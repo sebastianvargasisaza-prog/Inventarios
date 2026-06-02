@@ -14190,6 +14190,161 @@ def admin_formulas_mismapeo_page():
     return _FORMULAS_MISMAPEO_HTML
 
 
+@bp.route("/api/admin/mps-inci-sospechoso", methods=["GET"])
+def admin_mps_inci_sospechoso():
+    """Maestro_mps con nombre_inci SOSPECHOSO de estar mal escrito.
+
+    Caso MP00175: nombre_comercial 'N-Acetyl Glucosamina' pero nombre_inci
+    'ACETYL TETRAPEPTIDE-5' → el INCI describe OTRO material → confunde a
+    detectores y al matching por nombre. SIN escritura · solo diagnóstico.
+
+    Señales (de más a menos confiable):
+      A) el INCI (normalizado) es IGUAL al nombre (comercial/INCI) de OTRO código
+         activo → el INCI está 'prestado' de otro material (casi seguro mal).
+      B) el mismo INCI normalizado lo comparten 2+ códigos (colisión de INCI).
+      C) comercial vs INCI tienen identidad disjunta EN AMBAS direcciones
+         (dos nombres de material distintos · puede ser marca↔INCI legítimo →
+         se marca como 'revisar', baja confianza)."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    try:
+        from blueprints.formula_match import norm as _fnorm, palabras_clave as _pcl, _hay_identidad_disjunta as _disj
+    except ImportError:
+        from api.blueprints.formula_match import norm as _fnorm, palabras_clave as _pcl, _hay_identidad_disjunta as _disj
+    conn = db_connect()
+    c = conn.cursor()
+    try:
+        rows = c.execute(
+            "SELECT codigo_mp, COALESCE(nombre_comercial,''), COALESCE(nombre_inci,'') "
+            "FROM maestro_mps WHERE COALESCE(activo,1)=1").fetchall()
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+    # índices de nombres normalizados → códigos
+    name_to_codes = {}      # norm(nombre) -> set(codigos)  (comercial + inci)
+    inci_to_codes = {}      # norm(inci)   -> set(codigos)
+    info = {}
+    for cod, com, inci in rows:
+        cod = str(cod).strip()
+        info[cod] = {'comercial': com, 'inci': inci}
+        for nm in (com, inci):
+            k = _fnorm(nm)
+            if k:
+                name_to_codes.setdefault(k, set()).add(cod)
+        ki = _fnorm(inci)
+        if ki:
+            inci_to_codes.setdefault(ki, set()).add(cod)
+
+    sospechosos = []
+    for cod, com, inci in rows:
+        cod = str(cod).strip()
+        if not com or not inci:
+            continue
+        com_n = _fnorm(com)
+        inci_n = _fnorm(inci)
+        if not com_n or not inci_n or com_n == inci_n:
+            continue
+        senal = None
+        evidencia = None
+        # A) INCI igual al nombre de OTRO código → INCI prestado de otro material
+        otros = sorted(c2 for c2 in name_to_codes.get(inci_n, set()) if c2 != cod)
+        if otros:
+            senal = 'inci_es_otro_material'
+            evidencia = [{'codigo': o, 'comercial': info[o]['comercial'], 'inci': info[o]['inci']} for o in otros[:5]]
+        else:
+            # B) mismo INCI en 2+ códigos
+            comparten = sorted(c2 for c2 in inci_to_codes.get(inci_n, set()) if c2 != cod)
+            if comparten:
+                senal = 'inci_compartido'
+                evidencia = [{'codigo': o, 'comercial': info[o]['comercial'], 'inci': info[o]['inci']} for o in comparten[:5]]
+            # C) comercial vs INCI identidad disjunta en ambas direcciones
+            elif _disj(_pcl(com), _pcl(inci)) and _disj(_pcl(inci), _pcl(com)):
+                senal = 'revisar_disjunto'
+        if senal:
+            sospechosos.append({
+                'codigo_mp': cod, 'nombre_comercial': com, 'nombre_inci': inci,
+                'senal': senal, 'evidencia': evidencia,
+            })
+    # ordenar: prestado > compartido > revisar
+    _ord = {'inci_es_otro_material': 0, 'inci_compartido': 1, 'revisar_disjunto': 2}
+    sospechosos.sort(key=lambda x: (_ord.get(x['senal'], 9), x['codigo_mp']))
+    return jsonify({
+        'ok': True, 'total': len(sospechosos),
+        'sospechosos': sospechosos,
+        'por_senal': {
+            'inci_es_otro_material': sum(1 for s in sospechosos if s['senal'] == 'inci_es_otro_material'),
+            'inci_compartido': sum(1 for s in sospechosos if s['senal'] == 'inci_compartido'),
+            'revisar_disjunto': sum(1 for s in sospechosos if s['senal'] == 'revisar_disjunto'),
+        },
+    })
+
+
+_MPS_INCI_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>MPs · INCI sospechoso · EOS</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+.wrap{max-width:1100px;margin:0 auto}
+.card{background:#fff;border-radius:12px;padding:18px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:#b91c1c;font-size:21px}
+table{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+th{text-align:left;padding:8px;background:#f1f5f9;color:#475569;font-weight:700}
+td{padding:8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+.mono{font-family:ui-monospace,monospace;font-weight:700;color:#1e40af}
+.muted{color:#64748b;font-size:11px}
+button{background:#0f766e;color:#fff;border:none;padding:7px 14px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer}
+.bad{color:#b91c1c;font-weight:700}
+.pill{padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700}
+.p0{background:#fee2e2;color:#991b1b}.p1{background:#fef3c7;color:#92400e}.p2{background:#e0e7ff;color:#3730a3}
+</style></head><body>
+<div class="wrap">
+<a href="/modulos">&larr; Volver</a>
+<div class="card">
+  <h1>&#129516; Materias primas con INCI sospechoso</h1>
+  <div class="muted">Códigos cuyo <b>Nombre INCI</b> parece describir OTRO material que el comercial (ej. MP00175: comercial 'N-Acetyl Glucosamina' pero INCI 'Acetyl tetrapeptide-5'). Solo <b>diagnóstico</b> · corregí el INCI a mano en Bodega MP (botón Ajustar/✏️). No hay auto-fix.</div>
+  <div style="margin-top:10px"><button onclick="cargar()">↻ Recargar</button> <span id="resumen" class="muted"></span></div>
+</div>
+<div id="out" class="card">Cargando…</div>
+</div>
+<script>
+function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c];});}
+function pill(s){ if(s==='inci_es_otro_material') return '<span class="pill p0">INCI de otro material</span>'; if(s==='inci_compartido') return '<span class="pill p1">INCI compartido</span>'; return '<span class="pill p2">revisar</span>'; }
+async function cargar(){
+  var out=document.getElementById('out'); out.innerHTML='Cargando…';
+  try{
+    var r=await fetch('/api/admin/mps-inci-sospechoso',{cache:'no-store'});
+    if(r.status===401){ location.href='/login'; return; }
+    var d=await r.json();
+    if(!r.ok||!d.ok){ out.innerHTML='<span class="bad">Error: '+esc((d&&d.error)||r.status)+'</span>'; return; }
+    var ps=d.por_senal||{};
+    document.getElementById('resumen').textContent = d.total+' sospechoso(s) · '+(ps.inci_es_otro_material||0)+' INCI de otro material · '+(ps.inci_compartido||0)+' compartido · '+(ps.revisar_disjunto||0)+' revisar';
+    if(!d.sospechosos.length){ out.innerHTML='<div style="color:#15803d;font-weight:700">✅ Ningún INCI claramente sospechoso.</div>'; return; }
+    var h='<table><tr><th>Código</th><th>Nombre comercial</th><th>Nombre INCI (sospechoso)</th><th>Señal / evidencia</th></tr>';
+    d.sospechosos.forEach(function(x){
+      var ev='';
+      if(x.evidencia&&x.evidencia.length){ ev=' · igual a: '+x.evidencia.map(function(e){return esc(e.codigo)+' ('+esc(e.comercial||e.inci||'')+')';}).join(', '); }
+      h+='<tr><td><span class="mono">'+esc(x.codigo_mp)+'</span></td><td>'+esc(x.nombre_comercial)+'</td><td class="bad">'+esc(x.nombre_inci)+'</td><td>'+pill(x.senal)+'<span class="muted">'+ev+'</span></td></tr>';
+    });
+    h+='</table>';
+    out.innerHTML=h;
+  }catch(e){ out.innerHTML='<span class="bad">Error red: '+esc(e.message)+'</span>'; }
+}
+cargar();
+</script>
+</body></html>"""
+
+
+@bp.route("/admin/mps-inci", methods=["GET"])
+def admin_mps_inci_page():
+    """Página · MPs con nombre_inci sospechoso de estar mal."""
+    if 'compras_user' not in session:
+        return redirect("/login?next=/admin/mps-inci")
+    return _MPS_INCI_HTML
+
+
 @bp.route("/api/admin/maestro-mps-unificar", methods=["POST"])
 def maestro_mps_unificar():
     """Fusiona 2+ MPs duplicadas en una canónica.
