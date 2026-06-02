@@ -14582,8 +14582,9 @@ button.ap{background:#b45309}
   <div style="margin-top:12px">
     <input type="file" id="f" accept=".xlsx">
     <button onclick="run(false)">🔍 Verificar (reporte)</button>
-    <button style="background:#0f766e" onclick="crearMps(false)">➕ Crear MPs faltantes (ver)</button>
-    <button style="background:#047857" onclick="crearMps(true)">➕ Crear MPs faltantes (aplicar)</button>
+    <button style="background:#0f766e" onclick="crearMps(false,false)">➕ Ver faltantes / inactivas</button>
+    <button style="background:#047857" onclick="crearMps(true,false)">➕ Crear faltantes</button>
+    <button style="background:#7c3aed" onclick="crearMps(false,true)">♻ Reactivar inactivas</button>
     <button class="ap" onclick="run(true)">✔ Aplicar correcciones de código</button>
   </div>
   <div class="muted" style="margin-top:6px">Orden recomendado: <b>1)</b> Crear MPs faltantes · <b>2)</b> reconciliar stock · <b>3)</b> Aplicar correcciones de código.</div>
@@ -14594,16 +14595,18 @@ button.ap{background:#b45309}
 <script>
 function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c];});}
 async function _csrf(){ try{ var r=await fetch('/api/csrf-token',{credentials:'same-origin'}); if(r.ok){ var d=await r.json(); return d.csrf_token||''; } }catch(_){} return ''; }
-async function crearMps(aplicar){
+async function crearMps(aplicar, reactivar){
   var fi=document.getElementById('f'); if(!fi.files||!fi.files[0]){ alert('Elegí el archivo Excel primero'); return; }
-  if(aplicar && !confirm('Vas a CREAR en el catálogo las MPs que tu Excel define y que faltan (con su INCI/comercial). No toca fórmulas ni stock. ¿Continuar?')) return;
+  if(aplicar && !confirm('Vas a CREAR en el catálogo las MPs que tu Excel define y que faltan. No toca fórmulas ni stock. ¿Continuar?')) return;
+  if(reactivar && !confirm('Vas a REACTIVAR (activo=1) las MPs del Excel que están inactivas. Solo cambia el estado · NO toca fórmulas ni stock · reversible. ¿Continuar?')) return;
   var out=document.getElementById('out'); out.innerHTML='Procesando…';
   var fd=new FormData(); fd.append('file', fi.files[0]);
+  var qs=[]; if(aplicar)qs.push('aplicar=1'); if(reactivar)qs.push('reactivar=1');
   try{
-    var r=await fetch('/api/admin/crear-mps-faltantes-excel'+(aplicar?'?aplicar=1':''),{method:'POST',headers:{'X-CSRF-Token':await _csrf()},credentials:'same-origin',body:fd});
+    var r=await fetch('/api/admin/crear-mps-faltantes-excel'+(qs.length?('?'+qs.join('&')):''),{method:'POST',headers:{'X-CSRF-Token':await _csrf()},credentials:'same-origin',body:fd});
     var d=await r.json();
     if(!r.ok||!d.ok){ out.innerHTML='<span class="bad">Error: '+esc((d&&d.error)||r.status)+'</span>'; return; }
-    document.getElementById('resumen').innerHTML='Códigos en Excel: '+d.codigos_en_excel+' · ya existen: '+d.ya_existen+' · <b class="bad">faltan: '+d.total_faltantes+'</b>'+(d.total_inactivos?(' · inactivos: '+d.total_inactivos):'')+(d.aplicado?(' · <b class="ok">'+d.creados+' creados</b>'):'');
+    document.getElementById('resumen').innerHTML='Códigos en Excel: '+d.codigos_en_excel+' · ya existen activos: '+d.ya_existen+' · <b class="bad">faltan: '+d.total_faltantes+'</b> · inactivos: '+(d.total_inactivos||0)+(d.aplicado?(' · <b class="ok">'+d.creados+' creados</b>'):'')+(d.reactivado?(' · <b class="ok">'+d.reactivados+' reactivados</b>'):'');
     var h='<h3>MPs faltantes en el catálogo'+(d.aplicado?' (creadas)':' (se crearían)')+'</h3>';
     if(!d.faltantes.length){ h+='<div class="ok">✅ No falta ninguna MP del Excel.</div>'; }
     else{
@@ -14662,6 +14665,7 @@ def admin_crear_mps_faltantes_excel():
     if err:
         return err, code
     aplicar = (request.args.get('aplicar') or '').strip() in ('1', 'true', 'yes')
+    reactivar = (request.args.get('reactivar') or '').strip() in ('1', 'true', 'yes')
     raw = None
     if request.files and 'file' in request.files:
         raw = request.files['file'].read()
@@ -14717,6 +14721,7 @@ def admin_crear_mps_faltantes_excel():
     faltantes.sort(key=lambda x: x['codigo'])
 
     creados = 0
+    reactivados = 0
     if aplicar and faltantes:
         for f in faltantes:
             try:
@@ -14728,13 +14733,28 @@ def admin_crear_mps_faltantes_excel():
             except Exception:
                 pass  # ya existe (carrera) u otra restricción · se reporta como no creado
         conn.commit()
+    if reactivar and inactivos:
+        # Reactivar = activo=1 · NO toca nombre, fórmulas ni stock · reversible.
+        for it in inactivos:
+            try:
+                cur = c.execute(
+                    "UPDATE maestro_mps SET activo=1 WHERE codigo_mp=? AND COALESCE(activo,1)=0",
+                    (it['codigo'],))
+                if cur.rowcount:
+                    reactivados += 1
+            except Exception:
+                pass
+        conn.commit()
+    if aplicar or reactivar:
         try:
             import json as _json
             c.execute(
                 "INSERT INTO audit_log (usuario, accion, tabla, registro_id, detalle, ip, fecha) "
                 "VALUES (?,?,?,?,?,?,datetime('now','-5 hours'))",
-                (u, 'CREAR_MPS_FALTANTES', 'maestro_mps', '_BULK_',
-                 _json.dumps({'creados': creados, 'codigos': [f['codigo'] for f in faltantes][:200]},
+                (u, 'CREAR_REACTIVAR_MPS_EXCEL', 'maestro_mps', '_BULK_',
+                 _json.dumps({'creados': creados, 'reactivados': reactivados,
+                              'codigos_creados': [f['codigo'] for f in faltantes][:200],
+                              'codigos_reactivados': [it['codigo'] for it in inactivos][:200]},
                              ensure_ascii=False),
                  request.remote_addr))
             conn.commit()
@@ -14742,12 +14762,12 @@ def admin_crear_mps_faltantes_excel():
             pass
     conn.close()
     return jsonify({
-        'ok': True, 'aplicado': aplicar,
+        'ok': True, 'aplicado': aplicar, 'reactivado': reactivar,
         'codigos_en_excel': len(cods),
         'ya_existen': len(cods) - len(faltantes) - len(inactivos),
         'faltantes': faltantes, 'total_faltantes': len(faltantes),
         'inactivos': inactivos, 'total_inactivos': len(inactivos),
-        'creados': creados,
+        'creados': creados, 'reactivados': reactivados,
     })
 
 
