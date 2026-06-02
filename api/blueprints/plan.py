@@ -4496,6 +4496,24 @@ def plan_factibilidad():
         mp_stock_raw = _gms(conn)
     except Exception:
         mp_stock_raw = {}
+    # FIX 2-jun-2026 audit · resolver canónico fórmula→bodega (id-con-mov→bridge→
+    # nombre/alias) · antes factibilidad solo miraba id+bridge (perdía el tier de
+    # nombre/alias) → déficit falso para MP con stock bajo código por nombre.
+    try:
+        from blueprints.programacion import _resolver_material_bodega as _resolver_mp
+    except Exception:
+        _resolver_mp = None
+    _resolve_cache = {}
+    def _resolver_mid(mid_raw, nombre):
+        if _resolver_mp is None:
+            return mid_raw
+        k = (mid_raw, nombre or '')
+        if k not in _resolve_cache:
+            try:
+                _resolve_cache[k] = _resolver_mp(c, mid_raw, nombre or '') or mid_raw
+            except Exception:
+                _resolve_cache[k] = mid_raw
+        return _resolve_cache[k]
     # mp_stock_raw incluye keys por material_id, nombre upper, normalizado ·
     # nos interesa solo los material_id (que son los keys que usan formulas)
     mp_stock_g = {}
@@ -4729,9 +4747,13 @@ def plan_factibilidad():
             n_lotes = float(lotes or 1)
         req = []
         for it in items:
-            mid = it["material_id"]
-            if mid == 'MPAGUALI01':       # agua · consumible infinito
+            mid_raw = it["material_id"]
+            if mid_raw == 'MPAGUALI01':       # agua · consumible infinito
                 continue
+            # resolver a código de bodega (M1) · la simulación y la compra
+            # consolidada se llavean por el código resuelto → consistente con
+            # stock real (incluye tier nombre/alias) y con abastecimiento.
+            mid = _resolver_mid(mid_raw, it["material_nombre"])
             need = it["necesario_g_lote"] * n_lotes
             if lk > 0 and lk != lote_size.get(prod_norm, lk):
                 need = it["necesario_g_lote"] * (float(cant_kg) / lk)
