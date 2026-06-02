@@ -987,6 +987,131 @@ def mbr_generar_todas_desde_formulas():
     }), 201
 
 
+def _get_or_create_draft_mbr(cur, producto, usuario=''):
+    """Devuelve (mbr_id, creado) de un MBR DRAFT editable para el producto.
+    Si el último MBR vigente es draft → lo reusa. Si está aprobado/en_revisión →
+    crea una NUEVA versión draft (para no pisar el aprobado · BPM versionado).
+    Si no existe ninguno → crea uno draft vinculado a la fórmula activa.
+    Integración MyBatch · 2-jun-2026 · editar procedimiento/IPC desde Fórmulas."""
+    row = cur.execute(
+        "SELECT id, estado, version FROM mbr_templates "
+        "WHERE producto_nombre=? AND COALESCE(estado,'')!='obsoleto' "
+        "ORDER BY version DESC LIMIT 1", (producto,)).fetchone()
+    if row and row["estado"] == "draft":
+        return row["id"], False
+    fh = cur.execute(
+        "SELECT id AS fid, COALESCE(lote_size_kg,0) AS lk, COALESCE(unidad_base_g,0) AS ub "
+        "FROM formula_headers WHERE producto_nombre=? AND COALESCE(activo,1)=1 "
+        "ORDER BY id DESC LIMIT 1", (producto,)).fetchone()
+    formula_id = fh["fid"] if fh else None
+    lote_size_g = ((fh["lk"] if fh else 0) or 0) * 1000.0 or (fh["ub"] if fh else 0) or 1000.0
+    version = _next_version(cur, producto)
+    cur.execute(
+        "INSERT INTO mbr_templates (producto_nombre, formula_version_id, version, estado, lote_size_g, creado_por) "
+        "VALUES (?,?,?,'draft',?,?)", (producto, formula_id, version, float(lote_size_g), usuario))
+    return cur.lastrowid, True
+
+
+@bp.route("/api/brd/mbr/por-producto", methods=["GET"])
+def mbr_por_producto():
+    """Devuelve el MBR vigente (procedimiento + IPC) de un producto · para precargar
+    el editor de Fórmulas. ?producto=NOMBRE."""
+    err = _require_login()
+    if err:
+        return err
+    producto = (request.args.get("producto") or "").strip()
+    if not producto:
+        return jsonify({"error": "producto requerido"}), 400
+    conn = get_db(); cur = conn.cursor()
+    row = cur.execute(
+        "SELECT id, estado, version FROM mbr_templates "
+        "WHERE producto_nombre=? AND COALESCE(estado,'')!='obsoleto' "
+        "ORDER BY version DESC LIMIT 1", (producto,)).fetchone()
+    if not row:
+        return jsonify({"ok": True, "existe": False, "pasos": [], "ipc": []})
+    mbr_id = row["id"]
+    pasos = [{"orden": p["orden"], "descripcion": p["descripcion"],
+              "fase": p["fase"], "resultado_label": p["notas"]}
+             for p in cur.execute(
+                 "SELECT orden, descripcion, COALESCE(fase,'') fase, COALESCE(notas,'') notas "
+                 "FROM mbr_pasos WHERE mbr_template_id=? ORDER BY orden", (mbr_id,)).fetchall()]
+    ipc = [{"parametro": s["parametro"], "unidad": s["unidad"],
+            "valor_min": s["valor_min"], "valor_max": s["valor_max"],
+            "especificacion": s["notas"]}
+           for s in cur.execute(
+               "SELECT parametro, COALESCE(unidad,'') unidad, valor_min, valor_max, COALESCE(notas,'') notas "
+               "FROM ipc_specs WHERE mbr_template_id=?", (mbr_id,)).fetchall()]
+    return jsonify({"ok": True, "existe": True, "mbr_id": mbr_id,
+                    "estado": row["estado"], "version": row["version"],
+                    "pasos": pasos, "ipc": ipc})
+
+
+@bp.route("/api/brd/mbr/sync-procedimiento", methods=["POST"])
+def mbr_sync_procedimiento():
+    """Guarda el PROCEDIMIENTO (pasos de fabricación) + IPC de un producto como su
+    MBR draft · lo usa el editor de Fórmulas (integración MyBatch · el procedimiento
+    vive junto a la receta). Reemplaza pasos/IPC del draft. NO aprueba (eso exige
+    e-firma vía /aprobar). Body: {producto_nombre, pasos:[{descripcion,fase?,
+    resultado_label?,tipo_paso?}], ipc:[{parametro,unidad?,valor_min?,valor_max?,
+    especificacion?,metodo?}]}."""
+    err = _require_login()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    if user not in ADMIN_USERS and user not in CALIDAD_USERS:
+        return jsonify({"error": "solo Admin/Calidad puede editar el MBR"}), 403
+    b = request.get_json(silent=True) or {}
+    producto = (b.get("producto_nombre") or "").strip()
+    if not producto:
+        return jsonify({"error": "producto_nombre requerido"}), 400
+    pasos = b.get("pasos") or []
+    ipc = b.get("ipc") or []
+    conn = get_db(); cur = conn.cursor()
+    mbr_id, creado = _get_or_create_draft_mbr(cur, producto, user)
+    # reemplazar procedimiento (pasos)
+    cur.execute("DELETE FROM mbr_pasos WHERE mbr_template_id=?", (mbr_id,))
+    orden = 0
+    for p in pasos:
+        desc = (p.get("descripcion") or "").strip()
+        if not desc:
+            continue
+        orden += 1
+        tipo = (p.get("tipo_paso") or "mezclado").strip().lower()
+        if tipo not in VALID_TIPO_PASO:
+            tipo = "otro"
+        cur.execute(
+            "INSERT INTO mbr_pasos (mbr_template_id, orden, fase, descripcion, tipo_paso, "
+            "requiere_e_sign, requiere_qc, notas) VALUES (?,?,?,?,?,1,0,?)",
+            (mbr_id, orden, (p.get("fase") or "Fabricación").strip(), desc, tipo,
+             (p.get("resultado_label") or "").strip()))
+    # reemplazar IPC
+    cur.execute("DELETE FROM ipc_specs WHERE mbr_template_id=?", (mbr_id,))
+
+    def _f(v):
+        try:
+            return float(v) if v not in (None, "") else None
+        except (ValueError, TypeError):
+            return None
+    n_ipc = 0
+    for s in ipc:
+        par = (s.get("parametro") or "").strip()
+        if not par:
+            continue
+        n_ipc += 1
+        cur.execute(
+            "INSERT INTO ipc_specs (mbr_template_id, parametro, unidad, valor_min, valor_max, "
+            "metodo, obligatorio, notas) VALUES (?,?,?,?,?,?,?,?)",
+            (mbr_id, par, (s.get("unidad") or "").strip(), _f(s.get("valor_min")), _f(s.get("valor_max")),
+             (s.get("metodo") or "").strip(), 1 if s.get("obligatorio", 1) else 0,
+             (s.get("especificacion") or s.get("notas") or "").strip()))
+    audit_log(cur, usuario=user, accion="SYNC_MBR_PROCEDIMIENTO", tabla="mbr_templates",
+              registro_id=mbr_id, despues={"producto": producto, "n_pasos": orden,
+                                           "n_ipc": n_ipc, "mbr_creado": creado})
+    conn.commit()
+    return jsonify({"ok": True, "mbr_id": mbr_id, "n_pasos": orden, "n_ipc": n_ipc,
+                    "mbr_creado": creado})
+
+
 @bp.route("/api/brd/ebr", methods=["POST"])
 def iniciar_ebr():
     err = _require_login()
