@@ -8650,13 +8650,42 @@ def _compute_audit_minimos(horizonte_proyeccion_dias: int = 90,
 
     consumo_por_mp = {}
     for mp in (plan_data.get('mps_deficit') or []) + (plan_data.get('mps_ok') or []):
-        consumo_por_mp[mp['material_id']] = {
+        consumo_por_mp[str(mp['material_id']).strip()] = {
             'total_g_horizonte': float(mp.get('total_g') or 0),
             'origen': mp.get('origen', 'desconocido'),
             'productos': mp.get('productos', []) or [],
         }
 
     conn = _get_db()
+
+    # FIX 1-jun-2026 audit Abastecimiento (P0 · riesgo de quiebre silencioso) ·
+    # el consumo viene llaveado por el material_id de la FÓRMULA (ej. MPHEXDILI01)
+    # pero el loop de abajo itera maestro_mps.codigo_mp de BODEGA (ej. MP00245).
+    # Para los ~116 MPs con sistemas de ID distintos el match fallaba → consumo=0 →
+    # SIN_USO → mínimo=0 → NUNCA se disparaba alerta de reabastecimiento. Re-llaveamos
+    # el consumo a código de bodega vía mp_formula_bridge (mismo bridge que _get_mp_stock).
+    consumo_por_bodega = {}
+    try:
+        _bridge = {}
+        for _fid, _bid in conn.execute(
+            "SELECT formula_material_id, bodega_material_id FROM mp_formula_bridge WHERE activo=1"
+        ).fetchall():
+            _f = str(_fid or '').strip()
+            _b = str(_bid or '').strip()
+            if _f and _b:
+                _bridge[_f] = _b
+        for _fmid, _info in consumo_por_mp.items():
+            _bod = _bridge.get(_fmid, _fmid)  # sin bridge → asume mismo id
+            _acc = consumo_por_bodega.setdefault(
+                _bod, {'total_g_horizonte': 0.0, 'origen': 'desconocido', 'productos': []})
+            _acc['total_g_horizonte'] += _info['total_g_horizonte']
+            for _pp in (_info.get('productos') or []):
+                if _pp not in _acc['productos']:
+                    _acc['productos'].append(_pp)
+            if _info.get('origen') and _info['origen'] != 'desconocido':
+                _acc['origen'] = _info['origen']
+    except Exception:
+        consumo_por_bodega = dict(consumo_por_mp)  # bridge no disponible → fallback directo
     try:
         rows = conn.execute("""
             SELECT m.codigo_mp, m.nombre_inci, m.nombre_comercial, m.proveedor,
@@ -8694,7 +8723,9 @@ def _compute_audit_minimos(horizonte_proyeccion_dias: int = 90,
         stock_min_actual = float(stock_min_actual or 0)
         stock_actual = float(stock_actual or 0)
 
-        proy = consumo_por_mp.get(codigo)
+        # FIX 1-jun-2026 · buscar primero por código de bodega re-llaveado (bridge),
+        # luego directo (compat) → ya no quedan MPs muy consumidas en SIN_USO.
+        proy = consumo_por_bodega.get(str(codigo).strip()) or consumo_por_mp.get(str(codigo).strip())
         consumo_horizonte_g = proy['total_g_horizonte'] if proy else 0.0
         origen = proy['origen'] if proy else 'desconocido'
         productos = proy['productos'] if proy else []

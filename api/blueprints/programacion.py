@@ -1189,19 +1189,27 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
                 mp_needed[mid]['productos'].append(prod)
 
     # Lookup stock por mid o por nombre normalizado
+    # FIX 1-jun-2026 audit Abastecimiento (P0) · faltaba el tier de ALIAS que sí
+    # tiene el lookup canónico (~1404) → MPs con nombre-variante no bridgeado
+    # resolvían stock=0 → déficit FALSO → sobre-compra. Alineado al canónico.
     def _lookup_stock(mid, nombre):
         s = mp_stock.get(mid)
         if s is not None:
             return s
-        s = mp_stock.get(mid.upper())
+        s = mp_stock.get((mid or '').upper())
         if s is not None:
             return s
-        s = mp_stock.get((nombre or '').upper())
+        _nom_exact = (nombre or '').upper()
+        s = mp_stock.get(_nom_exact)
         if s is not None:
             return s
-        s = mp_stock.get(_norm_mp_name(nombre or ''))
+        _nom_norm = _norm_mp_name(nombre or '')
+        s = mp_stock.get(_nom_norm)
         if s is not None:
             return s
+        _alias = _MP_NAME_ALIAS.get(_nom_norm) or _MP_NAME_ALIAS.get(_nom_exact)
+        if _alias and mp_stock.get(_alias) is not None:
+            return mp_stock.get(_alias)
         return 0
 
     # Calcular déficit (UNA sola resta — total_g - stock)
@@ -9666,13 +9674,19 @@ def abastecimiento_consumo_horizontes():
     formulas = {}
     # Pre-cargar lote_size_kg por producto (también para B2B · evita N+1)
     lote_size_por_prod = {}
+    # FIX 1-jun-2026 audit Abastecimiento (P2) · (a) JOIN normalizado UPPER(TRIM)
+    # → antes la igualdad exacta perdía TODOS los items de un producto si el
+    # nombre difería en case/espacios entre formula_items y formula_headers
+    # (sub-conteo de demanda). (b) dedup por (producto, codigo_mp) → formula_items
+    # no tiene UNIQUE, los duplicados sumaban el MP dos veces (sobre-conteo).
+    _seen_fi = set()
     for r in c.execute("""
         SELECT fi.producto_nombre, fi.material_id,
                COALESCE(fi.material_nombre,''),
                COALESCE(fi.porcentaje,0), COALESCE(fi.cantidad_g_por_lote,0),
                COALESCE(fh.lote_size_kg, 0)
         FROM formula_items fi
-        JOIN formula_headers fh ON fh.producto_nombre = fi.producto_nombre
+        JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(fi.producto_nombre))
         WHERE fi.material_id IS NOT NULL AND TRIM(fi.material_id) != ''
           AND COALESCE(fh.activo,1) = 1
     """).fetchall():
@@ -9680,6 +9694,10 @@ def abastecimiento_consumo_horizontes():
         if not cm_norm:
             continue
         prod_key = _norm_prod(r[0])
+        _dk = (prod_key, cm_norm)
+        if _dk in _seen_fi:
+            continue  # duplicado de formula_items · no doble-contar
+        _seen_fi.add(_dk)
         formulas.setdefault(prod_key, []).append({
             'codigo_mp': cm_norm,
             'nombre': r[2],
@@ -10170,7 +10188,10 @@ def abastecimiento_consumo_horizontes():
             vel_uds_dia = qty_60d / 60.0
             ml = _inf_ml(prod)
             kg_dia = (vel_uds_dia * ml) / 1000.0
-            prod_up = prod.upper().strip()
+            # FIX 1-jun-2026 audit (P0) · usar _norm_prod (colapsa dobles espacios)
+            # igual que la clave de `formulas` · antes .upper().strip() no matcheaba
+            # y la proyección run-rate de esos productos caía a 0 (sub-conteo).
+            prod_up = _norm_prod(prod)
             vel_kg_dia_por_prod[prod_up] = vel_kg_dia_por_prod.get(prod_up, 0) + kg_dia
         # Pre-computar kg_fijo_por_prod_por_horizonte (lo ya programado Fijo)
         # + kg_b2b_por_prod_por_horizonte para descontar del run-rate y
@@ -10182,7 +10203,7 @@ def abastecimiento_consumo_horizontes():
                 pid, producto, fecha, lotes, cant_kg_expl, lote_size, _origen2, _ = _pr2
             else:
                 pid, producto, fecha, lotes, cant_kg_expl, lote_size, _origen2 = _pr2
-            producto_norm = (producto or '').strip().upper()
+            producto_norm = _norm_prod(producto)  # match con clave de formulas/run-rate
             try:
                 dias_hasta_f = (date.fromisoformat(str(fecha)[:10]) - hoy).days
             except Exception:
@@ -10201,7 +10222,7 @@ def abastecimiento_consumo_horizontes():
         for bid, cli_id, cli_nom, prod_nom, cant_uds, ml_u, f_est in b2b_rows:
             if not f_est:
                 continue
-            producto_norm_b = (prod_nom or '').strip().upper()
+            producto_norm_b = _norm_prod(prod_nom)  # match con clave de formulas/run-rate
             try:
                 dias_hasta_b = (date.fromisoformat(str(f_est)[:10]) - hoy).days
             except Exception:
@@ -10238,12 +10259,15 @@ def abastecimiento_consumo_horizontes():
                 kg_delta = max(kg_proyectado - kg_ya_fijo, 0.0)
                 if kg_delta <= 0.01:
                     continue
-                # Explotar fórmula sobre el delta
+                # Explotar fórmula sobre el delta · FIX 1-jun-2026 (P1) · priorizar
+                # pct ANTES que g_por_lote (igual que 8a/8b) · el seed de
+                # cantidad_g_por_lote está roto (cargado = al porcentaje) → usarlo
+                # primero daba escala equivocada (~hasta 2000×).
                 for it in items:
-                    if it['g_por_lote'] > 0 and lote_size_rr > 0:
-                        gramos = it['g_por_lote'] * (kg_delta / lote_size_rr)
-                    elif it['pct'] > 0:
+                    if it['pct'] > 0:
                         gramos = (it['pct'] / 100.0) * kg_delta * 1000.0
+                    elif it['g_por_lote'] > 0 and lote_size_rr > 0:
+                        gramos = it['g_por_lote'] * (kg_delta / lote_size_rr)
                     else:
                         continue
                     if incluir_mp and gramos > 0:
@@ -11709,8 +11733,14 @@ def planificacion_estrategica():
         clave correcta despues."""
         if _is_unlimited_mp(nombre):
             return None  # ilimitado, no decrementar
-        for k in (mid, mid.upper(), nombre.upper(), _norm_mp_name(nombre)):
-            if k in stock_simulado:
+        # FIX 1-jun-2026 audit Abastecimiento (P0) · incluir tier ALIAS (faltaba) ·
+        # alinea el lookup de factibilidad con el canónico → MP nombre-variante
+        # resuelve a su clave real y NO da déficit/factibilidad espuria.
+        _ne = (nombre or '').upper()
+        _nn = _norm_mp_name(nombre or '')
+        _al = _MP_NAME_ALIAS.get(_nn) or _MP_NAME_ALIAS.get(_ne)
+        for k in (mid, (mid or '').upper(), _ne, _nn, _al):
+            if k and k in stock_simulado:
                 return k
         return None
 
