@@ -312,6 +312,16 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (214, "ebr_ejecuciones · rendimiento por unidades (Envasado/Acondicionamiento) · reemplazo MyBatch Batch C · 3-jun-2026", [
+        # El yield de granel (yield_pct) es g_real/g_objetivo · sirve para
+        # Fabricación. En Envasado/Acondicionamiento el rendimiento se mide en
+        # UNIDADES (buenas vs teóricas). Aditivo · NULL por defecto · no toca el
+        # yield de granel. yield_uds_pct = unidades_buenas_real / unidades_teoricas.
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN unidades_teoricas REAL DEFAULT NULL",
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN unidades_buenas_real REAL DEFAULT NULL",
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN yield_uds_pct REAL DEFAULT NULL",
+    ]),
+
     (213, "ebr_observaciones · observaciones generales del proceso (bitácora del legajo) · reemplazo MyBatch · Sebastián 2-jun-2026", [
         # MyBatch tiene "Observaciones Generales del Proceso": bitácora libre
         # (quién, cuándo, qué) durante la ejecución. Tabla nueva append-only.

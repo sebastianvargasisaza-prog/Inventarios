@@ -78,6 +78,22 @@ def test_mismo_lote_misma_fase_rechaza(app, db_clean):
     assert r2.status_code == 409, r2.data
 
 
+def test_yield_por_unidades_envasado(app, db_clean):
+    """Batch C · completar un EBR de envasado calcula yield_uds_pct = buenas/teóricas."""
+    c = _login(app, "sebastian")
+    mbr_id = _exec("INSERT INTO mbr_templates (producto_nombre, version, estado, lote_size_g, creado_por) "
+                   "VALUES ('ZZ-YLD', 1, 'aprobado', 1000, 'sebastian')")
+    ebr_id = _exec("INSERT INTO ebr_ejecuciones (mbr_template_id, mbr_version, lote, estado, fase, "
+                   "iniciado_por, iniciado_at_utc, cantidad_objetivo_g) "
+                   "VALUES (?, 1, 'YLD-OF-1', 'en_proceso', 'envasado', 'sebastian', "
+                   "datetime('now','utc'), 1000)", (mbr_id,))
+    r = c.post(f"/api/brd/ebr/{ebr_id}/completar",
+               json={"cantidad_real_g": 980, "unidades_teoricas": 100,
+                     "unidades_buenas_real": 96}, headers=_h())
+    assert r.status_code == 200, r.data
+    assert r.get_json()["yield_uds_pct"] == 96.0, r.data
+
+
 def test_acond_no_libera_con_arte_sin_aprobar(app, db_clean):
     c = _login(app, "sebastian")
     c.patch("/api/identidad/sebastian", json={"cedula": "77777777"}, headers=_h())

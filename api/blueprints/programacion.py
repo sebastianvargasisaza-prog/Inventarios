@@ -17928,20 +17928,8 @@ def planta_aceptar_produccion(produccion_id):
                 'codigo': 'SIN_MBR_APROBADO',
             }), 409
 
-    # Reemplazo MyBatch · CANDADO MULTI-LOTE (audit 3-jun · P0).
-    # El motor EBR hoy crea UN solo legajo por producción (lote provisional
-    # 'PP<id>'). BPM/INVIMA exige 1 BPR por lote físico fabricado. Mientras el
-    # soporte multi-lote no esté implementado, NO permitir aceptar con EBR
-    # activo y lotes>1: generaría un legajo que documenta N lotes (no conforme).
-    # Con EBR_MODE='off' no aplica (no se crea EBR).
-    if EBR_MODE != 'off' and (lotes or 1) > 1:
-        return jsonify({
-            'error': f"El batch record (EBR) aún no soporta producciones "
-                     f"multi-lote. Esta programación tiene {lotes} lotes: "
-                     f"programá 1 lote por evento (o dividí la corrida) para "
-                     f"que cada lote físico tenga su propio BPR.",
-            'codigo': 'EBR_MULTILOTE_NO_SOPORTADO',
-        }), 409
+    # (Batch C 3-jun) El candado multi-lote del Batch A se reemplazó por soporte
+    # real: el hook de creación del EBR (abajo) genera N legajos cuando lotes>1.
 
     log = []
     # 1) Asignar área si no la tiene
@@ -18087,27 +18075,37 @@ def planta_aceptar_produccion(produccion_id):
     # Reemplazo MyBatch · fase 1 · crear/vincular el EBR (batch record) del lote
     # desde el MBR aprobado. EBR_MODE controla el comportamiento (off/warn/strict).
     # El bloqueo strict por falta de MBR ya se evaluó al inicio (antes de mutar).
+    # Batch C · multi-lote: una producción con lotes>1 genera N legajos (1 BPR por
+    # lote físico, exigencia BPM/INVIMA). lotes==1 mantiene el código 'PP<id>'
+    # (compat); lotes>1 usa 'PP<id>-L1..N'. Cada uno idempotente por (prod_id,lote).
     ebr = None
+    ebrs = []
     if EBR_MODE in ('warn', 'strict'):
         try:
             from blueprints.brd import crear_ebr_desde_mbr
-            ebr = crear_ebr_desde_mbr(
-                c, producto_nombre=producto, lote=f'PP{produccion_id}',
-                produccion_id=produccion_id, usuario=user)
-            if ebr.get('ok'):
-                log.append('✓ EBR ' + str(ebr.get('numero_op', '')) +
-                           (' reusado' if ebr.get('reusado') else
-                            ' creado (' + str(ebr.get('pasos', 0)) + ' pasos)'))
-                try:
-                    audit_log(c, usuario=user, accion='CREAR_EBR_AUTO',
-                              tabla='ebr_ejecuciones', registro_id=ebr.get('id'),
-                              despues={'produccion_id': produccion_id,
-                                       'numero_op': ebr.get('numero_op'),
-                                       'reusado': bool(ebr.get('reusado'))})
-                except Exception:
-                    pass
-            else:
-                log.append('⚠ EBR no creado: ' + str(ebr.get('detail', ebr.get('error'))))
+            _n_lotes = lotes or 1
+            for _i in range(1, _n_lotes + 1):
+                _lote_ebr = f'PP{produccion_id}' if _n_lotes == 1 else f'PP{produccion_id}-L{_i}'
+                _r = crear_ebr_desde_mbr(
+                    c, producto_nombre=producto, lote=_lote_ebr,
+                    produccion_id=produccion_id, usuario=user)
+                ebrs.append(_r)
+                if _r.get('ok'):
+                    log.append('✓ EBR ' + str(_r.get('numero_op', '')) +
+                               (' reusado' if _r.get('reusado') else
+                                ' creado (' + str(_r.get('pasos', 0)) + ' pasos)'))
+                    try:
+                        audit_log(c, usuario=user, accion='CREAR_EBR_AUTO',
+                                  tabla='ebr_ejecuciones', registro_id=_r.get('id'),
+                                  despues={'produccion_id': produccion_id,
+                                           'lote': _lote_ebr,
+                                           'numero_op': _r.get('numero_op'),
+                                           'reusado': bool(_r.get('reusado'))})
+                    except Exception:
+                        pass
+                else:
+                    log.append('⚠ EBR no creado: ' + str(_r.get('detail', _r.get('error'))))
+            ebr = ebrs[0] if ebrs else None  # compat: respuesta 'ebr' = primero
         except Exception as _eebr:
             logging.getLogger('programacion').warning('crear EBR en aceptar fallo: %s', _eebr)
 
@@ -18122,6 +18120,7 @@ def planta_aceptar_produccion(produccion_id):
         'fecha_envasado_estimada': fecha_obj,
         'area_id': area_id,
         'ebr': ebr,
+        'ebrs': ebrs,
     })
 
 

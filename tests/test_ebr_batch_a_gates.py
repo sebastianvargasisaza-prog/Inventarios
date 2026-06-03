@@ -40,20 +40,40 @@ def _firmar(c, *, record_table, record_id, meaning):
     return rs.get_json()["signature_id"]
 
 
-def test_candado_multilote_bloquea_aceptar(app, db_clean, monkeypatch):
-    """Con EBR encendido (warn/strict) y lotes>1 → 409 EBR_MULTILOTE_NO_SOPORTADO."""
+def test_multilote_crea_n_legajos(app, db_clean, monkeypatch):
+    """Batch C · una producción con lotes>1 crea N EBR (1 BPR por lote físico),
+    cada uno con lote único PP<id>-L1..N. Idempotente al re-aceptar."""
     import blueprints.programacion as _prog
     c = _login(app)
     monkeypatch.setattr(_prog, "EBR_MODE", "warn")
+    # MBR aprobado del producto (draft → pasos → aprobado)
+    mbr_id = _exec("INSERT INTO mbr_templates (producto_nombre, version, estado, lote_size_g, creado_por) "
+                   "VALUES ('MULTI-LOTE-T1', 1, 'draft', 1000, 'sebastian')")
+    _exec("INSERT INTO mbr_pasos (mbr_template_id, orden, descripcion) VALUES (?, 1, 'Dispensar')", (mbr_id,))
+    _exec("UPDATE mbr_templates SET estado='aprobado' WHERE id=?", (mbr_id,))
     pp = _exec("INSERT INTO produccion_programada (producto, fecha_programada, lotes, estado) "
                "VALUES ('MULTI-LOTE-T1', date('now'), 3, 'pendiente')")
     r = c.post(f"/api/planta/aceptar-produccion/{pp}", json={}, headers=_h())
-    assert r.status_code == 409, r.data
-    assert r.get_json().get("codigo") == "EBR_MULTILOTE_NO_SOPORTADO", r.data
-    # con EBR_MODE=off, el candado no aplica (no se crea EBR)
-    monkeypatch.setattr(_prog, "EBR_MODE", "off")
+    assert r.status_code == 200, r.data
+    ebrs = r.get_json().get("ebrs") or []
+    assert len([e for e in ebrs if e.get("ok")]) == 3, r.data
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    try:
+        n = conn.execute("SELECT COUNT(*) FROM ebr_ejecuciones WHERE produccion_id=?", (pp,)).fetchone()[0]
+        lotes = sorted(x[0] for x in conn.execute("SELECT lote FROM ebr_ejecuciones WHERE produccion_id=?", (pp,)).fetchall())
+    finally:
+        conn.close()
+    assert n == 3, n
+    assert lotes == [f"PP{pp}-L1", f"PP{pp}-L2", f"PP{pp}-L3"], lotes
+    # idempotente: re-aceptar no duplica
     r2 = c.post(f"/api/planta/aceptar-produccion/{pp}", json={}, headers=_h())
     assert r2.status_code == 200, r2.data
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    try:
+        n2 = conn.execute("SELECT COUNT(*) FROM ebr_ejecuciones WHERE produccion_id=?", (pp,)).fetchone()[0]
+    finally:
+        conn.close()
+    assert n2 == 3, n2
 
 
 def test_asignar_lote_fisico_propaga(app, db_clean):

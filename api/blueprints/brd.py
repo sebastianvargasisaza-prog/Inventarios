@@ -823,11 +823,13 @@ def crear_ebr_desde_mbr(cur, *, producto_nombre, lote, produccion_id=None,
       {ok:True, id, numero_op, reusado:True}     · ya existía para esa producción
       {ok:False, error:'NO_MBR_APROBADO'|'LOTE_DUPLICADO', detail}
     """
-    # Idempotencia: si la producción ya tiene EBR, reusar (no duplicar legajo).
+    # Idempotencia por (produccion_id, lote): re-aceptar reusa el legajo de ESE
+    # lote. Batch C · multi-lote: una producción con lotes>1 crea N legajos (uno
+    # por lote físico, lotes distintos), cada uno idempotente por su código.
     if produccion_id is not None:
         ex = cur.execute(
-            "SELECT id, numero_op FROM ebr_ejecuciones WHERE produccion_id=?",
-            (produccion_id,),
+            "SELECT id, numero_op FROM ebr_ejecuciones WHERE produccion_id=? AND lote=?",
+            (produccion_id, lote),
         ).fetchone()
         if ex:
             return {'ok': True, 'id': ex[0], 'numero_op': ex[1],
@@ -1740,7 +1742,8 @@ def completar_ebr(ebr_id):
     conn = get_db()
     cur = conn.cursor()
     ebr = cur.execute(
-        "SELECT estado, cantidad_objetivo_g FROM ebr_ejecuciones WHERE id = ?",
+        "SELECT estado, cantidad_objetivo_g, COALESCE(fase,'fabricacion') AS fase "
+        "FROM ebr_ejecuciones WHERE id = ?",
         (ebr_id,),
     ).fetchone()
     if not ebr:
@@ -1815,6 +1818,22 @@ def completar_ebr(ebr_id):
         densidad = 0.0
     densidad = densidad if densidad > 0 else None
     ml_envasable = round(cantidad_real / densidad, 2) if densidad else None
+    # Batch C · rendimiento por UNIDADES (Envasado/Acondicionamiento). El yield de
+    # granel (yield_pct) sigue igual; acá se calcula yield_uds_pct si el body trae
+    # unidades. Aplica a cualquier fase pero típicamente OF/OA.
+    def _num_opt(k):
+        v = body.get(k)
+        if v in (None, ""):
+            return None
+        try:
+            return float(v)
+        except (ValueError, TypeError):
+            return None
+    uds_teoricas = _num_opt("unidades_teoricas")
+    uds_buenas = _num_opt("unidades_buenas_real")
+    yield_uds_pct = (round(uds_buenas / uds_teoricas * 100, 2)
+                     if uds_teoricas and uds_buenas is not None and uds_teoricas > 0
+                     else None)
     user = session.get("compras_user", "")
     cur.execute(
         """UPDATE ebr_ejecuciones
@@ -1823,9 +1842,13 @@ def completar_ebr(ebr_id):
                  cantidad_real_g = ?,
                  yield_pct = ?,
                  densidad_g_ml = ?,
-                 ml_envasable = ?
+                 ml_envasable = ?,
+                 unidades_teoricas = ?,
+                 unidades_buenas_real = ?,
+                 yield_uds_pct = ?
            WHERE id = ?""",
-        (cantidad_real, yield_pct, densidad, ml_envasable, ebr_id),
+        (cantidad_real, yield_pct, densidad, ml_envasable,
+         uds_teoricas, uds_buenas, yield_uds_pct, ebr_id),
     )
     # INVIMA-FIX · 21-may-2026 · cuarentena explícita auto al completar
     # Antes: lote PT quedaba 'completado' pero NO había movimiento de
@@ -1871,6 +1894,7 @@ def completar_ebr(ebr_id):
                        "cuarentena_auto_creada": cuarentena_creada})
     return jsonify({"ok": True, "estado": "completado", "yield_pct": yield_pct,
                     "densidad_g_ml": densidad, "ml_envasable": ml_envasable,
+                    "yield_uds_pct": yield_uds_pct,
                     "cuarentena_creada": cuarentena_creada})
 
 
@@ -2812,6 +2836,17 @@ def pdf_ebr(ebr_id):
         if real is not None else
         f"Objetivo: {obj:,.2f} g   ·   Real: pendiente"),
         new_x="LMARGIN", new_y="NEXT")
+    # Batch C · rendimiento por unidades (Envasado/Acondicionamiento)
+    try:
+        _uds_t = ebr["unidades_teoricas"]; _uds_b = ebr["unidades_buenas_real"]
+        _yld_u = ebr["yield_uds_pct"]
+    except Exception:
+        _uds_t = _uds_b = _yld_u = None
+    if _uds_b is not None or _yld_u is not None:
+        pdf.cell(0, 5, _safe_pdf(
+            f"Unidades buenas: {_uds_b or 0:,.0f}   ·   teóricas: {_uds_t or 0:,.0f}"
+            + (f"   ·   Yield uds: {_yld_u:.2f} %" if _yld_u is not None else "")),
+            new_x="LMARGIN", new_y="NEXT")
     pdf.ln(3)
 
     def _line(text, h=5, font_size=9, italic=False):
