@@ -14627,7 +14627,12 @@ _CRUCE_MAESTRO_HTML = """<!DOCTYPE html><html lang="es"><head><meta charset="utf
 <div id="out"></div>
 </div>
 <script>
-function _csrf(){var m=document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/);return m?decodeURIComponent(m[1]):''}
+var _CSRF_CACHE='';
+async function _csrf(){
+ if(_CSRF_CACHE) return _CSRF_CACHE;
+ try{var r=await fetch('/api/csrf-token',{credentials:'same-origin'});var d=await r.json();_CSRF_CACHE=d.csrf_token||'';}catch(e){}
+ return _CSRF_CACHE;
+}
 function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML}
 function flagPill(fl){
  var map={INCI_VACIO:['warnp','INCI vacío'],INCI_RELLENADO:['ok','INCI rellenado'],INCI_MISMATCH:['bad','INCI distinto'],
@@ -14640,7 +14645,7 @@ async function run(aplicar){
  var out=document.getElementById('out'); out.innerHTML='Procesando…';
  var fd=new FormData(); fd.append('file', fi.files[0]);
  try{
-  var r=await fetch('/api/admin/cruce-maestro'+(aplicar?('?aplicar='+aplicar):''),{method:'POST',headers:{'X-CSRF-Token':_csrf()},credentials:'same-origin',body:fd});
+  var r=await fetch('/api/admin/cruce-maestro'+(aplicar?('?aplicar='+aplicar):''),{method:'POST',headers:{'X-CSRF-Token':await _csrf()},credentials:'same-origin',body:fd});
   var d=await r.json();
   if(!r.ok||!d.ok){out.innerHTML='<span class="pill bad">Error: '+esc((d&&d.error)||r.status)+'</span>';return;}
   var s=d.resumen, rb=document.getElementById('resumen'); rb.style.display='block';
