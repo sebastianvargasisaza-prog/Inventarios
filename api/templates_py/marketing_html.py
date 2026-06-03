@@ -3082,9 +3082,9 @@ function renderInfluencersTable() {
     // tal de que este mal \u00b7 alli donde dice pagos es confuso, debemos darle
     // mejor version". Badge clickable \u2192 abre modal Gestionar Pagos con lista
     // editable (Marcar Pagada/Pendiente, Editar valor, Eliminar err\u00f3neos).
-    let pagosBadge = '<button onclick="abrirGestionarPagos('+r.id+', '+JSON.stringify(r.nombre||'')+')" style="background:var(--cx-card);border:1px dashed #475569;color:var(--cx-text-mute);font-size:10px;padding:3px 8px;border-radius:6px;cursor:pointer" title="Sin pagos \u00b7 click para registrar/gestionar">+ Gestionar</button>';
+    let pagosBadge = '<button onclick="abrirGestionarPagos('+r.id+', '+esc(JSON.stringify(r.nombre||''))+')" style="background:var(--cx-card);border:1px dashed #475569;color:var(--cx-text-mute);font-size:10px;padding:3px 8px;border-radius:6px;cursor:pointer" title="Sin pagos \u00b7 click para registrar/gestionar">+ Gestionar</button>';
     if(pagosInf.length > 0){
-      pagosBadge = '<button onclick="abrirGestionarPagos('+r.id+', '+JSON.stringify(r.nombre||'')+')" style="background:transparent;border:0;padding:0;cursor:pointer;display:inline-flex;gap:4px;align-items:center;font-size:11px" title="Click para gestionar \u00b7 marcar pagado/pendiente, editar o eliminar">';
+      pagosBadge = '<button onclick="abrirGestionarPagos('+r.id+', '+esc(JSON.stringify(r.nombre||''))+')" style="background:transparent;border:0;padding:0;cursor:pointer;display:inline-flex;gap:4px;align-items:center;font-size:11px" title="Click para gestionar \u00b7 marcar pagado/pendiente, editar o eliminar">';
       if(pendCount>0) pagosBadge += `<span style="background:#78350f;color:#b45309;padding:2px 8px;border-radius:8px;font-weight:700">\u23f3 ${pendCount}</span>`;
       if(paidCount>0) pagosBadge += `<span style="background:var(--cx-success-pale);color:#16a34a;padding:2px 8px;border-radius:8px;font-weight:700">\u2713 ${paidCount}</span>`;
       pagosBadge += '<span style="color:#6d28d9;font-size:13px;margin-left:2px">\u2699</span></button>';
