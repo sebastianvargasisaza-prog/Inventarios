@@ -144,6 +144,18 @@ Opcional (no bloquea construcción):
 
 ---
 
+## 5.bis · PROGRESO DE CONSTRUCCIÓN
+
+- [x] **Batch fase + motor base** · mig 209 (`ebr_ejecuciones.fase` + `ebr_pasos_ejecutados.fase`) · commit 065da8e · prod
+- [x] **Batch 2ª firma de pesajes** · mig 208 (`verificado_por/at/e_sign_id`) + endpoint `/pesajes/<id>/verificar` · commit 53ad15c · prod
+- [x] **Batch Runner UI** · sección "Legajos EBR" en tab Fabricación (filtro fase, abrir EBR, verificar pesaje, iniciar/completar paso con doble firma) · commit fe9d8fe · prod
+- [ ] Batch conciliación material + %rend (Envasado)
+- [ ] Batch Acondicionamiento + Artes/Codificación
+- [ ] Batch cabecera/cierre + puente OP→OF (mL envasable)
+- [ ] Batch PM Premezclas (prioridad mínima)
+
+Nota: la 2ª firma de PASOS ya existía (qc_username/qc_e_sign_id en completar_paso_ebr).
+
 ## 6. Plan de construcción sugerido (cuando se apruebe)
 
 Orden por valor GMP y dependencias, en batches cero-error:
