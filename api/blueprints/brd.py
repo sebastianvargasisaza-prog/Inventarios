@@ -2755,12 +2755,92 @@ def listar_pesajes(ebr_id):
     rows = get_db().execute(
         """SELECT id, ebr_id, ebr_paso_id, material_id, material_nombre,
                   cantidad_teorica_g, cantidad_real_g, delta_g, delta_pct,
-                  lote_mp, pesado_por, pesado_at_utc, e_sign_id, notas
+                  lote_mp, pesado_por, pesado_at_utc, e_sign_id, notas,
+                  COALESCE(verificado_por,'') AS verificado_por,
+                  verificado_at_utc, verificado_e_sign_id
            FROM ebr_pesajes WHERE ebr_id = ?
            ORDER BY pesado_at_utc""",
         (ebr_id,),
     ).fetchall()
     return jsonify({"items": [dict(r) for r in rows]})
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/pesajes/<int:pesaje_id>/verificar",
+          methods=["POST"])
+def verificar_pesaje_ebr(ebr_id, pesaje_id):
+    """2ª firma GMP: una 2ª persona (Calidad/Admin) VERIFICA un pesaje ya
+    reportado. Reemplazo del `verified_weight` de MyBatch.
+
+    Reglas (cero-error / GMP):
+      · Solo Calidad o Admin verifican (segregación de funciones).
+      · El verificador NO puede ser quien pesó.
+      · Solo sobre EBR iniciado/en_proceso (post-liberación es inmutable).
+      · Requiere e-firma meaning='supervisa' sobre record_table='ebr_pesajes',
+        record_id=pesaje_id (mismo patrón que la QC de pasos).
+      · Un pesaje ya verificado no se re-verifica.
+    """
+    err = _require_login()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    if user not in (CALIDAD_USERS | ADMIN_USERS):
+        return jsonify({
+            "error": "Solo Calidad o Admin pueden verificar pesajes (2ª firma GMP)"
+        }), 403
+    body = request.get_json(silent=True) or {}
+    signature_id = body.get("signature_id")
+
+    conn = get_db()
+    cur = conn.cursor()
+    ebr = cur.execute(
+        "SELECT estado FROM ebr_ejecuciones WHERE id = ?", (ebr_id,),
+    ).fetchone()
+    if not ebr:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if ebr["estado"] not in ("iniciado", "en_proceso"):
+        return jsonify({"error": f"EBR no editable (estado: {ebr['estado']})"}), 409
+
+    pes = cur.execute(
+        """SELECT id, pesado_por, COALESCE(verificado_por,'') AS verificado_por
+           FROM ebr_pesajes WHERE id = ? AND ebr_id = ?""",
+        (pesaje_id, ebr_id),
+    ).fetchone()
+    if not pes:
+        return jsonify({"error": "pesaje no encontrado"}), 404
+    if (pes["verificado_por"] or "").strip():
+        return jsonify({"error": "pesaje ya verificado"}), 409
+    # Segregación de funciones GMP · quien verifica ≠ quien pesó (igual que la
+    # regla de la QC de pasos en completar_paso_ebr).
+    if user == (pes["pesado_por"] or ""):
+        return jsonify({
+            "error": "El verificador no puede ser quien pesó (segregación de funciones GMP)"
+        }), 409
+
+    if not signature_id:
+        return jsonify({
+            "error": "verificación requiere e-signature · meaning='supervisa' "
+                      "record_table='ebr_pesajes'",
+            "pesaje_id": pesaje_id,
+        }), 400
+    if not _validar_signature(
+        cur, signature_id, record_table="ebr_pesajes",
+        record_id=pesaje_id, meaning="supervisa", signer_username=user,
+    ):
+        return jsonify({"error": "signature_id inválido para esta verificación"}), 400
+
+    cur.execute(
+        """UPDATE ebr_pesajes
+             SET verificado_por = ?,
+                 verificado_at_utc = datetime('now', 'utc'),
+                 verificado_e_sign_id = ?
+           WHERE id = ?""",
+        (user, int(signature_id), pesaje_id),
+    )
+    audit_log(cur, usuario=user, accion="VERIFICAR_PESAJE_EBR",
+              tabla="ebr_pesajes", registro_id=pesaje_id,
+              despues={"ebr_id": ebr_id, "verificado_por": user})
+    conn.commit()
+    return jsonify({"ok": True, "verificado_por": user})
 
 
 @bp.route("/api/brd/ebr/<int:ebr_id>/reconciliacion", methods=["GET"])

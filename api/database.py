@@ -312,6 +312,19 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (208, "ebr_pesajes · 2ª firma de verificación de pesaje (verified_weight estilo MyBatch) · reemplazo MyBatch · Sebastián 2-jun-2026", [
+        # Reemplazo MyBatch: cada pesaje de MP puede ser VERIFICADO por una 2ª
+        # persona (Calidad), igual que el `verified_weight` de MyBatch. Es la
+        # segregación de funciones GMP: el verificador NO puede ser quien pesó.
+        # 100% ADITIVO · DEFAULT ''/NULL → los pesajes existentes quedan "sin
+        # verificar" sin romper nada. La verificación solo aplica mientras el EBR
+        # está iniciado/en_proceso (el trigger trg_pesajes_no_edit_liberado ya
+        # bloquea cualquier UPDATE tras liberar/rechazar).
+        "ALTER TABLE ebr_pesajes ADD COLUMN verificado_por TEXT DEFAULT ''",
+        "ALTER TABLE ebr_pesajes ADD COLUMN verificado_at_utc TEXT DEFAULT NULL",
+        "ALTER TABLE ebr_pesajes ADD COLUMN verificado_e_sign_id INTEGER DEFAULT NULL",
+    ]),
+
     (207, "facturas_proveedor_pdf · blob del PDF en tabla 1:1 (saca el base64 de la tabla transaccional · anti-OOM/bloat en listados) · Sebastián 1-jun-2026", [
         # Audit escalabilidad: el PDF base64 (hasta 6MB) vivía en
         # facturas_proveedor.pdf_adjunto → SELECT * arrastraba MB por fila. Ahora
