@@ -14411,6 +14411,241 @@ def _parse_excel_maestro(raw_bytes):
     return productos
 
 
+def _norm_inci_cruce(s):
+    """Normaliza INCI para comparar (lowercase, sin acentos, solo alfanum+espacio)."""
+    import unicodedata as _ud, re as _re
+    if not s:
+        return ''
+    n = _ud.normalize('NFD', str(s).lower().strip())
+    n = ''.join(ch for ch in n if _ud.category(ch) != 'Mn')
+    return _re.sub(r'\s+', ' ', _re.sub(r'[^a-z0-9 ]', ' ', n)).strip()
+
+
+@bp.route("/api/admin/cruce-maestro", methods=["POST"])
+def admin_cruce_maestro():
+    """Cruce consolidado del Excel maestro (CÓD. BATCH = canónico) contra las 4
+    capas: maestro_mps, formula_items y movimientos (stock). Read-only por
+    defecto. ?aplicar=inci rellena el nombre_inci VACÍO del maestro desde el
+    Excel (nunca sobrescribe · backup + audit · reversible).
+
+    Corazón de planta: confirma que un MISMO código vive consistente en todo.
+    El re-mapeo de códigos de fórmula y la creación de MPs faltantes siguen en
+    /admin/verificar-formulas y /admin/verificar-formulas-excel (no se duplican).
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    aplicar = (request.args.get('aplicar') or '').strip().lower()  # '' | 'inci'
+
+    raw = None
+    if request.files and 'file' in request.files:
+        raw = request.files['file'].read()
+    else:
+        b = request.get_json(silent=True) or {}
+        if b.get('contenido_b64'):
+            import base64 as _b64
+            try:
+                raw = _b64.b64decode(b['contenido_b64'])
+            except Exception:
+                return jsonify({'error': 'base64 inválido'}), 400
+    if not raw:
+        return jsonify({'error': 'archivo requerido (file= o contenido_b64)'}), 400
+    if len(raw) > 12 * 1024 * 1024:
+        return jsonify({'error': 'archivo muy grande (max 12MB)'}), 413
+    try:
+        excel = _parse_excel_maestro(raw)
+    except Exception as e:
+        return jsonify({'error': f'No pude leer el Excel: {str(e)[:200]}'}), 400
+    if not excel:
+        return jsonify({'error': 'Excel sin hojas de producto reconocibles'}), 400
+
+    conn = db_connect()
+    c = conn.cursor()
+    # maestro: codigo -> inci (solo activos)
+    maes = {}
+    for r in c.execute(
+        "SELECT codigo_mp, COALESCE(nombre_inci,'') FROM maestro_mps "
+        "WHERE COALESCE(activo,1)=1").fetchall():
+        maes[str(r[0]).strip().upper()] = (r[1] or '').strip()
+    # formula_headers normalizados -> nombre real
+    fh = {}
+    for r in c.execute("SELECT DISTINCT producto_nombre FROM formula_headers").fetchall():
+        fh[_norm_prod_excel(r[0])] = r[0]
+    # stock por codigo (neto, todos los estados)
+    stock = {}
+    try:
+        for r in c.execute(
+            """SELECT material_id, COALESCE(SUM(CASE
+                     WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                     WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
+                     ELSE 0 END),0)
+               FROM movimientos GROUP BY material_id""").fetchall():
+            stock[str(r[0]).strip().upper()] = float(r[1] or 0)
+    except Exception:
+        pass
+
+    WATER = {'MPAGUALI01'}  # agua: el Excel la excluye a propósito
+    if aplicar == 'inci':
+        try:
+            do_backup(triggered_by='pre_cruce_maestro_inci')
+        except Exception:
+            pass
+
+    resumen = {'productos': 0, 'productos_sin_formula': 0, 'ingredientes': 0,
+               'inci_vacio': 0, 'inci_mismatch': 0, 'cod_no_en_maestro': 0,
+               'falta_en_formula': 0, 'sin_stock': 0, 'formula_drift_prods': 0,
+               'inci_rellenados': 0}
+    productos_rep = []
+    backfilled = 0
+    for pnorm, data in sorted(excel.items(), key=lambda kv: kv[1]['titulo'].lower()):
+        resumen['productos'] += 1
+        prod_db = fh.get(pnorm)
+        dbcodes = set()
+        if prod_db:
+            for r in c.execute(
+                "SELECT material_id FROM formula_items WHERE producto_nombre=?",
+                (prod_db,)).fetchall():
+                if r[0]:
+                    dbcodes.add(str(r[0]).strip().upper())
+        else:
+            resumen['productos_sin_formula'] += 1
+        excel_codes = set()
+        items_rep = []
+        for it in data['items']:
+            cod = it['codigo']
+            excel_codes.add(cod)
+            resumen['ingredientes'] += 1
+            m_inci = maes.get(cod)  # None si no está en maestro
+            flags = []
+            if m_inci is None:
+                flags.append('COD_NO_EN_MAESTRO'); resumen['cod_no_en_maestro'] += 1
+            else:
+                if not m_inci:
+                    flags.append('INCI_VACIO'); resumen['inci_vacio'] += 1
+                    if aplicar == 'inci' and it['inci']:
+                        c.execute(
+                            "UPDATE maestro_mps SET nombre_inci=? "
+                            "WHERE codigo_mp=? AND COALESCE(TRIM(nombre_inci),'')=''",
+                            (it['inci'], cod))
+                        if c.rowcount:
+                            backfilled += 1
+                            maes[cod] = it['inci']
+                            flags.append('INCI_RELLENADO')
+                elif it['inci'] and _norm_inci_cruce(m_inci) != _norm_inci_cruce(it['inci']):
+                    flags.append('INCI_MISMATCH'); resumen['inci_mismatch'] += 1
+            if prod_db and cod not in dbcodes:
+                flags.append('FALTA_EN_FORMULA'); resumen['falta_en_formula'] += 1
+            if stock.get(cod, 0) <= 0:
+                resumen['sin_stock'] += 1
+            items_rep.append({
+                'codigo': cod, 'inci_excel': it['inci'], 'inci_maestro': (m_inci or ''),
+                'comercial': it['comercial'], 'pct': it['pct'],
+                'stock': round(stock.get(cod, 0), 1), 'flags': flags})
+        drift = sorted((dbcodes - excel_codes) - WATER)
+        if drift:
+            resumen['formula_drift_prods'] += 1
+        productos_rep.append({
+            'producto': data['titulo'], 'en_formula_db': bool(prod_db),
+            'n_ingredientes': len(data['items']), 'items': items_rep,
+            'formula_drift': drift})
+
+    if aplicar == 'inci':
+        resumen['inci_rellenados'] = backfilled
+        try:
+            conn.commit()
+            audit_log(c, usuario=u, accion='CRUCE_MAESTRO_BACKFILL_INCI',
+                      tabla='maestro_mps', registro_id=0,
+                      despues={'inci_rellenados': backfilled})
+            conn.commit()
+        except Exception:
+            pass
+
+    return jsonify({'ok': True, 'aplicado': (aplicar == 'inci'),
+                    'resumen': resumen, 'productos': productos_rep})
+
+
+_CRUCE_MAESTRO_HTML = """<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cruce Maestro · Fórmulas ↔ Inventario</title>
+<style>
+ body{font-family:system-ui,Segoe UI,Arial;margin:0;background:#f6f7fb;color:#1e293b}
+ .wrap{max-width:1200px;margin:0 auto;padding:18px}
+ h1{font-size:20px;color:#4c1d95;margin:0 0 4px} .sub{color:#64748b;font-size:13px;margin-bottom:14px}
+ .bar{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+ button{background:#6d28d9;color:#fff;border:none;border-radius:7px;padding:8px 14px;font-size:13px;cursor:pointer;font-weight:600}
+ button.sec{background:#0ea5e9} button.warn{background:#16a34a} button:disabled{opacity:.5;cursor:not-allowed}
+ #resumen{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-bottom:14px;font-size:13px;line-height:1.7}
+ .pill{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;margin-right:4px}
+ .ok{background:#dcfce7;color:#166534}.bad{background:#fee2e2;color:#991b1b}.warnp{background:#fef9c3;color:#854d0e}.muted{background:#f1f5f9;color:#475569}
+ table{width:100%;border-collapse:collapse;background:#fff;font-size:12px}
+ th,td{border:1px solid #eef2f7;padding:5px 7px;text-align:left} th{background:#faf8ff;color:#4c1d95}
+ .mono{font-family:monospace} h3{margin:18px 0 4px;color:#3730a3;font-size:14px}
+ .drift{background:#fff7ed;border-left:3px solid #f59e0b;padding:6px 10px;font-size:12px;margin:4px 0}
+</style></head><body><div class="wrap">
+<h1>🧬 Cruce Maestro · Excel ↔ Maestro ↔ Fórmulas ↔ Inventario</h1>
+<div class="sub">El <b>CÓD. BATCH del Excel</b> es el código canónico. Sube el Excel maestro para ver el cruce. Read-only · "Rellenar INCI" es seguro (solo llena vacíos, backup + audit).</div>
+<div class="bar">
+ <input type="file" id="f" accept=".xlsx">
+ <button onclick="run('')">Analizar (solo lectura)</button>
+ <button class="warn" onclick="run('inci')">Rellenar INCI vacíos desde Excel</button>
+ <a href="/admin/verificar-formulas" target="_blank"><button class="sec" type="button">Re-mapear códigos de fórmula →</button></a>
+</div>
+<div id="resumen" style="display:none"></div>
+<div id="out"></div>
+</div>
+<script>
+function _csrf(){var m=document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/);return m?decodeURIComponent(m[1]):''}
+function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML}
+function flagPill(fl){
+ var map={INCI_VACIO:['warnp','INCI vacío'],INCI_RELLENADO:['ok','INCI rellenado'],INCI_MISMATCH:['bad','INCI distinto'],
+   COD_NO_EN_MAESTRO:['bad','no en maestro'],FALTA_EN_FORMULA:['warnp','falta en fórmula']};
+ return fl.map(function(f){var m=map[f]||['muted',f];return '<span class="pill '+m[0]+'">'+m[1]+'</span>';}).join('');
+}
+async function run(aplicar){
+ var fi=document.getElementById('f'); if(!fi.files||!fi.files[0]){alert('Elegí el Excel maestro primero');return;}
+ if(aplicar==='inci' && !confirm('Rellenar el INCI VACÍO de las MPs desde el Excel. No sobrescribe nada. Backup + reversible. ¿Continuar?'))return;
+ var out=document.getElementById('out'); out.innerHTML='Procesando…';
+ var fd=new FormData(); fd.append('file', fi.files[0]);
+ try{
+  var r=await fetch('/api/admin/cruce-maestro'+(aplicar?('?aplicar='+aplicar):''),{method:'POST',headers:{'X-CSRF-Token':_csrf()},credentials:'same-origin',body:fd});
+  var d=await r.json();
+  if(!r.ok||!d.ok){out.innerHTML='<span class="pill bad">Error: '+esc((d&&d.error)||r.status)+'</span>';return;}
+  var s=d.resumen, rb=document.getElementById('resumen'); rb.style.display='block';
+  rb.innerHTML='Productos: <b>'+s.productos+'</b> ('+s.productos_sin_formula+' sin fórmula en DB) · Ingredientes: <b>'+s.ingredientes+'</b><br>'+
+   '<span class="pill bad">'+s.cod_no_en_maestro+' códigos NO en maestro</span>'+
+   '<span class="pill warnp">'+s.inci_vacio+' INCI vacíos</span>'+
+   '<span class="pill bad">'+s.inci_mismatch+' INCI distintos</span>'+
+   '<span class="pill warnp">'+s.falta_en_formula+' faltan en fórmula</span>'+
+   '<span class="pill muted">'+s.formula_drift_prods+' productos con códigos fuera del Excel</span>'+
+   (d.aplicado?('<span class="pill ok">'+s.inci_rellenados+' INCI rellenados ✓</span>'):'');
+  var h='';
+  d.productos.forEach(function(p){
+   var probs=p.items.filter(function(it){return it.flags.length;});
+   if(!probs.length && !p.formula_drift.length && p.en_formula_db) return; // solo mostrar lo que requiere atención
+   h+='<h3>'+esc(p.producto)+' <span class="pill '+(p.en_formula_db?'ok':'bad')+'">'+(p.en_formula_db?'fórmula en DB':'SIN fórmula en DB')+'</span> <span class="muted pill">'+p.n_ingredientes+' MPs</span></h3>';
+   if(p.formula_drift.length){h+='<div class="drift">⚠ '+p.formula_drift.length+' códigos en la fórmula DB que NO están en el Excel: <span class="mono">'+p.formula_drift.map(esc).join(', ')+'</span> → re-mapear en verificar-formulas</div>';}
+   if(probs.length){
+    h+='<table><tr><th>Código (Excel)</th><th>INCI Excel</th><th>INCI Maestro</th><th>Comercial</th><th>Stock</th><th>Estado</th></tr>';
+    probs.forEach(function(it){
+     h+='<tr><td class="mono">'+esc(it.codigo)+'</td><td>'+esc(it.inci_excel)+'</td><td>'+esc(it.inci_maestro||'—')+'</td><td>'+esc(it.comercial)+'</td><td style="text-align:right">'+(it.stock||0).toLocaleString()+'</td><td>'+flagPill(it.flags)+'</td></tr>';
+    });
+    h+='</table>';
+   }
+  });
+  out.innerHTML=h||'<span class="pill ok">✅ Todo cuadra · ningún problema de cruce detectado.</span>';
+ }catch(e){out.innerHTML='<span class="pill bad">Error red: '+esc(e.message)+'</span>';}
+}
+</script></body></html>"""
+
+
+@bp.route("/admin/cruce-maestro", methods=["GET"])
+def admin_cruce_maestro_page():
+    """Página · Cruce Maestro (Excel ↔ maestro ↔ fórmulas ↔ inventario)."""
+    if 'compras_user' not in session:
+        return redirect("/login?next=/admin/cruce-maestro")
+    return _CRUCE_MAESTRO_HTML
+
+
 @bp.route("/api/admin/verificar-formulas-excel", methods=["POST"])
 def admin_verificar_formulas_excel():
     """Compara las fórmulas de la app contra el Excel maestro (fuente de verdad).
