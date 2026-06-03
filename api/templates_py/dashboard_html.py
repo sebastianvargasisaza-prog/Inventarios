@@ -6852,11 +6852,13 @@ async function abrirEBR(id){
     if(!r.ok){box.innerHTML='<div style="color:#c0392b;">'+(d.error||'Error')+'</div>';return;}
     var rp=await fetch('/api/brd/ebr/'+id+'/pesajes',{credentials:'same-origin'});
     var dp=await rp.json();
-    box.innerHTML=_ebrRender(d,(dp&&dp.items)||[]);
+    var rc=await fetch('/api/brd/ebr/'+id+'/conciliacion-material',{credentials:'same-origin'});
+    var dcm=await rc.json();
+    box.innerHTML=_ebrRender(d,(dp&&dp.items)||[],(dcm&&dcm.items)||[]);
     box.scrollIntoView({behavior:'smooth',block:'start'});
   }catch(e){box.innerHTML='<div style="color:#c0392b;">Error de red.</div>';}
 }
-function _ebrRender(d, pesajes){
+function _ebrRender(d, pesajes, conc){
   var editable=(d.estado==='iniciado'||d.estado==='en_proceso');
   var em={fabricacion:'🏭',envasado:'📦',acondicionamiento:'🔧'};
   var fa=d.fase||'fabricacion';
@@ -6895,7 +6897,41 @@ function _ebrRender(d, pesajes){
     }
     h+='</tbody></table>';
   }
+  // Conciliación de material de envase/empaque (envasado/acondicionamiento)
+  h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">📦 Conciliación de material (envase/empaque)</h4>';
+  if(conc&&conc.length){
+    h+='<table class="table" style="font-size:12px;"><thead><tr><th>Tipo</th><th>Material</th><th>Lote</th><th style="text-align:right;">Req.</th><th style="text-align:right;">Recib.</th><th style="text-align:right;">Devuelta</th><th style="text-align:right;">Utilizada</th></tr></thead><tbody>';
+    for(var k=0;k<conc.length;k++){var m=conc[k];
+      h+='<tr><td>'+(m.tipo||'')+'</td><td>'+(m.material_nombre||'')+'</td><td>'+(m.lote_material||'')+'</td><td style="text-align:right;">'+(m.cant_requerida||0)+'</td><td style="text-align:right;">'+(m.cant_recibida||0)+'</td><td style="text-align:right;">'+(m.cant_devuelta||0)+'</td><td style="text-align:right;font-weight:700;">'+(m.cant_utilizada||0)+'</td></tr>';
+    }
+    h+='</tbody></table>';
+  }else{h+='<div style="color:#999;font-size:12px;">Sin material conciliado aún.</div>';}
+  if(editable){
+    h+='<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px;">';
+    h+='<select id="cm-tipo-'+d.id+'" style="padding:5px;border:1px solid #ccc;border-radius:5px;"><option value="envase">envase</option><option value="etiqueta">etiqueta</option><option value="estuche">estuche</option><option value="caja">caja</option><option value="inserto">inserto</option><option value="otro">otro</option></select>';
+    h+='<input id="cm-nom-'+d.id+'" placeholder="Material" style="padding:5px;border:1px solid #ccc;border-radius:5px;min-width:150px;">';
+    h+='<input id="cm-lote-'+d.id+'" placeholder="Lote" style="padding:5px;border:1px solid #ccc;border-radius:5px;width:90px;">';
+    h+='<input id="cm-req-'+d.id+'" type="number" placeholder="Req." style="padding:5px;border:1px solid #ccc;border-radius:5px;width:70px;">';
+    h+='<input id="cm-rec-'+d.id+'" type="number" placeholder="Recib." style="padding:5px;border:1px solid #ccc;border-radius:5px;width:70px;">';
+    h+='<input id="cm-dev-'+d.id+'" type="number" placeholder="Devuelta" style="padding:5px;border:1px solid #ccc;border-radius:5px;width:80px;">';
+    h+='<button onclick="ebrAgregarConciliacion('+d.id+')" style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:6px 12px;cursor:pointer;">+ Agregar</button>';
+    h+='<span style="color:#999;">utilizada = recibida &minus; devuelta</span>';
+    h+='</div>';
+  }
   return h;
+}
+async function ebrAgregarConciliacion(ebrId){
+  var g=function(p){var el=document.getElementById(p+ebrId);return el?el.value:'';};
+  var nom=(g('cm-nom-')||'').trim();
+  if(!nom){alert('Indica el material');return;}
+  var body={tipo:g('cm-tipo-'),material_nombre:nom,lote_material:g('cm-lote-'),
+            cant_requerida:g('cm-req-')||0,cant_recibida:g('cm-rec-')||0,cant_devuelta:g('cm-dev-')||0};
+  try{
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/conciliacion-material',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var d=await r.json();
+    if(!r.ok){alert(d.error||'No se pudo agregar');return;}
+    abrirEBR(ebrId);
+  }catch(e){alert('Error de red');}
 }
 async function ebrIniciarPaso(ebrId, orden){
   try{

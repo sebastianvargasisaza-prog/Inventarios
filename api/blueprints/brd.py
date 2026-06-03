@@ -2866,6 +2866,83 @@ def verificar_pesaje_ebr(ebr_id, pesaje_id):
     return jsonify({"ok": True, "verificado_por": user})
 
 
+@bp.route("/api/brd/ebr/<int:ebr_id>/conciliacion-material", methods=["GET"])
+def listar_conciliacion_material(ebr_id):
+    """Conciliación de material de envase/empaque del legajo (MyBatch OF/OA):
+    cuánto se requirió / recibió / devolvió / utilizó."""
+    err = _require_login()
+    if err:
+        return err
+    rows = get_db().execute(
+        """SELECT id, ebr_id, tipo, material_codigo, material_nombre, lote_material,
+                  cant_requerida, cant_recibida, cant_devuelta, cant_utilizada,
+                  registrado_por, registrado_at_utc, e_sign_id, notas
+           FROM ebr_conciliacion_material WHERE ebr_id = ? ORDER BY id""",
+        (ebr_id,),
+    ).fetchall()
+    return jsonify({"items": [dict(r) for r in rows]})
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/conciliacion-material", methods=["POST"])
+def registrar_conciliacion_material(ebr_id):
+    """Registra una línea de conciliación de material (envase/etiqueta/estuche...).
+
+    utilizada = recibida - devuelta si no se especifica. Solo sobre EBR
+    iniciado/en_proceso (post-liberación es inmutable · guard + trigger)."""
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    nombre = (body.get("material_nombre") or "").strip()
+    if not nombre:
+        return jsonify({"error": "material_nombre requerido"}), 400
+
+    def _num(k):
+        try:
+            return max(0.0, float(body.get(k) or 0))
+        except (ValueError, TypeError):
+            return 0.0
+
+    requerida = _num("cant_requerida")
+    recibida = _num("cant_recibida")
+    devuelta = _num("cant_devuelta")
+    if body.get("cant_utilizada") not in (None, ""):
+        utilizada = _num("cant_utilizada")
+    else:
+        utilizada = max(0.0, recibida - devuelta)
+
+    conn = get_db()
+    cur = conn.cursor()
+    ebr = cur.execute(
+        "SELECT estado FROM ebr_ejecuciones WHERE id = ?", (ebr_id,),
+    ).fetchone()
+    if not ebr:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if ebr["estado"] not in ("iniciado", "en_proceso"):
+        return jsonify({"error": f"EBR no editable (estado: {ebr['estado']})"}), 409
+
+    tipo = (body.get("tipo") or "envase").strip().lower()
+    user = session.get("compras_user", "")
+    cur.execute(
+        """INSERT INTO ebr_conciliacion_material
+             (ebr_id, tipo, material_codigo, material_nombre, lote_material,
+              cant_requerida, cant_recibida, cant_devuelta, cant_utilizada,
+              registrado_por, registrado_at_utc, notas)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'utc'), ?)""",
+        (ebr_id, tipo, (body.get("material_codigo") or "").strip(), nombre,
+         (body.get("lote_material") or "").strip(),
+         requerida, recibida, devuelta, utilizada, user,
+         (body.get("notas") or "").strip()),
+    )
+    rid = cur.lastrowid
+    audit_log(cur, usuario=user, accion="REGISTRAR_CONCILIACION_MATERIAL",
+              tabla="ebr_conciliacion_material", registro_id=rid,
+              despues={"ebr_id": ebr_id, "material": nombre,
+                        "utilizada": utilizada})
+    conn.commit()
+    return jsonify({"ok": True, "id": rid, "cant_utilizada": utilizada}), 201
+
+
 @bp.route("/api/brd/ebr/<int:ebr_id>/reconciliacion", methods=["GET"])
 def reconciliacion_ebr(ebr_id):
     """Resumen MP-por-MP de teórico vs real.

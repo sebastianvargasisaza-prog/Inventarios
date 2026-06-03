@@ -312,6 +312,48 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (210, "ebr_conciliacion_material · conciliación de material de envase/empaque (requerida/recibida/devuelta/utilizada) · reemplazo MyBatch fase envasado/acond · Sebastián 2-jun-2026", [
+        # MyBatch en OF/OA controla el material de empaque: cuánto se PIDIÓ, cuánto
+        # se RECIBIÓ, cuánto se DEVOLVIÓ y cuánto se UTILIZÓ (conciliación GMP).
+        # Tabla nueva (no toca nada existente). utilizada = recibida - devuelta si
+        # no se especifica. Inmutable tras liberar (trigger SQLite + guard en el
+        # endpoint para paridad PG, donde el trigger se omite).
+        """CREATE TABLE IF NOT EXISTS ebr_conciliacion_material (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ebr_id INTEGER NOT NULL,
+            tipo TEXT DEFAULT 'envase',
+            material_codigo TEXT DEFAULT '',
+            material_nombre TEXT NOT NULL,
+            lote_material TEXT DEFAULT '',
+            cant_requerida REAL DEFAULT 0,
+            cant_recibida REAL DEFAULT 0,
+            cant_devuelta REAL DEFAULT 0,
+            cant_utilizada REAL DEFAULT 0,
+            registrado_por TEXT NOT NULL,
+            registrado_at_utc TEXT NOT NULL,
+            e_sign_id INTEGER DEFAULT NULL,
+            notas TEXT DEFAULT '',
+            FOREIGN KEY (ebr_id) REFERENCES ebr_ejecuciones(id) ON DELETE CASCADE
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_concmat_ebr ON ebr_conciliacion_material(ebr_id)",
+        """CREATE TRIGGER IF NOT EXISTS trg_concmat_no_edit_liberado
+           BEFORE UPDATE ON ebr_conciliacion_material
+           FOR EACH ROW
+           WHEN EXISTS (SELECT 1 FROM ebr_ejecuciones
+                        WHERE id = NEW.ebr_id AND estado IN ('liberado','rechazado'))
+           BEGIN
+               SELECT RAISE(ABORT, 'conciliación de EBR liberado/rechazado es inmutable');
+           END""",
+        """CREATE TRIGGER IF NOT EXISTS trg_concmat_no_delete_liberado
+           BEFORE DELETE ON ebr_conciliacion_material
+           FOR EACH ROW
+           WHEN EXISTS (SELECT 1 FROM ebr_ejecuciones
+                        WHERE id = OLD.ebr_id AND estado IN ('liberado','rechazado'))
+           BEGIN
+               SELECT RAISE(ABORT, 'conciliación de EBR liberado/rechazado es inmutable · DELETE prohibido');
+           END""",
+    ]),
+
     (209, "ebr · discriminador de FASE del legajo (fabricacion/envasado/acondicionamiento) · motor EBR único por fases · reemplazo MyBatch · Sebastián 2-jun-2026", [
         # MyBatch usa el MISMO esqueleto EBR para OP/OF/OA. Acá habilitamos UN
         # motor por fases:
