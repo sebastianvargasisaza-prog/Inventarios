@@ -996,6 +996,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
           <button class="ebr-fbtn" data-fase="envasado" onclick="ebrSetFase(this)" style="padding:5px 10px;border:1px solid #c4b5fd;border-radius:6px;background:#fff;color:#6d28d9;cursor:pointer;">&#128230; Envasado</button>
           <button class="ebr-fbtn" data-fase="acondicionamiento" onclick="ebrSetFase(this)" style="padding:5px 10px;border:1px solid #c4b5fd;border-radius:6px;background:#fff;color:#6d28d9;cursor:pointer;">&#128295; Acondicionamiento</button>
         </div>
+        <button onclick="ebrNuevoLegajo()" title="Crear legajo de fabricaci&#243;n, envasado o acondicionamiento para un lote" style="padding:5px 12px;border:none;border-radius:6px;background:#16a34a;color:#fff;cursor:pointer;font-size:12px;font-weight:700;">&#10133; Nuevo legajo</button>
       </div>
       <p style="font-size:0.85em;color:#718096;margin:0 0 12px;">Reemplazo MyBatch &middot; cada legajo vigila su fase (despeje &rarr; pesaje &rarr; pasos &rarr; IPC) con doble firma GMP (21 CFR Part 11).</p>
       <div id="ebr-list" style="font-size:13px;color:#999;">Cargando&hellip;</div>
@@ -7054,6 +7055,25 @@ async function ebrVerificarPesaje(ebrId, pid){
   }catch(e){alert('Error de red');}
 }
 
+async function ebrNuevoLegajo(){
+  var prod=prompt('Producto (debe tener un MBR aprobado):');
+  if(!prod){return;} prod=prod.trim();
+  var fase=(prompt('Fase del legajo:\\n- fabricacion\\n- envasado\\n- acondicionamiento','fabricacion')||'').trim().toLowerCase();
+  if(['fabricacion','envasado','acondicionamiento'].indexOf(fase)<0){alert('Fase inválida');return;}
+  var lote=prompt('Lote físico/comercial del lote:');
+  if(!lote){return;} lote=lote.trim();
+  try{
+    var rm=await fetch('/api/brd/mbr?producto='+encodeURIComponent(prod)+'&estado=aprobado',{credentials:'same-origin'});
+    var md=await rm.json();var arr=(md&&md.items)||[];
+    if(!arr.length){alert('No hay MBR aprobado para "'+prod+'". Generá y aprobá el MBR primero (/brd).');return;}
+    var mbrId=arr[0].id;
+    var loteEbr=lote+(fase==='envasado'?'-OF':(fase==='acondicionamiento'?'-OA':''));
+    var r=await fetch('/api/brd/ebr',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mbr_template_id:mbrId,lote:loteEbr,fase:fase})});
+    var d=await r.json();
+    if(!r.ok){alert(d.error||'No se pudo crear el legajo');return;}
+    cargarEBRs();abrirEBR(d.id);
+  }catch(e){alert('Error de red');}
+}
 async function ebrAsignarLoteFisico(id, actual){
   var sug=(actual && actual.indexOf('PP')===0)?'':actual;
   var nuevo=prompt('Lote físico/comercial real (reemplaza el provisional '+(actual||'')+'):', sug);

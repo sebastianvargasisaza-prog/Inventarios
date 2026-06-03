@@ -148,7 +148,7 @@ no alterado.
 ### EBR
 - `GET    /api/brd/ebr` · listar (filtros estado, lote)
 - `GET    /api/brd/ebr/<id>` · detalle con pasos
-- `POST   /api/brd/ebr` · iniciar (clona pasos de MBR aprobado)
+- `POST   /api/brd/ebr` · iniciar (clona **solo los pasos de la fase** del MBR aprobado · Batch B). `lote` es UNIQUE: para el mismo lote físico en varias fases, usar sufijo (·-OF/-OA) y `asignar-lote-fisico` para el lote real.
 - `POST   /api/brd/ebr/<id>/pasos/<orden>/iniciar`
 - `POST   /api/brd/ebr/<id>/pasos/<orden>/completar` · valida e-sign
 - `POST   /api/brd/ebr/<id>/completar` · valida IPCs (bloquea conforme=0 **o NULL** obligatorio) + calcula yield

@@ -70,11 +70,12 @@ def test_ebr_fase_envasado(app, db_clean):
     assert r.status_code == 201, r.data
     ebr_id = r.get_json()['id']
 
-    # detalle: fase del legajo + fase arrastrada en pasos
+    # detalle: fase del legajo. Batch B (3-jun): un EBR de envasado clona SOLO
+    # los pasos de envasado (ya NO arrastra el paso de fabricación del MBR).
     d = c.get(f'/api/brd/ebr/{ebr_id}').get_json()
     assert d['fase'] == 'envasado', d
     fases_paso = sorted(p['fase'] for p in d['pasos'])
-    assert fases_paso == ['envasado', 'fabricacion'], fases_paso
+    assert fases_paso == ['envasado'], fases_paso
 
     # filtro ?fase=
     env = c.get('/api/brd/ebr?fase=envasado').get_json()['items']

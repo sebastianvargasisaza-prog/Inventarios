@@ -777,6 +777,26 @@ def _paso_ej_to_dict(row):
 _FASES_VALIDAS = {"fabricacion", "envasado", "acondicionamiento"}
 
 
+def _fase_canonica(label):
+    """Normaliza la etiqueta libre de fase de un paso de MBR (p.ej.
+    'Dispensación', 'Fabricación', 'Envasado', 'Acondicionamiento/Etiquetado')
+    a la fase canónica del EBR (fabricacion/envasado/acondicionamiento).
+
+    Batch B (audit 3-jun) · el motor EBR es por fase: un EBR de envasado debe
+    clonar SOLO los pasos de envasado, no los de fabricación. Todo lo que no sea
+    claramente envasado/acondicionamiento cuenta como 'fabricacion' (default
+    seguro · preserva el comportamiento actual de los MBR de una sola fase)."""
+    s = (label or "").strip().lower()
+    # quitar acentos básicos
+    for a, b in (("á", "a"), ("é", "e"), ("í", "i"), ("ó", "o"), ("ú", "u")):
+        s = s.replace(a, b)
+    if any(k in s for k in ("acondi", "etiqu", "codif", "empaqu", "estuch", "arte")):
+        return "acondicionamiento"
+    if any(k in s for k in ("envas", "llen", "sell", "tapad")):
+        return "envasado"
+    return "fabricacion"
+
+
 def _validar_signature(cur, signature_id, *, record_table, record_id,
                        meaning, signer_username):
     sig = cur.execute(
@@ -839,13 +859,19 @@ def crear_ebr_desde_mbr(cur, *, producto_nombre, lote, produccion_id=None,
          (fase if fase in _FASES_VALIDAS else 'fabricacion')),
     )
     ebr_id = cur.lastrowid
+    _fase_ebr = fase if fase in _FASES_VALIDAS else 'fabricacion'
     pasos = cur.execute(
         """SELECT id, orden, descripcion, tipo_paso, equipo_requerido,
                   requiere_e_sign, requiere_qc, COALESCE(fase,'') AS fase
              FROM mbr_pasos WHERE mbr_template_id=? ORDER BY orden""",
         (mbr[0],),
     ).fetchall()
+    # Batch B · clonar SOLO los pasos de la fase del EBR (un EBR de envasado no
+    # debe traer los pasos de fabricación, y viceversa).
+    n_clonados = 0
     for p in pasos:
+        if _fase_canonica(p[7]) != _fase_ebr:
+            continue
         cur.execute(
             """INSERT INTO ebr_pasos_ejecutados
                  (ebr_id, mbr_paso_id, orden, descripcion, tipo_paso,
@@ -853,7 +879,8 @@ def crear_ebr_desde_mbr(cur, *, producto_nombre, lote, produccion_id=None,
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendiente', ?)""",
             (ebr_id, p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]),
         )
-    return {'ok': True, 'id': ebr_id, 'numero_op': numero_op, 'pasos': len(pasos)}
+        n_clonados += 1
+    return {'ok': True, 'id': ebr_id, 'numero_op': numero_op, 'pasos': n_clonados}
 
 
 def _generar_mbr_desde_formula(cur, producto_nombre, usuario=''):
@@ -930,6 +957,26 @@ def _generar_mbr_desde_formula(cur, producto_nombre, usuario=''):
            VALUES (?, ?, 'Fabricación', 'Mezcla y homogenización del granel', 'mezclado', 1, 0)""",
         (mbr_id, orden),
     )
+    # Batch B · pasos genéricos de Envasado (OF) y Acondicionamiento (OA), para
+    # que el EBR de cada fase tenga un esqueleto editable (el usuario los ajusta
+    # por producto en el draft). Sin esto, un EBR de OF/OA nacería vacío.
+    _pasos_fase = [
+        ('Envasado', 'Alistamiento de envase/tapa (verificar limpieza y especificación)', 'envasado'),
+        ('Envasado', 'Llenado y control de peso/volumen', 'envasado'),
+        ('Envasado', 'Sellado/tapado', 'envasado'),
+        ('Acondicionamiento', 'Aprobación de arte/etiqueta y codificación (lote/vencimiento)', 'acondicionamiento'),
+        ('Acondicionamiento', 'Etiquetado', 'acondicionamiento'),
+        ('Acondicionamiento', 'Encajado / empaque secundario', 'acondicionamiento'),
+    ]
+    for _et, _desc, _tipo in _pasos_fase:
+        orden += 1
+        cur.execute(
+            """INSERT INTO mbr_pasos
+                 (mbr_template_id, orden, fase, descripcion, tipo_paso,
+                  requiere_e_sign, requiere_qc)
+               VALUES (?, ?, ?, ?, ?, 1, 0)""",
+            (mbr_id, orden, _et, _desc, _tipo),
+        )
     return {'ok': True, 'id': mbr_id, 'version': version, 'pasos': orden,
             'lote_size_g': float(lote_size_g)}
 
@@ -1154,6 +1201,14 @@ def iniciar_ebr():
             "error": f"solo MBR aprobado puede instanciar EBR (actual: {mbr['estado']})",
         }), 409
 
+    fase = (body.get("fase") or "fabricacion").strip().lower()
+    if fase not in _FASES_VALIDAS:
+        return jsonify({"error": f"fase inválida · use {sorted(_FASES_VALIDAS)}"}), 400
+
+    # `lote` es UNIQUE a nivel BD (1 legajo por código de lote). Para que el
+    # MISMO lote físico tenga legajo de fabricación/envasado/acondicionamiento,
+    # el código de lote del EBR lleva sufijo de fase (·OF/·OA) y el lote físico
+    # real se guarda en lote_codigo (vía asignar-lote-fisico). Batch B.
     if cur.execute("SELECT id FROM ebr_ejecuciones WHERE lote = ?", (lote,)).fetchone():
         return jsonify({"error": f"lote '{lote}' ya tiene un EBR"}), 409
 
@@ -1161,10 +1216,6 @@ def iniciar_ebr():
         cantidad_obj = float(body.get("cantidad_objetivo_g") or mbr["lote_size_g"])
     except (ValueError, TypeError):
         return jsonify({"error": "cantidad_objetivo_g inválida"}), 400
-
-    fase = (body.get("fase") or "fabricacion").strip().lower()
-    if fase not in _FASES_VALIDAS:
-        return jsonify({"error": f"fase inválida · use {sorted(_FASES_VALIDAS)}"}), 400
 
     user = session.get("compras_user", "")
     numero_op = assign_numero_op(cur)
@@ -1185,7 +1236,11 @@ def iniciar_ebr():
            FROM mbr_pasos WHERE mbr_template_id = ? ORDER BY orden""",
         (mbr["id"],),
     ).fetchall()
+    # Batch B · clonar SOLO los pasos de la fase del EBR.
+    n_clonados = 0
     for p in pasos_mbr:
+        if _fase_canonica(p["fase"]) != fase:
+            continue
         cur.execute(
             """INSERT INTO ebr_pasos_ejecutados
                  (ebr_id, mbr_paso_id, orden, descripcion, tipo_paso,
@@ -1195,14 +1250,15 @@ def iniciar_ebr():
              p["equipo_requerido"], p["requiere_e_sign"], p["requiere_qc"],
              p["fase"]),
         )
+        n_clonados += 1
     conn.commit()
     audit_log(cur, usuario=user, accion="INICIAR_EBR",
               tabla="ebr_ejecuciones", registro_id=ebr_id,
               despues={"mbr_template_id": mbr["id"], "lote": lote,
-                        "numero_op": numero_op,
-                        "pasos_clonados": len(pasos_mbr)})
+                        "numero_op": numero_op, "fase": fase,
+                        "pasos_clonados": n_clonados})
     return jsonify({"ok": True, "id": ebr_id, "numero_op": numero_op,
-                     "pasos": len(pasos_mbr)}), 201
+                     "pasos": n_clonados}), 201
 
 
 @bp.route("/api/brd/ebr", methods=["GET"])
@@ -1973,6 +2029,22 @@ def liberar_ebr(ebr_id):
                           f"resuelta (cerrada con CAPA efectivo)."),
                 "codigo": "IPC_OOS_SIN_RESOLVER",
             }), 409
+
+    # Batch B · Acondicionamiento · no liberar con arte/etiqueta sin aprobar
+    # (gate de etiquetado GMP). Aplica si hay artes registradas (costo nulo si no).
+    try:
+        _artes_sin = cur.execute(
+            "SELECT COUNT(*) FROM ebr_artes_codificacion "
+            "WHERE ebr_id=? AND COALESCE(aprobado_por,'')=''", (ebr_id,),
+        ).fetchone()[0]
+    except Exception:
+        _artes_sin = 0
+    if _artes_sin:
+        return jsonify({
+            "error": f"No se puede liberar: {_artes_sin} arte/etiqueta sin aprobar "
+                     f"(aprobá la codificación/etiqueta antes de liberar).",
+            "codigo": "ARTES_SIN_APROBAR",
+        }), 409
 
     # Audit 3-jun · GATE DE COMPLETITUD del legajo · solo EBR_MODE='strict' (BPM
     # duro). En 'warn' (piloto) NO bloquea, para no frenar mientras se adopta.

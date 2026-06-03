@@ -5092,19 +5092,23 @@ def test_golden_generar_mbr_desde_formula(app, db_clean):
     _exec("INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje, cantidad_g_por_lote) VALUES ('PROD-MBRGEN-T1','MP-A','Agua',60,1200)")
     _exec("INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje, cantidad_g_por_lote) VALUES ('PROD-MBRGEN-T1','MP-B','Glicerina',40,800)")
     try:
-        # Generar desde fórmula → 201, draft, 2 dispensaciones + 1 mezcla = 3 pasos
+        # Generar desde fórmula → 201, draft. Batch B (3-jun): el MBR es multi-fase
+        # = 2 dispensaciones + 1 mezcla (fabricación) + 3 envasado + 3 acond = 9 pasos.
         r = cs.post('/api/brd/mbr/generar-desde-formula',
                     json={'producto_nombre': 'PROD-MBRGEN-T1'}, headers=csrf_headers())
         assert r.status_code == 201, r.data
         d = r.get_json()
-        assert d['ok'] and d.get('pasos') == 3 and d.get('lote_size_g') == 2000.0, d
+        assert d['ok'] and d.get('pasos') == 9 and d.get('lote_size_g') == 2000.0, d
         mbr_id = d['id']
         conn = _sq.connect(os.environ['DB_PATH'], timeout=10.0)
         estado, fvid = conn.execute("SELECT estado, formula_version_id FROM mbr_templates WHERE id=?", (mbr_id,)).fetchone()
         n_disp = conn.execute("SELECT COUNT(*) FROM mbr_pasos WHERE mbr_template_id=? AND tipo_paso='dispensacion'", (mbr_id,)).fetchone()[0]
+        n_env = conn.execute("SELECT COUNT(*) FROM mbr_pasos WHERE mbr_template_id=? AND fase='Envasado'", (mbr_id,)).fetchone()[0]
+        n_acond = conn.execute("SELECT COUNT(*) FROM mbr_pasos WHERE mbr_template_id=? AND fase='Acondicionamiento'", (mbr_id,)).fetchone()[0]
         conn.close()
         assert estado == 'draft' and fvid is not None, 'MBR draft vinculado a la fórmula'
         assert n_disp == 2, 'un paso de dispensación por componente'
+        assert n_env == 3 and n_acond == 3, 'MBR multi-fase: pasos de envasado y acondicionamiento'
         # Idempotente: re-generar reusa (200 ya_existe)
         r2 = cs.post('/api/brd/mbr/generar-desde-formula',
                      json={'producto_nombre': 'PROD-MBRGEN-T1'}, headers=csrf_headers())
