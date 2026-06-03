@@ -6854,11 +6854,13 @@ async function abrirEBR(id){
     var dp=await rp.json();
     var rc=await fetch('/api/brd/ebr/'+id+'/conciliacion-material',{credentials:'same-origin'});
     var dcm=await rc.json();
-    box.innerHTML=_ebrRender(d,(dp&&dp.items)||[],(dcm&&dcm.items)||[]);
+    var ra=await fetch('/api/brd/ebr/'+id+'/artes',{credentials:'same-origin'});
+    var dar=await ra.json();
+    box.innerHTML=_ebrRender(d,(dp&&dp.items)||[],(dcm&&dcm.items)||[],(dar&&dar.items)||[]);
     box.scrollIntoView({behavior:'smooth',block:'start'});
   }catch(e){box.innerHTML='<div style="color:#c0392b;">Error de red.</div>';}
 }
-function _ebrRender(d, pesajes, conc){
+function _ebrRender(d, pesajes, conc, artes){
   var editable=(d.estado==='iniciado'||d.estado==='en_proceso');
   var em={fabricacion:'🏭',envasado:'📦',acondicionamiento:'🔧'};
   var fa=d.fase||'fabricacion';
@@ -6918,7 +6920,52 @@ function _ebrRender(d, pesajes, conc){
     h+='<span style="color:#999;">utilizada = recibida &minus; devuelta</span>';
     h+='</div>';
   }
+  // Aprobación de Artes / Codificación (gate de etiquetado · solo acondicionamiento)
+  if((d.fase||'')==='acondicionamiento'){
+    h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">🎨 Aprobación de Artes / Codificación</h4>';
+    if(artes&&artes.length){
+      h+='<table class="table" style="font-size:12px;"><thead><tr><th>Descripción</th><th>Cód. Lote</th><th>Cód. Vto.</th><th>Aprobó</th><th></th></tr></thead><tbody>';
+      for(var a=0;a<artes.length;a++){var ar=artes[a];
+        var ap=(ar.aprobado_por||'').trim();
+        var apCell=ap?('<span style="color:#16a34a;font-weight:700;">✓ '+ap+'</span>'):'<span style="color:#f59e0b;">pendiente</span>';
+        var apAcc='<span style="color:#999;">—</span>';
+        if(!ap&&editable){apAcc='<button onclick="ebrAprobarArte('+d.id+','+ar.id+')" style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Aprobar etiqueta</button>';}
+        h+='<tr><td>'+(ar.descripcion||'')+'</td><td>'+(ar.codigo_lote||'')+'</td><td>'+(ar.codigo_vencimiento||'')+'</td><td>'+apCell+'</td><td style="text-align:right;">'+apAcc+'</td></tr>';
+      }
+      h+='</tbody></table>';
+    }else{h+='<div style="color:#999;font-size:12px;">Sin artes/codificación registrados aún.</div>';}
+    if(editable){
+      h+='<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px;">';
+      h+='<input id="ar-desc-'+d.id+'" placeholder="Arte/etiqueta (descripción)" style="padding:5px;border:1px solid #ccc;border-radius:5px;min-width:180px;">';
+      h+='<input id="ar-lote-'+d.id+'" placeholder="Código lote" style="padding:5px;border:1px solid #ccc;border-radius:5px;width:110px;">';
+      h+='<input id="ar-venc-'+d.id+'" placeholder="Código vto." style="padding:5px;border:1px solid #ccc;border-radius:5px;width:110px;">';
+      h+='<button onclick="ebrAgregarArte('+d.id+')" style="background:#6d28d9;color:#fff;border:none;border-radius:5px;padding:6px 12px;cursor:pointer;">+ Agregar</button>';
+      h+='</div>';
+    }
+  }
   return h;
+}
+async function ebrAgregarArte(ebrId){
+  var g=function(p){var el=document.getElementById(p+ebrId);return el?el.value:'';};
+  var desc=(g('ar-desc-')||'').trim();
+  if(!desc){alert('Indica el arte/etiqueta');return;}
+  try{
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/artes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({descripcion:desc,codigo_lote:g('ar-lote-'),codigo_vencimiento:g('ar-venc-')})});
+    var d=await r.json();
+    if(!r.ok){alert(d.error||'No se pudo agregar');return;}
+    abrirEBR(ebrId);
+  }catch(e){alert('Error de red');}
+}
+async function ebrAprobarArte(ebrId, arteId){
+  var f=await _firmarEsign('aprueba','ebr_artes_codificacion',arteId);
+  if(!f){return;}
+  if(f.error){alert(f.error);return;}
+  try{
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/artes/'+arteId+'/aprobar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({signature_id:f.signature_id})});
+    var d=await r.json();
+    if(!r.ok){alert(d.error||'No se pudo aprobar');return;}
+    abrirEBR(ebrId);
+  }catch(e){alert('Error de red');}
 }
 async function ebrAgregarConciliacion(ebrId){
   var g=function(p){var el=document.getElementById(p+ebrId);return el?el.value:'';};

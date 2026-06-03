@@ -312,6 +312,37 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (211, "ebr_artes_codificacion · gate de etiquetado en Acondicionamiento (aprobar arte + código lote/vencimiento) · reemplazo MyBatch OA · Sebastián 2-jun-2026", [
+        # MyBatch en OA tiene "Aprobación de Artes / Codificación" + "Aprobar
+        # Etiqueta": antes de liberar se verifica que el ARTE de la etiqueta y la
+        # CODIFICACIÓN (lote/vencimiento impreso) sean correctos. Gate GMP de
+        # etiquetado. Tabla nueva · la aprobación lleva e-firma (meaning='aprueba').
+        """CREATE TABLE IF NOT EXISTS ebr_artes_codificacion (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ebr_id INTEGER NOT NULL,
+            descripcion TEXT NOT NULL,
+            codigo_lote TEXT DEFAULT '',
+            codigo_vencimiento TEXT DEFAULT '',
+            aprobado_por TEXT DEFAULT '',
+            aprobado_at_utc TEXT DEFAULT NULL,
+            e_sign_id INTEGER DEFAULT NULL,
+            creado_por TEXT NOT NULL,
+            creado_at_utc TEXT NOT NULL,
+            notas TEXT DEFAULT '',
+            FOREIGN KEY (ebr_id) REFERENCES ebr_ejecuciones(id) ON DELETE CASCADE
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_artescod_ebr ON ebr_artes_codificacion(ebr_id)",
+        """CREATE TRIGGER IF NOT EXISTS trg_artescod_no_edit_liberado
+           BEFORE UPDATE ON ebr_artes_codificacion
+           FOR EACH ROW
+           WHEN EXISTS (SELECT 1 FROM ebr_ejecuciones
+                        WHERE id = NEW.ebr_id AND estado IN ('liberado','rechazado'))
+                AND OLD.aprobado_at_utc IS NOT NULL
+           BEGIN
+               SELECT RAISE(ABORT, 'arte/codificación aprobada de EBR liberado es inmutable');
+           END""",
+    ]),
+
     (210, "ebr_conciliacion_material · conciliación de material de envase/empaque (requerida/recibida/devuelta/utilizada) · reemplazo MyBatch fase envasado/acond · Sebastián 2-jun-2026", [
         # MyBatch en OF/OA controla el material de empaque: cuánto se PIDIÓ, cuánto
         # se RECIBIÓ, cuánto se DEVOLVIÓ y cuánto se UTILIZÓ (conciliación GMP).

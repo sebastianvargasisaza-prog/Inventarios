@@ -2943,6 +2943,120 @@ def registrar_conciliacion_material(ebr_id):
     return jsonify({"ok": True, "id": rid, "cant_utilizada": utilizada}), 201
 
 
+@bp.route("/api/brd/ebr/<int:ebr_id>/artes", methods=["GET"])
+def listar_artes_codificacion(ebr_id):
+    """Artes/codificación del legajo (gate de etiquetado · MyBatch OA)."""
+    err = _require_login()
+    if err:
+        return err
+    rows = get_db().execute(
+        """SELECT id, ebr_id, descripcion, codigo_lote, codigo_vencimiento,
+                  COALESCE(aprobado_por,'') AS aprobado_por, aprobado_at_utc,
+                  e_sign_id, creado_por, creado_at_utc, notas
+           FROM ebr_artes_codificacion WHERE ebr_id = ? ORDER BY id""",
+        (ebr_id,),
+    ).fetchall()
+    return jsonify({"items": [dict(r) for r in rows]})
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/artes", methods=["POST"])
+def registrar_arte_codificacion(ebr_id):
+    """Registra una línea de arte/codificación (descripción + código lote/venc).
+    Aún sin aprobar · la aprobación va por /artes/<id>/aprobar con e-firma."""
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    desc = (body.get("descripcion") or "").strip()
+    if not desc:
+        return jsonify({"error": "descripcion requerida"}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    ebr = cur.execute(
+        "SELECT estado FROM ebr_ejecuciones WHERE id = ?", (ebr_id,),
+    ).fetchone()
+    if not ebr:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if ebr["estado"] not in ("iniciado", "en_proceso"):
+        return jsonify({"error": f"EBR no editable (estado: {ebr['estado']})"}), 409
+    user = session.get("compras_user", "")
+    cur.execute(
+        """INSERT INTO ebr_artes_codificacion
+             (ebr_id, descripcion, codigo_lote, codigo_vencimiento,
+              creado_por, creado_at_utc, notas)
+           VALUES (?, ?, ?, ?, ?, datetime('now', 'utc'), ?)""",
+        (ebr_id, desc, (body.get("codigo_lote") or "").strip(),
+         (body.get("codigo_vencimiento") or "").strip(), user,
+         (body.get("notas") or "").strip()),
+    )
+    rid = cur.lastrowid
+    audit_log(cur, usuario=user, accion="REGISTRAR_ARTE_CODIFICACION",
+              tabla="ebr_artes_codificacion", registro_id=rid,
+              despues={"ebr_id": ebr_id, "descripcion": desc})
+    conn.commit()
+    return jsonify({"ok": True, "id": rid}), 201
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/artes/<int:arte_id>/aprobar",
+          methods=["POST"])
+def aprobar_arte_codificacion(ebr_id, arte_id):
+    """Aprueba el arte/codificación (gate de etiquetado). Solo Calidad/Admin,
+    con e-firma meaning='aprueba'. No re-aprueba."""
+    err = _require_login()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    if user not in (CALIDAD_USERS | ADMIN_USERS):
+        return jsonify({
+            "error": "Solo Calidad o Admin aprueban artes/codificación"
+        }), 403
+    body = request.get_json(silent=True) or {}
+    signature_id = body.get("signature_id")
+
+    conn = get_db()
+    cur = conn.cursor()
+    ebr = cur.execute(
+        "SELECT estado FROM ebr_ejecuciones WHERE id = ?", (ebr_id,),
+    ).fetchone()
+    if not ebr:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if ebr["estado"] not in ("iniciado", "en_proceso"):
+        return jsonify({"error": f"EBR no editable (estado: {ebr['estado']})"}), 409
+    arte = cur.execute(
+        """SELECT id, COALESCE(aprobado_por,'') AS aprobado_por
+           FROM ebr_artes_codificacion WHERE id = ? AND ebr_id = ?""",
+        (arte_id, ebr_id),
+    ).fetchone()
+    if not arte:
+        return jsonify({"error": "arte/codificación no encontrada"}), 404
+    if (arte["aprobado_por"] or "").strip():
+        return jsonify({"error": "arte/codificación ya aprobada"}), 409
+    if not signature_id:
+        return jsonify({
+            "error": "aprobación requiere e-signature · meaning='aprueba' "
+                      "record_table='ebr_artes_codificacion'",
+            "arte_id": arte_id,
+        }), 400
+    if not _validar_signature(
+        cur, signature_id, record_table="ebr_artes_codificacion",
+        record_id=arte_id, meaning="aprueba", signer_username=user,
+    ):
+        return jsonify({"error": "signature_id inválido para esta aprobación"}), 400
+
+    cur.execute(
+        """UPDATE ebr_artes_codificacion
+             SET aprobado_por = ?, aprobado_at_utc = datetime('now', 'utc'),
+                 e_sign_id = ?
+           WHERE id = ?""",
+        (user, int(signature_id), arte_id),
+    )
+    audit_log(cur, usuario=user, accion="APROBAR_ARTE_CODIFICACION",
+              tabla="ebr_artes_codificacion", registro_id=arte_id,
+              despues={"ebr_id": ebr_id, "aprobado_por": user})
+    conn.commit()
+    return jsonify({"ok": True, "aprobado_por": user})
+
+
 @bp.route("/api/brd/ebr/<int:ebr_id>/reconciliacion", methods=["GET"])
 def reconciliacion_ebr(ebr_id):
     """Resumen MP-por-MP de teórico vs real.
