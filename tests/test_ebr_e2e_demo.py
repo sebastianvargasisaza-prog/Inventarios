@@ -163,6 +163,12 @@ def test_ebr_e2e_demo(app, db_clean, monkeypatch):
     assert ro.status_code in (200, 201), ro.data
     print("[10] Observación de bitácora registrada")
 
+    # ── 10b. Asignar el lote físico real (reemplaza 'PP<id>' provisional) ────
+    rlf = c.post(f"/api/brd/ebr/{ebr_id}/asignar-lote-fisico",
+                 json={"lote_fisico": "PROD-2026-DEMO"}, headers=_h())
+    assert rlf.status_code == 200, rlf.data
+    print(f"[10b] Lote físico asignado: {mine[0]['lote']} -> {rlf.get_json()['lote']}")
+
     # ── 11. Completar EBR (calcula yield) ───────────────────────────────────
     rcomp = c.post(f"/api/brd/ebr/{ebr_id}/completar",
                    json={"cantidad_real_g": 970.0}, headers=_h())

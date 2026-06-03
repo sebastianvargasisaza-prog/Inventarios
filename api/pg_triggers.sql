@@ -452,3 +452,73 @@ END $$ LANGUAGE plpgsql;
 CREATE OR REPLACE TRIGGER trg_usuarios_identidad_updated_at
   BEFORE UPDATE ON usuarios_identidad FOR EACH ROW
   EXECUTE FUNCTION fn_trg_usuarios_identidad_updated_at();
+
+-- ── Inmutabilidad post-liberación · tablas hijas del EBR (audit 3-jun) ────────
+-- Espejo PG de los triggers SQLite de mig 210 (conciliación), 211 (artes) y
+-- observaciones. Antes faltaban en pg_triggers.sql → en prod (PG) un legajo
+-- liberado/rechazado quedaba MUTABLE en estas tablas a nivel BD.
+CREATE OR REPLACE FUNCTION fn_trg_concmat_no_edit_liberado() RETURNS trigger AS $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM ebr_ejecuciones WHERE id = NEW.ebr_id AND estado IN ('liberado','rechazado')) THEN
+    RAISE EXCEPTION 'Conciliación de material de EBR liberado/rechazado es inmutable';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE OR REPLACE TRIGGER trg_concmat_no_edit_liberado
+  BEFORE UPDATE ON ebr_conciliacion_material FOR EACH ROW
+  EXECUTE FUNCTION fn_trg_concmat_no_edit_liberado();
+
+CREATE OR REPLACE FUNCTION fn_trg_concmat_no_delete_liberado() RETURNS trigger AS $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM ebr_ejecuciones WHERE id = OLD.ebr_id AND estado IN ('liberado','rechazado')) THEN
+    RAISE EXCEPTION 'Conciliación de material de EBR liberado/rechazado es inmutable · DELETE prohibido';
+  END IF;
+  RETURN OLD;
+END $$ LANGUAGE plpgsql;
+CREATE OR REPLACE TRIGGER trg_concmat_no_delete_liberado
+  BEFORE DELETE ON ebr_conciliacion_material FOR EACH ROW
+  EXECUTE FUNCTION fn_trg_concmat_no_delete_liberado();
+
+CREATE OR REPLACE FUNCTION fn_trg_artescod_no_edit_liberado() RETURNS trigger AS $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM ebr_ejecuciones WHERE id = NEW.ebr_id AND estado IN ('liberado','rechazado')) THEN
+    RAISE EXCEPTION 'Artes/codificación de EBR liberado/rechazado es inmutable';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE OR REPLACE TRIGGER trg_artescod_no_edit_liberado
+  BEFORE UPDATE ON ebr_artes_codificacion FOR EACH ROW
+  EXECUTE FUNCTION fn_trg_artescod_no_edit_liberado();
+
+CREATE OR REPLACE FUNCTION fn_trg_artescod_no_delete_liberado() RETURNS trigger AS $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM ebr_ejecuciones WHERE id = OLD.ebr_id AND estado IN ('liberado','rechazado')) THEN
+    RAISE EXCEPTION 'Artes/codificación de EBR liberado/rechazado es inmutable · DELETE prohibido';
+  END IF;
+  RETURN OLD;
+END $$ LANGUAGE plpgsql;
+CREATE OR REPLACE TRIGGER trg_artescod_no_delete_liberado
+  BEFORE DELETE ON ebr_artes_codificacion FOR EACH ROW
+  EXECUTE FUNCTION fn_trg_artescod_no_delete_liberado();
+
+CREATE OR REPLACE FUNCTION fn_trg_ebrobs_no_edit_liberado() RETURNS trigger AS $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM ebr_ejecuciones WHERE id = NEW.ebr_id AND estado IN ('liberado','rechazado')) THEN
+    RAISE EXCEPTION 'Observaciones de EBR liberado/rechazado son inmutables';
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+CREATE OR REPLACE TRIGGER trg_ebrobs_no_edit_liberado
+  BEFORE UPDATE ON ebr_observaciones FOR EACH ROW
+  EXECUTE FUNCTION fn_trg_ebrobs_no_edit_liberado();
+
+CREATE OR REPLACE FUNCTION fn_trg_ebrobs_no_delete_liberado() RETURNS trigger AS $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM ebr_ejecuciones WHERE id = OLD.ebr_id AND estado IN ('liberado','rechazado')) THEN
+    RAISE EXCEPTION 'Observaciones de EBR liberado/rechazado son inmutables · DELETE prohibido';
+  END IF;
+  RETURN OLD;
+END $$ LANGUAGE plpgsql;
+CREATE OR REPLACE TRIGGER trg_ebrobs_no_delete_liberado
+  BEFORE DELETE ON ebr_observaciones FOR EACH ROW
+  EXECUTE FUNCTION fn_trg_ebrobs_no_delete_liberado();

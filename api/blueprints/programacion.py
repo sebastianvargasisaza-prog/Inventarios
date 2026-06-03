@@ -17928,6 +17928,21 @@ def planta_aceptar_produccion(produccion_id):
                 'codigo': 'SIN_MBR_APROBADO',
             }), 409
 
+    # Reemplazo MyBatch · CANDADO MULTI-LOTE (audit 3-jun · P0).
+    # El motor EBR hoy crea UN solo legajo por producción (lote provisional
+    # 'PP<id>'). BPM/INVIMA exige 1 BPR por lote físico fabricado. Mientras el
+    # soporte multi-lote no esté implementado, NO permitir aceptar con EBR
+    # activo y lotes>1: generaría un legajo que documenta N lotes (no conforme).
+    # Con EBR_MODE='off' no aplica (no se crea EBR).
+    if EBR_MODE != 'off' and (lotes or 1) > 1:
+        return jsonify({
+            'error': f"El batch record (EBR) aún no soporta producciones "
+                     f"multi-lote. Esta programación tiene {lotes} lotes: "
+                     f"programá 1 lote por evento (o dividí la corrida) para "
+                     f"que cada lote físico tenga su propio BPR.",
+            'codigo': 'EBR_MULTILOTE_NO_SOPORTADO',
+        }), 409
+
     log = []
     # 1) Asignar área si no la tiene
     if not area_id:

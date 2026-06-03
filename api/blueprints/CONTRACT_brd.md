@@ -151,8 +151,9 @@ no alterado.
 - `POST   /api/brd/ebr` · iniciar (clona pasos de MBR aprobado)
 - `POST   /api/brd/ebr/<id>/pasos/<orden>/iniciar`
 - `POST   /api/brd/ebr/<id>/pasos/<orden>/completar` · valida e-sign
-- `POST   /api/brd/ebr/<id>/completar` · valida IPCs + calcula yield
-- `POST   /api/brd/ebr/<id>/liberar` · QC firma `meaning='libera'`
+- `POST   /api/brd/ebr/<id>/completar` · valida IPCs (bloquea conforme=0 **o NULL** obligatorio) + calcula yield
+- `POST   /api/brd/ebr/<id>/asignar-lote-fisico` · reemplaza el lote provisional `PP<id>` por el lote físico real (propaga a `movimientos` Entrada). Solo antes de liberar. (audit 3-jun)
+- `POST   /api/brd/ebr/<id>/liberar` · QC firma `meaning='libera'`. Gates: desviación abierta, **IPC OOS sin desviación resuelta (fail-closed, por ebr_id)**, y en `EBR_MODE=strict` exige pesajes verificados + conciliación.
 - `POST   /api/brd/ebr/<id>/rechazar` · QC firma `meaning='rechaza'` + motivo
 
 ### IPC resultados (parte del EBR)

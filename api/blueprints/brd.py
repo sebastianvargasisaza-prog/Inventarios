@@ -36,6 +36,10 @@ from flask import Blueprint, Response, jsonify, request, session
 
 from database import get_db
 from config import ADMIN_USERS, CALIDAD_USERS, PLANTA_USERS
+try:
+    from config import EBR_MODE
+except ImportError:  # deploy-safe
+    EBR_MODE = "off"
 from audit_helpers import audit_log
 
 bp = Blueprint("brd", __name__)
@@ -1723,22 +1727,27 @@ def completar_ebr(ebr_id):
             "error": "IPCs obligatorios sin reportar",
             "parametros": [r["parametro"] for r in ipcs_faltantes],
         }), 409
+    # Audit 3-jun · incluir conforme IS NULL: un IPC cualitativo obligatorio
+    # reportado pero SIN adjudicar (Conforme/No conforme) por QC no debe dejar
+    # completar el lote (antes solo bloqueaba conforme=0 → cualitativo NULL pasaba).
     ipcs_no_conformes = cur.execute(
-        """SELECT s.parametro, r.valor_medido, s.valor_min, s.valor_max
+        """SELECT s.parametro, r.valor_medido, s.valor_min, s.valor_max, r.conforme
            FROM ipc_resultados r
            JOIN ipc_specs s ON s.id = r.ipc_spec_id
            WHERE r.ebr_id = ?
              AND s.obligatorio = 1
-             AND r.conforme = 0""",
+             AND (r.conforme = 0 OR r.conforme IS NULL)""",
         (ebr_id,),
     ).fetchall()
     if ipcs_no_conformes:
         return jsonify({
-            "error": "IPCs obligatorios fuera de spec · debe haber desviación previa",
+            "error": "IPCs obligatorios fuera de spec o sin adjudicar QC "
+                     "(conforme=NULL) · debe resolverse antes de completar",
             "parametros": [{
                 "parametro": r["parametro"],
                 "medido": r["valor_medido"],
                 "min": r["valor_min"], "max": r["valor_max"],
+                "conforme": r["conforme"],
             } for r in ipcs_no_conformes],
         }), 409
 
@@ -1809,6 +1818,67 @@ def completar_ebr(ebr_id):
                     "cuarentena_creada": cuarentena_creada})
 
 
+@bp.route("/api/brd/ebr/<int:ebr_id>/asignar-lote-fisico", methods=["POST"])
+def asignar_lote_fisico_ebr(ebr_id):
+    """Reemplaza el lote provisional 'PP<id>' por el lote físico/comercial real
+    (audit 3-jun). QC firma y libera el lote REAL, no un código interno; y la
+    Entrada de PT en el kardex queda bajo el mismo lote. Solo antes de liberar.
+
+    Body: {lote_fisico}
+    """
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    nuevo = (body.get("lote_fisico") or "").strip()
+    if not nuevo:
+        return jsonify({"error": "lote_fisico requerido"}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    ebr = cur.execute(
+        "SELECT estado, lote FROM ebr_ejecuciones WHERE id=?", (ebr_id,),
+    ).fetchone()
+    if not ebr:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if ebr["estado"] in ("liberado", "rechazado"):
+        return jsonify({"error": f"EBR {ebr['estado']} es inmutable · no se puede "
+                                 f"reasignar el lote"}), 409
+    anterior = ebr["lote"] or ""
+    if nuevo == anterior:
+        return jsonify({"ok": True, "lote": nuevo, "sin_cambios": True})
+    # Unicidad: ningún otro EBR puede tener ese lote
+    dup = cur.execute(
+        "SELECT id FROM ebr_ejecuciones WHERE lote=? AND id<>?", (nuevo, ebr_id),
+    ).fetchone()
+    if dup:
+        return jsonify({"error": f"el lote '{nuevo}' ya está en uso por otro EBR",
+                        "codigo": "LOTE_DUPLICADO"}), 409
+    cur.execute(
+        "UPDATE ebr_ejecuciones SET lote=?, lote_codigo=? WHERE id=?",
+        (nuevo, nuevo, ebr_id),
+    )
+    # Propagar al movimiento de Entrada PT creado con el lote provisional, para
+    # que la promoción a VIGENTE (al liberar) y el kardex apunten al lote real.
+    mov_actualizados = 0
+    if anterior:
+        try:
+            cur.execute(
+                "UPDATE movimientos SET lote=? WHERE lote=? AND tipo='Entrada'",
+                (nuevo, anterior),
+            )
+            mov_actualizados = cur.rowcount or 0
+        except Exception:
+            pass  # deploy-safe
+    audit_log(cur, usuario=session.get("compras_user", ""),
+              accion="ASIGNAR_LOTE_FISICO_EBR", tabla="ebr_ejecuciones",
+              registro_id=ebr_id,
+              antes={"lote": anterior}, despues={"lote": nuevo,
+                                                 "movimientos_actualizados": mov_actualizados})
+    conn.commit()
+    return jsonify({"ok": True, "lote": nuevo, "lote_anterior": anterior,
+                    "movimientos_actualizados": mov_actualizados})
+
+
 @bp.route("/api/brd/ebr/<int:ebr_id>/liberar", methods=["POST"])
 def liberar_ebr(ebr_id):
     err = _require_qa_or_admin()
@@ -1866,6 +1936,73 @@ def liberar_ebr(ebr_id):
                 }), 409
     except Exception:
         pass  # deploy-safe (tabla/columna ausente no debe romper liberación)
+
+    # Audit 3-jun · GATE DIRECTO IPC OOS (fail-closed, independiente del texto del
+    # lote). El gate por desviación de arriba depende del matching textual de
+    # lotes_afectados y de que la auto-desviación se haya creado. Acá chequeamos
+    # por ebr_id directo: si hay IPC no-conforme o sin adjudicar, bloquear salvo
+    # que CADA uno tenga su desviación resuelta (cerrada + CAPA efectivo).
+    try:
+        _oos_n = cur.execute(
+            "SELECT COUNT(*) FROM ipc_resultados "
+            "WHERE ebr_id=? AND (conforme=0 OR conforme IS NULL)", (ebr_id,),
+        ).fetchone()[0]
+    except Exception:
+        _oos_n = 0
+    if _oos_n:
+        try:
+            _sin_resolver = cur.execute(
+                """SELECT COUNT(*) FROM ipc_resultados r
+                     LEFT JOIN desviaciones d ON d.id = r.desviacion_id
+                    WHERE r.ebr_id = ?
+                      AND (r.conforme = 0 OR r.conforme IS NULL)
+                      AND ( r.desviacion_id IS NULL
+                            OR COALESCE(d.estado,'') NOT IN ('cerrada','anulada')
+                            OR (COALESCE(d.estado,'') = 'cerrada'
+                                AND COALESCE(d.efectividad_ok,1) = 0) )""",
+                (ebr_id,),
+            ).fetchone()[0]
+        except Exception:
+            # No se pudo verificar el enlace (p.ej. desviacion_id ausente en PG):
+            # hay OOS y no podemos probar que esté resuelto → bloquear (fail-closed).
+            _sin_resolver = _oos_n
+        if _sin_resolver:
+            return jsonify({
+                "error": (f"No se puede liberar: {_sin_resolver} IPC fuera de "
+                          f"especificación o sin adjudicar QC sin desviación "
+                          f"resuelta (cerrada con CAPA efectivo)."),
+                "codigo": "IPC_OOS_SIN_RESOLVER",
+            }), 409
+
+    # Audit 3-jun · GATE DE COMPLETITUD del legajo · solo EBR_MODE='strict' (BPM
+    # duro). En 'warn' (piloto) NO bloquea, para no frenar mientras se adopta.
+    if EBR_MODE == 'strict':
+        try:
+            _pes_sin_verif = cur.execute(
+                "SELECT COUNT(*) FROM ebr_pesajes "
+                "WHERE ebr_id=? AND COALESCE(verificado_por,'')=''", (ebr_id,),
+            ).fetchone()[0]
+        except Exception:
+            _pes_sin_verif = 0
+        if _pes_sin_verif:
+            return jsonify({
+                "error": f"No se puede liberar: {_pes_sin_verif} pesaje(s) sin "
+                         f"2ª firma de verificación.",
+                "codigo": "PESAJES_SIN_VERIFICAR",
+            }), 409
+        try:
+            _n_concil = cur.execute(
+                "SELECT COUNT(*) FROM ebr_conciliacion_material WHERE ebr_id=?",
+                (ebr_id,),
+            ).fetchone()[0]
+        except Exception:
+            _n_concil = 0
+        if _n_concil == 0:
+            return jsonify({
+                "error": "No se puede liberar: falta la conciliación de material "
+                         "(envase/empaque) del lote.",
+                "codigo": "CONCILIACION_FALTANTE",
+            }), 409
 
     # INVIMA-FIX · 21-may-2026 · tiempo mínimo cuarentena antes de liberar
     # Antes: QA podía liberar EBR completado inmediatamente
@@ -2231,7 +2368,21 @@ def reportar_ipc_resultado(ebr_id):
                 pass  # mig 203 aún no aplicada · enlace opcional
             desviacion = {"codigo": cod, "id": desv_id}
         except Exception as _ed:
-            logging.getLogger('brd').warning('auto-desviación IPC OOS fallo: %s', _ed)
+            # FAIL-CLOSED (audit 3-jun): un IPC OOS DEBE quedar con su desviación.
+            # Si la auto-desviación falla, NO persistir el resultado en silencio
+            # (dejaría un OOS sin trazabilidad y el gate de liberación, que mira
+            # desviaciones, no lo vería → liberaría producto no conforme).
+            logging.getLogger('brd').error('auto-desviación IPC OOS fallo: %s', _ed)
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            return jsonify({
+                "error": "El IPC quedó fuera de especificación pero no se pudo "
+                         "abrir la desviación automática. No se guardó el "
+                         "resultado · reintentá o avisá a Calidad.",
+                "codigo": "DESVIACION_AUTO_FALLO",
+            }), 500
     conn.commit()
     audit_log(cur, usuario=user, accion="REPORTAR_IPC",
               tabla="ipc_resultados", registro_id=rid,
@@ -2501,6 +2652,28 @@ def pdf_ebr(ebr_id):
            ORDER BY r.medido_at_utc""",
         (ebr_id,),
     ).fetchall()
+    # Audit 3-jun · el legajo debe incluir TODAS las estaciones (no solo pasos/
+    # IPC): pesajes con 2ª firma, conciliación de material, artes/codificación y
+    # observaciones. Deploy-safe: si una tabla no existe, queda lista vacía.
+    def _q(sql, *p):
+        try:
+            return conn.execute(sql, p).fetchall()
+        except Exception:
+            return []
+    pesajes = _q(
+        "SELECT material_id, material_nombre, cantidad_teorica_g, cantidad_real_g, "
+        "delta_g, delta_pct, lote_mp, pesado_por, verificado_por, verificado_at_utc "
+        "FROM ebr_pesajes WHERE ebr_id=? ORDER BY id", ebr_id)
+    concil = _q(
+        "SELECT tipo, material_nombre, lote_material, cant_requerida, cant_recibida, "
+        "cant_devuelta, cant_utilizada, registrado_por FROM ebr_conciliacion_material "
+        "WHERE ebr_id=? ORDER BY id", ebr_id)
+    artes = _q(
+        "SELECT descripcion, codigo_lote, codigo_vencimiento, aprobado_por, "
+        "aprobado_at_utc FROM ebr_artes_codificacion WHERE ebr_id=? ORDER BY id", ebr_id)
+    observs = _q(
+        "SELECT descripcion, registrado_por, registrado_at_utc "
+        "FROM ebr_observaciones WHERE ebr_id=? ORDER BY id", ebr_id)
     firmas = conn.execute(
         """SELECT meaning, signer_username, signer_full_name, signer_cedula,
                   signer_cargo, signed_at_utc, comment
@@ -2510,8 +2683,13 @@ def pdf_ebr(ebr_id):
                   (SELECT CAST(id AS TEXT) FROM ebr_pasos_ejecutados WHERE ebr_id=?))
               OR (record_table='ipc_resultados' AND record_id IN
                   (SELECT CAST(id AS TEXT) FROM ipc_resultados WHERE ebr_id=?))
+              OR (record_table='ebr_pesajes' AND record_id IN
+                  (SELECT CAST(id AS TEXT) FROM ebr_pesajes WHERE ebr_id=?))
+              OR (record_table='ebr_pesajes' AND record_id LIKE ? )
+              OR (record_table='ebr_artes_codificacion' AND record_id IN
+                  (SELECT CAST(id AS TEXT) FROM ebr_artes_codificacion WHERE ebr_id=?))
            ORDER BY signed_at_utc""",
-        (str(ebr_id), ebr_id, ebr_id),
+        (str(ebr_id), ebr_id, ebr_id, ebr_id, f"{ebr_id}:%", ebr_id),
     ).fetchall()
 
     pdf = FPDF()
@@ -2610,6 +2788,62 @@ def pdf_ebr(ebr_id):
             )
         pdf.ln(2)
 
+    # Pesajes de materias primas (con 2ª firma de verificación)
+    if pesajes:
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 7, _safe_pdf(f"4b. Pesajes de materias primas ({len(pesajes)})"),
+                 new_x="LMARGIN", new_y="NEXT")
+        for w in pesajes:
+            dp = w["delta_pct"]
+            dp_s = f"{dp:+.2f}%" if dp is not None else "-"
+            verif = (f"verificó: {w['verificado_por']} ({(w['verificado_at_utc'] or '')[:19]} UTC)"
+                     if w["verificado_por"] else "SIN 2ª firma")
+            _line(
+                f"{w['material_id']} {w['material_nombre'] or ''}: teórico "
+                f"{w['cantidad_teorica_g']} g · real {w['cantidad_real_g']} g · "
+                f"delta {w['delta_g']} g ({dp_s}) · lote MP {w['lote_mp'] or '-'}",
+                h=5, font_size=9)
+            _line(f"   pesó: {w['pesado_por'] or '-'}  ·  {verif}", h=4, font_size=8)
+        pdf.ln(2)
+
+    # Conciliación de material de envase/empaque
+    if concil:
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 7, _safe_pdf(f"4c. Conciliación de material ({len(concil)})"),
+                 new_x="LMARGIN", new_y="NEXT")
+        for m in concil:
+            _line(
+                f"[{m['tipo']}] {m['material_nombre']} (lote {m['lote_material'] or '-'}): "
+                f"requerida {m['cant_requerida']} · recibida {m['cant_recibida']} · "
+                f"devuelta {m['cant_devuelta']} · utilizada {m['cant_utilizada']}  ·  "
+                f"{m['registrado_por'] or '-'}",
+                h=5, font_size=9)
+        pdf.ln(2)
+
+    # Artes / codificación (acondicionamiento)
+    if artes:
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 7, _safe_pdf(f"4d. Artes / codificación ({len(artes)})"),
+                 new_x="LMARGIN", new_y="NEXT")
+        for a in artes:
+            ap = (f"APROBADO por {a['aprobado_por']} ({(a['aprobado_at_utc'] or '')[:19]} UTC)"
+                  if a["aprobado_por"] else "SIN aprobar")
+            _line(
+                f"{a['descripcion']} · cód. lote {a['codigo_lote'] or '-'} · "
+                f"venc. {a['codigo_vencimiento'] or '-'}  ·  {ap}",
+                h=5, font_size=9)
+        pdf.ln(2)
+
+    # Observaciones / bitácora
+    if observs:
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 7, _safe_pdf(f"4e. Observaciones / bitácora ({len(observs)})"),
+                 new_x="LMARGIN", new_y="NEXT")
+        for o in observs:
+            _line(f"{(o['registrado_at_utc'] or '')[:19]} UTC · {o['registrado_por'] or '-'}: "
+                  f"{o['descripcion']}", h=5, font_size=9)
+        pdf.ln(2)
+
     # Firmas electrónicas
     if firmas:
         pdf.set_font("Helvetica", "B", 11)
@@ -2625,6 +2859,23 @@ def pdf_ebr(ebr_id):
             if f["comment"]:
                 _line(f'   "{f["comment"]}"', h=4, font_size=8, italic=True)
 
+    # 6. Disposición del lote / Certificado de liberación
+    pdf.ln(2)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 7, _safe_pdf("6. Disposición del lote"), new_x="LMARGIN", new_y="NEXT")
+    _est = (ebr["estado"] or "").upper()
+    if ebr["estado"] == "liberado":
+        _line(f"DECISIÓN QC: LIBERADO · por {ebr['liberado_por']} · "
+              f"{(ebr['liberado_at_utc'] or '')[:19]} UTC · firma e-sig "
+              f"#{ebr['liberado_signature_id']}", h=6, font_size=10)
+    elif ebr["estado"] == "rechazado":
+        _line(f"DECISIÓN QC: RECHAZADO · motivo: {ebr['rechazado_motivo'] or '-'}",
+              h=6, font_size=10)
+    else:
+        _line(f"DECISIÓN QC: PENDIENTE (estado actual: {_est})", h=6, font_size=10)
+    if yld is not None:
+        _line(f"Rendimiento: {yld:.2f} %", h=5, font_size=9)
+
     # Hash de contenido (NO de los bytes del PDF · esos cambian con timestamp).
     # Este hash es estable: depende solo de los datos del EBR. Sirve para que
     # el auditor verifique que el PDF que tiene en mano corresponde a un EBR
@@ -2637,6 +2888,8 @@ def pdf_ebr(ebr_id):
         str(ebr["yield_pct"]) if ebr["yield_pct"] is not None else "-",
         str(ebr["liberado_signature_id"] or "-"),
         str(len(pasos)), str(len(ipcs)), str(len(firmas)),
+        # Audit 3-jun · sellar también las estaciones nuevas en el hash
+        str(len(pesajes)), str(len(concil)), str(len(artes)), str(len(observs)),
     ])
     content_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
     gen_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -2703,7 +2956,10 @@ def reportar_pesaje(ebr_id):
     formula_items + cantidad_objetivo_g del EBR (no se acepta del cliente
     para evitar manipulación). delta_g y delta_pct también se calculan acá.
     """
-    err = _require_login()
+    # Audit 3-jun · era _require_login (cualquier usuario logueado). Es una
+    # mutación de registro de lote regulado → exige ejecutor (Planta/Calidad/
+    # Admin), igual que pasos/conciliación. Evita escalada de privilegios.
+    err = _require_brd_ejecutor()
     if err:
         return err
     body = request.get_json(silent=True) or {}
@@ -2745,9 +3001,18 @@ def reportar_pesaje(ebr_id):
     delta = real - teorico
     delta_pct = (delta / teorico * 100.0) if teorico > 0 else None
 
-    # Validar e-sign si se pasa
+    # Validar e-sign. Audit 3-jun · con el motor encendido (EBR_MODE != off)
+    # la 1ª firma del pesaje es OBLIGATORIA (Part 11 / dato de lote regulado).
     user = session.get("compras_user", "")
     signature_id = body.get("signature_id")
+    if not signature_id and EBR_MODE != "off":
+        return jsonify({
+            "error": "Falta la e-firma del pesaje (firmá como ejecutor).",
+            "codigo": "FIRMA_REQUERIDA",
+            "record_table": "ebr_pesajes",
+            "record_id": f"{ebr_id}:{material_id}",
+            "meaning": "ejecuta",
+        }), 400
     if signature_id:
         if not _validar_signature(
             cur, signature_id, record_table="ebr_pesajes",

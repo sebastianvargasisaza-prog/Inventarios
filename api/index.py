@@ -400,6 +400,30 @@ try:
             if _fallidas:
                 for _f in _fallidas[:5]:
                     _logger_mig.error("AUTO-MIG-PG FALLA · %s", _f)
+            # Audit 3-jun · cargar triggers PG (inmutabilidad EBR/firmas/audit).
+            # Las migraciones SALTAN los CREATE TRIGGER en PG (es_ddl_a_saltar) y
+            # pg_triggers.sql solo lo aplicaba el script one-time de migración →
+            # en prod los triggers de inmutabilidad podían faltar (legajo liberado
+            # MUTABLE). Es idempotente (CREATE OR REPLACE). NUNCA aborta el boot.
+            try:
+                _trg_path = os.path.join(os.path.dirname(__file__), 'pg_triggers.sql')
+                if os.path.exists(_trg_path):
+                    try:
+                        _c.rollback()  # asegurar transacción limpia
+                    except Exception:
+                        pass
+                    with open(_trg_path, encoding='utf-8') as _ftrg:
+                        _trg_sql = _ftrg.read()
+                    _c.executescript(_trg_sql)
+                    _c.commit()
+                    _logger_mig.warning("AUTO-MIG-PG · pg_triggers.sql cargado OK")
+            except Exception as _e:
+                _logger_mig.error(
+                    "AUTO-MIG-PG · pg_triggers.sql FALLÓ (no aborta boot): %s", _e)
+                try:
+                    _c.rollback()
+                except Exception:
+                    pass
         finally:
             try:
                 _c.close()

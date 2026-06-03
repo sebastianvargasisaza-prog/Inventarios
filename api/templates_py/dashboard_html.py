@@ -6870,7 +6870,9 @@ function _ebrRender(d, pesajes, conc, artes, obs){
   h+='<div><div style="font-weight:800;color:#4c1d95;font-size:15px;">'+(d.numero_op||('EBR #'+d.id))+' &middot; '+(em[fa]||'')+' '+fa+'</div>';
   var extra='';
   if(d.ml_envasable){extra=' &middot; <b style="color:#0e7490;">'+d.ml_envasable+' mL envasables</b>'+(d.densidad_g_ml?(' (dens. '+d.densidad_g_ml+' g/mL)'):'');}
-  h+='<div style="color:#555;font-size:12px;">Lote '+(d.lote||'')+' &middot; objetivo '+(d.cantidad_objetivo_g||0)+' g &middot; '+_ebrBadge(d.estado)+extra+'</div></div>';
+  var loteBtn='';
+  if(editable){loteBtn=' <button onclick="ebrAsignarLoteFisico('+d.id+",'"+(d.lote||'')+"'"+')" title="Asignar el lote físico/comercial real (reemplaza el provisional)" style="background:#ddd6fe;color:#4c1d95;border:none;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer;">✏️ lote físico</button>';}
+  h+='<div style="color:#555;font-size:12px;">Lote <b>'+(d.lote||'')+'</b>'+loteBtn+' &middot; objetivo '+(d.cantidad_objetivo_g||0)+' g &middot; '+_ebrBadge(d.estado)+extra+'</div></div>';
   h+='<button onclick="ebrCerrarRunner()" style="background:#94a3b8;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;">Cerrar ✕</button></div>';
   // Pesaje de MP (2ª firma · Batch 2)
   h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">⚖️ Pesaje de materias primas (2ª firma)</h4>';
@@ -7049,6 +7051,20 @@ async function ebrVerificarPesaje(ebrId, pid){
     var d=await r.json();
     if(!r.ok){alert(d.error||'No se pudo verificar el pesaje');return;}
     abrirEBR(ebrId);
+  }catch(e){alert('Error de red');}
+}
+
+async function ebrAsignarLoteFisico(id, actual){
+  var sug=(actual && actual.indexOf('PP')===0)?'':actual;
+  var nuevo=prompt('Lote físico/comercial real (reemplaza el provisional '+(actual||'')+'):', sug);
+  if(nuevo===null){return;}
+  nuevo=(nuevo||'').trim();
+  if(!nuevo){return;}
+  try{
+    var r=await fetch('/api/brd/ebr/'+id+'/asignar-lote-fisico',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lote_fisico:nuevo})});
+    var d=await r.json();
+    if(!r.ok){alert(d.error||'No se pudo asignar el lote');return;}
+    abrirEBR(id);
   }catch(e){alert('Error de red');}
 }
 
