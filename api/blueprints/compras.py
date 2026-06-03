@@ -6522,6 +6522,18 @@ def pagar_oc(numero_oc):
         "WHERE numero_oc=? AND estado != 'Pagada'",
         (numero_oc,)
     )
+    # Bulletproof 2-jun-2026 (Jeferson "le doy pagar y no desaparece"): el front
+    # envía el número de la SOL que el usuario pagó. Flipear ESA SOL directamente
+    # cubre el caso de numero_oc NULL/desalineado (legacy o link fallido) que
+    # dejaba el item pegado en la lista de influencers. Además re-vincula la OC.
+    _sol_numero = (d.get('sol_numero') or '').strip()
+    if _sol_numero:
+        cur.execute(
+            "UPDATE solicitudes_compra SET estado='Pagada', "
+            "numero_oc=COALESCE(NULLIF(numero_oc,''),?) "
+            "WHERE numero=? AND estado != 'Pagada'",
+            (numero_oc, _sol_numero)
+        )
     # Push notif in-app al solicitante (Jefferson en este caso) para que sepa
     # que su pago se procesó. Sebastian (30-abr-2026): "tampoco le estara
     # notificando a el, revisa si pueden llegar a marketing o como seria".

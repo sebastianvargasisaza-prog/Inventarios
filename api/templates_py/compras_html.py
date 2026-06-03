@@ -5783,7 +5783,7 @@ function renderInfluencers(){
       var ocNum = d1.numero_oc;
       if(!ocNum){ alert('OC no fue creada. Abort.'); loadInfluencers(); return; }
       // Paso 2: pagar la OC recién creada
-      var r2 = await fetch('/api/ordenes-compra/'+encodeURIComponent(ocNum)+'/pagar',_fetchOpts('PATCH', {monto: monto, medio: 'Transferencia'}));
+      var r2 = await fetch('/api/ordenes-compra/'+encodeURIComponent(ocNum)+'/pagar',_fetchOpts('PATCH', {monto: monto, medio: 'Transferencia', sol_numero: sol}));
       var raw2 = await r2.text();
       var d2 = null; try { d2 = JSON.parse(raw2); } catch(_){}
       if(!r2.ok){
@@ -5840,10 +5840,15 @@ function eliminarSolicitudAprobada(sol_num, nombre){
 }
 // ─── Pagar influencer ───────────────────────────────────────────────
 function pagarInfluencer(oc_num, sol_num, valor){
-  if(!oc_num){ alert('Esta solicitud no tiene OC vinculada. Contacta a Sebastian.'); return; }
+  if(!oc_num){
+    // Sin OC vinculada (legacy/link fallido): en vez de abortar, crear la OC y
+    // pagar en un paso (flujo Pendiente). Antes esto dejaba el item pegado.
+    if(window.pagarPendienteInfluencer){ return pagarPendienteInfluencer(sol_num, valor, sol_num); }
+    alert('Esta solicitud no tiene OC vinculada. Contacta a Sebastian.'); return;
+  }
   var confirmado=confirm('Confirmar pago ' + fmoney(valor) + ' para ' + sol_num + ' | OC: ' + oc_num + ' | Se registrará en Finanzas.');
   if(!confirmado) return;
-  fetch('/api/ordenes-compra/'+encodeURIComponent(oc_num)+'/pagar',_fetchOpts('PATCH', {monto:valor,medio:'Transferencia',observaciones:'Pago influencer '+sol_num})).then(function(r){return r.json();}).then(function(d){
+  fetch('/api/ordenes-compra/'+encodeURIComponent(oc_num)+'/pagar',_fetchOpts('PATCH', {monto:valor,medio:'Transferencia',observaciones:'Pago influencer '+sol_num,sol_numero:sol_num})).then(function(r){return r.json();}).then(function(d){
     if(d.ok){
       alert('Pago registrado. La OC quedó como Pagada y el egreso fue enviado a Finanzas.');
       loadInfluencers();

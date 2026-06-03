@@ -90,6 +90,9 @@ Cuando Catalina edita un item:
 
 ### Pagos
 - `POST /api/ordenes-compra/<num>/pagar` · registrar pago
+  - Sincroniza `solicitudes_compra.estado='Pagada'` por `numero_oc` Y, si el body
+    trae `sol_numero` (lo manda el front influencers), también por `numero` directo
+    + re-vincula `numero_oc` (bulletproof contra links rotos · 2-jun-2026).
 - `GET  /api/comprobantes-pago/<oc>` · PDF
 
 ### Influencers
