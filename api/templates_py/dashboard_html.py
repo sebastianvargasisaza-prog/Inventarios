@@ -526,7 +526,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
   <div id="bar-prodHub" class="sub-tab-bar">
     <button class="sub-btn active" onclick="subSwitchTab('formulas',this,'bar-prodHub')">&#129514; Fórmulas</button>
-    <button class="sub-btn" onclick="subSwitchTab('produccion',this,'bar-prodHub')">&#127981; Fabricación</button>
+    <button class="sub-btn" onclick="subSwitchTab('produccion',this,'bar-prodHub');cargarEBRs()">&#127981; Fabricación</button>
     <button class="sub-btn" onclick="subSwitchTab('envasado',this,'bar-prodHub');loadColaSinEnvasar()">&#128230; Envasado</button>
     <button class="sub-btn" onclick="subSwitchTab('acondicionamiento',this,'bar-prodHub');loadColaAcond()">&#128295; Acondicionamiento</button>
   </div>
@@ -985,6 +985,21 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <table class="table"><thead><tr><th>Producto</th><th>Lote PT</th><th style="text-align:right;">kg</th><th style="text-align:right;">Costo COP</th><th>Fecha</th><th>Operador</th><th style="text-align:center;">Estado</th><th style="text-align:center;">Acciones</th></tr></thead>
       <tbody id="hist-prod-body"><tr><td colspan="8" style="text-align:center;color:#999;padding:16px;">Cargando...</td></tr></tbody></table>
       <div id="hist-prod-footer" style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:12px;color:#64748b"></div>
+    </div>
+    <!-- ═══ Legajos electrónicos (EBR) · runner · reemplazo MyBatch ═══ -->
+    <div id="ebr-seccion" style="margin-top:28px;border-top:2px solid #eee;padding-top:20px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px;">
+        <h3 style="color:#6d28d9;margin:0;">&#128451;&#65039; Legajos electr&#243;nicos (EBR)</h3>
+        <div id="ebr-fase-tabs" style="display:flex;gap:6px;flex-wrap:wrap;font-size:12px;">
+          <button class="ebr-fbtn" data-fase="" onclick="ebrSetFase(this)" style="padding:5px 10px;border:1px solid #c4b5fd;border-radius:6px;background:#6d28d9;color:#fff;cursor:pointer;">Todos</button>
+          <button class="ebr-fbtn" data-fase="fabricacion" onclick="ebrSetFase(this)" style="padding:5px 10px;border:1px solid #c4b5fd;border-radius:6px;background:#fff;color:#6d28d9;cursor:pointer;">&#127981; Fabricaci&#243;n</button>
+          <button class="ebr-fbtn" data-fase="envasado" onclick="ebrSetFase(this)" style="padding:5px 10px;border:1px solid #c4b5fd;border-radius:6px;background:#fff;color:#6d28d9;cursor:pointer;">&#128230; Envasado</button>
+          <button class="ebr-fbtn" data-fase="acondicionamiento" onclick="ebrSetFase(this)" style="padding:5px 10px;border:1px solid #c4b5fd;border-radius:6px;background:#fff;color:#6d28d9;cursor:pointer;">&#128295; Acondicionamiento</button>
+        </div>
+      </div>
+      <p style="font-size:0.85em;color:#718096;margin:0 0 12px;">Reemplazo MyBatch &middot; cada legajo vigila su fase (despeje &rarr; pesaje &rarr; pasos &rarr; IPC) con doble firma GMP (21 CFR Part 11).</p>
+      <div id="ebr-list" style="font-size:13px;color:#999;">Cargando&hellip;</div>
+      <div id="ebr-runner" style="display:none;margin-top:16px;border:1px solid #ddd6fe;border-radius:10px;padding:16px;background:#faf8ff;"></div>
     </div>
     <!-- TRAZABILIDAD INVIMA -->
     <div style="margin-top:28px;border-top:2px solid #eee;padding-top:20px;">
@@ -6772,6 +6787,156 @@ async function _firmarLoteEsign(meaning, recordId){
     if(!rs.ok){return {error:ds.error||'Error al firmar'};}
     return {signature_id:ds.signature_id};
   }catch(e){return {error:'Error de red al firmar: '+e.message};}
+}
+
+// ═══ Runner EBR · reemplazo MyBatch · Sebastián 2-jun-2026 ═══
+// Firma electrónica generalizada (cualquier record_table) · Part 11.
+async function _firmarEsign(meaning, table, recordId){
+  var pwd=prompt('Firma electrónica (21 CFR Part 11) · contraseña para firmar ('+meaning+'):');
+  if(!pwd){return null;}
+  var totp=prompt('Código MFA de 6 dígitos (si no usás MFA, dejá vacío y OK):')||'';
+  try{
+    var rc=await fetch('/api/sign/challenge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd,totp_token:totp})});
+    var dc=await rc.json();
+    if(!rc.ok){return {error:dc.error||'Credenciales inválidas'};}
+    var rs=await fetch('/api/sign',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({record_table:table,record_id:String(recordId),meaning:meaning,challenge_token:dc.token})});
+    var ds=await rs.json();
+    if(!rs.ok){return {error:ds.error||'Error al firmar'};}
+    return {signature_id:ds.signature_id};
+  }catch(e){return {error:'Error de red al firmar'};}
+}
+function _ebrBadge(est){
+  var c={iniciado:'#f59e0b',en_proceso:'#3b82f6',completado:'#8b5cf6',liberado:'#16a34a',rechazado:'#dc2626'}[est]||'#64748b';
+  return '<span style="background:'+c+';color:#fff;border-radius:10px;padding:2px 8px;font-size:10px;">'+(est||'')+'</span>';
+}
+function ebrSetFase(btn){
+  window._ebrFase=btn.getAttribute('data-fase')||'';
+  var btns=document.querySelectorAll('#ebr-fase-tabs .ebr-fbtn');
+  for(var i=0;i<btns.length;i++){
+    var on=(btns[i]===btn);
+    btns[i].style.background=on?'#6d28d9':'#fff';
+    btns[i].style.color=on?'#fff':'#6d28d9';
+  }
+  cargarEBRs();
+}
+async function cargarEBRs(){
+  var cont=document.getElementById('ebr-list');
+  if(!cont){return;}
+  var fase=window._ebrFase||'';
+  cont.innerHTML='<span style="color:#999;">Cargando…</span>';
+  try{
+    var url='/api/brd/ebr'+(fase?('?fase='+encodeURIComponent(fase)):'');
+    var r=await fetch(url,{credentials:'same-origin'});
+    var d=await r.json();
+    var items=(d&&d.items)||[];
+    if(!items.length){cont.innerHTML='<div style="color:#999;padding:8px;">No hay legajos'+(fase?(' en fase '+fase):'')+'.</div>';return;}
+    var em={fabricacion:'🏭',envasado:'📦',acondicionamiento:'🔧'};
+    var h='<table class="table" style="font-size:12px;"><thead><tr><th>N° OP</th><th>Lote</th><th>Fase</th><th>Estado</th><th></th></tr></thead><tbody>';
+    for(var i=0;i<items.length;i++){
+      var it=items[i];var fa=it.fase||'fabricacion';
+      h+='<tr><td>'+(it.numero_op||('#'+it.id))+'</td><td>'+(it.lote||'')+'</td><td>'+(em[fa]||'')+' '+fa+'</td><td>'+_ebrBadge(it.estado)+'</td><td style="text-align:right;"><button onclick="abrirEBR('+it.id+')" style="background:#6d28d9;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;">▶ Abrir</button></td></tr>';
+    }
+    h+='</tbody></table>';
+    cont.innerHTML=h;
+  }catch(e){cont.innerHTML='<div style="color:#c0392b;">Error cargando legajos.</div>';}
+}
+function ebrCerrarRunner(){var b=document.getElementById('ebr-runner');if(b){b.style.display='none';b.innerHTML='';}}
+async function abrirEBR(id){
+  var box=document.getElementById('ebr-runner');
+  if(!box){return;}
+  box.style.display='block';
+  box.innerHTML='<span style="color:#999;">Cargando legajo…</span>';
+  try{
+    var r=await fetch('/api/brd/ebr/'+id,{credentials:'same-origin'});
+    var d=await r.json();
+    if(!r.ok){box.innerHTML='<div style="color:#c0392b;">'+(d.error||'Error')+'</div>';return;}
+    var rp=await fetch('/api/brd/ebr/'+id+'/pesajes',{credentials:'same-origin'});
+    var dp=await rp.json();
+    box.innerHTML=_ebrRender(d,(dp&&dp.items)||[]);
+    box.scrollIntoView({behavior:'smooth',block:'start'});
+  }catch(e){box.innerHTML='<div style="color:#c0392b;">Error de red.</div>';}
+}
+function _ebrRender(d, pesajes){
+  var editable=(d.estado==='iniciado'||d.estado==='en_proceso');
+  var em={fabricacion:'🏭',envasado:'📦',acondicionamiento:'🔧'};
+  var fa=d.fase||'fabricacion';
+  var h='<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">';
+  h+='<div><div style="font-weight:800;color:#4c1d95;font-size:15px;">'+(d.numero_op||('EBR #'+d.id))+' &middot; '+(em[fa]||'')+' '+fa+'</div>';
+  h+='<div style="color:#555;font-size:12px;">Lote '+(d.lote||'')+' &middot; objetivo '+(d.cantidad_objetivo_g||0)+' g &middot; '+_ebrBadge(d.estado)+'</div></div>';
+  h+='<button onclick="ebrCerrarRunner()" style="background:#94a3b8;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;">Cerrar ✕</button></div>';
+  // Pesaje de MP (2ª firma · Batch 2)
+  h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">⚖️ Pesaje de materias primas (2ª firma)</h4>';
+  if(!pesajes.length){h+='<div style="color:#999;font-size:12px;">Sin pesajes registrados aún.</div>';}
+  else{
+    h+='<table class="table" style="font-size:12px;"><thead><tr><th>Material</th><th style="text-align:right;">Teórico g</th><th style="text-align:right;">Real g</th><th>Pesó</th><th>Verificó</th><th></th></tr></thead><tbody>';
+    for(var i=0;i<pesajes.length;i++){
+      var p=pesajes[i];var verif=(p.verificado_por||'').trim();
+      var verifCell=verif?('<span style="color:#16a34a;font-weight:700;">✓ '+verif+'</span>'):'<span style="color:#f59e0b;">pendiente</span>';
+      var acc='<span style="color:#999;">—</span>';
+      if(!verif&&editable){acc='<button onclick="ebrVerificarPesaje('+d.id+','+p.id+')" style="background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Verificar</button>';}
+      h+='<tr><td>'+(p.material_nombre||p.material_id||'')+'</td><td style="text-align:right;">'+(p.cantidad_teorica_g||0)+'</td><td style="text-align:right;">'+(p.cantidad_real_g||0)+'</td><td>'+(p.pesado_por||'')+'</td><td>'+verifCell+'</td><td style="text-align:right;">'+acc+'</td></tr>';
+    }
+    h+='</tbody></table>';
+  }
+  // Pasos del proceso (Realizó + Verificó QC)
+  h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">📋 Pasos del proceso (Realizó + Verificó)</h4>';
+  var pasos=d.pasos||[];
+  if(!pasos.length){h+='<div style="color:#999;font-size:12px;">Este MBR no tiene pasos.</div>';}
+  else{
+    h+='<table class="table" style="font-size:12px;"><thead><tr><th>#</th><th>Fase</th><th>Descripción</th><th>Estado</th><th>Realizó</th><th>Verificó</th><th></th></tr></thead><tbody>';
+    for(var j=0;j<pasos.length;j++){
+      var s=pasos[j];var acc2='<span style="color:#999;">'+(s.estado==='completado'?'✓':'—')+'</span>';
+      if(editable){
+        if(s.estado==='pendiente'){acc2='<button onclick="ebrIniciarPaso('+d.id+','+s.orden+')" style="background:#f59e0b;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Iniciar</button>';}
+        else if(s.estado==='en_proceso'){acc2='<button onclick="ebrCompletarPaso('+d.id+','+s.orden+','+s.id+','+(s.requiere_e_sign?1:0)+','+(s.requiere_qc?1:0)+')" style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Completar</button>';}
+      }
+      var qcTag=s.requiere_qc?' <span title="requiere 2ª firma QC" style="color:#0ea5e9;font-weight:700;">◆QC</span>':'';
+      h+='<tr><td>'+s.orden+'</td><td style="font-size:11px;color:#777;">'+(s.fase||'')+'</td><td>'+(s.descripcion||'')+qcTag+'</td><td>'+_ebrBadge(s.estado)+'</td><td>'+(s.operario_username||'')+'</td><td>'+(s.qc_username||'')+'</td><td style="text-align:right;">'+acc2+'</td></tr>';
+    }
+    h+='</tbody></table>';
+  }
+  return h;
+}
+async function ebrIniciarPaso(ebrId, orden){
+  try{
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/pasos/'+orden+'/iniciar',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    var d=await r.json();
+    if(!r.ok){alert(d.error||'No se pudo iniciar el paso');return;}
+    abrirEBR(ebrId);
+  }catch(e){alert('Error de red');}
+}
+async function ebrCompletarPaso(ebrId, orden, pasoId, reqSign, reqQc){
+  var body={observaciones:(prompt('Observaciones del paso (opcional):')||'')};
+  if(reqSign){
+    var f=await _firmarEsign('ejecuta','ebr_pasos_ejecutados',pasoId);
+    if(!f){return;}
+    if(f.error){alert(f.error);return;}
+    body.signature_id=f.signature_id;
+  }
+  if(reqQc){
+    alert('Este paso requiere 2ª firma de Calidad (QC) · debe firmar una persona DISTINTA del operario.');
+    var fq=await _firmarEsign('supervisa','ebr_pasos_ejecutados',pasoId);
+    if(!fq){return;}
+    if(fq.error){alert(fq.error);return;}
+    body.qc_signature_id=fq.signature_id;
+  }
+  try{
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/pasos/'+orden+'/completar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var d=await r.json();
+    if(!r.ok){alert(d.error||'No se pudo completar el paso');return;}
+    abrirEBR(ebrId);
+  }catch(e){alert('Error de red');}
+}
+async function ebrVerificarPesaje(ebrId, pid){
+  var f=await _firmarEsign('supervisa','ebr_pesajes',pid);
+  if(!f){return;}
+  if(f.error){alert(f.error);return;}
+  try{
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/pesajes/'+pid+'/verificar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({signature_id:f.signature_id})});
+    var d=await r.json();
+    if(!r.ok){alert(d.error||'No se pudo verificar el pesaje');return;}
+    abrirEBR(ebrId);
+  }catch(e){alert('Error de red');}
 }
 
 async function enviarRevisionCC(){
