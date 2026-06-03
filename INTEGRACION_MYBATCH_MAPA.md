@@ -149,7 +149,8 @@ Opcional (no bloquea construcción):
 - [x] **Batch fase + motor base** · mig 209 (`ebr_ejecuciones.fase` + `ebr_pasos_ejecutados.fase`) · commit 065da8e · prod
 - [x] **Batch 2ª firma de pesajes** · mig 208 (`verificado_por/at/e_sign_id`) + endpoint `/pesajes/<id>/verificar` · commit 53ad15c · prod
 - [x] **Batch Runner UI** · sección "Legajos EBR" en tab Fabricación (filtro fase, abrir EBR, verificar pesaje, iniciar/completar paso con doble firma) · commit fe9d8fe · prod
-- [ ] Batch conciliación material + %rend (Envasado)
+- [x] **Batch conciliación material** · mig 210 (`ebr_conciliacion_material`) + endpoints GET/POST + estación en runner (utilizada=recibida-devuelta) · commit 74806cd · prod
+- [ ] Batch %rend por presentación (pendiente · ligado a producto_presentaciones)
 - [ ] Batch Acondicionamiento + Artes/Codificación
 - [ ] Batch cabecera/cierre + puente OP→OF (mL envasable)
 - [ ] Batch PM Premezclas (prioridad mínima)
