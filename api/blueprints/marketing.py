@@ -172,6 +172,23 @@ def _auth():
         return None, jsonify({"error": "Sin acceso al módulo Marketing"}), 403
     return u, None, None
 
+def _puede_capturar_banco(u):
+    """Quién puede LEER/ESCRIBIR datos bancarios de influencers.
+
+    CEO Sebastián 3-jun-2026 (LEY): marketing (Jeferson) es el responsable de
+    CAPTURAR y MANTENER los datos bancarios del influencer (banco/cuenta/cédula/
+    tipo) que viajan a la cuenta de cobro → Compras para que Sebastián pague.
+    Por eso la ESCRITURA/EDICIÓN se permite a MARKETING_USERS, no solo a admin.
+
+    Habeas Data Ley 1581 CO se preserva con: (a) audit_log enmascarado en toda
+    mutación bancaria, y (b) enmascaramiento de la LECTURA masiva/agregada de
+    terceros (listas, panel, scored, duplicados) que se mantiene intacto. Lo que
+    se abre es la captura y la verificación del registro que se está editando.
+    """
+    ul = (u or '').lower()
+    return ul in {x.lower() for x in (
+        set(ADMIN_USERS) | set(CONTADORA_USERS) | set(MARKETING_USERS))}
+
 def _send_push_alert(conn, tipo, clave_unica, asunto, cuerpo_resumen,
                      severidad="medio", destinatario=None):
     """Dispara alerta por email a Sebastian/marketing alerts y la registra en log.
@@ -3481,7 +3498,10 @@ def mkt_influencer_detail(iid):
     c = conn.cursor()
     try:
         if request.method == "GET":
-            if _is_admin:
+            # CEO 3-jun-2026 · marketing captura/mantiene datos bancarios →
+            # el modal de edición DEBE poder ver el dato actual para corregirlo.
+            # Quien no pueda capturar banco recibe la proyección sin lo bancario.
+            if _puede_capturar_banco(u):
                 row = c.execute("SELECT * FROM marketing_influencers WHERE id=?", (iid,)).fetchone()
             else:
                 row = c.execute(
@@ -3509,11 +3529,16 @@ def mkt_influencer_detail(iid):
                       "nicho", "tarifa", "estado", "email", "telefono", "notas",
                       "discount_code", "ciclo_pago",
                       "banco", "cuenta_bancaria", "tipo_cuenta", "cedula_nit"]
-            # Solo admin puede modificar campos bancarios sensibles
+            # CEO 3-jun-2026 · marketing (Jeferson) CAPTURA/CORRIGE datos
+            # bancarios (es su trabajo: van a la cuenta de cobro → Compras).
+            # Quien no esté autorizado a banco edita el resto; los sensibles se
+            # descartan PERO devolviendo aviso explícito (no falso "ok").
             campos_sensibles = {"banco", "cuenta_bancaria", "tipo_cuenta", "cedula_nit"}
-            if not _is_admin:
-                d_filtered = {k: v for k, v in d.items() if k not in campos_sensibles}
-                d = d_filtered
+            _bancarios_ignorados = False
+            if not _puede_capturar_banco(u):
+                if any(k in d for k in campos_sensibles):
+                    _bancarios_ignorados = True
+                d = {k: v for k, v in d.items() if k not in campos_sensibles}
             updates = {k: d[k] for k in campos if k in d}
             if "discount_code" in updates:
                 dc = (updates["discount_code"] or "").strip().upper().replace(" ", "")
@@ -3526,15 +3551,29 @@ def mkt_influencer_detail(iid):
             set_clause = ", ".join(f"{k}=?" for k in updates)
             c.execute(f"UPDATE marketing_influencers SET {set_clause} WHERE id=?",
                       list(updates.values()) + [iid])
+            _toca_banco = any(k in campos_sensibles for k in updates)
             try:
                 from audit_helpers import audit_log
-                audit_log(c, usuario=u, accion='MODIFICAR_INFLUENCER',
+                # Habeas Data · enmascarar valores bancarios en el rastro (no plano)
+                _a = {k: antes_dict.get(k) for k in updates}
+                _d = dict(updates)
+                for k in campos_sensibles:
+                    if k in _a and _a[k]:
+                        _a[k] = '***' + str(_a[k])[-3:]
+                    if k in _d and _d[k]:
+                        _d[k] = '***' + str(_d[k])[-3:]
+                audit_log(c, usuario=u,
+                          accion=('MODIFICAR_BANCO_INFLUENCER' if _toca_banco
+                                  else 'MODIFICAR_INFLUENCER'),
                           tabla='marketing_influencers', registro_id=iid,
-                          antes={k: antes_dict.get(k) for k in updates},
-                          despues=updates)
+                          antes=_a, despues=_d)
             except Exception:
                 pass
             conn.commit()
+            if _bancarios_ignorados:
+                return jsonify({"ok": True,
+                                "aviso": "No tienes permiso para editar datos "
+                                         "bancarios; los demás campos se guardaron."})
             return jsonify({"ok": True})
 
         if request.method == "DELETE":
@@ -6923,14 +6962,14 @@ def mkt_influencer_banco(iid):
     CAMPOS_GENERALES = {"nombre", "red_social", "usuario_red", "seguidores",
                          "engagement_rate", "nicho", "tarifa", "estado",
                          "email", "telefono", "notas", "discount_code"}
-    # Gate · si toca campos bancarios, debe ser admin+contadora
-    _u_lower = (u or '').lower()
-    _puede_banco = _u_lower in {
-        x.lower() for x in (set(ADMIN_USERS) | set(CONTADORA_USERS))}
+    # Gate · CEO 3-jun-2026 · marketing (Jeferson) captura/mantiene datos
+    # bancarios → política única vía _puede_capturar_banco (admin+contadora+
+    # marketing). Habeas Data se preserva con audit_log enmascarado (abajo).
+    _puede_banco = _puede_capturar_banco(u)
     edita_banco = any(k in d for k in CAMPOS_BANCARIOS)
     if edita_banco and not _puede_banco:
         return jsonify({
-            "error": "Solo Admin/Contadora pueden editar datos bancarios",
+            "error": "Sin permiso para editar datos bancarios",
             "codigo": "PRIVACIDAD_BANCO"}), 403
     # Normalizar discount_code (UPPERCASE, sin espacios)
     if "discount_code" in d:
