@@ -14621,7 +14621,8 @@ _CRUCE_MAESTRO_HTML = """<!DOCTYPE html><html lang="es"><head><meta charset="utf
  <input type="file" id="f" accept=".xlsx">
  <button onclick="run('')">Analizar (solo lectura)</button>
  <button class="warn" onclick="run('inci')">Rellenar INCI vacíos desde Excel</button>
- <a href="/admin/verificar-formulas" target="_blank"><button class="sec" type="button">Re-mapear códigos de fórmula →</button></a>
+ <button class="sec" onclick="runPares()">🔗 Asistente de unificación</button>
+ <a href="/admin/verificar-formulas" target="_blank"><button class="sec" type="button" style="background:#0891b2">Re-mapear códigos de fórmula →</button></a>
 </div>
 <div id="resumen" style="display:none"></div>
 <div id="out"></div>
@@ -14638,6 +14639,40 @@ function flagPill(fl){
  var map={INCI_VACIO:['warnp','INCI vacío'],INCI_RELLENADO:['ok','INCI rellenado'],INCI_MISMATCH:['bad','INCI distinto'],
    COD_NO_EN_MAESTRO:['bad','no en maestro'],FALTA_EN_FORMULA:['warnp','falta en fórmula']};
  return fl.map(function(f){var m=map[f]||['muted',f];return '<span class="pill '+m[0]+'">'+m[1]+'</span>';}).join('');
+}
+async function runPares(){
+ var fi=document.getElementById('f'); if(!fi.files||!fi.files[0]){alert('Elegí el Excel maestro primero');return;}
+ var out=document.getElementById('out'); out.innerHTML='Calculando pares…';
+ var fd=new FormData(); fd.append('file', fi.files[0]);
+ try{
+  var r=await fetch('/api/admin/cruce-maestro/pares',{method:'POST',headers:{'X-CSRF-Token':await _csrf()},credentials:'same-origin',body:fd});
+  var d=await r.json();
+  if(!r.ok||!d.ok){out.innerHTML='<span class="pill bad">Error: '+esc((d&&d.error)||r.status)+'</span>';return;}
+  var rb=document.getElementById('resumen'); rb.style.display='block';
+  rb.innerHTML='<b>Asistente de unificación</b><br><span class="pill ok">'+d.resumen.duplicados+' duplicados (unificables)</span><span class="pill bad">'+d.resumen.cross_maps+' cross-maps · NO tocar</span><span class="pill warnp">'+d.resumen.verificar+' a verificar</span>';
+  var h='<h3>🔗 Pares · código viejo (con stock) → canónico del Excel</h3>';
+  h+='<div class="sub">DUPLICADO = mismo INCI → Unificar mueve el stock al código del Excel (seguro). CROSS-MAP = material distinto → NO unificar.</div>';
+  h+='<table><tr><th>Clase</th><th>Viejo (stock)</th><th>INCI viejo</th><th>Canónico Excel (stock)</th><th>INCI canónico</th><th>Productos</th><th>Acción</th></tr>';
+  d.pares.forEach(function(p){
+   var clp=p.clase==='DUPLICADO'?'<span class="pill ok">DUPLICADO</span>':(p.clase==='CROSS_MAP'?'<span class="pill bad">CROSS-MAP</span>':'<span class="pill warnp">VERIFICAR</span>');
+   var acc;
+   if(p.clase==='DUPLICADO'){acc='<button class="warn" onclick="unificarPar('+JSON.stringify(p.old).replace(/"/g,'&quot;')+','+JSON.stringify(p.canonico).replace(/"/g,'&quot;')+')">Unificar → mover stock</button>';}
+   else if(p.clase==='CROSS_MAP'){acc='<span class="pill bad">NO unificar</span>';}
+   else{acc='<span class="muted">revisar manual</span>';}
+   h+='<tr><td>'+clp+'</td><td class="mono">'+esc(p.old)+' <span class="muted">('+(p.stock_old||0).toLocaleString()+')</span></td><td>'+esc(p.inci_old||'—')+'</td><td class="mono">'+esc(p.canonico)+' <span class="muted">('+(p.stock_canon||0).toLocaleString()+')</span></td><td>'+esc(p.inci_canon||'—')+'</td><td style="font-size:11px">'+esc((p.productos||[]).join(', ').substring(0,55))+'</td><td>'+acc+'</td></tr>';
+  });
+  h+='</table>';
+  out.innerHTML=h;
+ }catch(e){out.innerHTML='<span class="pill bad">Error red: '+esc(e.message)+'</span>';}
+}
+async function unificarPar(old, canon){
+ if(!confirm('Unificar '+old+' → '+canon+'?\\n\\nMueve TODO el stock, movimientos y fórmulas de '+old+' al canónico '+canon+' y desactiva '+old+'. Backup + reversible. Solo si es el MISMO material.'))return;
+ try{
+  var r=await fetch('/api/maestro-mps/unificar',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await _csrf()},credentials:'same-origin',body:JSON.stringify({canonico:canon,codigos_a_unir:[old],dry_run:false,token:'UNIFICAR_MP_2026'})});
+  var d=await r.json();
+  if(!r.ok){alert((d&&d.error)||'Error al unificar');return;}
+  alert('✓ Unificado '+old+' → '+canon+'. Volvé a correr el asistente para refrescar.');
+ }catch(e){alert('Error de red');}
 }
 async function archivarProducto(prod){
  if(!confirm('Archivar (eliminar) la fórmula de "'+prod+'"?\\n\\nSe borra formula_headers + formula_items de ese producto. Hace BACKUP antes y queda en audit (reversible restaurando el backup). Úsalo solo para descontinuados/duplicados.'))return;
@@ -14734,6 +14769,111 @@ def admin_cruce_archivar_producto():
     conn.commit()
     return jsonify({'ok': True, 'producto': prod,
                     'items_eliminados': del_items, 'headers_eliminados': del_head})
+
+
+@bp.route("/api/admin/cruce-maestro/pares", methods=["POST"])
+def admin_cruce_pares():
+    """Asistente de unificación · detecta pares (código viejo en fórmula CON stock
+    ↔ código canónico del Excel) y los CLASIFICA comparando el INCI de ambos:
+      · DUPLICADO  · mismo INCI → seguro unificar (mover stock al canónico)
+      · CROSS_MAP  · INCI distinto → NO tocar (material diferente · ej. Tween 80
+                     vs 20, tetrapéptido vs glucosamina)
+      · VERIFICAR  · falta INCI en uno → revisar manual
+    Read-only. La unificación se ejecuta con /api/maestro-mps/unificar."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    raw = None
+    if request.files and 'file' in request.files:
+        raw = request.files['file'].read()
+    else:
+        b = request.get_json(silent=True) or {}
+        if b.get('contenido_b64'):
+            import base64 as _b64
+            try:
+                raw = _b64.b64decode(b['contenido_b64'])
+            except Exception:
+                return jsonify({'error': 'base64 inválido'}), 400
+    if not raw:
+        return jsonify({'error': 'archivo requerido'}), 400
+    try:
+        excel = _parse_excel_maestro(raw)
+    except Exception as e:
+        return jsonify({'error': f'No pude leer el Excel: {str(e)[:200]}'}), 400
+    if not excel:
+        return jsonify({'error': 'Excel sin hojas reconocibles'}), 400
+
+    conn = db_connect()
+    c = conn.cursor()
+    maes_inci = {}
+    for r in c.execute("SELECT codigo_mp, COALESCE(nombre_inci,''), "
+                       "COALESCE(nombre_comercial,'') FROM maestro_mps").fetchall():
+        maes_inci[str(r[0]).strip().upper()] = (
+            (r[1] or '').strip() or (r[2] or '').strip())
+    stock = {}
+    try:
+        for r in c.execute(
+            """SELECT material_id, COALESCE(SUM(CASE
+                 WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                 WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
+                 ELSE 0 END),0) FROM movimientos GROUP BY material_id""").fetchall():
+            stock[str(r[0]).strip().upper()] = float(r[1] or 0)
+    except Exception:
+        pass
+    fh = {}
+    for r in c.execute("SELECT DISTINCT producto_nombre FROM formula_headers").fetchall():
+        fh[_norm_prod_excel(r[0])] = r[0]
+
+    pares = {}
+    for pnorm, data in excel.items():
+        prod_db = fh.get(pnorm)
+        if not prod_db:
+            continue
+        byname = {}
+        for it in data['items']:
+            if it.get('inci'):
+                byname.setdefault(_norm_inci_cruce(it['inci']), it['codigo'])
+            if it.get('comercial'):
+                byname.setdefault(_norm_inci_cruce(it['comercial']), it['codigo'])
+        for r in c.execute("SELECT material_id, material_nombre FROM formula_items "
+                           "WHERE producto_nombre=?", (prod_db,)).fetchall():
+            old = str(r[0] or '').strip().upper()
+            if not old:
+                continue
+            nm = r[1] or ''
+            canon = (byname.get(_norm_inci_cruce(nm))
+                     or byname.get(_norm_inci_cruce(maes_inci.get(old, ''))))
+            if not canon:
+                continue
+            canon = str(canon).strip().upper()
+            if canon == old:
+                continue
+            key = (old, canon)
+            if key in pares:
+                if data['titulo'] not in pares[key]['productos']:
+                    pares[key]['productos'].append(data['titulo'])
+                continue
+            inci_old = maes_inci.get(old, '')
+            inci_canon = maes_inci.get(canon, '')
+            if inci_old and inci_canon:
+                clase = ('DUPLICADO'
+                         if _norm_inci_cruce(inci_old) == _norm_inci_cruce(inci_canon)
+                         else 'CROSS_MAP')
+            else:
+                clase = 'VERIFICAR'
+            pares[key] = {
+                'old': old, 'canonico': canon,
+                'inci_old': inci_old, 'inci_canon': inci_canon,
+                'stock_old': round(stock.get(old, 0), 1),
+                'stock_canon': round(stock.get(canon, 0), 1),
+                'clase': clase, 'productos': [data['titulo']]}
+    out = sorted(pares.values(),
+                 key=lambda x: ({'DUPLICADO': 0, 'VERIFICAR': 1, 'CROSS_MAP': 2}.get(x['clase'], 3),
+                                x['old']))
+    resumen = {'duplicados': sum(1 for p in out if p['clase'] == 'DUPLICADO'),
+               'cross_maps': sum(1 for p in out if p['clase'] == 'CROSS_MAP'),
+               'verificar': sum(1 for p in out if p['clase'] == 'VERIFICAR')}
+    return jsonify({'ok': True, 'pares': out, 'resumen': resumen})
 
 
 @bp.route("/admin/cruce-maestro", methods=["GET"])

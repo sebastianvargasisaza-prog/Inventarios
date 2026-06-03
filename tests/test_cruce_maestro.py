@@ -136,6 +136,35 @@ def test_archivar_producto_elimina_formula(app, db_clean):
     assert n == 0 and nh == 0, "la fórmula debe quedar eliminada"
 
 
+def test_pares_clasifica_duplicado_vs_crossmap(app, db_clean):
+    """El asistente clasifica: mismo INCI = DUPLICADO; INCI distinto = CROSS_MAP."""
+    c = _login(app)
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    # par DUPLICADO: viejo y canónico con el MISMO INCI
+    conn.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,tipo_material,activo) VALUES ('MP-OLD-DUP','PANTHENOL','Pantenol viejo','MP',1)")
+    conn.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,tipo_material,activo) VALUES ('MP-CANON-DUP','PANTHENOL','Pantenol','MP',1)")
+    # par CROSS_MAP: INCI distinto
+    conn.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,tipo_material,activo) VALUES ('MP-OLD-CROSS','ACETYL TETRAPEPTIDE-5','Pep viejo','MP',1)")
+    conn.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,tipo_material,activo) VALUES ('MP-CANON-CROSS','N-ACETYL GLUCOSAMINE','Glucosamina','MP',1)")
+    conn.execute("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES ('PROD PARES T1',1,1)")
+    # fórmula usa los códigos VIEJOS; el Excel dirá los canónicos (por nombre comercial)
+    conn.execute("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje) VALUES ('PROD PARES T1','MP-OLD-DUP','Pantenol',5)")
+    conn.execute("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje) VALUES ('PROD PARES T1','MP-OLD-CROSS','Glucosamina',5)")
+    conn.commit(); conn.close()
+    # Excel: el producto con los códigos CANÓNICOS, match por nombre comercial
+    xls = _excel_maestro([
+        ("PANTHENOL", "Pantenol", "MP-CANON-DUP", 5.0),
+        ("N-ACETYL GLUCOSAMINE", "Glucosamina", "MP-CANON-CROSS", 5.0),
+    ], producto="PROD PARES T1")
+    r = c.post("/api/admin/cruce-maestro/pares",
+               data={"file": (io.BytesIO(xls), "m.xlsx")},
+               headers=csrf_headers(), content_type="multipart/form-data")
+    assert r.status_code == 200, r.data
+    pares = {p["old"]: p for p in r.get_json()["pares"]}
+    assert pares.get("MP-OLD-DUP", {}).get("clase") == "DUPLICADO", pares
+    assert pares.get("MP-OLD-CROSS", {}).get("clase") == "CROSS_MAP", pares
+
+
 def test_cruce_maestro_requiere_admin(app, db_clean):
     c = _login(app, "jefferson")  # marketing, no admin
     xls = _excel_maestro([("X", "x", "MP-CR-Z", 1.0)])
