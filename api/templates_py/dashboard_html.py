@@ -6866,7 +6866,9 @@ function _ebrRender(d, pesajes, conc, artes){
   var fa=d.fase||'fabricacion';
   var h='<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">';
   h+='<div><div style="font-weight:800;color:#4c1d95;font-size:15px;">'+(d.numero_op||('EBR #'+d.id))+' &middot; '+(em[fa]||'')+' '+fa+'</div>';
-  h+='<div style="color:#555;font-size:12px;">Lote '+(d.lote||'')+' &middot; objetivo '+(d.cantidad_objetivo_g||0)+' g &middot; '+_ebrBadge(d.estado)+'</div></div>';
+  var extra='';
+  if(d.ml_envasable){extra=' &middot; <b style="color:#0e7490;">'+d.ml_envasable+' mL envasables</b>'+(d.densidad_g_ml?(' (dens. '+d.densidad_g_ml+' g/mL)'):'');}
+  h+='<div style="color:#555;font-size:12px;">Lote '+(d.lote||'')+' &middot; objetivo '+(d.cantidad_objetivo_g||0)+' g &middot; '+_ebrBadge(d.estado)+extra+'</div></div>';
   h+='<button onclick="ebrCerrarRunner()" style="background:#94a3b8;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;">Cerrar ✕</button></div>';
   // Pesaje de MP (2ª firma · Batch 2)
   h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">⚖️ Pesaje de materias primas (2ª firma)</h4>';

@@ -735,6 +735,9 @@ def _ebr_to_dict(row, pasos=None):
         "notas": row["notas"] or "",
         # fase del legajo · defensivo: SELECTs viejos pueden no traer la columna
         "fase": (row["fase"] if "fase" in row.keys() and row["fase"] else "fabricacion"),
+        # puente OP→OF · defensivo
+        "densidad_g_ml": (row["densidad_g_ml"] if "densidad_g_ml" in row.keys() else None),
+        "ml_envasable": (row["ml_envasable"] if "ml_envasable" in row.keys() else None),
     }
     if pasos is not None:
         d["pasos"] = [_paso_ej_to_dict(p) for p in pasos]
@@ -1740,15 +1743,24 @@ def completar_ebr(ebr_id):
         }), 409
 
     yield_pct = round((cantidad_real / ebr["cantidad_objetivo_g"]) * 100, 2) if ebr["cantidad_objetivo_g"] else None
+    # Puente OP→OF · densidad (g/mL) opcional → mL envasable = real_g / densidad.
+    try:
+        densidad = float(body.get("densidad_g_ml") or 0)
+    except (ValueError, TypeError):
+        densidad = 0.0
+    densidad = densidad if densidad > 0 else None
+    ml_envasable = round(cantidad_real / densidad, 2) if densidad else None
     user = session.get("compras_user", "")
     cur.execute(
         """UPDATE ebr_ejecuciones
              SET estado = 'completado',
                  completado_at_utc = datetime('now', 'utc'),
                  cantidad_real_g = ?,
-                 yield_pct = ?
+                 yield_pct = ?,
+                 densidad_g_ml = ?,
+                 ml_envasable = ?
            WHERE id = ?""",
-        (cantidad_real, yield_pct, ebr_id),
+        (cantidad_real, yield_pct, densidad, ml_envasable, ebr_id),
     )
     # INVIMA-FIX · 21-may-2026 · cuarentena explícita auto al completar
     # Antes: lote PT quedaba 'completado' pero NO había movimiento de
@@ -1793,6 +1805,7 @@ def completar_ebr(ebr_id):
               despues={"cantidad_real_g": cantidad_real, "yield_pct": yield_pct,
                        "cuarentena_auto_creada": cuarentena_creada})
     return jsonify({"ok": True, "estado": "completado", "yield_pct": yield_pct,
+                    "densidad_g_ml": densidad, "ml_envasable": ml_envasable,
                     "cuarentena_creada": cuarentena_creada})
 
 

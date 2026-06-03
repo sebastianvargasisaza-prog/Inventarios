@@ -312,6 +312,15 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (212, "ebr_ejecuciones · densidad + mL envasable (puente OP→OF · cuánto bulk pasa a envasado) · reemplazo MyBatch · Sebastián 2-jun-2026", [
+        # MyBatch al cerrar la OP captura densidad (g/mL) y calcula la "cantidad
+        # disponible" en mL que pasa a envasado (lot_amount_filling). Es el puente
+        # OP→OF: el granel fabricado (g) se convierte a mL envasables.
+        # Aditivo · NULL por defecto. ml_envasable = cantidad_real_g / densidad.
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN densidad_g_ml REAL DEFAULT NULL",
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN ml_envasable REAL DEFAULT NULL",
+    ]),
+
     (211, "ebr_artes_codificacion · gate de etiquetado en Acondicionamiento (aprobar arte + código lote/vencimiento) · reemplazo MyBatch OA · Sebastián 2-jun-2026", [
         # MyBatch en OA tiene "Aprobación de Artes / Codificación" + "Aprobar
         # Etiqueta": antes de liberar se verifica que el ARTE de la etiqueta y la
