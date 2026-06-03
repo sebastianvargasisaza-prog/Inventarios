@@ -733,6 +733,8 @@ def _ebr_to_dict(row, pasos=None):
         "cantidad_real_g": row["cantidad_real_g"],
         "yield_pct": row["yield_pct"],
         "notas": row["notas"] or "",
+        # fase del legajo · defensivo: SELECTs viejos pueden no traer la columna
+        "fase": (row["fase"] if "fase" in row.keys() and row["fase"] else "fabricacion"),
     }
     if pasos is not None:
         d["pasos"] = [_paso_ej_to_dict(p) for p in pasos]
@@ -759,7 +761,13 @@ def _paso_ej_to_dict(row):
         "qc_username": row["qc_username"] or "",
         "qc_e_sign_id": row["qc_e_sign_id"],
         "desviacion_id": row["desviacion_id"],
+        # fase del paso · defensivo (SELECTs viejos pueden no traer la columna)
+        "fase": (row["fase"] if "fase" in row.keys() and row["fase"] else ""),
     }
+
+
+# Fases del motor EBR único (reemplazo MyBatch · OP/OF/OA comparten esqueleto).
+_FASES_VALIDAS = {"fabricacion", "envasado", "acondicionamiento"}
 
 
 def _validar_signature(cur, signature_id, *, record_table, record_id,
@@ -774,7 +782,8 @@ def _validar_signature(cur, signature_id, *, record_table, record_id,
 
 
 def crear_ebr_desde_mbr(cur, *, producto_nombre, lote, produccion_id=None,
-                        cantidad_objetivo_g=None, usuario='', notas=''):
+                        cantidad_objetivo_g=None, usuario='', notas='',
+                        fase='fabricacion'):
     """Crea (o reusa) un EBR para un lote desde el MBR APROBADO del producto.
 
     Reutilizable fuera de brd.py (p.ej. hook de aceptar producción en planta ·
@@ -815,15 +824,17 @@ def crear_ebr_desde_mbr(cur, *, producto_nombre, lote, produccion_id=None,
     cur.execute(
         """INSERT INTO ebr_ejecuciones
              (mbr_template_id, mbr_version, produccion_id, lote, numero_op,
-              estado, iniciado_por, iniciado_at_utc, cantidad_objetivo_g, notas)
-           VALUES (?, ?, ?, ?, ?, 'iniciado', ?, datetime('now', 'utc'), ?, ?)""",
+              estado, iniciado_por, iniciado_at_utc, cantidad_objetivo_g, notas,
+              fase)
+           VALUES (?, ?, ?, ?, ?, 'iniciado', ?, datetime('now', 'utc'), ?, ?, ?)""",
         (mbr[0], mbr[1], produccion_id, lote, numero_op, usuario,
-         float(cant or 0), notas),
+         float(cant or 0), notas,
+         (fase if fase in _FASES_VALIDAS else 'fabricacion')),
     )
     ebr_id = cur.lastrowid
     pasos = cur.execute(
         """SELECT id, orden, descripcion, tipo_paso, equipo_requerido,
-                  requiere_e_sign, requiere_qc
+                  requiere_e_sign, requiere_qc, COALESCE(fase,'') AS fase
              FROM mbr_pasos WHERE mbr_template_id=? ORDER BY orden""",
         (mbr[0],),
     ).fetchall()
@@ -831,9 +842,9 @@ def crear_ebr_desde_mbr(cur, *, producto_nombre, lote, produccion_id=None,
         cur.execute(
             """INSERT INTO ebr_pasos_ejecutados
                  (ebr_id, mbr_paso_id, orden, descripcion, tipo_paso,
-                  equipo_requerido, requiere_e_sign, requiere_qc, estado)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendiente')""",
-            (ebr_id, p[0], p[1], p[2], p[3], p[4], p[5], p[6]),
+                  equipo_requerido, requiere_e_sign, requiere_qc, estado, fase)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendiente', ?)""",
+            (ebr_id, p[0], p[1], p[2], p[3], p[4], p[5], p[6], p[7]),
         )
     return {'ok': True, 'id': ebr_id, 'numero_op': numero_op, 'pasos': len(pasos)}
 
@@ -1144,21 +1155,26 @@ def iniciar_ebr():
     except (ValueError, TypeError):
         return jsonify({"error": "cantidad_objetivo_g inválida"}), 400
 
+    fase = (body.get("fase") or "fabricacion").strip().lower()
+    if fase not in _FASES_VALIDAS:
+        return jsonify({"error": f"fase inválida · use {sorted(_FASES_VALIDAS)}"}), 400
+
     user = session.get("compras_user", "")
     numero_op = assign_numero_op(cur)
     cur.execute(
         """INSERT INTO ebr_ejecuciones
              (mbr_template_id, mbr_version, produccion_id, lote, numero_op,
-              estado, iniciado_por, iniciado_at_utc, cantidad_objetivo_g, notas)
-           VALUES (?, ?, ?, ?, ?, 'iniciado', ?, datetime('now', 'utc'), ?, ?)""",
+              estado, iniciado_por, iniciado_at_utc, cantidad_objetivo_g, notas,
+              fase)
+           VALUES (?, ?, ?, ?, ?, 'iniciado', ?, datetime('now', 'utc'), ?, ?, ?)""",
         (mbr["id"], mbr["version"], body.get("produccion_id"), lote, numero_op,
-         user, cantidad_obj, (body.get("notas") or "").strip()),
+         user, cantidad_obj, (body.get("notas") or "").strip(), fase),
     )
     ebr_id = cur.lastrowid
 
     pasos_mbr = cur.execute(
         """SELECT id, orden, descripcion, tipo_paso, equipo_requerido,
-                  requiere_e_sign, requiere_qc
+                  requiere_e_sign, requiere_qc, COALESCE(fase,'') AS fase
            FROM mbr_pasos WHERE mbr_template_id = ? ORDER BY orden""",
         (mbr["id"],),
     ).fetchall()
@@ -1166,10 +1182,11 @@ def iniciar_ebr():
         cur.execute(
             """INSERT INTO ebr_pasos_ejecutados
                  (ebr_id, mbr_paso_id, orden, descripcion, tipo_paso,
-                  equipo_requerido, requiere_e_sign, requiere_qc, estado)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendiente')""",
+                  equipo_requerido, requiere_e_sign, requiere_qc, estado, fase)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendiente', ?)""",
             (ebr_id, p["id"], p["orden"], p["descripcion"], p["tipo_paso"],
-             p["equipo_requerido"], p["requiere_e_sign"], p["requiere_qc"]),
+             p["equipo_requerido"], p["requiere_e_sign"], p["requiere_qc"],
+             p["fase"]),
         )
     conn.commit()
     audit_log(cur, usuario=user, accion="INICIAR_EBR",
@@ -1189,10 +1206,15 @@ def listar_ebr():
     estado = (request.args.get("estado") or "").strip()
     lote = (request.args.get("lote") or "").strip()
     numero_op = (request.args.get("numero_op") or "").strip()
+    fase = (request.args.get("fase") or "").strip().lower()
     where, params = [], []
     if estado:
         where.append("estado = ?")
         params.append(estado)
+    if fase:
+        # COALESCE → legajos viejos (fase NULL) cuentan como 'fabricacion'
+        where.append("COALESCE(fase,'fabricacion') = ?")
+        params.append(fase)
     if lote:
         where.append("lote = ?")
         params.append(lote)
@@ -1204,7 +1226,8 @@ def listar_ebr():
                     numero_op, estado, iniciado_por, iniciado_at_utc,
                     completado_at_utc, liberado_por, liberado_at_utc,
                     liberado_signature_id, rechazado_motivo,
-                    cantidad_objetivo_g, cantidad_real_g, yield_pct, notas
+                    cantidad_objetivo_g, cantidad_real_g, yield_pct, notas,
+                    COALESCE(fase,'fabricacion') AS fase
              FROM ebr_ejecuciones"""
     if where:
         sql += " WHERE " + " AND ".join(where)

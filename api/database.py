@@ -312,6 +312,19 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (209, "ebr · discriminador de FASE del legajo (fabricacion/envasado/acondicionamiento) · motor EBR único por fases · reemplazo MyBatch · Sebastián 2-jun-2026", [
+        # MyBatch usa el MISMO esqueleto EBR para OP/OF/OA. Acá habilitamos UN
+        # motor por fases:
+        #   ebr_ejecuciones.fase      → qué fase ejecuta este legajo
+        #   ebr_pasos_ejecutados.fase → se arrastra desde mbr_pasos.fase (que YA
+        #                               existe) para agrupar los pasos por fase.
+        # 100% ADITIVO · DEFAULT 'fabricacion' → legajos existentes = fabricación
+        # (que es lo que son hoy). NO toca el constraint UNIQUE de mbr_templates:
+        # los pasos por fase ya viven en mbr_pasos.fase dentro de un único template.
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN fase TEXT DEFAULT 'fabricacion'",
+        "ALTER TABLE ebr_pasos_ejecutados ADD COLUMN fase TEXT DEFAULT ''",
+    ]),
+
     (208, "ebr_pesajes · 2ª firma de verificación de pesaje (verified_weight estilo MyBatch) · reemplazo MyBatch · Sebastián 2-jun-2026", [
         # Reemplazo MyBatch: cada pesaje de MP puede ser VERIFICADO por una 2ª
         # persona (Calidad), igual que el `verified_weight` de MyBatch. Es la
