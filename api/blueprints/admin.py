@@ -14560,8 +14560,41 @@ def admin_cruce_maestro():
         except Exception:
             pass
 
+    # CÓDIGOS HUÉRFANOS · códigos usados en formula_items que NO existen en
+    # maestro_mps → esas fórmulas NO se pueden producir (código muerto, esquema
+    # legacy). Crítico de seguridad: se listan por producto + si el producto
+    # tiene contraparte en el Excel (re-mapeable) o no (decisión: duplicado/legacy).
+    huerfanos = {}
+    resumen['codigos_huerfanos'] = 0
+    resumen['productos_con_huerfanos'] = 0
+    try:
+        cods_maestro = set(maes.keys())
+        # incluir también inactivos para no marcar como huérfano algo que existe
+        for r in c.execute("SELECT codigo_mp FROM maestro_mps").fetchall():
+            cods_maestro.add(str(r[0]).strip().upper())
+        excel_prod_norm = set(excel.keys())
+        for r in c.execute(
+            "SELECT producto_nombre, material_id FROM formula_items "
+            "WHERE material_id IS NOT NULL AND material_id != ''").fetchall():
+            cod = str(r[1]).strip().upper()
+            if cod in cods_maestro:
+                continue
+            prod = r[0]
+            huerfanos.setdefault(prod, set()).add(cod)
+        for prod, cods in sorted(huerfanos.items()):
+            resumen['codigos_huerfanos'] += len(cods)
+        resumen['productos_con_huerfanos'] = len(huerfanos)
+    except Exception:
+        pass
+    huerfanos_rep = sorted(
+        [{'producto': p, 'en_excel': (_norm_prod_excel(p) in excel),
+          'n_codigos': len(cs), 'codigos': sorted(cs)[:60]}
+         for p, cs in huerfanos.items()],
+        key=lambda x: -x['n_codigos'])
+
     return jsonify({'ok': True, 'aplicado': (aplicar == 'inci'),
-                    'resumen': resumen, 'productos': productos_rep})
+                    'resumen': resumen, 'productos': productos_rep,
+                    'huerfanos': huerfanos_rep})
 
 
 _CRUCE_MAESTRO_HTML = """<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
@@ -14617,6 +14650,7 @@ async function run(aplicar){
    '<span class="pill bad">'+s.inci_mismatch+' INCI distintos</span>'+
    '<span class="pill warnp">'+s.falta_en_formula+' faltan en fórmula</span>'+
    '<span class="pill muted">'+s.formula_drift_prods+' productos con códigos fuera del Excel</span>'+
+   '<span class="pill bad">'+(s.codigos_huerfanos||0)+' códigos HUÉRFANOS (no en maestro · '+(s.productos_con_huerfanos||0)+' productos)</span>'+
    (d.aplicado?('<span class="pill ok">'+s.inci_rellenados+' INCI rellenados ✓</span>'):'');
   var h='';
   d.productos.forEach(function(p){
@@ -14632,6 +14666,14 @@ async function run(aplicar){
     h+='</table>';
    }
   });
+  if(d.huerfanos && d.huerfanos.length){
+   h+='<h3 style="color:#991b1b">🚨 Códigos huérfanos (en fórmula pero NO en maestro · no se pueden producir)</h3>';
+   h+='<table><tr><th>Producto</th><th>¿en Excel?</th><th>#</th><th>Códigos</th></tr>';
+   d.huerfanos.forEach(function(o){
+    h+='<tr><td>'+esc(o.producto)+'</td><td>'+(o.en_excel?'<span class="pill ok">sí → re-mapear</span>':'<span class="pill warnp">no → ¿duplicado/legacy?</span>')+'</td><td>'+o.n_codigos+'</td><td class="mono" style="font-size:11px">'+o.codigos.map(esc).join(', ')+'</td></tr>';
+   });
+   h+='</table>';
+  }
   out.innerHTML=h||'<span class="pill ok">✅ Todo cuadra · ningún problema de cruce detectado.</span>';
  }catch(e){out.innerHTML='<span class="pill bad">Error red: '+esc(e.message)+'</span>';}
 }
