@@ -3963,9 +3963,9 @@ async function loadDashboardCompleto(silent){
 async function loadStock(){
   var t0 = Date.now();
   try{
-    var r=await fetch('/api/lotes'), d=await r.json();
+    var r=await fetch('/api/lotes?incluir_sin_stock=1'), d=await r.json();
     _lotes=d.lotes||[];
-    document.getElementById('stock-count').textContent=_lotes.length+' lotes';
+    document.getElementById('stock-count').textContent=_lotes.length+' filas';
     // Fix #6 + #10: aplicar sort si user pinó alguna columna · actualizar timestamp
     if(_STOCK_SORT && _STOCK_SORT.col) _aplicarSortStock();
     var qGen=((document.getElementById('stock-search')||{}).value||'').trim();
@@ -3994,9 +3994,9 @@ async function loadStock(){
 function renderStock(items){
   var tb=document.getElementById('stock-body');
   if(!items.length){tb.innerHTML='<tr><td colspan="13" style="text-align:center;color:#999;padding:20px;">Sin datos</td></tr>';return;}
-  var bg={vencido:'#ffebeb',critico:'#fff3e0',proximo:'#fffde7',ok:'transparent'};
-  var fc={vencido:'#cc0000',critico:'#e65100',proximo:'#f57f17',ok:'#1a8a1a'};
-  var lb={vencido:'VENCIDO',critico:'CRITICO',proximo:'PROXIMO',ok:'VIGENTE'};
+  var bg={vencido:'#ffebeb',critico:'#fff3e0',proximo:'#fffde7',ok:'transparent',sin_stock:'#fafafa'};
+  var fc={vencido:'#cc0000',critico:'#e65100',proximo:'#f57f17',ok:'#1a8a1a',sin_stock:'#64748b'};
+  var lb={vencido:'VENCIDO',critico:'CRITICO',proximo:'PROXIMO',ok:'VIGENTE',sin_stock:'SIN STOCK'};
   var h='';
   // Fix #4: badge "Solicitada" solo en la PRIMERA fila visible de cada MP.
   // Antes aparecía en TODAS las filas del mismo MP · Luis veía "Solicitada"
@@ -4028,7 +4028,9 @@ function renderStock(items){
     var dias=i.dias_para_vencer!=null?i.dias_para_vencer:'';
     // Columna Estado consolidada: chip color + días dentro
     var estadoCell='—';
-    if(i.fecha_vencimiento){
+    if(a==='sin_stock'){
+      estadoCell='<span style="background:#f1f5f9;color:#64748b;padding:2px 7px;border-radius:10px;font-weight:700;font-size:0.78em;border:1px solid #cbd5e1;">SIN STOCK</span>';
+    } else if(i.fecha_vencimiento){
       var diasTxt = (dias===''?'':' · '+dias+'d');
       estadoCell='<div style="display:flex;flex-direction:column;align-items:center;gap:1px">'+
         '<span style="background:'+bg[a]+';color:'+fc[a]+';padding:2px 7px;border-radius:10px;font-weight:700;font-size:0.78em;border:1px solid '+fc[a]+';">'+lb[a]+'</span>'+

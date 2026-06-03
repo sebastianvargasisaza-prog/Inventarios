@@ -400,6 +400,38 @@ def test_lotes_incluye_lote_parcialmente_consumido(app, db_clean):
         _cleanup(['MP-PAR-1'])
 
 
+# ── Bodega MP · incluir_sin_stock muestra TODAS las MPs con su mínimo ──
+
+
+def test_lotes_incluir_sin_stock_muestra_mp_sin_inventario(app, db_clean):
+    """Sebastián 3-jun: ?incluir_sin_stock=1 lista MPs sin inventario (cant 0)
+    con su stock mínimo; sin el flag (default) NO aparecen. MEEs siguen fuera."""
+    cs = _login(app)
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    # MP de catálogo SIN movimientos + con stock mínimo
+    conn.execute("""INSERT OR REPLACE INTO maestro_mps
+        (codigo_mp, nombre_comercial, nombre_inci, tipo_material, stock_minimo, activo)
+        VALUES ('MP-NOSTK-1', 'Boron Nitride Test', 'Boron Nitride', 'MP', 250, 1)""")
+    # MEE en maestro_mps (no debe salir ni con el flag)
+    conn.execute("""INSERT OR REPLACE INTO maestro_mps
+        (codigo_mp, nombre_comercial, tipo_material, activo)
+        VALUES ('MEE-NOSTK-1', 'Frasco', 'Envase', 1)""")
+    conn.commit(); conn.close()
+    try:
+        # default: NO aparece (vista solo-stock)
+        d0 = cs.get('/api/lotes').get_json()
+        assert 'MP-NOSTK-1' not in {l['material_id'] for l in d0['lotes']}
+        # con flag: aparece con cantidad 0 y su mínimo; MEE sigue fuera
+        d1 = cs.get('/api/lotes?incluir_sin_stock=1').get_json()
+        fila = [l for l in d1['lotes'] if l['material_id'] == 'MP-NOSTK-1']
+        assert len(fila) == 1, f"la MP sin stock debe aparecer · {fila}"
+        assert fila[0]['cantidad_g'] == 0 and fila[0]['stock_min_g'] == 250.0, fila[0]
+        assert fila[0]['alerta'] == 'sin_stock', fila[0]
+        assert 'MEE-NOSTK-1' not in {l['material_id'] for l in d1['lotes']}, "MEE no debe salir"
+    finally:
+        _cleanup(['MP-NOSTK-1', 'MEE-NOSTK-1'])
+
+
 # ── Audit log + permisos en operaciones de Bodega MP ───────────────
 
 

@@ -4222,6 +4222,10 @@ def get_lotes():
     if offset < 0: offset = 0
     if limit > 5000: limit = 5000
     solo_criticos = (request.args.get('solo_criticos') or '').strip().lower() in ('1','true','yes')
+    # Sebastián 3-jun-2026: la Bodega MP debe listar TODAS las materias primas
+    # (tengan o no inventario) con su stock mínimo. Opt-in para no cambiar el
+    # comportamiento por defecto del endpoint (otros consumidores + tests).
+    incluir_sin_stock = (request.args.get('incluir_sin_stock') or '').strip().lower() in ('1','true','yes')
 
     conn = get_db(); c = conn.cursor()
 
@@ -4301,6 +4305,39 @@ def get_lotes():
                        'fecha_vencimiento':str(fvenc)[:10] if fvenc else '',
                        'dias_para_vencer':dias,'estado_lote':estado or '','alerta':alerta,
                        'tiene_solicitud_pendiente': (mid or '') in codigos_con_solicitud})
+
+    # Sebastián 3-jun-2026 · incluir TODAS las MPs del maestro (con o sin stock)
+    # con su stock mínimo. Las que NO tienen lote con stock se agregan como fila
+    # "sin stock" (cantidad 0). Opt-in (incluir_sin_stock) · no aplica a las
+    # vistas filtradas (solo_criticos). Respeta tipo_material='MP' y activo=1.
+    if incluir_sin_stock and not solo_criticos:
+        try:
+            _ya = {x['material_id'] for x in result}
+            _cat = c.execute(
+                """SELECT codigo_mp,
+                          COALESCE(NULLIF(TRIM(nombre_comercial),''),
+                                   NULLIF(TRIM(nombre_inci),''), codigo_mp) AS nombre,
+                          COALESCE(nombre_inci,'') AS inci,
+                          COALESCE(tipo,'') AS tipo,
+                          COALESCE(stock_minimo,0) AS smin
+                     FROM maestro_mps
+                    WHERE UPPER(COALESCE(tipo_material,'MP'))='MP'
+                      AND COALESCE(activo,1)=1""").fetchall()
+            for cr in _cat:
+                _cod = cr[0]
+                if not _cod or _cod in _ya:
+                    continue
+                result.append({
+                    'material_id': _cod, 'nombre_inci': cr[2], 'material_nombre': cr[1],
+                    'tipo': cr[3], 'proveedor': '', 'stock_min_g': round(cr[4] or 0, 1),
+                    'stock_total_mp_g': 0, 'lote': '', 'cantidad_g': 0, 'cantidad_kg': 0,
+                    'estanteria': '', 'posicion': '', 'fecha_vencimiento': '',
+                    'dias_para_vencer': None, 'estado_lote': '', 'alerta': 'sin_stock',
+                    'tiene_solicitud_pendiente': _cod in codigos_con_solicitud})
+            result.sort(key=lambda x: (x.get('material_nombre') or '').lower())
+        except Exception as _e:
+            __import__('logging').getLogger('inventario').warning(
+                "get_lotes incluir_sin_stock fallo: %s", _e)
 
     # Si llegó paginacion, incluir conteo total para que UI sepa cuantas
     # paginas hay. Si no, total = len(result) (legacy compat).
