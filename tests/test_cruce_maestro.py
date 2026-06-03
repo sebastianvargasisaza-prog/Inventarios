@@ -114,6 +114,28 @@ def test_cruce_maestro_detecta_codigos_huerfanos(app, db_clean):
     assert huerf["PROD HUERF T1"]["en_excel"] is False
 
 
+def test_archivar_producto_elimina_formula(app, db_clean):
+    """Archivar borra formula_headers + formula_items del producto (descontinuado)."""
+    c = _login(app)
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp, nombre_inci, tipo_material, activo) "
+                 "VALUES ('MP-ARCH-1', 'X', 'MP', 1)")
+    conn.execute("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo) "
+                 "VALUES ('PROD ARCHIVAR T1', 1, 1)")
+    conn.execute("INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje) "
+                 "VALUES ('PROD ARCHIVAR T1', 'MP-ARCH-1', 'X', 100)")
+    conn.commit(); conn.close()
+    r = c.post("/api/admin/cruce-maestro/archivar-producto",
+               json={"producto": "PROD ARCHIVAR T1"}, headers=csrf_headers())
+    assert r.status_code == 200, r.data
+    assert r.get_json()["items_eliminados"] == 1
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    n = conn.execute("SELECT COUNT(*) FROM formula_items WHERE producto_nombre='PROD ARCHIVAR T1'").fetchone()[0]
+    nh = conn.execute("SELECT COUNT(*) FROM formula_headers WHERE producto_nombre='PROD ARCHIVAR T1'").fetchone()[0]
+    conn.close()
+    assert n == 0 and nh == 0, "la fórmula debe quedar eliminada"
+
+
 def test_cruce_maestro_requiere_admin(app, db_clean):
     c = _login(app, "jefferson")  # marketing, no admin
     xls = _excel_maestro([("X", "x", "MP-CR-Z", 1.0)])

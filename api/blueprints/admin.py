@@ -14639,6 +14639,15 @@ function flagPill(fl){
    COD_NO_EN_MAESTRO:['bad','no en maestro'],FALTA_EN_FORMULA:['warnp','falta en fórmula']};
  return fl.map(function(f){var m=map[f]||['muted',f];return '<span class="pill '+m[0]+'">'+m[1]+'</span>';}).join('');
 }
+async function archivarProducto(prod){
+ if(!confirm('Archivar (eliminar) la fórmula de "'+prod+'"?\\n\\nSe borra formula_headers + formula_items de ese producto. Hace BACKUP antes y queda en audit (reversible restaurando el backup). Úsalo solo para descontinuados/duplicados.'))return;
+ try{
+  var r=await fetch('/api/admin/cruce-maestro/archivar-producto',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await _csrf()},credentials:'same-origin',body:JSON.stringify({producto:prod})});
+  var d=await r.json();
+  if(!r.ok||!d.ok){alert((d&&d.error)||'Error');return;}
+  alert('Archivado: '+d.producto+' ('+d.items_eliminados+' ingredientes, '+d.headers_eliminados+' cabecera). Volvé a Analizar para refrescar.');
+ }catch(e){alert('Error de red');}
+}
 async function run(aplicar){
  var fi=document.getElementById('f'); if(!fi.files||!fi.files[0]){alert('Elegí el Excel maestro primero');return;}
  if(aplicar==='inci' && !confirm('Rellenar el INCI VACÍO de las MPs desde el Excel. No sobrescribe nada. Backup + reversible. ¿Continuar?'))return;
@@ -14673,9 +14682,10 @@ async function run(aplicar){
   });
   if(d.huerfanos && d.huerfanos.length){
    h+='<h3 style="color:#991b1b">🚨 Códigos huérfanos (en fórmula pero NO en maestro · no se pueden producir)</h3>';
-   h+='<table><tr><th>Producto</th><th>¿en Excel?</th><th>#</th><th>Códigos</th></tr>';
+   h+='<table><tr><th>Producto</th><th>¿en Excel?</th><th>#</th><th>Códigos</th><th>Acción</th></tr>';
    d.huerfanos.forEach(function(o){
-    h+='<tr><td>'+esc(o.producto)+'</td><td>'+(o.en_excel?'<span class="pill ok">sí → re-mapear</span>':'<span class="pill warnp">no → ¿duplicado/legacy?</span>')+'</td><td>'+o.n_codigos+'</td><td class="mono" style="font-size:11px">'+o.codigos.map(esc).join(', ')+'</td></tr>';
+    h+='<tr><td>'+esc(o.producto)+'</td><td>'+(o.en_excel?'<span class="pill ok">sí → re-mapear</span>':'<span class="pill warnp">no → ¿duplicado/legacy?</span>')+'</td><td>'+o.n_codigos+'</td><td class="mono" style="font-size:11px">'+o.codigos.map(esc).join(', ')+'</td>'+
+     '<td><button class="bad" style="background:#dc2626" onclick="archivarProducto('+JSON.stringify(o.producto).replace(/"/g,'&quot;')+')">Archivar</button></td></tr>';
    });
    h+='</table>';
   }
@@ -14683,6 +14693,47 @@ async function run(aplicar){
  }catch(e){out.innerHTML='<span class="pill bad">Error red: '+esc(e.message)+'</span>';}
 }
 </script></body></html>"""
+
+
+@bp.route("/api/admin/cruce-maestro/archivar-producto", methods=["POST"])
+def admin_cruce_archivar_producto():
+    """Archiva (elimina) la fórmula de un producto descontinuado/duplicado:
+    borra formula_items + formula_headers de ese producto. Backup + audit ·
+    reversible restaurando el backup. Para limpiar fórmulas legacy con códigos
+    muertos (Suero Triactive NAD+, productos que ya no se hacen)."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.get_json(silent=True) or {}
+    prod = (d.get('producto') or '').strip()
+    if not prod:
+        return jsonify({'error': 'producto requerido'}), 400
+    conn = db_connect()
+    c = conn.cursor()
+    n_items = c.execute("SELECT COUNT(*) FROM formula_items WHERE producto_nombre=?",
+                        (prod,)).fetchone()[0]
+    n_head = c.execute("SELECT COUNT(*) FROM formula_headers WHERE producto_nombre=?",
+                       (prod,)).fetchone()[0]
+    if not n_items and not n_head:
+        return jsonify({'error': f"'{prod}' no tiene fórmula en la app"}), 404
+    try:
+        do_backup(triggered_by='pre_cruce_archivar_producto')
+    except Exception:
+        pass
+    c.execute("DELETE FROM formula_items WHERE producto_nombre=?", (prod,))
+    del_items = c.rowcount or 0
+    c.execute("DELETE FROM formula_headers WHERE producto_nombre=?", (prod,))
+    del_head = c.rowcount or 0
+    try:
+        audit_log(c, usuario=u, accion='ARCHIVAR_FORMULA_PRODUCTO',
+                  tabla='formula_headers', registro_id=0,
+                  antes={'producto': prod, 'items': n_items, 'headers': n_head},
+                  despues={'archivado': True, 'items_eliminados': del_items})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'producto': prod,
+                    'items_eliminados': del_items, 'headers_eliminados': del_head})
 
 
 @bp.route("/admin/cruce-maestro", methods=["GET"])
