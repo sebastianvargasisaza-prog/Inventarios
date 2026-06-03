@@ -312,6 +312,20 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (213, "ebr_observaciones · observaciones generales del proceso (bitácora del legajo) · reemplazo MyBatch · Sebastián 2-jun-2026", [
+        # MyBatch tiene "Observaciones Generales del Proceso": bitácora libre
+        # (quién, cuándo, qué) durante la ejecución. Tabla nueva append-only.
+        """CREATE TABLE IF NOT EXISTS ebr_observaciones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ebr_id INTEGER NOT NULL,
+            descripcion TEXT NOT NULL,
+            registrado_por TEXT NOT NULL,
+            registrado_at_utc TEXT NOT NULL,
+            FOREIGN KEY (ebr_id) REFERENCES ebr_ejecuciones(id) ON DELETE CASCADE
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ebrobs_ebr ON ebr_observaciones(ebr_id)",
+    ]),
+
     (212, "ebr_ejecuciones · densidad + mL envasable (puente OP→OF · cuánto bulk pasa a envasado) · reemplazo MyBatch · Sebastián 2-jun-2026", [
         # MyBatch al cerrar la OP captura densidad (g/mL) y calcula la "cantidad
         # disponible" en mL que pasa a envasado (lot_amount_filling). Es el puente

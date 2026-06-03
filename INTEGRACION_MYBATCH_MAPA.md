@@ -150,7 +150,14 @@ Opcional (no bloquea construcción):
 - [x] **Batch 2ª firma de pesajes** · mig 208 (`verificado_por/at/e_sign_id`) + endpoint `/pesajes/<id>/verificar` · commit 53ad15c · prod
 - [x] **Batch Runner UI** · sección "Legajos EBR" en tab Fabricación (filtro fase, abrir EBR, verificar pesaje, iniciar/completar paso con doble firma) · commit fe9d8fe · prod
 - [x] **Batch conciliación material** · mig 210 (`ebr_conciliacion_material`) + endpoints GET/POST + estación en runner (utilizada=recibida-devuelta) · commit 74806cd · prod
-- [ ] Batch %rend por presentación (pendiente · ligado a producto_presentaciones)
+- [x] **Batch Acondicionamiento · Artes/Codificación** · mig 211 (`ebr_artes_codificacion`) + GET/POST /artes + POST /artes/<id>/aprobar (e-firma aprueba) + estación runner (solo fase acond) · commit c4b3a1b · prod
+- [x] **Batch puente OP→OF** · mig 212 (`densidad_g_ml` + `ml_envasable` en ebr_ejecuciones, calculado al completar) · header runner · commit 0d4d2bd · prod
+- [x] **Batch observaciones generales** · mig 213 (`ebr_observaciones` bitácora) + GET/POST + estación runner · prod
+
+### DIFERIDO (con razón · no se construye a medias)
+- ⏸️ **%rend por presentación** — requiere modelar presentaciones de envasado (producto_presentaciones). Mejora futura.
+- ⏸️ **Registros físicos (adjuntar PDF)** — requiere decidir almacenamiento de archivos (tabla blob 1:1 estilo facturas_proveedor_pdf, o storage externo). Mejora futura.
+- ⏸️ **PM · Premezclas** — NO requiere código nuevo: una premezcla = un EBR fase fabricacion que produce un producto INTERMEDIO. El motor ya lo soporta. La tabla PM de MyBatch está vacía/sin uso. El enlace "Uso de Premezcla" (consumir el intermedio en otra OP) se hará cuando el laboratorio realmente use premezclas.
 - [ ] Batch Acondicionamiento + Artes/Codificación
 - [ ] Batch cabecera/cierre + puente OP→OF (mL envasable)
 - [ ] Batch PM Premezclas (prioridad mínima)

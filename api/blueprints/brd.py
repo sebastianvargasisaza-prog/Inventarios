@@ -3070,6 +3070,54 @@ def aprobar_arte_codificacion(ebr_id, arte_id):
     return jsonify({"ok": True, "aprobado_por": user})
 
 
+@bp.route("/api/brd/ebr/<int:ebr_id>/observaciones", methods=["GET"])
+def listar_observaciones_ebr(ebr_id):
+    """Bitácora de observaciones generales del proceso (MyBatch)."""
+    err = _require_login()
+    if err:
+        return err
+    rows = get_db().execute(
+        """SELECT id, ebr_id, descripcion, registrado_por, registrado_at_utc
+           FROM ebr_observaciones WHERE ebr_id = ? ORDER BY id""",
+        (ebr_id,),
+    ).fetchall()
+    return jsonify({"items": [dict(r) for r in rows]})
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/observaciones", methods=["POST"])
+def registrar_observacion_ebr(ebr_id):
+    """Agrega una observación general al legajo (append-only · solo EBR editable)."""
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    desc = (body.get("descripcion") or "").strip()
+    if not desc:
+        return jsonify({"error": "descripcion requerida"}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    ebr = cur.execute(
+        "SELECT estado FROM ebr_ejecuciones WHERE id = ?", (ebr_id,),
+    ).fetchone()
+    if not ebr:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if ebr["estado"] not in ("iniciado", "en_proceso"):
+        return jsonify({"error": f"EBR no editable (estado: {ebr['estado']})"}), 409
+    user = session.get("compras_user", "")
+    cur.execute(
+        """INSERT INTO ebr_observaciones
+             (ebr_id, descripcion, registrado_por, registrado_at_utc)
+           VALUES (?, ?, ?, datetime('now', 'utc'))""",
+        (ebr_id, desc[:1000], user),
+    )
+    rid = cur.lastrowid
+    audit_log(cur, usuario=user, accion="REGISTRAR_OBSERVACION_EBR",
+              tabla="ebr_observaciones", registro_id=rid,
+              despues={"ebr_id": ebr_id})
+    conn.commit()
+    return jsonify({"ok": True, "id": rid}), 201
+
+
 @bp.route("/api/brd/ebr/<int:ebr_id>/reconciliacion", methods=["GET"])
 def reconciliacion_ebr(ebr_id):
     """Resumen MP-por-MP de teórico vs real.

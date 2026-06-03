@@ -6856,11 +6856,13 @@ async function abrirEBR(id){
     var dcm=await rc.json();
     var ra=await fetch('/api/brd/ebr/'+id+'/artes',{credentials:'same-origin'});
     var dar=await ra.json();
-    box.innerHTML=_ebrRender(d,(dp&&dp.items)||[],(dcm&&dcm.items)||[],(dar&&dar.items)||[]);
+    var ro=await fetch('/api/brd/ebr/'+id+'/observaciones',{credentials:'same-origin'});
+    var dob=await ro.json();
+    box.innerHTML=_ebrRender(d,(dp&&dp.items)||[],(dcm&&dcm.items)||[],(dar&&dar.items)||[],(dob&&dob.items)||[]);
     box.scrollIntoView({behavior:'smooth',block:'start'});
   }catch(e){box.innerHTML='<div style="color:#c0392b;">Error de red.</div>';}
 }
-function _ebrRender(d, pesajes, conc, artes){
+function _ebrRender(d, pesajes, conc, artes, obs){
   var editable=(d.estado==='iniciado'||d.estado==='en_proceso');
   var em={fabricacion:'🏭',envasado:'📦',acondicionamiento:'🔧'};
   var fa=d.fase||'fabricacion';
@@ -6945,7 +6947,33 @@ function _ebrRender(d, pesajes, conc, artes){
       h+='</div>';
     }
   }
+  // Observaciones generales del proceso (bitácora)
+  h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">📝 Observaciones generales del proceso</h4>';
+  if(obs&&obs.length){
+    h+='<ul style="font-size:12px;color:#333;margin:0 0 8px;padding-left:18px;">';
+    for(var o=0;o<obs.length;o++){var ob=obs[o];
+      h+='<li><span style="color:#6d28d9;">'+(ob.registrado_por||'')+'</span> &middot; <span style="color:#999;">'+(ob.registrado_at_utc||'')+'</span><br>'+(ob.descripcion||'')+'</li>';
+    }
+    h+='</ul>';
+  }else{h+='<div style="color:#999;font-size:12px;">Sin observaciones aún.</div>';}
+  if(editable){
+    h+='<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:flex-start;font-size:12px;">';
+    h+='<textarea id="ob-txt-'+d.id+'" rows="2" placeholder="Observación del proceso…" style="flex:1;min-width:220px;padding:6px;border:1px solid #ccc;border-radius:5px;"></textarea>';
+    h+='<button onclick="ebrAgregarObservacion('+d.id+')" style="background:#6d28d9;color:#fff;border:none;border-radius:5px;padding:6px 12px;cursor:pointer;">+ Registrar</button>';
+    h+='</div>';
+  }
   return h;
+}
+async function ebrAgregarObservacion(ebrId){
+  var el=document.getElementById('ob-txt-'+ebrId);
+  var txt=el?(el.value||'').trim():'';
+  if(!txt){alert('Escribe la observación');return;}
+  try{
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/observaciones',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({descripcion:txt})});
+    var d=await r.json();
+    if(!r.ok){alert(d.error||'No se pudo registrar');return;}
+    abrirEBR(ebrId);
+  }catch(e){alert('Error de red');}
 }
 async function ebrAgregarArte(ebrId){
   var g=function(p){var el=document.getElementById(p+ebrId);return el?el.value:'';};
