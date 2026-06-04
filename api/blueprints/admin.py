@@ -14972,6 +14972,82 @@ def admin_cruce_reapuntar_formula():
                     'formulas_reapuntadas': nupd})
 
 
+@bp.route("/api/admin/diag-produccion", methods=["GET"])
+def admin_diag_produccion():
+    """Diagnóstico de por qué una fórmula no jala stock. Por cada componente:
+    código de la fórmula, su INCI, stock de ese código, código resuelto + su stock,
+    y TODOS los códigos (activos E INACTIVOS) del mismo INCI/nombre con su stock.
+    Read-only. Uso: /api/admin/diag-produccion?producto=AZ%20HIBRID%20CLEAR"""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    producto = (request.args.get('producto') or '').strip()
+    if not producto:
+        return jsonify({'error': 'producto requerido (?producto=...)'}), 400
+    try:
+        from blueprints.programacion import (_resolver_material_bodega as _res,
+                                             _norm_mp_name as _nm,
+                                             _ESTADOS_LOTE_NO_PRODUCIBLES as _NP)
+    except Exception:
+        from api.blueprints.programacion import (_resolver_material_bodega as _res,
+                                                 _norm_mp_name as _nm,
+                                                 _ESTADOS_LOTE_NO_PRODUCIBLES as _NP)
+    conn = db_connect()
+    c = conn.cursor()
+    _ph = ','.join(['?'] * len(_NP))
+
+    def _stock(cod):
+        try:
+            r = c.execute(
+                f"""SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                      WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0)
+                    FROM movimientos WHERE material_id=? AND UPPER(COALESCE(estado_lote,'')) NOT IN ({_ph})""",
+                (cod,) + tuple(_NP)).fetchone()
+            return round(float(r[0] or 0), 1)
+        except Exception:
+            return None
+    # maestro completo (activos e inactivos) para buscar dónde está el stock
+    maestro = [dict(zip(('codigo', 'inci', 'comercial', 'activo'), r)) for r in c.execute(
+        "SELECT codigo_mp, COALESCE(nombre_inci,''), COALESCE(nombre_comercial,''), COALESCE(activo,1) "
+        "FROM maestro_mps").fetchall()]
+    items = c.execute(
+        "SELECT material_id, material_nombre FROM formula_items WHERE producto_nombre=? ORDER BY material_nombre",
+        (producto,)).fetchall()
+    if not items:
+        return jsonify({'error': f'sin fórmula para "{producto}"'}), 404
+    out = []
+    for r in items:
+        fcod = str(r[0] or '').strip()
+        fnom = r[1] or ''
+        frow = next((m for m in maestro if m['codigo'].strip().upper() == fcod.upper()), None)
+        finci = frow['inci'] if frow else ''
+        nnom = _nm(fnom)
+        nfinci = _nm(finci)
+        # candidatos: mismo INCI o mismo nombre (activos e inactivos), con stock
+        cands = []
+        for m in maestro:
+            if m['codigo'].strip().upper() == fcod.upper():
+                continue
+            if (nfinci and _nm(m['inci']) == nfinci) or \
+               (nnom and (_nm(m['inci']) == nnom or _nm(m['comercial']) == nnom)):
+                st = _stock(m['codigo'])
+                if st:
+                    cands.append({'codigo': m['codigo'], 'inci': m['inci'],
+                                  'comercial': m['comercial'], 'activo': m['activo'],
+                                  'stock': st})
+        try:
+            resuelto = _res(c, fcod, fnom)
+        except Exception:
+            resuelto = fcod
+        out.append({
+            'ingrediente': fnom, 'codigo_formula': fcod, 'inci_formula': finci,
+            'activo_formula': (frow['activo'] if frow else None),
+            'stock_codigo_formula': _stock(fcod),
+            'codigo_resuelto': resuelto, 'stock_resuelto': _stock(resuelto),
+            'otros_codigos_mismo_material': sorted(cands, key=lambda x: -(x['stock'] or 0))})
+    return jsonify({'producto': producto, 'componentes': out})
+
+
 @bp.route("/api/admin/auto-unir-por-inci", methods=["POST"])
 def admin_auto_unir_por_inci():
     """Auto-reparador: junta los códigos DUPLICADOS (mismo INCI) en el código que
