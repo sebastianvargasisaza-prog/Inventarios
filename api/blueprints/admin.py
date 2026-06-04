@@ -14661,16 +14661,17 @@ async function autoUnir(aplicar){
   var rb=document.getElementById('resumen'); rb.style.display='block';
   rb.innerHTML='<b>Auto-unir por INCI</b> · <span class="pill ok">'+d.resumen.a_reparar+' a reparar</span><span class="pill warnp">'+d.resumen.ambiguos+' ambiguos (revisar manual)</span>'+(d.aplicado?('<span class="pill ok">'+d.resumen.reparados+' reparados ✓</span>'):'');
   var h='<h3>🔧 Duplicados que se unirán al código de la fórmula (mueve stock)</h3>';
+  d.planes=d.planes||[]; d.ambiguos=d.ambiguos||[];
   if(!d.planes.length){h+='<div class="pill ok">✅ No hay duplicados por INCI para unir.</div>';}
   else{
     h+='<table><tr><th>Código fórmula (canónico)</th><th>INCI</th><th>Stock actual</th><th>Códigos a unir</th><th>Stock a mover</th></tr>';
-    d.planes.forEach(function(p){h+='<tr><td class="mono">'+esc(p.canonico)+'</td><td>'+esc(p.inci)+'</td><td>'+(p.stock_canonico||0).toLocaleString()+'</td><td class="mono">'+p.a_unir.map(esc).join(', ')+'</td><td><b>'+(p.stock_a_mover||0).toLocaleString()+' g</b></td></tr>';});
+    d.planes.forEach(function(p){h+='<tr><td class="mono">'+esc(p.canonico)+'</td><td>'+esc(p.inci)+'</td><td>'+(p.stock_canonico||0).toLocaleString()+'</td><td class="mono">'+(p.a_unir||[]).map(esc).join(', ')+'</td><td><b>'+(p.stock_a_mover||0).toLocaleString()+' g</b></td></tr>';});
     h+='</table>';
     if(!aplicar){h+='<div style="margin-top:10px;"><button class="warn" style="background:#dc2626" onclick="autoUnir(true)">✔ Aplicar (mover stock + unir todo) · backup reversible</button></div>';}
   }
   if(d.ambiguos&&d.ambiguos.length){
     h+='<h3 class="muted">Ambiguos (mismo INCI usado por 2+ códigos de fórmula · revisar a mano)</h3>';
-    d.ambiguos.forEach(function(a){h+='<div class="muted" style="font-size:12px;">'+esc(a.inci)+': '+a.codigos_formula.map(esc).join(', ')+'</div>';});
+    d.ambiguos.forEach(function(a){var cs=a.codigos_excel||a.codigos_formula||[];h+='<div class="muted" style="font-size:12px;">'+esc(a.inci)+': '+cs.map(esc).join(', ')+(a.motivo?(' · '+esc(a.motivo)):'')+'</div>';});
   }
   out.innerHTML=h;
  }catch(e){out.innerHTML='<span class="pill bad">Error red: '+esc(e.message)+'</span>';}
