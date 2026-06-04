@@ -6861,11 +6861,18 @@ async function abrirEBR(id){
     var dar=await ra.json();
     var ro=await fetch('/api/brd/ebr/'+id+'/observaciones',{credentials:'same-origin'});
     var dob=await ro.json();
-    box.innerHTML=_ebrRender(d,(dp&&dp.items)||[],(dcm&&dcm.items)||[],(dar&&dar.items)||[],(dob&&dob.items)||[]);
+    // IPC · controles en proceso (specs del MBR + resultados del EBR)
+    var ipcSpecs=[],ipcRes=[];
+    try{
+      if(d.mbr_template_id){var rs=await fetch('/api/brd/mbr/'+d.mbr_template_id+'/ipc-specs',{credentials:'same-origin'});var ds=await rs.json();ipcSpecs=(ds&&ds.items)||ds||[];}
+      var rir=await fetch('/api/brd/ebr/'+id+'/ipc-resultados',{credentials:'same-origin'});var dir=await rir.json();ipcRes=(dir&&dir.items)||dir||[];
+    }catch(e){}
+    box.innerHTML=_ebrRender(d,(dp&&dp.items)||[],(dcm&&dcm.items)||[],(dar&&dar.items)||[],(dob&&dob.items)||[],ipcSpecs,ipcRes);
     box.scrollIntoView({behavior:'smooth',block:'start'});
   }catch(e){box.innerHTML='<div style="color:#c0392b;">Error de red.</div>';}
 }
-function _ebrRender(d, pesajes, conc, artes, obs){
+function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes){
+  ipcSpecs=ipcSpecs||[]; ipcRes=ipcRes||[];
   var editable=(d.estado==='iniciado'||d.estado==='en_proceso');
   var em={fabricacion:'🏭',envasado:'📦',acondicionamiento:'🔧'};
   var fa=d.fase||'fabricacion';
@@ -6905,6 +6912,23 @@ function _ebrRender(d, pesajes, conc, artes, obs){
       }
       var qcTag=s.requiere_qc?' <span title="requiere 2ª firma QC" style="color:#0ea5e9;font-weight:700;">◆QC</span>':'';
       h+='<tr><td>'+s.orden+'</td><td style="font-size:11px;color:#777;">'+(s.fase||'')+'</td><td>'+(s.descripcion||'')+qcTag+'</td><td>'+_ebrBadge(s.estado)+'</td><td>'+(s.operario_username||'')+'</td><td>'+(s.qc_username||'')+'</td><td style="text-align:right;">'+acc2+'</td></tr>';
+    }
+    h+='</tbody></table>';
+  }
+  // IPC · Controles en proceso (spec del MBR + resultado del EBR) · MyBatch ⑤
+  h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">🔬 Controles en proceso (IPC)</h4>';
+  if(!ipcSpecs.length){h+='<div style="color:#999;font-size:12px;">Este MBR no tiene IPCs definidos. Agregalos en /brd (specs del MBR).</div>';}
+  else{
+    var resBySpec={}; ipcRes.forEach(function(rr){resBySpec[rr.ipc_spec_id]=rr;});
+    h+='<table class="table" style="font-size:12px;"><thead><tr><th>Parámetro</th><th>Rango/Spec</th><th>Resultado</th><th>Conf.</th><th>Midió</th><th></th></tr></thead><tbody>';
+    for(var k=0;k<ipcSpecs.length;k++){
+      var sp=ipcSpecs[k]; var rr=resBySpec[sp.id];
+      var rango = (sp.valor_min!=null||sp.valor_max!=null) ? ((sp.valor_min!=null?sp.valor_min:'')+' – '+(sp.valor_max!=null?sp.valor_max:'')+' '+(sp.unidad||'')) : (sp.criterio||'cualitativo');
+      var resTxt = rr ? ((rr.valor_medido!=null?rr.valor_medido:'')+' '+(rr.valor_texto||'')) : '<span style="color:#f59e0b;">pendiente</span>';
+      var confTxt = rr ? (rr.conforme===1?'<span style="color:#16a34a;font-weight:700;">✓</span>':(rr.conforme===0?'<span style="color:#dc2626;font-weight:700;">✗ OOS</span>':'<span style="color:#999;">—</span>')) : '';
+      var oblig = sp.obligatorio?' <span title="obligatorio" style="color:#dc2626;">*</span>':'';
+      var ipcAcc = (!rr && editable) ? '<button onclick="ebrReportarIpc('+d.id+','+sp.id+','+((sp.valor_min!=null||sp.valor_max!=null)?1:0)+')" style="background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Reportar</button>' : '<span style="color:#999;">'+(rr?'✓':'—')+'</span>';
+      h+='<tr><td>'+(sp.parametro||'')+oblig+'</td><td style="font-size:11px;color:#777;">'+rango+'</td><td>'+resTxt+'</td><td style="text-align:center;">'+confTxt+'</td><td style="font-size:11px;">'+((rr&&rr.medido_por)||'')+'</td><td style="text-align:right;">'+ipcAcc+'</td></tr>';
     }
     h+='</tbody></table>';
   }
@@ -7074,6 +7098,25 @@ async function ebrNuevoLegajo(){
     var d=await r.json();
     if(!r.ok){alert(d.error||'No se pudo crear el legajo');return;}
     cargarEBRs();abrirEBR(d.id);
+  }catch(e){alert('Error de red');}
+}
+async function ebrReportarIpc(ebrId, specId, esNumerico){
+  var body={ipc_spec_id:specId};
+  if(esNumerico){
+    var v=prompt('Valor medido del IPC:'); if(v===null)return; v=(v||'').trim(); if(v==='')return;
+    if(isNaN(parseFloat(v))){alert('Valor numérico inválido');return;}
+    body.valor_medido=parseFloat(v);
+  } else {
+    var conf=confirm('¿El control CUMPLE (conforme)?\\nAceptar = Conforme · Cancelar = NO conforme');
+    var txt=prompt('Observación/valor cualitativo (opcional):')||'';
+    body.conforme=conf?1:0; body.valor_texto=txt.trim();
+  }
+  try{
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/ipc-resultados',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var d=await r.json();
+    if(!r.ok){alert((d&&d.error)||'No se pudo reportar el IPC');return;}
+    if(d.conforme===0 && d.desviacion){alert('⚠ IPC FUERA DE SPEC · se abrió la desviación '+(d.desviacion.codigo||'')+' automáticamente.');}
+    abrirEBR(ebrId);
   }catch(e){alert('Error de red');}
 }
 async function ebrAsignarLoteFisico(id, actual){
