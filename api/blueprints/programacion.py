@@ -6536,6 +6536,23 @@ def _resolver_material_bodega(c, formula_mid, formula_nombre):
         except Exception:
             return False
 
+    def _stock_neto(mid):
+        """Stock neto producible de un código (excluye estados no-producibles)."""
+        if not mid:
+            return 0.0
+        try:
+            _ph = ','.join(['?'] * len(_ESTADOS_LOTE_NO_PRODUCIBLES))
+            r = c.execute(
+                f"""SELECT COALESCE(SUM(CASE
+                      WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                      WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0)
+                    FROM movimientos WHERE material_id=?
+                      AND UPPER(COALESCE(estado_lote,'')) NOT IN ({_ph})""",
+                (mid,) + _ESTADOS_LOTE_NO_PRODUCIBLES).fetchone()
+            return float(r[0] or 0)
+        except Exception:
+            return 0.0
+
     # 1) el id de fórmula ya es el de bodega (tiene movimientos) → no tocar
     if fmid and _tiene_mov(fmid):
         return fmid
@@ -6548,12 +6565,13 @@ def _resolver_material_bodega(c, formula_mid, formula_nombre):
             return str(r[0]).strip()
     except Exception:
         pass
-    # 3) por nombre (exacto/normalizado/alias) contra maestro_mps que tenga movimientos.
-    # Audit 3-jun · GUARD DE AMBIGÜEDAD: si el nombre matchea MÁS DE UN código (duplicado
-    # cross-idioma / homónimo), NO adivinar (devolvía el primero, no determinista →
-    # descuento del código equivocado). Solo se resuelve por nombre si el candidato es
-    # ÚNICO; si hay >1, se devuelve el propio fmid ("Hay 0g del código correcto" es
-    # preferible a descontar de otro MP). Match único = comportamiento idéntico al previo.
+    # 3) por nombre (exacto/normalizado/alias) contra maestro_mps.
+    # Audit 4-jun · cuando el nombre matchea VARIOS códigos (mismo material en
+    # códigos duplicados, p.ej. PANTHENOL en MP00110/MP00236), elegir el de MÁS
+    # stock neto → producción jala el inventario aunque el código no esté unificado.
+    # Es seguro porque nombres distintos = materiales distintos NO se matchean
+    # (Polysorbate 80 ≠ 20, tetrapéptido ≠ glucosamina): solo compite el MISMO
+    # material consigo mismo. Determinista (max stock, desempate por código).
     nom = (formula_nombre or '').strip()
     if nom:
         nn = _norm_mp_name(nom)
@@ -6571,15 +6589,18 @@ def _resolver_material_bodega(c, formula_mid, formula_nombre):
                         continue
                     cn = _norm_mp_name(cand)
                     if cn == nn or cn == _alias_nn or _MP_NAME_ALIAS.get(cn) == nn:
-                        if _tiene_mov(cod):
-                            _cands.add(cod)
+                        _cands.add(cod)
                         break
-            if len(_cands) == 1:
-                return next(iter(_cands))
-            if len(_cands) > 1:
-                logging.getLogger('programacion').warning(
-                    "resolver MP ambiguo por nombre '%s' (fmid=%s) candidatos=%s "
-                    "· NO se cruza · crear bridge explícito", nom, fmid, sorted(_cands))
+            if _cands:
+                # preferir el de mayor stock neto; si ninguno tiene stock, el que
+                # tenga movimientos; desempate determinista por código.
+                _best = sorted(_cands, key=lambda x: (-_stock_neto(x),
+                               0 if _tiene_mov(x) else 1, x))[0]
+                if len(_cands) > 1:
+                    logging.getLogger('programacion').warning(
+                        "resolver MP nombre '%s' (fmid=%s) varios códigos %s → elige %s "
+                        "(más stock) · unificá para limpiar", nom, fmid, sorted(_cands), _best)
+                return _best
         except Exception:
             pass
     return fmid  # fallback · comportamiento previo

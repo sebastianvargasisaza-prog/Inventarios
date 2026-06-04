@@ -27,19 +27,20 @@ def test_get_mp_stock_excluye_bloqueado(app, db_clean):
     assert st.get('MP-BLK', 0) == 0, f"BLOQUEADO no debe sumar como stock · {st.get('MP-BLK')}"
 
 
-def test_resolver_nombre_ambiguo_no_cruza(app, db_clean):
+def test_resolver_nombre_varios_codigos_elige_mas_stock(app, db_clean):
+    """Mismo material en 2 códigos (mismo INCI) → el resolver elige el de MÁS stock
+    (mismo material consigo mismo, seguro) para que producción jale el inventario."""
     import blueprints.programacion as prog
     c = _conn()
-    # dos códigos ACTIVOS con el MISMO nombre normalizado, ambos con movimientos
     c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,tipo_material,activo) VALUES ('MP-AMB-1','GLYCERIN','MP',1)")
     c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,tipo_material,activo) VALUES ('MP-AMB-2','GLYCERIN','MP',1)")
     c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MP-AMB-1','GLYCERIN','Entrada',100,'L1',date('now'))")
-    c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MP-AMB-2','GLYCERIN','Entrada',100,'L2',date('now'))")
+    c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MP-AMB-2','GLYCERIN','Entrada',900,'L2',date('now'))")
     c.commit()
-    # fmid sin movimientos, nombre que matchea AMBOS → no debe cruzar a ninguno
+    # fmid sin movimientos, nombre que matchea AMBOS → elige el de más stock (MP-AMB-2 = 900)
     res = prog._resolver_material_bodega(c, 'MP-FMID-SINMOV', 'GLYCERIN')
     c.close()
-    assert res == 'MP-FMID-SINMOV', f"ambiguo debe devolver el propio fmid, no cruzar · {res}"
+    assert res == 'MP-AMB-2', f"debe elegir el de más stock · {res}"
 
 
 def test_resolver_nombre_unico_si_resuelve(app, db_clean):
