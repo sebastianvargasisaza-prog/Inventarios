@@ -2104,6 +2104,19 @@ def liberar_ebr(ebr_id):
                          "(envase/empaque) del lote.",
                 "codigo": "CONCILIACION_FALTANTE",
             }), 409
+        # MyBatch ② · despeje de línea conforme obligatorio (GMP)
+        try:
+            _despeje_ok = cur.execute(
+                "SELECT COUNT(*) FROM ebr_despeje_linea WHERE ebr_id=? AND conforme=1",
+                (ebr_id,),
+            ).fetchone()[0]
+        except Exception:
+            _despeje_ok = 1  # tabla ausente · no bloquear (deploy-safe)
+        if not _despeje_ok:
+            return jsonify({
+                "error": "No se puede liberar: falta el despeje de línea CONFORME.",
+                "codigo": "DESPEJE_FALTANTE",
+            }), 409
 
     # INVIMA-FIX · 21-may-2026 · tiempo mínimo cuarentena antes de liberar
     # Antes: QA podía liberar EBR completado inmediatamente
@@ -2776,6 +2789,14 @@ def pdf_ebr(ebr_id):
     observs = _q(
         "SELECT descripcion, registrado_por, registrado_at_utc "
         "FROM ebr_observaciones WHERE ebr_id=? ORDER BY id", ebr_id)
+    # MyBatch ①②⑦ · precauciones, despeje, registros físicos (audit 3-jun)
+    precs = _q("SELECT tipo, descripcion, registrado_por FROM ebr_precauciones "
+               "WHERE ebr_id=? ORDER BY id", ebr_id)
+    despejes = _q("SELECT area_limpia, sin_producto_anterior, equipos_limpios, "
+                  "documentacion_ok, conforme, observaciones, realizado_por, "
+                  "realizado_at_utc FROM ebr_despeje_linea WHERE ebr_id=? ORDER BY id", ebr_id)
+    regfis = _q("SELECT descripcion, archivo_nombre, registrado_por, registrado_at_utc "
+                "FROM ebr_registros_fisicos WHERE ebr_id=? ORDER BY id", ebr_id)
     firmas = conn.execute(
         """SELECT meaning, signer_username, signer_full_name, signer_cedula,
                   signer_cargo, signed_at_utc, comment
@@ -2957,6 +2978,44 @@ def pdf_ebr(ebr_id):
                   f"{o['descripcion']}", h=5, font_size=9)
         pdf.ln(2)
 
+    # Precauciones y equipos (MyBatch ①)
+    if precs:
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 7, _safe_pdf(f"4f. Precauciones y equipos ({len(precs)})"),
+                 new_x="LMARGIN", new_y="NEXT")
+        for p in precs:
+            _line(f"[{p['tipo']}] {p['descripcion']}  ·  {p['registrado_por'] or '-'}",
+                  h=5, font_size=9)
+        pdf.ln(2)
+
+    # Despeje de línea (MyBatch ②)
+    if despejes:
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 7, _safe_pdf("4g. Despeje de línea"), new_x="LMARGIN", new_y="NEXT")
+        for dl in despejes:
+            def _sn(v):
+                return "SI" if v else "NO"
+            _line(f"Área limpia: {_sn(dl['area_limpia'])} · Sin producto anterior: "
+                  f"{_sn(dl['sin_producto_anterior'])} · Equipos limpios: "
+                  f"{_sn(dl['equipos_limpios'])} · Documentación: {_sn(dl['documentacion_ok'])}",
+                  h=5, font_size=9)
+            _line(f"   Resultado: {'CONFORME' if dl['conforme'] else 'NO CONFORME'} · "
+                  f"{dl['realizado_por'] or '-'} · {(dl['realizado_at_utc'] or '')[:19]} UTC"
+                  + (f" · {dl['observaciones']}" if dl['observaciones'] else ""),
+                  h=4, font_size=8)
+        pdf.ln(2)
+
+    # Registros físicos (MyBatch ⑦)
+    if regfis:
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 7, _safe_pdf(f"4h. Registros físicos ({len(regfis)})"),
+                 new_x="LMARGIN", new_y="NEXT")
+        for rg in regfis:
+            _adj = f" [PDF: {rg['archivo_nombre']}]" if rg['archivo_nombre'] else ""
+            _line(f"{rg['descripcion']}{_adj}  ·  {rg['registrado_por'] or '-'}",
+                  h=5, font_size=9)
+        pdf.ln(2)
+
     # Firmas electrónicas
     if firmas:
         pdf.set_font("Helvetica", "B", 11)
@@ -3003,6 +3062,7 @@ def pdf_ebr(ebr_id):
         str(len(pasos)), str(len(ipcs)), str(len(firmas)),
         # Audit 3-jun · sellar también las estaciones nuevas en el hash
         str(len(pesajes)), str(len(concil)), str(len(artes)), str(len(observs)),
+        str(len(precs)), str(len(despejes)), str(len(regfis)),
     ])
     content_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
     gen_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")

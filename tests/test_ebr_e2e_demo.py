@@ -163,6 +163,17 @@ def test_ebr_e2e_demo(app, db_clean, monkeypatch):
     assert ro.status_code in (200, 201), ro.data
     print("[10] Observación de bitácora registrada")
 
+    # ── 10a. Estaciones MyBatch ①②⑦ (precauciones, despeje, registros) ──────
+    assert c.post(f"/api/brd/ebr/{ebr_id}/precauciones",
+                  json={"tipo": "precaucion", "descripcion": "Usar guantes"}, headers=_h()).status_code == 201
+    rdsp = c.post(f"/api/brd/ebr/{ebr_id}/despeje",
+                  json={"area_limpia": 1, "sin_producto_anterior": 1,
+                        "equipos_limpios": 1, "documentacion_ok": 1}, headers=_h())
+    assert rdsp.status_code == 201 and rdsp.get_json()["conforme"] == 1, rdsp.data
+    assert c.post(f"/api/brd/ebr/{ebr_id}/registros-fisicos",
+                  json={"descripcion": "Tirilla balanza"}, headers=_h()).status_code == 201
+    print("[10a] Precauciones + despeje (CONFORME) + registro físico OK")
+
     # ── 10b. Asignar el lote físico real (reemplaza 'PP<id>' provisional) ────
     rlf = c.post(f"/api/brd/ebr/{ebr_id}/asignar-lote-fisico",
                  json={"lote_fisico": "PROD-2026-DEMO"}, headers=_h())

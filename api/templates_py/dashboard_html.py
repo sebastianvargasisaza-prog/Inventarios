@@ -6832,7 +6832,17 @@ async function cargarEBRs(){
     var r=await fetch(url,{credentials:'same-origin'});
     var d=await r.json();
     var items=(d&&d.items)||[];
-    if(!items.length){cont.innerHTML='<div style="color:#999;padding:8px;">No hay legajos'+(fase?(' en fase '+fase):'')+'.</div>';return;}
+    if(!items.length){
+      cont.innerHTML='<div style="background:#faf8ff;border:1px dashed #c4b5fd;border-radius:8px;padding:14px;font-size:13px;color:#555;">'+
+        '<b>No hay legajos'+(fase?(' en fase '+fase):'')+' todavía.</b><br>'+
+        'El batch record nace cuando hay un MBR aprobado y se acepta una producción (o lo creás a mano).<br>'+
+        '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">'+
+        '<button onclick="ebrGenerarMBR()" style="background:#6d28d9;color:#fff;border:none;border-radius:6px;padding:7px 12px;cursor:pointer;">1) Generar MBR desde fórmula</button>'+
+        '<a href="/brd" target="_blank"><button type="button" style="background:#0891b2;color:#fff;border:none;border-radius:6px;padding:7px 12px;cursor:pointer;">2) Revisar y aprobar MBR (/brd)</button></a>'+
+        '<button onclick="ebrNuevoLegajo()" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:7px 12px;cursor:pointer;">3) ➕ Nuevo legajo</button>'+
+        '</div></div>';
+      return;
+    }
     var em={fabricacion:'🏭',envasado:'📦',acondicionamiento:'🔧'};
     var h='<table class="table" style="font-size:12px;"><thead><tr><th>N° OP</th><th>Lote</th><th>Fase</th><th>Estado</th><th></th></tr></thead><tbody>';
     for(var i=0;i<items.length;i++){
@@ -7175,6 +7185,17 @@ async function ebrVerificarPesaje(ebrId, pid){
   }catch(e){alert('Error de red');}
 }
 
+async function ebrGenerarMBR(){
+  var prod=prompt('Producto para generar su MBR desde la fórmula (ej. BLUSH BALM):');
+  if(prod===null)return; prod=(prod||'').trim(); if(!prod)return;
+  try{
+    var r=await fetch('/api/brd/mbr/generar-desde-formula',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({producto_nombre:prod})});
+    var d=await r.json();
+    if(!r.ok){alert((d&&d.error)||'No se pudo generar el MBR');return;}
+    if(d.ya_existe){alert('Ese producto ya tiene un MBR ('+(d.estado||'')+'). Aprobalo en /brd si está en draft.');}
+    else{alert('✓ MBR generado ('+(d.pasos||0)+' pasos, draft). Ahora aprobalo en /brd con e-firma y volvé a "➕ Nuevo legajo".');}
+  }catch(e){alert('Error de red');}
+}
 async function ebrNuevoLegajo(){
   var prod=prompt('Producto (debe tener un MBR aprobado):');
   if(!prod){return;} prod=prod.trim();
