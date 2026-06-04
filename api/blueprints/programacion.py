@@ -702,7 +702,7 @@ def _get_mp_stock(conn):
         WHERE material_id IS NOT NULL AND material_id != ''
           AND (estado_lote IS NULL
                OR UPPER(COALESCE(estado_lote,'')) NOT IN
-                  ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO'))
+                  ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO'))
         GROUP BY material_id
     """).fetchall():
         id_stock[str(mid).strip()] = max(float(sg or 0), 0)
@@ -747,7 +747,7 @@ def _get_mp_stock(conn):
           AND material_nombre IS NOT NULL AND material_nombre != ''
           AND (estado_lote IS NULL
                OR UPPER(COALESCE(estado_lote,'')) NOT IN
-                  ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO'))
+                  ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO'))
         GROUP BY material_nombre
     """).fetchall():
         val = max(float(sg or 0), 0)
@@ -6548,12 +6548,18 @@ def _resolver_material_bodega(c, formula_mid, formula_nombre):
             return str(r[0]).strip()
     except Exception:
         pass
-    # 3) por nombre (exacto/normalizado/alias) contra maestro_mps que tenga movimientos
+    # 3) por nombre (exacto/normalizado/alias) contra maestro_mps que tenga movimientos.
+    # Audit 3-jun · GUARD DE AMBIGÜEDAD: si el nombre matchea MÁS DE UN código (duplicado
+    # cross-idioma / homónimo), NO adivinar (devolvía el primero, no determinista →
+    # descuento del código equivocado). Solo se resuelve por nombre si el candidato es
+    # ÚNICO; si hay >1, se devuelve el propio fmid ("Hay 0g del código correcto" es
+    # preferible a descontar de otro MP). Match único = comportamiento idéntico al previo.
     nom = (formula_nombre or '').strip()
     if nom:
         nn = _norm_mp_name(nom)
         _alias_nn = _MP_NAME_ALIAS.get(nn)
         try:
+            _cands = set()
             for r in c.execute(
                 "SELECT codigo_mp, COALESCE(nombre_inci,''), COALESCE(nombre_comercial,'') "
                 "FROM maestro_mps WHERE COALESCE(activo,1)=1").fetchall():
@@ -6566,7 +6572,14 @@ def _resolver_material_bodega(c, formula_mid, formula_nombre):
                     cn = _norm_mp_name(cand)
                     if cn == nn or cn == _alias_nn or _MP_NAME_ALIAS.get(cn) == nn:
                         if _tiene_mov(cod):
-                            return cod
+                            _cands.add(cod)
+                        break
+            if len(_cands) == 1:
+                return next(iter(_cands))
+            if len(_cands) > 1:
+                logging.getLogger('programacion').warning(
+                    "resolver MP ambiguo por nombre '%s' (fmid=%s) candidatos=%s "
+                    "· NO se cruza · crear bridge explícito", nom, fmid, sorted(_cands))
         except Exception:
             pass
     return fmid  # fallback · comportamiento previo
@@ -6984,11 +6997,16 @@ def _distribuir_fefo(c, codigo_mp, cantidad_a_descontar):
     # solo si lo hay y cubre el restante, permitimos el sin_lote. Sino,
     # raise _DescuentoError para que la operación haga ROLLBACK limpio.
     if restante > 0.01:
-        legacy_row = c.execute("""
+        # Audit 3-jun · el stock legacy (lote='') DEBE excluir estados no-producibles
+        # (cuarentena/vencido/bloqueado/etc.), igual que el FEFO por lote y la
+        # validación · si no, descontaría stock retenido por Calidad.
+        _ph_leg = ','.join(['?'] * len(_ESTADOS_LOTE_NO_PRODUCIBLES))
+        legacy_row = c.execute(f"""
             SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END), 0)
             FROM movimientos
             WHERE material_id = ? AND COALESCE(lote,'') = ''
-        """, (codigo_mp,)).fetchone()
+              AND UPPER(COALESCE(estado_lote,'')) NOT IN ({_ph_leg})
+        """, (codigo_mp,) + _ESTADOS_LOTE_NO_PRODUCIBLES).fetchone()
         legacy_stock = float(legacy_row[0] or 0)
         if legacy_stock + 0.01 < restante:
             # Race condition o drift · NO insertar sin_lote silenciosamente

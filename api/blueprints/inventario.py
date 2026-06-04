@@ -4490,7 +4490,11 @@ _TABLAS_REF_MP = [
     ('solicitudes_compra_items', 'codigo_mp'),
     ('ordenes_compra_items', 'material_id'),
     ('mp_lead_time_config', 'material_id'),
-    ('mp_formula_bridge', 'material_id'),
+    # Audit 3-jun · mp_formula_bridge NO tiene columna material_id (eran
+    # formula_material_id / bodega_material_id) → la unify nunca repuntaba el
+    # bridge y dejaba filas colgadas que resolvían a stock 0. Se corrigen ambas.
+    ('mp_formula_bridge', 'formula_material_id'),
+    ('mp_formula_bridge', 'bodega_material_id'),
     ('precios_mp_historico', 'material_id'),
     ('conteo_items', 'material_id'),
     ('conteo_ciclico_calendario', 'material_id'),
