@@ -142,6 +142,39 @@ def test_simular_usa_resolver_y_jala_stock(app, db_clean):
     assert row['g_disponible'] > 0, f"simular debe resolver al código con stock · {row}"
 
 
+def test_api_produccion_resuelve_y_agua_no_bloquea(app, db_clean):
+    """El endpoint REAL /api/produccion (handle_produccion) ahora resuelve el código
+    de fórmula→bodega (igual que simular) y trata el agua (controla_stock=0) como
+    ilimitada → produce sin abortar aunque el código de fórmula tenga 0g y el agua
+    esté en negativo. Antes daba 'Stock insuficiente' (Terpenos/Pantenol 0g)."""
+    from .conftest import TEST_PASSWORD, csrf_headers
+    cl = app.test_client()
+    cl.post('/login', data={'username': 'sebastian', 'password': TEST_PASSWORD},
+            headers=csrf_headers(), follow_redirects=False)
+    c = _conn()
+    # MP activa con código de fórmula en 0g pero stock real bajo código duplicado (mismo INCI)
+    c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,tipo_material,activo) VALUES ('MP-PF','PRINCIPINOL','MP',1)")
+    c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,tipo_material,activo) VALUES ('MP-PG','PRINCIPINOL','MP',1)")
+    c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MP-PG','Principino','Entrada',9000,'L1',date('now'))")
+    # agua no-controlada, en negativo
+    c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,tipo_material,activo,controla_stock) VALUES ('MP-W','AQUA','MP',1,0)")
+    c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MP-W','Agua','Salida',9999,'L0',date('now'))")
+    c.execute("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES ('PROD E2E AGUA',1,1)")
+    c.execute("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje) VALUES ('PROD E2E AGUA','MP-PF','Principino',10)")
+    c.execute("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje) VALUES ('PROD E2E AGUA','MP-W','Agua',90)")
+    c.commit(); c.close()
+    r = cl.post('/api/produccion',
+                json={'producto': 'PROD E2E AGUA', 'cantidad_kg': 1,
+                      'operador': 'sebastian', 'presentacion': 'test'},
+                headers=csrf_headers())
+    assert r.status_code in (200, 201), f"debe producir sin abortar · {r.status_code} {r.data}"
+    # el agua no debe haber descontado kardex (no más negativo)
+    c = _conn()
+    salidas_agua = c.execute("SELECT COUNT(*) FROM movimientos WHERE material_id='MP-W' AND tipo='Salida' AND observaciones LIKE '%UNLIMITED%'").fetchone()[0]
+    c.close()
+    assert salidas_agua == 0, "agua controla_stock=0 NO debe escribir Salida (evita negativos)"
+
+
 def test_unify_repunta_bridge(app, db_clean):
     """maestro_mps_unificar ahora repunta mp_formula_bridge (bodega_material_id)."""
     from .conftest import csrf_headers, TEST_PASSWORD

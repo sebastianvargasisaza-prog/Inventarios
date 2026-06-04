@@ -2072,6 +2072,27 @@ def _handle_produccion_inner():
             def _is_unlimited(nombre):  # noqa
                 return False
 
+        # Audit 4-jun · MISMA resolución código fórmula→bodega que simular y el
+        # descuento canónico (M1 · resolver único). Antes este endpoint validaba
+        # contra el código CRUDO de fórmula → veía 0g cuando el stock está bajo un
+        # código duplicado/inactivo (Terpenos→MP00181, Pantenol→código inactivo) y
+        # abortaba aunque "Verificar Stock" mostrara el inventario OK.
+        try:
+            from .programacion import _resolver_material_bodega as _resolver_prod
+        except Exception:
+            _resolver_prod = None
+
+        # MP infinita / fabricada en casa (AGUA del lab, mig 218 controla_stock=0):
+        # no exige ni descuenta stock. Complementa la lista _MP_UNLIMITED por nombre.
+        def _no_controla(cod):
+            if not cod:
+                return False
+            try:
+                r = c.execute("SELECT COALESCE(controla_stock,1) FROM maestro_mps WHERE codigo_mp=?", (cod,)).fetchone()
+                return r is not None and int(r[0] or 0) == 0
+            except Exception:
+                return False
+
         # ─── PRE-CHECK: stock suficiente para TODAS las MPs ─────────────────
         # Construimos el plan completo SIN escribir nada. Si falta stock para
         # alguna MP, abortamos antes del primer INSERT.
@@ -2081,15 +2102,30 @@ def _handle_produccion_inner():
             g_total = round((pct / 100.0) * cantidad_g, 2)
             if g_total <= 0:
                 continue
+            # Resolver código fórmula → bodega (mismo material en código duplicado/
+            # inactivo CON stock). Todas las consultas y la Salida usan el resuelto.
+            mat_id_formula = mat_id
+            try:
+                if _resolver_prod:
+                    mat_id = _resolver_prod(c, mat_id, mat_nombre) or mat_id
+            except Exception:
+                mat_id = mat_id_formula
             entry = {
                 'mat_id': mat_id, 'mat_nombre': mat_nombre,
                 'g_total': g_total, 'lotes_a_usar': [],
                 'g_sin_lote': 0.0, 'unlimited': False,
             }
-            if _is_unlimited(mat_nombre):
-                # Aguas y similares — pesaje real pero sin requerir stock
+            if _is_unlimited(mat_nombre) or _no_controla(mat_id) or _no_controla(mat_id_formula):
+                # Aguas y similares (lista _MP_UNLIMITED o controla_stock=0) —
+                # pesaje real pero sin requerir stock.
                 entry['unlimited'] = True
-                entry['g_sin_lote'] = g_total
+                if _no_controla(mat_id) or _no_controla(mat_id_formula):
+                    # AGUA del lab (infinita, fabricada en casa): NO mover kardex
+                    # para no acumular stock negativo (-330k g). No se descuenta.
+                    entry['g_sin_lote'] = 0.0
+                else:
+                    # _MP_UNLIMITED legacy por nombre: deja Salida de pesaje (trazabilidad).
+                    entry['g_sin_lote'] = g_total
                 plan_descuentos.append(entry)
                 continue
 
