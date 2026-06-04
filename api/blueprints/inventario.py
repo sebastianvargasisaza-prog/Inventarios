@@ -3148,12 +3148,31 @@ def simular_produccion():
     factible = True
     costo_total = 0.0
     sin_precio = 0
+    # Audit 4-jun · MISMA resolución que el descuento real (M1): resolver el código
+    # de fórmula al de bodega y excluir los mismos 6 estados → "Verificar Stock"
+    # deja de mentir 0g cuando el stock está bajo un código duplicado/otro nombre.
+    try:
+        from blueprints.programacion import (_resolver_material_bodega as _resolver_mp,
+                                             _ESTADOS_LOTE_NO_PRODUCIBLES as _NP6)
+    except Exception:
+        _resolver_mp, _NP6 = None, None
     for mat_id, mat_nombre, pct, precio_kg in items:
         g_req = round((pct / 100) * cantidad_g, 2)
-        c.execute("""SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0)
-                     FROM movimientos WHERE material_id=?
-                     AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO'))""",
-                  (mat_id,))
+        if _resolver_mp and _NP6:
+            try:
+                cod_bodega = _resolver_mp(c, mat_id, mat_nombre) or mat_id
+            except Exception:
+                cod_bodega = mat_id
+            _ph = ','.join(['?'] * len(_NP6))
+            c.execute(f"""SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0)
+                         FROM movimientos WHERE material_id=?
+                         AND UPPER(COALESCE(estado_lote,'')) NOT IN ({_ph})""",
+                      (cod_bodega,) + tuple(_NP6))
+        else:
+            c.execute("""SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0)
+                         FROM movimientos WHERE material_id=?
+                         AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO'))""",
+                      (mat_id,))
         g_disp = round(c.fetchone()[0] or 0, 2)
         suf = g_disp >= g_req
         if not suf:

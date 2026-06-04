@@ -6553,16 +6553,37 @@ def _resolver_material_bodega(c, formula_mid, formula_nombre):
         except Exception:
             return 0.0
 
-    # 1) el id de fórmula ya es el de bodega (tiene movimientos) → no tocar
-    if fmid and _tiene_mov(fmid):
+    # 1) si el código de fórmula YA tiene stock neto producible → es el bueno.
+    # Audit 4-jun · antes cortaba por _tiene_mov (cualquier movimiento histórico)
+    # → un código con neto 0 (típico tras unify, o canónico consumido) devolvía 0g
+    # y NUNCA llegaba al match que halla el código duplicado CON stock.
+    if fmid and _stock_neto(fmid) > 0:
         return fmid
-    # 2) bridge explícito
+    # 2) bridge explícito (si el destino tiene stock)
     try:
         r = c.execute(
             "SELECT bodega_material_id FROM mp_formula_bridge "
             "WHERE TRIM(formula_material_id)=? AND COALESCE(activo,1)=1 LIMIT 1", (fmid,)).fetchone()
-        if r and r[0] and _tiene_mov(str(r[0]).strip()):
+        if r and r[0] and _stock_neto(str(r[0]).strip()) > 0:
             return str(r[0]).strip()
+    except Exception:
+        pass
+    # 2b) por INCI del código de fórmula · Audit 4-jun · robusto (no depende del
+    # texto del nombre): si el código de fórmula tiene un INCI, buscar OTROS códigos
+    # activos con el MISMO INCI y elegir el de más stock neto. Resuelve los
+    # duplicados de un material (PANTHENOL en MP00110/MP00236) sin unificar.
+    try:
+        if fmid:
+            _ir = c.execute("SELECT COALESCE(nombre_inci,'') FROM maestro_mps WHERE codigo_mp=?", (fmid,)).fetchone()
+            _inci_f = _norm_mp_name(_ir[0]) if (_ir and _ir[0]) else ''
+            if _inci_f:
+                _inci_cands = []
+                for r in c.execute("SELECT codigo_mp, COALESCE(nombre_inci,'') FROM maestro_mps WHERE COALESCE(activo,1)=1").fetchall():
+                    cod = str(r[0] or '').strip()
+                    if cod and _norm_mp_name(r[1]) == _inci_f and _stock_neto(cod) > 0:
+                        _inci_cands.append(cod)
+                if _inci_cands:
+                    return sorted(_inci_cands, key=lambda x: (-_stock_neto(x), x))[0]
     except Exception:
         pass
     # 3) por nombre (exacto/normalizado/alias) contra maestro_mps.

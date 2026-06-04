@@ -55,6 +55,44 @@ def test_resolver_nombre_unico_si_resuelve(app, db_clean):
     assert res == 'MP-UNI-1', f"match único debe resolver · {res}"
 
 
+def test_resolver_tier1_neto_cero_cae_a_inci_con_stock(app, db_clean):
+    """Si el código de fórmula tiene movimientos pero NETO 0, el resolver NO se
+    queda ahí: busca por INCI y elige el código (mismo material) con stock."""
+    import blueprints.programacion as prog
+    c = _conn()
+    c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,tipo_material,activo) VALUES ('MP-F-INCI','TESTINOLX','MP',1)")
+    c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,tipo_material,activo) VALUES ('MP-G-INCI','TESTINOLX','MP',1)")
+    # F: tiene movimientos pero neto 0 (entrada+salida)
+    c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MP-F-INCI','x','Entrada',50,'L0',date('now'))")
+    c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MP-F-INCI','x','Salida',50,'L0',date('now'))")
+    c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MP-G-INCI','x','Entrada',700,'L1',date('now'))")
+    c.commit()
+    res = prog._resolver_material_bodega(c, 'MP-F-INCI', 'nombre que no matchea nada')
+    c.close()
+    assert res == 'MP-G-INCI', f"tier-1 neto 0 debe caer al código del mismo INCI con stock · {res}"
+
+
+def test_simular_usa_resolver_y_jala_stock(app, db_clean):
+    """Verificar Stock (simular) ahora resuelve el código de fórmula → reporta el
+    stock que está bajo el código duplicado (antes mostraba 0g)."""
+    from .conftest import TEST_PASSWORD, csrf_headers
+    cl = app.test_client()
+    cl.post('/login', data={'username': 'sebastian', 'password': TEST_PASSWORD},
+            headers=csrf_headers(), follow_redirects=False)
+    c = _conn()
+    c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,tipo_material,activo) VALUES ('MP-SF','SIMINOL','MP',1)")
+    c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,tipo_material,activo) VALUES ('MP-SG','SIMINOL','MP',1)")
+    c.execute("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES ('PROD SIM T1',1,1)")
+    c.execute("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje) VALUES ('PROD SIM T1','MP-SF','Siminol',10)")
+    c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MP-SG','Siminol','Entrada',5000,'L1',date('now'))")
+    c.commit(); c.close()
+    r = cl.post('/api/produccion/simular',
+                json={'producto': 'PROD SIM T1', 'cantidad_kg': 1}, headers=csrf_headers())
+    assert r.status_code == 200, r.data
+    row = [i for i in r.get_json()['ingredientes'] if i['material_id'] == 'MP-SF'][0]
+    assert row['g_disponible'] > 0, f"simular debe resolver al código con stock · {row}"
+
+
 def test_unify_repunta_bridge(app, db_clean):
     """maestro_mps_unificar ahora repunta mp_formula_bridge (bodega_material_id)."""
     from .conftest import csrf_headers, TEST_PASSWORD
