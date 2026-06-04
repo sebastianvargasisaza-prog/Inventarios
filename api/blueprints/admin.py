@@ -14631,6 +14631,7 @@ _CRUCE_MAESTRO_HTML = """<!DOCTYPE html><html lang="es"><head><meta charset="utf
  <button class="warn" onclick="run('inci')">Rellenar INCI vacíos desde Excel</button>
  <button class="sec" onclick="runPares()">🔗 Asistente de unificación</button>
  <button class="warn" onclick="autoUnir(false)">🔧 Auto-unir duplicados por INCI</button>
+ <button class="warn" style="background:#b45309" onclick="repararFormula()">🩹 Reparar inventario de una fórmula</button>
  <a href="/admin/verificar-formulas" target="_blank"><button class="sec" type="button" style="background:#0891b2">Re-mapear códigos de fórmula →</button></a>
 </div>
 <div id="resumen" style="display:none"></div>
@@ -14648,6 +14649,27 @@ function flagPill(fl){
  var map={INCI_VACIO:['warnp','INCI vacío'],INCI_RELLENADO:['ok','INCI rellenado'],INCI_MISMATCH:['bad','INCI distinto'],
    COD_NO_EN_MAESTRO:['bad','no en maestro'],FALTA_EN_FORMULA:['warnp','falta en fórmula']};
  return fl.map(function(f){var m=map[f]||['muted',f];return '<span class="pill '+m[0]+'">'+m[1]+'</span>';}).join('');
+}
+async function repararFormula(){
+ var prod=prompt('Producto a reparar (ej. AZ HIBRID CLEAR):'); if(prod===null)return; prod=(prod||'').trim(); if(!prod)return;
+ var out=document.getElementById('out'); out.innerHTML='Analizando '+esc(prod)+'…';
+ async function run(aplicar){
+  var r=await fetch('/api/admin/reparar-stock-formula'+(aplicar?'?aplicar=1':''),{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await _csrf()},credentials:'same-origin',body:JSON.stringify({producto:prod})});
+  var d=await r.json();
+  if(!r.ok||!d.ok){out.innerHTML='<span class="pill bad">Error: '+esc((d&&d.error)||r.status)+'</span>';return null;}
+  return d;
+ }
+ var d=await run(false); if(!d)return;
+ var h='<h3>🩹 Reparar inventario · '+esc(prod)+'</h3>';
+ if(!d.planes.length){h+='<div class="pill ok">✅ Nada que reparar · todos los componentes resuelven stock.</div>';out.innerHTML=h;return;}
+ h+='<table><tr><th>Código fórmula</th><th>INCI</th><th>Recupera de</th><th>Stock a recuperar</th></tr>';
+ d.planes.forEach(function(p){h+='<tr><td class="mono">'+esc(p.codigo_formula)+'</td><td>'+esc(p.inci)+'</td><td class="mono">'+p.donantes.map(function(x){return esc(x.codigo)+'('+x.stock+'g)';}).join(', ')+'</td><td><b>'+(p.stock_a_recuperar||0).toLocaleString()+' g</b></td></tr>';});
+ h+='</table>';
+ out.innerHTML=h;
+ if(confirm('Reparar '+d.planes.length+' componente(s) de "'+prod+'"?\\n\\nReactiva el código de la fórmula y le mueve el stock atrapado (de códigos inactivos del mismo INCI). Backup + reversible.')){
+   var d2=await run(true);
+   if(d2){alert('✓ Reparados '+d2.resumen.reparados+' componente(s). Volvé a "Verificar Stock" en producción.');}
+ }
 }
 async function autoUnir(aplicar){
  var fi=document.getElementById('f'); if(!fi.files||!fi.files[0]){alert('Subí el Excel maestro primero (define el código canónico por INCI)');return;}
@@ -14970,6 +14992,112 @@ def admin_cruce_reapuntar_formula():
     conn.commit()
     return jsonify({'ok': True, 'old': old, 'canonico': canon,
                     'formulas_reapuntadas': nupd})
+
+
+@bp.route("/api/admin/reparar-stock-formula", methods=["POST"])
+def admin_reparar_stock_formula():
+    """Repara una fórmula que no jala stock porque sus códigos quedaron INACTIVOS
+    o el stock quedó atrapado en un código apagado (tras una unify mal hecha).
+    Por cada componente cuyo stock resuelto = 0: busca códigos del MISMO INCI
+    (activos O inactivos) con stock, REACTIVA el código de la fórmula, le mueve el
+    stock + movimientos y desactiva los donantes. Backup + audit. dry_run + aplicar."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.get_json(silent=True) or {}
+    producto = (d.get('producto') or '').strip()
+    aplicar = (request.args.get('aplicar') or '').strip() in ('1', 'true', 'yes')
+    if not producto:
+        return jsonify({'error': 'producto requerido'}), 400
+    try:
+        from blueprints.programacion import (_norm_mp_name as _nm,
+                                             _ESTADOS_LOTE_NO_PRODUCIBLES as _NP)
+    except Exception:
+        from api.blueprints.programacion import (_norm_mp_name as _nm,
+                                                 _ESTADOS_LOTE_NO_PRODUCIBLES as _NP)
+    conn = db_connect()
+    c = conn.cursor()
+    _ph = ','.join(['?'] * len(_NP))
+
+    def _stock(cod):
+        try:
+            r = c.execute(
+                f"""SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                      WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0)
+                    FROM movimientos WHERE material_id=? AND UPPER(COALESCE(estado_lote,'')) NOT IN ({_ph})""",
+                (cod,) + tuple(_NP)).fetchone()
+            return round(float(r[0] or 0), 1)
+        except Exception:
+            return 0.0
+    maestro = [dict(zip(('codigo', 'inci'), (str(r[0]).strip(), r[1] or ''))) for r in c.execute(
+        "SELECT codigo_mp, COALESCE(nombre_inci,'') FROM maestro_mps").fetchall()]
+    items = c.execute("SELECT DISTINCT material_id FROM formula_items WHERE producto_nombre=? "
+                      "AND material_id IS NOT NULL AND material_id != ''", (producto,)).fetchall()
+    if not items:
+        return jsonify({'error': f'sin fórmula para "{producto}"'}), 404
+    planes = []
+    for r in items:
+        F = str(r[0]).strip()
+        frow = next((m for m in maestro if m['codigo'].upper() == F.upper()), None)
+        if not frow:
+            continue
+        finci = _nm(frow['inci'])
+        if _stock(F) > 0:
+            continue  # ya tiene stock
+        if not finci:
+            continue  # sin INCI no se puede agrupar con seguridad
+        donantes = []
+        for m in maestro:
+            if m['codigo'].upper() == F.upper():
+                continue
+            if _nm(m['inci']) == finci and _stock(m['codigo']) > 0:
+                donantes.append({'codigo': m['codigo'], 'stock': _stock(m['codigo'])})
+        if donantes:
+            planes.append({'codigo_formula': F, 'inci': frow['inci'],
+                           'donantes': sorted(donantes, key=lambda x: -x['stock']),
+                           'stock_a_recuperar': round(sum(x['stock'] for x in donantes), 1)})
+
+    aplicados = []
+    if aplicar and planes:
+        try:
+            do_backup(triggered_by='pre_reparar_stock_formula')
+        except Exception:
+            pass
+        try:
+            from blueprints.inventario import _TABLAS_REF_MP
+        except ImportError:
+            from api.blueprints.inventario import _TABLAS_REF_MP
+        for pl in planes:
+            F = pl['codigo_formula']
+            dons = [x['codigo'] for x in pl['donantes']]
+            # reactivar el código de la fórmula
+            try:
+                c.execute("UPDATE maestro_mps SET activo=1 WHERE codigo_mp=?", (F,))
+            except Exception:
+                pass
+            ph2 = ','.join(['?'] * len(dons))
+            for tabla, col in _TABLAS_REF_MP:
+                try:
+                    c.execute(f"UPDATE {tabla} SET {col}=? WHERE {col} IN ({ph2})", [F] + dons)
+                except Exception:
+                    pass
+            try:
+                c.execute(f"UPDATE maestro_mps SET activo=0 WHERE codigo_mp IN ({ph2})", dons)
+            except Exception:
+                pass
+            try:
+                audit_log(c, usuario=u, accion='REPARAR_STOCK_FORMULA',
+                          tabla='maestro_mps', registro_id=F,
+                          despues={'producto': producto, 'codigo_formula': F,
+                                   'donantes': dons, 'stock': pl['stock_a_recuperar']})
+            except Exception:
+                pass
+            aplicados.append({'codigo_formula': F, 'donantes': dons,
+                              'stock_recuperado': pl['stock_a_recuperar']})
+        conn.commit()
+    return jsonify({'ok': True, 'producto': producto, 'aplicado': aplicar,
+                    'planes': planes, 'aplicados': aplicados,
+                    'resumen': {'a_reparar': len(planes), 'reparados': len(aplicados)}})
 
 
 @bp.route("/api/admin/diag-produccion", methods=["GET"])

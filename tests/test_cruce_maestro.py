@@ -226,6 +226,37 @@ def test_auto_unir_por_inci_consolida_al_codigo_del_excel(app, db_clean):
     assert act == 0, "el código viejo debe quedar inactivo"
 
 
+def test_reparar_stock_formula_reactiva_y_mueve(app, db_clean):
+    """Caso AZ Hybrid Clear/Pantenol: código de fórmula INACTIVO (0g) + stock en otro
+    código INACTIVO del mismo INCI → reactiva el de la fórmula y le mueve el stock."""
+    c = _login(app)
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    # F = código de la fórmula, INACTIVO, 0g · D = donante INACTIVO con stock, mismo INCI
+    conn.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,tipo_material,activo) VALUES ('MP-FORM-P','PANTENOLX','MP',0)")
+    conn.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,tipo_material,activo) VALUES ('MP-DON-P','PANTENOLX','MP',0)")
+    conn.execute("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES ('PROD REP T1',1,1)")
+    # FK trigger exige material_id activo → activar temporal para insertar la fórmula, luego desactivar
+    conn.execute("UPDATE maestro_mps SET activo=1 WHERE codigo_mp='MP-FORM-P'")
+    conn.execute("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje) VALUES ('PROD REP T1','MP-FORM-P','Pantenol',1)")
+    conn.execute("UPDATE maestro_mps SET activo=0 WHERE codigo_mp='MP-FORM-P'")
+    conn.execute("INSERT INTO movimientos (material_id,tipo,cantidad,lote,fecha) VALUES ('MP-DON-P','Entrada',1118,'L1',date('now'))")
+    conn.commit(); conn.close()
+    # dry-run
+    r = c.post("/api/admin/reparar-stock-formula", json={"producto": "PROD REP T1"}, headers=csrf_headers())
+    assert r.status_code == 200, r.data
+    pl = {p["codigo_formula"]: p for p in r.get_json()["planes"]}
+    assert "MP-FORM-P" in pl and any(x["codigo"] == "MP-DON-P" for x in pl["MP-FORM-P"]["donantes"]), r.get_json()
+    # aplicar
+    r2 = c.post("/api/admin/reparar-stock-formula?aplicar=1", json={"producto": "PROD REP T1"}, headers=csrf_headers())
+    assert r2.status_code == 200 and r2.get_json()["resumen"]["reparados"] >= 1, r2.data
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    act = conn.execute("SELECT activo FROM maestro_mps WHERE codigo_mp='MP-FORM-P'").fetchone()[0]
+    mov = conn.execute("SELECT COUNT(*) FROM movimientos WHERE material_id='MP-FORM-P'").fetchone()[0]
+    conn.close()
+    assert act == 1, "el código de la fórmula debe quedar ACTIVO"
+    assert mov == 1, "el stock debe quedar bajo el código de la fórmula"
+
+
 def test_cruce_maestro_requiere_admin(app, db_clean):
     c = _login(app, "jefferson")  # marketing, no admin
     xls = _excel_maestro([("X", "x", "MP-CR-Z", 1.0)])
