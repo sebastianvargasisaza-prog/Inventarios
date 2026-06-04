@@ -8,7 +8,7 @@ import secrets
 import sqlite3
 import string
 
-from flask import Blueprint, jsonify, request, session, send_file, Response
+from flask import Blueprint, jsonify, request, session, send_file, Response, redirect
 from werkzeug.security import generate_password_hash
 
 from config import (
