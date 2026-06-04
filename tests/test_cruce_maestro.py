@@ -194,6 +194,38 @@ def test_reapuntar_formula_no_mueve_stock(app, db_clean):
     assert mov == 1, "el stock/movimiento NO debe moverse"
 
 
+def test_auto_unir_por_inci_consolida_al_codigo_del_excel(app, db_clean):
+    """Auto-unir usa el Excel como árbitro: consolida todos los códigos del mismo
+    INCI en el código del Excel, moviendo stock. Caso Pantenol/Terpenos repartidos."""
+    c = _login(app)
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    # canónico (Excel, 0g) + hermano con stock (mismo INCI único, no en seed)
+    conn.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,tipo_material,activo) VALUES ('MP-CAN-Z','ZZTESTINOL','MP',1)")
+    conn.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,tipo_material,activo) VALUES ('MP-VJO-Z','ZZTESTINOL','MP',1)")
+    conn.execute("INSERT INTO movimientos (material_id,tipo,cantidad,lote,fecha) VALUES ('MP-VJO-Z','Entrada',1118,'L1',date('now'))")
+    conn.commit(); conn.close()
+    # Excel: el ingrediente apunta al canónico MP-CAN-Z
+    xls = _excel_maestro([("ZZTESTINOL", "Testinol", "MP-CAN-Z", 1.0)], producto="PROD AUTO T1")
+    # dry-run
+    r = c.post("/api/admin/auto-unir-por-inci",
+               data={"file": (io.BytesIO(xls), "m.xlsx")}, headers=csrf_headers(),
+               content_type="multipart/form-data")
+    assert r.status_code == 200, r.data
+    planes = {p["canonico"]: p for p in r.get_json()["planes"]}
+    assert "MP-CAN-Z" in planes and "MP-VJO-Z" in planes["MP-CAN-Z"]["a_unir"], r.get_json()
+    # aplicar
+    r2 = c.post("/api/admin/auto-unir-por-inci?aplicar=1",
+                data={"file": (io.BytesIO(xls), "m.xlsx")}, headers=csrf_headers(),
+                content_type="multipart/form-data")
+    assert r2.status_code == 200 and r2.get_json()["resumen"]["reparados"] >= 1, r2.data
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    mov = conn.execute("SELECT COUNT(*) FROM movimientos WHERE material_id='MP-CAN-Z'").fetchone()[0]
+    act = conn.execute("SELECT activo FROM maestro_mps WHERE codigo_mp='MP-VJO-Z'").fetchone()[0]
+    conn.close()
+    assert mov == 1, "el stock debe quedar bajo el código del Excel"
+    assert act == 0, "el código viejo debe quedar inactivo"
+
+
 def test_cruce_maestro_requiere_admin(app, db_clean):
     c = _login(app, "jefferson")  # marketing, no admin
     xls = _excel_maestro([("X", "x", "MP-CR-Z", 1.0)])

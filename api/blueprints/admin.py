@@ -14630,6 +14630,7 @@ _CRUCE_MAESTRO_HTML = """<!DOCTYPE html><html lang="es"><head><meta charset="utf
  <button onclick="run('')">Analizar (solo lectura)</button>
  <button class="warn" onclick="run('inci')">Rellenar INCI vacíos desde Excel</button>
  <button class="sec" onclick="runPares()">🔗 Asistente de unificación</button>
+ <button class="warn" onclick="autoUnir(false)">🔧 Auto-unir duplicados por INCI</button>
  <a href="/admin/verificar-formulas" target="_blank"><button class="sec" type="button" style="background:#0891b2">Re-mapear códigos de fórmula →</button></a>
 </div>
 <div id="resumen" style="display:none"></div>
@@ -14647,6 +14648,32 @@ function flagPill(fl){
  var map={INCI_VACIO:['warnp','INCI vacío'],INCI_RELLENADO:['ok','INCI rellenado'],INCI_MISMATCH:['bad','INCI distinto'],
    COD_NO_EN_MAESTRO:['bad','no en maestro'],FALTA_EN_FORMULA:['warnp','falta en fórmula']};
  return fl.map(function(f){var m=map[f]||['muted',f];return '<span class="pill '+m[0]+'">'+m[1]+'</span>';}).join('');
+}
+async function autoUnir(aplicar){
+ var fi=document.getElementById('f'); if(!fi.files||!fi.files[0]){alert('Subí el Excel maestro primero (define el código canónico por INCI)');return;}
+ if(aplicar && !confirm('Aplicar auto-unión: mueve TODO el stock y re-apunta las fórmulas al código del Excel por cada material. Backup + reversible. ¿Continuar?'))return;
+ var out=document.getElementById('out'); out.innerHTML='Analizando duplicados por INCI…';
+ var fd=new FormData(); fd.append('file', fi.files[0]);
+ try{
+  var r=await fetch('/api/admin/auto-unir-por-inci'+(aplicar?'?aplicar=1':''),{method:'POST',headers:{'X-CSRF-Token':await _csrf()},credentials:'same-origin',body:fd});
+  var d=await r.json();
+  if(!r.ok||!d.ok){out.innerHTML='<span class="pill bad">Error: '+esc((d&&d.error)||r.status)+'</span>';return;}
+  var rb=document.getElementById('resumen'); rb.style.display='block';
+  rb.innerHTML='<b>Auto-unir por INCI</b> · <span class="pill ok">'+d.resumen.a_reparar+' a reparar</span><span class="pill warnp">'+d.resumen.ambiguos+' ambiguos (revisar manual)</span>'+(d.aplicado?('<span class="pill ok">'+d.resumen.reparados+' reparados ✓</span>'):'');
+  var h='<h3>🔧 Duplicados que se unirán al código de la fórmula (mueve stock)</h3>';
+  if(!d.planes.length){h+='<div class="pill ok">✅ No hay duplicados por INCI para unir.</div>';}
+  else{
+    h+='<table><tr><th>Código fórmula (canónico)</th><th>INCI</th><th>Stock actual</th><th>Códigos a unir</th><th>Stock a mover</th></tr>';
+    d.planes.forEach(function(p){h+='<tr><td class="mono">'+esc(p.canonico)+'</td><td>'+esc(p.inci)+'</td><td>'+(p.stock_canonico||0).toLocaleString()+'</td><td class="mono">'+p.a_unir.map(esc).join(', ')+'</td><td><b>'+(p.stock_a_mover||0).toLocaleString()+' g</b></td></tr>';});
+    h+='</table>';
+    if(!aplicar){h+='<div style="margin-top:10px;"><button class="warn" style="background:#dc2626" onclick="autoUnir(true)">✔ Aplicar (mover stock + unir todo) · backup reversible</button></div>';}
+  }
+  if(d.ambiguos&&d.ambiguos.length){
+    h+='<h3 class="muted">Ambiguos (mismo INCI usado por 2+ códigos de fórmula · revisar a mano)</h3>';
+    d.ambiguos.forEach(function(a){h+='<div class="muted" style="font-size:12px;">'+esc(a.inci)+': '+a.codigos_formula.map(esc).join(', ')+'</div>';});
+  }
+  out.innerHTML=h;
+ }catch(e){out.innerHTML='<span class="pill bad">Error red: '+esc(e.message)+'</span>';}
 }
 async function runPares(){
  var fi=document.getElementById('f'); if(!fi.files||!fi.files[0]){alert('Elegí el Excel maestro primero');return;}
@@ -14942,6 +14969,144 @@ def admin_cruce_reapuntar_formula():
     conn.commit()
     return jsonify({'ok': True, 'old': old, 'canonico': canon,
                     'formulas_reapuntadas': nupd})
+
+
+@bp.route("/api/admin/auto-unir-por-inci", methods=["POST"])
+def admin_auto_unir_por_inci():
+    """Auto-reparador: junta los códigos DUPLICADOS (mismo INCI) en el código que
+    usa la FÓRMULA, moviendo el stock. Resuelve el caso 'la fórmula apunta a un
+    código en 0g pero el stock está en otro código del mismo material' sin que el
+    usuario decida par por par. SEGURO: solo une cuando el INCI es idéntico (mismo
+    material) y hay UN solo código de fórmula para ese INCI (si hay ambigüedad,
+    lo salta y reporta). dry_run por defecto · aplicar=1 ejecuta (backup + audit)."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    aplicar = (request.args.get('aplicar') or '').strip() in ('1', 'true', 'yes')
+    # Excel maestro (árbitro del código canónico por INCI). Obligatorio: sin él no
+    # se puede decidir cuál código gana cuando las fórmulas quedaron repartidas.
+    raw = None
+    if request.files and 'file' in request.files:
+        raw = request.files['file'].read()
+    else:
+        b = request.get_json(silent=True) or {}
+        if b.get('contenido_b64'):
+            import base64 as _b64
+            try:
+                raw = _b64.b64decode(b['contenido_b64'])
+            except Exception:
+                return jsonify({'error': 'base64 inválido'}), 400
+    if not raw:
+        return jsonify({'error': 'Subí el Excel maestro (define el código canónico por INCI)'}), 400
+    try:
+        excel = _parse_excel_maestro(raw)
+    except Exception as e:
+        return jsonify({'error': f'No pude leer el Excel: {str(e)[:200]}'}), 400
+
+    conn = db_connect()
+    c = conn.cursor()
+    # maestro activo: codigo -> inci_norm
+    maes = {}
+    for r in c.execute("SELECT codigo_mp, COALESCE(nombre_inci,'') FROM maestro_mps "
+                       "WHERE COALESCE(activo,1)=1").fetchall():
+        maes[str(r[0]).strip().upper()] = _norm_inci_cruce(r[1])
+    # INCI (del maestro) -> código canónico del Excel. Solo si el Excel mapea ese
+    # INCI a UN único código (si mapea a varios = grados distintos → ambiguo).
+    excel_inci_to_codes = {}
+    for data in excel.values():
+        for it in (data.get('items') or []):
+            cod = str(it.get('codigo') or '').strip().upper()
+            if not cod:
+                continue
+            inc = maes.get(cod)  # INCI según el maestro del código del Excel
+            if inc:
+                excel_inci_to_codes.setdefault(inc, set()).add(cod)
+    # stock neto por codigo
+    _NP = ('CUARENTENA', 'CUARENTENA_EXTENDIDA', 'VENCIDO', 'RECHAZADO', 'AGOTADO', 'BLOQUEADO')
+    stock = {}
+    try:
+        _ph = ','.join(['?'] * len(_NP))
+        for r in c.execute(
+            f"""SELECT material_id, COALESCE(SUM(CASE
+                  WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                  WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0)
+                FROM movimientos
+                WHERE UPPER(COALESCE(estado_lote,'')) NOT IN ({_ph})
+                GROUP BY material_id""", _NP).fetchall():
+            stock[str(r[0]).strip().upper()] = float(r[1] or 0)
+    except Exception:
+        pass
+
+    # Por cada INCI: canonical = código del Excel (si es único). Merge TODOS los
+    # demás códigos activos con ese mismo INCI (incluidas fórmulas repartidas).
+    planes = []
+    ambiguos = []
+    # agrupar códigos activos del maestro por INCI
+    inci_to_codes = {}
+    for cod, inc in maes.items():
+        if inc:
+            inci_to_codes.setdefault(inc, set()).add(cod)
+    for inc, excods in excel_inci_to_codes.items():
+        if len(excods) != 1:
+            ambiguos.append({'inci': inc, 'codigos_excel': sorted(excods),
+                             'motivo': 'el Excel usa varios códigos para este INCI (grados?)'})
+            continue
+        F = next(iter(excods))  # canónico del Excel
+        if F not in maes:
+            continue  # canónico inactivo · saltar
+        hermanos = sorted(g for g in inci_to_codes.get(inc, set()) if g != F)
+        if not hermanos:
+            continue
+        planes.append({
+            'canonico': F, 'inci': inc,
+            'stock_canonico': round(stock.get(F, 0), 1),
+            'a_unir': hermanos,
+            'stock_a_mover': round(sum(stock.get(g, 0) for g in hermanos), 1)})
+
+    aplicados = []
+    if aplicar and planes:
+        try:
+            do_backup(triggered_by='pre_auto_unir_por_inci')
+        except Exception:
+            pass
+        try:
+            from blueprints.inventario import _TABLAS_REF_MP
+        except ImportError:
+            from api.blueprints.inventario import _TABLAS_REF_MP
+        for pl in planes:
+            F = pl['canonico']
+            a_unir = [g for g in pl['a_unir']]
+            if not a_unir:
+                continue
+            ph = ','.join(['?'] * len(a_unir))
+            movidos = {}
+            for tabla, col in _TABLAS_REF_MP:
+                try:
+                    cur = c.execute(
+                        f"UPDATE {tabla} SET {col}=? WHERE {col} IN ({ph})",
+                        [F] + a_unir)
+                    movidos[tabla] = cur.rowcount or 0
+                except Exception as _e:
+                    movidos[tabla] = f"ERR:{str(_e)[:40]}"
+            try:
+                c.execute(f"UPDATE maestro_mps SET activo=0 WHERE codigo_mp IN ({ph})", a_unir)
+            except Exception:
+                pass
+            try:
+                audit_log(c, usuario=u, accion='AUTO_UNIR_POR_INCI',
+                          tabla='maestro_mps', registro_id=F,
+                          despues={'canonico': F, 'unidos': a_unir, 'inci': pl['inci']})
+            except Exception:
+                pass
+            aplicados.append({'canonico': F, 'unidos': a_unir,
+                              'stock_movido': pl['stock_a_mover']})
+        conn.commit()
+
+    return jsonify({'ok': True, 'aplicado': aplicar,
+                    'planes': planes, 'ambiguos': ambiguos,
+                    'aplicados': aplicados,
+                    'resumen': {'a_reparar': len(planes), 'ambiguos': len(ambiguos),
+                                'reparados': len(aplicados)}})
 
 
 @bp.route("/admin/cruce-maestro", methods=["GET"])
