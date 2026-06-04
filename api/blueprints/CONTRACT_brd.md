@@ -158,7 +158,16 @@ no alterado.
 
 ### IPC resultados (parte del EBR)
 - `GET  /api/brd/ebr/<id>/ipc-resultados`
-- `POST /api/brd/ebr/<id>/ipc-resultados` · operario reporta medición
+- `POST /api/brd/ebr/<id>/ipc-resultados` · operario reporta medición · OOS abre desviación auto
+
+### Estaciones MyBatch en el runner (reemplazo completo)
+- `GET/POST /api/brd/ebr/<id>/despeje` · despeje de línea (checklist CUMPLE · MyBatch ②) · mig 215
+- `GET/POST /api/brd/ebr/<id>/precauciones` · precauciones + equipos (MyBatch ①) · mig 216
+- `GET/POST /api/brd/ebr/<id>/registros-fisicos` + `GET .../<rid>/pdf` · adjuntar PDF/referencia (MyBatch ⑦) · mig 217
+- `GET/POST /api/brd/ebr/<id>/conciliacion-material` · conciliación envase/empaque (mig 210)
+- `GET/POST /api/brd/ebr/<id>/artes` + `/artes/<id>/aprobar` · artes/codificación (mig 211)
+- `GET/POST /api/brd/ebr/<id>/observaciones` · bitácora (mig 213)
+- `POST /api/brd/ebr/<id>/pesajes/<pid>/verificar` · 2ª firma de pesaje (mig 208)
 
 ### Pesajes (reconciliación granular)
 - `GET  /api/brd/ebr/<id>/pesajes` · listado

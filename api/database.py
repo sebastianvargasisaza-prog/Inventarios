@@ -312,6 +312,55 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (217, "ebr_registros_fisicos · adjuntar registros físicos/PDF al legajo (MyBatch estación ⑦) · 3-jun-2026", [
+        """CREATE TABLE IF NOT EXISTS ebr_registros_fisicos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ebr_id INTEGER NOT NULL,
+            descripcion TEXT NOT NULL,
+            tipo TEXT DEFAULT 'registro',
+            archivo_nombre TEXT DEFAULT '',
+            archivo_b64 TEXT DEFAULT NULL,
+            registrado_por TEXT NOT NULL,
+            registrado_at_utc TEXT NOT NULL,
+            FOREIGN KEY (ebr_id) REFERENCES ebr_ejecuciones(id) ON DELETE CASCADE
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ebrreg_ebr ON ebr_registros_fisicos(ebr_id)",
+    ]),
+
+    (216, "ebr_precauciones · precauciones + equipos del proceso (MyBatch estación ①) · 3-jun-2026", [
+        """CREATE TABLE IF NOT EXISTS ebr_precauciones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ebr_id INTEGER NOT NULL,
+            tipo TEXT DEFAULT 'precaucion',
+            descripcion TEXT NOT NULL,
+            registrado_por TEXT NOT NULL,
+            registrado_at_utc TEXT NOT NULL,
+            FOREIGN KEY (ebr_id) REFERENCES ebr_ejecuciones(id) ON DELETE CASCADE
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ebrprec_ebr ON ebr_precauciones(ebr_id)",
+    ]),
+
+    (215, "ebr_despeje_linea · despeje de línea por legajo (checklist CUMPLE · MyBatch estación ②) · 3-jun-2026", [
+        # MyBatch · antes de fabricar/envasar: despeje de línea (área limpia, sin
+        # producto anterior, equipos limpios/identificados, documentación). Un
+        # registro por EBR, con e-firma del responsable. Gate de liberación opcional.
+        """CREATE TABLE IF NOT EXISTS ebr_despeje_linea (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ebr_id INTEGER NOT NULL,
+            area_limpia INTEGER DEFAULT 0,
+            sin_producto_anterior INTEGER DEFAULT 0,
+            equipos_limpios INTEGER DEFAULT 0,
+            documentacion_ok INTEGER DEFAULT 0,
+            conforme INTEGER DEFAULT 0,
+            observaciones TEXT DEFAULT '',
+            realizado_por TEXT,
+            realizado_at_utc TEXT,
+            e_sign_id INTEGER DEFAULT NULL,
+            FOREIGN KEY (ebr_id) REFERENCES ebr_ejecuciones(id) ON DELETE CASCADE
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ebrdesp_ebr ON ebr_despeje_linea(ebr_id)",
+    ]),
+
     (214, "ebr_ejecuciones · rendimiento por unidades (Envasado/Acondicionamiento) · reemplazo MyBatch Batch C · 3-jun-2026", [
         # El yield de granel (yield_pct) es g_real/g_objetivo · sirve para
         # Fabricación. En Envasado/Acondicionamiento el rendimiento se mide en

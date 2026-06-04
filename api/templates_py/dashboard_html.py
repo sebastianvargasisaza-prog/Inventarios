@@ -6867,12 +6867,19 @@ async function abrirEBR(id){
       if(d.mbr_template_id){var rs=await fetch('/api/brd/mbr/'+d.mbr_template_id+'/ipc-specs',{credentials:'same-origin'});var ds=await rs.json();ipcSpecs=(ds&&ds.items)||ds||[];}
       var rir=await fetch('/api/brd/ebr/'+id+'/ipc-resultados',{credentials:'same-origin'});var dir=await rir.json();ipcRes=(dir&&dir.items)||dir||[];
     }catch(e){}
-    box.innerHTML=_ebrRender(d,(dp&&dp.items)||[],(dcm&&dcm.items)||[],(dar&&dar.items)||[],(dob&&dob.items)||[],ipcSpecs,ipcRes);
+    // MyBatch ①②⑦ · precauciones, despeje de línea, registros físicos
+    var despeje=[],prec=[],regs=[];
+    try{
+      var rde=await fetch('/api/brd/ebr/'+id+'/despeje',{credentials:'same-origin'});var dde=await rde.json();despeje=(dde&&dde.items)||[];
+      var rpr=await fetch('/api/brd/ebr/'+id+'/precauciones',{credentials:'same-origin'});var dpr=await rpr.json();prec=(dpr&&dpr.items)||[];
+      var rrg=await fetch('/api/brd/ebr/'+id+'/registros-fisicos',{credentials:'same-origin'});var drg=await rrg.json();regs=(drg&&drg.items)||[];
+    }catch(e){}
+    box.innerHTML=_ebrRender(d,(dp&&dp.items)||[],(dcm&&dcm.items)||[],(dar&&dar.items)||[],(dob&&dob.items)||[],ipcSpecs,ipcRes,despeje,prec,regs);
     box.scrollIntoView({behavior:'smooth',block:'start'});
   }catch(e){box.innerHTML='<div style="color:#c0392b;">Error de red.</div>';}
 }
-function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes){
-  ipcSpecs=ipcSpecs||[]; ipcRes=ipcRes||[];
+function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, prec, regs){
+  ipcSpecs=ipcSpecs||[]; ipcRes=ipcRes||[]; despeje=despeje||[]; prec=prec||[]; regs=regs||[];
   var editable=(d.estado==='iniciado'||d.estado==='en_proceso');
   var em={fabricacion:'🏭',envasado:'📦',acondicionamiento:'🔧'};
   var fa=d.fase||'fabricacion';
@@ -6884,6 +6891,25 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes){
   if(editable){loteBtn=' <button onclick="ebrAsignarLoteFisico('+d.id+",'"+(d.lote||'')+"'"+')" title="Asignar el lote físico/comercial real (reemplaza el provisional)" style="background:#ddd6fe;color:#4c1d95;border:none;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer;">✏️ lote físico</button>';}
   h+='<div style="color:#555;font-size:12px;">Lote <b>'+(d.lote||'')+'</b>'+loteBtn+' &middot; objetivo '+(d.cantidad_objetivo_g||0)+' g &middot; '+_ebrBadge(d.estado)+extra+'</div></div>';
   h+='<button onclick="ebrCerrarRunner()" style="background:#94a3b8;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;">Cerrar ✕</button></div>';
+  // Precauciones + equipos (MyBatch ①)
+  h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">⚠️ Precauciones y equipos</h4>';
+  if(prec.length){
+    h+='<ul style="font-size:12px;margin:4px 0 0;padding-left:18px;">';
+    for(var pi=0;pi<prec.length;pi++){var pp2=prec[pi];h+='<li><b>'+(pp2.tipo==='equipo'?'🔧 ':'⚠️ ')+'</b>'+(pp2.descripcion||'')+' <span style="color:#999;font-size:11px;">· '+(pp2.registrado_por||'')+'</span></li>';}
+    h+='</ul>';
+  } else {h+='<div style="color:#999;font-size:12px;">Sin precauciones/equipos registrados.</div>';}
+  if(editable){h+='<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;"><button onclick="ebrAgregarPrecaucion('+d.id+',\\'precaucion\\')" style="background:#f59e0b;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;">+ Precaución</button><button onclick="ebrAgregarPrecaucion('+d.id+',\\'equipo\\')" style="background:#0891b2;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;">+ Equipo</button></div>';}
+  // Despeje de línea (MyBatch ②)
+  h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">🧹 Despeje de línea</h4>';
+  if(despeje.length){
+    var dl=despeje[0];
+    var chk=function(v){return v?'<span style="color:#16a34a;">✓</span>':'<span style="color:#dc2626;">✗</span>';};
+    h+='<div style="font-size:12px;">'+chk(dl.area_limpia)+' Área limpia &nbsp; '+chk(dl.sin_producto_anterior)+' Sin producto anterior &nbsp; '+chk(dl.equipos_limpios)+' Equipos limpios &nbsp; '+chk(dl.documentacion_ok)+' Documentación</div>';
+    h+='<div style="font-size:12px;margin-top:2px;">Resultado: '+(dl.conforme?'<span style="color:#16a34a;font-weight:700;">CONFORME</span>':'<span style="color:#dc2626;font-weight:700;">NO CONFORME</span>')+' · '+(dl.realizado_por||'')+'</div>';
+  } else {
+    h+='<div style="color:#999;font-size:12px;">Despeje de línea no registrado.</div>';
+    if(editable){h+='<button onclick="ebrRegistrarDespeje('+d.id+')" style="margin-top:6px;background:#16a34a;color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;cursor:pointer;">Registrar despeje</button>';}
+  }
   // Pesaje de MP (2ª firma · Batch 2)
   h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">⚖️ Pesaje de materias primas (2ª firma)</h4>';
   if(!pesajes.length){h+='<div style="color:#999;font-size:12px;">Sin pesajes registrados aún.</div>';}
@@ -6991,6 +7017,17 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes){
     h+='<button onclick="ebrAgregarObservacion('+d.id+')" style="background:#6d28d9;color:#fff;border:none;border-radius:5px;padding:6px 12px;cursor:pointer;">+ Registrar</button>';
     h+='</div>';
   }
+  // Registros físicos (adjuntar PDF · MyBatch ⑦)
+  h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">📎 Registros físicos</h4>';
+  if(regs.length){
+    h+='<ul style="font-size:12px;margin:0 0 8px;padding-left:18px;">';
+    for(var rg=0;rg<regs.length;rg++){var rr2=regs[rg];
+      var pdfL=rr2.tiene_pdf?(' · <a href="/api/brd/ebr/'+d.id+'/registros-fisicos/'+rr2.id+'/pdf" target="_blank" style="color:#16a34a;">📄 PDF</a>'):'';
+      h+='<li>'+(rr2.descripcion||'')+pdfL+' <span style="color:#999;font-size:11px;">· '+(rr2.registrado_por||'')+'</span></li>';
+    }
+    h+='</ul>';
+  } else {h+='<div style="color:#999;font-size:12px;">Sin registros físicos adjuntos.</div>';}
+  if(editable){h+='<button onclick="ebrAgregarRegistroFisico('+d.id+')" style="margin-top:4px;background:#0891b2;color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;cursor:pointer;">+ Adjuntar registro/PDF</button>';}
   return h;
 }
 async function ebrAgregarObservacion(ebrId){
@@ -7025,6 +7062,63 @@ async function ebrAprobarArte(ebrId, arteId){
     if(!r.ok){alert(d.error||'No se pudo aprobar');return;}
     abrirEBR(ebrId);
   }catch(e){alert('Error de red');}
+}
+async function ebrAgregarPrecaucion(ebrId, tipo){
+  var d=prompt((tipo==='equipo'?'Equipo usado:':'Precaución del proceso:'));
+  if(d===null)return; d=(d||'').trim(); if(!d)return;
+  try{
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/precauciones',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tipo:tipo,descripcion:d})});
+    var j=await r.json(); if(!r.ok){alert(j.error||'Error');return;}
+    abrirEBR(ebrId);
+  }catch(e){alert('Error de red');}
+}
+async function ebrRegistrarDespeje(ebrId){
+  if(!confirm('Registrar despeje de línea?\\n\\nConfirmá que se cumple: área limpia, sin producto anterior, equipos limpios e identificados, documentación presente.\\nAceptar = TODO cumple (CONFORME) · Cancelar = abrir checklist parcial'))
+  { // checklist parcial
+    var al=confirm('¿Área limpia?'); var sp=confirm('¿Sin producto anterior?');
+    var eq=confirm('¿Equipos limpios e identificados?'); var doc=confirm('¿Documentación presente?');
+    var obs=prompt('Observaciones del despeje (opcional):')||'';
+    return _ebrPostDespeje(ebrId,{area_limpia:al,sin_producto_anterior:sp,equipos_limpios:eq,documentacion_ok:doc,observaciones:obs});
+  }
+  return _ebrPostDespeje(ebrId,{area_limpia:1,sin_producto_anterior:1,equipos_limpios:1,documentacion_ok:1});
+}
+async function _ebrPostDespeje(ebrId, body){
+  try{
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/despeje',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var j=await r.json(); if(!r.ok){alert(j.error||'Error');return;}
+    if(!j.conforme){alert('Despeje registrado como NO CONFORME · revisá antes de producir.');}
+    abrirEBR(ebrId);
+  }catch(e){alert('Error de red');}
+}
+async function ebrAgregarRegistroFisico(ebrId){
+  var desc=prompt('Descripción del registro físico (ej. "Bitácora pH pág 3", "Tirilla balanza"):');
+  if(desc===null)return; desc=(desc||'').trim(); if(!desc)return;
+  // file picker opcional para PDF
+  var inp=document.createElement('input'); inp.type='file'; inp.accept='application/pdf';
+  inp.onchange=async function(){
+    var body={descripcion:desc};
+    var f=inp.files&&inp.files[0];
+    if(f){
+      if(f.size>6*1024*1024){alert('PDF muy grande (max 6MB)');return;}
+      body.archivo_nombre=f.name;
+      body.archivo_b64=await new Promise(function(res){var rd=new FileReader();rd.onload=function(){res((rd.result||'').toString().split(',').pop());};rd.readAsDataURL(f);});
+    }
+    try{
+      var r=await fetch('/api/brd/ebr/'+ebrId+'/registros-fisicos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      var j=await r.json(); if(!r.ok){alert(j.error||'Error');return;}
+      abrirEBR(ebrId);
+    }catch(e){alert('Error de red');}
+  };
+  // permitir guardar sin PDF: si el usuario cancela el picker, igual guardamos solo descripción
+  var soloDesc=confirm('¿Adjuntar un PDF?\\nAceptar = elegir PDF · Cancelar = guardar solo la descripción');
+  if(soloDesc){inp.click();}
+  else{
+    try{
+      var r=await fetch('/api/brd/ebr/'+ebrId+'/registros-fisicos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({descripcion:desc})});
+      var j=await r.json(); if(!r.ok){alert(j.error||'Error');return;}
+      abrirEBR(ebrId);
+    }catch(e){alert('Error de red');}
+  }
 }
 async function ebrAgregarConciliacion(ebrId){
   var g=function(p){var el=document.getElementById(p+ebrId);return el?el.value:'';};
