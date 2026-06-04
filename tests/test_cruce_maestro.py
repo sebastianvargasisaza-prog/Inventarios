@@ -172,6 +172,28 @@ def test_pares_clasifica_duplicado_vs_crossmap(app, db_clean):
     assert pares.get("MP-OLD-ESEN", {}).get("clase") == "DUPLICADO", pares
 
 
+def test_reapuntar_formula_no_mueve_stock(app, db_clean):
+    """Re-apuntar cambia formula_items al canónico SIN tocar movimientos (cross-map)."""
+    c = _login(app)
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,tipo_material,activo) VALUES ('MP-RP-OLD','POLYSORBATE 80','MP',1)")
+    conn.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,tipo_material,activo) VALUES ('MP-RP-CANON','POLYSORBATE 20','MP',1)")
+    conn.execute("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES ('PROD RP T1',1,1)")
+    conn.execute("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje) VALUES ('PROD RP T1','MP-RP-OLD','Tween 20',2)")
+    conn.execute("INSERT INTO movimientos (material_id,tipo,cantidad,lote,fecha) VALUES ('MP-RP-OLD','Entrada',500,'L1',date('now'))")
+    conn.commit(); conn.close()
+    r = c.post("/api/admin/cruce-maestro/reapuntar-formula",
+               json={"old": "MP-RP-OLD", "canonico": "MP-RP-CANON"}, headers=csrf_headers())
+    assert r.status_code == 200, r.data
+    assert r.get_json()["formulas_reapuntadas"] == 1
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    fi = conn.execute("SELECT material_id FROM formula_items WHERE producto_nombre='PROD RP T1'").fetchone()[0]
+    mov = conn.execute("SELECT COUNT(*) FROM movimientos WHERE material_id='MP-RP-OLD'").fetchone()[0]
+    conn.close()
+    assert fi == "MP-RP-CANON", "la fórmula debe apuntar al canónico"
+    assert mov == 1, "el stock/movimiento NO debe moverse"
+
+
 def test_cruce_maestro_requiere_admin(app, db_clean):
     c = _login(app, "jefferson")  # marketing, no admin
     xls = _excel_maestro([("X", "x", "MP-CR-Z", 1.0)])

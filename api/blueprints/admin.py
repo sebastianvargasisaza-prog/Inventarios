@@ -14664,9 +14664,13 @@ async function runPares(){
   d.pares.forEach(function(p){
    var clp=p.clase==='DUPLICADO'?'<span class="pill ok">DUPLICADO</span>':(p.clase==='CROSS_MAP'?'<span class="pill bad">CROSS-MAP</span>':'<span class="pill warnp">VERIFICAR</span>');
    var acc;
-   if(p.clase==='DUPLICADO'){acc='<button class="warn" onclick="unificarPar('+JSON.stringify(p.old).replace(/"/g,'&quot;')+','+JSON.stringify(p.canonico).replace(/"/g,'&quot;')+')">Unificar → mover stock</button>';}
-   else if(p.clase==='CROSS_MAP'){acc='<span class="pill bad">NO unificar</span>';}
-   else{acc='<span class="muted">revisar manual</span>';}
+   var oq=JSON.stringify(p.old).replace(/"/g,'&quot;'), cq=JSON.stringify(p.canonico).replace(/"/g,'&quot;');
+   if(p.clase==='DUPLICADO'){acc='<button class="warn" onclick="unificarPar('+oq+','+cq+')">Unificar → mover stock</button>';}
+   else{
+     // CROSS_MAP / VERIFICAR · dos acciones manuales que decide el formulador
+     acc='<button class="warn" style="background:#b45309" onclick="unificarPar('+oq+','+cq+')" title="Solo si VOS confirmás que es el MISMO material (ej. cacay, butylresorcinol)">🔗 Unir</button> '+
+         '<button class="sec" onclick="reapuntarFormula('+oq+','+cq+')" title="Si es material DISTINTO: apunta la fórmula al código del Excel, sin mover stock">↪ Re-apuntar</button>';
+   }
    h+='<tr><td>'+clp+'</td><td class="mono">'+esc(p.old)+' <span class="muted">('+(p.stock_old||0).toLocaleString()+')</span></td><td>'+esc(p.inci_old||'—')+'</td><td class="mono">'+esc(p.canonico)+' <span class="muted">('+(p.stock_canon||0).toLocaleString()+')</span></td><td>'+esc(p.inci_canon||'—')+'</td><td style="font-size:11px">'+esc((p.productos||[]).join(', ').substring(0,55))+'</td><td>'+acc+'</td></tr>';
   });
   h+='</table>';
@@ -14680,6 +14684,15 @@ async function unificarPar(old, canon){
   var d=await r.json();
   if(!r.ok){alert((d&&d.error)||'Error al unificar');return;}
   alert('✓ Unificado '+old+' → '+canon+'. Volvé a correr el asistente para refrescar.');
+ }catch(e){alert('Error de red');}
+}
+async function reapuntarFormula(old, canon){
+ if(!confirm('Re-apuntar la fórmula de '+old+' → '+canon+' SIN mover stock?\\n\\nLa fórmula usará '+canon+' (código del Excel). NO mueve inventario: el stock de '+old+' queda donde está (es otro material). Producción verá el stock de '+canon+' (puede ser 0 hasta recibir el material correcto). Backup + reversible.'))return;
+ try{
+  var r=await fetch('/api/admin/cruce-maestro/reapuntar-formula',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await _csrf()},credentials:'same-origin',body:JSON.stringify({old:old,canonico:canon})});
+  var d=await r.json();
+  if(!r.ok||!d.ok){alert((d&&d.error)||'Error');return;}
+  alert('✓ Fórmula re-apuntada '+old+' → '+canon+' ('+d.formulas_reapuntadas+' filas). Stock NO movido. Refrescá el asistente.');
  }catch(e){alert('Error de red');}
 }
 async function archivarProducto(prod){
@@ -14882,6 +14895,53 @@ def admin_cruce_pares():
                'cross_maps': sum(1 for p in out if p['clase'] == 'CROSS_MAP'),
                'verificar': sum(1 for p in out if p['clase'] == 'VERIFICAR')}
     return jsonify({'ok': True, 'pares': out, 'resumen': resumen})
+
+
+@bp.route("/api/admin/cruce-maestro/reapuntar-formula", methods=["POST"])
+def admin_cruce_reapuntar_formula():
+    """Re-apunta formula_items.material_id de un código viejo al canónico del
+    Excel SIN mover inventario (para cross-maps: la fórmula apuntaba a un material
+    distinto). El stock del código viejo queda intacto (es otro material). Backup
+    + audit + reversible. NO toca movimientos."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.get_json(silent=True) or {}
+    old = (d.get('old') or '').strip().upper()
+    canon = (d.get('canonico') or '').strip().upper()
+    if not old or not canon:
+        return jsonify({'error': 'old y canonico requeridos'}), 400
+    if old == canon:
+        return jsonify({'error': 'old y canonico son iguales'}), 400
+    conn = db_connect()
+    c = conn.cursor()
+    rc = c.execute("SELECT COALESCE(activo,1) FROM maestro_mps WHERE codigo_mp=?",
+                   (canon,)).fetchone()
+    if not rc:
+        return jsonify({'error': f'{canon} no existe en maestro_mps'}), 404
+    if not int(rc[0] or 0):
+        return jsonify({'error': f'{canon} está inactivo · reactivalo primero'}), 409
+    n = c.execute("SELECT COUNT(*) FROM formula_items WHERE material_id=?",
+                  (old,)).fetchone()[0]
+    if not n:
+        return jsonify({'error': f'{old} no está en ninguna fórmula'}), 404
+    try:
+        do_backup(triggered_by='pre_cruce_reapuntar_formula')
+    except Exception:
+        pass
+    c.execute("UPDATE formula_items SET material_id=? WHERE material_id=?",
+              (canon, old))
+    nupd = c.rowcount or 0
+    try:
+        audit_log(c, usuario=u, accion='REAPUNTAR_FORMULA_MP',
+                  tabla='formula_items', registro_id=0,
+                  antes={'material_id_old': old},
+                  despues={'material_id_canonico': canon, 'filas': nupd})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'old': old, 'canonico': canon,
+                    'formulas_reapuntadas': nupd})
 
 
 @bp.route("/admin/cruce-maestro", methods=["GET"])
