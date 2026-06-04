@@ -14412,13 +14412,21 @@ def _parse_excel_maestro(raw_bytes):
 
 
 def _norm_inci_cruce(s):
-    """Normaliza INCI para comparar (lowercase, sin acentos, solo alfanum+espacio)."""
+    """Normaliza INCI para comparar (lowercase, sin acentos, solo alfanum+espacio).
+
+    Incluye sinónimos ES↔EN SEGUROS que NO cambian la identidad química (péptido↔
+    peptide, aceite↔oil) · los NÚMEROS se preservan (tetrapeptide-5 ≠ -40, etc.)
+    para no fundir grados/variantes distintas."""
     import unicodedata as _ud, re as _re
     if not s:
         return ''
     n = _ud.normalize('NFD', str(s).lower().strip())
     n = ''.join(ch for ch in n if _ud.category(ch) != 'Mn')
-    return _re.sub(r'\s+', ' ', _re.sub(r'[^a-z0-9 ]', ' ', n)).strip()
+    n = _re.sub(r'[^a-z0-9 ]', ' ', n)
+    # sinónimos ES->EN seguros (sin tocar números → no funde grados distintos).
+    # 'peptido' como sufijo (tri/tetra/penta/hexa-peptido) → 'peptide'.
+    n = n.replace('peptido', 'peptide').replace('aceite', 'oil')
+    return _re.sub(r'\s+', ' ', n).strip()
 
 
 @bp.route("/api/admin/cruce-maestro", methods=["POST"])

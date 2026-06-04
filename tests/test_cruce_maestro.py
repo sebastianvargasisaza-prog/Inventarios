@@ -146,15 +146,20 @@ def test_pares_clasifica_duplicado_vs_crossmap(app, db_clean):
     # par CROSS_MAP: INCI distinto
     conn.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,tipo_material,activo) VALUES ('MP-OLD-CROSS','ACETYL TETRAPEPTIDE-5','Pep viejo','MP',1)")
     conn.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,tipo_material,activo) VALUES ('MP-CANON-CROSS','N-ACETYL GLUCOSAMINE','Glucosamina','MP',1)")
+    # par DUPLICADO ES/EN: 'Tripeptido - 38' vs 'TRIPEPTIDE-38' = mismo (sinónimo idioma)
+    conn.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,tipo_material,activo) VALUES ('MP-OLD-ESEN','Palmitoyl Tripeptido - 38','Pep ES','MP',1)")
+    conn.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,tipo_material,activo) VALUES ('MP-CANON-ESEN','PALMITOYL TRIPEPTIDE-38','Pep EN','MP',1)")
     conn.execute("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES ('PROD PARES T1',1,1)")
     # fórmula usa los códigos VIEJOS; el Excel dirá los canónicos (por nombre comercial)
     conn.execute("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje) VALUES ('PROD PARES T1','MP-OLD-DUP','Pantenol',5)")
     conn.execute("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje) VALUES ('PROD PARES T1','MP-OLD-CROSS','Glucosamina',5)")
+    conn.execute("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje) VALUES ('PROD PARES T1','MP-OLD-ESEN','Palmitoyl tripeptide-38',5)")
     conn.commit(); conn.close()
     # Excel: el producto con los códigos CANÓNICOS, match por nombre comercial
     xls = _excel_maestro([
         ("PANTHENOL", "Pantenol", "MP-CANON-DUP", 5.0),
         ("N-ACETYL GLUCOSAMINE", "Glucosamina", "MP-CANON-CROSS", 5.0),
+        ("PALMITOYL TRIPEPTIDE-38", "Palmitoyl tripeptide-38", "MP-CANON-ESEN", 5.0),
     ], producto="PROD PARES T1")
     r = c.post("/api/admin/cruce-maestro/pares",
                data={"file": (io.BytesIO(xls), "m.xlsx")},
@@ -163,6 +168,8 @@ def test_pares_clasifica_duplicado_vs_crossmap(app, db_clean):
     pares = {p["old"]: p for p in r.get_json()["pares"]}
     assert pares.get("MP-OLD-DUP", {}).get("clase") == "DUPLICADO", pares
     assert pares.get("MP-OLD-CROSS", {}).get("clase") == "CROSS_MAP", pares
+    # ES/EN: 'Tripeptido-38' == 'TRIPEPTIDE-38' → DUPLICADO (no cross-map)
+    assert pares.get("MP-OLD-ESEN", {}).get("clase") == "DUPLICADO", pares
 
 
 def test_cruce_maestro_requiere_admin(app, db_clean):
