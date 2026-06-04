@@ -3137,7 +3137,8 @@ def simular_produccion():
     conn = get_db()
     c = conn.cursor()
     c.execute("""SELECT fi.material_id, fi.material_nombre, fi.porcentaje,
-                        COALESCE(m.precio_referencia, 0)
+                        COALESCE(m.precio_referencia, 0),
+                        COALESCE(m.controla_stock, 1)
                  FROM formula_items fi
                  LEFT JOIN maestro_mps m ON fi.material_id = m.codigo_mp
                  WHERE fi.producto_nombre=?""", (producto,))
@@ -3156,8 +3157,19 @@ def simular_produccion():
                                              _ESTADOS_LOTE_NO_PRODUCIBLES as _NP6)
     except Exception:
         _resolver_mp, _NP6 = None, None
-    for mat_id, mat_nombre, pct, precio_kg in items:
+    for mat_id, mat_nombre, pct, precio_kg, controla_stock in items:
         g_req = round((pct / 100) * cantidad_g, 2)
+        # MP infinita / fabricada en casa (AGUA del lab) → no se controla stock:
+        # siempre suficiente, nunca faltante, no bloquea la producción.
+        if int(controla_stock or 0) == 0:
+            resultado.append({
+                'material_id': mat_id, 'material_nombre': mat_nombre,
+                'porcentaje': pct, 'g_requerido': g_req,
+                'g_disponible': g_req, 'g_faltante': 0,
+                'suficiente': True, 'no_controla_stock': True,
+                'precio_kg': round(precio_kg or 0, 2), 'costo': 0,
+            })
+            continue
         if _resolver_mp and _NP6:
             try:
                 cod_bodega = _resolver_mp(c, mat_id, mat_nombre) or mat_id

@@ -312,6 +312,15 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (218, "maestro_mps.controla_stock · MP de fabricación propia/infinita (AGUA del lab) no exige ni descuenta stock · 4-jun-2026", [
+        # Default 1 = se controla normal. 0 = infinita / fabricada en casa (agua
+        # desionizada del laboratorio): producción la ignora (no bloquea, no descuenta).
+        "ALTER TABLE maestro_mps ADD COLUMN controla_stock INTEGER DEFAULT 1",
+        # El agua se produce en el lab (desionizada), es prácticamente infinita y no
+        # se compra → nunca debe bloquear producción ni generar faltantes/negativos.
+        "UPDATE maestro_mps SET controla_stock=0 WHERE UPPER(TRIM(COALESCE(nombre_inci,''))) IN ('AQUA','AGUA','WATER','AGUA DESIONIZADA','AGUA DESTILADA','AQUA (WATER)','AQUA/WATER') OR UPPER(TRIM(COALESCE(nombre_comercial,''))) LIKE 'AGUA%' OR codigo_mp='MPAGUALI01'",
+    ]),
+
     (217, "ebr_registros_fisicos · adjuntar registros físicos/PDF al legajo (MyBatch estación ⑦) · 3-jun-2026", [
         """CREATE TABLE IF NOT EXISTS ebr_registros_fisicos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

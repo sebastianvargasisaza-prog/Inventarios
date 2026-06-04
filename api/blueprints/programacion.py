@@ -6624,6 +6624,49 @@ def _resolver_material_bodega(c, formula_mid, formula_nombre):
                 return _best
         except Exception:
             pass
+    # 4) RESCATE FINAL · stock atrapado en código INACTIVO · Audit 4-jun
+    # Caso PANTENOL: el código de fórmula (MP00236) y su duplicado (MP00110, 1118g)
+    # están AMBOS inactivos tras una unificación a medias → tiers 2b/3 (solo activos)
+    # devuelven 0g y producción aborta "no hay" aunque el inventario exista físico.
+    # Aquí, como último recurso, buscamos por INCI o por nombre SIN filtrar activo y
+    # elegimos el código con MÁS stock neto. Es inventario real y usable; el código
+    # esté activo o no, el material existe en bodega. Log para que se limpie luego.
+    try:
+        _inci_f = ''
+        if fmid:
+            _ir = c.execute("SELECT COALESCE(nombre_inci,'') FROM maestro_mps WHERE codigo_mp=?", (fmid,)).fetchone()
+            _inci_f = _norm_mp_name(_ir[0]) if (_ir and _ir[0]) else ''
+        nn = _norm_mp_name(nom) if nom else ''
+        _alias_nn = _MP_NAME_ALIAS.get(nn) if nn else None
+        _resc = set()
+        for r in c.execute(
+            "SELECT codigo_mp, COALESCE(nombre_inci,''), COALESCE(nombre_comercial,'') "
+            "FROM maestro_mps").fetchall():  # SIN filtro activo
+            cod = str(r[0] or '').strip()
+            if not cod or cod == (fmid or ''):
+                continue
+            _ok = False
+            if _inci_f and _norm_mp_name(r[1]) == _inci_f:
+                _ok = True
+            elif nn:
+                for cand in (r[1], r[2]):
+                    if not cand:
+                        continue
+                    cn = _norm_mp_name(cand)
+                    if cn == nn or cn == _alias_nn or _MP_NAME_ALIAS.get(cn) == nn:
+                        _ok = True
+                        break
+            if _ok and _stock_neto(cod) > 0:
+                _resc.add(cod)
+        if _resc:
+            _best = sorted(_resc, key=lambda x: (-_stock_neto(x), x))[0]
+            logging.getLogger('programacion').warning(
+                "resolver MP RESCATE inactivo · fórmula '%s' (fmid=%s) → %s tiene "
+                "%.1fg atrapados (código posiblemente inactivo) · unificá para limpiar",
+                nom or _inci_f, fmid, _best, _stock_neto(_best))
+            return _best
+    except Exception:
+        pass
     return fmid  # fallback · comportamiento previo
 
 
@@ -6681,8 +6724,24 @@ def _calcular_mp_consumo_produccion(c, evento_id):
             'nombre': nom or '', 'cantidad_g': 0.0,
         })
         a['cantidad_g'] += g_total
+    # controla_stock: MP de fabricación propia/infinita (AGUA del lab) → la
+    # producción NO la exige ni la descuenta (nunca bloquea por "no hay"). Se
+    # marca con controla_stock=0 en maestro_mps (mig 218). Chequeamos tanto el
+    # código de fórmula como el resuelto (cualquiera marcado → no controla).
+    def _no_controla(cod_bodega, cod_formula):
+        for cc in (cod_bodega, cod_formula):
+            if not cc:
+                continue
+            try:
+                r = c.execute("SELECT COALESCE(controla_stock,1) FROM maestro_mps WHERE codigo_mp=?", (cc,)).fetchone()
+                if r is not None and int(r[0] or 0) == 0:
+                    return True
+            except Exception:
+                pass
+        return False
     mps = [{'codigo_mp': k, 'codigo_mp_formula': v['codigo_mp_formula'],
-            'nombre': v['nombre'], 'cantidad_g': round(v['cantidad_g'], 2)}
+            'nombre': v['nombre'], 'cantidad_g': round(v['cantidad_g'], 2),
+            'controla_stock': 0 if _no_controla(k, v['codigo_mp_formula']) else 1}
            for k, v in _acc.items()]
     return mps, {
         'producto': producto, 'fecha': fecha, 'lotes': lotes,
@@ -6744,6 +6803,9 @@ def _validar_stock_para_produccion(c, mps_a_consumir):
     for mp in mps_a_consumir:
         cod = mp['codigo_mp']
         if not cod:
+            continue
+        # MP infinita / fabricada en casa (AGUA del lab) → nunca falta, no bloquea.
+        if int(mp.get('controla_stock', 1) or 0) == 0:
             continue
         params = (cod,) + _ESTADOS_LOTE_NO_PRODUCIBLES
         r = c.execute(sql, params).fetchone()
@@ -6922,6 +6984,13 @@ def _descontar_mp_produccion(c, evento_id, user, forzar=False):
                 f"{meta['lotes']} lote(s) × {meta['cantidad_kg_total']:.0f}kg")
     descontados = []
     for mp in mps_a_consumir:
+        # MP infinita / fabricada en casa (AGUA del lab) → no se descuenta del
+        # kardex (no se compra ni se controla). Se registra en el legajo sin Salida.
+        if int(mp.get('controla_stock', 1) or 0) == 0:
+            mp['distribucion_fefo'] = []
+            mp['no_controla_stock'] = True
+            descontados.append(mp)
+            continue
         distrib = _distribuir_fefo(c, mp['codigo_mp'], mp['cantidad_g'])
         mp['distribucion_fefo'] = []
         for d in distrib:

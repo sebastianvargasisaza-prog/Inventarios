@@ -72,6 +72,55 @@ def test_resolver_tier1_neto_cero_cae_a_inci_con_stock(app, db_clean):
     assert res == 'MP-G-INCI', f"tier-1 neto 0 debe caer al código del mismo INCI con stock · {res}"
 
 
+def test_resolver_rescata_stock_en_codigo_inactivo(app, db_clean):
+    """Caso PANTENOL real (4-jun): el código de fórmula Y su duplicado están AMBOS
+    inactivos, con el stock atrapado en el inactivo. El resolver debe rescatarlo
+    igual (inventario físico real) en vez de devolver 0g y abortar producción."""
+    import blueprints.programacion as prog
+    c = _conn()
+    # ambos INACTIVOS · INCI único (no choca con seed) · stock en el duplicado inactivo
+    c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,tipo_material,activo) VALUES ('MP-PAN-F','RESCATINOLZZ','MP',0)")
+    c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,tipo_material,activo) VALUES ('MP-PAN-G','RESCATINOLZZ','MP',0)")
+    c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MP-PAN-G','Rescatinol atrapado','Entrada',1118,'L1',date('now'))")
+    c.commit()
+    res = prog._resolver_material_bodega(c, 'MP-PAN-F', 'nombre que no matchea seed')
+    c.close()
+    assert res == 'MP-PAN-G', f"debe rescatar stock atrapado en código inactivo · {res}"
+
+
+def test_agua_no_controla_stock_no_bloquea_produccion(app, db_clean):
+    """AGUA del lab (controla_stock=0): infinita, fabricada en casa → producción NO
+    la exige (sin faltante) ni la descuenta del kardex, aunque su stock sea 0/negativo."""
+    import blueprints.programacion as prog
+    c = _conn()
+    # agua marcada como no-controlada, con stock NEGATIVO (caso real -330k)
+    c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,tipo_material,activo,controla_stock) VALUES ('MP-AGUA','AQUA','MP',1,0)")
+    c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MP-AGUA','Agua','Salida',5000,'L0',date('now'))")
+    c.commit()
+    # validar: agua marcada no-controla → NO debe aparecer como faltante
+    mps = [{'codigo_mp': 'MP-AGUA', 'nombre': 'Agua', 'cantidad_g': 800, 'controla_stock': 0}]
+    falt = prog._validar_stock_para_produccion(c, mps)
+    c.close()
+    assert falt == [], f"agua infinita no debe bloquear producción · {falt}"
+
+
+def test_calcular_consumo_marca_agua_no_controla(app, db_clean):
+    """_calcular_mp_consumo_produccion debe marcar controla_stock=0 para el agua
+    (lee maestro_mps.controla_stock del código resuelto o el de fórmula)."""
+    import blueprints.programacion as prog
+    c = _conn()
+    c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,tipo_material,activo,controla_stock) VALUES ('MP-AGUA2','AQUA','MP',1,0)")
+    c.execute("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES ('PROD AGUA',1,1)")
+    c.execute("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje) VALUES ('PROD AGUA','MP-AGUA2','Agua',70)")
+    c.execute("INSERT INTO produccion_programada (producto,fecha_programada,lotes,cantidad_kg,estado,origen) VALUES ('PROD AGUA',date('now'),1,1,'programado','manual')")
+    pid = c.execute("SELECT id FROM produccion_programada WHERE producto='PROD AGUA'").fetchone()[0]
+    c.commit()
+    mps, _meta = prog._calcular_mp_consumo_produccion(c, pid)
+    c.close()
+    agua = [m for m in mps if m['codigo_mp'] == 'MP-AGUA2']
+    assert agua and agua[0]['controla_stock'] == 0, f"agua debe marcarse controla_stock=0 · {mps}"
+
+
 def test_simular_usa_resolver_y_jala_stock(app, db_clean):
     """Verificar Stock (simular) ahora resuelve el código de fórmula → reporta el
     stock que está bajo el código duplicado (antes mostraba 0g)."""
