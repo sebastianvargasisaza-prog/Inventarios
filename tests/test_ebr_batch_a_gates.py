@@ -86,7 +86,7 @@ def test_asignar_lote_fisico_propaga(app, db_clean):
                    "VALUES (?, 1, 'PP999', 'en_proceso', 'sebastian', datetime('now','utc'), 1000)", (mbr_id,))
     # un movimiento de Entrada con el lote provisional (simula PT en cuarentena)
     _exec("INSERT INTO movimientos (material_id, tipo, cantidad, lote, fecha) "
-          "VALUES ('PT-LF-T1', 'Entrada', 10, 'PP999', date('now'))")
+          "VALUES ('PT_LF_T1', 'Entrada', 10, 'PP999', date('now'))")
     r = c.post(f"/api/brd/ebr/{ebr_id}/asignar-lote-fisico",
                json={"lote_fisico": "PROD-2026-0007"}, headers=_h())
     assert r.status_code == 200, r.data

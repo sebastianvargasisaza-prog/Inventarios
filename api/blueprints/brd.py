@@ -1865,9 +1865,13 @@ def completar_ebr(ebr_id):
                 (ebr_id,),
             ).fetchone()
             prod_nombre = prod_row[0] if prod_row else ''
-            # Check si ya existe el movimiento para no duplicar
+            # Check si ya existe el movimiento PT para no duplicar.
+            # Audit 3-jun · scopear por material_id PT (LIKE 'PT_%') · antes filtraba
+            # solo por lote → una Entrada MP con el MISMO string de lote bloqueaba la
+            # creación del PT (y viceversa en liberar/asignar-lote).
             existe = cur.execute(
-                "SELECT 1 FROM movimientos WHERE lote=? AND tipo='Entrada' LIMIT 1",
+                "SELECT 1 FROM movimientos WHERE lote=? AND tipo='Entrada' "
+                "AND COALESCE(material_id,'') LIKE 'PT\\_%' ESCAPE '\\' LIMIT 1",
                 (lote_ref,),
             ).fetchone()
             if not existe:
@@ -1943,7 +1947,8 @@ def asignar_lote_fisico_ebr(ebr_id):
     if anterior:
         try:
             cur.execute(
-                "UPDATE movimientos SET lote=? WHERE lote=? AND tipo='Entrada'",
+                "UPDATE movimientos SET lote=? WHERE lote=? AND tipo='Entrada' "
+                "AND COALESCE(material_id,'') LIKE 'PT\\_%' ESCAPE '\\'",
                 (nuevo, anterior),
             )
             mov_actualizados = cur.rowcount or 0
@@ -2157,6 +2162,7 @@ def liberar_ebr(ebr_id):
             cur.execute(
                 """UPDATE movimientos SET estado_lote='VIGENTE'
                    WHERE lote=? AND tipo='Entrada'
+                     AND COALESCE(material_id,'') LIKE 'PT\\_%' ESCAPE '\\'
                      AND estado_lote IN ('CUARENTENA','CUARENTENA_EXTENDIDA')""",
                 (lote_ref,),
             )
