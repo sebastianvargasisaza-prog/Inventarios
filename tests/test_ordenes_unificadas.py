@@ -201,6 +201,27 @@ def test_registro_produccion_guarda_area_linea(app, db_clean):
     assert 'PROD2' in al and len(al) > len('PROD2'), al
 
 
+def test_registro_produccion_lote_personalizado(app, db_clean):
+    """5-jun · N° de Lote editable (MyBatch parity): si el operario escribe el
+    lote bulk (ej. 261561), se usa ese; si lo deja vacío, auto PROD-NNNNN."""
+    c = _conn()
+    c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,tipo_material,activo) VALUES ('MP-LOT1','GLYCERIN','Glicerina','MP',1)")
+    c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MP-LOT1','Glicerina','Entrada',100000,'LL1',date('now'))")
+    c.execute("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES ('PROD LOTE TEST',1,1)")
+    c.execute("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje) VALUES ('PROD LOTE TEST','MP-LOT1','Glicerina',10)")
+    c.commit(); c.close()
+    cl = _login(app)
+    r = cl.post('/api/produccion', json={'producto': 'PROD LOTE TEST', 'cantidad_kg': 1,
+                                         'operador': 'sebastian', 'presentacion': 'test',
+                                         'lote': '261561'}, headers=_h())
+    assert r.status_code in (200, 201), r.data
+    assert r.get_json().get('lote') == '261561', r.get_json().get('lote')
+    c = _conn()
+    lt = c.execute("SELECT lote FROM producciones WHERE producto='PROD LOTE TEST' ORDER BY id DESC LIMIT 1").fetchone()
+    c.close()
+    assert lt and lt[0] == '261561', f"la producción debe guardar el lote escrito · {lt}"
+
+
 def test_registro_produccion_sin_mbr_no_crea_legajo(app, db_clean):
     """Si el producto NO tiene MBR aprobado, el registro NO crea legajo (se
     comporta idéntico a antes · cero riesgo). El legajo automático depende del

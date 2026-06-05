@@ -945,6 +945,10 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <label>Área o Línea de fabricación</label>
       <select id="prod-area"><option value="">-- Selecciona área --</option></select>
     </div>
+    <div class="form-group">
+      <label>N° de Lote (opcional · si lo dejas vacío se genera automático)</label>
+      <input type="text" id="prod-lote" placeholder="Ej: 261561">
+    </div>
     <div id="prod-preview" style="background:#f0f8ff;border:1px solid #b8d4f0;border-radius:8px;padding:14px;margin-bottom:14px;display:none;">
       <strong style="color:#2c5f8a;">MPs que se descontaran automaticamente:</strong>
       <table class="table" style="margin-top:8px;">
@@ -6561,6 +6565,7 @@ async function iniciarRegistroProd(){
   var obs=document.getElementById('prod-obs').value;
   var pres=document.getElementById('prod-presentacion').value;
   var areaCod=(document.getElementById('prod-area')||{}).value||'';
+  var loteIn=((document.getElementById('prod-lote')||{}).value||'').trim();
   if(!pres || !pres.trim()){
     if(!confirm('⚠ Sin presentación · los rótulos saldrán incompletos. ¿Continuar sin presentación?')) return;
   }
@@ -6568,7 +6573,7 @@ async function iniciarRegistroProd(){
     var _csrf2 = (typeof csrfTokenNec === 'function') ? csrfTokenNec() : (window._csrfTok || '');
     var r=await fetch('/api/produccion',{method:'POST',credentials:'same-origin',
       headers:{'Content-Type':'application/json','X-CSRF-Token':_csrf2},
-      body:JSON.stringify({producto:prod,cantidad_kg:kg,observaciones:obs,presentacion:pres,operador:OPER_ACTUAL,area_codigo:areaCod})});
+      body:JSON.stringify({producto:prod,cantidad_kg:kg,observaciones:obs,presentacion:pres,operador:OPER_ACTUAL,area_codigo:areaCod,lote:loteIn})});
     var d=await r.json();
     if(!r.ok){
       // Sebastian 5-may-2026 (Luis Enrique): popup + detalle inline.

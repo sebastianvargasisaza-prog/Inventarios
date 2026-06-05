@@ -2016,6 +2016,9 @@ def _handle_produccion_inner():
         cantidad_g = cantidad_kg * 1000
         operador = (data.get('operador') or '').strip()
         observaciones_in = data.get('observaciones', '')
+        # N° de Lote bulk (MyBatch parity): si el operario lo escribe, se usa ese;
+        # si lo deja vacío, EOS auto-genera PROD-NNNNN. Sanitizado básico.
+        lote_in = (data.get('lote') or '').strip()[:40]
 
         # ─── Validación 1: input ─────────────────────────────────────────────
         if not producto:
@@ -2263,7 +2266,7 @@ def _handle_produccion_inner():
                 (producto, cantidad_kg, fecha, 'Completado', observaciones_in, operador, presentacion)
             )
             prod_id = c.lastrowid
-            lote_ref = f'PROD-{prod_id:05d}'
+            lote_ref = lote_in if lote_in else f'PROD-{prod_id:05d}'
             try:
                 c.execute("UPDATE producciones SET lote=? WHERE id=?", (lote_ref, prod_id))
             except sqlite3.OperationalError as _e:
