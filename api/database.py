@@ -312,6 +312,24 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (220, "ebr_despeje_items · checklist granular de despeje de línea (13 verificaciones GMP por ítem · MyBatch estación ② detalle) · 5-jun-2026", [
+        # MyBatch muestra el despeje como tabla VERIFICACIÓN/CUMPLE/ACCIONES con 13
+        # verificaciones. Esta tabla guarda el CUMPLE (Sí/No) por ítem, con e-firma del
+        # responsable. La tabla coarse ebr_despeje_linea sigue para el gate de liberación.
+        """CREATE TABLE IF NOT EXISTS ebr_despeje_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ebr_id INTEGER NOT NULL,
+            item_idx INTEGER NOT NULL,
+            item_texto TEXT NOT NULL,
+            cumple INTEGER DEFAULT NULL,
+            observaciones TEXT DEFAULT '',
+            registrado_por TEXT DEFAULT '',
+            registrado_at_utc TEXT DEFAULT '',
+            FOREIGN KEY (ebr_id) REFERENCES ebr_ejecuciones(id) ON DELETE CASCADE
+        )""",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_ebrdespitem_uniq ON ebr_despeje_items(ebr_id, item_idx)",
+    ]),
+
     (219, "ebr_ejecuciones.area_codigo · Área o Línea de la orden (MyBatch parity · 4 áreas autorizadas INVIMA) · 5-jun-2026", [
         "ALTER TABLE ebr_ejecuciones ADD COLUMN area_codigo TEXT DEFAULT ''",
     ]),

@@ -49,6 +49,11 @@ def _aislar_brd():
         for eid, in c.execute("SELECT id FROM ebr_ejecuciones").fetchall():
             if eid not in pre['ebr']:
                 c.execute("DELETE FROM ebr_pasos_ejecutados WHERE ebr_id=?", (eid,))
+                for _t in ('ebr_despeje_items', 'ebr_pesajes', 'ebr_precauciones', 'ebr_despeje_linea'):
+                    try:
+                        c.execute(f"DELETE FROM {_t} WHERE ebr_id=?", (eid,))
+                    except Exception:
+                        pass
                 c.execute("DELETE FROM ebr_ejecuciones WHERE id=?", (eid,))
         for pid, in c.execute("SELECT id FROM producciones").fetchall():
             if pid not in pre['prod']:
@@ -296,6 +301,39 @@ def test_pesaje_sheet_hoja_completa(app, db_clean):
     assert by['MP-SH1']['cant_a_pesar_g'] == 500 and not by['MP-SH1']['pesado'], by.get('MP-SH1')
     assert by['MP-SH1']['lote'] == 'LSH1', f"MP-SH1 debe traer su lote FEFO · {by['MP-SH1']}"
     assert by['MP-SH2']['pesado'] and by['MP-SH2']['cant_pesada_g'] == 510 and by['MP-SH2']['pesado_por'] == 'mrivera', by.get('MP-SH2')
+
+
+def test_despeje_checklist_13_items_y_registro(app, db_clean):
+    """5-jun · Despeje de Línea - Dispensación (MyBatch ② detalle): vista-completa
+    devuelve el checklist canónico de 13 verificaciones (cumple=None pendiente), y
+    el endpoint despeje-item registra CUMPLE por ítem (upsert · honesto, sin inventar)."""
+    c = _conn()
+    c.execute("INSERT INTO mbr_templates (producto_nombre,version,estado,lote_size_g,titulo,creado_por,creado_at_utc) VALUES ('PROD DESP TEST',1,'draft',1000,'t','sebastian','2026-06-05')")
+    mbr = c.execute("SELECT id FROM mbr_templates WHERE producto_nombre='PROD DESP TEST'").fetchone()[0]
+    c.execute("INSERT INTO mbr_pasos (mbr_template_id,orden,descripcion,tipo_paso,fase) VALUES (?,1,'Mezclar','mezclado','fabricacion')", (mbr,))
+    c.execute("UPDATE mbr_templates SET estado='aprobado' WHERE id=?", (mbr,))
+    c.execute("INSERT INTO ebr_ejecuciones (mbr_template_id,mbr_version,lote,numero_op,estado,iniciado_por,iniciado_at_utc,cantidad_objetivo_g,fase) VALUES (?,1,'LOTE-DESP','OP-2026-7777','iniciado','sebastian','2026-06-05',1000,'fabricacion')", (mbr,))
+    ebr = c.execute("SELECT id FROM ebr_ejecuciones WHERE lote='LOTE-DESP'").fetchone()[0]
+    c.commit(); c.close()
+    cl = _login(app)
+    d = cl.get(f'/api/brd/ebr/{ebr}/vista-completa').get_json()
+    chk = d.get('despeje_checklist') or []
+    assert len(chk) == 13, f"checklist canónico de 13 verificaciones · {len(chk)}"
+    assert chk[0]['cumple'] is None, "sin registro = pendiente (no inventa Sí)"
+    assert 'Temperatura' in chk[0]['texto']
+    # registrar CUMPLE del ítem 0
+    r = cl.post(f'/api/brd/ebr/{ebr}/despeje-item', json={'item_idx': 0, 'cumple': 1, 'observaciones': '28°C'}, headers=_h())
+    assert r.status_code == 201, r.data
+    # upsert: re-registrar el mismo ítem (No) no duplica
+    r2 = cl.post(f'/api/brd/ebr/{ebr}/despeje-item', json={'item_idx': 0, 'cumple': 0}, headers=_h())
+    assert r2.status_code == 201, r2.data
+    d2 = cl.get(f'/api/brd/ebr/{ebr}/vista-completa').get_json()
+    chk2 = {x['idx']: x for x in d2['despeje_checklist']}
+    assert chk2[0]['cumple'] == 0 and chk2[0]['registrado_por'] == 'sebastian', chk2[0]
+    cc = _conn()
+    n = cc.execute("SELECT COUNT(*) FROM ebr_despeje_items WHERE ebr_id=? AND item_idx=0", (ebr,)).fetchone()[0]
+    cc.close()
+    assert n == 1, f"upsert no debe duplicar · {n} filas"
 
 
 def test_registro_produccion_sin_mbr_no_crea_legajo(app, db_clean):

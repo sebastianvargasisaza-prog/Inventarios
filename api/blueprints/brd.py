@@ -45,6 +45,26 @@ from audit_helpers import audit_log
 bp = Blueprint("brd", __name__)
 log = logging.getLogger("brd")
 
+# Despeje de Línea · Dispensación (MyBatch estación ②) · checklist GMP canónico.
+# Sebastián 5-jun-2026: estas 13 verificaciones son el SOP de despeje de línea
+# (no son datos inventados, son los controles regulatorios estándar). El CUMPLE
+# por ítem se guarda en ebr_despeje_items con e-firma del responsable.
+DESPEJE_LINEA_ITEMS = [
+    "Temperatura menor a 30 grados",
+    "¿Cuenta con los EPP requeridos para el proceso?",
+    "¿Los equipos requeridos se encuentran aptos para su uso? (mantenimiento y calibración al día)",
+    "¿El formato de registro de condiciones ambientales se encuentra diligenciado y al día?",
+    "¿Las condiciones ambientales son las idóneas para el proceso?",
+    "Las materias primas, material de envase y empaque, graneles, etiquetas y documentación corresponden al producto a trabajar.",
+    "El área se encuentra identificada con el producto en proceso",
+    "El área y sus equipos y/o utensilios se encuentran completamente limpios y con los respectivos rótulos de Limpieza Área / Equipo.",
+    "¿Se comprueba que todas las áreas están rotuladas como \"Área limpia\" y están listas para ser usadas?",
+    "¿Se comprueba que todos los equipos están rotulados como \"Equipo limpio\" y están listos para ser usados?",
+    "¿Los formatos de Limpieza de áreas se encuentran diligenciados y al día?",
+    "¿Se asegura que las áreas de producción estén limpias y desinfectadas antes de cada lote?",
+    "El área está libre de materias primas, material de envase y empaque, gráneles, etiquetas, producto terminado y documentación del producto anterior.",
+]
+
 
 # ── UI dashboard (read-only listings) ──────────────────────────────────────
 
@@ -1627,6 +1647,42 @@ def ebr_vista_completa(ebr_id):
         out['header']['supervisado_por'] = sup
     except Exception:
         pass
+    # Aprobado por (Calidad) enriquecido · MyBatch parity (Sebastián 5-jun-2026):
+    # "calidad la libera el Jefe de Control de Calidad". liberado_por es el username
+    # firmante → resolvemos Nombre, Cargo (username) + fecha de liberación.
+    try:
+        lp = (out['header'].get('liberado_por') or '').strip()
+        if lp:
+            qr = conn.execute(
+                "SELECT COALESCE(nombre_completo,''), COALESCE(cargo,'') "
+                "FROM usuarios_identidad WHERE username=? AND COALESCE(activo,1)=1",
+                (lp,)).fetchone()
+            full = lp
+            if qr:
+                _pq = [p for p in (qr[0], qr[1]) if p and p != 'Por definir']
+                if _pq:
+                    full = ', '.join(_pq) + f' ({lp})'
+            _la = (out['header'].get('liberado_at_utc') or '')
+            if _la:
+                full += ' · ' + _la[:16].replace('T', ' ')
+            out['header']['liberado_por_full'] = full
+    except Exception:
+        pass
+    # Cantidad Disponible (mL) · MyBatch parity: granel producido menos el granel
+    # ya envasado/acondicionado del MISMO lote (OF/OA). Sin envasado registrado =>
+    # disponible = producido. Cálculo honesto sobre la propia data EOS (no inventado).
+    try:
+        prod_ml = out['header'].get('ml_envasable')
+        lote_b = (out['header'].get('lote_codigo') or '').strip()
+        if prod_ml is not None and lote_b:
+            cons = conn.execute(
+                "SELECT COALESCE(SUM(COALESCE(ml_envasable,0)),0) FROM ebr_ejecuciones "
+                "WHERE lote_codigo=? AND id<>? AND COALESCE(fase,'') IN ('envasado','acondicionamiento')",
+                (lote_b, ebr_id)).fetchone()
+            consumido = float(cons[0] or 0) if cons else 0.0
+            out['header']['cantidad_disponible_ml'] = max(0.0, round(float(prod_ml) - consumido, 2))
+    except Exception:
+        pass
     # 2. Pesajes MP
     try:
         rows = conn.execute(
@@ -1700,6 +1756,33 @@ def ebr_vista_completa(ebr_id):
                                 'registrado_por': r[2], 'fecha': r[3]} for r in prows]
     except Exception:
         out['precauciones'] = []
+    # 2d. Despeje de Línea · checklist 13 ítems (MyBatch ② detalle · Sebastián 5-jun).
+    # Template canónico (DESPEJE_LINEA_ITEMS) fusionado con lo registrado en
+    # ebr_despeje_items. CUMPLE: 1=Sí, 0=No, None=pendiente (honesto, sin inventar).
+    try:
+        reg = {}
+        try:
+            drows = conn.execute(
+                "SELECT item_idx, cumple, COALESCE(observaciones,''), "
+                "COALESCE(registrado_por,''), COALESCE(registrado_at_utc,'') "
+                "FROM ebr_despeje_items WHERE ebr_id=?", (ebr_id,)).fetchall()
+            for dr in drows:
+                reg[int(dr[0])] = dr
+        except Exception:
+            reg = {}
+        chk = []
+        for i, texto in enumerate(DESPEJE_LINEA_ITEMS):
+            r = reg.get(i)
+            chk.append({
+                'idx': i, 'texto': texto,
+                'cumple': (int(r[1]) if r and r[1] is not None else None),
+                'observaciones': (r[2] if r else ''),
+                'registrado_por': (r[3] if r else ''),
+                'fecha': (r[4] if r else ''),
+            })
+        out['despeje_checklist'] = chk
+    except Exception:
+        out['despeje_checklist'] = []
     # 3. Pasos
     try:
         rows = conn.execute(
@@ -3803,6 +3886,50 @@ def registrar_despeje_ebr(ebr_id):
     return jsonify({"ok": True, "id": rid, "conforme": conforme}), 201
 
 
+# ── MyBatch ② detalle · Despeje de línea por ÍTEM (checklist 13 verificaciones) ──
+@bp.route("/api/brd/ebr/<int:ebr_id>/despeje-item", methods=["POST"])
+def registrar_despeje_item_ebr(ebr_id):
+    """Registra el CUMPLE (Sí/No) de UNA verificación del despeje de línea.
+    Botón ✏️ de la tabla VERIFICACIÓN/CUMPLE/ACCIONES (MyBatch ② detalle)."""
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    try:
+        idx = int(body.get("item_idx"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "item_idx inválido"}), 400
+    if idx < 0 or idx >= len(DESPEJE_LINEA_ITEMS):
+        return jsonify({"error": "item_idx fuera de rango"}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    ebr = cur.execute("SELECT estado FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
+    if not ebr:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if ebr["estado"] not in ("iniciado", "en_proceso"):
+        return jsonify({"error": f"EBR no editable (estado: {ebr['estado']})"}), 409
+    cumple = 1 if body.get("cumple") in (1, True, '1', 'true', 'on', 'si', 'Si', 'sí') else 0
+    obs = (body.get("observaciones") or "").strip()[:500]
+    user = session.get("compras_user", "")
+    texto = DESPEJE_LINEA_ITEMS[idx]
+    # Upsert por (ebr_id, item_idx) · índice único de mig 220.
+    cur.execute(
+        """INSERT INTO ebr_despeje_items
+             (ebr_id, item_idx, item_texto, cumple, observaciones,
+              registrado_por, registrado_at_utc)
+           VALUES (?, ?, ?, ?, ?, ?, datetime('now','utc'))
+           ON CONFLICT(ebr_id, item_idx) DO UPDATE SET
+             cumple=excluded.cumple, observaciones=excluded.observaciones,
+             registrado_por=excluded.registrado_por,
+             registrado_at_utc=excluded.registrado_at_utc""",
+        (ebr_id, idx, texto, cumple, obs, user))
+    audit_log(cur, usuario=user, accion="REGISTRAR_DESPEJE_ITEM_EBR",
+              tabla="ebr_despeje_items", registro_id=ebr_id,
+              despues={"ebr_id": ebr_id, "item_idx": idx, "cumple": cumple})
+    conn.commit()
+    return jsonify({"ok": True, "item_idx": idx, "cumple": cumple}), 201
+
+
 # ── MyBatch ① · Precauciones + Equipos ──────────────────────────────────────
 @bp.route("/api/brd/ebr/<int:ebr_id>/precauciones", methods=["GET"])
 def listar_precauciones_ebr(ebr_id):
@@ -4288,6 +4415,9 @@ h1{font-size:28px;margin:0;color:#fff;letter-spacing:.5px}
 .b-pdf{background:#f97316;color:#fff}.b-rot{background:#14b8a6;color:#fff}
 .b-aj{background:#475569;color:#fff}
 .b-soon{background:#e2e8f0;color:#94a3b8;cursor:not-allowed}
+.b-mini{background:#14b8a6;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer}
+.b-i{background:#0ea5e9;color:#fff;border:none;border-radius:7px;width:30px;height:30px;font-style:italic;font-weight:800;cursor:pointer}
+.b-e{background:#f59e0b;color:#fff;border:none;border-radius:7px;width:30px;height:30px;cursor:pointer}
 h2{font-size:18px;color:#7c3aed;margin:0 0 14px}
 table{width:100%;border-collapse:collapse;font-size:12.5px}
 th{text-align:left;padding:10px 9px;background:#f5f3ff;color:#6d28d9;font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:.3px}
@@ -4323,6 +4453,33 @@ function estadoBg(e){var s=(e||'').toLowerCase();
   if(s.indexOf('complet')>=0)return '#cffafe';
   return '#fef9c3';}
 function togglePasos(){var s=document.getElementById('pasos-sec');s.style.display=s.style.display==='none'?'block':'none';if(s.style.display==='block')s.scrollIntoView({behavior:'smooth'});}
+// 1. Precauciones · "+ Agregar Equipo" (MyBatch ①)
+async function agregarEquipo(){
+  var desc=prompt('Equipo / precaución a registrar:');
+  if(!desc) return;
+  var tipo=confirm('¿Es un EQUIPO? (Aceptar=Equipo · Cancelar=Precaución)')?'equipo':'precaucion';
+  var r=await fetch('/api/brd/ebr/'+EBR_ID+'/precauciones',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({tipo:tipo,descripcion:desc})});
+  var d=await r.json(); if(!r.ok){alert('Error: '+(d.error||r.status));return;}
+  load();
+}
+// 2. Despeje · botón "i" (ver detalle de la verificación)
+function infoDespeje(idx){
+  var it=(window._despejeChk||[]).find(function(x){return x.idx===idx;}); if(!it) return;
+  var msg=it.texto+'\n\nCumple: '+(it.cumple===1?'Sí':(it.cumple===0?'No':'Pendiente'));
+  if(it.registrado_por) msg+='\nResponsable: '+it.registrado_por;
+  if(it.fecha) msg+='\nFecha: '+it.fecha.substring(0,16).replace('T',' ');
+  if(it.observaciones) msg+='\nObservación: '+it.observaciones;
+  alert(msg);
+}
+// 2. Despeje · botón "✏️" (registrar CUMPLE Sí/No + observación)
+async function editDespeje(idx){
+  var it=(window._despejeChk||[]).find(function(x){return x.idx===idx;}); if(!it) return;
+  var c=confirm('Verificación:\n'+it.texto+'\n\n¿CUMPLE? (Aceptar=Sí · Cancelar=No)');
+  var obs=prompt('Observación (opcional):', it.observaciones||'')||'';
+  var r=await fetch('/api/brd/ebr/'+EBR_ID+'/despeje-item',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({item_idx:idx,cumple:c?1:0,observaciones:obs})});
+  var d=await r.json(); if(!r.ok){alert('Error: '+(d.error||r.status));return;}
+  load();
+}
 async function ajustarOrden(){
   // + Ajuste: corrige la cantidad de la producción asociada (re-escala MP por FEFO).
   // Reusa /api/produccion/<pid>/ajustar-cantidad (admin · audit INVIMA).
@@ -4386,25 +4543,62 @@ async function load(){
     // Instrucción de Manufactura (MyBatch parity): cabecera de manufactura
     // (cantidades · densidad · rendimiento · aprobado calidad) + precauciones + pasos.
     function fld(l,v){return '<div><div class="lbl">'+l+'</div><div class="val">'+v+'</div></div>';}
-    var mlAprob = h.ml_envasable!=null ? Number(h.ml_envasable).toLocaleString('es-CO',{maximumFractionDigits:2})+' mL' : '—';
+    function dt(s){return s? esc(String(s).substring(0,16).replace("T"," ")) : '—';}
+    function mlf(v){return v!=null? (Number(v).toLocaleString('es-CO',{minimumFractionDigits:2,maximumFractionDigits:2})+' mL') : '—';}
+    // Cantidad Producida/Aprobada = "X Gr - Y mL" (granel en gramos y su equivalente mL).
+    var prodAprob = (h.cantidad_real_g!=null? gfmt(h.cantidad_real_g):'—') +
+                    (h.ml_envasable!=null? (' - '+mlf(h.ml_envasable)) : '');
+    var estManuf = h.estado||'—';
+    // Cabecera fiel a "INSTRUCCIONES DE MANUFACTURA" (MyBatch · Sebastián 5-jun).
     var manuf='<div class="grid" style="padding:0;margin-bottom:16px">'+
+      fld('N° de Lote Bulk', '<span class="mono">'+esc(h.lote_codigo||'—')+'</span>')+
       fld('Cantidad Ordenada', gfmt(h.cantidad_objetivo_g))+
-      fld('Cantidad Producida', gfmt(h.cantidad_real_g))+
-      fld('Cantidad Aprobada', mlAprob)+
+      fld('Área o Línea', esc(h.area_linea||'—'))+
+      fld('Fecha Inicio', dt(h.iniciado_at_utc))+
+      fld('Fecha Final', dt(h.completado_at_utc))+
+      fld('Estado Actual', '<b style="color:'+estadoColor(estManuf)+'">'+esc(estManuf)+'</b>')+
+      fld('Cantidad Producida/Aprobada', prodAprob)+
       fld('Densidad', h.densidad_g_ml? (Number(h.densidad_g_ml).toLocaleString('es-CO',{maximumFractionDigits:3})+' g/mL'):'—')+
       fld('Rendimiento', h.yield_pct!=null? (Number(h.yield_pct).toLocaleString('es-CO',{maximumFractionDigits:2})+'%'):'—')+
-      fld('Aprobado por (Calidad)', esc(h.liberado_por||'—'))+
+      fld('Cantidad Disponible', mlf(h.cantidad_disponible_ml))+
+      fld('Supervisado por', esc(h.supervisado_por||'—'))+
+      fld('Aprobado por (Calidad)', esc(h.liberado_por_full||h.liberado_por||'—'))+
       '</div>';
-    // 1. Precauciones / equipos
+    var editable = (estado==='iniciado'||estado==='en_proceso');
+    // 1. Precauciones (MyBatch ① · texto + "+ Agregar Equipo" + lista de equipos/precauciones)
     var prec=d.precauciones||[];
-    var precHtml='<h3 style="font-size:14px;color:#7c3aed;margin:6px 0 8px">1. Precauciones / Equipos</h3>'+
+    var precHtml='<div style="display:flex;align-items:center;gap:12px;margin:14px 0 8px">'+
+        '<h3 style="font-size:15px;color:#7c3aed;margin:0">1. Precauciones</h3>'+
+        (editable?'<button class="b-mini" onclick="agregarEquipo()">+ Agregar Equipo</button>':'')+
+      '</div>'+
+      '<div style="font-size:13px;color:#334155;margin-bottom:8px">Tenga en cuenta las siguientes precauciones antes de iniciar el proceso de fabricación:</div>'+
       (prec.length
         ? '<ul style="margin:0 0 14px 18px;font-size:13px;color:#334155">'+prec.map(function(p){
-            return '<li><b>'+esc(p.tipo||'')+':</b> '+esc(p.descripcion||'')+(p.registrado_por?' <span class="muted">('+esc(p.registrado_por)+')</span>':'')+'</li>';}).join('')+'</ul>'
-        : '<div class="muted" style="margin-bottom:14px">Sin precauciones/equipos registrados.</div>');
-    // 2. Pasos del proceso
+            var et=(p.tipo==='equipo')?'🛠 Equipo':'⚠ Precaución';
+            return '<li><b>'+et+':</b> '+esc(p.descripcion||'')+(p.registrado_por?' <span class="muted">('+esc(p.registrado_por)+')</span>':'')+'</li>';}).join('')+'</ul>'
+        : '<div class="muted" style="margin-bottom:14px">Sin equipos/precauciones registrados.</div>');
+    // 2. Despeje de Línea - Dispensación (MyBatch ② · checklist VERIFICACIÓN/CUMPLE/ACCIONES)
+    var chk=d.despeje_checklist||[];
+    function cumpleCell(c){
+      if(c===1) return '<span style="color:#166534;font-weight:700">Sí ✓</span>';
+      if(c===0) return '<span style="color:#b91c1c;font-weight:700">No ✗</span>';
+      return '<span class="muted">Pendiente</span>';
+    }
+    var despHtml='<h3 style="font-size:15px;color:#7c3aed;margin:18px 0 6px">2. Despeje de Línea - Dispensación</h3>'+
+      '<div style="font-size:13px;color:#334155;margin-bottom:8px">Realizar despeje en el área de dispensación de acuerdo a los procedimientos internos, y realice las siguientes verificaciones:</div>'+
+      '<table><thead><tr><th>Verificación</th><th style="text-align:center">Cumple</th><th style="text-align:center">Acciones</th></tr></thead><tbody>'+
+      chk.map(function(it){
+        return '<tr><td>'+esc(it.texto)+'</td>'+
+          '<td style="text-align:center">'+cumpleCell(it.cumple)+'</td>'+
+          '<td style="text-align:center;white-space:nowrap">'+
+            '<button class="b-i" title="Ver detalle" onclick="infoDespeje('+it.idx+')">i</button> '+
+            (editable?'<button class="b-e" title="Registrar" onclick="editDespeje('+it.idx+')">✏️</button>':'')+
+          '</td></tr>';
+      }).join('')+'</tbody></table>'+
+      '<div style="font-size:11px;color:#94a3b8;margin:6px 0 14px">Sí = cumple · No = no cumple · Pendiente = sin verificar. Cada verificación queda con responsable y hora.</div>';
+    // 3. Pasos del proceso
     var pasos=d.pasos||[];
-    var pasosHtml='<h3 style="font-size:14px;color:#7c3aed;margin:6px 0 8px">2. Pasos del proceso</h3>'+
+    var pasosHtml='<h3 style="font-size:15px;color:#7c3aed;margin:18px 0 6px">3. Pasos del proceso</h3>'+
       (pasos.length
       ? '<table><thead><tr><th>#</th><th>Descripción</th><th>Estado</th><th>Operario</th><th>Completado</th></tr></thead><tbody>'+
         pasos.map(function(p){return '<tr><td class="mono">'+esc(p.orden)+'</td><td>'+esc(p.descripcion)+'</td>'+
@@ -4412,7 +4606,9 @@ async function load(){
           '<td>'+esc(p.operario||'—')+'</td><td class="muted">'+esc((p.completado||'—').substring(0,16).replace("T"," "))+'</td></tr>';}).join('')+
         '</tbody></table>'
       : '<div class="muted">Sin pasos registrados.</div>');
-    document.getElementById('pasos').innerHTML = manuf + precHtml + pasosHtml;
+    // guardo el checklist para los botones i/✏️
+    window._despejeChk = chk;
+    document.getElementById('pasos').innerHTML = manuf + precHtml + despHtml + pasosHtml;
     // Pesaje de Materias Primas · HOJA COMPLETA (todas las MP de la fórmula)
     // estilo MyBatch: % · N° Lote (FEFO) · Cant. a pesar · Cant. pesada · Pesado por.
     var sheet=d.pesaje_sheet||[];
