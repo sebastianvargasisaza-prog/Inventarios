@@ -2344,10 +2344,11 @@ def _handle_produccion_inner():
             ebr_auto = None
             try:
                 from blueprints.brd import crear_ebr_desde_mbr
+                _area_cod = (data.get('area_codigo') or '').strip()
                 _r = crear_ebr_desde_mbr(
                     c, producto_nombre=producto, lote=lote_ref,
                     produccion_id=None, cantidad_objetivo_g=cantidad_g,
-                    usuario=operador)
+                    usuario=operador, area_codigo=_area_cod)
                 if _r.get('ok'):
                     ebr_auto = _r
                     try:

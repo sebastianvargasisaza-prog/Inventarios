@@ -941,6 +941,10 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <label>Cantidad a producir (kg)</label>
       <input type="number" id="prod-kg" placeholder="Ej: 20" step="0.001" oninput="previewProd()">
     </div>
+    <div class="form-group">
+      <label>Área o Línea de fabricación</label>
+      <select id="prod-area"><option value="">-- Selecciona área --</option></select>
+    </div>
     <div id="prod-preview" style="background:#f0f8ff;border:1px solid #b8d4f0;border-radius:8px;padding:14px;margin-bottom:14px;display:none;">
       <strong style="color:#2c5f8a;">MPs que se descontaran automaticamente:</strong>
       <table class="table" style="margin-top:8px;">
@@ -3725,7 +3729,7 @@ function switchTab(n,btn){
   if(btn) btn.classList.add('active');
   if(n==='stock') loadStock();
   if(n==='formulas'||n==='produccion') loadFormulas();
-  if(n==='produccion'){ if(typeof cargarPendientesFab==='function') cargarPendientesFab(); if(typeof cargarHistProd==='function') cargarHistProd(); }
+  if(n==='produccion'){ if(typeof cargarPendientesFab==='function') cargarPendientesFab(); if(typeof cargarHistProd==='function') cargarHistProd(); if(typeof cargarAreasFab==='function') cargarAreasFab(); }
   if(n==='cuarentena') cargarCuarentena();
   if(n==='ingreso') initIngreso();
   if(n==='abc') loadABC();
@@ -3767,7 +3771,7 @@ function subSwitchTab(tabId,btn,barId){
   if(target) target.classList.add('active');
   if(tabId==='stock'){loadStock();}  /* MEE vive en tab 'empaque' separado */
   if(tabId==='formulas'||tabId==='produccion') loadFormulas();
-  if(tabId==='produccion') cargarHistProd();
+  if(tabId==='produccion'){ cargarHistProd(); if(typeof cargarAreasFab==='function') cargarAreasFab(); }
   if(tabId==='envasado') cargarEnvasadoSimpleTab();
   if(tabId==='acondicionamiento') cargarAcondSimpleTab();
   if(tabId==='programacion') cargarProgramacion(null);
@@ -6529,6 +6533,19 @@ if(typeof document !== 'undefined' && !window._FAB_PEND_DELEG){
   });
 }
 
+async function cargarAreasFab(){
+  // Carga las áreas de FABRICACIÓN (puede_producir) en el desplegable del form.
+  var sel=document.getElementById('prod-area'); if(!sel) return;
+  try{
+    var r=await fetch('/api/planta/areas',{credentials:'same-origin'});
+    var d=await r.json(); var arr=(d&&(d.areas||d.items))||(Array.isArray(d)?d:[]);
+    var opts='<option value="">-- Selecciona área --</option>';
+    arr.filter(function(a){return a.puede_producir;}).forEach(function(a){
+      opts+='<option value="'+_escHTML(a.codigo)+'">'+_escHTML(a.nombre)+' ('+_escHTML(a.codigo)+')</option>';
+    });
+    sel.innerHTML=opts;
+  }catch(e){}
+}
 async function iniciarRegistroProd(){
   var msgEl = document.getElementById('prod-msg');
   var prod=document.getElementById('prod-sel').value||document.getElementById('prod-manual').value;
@@ -6543,6 +6560,7 @@ async function iniciarRegistroProd(){
   }
   var obs=document.getElementById('prod-obs').value;
   var pres=document.getElementById('prod-presentacion').value;
+  var areaCod=(document.getElementById('prod-area')||{}).value||'';
   if(!pres || !pres.trim()){
     if(!confirm('⚠ Sin presentación · los rótulos saldrán incompletos. ¿Continuar sin presentación?')) return;
   }
@@ -6550,7 +6568,7 @@ async function iniciarRegistroProd(){
     var _csrf2 = (typeof csrfTokenNec === 'function') ? csrfTokenNec() : (window._csrfTok || '');
     var r=await fetch('/api/produccion',{method:'POST',credentials:'same-origin',
       headers:{'Content-Type':'application/json','X-CSRF-Token':_csrf2},
-      body:JSON.stringify({producto:prod,cantidad_kg:kg,observaciones:obs,presentacion:pres,operador:OPER_ACTUAL})});
+      body:JSON.stringify({producto:prod,cantidad_kg:kg,observaciones:obs,presentacion:pres,operador:OPER_ACTUAL,area_codigo:areaCod})});
     var d=await r.json();
     if(!r.ok){
       // Sebastian 5-may-2026 (Luis Enrique): popup + detalle inline.

@@ -810,7 +810,7 @@ def _validar_signature(cur, signature_id, *, record_table, record_id,
 
 def crear_ebr_desde_mbr(cur, *, producto_nombre, lote, produccion_id=None,
                         cantidad_objetivo_g=None, usuario='', notas='',
-                        fase='fabricacion'):
+                        fase='fabricacion', area_codigo=''):
     """Crea (o reusa) un EBR para un lote desde el MBR APROBADO del producto.
 
     Reutilizable fuera de brd.py (p.ej. hook de aceptar producción en planta ·
@@ -850,16 +850,30 @@ def crear_ebr_desde_mbr(cur, *, producto_nombre, lote, produccion_id=None,
                 'detail': f"el lote '{lote}' ya tiene un EBR"}
     cant = cantidad_objetivo_g if cantidad_objetivo_g is not None else mbr[2]
     numero_op = assign_numero_op(cur)
-    cur.execute(
-        """INSERT INTO ebr_ejecuciones
-             (mbr_template_id, mbr_version, produccion_id, lote, numero_op,
-              estado, iniciado_por, iniciado_at_utc, cantidad_objetivo_g, notas,
-              fase)
-           VALUES (?, ?, ?, ?, ?, 'iniciado', ?, datetime('now', 'utc'), ?, ?, ?)""",
-        (mbr[0], mbr[1], produccion_id, lote, numero_op, usuario,
-         float(cant or 0), notas,
-         (fase if fase in _FASES_VALIDAS else 'fabricacion')),
-    )
+    try:
+        cur.execute(
+            """INSERT INTO ebr_ejecuciones
+                 (mbr_template_id, mbr_version, produccion_id, lote, numero_op,
+                  estado, iniciado_por, iniciado_at_utc, cantidad_objetivo_g, notas,
+                  fase, area_codigo)
+               VALUES (?, ?, ?, ?, ?, 'iniciado', ?, datetime('now', 'utc'), ?, ?, ?, ?)""",
+            (mbr[0], mbr[1], produccion_id, lote, numero_op, usuario,
+             float(cant or 0), notas,
+             (fase if fase in _FASES_VALIDAS else 'fabricacion'),
+             (area_codigo or '')),
+        )
+    except Exception:
+        # Fallback si la columna area_codigo aún no existe (mig 219 sin aplicar)
+        cur.execute(
+            """INSERT INTO ebr_ejecuciones
+                 (mbr_template_id, mbr_version, produccion_id, lote, numero_op,
+                  estado, iniciado_por, iniciado_at_utc, cantidad_objetivo_g, notas,
+                  fase)
+               VALUES (?, ?, ?, ?, ?, 'iniciado', ?, datetime('now', 'utc'), ?, ?, ?)""",
+            (mbr[0], mbr[1], produccion_id, lote, numero_op, usuario,
+             float(cant or 0), notas,
+             (fase if fase in _FASES_VALIDAS else 'fabricacion')),
+        )
     ebr_id = cur.lastrowid
     _fase_ebr = fase if fase in _FASES_VALIDAS else 'fabricacion'
     pasos = cur.execute(
@@ -1530,7 +1544,8 @@ def ebr_vista_completa(ebr_id):
                       COALESCE(rechazado_at_utc, '') AS rechazado_at_utc,
                       rechazado_motivo,
                       COALESCE(numero_op,'') AS numero_op,
-                      COALESCE(fase,'fabricacion') AS fase
+                      COALESCE(fase,'fabricacion') AS fase,
+                      COALESCE(area_codigo,'') AS area_codigo
                FROM ebr_ejecuciones WHERE id=?""",
             (ebr_id,),
         ).fetchone()
@@ -1545,7 +1560,18 @@ def ebr_vista_completa(ebr_id):
             'liberado_at_utc': row[10] or '', 'liberado_por': row[11] or '',
             'rechazado_at_utc': row[12] or '', 'rechazado_motivo': row[13] or '',
             'numero_op': row[14] or '', 'fase': row[15] or 'fabricacion',
+            'area_codigo': row[16] or '',
         }
+        # Área o Línea: resolver el nombre legible desde areas_planta.
+        try:
+            _ac = out['header'].get('area_codigo') or ''
+            if _ac:
+                _ar = conn.execute(
+                    "SELECT nombre FROM areas_planta WHERE codigo=?", (_ac,)).fetchone()
+                out['header']['area_linea'] = (
+                    (str(_ar[0]) + ' (' + _ac + ')') if _ar and _ar[0] else _ac)
+        except Exception:
+            pass
     except Exception as e:
         return jsonify({'error': f'header fallo: {e}'}), 500
     # Producto del MBR

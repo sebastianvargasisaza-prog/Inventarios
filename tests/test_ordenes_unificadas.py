@@ -172,6 +172,35 @@ def test_registro_produccion_crea_legajo_automatico(app, db_clean):
     assert len(filas) == 1 and filas[0]['origen'] == 'legajo', f"1 sola fila LEGAJO (sin duplicar) · {filas}"
 
 
+def test_registro_produccion_guarda_area_linea(app, db_clean):
+    """5-jun · Área o Línea: al registrar producción con area_codigo (de las áreas
+    INVIMA seed PROD1..4), el legajo la guarda y vista-completa la resuelve a
+    nombre (Área o Línea deja de salir '—')."""
+    c = _conn()
+    c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,tipo_material,activo) VALUES ('MP-AREA1','GLYCERIN','Glicerina','MP',1)")
+    c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MP-AREA1','Glicerina','Entrada',100000,'LAR1',date('now'))")
+    c.execute("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES ('PROD AREA TEST',1,1)")
+    c.execute("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje) VALUES ('PROD AREA TEST','MP-AREA1','Glicerina',10)")
+    c.execute("INSERT INTO mbr_templates (producto_nombre,version,estado,lote_size_g,titulo,creado_por,creado_at_utc) VALUES ('PROD AREA TEST',1,'draft',1000,'t','sebastian','2026-06-05')")
+    mbr = c.execute("SELECT id FROM mbr_templates WHERE producto_nombre='PROD AREA TEST'").fetchone()[0]
+    c.execute("INSERT INTO mbr_pasos (mbr_template_id,orden,descripcion,tipo_paso,fase) VALUES (?,1,'Mezclar','mezclado','fabricacion')", (mbr,))
+    c.execute("UPDATE mbr_templates SET estado='aprobado' WHERE id=?", (mbr,))
+    c.commit(); c.close()
+    cl = _login(app)
+    r = cl.post('/api/produccion', json={'producto': 'PROD AREA TEST', 'cantidad_kg': 1,
+                                         'operador': 'sebastian', 'presentacion': 'test',
+                                         'area_codigo': 'PROD2'}, headers=_h())
+    assert r.status_code in (200, 201), r.data
+    d = r.get_json()
+    assert d.get('ebr') and d['ebr'].get('id'), f"debe crear legajo · {d}"
+    ebr_id = d['ebr']['id']
+    h = cl.get(f'/api/brd/ebr/{ebr_id}/vista-completa').get_json()['header']
+    assert h.get('area_codigo') == 'PROD2', h.get('area_codigo')
+    # area_linea = "<nombre> (PROD2)" · resuelto desde areas_planta
+    al = h.get('area_linea') or ''
+    assert 'PROD2' in al and len(al) > len('PROD2'), al
+
+
 def test_registro_produccion_sin_mbr_no_crea_legajo(app, db_clean):
     """Si el producto NO tiene MBR aprobado, el registro NO crea legajo (se
     comporta idéntico a antes · cero riesgo). El legajo automático depende del

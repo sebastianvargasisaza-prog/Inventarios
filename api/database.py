@@ -312,6 +312,10 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (219, "ebr_ejecuciones.area_codigo · Área o Línea de la orden (MyBatch parity · 4 áreas autorizadas INVIMA) · 5-jun-2026", [
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN area_codigo TEXT DEFAULT ''",
+    ]),
+
     (218, "maestro_mps.controla_stock · MP de fabricación propia/infinita (AGUA del lab) no exige ni descuenta stock · 4-jun-2026", [
         # Default 1 = se controla normal. 0 = infinita / fabricada en casa (agua
         # desionizada del laboratorio): producción la ignora (no bloquea, no descuenta).
