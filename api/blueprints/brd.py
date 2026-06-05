@@ -3899,7 +3899,7 @@ def ordenes_unificadas():
             "ml_envasable": rd.get("ml_envasable"),
             "estado": _estado_orden_norm("legajo", rd.get("estado")),
             "fecha": (rd.get("iniciado_at_utc") or "")[:10],
-            "link": f"/brd/timeline/{rd['id']}",
+            "link": f"/planta/orden/{rd['id']}",
             "ebr_id": rd["id"],
         })
 
@@ -4045,3 +4045,130 @@ def ordenes_produccion_page():
         return Response('<script>location.href="/login?next=/planta/ordenes-produccion"</script>',
                         mimetype="text/html")
     return Response(_ORDENES_PROD_HTML, mimetype="text/html")
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Detalle de Orden de Producción · layout estilo MyBatch (Sebastián 4-jun-2026)
+# Sub-pasos A+B: cabecera + 5 botones + tabla "Pesaje de Materias Primas".
+# Reusa /api/brd/ebr/<id>/vista-completa (datos ya existentes). Aditivo.
+# El Timeline cronológico queda como uno de los botones.
+# ──────────────────────────────────────────────────────────────────────────
+
+_ORDEN_DETALLE_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Orden de Producción · EOS</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f3ff;color:#1e293b;margin:0;padding:20px}
+.wrap{max-width:1150px;margin:0 auto}
+a.back{color:#7c3aed;font-size:13px;text-decoration:none}
+.card{background:#fff;border-radius:14px;padding:22px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:18px}
+h1{font-size:24px;margin:0 0 2px;color:#1e293b}
+.prod{font-size:17px;color:#475569;font-weight:600;margin-bottom:18px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;font-size:13px}
+.grid .lbl{color:#64748b;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+.grid .val{color:#1e293b;margin-top:2px;font-weight:600}
+.estado{font-weight:800}
+.btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px}
+.btns a,.btns button{border:none;border-radius:8px;padding:11px 18px;font-size:13px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+.b-time{background:#0ea5e9;color:#fff}.b-mbr{background:#22c55e;color:#fff}
+.b-aj{background:#475569;color:#fff}.b-pdf{background:#f97316;color:#fff}.b-rot{background:#14b8a6;color:#fff}
+.b-soon{background:#e2e8f0;color:#64748b;cursor:not-allowed}
+h2{font-size:18px;color:#7c3aed;margin:0 0 12px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:left;padding:9px 8px;background:#f1f5f9;color:#475569;font-weight:700;font-size:11.5px}
+td{padding:9px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+.mono{font-family:ui-monospace,monospace;font-weight:700;color:#1e40af}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.delta-ok{color:#166534}.delta-warn{color:#b45309;font-weight:700}
+.muted{color:#94a3b8}
+#pasos-sec{display:none}
+</style></head><body>
+<div class="wrap">
+<a class="back" href="/inventarios">&larr; Planta · Producción</a>
+<div class="card" id="head">Cargando…</div>
+<div class="card" id="pasos-sec"><h2>📖 Instrucción de Manufactura (pasos)</h2><div id="pasos"></div></div>
+<div class="card"><h2>⚖️ Pesaje de Materias Primas</h2><div id="pesaje"></div></div>
+</div>
+<script>
+var EBR_ID = __EBR_ID__;
+function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
+function gfmt(n){return (n==null||n==='')?'—':Number(n).toLocaleString('es-CO',{maximumFractionDigits:1})+' g';}
+function estadoColor(e){var s=(e||'').toLowerCase();
+  if(s.indexOf('liber')>=0||s.indexOf('aprob')>=0)return '#166534';
+  if(s.indexOf('rechaz')>=0)return '#991b1b';
+  if(s.indexOf('cuarentena')>=0)return '#1e40af';
+  return '#854d0e';}
+function togglePasos(){var s=document.getElementById('pasos-sec');s.style.display=s.style.display==='none'?'block':'none';if(s.style.display==='block')s.scrollIntoView({behavior:'smooth'});}
+async function load(){
+  try{
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/vista-completa',{credentials:'same-origin'});
+    if(r.status===401){location.href='/login';return;}
+    var d=await r.json();
+    if(!r.ok){document.getElementById('head').innerHTML='<span style="color:#b91c1c">Error: '+esc(d.error||r.status)+'</span>';return;}
+    var h=d.header||{};
+    var numop = h.numero_op || ('EBR-'+EBR_ID);
+    document.getElementById('head').innerHTML =
+      '<h1>Orden de Producción '+esc(numop)+'</h1>'+
+      '<div class="prod">'+esc(h.producto||h.titulo||'—')+'</div>'+
+      '<div class="grid">'+
+        '<div><div class="lbl">N° de Lote Bulk</div><div class="val mono">'+esc(h.lote_codigo||'—')+'</div></div>'+
+        '<div><div class="lbl">Tamaño de Lote</div><div class="val">'+gfmt(h.lote_size_g)+'</div></div>'+
+        '<div><div class="lbl">Iniciado</div><div class="val">'+esc((h.iniciado_at_utc||'—').substring(0,16).replace("T"," "))+'</div></div>'+
+        '<div><div class="lbl">Estado Actual</div><div class="val estado" style="color:'+estadoColor(h.estado)+'">'+esc(h.estado||'—')+'</div></div>'+
+        '<div><div class="lbl">Elaborado por</div><div class="val">'+esc(h.operario||'—')+'</div></div>'+
+        '<div><div class="lbl">Liberado por</div><div class="val">'+esc(h.liberado_por||'—')+'</div></div>'+
+        '<div style="grid-column:1/-1"><div class="lbl">Observaciones</div><div class="val" style="font-weight:400">'+esc(h.observaciones||'Ninguna')+'</div></div>'+
+      '</div>'+
+      '<div class="btns">'+
+        '<a class="b-time" href="/brd/timeline/'+EBR_ID+'">📜 Timeline Batch Record</a>'+
+        '<button class="b-mbr" onclick="togglePasos()">📖 Instrucción de Manufactura</button>'+
+        '<a class="b-pdf" href="/api/brd/ebr/'+EBR_ID+'/pdf" target="_blank">📄 Descargar PDF</a>'+
+        '<button class="b-soon" title="Próximo sub-paso">➕ Ajuste</button>'+
+        '<button class="b-soon" title="Próximo sub-paso">🖨 Rótulos de Pesaje</button>'+
+      '</div>';
+    // Pasos (Instrucción de Manufactura)
+    var pasos=d.pasos||[];
+    document.getElementById('pasos').innerHTML = pasos.length
+      ? '<table><thead><tr><th>#</th><th>Descripción</th><th>Estado</th><th>Operario</th><th>Completado</th></tr></thead><tbody>'+
+        pasos.map(function(p){return '<tr><td class="mono">'+esc(p.orden)+'</td><td>'+esc(p.descripcion)+'</td>'+
+          '<td>'+(p.completado_flag?'<span style="color:#166534;font-weight:700">✓ hecho</span>':'<span class="muted">pendiente</span>')+'</td>'+
+          '<td>'+esc(p.operario||'—')+'</td><td class="muted">'+esc((p.completado||'—').substring(0,16).replace("T"," "))+'</td></tr>';}).join('')+
+        '</tbody></table>'
+      : '<div class="muted">Sin pasos registrados.</div>';
+    // Pesaje de Materias Primas
+    var ps=d.pesajes||[]; var lote_size=Number(h.lote_size_g||0);
+    document.getElementById('pesaje').innerHTML = ps.length
+      ? '<table><thead><tr><th>Materia Prima</th><th class="num">%</th><th>N° Lote</th>'+
+        '<th class="num">Cant. a pesar</th><th class="num">Cant. pesada</th><th class="num">Δ%</th><th>Pesado por</th></tr></thead><tbody>'+
+        ps.map(function(p){
+          var pct = lote_size>0 ? (p.esperada_g/lote_size*100).toLocaleString('es-CO',{maximumFractionDigits:2})+'%' : '—';
+          var dcl = Math.abs(p.delta_pct||0)>5 ? 'delta-warn' : 'delta-ok';
+          return '<tr>'+
+            '<td><span class="mono">'+esc(p.material_id)+'</span> '+esc(p.material_nombre||'')+'</td>'+
+            '<td class="num">'+pct+'</td>'+
+            '<td class="mono">'+esc(p.lote_mp||'—')+'</td>'+
+            '<td class="num">'+gfmt(p.esperada_g)+'</td>'+
+            '<td class="num">'+gfmt(p.real_g)+'</td>'+
+            '<td class="num '+dcl+'">'+(p.delta_pct!=null?p.delta_pct+'%':'—')+'</td>'+
+            '<td>'+esc(p.operario||'—')+(p.fecha?' <span class="muted">'+esc(p.fecha.substring(0,16).replace("T"," "))+'</span>':'')+'</td>'+
+          '</tr>';
+        }).join('')+'</tbody></table>'
+      : '<div class="muted">Aún no hay pesajes registrados para esta orden.</div>';
+  }catch(e){document.getElementById('head').innerHTML='<span style="color:#b91c1c">Error red: '+esc(e.message)+'</span>';}
+}
+load();
+</script>
+</body></html>"""
+
+
+@bp.route("/planta/orden/<int:ebr_id>", methods=["GET"])
+def orden_detalle_page(ebr_id):
+    """Detalle de Orden de Producción (legajo EBR) estilo MyBatch · solo lectura.
+    Sub-pasos A+B: cabecera + botones + pesaje. Reusa vista-completa."""
+    if not session.get("compras_user"):
+        return Response(f'<script>location.href="/login?next=/planta/orden/{ebr_id}"</script>',
+                        mimetype="text/html")
+    return Response(_ORDEN_DETALLE_HTML.replace("__EBR_ID__", str(ebr_id)),
+                    mimetype="text/html")

@@ -67,3 +67,33 @@ def test_ordenes_unificadas_requiere_login(app, db_clean):
     cl = app.test_client()
     r = cl.get('/api/brd/ordenes-unificadas')
     assert r.status_code == 401
+
+
+def test_orden_detalle_page_html(app, db_clean):
+    """Detalle de Orden estilo MyBatch (cabecera + botones + pesaje) · solo lectura."""
+    cl = _login(app)
+    r = cl.get('/planta/orden/123')
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert 'Orden de Producción' in body
+    assert 'Pesaje de Materias Primas' in body
+    assert 'vista-completa' in body          # reusa el endpoint existente
+    assert 'var EBR_ID = 123;' in body       # id inyectado correctamente
+
+
+def test_orden_detalle_link_apunta_a_detalle(app, db_clean):
+    """El link de las órdenes EBR debe apuntar a /planta/orden/<id> (no al timeline)."""
+    import sqlite3
+    c = _conn()
+    # crear un MBR + EBR mínimo para que aparezca como legajo con link
+    c.execute("INSERT INTO mbr_templates (producto_nombre, version, estado, lote_size_g, titulo, creado_por, creado_at_utc) "
+              "VALUES ('PROD DET TEST', 1, 'aprobado', 1000, 'MBR test', 'sebastian', '2026-06-04')")
+    mbr_id = c.execute("SELECT id FROM mbr_templates WHERE producto_nombre='PROD DET TEST'").fetchone()[0]
+    c.execute("INSERT INTO ebr_ejecuciones (mbr_template_id, mbr_version, lote, numero_op, estado, iniciado_por, iniciado_at_utc, cantidad_objetivo_g, fase) "
+              "VALUES (?, 1, 'LOTE-DET-1', 'OP-2026-9999', 'iniciado', 'sebastian', '2026-06-04', 1000, 'fabricacion')", (mbr_id,))
+    c.commit(); c.close()
+    cl = _login(app)
+    d = cl.get('/api/brd/ordenes-unificadas?fase=fabricacion').get_json()
+    fila = next((o for o in d['ordenes'] if o.get('numero_op') == 'OP-2026-9999'), None)
+    assert fila and fila['origen'] == 'legajo', f"el EBR debe aparecer como legajo · {d['resumen']}"
+    assert fila['link'] == f"/planta/orden/{fila['ebr_id']}", f"link al detalle · {fila.get('link')}"
