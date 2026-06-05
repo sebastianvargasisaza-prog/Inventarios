@@ -133,6 +133,42 @@ def _sign_payload(*, record_table, record_id, meaning, signer_username,
     return hmac.new(secret, payload, hashlib.sha256).hexdigest()
 
 
+def crear_firma_directa(conn, *, username, record_table, record_id,
+                        meaning, auth_factor='password', comment=''):
+    """Crea una e_signature server-side cuando los factores YA fueron verificados
+    por el caller (password + TOTP). Para operaciones BATCH que re-autentican UNA
+    vez y firman N records en una sesión continua (21 CFR Part 11 §11.200(a)(1)(ii):
+    serie de firmas durante un acceso continuo · primera con todos los factores).
+
+    Reusa _sign_payload (mismo HMAC/tamper-evidence que /api/sign). NO commitea
+    (el caller maneja la transacción). Devuelve signature_id.
+    """
+    cur = conn.cursor()
+    now_utc_str = _now_utc_iso()
+    ident = cur.execute(
+        "SELECT nombre_completo, cedula, cargo FROM usuarios_identidad WHERE username=?",
+        (username,)).fetchone()
+    fn = (ident["nombre_completo"] if ident else "") or ""
+    ced = (ident["cedula"] if ident else "") or ""
+    cargo = (ident["cargo"] if ident else "") or ""
+    ip = _client_ip()
+    rid = str(record_id)
+    sig_hash = _sign_payload(
+        record_table=record_table, record_id=rid, meaning=meaning,
+        signer_username=username, signed_at_utc=now_utc_str, ip=ip,
+        auth_factor=auth_factor, comment=comment, record_hash="")
+    cur.execute(
+        """INSERT INTO e_signatures
+             (record_table, record_id, meaning, signer_username,
+              signer_full_name, signer_cedula, signer_cargo,
+              signed_at_utc, ip, auth_factor, comment, record_hash,
+              signature_hash)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (record_table, rid, meaning, username, fn, ced, cargo,
+         now_utc_str, ip, auth_factor, comment, "", sig_hash))
+    return cur.lastrowid
+
+
 # ── /api/sign/challenge ───────────────────────────────────────────────────
 
 @bp.route("/api/sign/challenge", methods=["POST"])

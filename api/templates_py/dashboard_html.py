@@ -970,7 +970,10 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div id="prod-msg"></div>
     <div style="margin-top:28px;border-top:2px solid #eee;padding-top:20px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px"><h3 style="color:#6d28d9;margin:0;">&#128203; Órdenes de Producción</h3>
-        <button onclick="exportarExcelProducciones()" style="background:#217346;padding:7px 14px;font-size:0.85em;">&#128196; Descargar Excel</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <a href="/planta/activar-legajos" style="background:#7c3aed;color:#fff;text-decoration:none;padding:7px 14px;font-size:0.85em;border-radius:6px;font-weight:700">&#127981; Activar legajos automáticos</a>
+          <button onclick="exportarExcelProducciones()" style="background:#217346;padding:7px 14px;font-size:0.85em;">&#128196; Descargar Excel</button>
+        </div>
       </div>
       <!-- 4-jun-2026 · vista unificada estilo MyBatch (legajos EBR + registros
            simples) · lee /api/brd/ordenes-unificadas?fase=fabricacion -->

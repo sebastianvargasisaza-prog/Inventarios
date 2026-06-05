@@ -55,10 +55,14 @@ APP_BASE_URL = os.environ.get("APP_BASE_URL", "https://app.eossuite.com").rstrip
 # Reemplazo de MyBatch · fase 1 · EBR (batch record) automático al aceptar
 # producción. Modo de transición controlado por env para no frenar planta antes
 # de tener todos los MBR cargados:
-#   'off'    → no crea EBR (comportamiento actual · default seguro al desplegar)
-#   'warn'   → crea EBR si hay MBR aprobado; si falta, deja aceptar con aviso
-#   'strict' → BLOQUEA aceptar producción si no hay MBR aprobado (BPM estricto)
-# Activar 'strict' SOLO cuando todos los MBR estén cargados y aprobados.
+#   'off'    → no fuerza e-firma en pesajes/pasos · NO bloquea (default seguro)
+#   'warn'   → exige e-firma en pesajes/pasos (BPM) · no bloquea aceptar sin MBR
+#   'strict' → además BLOQUEA aceptar producción si no hay MBR aprobado
+# 5-jun-2026: el LEGAJO AUTOMÁTICO ya NO depende de EBR_MODE (se crea siempre que
+# el producto tenga MBR aprobado · ver _handle_produccion_inner). EBR_MODE quedó
+# SOLO para el rigor de firmas/bloqueo. Default 'off' = legajos automáticos sin
+# forzar que cada operario firme cada pesaje (eso se activa con 'warn' cuando el
+# equipo esté listo). Pasar a 'strict' cuando TODOS los MBR estén aprobados.
 EBR_MODE = os.environ.get("EBR_MODE", "off").strip().lower()
 if EBR_MODE not in ("off", "warn", "strict"):
     EBR_MODE = "off"

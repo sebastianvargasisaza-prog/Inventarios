@@ -75,10 +75,10 @@ def test_ordenes_unificadas_requiere_login(app, db_clean):
     assert r.status_code == 401
 
 
-def test_registro_produccion_crea_legajo_automatico(app, db_clean, monkeypatch):
-    """4-jun · LEGAJO AUTOMÁTICO (replica MyBatch): con EBR_MODE=warn y un MBR
-    aprobado, "Registrar Producción" crea el legajo solo (sin botón) y la orden
-    aparece UNA vez como LEGAJO (dedup del registro simple)."""
+def test_registro_produccion_crea_legajo_automatico(app, db_clean):
+    """5-jun · LEGAJO AUTOMÁTICO (replica MyBatch): con un MBR APROBADO,
+    "Registrar Producción" crea el legajo solo (sin botón, sin depender de
+    EBR_MODE) y la orden aparece UNA vez como LEGAJO (dedup del registro simple)."""
     c = _conn()
     c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,tipo_material,activo) VALUES ('MP-AUTO1','GLYCERIN','Glicerina','MP',1)")
     c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MP-AUTO1','Glicerina','Entrada',100000,'LA1',date('now'))")
@@ -91,9 +91,6 @@ def test_registro_produccion_crea_legajo_automatico(app, db_clean, monkeypatch):
     c.execute("INSERT INTO mbr_pasos (mbr_template_id,orden,descripcion,tipo_paso,fase) VALUES (?,1,'Mezclar bulk','mezclado','fabricacion')", (mbr_id,))
     c.execute("UPDATE mbr_templates SET estado='aprobado' WHERE id=?", (mbr_id,))
     c.commit(); c.close()
-    # activar el motor automático en runtime (la función lee config.EBR_MODE al vuelo)
-    import config
-    monkeypatch.setattr(config, 'EBR_MODE', 'warn', raising=False)
     cl = _login(app)
     r = cl.post('/api/produccion', json={'producto': 'PROD AUTO TEST', 'cantidad_kg': 1,
                                          'operador': 'sebastian', 'presentacion': 'test'},
@@ -109,9 +106,10 @@ def test_registro_produccion_crea_legajo_automatico(app, db_clean, monkeypatch):
     assert len(filas) == 1 and filas[0]['origen'] == 'legajo', f"1 sola fila LEGAJO (sin duplicar) · {filas}"
 
 
-def test_registro_produccion_sin_ebr_mode_no_crea_legajo(app, db_clean):
-    """Con EBR_MODE=off (default) el registro NO crea legajo (cero cambio de
-    comportamiento · seguro)."""
+def test_registro_produccion_sin_mbr_no_crea_legajo(app, db_clean):
+    """Si el producto NO tiene MBR aprobado, el registro NO crea legajo (se
+    comporta idéntico a antes · cero riesgo). El legajo automático depende del
+    MBR aprobado, no de EBR_MODE."""
     c = _conn()
     c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,tipo_material,activo) VALUES ('MP-OFF1','GLYCERIN','Glicerina','MP',1)")
     c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MP-OFF1','Glicerina','Entrada',100000,'LO1',date('now'))")
@@ -123,7 +121,40 @@ def test_registro_produccion_sin_ebr_mode_no_crea_legajo(app, db_clean):
                                          'operador': 'sebastian', 'presentacion': 'test'},
                 headers=_h())
     assert r.status_code in (200, 201), r.data
-    assert r.get_json().get('ebr') is None, "con EBR_MODE=off no debe crear legajo"
+    assert r.get_json().get('ebr') is None, "sin MBR aprobado no debe crear legajo"
+
+
+def test_aprobar_todas_genera_y_aprueba(app, db_clean):
+    """Activación masiva: genera+aprueba MBR de todos los productos con fórmula,
+    con una sola re-autenticación (password, sin MFA en test)."""
+    c = _conn()
+    c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,tipo_material,activo) VALUES ('MP-AT1','GLYCERIN','Glicerina','MP',1)")
+    c.execute("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES ('PROD APROBAR TODAS',1,1)")
+    c.execute("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje) VALUES ('PROD APROBAR TODAS','MP-AT1','Glicerina',100)")
+    c.commit(); c.close()
+    cl = _login(app)
+    r = cl.post('/api/brd/mbr/aprobar-todas', json={'password': TEST_PASSWORD, 'totp_token': ''}, headers=_h())
+    assert r.status_code == 200, r.data
+    d = r.get_json()
+    assert d['ok'] and d['mbr_aprobados'] >= 1, d
+    c = _conn()
+    est = c.execute("SELECT estado FROM mbr_templates WHERE producto_nombre='PROD APROBAR TODAS' ORDER BY version DESC LIMIT 1").fetchone()
+    c.close()
+    assert est and est[0] == 'aprobado', f"el MBR debe quedar aprobado · {est}"
+
+
+def test_aprobar_todas_password_invalida(app, db_clean):
+    cl = _login(app)
+    r = cl.post('/api/brd/mbr/aprobar-todas', json={'password': 'malísima', 'totp_token': ''}, headers=_h())
+    assert r.status_code == 401, r.data
+
+
+def test_activar_legajos_page_html(app, db_clean):
+    cl = _login(app)
+    r = cl.get('/planta/activar-legajos')
+    assert r.status_code == 200
+    b = r.get_data(as_text=True)
+    assert 'Activar legajos' in b and 'aprobar-todas' in b
 
 
 def test_vista_completa_supervisado_y_elaborado(app, db_clean):

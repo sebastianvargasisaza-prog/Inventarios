@@ -2334,37 +2334,33 @@ def _handle_produccion_inner():
             except Exception:
                 pass
 
-            # Reemplazo MyBatch · 4-jun-2026 · LEGAJO AUTOMÁTICO. Igual que
-            # planta_aceptar_produccion: al registrar producción se crea el EBR
-            # (batch record) desde el MBR APROBADO del producto. EBR_MODE controla:
-            # off (default)=no hace nada · warn/strict=crea si hay MBR aprobado.
-            # Así el legajo nace solo (como MyBatch), sin botón manual. Con off el
-            # comportamiento es idéntico al previo (cero riesgo).
+            # Reemplazo MyBatch · 5-jun-2026 · LEGAJO AUTOMÁTICO (como MyBatch).
+            # Al registrar producción se crea el EBR (batch record) SIEMPRE que el
+            # producto tenga un MBR APROBADO. crear_ebr_desde_mbr es auto-gateado:
+            # si NO hay MBR aprobado devuelve NO_MBR_APROBADO y no hace nada (no
+            # bloquea). NO depende de EBR_MODE: el legajo nace solo sin forzar la
+            # e-firma de pesajes (eso lo controla EBR_MODE aparte). Cero riesgo:
+            # productos sin MBR aprobado se comportan idéntico a antes.
             ebr_auto = None
             try:
-                from config import EBR_MODE as _EBR_MODE
-            except Exception:
-                _EBR_MODE = 'off'
-            if _EBR_MODE in ('warn', 'strict'):
-                try:
-                    from blueprints.brd import crear_ebr_desde_mbr
-                    _r = crear_ebr_desde_mbr(
-                        c, producto_nombre=producto, lote=lote_ref,
-                        produccion_id=None, cantidad_objetivo_g=cantidad_g,
-                        usuario=operador)
-                    if _r.get('ok'):
-                        ebr_auto = _r
-                        try:
-                            from database import audit_log as _al2
-                            _al2(c, usuario=operador or 'sistema', accion='CREAR_EBR_AUTO',
-                                 tabla='ebr_ejecuciones', registro_id=str(_r.get('id')),
-                                 despues={'producto': producto, 'lote': lote_ref,
-                                          'numero_op': _r.get('numero_op')})
-                        except Exception:
-                            pass
-                except Exception as _eebr:
-                    __import__('logging').getLogger('inventario').warning(
-                        'crear EBR auto en registro fallo (no bloquea producción): %s', _eebr)
+                from blueprints.brd import crear_ebr_desde_mbr
+                _r = crear_ebr_desde_mbr(
+                    c, producto_nombre=producto, lote=lote_ref,
+                    produccion_id=None, cantidad_objetivo_g=cantidad_g,
+                    usuario=operador)
+                if _r.get('ok'):
+                    ebr_auto = _r
+                    try:
+                        from database import audit_log as _al2
+                        _al2(c, usuario=operador or 'sistema', accion='CREAR_EBR_AUTO',
+                             tabla='ebr_ejecuciones', registro_id=str(_r.get('id')),
+                             despues={'producto': producto, 'lote': lote_ref,
+                                      'numero_op': _r.get('numero_op')})
+                    except Exception:
+                        pass
+            except Exception as _eebr:
+                __import__('logging').getLogger('inventario').warning(
+                    'crear EBR auto en registro fallo (no bloquea producción): %s', _eebr)
 
             conn.commit()
         except Exception as _e:

@@ -1054,6 +1054,80 @@ def mbr_generar_todas_desde_formulas():
     }), 201
 
 
+@bp.route("/api/brd/mbr/aprobar-todas", methods=["POST"])
+def mbr_aprobar_todas():
+    """ACTIVACIÓN MASIVA de legajos automáticos · Sebastián 5-jun-2026.
+
+    Genera (desde fórmula) y APRUEBA en lote todos los MBR faltantes, con UNA
+    re-autenticación (password + TOTP si MFA). 21 CFR Part 11 §11.200(a)(1)(ii):
+    serie de firmas durante un acceso continuo controlado. Solo Admin/Calidad.
+    Después, con EBR_MODE=warn, cada producción crea su legajo automático."""
+    err = _require_qa_or_admin()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    password = body.get("password", "")
+    totp = body.get("totp_token", "")
+    try:
+        from blueprints.firmas import (_verify_password, _verify_totp_if_enrolled,
+                                       crear_firma_directa)
+    except Exception:
+        from api.blueprints.firmas import (_verify_password, _verify_totp_if_enrolled,
+                                           crear_firma_directa)
+    user = session.get("compras_user", "")
+    if not _verify_password(user, password):
+        return jsonify({"error": "Credenciales inválidas", "codigo": "PWD"}), 401
+    ok_totp, factor = _verify_totp_if_enrolled(user, totp)
+    if not ok_totp:
+        return jsonify({"error": "Token MFA inválido", "codigo": "MFA"}), 401
+    conn = get_db(); cur = conn.cursor()
+    productos = [r[0] for r in cur.execute(
+        "SELECT DISTINCT producto_nombre FROM formula_headers WHERE COALESCE(activo,1)=1 "
+        "AND producto_nombre IS NOT NULL AND TRIM(producto_nombre)!='' "
+        "ORDER BY producto_nombre").fetchall()]
+    generados = 0; aprobados = 0; ya = 0; fallidos = []
+    for p in productos:
+        try:
+            res = _generar_mbr_desde_formula(cur, p, usuario=user)
+            if not res.get("ok"):
+                fallidos.append({"producto": p, "error": res.get("error", "sin_formula")})
+                continue
+            mbr_id = res["id"]
+            if not res.get("ya_existe"):
+                generados += 1
+            est_row = cur.execute("SELECT estado FROM mbr_templates WHERE id=?", (mbr_id,)).fetchone()
+            est = (est_row[0] if est_row else "") or ""
+            if est == "aprobado":
+                ya += 1
+                continue
+            if est == "draft":
+                cur.execute("UPDATE mbr_templates SET estado='en_revision' WHERE id=? AND estado='draft'", (mbr_id,))
+            sig_id = crear_firma_directa(conn, username=user, record_table="mbr_templates",
+                                         record_id=mbr_id, meaning="aprueba", auth_factor=factor)
+            cur.execute(
+                "UPDATE mbr_templates SET estado='aprobado', aprobado_por=?, "
+                "aprobado_at_utc=datetime('now','utc'), aprobado_signature_id=? WHERE id=?",
+                (user, sig_id, mbr_id))
+            try:
+                audit_log(cur, usuario=user, accion="APROBAR_MBR_BULK", tabla="mbr_templates",
+                          registro_id=mbr_id, despues={"producto": p, "signature_id": sig_id})
+            except Exception:
+                pass
+            aprobados += 1
+        except Exception as e:
+            fallidos.append({"producto": p, "error": str(e)[:140]})
+    conn.commit()
+    return jsonify({
+        "ok": True,
+        "total_productos": len(productos),
+        "mbr_generados": generados,
+        "mbr_aprobados": aprobados,
+        "ya_estaban_aprobados": ya,
+        "fallidos": fallidos,
+        "nota": "MBR aprobados. Con EBR_MODE=warn cada producción crea su legajo automático.",
+    })
+
+
 def _get_or_create_draft_mbr(cur, producto, usuario=''):
     """Devuelve (mbr_id, creado) de un MBR DRAFT editable para el producto.
     Si el último MBR vigente es draft → lo reusa. Si está aprobado/en_revisión →
@@ -4240,3 +4314,107 @@ def orden_detalle_page(ebr_id):
                         mimetype="text/html")
     return Response(_ORDEN_DETALLE_HTML.replace("__EBR_ID__", str(ebr_id)),
                     mimetype="text/html")
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Activación de legajos automáticos · Sebastián 5-jun-2026
+# Pantalla limpia (no popups) que genera+aprueba todos los MBR de una sola firma
+# (password + MFA). Después, con EBR_MODE=warn, cada producción crea su legajo.
+# ──────────────────────────────────────────────────────────────────────────
+
+_ACTIVAR_LEGAJOS_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Activar legajos automáticos · EOS</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f3ff;color:#1e293b;margin:0;padding:24px}
+.wrap{max-width:760px;margin:0 auto}
+a.back{display:inline-flex;align-items:center;gap:8px;background:#fff;color:#7c3aed;font-size:13px;font-weight:700;text-decoration:none;padding:10px 18px;border-radius:11px;border:1px solid #e9d5ff;box-shadow:0 2px 10px rgba(124,58,237,.10)}
+.card{background:#fff;border-radius:16px;box-shadow:0 4px 16px rgba(76,29,149,.07);margin:14px 0;overflow:hidden}
+.hbar{background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;padding:22px 26px}
+.hbar h1{margin:0;font-size:22px}.hbar p{margin:6px 0 0;font-size:13px;opacity:.9}
+.body{padding:24px 26px}
+.step{display:flex;gap:12px;margin-bottom:14px;font-size:13.5px;color:#475569}
+.step b{color:#1e293b}
+.num{flex:none;width:24px;height:24px;border-radius:50%;background:#ede9fe;color:#6d28d9;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:12px}
+label{display:block;font-size:12px;font-weight:700;color:#64748b;margin:14px 0 5px;text-transform:uppercase;letter-spacing:.3px}
+input{width:100%;padding:12px 14px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:15px}
+input:focus{outline:none;border-color:#7c3aed}
+.btn{margin-top:20px;width:100%;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;border-radius:11px;padding:14px;font-size:15px;font-weight:800;cursor:pointer;box-shadow:0 6px 18px rgba(124,58,237,.28)}
+.btn:disabled{opacity:.6;cursor:wait}
+.note{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;border-radius:10px;padding:12px 14px;font-size:12.5px;margin-top:16px}
+#out{margin-top:18px}
+.res{padding:14px 16px;border-radius:10px;font-size:14px;margin-bottom:10px}
+.res.ok{background:#dcfce7;color:#166534}.res.err{background:#fee2e2;color:#991b1b}
+.kpi{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+.kpi div{background:#f5f3ff;border-radius:9px;padding:9px 14px;font-size:13px;font-weight:700;color:#5b21b6}
+.fail{font-size:12px;color:#991b1b;margin-top:8px}
+</style></head><body>
+<div class="wrap">
+<a class="back" href="/inventarios"><span>&larr;</span> Volver a Producción</a>
+<div class="card">
+  <div class="hbar"><h1>🏭 Activar legajos automáticos</h1>
+    <p>Aprobá todos los procedimientos maestros (MBR) de una sola firma. Luego cada producción crea su legajo solo, como MyBatch.</p></div>
+  <div class="body">
+    <div class="step"><div class="num">1</div><div>Se <b>generan</b> los MBR faltantes desde tus fórmulas (procedimiento por componente).</div></div>
+    <div class="step"><div class="num">2</div><div>Se <b>aprueban todos</b> con tu firma electrónica (tu contraseña + código MFA · 21 CFR Part 11).</div></div>
+    <div class="step"><div class="num">3</div><div>Quedan como <b>procedimiento oficial</b>. Desde ahí, producir crea el legajo automático.</div></div>
+    <label>Tu contraseña de EOS</label>
+    <input id="pass" type="password" autocomplete="off" placeholder="Contraseña">
+    <label>Código MFA de 6 dígitos (vacío si no usás MFA)</label>
+    <input id="totp" type="text" inputmode="numeric" autocomplete="off" placeholder="123456">
+    <button class="btn" id="go" onclick="activar()">✅ Generar y aprobar todos los MBR</button>
+    <div class="note">Es una sola vez. Tu firma queda registrada (quién, qué, cuándo) como exige INVIMA. La contraseña no se guarda.</div>
+    <div id="out"></div>
+  </div>
+</div>
+</div>
+<script>
+function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
+async function activar(){
+  var pass=document.getElementById('pass').value;
+  var totp=document.getElementById('totp').value.trim();
+  if(!pass){alert('Escribí tu contraseña');return;}
+  var btn=document.getElementById('go'), out=document.getElementById('out');
+  btn.disabled=true; btn.textContent='Procesando… (puede tardar unos segundos)';
+  out.innerHTML='';
+  try{
+    var t='';
+    try{var cr=await fetch('/api/csrf-token',{credentials:'same-origin'});t=(await cr.json()).csrf_token||'';}catch(e){}
+    var r=await fetch('/api/brd/mbr/aprobar-todas',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':t},
+      body:JSON.stringify({password:pass,totp_token:totp})});
+    var d=await r.json();
+    if(!r.ok){
+      var hint = d.codigo==='MFA' ? ' (revisá el código de 6 dígitos · cambia cada 30s)' : (d.codigo==='PWD'?' (revisá la contraseña)':'');
+      out.innerHTML='<div class="res err">❌ '+esc(d.error||r.status)+hint+'</div>';
+      btn.disabled=false; btn.textContent='✅ Generar y aprobar todos los MBR'; return;
+    }
+    out.innerHTML='<div class="res ok">✅ ¡Listo! Procedimientos aprobados.</div>'+
+      '<div class="kpi">'+
+        '<div>'+(d.mbr_aprobados||0)+' aprobados ahora</div>'+
+        '<div>'+(d.ya_estaban_aprobados||0)+' ya estaban</div>'+
+        '<div>'+(d.mbr_generados||0)+' generados</div>'+
+        '<div>'+(d.total_productos||0)+' productos</div>'+
+      '</div>'+
+      ((d.fallidos&&d.fallidos.length)?('<div class="fail">⚠ '+d.fallidos.length+' sin fórmula o con problema: '+d.fallidos.slice(0,8).map(function(f){return esc(f.producto);}).join(', ')+(d.fallidos.length>8?'…':'')+'</div>'):'')+
+      '<div class="note">Siguiente: activar <b>EBR_MODE=warn</b> para que cada producción cree su legajo sola. Avisale a tu equipo técnico o pedímelo y lo dejo activo.</div>';
+    btn.textContent='✅ Hecho';
+  }catch(e){out.innerHTML='<div class="res err">Error de red: '+esc(e.message)+'</div>';btn.disabled=false;btn.textContent='✅ Generar y aprobar todos los MBR';}
+}
+</script>
+</body></html>"""
+
+
+@bp.route("/planta/activar-legajos", methods=["GET"])
+def activar_legajos_page():
+    """Pantalla de activación masiva de legajos automáticos (Admin/Calidad)."""
+    u = session.get("compras_user", "")
+    if not u:
+        return Response('<script>location.href="/login?next=/planta/activar-legajos"</script>',
+                        mimetype="text/html")
+    if u not in ADMIN_USERS and u not in CALIDAD_USERS:
+        return Response('<div style="font-family:sans-serif;padding:40px;color:#991b1b">Solo Admin o Calidad pueden activar legajos automáticos.</div>',
+                        mimetype="text/html")
+    return Response(_ACTIVAR_LEGAJOS_HTML, mimetype="text/html")
