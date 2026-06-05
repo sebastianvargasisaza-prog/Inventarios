@@ -86,6 +86,28 @@ def test_cruce_maestro_reporte_y_backfill_inci(app, db_clean):
     assert b2 == "Glycerin", "INCI existente no debe sobrescribirse"
 
 
+def test_backfill_inci_rellena_codigos_inactivos(app, db_clean):
+    """4-jun · el rellenado de INCI ahora toca también códigos INACTIVOS (caso
+    Pantenol MP00236/MP00110 inactivos con INCI vacío): antes el índice filtraba
+    activo=1 y los dejaba sin INCI → ni el reparador ni el resolver podían
+    agruparlos. Ahora se rellena su INCI desde el Excel igual."""
+    c = _login(app)
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp, nombre_inci, tipo_material, activo) "
+                 "VALUES ('MP-INACT-A', '', 'MP', 0)")  # INACTIVO + INCI vacío
+    conn.commit(); conn.close()
+    xls = _excel_maestro([("PANTHENOL", "Pantenol polvo", "MP-INACT-A", 1.0)],
+                         producto="PROD INACT T1")
+    r = c.post("/api/admin/cruce-maestro?aplicar=inci",
+               data={"file": (io.BytesIO(xls), "m.xlsx")},
+               headers=csrf_headers(), content_type="multipart/form-data")
+    assert r.status_code == 200, r.data
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    a = conn.execute("SELECT nombre_inci FROM maestro_mps WHERE codigo_mp='MP-INACT-A'").fetchone()[0]
+    conn.close()
+    assert a == "PANTHENOL", f"INCI debe rellenarse aunque el código esté inactivo · {a!r}"
+
+
 def test_cruce_maestro_detecta_codigos_huerfanos(app, db_clean):
     """Un código usado en formula_items que NO existe en maestro_mps se reporta
     como huérfano (fórmula no producible · código muerto/legacy)."""

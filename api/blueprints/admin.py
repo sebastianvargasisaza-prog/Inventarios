@@ -14469,11 +14469,13 @@ def admin_cruce_maestro():
 
     conn = db_connect()
     c = conn.cursor()
-    # maestro: codigo -> inci (solo activos)
+    # maestro: codigo -> inci · 4-jun-2026 INCLUYE INACTIVOS: el caso Pantenol
+    # (MP00236/MP00110 inactivos con INCI vacío) nunca se rellenaba porque el
+    # índice filtraba activo=1 → quedaban con INCI vacío y ni el reparador ni el
+    # resolver podían agruparlos. Ahora se rellena su INCI desde el Excel también.
     maes = {}
     for r in c.execute(
-        "SELECT codigo_mp, COALESCE(nombre_inci,'') FROM maestro_mps "
-        "WHERE COALESCE(activo,1)=1").fetchall():
+        "SELECT codigo_mp, COALESCE(nombre_inci,'') FROM maestro_mps").fetchall():
         maes[str(r[0]).strip().upper()] = (r[1] or '').strip()
     # formula_headers normalizados -> nombre real
     fh = {}
@@ -14661,10 +14663,23 @@ async function repararFormula(){
  }
  var d=await run(false); if(!d)return;
  var h='<h3>🩹 Reparar inventario · '+esc(prod)+'</h3>';
- if(!d.planes.length){h+='<div class="pill ok">✅ Nada que reparar · todos los componentes resuelven stock.</div>';out.innerHTML=h;return;}
+ var si=d.sin_inci||[];
+ function _siBlock(){
+   if(!si.length) return '';
+   return '<div class="pill bad" style="display:block;margin-top:8px">⚠ '+si.length+' componente(s) en 0g NO se pueden agrupar porque su código tiene el <b>INCI vacío</b>: '+
+     si.map(function(x){return esc(x.nombre||x.codigo_formula)+' (<span class="mono">'+esc(x.codigo_formula)+'</span>)';}).join(', ')+
+     '. → Subí el Excel y apretá <b>"Rellenar INCI vacíos desde Excel"</b> arriba, y volvé a reparar.</div>';
+ }
+ if(!d.planes.length){
+   h+=si.length
+     ? '<div class="pill warnp">Sin stock para mover por INCI.</div>'+_siBlock()
+     : '<div class="pill ok">✅ Nada que reparar · todos los componentes resuelven stock.</div>';
+   out.innerHTML=h;return;
+ }
  h+='<table><tr><th>Código fórmula</th><th>INCI</th><th>Recupera de</th><th>Stock a recuperar</th></tr>';
  d.planes.forEach(function(p){h+='<tr><td class="mono">'+esc(p.codigo_formula)+'</td><td>'+esc(p.inci)+'</td><td class="mono">'+p.donantes.map(function(x){return esc(x.codigo)+'('+x.stock+'g)';}).join(', ')+'</td><td><b>'+(p.stock_a_recuperar||0).toLocaleString()+' g</b></td></tr>';});
  h+='</table>';
+ h+=_siBlock();
  out.innerHTML=h;
  if(confirm('Reparar '+d.planes.length+' componente(s) de "'+prod+'"?\\n\\nReactiva el código de la fórmula y le mueve el stock atrapado (de códigos inactivos del mismo INCI). Backup + reversible.')){
    var d2=await run(true);
@@ -15036,8 +15051,10 @@ def admin_reparar_stock_formula():
     if not items:
         return jsonify({'error': f'sin fórmula para "{producto}"'}), 404
     planes = []
+    sin_inci = []   # componentes en 0g que NO se pueden agrupar por INCI vacío
     for r in items:
         F = str(r[0]).strip()
+        fnom_it = r[1] if len(r) > 1 else ''
         frow = next((m for m in maestro if m['codigo'].upper() == F.upper()), None)
         if not frow:
             continue
@@ -15045,7 +15062,13 @@ def admin_reparar_stock_formula():
         if _stock(F) > 0:
             continue  # ya tiene stock
         if not finci:
-            continue  # sin INCI no se puede agrupar con seguridad
+            # 4-jun · sin INCI no se puede agrupar con seguridad. ANTES esto se
+            # tragaba en silencio y el front decía "todos resuelven" (engañoso,
+            # caso Pantenol MP00236 inactivo+INCI vacío). Ahora se reporta para
+            # que el usuario sepa que falta rellenar el INCI (cruce-maestro).
+            sin_inci.append({'codigo_formula': F, 'nombre': fnom_it,
+                             'stock': _stock(F)})
+            continue
         donantes = []
         for m in maestro:
             if m['codigo'].upper() == F.upper():
@@ -15096,8 +15119,9 @@ def admin_reparar_stock_formula():
                               'stock_recuperado': pl['stock_a_recuperar']})
         conn.commit()
     return jsonify({'ok': True, 'producto': producto, 'aplicado': aplicar,
-                    'planes': planes, 'aplicados': aplicados,
-                    'resumen': {'a_reparar': len(planes), 'reparados': len(aplicados)}})
+                    'planes': planes, 'aplicados': aplicados, 'sin_inci': sin_inci,
+                    'resumen': {'a_reparar': len(planes), 'reparados': len(aplicados),
+                                'sin_inci': len(sin_inci)}})
 
 
 @bp.route("/api/admin/diag-produccion", methods=["GET"])
