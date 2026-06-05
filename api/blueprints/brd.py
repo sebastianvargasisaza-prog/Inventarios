@@ -3817,3 +3817,231 @@ def reconciliacion_ebr(ebr_id):
         "outlier_threshold_pct": OUTLIER_THRESHOLD_PCT,
         "estado_ebr": ebr["estado"],
     })
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Órdenes de Producción · vista unificada estilo MyBatch (Sebastián 4-jun-2026)
+#
+# PASO 1 (100% aditivo · SOLO LECTURA): surface las "Órdenes de Producción"
+# como MyBatch (N° orden OP-AAAA-NNNN · lote · producto · cant teórica/producida/
+# aprobada · estado). Une los DOS mundos que hoy están separados:
+#   - ebr_ejecuciones  → legajos formales (ya tienen numero_op, fase, estados).
+#   - producciones      → registros simples del formulario "Registrar Producción"
+#                         (sin N° de orden ni legajo · se muestran como 'simple').
+# NO toca el formulario, ni el descuento, ni el motor EBR. Solo lee y presenta.
+# ──────────────────────────────────────────────────────────────────────────
+
+def _estado_orden_norm(origen, estado):
+    """Mapea el estado interno al vocabulario MyBatch (En Proceso / Aprobado /
+    Cancelado / Completado)."""
+    e = (estado or "").strip().lower()
+    if origen == "legajo":
+        return {
+            "iniciado": "En Proceso",
+            "en_proceso": "En Proceso",
+            "completado": "En Proceso · Cuarentena",
+            "liberado": "Aprobado",
+            "rechazado": "Rechazado",
+        }.get(e, estado or "—")
+    # registro simple (producciones)
+    if e in ("completado", "completada"):
+        return "Completado (registro simple)"
+    if e in ("cancelado", "cancelada"):
+        return "Cancelado"
+    return estado or "Completado (registro simple)"
+
+
+@bp.route("/api/brd/ordenes-unificadas", methods=["GET"])
+def ordenes_unificadas():
+    """Lista unificada de Órdenes de Producción (legajos EBR + registros simples).
+
+    Query: ?fase=fabricacion|envasado|acondicionamiento (default fabricacion).
+    Los registros simples (tabla producciones) solo aplican a 'fabricacion'.
+    SOLO LECTURA · no escribe nada."""
+    err = _require_login()
+    if err:
+        return err
+    fase = (request.args.get("fase") or "fabricacion").strip().lower()
+    if fase not in _FASES_VALIDAS:
+        fase = "fabricacion"
+    conn = get_db()
+    items = []
+
+    # 1) Legajos EBR (ya MyBatch-shaped) · producto vía mbr_templates
+    try:
+        ebr_rows = conn.execute(
+            """SELECT e.id, e.numero_op, e.lote, e.estado,
+                      e.cantidad_objetivo_g, e.cantidad_real_g,
+                      COALESCE(e.ml_envasable, NULL) AS ml_envasable,
+                      e.iniciado_at_utc, e.liberado_at_utc,
+                      COALESCE(e.fase,'fabricacion') AS fase,
+                      COALESCE(m.producto_nombre,'') AS producto
+               FROM ebr_ejecuciones e
+               LEFT JOIN mbr_templates m ON m.id = e.mbr_template_id
+               WHERE COALESCE(e.fase,'fabricacion') = ?
+               ORDER BY e.iniciado_at_utc DESC""",
+            (fase,),
+        ).fetchall()
+    except Exception as _e:
+        log.warning("ordenes-unificadas EBR query fallo: %s", _e)
+        ebr_rows = []
+    for r in ebr_rows:
+        rd = dict(r)
+        liberado = bool(rd.get("liberado_at_utc"))
+        items.append({
+            "origen": "legajo",
+            "numero_op": rd.get("numero_op") or f"EBR-{rd['id']}",
+            "lote_bulk": rd.get("lote") or "",
+            "producto": rd.get("producto") or "",
+            "teorica_g": rd.get("cantidad_objetivo_g"),
+            "producida_g": rd.get("cantidad_real_g"),
+            "aprobada": (rd.get("cantidad_real_g") if liberado else None),
+            "ml_envasable": rd.get("ml_envasable"),
+            "estado": _estado_orden_norm("legajo", rd.get("estado")),
+            "fecha": (rd.get("iniciado_at_utc") or "")[:10],
+            "link": f"/brd/timeline/{rd['id']}",
+            "ebr_id": rd["id"],
+        })
+
+    # 2) Registros simples (producciones) · solo en fabricación
+    if fase == "fabricacion":
+        try:
+            prod_rows = conn.execute(
+                """SELECT id, producto, COALESCE(cantidad,0) AS cantidad,
+                          fecha, COALESCE(estado,'') AS estado,
+                          COALESCE(lote,'') AS lote, COALESCE(operador,'') AS operador
+                   FROM producciones
+                   ORDER BY fecha DESC
+                   LIMIT 300""",
+            ).fetchall()
+        except Exception as _e:
+            log.warning("ordenes-unificadas producciones query fallo: %s", _e)
+            prod_rows = []
+        for r in prod_rows:
+            rd = dict(r)
+            kg = float(rd.get("cantidad") or 0)
+            items.append({
+                "origen": "simple",
+                "numero_op": rd.get("lote") or f"PROD-{rd['id']:05d}",
+                "lote_bulk": rd.get("lote") or "",
+                "producto": rd.get("producto") or "",
+                "teorica_g": round(kg * 1000, 1),
+                "producida_g": round(kg * 1000, 1),
+                "aprobada": None,
+                "ml_envasable": None,
+                "estado": _estado_orden_norm("simple", rd.get("estado")),
+                "fecha": (rd.get("fecha") or "")[:10],
+                "link": None,
+                "operador": rd.get("operador") or "",
+            })
+
+    # orden global por fecha desc
+    items.sort(key=lambda x: (x.get("fecha") or ""), reverse=True)
+    resumen = {
+        "total": len(items),
+        "legajos": sum(1 for i in items if i["origen"] == "legajo"),
+        "simples": sum(1 for i in items if i["origen"] == "simple"),
+    }
+    return jsonify({"ok": True, "fase": fase, "resumen": resumen, "ordenes": items})
+
+
+_ORDENES_PROD_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Órdenes de Producción · EOS</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f3ff;color:#1e293b;margin:0;padding:20px}
+.wrap{max-width:1200px;margin:0 auto}
+h1{color:#7c3aed;font-size:22px;margin:0 0 4px}
+.sub{color:#64748b;font-size:13px;margin-bottom:14px}
+.tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.tab{padding:8px 16px;border-radius:8px;background:#ede9fe;color:#5b21b6;font-weight:700;font-size:13px;cursor:pointer;border:none}
+.tab.active{background:#7c3aed;color:#fff}
+.card{background:#fff;border-radius:12px;padding:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:left;padding:9px 8px;background:#f1f5f9;color:#475569;font-weight:700;font-size:11.5px;position:sticky;top:0}
+td{padding:9px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+.mono{font-family:ui-monospace,monospace;font-weight:700;color:#1e40af}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.pill{padding:2px 9px;border-radius:11px;font-size:10.5px;font-weight:700;white-space:nowrap}
+.proc{background:#fef9c3;color:#854d0e}.cuar{background:#dbeafe;color:#1e40af}
+.apr{background:#dcfce7;color:#166534}.rech{background:#fee2e2;color:#991b1b}.simp{background:#f1f5f9;color:#475569}
+.org{font-size:10px;padding:1px 6px;border-radius:8px;font-weight:700}
+.org-l{background:#ede9fe;color:#6d28d9}.org-s{background:#f1f5f9;color:#64748b}
+.muted{color:#94a3b8}a.legajo{color:#7c3aed;font-weight:700;text-decoration:none}
+.summary{display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.box{padding:7px 12px;border-radius:8px;font-size:12px;font-weight:700;background:#ede9fe;color:#5b21b6}
+</style></head><body>
+<div class="wrap">
+<a href="/inventarios" style="color:#7c3aed;font-size:13px">&larr; Planta</a>
+<h1>📋 Órdenes de Producción</h1>
+<div class="sub">Vista unificada (solo lectura) · legajos EBR + registros de Fabricación · equivalente a MyBatch.</div>
+<div class="tabs">
+  <button class="tab active" data-fase="fabricacion" onclick="ver('fabricacion',this)">🏭 Fabricación (OP)</button>
+  <button class="tab" data-fase="envasado" onclick="ver('envasado',this)">📦 Envasado (OF)</button>
+  <button class="tab" data-fase="acondicionamiento" onclick="ver('acondicionamiento',this)">🎨 Acondicionamiento (OA)</button>
+</div>
+<div id="summary" class="summary"></div>
+<div class="card"><div id="out">Cargando…</div></div>
+</div>
+<script>
+function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
+function gfmt(n){return n==null?'—':Number(n).toLocaleString('es-CO')+' g';}
+function pill(estado){
+  var e=(estado||'').toLowerCase(); var c='simp';
+  if(e.indexOf('cuarentena')>=0)c='cuar'; else if(e.indexOf('proceso')>=0)c='proc';
+  else if(e.indexOf('aprob')>=0)c='apr'; else if(e.indexOf('rechaz')>=0||e.indexOf('cancel')>=0)c='rech';
+  return '<span class="pill '+c+'">'+esc(estado)+'</span>';
+}
+async function ver(fase,btn){
+  document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active');});
+  if(btn)btn.classList.add('active');
+  var out=document.getElementById('out'); out.innerHTML='Cargando…';
+  try{
+    var r=await fetch('/api/brd/ordenes-unificadas?fase='+encodeURIComponent(fase),{credentials:'same-origin'});
+    if(r.status===401){location.href='/login';return;}
+    var d=await r.json();
+    if(!r.ok||!d.ok){out.innerHTML='<span style="color:#b91c1c">Error: '+esc((d&&d.error)||r.status)+'</span>';return;}
+    document.getElementById('summary').innerHTML=
+      '<div class="box">'+d.resumen.total+' órdenes</div>'+
+      '<div class="box">'+d.resumen.legajos+' con legajo EBR</div>'+
+      '<div class="box">'+d.resumen.simples+' registro simple</div>';
+    if(!d.ordenes.length){out.innerHTML='<div class="muted">Sin órdenes en esta fase.</div>';return;}
+    var h='<table><thead><tr>'+
+      '<th>N° de orden</th><th>N° lote</th><th>Producto</th>'+
+      '<th class="num">Cant. teórica</th><th class="num">Cant. producida</th>'+
+      '<th class="num">Cant. aprobada</th><th>Estado</th><th>Origen</th><th>Fecha</th><th></th>'+
+      '</tr></thead><tbody>';
+    d.ordenes.forEach(function(o){
+      var aprob = o.aprobada!=null ? gfmt(o.aprobada) : (o.ml_envasable!=null? (Number(o.ml_envasable).toLocaleString('es-CO')+' mL') : '—');
+      var acc = o.link ? '<a class="legajo" href="'+o.link+'">Abrir legajo →</a>' : '<span class="muted">—</span>';
+      var org = o.origen==='legajo' ? '<span class="org org-l">LEGAJO</span>' : '<span class="org org-s">SIMPLE</span>';
+      h+='<tr>'+
+        '<td class="mono">'+esc(o.numero_op)+'</td>'+
+        '<td class="mono">'+esc(o.lote_bulk||'—')+'</td>'+
+        '<td>'+esc(o.producto||'—')+'</td>'+
+        '<td class="num">'+gfmt(o.teorica_g)+'</td>'+
+        '<td class="num">'+gfmt(o.producida_g)+'</td>'+
+        '<td class="num">'+aprob+'</td>'+
+        '<td>'+pill(o.estado)+'</td>'+
+        '<td>'+org+'</td>'+
+        '<td class="muted">'+esc(o.fecha||'—')+'</td>'+
+        '<td>'+acc+'</td>'+
+      '</tr>';
+    });
+    h+='</tbody></table>';
+    out.innerHTML=h;
+  }catch(e){out.innerHTML='<span style="color:#b91c1c">Error red: '+esc(e.message)+'</span>';}
+}
+ver('fabricacion',document.querySelector('.tab'));
+</script>
+</body></html>"""
+
+
+@bp.route("/planta/ordenes-produccion", methods=["GET"])
+def ordenes_produccion_page():
+    """Página (solo lectura) · Órdenes de Producción unificadas estilo MyBatch."""
+    if not session.get("compras_user"):
+        return Response('<script>location.href="/login?next=/planta/ordenes-produccion"</script>',
+                        mimetype="text/html")
+    return Response(_ORDENES_PROD_HTML, mimetype="text/html")
