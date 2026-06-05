@@ -1546,7 +1546,10 @@ def ebr_vista_completa(ebr_id):
                       COALESCE(numero_op,'') AS numero_op,
                       COALESCE(fase,'fabricacion') AS fase,
                       COALESCE(area_codigo,'') AS area_codigo,
-                      COALESCE(cantidad_objetivo_g,0) AS cantidad_objetivo_g
+                      COALESCE(cantidad_objetivo_g,0) AS cantidad_objetivo_g,
+                      cantidad_real_g, yield_pct,
+                      COALESCE(densidad_g_ml,0) AS densidad_g_ml,
+                      COALESCE(ml_envasable,0) AS ml_envasable
                FROM ebr_ejecuciones WHERE id=?""",
             (ebr_id,),
         ).fetchone()
@@ -1563,6 +1566,10 @@ def ebr_vista_completa(ebr_id):
             'numero_op': row[14] or '', 'fase': row[15] or 'fabricacion',
             'area_codigo': row[16] or '',
             'cantidad_objetivo_g': float(row[17] or 0),
+            'cantidad_real_g': (float(row[18]) if row[18] is not None else None),
+            'yield_pct': (float(row[19]) if row[19] is not None else None),
+            'densidad_g_ml': (float(row[20]) if row[20] else None),
+            'ml_envasable': (float(row[21]) if row[21] else None),
         }
         # Área o Línea: resolver el nombre legible desde areas_planta.
         try:
@@ -1683,6 +1690,16 @@ def ebr_vista_completa(ebr_id):
         out['pesaje_sheet'] = sheet
     except Exception:
         out['pesaje_sheet'] = []
+    # 2c. Precauciones / equipos (MyBatch "Instrucción de Manufactura" · estación ①)
+    try:
+        prows = conn.execute(
+            "SELECT COALESCE(tipo,'precaucion'), descripcion, COALESCE(registrado_por,''), "
+            "COALESCE(registrado_at_utc,'') FROM ebr_precauciones WHERE ebr_id=? ORDER BY id",
+            (ebr_id,)).fetchall()
+        out['precauciones'] = [{'tipo': r[0], 'descripcion': r[1],
+                                'registrado_por': r[2], 'fecha': r[3]} for r in prows]
+    except Exception:
+        out['precauciones'] = []
     # 3. Pasos
     try:
         rows = conn.execute(
@@ -4286,7 +4303,7 @@ tbody tr:hover{background:#faf5ff}
 <a class="back" href="/inventarios"><span class="arw">&larr;</span> Volver a Producción</a>
 <div style="height:14px"></div>
 <div class="card" id="head">Cargando…</div>
-<div class="card pad" id="pasos-sec"><h2>📖 Instrucción de Manufactura (pasos)</h2><div id="pasos"></div></div>
+<div class="card pad" id="pasos-sec"><h2>📖 Instrucción de Manufactura</h2><div id="pasos"></div></div>
 <div class="card pad"><h2>⚖️ Pesaje de Materias Primas</h2><div id="pesaje"></div></div>
 </div>
 <script>
@@ -4366,15 +4383,36 @@ async function load(){
         '<a class="b-rot" href="/rotulos/'+prodRot+'/'+kgRot+'" target="_blank">🖨 Rótulos de Pesaje</a>'+
         '<button class="b-aj" onclick="ajustarOrden()">➕ Ajuste</button>'+
       '</div>';
-    // Pasos (Instrucción de Manufactura)
+    // Instrucción de Manufactura (MyBatch parity): cabecera de manufactura
+    // (cantidades · densidad · rendimiento · aprobado calidad) + precauciones + pasos.
+    function fld(l,v){return '<div><div class="lbl">'+l+'</div><div class="val">'+v+'</div></div>';}
+    var mlAprob = h.ml_envasable!=null ? Number(h.ml_envasable).toLocaleString('es-CO',{maximumFractionDigits:2})+' mL' : '—';
+    var manuf='<div class="grid" style="padding:0;margin-bottom:16px">'+
+      fld('Cantidad Ordenada', gfmt(h.cantidad_objetivo_g))+
+      fld('Cantidad Producida', gfmt(h.cantidad_real_g))+
+      fld('Cantidad Aprobada', mlAprob)+
+      fld('Densidad', h.densidad_g_ml? (Number(h.densidad_g_ml).toLocaleString('es-CO',{maximumFractionDigits:3})+' g/mL'):'—')+
+      fld('Rendimiento', h.yield_pct!=null? (Number(h.yield_pct).toLocaleString('es-CO',{maximumFractionDigits:2})+'%'):'—')+
+      fld('Aprobado por (Calidad)', esc(h.liberado_por||'—'))+
+      '</div>';
+    // 1. Precauciones / equipos
+    var prec=d.precauciones||[];
+    var precHtml='<h3 style="font-size:14px;color:#7c3aed;margin:6px 0 8px">1. Precauciones / Equipos</h3>'+
+      (prec.length
+        ? '<ul style="margin:0 0 14px 18px;font-size:13px;color:#334155">'+prec.map(function(p){
+            return '<li><b>'+esc(p.tipo||'')+':</b> '+esc(p.descripcion||'')+(p.registrado_por?' <span class="muted">('+esc(p.registrado_por)+')</span>':'')+'</li>';}).join('')+'</ul>'
+        : '<div class="muted" style="margin-bottom:14px">Sin precauciones/equipos registrados.</div>');
+    // 2. Pasos del proceso
     var pasos=d.pasos||[];
-    document.getElementById('pasos').innerHTML = pasos.length
+    var pasosHtml='<h3 style="font-size:14px;color:#7c3aed;margin:6px 0 8px">2. Pasos del proceso</h3>'+
+      (pasos.length
       ? '<table><thead><tr><th>#</th><th>Descripción</th><th>Estado</th><th>Operario</th><th>Completado</th></tr></thead><tbody>'+
         pasos.map(function(p){return '<tr><td class="mono">'+esc(p.orden)+'</td><td>'+esc(p.descripcion)+'</td>'+
           '<td>'+(p.completado_flag?'<span style="color:#166534;font-weight:700">✓ hecho</span>':'<span class="muted">pendiente</span>')+'</td>'+
           '<td>'+esc(p.operario||'—')+'</td><td class="muted">'+esc((p.completado||'—').substring(0,16).replace("T"," "))+'</td></tr>';}).join('')+
         '</tbody></table>'
-      : '<div class="muted">Sin pasos registrados.</div>';
+      : '<div class="muted">Sin pasos registrados.</div>');
+    document.getElementById('pasos').innerHTML = manuf + precHtml + pasosHtml;
     // Pesaje de Materias Primas · HOJA COMPLETA (todas las MP de la fórmula)
     // estilo MyBatch: % · N° Lote (FEFO) · Cant. a pesar · Cant. pesada · Pesado por.
     var sheet=d.pesaje_sheet||[];
