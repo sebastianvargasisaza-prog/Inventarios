@@ -246,6 +246,28 @@ def test_ebr_produccion_id_resuelve_para_ajuste(app, db_clean):
     assert pr['lote'] == 'LOTE-AJ-1'
 
 
+def test_rotulos_lote_producible_y_codigo_resuelto(app, db_clean):
+    """5-jun · el rótulo de pesaje muestra el MISMO lote que producción descuenta:
+    código RESUELTO (stock bajo otro código del mismo INCI) + lote con stock
+    producible (excluye CUARENTENA aunque venza antes)."""
+    c = _conn()
+    c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,tipo_material,activo) VALUES ('MP-ROTF','ROTININOLZ','Rotinol formula','MP',1)")
+    c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,tipo_material,activo) VALUES ('MP-ROTG','ROTININOLZ','Rotinol bodega','MP',1)")
+    c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,estado_lote,fecha,fecha_vencimiento) VALUES ('MP-ROTG','Rotinol','Entrada',5000,'LOTE-BUENO','VIGENTE',date('now'),'2030-01-01')")
+    c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,estado_lote,fecha,fecha_vencimiento) VALUES ('MP-ROTG','Rotinol','Entrada',9000,'LOTE-CUAR','CUARENTENA',date('now'),'2029-01-01')")
+    c.execute("INSERT INTO formula_headers (producto_nombre,lote_size_kg,unidad_base_g,activo) VALUES ('PROD ROT TEST',1,1000,1)")
+    c.execute("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje,cantidad_g_por_lote) VALUES ('PROD ROT TEST','MP-ROTF','Rotinol',100,1000)")
+    c.commit(); c.close()
+    cl = _login(app)
+    r = cl.get('/rotulos/PROD%20ROT%20TEST/1')
+    assert r.status_code == 200, r.data
+    b = r.get_data(as_text=True)
+    assert 'LOTE-BUENO' in b, 'el rótulo debe usar el lote producible con stock'
+    assert 'LOTE-CUAR' not in b, 'el rótulo NO debe usar el lote en cuarentena'
+    assert 'MP-ROTG' in b, 'el rótulo debe resolver al código que tiene el stock'
+    assert '1,000.00 g' in b or '1000.00 g' in b, 'peso teórico = 100% de 1000g'
+
+
 def test_registro_produccion_sin_mbr_no_crea_legajo(app, db_clean):
     """Si el producto NO tiene MBR aprobado, el registro NO crea legajo (se
     comporta idéntico a antes · cero riesgo). El legajo automático depende del

@@ -9532,19 +9532,54 @@ def generar_rotulos(producto_nombre, cantidad_str):
     conn = get_db(); c = conn.cursor()
     c.execute("SELECT material_id,material_nombre,porcentaje FROM formula_items WHERE producto_nombre=?", (prod,))
     items = c.fetchall()
-    lotes = {}; incis = {}
+    # Audit 5-jun-2026 · el LOTE del rótulo debe ser el MISMO que producción
+    # descuenta (FEFO real): código RESUELTO (no el crudo de fórmula), con stock
+    # NETO > 0 y en estado producible (excluye CUARENTENA/AGOTADO/VENCIDO/...).
+    # Antes usaba el código crudo + cualquier Entrada → podía mostrar S/L (cuando
+    # el stock está bajo un código duplicado) o un lote bloqueado/agotado.
+    try:
+        from blueprints.programacion import (_resolver_material_bodega as _res_rot,
+                                             _ESTADOS_LOTE_NO_PRODUCIBLES as _NP_ROT)
+    except Exception:
+        _res_rot, _NP_ROT = None, None
+    lotes = {}; incis = {}; cods = {}
     for r in items:
-        mid = r[0]
+        mid = r[0]; mnm = r[1] if len(r) > 1 else ''
         c.execute("SELECT nombre_inci FROM maestro_mps WHERE codigo_mp=?", (mid,)); ir=c.fetchone(); incis[mid]=ir[0] if ir and ir[0] else ''
-        # Sebastián 20-may-2026: PG-compat · CAST a TEXT antes de comparar con ''
-        c.execute("SELECT lote,estanteria,posicion,fecha_vencimiento FROM movimientos WHERE material_id=? AND tipo='Entrada' AND lote IS NOT NULL AND lote!='' AND lote!='S/L' ORDER BY COALESCE(NULLIF(CAST(fecha_vencimiento AS TEXT),''),'9999-12-31') ASC LIMIT 1", (mid,))
-        row=c.fetchone(); lotes[mid]={'lote':row[0] if row else 'S/L','est':row[1] if row else '','pos':row[2] if row else '','vence':str(row[3])[:10] if row and row[3] else ''}
+        cod = mid
+        if _res_rot:
+            try: cod = _res_rot(c, mid, mnm) or mid
+            except Exception: cod = mid
+        cods[mid] = cod
+        row = None
+        if _NP_ROT:
+            _ph = ','.join(['?'] * len(_NP_ROT))
+            try:
+                row = c.execute(
+                    f"""SELECT lote, MAX(estanteria), MAX(posicion),
+                              MAX(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA') THEN fecha_vencimiento END) AS fv,
+                              SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) AS stk
+                       FROM movimientos
+                       WHERE material_id=? AND COALESCE(lote,'') NOT IN ('','S/L')
+                         AND UPPER(COALESCE(estado_lote,'')) NOT IN ({_ph})
+                       GROUP BY lote HAVING stk > 0
+                       ORDER BY COALESCE(NULLIF(CAST(MAX(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA') THEN fecha_vencimiento END) AS TEXT),''),'9999-12-31') ASC
+                       LIMIT 1""",
+                    (cod,) + tuple(_NP_ROT)).fetchone()
+            except Exception:
+                row = None
+        if row is None:
+            # Fallback legacy (sin resolver/estados) · PG-compat CAST a TEXT.
+            c.execute("SELECT lote,estanteria,posicion,fecha_vencimiento FROM movimientos WHERE material_id=? AND tipo='Entrada' AND lote IS NOT NULL AND lote!='' AND lote!='S/L' ORDER BY COALESCE(NULLIF(CAST(fecha_vencimiento AS TEXT),''),'9999-12-31') ASC LIMIT 1", (cod,))
+            row=c.fetchone()
+        lotes[mid]={'lote':row[0] if row else 'S/L','est':row[1] if row else '','pos':row[2] if row else '','vence':str(row[3])[:10] if row and row[3] else ''}
     if not items: return '<h2>Formula no encontrada: '+prod+'</h2>', 404
     rhtml=''; barcodes=''
     for i,r in enumerate(items):
         mid,mnm,pct=r; peso=round((pct/100)*cant_g,2); info=lotes.get(mid,{}); lote_mp=info.get('lote','S/L')
+        cod_real=cods.get(mid,mid)
         ubicacion=('Est. '+str(info.get('est',''))+str(info.get('pos',''))).strip(); vence=info.get('vence',''); inci=incis.get(mid,'')
-        bv=mid+'|'+lote_mp; barcodes+=f'try{{JsBarcode("#bc{i}","{bv}",{{format:"CODE128",width:1.2,height:35,displayValue:false,margin:0}})}}catch(e){{}};'
+        bv=cod_real+'|'+lote_mp; barcodes+=f'try{{JsBarcode("#bc{i}","{bv}",{{format:"CODE128",width:1.2,height:35,displayValue:false,margin:0}})}}catch(e){{}};'
         rhtml+='<div class="r"><div class="rh"><span class="rt">RÓTULO PARA DISPENSAR MATERIA PRIMA</span><span class="rc">PRD-PRO-001-F08 | v1<br>04-Mar-2025 / 03-Mar-2028</span></div>'
         rhtml+='<table><tr><td class="l">OP:</td><td class="v">'+op_num+'</td><td class="l">Fecha:</td><td class="v">'+hoy+'</td></tr>'
         rhtml+='<tr><td class="l">Producto:</td><td class="v big" colspan="3"><b>'+prod+'</b> &mdash; '+str(cantidad_kg)+' kg</td></tr>'
@@ -9557,7 +9592,7 @@ def generar_rotulos(producto_nombre, cantidad_str):
         rhtml+='<tr><td class="l">Pesado por:</td><td class="blank firma"></td><td class="l">Verificado:</td><td class="blank firma"></td></tr>'
         rhtml+='</table>'
         rhtml+='<div style="text-align:center;padding:4px;"><svg id="bc'+str(i)+'"></svg></div>'
-        rhtml+='<div class="rf">'+mid+'|'+lote_mp+' | #'+str(i+1)+' de '+str(len(items))+'</div></div>'
+        rhtml+='<div class="rf">'+cod_real+'|'+lote_mp+' | #'+str(i+1)+' de '+str(len(items))+'</div></div>'
     css=('<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script><title>Rotulos</title>'
          '<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>'
          '<style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;font-size:9pt;background:#eee;}'
