@@ -962,28 +962,23 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <button onclick="simularProduccion()" style="background:#6c5ce7;">&#128269; Verificar Stock</button>
       <button onclick="iniciarRegistroProd()">&#9989; Registrar Producción</button>
       <button onclick="abrirRotulos()" style="background:#c0392b;">&#128209; Generar Rótulos</button>
-      <button onclick="diagnosticarFormulaActual()" style="background:#7c3aed;" title="Mostrar por qué la fórmula no encuentra stock (debug INVIMA)">&#128270; Diagnosticar fórmula</button>
-      <!-- Sebastián 21-may-2026 · acceso directo a "🔧 Huérfanos" desde
-           Producción · antes solo vivía en tab Fórmulas. Catalina ve el error
-           "Stock insuficiente" y desde ACÁ puede reparar TODAS las fórmulas
-           con material_id huérfano (no solo la del producto actual). -->
-      <button onclick="auditarFormulasHuerfanas()" style="background:#9a3412;color:#fff;" title="Detecta y repara material_id huérfanos en TODAS las fórmulas (post-unificación) · arregla 'hay 0g cuando hay stock'">🔧 Reparar TODAS las fórmulas huérfanas</button>
+      <!-- 4-jun-2026 · removidos "Diagnosticar fórmula" y "Reparar TODAS las
+           fórmulas huérfanas" (herramientas de estabilización · ya las cubre el
+           cron diario salud-cruce + el auto-reparar-huérfanas). -->
     </div>
     <div id="prod-simul-result" style="margin-top:12px;"></div>
     <div id="prod-msg"></div>
     <div style="margin-top:28px;border-top:2px solid #eee;padding-top:20px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px"><h3 style="color:#6d28d9;margin:0;">&#128202; Historial de Producciones</h3>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px"><h3 style="color:#6d28d9;margin:0;">&#128203; Órdenes de Producción</h3>
         <button onclick="exportarExcelProducciones()" style="background:#217346;padding:7px 14px;font-size:0.85em;">&#128196; Descargar Excel</button>
       </div>
-      <!-- Sprint Fabricación PRO 20-may-2026: buscador + filtros + paginación -->
+      <!-- 4-jun-2026 · vista unificada estilo MyBatch (legajos EBR + registros
+           simples) · lee /api/brd/ordenes-unificadas?fase=fabricacion -->
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;font-size:12px">
-        <input id="hist-prod-q" type="text" placeholder="🔍 Buscar producto / lote / operador…" oninput="_histProdDebounced()" style="flex:1;min-width:200px;padding:7px 10px;border:1px solid #cbd5e1;border-radius:5px">
-        <label style="color:#475569">Desde: <input id="hist-prod-desde" type="date" onchange="cargarHistProd()" style="padding:5px 8px;border:1px solid #cbd5e1;border-radius:5px"></label>
-        <label style="color:#475569">Hasta: <input id="hist-prod-hasta" type="date" onchange="cargarHistProd()" style="padding:5px 8px;border:1px solid #cbd5e1;border-radius:5px"></label>
-        <button onclick="document.getElementById('hist-prod-q').value='';document.getElementById('hist-prod-desde').value='';document.getElementById('hist-prod-hasta').value='';cargarHistProd()" style="background:#94a3b8;color:#fff;padding:6px 10px;font-size:11px;border:none;border-radius:5px;cursor:pointer">Limpiar</button>
+        <input id="hist-prod-q" type="text" placeholder="🔍 Buscar producto / lote / N° orden…" oninput="_histProdDebounced()" style="flex:1;min-width:200px;padding:7px 10px;border:1px solid #cbd5e1;border-radius:5px">
       </div>
-      <table class="table"><thead><tr><th>Producto</th><th>Lote PT</th><th style="text-align:right;">kg</th><th style="text-align:right;">Costo COP</th><th>Fecha</th><th>Operador</th><th style="text-align:center;">Estado</th><th style="text-align:center;">Acciones</th></tr></thead>
-      <tbody id="hist-prod-body"><tr><td colspan="8" style="text-align:center;color:#999;padding:16px;">Cargando...</td></tr></tbody></table>
+      <table class="table"><thead><tr><th>N° de orden</th><th>N° lote</th><th>Producto</th><th style="text-align:right;">Teórica</th><th style="text-align:right;">Producida</th><th style="text-align:right;">Aprobada</th><th style="text-align:center;">Estado</th><th style="text-align:center;">Origen</th><th>Fecha</th><th style="text-align:center;">Legajo</th></tr></thead>
+      <tbody id="hist-prod-body"><tr><td colspan="10" style="text-align:center;color:#999;padding:16px;">Cargando...</td></tr></tbody></table>
       <div id="hist-prod-footer" style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:12px;color:#64748b"></div>
     </div>
     <!-- ═══ Legajos electrónicos (EBR) · runner · reemplazo MyBatch ═══ -->
@@ -3469,64 +3464,64 @@ function _histProdDebounced(){
   }, 350);
 }
 async function cargarHistProd(){
+  // 4-jun-2026 · ahora pinta las ÓRDENES DE PRODUCCIÓN unificadas estilo MyBatch
+  // (legajos EBR + registros simples) en el mismo contenedor. Mantiene los ids
+  // hist-prod-body/footer/q para no romper los call-sites existentes.
   var tb=document.getElementById('hist-prod-body');
   var ft=document.getElementById('hist-prod-footer');
   if(!tb)return;
-  var q = (document.getElementById('hist-prod-q')||{}).value || '';
-  var desde = (document.getElementById('hist-prod-desde')||{}).value || '';
-  var hasta = (document.getElementById('hist-prod-hasta')||{}).value || '';
-  var limit = window._histProdLimit;
-  var offset = window._histProdOffset || 0;
-  var url = '/api/produccion?limit='+limit+'&offset='+offset
-          +(q ? '&q='+encodeURIComponent(q) : '')
-          +(desde ? '&desde='+encodeURIComponent(desde) : '')
-          +(hasta ? '&hasta='+encodeURIComponent(hasta) : '');
+  var q = (((document.getElementById('hist-prod-q')||{}).value)||'').trim().toLowerCase();
+  function gfmt(n){return n==null?'<span style="color:#94a3b8">—</span>':Number(n).toLocaleString('es-CO')+' g';}
+  function estadoPill(e){
+    var s=(e||'').toLowerCase(), bg='#f1f5f9', col='#475569';
+    if(s.indexOf('cuarentena')>=0){bg='#dbeafe';col='#1e40af';}
+    else if(s.indexOf('proceso')>=0){bg='#fef9c3';col='#854d0e';}
+    else if(s.indexOf('aprob')>=0){bg='#dcfce7';col='#166534';}
+    else if(s.indexOf('rechaz')>=0||s.indexOf('cancel')>=0){bg='#fee2e2';col='#991b1b';}
+    return '<span style="background:'+bg+';color:'+col+';padding:2px 8px;border-radius:10px;font-size:0.78em;font-weight:700;white-space:nowrap">'+_escHTML(e||'')+'</span>';
+  }
   try{
-    var r=await fetch(url, {credentials:'same-origin'}),d=await r.json();
-    var ps=d.producciones||[];
-    if(!ps.length){
-      tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#999;padding:16px;">Sin producciones que coincidan</td></tr>';
+    var r=await fetch('/api/brd/ordenes-unificadas?fase=fabricacion',{credentials:'same-origin'});
+    var d=await r.json();
+    var ordenes=(d&&d.ordenes)||[];
+    if(q){
+      ordenes=ordenes.filter(function(o){
+        return ((o.numero_op||'')+' '+(o.lote_bulk||'')+' '+(o.producto||'')).toLowerCase().indexOf(q)>=0;
+      });
+    }
+    if(!ordenes.length){
+      tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#999;padding:16px;">Sin órdenes que coincidan</td></tr>';
       if(ft) ft.innerHTML='Total: 0';
       return;
     }
-    tb.innerHTML=ps.map(function(p){
-      var f=p.fecha?p.fecha.substring(0,16).replace('T',' '):'';
-      var op=p.operador||'<span style="color:#bbb;font-style:italic;">-</span>';
-      var costo = p.costo_estimado_cop ? '$'+Number(p.costo_estimado_cop).toLocaleString('es-CO') : '<span style="color:#94a3b8">—</span>';
-      var lote = '<span style="font-family:monospace;font-weight:700;color:#6d28d9">'+_escHTML(p.lote||'')+'</span>';
-      var estadoBg = (p.estado||'').toLowerCase()==='completado'?'#d4edda':'#fde68a';
-      var estadoCol = (p.estado||'').toLowerCase()==='completado'?'#155724':'#92400e';
+    tb.innerHTML=ordenes.map(function(o){
+      var aprob = o.aprobada!=null ? gfmt(o.aprobada) : (o.ml_envasable!=null ? (Number(o.ml_envasable).toLocaleString('es-CO')+' mL') : '<span style="color:#94a3b8">—</span>');
+      var org = o.origen==='legajo'
+        ? '<span style="background:#ede9fe;color:#6d28d9;padding:1px 7px;border-radius:8px;font-size:0.72em;font-weight:700">LEGAJO</span>'
+        : '<span style="background:#f1f5f9;color:#64748b;padding:1px 7px;border-radius:8px;font-size:0.72em;font-weight:700">SIMPLE</span>';
+      var acc = o.link
+        ? '<a href="'+o.link+'" style="color:#7c3aed;font-weight:700;text-decoration:none;font-size:11px">Abrir →</a>'
+        : '<span style="color:#cbd5e1">—</span>';
       return '<tr>'+
-        '<td style="font-weight:600;">'+_escHTML(p.producto)+'</td>'+
-        '<td>'+lote+'</td>'+
-        '<td style="text-align:right;font-weight:700;color:#6d28d9;">'+Number(p.cantidad).toLocaleString()+' kg</td>'+
-        '<td style="text-align:right;font-size:0.85em">'+costo+'</td>'+
-        '<td style="font-size:0.85em;color:#666;">'+_escHTML(f)+'</td>'+
-        '<td>'+op+'</td>'+
-        '<td style="text-align:center;"><span style="background:'+estadoBg+';color:'+estadoCol+';padding:2px 8px;border-radius:10px;font-size:0.8em;font-weight:600;">'+_escHTML(p.estado||'')+'</span></td>'+
-        '<td style="text-align:center;white-space:nowrap">'+
-          '<button data-prod-act="detalle" data-pid="'+p.id+'" style="background:#7c3aed;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer;margin-right:3px" title="Ver MPs descontadas + lotes FEFO + costo">📋</button>'+
-          '<button data-prod-act="rotulo" data-pid="'+p.id+'" data-prod="'+_escHTML(p.producto||'')+'" data-kg="'+(p.cantidad||0)+'" style="background:#c0392b;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer" title="Re-imprimir rótulos completos de dispensación (MPs + lotes FEFO + INCI)">🏷</button>'+
-        '</td>'+
+        '<td style="font-family:monospace;font-weight:700;color:#1e40af">'+_escHTML(o.numero_op||'')+'</td>'+
+        '<td style="font-family:monospace;color:#6d28d9">'+_escHTML(o.lote_bulk||'—')+'</td>'+
+        '<td style="font-weight:600">'+_escHTML(o.producto||'—')+'</td>'+
+        '<td style="text-align:right">'+gfmt(o.teorica_g)+'</td>'+
+        '<td style="text-align:right">'+gfmt(o.producida_g)+'</td>'+
+        '<td style="text-align:right">'+aprob+'</td>'+
+        '<td style="text-align:center">'+estadoPill(o.estado)+'</td>'+
+        '<td style="text-align:center">'+org+'</td>'+
+        '<td style="font-size:0.85em;color:#666">'+_escHTML(o.fecha||'—')+'</td>'+
+        '<td style="text-align:center">'+acc+'</td>'+
       '</tr>';
     }).join('');
-    // Footer paginación
     if(ft){
-      var total = d.total || 0;
-      var desde_n = (offset||0) + 1;
-      var hasta_n = (offset||0) + ps.length;
-      var pagBtns = '';
-      if(offset > 0){
-        pagBtns += '<button onclick="window._histProdOffset=Math.max(0,window._histProdOffset-'+limit+');cargarHistProd()" style="padding:4px 10px;background:#475569;color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer;margin-right:4px">← Anterior</button>';
-      }
-      if(offset + limit < total){
-        pagBtns += '<button onclick="window._histProdOffset+='+limit+';cargarHistProd()" style="padding:4px 10px;background:#7c3aed;color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer">Siguiente →</button>';
-      }
-      ft.innerHTML = '<span>Mostrando '+desde_n+'–'+hasta_n+' de '+total.toLocaleString()+'</span><span>'+pagBtns+'</span>';
+      var rs=(d&&d.resumen)||{};
+      ft.innerHTML='<span>'+(rs.total||ordenes.length)+' órdenes · '+(rs.legajos||0)+' con legajo EBR · '+(rs.simples||0)+' registro simple</span><span></span>';
     }
   }catch(e){
-    console.error('cargarProduccionesHistorial fallo:',e);
-    tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#c00;padding:16px;">Error cargando histórico: '+_escHTML(e.message)+'</td></tr>';
+    console.error('cargarHistProd (ordenes) fallo:',e);
+    tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#c00;padding:16px;">Error cargando órdenes: '+_escHTML(e.message)+'</td></tr>';
   }
 }
 
