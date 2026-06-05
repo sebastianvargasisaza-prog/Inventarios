@@ -16070,28 +16070,42 @@ def admin_diagnostico_produccion_global():
     conn = db_connect()
     c = conn.cursor()
 
-    # disponible + retenido(atrapado recuperable) + cuarentena, por código
+    # disponible (producible) por código + recuperable REAL + cuarentena.
+    # 4-jun-2026 FIX espejismo "Recuperable 3620g": antes sumaba las entradas
+    # AGOTADO sin RESTAR las salidas del MISMO lote → reportaba como recuperable
+    # stock que en realidad ya se consumió (entró y salió). Ahora NETEA por
+    # (material_id, lote), idéntico al recuperador /admin/lotes-stock-atrapado:
+    # recuperable = trapped neteado, solo si el grupo queda en positivo.
     disp = {}
     retenido = {}
     cuarentena = {}
+    _grp = {}  # (mid, lote) -> {nt: neto_total, nd: neto_disp, fix: bool, cuar: float}
     movs = c.execute(
-        "SELECT material_id, tipo, cantidad, UPPER(COALESCE(estado_lote,'')), COALESCE(fecha_vencimiento,'') "
+        "SELECT material_id, COALESCE(lote,''), tipo, cantidad, UPPER(COALESCE(estado_lote,'')), COALESCE(fecha_vencimiento,'') "
         "FROM movimientos WHERE material_id IS NOT NULL AND material_id!=''").fetchall()
-    for mid, tipo, cant, est, venc in movs:
+    for mid, lote, tipo, cant, est, venc in movs:
         mid = str(mid).strip()
         signed = float(cant or 0) if tipo in ('Entrada', 'entrada', 'ENTRADA', 'Ajuste +', 'Ajuste') else (
             -float(cant or 0) if tipo in ('Salida', 'salida', 'SALIDA', 'Ajuste -') else 0.0)
         if est not in _NO_PROD:
             disp[mid] = disp.get(mid, 0.0) + signed
-        else:
-            # recuperable: AGOTADO siempre · VENCIDO solo si no vencido de verdad
-            venc_s = str(venc or '')[:10]
-            es_vencido_real = bool(venc_s) and venc_s < hoy
-            if signed > 0 and (est == 'AGOTADO' or (est == 'VENCIDO' and not es_vencido_real)):
-                retenido[mid] = retenido.get(mid, 0.0) + signed
-            # CUARENTENA: stock REAL físico, solo falta que Calidad lo libere
-            if signed != 0 and est in ('CUARENTENA', 'CUARENTENA_EXTENDIDA'):
-                cuarentena[mid] = cuarentena.get(mid, 0.0) + signed
+        k = (mid, str(lote) if str(lote).strip() else '(sin lote)')
+        g = _grp.setdefault(k, {'nt': 0.0, 'nd': 0.0, 'fix': False, 'cuar': 0.0})
+        g['nt'] += signed
+        if est not in _NO_PROD:
+            g['nd'] += signed
+        venc_s = str(venc or '')[:10]
+        es_vencido_real = bool(venc_s) and venc_s < hoy
+        if signed > 0 and (est == 'AGOTADO' or (est == 'VENCIDO' and not es_vencido_real)):
+            g['fix'] = True
+        if signed != 0 and est in ('CUARENTENA', 'CUARENTENA_EXTENDIDA'):
+            g['cuar'] += signed
+    for (mid, lote), g in _grp.items():
+        trapped = g['nt'] - max(g['nd'], 0.0)
+        if g['nt'] > 0.5 and trapped > 0.5 and g['fix']:
+            retenido[mid] = retenido.get(mid, 0.0) + trapped
+        if g['cuar'] > 0.01:
+            cuarentena[mid] = cuarentena.get(mid, 0.0) + g['cuar']
 
     # maestro: codigo -> (nombre, inci_norm) · INCI -> [(codigo, disp)]
     nombres = {}

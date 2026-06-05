@@ -43,3 +43,26 @@ def test_atrapado_sin_lote(app, db_clean):
     db=sqlite3.connect(os.environ['DB_PATH']); est=db.execute("SELECT estado_lote FROM movimientos WHERE material_id='MPATRNL' AND tipo='Entrada'").fetchone()[0]; db.close()
     assert est=='VIGENTE', est
     db=sqlite3.connect(os.environ['DB_PATH']); db.execute("DELETE FROM movimientos WHERE material_id='MPATRNL'"); db.commit(); db.close()
+
+
+def test_diag_global_no_reporta_agotado_ya_consumido(app, db_clean):
+    """4-jun · el diagnóstico global NETEA por lote: stock AGOTADO que ya se
+    consumió (entrada 3620 + salida 3620 en el MISMO lote = neto 0) NO debe
+    figurar como 'recuperable/ATRAPADO' (era el espejismo de Niacinamida).
+    Debe caer a SIN_STOCK_REAL (comprar), coherente con el recuperador."""
+    db=sqlite3.connect(os.environ['DB_PATH'])
+    db.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_comercial,nombre_inci,activo) VALUES ('MPCONS1','Niacina Cons','NIACINAMIDE',1)")
+    db.execute("DELETE FROM movimientos WHERE material_id='MPCONS1'")
+    db.execute("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES ('PROD CONS TEST',1,1)")
+    db.execute("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje) VALUES ('PROD CONS TEST','MPCONS1','Niacina Cons',10)")
+    # entró 3620 AGOTADO y salió 3620 en el MISMO lote → neto 0, NO recuperable
+    db.execute("INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,lote,estado_lote,fecha_vencimiento) VALUES ('MPCONS1','Niacina Cons',3620,'Entrada','2026-04-15','LC','AGOTADO','2027-12-07')")
+    db.execute("INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,lote,estado_lote) VALUES ('MPCONS1','Niacina Cons',3620,'Salida','2026-05-01','LC','AGOTADO')")
+    db.commit(); db.close()
+    c=_login(app)
+    d=c.get('/api/admin/diagnostico-produccion-global').get_json()
+    prod=next((p for p in d['productos'] if p['producto']=='PROD CONS TEST'),None)
+    assert prod, 'producto debe figurar bloqueado'
+    blo=next((b for b in prod['bloqueos'] if b['material_id']=='MPCONS1'),None)
+    assert blo and blo['categoria']=='SIN_STOCK_REAL', f"AGOTADO ya consumido NO es recuperable · {blo}"
+    db=sqlite3.connect(os.environ['DB_PATH']); db.execute("DELETE FROM movimientos WHERE material_id='MPCONS1'"); db.execute("DELETE FROM formula_items WHERE producto_nombre='PROD CONS TEST'"); db.commit(); db.close()
