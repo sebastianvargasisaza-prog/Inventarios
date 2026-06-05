@@ -1454,7 +1454,9 @@ def ebr_vista_completa(ebr_id):
                       COALESCE(observaciones, notas) AS observaciones,
                       liberado_at_utc, liberado_por,
                       COALESCE(rechazado_at_utc, '') AS rechazado_at_utc,
-                      rechazado_motivo
+                      rechazado_motivo,
+                      COALESCE(numero_op,'') AS numero_op,
+                      COALESCE(fase,'fabricacion') AS fase
                FROM ebr_ejecuciones WHERE id=?""",
             (ebr_id,),
         ).fetchone()
@@ -1468,6 +1470,7 @@ def ebr_vista_completa(ebr_id):
             'tiempo_total_min': row[8] or 0, 'observaciones': row[9] or '',
             'liberado_at_utc': row[10] or '', 'liberado_por': row[11] or '',
             'rechazado_at_utc': row[12] or '', 'rechazado_motivo': row[13] or '',
+            'numero_op': row[14] or '', 'fase': row[15] or 'fabricacion',
         }
     except Exception as e:
         return jsonify({'error': f'header fallo: {e}'}), 500
@@ -4067,25 +4070,33 @@ _ORDEN_DETALLE_HTML = """<!DOCTYPE html>
 <title>Orden de Producción · EOS</title>
 <style>
 *{box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f3ff;color:#1e293b;margin:0;padding:20px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f3ff;color:#1e293b;margin:0;padding:24px}
 .wrap{max-width:1150px;margin:0 auto}
-a.back{color:#7c3aed;font-size:13px;text-decoration:none}
-.card{background:#fff;border-radius:14px;padding:22px;box-shadow:0 2px 8px rgba(0,0,0,.05);margin-bottom:18px}
-h1{font-size:24px;margin:0 0 2px;color:#1e293b}
-.prod{font-size:17px;color:#475569;font-weight:600;margin-bottom:18px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;font-size:13px}
-.grid .lbl{color:#64748b;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
-.grid .val{color:#1e293b;margin-top:2px;font-weight:600}
-.estado{font-weight:800}
-.btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px}
-.btns a,.btns button{border:none;border-radius:8px;padding:11px 18px;font-size:13px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+a.back{color:#7c3aed;font-size:13px;text-decoration:none;font-weight:600}
+a.back:hover{text-decoration:underline}
+.card{background:#fff;border-radius:16px;padding:0;box-shadow:0 4px 16px rgba(76,29,149,.07);margin-bottom:18px;overflow:hidden}
+.card.pad{padding:22px}
+#head{padding:0}
+.hbar{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;padding:22px 26px}
+.hkicker{font-size:12px;font-weight:700;opacity:.85;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+h1{font-size:28px;margin:0;color:#fff;letter-spacing:.5px}
+.prod{font-size:16px;color:#ede9fe;font-weight:600;margin-top:4px}
+.estado-badge{padding:6px 14px;border-radius:20px;font-size:12px;font-weight:800;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.12)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:18px;font-size:13px;padding:22px 26px}
+.grid .lbl{color:#94a3b8;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px}
+.grid .val{color:#1e293b;margin-top:3px;font-weight:600;font-size:14px}
+.liber-line{margin:0 26px 4px;padding:10px 14px;background:#dcfce7;color:#166534;border-radius:8px;font-size:13px;font-weight:600}
+.btns{display:flex;gap:10px;flex-wrap:wrap;padding:6px 26px 24px}
+.btns a,.btns button{border:none;border-radius:9px;padding:11px 18px;font-size:13px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;transition:transform .06s}
+.btns a:active,.btns button:active{transform:translateY(1px)}
 .b-time{background:#0ea5e9;color:#fff}.b-mbr{background:#22c55e;color:#fff}
-.b-aj{background:#475569;color:#fff}.b-pdf{background:#f97316;color:#fff}.b-rot{background:#14b8a6;color:#fff}
-.b-soon{background:#e2e8f0;color:#64748b;cursor:not-allowed}
-h2{font-size:18px;color:#7c3aed;margin:0 0 12px}
+.b-pdf{background:#f97316;color:#fff}
+.b-soon{background:#e2e8f0;color:#94a3b8;cursor:not-allowed}
+h2{font-size:18px;color:#7c3aed;margin:0 0 14px}
 table{width:100%;border-collapse:collapse;font-size:12.5px}
-th{text-align:left;padding:9px 8px;background:#f1f5f9;color:#475569;font-weight:700;font-size:11.5px}
-td{padding:9px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+th{text-align:left;padding:10px 9px;background:#f5f3ff;color:#6d28d9;font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:.3px}
+td{padding:10px 9px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+tbody tr:hover{background:#faf5ff}
 .mono{font-family:ui-monospace,monospace;font-weight:700;color:#1e40af}
 .num{text-align:right;font-variant-numeric:tabular-nums}
 .delta-ok{color:#166534}.delta-warn{color:#b45309;font-weight:700}
@@ -4094,9 +4105,10 @@ td{padding:9px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
 </style></head><body>
 <div class="wrap">
 <a class="back" href="/inventarios">&larr; Planta · Producción</a>
+<div style="height:10px"></div>
 <div class="card" id="head">Cargando…</div>
-<div class="card" id="pasos-sec"><h2>📖 Instrucción de Manufactura (pasos)</h2><div id="pasos"></div></div>
-<div class="card"><h2>⚖️ Pesaje de Materias Primas</h2><div id="pesaje"></div></div>
+<div class="card pad" id="pasos-sec"><h2>📖 Instrucción de Manufactura (pasos)</h2><div id="pasos"></div></div>
+<div class="card pad"><h2>⚖️ Pesaje de Materias Primas</h2><div id="pesaje"></div></div>
 </div>
 <script>
 var EBR_ID = __EBR_ID__;
@@ -4106,7 +4118,14 @@ function estadoColor(e){var s=(e||'').toLowerCase();
   if(s.indexOf('liber')>=0||s.indexOf('aprob')>=0)return '#166534';
   if(s.indexOf('rechaz')>=0)return '#991b1b';
   if(s.indexOf('cuarentena')>=0)return '#1e40af';
+  if(s.indexOf('complet')>=0)return '#0e7490';
   return '#854d0e';}
+function estadoBg(e){var s=(e||'').toLowerCase();
+  if(s.indexOf('liber')>=0||s.indexOf('aprob')>=0)return '#dcfce7';
+  if(s.indexOf('rechaz')>=0)return '#fee2e2';
+  if(s.indexOf('cuarentena')>=0)return '#dbeafe';
+  if(s.indexOf('complet')>=0)return '#cffafe';
+  return '#fef9c3';}
 function togglePasos(){var s=document.getElementById('pasos-sec');s.style.display=s.style.display==='none'?'block':'none';if(s.style.display==='block')s.scrollIntoView({behavior:'smooth'});}
 async function load(){
   try{
@@ -4116,18 +4135,28 @@ async function load(){
     if(!r.ok){document.getElementById('head').innerHTML='<span style="color:#b91c1c">Error: '+esc(d.error||r.status)+'</span>';return;}
     var h=d.header||{};
     var numop = h.numero_op || ('EBR-'+EBR_ID);
+    var estado = h.estado||'—';
+    var fase = h.fase||'fabricacion';
+    var faseLbl = ({fabricacion:'Fabricación · OP',envasado:'Envasado · OF',acondicionamiento:'Acondicionamiento · OA'})[fase]||fase;
     document.getElementById('head').innerHTML =
-      '<h1>Orden de Producción '+esc(numop)+'</h1>'+
-      '<div class="prod">'+esc(h.producto||h.titulo||'—')+'</div>'+
+      '<div class="hbar">'+
+        '<div class="htitle">'+
+          '<div class="hkicker">📋 Orden de Producción · '+esc(faseLbl)+'</div>'+
+          '<h1>'+esc(numop)+'</h1>'+
+          '<div class="prod">'+esc(h.producto||h.titulo||'—')+'</div>'+
+        '</div>'+
+        '<span class="estado-badge" style="background:'+estadoBg(estado)+';color:'+estadoColor(estado)+'">'+esc(estado)+'</span>'+
+      '</div>'+
       '<div class="grid">'+
         '<div><div class="lbl">N° de Lote Bulk</div><div class="val mono">'+esc(h.lote_codigo||'—')+'</div></div>'+
         '<div><div class="lbl">Tamaño de Lote</div><div class="val">'+gfmt(h.lote_size_g)+'</div></div>'+
-        '<div><div class="lbl">Iniciado</div><div class="val">'+esc((h.iniciado_at_utc||'—').substring(0,16).replace("T"," "))+'</div></div>'+
-        '<div><div class="lbl">Estado Actual</div><div class="val estado" style="color:'+estadoColor(h.estado)+'">'+esc(h.estado||'—')+'</div></div>'+
+        '<div><div class="lbl">Fecha / Hora</div><div class="val">'+esc((h.iniciado_at_utc||'—').substring(0,16).replace("T"," "))+'</div></div>'+
+        '<div><div class="lbl">Área o Línea</div><div class="val">'+esc(h.area_linea||'—')+'</div></div>'+
         '<div><div class="lbl">Elaborado por</div><div class="val">'+esc(h.operario||'—')+'</div></div>'+
-        '<div><div class="lbl">Liberado por</div><div class="val">'+esc(h.liberado_por||'—')+'</div></div>'+
+        '<div><div class="lbl">Supervisado por</div><div class="val">'+esc(h.supervisado_por||'—')+'</div></div>'+
         '<div style="grid-column:1/-1"><div class="lbl">Observaciones</div><div class="val" style="font-weight:400">'+esc(h.observaciones||'Ninguna')+'</div></div>'+
       '</div>'+
+      (h.liberado_por ? '<div class="liber-line">✅ Liberado por <b>'+esc(h.liberado_por)+'</b>'+(h.liberado_at_utc?(' · '+esc(h.liberado_at_utc.substring(0,16).replace("T"," "))):'')+'</div>' : '')+
       '<div class="btns">'+
         '<a class="b-time" href="/brd/timeline/'+EBR_ID+'">📜 Timeline Batch Record</a>'+
         '<button class="b-mbr" onclick="togglePasos()">📖 Instrucción de Manufactura</button>'+
