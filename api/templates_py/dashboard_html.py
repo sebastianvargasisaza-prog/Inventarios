@@ -3534,8 +3534,11 @@ async function crearLegajoDesdeOrden(producto){
   if(!producto)return;
   var lote=(prompt('N° de lote físico/comercial para el legajo de "'+producto+'":','')||'').trim();
   if(!lote)return;
-  var pass=prompt('Tu contraseña (firma electrónica · aprueba el MBR · 21 CFR Part 11):');
+  var pass=prompt('Tu contraseña de EOS (firma electrónica · aprueba el MBR · 21 CFR Part 11):');
   if(!pass)return;
+  // Admins/usuarios con MFA: la firma exige también el código del autenticador.
+  // Si no usas MFA, deja este campo vacío.
+  var totp=(prompt('Código MFA de 6 dígitos (déjalo vacío si NO usas MFA):')||'').trim();
   function H(){var t=(typeof csrfTokenNec==='function')?csrfTokenNec():(window._csrfTok||'');return {'Content-Type':'application/json','X-CSRF-Token':t};}
   async function jpost(url,body){
     var r=await fetch(url,{method:'POST',credentials:'same-origin',headers:H(),body:JSON.stringify(body||{})});
@@ -3553,8 +3556,8 @@ async function crearLegajoDesdeOrden(producto){
         var s=await jpost('/api/brd/mbr/'+mbrId+'/submit',{});
         if(!s.ok){alert('No se pudo enviar el MBR a revisión: '+((s.d&&s.d.error)||s.status));return;}
       }
-      var ch=await jpost('/api/sign/challenge',{password:pass});
-      if(!ch.ok){alert('Contraseña inválida para firmar: '+((ch.d&&ch.d.error)||ch.status));return;}
+      var ch=await jpost('/api/sign/challenge',{password:pass,totp_token:totp});
+      if(!ch.ok){alert('No se pudo firmar: '+((ch.d&&ch.d.error)||ch.status)+'\\n\\n(Si dice "Token MFA inválido", revisá el código de 6 dígitos de tu app. Si dice "Credenciales inválidas", es la contraseña.)');return;}
       var sg=await jpost('/api/sign',{record_table:'mbr_templates',record_id:String(mbrId),meaning:'aprueba',challenge_token:ch.d.token});
       if(!sg.ok){alert('No se pudo firmar (¿tenés cédula en tu identidad?): '+((sg.d&&sg.d.error)||sg.status));return;}
       var ap=await jpost('/api/brd/mbr/'+mbrId+'/aprobar',{signature_id:sg.d.signature_id});
