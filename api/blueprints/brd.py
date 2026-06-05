@@ -4103,8 +4103,9 @@ _ORDEN_DETALLE_HTML = """<!DOCTYPE html>
 *{box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f3ff;color:#1e293b;margin:0;padding:24px}
 .wrap{max-width:1150px;margin:0 auto}
-a.back{color:#7c3aed;font-size:13px;text-decoration:none;font-weight:600}
-a.back:hover{text-decoration:underline}
+a.back{display:inline-flex;align-items:center;gap:8px;background:#fff;color:#7c3aed;font-size:13px;font-weight:700;text-decoration:none;padding:10px 18px;border-radius:11px;border:1px solid #e9d5ff;box-shadow:0 2px 10px rgba(124,58,237,.10);transition:all .14s ease}
+a.back:hover{background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border-color:transparent;box-shadow:0 6px 18px rgba(124,58,237,.30);transform:translateY(-1px)}
+a.back .arw{font-size:15px;line-height:1}
 .card{background:#fff;border-radius:16px;padding:0;box-shadow:0 4px 16px rgba(76,29,149,.07);margin-bottom:18px;overflow:hidden}
 .card.pad{padding:22px}
 #head{padding:0}
@@ -4135,8 +4136,8 @@ tbody tr:hover{background:#faf5ff}
 #pasos-sec{display:none}
 </style></head><body>
 <div class="wrap">
-<a class="back" href="/inventarios">&larr; Planta · Producción</a>
-<div style="height:10px"></div>
+<a class="back" href="/inventarios"><span class="arw">&larr;</span> Volver a Producción</a>
+<div style="height:14px"></div>
 <div class="card" id="head">Cargando…</div>
 <div class="card pad" id="pasos-sec"><h2>📖 Instrucción de Manufactura (pasos)</h2><div id="pasos"></div></div>
 <div class="card pad"><h2>⚖️ Pesaje de Materias Primas</h2><div id="pesaje"></div></div>
