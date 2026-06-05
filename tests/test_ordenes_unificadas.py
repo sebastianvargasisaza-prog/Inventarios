@@ -126,6 +126,28 @@ def test_registro_produccion_sin_ebr_mode_no_crea_legajo(app, db_clean):
     assert r.get_json().get('ebr') is None, "con EBR_MODE=off no debe crear legajo"
 
 
+def test_vista_completa_supervisado_y_elaborado(app, db_clean):
+    """5-jun · regla del CEO: el área productiva la supervisa el Jefe de
+    Producción. vista-completa resuelve 'Supervisado por' = Jefe de Producción y
+    enriquece 'Elaborado por' con nombre+cargo desde usuarios_identidad."""
+    c = _conn()
+    c.execute("INSERT OR REPLACE INTO usuarios_identidad (username,nombre_completo,cargo,activo) VALUES ('jprodtest','Jose Alfredo Rodriguez','Jefe de Producción',1)")
+    c.execute("INSERT OR REPLACE INTO usuarios_identidad (username,nombre_completo,cargo,activo) VALUES ('opertest','Maierlin Rivera','Operaria de producción',1)")
+    c.execute("INSERT INTO mbr_templates (producto_nombre,version,estado,lote_size_g,titulo,creado_por,creado_at_utc) VALUES ('PROD SUP TEST',1,'draft',1000,'t','sebastian','2026-06-05')")
+    mbr = c.execute("SELECT id FROM mbr_templates WHERE producto_nombre='PROD SUP TEST'").fetchone()[0]
+    c.execute("INSERT INTO mbr_pasos (mbr_template_id,orden,descripcion,tipo_paso,fase) VALUES (?,1,'Mezclar','mezclado','fabricacion')", (mbr,))
+    c.execute("UPDATE mbr_templates SET estado='aprobado' WHERE id=?", (mbr,))
+    c.execute("INSERT INTO ebr_ejecuciones (mbr_template_id,mbr_version,lote,numero_op,estado,iniciado_por,iniciado_at_utc,cantidad_objetivo_g,fase) VALUES (?,1,'LSUP-1','OP-2026-7777','iniciado','opertest','2026-06-05',1000,'fabricacion')", (mbr,))
+    ebr = c.execute("SELECT id FROM ebr_ejecuciones WHERE lote='LSUP-1'").fetchone()[0]
+    c.commit(); c.close()
+    cl = _login(app)
+    h = cl.get(f'/api/brd/ebr/{ebr}/vista-completa').get_json()['header']
+    assert 'Jefe de Producción' in (h.get('supervisado_por') or ''), h.get('supervisado_por')
+    assert 'Jose Alfredo' in (h.get('supervisado_por') or '')
+    assert 'Maierlin' in (h.get('operario') or '') and 'opertest' in (h.get('operario') or '')
+    assert h.get('numero_op') == 'OP-2026-7777'
+
+
 def test_orden_detalle_page_html(app, db_clean):
     """Detalle de Orden estilo MyBatch (cabecera + botones + pesaje) · solo lectura."""
     cl = _login(app)

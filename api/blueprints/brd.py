@@ -1487,6 +1487,37 @@ def ebr_vista_completa(ebr_id):
             out['header']['lote_size_g'] = float(mbr[3] or 0)
     except Exception:
         pass
+    # Elaborado por (enriquecido) + Supervisado por · Sebastián 5-jun-2026:
+    # "el área productiva la supervisa el Jefe de Producción; calidad el Jefe de
+    # Control de Calidad". Resolvemos nombre+cargo desde usuarios_identidad
+    # (fallback operarios.es_jefe_produccion). Solo lectura.
+    try:
+        op = out['header'].get('operario', '')
+        if op:
+            ir = conn.execute(
+                "SELECT COALESCE(nombre_completo,''), COALESCE(cargo,'') "
+                "FROM usuarios_identidad WHERE username=? AND COALESCE(activo,1)=1",
+                (op,)).fetchone()
+            if ir:
+                _partes = [p for p in (ir[0], ir[1]) if p and p != 'Por definir']
+                if _partes:
+                    out['header']['operario'] = ', '.join(_partes) + f' ({op})'
+        # Supervisado por = Jefe de Producción (fases productivas).
+        sup = ''
+        jp = conn.execute(
+            "SELECT COALESCE(nombre_completo,''), COALESCE(cargo,'') FROM usuarios_identidad "
+            "WHERE LOWER(cargo) LIKE '%jefe%produc%' AND COALESCE(activo,1)=1 LIMIT 1").fetchone()
+        if jp and (jp[0] or jp[1]):
+            sup = ((jp[0] + ', ') if jp[0] else '') + (jp[1] or 'Jefe de Producción')
+        else:
+            jo = conn.execute(
+                "SELECT nombre, COALESCE(apellido,'') FROM operarios "
+                "WHERE COALESCE(es_jefe_produccion,0)=1 LIMIT 1").fetchone()
+            if jo:
+                sup = (str(jo[0] or '') + ' ' + str(jo[1] or '')).strip() + ', Jefe de Producción'
+        out['header']['supervisado_por'] = sup
+    except Exception:
+        pass
     # 2. Pesajes MP
     try:
         rows = conn.execute(
