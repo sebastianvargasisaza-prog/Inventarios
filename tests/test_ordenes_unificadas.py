@@ -12,7 +12,73 @@ Cubre:
 """
 import os
 import sqlite3
+import pytest
 from .conftest import TEST_PASSWORD, csrf_headers
+
+
+@pytest.fixture(autouse=True)
+def _aislar_brd():
+    """Aísla la BD compartida de sesión: estos tests crean fórmulas, MPs,
+    movimientos, MBR, EBR y producciones que contaminarían los golden brd-seed /
+    zero-error si corren en el mismo proceso. Snapshot antes → revierte estados de
+    MBR y BORRA todo lo nuevo después de cada test (revertir aprobado→draft está
+    permitido · el trigger solo bloquea editar un MBR que SIGUE aprobado)."""
+    c = sqlite3.connect(os.environ['DB_PATH'], timeout=10.0)
+
+    def _ids(sql):
+        try:
+            return {r[0] for r in c.execute(sql).fetchall()}
+        except Exception:
+            return set()
+    try:
+        pre_mbr = dict(c.execute("SELECT id, estado FROM mbr_templates").fetchall())
+    except Exception:
+        pre_mbr = {}
+    pre = {
+        'ebr': _ids("SELECT id FROM ebr_ejecuciones"),
+        'prod': _ids("SELECT id FROM producciones"),
+        'fh': _ids("SELECT producto_nombre FROM formula_headers"),
+        'fi': _ids("SELECT id FROM formula_items"),
+        'mp': _ids("SELECT codigo_mp FROM maestro_mps"),
+        'mov': _ids("SELECT id FROM movimientos"),
+    }
+    c.close()
+    yield
+    c = sqlite3.connect(os.environ['DB_PATH'], timeout=10.0)
+    try:
+        for eid, in c.execute("SELECT id FROM ebr_ejecuciones").fetchall():
+            if eid not in pre['ebr']:
+                c.execute("DELETE FROM ebr_pasos_ejecutados WHERE ebr_id=?", (eid,))
+                c.execute("DELETE FROM ebr_ejecuciones WHERE id=?", (eid,))
+        for pid, in c.execute("SELECT id FROM producciones").fetchall():
+            if pid not in pre['prod']:
+                c.execute("DELETE FROM producciones WHERE id=?", (pid,))
+        for mid, est in c.execute("SELECT id, estado FROM mbr_templates").fetchall():
+            if mid in pre_mbr:
+                if est != pre_mbr[mid]:
+                    c.execute("UPDATE mbr_templates SET estado=? WHERE id=?", (pre_mbr[mid], mid))
+            else:
+                c.execute("UPDATE mbr_templates SET estado='draft' WHERE id=?", (mid,))
+                c.execute("DELETE FROM mbr_pasos WHERE mbr_template_id=?", (mid,))
+                c.execute("DELETE FROM mbr_templates WHERE id=?", (mid,))
+        # fórmulas/MPs/movimientos nuevos (orden: hijos antes que padres por FK)
+        for fid, in c.execute("SELECT id FROM formula_items").fetchall():
+            if fid not in pre['fi']:
+                c.execute("DELETE FROM formula_items WHERE id=?", (fid,))
+        for pn, in c.execute("SELECT producto_nombre FROM formula_headers").fetchall():
+            if pn not in pre['fh']:
+                c.execute("DELETE FROM formula_headers WHERE producto_nombre=?", (pn,))
+        for vid, in c.execute("SELECT id FROM movimientos").fetchall():
+            if vid not in pre['mov']:
+                c.execute("DELETE FROM movimientos WHERE id=?", (vid,))
+        for cod, in c.execute("SELECT codigo_mp FROM maestro_mps").fetchall():
+            if cod not in pre['mp']:
+                c.execute("DELETE FROM maestro_mps WHERE codigo_mp=?", (cod,))
+        c.commit()
+    except Exception:
+        pass
+    finally:
+        c.close()
 
 
 def _login(app, user='sebastian'):

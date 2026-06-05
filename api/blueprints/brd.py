@@ -4196,7 +4196,7 @@ h1{font-size:28px;margin:0;color:#fff;letter-spacing:.5px}
 .btns a,.btns button{border:none;border-radius:9px;padding:11px 18px;font-size:13px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;transition:transform .06s}
 .btns a:active,.btns button:active{transform:translateY(1px)}
 .b-time{background:#0ea5e9;color:#fff}.b-mbr{background:#22c55e;color:#fff}
-.b-pdf{background:#f97316;color:#fff}
+.b-pdf{background:#f97316;color:#fff}.b-rot{background:#14b8a6;color:#fff}
 .b-soon{background:#e2e8f0;color:#94a3b8;cursor:not-allowed}
 h2{font-size:18px;color:#7c3aed;margin:0 0 14px}
 table{width:100%;border-collapse:collapse;font-size:12.5px}
@@ -4244,6 +4244,9 @@ async function load(){
     var estado = h.estado||'—';
     var fase = h.fase||'fabricacion';
     var faseLbl = ({fabricacion:'Fabricación · OP',envasado:'Envasado · OF',acondicionamiento:'Acondicionamiento · OA'})[fase]||fase;
+    // Rótulos de pesaje: reusa el generador existente /rotulos/<producto>/<kg>
+    var prodRot = encodeURIComponent(h.producto||h.titulo||'');
+    var kgRot = (Number(h.lote_size_g||0)/1000) || 1;
     document.getElementById('head').innerHTML =
       '<div class="hbar">'+
         '<div class="htitle">'+
@@ -4267,8 +4270,8 @@ async function load(){
         '<a class="b-time" href="/brd/timeline/'+EBR_ID+'">📜 Timeline Batch Record</a>'+
         '<button class="b-mbr" onclick="togglePasos()">📖 Instrucción de Manufactura</button>'+
         '<a class="b-pdf" href="/api/brd/ebr/'+EBR_ID+'/pdf" target="_blank">📄 Descargar PDF</a>'+
+        '<a class="b-rot" href="/rotulos/'+prodRot+'/'+kgRot+'" target="_blank">🖨 Rótulos de Pesaje</a>'+
         '<button class="b-soon" title="Próximo sub-paso">➕ Ajuste</button>'+
-        '<button class="b-soon" title="Próximo sub-paso">🖨 Rótulos de Pesaje</button>'+
       '</div>';
     // Pasos (Instrucción de Manufactura)
     var pasos=d.pasos||[];
