@@ -4223,6 +4223,7 @@ h1{font-size:28px;margin:0;color:#fff;letter-spacing:.5px}
 .btns a:active,.btns button:active{transform:translateY(1px)}
 .b-time{background:#0ea5e9;color:#fff}.b-mbr{background:#22c55e;color:#fff}
 .b-pdf{background:#f97316;color:#fff}.b-rot{background:#14b8a6;color:#fff}
+.b-aj{background:#475569;color:#fff}
 .b-soon{background:#e2e8f0;color:#94a3b8;cursor:not-allowed}
 h2{font-size:18px;color:#7c3aed;margin:0 0 14px}
 table{width:100%;border-collapse:collapse;font-size:12.5px}
@@ -4259,6 +4260,26 @@ function estadoBg(e){var s=(e||'').toLowerCase();
   if(s.indexOf('complet')>=0)return '#cffafe';
   return '#fef9c3';}
 function togglePasos(){var s=document.getElementById('pasos-sec');s.style.display=s.style.display==='none'?'block':'none';if(s.style.display==='block')s.scrollIntoView({behavior:'smooth'});}
+async function ajustarOrden(){
+  // + Ajuste: corrige la cantidad de la producción asociada (re-escala MP por FEFO).
+  // Reusa /api/produccion/<pid>/ajustar-cantidad (admin · audit INVIMA).
+  try{
+    var pr=await fetch('/api/brd/ebr/'+EBR_ID+'/produccion-id',{credentials:'same-origin'});
+    var pd=await pr.json();
+    if(!pd.produccion_id){alert('Esta orden no tiene una producción asociada para ajustar (legajo sin registro de producción).');return;}
+    var nv=prompt('Nueva cantidad a fabricar (kg):'); if(nv===null)return; nv=parseFloat(nv);
+    if(!nv||nv<=0){alert('Cantidad inválida');return;}
+    var mot=(prompt('Motivo del ajuste (mínimo 10 caracteres · audit INVIMA):')||'').trim();
+    if(mot.length<10){alert('El motivo debe tener al menos 10 caracteres');return;}
+    var t=''; try{var cr=await fetch('/api/csrf-token',{credentials:'same-origin'});t=(await cr.json()).csrf_token||'';}catch(e){}
+    var r=await fetch('/api/produccion/'+pd.produccion_id+'/ajustar-cantidad',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify({nueva_cantidad_kg:nv,motivo:mot})});
+    var d=await r.json();
+    if(!r.ok){alert('No se pudo ajustar: '+((d&&d.error)||r.status));return;}
+    alert('✓ Ajustado a '+nv+' kg. '+(d.mensaje||''));
+    location.reload();
+  }catch(e){alert('Error de red: '+(e&&e.message||e));}
+}
 async function load(){
   try{
     var r=await fetch('/api/brd/ebr/'+EBR_ID+'/vista-completa',{credentials:'same-origin'});
@@ -4297,7 +4318,7 @@ async function load(){
         '<button class="b-mbr" onclick="togglePasos()">📖 Instrucción de Manufactura</button>'+
         '<a class="b-pdf" href="/api/brd/ebr/'+EBR_ID+'/pdf" target="_blank">📄 Descargar PDF</a>'+
         '<a class="b-rot" href="/rotulos/'+prodRot+'/'+kgRot+'" target="_blank">🖨 Rótulos de Pesaje</a>'+
-        '<button class="b-soon" title="Próximo sub-paso">➕ Ajuste</button>'+
+        '<button class="b-aj" onclick="ajustarOrden()">➕ Ajuste</button>'+
       '</div>';
     // Pasos (Instrucción de Manufactura)
     var pasos=d.pasos||[];
@@ -4447,3 +4468,27 @@ def activar_legajos_page():
         return Response('<div style="font-family:sans-serif;padding:40px;color:#991b1b">Solo Admin o Calidad pueden activar legajos automáticos.</div>',
                         mimetype="text/html")
     return Response(_ACTIVAR_LEGAJOS_HTML, mimetype="text/html")
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/produccion-id", methods=["GET"])
+def ebr_produccion_id(ebr_id):
+    """Devuelve el id de la producción (tabla producciones) asociada a este EBR,
+    matcheando por su lote. Permite ajustar la cantidad desde el detalle de orden
+    (botón "+ Ajuste") reusando /api/produccion/<pid>/ajustar-cantidad."""
+    err = _require_login()
+    if err:
+        return err
+    conn = get_db()
+    row = conn.execute(
+        "SELECT COALESCE(lote_codigo, lote) FROM ebr_ejecuciones WHERE id=?",
+        (ebr_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "EBR no existe"}), 404
+    lote = (row[0] or "").strip()
+    pid = None
+    if lote:
+        pr = conn.execute(
+            "SELECT id FROM producciones WHERE lote=? ORDER BY id DESC LIMIT 1",
+            (lote,)).fetchone()
+        pid = pr[0] if pr else None
+    return jsonify({"ok": True, "produccion_id": pid, "lote": lote})

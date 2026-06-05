@@ -222,6 +222,30 @@ def test_registro_produccion_lote_personalizado(app, db_clean):
     assert lt and lt[0] == '261561', f"la producción debe guardar el lote escrito · {lt}"
 
 
+def test_ebr_produccion_id_resuelve_para_ajuste(app, db_clean):
+    """5-jun · "+ Ajuste": el detalle de orden resuelve la producción asociada al
+    EBR por su lote para poder ajustar la cantidad."""
+    c = _conn()
+    c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,tipo_material,activo) VALUES ('MP-AJ1','GLYCERIN','Glicerina','MP',1)")
+    c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MP-AJ1','Glicerina','Entrada',100000,'LAJ1',date('now'))")
+    c.execute("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES ('PROD AJUSTE TEST',1,1)")
+    c.execute("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje) VALUES ('PROD AJUSTE TEST','MP-AJ1','Glicerina',10)")
+    c.execute("INSERT INTO mbr_templates (producto_nombre,version,estado,lote_size_g,titulo,creado_por,creado_at_utc) VALUES ('PROD AJUSTE TEST',1,'draft',1000,'t','sebastian','2026-06-05')")
+    mbr = c.execute("SELECT id FROM mbr_templates WHERE producto_nombre='PROD AJUSTE TEST'").fetchone()[0]
+    c.execute("INSERT INTO mbr_pasos (mbr_template_id,orden,descripcion,tipo_paso,fase) VALUES (?,1,'Mezclar','mezclado','fabricacion')", (mbr,))
+    c.execute("UPDATE mbr_templates SET estado='aprobado' WHERE id=?", (mbr,))
+    c.commit(); c.close()
+    cl = _login(app)
+    r = cl.post('/api/produccion', json={'producto': 'PROD AJUSTE TEST', 'cantidad_kg': 1,
+                                         'operador': 'sebastian', 'presentacion': 'test',
+                                         'lote': 'LOTE-AJ-1'}, headers=_h())
+    assert r.status_code in (200, 201), r.data
+    ebr_id = r.get_json()['ebr']['id']
+    pr = cl.get(f'/api/brd/ebr/{ebr_id}/produccion-id').get_json()
+    assert pr['ok'] and pr['produccion_id'], f"debe resolver la producción del EBR · {pr}"
+    assert pr['lote'] == 'LOTE-AJ-1'
+
+
 def test_registro_produccion_sin_mbr_no_crea_legajo(app, db_clean):
     """Si el producto NO tiene MBR aprobado, el registro NO crea legajo (se
     comporta idéntico a antes · cero riesgo). El legajo automático depende del
