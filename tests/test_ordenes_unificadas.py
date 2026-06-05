@@ -75,6 +75,57 @@ def test_ordenes_unificadas_requiere_login(app, db_clean):
     assert r.status_code == 401
 
 
+def test_registro_produccion_crea_legajo_automatico(app, db_clean, monkeypatch):
+    """4-jun · LEGAJO AUTOMÁTICO (replica MyBatch): con EBR_MODE=warn y un MBR
+    aprobado, "Registrar Producción" crea el legajo solo (sin botón) y la orden
+    aparece UNA vez como LEGAJO (dedup del registro simple)."""
+    c = _conn()
+    c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,tipo_material,activo) VALUES ('MP-AUTO1','GLYCERIN','Glicerina','MP',1)")
+    c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MP-AUTO1','Glicerina','Entrada',100000,'LA1',date('now'))")
+    c.execute("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES ('PROD AUTO TEST',1,1)")
+    c.execute("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje) VALUES ('PROD AUTO TEST','MP-AUTO1','Glicerina',10)")
+    # MBR: crear en draft → agregar pasos → aprobar (insertar pasos en un MBR
+    # aprobado está prohibido por trigger de inmutabilidad).
+    c.execute("INSERT INTO mbr_templates (producto_nombre,version,estado,lote_size_g,titulo,creado_por,creado_at_utc) VALUES ('PROD AUTO TEST',1,'draft',1000,'MBR auto','sebastian','2026-06-04')")
+    mbr_id = c.execute("SELECT id FROM mbr_templates WHERE producto_nombre='PROD AUTO TEST'").fetchone()[0]
+    c.execute("INSERT INTO mbr_pasos (mbr_template_id,orden,descripcion,tipo_paso,fase) VALUES (?,1,'Mezclar bulk','mezclado','fabricacion')", (mbr_id,))
+    c.execute("UPDATE mbr_templates SET estado='aprobado' WHERE id=?", (mbr_id,))
+    c.commit(); c.close()
+    # activar el motor automático en runtime (la función lee config.EBR_MODE al vuelo)
+    import config
+    monkeypatch.setattr(config, 'EBR_MODE', 'warn', raising=False)
+    cl = _login(app)
+    r = cl.post('/api/produccion', json={'producto': 'PROD AUTO TEST', 'cantidad_kg': 1,
+                                         'operador': 'sebastian', 'presentacion': 'test'},
+                headers=_h())
+    assert r.status_code in (200, 201), r.data
+    d = r.get_json()
+    assert d.get('ebr') and d['ebr'].get('numero_op'), f"debe crear legajo automático · {d}"
+    lote = d['lote']
+    c = _conn(); row = c.execute("SELECT id FROM ebr_ejecuciones WHERE lote=?", (lote,)).fetchone(); c.close()
+    assert row, "el EBR debe existir para el lote de la producción"
+    od = cl.get('/api/brd/ordenes-unificadas?fase=fabricacion').get_json()
+    filas = [o for o in od['ordenes'] if o.get('lote_bulk') == lote]
+    assert len(filas) == 1 and filas[0]['origen'] == 'legajo', f"1 sola fila LEGAJO (sin duplicar) · {filas}"
+
+
+def test_registro_produccion_sin_ebr_mode_no_crea_legajo(app, db_clean):
+    """Con EBR_MODE=off (default) el registro NO crea legajo (cero cambio de
+    comportamiento · seguro)."""
+    c = _conn()
+    c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,tipo_material,activo) VALUES ('MP-OFF1','GLYCERIN','Glicerina','MP',1)")
+    c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MP-OFF1','Glicerina','Entrada',100000,'LO1',date('now'))")
+    c.execute("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES ('PROD OFF TEST',1,1)")
+    c.execute("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje) VALUES ('PROD OFF TEST','MP-OFF1','Glicerina',10)")
+    c.commit(); c.close()
+    cl = _login(app)
+    r = cl.post('/api/produccion', json={'producto': 'PROD OFF TEST', 'cantidad_kg': 1,
+                                         'operador': 'sebastian', 'presentacion': 'test'},
+                headers=_h())
+    assert r.status_code in (200, 201), r.data
+    assert r.get_json().get('ebr') is None, "con EBR_MODE=off no debe crear legajo"
+
+
 def test_orden_detalle_page_html(app, db_clean):
     """Detalle de Orden estilo MyBatch (cabecera + botones + pesaje) · solo lectura."""
     cl = _login(app)

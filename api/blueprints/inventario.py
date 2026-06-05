@@ -2334,6 +2334,38 @@ def _handle_produccion_inner():
             except Exception:
                 pass
 
+            # Reemplazo MyBatch · 4-jun-2026 · LEGAJO AUTOMÁTICO. Igual que
+            # planta_aceptar_produccion: al registrar producción se crea el EBR
+            # (batch record) desde el MBR APROBADO del producto. EBR_MODE controla:
+            # off (default)=no hace nada · warn/strict=crea si hay MBR aprobado.
+            # Así el legajo nace solo (como MyBatch), sin botón manual. Con off el
+            # comportamiento es idéntico al previo (cero riesgo).
+            ebr_auto = None
+            try:
+                from config import EBR_MODE as _EBR_MODE
+            except Exception:
+                _EBR_MODE = 'off'
+            if _EBR_MODE in ('warn', 'strict'):
+                try:
+                    from blueprints.brd import crear_ebr_desde_mbr
+                    _r = crear_ebr_desde_mbr(
+                        c, producto_nombre=producto, lote=lote_ref,
+                        produccion_id=None, cantidad_objetivo_g=cantidad_g,
+                        usuario=operador)
+                    if _r.get('ok'):
+                        ebr_auto = _r
+                        try:
+                            from database import audit_log as _al2
+                            _al2(c, usuario=operador or 'sistema', accion='CREAR_EBR_AUTO',
+                                 tabla='ebr_ejecuciones', registro_id=str(_r.get('id')),
+                                 despues={'producto': producto, 'lote': lote_ref,
+                                          'numero_op': _r.get('numero_op')})
+                        except Exception:
+                            pass
+                except Exception as _eebr:
+                    __import__('logging').getLogger('inventario').warning(
+                        'crear EBR auto en registro fallo (no bloquea producción): %s', _eebr)
+
             conn.commit()
         except Exception as _e:
             conn.rollback()
@@ -2393,7 +2425,10 @@ def _handle_produccion_inner():
         msg = f'Produccion registrada: {producto} x {cantidad_kg}kg (FEFO)'
         if descuentos:
             msg += f'. {len(descuentos)} MPs descontadas.'
-        return jsonify({'message': msg, 'descuentos': descuentos, 'lote': lote_ref}), 201
+        if ebr_auto and ebr_auto.get('numero_op'):
+            msg += f' · Legajo {ebr_auto["numero_op"]} creado automáticamente.'
+        return jsonify({'message': msg, 'descuentos': descuentos, 'lote': lote_ref,
+                        'ebr': ebr_auto}), 201
     # Sprint Fabricación PRO 20-may-2026: paginación + búsqueda + filtros
     # server-side. Antes solo LIMIT 50 sin offset ni q · imposible navegar.
     try:

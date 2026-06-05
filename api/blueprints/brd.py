@@ -3885,9 +3885,12 @@ def ordenes_unificadas():
     except Exception as _e:
         log.warning("ordenes-unificadas EBR query fallo: %s", _e)
         ebr_rows = []
+    _lotes_con_legajo = set()  # para no duplicar la fila simple si ya tiene EBR
     for r in ebr_rows:
         rd = dict(r)
         liberado = bool(rd.get("liberado_at_utc"))
+        if rd.get("lote"):
+            _lotes_con_legajo.add(str(rd["lote"]).strip())
         items.append({
             "origen": "legajo",
             "numero_op": rd.get("numero_op") or f"EBR-{rd['id']}",
@@ -3919,6 +3922,10 @@ def ordenes_unificadas():
             prod_rows = []
         for r in prod_rows:
             rd = dict(r)
+            # dedup: si esta producción YA tiene legajo (mismo lote), no la repetimos
+            # como fila 'simple' · gana la fila LEGAJO (el legajo automático).
+            if str(rd.get("lote") or "").strip() in _lotes_con_legajo:
+                continue
             kg = float(rd.get("cantidad") or 0)
             items.append({
                 "origen": "simple",
