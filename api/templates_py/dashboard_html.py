@@ -849,11 +849,9 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:10px">
       <h2 style="margin:0">&#129514; Fórmulas Maestras de Producción</h2>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        <button onclick="auditarFormulasHuerfanas()" style="background:#9a3412;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Detecta y repara material_id huérfanos en TODAS las fórmulas (post-unificación)">🔧 Huérfanos</button>
-        <button onclick="abrirBasesFormulas()" style="background:#7c3aed;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Ver distribución de bases · normalizar a un valor común (admin)">📊 Bases</button>
+        <!-- 5-jun-2026 · removidos Huérfanos/Bases/Export/PIN (herramientas de
+             estabilización · ya no necesarias en el día a día). -->
         <button onclick="abrirImportExcelFormulas()" style="background:#7c3aed;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Subir XLSX/CSV de Alejandro · la app crea fórmulas automáticamente">📤 Import Excel</button>
-        <button onclick="window.open('/api/formulas/export-excel','_blank')" style="background:#217346;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">📄 Export</button>
-        <button id="formulas-pin-btn" onclick="cambiarFormulaPin()" style="background:#ca8a04;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Cambiar / setear PIN de fórmulas (admin)">🔑 PIN</button>
         <button onclick="abrirNuevoProducto()" style="background:linear-gradient(135deg,#6d28d9,#7c3aed);color:#fff;border:none;padding:9px 18px;border-radius:6px;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 2px 6px rgba(8,145,178,.3)">🚀 Lanzar producto nuevo</button>
       </div>
     </div>
@@ -4880,6 +4878,13 @@ async function loadFormulas(){
   }catch(e){}
 }
 
+function toggleFormula(idx){
+  var b=document.getElementById('fbody-'+idx), ch=document.getElementById('fchev-'+idx);
+  if(!b) return;
+  var abierto = b.style.display!=='none';
+  b.style.display = abierto ? 'none' : 'block';
+  if(ch) ch.innerHTML = abierto ? '&#9654;' : '&#9660;';
+}
 function renderFormulas(fl){
   var c=document.getElementById('formulas-list'); if(!c) return;
   if(!fl.length){c.innerHTML='<p style="color:#999;">Sin formulas aun.</p>';return;}
@@ -4914,15 +4919,19 @@ function renderFormulas(fl){
     var editBtn=formulasPin
       ?'<button onclick="editFormula('+idx+')" style="background:#667eea;padding:5px 10px;font-size:0.82em;">Editar</button>'
       :'<button onclick="pedirPinFormula()" style="background:#aaa;color:white;border:none;padding:5px 10px;font-size:0.82em;border-radius:3px;cursor:pointer;" title="Requiere PIN">&#128274; Editar</button>';
-    html+='<div style="border:1px solid #dde;border-radius:8px;padding:15px;margin-bottom:12px;background:white;">';
-    html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">';
-    html+='<h4 style="color:#667eea;">'+f.producto_nombre+' <span style="font-weight:normal;color:#888;font-size:0.82em;">(base '+f.unidad_base_g+'g)</span></h4>';
-    html+='<div style="display:flex;gap:6px;">'+editBtn;
+    html+='<div style="border:1px solid #dde;border-radius:8px;margin-bottom:10px;background:white;overflow:hidden;">';
+    // Cabecera CLICKEABLE · colapsa/expande la tabla (lista compacta)
+    html+='<div onclick="toggleFormula('+idx+')" style="display:flex;justify-content:space-between;align-items:center;padding:12px 15px;cursor:pointer;gap:8px;">';
+    html+='<h4 style="color:#667eea;margin:0;display:flex;align-items:center;gap:9px;"><span id="fchev-'+idx+'" style="font-size:0.75em;color:#999;transition:transform .12s;">&#9654;</span>'+f.producto_nombre+' <span style="font-weight:normal;color:#888;font-size:0.82em;">(base '+f.unidad_base_g+'g · '+f.items.length+' MP)</span></h4>';
+    html+='<div style="display:flex;gap:6px;" onclick="event.stopPropagation();">'+editBtn;
     html+='<button data-form-act="duplicar" data-prod="'+_escHTML(f.producto_nombre)+'" style="background:#7c3aed;padding:5px 10px;font-size:0.82em;" title="Crear copia con nuevo nombre">Duplicar</button>';
     html+='<button onclick="delFormula('+idx+')" style="background:#cc4444;padding:5px 10px;font-size:0.82em;">Eliminar</button>';
     html+='</div></div>';
+    // Cuerpo colapsable (oculto por defecto)
+    html+='<div id="fbody-'+idx+'" style="display:none;padding:0 15px 14px;">';
     html+='<table class="table" style="font-size:0.85em;"><thead><tr><th>Código MP</th><th>Material</th><th>%</th><th>'+_escHTML(unidadCol)+'</th></tr></thead><tbody>'+rows+'</tbody></table>';
     html+='<small style="color:'+(ok?'#28a745':'#e68a00')+';"> '+totalStr+'</small>';
+    html+='</div>';
     html+='</div>';
   });
   c.innerHTML=html;
