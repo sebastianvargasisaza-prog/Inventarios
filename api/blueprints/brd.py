@@ -1545,7 +1545,8 @@ def ebr_vista_completa(ebr_id):
                       rechazado_motivo,
                       COALESCE(numero_op,'') AS numero_op,
                       COALESCE(fase,'fabricacion') AS fase,
-                      COALESCE(area_codigo,'') AS area_codigo
+                      COALESCE(area_codigo,'') AS area_codigo,
+                      COALESCE(cantidad_objetivo_g,0) AS cantidad_objetivo_g
                FROM ebr_ejecuciones WHERE id=?""",
             (ebr_id,),
         ).fetchone()
@@ -1561,6 +1562,7 @@ def ebr_vista_completa(ebr_id):
             'rechazado_at_utc': row[12] or '', 'rechazado_motivo': row[13] or '',
             'numero_op': row[14] or '', 'fase': row[15] or 'fabricacion',
             'area_codigo': row[16] or '',
+            'cantidad_objetivo_g': float(row[17] or 0),
         }
         # Área o Línea: resolver el nombre legible desde areas_planta.
         try:
@@ -1622,9 +1624,9 @@ def ebr_vista_completa(ebr_id):
     try:
         rows = conn.execute(
             """SELECT material_id, COALESCE(material_nombre,''),
-                      cantidad_esperada_g, cantidad_real_g, COALESCE(lote_mp,''),
-                      COALESCE(operario,''), COALESCE(creado_at_utc,''),
-                      COALESCE(observaciones,'')
+                      cantidad_teorica_g, cantidad_real_g, COALESCE(lote_mp,''),
+                      COALESCE(pesado_por,''), COALESCE(pesado_at_utc,''),
+                      COALESCE(notas,'')
                FROM ebr_pesajes WHERE ebr_id=? ORDER BY id""",
             (ebr_id,),
         ).fetchall()
@@ -1637,6 +1639,50 @@ def ebr_vista_completa(ebr_id):
         } for r in rows]
     except Exception:
         out['pesajes'] = []
+    # 2b. HOJA DE PESAJE (MyBatch parity · Sebastián 5-jun): TODAS las MP de la
+    # fórmula con cant a pesar (teórico), lote FEFO (resuelto + producible) y la
+    # cant pesada/operario si ya se registró. Es la "Pesaje de Materias Primas".
+    try:
+        prod_nom = out['header'].get('producto') or ''
+        obj_g = float(out['header'].get('cantidad_objetivo_g') or 0)
+        recorded = {}
+        for p in out.get('pesajes', []):
+            recorded.setdefault(p['material_id'], p)
+        try:
+            from blueprints.inventario import _fefo_lote_rotulo as _fefo
+        except Exception:
+            _fefo = None
+        sheet = []
+        if prod_nom:
+            fitems = conn.execute(
+                "SELECT material_id, COALESCE(material_nombre,''), COALESCE(porcentaje,0) "
+                "FROM formula_items WHERE producto_nombre=? ORDER BY porcentaje DESC", (prod_nom,)).fetchall()
+            for fr in fitems:
+                mid = str(fr[0] or '').strip()
+                if not mid:
+                    continue
+                pct = float(fr[2] or 0)
+                cant_a_pesar = round(pct / 100.0 * obj_g, 2) if obj_g else None
+                rec = recorded.get(mid)
+                lote = (rec['lote_mp'] if rec and rec.get('lote_mp') else '')
+                if not lote and _fefo:
+                    try:
+                        lote = _fefo(conn, mid, fr[1]) or ''
+                    except Exception:
+                        lote = ''
+                sheet.append({
+                    'material_id': mid, 'material_nombre': fr[1] or '',
+                    'porcentaje': pct,
+                    'cant_a_pesar_g': cant_a_pesar,
+                    'lote': lote or '—',
+                    'cant_pesada_g': (rec['real_g'] if rec else None),
+                    'pesado_por': (rec['operario'] if rec else ''),
+                    'pesado_at': (rec['fecha'] if rec else ''),
+                    'pesado': bool(rec),
+                })
+        out['pesaje_sheet'] = sheet
+    except Exception:
+        out['pesaje_sheet'] = []
     # 3. Pasos
     try:
         rows = conn.execute(
@@ -4329,25 +4375,40 @@ async function load(){
           '<td>'+esc(p.operario||'—')+'</td><td class="muted">'+esc((p.completado||'—').substring(0,16).replace("T"," "))+'</td></tr>';}).join('')+
         '</tbody></table>'
       : '<div class="muted">Sin pasos registrados.</div>';
-    // Pesaje de Materias Primas
-    var ps=d.pesajes||[]; var lote_size=Number(h.lote_size_g||0);
-    document.getElementById('pesaje').innerHTML = ps.length
-      ? '<table><thead><tr><th>Materia Prima</th><th class="num">%</th><th>N° Lote</th>'+
-        '<th class="num">Cant. a pesar</th><th class="num">Cant. pesada</th><th class="num">Δ%</th><th>Pesado por</th></tr></thead><tbody>'+
-        ps.map(function(p){
-          var pct = lote_size>0 ? (p.esperada_g/lote_size*100).toLocaleString('es-CO',{maximumFractionDigits:2})+'%' : '—';
-          var dcl = Math.abs(p.delta_pct||0)>5 ? 'delta-warn' : 'delta-ok';
+    // Pesaje de Materias Primas · HOJA COMPLETA (todas las MP de la fórmula)
+    // estilo MyBatch: % · N° Lote (FEFO) · Cant. a pesar · Cant. pesada · Pesado por.
+    var sheet=d.pesaje_sheet||[];
+    if(sheet.length){
+      var pend=sheet.filter(function(x){return !x.pesado;}).length;
+      var resumen='<div style="font-size:12px;color:#64748b;margin-bottom:8px">'+sheet.length+' materias primas · '+
+        (sheet.length-pend)+' pesadas · '+pend+' pendientes</div>';
+      document.getElementById('pesaje').innerHTML = resumen+
+        '<table><thead><tr><th>Materia Prima</th><th class="num">%</th><th>N° Lote</th>'+
+        '<th class="num">Cant. a pesar</th><th class="num">Cant. pesada</th><th>Pesado por</th><th></th></tr></thead><tbody>'+
+        sheet.map(function(p){
+          var pesadaCol;
+          if(p.pesado){
+            var delta = (p.cant_a_pesar_g&&p.cant_pesada_g!=null)?((p.cant_pesada_g-p.cant_a_pesar_g)/p.cant_a_pesar_g*100):null;
+            var dcl = (delta!=null&&Math.abs(delta)>5)?'delta-warn':'delta-ok';
+            pesadaCol='<span class="'+dcl+'">'+gfmt(p.cant_pesada_g)+'</span>';
+          } else { pesadaCol='<span style="color:#cbd5e1">pendiente</span>'; }
+          var estado = p.pesado
+            ? '<span style="background:#dcfce7;color:#166534;padding:1px 8px;border-radius:9px;font-size:10px;font-weight:700">✓ pesado</span>'
+            : '<span style="background:#fef9c3;color:#854d0e;padding:1px 8px;border-radius:9px;font-size:10px;font-weight:700">pendiente</span>';
           return '<tr>'+
             '<td><span class="mono">'+esc(p.material_id)+'</span> '+esc(p.material_nombre||'')+'</td>'+
-            '<td class="num">'+pct+'</td>'+
-            '<td class="mono">'+esc(p.lote_mp||'—')+'</td>'+
-            '<td class="num">'+gfmt(p.esperada_g)+'</td>'+
-            '<td class="num">'+gfmt(p.real_g)+'</td>'+
-            '<td class="num '+dcl+'">'+(p.delta_pct!=null?p.delta_pct+'%':'—')+'</td>'+
-            '<td>'+esc(p.operario||'—')+(p.fecha?' <span class="muted">'+esc(p.fecha.substring(0,16).replace("T"," "))+'</span>':'')+'</td>'+
+            '<td class="num">'+(p.porcentaje!=null?Number(p.porcentaje).toLocaleString('es-CO',{maximumFractionDigits:3})+'%':'—')+'</td>'+
+            '<td class="mono">'+esc(p.lote||'—')+'</td>'+
+            '<td class="num">'+gfmt(p.cant_a_pesar_g)+'</td>'+
+            '<td class="num">'+pesadaCol+'</td>'+
+            '<td>'+esc(p.pesado_por||'—')+(p.pesado_at?' <span class="muted">'+esc(p.pesado_at.substring(0,16).replace("T"," "))+'</span>':'')+'</td>'+
+            '<td>'+estado+'</td>'+
           '</tr>';
-        }).join('')+'</tbody></table>'
-      : '<div class="muted">Aún no hay pesajes registrados para esta orden.</div>';
+        }).join('')+'</tbody></table>'+
+        '<div class="muted" style="margin-top:8px;font-size:11px">El pesaje real (con firma del operario) se registra en el runner de legajos (Producción → Fabricación → Legajos EBR).</div>';
+    } else {
+      document.getElementById('pesaje').innerHTML='<div class="muted">Esta orden no tiene fórmula con materias primas.</div>';
+    }
   }catch(e){document.getElementById('head').innerHTML='<span style="color:#b91c1c">Error red: '+esc(e.message)+'</span>';}
 }
 load();

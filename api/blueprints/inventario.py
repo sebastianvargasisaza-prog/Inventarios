@@ -9520,6 +9520,37 @@ def reset_mov():
         'restore_hint': 'Si fue un error: descarga el backup desde /admin → Backups y restaura.'
     })
 
+def _fefo_lote_rotulo(conn, material_id, material_nombre=''):
+    """Lote FEFO que producción usaría para este MP: código RESUELTO + lote con
+    stock neto>0 en estado producible, el de vencimiento más próximo. '' si no hay.
+    Usado por el rótulo de pesaje y la hoja de pesaje del detalle de orden · que
+    el lote mostrado sea SIEMPRE el que se va a descontar."""
+    try:
+        from blueprints.programacion import (_resolver_material_bodega as _res,
+                                             _ESTADOS_LOTE_NO_PRODUCIBLES as _NP)
+    except Exception:
+        return ''
+    cod = material_id
+    try:
+        cod = _res(conn, material_id, material_nombre) or material_id
+    except Exception:
+        cod = material_id
+    _ph = ','.join(['?'] * len(_NP))
+    try:
+        row = conn.execute(
+            f"""SELECT lote FROM movimientos
+                WHERE material_id=? AND COALESCE(lote,'') NOT IN ('','S/L')
+                  AND UPPER(COALESCE(estado_lote,'')) NOT IN ({_ph})
+                GROUP BY lote
+                HAVING SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) > 0
+                ORDER BY COALESCE(NULLIF(CAST(MAX(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA') THEN fecha_vencimiento END) AS TEXT),''),'9999-12-31') ASC
+                LIMIT 1""",
+            (cod,) + tuple(_NP)).fetchone()
+        return row[0] if row else ''
+    except Exception:
+        return ''
+
+
 @bp.route('/rotulos/<producto_nombre>/<cantidad_str>')
 def generar_rotulos(producto_nombre, cantidad_str):
     if 'compras_user' not in session:

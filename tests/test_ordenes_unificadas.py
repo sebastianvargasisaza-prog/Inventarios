@@ -268,6 +268,36 @@ def test_rotulos_lote_producible_y_codigo_resuelto(app, db_clean):
     assert '1,000.00 g' in b or '1000.00 g' in b, 'peso teórico = 100% de 1000g'
 
 
+def test_pesaje_sheet_hoja_completa(app, db_clean):
+    """5-jun · Pesaje de Materias Primas estilo MyBatch: vista-completa devuelve
+    TODAS las MP de la fórmula (cant a pesar teórica + lote FEFO), marcando las ya
+    pesadas (cant pesada + operario) vs pendientes."""
+    c = _conn()
+    c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,tipo_material,activo) VALUES ('MP-SH1','GLY','MP uno','MP',1)")
+    c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,tipo_material,activo) VALUES ('MP-SH2','PRO','MP dos','MP',1)")
+    c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,estado_lote,fecha,fecha_vencimiento) VALUES ('MP-SH1','MP uno','Entrada',9000,'LSH1','VIGENTE',date('now'),'2030-01-01')")
+    c.execute("INSERT INTO formula_headers (producto_nombre,lote_size_kg,unidad_base_g,activo) VALUES ('PROD SHEET TEST',1,1000,1)")
+    c.execute("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje,cantidad_g_por_lote) VALUES ('PROD SHEET TEST','MP-SH1','MP uno',50,500)")
+    c.execute("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje,cantidad_g_por_lote) VALUES ('PROD SHEET TEST','MP-SH2','MP dos',50,500)")
+    c.execute("INSERT INTO mbr_templates (producto_nombre,version,estado,lote_size_g,titulo,creado_por,creado_at_utc) VALUES ('PROD SHEET TEST',1,'draft',1000,'t','sebastian','2026-06-05')")
+    mbr = c.execute("SELECT id FROM mbr_templates WHERE producto_nombre='PROD SHEET TEST'").fetchone()[0]
+    c.execute("INSERT INTO mbr_pasos (mbr_template_id,orden,descripcion,tipo_paso,fase) VALUES (?,1,'Mezclar','mezclado','fabricacion')", (mbr,))
+    c.execute("UPDATE mbr_templates SET estado='aprobado' WHERE id=?", (mbr,))
+    c.execute("INSERT INTO ebr_ejecuciones (mbr_template_id,mbr_version,lote,numero_op,estado,iniciado_por,iniciado_at_utc,cantidad_objetivo_g,fase) VALUES (?,1,'LOTE-SHEET','OP-2026-8888','iniciado','sebastian','2026-06-05',1000,'fabricacion')", (mbr,))
+    ebr = c.execute("SELECT id FROM ebr_ejecuciones WHERE lote='LOTE-SHEET'").fetchone()[0]
+    # MP-SH2 ya pesada (columnas reales: cantidad_teorica_g, pesado_por, pesado_at_utc)
+    c.execute("INSERT INTO ebr_pesajes (ebr_id,material_id,material_nombre,cantidad_teorica_g,cantidad_real_g,lote_mp,pesado_por,pesado_at_utc) VALUES (?,'MP-SH2','MP dos',500,510,'LOTE-SH2','mrivera','2026-06-05 10:00')", (ebr,))
+    c.commit(); c.close()
+    cl = _login(app)
+    d = cl.get(f'/api/brd/ebr/{ebr}/vista-completa').get_json()
+    sheet = d.get('pesaje_sheet') or []
+    assert len(sheet) == 2, f"deben salir las 2 MP de la fórmula · {sheet}"
+    by = {x['material_id']: x for x in sheet}
+    assert by['MP-SH1']['cant_a_pesar_g'] == 500 and not by['MP-SH1']['pesado'], by.get('MP-SH1')
+    assert by['MP-SH1']['lote'] == 'LSH1', f"MP-SH1 debe traer su lote FEFO · {by['MP-SH1']}"
+    assert by['MP-SH2']['pesado'] and by['MP-SH2']['cant_pesada_g'] == 510 and by['MP-SH2']['pesado_por'] == 'mrivera', by.get('MP-SH2')
+
+
 def test_registro_produccion_sin_mbr_no_crea_legajo(app, db_clean):
     """Si el producto NO tiene MBR aprobado, el registro NO crea legajo (se
     comporta idéntico a antes · cero riesgo). El legajo automático depende del
