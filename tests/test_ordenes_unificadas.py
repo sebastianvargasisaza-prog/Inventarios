@@ -419,6 +419,9 @@ def test_orden_detalle_page_html(app, db_clean):
     assert 'Pesaje de Materias Primas' in body
     assert 'vista-completa' in body          # reusa el endpoint existente
     assert 'var EBR_ID = 123;' in body       # id inyectado correctamente
+    # Tooltips premium globales (data-tip) · CSS inyectado + ayudas en botones
+    assert '[data-tip]::after' in body, "CSS de tooltips debe inyectarse"
+    assert 'data-tip="' in body, "botones deben llevar ayuda data-tip"
 
 
 def test_bootstrap_legajo_chain(app, db_clean):

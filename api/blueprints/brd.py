@@ -37,6 +37,13 @@ from flask import Blueprint, Response, jsonify, request, session
 from database import get_db
 from config import ADMIN_USERS, CALIDAD_USERS, PLANTA_USERS
 try:
+    from templates_py.ui_help import TOOLTIP_CSS
+except Exception:  # deploy-safe
+    try:
+        from api.templates_py.ui_help import TOOLTIP_CSS
+    except Exception:
+        TOOLTIP_CSS = ""
+try:
     from config import EBR_MODE
 except ImportError:  # deploy-safe
     EBR_MODE = "off"
@@ -4390,6 +4397,7 @@ _ORDEN_DETALLE_HTML = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Orden de Producción · EOS</title>
 <style>
+/*__TOOLTIP_CSS__*/
 *{box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f3ff;color:#1e293b;margin:0;padding:24px}
 .wrap{max-width:1150px;margin:0 auto}
@@ -4534,11 +4542,11 @@ async function load(){
       '</div>'+
       (h.liberado_por ? '<div class="liber-line">✅ Liberado por <b>'+esc(h.liberado_por)+'</b>'+(h.liberado_at_utc?(' · '+esc(h.liberado_at_utc.substring(0,16).replace("T"," "))):'')+'</div>' : '')+
       '<div class="btns">'+
-        '<a class="b-time" href="/brd/timeline/'+EBR_ID+'">📜 Timeline Batch Record</a>'+
-        '<button class="b-mbr" onclick="togglePasos()">📖 Instrucción de Manufactura</button>'+
-        '<a class="b-pdf" href="/api/brd/ebr/'+EBR_ID+'/pdf" target="_blank">📄 Descargar PDF</a>'+
-        '<a class="b-rot" href="/rotulos/'+prodRot+'/'+kgRot+'" target="_blank">🖨 Rótulos de Pesaje</a>'+
-        '<button class="b-aj" onclick="ajustarOrden()">➕ Ajuste</button>'+
+        '<a class="b-time" data-tip="Línea de tiempo del lote: cada evento del legajo (inicio, pesajes, pasos, IPC, firmas) en orden cronológico." href="/brd/timeline/'+EBR_ID+'">📜 Timeline Batch Record</a>'+
+        '<button class="b-mbr" data-tip="Abre la instrucción de manufactura: cabecera del lote, precauciones, despeje de línea y pasos del proceso." onclick="togglePasos()">📖 Instrucción de Manufactura</button>'+
+        '<a class="b-pdf" data-tip="Descarga el legajo completo del lote en PDF (Batch Record) para imprimir o archivar." href="/api/brd/ebr/'+EBR_ID+'/pdf" target="_blank">📄 Descargar PDF</a>'+
+        '<a class="b-rot" data-tip="Genera los rótulos de pesaje de materias primas para imprimir y pegar en cada recipiente." href="/rotulos/'+prodRot+'/'+kgRot+'" target="_blank">🖨 Rótulos de Pesaje</a>'+
+        '<button class="b-aj" data-tip="Corrige la cantidad fabricada del lote y re-escala las materias primas (queda auditado · INVIMA)." onclick="ajustarOrden()">➕ Ajuste</button>'+
       '</div>';
     // Instrucción de Manufactura (MyBatch parity): cabecera de manufactura
     // (cantidades · densidad · rendimiento · aprobado calidad) + precauciones + pasos.
@@ -4569,7 +4577,7 @@ async function load(){
     var prec=d.precauciones||[];
     var precHtml='<div style="display:flex;align-items:center;gap:12px;margin:14px 0 8px">'+
         '<h3 style="font-size:15px;color:#7c3aed;margin:0">1. Precauciones</h3>'+
-        (editable?'<button class="b-mini" onclick="agregarEquipo()">+ Agregar Equipo</button>':'')+
+        (editable?'<button class="b-mini" data-tip="Registra un equipo usado o una precaución del proceso en este lote." onclick="agregarEquipo()">+ Agregar Equipo</button>':'')+
       '</div>'+
       '<div style="font-size:13px;color:#334155;margin-bottom:8px">Tenga en cuenta las siguientes precauciones antes de iniciar el proceso de fabricación:</div>'+
       (prec.length
@@ -4591,8 +4599,8 @@ async function load(){
         return '<tr><td>'+esc(it.texto)+'</td>'+
           '<td style="text-align:center">'+cumpleCell(it.cumple)+'</td>'+
           '<td style="text-align:center;white-space:nowrap">'+
-            '<button class="b-i" title="Ver detalle" onclick="infoDespeje('+it.idx+')">i</button> '+
-            (editable?'<button class="b-e" title="Registrar" onclick="editDespeje('+it.idx+')">✏️</button>':'')+
+            '<button class="b-i tip-r" data-tip="Detalles de la verificación: muestra el texto completo, si cumple, quién lo verificó y cuándo." onclick="infoDespeje('+it.idx+')">i</button> '+
+            (editable?'<button class="b-e tip-r" data-tip="Registrar verificación: marca si cumple (Sí/No) y agrega observación. Queda con tu usuario y la hora." onclick="editDespeje('+it.idx+')">✏️</button>':'')+
           '</td></tr>';
       }).join('')+'</tbody></table>'+
       '<div style="font-size:11px;color:#94a3b8;margin:6px 0 14px">Sí = cumple · No = no cumple · Pendiente = sin verificar. Cada verificación queda con responsable y hora.</div>';
@@ -4657,7 +4665,9 @@ def orden_detalle_page(ebr_id):
     if not session.get("compras_user"):
         return Response(f'<script>location.href="/login?next=/planta/orden/{ebr_id}"</script>',
                         mimetype="text/html")
-    return Response(_ORDEN_DETALLE_HTML.replace("__EBR_ID__", str(ebr_id)),
+    return Response(_ORDEN_DETALLE_HTML
+                    .replace("/*__TOOLTIP_CSS__*/", TOOLTIP_CSS)
+                    .replace("__EBR_ID__", str(ebr_id)),
                     mimetype="text/html")
 
 
