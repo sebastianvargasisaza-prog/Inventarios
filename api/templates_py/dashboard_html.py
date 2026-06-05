@@ -3501,7 +3501,7 @@ async function cargarHistProd(){
         : '<span style="background:#f1f5f9;color:#64748b;padding:1px 7px;border-radius:8px;font-size:0.72em;font-weight:700">SIMPLE</span>';
       var acc = o.link
         ? '<a href="'+o.link+'" style="color:#7c3aed;font-weight:700;text-decoration:none;font-size:11px">Abrir →</a>'
-        : '<span style="color:#cbd5e1">—</span>';
+        : '<button data-crear-legajo data-prod="'+_escHTML(o.producto||'')+'" style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:10px;font-weight:700;cursor:pointer" title="Crear el legajo electrónico (batch record) de esta orden">➕ Crear legajo</button>';
       return '<tr>'+
         '<td style="font-family:monospace;font-weight:700;color:#1e40af">'+_escHTML(o.numero_op||'')+'</td>'+
         '<td style="font-family:monospace;color:#6d28d9">'+_escHTML(o.lote_bulk||'—')+'</td>'+
@@ -3523,6 +3523,56 @@ async function cargarHistProd(){
     console.error('cargarHistProd (ordenes) fallo:',e);
     tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#c00;padding:16px;">Error cargando órdenes: '+_escHTML(e.message)+'</td></tr>';
   }
+}
+
+// 4-jun-2026 · Crear legajo electrónico (EBR) para una orden SIMPLE, encadenando
+// los endpoints YA existentes (cero backend nuevo): generar MBR desde fórmula →
+// submit → firma e-Part11 (tu contraseña) → aprobar MBR → crear EBR → abrir detalle.
+async function crearLegajoDesdeOrden(producto){
+  producto=(producto||'').trim();
+  if(!producto){producto=(prompt('Producto para crear el legajo:')||'').trim();}
+  if(!producto)return;
+  var lote=(prompt('N° de lote físico/comercial para el legajo de "'+producto+'":','')||'').trim();
+  if(!lote)return;
+  var pass=prompt('Tu contraseña (firma electrónica · aprueba el MBR · 21 CFR Part 11):');
+  if(!pass)return;
+  function H(){var t=(typeof csrfTokenNec==='function')?csrfTokenNec():(window._csrfTok||'');return {'Content-Type':'application/json','X-CSRF-Token':t};}
+  async function jpost(url,body){
+    var r=await fetch(url,{method:'POST',credentials:'same-origin',headers:H(),body:JSON.stringify(body||{})});
+    var d={}; try{d=await r.json();}catch(e){}
+    return {ok:r.ok,status:r.status,d:d};
+  }
+  try{
+    // 1) generar/obtener MBR desde la fórmula
+    var g=await jpost('/api/brd/mbr/generar-desde-formula',{producto_nombre:producto});
+    if(!g.ok){alert('No se pudo generar el MBR: '+((g.d&&g.d.error)||g.status)+(g.status===404?' · ¿el producto tiene fórmula registrada?':''));return;}
+    var mbrId=g.d.id, estado=g.d.estado||'draft';
+    // 2-5) si no está aprobado: submit → firmar → aprobar
+    if(estado!=='aprobado'){
+      if(estado==='draft'){
+        var s=await jpost('/api/brd/mbr/'+mbrId+'/submit',{});
+        if(!s.ok){alert('No se pudo enviar el MBR a revisión: '+((s.d&&s.d.error)||s.status));return;}
+      }
+      var ch=await jpost('/api/sign/challenge',{password:pass});
+      if(!ch.ok){alert('Contraseña inválida para firmar: '+((ch.d&&ch.d.error)||ch.status));return;}
+      var sg=await jpost('/api/sign',{record_table:'mbr_templates',record_id:String(mbrId),meaning:'aprueba',challenge_token:ch.d.token});
+      if(!sg.ok){alert('No se pudo firmar (¿tenés cédula en tu identidad?): '+((sg.d&&sg.d.error)||sg.status));return;}
+      var ap=await jpost('/api/brd/mbr/'+mbrId+'/aprobar',{signature_id:sg.d.signature_id});
+      if(!ap.ok){alert('No se pudo aprobar el MBR: '+((ap.d&&ap.d.error)||ap.status));return;}
+    }
+    // 6) crear el EBR (legajo) de fabricación y abrir el detalle
+    var e=await jpost('/api/brd/ebr',{mbr_template_id:mbrId,lote:lote,fase:'fabricacion'});
+    if(!e.ok){alert('No se pudo crear el legajo: '+((e.d&&e.d.error)||e.status));return;}
+    location.href='/planta/orden/'+e.d.id;
+  }catch(err){alert('Error de red: '+(err&&err.message||err));}
+}
+if(typeof document !== 'undefined' && !window._CREAR_LEGAJO_DELEG){
+  window._CREAR_LEGAJO_DELEG = true;
+  document.addEventListener('click', function(ev){
+    var b = ev.target && ev.target.closest && ev.target.closest('[data-crear-legajo]');
+    if(!b) return;
+    crearLegajoDesdeOrden(b.getAttribute('data-prod')||'');
+  });
 }
 
 // Event delegation · ver detalle / reimprimir rótulos

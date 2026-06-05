@@ -27,6 +27,12 @@ def _conn():
     return sqlite3.connect(os.environ['DB_PATH'], timeout=10.0)
 
 
+def _h():
+    h = {'Content-Type': 'application/json'}
+    h.update(csrf_headers())
+    return h
+
+
 def test_ordenes_unificadas_incluye_registro_simple(app, db_clean):
     c = _conn()
     c.execute("INSERT INTO producciones (producto, cantidad, fecha, estado, operador, lote) "
@@ -79,6 +85,51 @@ def test_orden_detalle_page_html(app, db_clean):
     assert 'Pesaje de Materias Primas' in body
     assert 'vista-completa' in body          # reusa el endpoint existente
     assert 'var EBR_ID = 123;' in body       # id inyectado correctamente
+
+
+def test_bootstrap_legajo_chain(app, db_clean):
+    """Cadena exacta del botón "➕ Crear legajo": generar MBR desde fórmula →
+    submit → firmar (e-Part11) → aprobar → crear EBR. Al final el detalle existe
+    y la orden aparece como LEGAJO. Garantiza que el bootstrap de 1-clic funciona."""
+    c = _conn()
+    c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,tipo_material,activo) VALUES ('MP-BOOT1','GLYCERIN','Glicerina','MP',1)")
+    c.execute("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES ('PROD BOOT TEST',10,1)")
+    c.execute("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje) VALUES ('PROD BOOT TEST','MP-BOOT1','Glicerina',100)")
+    c.commit(); c.close()
+    cl = _login(app)
+    # identidad con cédula (la e-firma la exige)
+    cl.patch('/api/identidad/sebastian', json={'cedula': '99999999'}, headers=_h())
+    # 1) generar MBR desde fórmula
+    g = cl.post('/api/brd/mbr/generar-desde-formula',
+                json={'producto_nombre': 'PROD BOOT TEST'}, headers=_h())
+    assert g.status_code in (200, 201), g.data
+    mbr_id = g.get_json()['id']
+    # 2) submit
+    s = cl.post(f'/api/brd/mbr/{mbr_id}/submit', json={}, headers=_h())
+    assert s.status_code == 200, s.data
+    # 3) firma e-Part11
+    ch = cl.post('/api/sign/challenge', json={'password': TEST_PASSWORD}, headers=_h())
+    assert ch.status_code == 200, ch.data
+    token = ch.get_json()['token']
+    sg = cl.post('/api/sign', json={'record_table': 'mbr_templates', 'record_id': str(mbr_id),
+                                    'meaning': 'aprueba', 'challenge_token': token}, headers=_h())
+    assert sg.status_code == 201, sg.data
+    sig = sg.get_json()['signature_id']
+    # 4) aprobar
+    ap = cl.post(f'/api/brd/mbr/{mbr_id}/aprobar', json={'signature_id': sig}, headers=_h())
+    assert ap.status_code == 200, ap.data
+    # 5) crear EBR (legajo)
+    e = cl.post('/api/brd/ebr', json={'mbr_template_id': mbr_id, 'lote': 'BOOT-LOTE-1',
+                                      'fase': 'fabricacion'}, headers=_h())
+    assert e.status_code == 201, e.data
+    ebr_id = e.get_json()['id']
+    # el detalle carga y la orden aparece como LEGAJO
+    vc = cl.get(f'/api/brd/ebr/{ebr_id}/vista-completa')
+    assert vc.status_code == 200, vc.data
+    d = cl.get('/api/brd/ordenes-unificadas?fase=fabricacion').get_json()
+    fila = next((o for o in d['ordenes'] if o.get('lote_bulk') == 'BOOT-LOTE-1'), None)
+    assert fila and fila['origen'] == 'legajo', f"la orden debe ser LEGAJO · {d['resumen']}"
+    assert fila['link'] == f'/planta/orden/{ebr_id}'
 
 
 def test_orden_detalle_link_apunta_a_detalle(app, db_clean):
