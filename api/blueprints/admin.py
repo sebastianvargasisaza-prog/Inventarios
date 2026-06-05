@@ -15883,15 +15883,19 @@ def admin_lotes_stock_atrapado():
 
     conn = db_connect()
     c = conn.cursor()
+    # 4-jun-2026 · FIX contradicción "cruce ve 3620g atrapados pero el recuperador
+    # dice 'ningún lote atrapado'": antes filtraba WHERE lote!='' → el stock AGOTADO
+    # SIN lote (caso Niacinamida MP00148, 3620g del reset 27-abr) quedaba invisible.
+    # Ahora incluye no-lote (se agrupa bajo lote='(sin lote)') y también lo recupera.
     rows = c.execute(
         "SELECT id, material_id, COALESCE(lote,''), tipo, cantidad, "
         "       UPPER(COALESCE(estado_lote,'')), COALESCE(fecha_vencimiento,'') "
-        "FROM movimientos WHERE COALESCE(lote,'') != ''").fetchall()
+        "FROM movimientos").fetchall()
 
-    # agregación por (material_id, lote)
+    # agregación por (material_id, lote) · lote vacío = grupo '(sin lote)'
     agg = {}
     for rid, mid, lote, tipo, cant, est, venc in rows:
-        k = (str(mid), str(lote))
+        k = (str(mid), str(lote) if str(lote).strip() else '(sin lote)')
         a = agg.setdefault(k, {'neto_total': 0.0, 'neto_disp': 0.0, 'fixables': [], 'estados': {}})
         signed = float(cant or 0) if tipo in _ENTRADA else (-float(cant or 0) if tipo in _SALIDA else 0.0)
         a['neto_total'] += signed
