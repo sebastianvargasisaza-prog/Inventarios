@@ -704,6 +704,10 @@ JOBS_SCHEDULE = [
     # ⭐ Auto-normalizar abbreviaturas en fórmulas · 4:30 AM (después huérfanas)
     # SAP → Sodium Ascorbyl Phosphate · HA → Hyaluronic Acid · etc.
     ('auto_normalizar_formulas', 4, 30, None, None,             'job_auto_normalizar_formulas'),
+    # ⭐ GUARDIÁN salud de cruce · diario 6:15 · alerta campana si hay stock en
+    # bodega que producción NO cruza (atrapado/cuarentena/duplicado/mismatch).
+    # Sebastián 4-jun-2026 · "que no se pierda nada a futuro". Solo detecta+avisa.
+    ('salud_cruce_inventario',   6, 15, None, None,             'job_salud_cruce_inventario'),
     # ⭐ Auto-normalizar MEE descriptions · 4:35 AM (5min después de MPs)
     # TAPA / ENVASE / ETIQUETA abreviadas → canonical · sku_mee_config dedup
     ('auto_normalizar_envases',  4, 35, None, None,             'job_auto_normalizar_envases'),
@@ -4711,6 +4715,74 @@ def job_auto_normalizar_envases(app):
             'aliases_cargados': len(aliases_dict),
             'detalle': renombrados[:30],
         }, f'{len(renombrados)} normalizados · {sku_movidos} reapuntados'
+
+
+def job_salud_cruce_inventario(app):
+    """GUARDIÁN diario · "que el inventario de bodega SIEMPRE cruce con las fórmulas
+    y no se pierda nada" (Sebastián 4-jun-2026).
+
+    Corre el diagnóstico global de cruce y AVISA por campana a admins cuando hay
+    ingredientes con stock FÍSICO en bodega que producción NO está cruzando:
+      ATRAPADO / EN_CUARENTENA / DUPLICADO_INCI / MISMATCH_NOMBRE.
+    Eso es lo recuperable (NO se perdió nada · está en otro código/estado). Lo
+    separa de SIN_STOCK_REAL (compra real · no es bug de cruce, no alerta por eso).
+
+    Solo DETECTA + ALERTA (no muta fórmulas · eso es decisión humana por INVIMA).
+    Así el problema sale a la luz ANTES de fallar al producir. Anti-spam: el
+    multi-cron lo corre 1×/día.
+    """
+    with app.app_context():
+        try:
+            from blueprints.admin import diagnosticar_cruce_global
+        except ImportError:
+            from api.blueprints.admin import diagnosticar_cruce_global
+        try:
+            d = diagnosticar_cruce_global()
+        except Exception as e:
+            log.exception('salud_cruce_inventario diagnóstico fallo')
+            return False, {'error': str(e)[:200]}, 0
+        pc = d.get('por_categoria', {}) or {}
+        # "hay stock pero NO cruza" = recuperable, lo peligroso (silenciosamente
+        # invisible para producción). SIN_STOCK_REAL NO entra (es compra).
+        cross_keys = ('ATRAPADO', 'EN_CUARENTENA', 'DUPLICADO_INCI', 'MISMATCH_NOMBRE')
+        n_cruce = sum(int(pc.get(k, 0) or 0) for k in cross_keys)
+        n_comprar = int(pc.get('SIN_STOCK_REAL', 0) or 0)
+        if n_cruce <= 0:
+            return True, {'mensaje': 'Cruce sano · todo el stock de bodega cruza',
+                          'sin_stock_real': n_comprar}, 0
+        # productos afectados por problemas de CRUCE (no por compra)
+        prods_cruce = []
+        for p in (d.get('productos') or []):
+            if any(b.get('categoria') in cross_keys for b in p.get('bloqueos', [])):
+                prods_cruce.append(p['producto'])
+        det = {'ATRAPADO': pc.get('ATRAPADO', 0), 'EN_CUARENTENA': pc.get('EN_CUARENTENA', 0),
+               'DUPLICADO_INCI': pc.get('DUPLICADO_INCI', 0), 'MISMATCH_NOMBRE': pc.get('MISMATCH_NOMBRE', 0)}
+        partes = []
+        if det['ATRAPADO']: partes.append(f"{det['ATRAPADO']} atrapado (recuperar)")
+        if det['EN_CUARENTENA']: partes.append(f"{det['EN_CUARENTENA']} en cuarentena (liberar)")
+        if det['DUPLICADO_INCI']: partes.append(f"{det['DUPLICADO_INCI']} duplicado INCI (unificar)")
+        if det['MISMATCH_NOMBRE']: partes.append(f"{det['MISMATCH_NOMBRE']} nombre≠código (re-mapear)")
+        ejemplos = ', '.join(prods_cruce[:5]) + ('…' if len(prods_cruce) > 5 else '')
+        body = (f"{n_cruce} ingrediente(s) en {len(prods_cruce)} producto(s) tienen stock en "
+                f"bodega que producción NO está cruzando: {' · '.join(partes)}. "
+                f"Ej: {ejemplos}. Abrí /admin/diagnostico-produccion. "
+                + (f"(Aparte, {n_comprar} sin stock real → comprar.)" if n_comprar else ""))
+        try:
+            from blueprints.notif import push_notif_multi
+            push_notif_multi(
+                ['sebastian', 'alejandro'],
+                'planta',
+                f'⚠ Cruce inventario: {n_cruce} MP con stock que NO entra a producción',
+                body=body,
+                link='/admin/diagnostico-produccion',
+                remitente='cron-salud-cruce',
+                importante=True,
+            )
+        except Exception as e:
+            log.warning('salud_cruce_inventario push_notif fallo: %s', e)
+        return True, {'n_cruce': n_cruce, 'productos': len(prods_cruce),
+                      'detalle': det, 'sin_stock_real': n_comprar,
+                      'ejemplos': prods_cruce[:10]}, n_cruce
 
 
 def job_auto_reparar_huerfanas(app):

@@ -16065,13 +16065,14 @@ def admin_lotes_stock_atrapado_page():
     return _LOTES_ATRAPADO_HTML
 
 
-@bp.route("/api/admin/diagnostico-produccion-global", methods=["GET"])
-def admin_diagnostico_produccion_global():
-    """Recorre TODAS las fórmulas y reporta cada ingrediente que producción NO
-    puede tomar (stock disponible = 0), categorizando el POR QUÉ y la acción:
+def diagnosticar_cruce_global():
+    """Helper REUSABLE (endpoint + cron guardián 'salud de cruce'). Recorre TODAS
+    las fórmulas y reporta cada ingrediente que producción NO puede tomar (stock
+    disponible = 0), categorizando el POR QUÉ y la acción:
 
       ATRAPADO       · el MISMO código tiene stock pero en AGOTADO/VENCIDO-no-vencido
                        (reset 27-abr) → /admin/lotes-stock-atrapado.
+      EN_CUARENTENA  · stock real físico, falta que Calidad lo libere.
       DUPLICADO_INCI · existe OTRO código activo con el MISMO INCI que SÍ tiene stock
                        (mismo material, código distinto · ej. boron MPBNIT01 vs MP00428
                        'Nitruro de boro') → Unificar MPs.
@@ -16079,10 +16080,9 @@ def admin_diagnostico_produccion_global():
                        /admin/verificar-formulas o /admin/formulas-mismapeo.
       SIN_STOCK_REAL · no hay stock en ningún lado → comprar (OC).
 
-    SIN escritura · solo diagnóstico global. Excluye MPs ilimitadas (agua)."""
-    u, err, code = _require_admin()
-    if err:
-        return err, code
+    Las 4 primeras = "hay stock pero NO cruza" (bug recuperable, NO se pierde nada).
+    SIN_STOCK_REAL = compra real. SIN escritura. Devuelve dict (no jsonify).
+    Excluye MPs ilimitadas (agua)."""
     try:
         from blueprints.formula_match import norm as _fnorm, build_maestro_index, evaluar_item
     except ImportError:
@@ -16218,13 +16218,22 @@ def admin_diagnostico_produccion_global():
 
     productos = sorted(([{'producto': k, 'bloqueos': v} for k, v in by_prod.items()]),
                        key=lambda x: -len(x['bloqueos']))
-    return jsonify({
-        'ok': True,
+    return {
         'productos_bloqueados': len(productos),
         'total_ingredientes_bloqueados': sum(len(p['bloqueos']) for p in productos),
         'por_categoria': cat_count,
         'productos': productos,
-    })
+    }
+
+
+@bp.route("/api/admin/diagnostico-produccion-global", methods=["GET"])
+def admin_diagnostico_produccion_global():
+    """Endpoint read-only del diagnóstico global de cruce · usa el helper
+    diagnosticar_cruce_global() (compartido con el cron guardián)."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    return jsonify({'ok': True, **diagnosticar_cruce_global()})
 
 
 _DIAG_PROD_HTML = """<!DOCTYPE html>

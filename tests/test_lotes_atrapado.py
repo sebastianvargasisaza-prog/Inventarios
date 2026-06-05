@@ -45,6 +45,33 @@ def test_atrapado_sin_lote(app, db_clean):
     db=sqlite3.connect(os.environ['DB_PATH']); db.execute("DELETE FROM movimientos WHERE material_id='MPATRNL'"); db.commit(); db.close()
 
 
+def test_guardian_salud_cruce_detecta_y_alerta(app, db_clean):
+    """4-jun · GUARDIÁN diario: detecta stock en bodega que NO cruza (atrapado/
+    duplicado) y avisa por campana. Separa el bug de cruce de la compra real."""
+    db=sqlite3.connect(os.environ['DB_PATH'])
+    # ATRAPADO: código de fórmula con stock pero en AGOTADO (recuperable)
+    db.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_comercial,nombre_inci,activo) VALUES ('MPGUARD1','Guardinol','GUARDINOLX',1)")
+    db.execute("DELETE FROM movimientos WHERE material_id='MPGUARD1'")
+    db.execute("INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,lote,estado_lote,fecha_vencimiento) VALUES ('MPGUARD1','Guardinol',5000,'Entrada','2026-04-15','LG','AGOTADO','2027-12-07')")
+    db.execute("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES ('PROD GUARD TEST',1,1)")
+    db.execute("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje) VALUES ('PROD GUARD TEST','MPGUARD1','Guardinol',10)")
+    db.commit(); db.close()
+    # helper directo
+    from blueprints.admin import diagnosticar_cruce_global
+    with app.app_context():
+        d = diagnosticar_cruce_global()
+    prod = next((p for p in d['productos'] if p['producto']=='PROD GUARD TEST'), None)
+    assert prod, 'el producto debe figurar bloqueado'
+    blo = next((b for b in prod['bloqueos'] if b['material_id']=='MPGUARD1'), None)
+    assert blo and blo['categoria']=='ATRAPADO', f"stock AGOTADO recuperable = ATRAPADO · {blo}"
+    # job guardián: debe detectar n_cruce>=1
+    from blueprints.auto_plan_jobs import job_salud_cruce_inventario
+    ok, detalle, count = job_salud_cruce_inventario(app)
+    assert ok and count >= 1, f"guardián debe detectar cruce · {detalle}"
+    assert 'PROD GUARD TEST' in (detalle.get('ejemplos') or []), detalle
+    db=sqlite3.connect(os.environ['DB_PATH']); db.execute("DELETE FROM movimientos WHERE material_id='MPGUARD1'"); db.execute("DELETE FROM formula_items WHERE producto_nombre='PROD GUARD TEST'"); db.commit(); db.close()
+
+
 def test_diag_global_no_reporta_agotado_ya_consumido(app, db_clean):
     """4-jun · el diagnóstico global NETEA por lote: stock AGOTADO que ya se
     consumió (entrada 3620 + salida 3620 en el MISMO lote = neto 0) NO debe
