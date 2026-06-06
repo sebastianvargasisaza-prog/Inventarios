@@ -529,6 +529,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <button class="sub-btn" onclick="subSwitchTab('produccion',this,'bar-prodHub');cargarEBRs()">&#127981; Fabricación</button>
     <button class="sub-btn" onclick="subSwitchTab('envasado',this,'bar-prodHub');loadColaSinEnvasar()">&#128230; Envasado</button>
     <button class="sub-btn" onclick="subSwitchTab('acondicionamiento',this,'bar-prodHub');loadColaAcond()">&#128295; Acondicionamiento</button>
+    <button class="sub-btn" onclick="subSwitchTab('rotuloslimp',this,'bar-prodHub');cargarRotulosLimp()">&#127991;&#65039; Rótulos de limpieza</button>
   </div>
   <div id="bar-calidadHub" class="sub-tab-bar">
     <button class="sub-btn active" onclick="subSwitchTab('cuarentena',this,'bar-calidadHub')">&#128274; Cuarentena</button>
@@ -924,6 +925,17 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </div>
     <h3 style="margin-bottom:12px;">Formulas Guardadas</h3>
     <div id="formulas-list"><p style="color:#999;">Cargando...</p></div>
+  </div>
+
+  <div id="rotuloslimp" class="tab-content">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+      <div>
+        <h2 style="margin:0;color:#7c3aed">&#127991;&#65039; Rótulos de Limpieza · PRD-PRO-002-F02</h2>
+        <p style="color:#666;font-size:13px;margin:4px 0 0">Estado de limpieza de cada sala · fluye con la producción · el operario registra la limpieza, Calidad verifica con firma. Click en una sala para abrir su rótulo.</p>
+      </div>
+      <button onclick="cargarRotulosLimp()" style="padding:6px 12px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">&#8635; Refrescar</button>
+    </div>
+    <div id="rotuloslimp-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">Cargando…</div>
   </div>
 
   <div id="produccion" class="tab-content">
@@ -19428,6 +19440,31 @@ async function ckMarcar(itemId, estado){
       alert('✅ '+dv.mensaje); cerrarRotulo();
       if(typeof salasVivoRecargar==='function') salasVivoRecargar();
     }catch(e){ alert('❌ '+(e.message||e)); }
+  }
+
+  // Sub-pestaña "Rótulos de limpieza" (en Fabricación · bar-prodHub): lista
+  // todas las salas con su estado y abre el rótulo de cada una.
+  async function cargarRotulosLimp(){
+    var box=document.getElementById('rotuloslimp-grid');
+    if(!box) return;
+    box.innerHTML='Cargando…';
+    try{
+      var r=await fetch('/api/planta/estado-salas-vivo',{credentials:'same-origin'});
+      var d=await r.json();
+      if(!r.ok) throw new Error(d.error||'HTTP '+r.status);
+      var salas=d.salas||[];
+      if(!salas.length){ box.innerHTML='<div style="color:#64748b">No hay salas configuradas.</div>'; return; }
+      var cols={'libre':['#15803d','🟢 LIMPIO'],'ocupada':['#dc2626','🔴 EN USO'],'sucia':['#f59e0b','🟡 SUCIO'],'limpiando':['#2563eb','🔵 EN LIMPIEZA']};
+      box.innerHTML=salas.map(function(s){
+        var c=cols[s.estado]||['#64748b',(s.estado||'').toUpperCase()];
+        var h='<div style="border:2px solid '+c[0]+';border-radius:10px;padding:12px;background:#fff">';
+        h+='<div style="display:flex;justify-content:space-between;align-items:center;gap:6px"><b style="font-size:13px">'+escapeHtml(s.codigo)+' · '+escapeHtml((s.nombre||'').substring(0,18))+'</b><span style="background:'+c[0]+';color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;white-space:nowrap">'+c[1]+'</span></div>';
+        if(s.produccion && s.produccion.producto) h+='<div style="font-size:11px;color:#64748b;margin-top:6px">🏭 '+escapeHtml(s.produccion.producto.substring(0,32))+'</div>';
+        h+='<button onclick="abrirRotulo('+s.id+')" style="margin-top:10px;width:100%;padding:8px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🏷️ Abrir rótulo de limpieza</button>';
+        h+='</div>';
+        return h;
+      }).join('');
+    }catch(e){ box.innerHTML='<div style="color:#dc2626">Error: '+escapeHtml(e.message||e)+'</div>'; }
   }
 
   async function autoAsignarPendientes(){
