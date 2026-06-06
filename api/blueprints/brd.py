@@ -3960,6 +3960,21 @@ def registrar_despeje_item_ebr(ebr_id):
     obs = (body.get("observaciones") or "").strip()[:500]
     user = session.get("compras_user", "")
     texto = DESPEJE_LINEA_ITEMS[idx]
+    # DOS ROLES (Sebastián 6-jun-2026): el despeje lo REGISTRA el operario; SOLO
+    # Calidad/Dirección Técnica puede CORREGIR un resultado ya registrado (botón
+    # "Corregir Resultado" de MyBatch). Trazabilidad INVIMA: queda en audit_log
+    # quién registró y quién corrigió.
+    prev = cur.execute(
+        "SELECT cumple, COALESCE(observaciones,''), COALESCE(registrado_por,'') "
+        "FROM ebr_despeje_items WHERE ebr_id=? AND item_idx=?", (ebr_id, idx)).fetchone()
+    es_correccion = bool(prev and prev[0] is not None)
+    es_calidad = (user in CALIDAD_USERS) or (user in ADMIN_USERS)
+    if es_correccion and not es_calidad:
+        return jsonify({
+            "error": "Corregir un resultado ya registrado es atribución de Calidad / "
+                     "Dirección Técnica. El operario solo registra el despeje inicial.",
+            "codigo": "SOLO_CALIDAD_CORRIGE",
+        }), 403
     # Upsert por (ebr_id, item_idx) · índice único de mig 220.
     cur.execute(
         """INSERT INTO ebr_despeje_items
@@ -3971,11 +3986,14 @@ def registrar_despeje_item_ebr(ebr_id):
              registrado_por=excluded.registrado_por,
              registrado_at_utc=excluded.registrado_at_utc""",
         (ebr_id, idx, texto, cumple, obs, user))
-    audit_log(cur, usuario=user, accion="REGISTRAR_DESPEJE_ITEM_EBR",
+    audit_log(cur, usuario=user,
+              accion=("CORREGIR_DESPEJE_ITEM_EBR" if es_correccion else "REGISTRAR_DESPEJE_ITEM_EBR"),
               tabla="ebr_despeje_items", registro_id=ebr_id,
-              despues={"ebr_id": ebr_id, "item_idx": idx, "cumple": cumple})
+              antes=({"cumple": prev[0], "observaciones": prev[1], "registrado_por": prev[2]} if es_correccion else None),
+              despues={"ebr_id": ebr_id, "item_idx": idx, "cumple": cumple, "por": user})
     conn.commit()
-    return jsonify({"ok": True, "item_idx": idx, "cumple": cumple}), 201
+    return jsonify({"ok": True, "item_idx": idx, "cumple": cumple,
+                    "correccion": es_correccion}), 201
 
 
 # ── MyBatch ① · Precauciones + Equipos ──────────────────────────────────────
@@ -4491,6 +4509,18 @@ h1{font-size:28px;margin:0;color:#fff;letter-spacing:.5px}
 .b-mini{background:#14b8a6;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer}
 .b-i{background:#0ea5e9;color:#fff;border:none;border-radius:7px;width:30px;height:30px;font-style:italic;font-weight:800;cursor:pointer}
 .b-e{background:#f59e0b;color:#fff;border:none;border-radius:7px;width:30px;height:30px;cursor:pointer}
+.b-pdf-sm{display:inline-flex;align-items:center;gap:5px;background:#ef4444;color:#fff;text-decoration:none;font-size:11px;font-weight:700;padding:4px 10px;border-radius:7px;margin-left:10px;vertical-align:middle}
+.cxmodal{display:none;position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:99998;align-items:center;justify-content:center;padding:20px}
+.cxbox{background:#fff;border-radius:16px;max-width:560px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden}
+.cxhead{background:linear-gradient(135deg,#0ea5e9,#0284c7);color:#fff;padding:16px 22px;display:flex;justify-content:space-between;align-items:center}
+.cxhead h3{margin:0;font-size:16px}
+.cxx{background:rgba(255,255,255,.25);border:none;color:#fff;width:30px;height:30px;border-radius:50%;font-size:16px;cursor:pointer;font-weight:700}
+.cxbody{padding:18px 22px}
+.mrow{display:flex;gap:14px;padding:9px 0;border-bottom:1px solid #f1f5f9}
+.mrow:last-child{border-bottom:none}
+.mk{flex:0 0 120px;color:#94a3b8;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;padding-top:2px}
+.mv{flex:1;color:#1e293b;font-size:14px;font-weight:500}
+.st-fin{color:#166534;font-weight:800}.st-no{color:#b91c1c;font-weight:800}.st-pend{color:#94a3b8;font-weight:700}
 h2{font-size:18px;color:#7c3aed;margin:0 0 14px}
 table{width:100%;border-collapse:collapse;font-size:12.5px}
 th{text-align:left;padding:10px 9px;background:#f5f3ff;color:#6d28d9;font-weight:800;font-size:11px;text-transform:uppercase;letter-spacing:.3px}
@@ -4508,6 +4538,12 @@ tbody tr:hover{background:#faf5ff}
 <div class="card" id="head">Cargando…</div>
 <div class="card pad" id="pasos-sec"><h2>📖 Instrucción de Manufactura</h2><div id="pasos"></div></div>
 <div class="card pad"><h2>⚖️ Pesaje de Materias Primas</h2><div id="pesaje"></div></div>
+</div>
+<div class="cxmodal" id="cxmodal" onclick="if(event.target===this)cerrarModal()">
+  <div class="cxbox">
+    <div class="cxhead"><h3>ℹ️ Detalles de la Verificación</h3><button class="cxx" onclick="cerrarModal()">×</button></div>
+    <div class="cxbody" id="cxmbody"></div>
+  </div>
 </div>
 <script>
 var EBR_ID = __EBR_ID__;
@@ -4546,22 +4582,37 @@ async function agregarEquipo(){
   var d=await r.json(); if(!r.ok){alert('Error: '+(d.error||r.status));return;}
   load();
 }
-// 2. Despeje · botón "i" (ver detalle de la verificación)
+// 2. Despeje · botón "i" → modal "Detalles de la Verificación" (MyBatch parity)
+function cerrarModal(){var m=document.getElementById('cxmodal');if(m)m.style.display='none';}
 function infoDespeje(idx){
   var it=(window._despejeChk||[]).find(function(x){return x.idx===idx;}); if(!it) return;
-  var msg=it.texto+'\\n\\nCumple: '+(it.cumple===1?'Sí':(it.cumple===0?'No':'Pendiente'));
-  if(it.registrado_por) msg+='\\nResponsable: '+it.registrado_por;
-  if(it.fecha) msg+='\\nFecha: '+it.fecha.substring(0,16).replace('T',' ');
-  if(it.observaciones) msg+='\\nObservación: '+it.observaciones;
-  alert(msg);
+  var estadoTxt = it.cumple===1?'<span class="st-fin">Sí cumple ✓</span>'
+                : it.cumple===0?'<span class="st-no">No cumple ✗</span>'
+                : '<span class="st-pend">Pendiente de verificar</span>';
+  var rows=''
+    + '<div class="mrow"><div class="mk">Verificación</div><div class="mv">'+esc(it.texto)+'</div></div>'
+    + '<div class="mrow"><div class="mk">Cumple</div><div class="mv">'+estadoTxt+'</div></div>'
+    + '<div class="mrow"><div class="mk">Responsable</div><div class="mv">'+esc(it.registrado_por||'— sin registrar')+'</div></div>'
+    + '<div class="mrow"><div class="mk">Fecha / Hora</div><div class="mv">'+(it.fecha?esc(it.fecha.substring(0,16).replace('T',' ')):'—')+'</div></div>'
+    + '<div class="mrow"><div class="mk">Observación</div><div class="mv">'+esc(it.observaciones||'Ninguna')+'</div></div>';
+  var body=document.getElementById('cxmbody');
+  if(body) body.innerHTML=rows;
+  var m=document.getElementById('cxmodal'); if(m) m.style.display='flex';
 }
-// 2. Despeje · botón "✏️" (registrar CUMPLE Sí/No + observación)
+// 2. Despeje · botón "✏️" · operario REGISTRA / Calidad CORRIGE
 async function editDespeje(idx){
   var it=(window._despejeChk||[]).find(function(x){return x.idx===idx;}); if(!it) return;
-  var c=confirm('Verificación:\\n'+it.texto+'\\n\\n¿CUMPLE? (Aceptar=Sí · Cancelar=No)');
-  var obs=prompt('Observación (opcional):', it.observaciones||'')||'';
+  var esCorreccion = it.cumple!=null;
+  var titulo = esCorreccion ? 'CORREGIR RESULTADO (solo Calidad / Dirección Técnica)' : 'REGISTRAR VERIFICACIÓN (operario)';
+  var c=confirm(titulo+'\\n\\n'+it.texto+'\\n\\n¿CUMPLE? (Aceptar=Sí · Cancelar=No)');
+  var obs=prompt('Observación'+(esCorreccion?' / motivo de la corrección':' (opcional)')+':', it.observaciones||'')||'';
   var r=await fetch('/api/brd/ebr/'+EBR_ID+'/despeje-item',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({item_idx:idx,cumple:c?1:0,observaciones:obs})});
-  var d=await r.json(); if(!r.ok){alert('Error: '+(d.error||r.status));return;}
+  var d=await r.json();
+  if(!r.ok){
+    if(r.status===403){alert('🔒 '+(d.error||'Solo Calidad / Dirección Técnica puede corregir un resultado ya registrado.'));}
+    else{alert('Error: '+(d.error||r.status));}
+    return;
+  }
   load();
 }
 async function ajustarOrden(){
@@ -4690,7 +4741,9 @@ async function load(){
       if(c===0) return '<span style="color:#b91c1c;font-weight:700">No ✗</span>';
       return '<span class="muted">Pendiente</span>';
     }
-    var despHtml='<h3 style="font-size:15px;color:#7c3aed;margin:18px 0 6px">2. Despeje de Línea - Dispensación</h3>'+
+    var despHtml='<h3 style="font-size:15px;color:#7c3aed;margin:18px 0 6px">2. Despeje de Línea - Dispensación'+
+      '<a class="b-pdf-sm" href="/brd/despeje/'+EBR_ID+'" target="_blank" data-tip="Descarga/imprime el formato completo del despeje de línea (registro GMP firmable).">📄 PDF</a>'+
+      '</h3>'+
       '<div style="font-size:13px;color:#334155;margin-bottom:8px">Realizar despeje en el área de dispensación de acuerdo a los procedimientos internos, y realice las siguientes verificaciones:</div>'+
       '<table><thead><tr><th>Verificación</th><th style="text-align:center">Cumple</th><th style="text-align:center">Acciones</th></tr></thead><tbody>'+
       chk.map(function(it){
@@ -4698,7 +4751,7 @@ async function load(){
           '<td style="text-align:center">'+cumpleCell(it.cumple)+'</td>'+
           '<td style="text-align:center;white-space:nowrap">'+
             '<button class="b-i tip-r" data-tip="Detalles de la verificación: muestra el texto completo, si cumple, quién lo verificó y cuándo." onclick="infoDespeje('+it.idx+')">i</button> '+
-            (editable?'<button class="b-e tip-r" data-tip="Registrar verificación: marca si cumple (Sí/No) y agrega observación. Queda con tu usuario y la hora." onclick="editDespeje('+it.idx+')">✏️</button>':'')+
+            (editable?'<button class="b-e tip-r" data-tip="'+(it.cumple!=null?'Corregir Resultado · solo Calidad / Dirección Técnica puede cambiar un resultado ya registrado.':'Registrar verificación (operario): marca si cumple Sí/No + observación. Queda con tu usuario y la hora.')+'" onclick="editDespeje('+it.idx+')">✏️</button>':'')+
           '</td></tr>';
       }).join('')+'</tbody></table>'+
       '<div style="font-size:11px;color:#94a3b8;margin:6px 0 14px">Sí = cumple · No = no cumple · Pendiente = sin verificar. Cada verificación queda con responsable y hora.</div>';
@@ -4767,6 +4820,127 @@ def orden_detalle_page(ebr_id):
                     .replace("/*__TOOLTIP_CSS__*/", TOOLTIP_CSS)
                     .replace("__EBR_ID__", str(ebr_id)),
                     mimetype="text/html")
+
+
+@bp.route("/brd/despeje/<int:ebr_id>", methods=["GET"])
+def despeje_imprimible(ebr_id):
+    """Formato IMPRIMIBLE del Despeje de Línea - Dispensación (MyBatch: el ícono
+    PDF junto al título). Registro GMP con las 13 verificaciones, CUMPLE,
+    responsable, fecha y firmas. Server-side (sin JS) · Ctrl+P o auto-print.
+    Sebastián 6-jun-2026."""
+    if not session.get("compras_user"):
+        return Response('<script>location.href="/login?next=/brd/despeje/' + str(ebr_id) + '"</script>',
+                        mimetype="text/html")
+    conn = get_db()
+    import html as _h
+    # Cabecera del legajo
+    hdr = {}
+    try:
+        row = conn.execute(
+            "SELECT COALESCE(lote,''), COALESCE(numero_op,''), COALESCE(area_codigo,''), "
+            "mbr_template_id, COALESCE(estado,''), COALESCE(iniciado_at_utc,'') "
+            "FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
+        if row:
+            hdr = {'lote': row[0], 'numero_op': row[1], 'area_codigo': row[2],
+                   'mbr': row[3], 'estado': row[4], 'iniciado': row[5]}
+    except Exception:
+        hdr = {}
+    producto = ''
+    try:
+        if hdr.get('mbr'):
+            mr = conn.execute("SELECT producto_nombre FROM mbr_templates WHERE id=?", (hdr['mbr'],)).fetchone()
+            producto = (mr[0] if mr else '') or ''
+    except Exception:
+        pass
+    area = hdr.get('area_codigo', '')
+    try:
+        if area:
+            ar = conn.execute("SELECT nombre FROM areas_planta WHERE codigo=?", (area,)).fetchone()
+            if ar and ar[0]:
+                area = str(ar[0]) + ' (' + hdr['area_codigo'] + ')'
+    except Exception:
+        pass
+    # Items registrados
+    reg = {}
+    try:
+        for dr in conn.execute(
+            "SELECT item_idx, cumple, COALESCE(observaciones,''), COALESCE(registrado_por,''), "
+            "COALESCE(registrado_at_utc,'') FROM ebr_despeje_items WHERE ebr_id=?", (ebr_id,)).fetchall():
+            reg[int(dr[0])] = dr
+    except Exception:
+        reg = {}
+
+    def _cumple_txt(c):
+        if c == 1:
+            return '<span style="color:#166534;font-weight:800">Sí</span>'
+        if c == 0:
+            return '<span style="color:#b91c1c;font-weight:800">No</span>'
+        return '<span style="color:#94a3b8">—</span>'
+
+    filas = []
+    for i, texto in enumerate(DESPEJE_LINEA_ITEMS):
+        r = reg.get(i)
+        cumple = (int(r[1]) if r and r[1] is not None else None)
+        obs = _h.escape(r[2]) if r else ''
+        resp = _h.escape(r[3]) if r else ''
+        fecha = (r[4][:16].replace('T', ' ') if r and r[4] else '')
+        filas.append(
+            '<tr><td class="n">' + str(i + 1) + '</td>'
+            '<td>' + _h.escape(texto) + '</td>'
+            '<td class="c">' + _cumple_txt(cumple) + '</td>'
+            '<td class="c">' + _h.escape(resp) + '</td>'
+            '<td class="c">' + _h.escape(fecha) + '</td>'
+            '<td>' + obs + '</td></tr>')
+    filas_html = ''.join(filas)
+    e = _h.escape
+    html = (
+        '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1.0">'
+        '<title>Despeje de Línea · ' + e(hdr.get('numero_op') or str(ebr_id)) + '</title>'
+        '<style>'
+        '*{box-sizing:border-box;font-family:"Segoe UI",Roboto,sans-serif}'
+        'body{margin:0;background:#f1f5f9;color:#0f172a;padding:18px}'
+        '.sheet{max-width:980px;margin:0 auto;background:#fff;padding:30px 34px;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,.08)}'
+        '.top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #0f172a;padding-bottom:10px;margin-bottom:14px}'
+        '.top h1{font-size:18px;margin:0;letter-spacing:.5px}'
+        '.top .co{font-size:13px;font-weight:700;color:#334155}'
+        '.meta{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 18px;font-size:12.5px;margin-bottom:16px}'
+        '.meta b{color:#64748b;font-weight:700;display:block;font-size:10.5px;text-transform:uppercase;letter-spacing:.3px}'
+        '.intro{font-size:12.5px;color:#334155;margin-bottom:10px}'
+        'table{width:100%;border-collapse:collapse;font-size:12px}'
+        'th{background:#0f172a;color:#fff;padding:8px;text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.3px}'
+        'td{padding:8px;border-bottom:1px solid #e2e8f0;vertical-align:top}'
+        'td.n{text-align:center;color:#94a3b8;width:26px}td.c{text-align:center;white-space:nowrap}'
+        '.firmas{display:grid;grid-template-columns:repeat(3,1fr);gap:30px;margin-top:42px;font-size:12px}'
+        '.firma{text-align:center}.firma .ln{border-top:1px solid #0f172a;margin-bottom:5px;padding-top:5px}'
+        '.no-print{text-align:center;margin:16px 0}'
+        '.btn{background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer}'
+        '@media print{.no-print{display:none}body{background:#fff;padding:0}.sheet{box-shadow:none;border-radius:0}}'
+        '</style></head><body>'
+        '<div class="no-print"><button class="btn" onclick="window.print()">🖨 Imprimir / Guardar PDF</button></div>'
+        '<div class="sheet">'
+        '<div class="top"><div><h1>DESPEJE DE LÍNEA · DISPENSACIÓN</h1>'
+        '<div style="font-size:11px;color:#64748b;margin-top:3px">Registro de verificación previo a fabricación · BPM/INVIMA</div></div>'
+        '<div class="co">Espagiria Laboratorio SAS<br><span style="font-weight:400;color:#64748b">ÁNIMUS Lab</span></div></div>'
+        '<div class="meta">'
+        '<div><b>Orden de Producción</b>' + e(hdr.get('numero_op') or ('EBR-' + str(ebr_id))) + '</div>'
+        '<div><b>N° de Lote Bulk</b>' + e(hdr.get('lote') or '—') + '</div>'
+        '<div><b>Producto</b>' + e(producto or '—') + '</div>'
+        '<div><b>Área o Línea</b>' + e(area or '—') + '</div>'
+        '<div><b>Estado</b>' + e(hdr.get('estado') or '—') + '</div>'
+        '<div><b>Fecha</b>' + e((hdr.get('iniciado') or '')[:16].replace('T', ' ') or '—') + '</div>'
+        '</div>'
+        '<div class="intro">Realizar despeje en el área de dispensación de acuerdo a los procedimientos internos, y realice las siguientes verificaciones:</div>'
+        '<table><thead><tr><th>#</th><th>Verificación</th><th style="text-align:center">Cumple</th>'
+        '<th style="text-align:center">Responsable</th><th style="text-align:center">Fecha</th><th>Observación</th></tr></thead>'
+        '<tbody>' + filas_html + '</tbody></table>'
+        '<div class="firmas">'
+        '<div class="firma"><div class="ln">&nbsp;</div>Realizó (Operario)</div>'
+        '<div class="firma"><div class="ln">&nbsp;</div>Revisó (Jefe de Producción)</div>'
+        '<div class="firma"><div class="ln">&nbsp;</div>Aprobó (Calidad)</div>'
+        '</div>'
+        '</div></body></html>')
+    return Response(html, mimetype='text/html')
 
 
 # ──────────────────────────────────────────────────────────────────────────

@@ -336,6 +336,56 @@ def test_despeje_checklist_13_items_y_registro(app, db_clean):
     assert n == 1, f"upsert no debe duplicar · {n} filas"
 
 
+def _crear_ebr_iniciado(lote, numop, prod='PROD ROLE TEST'):
+    c = _conn()
+    c.execute("INSERT INTO mbr_templates (producto_nombre,version,estado,lote_size_g,titulo,creado_por,creado_at_utc) VALUES (?,1,'draft',1000,'t','sebastian','2026-06-06')", (prod,))
+    mbr = c.execute("SELECT id FROM mbr_templates WHERE producto_nombre=?", (prod,)).fetchone()[0]
+    c.execute("INSERT INTO mbr_pasos (mbr_template_id,orden,descripcion,tipo_paso,fase) VALUES (?,1,'Mezclar','mezclado','fabricacion')", (mbr,))
+    c.execute("UPDATE mbr_templates SET estado='aprobado' WHERE id=?", (mbr,))
+    c.execute("INSERT INTO ebr_ejecuciones (mbr_template_id,mbr_version,lote,numero_op,estado,iniciado_por,iniciado_at_utc,cantidad_objetivo_g,fase) VALUES (?,1,?,?,'iniciado','sebastian','2026-06-06',1000,'fabricacion')", (mbr, lote, numop))
+    ebr = c.execute("SELECT id FROM ebr_ejecuciones WHERE lote=?", (lote,)).fetchone()[0]
+    c.commit(); c.close()
+    return ebr
+
+
+def test_despeje_pdf_imprimible(app, db_clean):
+    """6-jun · El ícono PDF junto al despeje abre el formato imprimible (registro
+    GMP) con las 13 verificaciones, encabezado del lote y líneas de firma."""
+    ebr = _crear_ebr_iniciado('LOTE-PDF', 'OP-2026-6001', 'PROD PDF TEST')
+    cl = _login(app)
+    r = cl.get(f'/brd/despeje/{ebr}')
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert 'DESPEJE DE LÍNEA' in body
+    assert 'Temperatura menor a 30 grados' in body
+    assert 'Aprobó (Calidad)' in body and 'Realizó (Operario)' in body
+    assert body.count('<tr>') >= 13, 'deben salir las 13 verificaciones'
+
+
+def test_despeje_roles_operario_registra_calidad_corrige(app, db_clean):
+    """6-jun · Dos roles: el OPERARIO registra el despeje inicial; SOLO Calidad /
+    Dirección Técnica puede CORREGIR un resultado ya registrado (MyBatch
+    'Corregir Resultado')."""
+    ebr = _crear_ebr_iniciado('LOTE-ROL', 'OP-2026-6002', 'PROD ROL TEST')
+    # operario (luis · PLANTA_USERS, no Calidad) registra el ítem 0 → OK
+    op = _login(app, user='luis')
+    r = op.post(f'/api/brd/ebr/{ebr}/despeje-item', json={'item_idx': 0, 'cumple': 1}, headers=_h())
+    assert r.status_code == 201, r.data
+    # el mismo operario intenta CORREGIR (ya hay resultado) → 403
+    r2 = op.post(f'/api/brd/ebr/{ebr}/despeje-item', json={'item_idx': 0, 'cumple': 0}, headers=_h())
+    assert r2.status_code == 403, r2.data
+    assert r2.get_json().get('codigo') == 'SOLO_CALIDAD_CORRIGE'
+    # Calidad/Admin (sebastian) SÍ corrige → OK + marca correccion
+    cal = _login(app)  # sebastian (ADMIN/CALIDAD)
+    r3 = cal.post(f'/api/brd/ebr/{ebr}/despeje-item', json={'item_idx': 0, 'cumple': 0, 'observaciones': 'reverificado'}, headers=_h())
+    assert r3.status_code == 201, r3.data
+    assert r3.get_json().get('correccion') is True
+    # el resultado quedó corregido a No por Calidad
+    d = cal.get(f'/api/brd/ebr/{ebr}/vista-completa').get_json()
+    chk = {x['idx']: x for x in d['despeje_checklist']}
+    assert chk[0]['cumple'] == 0 and chk[0]['registrado_por'] == 'sebastian'
+
+
 def test_registro_produccion_sin_mbr_no_crea_legajo(app, db_clean):
     """Si el producto NO tiene MBR aprobado, el registro NO crea legajo (se
     comporta idéntico a antes · cero riesgo). El legajo automático depende del
