@@ -1630,9 +1630,11 @@ def ebr_vista_completa(ebr_id):
             _ac = out['header'].get('area_codigo') or ''
             if _ac:
                 _ar = conn.execute(
-                    "SELECT nombre FROM areas_planta WHERE codigo=?", (_ac,)).fetchone()
+                    "SELECT id, nombre FROM areas_planta WHERE codigo=?", (_ac,)).fetchone()
                 out['header']['area_linea'] = (
-                    (str(_ar[0]) + ' (' + _ac + ')') if _ar and _ar[0] else _ac)
+                    (str(_ar[1]) + ' (' + _ac + ')') if _ar and _ar[1] else _ac)
+                # area_id para enlazar el rótulo de limpieza F02 del área.
+                out['header']['area_id'] = (_ar[0] if _ar else None)
         except Exception:
             pass
     except Exception as e:
@@ -5159,7 +5161,14 @@ async function load(){
         regs.map(function(g){return '<tr><td class="mono">'+esc(g.id)+'</td><td style="font-size:12.5px">'+esc(g.descripcion||'')+'</td>'+
           '<td style="text-align:center">'+(g.tiene_pdf?'<a class="b-pdf-sm" href="/api/brd/ebr/'+EBR_ID+'/registros-fisicos/'+g.id+'/pdf" target="_blank" data-tip="Ver el registro físico (foto o PDF).">📄 Ver</a>':'<span class="muted">—</span>')+'</td></tr>';}).join('')+'</tbody></table>'
       : '<div class="muted">Sin registros físicos adjuntos.</div>');
-    document.getElementById('pasos').innerHTML = manuf + precHtml + despHtml + dispHtml + ajustesHtml + despFabHtml + pasosHtml + ipcHtml + obsHtml + regHtml;
+    // Rótulo de limpieza del área (PRD-PRO-002-F02) · enlace al rótulo virtual.
+    var _aid=(d.header&&d.header.area_id)?d.header.area_id:null;
+    var rotuloHtml=_aid
+      ? '<div style="display:flex;align-items:center;gap:12px;margin:18px 0 6px"><h3 style="font-size:15px;color:#7c3aed;margin:0">🏷️ Rótulo de limpieza del área</h3></div>'
+        + '<div class="muted" style="font-size:12.5px;margin-bottom:6px">Estado de limpieza de '+esc(d.header.area_linea||'')+' (formato PRD-PRO-002-F02). El estado fluye con la producción · se opera desde «Estado salas en vivo».</div>'
+        + '<a class="b-pdf-sm" href="/planta/rotulo-limpieza/'+_aid+'/pdf" target="_blank" data-tip="Abre el rótulo de limpieza F02 del área de esta orden.">🖨️ Ver / imprimir rótulo F02</a>'
+      : '';
+    document.getElementById('pasos').innerHTML = manuf + precHtml + despHtml + dispHtml + ajustesHtml + despFabHtml + pasosHtml + ipcHtml + obsHtml + regHtml + rotuloHtml;
   }catch(e){document.getElementById('head').innerHTML='<span style="color:#b91c1c">Error red: '+esc(e.message)+'</span>';}
 }
 load();

@@ -33,6 +33,7 @@ PAGINAS = [
     ('/brd/despeje/1', 'admin'),
     ('/brd/dispensado/1', 'admin'),
     ('/admin/conteo-rescate', 'admin'),
+    ('/planta/rotulo-limpieza/1/pdf', 'admin'),
 ]
 
 

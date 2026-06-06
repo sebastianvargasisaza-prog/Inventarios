@@ -3293,6 +3293,504 @@ def planta_actualizar_estado_area(area_id):
                     'estado_anterior': estado_anterior})
 
 
+# ════════════════════════════════════════════════════════════════════════
+# RÓTULO VIRTUAL DE LIMPIEZA · PRD-PRO-002-F02 (Estado de Limpieza de
+# Áreas/Equipos) · Sebastián 6-jun-2026.
+#
+# Reemplaza el rótulo físico que se imprimía y diligenciaba a mano. Fluye
+# SOLO con la producción: el estado físico (Limpio/En uso/Sucio) ya vive en
+# areas_planta.estado (libre/ocupada/sucia) — NO se duplica acá (M5/M9). Esta
+# capa agrega el REGISTRO F02 por ciclo de limpieza (rotulos_limpieza), un
+# snapshot inmutable Part 11 con dos firmas: operario realiza · Calidad
+# verifica. La liberación física sucia→libre usa la ruta ÚNICA
+# liberar_sala_con_despeje (M3 · auto_plan.py).
+# ════════════════════════════════════════════════════════════════════════
+
+# Estado físico de la sala → etiqueta del rótulo F02.
+_ESTADO_ROTULO = {
+    'libre': 'Limpio', 'ocupada': 'En uso',
+    'sucia': 'Sucio', 'limpiando': 'En limpieza',
+}
+# Las salas legacy de programación (PROD1..PROD4) no comparten código con el
+# catálogo de equipos (FAB1/FAB2/FAB3/ENV2). Alias para listar sus equipos.
+_SALA_EQUIPO_ALIAS = {
+    'PROD1': 'FAB1', 'PROD2': 'FAB2', 'PROD3': 'FAB3', 'PROD4': 'ENV2',
+}
+
+
+def _now_co():
+    """Timestamp local Colombia (UTC-5) calculado en Python · PG-safe (no
+    datetime() en DML)."""
+    return (datetime.now(timezone.utc) - timedelta(hours=5)).strftime('%Y-%m-%d %H:%M:%S')
+
+
+def _equipos_de_area(c, area_codigo):
+    """Equipos activos de un área (catálogo equipos_planta). Resuelve el alias
+    sala-legacy→área-equipos para PROD1..PROD4."""
+    alias = _SALA_EQUIPO_ALIAS.get(area_codigo, area_codigo)
+    try:
+        rows = c.execute(
+            """SELECT codigo, nombre, tipo FROM equipos_planta
+               WHERE area_codigo IN (?, ?) AND activo=1
+               ORDER BY codigo""",
+            (area_codigo, alias),
+        ).fetchall()
+    except Exception:
+        return []
+    return [{'codigo': r[0], 'nombre': r[1], 'tipo': r[2] or ''} for r in rows]
+
+
+def _lote_de_produccion(c, produccion_id):
+    """Lote real desde el EBR (ebr_ejecuciones.lote) si existe. Best-effort."""
+    if not produccion_id:
+        return ''
+    try:
+        r = c.execute(
+            "SELECT lote FROM ebr_ejecuciones WHERE produccion_id=? ORDER BY id DESC LIMIT 1",
+            (produccion_id,),
+        ).fetchone()
+        return (r[0] if r and r[0] else '') or ''
+    except Exception:
+        return ''
+
+
+def _rotulo_derivar(c, area_id):
+    """Deriva en vivo los datos del rótulo de un área (defaults antes de
+    firmar). Devuelve dict o None si el área no existe."""
+    a = c.execute(
+        "SELECT id, codigo, nombre, estado FROM areas_planta WHERE id=? AND activo=1",
+        (area_id,),
+    ).fetchone()
+    if not a:
+        return None
+    estado_fisico = a[3] or 'libre'
+    # Producto a elaborar = producción en curso o próxima en el área.
+    prod_act = c.execute(
+        """SELECT id, producto FROM produccion_programada
+           WHERE area_id=? AND COALESCE(estado,'programado') NOT IN ('completado','cancelado')
+           ORDER BY (inicio_real_at IS NULL), fecha_programada ASC LIMIT 1""",
+        (area_id,),
+    ).fetchone()
+    # Producto anterior = último lote terminado físicamente en el área.
+    prod_prev = c.execute(
+        """SELECT id, producto FROM produccion_programada
+           WHERE area_id=? AND fin_real_at IS NOT NULL
+           ORDER BY fin_real_at DESC LIMIT 1""",
+        (area_id,),
+    ).fetchone()
+    return {
+        'area_id': a[0], 'area_codigo': a[1], 'area_nombre': a[2],
+        'estado_fisico': estado_fisico,
+        'estado': _ESTADO_ROTULO.get(estado_fisico, estado_fisico),
+        'produccion_id': (prod_act[0] if prod_act else None),
+        'producto_elaborar': (prod_act[1] if prod_act else ''),
+        'lote_elaborar': _lote_de_produccion(c, prod_act[0]) if prod_act else '',
+        'producto_anterior': (prod_prev[1] if prod_prev else ''),
+        'lote_anterior': _lote_de_produccion(c, prod_prev[0]) if prod_prev else '',
+        'equipos': _equipos_de_area(c, a[1]),
+    }
+
+
+def _rotulo_abierto(c, area_id):
+    """Fila del ciclo de limpieza ABIERTO (aún sin verificar) del área, o None."""
+    try:
+        r = c.execute(
+            """SELECT id, sanitizante, detergente, equipos_json, estado,
+                      realizado_por, realizado_at, verificado_por, verificado_at,
+                      producto_elaborar, lote_elaborar, producto_anterior,
+                      lote_anterior, observaciones
+               FROM rotulos_limpieza
+               WHERE area_id=? AND COALESCE(verificado_at,'')=''
+               ORDER BY id DESC LIMIT 1""",
+            (area_id,),
+        ).fetchone()
+    except Exception:
+        return None
+    if not r:
+        return None
+    return {
+        'id': r[0], 'sanitizante': r[1], 'detergente': r[2],
+        'equipos_json': r[3] or '', 'estado': r[4],
+        'realizado_por': r[5] or '', 'realizado_at': r[6] or '',
+        'verificado_por': r[7] or '', 'verificado_at': r[8] or '',
+        'producto_elaborar': r[9] or '', 'lote_elaborar': r[10] or '',
+        'producto_anterior': r[11] or '', 'lote_anterior': r[12] or '',
+        'observaciones': r[13] or '',
+    }
+
+
+@bp.route('/api/planta/rotulo-limpieza/<int:area_id>', methods=['GET'])
+def planta_rotulo_limpieza_get(area_id):
+    """Vista viva del rótulo de limpieza F02 de un área: estado físico actual
+    (Limpio/En uso/Sucio), producto a elaborar+lote, producto anterior+lote,
+    equipos del área, y el ciclo de limpieza abierto si existe."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = (session.get('compras_user') or '')
+    conn = get_db(); c = conn.cursor()
+    base = _rotulo_derivar(c, area_id)
+    if not base:
+        return jsonify({'error': 'área no encontrada'}), 404
+    abierto = _rotulo_abierto(c, area_id)
+    # Permisos para los botones de acción.
+    try:
+        es_planta = user in (set(ADMIN_USERS) | set(PLANTA_USERS))
+        es_calidad = user in (set(ADMIN_USERS) | set(CALIDAD_USERS))
+    except Exception:
+        es_planta = es_calidad = False
+    # Puede REALIZAR limpieza: la sala está sucia (o en limpieza) y es planta.
+    puede_realizar = es_planta and base['estado_fisico'] in ('sucia', 'limpiando')
+    # Puede VERIFICAR: hay limpieza realizada sin verificar y es calidad.
+    puede_verificar = bool(
+        es_calidad and abierto and abierto.get('realizado_at')
+        and not abierto.get('verificado_at'))
+    return jsonify({
+        'ok': True,
+        'rotulo': base,
+        'ciclo': abierto,
+        'puede_realizar': puede_realizar,
+        'puede_verificar': puede_verificar,
+        'es_planta': es_planta,
+        'es_calidad': es_calidad,
+        'sanitizantes_sugeridos': ['Alcohol 70%', 'Amonio Cuaternario', 'Hipoclorito 200ppm'],
+        'detergentes_sugeridos': ['Detergente Neutro Industrial', 'Desengrasante alcalino'],
+    })
+
+
+@bp.route('/api/planta/rotulo-limpieza/<int:area_id>/realizar', methods=['POST'])
+def planta_rotulo_limpieza_realizar(area_id):
+    """Operario registra que EJECUTÓ la limpieza del área (sucia → limpiando).
+    Fotografía (snapshot Part 11) producto/lote, sanitizante, detergente y los
+    equipos limpiados. NO libera la sala — eso lo hace Calidad al verificar.
+
+    Body: {sanitizante?, detergente?, equipos?:[codigos], observaciones?,
+           producto_elaborar?, lote_elaborar?, producto_anterior?, lote_anterior?}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = (session.get('compras_user') or '')
+    try:
+        if user not in (set(ADMIN_USERS) | set(PLANTA_USERS)):
+            return jsonify({'error': 'Solo planta/admin pueden registrar limpieza'}), 403
+    except Exception:
+        pass
+    conn = get_db(); c = conn.cursor()
+    base = _rotulo_derivar(c, area_id)
+    if not base:
+        return jsonify({'error': 'área no encontrada'}), 404
+    if base['estado_fisico'] not in ('sucia', 'limpiando'):
+        return jsonify({
+            'error': f"El área está '{base['estado']}' · solo se registra limpieza "
+                     f"cuando está Sucio (tras producción)",
+            'codigo': 'AREA_NO_SUCIA',
+            'estado': base['estado'],
+        }), 409
+    body = request.get_json(silent=True) or {}
+    sanitizante = (body.get('sanitizante') or 'Alcohol 70%').strip()[:120]
+    detergente = (body.get('detergente') or 'Detergente Neutro Industrial').strip()[:120]
+    obs = (body.get('observaciones') or '').strip()[:500]
+    equipos_sel = body.get('equipos') or []
+    if not isinstance(equipos_sel, list):
+        equipos_sel = []
+    equipos_json = json.dumps([str(x)[:40] for x in equipos_sel][:60], ensure_ascii=False)
+    # Snapshot: lo que el operario confirma/edita o, si no, lo derivado.
+    prod_elab = (body.get('producto_elaborar') or base['producto_elaborar'] or '').strip()[:200]
+    lote_elab = (body.get('lote_elaborar') or base['lote_elaborar'] or '').strip()[:80]
+    prod_prev = (body.get('producto_anterior') or base['producto_anterior'] or '').strip()[:200]
+    lote_prev = (body.get('lote_anterior') or base['lote_anterior'] or '').strip()[:80]
+    ahora = _now_co()
+    abierto = _rotulo_abierto(c, area_id)
+    if abierto:
+        rid = abierto['id']
+        c.execute(
+            """UPDATE rotulos_limpieza
+                 SET sanitizante=?, detergente=?, equipos_json=?, estado='realizado',
+                     realizado_por=?, realizado_at=?, producto_elaborar=?,
+                     lote_elaborar=?, producto_anterior=?, lote_anterior=?,
+                     observaciones=?, actualizado_en=?
+               WHERE id=?""",
+            (sanitizante, detergente, equipos_json, user, ahora, prod_elab,
+             lote_elab, prod_prev, lote_prev, obs, ahora, rid),
+        )
+    else:
+        c.execute(
+            """INSERT INTO rotulos_limpieza
+                 (area_id, area_codigo, produccion_id, producto_elaborar,
+                  lote_elaborar, producto_anterior, lote_anterior, sanitizante,
+                  detergente, equipos_json, estado, realizado_por, realizado_at,
+                  observaciones, creado_en, actualizado_en)
+               VALUES (?,?,?,?,?,?,?,?,?,?,'realizado',?,?,?,?,?)""",
+            (area_id, base['area_codigo'], base['produccion_id'], prod_elab,
+             lote_elab, prod_prev, lote_prev, sanitizante, detergente,
+             equipos_json, user, ahora, obs, ahora, ahora),
+        )
+        rid = c.lastrowid
+    # Estado físico: sucia → limpiando (no libera). Idempotente.
+    estado_prev = base['estado_fisico']
+    c.execute(
+        "UPDATE areas_planta SET estado='limpiando' WHERE id=? AND estado IN ('sucia','limpiando')",
+        (area_id,),
+    )
+    try:
+        c.execute(
+            """INSERT INTO area_eventos
+                 (area_id, tipo, estado_anterior, estado_nuevo, usuario, nota)
+               VALUES (?,?,?,?,?,?)""",
+            (area_id, 'limpieza_realizada', estado_prev, 'limpiando', user,
+             f'Limpieza ejecutada · {sanitizante} · rótulo #{rid}'),
+        )
+    except Exception:
+        pass
+    try:
+        audit_log(c, usuario=user, accion='ROTULO_LIMPIEZA_REALIZAR',
+                  tabla='rotulos_limpieza', registro_id=rid,
+                  antes={'estado_area': estado_prev},
+                  despues={'estado_area': 'limpiando', 'sanitizante': sanitizante,
+                           'equipos': equipos_sel[:20], 'producto_anterior': prod_prev,
+                           'producto_elaborar': prod_elab},
+                  detalle=f"Limpieza registrada en {base['area_codigo']} por {user}")
+    except Exception as _e:
+        logging.getLogger('programacion').warning(f'audit ROTULO_LIMPIEZA_REALIZAR: {_e}')
+    conn.commit()
+    return jsonify({'ok': True, 'rotulo_id': rid, 'estado': 'En limpieza',
+                    'mensaje': 'Limpieza registrada · pendiente verificación de Calidad'})
+
+
+@bp.route('/api/planta/rotulo-limpieza/<int:area_id>/verificar', methods=['POST'])
+def planta_rotulo_limpieza_verificar(area_id):
+    """Calidad VERIFICA la limpieza y libera el área (limpiando → libre).
+    Requiere e-firma Part 11 (meaning='verifica' sobre el rótulo). Usa la ruta
+    ÚNICA de liberación con despeje (M3) y cierra el registro F02 (inmutable).
+
+    Body: {signature_id (req), observaciones?}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = (session.get('compras_user') or '')
+    try:
+        if user not in (set(ADMIN_USERS) | set(CALIDAD_USERS)):
+            return jsonify({'error': 'Solo Calidad/admin pueden verificar la limpieza'}), 403
+    except Exception:
+        pass
+    conn = get_db(); c = conn.cursor()
+    base = _rotulo_derivar(c, area_id)
+    if not base:
+        return jsonify({'error': 'área no encontrada'}), 404
+    abierto = _rotulo_abierto(c, area_id)
+    if not abierto or not abierto.get('realizado_at'):
+        return jsonify({
+            'error': 'No hay limpieza realizada pendiente de verificar en esta área',
+            'codigo': 'SIN_LIMPIEZA_REALIZADA',
+        }), 409
+    rid = abierto['id']
+    body = request.get_json(silent=True) or {}
+    signature_id = body.get('signature_id')
+    if not signature_id:
+        return jsonify({
+            'error': "Firma requerida · primero POST /api/sign con "
+                     "{record_table:'rotulos_limpieza', record_id:'%s', meaning:'revisa'}" % rid,
+            'codigo': 'FIRMA_REQUERIDA',
+            'rotulo_id': rid,
+        }), 400
+    try:
+        from blueprints.inventario import _validar_e_sign
+    except ImportError:
+        from inventario import _validar_e_sign
+    try:
+        firma_ok = _validar_e_sign(
+            c, signature_id, record_table='rotulos_limpieza',
+            record_id=rid, meaning='revisa', signer_username=user)
+    except Exception:
+        firma_ok = False
+    if not firma_ok:
+        return jsonify({
+            'error': 'La firma no corresponde a una verificación de este rótulo por vos',
+            'codigo': 'FIRMA_INVALIDA',
+        }), 400
+    obs = (body.get('observaciones') or '').strip()[:500]
+    # Liberación física por la ruta ÚNICA (M3): despeje firmado + sala libre.
+    try:
+        from blueprints.auto_plan import liberar_sala_con_despeje
+    except ImportError:
+        from auto_plan import liberar_sala_con_despeje
+    try:
+        checklist_id, area_codigo, estado_prev = liberar_sala_con_despeje(
+            c, area_id, user,
+            obs=(obs or f'Verificación de limpieza · rótulo #{rid}'),
+            rotulo_id=rid, verificado_por=user)
+    except ValueError:
+        return jsonify({'error': 'área no encontrada'}), 404
+    ahora = _now_co()
+    c.execute(
+        """UPDATE rotulos_limpieza
+             SET estado='verificado', verificado_por=?, verificado_at=?,
+                 verificado_sign_id=?, despeje_checklist_id=?, actualizado_en=?
+           WHERE id=?""",
+        (user, ahora, int(signature_id), checklist_id, ahora, rid),
+    )
+    try:
+        c.execute(
+            """INSERT INTO area_eventos
+                 (area_id, tipo, estado_anterior, estado_nuevo, usuario, nota)
+               VALUES (?,?,?,?,?,?)""",
+            (area_id, 'limpieza_verificada', estado_prev, 'libre', user,
+             f'Limpieza verificada por Calidad · rótulo #{rid} · despeje #{checklist_id}'),
+        )
+    except Exception:
+        pass
+    try:
+        audit_log(c, usuario=user, accion='ROTULO_LIMPIEZA_VERIFICAR',
+                  tabla='rotulos_limpieza', registro_id=rid,
+                  antes={'estado_area': estado_prev},
+                  despues={'estado_area': 'libre', 'signature_id': int(signature_id),
+                           'despeje_checklist_id': checklist_id},
+                  detalle=f"Limpieza verificada y área {area_codigo} liberada por {user}")
+    except Exception as _e:
+        logging.getLogger('programacion').warning(f'audit ROTULO_LIMPIEZA_VERIFICAR: {_e}')
+    conn.commit()
+    return jsonify({'ok': True, 'rotulo_id': rid, 'estado': 'Limpio',
+                    'checklist_id': checklist_id,
+                    'mensaje': f'Limpieza verificada · {area_codigo} liberada (Limpio)'})
+
+
+def _persona_corta(c, username):
+    """username → 'Nombre Completo · Cargo' desde usuarios_identidad."""
+    if not username:
+        return ''
+    try:
+        r = c.execute(
+            "SELECT nombre_completo, cargo FROM usuarios_identidad WHERE username=?",
+            (username,),
+        ).fetchone()
+    except Exception:
+        r = None
+    if not r:
+        return username
+    nom = (r[0] or username).strip()
+    cargo = (r[1] or '').strip()
+    return f'{nom} · {cargo}' if cargo else nom
+
+
+@bp.route('/planta/rotulo-limpieza/<int:area_id>/pdf', methods=['GET'])
+def planta_rotulo_limpieza_pdf(area_id):
+    """Rótulo imprimible PRD-PRO-002-F02 (Estado de Limpieza de Áreas/Equipos).
+    Renderiza el ciclo de limpieza vigente del área (snapshot inmutable) sobre
+    el estado físico actual. HTML puro imprimible (sin scripts)."""
+    if 'compras_user' not in session:
+        from flask import redirect
+        return redirect('/login?next=/planta/rotulo-limpieza/%d/pdf' % area_id)
+    from flask import Response
+    from html import escape as _e
+    conn = get_db(); c = conn.cursor()
+    base = _rotulo_derivar(c, area_id)
+    if not base:
+        return Response('<h1>Área no encontrada</h1>', mimetype='text/html', status=404)
+    # Último ciclo (abierto o cerrado) para mostrar el registro F02 vigente.
+    rot = c.execute(
+        """SELECT producto_elaborar, lote_elaborar, producto_anterior, lote_anterior,
+                  sanitizante, detergente, equipos_json, realizado_por, realizado_at,
+                  verificado_por, verificado_at
+           FROM rotulos_limpieza WHERE area_id=? ORDER BY id DESC LIMIT 1""",
+        (area_id,),
+    ).fetchone()
+    if rot:
+        (prod_elab, lote_elab, prod_prev, lote_prev, sanit, deterg, eq_json,
+         realizado_por, realizado_at, verificado_por, verificado_at) = rot
+    else:
+        prod_elab, lote_elab = base['producto_elaborar'], base['lote_elaborar']
+        prod_prev, lote_prev = base['producto_anterior'], base['lote_anterior']
+        sanit, deterg, eq_json = 'Alcohol 70%', 'Detergente Neutro Industrial', ''
+        realizado_por = realizado_at = verificado_por = verificado_at = ''
+    try:
+        equipos_lst = json.loads(eq_json) if eq_json else []
+    except Exception:
+        equipos_lst = []
+    # Etiqueta de área/equipo: si el ciclo limpió UN solo equipo, mostrarlo.
+    area_label = f"{base['area_nombre']} · {base['area_codigo']}"
+    equipos_txt = ', '.join(str(x) for x in equipos_lst) if equipos_lst else '—'
+    estado_fisico = base['estado_fisico']
+    realizado_full = _persona_corta(c, realizado_por)
+    verificado_full = _persona_corta(c, verificado_por)
+
+    def _chip(label, activo):
+        if activo:
+            return (f'<span style="display:inline-block;padding:8px 18px;margin:0 4px;'
+                    f'border:3px solid #0f172a;border-radius:8px;background:#0f172a;'
+                    f'color:#fff;font-weight:800;font-size:16px">☑ {label}</span>')
+        return (f'<span style="display:inline-block;padding:8px 18px;margin:0 4px;'
+                f'border:2px solid #94a3b8;border-radius:8px;color:#94a3b8;'
+                f'font-weight:600;font-size:16px">☐ {label}</span>')
+
+    estado_chips = (_chip('LIMPIO', estado_fisico == 'libre')
+                    + _chip('EN USO', estado_fisico == 'ocupada')
+                    + _chip('SUCIO', estado_fisico in ('sucia', 'limpiando')))
+
+    def _row(lbl, val):
+        return (f'<tr><td style="border:1px solid #475569;padding:10px 12px;'
+                f'background:#f1f5f9;font-weight:700;width:38%;font-size:13px">{_e(lbl)}</td>'
+                f'<td style="border:1px solid #475569;padding:10px 12px;font-size:14px">'
+                f'{_e(str(val) or "—")}</td></tr>')
+
+    html = f'''<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rótulo de Limpieza · {_e(base['area_codigo'])}</title>
+<style>
+  body{{font-family:Arial,Helvetica,sans-serif;margin:0;padding:24px;color:#0f172a;background:#fff}}
+  .sheet{{max-width:720px;margin:0 auto;border:3px solid #0f172a;border-radius:10px;overflow:hidden}}
+  .hdr{{display:flex;justify-content:space-between;align-items:center;
+        background:#0f172a;color:#fff;padding:12px 18px}}
+  .hdr h1{{margin:0;font-size:18px}}
+  .hdr .cod{{font-size:12px;text-align:right;opacity:.85}}
+  .estado{{text-align:center;padding:18px;border-bottom:2px solid #0f172a}}
+  table{{width:100%;border-collapse:collapse}}
+  .firmas{{display:flex;border-top:2px solid #0f172a}}
+  .firma{{flex:1;padding:14px 16px;font-size:13px}}
+  .firma.b{{border-left:1px solid #475569}}
+  .firma .l{{font-weight:700;color:#475569;font-size:11px;text-transform:uppercase;letter-spacing:.5px}}
+  .firma .v{{font-size:15px;margin-top:4px;min-height:20px}}
+  .firma .f{{color:#64748b;font-size:11px;margin-top:2px}}
+  @media print{{ body{{padding:0}} .noprint{{display:none}} }}
+</style></head><body>
+<div class="sheet">
+  <div class="hdr">
+    <h1>ESTADO DE LIMPIEZA DE ÁREAS / EQUIPOS</h1>
+    <div class="cod">Código: PRD-PRO-002-F02<br>Versión: 02</div>
+  </div>
+  <div class="estado">
+    <div style="font-size:11px;font-weight:700;color:#475569;letter-spacing:.5px;margin-bottom:10px">ESTADO</div>
+    {estado_chips}
+  </div>
+  <table>
+    {_row('ÁREA O EQUIPO', area_label)}
+    {_row('EQUIPOS', equipos_txt)}
+    {_row('PRODUCTO A ELABORAR', prod_elab)}
+    {_row('LOTE', lote_elab)}
+    {_row('SANITIZANTE', sanit)}
+    {_row('DETERGENTE', deterg)}
+    {_row('PRODUCTO ANTERIOR', prod_prev)}
+    {_row('LOTE ANTERIOR', lote_prev)}
+  </table>
+  <div class="firmas">
+    <div class="firma a">
+      <div class="l">Realizado por (Operario)</div>
+      <div class="v">{_e(realizado_full or '—')}</div>
+      <div class="f">Fecha: {_e(realizado_at or '—')}</div>
+    </div>
+    <div class="firma b">
+      <div class="l">Verificado por (Calidad)</div>
+      <div class="v">{_e(verificado_full or '—')}</div>
+      <div class="f">Fecha: {_e(verificado_at or '—')}</div>
+    </div>
+  </div>
+</div>
+<div class="noprint" style="text-align:center;margin-top:18px">
+  <a href="javascript:window.print()" style="display:inline-block;padding:10px 24px;
+     background:#0f172a;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">🖨 Imprimir</a>
+</div>
+</body></html>'''
+    return Response(html, mimetype='text/html')
+
+
 @bp.route('/api/planta/operarios', methods=['GET', 'POST'])
 def planta_listar_operarios():
     """GET: lista crew activo (Mayerlin fija dispensación, Luis Enrique jefe).

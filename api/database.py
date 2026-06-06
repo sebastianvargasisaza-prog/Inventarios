@@ -312,6 +312,44 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (223, "rotulos_limpieza · rótulo virtual PRD-PRO-002-F02 (Estado de Limpieza de Áreas/Equipos) · snapshot inmutable Part 11 · fluye con producción · 6-jun-2026", [
+        # Rótulo virtual e interactivo de limpieza de áreas/equipos (formato
+        # PRD-PRO-002-F02 v02). El ESTADO físico (Limpio/En uso/Sucio) NO vive
+        # acá — su fuente de verdad es areas_planta.estado (libre/ocupada/sucia).
+        # Esta tabla guarda el REGISTRO F02 por ciclo de limpieza: un snapshot
+        # inmutable (21 CFR Part 11) de qué se elaboró, qué había antes,
+        # sanitizante/detergente, equipos limpiados, y las dos firmas
+        # (operario realiza · Calidad verifica). Una fila por ciclo: nace al
+        # 'realizar' y se cierra al 'verificar'. producto/lote se FOTOGRAFÍAN al
+        # firmar (no se re-derivan luego · M9 snapshot vs vivo).
+        """CREATE TABLE IF NOT EXISTS rotulos_limpieza (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            area_id INTEGER NOT NULL,
+            area_codigo TEXT DEFAULT '',
+            produccion_id INTEGER DEFAULT NULL,
+            producto_elaborar TEXT DEFAULT '',
+            lote_elaborar TEXT DEFAULT '',
+            producto_anterior TEXT DEFAULT '',
+            lote_anterior TEXT DEFAULT '',
+            sanitizante TEXT DEFAULT 'Alcohol 70%',
+            detergente TEXT DEFAULT 'Detergente Neutro Industrial',
+            equipos_json TEXT DEFAULT '',
+            estado TEXT NOT NULL DEFAULT 'realizado',
+            realizado_por TEXT DEFAULT '',
+            realizado_at TEXT DEFAULT '',
+            verificado_por TEXT DEFAULT '',
+            verificado_at TEXT DEFAULT '',
+            verificado_sign_id INTEGER DEFAULT NULL,
+            despeje_checklist_id INTEGER DEFAULT NULL,
+            observaciones TEXT DEFAULT '',
+            creado_en TEXT DEFAULT (datetime('now')),
+            actualizado_en TEXT DEFAULT NULL,
+            FOREIGN KEY (area_id) REFERENCES areas_planta(id)
+        )""",
+        # Búsqueda del ciclo abierto/último por área.
+        "CREATE INDEX IF NOT EXISTS idx_rotlimp_area ON rotulos_limpieza(area_id, id DESC)",
+    ]),
+
     (222, "ebr_despeje_items.etapa · soporta DOS despejes (dispensación + fabricación) con el mismo checklist · MyBatch sección 2 y 4 · 6-jun-2026", [
         # MyBatch tiene 2 despejes en el instructivo: '2. Despeje - Dispensación' y
         # '4. Despeje - Fabricación', mismas 13 verificaciones pero independientes.

@@ -9832,6 +9832,17 @@ function _renderProgramacion(d){
       <div id="salas-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px"></div>
     </div>
 
+    <!-- ── Modal Rótulo de Limpieza · PRD-PRO-002-F02 (Sebastián 6-jun-2026) ── -->
+    <div id="rotmodal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;align-items:flex-start;justify-content:center;overflow:auto;padding:30px 12px">
+      <div style="background:#fff;border-radius:12px;max-width:560px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+        <div style="display:flex;justify-content:space-between;align-items:center;background:#7c3aed;color:#fff;padding:12px 18px;border-radius:12px 12px 0 0">
+          <b>&#127991;&#65039; Rótulo de Limpieza · PRD-PRO-002-F02</b>
+          <span onclick="cerrarRotulo()" style="cursor:pointer;font-size:22px;font-weight:700;line-height:1">&times;</span>
+        </div>
+        <div id="rot-body" style="padding:18px">Cargando…</div>
+      </div>
+    </div>
+
     <!-- ── Mi Día por Operario · Sebastián 1-may-2026 (Alejandro) ────── -->
     <div id="plan-mi-dia" style="background:#fff;border:2px solid #1d4ed8;border-radius:10px;padding:14px 16px;margin-bottom:16px">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
@@ -19334,6 +19345,7 @@ async function ckMarcar(itemId, estado){
         if(s.requiere_limpieza_profunda && !s.ultima_limpieza_profunda){
           html += '<div style="font-size:9px;color:#92400e;margin-top:4px">⚠ Sin registro de limpieza profunda</div>';
         }
+        html += '<button onclick="abrirRotulo('+s.id+')" style="margin-top:8px;width:100%;padding:6px;background:#7c3aed;color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">&#127991;&#65039; Rótulo de limpieza</button>';
         html += '</div>';
         return html;
       }).join('');
@@ -19341,6 +19353,93 @@ async function ckMarcar(itemId, estado){
       if(sub) sub.textContent = 'Error: '+(e.message||e);
     }
   }
+  // ── Rótulo de Limpieza virtual · PRD-PRO-002-F02 · Sebastián 6-jun-2026
+  // Operario registra limpieza (sucia→en limpieza) · Calidad verifica con
+  // e-firma (en limpieza→Limpio, vía despeje canónico). Fluye con producción.
+  var _ROT = null;
+  async function abrirRotulo(areaId){
+    var m=document.getElementById('rotmodal');
+    var body=document.getElementById('rot-body');
+    if(m) m.style.display='flex';
+    if(body) body.innerHTML='Cargando…';
+    try{
+      var r=await fetch('/api/planta/rotulo-limpieza/'+areaId,{credentials:'same-origin'});
+      var d=await r.json();
+      if(!r.ok) throw new Error(d.error||'HTTP '+r.status);
+      d.area_id=areaId; _ROT=d; renderRotulo();
+    }catch(e){ if(body) body.innerHTML='<div style="color:#dc2626">Error: '+escapeHtml(e.message||e)+'</div>'; }
+  }
+  function cerrarRotulo(){ var m=document.getElementById('rotmodal'); if(m) m.style.display='none'; _ROT=null; }
+  function renderRotulo(){
+    var d=_ROT; if(!d) return;
+    var rot=d.rotulo, ciclo=d.ciclo||null;
+    var cols={'Limpio':'#15803d','En uso':'#dc2626','Sucio':'#f59e0b','En limpieza':'#2563eb'};
+    var col=cols[rot.estado]||'#64748b';
+    var h='';
+    h+='<div style="text-align:center;margin-bottom:14px"><span style="display:inline-block;padding:6px 18px;border-radius:20px;background:'+col+';color:#fff;font-weight:800;font-size:15px">'+escapeHtml(rot.estado)+'</span></div>';
+    h+='<div style="font-size:13px;line-height:1.7">';
+    h+='<div><b>Área:</b> '+escapeHtml(rot.area_nombre)+' · '+escapeHtml(rot.area_codigo)+'</div>';
+    h+='<div><b>Producto a elaborar:</b> '+escapeHtml(rot.producto_elaborar||'—')+(rot.lote_elaborar?' · Lote '+escapeHtml(rot.lote_elaborar):'')+'</div>';
+    h+='<div><b>Producto anterior:</b> '+escapeHtml(rot.producto_anterior||'—')+(rot.lote_anterior?' · Lote '+escapeHtml(rot.lote_anterior):'')+'</div>';
+    if(ciclo){
+      if(ciclo.realizado_por) h+='<div><b>Limpieza realizada por:</b> '+escapeHtml(ciclo.realizado_por)+' · '+escapeHtml(ciclo.realizado_at||'')+'</div>';
+      if(ciclo.verificado_por) h+='<div><b>Verificado por (Calidad):</b> '+escapeHtml(ciclo.verificado_por)+' · '+escapeHtml(ciclo.verificado_at||'')+'</div>';
+      if(ciclo.sanitizante && !d.puede_realizar) h+='<div><b>Sanitizante:</b> '+escapeHtml(ciclo.sanitizante)+'</div>';
+    }
+    h+='</div>';
+    if(d.puede_realizar){
+      h+='<div style="margin-top:14px;border-top:1px solid #e2e8f0;padding-top:12px">';
+      h+='<div style="font-weight:700;font-size:12px;margin-bottom:6px">Registrar limpieza (operario)</div>';
+      h+='<label style="font-size:12px">Sanitizante / detergente<br><select id="rot-sanit" style="width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:5px;margin-bottom:8px">';
+      (d.sanitizantes_sugeridos||['Alcohol 70%']).forEach(function(s){ h+='<option>'+escapeHtml(s)+'</option>'; });
+      h+='</select></label>';
+      if(rot.equipos && rot.equipos.length){
+        h+='<div style="font-size:12px;font-weight:700;margin:4px 0">Equipos limpiados:</div><div style="max-height:130px;overflow:auto;border:1px solid #e2e8f0;border-radius:5px;padding:6px">';
+        rot.equipos.forEach(function(eq){ h+='<label style="display:block;font-size:12px;margin:2px 0"><input type="checkbox" class="rot-eq" value="'+escapeHtml(eq.codigo)+'"> '+escapeHtml(eq.codigo)+' · '+escapeHtml(eq.nombre)+'</label>'; });
+        h+='</div>';
+      }
+      h+='<button onclick="rotuloRealizar()" style="margin-top:10px;width:100%;padding:8px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer">&#10003; Registrar limpieza</button>';
+      h+='</div>';
+    }
+    if(d.puede_verificar){
+      h+='<div style="margin-top:12px"><button onclick="rotuloVerificar()" style="width:100%;padding:8px;background:#15803d;color:#fff;border:none;border-radius:6px;font-weight:700;cursor:pointer">&#9989; Verificar y liberar (firma Calidad)</button></div>';
+    }
+    h+='<div style="margin-top:12px;text-align:center"><a href="/planta/rotulo-limpieza/'+d.area_id+'/pdf" target="_blank" style="color:#7c3aed;font-size:12px;font-weight:700;text-decoration:none">&#128424;&#65039; Imprimir rótulo F02</a></div>';
+    var body=document.getElementById('rot-body'); if(body) body.innerHTML=h;
+  }
+  async function rotuloRealizar(){
+    var d=_ROT; if(!d) return;
+    var sanitEl=document.getElementById('rot-sanit');
+    var sanit=sanitEl?sanitEl.value:'Alcohol 70%';
+    var equipos=[];
+    document.querySelectorAll('.rot-eq:checked').forEach(function(c){ equipos.push(c.value); });
+    try{
+      var r=await fetch('/api/planta/rotulo-limpieza/'+d.area_id+'/realizar',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({sanitizante:sanit,equipos:equipos})});
+      var dd=await r.json();
+      if(!r.ok||!dd.ok) throw new Error(dd.error||'HTTP '+r.status);
+      abrirRotulo(d.area_id);
+      if(typeof salasVivoRecargar==='function') salasVivoRecargar();
+    }catch(e){ alert('❌ '+(e.message||e)); }
+  }
+  async function rotuloVerificar(){
+    var d=_ROT; if(!d) return;
+    var rid=d.ciclo?d.ciclo.id:null;
+    if(!rid){ alert('No hay limpieza realizada para verificar'); return; }
+    var pwd=prompt('FIRMA ELECTRÓNICA (21 CFR Part 11)\\n\\nContraseña para verificar la limpieza del área:');
+    if(!pwd) return;
+    var totp=prompt('Si tenés MFA activo, ingresá el código de 6 dígitos.\\nSi no usás MFA, dejá vacío y presioná OK.')||'';
+    try{
+      var rc=await fetch('/api/sign/challenge',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd,totp_token:totp})});
+      var dc=await rc.json(); if(!rc.ok) throw new Error(dc.error||'Credenciales inválidas');
+      var rs=await fetch('/api/sign',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({record_table:'rotulos_limpieza',record_id:String(rid),meaning:'revisa',challenge_token:dc.token})});
+      var ds=await rs.json(); if(!rs.ok) throw new Error(ds.error||'Error al firmar');
+      var rv=await fetch('/api/planta/rotulo-limpieza/'+d.area_id+'/verificar',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({signature_id:ds.signature_id})});
+      var dv=await rv.json(); if(!rv.ok||!dv.ok) throw new Error(dv.error||'HTTP '+rv.status);
+      alert('✅ '+dv.mensaje); cerrarRotulo();
+      if(typeof salasVivoRecargar==='function') salasVivoRecargar();
+    }catch(e){ alert('❌ '+(e.message||e)); }
+  }
+
   async function autoAsignarPendientes(){
     if(!confirm('Auto-asignar área + operarios para producciones próximos 7 días sin asignar.\\n\\nLa IA elige tanque óptimo (más chico que aguante el lote) y rota operarios.\\n\\n¿Continuar?')) return;
     var sub = document.getElementById('salas-subtitle');

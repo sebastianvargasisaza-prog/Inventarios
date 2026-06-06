@@ -2,7 +2,7 @@
 
 > **Para agentes IA · LEER ANTES de modificar este blueprint.**
 
-Última revisión: 2026-05-23 (Fix #3 · Abastecimiento lee Calendar completo)
+Última revisión: 2026-06-06 (Rótulo virtual de limpieza PRD-PRO-002-F02 · mig 223)
 
 ---
 
@@ -13,6 +13,9 @@
 | `produccion_programada` | INSERT | Sync Calendar, manual nueva |
 | `produccion_programada` | UPDATE | Iniciar, cambiar área, descontar inventario |
 | `produccion_programada` | DELETE | Limpiar duplicados, espejo Calendar, admin borra |
+| `areas_planta` | UPDATE estado | Iniciar (→ocupada), terminar (→sucia), rótulo realizar (→limpiando) |
+| `rotulos_limpieza` | INSERT/UPDATE | Rótulo de limpieza F02 · operario realiza · Calidad verifica (mig 223) |
+| `area_eventos` | INSERT | Bitácora de transiciones de estado de sala |
 | `solicitudes_compra` | INSERT | Bulk solicitar faltantes (agrupado por proveedor) |
 | `solicitudes_compra_items` | INSERT | Faltantes detectados |
 | `mp_lead_time_config` | INSERT/UPDATE | Configuración manual o sync desde compras |
@@ -53,6 +56,22 @@
 - Default behavior (`force_mirror=False`): solo cancela `origen='calendar'`.
 - `force_mirror=True`: HARD DELETE de cualquier orfan (manual + calendar).
 - Solo se dispara desde el botón "📅 Re-sync Calendar" (admin).
+
+### INV-4 · Rótulo de limpieza F02 · estado y liberación
+- **Estado físico de la sala = `areas_planta.estado`** (libre/ocupada/sucia/
+  limpiando). El rótulo lo MAPEA a Limpio/En uso/Sucio para mostrar — NO crea
+  estado paralelo. `rotulos_limpieza` solo guarda el registro F02 (snapshot
+  inmutable Part 11): producto/lote, sanitizante, equipos, y las dos firmas.
+- **Una sola ruta de liberación `sucia/limpiando → libre`** (M3):
+  `auto_plan.liberar_sala_con_despeje()` (inserta `despeje_linea_checklist` +
+  marca libre). La usan tanto `marcar-limpia-con-despeje` como el endpoint
+  `rotulo-limpieza/<area_id>/verificar`. NO crear una segunda ruta a `libre`.
+- **Dos roles** (PRD-PRO-002): operario `realizar` (sucia→limpiando, e-firma no
+  requerida) · Calidad `verificar` (limpiando→libre, **e-firma `meaning='revisa'`
+  obligatoria** validada con `_validar_e_sign`).
+- Endpoints: `GET/POST /api/planta/rotulo-limpieza/<area_id>[/realizar|/verificar]`,
+  imprimible `GET /planta/rotulo-limpieza/<area_id>/pdf`. Tests:
+  `tests/test_rotulo_limpieza.py`.
 - Background cron NUNCA debe pasar force_mirror=True.
 
 ### INV-4 · Idempotencia

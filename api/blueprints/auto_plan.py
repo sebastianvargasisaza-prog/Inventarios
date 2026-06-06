@@ -9208,6 +9208,53 @@ loadSalas();
     return _Resp(html, mimetype='text/html')
 
 
+def liberar_sala_con_despeje(c, area_id, user, obs='', *,
+                             rotulo_id=None, verificado_por=None):
+    """Ruta ÚNICA de liberación sucia/limpiando → libre (regla M3).
+
+    Inserta el despeje_linea_checklist (5 ítems BPM en CUMPLE) y marca la sala
+    'libre'. NO commitea (el caller maneja la transacción). Asume que los 5
+    ítems ya fueron validados por el caller.
+
+    rotulo_id / verificado_por: enlace opcional al rótulo de limpieza F02
+    cuando la liberación viene del flujo de rótulo verificado por Calidad.
+
+    Devuelve (checklist_id, area_codigo, estado_prev).
+    Lanza ValueError('sala_no_existe') si el área no existe/está inactiva.
+    """
+    area_row = c.execute(
+        "SELECT codigo, estado FROM areas_planta WHERE id=? AND activo=1",
+        (area_id,),
+    ).fetchone()
+    if not area_row:
+        raise ValueError('sala_no_existe')
+    area_codigo, estado_prev = area_row[0], area_row[1]
+    c.execute(
+        """INSERT INTO despeje_linea_checklist
+             (area_id, area_codigo, marcado_por,
+              item1_sin_etiquetas, item2_sin_producto_suelto,
+              item3_equipos_lavados, item4_registros_archivados,
+              item5_sala_vacia, observaciones)
+           VALUES (?, ?, ?, 1, 1, 1, 1, 1, ?)""",
+        (area_id, area_codigo, user, obs),
+    )
+    checklist_id = c.lastrowid
+    c.execute(
+        "UPDATE areas_planta SET estado='libre' WHERE id=? AND activo=1",
+        (area_id,),
+    )
+    try:
+        audit_log(c, usuario=user, accion='DESPEJE_LINEA_FIRMADO',
+                  tabla='despeje_linea_checklist', registro_id=checklist_id,
+                  despues={'area_codigo': area_codigo, 'estado_prev': estado_prev,
+                           'observaciones': obs[:200],
+                           'rotulo_id': rotulo_id,
+                           'verificado_por': verificado_por})
+    except Exception:
+        pass
+    return checklist_id, area_codigo, estado_prev
+
+
 @bp.route('/api/planta/areas/<int:area_id>/marcar-limpia-con-despeje', methods=['POST'])
 def planta_marcar_limpia_con_despeje(area_id):
     """OLA 1 INVIMA · 20-may-2026 · Checklist despeje de línea.
@@ -9243,36 +9290,11 @@ def planta_marcar_limpia_con_despeje(area_id):
         }), 400
     obs = (body.get('observaciones') or '').strip()[:500]
     conn = get_db(); c = conn.cursor()
-    area_row = c.execute(
-        "SELECT codigo, estado FROM areas_planta WHERE id=? AND activo=1",
-        (area_id,),
-    ).fetchone()
-    if not area_row:
-        return jsonify({'error': 'sala no existe'}), 404
-    area_codigo, estado_prev = area_row
-    # Insertar checklist
-    c.execute(
-        """INSERT INTO despeje_linea_checklist
-             (area_id, area_codigo, marcado_por,
-              item1_sin_etiquetas, item2_sin_producto_suelto,
-              item3_equipos_lavados, item4_registros_archivados,
-              item5_sala_vacia, observaciones)
-           VALUES (?, ?, ?, 1, 1, 1, 1, 1, ?)""",
-        (area_id, area_codigo, user, obs),
-    )
-    checklist_id = c.lastrowid
-    # Marcar sala libre
-    c.execute(
-        "UPDATE areas_planta SET estado='libre' WHERE id=? AND activo=1",
-        (area_id,),
-    )
     try:
-        audit_log(c, usuario=user, accion='DESPEJE_LINEA_FIRMADO',
-                  tabla='despeje_linea_checklist', registro_id=checklist_id,
-                  despues={'area_codigo': area_codigo, 'estado_prev': estado_prev,
-                           'observaciones': obs[:200]})
-    except Exception:
-        pass
+        checklist_id, area_codigo, estado_prev = liberar_sala_con_despeje(
+            c, area_id, user, obs)
+    except ValueError:
+        return jsonify({'error': 'sala no existe'}), 404
     conn.commit()
     return jsonify({
         'ok': True, 'checklist_id': checklist_id,
