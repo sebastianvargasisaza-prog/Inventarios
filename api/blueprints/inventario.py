@@ -9255,13 +9255,18 @@ async function cargarMPs(){
   try{
     const r2=await fetch('/api/conteo/'+CONTEO_ID+'/items');
     const d2=await r2.json();
-    (d2.items||[]).forEach(it=>{
+    // FIX 6-jun-2026 (incidente "lo de ayer no sale"): el endpoint devuelve un
+    // array plano; antes se leía d2.items (undefined) → forEach nunca corría →
+    // las casillas de stock físico salían en blanco al retomar el conteo de ayer.
+    // Tolerante a ambas formas (array o {items:[...]}).
+    const arr2 = Array.isArray(d2) ? d2 : (d2.items||[]);
+    arr2.forEach(it=>{
       if(it.stock_fisico!=null && it.stock_fisico!==''){
         const k=it.codigo_mp+'|'+(it.lote||'');
         STOCK_FISICO[k]=it.stock_fisico;
       }
     });
-  }catch(e){}
+  }catch(e){ console.error('No se pudieron recuperar los valores del conteo previo (retomar):', e); }
   renderItems();
 }
 
@@ -9363,7 +9368,9 @@ def conteo_get_items(conteo_id):
     c.execute("SELECT * FROM conteo_items WHERE conteo_id=? ORDER BY codigo_mp", (conteo_id,))
     rows = c.fetchall()
     cols = [d[0] for d in c.description]
-    return jsonify([dict(zip(cols, r)) for r in rows])
+    # 6-jun-2026 · devolver {items:[...]} (lo que espera el frontend al retomar).
+    # El frontend también tolera array plano, pero unificamos el contrato.
+    return jsonify({'items': [dict(zip(cols, r)) for r in rows]})
 
 @bp.route('/api/lotes/cc-review', methods=['POST'])
 def cc_review():

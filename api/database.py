@@ -312,6 +312,23 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (221, "conteo_items · UNIQUE(conteo_id,codigo_mp,lote) anti-duplicado · arregla doble-ajuste por INSERT OR REPLACE sin clave en PG · 6-jun-2026", [
+        # Incidente 6-jun: conteo_items NO tenía clave única, y el guardado usa
+        # INSERT OR REPLACE → en PostgreSQL el ON CONFLICT caía a la PK 'id' (que
+        # no va en el INSERT) → NUNCA reemplazaba, INSERTABA filas duplicadas por
+        # cada re-guardado. Al cerrar el conteo eso aplicaría DOBLE ajuste al kardex.
+        # 1) normalizar lote NULL→'' (para que el UNIQUE agrupe bien).
+        "UPDATE conteo_items SET lote='' WHERE lote IS NULL",
+        # 2) de-duplicar conservando la fila más reciente (MAX id = último guardado
+        #    = valor final que el operario dejó). Borra solo duplicados del bug.
+        """DELETE FROM conteo_items WHERE id NOT IN (
+              SELECT MAX(id) FROM conteo_items
+              GROUP BY conteo_id, codigo_mp, lote)""",
+        # 3) clave única → desde ahora INSERT OR REPLACE reemplaza (pg_adapter elige
+        #    este keyset como target del ON CONFLICT) en vez de duplicar.
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_conteo_items ON conteo_items(conteo_id, codigo_mp, lote)",
+    ]),
+
     (220, "ebr_despeje_items · checklist granular de despeje de línea (13 verificaciones GMP por ítem · MyBatch estación ② detalle) · 5-jun-2026", [
         # MyBatch muestra el despeje como tabla VERIFICACIÓN/CUMPLE/ACCIONES con 13
         # verificaciones. Esta tabla guarda el CUMPLE (Sí/No) por ítem, con e-firma del
