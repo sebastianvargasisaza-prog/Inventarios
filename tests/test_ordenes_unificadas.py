@@ -466,7 +466,7 @@ def test_orden_detalle_page_html(app, db_clean):
     assert r.status_code == 200
     body = r.get_data(as_text=True)
     assert 'Orden de Producción' in body
-    assert 'Pesaje de Materias Primas' in body
+    assert 'Dispensado de Materias Primas' in body  # sección 3 integrada en el instructivo
     assert 'vista-completa' in body          # reusa el endpoint existente
     assert 'var EBR_ID = 123;' in body       # id inyectado correctamente
     # Tooltips premium globales (data-tip) · CSS inyectado + ayudas en botones

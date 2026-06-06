@@ -4530,14 +4530,13 @@ tbody tr:hover{background:#faf5ff}
 .num{text-align:right;font-variant-numeric:tabular-nums}
 .delta-ok{color:#166534}.delta-warn{color:#b45309;font-weight:700}
 .muted{color:#94a3b8}
-#pasos-sec{display:none}
+#pasos-sec{display:block}
 </style></head><body>
 <div class="wrap">
 <a class="back" href="/inventarios"><span class="arw">&larr;</span> Volver a Producción</a>
 <div style="height:14px"></div>
 <div class="card" id="head">Cargando…</div>
 <div class="card pad" id="pasos-sec"><h2>📖 Instrucción de Manufactura</h2><div id="pasos"></div></div>
-<div class="card pad"><h2>⚖️ Dispensado de Materias Primas</h2><div id="pesaje"></div></div>
 </div>
 <div class="cxmodal" id="cxmodal" onclick="if(event.target===this)cerrarModal()">
   <div class="cxbox">
@@ -4807,34 +4806,21 @@ async function load(){
           '</td></tr>';
       }).join('')+'</tbody></table>'+
       '<div style="font-size:11px;color:#94a3b8;margin:6px 0 14px">Sí = cumple · No = no cumple · Pendiente = sin verificar. Cada verificación queda con responsable y hora.</div>';
-    // 3. Pasos del proceso
-    var pasos=d.pasos||[];
-    var pasosHtml='<h3 style="font-size:15px;color:#7c3aed;margin:18px 0 6px">3. Pasos del proceso</h3>'+
-      (pasos.length
-      ? '<table><thead><tr><th>#</th><th>Descripción</th><th>Estado</th><th>Operario</th><th>Completado</th></tr></thead><tbody>'+
-        pasos.map(function(p){return '<tr><td class="mono">'+esc(p.orden)+'</td><td>'+esc(p.descripcion)+'</td>'+
-          '<td>'+(p.completado_flag?'<span style="color:#166534;font-weight:700">✓ hecho</span>':'<span class="muted">pendiente</span>')+'</td>'+
-          '<td>'+esc(p.operario||'—')+'</td><td class="muted">'+esc((p.completado||'—').substring(0,16).replace("T"," "))+'</td></tr>';}).join('')+
-        '</tbody></table>'
-      : '<div class="muted">Sin pasos registrados.</div>');
-    // guardo el checklist para los botones i/✏️
-    window._despejeChk = chk;
-    document.getElementById('pasos').innerHTML = manuf + precHtml + despHtml + pasosHtml;
-    // Pesaje de Materias Primas · HOJA COMPLETA (todas las MP de la fórmula)
-    // estilo MyBatch: % · N° Lote (FEFO) · Cant. a pesar · Cant. pesada · Pesado por.
+    // 3. Dispensado de Materias Primas · INTEGRADO en el instructivo (en secuencia,
+    // como en MyBatch · ya no es una tarjeta aparte). % · N° Lote · Cant. a pesar ·
+    // Cant. pesada · Acciones (i / ✏️) + Verificar Dispensado + PDF.
     var sheet=d.pesaje_sheet||[];
     window._pesajeSheet=sheet;
+    var dispHtml;
     if(sheet.length){
       var pend=sheet.filter(function(x){return !x.pesado;}).length;
-      var cab='<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px">'+
-        '<div style="font-size:12px;color:#64748b">'+sheet.length+' materias primas · '+(sheet.length-pend)+' pesadas · '+pend+' pendientes</div>'+
-        '<div style="display:flex;gap:8px">'+
+      dispHtml='<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:18px 0 6px">'+
+          '<h3 style="font-size:15px;color:#7c3aed;margin:0">3. Dispensado de Materias Primas'+
+            '<a class="b-pdf-sm" href="/brd/dispensado/'+EBR_ID+'" target="_blank" data-tip="Descarga/imprime la hoja de dispensado (registro GMP).">📄 PDF</a></h3>'+
           (editable?'<button class="b-mini" data-tip="Valida que todas las MP estén pesadas y dentro de tolerancia (±5%)." onclick="verificarDispensado()">✓ Verificar Dispensado</button>':'')+
-          '<a class="b-pdf-sm" href="/brd/dispensado/'+EBR_ID+'" target="_blank" data-tip="Descarga/imprime la hoja de dispensado (registro GMP).">📄 PDF</a>'+
         '</div>'+
-      '</div>'+
-      '<div style="font-size:12.5px;color:#334155;margin-bottom:8px">Realizar el dispensado de materias primas según las cantidades de la orden y los procedimientos internos.</div>';
-      document.getElementById('pesaje').innerHTML = cab+
+        '<div style="font-size:12px;color:#64748b;margin-bottom:6px">'+sheet.length+' materias primas · '+(sheet.length-pend)+' pesadas · '+pend+' pendientes</div>'+
+        '<div style="font-size:12.5px;color:#334155;margin-bottom:8px">Realizar el dispensado de materias primas según las cantidades de la orden y los procedimientos internos.</div>'+
         '<table><thead><tr><th>Materia Prima</th><th class="num">%</th><th>N° Lote</th>'+
         '<th class="num">Cant. a pesar</th><th class="num">Cant. pesada</th><th style="text-align:center">Acciones</th></tr></thead><tbody>'+
         sheet.map(function(p,i){
@@ -4856,10 +4842,24 @@ async function load(){
             '</td>'+
           '</tr>';
         }).join('')+'</tbody></table>'+
-        '<div class="muted" style="margin-top:8px;font-size:11px">El pesaje queda con tu usuario y la hora. Con el motor EBR en modo estricto, además exige e-firma (se registra desde el runner de legajos).</div>';
+        '<div class="muted" style="margin:6px 0 14px;font-size:11px">El pesaje queda con tu usuario y la hora. Con el motor EBR en modo estricto, además exige e-firma (se registra desde el runner de legajos).</div>';
     } else {
-      document.getElementById('pesaje').innerHTML='<div class="muted">Esta orden no tiene fórmula con materias primas.</div>';
+      dispHtml='<h3 style="font-size:15px;color:#7c3aed;margin:18px 0 6px">3. Dispensado de Materias Primas</h3>'+
+        '<div class="muted" style="margin-bottom:14px">Esta orden no tiene fórmula con materias primas.</div>';
     }
+    // 4. Fabricación / Mezclado (pasos del proceso)
+    var pasos=d.pasos||[];
+    var pasosHtml='<h3 style="font-size:15px;color:#7c3aed;margin:18px 0 6px">4. Fabricación / Mezclado</h3>'+
+      (pasos.length
+      ? '<table><thead><tr><th>#</th><th>Descripción</th><th>Estado</th><th>Operario</th><th>Completado</th></tr></thead><tbody>'+
+        pasos.map(function(p){return '<tr><td class="mono">'+esc(p.orden)+'</td><td>'+esc(p.descripcion)+'</td>'+
+          '<td>'+(p.completado_flag?'<span style="color:#166534;font-weight:700">✓ hecho</span>':'<span class="muted">pendiente</span>')+'</td>'+
+          '<td>'+esc(p.operario||'—')+'</td><td class="muted">'+esc((p.completado||'—').substring(0,16).replace("T"," "))+'</td></tr>';}).join('')+
+        '</tbody></table>'
+      : '<div class="muted">Sin pasos registrados.</div>');
+    // guardo el checklist para los botones i/✏️
+    window._despejeChk = chk;
+    document.getElementById('pasos').innerHTML = manuf + precHtml + despHtml + dispHtml + pasosHtml;
   }catch(e){document.getElementById('head').innerHTML='<span style="color:#b91c1c">Error red: '+esc(e.message)+'</span>';}
 }
 load();
