@@ -1931,6 +1931,30 @@ def ebr_vista_completa(ebr_id):
         out['ipc'] = ipc
     except Exception:
         out['ipc'] = []
+    # 7. Observaciones Generales del Proceso (MyBatch ⑦) · bitácora.
+    try:
+        rows = conn.execute(
+            "SELECT descripcion, COALESCE(registrado_por,''), COALESCE(registrado_at_utc,'') "
+            "FROM ebr_observaciones WHERE ebr_id=? ORDER BY id", (ebr_id,)).fetchall()
+        out['observaciones_proceso'] = [{
+            'descripcion': r[0], 'registrado_por': r[1],
+            'registrado_por_full': _persona(r[1]), 'fecha': r[2],
+        } for r in rows]
+    except Exception:
+        out['observaciones_proceso'] = []
+    # 8. Registros Físicos del Proceso (MyBatch ⑧) · PDFs adjuntos.
+    try:
+        rows = conn.execute(
+            "SELECT id, descripcion, COALESCE(tipo,''), "
+            "(CASE WHEN COALESCE(archivo_b64,'')!='' THEN 1 ELSE 0 END) AS tiene_pdf, "
+            "COALESCE(registrado_por,''), COALESCE(registrado_at_utc,'') "
+            "FROM ebr_registros_fisicos WHERE ebr_id=? ORDER BY id DESC", (ebr_id,)).fetchall()
+        out['registros_fisicos'] = [{
+            'id': r[0], 'descripcion': r[1], 'tipo': r[2],
+            'tiene_pdf': bool(r[3]), 'registrado_por': r[4], 'fecha': r[5],
+        } for r in rows]
+    except Exception:
+        out['registros_fisicos'] = []
     # 5. Despejes (referenciados por lote o produccion_id)
     try:
         rows = conn.execute(
@@ -4779,6 +4803,14 @@ function infoIpc(i){
   var ht=document.querySelector('#cxmodal .cxhead h3'); if(ht) ht.textContent='ℹ️ Detalle del Control';
   var m=document.getElementById('cxmodal'); if(m) m.style.display='flex';
 }
+// 7. Observaciones Generales · "+ Registrar"
+async function registrarObservacion(){
+  var desc=prompt('Observación general del proceso:');
+  if(!desc) return;
+  var r=await fetch('/api/brd/ebr/'+EBR_ID+'/observaciones',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({descripcion:desc})});
+  var d=await r.json(); if(!r.ok){alert('Error: '+((d&&d.error)||r.status));return;}
+  load();
+}
 // 1. Precauciones · "+ Agregar Equipo" (MyBatch ①)
 async function agregarEquipo(){
   var desc=prompt('Equipo / precaución a registrar:');
@@ -5055,7 +5087,27 @@ async function load(){
           '</tr>';
         }).join('')+'</tbody></table>'
       : '<div class="muted">Sin controles en proceso · se definen en el MBR del producto (parámetros como densidad, pH, color…).</div>');
-    document.getElementById('pasos').innerHTML = manuf + precHtml + despHtml + dispHtml + ajustesHtml + despFabHtml + pasosHtml + ipcHtml;
+    // 7. Observaciones Generales del Proceso (bitácora · + Registrar)
+    var obsP=d.observaciones_proceso||[];
+    var obsHtml='<div style="display:flex;align-items:center;gap:12px;margin:18px 0 6px">'+
+        '<h3 style="font-size:15px;color:#7c3aed;margin:0">7. Observaciones Generales del Proceso</h3>'+
+        (editable?'<button class="b-mini" data-tip="Registra una observación general del proceso (queda con tu usuario y la hora)." onclick="registrarObservacion()">+ Registrar</button>':'')+
+      '</div>'+
+      (obsP.length
+      ? '<table><thead><tr><th>Descripción de la observación</th><th>Realizada por</th><th>Fecha y hora</th></tr></thead><tbody>'+
+        obsP.map(function(o){return '<tr><td style="font-size:12.5px">'+esc(o.descripcion||'')+'</td>'+
+          '<td style="font-size:11.5px">'+esc(o.registrado_por_full||o.registrado_por||'—')+'</td>'+
+          '<td class="muted" style="font-size:11px">'+esc((o.fecha||'').substring(0,16).replace("T"," "))+'</td></tr>';}).join('')+'</tbody></table>'
+      : '<div class="muted">Sin observaciones registradas.</div>');
+    // 8. Registros Físicos del Proceso Manufactura (PDFs adjuntos)
+    var regs=d.registros_fisicos||[];
+    var regHtml='<h3 style="font-size:15px;color:#7c3aed;margin:18px 0 6px">8. Registros Físicos del Proceso Manufactura</h3>'+
+      (regs.length
+      ? '<table><thead><tr><th>Código</th><th>Descripción</th><th style="text-align:center">Acciones</th></tr></thead><tbody>'+
+        regs.map(function(g){return '<tr><td class="mono">'+esc(g.id)+'</td><td style="font-size:12.5px">'+esc(g.descripcion||'')+'</td>'+
+          '<td style="text-align:center">'+(g.tiene_pdf?'<a class="b-pdf-sm" href="/api/brd/ebr/'+EBR_ID+'/registros-fisicos/'+g.id+'/pdf" target="_blank" data-tip="Descarga el registro físico (PDF).">📄 PDF</a>':'<span class="muted">—</span>')+'</td></tr>';}).join('')+'</tbody></table>'
+      : '<div class="muted">Sin registros físicos adjuntos.</div>');
+    document.getElementById('pasos').innerHTML = manuf + precHtml + despHtml + dispHtml + ajustesHtml + despFabHtml + pasosHtml + ipcHtml + obsHtml + regHtml;
   }catch(e){document.getElementById('head').innerHTML='<span style="color:#b91c1c">Error red: '+esc(e.message)+'</span>';}
 }
 load();

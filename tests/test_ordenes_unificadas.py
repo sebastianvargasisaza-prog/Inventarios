@@ -399,6 +399,24 @@ def test_seccion6_controles_lee_ipc_specs_resultados(app, db_clean):
     assert dens['realizado_por'] == 'laura'
 
 
+def test_secciones_7_8_observaciones_registros(app, db_clean):
+    """6-jun · Sección 7 (Observaciones Generales) + 8 (Registros Físicos PDF)."""
+    ebr = _crear_ebr_iniciado('L-78', 'OP-2026-7800', 'PROD 78')
+    c = _conn()
+    c.execute("INSERT INTO ebr_observaciones (ebr_id,descripcion,registrado_por,registrado_at_utc) "
+              "VALUES (?,'Se ajusta pH con 295mL de Ácido Láctico 85%','laura','2026-06-05 15:41')", (ebr,))
+    c.execute("INSERT INTO ebr_registros_fisicos (ebr_id,descripcion,tipo,archivo_b64,registrado_por,registrado_at_utc) "
+              "VALUES (?,'Materia Prima Dispensada','registro','JVBERi0xLjQK','luis','2026-06-05 10:00')", (ebr,))
+    c.commit(); c.close()
+    cl = _login(app)
+    d = cl.get(f'/api/brd/ebr/{ebr}/vista-completa').get_json()
+    obs = d.get('observaciones_proceso') or []
+    regs = d.get('registros_fisicos') or []
+    assert any('Ácido Láctico' in (o['descripcion'] or '') for o in obs), 'sección 7 debe traer observaciones'
+    g = [x for x in regs if x['descripcion'] == 'Materia Prima Dispensada']
+    assert g and g[0]['tiene_pdf'], 'sección 8 debe traer registros con PDF'
+
+
 def test_seccion5_pasos_lee_ebr_pasos_ejecutados(app, db_clean):
     """6-jun · FIX: la sección 5 (Fabricación/Mezcla) leía 'ebr_pasos' (tabla
     inexistente) → salía vacía. Ahora lee ebr_pasos_ejecutados con
