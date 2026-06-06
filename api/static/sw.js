@@ -1,13 +1,18 @@
 /**
- * Service Worker para HHA Group PWA.
+ * Service Worker para EOS / HHA Group PWA.
  *
- * Estrategia simple: cache-first para assets estaticos (logo, CSS),
- * network-first para API y paginas (siempre datos frescos).
+ * v3 (Sebastián 5-jun-2026) · REESCRITO tras incidente "Cargando… eterno":
+ * el SW anterior cacheaba páginas HTML (network-first con fallback a caché) y
+ * podía dejar al usuario atrapado en una versión vieja de una página o colgar
+ * un fetch. Ahora el SW NO toca páginas ni API: ésas van SIEMPRE a la red
+ * nativa del navegador (no las intercepta → imposible que las cuelgue o sirva
+ * viejas). El SW solo cachea assets estáticos (logos) para velocidad/offline.
  *
- * No cachea POST/PATCH/DELETE — solo GET.
+ * Al activarse borra TODAS las cachés viejas (incluida la v1 que guardaba HTML)
+ * y reclama los clientes → los navegadores atrapados se curan al recargar.
  */
 
-const CACHE_NAME = 'hha-group-v1';
+const CACHE_NAME = 'eos-static-v3';
 const STATIC_ASSETS = [
   '/static/manifest.json',
   '/static/logo_hha.png',
@@ -18,7 +23,6 @@ self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
       return cache.addAll(STATIC_ASSETS).catch(err => {
-        // Si algun asset falla, no bloquear instalacion
         console.warn('[SW] Some assets failed to cache:', err);
       });
     })
@@ -29,59 +33,38 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(names => {
-      return Promise.all(
-        names.filter(n => n !== CACHE_NAME).map(n => caches.delete(n))
-      );
-    })
+      // Borra TODA caché que no sea la actual (purga el HTML viejo de v1/v2).
+      return Promise.all(names.filter(n => n !== CACHE_NAME).map(n => caches.delete(n)));
+    }).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 self.addEventListener('fetch', event => {
   const req = event.request;
 
-  // Solo GETs cacheables
+  // Solo nos metemos con assets estáticos por GET. Todo lo demás (páginas,
+  // navegaciones, /api/, login, admin) → red nativa del navegador, SIN
+  // respondWith: el SW no puede colgarlo ni servir una versión vieja.
   if (req.method !== 'GET') return;
+  if (req.mode === 'navigate') return;
 
-  // No cachear API ni autenticacion ni admin
-  if (req.url.includes('/api/') ||
-      req.url.includes('/login') ||
-      req.url.includes('/logout') ||
-      req.url.includes('/admin')) {
-    // Network-first: intentar red, si falla usar cache
-    event.respondWith(
-      fetch(req).catch(() => caches.match(req))
-    );
-    return;
-  }
+  const url = req.url;
+  const esEstatico = url.includes('/static/') &&
+    !url.includes('/static/sw.js');  // nunca cachear el propio SW
 
-  // Static assets: cache-first
-  if (req.url.includes('/static/')) {
-    event.respondWith(
-      caches.match(req).then(cached => {
-        return cached || fetch(req).then(resp => {
-          const respClone = resp.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(req, respClone));
-          return resp;
-        });
-      })
-    );
-    return;
-  }
+  if (!esEstatico) return;  // páginas + API + resto → red directa
 
-  // Paginas HTML: network-first con fallback a cache
+  // Assets estáticos: cache-first, refresca en segundo plano.
   event.respondWith(
-    fetch(req).then(resp => {
-      // Solo cachear respuestas exitosas
-      if (resp.ok && resp.type === 'basic') {
-        const respClone = resp.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(req, respClone));
-      }
-      return resp;
-    }).catch(() => caches.match(req).then(c => c || new Response('Sin conexión', {
-      status: 503,
-      statusText: 'Service Unavailable',
-      headers: {'Content-Type': 'text/plain; charset=utf-8'}
-    })))
+    caches.match(req).then(cached => {
+      const red = fetch(req).then(resp => {
+        if (resp && resp.ok && resp.type === 'basic') {
+          const clone = resp.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(req, clone));
+        }
+        return resp;
+      }).catch(() => cached);
+      return cached || red;
+    })
   );
 });
