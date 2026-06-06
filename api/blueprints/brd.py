@@ -4421,7 +4421,7 @@ window.addEventListener('error',function(e){
       m.style.cssText='background:#fee2e2;color:#991b1b;padding:12px 16px;margin:8px 0;border-radius:10px;font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap;border:1px solid #fca5a5';
       (document.body||document.documentElement).insertBefore(m,(document.body||document.documentElement).firstChild);}
     m.textContent='⚠ ERROR JS (por esto no carga): '+(e.message||(e.error&&e.error.message)||'desconocido')+
-      '\n@ '+((e.filename||'').split('/').pop())+' línea '+e.lineno+':'+e.colno;
+      '\\n@ '+((e.filename||'').split('/').pop())+' línea '+e.lineno+':'+e.colno;
   }catch(_){}
 },true);
 window.addEventListener('unhandledrejection',function(e){
@@ -4522,16 +4522,16 @@ async function agregarEquipo(){
 // 2. Despeje · botón "i" (ver detalle de la verificación)
 function infoDespeje(idx){
   var it=(window._despejeChk||[]).find(function(x){return x.idx===idx;}); if(!it) return;
-  var msg=it.texto+'\n\nCumple: '+(it.cumple===1?'Sí':(it.cumple===0?'No':'Pendiente'));
-  if(it.registrado_por) msg+='\nResponsable: '+it.registrado_por;
-  if(it.fecha) msg+='\nFecha: '+it.fecha.substring(0,16).replace('T',' ');
-  if(it.observaciones) msg+='\nObservación: '+it.observaciones;
+  var msg=it.texto+'\\n\\nCumple: '+(it.cumple===1?'Sí':(it.cumple===0?'No':'Pendiente'));
+  if(it.registrado_por) msg+='\\nResponsable: '+it.registrado_por;
+  if(it.fecha) msg+='\\nFecha: '+it.fecha.substring(0,16).replace('T',' ');
+  if(it.observaciones) msg+='\\nObservación: '+it.observaciones;
   alert(msg);
 }
 // 2. Despeje · botón "✏️" (registrar CUMPLE Sí/No + observación)
 async function editDespeje(idx){
   var it=(window._despejeChk||[]).find(function(x){return x.idx===idx;}); if(!it) return;
-  var c=confirm('Verificación:\n'+it.texto+'\n\n¿CUMPLE? (Aceptar=Sí · Cancelar=No)');
+  var c=confirm('Verificación:\\n'+it.texto+'\\n\\n¿CUMPLE? (Aceptar=Sí · Cancelar=No)');
   var obs=prompt('Observación (opcional):', it.observaciones||'')||'';
   var r=await fetch('/api/brd/ebr/'+EBR_ID+'/despeje-item',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({item_idx:idx,cumple:c?1:0,observaciones:obs})});
   var d=await r.json(); if(!r.ok){alert('Error: '+(d.error||r.status));return;}
