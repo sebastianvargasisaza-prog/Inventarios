@@ -8410,6 +8410,97 @@ def conteo_historial():
     cols = ['id','numero','estanteria','fecha_inicio','fecha_cierre','estado','responsable','total_items','items_diferencia','items_gerencia']
     return jsonify([dict(zip(cols, r)) for r in rows])
 
+
+@bp.route('/admin/conteo-rescate', methods=['GET'])
+def admin_conteo_rescate():
+    """RESCATE de conteo cíclico (Sebastián 6-jun-2026) · incidente "lo de ayer
+    no sale". Muestra TODOS los conteos recientes con sus items, SIN filtro de
+    fecha/semana/estado, para verificar que NADA se perdió y recuperar lo que los
+    operarios ingresaron. Server-side (sin JS). Admin/Calidad."""
+    u = session.get('compras_user', '')
+    if not u:
+        return redirect('/login?next=/admin/conteo-rescate')
+    if u not in (ADMIN_USERS | CALIDAD_USERS):
+        return Response('<div style="font-family:sans-serif;padding:40px;color:#991b1b">Solo Admin o Calidad pueden ver el rescate de conteo.</div>',
+                        status=403, mimetype='text/html')
+    import html as _hh
+    dias = request.args.get('dias', '3')
+    try:
+        dias = max(1, min(60, int(dias)))
+    except (TypeError, ValueError):
+        dias = 3
+    conn = get_db(); c = conn.cursor()
+    # Fecha de corte calculada en Python (PG-safe · sin datetime() en el WHERE).
+    corte = (datetime.utcnow() - timedelta(hours=5) - timedelta(days=dias)).strftime('%Y-%m-%d %H:%M:%S')
+    # Conteos recientes (por fecha_inicio) SIN filtrar estado ni semana.
+    c.execute(
+        "SELECT id, COALESCE(numero,''), COALESCE(estanteria,''), COALESCE(fecha_inicio,''), "
+        "COALESCE(fecha_cierre,''), COALESCE(estado,''), COALESCE(responsable,''), "
+        "COALESCE(total_items,0), COALESCE(items_diferencia,0), COALESCE(tipo_conteo,'') "
+        "FROM conteos_fisicos WHERE fecha_inicio >= ? "
+        "ORDER BY fecha_inicio DESC", (corte,))
+    conteos = c.fetchall()
+    bloques = []
+    tot_items = 0
+    for ct in conteos:
+        cid = ct[0]
+        c.execute(
+            "SELECT COALESCE(codigo_mp,''), COALESCE(nombre_mp,''), COALESCE(stock_sistema,0), "
+            "COALESCE(stock_fisico,0), COALESCE(diferencia,0), COALESCE(lote,''), "
+            "COALESCE(observaciones,''), COALESCE(ajuste_aplicado,0) "
+            "FROM conteo_items WHERE conteo_id=? ORDER BY nombre_mp", (cid,))
+        items = c.fetchall()
+        tot_items += len(items)
+        filas = ''.join(
+            '<tr><td class="mono">' + _hh.escape(str(it[0])) + '</td>'
+            '<td>' + _hh.escape(str(it[1])) + '</td>'
+            '<td class="mono">' + _hh.escape(str(it[5])) + '</td>'
+            '<td class="num">' + ('{:,.0f}'.format(it[2])) + '</td>'
+            '<td class="num"><b>' + ('{:,.0f}'.format(it[3])) + '</b></td>'
+            '<td class="num" style="color:' + ('#b91c1c' if it[4] else '#64748b') + '">' + ('{:,.0f}'.format(it[4])) + '</td>'
+            '<td>' + _hh.escape(str(it[6])) + '</td>'
+            '<td class="c">' + ('✓ aplicado' if it[7] else '—') + '</td></tr>'
+            for it in items)
+        if not filas:
+            filas = '<tr><td colspan="8" class="muted">— sin items en este conteo —</td></tr>'
+        estado_color = '#166534' if 'cerr' in (ct[5] or '').lower() else ('#854d0e' if 'abier' in (ct[5] or '').lower() else '#64748b')
+        bloques.append(
+            '<div class="conteo">'
+            '<div class="ch"><div><b>Conteo ' + _hh.escape(str(ct[1] or ('#' + str(cid)))) + '</b> · Estantería ' + _hh.escape(str(ct[2] or '—')) +
+            '</div><div>' + str(len(items)) + ' items · <span style="color:' + estado_color + ';font-weight:700">' + _hh.escape(str(ct[5] or '—')) + '</span></div></div>'
+            '<div class="cm">Iniciado: ' + _hh.escape(str(ct[3])[:16]) + ' · Responsable: ' + _hh.escape(str(ct[6] or '—')) +
+            (' · Cerrado: ' + _hh.escape(str(ct[4])[:16]) if ct[4] else '') + '</div>'
+            '<table><thead><tr><th>Código</th><th>Material</th><th>Lote</th><th class="num">Sistema</th>'
+            '<th class="num">Físico</th><th class="num">Dif.</th><th>Observación</th><th>Ajuste</th></tr></thead>'
+            '<tbody>' + filas + '</tbody></table></div>')
+    cuerpo = ''.join(bloques) if bloques else '<div class="muted" style="padding:30px;text-align:center">No hay conteos en los últimos ' + str(dias) + ' días.</div>'
+    html = (
+        '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1.0">'
+        '<title>Rescate de Conteo · EOS</title><style>'
+        '*{box-sizing:border-box;font-family:"Segoe UI",Roboto,sans-serif}'
+        'body{margin:0;background:#f5f3ff;color:#0f172a;padding:20px}'
+        '.wrap{max-width:1100px;margin:0 auto}'
+        'h1{color:#7c3aed;margin:0 0 4px}.sub{color:#64748b;font-size:13px;margin-bottom:18px}'
+        '.kpi{background:#fff;border-radius:12px;padding:14px 18px;margin-bottom:16px;box-shadow:0 2px 10px rgba(124,58,237,.08);font-size:14px}'
+        '.kpi b{color:#16a34a;font-size:20px}'
+        '.conteo{background:#fff;border-radius:12px;padding:14px 16px;margin-bottom:14px;box-shadow:0 2px 10px rgba(76,29,149,.07)}'
+        '.ch{display:flex;justify-content:space-between;font-size:14px;margin-bottom:3px}'
+        '.cm{font-size:11.5px;color:#94a3b8;margin-bottom:8px}'
+        'table{width:100%;border-collapse:collapse;font-size:12px}'
+        'th{background:#f5f3ff;color:#6d28d9;text-align:left;padding:7px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.3px}'
+        'td{padding:6px 8px;border-bottom:1px solid #f1f5f9}'
+        '.mono{font-family:ui-monospace,monospace;color:#1e40af}.num{text-align:right;font-variant-numeric:tabular-nums}.c{text-align:center}.muted{color:#94a3b8}'
+        'a.bk{display:inline-block;background:#fff;color:#7c3aed;text-decoration:none;font-weight:700;font-size:13px;padding:8px 14px;border-radius:9px;border:1px solid #e9d5ff;margin-bottom:12px}'
+        '</style></head><body><div class="wrap">'
+        '<a class="bk" href="/inventarios">&larr; Volver</a>'
+        '<h1>🛟 Rescate de Conteo Cíclico</h1>'
+        '<div class="sub">Todos los conteos de los últimos ' + str(dias) + ' días, con sus items — sin filtros de fecha/semana/estado. '
+        'Esto demuestra que lo ingresado NO se perdió. (cambia ?dias=N en la URL)</div>'
+        '<div class="kpi">📦 <b>' + str(len(conteos)) + '</b> conteos · <b>' + str(tot_items) + '</b> items registrados en los últimos ' + str(dias) + ' días.</div>'
+        + cuerpo + '</div></body></html>')
+    return Response(html, mimetype='text/html')
+
 @bp.route('/api/admin/mee/diag', methods=['GET'])
 def admin_mee_diag():
     """Diagnóstico completo de maestro_mee · detecta inconsistencias.
