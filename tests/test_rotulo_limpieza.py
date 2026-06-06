@@ -145,6 +145,25 @@ def test_rotulo_pdf_renderiza_formato_f02(admin_client, app):
     assert "Crema X" in body
 
 
+def test_lista_rotulos_incluye_7_areas_oficiales(admin_client, app):
+    r = admin_client.get("/api/planta/rotulos-limpieza")
+    assert r.status_code == 200
+    d = r.get_json()
+    assert d["ok"] is True
+    nombres = {a["nombre"] for a in d["areas"]}
+    codigos = {a["codigo"] for a in d["areas"]}
+    # Las 7 oficiales (mig 224)
+    assert "Fabricación 1" in nombres
+    assert "Fabricación y Envasado 2" in nombres
+    assert "Fabricación y Envasado 3" in nombres
+    assert "Envasado 1" in nombres
+    assert "Envasado 2" in nombres
+    assert "Dispensación" in nombres
+    assert "Acondicionamiento" in nombres
+    # Sin duplicados FAB* (desactivados)
+    assert not (codigos & {"FAB1", "FAB2", "FAB3", "FAB_FLOAT"})
+
+
 def test_usuario_no_planta_no_puede_realizar(logged_client, app):
     # valentina (comercial) no es planta → 403
     area_id = _area_sucia(app, 'PROD1')

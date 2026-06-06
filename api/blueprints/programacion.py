@@ -3314,7 +3314,7 @@ _ESTADO_ROTULO = {
 # Las salas legacy de programación (PROD1..PROD4) no comparten código con el
 # catálogo de equipos (FAB1/FAB2/FAB3/ENV2). Alias para listar sus equipos.
 _SALA_EQUIPO_ALIAS = {
-    'PROD1': 'FAB1', 'PROD2': 'FAB2', 'PROD3': 'FAB3', 'PROD4': 'ENV2',
+    'PROD1': 'FAB1', 'PROD2': 'FAB2', 'PROD3': 'FAB3',
 }
 
 
@@ -3455,6 +3455,35 @@ def planta_rotulo_limpieza_get(area_id):
         'sanitizantes_sugeridos': ['Alcohol 70%', 'Amonio Cuaternario', 'Hipoclorito 200ppm'],
         'detergentes_sugeridos': ['Detergente Neutro Industrial', 'Desengrasante alcalino'],
     })
+
+
+@bp.route('/api/planta/rotulos-limpieza', methods=['GET'])
+def planta_rotulos_limpieza_lista():
+    """Lista las áreas limpiables (las 7 oficiales: las de producción + Dispensación
+    + Acondicionamiento) con su estado actual · para la sub-pestaña de rótulos."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute(
+        """SELECT id, codigo, nombre, COALESCE(estado,'libre'), orden
+           FROM areas_planta
+           WHERE activo=1 AND (tipo='produccion' OR codigo IN ('DISP','ACOND'))
+           ORDER BY orden, codigo"""
+    ).fetchall()
+    areas = []
+    for r in rows:
+        aid, codigo, nombre, estado = r[0], r[1], r[2], r[3]
+        prod = c.execute(
+            """SELECT producto FROM produccion_programada
+               WHERE area_id=? AND COALESCE(estado,'programado') NOT IN ('completado','cancelado')
+               ORDER BY (inicio_real_at IS NULL), fecha_programada ASC LIMIT 1""",
+            (aid,)).fetchone()
+        areas.append({
+            'id': aid, 'codigo': codigo, 'nombre': nombre, 'estado': estado,
+            'estado_rotulo': _ESTADO_ROTULO.get(estado, estado),
+            'producto': (prod[0] if prod else ''),
+        })
+    return jsonify({'ok': True, 'areas': areas})
 
 
 @bp.route('/api/planta/rotulo-limpieza/<int:area_id>/realizar', methods=['POST'])

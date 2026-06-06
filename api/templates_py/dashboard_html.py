@@ -19449,17 +19449,17 @@ async function ckMarcar(itemId, estado){
     if(!box) return;
     box.innerHTML='Cargando…';
     try{
-      var r=await fetch('/api/planta/estado-salas-vivo',{credentials:'same-origin'});
+      var r=await fetch('/api/planta/rotulos-limpieza',{credentials:'same-origin'});
       var d=await r.json();
       if(!r.ok) throw new Error(d.error||'HTTP '+r.status);
-      var salas=d.salas||[];
-      if(!salas.length){ box.innerHTML='<div style="color:#64748b">No hay salas configuradas.</div>'; return; }
+      var salas=d.areas||[];
+      if(!salas.length){ box.innerHTML='<div style="color:#64748b">No hay áreas configuradas.</div>'; return; }
       var cols={'libre':['#15803d','🟢 LIMPIO'],'ocupada':['#dc2626','🔴 EN USO'],'sucia':['#f59e0b','🟡 SUCIO'],'limpiando':['#2563eb','🔵 EN LIMPIEZA']};
       box.innerHTML=salas.map(function(s){
         var c=cols[s.estado]||['#64748b',(s.estado||'').toUpperCase()];
         var h='<div style="border:2px solid '+c[0]+';border-radius:10px;padding:12px;background:#fff">';
-        h+='<div style="display:flex;justify-content:space-between;align-items:center;gap:6px"><b style="font-size:13px">'+escapeHtml(s.codigo)+' · '+escapeHtml((s.nombre||'').substring(0,18))+'</b><span style="background:'+c[0]+';color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;white-space:nowrap">'+c[1]+'</span></div>';
-        if(s.produccion && s.produccion.producto) h+='<div style="font-size:11px;color:#64748b;margin-top:6px">🏭 '+escapeHtml(s.produccion.producto.substring(0,32))+'</div>';
+        h+='<div style="display:flex;justify-content:space-between;align-items:center;gap:6px"><b style="font-size:13px">'+escapeHtml(s.nombre||s.codigo)+'</b><span style="background:'+c[0]+';color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;white-space:nowrap">'+c[1]+'</span></div>';
+        if(s.producto) h+='<div style="font-size:11px;color:#64748b;margin-top:6px">🏭 '+escapeHtml(s.producto.substring(0,32))+'</div>';
         h+='<button onclick="abrirRotulo('+s.id+')" style="margin-top:10px;width:100%;padding:8px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🏷️ Abrir rótulo de limpieza</button>';
         h+='</div>';
         return h;

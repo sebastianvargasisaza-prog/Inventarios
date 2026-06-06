@@ -312,6 +312,28 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (224, "areas_planta · consolidar a las 7 áreas oficiales (Sebastián 6-jun-2026) · elimina duplicados FAB*/PROD* · renombra · DISP/ACOND visibles no-fabricables", [
+        # AS-IS: convivían PROD1/2/3 (legacy, con historial produccion_programada.area_id)
+        # y FAB1/2/3 (nuevas, solo para equipos) → el mapa mostraba "Fabricación 1/2/3"
+        # DUPLICADO. Las 7 oficiales según Sebastián:
+        #   Fabricación 1 · Fabricación y Envasado 2 · Fabricación y Envasado 3 ·
+        #   Envasado 1 · Envasado 2 · Dispensación · Acondicionamiento.
+        # Mantenemos los códigos PROD*/ENV*/DISP/ACOND (cargan el historial), y
+        # DESACTIVAMOS los duplicados FAB1/FAB2/FAB3 + FAB_FLOAT. Los equipos siguen
+        # OK por el puente PROD→FAB del rótulo (_SALA_EQUIPO_ALIAS).
+        "UPDATE areas_planta SET nombre='Fabricación 1', puede_producir=1, puede_envasar=0, orden=1, tipo='produccion', requiere_limpieza_profunda=1, activo=1 WHERE codigo='PROD1'",
+        "UPDATE areas_planta SET nombre='Fabricación y Envasado 2', puede_producir=1, puede_envasar=1, orden=2, tipo='produccion', requiere_limpieza_profunda=1, activo=1 WHERE codigo='PROD2'",
+        "UPDATE areas_planta SET nombre='Fabricación y Envasado 3', puede_producir=1, puede_envasar=1, orden=3, tipo='produccion', requiere_limpieza_profunda=1, activo=1 WHERE codigo='PROD3'",
+        "UPDATE areas_planta SET nombre='Envasado 1', puede_producir=0, puede_envasar=1, orden=4, tipo='produccion', requiere_limpieza_profunda=1, activo=1 WHERE codigo='ENV1'",
+        "UPDATE areas_planta SET nombre='Envasado 2', puede_producir=0, puede_envasar=1, orden=5, tipo='produccion', requiere_limpieza_profunda=1, activo=1 WHERE codigo='ENV2'",
+        # Dispensación y Acondicionamiento: visibles (mapa + rótulos de limpieza) pero
+        # tipo='apoyo_asignable' → el auto-asignador de FABRICACIÓN NO las usa.
+        "UPDATE areas_planta SET nombre='Dispensación', orden=6, tipo='apoyo_asignable', requiere_limpieza_profunda=1, activo=1 WHERE codigo='DISP'",
+        "UPDATE areas_planta SET nombre='Acondicionamiento', orden=7, tipo='apoyo_asignable', requiere_limpieza_profunda=1, activo=1 WHERE codigo='ACOND'",
+        # Desactivar duplicados (no romper FKs: solo activo=0).
+        "UPDATE areas_planta SET activo=0 WHERE codigo IN ('FAB1','FAB2','FAB3','FAB_FLOAT')",
+    ]),
+
     (223, "rotulos_limpieza · rótulo virtual PRD-PRO-002-F02 (Estado de Limpieza de Áreas/Equipos) · snapshot inmutable Part 11 · fluye con producción · 6-jun-2026", [
         # Rótulo virtual e interactivo de limpieza de áreas/equipos (formato
         # PRD-PRO-002-F02 v02). El ESTADO físico (Limpio/En uso/Sucio) NO vive
