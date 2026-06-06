@@ -25,6 +25,14 @@ jobs:
             requirements.txt
             requirements-dev.txt
 
+      # Node para el guardián de JS de plantillas (test_template_js_valido.py):
+      # node --check sobre el JS inline renderizado → atrapa errores de sintaxis
+      # (incl. \n/\' crudos que rompen una cadena) antes de que lleguen al navegador.
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip

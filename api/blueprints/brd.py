@@ -4537,7 +4537,7 @@ tbody tr:hover{background:#faf5ff}
 <div style="height:14px"></div>
 <div class="card" id="head">Cargando…</div>
 <div class="card pad" id="pasos-sec"><h2>📖 Instrucción de Manufactura</h2><div id="pasos"></div></div>
-<div class="card pad"><h2>⚖️ Pesaje de Materias Primas</h2><div id="pesaje"></div></div>
+<div class="card pad"><h2>⚖️ Dispensado de Materias Primas</h2><div id="pesaje"></div></div>
 </div>
 <div class="cxmodal" id="cxmodal" onclick="if(event.target===this)cerrarModal()">
   <div class="cxbox">
@@ -4573,6 +4573,58 @@ function estadoBg(e){var s=(e||'').toLowerCase();
   if(s.indexOf('complet')>=0)return '#cffafe';
   return '#fef9c3';}
 function togglePasos(){var s=document.getElementById('pasos-sec');s.style.display=s.style.display==='none'?'block':'none';if(s.style.display==='block')s.scrollIntoView({behavior:'smooth'});}
+// 3. Dispensado · botón "✏️" → registrar la cantidad PESADA de una MP (MyBatch)
+async function registrarPesaje(idx){
+  var it=(window._pesajeSheet||[])[idx]; if(!it) return;
+  var mid=it.material_id;
+  var def = (it.cant_pesada_g!=null? it.cant_pesada_g : (it.cant_a_pesar_g!=null? it.cant_a_pesar_g : ''));
+  var v=prompt('Cantidad PESADA de '+(it.material_nombre||mid)+' (g) · a pesar: '+(it.cant_a_pesar_g!=null?it.cant_a_pesar_g:'—')+' g', def);
+  if(v===null) return;
+  var real=parseFloat(v);
+  if(isNaN(real)||real<0){alert('Cantidad inválida');return;}
+  var lote=prompt('N° de lote de la MP pesada:', it.lote&&it.lote!=='—'?it.lote:'')||'';
+  var r=await fetch('/api/brd/ebr/'+EBR_ID+'/pesajes',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({material_id:mid,cantidad_real_g:real,lote_mp:lote})});
+  var d=await r.json();
+  if(!r.ok){
+    if(d&&d.codigo==='FIRMA_REQUERIDA'){alert('🔒 Este pesaje requiere e-firma (el motor EBR está en modo estricto). Regístralo desde el runner de legajos.');}
+    else{alert('Error: '+((d&&d.error)||r.status));}
+    return;
+  }
+  load();
+}
+// 3. Dispensado · botón "i" → detalle del pesaje de una MP (reusa el modal)
+function infoPesaje(idx){
+  var it=(window._pesajeSheet||[])[idx]; if(!it) return;
+  function dpct(){ if(it.cant_a_pesar_g&&it.cant_pesada_g!=null){var dl=(it.cant_pesada_g-it.cant_a_pesar_g)/it.cant_a_pesar_g*100; return dl.toLocaleString('es-CO',{maximumFractionDigits:2})+'%';} return '—';}
+  var rows=''
+    +'<div class="mrow"><div class="mk">Materia Prima</div><div class="mv"><span class="mono">'+esc(it.material_id)+'</span> '+esc(it.material_nombre||'')+'</div></div>'
+    +'<div class="mrow"><div class="mk">% Fórmula</div><div class="mv">'+(it.porcentaje!=null?Number(it.porcentaje).toLocaleString('es-CO',{maximumFractionDigits:3})+'%':'—')+'</div></div>'
+    +'<div class="mrow"><div class="mk">N° Lote</div><div class="mv mono">'+esc(it.lote||'—')+'</div></div>'
+    +'<div class="mrow"><div class="mk">Cant. a pesar</div><div class="mv">'+gfmt(it.cant_a_pesar_g)+'</div></div>'
+    +'<div class="mrow"><div class="mk">Cant. pesada</div><div class="mv">'+(it.cant_pesada_g!=null?gfmt(it.cant_pesada_g):'<span class="st-pend">pendiente</span>')+'</div></div>'
+    +'<div class="mrow"><div class="mk">Desviación</div><div class="mv">'+dpct()+'</div></div>'
+    +'<div class="mrow"><div class="mk">Pesado por</div><div class="mv">'+esc(it.pesado_por||'— sin registrar')+'</div></div>'
+    +'<div class="mrow"><div class="mk">Fecha / Hora</div><div class="mv">'+(it.pesado_at?esc(it.pesado_at.substring(0,16).replace('T',' ')):'—')+'</div></div>';
+  var b=document.getElementById('cxmbody'); if(b) b.innerHTML=rows;
+  var ht=document.querySelector('#cxmodal .cxhead h3'); if(ht) ht.textContent='ℹ️ Detalle del Dispensado';
+  var m=document.getElementById('cxmodal'); if(m) m.style.display='flex';
+}
+// 3. Dispensado · "✓ Verificar Dispensado" → valida completitud + tolerancia
+function verificarDispensado(){
+  var sh=window._pesajeSheet||[];
+  if(!sh.length){alert('Esta orden no tiene fórmula con materias primas.');return;}
+  var pend=sh.filter(function(x){return !x.pesado;});
+  var fuera=sh.filter(function(x){return x.pesado && x.cant_a_pesar_g && x.cant_pesada_g!=null && Math.abs((x.cant_pesada_g-x.cant_a_pesar_g)/x.cant_a_pesar_g*100)>5;});
+  if(pend.length){
+    alert('⚠ Dispensado INCOMPLETO · faltan '+pend.length+' de '+sh.length+' materias primas por pesar:\\n\\n'+pend.slice(0,12).map(function(x){return '· '+(x.material_nombre||x.material_id);}).join('\\n')+(pend.length>12?'\\n…':''));
+    return;
+  }
+  if(fuera.length){
+    alert('⚠ Dispensado completo PERO '+fuera.length+' MP con desviación > 5% (revisar):\\n\\n'+fuera.map(function(x){return '· '+(x.material_nombre||x.material_id)+' ('+((x.cant_pesada_g-x.cant_a_pesar_g)/x.cant_a_pesar_g*100).toFixed(1)+'%)';}).join('\\n'));
+    return;
+  }
+  alert('✓ Dispensado VERIFICADO · las '+sh.length+' materias primas están pesadas y dentro de tolerancia (±5%).');
+}
 // 1. Precauciones · "+ Agregar Equipo" (MyBatch ①)
 async function agregarEquipo(){
   var desc=prompt('Equipo / precaución a registrar:');
@@ -4771,34 +4823,40 @@ async function load(){
     // Pesaje de Materias Primas · HOJA COMPLETA (todas las MP de la fórmula)
     // estilo MyBatch: % · N° Lote (FEFO) · Cant. a pesar · Cant. pesada · Pesado por.
     var sheet=d.pesaje_sheet||[];
+    window._pesajeSheet=sheet;
     if(sheet.length){
       var pend=sheet.filter(function(x){return !x.pesado;}).length;
-      var resumen='<div style="font-size:12px;color:#64748b;margin-bottom:8px">'+sheet.length+' materias primas · '+
-        (sheet.length-pend)+' pesadas · '+pend+' pendientes</div>';
-      document.getElementById('pesaje').innerHTML = resumen+
+      var cab='<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px">'+
+        '<div style="font-size:12px;color:#64748b">'+sheet.length+' materias primas · '+(sheet.length-pend)+' pesadas · '+pend+' pendientes</div>'+
+        '<div style="display:flex;gap:8px">'+
+          (editable?'<button class="b-mini" data-tip="Valida que todas las MP estén pesadas y dentro de tolerancia (±5%)." onclick="verificarDispensado()">✓ Verificar Dispensado</button>':'')+
+          '<a class="b-pdf-sm" href="/brd/dispensado/'+EBR_ID+'" target="_blank" data-tip="Descarga/imprime la hoja de dispensado (registro GMP).">📄 PDF</a>'+
+        '</div>'+
+      '</div>'+
+      '<div style="font-size:12.5px;color:#334155;margin-bottom:8px">Realizar el dispensado de materias primas según las cantidades de la orden y los procedimientos internos.</div>';
+      document.getElementById('pesaje').innerHTML = cab+
         '<table><thead><tr><th>Materia Prima</th><th class="num">%</th><th>N° Lote</th>'+
-        '<th class="num">Cant. a pesar</th><th class="num">Cant. pesada</th><th>Pesado por</th><th></th></tr></thead><tbody>'+
-        sheet.map(function(p){
+        '<th class="num">Cant. a pesar</th><th class="num">Cant. pesada</th><th style="text-align:center">Acciones</th></tr></thead><tbody>'+
+        sheet.map(function(p,i){
           var pesadaCol;
           if(p.pesado){
             var delta = (p.cant_a_pesar_g&&p.cant_pesada_g!=null)?((p.cant_pesada_g-p.cant_a_pesar_g)/p.cant_a_pesar_g*100):null;
             var dcl = (delta!=null&&Math.abs(delta)>5)?'delta-warn':'delta-ok';
-            pesadaCol='<span class="'+dcl+'">'+gfmt(p.cant_pesada_g)+'</span>';
+            pesadaCol='<span class="'+dcl+'">'+gfmt(p.cant_pesada_g)+' ✓</span>';
           } else { pesadaCol='<span style="color:#cbd5e1">pendiente</span>'; }
-          var estado = p.pesado
-            ? '<span style="background:#dcfce7;color:#166534;padding:1px 8px;border-radius:9px;font-size:10px;font-weight:700">✓ pesado</span>'
-            : '<span style="background:#fef9c3;color:#854d0e;padding:1px 8px;border-radius:9px;font-size:10px;font-weight:700">pendiente</span>';
           return '<tr>'+
             '<td><span class="mono">'+esc(p.material_id)+'</span> '+esc(p.material_nombre||'')+'</td>'+
             '<td class="num">'+(p.porcentaje!=null?Number(p.porcentaje).toLocaleString('es-CO',{maximumFractionDigits:3})+'%':'—')+'</td>'+
             '<td class="mono">'+esc(p.lote||'—')+'</td>'+
             '<td class="num">'+gfmt(p.cant_a_pesar_g)+'</td>'+
             '<td class="num">'+pesadaCol+'</td>'+
-            '<td>'+esc(p.pesado_por||'—')+(p.pesado_at?' <span class="muted">'+esc(p.pesado_at.substring(0,16).replace("T"," "))+'</span>':'')+'</td>'+
-            '<td>'+estado+'</td>'+
+            '<td style="text-align:center;white-space:nowrap">'+
+              '<button class="b-i tip-r" data-tip="Detalle del dispensado: %, lote, cant. a pesar/pesada, desviación, quién y cuándo." onclick="infoPesaje('+i+')">i</button> '+
+              (editable?'<button class="b-e tip-r" data-tip="Registrar la cantidad PESADA de esta materia prima." onclick="registrarPesaje('+i+')">✏️</button>':'')+
+            '</td>'+
           '</tr>';
         }).join('')+'</tbody></table>'+
-        '<div class="muted" style="margin-top:8px;font-size:11px">El pesaje real (con firma del operario) se registra en el runner de legajos (Producción → Fabricación → Legajos EBR).</div>';
+        '<div class="muted" style="margin-top:8px;font-size:11px">El pesaje queda con tu usuario y la hora. Con el motor EBR en modo estricto, además exige e-firma (se registra desde el runner de legajos).</div>';
     } else {
       document.getElementById('pesaje').innerHTML='<div class="muted">Esta orden no tiene fórmula con materias primas.</div>';
     }
@@ -4940,6 +4998,116 @@ def despeje_imprimible(ebr_id):
         '<div class="firma"><div class="ln">&nbsp;</div>Aprobó (Calidad)</div>'
         '</div>'
         '</div></body></html>')
+    return Response(html, mimetype='text/html')
+
+
+@bp.route("/brd/dispensado/<int:ebr_id>", methods=["GET"])
+def dispensado_imprimible(ebr_id):
+    """Hoja IMPRIMIBLE del Dispensado de Materias Primas (MyBatch: ícono PDF de la
+    sección 3). Lista todas las MP de la fórmula con %, lote, cant. a pesar y cant.
+    pesada (lo registrado) + firmas. Server-side · Sebastián 6-jun-2026."""
+    if not session.get("compras_user"):
+        return Response('<script>location.href="/login?next=/brd/dispensado/' + str(ebr_id) + '"</script>',
+                        mimetype="text/html")
+    conn = get_db()
+    import html as _h
+    hdr = {}
+    try:
+        row = conn.execute(
+            "SELECT COALESCE(lote,''), COALESCE(numero_op,''), mbr_template_id, "
+            "COALESCE(estado,''), COALESCE(iniciado_at_utc,''), COALESCE(cantidad_objetivo_g,0) "
+            "FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
+        if row:
+            hdr = {'lote': row[0], 'numero_op': row[1], 'mbr': row[2],
+                   'estado': row[3], 'iniciado': row[4], 'obj_g': float(row[5] or 0)}
+    except Exception:
+        hdr = {}
+    producto = ''
+    try:
+        if hdr.get('mbr'):
+            mr = conn.execute("SELECT producto_nombre FROM mbr_templates WHERE id=?", (hdr['mbr'],)).fetchone()
+            producto = (mr[0] if mr else '') or ''
+    except Exception:
+        pass
+    # Recordado (cant. pesada) por material · última fila por material.
+    recorded = {}
+    try:
+        for pr in conn.execute(
+            "SELECT material_id, cantidad_real_g, COALESCE(lote_mp,''), COALESCE(pesado_por,''), "
+            "COALESCE(pesado_at_utc,'') FROM ebr_pesajes WHERE ebr_id=? ORDER BY id", (ebr_id,)).fetchall():
+            recorded[str(pr[0])] = pr  # la última gana
+    except Exception:
+        recorded = {}
+    obj_g = hdr.get('obj_g', 0)
+    filas = []
+    try:
+        fitems = conn.execute(
+            "SELECT material_id, COALESCE(material_nombre,''), COALESCE(porcentaje,0) "
+            "FROM formula_items WHERE producto_nombre=? ORDER BY porcentaje DESC", (producto,)).fetchall()
+        for i, fr in enumerate(fitems):
+            mid = str(fr[0] or '').strip()
+            if not mid:
+                continue
+            pct = float(fr[2] or 0)
+            a_pesar = round(pct / 100.0 * obj_g, 1) if obj_g else 0
+            rec = recorded.get(mid)
+            pesada = ('{:,.1f}'.format(rec[1]) if rec and rec[1] is not None else '')
+            lote = (rec[2] if rec else '') or ''
+            por = (rec[3] if rec else '') or ''
+            filas.append(
+                '<tr><td class="n">' + str(i + 1) + '</td>'
+                '<td><span class="mono">' + _h.escape(mid) + '</span> ' + _h.escape(fr[1] or '') + '</td>'
+                '<td class="c">' + ('{:.3f}'.format(pct)).rstrip('0').rstrip('.') + '%</td>'
+                '<td class="mono">' + _h.escape(lote or '________') + '</td>'
+                '<td class="r">' + ('{:,.1f}'.format(a_pesar)) + ' g</td>'
+                '<td class="r">' + (pesada + ' g' if pesada else '__________') + '</td>'
+                '<td class="c">' + _h.escape(por or '______') + '</td></tr>')
+    except Exception:
+        pass
+    filas_html = ''.join(filas) or '<tr><td colspan="7" style="text-align:center;color:#94a3b8">Sin fórmula con materias primas.</td></tr>'
+    e = _h.escape
+    html = (
+        '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1.0">'
+        '<title>Dispensado · ' + e(hdr.get('numero_op') or str(ebr_id)) + '</title><style>'
+        '*{box-sizing:border-box;font-family:"Segoe UI",Roboto,sans-serif}'
+        'body{margin:0;background:#f1f5f9;color:#0f172a;padding:18px}'
+        '.sheet{max-width:1000px;margin:0 auto;background:#fff;padding:30px 34px;border-radius:8px;box-shadow:0 2px 12px rgba(0,0,0,.08)}'
+        '.top{display:flex;justify-content:space-between;border-bottom:2px solid #0f172a;padding-bottom:10px;margin-bottom:14px}'
+        '.top h1{font-size:18px;margin:0}.top .co{font-size:13px;font-weight:700;color:#334155;text-align:right}'
+        '.meta{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 18px;font-size:12.5px;margin-bottom:14px}'
+        '.meta b{color:#64748b;font-weight:700;display:block;font-size:10.5px;text-transform:uppercase}'
+        'table{width:100%;border-collapse:collapse;font-size:12px}'
+        'th{background:#0f172a;color:#fff;padding:8px;text-align:left;font-size:10.5px;text-transform:uppercase}'
+        'td{padding:7px 8px;border-bottom:1px solid #e2e8f0}'
+        'td.n{text-align:center;color:#94a3b8;width:26px}td.c{text-align:center}td.r{text-align:right;font-variant-numeric:tabular-nums}'
+        '.mono{font-family:ui-monospace,monospace}'
+        '.firmas{display:grid;grid-template-columns:repeat(3,1fr);gap:30px;margin-top:40px;font-size:12px}'
+        '.firma{text-align:center}.firma .ln{border-top:1px solid #0f172a;margin-bottom:5px;padding-top:5px}'
+        '.no-print{text-align:center;margin:16px 0}.btn{background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-weight:700;cursor:pointer}'
+        '@media print{.no-print{display:none}body{background:#fff;padding:0}.sheet{box-shadow:none}}'
+        '</style></head><body>'
+        '<div class="no-print"><button class="btn" onclick="window.print()">🖨 Imprimir / Guardar PDF</button></div>'
+        '<div class="sheet">'
+        '<div class="top"><div><h1>DISPENSADO DE MATERIAS PRIMAS</h1>'
+        '<div style="font-size:11px;color:#64748b;margin-top:3px">Hoja de pesaje · BPM/INVIMA</div></div>'
+        '<div class="co">Espagiria Laboratorio SAS<br><span style="font-weight:400;color:#64748b">ÁNIMUS Lab</span></div></div>'
+        '<div class="meta">'
+        '<div><b>Orden</b>' + e(hdr.get('numero_op') or ('EBR-' + str(ebr_id))) + '</div>'
+        '<div><b>N° de Lote</b>' + e(hdr.get('lote') or '—') + '</div>'
+        '<div><b>Producto</b>' + e(producto or '—') + '</div>'
+        '<div><b>Tamaño de lote</b>' + ('{:,.0f} g'.format(obj_g) if obj_g else '—') + '</div>'
+        '<div><b>Estado</b>' + e(hdr.get('estado') or '—') + '</div>'
+        '<div><b>Fecha</b>' + e((hdr.get('iniciado') or '')[:16].replace('T', ' ') or '—') + '</div>'
+        '</div>'
+        '<table><thead><tr><th>#</th><th>Materia Prima</th><th style="text-align:center">%</th><th>N° Lote</th>'
+        '<th style="text-align:right">Cant. a pesar</th><th style="text-align:right">Cant. pesada</th>'
+        '<th style="text-align:center">Pesó</th></tr></thead><tbody>' + filas_html + '</tbody></table>'
+        '<div class="firmas">'
+        '<div class="firma"><div class="ln">&nbsp;</div>Dispensó (Operario)</div>'
+        '<div class="firma"><div class="ln">&nbsp;</div>Verificó</div>'
+        '<div class="firma"><div class="ln">&nbsp;</div>Revisó (Calidad)</div>'
+        '</div></div></body></html>')
     return Response(html, mimetype='text/html')
 
 
