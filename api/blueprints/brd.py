@@ -1427,105 +1427,132 @@ def brd_timeline_page(ebr_id):
     err = _require_login()
     if err:
         return err
+    # Timeline estilo MyBatch (Sebastián 6-jun-2026) · "Batch Record Bulk Lote N°"
+    # línea de tiempo vertical de NODOS de etapa (no eventos sueltos): Orden de
+    # Producción → Instrucciones de Fabricación (con estado por etapa) → Liberación.
+    # OJO ESCAPES: este HTML va en un string Python '''...''' → NUNCA usar \n/\t
+    # crudos en cadenas JS (Python los volvería saltos de línea reales y romperían
+    # el <script>). Ver memoria feedback_js_escapes_template_python.
     html = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Timeline BR · ''' + str(ebr_id) + '''</title>
 <style>
 *{box-sizing:border-box;font-family:'Segoe UI',Roboto,sans-serif}
-body{margin:0;background:#f1f5f9;padding:18px;color:#0f172a}
-.wrap{max-width:900px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;box-shadow:0 2px 10px rgba(0,0,0,.06)}
-h1{color:#0f766e;margin:0 0 6px}
-.subtitle{color:#64748b;font-size:13px;margin-bottom:20px}
-.header-card{background:#f8fafc;border-radius:8px;padding:14px;margin-bottom:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;font-size:13px}
-.tl{position:relative;padding-left:38px;margin-top:14px}
-.tl::before{content:'';position:absolute;left:14px;top:0;bottom:0;width:2px;background:#cbd5e1}
-.evt{position:relative;margin-bottom:18px;padding:12px 14px;background:#fff;border:1px solid #e2e8f0;border-radius:8px}
-.evt::before{content:'';position:absolute;left:-31px;top:14px;width:18px;height:18px;border-radius:50%;background:#fff;border:3px solid #cbd5e1}
-.evt.ok::before{border-color:#16a34a;background:#dcfce7}
-.evt.warn::before{border-color:#ca8a04;background:#fef3c7}
-.evt.err::before{border-color:#dc2626;background:#fee2e2}
-.evt.info::before{border-color:#0891b2;background:#cffafe}
-.evt .ts{font-size:11px;color:#94a3b8;font-family:monospace}
-.evt .tit{font-weight:700;font-size:14px;color:#0f172a;margin:3px 0}
-.evt .det{font-size:12px;color:#475569;line-height:1.5}
-.badge{display:inline-block;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;margin-left:6px}
-.b-ok{background:#dcfce7;color:#166534}
-.b-warn{background:#fef3c7;color:#78350f}
-.b-err{background:#fee2e2;color:#991b1b}
+body{margin:0;background:#f5f3ff;padding:22px;color:#0f172a}
+.wrap{max-width:880px;margin:0 auto}
+a.back{display:inline-flex;align-items:center;gap:8px;background:#fff;color:#7c3aed;font-size:13px;font-weight:700;text-decoration:none;padding:9px 16px;border-radius:10px;border:1px solid #e9d5ff;box-shadow:0 2px 8px rgba(124,58,237,.10)}
+h1{text-align:center;color:#1e293b;margin:18px 0 2px;font-size:24px}
+.sub{text-align:center;color:#6d28d9;font-weight:600;margin:0 0 24px;font-size:16px}
+.tl{position:relative;padding-left:56px}
+.tl::before{content:'';position:absolute;left:21px;top:8px;bottom:8px;width:3px;background:#fbcfe8}
+.node{position:relative;margin-bottom:26px}
+.node .ico{position:absolute;left:-49px;top:6px;width:42px;height:42px;border-radius:50%;background:#fb923c;color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 3px 10px rgba(251,146,60,.4)}
+.card{background:#fff;border-radius:14px;padding:18px 20px;box-shadow:0 3px 14px rgba(76,29,149,.08)}
+.tag{display:inline-block;background:#fb923c;color:#fff;font-size:11px;font-weight:800;letter-spacing:.4px;padding:4px 12px;border-radius:6px;text-transform:uppercase;margin-bottom:12px}
+.tag.fab{background:#7c2d12}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;font-size:13px}
+.grid .lbl{color:#94a3b8;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.3px}
+.grid .val{color:#1e293b;margin-top:2px;font-weight:600}
+.mono{font-family:ui-monospace,monospace;color:#1e40af}
+.stages{list-style:none;margin:6px 0 0;padding:0}
+.stages li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 4px;border-bottom:1px solid #f1f5f9;font-size:13.5px}
+.stages li:last-child{border-bottom:none}
+.st-badge{font-size:10px;font-weight:800;padding:3px 10px;border-radius:20px;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap}
+.fin{background:#dcfce7;color:#166534}
+.proc{background:#fef9c3;color:#854d0e}
+.pend{background:#f1f5f9;color:#94a3b8}
+.btns{margin-top:14px;display:flex;gap:10px;flex-wrap:wrap}
+.btns a{border:none;border-radius:9px;padding:9px 16px;font-size:12.5px;font-weight:700;cursor:pointer;text-decoration:none;color:#fff}
+.b-ver{background:#fb923c}.b-desc{background:#ef4444}
 </style></head><body>
 <div class="wrap">
-<h1>📜 Timeline del BR</h1>
-<p class="subtitle">Vista cronológica de eventos · INVIMA-ready · genera PDF con Ctrl+P</p>
-<div id="head"></div>
+<a class="back" href="/planta/orden/''' + str(ebr_id) + '''">&larr; Volver a la Orden</a>
+<h1 id="t1">Batch Record</h1>
+<div class="sub" id="t2">Cargando…</div>
 <div class="tl" id="timeline"></div>
 </div>
 <script>
+var EBR_ID = ''' + str(ebr_id) + ''';
+function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
+function dt(s){return s?esc(String(s).substring(0,16).replace('T',' ')):'—';}
+function stBadge(done,partial){
+  if(done) return '<span class="st-badge fin">Finalizado</span>';
+  if(partial) return '<span class="st-badge proc">En proceso</span>';
+  return '<span class="st-badge pend">Pendiente</span>';
+}
 async function load(){
   try{
-    var r = await fetch('/api/brd/ebr/''' + str(ebr_id) + '''/vista-completa');
-    var d = await r.json();
-    if(!r.ok){
-      document.getElementById('timeline').innerHTML = '<div style="color:#dc2626">Error: '+(d.error||r.status)+'</div>';
-      return;
-    }
-    var h = d.header || {};
-    document.getElementById('head').innerHTML =
-      '<div class="header-card">'+
-        '<div><b>Producto</b><br>'+(h.producto||'—')+'</div>'+
-        '<div><b>Lote</b><br><span style="font-family:monospace;color:#dc2626;font-weight:700">'+(h.lote_codigo||'—')+'</span></div>'+
-        '<div><b>Estado</b><br>'+(h.estado||'—')+'</div>'+
-        '<div><b>Operario</b><br>'+(h.operario||'—')+'</div>'+
-        '<div><b>Iniciado</b><br>'+(h.iniciado_at_utc||'').substring(0,16)+'</div>'+
-        '<div><b>Completado</b><br>'+((h.completado_at_utc||'—').substring(0,16))+'</div>'+
-        '<div><b>Progreso</b><br><span style="color:#0891b2;font-weight:700">'+(d.progreso_pasos_pct||0)+'%</span></div>'+
-        '<div><b>IPC OK</b><br>'+(d.ipc_dentro_rango||0)+' / '+(d.ipc_total||0)+'</div>'+
-      '</div>';
-    // Construir eventos cronológicos
-    var eventos = [];
-    if(h.iniciado_at_utc) eventos.push({ts:h.iniciado_at_utc,tipo:'info',tit:'🚀 EBR iniciado',det:'Operario: '+(h.operario||'?')});
-    (d.pesajes||[]).forEach(function(p){
-      var ok = Math.abs(p.delta_pct) <= 3;
-      eventos.push({
-        ts:p.fecha,
-        tipo:ok?'ok':'warn',
-        tit:'⚖ Pesaje: '+p.material_nombre,
-        det:'Esperado: '+p.esperada_g+' g · Real: '+p.real_g+' g · Δ '+p.delta_pct+'%'+(p.lote_mp?' · Lote MP: '+p.lote_mp:'')+(p.operario?' · Op: '+p.operario:'')
-      });
-    });
-    (d.pasos||[]).forEach(function(s){
-      // SEC-FIX · 21-may-2026 · _escBRD aplica luego (al render). Aquí solo data.
-      if(s.iniciado) eventos.push({ts:s.iniciado,tipo:'info',tit:'▶ Paso #'+s.orden+': '+(s.descripcion||'')+' (inicio)',det:'Operario: '+(s.operario||'?')});
-      if(s.completado) eventos.push({ts:s.completado,tipo:'ok',tit:'✓ Paso #'+s.orden+': '+(s.descripcion||'')+' (fin)',det:s.observaciones||'sin notas'});
-    });
-    (d.ipc||[]).forEach(function(i){
-      eventos.push({
-        ts:i.fecha,
-        tipo:i.dentro_rango?'ok':'err',
-        tit:(i.dentro_rango?'✓':'✗')+' IPC: '+i.nombre,
-        det:'Esperado: '+i.esperado+' · Real: '+i.real+(i.observaciones?' · '+i.observaciones:'')
-      });
-    });
-    if(h.completado_at_utc) eventos.push({ts:h.completado_at_utc,tipo:'ok',tit:'🏁 EBR completado',det:'Tiempo total: '+(h.tiempo_total_min||0)+' min'});
-    if(h.liberado_at_utc) eventos.push({ts:h.liberado_at_utc,tipo:'ok',tit:'🔓 LIBERADO QC',det:'Por: '+(h.liberado_por||'?')});
-    if(h.rechazado_at_utc) eventos.push({ts:h.rechazado_at_utc,tipo:'err',tit:'⛔ RECHAZADO',det:h.rechazado_motivo||''});
-    // Sort cronológico
-    eventos.sort(function(a,b){ return (a.ts||'').localeCompare(b.ts||''); });
-    var tl = document.getElementById('timeline');
-    if(!eventos.length){
-      tl.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:30px">Sin eventos registrados todavía</div>';
-      return;
-    }
-    // SEC-FIX · 21-may-2026 · XSS · escapar todos los strings concatenados
-    // Antes: tit/det/operario/observaciones de DB sin escape · XSS stored
-    function _escBRD(s){return String(s||'').replace(/[&<>"\\\\'/]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;',"/":'&#47;'}[c];});}
-    tl.innerHTML = eventos.map(function(e){
-      return '<div class="evt '+_escBRD(e.tipo)+'">'+
-        '<div class="ts">'+_escBRD((e.ts||'').substring(0,16))+'</div>'+
-        '<div class="tit">'+_escBRD(e.tit)+'</div>'+
-        '<div class="det">'+_escBRD(e.det||'')+'</div>'+
-      '</div>';
+    var ctrl=new AbortController();var to=setTimeout(function(){ctrl.abort();},15000);
+    var r;
+    try{ r=await fetch('/api/brd/ebr/'+EBR_ID+'/vista-completa',{credentials:'same-origin',cache:'no-store',signal:ctrl.signal}); }
+    catch(fe){ clearTimeout(to); document.getElementById('t2').textContent='No se pudo cargar (timeout/red).'; return; }
+    clearTimeout(to);
+    if(r.status===401){location.href='/login';return;}
+    var d=await r.json();
+    if(!r.ok){ document.getElementById('t2').textContent='Error: '+esc(d.error||r.status); return; }
+    var h=d.header||{};
+    document.getElementById('t1').textContent='Batch Record Bulk Lote N°: '+(h.lote_codigo||'—');
+    document.getElementById('t2').textContent=h.producto||h.titulo||'—';
+    // Estado de cada etapa (honesto · desde la data real)
+    var prec=d.precauciones||[], chk=d.despeje_checklist||[], sheet=d.pesaje_sheet||[], pasos=d.pasos||[];
+    var estado=(h.estado||'').toLowerCase();
+    var liberado=(estado.indexOf('liber')>=0)||!!h.liberado_at_utc;
+    var completado=liberado||(estado.indexOf('complet')>=0)||!!h.completado_at_utc;
+    var precDone=prec.length>0;
+    var chkDone=chk.length>0 && chk.every(function(x){return x.cumple===1;});
+    var chkPart=chk.some(function(x){return x.cumple!=null;});
+    var sheetDone=sheet.length>0 && sheet.every(function(x){return x.pesado;});
+    var sheetPart=sheet.some(function(x){return x.pesado;});
+    var pasosDone=completado||(pasos.length>0 && pasos.every(function(p){return p.completado_flag;}));
+    var pasosPart=pasos.some(function(p){return p.completado_flag;});
+    // Etapas estilo MyBatch (Instrucciones de Fabricación)
+    var etapas=[
+      {n:'1. Precauciones', done:precDone, part:false},
+      {n:'2. Despeje de Línea - Dispensación', done:chkDone, part:chkPart},
+      {n:'3. Pesaje de Materias Primas', done:sheetDone, part:sheetPart},
+      {n:'4. Fabricación / Mezclado', done:pasosDone, part:pasosPart}
+    ];
+    var etapasHtml=etapas.map(function(e){
+      return '<li><span>'+esc(e.n)+'</span>'+stBadge(e.done,e.part)+'</li>';
     }).join('');
+    // Nodo 1: Orden de Producción
+    var ordenCard=
+      '<div class="node"><div class="ico">📋</div><div class="card">'+
+        '<span class="tag">Orden de Producción</span>'+
+        '<div class="grid">'+
+          '<div><div class="lbl">N° de Lote Bulk</div><div class="val mono">'+esc(h.lote_codigo||'—')+'</div></div>'+
+          '<div><div class="lbl">Tamaño de Lote</div><div class="val">'+(h.lote_size_g!=null?Number(h.lote_size_g).toLocaleString('es-CO')+' g':'—')+'</div></div>'+
+          '<div><div class="lbl">Fecha / Hora</div><div class="val">'+dt(h.iniciado_at_utc)+'</div></div>'+
+          '<div><div class="lbl">Estado Actual</div><div class="val">'+esc(h.estado||'—')+'</div></div>'+
+          '<div><div class="lbl">Elaborado por</div><div class="val">'+esc(h.operario||'—')+'</div></div>'+
+          '<div><div class="lbl">Supervisado por</div><div class="val">'+esc(h.supervisado_por||'—')+'</div></div>'+
+        '</div>'+
+        '<div class="btns">'+
+          '<a class="b-ver" href="/planta/orden/'+EBR_ID+'">Ver</a>'+
+          '<a class="b-desc" href="/api/brd/ebr/'+EBR_ID+'/pdf" target="_blank">📄 Descargar</a>'+
+        '</div>'+
+      '</div></div>';
+    // Nodo 2: Instrucciones de Fabricación
+    var instrCard=
+      '<div class="node"><div class="ico">📖</div><div class="card">'+
+        '<span class="tag fab">Instrucciones de Fabricación</span>'+
+        '<ul class="stages">'+etapasHtml+'</ul>'+
+        '<div class="btns"><a class="b-ver" href="/planta/orden/'+EBR_ID+'">Ver</a></div>'+
+      '</div></div>';
+    // Nodo 3 (si liberado/completado): Liberación QC
+    var libCard='';
+    if(completado){
+      libCard='<div class="node"><div class="ico" style="background:'+(liberado?'#16a34a':'#0891b2')+'">'+(liberado?'🔓':'🏁')+'</div><div class="card">'+
+        '<span class="tag" style="background:'+(liberado?'#16a34a':'#0891b2')+'">'+(liberado?'Liberación de Calidad':'Fabricación Completada')+'</span>'+
+        '<div class="grid">'+
+          '<div><div class="lbl">'+(liberado?'Liberado por':'Completado')+'</div><div class="val">'+esc(liberado?(h.liberado_por_full||h.liberado_por||'—'):dt(h.completado_at_utc))+'</div></div>'+
+          (h.rechazado_at_utc?'<div><div class="lbl">⛔ Rechazado</div><div class="val">'+esc(h.rechazado_motivo||'')+'</div></div>':'')+
+        '</div>'+
+      '</div></div>';
+    }
+    document.getElementById('timeline').innerHTML = ordenCard + instrCard + libCard;
   }catch(e){
-    document.getElementById('timeline').innerHTML = '<div style="color:#dc2626">Error red: '+e.message+'</div>';
+    document.getElementById('t2').textContent='Error: '+esc(e&&e.message||e);
   }
 }
 load();

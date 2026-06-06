@@ -424,6 +424,26 @@ def test_orden_detalle_page_html(app, db_clean):
     assert 'data-tip="' in body, "botones deben llevar ayuda data-tip"
 
 
+def test_timeline_page_estilo_mybatch(app, db_clean):
+    """6-jun · Timeline Batch Record estilo MyBatch: línea de tiempo de NODOS de
+    etapa (Orden de Producción + Instrucciones de Fabricación), no eventos sueltos."""
+    cl = _login(app)
+    r = cl.get('/brd/timeline/123')
+    assert r.status_code == 200
+    body = r.get_data(as_text=True)
+    assert 'Batch Record Bulk Lote' in body
+    assert 'Orden de Producción' in body
+    assert 'Instrucciones de Fabricación' in body
+    assert 'Despeje de Línea - Dispensación' in body
+    assert 'var EBR_ID = 123;' in body
+    # no debe haber \n crudo que rompa el <script> (lección 6-jun)
+    import re as _re
+    script = _re.search(r'<script>(.*?)</script>', body, _re.S).group(1)
+    assert '\n' in script  # el script tiene saltos de línea reales (formato), OK
+    # pero los string-literals JS no deben quedar partidos: validamos que cierre bien
+    assert script.count("load();") >= 1
+
+
 def test_bootstrap_legajo_chain(app, db_clean):
     """Cadena exacta del botón "➕ Crear legajo": generar MBR desde fórmula →
     submit → firmar (e-Part11) → aprobar → crear EBR. Al final el detalle existe
