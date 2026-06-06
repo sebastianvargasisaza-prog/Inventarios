@@ -1869,20 +1869,25 @@ def ebr_vista_completa(ebr_id):
     except Exception:
         out['despeje_checklist'] = []
         out['despeje_checklist_fab'] = []
-    # 3. Pasos
+    # 3. Pasos (Fabricación/Mezcla) · FIX 6-jun: la tabla real es
+    # ebr_pasos_ejecutados (no 'ebr_pasos', que no existe → la sección 5 salía
+    # siempre vacía). Realizado por = operario_username; Verificado por = qc_username.
     try:
         rows = conn.execute(
-            """SELECT orden, descripcion, COALESCE(tiempo_estimado_min,0),
+            """SELECT orden, descripcion, COALESCE(estado,''),
                       COALESCE(iniciado_at_utc,''), COALESCE(completado_at_utc,''),
-                      COALESCE(operario,''), COALESCE(observaciones,'')
-               FROM ebr_pasos WHERE ebr_id=? ORDER BY orden""",
+                      COALESCE(operario_username,''), COALESCE(observaciones,''),
+                      COALESCE(qc_username,'')
+               FROM ebr_pasos_ejecutados WHERE ebr_id=? ORDER BY orden""",
             (ebr_id,),
         ).fetchall()
         out['pasos'] = [{
-            'orden': r[0], 'descripcion': r[1],
-            'tiempo_estimado_min': r[2],
+            'orden': r[0], 'descripcion': r[1], 'estado': r[2],
             'iniciado': r[3], 'completado': r[4],
             'operario': r[5], 'observaciones': r[6],
+            'verificado_por': r[7],
+            'realizado_por_full': _persona(r[5]),
+            'verificado_por_full': _persona(r[7]),
             'completado_flag': bool(r[4]),
         } for r in rows]
     except Exception:
@@ -4703,6 +4708,36 @@ function verificarDispensado(){
   }
   alert('✓ Dispensado VERIFICADO · las '+sh.length+' materias primas están pesadas y dentro de tolerancia (±5%).');
 }
+// 5. Fabricación/Mezcla · botón "i" → detalle del paso (reusa el modal)
+function infoPaso(i){
+  var p=(window._pasos||[])[i]; if(!p) return;
+  function fdt(s){return s?esc(s.substring(0,16).replace('T',' ')):'';}
+  var realizado = p.completado_flag ? (esc(p.realizado_por_full||p.operario||'—')+(p.completado?' · '+fdt(p.completado):'')) : '<span class="st-pend">— pendiente</span>';
+  var verificado = (p.verificado_por&&p.verificado_por.trim()) ? esc(p.verificado_por_full||p.verificado_por) : '<span class="st-pend">pendiente de verificación (Calidad)</span>';
+  var rows=''
+    +'<div class="mrow"><div class="mk">Paso</div><div class="mv"><b>'+esc(p.orden)+'</b></div></div>'
+    +'<div class="mrow"><div class="mk">Actividad</div><div class="mv">'+esc(p.descripcion||'')+'</div></div>'
+    +'<div class="mrow"><div class="mk">Realizado por</div><div class="mv">'+realizado+'</div></div>'
+    +'<div class="mrow"><div class="mk">Verificado por</div><div class="mv">'+verificado+'</div></div>'
+    +(p.observaciones?'<div class="mrow"><div class="mk">Observación / Resultado</div><div class="mv">'+esc(p.observaciones)+'</div></div>':'');
+  var b=document.getElementById('cxmbody'); if(b) b.innerHTML=rows;
+  var ht=document.querySelector('#cxmodal .cxhead h3'); if(ht) ht.textContent='ℹ️ Detalle del Paso';
+  var m=document.getElementById('cxmodal'); if(m) m.style.display='flex';
+}
+// 5. Fabricación/Mezcla · botón "✏️" → registrar/completar el paso
+async function completarPaso(i){
+  var p=(window._pasos||[])[i]; if(!p) return;
+  var obs=prompt('Resultado / observación del paso '+p.orden+':', p.observaciones||'');
+  if(obs===null) return;
+  var r=await fetch('/api/brd/ebr/'+EBR_ID+'/pasos/'+p.orden+'/completar',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({observaciones:obs})});
+  var d=await r.json();
+  if(!r.ok){
+    if(d&&(''+(d.error||'')).indexOf('e-signature')>=0){alert('🔒 Este paso requiere e-firma (motor EBR estricto). Regístralo desde el runner de legajos.');}
+    else{alert('Error: '+((d&&d.error)||r.status));}
+    return;
+  }
+  load();
+}
 // 1. Precauciones · "+ Agregar Equipo" (MyBatch ①)
 async function agregarEquipo(){
   var desc=prompt('Equipo / precaución a registrar:');
@@ -4937,16 +4972,26 @@ async function load(){
     // Ajustes de materias primas (MyBatch · subsección entre dispensado y despeje fab)
     var ajustesHtml='<h3 style="font-size:15px;color:#7c3aed;margin:18px 0 6px">Ajustes</h3>'+
       '<div class="muted" style="margin-bottom:14px;font-size:13px">Sin registro de ajustes de materias primas.</div>';
-    // 5. Fabricación / Mezclado (pasos del proceso)
+    // 5. Fabricación / Mezclado · ACTIVIDAD / Realizado por / Verificado por / Acciones
+    // (MyBatch) · los pasos vienen del MBR del producto (mbr_pasos → ebr_pasos_ejecutados).
     var pasos=d.pasos||[];
+    window._pasos=pasos;
     var pasosHtml='<h3 style="font-size:15px;color:#7c3aed;margin:18px 0 6px">5. Fabricación / Mezclado</h3>'+
+      '<div style="font-size:13px;color:#334155;margin-bottom:8px">Realizar las siguientes actividades de acuerdo al orden establecido.</div>'+
       (pasos.length
-      ? '<table><thead><tr><th>#</th><th>Descripción</th><th>Estado</th><th>Operario</th><th>Completado</th></tr></thead><tbody>'+
-        pasos.map(function(p){return '<tr><td class="mono">'+esc(p.orden)+'</td><td>'+esc(p.descripcion)+'</td>'+
-          '<td>'+(p.completado_flag?'<span style="color:#166534;font-weight:700">✓ hecho</span>':'<span class="muted">pendiente</span>')+'</td>'+
-          '<td>'+esc(p.operario||'—')+'</td><td class="muted">'+esc((p.completado||'—').substring(0,16).replace("T"," "))+'</td></tr>';}).join('')+
-        '</tbody></table>'
-      : '<div class="muted">Sin pasos registrados.</div>');
+      ? '<table><thead><tr><th>Actividad</th><th>Realizado por</th><th>Verificado por</th><th style="text-align:center">Acciones</th></tr></thead><tbody>'+
+        pasos.map(function(p,i){
+          var realizado = p.completado_flag ? (esc(p.realizado_por_full||p.operario||'—')+(p.completado?' <span class="muted">'+esc(p.completado.substring(0,16).replace("T"," "))+'</span>':'')) : '<span class="muted">pendiente</span>';
+          var verificado = (p.verificado_por&&p.verificado_por.trim()) ? esc(p.verificado_por_full||p.verificado_por) : '<span class="muted">—</span>';
+          return '<tr><td style="font-size:12.5px"><b>Paso '+esc(p.orden)+'.</b> '+esc(p.descripcion)+'</td>'+
+            '<td style="font-size:11.5px">'+realizado+'</td>'+
+            '<td style="font-size:11.5px">'+verificado+'</td>'+
+            '<td style="text-align:center;white-space:nowrap">'+
+              '<button class="b-i tip-r" data-tip="Detalles del paso: actividad, realizado por y verificado por." onclick="infoPaso('+i+')">i</button> '+
+              (editable?'<button class="b-e tip-r" data-tip="Registrar / corregir este paso (queda con tu usuario y la hora)." onclick="completarPaso('+i+')">✏️</button>':'')+
+            '</td></tr>';
+        }).join('')+'</tbody></table>'
+      : '<div class="muted">Sin pasos registrados · los pasos de fabricación se definen en el MBR del producto y se copian al crear el legajo.</div>');
     document.getElementById('pasos').innerHTML = manuf + precHtml + despHtml + dispHtml + ajustesHtml + despFabHtml + pasosHtml;
   }catch(e){document.getElementById('head').innerHTML='<span style="color:#b91c1c">Error red: '+esc(e.message)+'</span>';}
 }

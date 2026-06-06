@@ -375,6 +375,26 @@ def test_orden_detalle_tiene_despeje_fabricacion(app, db_clean):
     assert 'Despeje de Línea - ' in body  # título base (se concatena con la etapa)
 
 
+def test_seccion5_pasos_lee_ebr_pasos_ejecutados(app, db_clean):
+    """6-jun · FIX: la sección 5 (Fabricación/Mezcla) leía 'ebr_pasos' (tabla
+    inexistente) → salía vacía. Ahora lee ebr_pasos_ejecutados con
+    Realizado/Verificado por."""
+    ebr = _crear_ebr_iniciado('L-PASOS5', 'OP-2026-5500', 'PROD PASOS5')
+    c = _conn()
+    mp = c.execute("SELECT id FROM mbr_pasos WHERE mbr_template_id=(SELECT mbr_template_id FROM ebr_ejecuciones WHERE id=?) LIMIT 1", (ebr,)).fetchone()
+    mpid = mp[0] if mp else 1
+    c.execute("INSERT INTO ebr_pasos_ejecutados (ebr_id,mbr_paso_id,orden,descripcion,estado,operario_username,completado_at_utc,qc_username) "
+              "VALUES (?,?,1,'Cargar 53g de agua a 20-25°C','completado','luis','2026-06-06 10:00','laura')", (ebr, mpid))
+    c.commit(); c.close()
+    cl = _login(app)
+    d = cl.get(f'/api/brd/ebr/{ebr}/vista-completa').get_json()
+    pasos = d.get('pasos') or []
+    assert any('Cargar 53g' in (p['descripcion'] or '') for p in pasos), 'sección 5 debe leer ebr_pasos_ejecutados'
+    p0 = [p for p in pasos if p['orden'] == 1][0]
+    assert p0['completado_flag'] and p0['operario'] == 'luis'
+    assert p0['verificado_por'] == 'laura'
+
+
 def _crear_ebr_iniciado(lote, numop, prod='PROD ROLE TEST'):
     c = _conn()
     c.execute("INSERT INTO mbr_templates (producto_nombre,version,estado,lote_size_g,titulo,creado_por,creado_at_utc) VALUES (?,1,'draft',1000,'t','sebastian','2026-06-06')", (prod,))
