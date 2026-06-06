@@ -769,7 +769,13 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
           <div class="form-group"><label>Posici&#243;n</label><input type="text" id="nmp-ing-pos" placeholder="Ej: B-2"></div>
           <div class="form-group"><label>Precio por kg (COP)</label><input type="number" id="nmp-ing-precio-kg" placeholder="Ej: 45000" step="0.01" min="0"></div>
         </div>
-        <small style="color:#666;font-size:0.78em;display:block;margin-top:6px;font-style:italic;">Si llenas cantidad &gt; 0, se crea la MP <b>y</b> se registra el ingreso en una sola acción.</small>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:10px;padding:9px 12px;background:#fff3e0;border-radius:6px;border:1px solid #ffe0b2;">
+          <input type="checkbox" id="nmp-ing-cuarentena" style="width:18px;height:18px;">
+          <label for="nmp-ing-cuarentena" style="margin:0;cursor:pointer;font-weight:600;color:#e65100;font-size:0.9em;">
+            &#128274; Ingresar en CUARENTENA (pendiente aprobaci&#243;n de Calidad)
+          </label>
+        </div>
+        <small style="color:#666;font-size:0.78em;display:block;margin-top:6px;font-style:italic;">Si llenas cantidad &gt; 0, se crea la MP <b>y</b> se registra el ingreso en una sola acción. Marca cuarentena si va al estante de cuarentena esperando que Calidad lo libere.</small>
       </div>
       <div style="display:flex;gap:10px;margin-top:12px;">
         <button onclick="crearNuevaMP()" style="background:#1b5e20;">&#10003; Crear en Catalogo (+ ingreso si hay cantidad)</button>
@@ -6732,6 +6738,7 @@ async function crearNuevaMP(){
   var ingEst = ((document.getElementById('nmp-ing-est')||{}).value||'').trim();
   var ingPos = ((document.getElementById('nmp-ing-pos')||{}).value||'').trim();
   var ingPrecioKg = parseFloat((document.getElementById('nmp-ing-precio-kg')||{}).value)||0;
+  var ingCuar = !!((document.getElementById('nmp-ing-cuarentena')||{}).checked);
 
   var msgEl = document.getElementById('nmp-msg');
   msgEl.innerHTML = '<div style="color:#666">⏳ Creando...</div>';
@@ -6758,27 +6765,34 @@ async function crearNuevaMP(){
         var provPrefix = (data.proveedor||'AUTO').replace(/[^A-Z]/gi,'').slice(0,4).toUpperCase()||'AUTO';
         loteFinal = provPrefix+ymd;
       }
-      var movPayload = {
-        material_id: cod,
-        material_nombre: nombre,
+      // 6-jun-2026: el primer ingreso de MP nueva ahora va por /api/recepcion
+      // (igual que la recepción de MP existente) para soportar CUARENTENA. Si
+      // cuarentena=true → estado_lote=CUARENTENA + notifica a Calidad. Si va a
+      // cuarentena y no se indicó estante, lo dejamos en el estante "CUARENTENA".
+      var estCuar = ingEst || (ingCuar ? 'CUARENTENA' : '');
+      var recPayload = {
+        codigo_mp: cod,
+        nombre_comercial: nombre,
+        nombre_inci: inci,
         cantidad: ingCant,
-        tipo: 'Entrada',
         observaciones: 'Primer ingreso al crear MP en catálogo' + (ingPrecioKg>0 ? ' · $'+ingPrecioKg.toLocaleString('es-CO')+'/kg' : ''),
         lote: loteFinal,
         fecha_vencimiento: ingVence||'',
-        estanteria: ingEst,
+        estanteria: estCuar,
         posicion: ingPos,
         proveedor: data.proveedor||'',
+        precio_kg: ingPrecioKg||0,
+        cuarentena: ingCuar,
         operador: (typeof OPER_ACTUAL !== 'undefined' ? OPER_ACTUAL : '') || ''
       };
-      var rm = await fetch('/api/movimientos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(movPayload)});
+      var rm = await fetch('/api/recepcion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(recPayload)});
       var resm={};try{resm=await rm.json();}catch(e){}
       if(!rm.ok){
         msgEl.innerHTML='<div class="alert-error">MP creada pero el ingreso falló: '+(resm.error||rm.status)+'. Podés reintentar el ingreso desde el form de abajo.</div>';
         var st=document.getElementById('ing-status'); if(st){st.textContent='MP creada · completa el ingreso abajo';st.style.color='#e67e22';}
         return;
       }
-      msgEl.innerHTML='<div class="alert-success">✓ MP <b>'+cod+'</b> creada en catálogo · ingreso registrado: lote <b>'+loteFinal+'</b> con <b>'+ingCant.toLocaleString('es-CO')+' g</b>.</div>';
+      msgEl.innerHTML='<div class="alert-success">✓ MP <b>'+cod+'</b> creada en catálogo · ingreso registrado: lote <b>'+loteFinal+'</b> con <b>'+ingCant.toLocaleString('es-CO')+' g</b>'+(ingCuar?' · <span style="color:#e65100;font-weight:700">🔒 EN CUARENTENA (pendiente Calidad)</span>':'')+'.</div>';
       // Refrescar el stock visible si la pantalla lo permite
       try{ if(typeof loadStock==='function') setTimeout(loadStock, 600); }catch(e){}
       try{ if(typeof cargarHistIngreso==='function') setTimeout(cargarHistIngreso, 600); }catch(e){}
