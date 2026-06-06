@@ -1893,18 +1893,42 @@ def ebr_vista_completa(ebr_id):
     except Exception:
         out['pasos'] = []
     # 4. IPC resultados
+    # 4. Controles en Proceso (IPC) · FIX 6-jun: la tabla real es ipc_resultados +
+    # ipc_specs (no 'ebr_ipc_resultados', inexistente → la sección 6 salía vacía).
+    # Specs por producto (MBR) + resultado por lote. CONTROL/RESULTADO/conforme/
+    # observaciones/Realizado por (Calidad).
     try:
+        mbr_tpl = out['header'].get('mbr_template_id')
         rows = conn.execute(
-            """SELECT nombre, valor_esperado, valor_real, dentro_rango,
-                      observaciones, COALESCE(creado_at_utc,'')
-               FROM ebr_ipc_resultados WHERE ebr_id=? ORDER BY id""",
-            (ebr_id,),
+            """SELECT s.parametro, COALESCE(s.unidad,''), s.valor_min, s.valor_max,
+                      r.valor_medido, COALESCE(r.valor_texto,''), r.conforme,
+                      COALESCE(r.medido_por,''), COALESCE(r.medido_at_utc,''),
+                      COALESCE(r.notas,''), COALESCE(s.obligatorio,1)
+               FROM ipc_specs s
+               LEFT JOIN ipc_resultados r ON r.ipc_spec_id=s.id AND r.ebr_id=?
+               WHERE s.mbr_template_id=? ORDER BY s.id""",
+            (ebr_id, mbr_tpl),
         ).fetchall()
-        out['ipc'] = [{
-            'nombre': r[0], 'esperado': r[1], 'real': r[2],
-            'dentro_rango': bool(r[3]), 'observaciones': r[4],
-            'fecha': r[5],
-        } for r in rows]
+        ipc = []
+        for r in rows:
+            vmin, vmax = r[2], r[3]
+            rango = ''
+            if vmin is not None and vmax is not None:
+                rango = f"{vmin} – {vmax} {r[1]}".strip()
+            elif vmin is not None:
+                rango = f"≥ {vmin} {r[1]}".strip()
+            elif vmax is not None:
+                rango = f"≤ {vmax} {r[1]}".strip()
+            resultado = (f"{r[4]} {r[1]}".strip() if r[4] is not None else (r[5] or ''))
+            ipc.append({
+                'control': r[0], 'unidad': r[1], 'rango': rango,
+                'resultado': resultado,
+                'conforme': (int(r[6]) if r[6] is not None else None),
+                'observaciones': r[9] or 'No aplica',
+                'realizado_por': r[7], 'realizado_por_full': _persona(r[7]),
+                'fecha': r[8], 'obligatorio': bool(r[10]),
+            })
+        out['ipc'] = ipc
     except Exception:
         out['ipc'] = []
     # 5. Despejes (referenciados por lote o produccion_id)
@@ -1939,7 +1963,7 @@ def ebr_vista_completa(ebr_id):
     completados = sum(1 for p in out['pasos'] if p['completado_flag'])
     out['progreso_pasos_pct'] = round((completados / len(out['pasos']) * 100) if out['pasos'] else 0, 1)
     out['pesajes_count'] = len(out['pesajes'])
-    out['ipc_dentro_rango'] = sum(1 for i in out['ipc'] if i['dentro_rango'])
+    out['ipc_dentro_rango'] = sum(1 for i in out['ipc'] if i.get('conforme') == 1)
     out['ipc_total'] = len(out['ipc'])
     return jsonify(out)
 
@@ -4738,6 +4762,23 @@ async function completarPaso(i){
   }
   load();
 }
+// 6. Controles en Proceso · botón "i" → detalle del control (reusa el modal)
+function infoIpc(i){
+  var c=(window._ipc||[])[i]; if(!c) return;
+  function fdt(s){return s?esc(s.substring(0,16).replace('T',' ')):'';}
+  var conf = c.conforme===1?'<span class="st-fin">Cumple ✓</span>':c.conforme===0?'<span class="st-no">No cumple ✗</span>':'<span class="st-pend">pendiente</span>';
+  var realizado = c.realizado_por ? (esc(c.realizado_por_full||c.realizado_por)+(c.fecha?' · '+fdt(c.fecha):'')) : '<span class="st-pend">— sin registrar</span>';
+  var rows=''
+    +'<div class="mrow"><div class="mk">Control</div><div class="mv">'+esc(c.control||'')+'</div></div>'
+    +(c.rango?'<div class="mrow"><div class="mk">Rango / Spec</div><div class="mv">'+esc(c.rango)+'</div></div>':'')
+    +'<div class="mrow"><div class="mk">Resultado</div><div class="mv"><b>'+esc(c.resultado||'pendiente')+'</b></div></div>'
+    +'<div class="mrow"><div class="mk">Conforme</div><div class="mv">'+conf+'</div></div>'
+    +'<div class="mrow"><div class="mk">Observaciones</div><div class="mv">'+esc(c.observaciones||'No aplica')+'</div></div>'
+    +'<div class="mrow"><div class="mk">Realizado por</div><div class="mv">'+realizado+'</div></div>';
+  var b=document.getElementById('cxmbody'); if(b) b.innerHTML=rows;
+  var ht=document.querySelector('#cxmodal .cxhead h3'); if(ht) ht.textContent='ℹ️ Detalle del Control';
+  var m=document.getElementById('cxmodal'); if(m) m.style.display='flex';
+}
 // 1. Precauciones · "+ Agregar Equipo" (MyBatch ①)
 async function agregarEquipo(){
   var desc=prompt('Equipo / precaución a registrar:');
@@ -4992,7 +5033,29 @@ async function load(){
             '</td></tr>';
         }).join('')+'</tbody></table>'
       : '<div class="muted">Sin pasos registrados · los pasos de fabricación se definen en el MBR del producto y se copian al crear el legajo.</div>');
-    document.getElementById('pasos').innerHTML = manuf + precHtml + despHtml + dispHtml + ajustesHtml + despFabHtml + pasosHtml;
+    // 6. Controles en Proceso (IPC) · CONTROL / RESULTADO / OBSERVACIONES / Realizado por
+    var ipc=d.ipc||[];
+    window._ipc=ipc;
+    function cumpleBadge(c){
+      if(c===1) return ' <span style="background:#dcfce7;color:#166534;padding:1px 8px;border-radius:10px;font-size:10px;font-weight:800">CUMPLE</span>';
+      if(c===0) return ' <span style="background:#fee2e2;color:#991b1b;padding:1px 8px;border-radius:10px;font-size:10px;font-weight:800">NO CUMPLE</span>';
+      return '';
+    }
+    var ipcHtml='<h3 style="font-size:15px;color:#7c3aed;margin:18px 0 6px">6. Controles en Proceso</h3>'+
+      '<div style="font-size:13px;color:#334155;margin-bottom:8px">Realizar muestreo y registrar el control en proceso:</div>'+
+      (ipc.length
+      ? '<table><thead><tr><th>Control</th><th>Resultado</th><th>Observaciones</th><th>Realizado por</th><th style="text-align:center">Acciones</th></tr></thead><tbody>'+
+        ipc.map(function(cc,i){
+          var resCol = cc.resultado ? (esc(cc.resultado)+cumpleBadge(cc.conforme)) : '<span class="muted">pendiente</span>';
+          return '<tr><td style="font-size:12.5px">'+esc(cc.control)+(cc.rango?' <span class="muted" style="font-size:10px">('+esc(cc.rango)+')</span>':'')+'</td>'+
+            '<td style="font-size:12.5px">'+resCol+'</td>'+
+            '<td style="font-size:11.5px">'+esc(cc.observaciones||'No aplica')+'</td>'+
+            '<td style="font-size:11.5px">'+(cc.realizado_por?esc(cc.realizado_por_full||cc.realizado_por):'<span class="muted">—</span>')+'</td>'+
+            '<td style="text-align:center"><button class="b-i tip-r" data-tip="Detalle del control: rango, resultado, conforme, quién y cuándo." onclick="infoIpc('+i+')">i</button></td>'+
+          '</tr>';
+        }).join('')+'</tbody></table>'
+      : '<div class="muted">Sin controles en proceso · se definen en el MBR del producto (parámetros como densidad, pH, color…).</div>');
+    document.getElementById('pasos').innerHTML = manuf + precHtml + despHtml + dispHtml + ajustesHtml + despFabHtml + pasosHtml + ipcHtml;
   }catch(e){document.getElementById('head').innerHTML='<span style="color:#b91c1c">Error red: '+esc(e.message)+'</span>';}
 }
 load();

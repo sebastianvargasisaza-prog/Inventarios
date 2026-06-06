@@ -375,6 +375,30 @@ def test_orden_detalle_tiene_despeje_fabricacion(app, db_clean):
     assert 'Despeje de Línea - ' in body  # título base (se concatena con la etapa)
 
 
+def test_seccion6_controles_lee_ipc_specs_resultados(app, db_clean):
+    """6-jun · FIX: la sección 6 (Controles en Proceso) leía 'ebr_ipc_resultados'
+    (tabla inexistente). Ahora lee ipc_specs (MBR) + ipc_resultados (lote)."""
+    c = _conn()
+    c.execute("INSERT INTO mbr_templates (producto_nombre,version,estado,lote_size_g,titulo,creado_por,creado_at_utc) VALUES ('PROD IPC6',1,'draft',1000,'t','sebastian','2026-06-06')")
+    mbr = c.execute("SELECT id FROM mbr_templates WHERE producto_nombre='PROD IPC6'").fetchone()[0]
+    c.execute("INSERT INTO mbr_pasos (mbr_template_id,orden,descripcion,tipo_paso,fase) VALUES (?,1,'Mezclar','mezclado','fabricacion')", (mbr,))
+    # spec se inserta en DRAFT (el trigger bloquea INSERT en MBR aprobado)
+    c.execute("INSERT INTO ipc_specs (mbr_template_id,parametro,unidad,valor_min,valor_max,obligatorio) VALUES (?,'Densidad a 25°C','g/mL',1.04,1.07,1)", (mbr,))
+    spec = c.execute("SELECT id FROM ipc_specs WHERE mbr_template_id=? AND parametro='Densidad a 25°C'", (mbr,)).fetchone()[0]
+    c.execute("UPDATE mbr_templates SET estado='aprobado' WHERE id=?", (mbr,))
+    c.execute("INSERT INTO ebr_ejecuciones (mbr_template_id,mbr_version,lote,numero_op,estado,iniciado_por,iniciado_at_utc,cantidad_objetivo_g,fase) VALUES (?,1,'L-IPC6','OP-2026-6600','iniciado','sebastian','2026-06-06',1000,'fabricacion')", (mbr,))
+    ebr = c.execute("SELECT id FROM ebr_ejecuciones WHERE lote='L-IPC6'").fetchone()[0]
+    c.execute("INSERT INTO ipc_resultados (ebr_id,ipc_spec_id,valor_medido,conforme,medido_por,medido_at_utc) VALUES (?,?,1.056,1,'laura','2026-06-05 11:31')", (ebr, spec))
+    c.commit(); c.close()
+    cl = _login(app)
+    d = cl.get(f'/api/brd/ebr/{ebr}/vista-completa').get_json()
+    ipc = d.get('ipc') or []
+    assert any(x['control'] == 'Densidad a 25°C' for x in ipc), 'sección 6 debe leer ipc_specs+ipc_resultados'
+    dens = [x for x in ipc if x['control'] == 'Densidad a 25°C'][0]
+    assert '1.056' in dens['resultado'] and dens['conforme'] == 1
+    assert dens['realizado_por'] == 'laura'
+
+
 def test_seccion5_pasos_lee_ebr_pasos_ejecutados(app, db_clean):
     """6-jun · FIX: la sección 5 (Fabricación/Mezcla) leía 'ebr_pasos' (tabla
     inexistente) → salía vacía. Ahora lee ebr_pasos_ejecutados con
