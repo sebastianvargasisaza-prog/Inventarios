@@ -4242,6 +4242,10 @@ async function initIngreso(){
   if(typeof restaurarIngresoDraft==='function') restaurarIngresoDraft();
 }
 function ocultarDropMP(){var d=document.getElementById('mp-dropdown');if(d)d.style.display='none';}
+// FIX 6-jun-2026: escapeHtml faltaba en este <script> (estaba escapeHtmlNec en
+// otro scope) → el dropdown del Ingreso MP tiraba "escapeHtml is not defined" y
+// no dejaba ingresar materias primas. Definición global aquí.
+function escapeHtml(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 function seleccionarMP(mp){
   document.getElementById('ing-cod').value=mp.codigo_mp;
   document.getElementById('ing-inci').value=mp.nombre_inci||'';
