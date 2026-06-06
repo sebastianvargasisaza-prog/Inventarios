@@ -4410,6 +4410,30 @@ _ORDEN_DETALLE_HTML = """<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Orden de Producción · EOS</title>
+<script>
+/* Capturador de errores VISIBLE (6-jun-diag) · corre antes que todo. Si el
+   script principal de la página falla al parsear/ejecutar, el error se pinta
+   en pantalla (sin DevTools) para diagnosticar el "Cargando…" eterno. */
+window.addEventListener('error',function(e){
+  try{
+    var m=document.getElementById('cxerr');
+    if(!m){m=document.createElement('div');m.id='cxerr';
+      m.style.cssText='background:#fee2e2;color:#991b1b;padding:12px 16px;margin:8px 0;border-radius:10px;font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap;border:1px solid #fca5a5';
+      (document.body||document.documentElement).insertBefore(m,(document.body||document.documentElement).firstChild);}
+    m.textContent='⚠ ERROR JS (por esto no carga): '+(e.message||(e.error&&e.error.message)||'desconocido')+
+      '\n@ '+((e.filename||'').split('/').pop())+' línea '+e.lineno+':'+e.colno;
+  }catch(_){}
+},true);
+window.addEventListener('unhandledrejection',function(e){
+  try{
+    var m=document.getElementById('cxerr');
+    if(!m){m=document.createElement('div');m.id='cxerr';
+      m.style.cssText='background:#fef3c7;color:#92400e;padding:12px 16px;margin:8px 0;border-radius:10px;font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap;border:1px solid #fcd34d';
+      (document.body||document.documentElement).insertBefore(m,(document.body||document.documentElement).firstChild);}
+    var r=e&&e.reason; m.textContent='⚠ Promesa rechazada: '+((r&&r.message)||r||'?');
+  }catch(_){}
+});
+</script>
 <style>
 /*__TOOLTIP_CSS__*/
 *{box-sizing:border-box}
