@@ -9832,17 +9832,6 @@ function _renderProgramacion(d){
       <div id="salas-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px"></div>
     </div>
 
-    <!-- ── Modal Rótulo de Limpieza · PRD-PRO-002-F02 (Sebastián 6-jun-2026) ── -->
-    <div id="rotmodal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;align-items:flex-start;justify-content:center;overflow:auto;padding:30px 12px">
-      <div style="background:#fff;border-radius:12px;max-width:560px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
-        <div style="display:flex;justify-content:space-between;align-items:center;background:#7c3aed;color:#fff;padding:12px 18px;border-radius:12px 12px 0 0">
-          <b>&#127991;&#65039; Rótulo de Limpieza · PRD-PRO-002-F02</b>
-          <span onclick="cerrarRotulo()" style="cursor:pointer;font-size:22px;font-weight:700;line-height:1">&times;</span>
-        </div>
-        <div id="rot-body" style="padding:18px">Cargando…</div>
-      </div>
-    </div>
-
     <!-- ── Mi Día por Operario · Sebastián 1-may-2026 (Alejandro) ────── -->
     <div id="plan-mi-dia" style="background:#fff;border:2px solid #1d4ed8;border-radius:10px;padding:14px 16px;margin-bottom:16px">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
@@ -13680,6 +13669,7 @@ async function ckMarcar(itemId, estado){
             var current = a.estado===est;
             return '<button onclick="cambiarEstadoSala('+a.id+',\\''+est+'\\')" style="padding:5px 10px;border:1px solid '+(current?'#1a4a7a':'#cbd5e1')+';background:'+(current?'#1a4a7a':'#fff')+';color:'+(current?'#fff':'#475569')+';border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;text-transform:uppercase">'+est+'</button>';
           }).join('') +
+          '<button onclick="abrirRotulo('+a.id+')" style="padding:5px 12px;border:none;background:#7c3aed;color:#fff;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">🏷️ Rótulo de limpieza</button>' +
         '</div>'+
       '</div>'+
       '<div style="font-size:13px;color:#475569;margin-top:8px">'+caps.join(' · ')+'</div>'+
@@ -24358,6 +24348,19 @@ async function ckMarcar(itemId, estado){
        (panel inicial). Antes flotaba en TODOS los módulos como mini
        círculo · molesto. El widget ya está en modulos_html.py para
        que aparezca solo en el hub al ingresar. Aquí queda removido. -->
+
+  <!-- ── Modal Rótulo de Limpieza · PRD-PRO-002-F02 (Sebastián 6-jun-2026) ──
+       A NIVEL RAÍZ (fuera de todo ptab) · un modal dentro de un tab con
+       display:none NO se ve aunque se le active display. -->
+  <div id="rotmodal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;align-items:flex-start;justify-content:center;overflow:auto;padding:30px 12px">
+    <div style="background:#fff;border-radius:12px;max-width:560px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+      <div style="display:flex;justify-content:space-between;align-items:center;background:#7c3aed;color:#fff;padding:12px 18px;border-radius:12px 12px 0 0">
+        <b>&#127991;&#65039; Rótulo de Limpieza · PRD-PRO-002-F02</b>
+        <span onclick="cerrarRotulo()" style="cursor:pointer;font-size:22px;font-weight:700;line-height:1">&times;</span>
+      </div>
+      <div id="rot-body" style="padding:18px">Cargando…</div>
+    </div>
+  </div>
 
 </body>
 </html>
