@@ -4478,7 +4478,7 @@ tbody tr:hover{background:#faf5ff}
 <div class="wrap">
 <a class="back" href="/inventarios"><span class="arw">&larr;</span> Volver a Producción</a>
 <div style="height:14px"></div>
-<div class="card" id="head">Cargando… <span style="font-size:10px;color:#cbd5e1">build eos-6jun-diag</span></div>
+<div class="card" id="head">Cargando…</div>
 <div class="card pad" id="pasos-sec"><h2>📖 Instrucción de Manufactura</h2><div id="pasos"></div></div>
 <div class="card pad"><h2>⚖️ Pesaje de Materias Primas</h2><div id="pesaje"></div></div>
 </div>
@@ -4491,7 +4491,7 @@ var EBR_ID = __EBR_ID__;
   try{
     var s=0;
     var el=document.getElementById('head');
-    if(el) el.innerHTML='⏳ Conectando al servidor… <b id="cxsec">0</b>s <span style="font-size:10px;color:#cbd5e1">build eos-6jun-diag</span>';
+    if(el) el.innerHTML='⏳ Conectando al servidor… <b id="cxsec">0</b>s';
     window.__cxTick=setInterval(function(){s++;var c=document.getElementById('cxsec');if(c)c.textContent=s;},1000);
   }catch(e){}
 })();
@@ -4740,19 +4740,6 @@ def orden_detalle_page(ebr_id):
                     .replace("/*__TOOLTIP_CSS__*/", TOOLTIP_CSS)
                     .replace("__EBR_ID__", str(ebr_id)),
                     mimetype="text/html")
-
-
-@bp.route("/diag-orden-render", methods=["GET"])
-def _diag_orden_render():
-    """TEMPORAL (6-jun-diag) · sirve el HTML EXACTO del detalle de orden SIN auth
-    para curlear los bytes por Cloudflare y detectar truncamiento del <script>
-    final en producción. Borrar tras diagnosticar."""
-    html = (_ORDEN_DETALLE_HTML
-            .replace("/*__TOOLTIP_CSS__*/", TOOLTIP_CSS)
-            .replace("__EBR_ID__", "0"))
-    # marcador único al final para verificar que el cuerpo llega entero
-    html = html.replace("</body></html>", "<!--EOS-END-MARKER-12345--></body></html>")
-    return Response(html, mimetype="text/html")
 
 
 # ──────────────────────────────────────────────────────────────────────────
