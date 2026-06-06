@@ -617,6 +617,11 @@ def _inject_chat_widget(response):
         ct = (response.headers.get('Content-Type') or '').lower()
         if not ct.startswith('text/html'):
             return response
+        # Defensa 6-jun: nunca tocar un cuerpo ya comprimido/encoded (decodificarlo
+        # como texto lo corrompería). Con el cambio de _gzip_response el HTML ya no
+        # llega comprimido acá, pero este guard lo deja a prueba de balas.
+        if response.headers.get('Content-Encoding') or response.direct_passthrough:
+            return response
         body = response.get_data(as_text=True)
         if '</body>' not in body:
             return response
@@ -727,8 +732,16 @@ def _gzip_response(response):
         accept_enc = request.headers.get('Accept-Encoding', '')
         if 'gzip' not in accept_enc.lower():
             return response
-        # Solo HTML / JSON / texto / JS / CSS
+        # Solo JSON / texto / JS / CSS · NO HTML.
         ct = (response.content_type or '').lower()
+        # 6-jun-2026 · NO gzipear text/html en la app. Cloudflare ya comprime el
+        # HTML en el edge; hacerlo también acá causaba doble-manejo de compresión
+        # (Content-Encoding:gzip + proxy) y, combinado con _inject_chat_widget que
+        # corre DESPUÉS del gzip (orden inverso de Flask), podía romper/cortar el
+        # <script> final en el navegador → página "Cargando…" eterna. Dejar el
+        # HTML sin comprimir en origen y que Cloudflare lo gzipee es lo robusto.
+        if 'text/html' in ct:
+            return response
         if not any(t in ct for t in ('text/', 'application/json', 'application/javascript',
                                        'application/xml')):
             return response
