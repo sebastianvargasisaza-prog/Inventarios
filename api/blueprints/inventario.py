@@ -8474,6 +8474,43 @@ def admin_conteo_rescate():
             '<th class="num">Físico</th><th class="num">Dif.</th><th>Observación</th><th>Ajuste</th></tr></thead>'
             '<tbody>' + filas + '</tbody></table></div>')
     cuerpo = ''.join(bloques) if bloques else '<div class="muted" style="padding:30px;text-align:center">No hay conteos en los últimos ' + str(dias) + ' días.</div>'
+    # Correcciones de Bodega MP (audit_log) — evidencia de que lo editado ayer
+    # quedó REGISTRADO y APLICADO (los endpoints PUT actualizan todas las filas
+    # del lote + commit). Acciones: ubicación, fecha venc, código lote, proveedor,
+    # eliminar, y ajustes de inventario.
+    corr_rows = []
+    try:
+        acciones = ('EDITAR_UBICACION_LOTE', 'EDITAR_FECHA_VENC_LOTE', 'EDITAR_CODIGO_LOTE',
+                    'EDITAR_PROVEEDOR_LOTE', 'EDITAR_PROVEEDOR_MP', 'ELIMINAR_LOTE',
+                    'AJUSTE_INVENTARIO', 'AJUSTE_INVENTARIO_CONTEO', 'AJUSTE_INVENTARIO_AUTO')
+        ph = ','.join(['?'] * len(acciones))
+        c.execute(
+            "SELECT fecha, COALESCE(usuario,''), COALESCE(accion,''), COALESCE(detalle,'') "
+            "FROM audit_log WHERE accion IN (" + ph + ") AND fecha >= ? "
+            "ORDER BY fecha DESC LIMIT 400", tuple(acciones) + (corte,))
+        corr_rows = c.fetchall()
+    except Exception:
+        corr_rows = []
+    _accion_label = {
+        'EDITAR_UBICACION_LOTE': '📍 Ubicación', 'EDITAR_FECHA_VENC_LOTE': '📅 Fecha venc.',
+        'EDITAR_CODIGO_LOTE': '🏷 Código lote', 'EDITAR_PROVEEDOR_LOTE': '🏭 Proveedor lote',
+        'EDITAR_PROVEEDOR_MP': '🏭 Proveedor MP', 'ELIMINAR_LOTE': '🗑 Eliminar lote',
+        'AJUSTE_INVENTARIO': '⚖ Ajuste', 'AJUSTE_INVENTARIO_CONTEO': '⚖ Ajuste conteo',
+        'AJUSTE_INVENTARIO_AUTO': '⚖ Ajuste auto'}
+    corr_filas = ''.join(
+        '<tr><td class="mono" style="white-space:nowrap">' + _hh.escape(str(cr[0])[:16]) + '</td>'
+        '<td>' + _hh.escape(str(cr[1])) + '</td>'
+        '<td>' + _hh.escape(_accion_label.get(cr[2], cr[2])) + '</td>'
+        '<td style="font-size:11px;color:#475569">' + _hh.escape(str(cr[3])[:220]) + '</td></tr>'
+        for cr in corr_rows)
+    if not corr_filas:
+        corr_filas = '<tr><td colspan="4" class="muted">— sin correcciones de Bodega MP en este período —</td></tr>'
+    corr_html = (
+        '<h2 style="color:#7c3aed;margin:22px 0 8px;font-size:18px">🛠 Correcciones en Bodega MP (últimos ' + str(dias) + ' días)</h2>'
+        '<div class="sub" style="margin-bottom:10px">Cada corrección de lote (ubicación, fecha, código, proveedor) y cada ajuste de inventario queda auditado aquí. '
+        'Esto confirma que lo editado ayer SE GUARDÓ (los endpoints actualizan todo el lote + commit).</div>'
+        '<div class="conteo"><table><thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Detalle</th></tr></thead>'
+        '<tbody>' + corr_filas + '</tbody></table></div>')
     html = (
         '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1.0">'
@@ -8497,7 +8534,9 @@ def admin_conteo_rescate():
         '<h1>🛟 Rescate de Conteo Cíclico</h1>'
         '<div class="sub">Todos los conteos de los últimos ' + str(dias) + ' días, con sus items — sin filtros de fecha/semana/estado. '
         'Esto demuestra que lo ingresado NO se perdió. (cambia ?dias=N en la URL)</div>'
-        '<div class="kpi">📦 <b>' + str(len(conteos)) + '</b> conteos · <b>' + str(tot_items) + '</b> items registrados en los últimos ' + str(dias) + ' días.</div>'
+        '<div class="kpi">📦 <b>' + str(len(conteos)) + '</b> conteos · <b>' + str(tot_items) + '</b> items registrados · <b>' + str(len(corr_rows)) + '</b> correcciones de Bodega en los últimos ' + str(dias) + ' días.</div>'
+        + corr_html
+        + '<h2 style="color:#7c3aed;margin:22px 0 8px;font-size:18px">📋 Conteos cíclicos</h2>'
         + cuerpo + '</div></body></html>')
     return Response(html, mimetype='text/html')
 
