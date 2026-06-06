@@ -8511,6 +8511,36 @@ def admin_conteo_rescate():
         'Esto confirma que lo editado ayer SE GUARDÓ (los endpoints actualizan todo el lote + commit).</div>'
         '<div class="conteo"><table><thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Detalle</th></tr></thead>'
         '<tbody>' + corr_filas + '</tbody></table></div>')
+    # Lotes ACTUALMENTE en cuarentena (bloqueados para producción) · para que el
+    # equipo vea de un vistazo qué falta liberar (Calidad) durante el cuadre.
+    cuar_rows = []
+    try:
+        c.execute(
+            "SELECT m.material_id, COALESCE(m.material_nombre,''), COALESCE(m.lote,''), "
+            "COALESCE(m.cantidad,0), COALESCE(m.estanteria,''), COALESCE(m.estado_lote,''), "
+            "COALESCE(m.fecha,'') FROM movimientos m "
+            "WHERE UPPER(COALESCE(m.estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA') "
+            "AND m.tipo='Entrada' ORDER BY m.fecha DESC LIMIT 300")
+        cuar_rows = c.fetchall()
+    except Exception:
+        cuar_rows = []
+    cuar_filas = ''.join(
+        '<tr><td class="mono">' + _hh.escape(str(q[0])) + '</td>'
+        '<td>' + _hh.escape(str(q[1])) + '</td>'
+        '<td class="mono">' + _hh.escape(str(q[2])) + '</td>'
+        '<td class="num">' + ('{:,.0f}'.format(q[3])) + '</td>'
+        '<td>' + _hh.escape(str(q[4]) or '—') + '</td>'
+        '<td><span style="color:#b45309;font-weight:700">' + _hh.escape(str(q[5])) + '</span></td>'
+        '<td class="mono" style="font-size:11px">' + _hh.escape(str(q[6])[:16]) + '</td></tr>'
+        for q in cuar_rows)
+    if not cuar_filas:
+        cuar_filas = '<tr><td colspan="7" class="muted">✓ No hay lotes bloqueados en cuarentena.</td></tr>'
+    cuar_html = (
+        '<h2 style="color:#b45309;margin:22px 0 8px;font-size:18px">🔒 Lotes en CUARENTENA (bloqueados para producción)</h2>'
+        '<div class="sub" style="margin-bottom:10px">Estos lotes NO se pueden usar en producción hasta que <b>Calidad los libere</b> '
+        '(Calidad → Cuarentena → Revisar CC). Al liberar, indica la ubicación final y salen del estante CUARENTENA.</div>'
+        '<div class="conteo"><table><thead><tr><th>Código</th><th>Material</th><th>Lote</th><th class="num">Cantidad</th>'
+        '<th>Estante físico</th><th>Estado</th><th>Ingreso</th></tr></thead><tbody>' + cuar_filas + '</tbody></table></div>')
     html = (
         '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1.0">'
@@ -8534,7 +8564,8 @@ def admin_conteo_rescate():
         '<h1>🛟 Rescate de Conteo Cíclico</h1>'
         '<div class="sub">Todos los conteos de los últimos ' + str(dias) + ' días, con sus items — sin filtros de fecha/semana/estado. '
         'Esto demuestra que lo ingresado NO se perdió. (cambia ?dias=N en la URL)</div>'
-        '<div class="kpi">📦 <b>' + str(len(conteos)) + '</b> conteos · <b>' + str(tot_items) + '</b> items registrados · <b>' + str(len(corr_rows)) + '</b> correcciones de Bodega en los últimos ' + str(dias) + ' días.</div>'
+        '<div class="kpi">📦 <b>' + str(len(conteos)) + '</b> conteos · <b>' + str(tot_items) + '</b> items · <b>' + str(len(corr_rows)) + '</b> correcciones Bodega · <b style="color:#b45309">' + str(len(cuar_rows)) + '</b> lotes en cuarentena · últimos ' + str(dias) + ' días.</div>'
+        + cuar_html
         + corr_html
         + '<h2 style="color:#7c3aed;margin:22px 0 8px;font-size:18px">📋 Conteos cíclicos</h2>'
         + cuerpo + '</div></body></html>')
@@ -9467,10 +9498,27 @@ def cc_review():
          1 if d.get('muestra_retencion') else 0, d.get('observaciones',''),
          user, estado_final, request.remote_addr))  # firmante = sesión autenticada (no spoofable por payload)
     c.execute("UPDATE movimientos SET estado_lote=? WHERE id=?", (estado_final, mov_id))
+    # Ubicación final al LIBERAR (Sebastián 6-jun-2026): el flujo real es
+    # "cuando Calidad libera, el lote pasa de la estantería CUARENTENA a su
+    # ubicación final". Si al aprobar se indica estante/posición final, se mueve
+    # el lote (TODAS sus filas de movimientos) → deja de estar en CUARENTENA física.
+    ubic_final_msg = ''
+    est_final = (d.get('estanteria_final') or '').strip()
+    pos_final = (d.get('posicion_final') or '').strip()
+    if estado_final == 'APROBADO' and (est_final or pos_final):
+        _sets, _ps = [], []
+        if est_final:
+            _sets.append('estanteria=?'); _ps.append(est_final[:50])
+        if pos_final:
+            _sets.append('posicion=?'); _ps.append(pos_final[:50])
+        c.execute(
+            "UPDATE movimientos SET " + ', '.join(_sets) + " WHERE material_id=? AND lote=?",
+            _ps + [mov[1], mov[2]])
+        ubic_final_msg = ' · ubicación final: ' + (est_final or '—') + (('/' + pos_final) if pos_final else '')
     c.execute(
         "INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha) VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))",
         (user, 'CC_REVIEW_'+estado_final, 'movimientos', str(mov_id),
-         'Lote '+d.get('lote','')+' AQL:'+resultado_aql+' Solub:'+solubilidad+' Firma:'+user+' e-sign #'+str(sig_id),
+         'Lote '+d.get('lote','')+' AQL:'+resultado_aql+' Solub:'+solubilidad+' Firma:'+user+' e-sign #'+str(sig_id)+ubic_final_msg,
          request.remote_addr))
     if estado_final == 'RECHAZADO':
         # Fix #2 · 21-may-2026 · schema actualizado de solicitudes_compra.
@@ -9529,7 +9577,7 @@ def cc_review():
                 "Auto-creación de solicitud devolución falló: %s", _e
             )
     conn.commit()
-    msgs = {'APROBADO': 'Lote APROBADO. Disponible para produccion.',
+    msgs = {'APROBADO': 'Lote APROBADO. Disponible para produccion.' + ubic_final_msg,
             'RECHAZADO': 'Lote RECHAZADO. Notificacion creada en Compras.',
             'CUARENTENA_EXTENDIDA': 'CUARENTENA EXTENDIDA. Maximo 5 dias para definicion.'}
     return jsonify({'message': msgs.get(estado_final,''), 'estado': estado_final})

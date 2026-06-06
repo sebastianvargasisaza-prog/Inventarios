@@ -11,6 +11,44 @@ por /api/movimientos, que no pone cuarentena).
 import os
 import sqlite3
 
+from .conftest import TEST_PASSWORD, csrf_headers
+
+
+def _firmar(c, *, record_id, meaning='libera'):
+    rc = c.post('/api/sign/challenge', json={'password': TEST_PASSWORD}, headers=csrf_headers())
+    assert rc.status_code == 200, rc.data
+    token = rc.get_json()['token']
+    rs = c.post('/api/sign', json={'record_table': 'movimientos', 'record_id': str(record_id),
+                                   'meaning': meaning, 'challenge_token': token}, headers=csrf_headers())
+    assert rs.status_code == 201, rs.data
+    return rs.get_json()['signature_id']
+
+
+def test_liberar_cc_mueve_a_ubicacion_final(admin_client):
+    """6-jun · Al LIBERAR (cc-review APROBADO) con ubicación final, el lote pasa de
+    la estantería CUARENTENA a su ubicación final (todas las filas) y queda APROBADO."""
+    h = {'Content-Type': 'application/json'}; h.update(csrf_headers())
+    rec = admin_client.post('/api/recepcion', json={
+        'codigo_mp': 'MPLIBQC', 'nombre_comercial': 'Activo Libera', 'nombre_inci': 'LIBACT',
+        'cantidad': 4000, 'lote': 'LLIBQC', 'estanteria': 'CUARENTENA', 'cuarentena': True,
+        'proveedor': 'ProvZ'}, headers=h)
+    assert rec.status_code in (200, 201), rec.data
+    c = sqlite3.connect(os.environ['DB_PATH'])
+    mov_id = c.execute("SELECT id FROM movimientos WHERE material_id='MPLIBQC' AND lote='LLIBQC' AND tipo='Entrada'").fetchone()[0]
+    c.close()
+    sig = _firmar(admin_client, record_id=mov_id, meaning='libera')
+    r = admin_client.post('/api/lotes/cc-review', json={
+        'mov_id': mov_id, 'lote': 'LLIBQC', 'codigo_mp': 'MPLIBQC',
+        'coa_ok': True, 'lote_coincide': True, 'coa_vigente': True, 'ficha_ok': True,
+        'solubilidad': 'CONFORME', 'resultado_aql': 'CONFORME', 'muestra_retencion': True,
+        'estanteria_final': '14', 'posicion_final': 'E', 'signature_id': sig}, headers=h)
+    assert r.status_code == 200, r.data
+    c = sqlite3.connect(os.environ['DB_PATH'])
+    row = c.execute("SELECT estado_lote, estanteria, posicion FROM movimientos WHERE id=?", (mov_id,)).fetchone()
+    c.close()
+    assert row[0] == 'APROBADO', f'debe quedar APROBADO · {row[0]}'
+    assert row[1] == '14' and row[2] == 'E', f'debe moverse a la ubicación final · {row}'
+
 
 def test_recepcion_mp_nueva_en_cuarentena(logged_client):
     """MP nueva ingresada con cuarentena=True → catálogo creado + lote en CUARENTENA."""

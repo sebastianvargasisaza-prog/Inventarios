@@ -1265,9 +1265,19 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
           </label>
         </div>
 
-        <div style="margin-bottom:24px;">
+        <div style="margin-bottom:16px;">
           <label style="display:block;font-weight:600;margin-bottom:6px;font-size:0.9em;color:#555;">Observaciones adicionales</label>
           <textarea id="cc-obs-final" rows="3" placeholder="Condiciones especiales, hallazgos, acciones tomadas..." style="width:100%;padding:10px;border:1px solid #dde;border-radius:8px;font-size:0.88em;resize:vertical;"></textarea>
+        </div>
+
+        <!-- Ubicacion final al LIBERAR (sale de la estanteria CUARENTENA) -->
+        <div style="margin-bottom:20px;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px 14px;">
+          <label style="display:block;font-weight:700;margin-bottom:8px;font-size:0.88em;color:#166534;">&#128205; Ubicaci&#243;n final (al APROBAR sale del estante CUARENTENA)</label>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <input type="text" id="cc-est-final" placeholder="Estanter&#237;a final (ej: 14)" style="padding:9px;border:1px solid #bbf7d0;border-radius:6px;font-size:0.88em;">
+            <input type="text" id="cc-pos-final" placeholder="Posici&#243;n final (ej: E)" style="padding:9px;border:1px solid #bbf7d0;border-radius:6px;font-size:0.88em;">
+          </div>
+          <small style="color:#16a34a;font-size:0.76em;display:block;margin-top:5px;">Opcional. Si lo dejas vac&#237;o, el lote queda liberado pero en su ubicaci&#243;n actual.</small>
         </div>
 
         <!-- Decision final -->
@@ -6863,6 +6873,8 @@ function abrirCCModal(lote){
   });
   document.getElementById('cc-aql-obs').value='';
   document.getElementById('cc-obs-final').value='';
+  var _ef=document.getElementById('cc-est-final'); if(_ef)_ef.value='';
+  var _pf=document.getElementById('cc-pos-final'); if(_pf)_pf.value='';
   document.getElementById('cc-modal-msg').innerHTML='';
   document.getElementById('cc-modal').style.display='flex';
 }
@@ -7375,6 +7387,8 @@ async function enviarRevisionCC(){
     observaciones_aql:aqlObs,
     muestra_retencion:muestraRet,
     observaciones:obsFinal,
+    estanteria_final:((document.getElementById('cc-est-final')||{}).value||'').trim(),
+    posicion_final:((document.getElementById('cc-pos-final')||{}).value||'').trim(),
     firmante:OPER_ACTUAL
   };
   try{
