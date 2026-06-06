@@ -312,6 +312,17 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (222, "ebr_despeje_items.etapa · soporta DOS despejes (dispensación + fabricación) con el mismo checklist · MyBatch sección 2 y 4 · 6-jun-2026", [
+        # MyBatch tiene 2 despejes en el instructivo: '2. Despeje - Dispensación' y
+        # '4. Despeje - Fabricación', mismas 13 verificaciones pero independientes.
+        # Discriminamos por 'etapa'. Las filas existentes quedan como 'dispensacion'.
+        "ALTER TABLE ebr_despeje_items ADD COLUMN etapa TEXT DEFAULT 'dispensacion'",
+        # El UNIQUE viejo (ebr_id,item_idx) impediría tener las 2 etapas → se
+        # reemplaza por (ebr_id,item_idx,etapa).
+        "DROP INDEX IF EXISTS idx_ebrdespitem_uniq",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_ebrdespitem_uniq2 ON ebr_despeje_items(ebr_id, item_idx, etapa)",
+    ]),
+
     (221, "conteo_items · UNIQUE(conteo_id,codigo_mp,lote) anti-duplicado · arregla doble-ajuste por INSERT OR REPLACE sin clave en PG · 6-jun-2026", [
         # Incidente 6-jun: conteo_items NO tenía clave única, y el guardado usa
         # INSERT OR REPLACE → en PostgreSQL el ON CONFLICT caía a la PK 'id' (que

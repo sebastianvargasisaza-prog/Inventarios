@@ -336,6 +336,45 @@ def test_despeje_checklist_13_items_y_registro(app, db_clean):
     assert n == 1, f"upsert no debe duplicar · {n} filas"
 
 
+def test_despeje_dos_etapas_independientes(app, db_clean):
+    """6-jun · DOS despejes: Dispensación (etapa) y Fabricación (etapa) con el mismo
+    checklist pero registros independientes (MyBatch secciones 2 y 4)."""
+    c = _conn()
+    c.execute("INSERT INTO mbr_templates (producto_nombre,version,estado,lote_size_g,titulo,creado_por,creado_at_utc) VALUES ('PROD 2DESP',1,'draft',1000,'t','sebastian','2026-06-06')")
+    mbr = c.execute("SELECT id FROM mbr_templates WHERE producto_nombre='PROD 2DESP'").fetchone()[0]
+    c.execute("INSERT INTO mbr_pasos (mbr_template_id,orden,descripcion,tipo_paso,fase) VALUES (?,1,'Mezclar','mezclado','fabricacion')", (mbr,))
+    c.execute("UPDATE mbr_templates SET estado='aprobado' WHERE id=?", (mbr,))
+    c.execute("INSERT INTO ebr_ejecuciones (mbr_template_id,mbr_version,lote,numero_op,estado,iniciado_por,iniciado_at_utc,cantidad_objetivo_g,fase) VALUES (?,1,'L-2DESP','OP-2026-2200','iniciado','sebastian','2026-06-06',1000,'fabricacion')", (mbr,))
+    ebr = c.execute("SELECT id FROM ebr_ejecuciones WHERE lote='L-2DESP'").fetchone()[0]
+    c.commit(); c.close()
+    cl = _login(app)
+    # registrar ítem 0 en DISPENSACIÓN (Sí) y en FABRICACIÓN (No) → independientes
+    r1 = cl.post(f'/api/brd/ebr/{ebr}/despeje-item', json={'item_idx': 0, 'cumple': 1, 'etapa': 'dispensacion'}, headers=_h())
+    assert r1.status_code == 201, r1.data
+    r2 = cl.post(f'/api/brd/ebr/{ebr}/despeje-item', json={'item_idx': 0, 'cumple': 0, 'etapa': 'fabricacion'}, headers=_h())
+    assert r2.status_code == 201, r2.data
+    d = cl.get(f'/api/brd/ebr/{ebr}/vista-completa').get_json()
+    disp = {x['idx']: x for x in d['despeje_checklist']}
+    fab = {x['idx']: x for x in d['despeje_checklist_fab']}
+    assert disp[0]['cumple'] == 1, 'dispensación ítem 0 = Sí'
+    assert fab[0]['cumple'] == 0, 'fabricación ítem 0 = No (independiente)'
+    assert len(d['despeje_checklist']) == 13 and len(d['despeje_checklist_fab']) == 13
+    # no se duplican filas: una por (ebr, item, etapa)
+    cc = _conn()
+    n = cc.execute("SELECT COUNT(*) FROM ebr_despeje_items WHERE ebr_id=? AND item_idx=0", (ebr,)).fetchone()[0]
+    cc.close()
+    assert n == 2, f'una fila por etapa (dispensacion + fabricacion) · {n}'
+
+
+def test_orden_detalle_tiene_despeje_fabricacion(app, db_clean):
+    """La página del detalle muestra la sección 4 Despeje de Línea - Fabricación."""
+    cl = _login(app)
+    body = cl.get('/planta/orden/123').get_data(as_text=True)
+    assert 'despeje_checklist_fab' in body  # el JS lee el segundo checklist
+    assert "'Fabricación', 'fabricacion'" in body  # buildDespeje arma la sección 4
+    assert 'Despeje de Línea - ' in body  # título base (se concatena con la etapa)
+
+
 def _crear_ebr_iniciado(lote, numop, prod='PROD ROLE TEST'):
     c = _conn()
     c.execute("INSERT INTO mbr_templates (producto_nombre,version,estado,lote_size_g,titulo,creado_por,creado_at_utc) VALUES (?,1,'draft',1000,'t','sebastian','2026-06-06')", (prod,))
