@@ -1718,12 +1718,36 @@ def ebr_vista_completa(ebr_id):
     except Exception:
         pass
     # 2. Pesajes MP
+    # Resolver username → "Nombre, Cargo (user)" para Realizado/Verificado por
+    # (MyBatch "Detalle del Pesaje"). Cache por request · solo lectura.
+    _persona_cache = {}
+
+    def _persona(u):
+        u = (u or '').strip()
+        if not u:
+            return ''
+        if u in _persona_cache:
+            return _persona_cache[u]
+        txt = u
+        try:
+            ir = conn.execute(
+                "SELECT COALESCE(nombre_completo,''), COALESCE(cargo,'') "
+                "FROM usuarios_identidad WHERE username=? AND COALESCE(activo,1)=1", (u,)).fetchone()
+            if ir:
+                partes = [p for p in (ir[0], ir[1]) if p and p != 'Por definir']
+                if partes:
+                    txt = ', '.join(partes) + ' (' + u + ')'
+        except Exception:
+            pass
+        _persona_cache[u] = txt
+        return txt
     try:
         rows = conn.execute(
             """SELECT material_id, COALESCE(material_nombre,''),
                       cantidad_teorica_g, cantidad_real_g, COALESCE(lote_mp,''),
                       COALESCE(pesado_por,''), COALESCE(pesado_at_utc,''),
-                      COALESCE(notas,'')
+                      COALESCE(notas,''), id,
+                      COALESCE(verificado_por,''), COALESCE(verificado_at_utc,'')
                FROM ebr_pesajes WHERE ebr_id=? ORDER BY id""",
             (ebr_id,),
         ).fetchall()
@@ -1731,7 +1755,10 @@ def ebr_vista_completa(ebr_id):
             'material_id': r[0], 'material_nombre': r[1],
             'esperada_g': float(r[2] or 0), 'real_g': float(r[3] or 0),
             'lote_mp': r[4], 'operario': r[5], 'fecha': r[6],
-            'observaciones': r[7],
+            'observaciones': r[7], 'pesaje_id': r[8],
+            'verificado_por': r[9], 'verificado_at': r[10],
+            'realizado_por_full': _persona(r[5]),
+            'verificado_por_full': _persona(r[9]),
             'delta_pct': round(((r[3] - r[2]) / r[2] * 100) if r[2] else 0, 2),
         } for r in rows]
     except Exception:
@@ -1790,6 +1817,12 @@ def ebr_vista_completa(ebr_id):
                     'pesado_por': (rec['operario'] if rec else ''),
                     'pesado_at': (rec['fecha'] if rec else ''),
                     'pesado': bool(rec),
+                    'pesaje_id': (rec.get('pesaje_id') if rec else None),
+                    'realizado_por_full': (rec.get('realizado_por_full') if rec else ''),
+                    'verificado_por': (rec.get('verificado_por') if rec else ''),
+                    'verificado_at': (rec.get('verificado_at') if rec else ''),
+                    'verificado_por_full': (rec.get('verificado_por_full') if rec else ''),
+                    'obs_pesaje': (rec.get('observaciones') if rec else ''),
                 })
         out['pesaje_sheet'] = sheet
     except Exception:
@@ -4544,6 +4577,26 @@ tbody tr:hover{background:#faf5ff}
     <div class="cxbody" id="cxmbody"></div>
   </div>
 </div>
+<div class="cxmodal" id="pesomodal" onclick="if(event.target===this)cerrarPeso()">
+  <div class="cxbox">
+    <div class="cxhead" style="background:linear-gradient(135deg,#f59e0b,#d97706)"><h3>✏️ Materia Prima Dispensada</h3><button class="cxx" onclick="cerrarPeso()">×</button></div>
+    <div class="cxbody">
+      <div id="peso-mp" style="font-weight:700;color:#1e293b;margin-bottom:4px"></div>
+      <div id="peso-apesar" class="muted" style="font-size:12px;margin-bottom:12px"></div>
+      <label style="display:block;font-size:11px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px">Cantidad pesada (g)</label>
+      <input id="peso-cant" type="number" step="0.01" min="0" style="width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:8px;font-size:15px;margin-bottom:12px">
+      <label style="display:block;font-size:11px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px">N° de lote</label>
+      <input id="peso-lote" type="text" style="width:100%;padding:9px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;margin-bottom:12px">
+      <label style="display:block;font-size:11px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px">Observaciones</label>
+      <textarea id="peso-obs" rows="2" style="width:100%;padding:9px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;resize:vertical"></textarea>
+      <div id="peso-msg" style="font-size:12px;margin-top:8px"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+        <button onclick="cerrarPeso()" style="background:#f1f5f9;color:#475569;border:none;border-radius:8px;padding:9px 18px;font-weight:700;cursor:pointer">Cerrar</button>
+        <button id="peso-save" onclick="guardarPeso()" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:9px 22px;font-weight:700;cursor:pointer">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
 <script>
 var EBR_ID = __EBR_ID__;
 // DIAGNÓSTICO VISIBLE (6-jun) · prueba que el script SÍ corre en el navegador.
@@ -4572,40 +4625,57 @@ function estadoBg(e){var s=(e||'').toLowerCase();
   if(s.indexOf('complet')>=0)return '#cffafe';
   return '#fef9c3';}
 function togglePasos(){var s=document.getElementById('pasos-sec');s.style.display=s.style.display==='none'?'block':'none';if(s.style.display==='block')s.scrollIntoView({behavior:'smooth'});}
-// 3. Dispensado · botón "✏️" → registrar la cantidad PESADA de una MP (MyBatch)
-async function registrarPesaje(idx){
+// 3. Dispensado · botón "✏️" → modal "Corregir Peso" (Cantidad + lote + obs)
+var _pesoIdx=null;
+function cerrarPeso(){var m=document.getElementById('pesomodal');if(m)m.style.display='none';}
+function registrarPesaje(idx){
   var it=(window._pesajeSheet||[])[idx]; if(!it) return;
-  var mid=it.material_id;
-  var def = (it.cant_pesada_g!=null? it.cant_pesada_g : (it.cant_a_pesar_g!=null? it.cant_a_pesar_g : ''));
-  var v=prompt('Cantidad PESADA de '+(it.material_nombre||mid)+' (g) · a pesar: '+(it.cant_a_pesar_g!=null?it.cant_a_pesar_g:'—')+' g', def);
-  if(v===null) return;
-  var real=parseFloat(v);
-  if(isNaN(real)||real<0){alert('Cantidad inválida');return;}
-  var lote=prompt('N° de lote de la MP pesada:', it.lote&&it.lote!=='—'?it.lote:'')||'';
-  var r=await fetch('/api/brd/ebr/'+EBR_ID+'/pesajes',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({material_id:mid,cantidad_real_g:real,lote_mp:lote})});
-  var d=await r.json();
-  if(!r.ok){
-    if(d&&d.codigo==='FIRMA_REQUERIDA'){alert('🔒 Este pesaje requiere e-firma (el motor EBR está en modo estricto). Regístralo desde el runner de legajos.');}
-    else{alert('Error: '+((d&&d.error)||r.status));}
-    return;
-  }
-  load();
+  _pesoIdx=idx;
+  document.getElementById('peso-mp').innerHTML='<span class="mono">'+esc(it.material_id)+'</span> '+esc(it.material_nombre||'');
+  document.getElementById('peso-apesar').textContent='Cantidad a pesar: '+(it.cant_a_pesar_g!=null?Number(it.cant_a_pesar_g).toLocaleString('es-CO',{maximumFractionDigits:1})+' g':'—');
+  document.getElementById('peso-cant').value=(it.cant_pesada_g!=null?it.cant_pesada_g:(it.cant_a_pesar_g!=null?it.cant_a_pesar_g:''));
+  document.getElementById('peso-lote').value=(it.lote&&it.lote!=='—'?it.lote:'');
+  document.getElementById('peso-obs').value=it.obs_pesaje||'';
+  document.getElementById('peso-msg').innerHTML='';
+  document.getElementById('pesomodal').style.display='flex';
 }
-// 3. Dispensado · botón "i" → detalle del pesaje de una MP (reusa el modal)
+async function guardarPeso(){
+  if(_pesoIdx===null) return;
+  var it=(window._pesajeSheet||[])[_pesoIdx]; if(!it) return;
+  var msg=document.getElementById('peso-msg');
+  var real=parseFloat(document.getElementById('peso-cant').value);
+  if(isNaN(real)||real<0){msg.innerHTML='<span style="color:#b91c1c">Cantidad inválida</span>';return;}
+  var lote=(document.getElementById('peso-lote').value||'').trim();
+  var obs=(document.getElementById('peso-obs').value||'').trim();
+  var btn=document.getElementById('peso-save'); btn.disabled=true; btn.textContent='Guardando…';
+  try{
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/pesajes',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({material_id:it.material_id,cantidad_real_g:real,lote_mp:lote,notas:obs})});
+    var d=await r.json();
+    if(!r.ok){
+      if(d&&d.codigo==='FIRMA_REQUERIDA'){msg.innerHTML='<span style="color:#b45309">🔒 Requiere e-firma (motor EBR estricto). Regístralo desde el runner de legajos.</span>';}
+      else{msg.innerHTML='<span style="color:#b91c1c">Error: '+esc((d&&d.error)||r.status)+'</span>';}
+      btn.disabled=false; btn.textContent='Guardar'; return;
+    }
+    cerrarPeso(); load();
+  }catch(e){ msg.innerHTML='<span style="color:#b91c1c">Error de red: '+esc(e.message)+'</span>'; btn.disabled=false; btn.textContent='Guardar'; }
+}
+// 3. Dispensado · botón "i" → "Detalle del Pesaje" (Realizado por / Verificado por)
 function infoPesaje(idx){
   var it=(window._pesajeSheet||[])[idx]; if(!it) return;
   function dpct(){ if(it.cant_a_pesar_g&&it.cant_pesada_g!=null){var dl=(it.cant_pesada_g-it.cant_a_pesar_g)/it.cant_a_pesar_g*100; return dl.toLocaleString('es-CO',{maximumFractionDigits:2})+'%';} return '—';}
+  function fdt(s){return s?esc(s.substring(0,16).replace('T',' ')):'';}
+  var realizado = it.pesado ? (esc(it.realizado_por_full||it.pesado_por||'—')+(it.pesado_at?' · '+fdt(it.pesado_at):'')) : '<span class="st-pend">— sin registrar</span>';
+  var verificado = (it.verificado_por&&it.verificado_por.trim()) ? (esc(it.verificado_por_full||it.verificado_por)+(it.verificado_at?' · '+fdt(it.verificado_at):'')) : '<span class="st-pend">pendiente de verificación (Calidad)</span>';
   var rows=''
     +'<div class="mrow"><div class="mk">Materia Prima</div><div class="mv"><span class="mono">'+esc(it.material_id)+'</span> '+esc(it.material_nombre||'')+'</div></div>'
-    +'<div class="mrow"><div class="mk">% Fórmula</div><div class="mv">'+(it.porcentaje!=null?Number(it.porcentaje).toLocaleString('es-CO',{maximumFractionDigits:3})+'%':'—')+'</div></div>'
     +'<div class="mrow"><div class="mk">N° Lote</div><div class="mv mono">'+esc(it.lote||'—')+'</div></div>'
     +'<div class="mrow"><div class="mk">Cant. a pesar</div><div class="mv">'+gfmt(it.cant_a_pesar_g)+'</div></div>'
-    +'<div class="mrow"><div class="mk">Cant. pesada</div><div class="mv">'+(it.cant_pesada_g!=null?gfmt(it.cant_pesada_g):'<span class="st-pend">pendiente</span>')+'</div></div>'
-    +'<div class="mrow"><div class="mk">Desviación</div><div class="mv">'+dpct()+'</div></div>'
-    +'<div class="mrow"><div class="mk">Pesado por</div><div class="mv">'+esc(it.pesado_por||'— sin registrar')+'</div></div>'
-    +'<div class="mrow"><div class="mk">Fecha / Hora</div><div class="mv">'+(it.pesado_at?esc(it.pesado_at.substring(0,16).replace('T',' ')):'—')+'</div></div>';
+    +'<div class="mrow"><div class="mk">Cantidad Pesada</div><div class="mv"><b>'+(it.cant_pesada_g!=null?gfmt(it.cant_pesada_g):'<span class="st-pend">pendiente</span>')+'</b> <span class="muted">(desv '+dpct()+')</span></div></div>'
+    +'<div class="mrow"><div class="mk">Realizado por</div><div class="mv">'+realizado+'</div></div>'
+    +'<div class="mrow"><div class="mk">Verificado por</div><div class="mv">'+verificado+'</div></div>'
+    +(it.obs_pesaje?'<div class="mrow"><div class="mk">Observación</div><div class="mv">'+esc(it.obs_pesaje)+'</div></div>':'');
   var b=document.getElementById('cxmbody'); if(b) b.innerHTML=rows;
-  var ht=document.querySelector('#cxmodal .cxhead h3'); if(ht) ht.textContent='ℹ️ Detalle del Dispensado';
+  var ht=document.querySelector('#cxmodal .cxhead h3'); if(ht) ht.textContent='ℹ️ Detalle del Pesaje';
   var m=document.getElementById('cxmodal'); if(m) m.style.display='flex';
 }
 // 3. Dispensado · "✓ Verificar Dispensado" → valida completitud + tolerancia
@@ -4837,8 +4907,8 @@ async function load(){
             '<td class="num">'+gfmt(p.cant_a_pesar_g)+'</td>'+
             '<td class="num">'+pesadaCol+'</td>'+
             '<td style="text-align:center;white-space:nowrap">'+
-              '<button class="b-i tip-r" data-tip="Detalle del dispensado: %, lote, cant. a pesar/pesada, desviación, quién y cuándo." onclick="infoPesaje('+i+')">i</button> '+
-              (editable?'<button class="b-e tip-r" data-tip="Registrar la cantidad PESADA de esta materia prima." onclick="registrarPesaje('+i+')">✏️</button>':'')+
+              '<button class="b-i tip-r" data-tip="Detalle del Pesaje: cantidad pesada, realizado por (operario) y verificado por (Calidad)." onclick="infoPesaje('+i+')">i</button> '+
+              (editable?'<button class="b-e tip-r" data-tip="Corregir Peso: ajusta la cantidad pesada y agrega observación." onclick="registrarPesaje('+i+')">✏️</button>':'')+
             '</td>'+
           '</tr>';
         }).join('')+'</tbody></table>'+

@@ -467,6 +467,8 @@ def test_orden_detalle_page_html(app, db_clean):
     body = r.get_data(as_text=True)
     assert 'Orden de Producción' in body
     assert 'Dispensado de Materias Primas' in body  # sección 3 integrada en el instructivo
+    assert 'Detalle del Pesaje' in body      # modal i del dispensado
+    assert 'Corregir Peso' in body and 'pesomodal' in body  # modal ✏️ del dispensado
     assert 'vista-completa' in body          # reusa el endpoint existente
     assert 'var EBR_ID = 123;' in body       # id inyectado correctamente
     # Tooltips premium globales (data-tip) · CSS inyectado + ayudas en botones
