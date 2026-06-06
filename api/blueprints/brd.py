@@ -4210,10 +4210,32 @@ def descargar_registro_fisico_pdf(ebr_id, rid):
     try:
         raw = _b64.b64decode(row["archivo_b64"])
     except Exception:
-        return jsonify({"error": "PDF inválido"}), 500
-    return send_file(_io.BytesIO(raw), mimetype="application/pdf",
-                     as_attachment=True,
-                     download_name=(row["archivo_nombre"] or f"registro_{rid}.pdf"))
+        return jsonify({"error": "archivo inválido"}), 500
+    # Detectar tipo por extensión del nombre (las fotos de rótulos son imágenes,
+    # no PDF) y servir INLINE para verlo en el navegador (como el modal de MyBatch).
+    nombre = (row["archivo_nombre"] or f"registro_{rid}").lower()
+    if nombre.endswith(('.jpg', '.jpeg')):
+        mime = "image/jpeg"
+    elif nombre.endswith('.png'):
+        mime = "image/png"
+    elif nombre.endswith('.webp'):
+        mime = "image/webp"
+    elif nombre.endswith('.gif'):
+        mime = "image/gif"
+    elif nombre.endswith('.pdf'):
+        mime = "application/pdf"
+    else:
+        # Sin extensión clara: inferir por los primeros bytes (magic number).
+        if raw[:4] == b'%PDF':
+            mime = "application/pdf"
+        elif raw[:3] == b'\xff\xd8\xff':
+            mime = "image/jpeg"
+        elif raw[:8] == b'\x89PNG\r\n\x1a\n':
+            mime = "image/png"
+        else:
+            mime = "application/octet-stream"
+    return send_file(_io.BytesIO(raw), mimetype=mime, as_attachment=False,
+                     download_name=(row["archivo_nombre"] or f"registro_{rid}"))
 
 
 @bp.route("/api/brd/ebr/<int:ebr_id>/reconciliacion", methods=["GET"])
@@ -4639,6 +4661,7 @@ tbody tr:hover{background:#faf5ff}
     <div class="cxbody" id="cxmbody"></div>
   </div>
 </div>
+<input type="file" id="reg-file" accept="image/*,application/pdf" capture="environment" style="display:none" onchange="_subirRegistroFile(this.files&&this.files[0])">
 <div class="cxmodal" id="pesomodal" onclick="if(event.target===this)cerrarPeso()">
   <div class="cxbox">
     <div class="cxhead" style="background:linear-gradient(135deg,#f59e0b,#d97706)"><h3>✏️ Materia Prima Dispensada</h3><button class="cxx" onclick="cerrarPeso()">×</button></div>
@@ -4802,6 +4825,25 @@ function infoIpc(i){
   var b=document.getElementById('cxmbody'); if(b) b.innerHTML=rows;
   var ht=document.querySelector('#cxmodal .cxhead h3'); if(ht) ht.textContent='ℹ️ Detalle del Control';
   var m=document.getElementById('cxmodal'); if(m) m.style.display='flex';
+}
+// 8. Registros Físicos · subir foto/PDF (el rótulo se imprime, se diligencia y se
+// sube la foto · MyBatch). En el celular abre la cámara (capture=environment).
+function subirRegistroPick(){ var f=document.getElementById('reg-file'); if(f){f.value='';f.click();} }
+async function _subirRegistroFile(file){
+  if(!file) return;
+  if(file.size > 6*1024*1024){ alert('Archivo muy grande (máx ~6MB). Toma la foto en menor resolución.'); return; }
+  var desc=prompt('Descripción del registro (ej: Rótulo MP00123 diligenciado):', file.name);
+  if(desc===null) return;
+  var reader=new FileReader();
+  reader.onload=async function(){
+    var b64=((reader.result||'')+'').split(',')[1]||'';
+    if(!b64){ alert('No se pudo leer el archivo'); return; }
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/registros-fisicos',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({descripcion:(desc||file.name),tipo:'foto',archivo_nombre:file.name,archivo_b64:b64})});
+    var d=await r.json(); if(!r.ok){ alert('Error: '+((d&&d.error)||r.status)); return; }
+    load();
+  };
+  reader.onerror=function(){ alert('Error al leer el archivo'); };
+  reader.readAsDataURL(file);
 }
 // 7. Observaciones Generales · "+ Registrar"
 async function registrarObservacion(){
@@ -5099,13 +5141,16 @@ async function load(){
           '<td style="font-size:11.5px">'+esc(o.registrado_por_full||o.registrado_por||'—')+'</td>'+
           '<td class="muted" style="font-size:11px">'+esc((o.fecha||'').substring(0,16).replace("T"," "))+'</td></tr>';}).join('')+'</tbody></table>'
       : '<div class="muted">Sin observaciones registradas.</div>');
-    // 8. Registros Físicos del Proceso Manufactura (PDFs adjuntos)
+    // 8. Registros Físicos del Proceso Manufactura (fotos/PDF adjuntos)
     var regs=d.registros_fisicos||[];
-    var regHtml='<h3 style="font-size:15px;color:#7c3aed;margin:18px 0 6px">8. Registros Físicos del Proceso Manufactura</h3>'+
+    var regHtml='<div style="display:flex;align-items:center;gap:12px;margin:18px 0 6px">'+
+        '<h3 style="font-size:15px;color:#7c3aed;margin:0">8. Registros Físicos del Proceso Manufactura</h3>'+
+        (editable?'<button class="b-mini" data-tip="Sube una foto o PDF del registro físico diligenciado (ej: rótulo de pesaje firmado). En el celular abre la cámara." onclick="subirRegistroPick()">📷 Subir registro</button>':'')+
+      '</div>'+
       (regs.length
       ? '<table><thead><tr><th>Código</th><th>Descripción</th><th style="text-align:center">Acciones</th></tr></thead><tbody>'+
         regs.map(function(g){return '<tr><td class="mono">'+esc(g.id)+'</td><td style="font-size:12.5px">'+esc(g.descripcion||'')+'</td>'+
-          '<td style="text-align:center">'+(g.tiene_pdf?'<a class="b-pdf-sm" href="/api/brd/ebr/'+EBR_ID+'/registros-fisicos/'+g.id+'/pdf" target="_blank" data-tip="Descarga el registro físico (PDF).">📄 PDF</a>':'<span class="muted">—</span>')+'</td></tr>';}).join('')+'</tbody></table>'
+          '<td style="text-align:center">'+(g.tiene_pdf?'<a class="b-pdf-sm" href="/api/brd/ebr/'+EBR_ID+'/registros-fisicos/'+g.id+'/pdf" target="_blank" data-tip="Ver el registro físico (foto o PDF).">📄 Ver</a>':'<span class="muted">—</span>')+'</td></tr>';}).join('')+'</tbody></table>'
       : '<div class="muted">Sin registros físicos adjuntos.</div>');
     document.getElementById('pasos').innerHTML = manuf + precHtml + despHtml + dispHtml + ajustesHtml + despFabHtml + pasosHtml + ipcHtml + obsHtml + regHtml;
   }catch(e){document.getElementById('head').innerHTML='<span style="color:#b91c1c">Error red: '+esc(e.message)+'</span>';}

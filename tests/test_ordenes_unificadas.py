@@ -399,6 +399,28 @@ def test_seccion6_controles_lee_ipc_specs_resultados(app, db_clean):
     assert dens['realizado_por'] == 'laura'
 
 
+def test_subir_registro_fisico_foto_inline(app, db_clean):
+    """6-jun · Subir foto del rótulo diligenciado (sección 8): se guarda y el
+    visor la sirve INLINE como imagen (no fuerza application/pdf)."""
+    import base64 as _b64
+    ebr = _crear_ebr_iniciado('L-FOTO', 'OP-2026-9100', 'PROD FOTO')
+    cl = _login(app)
+    jpg_b64 = _b64.b64encode(b'\xff\xd8\xff\xe0\x00\x10JFIF foto rotulo').decode()
+    r = cl.post(f'/api/brd/ebr/{ebr}/registros-fisicos',
+                json={'descripcion': 'Rótulo MP00123 diligenciado', 'tipo': 'foto',
+                      'archivo_nombre': 'rotulo.jpg', 'archivo_b64': jpg_b64}, headers=_h())
+    assert r.status_code == 201, r.data
+    rid = r.get_json()['id']
+    d = cl.get(f'/api/brd/ebr/{ebr}/vista-completa').get_json()
+    regs = d.get('registros_fisicos') or []
+    assert any(g['descripcion'] == 'Rótulo MP00123 diligenciado' and g['tiene_pdf'] for g in regs)
+    # el visor sirve la imagen inline con mimetype de imagen (no PDF)
+    rd = cl.get(f'/api/brd/ebr/{ebr}/registros-fisicos/{rid}/pdf')
+    assert rd.status_code == 200
+    assert rd.mimetype == 'image/jpeg', rd.mimetype
+    assert 'attachment' not in (rd.headers.get('Content-Disposition') or '')
+
+
 def test_secciones_7_8_observaciones_registros(app, db_clean):
     """6-jun · Sección 7 (Observaciones Generales) + 8 (Registros Físicos PDF)."""
     ebr = _crear_ebr_iniciado('L-78', 'OP-2026-7800', 'PROD 78')
