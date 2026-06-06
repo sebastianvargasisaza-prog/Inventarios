@@ -4742,6 +4742,19 @@ def orden_detalle_page(ebr_id):
                     mimetype="text/html")
 
 
+@bp.route("/diag-orden-render", methods=["GET"])
+def _diag_orden_render():
+    """TEMPORAL (6-jun-diag) · sirve el HTML EXACTO del detalle de orden SIN auth
+    para curlear los bytes por Cloudflare y detectar truncamiento del <script>
+    final en producción. Borrar tras diagnosticar."""
+    html = (_ORDEN_DETALLE_HTML
+            .replace("/*__TOOLTIP_CSS__*/", TOOLTIP_CSS)
+            .replace("__EBR_ID__", "0"))
+    # marcador único al final para verificar que el cuerpo llega entero
+    html = html.replace("</body></html>", "<!--EOS-END-MARKER-12345--></body></html>")
+    return Response(html, mimetype="text/html")
+
+
 # ──────────────────────────────────────────────────────────────────────────
 # Activación de legajos automáticos · Sebastián 5-jun-2026
 # Pantalla limpia (no popups) que genera+aprueba todos los MBR de una sola firma
