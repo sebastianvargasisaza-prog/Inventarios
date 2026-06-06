@@ -1722,6 +1722,14 @@ def ebr_vista_completa(ebr_id):
             from blueprints.inventario import _fefo_lote_rotulo as _fefo
         except Exception:
             _fefo = None
+        # Presupuesto de tiempo · el resolver FEFO escanea maestro_mps por cada MP
+        # (en prod son miles de filas) → sin tope, una fórmula grande cuelga la
+        # página. Tras ~2.5s dejamos de resolver lotes (se muestra '—'); el resto
+        # de la hoja (%, cant a pesar, pesados) sale igual y el descuento real en
+        # producción sigue usando el resolver completo. Sebastián 5-jun-2026.
+        import time as _time
+        _fefo_deadline = _time.monotonic() + 2.5
+        _fefo_cache = {}
         sheet = []
         if prod_nom:
             fitems = conn.execute(
@@ -1736,10 +1744,16 @@ def ebr_vista_completa(ebr_id):
                 rec = recorded.get(mid)
                 lote = (rec['lote_mp'] if rec and rec.get('lote_mp') else '')
                 if not lote and _fefo:
-                    try:
-                        lote = _fefo(conn, mid, fr[1]) or ''
-                    except Exception:
-                        lote = ''
+                    if mid in _fefo_cache:
+                        lote = _fefo_cache[mid]
+                    elif _time.monotonic() < _fefo_deadline:
+                        try:
+                            lote = _fefo(conn, mid, fr[1]) or ''
+                        except Exception:
+                            lote = ''
+                        _fefo_cache[mid] = lote
+                    else:
+                        lote = ''  # presupuesto agotado · no colgar la página
                 sheet.append({
                     'material_id': mid, 'material_nombre': fr[1] or '',
                     'porcentaje': pct,
@@ -4509,11 +4523,32 @@ async function ajustarOrden(){
   }catch(e){alert('Error de red: '+(e&&e.message||e));}
 }
 async function load(){
+  var headEl=document.getElementById('head');
   try{
-    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/vista-completa',{credentials:'same-origin'});
+    // Timeout duro 25s · una orden nunca debe quedarse en "Cargando…" eterno.
+    var ctrl=new AbortController();
+    var to=setTimeout(function(){ctrl.abort();},25000);
+    var r;
+    try{
+      r=await fetch('/api/brd/ebr/'+EBR_ID+'/vista-completa',{credentials:'same-origin',cache:'no-store',signal:ctrl.signal});
+    }catch(fe){
+      clearTimeout(to);
+      var msg=(fe&&fe.name==='AbortError')
+        ? 'El servidor no respondió en 25s (posible cuelgue del lote '+EBR_ID+'). Avísame para revisarlo.'
+        : 'No se pudo contactar el servidor: '+esc((fe&&fe.message)||fe);
+      headEl.innerHTML='<div style="padding:24px;color:#b91c1c"><b>⏱ '+msg+'</b><br><button onclick="load()" style="margin-top:10px;background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-weight:700;cursor:pointer">Reintentar</button></div>';
+      return;
+    }
+    clearTimeout(to);
     if(r.status===401){location.href='/login';return;}
-    var d=await r.json();
-    if(!r.ok){document.getElementById('head').innerHTML='<span style="color:#b91c1c">Error: '+esc(d.error||r.status)+'</span>';return;}
+    var d;
+    try{ d=await r.json(); }
+    catch(je){
+      var txt=''; try{txt=await r.text();}catch(e2){}
+      headEl.innerHTML='<div style="padding:24px;color:#b91c1c"><b>Error '+r.status+' del servidor.</b><br><span style="font-size:12px;color:#64748b">'+esc((txt||'').substring(0,300))+'</span></div>';
+      return;
+    }
+    if(!r.ok){headEl.innerHTML='<div style="padding:24px;color:#b91c1c"><b>Error '+r.status+': '+esc(d.error||'fallo')+'</b></div>';return;}
     var h=d.header||{};
     var numop = h.numero_op || ('EBR-'+EBR_ID);
     var estado = h.estado||'—';
