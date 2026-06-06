@@ -4454,12 +4454,23 @@ tbody tr:hover{background:#faf5ff}
 <div class="wrap">
 <a class="back" href="/inventarios"><span class="arw">&larr;</span> Volver a Producción</a>
 <div style="height:14px"></div>
-<div class="card" id="head">Cargando…</div>
+<div class="card" id="head">Cargando… <span style="font-size:10px;color:#cbd5e1">build eos-6jun-diag</span></div>
 <div class="card pad" id="pasos-sec"><h2>📖 Instrucción de Manufactura</h2><div id="pasos"></div></div>
 <div class="card pad"><h2>⚖️ Pesaje de Materias Primas</h2><div id="pesaje"></div></div>
 </div>
 <script>
 var EBR_ID = __EBR_ID__;
+// DIAGNÓSTICO VISIBLE (6-jun) · prueba que el script SÍ corre en el navegador.
+// Marca #head con un contador en vivo apenas arranca; load() lo reemplaza al
+// recibir datos. Si el usuario ve "⏳ Conectando… Ns" subiendo, el JS está vivo.
+(function(){
+  try{
+    var s=0;
+    var el=document.getElementById('head');
+    if(el) el.innerHTML='⏳ Conectando al servidor… <b id="cxsec">0</b>s <span style="font-size:10px;color:#cbd5e1">build eos-6jun-diag</span>';
+    window.__cxTick=setInterval(function(){s++;var c=document.getElementById('cxsec');if(c)c.textContent=s;},1000);
+  }catch(e){}
+})();
 function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
 function gfmt(n){return (n==null||n==='')?'—':Number(n).toLocaleString('es-CO',{maximumFractionDigits:1})+' g';}
 function estadoColor(e){var s=(e||'').toLowerCase();
@@ -4527,14 +4538,14 @@ async function load(){
   try{
     // Timeout duro 25s · una orden nunca debe quedarse en "Cargando…" eterno.
     var ctrl=new AbortController();
-    var to=setTimeout(function(){ctrl.abort();},25000);
+    var to=setTimeout(function(){ctrl.abort();},15000);
     var r;
     try{
       r=await fetch('/api/brd/ebr/'+EBR_ID+'/vista-completa',{credentials:'same-origin',cache:'no-store',signal:ctrl.signal});
     }catch(fe){
-      clearTimeout(to);
+      clearTimeout(to); try{clearInterval(window.__cxTick);}catch(e){}
       var msg=(fe&&fe.name==='AbortError')
-        ? 'El servidor no respondió en 25s (posible cuelgue del lote '+EBR_ID+'). Avísame para revisarlo.'
+        ? 'El servidor no respondió en 15s (posible cuelgue del lote '+EBR_ID+'). Avísame para revisarlo.'
         : 'No se pudo contactar el servidor: '+esc((fe&&fe.message)||fe);
       headEl.innerHTML='<div style="padding:24px;color:#b91c1c"><b>⏱ '+msg+'</b><br><button onclick="load()" style="margin-top:10px;background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-weight:700;cursor:pointer">Reintentar</button></div>';
       return;
@@ -4557,6 +4568,7 @@ async function load(){
     // Rótulos de pesaje: reusa el generador existente /rotulos/<producto>/<kg>
     var prodRot = encodeURIComponent(h.producto||h.titulo||'');
     var kgRot = (Number(h.lote_size_g||0)/1000) || 1;
+    try{clearInterval(window.__cxTick);}catch(e){}
     document.getElementById('head').innerHTML =
       '<div class="hbar">'+
         '<div class="htitle">'+
