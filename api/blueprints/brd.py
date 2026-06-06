@@ -4828,12 +4828,19 @@ function infoIpc(i){
 }
 // 8. Registros Físicos · subir foto/PDF (el rótulo se imprime, se diligencia y se
 // sube la foto · MyBatch). En el celular abre la cámara (capture=environment).
-function subirRegistroPick(){ var f=document.getElementById('reg-file'); if(f){f.value='';f.click();} }
+var _regDesc='';
+function subirRegistroPick(){
+  var c=prompt('¿Qué registro vas a subir?\\n\\n1 = Materia Prima Dispensada\\n2 = Estado de Limpieza Dispensación\\n3 = Estado de Limpieza Fabricación\\n4 = Otro (escribir)','1');
+  if(c===null) return;
+  var map={'1':'Materia Prima Dispensada','2':'Estado de Limpieza Dispensación','3':'Estado de Limpieza Fabricación'};
+  _regDesc = map[(c||'').trim()];
+  if(!_regDesc){ _regDesc = prompt('Describe el registro:','') || 'Registro físico'; }
+  var f=document.getElementById('reg-file'); if(f){f.value='';f.click();}
+}
 async function _subirRegistroFile(file){
   if(!file) return;
   if(file.size > 6*1024*1024){ alert('Archivo muy grande (máx ~6MB). Toma la foto en menor resolución.'); return; }
-  var desc=prompt('Descripción del registro (ej: Rótulo MP00123 diligenciado):', file.name);
-  if(desc===null) return;
+  var desc=_regDesc || file.name;
   var reader=new FileReader();
   reader.onload=async function(){
     var b64=((reader.result||'')+'').split(',')[1]||'';
