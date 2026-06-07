@@ -72,6 +72,17 @@ DESPEJE_LINEA_ITEMS = [
     "El área está libre de materias primas, material de envase y empaque, gráneles, etiquetas, producto terminado y documentación del producto anterior.",
 ]
 
+# Controles en Proceso ESTÁNDAR · Sebastián 6-jun-2026. Se muestran SIEMPRE en
+# la sección 6 (aunque el MBR del producto no defina IPCs), y cada uno se puede
+# registrar con valor o marcar "No aplica". (codigo, nombre, unidad).
+IPC_ESTANDAR = [
+    ("densidad",   "Densidad a 25°C", "g/mL"),
+    ("ph",         "pH a 25°C",       ""),
+    ("olor",       "Olor",            ""),
+    ("color",      "Color",           ""),
+    ("apariencia", "Apariencia",      ""),
+]
+
 
 # ── UI dashboard (read-only listings) ──────────────────────────────────────
 
@@ -1905,13 +1916,14 @@ def ebr_vista_completa(ebr_id):
             """SELECT s.parametro, COALESCE(s.unidad,''), s.valor_min, s.valor_max,
                       r.valor_medido, COALESCE(r.valor_texto,''), r.conforme,
                       COALESCE(r.medido_por,''), COALESCE(r.medido_at_utc,''),
-                      COALESCE(r.notas,''), COALESCE(s.obligatorio,1)
+                      COALESCE(r.notas,''), COALESCE(s.obligatorio,1), s.id
                FROM ipc_specs s
                LEFT JOIN ipc_resultados r ON r.ipc_spec_id=s.id AND r.ebr_id=?
                WHERE s.mbr_template_id=? ORDER BY s.id""",
             (ebr_id, mbr_tpl),
         ).fetchall()
         ipc = []
+        nombres_mbr = set()
         for r in rows:
             vmin, vmax = r[2], r[3]
             rango = ''
@@ -1929,6 +1941,36 @@ def ebr_vista_completa(ebr_id):
                 'observaciones': r[9] or 'No aplica',
                 'realizado_por': r[7], 'realizado_por_full': _persona(r[7]),
                 'fecha': r[8], 'obligatorio': bool(r[10]),
+                'tipo': 'mbr', 'spec_id': r[11],
+            })
+            nombres_mbr.add((r[0] or '').strip().lower())
+        # Controles ESTÁNDAR siempre presentes (los que el MBR no define).
+        est = {}
+        try:
+            for er in conn.execute(
+                """SELECT control_codigo, COALESCE(valor_texto,''), conforme,
+                          COALESCE(observaciones,''), COALESCE(medido_por,''),
+                          COALESCE(medido_at_utc,'')
+                   FROM ipc_estandar_resultados WHERE ebr_id=?""",
+                (ebr_id,),
+            ).fetchall():
+                est[er[0]] = er
+        except Exception:
+            est = {}
+        for cod, nom, uni in IPC_ESTANDAR:
+            if nom.strip().lower() in nombres_mbr:
+                continue  # el MBR ya define este control · no duplicar
+            er = est.get(cod)
+            conf = (int(er[2]) if er and er[2] is not None else None)
+            ipc.append({
+                'control': nom, 'unidad': uni, 'rango': '',
+                'resultado': (er[1] if er else ''),
+                'conforme': conf,
+                'observaciones': (er[3] if er and er[3] else ('No aplica' if conf == 2 else '')),
+                'realizado_por': (er[4] if er else ''),
+                'realizado_por_full': _persona(er[4] if er else ''),
+                'fecha': (er[5] if er else ''), 'obligatorio': False,
+                'tipo': 'estandar', 'codigo': cod,
             })
         out['ipc'] = ipc
     except Exception:
@@ -2852,7 +2894,13 @@ def reportar_ipc_resultado(ebr_id):
     except (ValueError, TypeError):
         return jsonify({"error": "valor_medido inválido"}), 400
 
-    if spec["valor_min"] is not None or spec["valor_max"] is not None:
+    if body.get("no_aplica"):
+        # "No aplica" (conforme=2): el control no corresponde a este producto.
+        # No bloquea la liberación y NO abre desviación.
+        conforme = 2
+        valor_f = None
+        valor_texto = valor_texto or "No aplica"
+    elif spec["valor_min"] is not None or spec["valor_max"] is not None:
         if valor_f is None:
             return jsonify({"error": "valor_medido requerido (spec numérico)"}), 400
         conforme = 1
@@ -2952,6 +3000,95 @@ def _cleaning_to_dict(row):
         "completado_at_utc": row["completado_at_utc"],
         "observaciones": row["observaciones"] or "",
     }
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/ipc-estandar", methods=["GET", "POST"])
+def reportar_ipc_estandar(ebr_id):
+    """GET: lista los 5 controles ESTÁNDAR con su resultado (para el legajo).
+    POST: registra/actualiza uno. Soporta 'No aplica' (conforme=2). Upsert por
+    (ebr_id, control_codigo). No abre desviación.
+
+    Body POST: {control_codigo, control_nombre?, valor_texto?, conforme?(bool),
+                no_aplica?(bool), observaciones?}
+    """
+    if request.method == "GET":
+        if not session.get("compras_user"):
+            return jsonify({"error": "No autorizado"}), 401
+        cur = get_db().cursor()
+        est = {}
+        try:
+            for er in cur.execute(
+                """SELECT control_codigo, COALESCE(valor_texto,''), conforme,
+                          COALESCE(observaciones,''), COALESCE(medido_por,''),
+                          COALESCE(medido_at_utc,'')
+                   FROM ipc_estandar_resultados WHERE ebr_id=?""",
+                (ebr_id,),
+            ).fetchall():
+                est[er[0]] = er
+        except Exception:
+            est = {}
+        items = []
+        for cod, nom, uni in IPC_ESTANDAR:
+            er = est.get(cod)
+            items.append({
+                "control_codigo": cod, "control_nombre": nom, "unidad": uni,
+                "valor_texto": (er[1] if er else ""),
+                "conforme": (int(er[2]) if er and er[2] is not None else None),
+                "observaciones": (er[3] if er else ""),
+                "medido_por": (er[4] if er else ""),
+                "medido_at_utc": (er[5] if er else ""),
+            })
+        return jsonify({"items": items})
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    cod = (body.get("control_codigo") or "").strip().lower()
+    validos = {c[0]: c[1] for c in IPC_ESTANDAR}
+    if cod not in validos:
+        return jsonify({"error": "control_codigo inválido"}), 400
+    nombre = (body.get("control_nombre") or validos[cod]).strip()[:120]
+    conn = get_db()
+    cur = conn.cursor()
+    ebr = cur.execute(
+        "SELECT estado FROM ebr_ejecuciones WHERE id = ?", (ebr_id,)
+    ).fetchone()
+    if not ebr:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if ebr["estado"] not in ("iniciado", "en_proceso"):
+        return jsonify({"error": f"EBR no editable (estado: {ebr['estado']})"}), 409
+    valor_texto = (body.get("valor_texto") or "").strip()[:200]
+    obs = (body.get("observaciones") or "").strip()[:300]
+    if body.get("no_aplica"):
+        conforme = 2
+        valor_texto = valor_texto or "No aplica"
+    else:
+        conf = body.get("conforme")
+        conforme = (1 if conf else 0) if conf is not None else None
+    user = session.get("compras_user", "")
+    # Upsert por (ebr_id, control_codigo): borra el previo y reinserta.
+    cur.execute(
+        "DELETE FROM ipc_estandar_resultados WHERE ebr_id=? AND control_codigo=?",
+        (ebr_id, cod),
+    )
+    cur.execute(
+        """INSERT INTO ipc_estandar_resultados
+             (ebr_id, control_codigo, control_nombre, valor_texto, conforme,
+              observaciones, medido_por, medido_at_utc)
+           VALUES (?,?,?,?,?,?,?, datetime('now','utc'))""",
+        (ebr_id, cod, nombre, valor_texto, conforme, obs, user),
+    )
+    rid = cur.lastrowid
+    try:
+        audit_log(cur, usuario=user, accion='IPC_ESTANDAR_REGISTRAR',
+                  tabla='ipc_estandar_resultados', registro_id=rid,
+                  despues={'ebr_id': ebr_id, 'control': cod, 'conforme': conforme,
+                           'valor': valor_texto})
+    except Exception:
+        pass
+    conn.commit()
+    estado_txt = {1: 'Cumple', 0: 'No cumple', 2: 'No aplica'}.get(conforme, 'pendiente')
+    return jsonify({"ok": True, "id": rid, "conforme": conforme, "estado": estado_txt})
 
 
 @bp.route("/api/brd/cleaning", methods=["POST"])
@@ -4815,7 +4952,7 @@ async function completarPaso(i){
 function infoIpc(i){
   var c=(window._ipc||[])[i]; if(!c) return;
   function fdt(s){return s?esc(s.substring(0,16).replace('T',' ')):'';}
-  var conf = c.conforme===1?'<span class="st-fin">Cumple ✓</span>':c.conforme===0?'<span class="st-no">No cumple ✗</span>':'<span class="st-pend">pendiente</span>';
+  var conf = c.conforme===1?'<span class="st-fin">Cumple ✓</span>':c.conforme===0?'<span class="st-no">No cumple ✗</span>':c.conforme===2?'<span class="st-pend">No aplica</span>':'<span class="st-pend">pendiente</span>';
   var realizado = c.realizado_por ? (esc(c.realizado_por_full||c.realizado_por)+(c.fecha?' · '+fdt(c.fecha):'')) : '<span class="st-pend">— sin registrar</span>';
   var rows=''
     +'<div class="mrow"><div class="mk">Control</div><div class="mv">'+esc(c.control||'')+'</div></div>'
@@ -4827,6 +4964,39 @@ function infoIpc(i){
   var b=document.getElementById('cxmbody'); if(b) b.innerHTML=rows;
   var ht=document.querySelector('#cxmodal .cxhead h3'); if(ht) ht.textContent='ℹ️ Detalle del Control';
   var m=document.getElementById('cxmodal'); if(m) m.style.display='flex';
+}
+// Registrar un Control en Proceso (sección 6) · valor + Cumple/No cumple, o
+// marcar "No aplica". Enruta a /ipc-resultados (MBR) o /ipc-estandar (estándar).
+async function registrarIpc(i){
+  var cc=(window._ipc||[])[i]; if(!cc) return;
+  var aplica=confirm('Control: '+(cc.control||'')+'\\n\\n¿APLICA a este producto?\\n\\nAceptar = Sí (registrar resultado)\\nCancelar = NO APLICA');
+  var body={};
+  if(!aplica){
+    body.no_aplica=true;
+  } else if(cc.rango){
+    var v=prompt('Valor medido ('+(cc.rango||'')+'):'); if(v===null)return; v=(v||'').trim(); if(v==='')return;
+    if(isNaN(parseFloat(v.replace(',','.')))){alert('Valor numérico inválido');return;}
+    body.valor_medido=parseFloat(v.replace(',','.'));
+  } else {
+    var conf=confirm('¿El control CUMPLE?\\n\\nAceptar = Cumple · Cancelar = No cumple');
+    var txt=prompt('Resultado / observación (ej: 1,056 g/mL · Inodoro · Amarillento…):')||'';
+    body.conforme=conf?1:0; body.valor_texto=txt.trim();
+  }
+  var url;
+  if(cc.tipo==='estandar'){
+    url='/api/brd/ebr/'+EBR_ID+'/ipc-estandar';
+    body.control_codigo=cc.codigo; body.control_nombre=cc.control;
+  } else {
+    url='/api/brd/ebr/'+EBR_ID+'/ipc-resultados';
+    body.ipc_spec_id=cc.spec_id;
+  }
+  try{
+    var r=await fetch(url,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var d=await r.json();
+    if(!r.ok){alert((d&&d.error)||'No se pudo registrar el control');return;}
+    if(d.desviacion){alert('⚠ Fuera de especificación · se abrió la desviación '+((d.desviacion&&d.desviacion.codigo)||'')+' automáticamente.');}
+    load();
+  }catch(e){alert('Error de red: '+(e.message||e));}
 }
 // 8. Registros Físicos · subir foto/PDF (el rótulo se imprime, se diligencia y se
 // sube la foto · MyBatch). En el celular abre la cámara (capture=environment).
@@ -5122,6 +5292,7 @@ async function load(){
     function cumpleBadge(c){
       if(c===1) return ' <span style="background:#dcfce7;color:#166534;padding:1px 8px;border-radius:10px;font-size:10px;font-weight:800">CUMPLE</span>';
       if(c===0) return ' <span style="background:#fee2e2;color:#991b1b;padding:1px 8px;border-radius:10px;font-size:10px;font-weight:800">NO CUMPLE</span>';
+      if(c===2) return ' <span style="background:#e2e8f0;color:#475569;padding:1px 8px;border-radius:10px;font-size:10px;font-weight:800">NO APLICA</span>';
       return '';
     }
     var ipcHtml='<h3 style="font-size:15px;color:#7c3aed;margin:18px 0 6px">6. Controles en Proceso</h3>'+
@@ -5129,12 +5300,14 @@ async function load(){
       (ipc.length
       ? '<table><thead><tr><th>Control</th><th>Resultado</th><th>Observaciones</th><th>Realizado por</th><th style="text-align:center">Acciones</th></tr></thead><tbody>'+
         ipc.map(function(cc,i){
-          var resCol = cc.resultado ? (esc(cc.resultado)+cumpleBadge(cc.conforme)) : '<span class="muted">pendiente</span>';
+          var resCol = cc.conforme===2 ? cumpleBadge(2)
+                     : (cc.resultado ? (esc(cc.resultado)+cumpleBadge(cc.conforme)) : '<span class="muted">pendiente</span>');
+          var regBtn = editable ? '<button class="b-edit tip-r" data-tip="Registrar el control: valor + Cumple/No cumple, o marcar No aplica." onclick="registrarIpc('+i+')">✏️</button>' : '';
           return '<tr><td style="font-size:12.5px">'+esc(cc.control)+(cc.rango?' <span class="muted" style="font-size:10px">('+esc(cc.rango)+')</span>':'')+'</td>'+
             '<td style="font-size:12.5px">'+resCol+'</td>'+
             '<td style="font-size:11.5px">'+esc(cc.observaciones||'No aplica')+'</td>'+
             '<td style="font-size:11.5px">'+(cc.realizado_por?esc(cc.realizado_por_full||cc.realizado_por):'<span class="muted">—</span>')+'</td>'+
-            '<td style="text-align:center"><button class="b-i tip-r" data-tip="Detalle del control: rango, resultado, conforme, quién y cuándo." onclick="infoIpc('+i+')">i</button></td>'+
+            '<td style="text-align:center;white-space:nowrap"><button class="b-i tip-r" data-tip="Detalle del control: rango, resultado, conforme, quién y cuándo." onclick="infoIpc('+i+')">i</button> '+regBtn+'</td>'+
           '</tr>';
         }).join('')+'</tbody></table>'
       : '<div class="muted">Sin controles en proceso · se definen en el MBR del producto (parámetros como densidad, pH, color…).</div>');

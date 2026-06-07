@@ -312,6 +312,29 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (225, "ipc_estandar_resultados · controles en proceso ESTÁNDAR siempre presentes (Densidad/pH/Olor/Color/Apariencia) con opción 'No aplica' (conforme=2) · 6-jun-2026", [
+        # Sebastián: la sección 6 (Controles en Proceso) debe mostrar SIEMPRE un set
+        # estándar aunque el MBR del producto no lo defina, y cada control se puede
+        # registrar con valor o marcar 'No aplica'. Como ipc_resultados.ipc_spec_id es
+        # NOT NULL + FK a ipc_specs (y triggers impiden agregar specs a MBR aprobados),
+        # los estándar viven en tabla propia, identificados por control_codigo.
+        # conforme: 1=Cumple · 0=No cumple · 2=No aplica · NULL=pendiente.
+        """CREATE TABLE IF NOT EXISTS ipc_estandar_resultados (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ebr_id INTEGER NOT NULL,
+            control_codigo TEXT NOT NULL,
+            control_nombre TEXT NOT NULL,
+            valor_texto TEXT DEFAULT '',
+            conforme INTEGER DEFAULT NULL,
+            observaciones TEXT DEFAULT '',
+            medido_por TEXT DEFAULT '',
+            medido_at_utc TEXT DEFAULT '',
+            FOREIGN KEY (ebr_id) REFERENCES ebr_ejecuciones(id) ON DELETE CASCADE,
+            UNIQUE(ebr_id, control_codigo)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ipcest_ebr ON ipc_estandar_resultados(ebr_id)",
+    ]),
+
     (224, "areas_planta · consolidar a las 7 áreas oficiales (Sebastián 6-jun-2026) · elimina duplicados FAB*/PROD* · renombra · DISP/ACOND visibles no-fabricables", [
         # AS-IS: convivían PROD1/2/3 (legacy, con historial produccion_programada.area_id)
         # y FAB1/2/3 (nuevas, solo para equipos) → el mapa mostraba "Fabricación 1/2/3"

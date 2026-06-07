@@ -6997,10 +6997,11 @@ async function abrirEBR(id){
     var ro=await fetch('/api/brd/ebr/'+id+'/observaciones',{credentials:'same-origin'});
     var dob=await ro.json();
     // IPC · controles en proceso (specs del MBR + resultados del EBR)
-    var ipcSpecs=[],ipcRes=[];
+    var ipcSpecs=[],ipcRes=[],ipcEstandar=[];
     try{
       if(d.mbr_template_id){var rs=await fetch('/api/brd/mbr/'+d.mbr_template_id+'/ipc-specs',{credentials:'same-origin'});var ds=await rs.json();ipcSpecs=(ds&&ds.items)||ds||[];}
       var rir=await fetch('/api/brd/ebr/'+id+'/ipc-resultados',{credentials:'same-origin'});var dir=await rir.json();ipcRes=(dir&&dir.items)||dir||[];
+      var rie=await fetch('/api/brd/ebr/'+id+'/ipc-estandar',{credentials:'same-origin'});var die=await rie.json();ipcEstandar=(die&&die.items)||[];
     }catch(e){}
     // MyBatch ①②⑦ · precauciones, despeje de línea, registros físicos
     var despeje=[],prec=[],regs=[];
@@ -7086,13 +7087,24 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
       var sp=ipcSpecs[k]; var rr=resBySpec[sp.id];
       var rango = (sp.valor_min!=null||sp.valor_max!=null) ? ((sp.valor_min!=null?sp.valor_min:'')+' – '+(sp.valor_max!=null?sp.valor_max:'')+' '+(sp.unidad||'')) : (sp.criterio||'cualitativo');
       var resTxt = rr ? ((rr.valor_medido!=null?rr.valor_medido:'')+' '+(rr.valor_texto||'')) : '<span style="color:#f59e0b;">pendiente</span>';
-      var confTxt = rr ? (rr.conforme===1?'<span style="color:#16a34a;font-weight:700;">✓</span>':(rr.conforme===0?'<span style="color:#dc2626;font-weight:700;">✗ OOS</span>':'<span style="color:#999;">—</span>')) : '';
+      var confTxt = rr ? (rr.conforme===1?'<span style="color:#16a34a;font-weight:700;">✓</span>':(rr.conforme===0?'<span style="color:#dc2626;font-weight:700;">✗ OOS</span>':(rr.conforme===2?'<span style="color:#64748b;font-weight:700;">N/A</span>':'<span style="color:#999;">—</span>'))) : '';
       var oblig = sp.obligatorio?' <span title="obligatorio" style="color:#dc2626;">*</span>':'';
-      var ipcAcc = (!rr && editable) ? '<button onclick="ebrReportarIpc('+d.id+','+sp.id+','+((sp.valor_min!=null||sp.valor_max!=null)?1:0)+')" style="background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Reportar</button>' : '<span style="color:#999;">'+(rr?'✓':'—')+'</span>';
+      var ipcAcc = (!rr && editable) ? '<button onclick="ebrReportarIpc('+d.id+','+sp.id+','+((sp.valor_min!=null||sp.valor_max!=null)?1:0)+')" style="background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Reportar</button>' : '<span style="color:#999;">'+(rr?(rr.conforme===2?'N/A':'✓'):'—')+'</span>';
       h+='<tr><td>'+(sp.parametro||'')+oblig+'</td><td style="font-size:11px;color:#777;">'+rango+'</td><td>'+resTxt+'</td><td style="text-align:center;">'+confTxt+'</td><td style="font-size:11px;">'+((rr&&rr.medido_por)||'')+'</td><td style="text-align:right;">'+ipcAcc+'</td></tr>';
     }
     h+='</tbody></table>';
   }
+  // Controles ESTÁNDAR (siempre presentes) · valor o "No aplica"
+  h+='<div style="margin-top:10px;font-size:12px;font-weight:700;color:#6d28d9;">Controles estándar (Densidad · pH · Olor · Color · Apariencia)</div>';
+  h+='<table class="table" style="font-size:12px;"><thead><tr><th>Control</th><th>Resultado</th><th>Conf.</th><th>Midió</th><th></th></tr></thead><tbody>';
+  for(var e=0;e<ipcEstandar.length;e++){
+    var ec=ipcEstandar[e];
+    var ecConf=ec.conforme===1?'<span style="color:#16a34a;font-weight:700;">✓</span>':(ec.conforme===0?'<span style="color:#dc2626;font-weight:700;">✗</span>':(ec.conforme===2?'<span style="color:#64748b;font-weight:700;">N/A</span>':'<span style="color:#999;">—</span>'));
+    var ecRes=ec.conforme===2?'No aplica':(ec.valor_texto||'<span style="color:#f59e0b;">pendiente</span>');
+    var ecAcc=editable?'<button onclick="ebrReportarIpcEstandar('+d.id+',\\''+ec.control_codigo+'\\')" style="background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Registrar</button>':'<span style="color:#999;">—</span>';
+    h+='<tr><td>'+ec.control_nombre+'</td><td>'+ecRes+'</td><td style="text-align:center;">'+ecConf+'</td><td style="font-size:11px;">'+(ec.medido_por||'')+'</td><td style="text-align:right;">'+ecAcc+'</td></tr>';
+  }
+  h+='</tbody></table>';
   // Conciliación de material de envase/empaque (envasado/acondicionamiento)
   h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">📦 Conciliación de material (envase/empaque)</h4>';
   if(conc&&conc.length){
@@ -7342,7 +7354,10 @@ async function ebrNuevoLegajo(){
 }
 async function ebrReportarIpc(ebrId, specId, esNumerico){
   var body={ipc_spec_id:specId};
-  if(esNumerico){
+  var aplica=confirm('¿Este control APLICA al producto?\\n\\nAceptar = Sí (registrar medición)\\nCancelar = NO APLICA');
+  if(!aplica){
+    body.no_aplica=true;
+  } else if(esNumerico){
     var v=prompt('Valor medido del IPC:'); if(v===null)return; v=(v||'').trim(); if(v==='')return;
     if(isNaN(parseFloat(v))){alert('Valor numérico inválido');return;}
     body.valor_medido=parseFloat(v);
@@ -7356,6 +7371,23 @@ async function ebrReportarIpc(ebrId, specId, esNumerico){
     var d=await r.json();
     if(!r.ok){alert((d&&d.error)||'No se pudo reportar el IPC');return;}
     if(d.conforme===0 && d.desviacion){alert('⚠ IPC FUERA DE SPEC · se abrió la desviación '+(d.desviacion.codigo||'')+' automáticamente.');}
+    abrirEBR(ebrId);
+  }catch(e){alert('Error de red');}
+}
+async function ebrReportarIpcEstandar(ebrId, codigo){
+  var body={control_codigo:codigo};
+  var aplica=confirm('¿Este control APLICA al producto?\\n\\nAceptar = Sí (registrar)\\nCancelar = NO APLICA');
+  if(!aplica){
+    body.no_aplica=true;
+  } else {
+    var conf=confirm('¿CUMPLE?\\nAceptar = Cumple · Cancelar = No cumple');
+    var txt=prompt('Resultado / valor (ej: 1,056 g/mL · Inodoro · Amarillento…):')||'';
+    body.conforme=conf?1:0; body.valor_texto=txt.trim();
+  }
+  try{
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/ipc-estandar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var d=await r.json();
+    if(!r.ok){alert((d&&d.error)||'No se pudo registrar el control');return;}
     abrirEBR(ebrId);
   }catch(e){alert('Error de red');}
 }
