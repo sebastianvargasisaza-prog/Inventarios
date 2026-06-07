@@ -4787,10 +4787,27 @@ tbody tr:hover{background:#faf5ff}
 .delta-ok{color:#166534}.delta-warn{color:#b45309;font-weight:700}
 .muted{color:#94a3b8}
 #pasos-sec{display:block}
+.printonly{display:none}
+.btn-print{display:inline-flex;align-items:center;gap:6px;background:#ea580c;color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:12px}
+@media print{
+  body{padding:0;background:#fff;color:#000}
+  .back,.btn-print,.noprint,.cxmodal,.b-time,.b-mbr,.b-pdf,.b-rot,.b-aj,.b-soon,.b-mini,.b-i,.b-e,.b-pdf-sm{display:none !important}
+  .printonly{display:block;text-align:center;border-bottom:2px solid #0f172a;margin-bottom:12px;padding-bottom:8px}
+  .printonly b{font-size:16px;letter-spacing:.5px}
+  .printonly span{font-size:12px;color:#334155}
+  .wrap{max-width:100%;margin:0}
+  .card{box-shadow:none;border:1px solid #cbd5e1;break-inside:avoid;page-break-inside:avoid}
+  h2{font-size:14px}
+  table{font-size:10px;width:100%}
+  tr{break-inside:avoid;page-break-inside:avoid}
+  th,td{padding:4px 6px !important}
+}
 </style></head><body>
 <div class="wrap">
 <a class="back" href="/inventarios"><span class="arw">&larr;</span> Volver a Producción</a>
-<div style="height:14px"></div>
+<div class="printonly"><b>Espagiria Laboratorio SAS</b><br><span>INSTRUCTIVO DE MANUFACTURA &middot; PRD-PRO-001-F01</span></div>
+<div style="height:10px"></div>
+<button class="btn-print" onclick="window.print()">&#128196; Descargar / Imprimir instructivo (PDF)</button>
 <div class="card" id="head">Cargando…</div>
 <div class="card pad" id="pasos-sec"><h2>📖 Instrucción de Manufactura</h2><div id="pasos"></div></div>
 </div>
@@ -5302,7 +5319,7 @@ async function load(){
         ipc.map(function(cc,i){
           var resCol = cc.conforme===2 ? cumpleBadge(2)
                      : (cc.resultado ? (esc(cc.resultado)+cumpleBadge(cc.conforme)) : '<span class="muted">pendiente</span>');
-          var regBtn = editable ? '<button class="b-edit tip-r" data-tip="Registrar el control: valor + Cumple/No cumple, o marcar No aplica." onclick="registrarIpc('+i+')">✏️</button>' : '';
+          var regBtn = editable ? '<button class="b-e tip-r" data-tip="Registrar el control: valor + Cumple/No cumple, o marcar No aplica." onclick="registrarIpc('+i+')">✏️</button>' : '';
           return '<tr><td style="font-size:12.5px">'+esc(cc.control)+(cc.rango?' <span class="muted" style="font-size:10px">('+esc(cc.rango)+')</span>':'')+'</td>'+
             '<td style="font-size:12.5px">'+resCol+'</td>'+
             '<td style="font-size:11.5px">'+esc(cc.observaciones||'No aplica')+'</td>'+
