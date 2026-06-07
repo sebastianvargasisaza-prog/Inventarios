@@ -83,8 +83,21 @@ textarea{resize:vertical;min-height:60px;}
   <div class="tab" onclick="goTab(event,'tab-fichas')">&#128196; Fichas Tecnicas</div>
   <div class="tab" onclick="goTab(event,'tab-invima')">&#x2696;&#xfe0f; Registros INVIMA</div>
   <div class="tab" onclick="goTab(event,'tab-sgd')">&#128193; Documentos SGD</div>
+  <div class="tab" onclick="goTab(event,'tab-operacion');loadOperacion()">&#127981; Operaci&oacute;n en vivo</div>
 </div>
 <div class="main">
+<!-- Operación en vivo (Dirección Técnica · tiempo real) -->
+<div id="tab-operacion" class="pane">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px">
+    <h3 style="margin:0">&#127981; Operaci&oacute;n en vivo &middot; &aacute;reas y lotes</h3>
+    <div><span id="op-resumen" style="font-size:12px;color:#64748b"></span>
+      <button onclick="loadOperacion()" style="margin-left:8px;padding:5px 10px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;cursor:pointer">&#8635; Refrescar</button></div>
+  </div>
+  <div style="font-weight:700;font-size:13px;margin:6px 0">Estado de limpieza de &aacute;reas</div>
+  <div id="op-areas" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-bottom:16px">Cargando&hellip;</div>
+  <div style="font-weight:700;font-size:13px;margin:6px 0">Lotes en curso (resumen del batch)</div>
+  <div id="op-batches">Cargando&hellip;</div>
+</div>
 <!-- Dashboard -->
 <div id="tab-dash" class="pane active">
   <div class="kpi-row">
@@ -750,6 +763,34 @@ function registrarDoc() {
   if (!payload.codigo || !payload.nombre) { alert('Codigo y nombre son obligatorios'); return; }
   _apiPost('/api/tecnica/documentos', payload).then(function(d){if(d.ok){loadSgd();document.getElementById('sg-cod').value='';document.getElementById('sg-nom').value='';document.getElementById('sg-url').value='';}else alert(d.error||'Error');});
 }
+// Operación en vivo (Dirección Técnica) · áreas + lotes en curso, auto-refresh.
+function _opEsc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function loadOperacion(){
+  _apiGet('/api/tecnica/operacion-vivo').then(function(d){
+    var ra=d.resumen_areas||{};
+    var sub=document.getElementById('op-resumen');
+    if(sub) sub.textContent=(d.total_batches||0)+' lote(s) en curso · '+(ra.limpio||0)+' limpias · '+(ra.en_uso||0)+' en uso · '+(ra.sucio||0)+' sucias · '+(ra.en_limpieza||0)+' en limpieza';
+    var cols={'libre':['#15803d','LIMPIO'],'ocupada':['#dc2626','EN USO'],'sucia':['#f59e0b','SUCIO'],'limpiando':['#2563eb','EN LIMPIEZA']};
+    var ag=document.getElementById('op-areas');
+    if(ag){ ag.innerHTML=(d.areas||[]).map(function(a){
+      var c=cols[a.estado]||['#64748b',_opEsc(a.estado_label)];
+      return '<div style="border:2px solid '+c[0]+';border-radius:8px;padding:8px 10px;background:#fff"><div style="font-weight:700;font-size:12px">'+_opEsc(a.nombre)+'</div><div style="margin-top:4px"><span style="background:'+c[0]+';color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">'+c[1]+'</span></div></div>';
+    }).join('')||'<div style="color:#94a3b8">Sin áreas configuradas.</div>'; }
+    var bt=document.getElementById('op-batches');
+    if(!bt) return;
+    var bs=d.batches||[];
+    if(!bs.length){ bt.innerHTML='<div style="color:#94a3b8;font-size:13px">No hay lotes en curso.</div>'; return; }
+    var h='<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="background:#f1f5f9;text-align:left"><th style="padding:6px 8px">Producto</th><th style="padding:6px 8px">Lote</th><th style="padding:6px 8px">Fase</th><th style="padding:6px 8px">Avance</th><th style="padding:6px 8px">Despeje</th><th style="padding:6px 8px">IPC</th></tr></thead><tbody>';
+    h+=bs.map(function(b){
+      var ipc=b.ipc_oos>0?'<span style="color:#dc2626;font-weight:700">'+b.ipc_oos+' OOS</span>':'<span style="color:#16a34a">ok</span>';
+      var desp=b.despeje_ok?'<span style="color:#16a34a">✓</span>':'<span style="color:#94a3b8">—</span>';
+      return '<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:6px 8px"><b>'+_opEsc(b.producto||'?')+'</b></td><td style="padding:6px 8px">'+_opEsc(b.lote||'')+'</td><td style="padding:6px 8px">'+_opEsc(b.fase||'')+'</td><td style="padding:6px 8px">'+b.pasos_done+'/'+b.pasos_total+' ('+b.pct+'%)</td><td style="padding:6px 8px;text-align:center">'+desp+'</td><td style="padding:6px 8px">'+ipc+'</td></tr>';
+    }).join('');
+    h+='</tbody></table>';
+    bt.innerHTML=h;
+  }).catch(function(e){ var bt=document.getElementById('op-batches'); if(bt) bt.innerHTML='<div style="color:#dc2626">Error cargando operación en vivo.</div>'; });
+}
+setInterval(function(){var p=document.getElementById('tab-operacion'); if(p&&p.classList.contains('active')) loadOperacion();}, 20000);
 loadDash();
 </script>
 </body>

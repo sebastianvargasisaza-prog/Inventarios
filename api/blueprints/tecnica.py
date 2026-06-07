@@ -269,6 +269,68 @@ def tecnica_dashboard():
         'proximos_vencimientos': proximos
     })
 
+# ── Operación en vivo (Dirección Técnica) ──────────────────────────────────
+@bp.route('/api/tecnica/operacion-vivo')
+def tecnica_operacion_vivo():
+    """Vista en tiempo real para el Director Técnico: estado de limpieza de las
+    áreas (Limpio/En uso/Sucio) + resumen de TODOS los lotes (EBR) en curso —
+    fase, avance de pasos, IPC y despeje. Solo lectura."""
+    if not _check_access():
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    _EST = {'libre': 'Limpio', 'ocupada': 'En uso', 'sucia': 'Sucio',
+            'limpiando': 'En limpieza'}
+    # Áreas (las 7 operativas) con su estado físico vivo.
+    areas = []
+    try:
+        for r in c.execute(
+            """SELECT id, codigo, nombre, COALESCE(estado,'libre')
+               FROM areas_planta
+               WHERE activo=1 AND (tipo='produccion' OR codigo IN ('DISP','ACOND'))
+               ORDER BY orden, codigo""").fetchall():
+            areas.append({'id': r[0], 'codigo': r[1], 'nombre': r[2],
+                          'estado': r[3], 'estado_label': _EST.get(r[3], r[3])})
+    except Exception:
+        areas = []
+    resumen_areas = {
+        'limpio': sum(1 for a in areas if a['estado'] == 'libre'),
+        'en_uso': sum(1 for a in areas if a['estado'] == 'ocupada'),
+        'sucio': sum(1 for a in areas if a['estado'] == 'sucia'),
+        'en_limpieza': sum(1 for a in areas if a['estado'] == 'limpiando'),
+    }
+    # Lotes (EBR) en curso · resumen de operación.
+    batches = []
+    try:
+        rows = c.execute(
+            """SELECT e.id, e.lote, COALESCE(e.fase,'fabricacion'), e.estado,
+                      COALESCE(m.producto_nombre,''), COALESCE(e.area_codigo,''),
+                      COALESCE(e.iniciado_at_utc,'')
+               FROM ebr_ejecuciones e
+               LEFT JOIN mbr_templates m ON m.id = e.mbr_template_id
+               WHERE e.estado IN ('iniciado','en_proceso')
+               ORDER BY e.iniciado_at_utc DESC LIMIT 50""").fetchall()
+        for r in rows:
+            eid = r[0]
+            tot = c.execute("SELECT COUNT(*) FROM ebr_pasos_ejecutados WHERE ebr_id=?", (eid,)).fetchone()[0] or 0
+            done = c.execute("SELECT COUNT(*) FROM ebr_pasos_ejecutados WHERE ebr_id=? AND estado='completado'", (eid,)).fetchone()[0] or 0
+            # IPC del MBR: cuántos fuera de spec (conforme=0) y pendientes.
+            ipc_oos = c.execute(
+                "SELECT COUNT(*) FROM ipc_resultados WHERE ebr_id=? AND conforme=0", (eid,)).fetchone()[0] or 0
+            despeje = c.execute(
+                "SELECT COUNT(*) FROM ebr_despeje_linea WHERE ebr_id=? AND conforme=1", (eid,)).fetchone()[0] or 0
+            batches.append({
+                'id': eid, 'lote': r[1], 'fase': r[2], 'estado': r[3],
+                'producto': r[4], 'area_codigo': r[5], 'iniciado': r[6],
+                'pasos_total': tot, 'pasos_done': done,
+                'pct': (round(done * 100.0 / tot) if tot else 0),
+                'ipc_oos': ipc_oos, 'despeje_ok': bool(despeje),
+            })
+    except Exception:
+        batches = []
+    return jsonify({'ok': True, 'areas': areas, 'resumen_areas': resumen_areas,
+                    'batches': batches, 'total_batches': len(batches)})
+
+
 # ── Fórmulas Maestras ──────────────────────────────────────────────────────
 @bp.route('/api/tecnica/formulas', methods=['GET', 'POST'])
 def formulas_list():

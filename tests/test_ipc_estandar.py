@@ -80,6 +80,18 @@ def test_vista_completa_incluye_controles_estandar(admin_client, app):
     assert len(est) == 5
 
 
+def test_operacion_vivo_direccion_tecnica(admin_client, app):
+    ebr = _crear_ebr(app, "LOTE-OPVIVO")
+    r = admin_client.get("/api/tecnica/operacion-vivo")
+    assert r.status_code == 200
+    d = r.get_json()
+    assert d["ok"] is True
+    assert "areas" in d and "resumen_areas" in d
+    # El EBR iniciado debe aparecer en el resumen de lotes
+    lotes = {b["lote"] for b in d["batches"]}
+    assert "LOTE-OPVIVO" in lotes
+
+
 def test_control_codigo_invalido_rechaza(admin_client, app):
     ebr = _crear_ebr(app, "LOTE-IPC-EST-BAD")
     r = admin_client.post(f"/api/brd/ebr/{ebr}/ipc-estandar",
