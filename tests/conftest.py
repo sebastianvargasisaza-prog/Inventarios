@@ -33,6 +33,15 @@ ALL_USERS = [
     "camilo",
 ]
 
+# Tablas TRANSACCIONALES que db_clean resetea entre tests para evitar
+# contaminación cruzada en la suite completa (PG comparte la BD toda la sesión).
+# SOLO transaccionales — NUNCA tablas seed (formula_headers, maestro_mps, etc.).
+_TABLAS_TRANSACCIONALES = (
+    'ordenes_compra_items', 'ordenes_compra',
+    'solicitudes_compra_items', 'solicitudes_compra',
+    'audit_zero_error_runs',
+)
+
 
 @pytest.fixture(scope="session")
 def test_workspace():
@@ -254,6 +263,20 @@ def db_clean(app):
                         cur.execute(f"DELETE FROM {t}")
                 except Exception:
                     pass
+            # Reset transaccional FK-safe (anti contaminación cruzada en la suite
+            # completa · PG comparte la BD toda la sesión). session_replication_role
+            # =replica desactiva los triggers de FK para borrar sin importar orden.
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SET session_replication_role = replica")
+                    for t in _TABLAS_TRANSACCIONALES:
+                        try:
+                            cur.execute(f"DELETE FROM {t}")
+                        except Exception:
+                            pass
+                    cur.execute("SET session_replication_role = DEFAULT")
+            except Exception:
+                pass
             conn.close()
         else:
             conn = sqlite3.connect(os.environ["DB_PATH"])
@@ -262,6 +285,16 @@ def db_clean(app):
                     conn.execute(f"DELETE FROM {t}")
                 except sqlite3.OperationalError:
                     pass
+            try:
+                conn.execute("PRAGMA foreign_keys=OFF")
+                for t in _TABLAS_TRANSACCIONALES:
+                    try:
+                        conn.execute(f"DELETE FROM {t}")
+                    except sqlite3.OperationalError:
+                        pass
+                conn.execute("PRAGMA foreign_keys=ON")
+            except Exception:
+                pass
             conn.commit()
             conn.close()
     except Exception:
