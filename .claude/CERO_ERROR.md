@@ -89,6 +89,13 @@ Tests corren en **SQLite** (local, pasan ✅) pero producción es **PostgreSQL**
 
 ---
 
+## 🔒 Postura de seguridad (NO re-litigar)
+
+- **Auth = capa de aplicación** (sesiones Flask + roles en `config.py`/`auth.py`). EOS conecta a PG con UN solo rol (dueño, vía `DATABASE_URL`).
+- **NO activar PostgreSQL RLS** (decisión Sebastián 8-jun): con rol dueño se ignora (no-op) y con `FORCE` sin políticas da DENY total → **caída de producción**. RLS solo aplicaría con rol no-dueño + contexto por request + políticas por tabla (re-arquitectura). No es el modelo de EOS.
+- **CORS/Origin ya enforced**: `csrf_origin_check` (auth.py) → 403 si Origin/Referer ≠ host en métodos que mutan. No hay `Access-Control-Allow-Origin` permisivo.
+- **Security headers** en `add_security_headers` (auth.py): HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, CSP, COOP/CORP, Permissions-Policy. Datos bancarios solo admin+contadora (Habeas Data Ley 1581).
+
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
 
 Al cerrar una sesión donde se encontró/arregló un bug con patrón no listado aquí:
