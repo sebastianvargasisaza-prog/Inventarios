@@ -260,7 +260,7 @@ def test_cargar_afinidad_fallback_si_tabla_vacia(app, db_clean):
             conn.execute(
                 "INSERT OR IGNORE INTO rol_afinidad_config "
                 "(rol_destino, rol_predeterminado, peso) VALUES (?,?,?)",
-                r
+                tuple(r)   # psycopg no acepta un Row como params; SQLite sí
             )
         conn.commit()
     finally:

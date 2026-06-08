@@ -50,7 +50,7 @@ def test_crear_factura_audita(app, db_clean):
     conn = sqlite3.connect(os.environ["DB_PATH"])
     conn.execute("""INSERT OR REPLACE INTO config_facturacion
                     (empresa, anio, tipo, siguiente)
-                    VALUES ('ANIMUS', strftime('%Y', 'now'), 'FV', 50000)""")
+                    VALUES ('ANIMUS', CAST(strftime('%Y', 'now') AS INTEGER), 'FV', 50000)""")
     conn.commit(); conn.close()
     r = c.post("/api/contabilidad/facturas/generar",
                json={"empresa": "ANIMUS", "iva_pct": 19,

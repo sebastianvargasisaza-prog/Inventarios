@@ -455,14 +455,14 @@ def test_feedback_loop_agente(app, db_clean):
     db_path = os.environ["DB_PATH"]
     conn = sqlite3.connect(db_path)
     # Crear 2 ejecuciones de log
-    conn.execute("""INSERT INTO marketing_agentes_log
+    # cursor.lastrowid (lo resuelve el adaptador vía RETURNING en PG) en vez de
+    # last_insert_rowid() — esa función es SQLite-only y no existe en PostgreSQL.
+    log1 = conn.execute("""INSERT INTO marketing_agentes_log
         (agente, accion, resultado, ejecutado_por)
-        VALUES ('estrategia','Ejecutado','{}','test')""")
-    log1 = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    conn.execute("""INSERT INTO marketing_agentes_log
+        VALUES ('estrategia','Ejecutado','{}','test')""").lastrowid
+    log2 = conn.execute("""INSERT INTO marketing_agentes_log
         (agente, accion, resultado, ejecutado_por)
-        VALUES ('estrategia','Ejecutado','{}','test')""")
-    log2 = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        VALUES ('estrategia','Ejecutado','{}','test')""").lastrowid
     conn.commit()
     conn.close()
 

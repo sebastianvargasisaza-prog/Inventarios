@@ -98,7 +98,7 @@ def test_jeferson_audit_banco_enmascarado(app, db_clean):
         rows = get_db().execute(
             "SELECT accion, antes, despues FROM audit_log "
             "WHERE tabla='marketing_influencers' AND registro_id=? "
-            "ORDER BY id DESC LIMIT 1", (iid,)).fetchall()
+            "ORDER BY id DESC LIMIT 1", (str(iid),)).fetchall()
         assert rows, "no se registró audit_log"
         blob = (str(rows[0]["antes"]) + str(rows[0]["despues"]))
         assert "55544433322" not in blob, f"cuenta en claro en audit: {blob}"

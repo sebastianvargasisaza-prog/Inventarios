@@ -87,8 +87,8 @@ def test_audit_trail_filtro_accion(app, db_clean):
     )
     # Cleanup
     conn = sqlite3.connect(os.environ["DB_PATH"])
-    conn.execute("DELETE FROM desviaciones WHERE id=?", (desv_id,))
     conn.execute("DELETE FROM desviaciones_eventos WHERE desviacion_id=?", (desv_id,))
+    conn.execute("DELETE FROM desviaciones WHERE id=?", (desv_id,))
     conn.commit(); conn.close()
 
 
@@ -238,6 +238,6 @@ def test_lote_trazabilidad_encuentra_desviacion(app, db_clean):
     assert len(desviaciones) >= 1
     # Cleanup
     conn = sqlite3.connect(os.environ["DB_PATH"])
-    conn.execute("DELETE FROM desviaciones WHERE id=?", (desv_id,))
     conn.execute("DELETE FROM desviaciones_eventos WHERE desviacion_id=?", (desv_id,))
+    conn.execute("DELETE FROM desviaciones WHERE id=?", (desv_id,))
     conn.commit(); conn.close()

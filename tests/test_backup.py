@@ -18,6 +18,11 @@ def test_backup_manual_creates_file(app, db_clean):
     assert os.path.exists(r["file_path"])
     assert r["size_bytes"] > 0
 
+    # En PostgreSQL el backup es un pg_dump (.sql.gz), no una BD SQLite → la
+    # verificación de integridad con sqlite3 no aplica (basta archivo + tamaño).
+    if os.environ.get("EOS_DB_BACKEND", "").strip().lower() == "postgres":
+        return
+
     # Descomprimir y verificar integridad
     extracted = r["file_path"] + ".extracted.db"
     with gzip.open(r["file_path"], "rb") as fin, open(extracted, "wb") as fout:

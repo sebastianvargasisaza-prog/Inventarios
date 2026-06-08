@@ -172,18 +172,28 @@ def test_liberacion_disposicion_user_no_calidad_403(app, db_clean):
 def test_liberar_lote_audita(app, db_clean):
     c = _login(app, "laura")
     conn = sqlite3.connect(os.environ["DB_PATH"])
+    # Cadena de padres para satisfacer la FK envasado_id en PG (SQLite no la
+    # enforzaba, antes se usaba un id fijo inexistente).
+    pp_id = conn.execute(
+        "INSERT INTO produccion_programada (producto, fecha_programada) "
+        "VALUES ('PT-AUDIT-T1', date('now'))").lastrowid
+    env_id = conn.execute(
+        "INSERT INTO produccion_envasado (produccion_id, producto_nombre, lote) "
+        "VALUES (?, 'PT-AUDIT-T1', 'LOTE-LIB-T1')", (pp_id,)).lastrowid
     cur = conn.execute("""
         INSERT INTO cola_liberacion
             (envasado_id, producto_nombre, lote, unidades,
              fecha_envasado, fecha_min_liberacion, estado)
-        VALUES (1, 'PT-AUDIT-T1', 'LOTE-LIB-T1', 100,
+        VALUES (?, 'PT-AUDIT-T1', 'LOTE-LIB-T1', 100,
                 date('now'), date('now'), 'listo_revisar')
-    """)
+    """, (env_id,))
     item_id = cur.lastrowid
     conn.commit(); conn.close()
     try:
+        # override_micro: el lote no tiene micro conforme registrado; el gate
+        # INVIMA (Res 2674/2013) exige override explícito para liberar igual.
         r = c.post(f"/api/planta/cola-liberacion/{item_id}/disposicion",
-                   json={"disposicion": "aprobado"},
+                   json={"disposicion": "aprobado", "override_micro": True},
                    headers=csrf_headers())
         assert r.status_code == 200
         audit = _last_audit(accion="LIBERAR_LOTE_PT")
@@ -193,6 +203,8 @@ def test_liberar_lote_audita(app, db_clean):
     finally:
         conn = sqlite3.connect(os.environ["DB_PATH"])
         conn.execute("DELETE FROM cola_liberacion WHERE id=?", (item_id,))
+        conn.execute("DELETE FROM produccion_envasado WHERE id=?", (env_id,))
+        conn.execute("DELETE FROM produccion_programada WHERE id=?", (pp_id,))
         conn.commit(); conn.close()
 
 
@@ -204,7 +216,7 @@ def test_rechazar_lote_pt_requiere_notas(app, db_clean):
         INSERT INTO cola_liberacion
             (envasado_id, producto_nombre, lote, unidades,
              fecha_envasado, fecha_min_liberacion, estado)
-        VALUES (1, 'PT-REJ-T', 'LOTE-REJ-T', 50,
+        VALUES (NULL, 'PT-REJ-T', 'LOTE-REJ-T', 50,
                 date('now'), date('now'), 'listo_revisar')
     """)
     item_id = cur.lastrowid

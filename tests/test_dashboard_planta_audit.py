@@ -82,8 +82,8 @@ def test_lotes_vencidos_calcula_dinamicamente_desde_fecha_venc(app, db_clean):
         conn = sqlite3.connect(os.environ["DB_PATH"])
         cnt_directo = conn.execute("""
             SELECT COUNT(*) FROM (
-              SELECT material_id, lote, MIN(fecha_vencimiento) v,
-                     SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) s
+              SELECT material_id, lote, MIN(fecha_vencimiento) AS v,
+                     SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) AS s
               FROM movimientos
               WHERE COALESCE(lote,'') != '' AND fecha_vencimiento IS NOT NULL
                 AND fecha_vencimiento != ''
@@ -173,8 +173,8 @@ def test_venc_criticos_lotes_proximos_30d(app, db_clean):
         conn = sqlite3.connect(os.environ["DB_PATH"])
         cnt = conn.execute("""
             SELECT COUNT(*) FROM (
-              SELECT material_id, lote, MIN(fecha_vencimiento) v,
-                     SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) s
+              SELECT material_id, lote, MIN(fecha_vencimiento) AS v,
+                     SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) AS s
               FROM movimientos WHERE material_id IN ('MP-AUD-C1','MP-AUD-C2')
               GROUP BY material_id, lote
               HAVING s > 0 AND v >= date('now') AND v <= date('now','+30 day')

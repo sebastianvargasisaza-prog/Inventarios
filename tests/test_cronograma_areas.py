@@ -147,7 +147,7 @@ def test_cronograma_proyecta_liberacion(app, db_clean):
     conn.execute("""INSERT INTO cola_liberacion
         (envasado_id, producto_nombre, lote, unidades, fecha_envasado,
          fecha_min_liberacion, estado)
-        VALUES (1, 'PROD-LIB-T', 'LOTE-LIB-T', 100, date('now','-7 days'),
+        VALUES (NULL, 'PROD-LIB-T', 'LOTE-LIB-T', 100, date('now','-7 days'),
                 ?, 'esperando_micro')""", (viernes.isoformat(),))
     conn.commit(); conn.close()
     try:
