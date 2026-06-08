@@ -8,6 +8,11 @@
 #   bash scripts/guardian.sh           · run normal
 #   bash scripts/guardian.sh --quick   · solo golden paths
 #   bash scripts/guardian.sh --full    · golden + tests críticos relacionados
+#   bash scripts/guardian.sh --pg      · golden EN MODO PostgreSQL (paridad prod)
+#
+# El modo --pg corre la suite contra el Postgres local (pgdev) para cazar el
+# drift SQLite↔PG (causa #1 de reprocesos · ver .claude/CERO_ERROR.md). Requiere
+# el PG local levantado y la BD eos_test. El CI lo corre automático en cada push.
 #
 # Instalación como pre-push hook:
 #   bash scripts/install_hooks.sh
@@ -31,8 +36,25 @@ if ! command -v "$PYTHON_BIN" &>/dev/null; then
   PYTHON_BIN="python3"
 fi
 
-# Tests a correr según modo
-if [ "$MODE" = "--full" ] || [ "$MODE" = "full" ]; then
+# Modo PostgreSQL · paridad con producción (caza drift SQLite↔PG)
+if [ "$MODE" = "--pg" ] || [ "$MODE" = "pg" ]; then
+  export EOS_DB_BACKEND=postgres
+  export PGHOST="${PGHOST:-127.0.0.1}"
+  export PGPORT="${PGPORT:-5432}"
+  export PGUSER="${PGUSER:-postgres}"
+  export PGDATABASE="${PGDATABASE:-eos_test}"
+  echo "    backend: PostgreSQL ($PGHOST:$PGPORT/$PGDATABASE)"
+  # Verificar que PG responde antes de correr (mensaje claro si está apagado)
+  if ! "$PYTHON_BIN" -c "import socket,sys; s=socket.socket(); s.settimeout(2); sys.exit(0 if s.connect_ex(('$PGHOST',int('$PGPORT')))==0 else 1)" 2>/dev/null; then
+    echo ""
+    echo "❌ PostgreSQL no responde en $PGHOST:$PGPORT"
+    echo "   Levantá el PG local:  pg_ctl -D <data_dir> -l pg.log start"
+    echo "   (En esta máquina: C:/Users/sebas/pgdev/pg2/pgsql/bin/pg_ctl.exe -D C:/Users/sebas/pgdev/data start)"
+    echo ""
+    exit 1
+  fi
+  TESTS=("tests/test_golden_paths.py")
+elif [ "$MODE" = "--full" ] || [ "$MODE" = "full" ]; then
   TESTS=(
     "tests/test_golden_paths.py"
     "tests/test_compras_smoke.py::test_all_pages_js_parses_with_node"
