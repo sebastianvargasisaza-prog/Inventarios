@@ -48,12 +48,19 @@ scripts/guardian.sh --quick` pasó localmente. El usuario debe pegar
 el output.
 
 ### Check 5 · Patrones peligrosos
-Buscar antipatrones:
+Fuente de patrones: **`.claude/CERO_ERROR.md`** (catálogo vivo · leélo). Buscar antipatrones:
 - `lote='AJUSTE-` (lote sintético — debe ser fallback, no default)
 - `WHERE origen='calendar'` (filtro restrictivo · puede dejar fantasmas)
-- `.commit()` sin `try/except` previo (error swallowing)
+- `.commit()` sin `try/except` previo, o `try/except: pass` en mutaciones (error swallowing · M4)
 - `f"...{user_input}..."` en SQL (inyección potencial)
+- `date('now'...)` / `datetime('now'...)` en INSERT/UPDATE (drift PG · usar fecha param Python)
+- `audit_log` DESPUÉS del `commit` (nunca persiste)
+- `MAX(0, x - ?)` en stock (esconde underflow en vez de prevenirlo · usar CAS)
+- `'$' + fmt(` (doble dollar · fmt ya prefija)
+- columna sin calificar en WHERE/ORDER BY de un SELECT con JOIN (ambiguous column)
 - TODO / FIXME / `# implement later` (no se permite en commits a main)
+
+Si el diff introduce un patrón de error NUEVO que valga la pena recordar, sugerí agregarlo a `.claude/CERO_ERROR.md` en el mismo commit.
 
 ## Reporting style
 

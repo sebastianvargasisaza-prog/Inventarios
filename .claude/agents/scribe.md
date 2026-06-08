@@ -19,6 +19,11 @@ Cuando seas invocado al final de una sesión:
    - Si tocó un blueprint con CONTRACT → actualizar CONTRACT
    - Si decidió una regla nueva → actualizar MEMORY.md
    - Si cazó un bug → agregar post-mortem al CONTRACT
+   - **Si el bug revela un PATRÓN nuevo (algo que podría repetirse en otro
+     módulo) → agregar una línea densa a `.claude/CERO_ERROR.md`** en el
+     checklist o meta-lección correspondiente, y actualizar su fecha. Este
+     archivo se carga en CADA sesión, así que el patrón queda activo para
+     siempre. No dupliques si ya existe uno equivalente.
 3. Escribir un nuevo `SESSION_LOG/YYYY-MM-DD-N.md` con estructura
    completa (request, cambios, reglas, bugs, pendientes, commits).
 
@@ -106,6 +111,7 @@ Al terminar, reportá:
 
 Cargá:
 - `MEMORY.md` (estado actual)
+- `.claude/CERO_ERROR.md` (catálogo de patrones de error · candidato a actualizar)
 - `SESSION_LOG/README.md` (protocolo)
 - `api/blueprints/CONTRACT_*.md` (estado actual de invariantes)
 - `git log --oneline -20` (contexto de cambios recientes)

@@ -2,6 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> _Última actualización del mapa: **2026-06-08** (36 blueprints, 232 golden paths, EBR/MyBatch activo). Si trabajas mucho y notas que algo aquí ya no coincide con el código, actualiza este archivo en el mismo commit._
+
+## 🧠 CERO ERROR — leer SIEMPRE
+
+El catálogo vivo de errores y reglas anti-bug se carga automáticamente desde aquí:
+
+@.claude/CERO_ERROR.md
+
+**Regla dura:** cuando encuentres o arregles un bug con un patrón nuevo, agrégalo a `.claude/CERO_ERROR.md` en el MISMO commit. Así el "cerebro cero-error" siempre conoce lo nuevo. Sebastián exige **cero error**.
+
 ## Idioma y usuario
 - SIEMPRE responder en español
 - Usuario: Sebastián Vargas, CEO HHA Group, MD MPH
@@ -21,7 +31,7 @@ gunicorn api.index:app       # production-like
 
 # Tests — single DB per session, no /var/data writes
 pytest tests/ -v --tb=short
-pytest tests/test_golden_paths.py -q                      # 50 protected user journeys (~25s)
+pytest tests/test_golden_paths.py -q                      # 232 protected user journeys (~100s)
 pytest tests/test_golden_paths.py::<test_name> -xvs       # single test, full output
 pytest -k "compras"                                       # by keyword
 
@@ -44,13 +54,15 @@ CI: `.github/workflows/test.yml` runs the full pytest suite on push/PR to main w
 ## Architecture
 
 ### Flask monolith with one blueprint per domain
-`api/index.py` boots the app, runs `init_db()` (which executes the idempotent `MIGRATIONS` list in `api/database.py`), starts background daemons (marketing metrics loop, auto-plan cron, multi-cron), and registers ~30 blueprints from `api/blueprints/`. Blueprint names map to business domains: `inventario`, `compras`, `programacion`, `aseguramiento` (quality/compliance), `animus`, `espagiria`, `comercial`, `maquila`, `rrhh`, `mfa`, etc. Each blueprint owns its tables, endpoints, and HTML view (rendered server-side from `api/templates_py/`).
+`api/index.py` boots the app, runs `init_db()` (which executes the idempotent `MIGRATIONS` list in `api/database.py`), starts background daemons (marketing metrics loop, auto-plan cron, multi-cron), and registers **36 blueprints** from `api/blueprints/`. Blueprint names map to business domains: `inventario`, `compras`, `programacion`, `aseguramiento` (quality/compliance), `brd` (Batch Record Digital / EBR — reemplazo de MyBatch, datos regulatorios más críticos), `animus`, `espagiria`, `comercial`, `maquila`, `rrhh`, `mfa`, etc. Each blueprint owns its tables, endpoints, and HTML view (rendered server-side from `api/templates_py/`).
+
+**Navegar archivos gigantes (no leerlos enteros):** algunos archivos son enormes — `admin.py` (~27.700 líneas, 176 rutas), `dashboard_html.py` (~24.400), `programacion.py` (~18.800), `plan.py` (~18.700). Para `admin.py` usa la tabla de saltos **`api/blueprints/MAP_admin.md`** (carga bajo demanda, no en el arranque). En general: `grep -n '<ruta o función>'` para ubicar la línea, luego `Read` con `offset`/`limit` sobre esa zona. Nunca abras el archivo completo "para ver".
 
 ### Three documents govern any change to a critical blueprint
-Before touching `inventario.py`, `compras.py`, or `programacion.py`, read in this order:
+Before touching `inventario.py`, `compras.py`, `programacion.py`, or `brd.py` (EBR/MyBatch — regulado INVIMA/GMP), read in this order:
 1. **`MEMORY.md`** — static domain rules that must never silently change (5% gerencia threshold, Calendar = single source of truth, kardex-only stock, 3 SOL sources, gramos-only display, etc.). Editing this file requires a `SESSION_LOG/YYYY-MM-DD-N.md` entry.
 2. **`api/blueprints/CONTRACT_<module>.md`** — invariants per blueprint (tables it writes/reads, endpoint list, downstream consumers, post-mortems). When you add an endpoint or change an invariant, update the CONTRACT in the same commit.
-3. **`tests/test_golden_paths.py`** — 50 E2E journeys that are the executable spec of those invariants. Never modify a golden path to make a failing change pass; the code adapts to the test.
+3. **`tests/test_golden_paths.py`** — 232 E2E journeys that are the executable spec of those invariants. Never modify a golden path to make a failing change pass; the code adapts to the test.
 
 ### Stock = SUM(movimientos), always
 The `movimientos` table is the canonical kardex. Compute stock with `_get_mp_stock(conn)` from `programacion.py` — never with a parallel `stock_actual_g` cache (caused drift in the past). Every `INSERT INTO movimientos` requires a real `lote`; the synthetic fallback `'AJUSTE-CICLICO-<id>'` is only allowed when the source row has no lote at all.
@@ -76,6 +88,13 @@ Sebastián 19-may-2026 (rediseño post-incidente): `produccion_programada` separ
 
 Catalina's UI tabs depend on these never overlapping. PATCHing a SOL item also writes through to `maestro_mps.proveedor / precio_referencia` and upserts `mp_lead_time_config` — that's INV-2 in `CONTRACT_compras.md`, covered by GP-3.
 
+### Batch Record Digital (EBR) · reemplazo de MyBatch · `brd.py`
+Datos regulatorios MÁS críticos del sistema (Part 11 / GMP INVIMA). Tres capas: **MBR** (Master Batch Record, procedimiento aprobado por QA) → **EBR** (ejecución de UN lote real) → **IPCs** (in-process controls con specs y bloqueo OOS) + cleaning log + pesajes (reconciliación teórico vs real) + PDF maestro auditable. Invariantes duras (todas con triggers de DB, ver `CONTRACT_brd.md`):
+- **MBR aprobado es INMUTABLE** (mig 109) — para cambiar: `obsoletar` versión + crear `version+1`. IPC specs siguen el estado del MBR (mig 112).
+- **EBR liberado/rechazado es INMUTABLE** (mig 111) — pasos, IPCs y pesajes asociados también.
+- Toda operación crítica escribe `audit_log` + usa `e_signatures` (firma con identity snapshot).
+- Se enciende por fases: `EBR_MODE` off → warn → strict. Si "no se ve funcional", primero verificar que NO está apagado (sin MBR aprobados) antes de buscar un bug.
+
 ### SQLite + WAL + multi-worker Gunicorn
 `_configure_conn` in `api/database.py` sets `journal_mode=WAL`, `busy_timeout=5000`, `foreign_keys=ON` on every connection. Connections are per-request (Flask `g`) and closed in `teardown_appcontext`. With 3 sync workers in production, `cron_locks` table (migration 81) prevents duplicate cron runs across workers. Migrations are an append-only list of `(version, description, sql)` tuples in `MIGRATIONS` — never edit a past entry; add new ones at the end. Use `safe_alter()` for idempotent DDL (it only swallows "duplicate column" / "already exists" errors and re-raises everything else).
 
@@ -84,7 +103,7 @@ Catalina's UI tabs depend on these never overlapping. PATCHing a SOL item also w
 
 ### Anti-regression sandwich
 - **pre-commit** runs `scripts/reviewer.py` → flags missing CONTRACT updates, missing tests for new endpoints, edits to high-risk functions (`conteo_ajustar`, `_sync_calendar_a_produccion_programada`, `update_sol_items`, `limpiar_duplicados_producciones`), and dangerous patterns (synthetic lote defaults, restrictive `WHERE origen='calendar'` filters, f-string SQL).
-- **pre-push** runs `scripts/guardian.sh --quick` → 50 golden paths, ~25s. If red, push is blocked.
+- **pre-push** runs `scripts/guardian.sh --quick` → 232 golden paths, ~100s. If red, push is blocked.
 - Three subagents in `.claude/agents/` (`guardian`, `reviewer`, `scribe`) automate the same gates inside Claude Code sessions. After landing changes, invoke `scribe` to update CONTRACT/MEMORY/SESSION_LOG.
 
 ## Conventions specific to this codebase
