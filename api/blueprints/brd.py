@@ -2012,21 +2012,54 @@ def ebr_vista_completa(ebr_id):
         } for r in rows]
     except Exception:
         out['despejes_recientes'] = []
-    # 6. Audit log filtrado
+    # 6. Audit log filtrado + Correcciones (Audit Trail Part 11 · MyBatch parity).
+    # A nivel orden (registro_id=ebr_id) y por MP/paso/IPC (despues contiene ebr_id).
     try:
         rows = conn.execute(
-            """SELECT fecha, usuario, accion, COALESCE(detalle,'')
+            """SELECT fecha, usuario, accion, COALESCE(detalle,''),
+                      COALESCE(antes,''), COALESCE(despues,''), COALESCE(tabla,'')
                FROM audit_log
-               WHERE tabla IN ('ebr_ejecuciones','ebr_pesajes','ebr_pasos','ebr_ipc_resultados')
-                 AND registro_id = ?
-               ORDER BY fecha DESC LIMIT 30""",
-            (str(ebr_id),),
+               WHERE (tabla='ebr_ejecuciones' AND registro_id = ?)
+                  OR (tabla IN ('ebr_pesajes','ebr_pasos_ejecutados','ipc_resultados',
+                                'ipc_estandar_resultados','ebr_despeje_items','ebr_despeje_linea')
+                      AND (despues LIKE ? OR despues LIKE ?))
+               ORDER BY fecha DESC LIMIT 200""",
+            (str(ebr_id), '%"ebr_id": ' + str(ebr_id) + ',%',
+             '%"ebr_id": ' + str(ebr_id) + '}%'),
         ).fetchall()
         out['audit'] = [{
             'fecha': r[0], 'usuario': r[1], 'accion': r[2], 'detalle': r[3],
         } for r in rows]
+        # Correcciones con diff campo/anterior/nuevo (parse antes/despues JSON).
+        correcciones = []
+        for r in rows:
+            try:
+                antes = _json.loads(r[4]) if r[4] else {}
+            except Exception:
+                antes = {}
+            try:
+                despues = _json.loads(r[5]) if r[5] else {}
+            except Exception:
+                despues = {}
+            campos = []
+            if isinstance(despues, dict):
+                for k, vn in despues.items():
+                    if k == 'ebr_id':
+                        continue
+                    va = antes.get(k) if isinstance(antes, dict) else None
+                    if str(va) != str(vn):  # solo cambios reales
+                        campos.append({'campo': k,
+                                       'anterior': ('' if va is None else str(va)),
+                                       'nuevo': ('' if vn is None else str(vn))})
+            correcciones.append({
+                'fecha': r[0], 'usuario': r[1],
+                'usuario_full': _persona(r[1]), 'accion': r[2],
+                'detalle': r[3], 'tabla': r[6], 'campos': campos,
+            })
+        out['correcciones'] = correcciones
     except Exception:
         out['audit'] = []
+        out['correcciones'] = []
     # Resumen métricas
     completados = sum(1 for p in out['pasos'] if p['completado_flag'])
     out['progreso_pasos_pct'] = round((completados / len(out['pasos']) * 100) if out['pasos'] else 0, 1)
@@ -5358,7 +5391,22 @@ async function load(){
         + '<div class="muted" style="font-size:12.5px;margin-bottom:6px">Estado de limpieza de '+esc(d.header.area_linea||'')+' (formato PRD-PRO-002-F02). El estado fluye con la producción · se opera desde «Estado salas en vivo».</div>'
         + '<a class="b-pdf-sm" href="/planta/rotulo-limpieza/'+_aid+'/pdf" target="_blank" data-tip="Abre el rótulo de limpieza F02 del área de esta orden.">🖨️ Ver / imprimir rótulo F02</a>'
       : '';
-    document.getElementById('pasos').innerHTML = manuf + precHtml + despHtml + dispHtml + ajustesHtml + despFabHtml + pasosHtml + ipcHtml + obsHtml + regHtml + rotuloHtml;
+    // 9. Correcciones / Auditoría (Audit Trail · Part 11 · MyBatch parity).
+    var corrs=d.correcciones||[];
+    var corrHtml='<div style="display:flex;align-items:center;gap:12px;margin:18px 0 6px"><h3 style="font-size:15px;color:#7c3aed;margin:0">📝 Correcciones / Auditoría</h3></div>'+
+      (corrs.length
+       ? corrs.map(function(cr){
+           var hd='<div style="font-weight:700;font-size:12.5px;margin-top:10px">'+esc(cr.usuario_full||cr.usuario)+' · '+esc(cr.accion)+' <span class="muted" style="font-weight:400">'+dt(cr.fecha)+'</span></div>';
+           if(cr.campos && cr.campos.length){
+             hd+='<table style="margin-top:4px"><thead><tr><th>Campo</th><th>Valor anterior</th><th>Valor nuevo</th></tr></thead><tbody>'+
+               cr.campos.map(function(cp){return '<tr><td style="font-size:11.5px">'+esc(cp.campo)+'</td><td style="font-size:11.5px;color:#94a3b8">'+esc(cp.anterior||'—')+'</td><td style="font-size:11.5px;color:#166534">'+esc(cp.nuevo||'—')+'</td></tr>';}).join('')+'</tbody></table>';
+           } else if(cr.detalle){
+             hd+='<div class="muted" style="font-size:11.5px">'+esc(cr.detalle)+'</div>';
+           }
+           return hd;
+         }).join('')
+       : '<div class="muted">Sin correcciones registradas.</div>');
+    document.getElementById('pasos').innerHTML = manuf + precHtml + despHtml + dispHtml + ajustesHtml + despFabHtml + pasosHtml + ipcHtml + obsHtml + regHtml + rotuloHtml + corrHtml;
   }catch(e){document.getElementById('head').innerHTML='<span style="color:#b91c1c">Error red: '+esc(e.message)+'</span>';}
 }
 load();
