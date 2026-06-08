@@ -90,3 +90,26 @@ def test_identificador_con_comillas_dobles_no_se_toca():
     # `"foo"` (no vacío) es un identificador en PG · se preserva.
     assert tr('SELECT "miCol" FROM t WHERE id=?') == \
         'SELECT "miCol" FROM t WHERE id=%s'
+
+
+# ── rewrite_having_alias · expandir alias del SELECT en HAVING (PG no los acepta)
+from pg_compat import rewrite_having_alias as rha
+
+
+def test_having_alias_se_expande():
+    # El alias sin calificar SÍ se expande a su expresión del SELECT.
+    out = rha("SELECT a, COUNT(*) AS n FROM t GROUP BY a HAVING n > 2")
+    assert "(COUNT(*)) > 2" in out
+
+
+def test_having_columna_calificada_no_se_mangla():
+    # Regresión 8-jun: una columna calificada (m.tipo) cuyo nombre coincide con
+    # un alias del SELECT (`... AS tipo`) NO debe sustituirse dentro de HAVING.
+    # Antes producía `m.(COALESCE(...))` → "syntax error at or near (" en PG.
+    sql = ("SELECT m.material_id, COALESCE(mp.clase,'MP') AS tipo, "
+           "SUM(CASE WHEN m.tipo='E' THEN 1 ELSE 0 END) AS stock "
+           "FROM movimientos m GROUP BY m.material_id "
+           "HAVING SUM(CASE WHEN m.tipo='E' THEN 1 ELSE 0 END) > 0")
+    out = rha(sql)
+    assert "m.tipo" in out            # la columna calificada se mantiene
+    assert "m.(COALESCE" not in out   # no se mangla

@@ -431,8 +431,13 @@ def rewrite_having_alias(sql: str) -> str:
             e = _ae.get(m.group(0).lower())
             return '(' + e + ')' if e else m.group(0)
 
+        # `(?<!\.)` · NO sustituir una palabra precedida por punto: en `m.tipo`
+        # el token `tipo` es una columna CALIFICADA (movimientos.tipo), no el
+        # alias del SELECT. Sin esto, si el nombre de columna coincide con un
+        # alias (`tipo`, `fecha_proxima`...) se manglaba a `m.(COALESCE(...))` →
+        # "syntax error at or near (" en PG. Los alias siempre son no-calificados.
         resultado = (resultado[:hpos + 6]
-                     + _re.sub(r'\b\w+\b', _repl, resultado[hpos + 6:fin])
+                     + _re.sub(r'(?<!\.)\b\w+\b', _repl, resultado[hpos + 6:fin])
                      + resultado[fin:])
     return resultado
 

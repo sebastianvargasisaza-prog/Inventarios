@@ -1904,7 +1904,10 @@ def calidad_equipos_dashboard():
                   AND tipo_evento = 'calibracion') as ultima_cal
         FROM equipos_planta ep
         WHERE COALESCE(ep.activo,1) = 1
-        GROUP BY ep.codigo
+        -- PG exige toda columna no-agregada del SELECT en el GROUP BY (SQLite no).
+        -- ep.codigo es único, así que agrupar por todas las ep.* preserva el
+        -- resultado. Sin esto: 500 'must appear in the GROUP BY clause'. Suite PG.
+        GROUP BY ep.codigo, ep.nombre, ep.area_codigo, ep.ubicacion_raw, ep.tipo
         ORDER BY ep.codigo
     """).fetchall()
 

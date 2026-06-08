@@ -1775,10 +1775,12 @@ def job_equipos_vencimientos(app):
                   AND ee.tipo_evento IN ('calibracion','verificacion_semestral')
                   AND ee.fecha_proxima IS NOT NULL
                 WHERE COALESCE(ep.activo,1) = 1
-                GROUP BY ep.codigo
-                HAVING fecha_proxima IS NOT NULL
-                  AND date(fecha_proxima) <= date('now', '-5 hours', '+30 days')
-                ORDER BY fecha_proxima ASC
+                -- PG: nombre/area_codigo deben ir en GROUP BY, y HAVING no acepta
+                -- el alias fecha_proxima → usar MAX(ee.fecha_proxima). Cazado por suite PG.
+                GROUP BY ep.codigo, ep.nombre, ep.area_codigo
+                HAVING MAX(ee.fecha_proxima) IS NOT NULL
+                  AND date(MAX(ee.fecha_proxima)) <= date('now', '-5 hours', '+30 days')
+                ORDER BY MAX(ee.fecha_proxima) ASC
                 LIMIT 100
             """).fetchall()
         except Exception as e:

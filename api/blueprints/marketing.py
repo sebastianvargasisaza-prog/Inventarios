@@ -5266,9 +5266,11 @@ def mkt_ejecutar_agente(agente):
                        AVG(cantidad_uds) as uds_promedio
                 FROM pedidos_b2b
                 WHERE COALESCE(estado,'') NOT IN ('pendiente','cancelado')
-                GROUP BY cliente_id
-                HAVING pedidos >= 2
-                ORDER BY pedidos DESC, uds_total DESC LIMIT 15
+                -- PG: cliente_nombre debe ir en GROUP BY, y HAVING no acepta el
+                -- alias 'pedidos' → usar COUNT(*). Cazado por suite PG.
+                GROUP BY cliente_id, cliente_nombre
+                HAVING COUNT(*) >= 2
+                ORDER BY COUNT(*) DESC, SUM(cantidad_uds) DESC LIMIT 15
             """).fetchall()
             predicciones = []
             for cl in clientes_b2b:

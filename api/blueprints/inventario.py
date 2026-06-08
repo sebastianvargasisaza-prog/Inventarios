@@ -11914,8 +11914,12 @@ def alertas_vivas_planta():
         WHERE m.fecha_vencimiento != ''
           AND m.fecha_vencimiento <= ?
           AND m.estado_lote IN ('VIGENTE','CUARENTENA')
-        GROUP BY m.material_id, m.lote
-        HAVING stock > 0
+        -- material_nombre/fecha_vencimiento/tipo son funcionalmente dependientes
+        -- del lote, pero PG exige toda columna no-agregada en el GROUP BY (SQLite
+        -- no) → si no, 500 'must appear in the GROUP BY clause'. Y PG tampoco
+        -- acepta el alias 'stock' en HAVING → repetir la expresión. Cazado por suite PG.
+        GROUP BY m.material_id, m.lote, m.material_nombre, m.fecha_vencimiento, mp.tipo_material
+        HAVING SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END) > 0
         ORDER BY m.fecha_vencimiento ASC
         LIMIT 100
     """, (in_30,))
@@ -11975,8 +11979,14 @@ def alertas_vivas_planta():
             FROM conteos_fisicos cf
             LEFT JOIN conteo_items ci ON cf.id = ci.conteo_id
             WHERE cf.estado = 'Cerrado'
-            GROUP BY cf.id
-            HAVING n_dif > 0
+            -- PG: numero/fecha_cierre deben ir en GROUP BY, y HAVING no acepta
+            -- el alias n_dif → repetir la expresión. Si esta query falla en PG la
+            -- transacción queda abortada y revienta TODO el endpoint (el except no
+            -- la recupera). Cazado por suite PG.
+            GROUP BY cf.id, cf.numero, cf.fecha_cierre
+            HAVING SUM(CASE WHEN ABS(COALESCE(ci.diferencia,0)) > 0
+                             AND COALESCE(ci.ajuste_aplicado,0) = 0
+                            THEN 1 ELSE 0 END) > 0
             ORDER BY cf.fecha_cierre DESC
             LIMIT 20
         """)
