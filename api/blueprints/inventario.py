@@ -2158,10 +2158,13 @@ def _handle_produccion_inner():
                 ret_total = 0.0
                 try:
                     for er in c.execute(
-                        """SELECT COALESCE(estado_lote,'(sin estado)') est, lote,
-                                  SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) stk
+                        """SELECT COALESCE(estado_lote,'(sin estado)') AS est, lote,
+                                  SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) AS stk
                            FROM movimientos
                            WHERE material_id=? AND estado_lote IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO')
+                           -- AS explícito en stk: el reescritor de HAVING-alias del adaptador
+                           -- solo expande alias con AS; sin él, `HAVING stk` daba
+                           -- "column stk does not exist" en PG → retenido vacío. Suite PG 8-jun.
                            GROUP BY estado_lote, lote HAVING stk > 0""", (mat_id,)).fetchall():
                         g = float(er[2] or 0)
                         retenido.setdefault(er[0], 0.0)

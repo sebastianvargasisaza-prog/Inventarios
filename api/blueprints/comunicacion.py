@@ -379,9 +379,12 @@ def tarea_avance(tid):
         return jsonify({"error": "Nota requerida"}), 400
     conn = get_db(); c = conn.cursor()
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-    nueva = f"[{timestamp}] {u}: {nota}"
+    # El salto de línea va en el parámetro (no `char(10)`: SQLite tiene char(),
+    # PostgreSQL usa chr() → en PG `char(10)` rompía la UPDATE y las notas
+    # quedaban vacías). Cazado por suite PG · 8-jun.
+    nueva = f"[{timestamp}] {u}: {nota}\n"
     c.execute("""UPDATE tareas_internas
-                 SET notas_avance = COALESCE(notas_avance,'') || ? || char(10)
+                 SET notas_avance = COALESCE(notas_avance,'') || ?
                  WHERE id=?""", (nueva, tid))
     conn.commit()
     return jsonify({"ok": True})

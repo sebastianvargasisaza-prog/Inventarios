@@ -2752,7 +2752,7 @@ def recall_recoleccion(rid):
         UPDATE recalls
         SET cantidad_recolectada=?,
             recoleccion_inicio_at=COALESCE(recoleccion_inicio_at, datetime('now', '-5 hours')),
-            recoleccion_completada_at=CASE WHEN ? THEN datetime('now', '-5 hours') ELSE recoleccion_completada_at END,
+            recoleccion_completada_at=CASE WHEN ? <> 0 THEN datetime('now', '-5 hours') ELSE recoleccion_completada_at END,
             estado=?, actualizado_en=datetime('now', '-5 hours')
         WHERE id=?
     """, (cantidad, 1 if completa else 0, nuevo_estado, rid))
