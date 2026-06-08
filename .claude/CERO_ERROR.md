@@ -96,6 +96,17 @@ Tests corren en **SQLite** (local, pasan ✅) pero producción es **PostgreSQL**
 - **CORS/Origin ya enforced**: `csrf_origin_check` (auth.py) → 403 si Origin/Referer ≠ host en métodos que mutan. No hay `Access-Control-Allow-Origin` permisivo.
 - **Security headers** en `add_security_headers` (auth.py): HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, CSP, COOP/CORP, Permissions-Policy. Datos bancarios solo admin+contadora (Habeas Data Ley 1581).
 
+## 🧪 Aislamiento de tests en PG (NO perseguir)
+
+La suite completa (1720) en una sola sesión PG comparte la BD. `db_clean` resetea
+tablas volátiles + transaccionales (solicitudes/OCs/audit_zero_error). Quedan **2
+falsos-positivos de contaminación SOLO en la corrida full** (pasan en aislamiento
+y en el gate): `planificacion::solicitar_bulk_sin_deficits_ok` y
+`producciones_faltantes::test_atrasada`. Dependen de stock/producción
+(`movimientos`/`produccion_programada`). **NO resetear `movimientos`** (es el stock
+seedeado · zerearlo rompe cientos de tests). El gate CI corre golden (verde), no la
+full-suite, así que no afecta nada. No vale la pena perseguirlos.
+
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
 
 Al cerrar una sesión donde se encontró/arregló un bug con patrón no listado aquí:
