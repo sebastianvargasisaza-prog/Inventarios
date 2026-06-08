@@ -12643,7 +12643,14 @@ def test_golden_aplicar_migraciones_pg_endpoint_guards(app, db_clean):
     - mayerlin (no admin) → 403
     - admin en SQLite → 400 con mensaje claro (no debe tocar nada)
     - POST aplicar=true en SQLite → 400 también (guard absoluto)
+
+    Las aserciones 400 dependen de estar en SQLite (el endpoint responde 200
+    cuando SÍ corre sobre PostgreSQL). En la suite en modo PG este test se
+    salta (el camino PG real lo cubre el propio AUTO-MIG-PG del boot).
     """
+    if os.environ.get('EOS_DB_BACKEND', '').strip().lower() == 'postgres':
+        import pytest
+        pytest.skip('guards de no-PG · solo aplican en modo SQLite')
     cs_op = _login(app, 'mayerlin')
     r = cs_op.get('/api/admin/aplicar-migraciones-pg')
     assert r.status_code == 403

@@ -2767,8 +2767,13 @@ def listar_recepciones_discrepancias():
         # "DISTRIQUIM" vs "distriquim ") aparecían como 3 entradas distintas
         # en el ranking · tasa diluida por proveedor real. Mismo fix que
         # aplicamos en Bandeja Planta (commit bbcff41).
+        # prov_norm_orig usa MIN(TRIM(...)) — debe ser agregado: en PostgreSQL una
+        # columna del SELECT que no esté en GROUP BY ni agregada es error duro
+        # ("must appear in the GROUP BY clause"). SQLite lo toleraba (valor
+        # arbitrario) → el ranking salía bien local pero VACÍO en prod (PG), y el
+        # error lo tragaba el except → silencioso. Cazado por suite golden en PG · 8-jun.
         for r in c.execute("""
-            SELECT TRIM(proveedor) AS prov_norm_orig,
+            SELECT MIN(TRIM(proveedor)) AS prov_norm_orig,
                    UPPER(TRIM(proveedor)) AS prov_norm_key,
                    COUNT(*) AS total_recibidas,
                    SUM(CASE WHEN tiene_discrepancias=1 THEN 1 ELSE 0 END) AS con_discrep
@@ -2791,8 +2796,11 @@ def listar_recepciones_discrepancias():
                     'con_discrepancia': con_dis,
                     'tasa_discrepancia_pct': tasa,
                 }
-    except Exception:
-        pass
+    except Exception as _e_rank:
+        # No tragar en silencio (M4): si el ranking falla, dejar rastro. El
+        # endpoint sigue devolviendo las OCs con discrepancia aunque el ranking
+        # quede vacío.
+        log.warning('ranking_proveedores recepciones-discrepancias falló: %s', _e_rank)
     ranking_lista = sorted(
         ranking.values(),
         key=lambda x: (-x['tasa_discrepancia_pct'], -x['con_discrepancia']),

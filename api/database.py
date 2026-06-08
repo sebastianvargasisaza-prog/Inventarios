@@ -312,6 +312,17 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (226, "portal_solicitudes.cliente_id INTEGER→TEXT · bug VIVO en PG: el portal B2B "
+          "guarda códigos de cliente TEXT (portal_clientes_credenciales.cliente_id es "
+          "TEXT) pero esta columna era INTEGER → crear solicitud (RFQ/cotización) daba "
+          "HTTP 500 en producción (SQLite lo toleraba por tipado dinámico). Cazado por la "
+          "suite golden en modo PostgreSQL · 8-jun-2026. Solo aplica en PG (en SQLite el "
+          "tipo es irrelevante y el CREATE TABLE base ya quedó TEXT).", (
+        ["ALTER TABLE portal_solicitudes ALTER COLUMN cliente_id TYPE TEXT "
+         "USING cliente_id::text"]
+        if _usa_postgres() else []
+    )),
+
     (225, "ipc_estandar_resultados · controles en proceso ESTÁNDAR siempre presentes (Densidad/pH/Olor/Color/Apariencia) con opción 'No aplica' (conforme=2) · 6-jun-2026", [
         # Sebastián: la sección 6 (Controles en Proceso) debe mostrar SIEMPRE un set
         # estándar aunque el MBR del producto no lo defina, y cada control se puede
@@ -1151,7 +1162,7 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # Cubre 3 tipos: cotización, muestras, ficha técnica.
         """CREATE TABLE IF NOT EXISTS portal_solicitudes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            cliente_id INTEGER,
+            cliente_id TEXT,
             cliente_nombre TEXT NOT NULL,
             cliente_email TEXT,
             tipo TEXT NOT NULL DEFAULT 'cotizacion',
