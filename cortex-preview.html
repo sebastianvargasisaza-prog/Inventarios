@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EOS · Muestra de diseño premium</title>
+<link rel="stylesheet" href="api/static/cortex.css">
+<style>
+  body { background: var(--cx-bg); margin: 0; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 var(--cx-s5) var(--cx-s8); }
+  .row { display: flex; gap: var(--cx-s3); flex-wrap: wrap; align-items: center; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--cx-s4); }
+  @media (max-width:760px){ .grid2 { grid-template-columns: 1fr; } }
+  h2.demo { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; color: var(--cx-text-mute); margin: var(--cx-s6) 0 var(--cx-s3); }
+  p.lead { color: var(--cx-text-soft); max-width: 70ch; }
+</style>
+</head>
+<body>
+
+<!-- Header de módulo (compartido por toda la app) -->
+<div class="cx-page-header">
+  <div class="cx-page-header__icon">✦</div>
+  <div>
+    <div class="cx-page-header__title">Panel de Producción</div>
+    <div class="cx-page-header__sub">ÁNIMUS Lab · vista de hoy</div>
+  </div>
+  <div class="cx-page-header__actions">
+    <button class="cx-btn cx-btn-ghost cx-btn-sm">Exportar</button>
+    <button class="cx-btn cx-btn-sm">Nueva orden</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <h2 class="demo">Tipografía &amp; números tabulares</h2>
+  <p class="lead">Esta es la base de lectura. Los <strong>números tabulares</strong>
+    alinean en columnas: <span class="cx-num">1.234.567</span> ·
+    <span class="cx-num">  98.402</span> · <span class="cx-num">   1.009</span>.
+    Premium por precisión, no por decoración.</p>
+
+  <h2 class="demo">KPIs</h2>
+  <div class="cx-kpi-grid">
+    <div class="cx-kpi cx-kpi--ok">
+      <div class="cx-kpi__label">Producciones hoy</div>
+      <div class="cx-kpi__value cx-kpi__value--ok">12</div>
+      <div class="cx-kpi__hint">+3 vs ayer</div>
+    </div>
+    <div class="cx-kpi cx-kpi--warn">
+      <div class="cx-kpi__label">MP en cuarentena</div>
+      <div class="cx-kpi__value">4</div>
+      <div class="cx-kpi__hint">esperando QC</div>
+    </div>
+    <div class="cx-kpi cx-kpi--danger">
+      <div class="cx-kpi__label">Quiebres de stock</div>
+      <div class="cx-kpi__value cx-kpi__value--danger">2</div>
+      <div class="cx-kpi__hint">acción requerida</div>
+    </div>
+    <div class="cx-kpi">
+      <div class="cx-kpi__label">Lotes liberados</div>
+      <div class="cx-kpi__value">847</div>
+      <div class="cx-kpi__hint">acumulado mes</div>
+    </div>
+  </div>
+
+  <h2 class="demo">Botones &amp; estados</h2>
+  <div class="row">
+    <button class="cx-btn">Acción principal</button>
+    <button class="cx-btn cx-btn-grad">CTA gradiente</button>
+    <button class="cx-btn cx-btn-success">Liberar lote</button>
+    <button class="cx-btn cx-btn-danger">Rechazar</button>
+    <button class="cx-btn cx-btn-ghost">Secundario</button>
+    <button class="cx-btn" disabled>Deshabilitado</button>
+  </div>
+
+  <h2 class="demo">Formularios</h2>
+  <div class="grid2">
+    <div>
+      <input class="cx-input" placeholder="Buscar materia prima…">
+    </div>
+    <div>
+      <input class="cx-input" value="MP00169 · Glicerina USP" disabled>
+    </div>
+  </div>
+
+  <h2 class="demo">Chips &amp; badges de estado</h2>
+  <div class="row">
+    <span class="cx-chip cx-chip-success">Liberado</span>
+    <span class="cx-chip cx-chip-warn">Cuarentena</span>
+    <span class="cx-chip cx-chip-danger">OOS</span>
+    <span class="cx-chip cx-chip-info">En revisión</span>
+    <span class="cx-chip cx-chip-violet">B2B</span>
+    <span class="cx-badge cx-badge--ok">Stock sano</span>
+    <span class="cx-badge cx-badge--warn">Por agotar</span>
+    <span class="cx-badge cx-badge--danger">Crítico</span>
+  </div>
+
+  <h2 class="demo">Tabla de datos</h2>
+  <div class="cx-table-wrap">
+    <table class="cx-table">
+      <thead><tr><th>Lote</th><th>Producto</th><th>Cantidad</th><th>Vence</th><th>Estado</th></tr></thead>
+      <tbody>
+        <tr><td>YT20251203</td><td>Contorno de ojos</td><td class="cx-num">600 g</td><td>2026-08-14</td><td><span class="cx-chip cx-chip-success">Liberado</span></td></tr>
+        <tr><td>LB20260105</td><td>Sérum niacinamida</td><td class="cx-num">1.240 g</td><td>2026-07-02</td><td><span class="cx-chip cx-chip-warn">Cuarentena</span></td></tr>
+        <tr><td>AH20260118</td><td>Suero AH</td><td class="cx-num">98 g</td><td>2026-06-20</td><td><span class="cx-chip cx-chip-danger">OOS</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 class="demo">Cards &amp; empty state</h2>
+  <div class="grid2">
+    <div class="cx-card cx-card-link">
+      <strong>Orden OC-2026-0148</strong>
+      <p class="cx-text-mute" style="margin:8px 0 0">Inquimica · 5 ítems · esperando recepción</p>
+    </div>
+    <div class="cx-card">
+      <div class="cx-empty">
+        <div class="cx-empty__icon">✓</div>
+        <div class="cx-empty__title">Sin pendientes</div>
+        <div class="cx-empty__hint">Todo al día en este turno.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
