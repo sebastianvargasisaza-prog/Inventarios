@@ -917,7 +917,7 @@ def _registrar_ejecucion(conn, job_name, ok, resultado, duracion_ms, error=None)
                     INSERT INTO cron_jobs_health (job_name, errores_consecutivos, ultimo_error_at, ultimo_error_msg)
                     VALUES (?, 1, datetime('now', '-5 hours'), ?)
                     ON CONFLICT(job_name) DO UPDATE SET
-                      errores_consecutivos = errores_consecutivos + 1,
+                      errores_consecutivos = cron_jobs_health.errores_consecutivos + 1,
                       ultimo_error_at = datetime('now', '-5 hours'),
                       ultimo_error_msg = excluded.ultimo_error_msg
                 """, (job_name, (error or '')[:300]))
@@ -2187,7 +2187,7 @@ def job_desv_plazos(app):
                    VALUES (?, ?, ?, 1)
                    ON CONFLICT(tipo_alerta, registro_id) DO UPDATE SET
                      ultima_notif=excluded.ultima_notif,
-                     count_notifs=count_notifs+1""",
+                     count_notifs=cron_alerts_sent.count_notifs+1""",
                 ('desv_plazos', firma_actual, hoy_iso)
             )
             conn.commit()
@@ -3961,7 +3961,7 @@ def job_mailbox_factura_proveedor(app):
                        VALUES (?, ?, ?, ?)
                        ON CONFLICT(tipo_alerta, registro_id) DO UPDATE SET
                          ultima_notif=excluded.ultima_notif,
-                         count_notifs=count_notifs+1""",
+                         count_notifs=cron_alerts_sent.count_notifs+1""",
                     ('mailbox_fail', 'imap_error', hoy_iso, count)
                 )
                 conn.commit()
@@ -4232,7 +4232,7 @@ def job_ocs_atrasadas(app):
                            VALUES (?, ?, ?, 1)
                            ON CONFLICT(tipo_alerta, registro_id) DO UPDATE SET
                              ultima_notif=excluded.ultima_notif,
-                             count_notifs=count_notifs+1""",
+                             count_notifs=cron_alerts_sent.count_notifs+1""",
                         ('oc_atrasada', a['numero_oc'], hoy_iso)
                     )
                 except Exception:

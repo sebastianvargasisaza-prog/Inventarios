@@ -171,21 +171,33 @@ def _record_failure(ip, username=None):
         conn = db_connect()
         conn.execute("PRAGMA busy_timeout=2000")
         for key in keys_to_record:
+            # IMPORTANTE: calificar rate_limit.attempts / rate_limit.locked_until.
+            # En PostgreSQL, `attempts` a secas dentro del DO UPDATE SET es
+            # AMBIGUO ("column reference attempts is ambiguous") → el INSERT
+            # lanzaba excepción que el except tragaba → el rate-limit quedaba
+            # SILENCIOSAMENTE DESACTIVADO en producción (brute-force sin tope).
+            # SQLite también acepta la forma calificada. Cazado por suite PG · 8-jun.
             conn.execute("""
                 INSERT INTO rate_limit(ip, attempts, locked_until, last_attempt)
                 VALUES(?, 1, 0, ?)
                 ON CONFLICT(ip) DO UPDATE SET
-                    attempts     = attempts + 1,
+                    attempts     = rate_limit.attempts + 1,
                     last_attempt = excluded.last_attempt,
                     locked_until = CASE
-                        WHEN attempts + 1 >= ? THEN ? + excluded.last_attempt
-                        ELSE locked_until
+                        WHEN rate_limit.attempts + 1 >= ? THEN ? + excluded.last_attempt
+                        ELSE rate_limit.locked_until
                     END
             """, (key, time.time(), _MAX_ATTEMPTS, _LOCKOUT_SECS))
         conn.commit()
         conn.close()
-    except Exception:
-        pass
+    except Exception as e:
+        # NO tragar en silencio (M4): este except ocultó que el rate-limit
+        # estaba roto en PG. Si falla, dejar rastro de seguridad.
+        try:
+            _log_sec("rate_limit_record_error", username or "", ip or "",
+                     details=str(e)[:200])
+        except Exception:
+            pass
 
 
 # Alias defensivo · audit 26-may-2026 P0 · portal.py:215 hacía
