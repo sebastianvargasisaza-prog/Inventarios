@@ -5867,6 +5867,14 @@ def test_golden_brd_auto_seed_mbrs_desde_formula_headers(app, db_clean):
     """Cada producto en formula_headers tiene un MBR draft auto-creado."""
     cs = _login(app, 'sebastian')
 
+    # Asegurar MBRs para TODOS los productos con fórmula actuales. La mig 115
+    # auto-seed corre al init; pero en la suite completa otros tests agregan
+    # formula_headers DESPUÉS del init (esos productos no tendrían MBR auto y
+    # contaminaban este test). Regenerar es idempotente (salta los que ya tienen)
+    # y deja el sistema consistente. El check de "3 pasos" abajo sigue validando
+    # SOLO los MBR creado_por='system-seed' (la verificación real del auto-seed).
+    cs.post('/api/brd/mbr/generar-todas-desde-formulas', headers=csrf_headers())
+
     # Listar todos los productos con fórmula
     productos = _query("SELECT producto_nombre FROM formula_headers")
     productos_set = {p[0] for p in productos}
