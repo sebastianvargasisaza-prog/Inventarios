@@ -507,6 +507,15 @@ def register_hooks(app):
             "object-src 'none';"
         )
         response.headers['Content-Security-Policy'] = csp
+        # Permissions-Policy · desactiva features potentes que la app NO usa
+        # (geolocalización, micrófono, pago, USB). camera=(self): SÍ se usa para
+        # la foto de registros en MyBatch (brd.py · <input capture>), permitida
+        # solo en mismo origen. Reduce superficie de abuso si hay XSS.
+        response.headers['Permissions-Policy'] = (
+            'geolocation=(), microphone=(), payment=(), usb=(), '
+            'magnetometer=(), gyroscope=(), accelerometer=(), camera=(self)'
+        )
         # Cross-Origin policies para defense in depth contra Spectre y leaks
         response.headers['Cross-Origin-Opener-Policy'] = 'same-origin'
+        response.headers['Cross-Origin-Resource-Policy'] = 'same-origin'
         return response
