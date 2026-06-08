@@ -10,12 +10,32 @@ Cubre:
 - Login flow: usuario con MFA activo debe pasar por /login/mfa
 - Login con backup code desactiva MFA + completa sesión
 """
+import os
 import sqlite3
 import time
 import pytest
 import pyotp
 
-from .conftest import TEST_PASSWORD
+from .conftest import TEST_PASSWORD, ALL_USERS, TEST_PASSWORD_HASH
+
+
+@pytest.fixture(autouse=True)
+def _seed_users_passwords(app):
+    """users_mfa tiene FK username→users_passwords. En prod los usuarios viven
+    en esa tabla; en tests vienen de env. Sembramos antes de cada test MFA para
+    que el INSERT en users_mfa no falle por FK en PostgreSQL (SQLite no la
+    enforzaba). db_clean borra users_passwords tras cada test, por eso se
+    siembra aquí en el setup (no rompe los tests de cambio de password)."""
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    for u in ALL_USERS:
+        try:
+            conn.execute(
+                "INSERT OR IGNORE INTO users_passwords (username, password_hash, activo) "
+                "VALUES (?, ?, 1)", (u, TEST_PASSWORD_HASH))
+        except Exception:
+            pass
+    conn.commit(); conn.close()
+    yield
 
 
 def _fresh_totp(secret, ya_usado=None):

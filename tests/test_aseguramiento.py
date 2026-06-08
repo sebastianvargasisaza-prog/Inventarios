@@ -182,8 +182,8 @@ def test_mis_tareas_no_ve_de_otros(app, db_clean):
 
     # Cleanup
     conn = sqlite3.connect(os.environ["DB_PATH"])
-    conn.execute("DELETE FROM desviaciones WHERE id=?", (desv_id,))
     conn.execute("DELETE FROM desviaciones_eventos WHERE desviacion_id=?", (desv_id,))
+    conn.execute("DELETE FROM desviaciones WHERE id=?", (desv_id,))
     conn.commit(); conn.close()
 
 
@@ -290,6 +290,9 @@ def test_kpis_no_limitados_a_500_pagina(app, db_clean):
     assert r.get_json()['kpis']['total'] == total_antes + 1
     # Cleanup
     conn = sqlite3.connect(os.environ["DB_PATH"])
+    # Borrar hijos (eventos) antes del padre · PG enforça la FK (SQLite no).
+    conn.execute("DELETE FROM control_cambios_eventos WHERE cambio_id IN "
+                 "(SELECT id FROM control_cambios WHERE titulo='Test KPI')")
     conn.execute("DELETE FROM control_cambios WHERE titulo='Test KPI'")
     conn.commit(); conn.close()
 
@@ -331,8 +334,8 @@ def test_cambio_implementar_bloquea_sin_invima_notif(app, db_clean):
     assert r.status_code == 200
     # Cleanup
     conn = sqlite3.connect(os.environ["DB_PATH"])
-    conn.execute("DELETE FROM control_cambios WHERE id=?", (cid,))
     conn.execute("DELETE FROM control_cambios_eventos WHERE cambio_id=?", (cid,))
+    conn.execute("DELETE FROM control_cambios WHERE id=?", (cid,))
     conn.commit(); conn.close()
 
 
@@ -352,8 +355,8 @@ def test_audit_log_recall_iniciar(app, db_clean):
     """, (codigo,)).fetchall()
     assert len(rows) == 1
     assert 'PROD-X-test' in (rows[0][3] or '')
-    conn.execute("DELETE FROM recalls WHERE id=?", (rid,))
     conn.execute("DELETE FROM recalls_eventos WHERE recall_id=?", (rid,))
+    conn.execute("DELETE FROM recalls WHERE id=?", (rid,))
     conn.commit(); conn.close()
 
 
@@ -380,8 +383,8 @@ def test_audit_log_recall_clasificar_y_notif_invima(app, db_clean):
     assert 'INICIAR_RECALL' in acciones
     assert 'RECALL_CLASIFICAR' in acciones
     assert 'RECALL_NOTIFICAR_INVIMA' in acciones
-    conn.execute("DELETE FROM recalls WHERE id=?", (rid,))
     conn.execute("DELETE FROM recalls_eventos WHERE recall_id=?", (rid,))
+    conn.execute("DELETE FROM recalls WHERE id=?", (rid,))
     conn.commit(); conn.close()
 
 

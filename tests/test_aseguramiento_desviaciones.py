@@ -41,8 +41,8 @@ def test_desv_crear_con_codigo_auto(app, db_clean):
 
     # Cleanup
     conn = sqlite3.connect(os.environ["DB_PATH"])
-    conn.execute("DELETE FROM desviaciones WHERE id=?", (data["id"],))
     conn.execute("DELETE FROM desviaciones_eventos WHERE desviacion_id=?", (data["id"],))
+    conn.execute("DELETE FROM desviaciones WHERE id=?", (data["id"],))
     conn.commit(); conn.close()
 
 
@@ -106,8 +106,8 @@ def test_desv_workflow_completo(app, db_clean):
 
     # Cleanup
     conn = sqlite3.connect(os.environ["DB_PATH"])
-    conn.execute("DELETE FROM desviaciones WHERE codigo=?", (codigo,))
     conn.execute("DELETE FROM desviaciones_eventos WHERE desviacion_id=?", (desv_id,))
+    conn.execute("DELETE FROM desviaciones WHERE codigo=?", (codigo,))
     conn.commit(); conn.close()
 
 
@@ -127,8 +127,8 @@ def test_desv_clasificar_solo_calidad(app, db_clean):
     assert r.status_code == 403
 
     conn = sqlite3.connect(os.environ["DB_PATH"])
-    conn.execute("DELETE FROM desviaciones WHERE id=?", (desv_id,))
     conn.execute("DELETE FROM desviaciones_eventos WHERE desviacion_id=?", (desv_id,))
+    conn.execute("DELETE FROM desviaciones WHERE id=?", (desv_id,))
     conn.commit(); conn.close()
 
 
@@ -146,8 +146,8 @@ def test_desv_no_puede_cerrar_sin_capa(app, db_clean):
     assert r.status_code == 409  # estado inválido
 
     conn = sqlite3.connect(os.environ["DB_PATH"])
-    conn.execute("DELETE FROM desviaciones WHERE id=?", (desv_id,))
     conn.execute("DELETE FROM desviaciones_eventos WHERE desviacion_id=?", (desv_id,))
+    conn.execute("DELETE FROM desviaciones WHERE id=?", (desv_id,))
     conn.commit(); conn.close()
 
 
@@ -164,8 +164,8 @@ def test_desv_clasificacion_invalida(app, db_clean):
     assert r.status_code == 400
 
     conn = sqlite3.connect(os.environ["DB_PATH"])
-    conn.execute("DELETE FROM desviaciones WHERE id=?", (desv_id,))
     conn.execute("DELETE FROM desviaciones_eventos WHERE desviacion_id=?", (desv_id,))
+    conn.execute("DELETE FROM desviaciones WHERE id=?", (desv_id,))
     conn.commit(); conn.close()
 
 
@@ -191,8 +191,8 @@ def test_desv_codigo_secuencial(app, db_clean):
 
     conn = sqlite3.connect(os.environ["DB_PATH"])
     for i in ids:
-        conn.execute("DELETE FROM desviaciones WHERE id=?", (i,))
         conn.execute("DELETE FROM desviaciones_eventos WHERE desviacion_id=?", (i,))
+        conn.execute("DELETE FROM desviaciones WHERE id=?", (i,))
     conn.commit(); conn.close()
 
 
@@ -237,8 +237,8 @@ def test_desv_critica_efectividad_no_ok_sugiere_recall(app, db_clean):
 
     # Cleanup
     conn = sqlite3.connect(os.environ["DB_PATH"])
-    conn.execute("DELETE FROM desviaciones WHERE codigo=?", (codigo,))
     conn.execute("DELETE FROM desviaciones_eventos WHERE desviacion_id=?", (desv_id,))
+    conn.execute("DELETE FROM desviaciones WHERE codigo=?", (codigo,))
     conn.commit(); conn.close()
 
 
@@ -268,8 +268,8 @@ def test_desv_critica_efectividad_ok_no_sugiere_recall(app, db_clean):
     assert "recall_prefill" not in data
     # Cleanup
     conn = sqlite3.connect(os.environ["DB_PATH"])
-    conn.execute("DELETE FROM desviaciones WHERE id=?", (desv_id,))
     conn.execute("DELETE FROM desviaciones_eventos WHERE desviacion_id=?", (desv_id,))
+    conn.execute("DELETE FROM desviaciones WHERE id=?", (desv_id,))
     conn.commit(); conn.close()
 
 
