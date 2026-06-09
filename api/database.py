@@ -312,6 +312,22 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (232, "MAXLASH · crea las 8 MPs que faltaban en maestro_mps (Sebastián subió la fórmula "
+          "MaxLash · audit corazón 9-jun). La fórmula del MAXLASH en la app ya era correcta "
+          "(% = docx) pero 8 ingredientes MORÍAN porque su código canónico (destino del bridge) "
+          "no existía en maestro. Se crean con el código del bridge (verificado) + INCI del docx "
+          "MaxLash (no inventado). Tras esto MAXLASH cruza 100%. Idempotente (codigo_mp es PK).", [
+        "INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, activo) VALUES "
+        "('MP00151', 'Prolina', 'PROLINE', 1), "
+        "('MP00164', 'N-Acetil-cisteína', 'ACETYL CYSTEINE', 1), "
+        "('MP00168', 'Péptidos hidrolizados de queratina', 'HYDROLYZED KERATIN', 1), "
+        "('MP00170', 'Acetil tetrapéptido-3', 'ACETYL TETRAPEPTIDE-3', 1), "
+        "('MP00171', 'Miristoil hexapéptido-16', 'MYRISTOYL HEXAPEPTIDE-16', 1), "
+        "('MP00187', 'Miristoil pentapéptido-17', 'MYRISTOYL PENTAPEPTIDE-17', 1), "
+        "('MP00193', 'Biotinoil tripéptido-1', 'BIOTINOYL TRIPEPTIDE-1', 1), "
+        "('MP00241', 'Extracto de trébol rojo', 'TRIFOLIUM PRATENSE (RED CLOVER) FLOWER EXTRACT', 1)",
+    ]),
+
     (231, "DESCONTINÚA 6 fórmulas que ya no se venden (decisión Sebastián 9-jun · audit corazón · "
           "productos propios que no estaban en el Excel maestro; MAXLASH se CONSERVA porque "
           "Sebastián lo subirá al Excel): CREMA DE UREA, EMULSION HIDRATANTE ANTIOXIDANTE, ESENCIA "
