@@ -5971,6 +5971,33 @@ def test_golden_mbr_preparar_aprobado(app, db_clean):
         _exec("DELETE FROM ebr_ejecuciones WHERE lote LIKE 'L-PREP%'")
 
 
+def test_golden_vista_completa_envasado_presentaciones(app, db_clean):
+    """El legajo de ENVASADO trae fase='envasado' + envasado_presentaciones ('Lotes de
+    Producto por Presentación' · paridad MyBatch 9-jun), no el pesaje de MP de fabricación."""
+    cs = _login(app, 'sebastian')
+    cs.post('/api/brd/mbr/preparar-aprobado',
+            json={'producto_nombre': 'Blush Balm'}, headers=csrf_headers())
+    _exec("INSERT INTO envasado (lote, producto, presentacion, unidades, estado, fecha) "
+          "VALUES ('L-VP', 'Blush Balm', 'Frasco x 30g', 120, 'Completado', '2026-06-09')")
+    r = cs.post('/api/brd/legajo-rapido', json={'producto': 'Blush Balm',
+                'lote': 'L-VP', 'fase': 'envasado'}, headers=csrf_headers())
+    assert r.status_code == 200, r.data
+    ebr_id = r.get_json()['id']
+    try:
+        v = cs.get(f'/api/brd/ebr/{ebr_id}/vista-completa')
+        assert v.status_code == 200, v.data
+        d = v.get_json()
+        assert d.get('fase') == 'envasado', d.get('fase')
+        pres = d.get('envasado_presentaciones') or []
+        assert any(p['unidades'] == 120 and 'Frasco' in (p.get('presentacion') or '')
+                   for p in pres), pres
+    finally:
+        _exec("DELETE FROM ebr_pasos_ejecutados WHERE ebr_id IN "
+              "(SELECT id FROM ebr_ejecuciones WHERE lote LIKE 'L-VP%')")
+        _exec("DELETE FROM ebr_ejecuciones WHERE lote LIKE 'L-VP%'")
+        _exec("DELETE FROM envasado WHERE lote='L-VP'")
+
+
 def test_golden_mbr_genera_formula_case_insensitive(app, db_clean):
     """M2 · _generar_mbr_desde_formula matchea la fórmula case-insensitive: el registro de
     envasado trae 'Prod X' pero la fórmula está como 'PROD X' → NO debe dar SIN_FORMULA

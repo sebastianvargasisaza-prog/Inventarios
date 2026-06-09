@@ -1744,6 +1744,38 @@ def ebr_vista_completa(ebr_id):
             out['header']['lote_size_g'] = float(mbr[3] or 0)
     except Exception:
         pass
+    # Fase a top-level (el front ramifica por d.fase) + presentaciones de envasado.
+    # Para un legajo de ENVASADO, el cuerpo es "Lotes de Producto por Presentación"
+    # (envase × unidades × área), leído de la tabla `envasado` por el lote físico.
+    out['fase'] = out['header'].get('fase', 'fabricacion')
+    if out['fase'] == 'envasado':
+        out['envasado_presentaciones'] = []
+        try:
+            _lote = (out['header'].get('lote_codigo') or '').strip()
+            if _lote:
+                _rows = conn.execute(
+                    """SELECT COALESCE(e.presentacion,'') AS presentacion,
+                              COALESCE(e.lote,'') AS lote, COALESCE(e.unidades,0) AS unidades,
+                              COALESCE(ap.nombre, e.area_codigo, '') AS area,
+                              COALESCE(e.estado,'') AS estado, COALESCE(e.envase_codigo,'') AS envase
+                         FROM envasado e
+                         LEFT JOIN areas_planta ap ON ap.codigo = e.area_codigo
+                        WHERE UPPER(TRIM(e.lote))=UPPER(TRIM(?))
+                        ORDER BY e.id ASC""",
+                    (_lote,),
+                ).fetchall()
+                for r in _rows:
+                    rd = dict(r)
+                    out['envasado_presentaciones'].append({
+                        'presentacion': rd.get('presentacion') or rd.get('envase') or '—',
+                        'lote': rd.get('lote') or _lote,
+                        'unidades': int(rd.get('unidades') or 0),
+                        'area': rd.get('area') or '',
+                        'cantidad_ml': None, 'unidades_final': None, 'rend_pct': None,
+                        'estado': rd.get('estado') or 'En proceso',
+                    })
+        except Exception as _ep:
+            __import__('logging').getLogger('brd').warning('envasado_presentaciones fallo: %s', _ep)
     # Elaborado por (enriquecido) + Supervisado por · Sebastián 5-jun-2026:
     # "el área productiva la supervisa el Jefe de Producción; calidad el Jefe de
     # Control de Calidad". Resolvemos nombre+cargo desde usuarios_identidad
@@ -5564,7 +5596,32 @@ async function load(){
            return hd;
          }).join('')
        : '<div class="muted">Sin correcciones registradas.</div>');
-    document.getElementById('pasos').innerHTML = manuf + precHtml + despHtml + dispHtml + ajustesHtml + despFabHtml + pasosHtml + ipcHtml + obsHtml + regHtml + rotuloHtml + corrHtml;
+    if(d.fase==='envasado'){
+      // Envasado · "Lotes de Producto por Presentación" (paridad MyBatch · 9-jun). El
+      // corazón del legajo de envasado es el granel → presentaciones (envase × unidades ×
+      // área × %rendimiento), NO el pesaje de MP (eso es fabricación).
+      var pres=d.envasado_presentaciones||[];
+      var totUds=pres.reduce(function(a,p){return a+(Number(p.unidades)||0);},0);
+      var presHtml='<div style="display:flex;align-items:center;gap:12px;margin:18px 0 8px">'+
+          '<h3 style="font-size:15px;color:#7c3aed;margin:0">Lotes de Producto por Presentación</h3></div>'+
+        (pres.length
+        ? '<table><thead><tr><th>Presentación</th><th>N° de lote</th><th class="num">Unid.</th><th>Área / Línea</th><th class="num">Cantidad</th><th class="num">Unid. final</th><th class="num">%Rend.</th><th>Estado</th></tr></thead><tbody>'+
+          pres.map(function(p){
+            return '<tr><td style="font-size:12.5px">'+esc(p.presentacion||'—')+'</td>'+
+              '<td class="mono">'+esc(p.lote||'—')+'</td>'+
+              '<td class="num">'+(p.unidades!=null?Number(p.unidades).toLocaleString('es-CO'):'—')+'</td>'+
+              '<td style="font-size:12px">'+esc(p.area||'—')+'</td>'+
+              '<td class="num">'+(p.cantidad_ml!=null?mlf(p.cantidad_ml):'—')+'</td>'+
+              '<td class="num">'+(p.unidades_final!=null?Number(p.unidades_final).toLocaleString('es-CO'):'<span class="muted">pendiente</span>')+'</td>'+
+              '<td class="num">'+(p.rend_pct!=null?Number(p.rend_pct).toLocaleString('es-CO',{maximumFractionDigits:2})+'%':'—')+'</td>'+
+              '<td>'+esc(p.estado||'—')+'</td></tr>';
+          }).join('')+'</tbody>'+
+          '<tfoot><tr><td><b>Total</b></td><td></td><td class="num"><b>'+totUds.toLocaleString('es-CO')+'</b></td><td colspan="5"></td></tr></tfoot></table>'
+        : '<div class="muted">Sin presentaciones registradas aún para este lote. Cuando se envase (envase × unidades × área) aparecerán aquí.</div>');
+      document.getElementById('pasos').innerHTML = manuf + presHtml + obsHtml + regHtml + rotuloHtml + corrHtml;
+    } else {
+      document.getElementById('pasos').innerHTML = manuf + precHtml + despHtml + dispHtml + ajustesHtml + despFabHtml + pasosHtml + ipcHtml + obsHtml + regHtml + rotuloHtml + corrHtml;
+    }
   }catch(e){document.getElementById('head').innerHTML='<span style="color:#b91c1c">Error red: '+esc(e.message)+'</span>';}
 }
 load();
