@@ -763,6 +763,7 @@ def generar_plan(horizonte_dias=60, tipo='auto', usuario='cron'):
 
     # 3. Calcular compras anticipadas (MP + envases)
     consumo_acumulado = {}  # material_id -> g requeridos por todo el plan
+    consumo_nombre = {}     # material_id -> nombre real de fórmula (para el resolver)
     for prop in producciones_propuestas:
         items = c.execute("""
             SELECT material_id, material_nombre, COALESCE(cantidad_g_por_lote, 0), porcentaje
@@ -789,6 +790,8 @@ def generar_plan(horizonte_dias=60, tipo='auto', usuario='cron'):
             if not merma_flag.get(mat_id, 0):
                 req_g = req_g * (1 + prop['merma_pct'] / 100.0)
             consumo_acumulado[mat_id] = consumo_acumulado.get(mat_id, 0) + req_g
+            if mat_nom and mat_id not in consumo_nombre:
+                consumo_nombre[mat_id] = mat_nom
 
     compras_propuestas = []
     # PERF · audit ronda2 29-may: pendiente-en-compras en bloque (2 queries
@@ -805,13 +808,29 @@ def generar_plan(horizonte_dias=60, tipo='auto', usuario='cron'):
             from api.blueprints.programacion import _resolver_material_bodega as _resolv_mp
         except Exception:
             _resolv_mp = None
+    # FIX 9-jun-2026 · audit corazón (M1/M2) · COLAPSAR la demanda al código de
+    # bodega resuelto ANTES del loop de déficit. Antes se acumulaba/iteraba por el
+    # código CRUDO de fórmula y se resolvía solo para leer stock → (1) si N códigos
+    # de fórmula bridgean al mismo bodega, cada uno restaba el MISMO stock (déficit
+    # subestimado/sub-compra); (2) la SOL quedaba bajo el código fantasma y el
+    # pendiente NO cruzaba con la demanda colapsada (SOLs duplicadas). Igual que
+    # abastecimiento_consumo_horizontes. Se pasa el NOMBRE real (no '') para activar
+    # los tiers nombre/INCI/alias del resolver (rescata fantasmas sin bridge).
+    if _resolv_mp:
+        _colapsado = {}
+        for _mid, _req in consumo_acumulado.items():
+            _bod = _resolv_mp(c, _mid, consumo_nombre.get(_mid, '')) or _mid
+            _colapsado[_bod] = _colapsado.get(_bod, 0) + _req
+        consumo_acumulado = _colapsado
     for mat_id, req_g in consumo_acumulado.items():
         # Stock disponible · audit zero-error 2-may-2026: usar helper canónico.
         # Antes usaba 'Ingreso'/'Consumo' (no existen) y devolvía 0/negativo
         # siempre · IA proponía compras erróneas (toda MP aparecía en déficit).
         # FIX 1-jun-2026 · resolver id fórmula→bodega (bridge) antes del lookup ·
         # IA-compras daba déficit falso por el desajuste de id (caso glucosamina).
-        _mid_b = _resolv_mp(c, mat_id, '') if _resolv_mp else mat_id
+        # FIX 9-jun-2026 · mat_id YA es el código de bodega resuelto (colapso M1
+        # arriba) · stock, pendiente y SOL usan el mismo código canónico.
+        _mid_b = mat_id
         stock_g = stock_mp_disponible(c, _mid_b)
         # Lead time + buffer · Sebastian 4-may-2026 (Catalina): ANTES leía SOLO
         # mp_lead_time_config.proveedor_principal y si estaba vacio aparecia "sin
