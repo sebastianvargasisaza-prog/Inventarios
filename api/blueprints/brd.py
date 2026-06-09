@@ -4744,6 +4744,7 @@ _ORDEN_DETALLE_HTML = """<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Orden de Producción · EOS</title>
+<link rel="stylesheet" href="/static/cortex.css">
 <script>
 /* Capturador de errores VISIBLE (6-jun-diag) · corre antes que todo. Si el
    script principal de la página falla al parsear/ejecutar, el error se pinta
@@ -4771,7 +4772,7 @@ window.addEventListener('unhandledrejection',function(e){
 <style>
 /*__TOOLTIP_CSS__*/
 *{box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f3ff;color:#1e293b;margin:0;padding:24px}
+body{font-family:var(--cx-font);background:var(--cx-bg);color:var(--cx-text);margin:0;padding:24px}
 .wrap{max-width:1150px;margin:0 auto}
 a.back{display:inline-flex;align-items:center;gap:8px;background:#fff;color:#7c3aed;font-size:13px;font-weight:700;text-decoration:none;padding:10px 18px;border-radius:11px;border:1px solid #e9d5ff;box-shadow:0 2px 10px rgba(124,58,237,.10);transition:all .14s ease}
 a.back:hover{background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border-color:transparent;box-shadow:0 6px 18px rgba(124,58,237,.30);transform:translateY(-1px)}
@@ -4789,19 +4790,23 @@ h1{font-size:28px;margin:0;color:#fff;letter-spacing:.5px}
 .grid .val{color:#1e293b;margin-top:3px;font-weight:600;font-size:14px}
 .liber-line{margin:0 26px 4px;padding:10px 14px;background:#dcfce7;color:#166534;border-radius:8px;font-size:13px;font-weight:600}
 .btns{display:flex;gap:10px;flex-wrap:wrap;padding:6px 26px 24px}
-.btns a,.btns button{border:none;border-radius:9px;padding:11px 18px;font-size:13px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;transition:transform .06s}
+.btns a,.btns button{border:1px solid transparent;border-radius:var(--cx-r-md);padding:11px 18px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;transition:background var(--cx-tr-fast),color var(--cx-tr-fast),border-color var(--cx-tr-fast),box-shadow var(--cx-tr-fast),transform .06s}
 .btns a:active,.btns button:active{transform:translateY(1px)}
-.b-time{background:#0ea5e9;color:#fff}.b-mbr{background:#22c55e;color:#fff}
-.b-pdf{background:#f97316;color:#fff}.b-rot{background:#14b8a6;color:#fff}
-.b-aj{background:#475569;color:#fff}
+/* Toolbar RESTRINGIDO (premium): los secundarios son ghost neutro · solo
+   "Instrucción de Manufactura" (la acción de trabajo) lleva el acento violeta.
+   Antes: 5 colores saturados (arcoíris) = el tell #1 de amateur. */
+.b-time,.b-pdf,.b-rot,.b-aj{background:var(--cx-card);color:var(--cx-text-soft);border-color:var(--cx-border)}
+.b-time:hover,.b-pdf:hover,.b-rot:hover,.b-aj:hover{border-color:var(--cx-primary-light);color:var(--cx-primary-dark);background:var(--cx-primary-pale)}
+.b-mbr{background:var(--cx-primary);color:#fff}
+.b-mbr:hover{background:var(--cx-primary-dark);box-shadow:var(--cx-sh-violet-sm)}
 .b-soon{background:#e2e8f0;color:#94a3b8;cursor:not-allowed}
 .b-mini{background:#14b8a6;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer}
 .b-i{background:#0ea5e9;color:#fff;border:none;border-radius:7px;width:30px;height:30px;font-style:italic;font-weight:800;cursor:pointer}
 .b-e{background:#f59e0b;color:#fff;border:none;border-radius:7px;width:30px;height:30px;cursor:pointer}
 .b-pdf-sm{display:inline-flex;align-items:center;gap:5px;background:#ef4444;color:#fff;text-decoration:none;font-size:11px;font-weight:700;padding:4px 10px;border-radius:7px;margin-left:10px;vertical-align:middle}
 .cxmodal{display:none;position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:99998;align-items:center;justify-content:center;padding:20px}
-.cxbox{background:#fff;border-radius:16px;max-width:560px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden}
-.cxhead{background:linear-gradient(135deg,#0ea5e9,#0284c7);color:#fff;padding:16px 22px;display:flex;justify-content:space-between;align-items:center}
+.cxbox{background:var(--cx-card);border-radius:var(--cx-r-lg);max-width:560px;width:100%;box-shadow:var(--cx-sh-lg);overflow:hidden}
+.cxhead{background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;padding:16px 22px;display:flex;justify-content:space-between;align-items:center}
 .cxhead h3{margin:0;font-size:16px}
 .cxx{background:rgba(255,255,255,.25);border:none;color:#fff;width:30px;height:30px;border-radius:50%;font-size:16px;cursor:pointer;font-weight:700}
 .cxbody{padding:18px 22px}
