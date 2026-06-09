@@ -5930,6 +5930,32 @@ def test_golden_envasado_api_gate_area_limpia(app, db_clean):
         _exec("DELETE FROM areas_planta WHERE codigo='ENV-GT'")
 
 
+def test_golden_legajo_rapido_envasado(app, db_clean):
+    """Botón '+ Nueva orden de envasado': /api/brd/legajo-rapido crea el legajo OF desde
+    producto+lote (MBR aprobado). Sin MBR aprobado → 409 con mensaje claro."""
+    cs = _login(app, 'sebastian')
+    r0 = cs.post('/api/brd/legajo-rapido', json={'producto': 'Producto Inexistente XYZ',
+                 'lote': 'L-RX', 'fase': 'envasado'}, headers=csrf_headers())
+    assert r0.status_code == 409, r0.data
+    rl = cs.get('/api/brd/mbr?producto=Blush Balm')
+    bb = next(it for it in rl.get_json()['items'] if it['version'] == 1)
+    if bb['estado'] != 'aprobado':
+        cs.post(f'/api/brd/mbr/{bb["id"]}/submit', json={}, headers=csrf_headers())
+        sig = _firmar(cs, record_table='mbr_templates', record_id=bb['id'], meaning='aprueba')
+        cs.post(f'/api/brd/mbr/{bb["id"]}/aprobar',
+                json={'signature_id': sig}, headers=csrf_headers())
+    try:
+        r = cs.post('/api/brd/legajo-rapido', json={'producto': 'Blush Balm',
+                    'lote': 'L-RAPIDO', 'fase': 'envasado'}, headers=csrf_headers())
+        assert r.status_code == 200, r.data
+        d = r.get_json()
+        assert d['ok'] and d['id'] and d['link'].startswith('/planta/orden/')
+    finally:
+        _exec("DELETE FROM ebr_pasos_ejecutados WHERE ebr_id IN "
+              "(SELECT id FROM ebr_ejecuciones WHERE lote LIKE 'L-RAPIDO%')")
+        _exec("DELETE FROM ebr_ejecuciones WHERE lote LIKE 'L-RAPIDO%'")
+
+
 def test_golden_ordenes_of_muestra_envasado_con_estado(app, db_clean):
     """La OF (/api/brd/ordenes-unificadas?fase=envasado) lista las órdenes de envasado
     CON estado (como MyBatch), no solo legajos EBR (9-jun)."""

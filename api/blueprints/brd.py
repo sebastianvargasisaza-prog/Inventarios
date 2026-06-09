@@ -1389,6 +1389,40 @@ def iniciar_ebr():
                      "pasos": n_clonados}), 201
 
 
+@bp.route("/api/brd/legajo-rapido", methods=["POST"])
+def legajo_rapido():
+    """Crea un legajo EBR rápido (producto + lote + fase) con el resolver canónico
+    crear_ebr_desde_mbr (resuelve MBR aprobado, sufijo de fase, idempotencia). Para el
+    botón '+ Nueva orden de envasado' de la página de Órdenes (9-jun-2026)."""
+    err = _require_login()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    producto = (body.get("producto") or "").strip()
+    lote = (body.get("lote") or "").strip()
+    fase = (body.get("fase") or "envasado").strip().lower()
+    if not producto or not lote:
+        return jsonify({"ok": False, "error": "producto y lote requeridos"}), 400
+    if fase not in _FASES_VALIDAS:
+        return jsonify({"ok": False, "error": "fase inválida"}), 400
+    conn = get_db(); cur = conn.cursor()
+    user = session.get("compras_user", "")
+    r = crear_ebr_desde_mbr(cur, producto_nombre=producto, lote=lote, usuario=user, fase=fase)
+    if not r.get("ok"):
+        msg = ("El producto no tiene MBR APROBADO con pasos de esa fase · aprueba su MBR primero."
+               if r.get("error") == "NO_MBR_APROBADO" else (r.get("detail") or r.get("error") or "error"))
+        return jsonify({"ok": False, "error": msg, "detail": r.get("error")}), 409
+    try:
+        audit_log(cur, usuario=user or "sistema", accion="CREAR_LEGAJO_RAPIDO",
+                  tabla="ebr_ejecuciones", registro_id=r.get("id"),
+                  despues={"producto": producto, "lote": lote, "fase": fase})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({"ok": True, "id": r.get("id"), "numero_op": r.get("numero_op"),
+                    "link": f"/planta/orden/{r.get('id')}", "reusado": r.get("reusado", False)})
+
+
 @bp.route("/api/brd/ebr", methods=["GET"])
 def listar_ebr():
     err = _require_login()
@@ -4710,6 +4744,10 @@ td{padding:9px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
   <button class="tab" data-fase="envasado" onclick="ver('envasado',this)">📦 Envasado (OF)</button>
   <button class="tab" data-fase="acondicionamiento" onclick="ver('acondicionamiento',this)">🎨 Acondicionamiento (OA)</button>
 </div>
+<div style="margin-bottom:12px">
+  <button onclick="crearLegajoRapido()" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer">+ Nueva orden de esta fase</button>
+  <span style="font-size:12px;color:#64748b;margin-left:8px">crea el legajo (requiere MBR aprobado del producto)</span>
+</div>
 <div id="summary" class="summary"></div>
 <div class="card"><div id="out">Cargando…</div></div>
 </div>
@@ -4722,7 +4760,23 @@ function pill(estado){
   else if(e.indexOf('aprob')>=0)c='apr'; else if(e.indexOf('rechaz')>=0||e.indexOf('cancel')>=0)c='rech';
   return '<span class="pill '+c+'">'+esc(estado)+'</span>';
 }
+var _FASE_ACTUAL='fabricacion';
+async function crearLegajoRapido(){
+  var f=_FASE_ACTUAL||'envasado';
+  var fl=({fabricacion:'fabricación (OP)',envasado:'envasado (OF)',acondicionamiento:'acondicionamiento (OA)'})[f]||f;
+  var prod=prompt('Producto para la orden de '+fl+' (nombre exacto):');
+  if(!prod)return;
+  var lote=prompt('N° de lote:');
+  if(!lote)return;
+  try{
+    var r=await fetch('/api/brd/legajo-rapido',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({producto:prod,lote:lote,fase:f})});
+    var d=await r.json();
+    if(!r.ok||!d.ok){alert('No se pudo crear el legajo: '+((d&&d.error)||r.status));return;}
+    location.href=d.link||('/planta/orden/'+d.id);
+  }catch(e){alert('Error de red: '+(e.message||e));}
+}
 async function ver(fase,btn){
+  _FASE_ACTUAL=fase;
   document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active');});
   if(btn)btn.classList.add('active');
   var out=document.getElementById('out'); out.innerHTML='Cargando…';
