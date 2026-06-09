@@ -8917,6 +8917,18 @@ function registrarAcond(){
     if(msgEl) msgEl.innerHTML='<span style="color:red;">Error de red: '+e+'</span>';
   });
 }
+async function crearLegajoEnvasado(btn){
+  // Crea el legajo EBR de envasado para una orden 'registro simple' y entra a construirlo.
+  var prod=btn.getAttribute('data-prod'), lote=btn.getAttribute('data-lote');
+  if(!prod){return;}
+  btn.disabled=true; var _t=btn.textContent; btn.textContent='Creando…';
+  try{
+    var r=await fetch('/api/brd/legajo-rapido',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({producto:prod,lote:lote||prod,fase:'envasado'})});
+    var d=await r.json();
+    if(!r.ok||!d.ok){alert('No se pudo crear el legajo: '+((d&&d.error)||r.status)+'\\n\\n(El producto necesita un MBR de envasado APROBADO.)');btn.disabled=false;btn.textContent=_t;return;}
+    location.href=d.link||('/planta/orden/'+d.id);
+  }catch(e){alert('Error: '+(e.message||e));btn.disabled=false;btn.textContent=_t;}
+}
 function cargarOrdenesEnvasado(){
   // Órdenes de Envasado (con estado + legajo) · como MyBatch. Reusa el endpoint
   // unificado /api/brd/ordenes-unificadas?fase=envasado (trae estado y link al legajo).
@@ -8927,7 +8939,7 @@ function cargarOrdenesEnvasado(){
     var ords=(d&&d.ordenes)||[];
     if(!ords.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#999;padding:10px">Sin órdenes de envasado aún · envasá un lote para crearlas</td></tr>';return;}
     tb.innerHTML=ords.map(function(o){
-      var leg=o.link?('<a href="'+E(o.link)+'" style="color:#7c3aed;font-weight:700;text-decoration:none">Abrir legajo →</a>'):'<span style="color:#94a3b8">—</span>';
+      var leg=o.link?('<a href="'+E(o.link)+'" style="color:#7c3aed;font-weight:700;text-decoration:none">Abrir legajo →</a>'):('<button data-prod="'+E(o.producto)+'" data-lote="'+E(o.lote_bulk||o.numero_op||'')+'" onclick="crearLegajoEnvasado(this)" style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:12px;cursor:pointer">Crear legajo &rarr;</button>');
       return '<tr style="border-bottom:1px solid #f1f5f9">'+
         '<td style="padding:8px;font-weight:600">'+E(o.numero_op)+'</td>'+
         '<td style="padding:8px">'+E(o.producto)+'</td>'+
