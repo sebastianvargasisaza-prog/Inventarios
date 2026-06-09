@@ -4851,7 +4851,7 @@ tbody tr:hover{background:#faf5ff}
 }
 </style></head><body>
 <div class="wrap">
-<a class="back" href="/inventarios"><span class="arw">&larr;</span> Volver a Producción</a>
+<a class="back" href="/planta/ordenes-produccion"><span class="arw">&larr;</span> Volver a Producción</a>
 <div class="printonly"><b>Espagiria Laboratorio SAS</b><br><span>INSTRUCTIVO DE MANUFACTURA &middot; PRD-PRO-001-F01</span></div>
 <div style="height:10px"></div>
 <button class="btn-print" onclick="window.print()">&#128196; Descargar / Imprimir instructivo (PDF)</button>
@@ -5722,7 +5722,7 @@ input:focus{outline:none;border-color:#7c3aed}
 .fail{font-size:12px;color:#991b1b;margin-top:8px}
 </style></head><body>
 <div class="wrap">
-<a class="back" href="/inventarios"><span>&larr;</span> Volver a Producción</a>
+<a class="back" href="/planta/ordenes-produccion"><span>&larr;</span> Volver a Producción</a>
 <div class="card">
   <div class="hbar"><h1>🏭 Activar legajos automáticos</h1>
     <p>Aprobá todos los procedimientos maestros (MBR) de una sola firma. Luego cada producción crea su legajo solo, como MyBatch.</p></div>
