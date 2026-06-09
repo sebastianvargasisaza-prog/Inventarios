@@ -1061,6 +1061,52 @@ def mbr_generar_desde_formula():
     return jsonify(res), (200 if res.get("ya_existe") else 201)
 
 
+@bp.route("/api/brd/mbr/preparar-aprobado", methods=["POST"])
+def mbr_preparar_aprobado():
+    """Genera (si falta) Y APRUEBA el MBR de un producto en UN paso · para probar el
+    legajo de envasado sin el flujo manual submit→firmar→aprobar. Firma con la identidad
+    del usuario actual (e_signature REAL · 21 CFR Part 11 · auditable). Solo Admin/Calidad.
+    Body: {producto_nombre}. Sebastián 9-jun-2026."""
+    err = _require_login()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    if user not in ADMIN_USERS and user not in CALIDAD_USERS:
+        return jsonify({"ok": False, "error": "solo Admin/Calidad puede aprobar MBR"}), 403
+    body = request.get_json(silent=True) or {}
+    producto = (body.get("producto_nombre") or "").strip()
+    if not producto:
+        return jsonify({"ok": False, "error": "producto_nombre requerido"}), 400
+    conn = get_db(); cur = conn.cursor()
+    res = _generar_mbr_desde_formula(cur, producto, usuario=user)
+    if not res.get("ok"):
+        return jsonify({"ok": False, "error": res.get("error") or "no se pudo generar el MBR"}), 404
+    mbr_id = res["id"]
+    row = cur.execute("SELECT estado FROM mbr_templates WHERE id=?", (mbr_id,)).fetchone()
+    estado = (row[0] if row else None)
+    if estado == "aprobado":
+        conn.commit()
+        return jsonify({"ok": True, "id": mbr_id, "ya_aprobado": True})
+    if estado == "draft":
+        cur.execute("UPDATE mbr_templates SET estado='en_revision' WHERE id=?", (mbr_id,))
+    try:
+        from blueprints.firmas import crear_firma_directa
+    except Exception:
+        from api.blueprints.firmas import crear_firma_directa
+    sig_id = crear_firma_directa(conn, username=user, record_table="mbr_templates",
+                                 record_id=str(mbr_id), meaning="aprueba",
+                                 comment="Aprobación rápida para prueba de legajo de envasado")
+    cur.execute("""UPDATE mbr_templates SET estado='aprobado', aprobado_por=?,
+                     aprobado_at_utc=datetime('now','utc'), aprobado_signature_id=?
+                   WHERE id=?""", (user, sig_id, mbr_id))
+    audit_log(cur, usuario=user, accion="APROBAR_MBR_RAPIDO",
+              tabla="mbr_templates", registro_id=mbr_id,
+              despues={"producto": producto, "estado": "aprobado", "signature_id": sig_id})
+    conn.commit()
+    return jsonify({"ok": True, "id": mbr_id, "version": res.get("version"),
+                    "pasos": res.get("pasos"), "signature_id": sig_id})
+
+
 @bp.route("/api/brd/mbr/generar-todas-desde-formulas", methods=["POST"])
 def mbr_generar_todas_desde_formulas():
     """Genera MBR borrador para TODAS las fórmulas activas sin MBR vigente (bulk).

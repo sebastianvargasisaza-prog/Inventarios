@@ -8937,15 +8937,28 @@ function registrarAcond(){
   });
 }
 async function crearLegajoEnvasado(btn){
-  // Crea el legajo EBR de envasado para una orden 'registro simple' y entra a construirlo.
+  // Crea el legajo EBR de envasado y entra a construirlo. Si falta el MBR aprobado,
+  // ofrece generarlo+aprobarlo (con la firma del usuario) y reintenta.
   var prod=btn.getAttribute('data-prod'), lote=btn.getAttribute('data-lote');
   if(!prod){return;}
   btn.disabled=true; var _t=btn.textContent; btn.textContent='Creando…';
-  try{
+  async function _crear(){
     var r=await fetch('/api/brd/legajo-rapido',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({producto:prod,lote:lote||prod,fase:'envasado'})});
-    var d=await r.json();
-    if(!r.ok||!d.ok){alert('No se pudo crear el legajo: '+((d&&d.error)||r.status)+'\\n\\n(El producto necesita un MBR de envasado APROBADO.)');btn.disabled=false;btn.textContent=_t;return;}
-    location.href=d.link||('/planta/orden/'+d.id);
+    return {r:r,d:await r.json()};
+  }
+  try{
+    var res=await _crear();
+    if(res.r.status===409 && /MBR/.test(((res.d&&res.d.error)||''))){
+      if(confirm('"'+prod+'" no tiene MBR de envasado aprobado.\\n\\n¿Generar y APROBAR su MBR ahora (con tu firma) para hacer la prueba?')){
+        btn.textContent='Aprobando MBR…';
+        var ra=await fetch('/api/brd/mbr/preparar-aprobado',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({producto_nombre:prod})});
+        var da=await ra.json();
+        if(!ra.ok||!da.ok){alert('No se pudo aprobar el MBR: '+((da&&da.error)||ra.status));btn.disabled=false;btn.textContent=_t;return;}
+        btn.textContent='Creando…'; res=await _crear();
+      } else { btn.disabled=false; btn.textContent=_t; return; }
+    }
+    if(!res.r.ok||!res.d.ok){alert('No se pudo crear el legajo: '+((res.d&&res.d.error)||res.r.status));btn.disabled=false;btn.textContent=_t;return;}
+    location.href=res.d.link||('/planta/orden/'+res.d.id);
   }catch(e){alert('Error: '+(e.message||e));btn.disabled=false;btn.textContent=_t;}
 }
 function cargarOrdenesEnvasado(){

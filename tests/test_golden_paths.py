@@ -5948,6 +5948,29 @@ def test_golden_listado_historico_incluye_pasado_y_completadas(app, db_clean):
         _exec("DELETE FROM produccion_programada WHERE producto='PROD HIST TEST'")
 
 
+def test_golden_mbr_preparar_aprobado(app, db_clean):
+    """Generar+aprobar MBR en UN paso (botón 'Crear legajo' cuando falta MBR · 9-jun):
+    /api/brd/mbr/preparar-aprobado genera y aprueba el MBR con la firma del usuario, y de
+    ahí el legajo-rapido de envasado funciona."""
+    cs = _login(app, 'sebastian')
+    r = cs.post('/api/brd/mbr/preparar-aprobado', json={'producto_nombre': 'Blush Balm'},
+                headers=csrf_headers())
+    assert r.status_code == 200, r.data
+    d = r.get_json()
+    assert d['ok'] and d['id']
+    rl = cs.get('/api/brd/mbr?producto=Blush Balm')
+    bb = next((it for it in rl.get_json()['items'] if it['id'] == d['id']), None)
+    assert bb and bb['estado'] == 'aprobado', f'BUG: el MBR no quedó aprobado · {bb}'
+    try:
+        r2 = cs.post('/api/brd/legajo-rapido', json={'producto': 'Blush Balm',
+                     'lote': 'L-PREP', 'fase': 'envasado'}, headers=csrf_headers())
+        assert r2.status_code == 200, r2.data
+    finally:
+        _exec("DELETE FROM ebr_pasos_ejecutados WHERE ebr_id IN "
+              "(SELECT id FROM ebr_ejecuciones WHERE lote LIKE 'L-PREP%')")
+        _exec("DELETE FROM ebr_ejecuciones WHERE lote LIKE 'L-PREP%'")
+
+
 def test_golden_legajo_rapido_envasado(app, db_clean):
     """Botón '+ Nueva orden de envasado': /api/brd/legajo-rapido crea el legajo OF desde
     producto+lote (MBR aprobado). Sin MBR aprobado → 409 con mensaje claro."""
