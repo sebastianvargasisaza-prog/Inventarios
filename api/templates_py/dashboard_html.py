@@ -1550,8 +1550,14 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
 
 <div id="envasado" class="tab-content">
 <div style="padding:18px">
-  <h2 style="margin:0 0 4px;color:#1a4a7a">&#128230; Envasado</h2>
-  <p style="color:#666;font-size:13px;margin-bottom:16px">Registra el uso de envases y tapas por lote de produccion terminado.</p>
+  <h2 style="margin:0 0 8px;color:#1a4a7a">&#128230; Envasado</h2>
+  <div style="background:#f5f3ff;border:1px solid #e9d5ff;border-radius:8px;padding:11px 14px;margin-bottom:16px;font-size:12.5px;color:#4c1d95;line-height:1.8">
+    <b>Cómo funciona el flujo:</b><br>
+    &#9312; El lote producido cae a la <b>Cola: lotes listos para envasar</b>.
+    &nbsp;&#9313; El jefe da <b>Envasar</b> (asigna operario + área limpia &middot; gate de limpieza F02).
+    &nbsp;&#9314; Aparece en <b>Órdenes de Envasado</b> con su <b>estado</b> y su <b>legajo</b> (batch record).
+    &nbsp;&#9315; En el <b>legajo</b> se ejecuta el batch: alistamiento de envase/tapa &rarr; llenado/control de peso &rarr; sellado &rarr; cierre.
+  </div>
 
   <div id="cola-sin-envasar" style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;padding:14px;margin-bottom:18px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
@@ -1664,7 +1670,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   </div>
 
   <div id="env-historial">
-    <h3 style="margin:0 0 10px;color:#6d28d9;font-size:14px">&#128202; Historial Envasado</h3>
+    <h3 style="margin:0 0 10px;color:#6d28d9;font-size:14px">&#128202; Registro detallado de envasado <span style="font-weight:400;font-size:12px;color:#94a3b8">(por presentación · buscar / filtrar por fecha)</span></h3>
     <!-- Sprint Envasado PRO 20-may-2026 · paginación + búsqueda -->
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;font-size:12px">
       <input id="env-q" type="text" placeholder="🔍 Buscar lote / producto / operador…" oninput="_envHistDebounced()" style="flex:1;min-width:200px;padding:7px 10px;border:1px solid #cbd5e1;border-radius:5px">
