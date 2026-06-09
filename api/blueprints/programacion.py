@@ -17279,15 +17279,57 @@ def planta_preflight(produccion_id):
 #  F. Resultado micro ok → entra a cola de liberación 1-2/día
 #  C. Scheduler limpieza profunda L-Ma-J-V rotando 9 áreas
 
+@bp.route('/api/planta/envasado/sugerencias', methods=['GET'])
+def planta_envasado_sugerencias():
+    """Semi-auto envasado · pre-llena el inicio que da el jefe: áreas de envasado
+    LIMPIAS + operarios sugeridos (crew de envasado). El jefe confirma o cambia en
+    1 clic. El estado de limpieza sale de areas_planta.estado (no se duplica · M9)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    areas = []
+    try:
+        for r in c.execute(
+            "SELECT codigo, nombre, COALESCE(estado,'') FROM areas_planta "
+            "WHERE COALESCE(activo,1)=1 AND tipo='envasado' "
+            "ORDER BY CASE COALESCE(estado,'') WHEN 'libre' THEN 0 ELSE 1 END, nombre"
+        ).fetchall():
+            areas.append({'codigo': r[0], 'nombre': r[1], 'estado': r[2],
+                          'limpia': r[2] == 'libre'})
+    except Exception:
+        areas = []
+    # Operarios aptos para envasado: rol envasado/todero · no fijos en dispensación · no jefe.
+    operarios = []
+    try:
+        for r in c.execute(
+            "SELECT nombre, COALESCE(apellido,''), COALESCE(rol_predeterminado,'') "
+            "FROM operarios_planta WHERE COALESCE(activo,1)=1 "
+            "AND COALESCE(fija_en_dispensacion,0)=0 AND COALESCE(es_jefe_produccion,0)=0 "
+            "ORDER BY CASE COALESCE(rol_predeterminado,'') WHEN 'envasado' THEN 0 "
+            "WHEN 'todero' THEN 1 ELSE 2 END, nombre"
+        ).fetchall():
+            operarios.append({'nombre': (r[0] + ' ' + r[1]).strip(), 'rol': r[2]})
+    except Exception:
+        operarios = []
+    return jsonify({
+        'ok': True, 'areas': areas, 'operarios': operarios,
+        'area_sugerida': next((a['codigo'] for a in areas if a['limpia']), ''),
+        'operario_sugerido': operarios[0]['nombre'] if operarios else '',
+    })
+
+
 @bp.route('/api/planta/envasado/iniciar', methods=['POST'])
 def planta_envasado_iniciar():
-    """Operario marca el inicio de envasado. Triggers automáticos:
-       1. Crea registro produccion_envasado
-       2. Crea muestra micro pendiente con deadline = ahora + 5 días
-       3. Crea entrada en cola_liberacion estado='esperando_micro'
+    """Jefe de producción da el clock de inicio de envasado (semi-auto). Asigna
+    operario + área (pre-sugeridos por /sugerencias). El área debe estar LIMPIA
+    (gate avisar+override · M5). Triggers automáticos:
+       1. Crea registro produccion_envasado (con operario_asignado + area_codigo)
+       2. Marca el área como ocupada
+       3. Crea muestra micro pendiente con deadline = ahora + 5 días
+       4. Crea entrada en cola_liberacion estado='esperando_micro'
 
-    Body: {produccion_id*, lote*, presentacion_id?, presentacion_etiqueta?,
-           unidades_planeadas?, envase_codigo?}
+    Body: {produccion_id*, lote*, operario?, area_codigo?, override_area?,
+           presentacion_id?, presentacion_etiqueta?, unidades_planeadas?, envase_codigo?}
     """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
@@ -17315,18 +17357,38 @@ def planta_envasado_iniciar():
             pres_etiqueta = pr[0]
             if not d.get('envase_codigo'):
                 d['envase_codigo'] = pr[1]
-    # 1) Crear envasado
+    # 0) Semi-auto · asignación del jefe: operario + área. Gate de limpieza · el
+    #    área de envasado debe estar LIMPIA (areas_planta.estado='libre'). Patrón
+    #    avisar+override (no bloqueo duro · M5) · el override queda en el registro.
+    operario = (d.get('operario') or '').strip()
+    area_codigo = (d.get('area_codigo') or '').strip()
+    if area_codigo:
+        ar = c.execute(
+            "SELECT COALESCE(estado,'') FROM areas_planta WHERE codigo=? AND COALESCE(activo,1)=1",
+            (area_codigo,)).fetchone()
+        if ar and ar[0] != 'libre' and not bool(d.get('override_area')):
+            return jsonify({
+                'warning': f'El área {area_codigo} NO está limpia (estado: {ar[0] or "?"}). '
+                           f'Limpiá el área (rótulo F02) o confirmá para iniciar igual.',
+                'requiere_override': True, 'bloqueo': 'area_no_limpia',
+            }), 409
+    # 1) Crear envasado (con operario asignado + área · semi-auto)
     cur = c.execute("""
         INSERT INTO produccion_envasado
           (produccion_id, producto_nombre, lote, presentacion_id,
            presentacion_etiqueta, unidades_planeadas, envase_codigo,
-           iniciado_por, estado)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'en_proceso')
+           iniciado_por, operario_asignado, area_codigo, estado)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'en_proceso')
     """, (prod_id, producto, lote, pres_id, pres_etiqueta or None,
           d.get('unidades_planeadas'),
           (d.get('envase_codigo') or None),
-          user))
+          user, operario, area_codigo))
     envasado_id = cur.lastrowid
+    # 1b) Marcar el área como ocupada (deja de estar libre mientras se envasa).
+    if area_codigo:
+        c.execute("UPDATE areas_planta SET estado='ocupada' "
+                  "WHERE codigo=? AND COALESCE(activo,1)=1 AND estado='libre'",
+                  (area_codigo,))
     # 2) Crear muestra micro pendiente con deadline 5 días
     deadline = (datetime.now() + timedelta(days=5)).strftime('%Y-%m-%d')
     fecha_hoy = datetime.now().strftime('%Y-%m-%d')

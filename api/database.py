@@ -312,6 +312,13 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (227, "produccion_envasado · operario_asignado + area_codigo (semi-auto envasado: "
+          "el jefe de producción asigna operario + área LIMPIA al dar el clock de "
+          "iniciar · Sebastián 8-jun-2026)", [
+        "ALTER TABLE produccion_envasado ADD COLUMN operario_asignado TEXT DEFAULT ''",
+        "ALTER TABLE produccion_envasado ADD COLUMN area_codigo TEXT DEFAULT ''",
+    ]),
+
     (226, "portal_solicitudes.cliente_id INTEGER→TEXT · bug VIVO en PG: el portal B2B "
           "guarda códigos de cliente TEXT (portal_clientes_credenciales.cliente_id es "
           "TEXT) pero esta columna era INTEGER → crear solicitud (RFQ/cotización) daba "

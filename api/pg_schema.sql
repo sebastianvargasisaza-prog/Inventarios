@@ -2833,7 +2833,7 @@ CREATE TABLE produccion_envasado (
             estado TEXT NOT NULL DEFAULT 'en_proceso'
                 CHECK(estado IN ('en_proceso','terminado','cancelado')),
             muestra_micro_id INTEGER,
-            notas TEXT
+            notas TEXT, operario_asignado TEXT DEFAULT '', area_codigo TEXT DEFAULT ''
         );
 
 -- tabla: produccion_eventos
