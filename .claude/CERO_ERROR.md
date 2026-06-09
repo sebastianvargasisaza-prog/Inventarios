@@ -23,7 +23,7 @@
 
 ## 🔑 META-LECCIONES (aplican a TODO el sistema)
 
-- **M1 · UN SOLO resolver canónico por entidad.** Si existe un resolver con tiers (id → nombre exacto → nombre normalizado → alias → bridge), TODO lookup de esa entidad usa ESE helper o replica TODOS los tiers. Busca el helper canónico antes de escribir un lookup nuevo (`_get_mp_stock`, `_pendiente_en_compras_g`, `stock_mp_disponible`, `_mee_stock_real`).
+- **M1 · UN SOLO resolver canónico por entidad.** Si existe un resolver con tiers (id → nombre exacto → nombre normalizado → alias → bridge), TODO lookup de esa entidad usa ESE helper o replica TODOS los tiers. Busca el helper canónico antes de escribir un lookup nuevo (`_get_mp_stock`, `_lookup_stock_5tier`, `_resolver_material_bodega`, `_pendiente_en_compras_g`, `stock_mp_disponible`, `_mee_stock_real`). **NUNCA un `SELECT ... FROM movimientos WHERE material_id IN (...)` con el código CRUDO de fórmula** (sin bridge) → los códigos fantasma (`MPxxxSO01`, 116 de ellos en prod) dan 0g = déficit falso/sobre-compra. **La cadena planear→solicitar→recibir usa UN solo código canónico (el de bodega resuelto)**: colapsá la demanda al código de bodega ANTES de calcular déficit y escribí la SOL con ese código (si no, el pendiente no cruza → SOLs duplicadas). Cazado 9-jun en `generar_plan` (auto_plan.py), `_seleccionar_variante_optima` y `_check_mp_para_pedido_b2b` (plan.py). ⚠ El bridge `mp_formula_bridge` puede estar MAL: 24 destinos no existen en maestro (fantasma→fantasma) y 2 con INCI equivocado (Ác. Ferúlico→Etil ascórbico, Betaína→Betaglucano) — corregir con Excel maestro, NO adivinar.
 - **M2 · Normalización IDÉNTICA en clave y lookup.** La función que normaliza la CLAVE de un dict debe ser la MISMA en el `.get()`. (Bug: `_norm_prod` colapsa dobles espacios pero el lookup usaba `.upper().strip()` → caían a 0.)
 - **M3 · UNA sola ruta canónica de mutación; los demás delegan.** Iniciar/terminar/completar/cancelar producción y descontar MP/MEE tienen UN punto canónico (`prog_completar_evento`, `prog_iniciar_produccion`). Botones, Kanban y acciones-rápidas DELEGAN, nunca reimplementan parcial.
 - **M4 · NUNCA tragar excepciones en mutaciones.** Prohibido `try/except: pass` en INSERT/UPDATE. El `except` hace rollback + log + devuelve la causa REAL en JSON. Un INSERT "que no puede fallar" se verifica (rowcount / SELECT después).
@@ -106,6 +106,14 @@ y en el gate): `planificacion::solicitar_bulk_sin_deficits_ok` y
 (`movimientos`/`produccion_programada`). **NO resetear `movimientos`** (es el stock
 seedeado · zerearlo rompe cientos de tests). El gate CI corre golden (verde), no la
 full-suite, así que no afecta nada. No vale la pena perseguirlos.
+
+**⏰ Golden date-frágiles (arreglar, sí afectan el gate):** un golden con `fecha_programada`
+HARDCODED se rompe SOLO cuando rueda el calendario. Casos 9-jun: `necesidades.lotes_pendientes`
+filtra `fecha >= hoy-7d` (plan.py:3910) → fecha fija `2026-06-01` salió del window y dio
+`lotes_pendientes_n=0`; y la regla "lote grande = 1/día" (same-day, plan.py:5009) → un golden con
+fecha relativa que cae en la fecha fija de OTRO golden (hoy+7) lo ocupa → 422. Fix: usar **fecha
+relativa a hoy** en el input/assert, y que el test **limpie su fecha objetivo** antes de programar
+(auto-contención). No tocar el código (las reglas son correctas).
 
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
 

@@ -212,11 +212,12 @@ def _seleccionar_variante_optima(conn, producto_canonico, kg_objetivo=1.0):
     #
     # 1) Levantar la lista de material_ids candidatos UPA vez.
     _todos_mat_ids = set()
+    _nombre_por_mat = {}
     items_por_variante = {}
     for prod_nom, var_label, _prio, lote_kg in variantes:
         _items = conn.execute(
             """SELECT material_id, COALESCE(porcentaje, 0),
-                      COALESCE(cantidad_g_por_lote, 0)
+                      COALESCE(cantidad_g_por_lote, 0), COALESCE(material_nombre, '')
                FROM formula_items
                WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))""",
             (prod_nom,),
@@ -225,41 +226,31 @@ def _seleccionar_variante_optima(conn, producto_canonico, kg_objetivo=1.0):
         for _row in _items:
             if _row[0]:
                 _todos_mat_ids.add(_row[0])
+                if _row[3] and _row[0] not in _nombre_por_mat:
+                    _nombre_por_mat[_row[0]] = _row[3]
 
-    # 2) Una sola query agregada para stock disponible por material_id.
+    # 2) Stock disponible · FIX 9-jun-2026 (audit corazón · M1): usar el resolver
+    # canónico (_get_mp_stock + _lookup_stock_5tier) en vez de un SELECT crudo por
+    # material_id. El crudo NO pasaba por bridge/alias/nombre → los códigos de
+    # fórmula fantasma (con bridge a bodega) daban stock 0 → faltante inflado → se
+    # descartaba la variante correcta. Además su CASE solo contaba 'Entrada'/
+    # 'Salida'/'Ajuste' exactos (ignoraba minúsculas y 'Ajuste -' · regla #4).
     stock_por_mat = {}
     if _todos_mat_ids:
         try:
-            _ph = ','.join(['?'] * len(_todos_mat_ids))
-            _mat_list = list(_todos_mat_ids)
-            for _r in conn.execute(
-                f"""SELECT material_id,
-                          COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad
-                                            WHEN tipo='Salida'  THEN -cantidad
-                                            WHEN tipo='Ajuste'  THEN cantidad
-                                            ELSE 0 END), 0)
-                     FROM movimientos
-                     WHERE material_id IN ({_ph})
-                       AND (estado_lote IS NULL OR UPPER(estado_lote) NOT IN
-                            ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO'))
-                     GROUP BY material_id""",
-                _mat_list
-            ).fetchall():
-                stock_por_mat[_r[0]] = float(_r[1] or 0)
+            from blueprints.programacion import _get_mp_stock as _gms, _lookup_stock_5tier as _lk5
         except Exception:
-            # Fallback a query individual si la batch falla (PG/SQLite divergence)
-            for _mid in _todos_mat_ids:
-                try:
-                    stock_por_mat[_mid] = float(stock_mp_disponible(conn, _mid) or 0)
-                except Exception:
-                    stock_por_mat[_mid] = 0.0
+            from api.blueprints.programacion import _get_mp_stock as _gms, _lookup_stock_5tier as _lk5
+        _stock_canon = _gms(conn)
+        for _mid in _todos_mat_ids:
+            stock_por_mat[_mid] = float(_lk5(_stock_canon, _mid, _nombre_por_mat.get(_mid, '')) or 0)
 
     # Calcular faltante por variante (sin más SELECTs en el loop)
     evaluadas = []
     for prod_nom, var_label, _prio, lote_kg in variantes:
         items = items_por_variante.get(prod_nom, [])
         faltante_total = 0.0
-        for mat_id, pct, cant_g_por_lote in items:
+        for mat_id, pct, cant_g_por_lote, _mnom in items:
             if cant_g_por_lote and lote_kg:
                 req_g = float(cant_g_por_lote) * (kg_objetivo / float(lote_kg)) if float(lote_kg) > 0 else float(cant_g_por_lote)
             else:
@@ -1067,11 +1058,18 @@ def _check_mp_para_pedido_b2b(c, producto, kg_b2b):
     lote_kg = float(items[0][4] or 0)
     n_lotes = kg_b2b / lote_kg if lote_kg > 0 else 1.0
 
-    # Necesidad por MP
+    # Necesidad por MP · FIX 9-jun-2026 (audit corazón · M1): resolver canónico +
+    # _is_unlimited_mp (no el literal 'MPAGUALI01', que dejaba pasar variantes de agua).
+    try:
+        from blueprints.programacion import (_get_mp_stock as _gms,
+            _lookup_stock_5tier as _lk5, _is_unlimited_mp as _is_unlim)
+    except Exception:
+        from api.blueprints.programacion import (_get_mp_stock as _gms,
+            _lookup_stock_5tier as _lk5, _is_unlimited_mp as _is_unlim)
     requeridos = []  # [(material_id, nombre, gramos)]
     for mid_raw, mnom, cant_g, pct, _lk in items:
         mid = str(mid_raw).strip()
-        if mid == 'MPAGUALI01':  # agua = consumible infinito
+        if _is_unlim(str(mnom)) or mid == 'MPAGUALI01':  # agua/consumible infinito
             continue
         nec_g = float(cant_g or 0)
         if nec_g <= 0 and pct and lote_kg > 0:
@@ -1084,27 +1082,15 @@ def _check_mp_para_pedido_b2b(c, producto, kg_b2b):
         return {"ok": True, "mps_faltantes": [], "sin_formula": False,
                 "lote_size_kg": lote_kg, "n_lotes": round(n_lotes, 3)}
 
-    # Stock actual = SUM(movimientos) por material_id requerido
-    ids = [r[0] for r in requeridos]
-    placeholders = ','.join(['?'] * len(ids))
+    # Stock actual · FIX 9-jun-2026 (audit corazón · M1): resolver canónico
+    # (_get_mp_stock + _lookup_stock_5tier con nombre) en vez del SELECT crudo por
+    # material_id. El crudo NO pasaba por bridge/alias/nombre → un código de fórmula
+    # fantasma con bridge a bodega (p.ej. MPTWEELI01→MP00082) daba 0g aunque hubiera
+    # stock real → aviso FALSO de "falta MP" al crear el pedido B2B (sobre-compra).
+    _stock_canon = _gms(c)
     stock_g = {}
-    for r in c.execute(
-        f"""SELECT material_id,
-                   COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
-                                     WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
-                                     ELSE 0 END),0)
-            FROM movimientos
-            WHERE material_id IN ({placeholders})
-              -- FIX 1-jun-2026 audit Abastecimiento (P0-3) · excluir estados no
-              -- disponibles (cuarentena/vencido/rechazado) igual que _get_mp_stock ·
-              -- antes el aviso B2B contaba ese stock → sobre-optimista.
-              AND (estado_lote IS NULL
-                   OR UPPER(COALESCE(estado_lote,'')) NOT IN
-                      ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO'))
-            GROUP BY material_id""",
-        ids,
-    ).fetchall():
-        stock_g[str(r[0]).strip()] = max(float(r[1] or 0), 0.0)
+    for _mid, _mnom, _need in requeridos:
+        stock_g[_mid] = max(float(_lk5(_stock_canon, _mid, _mnom) or 0), 0.0)
 
     # Comparar
     faltantes = []

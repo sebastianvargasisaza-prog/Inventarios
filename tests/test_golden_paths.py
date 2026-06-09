@@ -11340,9 +11340,14 @@ def test_golden_plan_programar_produccion_origen_eos(app, db_clean):
     # (observaciones='Pedido B2B...') · DELETE original solo limpiaba TEST_PLAN_%
     # · al intentar 90kg en fecha ocupada el endpoint retornaba 422 lote_grande_conflicto.
     _exec("DELETE FROM produccion_programada WHERE observaciones LIKE 'TEST_PLAN_%'")
-    _exec("""DELETE FROM produccion_programada
-             WHERE UPPER(TRIM(producto)) = 'SUERO HIDRATANTE AH 1.5%'
-               AND fecha_programada = '2026-06-01'""")
+    # FIX 9-jun-2026: fecha RELATIVA a hoy (CO). necesidades.lotes_pendientes filtra
+    # fecha_programada >= hoy-7d (plan.py:3910); la fecha fija '2026-06-01' salía del
+    # window al rodar el calendario (fallaba desde el 9-jun) → fragilidad de fecha del
+    # test, NO bug de código. Usar hoy preserva la intención (lote agendado visible).
+    from datetime import datetime as _dtg, timezone as _tzg, timedelta as _tdg
+    _FECHA_PROG = (_dtg.now(_tzg.utc) - _tdg(hours=5)).date().isoformat()
+    _exec("DELETE FROM produccion_programada WHERE UPPER(TRIM(producto)) = "
+          "'SUERO HIDRATANTE AH 1.5%' AND fecha_programada = '" + _FECHA_PROG + "'")
 
     cs = _login(app, 'sebastian')
 
@@ -11350,7 +11355,7 @@ def test_golden_plan_programar_produccion_origen_eos(app, db_clean):
     r1 = cs.post('/api/plan/programar-produccion', json={
         'producto_nombre': 'SUERO HIDRATANTE AH 1.5%',
         'cantidad_kg': 90,
-        'fecha_programada': '2026-06-01',
+        'fecha_programada': _FECHA_PROG,
         'notas': 'TEST_PLAN_SAH · lote semanal',
     }, headers=csrf_headers())
     assert r1.status_code == 201, f'BUG POST: {r1.status_code} {r1.data}'
@@ -11366,7 +11371,7 @@ def test_golden_plan_programar_produccion_origen_eos(app, db_clean):
     assert origen == 'eos_plan', f'BUG: origen={origen}, esperaba eos_plan'
     assert estado == 'pendiente', f'BUG: estado={estado}'
     assert kg == 90.0
-    assert fecha == '2026-06-01'
+    assert fecha == _FECHA_PROG
     assert 'TEST_PLAN_SAH' in notas
 
     # Caso 3: audit_log captura
@@ -12194,6 +12199,11 @@ def test_golden_plan_escenarios_y_proximas(app, db_clean):
     # Caso 2: POST programar-produccion + GET proximas devuelve el lote
     # Fecha 2026-06-16 (martes hábil) · 2026-06-15 es festivo Sagrado Corazón.
     # Sebastián 14-may-2026 (audit W4): programar-produccion ahora valida reglas.
+    # FIX 9-jun-2026: limpiar la fecha objetivo antes de programar. Otro golden con
+    # fecha RELATIVA puede caer en 2026-06-16 (= hoy+7 cuando hoy=2026-06-09) y ocupar
+    # el día (regla lote grande = 1/día) → 422. Robustez ante contaminación full-suite
+    # (no es bug de código · la regla es same-day, plan.py:5009).
+    _exec("DELETE FROM produccion_programada WHERE date(fecha_programada) = '2026-06-16'")
     r2 = cs.post('/api/plan/programar-produccion', json={
         'producto_nombre': 'SUERO HIDRATANTE AH 1.5%',
         'cantidad_kg': 60,
