@@ -5961,6 +5961,26 @@ def test_golden_envasado_semiauto_sugerencias_y_gate(app, db_clean):
         conn.commit(); conn.close()
 
 
+def test_golden_integridad_bridge_detecta_rotos(app, db_clean):
+    """Guardián de integridad del bridge MP (audit corazón 9-jun): /api/admin/
+    integridad-bridge detecta bridges ACTIVOS cuyo destino no existe en maestro_mps
+    (cadena rota fantasma→fantasma · la categoría más peligrosa). Solo detecta · no
+    muta datos. (Huérfanos en formula_items no se siembran: hay trigger FK que exige
+    material_id en maestro · por eso los huérfanos de prod son datos pre-trigger.)"""
+    cs = _login(app, 'sebastian')
+    _exec("INSERT INTO mp_formula_bridge (formula_material_id, formula_material_nombre, "
+          "bodega_material_id, activo) VALUES ('MPTESTROTO01', 'TEST MP ROTO', 'MP-NOEXISTE-999', 1)")
+    try:
+        r = cs.get('/api/admin/integridad-bridge')
+        assert r.status_code == 200, r.data
+        d = r.get_json()
+        assert d.get('ok')
+        rotos = [b['formula_material_id'] for b in d['bridges_rotos']]
+        assert 'MPTESTROTO01' in rotos, f'BUG: no detectó bridge roto · {rotos[:5]}'
+    finally:
+        _exec("DELETE FROM mp_formula_bridge WHERE formula_material_id='MPTESTROTO01'")
+
+
 # ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH HOOK · iniciar producción crea EBR auto si hay MBR aprobado
 # ═══════════════════════════════════════════════════════════════════

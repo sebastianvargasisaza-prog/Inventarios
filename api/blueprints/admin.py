@@ -16226,6 +16226,105 @@ def diagnosticar_cruce_global():
     }
 
 
+def diagnosticar_integridad_bridge():
+    """GUARDIÁN de integridad de mp_formula_bridge (audit corazón · 9-jun-2026).
+    El corazón (planear+solicitar) resuelve los códigos de fórmula→bodega vía este
+    bridge; si está mal, la demanda muere o se imputa a la MP equivocada. Detecta
+    SIN escribir nada (solo SURFACE · corregir con el Excel en /admin/formulas-mismapeo
+    · score<90 = solo sugerencia · regla cero-error):
+      bridges_rotos   · bridge ACTIVO cuyo bodega_material_id NO existe en maestro_mps
+                        → la demanda muere en un código fantasma (déficit falso/sobre-compra).
+      inci_sospechoso · el nombre real de la fórmula NO comparte ningún token con el
+                        nombre/INCI del destino (posible mismapeo · ej. Ác.Ferúlico→Etil
+                        ascórbico, Betaína→Betaglucano). HEURÍSTICO · revisar con Excel.
+      huerfanos       · material_id usado en fórmulas que NO está en maestro NI en bridge
+                        (no resuelve a nada · ej. RESVERATROL).
+    Devuelve dict. Excluye MPs ilimitadas (agua)."""
+    try:
+        from blueprints.formula_match import norm as _fnorm
+    except ImportError:
+        from api.blueprints.formula_match import norm as _fnorm
+    try:
+        from blueprints.programacion import _is_unlimited_mp as _is_unlim
+    except Exception:
+        try:
+            from api.blueprints.programacion import _is_unlimited_mp as _is_unlim
+        except Exception:
+            _is_unlim = lambda *_a: False
+
+    conn = db_connect(); c = conn.cursor()
+    maestro = {}
+    for r in c.execute("SELECT codigo_mp, COALESCE(nombre_comercial,''), "
+                       "COALESCE(nombre_inci,'') FROM maestro_mps").fetchall():
+        maestro[str(r[0]).strip()] = (r[1], r[2])
+
+    bridge_dest = {}   # formula_material_id -> bodega_material_id (activos)
+    bridges_rotos = []
+    for r in c.execute(
+        "SELECT formula_material_id, COALESCE(formula_material_nombre,''), "
+        "bodega_material_id FROM mp_formula_bridge WHERE COALESCE(activo,1)=1").fetchall():
+        fmid = str(r[0]).strip(); bod = str(r[2] or '').strip()
+        if not fmid:
+            continue
+        bridge_dest[fmid] = bod
+        if bod and bod not in maestro:
+            bridges_rotos.append({'formula_material_id': fmid, 'formula_nombre': r[1],
+                                  'destino': bod})
+
+    # Nombre REAL por material_id de fórmula (el que usan las fórmulas activas).
+    nombre_formula = {}
+    for r in c.execute("SELECT material_id, COALESCE(material_nombre,'') FROM formula_items "
+                       "WHERE material_id IS NOT NULL AND material_id!=''").fetchall():
+        mid = str(r[0]).strip()
+        if r[1] and mid not in nombre_formula:
+            nombre_formula[mid] = r[1]
+
+    def _toks(s):
+        return set(t for t in _fnorm(s).split() if len(t) >= 4)
+
+    inci_sospechoso = []
+    for fmid, bod in bridge_dest.items():
+        if bod not in maestro:
+            continue  # ya está en bridges_rotos
+        nom_f = nombre_formula.get(fmid, '')
+        if not nom_f or _is_unlim(nom_f):
+            continue
+        nom_b, inci_b = maestro[bod]
+        tf = _toks(nom_f)
+        tb = _toks(nom_b) | _toks(inci_b)
+        if tf and tb and not (tf & tb):
+            inci_sospechoso.append({'formula_material_id': fmid, 'formula_nombre': nom_f,
+                                    'destino': bod, 'destino_nombre': nom_b,
+                                    'destino_inci': inci_b})
+
+    huerfanos = []
+    for mid, nom in nombre_formula.items():
+        if mid in maestro or mid in bridge_dest or _is_unlim(nom):
+            continue
+        n = c.execute("SELECT COUNT(DISTINCT producto_nombre) FROM formula_items "
+                      "WHERE material_id=?", (mid,)).fetchone()
+        huerfanos.append({'material_id': mid, 'nombre': nom,
+                          'productos': int(n[0] if n else 0)})
+
+    return {
+        'bridges_rotos': sorted(bridges_rotos, key=lambda x: x['formula_material_id']),
+        'inci_sospechoso': sorted(inci_sospechoso, key=lambda x: x['formula_material_id']),
+        'huerfanos': sorted(huerfanos, key=lambda x: -x['productos']),
+        'total': len(bridges_rotos) + len(inci_sospechoso) + len(huerfanos),
+    }
+
+
+@bp.route("/api/admin/integridad-bridge", methods=["GET"])
+def admin_integridad_bridge():
+    """Read-only · integridad de mp_formula_bridge (bridges rotos / INCI sospechoso /
+    huérfanos). Usa diagnosticar_integridad_bridge() (compartido con el cron guardián).
+    Para corregir: /admin/formulas-mismapeo con el Excel maestro (preview+audit+reversa)."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    return jsonify({'ok': True, **diagnosticar_integridad_bridge()})
+
+
 @bp.route("/api/admin/diagnostico-produccion-global", methods=["GET"])
 def admin_diagnostico_produccion_global():
     """Endpoint read-only del diagnóstico global de cruce · usa el helper

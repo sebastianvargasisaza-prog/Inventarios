@@ -4749,9 +4749,46 @@ def job_salud_cruce_inventario(app):
         cross_keys = ('ATRAPADO', 'EN_CUARENTENA', 'DUPLICADO_INCI', 'MISMATCH_NOMBRE')
         n_cruce = sum(int(pc.get(k, 0) or 0) for k in cross_keys)
         n_comprar = int(pc.get('SIN_STOCK_REAL', 0) or 0)
+
+        # Integridad del bridge fórmula→bodega (audit corazón 9-jun · M1). El corazón
+        # resuelve los códigos de fórmula→bodega vía mp_formula_bridge; si hay bridges
+        # rotos / INCI sospechoso / huérfanos, la demanda muere o se imputa a la MP
+        # equivocada (déficit falso / sobre-compra / kardex mal). Solo DETECTA + AVISA
+        # (corregir es decisión humana con el Excel · /admin/formulas-mismapeo).
+        try:
+            from blueprints.admin import diagnosticar_integridad_bridge
+        except ImportError:
+            from api.blueprints.admin import diagnosticar_integridad_bridge
+        try:
+            bridge = diagnosticar_integridad_bridge()
+        except Exception:
+            log.exception('salud_cruce_inventario integridad-bridge fallo')
+            bridge = {'bridges_rotos': [], 'inci_sospechoso': [], 'huerfanos': [], 'total': 0}
+        n_rotos = len(bridge.get('bridges_rotos', []))
+        n_inci = len(bridge.get('inci_sospechoso', []))
+        n_huer = len(bridge.get('huerfanos', []))
+        n_bridge = n_rotos + n_inci + n_huer
+        if n_bridge > 0:
+            bpartes = []
+            if n_rotos: bpartes.append(f"{n_rotos} a código inexistente")
+            if n_inci: bpartes.append(f"{n_inci} con INCI sospechoso")
+            if n_huer: bpartes.append(f"{n_huer} huérfano(s)")
+            try:
+                from blueprints.notif import push_notif_multi as _pnm_b
+                _pnm_b(
+                    ['sebastian', 'alejandro'], 'planta',
+                    f'⚠ Integridad del bridge MP: {n_bridge} mapeo(s) a revisar',
+                    body=("La demanda de fórmula resuelve a bodega vía mp_formula_bridge: "
+                          f"{' · '.join(bpartes)} → riesgo de déficit falso / MP equivocada en "
+                          "planear+solicitar. Corregí con el Excel en /admin/formulas-mismapeo."),
+                    link='/admin/formulas-mismapeo', remitente='cron-salud-cruce',
+                    importante=True)
+            except Exception as e:
+                log.warning('salud_cruce integridad-bridge push fallo: %s', e)
+
         if n_cruce <= 0:
             return True, {'mensaje': 'Cruce sano · todo el stock de bodega cruza',
-                          'sin_stock_real': n_comprar}, 0
+                          'sin_stock_real': n_comprar, 'bridge_issues': n_bridge}, n_bridge
         # productos afectados por problemas de CRUCE (no por compra)
         prods_cruce = []
         for p in (d.get('productos') or []):
@@ -4784,7 +4821,7 @@ def job_salud_cruce_inventario(app):
             log.warning('salud_cruce_inventario push_notif fallo: %s', e)
         return True, {'n_cruce': n_cruce, 'productos': len(prods_cruce),
                       'detalle': det, 'sin_stock_real': n_comprar,
-                      'ejemplos': prods_cruce[:10]}, n_cruce
+                      'ejemplos': prods_cruce[:10], 'bridge_issues': n_bridge}, n_cruce
 
 
 def job_auto_reparar_huerfanas(app):
