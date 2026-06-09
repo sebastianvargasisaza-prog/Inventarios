@@ -312,6 +312,19 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (233, "Corrige INCI equivocado en bridges (audit corazón 9-jun): (1) BETAÍNA MPBETASO01 → "
+          "MP00215 (Betaína/BETAINE) · apuntaba MAL a MP00214 (Betaglucano/BETA-GLUCAN, molécula "
+          "distinta) → consumo de betaína se imputaba al betaglucano. Afecta MAXLASH (activo · "
+          "Betaína 0.3% confirmada en el docx). MP00215 existe. (2) Desactiva el bridge "
+          "MPACFESO01 (Ác. Ferúlico) → MP00160 (Etil ascórbico, MAL): su único uso está "
+          "descontinuado; desactivar evita que consuma la MP equivocada si se reactiva (que "
+          "muera y avise > mis-map silencioso). Idempotente.", [
+        "UPDATE mp_formula_bridge SET bodega_material_id='MP00215' "
+        "WHERE formula_material_id='MPBETASO01'",
+        "UPDATE mp_formula_bridge SET activo=0 "
+        "WHERE formula_material_id='MPACFESO01' AND bodega_material_id='MP00160'",
+    ]),
+
     (232, "MAXLASH · crea las 8 MPs que faltaban en maestro_mps (Sebastián subió la fórmula "
           "MaxLash · audit corazón 9-jun). La fórmula del MAXLASH en la app ya era correcta "
           "(% = docx) pero 8 ingredientes MORÍAN porque su código canónico (destino del bridge) "
