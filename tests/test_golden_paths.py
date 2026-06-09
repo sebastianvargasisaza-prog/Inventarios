@@ -5977,8 +5977,9 @@ def test_golden_vista_completa_envasado_presentaciones(app, db_clean):
     cs = _login(app, 'sebastian')
     cs.post('/api/brd/mbr/preparar-aprobado',
             json={'producto_nombre': 'Blush Balm'}, headers=csrf_headers())
-    _exec("INSERT INTO envasado (lote, producto, presentacion, unidades, estado, fecha) "
-          "VALUES ('L-VP', 'Blush Balm', 'Frasco x 30g', 120, 'Completado', '2026-06-09')")
+    _exec("INSERT INTO envasado (lote, producto, presentacion, unidades, envase_codigo, "
+          "estado, fecha) VALUES ('L-VP', 'Blush Balm', 'Frasco x 30g', 120, "
+          "'ENV-TEST-01', 'Completado', '2026-06-09')")
     r = cs.post('/api/brd/legajo-rapido', json={'producto': 'Blush Balm',
                 'lote': 'L-VP', 'fase': 'envasado'}, headers=csrf_headers())
     assert r.status_code == 200, r.data
@@ -5991,6 +5992,9 @@ def test_golden_vista_completa_envasado_presentaciones(app, db_clean):
         pres = d.get('envasado_presentaciones') or []
         assert any(p['unidades'] == 120 and 'Frasco' in (p.get('presentacion') or '')
                    for p in pres), pres
+        mats = d.get('envasado_materiales') or []
+        assert any('ENV-TEST-01' in (m.get('material') or '') and m['requerida'] == 120
+                   for m in mats), mats
     finally:
         _exec("DELETE FROM ebr_pasos_ejecutados WHERE ebr_id IN "
               "(SELECT id FROM ebr_ejecuciones WHERE lote LIKE 'L-VP%')")

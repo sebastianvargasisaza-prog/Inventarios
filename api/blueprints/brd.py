@@ -1776,6 +1776,41 @@ def ebr_vista_completa(ebr_id):
                     })
         except Exception as _ep:
             __import__('logging').getLogger('brd').warning('envasado_presentaciones fallo: %s', _ep)
+        # Materiales de Envase (envase + tapa usados) · conciliación de empaque (MyBatch):
+        # cant. requerida vs devuelta/utilizada/averiada/diferencia. Iteración 2 · requerida.
+        out['envasado_materiales'] = []
+        try:
+            _lote2 = (out['header'].get('lote_codigo') or '').strip()
+            if _lote2:
+                _erows = conn.execute(
+                    "SELECT COALESCE(envase_codigo,''), COALESCE(tapa_codigo,''), "
+                    "COALESCE(unidades,0) FROM envasado "
+                    "WHERE UPPER(TRIM(lote))=UPPER(TRIM(?))", (_lote2,)).fetchall()
+                _acc = {}
+                for er in _erows:
+                    _env = (er[0] or '').strip(); _tapa = (er[1] or '').strip()
+                    _uds = int(er[2] or 0)
+                    if _env:
+                        _acc[_env] = _acc.get(_env, 0) + _uds
+                    if _tapa:
+                        _acc[_tapa] = _acc.get(_tapa, 0) + _uds
+                for _cod, _req in _acc.items():
+                    _nom = ''
+                    try:
+                        _n = conn.execute(
+                            "SELECT nombre_comercial FROM maestro_mps WHERE codigo_mp=?",
+                            (_cod,)).fetchone()
+                        _nom = (_n[0] if _n else '') or ''
+                    except Exception:
+                        pass
+                    out['envasado_materiales'].append({
+                        'lote_envasado': _lote2,
+                        'material': (_cod + (' ' + _nom if _nom else '')),
+                        'lote_material': '', 'requerida': _req,
+                        'devuelta': None, 'utilizada': None, 'averiada': None, 'diferencia': None,
+                    })
+        except Exception as _em:
+            __import__('logging').getLogger('brd').warning('envasado_materiales fallo: %s', _em)
     # Elaborado por (enriquecido) + Supervisado por · Sebastián 5-jun-2026:
     # "el área productiva la supervisa el Jefe de Producción; calidad el Jefe de
     # Control de Calidad". Resolvemos nombre+cargo desde usuarios_identidad
@@ -5368,28 +5403,47 @@ async function load(){
     var estado = h.estado||'—';
     var fase = h.fase||'fabricacion';
     var faseLbl = ({fabricacion:'Fabricación · OP',envasado:'Envasado · OF',acondicionamiento:'Acondicionamiento · OA'})[fase]||fase;
+    var esEnv = (fase==='envasado');
     // Rótulos de pesaje: reusa el generador existente /rotulos/<producto>/<kg>
     var prodRot = encodeURIComponent(h.producto||h.titulo||'');
     var kgRot = (Number(h.lote_size_g||0)/1000) || 1;
+    // Envasado (fiel a MyBatch) · Tamaño Bulk (g - mL) · Cantidad por Envasar (mL) · Densidad Bulk.
+    var _densi = h.densidad_g_ml ? Number(h.densidad_g_ml) : null;
+    var _gBulk = (Number(h.lote_size_g||0)>0) ? Number(h.lote_size_g) : (h.cantidad_objetivo_g!=null?Number(h.cantidad_objetivo_g):null);
+    var _mlBulk = (_gBulk!=null && _densi) ? (_gBulk/_densi) : null;
+    var _tamBulk = (_gBulk!=null?gfmt(_gBulk):'—') + (_mlBulk!=null?(' - '+mlf(_mlBulk)):'');
+    var _kicker = esEnv ? ('📦 Orden de Envasado · '+esc(faseLbl)) : ('📋 Orden de Producción · '+esc(faseLbl));
+    var _gridHead = esEnv
+      ? ('<div class="grid">'+
+          '<div><div class="lbl">N° Lote Bulk</div><div class="val mono">'+esc(h.lote_codigo||'—')+'</div></div>'+
+          '<div><div class="lbl">Tamaño Bulk</div><div class="val">'+_tamBulk+'</div></div>'+
+          '<div><div class="lbl">Estado Actual</div><div class="val"><b style="color:'+estadoColor(estado)+'">'+esc(estado)+'</b></div></div>'+
+          '<div><div class="lbl">Elaborado por</div><div class="val">'+esc(h.operario||'—')+'</div></div>'+
+          '<div><div class="lbl">Observaciones</div><div class="val" style="font-weight:400">'+esc(h.observaciones||'Ninguna')+'</div></div>'+
+          '<div><div class="lbl">Cantidad por Envasar</div><div class="val">'+(_mlBulk!=null?mlf(_mlBulk):'—')+'</div></div>'+
+          '<div><div class="lbl">Densidad Bulk</div><div class="val">'+(_densi?(_densi.toLocaleString('es-CO',{maximumFractionDigits:3})+' g/mL'):'—')+'</div></div>'+
+          '<div><div class="lbl">Supervisado por</div><div class="val">'+esc(h.supervisado_por||'—')+'</div></div>'+
+        '</div>')
+      : ('<div class="grid">'+
+          '<div><div class="lbl">N° de Lote Bulk</div><div class="val mono">'+esc(h.lote_codigo||'—')+'</div></div>'+
+          '<div><div class="lbl">Tamaño de Lote</div><div class="val">'+gfmt(h.lote_size_g)+'</div></div>'+
+          '<div><div class="lbl">Fecha / Hora</div><div class="val">'+esc((h.iniciado_at_utc||'—').substring(0,16).replace("T"," "))+'</div></div>'+
+          '<div><div class="lbl">Área o Línea</div><div class="val">'+esc(h.area_linea||'—')+'</div></div>'+
+          '<div><div class="lbl">Elaborado por</div><div class="val">'+esc(h.operario||'—')+'</div></div>'+
+          '<div><div class="lbl">Supervisado por</div><div class="val">'+esc(h.supervisado_por||'—')+'</div></div>'+
+          '<div style="grid-column:1/-1"><div class="lbl">Observaciones</div><div class="val" style="font-weight:400">'+esc(h.observaciones||'Ninguna')+'</div></div>'+
+        '</div>');
     try{clearInterval(window.__cxTick);}catch(e){}
     document.getElementById('head').innerHTML =
       '<div class="hbar">'+
         '<div class="htitle">'+
-          '<div class="hkicker">📋 Orden de Producción · '+esc(faseLbl)+'</div>'+
+          '<div class="hkicker">'+_kicker+'</div>'+
           '<h1>'+esc(numop)+'</h1>'+
           '<div class="prod">'+esc(h.producto||h.titulo||'—')+'</div>'+
         '</div>'+
         '<span class="estado-badge" style="background:'+estadoBg(estado)+';color:'+estadoColor(estado)+'">'+esc(estado)+'</span>'+
       '</div>'+
-      '<div class="grid">'+
-        '<div><div class="lbl">N° de Lote Bulk</div><div class="val mono">'+esc(h.lote_codigo||'—')+'</div></div>'+
-        '<div><div class="lbl">Tamaño de Lote</div><div class="val">'+gfmt(h.lote_size_g)+'</div></div>'+
-        '<div><div class="lbl">Fecha / Hora</div><div class="val">'+esc((h.iniciado_at_utc||'—').substring(0,16).replace("T"," "))+'</div></div>'+
-        '<div><div class="lbl">Área o Línea</div><div class="val">'+esc(h.area_linea||'—')+'</div></div>'+
-        '<div><div class="lbl">Elaborado por</div><div class="val">'+esc(h.operario||'—')+'</div></div>'+
-        '<div><div class="lbl">Supervisado por</div><div class="val">'+esc(h.supervisado_por||'—')+'</div></div>'+
-        '<div style="grid-column:1/-1"><div class="lbl">Observaciones</div><div class="val" style="font-weight:400">'+esc(h.observaciones||'Ninguna')+'</div></div>'+
-      '</div>'+
+      _gridHead+
       (h.liberado_por ? '<div class="liber-line">✅ Liberado por <b>'+esc(h.liberado_por)+'</b>'+(h.liberado_at_utc?(' · '+esc(h.liberado_at_utc.substring(0,16).replace("T"," "))):'')+'</div>' : '')+
       '<div class="btns">'+
         '<a class="b-time" data-tip="Línea de tiempo del lote: cada evento del legajo (inicio, pesajes, pasos, IPC, firmas) en orden cronológico." href="/brd/timeline/'+EBR_ID+'">📜 Timeline Batch Record</a>'+
@@ -5618,7 +5672,25 @@ async function load(){
           }).join('')+'</tbody>'+
           '<tfoot><tr><td><b>Total</b></td><td></td><td class="num"><b>'+totUds.toLocaleString('es-CO')+'</b></td><td colspan="5"></td></tr></tfoot></table>'
         : '<div class="muted">Sin presentaciones registradas aún para este lote. Cuando se envase (envase × unidades × área) aparecerán aquí.</div>');
-      document.getElementById('pasos').innerHTML = manuf + presHtml + obsHtml + regHtml + rotuloHtml + corrHtml;
+      // Materiales de Envase · conciliación de empaque (envase + tapa) · paridad MyBatch.
+      var mats=d.envasado_materiales||[];
+      function _nf(v){return v!=null?Number(v).toLocaleString('es-CO'):'<span class="muted">—</span>';}
+      var matHtml='<div style="display:flex;align-items:center;gap:12px;margin:22px 0 8px">'+
+          '<h3 style="font-size:15px;color:#7c3aed;margin:0">Materiales de Envase</h3></div>'+
+        (mats.length
+        ? '<table><thead><tr><th>N° lote envasado</th><th>Material de envase</th><th>N° lote material</th><th class="num">Cant. requerida</th><th class="num">Cant. devuelta</th><th class="num">Cant. utilizada</th><th class="num">Cant. averiada</th><th class="num">Diferencia</th></tr></thead><tbody>'+
+          mats.map(function(m){
+            return '<tr><td class="mono">'+esc(m.lote_envasado||'—')+'</td>'+
+              '<td style="font-size:12.5px">'+esc(m.material||'—')+'</td>'+
+              '<td class="mono">'+esc(m.lote_material||'—')+'</td>'+
+              '<td class="num">'+(m.requerida!=null?Number(m.requerida).toLocaleString('es-CO'):'—')+'</td>'+
+              '<td class="num">'+_nf(m.devuelta)+'</td>'+
+              '<td class="num">'+_nf(m.utilizada)+'</td>'+
+              '<td class="num">'+_nf(m.averiada)+'</td>'+
+              '<td class="num">'+_nf(m.diferencia)+'</td></tr>';
+          }).join('')+'</tbody></table>'
+        : '<div class="muted">Sin materiales de envase registrados para este lote.</div>');
+      document.getElementById('pasos').innerHTML = presHtml + matHtml + obsHtml + regHtml + rotuloHtml + corrHtml;
     } else {
       document.getElementById('pasos').innerHTML = manuf + precHtml + despHtml + dispHtml + ajustesHtml + despFabHtml + pasosHtml + ipcHtml + obsHtml + regHtml + rotuloHtml + corrHtml;
     }
