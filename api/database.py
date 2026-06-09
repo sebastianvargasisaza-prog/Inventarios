@@ -312,6 +312,15 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (228, "Corrige bridge MPALANSO01 (Alantoína) → MP00047 · audit corazón 9-jun: el "
+          "destino MP00085 NO existe en maestro_mps (bridge roto fantasma→fantasma) y la "
+          "Alantoína real es MP00047 (match EXACTO por nombre · único activo). Los otros 23 "
+          "bridges rotos + RESVERATROL + 2 de INCI necesitan el Excel maestro · NO se "
+          "adivinan (matching difuso corrompe el kardex · regla cero-error). Idempotente.", [
+        "UPDATE mp_formula_bridge SET bodega_material_id='MP00047' "
+        "WHERE formula_material_id='MPALANSO01' AND bodega_material_id='MP00085'",
+    ]),
+
     (227, "produccion_envasado · operario_asignado + area_codigo (semi-auto envasado: "
           "el jefe de producción asigna operario + área LIMPIA al dar el clock de "
           "iniciar · Sebastián 8-jun-2026)", [
