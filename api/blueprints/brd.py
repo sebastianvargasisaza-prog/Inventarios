@@ -1448,7 +1448,8 @@ def brd_timeline_page(ebr_id):
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Timeline BR · ''' + str(ebr_id) + '''</title>
 <style>
-*{box-sizing:border-box;font-family:'Segoe UI',Roboto,sans-serif}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+*{box-sizing:border-box;font-family:'Inter',system-ui,Arial,sans-serif}
 body{margin:0;background:#f5f3ff;padding:22px;color:#0f172a}
 .wrap{max-width:880px;margin:0 auto}
 a.back{display:inline-flex;align-items:center;gap:8px;background:#fff;color:#7c3aed;font-size:13px;font-weight:700;text-decoration:none;padding:9px 16px;border-radius:10px;border:1px solid #e9d5ff;box-shadow:0 2px 8px rgba(124,58,237,.10)}
@@ -3410,15 +3411,23 @@ def pdf_ebr(ebr_id):
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
 
-    # Header
-    pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 10, _safe_pdf(f"Executed Batch Record · Lote {ebr['lote']}"),
-             new_x="LMARGIN", new_y="NEXT", align="C")
+    # Header · banda de marca violeta (premium · consistente con los rótulos HTML)
+    pdf.set_fill_color(109, 40, 217)            # violeta de marca ANIMUS
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.cell(0, 7, _safe_pdf("ESPAGIRIA Laboratorio SAS  ·  ANIMUS Lab"),
+             new_x="LMARGIN", new_y="NEXT", align="C", fill=True)
+    pdf.set_fill_color(245, 243, 255)           # pale violeta
+    pdf.set_text_color(76, 29, 149)             # violeta oscuro
+    pdf.set_font("Helvetica", "B", 15)
+    pdf.cell(0, 10, _safe_pdf(f"Executed Batch Record  ·  Lote {ebr['lote']}"),
+             new_x="LMARGIN", new_y="NEXT", align="C", fill=True)
+    pdf.set_text_color(60, 60, 67)
     pdf.set_font("Helvetica", "", 10)
-    pdf.cell(0, 6, _safe_pdf(f"Producto: {mbr['producto_nombre']} · MBR v{ebr['mbr_version']}"),
+    pdf.cell(0, 6, _safe_pdf(
+        f"Producto: {mbr['producto_nombre']}  ·  MBR v{ebr['mbr_version']}  ·  Estado: {ebr['estado'].upper()}"),
              new_x="LMARGIN", new_y="NEXT", align="C")
-    pdf.cell(0, 6, _safe_pdf(f"Estado: {ebr['estado'].upper()}"),
-             new_x="LMARGIN", new_y="NEXT", align="C")
+    pdf.set_text_color(0, 0, 0)
     pdf.ln(4)
 
     # Identificación
@@ -4636,7 +4645,7 @@ _ORDENES_PROD_HTML = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Órdenes de Producción · EOS</title>
 <style>
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f3ff;color:#1e293b;margin:0;padding:20px}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#f4f4f7;color:#18181b;margin:0;padding:20px;-webkit-font-smoothing:antialiased}
 .wrap{max-width:1200px;margin:0 auto}
 h1{color:#7c3aed;font-size:22px;margin:0 0 4px}
 .sub{color:#64748b;font-size:13px;margin-bottom:14px}
@@ -5643,7 +5652,7 @@ def dispensado_imprimible(ebr_id):
         '.meta{display:grid;grid-template-columns:repeat(3,1fr);gap:8px 18px;font-size:12.5px;margin-bottom:14px}'
         '.meta b{color:#64748b;font-weight:700;display:block;font-size:10.5px;text-transform:uppercase}'
         'table{width:100%;border-collapse:collapse;font-size:12px}'
-        'th{background:#0f172a;color:#fff;padding:8px;text-align:left;font-size:10.5px;text-transform:uppercase}'
+        'th{background:#f5f3ff;color:#4c1d95;padding:9px 10px;text-align:left;font-size:10.5px;text-transform:uppercase;font-weight:700}'
         'td{padding:7px 8px;border-bottom:1px solid #e2e8f0}'
         'td.n{text-align:center;color:#94a3b8;width:26px}td.c{text-align:center}td.r{text-align:right;font-variant-numeric:tabular-nums}'
         '.mono{font-family:ui-monospace,monospace}'
@@ -5689,7 +5698,7 @@ _ACTIVAR_LEGAJOS_HTML = """<!DOCTYPE html>
 <title>Activar legajos automáticos · EOS</title>
 <style>
 *{box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f3ff;color:#1e293b;margin:0;padding:24px}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#f4f4f7;color:#18181b;margin:0;padding:24px;-webkit-font-smoothing:antialiased}
 .wrap{max-width:760px;margin:0 auto}
 a.back{display:inline-flex;align-items:center;gap:8px;background:#fff;color:#7c3aed;font-size:13px;font-weight:700;text-decoration:none;padding:10px 18px;border-radius:11px;border:1px solid #e9d5ff;box-shadow:0 2px 10px rgba(124,58,237,.10)}
 .card{background:#fff;border-radius:16px;box-shadow:0 4px 16px rgba(76,29,149,.07);margin:14px 0;overflow:hidden}
