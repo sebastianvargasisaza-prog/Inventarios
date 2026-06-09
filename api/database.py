@@ -312,6 +312,16 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (229, "DESCONTINÚA 3 fórmulas (decisión Sebastián 9-jun · audit corazón): 'SUERO AZ + B3' "
+          "y 'Suero RETINAL +' ya no se venden; 'SUERO TRIACTIVE RETINOID NAD+' (49 ítems, "
+          "reformulado/legacy) es duplicado del SKU — queda 'SUERO TRIACTIVE RETINOID NAD' (40 "
+          "ítems = idéntico al Excel maestro). GMP/INVIMA: NO se borran registros · activo=0 los "
+          "oculta de producción/planeación/venta/cruce y es REVERSIBLE. Sin producciones "
+          "programadas (0 refs · verificado). Idempotente.", [
+        "UPDATE formula_headers SET activo=0 WHERE producto_nombre IN "
+        "('SUERO TRIACTIVE RETINOID NAD+', 'Suero RETINAL +', 'SUERO AZ + B3')",
+    ]),
+
     (228, "Corrige bridge MPALANSO01 (Alantoína) → MP00047 · audit corazón 9-jun: el "
           "destino MP00085 NO existe en maestro_mps (bridge roto fantasma→fantasma) y la "
           "Alantoína real es MP00047 (match EXACTO por nombre · único activo). Los otros 23 "
