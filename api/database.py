@@ -312,6 +312,18 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (231, "DESCONTINÚA 6 fórmulas que ya no se venden (decisión Sebastián 9-jun · audit corazón · "
+          "productos propios que no estaban en el Excel maestro; MAXLASH se CONSERVA porque "
+          "Sebastián lo subirá al Excel): CREMA DE UREA, EMULSION HIDRATANTE ANTIOXIDANTE, ESENCIA "
+          "ILUMINADORA, SUERO ANTIOXIDANTE VITAMINA C+B3, SUERO DE RETINALDEHIDO 0.05%, SUERO "
+          "ILUMINADOR AHA+AH. activo=0 (GMP · reversible · conserva registros). Sin producciones "
+          "programadas (0 refs · verificado). Idempotente.", [
+        "UPDATE formula_headers SET activo=0 WHERE producto_nombre IN "
+        "('CREMA DE UREA', 'EMULSION HIDRATANTE ANTIOXIDANTE', 'ESENCIA ILUMINADORA', "
+        "'SUERO ANTIOXIDANTE VITAMINA C+B3', 'SUERO DE RETINALDEHIDO 0.05%', "
+        "'SUERO ILUMINADOR AHA+AH.')",
+    ]),
+
     (230, "Dedup BLUSH BALM (audit corazón 9-jun): existían 2 fórmulas del mismo SKU — 'Blush "
           "Balm' (INCOMPLETA, 67%, lote 0, sin producciones) y 'BLUSH BALM' (COMPLETA 100%, "
           "idéntica al Excel maestro con MP00127/MPCOCP01/MPBNIT01, en producción). Descontinúa "
