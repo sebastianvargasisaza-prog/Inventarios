@@ -5930,6 +5930,32 @@ def test_golden_envasado_api_gate_area_limpia(app, db_clean):
         _exec("DELETE FROM areas_planta WHERE codigo='ENV-GT'")
 
 
+def test_golden_envasado_hook_crea_legajo_of(app, db_clean):
+    """Hook MyBatch (9-jun): al registrar envasado de un producto con MBR aprobado nace
+    el legajo EBR de fase ENVASADO (la 'Orden de Envasado'). Blush Balm tiene 1 paso de
+    envasado en su MBR (mig 110). Auto-gateado: sin MBR aprobado = no-op."""
+    cs = _login(app, 'sebastian')
+    rl = cs.get('/api/brd/mbr?producto=Blush Balm')
+    bb = next(it for it in rl.get_json()['items'] if it['version'] == 1)
+    if bb['estado'] != 'aprobado':
+        cs.post(f'/api/brd/mbr/{bb["id"]}/submit', json={}, headers=csrf_headers())
+        sig = _firmar(cs, record_table='mbr_templates', record_id=bb['id'], meaning='aprueba')
+        cs.post(f'/api/brd/mbr/{bb["id"]}/aprobar',
+                json={'signature_id': sig}, headers=csrf_headers())
+    _lote = 'L-OF-ENVTEST'
+    try:
+        r = cs.post('/api/envasado', json={'producto': 'Blush Balm', 'lote': _lote,
+                    'unidades': 10}, headers=csrf_headers())
+        assert r.status_code in (200, 201), r.data
+        ebrs = _query("SELECT id FROM ebr_ejecuciones WHERE lote=?", (_lote,))
+        assert ebrs, 'BUG: el hook no creó el legajo EBR de envasado (OF)'
+    finally:
+        _exec("DELETE FROM ebr_pasos_ejecutados WHERE ebr_id IN "
+              "(SELECT id FROM ebr_ejecuciones WHERE lote='L-OF-ENVTEST')")
+        _exec("DELETE FROM ebr_ejecuciones WHERE lote='L-OF-ENVTEST'")
+        _exec("DELETE FROM envasado WHERE lote='L-OF-ENVTEST'")
+
+
 def test_golden_envasado_semiauto_sugerencias_y_gate(app, db_clean):
     """Semi-auto envasado: /sugerencias pre-llena áreas LIMPIAS + operarios; iniciar
     guarda operario/área y aplica el gate de limpieza (avisar+override · M5)."""

@@ -11471,6 +11471,31 @@ def envasado_list():
                         'stock': nuevo_stock, 'minimo': stock_minimo,
                         'deficit': deficit,
                     })
+
+            # Reemplazo MyBatch · 9-jun-2026 · LEGAJO OF AUTOMÁTICO de envasado: al
+            # envasar nace el EBR de fase ENVASADO (la "Orden de Envasado") si el
+            # producto tiene MBR aprobado con pasos de envasado. Auto-gateado:
+            # NO_MBR_APROBADO → no-op (no bloquea · idéntico a antes para productos sin
+            # MBR). Idempotente por (produccion_id, lote): N presentaciones del mismo
+            # lote = 1 solo legajo. Espeja el hook de fabricación (línea ~2354).
+            try:
+                from blueprints.brd import crear_ebr_desde_mbr
+                _re = crear_ebr_desde_mbr(
+                    c, producto_nombre=producto, lote=lote,
+                    produccion_id=(produccion_id or None), usuario=operador,
+                    fase='envasado', area_codigo=area_codigo)
+                if _re.get('ok') and not _re.get('reusado'):
+                    try:
+                        from database import audit_log as _ale
+                        _ale(c, usuario=operador or 'sistema', accion='CREAR_EBR_OF_AUTO',
+                             tabla='ebr_ejecuciones', registro_id=str(_re.get('id')),
+                             despues={'producto': producto, 'lote': lote,
+                                      'fase': 'envasado', 'numero_op': _re.get('numero_op')})
+                    except Exception:
+                        pass
+            except Exception as _eo:
+                __import__('logging').getLogger('inventario').warning(
+                    'crear EBR OF (envasado) auto fallo (no bloquea envasado): %s', _eo)
         except Exception as _e:
             conn.rollback()
             __import__('logging').getLogger('inventario').error(
