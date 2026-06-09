@@ -13845,7 +13845,7 @@ async function cargar(){
     // Sebastián 14-may-2026: bust cache · "solo sale el gel hidratante"
     // Posible cache del browser sirviendo respuesta vieja con 1 producto.
     const _ts = Date.now();
-    const rAgendadas = await fetch('/api/programacion/produccion-programada/listado?_t=' + _ts, {cache: 'no-store'});
+    const rAgendadas = await fetch('/api/programacion/produccion-programada/listado?historico=1&_t=' + _ts, {cache: 'no-store'});
     const dAgendadas = await rAgendadas.json();
     if (!rAgendadas.ok){ alert('Error agendadas: ' + rAgendadas.status); return; }
     // Diag · cuántos llegaron y qué productos únicos hay en la respuesta

@@ -5930,6 +5930,24 @@ def test_golden_envasado_api_gate_area_limpia(app, db_clean):
         _exec("DELETE FROM areas_planta WHERE codigo='ENV-GT'")
 
 
+def test_golden_listado_historico_incluye_pasado_y_completadas(app, db_clean):
+    """El calendario con ?historico=1 muestra TODO el histórico (producciones pasadas y
+    completadas que el default oculta) · 'debe permanecer todo, es el histórico' (9-jun).
+    El default (vista de plan) sigue ocultándolas."""
+    cs = _login(app, 'sebastian')
+    _exec("INSERT INTO produccion_programada (producto, fecha_programada, cantidad_kg, estado, origen) "
+          "VALUES ('PROD HIST TEST', '2026-05-15', 10, 'completado', 'manual')")
+    try:
+        dd = cs.get('/api/programacion/produccion-programada/listado').get_json()
+        assert not any(p['producto'] == 'PROD HIST TEST' for p in dd.get('producciones', [])), \
+            'el default NO debe traer la histórica completada'
+        dh = cs.get('/api/programacion/produccion-programada/listado?historico=1').get_json()
+        assert any(p['producto'] == 'PROD HIST TEST' for p in dh.get('producciones', [])), \
+            'BUG: ?historico=1 debe traer la producción pasada/completada'
+    finally:
+        _exec("DELETE FROM produccion_programada WHERE producto='PROD HIST TEST'")
+
+
 def test_golden_legajo_rapido_envasado(app, db_clean):
     """Botón '+ Nueva orden de envasado': /api/brd/legajo-rapido crea el legajo OF desde
     producto+lote (MBR aprobado). Sin MBR aprobado → 409 con mensaje claro."""

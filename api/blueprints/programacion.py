@@ -6505,6 +6505,18 @@ def listado_produccion_programada():
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db()
+    # Sebastián 9-jun-2026: ?historico=1 → muestra TODO el histórico (incl. completadas,
+    # sin ventana de fecha · "debe permanecer todo, es el histórico"). Las completadas son
+    # de fechas pasadas → solo llenan celdas pasadas, no ensucian el plan adelante. Default
+    # (sin flag) = vista de plan (últimos 7 días + futuro, sin completadas · diag admin).
+    _historico = (request.args.get('historico') or '').strip().lower() in ('1', 'true', 'si')
+    if _historico:
+        _where_clause = ("WHERE LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado') "
+                         "ORDER BY pp.fecha_programada ASC, pp.id ASC")
+    else:
+        _where_clause = ("WHERE LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado') "
+                         "AND pp.fecha_programada >= date('now', '-5 hours', '-7 day') "
+                         "ORDER BY pp.fecha_programada ASC, pp.id ASC")
     # Sebastián 25-may-2026 PM · agregar envase_codigo_override (mig 184)
     # Fallback al SELECT sin la columna si la mig no aplicó aún
     try:
@@ -6528,10 +6540,7 @@ def listado_produccion_programada():
             LEFT JOIN operarios_planta oe  ON oe.id  = pp.operario_elaboracion_id
             LEFT JOIN operarios_planta oen ON oen.id = pp.operario_envasado_id
             LEFT JOIN operarios_planta oa  ON oa.id  = pp.operario_acondicionamiento_id
-            WHERE LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
-              AND pp.fecha_programada >= date('now', '-5 hours', '-7 day')
-            ORDER BY pp.fecha_programada ASC, pp.id ASC
-        """).fetchall()
+        """ + " " + _where_clause).fetchall()
         _has_env_ovr = True
     except Exception:
         rows = conn.execute("""
@@ -6553,10 +6562,7 @@ def listado_produccion_programada():
             LEFT JOIN operarios_planta oe  ON oe.id  = pp.operario_elaboracion_id
             LEFT JOIN operarios_planta oen ON oen.id = pp.operario_envasado_id
             LEFT JOIN operarios_planta oa  ON oa.id  = pp.operario_acondicionamiento_id
-            WHERE LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
-              AND pp.fecha_programada >= date('now', '-5 hours', '-7 day')
-            ORDER BY pp.fecha_programada ASC, pp.id ASC
-        """).fetchall()
+        """ + " " + _where_clause).fetchall()
         _has_env_ovr = False
     lote_ids = [r[0] for r in rows]
     desglose_por_lote = {}
