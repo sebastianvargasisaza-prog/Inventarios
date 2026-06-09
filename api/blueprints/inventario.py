@@ -11340,11 +11340,25 @@ def envasado_list():
         operador = d.get('operador', session.get('compras_user', '')).strip()
         fecha = d.get('fecha', datetime.now().strftime('%Y-%m-%d'))
         obs = d.get('observaciones', '').strip()
+        area_codigo = (d.get('area_codigo') or '').strip()
 
         if not lote or not producto:
             return jsonify({'error': 'lote y producto son requeridos'}), 400
         if unidades <= 0:
             return jsonify({'error': 'unidades debe ser > 0'}), 400
+        # Semi-auto envasado (9-jun) · GATE de área limpia (avisar+override · M5): el
+        # área de envasado asignada debe estar LIMPIA (areas_planta.estado='libre')
+        # antes de envasar. Pre-llenada en el modal vía /api/planta/envasado/sugerencias.
+        if area_codigo:
+            _ar = c.execute(
+                "SELECT COALESCE(estado,'') FROM areas_planta WHERE codigo=? AND COALESCE(activo,1)=1",
+                (area_codigo,)).fetchone()
+            if _ar and _ar[0] != 'libre' and not bool(d.get('override_area')):
+                return jsonify({
+                    'warning': f'El área {area_codigo} NO está limpia (estado: {_ar[0] or "?"}). '
+                               f'Limpiá el área (rótulo F02) o confirmá para envasar igual.',
+                    'requiere_override': True, 'bloqueo': 'area_no_limpia',
+                }), 409
 
         # ─── PRE-CHECK MEE ──────────────────────────────────────────────────
         # Validar que los códigos existan en maestro_mee (anti-typo) y que
@@ -11408,11 +11422,16 @@ def envasado_list():
         try:
             c.execute("""INSERT INTO envasado
                 (produccion_id, lote, producto, presentacion, batch_g, unidades,
-                 envase_codigo, tapa_codigo, operador, fecha, estado, observaciones)
-                VALUES (?,?,?,?,?,?,?,?,?,?,'Completado',?)""",
+                 envase_codigo, tapa_codigo, operador, fecha, estado, observaciones, area_codigo)
+                VALUES (?,?,?,?,?,?,?,?,?,?,'Completado',?,?)""",
                 (produccion_id, lote, producto, presentacion, batch_g, unidades,
-                 envase_codigo, tapa_codigo, operador, fecha, obs))
+                 envase_codigo, tapa_codigo, operador, fecha, obs, area_codigo))
             nuevo_id = c.lastrowid
+            # Semi-auto · marcar el área asignada como ocupada (deja de estar libre).
+            if area_codigo:
+                c.execute("UPDATE areas_planta SET estado='ocupada' "
+                          "WHERE codigo=? AND COALESCE(activo,1)=1 AND estado='libre'",
+                          (area_codigo,))
 
             alertas_mee = []
             for codigo_mee, cant, descripcion, stock_actual, stock_minimo in plan_mee:

@@ -1586,6 +1586,17 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       </div>
       <button onclick="cerrarEnvActivo()" style="background:#6c757d;color:#fff;border:none;border-radius:5px;padding:6px 14px;font-size:12px;cursor:pointer">&#10005; Cancelar</button>
     </div>
+    <!-- Semi-auto · asignación del jefe: operario sugerido + área limpia (gate F02) -->
+    <div style="display:flex;gap:14px;flex-wrap:wrap;background:#f5f3ff;border:1px solid #e9d5ff;border-radius:8px;padding:12px;margin-bottom:14px">
+      <div style="flex:1;min-width:180px">
+        <label style="font-size:12px;font-weight:700;color:#6d28d9;display:block;margin-bottom:3px">&#128100; Operario asignado</label>
+        <select id="env-act-operario" style="width:100%;padding:8px;border:1px solid #c4b5fd;border-radius:6px;font-size:13px"></select>
+      </div>
+      <div style="flex:1;min-width:180px">
+        <label style="font-size:12px;font-weight:700;color:#6d28d9;display:block;margin-bottom:3px">&#129529; Área de envasado <span id="env-area-hint" style="font-weight:400;color:#16a34a"></span></label>
+        <select id="env-act-area" style="width:100%;padding:8px;border:1px solid #c4b5fd;border-radius:6px;font-size:13px"></select>
+      </div>
+    </div>
     <div id="env-pres-rows"></div>
     <button onclick="addPresRow()" style="background:transparent;border:2px dashed #1a4a7a;color:#1a4a7a;border-radius:6px;padding:7px 18px;font-size:13px;cursor:pointer;margin-bottom:14px;width:100%">+ Agregar presentacion</button>
     <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
@@ -8976,6 +8987,31 @@ function abrirEnvasado(id){
   document.getElementById('env-act-msg').innerHTML='';
   document.getElementById('env-panel-activo').style.display='block';
   document.getElementById('env-panel-activo').scrollIntoView({behavior:'smooth',block:'start'});
+  _cargarSugerenciasEnvasado();
+}
+function _cargarSugerenciasEnvasado(){
+  // Semi-auto · pre-llena operario sugerido + áreas de envasado limpias (jefe confirma).
+  var E=function(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');};
+  var opSel=document.getElementById('env-act-operario');
+  var arSel=document.getElementById('env-act-area');
+  var hint=document.getElementById('env-area-hint');
+  if(opSel)opSel.innerHTML='<option>Cargando…</option>';
+  if(arSel)arSel.innerHTML='<option>Cargando…</option>';
+  fetch('/api/planta/envasado/sugerencias').then(function(r){return r.json();}).then(function(d){
+    var ops=d.operarios||[];
+    if(opSel)opSel.innerHTML = ops.length ? ops.map(function(o){
+      return '<option value="'+E(o.nombre)+'"'+(o.nombre===d.operario_sugerido?' selected':'')+'>'+E(o.nombre)+(o.rol?(' · '+E(o.rol)):'')+'</option>';
+    }).join('') : '<option value="">(sin operarios)</option>';
+    var ars=d.areas||[];
+    if(arSel)arSel.innerHTML = (ars.length ? ars.map(function(a){
+      var et=a.limpia?'✓ limpia':('⚠ '+(a.estado||''));
+      return '<option value="'+E(a.codigo)+'"'+(a.codigo===d.area_sugerida?' selected':'')+'>'+E(a.nombre||a.codigo)+' · '+et+'</option>';
+    }).join('') : '') + '<option value="">— sin asignar área —</option>';
+    if(hint)hint.textContent = d.area_sugerida ? '(sugerida limpia)' : '(ninguna limpia)';
+  }).catch(function(){
+    if(opSel)opSel.innerHTML='<option value="">(error)</option>';
+    if(arSel)arSel.innerHTML='<option value="">(error)</option>';
+  });
 }
 function addPresRow(){
   _prIdx++;
@@ -9007,25 +9043,40 @@ async function registrarEnvasadoMulti(){
   var msg=document.getElementById('env-act-msg');
   msg.innerHTML='<span style="color:#666">Registrando...</span>';
   var errores=[];
+  // Semi-auto · operario + área asignados (gate de limpieza · override por confirmación).
+  var _oper=(document.getElementById('env-act-operario')||{value:''}).value||(OPER_ACTUAL||'Operario');
+  var _areaCod=(document.getElementById('env-act-area')||{value:''}).value||'';
+  var _ovr=false;
   for(var i=0;i<payload.length;i++){
     var p=payload[i];
-    try{
-      var r=await fetch('/api/envasado',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          produccion_id:_envActObj.id||null,
-          lote:_envActObj.lote||'',
-          producto:_envActObj.producto||'',
-          presentacion:p.pres,
-          unidades:p.uds,
-          envase_codigo:p.env||'',
-          tapa_codigo:p.tap||'',
-          operador:OPER_ACTUAL||'Operario',
-          batch_g:(_envActObj.cantidad_kg||0)*1000
-        })
-      });
-      var d=await r.json();
-      if(!r.ok&&!d.id){errores.push(p.pres+': '+(d.error||'error'));}
-    }catch(e){errores.push(p.pres+': error de red');}
+    var _try=0;
+    while(_try<2){
+      _try++;
+      try{
+        var r=await fetch('/api/envasado',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({
+            produccion_id:_envActObj.id||null,
+            lote:_envActObj.lote||'',
+            producto:_envActObj.producto||'',
+            presentacion:p.pres,
+            unidades:p.uds,
+            envase_codigo:p.env||'',
+            tapa_codigo:p.tap||'',
+            operador:_oper,
+            area_codigo:_areaCod,
+            override_area:_ovr,
+            batch_g:(_envActObj.cantidad_kg||0)*1000
+          })
+        });
+        var d=await r.json();
+        if(r.status===409&&d.requiere_override&&!_ovr){
+          if(confirm((d.warning||'Área no limpia')+'\\n\\n¿Envasar igual?')){_ovr=true;continue;}
+          errores.push(p.pres+': área no limpia (cancelado)');break;
+        }
+        if(!r.ok&&!d.id){errores.push(p.pres+': '+(d.error||d.warning||'error'));break;}
+        break;
+      }catch(e){errores.push(p.pres+': error de red');break;}
+    }
   }
   if(errores.length){
     msg.innerHTML='<span style="color:red">'+errores.join(' | ')+'</span>';

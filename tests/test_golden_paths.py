@@ -5910,6 +5910,26 @@ def test_golden_brd_auto_seed_mbrs_desde_formula_headers(app, db_clean):
         assert 'envasado' in fases
 
 
+def test_golden_envasado_api_gate_area_limpia(app, db_clean):
+    """Semi-auto en el flujo REAL de la cola (/api/envasado): el área asignada debe
+    estar LIMPIA (gate avisar+override · 9-jun). Área sucia → 409; con override pasa."""
+    cs = _login(app, 'sebastian')
+    _exec("INSERT INTO areas_planta (codigo, nombre, tipo, estado, activo) "
+          "VALUES ('ENV-GT', 'Envasado Gate', 'envasado', 'sucia', 1)")
+    try:
+        r = cs.post('/api/envasado', json={'lote': 'L-GT', 'producto': 'X',
+                    'unidades': 10, 'area_codigo': 'ENV-GT'}, headers=csrf_headers())
+        assert r.status_code == 409, r.data
+        assert r.get_json().get('bloqueo') == 'area_no_limpia'
+        r2 = cs.post('/api/envasado', json={'lote': 'L-GT', 'producto': 'X', 'unidades': 10,
+                     'area_codigo': 'ENV-GT', 'override_area': True}, headers=csrf_headers())
+        # con override ya NO es el gate de área (puede ser ok u otro error, pero no 409-área)
+        assert not (r2.status_code == 409 and (r2.get_json() or {}).get('bloqueo') == 'area_no_limpia'), r2.data
+    finally:
+        _exec("DELETE FROM envasado WHERE lote='L-GT'")
+        _exec("DELETE FROM areas_planta WHERE codigo='ENV-GT'")
+
+
 def test_golden_envasado_semiauto_sugerencias_y_gate(app, db_clean):
     """Semi-auto envasado: /sugerencias pre-llena áreas LIMPIAS + operarios; iniciar
     guarda operario/área y aplica el gate de limpieza (avisar+override · M5)."""

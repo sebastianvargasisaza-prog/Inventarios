@@ -1522,7 +1522,7 @@ CREATE TABLE envasado (
         fecha               TEXT DEFAULT '',
         estado              TEXT DEFAULT 'Completado',
         observaciones       TEXT DEFAULT ''
-    );
+    , area_codigo TEXT DEFAULT '');
 
 -- tabla: eos_leads
 CREATE TABLE eos_leads (

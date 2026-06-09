@@ -312,6 +312,13 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (234, "envasado · area_codigo (semi-auto envasado en el flujo REAL · 9-jun): la cola "
+          "'Envasar' usa /api/envasado (tabla envasado), no el /iniciar huérfano. Agrega "
+          "area_codigo para registrar el área asignada (con gate de limpieza). operador ya "
+          "existía.", [
+        "ALTER TABLE envasado ADD COLUMN area_codigo TEXT DEFAULT ''",
+    ]),
+
     (233, "Corrige INCI equivocado en bridges (audit corazón 9-jun): (1) BETAÍNA MPBETASO01 → "
           "MP00215 (Betaína/BETAINE) · apuntaba MAL a MP00214 (Betaglucano/BETA-GLUCAN, molécula "
           "distinta) → consumo de betaína se imputaba al betaglucano. Afecta MAXLASH (activo · "
