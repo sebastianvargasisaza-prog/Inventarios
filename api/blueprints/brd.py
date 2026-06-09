@@ -5057,9 +5057,12 @@ async function registrarIpc(i){
 // sube la foto · MyBatch). En el celular abre la cámara (capture=environment).
 var _regDesc='';
 function subirRegistroPick(){
-  var c=prompt('¿Qué registro vas a subir?\\n\\n1 = Materia Prima Dispensada\\n2 = Estado de Limpieza Dispensación\\n3 = Estado de Limpieza Fabricación\\n4 = Otro (escribir)','1');
+  // El Estado de Limpieza de Áreas ya NO se sube como foto: es DIGITAL (rótulo
+  // F02 auto-rellenado, ver arriba "rótulo de limpieza"). Aquí solo se suben los
+  // registros que SÍ son evidencia física: rótulos de pesaje / MP dispensada.
+  var c=prompt('¿Qué registro vas a subir?\\n\\n1 = Materia Prima Dispensada / Rótulo de pesaje\\n2 = Otro (escribir)\\n\\nNota: el Estado de Limpieza de Áreas es DIGITAL — usá el rótulo F02 (no subir foto).','1');
   if(c===null) return;
-  var map={'1':'Materia Prima Dispensada','2':'Estado de Limpieza Dispensación','3':'Estado de Limpieza Fabricación'};
+  var map={'1':'Materia Prima Dispensada / Rótulo de pesaje'};
   _regDesc = map[(c||'').trim()];
   if(!_regDesc){ _regDesc = prompt('Describe el registro:','') || 'Registro físico'; }
   var f=document.getElementById('reg-file'); if(f){f.value='';f.click();}
