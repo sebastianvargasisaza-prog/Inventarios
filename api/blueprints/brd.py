@@ -963,7 +963,7 @@ def _generar_mbr_desde_formula(cur, producto_nombre, usuario=''):
     fh = cur.execute(
         """SELECT id, COALESCE(lote_size_kg,0), COALESCE(unidad_base_g,0)
              FROM formula_headers
-            WHERE producto_nombre=? AND COALESCE(activo,1)=1
+            WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1
             ORDER BY id DESC LIMIT 1""",
         (producto_nombre,),
     ).fetchone()
@@ -974,7 +974,7 @@ def _generar_mbr_desde_formula(cur, producto_nombre, usuario=''):
     items = cur.execute(
         """SELECT material_nombre, material_id, COALESCE(porcentaje,0),
                   COALESCE(cantidad_g_por_lote,0)
-             FROM formula_items WHERE producto_nombre=?
+             FROM formula_items WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))
             ORDER BY cantidad_g_por_lote DESC""",
         (producto_nombre,),
     ).fetchall()

@@ -5971,6 +5971,35 @@ def test_golden_mbr_preparar_aprobado(app, db_clean):
         _exec("DELETE FROM ebr_ejecuciones WHERE lote LIKE 'L-PREP%'")
 
 
+def test_golden_mbr_genera_formula_case_insensitive(app, db_clean):
+    """M2 · _generar_mbr_desde_formula matchea la fórmula case-insensitive: el registro de
+    envasado trae 'Prod X' pero la fórmula está como 'PROD X' → NO debe dar SIN_FORMULA
+    (caso real 9-jun: 'Suero Exfoliante Nova PHA' vs 'SUERO EXFOLIANTE NOVA PHA')."""
+    cs = _login(app, 'sebastian')
+    _exec("INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, activo) "
+          "VALUES ('MP09997', 'Material Case Test', 'CASE TEST INCI', 1)")
+    _exec("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo) "
+          "VALUES ('PROD CASE TEST XYZ', 10, 1)")
+    _exec("INSERT INTO formula_items (producto_nombre, material_nombre, material_id, "
+          "porcentaje, cantidad_g_por_lote) VALUES "
+          "('PROD CASE TEST XYZ', 'Material Case Test', 'MP09997', 100, 10000)")
+    try:
+        # generar (draft) con OTRO caso → debe encontrar la fórmula, NO dar SIN_FORMULA
+        r = cs.post('/api/brd/mbr/generar-desde-formula',
+                    json={'producto_nombre': 'Prod Case Test Xyz'}, headers=csrf_headers())
+        assert r.status_code in (200, 201), r.data
+        d = r.get_json()
+        assert d.get('ok') and d.get('error') != 'SIN_FORMULA', r.data
+        assert (d.get('pasos') or 0) >= 1, r.data
+    finally:
+        _exec("DELETE FROM mbr_pasos WHERE mbr_template_id IN "
+              "(SELECT id FROM mbr_templates WHERE UPPER(producto_nombre) LIKE 'PROD CASE TEST%')")
+        _exec("DELETE FROM mbr_templates WHERE UPPER(producto_nombre) LIKE 'PROD CASE TEST%'")
+        _exec("DELETE FROM formula_items WHERE producto_nombre='PROD CASE TEST XYZ'")
+        _exec("DELETE FROM formula_headers WHERE producto_nombre='PROD CASE TEST XYZ'")
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp='MP09997'")
+
+
 def test_golden_legajo_rapido_envasado(app, db_clean):
     """Botón '+ Nueva orden de envasado': /api/brd/legajo-rapido crea el legajo OF desde
     producto+lote (MBR aprobado). Sin MBR aprobado → 409 con mensaje claro."""
