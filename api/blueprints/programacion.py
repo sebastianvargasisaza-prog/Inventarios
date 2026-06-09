@@ -3742,79 +3742,99 @@ def planta_rotulo_limpieza_pdf(area_id):
     verificado_full = _persona_corta(c, verificado_por)
 
     def _chip(label, activo):
-        if activo:
-            return (f'<span style="display:inline-block;padding:8px 18px;margin:0 4px;'
-                    f'border:3px solid #0f172a;border-radius:8px;background:#0f172a;'
-                    f'color:#fff;font-weight:800;font-size:16px">☑ {label}</span>')
-        return (f'<span style="display:inline-block;padding:8px 18px;margin:0 4px;'
-                f'border:2px solid #94a3b8;border-radius:8px;color:#94a3b8;'
-                f'font-weight:600;font-size:16px">☐ {label}</span>')
+        cls = 'chip on' if activo else 'chip off'
+        return f'<span class="{cls}">{_e(label)}</span>'
 
-    estado_chips = (_chip('LIMPIO', estado_fisico == 'libre')
-                    + _chip('EN USO', estado_fisico == 'ocupada')
-                    + _chip('SUCIO', estado_fisico in ('sucia', 'limpiando')))
+    estado_chips = (_chip('Limpio', estado_fisico == 'libre')
+                    + _chip('En uso', estado_fisico == 'ocupada')
+                    + _chip('Sucio', estado_fisico in ('sucia', 'limpiando')))
 
-    def _row(lbl, val):
-        return (f'<tr><td style="border:1px solid #475569;padding:10px 12px;'
-                f'background:#f1f5f9;font-weight:700;width:38%;font-size:13px">{_e(lbl)}</td>'
-                f'<td style="border:1px solid #475569;padding:10px 12px;font-size:14px">'
-                f'{_e(str(val) or "—")}</td></tr>')
+    def _row(lbl, val, num=False):
+        vcls = ' class="num"' if num else ''
+        return f'<tr><td class="k">{_e(lbl)}</td><td{vcls}>{_e(str(val) or "—")}</td></tr>'
 
     html = f'''<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Rótulo de Limpieza · {_e(base['area_codigo'])}</title>
+<title>Rótulo de Limpieza F02 · {_e(base['area_codigo'])}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
 <style>
-  body{{font-family:Arial,Helvetica,sans-serif;margin:0;padding:24px;color:#0f172a;background:#fff}}
-  .sheet{{max-width:720px;margin:0 auto;border:3px solid #0f172a;border-radius:10px;overflow:hidden}}
-  .hdr{{display:flex;justify-content:space-between;align-items:center;
-        background:#0f172a;color:#fff;padding:12px 18px}}
-  .hdr h1{{margin:0;font-size:18px}}
-  .hdr .cod{{font-size:12px;text-align:right;opacity:.85}}
-  .estado{{text-align:center;padding:18px;border-bottom:2px solid #0f172a}}
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+  :root{{--ink:#18181b;--soft:#3f3f46;--mute:#71717a;--line:#e4e4e7;--violet:#6d28d9;--violet-d:#4c1d95;--pale:#f5f3ff}}
+  *{{box-sizing:border-box}}
+  body{{font-family:'Inter',system-ui,Arial,sans-serif;margin:0;padding:28px;background:#f4f4f7;color:var(--ink);-webkit-font-smoothing:antialiased}}
+  .sheet{{max-width:760px;margin:0 auto;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(24,24,27,.05),0 12px 28px rgba(24,24,27,.08)}}
+  .accent{{height:5px;background:linear-gradient(90deg,#a78bfa,var(--violet))}}
+  .top{{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;padding:20px 26px 14px}}
+  .brand{{display:flex;align-items:center;gap:12px}}
+  .mark{{width:46px;height:46px;border-radius:13px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#a78bfa,var(--violet));box-shadow:0 4px 14px rgba(109,40,217,.22)}}
+  .brand .co{{font-size:16px;font-weight:800;letter-spacing:-.3px;line-height:1.1}}
+  .brand .sub{{font-size:11.5px;color:var(--mute);margin-top:2px;font-weight:500}}
+  .ctrl{{font-size:11px;color:var(--soft);text-align:right;line-height:1.7;background:var(--pale);border:1px solid #ede9fe;border-radius:10px;padding:9px 14px}}
+  .ctrl b{{color:var(--violet-d);font-weight:700}}
+  .title{{text-align:center;padding:6px 26px 16px}}
+  .title h1{{margin:0;font-size:19px;font-weight:800;letter-spacing:-.3px;color:var(--ink);text-transform:uppercase}}
+  .title .k{{font-size:11.5px;color:var(--mute);margin-top:4px;font-weight:600;letter-spacing:.4px}}
+  .estado{{text-align:center;padding:6px 20px 20px;border-bottom:1px solid var(--line)}}
+  .estado .elbl{{font-size:11px;font-weight:700;color:var(--mute);letter-spacing:.6px;margin-bottom:10px}}
+  .chip{{display:inline-block;padding:9px 20px;margin:0 5px;border-radius:10px;font-weight:700;font-size:14px;letter-spacing:.3px}}
+  .chip.on{{background:var(--violet);color:#fff;box-shadow:0 4px 14px rgba(109,40,217,.18)}}
+  .chip.off{{border:1px solid var(--line);color:var(--mute)}}
   table{{width:100%;border-collapse:collapse}}
-  .firmas{{display:flex;border-top:2px solid #0f172a}}
-  .firma{{flex:1;padding:14px 16px;font-size:13px}}
-  .firma.b{{border-left:1px solid #475569}}
-  .firma .l{{font-weight:700;color:#475569;font-size:11px;text-transform:uppercase;letter-spacing:.5px}}
-  .firma .v{{font-size:15px;margin-top:4px;min-height:20px}}
-  .firma .f{{color:#64748b;font-size:11px;margin-top:2px}}
-  @media print{{ body{{padding:0}} .noprint{{display:none}} }}
+  td{{padding:11px 16px;border-bottom:1px solid var(--line);vertical-align:middle;font-size:14px}}
+  td.k{{width:34%;color:var(--mute);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.4px;background:#fafafa}}
+  .num{{font-variant-numeric:tabular-nums;font-weight:600}}
+  .firmas{{display:flex;border-top:1px solid var(--line)}}
+  .firma{{flex:1;padding:18px 22px 22px}}
+  .firma+.firma{{border-left:1px solid var(--line)}}
+  .firma .l{{font-size:11px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.4px}}
+  .firma .v{{font-size:15px;font-weight:600;margin-top:18px;border-top:1px solid var(--ink);padding-top:6px}}
+  .firma .f{{font-size:11.5px;color:var(--mute);margin-top:3px;font-variant-numeric:tabular-nums}}
+  .printbar{{text-align:center;margin-top:18px}}
+  .printbtn{{display:inline-flex;align-items:center;gap:8px;padding:11px 26px;background:var(--violet);color:#fff;text-decoration:none;border:none;border-radius:10px;font-weight:600;font-size:14px;font-family:'Inter';cursor:pointer;box-shadow:0 4px 14px rgba(109,40,217,.22)}}
+  @media print{{ body{{padding:0;background:#fff}} .sheet{{box-shadow:none;border:none}} .printbar{{display:none}} }}
 </style></head><body>
 <div class="sheet">
-  <div class="hdr">
-    <h1>ESTADO DE LIMPIEZA DE ÁREAS / EQUIPOS</h1>
-    <div class="cod">Código: PRD-PRO-002-F02<br>Versión: 02</div>
+  <div class="accent"></div>
+  <div class="top">
+    <div class="brand">
+      <span class="mark"><svg viewBox="0 0 32 32" width="28" height="28" fill="none" stroke="#fff" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#fff"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.6" stroke-linecap="round" opacity=".7"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.6" stroke-linecap="round" opacity=".4"/></svg></span>
+      <div><div class="co">ESPAGIRIA Laboratorio SAS</div><div class="sub">ÁNIMUS Lab · Producción</div></div>
+    </div>
+    <div class="ctrl"><b>Código:</b> PRD-PRO-002-F02<br><b>Versión:</b> 02 &nbsp;·&nbsp; <b>Página:</b> 1 de 1<br><b>Vigencia:</b> 9-Abr-2026 a 8-Abr-2029</div>
+  </div>
+  <div class="title">
+    <h1>Estado de Limpieza de Áreas / Equipos</h1>
+    <div class="k">Registro de verificación previo a fabricación · BPM / INVIMA · 21 CFR Part 11</div>
   </div>
   <div class="estado">
-    <div style="font-size:11px;font-weight:700;color:#475569;letter-spacing:.5px;margin-bottom:10px">ESTADO</div>
+    <div class="elbl">ESTADO</div>
     {estado_chips}
   </div>
   <table>
-    {_row('ÁREA O EQUIPO', area_label)}
-    {_row('EQUIPOS', equipos_txt)}
-    {_row('PRODUCTO A ELABORAR', prod_elab)}
-    {_row('LOTE', lote_elab)}
-    {_row('SANITIZANTE', sanit)}
-    {_row('DETERGENTE', deterg)}
-    {_row('PRODUCTO ANTERIOR', prod_prev)}
-    {_row('LOTE ANTERIOR', lote_prev)}
+    {_row('Área o equipo · código', area_label)}
+    {_row('Equipos', equipos_txt)}
+    {_row('Producto a elaborar', prod_elab)}
+    {_row('Lote', lote_elab, num=True)}
+    {_row('Sanitizante', sanit)}
+    {_row('Detergente', deterg)}
+    {_row('Producto anterior', prod_prev)}
+    {_row('Lote anterior', lote_prev, num=True)}
   </table>
   <div class="firmas">
-    <div class="firma a">
+    <div class="firma">
       <div class="l">Realizado por (Operario)</div>
       <div class="v">{_e(realizado_full or '—')}</div>
-      <div class="f">Fecha: {_e(realizado_at or '—')}</div>
+      <div class="f">Fecha: {_e(realizado_at or '—')}{' · firma electrónica ✔' if realizado_full else ''}</div>
     </div>
-    <div class="firma b">
+    <div class="firma">
       <div class="l">Verificado por (Calidad)</div>
       <div class="v">{_e(verificado_full or '—')}</div>
-      <div class="f">Fecha: {_e(verificado_at or '—')}</div>
+      <div class="f">Fecha: {_e(verificado_at or '—')}{' · firma electrónica ✔' if verificado_full else ''}</div>
     </div>
   </div>
 </div>
-<div class="noprint" style="text-align:center;margin-top:18px">
-  <a href="javascript:window.print()" style="display:inline-block;padding:10px 24px;
-     background:#0f172a;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">🖨 Imprimir</a>
+<div class="printbar">
+  <button class="printbtn" onclick="window.print()">🖨 Imprimir / Guardar PDF</button>
 </div>
 </body></html>'''
     return Response(html, mimetype='text/html')

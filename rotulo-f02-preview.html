@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rótulo F02 · Preview · Estado de Limpieza</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+  :root{
+    --ink:#18181b; --soft:#3f3f46; --mute:#71717a; --line:#e4e4e7;
+    --violet:#6d28d9; --violet-d:#4c1d95; --pale:#f5f3ff;
+  }
+  *{box-sizing:border-box}
+  body{font-family:'Inter',system-ui,sans-serif;margin:0;padding:28px;
+       background:#f4f4f7;color:var(--ink);-webkit-font-smoothing:antialiased}
+  .sheet{max-width:760px;margin:0 auto;background:#fff;border:1px solid var(--line);
+         border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(24,24,27,.05),0 12px 28px rgba(24,24,27,.08)}
+  /* barra de acento de marca */
+  .accent{height:5px;background:linear-gradient(90deg,#a78bfa,var(--violet))}
+  /* encabezado · logo + control documental */
+  .top{display:flex;justify-content:space-between;align-items:flex-start;
+       gap:18px;padding:20px 26px 14px}
+  .brand{display:flex;align-items:center;gap:12px}
+  .mark{width:46px;height:46px;border-radius:13px;flex-shrink:0;display:inline-flex;
+        align-items:center;justify-content:center;background:linear-gradient(135deg,#a78bfa,var(--violet));
+        box-shadow:0 4px 14px rgba(109,40,217,.22)}
+  .brand .co{font-size:16px;font-weight:800;letter-spacing:-.3px;line-height:1.1}
+  .brand .sub{font-size:11.5px;color:var(--mute);margin-top:2px;font-weight:500}
+  .ctrl{font-size:11px;color:var(--soft);text-align:right;line-height:1.7;
+        background:var(--pale);border:1px solid #ede9fe;border-radius:10px;padding:9px 14px}
+  .ctrl b{color:var(--violet-d);font-weight:700}
+  /* título del formato */
+  .title{text-align:center;padding:6px 26px 16px}
+  .title h1{margin:0;font-size:19px;font-weight:800;letter-spacing:-.3px;color:var(--ink);text-transform:uppercase}
+  .title .k{font-size:11.5px;color:var(--mute);margin-top:4px;font-weight:600;letter-spacing:.4px}
+  /* estado */
+  .estado{text-align:center;padding:6px 20px 20px;border-bottom:1px solid var(--line)}
+  .estado .lbl{font-size:11px;font-weight:700;color:var(--mute);letter-spacing:.6px;margin-bottom:10px}
+  .chip{display:inline-block;padding:9px 20px;margin:0 5px;border-radius:10px;font-weight:700;font-size:14px;letter-spacing:.3px}
+  .chip.on{background:var(--violet);color:#fff;box-shadow:0 4px 14px rgba(109,40,217,.18)}
+  .chip.off{border:1px solid var(--line);color:var(--mute)}
+  /* tabla de campos */
+  table{width:100%;border-collapse:collapse}
+  td{padding:11px 16px;border-bottom:1px solid var(--line);vertical-align:middle;font-size:14px}
+  td.k{width:34%;color:var(--mute);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.4px;background:#fafafa}
+  .num{font-variant-numeric:tabular-nums;font-weight:600}
+  /* firmas */
+  .firmas{display:flex;border-top:1px solid var(--line)}
+  .firma{flex:1;padding:18px 22px 22px}
+  .firma+.firma{border-left:1px solid var(--line)}
+  .firma .l{font-size:11px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.4px}
+  .firma .v{font-size:15px;font-weight:600;margin-top:18px;border-top:1px solid var(--ink);padding-top:6px}
+  .firma .f{font-size:11.5px;color:var(--mute);margin-top:3px;font-variant-numeric:tabular-nums}
+  .printbar{text-align:center;margin-top:18px}
+  .printbtn{display:inline-flex;align-items:center;gap:8px;padding:11px 26px;background:var(--violet);
+            color:#fff;text-decoration:none;border:none;border-radius:10px;font-weight:600;font-size:14px;
+            font-family:'Inter';cursor:pointer;box-shadow:0 4px 14px rgba(109,40,217,.22)}
+  @media print{ body{padding:0;background:#fff} .sheet{box-shadow:none;border:none} .printbar{display:none} }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <div class="accent"></div>
+  <div class="top">
+    <div class="brand">
+      <span class="mark">
+        <svg viewBox="0 0 32 32" width="28" height="28" fill="none" stroke="#fff" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="16" cy="12" r="3" fill="#fff"/>
+          <path d="M 5 19 Q 16 17, 27 19" stroke-width="1.6" stroke-linecap="round" opacity=".7"/>
+          <path d="M 5 23 Q 16 21, 27 23" stroke-width="1.6" stroke-linecap="round" opacity=".4"/>
+        </svg>
+      </span>
+      <div>
+        <div class="co">ESPAGIRIA Laboratorio SAS</div>
+        <div class="sub">ÁNIMUS Lab · Producción</div>
+      </div>
+    </div>
+    <div class="ctrl">
+      <b>Código:</b> PRD-PRO-002-F02<br>
+      <b>Versión:</b> 02 &nbsp;·&nbsp; <b>Página:</b> 1 de 1<br>
+      <b>Vigencia:</b> 9-Abr-2026 a 8-Abr-2029
+    </div>
+  </div>
+
+  <div class="title">
+    <h1>Estado de Limpieza de Áreas / Equipos</h1>
+    <div class="k">Registro de verificación previo a fabricación · BPM / INVIMA · 21 CFR Part 11</div>
+  </div>
+
+  <div class="estado">
+    <div class="lbl">ESTADO</div>
+    <span class="chip off">Limpio</span>
+    <span class="chip on">En uso</span>
+    <span class="chip off">Sucio</span>
+  </div>
+
+  <table>
+    <tr><td class="k">Área o equipo · código</td><td>Tanque Fabricación 10 L · <span class="num">TF-PRD-016</span></td></tr>
+    <tr><td class="k">Equipos</td><td>Tanque de fabricación, agitador, mangueras</td></tr>
+    <tr><td class="k">Producto a elaborar</td><td>Suero Exfoliante BHA 2%</td></tr>
+    <tr><td class="k">Lote</td><td class="num">261515</td></tr>
+    <tr><td class="k">Sanitizante</td><td>Alcohol 70%</td></tr>
+    <tr><td class="k">Detergente</td><td>Neutro Industrial</td></tr>
+    <tr><td class="k">Producto anterior</td><td>Limpiador Facial BHA 2%</td></tr>
+    <tr><td class="k">Lote anterior</td><td class="num">261451</td></tr>
+  </table>
+
+  <div class="firmas">
+    <div class="firma">
+      <div class="l">Realizado por (Operario)</div>
+      <div class="v">M. Rivera</div>
+      <div class="f">Fecha: 04-Jun-2026 · firma electrónica ✔</div>
+    </div>
+    <div class="firma">
+      <div class="l">Verificado por (Calidad)</div>
+      <div class="v">P. González</div>
+      <div class="f">Fecha: 04-Jun-2026 · firma electrónica ✔</div>
+    </div>
+  </div>
+</div>
+
+<div class="printbar">
+  <button class="printbtn" onclick="window.print()">🖨 Imprimir / Guardar PDF</button>
+</div>
+</body>
+</html>
