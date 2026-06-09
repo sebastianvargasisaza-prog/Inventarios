@@ -312,6 +312,14 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (230, "Dedup BLUSH BALM (audit corazón 9-jun): existían 2 fórmulas del mismo SKU — 'Blush "
+          "Balm' (INCOMPLETA, 67%, lote 0, sin producciones) y 'BLUSH BALM' (COMPLETA 100%, "
+          "idéntica al Excel maestro con MP00127/MPCOCP01/MPBNIT01, en producción). Descontinúa "
+          "la incompleta (activo=0 · reversible · GMP); queda la completa = Excel. Idempotente.", [
+        "UPDATE formula_headers SET activo=0 WHERE producto_nombre='Blush Balm' "
+        "AND COALESCE(lote_size_kg,0)=0",
+    ]),
+
     (229, "DESCONTINÚA 3 fórmulas (decisión Sebastián 9-jun · audit corazón): 'SUERO AZ + B3' "
           "y 'Suero RETINAL +' ya no se venden; 'SUERO TRIACTIVE RETINOID NAD+' (49 ítems, "
           "reformulado/legacy) es duplicado del SKU — queda 'SUERO TRIACTIVE RETINOID NAD' (40 "

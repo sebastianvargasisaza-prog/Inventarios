@@ -19,6 +19,8 @@
 
 **Antes de cambiar algo crítico**, lee en orden: `CLAUDE.md` → `api/blueprints/CONTRACT_<modulo>.md` → `tests/test_golden_paths.py`.
 
+**🧬 Fórmulas/maestro (audit corazón 9-jun):** la app tenía DOS poblaciones de fórmulas — 28 alineadas al Excel maestro con códigos canónicos (MP000xx · 23 coinciden EXACTO) y ~19 legacy/duplicadas con códigos fantasma (MPxxxSO01, resueltos por `mp_formula_bridge`). Reglas: (a) el Excel maestro (`FORMULAS_MAESTRO_v2_1`) trae el **código de MP en la columna CÓD. BATCH** → es la fuente de verdad para reconciliar (determinista, no agentes). (b) **Descontinuar fórmula = `activo=0`, NUNCA DELETE** (GMP/INVIMA conserva registros · reversible · no rompe golden de seed-state). (c) Antes de "agregar ingredientes faltantes" a una fórmula, **verificá si ya existe un duplicado COMPLETO** (caso BLUSH BALM: "Blush Balm" 67% incompleta vs "BLUSH BALM" 100% = Excel · el fix era dedup, no agregar). (d) Códigos fantasma que NO cruzan ni por bridge se corrigen con el Excel, **no se adivinan** (matching difuso = molécula equivocada · ej. N-acetil-cisteína→glucosamina).
+
 ---
 
 ## 🔑 META-LECCIONES (aplican a TODO el sistema)
