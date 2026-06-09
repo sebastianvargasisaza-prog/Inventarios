@@ -4630,6 +4630,40 @@ def ordenes_unificadas():
                 "operador": rd.get("operador") or "",
             })
 
+    # 2b) Registros simples de ENVASADO (tabla envasado · 9-jun) → la OF muestra las
+    # órdenes de envasado CON su estado (como MyBatch), no solo legajos EBR. Agrupa por
+    # lote+producto (la modal registra 1 fila por presentación · 1 orden por lote).
+    if fase == "envasado":
+        try:
+            env_rows = conn.execute(
+                """SELECT MIN(id) AS id, COALESCE(producto,'') AS producto,
+                          COALESCE(lote,'') AS lote, MAX(COALESCE(estado,'Completado')) AS estado,
+                          MAX(COALESCE(fecha,'')) AS fecha, MAX(COALESCE(operador,'')) AS operador,
+                          SUM(COALESCE(unidades,0)) AS unidades
+                   FROM envasado
+                   GROUP BY producto, lote
+                   ORDER BY id DESC LIMIT 300""",
+            ).fetchall()
+        except Exception as _e:
+            log.warning("ordenes-unificadas envasado query fallo: %s", _e)
+            env_rows = []
+        for r in env_rows:
+            rd = dict(r)
+            if str(rd.get("lote") or "").strip() in _lotes_con_legajo:
+                continue
+            items.append({
+                "origen": "simple",
+                "numero_op": rd.get("lote") or f"ENV-{rd['id']:05d}",
+                "lote_bulk": rd.get("lote") or "",
+                "producto": rd.get("producto") or "",
+                "teorica_g": None, "producida_g": None, "aprobada": None,
+                "ml_envasable": None,
+                "estado": _estado_orden_norm("simple", rd.get("estado")),
+                "fecha": (rd.get("fecha") or "")[:10],
+                "link": None,
+                "operador": rd.get("operador") or "",
+            })
+
     # orden global por fecha desc
     items.sort(key=lambda x: (x.get("fecha") or ""), reverse=True)
     resumen = {

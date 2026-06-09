@@ -5930,6 +5930,23 @@ def test_golden_envasado_api_gate_area_limpia(app, db_clean):
         _exec("DELETE FROM areas_planta WHERE codigo='ENV-GT'")
 
 
+def test_golden_ordenes_of_muestra_envasado_con_estado(app, db_clean):
+    """La OF (/api/brd/ordenes-unificadas?fase=envasado) lista las órdenes de envasado
+    CON estado (como MyBatch), no solo legajos EBR (9-jun)."""
+    cs = _login(app, 'sebastian')
+    _exec("INSERT INTO envasado (lote, producto, unidades, estado, fecha) "
+          "VALUES ('LOTE-OF-T', 'Producto OF Test', 50, 'Completado', '2026-06-09')")
+    try:
+        r = cs.get('/api/brd/ordenes-unificadas?fase=envasado')
+        assert r.status_code == 200, r.data
+        d = r.get_json()
+        mio = next((o for o in d['ordenes'] if o.get('lote_bulk') == 'LOTE-OF-T'), None)
+        assert mio, 'BUG: la orden de envasado no aparece en la OF'
+        assert mio.get('estado'), 'BUG: falta el ESTADO en la orden de envasado'
+    finally:
+        _exec("DELETE FROM envasado WHERE lote='LOTE-OF-T'")
+
+
 def test_golden_envasado_hook_crea_legajo_of(app, db_clean):
     """Hook MyBatch (9-jun): al registrar envasado de un producto con MBR aprobado nace
     el legajo EBR de fase ENVASADO (la 'Orden de Envasado'). Blush Balm tiene 1 paso de
