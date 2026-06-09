@@ -4780,6 +4780,13 @@ async function ver(fase,btn){
   document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active');});
   if(btn)btn.classList.add('active');
   var out=document.getElementById('out'); out.innerHTML='Cargando…';
+  // Envasado se gestiona en UN solo lugar (Planta → Envasado) · este tab ya NO
+  // duplica la lista · redirige al lugar canónico (9-jun · quitar redundancia).
+  if(fase==='envasado'){
+    document.getElementById('summary').innerHTML='';
+    out.innerHTML='<div style="text-align:center;padding:34px 20px"><div style="font-size:34px;margin-bottom:8px">&#128230;</div><b style="font-size:15px;color:#6d28d9">Las Órdenes de Envasado viven en un solo lugar</b><br><span style="color:#64748b;font-size:13px">Planta &rarr; Envasado (la cola, el estado y el legajo) &middot; sin duplicados.</span><br><br><a href="/inventarios#envasado" style="display:inline-block;background:#7c3aed;color:#fff;padding:11px 24px;border-radius:9px;text-decoration:none;font-weight:700">Ir a Envasado &rarr;</a></div>';
+    return;
+  }
   try{
     var r=await fetch('/api/brd/ordenes-unificadas?fase='+encodeURIComponent(fase),{credentials:'same-origin'});
     if(r.status===401){location.href='/login';return;}

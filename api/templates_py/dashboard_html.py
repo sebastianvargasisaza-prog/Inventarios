@@ -3847,6 +3847,19 @@ function subSwitchTab(tabId,btn,barId){
   if(tabId==='alertas'){ loadAlertasAll(); }
   if(tabId==='movimientos') loadMovimientos();
 }
+// Deep-link · /inventarios#envasado abre Producción → Envasado (desde el redirect del
+// tab OF de Órdenes · quitar redundancia · 9-jun). Defensivo: no-op si no hay hash/botones.
+function _deepLinkTab(){
+  try{
+    if((location.hash||'').toLowerCase()!=='#envasado') return;
+    var mod=[].slice.call(document.querySelectorAll('.tab-button')).filter(function(b){return /switchGroup\\(.bar-prodHub./.test(b.getAttribute('onclick')||'');})[0];
+    if(mod) mod.click();
+    var bar=document.getElementById('bar-prodHub');
+    var sub=bar?[].slice.call(bar.querySelectorAll('.sub-btn')).filter(function(b){return /subSwitchTab\\(.envasado./.test(b.getAttribute('onclick')||'');})[0]:null;
+    if(sub) sub.click();
+  }catch(e){}
+}
+if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',_deepLinkTab);}else{setTimeout(_deepLinkTab,0);}
 var _charts={};
 async function loadDashboard(){
   try{
