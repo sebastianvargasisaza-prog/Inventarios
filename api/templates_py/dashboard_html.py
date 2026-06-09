@@ -1571,6 +1571,22 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     </div>
   </div>
 
+  <!-- Órdenes de Envasado (con estado + legajo) · como MyBatch · 9-jun-2026 -->
+  <div style="background:#fff;border:1px solid #e9d5ff;border-radius:10px;padding:14px;margin-bottom:18px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+      <h3 style="margin:0;font-size:14px;color:#6d28d9">&#128203; Órdenes de Envasado</h3>
+      <button onclick="cargarOrdenesEnvasado()" style="background:#7c3aed;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer">&#8635; Actualizar</button>
+    </div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="background:#f5f3ff;color:#5b21b6">
+        <th style="text-align:left;padding:8px">N&deg; de orden</th><th style="text-align:left;padding:8px">Producto</th>
+        <th style="text-align:left;padding:8px">N&deg; lote</th><th style="text-align:left;padding:8px">Estado</th>
+        <th style="text-align:left;padding:8px">Fecha</th><th style="padding:8px">Legajo</th>
+      </tr></thead>
+      <tbody id="ordenes-env-tbody"><tr><td colspan="6" style="text-align:center;color:#999;padding:10px">Cargando&hellip;</td></tr></tbody>
+    </table></div>
+  </div>
+
   <!-- Panel activo de envasado — aparece al hacer clic en Envasar desde la cola -->
   <div id="env-panel-activo" style="display:none;background:#fff;border:2px solid #1a4a7a;border-radius:10px;padding:18px;margin-bottom:18px">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;gap:8px">
@@ -8901,7 +8917,29 @@ function registrarAcond(){
     if(msgEl) msgEl.innerHTML='<span style="color:red;">Error de red: '+e+'</span>';
   });
 }
+function cargarOrdenesEnvasado(){
+  // Órdenes de Envasado (con estado + legajo) · como MyBatch. Reusa el endpoint
+  // unificado /api/brd/ordenes-unificadas?fase=envasado (trae estado y link al legajo).
+  var tb=document.getElementById('ordenes-env-tbody');
+  if(!tb)return;
+  var E=function(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');};
+  fetch('/api/brd/ordenes-unificadas?fase=envasado').then(function(r){return r.json();}).then(function(d){
+    var ords=(d&&d.ordenes)||[];
+    if(!ords.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#999;padding:10px">Sin órdenes de envasado aún · envasá un lote para crearlas</td></tr>';return;}
+    tb.innerHTML=ords.map(function(o){
+      var leg=o.link?('<a href="'+E(o.link)+'" style="color:#7c3aed;font-weight:700;text-decoration:none">Abrir legajo →</a>'):'<span style="color:#94a3b8">—</span>';
+      return '<tr style="border-bottom:1px solid #f1f5f9">'+
+        '<td style="padding:8px;font-weight:600">'+E(o.numero_op)+'</td>'+
+        '<td style="padding:8px">'+E(o.producto)+'</td>'+
+        '<td style="padding:8px">'+E(o.lote_bulk||'—')+'</td>'+
+        '<td style="padding:8px">'+E(o.estado||'—')+'</td>'+
+        '<td style="padding:8px;color:#64748b">'+E(o.fecha||'—')+'</td>'+
+        '<td style="padding:8px;text-align:center">'+leg+'</td></tr>';
+    }).join('');
+  }).catch(function(){tb.innerHTML='<tr><td colspan="6" style="color:#c00;text-align:center;padding:10px">Error cargando órdenes</td></tr>';});
+}
 function loadColaSinEnvasar(){
+  if(typeof cargarOrdenesEnvasado==='function')cargarOrdenesEnvasado();
   var tb=document.getElementById('cola-env-tbody');
   if(!tb)return;
   tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#999;padding:10px">Cargando...</td></tr>';
