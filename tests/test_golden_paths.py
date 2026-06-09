@@ -5910,6 +5910,57 @@ def test_golden_brd_auto_seed_mbrs_desde_formula_headers(app, db_clean):
         assert 'envasado' in fases
 
 
+def test_golden_envasado_semiauto_sugerencias_y_gate(app, db_clean):
+    """Semi-auto envasado: /sugerencias pre-llena áreas LIMPIAS + operarios; iniciar
+    guarda operario/área y aplica el gate de limpieza (avisar+override · M5)."""
+    import os as _os, sqlite3 as _sq
+    cs = _login(app, 'sebastian')
+
+    # 1) Sugerencias: estructura correcta (áreas con flag limpia + operarios).
+    r = cs.get('/api/planta/envasado/sugerencias')
+    assert r.status_code == 200, r.data
+    d = r.get_json()
+    assert d.get('ok') and 'areas' in d and 'operarios' in d
+    for a in d['areas']:
+        assert 'limpia' in a and 'estado' in a and a.get('limpia') == (a['estado'] == 'libre')
+
+    # 2) Gate de limpieza: con un área SUCIA, iniciar sin override → 409.
+    conn = _sq.connect(_os.environ['DB_PATH'])
+    conn.execute("INSERT INTO produccion_programada (producto, fecha_programada) "
+                 "VALUES ('PROD-ENVTEST', date('now'))")
+    pp_id = conn.execute("SELECT id FROM produccion_programada WHERE producto='PROD-ENVTEST'").fetchone()[0]
+    conn.execute("INSERT INTO areas_planta (codigo, nombre, tipo, estado, activo) "
+                 "VALUES ('ENV-TST', 'Envasado Test', 'envasado', 'sucia', 1)")
+    conn.commit(); conn.close()
+    try:
+        r = cs.post('/api/planta/envasado/iniciar',
+                    json={'produccion_id': pp_id, 'lote': 'LOTE-ENV-T',
+                          'operario': 'Luis', 'area_codigo': 'ENV-TST'},
+                    headers=csrf_headers())
+        assert r.status_code == 409, r.data
+        assert r.get_json().get('bloqueo') == 'area_no_limpia'
+        # Con override → inicia y guarda operario + área.
+        r = cs.post('/api/planta/envasado/iniciar',
+                    json={'produccion_id': pp_id, 'lote': 'LOTE-ENV-T',
+                          'operario': 'Luis', 'area_codigo': 'ENV-TST', 'override_area': True},
+                    headers=csrf_headers())
+        assert r.status_code == 200, r.data
+        conn = _sq.connect(_os.environ['DB_PATH'])
+        row = conn.execute("SELECT operario_asignado, area_codigo FROM produccion_envasado "
+                           "WHERE lote='LOTE-ENV-T'").fetchone()
+        conn.close()
+        assert row and row[0] == 'Luis' and row[1] == 'ENV-TST'
+    finally:
+        conn = _sq.connect(_os.environ['DB_PATH'])
+        # Hijos primero (FK en PG): cola_liberacion + micro → envasado → producción.
+        conn.execute("DELETE FROM cola_liberacion WHERE lote='LOTE-ENV-T'")
+        conn.execute("DELETE FROM calidad_micro_resultados WHERE lote='LOTE-ENV-T'")
+        conn.execute("DELETE FROM produccion_envasado WHERE lote='LOTE-ENV-T'")
+        conn.execute("DELETE FROM areas_planta WHERE codigo='ENV-TST'")
+        conn.execute("DELETE FROM produccion_programada WHERE id=?", (pp_id,))
+        conn.commit(); conn.close()
+
+
 # ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH HOOK · iniciar producción crea EBR auto si hay MBR aprobado
 # ═══════════════════════════════════════════════════════════════════
