@@ -5447,6 +5447,7 @@ async function load(){
           '<div class="hkicker">📋 Orden de Producción · '+esc(faseLbl)+'</div>'+
           '<h1>'+esc(numop)+'</h1>'+
           '<div class="prod">'+esc(h.producto||h.titulo||'—')+'</div>'+
+          ((d.mi_rol&&d.mi_rol.rol)?'<div style="margin-top:6px"><span style="display:inline-flex;align-items:center;gap:5px;background:#f5f3ff;color:#6d28d9;font-size:12px;font-weight:700;padding:4px 11px;border-radius:20px;border:1px solid #a78bfa">&#128100; '+esc(d.mi_rol.rol)+'</span></div>':'')+
         '</div>'+
         '<span class="estado-badge" style="background:'+estadoBg(estado)+';color:'+estadoColor(estado)+'">'+esc(estado)+'</span>'+
       '</div>'+
@@ -5491,7 +5492,7 @@ async function load(){
       fld('Supervisado por', esc(h.supervisado_por||'—'))+
       fld('Aprobado por (Calidad)', esc(h.liberado_por_full||h.liberado_por||'—'))+
       '</div>';
-    var editable = (estado==='iniciado'||estado==='en_proceso');
+    var editable = (estado==='iniciado'||estado==='en_proceso') && !!(d.mi_rol && d.mi_rol.puede_ejecutar);
     // 1. Precauciones (MyBatch ① · texto + "+ Agregar Equipo" + lista de equipos/precauciones)
     var prec=d.precauciones||[];
     var precHtml='<div style="display:flex;align-items:center;gap:12px;margin:14px 0 8px">'+
@@ -5964,6 +5965,13 @@ async function load(){
     function abEd(){return editable?'<button class="ab ab-ed" onclick="prox()" title="Registrar">&#9998;</button>':'';}
     function bdgC(c){if(c===1)return ' <span class="bdg bdg-ok">Cumple</span>';if(c===0)return ' <span class="bdg bdg-no">No cumple</span>';return '';}
     var html='';
+    // Leyenda de responsabilidades (segregación de funciones GMP · diseño por roles).
+    html+='<div class="card" style="padding:15px 20px"><div style="font-size:13px;color:var(--cx-text-soft,#3f3f46);line-height:1.7">'+
+      '<b>Responsabilidades:</b> &nbsp;'+
+      '<span style="color:var(--cx-primary,#6d28d9);font-weight:800">●</span> <b>Operario</b> ejecuta y registra (precauciones, despeje, recepción, envasado). &nbsp;'+
+      '<span style="color:var(--cx-success,#15803d);font-weight:800">●</span> <b>Calidad / Aseguramiento</b> verifica los controles, corrige resultados y <b>libera el lote</b>. &nbsp;'+
+      '<span style="color:var(--cx-warn,#f59e0b);font-weight:800">●</span> <b>Dirección Técnica</b> aprueba el MBR.'+
+      '</div></div>';
     var prec=d.precauciones||[];
     html+='<div class="card"><div class="sectit">1. Precauciones</div>'+
       '<div class="sechint">Tenga en cuenta las siguientes precauciones antes de iniciar el proceso de envasado:</div>'+
