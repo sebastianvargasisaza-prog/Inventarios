@@ -1015,9 +1015,11 @@ def _generar_mbr_desde_formula(cur, producto_nombre, usuario=''):
     # que el EBR de cada fase tenga un esqueleto editable (el usuario los ajusta
     # por producto en el draft). Sin esto, un EBR de OF/OA nacería vacío.
     _pasos_fase = [
-        ('Envasado', 'Alistamiento de envase/tapa (verificar limpieza y especificación)', 'envasado'),
-        ('Envasado', 'Llenado y control de peso/volumen', 'envasado'),
-        ('Envasado', 'Sellado/tapado', 'envasado'),
+        ('Envasado', 'Luego que control de calidad apruebe el granel, se debe realizar el despeje de línea indicado.', 'envasado'),
+        ('Envasado', 'Realizar el alistamiento de los envases y de la máquina de envasado que se requiere para este llenado.', 'envasado'),
+        ('Envasado', 'Ajustar la máquina a la cantidad requerida.', 'envasado'),
+        ('Envasado', 'Realizar controles periódicos al proceso de llenado con el fin de verificar que se mantiene en el rango de llenado.', 'envasado'),
+        ('Envasado', 'Al finalizar despejar el área, dejar todo limpio y realizar la entrega al área de acondicionamiento.', 'envasado'),
         ('Acondicionamiento', 'Aprobación de arte/etiqueta y codificación (lote/vencimiento)', 'acondicionamiento'),
         ('Acondicionamiento', 'Etiquetado', 'acondicionamiento'),
         ('Acondicionamiento', 'Encajado / empaque secundario', 'acondicionamiento'),
