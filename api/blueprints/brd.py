@@ -5838,6 +5838,25 @@ a.back{color:var(--cx-primary,#6d28d9);font-size:13px;font-weight:600;text-decor
 .val{font-size:13.5px;color:var(--cx-text-mute,#71717a);line-height:1.45}
 .sectit{font-size:18px;font-weight:800;color:var(--cx-text,#18181b);letter-spacing:-.2px;margin:0 0 12px}
 .muted{color:var(--cx-text-faint,#a1a1aa)}
+.mono{font-family:var(--cx-font-mono,ui-monospace,monospace)}
+.sechead{display:flex;align-items:center;gap:12px;justify-content:space-between;flex-wrap:wrap;margin-bottom:6px}
+.sechead .sectit{margin:0}
+.sechint{font-size:13.5px;color:var(--cx-text-mute,#71717a);margin:6px 0 14px;line-height:1.5}
+.btreg{padding:9px 15px;border-radius:9px;font-size:12px;font-weight:600;border:none;cursor:pointer;background:var(--cx-primary,#6d28d9);color:#fff;display:inline-flex;align-items:center;gap:6px;text-decoration:none;white-space:nowrap}.btreg:hover{background:var(--cx-primary-dark,#4c1d95)}
+.tw{overflow-x:auto}
+table.t{width:100%;border-collapse:collapse;font-size:13.5px}
+table.t th,table.t td{padding:12px;text-align:left;vertical-align:middle;border-bottom:1px solid var(--cx-border-soft,#f1f1f4)}
+table.t thead th{color:var(--cx-text-mute,#71717a);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;border-bottom:1px solid var(--cx-border,#e6e6ea)}
+table.t tbody td{color:var(--cx-text-soft,#3f3f46)}
+table.t tbody tr:hover td{background:var(--cx-primary-pale,#f5f3ff)}
+.regfoot{color:var(--cx-text-faint,#a1a1aa);font-size:12.5px;margin-top:14px}
+.ok{color:var(--cx-success,#15803d);font-weight:700}.no{color:var(--cx-danger,#dc2626);font-weight:700}.pend{color:var(--cx-text-faint,#a1a1aa)}
+.bdg{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.3px}
+.bdg-ok{background:var(--cx-success-pale,#f0fdf4);color:var(--cx-success,#15803d)}.bdg-no{background:var(--cx-danger-pale,#fef2f2);color:var(--cx-danger,#dc2626)}
+.pasonum{font-weight:700;color:var(--cx-primary,#6d28d9);margin-right:5px}
+.act{display:inline-flex;gap:6px}
+.ab{width:30px;height:30px;border-radius:7px;border:none;cursor:pointer;color:#fff;font-size:13px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;transition:filter .15s ease}.ab:hover{filter:brightness(1.08)}
+.ab-i{background:var(--cx-info,#2563eb)}.ab-ed{background:var(--cx-warn,#f59e0b)}.ab-pdf{background:var(--cx-danger,#dc2626)}
 @media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}}
 </style></head>
 <body>
@@ -5882,13 +5901,63 @@ async function load(){
         fld('Fecha Final',dt(h.completado_at_utc))+
         fld('Estado Actual','<b style="color:'+estCol(estado)+'">'+esc(estado)+'</b>')+
       '</div>';
-    document.getElementById('cuerpo').innerHTML=
-      '<div class="card"><div class="sectit">1. Precauciones</div>'+
-        '<div class="val" style="font-size:14px">Tenga en cuenta las siguientes precauciones antes de iniciar el proceso de envasado:</div>'+
-        '<div class="muted" style="margin-top:12px">— construiremos las secciones paso a paso —</div>'+
+    var editable=(estado==='iniciado'||estado==='en_proceso');
+    function cumpleCell(c){if(c===1)return '<span class="ok">Sí &#10003;</span>';if(c===0)return '<span class="no">No &#10007;</span>';return '<span class="pend">Pendiente</span>';}
+    function regBtn(t){return editable?('<button class="btreg" onclick="prox()">+ '+t+'</button>'):'';}
+    function abI(){return '<button class="ab ab-i" onclick="prox()" title="Detalle">i</button>';}
+    function abEd(){return editable?'<button class="ab ab-ed" onclick="prox()" title="Registrar">&#9998;</button>':'';}
+    function bdgC(c){if(c===1)return ' <span class="bdg bdg-ok">Cumple</span>';if(c===0)return ' <span class="bdg bdg-no">No cumple</span>';return '';}
+    var html='';
+    var prec=d.precauciones||[];
+    html+='<div class="card"><div class="sectit">1. Precauciones</div>'+
+      '<div class="sechint">Tenga en cuenta las siguientes precauciones antes de iniciar el proceso de envasado:</div>'+
+      (prec.length?('<ul style="margin:0;padding-left:18px;color:var(--cx-text-soft);font-size:13.5px;line-height:1.95">'+prec.map(function(p){return '<li><b>'+(p.tipo==='equipo'?'&#128296; Equipo':'&#9888; Precaución')+':</b> '+esc(p.descripcion||'')+'</li>';}).join('')+'</ul>'):'<div class="muted">Sin precauciones registradas (se definen en el MBR).</div>')+
       '</div>';
+    var dch=d.despeje_checklist||[];
+    html+='<div class="card"><div class="sechead"><div class="sectit">2. Despejes de Línea</div>'+regBtn('Registrar')+'</div>'+
+      '<div class="sechint">Realizar despeje en el área de acuerdo a los procedimientos internos, y realice las siguientes verificaciones:</div>'+
+      (dch.length?('<div class="tw"><table class="t"><thead><tr><th>Verificación</th><th>Cumple</th><th>Acciones</th></tr></thead><tbody>'+
+        dch.map(function(it){return '<tr><td>'+esc(it.texto||'')+'</td><td>'+cumpleCell(it.cumple)+'</td><td><div class="act">'+abI()+abEd()+'</div></td></tr>';}).join('')+
+        '</tbody></table></div>'):'<div class="muted">Sin verificaciones de despeje (se definen en el MBR).</div>')+
+      '</div>';
+    var mats=d.envasado_materiales||[];
+    html+='<div class="card"><div class="sectit">3. Recepción de Material de Envase</div>'+
+      '<div class="sechint">Verificar contra la orden de envasado y la etiqueta o rótulo de identificación de los siguientes materiales de envase:</div>'+
+      '<div class="tw"><table class="t"><thead><tr><th>Material</th><th>N° lote</th><th>Cant. requerida</th><th>Cant. recibida</th><th>Acciones</th></tr></thead><tbody>'+
+      (mats.length?mats.map(function(m){return '<tr><td>'+esc(m.material||'—')+'</td><td class="mono">'+esc(m.lote_material||m.lote_envasado||'—')+'</td><td>'+(m.requerida!=null?Number(m.requerida).toLocaleString('es-CO'):'')+'</td><td>'+(m.recibida!=null?Number(m.recibida).toLocaleString('es-CO'):'<span class="pend">pendiente</span>')+'</td><td><div class="act">'+abI()+abEd()+'</div></td></tr>';}).join('')
+        :'<tr><td colspan="5" class="muted" style="text-align:center">Sin materiales registrados.</td></tr>')+
+      '</tbody></table></div>'+
+      '<div class="regfoot">Mostrando '+mats.length+' de '+mats.length+' registro'+(mats.length===1?'':'s')+'</div></div>';
+    var pasos=d.pasos||[];
+    html+='<div class="card"><div class="sechead"><div class="sectit">4. Envasado</div>'+regBtn('Registrar Actividades')+'</div>'+
+      '<div class="sechint">Realizar las siguientes actividades de acuerdo al orden establecido:</div>'+
+      (pasos.length?('<div class="tw"><table class="t"><thead><tr><th>Actividad</th><th>Realizado por</th><th>Verificado por</th><th>Acciones</th></tr></thead><tbody>'+
+        pasos.map(function(p){return '<tr><td><span class="pasonum">Paso '+esc(p.orden)+'.</span>'+esc(p.descripcion||'')+'</td><td>'+(p.realizado_por_full?esc(p.realizado_por_full):'<span class="pend">—</span>')+'</td><td>'+(p.verificado_por_full?esc(p.verificado_por_full):'<span class="pend">—</span>')+'</td><td><div class="act">'+abI()+abEd()+'</div></td></tr>';}).join('')+
+        '</tbody></table></div>'):'<div class="muted">Sin pasos de envasado (se definen en el MBR).</div>')+
+      '</div>';
+    var ipc=d.ipc||[];
+    html+='<div class="card"><div class="sechead"><div class="sectit">5. Controles en Proceso</div>'+(editable?'<button class="btreg" onclick="prox()">+ Control de Volumen</button>':'')+'</div>'+
+      '<div class="sechint">Realizar muestreo y registrar control en proceso:</div>'+
+      (ipc.length?('<div class="tw"><table class="t"><thead><tr><th>Control</th><th>Resultado</th><th>Observaciones</th><th>Realizado por</th><th>Acciones</th></tr></thead><tbody>'+
+        ipc.map(function(c){var res=c.conforme===2?'<span class="bdg" style="background:var(--cx-bg-alt);color:var(--cx-text-mute)">No aplica</span>':(c.resultado?(esc(c.resultado)+bdgC(c.conforme)):'<span class="pend">pendiente</span>');return '<tr><td>'+esc(c.control||'')+(c.rango?' <span class="muted" style="font-size:11px">('+esc(c.rango)+')</span>':'')+'</td><td>'+res+'</td><td>'+esc(c.observaciones||'No aplica')+'</td><td>'+(c.realizado_por?esc(c.realizado_por_full||c.realizado_por):'<span class="pend">—</span>')+'</td><td><div class="act">'+abI()+abEd()+'</div></td></tr>';}).join('')+
+        '</tbody></table></div>'):'<div class="muted">Sin controles en proceso (se definen en el MBR).</div>')+
+      '</div>';
+    var obs=d.observaciones_proceso||[];
+    html+='<div class="card"><div class="sechead"><div class="sectit">6. Observaciones Generales del Proceso</div>'+regBtn('Registrar')+'</div>'+
+      (obs.length?('<div class="tw"><table class="t"><thead><tr><th>Descripción de la observación</th><th>Realizada por</th><th>Fecha y hora</th></tr></thead><tbody>'+
+        obs.map(function(o){return '<tr><td>'+esc(o.descripcion||'')+'</td><td>'+esc(o.registrado_por_full||o.registrado_por||'—')+'</td><td class="muted">'+dt(o.fecha)+'</td></tr>';}).join('')+
+        '</tbody></table></div>'):'<div class="muted">Sin observaciones registradas.</div>')+
+      '</div>';
+    var regs=d.registros_fisicos||[];
+    html+='<div class="card"><div class="sectit">7. Registros Físicos del Proceso de Envasado</div>'+
+      (regs.length?('<div class="tw"><table class="t"><thead><tr><th>Código</th><th>Descripción</th><th>Documento</th></tr></thead><tbody>'+
+        regs.map(function(g){return '<tr><td class="mono">'+esc(g.id)+'</td><td>'+esc(g.descripcion||'')+'</td><td>'+(g.tiene_pdf?('<a class="ab ab-pdf" href="/api/brd/ebr/'+EBR_ID+'/registros-fisicos/'+g.id+'/pdf" target="_blank" title="Ver">&#128196;</a>'):'<span class="pend">—</span>')+'</td></tr>';}).join('')+
+        '</tbody></table></div>'):'<div class="muted">Sin registros físicos adjuntos.</div>')+
+      '</div>';
+    document.getElementById('cuerpo').innerHTML=html;
   }catch(e){document.getElementById('cab').innerHTML='<span style="color:#b91c1c">Error de red: '+esc(e.message)+'</span>';}
 }
+function prox(){alert('Esta acción la construimos en el siguiente paso.');}
 load();
 </script>
 </body></html>"""
