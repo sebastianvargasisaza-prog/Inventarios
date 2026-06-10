@@ -76,3 +76,39 @@ def test_oa_legajo_convive_con_op_of(app, db_clean):
     # Idempotencia: re-crear la OA del mismo lote físico NO duplica (LOTE_DUPLICADO → 409).
     oa2 = c.post("/api/brd/legajo-rapido", json={"producto": "ZZ-OA-LEG", "lote": "LOTEOA1", "fase": "acondicionamiento"}, headers=_h())
     assert oa2.status_code == 409, oa2.data
+
+
+def test_descartar_ebr_anula_y_desaparece(app, db_clean):
+    """Descartar (anular) un legajo creado por error: estado='cancelado' + audit y
+    desaparece de la lista de órdenes activas. Solo Admin · 10-jun-2026."""
+    c = _login(app, "sebastian")
+    mbr_id = _exec("INSERT INTO mbr_templates (producto_nombre, version, estado, lote_size_g, creado_por) "
+                   "VALUES ('ZZ-DESC', 1, 'aprobado', 1000, 'sebastian')")
+    ebr_id = _exec("INSERT INTO ebr_ejecuciones (mbr_template_id, mbr_version, lote, estado, fase, "
+                   "iniciado_por, iniciado_at_utc, cantidad_objetivo_g) "
+                   "VALUES (?, 1, 'DESC-OP1', 'iniciado', 'fabricacion', 'sebastian', "
+                   "datetime('now','utc'), 1000)", (mbr_id,))
+    lu = c.get("/api/brd/ordenes-unificadas?fase=fabricacion").get_json()
+    assert any(o.get("ebr_id") == ebr_id for o in lu["ordenes"]), "el legajo debe aparecer antes de descartar"
+    r = c.post(f"/api/brd/ebr/{ebr_id}/descartar", json={"motivo": "creado por error"}, headers=_h())
+    assert r.status_code == 200 and r.get_json().get("estado") == "cancelado", r.data
+    lu2 = c.get("/api/brd/ordenes-unificadas?fase=fabricacion").get_json()
+    assert not any(o.get("ebr_id") == ebr_id for o in lu2["ordenes"]), "el legajo cancelado NO debe aparecer"
+    import sqlite3 as _s, os as _o
+    cc = _s.connect(_o.environ["DB_PATH"])
+    est = cc.execute("SELECT estado FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()[0]
+    cc.close()
+    assert est == "cancelado", est
+
+
+def test_descartar_ebr_liberado_rechaza(app, db_clean):
+    """Un EBR liberado es inmutable · no se puede descartar (409)."""
+    c = _login(app, "sebastian")
+    mbr_id = _exec("INSERT INTO mbr_templates (producto_nombre, version, estado, lote_size_g, creado_por) "
+                   "VALUES ('ZZ-DESC2', 1, 'aprobado', 1000, 'sebastian')")
+    ebr_id = _exec("INSERT INTO ebr_ejecuciones (mbr_template_id, mbr_version, lote, estado, fase, "
+                   "iniciado_por, iniciado_at_utc, cantidad_objetivo_g, cantidad_real_g) "
+                   "VALUES (?, 1, 'DESC-LIB', 'liberado', 'fabricacion', 'sebastian', "
+                   "datetime('now','utc'), 1000, 980)", (mbr_id,))
+    r = c.post(f"/api/brd/ebr/{ebr_id}/descartar", json={}, headers=_h())
+    assert r.status_code == 409, r.data

@@ -3033,6 +3033,40 @@ def rechazar_ebr(ebr_id):
     return jsonify({"ok": True, "estado": "rechazado"})
 
 
+@bp.route("/api/brd/ebr/<int:ebr_id>/descartar", methods=["POST"])
+def descartar_ebr(ebr_id):
+    """Anula un legajo (EBR) creado POR ERROR · solo Admin. GMP/Part 11: NO se borra
+    el registro, se marca estado='cancelado' con audit_log (queda el rastro). Los
+    cancelados se ocultan de la lista de órdenes activas. NO aplica a liberado/
+    rechazado (inmutables). Sebastián 10-jun-2026."""
+    err = _require_login()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    if user not in ADMIN_USERS:
+        return jsonify({"error": "solo Admin puede descartar un legajo"}), 403
+    body = request.get_json(silent=True) or {}
+    motivo = (body.get("motivo") or "Descartado por error").strip()
+    conn = get_db(); cur = conn.cursor()
+    ebr = cur.execute(
+        "SELECT estado, COALESCE(lote_codigo, lote) AS lote FROM ebr_ejecuciones WHERE id=?",
+        (ebr_id,)).fetchone()
+    if not ebr:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    estado = ebr["estado"]
+    if estado in ("liberado", "rechazado"):
+        return jsonify({"error": f"un EBR {estado} es inmutable · no se descarta"}), 409
+    if estado == "cancelado":
+        return jsonify({"ok": True, "estado": "cancelado", "ya": True})
+    cur.execute("UPDATE ebr_ejecuciones SET estado='cancelado' WHERE id=?", (ebr_id,))
+    audit_log(cur, usuario=user, accion="DESCARTAR_EBR",
+              tabla="ebr_ejecuciones", registro_id=ebr_id,
+              antes={"estado": estado, "lote": ebr["lote"]},
+              despues={"estado": "cancelado", "motivo": motivo})
+    conn.commit()
+    return jsonify({"ok": True, "estado": "cancelado"})
+
+
 # ════════════════════════════════════════════════════════════════════════════
 # IPCs · In-Process Controls (specs en MBR + resultados en EBR)
 # ════════════════════════════════════════════════════════════════════════════
@@ -4866,6 +4900,7 @@ def ordenes_unificadas():
                FROM ebr_ejecuciones e
                LEFT JOIN mbr_templates m ON m.id = e.mbr_template_id
                WHERE COALESCE(e.fase,'fabricacion') = ?
+                 AND COALESCE(e.estado,'') != 'cancelado'
                ORDER BY e.iniciado_at_utc DESC""",
             (fase,),
         ).fetchall()

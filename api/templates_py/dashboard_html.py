@@ -3587,8 +3587,13 @@ async function cargarHistProd(){
       var org = o.origen==='legajo'
         ? '<span style="background:#ede9fe;color:#6d28d9;padding:1px 7px;border-radius:8px;font-size:0.72em;font-weight:700">LEGAJO</span>'
         : '<span style="background:#f1f5f9;color:#64748b;padding:1px 7px;border-radius:8px;font-size:0.72em;font-weight:700">SIMPLE</span>';
+      var _estLow=(o.estado||'').toLowerCase();
+      var _puedeDescartar = (o.origen==='legajo' && o.ebr_id && _estLow.indexOf('aprob')<0 && _estLow.indexOf('rechaz')<0);
+      var _btnDescartar = _puedeDescartar
+        ? ' <button data-descartar-ebr data-id="'+o.ebr_id+'" data-prod="'+_escHTML(o.producto||'')+'" data-op="'+_escHTML(o.numero_op||'')+'" title="Descartar este legajo (creado por error · solo Admin · queda auditado)" style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:5px;padding:3px 7px;font-size:11px;cursor:pointer">🗑️</button>'
+        : '';
       var acc = o.link
-        ? '<a href="'+o.link+'" style="color:#7c3aed;font-weight:700;text-decoration:none;font-size:11px">Abrir →</a>'
+        ? '<a href="'+o.link+'" style="color:#7c3aed;font-weight:700;text-decoration:none;font-size:11px">Abrir →</a>'+_btnDescartar
         : '<button data-crear-legajo data-prod="'+_escHTML(o.producto||'')+'" data-g="'+(o.producida_g||o.teorica_g||'')+'" data-lote="'+_escHTML(o.lote_bulk||'')+'" style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:10px;font-weight:700;cursor:pointer" title="Crear el legajo electrónico (batch record) de esta orden">➕ Crear legajo</button>';
       return '<tr>'+
         '<td style="font-family:monospace;font-weight:700;color:#1e40af">'+_escHTML(o.numero_op||'')+'</td>'+
@@ -3668,6 +3673,24 @@ if(typeof document !== 'undefined' && !window._CREAR_LEGAJO_DELEG){
     var b = ev.target && ev.target.closest && ev.target.closest('[data-crear-legajo]');
     if(!b) return;
     crearLegajoDesdeOrden(b.getAttribute('data-prod')||'', b.getAttribute('data-g')||'', b.getAttribute('data-lote')||'');
+  });
+}
+// Descartar (anular) un legajo creado por error · solo Admin · queda auditado.
+if(typeof document !== 'undefined' && !window._DESCARTAR_EBR_DELEG){
+  window._DESCARTAR_EBR_DELEG = true;
+  document.addEventListener('click', async function(ev){
+    var b = ev.target && ev.target.closest && ev.target.closest('[data-descartar-ebr]');
+    if(!b) return;
+    var id=b.getAttribute('data-id'); var op=b.getAttribute('data-op')||('EBR-'+id);
+    if(!id) return;
+    if(!confirm('¿Descartar el legajo '+op+'?\\n\\nSe anula (estado: cancelado · queda auditado · solo Admin) y desaparece de la lista. No aplica a legajos ya liberados/rechazados.')) return;
+    try{
+      var t=(typeof csrfTokenNec==='function')?csrfTokenNec():(window._csrfTok||'');
+      var r=await fetch('/api/brd/ebr/'+id+'/descartar',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:'{}'});
+      var d={}; try{d=await r.json();}catch(e){}
+      if(!r.ok){alert((r.status===403?'🔒 Solo Admin puede descartar.\\n\\n':'No se pudo descartar: ')+((d&&d.error)||r.status));return;}
+      if(typeof cargarEBRs==='function') cargarEBRs();
+    }catch(e){alert('Error de red: '+(e.message||e));}
   });
 }
 
