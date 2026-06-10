@@ -5913,11 +5913,11 @@ async function load(){
       '<div class="sechint">Tenga en cuenta las siguientes precauciones antes de iniciar el proceso de envasado:</div>'+
       (prec.length?('<ul style="margin:0;padding-left:18px;color:var(--cx-text-soft);font-size:13.5px;line-height:1.95">'+prec.map(function(p){return '<li><b>'+(p.tipo==='equipo'?'&#128296; Equipo':'&#9888; Precaución')+':</b> '+esc(p.descripcion||'')+'</li>';}).join('')+'</ul>'):'<div class="muted">Sin precauciones registradas (se definen en el MBR).</div>')+
       '</div>';
-    var dch=d.despeje_checklist||[];
-    html+='<div class="card"><div class="sechead"><div class="sectit">2. Despejes de Línea</div>'+regBtn('Registrar')+'</div>'+
+    var dch=d.despeje_checklist||[]; window._dch=dch;
+    html+='<div class="card"><div class="sectit">2. Despejes de Línea</div>'+
       '<div class="sechint">Realizar despeje en el área de acuerdo a los procedimientos internos, y realice las siguientes verificaciones:</div>'+
       (dch.length?('<div class="tw"><table class="t"><thead><tr><th>Verificación</th><th>Cumple</th><th>Acciones</th></tr></thead><tbody>'+
-        dch.map(function(it){return '<tr><td>'+esc(it.texto||'')+'</td><td>'+cumpleCell(it.cumple)+'</td><td><div class="act">'+abI()+abEd()+'</div></td></tr>';}).join('')+
+        dch.map(function(it){return '<tr><td>'+esc(it.texto||'')+'</td><td>'+cumpleCell(it.cumple)+'</td><td><div class="act"><button class="ab ab-i" onclick="infoDespeje('+it.idx+')" title="Detalle">i</button>'+(editable?'<button class="ab ab-ed" onclick="regDespeje('+it.idx+')" title="Registrar verificación">&#9998;</button>':'')+'</div></td></tr>';}).join('')+
         '</tbody></table></div>'):'<div class="muted">Sin verificaciones de despeje (se definen en el MBR).</div>')+
       '</div>';
     var mats=d.envasado_materiales||[];
@@ -5958,6 +5958,26 @@ async function load(){
   }catch(e){document.getElementById('cab').innerHTML='<span style="color:#b91c1c">Error de red: '+esc(e.message)+'</span>';}
 }
 function prox(){alert('Esta acción la construimos en el siguiente paso.');}
+async function regDespeje(idx){
+  // Registrar la verificación de despeje (operario) · Cumple Sí/No + observación.
+  // Mismo endpoint GMP que producción (e-firma/audit en el backend).
+  var it=(window._dch||[]).find(function(x){return x.idx===idx;}); if(!it)return;
+  var esCorr=(it.cumple!=null);
+  var titulo=esCorr?'CORREGIR RESULTADO (solo Calidad / Dirección Técnica)':'REGISTRAR VERIFICACIÓN (operario)';
+  var c=confirm(titulo+'\\n\\n'+it.texto+'\\n\\n¿CUMPLE? (Aceptar = Sí · Cancelar = No)');
+  var obs=prompt('Observación'+(esCorr?' / motivo de la corrección':' (opcional)')+':', it.observaciones||'')||'';
+  try{
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/despeje-item',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({item_idx:idx,cumple:c?1:0,observaciones:obs,etapa:'dispensacion'})});
+    var d=await r.json();
+    if(!r.ok){alert((r.status===403?'🔒 ':'Error: ')+(d.error||r.status));return;}
+    load();
+  }catch(e){alert('Error de red: '+(e.message||e));}
+}
+function infoDespeje(idx){
+  var it=(window._dch||[]).find(function(x){return x.idx===idx;}); if(!it)return;
+  var res=it.cumple===1?'Sí cumple':(it.cumple===0?'No cumple':'Pendiente');
+  alert('VERIFICACIÓN DE DESPEJE\\n\\n'+it.texto+'\\n\\nResultado: '+res+(it.observaciones?('\\nObservación: '+it.observaciones):'')+(it.registrado_por?('\\nRegistrado por: '+it.registrado_por):''));
+}
 load();
 </script>
 </body></html>"""
