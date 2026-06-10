@@ -5756,7 +5756,8 @@ async function load(){
         fld('Supervisado por',esc(h.supervisado_por||'—'))+
       '</div>'+
       '<div class="btnrow">'+
-        '<button class="bt bt-add" onclick="adicionarLote()">+ Adicionar Lote</button>'+
+        '<a class="bt bt-add" href="/planta/instrucciones-envasado/'+EBR_ID+'">&#9654; Instrucciones de Envasado</a>'+
+        '<button class="bt bt-pdf" onclick="adicionarLote()">+ Adicionar Lote</button>'+
         '<a class="bt bt-pdf" href="/api/brd/ebr/'+EBR_ID+'/pdf" target="_blank">&#128196; Descargar</a>'+
         '<button class="bt bt-pdf" onclick="regenerarMBR()" title="Crea una nueva versión del MBR con los pasos de envasado actualizados (GMP · obsoleta el anterior)">&#8635; Regenerar MBR</button>'+
         '<a class="bt bt-back" href="/inventarios#envasado">&#9198; Atrás</a>'+
