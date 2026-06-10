@@ -5684,13 +5684,26 @@ a.back{color:#7c3aed;font-size:13px;text-decoration:none}
 .bt-add{background:#2bb8cc}.bt-add:hover{background:#23a6b9}
 .bt-pdf{background:#e8703a}.bt-pdf:hover{background:#d9612d}
 .bt-back{background:#26a69a}.bt-back:hover{background:#1f8f85}
+.sectit{font-size:23px;font-weight:800;color:#1f2937;margin:0 0 18px}
+.tw{overflow-x:auto}
+table.t{width:100%;border-collapse:collapse;font-size:14px}
+table.t th,table.t td{border:1px solid #e5e7eb;padding:14px 12px;text-align:left;vertical-align:middle}
+table.t thead th{color:#374151;font-weight:700;font-size:12.5px;text-transform:uppercase;letter-spacing:.3px;background:#fff;white-space:nowrap}
+table.t thead th .ar{color:#cbd5e1;font-size:11px;margin-left:3px}
+table.t tbody td{color:#4b5563;background:#f7f8fa}
+table.t tfoot td{font-weight:800;color:#1f2937;background:#fff}
+.tnum{text-align:right}
+.regfoot{color:#6b7280;font-size:13px;margin-top:14px}
+.act{display:inline-flex;gap:6px;flex-wrap:wrap}
+.ab{width:34px;height:34px;border-radius:7px;border:none;cursor:pointer;color:#fff;font-size:15px;line-height:1;display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+.ab-play{background:#5cb85c}.ab-plus{background:#5bc0de}.ab-x{background:#e8703a}.ab-ed{background:#f0ad4e}.ab-ed2{background:#5cb85c}.ab-i{background:#5bc0de}
 @media(max-width:760px){.grid{grid-template-columns:repeat(2,1fr)}}
 </style></head>
 <body>
 <div class="wrap">
   <a class="back" href="/inventarios#envasado">&larr; Envasado</a>
   <div class="card" id="cab"><div class="muted">Cargando…</div></div>
-  <div class="card" id="cuerpo"><div class="muted" style="text-align:center;padding:14px">— aquí construiremos el legajo de envasado, paso a paso —</div></div>
+  <div id="cuerpo"></div>
 </div>
 <script>
 var EBR_ID=__EBR_ID__;
@@ -5729,9 +5742,60 @@ async function load(){
         '<a class="bt bt-pdf" href="/api/brd/ebr/'+EBR_ID+'/pdf" target="_blank">&#128196; Descargar</a>'+
         '<a class="bt bt-back" href="/inventarios#envasado">&#9198; Atrás</a>'+
       '</div>';
+    // Paso 2 · Lotes de Producto por Presentación + Materiales de Envase (tal cual MyBatch).
+    function ar(){return '<span class="ar">&#8645;</span>';}
+    var pres=d.envasado_presentaciones||[];
+    var totUds=pres.reduce(function(a,p){return a+(Number(p.unidades)||0);},0);
+    var totCant=pres.reduce(function(a,p){return a+(Number(p.cantidad_ml)||0);},0);
+    var presRows=pres.length
+      ? pres.map(function(p){
+          return '<tr>'+
+            '<td>'+esc(p.presentacion||'—')+'</td>'+
+            '<td class="mono">'+esc(p.lote||'—')+'</td>'+
+            '<td>'+(p.unidades!=null?Number(p.unidades).toLocaleString('es-CO'):'')+'</td>'+
+            '<td>'+esc(p.area||'—')+'</td>'+
+            '<td>'+(p.cantidad_ml!=null?mlf(p.cantidad_ml):'')+'</td>'+
+            '<td>'+(p.unidades_final!=null?Number(p.unidades_final).toLocaleString('es-CO'):'')+'</td>'+
+            '<td>'+(p.rend_pct!=null?(Number(p.rend_pct).toLocaleString('es-CO',{maximumFractionDigits:2})+'%'):'')+'</td>'+
+            '<td>'+esc(p.estado||'—')+'</td>'+
+            '<td><div class="act"><button class="ab ab-play" onclick="prox()" title="Ejecutar">&#9654;</button><button class="ab ab-plus" onclick="prox()" title="Agregar">+</button></div></td>'+
+          '</tr>';
+        }).join('')
+      : '<tr><td colspan="9" class="muted" style="text-align:center;background:#fff">Sin presentaciones registradas aún.</td></tr>';
+    var presCard='<div class="card"><div class="sectit">Lotes de Producto por Presentación</div>'+
+      '<div class="tw"><table class="t"><thead><tr>'+
+        '<th>Presentación'+ar()+'</th><th>N° de lote'+ar()+'</th><th>Unid.'+ar()+'</th><th>Área/Línea'+ar()+'</th><th>Cantidad'+ar()+'</th><th>Unid. final'+ar()+'</th><th>%Rend.'+ar()+'</th><th>Estado'+ar()+'</th><th>Acciones</th>'+
+      '</tr></thead><tbody>'+presRows+'</tbody>'+
+      (pres.length?('<tfoot><tr><td><b>Total</b></td><td></td><td>'+totUds.toLocaleString('es-CO')+'</td><td></td><td>'+(totCant>0?mlf(totCant):'')+'</td><td></td><td></td><td></td><td></td></tr></tfoot>'):'')+
+      '</table></div>'+
+      '<div class="regfoot">Mostrando '+pres.length+' de '+pres.length+' registro'+(pres.length===1?'':'s')+'</div></div>';
+    var mats=d.envasado_materiales||[];
+    function mc(v){return v!=null?Number(v).toLocaleString('es-CO'):'';}
+    var matRows=mats.length
+      ? mats.map(function(m){
+          return '<tr>'+
+            '<td class="mono">'+esc(m.lote_envasado||'—')+'</td>'+
+            '<td>'+esc(m.material||'—')+'</td>'+
+            '<td class="mono">'+esc(m.lote_material||'—')+'</td>'+
+            '<td>'+mc(m.requerida)+'</td>'+
+            '<td>'+mc(m.devuelta)+'</td>'+
+            '<td>'+mc(m.utilizada)+'</td>'+
+            '<td>'+mc(m.averiada)+'</td>'+
+            '<td>'+mc(m.diferencia)+'</td>'+
+            '<td><div class="act"><button class="ab ab-x" onclick="prox()" title="Eliminar">&#215;</button><button class="ab ab-ed" onclick="prox()" title="Editar">&#9998;</button><button class="ab ab-ed2" onclick="prox()" title="Registrar">&#9998;</button><button class="ab ab-i" onclick="prox()" title="Detalle">i</button></div></td>'+
+          '</tr>';
+        }).join('')
+      : '<tr><td colspan="9" class="muted" style="text-align:center;background:#fff">Sin materiales de envase registrados aún.</td></tr>';
+    var matCard='<div class="card"><div class="sectit">Materiales de Envase</div>'+
+      '<div class="tw"><table class="t"><thead><tr>'+
+        '<th>N° lote envasado'+ar()+'</th><th>Material de envase'+ar()+'</th><th>N° de lote material'+ar()+'</th><th>Cant. requerida'+ar()+'</th><th>Cant. devuelta'+ar()+'</th><th>Cant. utilizada'+ar()+'</th><th>Cant. averiada'+ar()+'</th><th>Diferencia'+ar()+'</th><th>Acciones</th>'+
+      '</tr></thead><tbody>'+matRows+'</tbody></table></div>'+
+      '<div class="regfoot">Mostrando '+mats.length+' de '+mats.length+' registro'+(mats.length===1?'':'s')+'</div></div>';
+    document.getElementById('cuerpo').innerHTML = presCard + matCard;
   }catch(e){document.getElementById('cab').innerHTML='<span style="color:#b91c1c">Error de red: '+esc(e.message)+'</span>';}
 }
 function adicionarLote(){alert('“Adicionar Lote” lo construimos en el siguiente paso.');}
+function prox(){alert('Esta acción la construimos en el siguiente paso.');}
 load();
 </script>
 </body></html>"""
