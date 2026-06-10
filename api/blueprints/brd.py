@@ -6159,8 +6159,8 @@ def analitica_lotes():
     if err:
         return err
     u = session.get("compras_user", "")
-    if u not in ADMIN_USERS and u not in CALIDAD_USERS:
-        return jsonify({"error": "solo Dirección Técnica / Calidad / Admin"}), 403
+    if u not in ADMIN_USERS:
+        return jsonify({"error": "Privado · solo Gerencia / Dirección"}), 403
     from datetime import datetime as _DT
 
     def _pd(s):
@@ -6285,7 +6285,7 @@ td{color:var(--cx-text-soft,#3f3f46)}
 <div class="wrap">
   <a class="back" href="/inventarios">&larr; Planta</a>
   <h1>&#128202; Analítica del Batch</h1>
-  <div class="sub">Tiempos, rendimiento y productividad &middot; derivado de los registros de lote (EBR) en vivo.</div>
+  <div class="sub">&#128274; Privado &middot; Gerencia &nbsp;&mdash;&nbsp; tiempos, rendimiento y productividad, derivado de los registros de lote (EBR) en vivo.</div>
   <div id="cont"><div class="muted">Cargando&hellip;</div></div>
 </div>
 <script>
@@ -6300,7 +6300,7 @@ async function load(){
   try{
     var r=await fetch('/api/brd/analitica-lotes',{credentials:'same-origin',cache:'no-store'});
     if(r.status===401){location.href='/login';return;}
-    if(r.status===403){document.getElementById('cont').innerHTML='<div class="card">Solo Dirección Técnica / Calidad / Admin.</div>';return;}
+    if(r.status===403){document.getElementById('cont').innerHTML='<div class="card">&#128274; Privado · solo Gerencia / Dirección.</div>';return;}
     var d=await r.json();
     if(!d.ok){document.getElementById('cont').innerHTML='<div class="card" style="color:#b91c1c">Error</div>';return;}
     var R=d.resumen||{};
@@ -6337,6 +6337,149 @@ def analitica_batch_page():
         return Response('<script>location.href="/login?next=/planta/analitica-batch"</script>',
                         mimetype="text/html")
     return Response(_ANALITICA_BATCH_HTML, mimetype="text/html")
+
+
+@bp.route("/api/brd/mbr/<int:mbr_id>/aprobar-rapido", methods=["POST"])
+def aprobar_mbr_rapido(mbr_id):
+    """Aprueba un MBR en_revision con la e-firma del usuario (Bandeja DT · 9-jun). Solo
+    Calidad/Dir.Téc/Admin. Crea firma 'aprueba' + estado=aprobado + audit."""
+    err = _require_qa_or_admin()
+    if err:
+        return err
+    conn = get_db(); cur = conn.cursor()
+    user = session.get("compras_user", "")
+    row = cur.execute("SELECT estado FROM mbr_templates WHERE id=?", (mbr_id,)).fetchone()
+    if not row:
+        return jsonify({"ok": False, "error": "MBR no encontrado"}), 404
+    est = (row[0] if not hasattr(row, 'keys') else row['estado'])
+    if est != 'en_revision':
+        return jsonify({"ok": False, "error": f"solo en_revision puede aprobarse (actual: {est})"}), 409
+    try:
+        from blueprints.firmas import crear_firma_directa
+    except Exception:
+        from api.blueprints.firmas import crear_firma_directa
+    sig_id = crear_firma_directa(conn, username=user, record_table="mbr_templates",
+                                 record_id=str(mbr_id), meaning="aprueba",
+                                 comment="Aprobación desde bandeja DT")
+    cur.execute("""UPDATE mbr_templates SET estado='aprobado', aprobado_por=?,
+                     aprobado_at_utc=datetime('now','utc'), aprobado_signature_id=?
+                   WHERE id=?""", (user, sig_id, mbr_id))
+    audit_log(cur, usuario=user, accion="APROBAR_MBR", tabla="mbr_templates",
+              registro_id=mbr_id, antes={"estado": "en_revision"},
+              despues={"estado": "aprobado", "signature_id": sig_id})
+    conn.commit()
+    return jsonify({"ok": True, "estado": "aprobado"})
+
+
+@bp.route("/api/brd/bandeja-dt", methods=["GET"])
+def bandeja_dt():
+    """Bandeja del Director Técnico / Calidad: decisiones que requieren su firma · MBRs por
+    aprobar + lotes por liberar (9-jun). Solo Dir.Téc/Calidad/Admin."""
+    err = _require_login()
+    if err:
+        return err
+    u = session.get("compras_user", "")
+    if u not in ADMIN_USERS and u not in CALIDAD_USERS:
+        return jsonify({"error": "solo Dirección Técnica / Calidad / Admin"}), 403
+    conn = get_db()
+    try:
+        mbrs = conn.execute(
+            "SELECT id, COALESCE(producto_nombre,'') AS producto, COALESCE(version,1) AS version, "
+            "COALESCE(creado_por,'') AS creado_por FROM mbr_templates "
+            "WHERE estado='en_revision' ORDER BY id DESC LIMIT 100").fetchall()
+    except Exception:
+        mbrs = []
+    try:
+        lotes = conn.execute(
+            "SELECT e.id, COALESCE(e.numero_op,'') AS numero_op, COALESCE(e.lote,'') AS lote, "
+            "COALESCE(e.fase,'fabricacion') AS fase, COALESCE(m.producto_nombre,'') AS producto, "
+            "COALESCE(e.completado_at_utc,'') AS completado_at FROM ebr_ejecuciones e "
+            "LEFT JOIN mbr_templates m ON m.id=e.mbr_template_id "
+            "WHERE COALESCE(e.estado,'') IN ('completado','en_revision_qc') "
+            "ORDER BY e.completado_at_utc DESC LIMIT 100").fetchall()
+    except Exception:
+        lotes = []
+    return jsonify({"ok": True,
+                    "mbr_pendientes": [dict(r) for r in mbrs],
+                    "lotes_por_liberar": [dict(r) for r in lotes]})
+
+
+_BANDEJA_DT_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Bandeja · Dirección Técnica · EOS</title>
+<link rel="stylesheet" href="/static/cortex.css">
+<style>
+body{font-family:var(--cx-font,'Inter',system-ui,sans-serif);background:var(--cx-bg,#f4f4f7);color:var(--cx-text,#18181b);margin:0;padding:24px;font-variant-numeric:tabular-nums}
+.wrap{max-width:1100px;margin:0 auto}
+a.back{color:var(--cx-primary,#6d28d9);font-size:13px;font-weight:600;text-decoration:none}
+h1{font-size:24px;font-weight:800;letter-spacing:-.4px;margin:8px 0 2px}
+.sub{color:var(--cx-text-mute,#71717a);font-size:13px;margin-bottom:20px}
+.card{background:var(--cx-card,#fff);border:1px solid var(--cx-border-soft,#f1f1f4);border-radius:14px;padding:22px 26px;box-shadow:0 1px 3px rgba(24,24,27,.04);margin-bottom:18px}
+.sectit{font-size:17px;font-weight:800;color:var(--cx-text,#18181b);margin:0 0 3px}
+.sectit .badge{font-size:12px;background:var(--cx-warn-pale,#fffbeb);color:var(--cx-warn,#f59e0b);font-weight:800;padding:2px 10px;border-radius:20px;margin-left:8px;vertical-align:middle}
+.sechint{font-size:12.5px;color:var(--cx-text-mute,#71717a);margin-bottom:14px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{padding:12px;text-align:left;border-bottom:1px solid var(--cx-border-soft,#f1f1f4);vertical-align:middle}
+th{color:var(--cx-text-mute,#71717a);font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:700}
+td{color:var(--cx-text-soft,#3f3f46)}
+.mono{font-family:var(--cx-font-mono,ui-monospace,monospace)}
+.muted{color:var(--cx-text-faint,#a1a1aa)}
+.bt{padding:8px 15px;border-radius:9px;font-size:12.5px;font-weight:600;border:none;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:5px;color:#fff}
+.bt-ap{background:var(--cx-success,#15803d)}.bt-ver{background:var(--cx-primary,#6d28d9)}
+</style></head>
+<body>
+<div class="wrap">
+  <a class="back" href="/inventarios">&larr; Planta</a>
+  <h1>&#128203; Bandeja &middot; Dirección Técnica</h1>
+  <div class="sub">Decisiones que requieren tu firma &middot; aprobar procedimientos (MBR) y liberar lotes.</div>
+  <div id="cont"><div class="muted">Cargando&hellip;</div></div>
+</div>
+<script>
+function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
+function dt(s){return s?esc(String(s).substring(0,16).replace('T',' ')):'—';}
+async function load(){
+  try{
+    var r=await fetch('/api/brd/bandeja-dt',{credentials:'same-origin',cache:'no-store'});
+    if(r.status===401){location.href='/login';return;}
+    if(r.status===403){document.getElementById('cont').innerHTML='<div class="card">Solo Dirección Técnica / Calidad / Admin.</div>';return;}
+    var d=await r.json();
+    var mbr=d.mbr_pendientes||[], lot=d.lotes_por_liberar||[];
+    var h='<div class="card"><div class="sectit">&#128221; MBR por aprobar'+(mbr.length?'<span class="badge">'+mbr.length+'</span>':'')+'</div>'+
+      '<div class="sechint">Procedimientos maestros en revisión esperando tu aprobación (e-firma).</div>'+
+      '<table><thead><tr><th>Producto</th><th>Versión</th><th>Creado por</th><th>Acción</th></tr></thead><tbody>'+
+      (mbr.length?mbr.map(function(m){return '<tr><td>'+esc(m.producto)+'</td><td>v'+esc(m.version)+'</td><td>'+esc(m.creado_por||'—')+'</td><td><button class="bt bt-ap" onclick="aprobar('+m.id+',this)">&#10003; Aprobar</button></td></tr>';}).join(''):'<tr><td colspan="4" class="muted">Nada pendiente de aprobar.</td></tr>')+
+      '</tbody></table></div>';
+    h+='<div class="card"><div class="sectit">&#128275; Lotes por liberar'+(lot.length?'<span class="badge">'+lot.length+'</span>':'')+'</div>'+
+      '<div class="sechint">Lotes completados esperando liberación de Calidad/Dirección Técnica.</div>'+
+      '<table><thead><tr><th>N&deg; orden</th><th>Producto</th><th>N&deg; lote</th><th>Fase</th><th>Completado</th><th>Acción</th></tr></thead><tbody>'+
+      (lot.length?lot.map(function(l){var url=(l.fase==='envasado'?'/planta/legajo-envasado/':'/planta/orden/')+l.id;return '<tr><td class="mono">'+esc(l.numero_op||('EBR-'+l.id))+'</td><td>'+esc(l.producto)+'</td><td class="mono">'+esc(l.lote)+'</td><td>'+esc(l.fase)+'</td><td class="muted">'+dt(l.completado_at)+'</td><td><a class="bt bt-ver" href="'+url+'">Abrir &amp; liberar &rarr;</a></td></tr>';}).join(''):'<tr><td colspan="6" class="muted">Ningún lote esperando liberación.</td></tr>')+
+      '</tbody></table></div>';
+    document.getElementById('cont').innerHTML=h;
+  }catch(e){document.getElementById('cont').innerHTML='<div class="card" style="color:#b91c1c">Error de red: '+esc(e.message)+'</div>';}
+}
+async function aprobar(id,btn){
+  if(!confirm('¿Aprobar este MBR con tu firma electrónica? (queda auditado · Part 11)'))return;
+  btn.disabled=true; btn.textContent='Aprobando…';
+  try{
+    var r=await fetch('/api/brd/mbr/'+id+'/aprobar-rapido',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:'{}'});
+    var d=await r.json();
+    if(!r.ok||!d.ok){alert('No se pudo aprobar: '+((d&&d.error)||r.status));btn.disabled=false;btn.textContent='Aprobar';return;}
+    load();
+  }catch(e){alert('Error: '+(e.message||e));btn.disabled=false;btn.textContent='Aprobar';}
+}
+load();
+</script>
+</body></html>"""
+
+
+@bp.route("/planta/bandeja-dt", methods=["GET"])
+def bandeja_dt_page():
+    """Bandeja de Dirección Técnica · decisiones pendientes · premium · 9-jun-2026."""
+    if not session.get("compras_user"):
+        return Response('<script>location.href="/login?next=/planta/bandeja-dt"</script>',
+                        mimetype="text/html")
+    return Response(_BANDEJA_DT_HTML, mimetype="text/html")
 
 
 @bp.route("/brd/despeje/<int:ebr_id>", methods=["GET"])

@@ -6059,6 +6059,20 @@ def test_golden_mbr_genera_formula_case_insensitive(app, db_clean):
         _exec("DELETE FROM maestro_mps WHERE codigo_mp='MP09997'")
 
 
+def test_golden_bandeja_dt(app, db_clean):
+    """Bandeja Dirección Técnica (9-jun): /api/brd/bandeja-dt lista MBR por aprobar + lotes
+    por liberar · solo Dir.Téc/Calidad/Admin (operario → 403). La página premium carga."""
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/brd/bandeja-dt')
+    assert r.status_code == 200, r.data
+    d = r.get_json()
+    assert d['ok'] and 'mbr_pendientes' in d and 'lotes_por_liberar' in d, d
+    p = cs.get('/planta/bandeja-dt')
+    assert p.status_code == 200 and b'Direcci' in p.data, p.status_code
+    co = _login(app, 'luis')  # operario → 403
+    assert co.get('/api/brd/bandeja-dt').status_code == 403
+
+
 def test_golden_analitica_batch(app, db_clean):
     """Analítica del batch (gerencia / Dirección Técnica · 9-jun): /api/brd/analitica-lotes
     agrega los tiempos del EBR (ciclo, cuellos, rendimiento, productividad) · solo Dir.Téc/
