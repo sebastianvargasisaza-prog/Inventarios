@@ -1764,6 +1764,24 @@ def ebr_vista_completa(ebr_id):
     # Para un legajo de ENVASADO, el cuerpo es "Lotes de Producto por Presentación"
     # (envase × unidades × área), leído de la tabla `envasado` por el lote físico.
     out['fase'] = out['header'].get('fase', 'fabricacion')
+    # Rol del usuario + permisos (segregación de funciones GMP · la UI se adapta · 9-jun).
+    # El backend YA bloquea (403); esto es para que la UI muestre el rol y oculte lo que
+    # no le toca. Operario ejecuta · Calidad verifica/libera/corrige · Admin/Dir.Téc todo.
+    _u = session.get("compras_user", "")
+    _es_admin = _u in ADMIN_USERS
+    _es_calidad = _u in CALIDAD_USERS
+    _es_planta = _u in PLANTA_USERS
+    out['mi_rol'] = {
+        'usuario': _u,
+        'rol': ('Dirección Técnica / Admin' if _es_admin
+                else 'Calidad / Aseguramiento' if _es_calidad
+                else 'Operario' if _es_planta else 'Usuario'),
+        'puede_ejecutar': (_es_planta or _es_calidad or _es_admin),
+        'puede_corregir': (_es_calidad or _es_admin),
+        'puede_verificar': (_es_calidad or _es_admin),
+        'puede_liberar': (_es_calidad or _es_admin),
+        'puede_aprobar': (_es_calidad or _es_admin),
+    }
     if out['fase'] == 'envasado':
         out['envasado_presentaciones'] = []
         try:
@@ -5745,6 +5763,7 @@ async function load(){
     document.getElementById('cab').innerHTML=
       '<div class="ortit">ORDEN DE ENVASADO N°: '+esc(h.numero_op||('OF-'+EBR_ID))+'</div>'+
       '<div class="prod">'+esc(h.producto||h.titulo||'—')+'</div>'+
+      '<div style="margin:-10px 0 18px"><span style="display:inline-flex;align-items:center;gap:5px;background:var(--cx-primary-pale,#f5f3ff);color:var(--cx-primary,#6d28d9);font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;border:1px solid var(--cx-primary-light,#a78bfa)">&#128100; '+esc((d.mi_rol&&d.mi_rol.rol)||'Usuario')+'</span></div>'+
       '<div class="grid">'+
         fld('N° Lote Bulk','<span class="mono">'+esc(h.lote_codigo||'—')+'</span>')+
         fld('Tamaño Bulk',esc(tamBulk))+
@@ -5759,7 +5778,7 @@ async function load(){
         '<a class="bt bt-add" href="/planta/instrucciones-envasado/'+EBR_ID+'">&#9654; Instrucciones de Envasado</a>'+
         '<button class="bt bt-pdf" onclick="adicionarLote()">+ Adicionar Lote</button>'+
         '<a class="bt bt-pdf" href="/api/brd/ebr/'+EBR_ID+'/pdf" target="_blank">&#128196; Descargar</a>'+
-        '<button class="bt bt-pdf" onclick="regenerarMBR()" title="Crea una nueva versión del MBR con los pasos de envasado actualizados (GMP · obsoleta el anterior)">&#8635; Regenerar MBR</button>'+
+        ((d.mi_rol&&d.mi_rol.puede_aprobar)?'<button class="bt bt-pdf" onclick="regenerarMBR()" title="Crea una nueva versión del MBR con los pasos de envasado actualizados (GMP · obsoleta el anterior · solo Calidad/Dirección Técnica)">&#8635; Regenerar MBR</button>':'')+
         '<a class="bt bt-back" href="/inventarios#envasado">&#9198; Atrás</a>'+
       '</div>';
     window._prod=h.producto||h.titulo||''; window._lote=h.lote_codigo||'';
@@ -5919,7 +5938,8 @@ async function load(){
     var uds=pres.reduce(function(a,p){return a+(Number(p.unidades)||0);},0);
     document.getElementById('cab').innerHTML=
       '<div class="htop">'+
-        '<div class="htit">INSTRUCCIONES DE ENVASADO</div>'+
+        '<div><div class="htit">INSTRUCCIONES DE ENVASADO</div>'+
+          '<div style="margin-top:7px"><span style="display:inline-flex;align-items:center;gap:5px;background:var(--cx-primary-pale,#f5f3ff);color:var(--cx-primary,#6d28d9);font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;border:1px solid var(--cx-primary-light,#a78bfa)">&#128100; '+esc((d.mi_rol&&d.mi_rol.rol)||'Usuario')+'</span></div></div>'+
         '<div class="btns">'+
           '<a class="bt bt-tl" href="/brd/timeline/'+EBR_ID+'">&#9198; Timeline Batch Record</a>'+
           '<a class="bt bt-oe" href="/planta/legajo-envasado/'+EBR_ID+'">&#128196; Orden de Envase</a>'+
@@ -5937,7 +5957,7 @@ async function load(){
         fld('Fecha Final',dt(h.completado_at_utc))+
         fld('Estado Actual','<b style="color:'+estCol(estado)+'">'+esc(estado)+'</b>')+
       '</div>';
-    var editable=(estado==='iniciado'||estado==='en_proceso');
+    var editable=(estado==='iniciado'||estado==='en_proceso') && !!(d.mi_rol && d.mi_rol.puede_ejecutar);
     function cumpleCell(c){if(c===1)return '<span class="ok">Sí &#10003;</span>';if(c===0)return '<span class="no">No &#10007;</span>';return '<span class="pend">Pendiente</span>';}
     function regBtn(t){return editable?('<button class="btreg" onclick="prox()">+ '+t+'</button>'):'';}
     function abI(){return '<button class="ab ab-i" onclick="prox()" title="Detalle">i</button>';}

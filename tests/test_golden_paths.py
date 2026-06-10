@@ -6013,6 +6013,10 @@ def test_golden_vista_completa_envasado_presentaciones(app, db_clean):
         assert v.status_code == 200, v.data
         d = v.get_json()
         assert d.get('fase') == 'envasado', d.get('fase')
+        # rol + permisos (segregación GMP · la UI se adapta) · sebastian = admin/dir.téc
+        rol = d.get('mi_rol') or {}
+        assert rol.get('puede_aprobar') is True and rol.get('puede_ejecutar') is True, rol
+        assert 'Admin' in (rol.get('rol') or '') or 'Dir' in (rol.get('rol') or ''), rol
         pres = d.get('envasado_presentaciones') or []
         assert any(p['unidades'] == 120 and 'Frasco' in (p.get('presentacion') or '')
                    for p in pres), pres
