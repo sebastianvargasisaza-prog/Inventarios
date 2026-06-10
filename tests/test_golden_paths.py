@@ -6059,6 +6059,23 @@ def test_golden_mbr_genera_formula_case_insensitive(app, db_clean):
         _exec("DELETE FROM maestro_mps WHERE codigo_mp='MP09997'")
 
 
+def test_golden_analitica_batch(app, db_clean):
+    """Analítica del batch (gerencia / Dirección Técnica · 9-jun): /api/brd/analitica-lotes
+    agrega los tiempos del EBR (ciclo, cuellos, rendimiento, productividad) · solo Dir.Téc/
+    Calidad/Admin (operario → 403). La página premium carga."""
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/brd/analitica-lotes')
+    assert r.status_code == 200, r.data
+    d = r.get_json()
+    for k in ('resumen', 'ciclo_por_fase', 'cuellos', 'rendimiento', 'productividad'):
+        assert k in d, (k, d)
+    assert d['ok'] and isinstance(d['resumen'].get('total'), int), d
+    p = cs.get('/planta/analitica-batch')
+    assert p.status_code == 200 and b'Anal' in p.data, p.status_code
+    co = _login(app, 'luis')  # operario · Planta, no gerencia
+    assert co.get('/api/brd/analitica-lotes').status_code == 403
+
+
 def test_golden_firmar_liberar_por_rol(app, db_clean):
     """Cierre del batch por roles (9-jun): firmar-rapido 'libera' solo Calidad/Admin (operario
     → 403). Liberar sin completar el lote → 409 (debe terminarse primero)."""

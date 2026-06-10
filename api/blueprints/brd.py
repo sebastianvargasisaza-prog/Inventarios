@@ -6150,6 +6150,195 @@ def instrucciones_envasado_page(ebr_id):
                     mimetype="text/html")
 
 
+@bp.route("/api/brd/analitica-lotes", methods=["GET"])
+def analitica_lotes():
+    """Analítica operativa del batch (gerencia + Dirección Técnica): tiempo de ciclo, duración
+    de procedimientos (cuellos de botella), rendimiento, productividad · derivado de los
+    timestamps que el EBR YA captura (no inventa nada). Solo Dir.Téc/Calidad/Admin · 9-jun-2026."""
+    err = _require_login()
+    if err:
+        return err
+    u = session.get("compras_user", "")
+    if u not in ADMIN_USERS and u not in CALIDAD_USERS:
+        return jsonify({"error": "solo Dirección Técnica / Calidad / Admin"}), 403
+    from datetime import datetime as _DT
+
+    def _pd(s):
+        if not s:
+            return None
+        try:
+            return _DT.fromisoformat(str(s).strip().replace('Z', '').replace(' ', 'T', 1)[:26])
+        except Exception:
+            return None
+
+    def _horas(a, b):
+        da, db = _pd(a), _pd(b)
+        if not da or not db:
+            return None
+        h = (db - da).total_seconds() / 3600.0
+        return h if h >= 0 else None
+
+    def _avg(xs):
+        return round(sum(xs) / len(xs), 2) if xs else None
+
+    conn = get_db()
+    try:
+        lotes = conn.execute(
+            """SELECT e.id, COALESCE(e.fase,'fabricacion') AS fase,
+                      COALESCE(m.producto_nombre,'') AS producto, COALESCE(e.estado,'') AS estado,
+                      e.iniciado_at_utc, e.completado_at_utc, e.liberado_at_utc,
+                      e.yield_pct, COALESCE(e.cantidad_objetivo_g,0) AS obj, e.cantidad_real_g
+                 FROM ebr_ejecuciones e
+                 LEFT JOIN mbr_templates m ON m.id = e.mbr_template_id""").fetchall()
+    except Exception:
+        lotes = []
+    estados, ciclo_fase, rend_prod, libera = {}, {}, {}, []
+    for r in lotes:
+        d = dict(r)
+        est = (d.get('estado') or '').lower()
+        estados[est] = estados.get(est, 0) + 1
+        c = _horas(d.get('iniciado_at_utc'), d.get('completado_at_utc'))
+        if c is not None:
+            ciclo_fase.setdefault(d.get('fase') or 'fabricacion', []).append(c)
+        y = d.get('yield_pct')
+        if y is None and d.get('obj') and d.get('cantidad_real_g'):
+            try:
+                y = float(d['cantidad_real_g']) / float(d['obj']) * 100
+            except Exception:
+                y = None
+        if y is not None:
+            rend_prod.setdefault(d.get('producto') or '—', []).append(float(y))
+        lh = _horas(d.get('completado_at_utc'), d.get('liberado_at_utc'))
+        if lh is not None:
+            libera.append(lh)
+    try:
+        pasos = conn.execute(
+            """SELECT p.descripcion, COALESCE(p.operario_username,'') AS operario,
+                      p.iniciado_at_utc, p.completado_at_utc
+                 FROM ebr_pasos_ejecutados p
+                WHERE p.completado_at_utc IS NOT NULL""").fetchall()
+    except Exception:
+        pasos = []
+    cuellos, prod_op = {}, {}
+    for r in pasos:
+        d = dict(r)
+        m = _horas(d.get('iniciado_at_utc'), d.get('completado_at_utc'))
+        if m is not None:
+            cuellos.setdefault((d.get('descripcion') or '—')[:70], []).append(m * 60.0)
+        op = d.get('operario') or ''
+        if op:
+            prod_op[op] = prod_op.get(op, 0) + 1
+    return jsonify({
+        'ok': True,
+        'resumen': {
+            'total': len(lotes),
+            'en_proceso': sum(v for k, v in estados.items() if k in ('iniciado', 'en_proceso')),
+            'completados': estados.get('completado', 0) + estados.get('en_revision_qc', 0),
+            'liberados': estados.get('liberado', 0),
+            'rechazados': estados.get('rechazado', 0),
+        },
+        'ciclo_por_fase': sorted(
+            [{'fase': f, 'lotes': len(v), 'ciclo_horas_prom': _avg(v)} for f, v in ciclo_fase.items()],
+            key=lambda x: -(x['ciclo_horas_prom'] or 0)),
+        'cuellos': sorted(
+            [{'paso': p, 'n': len(v), 'duracion_min_prom': _avg(v)} for p, v in cuellos.items()],
+            key=lambda x: -(x['duracion_min_prom'] or 0))[:10],
+        'rendimiento': sorted(
+            [{'producto': p, 'lotes': len(v), 'yield_prom': _avg(v)} for p, v in rend_prod.items()],
+            key=lambda x: -(x['yield_prom'] or 0))[:12],
+        'productividad': sorted(
+            [{'operario': o, 'pasos': n} for o, n in prod_op.items()], key=lambda x: -x['pasos'])[:12],
+        'completar_a_liberar_horas_prom': _avg(libera),
+    })
+
+
+_ANALITICA_BATCH_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Analítica del Batch · EOS</title>
+<link rel="stylesheet" href="/static/cortex.css">
+<style>
+body{font-family:var(--cx-font,'Inter',system-ui,sans-serif);background:var(--cx-bg,#f4f4f7);color:var(--cx-text,#18181b);margin:0;padding:24px;font-variant-numeric:tabular-nums}
+.wrap{max-width:1200px;margin:0 auto}
+a.back{color:var(--cx-primary,#6d28d9);font-size:13px;font-weight:600;text-decoration:none}
+h1{font-size:24px;font-weight:800;letter-spacing:-.4px;margin:8px 0 2px}
+.sub{color:var(--cx-text-mute,#71717a);font-size:13px;margin-bottom:20px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:22px}
+.kpi{background:var(--cx-card,#fff);border:1px solid var(--cx-border-soft,#f1f1f4);border-radius:14px;padding:18px 20px;box-shadow:0 1px 3px rgba(24,24,27,.04)}
+.kpi .v{font-size:27px;font-weight:800;color:var(--cx-text,#18181b)}
+.kpi .l{font-size:11.5px;font-weight:700;color:var(--cx-text-mute,#71717a);text-transform:uppercase;letter-spacing:.4px;margin-top:2px}
+.card{background:var(--cx-card,#fff);border:1px solid var(--cx-border-soft,#f1f1f4);border-radius:14px;padding:22px 26px;box-shadow:0 1px 3px rgba(24,24,27,.04);margin-bottom:18px}
+.sectit{font-size:16px;font-weight:800;color:var(--cx-text,#18181b);margin:0 0 3px}
+.sechint{font-size:12.5px;color:var(--cx-text-mute,#71717a);margin-bottom:14px}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{padding:11px 12px;text-align:left;border-bottom:1px solid var(--cx-border-soft,#f1f1f4)}
+th{color:var(--cx-text-mute,#71717a);font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:700}
+td{color:var(--cx-text-soft,#3f3f46)}
+.num{text-align:right;font-weight:700}
+.bar{height:8px;border-radius:6px;background:var(--cx-primary,#6d28d9);display:inline-block;vertical-align:middle}
+.bartrk{background:var(--cx-primary-pale,#f5f3ff);border-radius:6px;width:122px;display:inline-block;vertical-align:middle;margin-right:8px}
+.muted{color:var(--cx-text-faint,#a1a1aa)}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:820px){.cols{grid-template-columns:1fr}}
+</style></head>
+<body>
+<div class="wrap">
+  <a class="back" href="/inventarios">&larr; Planta</a>
+  <h1>&#128202; Analítica del Batch</h1>
+  <div class="sub">Tiempos, rendimiento y productividad &middot; derivado de los registros de lote (EBR) en vivo.</div>
+  <div id="cont"><div class="muted">Cargando&hellip;</div></div>
+</div>
+<script>
+function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
+function nf(n,dec){return n==null?'—':Number(n).toLocaleString('es-CO',{maximumFractionDigits:dec==null?1:dec});}
+function kpi(v,l){return '<div class="kpi"><div class="v">'+(typeof v==='number'?nf(v,0):esc(v))+'</div><div class="l">'+l+'</div></div>';}
+function tbl(heads,rows){var h='<table><thead><tr>';heads.forEach(function(x,i){h+='<th'+(i>0?' class="num"':'')+'>'+esc(x)+'</th>';});h+='</tr></thead><tbody>';
+  if(!rows.length){h+='<tr><td colspan="'+heads.length+'" class="muted">Sin datos aún.</td></tr>';}
+  else{rows.forEach(function(r){h+='<tr>';r.forEach(function(c,i){h+='<td'+(i>0?' class="num"':'')+'>'+(c==null?'—':esc(c))+'</td>';});h+='</tr>';});}
+  return h+'</tbody></table>';}
+async function load(){
+  try{
+    var r=await fetch('/api/brd/analitica-lotes',{credentials:'same-origin',cache:'no-store'});
+    if(r.status===401){location.href='/login';return;}
+    if(r.status===403){document.getElementById('cont').innerHTML='<div class="card">Solo Dirección Técnica / Calidad / Admin.</div>';return;}
+    var d=await r.json();
+    if(!d.ok){document.getElementById('cont').innerHTML='<div class="card" style="color:#b91c1c">Error</div>';return;}
+    var R=d.resumen||{};
+    var h='<div class="kpis">'+
+      kpi(R.total,'Lotes totales')+kpi(R.en_proceso,'En proceso')+kpi(R.completados,'Completados')+
+      kpi(R.liberados,'Liberados')+kpi(R.rechazados,'Rechazados')+
+      kpi(d.completar_a_liberar_horas_prom!=null?(nf(d.completar_a_liberar_horas_prom)+' h'):'—','Completar→Liberar')+
+    '</div>';
+    h+='<div class="cols">';
+    h+='<div class="card"><div class="sectit">&#9201;&#65039; Tiempo de ciclo por fase</div><div class="sechint">Horas promedio de inicio a completado.</div>'+
+      tbl(['Fase','Lotes','Horas prom'],(d.ciclo_por_fase||[]).map(function(x){return [x.fase,x.lotes,nf(x.ciclo_horas_prom)+' h'];}))+'</div>';
+    h+='<div class="card"><div class="sectit">&#128200; Rendimiento (yield) por producto</div><div class="sechint">% real vs objetivo · ¿se pierde granel?</div>'+
+      tbl(['Producto','Lotes','Yield prom'],(d.rendimiento||[]).map(function(x){return [x.producto,x.lotes,nf(x.yield_prom)+'%'];}))+'</div>';
+    h+='</div>';
+    var cu=d.cuellos||[]; var maxc=cu.length?Math.max.apply(null,cu.map(function(x){return x.duracion_min_prom||0;})):1;
+    h+='<div class="card"><div class="sectit">&#128269; Cuellos de botella · duración por procedimiento</div><div class="sechint">Los pasos que más tardan (minutos promedio). Ahí se pierde tiempo.</div>'+
+      '<table><thead><tr><th>Procedimiento</th><th class="num">Veces</th><th>Duración prom</th></tr></thead><tbody>'+
+      (cu.length?cu.map(function(x){var w=Math.round((x.duracion_min_prom||0)/(maxc||1)*120);return '<tr><td>'+esc(x.paso)+'</td><td class="num">'+x.n+'</td><td><span class="bartrk"><span class="bar" style="width:'+w+'px"></span></span>'+nf(x.duracion_min_prom)+' min</td></tr>';}).join(''):'<tr><td colspan="3" class="muted">Sin pasos con tiempos aún.</td></tr>')+
+      '</tbody></table></div>';
+    h+='<div class="card"><div class="sectit">&#128119; Productividad por operario</div><div class="sechint">Pasos ejecutados (registrados).</div>'+
+      tbl(['Operario','Pasos'],(d.productividad||[]).map(function(x){return [x.operario,x.pasos];}))+'</div>';
+    document.getElementById('cont').innerHTML=h;
+  }catch(e){document.getElementById('cont').innerHTML='<div class="card" style="color:#b91c1c">Error de red: '+esc(e.message)+'</div>';}
+}
+load();
+</script>
+</body></html>"""
+
+
+@bp.route("/planta/analitica-batch", methods=["GET"])
+def analitica_batch_page():
+    """Tablero de analítica del batch (gerencia / Dirección Técnica) · premium · 9-jun-2026."""
+    if not session.get("compras_user"):
+        return Response('<script>location.href="/login?next=/planta/analitica-batch"</script>',
+                        mimetype="text/html")
+    return Response(_ANALITICA_BATCH_HTML, mimetype="text/html")
+
+
 @bp.route("/brd/despeje/<int:ebr_id>", methods=["GET"])
 def despeje_imprimible(ebr_id):
     """Formato IMPRIMIBLE del Despeje de Línea - Dispensación (MyBatch: el ícono
