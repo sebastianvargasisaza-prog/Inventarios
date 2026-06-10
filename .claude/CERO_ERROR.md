@@ -5,7 +5,7 @@
 > **Cuando encuentres o arregles un bug con un patrón nuevo, AGRÉGALO aquí en el mismo commit.**
 > Mantenlo denso y accionable (checklist, no narrativa). La historia detallada vive en `SESSION_LOG/`.
 
-Última actualización: **2026-06-08**
+Última actualización: **2026-06-10**
 
 ---
 
@@ -34,6 +34,7 @@
 - **M7 · TOTAL vs PORCIÓN relevante, explícito.** Antes de sumar pregunta: ¿esto es para Animus solo, para un cliente, o total? (La sugerencia de próxima producción usa la porción Animus; la demanda de MP usa el lote completo.)
 - **M8 · Datos externos agregados: SCOPEAR, no sumar ciego.** Al leer Shopify/multi-location/multi-bodega, filtra a la entidad correcta (solo ÁNIMUS LAB); si no podés, MAX o la dominante, NUNCA la SUMA (una location fantasma negativa daba -235).
 - **M9 · Snapshot vs VIVO.** Una vista "fuente de la verdad" no sirve snapshots viejos en silencio. Auto-refresh si stale (>10min), lock-guarded, y mostrar la antigüedad. Si el usuario dice "debe ser en vivo", es porque el snapshot lo engaña.
+- **M10 · EBR multi-fase: `ebr_ejecuciones.lote` es UNIQUE (database.py) → un lote físico NO puede tener 2 EBR con el mismo string `lote`.** Para que el MISMO lote físico tenga legajo de Fabricación (OP) + Envasado (OF) + Acondicionamiento (OA) — órdenes distintas como MyBatch — la LLAVE `lote` lleva sufijo de fase (`-OF`/`-OA`) y el lote físico real va en `lote_codigo`. `crear_ebr_desde_mbr` (brd.py) hace esto: idempotencia y dedup van por `(COALESCE(lote_codigo,lote), fase)`, NO por `lote` crudo; resuelve colisión del UNIQUE con contador. Toda lectura del lote para mostrar/cruzar (vista-completa, ordenes-unificadas, JOIN con envasado/acondicionamiento) usa `COALESCE(lote_codigo, lote)`, nunca `lote` crudo (mostraría la llave sufijada y rompería el dedup contra filas simples). El hook de auto-creación al envasar/acondicionar pasa el lote FÍSICO; la función sufija. Cazado 10-jun construyendo OA (el guard viejo `WHERE lote=?` bloqueaba OF/OA del mismo lote que ya tenía OP). ⚠ `POST /api/brd/ebr` (iniciar_ebr) es OTRA ruta: NO sufija · el caller pasa el lote ya sufijado.
 
 ---
 

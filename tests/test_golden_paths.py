@@ -6215,12 +6215,16 @@ def test_golden_envasado_hook_crea_legajo_of(app, db_clean):
         r = cs.post('/api/envasado', json={'producto': 'Blush Balm', 'lote': _lote,
                     'unidades': 10}, headers=csrf_headers())
         assert r.status_code in (200, 201), r.data
-        ebrs = _query("SELECT id FROM ebr_ejecuciones WHERE lote=?", (_lote,))
+        # La llave `lote` lleva sufijo de fase (-OF) y el lote físico va en lote_codigo
+        # (multi-fase OP/OF/OA · 10-jun) → consultar por el lote FÍSICO + fase envasado.
+        ebrs = _query("SELECT id FROM ebr_ejecuciones "
+                      "WHERE COALESCE(lote_codigo, lote)=? AND COALESCE(fase,'')='envasado'",
+                      (_lote,))
         assert ebrs, 'BUG: el hook no creó el legajo EBR de envasado (OF)'
     finally:
         _exec("DELETE FROM ebr_pasos_ejecutados WHERE ebr_id IN "
-              "(SELECT id FROM ebr_ejecuciones WHERE lote='L-OF-ENVTEST')")
-        _exec("DELETE FROM ebr_ejecuciones WHERE lote='L-OF-ENVTEST'")
+              "(SELECT id FROM ebr_ejecuciones WHERE COALESCE(lote_codigo, lote)='L-OF-ENVTEST')")
+        _exec("DELETE FROM ebr_ejecuciones WHERE COALESCE(lote_codigo, lote)='L-OF-ENVTEST'")
         _exec("DELETE FROM envasado WHERE lote='L-OF-ENVTEST'")
 
 

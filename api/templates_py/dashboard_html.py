@@ -1721,6 +1721,22 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     </div>
   </div>
 
+  <!-- Órdenes de Acondicionamiento (con estado + legajo) · como MyBatch · 10-jun-2026 -->
+  <div style="background:#fff;border:1px solid #e9d5ff;border-radius:10px;padding:14px;margin-bottom:18px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+      <h3 style="margin:0;font-size:14px;color:#6d28d9">&#128203; Órdenes de Acondicionamiento</h3>
+      <button onclick="cargarOrdenesAcondicionamiento()" style="background:#7c3aed;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer">&#8635; Actualizar</button>
+    </div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="background:#f5f3ff;color:#5b21b6">
+        <th style="text-align:left;padding:8px">N&deg; de orden</th><th style="text-align:left;padding:8px">Producto</th>
+        <th style="text-align:left;padding:8px">N&deg; lote</th><th style="text-align:left;padding:8px">Estado</th>
+        <th style="text-align:left;padding:8px">Fecha</th><th style="padding:8px">Legajo</th>
+      </tr></thead>
+      <tbody id="ordenes-acond-tbody"><tr><td colspan="6" style="text-align:center;color:#999;padding:10px">Cargando&hellip;</td></tr></tbody>
+    </table></div>
+  </div>
+
   <!-- Panel activo de acondicionamiento — aparece al clic en Acondicionar desde la cola -->
   <div id="ac-panel-activo" style="display:none;background:#fff;border:2px solid #0d47a1;border-radius:10px;padding:18px;margin-bottom:18px">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;gap:8px">
@@ -8982,6 +8998,52 @@ function cargarOrdenesEnvasado(){
     }).join('');
   }).catch(function(){tb.innerHTML='<tr><td colspan="6" style="color:#c00;text-align:center;padding:10px">Error cargando órdenes</td></tr>';});
 }
+async function crearLegajoAcondicionamiento(btn){
+  // Crea el legajo EBR de acondicionamiento (OA) y entra a construirlo. Si falta el
+  // MBR aprobado, ofrece generarlo+aprobarlo (con la firma del usuario) y reintenta.
+  var prod=btn.getAttribute('data-prod'), lote=btn.getAttribute('data-lote');
+  if(!prod){return;}
+  btn.disabled=true; var _t=btn.textContent; btn.textContent='Creando…';
+  async function _crear(){
+    var r=await fetch('/api/brd/legajo-rapido',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({producto:prod,lote:lote||prod,fase:'acondicionamiento'})});
+    return {r:r,d:await r.json()};
+  }
+  try{
+    var res=await _crear();
+    if(res.r.status===409 && /MBR/.test(((res.d&&res.d.error)||''))){
+      if(confirm('"'+prod+'" no tiene MBR aprobado.\\n\\n¿Generar y APROBAR su MBR ahora (con tu firma) para hacer la prueba?')){
+        btn.textContent='Aprobando MBR…';
+        var ra=await fetch('/api/brd/mbr/preparar-aprobado',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({producto_nombre:prod})});
+        var da=await ra.json();
+        if(!ra.ok||!da.ok){alert('No se pudo aprobar el MBR: '+((da&&da.error)||ra.status));btn.disabled=false;btn.textContent=_t;return;}
+        btn.textContent='Creando…'; res=await _crear();
+      } else { btn.disabled=false; btn.textContent=_t; return; }
+    }
+    if(!res.r.ok||!res.d.ok){alert('No se pudo crear el legajo: '+((res.d&&res.d.error)||res.r.status));btn.disabled=false;btn.textContent=_t;return;}
+    location.href=res.d.link||('/planta/orden/'+res.d.id);
+  }catch(e){alert('Error: '+(e.message||e));btn.disabled=false;btn.textContent=_t;}
+}
+function cargarOrdenesAcondicionamiento(){
+  // Órdenes de Acondicionamiento (con estado + legajo) · como MyBatch. Reusa el endpoint
+  // unificado /api/brd/ordenes-unificadas?fase=acondicionamiento (estado + link al legajo).
+  var tb=document.getElementById('ordenes-acond-tbody');
+  if(!tb)return;
+  var E=function(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');};
+  fetch('/api/brd/ordenes-unificadas?fase=acondicionamiento').then(function(r){return r.json();}).then(function(d){
+    var ords=(d&&d.ordenes)||[];
+    if(!ords.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#999;padding:10px">Sin órdenes de acondicionamiento aún · acondicioná un lote para crearlas</td></tr>';return;}
+    tb.innerHTML=ords.map(function(o){
+      var leg=o.link?('<a href="'+E(o.link)+'" style="color:#7c3aed;font-weight:700;text-decoration:none">Abrir legajo →</a>'):('<button data-prod="'+E(o.producto)+'" data-lote="'+E(o.lote_bulk||o.numero_op||'')+'" onclick="crearLegajoAcondicionamiento(this)" style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:12px;cursor:pointer">Crear legajo &rarr;</button>');
+      return '<tr style="border-bottom:1px solid #f1f5f9">'+
+        '<td style="padding:8px;font-weight:600">'+E(o.numero_op)+'</td>'+
+        '<td style="padding:8px">'+E(o.producto)+'</td>'+
+        '<td style="padding:8px">'+E(o.lote_bulk||'—')+'</td>'+
+        '<td style="padding:8px">'+E(o.estado||'—')+'</td>'+
+        '<td style="padding:8px;color:#64748b">'+E(o.fecha||'—')+'</td>'+
+        '<td style="padding:8px;text-align:center">'+leg+'</td></tr>';
+    }).join('');
+  }).catch(function(){tb.innerHTML='<tr><td colspan="6" style="color:#c00;text-align:center;padding:10px">Error cargando órdenes</td></tr>';});
+}
 function loadColaSinEnvasar(){
   if(typeof cargarOrdenesEnvasado==='function')cargarOrdenesEnvasado();
   var tb=document.getElementById('cola-env-tbody');
@@ -9170,6 +9232,7 @@ async function registrarEnvasadoMulti(){
   }
 }
 function loadColaAcond(){
+  if(typeof cargarOrdenesAcondicionamiento==='function')cargarOrdenesAcondicionamiento();
   var tb=document.getElementById('cola-acond-tbody');
   if(!tb)return;
   tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#999;padding:10px">Cargando...</td></tr>';

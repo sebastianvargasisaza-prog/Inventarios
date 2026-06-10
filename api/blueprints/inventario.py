@@ -11712,6 +11712,36 @@ def acondicionamiento_list():
                          VALUES (?,?,?,?,?,?,?)""",
                       (cod, 'Salida', cant, lote_ref, lote_ref, u,
                        f'Consumo acondicionamiento {lote_ref}'))
+        # Reemplazo MyBatch · 10-jun-2026 · LEGAJO OA AUTOMÁTICO de acondicionamiento:
+        # al acondicionar nace el EBR de fase ACONDICIONAMIENTO (la "Orden de
+        # Acondicionamiento") si el producto tiene MBR aprobado con pasos de OA.
+        # Auto-gateado: NO_MBR_APROBADO → no-op (no bloquea · idéntico a antes para
+        # productos sin MBR). Idempotente por (produccion_id, lote, fase): N
+        # presentaciones del mismo lote = 1 solo legajo OA. Espeja el hook de
+        # envasado (línea ~11475) y el de fabricación (línea ~2352).
+        _prod_oa = (d.get('producto', '') or '').strip()
+        _lote_oa = (d.get('lote', '') or '').strip()
+        if _prod_oa and _lote_oa:
+            try:
+                from blueprints.brd import crear_ebr_desde_mbr
+                _ro = crear_ebr_desde_mbr(
+                    c, producto_nombre=_prod_oa, lote=_lote_oa,
+                    produccion_id=(int(d.get('produccion_id') or 0) or None),
+                    usuario=u, fase='acondicionamiento',
+                    area_codigo=(d.get('area_codigo') or '').strip())
+                if _ro.get('ok') and not _ro.get('reusado'):
+                    try:
+                        from database import audit_log as _alo
+                        _alo(c, usuario=u or 'sistema', accion='CREAR_EBR_OA_AUTO',
+                             tabla='ebr_ejecuciones', registro_id=str(_ro.get('id')),
+                             despues={'producto': _prod_oa, 'lote': _lote_oa,
+                                      'fase': 'acondicionamiento',
+                                      'numero_op': _ro.get('numero_op')})
+                    except Exception:
+                        pass
+            except Exception as _eo:
+                __import__('logging').getLogger('inventario').warning(
+                    'crear EBR OA (acondicionamiento) auto fallo (no bloquea): %s', _eo)
         conn.commit()
         return jsonify({'ok': True, 'id': new_id}), 201
     # Sprint Acondicionamiento PRO · 21-may-2026 · paginación + filtros

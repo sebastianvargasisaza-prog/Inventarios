@@ -43,14 +43,15 @@ def _firmar(c, *, record_table, record_id, meaning):
 def test_ebr_por_fase_clona_solo_su_fase(app, db_clean):
     c = _login(app, "sebastian")
     c.patch("/api/identidad/sebastian", json={"cedula": "77777777"}, headers=_h())
-    # MBR multi-fase: 1 dispensación + 1 mezcla (fab) + 3 envasado + 3 acond = 8 pasos
+    # MBR multi-fase: 1 dispensación + 1 mezcla (fab) + 5 envasado + 3 acond = 10 pasos
+    # (los 5 pasos reales de envasado · 9-jun-2026).
     _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_inci, activo) VALUES ('MP-Z','Agua',1)")
     _exec("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo) VALUES ('ZZ-BFASE', 1, 1)")
     _exec("INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje, cantidad_g_por_lote) "
           "VALUES ('ZZ-BFASE','MP-Z','Agua',100,1000)")
     r = c.post("/api/brd/mbr/generar-desde-formula", json={"producto_nombre": "ZZ-BFASE"}, headers=_h())
     assert r.status_code == 201, r.data
-    assert r.get_json()["pasos"] == 8, r.data
+    assert r.get_json()["pasos"] == 10, r.data
     mbr_id = r.get_json()["id"]
     c.post(f"/api/brd/mbr/{mbr_id}/submit", json={}, headers=_h())
     sig = _firmar(c, record_table="mbr_templates", record_id=mbr_id, meaning="aprueba")
@@ -63,7 +64,7 @@ def test_ebr_por_fase_clona_solo_su_fase(app, db_clean):
     oa = c.post("/api/brd/ebr", json={"mbr_template_id": mbr_id, "lote": "BFASE-L1-OA", "fase": "acondicionamiento"}, headers=_h())
     assert op.status_code == 201 and of.status_code == 201 and oa.status_code == 201, (op.data, of.data, oa.data)
     assert op.get_json()["pasos"] == 2, op.data   # dispensación + mezcla
-    assert of.get_json()["pasos"] == 3, of.data   # 3 envasado
+    assert of.get_json()["pasos"] == 5, of.data   # 5 envasado (pasos reales 9-jun)
     assert oa.get_json()["pasos"] == 3, oa.data   # 3 acondicionamiento
 
 

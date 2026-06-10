@@ -233,6 +233,32 @@ no alterado.
 - Activar 'strict' SOLO cuando todos los MBR estén cargados/aprobados (sino frena
   planta). Cubierto por golden GP-62 test_golden_ebr_auto_al_aceptar_produccion.
 
+### 2026-06-10 · Módulo OA (Órdenes de Acondicionamiento) + llave EBR por fase
+- **`crear_ebr_desde_mbr` ahora sufija la llave `lote` por fase** (fabricación=''/
+  envasado='-OF'/acondicionamiento='-OA') y guarda el lote FÍSICO real en
+  `lote_codigo`. Idempotencia y dedup van por `(COALESCE(lote_codigo,lote), fase)`,
+  NO por `lote` crudo (que es UNIQUE en BD). Resuelve colisión del UNIQUE con
+  contador. Efecto: el MISMO lote físico tiene OP+OF+OA conviviendo (órdenes
+  distintas, como MyBatch). Arregla bug latente: el legajo de Envasado solo nacía
+  cuando el lote no chocaba con fabricación. **Toda lectura del lote para mostrar/
+  cruzar usa `COALESCE(lote_codigo, lote)`** (vista-completa, ordenes-unificadas,
+  JOIN con envasado/acondicionamiento). `POST /api/brd/ebr` (iniciar_ebr) NO sufija
+  (el caller pasa el lote ya sufijado).
+- Hook nuevo: `POST /api/acondicionamiento` (inventario.py) crea EBR
+  `fase='acondicionamiento'` auto si hay MBR aprobado (audit `CREAR_EBR_OA_AUTO`,
+  no bloquea · espeja el hook de envasado).
+- `vista-completa`: rama `acondicionamiento` → `acond_presentaciones` (unidades/
+  presentación del lote) + `acond_materiales` (empaque desde `mee_consumido`).
+- Páginas nuevas (HTML server-side, aisladas de producción · espejan Envasado):
+  - `GET /planta/legajo-acondicionamiento/<id>` · la "Orden de Acondicionamiento".
+  - `GET /planta/instrucciones-acondicionamiento/<id>` · ejecución 7 secciones.
+  - `/planta/orden/<id>` redirige fase acond → legajo-acondicionamiento.
+- `ordenes-unificadas?fase=acondicionamiento` agrega filas simples desde la tabla
+  `acondicionamiento` (OA sin legajo aún).
+- Golden: test_acondicionamiento_legajo (nuevo · OP/OF/OA conviven, legajo carga,
+  idempotencia). test_golden_envasado_hook_crea_legajo_of adaptado a
+  COALESCE(lote_codigo,lote). Suite golden 247/247 verde.
+
 ### 2026-05-30 · Fase 2 · IPC fuera de spec → desviación/CAPA automática (mig 203)
 - `reportar_ipc_resultado`: si conforme=0, abre desviación automática vía
   `aseguramiento.crear_desviacion_auto` (tipo proceso, lotes_afectados=lote EBR,

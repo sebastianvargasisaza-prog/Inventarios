@@ -861,13 +861,21 @@ def crear_ebr_desde_mbr(cur, *, producto_nombre, lote, produccion_id=None,
       {ok:True, id, numero_op, reusado:True}     · ya existía para esa producción
       {ok:False, error:'NO_MBR_APROBADO'|'LOTE_DUPLICADO', detail}
     """
-    # Idempotencia por (produccion_id, lote): re-aceptar reusa el legajo de ESE
-    # lote. Batch C · multi-lote: una producción con lotes>1 crea N legajos (uno
-    # por lote físico, lotes distintos), cada uno idempotente por su código.
+    # `ebr_ejecuciones.lote` es UNIQUE a nivel BD. Para que el MISMO lote físico tenga
+    # legajo de fabricación/envasado/acondicionamiento (órdenes OP/OF/OA distintas, como
+    # MyBatch · 10-jun), la LLAVE `lote` lleva sufijo de fase (·OF/·OA) y el lote físico
+    # real se guarda en `lote_codigo`. La idempotencia/dedup van por (lote_codigo, FASE).
+    _fase_norm = fase if fase in _FASES_VALIDAS else 'fabricacion'
+    lote_codigo = (lote or '').strip()
+    _suf = {'fabricacion': '', 'envasado': '-OF', 'acondicionamiento': '-OA'}.get(_fase_norm, '')
+    lote_key = lote_codigo + _suf
+    # Idempotencia por (produccion_id, lote_codigo, FASE): re-aceptar la misma fase reusa
+    # el legajo de ESE lote físico. Batch C · multi-lote: lotes físicos distintos = N legajos.
     if produccion_id is not None:
         ex = cur.execute(
-            "SELECT id, numero_op FROM ebr_ejecuciones WHERE produccion_id=? AND lote=?",
-            (produccion_id, lote),
+            "SELECT id, numero_op FROM ebr_ejecuciones "
+            "WHERE produccion_id=? AND COALESCE(lote_codigo,lote)=? AND COALESCE(fase,'fabricacion')=?",
+            (produccion_id, lote_codigo, _fase_norm),
         ).fetchone()
         if ex:
             return {'ok': True, 'id': ex[0], 'numero_op': ex[1],
@@ -883,9 +891,18 @@ def crear_ebr_desde_mbr(cur, *, producto_nombre, lote, produccion_id=None,
     if not mbr:
         return {'ok': False, 'error': 'NO_MBR_APROBADO',
                 'detail': f"No hay MBR aprobado para '{producto_nombre}'"}
-    if cur.execute("SELECT id FROM ebr_ejecuciones WHERE lote=?", (lote,)).fetchone():
+    # Un solo EBR por (lote físico, FASE): Fabricación/Envasado/Acondicionamiento del
+    # mismo lote conviven. Dentro de UNA fase, el lote sigue siendo único.
+    if cur.execute(
+        "SELECT id FROM ebr_ejecuciones WHERE COALESCE(lote_codigo,lote)=? AND COALESCE(fase,'fabricacion')=?",
+        (lote_codigo, _fase_norm)).fetchone():
         return {'ok': False, 'error': 'LOTE_DUPLICADO',
-                'detail': f"el lote '{lote}' ya tiene un EBR"}
+                'detail': f"el lote '{lote_codigo}' ya tiene un EBR de fase {_fase_norm}"}
+    # Resolver colisión del UNIQUE `lote` (por si la llave sufijada ya existe por otra vía).
+    _base_key = lote_key; _n = 1
+    while cur.execute("SELECT 1 FROM ebr_ejecuciones WHERE lote=?", (lote_key,)).fetchone():
+        _n += 1
+        lote_key = f"{_base_key}-{_n}"
     cant = cantidad_objetivo_g if cantidad_objetivo_g is not None else mbr[2]
     numero_op = assign_numero_op(cur)
     try:
@@ -895,10 +912,8 @@ def crear_ebr_desde_mbr(cur, *, producto_nombre, lote, produccion_id=None,
                   estado, iniciado_por, iniciado_at_utc, cantidad_objetivo_g, notas,
                   fase, area_codigo)
                VALUES (?, ?, ?, ?, ?, 'iniciado', ?, datetime('now', 'utc'), ?, ?, ?, ?)""",
-            (mbr[0], mbr[1], produccion_id, lote, numero_op, usuario,
-             float(cant or 0), notas,
-             (fase if fase in _FASES_VALIDAS else 'fabricacion'),
-             (area_codigo or '')),
+            (mbr[0], mbr[1], produccion_id, lote_key, numero_op, usuario,
+             float(cant or 0), notas, _fase_norm, (area_codigo or '')),
         )
     except Exception:
         # Fallback si la columna area_codigo aún no existe (mig 219 sin aplicar)
@@ -908,12 +923,17 @@ def crear_ebr_desde_mbr(cur, *, producto_nombre, lote, produccion_id=None,
                   estado, iniciado_por, iniciado_at_utc, cantidad_objetivo_g, notas,
                   fase)
                VALUES (?, ?, ?, ?, ?, 'iniciado', ?, datetime('now', 'utc'), ?, ?, ?)""",
-            (mbr[0], mbr[1], produccion_id, lote, numero_op, usuario,
-             float(cant or 0), notas,
-             (fase if fase in _FASES_VALIDAS else 'fabricacion')),
+            (mbr[0], mbr[1], produccion_id, lote_key, numero_op, usuario,
+             float(cant or 0), notas, _fase_norm),
         )
     ebr_id = cur.lastrowid
-    _fase_ebr = fase if fase in _FASES_VALIDAS else 'fabricacion'
+    # lote_codigo = lote físico real (la llave `lote` puede llevar sufijo de fase).
+    try:
+        cur.execute("UPDATE ebr_ejecuciones SET lote_codigo=? WHERE id=?",
+                    (lote_codigo, ebr_id))
+    except Exception:
+        pass
+    _fase_ebr = _fase_norm
     pasos = cur.execute(
         """SELECT id, orden, descripcion, tipo_paso, equipo_requerido,
                   requiere_e_sign, requiere_qc, COALESCE(fase,'') AS fase
@@ -1856,6 +1876,62 @@ def ebr_vista_completa(ebr_id):
                     })
         except Exception as _em:
             __import__('logging').getLogger('brd').warning('envasado_materiales fallo: %s', _em)
+    # Acondicionamiento (OA · 10-jun) · el cuerpo del legajo es "Unidades por
+    # Presentación" (lo acondicionado del lote) + "Materiales de Empaque" (etiquetas,
+    # plegadizas, insertos · leídos del mee_consumido). Espeja la rama de envasado.
+    if out['fase'] == 'acondicionamiento':
+        out['acond_presentaciones'] = []
+        out['acond_materiales'] = []
+        try:
+            _loa = (out['header'].get('lote_codigo') or '').strip()
+            if _loa:
+                _arows = conn.execute(
+                    """SELECT COALESCE(presentacion,'') AS presentacion,
+                              COALESCE(lote,'') AS lote,
+                              COALESCE(unidades_producidas,0) AS unidades,
+                              COALESCE(estado,'') AS estado,
+                              COALESCE(mee_consumido,'[]') AS mee_consumido,
+                              COALESCE(sku,'') AS sku
+                         FROM acondicionamiento
+                        WHERE UPPER(TRIM(lote))=UPPER(TRIM(?))
+                        ORDER BY id ASC""",
+                    (_loa,),
+                ).fetchall()
+                _acc_oa = {}  # codigo -> unidades acumuladas (material de empaque)
+                for r in _arows:
+                    rd = dict(r)
+                    out['acond_presentaciones'].append({
+                        'presentacion': rd.get('presentacion') or rd.get('sku') or '—',
+                        'lote': rd.get('lote') or _loa,
+                        'unidades': int(rd.get('unidades') or 0),
+                        'estado': rd.get('estado') or 'En proceso',
+                    })
+                    try:
+                        _mlist = json.loads(rd.get('mee_consumido') or '[]')
+                    except Exception:
+                        _mlist = []
+                    for _m in (_mlist or []):
+                        _c = str(_m.get('codigo', _m.get('codigo_mee', '')) or '').strip()
+                        _q = float(_m.get('cantidad', 0) or 0)
+                        if _c:
+                            _acc_oa[_c] = _acc_oa.get(_c, 0) + _q
+                for _cod, _req in _acc_oa.items():
+                    _nom = ''
+                    try:
+                        _n = conn.execute(
+                            "SELECT descripcion FROM maestro_mee WHERE codigo=?",
+                            (_cod,)).fetchone()
+                        _nom = (_n[0] if _n else '') or ''
+                    except Exception:
+                        pass
+                    out['acond_materiales'].append({
+                        'lote_acond': _loa,
+                        'material': (_cod + (' ' + _nom if _nom else '')),
+                        'lote_material': '', 'requerida': _req,
+                        'devuelta': None, 'utilizada': None, 'averiada': None, 'diferencia': None,
+                    })
+        except Exception as _ea:
+            __import__('logging').getLogger('brd').warning('acond_presentaciones fallo: %s', _ea)
     # Elaborado por (enriquecido) + Supervisado por · Sebastián 5-jun-2026:
     # "el área productiva la supervisa el Jefe de Producción; calidad el Jefe de
     # Control de Calidad". Resolvemos nombre+cargo desde usuarios_identidad
@@ -4780,7 +4856,8 @@ def ordenes_unificadas():
     # 1) Legajos EBR (ya MyBatch-shaped) · producto vía mbr_templates
     try:
         ebr_rows = conn.execute(
-            """SELECT e.id, e.numero_op, e.lote, e.estado,
+            """SELECT e.id, e.numero_op,
+                      COALESCE(e.lote_codigo, e.lote) AS lote, e.estado,
                       e.cantidad_objetivo_g, e.cantidad_real_g,
                       COALESCE(e.ml_envasable, NULL) AS ml_envasable,
                       e.iniciado_at_utc, e.liberado_at_utc,
@@ -4876,6 +4953,40 @@ def ordenes_unificadas():
             items.append({
                 "origen": "simple",
                 "numero_op": rd.get("lote") or f"ENV-{rd['id']:05d}",
+                "lote_bulk": rd.get("lote") or "",
+                "producto": rd.get("producto") or "",
+                "teorica_g": None, "producida_g": None, "aprobada": None,
+                "ml_envasable": None,
+                "estado": _estado_orden_norm("simple", rd.get("estado")),
+                "fecha": (rd.get("fecha") or "")[:10],
+                "link": None,
+                "operador": rd.get("operador") or "",
+            })
+
+    # 2c) Registros simples de ACONDICIONAMIENTO (tabla acondicionamiento · 10-jun) →
+    # la OA muestra las órdenes con su estado (como MyBatch), aunque aún no tengan
+    # legajo EBR. Agrupa por lote+producto.
+    if fase == "acondicionamiento":
+        try:
+            ac_rows = conn.execute(
+                """SELECT MIN(id) AS id, COALESCE(producto,'') AS producto,
+                          COALESCE(lote,'') AS lote, MAX(COALESCE(estado,'En proceso')) AS estado,
+                          MAX(COALESCE(fecha,'')) AS fecha, MAX(COALESCE(operador,'')) AS operador,
+                          SUM(COALESCE(unidades_producidas,0)) AS unidades
+                   FROM acondicionamiento
+                   GROUP BY producto, lote
+                   ORDER BY id DESC LIMIT 300""",
+            ).fetchall()
+        except Exception as _e:
+            log.warning("ordenes-unificadas acondicionamiento query fallo: %s", _e)
+            ac_rows = []
+        for r in ac_rows:
+            rd = dict(r)
+            if str(rd.get("lote") or "").strip() in _lotes_con_legajo:
+                continue
+            items.append({
+                "origen": "simple",
+                "numero_op": rd.get("lote") or f"ACOND-{rd['id']:05d}",
                 "lote_bulk": rd.get("lote") or "",
                 "producto": rd.get("producto") or "",
                 "teorica_g": None, "producida_g": None, "aprobada": None,
@@ -5731,6 +5842,10 @@ def orden_detalle_page(ebr_id):
             return Response(
                 f'<script>location.href="/planta/legajo-envasado/{ebr_id}"</script>',
                 mimetype="text/html")
+        if _f and (_f[0] or '') == 'acondicionamiento':
+            return Response(
+                f'<script>location.href="/planta/legajo-acondicionamiento/{ebr_id}"</script>',
+                mimetype="text/html")
     except Exception:
         pass
     return Response(_ORDEN_DETALLE_HTML
@@ -5936,6 +6051,188 @@ def legajo_envasado_page(ebr_id):
             f'<script>location.href="/login?next=/planta/legajo-envasado/{ebr_id}"</script>',
             mimetype="text/html")
     return Response(_ENVASADO_LEGAJO_HTML.replace("__EBR_ID__", str(ebr_id)),
+                    mimetype="text/html")
+
+
+_ACOND_LEGAJO_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Orden de Acondicionamiento · EOS</title>
+<link rel="stylesheet" href="/static/cortex.css">
+<style>
+body{font-family:var(--cx-font,'Inter',system-ui,sans-serif);background:var(--cx-bg,#f4f4f7);color:var(--cx-text,#18181b);margin:0;padding:24px;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+.wrap{max-width:1180px;margin:0 auto}
+.card{background:var(--cx-card,#fff);border:1px solid var(--cx-border-soft,#f1f1f4);border-radius:14px;padding:28px 32px;box-shadow:0 1px 3px rgba(24,24,27,.04),0 8px 24px -14px rgba(24,24,27,.10);margin-bottom:18px}
+a.back{color:var(--cx-primary,#6d28d9);font-size:13px;font-weight:600;text-decoration:none}
+.ortit{font-size:26px;font-weight:800;color:var(--cx-text,#18181b);margin:6px 0 6px;letter-spacing:-.4px}
+.prod{color:var(--cx-text-mute,#71717a);font-size:17px;margin-bottom:24px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:24px 22px}
+.lbl{font-size:12.5px;font-weight:700;color:var(--cx-text-soft,#3f3f46);margin-bottom:5px}
+.val{font-size:14px;color:var(--cx-text-mute,#71717a);line-height:1.45}
+.mono{font-family:var(--cx-font-mono,ui-monospace,monospace)}
+.muted{color:var(--cx-text-faint,#a1a1aa)}
+.btnrow{display:flex;gap:12px;justify-content:flex-start;flex-wrap:wrap;margin-top:24px}
+.bt{padding:11px 20px;border-radius:10px;font-size:13px;font-weight:600;border:1px solid transparent;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:7px;transition:all .15s ease}
+.bt-add{background:var(--cx-primary,#6d28d9);color:#fff}.bt-add:hover{background:var(--cx-primary-dark,#4c1d95)}
+.bt-pdf{background:var(--cx-bg-alt,#fbfbfd);color:var(--cx-text-soft,#3f3f46);border-color:var(--cx-border,#e6e6ea)}.bt-pdf:hover{border-color:var(--cx-primary,#6d28d9);color:var(--cx-primary,#6d28d9)}
+.bt-back{background:transparent;color:var(--cx-text-mute,#71717a);border-color:var(--cx-border,#e6e6ea)}.bt-back:hover{background:var(--cx-bg-alt,#fbfbfd)}
+.sectit{font-size:18px;font-weight:800;color:var(--cx-text,#18181b);letter-spacing:-.2px;margin:0 0 16px}
+.tw{overflow-x:auto}
+table.t{width:100%;border-collapse:collapse;font-size:13.5px}
+table.t th,table.t td{padding:13px 12px;text-align:left;vertical-align:middle;border-bottom:1px solid var(--cx-border-soft,#f1f1f4)}
+table.t thead th{color:var(--cx-text-mute,#71717a);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;border-bottom:1px solid var(--cx-border,#e6e6ea)}
+table.t thead th .ar{color:var(--cx-text-faint,#a1a1aa);font-size:10px;margin-left:3px}
+table.t tbody td{color:var(--cx-text-soft,#3f3f46)}
+table.t tbody tr:hover td{background:var(--cx-primary-pale,#f5f3ff)}
+table.t tfoot td{font-weight:800;color:var(--cx-text,#18181b);border-top:2px solid var(--cx-border,#e6e6ea)}
+.regfoot{color:var(--cx-text-faint,#a1a1aa);font-size:12.5px;margin-top:14px}
+.act{display:inline-flex;gap:6px;flex-wrap:wrap}
+.ab{width:32px;height:32px;border-radius:8px;border:none;cursor:pointer;color:#fff;font-size:14px;line-height:1;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;transition:filter .15s ease}.ab:hover{filter:brightness(1.08)}
+.ab-play{background:var(--cx-success,#15803d)}.ab-plus{background:var(--cx-primary,#6d28d9)}.ab-x{background:var(--cx-danger,#dc2626)}.ab-ed{background:var(--cx-warn,#f59e0b)}.ab-ed2{background:var(--cx-success,#15803d)}.ab-i{background:var(--cx-info,#2563eb)}
+@media(max-width:760px){.grid{grid-template-columns:repeat(2,1fr)}}
+</style></head>
+<body>
+<div class="wrap">
+  <a class="back" href="/inventarios#acondicionamiento">&larr; Acondicionamiento</a>
+  <div class="card" id="cab"><div class="muted">Cargando…</div></div>
+  <div id="cuerpo"></div>
+</div>
+<script>
+var EBR_ID=__EBR_ID__;
+function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
+function ufmt(n){return n==null?'—':Number(n).toLocaleString('es-CO');}
+function fld(l,v){return '<div><div class="lbl">'+l+'</div><div class="val">'+v+'</div></div>';}
+function estCol(e){e=(e||'').toLowerCase();if(e.indexOf('aprob')>=0||e.indexOf('liber')>=0)return '#166534';if(e.indexOf('proceso')>=0)return '#b45309';if(e.indexOf('rechaz')>=0||e.indexOf('cancel')>=0)return '#b91c1c';return '#475569';}
+async function load(){
+  try{
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/vista-completa',{credentials:'same-origin',cache:'no-store'});
+    if(r.status===401){location.href='/login';return;}
+    var d=await r.json();
+    if(!r.ok){document.getElementById('cab').innerHTML='<span style="color:#b91c1c">Error: '+esc(d.error||r.status)+'</span>';return;}
+    var h=d.header||{};
+    var estado=h.estado||'—';
+    var pres=d.acond_presentaciones||[];
+    var totUds=pres.reduce(function(a,p){return a+(Number(p.unidades)||0);},0);
+    document.getElementById('cab').innerHTML=
+      '<div class="ortit">ORDEN DE ACONDICIONAMIENTO N°: '+esc(h.numero_op||('OA-'+EBR_ID))+'</div>'+
+      '<div class="prod">'+esc(h.producto||h.titulo||'—')+(pres.length&&pres[0].presentacion?(', '+esc(pres[0].presentacion)):'')+'</div>'+
+      '<div style="margin:-10px 0 18px"><span style="display:inline-flex;align-items:center;gap:5px;background:var(--cx-primary-pale,#f5f3ff);color:var(--cx-primary,#6d28d9);font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;border:1px solid var(--cx-primary-light,#a78bfa)">&#128100; '+esc((d.mi_rol&&d.mi_rol.rol)||'Usuario')+'</span></div>'+
+      '<div class="grid">'+
+        fld('N° Lote','<span class="mono">'+esc(h.lote_codigo||'—')+'</span>')+
+        fld('Unidades acondicionadas',ufmt(totUds))+
+        fld('Estado Actual','<b style="color:'+estCol(estado)+'">'+esc(estado)+'</b>')+
+        fld('Elaborado por',esc(h.operario||'—'))+
+        fld('Observaciones',esc(h.observaciones||'Ninguna'))+
+        fld('Área / Línea',esc(h.area_linea||'—'))+
+        fld('Supervisado por',esc(h.supervisado_por||'—'))+
+        fld('Liberado por',esc(h.liberado_por_full||'—'))+
+      '</div>'+
+      '<div class="btnrow">'+
+        '<a class="bt bt-add" href="/planta/instrucciones-acondicionamiento/'+EBR_ID+'">&#9654; Instrucciones de Acondicionamiento</a>'+
+        ((d.mi_rol&&d.mi_rol.puede_ejecutar&&(estado==='iniciado'||estado==='en_proceso'))?'<button class="bt bt-pdf" onclick="terminarLote()" title="Operario: termina el acondicionamiento (todos los pasos completos)">&#10003; Terminar</button>':'')+
+        ((d.mi_rol&&d.mi_rol.puede_liberar&&(estado==='completado'||estado==='en_revision_qc'))?'<button class="bt bt-add" onclick="liberarLote()" style="background:var(--cx-success,#15803d)" title="Calidad/Aseguramiento: libera el lote con e-firma (cierra el batch record)">&#128275; Liberar lote</button>':'')+
+        '<a class="bt bt-pdf" href="/api/brd/ebr/'+EBR_ID+'/pdf" target="_blank">&#128196; Descargar</a>'+
+        ((d.mi_rol&&d.mi_rol.puede_aprobar)?'<button class="bt bt-pdf" onclick="regenerarMBR()" title="Crea una nueva versión del MBR con los pasos de acondicionamiento actualizados (GMP · obsoleta el anterior · solo Calidad/Dirección Técnica)">&#8635; Regenerar MBR</button>':'')+
+        '<a class="bt bt-back" href="/inventarios#acondicionamiento">&#9198; Atrás</a>'+
+      '</div>';
+    window._prod=h.producto||h.titulo||''; window._lote=h.lote_codigo||'';
+    function ar(){return '<span class="ar">&#8645;</span>';}
+    var presRows=pres.length
+      ? pres.map(function(p){
+          return '<tr>'+
+            '<td>'+esc(p.presentacion||'—')+'</td>'+
+            '<td class="mono">'+esc(p.lote||'—')+'</td>'+
+            '<td>'+(p.unidades!=null?Number(p.unidades).toLocaleString('es-CO'):'')+'</td>'+
+            '<td>'+esc(p.estado||'—')+'</td>'+
+            '<td><div class="act"><a class="ab ab-play" href="/planta/instrucciones-acondicionamiento/'+EBR_ID+'" title="Ejecutar / Instrucciones de Acondicionamiento">&#9654;</a></div></td>'+
+          '</tr>';
+        }).join('')
+      : '<tr><td colspan="5" class="muted" style="text-align:center;background:#fff">Sin presentaciones acondicionadas aún.</td></tr>';
+    var presCard='<div class="card"><div class="sectit">Unidades por Presentación</div>'+
+      '<div class="tw"><table class="t"><thead><tr>'+
+        '<th>Presentación'+ar()+'</th><th>N° de lote'+ar()+'</th><th>Unidades'+ar()+'</th><th>Estado'+ar()+'</th><th>Acciones</th>'+
+      '</tr></thead><tbody>'+presRows+'</tbody>'+
+      (pres.length?('<tfoot><tr><td><b>Total</b></td><td></td><td>'+totUds.toLocaleString('es-CO')+'</td><td></td><td></td></tr></tfoot>'):'')+
+      '</table></div>'+
+      '<div class="regfoot">Mostrando '+pres.length+' de '+pres.length+' registro'+(pres.length===1?'':'s')+'</div></div>';
+    var mats=d.acond_materiales||[];
+    function mc(v){return v!=null?Number(v).toLocaleString('es-CO'):'';}
+    var matRows=mats.length
+      ? mats.map(function(m){
+          return '<tr>'+
+            '<td class="mono">'+esc(m.lote_acond||'—')+'</td>'+
+            '<td>'+esc(m.material||'—')+'</td>'+
+            '<td class="mono">'+esc(m.lote_material||'—')+'</td>'+
+            '<td>'+mc(m.requerida)+'</td>'+
+            '<td>'+mc(m.devuelta)+'</td>'+
+            '<td>'+mc(m.utilizada)+'</td>'+
+            '<td>'+mc(m.averiada)+'</td>'+
+            '<td>'+mc(m.diferencia)+'</td>'+
+          '</tr>';
+        }).join('')
+      : '<tr><td colspan="8" class="muted" style="text-align:center;background:#fff">Sin materiales de empaque registrados aún.</td></tr>';
+    var matCard='<div class="card"><div class="sectit">Materiales de Empaque</div>'+
+      '<div class="tw"><table class="t"><thead><tr>'+
+        '<th>N° lote acond.'+ar()+'</th><th>Material de empaque'+ar()+'</th><th>N° de lote material'+ar()+'</th><th>Cant. requerida'+ar()+'</th><th>Cant. devuelta'+ar()+'</th><th>Cant. utilizada'+ar()+'</th><th>Cant. averiada'+ar()+'</th><th>Diferencia'+ar()+'</th>'+
+      '</tr></thead><tbody>'+matRows+'</tbody></table></div>'+
+      '<div class="regfoot">Mostrando '+mats.length+' de '+mats.length+' registro'+(mats.length===1?'':'s')+'</div></div>';
+    document.getElementById('cuerpo').innerHTML = presCard + matCard;
+  }catch(e){document.getElementById('cab').innerHTML='<span style="color:#b91c1c">Error de red: '+esc(e.message)+'</span>';}
+}
+async function regenerarMBR(){
+  var prod=(window._prod||'');
+  if(!prod){alert('No identifiqué el producto.');return;}
+  if(!confirm('¿Regenerar el MBR de "'+prod+'" con los pasos de acondicionamiento actualizados y abrir un legajo NUEVO para verlos?\\n\\nObsoleta el MBR anterior (forma GMP correcta · queda auditado).'))return;
+  try{
+    var r=await fetch('/api/brd/mbr/preparar-aprobado',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({producto_nombre:prod,regenerar:true})});
+    var d=await r.json();
+    if(!r.ok||!d.ok){alert('No se pudo regenerar: '+((d&&d.error)||r.status));return;}
+    var base=(window._lote||prod).replace(/-R\\d+$/,'');
+    var nuevoLote=base+'-OA'+(Math.floor(Date.now()/1000)%100000);
+    var rl=await fetch('/api/brd/legajo-rapido',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({producto:prod,lote:nuevoLote,fase:'acondicionamiento'})});
+    var dl=await rl.json();
+    if(rl.ok&&dl.ok&&dl.id){location.href='/planta/legajo-acondicionamiento/'+dl.id;return;}
+    alert('✅ MBR regenerado (v'+(d.version||'?')+'). No pude abrir el legajo nuevo automáticamente; créalo desde Acondicionamiento.');
+  }catch(e){alert('Error: '+(e.message||e));}
+}
+async function terminarLote(){
+  var cant=prompt('Terminar el acondicionamiento · cantidad real (g, opcional · Enter para usar el objetivo):');
+  if(cant===null)return;
+  var body={};
+  if(String(cant).trim()!==''){var n=parseFloat(cant);if(n>0)body.cantidad_real_g=n;}
+  try{
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/completar',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify(body)});
+    var d=await r.json();
+    if(!r.ok){alert('No se pudo terminar: '+(d.error||r.status));return;}
+    alert('✅ Acondicionamiento terminado. Ahora Calidad/Aseguramiento puede liberarlo.'); location.reload();
+  }catch(e){alert('Error: '+(e.message||e));}
+}
+async function liberarLote(){
+  if(!confirm('¿LIBERAR el lote? Cierra el batch record con tu firma electrónica (Calidad / Aseguramiento · queda auditado · 21 CFR Part 11).'))return;
+  try{
+    var rf=await fetch('/api/brd/ebr/'+EBR_ID+'/firmar-rapido',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({meaning:'libera'})});
+    var df=await rf.json();
+    if(!rf.ok||!df.ok){alert('No se pudo firmar la liberación: '+((df&&df.error)||rf.status));return;}
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/liberar',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({signature_id:df.signature_id})});
+    var d=await r.json();
+    if(!r.ok){alert('No se pudo liberar: '+((d&&d.error)||r.status));return;}
+    alert('✅ Lote LIBERADO. Batch record cerrado.'); location.reload();
+  }catch(e){alert('Error: '+(e.message||e));}
+}
+load();
+</script>
+</body></html>"""
+
+
+@bp.route("/planta/legajo-acondicionamiento/<int:ebr_id>", methods=["GET"])
+def legajo_acondicionamiento_page(ebr_id):
+    """Legajo de Acondicionamiento (OA) · página propia, aislada de producción ·
+    espeja el legajo de envasado (10-jun-2026). Reusa vista-completa."""
+    if not session.get("compras_user"):
+        return Response(
+            f'<script>location.href="/login?next=/planta/legajo-acondicionamiento/{ebr_id}"</script>',
+            mimetype="text/html")
+    return Response(_ACOND_LEGAJO_HTML.replace("__EBR_ID__", str(ebr_id)),
                     mimetype="text/html")
 
 
@@ -6147,6 +6444,212 @@ def instrucciones_envasado_page(ebr_id):
             f'<script>location.href="/login?next=/planta/instrucciones-envasado/{ebr_id}"</script>',
             mimetype="text/html")
     return Response(_INSTRUCCIONES_ENVASADO_HTML.replace("__EBR_ID__", str(ebr_id)),
+                    mimetype="text/html")
+
+
+_INSTRUCCIONES_ACOND_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Instrucciones de Acondicionamiento · EOS</title>
+<link rel="stylesheet" href="/static/cortex.css">
+<style>
+body{font-family:var(--cx-font,'Inter',system-ui,sans-serif);background:var(--cx-bg,#f4f4f7);color:var(--cx-text,#18181b);margin:0;padding:24px;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+.wrap{max-width:1180px;margin:0 auto}
+.card{background:var(--cx-card,#fff);border:1px solid var(--cx-border-soft,#f1f1f4);border-radius:14px;padding:28px 32px;box-shadow:0 1px 3px rgba(24,24,27,.04),0 8px 24px -14px rgba(24,24,27,.10);margin-bottom:18px}
+a.back{color:var(--cx-primary,#6d28d9);font-size:13px;font-weight:600;text-decoration:none}
+.htop{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+.htit{font-size:25px;font-weight:800;color:var(--cx-text,#18181b);letter-spacing:-.4px}
+.btns{display:flex;gap:10px;flex-wrap:wrap}
+.bt{padding:10px 16px;border-radius:10px;font-size:12px;font-weight:600;border:1px solid var(--cx-border,#e6e6ea);cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;background:var(--cx-bg-alt,#fbfbfd);color:var(--cx-text-soft,#3f3f46);transition:all .15s ease}
+.bt:hover{border-color:var(--cx-primary,#6d28d9);color:var(--cx-primary,#6d28d9)}
+.bt-up{background:var(--cx-primary,#6d28d9);color:#fff;border-color:transparent}.bt-up:hover{background:var(--cx-primary-dark,#4c1d95);color:#fff}
+.subl{font-size:16px;color:var(--cx-text-soft,#3f3f46);font-weight:600;margin:2px 0 4px}
+.prod{font-size:17px;color:var(--cx-text,#18181b);font-weight:700;margin-bottom:22px}
+.grid{display:grid;grid-template-columns:repeat(5,1fr);gap:20px}
+.lbl{font-size:12.5px;font-weight:700;color:var(--cx-text-soft,#3f3f46);margin-bottom:5px}
+.val{font-size:13.5px;color:var(--cx-text-mute,#71717a);line-height:1.45}
+.sectit{font-size:18px;font-weight:800;color:var(--cx-text,#18181b);letter-spacing:-.2px;margin:0 0 12px}
+.muted{color:var(--cx-text-faint,#a1a1aa)}
+.mono{font-family:var(--cx-font-mono,ui-monospace,monospace)}
+.sechead{display:flex;align-items:center;gap:12px;justify-content:space-between;flex-wrap:wrap;margin-bottom:6px}
+.sechead .sectit{margin:0}
+.sechint{font-size:13.5px;color:var(--cx-text-mute,#71717a);margin:6px 0 14px;line-height:1.5}
+.btreg{padding:9px 15px;border-radius:9px;font-size:12px;font-weight:600;border:none;cursor:pointer;background:var(--cx-primary,#6d28d9);color:#fff;display:inline-flex;align-items:center;gap:6px;text-decoration:none;white-space:nowrap}.btreg:hover{background:var(--cx-primary-dark,#4c1d95)}
+.tw{overflow-x:auto}
+table.t{width:100%;border-collapse:collapse;font-size:13.5px}
+table.t th,table.t td{padding:12px;text-align:left;vertical-align:middle;border-bottom:1px solid var(--cx-border-soft,#f1f1f4)}
+table.t thead th{color:var(--cx-text-mute,#71717a);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;border-bottom:1px solid var(--cx-border,#e6e6ea)}
+table.t tbody td{color:var(--cx-text-soft,#3f3f46)}
+table.t tbody tr:hover td{background:var(--cx-primary-pale,#f5f3ff)}
+.regfoot{color:var(--cx-text-faint,#a1a1aa);font-size:12.5px;margin-top:14px}
+.ok{color:var(--cx-success,#15803d);font-weight:700}.no{color:var(--cx-danger,#dc2626);font-weight:700}.pend{color:var(--cx-text-faint,#a1a1aa)}
+.bdg{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.3px}
+.bdg-ok{background:var(--cx-success-pale,#f0fdf4);color:var(--cx-success,#15803d)}.bdg-no{background:var(--cx-danger-pale,#fef2f2);color:var(--cx-danger,#dc2626)}
+.pasonum{font-weight:700;color:var(--cx-primary,#6d28d9);margin-right:5px}
+.act{display:inline-flex;gap:6px}
+.ab{width:30px;height:30px;border-radius:7px;border:none;cursor:pointer;color:#fff;font-size:13px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;transition:filter .15s ease}.ab:hover{filter:brightness(1.08)}
+.ab-i{background:var(--cx-info,#2563eb)}.ab-ed{background:var(--cx-warn,#f59e0b)}.ab-pdf{background:var(--cx-danger,#dc2626)}
+@media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}}
+</style></head>
+<body>
+<div class="wrap">
+  <a class="back" href="/planta/legajo-acondicionamiento/__EBR_ID__">&larr; Orden de Acondicionamiento</a>
+  <div class="card" id="cab"><div class="muted">Cargando…</div></div>
+  <div id="cuerpo"></div>
+</div>
+<script>
+var EBR_ID=__EBR_ID__;
+function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
+function dt(s){return s?esc(String(s).substring(0,16).replace('T',' ')):'—';}
+function estCol(e){e=(e||'').toLowerCase();if(e.indexOf('aprob')>=0||e.indexOf('liber')>=0||e.indexOf('complet')>=0)return '#166534';if(e.indexOf('proceso')>=0)return '#0d9488';if(e.indexOf('rechaz')>=0||e.indexOf('cancel')>=0)return '#b91c1c';return '#475569';}
+function fld(l,v){return '<div><div class="lbl">'+l+'</div><div class="val">'+v+'</div></div>';}
+async function load(){
+  try{
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/vista-completa',{credentials:'same-origin',cache:'no-store'});
+    if(r.status===401){location.href='/login';return;}
+    var d=await r.json();
+    if(!r.ok){document.getElementById('cab').innerHTML='<span style="color:#b91c1c">Error: '+esc(d.error||r.status)+'</span>';return;}
+    var h=d.header||{};
+    var estado=h.estado||'—';
+    var pres=d.acond_presentaciones||[];
+    var uds=pres.reduce(function(a,p){return a+(Number(p.unidades)||0);},0);
+    document.getElementById('cab').innerHTML=
+      '<div class="htop">'+
+        '<div><div class="htit">INSTRUCCIONES DE ACONDICIONAMIENTO</div>'+
+          '<div style="margin-top:7px"><span style="display:inline-flex;align-items:center;gap:5px;background:var(--cx-primary-pale,#f5f3ff);color:var(--cx-primary,#6d28d9);font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;border:1px solid var(--cx-primary-light,#a78bfa)">&#128100; '+esc((d.mi_rol&&d.mi_rol.rol)||'Usuario')+'</span></div></div>'+
+        '<div class="btns">'+
+          '<a class="bt bt-tl" href="/brd/timeline/'+EBR_ID+'">&#9198; Timeline Batch Record</a>'+
+          '<a class="bt bt-oe" href="/planta/legajo-acondicionamiento/'+EBR_ID+'">&#128196; Orden de Acondicionamiento</a>'+
+          '<a class="bt bt-dl" href="/api/brd/ebr/'+EBR_ID+'/pdf" target="_blank">&#128196; Descargar</a>'+
+          '<button class="bt bt-up" onclick="location.reload()">&#8635; Actualizar</button>'+
+        '</div>'+
+      '</div>'+
+      '<div class="subl">'+esc(h.numero_op||('OA-'+EBR_ID))+'. Lote N°: '+esc(h.lote_codigo||'—')+'</div>'+
+      '<div class="prod">'+esc(h.producto||h.titulo||'—')+(pres.length&&pres[0].presentacion?(', '+esc(pres[0].presentacion)):'')+'</div>'+
+      '<div class="grid">'+
+        fld('Programado por',esc(h.operario||'—'))+
+        fld('Unidades',uds?uds.toLocaleString('es-CO'):'—')+
+        fld('N° de Lote','<span style="font-family:ui-monospace,monospace">'+esc(h.lote_codigo||'—')+'</span>')+
+        fld('Fecha Inicio',dt(h.iniciado_at_utc))+
+        fld('Fecha Final',dt(h.completado_at_utc))+
+        fld('Estado Actual','<b style="color:'+estCol(estado)+'">'+esc(estado)+'</b>')+
+      '</div>';
+    var editable=(estado==='iniciado'||estado==='en_proceso') && !!(d.mi_rol && d.mi_rol.puede_ejecutar);
+    function cumpleCell(c){if(c===1)return '<span class="ok">Sí &#10003;</span>';if(c===0)return '<span class="no">No &#10007;</span>';return '<span class="pend">Pendiente</span>';}
+    function regBtn(t){return editable?('<button class="btreg" onclick="prox()">+ '+t+'</button>'):'';}
+    function abI(){return '<button class="ab ab-i" onclick="prox()" title="Detalle">i</button>';}
+    function abEd(){return editable?'<button class="ab ab-ed" onclick="prox()" title="Registrar">&#9998;</button>':'';}
+    function bdgC(c){if(c===1)return ' <span class="bdg bdg-ok">Cumple</span>';if(c===0)return ' <span class="bdg bdg-no">No cumple</span>';return '';}
+    var html='';
+    html+='<div class="card" style="padding:15px 20px"><div style="font-size:13px;color:var(--cx-text-soft,#3f3f46);line-height:1.7">'+
+      '<b>Responsabilidades:</b> &nbsp;'+
+      '<span style="color:var(--cx-primary,#6d28d9);font-weight:800">●</span> <b>Operario</b> ejecuta y registra (despeje, recepción de empaque, etiquetado, encajado). &nbsp;'+
+      '<span style="color:var(--cx-success,#15803d);font-weight:800">●</span> <b>Calidad / Aseguramiento</b> verifica los controles, corrige resultados y <b>libera el lote</b>. &nbsp;'+
+      '<span style="color:var(--cx-warn,#f59e0b);font-weight:800">●</span> <b>Dirección Técnica</b> aprueba el MBR.'+
+      '</div></div>';
+    var prec=d.precauciones||[];
+    html+='<div class="card"><div class="sectit">1. Precauciones</div>'+
+      '<div class="sechint">Tenga en cuenta las siguientes precauciones antes de iniciar el proceso de acondicionamiento:</div>'+
+      (prec.length?('<ul style="margin:0;padding-left:18px;color:var(--cx-text-soft);font-size:13.5px;line-height:1.95">'+prec.map(function(p){return '<li><b>'+(p.tipo==='equipo'?'&#128296; Equipo':'&#9888; Precaución')+':</b> '+esc(p.descripcion||'')+'</li>';}).join('')+'</ul>'):'<div class="muted">Sin precauciones registradas (se definen en el MBR).</div>')+
+      '</div>';
+    var dch=d.despeje_checklist||[]; window._dch=dch;
+    html+='<div class="card"><div class="sectit">2. Despeje de Área</div>'+
+      '<div class="sechint">Realizar despeje en el área de acuerdo a los procedimientos internos, y realice las siguientes verificaciones:</div>'+
+      (dch.length?('<div class="tw"><table class="t"><thead><tr><th>Verificación</th><th>Cumple</th><th>Acciones</th></tr></thead><tbody>'+
+        dch.map(function(it){return '<tr><td>'+esc(it.texto||'')+'</td><td>'+cumpleCell(it.cumple)+'</td><td><div class="act"><button class="ab ab-i" onclick="infoDespeje('+it.idx+')" title="Detalle">i</button>'+(editable?'<button class="ab ab-ed" onclick="regDespeje('+it.idx+')" title="Registrar verificación">&#9998;</button>':'')+'</div></td></tr>';}).join('')+
+        '</tbody></table></div>'):'<div class="muted">Sin verificaciones de despeje (se definen en el MBR).</div>')+
+      '</div>';
+    var mats=d.acond_materiales||[];
+    html+='<div class="card"><div class="sectit">3. Recepción de Material de Empaque</div>'+
+      '<div class="sechint">Verificar contra la orden de acondicionamiento y la etiqueta o rótulo de identificación de los siguientes materiales de empaque (etiquetas, plegadizas, insertos):</div>'+
+      '<div class="tw"><table class="t"><thead><tr><th>Material</th><th>N° lote</th><th>Cant. requerida</th><th>Cant. recibida</th><th>Acciones</th></tr></thead><tbody>'+
+      (mats.length?mats.map(function(m){return '<tr><td>'+esc(m.material||'—')+'</td><td class="mono">'+esc(m.lote_material||m.lote_acond||'—')+'</td><td>'+(m.requerida!=null?Number(m.requerida).toLocaleString('es-CO'):'')+'</td><td><span class="pend">pendiente</span></td><td><div class="act">'+abI()+abEd()+'</div></td></tr>';}).join('')
+        :'<tr><td colspan="5" class="muted" style="text-align:center">Sin materiales registrados.</td></tr>')+
+      '</tbody></table></div>'+
+      '<div class="regfoot">Mostrando '+mats.length+' de '+mats.length+' registro'+(mats.length===1?'':'s')+'</div></div>';
+    var pasos=d.pasos||[]; window._pasos=pasos;
+    html+='<div class="card"><div class="sechead"><div class="sectit">4. Acondicionamiento</div>'+(editable?'<button class="btreg" onclick="registrarActividades()">&#10003; Registrar Actividades</button>':'')+'</div>'+
+      '<div class="sechint">Realizar las siguientes actividades de acuerdo al orden establecido:</div>'+
+      (pasos.length?('<div class="tw"><table class="t"><thead><tr><th>Actividad</th><th>Realizado por</th><th>Verificado por</th><th>Acciones</th></tr></thead><tbody>'+
+        pasos.map(function(p,i){var ts=p.completado?('<br><span class="muted" style="font-size:11.5px">'+dt(p.completado)+'</span>'):'';return '<tr><td><span class="pasonum">Paso '+(i+1)+'.</span>'+esc(p.descripcion||'')+'</td><td>'+(p.realizado_por_full?(esc(p.realizado_por_full)+ts):'<span class="pend">—</span>')+'</td><td>'+(p.verificado_por_full?(esc(p.verificado_por_full)+ts):'<span class="pend">—</span>')+'</td><td><div class="act"><button class="ab ab-i" onclick="infoPaso('+p.orden+')" title="Detalles de la Verificación">i</button></div></td></tr>';}).join('')+
+        '</tbody></table></div>'):'<div class="muted">Sin pasos de acondicionamiento (se definen en el MBR).</div>')+
+      '</div>';
+    var ipc=d.ipc||[];
+    html+='<div class="card"><div class="sechead"><div class="sectit">5. Controles en Proceso</div>'+(editable?'<button class="btreg" onclick="prox()">+ Control</button>':'')+'</div>'+
+      '<div class="sechint">Realizar muestreo y registrar control en proceso:</div>'+
+      (ipc.length?('<div class="tw"><table class="t"><thead><tr><th>Control</th><th>Resultado</th><th>Observaciones</th><th>Realizado por</th><th>Acciones</th></tr></thead><tbody>'+
+        ipc.map(function(c){var res=c.conforme===2?'<span class="bdg" style="background:var(--cx-bg-alt);color:var(--cx-text-mute)">No aplica</span>':(c.resultado?(esc(c.resultado)+bdgC(c.conforme)):'<span class="pend">pendiente</span>');return '<tr><td>'+esc(c.control||'')+(c.rango?' <span class="muted" style="font-size:11px">('+esc(c.rango)+')</span>':'')+'</td><td>'+res+'</td><td>'+esc(c.observaciones||'No aplica')+'</td><td>'+(c.realizado_por?esc(c.realizado_por_full||c.realizado_por):'<span class="pend">—</span>')+'</td><td><div class="act">'+abI()+abEd()+'</div></td></tr>';}).join('')+
+        '</tbody></table></div>'):'<div class="muted">Sin controles en proceso (se definen en el MBR).</div>')+
+      '</div>';
+    var obs=d.observaciones_proceso||[];
+    html+='<div class="card"><div class="sechead"><div class="sectit">6. Observaciones Generales del Proceso</div>'+regBtn('Registrar')+'</div>'+
+      (obs.length?('<div class="tw"><table class="t"><thead><tr><th>Descripción de la observación</th><th>Realizada por</th><th>Fecha y hora</th></tr></thead><tbody>'+
+        obs.map(function(o){return '<tr><td>'+esc(o.descripcion||'')+'</td><td>'+esc(o.registrado_por_full||o.registrado_por||'—')+'</td><td class="muted">'+dt(o.fecha)+'</td></tr>';}).join('')+
+        '</tbody></table></div>'):'<div class="muted">Sin observaciones registradas.</div>')+
+      '</div>';
+    var regs=d.registros_fisicos||[];
+    html+='<div class="card"><div class="sectit">7. Registros Físicos del Proceso de Acondicionamiento</div>'+
+      (regs.length?('<div class="tw"><table class="t"><thead><tr><th>Código</th><th>Descripción</th><th>Documento</th></tr></thead><tbody>'+
+        regs.map(function(g){return '<tr><td class="mono">'+esc(g.id)+'</td><td>'+esc(g.descripcion||'')+'</td><td>'+(g.tiene_pdf?('<a class="ab ab-pdf" href="/api/brd/ebr/'+EBR_ID+'/registros-fisicos/'+g.id+'/pdf" target="_blank" title="Ver">&#128196;</a>'):'<span class="pend">—</span>')+'</td></tr>';}).join('')+
+        '</tbody></table></div>'):'<div class="muted">Sin registros físicos adjuntos.</div>')+
+      '</div>';
+    document.getElementById('cuerpo').innerHTML=html;
+  }catch(e){document.getElementById('cab').innerHTML='<span style="color:#b91c1c">Error de red: '+esc(e.message)+'</span>';}
+}
+function prox(){alert('Esta acción la construimos en el siguiente paso.');}
+async function regDespeje(idx){
+  var it=(window._dch||[]).find(function(x){return x.idx===idx;}); if(!it)return;
+  var esCorr=(it.cumple!=null);
+  var titulo=esCorr?'CORREGIR RESULTADO (solo Calidad / Dirección Técnica)':'REGISTRAR VERIFICACIÓN (operario)';
+  var c=confirm(titulo+'\\n\\n'+it.texto+'\\n\\n¿CUMPLE? (Aceptar = Sí · Cancelar = No)');
+  var obs=prompt('Observación'+(esCorr?' / motivo de la corrección':' (opcional)')+':', it.observaciones||'')||'';
+  try{
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/despeje-item',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({item_idx:idx,cumple:c?1:0,observaciones:obs,etapa:'dispensacion'})});
+    var d=await r.json();
+    if(!r.ok){alert((r.status===403?'🔒 ':'Error: ')+(d.error||r.status));return;}
+    load();
+  }catch(e){alert('Error de red: '+(e.message||e));}
+}
+function infoDespeje(idx){
+  var it=(window._dch||[]).find(function(x){return x.idx===idx;}); if(!it)return;
+  var res=it.cumple===1?'Sí cumple':(it.cumple===0?'No cumple':'Pendiente');
+  alert('VERIFICACIÓN DE DESPEJE\\n\\n'+it.texto+'\\n\\nResultado: '+res+(it.observaciones?('\\nObservación: '+it.observaciones):'')+(it.registrado_por?('\\nRegistrado por: '+it.registrado_por):''));
+}
+function infoPaso(orden){
+  var pasos=(window._pasos||[]);
+  var i=pasos.findIndex(function(x){return x.orden===orden;}); if(i<0)return;
+  var p=pasos[i];
+  var est=p.completado_flag?'Completado':(p.iniciado?'En proceso':'Pendiente');
+  alert('DETALLES DE LA VERIFICACIÓN\\n\\nPaso '+(i+1)+': '+p.descripcion+'\\n\\nEstado: '+est+'\\nRealizado por: '+(p.realizado_por_full||'—')+'\\nVerificado por: '+(p.verificado_por_full||'—')+(p.observaciones?('\\nObservaciones: '+p.observaciones):''));
+}
+async function registrarActividades(){
+  var pend=(window._pasos||[]).filter(function(p){return !p.completado_flag;});
+  if(!pend.length){alert('Todas las actividades ya están registradas.');return;}
+  var p=pend[0];
+  var _i=(window._pasos||[]).findIndex(function(x){return x.orden===p.orden;});
+  var obs=prompt('Registrar Paso '+(_i+1)+':\\n'+p.descripcion+'\\n\\nResultado / observación:', p.observaciones||'');
+  if(obs===null)return;
+  try{
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/pasos/'+p.orden+'/completar',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({observaciones:obs||''})});
+    var d=await r.json();
+    if(!r.ok){alert((r.status===403?'🔒 ':'Error: ')+(d.error||r.status));return;}
+    load();
+  }catch(e){alert('Error de red: '+(e.message||e));}
+}
+load();
+</script>
+</body></html>"""
+
+
+@bp.route("/planta/instrucciones-acondicionamiento/<int:ebr_id>", methods=["GET"])
+def instrucciones_acondicionamiento_page(ebr_id):
+    """Instrucciones de Acondicionamiento (OA) · ejecución (abre desde el ▶ de la Orden
+    de Acondicionamiento) · página propia, aislada · espeja envasado (10-jun-2026)."""
+    if not session.get("compras_user"):
+        return Response(
+            f'<script>location.href="/login?next=/planta/instrucciones-acondicionamiento/{ebr_id}"</script>',
+            mimetype="text/html")
+    return Response(_INSTRUCCIONES_ACOND_HTML.replace("__EBR_ID__", str(ebr_id)),
                     mimetype="text/html")
 
 
