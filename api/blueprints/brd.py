@@ -5761,7 +5761,7 @@ async function load(){
         '<button class="bt bt-pdf" onclick="regenerarMBR()" title="Crea una nueva versión del MBR con los pasos de envasado actualizados (GMP · obsoleta el anterior)">&#8635; Regenerar MBR</button>'+
         '<a class="bt bt-back" href="/inventarios#envasado">&#9198; Atrás</a>'+
       '</div>';
-    window._prod=h.producto||h.titulo||'';
+    window._prod=h.producto||h.titulo||''; window._lote=h.lote_codigo||'';
     // Paso 2 · Lotes de Producto por Presentación + Materiales de Envase (tal cual MyBatch).
     function ar(){return '<span class="ar">&#8645;</span>';}
     var pres=d.envasado_presentaciones||[];
@@ -5818,12 +5818,18 @@ function adicionarLote(){alert('“Adicionar Lote” lo construimos en el siguie
 async function regenerarMBR(){
   var prod=(window._prod||'');
   if(!prod){alert('No identifiqué el producto.');return;}
-  if(!confirm('¿Regenerar el MBR de "'+prod+'" a una nueva versión con los pasos de envasado actualizados?\\n\\nObsoleta el MBR anterior (forma GMP correcta · queda auditado). Luego crea un NUEVO legajo (nuevo lote) para ver los pasos nuevos.'))return;
+  if(!confirm('¿Regenerar el MBR de "'+prod+'" con los pasos de envasado actualizados (los 5 reales) y abrir un legajo NUEVO para verlos?\\n\\nObsoleta el MBR anterior (forma GMP correcta · queda auditado).'))return;
   try{
     var r=await fetch('/api/brd/mbr/preparar-aprobado',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({producto_nombre:prod,regenerar:true})});
     var d=await r.json();
     if(!r.ok||!d.ok){alert('No se pudo regenerar: '+((d&&d.error)||r.status));return;}
-    alert('✅ MBR regenerado'+(d.version?(' (v'+d.version+')'):'')+' con los pasos actualizados.\\n\\nAhora crea un NUEVO legajo (nuevo lote) de este producto para ver los 5 pasos.');
+    // Crea un legajo nuevo (lote + sufijo) que clona la versión nueva del MBR → 5 pasos.
+    var base=(window._lote||prod).replace(/-R\\d+$/,'');
+    var nuevoLote=base+'-R'+(Math.floor(Date.now()/1000)%100000);
+    var rl=await fetch('/api/brd/legajo-rapido',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({producto:prod,lote:nuevoLote,fase:'envasado'})});
+    var dl=await rl.json();
+    if(rl.ok&&dl.ok&&dl.id){location.href='/planta/legajo-envasado/'+dl.id;return;}
+    alert('✅ MBR regenerado (v'+(d.version||'?')+'). No pude abrir el legajo nuevo automáticamente; créalo desde Envasado.');
   }catch(e){alert('Error: '+(e.message||e));}
 }
 function prox(){alert('Esta acción la construimos en el siguiente paso.');}
