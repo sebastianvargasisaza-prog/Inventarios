@@ -2642,6 +2642,36 @@ def asignar_lote_fisico_ebr(ebr_id):
                     "movimientos_actualizados": mov_actualizados})
 
 
+@bp.route("/api/brd/ebr/<int:ebr_id>/firmar-rapido", methods=["POST"])
+def firmar_ebr_rapido(ebr_id):
+    """Crea una e-firma server-side (identidad de la sesión · 21 CFR Part 11 §11.200(a)(1)(ii)
+    acceso continuo) para una acción del lote, y devuelve signature_id para encadenar con
+    liberar/etc. 'libera'/'verifica' requieren Calidad/Dirección Técnica. Botones de cierre
+    del batch (9-jun-2026)."""
+    err = _require_login()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    meaning = (body.get("meaning") or "").strip()
+    if meaning not in ("libera", "ejecuta", "verifica", "aprueba"):
+        return jsonify({"ok": False, "error": "meaning inválido"}), 400
+    user = session.get("compras_user", "")
+    if meaning in ("libera", "verifica", "aprueba") and user not in ADMIN_USERS and user not in CALIDAD_USERS:
+        return jsonify({"ok": False, "error": "Solo Calidad / Dirección Técnica puede firmar esta acción"}), 403
+    conn = get_db(); cur = conn.cursor()
+    if not cur.execute("SELECT id FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone():
+        return jsonify({"ok": False, "error": "EBR no encontrado"}), 404
+    try:
+        from blueprints.firmas import crear_firma_directa
+    except Exception:
+        from api.blueprints.firmas import crear_firma_directa
+    sig_id = crear_firma_directa(conn, username=user, record_table="ebr_ejecuciones",
+                                 record_id=str(ebr_id), meaning=meaning,
+                                 comment="Firma de cierre/verificación de lote")
+    conn.commit()
+    return jsonify({"ok": True, "signature_id": sig_id})
+
+
 @bp.route("/api/brd/ebr/<int:ebr_id>/liberar", methods=["POST"])
 def liberar_ebr(ebr_id):
     err = _require_qa_or_admin()
@@ -5777,6 +5807,8 @@ async function load(){
       '</div>'+
       '<div class="btnrow">'+
         '<a class="bt bt-add" href="/planta/instrucciones-envasado/'+EBR_ID+'">&#9654; Instrucciones de Envasado</a>'+
+        ((d.mi_rol&&d.mi_rol.puede_ejecutar&&(estado==='iniciado'||estado==='en_proceso'))?'<button class="bt bt-pdf" onclick="terminarLote()" title="Operario: termina el lote (cantidad real · todos los pasos completos)">&#10003; Terminar lote</button>':'')+
+        ((d.mi_rol&&d.mi_rol.puede_liberar&&(estado==='completado'||estado==='en_revision_qc'))?'<button class="bt bt-add" onclick="liberarLote()" style="background:var(--cx-success,#15803d)" title="Calidad/Aseguramiento: libera el lote con e-firma (cierra el batch record)">&#128275; Liberar lote</button>':'')+
         '<button class="bt bt-pdf" onclick="adicionarLote()">+ Adicionar Lote</button>'+
         '<a class="bt bt-pdf" href="/api/brd/ebr/'+EBR_ID+'/pdf" target="_blank">&#128196; Descargar</a>'+
         ((d.mi_rol&&d.mi_rol.puede_aprobar)?'<button class="bt bt-pdf" onclick="regenerarMBR()" title="Crea una nueva versión del MBR con los pasos de envasado actualizados (GMP · obsoleta el anterior · solo Calidad/Dirección Técnica)">&#8635; Regenerar MBR</button>':'')+
@@ -5851,6 +5883,31 @@ async function regenerarMBR(){
     var dl=await rl.json();
     if(rl.ok&&dl.ok&&dl.id){location.href='/planta/legajo-envasado/'+dl.id;return;}
     alert('✅ MBR regenerado (v'+(d.version||'?')+'). No pude abrir el legajo nuevo automáticamente; créalo desde Envasado.');
+  }catch(e){alert('Error: '+(e.message||e));}
+}
+async function terminarLote(){
+  // Operario · termina el lote (cantidad real · requiere todos los pasos completos).
+  var cant=prompt('Terminar el lote · cantidad real producida (g):');
+  if(cant===null)return; cant=parseFloat(cant);
+  if(!cant||cant<=0){alert('Cantidad inválida');return;}
+  try{
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/completar',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({cantidad_real_g:cant})});
+    var d=await r.json();
+    if(!r.ok){alert('No se pudo terminar: '+(d.error||r.status));return;}
+    alert('✅ Lote terminado. Ahora Calidad/Aseguramiento puede liberarlo.'); location.reload();
+  }catch(e){alert('Error: '+(e.message||e));}
+}
+async function liberarLote(){
+  // Calidad/Aseguramiento · libera el lote con e-firma (cierra el batch record · Part 11).
+  if(!confirm('¿LIBERAR el lote? Cierra el batch record con tu firma electrónica (Calidad / Aseguramiento · queda auditado · 21 CFR Part 11).'))return;
+  try{
+    var rf=await fetch('/api/brd/ebr/'+EBR_ID+'/firmar-rapido',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({meaning:'libera'})});
+    var df=await rf.json();
+    if(!rf.ok||!df.ok){alert('No se pudo firmar la liberación: '+((df&&df.error)||rf.status));return;}
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/liberar',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({signature_id:df.signature_id})});
+    var d=await r.json();
+    if(!r.ok){alert('No se pudo liberar: '+((d&&d.error)||r.status));return;}
+    alert('✅ Lote LIBERADO. Batch record cerrado.'); location.reload();
   }catch(e){alert('Error: '+(e.message||e));}
 }
 function prox(){alert('Esta acción la construimos en el siguiente paso.');}

@@ -6059,6 +6059,35 @@ def test_golden_mbr_genera_formula_case_insensitive(app, db_clean):
         _exec("DELETE FROM maestro_mps WHERE codigo_mp='MP09997'")
 
 
+def test_golden_firmar_liberar_por_rol(app, db_clean):
+    """Cierre del batch por roles (9-jun): firmar-rapido 'libera' solo Calidad/Admin (operario
+    → 403). Liberar sin completar el lote → 409 (debe terminarse primero)."""
+    cs = _login(app, 'sebastian')  # admin = puede liberar
+    cs.post('/api/brd/mbr/preparar-aprobado',
+            json={'producto_nombre': 'Blush Balm'}, headers=csrf_headers())
+    r = cs.post('/api/brd/legajo-rapido', json={'producto': 'Blush Balm',
+                'lote': 'L-LIB', 'fase': 'envasado'}, headers=csrf_headers())
+    assert r.status_code == 200, r.data
+    ebr_id = r.get_json()['id']
+    try:
+        rf = cs.post(f'/api/brd/ebr/{ebr_id}/firmar-rapido',
+                     json={'meaning': 'libera'}, headers=csrf_headers())
+        assert rf.status_code == 200 and rf.get_json().get('signature_id'), rf.data
+        rl = cs.post(f'/api/brd/ebr/{ebr_id}/liberar',
+                     json={'signature_id': rf.get_json()['signature_id']}, headers=csrf_headers())
+        assert rl.status_code == 409, ('liberar sin completar debe dar 409', rl.data)
+        # operario (luis · Planta, no Calidad) NO puede firmar 'libera' → 403
+        co = _login(app, 'luis')
+        rfo = co.post(f'/api/brd/ebr/{ebr_id}/firmar-rapido',
+                      json={'meaning': 'libera'}, headers=csrf_headers())
+        assert rfo.status_code == 403, rfo.data
+    finally:
+        # e_signatures es append-only (Part 11 §11.50) · no se borra · es inofensivo
+        _exec("DELETE FROM ebr_pasos_ejecutados WHERE ebr_id IN "
+              "(SELECT id FROM ebr_ejecuciones WHERE lote LIKE 'L-LIB%')")
+        _exec("DELETE FROM ebr_ejecuciones WHERE lote LIKE 'L-LIB%'")
+
+
 def test_golden_mbr_regenerar(app, db_clean):
     """Regenerar MBR (botón 9-jun): obsoleta el MBR vigente + crea una versión NUEVA
     (forma GMP) con los pasos de envasado actualizados."""
