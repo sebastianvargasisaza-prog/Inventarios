@@ -3689,8 +3689,14 @@ if(typeof document !== 'undefined' && !window._DESCARTAR_EBR_DELEG){
       var t=(typeof csrfTokenNec==='function')?csrfTokenNec():(window._csrfTok||'');
       var r=await fetch('/api/brd/ebr/'+id+'/descartar',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:'{}'});
       var d={}; try{d=await r.json();}catch(e){}
-      if(!r.ok){alert((r.status===403?'🔒 Solo Admin puede descartar.\\n\\n':'No se pudo descartar: ')+((d&&d.error)||r.status));return;}
-      if(typeof cargarEBRs==='function') cargarEBRs();
+      if(!r.ok){
+        // 404 "EBR no encontrado" = ya estaba eliminado (p.ej. doble clic) → refrescá igual.
+        if(r.status===404){ if(typeof cargarHistProd==='function') cargarHistProd(); }
+        alert((r.status===403?'🔒 Solo Admin puede eliminar.':(r.status===404?'Ese legajo ya no existe (ya estaba eliminado).':'No se pudo eliminar: '+((d&&d.error)||r.status))));
+        return;
+      }
+      if(typeof cargarHistProd==='function') cargarHistProd();
+      else if(typeof cargarEBRs==='function') cargarEBRs();
     }catch(e){alert('Error de red: '+(e.message||e));}
   });
 }
