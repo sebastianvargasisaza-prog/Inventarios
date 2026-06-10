@@ -3588,9 +3588,10 @@ async function cargarHistProd(){
         ? '<span style="background:#ede9fe;color:#6d28d9;padding:1px 7px;border-radius:8px;font-size:0.72em;font-weight:700">LEGAJO</span>'
         : '<span style="background:#f1f5f9;color:#64748b;padding:1px 7px;border-radius:8px;font-size:0.72em;font-weight:700">SIMPLE</span>';
       var _estLow=(o.estado||'').toLowerCase();
-      var _puedeDescartar = (o.origen==='legajo' && o.ebr_id && _estLow.indexOf('aprob')<0 && _estLow.indexOf('rechaz')<0);
+      // Solo legajos en proceso (no lotes reales: aprobado/rechazado/cuarentena·completado).
+      var _puedeDescartar = (o.origen==='legajo' && o.ebr_id && _estLow.indexOf('aprob')<0 && _estLow.indexOf('rechaz')<0 && _estLow.indexOf('cuarentena')<0);
       var _btnDescartar = _puedeDescartar
-        ? ' <button data-descartar-ebr data-id="'+o.ebr_id+'" data-prod="'+_escHTML(o.producto||'')+'" data-op="'+_escHTML(o.numero_op||'')+'" title="Descartar este legajo (creado por error · solo Admin · queda auditado)" style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:5px;padding:3px 7px;font-size:11px;cursor:pointer">🗑️</button>'
+        ? ' <button data-descartar-ebr data-id="'+o.ebr_id+'" data-prod="'+_escHTML(o.producto||'')+'" data-op="'+_escHTML(o.numero_op||'')+'" title="Eliminar este legajo (creado por error del sistema · solo Admin)" style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:5px;padding:3px 7px;font-size:11px;cursor:pointer">🗑️</button>'
         : '';
       var acc = o.link
         ? '<a href="'+o.link+'" style="color:#7c3aed;font-weight:700;text-decoration:none;font-size:11px">Abrir →</a>'+_btnDescartar
@@ -3683,7 +3684,7 @@ if(typeof document !== 'undefined' && !window._DESCARTAR_EBR_DELEG){
     if(!b) return;
     var id=b.getAttribute('data-id'); var op=b.getAttribute('data-op')||('EBR-'+id);
     if(!id) return;
-    if(!confirm('¿Descartar el legajo '+op+'?\\n\\nSe anula (estado: cancelado · queda auditado · solo Admin) y desaparece de la lista. No aplica a legajos ya liberados/rechazados.')) return;
+    if(!confirm('¿ELIMINAR el legajo '+op+'?\\n\\nSe borra por completo (creado por error del sistema · solo Admin). NO aplica a lotes reales (completado/aprobado/rechazado).')) return;
     try{
       var t=(typeof csrfTokenNec==='function')?csrfTokenNec():(window._csrfTok||'');
       var r=await fetch('/api/brd/ebr/'+id+'/descartar',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:'{}'});

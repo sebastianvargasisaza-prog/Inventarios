@@ -78,8 +78,8 @@ def test_oa_legajo_convive_con_op_of(app, db_clean):
     assert oa2.status_code == 409, oa2.data
 
 
-def test_descartar_ebr_anula_y_desaparece(app, db_clean):
-    """Descartar (anular) un legajo creado por error: estado='cancelado' + audit y
+def test_descartar_ebr_elimina_y_desaparece(app, db_clean):
+    """Eliminar un legajo creado por error (artefacto de bug): hard delete + audit y
     desaparece de la lista de órdenes activas. Solo Admin · 10-jun-2026."""
     c = _login(app, "sebastian")
     mbr_id = _exec("INSERT INTO mbr_templates (producto_nombre, version, estado, lote_size_g, creado_por) "
@@ -89,20 +89,21 @@ def test_descartar_ebr_anula_y_desaparece(app, db_clean):
                    "VALUES (?, 1, 'DESC-OP1', 'iniciado', 'fabricacion', 'sebastian', "
                    "datetime('now','utc'), 1000)", (mbr_id,))
     lu = c.get("/api/brd/ordenes-unificadas?fase=fabricacion").get_json()
-    assert any(o.get("ebr_id") == ebr_id for o in lu["ordenes"]), "el legajo debe aparecer antes de descartar"
-    r = c.post(f"/api/brd/ebr/{ebr_id}/descartar", json={"motivo": "creado por error"}, headers=_h())
-    assert r.status_code == 200 and r.get_json().get("estado") == "cancelado", r.data
+    assert any(o.get("ebr_id") == ebr_id for o in lu["ordenes"]), "el legajo debe aparecer antes de eliminar"
+    r = c.post(f"/api/brd/ebr/{ebr_id}/descartar", json={"motivo": "inventado por el sistema"}, headers=_h())
+    assert r.status_code == 200 and r.get_json().get("eliminado") is True, r.data
     lu2 = c.get("/api/brd/ordenes-unificadas?fase=fabricacion").get_json()
-    assert not any(o.get("ebr_id") == ebr_id for o in lu2["ordenes"]), "el legajo cancelado NO debe aparecer"
+    assert not any(o.get("ebr_id") == ebr_id for o in lu2["ordenes"]), "el legajo eliminado NO debe aparecer"
+    # Hard delete: la fila ya no existe en BD.
     import sqlite3 as _s, os as _o
     cc = _s.connect(_o.environ["DB_PATH"])
-    est = cc.execute("SELECT estado FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()[0]
+    row = cc.execute("SELECT id FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
     cc.close()
-    assert est == "cancelado", est
+    assert row is None, "el EBR debe estar borrado (sin rastro en la tabla)"
 
 
-def test_descartar_ebr_liberado_rechaza(app, db_clean):
-    """Un EBR liberado es inmutable · no se puede descartar (409)."""
+def test_descartar_ebr_lote_real_rechaza(app, db_clean):
+    """Un EBR que es un lote REAL (liberado/completado) NO se elimina (409)."""
     c = _login(app, "sebastian")
     mbr_id = _exec("INSERT INTO mbr_templates (producto_nombre, version, estado, lote_size_g, creado_por) "
                    "VALUES ('ZZ-DESC2', 1, 'aprobado', 1000, 'sebastian')")
