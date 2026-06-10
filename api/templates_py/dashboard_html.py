@@ -3589,7 +3589,7 @@ async function cargarHistProd(){
         : '<span style="background:#f1f5f9;color:#64748b;padding:1px 7px;border-radius:8px;font-size:0.72em;font-weight:700">SIMPLE</span>';
       var acc = o.link
         ? '<a href="'+o.link+'" style="color:#7c3aed;font-weight:700;text-decoration:none;font-size:11px">Abrir →</a>'
-        : '<button data-crear-legajo data-prod="'+_escHTML(o.producto||'')+'" style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:10px;font-weight:700;cursor:pointer" title="Crear el legajo electrónico (batch record) de esta orden">➕ Crear legajo</button>';
+        : '<button data-crear-legajo data-prod="'+_escHTML(o.producto||'')+'" data-g="'+(o.producida_g||o.teorica_g||'')+'" data-lote="'+_escHTML(o.lote_bulk||'')+'" style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:10px;font-weight:700;cursor:pointer" title="Crear el legajo electrónico (batch record) de esta orden">➕ Crear legajo</button>';
       return '<tr>'+
         '<td style="font-family:monospace;font-weight:700;color:#1e40af">'+_escHTML(o.numero_op||'')+'</td>'+
         '<td style="font-family:monospace;color:#6d28d9">'+_escHTML(o.lote_bulk||'—')+'</td>'+
@@ -3616,11 +3616,14 @@ async function cargarHistProd(){
 // 4-jun-2026 · Crear legajo electrónico (EBR) para una orden SIMPLE, encadenando
 // los endpoints YA existentes (cero backend nuevo): generar MBR desde fórmula →
 // submit → firma e-Part11 (tu contraseña) → aprobar MBR → crear EBR → abrir detalle.
-async function crearLegajoDesdeOrden(producto){
+async function crearLegajoDesdeOrden(producto, gramos, loteDefault){
   producto=(producto||'').trim();
   if(!producto){producto=(prompt('Producto para crear el legajo:')||'').trim();}
   if(!producto)return;
-  var lote=(prompt('N° de lote físico/comercial para el legajo de "'+producto+'":','')||'').trim();
+  // La cantidad del legajo = la REALMENTE producida en esta orden (no el tamaño por
+  // defecto del MBR). Si la orden no la trae, el backend cae al lote_size_g del MBR.
+  var _gPlan = parseFloat(gramos);
+  var lote=(prompt('N° de lote físico/comercial para el legajo de "'+producto+'":', (loteDefault||''))||'').trim();
   if(!lote)return;
   var pass=prompt('Tu contraseña de EOS (firma electrónica · aprueba el MBR · 21 CFR Part 11):');
   if(!pass)return;
@@ -3651,8 +3654,10 @@ async function crearLegajoDesdeOrden(producto){
       var ap=await jpost('/api/brd/mbr/'+mbrId+'/aprobar',{signature_id:sg.d.signature_id});
       if(!ap.ok){alert('No se pudo aprobar el MBR: '+((ap.d&&ap.d.error)||ap.status));return;}
     }
-    // 6) crear el EBR (legajo) de fabricación y abrir el detalle
-    var e=await jpost('/api/brd/ebr',{mbr_template_id:mbrId,lote:lote,fase:'fabricacion'});
+    // 6) crear el EBR (legajo) de fabricación con la cantidad REAL producida y abrir
+    var _ebrBody={mbr_template_id:mbrId,lote:lote,fase:'fabricacion'};
+    if(_gPlan && _gPlan>0){ _ebrBody.cantidad_objetivo_g=_gPlan; }
+    var e=await jpost('/api/brd/ebr',_ebrBody);
     if(!e.ok){alert('No se pudo crear el legajo: '+((e.d&&e.d.error)||e.status));return;}
     location.href='/planta/orden/'+e.d.id;
   }catch(err){alert('Error de red: '+(err&&err.message||err));}
@@ -3662,7 +3667,7 @@ if(typeof document !== 'undefined' && !window._CREAR_LEGAJO_DELEG){
   document.addEventListener('click', function(ev){
     var b = ev.target && ev.target.closest && ev.target.closest('[data-crear-legajo]');
     if(!b) return;
-    crearLegajoDesdeOrden(b.getAttribute('data-prod')||'');
+    crearLegajoDesdeOrden(b.getAttribute('data-prod')||'', b.getAttribute('data-g')||'', b.getAttribute('data-lote')||'');
   });
 }
 
