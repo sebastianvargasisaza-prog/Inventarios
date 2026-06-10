@@ -5758,7 +5758,7 @@ async function load(){
             '<td>'+(p.unidades_final!=null?Number(p.unidades_final).toLocaleString('es-CO'):'')+'</td>'+
             '<td>'+(p.rend_pct!=null?(Number(p.rend_pct).toLocaleString('es-CO',{maximumFractionDigits:2})+'%'):'')+'</td>'+
             '<td>'+esc(p.estado||'—')+'</td>'+
-            '<td><div class="act"><button class="ab ab-play" onclick="prox()" title="Ejecutar">&#9654;</button><button class="ab ab-plus" onclick="prox()" title="Agregar">+</button></div></td>'+
+            '<td><div class="act"><a class="ab ab-play" href="/planta/instrucciones-envasado/'+EBR_ID+'" title="Ejecutar / Instrucciones de Envasado">&#9654;</a><button class="ab ab-plus" onclick="prox()" title="Agregar">+</button></div></td>'+
           '</tr>';
         }).join('')
       : '<tr><td colspan="9" class="muted" style="text-align:center;background:#fff">Sin presentaciones registradas aún.</td></tr>';
@@ -5810,6 +5810,95 @@ def legajo_envasado_page(ebr_id):
             f'<script>location.href="/login?next=/planta/legajo-envasado/{ebr_id}"</script>',
             mimetype="text/html")
     return Response(_ENVASADO_LEGAJO_HTML.replace("__EBR_ID__", str(ebr_id)),
+                    mimetype="text/html")
+
+
+_INSTRUCCIONES_ENVASADO_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Instrucciones de Envasado · EOS</title>
+<style>
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#eceaf3;color:#1f2937;margin:0;padding:24px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto}
+.card{background:#fff;border-radius:16px;padding:30px 34px;box-shadow:0 2px 10px rgba(0,0,0,.05);margin-bottom:20px}
+a.back{color:#7c3aed;font-size:13px;text-decoration:none}
+.htop{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:16px}
+.htit{font-size:26px;font-weight:800;color:#1f2937}
+.btns{display:flex;gap:12px;flex-wrap:wrap}
+.bt{padding:11px 18px;border-radius:9px;font-size:12px;font-weight:700;border:none;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px;color:#fff;text-transform:uppercase;letter-spacing:.3px}
+.bt-tl{background:#2bb8cc}.bt-oe{background:#26a69a}.bt-dl{background:#e8703a}.bt-up{background:#f0ad4e}
+.subl{font-size:17px;color:#374151;font-weight:600;margin:2px 0 4px}
+.prod{font-size:18px;color:#1f2937;font-weight:700;margin-bottom:22px}
+.grid{display:grid;grid-template-columns:repeat(5,1fr);gap:20px}
+.lbl{font-size:14px;font-weight:700;color:#374151;margin-bottom:5px}
+.val{font-size:13.5px;color:#6b7280;line-height:1.45}
+.sectit{font-size:22px;font-weight:800;color:#1f2937;margin:0 0 12px}
+.muted{color:#94a3b8}
+@media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}}
+</style></head>
+<body>
+<div class="wrap">
+  <a class="back" href="/planta/legajo-envasado/__EBR_ID__">&larr; Orden de Envasado</a>
+  <div class="card" id="cab"><div class="muted">Cargando…</div></div>
+  <div id="cuerpo"></div>
+</div>
+<script>
+var EBR_ID=__EBR_ID__;
+function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
+function dt(s){return s?esc(String(s).substring(0,16).replace('T',' ')):'—';}
+function estCol(e){e=(e||'').toLowerCase();if(e.indexOf('aprob')>=0||e.indexOf('liber')>=0||e.indexOf('complet')>=0)return '#166534';if(e.indexOf('proceso')>=0)return '#0d9488';if(e.indexOf('rechaz')>=0||e.indexOf('cancel')>=0)return '#b91c1c';return '#475569';}
+function fld(l,v){return '<div><div class="lbl">'+l+'</div><div class="val">'+v+'</div></div>';}
+async function load(){
+  try{
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/vista-completa',{credentials:'same-origin',cache:'no-store'});
+    if(r.status===401){location.href='/login';return;}
+    var d=await r.json();
+    if(!r.ok){document.getElementById('cab').innerHTML='<span style="color:#b91c1c">Error: '+esc(d.error||r.status)+'</span>';return;}
+    var h=d.header||{};
+    var estado=h.estado||'—';
+    var pres=d.envasado_presentaciones||[];
+    var uds=pres.reduce(function(a,p){return a+(Number(p.unidades)||0);},0);
+    document.getElementById('cab').innerHTML=
+      '<div class="htop">'+
+        '<div class="htit">INSTRUCCIONES DE ENVASADO</div>'+
+        '<div class="btns">'+
+          '<a class="bt bt-tl" href="/brd/timeline/'+EBR_ID+'">&#9198; Timeline Batch Record</a>'+
+          '<a class="bt bt-oe" href="/planta/legajo-envasado/'+EBR_ID+'">&#128196; Orden de Envase</a>'+
+          '<a class="bt bt-dl" href="/api/brd/ebr/'+EBR_ID+'/pdf" target="_blank">&#128196; Descargar</a>'+
+          '<button class="bt bt-up" onclick="location.reload()">&#8635; Actualizar</button>'+
+        '</div>'+
+      '</div>'+
+      '<div class="subl">'+esc(h.numero_op||('OF-'+EBR_ID))+'. Lote N°: '+esc(h.lote_codigo||'—')+'</div>'+
+      '<div class="prod">'+esc(h.producto||h.titulo||'—')+(pres.length&&pres[0].presentacion?(', '+esc(pres[0].presentacion)):'')+'</div>'+
+      '<div class="grid">'+
+        fld('Programado por',esc(h.operario||'—'))+
+        fld('Unidades',uds?uds.toLocaleString('es-CO'):'—')+
+        fld('N° de Lote Bulk','<span style="font-family:ui-monospace,monospace">'+esc(h.lote_codigo||'—')+'</span>')+
+        fld('Fecha Inicio',dt(h.iniciado_at_utc))+
+        fld('Fecha Final',dt(h.completado_at_utc))+
+        fld('Estado Actual','<b style="color:'+estCol(estado)+'">'+esc(estado)+'</b>')+
+      '</div>';
+    document.getElementById('cuerpo').innerHTML=
+      '<div class="card"><div class="sectit">1. Precauciones</div>'+
+        '<div class="val" style="font-size:14px">Tenga en cuenta las siguientes precauciones antes de iniciar el proceso de envasado:</div>'+
+        '<div class="muted" style="margin-top:12px">— construiremos las secciones paso a paso —</div>'+
+      '</div>';
+  }catch(e){document.getElementById('cab').innerHTML='<span style="color:#b91c1c">Error de red: '+esc(e.message)+'</span>';}
+}
+load();
+</script>
+</body></html>"""
+
+
+@bp.route("/planta/instrucciones-envasado/<int:ebr_id>", methods=["GET"])
+def instrucciones_envasado_page(ebr_id):
+    """Instrucciones de Envasado · ejecución de la presentación (abre desde el ▶ de la
+    Orden de Envasado) · página propia, aislada · se construye paso a paso (9-jun-2026)."""
+    if not session.get("compras_user"):
+        return Response(
+            f'<script>location.href="/login?next=/planta/instrucciones-envasado/{ebr_id}"</script>',
+            mimetype="text/html")
+    return Response(_INSTRUCCIONES_ENVASADO_HTML.replace("__EBR_ID__", str(ebr_id)),
                     mimetype="text/html")
 
 

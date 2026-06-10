@@ -5986,6 +5986,8 @@ def test_golden_legajo_envasado_pagina_propia(app, db_clean):
         assert p.status_code == 200 and b'Orden de Envasado' in p.data, p.status_code
         o = cs.get(f'/planta/orden/{ebr_id}')
         assert b'/planta/legajo-envasado/' in o.data, 'producción debe redirigir envasado'
+        ie = cs.get(f'/planta/instrucciones-envasado/{ebr_id}')
+        assert ie.status_code == 200 and b'INSTRUCCIONES DE ENVASADO' in ie.data, ie.status_code
     finally:
         _exec("DELETE FROM ebr_pasos_ejecutados WHERE ebr_id IN "
               "(SELECT id FROM ebr_ejecuciones WHERE lote LIKE 'L-EP%')")
