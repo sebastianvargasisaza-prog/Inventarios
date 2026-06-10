@@ -5932,7 +5932,7 @@ async function load(){
     html+='<div class="card"><div class="sechead"><div class="sectit">4. Envasado</div>'+(editable?'<button class="btreg" onclick="registrarActividades()">&#10003; Registrar Actividades</button>':'')+'</div>'+
       '<div class="sechint">Realizar las siguientes actividades de acuerdo al orden establecido:</div>'+
       (pasos.length?('<div class="tw"><table class="t"><thead><tr><th>Actividad</th><th>Realizado por</th><th>Verificado por</th><th>Acciones</th></tr></thead><tbody>'+
-        pasos.map(function(p){return '<tr><td><span class="pasonum">Paso '+esc(p.orden)+'.</span>'+esc(p.descripcion||'')+'</td><td>'+(p.realizado_por_full?esc(p.realizado_por_full):'<span class="pend">—</span>')+'</td><td>'+(p.verificado_por_full?esc(p.verificado_por_full):'<span class="pend">—</span>')+'</td><td><div class="act"><button class="ab ab-i" onclick="infoPaso('+p.orden+')" title="Detalles de la Verificación">i</button></div></td></tr>';}).join('')+
+        pasos.map(function(p){var ts=p.completado?('<br><span class="muted" style="font-size:11.5px">'+dt(p.completado)+'</span>'):'';return '<tr><td><span class="pasonum">Paso '+esc(p.orden)+'.</span>'+esc(p.descripcion||'')+'</td><td>'+(p.realizado_por_full?(esc(p.realizado_por_full)+ts):'<span class="pend">—</span>')+'</td><td>'+(p.verificado_por_full?(esc(p.verificado_por_full)+ts):'<span class="pend">—</span>')+'</td><td><div class="act"><button class="ab ab-i" onclick="infoPaso('+p.orden+')" title="Detalles de la Verificación">i</button></div></td></tr>';}).join('')+
         '</tbody></table></div>'):'<div class="muted">Sin pasos de envasado (se definen en el MBR).</div>')+
       '</div>';
     var ipc=d.ipc||[];
