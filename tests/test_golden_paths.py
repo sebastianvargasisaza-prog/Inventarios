@@ -5971,6 +5971,27 @@ def test_golden_mbr_preparar_aprobado(app, db_clean):
         _exec("DELETE FROM ebr_ejecuciones WHERE lote LIKE 'L-PREP%'")
 
 
+def test_golden_legajo_envasado_pagina_propia(app, db_clean):
+    """El envasado tiene página PROPIA, aislada de producción (9-jun): un EBR de envasado
+    redirige de /planta/orden/<id> a /planta/legajo-envasado/<id>, y esa página carga."""
+    cs = _login(app, 'sebastian')
+    cs.post('/api/brd/mbr/preparar-aprobado',
+            json={'producto_nombre': 'Blush Balm'}, headers=csrf_headers())
+    r = cs.post('/api/brd/legajo-rapido', json={'producto': 'Blush Balm',
+                'lote': 'L-EP', 'fase': 'envasado'}, headers=csrf_headers())
+    assert r.status_code == 200, r.data
+    ebr_id = r.get_json()['id']
+    try:
+        p = cs.get(f'/planta/legajo-envasado/{ebr_id}')
+        assert p.status_code == 200 and b'Orden de Envasado' in p.data, p.status_code
+        o = cs.get(f'/planta/orden/{ebr_id}')
+        assert b'/planta/legajo-envasado/' in o.data, 'producción debe redirigir envasado'
+    finally:
+        _exec("DELETE FROM ebr_pasos_ejecutados WHERE ebr_id IN "
+              "(SELECT id FROM ebr_ejecuciones WHERE lote LIKE 'L-EP%')")
+        _exec("DELETE FROM ebr_ejecuciones WHERE lote LIKE 'L-EP%'")
+
+
 def test_golden_vista_completa_envasado_presentaciones(app, db_clean):
     """El legajo de ENVASADO trae fase='envasado' + envasado_presentaciones ('Lotes de
     Producto por Presentación' · paridad MyBatch 9-jun), no el pesaje de MP de fabricación."""
