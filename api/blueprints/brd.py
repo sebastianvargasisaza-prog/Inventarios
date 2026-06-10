@@ -6283,7 +6283,7 @@ td{color:var(--cx-text-soft,#3f3f46)}
 </style></head>
 <body>
 <div class="wrap">
-  <a class="back" href="/inventarios">&larr; Planta</a>
+  <a class="back" href="/gerencia">&larr; Gerencia</a>
   <h1>&#128202; Analítica del Batch</h1>
   <div class="sub">&#128274; Privado &middot; Gerencia &nbsp;&mdash;&nbsp; tiempos, rendimiento y productividad, derivado de los registros de lote (EBR) en vivo.</div>
   <div id="cont"><div class="muted">Cargando&hellip;</div></div>
