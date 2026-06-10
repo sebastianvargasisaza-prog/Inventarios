@@ -1079,7 +1079,21 @@ def mbr_preparar_aprobado():
     producto = (body.get("producto_nombre") or "").strip()
     if not producto:
         return jsonify({"ok": False, "error": "producto_nombre requerido"}), 400
+    _regenerar = body.get("regenerar") in (True, 1, "1", "true", "True", "si")
     conn = get_db(); cur = conn.cursor()
+    if _regenerar:
+        # Obsoletar el MBR vigente para generar uno fresco (nueva versión) con los pasos
+        # actualizados · forma GMP correcta (obsoletar + version+1 · el trigger lo permite).
+        try:
+            cur.execute(
+                "UPDATE mbr_templates SET estado='obsoleto', "
+                "obsoleto_at_utc=datetime('now','utc'), "
+                "obsoleto_motivo='Regeneración: pasos de envasado actualizados' "
+                "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) "
+                "AND COALESCE(estado,'') != 'obsoleto'",
+                (producto,))
+        except Exception as _eo:
+            __import__('logging').getLogger('brd').warning('regenerar: obsoletar fallo: %s', _eo)
     res = _generar_mbr_desde_formula(cur, producto, usuario=user)
     if not res.get("ok"):
         return jsonify({"ok": False, "error": res.get("error") or "no se pudo generar el MBR"}), 404
@@ -5744,8 +5758,10 @@ async function load(){
       '<div class="btnrow">'+
         '<button class="bt bt-add" onclick="adicionarLote()">+ Adicionar Lote</button>'+
         '<a class="bt bt-pdf" href="/api/brd/ebr/'+EBR_ID+'/pdf" target="_blank">&#128196; Descargar</a>'+
+        '<button class="bt bt-pdf" onclick="regenerarMBR()" title="Crea una nueva versión del MBR con los pasos de envasado actualizados (GMP · obsoleta el anterior)">&#8635; Regenerar MBR</button>'+
         '<a class="bt bt-back" href="/inventarios#envasado">&#9198; Atrás</a>'+
       '</div>';
+    window._prod=h.producto||h.titulo||'';
     // Paso 2 · Lotes de Producto por Presentación + Materiales de Envase (tal cual MyBatch).
     function ar(){return '<span class="ar">&#8645;</span>';}
     var pres=d.envasado_presentaciones||[];
@@ -5799,6 +5815,17 @@ async function load(){
   }catch(e){document.getElementById('cab').innerHTML='<span style="color:#b91c1c">Error de red: '+esc(e.message)+'</span>';}
 }
 function adicionarLote(){alert('“Adicionar Lote” lo construimos en el siguiente paso.');}
+async function regenerarMBR(){
+  var prod=(window._prod||'');
+  if(!prod){alert('No identifiqué el producto.');return;}
+  if(!confirm('¿Regenerar el MBR de "'+prod+'" a una nueva versión con los pasos de envasado actualizados?\\n\\nObsoleta el MBR anterior (forma GMP correcta · queda auditado). Luego crea un NUEVO legajo (nuevo lote) para ver los pasos nuevos.'))return;
+  try{
+    var r=await fetch('/api/brd/mbr/preparar-aprobado',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({producto_nombre:prod,regenerar:true})});
+    var d=await r.json();
+    if(!r.ok||!d.ok){alert('No se pudo regenerar: '+((d&&d.error)||r.status));return;}
+    alert('✅ MBR regenerado'+(d.version?(' (v'+d.version+')'):'')+' con los pasos actualizados.\\n\\nAhora crea un NUEVO legajo (nuevo lote) de este producto para ver los 5 pasos.');
+  }catch(e){alert('Error: '+(e.message||e));}
+}
 function prox(){alert('Esta acción la construimos en el siguiente paso.');}
 load();
 </script>

@@ -6054,6 +6054,42 @@ def test_golden_mbr_genera_formula_case_insensitive(app, db_clean):
         _exec("DELETE FROM maestro_mps WHERE codigo_mp='MP09997'")
 
 
+def test_golden_mbr_regenerar(app, db_clean):
+    """Regenerar MBR (botón 9-jun): obsoleta el MBR vigente + crea una versión NUEVA
+    (forma GMP) con los pasos de envasado actualizados."""
+    cs = _login(app, 'sebastian')
+    _exec("INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, activo) "
+          "VALUES ('MP09996','Mat Regen Test','REGEN INCI',1)")
+    _exec("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo) "
+          "VALUES ('PROD REGEN TEST', 10, 1)")
+    _exec("INSERT INTO formula_items (producto_nombre, material_nombre, material_id, "
+          "porcentaje, cantidad_g_por_lote) VALUES "
+          "('PROD REGEN TEST','Mat Regen Test','MP09996',100,10000)")
+    try:
+        r1 = cs.post('/api/brd/mbr/preparar-aprobado',
+                     json={'producto_nombre': 'PROD REGEN TEST'}, headers=csrf_headers())
+        assert r1.status_code == 200, r1.data
+        id1 = r1.get_json()['id']
+        r2 = cs.post('/api/brd/mbr/preparar-aprobado',
+                     json={'producto_nombre': 'PROD REGEN TEST', 'regenerar': True},
+                     headers=csrf_headers())
+        assert r2.status_code == 200, r2.data
+        id2 = r2.get_json()['id']
+        assert id2 != id1, 'regenerar debe crear un MBR nuevo (versión)'
+        items = cs.get('/api/brd/mbr?producto=PROD REGEN TEST').get_json()['items']
+        nuevo = next((it for it in items if it['id'] == id2), None)
+        assert nuevo and nuevo['estado'] == 'aprobado', f'v2 debe estar aprobado · {nuevo}'
+    finally:
+        _exec("UPDATE mbr_templates SET estado='obsoleto' WHERE "
+              "UPPER(producto_nombre) LIKE 'PROD REGEN TEST%' AND estado='aprobado'")
+        _exec("DELETE FROM mbr_pasos WHERE mbr_template_id IN "
+              "(SELECT id FROM mbr_templates WHERE UPPER(producto_nombre) LIKE 'PROD REGEN TEST%')")
+        _exec("DELETE FROM mbr_templates WHERE UPPER(producto_nombre) LIKE 'PROD REGEN TEST%'")
+        _exec("DELETE FROM formula_items WHERE producto_nombre='PROD REGEN TEST'")
+        _exec("DELETE FROM formula_headers WHERE producto_nombre='PROD REGEN TEST'")
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp='MP09996'")
+
+
 def test_golden_legajo_rapido_envasado(app, db_clean):
     """Botón '+ Nueva orden de envasado': /api/brd/legajo-rapido crea el legajo OF desde
     producto+lote (MBR aprobado). Sin MBR aprobado → 409 con mensaje claro."""
