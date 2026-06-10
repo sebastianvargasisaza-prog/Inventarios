@@ -1084,7 +1084,11 @@ def mbr_preparar_aprobado():
     if _regenerar:
         # Obsoletar el MBR vigente para generar uno fresco (nueva versión) con los pasos
         # actualizados · forma GMP correcta (obsoletar + version+1 · el trigger lo permite).
+        # audit_log por cada MBR obsoletado (mutación regulada · ANTES del commit final).
         try:
+            _viejos = cur.execute(
+                "SELECT id FROM mbr_templates WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) "
+                "AND COALESCE(estado,'') != 'obsoleto'", (producto,)).fetchall()
             cur.execute(
                 "UPDATE mbr_templates SET estado='obsoleto', "
                 "obsoleto_at_utc=datetime('now','utc'), "
@@ -1092,6 +1096,13 @@ def mbr_preparar_aprobado():
                 "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) "
                 "AND COALESCE(estado,'') != 'obsoleto'",
                 (producto,))
+            for _row in _viejos:
+                _vid = (_row[0] if not hasattr(_row, 'keys') else _row['id'])
+                audit_log(cur, usuario=user, accion="OBSOLETAR_MBR_REGENERAR",
+                          tabla="mbr_templates", registro_id=_vid,
+                          antes={"estado": "vigente"},
+                          despues={"estado": "obsoleto",
+                                   "motivo": "Regeneración: pasos de envasado actualizados"})
         except Exception as _eo:
             __import__('logging').getLogger('brd').warning('regenerar: obsoletar fallo: %s', _eo)
     res = _generar_mbr_desde_formula(cur, producto, usuario=user)

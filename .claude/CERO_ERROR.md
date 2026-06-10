@@ -79,6 +79,7 @@ Tests corren en **SQLite** (local, pasan ✅) pero producción es **PostgreSQL**
 - [ ] **Helper para "evitar duplicar X" → aplicarlo en TODOS los canales** que generan X (grep), no solo uno. Idempotencia en creación: button-disable + re-check + dedup case-insensitive incluyendo todos los estados activos.
 - [ ] **Guards de `produccion_programada`:** chequear `estado` Y `inicio_real_at` Y `inventario_descontado_at` Y `origen` (Fijo) antes de cancelar/borrar/sobrescribir. La colisión/dedup del cron usa la MISMA clave y filtro que el INSERT.
 - [ ] **`audit_log` ANTES del `conn.commit()`** (si va después, nunca persiste con el cursor del caller).
+- [ ] **Atajo que obsoleta/regenera un registro regulado** (MBR/EBR/lote) → `audit_log` por cada cambio, igual que el endpoint canónico. Caso 9-jun: `mbr/preparar-aprobado?regenerar` obsoletaba MBRs (UPDATE estado='obsoleto') **sin auditar** mientras el `obsoletar_mbr` propio sí audita. SELECT los ids antes del UPDATE → audit_log cada uno → luego el commit final.
 - [ ] **Feature nueva → test golden que la cubra ANTES de declararla lista.** Suite verde ≠ correctness, solo no-regresión de lo ya cubierto. Bug crítico → test que lo reproduzca.
 - [ ] **Cambios globales** (cortex.css, before/after_request) se prueban con MUCHO cuidado: una animación CSS puede tapar la pantalla y bloquear clicks (caso real 28-may, 7.6s de bloqueo).
 - [ ] **Comentario al modificar bloque:** `# FIX · YYYY-MM-DD · descripción · ref bug/auditoría`.
