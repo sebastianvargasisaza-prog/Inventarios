@@ -5668,18 +5668,22 @@ _ENVASADO_LEGAJO_HTML = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Orden de Envasado · EOS</title>
 <style>
-body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#f4f4f7;color:#18181b;margin:0;padding:20px;-webkit-font-smoothing:antialiased}
-.wrap{max-width:1100px;margin:0 auto}
-.card{background:#fff;border-radius:14px;padding:22px;box-shadow:0 2px 8px rgba(0,0,0,.06);margin-bottom:18px}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#eceaf3;color:#1f2937;margin:0;padding:24px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto}
+.card{background:#fff;border-radius:16px;padding:30px 34px;box-shadow:0 2px 10px rgba(0,0,0,.05);margin-bottom:20px}
 a.back{color:#7c3aed;font-size:13px;text-decoration:none}
-.kicker{color:#7c3aed;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px}
-h1{font-size:22px;margin:4px 0 2px;color:#18181b}
-.prod{color:#475569;font-size:15px;margin-bottom:16px}
-.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px 22px}
-.lbl{font-size:11px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.3px;margin-bottom:3px}
-.val{font-size:14px;color:#18181b}
+.ortit{font-size:27px;font-weight:800;color:#1f2937;margin:6px 0 8px;letter-spacing:-.3px}
+.prod{color:#6b7280;font-size:18px;margin-bottom:24px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:26px 24px}
+.lbl{font-size:14px;font-weight:700;color:#374151;margin-bottom:5px}
+.val{font-size:14px;color:#6b7280;line-height:1.4}
 .mono{font-family:ui-monospace,monospace}
 .muted{color:#94a3b8}
+.btnrow{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;margin-top:26px}
+.bt{padding:13px 24px;border-radius:9px;font-size:13px;font-weight:700;border:none;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:7px;color:#fff;text-transform:uppercase;letter-spacing:.4px}
+.bt-add{background:#2bb8cc}.bt-add:hover{background:#23a6b9}
+.bt-pdf{background:#e8703a}.bt-pdf:hover{background:#d9612d}
+.bt-back{background:#26a69a}.bt-back:hover{background:#1f8f85}
 @media(max-width:760px){.grid{grid-template-columns:repeat(2,1fr)}}
 </style></head>
 <body>
@@ -5708,8 +5712,7 @@ async function load(){
     var mlB=(gB!=null&&densi)?(gB/densi):null;
     var tamBulk=(gB!=null?gfmt(gB):'—')+(mlB!=null?(' - '+mlf(mlB)):'');
     document.getElementById('cab').innerHTML=
-      '<div class="kicker">&#128230; Orden de Envasado &middot; OF</div>'+
-      '<h1>'+esc(h.numero_op||('OF-'+EBR_ID))+'</h1>'+
+      '<div class="ortit">ORDEN DE ENVASADO N°: '+esc(h.numero_op||('OF-'+EBR_ID))+'</div>'+
       '<div class="prod">'+esc(h.producto||h.titulo||'—')+'</div>'+
       '<div class="grid">'+
         fld('N° Lote Bulk','<span class="mono">'+esc(h.lote_codigo||'—')+'</span>')+
@@ -5720,9 +5723,15 @@ async function load(){
         fld('Cantidad por Envasar',mlB!=null?mlf(mlB):'—')+
         fld('Densidad Bulk',densi?(densi.toLocaleString('es-CO',{maximumFractionDigits:3})+' g/mL'):'—')+
         fld('Supervisado por',esc(h.supervisado_por||'—'))+
+      '</div>'+
+      '<div class="btnrow">'+
+        '<button class="bt bt-add" onclick="adicionarLote()">+ Adicionar Lote</button>'+
+        '<a class="bt bt-pdf" href="/api/brd/ebr/'+EBR_ID+'/pdf" target="_blank">&#128196; Descargar</a>'+
+        '<a class="bt bt-back" href="/inventarios#envasado">&#9198; Atrás</a>'+
       '</div>';
   }catch(e){document.getElementById('cab').innerHTML='<span style="color:#b91c1c">Error de red: '+esc(e.message)+'</span>';}
 }
+function adicionarLote(){alert('“Adicionar Lote” lo construimos en el siguiente paso.');}
 load();
 </script>
 </body></html>"""
