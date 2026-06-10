@@ -5968,7 +5968,7 @@ async function load(){
     html+='<div class="card"><div class="sechead"><div class="sectit">4. Envasado</div>'+(editable?'<button class="btreg" onclick="registrarActividades()">&#10003; Registrar Actividades</button>':'')+'</div>'+
       '<div class="sechint">Realizar las siguientes actividades de acuerdo al orden establecido:</div>'+
       (pasos.length?('<div class="tw"><table class="t"><thead><tr><th>Actividad</th><th>Realizado por</th><th>Verificado por</th><th>Acciones</th></tr></thead><tbody>'+
-        pasos.map(function(p){var ts=p.completado?('<br><span class="muted" style="font-size:11.5px">'+dt(p.completado)+'</span>'):'';return '<tr><td><span class="pasonum">Paso '+esc(p.orden)+'.</span>'+esc(p.descripcion||'')+'</td><td>'+(p.realizado_por_full?(esc(p.realizado_por_full)+ts):'<span class="pend">—</span>')+'</td><td>'+(p.verificado_por_full?(esc(p.verificado_por_full)+ts):'<span class="pend">—</span>')+'</td><td><div class="act"><button class="ab ab-i" onclick="infoPaso('+p.orden+')" title="Detalles de la Verificación">i</button></div></td></tr>';}).join('')+
+        pasos.map(function(p,i){var ts=p.completado?('<br><span class="muted" style="font-size:11.5px">'+dt(p.completado)+'</span>'):'';return '<tr><td><span class="pasonum">Paso '+(i+1)+'.</span>'+esc(p.descripcion||'')+'</td><td>'+(p.realizado_por_full?(esc(p.realizado_por_full)+ts):'<span class="pend">—</span>')+'</td><td>'+(p.verificado_por_full?(esc(p.verificado_por_full)+ts):'<span class="pend">—</span>')+'</td><td><div class="act"><button class="ab ab-i" onclick="infoPaso('+p.orden+')" title="Detalles de la Verificación">i</button></div></td></tr>';}).join('')+
         '</tbody></table></div>'):'<div class="muted">Sin pasos de envasado (se definen en el MBR).</div>')+
       '</div>';
     var ipc=d.ipc||[];
@@ -6015,17 +6015,20 @@ function infoDespeje(idx){
   alert('VERIFICACIÓN DE DESPEJE\\n\\n'+it.texto+'\\n\\nResultado: '+res+(it.observaciones?('\\nObservación: '+it.observaciones):'')+(it.registrado_por?('\\nRegistrado por: '+it.registrado_por):''));
 }
 function infoPaso(orden){
-  // Detalles de la Verificación (sección 4 · read-only).
-  var p=(window._pasos||[]).find(function(x){return x.orden===orden;}); if(!p)return;
+  // Detalles de la Verificación (sección 4 · read-only). Numera 1..N dentro de la fase.
+  var pasos=(window._pasos||[]);
+  var i=pasos.findIndex(function(x){return x.orden===orden;}); if(i<0)return;
+  var p=pasos[i];
   var est=p.completado_flag?'Completado':(p.iniciado?'En proceso':'Pendiente');
-  alert('DETALLES DE LA VERIFICACIÓN\\n\\nPaso '+p.orden+': '+p.descripcion+'\\n\\nEstado: '+est+'\\nRealizado por: '+(p.realizado_por_full||'—')+'\\nVerificado por: '+(p.verificado_por_full||'—')+(p.observaciones?('\\nObservaciones: '+p.observaciones):''));
+  alert('DETALLES DE LA VERIFICACIÓN\\n\\nPaso '+(i+1)+': '+p.descripcion+'\\n\\nEstado: '+est+'\\nRealizado por: '+(p.realizado_por_full||'—')+'\\nVerificado por: '+(p.verificado_por_full||'—')+(p.observaciones?('\\nObservaciones: '+p.observaciones):''));
 }
 async function registrarActividades(){
   // Registra (completa) la siguiente actividad pendiente · endpoint GMP con audit/e-firma.
   var pend=(window._pasos||[]).filter(function(p){return !p.completado_flag;});
   if(!pend.length){alert('Todas las actividades ya están registradas.');return;}
   var p=pend[0];
-  var obs=prompt('Registrar Paso '+p.orden+':\\n'+p.descripcion+'\\n\\nResultado / observación:', p.observaciones||'');
+  var _i=(window._pasos||[]).findIndex(function(x){return x.orden===p.orden;});
+  var obs=prompt('Registrar Paso '+(_i+1)+':\\n'+p.descripcion+'\\n\\nResultado / observación:', p.observaciones||'');
   if(obs===null)return;
   try{
     var r=await fetch('/api/brd/ebr/'+EBR_ID+'/pasos/'+p.orden+'/completar',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({observaciones:obs||''})});
