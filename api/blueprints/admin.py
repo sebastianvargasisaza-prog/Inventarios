@@ -14345,6 +14345,249 @@ def admin_mps_inci_page():
     return _MPS_INCI_HTML
 
 
+@bp.route("/api/admin/auditoria-bodega-mp", methods=["GET"])
+def admin_auditoria_bodega_mp():
+    """Auditoría EXHAUSTIVA de concordancia de Bodega MP (read-only · una sola pasada).
+
+    Consolida en una lista priorizada TODAS las señales de inconsistencia que se pueden
+    calcular del propio maestro_mps (sin Excel): INCI prestado de otro material, INCI
+    compartido, nombre comercial duplicado, INCI vacío, abreviatura en el campo INCI, y
+    comercial↔INCI disjunto. NO escribe nada. La corrección es por caso (Bodega MP ✏️ o
+    /admin/cruce-maestro con el Excel maestro = fuente de verdad). Sebastián 10-jun-2026.
+
+    El cruce contra el Excel (códigos fantasma que no existen en el maestro) vive en
+    /admin/cruce-maestro porque requiere subir el archivo · acá se reporta lo demás."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    try:
+        from blueprints.formula_match import norm as _fnorm, palabras_clave as _pcl, _hay_identidad_disjunta as _disj
+    except ImportError:
+        from api.blueprints.formula_match import norm as _fnorm, palabras_clave as _pcl, _hay_identidad_disjunta as _disj
+    conn = db_connect(); c = conn.cursor()
+    try:
+        rows = c.execute(
+            "SELECT codigo_mp, COALESCE(nombre_comercial,''), COALESCE(nombre_inci,''), "
+            "COALESCE(activo,1), COALESCE(controla_stock,1) FROM maestro_mps").fetchall()
+        try:
+            aliases = {str(a[0]).strip().upper() for a in
+                       c.execute("SELECT alias FROM mp_aliases").fetchall() if a and a[0]}
+        except Exception:
+            aliases = set()
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    activos = []
+    info = {}
+    name_to_codes = {}   # norm(comercial|inci) -> set(codigos activos)
+    inci_to_codes = {}   # norm(inci) -> set
+    com_to_codes = {}    # norm(comercial) -> set
+    for cod, com, inci, act, ctrl in rows:
+        cod = str(cod).strip()
+        info[cod] = {'comercial': com, 'inci': inci}
+        if int(act or 0) != 1:
+            continue
+        activos.append((cod, com, inci, int(ctrl or 0)))
+        for nm in (com, inci):
+            k = _fnorm(nm)
+            if k:
+                name_to_codes.setdefault(k, set()).add(cod)
+        ki = _fnorm(inci)
+        if ki:
+            inci_to_codes.setdefault(ki, set()).add(cod)
+        kc = _fnorm(com)
+        if kc:
+            com_to_codes.setdefault(kc, set()).add(cod)
+
+    hall = []  # {codigo_mp, nombre_comercial, nombre_inci, categoria, severidad, detalle, relacionados}
+
+    def _ev(codes):
+        return [{'codigo': o, 'comercial': info[o]['comercial'], 'inci': info[o]['inci']}
+                for o in codes[:6]]
+
+    for cod, com, inci, ctrl in activos:
+        com_s, inci_s = (com or '').strip(), (inci or '').strip()
+        # 1) INCI vacío (solo materiales reales que controlan stock · el agua no aplica)
+        if ctrl == 1 and not inci_s:
+            hall.append({'codigo_mp': cod, 'nombre_comercial': com, 'nombre_inci': inci,
+                         'categoria': 'inci_vacio', 'severidad': 'media',
+                         'detalle': 'Material sin nombre INCI · no cruza con fórmulas ni Excel.',
+                         'relacionados': []})
+            continue
+        com_n, inci_n = _fnorm(com), _fnorm(inci)
+        # 2) Abreviatura en el campo INCI (debería ir el INCI completo)
+        if inci_s and inci_s.upper() in aliases:
+            hall.append({'codigo_mp': cod, 'nombre_comercial': com, 'nombre_inci': inci,
+                         'categoria': 'inci_abreviatura', 'severidad': 'media',
+                         'detalle': f"El INCI es una abreviatura ('{inci_s}') · poné el INCI completo.",
+                         'relacionados': []})
+            # no 'continue': una abreviatura igual puede ser INCI de otro material, etc.
+        if not com_s or not inci_s or not com_n or not inci_n or com_n == inci_n:
+            continue
+        # 3) INCI prestado de OTRO material (la señal más grave · tu caso glucosamina)
+        otros = sorted(x for x in name_to_codes.get(inci_n, set()) if x != cod)
+        if otros:
+            hall.append({'codigo_mp': cod, 'nombre_comercial': com, 'nombre_inci': inci,
+                         'categoria': 'inci_es_otro_material', 'severidad': 'alta',
+                         'detalle': 'El INCI coincide con el NOMBRE de otro material activo → INCI prestado/equivocado.',
+                         'relacionados': _ev(otros)})
+            continue
+        # 4) INCI compartido por 2+ códigos (posible duplicado / INCI mal en uno)
+        comparten = sorted(x for x in inci_to_codes.get(inci_n, set()) if x != cod)
+        if comparten:
+            hall.append({'codigo_mp': cod, 'nombre_comercial': com, 'nombre_inci': inci,
+                         'categoria': 'inci_compartido', 'severidad': 'alta',
+                         'detalle': 'Mismo INCI en varios códigos · unificar o corregir el INCI del que esté mal.',
+                         'relacionados': _ev(comparten)})
+            continue
+        # 5) comercial vs INCI disjunto en ambas direcciones (baja confianza · revisar)
+        if _disj(_pcl(com), _pcl(inci)) and _disj(_pcl(inci), _pcl(com)):
+            hall.append({'codigo_mp': cod, 'nombre_comercial': com, 'nombre_inci': inci,
+                         'categoria': 'revisar_disjunto', 'severidad': 'baja',
+                         'detalle': 'El nombre comercial y el INCI no se parecen · puede ser marca↔INCI legítimo o un error.',
+                         'relacionados': []})
+
+    # 6) Nombre comercial duplicado (2+ códigos activos con el mismo comercial normalizado)
+    _ya_dup = set()
+    for k, codes in com_to_codes.items():
+        if len(codes) > 1:
+            cl = sorted(codes)
+            for cod in cl:
+                _ya_dup.add(cod)
+                hall.append({'codigo_mp': cod, 'nombre_comercial': info[cod]['comercial'],
+                             'nombre_inci': info[cod]['inci'],
+                             'categoria': 'comercial_duplicado', 'severidad': 'media',
+                             'detalle': 'Mismo nombre comercial en varios códigos · posible material duplicado (unificar).',
+                             'relacionados': _ev([x for x in cl if x != cod])})
+
+    _sevord = {'alta': 0, 'media': 1, 'baja': 2}
+    _catord = {'inci_es_otro_material': 0, 'inci_compartido': 1, 'comercial_duplicado': 2,
+               'inci_abreviatura': 3, 'inci_vacio': 4, 'revisar_disjunto': 5}
+    hall.sort(key=lambda h: (_sevord.get(h['severidad'], 9), _catord.get(h['categoria'], 9), h['codigo_mp']))
+
+    por_cat = {}
+    for h in hall:
+        por_cat[h['categoria']] = por_cat.get(h['categoria'], 0) + 1
+    return jsonify({
+        'ok': True,
+        'total_mps_activos': len(activos),
+        'total_hallazgos': len(hall),
+        'por_categoria': por_cat,
+        'por_severidad': {
+            'alta': sum(1 for h in hall if h['severidad'] == 'alta'),
+            'media': sum(1 for h in hall if h['severidad'] == 'media'),
+            'baja': sum(1 for h in hall if h['severidad'] == 'baja'),
+        },
+        'hallazgos': hall,
+    })
+
+
+@bp.route("/admin/auditoria-bodega-mp", methods=["GET"])
+def admin_auditoria_bodega_mp_page():
+    """Página · auditoría exhaustiva de concordancia de Bodega MP (read-only)."""
+    if 'compras_user' not in session:
+        return redirect("/login?next=/admin/auditoria-bodega-mp")
+    return _AUDITORIA_BODEGA_MP_HTML
+
+
+_AUDITORIA_BODEGA_MP_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Auditoría Bodega MP · EOS</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+.wrap{max-width:1180px;margin:0 auto}
+.card{background:#fff;border-radius:12px;padding:18px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:#6d28d9;font-size:22px}
+.muted{color:#64748b;font-size:12px;line-height:1.5}
+.kpis{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
+.kpi{padding:8px 14px;border-radius:9px;font-weight:800;font-size:13px}
+.k-alta{background:#fee2e2;color:#991b1b}.k-media{background:#fef3c7;color:#92400e}.k-baja{background:#e0e7ff;color:#3730a3}.k-tot{background:#ede9fe;color:#5b21b6}
+.filtros{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.fb{padding:5px 11px;border-radius:18px;border:1px solid #e2e8f0;background:#fff;color:#475569;font-size:12px;font-weight:700;cursor:pointer}
+.fb.on{background:#6d28d9;color:#fff;border-color:#6d28d9}
+table{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+th{text-align:left;padding:8px;background:#f1f5f9;color:#475569;font-weight:700;position:sticky;top:0}
+td{padding:8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+.mono{font-family:ui-monospace,monospace;font-weight:700;color:#1e40af}
+.pill{padding:1px 8px;border-radius:10px;font-size:10px;font-weight:800;white-space:nowrap}
+.s-alta{background:#fee2e2;color:#991b1b}.s-media{background:#fef3c7;color:#92400e}.s-baja{background:#e0e7ff;color:#3730a3}
+.rel{color:#64748b;font-size:11px}
+button{background:#0f766e;color:#fff;border:none;padding:7px 14px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer}
+.bad{color:#b91c1c;font-weight:700}
+a.fix{color:#6d28d9;font-weight:700;text-decoration:none}
+</style></head><body>
+<div class="wrap">
+<a href="/modulos">&larr; Volver</a>
+<div class="card">
+  <h1>🧪 Auditoría exhaustiva · Bodega MP (INCI & concordancia)</h1>
+  <div class="muted">Una sola pasada sobre el maestro de MP. Detecta INCI prestado de otro material (tu caso glucosamina), INCI compartido, nombre comercial duplicado, INCI vacío y abreviaturas en el INCI. <b>Solo diagnóstico</b> · corregí cada caso en <a class="fix" href="/inventarios#bodega-mp">Bodega MP (✏️)</a> o, contra el Excel maestro, en <a class="fix" href="/admin/cruce-maestro">cruce-maestro</a>. El cruce contra el Excel (códigos fantasma) se hace allí (requiere subir el archivo).</div>
+  <div class="kpis" id="kpis"></div>
+  <div style="margin-top:6px"><button onclick="cargar()">↻ Recargar</button> <button onclick="csv()" style="background:#16a34a">⬇ Exportar CSV</button></div>
+</div>
+<div class="card">
+  <div class="filtros" id="filtros"></div>
+  <div id="out">Cargando…</div>
+</div>
+</div>
+<script>
+var _DATA=null, _FILTRO='';
+function esc(s){return String(s==null?'':s).replace(/[&<>\\"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\\"':'&quot;',"'":'&#39;'}[c];});}
+var CATLBL={inci_es_otro_material:'INCI de otro material',inci_compartido:'INCI compartido',comercial_duplicado:'Comercial duplicado',inci_abreviatura:'Abreviatura en INCI',inci_vacio:'INCI vacío',revisar_disjunto:'Revisar (disjunto)'};
+function sevPill(s){return '<span class="pill s-'+s+'">'+esc(s)+'</span>';}
+async function cargar(){
+  var out=document.getElementById('out'); out.innerHTML='Cargando…';
+  try{
+    var r=await fetch('/api/admin/auditoria-bodega-mp',{cache:'no-store'});
+    if(r.status===401){location.href='/login';return;}
+    var d=await r.json();
+    if(!r.ok||!d.ok){out.innerHTML='<span class="bad">Error: '+esc((d&&d.error)||r.status)+'</span>';return;}
+    _DATA=d;
+    var sv=d.por_severidad||{};
+    document.getElementById('kpis').innerHTML=
+      '<span class="kpi k-tot">'+d.total_hallazgos+' hallazgos / '+d.total_mps_activos+' MPs</span>'+
+      '<span class="kpi k-alta">'+(sv.alta||0)+' alta</span>'+
+      '<span class="kpi k-media">'+(sv.media||0)+' media</span>'+
+      '<span class="kpi k-baja">'+(sv.baja||0)+' baja</span>';
+    var pc=d.por_categoria||{};
+    var fhtml='<button class="fb'+(_FILTRO===''?' on':'')+'" onclick="setF(\\'\\')">Todas ('+d.total_hallazgos+')</button>';
+    Object.keys(CATLBL).forEach(function(k){ if(pc[k]) fhtml+='<button class="fb'+(_FILTRO===k?' on':'')+'" onclick="setF(\\''+k+'\\')">'+CATLBL[k]+' ('+pc[k]+')</button>'; });
+    document.getElementById('filtros').innerHTML=fhtml;
+    render();
+  }catch(e){out.innerHTML='<span class="bad">Error de red: '+esc(e.message)+'</span>';}
+}
+function setF(k){_FILTRO=k;cargar();}
+function render(){
+  var hs=(_DATA.hallazgos||[]).filter(function(h){return !_FILTRO||h.categoria===_FILTRO;});
+  if(!hs.length){document.getElementById('out').innerHTML='<div class="muted">✅ Sin hallazgos en este filtro.</div>';return;}
+  var rows=hs.map(function(h){
+    var rel=(h.relacionados||[]).map(function(e){return e.codigo+' ('+esc(e.comercial||e.inci||'')+')';}).join(' · ');
+    return '<tr><td>'+sevPill(h.severidad)+'</td><td>'+esc(CATLBL[h.categoria]||h.categoria)+'</td>'+
+      '<td class="mono">'+esc(h.codigo_mp)+'</td><td>'+esc(h.nombre_comercial||'—')+'</td>'+
+      '<td>'+esc(h.nombre_inci||'—')+'</td><td class="muted">'+esc(h.detalle||'')+(rel?('<br><span class="rel">↔ '+rel+'</span>'):'')+'</td></tr>';
+  }).join('');
+  document.getElementById('out').innerHTML='<div style="overflow-x:auto"><table><thead><tr><th>Sev</th><th>Tipo</th><th>Código</th><th>Comercial</th><th>INCI</th><th>Detalle / relacionados</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+function csv(){
+  if(!_DATA||!_DATA.hallazgos){return;}
+  var head=['severidad','categoria','codigo_mp','nombre_comercial','nombre_inci','detalle','relacionados'];
+  var lines=[head.join(',')];
+  _DATA.hallazgos.forEach(function(h){
+    var rel=(h.relacionados||[]).map(function(e){return e.codigo;}).join(' ');
+    var row=[h.severidad,h.categoria,h.codigo_mp,h.nombre_comercial,h.nombre_inci,h.detalle,rel].map(function(v){return '"'+String(v==null?'':v).replace(/"/g,'""')+'"';});
+    lines.push(row.join(','));
+  });
+  var blob=new Blob([lines.join('\\n')],{type:'text/csv;charset=utf-8'});
+  var a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='auditoria_bodega_mp_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
+}
+cargar();
+</script>
+</body></html>"""
+
+
 def _norm_prod_excel(s):
     """Normaliza nombre de producto para casar hoja Excel ↔ formula_headers."""
     import unicodedata as _ud, re as _re
