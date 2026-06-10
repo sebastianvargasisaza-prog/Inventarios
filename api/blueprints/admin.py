@@ -14360,10 +14360,25 @@ def admin_auditoria_bodega_mp():
     u, err, code = _require_admin()
     if err:
         return err, code
-    try:
-        from blueprints.formula_match import norm as _fnorm, palabras_clave as _pcl, _hay_identidad_disjunta as _disj
-    except ImportError:
-        from api.blueprints.formula_match import norm as _fnorm, palabras_clave as _pcl, _hay_identidad_disjunta as _disj
+    import unicodedata as _ud, re as _re
+
+    def _ninci(s):
+        """Normaliza INCI/nombre para comparar identidad química · ALTA precisión:
+        lowercase, sin acentos, alfanum+espacio, PRESERVA los números (1500 kD ≠ 50 kD →
+        no funde grados distintos). NO traduce idiomas (evita falsos positivos)."""
+        if not s:
+            return ''
+        n = _ud.normalize('NFD', str(s).lower().strip())
+        n = ''.join(ch for ch in n if _ud.category(ch) != 'Mn')
+        n = _re.sub(r'[^a-z0-9 ]', ' ', n)
+        return _re.sub(r'\s+', ' ', n).strip()
+
+    # INCIs genéricos legítimamente COMPARTIDOS por muchos materiales (no son error).
+    _GENERICO = {'parfum', 'fragrance', 'perfume', 'aroma', 'flavor', 'aqua', 'water',
+                 'aqua water', 'fragancia'}
+    # Texto marcador = INCI provisional (no es un INCI real).
+    _PLACEHOLDER = ('pendiente', 'por definir', 'sin inci', 'tbd', 'xxx', 'revisar', 'falta')
+
     conn = db_connect(); c = conn.cursor()
     try:
         rows = c.execute(
@@ -14382,25 +14397,20 @@ def admin_auditoria_bodega_mp():
 
     activos = []
     info = {}
-    name_to_codes = {}   # norm(comercial|inci) -> set(codigos activos)
-    inci_to_codes = {}   # norm(inci) -> set
-    com_to_codes = {}    # norm(comercial) -> set
+    com_to_codes = {}    # ninci(comercial) -> set(codigos)  · para detectar INCI prestado + comercial duplicado
+    inci_to_codes = {}   # ninci(inci) -> set                · para INCI compartido (no genérico)
     for cod, com, inci, act, ctrl in rows:
         cod = str(cod).strip()
         info[cod] = {'comercial': com, 'inci': inci}
         if int(act or 0) != 1:
             continue
         activos.append((cod, com, inci, int(ctrl or 0)))
-        for nm in (com, inci):
-            k = _fnorm(nm)
-            if k:
-                name_to_codes.setdefault(k, set()).add(cod)
-        ki = _fnorm(inci)
-        if ki:
-            inci_to_codes.setdefault(ki, set()).add(cod)
-        kc = _fnorm(com)
+        kc = _ninci(com)
         if kc:
             com_to_codes.setdefault(kc, set()).add(cod)
+        ki = _ninci(inci)
+        if ki and ki not in _GENERICO:
+            inci_to_codes.setdefault(ki, set()).add(cod)
 
     hall = []  # {codigo_mp, nombre_comercial, nombre_inci, categoria, severidad, detalle, relacionados}
 
@@ -14410,53 +14420,62 @@ def admin_auditoria_bodega_mp():
 
     for cod, com, inci, ctrl in activos:
         com_s, inci_s = (com or '').strip(), (inci or '').strip()
-        # 1) INCI vacío (solo materiales reales que controlan stock · el agua no aplica)
-        if ctrl == 1 and not inci_s:
+        com_n, inci_n = _ninci(com), _ninci(inci)
+        es_fantasma = (not com_s) or (com_n == _ninci(cod))  # nombre = el propio código → legacy
+        # 1) INCI vacío
+        if not inci_s:
+            if ctrl == 1 and not es_fantasma:
+                hall.append({'codigo_mp': cod, 'nombre_comercial': com, 'nombre_inci': inci,
+                             'categoria': 'inci_vacio', 'severidad': 'media',
+                             'detalle': 'Material real sin INCI · completalo (no cruza con fórmulas/Excel).',
+                             'relacionados': []})
+            else:
+                hall.append({'codigo_mp': cod, 'nombre_comercial': com, 'nombre_inci': inci,
+                             'categoria': 'codigo_fantasma', 'severidad': 'baja',
+                             'detalle': 'Código legacy sin INCI ni nombre real · reconciliar con el Excel o archivar.',
+                             'relacionados': []})
+            continue
+        # 2) INCI provisional (texto marcador)
+        if any(p in inci_n for p in _PLACEHOLDER):
             hall.append({'codigo_mp': cod, 'nombre_comercial': com, 'nombre_inci': inci,
-                         'categoria': 'inci_vacio', 'severidad': 'media',
-                         'detalle': 'Material sin nombre INCI · no cruza con fórmulas ni Excel.',
+                         'categoria': 'inci_placeholder', 'severidad': 'media',
+                         'detalle': f"INCI provisional ('{inci_s}') · poné el INCI real.",
                          'relacionados': []})
             continue
-        com_n, inci_n = _fnorm(com), _fnorm(inci)
-        # 2) Abreviatura en el campo INCI (debería ir el INCI completo)
-        if inci_s and inci_s.upper() in aliases:
+        # 3) Abreviatura en el campo INCI (debería ir el INCI completo)
+        if inci_s.upper() in aliases:
             hall.append({'codigo_mp': cod, 'nombre_comercial': com, 'nombre_inci': inci,
                          'categoria': 'inci_abreviatura', 'severidad': 'media',
                          'detalle': f"El INCI es una abreviatura ('{inci_s}') · poné el INCI completo.",
                          'relacionados': []})
-            # no 'continue': una abreviatura igual puede ser INCI de otro material, etc.
-        if not com_s or not inci_s or not com_n or not inci_n or com_n == inci_n:
             continue
-        # 3) INCI prestado de OTRO material (la señal más grave · tu caso glucosamina)
-        otros = sorted(x for x in name_to_codes.get(inci_n, set()) if x != cod)
+        if not com_n or not inci_n or com_n == inci_n or inci_n in _GENERICO:
+            continue
+        # 4) INCI prestado de OTRO material: el INCI coincide con el NOMBRE COMERCIAL de
+        #    otro código (alta precisión · tu caso glucosamina/péptido). NO compara
+        #    INCI↔INCI (eso es compartido, abajo) ni genéricos (PARFUM, etc.).
+        otros = sorted(x for x in com_to_codes.get(inci_n, set()) if x != cod)
         if otros:
             hall.append({'codigo_mp': cod, 'nombre_comercial': com, 'nombre_inci': inci,
                          'categoria': 'inci_es_otro_material', 'severidad': 'alta',
-                         'detalle': 'El INCI coincide con el NOMBRE de otro material activo → INCI prestado/equivocado.',
+                         'detalle': 'El INCI coincide con el NOMBRE COMERCIAL de otro material → INCI prestado/equivocado.',
                          'relacionados': _ev(otros)})
             continue
-        # 4) INCI compartido por 2+ códigos (posible duplicado / INCI mal en uno)
+        # 5) INCI compartido EXACTO (con números) por 2+ códigos, no genérico → posible
+        #    duplicado o INCI mal en uno (los grados por MW NO colisionan: 1500 ≠ 50).
         comparten = sorted(x for x in inci_to_codes.get(inci_n, set()) if x != cod)
         if comparten:
             hall.append({'codigo_mp': cod, 'nombre_comercial': com, 'nombre_inci': inci,
                          'categoria': 'inci_compartido', 'severidad': 'alta',
-                         'detalle': 'Mismo INCI en varios códigos · unificar o corregir el INCI del que esté mal.',
+                         'detalle': 'Mismo INCI exacto en varios códigos · unificar o corregir el que esté mal.',
                          'relacionados': _ev(comparten)})
             continue
-        # 5) comercial vs INCI disjunto en ambas direcciones (baja confianza · revisar)
-        if _disj(_pcl(com), _pcl(inci)) and _disj(_pcl(inci), _pcl(com)):
-            hall.append({'codigo_mp': cod, 'nombre_comercial': com, 'nombre_inci': inci,
-                         'categoria': 'revisar_disjunto', 'severidad': 'baja',
-                         'detalle': 'El nombre comercial y el INCI no se parecen · puede ser marca↔INCI legítimo o un error.',
-                         'relacionados': []})
 
-    # 6) Nombre comercial duplicado (2+ códigos activos con el mismo comercial normalizado)
-    _ya_dup = set()
+    # 6) Nombre comercial duplicado (2+ códigos activos, mismo comercial · no fantasma/genérico)
     for k, codes in com_to_codes.items():
-        if len(codes) > 1:
+        if len(codes) > 1 and k and k not in _GENERICO:
             cl = sorted(codes)
             for cod in cl:
-                _ya_dup.add(cod)
                 hall.append({'codigo_mp': cod, 'nombre_comercial': info[cod]['comercial'],
                              'nombre_inci': info[cod]['inci'],
                              'categoria': 'comercial_duplicado', 'severidad': 'media',
@@ -14465,7 +14484,7 @@ def admin_auditoria_bodega_mp():
 
     _sevord = {'alta': 0, 'media': 1, 'baja': 2}
     _catord = {'inci_es_otro_material': 0, 'inci_compartido': 1, 'comercial_duplicado': 2,
-               'inci_abreviatura': 3, 'inci_vacio': 4, 'revisar_disjunto': 5}
+               'inci_placeholder': 3, 'inci_abreviatura': 4, 'inci_vacio': 5, 'codigo_fantasma': 6}
     hall.sort(key=lambda h: (_sevord.get(h['severidad'], 9), _catord.get(h['categoria'], 9), h['codigo_mp']))
 
     por_cat = {}
@@ -14535,7 +14554,7 @@ a.fix{color:#6d28d9;font-weight:700;text-decoration:none}
 <script>
 var _DATA=null, _FILTRO='';
 function esc(s){return String(s==null?'':s).replace(/[&<>\\"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\\"':'&quot;',"'":'&#39;'}[c];});}
-var CATLBL={inci_es_otro_material:'INCI de otro material',inci_compartido:'INCI compartido',comercial_duplicado:'Comercial duplicado',inci_abreviatura:'Abreviatura en INCI',inci_vacio:'INCI vacío',revisar_disjunto:'Revisar (disjunto)'};
+var CATLBL={inci_es_otro_material:'INCI de otro material',inci_compartido:'INCI compartido',comercial_duplicado:'Comercial duplicado',inci_placeholder:'INCI provisional',inci_abreviatura:'Abreviatura en INCI',inci_vacio:'INCI vacío (material real)',codigo_fantasma:'Código fantasma (sin INCI)'};
 function sevPill(s){return '<span class="pill s-'+s+'">'+esc(s)+'</span>';}
 async function cargar(){
   var out=document.getElementById('out'); out.innerHTML='Cargando…';
