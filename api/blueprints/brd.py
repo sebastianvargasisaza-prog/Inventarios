@@ -2038,6 +2038,11 @@ def ebr_vista_completa(ebr_id):
                     out['header'].get('produccion_id'), out['header'].get('lote_codigo') or '')
             except Exception as _emp:
                 __import__('logging').getLogger('brd').warning('materiales envase planeados OF fallo: %s', _emp)
+        # + materiales agregados/editados A MANO (se suman a lo auto-cargado · editables).
+        try:
+            out['envasado_materiales'] = (out['envasado_materiales'] or []) + _materiales_envase_manuales(conn, ebr_id)
+        except Exception:
+            pass
     # Acondicionamiento (OA · 10-jun) · el cuerpo del legajo es "Unidades por
     # Presentación" (lo acondicionado del lote) + "Materiales de Empaque" (etiquetas,
     # plegadizas, insertos · leídos del mee_consumido). Espeja la rama de envasado.
@@ -2110,6 +2115,11 @@ def ebr_vista_completa(ebr_id):
                     out['header'].get('produccion_id'), out['header'].get('lote_codigo') or '')
             except Exception as _emp:
                 __import__('logging').getLogger('brd').warning('materiales envase planeados OA fallo: %s', _emp)
+        # + materiales agregados/editados A MANO (se suman a lo auto-cargado · editables).
+        try:
+            out['acond_materiales'] = (out['acond_materiales'] or []) + _materiales_envase_manuales(conn, ebr_id)
+        except Exception:
+            pass
     # Elaborado por (enriquecido) + Supervisado por · Sebastián 5-jun-2026:
     # "el área productiva la supervisa el Jefe de Producción; calidad el Jefe de
     # Control de Calidad". Resolvemos nombre+cargo desde usuarios_identidad
@@ -3259,6 +3269,154 @@ def descartar_ebr(ebr_id):
     cur.execute("DELETE FROM ebr_ejecuciones WHERE id=?", (ebr_id,))
     conn.commit()
     return jsonify({"ok": True, "eliminado": True, "id": ebr_id})
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Materiales de envase MANUALES del legajo (Sebastián 11-jun) · elegir/agregar/editar
+# desde el desplegable de TODOS los envases (maestro_mee). Tabla aparte
+# (ebr_envase_materiales) · no toca el envasado real ni la inmutabilidad del EBR.
+# ════════════════════════════════════════════════════════════════════════════
+@bp.route("/api/brd/envase-opciones", methods=["GET"])
+def brd_envase_opciones():
+    """Catálogo de TODOS los materiales de envase (maestro_mee) para el desplegable del
+    legajo. Solo lectura. ?q= filtra por código/descripción."""
+    err = _require_login()
+    if err:
+        return err
+    conn = get_db(); cur = conn.cursor()
+    try:
+        rows = cur.execute(
+            "SELECT codigo, COALESCE(descripcion,'') FROM maestro_mee ORDER BY codigo").fetchall()
+    except Exception:
+        rows = []
+    out = [{"codigo": r[0], "descripcion": r[1],
+            "label": (str(r[0]) + (" · " + r[1] if r[1] else ""))} for r in rows if r[0]]
+    q = (request.args.get("q") or "").strip().upper()
+    if q:
+        out = [o for o in out if q in (o["label"] or "").upper()]
+    return jsonify({"ok": True, "opciones": out})
+
+
+def _ebr_estado_lote(cur, ebr_id):
+    r = cur.execute(
+        "SELECT estado, COALESCE(lote_codigo, lote, '') AS lote FROM ebr_ejecuciones WHERE id=?",
+        (ebr_id,)).fetchone()
+    return r
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/material-envase", methods=["POST"])
+def brd_material_envase_upsert(ebr_id):
+    """Agrega o EDITA a mano un material de envase del legajo (elegido del desplegable de
+    maestro_mee). Bloqueado si el lote está liberado/rechazado (inmutable · Part 11)."""
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    body = request.get_json(silent=True) or {}
+    cod = (body.get("material_codigo") or "").strip()
+    if not cod:
+        return jsonify({"error": "Elegí un material de envase del desplegable"}), 400
+    conn = get_db(); cur = conn.cursor()
+    ebr = _ebr_estado_lote(cur, ebr_id)
+    if not ebr:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if ebr["estado"] in ("liberado", "rechazado"):
+        return jsonify({"error": f"el lote está {ebr['estado']} (inmutable) · no se edita"}), 409
+
+    def _num(k):
+        v = body.get(k)
+        try:
+            return float(v) if v not in (None, "") else None
+        except Exception:
+            return None
+
+    nom = (body.get("material_nombre") or "").strip()
+    if not nom:
+        try:
+            r = cur.execute("SELECT COALESCE(descripcion,'') FROM maestro_mee WHERE codigo=?",
+                            (cod,)).fetchone()
+            nom = (r[0] if r else "") or ""
+        except Exception:
+            nom = ""
+    requerida = _num("requerida") or 0
+    lote_mat = (body.get("lote_material") or "").strip()
+    lote_env = (body.get("lote_envasado") or ebr["lote"] or "").strip()
+    row_id = body.get("id")
+    if row_id:
+        cur.execute(
+            "UPDATE ebr_envase_materiales SET material_codigo=?, material_nombre=?, "
+            "lote_material=?, requerida=?, devuelta=?, utilizada=?, averiada=?, lote_envasado=? "
+            "WHERE id=? AND ebr_id=?",
+            (cod, nom, lote_mat, requerida, _num("devuelta"), _num("utilizada"),
+             _num("averiada"), lote_env, int(row_id), ebr_id))
+        if cur.rowcount != 1:
+            return jsonify({"error": "fila no encontrada"}), 404
+        nuevo_id = int(row_id); accion = "EDITAR_MATERIAL_ENVASE_EBR"
+    else:
+        cur.execute(
+            "INSERT INTO ebr_envase_materiales (ebr_id, lote_envasado, material_codigo, "
+            "material_nombre, lote_material, requerida, devuelta, utilizada, averiada, creado_por) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (ebr_id, lote_env, cod, nom, lote_mat, requerida, _num("devuelta"),
+             _num("utilizada"), _num("averiada"), user))
+        nuevo_id = cur.lastrowid; accion = "AGREGAR_MATERIAL_ENVASE_EBR"
+    audit_log(cur, usuario=user, accion=accion, tabla="ebr_envase_materiales",
+              registro_id=nuevo_id, despues={"material": cod, "requerida": requerida})
+    conn.commit()
+    return jsonify({"ok": True, "id": nuevo_id})
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/material-envase/<int:row_id>", methods=["DELETE"])
+def brd_material_envase_delete(ebr_id, row_id):
+    """Elimina una fila de material de envase agregada a mano (no toca las auto-cargadas
+    del plan, que no tienen id). Bloqueado si el lote está liberado/rechazado."""
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    conn = get_db(); cur = conn.cursor()
+    ebr = _ebr_estado_lote(cur, ebr_id)
+    if not ebr:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if ebr["estado"] in ("liberado", "rechazado"):
+        return jsonify({"error": f"el lote está {ebr['estado']} (inmutable)"}), 409
+    cur.execute("DELETE FROM ebr_envase_materiales WHERE id=? AND ebr_id=?", (row_id, ebr_id))
+    if cur.rowcount != 1:
+        return jsonify({"error": "fila no encontrada"}), 404
+    audit_log(cur, usuario=user, accion="ELIMINAR_MATERIAL_ENVASE_EBR",
+              tabla="ebr_envase_materiales", registro_id=row_id)
+    conn.commit()
+    return jsonify({"ok": True, "eliminado": True})
+
+
+def _materiales_envase_manuales(conn, ebr_id):
+    """Filas de material de envase agregadas/editadas a mano (ebr_envase_materiales).
+    Tienen `id` y `fuente='manual'` → la UI permite editarlas/borrarlas."""
+    try:
+        cur = conn.cursor()
+        rows = cur.execute(
+            "SELECT id, lote_envasado, material_codigo, material_nombre, lote_material, "
+            "requerida, devuelta, utilizada, averiada FROM ebr_envase_materiales "
+            "WHERE ebr_id=? ORDER BY id", (ebr_id,)).fetchall()
+    except Exception:
+        return []
+    out = []
+    for r in rows:
+        req = r["requerida"]; dev = r["devuelta"]; uti = r["utilizada"]
+        dif = None
+        if req is not None and uti is not None:
+            dif = round(float(req) - float(uti), 2)
+        nom = r["material_nombre"] or ""
+        out.append({
+            "id": r["id"], "fuente": "manual",
+            "lote_envasado": r["lote_envasado"] or "", "lote_acond": r["lote_envasado"] or "",
+            "material": (r["material_codigo"] + (" " + nom if nom else "")),
+            "material_codigo": r["material_codigo"], "material_nombre": nom,
+            "lote_material": r["lote_material"] or "",
+            "requerida": req, "devuelta": dev, "utilizada": uti,
+            "averiada": r["averiada"], "diferencia": dif,
+        })
+    return out
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -6198,23 +6356,31 @@ async function load(){
       '</table></div>'+
       '<div class="regfoot">Mostrando '+pres.length+' de '+pres.length+' registro'+(pres.length===1?'':'s')+'</div></div>';
     var mats=d.envasado_materiales||[];
+    window._mats=mats;
+    var puedeEditarMat=(estado!=='liberado'&&estado!=='rechazado');
     function mc(v){return v!=null?Number(v).toLocaleString('es-CO'):'';}
     var matRows=mats.length
-      ? mats.map(function(m){
+      ? mats.map(function(m,i){
+          var acc='<button class="ab ab-i" onclick="prox()" title="Detalle">i</button>';
+          if(puedeEditarMat){
+            acc='<button class="ab ab-ed" onclick="matModal('+i+')" title="Editar / registrar cantidades">&#9998;</button>'+acc;
+            if(m.id){acc='<button class="ab ab-x" onclick="borrarMat('+m.id+')" title="Eliminar">&#215;</button>'+acc;}
+          }
           return '<tr>'+
             '<td class="mono">'+esc(m.lote_envasado||'—')+'</td>'+
-            '<td>'+esc(m.material||'—')+'</td>'+
+            '<td>'+esc(m.material||'—')+(m.fuente==='manual'?' <span style="color:#7c3aed;font-size:10px;font-weight:700">·manual</span>':'')+'</td>'+
             '<td class="mono">'+esc(m.lote_material||'—')+'</td>'+
             '<td>'+mc(m.requerida)+'</td>'+
             '<td>'+mc(m.devuelta)+'</td>'+
             '<td>'+mc(m.utilizada)+'</td>'+
             '<td>'+mc(m.averiada)+'</td>'+
             '<td>'+mc(m.diferencia)+'</td>'+
-            '<td><div class="act"><button class="ab ab-x" onclick="prox()" title="Eliminar">&#215;</button><button class="ab ab-ed" onclick="prox()" title="Editar">&#9998;</button><button class="ab ab-ed2" onclick="prox()" title="Registrar">&#9998;</button><button class="ab ab-i" onclick="prox()" title="Detalle">i</button></div></td>'+
+            '<td><div class="act">'+acc+'</div></td>'+
           '</tr>';
         }).join('')
       : '<tr><td colspan="9" class="muted" style="text-align:center;background:#fff">Sin materiales de envase registrados aún.</td></tr>';
-    var matCard='<div class="card"><div class="sectit">Materiales de Envase</div>'+
+    var matCard='<div class="card"><div class="sechead" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div class="sectit">Materiales de Envase</div>'+
+      (puedeEditarMat?'<button class="bt bt-pdf" onclick="matModal(-1)" title="Elegir un material de envase del catálogo completo">+ Material de envase</button>':'')+'</div>'+
       '<div class="tw"><table class="t"><thead><tr>'+
         '<th>N° lote envasado'+ar()+'</th><th>Material de envase'+ar()+'</th><th>N° de lote material'+ar()+'</th><th>Cant. requerida'+ar()+'</th><th>Cant. devuelta'+ar()+'</th><th>Cant. utilizada'+ar()+'</th><th>Cant. averiada'+ar()+'</th><th>Diferencia'+ar()+'</th><th>Acciones</th>'+
       '</tr></thead><tbody>'+matRows+'</tbody></table></div>'+
@@ -6263,6 +6429,61 @@ async function liberarLote(){
     var d=await r.json();
     if(!r.ok){alert('No se pudo liberar: '+((d&&d.error)||r.status));return;}
     alert('✅ Lote LIBERADO. Batch record cerrado.'); location.reload();
+  }catch(e){alert('Error: '+(e.message||e));}
+}
+var _envOpc=null;
+async function cargarEnvaseOpc(){
+  if(_envOpc)return _envOpc;
+  try{var r=await fetch('/api/brd/envase-opciones',{credentials:'same-origin'});var d=await r.json();_envOpc=(d&&d.opciones)||[];}catch(e){_envOpc=[];}
+  return _envOpc;
+}
+async function matModal(i){
+  var m=(i>=0&&window._mats)?window._mats[i]:null;
+  var opc=await cargarEnvaseOpc();
+  var ov=document.getElementById('matov');
+  if(!ov){ov=document.createElement('div');ov.id='matov';ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:9999';document.body.appendChild(ov);}
+  var selCod=(m&&m.material_codigo)||'';
+  var opciones='<option value="">— elegí un material de envase —</option>'+opc.map(function(o){return '<option value="'+esc(o.codigo)+'"'+(o.codigo===selCod?' selected':'')+'>'+esc(o.label)+'</option>';}).join('');
+  function v(x){return (x==null?'':x);}
+  ov.innerHTML='<div style="background:#fff;border-radius:14px;padding:22px;max-width:520px;width:92%;box-shadow:0 10px 40px rgba(0,0,0,.3)">'+
+    '<div style="font-weight:800;font-size:17px;margin-bottom:14px">'+(m?'Editar material de envase':'Agregar material de envase')+'</div>'+
+    '<input type="hidden" id="m_id" value="'+v(m&&m.id)+'">'+
+    '<label style="font-size:12px;color:#475569;font-weight:600">Material de envase (catálogo completo)</label>'+
+    '<select id="m_cod" style="width:100%;padding:9px;margin:4px 0 12px;border:1px solid #cbd5e1;border-radius:8px">'+opciones+'</select>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+      '<div><label style="font-size:12px;color:#475569;font-weight:600">N° lote material</label><input id="m_lote" value="'+esc(v(m&&m.lote_material))+'" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px"></div>'+
+      '<div><label style="font-size:12px;color:#475569;font-weight:600">Cant. requerida</label><input id="m_req" type="number" value="'+v(m&&m.requerida)+'" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px"></div>'+
+      '<div><label style="font-size:12px;color:#475569;font-weight:600">Cant. devuelta</label><input id="m_dev" type="number" value="'+v(m&&m.devuelta)+'" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px"></div>'+
+      '<div><label style="font-size:12px;color:#475569;font-weight:600">Cant. utilizada</label><input id="m_uti" type="number" value="'+v(m&&m.utilizada)+'" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px"></div>'+
+      '<div><label style="font-size:12px;color:#475569;font-weight:600">Cant. averiada</label><input id="m_ave" type="number" value="'+v(m&&m.averiada)+'" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px"></div>'+
+    '</div>'+
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">'+
+      '<button onclick="cerrarMat()" style="padding:9px 16px;border:1px solid #cbd5e1;background:#f1f5f9;border-radius:8px;cursor:pointer">Cancelar</button>'+
+      '<button onclick="guardarMat()" style="padding:9px 16px;border:0;background:#7c3aed;color:#fff;border-radius:8px;cursor:pointer;font-weight:700">Guardar</button>'+
+    '</div></div>';
+  ov.style.display='flex';
+}
+function cerrarMat(){var ov=document.getElementById('matov');if(ov)ov.style.display='none';}
+async function guardarMat(){
+  var cod=document.getElementById('m_cod').value;
+  if(!cod){alert('Elegí un material del desplegable.');return;}
+  function n(id){var x=document.getElementById(id).value;return x===''?null:parseFloat(x);}
+  var body={material_codigo:cod,lote_material:document.getElementById('m_lote').value,requerida:n('m_req'),devuelta:n('m_dev'),utilizada:n('m_uti'),averiada:n('m_ave')};
+  var idv=document.getElementById('m_id').value;if(idv)body.id=parseInt(idv,10);
+  try{
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/material-envase',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify(body)});
+    var d=await r.json();
+    if(!r.ok||!d.ok){alert('No se pudo guardar: '+((d&&d.error)||r.status));return;}
+    cerrarMat();load();
+  }catch(e){alert('Error: '+(e.message||e));}
+}
+async function borrarMat(id){
+  if(!confirm('¿Eliminar este material de envase agregado a mano?'))return;
+  try{
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/material-envase/'+id,{method:'DELETE',credentials:'same-origin'});
+    var d=await r.json();
+    if(!r.ok||!d.ok){alert('No se pudo eliminar: '+((d&&d.error)||r.status));return;}
+    load();
   }catch(e){alert('Error: '+(e.message||e));}
 }
 function prox(){alert('Esta acción la construimos en el siguiente paso.');}

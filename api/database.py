@@ -312,6 +312,26 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (235, "EBR · materiales de envase MANUALES del legajo (Sebastián 11-jun): permite "
+          "elegir/agregar/editar a mano un material de envase desde el desplegable de TODOS "
+          "los envases (maestro_mee), además del auto-cargado del plan. Tabla aparte · no "
+          "toca el envasado real ni la inmutabilidad del EBR liberado.", [
+        "CREATE TABLE IF NOT EXISTS ebr_envase_materiales ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " ebr_id INTEGER NOT NULL,"
+        " lote_envasado TEXT DEFAULT '',"
+        " material_codigo TEXT NOT NULL,"
+        " material_nombre TEXT DEFAULT '',"
+        " lote_material TEXT DEFAULT '',"
+        " requerida REAL DEFAULT 0,"
+        " devuelta REAL,"
+        " utilizada REAL,"
+        " averiada REAL,"
+        " creado_por TEXT DEFAULT '',"
+        " creado_at TEXT DEFAULT (datetime('now','-5 hours')))",
+        "CREATE INDEX IF NOT EXISTS idx_ebr_env_mat ON ebr_envase_materiales(ebr_id)",
+    ]),
+
     (234, "envasado · area_codigo (semi-auto envasado en el flujo REAL · 9-jun): la cola "
           "'Envasar' usa /api/envasado (tabla envasado), no el /iniciar huérfano. Agrega "
           "area_codigo para registrar el área asignada (con gate de limpieza). operador ya "
