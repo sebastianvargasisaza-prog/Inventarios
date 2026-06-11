@@ -11237,9 +11237,21 @@ def abastecimiento_consumo_horizontes():
     except Exception:
         log.warning('colapso consumo_mp por bodega falló · uso crudo', exc_info=True)
 
+    # FIX 11-jun · MP con controla_stock=0 (agua del lab / consumibles infinitos · mig 218)
+    # NO se compran nunca → excluirlas de la tabla de Abastecimiento, igual que factibilidad
+    # (antes el Agua Desionizada aparecía con déficit y Pedir gigante · Sebastián 11-jun).
+    _no_controla = set()
+    try:
+        for _r in c.execute("SELECT codigo_mp FROM maestro_mps WHERE COALESCE(controla_stock,1)=0").fetchall():
+            if _r[0]:
+                _no_controla.add(str(_r[0]).upper().strip())
+    except Exception:
+        pass
     items_out_mp = []
     if incluir_mp:
         for cod, consumo in consumo_mp.items():
+            if (cod or '').upper().strip() in _no_controla:
+                continue  # agua / consumible infinito · no se pide
             info = mp_info.get(cod, {'nombre': cod, 'proveedor': '',
                                      'lead_time_dias': 14, 'buffer_dias': 30})
             # FIX 1-jun-2026 audit · lookup canónico 5-tier (antes solo id → MP con
