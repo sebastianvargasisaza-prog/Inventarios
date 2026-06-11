@@ -10536,7 +10536,14 @@ def abastecimiento_consumo_horizontes():
     # B3+BHA' un solo espacio). Resultado: lote_size=0 → producción saltada
     # del cálculo. Ahora normalizamos en Python · colapsa espacios múltiples.
     def _norm_prod(s):
-        return ' '.join((s or '').strip().upper().split())
+        # FIX 10-jun audit · antes solo UPPER + colapsar espacios → un acento, un '+'
+        # o un paréntesis distinto entre produccion_programada.producto y
+        # formula_headers.producto_nombre rompía el match → ese lote aportaba 0 a la
+        # demanda ("parece que no acumula"). Ahora quita acentos y normaliza puntuación
+        # a espacios (mismo criterio que _norm_prod_excel del cruce-maestro).
+        import unicodedata as _udn, re as _ren
+        n = _udn.normalize('NFKD', str(s or '')).encode('ascii', 'ignore').decode().upper()
+        return _ren.sub(r'[^A-Z0-9]+', ' ', n).strip()
     formulas = {}
     # Pre-cargar lote_size_kg por producto (también para B2B · evita N+1)
     lote_size_por_prod = {}
