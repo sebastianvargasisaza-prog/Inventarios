@@ -1699,6 +1699,101 @@ load();
     return Response(html, mimetype='text/html')
 
 
+def _pp_id_para_producto(cur, producto, ebr_produccion_id=None):
+    """Resuelve el produccion_programada.id relevante para un producto (no hay FK · se
+    enlaza por producto). Prefiere el produccion_id del EBR si coincide; si no, el más
+    reciente no-cancelado del producto. Devuelve id o None."""
+    if not producto:
+        return None
+    try:
+        if ebr_produccion_id:
+            r = cur.execute(
+                "SELECT id FROM produccion_programada WHERE id=? "
+                "AND LOWER(TRIM(producto))=LOWER(TRIM(?))",
+                (ebr_produccion_id, producto)).fetchone()
+            if r:
+                return r[0]
+        r = cur.execute(
+            "SELECT id FROM produccion_programada "
+            "WHERE LOWER(TRIM(producto))=LOWER(TRIM(?)) "
+            "AND COALESCE(estado,'') NOT IN ('cancelado') "
+            "ORDER BY id DESC LIMIT 1", (producto,)).fetchone()
+        return r[0] if r else None
+    except Exception:
+        return None
+
+
+def _materiales_envase_planeados(conn, producto, ebr_produccion_id=None, lote=''):
+    """Material de envase PLANEADO de un producto desde la PROGRAMACIÓN (paridad MyBatch ·
+    11-jun): por cada presentación, el envase + sus componentes (tapa/gotero/etiqueta vía
+    sku_mee_config) con cant. REQUERIDA = unidades de esa presentación. Auto-carga la
+    sección 'Materiales de Envase' del legajo cuando aún no hay envasado real. READ-ONLY."""
+    if not producto:
+        return []
+    cur = conn.cursor()
+    pp_id = _pp_id_para_producto(cur, producto, ebr_produccion_id)
+    if not pp_id:
+        return []
+    try:
+        from blueprints.programacion import _composicion_envases_lote
+    except Exception:
+        try:
+            from api.blueprints.programacion import _composicion_envases_lote
+        except Exception:
+            return []
+    try:
+        comp = _composicion_envases_lote(cur, pp_id) or {}
+    except Exception:
+        return []
+    variantes = comp.get('variantes') or []
+    if not variantes:
+        return []
+    # sku_mee_config: sku_codigo(upper) -> [(mee_codigo, cant_por_unidad)]
+    sku_mee = {}
+    try:
+        for r in cur.execute(
+            "SELECT UPPER(TRIM(sku_codigo)), mee_codigo, COALESCE(cantidad_por_unidad,1) "
+            "FROM sku_mee_config WHERE COALESCE(aplica,1)=1").fetchall():
+            if r[1]:
+                sku_mee.setdefault(r[0], []).append((str(r[1]).strip(), float(r[2] or 1)))
+    except Exception:
+        sku_mee = {}
+    acc = {}  # codigo_mee -> requerida total
+    for v in variantes:
+        uds = int(v.get('unidades_estimadas') or 0)
+        if uds <= 0:
+            continue
+        sku = (v.get('sku_shopify') or '').strip().upper()
+        comps = sku_mee.get(sku)
+        if comps:  # envase + tapa + gotero + etiqueta… definidos por SKU
+            for cod, cx in comps:
+                if cod:
+                    acc[cod] = acc.get(cod, 0.0) + uds * cx
+        else:  # sin config MEE · al menos el envase de la presentación
+            env = (v.get('envase_codigo') or '').strip()
+            if env:
+                acc[env] = acc.get(env, 0.0) + uds
+    if not acc:
+        return []
+    out = []
+    for cod, req in sorted(acc.items(), key=lambda x: -x[1]):
+        nom = ''
+        try:
+            n = cur.execute("SELECT COALESCE(descripcion,'') FROM maestro_mee WHERE codigo=?",
+                            (cod,)).fetchone()
+            nom = (n[0] if n else '') or ''
+        except Exception:
+            pass
+        out.append({
+            'lote_envasado': lote, 'lote_acond': lote,
+            'material': (cod + (' ' + nom if nom else '')),
+            'lote_material': '', 'requerida': round(req, 0),
+            'recibida': None, 'devuelta': None, 'utilizada': None,
+            'averiada': None, 'diferencia': None,
+        })
+    return out
+
+
 def _presentaciones_planeadas(conn, producto, ebr_produccion_id=None):
     """Presentaciones PLANEADAS (estado 'Programado') de un producto desde la
     PROGRAMACIÓN · para auto-cargar el legajo de Envasado/Acondicionamiento cuando aún
@@ -1715,29 +1810,10 @@ def _presentaciones_planeadas(conn, producto, ebr_produccion_id=None):
     if not producto:
         return []
     cur = conn.cursor()
-    # 1) elegir el produccion_programada relevante (no hay FK · se enlaza por producto)
-    pp_id = None
-    try:
-        if ebr_produccion_id:
-            r = cur.execute(
-                "SELECT id FROM produccion_programada WHERE id=? "
-                "AND LOWER(TRIM(producto))=LOWER(TRIM(?))",
-                (ebr_produccion_id, producto)).fetchone()
-            if r:
-                pp_id = r[0]
-        if not pp_id:
-            r = cur.execute(
-                "SELECT id FROM produccion_programada "
-                "WHERE LOWER(TRIM(producto))=LOWER(TRIM(?)) "
-                "AND COALESCE(estado,'') NOT IN ('cancelado') "
-                "ORDER BY id DESC LIMIT 1", (producto,)).fetchone()
-            if r:
-                pp_id = r[0]
-    except Exception:
-        pp_id = None
+    pp_id = _pp_id_para_producto(cur, producto, ebr_produccion_id)
     if not pp_id:
         return []
-    # 2) Reusar las funciones CANÓNICAS de programación (mismas que el modal "Plan de
+    # Reusar las funciones CANÓNICAS de programación (mismas que el modal "Plan de
     #    envasado") para que el legajo muestre EXACTO lo mismo: Animus DTC (composición −
     #    B2B) + una fila por cada cliente B2B (ej. Kelly/Fernando Meza). 10-jun-2026.
     try:
@@ -1953,6 +2029,15 @@ def ebr_vista_completa(ebr_id):
                     })
         except Exception as _em:
             __import__('logging').getLogger('brd').warning('envasado_materiales fallo: %s', _em)
+        # Auto-carga (MyBatch · 11-jun): si aún no hay envasado real, mostrar el material
+        # de envase PLANEADO del producto (envase + tapa/gotero/etiqueta · cant requerida).
+        if not out['envasado_materiales']:
+            try:
+                out['envasado_materiales'] = _materiales_envase_planeados(
+                    conn, out['header'].get('producto'),
+                    out['header'].get('produccion_id'), out['header'].get('lote_codigo') or '')
+            except Exception as _emp:
+                __import__('logging').getLogger('brd').warning('materiales envase planeados OF fallo: %s', _emp)
     # Acondicionamiento (OA · 10-jun) · el cuerpo del legajo es "Unidades por
     # Presentación" (lo acondicionado del lote) + "Materiales de Empaque" (etiquetas,
     # plegadizas, insertos · leídos del mee_consumido). Espeja la rama de envasado.
@@ -2017,6 +2102,14 @@ def ebr_vista_completa(ebr_id):
                     conn, out['header'].get('producto'), out['header'].get('produccion_id'))
             except Exception as _epp:
                 __import__('logging').getLogger('brd').warning('presentaciones planeadas OA fallo: %s', _epp)
+        # Auto-carga del material de empaque planeado si aún no hay acond real.
+        if not out['acond_materiales']:
+            try:
+                out['acond_materiales'] = _materiales_envase_planeados(
+                    conn, out['header'].get('producto'),
+                    out['header'].get('produccion_id'), out['header'].get('lote_codigo') or '')
+            except Exception as _emp:
+                __import__('logging').getLogger('brd').warning('materiales envase planeados OA fallo: %s', _emp)
     # Elaborado por (enriquecido) + Supervisado por · Sebastián 5-jun-2026:
     # "el área productiva la supervisa el Jefe de Producción; calidad el Jefe de
     # Control de Calidad". Resolvemos nombre+cargo desde usuarios_identidad

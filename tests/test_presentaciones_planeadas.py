@@ -58,6 +58,30 @@ def test_envasado_autocarga_presentaciones_b2b_y_animus(app, db_clean):
     assert all((p.get("estado") == "Programado") for p in pres), pres
 
 
+def test_material_envase_se_autocarga_del_plan(app, db_clean):
+    """Material de Envase del legajo se auto-carga desde la planeación (envase por
+    presentación · cant requerida = unidades) cuando aún no hay envasado real."""
+    prod = "ZZ-MATENV"
+    pp_id = _exec("INSERT INTO produccion_programada (producto, fecha_programada, cantidad_kg, estado, lotes) "
+                  "VALUES (?, date('now','-5 hours'), 30, 'pendiente', 1)", (prod,))
+    _exec("INSERT INTO producto_presentaciones (producto_nombre, presentacion_codigo, etiqueta, "
+          "volumen_ml, envase_codigo, activo) VALUES (?, 'ZZM-30', 'Envase 30ml', 30, 'ENV-ZZM-30', 1)", (prod,))
+    mbr_id = _exec("INSERT INTO mbr_templates (producto_nombre, version, estado, lote_size_g, creado_por) "
+                   "VALUES (?, 1, 'aprobado', 30000, 'sebastian')", (prod,))
+    ebr_id = _exec("INSERT INTO ebr_ejecuciones (mbr_template_id, mbr_version, produccion_id, lote, estado, fase, "
+                   "iniciado_por, iniciado_at_utc, cantidad_objetivo_g) "
+                   "VALUES (?, 1, ?, 'ZZMAT-OF', 'iniciado', 'envasado', 'sebastian', "
+                   "datetime('now','utc'), 30000)", (mbr_id, pp_id))
+    c = _login(app, "sebastian")
+    v = c.get(f"/api/brd/ebr/{ebr_id}/vista-completa")
+    assert v.status_code == 200, v.data
+    mats = v.get_json().get("envasado_materiales", [])
+    assert mats, "el material de envase debe auto-cargarse del plan"
+    codigos = " ".join(m.get("material", "") for m in mats)
+    assert "ENV-ZZM-30" in codigos, codigos
+    assert any((m.get("requerida") or 0) > 0 for m in mats), mats
+
+
 def test_envasado_con_real_no_usa_planeadas(app, db_clean):
     """Si YA hay envasado real registrado, manda lo real (no las planeadas)."""
     c = _login(app, "sebastian")
