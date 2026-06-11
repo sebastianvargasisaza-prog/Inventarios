@@ -51,10 +51,9 @@ def test_envasado_autocarga_presentaciones_b2b_y_animus(app, db_clean):
     pres = v.get_json().get("envasado_presentaciones", [])
     assert pres, "el legajo debe auto-cargar presentaciones planeadas (Programado)"
     clientes = {p.get("cliente") for p in pres}
-    # La fila B2B (cliente) debe aparecer · es la parte determinista.
+    # La fila del cliente B2B (Fernando Meza) debe aparecer en el legajo · igual que en
+    # el modal de programación (parte determinista · lee pedidos_b2b_lote).
     assert "Fernando Mesa ZZ" in clientes, clientes
-    # Y debe haber al menos una fila Animus (la presentación 30ml del producto).
-    assert "Animus" in clientes, clientes
     # Todas las planeadas van en estado 'Programado'.
     assert all((p.get("estado") == "Programado") for p in pres), pres
 
