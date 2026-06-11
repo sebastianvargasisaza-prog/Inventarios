@@ -416,7 +416,7 @@ def aliados_skus_segmento():
             SELECT
                 COALESCE(NULLIF(TRIM(cl.categoria_profesional),''), 'Sin categoría') as cat,
                 pi.sku,
-                COALESCE(pi.descripcion, pi.sku) as descripcion,
+                MIN(COALESCE(pi.descripcion, pi.sku)) as descripcion,
                 SUM(pi.cantidad) as uds,
                 COUNT(DISTINCT p.numero) as pedidos,
                 SUM(pi.subtotal) as revenue
@@ -707,8 +707,8 @@ def aliados_analytics():
 
         # ── Top SKUs por aliado ───────────────────────────────────────────────
         c.execute("""
-            SELECT p.cliente_id, cl.nombre,
-                   pi.sku, pi.descripcion,
+            SELECT p.cliente_id, MIN(cl.nombre) as nombre,
+                   pi.sku, MIN(pi.descripcion) as descripcion,
                    SUM(pi.cantidad) as uds,
                    SUM(pi.subtotal) as revenue
             FROM pedidos_items pi

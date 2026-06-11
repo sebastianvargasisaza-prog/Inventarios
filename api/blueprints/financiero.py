@@ -510,13 +510,17 @@ def financiero_importar_ocs():
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
     # Traer OCs recibidas que no estén ya importadas
+    # FIX 10-jun audit · (a) GROUP BY incompleto → 500 en PG (numero_oc es UNIQUE, no PK)
+    # · agregar todas las columnas no agregadas. (b) IVA: el egreso debe ser el valor_total
+    # de la OC (ya incluye IVA · compras.py *1.19), no la suma de subtotales SIN IVA →
+    # priorizar valor_total con NULLIF; SUM queda como fallback si la OC no tiene total.
     c.execute("""SELECT oc.numero_oc, oc.fecha, oc.proveedor,
-                        COALESCE(SUM(i.cantidad_g * i.precio_unitario), oc.valor_total, 0) as total
+                        COALESCE(NULLIF(oc.valor_total,0), SUM(i.cantidad_g * i.precio_unitario), 0) as total
                  FROM ordenes_compra oc
                  LEFT JOIN ordenes_compra_items i ON oc.numero_oc=i.numero_oc
                  WHERE oc.estado='Recibida'
                  AND oc.numero_oc NOT IN (SELECT referencia FROM flujo_egresos WHERE referencia LIKE 'OC-%')
-                 GROUP BY oc.numero_oc""")
+                 GROUP BY oc.numero_oc, oc.fecha, oc.proveedor, oc.valor_total""")
     ocs = c.fetchall()
     usuario = session.get('compras_user','sistema')
     importadas = 0
@@ -608,17 +612,17 @@ def pnl_por_empresa():
     for emp in empresas:
         try:
             ing = c.execute("""SELECT COALESCE(SUM(monto),0) FROM flujo_ingresos
-                              WHERE empresa=? AND fecha BETWEEN ? AND ?""",
+                              WHERE UPPER(TRIM(empresa))=? AND fecha BETWEEN ? AND ?""",
                             (emp, desde, hasta)).fetchone()[0] or 0
             egr = c.execute("""SELECT COALESCE(SUM(monto),0) FROM flujo_egresos
-                              WHERE empresa=? AND fecha BETWEEN ? AND ?""",
+                              WHERE UPPER(TRIM(empresa))=? AND fecha BETWEEN ? AND ?""",
                             (emp, desde, hasta)).fetchone()[0] or 0
 
             # Desglose ingresos por categoria
             ing_breakdown = {}
             for row in c.execute("""SELECT categoria, COALESCE(SUM(monto),0)
                                     FROM flujo_ingresos
-                                    WHERE empresa=? AND fecha BETWEEN ? AND ?
+                                    WHERE UPPER(TRIM(empresa))=? AND fecha BETWEEN ? AND ?
                                     GROUP BY categoria""", (emp, desde, hasta)).fetchall():
                 ing_breakdown[row[0] or 'Sin categoria'] = row[1]
 
@@ -626,7 +630,7 @@ def pnl_por_empresa():
             egr_breakdown = {}
             for row in c.execute("""SELECT categoria, COALESCE(SUM(monto),0)
                                     FROM flujo_egresos
-                                    WHERE empresa=? AND fecha BETWEEN ? AND ?
+                                    WHERE UPPER(TRIM(empresa))=? AND fecha BETWEEN ? AND ?
                                     GROUP BY categoria""", (emp, desde, hasta)).fetchall():
                 egr_breakdown[row[0] or 'Sin categoria'] = row[1]
 
@@ -974,10 +978,14 @@ def financiero_ar_aging():
         return jsonify({'error': 'No autenticado'}), 401
     today = date.today()
     conn = get_db(); c = conn.cursor()
-    c.execute("""SELECT numero_pedido, cliente, fecha, valor_total
-                 FROM pedidos
-                 WHERE estado NOT IN ('Cancelado','Facturado','Entregado')
-                 AND valor_total > 0""")
+    # FIX 10-jun audit · la tabla `pedidos` tiene `numero` y `cliente_id` (no
+    # `numero_pedido`/`cliente`) → la query daba 500 siempre y la cartera AR nunca
+    # cargaba. JOIN a clientes para el nombre (mismo patrón que clientes.py/gerencia.py).
+    c.execute("""SELECT p.numero, COALESCE(cl.nombre,''), p.fecha, p.valor_total
+                 FROM pedidos p
+                 LEFT JOIN clientes cl ON p.cliente_id = cl.id
+                 WHERE p.estado NOT IN ('Cancelado','Facturado','Entregado')
+                 AND p.valor_total > 0""")
     rows = c.fetchall()
     buckets = {
         'corriente': {'total': 0, 'count': 0},
@@ -1066,7 +1074,10 @@ def financiero_working_capital():
     ap_total = c.fetchone()[0] or 0
     # Cash from gerencia_inputs
     try:
-        c.execute("SELECT valor FROM gerencia_inputs WHERE clave='saldo_caja' ORDER BY fecha DESC LIMIT 1")
+        # FIX 10-jun audit · gerencia_inputs es (periodo, saldo_caja, ...) · NO tiene
+        # columnas clave/valor → la query fallaba siempre y dejaba cash=0 (working_capital
+        # y runway subestimados). Misma fuente que financiero_kpis y gerencia.
+        c.execute("SELECT saldo_caja FROM gerencia_inputs ORDER BY periodo DESC LIMIT 1")
         row = c.fetchone()
         cash = float(row[0]) if row else 0.0
     except Exception:

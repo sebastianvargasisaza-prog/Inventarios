@@ -879,9 +879,12 @@ def portal_crear_pedido():
 
     conn = get_db()
     cur = conn.cursor()
-    # Validar que el producto exista
+    # Validar que el producto exista Y esté ACTIVO (el catálogo del portal filtra
+    # activo=1 · FIX 10-jun audit: sin este filtro un POST aceptaba fórmulas
+    # descontinuadas (activo=0) que entraban al plan como Fijo eos_b2b).
     prod_row = cur.execute(
-        "SELECT producto_nombre FROM formula_headers WHERE producto_nombre = ?",
+        "SELECT producto_nombre FROM formula_headers "
+        "WHERE producto_nombre = ? AND COALESCE(activo,1) = 1",
         (producto,),
     ).fetchone()
     if not prod_row:
@@ -2267,13 +2270,20 @@ def portal_convertir_solicitud_a_pedido(sol_id):
             pedido_id = cur.lastrowid
         else:
             raise
-    # Marcar solicitud como convertida
+    # Marcar solicitud como convertida · CAS (FIX 10-jun audit · race 3 workers):
+    # condicionado a que SIGA sin convertir y respondida · si otro request ganó la
+    # carrera (doble clic), rowcount=0 → rollback (deshace el pedido recién insertado)
+    # y 409, evitando 2 pedidos B2B del mismo RFQ.
     cur.execute(
         "UPDATE portal_solicitudes SET convertida_pedido_id = ?, "
         "       estado = 'convertida', "
         "       actualizada_at = datetime('now', '-5 hours') "
-        "WHERE id = ?",
+        "WHERE id = ? AND COALESCE(convertida_pedido_id,0) = 0 AND estado = 'respondida'",
         (pedido_id, sol_id))
+    if cur.rowcount != 1:
+        try: conn.rollback()
+        except Exception: pass
+        return jsonify({'error': 'Esta solicitud ya fue convertida (doble envío)'}), 409
     try:
         from audit_helpers import audit_log
         audit_log(cur, usuario=f'portal:{cnom}'[:80],

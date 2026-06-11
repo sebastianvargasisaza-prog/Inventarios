@@ -2949,6 +2949,14 @@ def handle_proveedores_compras():
     cols = ['nombre','contacto','email','telefono','categoria','condiciones_pago',
             'nit','direccion','num_cuenta','tipo_cuenta','banco','concepto_compra']
     provs = [dict(zip(cols, r)) for r in c.fetchall()]
+    # SEC-FIX 10-jun audit · Habeas Data (Ley 1581 · CERO_ERROR regla 5): los datos
+    # bancarios SOLO los ve admin+contadora. Antes cualquier user de compras (planta,
+    # calidad, marketing) leía num_cuenta/banco/nit en claro. Mismo patrón que marketing.py.
+    if not (u and u.lower() in {x.lower() for x in (set(ADMIN_USERS) | set(CONTADORA_USERS))}):
+        for _p in provs:
+            for _cb in ('num_cuenta', 'tipo_cuenta', 'banco', 'nit'):
+                if _p.get(_cb):
+                    _p[_cb] = '***'
     return jsonify({'proveedores': provs})
 
 @bp.route('/api/proveedores-compras/<path:nombre>', methods=['PATCH','DELETE'])
@@ -3125,6 +3133,11 @@ def proveedor_ficha_360(nombre):
             'id_interno','estado_lpa','ultima_evaluacion','vencimiento_docs',
             'acuerdo_calidad','condiciones_pago']
     prov = dict(zip(cols, row))
+    # SEC-FIX 10-jun audit · Habeas Data (Ley 1581): datos bancarios solo admin+contadora.
+    if not (u and u.lower() in {x.lower() for x in (set(ADMIN_USERS) | set(CONTADORA_USERS))}):
+        for _cb in ('num_cuenta', 'tipo_cuenta', 'banco', 'nit'):
+            if prov.get(_cb):
+                prov[_cb] = '***'
     # OC stats
     c.execute("""SELECT COUNT(*), COALESCE(SUM(valor_total),0), MIN(fecha), MAX(fecha)
                  FROM ordenes_compra WHERE proveedor=?""", (nombre,))
