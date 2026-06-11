@@ -7109,6 +7109,29 @@ def borrar_produccion_programada(evento_id):
 
 
 def _resolver_material_bodega(c, formula_mid, formula_nombre):
+    """Wrapper memoizado POR REQUEST de la resolución a código de bodega (FIX 11-jun perf).
+    El impl hace varias queries a `movimientos` por llamada y se invoca 1 vez por cada
+    código de MP (consumo-horizontes ~150, motor de déficit, factibilidad) → era N+1.
+    La resolución es determinista dentro de un request → cachear es seguro. Fuera de
+    request (crons sin `g`) cae al impl sin caché."""
+    _k = (str(formula_mid or '').strip(), str(formula_nombre or '').strip().upper())
+    try:
+        from flask import g as _g
+        _cache = getattr(_g, '_resolver_bodega_cache', None)
+        if _cache is None:
+            _cache = {}
+            _g._resolver_bodega_cache = _cache
+    except Exception:
+        _cache = None
+    if _cache is not None and _k in _cache:
+        return _cache[_k]
+    _res = _resolver_material_bodega_impl(c, formula_mid, formula_nombre)
+    if _cache is not None:
+        _cache[_k] = _res
+    return _res
+
+
+def _resolver_material_bodega_impl(c, formula_mid, formula_nombre):
     """FIX 1-jun-2026 (P0 · frena producción) · resuelve el material_id de FÓRMULA al
     material_id que usa BODEGA/movimientos. Bug: al producir 'N-acetil glucosamina' decía
     'Hay 0g' aunque bodega tenía 600g bajo otro código (los ~116 MPs con ID distinto entre
