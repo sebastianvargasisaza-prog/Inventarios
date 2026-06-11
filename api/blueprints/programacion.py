@@ -1201,8 +1201,15 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
             # /generar-oc, /regenerar-oc, /mps-deficit).
             _mid_raw = str(item['material_id']).strip()
             mid = _resolver_material_bodega(conn, _mid_raw, nombre) or _mid_raw
-            g_lote = item.get('cantidad_g_por_lote', 0)
-            g_need = float(g_lote) * factor
+            g_lote = float(item.get('cantidad_g_por_lote', 0) or 0)
+            if g_lote > 0:
+                g_need = g_lote * factor
+            else:
+                # FIX 10-jun audit factibilidad (BUG 2) · ítems cargados SOLO con %
+                # (sin gramos) NO aportaban demanda → déficit subestimado / sub-compra.
+                # Convertir % → gramos del evento (igual que plan.py / simular_produccion).
+                _pct = float(item.get('porcentaje', 0) or 0)
+                g_need = (_pct / 100.0) * float(kg_ev or 0) * 1000.0
             if g_need <= 0 or not mid:
                 continue
             if _is_unlimited_mp(nombre):
@@ -1243,11 +1250,29 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
             return mp_stock.get(_alias)
         return 0
 
-    # Calcular déficit (UNA sola resta — total_g - stock)
+    # FIX 10-jun audit abastecimiento (BUG 3) · restar lo YA pedido (SOL/OC en vuelo) ANTES
+    # del déficit. Sin esto, /generar-oc y /regenerar-oc re-piden el total aunque ya exista
+    # una OC en curso → sobre-compra y SOLs duplicadas. Mismo criterio que los motores
+    # nuevos (auto_plan, consumo-horizontes). Pendiente va por código de BODEGA (UPPER).
+    try:
+        from blueprints.compras import _pendiente_en_compras_bulk as _pend_bulk
+    except Exception:
+        try:
+            from api.blueprints.compras import _pendiente_en_compras_bulk as _pend_bulk
+        except Exception:
+            _pend_bulk = None
+    _pendiente = {}
+    try:
+        _pendiente = _pend_bulk(conn) if _pend_bulk else {}
+    except Exception:
+        _pendiente = {}
+
+    # Calcular déficit (UNA sola resta — total_g - stock - pendiente)
     out = {}
     for mid, data in mp_needed.items():
         stock_g = _lookup_stock(mid, data['nombre'])
-        deficit = max(0.0, data['total_g'] - stock_g)
+        pend_g = float(_pendiente.get((mid or '').upper().strip(), 0) or 0)
+        deficit = max(0.0, data['total_g'] - stock_g - pend_g)
         if deficit <= 0:
             continue
         out[mid] = {
@@ -1255,6 +1280,7 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
             'nombre': data['nombre'],
             'total_g': round(data['total_g'], 1),
             'stock_g': round(stock_g, 1),
+            'pendiente_g': round(pend_g, 1),
             'deficit_g': round(deficit, 1),
             'productos': data['productos'],
             'por_mes': data['por_mes'],
@@ -9907,8 +9933,9 @@ def producciones_faltantes():
                    COALESCE(SUM(i.cantidad_g - COALESCE(i.cantidad_recibida_g,0)),0)
             FROM ordenes_compra_items i
             JOIN ordenes_compra oc ON oc.numero_oc = i.numero_oc
-            WHERE oc.estado IN ('Borrador','Pendiente','Revisada','Aprobada',
-                                'Autorizada','Parcial','Pagada')
+            WHERE (oc.estado IN ('Borrador','Pendiente','Revisada','Aprobada',
+                                 'Autorizada','Parcial')
+                   OR (oc.estado='Pagada' AND COALESCE(oc.fecha_recepcion,'')=''))
               AND COALESCE(TRIM(i.codigo_mp),'') != ''
             GROUP BY UPPER(TRIM(i.codigo_mp))
         """).fetchall():
@@ -18509,19 +18536,29 @@ def planta_plan_semanal():
         prod_id, producto, fecha_prog, lotes, estado, area_id, area_codigo, area_nombre, lote_size, imagen_url = row
         lotes = lotes or 1
         mp_req = _calcular_mp_requerido(producto, lotes, c)
+        # FIX 10-jun audit factibilidad (BUG 1) · resolver al código de BODEGA antes de
+        # mirar stock y de acumular el consumo. Los códigos fantasma de fórmula
+        # (MPxxxSO01) daban stock 0 = déficit FALSO. Se agregan los crudos que mapean al
+        # mismo código de bodega. (El stock sigue incluyendo cuarentena a propósito · el
+        # plan mira consumo futuro · ver _stock_mp.)
+        mp_req_resuelto = {}
+        nombre_por_cod = {}
+        for _mid_raw, _rg in mp_req.items():
+            _nr = c.execute("SELECT material_nombre FROM formula_items WHERE material_id=? LIMIT 1",
+                            (_mid_raw,)).fetchone()
+            _nom = (_nr[0] if _nr else _mid_raw)
+            _cod = _resolver_material_bodega(c, str(_mid_raw), _nom) or str(_mid_raw)
+            mp_req_resuelto[_cod] = mp_req_resuelto.get(_cod, 0) + _rg
+            nombre_por_cod.setdefault(_cod, _nom)
 
         # Para cada MP, calcular disponible NETO al momento de esta producción
         mp_status = []
         deficit = []
-        for mat_id, req_g in mp_req.items():
+        for mat_id, req_g in mp_req_resuelto.items():
             stock_total = _stock_mp(mat_id, c)
             ya_reservado = consumo_acumulado.get(mat_id, 0)
             disp_neto = stock_total - ya_reservado
-            mat_nom_row = c.execute(
-                "SELECT material_nombre FROM formula_items "
-                "WHERE material_id=? LIMIT 1", (mat_id,)
-            ).fetchone()
-            mat_nom = (mat_nom_row[0] if mat_nom_row else mat_id)
+            mat_nom = nombre_por_cod.get(mat_id, mat_id)
             estado_mp = 'ok' if disp_neto >= req_g else ('justo' if disp_neto >= req_g * 0.5 else 'deficit')
             mp_status.append({
                 'material_id': mat_id, 'material_nombre': mat_nom,
