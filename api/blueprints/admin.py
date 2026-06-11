@@ -15606,6 +15606,212 @@ def admin_auto_unir_por_inci():
                                 'reparados': len(aplicados)}})
 
 
+def _norm_inci(s):
+    """Normaliza INCI/nombre para comparar: sin acentos, mayúsculas, puntuación→espacio."""
+    import unicodedata as _ud, re as _re
+    n = _ud.normalize('NFKD', str(s or '')).encode('ascii', 'ignore').decode().upper()
+    return _re.sub(r'[^A-Z0-9]+', ' ', n).strip()
+
+
+@bp.route("/api/admin/maestro-inci-diff", methods=["POST"])
+def admin_maestro_inci_diff():
+    """READ-ONLY · sube el Excel global de Alejandro (INVENTARIO_MP · columnas
+    CÓDIGO MP | NOMBRE INCI | NOMBRE COMERCIAL) y reporta la brecha contra el
+    maestro_mps + formula_items VIVOS. NO cambia nada (Etapa 1 · diagnóstico)."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    if 'file' not in request.files:
+        return jsonify({'error': 'Falta archivo (campo "file")'}), 400
+    f = request.files['file']
+    if not f.filename or not f.filename.lower().endswith(('.xlsx', '.xlsm')):
+        return jsonify({'error': 'El archivo debe ser .xlsx'}), 400
+    try:
+        from openpyxl import load_workbook
+        wb = load_workbook(f, data_only=True, read_only=True)
+    except Exception as e:
+        return jsonify({'error': f'Excel inválido: {e}'}), 400
+    ws = wb['INVENTARIO'] if 'INVENTARIO' in wb.sheetnames else wb[wb.sheetnames[0]]
+    # Detectar header (fila con CÓDIGO + INCI) y mapear columnas por nombre.
+    header_row = col_cod = col_inci = col_com = None
+    for ri, row in enumerate(ws.iter_rows(min_row=1, max_row=12, values_only=True), start=1):
+        cells = [_norm_inci(c) for c in row]
+        if any('CODIGO' in c for c in cells) and any('INCI' in c for c in cells):
+            header_row = ri
+            for ci, cval in enumerate(cells, start=1):
+                if 'CODIGO' in cval and col_cod is None:
+                    col_cod = ci
+                elif 'INCI' in cval and col_inci is None:
+                    col_inci = ci
+                elif 'COMERCIAL' in cval and col_com is None:
+                    col_com = ci
+            break
+    if not header_row or not col_cod or not col_inci:
+        return jsonify({'error': 'No encontré el header (CÓDIGO MP / NOMBRE INCI). Revisá el formato del Excel.'}), 400
+
+    def _cell(row, ci):
+        if not ci or ci - 1 >= len(row):
+            return ''
+        v = row[ci - 1]
+        return str(v).strip() if v is not None else ''
+
+    excel = {}
+    pendientes = []
+    for row in ws.iter_rows(min_row=header_row + 1, values_only=True):
+        cod = _cell(row, col_cod)
+        if not cod or not cod.upper().startswith('MP'):
+            continue
+        inci = _cell(row, col_inci)
+        com = _cell(row, col_com)
+        if cod not in excel:
+            excel[cod] = {'inci': inci, 'comercial': com}
+        if (not inci) or _norm_inci(inci) == 'PENDIENTE INCI':
+            pendientes.append({'codigo': cod, 'comercial': com})
+
+    conn = get_db(); c = conn.cursor()
+    db = {}
+    for r in c.execute("SELECT codigo_mp, COALESCE(nombre_inci,''), COALESCE(nombre_comercial,''), "
+                       "COALESCE(activo,1) FROM maestro_mps").fetchall():
+        db[r[0]] = {'inci': r[1], 'comercial': r[2], 'activo': r[3]}
+    db_up = {k.upper() for k in db}
+    excel_up = {k.upper() for k in excel}
+
+    from collections import defaultdict
+    fcod = defaultdict(set)
+    try:
+        for r in c.execute("SELECT UPPER(TRIM(material_id)), producto_nombre FROM formula_items "
+                           "WHERE TRIM(COALESCE(material_id,'')) != ''").fetchall():
+            fcod[r[0]].add(r[1])
+    except Exception:
+        pass
+
+    inci_mismatch, falta_en_maestro, huerfano_maestro, formula_sin_maestro = [], [], [], []
+    for cod, e in excel.items():
+        d = db.get(cod)
+        if not d:
+            falta_en_maestro.append({'codigo': cod, 'inci': e['inci'], 'comercial': e['comercial']})
+        elif e['inci'] and _norm_inci(d['inci']) != _norm_inci(e['inci']):
+            inci_mismatch.append({'codigo': cod, 'db_inci': d['inci'], 'excel_inci': e['inci'],
+                                  'comercial': e['comercial']})
+    for cod, d in db.items():
+        if cod.upper() not in excel_up:
+            huerfano_maestro.append({'codigo': cod, 'inci': d['inci'], 'comercial': d['comercial'],
+                                     'activo': d['activo']})
+    for cu, prods in fcod.items():
+        if cu not in excel_up:
+            formula_sin_maestro.append({'codigo': cu, 'n_formulas': len(prods),
+                                        'formulas': sorted(prods)[:8], 'en_maestro_db': cu in db_up})
+    byinci = defaultdict(list)
+    for cod, e in excel.items():
+        if e['inci'] and _norm_inci(e['inci']) != 'PENDIENTE INCI':
+            byinci[_norm_inci(e['inci'])].append(cod)
+    repetidos = [{'inci': k, 'codigos': v} for k, v in byinci.items() if len(v) > 1]
+
+    formula_sin_maestro.sort(key=lambda x: -x['n_formulas'])
+    return jsonify({
+        'ok': True,
+        'excel_mps': len(excel), 'db_mps': len(db), 'formula_codigos': len(fcod),
+        'inci_mismatch': inci_mismatch, 'falta_en_maestro': falta_en_maestro,
+        'huerfano_maestro': huerfano_maestro, 'formula_sin_maestro': formula_sin_maestro,
+        'pendientes_inci': pendientes, 'repetidos_inci': repetidos,
+        'resumen': {
+            'inci_a_corregir': len(inci_mismatch),
+            'falta_en_maestro': len(falta_en_maestro),
+            'huerfanos_maestro': len(huerfano_maestro),
+            'formula_codigos_sin_maestro': len(formula_sin_maestro),
+            'pendientes_inci': len(pendientes),
+            'incis_repetidos': len(repetidos),
+        },
+    })
+
+
+_MAESTRO_INCI_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Maestro INCI · Diagnóstico</title>
+<style>
+ body{font-family:system-ui,Arial;margin:0;background:#0f172a;color:#e2e8f0}
+ .wrap{max-width:1100px;margin:0 auto;padding:24px}
+ h1{font-size:20px}.muted{color:#94a3b8;font-size:13px}
+ .card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:18px;margin:14px 0}
+ .kpis{display:flex;gap:10px;flex-wrap:wrap}
+ .kpi{background:#0b1220;border:1px solid #334155;border-radius:10px;padding:12px 16px;min-width:120px}
+ .kpi .v{font-size:24px;font-weight:800}.kpi .l{font-size:11px;color:#94a3b8}
+ .bad{color:#f87171}.warn{color:#fbbf24}.ok{color:#34d399}
+ table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px}
+ th,td{padding:5px 8px;border-bottom:1px solid #334155;text-align:left}
+ th{color:#a5b4fc}.mono{font-family:ui-monospace,monospace}
+ button{padding:9px 16px;border:0;border-radius:8px;background:#7c3aed;color:#fff;font-weight:700;cursor:pointer}
+ input[type=file]{color:#cbd5e1}
+ a{color:#a5b4fc}
+</style></head><body><div class="wrap">
+<a href="/admin">&larr; Volver al Hub</a>
+<h1>🧬 Maestro INCI · Diagnóstico (read-only)</h1>
+<div class="muted">Subí el Excel global de Alejandro (INVENTARIO_MP · CÓDIGO MP | NOMBRE INCI | NOMBRE COMERCIAL).
+Compara contra el maestro y las fórmulas VIVOS y te muestra la brecha. <b>No cambia nada.</b></div>
+<div class="card">
+ <input type="file" id="f" accept=".xlsx,.xlsm">
+ <button onclick="diff()">Diagnosticar</button>
+ <div id="msg" class="muted" style="margin-top:10px"></div>
+</div>
+<div id="out"></div>
+</div>
+<script>
+function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+function _csrf(){return (document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/)||['',''])[1];}
+async function diff(){
+  var fe=document.getElementById('f'); var msg=document.getElementById('msg'); var out=document.getElementById('out');
+  if(!fe.files||!fe.files[0]){msg.textContent='Elegí el Excel primero.';return;}
+  msg.textContent='Analizando…'; out.innerHTML='';
+  try{
+    var fd=new FormData(); fd.append('file', fe.files[0]);
+    var r=await fetch('/api/admin/maestro-inci-diff',{method:'POST',body:fd,credentials:'same-origin',headers:{'X-CSRF-Token':_csrf()}});
+    var d=await r.json();
+    if(!r.ok||!d.ok){msg.textContent='Error: '+((d&&d.error)||r.status);return;}
+    msg.textContent='Excel: '+d.excel_mps+' MPs · Maestro app: '+d.db_mps+' · códigos en fórmulas: '+d.formula_codigos;
+    var s=d.resumen;
+    var h='<div class="card"><div class="kpis">'+
+      kpi('INCI a corregir', s.inci_a_corregir, 'warn')+
+      kpi('Faltan en maestro', s.falta_en_maestro, 'warn')+
+      kpi('Códigos de fórmula SIN maestro', s.formula_codigos_sin_maestro, 'bad')+
+      kpi('Huérfanos en maestro', s.huerfanos_maestro, 'muted')+
+      kpi('PENDIENTE INCI', s.pendientes_inci, 'warn')+
+      kpi('INCI repetidos', s.incis_repetidos, 'muted')+
+    '</div></div>';
+    h+=tbl('🔴 Códigos usados en fórmulas que NO están en el Excel de Alejandro (no van a casar)', d.formula_sin_maestro,
+      ['codigo','n_formulas','en_maestro_db','formulas'], function(x){return [x.codigo, x.n_formulas, (x.en_maestro_db?'sí':'NO'), (x.formulas||[]).join(', ')];});
+    h+=tbl('🟡 INCI distinto (app vs Excel) · se corregiría al del Excel', d.inci_mismatch,
+      ['codigo','db_inci','excel_inci'], function(x){return [x.codigo, x.db_inci, x.excel_inci];});
+    h+=tbl('🟡 En el Excel pero faltan en el maestro app', d.falta_en_maestro,
+      ['codigo','inci','comercial'], function(x){return [x.codigo, x.inci, x.comercial];});
+    h+=tbl('🟡 PENDIENTE INCI (Alejandro debe completar)', d.pendientes_inci,
+      ['codigo','comercial'], function(x){return [x.codigo, x.comercial];});
+    h+=tbl('⚪ Huérfanos: en el maestro app pero NO en el Excel (revisar)', d.huerfano_maestro,
+      ['codigo','inci','comercial','activo'], function(x){return [x.codigo, x.inci, x.comercial, (x.activo?'activo':'inactivo')];});
+    h+=tbl('⚪ INCI repetidos (identidad = código · informativo)', d.repetidos_inci,
+      ['inci','codigos'], function(x){return [x.inci, (x.codigos||[]).join(', ')];});
+    out.innerHTML=h;
+  }catch(e){msg.textContent='Error: '+(e.message||e);}
+}
+function kpi(l,v,cls){return '<div class="kpi"><div class="v '+(cls||'')+'">'+v+'</div><div class="l">'+l+'</div></div>';}
+function tbl(titulo, rows, cols, mapfn){
+  if(!rows||!rows.length) return '<div class="card"><b>'+titulo+'</b> <span class="ok">— 0</span></div>';
+  var h='<div class="card"><b>'+titulo+'</b> <span class="muted">('+rows.length+')</span><table><thead><tr>'+
+    cols.map(function(c){return '<th>'+esc(c)+'</th>';}).join('')+'</tr></thead><tbody>';
+  rows.slice(0,300).forEach(function(x){ h+='<tr>'+mapfn(x).map(function(v){return '<td class="mono">'+esc(v)+'</td>';}).join('')+'</tr>'; });
+  h+='</tbody></table>'+(rows.length>300?'<div class="muted">… '+(rows.length-300)+' más</div>':'')+'</div>';
+  return h;
+}
+</script></body></html>"""
+
+
+@bp.route("/admin/maestro-inci", methods=["GET"])
+def admin_maestro_inci_page():
+    """Página · diagnóstico Maestro INCI (Excel global ↔ maestro ↔ fórmulas)."""
+    if 'compras_user' not in session:
+        return redirect("/login?next=/admin/maestro-inci")
+    return _MAESTRO_INCI_HTML
+
+
 @bp.route("/admin/cruce-maestro", methods=["GET"])
 def admin_cruce_maestro_page():
     """Página · Cruce Maestro (Excel ↔ maestro ↔ fórmulas ↔ inventario)."""
