@@ -818,6 +818,17 @@ def _get_formulas(conn):
         }
     return formulas
 
+
+def _norm_prod_fuerte(s):
+    """Normaliza un nombre de PRODUCTO para match ROBUSTO entre tablas (M13 · 10-jun):
+    sin acentos (NFKD→ascii), puntuación→espacio, mayúsculas, espacios colapsados.
+    Evita que un acento, un '+' o un paréntesis distinto entre produccion_programada y
+    formula_headers rompa el match → demanda 0 silenciosa. Mismo criterio que el cruce
+    de Abastecimiento y _norm_prod_excel."""
+    import unicodedata as _udp, re as _rep
+    n = _udp.normalize('NFKD', str(s or '')).encode('ascii', 'ignore').decode().upper()
+    return _rep.sub(r'[^A-Z0-9]+', ' ', n).strip()
+
 # ─── Helpers: PT stock y MEE stock ──────────────────────────────────────────
 
 def _resolved_stock_por_sku(conn, empresa=None):
@@ -1153,6 +1164,9 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
 
     # produccion_programada (DB local) — complementa el calendario
     _upper_to_prod = {p.upper(): p for p in formulas.keys()}
+    # FIX 10-jun (M13) · match fuerte (sin acentos/puntuación) como fallback · si la
+    # programación difiere por acento/'+'/paréntesis del nombre de la fórmula, igual cruza.
+    _norm_to_prod = {_norm_prod_fuerte(p): p for p in formulas.keys()}
     try:
         local_rows = conn.execute(
             """SELECT producto, fecha_programada, lotes FROM produccion_programada
@@ -1166,7 +1180,9 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
             prod_raw = (row[0] or '').strip()
             fecha_s = (row[1] or '').strip()
             lotes = int(row[2] or 1)
-            prod = prod_raw if prod_raw in formulas else _upper_to_prod.get(prod_raw.upper())
+            prod = (prod_raw if prod_raw in formulas
+                    else _upper_to_prod.get(prod_raw.upper())
+                    or _norm_to_prod.get(_norm_prod_fuerte(prod_raw)))
             if not prod or not fecha_s:
                 continue
             key = (prod, fecha_s)
@@ -17869,17 +17885,26 @@ def planta_limpieza_completar(item_id):
 def _calcular_mp_requerido(producto, lotes, conn):
     """Devuelve dict {material_id: gramos_requeridos} para una producción."""
     fh = conn.execute(
-        "SELECT lote_size_kg FROM formula_headers WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
+        "SELECT producto_nombre, lote_size_kg FROM formula_headers WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
         (producto,)
     ).fetchone()
-    if not fh:
+    real_name = (fh[0] if fh else None)
+    lote_kg = ((fh[1] if fh else 0) or 0)
+    if not real_name:
+        # FIX 10-jun (M13) · si el match exacto falla, probar match FUERTE (sin acentos/
+        # puntuación) contra los nombres de fórmula · evita demanda 0 por renombres.
+        _pn = _norm_prod_fuerte(producto)
+        for r in conn.execute("SELECT producto_nombre, lote_size_kg FROM formula_headers").fetchall():
+            if _norm_prod_fuerte(r[0]) == _pn:
+                real_name, lote_kg = r[0], (r[1] or 0)
+                break
+    if not real_name:
         return {}
-    lote_kg = fh[0] or 0
     items = conn.execute("""
         SELECT material_id, porcentaje, COALESCE(cantidad_g_por_lote, 0)
         FROM formula_items
         WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))
-    """, (producto,)).fetchall()
+    """, (real_name,)).fetchall()
     out = {}
     for mat_id, pct, cant_lote in items:
         if cant_lote:
