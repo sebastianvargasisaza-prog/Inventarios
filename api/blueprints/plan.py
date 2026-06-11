@@ -4440,7 +4440,12 @@ def plan_factibilidad():
     except Exception:
         dias = 30
     solo_fijo = str(request.args.get('solo_fijo', '1')).lower() in ('1', 'true', 'yes')
-    incluir_atrasadas = str(request.args.get('incluir_atrasadas', '1')).lower() in ('1', 'true', 'yes')
+    # FIX 11-jun · Sebastián: "factibilidad debe mostrar desde el día que estoy viendo,
+    # hoy primero". Por defecto FORWARD-ONLY (hoy → +dias) · no arrastra el pasado
+    # (lotes viejos 'pendiente' del mes anterior = zombies que ensuciaban y descolocaban
+    # el orden). El que quiera ver backlog reciente pasa ?incluir_atrasadas=1 (acotado a
+    # atraso_max_dias, default 7).
+    incluir_atrasadas = str(request.args.get('incluir_atrasadas', '0')).lower() in ('1', 'true', 'yes')
     conn = get_db()
     c = conn.cursor()
 
@@ -4614,9 +4619,9 @@ def plan_factibilidad():
         # el pasado (lotes programados hace meses, nunca hechos ni cancelados = zombies).
         # Ahora solo atrasadas RECIENTES (default 30d · genuinamente tarde, no fósiles).
         try:
-            atraso_max = max(1, min(180, int(request.args.get('atraso_max_dias', 30))))
+            atraso_max = max(1, min(180, int(request.args.get('atraso_max_dias', 7))))
         except Exception:
-            atraso_max = 30
+            atraso_max = 7
         piso_atraso = (hoy - timedelta(days=atraso_max)).strftime("%Y-%m-%d")
         where_fechas += (
             " OR (substr(fecha_programada,1,10) < ? "
