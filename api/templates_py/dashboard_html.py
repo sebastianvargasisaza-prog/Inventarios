@@ -12851,6 +12851,10 @@ async function ckMarcar(itemId, estado){
   // Sebastián 24-may-2026 noche · selector 7 opciones · 15/30/60/90/120/180/365
   window.setAbastFoco = function(dias){
     window.ABAST_HORIZ = dias;
+    // FIX 10-jun · el horizonte de FOCO es la decisión: "Cubrir" (cantidad a pedir)
+    // se sincroniza con él → si decido 90 días, "Pedir" jala EXACTO el déficit a 90d.
+    // (el usuario igual puede cambiar "Cubrir" a mano después.)
+    try { if (window._ABA_STATE) window._ABA_STATE.cubrir_dias = dias; } catch(e){}
     document.querySelectorAll('.abast-htab').forEach(function(b){
       var active = parseInt(b.dataset.h) === dias;
       b.style.background = active ? '#7c3aed' : '#fff';
@@ -21881,19 +21885,13 @@ async function ckMarcar(itemId, estado){
   }
 
   function _cantidadSugerida(it, cubrirDias) {
-    // Cantidad a pedir = déficit del horizonte cubrir_dias (lo que falta
-    // para cubrir hasta ese día) · si está cubierto, sugerir el siguiente
-    // horizonte con déficit
+    // Cantidad a pedir = déficit EXACTO del horizonte elegido (consumo_H − stock −
+    // en cola). FIX 10-jun (Sebastián): "jalar exacto para N días · ni de más ni de
+    // menos". Antes, si el horizonte elegido estaba cubierto, jalaba de un horizonte
+    // POSTERIOR (se pasaba). Ahora si está cubierto → 0 (no sobre-pedir).
     if (!it.deficit) return 0;
     const dh = it.deficit[String(cubrirDias)];
-    if (dh && dh > 0.01) return Math.round(dh);
-    // Buscar el primer horizonte con déficit > 0
-    const hs = (window._ABA_STATE.horizontes || []).slice();
-    for (const h of hs) {
-      const v = it.deficit[String(h)];
-      if (v && v > 0.01) return Math.round(v);
-    }
-    return 0;
+    return (dh && dh > 0.01) ? Math.round(dh) : 0;
   }
 
   function _aplicarFiltros(items) {
