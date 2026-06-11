@@ -4609,12 +4609,23 @@ def plan_factibilidad():
     )
     params_fechas = [desde, hasta]
     if incluir_atrasadas:
+        # FIX 11-jun · Sebastián: "factibilidad muestra producciones antiguas, no una
+        # realidad". El filtro de atrasadas no tenía PISO hacia atrás → arrastraba TODO
+        # el pasado (lotes programados hace meses, nunca hechos ni cancelados = zombies).
+        # Ahora solo atrasadas RECIENTES (default 30d · genuinamente tarde, no fósiles).
+        try:
+            atraso_max = max(1, min(180, int(request.args.get('atraso_max_dias', 30))))
+        except Exception:
+            atraso_max = 30
+        piso_atraso = (hoy - timedelta(days=atraso_max)).strftime("%Y-%m-%d")
         where_fechas += (
             " OR (substr(fecha_programada,1,10) < ? "
+            "     AND substr(fecha_programada,1,10) >= ? "
             "     AND LOWER(COALESCE(estado,'')) IN ('pendiente','programado','atrasada')"
             "     AND inventario_descontado_at IS NULL)"
         )
         params_fechas.append(desde)
+        params_fechas.append(piso_atraso)
     where_fechas += ")"
     where_origen = ""
     if solo_fijo:
