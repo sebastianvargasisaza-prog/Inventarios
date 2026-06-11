@@ -1699,6 +1699,97 @@ load();
     return Response(html, mimetype='text/html')
 
 
+def _presentaciones_planeadas(conn, producto, ebr_produccion_id=None):
+    """Presentaciones PLANEADAS (estado 'Programado') de un producto desde la
+    PROGRAMACIÓN · para auto-cargar el legajo de Envasado/Acondicionamiento cuando aún
+    no hay envasado/acond real registrado (paridad MyBatch · 10-jun-2026).
+
+    Una sola producción de granel → N presentaciones = envase × cliente:
+      - Animus (DTC): variantes por ratio de ventas (helper canónico
+        `_composicion_envases_lote`) MENOS la porción que va a clientes B2B (no doble
+        contar).
+      - B2B: una fila por aporte de pedido (`pedidos_b2b_lote`: cliente + envase + uds).
+
+    Best-effort y READ-ONLY: si no hay programación enlazable o algo falla → []
+    (el legajo queda como antes, sin presentaciones). NO escribe nada."""
+    if not producto:
+        return []
+    cur = conn.cursor()
+    # 1) elegir el produccion_programada relevante (no hay FK · se enlaza por producto)
+    pp_id = None
+    try:
+        if ebr_produccion_id:
+            r = cur.execute(
+                "SELECT id FROM produccion_programada WHERE id=? "
+                "AND LOWER(TRIM(producto))=LOWER(TRIM(?))",
+                (ebr_produccion_id, producto)).fetchone()
+            if r:
+                pp_id = r[0]
+        if not pp_id:
+            r = cur.execute(
+                "SELECT id FROM produccion_programada "
+                "WHERE LOWER(TRIM(producto))=LOWER(TRIM(?)) "
+                "AND COALESCE(estado,'') NOT IN ('cancelado') "
+                "ORDER BY id DESC LIMIT 1", (producto,)).fetchone()
+            if r:
+                pp_id = r[0]
+    except Exception:
+        pp_id = None
+    if not pp_id:
+        return []
+    # 2) Aportes B2B por envase (cliente + uds) · lote_produccion_id = produccion_programada.id
+    b2b = []
+    b2b_por_envase = {}
+    try:
+        for r in cur.execute(
+            "SELECT COALESCE(cliente_nombre,''), COALESCE(envase_codigo,''), "
+            "COALESCE(unidades_aporte,0), COALESCE(ml_unidad,0) "
+            "FROM pedidos_b2b_lote WHERE lote_produccion_id=?", (pp_id,)).fetchall():
+            cli = (r[0] or 'Cliente B2B'); env = (r[1] or '').strip()
+            uds = int(r[2] or 0); ml = float(r[3] or 0)
+            b2b.append({'cliente': cli, 'envase': env, 'unidades': uds, 'volumen_ml': ml})
+            if env:
+                b2b_por_envase[env.upper()] = b2b_por_envase.get(env.upper(), 0) + uds
+    except Exception:
+        pass
+    out = []
+    # 3) Variantes Animus (composición) MENOS la porción B2B del mismo envase
+    try:
+        from blueprints.programacion import _composicion_envases_lote
+    except Exception:
+        try:
+            from api.blueprints.programacion import _composicion_envases_lote
+        except Exception:
+            _composicion_envases_lote = None
+    if _composicion_envases_lote:
+        try:
+            comp = _composicion_envases_lote(cur, pp_id) or {}
+            for v in (comp.get('variantes') or []):
+                env = (v.get('envase_codigo') or '').strip()
+                tot = int(v.get('unidades_estimadas') or 0)
+                animus = max(0, tot - b2b_por_envase.get(env.upper(), 0))
+                vol = float(v.get('volumen_ml') or 0)
+                out.append({
+                    'presentacion': v.get('etiqueta') or v.get('presentacion_codigo') or env or '—',
+                    'lote': '', 'unidades': animus, 'area': '',
+                    'cantidad_ml': (animus * vol) if (animus and vol) else None,
+                    'unidades_final': None, 'rend_pct': None,
+                    'estado': 'Programado', 'cliente': 'Animus',
+                })
+        except Exception:
+            pass
+    # 4) Una fila por aporte B2B (cliente)
+    for b in b2b:
+        out.append({
+            'presentacion': (b['envase'] or '—'),
+            'lote': '', 'unidades': b['unidades'], 'area': '',
+            'cantidad_ml': (b['unidades'] * b['volumen_ml']) if (b['unidades'] and b['volumen_ml']) else None,
+            'unidades_final': None, 'rend_pct': None,
+            'estado': 'Programado', 'cliente': b['cliente'],
+        })
+    return out
+
+
 @bp.route("/api/brd/ebr/<int:ebr_id>/vista-completa", methods=["GET"])
 def ebr_vista_completa(ebr_id):
     """MyBatch parity Sprint B · 21-may-2026 · Sebastián.
@@ -1841,6 +1932,14 @@ def ebr_vista_completa(ebr_id):
                     })
         except Exception as _ep:
             __import__('logging').getLogger('brd').warning('envasado_presentaciones fallo: %s', _ep)
+        # Auto-carga (MyBatch · 10-jun): si aún no hay envasado real registrado, mostrar
+        # las presentaciones PLANEADAS desde la programación (Animus + B2B · 'Programado').
+        if not out['envasado_presentaciones']:
+            try:
+                out['envasado_presentaciones'] = _presentaciones_planeadas(
+                    conn, out['header'].get('producto'), out['header'].get('produccion_id'))
+            except Exception as _epp:
+                __import__('logging').getLogger('brd').warning('presentaciones planeadas OF fallo: %s', _epp)
         # Materiales de Envase (envase + tapa usados) · conciliación de empaque (MyBatch):
         # cant. requerida vs devuelta/utilizada/averiada/diferencia. Iteración 2 · requerida.
         out['envasado_materiales'] = []
@@ -1932,6 +2031,14 @@ def ebr_vista_completa(ebr_id):
                     })
         except Exception as _ea:
             __import__('logging').getLogger('brd').warning('acond_presentaciones fallo: %s', _ea)
+        # Auto-carga (MyBatch · 10-jun): si aún no hay acondicionamiento real, mostrar
+        # las presentaciones PLANEADAS desde la programación (Animus + B2B · 'Programado').
+        if not out['acond_presentaciones']:
+            try:
+                out['acond_presentaciones'] = _presentaciones_planeadas(
+                    conn, out['header'].get('producto'), out['header'].get('produccion_id'))
+            except Exception as _epp:
+                __import__('logging').getLogger('brd').warning('presentaciones planeadas OA fallo: %s', _epp)
     # Elaborado por (enriquecido) + Supervisado por · Sebastián 5-jun-2026:
     # "el área productiva la supervisa el Jefe de Producción; calidad el Jefe de
     # Control de Calidad". Resolvemos nombre+cargo desde usuarios_identidad
@@ -6000,7 +6107,7 @@ async function load(){
     var presRows=pres.length
       ? pres.map(function(p){
           return '<tr>'+
-            '<td>'+esc(p.presentacion||'—')+'</td>'+
+            '<td>'+esc(p.presentacion||'—')+(p.cliente?' <span style="color:#94a3b8;font-size:11px">· '+esc(p.cliente)+'</span>':'')+'</td>'+
             '<td class="mono">'+esc(p.lote||'—')+'</td>'+
             '<td>'+(p.unidades!=null?Number(p.unidades).toLocaleString('es-CO'):'')+'</td>'+
             '<td>'+esc(p.area||'—')+'</td>'+
@@ -6191,7 +6298,7 @@ async function load(){
     var presRows=pres.length
       ? pres.map(function(p){
           return '<tr>'+
-            '<td>'+esc(p.presentacion||'—')+'</td>'+
+            '<td>'+esc(p.presentacion||'—')+(p.cliente?' <span style="color:#94a3b8;font-size:11px">· '+esc(p.cliente)+'</span>':'')+'</td>'+
             '<td class="mono">'+esc(p.lote||'—')+'</td>'+
             '<td>'+(p.unidades!=null?Number(p.unidades).toLocaleString('es-CO'):'')+'</td>'+
             '<td>'+esc(p.estado||'—')+'</td>'+
