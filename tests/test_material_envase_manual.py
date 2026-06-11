@@ -80,3 +80,40 @@ def test_material_envase_bloqueado_si_liberado(app, db_clean):
     r = c.post(f"/api/brd/ebr/{ebr_id}/material-envase",
                json={"material_codigo": "ENV-XTEST", "requerida": 100})
     assert r.status_code == 409, r.data
+
+
+def test_presentacion_manual_crud(app, db_clean):
+    ebr_id = _ebr_envasado(prod="ZZ-PRESMAN", lote="ZZPM-OF")
+    c = _login(app)
+
+    # AGREGAR (30 ml · 300 uds → cantidad 9000 mL)
+    ra = c.post(f"/api/brd/ebr/{ebr_id}/presentacion",
+                json={"presentacion": "30 ml", "cliente": "Kelly Guerra", "unidades": 300, "volumen_ml": 30})
+    assert ra.status_code == 200, ra.data
+    rid = ra.get_json()["id"]
+    v = c.get(f"/api/brd/ebr/{ebr_id}/vista-completa").get_json()
+    man = [p for p in v["envasado_presentaciones"] if p.get("id") == rid]
+    assert man, v["envasado_presentaciones"]
+    assert man[0]["fuente"] == "manual" and man[0]["cliente"] == "Kelly Guerra"
+    assert abs((man[0]["cantidad_ml"] or 0) - 9000) < 1, man[0]
+
+    # EDITAR (subir a 400 uds)
+    re = c.post(f"/api/brd/ebr/{ebr_id}/presentacion",
+                json={"id": rid, "presentacion": "30 ml", "unidades": 400, "volumen_ml": 30})
+    assert re.status_code == 200, re.data
+    m2 = [p for p in c.get(f"/api/brd/ebr/{ebr_id}/vista-completa").get_json()["envasado_presentaciones"]
+          if p.get("id") == rid][0]
+    assert abs(m2["unidades"] - 400) < 1, m2
+
+    # BORRAR
+    rd = c.delete(f"/api/brd/ebr/{ebr_id}/presentacion/{rid}")
+    assert rd.status_code == 200, rd.data
+    v3 = c.get(f"/api/brd/ebr/{ebr_id}/vista-completa").get_json()
+    assert not [p for p in v3["envasado_presentaciones"] if p.get("id") == rid]
+
+
+def test_presentacion_manual_bloqueada_si_liberado(app, db_clean):
+    ebr_id = _ebr_envasado(prod="ZZ-PRESLIB", lote="ZZPL-OF", estado="liberado")
+    c = _login(app)
+    r = c.post(f"/api/brd/ebr/{ebr_id}/presentacion", json={"presentacion": "10 ml", "unidades": 50})
+    assert r.status_code == 409, r.data

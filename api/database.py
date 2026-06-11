@@ -312,6 +312,24 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (236, "EBR · presentaciones MANUALES del legajo (Sebastián 11-jun): permite agregar/"
+          "editar/borrar a mano una presentación (por si no cargó del plan), además de las "
+          "auto-cargadas. Tabla aparte · no toca el envasado real ni la inmutabilidad.", [
+        "CREATE TABLE IF NOT EXISTS ebr_presentaciones_manual ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " ebr_id INTEGER NOT NULL,"
+        " presentacion TEXT DEFAULT '',"
+        " cliente TEXT DEFAULT '',"
+        " volumen_ml REAL,"
+        " envase_codigo TEXT DEFAULT '',"
+        " unidades REAL,"
+        " area TEXT DEFAULT '',"
+        " lote TEXT DEFAULT '',"
+        " creado_por TEXT DEFAULT '',"
+        " creado_at TEXT DEFAULT (datetime('now','-5 hours')))",
+        "CREATE INDEX IF NOT EXISTS idx_ebr_pres_man ON ebr_presentaciones_manual(ebr_id)",
+    ]),
+
     (235, "EBR · materiales de envase MANUALES del legajo (Sebastián 11-jun): permite "
           "elegir/agregar/editar a mano un material de envase desde el desplegable de TODOS "
           "los envases (maestro_mee), además del auto-cargado del plan. Tabla aparte · no "

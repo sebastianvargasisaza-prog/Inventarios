@@ -1994,6 +1994,11 @@ def ebr_vista_completa(ebr_id):
                     conn, out['header'].get('producto'), out['header'].get('produccion_id'))
             except Exception as _epp:
                 __import__('logging').getLogger('brd').warning('presentaciones planeadas OF fallo: %s', _epp)
+        # + presentaciones agregadas/editadas A MANO (se suman a lo auto-cargado · editables).
+        try:
+            out['envasado_presentaciones'] = (out['envasado_presentaciones'] or []) + _presentaciones_manuales(conn, ebr_id)
+        except Exception:
+            pass
         # Materiales de Envase (envase + tapa usados) · conciliación de empaque (MyBatch):
         # cant. requerida vs devuelta/utilizada/averiada/diferencia. Iteración 2 · requerida.
         out['envasado_materiales'] = []
@@ -2107,6 +2112,11 @@ def ebr_vista_completa(ebr_id):
                     conn, out['header'].get('producto'), out['header'].get('produccion_id'))
             except Exception as _epp:
                 __import__('logging').getLogger('brd').warning('presentaciones planeadas OA fallo: %s', _epp)
+        # + presentaciones agregadas/editadas A MANO (se suman a lo auto-cargado · editables).
+        try:
+            out['acond_presentaciones'] = (out['acond_presentaciones'] or []) + _presentaciones_manuales(conn, ebr_id)
+        except Exception:
+            pass
         # Auto-carga del material de empaque planeado si aún no hay acond real.
         if not out['acond_materiales']:
             try:
@@ -3415,6 +3425,105 @@ def _materiales_envase_manuales(conn, ebr_id):
             "lote_material": r["lote_material"] or "",
             "requerida": req, "devuelta": dev, "utilizada": uti,
             "averiada": r["averiada"], "diferencia": dif,
+        })
+    return out
+
+
+# ── Presentaciones MANUALES del legajo (gemelo de los materiales · 11-jun) ──────
+@bp.route("/api/brd/ebr/<int:ebr_id>/presentacion", methods=["POST"])
+def brd_presentacion_upsert(ebr_id):
+    """Agrega o EDITA a mano una presentación del legajo (por si no cargó del plan).
+    Bloqueado si el lote está liberado/rechazado (inmutable · Part 11)."""
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    body = request.get_json(silent=True) or {}
+    pres = (body.get("presentacion") or "").strip()
+    if not pres:
+        return jsonify({"error": "Indicá la presentación (ej. 30 ml)"}), 400
+    conn = get_db(); cur = conn.cursor()
+    ebr = _ebr_estado_lote(cur, ebr_id)
+    if not ebr:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if ebr["estado"] in ("liberado", "rechazado"):
+        return jsonify({"error": f"el lote está {ebr['estado']} (inmutable) · no se edita"}), 409
+
+    def _num(k):
+        v = body.get(k)
+        try:
+            return float(v) if v not in (None, "") else None
+        except Exception:
+            return None
+
+    cliente = (body.get("cliente") or "Animus DTC").strip()
+    envase = (body.get("envase_codigo") or "").strip()
+    area = (body.get("area") or "").strip()
+    lote = (body.get("lote") or ebr["lote"] or "").strip()
+    vol = _num("volumen_ml"); uds = _num("unidades")
+    row_id = body.get("id")
+    if row_id:
+        cur.execute(
+            "UPDATE ebr_presentaciones_manual SET presentacion=?, cliente=?, volumen_ml=?, "
+            "envase_codigo=?, unidades=?, area=?, lote=? WHERE id=? AND ebr_id=?",
+            (pres, cliente, vol, envase, uds, area, lote, int(row_id), ebr_id))
+        if cur.rowcount != 1:
+            return jsonify({"error": "fila no encontrada"}), 404
+        nuevo_id = int(row_id); accion = "EDITAR_PRESENTACION_EBR"
+    else:
+        cur.execute(
+            "INSERT INTO ebr_presentaciones_manual (ebr_id, presentacion, cliente, volumen_ml, "
+            "envase_codigo, unidades, area, lote, creado_por) VALUES (?,?,?,?,?,?,?,?,?)",
+            (ebr_id, pres, cliente, vol, envase, uds, area, lote, user))
+        nuevo_id = cur.lastrowid; accion = "AGREGAR_PRESENTACION_EBR"
+    audit_log(cur, usuario=user, accion=accion, tabla="ebr_presentaciones_manual",
+              registro_id=nuevo_id, despues={"presentacion": pres, "unidades": uds, "cliente": cliente})
+    conn.commit()
+    return jsonify({"ok": True, "id": nuevo_id})
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/presentacion/<int:row_id>", methods=["DELETE"])
+def brd_presentacion_delete(ebr_id, row_id):
+    """Elimina una presentación agregada a mano (no toca las auto-cargadas del plan)."""
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    conn = get_db(); cur = conn.cursor()
+    ebr = _ebr_estado_lote(cur, ebr_id)
+    if not ebr:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if ebr["estado"] in ("liberado", "rechazado"):
+        return jsonify({"error": f"el lote está {ebr['estado']} (inmutable)"}), 409
+    cur.execute("DELETE FROM ebr_presentaciones_manual WHERE id=? AND ebr_id=?", (row_id, ebr_id))
+    if cur.rowcount != 1:
+        return jsonify({"error": "fila no encontrada"}), 404
+    audit_log(cur, usuario=user, accion="ELIMINAR_PRESENTACION_EBR",
+              tabla="ebr_presentaciones_manual", registro_id=row_id)
+    conn.commit()
+    return jsonify({"ok": True, "eliminado": True})
+
+
+def _presentaciones_manuales(conn, ebr_id):
+    """Presentaciones agregadas/editadas a mano (ebr_presentaciones_manual). Tienen `id`
+    y `fuente='manual'` → la UI permite editarlas/borrarlas. Estado 'Programado (manual)'."""
+    try:
+        cur = conn.cursor()
+        rows = cur.execute(
+            "SELECT id, presentacion, cliente, volumen_ml, envase_codigo, unidades, area, lote "
+            "FROM ebr_presentaciones_manual WHERE ebr_id=? ORDER BY id", (ebr_id,)).fetchall()
+    except Exception:
+        return []
+    out = []
+    for r in rows:
+        uds = r["unidades"]; ml = r["volumen_ml"]
+        out.append({
+            "id": r["id"], "fuente": "manual",
+            "presentacion": r["presentacion"] or "—", "cliente": r["cliente"] or "Animus DTC",
+            "lote": r["lote"] or "", "unidades": uds, "area": r["area"] or "",
+            "envase_codigo": r["envase_codigo"] or "", "volumen_ml": ml,
+            "cantidad_ml": (uds * ml) if (uds and ml) else None,
+            "unidades_final": None, "rend_pct": None, "estado": "Programado (manual)",
         })
     return out
 
@@ -6331,12 +6440,19 @@ async function load(){
     // Paso 2 · Lotes de Producto por Presentación + Materiales de Envase (tal cual MyBatch).
     function ar(){return '<span class="ar">&#8645;</span>';}
     var pres=d.envasado_presentaciones||[];
+    window._pres=pres;
+    var puedeEdPres=(estado!=='liberado'&&estado!=='rechazado');
     var totUds=pres.reduce(function(a,p){return a+(Number(p.unidades)||0);},0);
     var totCant=pres.reduce(function(a,p){return a+(Number(p.cantidad_ml)||0);},0);
     var presRows=pres.length
-      ? pres.map(function(p){
+      ? pres.map(function(p,i){
+          var acc='<a class="ab ab-play" href="/planta/instrucciones-envasado/'+EBR_ID+'" title="Ejecutar / Instrucciones de Envasado">&#9654;</a>';
+          if(puedeEdPres){
+            acc+='<button class="ab ab-ed" onclick="presModal('+i+')" title="Editar">&#9998;</button>';
+            if(p.id){acc='<button class="ab ab-x" onclick="borrarPres('+p.id+')" title="Eliminar">&#215;</button>'+acc;}
+          }
           return '<tr>'+
-            '<td>'+esc(p.presentacion||'—')+(p.cliente?' <span style="color:#94a3b8;font-size:11px">· '+esc(p.cliente)+'</span>':'')+'</td>'+
+            '<td>'+esc(p.presentacion||'—')+(p.cliente?' <span style="color:#94a3b8;font-size:11px">· '+esc(p.cliente)+'</span>':'')+(p.fuente==='manual'?' <span style="color:#7c3aed;font-size:10px;font-weight:700">·manual</span>':'')+'</td>'+
             '<td class="mono">'+esc(p.lote||'—')+'</td>'+
             '<td>'+(p.unidades!=null?Number(p.unidades).toLocaleString('es-CO'):'')+'</td>'+
             '<td>'+esc(p.area||'—')+'</td>'+
@@ -6344,11 +6460,12 @@ async function load(){
             '<td>'+(p.unidades_final!=null?Number(p.unidades_final).toLocaleString('es-CO'):'')+'</td>'+
             '<td>'+(p.rend_pct!=null?(Number(p.rend_pct).toLocaleString('es-CO',{maximumFractionDigits:2})+'%'):'')+'</td>'+
             '<td>'+esc(p.estado||'—')+'</td>'+
-            '<td><div class="act"><a class="ab ab-play" href="/planta/instrucciones-envasado/'+EBR_ID+'" title="Ejecutar / Instrucciones de Envasado">&#9654;</a><button class="ab ab-plus" onclick="prox()" title="Agregar">+</button></div></td>'+
+            '<td><div class="act">'+acc+'</div></td>'+
           '</tr>';
         }).join('')
       : '<tr><td colspan="9" class="muted" style="text-align:center;background:#fff">Sin presentaciones registradas aún.</td></tr>';
-    var presCard='<div class="card"><div class="sectit">Lotes de Producto por Presentación</div>'+
+    var presCard='<div class="card"><div class="sechead" style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div class="sectit">Lotes de Producto por Presentación</div>'+
+      (puedeEdPres?'<button class="bt bt-pdf" onclick="presModal(-1)" title="Agregar una presentación a mano (por si no cargó del plan)">+ Presentación</button>':'')+'</div>'+
       '<div class="tw"><table class="t"><thead><tr>'+
         '<th>Presentación'+ar()+'</th><th>N° de lote'+ar()+'</th><th>Unid.'+ar()+'</th><th>Área/Línea'+ar()+'</th><th>Cantidad'+ar()+'</th><th>Unid. final'+ar()+'</th><th>%Rend.'+ar()+'</th><th>Estado'+ar()+'</th><th>Acciones</th>'+
       '</tr></thead><tbody>'+presRows+'</tbody>'+
@@ -6481,6 +6598,50 @@ async function borrarMat(id){
   if(!confirm('¿Eliminar este material de envase agregado a mano?'))return;
   try{
     var r=await fetch('/api/brd/ebr/'+EBR_ID+'/material-envase/'+id,{method:'DELETE',credentials:'same-origin'});
+    var d=await r.json();
+    if(!r.ok||!d.ok){alert('No se pudo eliminar: '+((d&&d.error)||r.status));return;}
+    load();
+  }catch(e){alert('Error: '+(e.message||e));}
+}
+function presModal(i){
+  var p=(i>=0&&window._pres)?window._pres[i]:null;
+  var ov=document.getElementById('presov');
+  if(!ov){ov=document.createElement('div');ov.id='presov';ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:9999';document.body.appendChild(ov);}
+  function v(x){return (x==null?'':x);}
+  ov.innerHTML='<div style="background:#fff;border-radius:14px;padding:22px;max-width:520px;width:92%;box-shadow:0 10px 40px rgba(0,0,0,.3)">'+
+    '<div style="font-weight:800;font-size:17px;margin-bottom:14px">'+(p?'Editar presentación':'Agregar presentación')+'</div>'+
+    '<input type="hidden" id="p_id" value="'+v(p&&p.id)+'">'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+      '<div><label style="font-size:12px;color:#475569;font-weight:600">Presentación *</label><input id="p_pres" value="'+esc(v(p&&p.presentacion))+'" placeholder="ej. 30 ml" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px"></div>'+
+      '<div><label style="font-size:12px;color:#475569;font-weight:600">Cliente</label><input id="p_cli" value="'+esc(v((p&&p.cliente)||"Animus DTC"))+'" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px"></div>'+
+      '<div><label style="font-size:12px;color:#475569;font-weight:600">Unidades</label><input id="p_uds" type="number" value="'+v(p&&p.unidades)+'" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px"></div>'+
+      '<div><label style="font-size:12px;color:#475569;font-weight:600">Volumen (mL/ud)</label><input id="p_vol" type="number" value="'+v(p&&p.volumen_ml)+'" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px"></div>'+
+      '<div><label style="font-size:12px;color:#475569;font-weight:600">Área/Línea</label><input id="p_area" value="'+esc(v(p&&p.area))+'" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:8px"></div>'+
+    '</div>'+
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">'+
+      '<button onclick="cerrarPres()" style="padding:9px 16px;border:1px solid #cbd5e1;background:#f1f5f9;border-radius:8px;cursor:pointer">Cancelar</button>'+
+      '<button onclick="guardarPres()" style="padding:9px 16px;border:0;background:#7c3aed;color:#fff;border-radius:8px;cursor:pointer;font-weight:700">Guardar</button>'+
+    '</div></div>';
+  ov.style.display='flex';
+}
+function cerrarPres(){var ov=document.getElementById('presov');if(ov)ov.style.display='none';}
+async function guardarPres(){
+  var pres=document.getElementById('p_pres').value.trim();
+  if(!pres){alert('Indicá la presentación (ej. 30 ml).');return;}
+  function n(id){var x=document.getElementById(id).value;return x===''?null:parseFloat(x);}
+  var body={presentacion:pres,cliente:document.getElementById('p_cli').value,unidades:n('p_uds'),volumen_ml:n('p_vol'),area:document.getElementById('p_area').value};
+  var idv=document.getElementById('p_id').value;if(idv)body.id=parseInt(idv,10);
+  try{
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/presentacion',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify(body)});
+    var d=await r.json();
+    if(!r.ok||!d.ok){alert('No se pudo guardar: '+((d&&d.error)||r.status));return;}
+    cerrarPres();load();
+  }catch(e){alert('Error: '+(e.message||e));}
+}
+async function borrarPres(id){
+  if(!confirm('¿Eliminar esta presentación agregada a mano?'))return;
+  try{
+    var r=await fetch('/api/brd/ebr/'+EBR_ID+'/presentacion/'+id,{method:'DELETE',credentials:'same-origin'});
     var d=await r.json();
     if(!r.ok||!d.ok){alert('No se pudo eliminar: '+((d&&d.error)||r.status));return;}
     load();
