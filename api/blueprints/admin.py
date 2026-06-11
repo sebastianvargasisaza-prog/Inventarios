@@ -10426,8 +10426,13 @@ async function diagLogin(username) {
 async function resetPassword(username) {
   if (!confirm('¿Resetear la password de "' + username + '"?\\n\\nSe generará una password aleatoria que verás UNA SOLA VEZ. Tienes que comunicársela al usuario.')) return;
   try {
+    // FIX 11-jun · el POST de reset es endpoint admin/sensible → requiere X-CSRF-Token.
+    // Antes no lo mandaba → "CSRF token requerido". Pedimos el token de sesión primero.
+    let _csrf = '';
+    try { const _tr = await fetch('/api/csrf-token', {credentials:'same-origin'}); if (_tr.ok) { const _td = await _tr.json(); _csrf = _td.csrf_token || ''; } } catch (e) {}
     const r = await fetch('/api/admin/reset-password', {
-      method:'POST', headers:{'Content-Type':'application/json'},
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json', 'X-CSRF-Token': _csrf},
       body: JSON.stringify({username: username})
     });
     const data = await r.json();
