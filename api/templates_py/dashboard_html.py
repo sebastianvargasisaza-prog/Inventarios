@@ -3902,11 +3902,16 @@ function subSwitchTab(tabId,btn,barId){
 // tab OF de Órdenes · quitar redundancia · 9-jun). Defensivo: no-op si no hay hash/botones.
 function _deepLinkTab(){
   try{
-    if((location.hash||'').toLowerCase()!=='#envasado') return;
+    var h=(location.hash||'').toLowerCase();
+    var subkey=null;
+    if(h==='#envasado') subkey='envasado';
+    else if(h==='#acondicionamiento') subkey='acondicionamiento';
+    else if(h==='#fabricacion'||h==='#produccion') subkey='produccion';
+    else return;
     var mod=[].slice.call(document.querySelectorAll('.tab-button')).filter(function(b){return /switchGroup\\(.bar-prodHub./.test(b.getAttribute('onclick')||'');})[0];
     if(mod) mod.click();
     var bar=document.getElementById('bar-prodHub');
-    var sub=bar?[].slice.call(bar.querySelectorAll('.sub-btn')).filter(function(b){return /subSwitchTab\\(.envasado./.test(b.getAttribute('onclick')||'');})[0]:null;
+    var sub=bar?[].slice.call(bar.querySelectorAll('.sub-btn')).filter(function(b){return (b.getAttribute('onclick')||'').indexOf("subSwitchTab('"+subkey+"'")>=0;})[0]:null;
     if(sub) sub.click();
   }catch(e){}
 }
