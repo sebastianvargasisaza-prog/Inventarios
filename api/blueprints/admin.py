@@ -2748,13 +2748,14 @@ def admin_reset_password():
         "username": target,
         "email_enviado": email_enviado,
         "email_destino": target_email if email_enviado else None,
-        "warning": ("Password enviado por email." if email_enviado
-                    else "Esta password se muestra UNA SOLA VEZ · "
-                         "compártela por canal seguro y forzá cambio en primer login."),
+        "warning": (("También se envió por email a " + target_email + ". ") if email_enviado else "")
+                   + "Se muestra UNA SOLA VEZ · compartila por canal seguro y que la cambie en su primer login.",
     }
-    if not email_enviado:
-        # Sin email · admin DEBE leer plaintext (log warning)
-        resp["new_password"] = new_pwd
+    # FIX 11-jun · SIEMPRE devolver la plaintext al admin que reseteó (la tiene que
+    # comunicar al usuario). Antes, si el user tenía email, se mandaba por correo y la
+    # pantalla quedaba VACÍA ("no salió nada para copiar"). El admin ya tiene control
+    # total; ver la clave temporal una vez, sobre HTTPS, es necesario y estándar.
+    resp["new_password"] = new_pwd
     return jsonify(resp)
 
 
