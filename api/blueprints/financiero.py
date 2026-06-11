@@ -760,6 +760,17 @@ def _sync_shopify_a_flujo_ingresos(conn, solo_pagados=True, desde_fecha='', dry_
         total = float(row[3] or 0)
         if total <= 0:
             continue
+        # FIX 10-jun audit · RACE multi-worker (3 Gunicorn + trigger on-demand desde KPIs):
+        # reclamar el pedido ATÓMICAMENTE antes de insertar. El CAS marca flujo_synced=1
+        # solo si seguía en 0 → un único worker gana cada pedido (rowcount==1); el resto
+        # ve rowcount==0 y salta. Evita el doble INSERT que inflaba los ingresos (la tabla
+        # flujo_ingresos no tiene UNIQUE en referencia, así que el check-then-insert no bastaba).
+        if c.execute(
+            "UPDATE animus_shopify_orders SET flujo_synced=1 "
+            "WHERE id=? AND (flujo_synced=0 OR flujo_synced IS NULL)",
+            (order_id,)
+        ).rowcount != 1:
+            continue  # otro worker ya está sincronizando este pedido
         fecha = (row[5] or datetime.now().isoformat())[:10]
         periodo = fecha[:7]
         nombre = row[2] or ''
@@ -769,10 +780,9 @@ def _sync_shopify_a_flujo_ingresos(conn, solo_pagados=True, desde_fecha='', dry_
             "SELECT id FROM flujo_ingresos WHERE referencia=?", (ref,)
         ).fetchone()
         if existente:
-            ing_id = existente[0]
             c.execute(
-                "UPDATE animus_shopify_orders SET flujo_synced=1, flujo_ingreso_id=? WHERE id=?",
-                (ing_id, order_id)
+                "UPDATE animus_shopify_orders SET flujo_ingreso_id=? WHERE id=?",
+                (existente[0], order_id)
             )
             continue
         c.execute("""INSERT INTO flujo_ingresos
@@ -783,7 +793,7 @@ def _sync_shopify_a_flujo_ingresos(conn, solo_pagados=True, desde_fecha='', dry_
                    total, periodo, 'shopify_auto', ref, 'sistema_sync'))
         ing_id = c.lastrowid
         c.execute(
-            "UPDATE animus_shopify_orders SET flujo_synced=1, flujo_ingreso_id=? WHERE id=?",
+            "UPDATE animus_shopify_orders SET flujo_ingreso_id=? WHERE id=?",
             (ing_id, order_id)
         )
         importadas += 1

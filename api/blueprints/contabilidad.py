@@ -298,7 +298,16 @@ def cont_login():
     data = request.get_json() or {}
     u = data.get('usuario', '').strip().lower()
     p = data.get('password', '')
+    # SEC-FIX 10-jun audit · rate-limit + lockout + log de seguridad (este login da
+    # sesión a facturación DIAN/nómina/tesorería y no tenía NINGUNA protección · el
+    # login principal sí). Mismos helpers que core.py.
+    from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
+    _ip = _client_ip()
+    if _is_locked(_ip, u):
+        _log_sec('cont_login_locked', username=u, ip=_ip)
+        return jsonify({'error': 'Demasiados intentos fallidos · esperá unos minutos'}), 429
     if u not in CONT_USERS:
+        _record_failure(_ip, u)
         return jsonify({'error': 'Credenciales incorrectas'}), 401
     # SEC-FIX 28-may · antes comparaba el HASH almacenado contra el password
     # en texto plano (ALL_PASSES.get(u) == p) → el login NUNCA funcionaba y
@@ -313,8 +322,12 @@ def cont_login():
     else:
         ok = bool(expected) and _hmac.compare_digest(expected, p)
     if ok:
+        _clear_attempts(_ip, u)
+        _log_sec('cont_login_ok', username=u, ip=_ip)
         session['cont_user'] = u
         return jsonify({'ok': True, 'usuario': u})
+    _record_failure(_ip, u)
+    _log_sec('cont_login_fail', username=u, ip=_ip)
     return jsonify({'error': 'Credenciales incorrectas'}), 401
 
 @bp.route('/api/contabilidad/logout', methods=['POST'])
