@@ -15613,30 +15613,20 @@ def _norm_inci(s):
     return _re.sub(r'[^A-Z0-9]+', ' ', n).strip()
 
 
-@bp.route("/api/admin/maestro-inci-diff", methods=["POST"])
-def admin_maestro_inci_diff():
-    """READ-ONLY · sube el Excel global de Alejandro (INVENTARIO_MP · columnas
-    CÓDIGO MP | NOMBRE INCI | NOMBRE COMERCIAL) y reporta la brecha contra el
-    maestro_mps + formula_items VIVOS. NO cambia nada (Etapa 1 · diagnóstico)."""
-    u, err, code = _require_admin()
-    if err:
-        return err, code
-    if 'file' not in request.files:
-        return jsonify({'error': 'Falta archivo (campo "file")'}), 400
-    f = request.files['file']
-    if not f.filename or not f.filename.lower().endswith(('.xlsx', '.xlsm')):
-        return jsonify({'error': 'El archivo debe ser .xlsx'}), 400
+def _leer_maestro_inci_excel(f):
+    """Lee el Excel global de Alejandro (INVENTARIO_MP · CÓDIGO MP | NOMBRE INCI |
+    NOMBRE COMERCIAL). Devuelve (excel_dict, pendientes, error). excel_dict:
+    codigo -> {inci, comercial}. Compartido por diff y aplicar (sin drift)."""
     try:
         from openpyxl import load_workbook
         wb = load_workbook(f, data_only=True, read_only=True)
     except Exception as e:
-        return jsonify({'error': f'Excel inválido: {e}'}), 400
+        return None, None, f'Excel inválido: {e}'
     ws = wb['INVENTARIO'] if 'INVENTARIO' in wb.sheetnames else wb[wb.sheetnames[0]]
-    # Detectar header (fila con CÓDIGO + INCI) y mapear columnas por nombre.
     header_row = col_cod = col_inci = col_com = None
     for ri, row in enumerate(ws.iter_rows(min_row=1, max_row=12, values_only=True), start=1):
-        cells = [_norm_inci(c) for c in row]
-        if any('CODIGO' in c for c in cells) and any('INCI' in c for c in cells):
+        cells = [_norm_inci(cc) for cc in row]
+        if any('CODIGO' in cc for cc in cells) and any('INCI' in cc for cc in cells):
             header_row = ri
             for ci, cval in enumerate(cells, start=1):
                 if 'CODIGO' in cval and col_cod is None:
@@ -15647,7 +15637,7 @@ def admin_maestro_inci_diff():
                     col_com = ci
             break
     if not header_row or not col_cod or not col_inci:
-        return jsonify({'error': 'No encontré el header (CÓDIGO MP / NOMBRE INCI). Revisá el formato del Excel.'}), 400
+        return None, None, 'No encontré el header (CÓDIGO MP / NOMBRE INCI). Revisá el formato del Excel.'
 
     def _cell(row, ci):
         if not ci or ci - 1 >= len(row):
@@ -15667,7 +15657,27 @@ def admin_maestro_inci_diff():
             excel[cod] = {'inci': inci, 'comercial': com}
         if (not inci) or _norm_inci(inci) == 'PENDIENTE INCI':
             pendientes.append({'codigo': cod, 'comercial': com})
+    return excel, pendientes, None
 
+
+@bp.route("/api/admin/maestro-inci-diff", methods=["POST"])
+def admin_maestro_inci_diff():
+    """READ-ONLY · sube el Excel global de Alejandro (INVENTARIO_MP · columnas
+    CÓDIGO MP | NOMBRE INCI | NOMBRE COMERCIAL) y reporta la brecha contra el
+    maestro_mps + formula_items VIVOS. NO cambia nada (Etapa 1 · diagnóstico)."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    if 'file' not in request.files:
+        return jsonify({'error': 'Falta archivo (campo "file")'}), 400
+    f = request.files['file']
+    if not f.filename or not f.filename.lower().endswith(('.xlsx', '.xlsm')):
+        return jsonify({'error': 'El archivo debe ser .xlsx'}), 400
+    excel, pendientes, perr = _leer_maestro_inci_excel(f)
+    if perr:
+        return jsonify({'error': perr}), 400
+
+    from database import get_db
     conn = get_db(); c = conn.cursor()
     db = {}
     for r in c.execute("SELECT codigo_mp, COALESCE(nombre_inci,''), COALESCE(nombre_comercial,''), "
@@ -15690,7 +15700,10 @@ def admin_maestro_inci_diff():
         d = db.get(cod)
         if not d:
             falta_en_maestro.append({'codigo': cod, 'inci': e['inci'], 'comercial': e['comercial']})
-        elif e['inci'] and _norm_inci(d['inci']) != _norm_inci(e['inci']):
+        elif (e['inci'] and (d['inci'] or '').strip()
+              and _norm_inci(e['inci']) != 'PENDIENTE INCI'
+              and _norm_inci(d['inci']) != _norm_inci(e['inci'])):
+            # INCI NO vacío en la app y distinto → corregir. (Vacío → backfill, no mismatch.)
             inci_mismatch.append({'codigo': cod, 'db_inci': d['inci'], 'excel_inci': e['inci'],
                                   'comercial': e['comercial']})
     for cod, d in db.items():
@@ -15723,6 +15736,113 @@ def admin_maestro_inci_diff():
             'incis_repetidos': len(repetidos),
         },
     })
+
+
+@bp.route("/api/admin/maestro-inci-aplicar", methods=["POST"])
+def admin_maestro_inci_aplicar():
+    """Aplica la convergencia del maestro al Excel de Alejandro · SOLO maestro_mps,
+    NO toca movimientos/stock (cero riesgo de pérdida de inventario).
+      modo='sembrar'        → INSERTA en maestro_mps los códigos del Excel ausentes.
+      modo='backfill-inci'  → rellena nombre_inci VACÍO desde el Excel (NUNCA sobrescribe).
+      modo='corregir-inci'  → corrige nombre_inci MAL · SOLO para los códigos en la
+                              whitelist (confirmación fila-a-fila · el INCI puede estar
+                              mal en cualquiera de los dos lados, no se aplica a ciegas).
+    ?dry_run=1 (default) = preview. El aplicar real hace backup VERIFICADO + audit
+    con antes/después por código (reversible)."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    if 'file' not in request.files:
+        return jsonify({'error': 'Falta archivo (campo "file")'}), 400
+    f = request.files['file']
+    if not f.filename or not f.filename.lower().endswith(('.xlsx', '.xlsm')):
+        return jsonify({'error': 'El archivo debe ser .xlsx'}), 400
+    modo = (request.form.get('modo') or request.args.get('modo') or '').strip()
+    if modo not in ('sembrar', 'backfill-inci', 'corregir-inci'):
+        return jsonify({'error': "modo debe ser 'sembrar', 'backfill-inci' o 'corregir-inci'"}), 400
+    dry_run = str(request.form.get('dry_run', request.args.get('dry_run', '1'))).lower() in ('1', 'true', 'yes')
+    import json as _json
+    try:
+        whitelist = {str(x).strip().upper() for x in _json.loads(request.form.get('codigos') or '[]') if str(x).strip()}
+    except Exception:
+        whitelist = set()
+
+    excel, _pend, perr = _leer_maestro_inci_excel(f)
+    if perr:
+        return jsonify({'error': perr}), 400
+
+    from database import get_db
+    conn = get_db(); c = conn.cursor()
+    db = {}
+    for r in c.execute("SELECT codigo_mp, COALESCE(nombre_inci,'') FROM maestro_mps").fetchall():
+        db[r[0]] = r[1]
+    db_codes = set(db.keys())
+
+    cambios = []
+    if modo == 'sembrar':
+        for cod, e in excel.items():
+            if cod not in db_codes:
+                cambios.append({'codigo': cod, 'inci': e['inci'], 'comercial': e['comercial']})
+    elif modo == 'backfill-inci':
+        for cod, e in excel.items():
+            if cod in db and e['inci'] and _norm_inci(e['inci']) != 'PENDIENTE INCI' and not (db[cod] or '').strip():
+                cambios.append({'codigo': cod, 'de': db[cod], 'a': e['inci']})
+    elif modo == 'corregir-inci':
+        for cod, e in excel.items():
+            if cod not in db or not e['inci'] or _norm_inci(e['inci']) == 'PENDIENTE INCI':
+                continue
+            if not (db[cod] or '').strip():
+                continue  # vacío → es backfill, no corrección
+            if _norm_inci(db[cod]) != _norm_inci(e['inci']):
+                if not dry_run and cod.upper() not in whitelist:
+                    continue
+                cambios.append({'codigo': cod, 'de': db[cod], 'a': e['inci']})
+
+    if dry_run:
+        return jsonify({'ok': True, 'dry_run': True, 'modo': modo,
+                        'total': len(cambios), 'cambios': cambios[:500]})
+
+    if modo == 'corregir-inci' and not whitelist:
+        return jsonify({'error': 'corregir-inci requiere lista de códigos (confirmación fila-a-fila)'}), 400
+    if not cambios:
+        return jsonify({'ok': True, 'aplicado': True, 'modo': modo, 'total': 0, 'aplicados': 0})
+
+    # Backup VERIFICADO antes de escribir (riesgo #7 · nada de try/except: pass silencioso)
+    try:
+        bak = do_backup(triggered_by=f'pre_maestro_inci_{modo}')
+    except Exception as e:
+        return jsonify({'error': f'Backup falló: {e}'}), 500
+    if not (bak and bak.get('ok')):
+        return jsonify({'error': 'Backup NO confirmado · aplicar abortado (reintentá en unos segundos)',
+                        'backup': bak}), 500
+
+    aplicados = 0
+    for ch in cambios:
+        cod = ch['codigo']
+        if modo == 'sembrar':
+            c.execute("INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_inci, nombre_comercial, activo) "
+                      "VALUES (?,?,?,1)", (cod, ch['inci'] or None, ch['comercial'] or None))
+            if c.rowcount:
+                audit_log(c, usuario=u, accion='MAESTRO_INCI_SEMBRAR', tabla='maestro_mps',
+                          registro_id=cod, despues={'inci': ch['inci'], 'comercial': ch['comercial']})
+                aplicados += 1
+        elif modo == 'backfill-inci':
+            c.execute("UPDATE maestro_mps SET nombre_inci=? WHERE codigo_mp=? "
+                      "AND COALESCE(TRIM(nombre_inci),'')=''", (ch['a'], cod))
+            if c.rowcount:
+                audit_log(c, usuario=u, accion='MAESTRO_INCI_BACKFILL', tabla='maestro_mps',
+                          registro_id=cod, antes={'inci': ch['de']}, despues={'inci': ch['a']})
+                aplicados += 1
+        else:  # corregir-inci
+            c.execute("UPDATE maestro_mps SET nombre_inci=? WHERE codigo_mp=?", (ch['a'], cod))
+            if c.rowcount:
+                audit_log(c, usuario=u, accion='MAESTRO_INCI_CORREGIR', tabla='maestro_mps',
+                          registro_id=cod, antes={'inci': ch['de']}, despues={'inci': ch['a']})
+                aplicados += 1
+    conn.commit()
+    return jsonify({'ok': True, 'aplicado': True, 'modo': modo, 'total': len(cambios),
+                    'aplicados': aplicados, 'backup': (bak.get('filename') or ''),
+                    'reversible': 'sí · audit_log con antes/después por código'})
 
 
 _MAESTRO_INCI_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
@@ -15768,6 +15888,7 @@ async function diff(){
     var d=await r.json();
     if(!r.ok||!d.ok){msg.textContent='Error: '+((d&&d.error)||r.status);return;}
     msg.textContent='Excel: '+d.excel_mps+' MPs · Maestro app: '+d.db_mps+' · códigos en fórmulas: '+d.formula_codigos;
+    window._diffData=d;
     var s=d.resumen;
     var h='<div class="card"><div class="kpis">'+
       kpi('INCI a corregir', s.inci_a_corregir, 'warn')+
@@ -15777,6 +15898,11 @@ async function diff(){
       kpi('PENDIENTE INCI', s.pendientes_inci, 'warn')+
       kpi('INCI repetidos', s.incis_repetidos, 'muted')+
     '</div></div>';
+    h+='<div class="card"><b>Aplicar (no toca stock · backup + reversible)</b><div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">'+
+      '<button onclick="aplicarMaestro(\\'sembrar\\')">Sembrar '+s.falta_en_maestro+' faltantes</button>'+
+      '<button onclick="aplicarMaestro(\\'backfill-inci\\')">Rellenar INCI vacío</button>'+
+      '<button onclick="aplicarMaestro(\\'corregir-inci\\')">Corregir '+s.inci_a_corregir+' INCI mal</button>'+
+      '</div><div class="muted" style="margin-top:8px">Cada botón muestra primero un PREVIEW y pide confirmación antes de escribir.</div></div>';
     h+=tbl('🔴 Códigos usados en fórmulas que NO están en el Excel de Alejandro (no van a casar)', d.formula_sin_maestro,
       ['codigo','n_formulas','en_maestro_db','formulas'], function(x){return [x.codigo, x.n_formulas, (x.en_maestro_db?'sí':'NO'), (x.formulas||[]).join(', ')];});
     h+=tbl('🟡 INCI distinto (app vs Excel) · se corregiría al del Excel', d.inci_mismatch,
@@ -15793,6 +15919,33 @@ async function diff(){
   }catch(e){msg.textContent='Error: '+(e.message||e);}
 }
 function kpi(l,v,cls){return '<div class="kpi"><div class="v '+(cls||'')+'">'+v+'</div><div class="l">'+l+'</div></div>';}
+async function aplicarMaestro(modo){
+  var fe=document.getElementById('f'); var msg=document.getElementById('msg');
+  if(!fe.files||!fe.files[0]){alert('Volvé a elegir el Excel y diagnosticá primero.');return;}
+  function mkfd(dry){
+    var x=new FormData(); x.append('file', fe.files[0]); x.append('modo', modo); x.append('dry_run', dry?'1':'0');
+    if(modo==='corregir-inci'){
+      var cods=((window._diffData&&window._diffData.inci_mismatch)||[]).map(function(m){return m.codigo;});
+      x.append('codigos', JSON.stringify(cods));
+    }
+    return x;
+  }
+  msg.textContent='Preview '+modo+'…';
+  try{
+    var rp=await fetch('/api/admin/maestro-inci-aplicar?dry_run=1',{method:'POST',body:mkfd(true),credentials:'same-origin',headers:{'X-CSRF-Token':_csrf()}});
+    var dp=await rp.json();
+    if(!rp.ok||!dp.ok){msg.textContent='Error: '+((dp&&dp.error)||rp.status);return;}
+    if(!dp.total){alert('Nada para aplicar en '+modo+' (0 cambios).');msg.textContent='';return;}
+    var muestra=(dp.cambios||[]).slice(0,15).map(function(ch){return ch.codigo+(ch.a?(': '+(ch.de||'(vacío)')+' -> '+ch.a):(ch.inci?(': '+ch.inci):''));}).join('\\n');
+    if(!confirm('Vas a aplicar '+modo+' a '+dp.total+' código(s).\\n\\nEjemplos:\\n'+muestra+(dp.total>15?('\\n... +'+(dp.total-15)+' más'):'')+'\\n\\n¿Confirmás? (hace backup + queda en auditoría · reversible)'))return;
+    msg.textContent='Aplicando '+modo+'…';
+    var ra=await fetch('/api/admin/maestro-inci-aplicar?dry_run=0',{method:'POST',body:mkfd(false),credentials:'same-origin',headers:{'X-CSRF-Token':_csrf()}});
+    var da=await ra.json();
+    if(!ra.ok||!da.ok){msg.textContent='Error al aplicar: '+((da&&da.error)||ra.status);return;}
+    alert('✅ '+modo+': '+da.aplicados+' aplicados (backup: '+(da.backup||'ok')+'). Re-analizando…');
+    diff();
+  }catch(e){msg.textContent='Error: '+(e.message||e);}
+}
 function tbl(titulo, rows, cols, mapfn){
   if(!rows||!rows.length) return '<div class="card"><b>'+titulo+'</b> <span class="ok">— 0</span></div>';
   var h='<div class="card"><b>'+titulo+'</b> <span class="muted">('+rows.length+')</span><table><thead><tr>'+
