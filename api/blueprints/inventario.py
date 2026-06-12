@@ -8127,15 +8127,12 @@ def conteo_cerrar(conteo_id):
                 continue
             tipo_mov = 'Entrada' if diff > 0 else 'Salida'
 
-            if req_ger and not aprob_ger:
-                # Diferencia significativa — NO ajustar. Pendiente de gerencia.
-                pendientes_gerencia_lista.append({
-                    'item_id': it_id, 'codigo_mp': codigo, 'nombre': nombre,
-                    'stock_sistema': stock_sis, 'stock_fisico': stock_fis,
-                    'diferencia_g': diff, 'valor_diferencia': valor,
-                    'causa': causa, 'estanteria': estant,
-                })
-                continue
+            # Sebastian 12-jun: el jefe de produccion y los operarios ajustan el
+            # inventario SIN aprobacion de Gerencia ni correo. Antes los items con
+            # diferencia >5% NO se auto-ajustaban (quedaban pendientes + se enviaba
+            # email a gerencia). Ahora se auto-ajustan TODOS; la trazabilidad queda
+            # en audit_log (operario + causa + monto). El flag requiere_gerencia se
+            # conserva solo como marca informativa para reportes.
 
             # Auto-ajuste para diferencias menores
             # Sebastian 7-may-2026: aplicar al lote REAL del conteo (no
@@ -8292,15 +8289,19 @@ def conteo_cerrar(conteo_id):
 
 @bp.route('/api/conteo/alertas-gerencia', methods=['GET'])
 def conteo_alertas_gerencia():
-    """Lista de items con diferencia >5% pendientes de aprobación de gerencia.
+    """INFORME de ajustes grandes (>5%) para revisión de Gerencia.
 
-    Útil para que gerencia tenga un dashboard de "qué decisiones están
-    esperándome" sin tener que abrir conteo por conteo.
+    Sebastian 12-jun: los operarios/jefe ajustan SIN aprobación previa. Este
+    endpoint dejó de ser una cola de aprobación y pasó a ser un INFORME: muestra
+    los ajustes grandes YA APLICADOS (con quién los hizo + causa + monto + cuándo)
+    para que Gerencia los revise cuando quiera, sin bloquear ni aprobar.
+    `pendientes` queda por compatibilidad (normalmente vacío).
     """
     user = session.get('compras_user','')
     if not user:
         return jsonify({'error': 'No autenticado'}), 401
     conn = get_db(); c = conn.cursor()
+    # Pendientes (compat · normalmente vacío ya que se auto-aplican)
     c.execute("""SELECT cf.id AS conteo_id, cf.numero, cf.estanteria, cf.fecha_cierre,
                         ci.id AS item_id, ci.codigo_mp, ci.nombre_mp,
                         ci.stock_sistema, ci.stock_fisico, ci.diferencia,
@@ -8313,11 +8314,26 @@ def conteo_alertas_gerencia():
                  ORDER BY ABS(ci.valor_diferencia) DESC LIMIT 200""")
     cols = [d[0] for d in c.description]
     rows = [dict(zip(cols, r)) for r in c.fetchall()]
+    # INFORME · ajustes grandes YA aplicados (quién + causa + monto + cuándo)
+    c.execute("""SELECT cf.id AS conteo_id, cf.numero, cf.estanteria, cf.fecha_cierre,
+                        ci.id AS item_id, ci.codigo_mp, ci.nombre_mp,
+                        ci.stock_sistema, ci.stock_fisico, ci.diferencia,
+                        ci.causa_diferencia, ci.valor_diferencia,
+                        ci.aprobado_gerencia_por AS aplicado_por
+                 FROM conteo_items ci
+                 JOIN conteos_fisicos cf ON ci.conteo_id = cf.id
+                 WHERE ci.requiere_gerencia=1 AND ci.ajuste_aplicado=1
+                 ORDER BY cf.fecha_cierre DESC, ABS(ci.valor_diferencia) DESC LIMIT 200""")
+    cols2 = [d[0] for d in c.description]
+    aplicados = [dict(zip(cols2, r)) for r in c.fetchall()]
     total_valor = sum(r.get('valor_diferencia') or 0 for r in rows)
     return jsonify({
         'pendientes': rows,
         'total': len(rows),
         'total_valor_diferencia': round(total_valor, 0),
+        'aplicados': aplicados,
+        'total_aplicados': len(aplicados),
+        'total_valor_aplicados': round(sum(r.get('valor_diferencia') or 0 for r in aplicados), 0),
     })
 
 @bp.route('/api/conteo/<int:conteo_id>/ajustar', methods=['POST'])
@@ -8352,9 +8368,12 @@ def conteo_ajustar(conteo_id):
             'item_id': item_id,
             'aplicado_anterior': True,
         }), 409
+    # Sebastian 12-jun: el jefe de produccion y los operarios ajustan SIN
+    # aprobacion de Gerencia (antes >5% exigia ADMIN -> 403). Ahora cualquier
+    # usuario con acceso al conteo aplica el ajuste; se registra quien lo hizo
+    # (aprobado_gerencia_por=user) + audit_log -> trazabilidad sin bloqueo.
+    # Los ajustes grandes quedan en el INFORME /api/conteo/alertas-gerencia.
     if it['requiere_gerencia'] and not it['aprobado_gerencia']:
-        if user not in ADMIN_USERS:
-            return jsonify({'error': 'Diferencia >5% requiere aprobacion Gerencia General (BDG-PRO-002)'}), 403
         c.execute("UPDATE conteo_items SET aprobado_gerencia=1,aprobado_gerencia_por=? WHERE id=?", (user, item_id))
     diff = float(it['diferencia'])
     if diff == 0:
