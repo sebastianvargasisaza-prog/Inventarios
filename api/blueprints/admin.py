@@ -16046,6 +16046,7 @@ Compara contra el maestro y las fórmulas VIVOS y te muestra la brecha. <b>No ca
   <input id="u_dups" placeholder="MP00436,MP00447" style="padding:8px;border:1px solid #475569;border-radius:8px;width:240px;background:#0b1220;color:#e2e8f0">
   <label class="muted"><input type="checkbox" id="u_force"> forzar (INCI distinto)</label>
   <button onclick="unificar()" style="background:#b45309">Unificar</button>
+  <button onclick="unificarTodos()" style="background:#7c3aed;margin-left:10px">⚡ Unificar TODOS los duplicados detectados (preview)</button>
  </div>
  <div id="u_out" style="margin-top:8px"></div>
 </div>
@@ -16171,6 +16172,34 @@ async function unificar(){
     if(!r.ok||!d.ok){out.innerHTML='<span class="bad">Error: '+esc((d&&(d.error||d.detail))||r.status)+'</span>';return;}
     var t=d.totales_transferidos||{};
     out.innerHTML='<span class="ok">✅ Unificado en '+esc(d.canonico||canon)+' · archivados: '+((d.duplicados_archivados||dups).length)+' · movimientos movidos: '+(t.movimientos||0)+' · fórmulas: '+(t.formula_items||0)+'</span> · <span class="muted">verificá con el inspector.</span>';
+  }catch(e){out.innerHTML='<span class="bad">Error: '+(e.message||e)+'</span>';}
+}
+async function unificarTodos(){
+  var out=document.getElementById('u_out');
+  out.innerHTML='<span class="muted">Buscando duplicados (stock en otro código, mismo INCI, no ambiguos)…</span>';
+  try{
+    var r=await fetch('/api/admin/formula-bodega-cruce',{credentials:'same-origin'});
+    var d=await r.json();
+    if(!r.ok||!d.ok){out.innerHTML='<span class="bad">Error: '+((d&&d.error)||r.status)+'</span>';return;}
+    // STOCK_EN_OTRO_CODIGO = la fórmula apunta a un código en 0 y el stock está en otro del MISMO INCI.
+    var dupes=(d.items||[]).filter(function(x){return x.estado==='STOCK_EN_OTRO_CODIGO' && (x.duplicados||[]).length;});
+    if(!dupes.length){out.innerHTML='<span class="ok">No hay duplicados auto-unificables (todos resuelven o son ambiguos). Los borderline (grados) y fragancias se hacen a mano.</span>';return;}
+    var plan=dupes.map(function(x){return {canon:x.codigo, inci:x.inci, dups:(x.duplicados||[]).map(function(z){return z.codigo;})};});
+    var resumen=plan.map(function(p){return p.dups.join(',')+' → '+p.canon+'  ('+esc(p.inci)+')';}).join('\\n');
+    if(!confirm('Voy a unificar '+plan.length+' material(es) (mismo INCI · mueve stock al código de la fórmula):\\n\\n'+resumen+'\\n\\n¿Confirmás? (cada uno con audit + reversa)'))return;
+    out.innerHTML='<span class="muted">Unificando '+plan.length+'…</span>';
+    var oks=0, fails=[];
+    for(var i=0;i<plan.length;i++){
+      var p=plan[i];
+      try{
+        var rr=await fetch('/api/admin/maestro-mps-unificar',{method:'POST',credentials:'same-origin',
+          headers:{'Content-Type':'application/json','X-CSRF-Token':await _csrf()},
+          body:JSON.stringify({codigo_canonico:p.canon,codigos_duplicados:p.dups,merge_force:false,motivo:'Bulk unificar duplicados (mismo INCI) desde maestro-inci'})});
+        var dd=await rr.json();
+        if(rr.ok&&dd.ok){oks++;}else{fails.push(p.canon+': '+((dd&&(dd.error||dd.detail))||rr.status));}
+      }catch(e){fails.push(p.canon+': '+(e.message||e));}
+    }
+    out.innerHTML='<span class="ok">✅ Unificados: '+oks+'/'+plan.length+'</span>'+(fails.length?('<div class="bad" style="margin-top:6px">Fallaron '+fails.length+':<br>'+fails.map(esc).join('<br>')+'</div>'):'')+' · <span class="muted">re-corré "Cruzar" para ver el estado.</span>';
   }catch(e){out.innerHTML='<span class="bad">Error: '+(e.message||e)+'</span>';}
 }
 async function inspeccionar(){
