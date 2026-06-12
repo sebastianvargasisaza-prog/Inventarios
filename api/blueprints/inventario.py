@@ -7965,6 +7965,21 @@ def conteo_guardar(conteo_id):
     items_invalidos = []
     for item in items:
         codigo = item.get('codigo_mp','')
+        _lote_it = (item.get('lote','') or '')
+        # Cero-error (Sebastian 12-jun): si el ajuste de este item YA se aplico,
+        # NO re-escribir su fila. El INSERT OR REPLACE de abajo resetearia
+        # ajuste_aplicado/aprobado_gerencia (no estan en la lista de columnas) ->
+        # el item volveria a 'no ajustado' y cerrar/ajustar lo aplicaria una 2da
+        # vez (doble entrada/salida en el kardex). Una vez aplicado, queda fijo.
+        try:
+            _ya = c.execute(
+                "SELECT COALESCE(ajuste_aplicado,0) FROM conteo_items "
+                "WHERE conteo_id=? AND codigo_mp=? AND COALESCE(lote,'')=?",
+                (conteo_id, codigo, _lote_it)).fetchone()
+            if _ya and _ya[0]:
+                continue
+        except Exception:
+            pass
         try:
             stock_sis = float(item.get('stock_sistema', 0))
         except (TypeError, ValueError):
