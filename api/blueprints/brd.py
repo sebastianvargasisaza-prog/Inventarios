@@ -2728,10 +2728,12 @@ def completar_ebr(ebr_id):
     # mbr_template_id pero abajo (cuarentena) accedía ebr_full['lote'] / .get('lote')
     # → KeyError/AttributeError SIEMPRE → la Entrada en CUARENTENA NUNCA se creaba
     # (lote PT no pasaba por cuarentena · liberar_ebr no tenía qué promover).
-    # Ahora cargamos lote y lo dejamos como dict (para .get) · lote_codigo no existe
-    # como columna, se elimina su referencia.
+    # Ahora cargamos lote + lote_codigo (lote FISICO) y lo dejamos como dict.
+    # FIX 12-jun: lote_codigo SI existe (ALTER ebr_ejecuciones · database.py:7933,
+    # backfill COALESCE(lote_codigo,lote)). El PT se keyea por el lote fisico, no
+    # por la llave sufijada -OF/-OA (antes inflaba el PT una vez por fase · A-3).
     _ef = cur.execute(
-        "SELECT mbr_template_id, lote FROM ebr_ejecuciones WHERE id = ?", (ebr_id,)
+        "SELECT mbr_template_id, lote, lote_codigo FROM ebr_ejecuciones WHERE id = ?", (ebr_id,)
     ).fetchone()
     ebr_full = dict(_ef) if _ef else {}
     ipcs_faltantes = cur.execute(
@@ -2819,8 +2821,24 @@ def completar_ebr(ebr_id):
     # Ahora: INSERT movimientos · libera_ebr promueve a VIGENTE (Fix prev).
     cuarentena_creada = False
     try:
-        lote_ref = (ebr_full.get('lote') or '').strip()
-        if lote_ref and cantidad_real and cantidad_real > 0:
+        # A-3 (Sebastian 12-jun): el PT vendible se cuenta al terminar la fase FINAL
+        # del lote + liberar. Keyear por LOTE FISICO (lote_codigo), no la llave
+        # sufijada. Gate de fase terminal: si existe un EBR de una fase POSTERIOR
+        # para el mismo lote fisico, esta fase NO crea el PT (lo creara la final) ->
+        # evita 2-3 Entradas PT del mismo lote (una por OP/OF/OA · M10/M3).
+        lote_ref = (ebr_full.get('lote_codigo') or ebr_full.get('lote') or '').strip()
+        _FASE_ORDEN = {'fabricacion': 1, 'envasado': 2, 'acondicionamiento': 3}
+        _orden_actual = _FASE_ORDEN.get(ebr['fase'] or 'fabricacion', 1)
+        _hay_fase_posterior = False
+        if lote_ref:
+            for _r in cur.execute(
+                "SELECT DISTINCT COALESCE(fase,'fabricacion') FROM ebr_ejecuciones "
+                "WHERE COALESCE(NULLIF(lote_codigo,''), lote) = ? AND id != ?",
+                (lote_ref, ebr_id)).fetchall():
+                if _FASE_ORDEN.get(_r[0], 1) > _orden_actual:
+                    _hay_fase_posterior = True
+                    break
+        if lote_ref and cantidad_real and cantidad_real > 0 and not _hay_fase_posterior:
             # Buscar producto del producción para material_id (puede ser PT)
             prod_row = cur.execute(
                 """SELECT pp.producto FROM produccion_programada pp
@@ -3163,7 +3181,10 @@ def liberar_ebr(ebr_id):
             "SELECT lote, lote_codigo FROM ebr_ejecuciones WHERE id=?",
             (ebr_id,),
         ).fetchone()
-        lote_ref = (lote_row['lote'] or lote_row.get('lote_codigo', '') if lote_row else '') or ''
+        # A-3 (12-jun): el PT ahora se crea bajo el LOTE FISICO (lote_codigo) en la
+        # fase final · liberar debe promoverlo por ese mismo lote fisico (antes
+        # usaba la llave sufijada 'lote' y no encontraba el PT tras el fix).
+        lote_ref = ((lote_row['lote_codigo'] or lote_row['lote']) if lote_row else '') or ''
         if lote_ref:
             cur.execute(
                 """UPDATE movimientos SET estado_lote='VIGENTE'
