@@ -6929,10 +6929,14 @@ def consumo_manual():
         return jsonify({'error': f'MP {codigo} no existe en catalogo'}), 404
     nombre = mp[0] or codigo
 
-    # Calcular stock disponible ANTES del descuento (para audit + warning)
+    # Calcular stock disponible ANTES del descuento (para audit + warning).
+    # B-1 (Sebastian 12-jun): excluir lotes retenidos (cuarentena/rechazado/vencido/
+    # agotado/bloqueado) · antes sumaba TODO -> permitia descontar stock que Calidad
+    # tiene retenido y dejar el saldo producible negativo. Alineado con /api/lotes.
     stock_antes_row = c.execute(
         "SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END), 0) "
-        "FROM movimientos WHERE material_id=?",
+        "FROM movimientos WHERE material_id=? "
+        "AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO'))",
         (codigo,),
     ).fetchone()
     stock_antes = float(stock_antes_row[0] or 0)
