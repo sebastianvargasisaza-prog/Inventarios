@@ -4921,7 +4921,7 @@ def planta_actividades_kpis():
     conn = get_db()
     # Total min por operario
     rows_op = conn.execute("""
-        SELECT op.nombre, op.apellido,
+        SELECT MIN(op.nombre) AS nombre, MIN(op.apellido) AS apellido,
                COUNT(*) as turnos,
                SUM(COALESCE(a.duracion_min, 0)) as min_total
         FROM actividades_sala a
@@ -4931,6 +4931,10 @@ def planta_actividades_kpis():
         GROUP BY a.operario_id
         ORDER BY min_total DESC
     """, (desde, hasta)).fetchall()
+    # M12 (drift SQLite<->PG): op.nombre/apellido vienen del JOIN y NO estan en el
+    # GROUP BY (que agrupa por a.operario_id) -> PostgreSQL lo rechaza con 500
+    # ("must appear in GROUP BY"). SQLite lo toleraba. MIN() las agrega sin cambiar
+    # la cardinalidad (1 fila por operario). Sebastian 12-jun.
     por_operario = [{
         'operario': ((r[0] or '') + ' ' + (r[1] or '')).strip(),
         'turnos': r[2] or 0,

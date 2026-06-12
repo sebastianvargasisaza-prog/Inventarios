@@ -2144,7 +2144,7 @@ def _handle_produccion_inner():
                                 SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock
                          FROM movimientos
                          WHERE material_id=? AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
-                           AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO'))
+                           AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO'))
                          GROUP BY lote HAVING stock > 0.01
                          ORDER BY COALESCE(NULLIF(CAST(MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) AS TEXT), ''), '9999-12-31') ASC""", (mat_id,))
             lotes_fefo = c.fetchall()
