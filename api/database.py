@@ -312,6 +312,72 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (237, "Reconciliacion formulas vs maestro Alejandro (Sebastian 12-jun · AUTORIZADO) · "
+          "cruce FORMULAS_MAESTRO_v2_1 + INVENTARIO_MP_v8_2 uno-a-uno. Arregla 3 mapeos "
+          "MAL que rompian descuento/necesidades; deja Centella(#3) y Vit E(#4) para "
+          "decision de grado de Alejandro. DETALLE: "
+          "#1 Propylheptyl Caprylate / Beauty Sensoft estaban apuntados a MP00137, que "
+          "ES Argania Spinosa (ARGAN, otro material) -> por eso MP00137 quedo en -724g. "
+          "Re-apunta SOLO esos items a MP00030 (PROPYLHEPTYL CAPRYLATE). NO toca el stock "
+          "fisico de Argan/Sensoft (requiere conteo fisico de bodega). "
+          "#2 'Beauty oil Kakai' usaba MP00444 (codigo fuera del inventario) -> unifica a "
+          "MPCAKY01 (CACAY OIL): mueve los ~530g y re-apunta formulas. El Excel decia "
+          "MP00103 pero eso es CERAMIDE NP (error del Excel) -> NO se sigue. "
+          "#3 agrega Myristoyl Nonapeptide-3 (MP00250) que faltaba en Suero Exfoliante "
+          "BHA (0.0015%) y Booster Tensor (0.003%). Idempotente + reversible (movimientos "
+          "marcados con [unif ... mig237]; nada se borra, MP00444 queda activo=0).", [
+        # ── Paso 0: los codigos destino deben existir ACTIVOS con su INCI correcto.
+        #    El trigger FK de mig 98 aborta si material_id no esta en maestro activo.
+        "INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_inci, nombre_comercial, activo) "
+        "VALUES ('MP00030','PROPYLHEPTYL CAPRYLATE','Beauty Sensoft',1)",
+        "INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_inci, nombre_comercial, activo) "
+        "VALUES ('MPCAKY01','CACAY OIL','Aceite de cacay',1)",
+        "INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_inci, nombre_comercial, activo) "
+        "VALUES ('MP00250','MYRISTOYL NONAPEPTIDE-3','Myristoyl nonapeptide-3',1)",
+        "UPDATE maestro_mps SET activo=1 WHERE codigo_mp IN ('MP00030','MPCAKY01','MP00250')",
+        # rellenar INCI solo si estaba vacio o PENDIENTE (no pisar uno bueno distinto)
+        "UPDATE maestro_mps SET nombre_inci='PROPYLHEPTYL CAPRYLATE' WHERE codigo_mp='MP00030' "
+        "AND (nombre_inci IS NULL OR TRIM(nombre_inci)='' OR UPPER(nombre_inci)='PENDIENTE INCI')",
+        "UPDATE maestro_mps SET nombre_inci='CACAY OIL' WHERE codigo_mp='MPCAKY01' "
+        "AND (nombre_inci IS NULL OR TRIM(nombre_inci)='' OR UPPER(nombre_inci)='PENDIENTE INCI')",
+        "UPDATE maestro_mps SET nombre_inci='MYRISTOYL NONAPEPTIDE-3' WHERE codigo_mp='MP00250' "
+        "AND (nombre_inci IS NULL OR TRIM(nombre_inci)='' OR UPPER(nombre_inci)='PENDIENTE INCI')",
+
+        # ── #1: re-apuntar SOLO los items Sensoft/Propylheptyl de MP00137 -> MP00030.
+        #    Scope por material_nombre: un uso legitimo de MP00137 como Argan
+        #    (material_nombre LIKE Argan) queda INTACTO.
+        "UPDATE formula_items SET material_id='MP00030' "
+        "WHERE material_id='MP00137' AND ("
+        "UPPER(material_nombre) LIKE '%SENSOFT%' "
+        "OR UPPER(material_nombre) LIKE '%PROPYLHEPTYL%' "
+        "OR UPPER(material_nombre) LIKE '%PROPYL HEPTYL%')",
+
+        # ── #2: unificar Kakai MP00444 -> MPCAKY01 (mismo aceite Cacay/Kakai).
+        #    a) re-apunta formulas
+        "UPDATE formula_items SET material_id='MPCAKY01' WHERE material_id='MP00444'",
+        #    b) mueve el stock (re-key movimientos · preserva lote/fecha · marca origen)
+        "UPDATE movimientos SET material_id='MPCAKY01', "
+        "observaciones=COALESCE(observaciones,'')||' [unif MP00444->MPCAKY01 mig237]' "
+        "WHERE material_id='MP00444'",
+        #    c) archiva el codigo sucio (NO se borra · trazabilidad INVIMA)
+        "UPDATE maestro_mps SET activo=0 WHERE codigo_mp='MP00444'",
+
+        # ── #3: agregar Myristoyl Nonapeptide-3 (MP00250) que faltaba en 2 formulas.
+        #    Usa el producto_nombre REAL guardado (match normalizado) e idempotente.
+        "INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje) "
+        "SELECT DISTINCT fi.producto_nombre, 'MP00250', 'Myristoyl nonapeptide-3', 0.0015 "
+        "FROM formula_items fi "
+        "WHERE REPLACE(REPLACE(UPPER(fi.producto_nombre),' ',''),'%','') LIKE '%SUEROEXFOLIANTEBHA%' "
+        "AND NOT EXISTS (SELECT 1 FROM formula_items x "
+        "WHERE x.producto_nombre=fi.producto_nombre AND x.material_id='MP00250')",
+        "INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje) "
+        "SELECT DISTINCT fi.producto_nombre, 'MP00250', 'Myristoyl nonapeptide-3', 0.003 "
+        "FROM formula_items fi "
+        "WHERE REPLACE(UPPER(fi.producto_nombre),' ','') LIKE '%BOOSTERTENSOR%' "
+        "AND NOT EXISTS (SELECT 1 FROM formula_items x "
+        "WHERE x.producto_nombre=fi.producto_nombre AND x.material_id='MP00250')",
+    ]),
+
     (236, "EBR · presentaciones MANUALES del legajo (Sebastián 11-jun): permite agregar/"
           "editar/borrar a mano una presentación (por si no cargó del plan), además de las "
           "auto-cargadas. Tabla aparte · no toca el envasado real ni la inmutabilidad.", [
