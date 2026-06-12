@@ -4924,6 +4924,17 @@ def proveedores_unicos():
             proveedores.add(row[0].strip())
     except sqlite3.OperationalError:
         pass
+    # Sebastian 12-jun: incluir TAMBIEN el maestro de proveedores (tabla
+    # proveedores) — antes solo salian los YA asignados a alguna MP/movimiento,
+    # asi que para corregir/normalizar a un proveedor registrado pero aun no
+    # usado (ej. Quincream es de GYM, no Agenquimicos) no aparecia en el
+    # desplegable. Ahora salen TODOS los proveedores activos.
+    try:
+        for row in c.execute("SELECT DISTINCT nombre FROM proveedores "
+                             "WHERE COALESCE(activo,1)=1 AND nombre IS NOT NULL AND nombre != ''"):
+            proveedores.add(row[0].strip())
+    except sqlite3.OperationalError:
+        pass
     return jsonify({'proveedores': sorted(proveedores, key=lambda s: s.lower())})
 
 
