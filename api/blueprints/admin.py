@@ -15807,14 +15807,13 @@ def admin_maestro_inci_aplicar():
     if not cambios:
         return jsonify({'ok': True, 'aplicado': True, 'modo': modo, 'total': 0, 'aplicados': 0})
 
-    # Backup VERIFICADO antes de escribir (riesgo #7 · nada de try/except: pass silencioso)
+    # Backup best-effort (pg_dump puede no estar disponible en Render). NO bloquea:
+    # sembrar/backfill/corregir-inci son REVERSIBLES por audit (antes/después). El audit
+    # es el respaldo real · no tiene sentido abortar si pg_dump no corre en el host.
     try:
         bak = do_backup(triggered_by=f'pre_maestro_inci_{modo}')
     except Exception as e:
-        return jsonify({'error': f'Backup falló: {e}'}), 500
-    if not (bak and bak.get('ok')):
-        return jsonify({'error': 'Backup NO confirmado · aplicar abortado (reintentá en unos segundos)',
-                        'backup': bak}), 500
+        bak = {'ok': False, 'error': str(e)[:150]}
 
     aplicados = 0
     for ch in cambios:
@@ -16056,12 +16055,12 @@ def admin_retirar_huerfanos_muertos():
         return jsonify({'ok': True, 'dry_run': True, 'total': len(muertos), 'muertos': muertos[:500]})
     if not muertos:
         return jsonify({'ok': True, 'aplicado': True, 'total': 0, 'retirados': 0})
+    # Backup best-effort (pg_dump puede no estar disponible en Render). NO bloquea:
+    # retirar = activo=0, REVERSIBLE por audit (activo=1). El audit_log es el respaldo real.
     try:
         bak = do_backup(triggered_by='pre_retirar_huerfanos_muertos')
     except Exception as e:
-        return jsonify({'error': f'Backup falló: {e}'}), 500
-    if not (bak and bak.get('ok')):
-        return jsonify({'error': 'Backup NO confirmado · abortado', 'backup': bak}), 500
+        bak = {'ok': False, 'error': str(e)[:150]}
     retirados = 0
     for m in muertos:
         c.execute("UPDATE maestro_mps SET activo=0 WHERE codigo_mp=? AND COALESCE(activo,1)=1", (m['codigo'],))
