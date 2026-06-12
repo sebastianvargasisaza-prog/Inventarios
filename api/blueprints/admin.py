@@ -15996,7 +15996,20 @@ def admin_mp_inspeccionar():
         out.append({'codigo': cod, 'inci': r[1], 'comercial': r[2], 'activo': r[3],
                     'controla_stock': r[4], 'neto': round(neto, 1), 'neto_producible': round(neto_prod, 1),
                     'movimientos': movs[-25:], 'n_movs': len(movs), 'formulas': fmls})
-    return jsonify({'ok': True, 'q': q, 'resultados': out})
+    # Qué fórmulas MENCIONAN el término por NOMBRE de receta (revela qué código usan
+    # realmente, aunque ese código tenga INCI vacío en el maestro · caso Myristoyl).
+    fpn = []
+    try:
+        for r in c.execute(
+            "SELECT fi.producto_nombre, UPPER(TRIM(fi.material_id)), COALESCE(fi.material_nombre,'') "
+            "FROM formula_items fi JOIN formula_headers fh "
+            "  ON UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(fi.producto_nombre)) "
+            "WHERE COALESCE(fh.activo,1)=1 AND UPPER(COALESCE(fi.material_nombre,'')) LIKE ? "
+            "ORDER BY fi.producto_nombre LIMIT 80", (f'%{qn}%',)).fetchall():
+            fpn.append({'producto': r[0], 'codigo': r[1], 'nombre': r[2]})
+    except Exception:
+        pass
+    return jsonify({'ok': True, 'q': q, 'resultados': out, 'formulas_por_nombre': fpn})
 
 
 @bp.route("/api/admin/retirar-huerfanos-muertos", methods=["POST"])
@@ -16326,6 +16339,14 @@ async function inspeccionar(){
           '</tbody></table>'):'<div class="muted" style="margin-top:4px">Sin movimientos.</div>')+
       '</div>';
     });
+    var fpn=d.formulas_por_nombre||[];
+    if(fpn.length){
+      var byc={}; fpn.forEach(function(f){ (byc[f.codigo]=byc[f.codigo]||[]).push(f.producto); });
+      h+='<div style="border:1px solid #7c3aed;border-radius:8px;padding:10px;margin-top:10px">'+
+        '<b>📋 Fórmulas que MENCIONAN "'+esc(q)+'" por nombre</b> <span class="muted">(qué código usan de verdad)</span>'+
+        Object.keys(byc).map(function(cd){return '<div style="margin-top:4px"><b class="mono">'+esc(cd)+'</b> ← '+byc[cd].map(esc).join(', ')+'</div>';}).join('')+
+      '</div>';
+    } else { h+='<div class="muted" style="margin-top:8px">Ninguna fórmula activa menciona "'+esc(q)+'" por nombre.</div>'; }
     box.innerHTML=h;
   }catch(e){box.innerHTML='Error: '+(e.message||e);}
 }
