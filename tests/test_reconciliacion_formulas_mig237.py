@@ -17,11 +17,22 @@ import sqlite3
 
 
 def _load_migrations():
+    # Importa MIGRATIONS sin contaminar sys.path de forma permanente (si este
+    # test corre primero bajo pytest-randomly, dejar api/ insertado podía
+    # ensombrecer imports de otros tests · se restaura en finally).
     api_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "api")
-    if api_dir not in sys.path:
+    added = api_dir not in sys.path
+    if added:
         sys.path.insert(0, api_dir)
-    from database import MIGRATIONS
-    return MIGRATIONS
+    try:
+        from database import MIGRATIONS
+        return MIGRATIONS
+    finally:
+        if added:
+            try:
+                sys.path.remove(api_dir)
+            except ValueError:
+                pass
 
 
 def _mig237_stmts():
