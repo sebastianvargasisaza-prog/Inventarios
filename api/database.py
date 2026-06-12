@@ -312,6 +312,23 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (238, "Blush Balm · mapear los 8 tonos (SKU Shopify) al producto 'Blush Balm' (Sebastian "
+          "12-jun). Los tonos son variantes Shopify (BB101..BB801) que comparten el mismo "
+          "bulk base -> sus ventas deben SUMAR a 'Blush Balm' para que aparezca en "
+          "necesidades y se solicite la produccion del bulk. Antes no estaban mapeados -> "
+          "Blush Balm no salia en necesidades (Malva BB201=-29 y Borgona BB801=-7 estan "
+          "sobrevendidos). El desglose POR TONO (ventas/unidades/pigmento) se maneja aparte "
+          "(capa de tonos · pendiente pigmentos). Idempotente · reversible (activo=0).", [
+        # Tonos: BB101 Hot Pink · BB201 Malva · BB301 Peach · BB401 Carolina ·
+        #        BB501 Himalayan Pink · BB601 Cinnamon · BB701 Moca · BB801 Borgona
+        "INSERT OR IGNORE INTO sku_producto_map (sku, producto_nombre, activo) VALUES "
+        "('BB101','Blush Balm',1),('BB201','Blush Balm',1),('BB301','Blush Balm',1),"
+        "('BB401','Blush Balm',1),('BB501','Blush Balm',1),('BB601','Blush Balm',1),"
+        "('BB701','Blush Balm',1),('BB801','Blush Balm',1)",
+        "UPDATE sku_producto_map SET producto_nombre='Blush Balm', activo=1 "
+        "WHERE UPPER(sku) IN ('BB101','BB201','BB301','BB401','BB501','BB601','BB701','BB801')",
+    ]),
+
     (237, "Reconciliacion formulas vs maestro Alejandro (Sebastian 12-jun · AUTORIZADO) · "
           "cruce FORMULAS_MAESTRO_v2_1 + INVENTARIO_MP_v8_2 uno-a-uno. Arregla 3 mapeos "
           "MAL que rompian descuento/necesidades; deja Centella(#3) y Vit E(#4) para "
