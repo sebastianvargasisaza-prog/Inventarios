@@ -15875,13 +15875,20 @@ def admin_formula_bodega_cruce():
         stock[r[0]] = float(r[1] or 0)
     maestro = {}
     for r in c.execute("SELECT UPPER(TRIM(codigo_mp)), COALESCE(nombre_inci,''), "
-                       "COALESCE(nombre_comercial,''), COALESCE(activo,1) FROM maestro_mps").fetchall():
-        maestro[r[0]] = {'inci': r[1], 'comercial': r[2], 'activo': r[3]}
+                       "COALESCE(nombre_comercial,''), COALESCE(activo,1), COALESCE(controla_stock,1) "
+                       "FROM maestro_mps").fetchall():
+        maestro[r[0]] = {'inci': r[1], 'comercial': r[2], 'activo': r[3], 'controla': r[4]}
     by_inci = defaultdict(list)
     for cod, m in maestro.items():
         ni = _norm_inci(m['inci'])
         if ni and ni != 'PENDIENTE INCI':
             by_inci[ni].append(cod)
+    # INCI ambiguo = compartido por materiales DISTINTOS (no unificable a ciegas):
+    # genéricos conocidos (PARFUM, AQUA…) o repartido en muchos códigos.
+    GENERIC_INCI = {'PARFUM', 'AQUA', 'WATER', 'FRAGRANCE', 'PERFUME', 'CI 77891'}
+
+    def _inci_ambiguo(ni):
+        return bool(ni) and (ni in GENERIC_INCI or len(by_inci.get(ni, [])) >= 4)
     usados = defaultdict(set)
     for r in c.execute(
         """SELECT UPPER(TRIM(fi.material_id)), fi.producto_nombre
@@ -15892,10 +15899,15 @@ def admin_formula_bodega_cruce():
 
     items = []
     for cod, prods in usados.items():
-        m = maestro.get(cod, {'inci': '', 'comercial': '', 'activo': 1})
+        m = maestro.get(cod, {'inci': '', 'comercial': '', 'activo': 1, 'controla': 1})
+        if int(m.get('controla', 1) or 0) == 0:
+            continue  # FIX · agua / consumible infinito (controla_stock=0) no aplica al cruce
         inci = m['inci']; st = stock.get(cod, 0.0); ni = _norm_inci(inci)
+        ambiguo = _inci_ambiguo(ni)
         dups = []
-        if ni and ni != 'PENDIENTE INCI':
+        # Solo proponer duplicados/unificar si el INCI NO es ambiguo (PARFUM, etc.):
+        # unificar fragancias distintas que comparten 'PARFUM' mezclaría el kardex.
+        if ni and ni != 'PENDIENTE INCI' and not ambiguo:
             for oc in by_inci.get(ni, []):
                 if oc != cod and stock.get(oc, 0) > 0:
                     dups.append({'codigo': oc, 'stock': round(stock.get(oc, 0), 1),
@@ -15903,8 +15915,8 @@ def admin_formula_bodega_cruce():
         flags = []
         if not (inci or '').strip():
             flags.append('SIN_INCI')
-        elif _norm_inci(inci) == _norm_inci(m['comercial']) and m['comercial']:
-            flags.append('INCI=COMERCIAL')
+        if ambiguo:
+            flags.append('INCI_AMBIGUO')
         if st > 0:
             estado = 'OK'
         elif dups:
@@ -15915,8 +15927,8 @@ def admin_formula_bodega_cruce():
         if estado == 'STOCK_EN_OTRO_CODIGO':
             mejor = sorted(dups, key=lambda x: -x['stock'])[0]
             sug = f"Unificar con {mejor['codigo']} ({mejor['stock']} g · mismo INCI)"
-        elif 'INCI=COMERCIAL' in flags:
-            sug = 'Corregir INCI (hoy tiene el nombre comercial, no el INCI real)'
+        elif ambiguo and st <= 0:
+            sug = 'INCI compartido por materiales distintos (ej. fragancias) · NO unificar a ciegas · mapear/comprar a mano'
         elif 'SIN_INCI' in flags:
             sug = 'Completar INCI desde el Excel de Alejandro'
         items.append({'codigo': cod, 'inci': inci, 'comercial': m['comercial'],
@@ -15930,10 +15942,62 @@ def admin_formula_bodega_cruce():
         'ok': sum(1 for i in items if i['estado'] == 'OK'),
         'stock_en_otro': sum(1 for i in items if i['estado'] == 'STOCK_EN_OTRO_CODIGO'),
         'sin_stock': sum(1 for i in items if i['estado'] == 'SIN_STOCK'),
-        'inci_falso': sum(1 for i in items if 'INCI=COMERCIAL' in i['flags']),
+        'inci_ambiguo': sum(1 for i in items if 'INCI_AMBIGUO' in i['flags']),
         'sin_inci': sum(1 for i in items if 'SIN_INCI' in i['flags']),
     }
     return jsonify({'ok': True, 'resumen': resumen, 'items': items})
+
+
+@bp.route("/api/admin/mp-inspeccionar", methods=["GET"])
+def admin_mp_inspeccionar():
+    """READ-ONLY · estado COMPLETO de un material para 'revisar a fondo': maestro
+    (INCI/comercial/activo/controla_stock) + TODOS sus movimientos (lote, tipo, cantidad,
+    estado_lote, fecha) + neto real producible + fórmulas que lo usan. ?q=codigo_o_nombre."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    from database import get_db
+    q = (request.args.get('q') or '').strip()
+    if not q:
+        return jsonify({'error': 'Falta ?q= (código o nombre)'}), 400
+    conn = get_db(); c = conn.cursor()
+    qn = q.upper()
+    rows = c.execute(
+        "SELECT codigo_mp, COALESCE(nombre_inci,''), COALESCE(nombre_comercial,''), "
+        "COALESCE(activo,1), COALESCE(controla_stock,1) FROM maestro_mps "
+        "WHERE UPPER(codigo_mp)=? OR UPPER(COALESCE(nombre_inci,'')) LIKE ? "
+        "OR UPPER(COALESCE(nombre_comercial,'')) LIKE ? ORDER BY codigo_mp LIMIT 40",
+        (qn, f'%{qn}%', f'%{qn}%')).fetchall()
+    NO_PROD = ('CUARENTENA', 'RECHAZADO', 'VENCIDO', 'RETENIDO', 'BLOQUEADO', 'OBSERVADO')
+    out = []
+    for r in rows:
+        cod = r[0]
+        movs = []; neto = 0.0; neto_prod = 0.0
+        try:
+            for mv in c.execute(
+                "SELECT COALESCE(lote,''), tipo, COALESCE(cantidad,0), COALESCE(estado_lote,''), "
+                "COALESCE(fecha,'') FROM movimientos WHERE UPPER(TRIM(material_id))=? "
+                "ORDER BY fecha", (cod.upper(),)).fetchall():
+                t = str(mv[1] or '').lower()
+                signo = 1 if t in ('entrada', 'ajuste +', 'ajuste') else (-1 if t in ('salida', 'ajuste -') else 0)
+                cant = float(mv[2] or 0)
+                neto += signo * cant
+                if str(mv[3] or '').upper() not in NO_PROD:
+                    neto_prod += signo * cant
+                movs.append({'lote': mv[0], 'tipo': mv[1], 'cantidad': mv[2],
+                             'estado_lote': mv[3], 'fecha': str(mv[4])[:10]})
+        except Exception:
+            pass
+        try:
+            fmls = [x[0] for x in c.execute(
+                "SELECT DISTINCT producto_nombre FROM formula_items WHERE UPPER(TRIM(material_id))=? LIMIT 12",
+                (cod.upper(),)).fetchall()]
+        except Exception:
+            fmls = []
+        out.append({'codigo': cod, 'inci': r[1], 'comercial': r[2], 'activo': r[3],
+                    'controla_stock': r[4], 'neto': round(neto, 1), 'neto_producible': round(neto_prod, 1),
+                    'movimientos': movs[-25:], 'n_movs': len(movs), 'formulas': fmls})
+    return jsonify({'ok': True, 'q': q, 'resultados': out})
 
 
 _MAESTRO_INCI_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
@@ -15964,6 +16028,14 @@ Compara contra el maestro y las fórmulas VIVOS y te muestra la brecha. <b>No ca
  <button onclick="diff()">Diagnosticar (Excel ↔ app)</button>
  <button onclick="cruceFB()" style="background:#0e7490;margin-left:8px">Cruzar fórmulas ↔ bodega (uno por uno)</button>
  <div id="msg" class="muted" style="margin-top:10px"></div>
+</div>
+<div class="card">
+ <b>🔎 Inspeccionar MP a fondo</b> <span class="muted">(estado completo: INCI, lotes, movimientos, neto real)</span>
+ <div style="margin-top:8px">
+  <input id="qmp" placeholder="código o nombre · ej: quimcr, MP00071, acetyl" style="padding:9px;border:1px solid #475569;border-radius:8px;width:320px;background:#0b1220;color:#e2e8f0">
+  <button onclick="inspeccionar()" style="background:#475569;margin-left:6px">Inspeccionar</button>
+ </div>
+ <div id="insp"></div>
 </div>
 <div id="out"></div>
 </div>
@@ -16051,7 +16123,7 @@ async function cruceFB(){
       kpi('OK (resuelve)', s.ok, 'ok')+
       kpi('STOCK EN OTRO CÓDIGO (el roto)', s.stock_en_otro, 'bad')+
       kpi('Sin stock', s.sin_stock, 'warn')+
-      kpi('INCI falso (=comercial)', s.inci_falso, 'warn')+
+      kpi('INCI ambiguo (PARFUM/AQUA…)', s.inci_ambiguo, 'muted')+
       kpi('Sin INCI', s.sin_inci, 'warn')+
     '</div></div>';
     var probl=(d.items||[]).filter(function(x){return x.estado!=='OK';});
@@ -16065,6 +16137,31 @@ async function cruceFB(){
       ['codigo','inci','stock_propio','n_formulas'], function(x){return [x.codigo, x.inci, x.stock_propio, x.n_formulas];});
     out.innerHTML=h;
   }catch(e){msg.textContent='Error: '+(e.message||e);}
+}
+async function inspeccionar(){
+  var q=document.getElementById('qmp').value.trim(); var box=document.getElementById('insp');
+  if(!q){box.innerHTML='<span class="muted">Escribí un código o nombre.</span>';return;}
+  box.innerHTML='<span class="muted">Buscando…</span>';
+  try{
+    var r=await fetch('/api/admin/mp-inspeccionar?q='+encodeURIComponent(q),{credentials:'same-origin'});
+    var d=await r.json();
+    if(!r.ok||!d.ok){box.innerHTML='Error: '+((d&&d.error)||r.status);return;}
+    if(!d.resultados.length){box.innerHTML='<span class="warn">Nada encontrado para "'+esc(q)+'".</span>';return;}
+    var h='';
+    d.resultados.forEach(function(x){
+      h+='<div style="border:1px solid #334155;border-radius:8px;padding:10px;margin-top:10px">'+
+        '<div><b class="mono">'+esc(x.codigo)+'</b> · INCI: <b>'+esc(x.inci||'(VACÍO)')+'</b> · comercial: '+esc(x.comercial||'—')+
+        ' · '+(x.activo?'<span class="ok">activo</span>':'<span class="bad">INACTIVO</span>')+
+        (x.controla_stock?'':' · <span class="warn">no controla stock (infinito)</span>')+'</div>'+
+        '<div style="margin-top:4px">Neto total: <b>'+x.neto+'</b> g · Neto PRODUCIBLE (lo que ve fabricar): <b class="'+(x.neto_producible>0?'ok':'bad')+'">'+x.neto_producible+'</b> g · '+x.n_movs+' movimientos</div>'+
+        (x.formulas.length?('<div class="muted" style="margin-top:4px">Fórmulas: '+x.formulas.map(esc).join(', ')+'</div>'):'<div class="muted" style="margin-top:4px">No usado en ninguna fórmula</div>')+
+        (x.movimientos.length?('<table style="margin-top:6px"><thead><tr><th>Lote</th><th>Tipo</th><th>Cant</th><th>Estado lote</th><th>Fecha</th></tr></thead><tbody>'+
+          x.movimientos.map(function(m){return '<tr><td class="mono">'+esc(m.lote||'—')+'</td><td>'+esc(m.tipo)+'</td><td>'+m.cantidad+'</td><td>'+(esc(m.estado_lote)||'—')+'</td><td class="muted">'+esc(m.fecha)+'</td></tr>';}).join('')+
+          '</tbody></table>'):'<div class="muted" style="margin-top:4px">Sin movimientos.</div>')+
+      '</div>';
+    });
+    box.innerHTML=h;
+  }catch(e){box.innerHTML='Error: '+(e.message||e);}
 }
 function tbl(titulo, rows, cols, mapfn){
   if(!rows||!rows.length) return '<div class="card"><b>'+titulo+'</b> <span class="ok">— 0</span></div>';

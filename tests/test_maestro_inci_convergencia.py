@@ -148,6 +148,43 @@ def test_cruce_detecta_stock_en_otro_codigo(app, db_clean):
     assert d["resumen"]["stock_en_otro"] >= 1
 
 
+def test_cruce_excluye_agua_y_no_unifica_parfum(app, db_clean):
+    """Fixes 11-jun: (a) agua (controla_stock=0) NO aparece en el cruce; (b) PARFUM
+    (INCI ambiguo · varias fragancias) NO se sugiere unificar (mezclaría fragancias)."""
+    # agua infinita usada en una fórmula
+    _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp,nombre_inci,activo,controla_stock) VALUES ('MPQAGUA','AQUA',1,0)")
+    # 2 fragancias distintas, ambas INCI PARFUM (genérico ambiguo) · una sin stock usada en fórmula, otra con stock
+    _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,activo) VALUES ('MPQPAR1','PARFUM','Citronela',1)")
+    _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,activo) VALUES ('MPQPAR2','PARFUM','Eucalipto',1)")
+    _exec("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES ('QA PARF',10,1)")
+    _exec("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje) VALUES ('QA PARF','MPQAGUA','Agua',80)")
+    _exec("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje) VALUES ('QA PARF','MPQPAR1','Citronela',1)")
+    _exec("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MPQPAR2','Eucalipto','Entrada',500,'LE',date('now'))")
+
+    c = _login(app)
+    d = c.get("/api/admin/formula-bodega-cruce").get_json()
+    cods = {i["codigo"]: i for i in d["items"]}
+    assert "MPQAGUA" not in cods, "el agua (controla_stock=0) NO debe aparecer en el cruce"
+    par1 = cods.get("MPQPAR1")
+    assert par1 is not None
+    assert par1["estado"] != "STOCK_EN_OTRO_CODIGO", "PARFUM no debe proponer unificar (fragancias distintas)"
+    assert "INCI_AMBIGUO" in par1["flags"], par1
+    assert not par1["duplicados"], "no sugiere unificar con la otra fragancia"
+
+
+def test_inspector_mp_muestra_movimientos_y_neto(app, db_clean):
+    _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,activo) VALUES ('MPINSP','TEST INCI','Test comercial',1)")
+    _exec("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MPINSP','Test','Entrada',300,'L1',date('now'))")
+    _exec("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MPINSP','Test','Salida',120,'L1',date('now'))")
+    c = _login(app)
+    d = c.get("/api/admin/mp-inspeccionar?q=MPINSP").get_json()
+    assert d["ok"]
+    res = [x for x in d["resultados"] if x["codigo"] == "MPINSP"]
+    assert res, d
+    assert abs(res[0]["neto"] - 180) < 1, res[0]  # 300 - 120
+    assert res[0]["n_movs"] == 2
+
+
 def test_cero_perdida_stock_global(app, db_clean):
     """Estrella: tras sembrar+backfill+corregir, SUM(movimientos) global IDÉNTICO."""
     _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp,nombre_inci,activo) VALUES ('MPQAS1','',1)")
