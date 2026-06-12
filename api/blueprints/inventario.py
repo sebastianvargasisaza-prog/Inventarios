@@ -9394,7 +9394,10 @@ async function iniciarConteo(){
 async function cargarMPs(){
   const r=await fetch('/api/conteo/materiales?estanteria='+encodeURIComponent(EST));
   const d=await r.json();
-  ITEMS=d.items||[];
+  // A-2 (Sebastian 12-jun): /api/conteo/materiales devuelve un ARRAY plano, no
+  // {items:[...]}. Antes ITEMS=d.items||[] daba SIEMPRE [] -> la pagina movil de
+  // conteo nunca listaba materiales al operario en bodega. Soporta ambos contratos.
+  ITEMS = Array.isArray(d) ? d : (d.items||[]);
   // Si el conteo se está retomando, recuperar valores guardados previamente
   try{
     const r2=await fetch('/api/conteo/'+CONTEO_ID+'/items');
@@ -9487,12 +9490,14 @@ async function guardarTodo(){
 async function cerrarConteo(){
   if(!CONTEO_ID)return;
   await guardarTodo();
-  if(!confirm('¿Cerrar el conteo?\\n\\nLas diferencias <5% se ajustan automáticamente en kardex. Las >5% van a gerencia.')) return;
+  if(!confirm('¿Cerrar el conteo?\\n\\nTodas las diferencias se ajustan en el kardex. Las grandes quedan en el informe de revisión (sin frenar el cierre).')) return;
   try{
     const r=await fetch('/api/conteo/'+CONTEO_ID+'/cerrar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
     const d=await r.json();
     if(!r.ok){toast('Error: '+(d.error||r.status),true);return}
-    const msg='Cerrado · '+d.ajustes_aplicados+' ajustes auto · '+d.items_gerencia+' a gerencia';
+    // B-2 (12-jun): el backend devuelve total_items_ajustados/total_pendientes
+    // (antes leia ajustes_aplicados/items_gerencia -> "undefined").
+    const msg='Cerrado · '+(d.total_items_ajustados||0)+' ajuste(s) aplicado(s) al kardex';
     alert(msg+'\\n\\nVolvé al dashboard.');
     location.href='/';
   }catch(e){toast('Error red: '+e.message,true)}
