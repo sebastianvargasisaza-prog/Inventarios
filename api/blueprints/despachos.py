@@ -52,11 +52,16 @@ def recepcion_detalle_oc(numero_oc):
             'error': f'La OC {oc[0]} es de tipo {oc[3]} (intangible). '
                      'No requiere recepcion fisica — se gestiona directamente en Compras.'
         }), 422
+    # Recepcion se identifica por INCI + codigo (Sebastian 12-jun · el comercial
+    # confunde por proveedor). JOIN a maestro para traer el INCI; nombre_mp
+    # (comercial) sigue disponible pero el front ya no lo muestra.
     c.execute(
-        'SELECT codigo_mp, nombre_mp, COALESCE(cantidad_g,0), '
-        'COALESCE(precio_unitario,0), COALESCE(cantidad_recibida_g,0), '
-        "COALESCE(lote_asignado,'') "
-        'FROM ordenes_compra_items WHERE numero_oc=?', (numero_oc,))
+        'SELECT oi.codigo_mp, oi.nombre_mp, COALESCE(oi.cantidad_g,0), '
+        'COALESCE(oi.precio_unitario,0), COALESCE(oi.cantidad_recibida_g,0), '
+        "COALESCE(oi.lote_asignado,''), COALESCE(m.nombre_inci,'') "
+        'FROM ordenes_compra_items oi '
+        'LEFT JOIN maestro_mps m ON m.codigo_mp = oi.codigo_mp '
+        'WHERE oi.numero_oc=?', (numero_oc,))
     items = c.fetchall()
     return jsonify({
         'numero_oc': oc[0], 'proveedor': oc[1], 'estado': oc[2],
@@ -64,7 +69,8 @@ def recepcion_detalle_oc(numero_oc):
         'creado_por': oc[6], 'observaciones': oc[7],
         'items': [
             {'codigo_mp': i[0], 'nombre_mp': i[1], 'cantidad_g': i[2],
-             'precio_unitario': i[3], 'cantidad_recibida_g': i[4], 'lote_asignado': i[5]}
+             'precio_unitario': i[3], 'cantidad_recibida_g': i[4], 'lote_asignado': i[5],
+             'inci': i[6]}
             for i in items
         ]
     })

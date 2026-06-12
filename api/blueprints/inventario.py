@@ -7079,7 +7079,12 @@ def registrar_recepcion():
             pass
     c.execute("SELECT nombre_inci,nombre_comercial,tipo,proveedor FROM maestro_mps WHERE codigo_mp=?", (codigo,))
     mp = c.fetchone()
-    nombre = d.get('nombre_comercial','') or (mp[1] if mp else codigo)
+    nombre_comercial = d.get('nombre_comercial','') or (mp[1] if mp else codigo)
+    # El kardex se rotula por INCI (Sebastian 12-jun · en recepcion NO se usa el
+    # comercial, que varia por proveedor y confunde); cae al codigo si no hay INCI.
+    # El comercial NO se borra: se sigue guardando en maestro_mps.nombre_comercial.
+    _inci_rec = (mp[0] if mp else d.get('nombre_inci','')) or ''
+    nombre = _inci_rec.strip() or codigo
     proveedor = d.get('proveedor','') or (mp[3] if mp else '')
     precio_kg = float(d.get('precio_kg') or 0)
     numero_factura = (d.get('numero_factura') or '').strip()
@@ -7089,7 +7094,7 @@ def registrar_recepcion():
     # Si la MP es nueva y viene con datos, crearla en el catalogo
     if not mp and (d.get('nombre_inci') or d.get('nombre_comercial')):
         c.execute("INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_inci, nombre_comercial, tipo, proveedor, stock_minimo) VALUES (?,?,?,?,?,?)",
-                  (codigo, d.get('nombre_inci',''), nombre, d.get('tipo',''), proveedor, d.get('stock_minimo',0)))
+                  (codigo, d.get('nombre_inci',''), nombre_comercial, d.get('tipo',''), proveedor, d.get('stock_minimo',0)))
         conn.commit()
     # Actualizar precio_referencia en maestro_mps si viene precio.
     # Solo ignoramos si la columna 'ultima_act_precio' no existe (versión vieja).

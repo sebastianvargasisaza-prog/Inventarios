@@ -53,6 +53,17 @@ Cuando Catalina edita un item:
 - `/limpiar-solicitudes-planta` borra solo `estado='Pendiente'` AND
   `numero_oc=''`. NUNCA toca SOLs con OC vinculada.
 
+### INV-6 · Recepción rotula el kardex por INCI, no por comercial (Sebastián 12-jun)
+- En `recibir_oc` el `movimientos.material_nombre` se escribe con el **INCI**
+  (`maestro_mps.nombre_inci`), no con el `nombre_mp` comercial de la OC. Cae al
+  **código** si no hay INCI (nunca al comercial, nunca en blanco). Identidad
+  sigue siendo el código (`material_id`). El comercial NO se borra: queda en
+  `ordenes_compra_items.nombre_mp` y `maestro_mps.nombre_comercial`.
+- Mismo criterio en el ingreso manual `inventario.py /api/recepcion` y en el
+  panel `/api/recepcion/detalle` (devuelve `inci`; el front muestra `INCI (código)`).
+- Motivo: el comercial varía por proveedor y era la mayor fuente de error en
+  recepción. Tests: `tests/test_recepcion_ingreso_inci.py`.
+
 ---
 
 ## Endpoints downstream que CONSUMEN sus datos

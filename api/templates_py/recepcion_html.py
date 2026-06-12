@@ -322,7 +322,7 @@ function renderOC(d) {
       tr.id = 'item-row-' + i;
       tr.innerHTML =
         '<td style="text-align:center;">' + getItemIcon('OK', pct) + '</td>' +
-        '<td><strong>' + it.nombre_mp + '</strong><br><small style="color:#78716c">' + it.codigo_mp + '</small></td>' +
+        '<td><strong>' + ((it.inci && it.inci.trim()) ? it.inci : it.codigo_mp) + '</strong><br><small style="color:#78716c">' + it.codigo_mp + '</small></td>' +
         '<td class="valor">' + Number(it.cantidad_g||0).toLocaleString() + ' ' + unidad + '</td>' +
         '<td><input type="number" id="cant-' + i + '" data-codigo="' + it.codigo_mp + '" data-sol="' + it.cantidad_g + '" value="' + prevRec + '" min="0" step="0.01" oninput="updateRow(' + i + ')"></td>' +
         '<td id="dif-' + i + '" class="valor" style="font-weight:600;"></td>' +

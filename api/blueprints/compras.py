@@ -5682,6 +5682,19 @@ def recibir_oc(numero_oc):
         }), 409
     cur.execute("SELECT id, codigo_mp, nombre_mp, cantidad_g FROM ordenes_compra_items WHERE numero_oc=?", (numero_oc,))
     items_oc = cur.fetchall()
+    # Etiqueta de INGRESO por INCI (Sebastian 12-jun): en recepcion el nombre
+    # comercial varia por proveedor y es la mayor fuente de error -> el kardex
+    # se rotula con el INCI (identidad sigue siendo el codigo). Si la MP no tiene
+    # INCI aun, cae al codigo (nunca al comercial, nunca en blanco). El
+    # nombre_comercial NO se borra de la BD; solo deja de usarse como etiqueta.
+    _cods_oc = [r[1] for r in items_oc if r[1]]
+    inci_by_cod = {}
+    if _cods_oc:
+        _ph = ','.join('?' for _ in _cods_oc)
+        for _cc, _ii in cur.execute(
+                "SELECT codigo_mp, COALESCE(nombre_inci,'') FROM maestro_mps "
+                f"WHERE codigo_mp IN ({_ph})", _cods_oc).fetchall():
+            inci_by_cod[_cc] = (_ii or '').strip()
     fecha = datetime.now().isoformat()
     operador = session.get('compras_user', '')
     data2 = request.get_json(silent=True) or {}
@@ -5739,6 +5752,9 @@ def recibir_oc(numero_oc):
 
     for _idx, item in enumerate(items_oc):
         _oci_rowid, codigo, nombre, cantidad_pedida = item
+        # Rotular el ingreso por INCI (cae al codigo si no hay INCI). El comercial
+        # (nombre) queda en la OC pero no entra al kardex como etiqueta.
+        nombre = inci_by_cod.get(codigo) or codigo or nombre
         # AUDITORÍA C22 · prioridad: rowid > idx posicional > codigo único
         ir = (rec_map_rowid.get(_oci_rowid)
               or rec_map_idx.get(_idx)
@@ -5816,6 +5832,9 @@ def recibir_oc(numero_oc):
     lotes_sinteticos_advertencia = []  # Fix #9 · 21-may-2026
     for _idx, item in enumerate(items_oc):
         _oci_rowid, codigo, nombre, cantidad_pedida = item
+        # Rotular el ingreso por INCI (cae al codigo si no hay INCI). El comercial
+        # (nombre) queda en la OC pero no entra al kardex como etiqueta.
+        nombre = inci_by_cod.get(codigo) or codigo or nombre
         # AUDITORÍA C22 · prioridad: rowid > idx posicional > codigo único
         ir = (rec_map_rowid.get(_oci_rowid)
               or rec_map_idx.get(_idx)
