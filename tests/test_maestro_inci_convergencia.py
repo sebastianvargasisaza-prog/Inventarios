@@ -125,6 +125,29 @@ def test_corregir_solo_whitelist(app, db_clean):
     assert conn.execute("SELECT nombre_inci FROM maestro_mps WHERE codigo_mp='MPQAB'").fetchone()[0] == "MAL B", "sin whitelist NO se toca"
 
 
+def test_cruce_detecta_stock_en_otro_codigo(app, db_clean):
+    """El 'roto' Quincream: la fórmula usa un código sin stock, pero hay stock bajo OTRO
+    código del MISMO INCI → cruce lo marca STOCK_EN_OTRO_CODIGO + sugiere unificar."""
+    _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,activo) VALUES ('MPQF1','ACRYLATES COPOLYMER','Quincream',1)")
+    _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,activo) VALUES ('MPQF2','ACRYLATES COPOLYMER','Quimcream',1)")
+    _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp,nombre_inci,nombre_comercial,activo) VALUES ('MPQF3','GLYCERIN','Glicerina',1)")
+    _exec("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES ('QA CRUCE',10,1)")
+    _exec("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje) VALUES ('QA CRUCE','MPQF1','Quincream',5)")
+    _exec("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje) VALUES ('QA CRUCE','MPQF3','Glicerina',10)")
+    # stock: 0 bajo MPQF1 (el de la fórmula) · 276 bajo MPQF2 (otro código mismo INCI) · MPQF3 con stock propio
+    _exec("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MPQF2','Quimcream','Entrada',276,'LQ',date('now'))")
+    _exec("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MPQF3','Glicerina','Entrada',1000,'LG',date('now'))")
+
+    c = _login(app)
+    d = c.get("/api/admin/formula-bodega-cruce").get_json()
+    assert d["ok"], d
+    byc = {i["codigo"]: i for i in d["items"]}
+    assert byc["MPQF1"]["estado"] == "STOCK_EN_OTRO_CODIGO", byc["MPQF1"]
+    assert any(z["codigo"] == "MPQF2" and abs(z["stock"] - 276) < 1 for z in byc["MPQF1"]["duplicados"]), byc["MPQF1"]
+    assert byc["MPQF3"]["estado"] == "OK", byc["MPQF3"]
+    assert d["resumen"]["stock_en_otro"] >= 1
+
+
 def test_cero_perdida_stock_global(app, db_clean):
     """Estrella: tras sembrar+backfill+corregir, SUM(movimientos) global IDÉNTICO."""
     _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp,nombre_inci,activo) VALUES ('MPQAS1','',1)")

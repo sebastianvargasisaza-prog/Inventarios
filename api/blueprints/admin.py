@@ -15845,6 +15845,97 @@ def admin_maestro_inci_aplicar():
                     'reversible': 'sí · audit_log con antes/después por código'})
 
 
+@bp.route("/api/admin/formula-bodega-cruce", methods=["GET"])
+def admin_formula_bodega_cruce():
+    """READ-ONLY · UNO POR UNO: cada material usado en fórmulas (formula_items de fórmulas
+    activas) cruzado con bodega. Clasifica:
+      OK                   → el código de la fórmula tiene stock propio (producción lo ve).
+      STOCK_EN_OTRO_CODIGO → 0 stock propio PERO hay stock bajo OTRO código del MISMO INCI
+                             (el 'roto' Quincream/Quimcream · producción ve 0 y no fabrica).
+      SIN_STOCK            → no hay stock en ningún código de ese material.
+    Flags: SIN_INCI · INCI=COMERCIAL (INCI falso = nombre comercial). Sugiere el fix.
+    NO cambia nada."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    from database import get_db
+    from collections import defaultdict
+    conn = get_db(); c = conn.cursor()
+    NO_PROD = ('CUARENTENA', 'RECHAZADO', 'VENCIDO', 'RETENIDO', 'BLOQUEADO', 'OBSERVADO')
+    _ph = ','.join(['?'] * len(NO_PROD))
+    stock = {}
+    for r in c.execute(
+        f"""SELECT UPPER(TRIM(material_id)),
+                   COALESCE(SUM(CASE WHEN LOWER(tipo) IN ('entrada','ajuste +','ajuste') THEN cantidad
+                                     WHEN LOWER(tipo) IN ('salida','ajuste -') THEN -cantidad
+                                     ELSE 0 END),0)
+            FROM movimientos
+            WHERE UPPER(COALESCE(estado_lote,'')) NOT IN ({_ph})
+            GROUP BY UPPER(TRIM(material_id))""", NO_PROD).fetchall():
+        stock[r[0]] = float(r[1] or 0)
+    maestro = {}
+    for r in c.execute("SELECT UPPER(TRIM(codigo_mp)), COALESCE(nombre_inci,''), "
+                       "COALESCE(nombre_comercial,''), COALESCE(activo,1) FROM maestro_mps").fetchall():
+        maestro[r[0]] = {'inci': r[1], 'comercial': r[2], 'activo': r[3]}
+    by_inci = defaultdict(list)
+    for cod, m in maestro.items():
+        ni = _norm_inci(m['inci'])
+        if ni and ni != 'PENDIENTE INCI':
+            by_inci[ni].append(cod)
+    usados = defaultdict(set)
+    for r in c.execute(
+        """SELECT UPPER(TRIM(fi.material_id)), fi.producto_nombre
+           FROM formula_items fi JOIN formula_headers fh
+             ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(fi.producto_nombre))
+           WHERE COALESCE(fh.activo,1)=1 AND TRIM(COALESCE(fi.material_id,'')) != ''""").fetchall():
+        usados[r[0]].add(r[1])
+
+    items = []
+    for cod, prods in usados.items():
+        m = maestro.get(cod, {'inci': '', 'comercial': '', 'activo': 1})
+        inci = m['inci']; st = stock.get(cod, 0.0); ni = _norm_inci(inci)
+        dups = []
+        if ni and ni != 'PENDIENTE INCI':
+            for oc in by_inci.get(ni, []):
+                if oc != cod and stock.get(oc, 0) > 0:
+                    dups.append({'codigo': oc, 'stock': round(stock.get(oc, 0), 1),
+                                 'comercial': maestro.get(oc, {}).get('comercial', '')})
+        flags = []
+        if not (inci or '').strip():
+            flags.append('SIN_INCI')
+        elif _norm_inci(inci) == _norm_inci(m['comercial']) and m['comercial']:
+            flags.append('INCI=COMERCIAL')
+        if st > 0:
+            estado = 'OK'
+        elif dups:
+            estado = 'STOCK_EN_OTRO_CODIGO'
+        else:
+            estado = 'SIN_STOCK'
+        sug = ''
+        if estado == 'STOCK_EN_OTRO_CODIGO':
+            mejor = sorted(dups, key=lambda x: -x['stock'])[0]
+            sug = f"Unificar con {mejor['codigo']} ({mejor['stock']} g · mismo INCI)"
+        elif 'INCI=COMERCIAL' in flags:
+            sug = 'Corregir INCI (hoy tiene el nombre comercial, no el INCI real)'
+        elif 'SIN_INCI' in flags:
+            sug = 'Completar INCI desde el Excel de Alejandro'
+        items.append({'codigo': cod, 'inci': inci, 'comercial': m['comercial'],
+                      'activo': m['activo'], 'stock_propio': round(st, 1),
+                      'n_formulas': len(prods), 'formulas': sorted(prods)[:6],
+                      'estado': estado, 'flags': flags, 'duplicados': dups, 'sugerencia': sug})
+    orden = {'STOCK_EN_OTRO_CODIGO': 0, 'SIN_STOCK': 1, 'OK': 2}
+    items.sort(key=lambda x: (orden.get(x['estado'], 3), -x['n_formulas']))
+    resumen = {
+        'total': len(items),
+        'ok': sum(1 for i in items if i['estado'] == 'OK'),
+        'stock_en_otro': sum(1 for i in items if i['estado'] == 'STOCK_EN_OTRO_CODIGO'),
+        'sin_stock': sum(1 for i in items if i['estado'] == 'SIN_STOCK'),
+        'inci_falso': sum(1 for i in items if 'INCI=COMERCIAL' in i['flags']),
+        'sin_inci': sum(1 for i in items if 'SIN_INCI' in i['flags']),
+    }
+    return jsonify({'ok': True, 'resumen': resumen, 'items': items})
+
+
 _MAESTRO_INCI_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Maestro INCI · Diagnóstico</title>
@@ -15870,7 +15961,8 @@ _MAESTRO_INCI_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-
 Compara contra el maestro y las fórmulas VIVOS y te muestra la brecha. <b>No cambia nada.</b></div>
 <div class="card">
  <input type="file" id="f" accept=".xlsx,.xlsm">
- <button onclick="diff()">Diagnosticar</button>
+ <button onclick="diff()">Diagnosticar (Excel ↔ app)</button>
+ <button onclick="cruceFB()" style="background:#0e7490;margin-left:8px">Cruzar fórmulas ↔ bodega (uno por uno)</button>
  <div id="msg" class="muted" style="margin-top:10px"></div>
 </div>
 <div id="out"></div>
@@ -15944,6 +16036,34 @@ async function aplicarMaestro(modo){
     if(!ra.ok||!da.ok){msg.textContent='Error al aplicar: '+((da&&da.error)||ra.status);return;}
     alert('✅ '+modo+': '+da.aplicados+' aplicados (backup: '+(da.backup||'ok')+'). Re-analizando…');
     diff();
+  }catch(e){msg.textContent='Error: '+(e.message||e);}
+}
+async function cruceFB(){
+  var msg=document.getElementById('msg'); var out=document.getElementById('out');
+  msg.textContent='Cruzando cada material de las fórmulas contra bodega…'; out.innerHTML='';
+  try{
+    var r=await fetch('/api/admin/formula-bodega-cruce',{credentials:'same-origin'});
+    var d=await r.json();
+    if(!r.ok||!d.ok){msg.textContent='Error: '+((d&&d.error)||r.status);return;}
+    var s=d.resumen;
+    msg.textContent=s.total+' materiales en fórmulas · '+s.ok+' OK · '+s.stock_en_otro+' con stock en otro código · '+s.sin_stock+' sin stock';
+    var h='<div class="card"><div class="kpis">'+
+      kpi('OK (resuelve)', s.ok, 'ok')+
+      kpi('STOCK EN OTRO CÓDIGO (el roto)', s.stock_en_otro, 'bad')+
+      kpi('Sin stock', s.sin_stock, 'warn')+
+      kpi('INCI falso (=comercial)', s.inci_falso, 'warn')+
+      kpi('Sin INCI', s.sin_inci, 'warn')+
+    '</div></div>';
+    var probl=(d.items||[]).filter(function(x){return x.estado!=='OK';});
+    h+=tbl('🔴 Materiales con problema (uno por uno · arreglar de arriba a abajo)', probl,
+      ['codigo','inci','estado','stock_propio','sugerencia','formulas'],
+      function(x){return [x.codigo, x.inci||((x.flags||[]).indexOf('SIN_INCI')>=0?'(sin INCI)':''),
+        x.estado+((x.flags||[]).length?(' · '+x.flags.join(',')):''), x.stock_propio,
+        x.sugerencia+((x.duplicados||[]).length?(' → '+x.duplicados.map(function(z){return z.codigo+'('+z.stock+'g)';}).join(', ')):''),
+        (x.formulas||[]).join(', ')];});
+    h+=tbl('✅ Materiales OK (resuelven bien · no tocar)', (d.items||[]).filter(function(x){return x.estado==='OK';}),
+      ['codigo','inci','stock_propio','n_formulas'], function(x){return [x.codigo, x.inci, x.stock_propio, x.n_formulas];});
+    out.innerHTML=h;
   }catch(e){msg.textContent='Error: '+(e.message||e);}
 }
 function tbl(titulo, rows, cols, mapfn){
