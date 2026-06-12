@@ -15,7 +15,7 @@ Dependencias de env:
   ANTHROPIC_API_KEY — para narrativa IA
 """
 
-from flask import Blueprint, g, jsonify, request, session
+from flask import Blueprint, g, jsonify, request, session, Response, redirect
 from database import db_connect
 import os, json, logging, sqlite3, urllib.request, urllib.error, urllib.parse
 from datetime import datetime, timedelta, date, timezone
@@ -2939,6 +2939,114 @@ def prog_debug_ventas():
         'meses_analizados': vel['months_analyzed'],
     })
 
+
+# ─── Blush Balm · vista por TONO (Sebastián 12-jun) ─────────────────────────
+# Los 8 tonos son variantes Shopify (BB101..BB801) que comparten el bulk base
+# 'Blush Balm' (mig 238 los mapea para que el bulk salga en necesidades). Esta
+# vista desglosa venta + stock + unidades sugeridas POR TONO (para el envasado:
+# cuantas unidades de cada color llenar). El pigmento por tono (capa B) es aparte.
+BLUSH_TONOS = [
+    ('BB101', 'Hot Pink'), ('BB201', 'Malva'), ('BB301', 'Peach'),
+    ('BB401', 'Carolina'), ('BB501', 'Himalayan Pink'), ('BB601', 'Cinnamon'),
+    ('BB701', 'Moca'), ('BB801', 'Borgoña'),
+]
+
+
+def _blush_tonos_data(conn, dias_objetivo=60):
+    """Por tono: venta 180d, venta/mes, stock disponible, dias de cobertura y
+    unidades sugeridas a producir (para cubrir dias_objetivo). El total sugerido
+    es el tamano del BULK a fabricar; el desglose es el split de envasado."""
+    ventas180 = _ventas_sku_180d(conn)
+    stock_sku = _resolved_stock_por_sku(conn)
+    filas = []
+    tot_v180 = tot_stock = tot_sug = 0
+    for sku, nombre in BLUSH_TONOS:
+        v180 = int(ventas180.get(sku, 0) or 0)
+        vdia = v180 / 180.0
+        vmes = round(vdia * 30, 1)
+        st = int((stock_sku.get(sku.upper()) or {}).get('uds', 0) or 0)
+        cobertura = int(round(st / vdia)) if vdia > 0 else None
+        sugerencia = max(0, int(round(vdia * dias_objetivo)) - st)
+        filas.append({
+            'sku': sku, 'tono': nombre, 'ventas_180d': v180, 'ventas_mes': vmes,
+            'stock': st, 'dias_cobertura': cobertura, 'sugerencia_uds': sugerencia,
+        })
+        tot_v180 += v180; tot_stock += st; tot_sug += sugerencia
+    return {
+        'dias_objetivo': dias_objetivo, 'tonos': filas,
+        'total_ventas_180d': tot_v180, 'total_stock': tot_stock,
+        'total_bulk_sugerido_uds': tot_sug,
+    }
+
+
+@bp.route('/api/planta/blush-tonos')
+def api_blush_tonos():
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    try:
+        dias = max(1, min(int(request.args.get('dias', 60) or 60), 365))
+    except (ValueError, TypeError):
+        dias = 60
+    return jsonify(_blush_tonos_data(get_db(), dias))
+
+
+@bp.route('/planta/blush-tonos')
+def page_blush_tonos():
+    if not _auth():
+        return redirect('/login?next=/planta/blush-tonos')
+    try:
+        dias = max(1, min(int(request.args.get('dias', 60) or 60), 365))
+    except (ValueError, TypeError):
+        dias = 60
+    d = _blush_tonos_data(get_db(), dias)
+    rows = []
+    for t in d['tonos']:
+        cob = '—' if t['dias_cobertura'] is None else (str(t['dias_cobertura']) + ' d')
+        bg = ' style="background:#fef2f2"' if t['stock'] <= 0 else ''
+        rows.append(
+            '<tr' + bg + '><td><b>' + t['tono'] + '</b><br><small style="color:#78716c">'
+            + t['sku'] + '</small></td>'
+            '<td class="num">' + str(t['ventas_180d']) + '</td>'
+            '<td class="num">' + str(t['ventas_mes']) + '</td>'
+            '<td class="num">' + str(t['stock']) + '</td>'
+            '<td class="num">' + cob + '</td>'
+            '<td class="num" style="font-weight:700;color:#7c3aed">' + str(t['sugerencia_uds']) + '</td></tr>'
+        )
+    html = (
+        '<!doctype html><html lang="es"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<title>Blush Balm · por tono</title><style>'
+        'body{font-family:-apple-system,Segoe UI,Arial;margin:0;background:#faf9fb;color:#1c1917}'
+        '.wrap{max-width:880px;margin:0 auto;padding:24px}'
+        'h1{font-size:20px;margin:0 0 4px}.sub{color:#78716c;font-size:13px;margin:0 0 18px}'
+        'table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;'
+        'box-shadow:0 1px 3px rgba(0,0,0,.08)}'
+        'th,td{padding:11px 14px;border-bottom:1px solid #f1f0f2;text-align:left;font-size:14px}'
+        'th{background:#f5f3f7;color:#57534e;font-size:12px;text-transform:uppercase;letter-spacing:.03em}'
+        '.num{text-align:right;font-variant-numeric:tabular-nums}'
+        'tfoot td{font-weight:700;background:#faf9fb}'
+        '.tag{display:inline-block;background:#ede9fe;color:#6d28d9;border-radius:6px;padding:2px 8px;font-size:12px}'
+        '</style></head><body><div class="wrap">'
+        '<h1>🎨 Blush Balm · necesidad por tono</h1>'
+        '<p class="sub">Bulk base compartido · se pigmenta por tono al envasar. '
+        'Objetivo de cobertura: <b>' + str(d['dias_objetivo']) + ' días</b> '
+        '(cambialo con <code>?dias=30</code>). Filas rojas = stock agotado.</p>'
+        '<table><thead><tr><th>Tono</th><th class="num">Venta 180d</th>'
+        '<th class="num">Venta/mes</th><th class="num">Stock</th>'
+        '<th class="num">Cobertura</th><th class="num">Sugerido producir</th></tr></thead>'
+        '<tbody>' + ''.join(rows) + '</tbody>'
+        '<tfoot><tr><td>TOTAL (bulk)</td>'
+        '<td class="num">' + str(d['total_ventas_180d']) + '</td><td></td>'
+        '<td class="num">' + str(d['total_stock']) + '</td><td></td>'
+        '<td class="num" style="color:#7c3aed">' + str(d['total_bulk_sugerido_uds']) + '</td></tr></tfoot>'
+        '</table>'
+        '<p class="sub" style="margin-top:14px">El <b>TOTAL sugerido</b> es el tamaño del '
+        '<span class="tag">bulk a fabricar</span>; el desglose por fila es el '
+        '<b>split de envasado</b> (unidades de cada color a llenar). '
+        'El pigmento por tono se agrega cuando Alejandro pase los códigos.</p>'
+        '</div></body></html>'
+    )
+    return Response(html, mimetype='text/html')
 
 
 # ─── Producción programada (local calendar) ────────────────────────────────
