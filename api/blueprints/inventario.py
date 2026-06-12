@@ -2300,6 +2300,12 @@ def _handle_produccion_inner():
             for plan in plan_descuentos:
                 lotes_log = []
                 for uso in plan['lotes_a_usar']:
+                    # FIX 11-jun (drift PG) · NO insertar un movimiento de 0/negativo:
+                    # el trigger fn_trg_mov_cantidad_positiva lo rechaza y aborta TODA
+                    # la producción (HTTP 500). Si la distribución FEFO asignó 0 g a un
+                    # lote (redondeo / lote sin saldo), se salta · otros lotes cubren el total.
+                    if float(uso.get('g') or 0) <= 0:
+                        continue
                     c.execute(
                         "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones, lote, operador) VALUES (?,?,?,?,?,?,?,?)",
                         (plan['mat_id'], plan['mat_nombre'], uso['g'], 'Salida', fecha,
