@@ -2657,18 +2657,27 @@ def admin_reset_password():
     if target not in COMPRAS_USERS:
         return jsonify({"error": f"Usuario '{target}' no existe"}), 404
 
-    # Generar password aleatoria fuerte (12 chars, sin caracteres ambiguos)
-    safe_alphabet = "".join(
-        c for c in (string.ascii_letters + string.digits + "!@#%&*+=?")
-        if c not in "0Oo1Il"
-    )
-    while True:
-        new_pwd = "".join(secrets.choice(safe_alphabet) for _ in range(12))
-        if (any(c.isupper() for c in new_pwd)
-                and any(c.islower() for c in new_pwd)
-                and any(c.isdigit() for c in new_pwd)
-                and any(not c.isalnum() for c in new_pwd)):
-            break
+    # Password ELEGIDA por el admin (opcional) · si no viene, se genera aleatoria.
+    # Sebastian 12-jun: poder FIJAR la clave sin depender de email (Miguel/Laura no
+    # tienen correo) y comunicarla directo. Identidad admin ya validada arriba.
+    custom = (body.get("new_password") or "").strip()
+    if custom:
+        if len(custom) < 8:
+            return jsonify({"error": "La contraseña debe tener al menos 8 caracteres"}), 400
+        new_pwd = custom
+    else:
+        # Generar password aleatoria fuerte (12 chars, sin caracteres ambiguos)
+        safe_alphabet = "".join(
+            c for c in (string.ascii_letters + string.digits + "!@#%&*+=?")
+            if c not in "0Oo1Il"
+        )
+        while True:
+            new_pwd = "".join(secrets.choice(safe_alphabet) for _ in range(12))
+            if (any(c.isupper() for c in new_pwd)
+                    and any(c.islower() for c in new_pwd)
+                    and any(c.isdigit() for c in new_pwd)
+                    and any(not c.isalnum() for c in new_pwd)):
+                break
 
     new_hash = generate_password_hash(new_pwd, method="pbkdf2:sha256:600000")
 
@@ -10425,7 +10434,12 @@ async function diagLogin(username) {
 }
 
 async function resetPassword(username) {
-  if (!confirm('¿Resetear la password de "' + username + '"?\\n\\nSe generará una password aleatoria que verás UNA SOLA VEZ. Tienes que comunicársela al usuario.')) return;
+  // Sebastián 12-jun · elegí la clave vos mismo (sin depender de email) o dejala
+  // vacía para una aleatoria. Se muestra UNA vez · comunicásela al usuario.
+  const choice = prompt('Nueva contraseña para "' + username + '"\\n\\n• Escribila (mínimo 8 caracteres) para FIJARLA, o\\n• dejala VACÍA para generar una aleatoria.\\n\\nSe muestra UNA SOLA VEZ.', '');
+  if (choice === null) return; // canceló
+  const custom = (choice || '').trim();
+  if (custom && custom.length < 8) { toast('La contraseña debe tener al menos 8 caracteres', 'err'); return; }
   try {
     // FIX 11-jun · el POST de reset es endpoint admin/sensible → requiere X-CSRF-Token.
     // Antes no lo mandaba → "CSRF token requerido". Pedimos el token de sesión primero.
@@ -10434,7 +10448,7 @@ async function resetPassword(username) {
     const r = await fetch('/api/admin/reset-password', {
       method:'POST', credentials:'same-origin',
       headers:{'Content-Type':'application/json', 'X-CSRF-Token': _csrf},
-      body: JSON.stringify({username: username})
+      body: JSON.stringify({username: username, new_password: custom})
     });
     const data = await r.json();
     if (r.ok && data.ok) {

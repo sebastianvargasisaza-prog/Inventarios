@@ -103,6 +103,35 @@ def test_reset_password_works_end_to_end(app, db_clean):
     assert r.status_code == 302  # redirect
 
 
+def test_reset_password_custom_elegida_por_admin(app, db_clean):
+    """Sebastián 12-jun: el admin puede FIJAR la clave (sin depender de email)."""
+    admin = app.test_client()
+    admin.post("/login", data={"username": "sebastian", "password": TEST_PASSWORD},
+               headers=csrf_headers(), follow_redirects=False)
+    elegida = "MiguelLaura2026"
+    r = admin.post("/api/admin/reset-password",
+                   json={"username": "valentina", "new_password": elegida},
+                   headers=csrf_headers())
+    assert r.status_code == 200, r.data
+    assert r.get_json()["new_password"] == elegida  # la devuelve tal cual para comunicarla
+    # El usuario entra con la clave elegida
+    user_c = app.test_client()
+    r = user_c.post("/login",
+                    data={"username": "valentina", "password": elegida},
+                    headers=csrf_headers(), follow_redirects=False)
+    assert r.status_code == 302
+
+
+def test_reset_password_custom_corta_rechazada(app, db_clean):
+    admin = app.test_client()
+    admin.post("/login", data={"username": "sebastian", "password": TEST_PASSWORD},
+               headers=csrf_headers(), follow_redirects=False)
+    r = admin.post("/api/admin/reset-password",
+                   json={"username": "valentina", "new_password": "corta"},
+                   headers=csrf_headers())
+    assert r.status_code == 400, r.data
+
+
 def test_reset_password_disables_old_password(app, db_clean):
     """Después del reset, la password vieja (env var) ya no funciona."""
     admin = app.test_client()
