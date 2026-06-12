@@ -185,6 +185,31 @@ def test_inspector_mp_muestra_movimientos_y_neto(app, db_clean):
     assert res[0]["n_movs"] == 2
 
 
+def test_retirar_huerfanos_muertos(app, db_clean):
+    """Retira (activo=0) solo los muertos: sin stock + sin fórmula + sin OC. NO toca
+    los que tienen stock ni los usados en fórmulas. NO borra (la fila sigue)."""
+    _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp,nombre_inci,activo) VALUES ('MPMUERTO','',1)")        # muerto
+    _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp,nombre_inci,activo) VALUES ('MPCONSTOCK','X',1)")     # tiene stock
+    _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp,nombre_inci,activo) VALUES ('MPENFORM','Y',1)")       # usado en fórmula
+    _exec("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,fecha) VALUES ('MPCONSTOCK','x','Entrada',500,'L',date('now'))")
+    _exec("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES ('QA MUE',10,1)")
+    _exec("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje) VALUES ('QA MUE','MPENFORM','Y',5)")
+
+    c = _login(app)
+    # preview lista MPMUERTO, NO los otros
+    pv = c.post("/api/admin/retirar-huerfanos-muertos", headers=csrf_headers()).get_json()
+    cods = {m["codigo"] for m in pv["muertos"]}
+    assert "MPMUERTO" in cods and "MPCONSTOCK" not in cods and "MPENFORM" not in cods, pv
+    # aplicar
+    ap = c.post("/api/admin/retirar-huerfanos-muertos?aplicar=1", headers=csrf_headers()).get_json()
+    assert ap["aplicado"] and ap["retirados"] >= 1
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    assert conn.execute("SELECT activo FROM maestro_mps WHERE codigo_mp='MPMUERTO'").fetchone()[0] == 0
+    assert conn.execute("SELECT activo FROM maestro_mps WHERE codigo_mp='MPCONSTOCK'").fetchone()[0] == 1
+    assert conn.execute("SELECT activo FROM maestro_mps WHERE codigo_mp='MPENFORM'").fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) FROM maestro_mps WHERE codigo_mp='MPMUERTO'").fetchone()[0] == 1  # NO borrado
+
+
 def test_cero_perdida_stock_global(app, db_clean):
     """Estrella: tras sembrar+backfill+corregir, SUM(movimientos) global IDÉNTICO."""
     _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp,nombre_inci,activo) VALUES ('MPQAS1','',1)")

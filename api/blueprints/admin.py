@@ -16000,6 +16000,80 @@ def admin_mp_inspeccionar():
     return jsonify({'ok': True, 'q': q, 'resultados': out})
 
 
+@bp.route("/api/admin/retirar-huerfanos-muertos", methods=["POST"])
+def admin_retirar_huerfanos_muertos():
+    """Retira (activo=0, NO borra) los códigos MUERTOS: activos, SIN stock producible,
+    NO usados en ninguna fórmula activa y SIN OC/SOL pendiente. Son los legacy abandonados
+    (MPXXXSO01 sin INCI, etc.). ?aplicar=1 ejecuta (backup + audit) · default = preview.
+    Reversible (activo=1). NUNCA borrado físico (trazabilidad INVIMA + FKs)."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    from database import get_db
+    aplicar = (request.args.get('aplicar') or '').strip() in ('1', 'true', 'yes')
+    conn = get_db(); c = conn.cursor()
+    # stock neto por código
+    stock = {}
+    for r in c.execute(
+        """SELECT UPPER(TRIM(material_id)),
+                  COALESCE(SUM(CASE WHEN LOWER(tipo) IN ('entrada','ajuste +','ajuste') THEN cantidad
+                                    WHEN LOWER(tipo) IN ('salida','ajuste -') THEN -cantidad ELSE 0 END),0)
+           FROM movimientos GROUP BY UPPER(TRIM(material_id))""").fetchall():
+        stock[r[0]] = float(r[1] or 0)
+    en_formula = set()
+    for r in c.execute("SELECT DISTINCT UPPER(TRIM(fi.material_id)) FROM formula_items fi "
+                       "JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(fi.producto_nombre)) "
+                       "WHERE COALESCE(fh.activo,1)=1 AND TRIM(COALESCE(fi.material_id,''))!=''").fetchall():
+        en_formula.add(r[0])
+    # OC/SOL pendientes (no retirar un código que va a recibir stock)
+    con_oc = set()
+    try:
+        for r in c.execute("SELECT DISTINCT UPPER(TRIM(oci.codigo_mp)) FROM ordenes_compra_items oci "
+                           "JOIN ordenes_compra oc ON oc.numero_oc=oci.numero_oc "
+                           "WHERE oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')").fetchall():
+            con_oc.add(r[0])
+    except Exception:
+        pass
+    try:
+        for r in c.execute("SELECT DISTINCT UPPER(TRIM(sci.codigo_mp)) FROM solicitudes_compra_items sci "
+                           "JOIN solicitudes_compra sc ON sc.numero=sci.numero "
+                           "WHERE sc.estado IN ('Pendiente','Aprobada') AND COALESCE(sc.numero_oc,'')=''").fetchall():
+            con_oc.add(r[0])
+    except Exception:
+        pass
+    muertos = []
+    for r in c.execute("SELECT codigo_mp, COALESCE(nombre_inci,''), COALESCE(nombre_comercial,'') "
+                       "FROM maestro_mps WHERE COALESCE(activo,1)=1").fetchall():
+        cu = str(r[0]).strip().upper()
+        if cu in en_formula or cu in con_oc:
+            continue
+        if stock.get(cu, 0) > 0.01:
+            continue
+        muertos.append({'codigo': r[0], 'inci': r[1], 'comercial': r[2],
+                        'tuvo_movimientos': cu in stock})
+    muertos.sort(key=lambda x: (bool(x['inci']), x['codigo']))
+    if not aplicar:
+        return jsonify({'ok': True, 'dry_run': True, 'total': len(muertos), 'muertos': muertos[:500]})
+    if not muertos:
+        return jsonify({'ok': True, 'aplicado': True, 'total': 0, 'retirados': 0})
+    try:
+        bak = do_backup(triggered_by='pre_retirar_huerfanos_muertos')
+    except Exception as e:
+        return jsonify({'error': f'Backup falló: {e}'}), 500
+    if not (bak and bak.get('ok')):
+        return jsonify({'error': 'Backup NO confirmado · abortado', 'backup': bak}), 500
+    retirados = 0
+    for m in muertos:
+        c.execute("UPDATE maestro_mps SET activo=0 WHERE codigo_mp=? AND COALESCE(activo,1)=1", (m['codigo'],))
+        if c.rowcount:
+            audit_log(c, usuario=u, accion='RETIRAR_HUERFANO_MUERTO', tabla='maestro_mps',
+                      registro_id=m['codigo'], antes={'activo': 1}, despues={'activo': 0, 'motivo': 'sin stock/fórmula/OC'})
+            retirados += 1
+    conn.commit()
+    return jsonify({'ok': True, 'aplicado': True, 'total': len(muertos), 'retirados': retirados,
+                    'backup': (bak.get('filename') or ''), 'reversible': 'sí · activo=1 + audit'})
+
+
 _MAESTRO_INCI_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Maestro INCI · Diagnóstico</title>
@@ -16049,6 +16123,14 @@ Compara contra el maestro y las fórmulas VIVOS y te muestra la brecha. <b>No ca
   <button onclick="unificarTodos()" style="background:#7c3aed;margin-left:10px">⚡ Unificar TODOS los duplicados detectados (preview)</button>
  </div>
  <div id="u_out" style="margin-top:8px"></div>
+</div>
+<div class="card">
+ <b>🧹 Retirar huérfanos muertos</b> <span class="muted">(activo=0 · códigos sin stock, sin fórmula y sin OC pendiente · NO borra · reversible)</span>
+ <div style="margin-top:8px">
+  <button onclick="retirarMuertos(false)" style="background:#475569">Preview</button>
+  <button onclick="retirarMuertos(true)" style="background:#dc2626;margin-left:8px">Retirar todos</button>
+ </div>
+ <div id="r_out" style="margin-top:8px"></div>
 </div>
 <div id="out"></div>
 </div>
@@ -16172,6 +16254,27 @@ async function unificar(){
     if(!r.ok||!d.ok){out.innerHTML='<span class="bad">Error: '+esc((d&&(d.error||d.detail))||r.status)+'</span>';return;}
     var t=d.totales_transferidos||{};
     out.innerHTML='<span class="ok">✅ Unificado en '+esc(d.canonico||canon)+' · archivados: '+((d.duplicados_archivados||dups).length)+' · movimientos movidos: '+(t.movimientos||0)+' · fórmulas: '+(t.formula_items||0)+'</span> · <span class="muted">verificá con el inspector.</span>';
+  }catch(e){out.innerHTML='<span class="bad">Error: '+(e.message||e)+'</span>';}
+}
+async function retirarMuertos(aplicar){
+  var out=document.getElementById('r_out');
+  out.innerHTML='<span class="muted">'+(aplicar?'Retirando…':'Buscando huérfanos muertos…')+'</span>';
+  try{
+    if(aplicar){
+      var pv=await (await fetch('/api/admin/retirar-huerfanos-muertos',{method:'POST',credentials:'same-origin',headers:{'X-CSRF-Token':await _csrf()}})).json();
+      if(!pv.ok){out.innerHTML='<span class="bad">Error: '+esc(pv.error||'')+'</span>';return;}
+      if(!pv.total){out.innerHTML='<span class="ok">No hay huérfanos muertos.</span>';return;}
+      if(!confirm('Voy a RETIRAR (activo=0) '+pv.total+' códigos muertos (sin stock, sin fórmula, sin OC).\\n\\nEjemplos: '+(pv.muertos||[]).slice(0,12).map(function(m){return m.codigo+(m.inci?(' '+m.inci):'');}).join(', ')+'\\n\\nNO se borran · reversible. ¿Confirmás?'))return;
+    }
+    var r=await fetch('/api/admin/retirar-huerfanos-muertos'+(aplicar?'?aplicar=1':''),{method:'POST',credentials:'same-origin',headers:{'X-CSRF-Token':await _csrf()}});
+    var d=await r.json();
+    if(!r.ok||!d.ok){out.innerHTML='<span class="bad">Error: '+((d&&d.error)||r.status)+'</span>';return;}
+    if(d.dry_run){
+      out.innerHTML='<b>'+d.total+'</b> huérfanos muertos (preview):<table style="margin-top:6px"><thead><tr><th>Código</th><th>INCI</th><th>Comercial</th></tr></thead><tbody>'+
+        (d.muertos||[]).map(function(m){return '<tr><td class="mono">'+esc(m.codigo)+'</td><td>'+esc(m.inci||'(sin INCI)')+'</td><td class="muted">'+esc(m.comercial||'')+'</td></tr>';}).join('')+'</tbody></table>';
+    }else{
+      out.innerHTML='<span class="ok">✅ Retirados (activo=0): '+d.retirados+'/'+d.total+' · reversible por audit.</span>';
+    }
   }catch(e){out.innerHTML='<span class="bad">Error: '+(e.message||e)+'</span>';}
 }
 async function unificarTodos(){
