@@ -2145,7 +2145,7 @@ def _handle_produccion_inner():
                          FROM movimientos
                          WHERE material_id=? AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
                            AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO'))
-                         GROUP BY lote HAVING stock > 0
+                         GROUP BY lote HAVING stock > 0.01
                          ORDER BY COALESCE(NULLIF(CAST(MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) AS TEXT), ''), '9999-12-31') ASC""", (mat_id,))
             lotes_fefo = c.fetchall()
             stock_total_disp = sum(float(l[2] or 0) for l in lotes_fefo)
@@ -4352,7 +4352,11 @@ def get_lotes():
                  FROM movimientos m LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
                  WHERE UPPER(COALESCE(mp.tipo_material,'MP'))='MP'
                  GROUP BY m.material_id, m.lote
-                 HAVING stock_neto > 0"""
+                 HAVING stock_neto > 0.01"""
+    # Sebastian 12-jun: umbral 0.01g (no >0). Un lote ya gastado deja un residuo
+    # flotante diminuto (0.004g del redondeo del descuento) que pasaba >0 pero se
+    # mostraba como "0" y nunca desaparecia. <=0.01g = consumido -> sale de la vista
+    # y de FEFO (siempre se elige donde HAY · al agotarse, el lote desaparece solo).
     if solo_criticos:
         # Solo lotes vencidos o que vencen en proximos 30d (con fecha_venc set)
         sql += (" AND MAX(m.fecha_vencimiento) IS NOT NULL"
@@ -4462,7 +4466,7 @@ def get_lotes():
                   FROM movimientos m LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
                   WHERE UPPER(COALESCE(mp.tipo_material,'MP'))='MP'
                   GROUP BY m.material_id, m.lote
-                  HAVING sn > 0
+                  HAVING sn > 0.01
                 )
             """
             total_count = c.execute(count_sql).fetchone()[0]
@@ -7704,7 +7708,7 @@ def conteo_materiales_estanteria():
                      FROM movimientos m
                      LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
                      WHERE m.estanteria=?{type_filter}{estado_lote_filter}
-                     GROUP BY m.material_id, m.lote, mp.codigo_mp HAVING stock_sistema > 0
+                     GROUP BY m.material_id, m.lote, mp.codigo_mp HAVING stock_sistema > 0.01
                      ORDER BY material_nombre, m.lote""", (est,) + type_args)
     else:
         c.execute(f"""SELECT m.material_id, MAX(m.material_nombre) as material_nombre,
@@ -7720,7 +7724,7 @@ def conteo_materiales_estanteria():
                      FROM movimientos m
                      LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
                      WHERE (m.estanteria IS NULL OR m.estanteria=''){type_filter}{estado_lote_filter}
-                     GROUP BY m.material_id, m.lote, mp.codigo_mp HAVING stock_sistema > 0
+                     GROUP BY m.material_id, m.lote, mp.codigo_mp HAVING stock_sistema > 0.01
                      ORDER BY material_nombre, m.lote""", type_args)
     rows = c.fetchall()
     cols = ['codigo_mp','nombre','inci','precio_ref','stock_sistema',
