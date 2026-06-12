@@ -7806,7 +7806,7 @@ async function aplicarTodas(){
   try{
     var r=await fetch('/api/admin/aplicar-migraciones-pg',{
       method:'POST',credentials:'same-origin',
-      headers:{'Content-Type':'application/json','X-CSRF-Token':_csrf()},
+      headers:{'Content-Type':'application/json','X-CSRF-Token':await _csrf()},
       body:JSON.stringify({aplicar:true})
     });
     var d=await r.json();
@@ -16041,14 +16041,19 @@ Compara contra el maestro y las fórmulas VIVOS y te muestra la brecha. <b>No ca
 </div>
 <script>
 function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
-function _csrf(){return (document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/)||['',''])[1];}
+var _CSRF='';
+async function _csrf(){
+  if(_CSRF)return _CSRF;
+  try{var r=await fetch('/api/csrf-token',{credentials:'same-origin'});if(r.ok){var d=await r.json();_CSRF=d.csrf_token||'';}}catch(e){}
+  return _CSRF;
+}
 async function diff(){
   var fe=document.getElementById('f'); var msg=document.getElementById('msg'); var out=document.getElementById('out');
   if(!fe.files||!fe.files[0]){msg.textContent='Elegí el Excel primero.';return;}
   msg.textContent='Analizando…'; out.innerHTML='';
   try{
     var fd=new FormData(); fd.append('file', fe.files[0]);
-    var r=await fetch('/api/admin/maestro-inci-diff',{method:'POST',body:fd,credentials:'same-origin',headers:{'X-CSRF-Token':_csrf()}});
+    var r=await fetch('/api/admin/maestro-inci-diff',{method:'POST',body:fd,credentials:'same-origin',headers:{'X-CSRF-Token':await _csrf()}});
     var d=await r.json();
     if(!r.ok||!d.ok){msg.textContent='Error: '+((d&&d.error)||r.status);return;}
     msg.textContent='Excel: '+d.excel_mps+' MPs · Maestro app: '+d.db_mps+' · códigos en fórmulas: '+d.formula_codigos;
@@ -16096,14 +16101,14 @@ async function aplicarMaestro(modo){
   }
   msg.textContent='Preview '+modo+'…';
   try{
-    var rp=await fetch('/api/admin/maestro-inci-aplicar?dry_run=1',{method:'POST',body:mkfd(true),credentials:'same-origin',headers:{'X-CSRF-Token':_csrf()}});
+    var rp=await fetch('/api/admin/maestro-inci-aplicar?dry_run=1',{method:'POST',body:mkfd(true),credentials:'same-origin',headers:{'X-CSRF-Token':await _csrf()}});
     var dp=await rp.json();
     if(!rp.ok||!dp.ok){msg.textContent='Error: '+((dp&&dp.error)||rp.status);return;}
     if(!dp.total){alert('Nada para aplicar en '+modo+' (0 cambios).');msg.textContent='';return;}
     var muestra=(dp.cambios||[]).slice(0,15).map(function(ch){return ch.codigo+(ch.a?(': '+(ch.de||'(vacío)')+' -> '+ch.a):(ch.inci?(': '+ch.inci):''));}).join('\\n');
     if(!confirm('Vas a aplicar '+modo+' a '+dp.total+' código(s).\\n\\nEjemplos:\\n'+muestra+(dp.total>15?('\\n... +'+(dp.total-15)+' más'):'')+'\\n\\n¿Confirmás? (hace backup + queda en auditoría · reversible)'))return;
     msg.textContent='Aplicando '+modo+'…';
-    var ra=await fetch('/api/admin/maestro-inci-aplicar?dry_run=0',{method:'POST',body:mkfd(false),credentials:'same-origin',headers:{'X-CSRF-Token':_csrf()}});
+    var ra=await fetch('/api/admin/maestro-inci-aplicar?dry_run=0',{method:'POST',body:mkfd(false),credentials:'same-origin',headers:{'X-CSRF-Token':await _csrf()}});
     var da=await ra.json();
     if(!ra.ok||!da.ok){msg.textContent='Error al aplicar: '+((da&&da.error)||ra.status);return;}
     alert('✅ '+modo+': '+da.aplicados+' aplicados (backup: '+(da.backup||'ok')+'). Re-analizando…');
