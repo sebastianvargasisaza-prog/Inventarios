@@ -471,7 +471,7 @@ def crear_mbr():
     )
     mbr_id = cur.lastrowid
     conn.commit()
-    audit_log(cur, usuario=user, accion="CREATE_MBR_DRAFT",
+    audit_log(None, usuario=user, accion="CREATE_MBR_DRAFT",
               tabla="mbr_templates", registro_id=mbr_id,
               despues={"producto": producto, "version": version})
     return jsonify({"ok": True, "id": mbr_id, "version": version}), 201
@@ -501,7 +501,7 @@ def editar_mbr(mbr_id):
     cur.execute(f"UPDATE mbr_templates SET {set_clause} WHERE id = ?",
                 list(cambios.values()) + [mbr_id])
     conn.commit()
-    audit_log(cur, usuario=session.get("compras_user", ""),
+    audit_log(None, usuario=session.get("compras_user", ""),
               accion="UPDATE_MBR_DRAFT", tabla="mbr_templates",
               registro_id=mbr_id, despues=cambios)
     return jsonify({"ok": True})
@@ -644,7 +644,7 @@ def submit_a_revision(mbr_id):
         (mbr_id,),
     )
     conn.commit()
-    audit_log(cur, usuario=user, accion="SUBMIT_MBR",
+    audit_log(None, usuario=user, accion="SUBMIT_MBR",
               tabla="mbr_templates", registro_id=mbr_id,
               antes={"estado": "draft"}, despues={"estado": "en_revision"})
     return jsonify({"ok": True, "estado": "en_revision"})
@@ -698,7 +698,7 @@ def aprobar_mbr(mbr_id):
         (user, int(signature_id), mbr_id),
     )
     conn.commit()
-    audit_log(cur, usuario=user, accion="APROBAR_MBR",
+    audit_log(None, usuario=user, accion="APROBAR_MBR",
               tabla="mbr_templates", registro_id=mbr_id,
               antes={"estado": "en_revision"},
               despues={"estado": "aprobado", "signature_id": signature_id})
@@ -733,7 +733,7 @@ def obsoletar_mbr(mbr_id):
         (motivo, mbr_id),
     )
     conn.commit()
-    audit_log(cur, usuario=user, accion="OBSOLETAR_MBR",
+    audit_log(None, usuario=user, accion="OBSOLETAR_MBR",
               tabla="mbr_templates", registro_id=mbr_id,
               antes={"estado": "aprobado"},
               despues={"estado": "obsoleto", "motivo": motivo})
@@ -1473,7 +1473,7 @@ def iniciar_ebr():
         )
         n_clonados += 1
     conn.commit()
-    audit_log(cur, usuario=user, accion="INICIAR_EBR",
+    audit_log(None, usuario=user, accion="INICIAR_EBR",
               tabla="ebr_ejecuciones", registro_id=ebr_id,
               despues={"mbr_template_id": mbr["id"], "lote": lote,
                         "numero_op": numero_op, "fase": fase,
@@ -2855,7 +2855,7 @@ def completar_ebr(ebr_id):
         import logging as _logc
         _logc.getLogger('inventario.brd').warning('cuarentena auto completar_ebr fallo: %s', _e)
     conn.commit()
-    audit_log(cur, usuario=user, accion="COMPLETAR_EBR",
+    audit_log(None, usuario=user, accion="COMPLETAR_EBR",
               tabla="ebr_ejecuciones", registro_id=ebr_id,
               despues={"cantidad_real_g": cantidad_real, "yield_pct": yield_pct,
                        "cuarentena_auto_creada": cuarentena_creada})
@@ -3177,7 +3177,7 @@ def liberar_ebr(ebr_id):
         import logging as _log
         _log.getLogger('inventario.brd').warning('liberar_ebr promocion PT fallo: %s', _e)
     conn.commit()
-    audit_log(cur, usuario=user, accion="LIBERAR_EBR",
+    audit_log(None, usuario=user, accion="LIBERAR_EBR",
               tabla="ebr_ejecuciones", registro_id=ebr_id,
               despues={"liberado_por": user, "signature_id": signature_id,
                        "pt_lotes_promovidos": pt_lote_promovidos})
@@ -3225,7 +3225,7 @@ def rechazar_ebr(ebr_id):
         (motivo, ebr_id),
     )
     conn.commit()
-    audit_log(cur, usuario=user, accion="RECHAZAR_EBR",
+    audit_log(None, usuario=user, accion="RECHAZAR_EBR",
               tabla="ebr_ejecuciones", registro_id=ebr_id,
               despues={"motivo": motivo, "signature_id": signature_id})
     return jsonify({"ok": True, "estado": "rechazado"})
