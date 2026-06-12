@@ -16037,6 +16037,18 @@ Compara contra el maestro y las fórmulas VIVOS y te muestra la brecha. <b>No ca
  </div>
  <div id="insp"></div>
 </div>
+<div class="card">
+ <b>🔗 Unificar duplicados</b> <span class="muted">(mismo material en varios códigos → uno · mueve el stock atómico, archiva los viejos activo=0, reversible por audit)</span>
+ <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+  <label class="muted">Canónico (sobrevive):</label>
+  <input id="u_canon" placeholder="MP00071" style="padding:8px;border:1px solid #475569;border-radius:8px;width:130px;background:#0b1220;color:#e2e8f0">
+  <label class="muted">Duplicados (coma):</label>
+  <input id="u_dups" placeholder="MP00436,MP00447" style="padding:8px;border:1px solid #475569;border-radius:8px;width:240px;background:#0b1220;color:#e2e8f0">
+  <label class="muted"><input type="checkbox" id="u_force"> forzar (INCI distinto)</label>
+  <button onclick="unificar()" style="background:#b45309">Unificar</button>
+ </div>
+ <div id="u_out" style="margin-top:8px"></div>
+</div>
 <div id="out"></div>
 </div>
 <script>
@@ -16142,6 +16154,24 @@ async function cruceFB(){
       ['codigo','inci','stock_propio','n_formulas'], function(x){return [x.codigo, x.inci, x.stock_propio, x.n_formulas];});
     out.innerHTML=h;
   }catch(e){msg.textContent='Error: '+(e.message||e);}
+}
+async function unificar(){
+  var canon=document.getElementById('u_canon').value.trim().toUpperCase();
+  var dups=document.getElementById('u_dups').value.split(',').map(function(s){return s.trim().toUpperCase();}).filter(Boolean);
+  var force=document.getElementById('u_force').checked;
+  var out=document.getElementById('u_out');
+  if(!canon||!dups.length){out.innerHTML='<span class="warn">Poné el canónico y al menos un duplicado.</span>';return;}
+  if(!confirm('Unificar '+dups.join(', ')+' → '+canon+'\\n\\nMueve TODO el stock y las fórmulas al canónico y archiva los duplicados (activo=0).'+(force?'\\nFORZADO (INCI distinto).':'')+'\\n\\n¿Confirmás? (queda en auditoría · reversible)'))return;
+  out.innerHTML='<span class="muted">Unificando…</span>';
+  try{
+    var r=await fetch('/api/admin/maestro-mps-unificar',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':await _csrf()},
+      body:JSON.stringify({codigo_canonico:canon,codigos_duplicados:dups,merge_force:force,motivo:'Consolidar duplicado desde maestro-inci'})});
+    var d=await r.json();
+    if(!r.ok||!d.ok){out.innerHTML='<span class="bad">Error: '+esc((d&&(d.error||d.detail))||r.status)+'</span>';return;}
+    var t=d.totales_transferidos||{};
+    out.innerHTML='<span class="ok">✅ Unificado en '+esc(d.canonico||canon)+' · archivados: '+((d.duplicados_archivados||dups).length)+' · movimientos movidos: '+(t.movimientos||0)+' · fórmulas: '+(t.formula_items||0)+'</span> · <span class="muted">verificá con el inspector.</span>';
+  }catch(e){out.innerHTML='<span class="bad">Error: '+(e.message||e)+'</span>';}
 }
 async function inspeccionar(){
   var q=document.getElementById('qmp').value.trim(); var box=document.getElementById('insp');
