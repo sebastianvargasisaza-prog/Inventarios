@@ -3255,15 +3255,26 @@ def simular_produccion():
                 cod_bodega = _resolver_mp(c, mat_id, mat_nombre) or mat_id
             except Exception:
                 cod_bodega = mat_id
+            # M-1 (Sebastian 12-jun): alinear "Verificar Stock" con la seleccion REAL
+            # de FEFO -> solo lotes con lote real (no S/L) y stock>0.01 por lote,
+            # excluyendo no-producibles (incl BLOQUEADO). Antes era un SUM plano que
+            # sobre-reportaba (sumaba S/L, polvo <0.01 y estados retenidos) -> simular
+            # decia factible y el descuento real fallaba con 422.
             _ph = ','.join(['?'] * len(_NP6))
-            c.execute(f"""SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0)
-                         FROM movimientos WHERE material_id=?
-                         AND UPPER(COALESCE(estado_lote,'')) NOT IN ({_ph})""",
+            c.execute(f"""SELECT COALESCE(SUM(stk),0) FROM (
+                            SELECT SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) AS stk
+                            FROM movimientos WHERE material_id=?
+                              AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
+                              AND UPPER(COALESCE(estado_lote,'')) NOT IN ({_ph})
+                            GROUP BY lote HAVING stk > 0.01)""",
                       (cod_bodega,) + tuple(_NP6))
         else:
-            c.execute("""SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0)
-                         FROM movimientos WHERE material_id=?
-                         AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO'))""",
+            c.execute("""SELECT COALESCE(SUM(stk),0) FROM (
+                            SELECT SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) AS stk
+                            FROM movimientos WHERE material_id=?
+                              AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
+                              AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO'))
+                            GROUP BY lote HAVING stk > 0.01)""",
                       (mat_id,))
         g_disp = round(c.fetchone()[0] or 0, 2)
         suf = g_disp >= g_req
