@@ -1729,24 +1729,34 @@ def actualizar_precios_items_oc(numero_oc):
             except sqlite3.OperationalError:
                 pass
 
-    # Recalcular valor_total de la OC
+    # Recalcular valor_total de la OC · FIX 13-jun (audit compras · M12(f)): RESPETAR
+    # con_iva. Antes este endpoint (el que usa Catalina para guardar precios) guardaba
+    # la SUMA de subtotales SIN IVA mientras editar_oc/agregar/modificar sí aplican
+    # ×1.19 → tras pasar por aquí el valor_total perdía el 16% y pagar_oc/espejo
+    # financiero pagaban de menos. Ahora alineado con los otros 3 paths.
     total = c.execute(
         'SELECT COALESCE(SUM(COALESCE(subtotal,0)),0) FROM ordenes_compra_items WHERE numero_oc=?',
         (numero_oc,)
     ).fetchone()[0] or 0
+    _row_iva = c.execute('SELECT COALESCE(con_iva,0) FROM ordenes_compra WHERE numero_oc=?',
+                         (numero_oc,)).fetchone()
+    _con_iva = int(_row_iva[0]) if _row_iva else 0
+    sub = round(float(total), 2)
+    valor_total = round(sub * 1.19, 2) if _con_iva else sub
     c.execute(
-        'UPDATE ordenes_compra SET valor_total=? WHERE numero_oc=?',
-        (round(float(total), 2), numero_oc)
+        'UPDATE ordenes_compra SET valor_total=?, valor_sin_iva=? WHERE numero_oc=?',
+        (valor_total, sub, numero_oc)
     )
     try:
         usuario_act = session.get('compras_user', '')
         audit_log(c, usuario=usuario_act, accion='ACTUALIZAR_PRECIOS_OC',
                   tabla='ordenes_compra_items', registro_id=numero_oc,
                   despues={'items_actualizados': actualizados,
-                            'valor_total_nuevo': round(float(total), 2),
+                            'valor_total_nuevo': valor_total,
+                            'valor_sin_iva': sub, 'con_iva': _con_iva,
                             'proveedor': proveedor[:200]},
                   detalle=f"Actualizó precios de {actualizados} items en OC {numero_oc} "
-                          f"· nuevo total {float(total):.0f}")
+                          f"· nuevo total {valor_total:.0f}" + (" (con IVA)" if _con_iva else ""))
     except Exception as e:
         log.warning('audit_log ACTUALIZAR_PRECIOS_OC fallo: %s', e)
     conn.commit()
@@ -6539,6 +6549,20 @@ def pagar_oc(numero_oc):
     nuevo_estado = (_row_est[0] if _row_est else 'Parcial') or 'Parcial'
     cur.execute("SELECT COALESCE(SUM(monto),0) FROM pagos_oc WHERE numero_oc=?", (numero_oc,))
     total_pagado = float(cur.fetchone()[0] or 0)
+    # FIX 13-jun (audit compras · M27/M12(d)) · guard de over-payment ATÓMICO post-insert.
+    # El check previo (~6470) es check-then-act; con 2 pagos full concurrentes SIN nº de
+    # factura (el path con factura ya lo cubre el UNIQUE) ambos podían pasar el check y
+    # duplicar el egreso. Acá re-verificamos el SUM REAL ya con este pago insertado: si
+    # excede el valor de la OC, otro pago entró en paralelo → rollback ANTES de crear el
+    # egreso financiero / comprobante. (Cubre el doble-click y el caso donde el otro pago
+    # ya commiteó; SQLite serializa escrituras, así que el riesgo era solo PG.)
+    if total_pagado > (valor_total_oc + 0.01):
+        conn.rollback()
+        return jsonify({
+            'error': (f"Over-payment por pago concurrente: total {total_pagado:.0f} "
+                      f"excede el valor de la OC {valor_total_oc:.0f}. No se registró este pago."),
+            'codigo': 'OVER_PAYMENT_RACE',
+        }), 409
     # Audit log INVIMA · Resolución 2214/2021 · pago de OC es operación financiera regulada
     try:
         audit_log(cur, usuario=usuario_actual, accion='PAGAR_OC',
