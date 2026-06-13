@@ -1207,6 +1207,17 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <tbody id="cuar-tbody"><tr><td colspan="10" style="text-align:center;color:#999;">Sin lotes en cuarentena</td></tr></tbody>
     </table>
 
+    <!-- Lotes NO disponibles: rechazado / vencido / bloqueado (trazabilidad INVIMA) -->
+    <h3 style="margin-top:28px;color:#b91c1c;">&#128683; No disponible &middot; retenido</h3>
+    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:12px 18px;margin-bottom:12px;font-size:0.86em;color:#7f1d1d;">
+      Lotes <b>rechazados, vencidos o bloqueados</b> que <b>siguen fisicamente en bodega</b>. No cuentan como stock disponible (se excluyen de produccion, FEFO y del total de Bodega), pero permanecen aqui para su <b>trazabilidad</b> (INVIMA Res. 2214/2021) y para que tu <b>conteo fisico cuadre</b> hasta documentar su disposicion (devolucion al proveedor o destruccion).
+      <span style="color:#16a34a;font-weight:600;">&#10003; Si esta vacia: no hay material retenido con saldo &mdash; ideal.</span>
+    </div>
+    <table class="table" id="ret-table">
+      <thead><tr><th>Codigo</th><th>INCI</th><th>Nombre</th><th>Lote</th><th>Cant. (g)</th><th>Proveedor</th><th>OC</th><th>Vencimiento</th><th>Estado</th></tr></thead>
+      <tbody id="ret-tbody"><tr><td colspan="9" style="text-align:center;color:#999;">Sin material retenido</td></tr></tbody>
+    </table>
+
     <!-- Modal de revision CC -->
     <div id="cc-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:9999;align-items:center;justify-content:center;">
       <div style="background:#fff;border-radius:14px;padding:32px;max-width:680px;width:95%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
@@ -3847,7 +3858,7 @@ function switchTab(n,btn){
   if(n==='stock') loadStock();
   if(n==='formulas'||n==='produccion') loadFormulas();
   if(n==='produccion'){ if(typeof cargarPendientesFab==='function') cargarPendientesFab(); if(typeof cargarHistProd==='function') cargarHistProd(); if(typeof cargarAreasFab==='function') cargarAreasFab(); }
-  if(n==='cuarentena') cargarCuarentena();
+  if(n==='cuarentena'){ cargarCuarentena(); cargarRetenido(); }
   if(n==='ingreso') initIngreso();
   if(n==='abc') loadABC();
   if(n==='conteo'){ cargarEstanterias(); cargarHistorialConteos(); cargarProgramacionCiclica(); }
@@ -6975,6 +6986,35 @@ async function cargarCuarentena(){
         h+='<span style="color:#999;font-size:0.82em;">Solo CC/Admin</span>';
       }
       h+='</td></tr>';
+    });
+    tb.innerHTML=h;
+  }catch(e){console.error(e);}
+}
+
+// Lotes NO disponibles (rechazado/vencido/bloqueado) con saldo fisico · trazabilidad INVIMA
+async function cargarRetenido(){
+  try{
+    var r=await fetch('/api/lotes/retenido');
+    var data=await r.json();
+    var tb=document.getElementById('ret-tbody');
+    if(!tb)return;
+    if(!Array.isArray(data)||!data.length){tb.innerHTML='<tr><td colspan="9" style="text-align:center;color:#999;padding:18px;">Sin material retenido con saldo</td></tr>';return;}
+    var colores={'RECHAZADO':'#dc2626','VENCIDO':'#d97706','BLOQUEADO':'#6b7280'};
+    var h='';
+    data.forEach(function(l){
+      var est=(l.estado_lote||'').toUpperCase();
+      var col=colores[est]||'#888';
+      h+='<tr>';
+      h+='<td style="font-family:monospace;font-size:0.85em;">'+(l.codigo_mp||'')+'</td>';
+      h+='<td style="font-size:0.8em;color:#555;">'+(l.nombre_inci||'')+'</td>';
+      h+='<td>'+(l.nombre||'')+'</td>';
+      h+='<td style="font-family:monospace;font-weight:600;">'+(l.lote||'')+'</td>';
+      h+='<td style="text-align:right;font-weight:600;">'+Number(l.cantidad||0).toLocaleString()+'</td>';
+      h+='<td style="font-size:0.85em;">'+(l.proveedor||'')+'</td>';
+      h+='<td style="font-size:0.82em;">'+(l.numero_oc||'')+'</td>';
+      h+='<td style="font-size:0.82em;">'+((l.fecha_vencimiento||'')+'').substring(0,10)+'</td>';
+      h+='<td><span style="background:'+col+'20;color:'+col+';padding:2px 8px;border-radius:10px;font-size:0.8em;font-weight:700;">'+est+'</span></td>';
+      h+='</tr>';
     });
     tb.innerHTML=h;
   }catch(e){console.error(e);}

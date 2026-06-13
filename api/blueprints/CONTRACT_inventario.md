@@ -111,7 +111,12 @@ Invariante nueva:
   activas · NO expone precio / proveedor / stock (uso de planeación)
 - `GET  /api/proveedores-unicos` · datalist autocomplete
 - `GET  /api/lotes` · listado lotes MP con stock > 0 (paginación opcional
-  via `?limit=N&offset=N`, `?solo_criticos=1` para vencidos/<30d)
+  via `?limit=N&offset=N`, `?solo_criticos=1` para vencidos/<30d).
+  Excluye estados NO usables (cuarentena/rechazado/vencido/agotado/bloqueado · A1)
+- `GET  /api/lotes/retenido` · lotes NO disponibles con saldo físico (RECHAZADO/
+  VENCIDO/BLOQUEADO), netos por lote, umbral >0.01, UPPER-insensible. Read-only.
+  Complementa `/api/lotes/cuarentena` (solo CUARENTENA/_EXTENDIDA) para que el
+  material retenido siga TRAZABLE (INVIMA Res. 2214) y cuadre el conteo físico
 - `GET  /api/lotes/<material_id>/<lote>/movimientos` · historial del lote
   específico server-side, ≤ 500 filas, acepta `_SIN_LOTE_` como marcador
   · Sebastián 20-may-2026 Sprint Bodega MP PRO (antes Historial bajaba

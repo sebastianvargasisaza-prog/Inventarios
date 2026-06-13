@@ -7638,6 +7638,40 @@ def lotes_cuarentena():
     cols = ['id','codigo_mp','nombre','lote','cantidad','fecha','proveedor','numero_factura','numero_oc','observaciones','nombre_inci','estado_lote']
     return jsonify([dict(zip(cols,r)) for r in rows])
 
+@bp.route('/api/lotes/retenido', methods=['GET'])
+def lotes_retenido():
+    """Lotes NO disponibles con stock físico: RECHAZADO / VENCIDO / BLOQUEADO.
+
+    Complementa /api/lotes/cuarentena (que solo lista CUARENTENA/_EXTENDIDA).
+    A1 (Sebastián 12-jun) excluyó estos estados de /api/lotes para no enmascarar
+    quiebres (M5), PERO el material físico sigue en bodega y debe permanecer
+    TRAZABLE: INVIMA Res. 2214/2021 exige documentar el rechazado/vencido hasta
+    su disposición (devolución/destrucción) y el conteo físico debe CUADRAR
+    contra lo que el sistema muestra. Read-only · no muta nada.
+
+    Stock NETO por (material_id, lote) con el CASE canónico (cuenta Ajuste como
+    entrada · M-bodega), filtro de estado UPPER-insensible (M23), umbral >0.01 (M21).
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    c.execute("""SELECT m.material_id, MAX(m.material_nombre) as nombre, m.lote,
+                        SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END) as stock_neto,
+                        MAX(m.fecha_vencimiento) as fecha_vencimiento,
+                        MAX(m.proveedor) as proveedor, MAX(m.numero_oc) as numero_oc,
+                        MAX(m.numero_factura) as numero_factura,
+                        UPPER(COALESCE(MAX(m.estado_lote),'')) as estado_lote,
+                        COALESCE(MAX(mp.nombre_inci),'') as nombre_inci
+                 FROM movimientos m LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
+                 WHERE UPPER(COALESCE(m.estado_lote,'')) IN ('RECHAZADO','VENCIDO','BLOQUEADO')
+                 GROUP BY m.material_id, m.lote
+                 HAVING stock_neto > 0.01
+                 ORDER BY estado_lote, nombre""")
+    rows = c.fetchall()
+    cols = ['codigo_mp','nombre','lote','cantidad','fecha_vencimiento','proveedor','numero_oc','numero_factura','estado_lote','nombre_inci']
+    return jsonify([dict(zip(cols,r)) for r in rows])
+
 @bp.route('/api/lotes/liberar', methods=['POST'])
 def liberar_lote():
     # Equipo de Calidad (CALIDAD_USERS) y admins pueden liberar lotes —
