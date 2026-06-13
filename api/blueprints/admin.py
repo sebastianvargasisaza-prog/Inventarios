@@ -8843,7 +8843,7 @@ def _compute_audit_minimos(horizonte_proyeccion_dias: int = 90,
                        SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock_actual
                 FROM movimientos
                 WHERE (estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) NOT IN
-                       ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO'))
+                       ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO'))
                 GROUP BY material_id
             ) s ON m.codigo_mp = s.material_id
             WHERE m.activo = 1
@@ -8860,7 +8860,7 @@ def _compute_audit_minimos(horizonte_proyeccion_dias: int = 90,
                        SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock_actual
                 FROM movimientos
                 WHERE (estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) NOT IN
-                       ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO'))
+                       ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO'))
                 GROUP BY material_id
             ) s ON m.codigo_mp = s.material_id
             WHERE m.activo = 1

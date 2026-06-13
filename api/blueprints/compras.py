@@ -8320,7 +8320,7 @@ def compras_feed_necesidades():
                               WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) AS stock
                        FROM movimientos
                        WHERE UPPER(COALESCE(estado_lote,'')) NOT IN
-                             ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO')
+                             ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO')
                        GROUP BY material_id) s ON s.material_id = m.codigo_mp
             WHERE m.activo=1 AND m.stock_minimo>0 AND COALESCE(s.stock,0) < m.stock_minimo
         """).fetchall():
@@ -10796,7 +10796,7 @@ def compras_prediccion_demanda():
                WHERE material_id IS NOT NULL AND material_id != ''
                  AND (estado_lote IS NULL
                       OR UPPER(COALESCE(estado_lote,'')) NOT IN
-                         ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO'))
+                         ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO'))
                GROUP BY material_id""",
         ).fetchall()
         for r in rows:

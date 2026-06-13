@@ -4792,10 +4792,20 @@ def plan_factibilidad():
         })
 
     # 8. Compra consolidada · F2 descontar pendientes · F10 proveedor + LT
+    # FIX 13-jun-2026 (audit fórmulas): acreditar TAMBIÉN las OC CON fecha del
+    # oc_timeline. Antes el pendiente solo restaba pendientes_compras (SOL sin OC +
+    # OC sin fecha) → para una MP con OC datada en curso, la compra consolidada
+    # SOBRE-estimaba el faltante y sugería recomprar material ya pedido (M16/M11:
+    # el pendiente-por-OC se acredita para no duplicar SOL). El timeline datado se
+    # usa para el veredicto temporal; para "qué falta comprar" toda OC abierta cuenta.
+    oc_dated_total = {}
+    for _mids in oc_timeline.values():
+        for _m, _g in _mids.items():
+            oc_dated_total[_m] = oc_dated_total.get(_m, 0.0) + float(_g or 0)
     compra = []
     for mid, total_need in necesidad_total.items():
         mid_up = mid.upper()
-        pendiente = float(pendientes_compras.get(mid_up, 0))
+        pendiente = float(pendientes_compras.get(mid_up, 0)) + float(oc_dated_total.get(mid_up, 0))
         stock_actual = float(mp_stock_g.get(mid, 0))
         falta = total_need - stock_actual - pendiente
         if falta > 0.01:

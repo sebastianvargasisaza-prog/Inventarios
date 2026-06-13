@@ -8631,7 +8631,7 @@ def asistente_operacion():
                                                 ELSE 0 END) as stock
                   FROM movimientos
                   WHERE UPPER(COALESCE(estado_lote,'')) NOT IN
-                        ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO')
+                        ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO')
                   GROUP BY material_id
                ) s ON mp.codigo_mp = s.material_id
                WHERE COALESCE(mp.activo,1)=1 AND COALESCE(mp.stock_minimo,0)>0
