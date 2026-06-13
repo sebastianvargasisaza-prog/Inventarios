@@ -7104,8 +7104,12 @@ def registrar_recepcion():
                     'cantidad_excede_oc': True,
                     'pendiente_oc_g': pendiente_g,
                 }), 409
-        except Exception:
-            pass  # si query falla, no bloqueamos · solo perdemos la validación
+        except Exception as _e_sobre:
+            # REC-02 (12-jun · M4): no tragar mudo · si la query de pendiente-OC
+            # falla, dejamos rastro (antes perdiamos la validacion de sobre-recepcion
+            # en silencio · p.ej. drift de columnas en PG). No bloqueante.
+            __import__('logging').getLogger('inventario').warning(
+                "registrar_recepcion sobre-recepcion check fallo (no bloquea): %s", _e_sobre)
 
     # Sprint Recepciones PRO fix #12: alerta si precio cambió >30%
     precio_pre = float(d.get('precio_kg') or 0)
@@ -7163,6 +7167,22 @@ def registrar_recepcion():
     lote = (d.get('lote') or '').strip()
     if not lote or lote.upper()=='AUTO':
         from datetime import date; lote = f"ESP{date.today().strftime('%y%m%d')}{codigo[-3:]}"
+    # REC-01 (12-jun · INVIMA): bloquear MP YA VENCIDA en el ingreso manual
+    # (puerta lateral · recibir_oc ya lo bloquea). Antes registrar_recepcion
+    # aceptaba fecha_vencimiento < hoy y la metia como VIGENTE -> material
+    # vencido usable en FEFO sin alerta. Override admin: forzar_vencido=true.
+    _fv = (d.get('fecha_vencimiento') or '').strip()
+    if _fv and len(_fv) >= 10 and not d.get('forzar_vencido'):
+        try:
+            from datetime import date as _dvenc
+            if _dvenc.fromisoformat(_fv[:10]) < _dvenc.today():
+                return jsonify({
+                    'error': 'fecha_vencimiento ya pasada (' + _fv[:10] + ') · MP vencida no debe ingresar como disponible',
+                    'vencimiento_pasado': True,
+                    'hint': 'Si es un ingreso historico/excepcional, reenvia con forzar_vencido=true (admin).',
+                }), 409
+        except (ValueError, TypeError):
+            pass  # fecha mal formada · no bloquear por eso (la validan otros)
     # Sebastián 15-may-2026: guard de idempotencia. Tras el incidente de
     # corrupción de BD, si la analista vio "error interno" y reintentó un
     # ingreso que en realidad sí se había guardado, se duplicaba el
