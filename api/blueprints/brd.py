@@ -2664,6 +2664,8 @@ def completar_paso_ebr(ebr_id, orden):
             return jsonify({"error": "El QC (supervisa) no puede ser el mismo operario que ejecutó el paso"}), 409
 
     op_username = paso["operario_username"] or user
+    # CAS (race · M27): solo completar si el paso sigue pendiente/en_proceso ·
+    # evita que dos completados concurrentes se pisen la e-firma/QC.
     cur.execute(
         """UPDATE ebr_pasos_ejecutados
              SET estado = 'completado',
@@ -2674,13 +2676,17 @@ def completar_paso_ebr(ebr_id, orden):
                  e_sign_id = ?,
                  qc_username = ?,
                  qc_e_sign_id = ?
-           WHERE id = ?""",
+           WHERE id = ? AND estado IN ('en_proceso', 'pendiente')""",
         (op_username, observaciones,
          int(signature_id) if signature_id else None,
          qc_username,
          int(qc_signature_id) if qc_signature_id else None,
          paso["id"]),
     )
+    if cur.rowcount == 0:
+        conn.rollback()
+        return jsonify({"error": "paso ya completado (concurrencia) · refrescá",
+                        "codigo": "ESTADO_CAMBIO"}), 409
     audit_log(cur, usuario=user, accion="COMPLETAR_PASO_EBR",
               tabla="ebr_pasos_ejecutados", registro_id=paso["id"],
               despues={"ebr_id": ebr_id, "orden": orden,
