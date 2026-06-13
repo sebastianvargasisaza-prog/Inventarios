@@ -312,6 +312,17 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (240, "Homologa el nombre de MP00297 (NaOH) en formula_items (audit formulas 13-jun · "
+          "Sebastian confirmo: fisicamente es UNA sola solucion al 50% · las 3 formulas activas "
+          "que lo usan dosifican de ella · el % de cada una ya lo contempla). Antes el mismo "
+          "codigo aparecia con 3 etiquetas distintas ('Hidroxido sodio', 'Soda caustica 10%', "
+          "'Hidroxido sodio sol. 50%') = confusion visual, NO error de dosificacion (el descuento "
+          "resuelve por codigo). Cosmetico: alinea material_nombre al comercial del maestro. "
+          "Idempotente.", [
+        "UPDATE formula_items SET material_nombre = "
+        "COALESCE((SELECT nombre_comercial FROM maestro_mps WHERE codigo_mp='MP00297'), material_nombre) "
+        "WHERE material_id='MP00297'",
+    ]),
     (239, "P0 INVIMA · normalizar movimientos.estado_lote a MAYUSCULAS canonicas "
           "(Sebastian 12-jun · hallazgo Fable). Calidad escribia 'Aprobado'/'Rechazado' "
           "(Title-case) en aprobar-lote, pero el FEFO del descuento filtra "
