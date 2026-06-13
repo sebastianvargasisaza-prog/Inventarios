@@ -3686,29 +3686,36 @@ def get_analisis_abc():
 
     if tipo_material == 'MEE':
         # Camino simple para MEE: usa maestro_mee directamente
+        # stock CANÓNICO desde SUM(movimientos_mee) (no el cache stock_actual que
+        # driftea · igual que _mee_stock_real). Columna real = mee_codigo.
         rows = c.execute(
-            """SELECT codigo, descripcion, '' as nombre_inci, COALESCE(proveedor,''),
-                      COALESCE(categoria,''), '' as origen,
-                      COALESCE(stock_actual, 0) as stock,
-                      COALESCE(precio_unitario, 0) as precio
-               FROM maestro_mee
-               WHERE COALESCE(estado, 'Activo') = 'Activo'
+            """SELECT m.codigo, m.descripcion, '' as nombre_inci, COALESCE(m.proveedor,''),
+                      COALESCE(m.categoria,''), '' as origen,
+                      COALESCE((SELECT SUM(CASE WHEN mm.tipo='Entrada' THEN mm.cantidad
+                                                WHEN mm.tipo='Salida'  THEN -mm.cantidad
+                                                WHEN mm.tipo='Ajuste'  THEN mm.cantidad
+                                                ELSE 0 END)
+                                FROM movimientos_mee mm
+                                WHERE mm.mee_codigo=m.codigo AND COALESCE(mm.anulado,0)=0), 0) as stock,
+                      0 as precio  -- maestro_mee no tiene columna de precio (ABC MEE = por gramos/consumo, no valor)
+               FROM maestro_mee m
+               WHERE COALESCE(m.estado, 'Activo') = 'Activo'
                """,
         ).fetchall()
         consumo_map = {}
         if ventana_dias:
             for r in c.execute(
-                f"""SELECT codigo_mee, COALESCE(SUM(cantidad), 0)
+                f"""SELECT mee_codigo, COALESCE(SUM(cantidad), 0)
                     FROM movimientos_mee
-                    WHERE tipo IN ('Salida','salida','SALIDA')
+                    WHERE tipo IN ('Salida','salida','SALIDA') AND COALESCE(anulado,0)=0
                       AND fecha >= date('now', '-5 hours', '-{int(ventana_dias)} days')
-                    GROUP BY codigo_mee""",
+                    GROUP BY mee_codigo""",
             ).fetchall():
                 consumo_map[r[0]] = float(r[1] or 0)
         items_raw = []
         for r in rows:
             cod, nom, inci, prov, subt, orig, stock, precio = r
-            stock = float(stock or 0)
+            stock = max(float(stock or 0), 0)
             precio = float(precio or 0)
             valor_cop = stock * precio
             consumo = consumo_map.get(cod, 0.0)
@@ -4026,22 +4033,30 @@ def alertas_all():
     # 3. MEE bajo mínimo
     mees_bajo = []
     try:
+        # stock CANÓNICO desde SUM(movimientos_mee) (no el cache, que driftea) ·
+        # la alerta de quiebre debe usar el stock real (M5: display = decisión).
         rows_mee = c.execute(
-            """SELECT codigo, descripcion, COALESCE(categoria,''),
-                      COALESCE(proveedor,''),
-                      COALESCE(stock_minimo, 0) as smin,
-                      COALESCE(stock_actual, 0) as stock
-               FROM maestro_mee
-               WHERE COALESCE(estado, 'Activo') = 'Activo'
-                 AND COALESCE(stock_minimo, 0) > 0
-                 AND COALESCE(stock_actual, 0) < COALESCE(stock_minimo, 0)
-               ORDER BY (CAST(stock_actual AS REAL) / stock_minimo) ASC""",
+            """SELECT m.codigo, m.descripcion, COALESCE(m.categoria,''),
+                      COALESCE(m.proveedor,''),
+                      COALESCE(m.stock_minimo, 0) as smin,
+                      COALESCE((SELECT SUM(CASE WHEN mm.tipo='Entrada' THEN mm.cantidad
+                                                WHEN mm.tipo='Salida'  THEN -mm.cantidad
+                                                WHEN mm.tipo='Ajuste'  THEN mm.cantidad
+                                                ELSE 0 END)
+                                FROM movimientos_mee mm
+                                WHERE mm.mee_codigo=m.codigo AND COALESCE(mm.anulado,0)=0), 0) as stock
+               FROM maestro_mee m
+               WHERE COALESCE(m.estado, 'Activo') = 'Activo'
+                 AND COALESCE(m.stock_minimo, 0) > 0
+               ORDER BY m.descripcion ASC""",
         ).fetchall()
         for r in rows_mee:
             cod, desc, cat, prov, smin, stock = r
+            smin = float(smin or 0); stock = max(float(stock or 0), 0)
+            if stock >= smin:   # solo los que están BAJO el mínimo (filtro en Python · stock canónico)
+                continue
             if not _no_silenciado('mee_bajo_minimo', cod):
                 continue
-            smin = float(smin or 0); stock = float(stock or 0)
             mees_bajo.append({
                 'codigo': cod, 'descripcion': desc or '',
                 'categoria': cat, 'proveedor': prov,
@@ -10667,9 +10682,12 @@ def mee_stock_list():
     """Lista maestro_mee con stock, alertas y metricas de movimiento."""
     conn = get_db(); c = conn.cursor()
     cat_f = request.args.get('categoria', '')
+    # FIX 12-jun · stock CANÓNICO = SUM(movimientos_mee) (igual que _mee_stock_real),
+    # no el cache m.stock_actual que driftea (hay backfill de drift en admin). El
+    # display y la alerta critico/bajo se calculan sobre stock_real, no el cache.
     sql = """
         SELECT m.codigo, m.descripcion, m.categoria, m.unidad,
-               m.stock_actual, m.stock_minimo, m.estado, m.proveedor,
+               COALESCE(mv.stock_real, 0) as stock_actual, m.stock_minimo, m.estado, m.proveedor,
                COALESCE(mv.ultima_entrada,'') as ultima_entrada,
                COALESCE(mv.ultima_salida,'')  as ultima_salida,
                COALESCE(mv.total_entradas,0)  as total_entradas,
@@ -10680,7 +10698,11 @@ def mee_stock_list():
                    MAX(CASE WHEN tipo='Entrada' AND anulado=0 THEN fecha END) as ultima_entrada,
                    MAX(CASE WHEN tipo='Salida'  AND anulado=0 THEN fecha END) as ultima_salida,
                    SUM(CASE WHEN tipo='Entrada' AND anulado=0 THEN cantidad ELSE 0 END) as total_entradas,
-                   SUM(CASE WHEN tipo='Salida'  AND anulado=0 THEN cantidad ELSE 0 END) as total_salidas
+                   SUM(CASE WHEN tipo='Salida'  AND anulado=0 THEN cantidad ELSE 0 END) as total_salidas,
+                   SUM(CASE WHEN anulado=0 AND tipo='Entrada' THEN cantidad
+                            WHEN anulado=0 AND tipo='Salida'  THEN -cantidad
+                            WHEN anulado=0 AND tipo='Ajuste'  THEN cantidad
+                            ELSE 0 END) as stock_real
             FROM movimientos_mee GROUP BY mee_codigo
         ) mv ON m.codigo = mv.mee_codigo
         WHERE m.estado='Activo'
@@ -10696,7 +10718,11 @@ def mee_stock_list():
     from datetime import date
     hoy = date.today()
     for r in rows:
-        s, mn = r['stock_actual'] or 0, r['stock_minimo'] or 0
+        # canónico clamp >=0 (igual que _mee_stock_real) · el display y la alerta
+        # usan el stock real, nunca negativo aunque haya sobre-consumo registrado
+        s = max(float(r['stock_actual'] or 0), 0)
+        r['stock_actual'] = s
+        mn = r['stock_minimo'] or 0
         if mn > 0:
             ratio = s / mn
             if ratio <= 0:    r['alerta'] = 'critico'
