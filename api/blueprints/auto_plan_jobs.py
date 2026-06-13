@@ -3720,7 +3720,7 @@ def job_marcar_vencidos(app):
                 WHERE fecha_vencimiento IS NOT NULL
                   AND TRIM(fecha_vencimiento) != ''
                   AND date(fecha_vencimiento) < date('now', '-5 hours')
-                  AND UPPER(COALESCE(estado_lote,'')) = 'VIGENTE'
+                  AND UPPER(COALESCE(estado_lote,'')) IN ('VIGENTE', '')
                 GROUP BY material_id, lote, fecha_vencimiento
                 ORDER BY fecha_vencimiento ASC
                 LIMIT 200
@@ -3736,7 +3736,7 @@ def job_marcar_vencidos(app):
                 WHERE fecha_vencimiento IS NOT NULL
                   AND TRIM(fecha_vencimiento) != ''
                   AND date(fecha_vencimiento) < date('now', '-5 hours')
-                  AND UPPER(COALESCE(estado_lote,'')) = 'VIGENTE'
+                  AND UPPER(COALESCE(estado_lote,'')) IN ('VIGENTE', '')
             """)
             actualizados = res.rowcount
 

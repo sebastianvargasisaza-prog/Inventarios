@@ -1875,6 +1875,13 @@ def handle_movimientos():
                 'error': 'lote requerido para movimientos tipo Entrada · sin lote el kardex queda roto y no se puede aplicar FEFO',
                 'lote_obligatorio': True,
             }), 400
+        # P2 (12-jun · hallazgo Fable): whitelist + normaliza estado_lote. Antes
+        # entraba crudo -> un 'cuarentena' minuscula o un estado inventado evadia los
+        # filtros NOT IN (mayusculas) del FEFO/descuento (fail-open a "usable").
+        _ESTADOS_OK = ('VIGENTE', 'CUARENTENA', 'CUARENTENA_EXTENDIDA', 'RECHAZADO', 'VENCIDO', 'AGOTADO', 'BLOQUEADO')
+        estado_lote_in = (data.get('estado_lote') or 'VIGENTE').strip().upper()
+        if estado_lote_in not in _ESTADOS_OK:
+            return jsonify({'error': 'estado_lote invalido: ' + estado_lote_in + ' · validos: ' + ', '.join(_ESTADOS_OK)}), 400
         c.execute("""INSERT INTO movimientos
                      (material_id, material_nombre, cantidad, tipo, fecha, observaciones,
                       lote, fecha_vencimiento, estanteria, posicion, proveedor, estado_lote, operador)
@@ -1883,7 +1890,7 @@ def handle_movimientos():
                    tipo, datetime.now().isoformat(), data.get('observaciones',''),
                    lote_in, data.get('fecha_vencimiento',''),
                    data.get('estanteria',''), data.get('posicion',''),
-                   data.get('proveedor',''), data.get('estado_lote','VIGENTE'),
+                   data.get('proveedor',''), estado_lote_in,
                    data.get('operador','') or u))
         mov_id = c.lastrowid
         # Sprint Movimientos PRO: audit_log (faltaba en este endpoint)
