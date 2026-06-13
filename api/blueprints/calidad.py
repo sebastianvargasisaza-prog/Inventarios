@@ -1597,8 +1597,11 @@ def calidad_agua_registros():
             if micro > 100: estado = 'fuera_spec'; warnings.append(f'micro={micro}UFC/ml > 100')
             elif micro > 50: estado = 'alerta' if estado=='ok' else estado
 
-        from datetime import date as _date
-        fecha_reg = (d.get('fecha') or '').strip() or _date.today().isoformat()
+        # FIX · 2026-06-12 · TZ writer↔bandeja: fecha por defecto = HOY Colombia
+        # vía SQLite (COALESCE más abajo), igual anclaje que la bandeja de Calidad
+        # (date('now','-5 hours')). Antes _date.today() (UTC en Render) desfasaba de
+        # noche → la lectura del día no se detectaba → falso "falta registro de agua".
+        fecha_reg = (d.get('fecha') or '').strip() or None
         obs_extra = d.get('observaciones') or ''
         if warnings:
             obs_final = '; '.join(warnings) + (' | ' + obs_extra if obs_extra else '')
@@ -1608,7 +1611,7 @@ def calidad_agua_registros():
             (fecha, hora, punto_muestreo, tipo_agua, ph, conductividad_us_cm,
              toc_ppb, microorganismos_ufc_ml, cloro_residual_ppm, temperatura_c,
              estado, observaciones, operador)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            VALUES (COALESCE(?, date('now','-5 hours')),?,?,?,?,?,?,?,?,?,?,?,?)""",
             (fecha_reg,
              (d.get('hora') or '').strip() or None,
              punto, d.get('tipo_agua') or 'purificada',

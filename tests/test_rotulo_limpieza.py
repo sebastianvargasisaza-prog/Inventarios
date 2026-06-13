@@ -140,7 +140,8 @@ def test_rotulo_pdf_renderiza_formato_f02(admin_client, app):
     assert r.status_code == 200
     body = r.data.decode("utf-8", "replace")
     assert "PRD-PRO-002-F02" in body
-    assert "ESTADO DE LIMPIEZA" in body
+    # encabezado real del rótulo: "Estado de Limpieza de Áreas / Equipos" (Title-case)
+    assert "ESTADO DE LIMPIEZA" in body.upper()
     assert "Amonio Cuaternario" in body
     assert "Crema X" in body
 

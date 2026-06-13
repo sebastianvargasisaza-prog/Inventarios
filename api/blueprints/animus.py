@@ -1719,8 +1719,13 @@ def animus_inv_fisico_asignar_hoy():
 
     asignados = []
     for r in candidatos:
+        # #2 (12-jun): setear fecha_asignado en hora Colombia (date('now','-5 hours'))
+        # EXPLICITO · el default de columna es date('now') (UTC) pero el check de
+        # idempotencia (arriba) compara date('now','-5 hours') -> de noche la fecha UTC
+        # rodaba al dia siguiente y NO matcheaba -> re-asignaba (no idempotente).
         c.execute("""INSERT INTO animus_conteos_asignados
-                     (sku, asignado_a, estado) VALUES (?, ?, 'pendiente')""",
+                     (sku, asignado_a, estado, fecha_asignado)
+                     VALUES (?, ?, 'pendiente', date('now', '-5 hours'))""",
                   (r['sku'], asignar_a))
         asignados.append({
             'sku': r['sku'],

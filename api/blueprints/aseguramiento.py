@@ -2888,7 +2888,11 @@ def reporte_audit_trail():
     if not desde:
         desde = (datetime.now() - timedelta(days=30)).date().isoformat()
     if not hasta:
-        hasta = datetime.now().date().isoformat()
+        # +1 dia (12-jun): el audit_log canonico guarda fecha en UTC (datetime('now'))
+        # y el server corre en hora Colombia (UTC-5). De noche la fecha UTC rueda al
+        # dia siguiente y date(fecha) > hoy-local excluia el registro recien escrito
+        # (CERRAR_DESVIACION no aparecia en el reporte aunque SI estaba en la tabla).
+        hasta = (datetime.now() + timedelta(days=1)).date().isoformat()
     where = ['date(fecha) >= ?', 'date(fecha) <= ?']
     params = [desde, hasta]
     if accion:
@@ -2995,7 +2999,11 @@ def reporte_audit_trail_csv():
     if not desde:
         desde = (datetime.now() - timedelta(days=30)).date().isoformat()
     if not hasta:
-        hasta = datetime.now().date().isoformat()
+        # +1 dia (12-jun): el audit_log canonico guarda fecha en UTC (datetime('now'))
+        # y el server corre en hora Colombia (UTC-5). De noche la fecha UTC rueda al
+        # dia siguiente y date(fecha) > hoy-local excluia el registro recien escrito
+        # (CERRAR_DESVIACION no aparecia en el reporte aunque SI estaba en la tabla).
+        hasta = (datetime.now() + timedelta(days=1)).date().isoformat()
     where = ['date(fecha) >= ?', 'date(fecha) <= ?']
     params = [desde, hasta]
     if accion:

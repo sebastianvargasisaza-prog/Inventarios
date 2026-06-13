@@ -175,11 +175,11 @@ def test_bandeja_agua_registrada_hoy_alert(app, db_clean):
 def test_bandeja_agua_registrada_detecta_lectura_hoy(app, db_clean):
     """Si hay lectura hoy en calidad_sistema_agua, bandeja la detecta."""
     conn = sqlite3.connect(os.environ["DB_PATH"])
-    conn.execute("DELETE FROM calidad_sistema_agua WHERE date(fecha) = date('now')")
+    conn.execute("DELETE FROM calidad_sistema_agua WHERE date(fecha) = date('now','-5 hours')")
     conn.execute("""INSERT INTO calidad_sistema_agua
         (fecha, hora, punto_muestreo, tipo_agua, ph, conductividad_us_cm,
          estado, operador)
-        VALUES (date('now'), '08:30', 'Tanque RO', 'purificada',
+        VALUES (date('now','-5 hours'), '08:30', 'Tanque RO', 'purificada',
                 6.8, 0.9, 'ok', 'laura')""")
     conn.commit(); conn.close()
 
@@ -218,11 +218,11 @@ def test_agua_estado_hoy_sin_registro(app, db_clean):
 def test_agua_estado_hoy_con_registro(app, db_clean):
     """GET con registro retorna detalles del último."""
     conn = sqlite3.connect(os.environ["DB_PATH"])
-    conn.execute("DELETE FROM calidad_sistema_agua WHERE date(fecha) = date('now')")
+    conn.execute("DELETE FROM calidad_sistema_agua WHERE date(fecha) = date('now','-5 hours')")
     conn.execute("""INSERT INTO calidad_sistema_agua
         (fecha, hora, punto_muestreo, tipo_agua, ph, conductividad_us_cm,
          estado, operador)
-        VALUES (date('now'), '09:00', 'Loop1', 'purificada',
+        VALUES (date('now','-5 hours'), '09:00', 'Loop1', 'purificada',
                 6.5, 1.0, 'ok', 'miguel')""")
     conn.commit(); conn.close()
 
