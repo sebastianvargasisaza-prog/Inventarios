@@ -54,6 +54,15 @@
   `usuario, accion, tabla, registro_id, detalle, ip, fecha`.
 - Sin audit_log → NO se debe deployar.
 
+### INV-6 · Producción NUNCA consume material vencido (INVIMA Res. 2214)
+- El FEFO del descuento, `verificar-stock`/`simular_produccion` y los helpers de
+  lote-de-pesaje excluyen lotes con `date(fecha_venc_Entrada) < date('now','-5 hours')`
+  (mismo límite que el cron `job_marcar_vencidos`), aunque `estado_lote` aún sea
+  VIGENTE porque el cron diario no corrió. `NULL`/'' = sin venc = usable.
+- Las VISTAS de bodega (`/api/lotes`, retenido) siguen ancladas en `estado_lote`
+  (fuente única que el cron alinea diario · no crear 2ª fuente de verdad).
+- `consumo_manual` NO aplica este filtro (se usa para dar de baja vencidos). M25.
+
 ---
 
 ## Endpoints downstream que CONSUMEN sus tablas
