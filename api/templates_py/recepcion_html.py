@@ -597,7 +597,11 @@ async function buscarLote() {
     }
     h += '<table><thead><tr><th>Material</th><th>Cant.</th><th>Tipo</th><th>Fecha</th><th>Estado Lote</th><th>Proveedor</th><th>Vence</th></tr></thead><tbody>';
     movs.forEach(function(m) {
-      var estadoColor = m.estado_lote === 'Aprobado' ? '#16a34a' : m.estado_lote === 'Rechazado' ? '#dc2626' : '#d97706';
+      // H1 (12-jun): el estado_lote ahora es canonico MAYUSCULAS (VIGENTE/RECHAZADO/
+      // CUARENTENA · M23). Antes comparaba 'Aprobado'/'Rechazado' (Title) -> nunca
+      // matcheaba -> TODO salia ambar (un RECHAZADO se veia ambar, no rojo).
+      var _est = (m.estado_lote||'').toUpperCase();
+      var estadoColor = (_est === 'VIGENTE' || _est === 'APROBADO') ? '#16a34a' : _est === 'RECHAZADO' ? '#dc2626' : '#d97706';
       h += '<tr><td><strong>' + (m.material_nombre||m.material_id||'') + '</strong></td>'
         + '<td>' + Number(m.cantidad||0).toLocaleString() + '</td>'
         + '<td>' + (m.cantidad > 0 ? 'Entrada' : 'Salida') + '</td>'

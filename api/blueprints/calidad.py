@@ -69,13 +69,18 @@ def calidad_dashboard():
                  WHERE tipo='Entrada'
                    AND UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')""")
     cuarentena = c.fetchone()[0]
-    # Aprobados y rechazados últimos 30d · UPPER tambien
-    c.execute("""SELECT COUNT(*) FROM movimientos
-                 WHERE UPPER(COALESCE(estado_lote,''))='APROBADO'
+    # Aprobados y rechazados ultimos 30d · H2-F4 (12-jun): contar DECISIONES de QC
+    # desde audit_log, no del estado_lote actual. Antes contaba estado_lote='APROBADO'
+    # -> tras M23 (aprobar-lote ahora escribe VIGENTE, no APROBADO) el KPI subcontaba
+    # (no incluia las liberaciones del panel de recepcion). audit_log captura ambas
+    # rutas: APROBAR_LOTE (panel) + CC_REVIEW_APROBADO (cc-review). Robusto: cuenta
+    # el evento de aprobacion, no el token transitorio del lote.
+    c.execute("""SELECT COUNT(*) FROM audit_log
+                 WHERE accion IN ('APROBAR_LOTE','CC_REVIEW_APROBADO')
                    AND fecha >= date('now', '-5 hours', '-30 days')""")
     aprobados = c.fetchone()[0]
-    c.execute("""SELECT COUNT(*) FROM movimientos
-                 WHERE UPPER(COALESCE(estado_lote,''))='RECHAZADO'
+    c.execute("""SELECT COUNT(*) FROM audit_log
+                 WHERE accion IN ('RECHAZAR_LOTE','CC_REVIEW_RECHAZADO')
                    AND fecha >= date('now', '-5 hours', '-30 days')""")
     rechazados = c.fetchone()[0]
     # NC abiertas

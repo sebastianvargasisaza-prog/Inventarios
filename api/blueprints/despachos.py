@@ -98,10 +98,12 @@ def recepcion_seguimiento():
         "COALESCE(oc.tiene_discrepancias,0), "
         "COALESCE(oc.fecha_pago,''), COALESCE(oc.fecha_autorizacion,''), "
         "COALESCE(oc.recibido_por,''), "
-        "COALESCE(sc.numero,''), "            # sol_numero (origen)
+        # H4 (12-jun): subquery en vez de LEFT JOIN · varias SOL pueden apuntar a la
+        # MISMA OC (numero_oc no es UNIQUE · crear_oc_desde_solicitudes consolida N SOLs)
+        # -> el JOIN duplicaba la tarjeta de la OC e inflaba los contadores. Una fila por OC.
+        "COALESCE((SELECT MIN(numero) FROM solicitudes_compra sc WHERE sc.numero_oc = oc.numero_oc),''), "  # sol_numero origen
         "COALESCE(oc.fecha_entrega_est,'') "  # ETA estimada
         'FROM ordenes_compra oc '
-        'LEFT JOIN solicitudes_compra sc ON sc.numero_oc = oc.numero_oc '
         "WHERE oc.estado IN "
         "('Borrador','Pendiente','Revisada','Aprobada','Autorizada','Recibida','Parcial','Pagada') "
         "AND oc.categoria NOT IN ('SVC','CC','Influencer/Marketing Digital','Cuenta de Cobro') "
