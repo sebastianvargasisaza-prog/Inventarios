@@ -5296,8 +5296,9 @@ def job_pagos_influencer_urgencia(app):
     with app.app_context():
         from database import get_db
         conn = get_db(); c = conn.cursor()
-        from datetime import datetime as _dt
-        hoy = _dt.now().strftime('%Y-%m-%d')
+        from datetime import datetime as _dt, timedelta as _td
+        # FIX 13-jun (M24): HOY ancla en Colombia (UTC-5), no _dt.now() (UTC)
+        hoy = (_dt.utcnow() - _td(hours=5)).strftime('%Y-%m-%d')
         try:
             rows = c.execute(
                 """SELECT id, influencer_nombre, valor, vence_pago_at, fecha_contenido

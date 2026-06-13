@@ -212,9 +212,10 @@ def test_limite_aprobacion_admin_sin_limite(app, db_clean):
 
 
 def test_contadora_no_autoriza_oc_grande(app, db_clean):
-    """Segregación de duties 21-may: contadora (catalina) NO autoriza OCs,
-    sin importar el monto. El control de segregación dispara antes que el
-    límite de monto → SEGREGATION_OF_DUTIES, no EXCEDE_LIMITE_APROBACION.
+    """Segregación de duties: la contadora PURA (mayra) NO autoriza OCs, sin
+    importar el monto → SEGREGATION_OF_DUTIES, no EXCEDE_LIMITE_APROBACION.
+    NOTA 13-jun: Catalina SÍ autoriza ahora (OC_AUTORIZA_USERS · pedido Sebastián);
+    el test usa MAYRA, que es la contadora pura aún bloqueada por SoD.
     """
     conn = sqlite3.connect(os.environ["DB_PATH"])
     conn.execute("""INSERT INTO ordenes_compra
@@ -223,15 +224,15 @@ def test_contadora_no_autoriza_oc_grande(app, db_clean):
     conn.commit()
     conn.close()
 
-    c = _login(app, "catalina")
+    c = _login(app, "mayra")
     r = c.patch("/api/ordenes-compra/OC-EXCEDE/autorizar", headers=csrf_headers())
     assert r.status_code == 403
     assert r.get_json().get("codigo") == "SEGREGATION_OF_DUTIES"
 
 
 def test_contadora_no_autoriza_oc_pequena(app, db_clean):
-    """Segregación de duties: ni siquiera una OC pequeña puede ser autorizada
-    por la contadora. Solo admin/compras autorizan.
+    """Segregación de duties: ni una OC pequeña la autoriza la contadora pura
+    (mayra). Solo admin/compras (y Catalina, autorizador explícito) autorizan.
     """
     conn = sqlite3.connect(os.environ["DB_PATH"])
     conn.execute("""INSERT INTO ordenes_compra
@@ -240,7 +241,7 @@ def test_contadora_no_autoriza_oc_pequena(app, db_clean):
     conn.commit()
     conn.close()
 
-    c = _login(app, "catalina")
+    c = _login(app, "mayra")
     r = c.patch("/api/ordenes-compra/OC-OK/autorizar", headers=csrf_headers())
     assert r.status_code == 403
     assert r.get_json().get("codigo") == "SEGREGATION_OF_DUTIES"

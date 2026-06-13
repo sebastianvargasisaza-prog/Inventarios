@@ -98,6 +98,18 @@ LIMITES_APROBACION_OC = {
     "catalina":  5_000_000,
 }
 
+# ── Quién puede AUTORIZAR/PAGAR OCs aunque comparta el perfil contable ────────
+# Sebastián 13-jun-2026: Catalina (asistente de COMPRAS) debe poder autorizar y
+# pagar OCs (hasta su límite de LIMITES_APROBACION_OC; mayor → admin). Está en
+# CONTADORA_USERS solo por el perfil financiero/bancario compartido, pero su rol
+# operativo es compras. El gate _require_authorize_oc (segregación de funciones)
+# bloquea a las contadoras EXCEPTO a quienes estén en este set explícito.
+# Mayra (contadora pura) NO está aquí: registra pagos, no autoriza (SoD).
+# ⚠ Nota SoD: que el mismo usuario autorice Y pague una OC concentra funciones;
+#   en una operación chica es decisión de gerencia y el audit_log es el control
+#   compensatorio (cada autorizar/pagar queda con usuario/fecha).
+OC_AUTORIZA_USERS = {"catalina"}
+
 # PIN para desbloquear vista de cantidades en Fórmulas.
 # DEBE setearse via env var FORMULA_PIN. Si falta, se genera un PIN
 # aleatorio efímero (cambia en cada redeploy) — equivalente a deshabilitar

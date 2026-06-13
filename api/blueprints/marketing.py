@@ -705,7 +705,9 @@ def mkt_pagos_influencer_urgencias():
         return jsonify({'pagos': [], 'kpis': {'vencidos': 0, 'urgentes': 0, 'proximos': 0, 'normal': 0},
                          'nota': 'Mig 195 pendiente · ejecutar en /admin/migraciones-pg'}), 200
     from datetime import datetime as _dt, timedelta as _td
-    hoy = _dt.now()
+    # FIX 13-jun (M24): HOY ancla en Colombia (UTC-5), no _dt.now() (UTC en Render)
+    # que de noche CO clasificaba vencido/urgente con un día de corrimiento.
+    hoy = _dt.utcnow() - _td(hours=5)
     pagos = []
     kpis = {'vencidos': 0, 'urgentes': 0, 'proximos': 0, 'normal': 0}
     for r in rows:

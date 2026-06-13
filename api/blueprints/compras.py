@@ -93,12 +93,21 @@ def _require_authorize_oc():
         from config import CONTADORA_USERS as _CU
     except Exception:
         _CU = set()
-    if (usuario or '').lower() in {x.lower() for x in _CU}:
-        if (usuario or '').lower() not in {x.lower() for x in ADMIN_USERS}:
-            return None, jsonify({
-                'error': 'Contadora no autoriza OCs · solo admin/compras',
-                'codigo': 'SEGREGATION_OF_DUTIES',
-            }), 403
+    try:
+        from config import OC_AUTORIZA_USERS as _OCA
+    except Exception:
+        _OCA = set()
+    u_lower = (usuario or '').lower()
+    es_admin = u_lower in {x.lower() for x in ADMIN_USERS}
+    # Autorizador de OC explícito (ej. Catalina, asistente de compras) — puede
+    # autorizar/pagar aunque comparta el perfil contable. Sebastián 13-jun-2026.
+    es_autorizador_oc = u_lower in {x.lower() for x in _OCA}
+    if u_lower in {x.lower() for x in _CU} and not es_admin and not es_autorizador_oc:
+        # Contadora PURA (registra pagos, no autoriza · segregación de funciones)
+        return None, jsonify({
+            'error': 'Contadora no autoriza OCs · solo admin/compras',
+            'codigo': 'SEGREGATION_OF_DUTIES',
+        }), 403
     return usuario, None, None
 
 
@@ -6466,6 +6475,25 @@ def pagar_oc(numero_oc):
         monto = valor_total_oc
     if monto <= 0:
         return jsonify({'error': 'monto debe ser > 0', 'codigo': 'MONTO_INVALIDO'}), 400
+    # FIX 13-jun (audit influencers · H3): si Marketing YA marcó este pago de
+    # influencer como Pagado (corrección manual vía mkt_pago_influencer_editar),
+    # NO crear otro egreso por acá → evita doble pago. Antes Marketing mostraba
+    # "Pagado" y Compras lo seguía mostrando pagable = divergencia + riesgo doble
+    # egreso. (No bloquea el flujo normal: ahí pagos_influencers está 'Pendiente'
+    # hasta que ESTE pago lo marque Pagado al final.)
+    try:
+        _inf_pagado = cur.execute(
+            "SELECT 1 FROM pagos_influencers WHERE numero_oc=? AND estado='Pagada' LIMIT 1",
+            (numero_oc,)).fetchone()
+    except Exception:
+        _inf_pagado = None
+    if _inf_pagado:
+        return jsonify({
+            'error': ('Este pago de influencer ya figura PAGADO en Marketing · '
+                      'no lo pagues de nuevo por acá. Reconciliá antes (Marketing → '
+                      'editar pago) si fue un error.'),
+            'codigo': 'INFLUENCER_YA_PAGADO',
+        }), 409
     # Audit zero-error 2-may-2026: validar over-payment ANTES de insertar
     cur.execute("SELECT COALESCE(SUM(monto), 0) FROM pagos_oc WHERE numero_oc=?", (numero_oc,))
     total_pagado_actual = float(cur.fetchone()[0] or 0)
