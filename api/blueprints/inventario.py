@@ -2153,6 +2153,7 @@ def _handle_produccion_inner():
                          WHERE material_id=? AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
                            AND (estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO'))
                          GROUP BY lote HAVING stock > 0.01
+                           AND (fv_real IS NULL OR TRIM(CAST(fv_real AS TEXT))='' OR date(fv_real) >= date('now', '-5 hours'))
                          ORDER BY COALESCE(NULLIF(CAST(MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) AS TEXT), ''), '9999-12-31') ASC""", (mat_id,))
             lotes_fefo = c.fetchall()
             stock_total_disp = sum(float(l[2] or 0) for l in lotes_fefo)
@@ -3268,20 +3269,28 @@ def simular_produccion():
             # sobre-reportaba (sumaba S/L, polvo <0.01 y estados retenidos) -> simular
             # decia factible y el descuento real fallaba con 422.
             _ph = ','.join(['?'] * len(_NP6))
+            # M-1 + vencimiento (12-jun): excluir tambien lotes vencidos POR FECHA
+            # (fv Entrada < hoy Colombia) aunque el cron diario aun no los marque
+            # VENCIDO — mismo limite que job_marcar_vencidos. Asi "Verificar Stock"
+            # no dice "alcanza" con un lote que el FEFO real va a rechazar (M5).
             c.execute(f"""SELECT COALESCE(SUM(stk),0) FROM (
-                            SELECT SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) AS stk
+                            SELECT SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) AS stk,
+                                   MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) AS fv_real
                             FROM movimientos WHERE material_id=?
                               AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
                               AND UPPER(COALESCE(estado_lote,'')) NOT IN ({_ph})
-                            GROUP BY lote HAVING stk > 0.01)""",
+                            GROUP BY lote HAVING stk > 0.01
+                              AND (fv_real IS NULL OR TRIM(CAST(fv_real AS TEXT))='' OR date(fv_real) >= date('now', '-5 hours')))""",
                       (cod_bodega,) + tuple(_NP6))
         else:
             c.execute("""SELECT COALESCE(SUM(stk),0) FROM (
-                            SELECT SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) AS stk
+                            SELECT SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) AS stk,
+                                   MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) AS fv_real
                             FROM movimientos WHERE material_id=?
                               AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
-                              AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO'))
-                            GROUP BY lote HAVING stk > 0.01)""",
+                              AND (estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO'))
+                            GROUP BY lote HAVING stk > 0.01
+                              AND (fv_real IS NULL OR TRIM(CAST(fv_real AS TEXT))='' OR date(fv_real) >= date('now', '-5 hours')))""",
                       (mat_id,))
         g_disp = round(c.fetchone()[0] or 0, 2)
         suf = g_disp >= g_req
@@ -9889,6 +9898,9 @@ def _fefo_lote_rotulo(conn, material_id, material_nombre=''):
                   AND UPPER(COALESCE(estado_lote,'')) NOT IN ({_ph})
                 GROUP BY lote
                 HAVING SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) > 0
+                  AND (MAX(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA') THEN fecha_vencimiento END) IS NULL
+                       OR TRIM(CAST(MAX(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA') THEN fecha_vencimiento END) AS TEXT))=''
+                       OR date(MAX(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA') THEN fecha_vencimiento END)) >= date('now', '-5 hours'))
                 ORDER BY COALESCE(NULLIF(CAST(MAX(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA') THEN fecha_vencimiento END) AS TEXT),''),'9999-12-31') ASC
                 LIMIT 1""",
             (cod,) + tuple(_NP)).fetchone()
@@ -9940,6 +9952,7 @@ def generar_rotulos(producto_nombre, cantidad_str):
                        WHERE material_id=? AND COALESCE(lote,'') NOT IN ('','S/L')
                          AND UPPER(COALESCE(estado_lote,'')) NOT IN ({_ph})
                        GROUP BY lote HAVING stk > 0
+                         AND (fv IS NULL OR TRIM(CAST(fv AS TEXT))='' OR date(fv) >= date('now', '-5 hours'))
                        ORDER BY COALESCE(NULLIF(CAST(MAX(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA') THEN fecha_vencimiento END) AS TEXT),''),'9999-12-31') ASC
                        LIMIT 1""",
                     (cod,) + tuple(_NP_ROT)).fetchone()
