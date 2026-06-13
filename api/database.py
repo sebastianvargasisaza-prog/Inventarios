@@ -312,6 +312,21 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (241, "Backfill INCI SOLO de los MPs cuyo nombre comercial ES el nombre INCI estandar "
+          "verbatim (audit formulas 13-jun · NO es adivinar, es copiar el INCI = comercial). "
+          "Los nombres de marca/ambiguos (Cetiol, Tinogard, Stabil, Vit E polvo vs liquida, "
+          "aceites esenciales, BM-956, etc.) NO se tocan: requieren la ficha tecnica de Alejandro "
+          "(riesgo de etiquetado INVIMA · M17/M19). Idempotente: solo rellena si esta vacio (no "
+          "pisa un INCI ya corregido). INCI en MAYUSCULAS = convencion del maestro.", [
+        "UPDATE maestro_mps SET nombre_inci='PALMITOYL TETRAPEPTIDE-7' WHERE codigo_mp='MP00172' AND COALESCE(nombre_inci,'')=''",
+        "UPDATE maestro_mps SET nombre_inci='PALMITOYL TRIPEPTIDE-38' WHERE codigo_mp='MP00174' AND COALESCE(nombre_inci,'')=''",
+        "UPDATE maestro_mps SET nombre_inci='PALMITOYL TRIPEPTIDE-1' WHERE codigo_mp='MP00190' AND COALESCE(nombre_inci,'')=''",
+        "UPDATE maestro_mps SET nombre_inci='POLYGLYCERYL-2 TRIISOSTEARATE' WHERE codigo_mp='MP00051' AND COALESCE(nombre_inci,'')=''",
+        "UPDATE maestro_mps SET nombre_inci='LAUROYL LYSINE' WHERE codigo_mp='MP00054' AND COALESCE(nombre_inci,'')=''",
+        "UPDATE maestro_mps SET nombre_inci='SYNTHETIC WAX' WHERE codigo_mp='MP00257' AND COALESCE(nombre_inci,'')=''",
+        "UPDATE maestro_mps SET nombre_inci='BORON NITRIDE' WHERE codigo_mp='MPBNIT01' AND COALESCE(nombre_inci,'')=''",
+        "UPDATE maestro_mps SET nombre_inci='COCO-CAPRYLATE' WHERE codigo_mp='MPCOCP01' AND COALESCE(nombre_inci,'')=''",
+    ]),
     (240, "Homologa el nombre de MP00297 (NaOH) en formula_items (audit formulas 13-jun · "
           "Sebastian confirmo: fisicamente es UNA sola solucion al 50% · las 3 formulas activas "
           "que lo usan dosifican de ella · el % de cada una ya lo contempla). Antes el mismo "
