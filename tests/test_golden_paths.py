@@ -11690,11 +11690,15 @@ def test_golden_plan_programar_produccion_origen_eos(app, db_clean):
     cs = _login(app, 'sebastian')
 
     # Caso 1: POST crea lote correctamente
+    # skip_validacion_dia: el test valida origen=eos_plan/audit/persistencia, NO
+    # las reglas de día hábil (que son correctas) · si "hoy" cae sábado/domingo o
+    # festivo colombiano el endpoint rechazaría con 422 (fragilidad de fecha).
     r1 = cs.post('/api/plan/programar-produccion', json={
         'producto_nombre': 'SUERO HIDRATANTE AH 1.5%',
         'cantidad_kg': 90,
         'fecha_programada': _FECHA_PROG,
         'notas': 'TEST_PLAN_SAH · lote semanal',
+        'skip_validacion_dia': True,
     }, headers=csrf_headers())
     assert r1.status_code == 201, f'BUG POST: {r1.status_code} {r1.data}'
     pid = r1.get_json()['id']

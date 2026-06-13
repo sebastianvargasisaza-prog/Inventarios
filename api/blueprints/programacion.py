@@ -6466,12 +6466,15 @@ def compras_minimos_envases_sugeridos():
                 continue
             consumo[env] = consumo.get(env, 0) + int(v.get('unidades_estimadas') or 0)
     mee = {}
+    # stock CANÓNICO (SUM movimientos_mee, fallback cache) · misma fuente que
+    # planeación · no el cache crudo que driftea (M26)
+    _mee_canon = _get_mee_stock(conn)
     try:
         for r in c.execute(
             "SELECT codigo, COALESCE(descripcion,''), COALESCE(stock_minimo,0), "
             "COALESCE(stock_actual,0) FROM maestro_mee").fetchall():
             mee[r[0]] = {'descripcion': r[1], 'stock_minimo': float(r[2] or 0),
-                         'stock_actual': float(r[3] or 0)}
+                         'stock_actual': _mee_canon.get(str(r[0]).strip().upper(), float(r[3] or 0))}
     except Exception:
         pass
     items = []
@@ -17355,12 +17358,15 @@ def _gate_envases_listos(produccion, conn):
             items_pres.append({'presentacion': etiqueta, 'envase': None,
                                'mensaje': 'Sin código de envase asignado'})
             continue
-        # Buscar stock en maestro_mee
+        # stock CANÓNICO (SUM movimientos_mee, fallback cache · M26) + descripción.
+        # maestro_mee NO tiene columna 'nombre' → antes esta gate reventaba
+        # silenciosa ("no such column: nombre", tragada por el try del caller) y
+        # NUNCA chequeaba envases de verdad. Ahora usa descripcion + _get_mee_stock.
         mee = conn.execute(
-            "SELECT stock_actual, nombre FROM maestro_mee WHERE codigo=?", (env_code,)
+            "SELECT descripcion FROM maestro_mee WHERE codigo=?", (env_code,)
         ).fetchone()
-        stock = (mee[0] if mee else 0) or 0
-        nombre_mee = (mee[1] if mee else '') or env_code
+        stock = _get_mee_stock(conn).get(str(env_code).strip().upper(), 0)
+        nombre_mee = (mee[0] if mee else '') or env_code
         items_pres.append({'presentacion': etiqueta, 'envase': env_code,
                            'envase_nombre': nombre_mee, 'stock': stock})
         if stock <= 0:

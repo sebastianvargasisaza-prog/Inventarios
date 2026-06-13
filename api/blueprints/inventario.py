@@ -3696,7 +3696,7 @@ def get_analisis_abc():
                                                 WHEN mm.tipo='Ajuste'  THEN mm.cantidad
                                                 ELSE 0 END)
                                 FROM movimientos_mee mm
-                                WHERE mm.mee_codigo=m.codigo AND COALESCE(mm.anulado,0)=0), 0) as stock,
+                                WHERE mm.mee_codigo=m.codigo AND COALESCE(mm.anulado,0)=0), m.stock_actual, 0) as stock,
                       0 as precio  -- maestro_mee no tiene columna de precio (ABC MEE = por gramos/consumo, no valor)
                FROM maestro_mee m
                WHERE COALESCE(m.estado, 'Activo') = 'Activo'
@@ -4044,7 +4044,7 @@ def alertas_all():
                                                 WHEN mm.tipo='Ajuste'  THEN mm.cantidad
                                                 ELSE 0 END)
                                 FROM movimientos_mee mm
-                                WHERE mm.mee_codigo=m.codigo AND COALESCE(mm.anulado,0)=0), 0) as stock
+                                WHERE mm.mee_codigo=m.codigo AND COALESCE(mm.anulado,0)=0), m.stock_actual, 0) as stock
                FROM maestro_mee m
                WHERE COALESCE(m.estado, 'Activo') = 'Activo'
                  AND COALESCE(m.stock_minimo, 0) > 0
@@ -10687,7 +10687,7 @@ def mee_stock_list():
     # display y la alerta critico/bajo se calculan sobre stock_real, no el cache.
     sql = """
         SELECT m.codigo, m.descripcion, m.categoria, m.unidad,
-               COALESCE(mv.stock_real, 0) as stock_actual, m.stock_minimo, m.estado, m.proveedor,
+               COALESCE(mv.stock_real, m.stock_actual, 0) as stock_actual, m.stock_minimo, m.estado, m.proveedor,
                COALESCE(mv.ultima_entrada,'') as ultima_entrada,
                COALESCE(mv.ultima_salida,'')  as ultima_salida,
                COALESCE(mv.total_entradas,0)  as total_entradas,
