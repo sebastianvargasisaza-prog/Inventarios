@@ -2811,10 +2811,18 @@ def completar_ebr(ebr_id):
                  unidades_teoricas = ?,
                  unidades_buenas_real = ?,
                  yield_uds_pct = ?
-           WHERE id = ?""",
+           WHERE id = ? AND estado IN ('iniciado', 'en_proceso')""",
         (cantidad_real, yield_pct, densidad, ml_envasable,
          uds_teoricas, uds_buenas, yield_uds_pct, ebr_id),
     )
+    if cur.rowcount == 0:
+        # CAS (race · regla M-race): otro worker ya completó este EBR · evita
+        # doble Entrada PT en CUARENTENA (infla el PT · A-3/M10).
+        conn.rollback()
+        return jsonify({
+            "error": "El EBR ya fue completado o cambió de estado · refrescá",
+            "codigo": "ESTADO_CAMBIO",
+        }), 409
     # INVIMA-FIX · 21-may-2026 · cuarentena explícita auto al completar
     # Antes: lote PT quedaba 'completado' pero NO había movimiento de
     # Entrada con estado_lote='CUARENTENA' · podía usarse antes de QC.
@@ -3162,15 +3170,25 @@ def liberar_ebr(ebr_id):
     ):
         return jsonify({"error": "signature_id no corresponde a una firma 'libera' de este EBR por vos"}), 400
 
+    # CAS (race multi-worker · regla M-race): transicionar SOLO si sigue en un
+    # estado liberable. Sin esto, un liberar y un rechazar concurrentes (ambos
+    # pasan el check-then-act de arriba) podían dejar el EBR 'rechazado' pero con
+    # el PT ya promovido a VIGENTE = producto rechazado vendible (riesgo INVIMA).
     cur.execute(
         """UPDATE ebr_ejecuciones
              SET estado = 'liberado',
                  liberado_por = ?,
                  liberado_at_utc = datetime('now', 'utc'),
                  liberado_signature_id = ?
-           WHERE id = ?""",
+           WHERE id = ? AND estado IN ('completado', 'en_revision_qc')""",
         (user, int(signature_id), ebr_id),
     )
+    if cur.rowcount == 0:
+        conn.rollback()
+        return jsonify({
+            "error": "El EBR ya fue liberado/rechazado o cambió de estado · refrescá",
+            "codigo": "ESTADO_CAMBIO",
+        }), 409
     # INVIMA-FIX · 21-may-2026 · promociona lote PT a VIGENTE
     # Antes: estado solo cambiaba en ebr_ejecuciones · movimientos PT
     # seguía CUARENTENA · Compras/Despachos no podía facturarlo aunque
@@ -3237,14 +3255,21 @@ def rechazar_ebr(ebr_id):
         return jsonify({"error": "signature_id no corresponde a una firma 'rechaza' de este EBR por vos"}), 400
 
     # INVIMA-FIX · 21-may-2026 · grabar timestamp rechazo (KPI 30d en dashboard)
+    # CAS (race · igual que liberar): no rechazar si ya se liberó/rechazó.
     cur.execute(
         """UPDATE ebr_ejecuciones
              SET estado = 'rechazado',
                  rechazado_motivo = ?,
                  rechazado_at_utc = datetime('now', 'utc')
-           WHERE id = ?""",
+           WHERE id = ? AND estado IN ('completado', 'en_revision_qc')""",
         (motivo, ebr_id),
     )
+    if cur.rowcount == 0:
+        conn.rollback()
+        return jsonify({
+            "error": "El EBR ya fue liberado/rechazado o cambió de estado · refrescá",
+            "codigo": "ESTADO_CAMBIO",
+        }), 409
     conn.commit()
     audit_log(None, usuario=user, accion="RECHAZAR_EBR",
               tabla="ebr_ejecuciones", registro_id=ebr_id,

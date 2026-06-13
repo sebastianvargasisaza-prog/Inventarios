@@ -112,6 +112,13 @@ Es hash de campos estables del EBR (id, lote, cantidad, signature_id,
 counts). Permite verificar que el PDF se generó desde un EBR específico
 no alterado.
 
+### INV-11 · Transiciones de estado del EBR van con CAS (no check-then-act)
+`completar`/`liberar`/`rechazar` llevan la condición de estado en el WHERE
+del UPDATE (`WHERE id=? AND estado IN (...)`) + `if rowcount==0 → rollback
++ 409 ESTADO_CAMBIO`. Sin CAS, con 3 workers un liberar y un rechazar
+concurrentes dejaban el EBR 'rechazado' con el PT ya promovido a VIGENTE
+(producto rechazado vendible). Regla M27.
+
 ---
 
 ## Endpoints downstream que CONSUMEN sus datos
