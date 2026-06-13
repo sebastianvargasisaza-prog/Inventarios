@@ -10595,7 +10595,11 @@ def abastecimiento_consumo_horizontes():
     conn = get_db()
     c = conn.cursor()
     from datetime import date, timedelta as _td
-    hoy = date.today()
+    # FIX 13-jun (M24): HOY ancla en Colombia (date('now','-5 hours')), no date.today()
+    # que en el server UTC de Render salta al día siguiente >19:00 CO → Abastecimiento
+    # excluía las producciones de HOY y sub-estimaba la demanda, contradiciendo a
+    # plan_factibilidad (que sí usa Colombia). datetime/timezone vienen del import de módulo.
+    hoy = (datetime.now(timezone.utc) - _td(hours=5)).date()
     cutoff_max = (hoy + _td(days=max(horizontes))).isoformat()
     hoy_iso = hoy.isoformat()
 

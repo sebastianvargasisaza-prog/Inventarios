@@ -2037,7 +2037,15 @@ def _handle_produccion_inner():
 
         # ─── Validación 2: fórmula existe ───────────────────────────────────
         c.execute(
-            'SELECT material_id, material_nombre, porcentaje FROM formula_items WHERE producto_nombre=?',
+            # FIX 13-jun (audit fórmulas · GMP): NO fabricar desde una fórmula
+            # DESCONTINUADA. Una fórmula con activo=0 (descontinuada · mig 229/230/231)
+            # conserva sus formula_items; sin este filtro, producir con su nombre exacto
+            # descontaba la fórmula vieja/incompleta (caso 'Blush Balm' minúscula 67% vs
+            # 'BLUSH BALM' completa). Excluye solo headers EXPLÍCITAMENTE activo=0 (ningún
+            # nombre exacto tiene header activo+inactivo a la vez · verificado).
+            'SELECT material_id, material_nombre, porcentaje FROM formula_items '
+            'WHERE producto_nombre=? AND producto_nombre NOT IN '
+            '(SELECT producto_nombre FROM formula_headers WHERE COALESCE(activo,1)=0)',
             (producto,)
         )
         formula_items = c.fetchall()
@@ -2291,7 +2299,8 @@ def _handle_produccion_inner():
                 import json as _json_snap
                 items_snap = c.execute(
                     "SELECT material_id, material_nombre, porcentaje "
-                    "FROM formula_items WHERE producto_nombre=?",
+                    "FROM formula_items WHERE producto_nombre=? AND producto_nombre NOT IN "
+                    "(SELECT producto_nombre FROM formula_headers WHERE COALESCE(activo,1)=0)",
                     (producto,)
                 ).fetchall()
                 snap = [{'material_id': r[0], 'material_nombre': r[1],
@@ -3229,10 +3238,11 @@ def simular_produccion():
                         COALESCE(m.controla_stock, 1)
                  FROM formula_items fi
                  LEFT JOIN maestro_mps m ON fi.material_id = m.codigo_mp
-                 WHERE fi.producto_nombre=?""", (producto,))
+                 WHERE fi.producto_nombre=? AND fi.producto_nombre NOT IN
+                       (SELECT producto_nombre FROM formula_headers WHERE COALESCE(activo,1)=0)""", (producto,))
     items = c.fetchall()
     if not items:
-        return jsonify({'error': f'Formula no encontrada: {producto}', 'factible': False}), 404
+        return jsonify({'error': f'Formula no encontrada o descontinuada: {producto}', 'factible': False}), 404
     resultado = []
     factible = True
     costo_total = 0.0
