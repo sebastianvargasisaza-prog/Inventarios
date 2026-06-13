@@ -2144,7 +2144,7 @@ def _handle_produccion_inner():
                                 SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock
                          FROM movimientos
                          WHERE material_id=? AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
-                           AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO'))
+                           AND (estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO'))
                          GROUP BY lote HAVING stock > 0.01
                          ORDER BY COALESCE(NULLIF(CAST(MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) AS TEXT), ''), '9999-12-31') ASC""", (mat_id,))
             lotes_fefo = c.fetchall()
@@ -6953,7 +6953,7 @@ def consumo_manual():
     stock_antes_row = c.execute(
         "SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END), 0) "
         "FROM movimientos WHERE material_id=? "
-        "AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO'))",
+        "AND (estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO'))",
         (codigo,),
     ).fetchone()
     stock_antes = float(stock_antes_row[0] or 0)
@@ -7724,7 +7724,7 @@ def conteo_materiales_estanteria():
     # Ahora exclusión alineada con _get_mp_stock canónico.
     estado_lote_filter = (
         " AND (m.estado_lote IS NULL OR UPPER(COALESCE(m.estado_lote,'')) "
-        "      NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO'))"
+        "      NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO'))"
     )
     if est and est != 'Sin estanteria':
         c.execute(f"""SELECT m.material_id, MAX(m.material_nombre) as material_nombre,

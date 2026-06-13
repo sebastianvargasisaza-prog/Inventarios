@@ -312,6 +312,18 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (239, "P0 INVIMA · normalizar movimientos.estado_lote a MAYUSCULAS canonicas "
+          "(Sebastian 12-jun · hallazgo Fable). Calidad escribia 'Aprobado'/'Rechazado' "
+          "(Title-case) en aprobar-lote, pero el FEFO del descuento filtra "
+          "NOT IN ('...','RECHAZADO') case-sensitive -> un lote RECHAZADO se colaba a "
+          "produccion ('Rechazado' != 'RECHAZADO'). Esta mig pasa todo a UPPER y mapea "
+          "APROBADO->VIGENTE para que los ~10 filtros NOT IN (mayusculas) coincidan. "
+          "Idempotente · reversible (solo normaliza case). NO toca cantidades/lotes.", [
+        "UPDATE movimientos SET estado_lote=UPPER(estado_lote) "
+        "WHERE estado_lote IS NOT NULL AND estado_lote <> '' AND estado_lote <> UPPER(estado_lote)",
+        "UPDATE movimientos SET estado_lote='VIGENTE' WHERE estado_lote='APROBADO'",
+    ]),
+
     (238, "Blush Balm · mapear los 8 tonos (SKU Shopify) al producto 'Blush Balm' (Sebastian "
           "12-jun). Los tonos son variantes Shopify (BB101..BB801) que comparten el mismo "
           "bulk base -> sus ventas deben SUMAR a 'Blush Balm' para que aparezca en "

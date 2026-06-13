@@ -196,8 +196,13 @@ def recepcion_aprobar_lote():
     if not antes_row:
         return jsonify({'error': 'Movimiento no encontrado'}), 404
     antes = dict(antes_row)
+    # P0 (12-jun · hallazgo Fable): persistir estado_lote CANONICO en mayusculas.
+    # Antes guardaba 'Aprobado'/'Rechazado' (Title-case) y el FEFO filtra
+    # NOT IN ('...','RECHAZADO') case-sensitive -> un lote RECHAZADO se colaba a
+    # produccion. Aprobado->VIGENTE (usable), Rechazado->RECHAZADO (bloqueado).
+    estado_canon = 'VIGENTE' if nuevo_estado == 'Aprobado' else 'RECHAZADO'
     c.execute("UPDATE movimientos SET estado_lote=?, operador=? WHERE id=?",
-              (nuevo_estado, usuario, mov_id))
+              (estado_canon, usuario, mov_id))
     accion = 'APROBAR_LOTE' if nuevo_estado == 'Aprobado' else 'RECHAZAR_LOTE'
     audit_log(c, usuario=usuario, accion=accion, tabla='movimientos',
               registro_id=mov_id, antes=antes,
