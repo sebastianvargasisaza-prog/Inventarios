@@ -694,6 +694,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <input type="text" id="stock-search" placeholder="MP, INCI, proveedor..." oninput="filterStock()" style="width:200px;margin-top:0;">
       <input type="text" id="stock-search-lote" placeholder="&#127991; Solo por lote" oninput="filterStock()" style="width:170px;margin-top:0;border:2px solid #1e63a8;background:#f0f8ff;">
       <div style="display:flex;gap:10px;flex-wrap:wrap;"><button onclick="loadStock()">&#8635; Actualizar</button><button onclick="exportarExcelStock()" style="background:#217346;">&#128196; Descargar Excel</button><button onclick="abrirLimpiezaProveedores()" style="background:#7c3aed;" title="Detecta proveedores duplicados por typo y los unifica">&#129529; Limpiar proveedores</button><button onclick="abrirUnificarMPs()" style="background:#be185d;" title="Detecta MPs con dos códigos (purisil, etc) y unifica en uno · admin">&#129529; Unificar MPs</button><button onclick="abrirRevisarMinimos()" style="background:#7c3aed;" title="Audita stock minimo de cada MP vs consumo proyectado · evita alertas falsas">&#128202; Revisar m&iacute;nimos</button></div>
+      <label style="font-size:0.85em;color:#555;display:inline-flex;align-items:center;gap:4px;cursor:pointer;" title="Por defecto la bodega muestra solo lo que hay fisicamente. Marca para ver tambien las MPs en 0 (catalogo / a comprar)."><input type="checkbox" id="stock-ver-sin" onchange="loadStock()"> Ver MPs en 0 (a comprar)</label>
       <span id="stock-count" style="color:#888;font-size:0.88em;"></span>
     </div>
     <!-- Sprint Bodega MP PRO · 20-may-2026 fix #6: headers clickeables ordenan -->
@@ -4152,9 +4153,14 @@ async function loadDashboardCompleto(silent){
 async function loadStock(){
   var t0 = Date.now();
   try{
-    var r=await fetch('/api/lotes?incluir_sin_stock=1'), d=await r.json();
+    // Sebastian 12-jun: por defecto la Bodega muestra SOLO lo que tiene stock real.
+    // Las MPs en 0 (catalogo · a comprar) solo si el usuario marca el checkbox.
+    var _verSin=(document.getElementById('stock-ver-sin')||{}).checked;
+    var r=await fetch('/api/lotes'+(_verSin?'?incluir_sin_stock=1':'')), d=await r.json();
     _lotes=d.lotes||[];
-    document.getElementById('stock-count').textContent=_lotes.length+' filas';
+    var _nSin=_lotes.filter(function(x){return (x.cantidad_g||0)<=0.01;}).length;
+    document.getElementById('stock-count').textContent=
+      _lotes.length+' filas'+(_verSin&&_nSin?(' ('+_nSin+' en 0)'):'');
     // Fix #6 + #10: aplicar sort si user pinó alguna columna · actualizar timestamp
     if(_STOCK_SORT && _STOCK_SORT.col) _aplicarSortStock();
     var qGen=((document.getElementById('stock-search')||{}).value||'').trim();

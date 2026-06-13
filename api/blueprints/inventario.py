@@ -4362,8 +4362,15 @@ def get_lotes():
                         COALESCE(MAX(mp.stock_minimo),0) as smin
                  FROM movimientos m LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
                  WHERE UPPER(COALESCE(mp.tipo_material,'MP'))='MP'
+                   AND (m.estado_lote IS NULL OR UPPER(COALESCE(m.estado_lote,'')) NOT IN
+                        ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO'))
                  GROUP BY m.material_id, m.lote
                  HAVING stock_neto > 0.01"""
+    # A1 (Sebastian 12-jun · decision: excluir): la Bodega MP muestra solo stock
+    # USABLE · antes listaba lotes en cuarentena/rechazado/vencido/agotado como
+    # disponibles e inflaba el total -> enmascaraba quiebres (M5). Ahora alineado
+    # con conteo_ciclico + FEFO + descuento. El stock retenido vive en su vista
+    # de Cuarentena/Calidad (/api/lotes/cuarentena).
     # Sebastian 12-jun: umbral 0.01g (no >0). Un lote ya gastado deja un residuo
     # flotante diminuto (0.004g del redondeo del descuento) que pasaba >0 pero se
     # mostraba como "0" y nunca desaparecia. <=0.01g = consumido -> sale de la vista
@@ -4476,6 +4483,8 @@ def get_lotes():
                          SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END) as sn
                   FROM movimientos m LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
                   WHERE UPPER(COALESCE(mp.tipo_material,'MP'))='MP'
+                    AND (m.estado_lote IS NULL OR UPPER(COALESCE(m.estado_lote,'')) NOT IN
+                         ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO'))
                   GROUP BY m.material_id, m.lote
                   HAVING sn > 0.01
                 )
@@ -4567,8 +4576,12 @@ def maestro_mps_duplicados_deteccion():
         # Para cada variante, traer stats: stock, movs, lotes, formulas, sols
         for v in variantes:
             stock_row = c.execute(
-                "SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad "
-                "ELSE -cantidad END),0), COUNT(*), COUNT(DISTINCT COALESCE(lote,'')) "
+                # M1 (12-jun): CASE canonico · antes 'tipo=Entrada ELSE -cantidad'
+                # restaba los 'Ajuste'/'Ajuste +'/'entrada' minuscula (tipos reales)
+                # -> stock drift en esta vista de duplicados (regla #4 / M16).
+                "SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad "
+                "WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0), "
+                "COUNT(*), COUNT(DISTINCT COALESCE(lote,'')) "
                 "FROM movimientos WHERE material_id = ?",
                 (v['codigo_mp'],),
             ).fetchone()
