@@ -328,6 +328,39 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (251, "Siembra el catálogo de documentos que el sistema YA referencia en el SGD "
+          "(biblioteca de Documentos · 14-jun). Registra como BORRADOR (pendiente de adjuntar "
+          "PDF/versión en Aseguramiento) los 13 procedimientos conocidos (COC-PRO-002/006/008/"
+          "011/012/016, COC-EVA-002, ASG-NOR/LMA-001, ASG-PRO-001/004/007/013). Así la "
+          "biblioteca deja de estar vacía y sirve de checklist. Idempotente (INSERT OR IGNORE "
+          "por código · no pisa los que Miguel ya haya creado).", [
+        "INSERT OR IGNORE INTO sgd_documentos (codigo,area,tipo_doc,numero,titulo,estado,observaciones,creado_por) VALUES "
+        "('COC-PRO-002','COC','PRO',2,'Rotulado e identificación de materiales en bodega','borrador','Sembrado · adjuntar PDF/versión','seed_mig251')",
+        "INSERT OR IGNORE INTO sgd_documentos (codigo,area,tipo_doc,numero,titulo,estado,observaciones,creado_por) VALUES "
+        "('COC-PRO-006','COC','PRO',6,'Equipos e instrumentos: calibración y verificación','borrador','Sembrado · adjuntar PDF/versión','seed_mig251')",
+        "INSERT OR IGNORE INTO sgd_documentos (codigo,area,tipo_doc,numero,titulo,estado,observaciones,creado_por) VALUES "
+        "('COC-PRO-008','COC','PRO',8,'Control del sistema de agua purificada','borrador','Sembrado · adjuntar PDF/versión','seed_mig251')",
+        "INSERT OR IGNORE INTO sgd_documentos (codigo,area,tipo_doc,numero,titulo,estado,observaciones,creado_por) VALUES "
+        "('COC-PRO-011','COC','PRO',11,'Muestreo microbiológico','borrador','Sembrado · adjuntar PDF/versión','seed_mig251')",
+        "INSERT OR IGNORE INTO sgd_documentos (codigo,area,tipo_doc,numero,titulo,estado,observaciones,creado_por) VALUES "
+        "('COC-PRO-012','COC','PRO',12,'Vencimiento y cronograma de calibración de equipos','borrador','Sembrado · adjuntar PDF/versión','seed_mig251')",
+        "INSERT OR IGNORE INTO sgd_documentos (codigo,area,tipo_doc,numero,titulo,estado,observaciones,creado_por) VALUES "
+        "('COC-PRO-016','COC','PRO',16,'Recall / simulacro de retiro de producto','borrador','Sembrado · adjuntar PDF/versión','seed_mig251')",
+        "INSERT OR IGNORE INTO sgd_documentos (codigo,area,tipo_doc,numero,titulo,estado,observaciones,creado_por) VALUES "
+        "('COC-EVA-002','COC','EVA',2,'Evaluación: examen de envase y empaque','borrador','Sembrado · adjuntar PDF/versión','seed_mig251')",
+        "INSERT OR IGNORE INTO sgd_documentos (codigo,area,tipo_doc,numero,titulo,estado,observaciones,creado_por) VALUES "
+        "('ASG-NOR-001','ASG','NOR',1,'Norma documental del SGD','borrador','Sembrado · adjuntar PDF/versión','seed_mig251')",
+        "INSERT OR IGNORE INTO sgd_documentos (codigo,area,tipo_doc,numero,titulo,estado,observaciones,creado_por) VALUES "
+        "('ASG-LMA-001','ASG','LMA',1,'Listado maestro de documentos','borrador','Sembrado · adjuntar PDF/versión','seed_mig251')",
+        "INSERT OR IGNORE INTO sgd_documentos (codigo,area,tipo_doc,numero,titulo,estado,observaciones,creado_por) VALUES "
+        "('ASG-PRO-001','ASG','PRO',1,'Manejo de desviaciones','borrador','Sembrado · adjuntar PDF/versión','seed_mig251')",
+        "INSERT OR IGNORE INTO sgd_documentos (codigo,area,tipo_doc,numero,titulo,estado,observaciones,creado_por) VALUES "
+        "('ASG-PRO-004','ASG','PRO',4,'Recall / retiro de producto','borrador','Sembrado · adjuntar PDF/versión','seed_mig251')",
+        "INSERT OR IGNORE INTO sgd_documentos (codigo,area,tipo_doc,numero,titulo,estado,observaciones,creado_por) VALUES "
+        "('ASG-PRO-007','ASG','PRO',7,'Control de cambios','borrador','Sembrado · adjuntar PDF/versión','seed_mig251')",
+        "INSERT OR IGNORE INTO sgd_documentos (codigo,area,tipo_doc,numero,titulo,estado,observaciones,creado_por) VALUES "
+        "('ASG-PRO-013','ASG','PRO',13,'Quejas y reclamos de clientes','borrador','Sembrado · adjuntar PDF/versión','seed_mig251')",
+    ]),
     (250, "OOS: doble aprobación para disposiciones de rechazo/destrucción (GMP · 14-jun). "
           "Agrega calidad_oos.aprobado_gerencia (2ª firma de gerencia, distinta del Jefe de "
           "Calidad que cierra). Idempotente (duplicate column benigno).", [
