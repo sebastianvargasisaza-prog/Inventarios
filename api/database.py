@@ -312,6 +312,23 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (242, "Backfill INCI confirmados POR SEBASTIAN/ALEJANDRO (13-jun · datos del dueno, no "
+          "adivinados): Vit E liquida=TOCOPHEROL, Vit E polvo=TOCOPHERYL ACETATE (resuelve el "
+          "'pendiente'), Tinogard TT, BM-956, Stabil (blend), PMSS, Microcristalina, Neroli, "
+          "Ceresine, Murumuru, Vainilla. Quedan PENDIENTES (variante exacta a definir): MP00040 "
+          "Cetiol (CC/AB/HE) y MP00103 Beauty Oil Ceramidas. Idempotente (UPDATE por codigo).", [
+        "UPDATE maestro_mps SET nombre_inci='TOCOPHEROL' WHERE codigo_mp='MP00078'",
+        "UPDATE maestro_mps SET nombre_inci='TOCOPHERYL ACETATE' WHERE codigo_mp='MP00079'",
+        "UPDATE maestro_mps SET nombre_inci='PENTAERYTHRITYL TETRA-DI-T-BUTYL HYDROXYHYDROCINNAMATE' WHERE codigo_mp='MP00063'",
+        "UPDATE maestro_mps SET nombre_inci='PHENYL TRIMETHICONE' WHERE codigo_mp='MP00127'",
+        "UPDATE maestro_mps SET nombre_inci='PHENETHYL ALCOHOL, CAPRYLYL GLYCOL' WHERE codigo_mp='MP00207'",
+        "UPDATE maestro_mps SET nombre_inci='POLYMETHYLSILSESQUIOXANE' WHERE codigo_mp='MP00055'",
+        "UPDATE maestro_mps SET nombre_inci='MICROCRYSTALLINE WAX' WHERE codigo_mp='MP00024'",
+        "UPDATE maestro_mps SET nombre_inci='CITRUS AURANTIUM AMARA FLOWER OIL' WHERE codigo_mp='MP00025'",
+        "UPDATE maestro_mps SET nombre_inci='CERESIN' WHERE codigo_mp='MP00041'",
+        "UPDATE maestro_mps SET nombre_inci='ASTROCARYUM MURUMURU SEED BUTTER' WHERE codigo_mp='MP00077'",
+        "UPDATE maestro_mps SET nombre_inci='VANILLA PLANIFOLIA FRUIT EXTRACT' WHERE codigo_mp='MP00101'",
+    ]),
     (241, "Backfill INCI SOLO de los MPs cuyo nombre comercial ES el nombre INCI estandar "
           "verbatim (audit formulas 13-jun · NO es adivinar, es copiar el INCI = comercial). "
           "Los nombres de marca/ambiguos (Cetiol, Tinogard, Stabil, Vit E polvo vs liquida, "
