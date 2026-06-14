@@ -3890,16 +3890,34 @@ def pqr_inbox_listar():
     estado = (request.args.get('estado') or 'pendiente').strip()
     conn = get_db(); c = conn.cursor()
     rows = c.execute(
-        "SELECT id, canal, contacto_nombre, contacto_email, contacto_telefono, mensaje, recibido_en, "
+        "SELECT id, ghl_message_id, canal, contacto_nombre, contacto_email, contacto_telefono, mensaje, recibido_en, "
         "ia_empresa, ia_tipo, ia_severidad, ia_confianza, ia_resumen, ia_razon, ia_fuente, estado, "
         "destino_empresa, destino_tabla, destino_id FROM pqr_inbox WHERE estado=? "
         "ORDER BY (ia_confianza IS NULL) DESC, recibido_en DESC LIMIT 200", (estado,)).fetchall()
-    cols = ['id', 'canal', 'contacto_nombre', 'contacto_email', 'contacto_telefono', 'mensaje',
+    cols = ['id', 'ghl_message_id', 'canal', 'contacto_nombre', 'contacto_email', 'contacto_telefono', 'mensaje',
             'recibido_en', 'ia_empresa', 'ia_tipo', 'ia_severidad', 'ia_confianza', 'ia_resumen',
             'ia_razon', 'ia_fuente', 'estado', 'destino_empresa', 'destino_tabla', 'destino_id']
     items = [dict(zip(cols, r)) for r in rows]
     pend = c.execute("SELECT COUNT(*) FROM pqr_inbox WHERE estado='pendiente'").fetchone()[0]
     return jsonify({'inbox': items, 'pendientes': pend})
+
+
+@bp.route('/api/aseguramiento/pqr-inbox/diagnostico', methods=['GET'])
+def pqr_inbox_diagnostico():
+    """Solo admin · últimas 30 entradas del buzón (TODOS los estados) con su ghl_message_id,
+    clasificación y destino. Para verificar la integración con GHL (qué llegó y cómo se clasificó)."""
+    if session.get('compras_user', '') not in set(ADMIN_USERS):
+        return jsonify({'error': 'Solo admin'}), 403
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute(
+        "SELECT id, ghl_message_id, recibido_en, canal, contacto_nombre, ia_empresa, ia_tipo, "
+        "ia_confianza, ia_fuente, estado, destino_empresa, destino_tabla, destino_id, "
+        "substr(mensaje,1,200) FROM pqr_inbox ORDER BY id DESC LIMIT 30").fetchall()
+    cols = ['id', 'ghl_message_id', 'recibido_en', 'canal', 'contacto_nombre', 'ia_empresa', 'ia_tipo',
+            'ia_confianza', 'ia_fuente', 'estado', 'destino_empresa', 'destino_tabla', 'destino_id', 'mensaje']
+    items = [dict(zip(cols, r)) for r in rows]
+    tot = c.execute("SELECT COUNT(*) FROM pqr_inbox").fetchone()[0]
+    return jsonify({'total': tot, 'ultimas': items})
 
 
 @bp.route('/api/aseguramiento/pqr-inbox/<int:iid>/enrutar', methods=['POST'])

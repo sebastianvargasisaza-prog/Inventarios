@@ -3446,7 +3446,7 @@ async function loadPqrTriaje(){
       var opcAni = _TIPO_ANI.map(function(t){return '<option value="'+t[0]+'"'+(x.ia_tipo===t[0]?' selected':'')+'>'+t[1]+'</option>';}).join('');
       return '<div class="card" style="margin:0 0 8px 0;border-left:3px solid '+(emp==='espagiria'?'#6d28d9':(emp==='animus'?'#0ea5e9':'#94a3b8'))+'">'
         +'<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">'
-        +'<div style="font-size:0.78em;color:#64748b">'+_esc(x.canal||'')+' · '+_esc(x.contacto_nombre||'anónimo')+' · '+_esc(x.recibido_en||'')+'</div>'
+        +'<div style="font-size:0.78em;color:#64748b">'+_esc(x.canal||'')+' · '+_esc(x.contacto_nombre||'anónimo')+' · '+_esc(x.recibido_en||'')+(x.ghl_message_id?' · <span style="color:#94a3b8">GHL:'+_esc(x.ghl_message_id)+'</span>':'')+'</div>'
         +'<div style="font-size:0.78em">'+sugTxt+'</div></div>'
         +'<div style="font-size:0.9em;color:#0f172a;margin:6px 0">'+_esc(x.mensaje||'')+'</div>'
         +(x.ia_razon?'<div style="font-size:0.74em;color:#94a3b8;font-style:italic">'+_esc(x.ia_razon)+'</div>':'')
