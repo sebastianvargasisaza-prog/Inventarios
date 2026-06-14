@@ -4245,8 +4245,8 @@ function renderStock(items){
     }
     h+='<tr style="background:'+bg[a]+';font-size:0.83em;">';
     h+='<td style="font-family:monospace;color:#555;">'+_escHTML(i.material_id||'')+'</td>';
-    h+='<td style="color:#444;font-size:0.82em;">'+_escHTML(i.nombre_inci||'')+'</td>';
-    h+='<td style="font-weight:600;">'+_escHTML(i.material_nombre||'')+'</td>';
+    h+='<td style="font-weight:600;">'+_escHTML(i.nombre_inci||i.material_nombre||'')+'</td>';
+    h+='<td style="color:#888;font-size:0.78em;">'+_escHTML(i.material_nombre||'')+'</td>';
     h+='<td style="color:#888;">'+_escHTML(i.tipo||'')+'</td>';
     h+='<td style="color:#555;">'+(i.proveedor?_escHTML(i.proveedor):'<span style="color:#bbb;">— sin proveedor —</span>')+' <button onclick="abrirEditarProveedor('+gi+')" title="Editar proveedor" style="margin-left:4px;padding:1px 6px;font-size:0.75em;background:#e8f5f5;color:#6d28d9;border:1px solid #b8dada;border-radius:4px;cursor:pointer;">&#9999;&#65039;</button></td>';
     // Mostrar Min solo en primera fila de cada MP · "↑" en las demás (gris)
@@ -5455,8 +5455,8 @@ async function loadABC(){
         '<td style="text-align:right;color:#94a3b8;font-family:monospace">'+i.ranking+'</td>'+
         '<td><span style="background:'+bg+';color:white;padding:2px 8px;border-radius:8px;font-weight:700;font-size:10px">'+i.clasificacion+'</span></td>'+
         '<td style="font-family:monospace;color:#555">'+_escHTML(i.material_id)+'</td>'+
-        '<td style="font-weight:600">'+_escHTML(i.nombre_comercial||'—')+'</td>'+
-        '<td style="font-size:11px;color:#475569">'+_escHTML(i.nombre_inci||'')+'</td>'+
+        '<td style="font-size:11px;color:#888">'+_escHTML(i.nombre_comercial||'')+'</td>'+
+        '<td style="font-weight:600">'+_escHTML(i.nombre_inci||i.nombre_comercial||'—')+'</td>'+
         '<td style="font-size:11px;color:#475569">'+_escHTML(i.proveedor||'—')+'</td>'+
         '<td style="font-size:11px">'+origenIcon+' '+_escHTML(i.origen)+'</td>'+
         '<td style="text-align:right">'+Math.round(i.stock_g).toLocaleString()+'</td>'+
@@ -5867,8 +5867,8 @@ function _renderSeccionMP(titulo, items, color, tipoSilen){
     var pctColor = pct<25?'#dc2626':pct<50?'#ea580c':'#ca8a04';
     h += '<tr>'+
       '<td style="font-family:monospace;font-size:11px">'+_escHTML(it.codigo_mp)+'</td>'+
-      '<td style="font-weight:600">'+_escHTML(it.nombre)+'</td>'+
-      '<td style="font-size:11px;color:#475569">'+_escHTML(it.nombre_inci||'')+'</td>'+
+      '<td style="font-size:11px;color:#888">'+_escHTML(it.nombre)+'</td>'+
+      '<td style="font-weight:600">'+_escHTML(it.nombre_inci||it.nombre)+'</td>'+
       '<td style="font-size:11px;color:#475569">'+_escHTML(it.proveedor||'—')+'</td>'+
       '<td style="text-align:right">'+Math.round(it.stock_minimo_g).toLocaleString()+'</td>'+
       '<td style="text-align:right;color:'+pctColor+';font-weight:600">'+Math.round(it.stock_actual_g).toLocaleString()+'</td>'+
@@ -6971,8 +6971,8 @@ async function cargarCuarentena(){
       var estadoColor=l.estado_lote==='CUARENTENA'?'#e67e22':l.estado_lote==='CUARENTENA_EXTENDIDA'?'#c0392b':'#888';
       h+='<tr>';
       h+='<td style="font-family:monospace;font-size:0.85em;">'+l.codigo_mp+'</td>';
-      h+='<td style="font-size:0.8em;color:#555;">'+(l.nombre_inci||'')+'</td>';
-      h+='<td>'+l.nombre+'</td>';
+      h+='<td style="font-weight:600;">'+(l.nombre_inci||l.nombre||'')+'</td>';
+      h+='<td style="font-size:0.78em;color:#888;">'+(l.nombre||'')+'</td>';
       h+='<td style="font-family:monospace;font-weight:600;">'+l.lote+'</td>';
       h+='<td style="text-align:right;font-weight:600;">'+l.cantidad.toLocaleString()+'</td>';
       h+='<td style="font-size:0.85em;">'+(l.proveedor||'')+'</td>';
@@ -7006,8 +7006,8 @@ async function cargarRetenido(){
       var col=colores[est]||'#888';
       h+='<tr>';
       h+='<td style="font-family:monospace;font-size:0.85em;">'+(l.codigo_mp||'')+'</td>';
-      h+='<td style="font-size:0.8em;color:#555;">'+(l.nombre_inci||'')+'</td>';
-      h+='<td>'+(l.nombre||'')+'</td>';
+      h+='<td style="font-weight:600;">'+(l.nombre_inci||l.nombre||'')+'</td>';
+      h+='<td style="font-size:0.78em;color:#888;">'+(l.nombre||'')+'</td>';
       h+='<td style="font-family:monospace;font-weight:600;">'+(l.lote||'')+'</td>';
       h+='<td style="text-align:right;font-weight:600;">'+Number(l.cantidad||0).toLocaleString()+'</td>';
       h+='<td style="font-size:0.85em;">'+(l.proveedor||'')+'</td>';
@@ -22229,7 +22229,7 @@ async function ckMarcar(itemId, estado){
       html += '<td style="padding:6px 8px;font-family:ui-monospace;font-weight:700">' +
         '<a href="#" onclick="abastTrailMp(this.dataset.cod);return false" data-cod="' + codTrail + '" style="color:#7c3aed;text-decoration:underline;cursor:pointer" title="Ver desglose · qué productos la usan y cuántos lotes futuros">' +
         codTrail + '</a>' + badgesHtml + '</td>';
-      html += '<td style="padding:6px 8px"><a href="#" onclick="abastTrailMp(this.dataset.cod);return false" data-cod="' + codTrail + '" style="color:#1e293b;text-decoration:none;cursor:pointer" title="Ver desglose">' + escapeHtmlNec(it.nombre) + '</a></td>';
+      html += '<td style="padding:6px 8px"><a href="#" onclick="abastTrailMp(this.dataset.cod);return false" data-cod="' + codTrail + '" style="color:#1e293b;text-decoration:none;cursor:pointer;font-weight:600" title="Ver desglose">' + escapeHtmlNec(it.nombre_inci || it.nombre) + '</a>' + ((it.nombre_inci && it.nombre && it.nombre_inci !== it.nombre) ? '<div style="font-size:10px;color:#94a3b8">' + escapeHtmlNec(it.nombre) + '</div>' : '') + '</td>';
       html += '<td style="padding:6px 8px;text-align:center;font-size:10px;font-weight:700;color:' + (it.tipo==='MP'?'#7c3aed':'#7c3aed') + '">' + it.tipo + '</td>';
       html += '<td style="padding:6px 8px;color:#64748b">' + escapeHtmlNec(it.proveedor_sugerido || '—') + '</td>';
       // Lead time · si quiebre <= lead_time → advertencia roja (no llegará a tiempo)

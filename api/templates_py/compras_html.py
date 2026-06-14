@@ -3455,7 +3455,7 @@ async function loadMPLookup(){
     if(!dl){ dl=document.createElement('datalist'); dl.id='mp-dl'; document.body.appendChild(dl); }
     dl.innerHTML=_MP_LIST.map(function(m){
       var cod=m.codigo_mp||m.codigo_interno||'';
-      var nom=m.nombre_comercial||m.nombre_material||m.nombre_inci||'';
+      var nom=m.nombre_inci||m.nombre_comercial||m.nombre_material||'';
       return '<option value="'+cod+'">'+nom+'</option>';
     }).join('');
   }catch(e){ console.warn('MP lookup unavailable',e); }
@@ -3619,7 +3619,7 @@ function openNuevaOCMP(prefillItems){
   fillProvSelect('nmp-prov');
   var dl=document.getElementById('mp-codes-dl');
   dl.innerHTML=_MPCAT.map(function(m){
-    return '<option value="'+esc(m.codigo_mp)+'">'+esc(m.nombre_comercial||m.nombre_inci||m.codigo_mp)+'</option>';
+    return '<option value="'+esc(m.codigo_mp)+'">'+esc(m.nombre_inci||m.nombre_comercial||m.codigo_mp)+'</option>';
   }).join('');
   var info=document.getElementById('nmp-alert-info');
   if(_ALERTAS_MP&&_ALERTAS_MP.length){
@@ -3855,7 +3855,7 @@ async function refrescarCatalogoMP(){
     var dl = document.getElementById('mp-codes-dl');
     if (dl) {
       dl.innerHTML = _MPCAT.map(function(m){
-        return '<option value="'+esc(m.codigo_mp)+'">'+esc(m.nombre_comercial||m.nombre_inci||m.codigo_mp)+'</option>';
+        return '<option value="'+esc(m.codigo_mp)+'">'+esc(m.nombre_inci||m.nombre_comercial||m.codigo_mp)+'</option>';
       }).join('');
     }
   }catch(e){ console.error('refrescarCatalogoMP fallo:', e); }
