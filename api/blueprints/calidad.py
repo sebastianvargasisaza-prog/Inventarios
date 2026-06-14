@@ -630,6 +630,30 @@ def calidad_bandeja():
         log.info('bandeja estabilidades: %s', e)
         out['secciones']['estabilidades_pendientes'] = {'total': 0, 'items': []}
 
+    # ── 10. EBR completados esperando liberación de PT (Fase 4 · 14-jun) ──
+    # Consolida en el centro de mando de Calidad la decisión de liberar/rechazar
+    # el Producto Terminado, que hoy vive sólo en /brd. La jefa ve acá los legajos
+    # listos y entra a decidir con un clic. Deploy-safe (tabla ausente → vacío).
+    try:
+        rows = c.execute("""
+            SELECT e.id, e.lote, COALESCE(mt.producto_nombre,'') AS producto,
+                   e.estado, e.completado_at_utc
+            FROM ebr_ejecuciones e
+            LEFT JOIN mbr_templates mt ON mt.id = e.mbr_template_id
+            WHERE e.estado IN ('completado','en_revision_qc')
+            ORDER BY COALESCE(e.completado_at_utc,'') ASC, e.id ASC
+            LIMIT 30
+        """).fetchall()
+        items = [{
+            'ebr_id': r[0], 'lote': r[1], 'producto': r[2],
+            'estado': r[3], 'completado_at': (r[4] or '')[:10],
+            'link': f'/brd/timeline/{r[0]}',
+        } for r in rows]
+        out['secciones']['ebr_por_liberar'] = {'total': len(items), 'items': items}
+    except Exception as e:
+        log.info('bandeja ebr_por_liberar (tabla puede no existir): %s', e)
+        out['secciones']['ebr_por_liberar'] = {'total': 0, 'items': []}
+
     # ── KPIs unificados ─────────────────────────────────────────────────
     out['kpis'] = {
         'lotes_cuarentena': out['secciones']['lotes_cuarentena']['total'],
@@ -643,6 +667,7 @@ def calidad_bandeja():
         'auditorias_proximas': out['secciones']['auditorias_proximas']['total'],
         'estabilidades_pendientes': out['secciones']['estabilidades_pendientes']['total'],
         'agua_registrada_hoy': out['secciones']['registro_agua_hoy'].get('registrado', False),
+        'ebr_por_liberar': out['secciones']['ebr_por_liberar']['total'],
     }
     # Total de "items que requieren acción del equipo Calidad"
     out['kpis']['total_pendientes'] = (
@@ -651,6 +676,7 @@ def calidad_bandeja():
         + out['kpis']['oos_abiertas']
         + out['kpis']['calibraciones_vencidas']
         + out['kpis']['cola_liberacion_listos']
+        + out['kpis']['ebr_por_liberar']
     )
     return jsonify(out)
 

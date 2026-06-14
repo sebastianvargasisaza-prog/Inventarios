@@ -1363,6 +1363,26 @@ async function loadBandeja(){
       }
     });
 
+    // 10. EBR completados · listos para liberar PT (Fase 4 · consolidación)
+    if(s.ebr_por_liberar){
+      html += _bandejaCard({
+        titulo:'PT por Liberar (EBR)', icon:'&#x1F9FE;',
+        total: s.ebr_por_liberar.total,
+        accent: s.ebr_por_liberar.total>0 ? 'amber' : 'green',
+        subtitulo:'Legajos completados esperando decisi&oacute;n de Calidad',
+        items: s.ebr_por_liberar.items,
+        empty_msg:'Sin EBR por liberar',
+        render_item: function(it){
+          return '<div style="padding:6px 8px;border-bottom:1px solid #f1f5f9;font-size:0.82em">'
+            + '<b>'+_escBan(it.producto||'')+'</b> · Lote <code>'+_escBan(it.lote||'')+'</code>'
+            + ' <span style="color:var(--cx-text-mute);font-size:0.9em">'+_escBan(it.estado||'')+'</span><br>'
+            + '<a href="'+_escBan(it.link||'#')+'" style="color:#6d28d9;font-weight:600">Revisar y liberar &rarr;</a>'
+            + (it.completado_at?' <span style="color:var(--cx-text-mute);font-size:0.9em">· compl. '+_escBan(it.completado_at)+'</span>':'')
+            + '</div>';
+        }
+      });
+    }
+
     if(sec) sec.innerHTML = html;
   }catch(e){
     console.error('loadBandeja error:', e);
