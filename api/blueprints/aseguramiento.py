@@ -3533,3 +3533,140 @@ def acuerdos_calidad():
                      "FROM acuerdos_calidad ORDER BY id DESC LIMIT 200").fetchall()
     cols = ['id', 'tercero', 'tipo', 'version', 'fecha_efectiva', 'fecha_renovacion', 'estado', 'ultima_auditoria']
     return jsonify({'acuerdos': [dict(zip(cols, r)) for r in rows]})
+
+
+# ════════════════════════════════════════════════════════════════════════
+# INDICADORES · cuadro de mando cross-módulo (Aseguramiento + Planta + Calidad)
+# Mismo patrón que /api/calidad/indicadores: meta + semáforo. Cálculos cross-DB
+# (date-diff en Python; nada de strftime/julianday). Cada KPI con meta editable.
+# ════════════════════════════════════════════════════════════════════════
+def _semaforo_asg(valor, meta, umbral, direccion):
+    if valor is None or meta is None:
+        return 'gris'
+    if direccion == 'mayor_mejor':
+        if valor >= meta:
+            return 'verde'
+        return 'amarillo' if (umbral is not None and valor >= umbral) else 'rojo'
+    if valor <= meta:
+        return 'verde'
+    return 'amarillo' if (umbral is not None and valor <= umbral) else 'rojo'
+
+
+def _indicadores_asg_valores(c):
+    """Valor actual de cada KPI. Solo tablas/columnas verificadas (en PG un query
+    a columna inexistente aborta la transacción · NO usar try/except por query)."""
+    hoy = c.execute("SELECT date('now','-5 hours')").fetchone()[0]
+
+    def cont(sql, p=()):
+        r = c.execute(sql, p).fetchone()
+        return (r[0] or 0) if r else 0
+
+    def ratio(num, den):
+        return round(num / den * 100, 1) if den else None
+
+    def _dias_pct(rows, limite):
+        tot = ok = 0
+        for r in rows:
+            try:
+                d0 = datetime.fromisoformat(str(r[0])[:10])
+                d1 = datetime.fromisoformat(str(r[1])[:10])
+                tot += 1
+                if (d1 - d0).days <= limite:
+                    ok += 1
+            except Exception:
+                pass
+        return ratio(ok, tot)
+
+    v = {}
+    v['desv_abiertas'] = cont("SELECT COUNT(*) FROM desviaciones WHERE estado NOT IN ('cerrada','rechazada')")
+    v['desv_a_tiempo'] = _dias_pct(c.execute(
+        "SELECT fecha_deteccion, fecha_cierre FROM desviaciones WHERE estado='cerrada' "
+        "AND COALESCE(fecha_cierre,'')<>'' AND fecha_cierre >= date('now','-5 hours','-180 days')"
+    ).fetchall(), 30)
+    capa_cerr = cont("SELECT COUNT(*) FROM capa_acciones WHERE estado IN ('Cerrada','Verificada','Ejecutada') AND COALESCE(fecha_compromiso,'')<>'' AND COALESCE(fecha_ejecucion,'')<>''")
+    capa_ok = cont("SELECT COUNT(*) FROM capa_acciones WHERE estado IN ('Cerrada','Verificada','Ejecutada') AND COALESCE(fecha_compromiso,'')<>'' AND COALESCE(fecha_ejecucion,'')<>'' AND fecha_ejecucion <= fecha_compromiso")
+    v['capa_a_tiempo'] = ratio(capa_ok, capa_cerr)
+    inv_impl = cont("SELECT COUNT(*) FROM control_cambios WHERE requiere_invima=1 AND COALESCE(implementado_at,'')<>''")
+    inv_ok = cont("SELECT COUNT(*) FROM control_cambios WHERE requiere_invima=1 AND COALESCE(implementado_at,'')<>'' AND COALESCE(notificacion_invima_at,'')<>'' AND notificacion_invima_at <= implementado_at")
+    v['cambios_invima_ok'] = ratio(inv_ok, inv_impl)
+    v['quejas_sla'] = _dias_pct(c.execute(
+        "SELECT fecha_recepcion, respondido_at FROM quejas_clientes WHERE COALESCE(respondido_at,'')<>'' "
+        "AND respondido_at >= date('now','-5 hours','-180 days')"
+    ).fetchall(), 15)
+    v['recalls_abiertos'] = cont("SELECT COUNT(*) FROM recalls WHERE estado NOT IN ('cerrado','cancelado')")
+    sgd_base = cont("SELECT COUNT(*) FROM sgd_documentos WHERE estado='vigente'")
+    sgd_venc = cont("SELECT COUNT(*) FROM sgd_documentos WHERE estado='vigente' AND COALESCE(proxima_revision,'')<>'' AND proxima_revision < ?", (hoy,))
+    v['sgd_vigente_pct'] = ratio(sgd_base - sgd_venc, sgd_base)
+    cap_tot = cont("SELECT COUNT(*) FROM sgd_capacitaciones")
+    cap_ok = cont("SELECT COUNT(*) FROM sgd_capacitaciones WHERE estado IN ('firmada','aprobada')")
+    v['capacitacion_cumplimiento'] = ratio(cap_ok, cap_tot)
+    objetivo = cont("SELECT COALESCE(SUM(ejecuciones_year_objetivo),0) FROM cronogramas_bpm WHERE activo=1")
+    ejec = cont("SELECT COUNT(*) FROM cronograma_ejecuciones WHERE estado='ejecutado' AND COALESCE(fecha_real,'') >= ?", (hoy[0:4] + '-01-01',))
+    v['cronogramas_cumplimiento'] = ratio(ejec, objetivo)
+    crit_tot = cont("SELECT COUNT(*) FROM proveedores_calificacion WHERE criticidad='critico'")
+    crit_ok = cont("SELECT COUNT(*) FROM proveedores_calificacion WHERE criticidad='critico' AND estado='aprobado'")
+    v['proveedores_criticos_ok'] = ratio(crit_ok, crit_tot)
+    aprob = cont("SELECT COUNT(*) FROM audit_log WHERE accion IN ('APROBAR_LOTE','CC_REVIEW_APROBADO') AND fecha >= date('now','-5 hours','-30 days')")
+    rech = cont("SELECT COUNT(*) FROM audit_log WHERE accion IN ('RECHAZAR_LOTE','CC_REVIEW_RECHAZADO') AND fecha >= date('now','-5 hours','-30 days')")
+    v['rft_mp'] = ratio(aprob, aprob + rech)
+    lib = cont("SELECT COUNT(*) FROM liberaciones WHERE estado='Liberado' AND fecha_liberacion >= date('now','-5 hours','-90 days')")
+    lib_r = cont("SELECT COUNT(*) FROM liberaciones WHERE estado='Rechazado' AND fecha_liberacion >= date('now','-5 hours','-90 days')")
+    v['liberacion_pt'] = ratio(lib, lib + lib_r)
+    v['oos_abiertos'] = cont("SELECT COUNT(*) FROM calidad_oos WHERE LOWER(COALESCE(estado,'')) NOT IN ('cerrado','rechazado','descartado')")
+    return hoy, v
+
+
+@bp.route('/api/aseguramiento/indicadores', methods=['GET'])
+def aseguramiento_indicadores():
+    """Cuadro de mando GMP: KPIs propios + de Planta + de Calidad, con meta y semáforo."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    hoy, valores = _indicadores_asg_valores(c)
+    metas = c.execute(
+        "SELECT codigo,nombre,descripcion,unidad,direccion,meta,umbral_amarillo,categoria,orden "
+        "FROM aseguramiento_kpi_metas WHERE activo=1 ORDER BY orden, nombre"
+    ).fetchall()
+    indicadores = []
+    for m in metas:
+        val = valores.get(m[0])
+        indicadores.append({
+            'codigo': m[0], 'nombre': m[1], 'descripcion': m[2], 'unidad': m[3],
+            'direccion': m[4], 'meta': m[5], 'umbral_amarillo': m[6],
+            'categoria': m[7], 'orden': m[8], 'valor': val,
+            'semaforo': _semaforo_asg(val, m[5], m[6], m[4]),
+        })
+    resumen = {sem: sum(1 for i in indicadores if i['semaforo'] == sem) for sem in ('verde', 'amarillo', 'rojo', 'gris')}
+    return jsonify({'indicadores': indicadores, 'resumen': resumen, 'hoy': hoy})
+
+
+@bp.route('/api/aseguramiento/indicadores/metas/<codigo>', methods=['PATCH'])
+def aseguramiento_indicador_meta(codigo):
+    """Edita meta/umbral de un KPI (solo Aseguramiento/Calidad/Admin)."""
+    user = session.get('compras_user', '')
+    if user not in _autorizados_escritura():
+        return jsonify({'error': 'Solo Aseguramiento/Calidad o Admin'}), 403
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT meta, umbral_amarillo FROM aseguramiento_kpi_metas WHERE codigo=?", (codigo,)).fetchone()
+    if not row:
+        return jsonify({'error': 'KPI no encontrado'}), 404
+    d = request.get_json(silent=True) or {}
+    campos, vals = [], []
+    if 'meta' in d:
+        try:
+            campos.append('meta=?'); vals.append(float(d['meta']))
+        except (TypeError, ValueError):
+            return jsonify({'error': 'meta inválida'}), 400
+    if 'umbral_amarillo' in d:
+        try:
+            campos.append('umbral_amarillo=?'); vals.append(float(d['umbral_amarillo']))
+        except (TypeError, ValueError):
+            return jsonify({'error': 'umbral inválido'}), 400
+    if not campos:
+        return jsonify({'error': 'nada que actualizar'}), 400
+    _audit_log(c, usuario=user, accion='EDITAR_KPI_META_ASG', tabla='aseguramiento_kpi_metas',
+               registro_id=codigo, antes={'meta': row[0], 'umbral': row[1]}, despues=d)
+    vals.append(codigo)
+    c.execute("UPDATE aseguramiento_kpi_metas SET " + ', '.join(campos) + " WHERE codigo=?", vals)
+    conn.commit()
+    return jsonify({'ok': True})

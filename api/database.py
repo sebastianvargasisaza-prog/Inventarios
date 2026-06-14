@@ -328,6 +328,42 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (253, "Aseguramiento · cuadro de indicadores cross-módulo (14-jun): tabla "
+          "aseguramiento_kpi_metas (meta+umbral+dirección+semáforo) con seed de los KPIs "
+          "que el sistema de calidad debe cumplir — propios de Aseguramiento + de Planta + "
+          "de Calidad. Idéntico patrón a calidad_kpi_metas (mig 244). Idempotente.", [
+        """CREATE TABLE IF NOT EXISTS aseguramiento_kpi_metas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT NOT NULL UNIQUE,
+            nombre TEXT NOT NULL,
+            descripcion TEXT,
+            unidad TEXT DEFAULT '%',
+            direccion TEXT NOT NULL DEFAULT 'mayor_mejor'
+                CHECK(direccion IN ('mayor_mejor','menor_mejor')),
+            meta REAL,
+            umbral_amarillo REAL,
+            categoria TEXT DEFAULT 'aseguramiento',
+            orden INTEGER DEFAULT 100,
+            activo INTEGER NOT NULL DEFAULT 1,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_asg_kpi_orden ON aseguramiento_kpi_metas(orden, activo)",
+        # Seed · meta/umbral razonables · dirección define el semáforo
+        "INSERT OR IGNORE INTO aseguramiento_kpi_metas (codigo,nombre,descripcion,unidad,direccion,meta,umbral_amarillo,categoria,orden) VALUES "
+        "('desv_a_tiempo','Desviaciones cerradas a tiempo','% de desviaciones cerradas dentro del SLA (30 días desde su apertura).','%','mayor_mejor',90,75,'aseguramiento',10),"
+        "('desv_abiertas','Desviaciones abiertas','Número de desviaciones sin cerrar (incluye críticas).','#','menor_mejor',3,6,'aseguramiento',20),"
+        "('capa_a_tiempo','CAPA cerradas a tiempo','% de acciones CAPA ejecutadas dentro de la fecha comprometida.','%','mayor_mejor',90,75,'aseguramiento',30),"
+        "('cambios_invima_ok','Cambios INVIMA notificados a tiempo','% de cambios que requieren INVIMA notificados ANTES de implementar.','%','mayor_mejor',100,90,'aseguramiento',40),"
+        "('quejas_sla','Quejas/PQR respondidas en SLA','% de quejas de cliente respondidas dentro de 15 días.','%','mayor_mejor',90,70,'aseguramiento',50),"
+        "('recalls_abiertos','Recalls abiertos','Número de retiros de producto en curso.','#','menor_mejor',0,1,'aseguramiento',60),"
+        "('sgd_vigente_pct','Documentos SGD vigentes','% de documentos del SGD vigentes (no vencidos).','%','mayor_mejor',95,85,'documental',70),"
+        "('capacitacion_cumplimiento','Capacitación al día','% de capacitaciones SGD asignadas que ya fueron firmadas/leídas.','%','mayor_mejor',90,70,'documental',80),"
+        "('cronogramas_cumplimiento','Cumplimiento cronogramas BPM','% promedio de ejecución de los cronogramas BPM del año (capacitación, mantenimiento, fumigación, micro, duchas).','%','mayor_mejor',90,70,'documental',90),"
+        "('proveedores_criticos_ok','Proveedores críticos aprobados','% de proveedores críticos con calificación aprobada.','%','mayor_mejor',95,80,'aseguramiento',100),"
+        "('rft_mp','RFT materia prima','Right First Time: % de lotes de MP aprobados sin rechazo (Control de Calidad).','%','mayor_mejor',95,90,'planta',110),"
+        "('liberacion_pt','Liberación de PT','% de producto terminado liberado vs rechazado (Calidad).','%','mayor_mejor',95,90,'planta',120),"
+        "('oos_abiertos','OOS abiertos','Resultados fuera de especificación sin cerrar (Calidad).','#','menor_mejor',0,2,'planta',130)",
+    ]),
     (252, "Aseguramiento · 5 elementos de gobierno GMP (14-jun): (a) revision_direccion "
           "(Revisión por la Dirección / APR anual · INVIMA Res.2214 art.8), (b) "
           "proveedores_calificacion (aprobación + reevaluación + protocolo de visita · reusa "

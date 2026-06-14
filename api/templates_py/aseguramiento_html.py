@@ -100,6 +100,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 
 <div class="tabs">
   <div class="tab active" data-tip="Estado general del sistema de calidad de un vistazo: documentos del SGD (vigentes/por vencer/vencidos), conflictos, capacitaciones pendientes y los contadores de desviaciones, cambios, quejas y recalls." data-tip-pos="bottom" onclick="goTab('tab-dash')">&#x1F4CA; Dashboard</div>
+  <div class="tab" data-tip="Cuadro de mando GMP: los indicadores que el sistema de calidad debe cumplir (desviaciones a tiempo, CAPA, cambios INVIMA, quejas, cronogramas, SGD) + KPIs de Planta (RFT) y Calidad (liberación, OOS), cada uno con meta editable y semáforo. Alimenta la Revisión por la Dirección." data-tip-pos="bottom" onclick="goTab('tab-indic')">&#x1F4C8; Indicadores</div>
   <div class="tab" data-tip="Tu vista personal: lo que TÚ tienes pendiente — capacitaciones por firmar, ítems que reportaste y siguen abiertos, y (si eres Calidad) la cola que espera tu acción." data-tip-pos="bottom" onclick="goTab('tab-mis-tareas')">&#x1F464; Mis tareas</div>
   <div class="tab" data-tip="Biblioteca maestra de TODOS los procedimientos (SOPs, COC-PRO, ASG-PRO): código, versión, estado vigente/obsoleto, próxima revisión y enlace al PDF (Drive). El control documental GMP." data-tip-pos="bottom" onclick="goTab('tab-sgd')">&#x1F4DA; SGD electrónico</div>
   <div class="tab" data-tip="Asignar y controlar el entrenamiento del personal en cada SOP: quién leyó qué, con firma electrónica. Evidencia GMP de que el personal está capacitado." data-tip-pos="bottom" onclick="goTab('tab-cap')">&#x1F393; Capacitaciones</div>
@@ -166,6 +167,28 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   <div class="card" style="margin-top:14px">
     <div class="card-title">Resumen del SGD por área</div>
     <div id="dash-areas"><p class="empty">Cargando...</p></div>
+  </div>
+</div>
+
+<!-- INDICADORES · cuadro de mando GMP cross-módulo -->
+<div id="tab-indic" class="pane">
+  <div class="card" style="background:linear-gradient(135deg,#f5f3ff,#ede9fe);border:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+      <div>
+        <div style="font-size:0.78em;color:#6b7280;text-transform:uppercase;letter-spacing:.6px">Cuadro de mando del Sistema de Calidad</div>
+        <div style="font-size:1.3em;font-weight:700;color:#6d28d9">Indicadores GMP &middot; <span id="ind-asg-hoy">&mdash;</span></div>
+        <div style="font-size:0.78em;color:#6b7280;margin-top:2px">Meta vs real &middot; sem&aacute;foro verde/amarillo/rojo. Doble-clic una tarjeta para editar su meta. Alimenta la Revisi&oacute;n por la Direcci&oacute;n.</div>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+        <div style="text-align:center"><div style="font-size:0.7em;color:#6b7280">EN META</div><div id="ind-asg-verde" style="font-size:1.5em;font-weight:800;color:#16a34a">&mdash;</div></div>
+        <div style="text-align:center"><div style="font-size:0.7em;color:#6b7280">EN AVISO</div><div id="ind-asg-amari" style="font-size:1.5em;font-weight:800;color:#d97706">&mdash;</div></div>
+        <div style="text-align:center"><div style="font-size:0.7em;color:#6b7280">FUERA</div><div id="ind-asg-rojo" style="font-size:1.5em;font-weight:800;color:#dc2626">&mdash;</div></div>
+        <button class="btn btn-ghost btn-sm" onclick="loadIndicadoresASG()">&#x21BB; Refrescar</button>
+      </div>
+    </div>
+  </div>
+  <div id="ind-asg-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:14px">
+    <p class="empty">Cargando...</p>
   </div>
 </div>
 
@@ -259,6 +282,19 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 
 <!-- CAPACITACIONES (asignación / supervisión) -->
 <div id="tab-cap" class="pane">
+  <!-- Cronogramas BPM (capacitación, mantenimiento, fumigación, micro, duchas) -->
+  <div class="card" style="background:linear-gradient(135deg,#f5f3ff,#ede9fe);border:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <div>
+        <div style="font-size:0.78em;color:#6b7280;text-transform:uppercase;letter-spacing:.6px">Cronogramas BPM &middot; cumplimiento <span id="cron-bpm-year"></span></div>
+        <div style="font-size:1.15em;font-weight:700;color:#6d28d9">📅 Capacitaci&oacute;n, mantenimiento y dem&aacute;s cronogramas del a&ntilde;o</div>
+        <div style="font-size:0.78em;color:#6b7280;margin-top:2px">El cronograma de capacitaciones y el de mantenimientos viven aqu&iacute; con su % de cumplimiento y alertas de vencidas/pr&oacute;ximas.</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="loadCronogramasBPM()">&#x21BB; Refrescar</button>
+    </div>
+  </div>
+  <div id="cron-bpm-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-bottom:14px"><p class="empty">Cargando cronogramas...</p></div>
+
   <div class="card">
     <div class="card-title">Asignar lectura/firma de un SOP</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
@@ -376,6 +412,16 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
     <div class="modal-title" id="m-desv-det-title">Detalle</div>
     <input type="hidden" id="m-desv-det-id">
     <div id="m-desv-det-body"><p class="empty">Cargando...</p></div>
+  </div>
+</div>
+
+<!-- Modal ejecuciones de cronograma BPM -->
+<div class="modal-overlay" id="m-cron" role="dialog" aria-modal="true" aria-label="Ejecuciones de cronograma">
+  <div class="modal" style="max-width:680px">
+    <button class="modal-close" onclick="closeModal('m-cron')">&times;</button>
+    <div class="modal-title" id="m-cron-title">Ejecuciones</div>
+    <input type="hidden" id="m-cron-id">
+    <div id="m-cron-body"><p class="empty">Cargando...</p></div>
   </div>
 </div>
 
@@ -1148,12 +1194,14 @@ async function withBusy(btn, fn){
   finally { btn.disabled = false; if(btn.textContent !== prev) btn.textContent = prev; }
 }
 
-var _tabIds = ['tab-dash','tab-mis-tareas','tab-sgd','tab-cap','tab-mis-cap','tab-desv','tab-cambios','tab-quejas','tab-recalls','tab-gob','tab-reportes','tab-conf'];
+var _tabIds = ['tab-dash','tab-indic','tab-mis-tareas','tab-sgd','tab-cap','tab-mis-cap','tab-desv','tab-cambios','tab-quejas','tab-recalls','tab-gob','tab-reportes','tab-conf'];
 function goTab(id){
   document.querySelectorAll('.tab').forEach((t,i)=>{t.classList.toggle('active',_tabIds[i]===id);});
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   if(id==='tab-dash') loadDashboard();
+  else if(id==='tab-indic') loadIndicadoresASG();
+  else if(id==='tab-cap') loadCronogramasBPM();
   else if(id==='tab-mis-tareas') loadMisTareas();
   else if(id==='tab-sgd') loadSGD();
   else if(id==='tab-mis-cap') loadMisCapacitaciones();
@@ -3226,6 +3274,139 @@ async function gobNuevoAcuerdo(){
       {tercero:tercero, tipo:tipo, version:version, fecha_efectiva:efectiva, fecha_renovacion:renov, alcance:alcance}));
     var d=await r.json();
     if(r.ok && d.ok){ toast('Acuerdo registrado','success'); gobLoadAcuerdos(); }
+    else toast('Error: '+(d.error||'?'),'error');
+  }catch(e){ toast('Error red: '+e.message,'error'); }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// INDICADORES GMP · cuadro de mando cross-módulo (meta + semáforo)
+// ════════════════════════════════════════════════════════════════════
+var _SEM_COLOR = {verde:'#16a34a', amarillo:'#d97706', rojo:'#dc2626', gris:'#94a3b8'};
+var _SEM_BG = {verde:'#f0fdf4', amarillo:'#fffbeb', rojo:'#fef2f2', gris:'#f8fafc'};
+var _CAT_LABEL = {aseguramiento:'Aseguramiento', documental:'Documental / SGD', planta:'Planta / Calidad'};
+async function loadIndicadoresASG(){
+  var grid = document.getElementById('ind-asg-grid');
+  try{
+    var r = await fetch('/api/aseguramiento/indicadores', {credentials:'same-origin'});
+    var d = await r.json();
+    if(!r.ok) throw new Error(d.error||'error');
+    document.getElementById('ind-asg-hoy').textContent = d.hoy||'';
+    var s = d.resumen||{};
+    document.getElementById('ind-asg-verde').textContent = s.verde||0;
+    document.getElementById('ind-asg-amari').textContent = s.amarillo||0;
+    document.getElementById('ind-asg-rojo').textContent = s.rojo||0;
+    var inds = d.indicadores||[];
+    if(!inds.length){ grid.innerHTML='<p class="empty">Sin indicadores configurados.</p>'; return; }
+    // Agrupar por categoría
+    var cats = {};
+    inds.forEach(function(i){ (cats[i.categoria]=cats[i.categoria]||[]).push(i); });
+    var html='';
+    Object.keys(cats).forEach(function(cat){
+      html += '<div style="grid-column:1/-1;font-size:0.8em;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-top:4px">'+_esc(_CAT_LABEL[cat]||cat)+'</div>';
+      cats[cat].forEach(function(i){
+        var col=_SEM_COLOR[i.semaforo]||'#94a3b8';
+        var bg=_SEM_BG[i.semaforo]||'#f8fafc';
+        var valTxt = (i.valor===null||i.valor===undefined) ? '—' : (i.valor + (i.unidad==='%'?'%':(i.unidad==='#'?'':' '+(i.unidad||''))));
+        var metaTxt = (i.meta===null||i.meta===undefined) ? '' : ((i.direccion==='mayor_mejor'?'≥':'≤')+' '+i.meta+(i.unidad==='%'?'%':''));
+        html += '<div class="card" style="background:'+bg+';border-left:4px solid '+col+';cursor:pointer;margin:0" title="Doble-clic para editar la meta" ondblclick="editarMetaASG('+JSON.stringify(i.codigo).replace(/"/g,'&quot;')+','+(i.meta||0)+','+(i.umbral_amarillo||0)+')">'
+          +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">'
+          +'<div style="font-size:0.84em;font-weight:700;color:#0f172a">'+_esc(i.nombre)+'</div>'
+          +'<span style="width:10px;height:10px;border-radius:50%;background:'+col+';flex-shrink:0;margin-top:4px"></span>'
+          +'</div>'
+          +'<div style="font-size:1.7em;font-weight:800;color:'+col+';margin:4px 0">'+valTxt+'</div>'
+          +'<div style="font-size:0.72em;color:#64748b">Meta: '+(metaTxt||'—')+'</div>'
+          +'<div style="font-size:0.72em;color:#94a3b8;margin-top:4px">'+_esc(i.descripcion||'')+'</div>'
+          +'</div>';
+      });
+    });
+    grid.innerHTML = html;
+  }catch(e){ grid.innerHTML='<p class="empty">Error: '+_esc(e.message)+'</p>'; }
+}
+async function editarMetaASG(codigo, metaActual, umbralActual){
+  var meta = prompt('Nueva meta para "'+codigo+'":', metaActual);
+  if(meta===null) return;
+  var umbral = prompt('Umbral amarillo (límite de aviso):', umbralActual);
+  if(umbral===null) return;
+  try{
+    var r = await fetch('/api/aseguramiento/indicadores/metas/'+encodeURIComponent(codigo), _fetchOpts('PATCH', {meta:parseFloat(meta), umbral_amarillo:parseFloat(umbral)}));
+    var d = await r.json();
+    if(r.ok && d.ok){ toast('Meta actualizada','success'); loadIndicadoresASG(); }
+    else toast('Error: '+(d.error||'?'),'error');
+  }catch(e){ toast('Error red: '+e.message,'error'); }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// CRONOGRAMAS BPM · reusa /api/compliance (capacitación, mantenimiento...)
+// ════════════════════════════════════════════════════════════════════
+async function loadCronogramasBPM(){
+  var grid = document.getElementById('cron-bpm-grid');
+  if(!grid) return;
+  try{
+    var r = await fetch('/api/compliance/cronogramas', {credentials:'same-origin'});
+    var d = await r.json();
+    if(!r.ok) throw new Error(d.error||'error');
+    var yEl=document.getElementById('cron-bpm-year'); if(yEl) yEl.textContent = d.year||'';
+    var rows = d.cronogramas||[];
+    if(!rows.length){ grid.innerHTML='<p class="empty">Sin cronogramas BPM.</p>'; return; }
+    grid.innerHTML = rows.map(function(c){
+      var pct = c.pct_cumplimiento||0;
+      var col = pct>=90?'#16a34a':(pct>=70?'#d97706':'#dc2626');
+      var venc = c.vencidas||0;
+      return '<div class="card" style="margin:0;border-left:4px solid '+col+'">'
+        +'<div style="font-size:0.9em;font-weight:700;color:#0f172a">'+_esc(c.nombre)+'</div>'
+        +'<div style="font-size:0.72em;color:#94a3b8"><code>'+_esc(c.codigo)+'</code> · '+_esc(c.frecuencia||'')+' · '+_esc(c.responsable||'')+'</div>'
+        +'<div style="display:flex;align-items:baseline;gap:6px;margin:6px 0"><span style="font-size:1.6em;font-weight:800;color:'+col+'">'+pct+'%</span>'
+        +'<span style="font-size:0.72em;color:#64748b">'+(c.ejecutadas||0)+'/'+(c.objetivo||0)+' del año</span></div>'
+        +'<div style="font-size:0.74em;color:#64748b">'
+        +(venc>0?'<span style="color:#dc2626;font-weight:700">⚠ '+venc+' vencida(s)</span> · ':'')
+        +(c.proximas||0)+' próxima(s)</div>'
+        +'<div style="margin-top:8px;display:flex;gap:6px"><button class="btn btn-ghost btn-sm" onclick="verEjecucionesBPM('+c.id+',\''+_esc(c.nombre).replace(/\x27/g,"")+'\')">Ejecuciones</button></div>'
+        +'</div>';
+    }).join('');
+  }catch(e){ grid.innerHTML='<p class="empty">Error: '+_esc(e.message)+'</p>'; }
+}
+async function verEjecucionesBPM(cronId, nombre){
+  var body = document.getElementById('m-cron-body');
+  document.getElementById('m-cron-title').textContent = 'Ejecuciones · ' + nombre;
+  document.getElementById('m-cron-id').value = cronId;
+  body.innerHTML = '<p class="empty">Cargando...</p>';
+  openModal('m-cron');
+  try{
+    var r = await fetch('/api/compliance/cronogramas/'+cronId+'/ejecuciones', {credentials:'same-origin'});
+    var d = await r.json();
+    var ejs = d.ejecuciones||[];
+    var html = '<div style="margin-bottom:10px;display:flex;gap:6px;align-items:center">'
+      +'<input type="date" id="cron-nueva-fecha" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:4px">'
+      +'<button class="btn btn-primary btn-sm" onclick="agendarBPM('+cronId+')">+ Agendar</button></div>';
+    if(!ejs.length){ html += '<p class="empty">Sin ejecuciones agendadas.</p>'; }
+    else{
+      html += '<table class="tbl"><thead><tr><th>Planeada</th><th>Estado</th><th>Real</th><th>Por</th><th></th></tr></thead><tbody>';
+      ejs.forEach(function(e){
+        var estCol = e.estado==='ejecutado'?'#16a34a':(e.estado==='vencido'?'#dc2626':'#d97706');
+        var btn = (e.estado!=='ejecutado') ? '<button class="btn btn-ghost btn-sm" onclick="cumplirBPM('+e.id+')">✔ Cumplir</button>' : (e.evidencia_url?'<a href="'+_esc(e.evidencia_url)+'" target="_blank" class="btn btn-ghost btn-sm">📎</a>':'');
+        html += '<tr><td>'+_esc(e.fecha_planeada||'—')+'</td><td><span style="color:'+estCol+';font-weight:700">'+_esc(e.estado)+'</span></td><td>'+_esc(e.fecha_real||'—')+'</td><td>'+_esc(e.ejecutado_por||'—')+'</td><td>'+btn+'</td></tr>';
+      });
+      html += '</tbody></table>';
+    }
+    body.innerHTML = html;
+  }catch(e){ body.innerHTML='<p class="empty">Error: '+_esc(e.message)+'</p>'; }
+}
+async function agendarBPM(cronId){
+  var f = document.getElementById('cron-nueva-fecha').value;
+  if(!f){ toast('Elige una fecha','warn'); return; }
+  try{
+    var r = await fetch('/api/compliance/cronogramas/'+cronId+'/ejecuciones', _fetchOpts('POST', {fecha_planeada:f}));
+    var d = await r.json();
+    if(r.ok && d.ok){ toast('Ejecución agendada','success'); verEjecucionesBPM(cronId, document.getElementById('m-cron-title').textContent.replace('Ejecuciones · ','')); loadCronogramasBPM(); }
+    else toast('Error: '+(d.error||'?'),'error');
+  }catch(e){ toast('Error red: '+e.message,'error'); }
+}
+async function cumplirBPM(ejId){
+  var evidencia = prompt('Link de evidencia (Drive/foto, opcional):')||'';
+  try{
+    var r = await fetch('/api/compliance/ejecuciones/'+ejId+'/cumplir', _fetchOpts('POST', {evidencia_url:evidencia}));
+    var d = await r.json();
+    if(r.ok && d.ok){ toast('Marcado como cumplido','success'); var cid=document.getElementById('m-cron-id').value; verEjecucionesBPM(cid, document.getElementById('m-cron-title').textContent.replace('Ejecuciones · ','')); loadCronogramasBPM(); }
     else toast('Error: '+(d.error||'?'),'error');
   }catch(e){ toast('Error red: '+e.message,'error'); }
 }

@@ -132,3 +132,45 @@ def test_tipo_invalido_rechazado(app, db_clean):
     r = c.post('/api/aseguramiento/validacion-equipos', json={
         'equipo_codigo': 'EQ-X', 'tipo': 'BASURA'}, headers=csrf_headers())
     assert r.status_code == 400, r.data[:300]
+
+
+# ── Indicadores cross-módulo ─────────────────────────────────────────────
+def test_indicadores_asg_lista_y_semaforo(app, db_clean):
+    c = _login(app, 'miguel')
+    r = c.get('/api/aseguramiento/indicadores')
+    assert r.status_code == 200, r.data[:300]
+    d = r.get_json()
+    assert len(d['indicadores']) >= 12
+    assert 'resumen' in d and set(d['resumen']) == {'verde', 'amarillo', 'rojo', 'gris'}
+    cods = {i['codigo'] for i in d['indicadores']}
+    # KPIs propios + de Planta + de Calidad presentes
+    assert {'desv_a_tiempo', 'cronogramas_cumplimiento', 'rft_mp', 'oos_abiertos'} <= cods
+    for i in d['indicadores']:
+        assert i['semaforo'] in ('verde', 'amarillo', 'rojo', 'gris')
+
+
+def test_indicador_meta_editable_y_gated(app, db_clean):
+    c = _login(app, 'miguel')
+    r = c.patch('/api/aseguramiento/indicadores/metas/desv_abiertas',
+                json={'meta': 2, 'umbral_amarillo': 5}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    # usuario sin rol no puede editar metas
+    c2 = _login(app, 'valentina')
+    r2 = c2.patch('/api/aseguramiento/indicadores/metas/desv_abiertas',
+                  json={'meta': 1}, headers=csrf_headers())
+    assert r2.status_code == 403, r2.data[:300]
+
+
+# ── Cronogramas BPM · Miguel ahora es responsable BPM ────────────────────
+def test_miguel_responsable_bpm_agenda_y_cumple(app, db_clean):
+    c = _login(app, 'miguel')
+    lst = c.get('/api/compliance/cronogramas').get_json()['cronogramas']
+    assert lst, 'deben existir los cronogramas BPM sembrados'
+    cid = lst[0]['id']
+    a = c.post('/api/compliance/cronogramas/%d/ejecuciones' % cid,
+               json={'fecha_planeada': '2026-06-20'}, headers=csrf_headers())
+    assert a.status_code == 201, a.data[:300]
+    ej_id = a.get_json()['id']
+    cu = c.post('/api/compliance/ejecuciones/%d/cumplir' % ej_id,
+                json={'evidencia_url': 'http://drive/evidencia'}, headers=csrf_headers())
+    assert cu.status_code == 200 and cu.get_json()['ok'], cu.data[:300]

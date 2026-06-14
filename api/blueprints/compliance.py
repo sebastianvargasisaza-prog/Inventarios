@@ -24,7 +24,14 @@ RESPONSABLES_BPM = {'sebastian','alejandro','aseguramiento.espagiria',
 
 def _is_responsable(user):
     u = (user or '').lower()
-    return u in RESPONSABLES_BPM or u in {x.lower() for x in ADMIN_USERS}
+    if u in RESPONSABLES_BPM or u in {x.lower() for x in ADMIN_USERS}:
+        return True
+    # 14-jun: Aseguramiento (Miguel) gestiona los cronogramas BPM desde su módulo.
+    try:
+        from config import ASEGURAMIENTO_USERS
+        return u in {x.lower() for x in ASEGURAMIENTO_USERS}
+    except Exception:
+        return False
 
 
 # ─── Pagina /compliance ───────────────────────────────────────────────────
