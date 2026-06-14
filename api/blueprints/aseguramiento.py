@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from flask import Blueprint, jsonify, request, session, Response
 
 from database import get_db
@@ -38,6 +38,12 @@ from templates_py.aseguramiento_html import ASEGURAMIENTO_HTML
 
 bp = Blueprint('aseguramiento', __name__)
 log = logging.getLogger('aseguramiento')
+
+
+def _hoy_co():
+    """Fecha de HOY en Colombia (M24). En Render el server es UTC; de noche en Colombia
+    datetime.now() ya es 'mañana' UTC y desfasaba los KPIs (cerradas_30d, vencidos)."""
+    return (datetime.now(timezone.utc) - timedelta(hours=5)).date()
 
 
 # Áreas oficiales SGD según ASG-NOR-001
@@ -136,7 +142,7 @@ def aseguramiento_dashboard():
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
-    out = {'fecha_hoy': datetime.now().date().isoformat()}
+    out = {'fecha_hoy': _hoy_co().isoformat()}
 
     # SGD: docs vigentes / próximos a vencer / obsoletos / conflictos
     # SQLite no soporta COUNT(*) FILTER · usar COUNT(CASE WHEN ...)
@@ -1060,7 +1066,7 @@ def desviaciones_endpoint():
           COUNT(CASE WHEN estado='en_investigacion' THEN 1 END) as investigando,
           COUNT(CASE WHEN estado='cerrada' AND fecha_cierre >= ? THEN 1 END) as cerradas_30d
         FROM desviaciones {kpi_where}
-    """, params + [(datetime.now().date() - timedelta(days=30)).isoformat()]).fetchone()
+    """, params + [(_hoy_co() - timedelta(days=30)).isoformat()]).fetchone()
     kpis = {
         'total': kpi_row[0] or 0, 'criticas_abiertas': kpi_row[1] or 0,
         'sin_clasificar': kpi_row[2] or 0, 'investigando': kpi_row[3] or 0,
@@ -1139,8 +1145,10 @@ def desviacion_clasificar(desv_id):
         SET clasificacion=?, justificacion_clasificacion=?,
             clasificado_por=?, clasificado_at=datetime('now', '-5 hours'),
             estado='clasificada', actualizado_en=datetime('now', '-5 hours')
-        WHERE id=?
+        WHERE id=? AND estado IN ('detectada','clasificada')
     """, (clasif, just, user, desv_id))
+    if c.rowcount != 1:  # CAS (M27): otro worker cambió el estado en paralelo
+        return jsonify({'error': 'El estado cambió en paralelo · recargá', 'codigo': 'RACE_ESTADO'}), 409
     c.execute("""
         INSERT INTO desviaciones_eventos
           (desviacion_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
@@ -1181,8 +1189,10 @@ def desviacion_investigar(desv_id):
         SET metodo_investigacion=?, causa_raiz_descripcion=?,
             investigado_por=?, investigacion_at=datetime('now', '-5 hours'),
             estado='en_investigacion', actualizado_en=datetime('now', '-5 hours')
-        WHERE id=?
+        WHERE id=? AND estado IN ('clasificada','en_investigacion')
     """, (metodo, causa, user, desv_id))
+    if c.rowcount != 1:  # CAS (M27)
+        return jsonify({'error': 'El estado cambió en paralelo · recargá', 'codigo': 'RACE_ESTADO'}), 409
     c.execute("""
         INSERT INTO desviaciones_eventos
           (desviacion_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
@@ -1222,8 +1232,10 @@ def desviacion_capa(desv_id):
         UPDATE desviaciones
         SET capa_descripcion=?, capa_responsable=?, capa_fecha_limite=?,
             estado='capa_propuesto', actualizado_en=datetime('now', '-5 hours')
-        WHERE id=?
+        WHERE id=? AND estado IN ('en_investigacion','capa_propuesto')
     """, (capa, responsable, fecha_limite, desv_id))
+    if c.rowcount != 1:  # CAS (M27)
+        return jsonify({'error': 'El estado cambió en paralelo · recargá', 'codigo': 'RACE_ESTADO'}), 409
     c.execute("""
         INSERT INTO desviaciones_eventos
           (desviacion_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
@@ -1277,9 +1289,11 @@ def desviacion_cerrar(desv_id):
             verificacion_efectividad=?, verificado_at=datetime('now', '-5 hours'), verificado_por=?,
             efectividad_ok=?, observaciones_cierre=?,
             actualizado_en=datetime('now', '-5 hours')
-        WHERE id=?
+        WHERE id=? AND estado IN ('capa_propuesto','capa_implementado')
     """, (user, verificacion, user, 1 if efectividad_ok else 0,
           obs[:500] or None, desv_id))
+    if c.rowcount != 1:  # CAS (M27)
+        return jsonify({'error': 'El estado cambió en paralelo · recargá', 'codigo': 'RACE_ESTADO'}), 409
     c.execute("""
         INSERT INTO desviaciones_eventos
           (desviacion_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
@@ -1390,6 +1404,11 @@ def cambios_endpoint():
                   (cambio_id, evento_tipo, estado_nuevo, usuario, comentario)
                 VALUES (?, 'solicitado', 'solicitado', ?, ?)
             """, (cid, user, f'Solicitud de cambio: {titulo[:200]}'))
+            # M22 · audit Part 11: la solicitud de cambio es evento regulado.
+            _audit_log_global(c, usuario=user, accion='CREAR_CAMBIO', tabla='control_cambios',
+                              registro_id=codigo, despues={'titulo': titulo[:120], 'tipo': tipo,
+                              'impacto_bpm': bool(d.get('impacto_bpm')),
+                              'impacto_regulatorio': bool(d.get('impacto_regulatorio'))})
             conn.commit()
         except Exception as e:
             try: conn.rollback()
@@ -1441,7 +1460,7 @@ def cambios_endpoint():
           COUNT(CASE WHEN requiere_invima=1 AND estado NOT IN ('cerrado','rechazado') THEN 1 END) as requieren_invima,
           COUNT(CASE WHEN estado='cerrado' AND fecha_cierre >= ? THEN 1 END) as cerrados_30d
         FROM control_cambios {kpi_where}
-    """, params + [(datetime.now().date() - timedelta(days=30)).isoformat()]).fetchone()
+    """, params + [(_hoy_co() - timedelta(days=30)).isoformat()]).fetchone()
     kpis = {
         'total': kpi_row[0] or 0, 'sin_evaluar': kpi_row[1] or 0,
         'en_evaluacion': kpi_row[2] or 0, 'aprobados_pendientes': kpi_row[3] or 0,
@@ -1825,6 +1844,11 @@ def quejas_endpoint():
                   (queja_id, evento_tipo, estado_nuevo, usuario, comentario)
                 VALUES (?, 'recibida', 'nueva', ?, ?)
             """, (qid, user, f'Queja recibida vía {canal} de {cliente_nombre[:100]}'))
+            # M22 · audit Part 11: la creación de una queja es evento regulado.
+            _audit_log_global(c, usuario=user, accion='CREAR_QUEJA', tabla='quejas_clientes',
+                              registro_id=codigo, despues={'cliente': cliente_nombre[:100],
+                              'tipo': tipo_queja, 'impacto_salud': bool(d.get('impacto_salud')),
+                              'lote': (d.get('lote') or '')[:60]})
             conn.commit()
         except Exception as e:
             try: conn.rollback()
@@ -1875,7 +1899,7 @@ def quejas_endpoint():
                        AND estado NOT IN ('cerrada','rechazada') THEN 1 END) as criticas_abiertas,
           COUNT(CASE WHEN estado='cerrada' AND fecha_cierre >= ? THEN 1 END) as cerradas_30d
         FROM quejas_clientes {kpi_where}
-    """, params + [(datetime.now().date() - timedelta(days=30)).isoformat()]).fetchone()
+    """, params + [(_hoy_co() - timedelta(days=30)).isoformat()]).fetchone()
     kpis = {
         'total': kpi_row[0] or 0, 'nuevas': kpi_row[1] or 0,
         'en_investigacion': kpi_row[2] or 0, 'pendientes_cierre': kpi_row[3] or 0,
@@ -2539,7 +2563,7 @@ def recalls_endpoint():
           COUNT(CASE WHEN estado='en_recoleccion' THEN 1 END) as en_recoleccion,
           COUNT(CASE WHEN estado='cerrado' AND fecha_cierre >= ? THEN 1 END) as cerrados_30d
         FROM recalls {kpi_where}
-    """, params + [(datetime.now().date() - timedelta(days=30)).isoformat()]).fetchone()
+    """, params + [(_hoy_co() - timedelta(days=30)).isoformat()]).fetchone()
     kpis = {
         'total': kpi_row[0] or 0, 'sin_clasificar': kpi_row[1] or 0,
         'clase_I_abiertos': kpi_row[2] or 0, 'invima_pendiente': kpi_row[3] or 0,
@@ -2903,7 +2927,7 @@ def reporte_audit_trail():
     tabla = (request.args.get('tabla') or '').strip()
     usuario_filtro = (request.args.get('usuario') or '').strip()
     if not desde:
-        desde = (datetime.now() - timedelta(days=30)).date().isoformat()
+        desde = (_hoy_co() - timedelta(days=30)).isoformat()
     if not hasta:
         # +1 dia (12-jun): el audit_log canonico guarda fecha en UTC (datetime('now'))
         # y el server corre en hora Colombia (UTC-5). De noche la fecha UTC rueda al
@@ -2958,10 +2982,16 @@ def reporte_cliente_trazabilidad(cid):
     """, (cid,)).fetchone()
     if not cliente:
         return jsonify({'error': 'cliente no encontrado'}), 404
+    # Habeas Data (Ley 1581): email/teléfono/NIT son PII · solo admin los ve en claro;
+    # Calidad ve el nombre/empresa (suficiente para el recall) con el contacto enmascarado.
+    _es_admin = user in set(ADMIN_USERS)
+
+    def _pii(v):
+        return v if _es_admin else ('***' if v else None)
     cli_dict = {
         'id': cliente[0], 'codigo': cliente[1], 'nombre': cliente[2],
-        'empresa': cliente[3], 'email': cliente[4],
-        'telefono': cliente[5], 'nit': cliente[6],
+        'empresa': cliente[3], 'email': _pii(cliente[4]),
+        'telefono': _pii(cliente[5]), 'nit': _pii(cliente[6]),
     }
     # Despachos con lotes (recall-ready)
     despachos = [{
@@ -3014,7 +3044,7 @@ def reporte_audit_trail_csv():
     tabla = (request.args.get('tabla') or '').strip()
     usuario_filtro = (request.args.get('usuario') or '').strip()
     if not desde:
-        desde = (datetime.now() - timedelta(days=30)).date().isoformat()
+        desde = (_hoy_co() - timedelta(days=30)).isoformat()
     if not hasta:
         # +1 dia (12-jun): el audit_log canonico guarda fecha en UTC (datetime('now'))
         # y el server corre en hora Colombia (UTC-5). De noche la fecha UTC rueda al
