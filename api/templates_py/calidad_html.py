@@ -267,7 +267,10 @@ textarea{resize:vertical;min-height:70px;}
       <div class="card-title" style="margin:0">&#x1F9EB; Microbiolog&iacute;a</div>
       <div style="color:var(--cx-text-mute);font-size:12px;margin-top:2px">Resultados por lote, mapa de calor y gr&aacute;ficas de an&aacute;lisis &middot; doble l&iacute;mite industria/meta-lab &middot; auto-OOS.</div>
     </div>
-    <button class="btn btn-primary btn-sm" data-tip="Registrar un resultado microbiológico (con su lote de planta, COA y N° de informe)." onclick="abrirModalNuevoResultadoMicro()">+ Registrar resultado</button>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <label class="btn btn-ghost btn-sm" data-tip="Subí el correo .eml de Microlab: el sistema lee los PDF, carga los resultados y guarda el COA (sin duplicar)." style="cursor:pointer;margin:0">&#128229; Importar informe (.eml)<input type="file" accept=".eml,message/rfc822" style="display:none" onchange="importarEmlCoa(this)"></label>
+      <button class="btn btn-primary btn-sm" data-tip="Registrar un resultado microbiológico (con su lote de planta, COA y N° de informe)." onclick="abrirModalNuevoResultadoMicro()">+ Registrar resultado</button>
+    </div>
   </div>
   <div style="display:flex;gap:6px;margin-bottom:12px;border-bottom:1px solid #e7e5e4;padding-bottom:8px">
     <button id="msub-res" class="btn btn-primary btn-sm" onclick="microSub('res')">&#x1F4CB; Resultados &amp; Heatmap</button>
@@ -1557,6 +1560,25 @@ async function toggleMicroGate(on){
 }
 
 // === MICROBIOLOGÍA · sub-navegación (Resultados / Gráficas) =====================
+async function importarEmlCoa(input){
+  var f = input.files && input.files[0];
+  if(!f){ return; }
+  var fd = new FormData(); fd.append('archivo', f);
+  var lbl = input.parentNode;
+  var prev = lbl.firstChild ? lbl.firstChild.textContent : '';
+  try{
+    var headers = {}; var tok = _csrf(); if(tok) headers['X-CSRF-Token'] = tok;
+    var r = await fetch('/api/calidad/micro/importar-eml', {method:'POST', credentials:'same-origin', headers:headers, body:fd});
+    var d = await r.json();
+    if(!r.ok || d.error){ alert('Error: '+(d.error||r.status)); }
+    else {
+      alert('✅ Importado: '+d.informes+' informe(s) · '+d.nuevos+' resultados nuevos · '
+        +d.actualizados+' con COA actualizado'+(d.oos?(' · ⚠ '+d.oos+' fuera de spec'):''));
+      loadMicroHeatmap();
+    }
+  }catch(e){ alert('Error de red: '+(e.message||e)); }
+  input.value='';
+}
 function microSub(name){
   var res=document.getElementById('micro-sub-res'), anl=document.getElementById('micro-sub-anl');
   var bres=document.getElementById('msub-res'), banl=document.getElementById('msub-anl');

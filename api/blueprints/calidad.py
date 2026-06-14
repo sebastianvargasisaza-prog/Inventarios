@@ -2052,6 +2052,92 @@ def calidad_fisicoquimica_resultados():
     return jsonify({'resultados': [dict(zip(cols, r)) for r in rows]})
 
 
+def _coas_dir():
+    import os as _os
+    from config import DB_PATH
+    d = _os.path.join(_os.path.dirname(DB_PATH) or '.', 'coas')
+    _os.makedirs(d, exist_ok=True)
+    return d
+
+
+@bp.route('/api/calidad/micro/importar-eml', methods=['POST'])
+def calidad_importar_eml():
+    """Sube el correo .eml del laboratorio (Microlab) → parsea los PDF, hace upsert de los
+    resultados (micro + fisicoquímico, idempotente por N° de informe) y guarda cada COA.
+    Re-subir un correo NO duplica: actualiza el COA de los que ya estaban."""
+    err, code = _require_calidad()
+    if err:
+        return err, code
+    import os as _os
+    import re as _re
+    f = request.files.get('archivo')
+    if not f or not (f.filename or '').lower().endswith('.eml'):
+        return jsonify({'error': 'Subí el archivo del correo (.eml) del laboratorio.'}), 400
+    data = f.read()
+    if not data or len(data) > 30 * 1024 * 1024:
+        return jsonify({'error': 'Archivo vacío o demasiado grande (>30 MB).'}), 400
+    try:
+        from coa_import import parse_eml_bytes, upsert_sample
+    except ImportError:
+        from api.coa_import import parse_eml_bytes, upsert_sample
+    try:
+        parsed = parse_eml_bytes(data)
+    except ImportError:
+        return jsonify({'error': 'El servidor aún no tiene el lector de PDF (pdfplumber). '
+                                 'Reintentá luego del próximo deploy.'}), 503
+    except Exception as e:
+        return jsonify({'error': f'No se pudo leer el correo: {e}'}), 400
+    samples = parsed.get('samples') or []
+    if not samples:
+        return jsonify({'error': 'El correo no tiene informes de laboratorio reconocibles '
+                                 '(¿es un informe de Microlab con PDF adjunto?).'}), 422
+    coas_dir = _coas_dir()
+    conn = get_db(); c = conn.cursor()
+    user = session.get('compras_user', '')
+    tot = {'informes': 0, 'nuevos': 0, 'actualizados': 0, 'oos': 0}
+    for s in samples:
+        ref = s.get('ref') or 'coa'
+        safe = _re.sub(r'[^A-Za-z0-9_.-]', '_', ref) + '.pdf'
+        try:
+            with open(_os.path.join(coas_dir, safe), 'wb') as fh:
+                fh.write(s.get('pdf_bytes') or b'')
+        except Exception as _e:
+            logging.getLogger('calidad').warning('no se pudo guardar COA %s: %s', safe, _e)
+        coa_url = '/api/calidad/micro/coa/' + safe
+        r = upsert_sample(conn, s, coa_url, usuario=user)
+        tot['nuevos'] += r['nuevos']; tot['actualizados'] += r['actualizados']
+        tot['oos'] += r['oos']; tot['informes'] += 1
+    audit_log(c, usuario=user, accion='IMPORTAR_COA_EML', tabla='calidad_micro_resultados',
+              registro_id=0, despues={**tot, 'archivo': (f.filename or '')[:120]})
+    conn.commit()
+    return jsonify({'ok': True, **tot, 'archivo': f.filename})
+
+
+@bp.route('/api/calidad/micro/coa/<path:fname>', methods=['GET'])
+def calidad_servir_coa(fname):
+    """Sirve el PDF del COA guardado (solo Calidad/Aseguramiento/Admin · anti path-traversal)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    u = session.get('compras_user', '')
+    try:
+        from config import ASEGURAMIENTO_USERS as _AC
+    except Exception:
+        _AC = set()
+    if u not in (set(CALIDAD_USERS) | set(_AC) | set(ADMIN_USERS)):
+        return jsonify({'error': 'no autorizado'}), 403
+    import os as _os
+    import re as _re
+    safe = _os.path.basename(fname)
+    if not _re.match(r'^[A-Za-z0-9_.\-]+\.pdf$', safe):
+        return jsonify({'error': 'nombre inválido'}), 400
+    path = _os.path.join(_coas_dir(), safe)
+    if not _os.path.exists(path):
+        return jsonify({'error': 'COA no encontrado (¿se importó el informe?)'}), 404
+    from flask import send_file
+    return send_file(path, mimetype='application/pdf', as_attachment=False,
+                     download_name=safe)
+
+
 @bp.route('/api/calidad/agua/registros', methods=['GET', 'POST'])
 def calidad_agua_registros():
     """COC-PRO-008 Sistema de Agua. GET lista registros con filtro fecha+punto.

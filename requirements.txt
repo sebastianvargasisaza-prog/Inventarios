@@ -17,3 +17,8 @@ psycopg[binary]==3.3.4
 # Sebastian 26-may-2026: si MFA_MASTER_KEY env var configurada en Render,
 # users_mfa.secret_enc se llena al setup · sino fallback plaintext.
 cryptography>=42.0.0
+# pdfplumber: lee los PDF de los informes del laboratorio (Microlab) para la herramienta
+# de importación de COA en Calidad (subir .eml → parsea resultados + guarda el PDF).
+# Sebastian 14-jun-2026. Pillow ya viene por qrcode[pil]; solo suma pdfminer.six.
+# Import perezoso (solo se carga al usar la importación · no afecta el arranque).
+pdfplumber==0.11.4
