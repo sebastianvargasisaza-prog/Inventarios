@@ -44,3 +44,17 @@ def test_pagina_calidad_tiene_tooltips_y_analisis(admin_client):
     assert 'data-tip=' in body, 'faltan tooltips para-qué-sirve'
     assert '[data-tip]' in body, 'falta el CSS de tooltips (ui_help)'
     assert 'tab-analisis' in body and 'loadMicroAnalisis' in body, 'falta la pestaña Análisis'
+
+
+def test_fisicoquimica_seed_y_post(admin_client):
+    from .conftest import csrf_headers
+    # seed mig 249 presente
+    r = admin_client.get('/api/calidad/fisicoquimica/resultados')
+    assert r.status_code == 200, r.data[:200]
+    res = r.get_json()['resultados']
+    assert any('FÓSFORO' in (x['parametro'] or '').upper() or 'FOSFORO' in (x['parametro'] or '').upper() for x in res), 'falta el seed FQ'
+    # POST nuevo
+    r2 = admin_client.post('/api/calidad/fisicoquimica/resultados',
+                           json={'producto_nombre': 'GEL HIDRATANTE', 'parametro': 'pH', 'resultado': '5.8', 'unidad': '—'},
+                           headers=csrf_headers())
+    assert r2.status_code in (200, 201), r2.data[:200]

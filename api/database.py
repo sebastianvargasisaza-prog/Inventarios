@@ -328,6 +328,40 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (249, "Sección fisicoquímica de Control de Calidad (14-jun): tabla "
+          "calidad_fisicoquimica_resultados (análisis FQ del lab: pH, densidad, fósforo, "
+          "viscosidad… valor medido vs referencia, sin recuento micro) + siembra el informe FQ "
+          "de Microlab (ref 26734-26, Limpiador Facial Hidratante, Fósforo). Idempotente.", [
+        """CREATE TABLE IF NOT EXISTS calidad_fisicoquimica_resultados (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            lote TEXT,
+            producto_nombre TEXT NOT NULL,
+            categoria TEXT DEFAULT 'producto',
+            n_referencia TEXT,
+            fecha_muestreo TEXT,
+            fecha_analisis TEXT,
+            parametro TEXT NOT NULL,
+            metodo TEXT,
+            resultado TEXT,
+            unidad TEXT,
+            valor_referencia TEXT,
+            estado TEXT DEFAULT 'informado',
+            laboratorio TEXT DEFAULT 'Interno',
+            analista TEXT,
+            archivo_coa_url TEXT,
+            ebr_id INTEGER,
+            observaciones TEXT,
+            creado_por TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_fq_prod ON calidad_fisicoquimica_resultados(producto_nombre, fecha_analisis DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_fq_ref ON calidad_fisicoquimica_resultados(n_referencia)",
+        "INSERT INTO calidad_fisicoquimica_resultados "
+        "(lote,producto_nombre,categoria,n_referencia,fecha_analisis,parametro,metodo,resultado,unidad,estado,laboratorio,creado_por) "
+        "SELECT 'LP260971','LIMPIADOR FACIAL HIDRATANTE','producto','26734-26','2026-04-10',"
+        "'Determinación de Fósforo','ASTM D820-93 (2016). Numeral 29','<0.05','g/100g','informado','Microlab Cali','seed_mig249' "
+        "WHERE NOT EXISTS (SELECT 1 FROM calidad_fisicoquimica_resultados WHERE n_referencia='26734-26' AND parametro='Determinación de Fósforo')",
+    ]),
     (248, "Rellena fecha_analisis/fecha_muestreo de los resultados Microlab que quedaron "
           "vacíos en mig 246 (la extracción del PDF no halló la fecha en 105 informes · se usa "
           "la fecha del correo como fallback). Sin fecha, los paneles de análisis por ventana "

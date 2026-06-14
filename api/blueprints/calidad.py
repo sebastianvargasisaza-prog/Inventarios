@@ -1977,6 +1977,81 @@ def calidad_lotes_planta():
     return jsonify({'lotes': lotes, 'total': len(lotes)})
 
 
+@bp.route('/api/calidad/fisicoquimica/resultados', methods=['GET', 'POST'])
+def calidad_fisicoquimica_resultados():
+    """Resultados FISICOQUÍMICOS (pH, densidad, fósforo, viscosidad…). Valor medido vs
+    referencia, sin recuento micro. GET lista; POST registra (solo Calidad/Admin)."""
+    if request.method == 'POST':
+        err, code = _require_calidad()
+        if err:
+            return err, code
+    elif 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+
+    if request.method == 'POST':
+        d = request.get_json(silent=True) or {}
+        producto = (d.get('producto_nombre') or '').strip()
+        parametro = (d.get('parametro') or '').strip()
+        if not producto or not parametro:
+            return jsonify({'error': 'producto_nombre y parametro requeridos'}), 400
+        coa = (d.get('archivo_coa_url') or '').strip() or None
+        if coa and not (coa.startswith('http://') or coa.startswith('https://')):
+            return jsonify({'error': 'archivo_coa_url debe ser URL http(s)'}), 400
+        ebr_id = d.get('ebr_id')
+        try:
+            ebr_id = int(ebr_id) if ebr_id not in (None, '') else None
+        except (TypeError, ValueError):
+            ebr_id = None
+        cat = (d.get('categoria') or 'producto').strip().lower()
+        if cat not in ('producto', 'materia_prima', 'ambiente'):
+            cat = 'producto'
+        from datetime import date as _date
+        c.execute(
+            "INSERT INTO calidad_fisicoquimica_resultados "
+            "(lote,producto_nombre,categoria,n_referencia,fecha_muestreo,fecha_analisis,parametro,"
+            " metodo,resultado,unidad,valor_referencia,estado,laboratorio,analista,archivo_coa_url,ebr_id,observaciones,creado_por) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            ((d.get('lote') or '').strip(), producto, cat,
+             (d.get('n_referencia') or '').strip() or None,
+             (d.get('fecha_muestreo') or '').strip() or None,
+             (d.get('fecha_analisis') or '').strip() or _date.today().isoformat(),
+             parametro, (d.get('metodo') or '').strip() or None,
+             (d.get('resultado') or '').strip() or None,
+             (d.get('unidad') or '').strip() or None,
+             (d.get('valor_referencia') or '').strip() or None,
+             (d.get('estado') or 'informado').strip().lower(),
+             (d.get('laboratorio') or 'Interno').strip(),
+             (d.get('analista') or '').strip() or user, coa, ebr_id,
+             (d.get('observaciones') or '').strip() or None, user))
+        new_id = c.lastrowid
+        audit_log(c, usuario=user, accion='CREAR_FQ', tabla='calidad_fisicoquimica_resultados',
+                  registro_id=new_id, despues={'producto': producto, 'parametro': parametro})
+        conn.commit()
+        return jsonify({'ok': True, 'id': new_id}), 201
+
+    # GET
+    prod = (request.args.get('producto') or '').strip()
+    lote = (request.args.get('lote') or '').strip()
+    where, params = [], []
+    if prod:
+        where.append('producto_nombre=?'); params.append(prod)
+    if lote:
+        where.append('lote=?'); params.append(lote)
+    sql = ("SELECT id, lote, producto_nombre, categoria, n_referencia, fecha_analisis, "
+           "parametro, metodo, resultado, unidad, valor_referencia, estado, laboratorio, "
+           "COALESCE(archivo_coa_url,''), ebr_id FROM calidad_fisicoquimica_resultados")
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY fecha_analisis DESC, id DESC LIMIT 500"
+    rows = c.execute(sql, params).fetchall()
+    cols = ['id', 'lote', 'producto_nombre', 'categoria', 'n_referencia', 'fecha_analisis',
+            'parametro', 'metodo', 'resultado', 'unidad', 'valor_referencia', 'estado',
+            'laboratorio', 'archivo_coa_url', 'ebr_id']
+    return jsonify({'resultados': [dict(zip(cols, r)) for r in rows]})
+
+
 @bp.route('/api/calidad/agua/registros', methods=['GET', 'POST'])
 def calidad_agua_registros():
     """COC-PRO-008 Sistema de Agua. GET lista registros con filtro fecha+punto.

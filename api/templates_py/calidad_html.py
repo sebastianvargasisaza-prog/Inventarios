@@ -1647,8 +1647,29 @@ async function loadMicroAnalisis(){
     }).join('');
     html+=_anlCard('Monitoreo ambiental (COC-PRO-011)', am.length?('<table style="font-size:12px"><thead><tr><th>Punto</th><th>n</th><th>OOS</th><th>Última</th></tr></thead><tbody>'+rowsa+'</tbody></table>'):'<p class="empty">Sin monitoreo ambiental en el período.</p>');
 
+    // Panel 6 · Análisis fisicoquímicos (pH, densidad, fósforo, viscosidad…)
+    try{
+      var rf=await fetch('/api/calidad/fisicoquimica/resultados',{credentials:'same-origin',cache:'no-store'});
+      var fq=(await rf.json()).resultados||[];
+      var rowsf=fq.map(function(x){
+        return '<tr><td>'+esc(x.fecha_analisis||'')+'</td><td>'+esc(x.producto_nombre)+(x.lote?' <span style="font-size:9px;color:#94a3b8">'+esc(x.lote)+'</span>':'')+'</td><td>'+esc(x.parametro)+'</td><td><b>'+esc(x.resultado||'')+'</b> '+esc(x.unidad||'')+'</td><td style="color:var(--cx-text-mute);font-size:11px">'+esc(x.metodo||'')+'</td></tr>';
+      }).join('');
+      var hdr='<div style="display:flex;justify-content:space-between;align-items:center"><span>Análisis fisicoquímicos</span><button class="btn btn-ghost btn-sm" style="padding:2px 8px" onclick="abrirModalFQ()">+ Registrar</button></div>';
+      html+=_anlCard(hdr, fq.length?('<table style="font-size:12px"><thead><tr><th>Fecha</th><th>Producto</th><th>Parámetro</th><th>Resultado</th><th>Método</th></tr></thead><tbody>'+rowsf+'</tbody></table>'):'<p class="empty">Sin análisis fisicoquímicos. Usá "+ Registrar".</p>');
+    }catch(e){}
+
     grid.innerHTML=html;
   }catch(e){ grid.innerHTML='<div style="color:#dc2626;padding:14px">Error: '+(e.message||e)+'</div>'; }
+}
+function abrirModalFQ(){
+  var prod=prompt('Producto:'); if(!prod) return;
+  var param=prompt('Parámetro (ej. pH, Densidad, Fósforo, Viscosidad):'); if(!param) return;
+  var res=prompt('Resultado (ej. 5.8, <0.05):')||'';
+  var uni=prompt('Unidad (ej. g/100g, cP, —):')||'';
+  var lote=prompt('Lote (opcional):')||'';
+  fetch('/api/calidad/fisicoquimica/resultados', _fetchOpts('POST',{producto_nombre:prod,parametro:param,resultado:res,unidad:uni,lote:lote}))
+    .then(function(r){return r.json();}).then(function(d){ if(d.ok){ loadMicroAnalisis(); } else alert('Error: '+(d.error||'?')); })
+    .catch(function(e){ alert('Error red: '+(e.message||e)); });
 }
 
 // === SISTEMA DE AGUA ====================================================
