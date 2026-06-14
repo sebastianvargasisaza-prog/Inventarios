@@ -6803,7 +6803,7 @@ async function openSolicitudDetail(num){
         var itemId = it.id || '';
         h+='<tr data-cod="'+esc(it.codigo_mp||'')+'" data-itemid="'+esc(itemId)+'" data-nombre="'+esc(it.nombre_mp||'')+'" style="background:'+bg+';border-bottom:1px solid #f0edec;">';
         h+='<td style="padding:11px 14px;font-family:monospace;font-size:11px;color:#78716c;">'+esc(it.codigo_mp||'—')+'</td>';
-        h+='<td style="padding:11px 14px;font-weight:600;color:#1c1917;">'+esc(it.nombre_mp||'—')+'</td>';
+        h+='<td style="padding:11px 14px;font-weight:600;color:#1c1917;">'+esc(it.nombre_inci||it.nombre_mp||'—')+((it.nombre_inci&&it.nombre_mp&&it.nombre_inci!==it.nombre_mp)?'<span style="font-weight:400;color:#a8a29e;font-size:11px"> ('+esc(it.nombre_mp)+')</span>':'')+'</td>';
         // PROVEEDOR — input directo (con datalist de proveedores conocidos)
         if(puedeEditarPrecios){
           h+='<td style="padding:8px 10px;">';

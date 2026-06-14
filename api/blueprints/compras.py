@@ -3582,16 +3582,18 @@ def solicitudes_agrupadas_por_proveedor():
     placeholders = ','.join(['?'] * len(nums))
     try:
         c.execute(f"""
-            SELECT id, numero, codigo_mp, nombre_mp, cantidad_g, unidad,
-                   COALESCE(valor_estimado, 0),
-                   COALESCE(justificacion, ''),
-                   COALESCE(precio_unit_g, 0),
-                   COALESCE(proveedor_sugerido, '')
-            FROM solicitudes_compra_items
-            WHERE numero IN ({placeholders})
+            SELECT sci.id, sci.numero, sci.codigo_mp, sci.nombre_mp, sci.cantidad_g, sci.unidad,
+                   COALESCE(sci.valor_estimado, 0),
+                   COALESCE(sci.justificacion, ''),
+                   COALESCE(sci.precio_unit_g, 0),
+                   COALESCE(sci.proveedor_sugerido, ''),
+                   COALESCE(mm.nombre_inci, '')
+            FROM solicitudes_compra_items sci
+            LEFT JOIN maestro_mps mm ON mm.codigo_mp = sci.codigo_mp
+            WHERE sci.numero IN ({placeholders})
         """, nums)
         item_cols = ['id','numero','codigo_mp','nombre_mp','cantidad_g','unidad',
-                     'valor_estimado','justificacion','precio_unit_g','proveedor_sugerido']
+                     'valor_estimado','justificacion','precio_unit_g','proveedor_sugerido','nombre_inci']
         items_all = [dict(zip(item_cols, r)) for r in c.fetchall()]
     except sqlite3.OperationalError:
         # Fallback sin proveedor_sugerido (esquema viejo)
