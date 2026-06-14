@@ -303,7 +303,10 @@ def register_hooks(app):
                       # la emergencia real.
                       '/api/admin/emergency-restore',
                       # Portal B2B login · cliente externo aún no tiene sesión.
-                      '/api/portal/login'}
+                      '/api/portal/login',
+                      # Webhook PQR de GHL (server-to-server) · valida secreto
+                      # propio PQR_WEBHOOK_SECRET en el handler, no usa sesión.
+                      '/api/pqr/inbound'}
         if request.path in PUBLIC_API:
             return
         # Portal B2B: rutas /api/portal/* validan portal_cliente_id
@@ -381,6 +384,7 @@ def register_hooks(app):
         '/api/health',         # health check público
         '/api/csrf-token',     # endpoint que entrega el token
         '/api/publico/empleado-reporte',  # portal /reportar mobile · valida cedula + rate limit
+        '/api/pqr/inbound',    # webhook GHL server-to-server · valida secreto propio
     }
     UNSAFE_METHODS = {'POST', 'PUT', 'DELETE', 'PATCH'}
 

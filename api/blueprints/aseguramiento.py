@@ -21,6 +21,7 @@ Sebastián 1-may-2026.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -3668,5 +3669,281 @@ def aseguramiento_indicador_meta(codigo):
                registro_id=codigo, antes={'meta': row[0], 'umbral': row[1]}, despues=d)
     vals.append(codigo)
     c.execute("UPDATE aseguramiento_kpi_metas SET " + ', '.join(campos) + " WHERE codigo=?", vals)
+    conn.commit()
+    return jsonify({'ok': True})
+
+
+# ════════════════════════════════════════════════════════════════════════
+# PQR OMNICANAL · webhook GHL → clasificación IA (Espagiria vs Ánimus) → triaje
+# Espagiria = calidad de producto/regulado → quejas_clientes (workflow INVIMA).
+# Ánimus = comercial (envíos, producto equivocado, devoluciones) → animus_pqr.
+# ════════════════════════════════════════════════════════════════════════
+_PQR_AUTO_CONF = 0.82  # confianza IA mínima para enrutar sin pasar por triaje
+
+_CANAL_GHL_A_QUEJA = {
+    'instagram': 'redes_sociales', 'facebook': 'redes_sociales', 'ig': 'redes_sociales',
+    'whatsapp': 'whatsapp', 'wa': 'whatsapp', 'sms': 'telefono', 'phone': 'telefono',
+    'call': 'telefono', 'email': 'email', 'web': 'formulario_web', 'webchat': 'formulario_web',
+    'formulario_web': 'formulario_web', 'presencial': 'presencial',
+}
+_VALID_TIPO_QUEJA = ('reaccion_adversa', 'calidad_producto', 'envase_empaque',
+                     'cantidad_volumen', 'fecha_vencimiento', 'sabor_olor_textura',
+                     'eficacia', 'documentacion', 'servicio', 'otro')
+_VALID_TIPO_ANIMUS = ('envio', 'producto_equivocado', 'faltante', 'devolucion',
+                      'servicio', 'facturacion', 'comercial', 'otro')
+
+
+def _anthropic_key(c):
+    try:
+        r = c.execute("SELECT valor FROM animus_config WHERE clave='anthropic_api_key'").fetchone()
+        return (r[0] if r else None) or os.environ.get('ANTHROPIC_API_KEY')
+    except Exception:
+        return os.environ.get('ANTHROPIC_API_KEY')
+
+
+def _clasificar_pqr_reglas(mensaje):
+    """Fallback por palabras clave · confianza baja (cae a triaje)."""
+    t = (mensaje or '').lower()
+    esp_kw = ['reaccion', 'reacción', 'alergi', 'brote', 'irritaci', 'ardor', 'quem',
+              'roncha', 'vencido', 'caducado', 'hongo', 'moho', 'contamin', 'cuerpo extraño',
+              'separad', 'cortad', 'rancio', 'huele mal', 'mal olor', 'no funciona', 'no sirve',
+              'no me hizo', 'mal sellad', 'fuga', 'registro invima', 'etiqueta', 'rotulo', 'rótulo']
+    ani_kw = ['envio', 'envío', 'enví', 'transportadora', 'servientrega', 'interrapidisimo',
+              'no ha llegado', 'no llego', 'no llegó', 'demora', 'tarda', 'equivocad', 'no era',
+              'pedido', 'factura', 'reembolso', 'devolu', 'cambio de producto', 'precio',
+              'descuento', 'promoci', 'donde compro', 'dónde compro', 'disponible', 'asesoria', 'asesoría']
+    esp = sum(1 for k in esp_kw if k in t)
+    ani = sum(1 for k in ani_kw if k in t)
+    if esp == 0 and ani == 0:
+        return {'empresa': None, 'confianza': 0.0}
+    empresa = 'espagiria' if esp > ani else ('animus' if ani > esp else None)
+    return {'empresa': empresa, 'confianza': 0.45 if empresa else 0.2}
+
+
+def _clasificar_pqr(c, mensaje, contacto_nombre=''):
+    """Devuelve {empresa, tipo, severidad, confianza, resumen, razon, fuente}.
+    Intenta Claude; si no hay key o falla, cae a reglas (confianza baja → triaje)."""
+    base = {'empresa': None, 'tipo': None, 'severidad': None, 'confianza': 0.0,
+            'resumen': (mensaje or '')[:160], 'razon': '', 'fuente': 'reglas'}
+    api_key = _anthropic_key(c)
+    if api_key and (mensaje or '').strip():
+        prompt = (
+            "Eres el clasificador de PQR de un laboratorio cosmético colombiano. Hay DOS destinos:\n"
+            "- 'espagiria' = problema del PRODUCTO o regulatorio (laboratorio fabricante / INVIMA): "
+            "reacción adversa o efecto en piel/salud, defecto de calidad (color/olor/textura/separación), "
+            "envase o empaque defectuoso DE FÁBRICA, producto vencido, contaminación o cuerpo extraño, "
+            "eficacia (no funciona), rotulado/etiquetado incorrecto.\n"
+            "- 'animus' = problema COMERCIAL o de experiencia (la marca): envíos/transportadora/demora, "
+            "producto equivocado en el despacho ('me llegó lo que no era'), faltantes del pedido, "
+            "devoluciones/cambios/reembolsos, servicio al cliente, facturación/pagos, preguntas comerciales.\n"
+            "Caso 'envase roto': si se dañó en transporte = animus; si vino mal de fábrica = espagiria.\n"
+            "Responde SOLO un JSON válido, sin texto extra, con: empresa ('espagiria'|'animus'), "
+            "tipo (para espagiria uno de: reaccion_adversa,calidad_producto,envase_empaque,cantidad_volumen,"
+            "fecha_vencimiento,sabor_olor_textura,eficacia,documentacion,servicio,otro · para animus uno de: "
+            "envio,producto_equivocado,faltante,devolucion,servicio,facturacion,comercial,otro), "
+            "severidad ('critica'|'mayor'|'menor'|'informativa'), confianza (0 a 1), "
+            "resumen (1 frase), razon (1 frase de por qué).\n\nMensaje del cliente"
+            + (f" ({contacto_nombre})" if contacto_nombre else "") + ":\n" + (mensaje or '')[:1500]
+        )
+        try:
+            import urllib.request as _ur
+            payload = json.dumps({
+                "model": "claude-haiku-4-5-20251001", "max_tokens": 400,
+                "messages": [{"role": "user", "content": prompt}],
+            }).encode("utf-8")
+            req = _ur.Request("https://api.anthropic.com/v1/messages", data=payload,
+                              headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
+                                       "content-type": "application/json"}, method="POST")
+            with _ur.urlopen(req, timeout=20) as resp:
+                txt = json.loads(resp.read().decode("utf-8"))["content"][0]["text"]
+            m = re.search(r'\{.*\}', txt, re.DOTALL)
+            obj = json.loads(m.group(0)) if m else {}
+            emp = (obj.get('empresa') or '').strip().lower()
+            if emp in ('espagiria', 'animus'):
+                base.update({
+                    'empresa': emp, 'tipo': (obj.get('tipo') or '').strip().lower() or None,
+                    'severidad': (obj.get('severidad') or '').strip().lower() or None,
+                    'confianza': round(float(obj.get('confianza', 0.7)), 2),
+                    'resumen': (obj.get('resumen') or base['resumen'])[:300],
+                    'razon': (obj.get('razon') or '')[:300], 'fuente': 'ia',
+                })
+                return base
+        except Exception as e:
+            log.warning('clasificar_pqr IA falló, uso reglas: %s', e)
+    r = _clasificar_pqr_reglas(mensaje)
+    base.update({'empresa': r['empresa'], 'confianza': r['confianza'],
+                 'razon': 'clasificación por palabras clave (IA no disponible)'})
+    return base
+
+
+def _tipo_para_destino(empresa, tipo):
+    if empresa == 'espagiria':
+        return tipo if tipo in _VALID_TIPO_QUEJA else 'otro'
+    return tipo if tipo in _VALID_TIPO_ANIMUS else 'otro'
+
+
+def _enrutar_a_espagiria(c, row, tipo, user):
+    """Crea una queja_clientes (Espagiria) desde un pqr_inbox. Devuelve (codigo, id)."""
+    canal_q = _CANAL_GHL_A_QUEJA.get((row['canal'] or '').lower(), 'otro')
+    tipo_q = _tipo_para_destino('espagiria', tipo)
+
+    def _ins():
+        cod = _generar_codigo_queja(c)
+        c.execute(
+            "INSERT INTO quejas_clientes (codigo, fecha_recepcion, recibido_por, canal, "
+            "cliente_nombre, cliente_contacto, tipo_queja, descripcion, impacto_salud, estado) "
+            "VALUES (?, date('now','-5 hours'), ?, ?, ?, ?, ?, ?, ?, 'nueva')",
+            (cod, user, canal_q, (row['contacto_nombre'] or 'Cliente GHL')[:200],
+             ((row['contacto_email'] or '') + ' ' + (row['contacto_telefono'] or '')).strip()[:200],
+             tipo_q, (row['mensaje'] or '')[:3000], 1 if tipo_q == 'reaccion_adversa' else 0))
+        return cod, c.lastrowid
+    cod, qid = _intentar_insert_con_retry(_ins)
+    _audit_log(c, usuario=user, accion='CREAR_QUEJA', tabla='quejas_clientes',
+               registro_id=qid, despues={'codigo': cod, 'origen': 'pqr_inbox', 'inbox_id': row['id']})
+    return cod, qid
+
+
+def _enrutar_a_animus(c, row, tipo, user):
+    """Crea un animus_pqr (comercial) desde un pqr_inbox. Devuelve (codigo, id)."""
+    tipo_a = _tipo_para_destino('animus', tipo)
+    cod = _siguiente_codigo_secuencial(c, 'PQR-A', 'animus_pqr')
+    c.execute(
+        "INSERT INTO animus_pqr (codigo, canal, contacto_nombre, contacto_email, contacto_telefono, "
+        "ghl_contact_id, tipo, descripcion, origen_inbox_id, creado_por) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (cod, (row['canal'] or 'otro'), (row['contacto_nombre'] or '')[:200],
+         (row['contacto_email'] or '')[:200], (row['contacto_telefono'] or '')[:80],
+         row['ghl_contact_id'], tipo_a, (row['mensaje'] or '')[:3000], row['id'], user))
+    aid = c.lastrowid
+    _audit_log(c, usuario=user, accion='CREAR_PQR_ANIMUS', tabla='animus_pqr',
+               registro_id=aid, despues={'codigo': cod, 'tipo': tipo_a, 'inbox_id': row['id']})
+    return cod, aid
+
+
+def _marcar_inbox_enrutado(c, inbox_id, empresa, tabla, dest_id, dest_cod, user):
+    c.execute(
+        "UPDATE pqr_inbox SET estado='enrutado', destino_empresa=?, destino_tabla=?, destino_id=?, "
+        "enrutado_por=?, enrutado_en=date('now','-5 hours') WHERE id=? AND estado='pendiente'",
+        (empresa, tabla, dest_id, user, inbox_id))
+    return c.rowcount == 1
+
+
+@bp.route('/api/pqr/inbound', methods=['POST'])
+def pqr_inbound():
+    """Webhook server-to-server desde GHL. Valida secreto propio (no usa sesión).
+    Inserta en pqr_inbox, clasifica con IA y auto-enruta si la confianza es alta."""
+    secret = os.environ.get('PQR_WEBHOOK_SECRET', '')
+    provided = request.headers.get('X-PQR-Token', '') or request.args.get('token', '')
+    if secret:
+        if provided != secret:
+            return jsonify({'error': 'token inválido'}), 401
+    elif not os.environ.get('PYTEST_CURRENT_TEST'):
+        return jsonify({'error': 'PQR_WEBHOOK_SECRET no configurado'}), 503
+
+    d = request.get_json(silent=True) or {}
+    mensaje = (d.get('message') or d.get('body') or d.get('mensaje') or d.get('lastMessageBody') or '').strip()
+    if not mensaje:
+        return jsonify({'error': 'mensaje vacío'}), 400
+    contacto = (d.get('full_name') or d.get('fullName') or d.get('contact_name')
+                or d.get('name') or d.get('contacto') or '').strip()
+    email = (d.get('email') or d.get('contact_email') or '').strip()
+    telefono = (d.get('phone') or d.get('telefono') or '').strip()
+    canal = (d.get('channel') or d.get('canal') or d.get('source') or 'otro').strip().lower()
+    ghl_contact_id = (d.get('contact_id') or d.get('contactId') or d.get('ghl_contact_id') or '').strip() or None
+    ghl_msg_id = (d.get('message_id') or d.get('messageId') or d.get('id') or '').strip() or None
+
+    conn = get_db(); c = conn.cursor()
+    if ghl_msg_id:
+        ex = c.execute("SELECT id FROM pqr_inbox WHERE ghl_message_id=?", (ghl_msg_id,)).fetchone()
+        if ex:
+            return jsonify({'ok': True, 'inbox_id': ex[0], 'duplicado': True}), 200
+
+    clf = _clasificar_pqr(c, mensaje, contacto)
+    c.execute(
+        "INSERT INTO pqr_inbox (ghl_message_id, ghl_contact_id, canal, contacto_nombre, contacto_email, "
+        "contacto_telefono, mensaje, recibido_en, ia_empresa, ia_tipo, ia_severidad, ia_confianza, "
+        "ia_resumen, ia_razon, ia_fuente) VALUES (?,?,?,?,?,?,?,date('now','-5 hours'),?,?,?,?,?,?,?)",
+        (ghl_msg_id, ghl_contact_id, canal, contacto[:200], email[:200], telefono[:80], mensaje[:5000],
+         clf['empresa'], clf['tipo'], clf['severidad'], clf['confianza'],
+         clf['resumen'], clf['razon'], clf['fuente']))
+    inbox_id = c.lastrowid
+    rrow = c.execute("SELECT * FROM pqr_inbox WHERE id=?", (inbox_id,)).fetchone()
+    row = dict(rrow) if rrow else {}
+
+    auto = False
+    if clf['empresa'] in ('espagiria', 'animus') and (clf['confianza'] or 0) >= _PQR_AUTO_CONF:
+        if clf['empresa'] == 'espagiria':
+            cod, did = _enrutar_a_espagiria(c, row, clf['tipo'], 'pqr_bot')
+            _marcar_inbox_enrutado(c, inbox_id, 'espagiria', 'quejas_clientes', did, cod, 'pqr_bot')
+        else:
+            cod, did = _enrutar_a_animus(c, row, clf['tipo'], 'pqr_bot')
+            _marcar_inbox_enrutado(c, inbox_id, 'animus', 'animus_pqr', did, cod, 'pqr_bot')
+        auto = True
+    conn.commit()
+    return jsonify({'ok': True, 'inbox_id': inbox_id, 'clasificacion': clf, 'auto_enrutado': auto}), 201
+
+
+@bp.route('/api/aseguramiento/pqr-inbox', methods=['GET'])
+def pqr_inbox_listar():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    estado = (request.args.get('estado') or 'pendiente').strip()
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute(
+        "SELECT id, canal, contacto_nombre, contacto_email, contacto_telefono, mensaje, recibido_en, "
+        "ia_empresa, ia_tipo, ia_severidad, ia_confianza, ia_resumen, ia_razon, ia_fuente, estado, "
+        "destino_empresa, destino_tabla, destino_id FROM pqr_inbox WHERE estado=? "
+        "ORDER BY (ia_confianza IS NULL) DESC, recibido_en DESC LIMIT 200", (estado,)).fetchall()
+    cols = ['id', 'canal', 'contacto_nombre', 'contacto_email', 'contacto_telefono', 'mensaje',
+            'recibido_en', 'ia_empresa', 'ia_tipo', 'ia_severidad', 'ia_confianza', 'ia_resumen',
+            'ia_razon', 'ia_fuente', 'estado', 'destino_empresa', 'destino_tabla', 'destino_id']
+    items = [dict(zip(cols, r)) for r in rows]
+    pend = c.execute("SELECT COUNT(*) FROM pqr_inbox WHERE estado='pendiente'").fetchone()[0]
+    return jsonify({'inbox': items, 'pendientes': pend})
+
+
+@bp.route('/api/aseguramiento/pqr-inbox/<int:iid>/enrutar', methods=['POST'])
+def pqr_inbox_enrutar(iid):
+    user = session.get('compras_user', '')
+    if user not in _autorizados_escritura():
+        return jsonify({'error': 'Solo Aseguramiento/Calidad o Admin'}), 403
+    d = request.get_json(silent=True) or {}
+    empresa = (d.get('empresa') or '').strip().lower()
+    if empresa not in ('espagiria', 'animus'):
+        return jsonify({'error': "empresa debe ser 'espagiria' o 'animus'"}), 400
+    tipo = (d.get('tipo') or '').strip().lower() or None
+    conn = get_db(); c = conn.cursor()
+    rrow = c.execute("SELECT * FROM pqr_inbox WHERE id=?", (iid,)).fetchone()
+    if not rrow:
+        return jsonify({'error': 'no encontrado'}), 404
+    row = dict(rrow)
+    if row['estado'] != 'pendiente':
+        return jsonify({'error': 'ya fue procesado'}), 409
+    if empresa == 'espagiria':
+        cod, did = _enrutar_a_espagiria(c, row, tipo, user)
+        tabla = 'quejas_clientes'
+    else:
+        cod, did = _enrutar_a_animus(c, row, tipo, user)
+        tabla = 'animus_pqr'
+    if not _marcar_inbox_enrutado(c, iid, empresa, tabla, did, cod, user):
+        conn.rollback()
+        return jsonify({'error': 'cambió de estado (concurrencia)'}), 409
+    conn.commit()
+    return jsonify({'ok': True, 'empresa': empresa, 'codigo': cod, 'destino_id': did})
+
+
+@bp.route('/api/aseguramiento/pqr-inbox/<int:iid>/descartar', methods=['POST'])
+def pqr_inbox_descartar(iid):
+    user = session.get('compras_user', '')
+    if user not in _autorizados_escritura():
+        return jsonify({'error': 'Solo Aseguramiento/Calidad o Admin'}), 403
+    motivo = ((request.get_json(silent=True) or {}).get('motivo') or '').strip()
+    conn = get_db(); c = conn.cursor()
+    c.execute("UPDATE pqr_inbox SET estado='descartado', descartado_por=?, motivo_descarte=? "
+              "WHERE id=? AND estado='pendiente'", (user, motivo[:300], iid))
+    if c.rowcount != 1:
+        return jsonify({'error': 'no encontrado o ya procesado'}), 409
+    _audit_log(c, usuario=user, accion='DESCARTAR_PQR_INBOX', tabla='pqr_inbox',
+               registro_id=iid, despues={'motivo': motivo[:200]})
     conn.commit()
     return jsonify({'ok': True})

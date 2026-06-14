@@ -328,6 +328,66 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (254, "PQR omnicanal (14-jun): bandeja de triaje desde GHL (pqr_inbox · webhook "
+          "/api/pqr/inbound · clasificación IA Espagiria vs Ánimus) + tabla animus_pqr "
+          "(PQR comercial: envíos, producto equivocado, devoluciones, servicio). Los de "
+          "calidad (Espagiria) se enrutan a quejas_clientes; los comerciales a animus_pqr.", [
+        """CREATE TABLE IF NOT EXISTS pqr_inbox (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ghl_message_id TEXT UNIQUE,
+            ghl_contact_id TEXT,
+            canal TEXT DEFAULT 'otro',
+            contacto_nombre TEXT,
+            contacto_email TEXT,
+            contacto_telefono TEXT,
+            mensaje TEXT NOT NULL,
+            recibido_en TEXT,
+            ia_empresa TEXT,
+            ia_tipo TEXT,
+            ia_severidad TEXT,
+            ia_confianza REAL,
+            ia_resumen TEXT,
+            ia_razon TEXT,
+            ia_fuente TEXT,
+            estado TEXT NOT NULL DEFAULT 'pendiente'
+                CHECK(estado IN ('pendiente','enrutado','descartado')),
+            destino_empresa TEXT,
+            destino_tabla TEXT,
+            destino_id INTEGER,
+            enrutado_por TEXT,
+            enrutado_en TEXT,
+            descartado_por TEXT,
+            motivo_descarte TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_pqr_inbox_estado ON pqr_inbox(estado, creado_en)",
+        """CREATE TABLE IF NOT EXISTS animus_pqr (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT UNIQUE,
+            canal TEXT DEFAULT 'otro',
+            contacto_nombre TEXT,
+            contacto_email TEXT,
+            contacto_telefono TEXT,
+            ghl_contact_id TEXT,
+            tipo TEXT NOT NULL DEFAULT 'otro'
+                CHECK(tipo IN ('envio','producto_equivocado','faltante','devolucion',
+                               'servicio','facturacion','comercial','otro')),
+            descripcion TEXT NOT NULL,
+            prioridad TEXT NOT NULL DEFAULT 'media'
+                CHECK(prioridad IN ('alta','media','baja')),
+            estado TEXT NOT NULL DEFAULT 'nuevo'
+                CHECK(estado IN ('nuevo','en_proceso','resuelto','cerrado')),
+            asignado_a TEXT,
+            respuesta TEXT,
+            respondido_por TEXT,
+            respondido_en TEXT,
+            origen_inbox_id INTEGER,
+            creado_por TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+            actualizado_en TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_animus_pqr_estado ON animus_pqr(estado, creado_en)",
+    ]),
     (253, "Aseguramiento · cuadro de indicadores cross-módulo (14-jun): tabla "
           "aseguramiento_kpi_metas (meta+umbral+dirección+semáforo) con seed de los KPIs "
           "que el sistema de calidad debe cumplir — propios de Aseguramiento + de Planta + "

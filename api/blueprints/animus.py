@@ -2113,3 +2113,102 @@ def animus_inv_fisico_movimientos():
 # ── REDIRECT eliminado: /animus ahora sirve el panel de Caja Menor + ──
 #    Inventario Cíclico (definido en core.py con ANIMUS_HTML).
 
+
+# ════════════════════════════════════════════════════════════════════════
+# PQR COMERCIAL de ÁNIMUS · envíos, producto equivocado, devoluciones, servicio.
+# Los crea el enrutador de Aseguramiento (/api/pqr/inbound + triaje) o a mano.
+# ════════════════════════════════════════════════════════════════════════
+_PQR_A_ESTADOS = ('nuevo', 'en_proceso', 'resuelto', 'cerrado')
+_PQR_A_TIPOS = ('envio', 'producto_equivocado', 'faltante', 'devolucion',
+                'servicio', 'facturacion', 'comercial', 'otro')
+
+
+@bp.route("/api/animus/pqr", methods=["GET", "POST"])
+def animus_pqr_listar():
+    u, err, code = _auth()
+    if err:
+        return err, code
+    conn = _db(); c = conn.cursor()
+    if request.method == "POST":
+        d = request.get_json(silent=True) or {}
+        desc = (d.get("descripcion") or "").strip()
+        if len(desc) < 5:
+            return jsonify({"error": "descripcion requerida"}), 400
+        tipo = (d.get("tipo") or "otro").strip().lower()
+        if tipo not in _PQR_A_TIPOS:
+            tipo = "otro"
+        from audit_helpers import siguiente_codigo_secuencial as _seqc
+        try:
+            cod = _seqc(c, "PQR-A", "animus_pqr")
+        except Exception:
+            cod = "PQR-A-" + datetime.now().strftime("%y%m%d%H%M%S")
+        c.execute(
+            "INSERT INTO animus_pqr (codigo, canal, contacto_nombre, contacto_email, contacto_telefono, "
+            "tipo, descripcion, prioridad, creado_por) VALUES (?,?,?,?,?,?,?,?,?)",
+            (cod, (d.get("canal") or "otro"), (d.get("contacto_nombre") or "")[:200],
+             (d.get("contacto_email") or "")[:200], (d.get("contacto_telefono") or "")[:80],
+             tipo, desc[:3000], (d.get("prioridad") or "media"), u))
+        aid = c.lastrowid
+        try:
+            audit_log(c, usuario=u, accion="CREAR_PQR_ANIMUS", tabla="animus_pqr",
+                      registro_id=aid, despues={"codigo": cod, "tipo": tipo})
+        except Exception:
+            pass
+        conn.commit()
+        return jsonify({"ok": True, "id": aid, "codigo": cod}), 201
+    estado = (request.args.get("estado") or "").strip()
+    sql = ("SELECT id, codigo, canal, contacto_nombre, contacto_email, contacto_telefono, tipo, "
+           "descripcion, prioridad, estado, asignado_a, respuesta, respondido_por, respondido_en, "
+           "creado_en FROM animus_pqr")
+    params = []
+    if estado in _PQR_A_ESTADOS:
+        sql += " WHERE estado=?"; params.append(estado)
+    sql += " ORDER BY CASE prioridad WHEN 'alta' THEN 0 WHEN 'media' THEN 1 ELSE 2 END, id DESC LIMIT 300"
+    rows = c.execute(sql, params).fetchall()
+    items = [dict(r) for r in rows]
+    resumen = {}
+    for e in _PQR_A_ESTADOS:
+        resumen[e] = c.execute("SELECT COUNT(*) FROM animus_pqr WHERE estado=?", (e,)).fetchone()[0]
+    return jsonify({"pqr": items, "resumen": resumen})
+
+
+@bp.route("/api/animus/pqr/<int:pid>", methods=["PATCH"])
+def animus_pqr_actualizar(pid):
+    u, err, code = _auth()
+    if err:
+        return err, code
+    d = request.get_json(silent=True) or {}
+    conn = _db(); c = conn.cursor()
+    row = c.execute("SELECT estado FROM animus_pqr WHERE id=?", (pid,)).fetchone()
+    if not row:
+        return jsonify({"error": "no encontrado"}), 404
+    campos, vals = [], []
+    if "estado" in d:
+        est = (d.get("estado") or "").strip().lower()
+        if est not in _PQR_A_ESTADOS:
+            return jsonify({"error": "estado inválido"}), 400
+        campos.append("estado=?"); vals.append(est)
+    if "prioridad" in d:
+        pr = (d.get("prioridad") or "").strip().lower()
+        if pr not in ("alta", "media", "baja"):
+            return jsonify({"error": "prioridad inválida"}), 400
+        campos.append("prioridad=?"); vals.append(pr)
+    if "asignado_a" in d:
+        campos.append("asignado_a=?"); vals.append((d.get("asignado_a") or "")[:80] or None)
+    if "respuesta" in d:
+        campos.append("respuesta=?"); vals.append((d.get("respuesta") or "")[:3000])
+        campos.append("respondido_por=?"); vals.append(u)
+        campos.append("respondido_en=?"); vals.append(datetime.now().strftime("%Y-%m-%d"))
+    if not campos:
+        return jsonify({"error": "nada que actualizar"}), 400
+    campos.append("actualizado_en=?"); vals.append(datetime.now().strftime("%Y-%m-%d %H:%M"))
+    vals.append(pid)
+    c.execute("UPDATE animus_pqr SET " + ", ".join(campos) + " WHERE id=?", vals)
+    try:
+        audit_log(c, usuario=u, accion="ACTUALIZAR_PQR_ANIMUS", tabla="animus_pqr",
+                  registro_id=pid, despues={k: d[k] for k in d if k in ("estado", "prioridad", "asignado_a")})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({"ok": True})
+

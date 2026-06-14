@@ -166,6 +166,7 @@ window.addEventListener('error', function(ev){
   <button class="tab-btn active" data-tab="caja" onclick="switchTab('caja')">&#128176; Caja Menor</button>
   <button class="tab-btn" data-tab="invfis" onclick="switchTab('invfis')">&#128202; Inventario Fisico</button>
   <button class="tab-btn" data-tab="inventario" onclick="switchTab('inventario')">&#128230; Conteo Ciclico</button>
+  <button class="tab-btn" data-tab="pqr" onclick="switchTab('pqr')">&#128233; PQR Clientes</button>
 </div>
 
 <!-- TAB: CAJA MENOR -->
@@ -508,6 +509,51 @@ window.addEventListener('error', function(ev){
   </div>
 </div>
 
+<!-- TAB: PQR CLIENTES (comercial · llega del triaje de Aseguramiento o manual) -->
+<div id="tab-pqr" class="tab-panel">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
+    <div>
+      <div class="page-title">&#128233; PQR Clientes</div>
+      <div class="page-sub">Peticiones, quejas y reclamos <b>comerciales</b> de ÁNIMUS: envíos, producto equivocado, faltantes, devoluciones, servicio. Los de calidad del producto los maneja Aseguramiento (Espagiria).</div>
+    </div>
+    <button class="btn btn-primary" onclick="abrirPqrManual()">+ Registrar PQR</button>
+  </div>
+  <div class="kpi-grid" id="pqr-ani-kpis"></div>
+  <div style="margin:8px 0;display:flex;gap:6px;flex-wrap:wrap">
+    <select id="pqr-ani-festado" onchange="loadAnimusPqr()" style="padding:6px 10px;border:1px solid var(--cx-hairline,#cbd5e1);border-radius:6px">
+      <option value="">Todos los estados</option>
+      <option value="nuevo">Nuevos</option>
+      <option value="en_proceso">En proceso</option>
+      <option value="resuelto">Resueltos</option>
+      <option value="cerrado">Cerrados</option>
+    </select>
+    <button class="btn btn-outline" onclick="loadAnimusPqr()">&#x21BB; Refrescar</button>
+  </div>
+  <div id="pqr-ani-list"><p style="color:#94a3b8;text-align:center;padding:14px">Cargando...</p></div>
+</div>
+
+<!-- Modal registrar PQR manual -->
+<div id="modal-pqr-ani" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:var(--cx-card);border:1px solid #475569;border-radius:14px;padding:22px;width:520px;max-width:92vw;">
+    <h3 style="margin-top:0;color:var(--cx-text)">Registrar PQR comercial</h3>
+    <label style="font-size:12px;color:#555">Tipo</label>
+    <select id="pqr-ani-tipo" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;margin-bottom:8px">
+      <option value="envio">Envío</option><option value="producto_equivocado">Producto equivocado</option>
+      <option value="faltante">Faltante</option><option value="devolucion">Devolución</option>
+      <option value="servicio">Servicio</option><option value="facturacion">Facturación</option>
+      <option value="comercial">Comercial</option><option value="otro">Otro</option>
+    </select>
+    <label style="font-size:12px;color:#555">Cliente</label>
+    <input id="pqr-ani-cliente" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;margin-bottom:8px" placeholder="Nombre del cliente">
+    <label style="font-size:12px;color:#555">Descripción</label>
+    <textarea id="pqr-ani-desc" rows="3" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;margin-bottom:8px" placeholder="Qué pasó..."></textarea>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-outline" onclick="cerrarModal('modal-pqr-ani')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarPqrManual()">Guardar</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // Tabs
 const _loaded = {};
@@ -524,6 +570,7 @@ function loadTab(name){
   if (name === 'caja') loadCaja();
   else if (name === 'invfis') { cargarInvFisico(); cargarMovimientosInvFis(); }
   else if (name === 'inventario') { loadInvSkus(); loadInvConteos(); }
+  else if (name === 'pqr') loadAnimusPqr();
 }
 
 function fmtCOP(n){
@@ -1236,6 +1283,64 @@ loadTab = function(name) {
     cargarDiagnostico();
   }
 };
+
+// ── PQR Clientes (comercial) ──────────────────────────────────────────
+var _PQR_TIPO_LBL = {envio:'Envío',producto_equivocado:'Producto equivocado',faltante:'Faltante',devolucion:'Devolución',servicio:'Servicio',facturacion:'Facturación',comercial:'Comercial',otro:'Otro'};
+var _PQR_EST_LBL = {nuevo:['Nuevo','#d97706'],en_proceso:['En proceso','#0ea5e9'],resuelto:['Resuelto','#16a34a'],cerrado:['Cerrado','#64748b']};
+async function loadAnimusPqr(){
+  var box = document.getElementById('pqr-ani-list');
+  var est = (document.getElementById('pqr-ani-festado')||{}).value || '';
+  try{
+    var r = await fetch('/api/animus/pqr' + (est?('?estado='+est):''), {credentials:'same-origin'});
+    var d = await r.json();
+    if(!r.ok) throw new Error(d.error||'error');
+    var s = d.resumen||{};
+    document.getElementById('pqr-ani-kpis').innerHTML =
+      '<div class="kpi-card"><div class="label">Nuevos</div><div class="val" style="color:#d97706">'+(s.nuevo||0)+'</div></div>'+
+      '<div class="kpi-card"><div class="label">En proceso</div><div class="val" style="color:#0ea5e9">'+(s.en_proceso||0)+'</div></div>'+
+      '<div class="kpi-card"><div class="label">Resueltos</div><div class="val" style="color:#16a34a">'+(s.resuelto||0)+'</div></div>'+
+      '<div class="kpi-card"><div class="label">Cerrados</div><div class="val">'+(s.cerrado||0)+'</div></div>';
+    var items = d.pqr||[];
+    if(!items.length){ box.innerHTML='<p style="color:#94a3b8;text-align:center;padding:14px">Sin PQR.</p>'; return; }
+    box.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:0.86em"><thead><tr style="text-align:left;color:#94a3b8;font-size:0.85em"><th style="padding:6px">Código</th><th>Tipo</th><th>Cliente</th><th>Descripción</th><th>Estado</th><th>Acción</th></tr></thead><tbody>'
+      + items.map(function(p){
+        var est = _PQR_EST_LBL[p.estado]||[p.estado,'#64748b'];
+        var pr = p.prioridad==='alta'?' 🔴':(p.prioridad==='baja'?'':' 🟡');
+        return '<tr style="border-top:1px solid var(--cx-hairline,#e2e8f0)">'
+          +'<td style="padding:6px"><b>'+(p.codigo||p.id)+'</b>'+pr+'</td>'
+          +'<td>'+(_PQR_TIPO_LBL[p.tipo]||p.tipo)+'</td>'
+          +'<td>'+(p.contacto_nombre||'—')+'</td>'
+          +'<td style="max-width:320px">'+(p.descripcion||'').replace(/</g,'&lt;')+'</td>'
+          +'<td><span style="color:'+est[1]+';font-weight:700">'+est[0]+'</span></td>'
+          +'<td><button class="btn btn-outline" style="padding:3px 8px;font-size:0.8em" onclick="gestionarPqr('+p.id+',\''+p.estado+'\')">Gestionar</button></td>'
+          +'</tr>';
+      }).join('') + '</tbody></table>';
+  }catch(e){ box.innerHTML='<p style="color:#dc2626;text-align:center;padding:14px">Error: '+e.message+'</p>'; }
+}
+async function gestionarPqr(id, estadoActual){
+  var nuevo = prompt('Nuevo estado (nuevo / en_proceso / resuelto / cerrado):', estadoActual);
+  if(!nuevo) return;
+  var resp = prompt('Respuesta/nota al cliente (opcional):')||'';
+  var body = {estado:nuevo.trim()};
+  if(resp) body.respuesta = resp;
+  try{
+    var r = await fetch('/api/animus/pqr/'+id, _fetchOpts('PATCH', body));
+    var d = await r.json();
+    if(r.ok && d.ok){ loadAnimusPqr(); } else alert('Error: '+(d.error||'?'));
+  }catch(e){ alert('Error red: '+e.message); }
+}
+function abrirPqrManual(){ abrirModal('modal-pqr-ani'); }
+async function guardarPqrManual(){
+  var desc = document.getElementById('pqr-ani-desc').value.trim();
+  if(desc.length<5){ alert('Describe el PQR'); return; }
+  var body = {tipo:document.getElementById('pqr-ani-tipo').value, contacto_nombre:document.getElementById('pqr-ani-cliente').value.trim(), descripcion:desc};
+  try{
+    var r = await fetch('/api/animus/pqr', _fetchOpts('POST', body));
+    var d = await r.json();
+    if(r.ok && d.ok){ cerrarModal('modal-pqr-ani'); document.getElementById('pqr-ani-desc').value=''; document.getElementById('pqr-ani-cliente').value=''; loadAnimusPqr(); }
+    else alert('Error: '+(d.error||'?'));
+  }catch(e){ alert('Error red: '+e.message); }
+}
 
 // Init
 loadCaja();

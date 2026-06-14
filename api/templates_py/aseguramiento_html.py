@@ -524,6 +524,17 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 
 <!-- QUEJAS CLIENTES · ASG-PRO-013 -->
 <div id="tab-quejas" class="pane">
+  <!-- BANDEJA DE TRIAJE PQR · llega de GHL, la IA propone Espagiria/Ánimus -->
+  <div class="card" style="background:linear-gradient(135deg,#eff6ff,#e0f2fe);border-left:4px solid #0ea5e9">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-weight:700;color:#0c4a6e">📨 Bandeja de triaje PQR <span id="pqr-tri-cnt" style="background:#0ea5e9;color:#fff;border-radius:10px;padding:1px 8px;font-size:0.8em;margin-left:4px">0</span></div>
+        <div style="font-size:0.8em;color:#0c4a6e">Mensajes que llegan de GHL (Instagram, WhatsApp…). La IA propone si son de <b>Espagiria</b> (calidad) o <b>Ánimus</b> (comercial). Confirma el destino con un clic.</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="loadPqrTriaje()">&#x21BB; Refrescar</button>
+    </div>
+    <div id="pqr-tri-list" style="margin-top:10px"></div>
+  </div>
   <div class="kpi-row" id="qc-kpis">
     <div class="kpi"><div class="kpi-label">Total</div><div class="kpi-val" id="qc-kp-tot">—</div></div>
     <div class="kpi"><div class="kpi-label">Nuevas</div><div class="kpi-val warn" id="qc-kp-nue">—</div></div>
@@ -1917,6 +1928,7 @@ async function _postCambioAccion(id, accion, body){ return _postWorkflowAccion('
 
 // === QUEJAS DE CLIENTES (ASG-PRO-013) ==================================
 async function loadQuejas(){
+  loadPqrTriaje();
   var estado = document.getElementById('qc-f-estado').value;
   var sev = document.getElementById('qc-f-sev').value;
   var qs = [];
@@ -3407,6 +3419,63 @@ async function cumplirBPM(ejId){
     var r = await fetch('/api/compliance/ejecuciones/'+ejId+'/cumplir', _fetchOpts('POST', {evidencia_url:evidencia}));
     var d = await r.json();
     if(r.ok && d.ok){ toast('Marcado como cumplido','success'); var cid=document.getElementById('m-cron-id').value; verEjecucionesBPM(cid, document.getElementById('m-cron-title').textContent.replace('Ejecuciones · ','')); loadCronogramasBPM(); }
+    else toast('Error: '+(d.error||'?'),'error');
+  }catch(e){ toast('Error red: '+e.message,'error'); }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// BANDEJA DE TRIAJE PQR · GHL → IA propone Espagiria/Ánimus → confirmar
+// ════════════════════════════════════════════════════════════════════
+var _TIPO_ESP = [['reaccion_adversa','Reacción adversa'],['calidad_producto','Defecto de calidad'],['envase_empaque','Envase/empaque'],['fecha_vencimiento','Vencimiento'],['sabor_olor_textura','Olor/textura'],['eficacia','Eficacia'],['cantidad_volumen','Cantidad/volumen'],['documentacion','Documentación'],['otro','Otro']];
+var _TIPO_ANI = [['envio','Envío'],['producto_equivocado','Producto equivocado'],['faltante','Faltante'],['devolucion','Devolución'],['servicio','Servicio'],['facturacion','Facturación'],['comercial','Comercial'],['otro','Otro']];
+async function loadPqrTriaje(){
+  var box = document.getElementById('pqr-tri-list');
+  if(!box) return;
+  try{
+    var r = await fetch('/api/aseguramiento/pqr-inbox?estado=pendiente', {credentials:'same-origin'});
+    var d = await r.json();
+    if(!r.ok) throw new Error(d.error||'error');
+    var cnt = document.getElementById('pqr-tri-cnt'); if(cnt) cnt.textContent = d.pendientes||0;
+    var items = d.inbox||[];
+    if(!items.length){ box.innerHTML = '<p style="color:#0c4a6e;font-size:0.85em;margin:6px 0">Sin PQR pendientes de triaje 👏</p>'; return; }
+    box.innerHTML = items.map(function(x){
+      var conf = x.ia_confianza!=null ? Math.round(x.ia_confianza*100)+'%' : '—';
+      var emp = x.ia_empresa;
+      var sugTxt = emp ? ('IA sugiere <b style="color:'+(emp==='espagiria'?'#6d28d9':'#0ea5e9')+'">'+(emp==='espagiria'?'ESPAGIRIA':'ÁNIMUS')+'</b> ('+conf+' · '+_esc(x.ia_fuente||'')+')') : '<span style="color:#94a3b8">IA sin sugerencia</span>';
+      var opcEsp = _TIPO_ESP.map(function(t){return '<option value="'+t[0]+'"'+(x.ia_tipo===t[0]?' selected':'')+'>'+t[1]+'</option>';}).join('');
+      var opcAni = _TIPO_ANI.map(function(t){return '<option value="'+t[0]+'"'+(x.ia_tipo===t[0]?' selected':'')+'>'+t[1]+'</option>';}).join('');
+      return '<div class="card" style="margin:0 0 8px 0;border-left:3px solid '+(emp==='espagiria'?'#6d28d9':(emp==='animus'?'#0ea5e9':'#94a3b8'))+'">'
+        +'<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">'
+        +'<div style="font-size:0.78em;color:#64748b">'+_esc(x.canal||'')+' · '+_esc(x.contacto_nombre||'anónimo')+' · '+_esc(x.recibido_en||'')+'</div>'
+        +'<div style="font-size:0.78em">'+sugTxt+'</div></div>'
+        +'<div style="font-size:0.9em;color:#0f172a;margin:6px 0">'+_esc(x.mensaje||'')+'</div>'
+        +(x.ia_razon?'<div style="font-size:0.74em;color:#94a3b8;font-style:italic">'+_esc(x.ia_razon)+'</div>':'')
+        +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">'
+        +'<span style="font-size:0.78em;color:#6d28d9;font-weight:700">→ Espagiria</span> <select id="tri-esp-'+x.id+'" class="btn-sm" style="padding:4px;border:1px solid #cbd5e1;border-radius:4px">'+opcEsp+'</select>'
+        +'<button class="btn btn-sm" style="background:#6d28d9;color:#fff" onclick="enrutarPqr('+x.id+',\'espagiria\')">Es de Calidad</button>'
+        +'<span style="font-size:0.78em;color:#0ea5e9;font-weight:700;margin-left:10px">→ Ánimus</span> <select id="tri-ani-'+x.id+'" class="btn-sm" style="padding:4px;border:1px solid #cbd5e1;border-radius:4px">'+opcAni+'</select>'
+        +'<button class="btn btn-sm" style="background:#0ea5e9;color:#fff" onclick="enrutarPqr('+x.id+',\'animus\')">Es comercial</button>'
+        +'<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="descartarPqr('+x.id+')">Descartar</button>'
+        +'</div></div>';
+    }).join('');
+  }catch(e){ box.innerHTML = '<p class="empty">Error: '+_esc(e.message)+'</p>'; }
+}
+async function enrutarPqr(id, empresa){
+  var sel = document.getElementById((empresa==='espagiria'?'tri-esp-':'tri-ani-')+id);
+  var tipo = sel ? sel.value : '';
+  try{
+    var r = await fetch('/api/aseguramiento/pqr-inbox/'+id+'/enrutar', _fetchOpts('POST', {empresa:empresa, tipo:tipo}));
+    var d = await r.json();
+    if(r.ok && d.ok){ toast((empresa==='espagiria'?'→ Queja de Calidad ':'→ PQR Ánimus ')+d.codigo,'success'); loadPqrTriaje(); if(empresa==='espagiria') loadQuejas(); }
+    else toast('Error: '+(d.error||'?'),'error');
+  }catch(e){ toast('Error red: '+e.message,'error'); }
+}
+async function descartarPqr(id){
+  var motivo = prompt('Motivo del descarte (spam, no es PQR, etc.):')||'';
+  try{
+    var r = await fetch('/api/aseguramiento/pqr-inbox/'+id+'/descartar', _fetchOpts('POST', {motivo:motivo}));
+    var d = await r.json();
+    if(r.ok && d.ok){ toast('Descartado','success'); loadPqrTriaje(); }
     else toast('Error: '+(d.error||'?'),'error');
   }catch(e){ toast('Error red: '+e.message,'error'); }
 }
