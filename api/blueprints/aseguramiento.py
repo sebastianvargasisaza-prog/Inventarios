@@ -109,8 +109,8 @@ def aseguramiento_page():
     # equipo de calidad también entran (mismo equipo hasta separar membresías).
     u = session.get('compras_user', '')
     try:
-        from config import ASEGURAMIENTO_USERS, CALIDAD_USERS as _CC, ADMIN_USERS as _ADM
-        permitidos = set(ASEGURAMIENTO_USERS) | set(_CC) | set(_ADM)
+        from config import ASEGURAMIENTO_USERS, ADMIN_USERS as _ADM
+        permitidos = set(ASEGURAMIENTO_USERS) | set(_ADM)
     except Exception:
         permitidos = set()
     if permitidos and u not in permitidos:

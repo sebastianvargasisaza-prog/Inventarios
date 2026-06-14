@@ -3,7 +3,7 @@ CALIDAD_HTML = r"""<!DOCTYPE html>
 <html lang="es" translate="no">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Calidad BPM Ã¢ÂÂ Espagiria</title>
+<title>Control de Calidad &middot; EOS</title>
 <link rel="stylesheet" href="/static/cortex.css?v=eos15">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
@@ -115,7 +115,7 @@ textarea{resize:vertical;min-height:70px;}
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#6d28d9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M9 3h6M10 3v6.5L4 19a2 2 0 001.7 3h12.6a2 2 0 001.7-3l-6-9.5V3"/><path d="M6 14h12"/></svg>
       Calidad BPM
     </div>
-    <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; Espagiria &middot; cuarentena, NCs &amp; CAPA</div>
+    <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; Espagiria &middot; Control de Calidad: an&aacute;lisis, micro, liberaci&oacute;n</div>
   </div>
   <div class="cx-mod-header__nav">
     <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver">&larr; Módulos</a>
@@ -127,7 +127,6 @@ textarea{resize:vertical;min-height:70px;}
 <script>function cxToggleTheme(){var h=document.documentElement;var c=h.getAttribute('data-theme');var n=c==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
 <div class="tabs">
   <div class="tab active" data-tip="Centro de mando del día: todo lo pendiente de Calidad en un vistazo (cuarentena, NCs, OOS, agua, calibraciones, PT por liberar) + alertas de microbiología." data-tip-pos="bottom" onclick="goTab('tab-bandeja')">&#x1F3AF; Bandeja del Dia</div>
-  <div class="tab" data-tip="KPIs del día y actividad reciente de Calidad." data-tip-pos="bottom" onclick="goTab('tab-dash')">&#128202; Dashboard</div>
   <div class="tab" data-tip="Cuadro de mando: indicadores con META, semáforo y tendencia (RFT, rechazos, CAPA, OOS, agua...). Doble-clic una tarjeta para editar su meta." data-tip-pos="bottom" onclick="goTab('tab-indic')">&#128201; Indicadores</div>
   <div class="tab" data-tip="Tareas de calidad del día (muestreos, inspecciones) según COC-PRO-011." data-tip-pos="bottom" onclick="goTab('tab-cron')">&#128203; Cronograma del Dia</div>
   <div class="tab" data-tip="Lotes de materia prima en cuarentena esperando aprobación/rechazo." data-tip-pos="bottom" onclick="goTab('tab-cc')">&#x1F9EA; Control Calidad MP</div>
@@ -163,27 +162,6 @@ textarea{resize:vertical;min-height:70px;}
   </div>
 </div>
 
-<!-- DASHBOARD -->
-<div id="tab-dash" class="pane">
-  <div class="kpi-row">
-    <div class="kpi"><div class="kpi-label">Cronograma Hoy</div><div class="kpi-val good" id="kv-cron-pct">â</div><div class="kpi-sub">% completado</div></div>
-    <div class="kpi"><div class="kpi-label">Lotes en Cuarentena</div><div class="kpi-val warn" id="kv-cuarentena">Ã¢ÂÂ</div><div class="kpi-sub">Pendientes CC</div></div>
-    <div class="kpi"><div class="kpi-label">Aprobados (30d)</div><div class="kpi-val good" id="kv-aprobados">Ã¢ÂÂ</div><div class="kpi-sub">Lotes aprobados</div></div>
-    <div class="kpi"><div class="kpi-label">Rechazados (30d)</div><div class="kpi-val crit" id="kv-rechazados">Ã¢ÂÂ</div><div class="kpi-sub">Lotes rechazados</div></div>
-    <div class="kpi"><div class="kpi-label">NC Abiertas</div><div class="kpi-val warn" id="kv-nc">Ã¢ÂÂ</div><div class="kpi-sub">No conformidades</div></div>
-    <div class="kpi"><div class="kpi-label">Calibraciones Vencidas</div><div class="kpi-val crit" id="kv-cals">Ã¢ÂÂ</div><div class="kpi-sub">Requieren accion</div>
-    <div class="kpi"><div class="kpi-label">PT Liberados (30d)</div><div class="kpi-val good" id="kv-lib-mes">—</div><div class="kpi-sub">Productos terminados</div></div>
-    <div class="kpi"><div class="kpi-label">Tasa Liberacion PT</div><div class="kpi-val good" id="kv-tasa-lib">—</div><div class="kpi-sub">% aprobados vs total</div></div></div>
-  </div>
-  <div class="card">
-    <div class="card-title">Cumplimiento â Ultimos 7 dias</div>
-    <div class="week-chart" id="week-chart"><p style="color:var(--cx-text-faint);font-size:0.78em">Cargando...</p></div>
-  </div>
-    <div class="card">
-    <div class="card-title">Actividad Reciente</div>
-    <div class="actividad" id="act-list"><p class="empty">Cargando...</p></div>
-  </div>
-</div>
 
 <!-- INDICADORES DE CALIDAD · cuadro de mando con metas + semáforos + tendencia -->
 <div id="tab-indic" class="pane">
@@ -818,13 +796,12 @@ function cambiarPagSize(tabla, valor){ TBL_STATE[tabla].size = parseInt(valor,10
 function buscarTabla(tabla, valor){ TBL_STATE[tabla].q = valor||''; TBL_STATE[tabla].page = 1; if(_PAG_REFRESH[tabla]) _PAG_REFRESH[tabla](); }
 
 
-var _tabIds=['tab-bandeja','tab-dash','tab-indic','tab-cron','tab-cc','tab-nc','tab-cal','tab-micro','tab-analisis','tab-agua','tab-equipos','tab-oos','tab-doc'];
+var _tabIds=['tab-bandeja','tab-indic','tab-cron','tab-cc','tab-nc','tab-cal','tab-micro','tab-analisis','tab-agua','tab-equipos','tab-oos','tab-doc'];
 function goTab(id){
   document.querySelectorAll('.tab').forEach((t,i)=>{t.classList.toggle('active',_tabIds[i]===id);});
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   if(id==='tab-bandeja') loadBandeja();
-  else if(id==='tab-dash') loadDash();
   else if(id==='tab-indic') loadIndicadores();
   else if(id==='tab-cron') loadCronograma();
   else if(id==='tab-cc') loadCuarentena();
@@ -1516,7 +1493,7 @@ async function cargarLotesPlantaPicker(){
     var r=await fetch('/api/calidad/lotes-planta?dias=120',{credentials:'same-origin',cache:'no-store'});
     var d=await r.json(); _LOTES_PLANTA=d.lotes||[];
     sel.innerHTML='<option value="">— elegir lote de producción —</option>'+_LOTES_PLANTA.map(function(l,i){
-      return '<option value="'+i+'">'+escapeHtmlNec(l.lote)+' · '+escapeHtmlNec(l.producto||'')+' ('+escapeHtmlNec(l.estado||'')+')</option>';
+      return '<option value="'+i+'">'+esc(l.lote)+' · '+esc(l.producto||'')+' ('+esc(l.estado||'')+')</option>';
     }).join('');
   }catch(e){ /* sin planta, el picker queda vacío y se registra a mano */ }
 }
@@ -1596,7 +1573,7 @@ async function loadMicroAnalisis(){
     var r=await fetch('/api/calidad/micro/analisis?meses='+meses,{credentials:'same-origin',cache:'no-store'});
     if(r.status===401){ window.location.href='/login'; return; }
     var d=await r.json();
-    var esc=escapeHtmlNec, html='';
+    var html='';
 
     // Panel 1 · Tendencia OOS por mes (barras)
     var t=d.tendencia||[];
@@ -2322,7 +2299,7 @@ async function loadCal(){
 // Init
 document.getElementById('cron-fecha').value=new Date().toISOString().substring(0,10);
 _crDate=new Date().toISOString().substring(0,10);
-loadDash();
+// dashboard removido · la bandeja carga en DOMContentLoaded
 </script>
 
 <!-- Widget "Mi contraseña" removido 24-may-2026 · vive en /modulos y /hub -->

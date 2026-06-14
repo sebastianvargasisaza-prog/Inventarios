@@ -40,17 +40,17 @@ CONTADORA_USERS = {"mayra", "catalina"}
 # Gloria (sólo RRHH), + asistentes de gerencia (daniela ÁNIMUS, luz Espagiria),
 # + contadora/asist. compras (mayra, catalina), + admins.
 RRHH_USERS      = {"gloria", "daniela", "luz", "mayra", "catalina", "alejandro", "sebastian"}
-# Control de Calidad (CC · Jefe de Control de Calidad) · análisis, liberación, micro,
-# fisicoquímico, agua, calibraciones, estabilidades, OOS. Módulo /calidad.
-CALIDAD_USERS   = {"laura", "miguel", "yuliel", "alejandro", "sebastian"}
-# Aseguramiento de la Calidad (AC) · CARGO DISTINTO al de Control de Calidad: gobierna el
-# SISTEMA de calidad — SGD (control de documentos), desviaciones, control de cambios, CAPA,
-# quejas, recalls, auditorías/autoinspección, capacitaciones. Módulo /aseguramiento.
-# Por defecto = mismo equipo de calidad hasta que Sebastián confirme quién es el responsable
-# específico de AC (ahí se restringe la membresía). Override con env ASEGURAMIENTO_USERS_OVERRIDE.
+# Control de Calidad (CC · Jefe de Control de Calidad = Laura, analista = Yulieth) ·
+# análisis, liberación, micro, fisicoquímico, agua, calibraciones, estabilidades, OOS.
+# Módulo /calidad. (Miguel NO va acá: es Aseguramiento · división de cargos 14-jun.)
+CALIDAD_USERS   = {"laura", "yuliel", "alejandro", "sebastian"}
+# Aseguramiento de la Calidad (AC · responsable = Miguel) · CARGO DISTINTO al de Control de
+# Calidad: gobierna el SISTEMA de calidad — SGD (control de documentos), desviaciones, control
+# de cambios, CAPA, quejas, recalls, auditorías/autoinspección, capacitaciones. Módulo
+# /aseguramiento. Override con env ASEGURAMIENTO_USERS_OVERRIDE.
 ASEGURAMIENTO_USERS = {
     u.strip().lower() for u in os.environ.get(
-        "ASEGURAMIENTO_USERS_OVERRIDE", "laura,miguel,yuliel,alejandro,sebastian"
+        "ASEGURAMIENTO_USERS_OVERRIDE", "miguel,alejandro,sebastian"
     ).split(",") if u.strip()
 }
 PLANTA_USERS    = {"luis", "smurillo", "sergio", "mayerlin", "camilo"}

@@ -28,5 +28,22 @@ def test_aseguramiento_page_bloquea_no_calidad(logged_client):
 
 
 def test_rol_aseguramiento_existe():
-    from config import ASEGURAMIENTO_USERS
-    assert isinstance(ASEGURAMIENTO_USERS, set) and ASEGURAMIENTO_USERS, 'ASEGURAMIENTO_USERS debe existir'
+    from config import ASEGURAMIENTO_USERS, CALIDAD_USERS
+    assert 'miguel' in ASEGURAMIENTO_USERS, 'Miguel debe ser Aseguramiento'
+    assert 'miguel' not in CALIDAD_USERS, 'Miguel ya no es Control de Calidad'
+    assert 'laura' in CALIDAD_USERS, 'Laura sigue en Control de Calidad'
+
+
+def test_division_acceso_miguel_si_laura_no(app):
+    from .conftest import TEST_PASSWORD, csrf_headers
+    # Miguel (Aseguramiento) entra
+    cm = app.test_client()
+    cm.post('/login', data={'username': 'miguel', 'password': TEST_PASSWORD}, headers=csrf_headers())
+    assert cm.get('/aseguramiento').status_code == 200
+    # Laura (Control de Calidad) NO entra a Aseguramiento (cargos divididos)
+    cl = app.test_client()
+    cl.post('/login', data={'username': 'laura', 'password': TEST_PASSWORD}, headers=csrf_headers())
+    body = cl.get('/aseguramiento').get_data(as_text=True)
+    assert 'cceso' in body, 'CC no debe entrar a Aseguramiento (división de cargos)'
+    # ...pero Laura SÍ entra a Control de Calidad
+    assert cl.get('/calidad').status_code == 200
