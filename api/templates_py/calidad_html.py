@@ -137,6 +137,7 @@ textarea{resize:vertical;min-height:70px;}
   <div class="tab" onclick="goTab('tab-agua')">&#x1F4A7; Sistema de Agua</div>
   <div class="tab" onclick="goTab('tab-equipos')">&#x1F527; Equipos</div>
   <div class="tab" onclick="goTab('tab-oos')">&#x26A0;&#xFE0F; OOS</div>
+  <div class="tab" onclick="goTab('tab-doc')">&#128218; Documentos</div>
 </div>
 <div class="main">
 
@@ -557,6 +558,42 @@ textarea{resize:vertical;min-height:70px;}
   </div>
 </div>
 
+<!-- DOCUMENTOS · biblioteca del Sistema de Gestión Documental (SGD) -->
+<div id="tab-doc" class="pane">
+  <div class="card" style="background:linear-gradient(135deg,#faf5ff,#e7e5e4);border:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+      <div>
+        <div style="font-size:0.78em;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.6px">Sistema de gesti&oacute;n documental</div>
+        <div style="font-size:1.3em;font-weight:700;color:#6d28d9">Biblioteca de documentos</div>
+        <div style="font-size:0.78em;color:var(--cx-text-mute);margin-top:2px">Procedimientos, formatos y manuales vigentes (COC-PRO, ASG-PRO&hellip;). Los vencidos / por vencer salen arriba. Crear/versionar se hace en Aseguramiento.</div>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+        <div style="text-align:center"><div style="font-size:0.7em;color:var(--cx-text-mute)">VIGENTES</div><div id="doc-k-vig" style="font-size:1.4em;font-weight:800;color:#16a34a">&mdash;</div></div>
+        <div style="text-align:center"><div style="font-size:0.7em;color:var(--cx-text-mute)">POR VENCER</div><div id="doc-k-pronto" style="font-size:1.4em;font-weight:800;color:#d97706">&mdash;</div></div>
+        <div style="text-align:center"><div style="font-size:0.7em;color:var(--cx-text-mute)">VENCIDOS</div><div id="doc-k-venc" style="font-size:1.4em;font-weight:800;color:#dc2626">&mdash;</div></div>
+        <button class="btn btn-ghost btn-sm" onclick="loadDocumentos()">&#x21BB; Refrescar</button>
+      </div>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0">
+    <input type="text" id="doc-q" placeholder="Buscar c&oacute;digo o t&iacute;tulo..." oninput="renderDocumentos()" style="padding:6px 10px;border:1px solid #e7e5e4;background:var(--cx-bg-alt);color:var(--cx-text);border-radius:6px;font-size:12px;max-width:240px">
+    <select id="doc-area" onchange="renderDocumentos()" style="padding:6px 10px;border:1px solid #e7e5e4;background:var(--cx-bg-alt);color:var(--cx-text);border-radius:6px;font-size:12px"><option value="">Todas las &aacute;reas</option></select>
+    <select id="doc-estado" onchange="renderDocumentos()" style="padding:6px 10px;border:1px solid #e7e5e4;background:var(--cx-bg-alt);color:var(--cx-text);border-radius:6px;font-size:12px">
+      <option value="">Todos los estados</option>
+      <option value="vencido">Vencidos</option>
+      <option value="vence_pronto">Por vencer (30d)</option>
+      <option value="vigente">Vigentes</option>
+      <option value="obsoleto">Obsoletos</option>
+    </select>
+  </div>
+  <div class="card">
+    <table>
+      <thead><tr><th>C&oacute;digo</th><th>T&iacute;tulo</th><th>Ver.</th><th>Estado</th><th>Pr&oacute;xima revisi&oacute;n</th><th>PDF</th></tr></thead>
+      <tbody id="doc-tbody"><tr><td colspan="6" class="empty">Cargando...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
 <!-- Modal nuevo resultado micro -->
 <div class="modal-overlay" id="m-micro">
   <div class="modal">
@@ -758,7 +795,7 @@ function cambiarPagSize(tabla, valor){ TBL_STATE[tabla].size = parseInt(valor,10
 function buscarTabla(tabla, valor){ TBL_STATE[tabla].q = valor||''; TBL_STATE[tabla].page = 1; if(_PAG_REFRESH[tabla]) _PAG_REFRESH[tabla](); }
 
 
-var _tabIds=['tab-bandeja','tab-dash','tab-indic','tab-cron','tab-cc','tab-nc','tab-cal','tab-micro','tab-agua','tab-equipos','tab-oos'];
+var _tabIds=['tab-bandeja','tab-dash','tab-indic','tab-cron','tab-cc','tab-nc','tab-cal','tab-micro','tab-agua','tab-equipos','tab-oos','tab-doc'];
 function goTab(id){
   document.querySelectorAll('.tab').forEach((t,i)=>{t.classList.toggle('active',_tabIds[i]===id);});
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
@@ -774,6 +811,7 @@ function goTab(id){
   else if(id==='tab-agua') loadAguaRegistros();
   else if(id==='tab-equipos') loadEquiposCompleto();
   else if(id==='tab-oos') loadOOS();
+  else if(id==='tab-doc') loadDocumentos();
 }
 
 // === INDICADORES DE CALIDAD · cuadro de mando ==========================
@@ -857,6 +895,68 @@ async function editarMetaKpi(codigo){
     if(!r.ok || d.error){ alert('Error: '+(d.error||r.status)); return; }
     loadIndicadores();
   }catch(e){ alert('Error red: '+(e.message||e)); }
+}
+
+// === DOCUMENTOS · biblioteca SGD (lectura · creación vive en Aseguramiento) ===
+var _DOCS = [];
+async function loadDocumentos(){
+  var tb = document.getElementById('doc-tbody');
+  if(!tb) return;
+  tb.innerHTML = '<tr><td colspan="6" class="empty">Cargando...</td></tr>';
+  try{
+    var r = await fetch('/api/aseguramiento/sgd/listado', {credentials:'same-origin', cache:'no-store'});
+    if(r.status===401){ window.location.href='/login'; return; }
+    var d = await r.json();
+    _DOCS = d.items || [];
+    // KPIs
+    var vig=0, pronto=0, venc=0;
+    _DOCS.forEach(function(it){
+      if(it.estado_efectivo==='vencido') venc++;
+      else if(it.estado_efectivo==='vence_pronto') pronto++;
+      else if(it.estado==='vigente') vig++;
+    });
+    document.getElementById('doc-k-vig').textContent = vig;
+    document.getElementById('doc-k-pronto').textContent = pronto;
+    document.getElementById('doc-k-venc').textContent = venc;
+    // poblar áreas
+    var sel = document.getElementById('doc-area');
+    if(sel && sel.options.length<=1){
+      var areas = Object.keys(d.resumen_por_area||{}).sort();
+      areas.forEach(function(a){ var o=document.createElement('option'); o.value=a; o.textContent=a; sel.appendChild(o); });
+    }
+    renderDocumentos();
+  }catch(e){ tb.innerHTML = '<tr><td colspan="6" class="empty">Error: '+esc(e.message||e)+'</td></tr>'; }
+}
+function renderDocumentos(){
+  var tb = document.getElementById('doc-tbody');
+  if(!tb) return;
+  var q = (document.getElementById('doc-q').value||'').toLowerCase().trim();
+  var area = document.getElementById('doc-area').value;
+  var est = document.getElementById('doc-estado').value;
+  var badge = {vigente:'#16a34a', vence_pronto:'#d97706', vencido:'#dc2626', obsoleto:'#94a3b8', borrador:'#94a3b8', revision:'#0891b2', retirado:'#94a3b8', conflicto:'#dc2626'};
+  var ordEst = {vencido:0, vence_pronto:1, vigente:2, revision:3, borrador:4, obsoleto:5, retirado:6, conflicto:0};
+  var lst = _DOCS.filter(function(it){
+    if(area && it.area!==area) return false;
+    if(est && it.estado_efectivo!==est) return false;
+    if(q && (it.codigo||'').toLowerCase().indexOf(q)<0 && (it.titulo||'').toLowerCase().indexOf(q)<0) return false;
+    return true;
+  });
+  lst.sort(function(a,b){ return (ordEst[a.estado_efectivo]==null?9:ordEst[a.estado_efectivo]) - (ordEst[b.estado_efectivo]==null?9:ordEst[b.estado_efectivo]) || (a.codigo>b.codigo?1:-1); });
+  if(!lst.length){ tb.innerHTML = '<tr><td colspan="6" class="empty">Sin documentos.</td></tr>'; return; }
+  tb.innerHTML = lst.map(function(it){
+    var ee = it.estado_efectivo||it.estado||'';
+    var col = badge[ee] || '#94a3b8';
+    var pdf = it.archivo_pdf_url ? '<a href="'+esc(it.archivo_pdf_url)+'" target="_blank" rel="noopener" style="color:#6d28d9">&#128196; ver</a>' : '<span style="color:#cbd5e1">&mdash;</span>';
+    var lbl = ee==='vence_pronto'?'por vencer':ee;
+    return '<tr>'
+      +'<td style="font-family:monospace;font-weight:700">'+esc(it.codigo)+'</td>'
+      +'<td>'+esc(it.titulo||'')+'</td>'
+      +'<td>'+esc(it.version_actual||'')+'</td>'
+      +'<td><span style="color:'+col+';font-weight:700">'+esc(lbl)+'</span></td>'
+      +'<td>'+esc(it.proxima_revision||'')+'</td>'
+      +'<td>'+pdf+'</td>'
+    +'</tr>';
+  }).join('');
 }
 
 // === EQUIPOS Y CALIBRACIONES (COC-PRO-006/012 + PRD-PRO-004) ===========
