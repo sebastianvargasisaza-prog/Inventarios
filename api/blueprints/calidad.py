@@ -1518,11 +1518,20 @@ def calidad_micro_resultados():
 
         from datetime import date as _date
         fecha_analisis = (d.get('fecha_analisis') or '').strip() or _date.today().isoformat()
+        # Fase 2 · COA del laboratorio (URL http/https) + ligado al EBR/lote del PT
+        coa_url = (d.get('archivo_coa_url') or '').strip() or None
+        if coa_url and not (coa_url.startswith('http://') or coa_url.startswith('https://')):
+            return jsonify({'error': 'archivo_coa_url debe ser una URL http(s)'}), 400
+        ebr_id = d.get('ebr_id')
+        try:
+            ebr_id = int(ebr_id) if ebr_id not in (None, '') else None
+        except (TypeError, ValueError):
+            ebr_id = None
         c.execute("""INSERT INTO calidad_micro_resultados
             (lote, producto_nombre, fecha_muestreo, fecha_analisis,
              microorganismo, valor, valor_texto, unidad, estado, laboratorio,
-             analista, metodo, observaciones, creado_por)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             analista, metodo, observaciones, creado_por, archivo_coa_url, ebr_id)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (lote, producto,
              (d.get('fecha_muestreo') or '').strip() or None,
              fecha_analisis,
@@ -1531,7 +1540,7 @@ def calidad_micro_resultados():
              (d.get('analista') or '').strip() or user,
              (d.get('metodo') or '').strip() or None,
              (d.get('observaciones') or '').strip() or None,
-             user))
+             user, coa_url, ebr_id))
         new_id = c.lastrowid
 
         # Si fuera_industria → crear OOS automáticamente · race-safe
@@ -1614,7 +1623,8 @@ def calidad_micro_resultados():
     if hasta: where.append('fecha_analisis <= ?'); params.append(hasta)
     sql = """SELECT id, lote, producto_nombre, fecha_muestreo, fecha_analisis,
                     microorganismo, valor, valor_texto, unidad, estado,
-                    laboratorio, analista, metodo, observaciones, oos_id
+                    laboratorio, analista, metodo, observaciones, oos_id,
+                    COALESCE(archivo_coa_url,''), ebr_id
              FROM calidad_micro_resultados"""
     if where:
         sql += " WHERE " + " AND ".join(where)
@@ -1622,7 +1632,8 @@ def calidad_micro_resultados():
     rows = c.execute(sql, params).fetchall()
     cols = ['id','lote','producto_nombre','fecha_muestreo','fecha_analisis',
             'microorganismo','valor','valor_texto','unidad','estado',
-            'laboratorio','analista','metodo','observaciones','oos_id']
+            'laboratorio','analista','metodo','observaciones','oos_id',
+            'archivo_coa_url','ebr_id']
     return jsonify({'resultados': [dict(zip(cols, r)) for r in rows]})
 
 

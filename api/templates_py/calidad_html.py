@@ -311,8 +311,8 @@ textarea{resize:vertical;min-height:70px;}
   <div class="card" style="margin-top:14px">
     <div class="card-title">Ultimos resultados registrados</div>
     <table>
-      <thead><tr><th>Fecha</th><th>Lote</th><th>Producto</th><th>Microorganismo</th><th>Valor</th><th>Estado</th><th>OOS</th><th>Analista</th></tr></thead>
-      <tbody id="micro-res-tbody"><tr><td colspan="8" class="empty">Cargando...</td></tr></tbody>
+      <thead><tr><th>Fecha</th><th>Lote</th><th>Producto</th><th>Microorganismo</th><th>Valor</th><th>Estado</th><th>OOS</th><th>COA</th><th>Lab</th><th>Analista</th></tr></thead>
+      <tbody id="micro-res-tbody"><tr><td colspan="10" class="empty">Cargando...</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -582,6 +582,11 @@ textarea{resize:vertical;min-height:70px;}
       <div class="form-group"><label>Valor (UFC/g)</label><input id="m-micro-val" type="number" min="0" step="any"></div>
       <div class="form-group"><label>O texto (ausencia)</label><input id="m-micro-txt" placeholder="ausencia, &lt;10"></div>
     </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label>Laboratorio</label><input id="m-micro-lab" placeholder="Ej: BioQu&iacute;mica Ltda. (o Interno)"></div>
+      <div class="form-group"><label>EBR id (opcional)</label><input id="m-micro-ebr" type="number" min="0" placeholder="liga al legajo del lote"></div>
+    </div>
+    <div class="form-group"><label>COA / informe del laboratorio (URL)</label><input id="m-micro-coa" placeholder="https://... (PDF del informe)"></div>
     <div class="form-group"><label>Observaciones</label><textarea id="m-micro-obs" style="min-height:50px"></textarea></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('m-micro')">Cancelar</button>
@@ -1315,18 +1320,22 @@ async function loadMicroHeatmap(){
     var dd = await rr.json();
     var rb = document.getElementById('micro-res-tbody');
     var lst = (dd.resultados||[]).slice(0,30);
-    if(!lst.length){ rb.innerHTML = '<tr><td colspan="8" class="empty">Sin resultados.</td></tr>'; return; }
+    if(!lst.length){ rb.innerHTML = '<tr><td colspan="10" class="empty">Sin resultados.</td></tr>'; return; }
     rb.innerHTML = lst.map(function(p){
       var estColor = {ok:'#34d399',fuera_meta:'#fcd34d',fuera_industria:'#fca5a5',observacion:'#94a3b8'}[p.estado] || '#94a3b8';
       var oosLink = p.oos_id ? '<a href="#" onclick="event.preventDefault();goTab(\'tab-oos\')" style="color:#dc2626">OOS</a>' : '';
+      var coaLink = p.archivo_coa_url ? '<a href="'+esc(p.archivo_coa_url)+'" target="_blank" rel="noopener" style="color:#6d28d9">&#128196; COA</a>' : '<span style="color:#cbd5e1">&mdash;</span>';
+      var loteTxt = esc(p.lote) + (p.ebr_id ? ' <span style="font-size:9px;color:#94a3b8">EBR#'+p.ebr_id+'</span>' : '');
       return '<tr>'
         +'<td>'+fmt(p.fecha_analisis)+'</td>'
-        +'<td>'+esc(p.lote)+'</td>'
+        +'<td>'+loteTxt+'</td>'
         +'<td>'+esc(p.producto_nombre)+'</td>'
         +'<td>'+esc(p.microorganismo)+'</td>'
         +'<td>'+(p.valor!=null?p.valor:esc(p.valor_texto||''))+' '+esc(p.unidad||'')+'</td>'
         +'<td><span style="color:'+estColor+';font-weight:700">'+p.estado+'</span></td>'
         +'<td>'+oosLink+'</td>'
+        +'<td>'+coaLink+'</td>'
+        +'<td>'+esc(p.laboratorio||'')+'</td>'
         +'<td>'+esc(p.analista||'')+'</td>'
       +'</tr>';
     }).join('');
@@ -1336,7 +1345,7 @@ async function loadMicroHeatmap(){
 }
 
 function abrirModalNuevoResultadoMicro(){
-  ['m-micro-prod','m-micro-lote','m-micro-val','m-micro-txt','m-micro-obs'].forEach(function(id){document.getElementById(id).value='';});
+  ['m-micro-prod','m-micro-lote','m-micro-val','m-micro-txt','m-micro-obs','m-micro-lab','m-micro-coa','m-micro-ebr'].forEach(function(id){var el=document.getElementById(id); if(el) el.value='';});
   document.getElementById('m-micro-fecha').value = new Date().toISOString().slice(0,10);
   openModal('m-micro');
 }
@@ -1350,8 +1359,12 @@ async function guardarResultadoMicro(){
     valor: document.getElementById('m-micro-val').value || null,
     valor_texto: document.getElementById('m-micro-txt').value || null,
     observaciones: document.getElementById('m-micro-obs').value || null,
+    laboratorio: (document.getElementById('m-micro-lab').value||'').trim() || null,
+    archivo_coa_url: (document.getElementById('m-micro-coa').value||'').trim() || null,
+    ebr_id: (document.getElementById('m-micro-ebr').value||'').trim() || null,
   };
   if(!body.producto_nombre || !body.lote){ alert('Producto y lote requeridos'); return; }
+  if(body.archivo_coa_url && !/^https?:\/\//.test(body.archivo_coa_url)){ alert('El COA debe ser una URL http(s)'); return; }
   try{
     var r = await fetch('/api/calidad/micro/resultados', _fetchOpts('POST', body));
     var d = await r.json();

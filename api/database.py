@@ -312,6 +312,15 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (245, "Micro brutal (Fase 2 · 14-jun): liga los análisis micro al lote de PT/EBR y "
+          "permite adjuntar el COA/informe del laboratorio. Agrega a "
+          "calidad_micro_resultados: archivo_coa_url (URL del informe del lab) y ebr_id "
+          "(FK suave a ebr_ejecuciones para trazar el resultado al legajo del lote). "
+          "Idempotente (duplicate column = benigno).", [
+        "ALTER TABLE calidad_micro_resultados ADD COLUMN archivo_coa_url TEXT",
+        "ALTER TABLE calidad_micro_resultados ADD COLUMN ebr_id INTEGER",
+        "CREATE INDEX IF NOT EXISTS idx_micro_res_ebr ON calidad_micro_resultados(ebr_id)",
+    ]),
     (244, "Cuadro de mando de indicadores de calidad (Fase 1 · 14-jun). Tabla "
           "calidad_kpi_metas: cada indicador tiene meta/objetivo + umbral_amarillo + "
           "direccion (mayor_mejor/menor_mejor) para semaforo verde/amarillo/rojo. Seed con "

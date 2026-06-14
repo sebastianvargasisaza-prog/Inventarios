@@ -3105,6 +3105,57 @@ def liberar_ebr(ebr_id):
             "codigo": "ARTES_SIN_APROBAR",
         }), 409
 
+    # GATE MICRO · Fase 2 (14-jun · decisión Sebastián = bloqueo duro). El lote NO se
+    # libera si tiene un resultado micro FUERA DE SPEC DE INDUSTRIA sin resolver (OOS
+    # abierto) — esto es incondicional y seguro (solo dispara con dato real de OOS, no
+    # rompe lotes sin micro). El requisito de que el análisis micro ESTÉ PRESENTE
+    # ("faltante") es más estricto y se enciende por fases con BRD_MICRO_GATE='strict'
+    # (igual que EBR_MODE off→warn→strict), para no frenar la operación antes de que
+    # estén cargando micro consistentemente.
+    try:
+        _mr = cur.execute("SELECT lote FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
+        _lote_pt = (_mr[0] if _mr else '') or ''
+    except Exception:
+        _lote_pt = ''
+    if _lote_pt:
+        try:
+            micro_oos = cur.execute(
+                "SELECT mr.microorganismo, mr.valor, mr.valor_texto, mr.unidad "
+                "FROM calidad_micro_resultados mr "
+                "LEFT JOIN calidad_oos o ON o.id = mr.oos_id "
+                "WHERE (mr.ebr_id=? OR mr.lote=?) AND mr.estado='fuera_industria' "
+                "AND (mr.oos_id IS NULL OR LOWER(COALESCE(o.estado,'')) NOT IN ('cerrado','rechazado','descartado')) "
+                "ORDER BY mr.id DESC LIMIT 1",
+                (ebr_id, _lote_pt),
+            ).fetchone()
+        except Exception:
+            micro_oos = None  # tabla/columna ausente · deploy-safe
+        if micro_oos:
+            return jsonify({
+                "error": (f"No se puede liberar: análisis microbiológico FUERA DE SPEC "
+                          f"({micro_oos[0]}: {micro_oos[1] if micro_oos[1] is not None else micro_oos[2]} "
+                          f"{micro_oos[3] or ''}) sin OOS resuelto para el lote {_lote_pt}. "
+                          f"Resolvé el OOS micro antes de liberar."),
+                "codigo": "MICRO_OOS",
+            }), 409
+        import os as _os_micro
+        if _os_micro.environ.get('BRD_MICRO_GATE', 'off').lower() == 'strict':
+            try:
+                _micro_ok = cur.execute(
+                    "SELECT COUNT(*) FROM calidad_micro_resultados "
+                    "WHERE (ebr_id=? OR lote=?) AND estado IN ('ok','fuera_meta')",
+                    (ebr_id, _lote_pt),
+                ).fetchone()[0]
+            except Exception:
+                _micro_ok = 1  # deploy-safe
+            if not _micro_ok:
+                return jsonify({
+                    "error": (f"No se puede liberar: falta el análisis microbiológico del "
+                              f"lote {_lote_pt} (BRD_MICRO_GATE=strict). Registrá el resultado "
+                              f"micro conforme antes de liberar."),
+                    "codigo": "MICRO_FALTANTE",
+                }), 409
+
     # Audit 3-jun · GATE DE COMPLETITUD del legajo · solo EBR_MODE='strict' (BPM
     # duro). En 'warn' (piloto) NO bloquea, para no frenar mientras se adopta.
     if EBR_MODE == 'strict':
