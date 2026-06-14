@@ -2223,16 +2223,18 @@ def ebr_vista_completa(ebr_id):
         return txt
     try:
         rows = conn.execute(
-            """SELECT material_id, COALESCE(material_nombre,''),
-                      cantidad_teorica_g, cantidad_real_g, COALESCE(lote_mp,''),
-                      COALESCE(pesado_por,''), COALESCE(pesado_at_utc,''),
-                      COALESCE(notas,''), id,
-                      COALESCE(verificado_por,''), COALESCE(verificado_at_utc,'')
-               FROM ebr_pesajes WHERE ebr_id=? ORDER BY id""",
+            """SELECT p.material_id, COALESCE(p.material_nombre,''),
+                      p.cantidad_teorica_g, p.cantidad_real_g, COALESCE(p.lote_mp,''),
+                      COALESCE(p.pesado_por,''), COALESCE(p.pesado_at_utc,''),
+                      COALESCE(p.notas,''), p.id,
+                      COALESCE(p.verificado_por,''), COALESCE(p.verificado_at_utc,''),
+                      COALESCE(mm.nombre_inci,'')
+               FROM ebr_pesajes p LEFT JOIN maestro_mps mm ON mm.codigo_mp=p.material_id
+               WHERE p.ebr_id=? ORDER BY p.id""",
             (ebr_id,),
         ).fetchall()
         out['pesajes'] = [{
-            'material_id': r[0], 'material_nombre': r[1],
+            'material_id': r[0], 'material_nombre': r[1], 'nombre_inci': r[11],
             'esperada_g': float(r[2] or 0), 'real_g': float(r[3] or 0),
             'lote_mp': r[4], 'operario': r[5], 'fecha': r[6],
             'observaciones': r[7], 'pesaje_id': r[8],
@@ -2267,8 +2269,10 @@ def ebr_vista_completa(ebr_id):
         sheet = []
         if prod_nom:
             fitems = conn.execute(
-                "SELECT material_id, COALESCE(material_nombre,''), COALESCE(porcentaje,0) "
-                "FROM formula_items WHERE producto_nombre=? ORDER BY porcentaje DESC", (prod_nom,)).fetchall()
+                "SELECT fi.material_id, COALESCE(fi.material_nombre,''), COALESCE(fi.porcentaje,0), "
+                "COALESCE(mm.nombre_inci,'') "
+                "FROM formula_items fi LEFT JOIN maestro_mps mm ON mm.codigo_mp=fi.material_id "
+                "WHERE fi.producto_nombre=? ORDER BY fi.porcentaje DESC", (prod_nom,)).fetchall()
             for fr in fitems:
                 mid = str(fr[0] or '').strip()
                 if not mid:
@@ -2290,6 +2294,7 @@ def ebr_vista_completa(ebr_id):
                         lote = ''  # presupuesto agotado · no colgar la página
                 sheet.append({
                     'material_id': mid, 'material_nombre': fr[1] or '',
+                    'nombre_inci': fr[3] or '',
                     'porcentaje': pct,
                     'cant_a_pesar_g': cant_a_pesar,
                     'lote': lote or '—',
@@ -4213,9 +4218,11 @@ def pdf_ebr(ebr_id):
         except Exception:
             return []
     pesajes = _q(
-        "SELECT material_id, material_nombre, cantidad_teorica_g, cantidad_real_g, "
-        "delta_g, delta_pct, lote_mp, pesado_por, verificado_por, verificado_at_utc "
-        "FROM ebr_pesajes WHERE ebr_id=? ORDER BY id", ebr_id)
+        "SELECT p.material_id, p.material_nombre, p.cantidad_teorica_g, p.cantidad_real_g, "
+        "p.delta_g, p.delta_pct, p.lote_mp, p.pesado_por, p.verificado_por, p.verificado_at_utc, "
+        "COALESCE(mm.nombre_inci,'') AS nombre_inci "
+        "FROM ebr_pesajes p LEFT JOIN maestro_mps mm ON mm.codigo_mp=p.material_id "
+        "WHERE p.ebr_id=? ORDER BY p.id", ebr_id)
     concil = _q(
         "SELECT tipo, material_nombre, lote_material, cant_requerida, cant_recibida, "
         "cant_devuelta, cant_utilizada, registrado_por FROM ebr_conciliacion_material "
@@ -4377,8 +4384,12 @@ def pdf_ebr(ebr_id):
             dp_s = f"{dp:+.2f}%" if dp is not None else "-"
             verif = (f"verificó: {w['verificado_por']} ({(w['verificado_at_utc'] or '')[:19]} UTC)"
                      if w["verificado_por"] else "SIN 2ª firma")
+            # UI por INCI (regulado · INCI + comercial para trazabilidad)
+            _nm = w['nombre_inci'] or w['material_nombre'] or ''
+            if w['nombre_inci'] and w['material_nombre'] and w['nombre_inci'] != w['material_nombre']:
+                _nm = f"{w['nombre_inci']} ({w['material_nombre']})"
             _line(
-                f"{w['material_id']} {w['material_nombre'] or ''}: teórico "
+                f"{w['material_id']} {_nm}: teórico "
                 f"{w['cantidad_teorica_g']} g · real {w['cantidad_real_g']} g · "
                 f"delta {w['delta_g']} g ({dp_s}) · lote MP {w['lote_mp'] or '-'}",
                 h=5, font_size=9)
@@ -4549,8 +4560,10 @@ def _calcular_teoricos_mp(conn, producto_nombre, lote_size_g):
     Si la fórmula no existe (producto no fórmula-driven), devuelve dict vacío.
     """
     rows = conn.execute(
-        """SELECT material_id, material_nombre, porcentaje
-           FROM formula_items WHERE producto_nombre = ?""",
+        """SELECT fi.material_id, fi.material_nombre, fi.porcentaje,
+                  COALESCE(mm.nombre_inci,'') AS nombre_inci
+           FROM formula_items fi LEFT JOIN maestro_mps mm ON mm.codigo_mp=fi.material_id
+           WHERE fi.producto_nombre = ?""",
         (producto_nombre,),
     ).fetchall()
     teoricos = {}
@@ -4558,6 +4571,7 @@ def _calcular_teoricos_mp(conn, producto_nombre, lote_size_g):
         teoricos[r["material_id"]] = {
             "material_id": r["material_id"],
             "material_nombre": r["material_nombre"] or "",
+            "nombre_inci": r["nombre_inci"] or "",
             "porcentaje": r["porcentaje"],
             "cantidad_teorica_g": (r["porcentaje"] / 100.0) * lote_size_g,
         }
@@ -5310,6 +5324,7 @@ def reconciliacion_ebr(ebr_id):
             no_pesados.append({
                 "material_id": mid,
                 "material_nombre": spec["material_nombre"],
+                "nombre_inci": spec.get("nombre_inci", ""),
                 "cantidad_teorica_g": teorico,
             })
             continue
@@ -5320,6 +5335,7 @@ def reconciliacion_ebr(ebr_id):
         item = {
             "material_id": mid,
             "material_nombre": spec["material_nombre"],
+            "nombre_inci": spec.get("nombre_inci", ""),
             "cantidad_teorica_g": teorico,
             "cantidad_real_g": real,
             "delta_g": delta,

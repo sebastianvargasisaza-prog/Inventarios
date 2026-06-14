@@ -477,7 +477,7 @@ async function showEbrDetail(id){
         html += '<div class="card"><div class="card-title">Pesajes pendientes (' + recRes.no_pesados.length + ' MPs)</div>'
           + '<table><thead><tr><th>MP</th><th>Teórico (g)</th><th></th></tr></thead><tbody>';
         recRes.no_pesados.forEach(function(mp){
-          html += '<tr><td>' + escapeHtml(mp.material_id) + ' · ' + escapeHtml(mp.material_nombre || '') + '</td>'
+          html += '<tr><td>' + escapeHtml(mp.material_id) + ' · ' + escapeHtml(mp.nombre_inci || mp.material_nombre || '') + ((mp.nombre_inci && mp.material_nombre && mp.nombre_inci !== mp.material_nombre) ? ' <span style="color:#999;font-size:0.85em">(' + escapeHtml(mp.material_nombre) + ')</span>' : '') + '</td>'
             + '<td>' + mp.cantidad_teorica_g.toFixed(2) + '</td>'
             + '<td><button class="btn btn-primary btn-sm" onclick="reportarPesaje(' + id + ',\'' + escapeHtml(mp.material_id) + '\',\'' + escapeHtml(mp.material_nombre||'') + '\',' + mp.cantidad_teorica_g + ')">Reportar</button></td></tr>';
         });
@@ -502,7 +502,7 @@ async function showEbrDetail(id){
     if (rec.outliers.length) {
       html += '<table><thead><tr><th>MP</th><th>Teórico (g)</th><th>Real (g)</th><th>Δ%</th></tr></thead><tbody>';
       rec.outliers.forEach(function(x){
-        html += '<tr><td>' + escapeHtml(x.material_id) + ' · ' + escapeHtml(x.material_nombre || '') + '</td><td>' + x.cantidad_teorica_g.toFixed(2) + '</td><td>' + x.cantidad_real_g.toFixed(2) + '</td><td style="color:#991b1b;font-weight:700">' + x.delta_pct.toFixed(1) + '%</td></tr>';
+        html += '<tr><td>' + escapeHtml(x.material_id) + ' · ' + escapeHtml(x.nombre_inci || x.material_nombre || '') + ((x.nombre_inci && x.material_nombre && x.nombre_inci !== x.material_nombre) ? ' <span style="color:#999;font-size:0.85em">(' + escapeHtml(x.material_nombre) + ')</span>' : '') + '</td><td>' + x.cantidad_teorica_g.toFixed(2) + '</td><td>' + x.cantidad_real_g.toFixed(2) + '</td><td style="color:#991b1b;font-weight:700">' + x.delta_pct.toFixed(1) + '%</td></tr>';
       });
       html += '</tbody></table>';
     }

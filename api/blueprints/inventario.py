@@ -736,8 +736,14 @@ def handle_formulas():
     headers = c.fetchall()
     formulas = []
     for h in headers:
-        c.execute('SELECT material_id, material_nombre, porcentaje FROM formula_items WHERE producto_nombre=?', (h[0],))
-        items = [{'material_id': r[0], 'material_nombre': r[1], 'porcentaje': r[2]} for r in c.fetchall()]
+        # INCI (13-jun · UI por INCI): JOIN al maestro por código (la identidad sigue
+        # siendo material_id; nombre_inci es solo para mostrar).
+        c.execute('SELECT fi.material_id, fi.material_nombre, fi.porcentaje, '
+                  "COALESCE(mm.nombre_inci,'') FROM formula_items fi "
+                  'LEFT JOIN maestro_mps mm ON mm.codigo_mp=fi.material_id '
+                  'WHERE fi.producto_nombre=?', (h[0],))
+        items = [{'material_id': r[0], 'material_nombre': r[1], 'porcentaje': r[2],
+                  'nombre_inci': r[3]} for r in c.fetchall()]
         formulas.append({'producto_nombre': h[0], 'unidad_base_g': h[1], 'descripcion': h[2],
                          'fecha_creacion': h[3], 'items': items})
     return jsonify({'formulas': formulas})

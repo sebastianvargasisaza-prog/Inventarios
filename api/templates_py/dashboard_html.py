@@ -5065,7 +5065,8 @@ function renderFormulas(fl){
     f.items.forEach(function(it){
       var pctVal=formulasPin?it.porcentaje+'%':MASK+'%';
       var gPorBase = formulasPin ? (it.porcentaje * baseF / 100).toFixed(2) + 'g' : MASK + 'g';
-      rows+='<tr><td style="font-family:monospace;">'+it.material_id+'</td><td>'+it.material_nombre+'</td><td>'+pctVal+'</td><td style="font-weight:600;">'+gPorBase+'</td></tr>';
+      var nmF=(it.nombre_inci||it.material_nombre||'')+((it.nombre_inci&&it.material_nombre&&it.nombre_inci!==it.material_nombre)?' <span style="color:#999;font-size:0.85em;">('+it.material_nombre+')</span>':'');
+      rows+='<tr><td style="font-family:monospace;">'+it.material_id+'</td><td>'+nmF+'</td><td>'+pctVal+'</td><td style="font-weight:600;">'+gPorBase+'</td></tr>';
     });
     var unidadCol = 'g por ' + baseF + 'g';
     var totalStr=formulasPin?total.toFixed(2)+'%'+(ok?' OK':' revisar'):MASK+'%';
@@ -5333,7 +5334,7 @@ function previewProd(){
   if(!f||!f.items.length){preview.style.display='none';return;}
   var g=kg*1000;
   document.getElementById('prod-preview-body').innerHTML=f.items.map(function(it){
-    return '<tr><td>'+it.material_nombre+'</td><td style="text-align:right;font-weight:700;">'+((it.porcentaje/100)*g).toFixed(1)+' g</td></tr>';
+    return '<tr><td>'+(it.nombre_inci||it.material_nombre||'')+'</td><td style="text-align:right;font-weight:700;">'+((it.porcentaje/100)*g).toFixed(1)+' g</td></tr>';
   }).join('');
   preview.style.display='block';
 }
