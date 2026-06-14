@@ -4436,7 +4436,8 @@ async function buscarMPIngreso(val){
       }
       dd.innerHTML=header+matches.map(function(m,i){
         var via=m.match_via?' <span style="color:#10b981;font-size:0.75em">['+m.match_via+']</span>':'';
-        return '<div class="mp-item" style="padding:9px 14px;cursor:pointer;border-bottom:1px solid #eee;font-size:0.9em;" onmousedown="seleccionarMP(_mpMatches['+i+'])">'+'<span style="font-family:monospace;color:#667eea;font-size:0.85em;">'+escapeHtml(m.codigo_mp)+'</span> &mdash; <strong>'+escapeHtml(m.nombre_comercial||m.nombre_inci||'')+'</strong>'+via+(m.proveedor?' <span style="color:#888;font-size:0.82em;">('+escapeHtml(m.proveedor)+')</span>':'')+'</div>';
+        var _sec=(m.nombre_comercial&&m.nombre_inci&&m.nombre_comercial!==m.nombre_inci)?' <span style="color:#888;font-size:0.82em;">'+escapeHtml(m.nombre_comercial)+'</span>':'';
+        return '<div class="mp-item" style="padding:9px 14px;cursor:pointer;border-bottom:1px solid #eee;font-size:0.9em;" onmousedown="seleccionarMP(_mpMatches['+i+'])">'+'<span style="font-family:monospace;color:#667eea;font-size:0.85em;">'+escapeHtml(m.codigo_mp)+'</span> &mdash; <strong>'+escapeHtml(m.nombre_inci||m.nombre_comercial||'')+'</strong>'+_sec+via+(m.proveedor?' <span style="color:#888;font-size:0.82em;">('+escapeHtml(m.proveedor)+')</span>':'')+'</div>';
       }).join('');
     }
   }
@@ -6330,7 +6331,8 @@ async function abrirPreciosMP(){
   var d=await r.json();
   var mps=d.mps||[];
   var rows=mps.map(function(m){
-    return '<tr><td>'+m.codigo_mp+'</td><td>'+m.nombre_comercial+'</td>'
+    var _nm=(m.nombre_inci||m.nombre_comercial||'')+((m.nombre_comercial&&m.nombre_inci&&m.nombre_comercial!==m.nombre_inci)?' <span style="color:#94a3b8;font-size:0.8em;">('+m.nombre_comercial+')</span>':'');
+    return '<tr><td>'+m.codigo_mp+'</td><td>'+_nm+'</td>'
       +'<td><input type="number" step="0.01" min="0" value="'+(m.precio_referencia||0)+'" id="pr-'+m.codigo_mp+'" style="width:110px;padding:3px 6px;border:1px solid #ccc;border-radius:4px;"></td>'
       +'<td><button onclick="guardarPrecioMP(\\''+m.codigo_mp+'\\')" style="padding:3px 10px;font-size:0.8em;background:#6c5ce7;color:#fff;border:none;border-radius:4px;cursor:pointer;">Guardar</button></td></tr>';
   }).join('');
@@ -22042,8 +22044,8 @@ async function ckMarcar(itemId, estado){
       const consumo = d.total_consumo_365d_g || 0;
       const deficit = d.deficit_365d_g || 0;
       let html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #e2e8f0;padding-bottom:14px;margin-bottom:14px">';
-      html += '<div><h2 style="margin:0;font-size:18px;color:#1e293b">' + (d.codigo_mp) + ' · ' + escapeHtmlNec(d.nombre_comercial || '') + '</h2>';
-      if (d.nombre_inci) html += '<div style="font-size:11px;color:#64748b;margin-top:3px">INCI: ' + escapeHtmlNec(d.nombre_inci) + '</div>';
+      html += '<div><h2 style="margin:0;font-size:18px;color:#1e293b">' + (d.codigo_mp) + ' · ' + escapeHtmlNec(d.nombre_inci || d.nombre_comercial || '') + '</h2>';
+      if (d.nombre_comercial && d.nombre_comercial !== d.nombre_inci) html += '<div style="font-size:11px;color:#64748b;margin-top:3px">Comercial: ' + escapeHtmlNec(d.nombre_comercial) + '</div>';
       if (d.proveedor) html += '<div style="font-size:11px;color:#64748b">Proveedor: ' + escapeHtmlNec(d.proveedor) + '</div>';
       html += '</div>';
       html += '<button onclick="document.getElementById(&quot;modal-trail-mp&quot;).remove()" style="background:#e2e8f0;color:#475569;border:none;width:36px;height:36px;border-radius:50%;font-size:20px;cursor:pointer">×</button>';

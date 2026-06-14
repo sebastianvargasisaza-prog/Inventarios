@@ -7245,7 +7245,7 @@ function renderConsolCard(p, idx){
         : '—';
       var ocs = it.ocs_origen.length > 1 ? it.ocs_origen.join(', ') : (it.ocs_origen[0]||'');
       return '<tr>'
-        +'<td style="padding:5px 8px;color:#1e293b;">'+escConH(it.nombre_mp)+'</td>'
+        +'<td style="padding:5px 8px;color:#1e293b;">'+escConH(it.nombre_inci||it.nombre_mp)+((it.nombre_inci&&it.nombre_mp&&it.nombre_inci!==it.nombre_mp)?'<span style="color:#a8a29e;font-size:11px"> ('+escConH(it.nombre_mp)+')</span>':'')+'</td>'
         +'<td style="padding:5px 8px;font-weight:600;">'+cant+'</td>'
         +'<td style="padding:5px 8px;color:#64748b;">'+sub+'</td>'
         +'<td style="padding:5px 8px;font-size:11px;color:#94a3b8;">'+ocs+'</td>'
@@ -7335,7 +7335,7 @@ function renderConsolCardEdit(p, idx){
     var itemsRows = (o.items_raw||[]).map(function(it, ii){
       var rid = ocId+'-it-'+ii;
       return '<tr data-item-id="'+it.id+'" data-row-id="'+rid+'">'
-        +'<td style="padding:6px 8px;font-size:12px;color:#1e293b;">'+escConH(it.nombre_mp||it.codigo_mp||'?')+'</td>'
+        +'<td style="padding:6px 8px;font-size:12px;color:#1e293b;">'+escConH(it.nombre_inci||it.nombre_mp||it.codigo_mp||'?')+((it.nombre_inci&&it.nombre_mp&&it.nombre_inci!==it.nombre_mp)?'<span style="color:#a8a29e;font-size:11px"> ('+escConH(it.nombre_mp)+')</span>':'')+'</td>'
         +'<td style="padding:4px 8px;"><input type="number" step="any" min="0" value="'+(it.cantidad_g||0)+'" '
           +'data-field="cantidad_g" oninput="recalcConsolOCFromEl(this)" '
           +'style="width:90px;padding:4px 6px;border:1px solid #d1d5db;border-radius:5px;font-size:12px;text-align:right;"></td>'
@@ -7510,7 +7510,10 @@ async function copiarPedido(idx){
       var sub = it.subtotal_total > 0
         ? '  ($'+Number(it.subtotal_total).toLocaleString('es-CO',{maximumFractionDigits:0})+')'
         : '';
-      lines.push('- '+it.nombre_mp+': '+cant+sub);
+      var _nom = (it.nombre_inci && it.nombre_mp && it.nombre_inci!==it.nombre_mp)
+        ? it.nombre_inci+' ('+it.nombre_mp+')'
+        : (it.nombre_inci||it.nombre_mp||'');
+      lines.push('- '+_nom+': '+cant+sub);
     });
   } else {
     p.ocs.forEach(function(o){
@@ -7567,7 +7570,7 @@ function imprimirPedido(idx){
       var cant = Math.round(it.cantidad_total_g||0).toLocaleString('es-CO')+' g';
       detalleRows += '<tr>'
         +'<td>'+escConH(it.codigo_mp||'')+'</td>'
-        +'<td>'+escConH(it.nombre_mp)+'</td>'
+        +'<td>'+escConH(it.nombre_inci||it.nombre_mp)+((it.nombre_inci&&it.nombre_mp&&it.nombre_inci!==it.nombre_mp)?'<span style="color:#a8a29e;font-size:11px"> ('+escConH(it.nombre_mp)+')</span>':'')+'</td>'
         +'<td class="c">'+cant+'</td>'
         +'<td class="r">'+(it.precio_unitario>0?fmtCOP(it.precio_unitario):'$0,00')+'</td>'
         +'<td class="r">'+(it.subtotal_total>0?fmtCOP(it.subtotal_total):'$0,00')+'</td>'

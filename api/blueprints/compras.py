@@ -8465,9 +8465,11 @@ def consolidado_por_proveedor():
             pv.telefono,
             pv.email,
             COALESCE(o.con_iva, 0) AS con_iva,
-            COALESCE(o.valor_sin_iva, 0) AS valor_sin_iva
+            COALESCE(o.valor_sin_iva, 0) AS valor_sin_iva,
+            COALESCE(mm.nombre_inci, '') AS nombre_inci
         FROM ordenes_compra o
         LEFT JOIN ordenes_compra_items i ON o.numero_oc = i.numero_oc
+        LEFT JOIN maestro_mps mm ON mm.codigo_mp = i.codigo_mp
         LEFT JOIN proveedores pv ON LOWER(TRIM(o.proveedor)) = LOWER(TRIM(pv.nombre))
         WHERE o.estado IN ({placeholders})
         AND o.categoria NOT IN ('Influencer/Marketing Digital','Cuenta de Cobro','CC')
@@ -8482,7 +8484,7 @@ def consolidado_por_proveedor():
         (prov, oc, estado, fecha, valor_total_oc, cat, obs,
          item_id, cod_mp, nom_mp, cant, precio_u, subtotal,
          nit, contacto, telefono, email,
-         con_iva, valor_sin_iva) = row
+         con_iva, valor_sin_iva, nom_inci) = row
         prov = prov or 'Sin proveedor'
 
         if prov not in proveedores:
@@ -8525,6 +8527,7 @@ def consolidado_por_proveedor():
                 'id': item_id,
                 'codigo_mp': cod_mp or '',
                 'nombre_mp': nom_mp or cod_mp or '',
+                'nombre_inci': nom_inci or '',
                 'cantidad_g': cant or 0,
                 'precio_unitario': precio_u or 0,
                 'subtotal': subtotal or 0,
@@ -8536,6 +8539,7 @@ def consolidado_por_proveedor():
                 p['items'][cod_mp] = {
                     'codigo_mp': cod_mp,
                     'nombre_mp': nom_mp or cod_mp,
+                    'nombre_inci': nom_inci or '',
                     'cantidad_total_g': 0.0,
                     'precio_unitario': precio_u or 0,
                     'subtotal_total': 0.0,
