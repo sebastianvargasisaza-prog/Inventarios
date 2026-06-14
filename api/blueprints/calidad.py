@@ -54,7 +54,14 @@ def calidad_page():
     u = session.get('compras_user', '')
     if u not in CALIDAD_USERS:
         return Response(sin_acceso_html('Calidad BPM'), mimetype='text/html')
-    return Response(CALIDAD_HTML, mimetype='text/html')
+    # Tooltips premium "para qué sirve" (data-tip) · mismo sistema global que el resto de EOS
+    html = CALIDAD_HTML
+    try:
+        from templates_py.ui_help import TOOLTIP_CSS
+        html = html.replace('</style>', TOOLTIP_CSS + '\n</style>', 1)
+    except Exception:
+        pass
+    return Response(html, mimetype='text/html')
 
 @bp.route('/api/calidad/dashboard')
 def calidad_dashboard():
@@ -1810,6 +1817,164 @@ def calidad_micro_heatmap():
             'tasa_ok': round((total_res - total_fi - total_fm) * 100 / total_res, 1) if total_res else None,
         },
     })
+
+
+# ════════════════════════════════════════════════════════════════════════
+# ANÁLISIS MICRO · panel pro (gráficas) + alertas accionables · 14-jun-2026
+# Todo cross-DB (SUBSTR para mes, cutoff calculado en Python · sin julianday).
+# ════════════════════════════════════════════════════════════════════════
+_PATOGENOS = ('E. coli', 'Staphylococcus aureus', 'Pseudomonas aeruginosa',
+              'Candida albicans', 'Burkholderia cepacia')
+
+
+def _cutoff_meses(c, meses):
+    """Primer día del mes hace `meses` meses, anclado a Colombia (M24)."""
+    hoy = c.execute("SELECT date('now','-5 hours')").fetchone()[0]
+    y, m = int(hoy[0:4]), int(hoy[5:7])
+    m -= int(meses)
+    while m <= 0:
+        m += 12; y -= 1
+    return f"{y:04d}-{m:02d}-01", hoy
+
+
+@bp.route('/api/calidad/micro/analisis', methods=['GET'])
+def calidad_micro_analisis():
+    """Datos para el panel de gráficas de análisis micro (5 paneles en 1 llamada).
+    Excluye 'ambiente' de los paneles de producto (tiene su propio panel)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    meses = int(request.args.get('meses', 6) or 6)
+    conn = get_db(); c = conn.cursor()
+    cutoff, hoy = _cutoff_meses(c, meses)
+    NOAMB = "COALESCE(categoria,'producto')<>'ambiente'"
+
+    def q(sql, params=()):
+        return c.execute(sql, params).fetchall()
+
+    # Panel 1 · Tendencia OOS por mes (producto/MP)
+    rows = q(f"SELECT SUBSTR(fecha_analisis,1,7) ym, COUNT(*), "
+             f"SUM(CASE WHEN estado='fuera_industria' THEN 1 ELSE 0 END) "
+             f"FROM calidad_micro_resultados WHERE {NOAMB} AND fecha_analisis>=? "
+             f"GROUP BY SUBSTR(fecha_analisis,1,7) ORDER BY ym", (cutoff,))
+    tendencia = [{'mes': r[0], 'total': r[1], 'oos': r[2] or 0,
+                  'oos_pct': round((r[2] or 0) * 100 / r[1], 1) if r[1] else 0} for r in rows]
+
+    # Panel 2 · Top microorganismos (producto/MP)
+    rows = q(f"SELECT microorganismo, COUNT(*), "
+             f"SUM(CASE WHEN estado='fuera_industria' THEN 1 ELSE 0 END) "
+             f"FROM calidad_micro_resultados WHERE {NOAMB} AND fecha_analisis>=? "
+             f"GROUP BY microorganismo ORDER BY COUNT(*) DESC LIMIT 10", (cutoff,))
+    top_micro = [{'microorganismo': r[0], 'n': r[1], 'oos': r[2] or 0} for r in rows]
+
+    # Panel 3 · Conformidad por producto (peores primero)
+    rows = q(f"SELECT producto_nombre, COUNT(*), "
+             f"SUM(CASE WHEN estado='ok' THEN 1 ELSE 0 END), "
+             f"SUM(CASE WHEN estado='fuera_meta' THEN 1 ELSE 0 END), "
+             f"SUM(CASE WHEN estado='fuera_industria' THEN 1 ELSE 0 END) "
+             f"FROM calidad_micro_resultados WHERE {NOAMB} AND fecha_analisis>=? "
+             f"GROUP BY producto_nombre ORDER BY "
+             f"(SUM(CASE WHEN estado='ok' THEN 1 ELSE 0 END)*1.0/COUNT(*)) ASC, COUNT(*) DESC LIMIT 15", (cutoff,))
+    conformidad = [{'producto': r[0], 'total': r[1], 'ok': r[2] or 0,
+                    'meta': r[3] or 0, 'oos': r[4] or 0,
+                    'pct_ok': round((r[2] or 0) * 100 / r[1], 1) if r[1] else 0} for r in rows]
+
+    # Panel 4 · Top hallazgos OOS (producto + ambiente)
+    rows = q("SELECT producto_nombre, COALESCE(categoria,'producto'), COUNT(*), MAX(fecha_analisis) "
+             "FROM calidad_micro_resultados WHERE estado='fuera_industria' AND fecha_analisis>=? "
+             "GROUP BY producto_nombre, COALESCE(categoria,'producto') ORDER BY COUNT(*) DESC, MAX(fecha_analisis) DESC LIMIT 12", (cutoff,))
+    hallazgos = [{'nombre': r[0], 'categoria': r[1], 'oos': r[2], 'ultima': r[3]} for r in rows]
+
+    # Panel 5 · Monitoreo ambiental por punto (categoria=ambiente)
+    rows = q("SELECT producto_nombre, COUNT(*), "
+             "SUM(CASE WHEN estado='fuera_industria' THEN 1 ELSE 0 END), MAX(fecha_analisis) "
+             "FROM calidad_micro_resultados WHERE categoria='ambiente' AND fecha_analisis>=? "
+             "GROUP BY producto_nombre ORDER BY SUM(CASE WHEN estado='fuera_industria' THEN 1 ELSE 0 END) DESC, MAX(fecha_analisis) DESC LIMIT 25", (cutoff,))
+    ambiental = [{'punto': r[0], 'n': r[1], 'oos': r[2] or 0, 'ultima': r[3]} for r in rows]
+
+    return jsonify({'meses': meses, 'desde': cutoff, 'hoy': hoy,
+                    'tendencia': tendencia, 'top_microorganismos': top_micro,
+                    'conformidad': conformidad, 'hallazgos': hallazgos, 'ambiental': ambiental})
+
+
+@bp.route('/api/calidad/micro/alertas', methods=['GET'])
+def calidad_micro_alertas():
+    """Alertas accionables de micro para la bandeja del día."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    cutoff_30, hoy = _cutoff_meses(c, 1)
+    alertas = []
+
+    # A1 · tendencia creciente de OOS (mes actual vs anterior · producto/MP)
+    NOAMB = "COALESCE(categoria,'producto')<>'ambiente'"
+    rows = c.execute(f"SELECT SUBSTR(fecha_analisis,1,7) ym, COUNT(*), "
+                     f"SUM(CASE WHEN estado='fuera_industria' THEN 1 ELSE 0 END) "
+                     f"FROM calidad_micro_resultados WHERE {NOAMB} "
+                     f"GROUP BY SUBSTR(fecha_analisis,1,7) ORDER BY ym DESC LIMIT 2").fetchall()
+    if len(rows) == 2:
+        cur_pct = (rows[0][2] or 0) * 100 / rows[0][1] if rows[0][1] else 0
+        prev_pct = (rows[1][2] or 0) * 100 / rows[1][1] if rows[1][1] else 0
+        if cur_pct > prev_pct and cur_pct > 0:
+            alertas.append({'tipo': 'tendencia', 'severidad': 'rojo',
+                            'mensaje': f'Tendencia ↑ de OOS micro: {round(cur_pct,1)}% este mes vs {round(prev_pct,1)}% el anterior. Investigar causa raíz.',
+                            'cantidad': rows[0][2] or 0})
+
+    # A2 · OOS repetido en mismo (producto × microorganismo) en 30d
+    rep = c.execute("SELECT producto_nombre, microorganismo, COUNT(*) FROM calidad_micro_resultados "
+                    "WHERE estado='fuera_industria' AND fecha_analisis>=? "
+                    "GROUP BY producto_nombre, microorganismo HAVING COUNT(*)>=2 ORDER BY COUNT(*) DESC", (cutoff_30,)).fetchall()
+    for r in rep:
+        alertas.append({'tipo': 'repetido', 'severidad': 'naranja',
+                        'mensaje': f'{r[2]} OOS de {r[1]} en "{r[0]}" en 30 días — patrón. Muestreo inmediato post-corrección.',
+                        'cantidad': r[2]})
+
+    # A3 · patógeno crítico detectado (últimos 30d)
+    ph = ','.join('?' * len(_PATOGENOS))
+    pat = c.execute(f"SELECT producto_nombre, microorganismo, lote, fecha_analisis, COALESCE(categoria,'') "
+                    f"FROM calidad_micro_resultados WHERE estado='fuera_industria' "
+                    f"AND microorganismo IN ({ph}) AND fecha_analisis>=? "
+                    f"ORDER BY fecha_analisis DESC LIMIT 10", (*_PATOGENOS, cutoff_30)).fetchall()
+    for r in pat:
+        alertas.append({'tipo': 'patogeno', 'severidad': 'rojo',
+                        'mensaje': f'⚠ Patógeno {r[1]} detectado en "{r[0]}"'
+                                   + (f' lote {r[2]}' if r[2] else '') + f' ({r[3]}). Cuarentena + OOS + notificar gerencia.',
+                        'cantidad': 1})
+
+    return jsonify({'alertas': alertas, 'total': len(alertas),
+                    'criticas': sum(1 for a in alertas if a['severidad'] == 'rojo')})
+
+
+@bp.route('/api/calidad/lotes-planta', methods=['GET'])
+def calidad_lotes_planta():
+    """Lotes reales de Planta (EBR) para el picker al registrar un análisis. Conecta
+    Calidad↔Producción: al elegir un lote se autocompleta producto + ebr_id, así el
+    resultado micro queda ligado al legajo real (y habilita el gate de liberación)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    try:
+        dias = int(request.args.get('dias', 90) or 90)
+    except ValueError:
+        dias = 90
+    hoy = c.execute("SELECT date('now','-5 hours')").fetchone()[0]
+    try:
+        cutoff = (datetime.fromisoformat(hoy[:10]) - timedelta(days=dias)).date().isoformat()
+    except Exception:
+        cutoff = '2025-01-01'
+    try:
+        rows = c.execute(
+            "SELECT e.id, COALESCE(NULLIF(e.lote_codigo,''), e.lote), COALESCE(mt.producto_nombre,''), "
+            "       e.estado, COALESCE(e.completado_at_utc, e.iniciado_at_utc,'') "
+            "FROM ebr_ejecuciones e LEFT JOIN mbr_templates mt ON mt.id = e.mbr_template_id "
+            "WHERE COALESCE(e.completado_at_utc, e.iniciado_at_utc,'') >= ? "
+            "ORDER BY COALESCE(e.completado_at_utc, e.iniciado_at_utc,'') DESC LIMIT 150",
+            (cutoff,)).fetchall()
+    except Exception as e:
+        logging.getLogger('calidad').info('lotes-planta: %s', e)
+        rows = []
+    lotes = [{'ebr_id': r[0], 'lote': r[1], 'producto': r[2],
+              'estado': r[3], 'fecha': (r[4] or '')[:10]} for r in rows if r[1]]
+    return jsonify({'lotes': lotes, 'total': len(lotes)})
 
 
 @bp.route('/api/calidad/agua/registros', methods=['GET', 'POST'])

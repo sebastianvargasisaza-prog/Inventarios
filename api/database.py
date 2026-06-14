@@ -319,7 +319,44 @@ except ImportError:
     except ImportError:
         _MIG_246_STMTS = []
 
+try:
+    from mig_248_micro_fechas_data import STATEMENTS as _MIG_248_STMTS
+except ImportError:
+    try:
+        from api.mig_248_micro_fechas_data import STATEMENTS as _MIG_248_STMTS
+    except ImportError:
+        _MIG_248_STMTS = []
+
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (248, "Rellena fecha_analisis/fecha_muestreo de los resultados Microlab que quedaron "
+          "vacíos en mig 246 (la extracción del PDF no halló la fecha en 105 informes · se usa "
+          "la fecha del correo como fallback). Sin fecha, los paneles de análisis por ventana "
+          "temporal perdían el 64% de los datos. Idempotente (solo filas con fecha vacía).",
+        _MIG_248_STMTS),
+    (247, "Limpia nombres de producto en calidad_micro_resultados (audit nombres workflow · "
+          "14-jun): arregla mojibake de la extracción del PDF (FABRICACIÓN/PRODUCCIÓN), quita el "
+          "sufijo/prefijo '(PRODUCTO TERMINADO)' y alinea variantes al nombre canónico de "
+          "formula_headers (trazabilidad QC↔producción). Corrige 2 categorías mal puestas "
+          "(Agua Micelar=producto, Ceramide NP=materia_prima). Idempotente (WHERE LIKE).", [
+        # mojibake (U+FFFD) que dejó la extracción del PDF en nombres con acento
+        "UPDATE calidad_micro_resultados SET producto_nombre = REPLACE(producto_nombre, 'FABRICACI�N', 'FABRICACIÓN') WHERE producto_nombre LIKE '%FABRICACI�N%'",
+        "UPDATE calidad_micro_resultados SET producto_nombre = REPLACE(producto_nombre, 'PRODUCCI�N', 'PRODUCCIÓN') WHERE producto_nombre LIKE '%PRODUCCI�N%'",
+        # sufijo/prefijo '(PRODUCTO TERMINADO)' (orden: más específico primero)
+        "UPDATE calidad_micro_resultados SET producto_nombre = TRIM(REPLACE(producto_nombre, ' - (PRODUCTO TERMINADO)', '')) WHERE producto_nombre LIKE '% - (PRODUCTO TERMINADO)%'",
+        "UPDATE calidad_micro_resultados SET producto_nombre = TRIM(REPLACE(producto_nombre, ' (PRODUCTO TERMINADO)', '')) WHERE producto_nombre LIKE '% (PRODUCTO TERMINADO)%'",
+        "UPDATE calidad_micro_resultados SET producto_nombre = TRIM(REPLACE(producto_nombre, '(PRODUCTO TERMINADO)', '')) WHERE producto_nombre LIKE '%(PRODUCTO TERMINADO)%'",
+        "UPDATE calidad_micro_resultados SET producto_nombre = TRIM(REPLACE(producto_nombre, 'PRODUCTO TERMINADO ', '')) WHERE producto_nombre LIKE 'PRODUCTO TERMINADO %'",
+        # alineaciones canónicas (verificadas por el agente vs formula_headers)
+        "UPDATE calidad_micro_resultados SET producto_nombre = 'CREMA DE UREA' WHERE producto_nombre = 'CREMA CORPORAL DE UREA'",
+        "UPDATE calidad_micro_resultados SET producto_nombre = 'LIMPIADOR ILUMINADOR ACIDO KOJICO' WHERE producto_nombre = 'LIMPIADOR ILUMINADOR DE ACIDO KOJICO'",
+        # 'PRODUCTO TERMINADO' embebido en el medio (no como sufijo entre paréntesis)
+        "UPDATE calidad_micro_resultados SET producto_nombre = 'SUERO MULTIPEPTIDOS' WHERE producto_nombre LIKE 'SUERO MULTIPEPTIDOS - PRODUCTO TERMINADO%'",
+        # categorías mal puestas por el heurístico del seed
+        "UPDATE calidad_micro_resultados SET categoria = 'producto' WHERE producto_nombre LIKE '%AGUA MICELAR%' AND COALESCE(categoria,'')='ambiente'",
+        "UPDATE calidad_micro_resultados SET categoria = 'materia_prima' WHERE producto_nombre IN ('CERAMIDE NP') AND COALESCE(categoria,'')<>'materia_prima'",
+        # agua de servicio (desionizada/potable/filtrada/manguera) = monitoreo ambiental, NO producto
+        "UPDATE calidad_micro_resultados SET categoria = 'ambiente' WHERE producto_nombre LIKE 'AGUA %' AND producto_nombre NOT LIKE '%MICELAR%' AND COALESCE(categoria,'')='producto'",
+    ]),
     (246, "Carga histórica de resultados micro de Microlab Cali (lab externo · 14-jun). "
           "Agrega categoria (producto/materia_prima/ambiente) + n_referencia (N° informe del "
           "lab, p.ej. 27861-26) a calidad_micro_resultados; luego siembra 458 resultados de "

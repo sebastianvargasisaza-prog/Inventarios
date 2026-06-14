@@ -126,18 +126,19 @@ textarea{resize:vertical;min-height:70px;}
 </header>
 <script>function cxToggleTheme(){var h=document.documentElement;var c=h.getAttribute('data-theme');var n=c==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
 <div class="tabs">
-  <div class="tab active" onclick="goTab('tab-bandeja')">&#x1F3AF; Bandeja del Dia</div>
-  <div class="tab" onclick="goTab('tab-dash')">&#128202; Dashboard</div>
-  <div class="tab" onclick="goTab('tab-indic')">&#128201; Indicadores</div>
-  <div class="tab" onclick="goTab('tab-cron')">&#128203; Cronograma del Dia</div>
-  <div class="tab" onclick="goTab('tab-cc')">&#x1F9EA; Control Calidad MP</div>
-  <div class="tab" onclick="goTab('tab-nc')">&#x26A0; No Conformidades</div>
-  <div class="tab" onclick="goTab('tab-cal')">&#x1F527; Calibraciones</div>
-  <div class="tab" onclick="goTab('tab-micro')">&#x1F9EB; Micro &amp; Heatmap</div>
-  <div class="tab" onclick="goTab('tab-agua')">&#x1F4A7; Sistema de Agua</div>
-  <div class="tab" onclick="goTab('tab-equipos')">&#x1F527; Equipos</div>
-  <div class="tab" onclick="goTab('tab-oos')">&#x26A0;&#xFE0F; OOS</div>
-  <div class="tab" onclick="goTab('tab-doc')">&#128218; Documentos</div>
+  <div class="tab active" data-tip="Centro de mando del día: todo lo pendiente de Calidad en un vistazo (cuarentena, NCs, OOS, agua, calibraciones, PT por liberar) + alertas de microbiología." data-tip-pos="bottom" onclick="goTab('tab-bandeja')">&#x1F3AF; Bandeja del Dia</div>
+  <div class="tab" data-tip="KPIs del día y actividad reciente de Calidad." data-tip-pos="bottom" onclick="goTab('tab-dash')">&#128202; Dashboard</div>
+  <div class="tab" data-tip="Cuadro de mando: indicadores con META, semáforo y tendencia (RFT, rechazos, CAPA, OOS, agua...). Doble-clic una tarjeta para editar su meta." data-tip-pos="bottom" onclick="goTab('tab-indic')">&#128201; Indicadores</div>
+  <div class="tab" data-tip="Tareas de calidad del día (muestreos, inspecciones) según COC-PRO-011." data-tip-pos="bottom" onclick="goTab('tab-cron')">&#128203; Cronograma del Dia</div>
+  <div class="tab" data-tip="Lotes de materia prima en cuarentena esperando aprobación/rechazo." data-tip-pos="bottom" onclick="goTab('tab-cc')">&#x1F9EA; Control Calidad MP</div>
+  <div class="tab" data-tip="Registro y cierre de No Conformidades (producto/proceso)." data-tip-pos="bottom" onclick="goTab('tab-nc')">&#x26A0; No Conformidades</div>
+  <div class="tab" data-tip="Estado y vencimiento de calibraciones de instrumentos (COC-PRO-006/012)." data-tip-pos="bottom" onclick="goTab('tab-cal')">&#x1F527; Calibraciones</div>
+  <div class="tab" data-tip="Resultados microbiológicos por lote + mapa de calor producto×microorganismo. Registrá resultados con su COA y N° de informe." data-tip-pos="bottom" onclick="goTab('tab-micro')">&#x1F9EB; Micro &amp; Heatmap</div>
+  <div class="tab" data-tip="Gráficas de análisis: tendencia de OOS, conformidad por producto, hallazgos y monitoreo ambiental." data-tip-pos="bottom" onclick="goTab('tab-analisis')">&#128200; An&aacute;lisis</div>
+  <div class="tab" data-tip="Sistema de agua purificada: pH, conductividad, TOC, micro (COC-PRO-008) + tendencia y alertas." data-tip-pos="bottom" onclick="goTab('tab-agua')">&#x1F4A7; Sistema de Agua</div>
+  <div class="tab" data-tip="Hoja de vida y cronograma de calibración de equipos de planta." data-tip-pos="bottom" onclick="goTab('tab-equipos')">&#x1F527; Equipos</div>
+  <div class="tab" data-tip="Out Of Specification: investigación, causa raíz, disposición y cierre." data-tip-pos="bottom" onclick="goTab('tab-oos')">&#x26A0;&#xFE0F; OOS</div>
+  <div class="tab" data-tip="Biblioteca de documentos vigentes (COC-PRO, ASG-PRO) con próximos a vencer." data-tip-pos="bottom" onclick="goTab('tab-doc')">&#128218; Documentos</div>
 </div>
 <div class="main">
 
@@ -316,6 +317,25 @@ textarea{resize:vertical;min-height:70px;}
       <thead><tr><th>Fecha</th><th>Lote</th><th>Producto</th><th>Microorganismo</th><th>Valor</th><th>Estado</th><th>OOS</th><th>COA</th><th>Lab</th><th>Analista</th></tr></thead>
       <tbody id="micro-res-tbody"><tr><td colspan="10" class="empty">Cargando...</td></tr></tbody>
     </table>
+  </div>
+</div>
+
+<!-- AN\u00c1LISIS \u00b7 panel de gr\u00e1ficas micro (tendencias, conformidad, hallazgos, ambiental) -->
+<div id="tab-analisis" class="pane">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+    <div>
+      <div class="card-title" style="margin:0">&#128200; An&aacute;lisis microbiol&oacute;gico</div>
+      <div style="color:var(--cx-text-mute);font-size:12px;margin-top:2px">Tendencias, conformidad por producto, hallazgos y monitoreo ambiental &middot; datos del laboratorio.</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <select id="anl-meses" onchange="loadMicroAnalisis()" style="padding:6px 10px;border:1px solid #e7e5e4;background:var(--cx-bg-alt);color:var(--cx-text);border-radius:6px;font-size:12px">
+        <option value="3">3 meses</option><option value="6" selected>6 meses</option><option value="12">12 meses</option><option value="24">24 meses</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" onclick="loadMicroAnalisis()">&#x21BB;</button>
+    </div>
+  </div>
+  <div id="anl-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px">
+    <p class="empty">Cargando...</p>
   </div>
 </div>
 
@@ -600,6 +620,8 @@ textarea{resize:vertical;min-height:70px;}
   <div class="modal">
     <button class="modal-close" onclick="closeModal('m-micro')">&times;</button>
     <div class="modal-title">Registrar resultado microbiol\u00f3gico</div>
+    <div class="form-group"><label>Lote de Planta (opcional &middot; autocompleta producto)</label>
+      <select id="m-micro-lote-planta" onchange="prefillDesdeLotePlanta()"><option value="">&mdash; elegir lote de producci&oacute;n &mdash;</option></select></div>
     <div class="form-group"><label>Producto</label><input id="m-micro-prod" placeholder="Ej: LBHA"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <div class="form-group"><label>Lote</label><input id="m-micro-lote" placeholder="Ej: 261001"></div>
@@ -796,7 +818,7 @@ function cambiarPagSize(tabla, valor){ TBL_STATE[tabla].size = parseInt(valor,10
 function buscarTabla(tabla, valor){ TBL_STATE[tabla].q = valor||''; TBL_STATE[tabla].page = 1; if(_PAG_REFRESH[tabla]) _PAG_REFRESH[tabla](); }
 
 
-var _tabIds=['tab-bandeja','tab-dash','tab-indic','tab-cron','tab-cc','tab-nc','tab-cal','tab-micro','tab-agua','tab-equipos','tab-oos','tab-doc'];
+var _tabIds=['tab-bandeja','tab-dash','tab-indic','tab-cron','tab-cc','tab-nc','tab-cal','tab-micro','tab-analisis','tab-agua','tab-equipos','tab-oos','tab-doc'];
 function goTab(id){
   document.querySelectorAll('.tab').forEach((t,i)=>{t.classList.toggle('active',_tabIds[i]===id);});
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
@@ -809,6 +831,7 @@ function goTab(id){
   else if(id==='tab-nc') loadNC();
   else if(id==='tab-cal') loadCal();
   else if(id==='tab-micro') loadMicroHeatmap();
+  else if(id==='tab-analisis') loadMicroAnalisis();
   else if(id==='tab-agua') loadAguaRegistros();
   else if(id==='tab-equipos') loadEquiposCompleto();
   else if(id==='tab-oos') loadOOS();
@@ -1212,6 +1235,23 @@ async function loadBandeja(){
 
     var html = '';
 
+    // 0. Alertas de microbiología (banner full-width arriba)
+    try{
+      var ra = await fetch('/api/calidad/micro/alertas', {credentials:'same-origin', cache:'no-store'});
+      if(ra.ok){
+        var da = await ra.json();
+        if(da.alertas && da.alertas.length){
+          html += '<div class="card" style="grid-column:1/-1;border-left:5px solid #dc2626;background:#fef2f2">';
+          html += '<div class="card-title" style="color:#b91c1c;margin-bottom:6px">&#128300; Alertas de microbiolog&iacute;a ('+da.alertas.length+')</div>';
+          da.alertas.forEach(function(a){
+            var col = {rojo:'#dc2626',naranja:'#d97706',amarillo:'#ca8a04'}[a.severidad]||'#64748b';
+            html += '<div style="padding:5px 0;border-bottom:1px solid #fee2e2;font-size:12px"><span style="color:'+col+';font-weight:700">&#9679;</span> '+_escBan(a.mensaje)+'</div>';
+          });
+          html += '</div>';
+        }
+      }
+    }catch(e){}
+
     // 1. Lotes en cuarentena
     html += _bandejaCard({
       titulo:'Lotes en Cuarentena', icon:'&#x1F4E6;',
@@ -1469,9 +1509,29 @@ async function loadMicroHeatmap(){
   }
 }
 
+var _LOTES_PLANTA = [];
+async function cargarLotesPlantaPicker(){
+  var sel=document.getElementById('m-micro-lote-planta'); if(!sel) return;
+  try{
+    var r=await fetch('/api/calidad/lotes-planta?dias=120',{credentials:'same-origin',cache:'no-store'});
+    var d=await r.json(); _LOTES_PLANTA=d.lotes||[];
+    sel.innerHTML='<option value="">— elegir lote de producción —</option>'+_LOTES_PLANTA.map(function(l,i){
+      return '<option value="'+i+'">'+escapeHtmlNec(l.lote)+' · '+escapeHtmlNec(l.producto||'')+' ('+escapeHtmlNec(l.estado||'')+')</option>';
+    }).join('');
+  }catch(e){ /* sin planta, el picker queda vacío y se registra a mano */ }
+}
+function prefillDesdeLotePlanta(){
+  var sel=document.getElementById('m-micro-lote-planta'); if(!sel||sel.value==='') return;
+  var l=_LOTES_PLANTA[parseInt(sel.value)]; if(!l) return;
+  if(l.producto) document.getElementById('m-micro-prod').value=l.producto;
+  if(l.lote) document.getElementById('m-micro-lote').value=l.lote;
+  if(l.ebr_id) document.getElementById('m-micro-ebr').value=l.ebr_id;
+}
 function abrirModalNuevoResultadoMicro(){
   ['m-micro-prod','m-micro-lote','m-micro-val','m-micro-txt','m-micro-obs','m-micro-lab','m-micro-coa','m-micro-ebr'].forEach(function(id){var el=document.getElementById(id); if(el) el.value='';});
+  var lp=document.getElementById('m-micro-lote-planta'); if(lp) lp.value='';
   document.getElementById('m-micro-fecha').value = new Date().toISOString().slice(0,10);
+  cargarLotesPlantaPicker();
   openModal('m-micro');
 }
 
@@ -1522,6 +1582,73 @@ async function toggleMicroGate(on){
     if(!r.ok||d.error){ alert('Error: '+(d.error||r.status)); return; }
     loadMicroGateCtrl();
   }catch(e){ alert('Error red: '+(e.message||e)); }
+}
+
+// === ANÁLISIS MICRO · panel de gráficas (sin librerías · barras/SVG/tablas) =====
+function _anlCard(titulo, inner){
+  return '<div class="card"><div class="card-title" style="margin-bottom:8px">'+titulo+'</div>'+inner+'</div>';
+}
+async function loadMicroAnalisis(){
+  var grid=document.getElementById('anl-grid'); if(!grid) return;
+  grid.innerHTML='<p class="empty">Cargando...</p>';
+  var meses=(document.getElementById('anl-meses')||{value:'6'}).value;
+  try{
+    var r=await fetch('/api/calidad/micro/analisis?meses='+meses,{credentials:'same-origin',cache:'no-store'});
+    if(r.status===401){ window.location.href='/login'; return; }
+    var d=await r.json();
+    var esc=escapeHtmlNec, html='';
+
+    // Panel 1 · Tendencia OOS por mes (barras)
+    var t=d.tendencia||[];
+    var maxpct=Math.max(1,...t.map(function(x){return x.oos_pct||0;}));
+    var bars=t.map(function(x){
+      var h=6+Math.round((x.oos_pct||0)/maxpct*60);
+      var col=(x.oos_pct>0)?'#dc2626':'#16a34a';
+      return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px">'
+        +'<div style="font-size:9px;color:var(--cx-text-mute)">'+(x.oos_pct||0)+'%</div>'
+        +'<div title="'+esc(x.mes)+': '+x.oos+'/'+x.total+' OOS" style="width:70%;height:'+h+'px;background:'+col+';opacity:.75;border-radius:3px 3px 0 0"></div>'
+        +'<div style="font-size:9px;color:var(--cx-text-faint)">'+esc((x.mes||'').slice(2))+'</div></div>';
+    }).join('');
+    html+=_anlCard('Tendencia OOS por mes (producto/MP)', t.length?('<div style="display:flex;align-items:flex-end;gap:6px;height:100px">'+bars+'</div>'):'<p class="empty">Sin datos.</p>');
+
+    // Panel 2 · Top microorganismos (barras horizontales)
+    var tm=d.top_microorganismos||[]; var maxn=Math.max(1,...tm.map(function(x){return x.n;}));
+    var rowsm=tm.map(function(x){
+      var w=Math.round(x.n/maxn*100);
+      var oosw=x.n?Math.round((x.oos||0)/x.n*100):0;
+      return '<div style="margin-bottom:6px"><div style="display:flex;justify-content:space-between;font-size:11px"><span>'+esc(x.microorganismo)+'</span><span style="color:var(--cx-text-mute)">'+x.n+(x.oos?(' · '+x.oos+' OOS'):'')+'</span></div>'
+        +'<div style="background:#eef2ff;border-radius:5px;height:12px;overflow:hidden"><div style="width:'+w+'%;height:100%;background:'+(x.oos?'linear-gradient(90deg,#dc2626 '+oosw+'%,#6366f1 '+oosw+'%)':'#6366f1')+'"></div></div></div>';
+    }).join('');
+    html+=_anlCard('Top microorganismos analizados', tm.length?rowsm:'<p class="empty">Sin datos.</p>');
+
+    // Panel 3 · Conformidad por producto (barra apilada · peores primero)
+    var cf=d.conformidad||[];
+    var rowsc=cf.map(function(x){
+      var ok=x.total?Math.round(x.ok/x.total*100):0, me=x.total?Math.round(x.meta/x.total*100):0, oo=x.total?Math.round(x.oos/x.total*100):0;
+      return '<div style="margin-bottom:6px"><div style="display:flex;justify-content:space-between;font-size:11px"><span>'+esc(x.producto)+'</span><span style="color:var(--cx-text-mute)">'+x.pct_ok+'% ok ('+x.total+')</span></div>'
+        +'<div style="display:flex;height:12px;border-radius:5px;overflow:hidden;background:#f1f5f9">'
+        +'<div style="width:'+ok+'%;background:#16a34a"></div><div style="width:'+me+'%;background:#d97706"></div><div style="width:'+oo+'%;background:#dc2626"></div></div></div>';
+    }).join('');
+    html+=_anlCard('Conformidad por producto (peores primero)', cf.length?('<div style="font-size:10px;color:var(--cx-text-mute);margin-bottom:6px"><span style="color:#16a34a">&#9632;</span> ok &nbsp;<span style="color:#d97706">&#9632;</span> fuera meta &nbsp;<span style="color:#dc2626">&#9632;</span> OOS</div>'+rowsc):'<p class="empty">Sin datos.</p>');
+
+    // Panel 4 · Top hallazgos OOS
+    var hl=d.hallazgos||[];
+    var rowsh=hl.map(function(x){
+      var cat={producto:'PT',materia_prima:'MP',ambiente:'AMB'}[x.categoria]||x.categoria;
+      return '<tr><td>'+esc(x.nombre)+'</td><td style="text-align:center">'+esc(cat)+'</td><td style="text-align:center;color:#dc2626;font-weight:700">'+x.oos+'</td><td style="color:var(--cx-text-mute)">'+esc(x.ultima||'')+'</td></tr>';
+    }).join('');
+    html+=_anlCard('Hallazgos (OOS) recientes', hl.length?('<table style="font-size:12px"><thead><tr><th>Muestra</th><th>Cat</th><th>OOS</th><th>Última</th></tr></thead><tbody>'+rowsh+'</tbody></table>'):'<p class="empty" style="color:#16a34a">Sin OOS en el período &#10003;</p>');
+
+    // Panel 5 · Monitoreo ambiental por punto
+    var am=d.ambiental||[];
+    var rowsa=am.map(function(x){
+      var c=x.oos?'#dc2626':'#16a34a';
+      return '<tr><td>'+esc(x.punto)+'</td><td style="text-align:center">'+x.n+'</td><td style="text-align:center;color:'+c+';font-weight:700">'+(x.oos||0)+'</td><td style="color:var(--cx-text-mute)">'+esc(x.ultima||'')+'</td></tr>';
+    }).join('');
+    html+=_anlCard('Monitoreo ambiental (COC-PRO-011)', am.length?('<table style="font-size:12px"><thead><tr><th>Punto</th><th>n</th><th>OOS</th><th>Última</th></tr></thead><tbody>'+rowsa+'</tbody></table>'):'<p class="empty">Sin monitoreo ambiental en el período.</p>');
+
+    grid.innerHTML=html;
+  }catch(e){ grid.innerHTML='<div style="color:#dc2626;padding:14px">Error: '+(e.message||e)+'</div>'; }
 }
 
 // === SISTEMA DE AGUA ====================================================
