@@ -99,18 +99,18 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 <script>function cxToggleTheme(){var h=document.documentElement;var c=h.getAttribute('data-theme');var n=c==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
 
 <div class="tabs">
-  <div class="tab active" onclick="goTab('tab-dash')">&#x1F4CA; Dashboard</div>
-  <div class="tab" onclick="goTab('tab-mis-tareas')">&#x1F464; Mis tareas</div>
-  <div class="tab" onclick="goTab('tab-sgd')">&#x1F4DA; SGD electrónico</div>
-  <div class="tab" onclick="goTab('tab-cap')">&#x1F393; Capacitaciones</div>
-  <div class="tab" onclick="goTab('tab-mis-cap')">&#x270D;&#xFE0F; Mis firmas</div>
-  <div class="tab" onclick="goTab('tab-desv')">&#x1F4E2; Desviaciones</div>
-  <div class="tab" onclick="goTab('tab-cambios')">&#x1F504; Control de Cambios</div>
-  <div class="tab" onclick="goTab('tab-quejas')">&#x1F4AC; Quejas Clientes</div>
-  <div class="tab" onclick="goTab('tab-recalls')">&#x1F6A8; Recall</div>
-  <div class="tab" onclick="goTab('tab-gob')">&#x1F3DB;&#xFE0F; Gobierno GMP</div>
-  <div class="tab" onclick="goTab('tab-reportes')">&#x1F4CB; Reportes INVIMA</div>
-  <div class="tab" onclick="goTab('tab-conf')">&#x26A0;&#xFE0F; Conflictos SGD</div>
+  <div class="tab active" data-tip="Estado general del sistema de calidad de un vistazo: documentos del SGD (vigentes/por vencer/vencidos), conflictos, capacitaciones pendientes y los contadores de desviaciones, cambios, quejas y recalls." data-tip-pos="bottom" onclick="goTab('tab-dash')">&#x1F4CA; Dashboard</div>
+  <div class="tab" data-tip="Tu vista personal: lo que TÚ tienes pendiente — capacitaciones por firmar, ítems que reportaste y siguen abiertos, y (si eres Calidad) la cola que espera tu acción." data-tip-pos="bottom" onclick="goTab('tab-mis-tareas')">&#x1F464; Mis tareas</div>
+  <div class="tab" data-tip="Biblioteca maestra de TODOS los procedimientos (SOPs, COC-PRO, ASG-PRO): código, versión, estado vigente/obsoleto, próxima revisión y enlace al PDF (Drive). El control documental GMP." data-tip-pos="bottom" onclick="goTab('tab-sgd')">&#x1F4DA; SGD electrónico</div>
+  <div class="tab" data-tip="Asignar y controlar el entrenamiento del personal en cada SOP: quién leyó qué, con firma electrónica. Evidencia GMP de que el personal está capacitado." data-tip-pos="bottom" onclick="goTab('tab-cap')">&#x1F393; Capacitaciones</div>
+  <div class="tab" data-tip="Tus capacitaciones asignadas para leer y firmar (la cara personal de la pestaña Capacitaciones)." data-tip-pos="bottom" onclick="goTab('tab-mis-cap')">&#x270D;&#xFE0F; Mis firmas</div>
+  <div class="tab" data-tip="Desviaciones de proceso y su ciclo completo: detectada → clasificada → investigación (causa raíz) → CAPA → cerrada. Cada paso auditado (Part 11)." data-tip-pos="bottom" onclick="goTab('tab-desv')">&#x1F4E2; Desviaciones</div>
+  <div class="tab" data-tip="Control de cambios (proveedor, fórmula, equipo, proceso). Candado INVIMA: un cambio que requiere notificación regulatoria no se puede implementar sin notificar primero." data-tip-pos="bottom" onclick="goTab('tab-cambios')">&#x1F504; Control de Cambios</div>
+  <div class="tab" data-tip="PQR / quejas y reclamos de calidad del cliente con clasificación, severidad e investigación (workflow regulado INVIMA, distinto del portal B2B)." data-tip-pos="bottom" onclick="goTab('tab-quejas')">&#x1F4AC; Quejas Clientes</div>
+  <div class="tab" data-tip="Retiro de producto del mercado: clase I/II/III, alcance, lotes afectados, notificación a INVIMA y trazabilidad del recall." data-tip-pos="bottom" onclick="goTab('tab-recalls')">&#x1F6A8; Recall</div>
+  <div class="tab" data-tip="Gobierno GMP: revisión por la dirección, calificación de proveedores (con scorecard de Compras), validación de equipos IQ/OQ/PQ, FMEA (riesgo ICH Q9) y acuerdos de calidad con terceros." data-tip-pos="bottom" onclick="goTab('tab-gob')">&#x1F3DB;&#xFE0F; Gobierno GMP</div>
+  <div class="tab" data-tip="Consultas ad-hoc para auditorías INVIMA: audit-trail, trazabilidad por lote y por cliente, exportables a CSV." data-tip-pos="bottom" onclick="goTab('tab-reportes')">&#x1F4CB; Reportes INVIMA</div>
+  <div class="tab" data-tip="Detección y resolución de códigos de documento repetidos o inconsistentes en el SGD (higiene del sistema documental)." data-tip-pos="bottom" onclick="goTab('tab-conf')">&#x26A0;&#xFE0F; Conflictos SGD</div>
 </div>
 
 <div class="main">
