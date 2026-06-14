@@ -1251,6 +1251,27 @@ async function loadBandeja(){
       });
     }
 
+    // 0c. Equipos con calibración vencida / próxima (sistema equipos_planta)
+    if(s.equipos_calibracion && s.equipos_calibracion.items && s.equipos_calibracion.items.length){
+      html += _bandejaCard({
+        titulo:'Equipos por calibrar (30d)', icon:'&#x1F527;',
+        total: s.equipos_calibracion.total,
+        accent: s.equipos_calibracion.vencidos>0 ? 'red' : 'amber',
+        subtitulo: s.equipos_calibracion.vencidos>0 ? ('&#x26A0;&#xFE0F; '+s.equipos_calibracion.vencidos+' con calibración VENCIDA') : 'Calibración próxima a vencer',
+        items: s.equipos_calibracion.items,
+        empty_msg:'Equipos al día',
+        render_item: function(it){
+          var col = it.vencido ? '#dc2626' : (it.dias<=7 ? '#d97706' : '#64748b');
+          var txt = it.vencido ? ('VENCIDA hace '+Math.abs(it.dias||0)+'d &#x1F6AB; no usar') : ('vence en '+(it.dias!=null?it.dias:'?')+'d');
+          return '<div style="padding:6px 8px;border-bottom:1px solid #f1f5f9;font-size:0.82em">'
+            + '<b><code>'+_escBan(it.codigo||'')+'</code></b> '+_escBan(it.nombre||'')+'<br>'
+            + '<span style="color:'+col+';font-weight:700">'+txt+'</span>'
+            + '<span style="color:var(--cx-text-mute)"> · '+_escBan(it.fecha_proxima||'')+'</span>'
+            + '</div>';
+        }
+      });
+    }
+
     // 1. Lotes en cuarentena
     html += _bandejaCard({
       titulo:'Lotes en Cuarentena', icon:'&#x1F4E6;',
@@ -1290,12 +1311,14 @@ async function loadBandeja(){
     html += _bandejaCard({
       titulo:'OOS Abiertos', icon:'&#x26A0;&#xFE0F;',
       total: s.oos_abiertas.total,
-      accent: s.oos_abiertas.total>0 ? 'red' : 'green',
+      accent: (s.oos_abiertas.sla_vencidos>0 || s.oos_abiertas.total>0) ? 'red' : 'green',
+      subtitulo: s.oos_abiertas.sla_vencidos>0 ? ('&#x23F0; '+s.oos_abiertas.sla_vencidos+' con plazo de cierre VENCIDO') : null,
       items: s.oos_abiertas.items,
       empty_msg:'Sin OOS abiertos',
       render_item: function(it){
+        var sla = it.sla_vencido ? ' <span style="background:#dc2626;color:#fff;padding:1px 6px;border-radius:8px;font-size:0.75em">SLA vencido</span>' : '';
         return '<div style="padding:6px 8px;border-bottom:1px solid #f1f5f9;font-size:0.82em">'
-          + '<b>'+_escBan(it.producto||'')+'</b> · Lote <code>'+_escBan(it.lote||'')+'</code><br>'
+          + '<b>'+_escBan(it.producto||'')+'</b> · Lote <code>'+_escBan(it.lote||'')+'</code>'+sla+'<br>'
           + '<span style="color:#ef4444">'+_escBan(it.parametro||'')+': <b>'+_escBan(String(it.valor||''))+'</b> (spec: '+_escBan(String(it.spec||''))+')</span>'
           + ' · '+(it.dias_abierta||0)+'d'
           + '</div>';

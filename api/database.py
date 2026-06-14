@@ -328,6 +328,11 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (250, "OOS: doble aprobación para disposiciones de rechazo/destrucción (GMP · 14-jun). "
+          "Agrega calidad_oos.aprobado_gerencia (2ª firma de gerencia, distinta del Jefe de "
+          "Calidad que cierra). Idempotente (duplicate column benigno).", [
+        "ALTER TABLE calidad_oos ADD COLUMN aprobado_gerencia TEXT",
+    ]),
     (249, "Sección fisicoquímica de Control de Calidad (14-jun): tabla "
           "calidad_fisicoquimica_resultados (análisis FQ del lab: pH, densidad, fósforo, "
           "viscosidad… valor medido vs referencia, sin recuento micro) + siembra el informe FQ "

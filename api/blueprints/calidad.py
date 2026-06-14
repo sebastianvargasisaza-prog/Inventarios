@@ -490,6 +490,40 @@ def calidad_bandeja():
         log.info('bandeja por_vencer (julianday/fecha): %s', e)
         out['secciones']['por_vencer'] = {'total': 0, 'vencidos': 0, 'items': []}
 
+    # ── 1c. EQUIPOS con calibración vencida / próxima (sistema equipos_planta) ──
+    # Distinto de 'calibraciones' (tabla legacy): éste es el maestro de 104 equipos con
+    # su último evento. Calidad ve en el centro de mando los instrumentos a calibrar.
+    try:
+        _hoy_eq = c.execute("SELECT date('now','-5 hours')").fetchone()[0]
+        rows = c.execute("""
+            SELECT ep.codigo, ep.nombre,
+                   (SELECT MAX(ev.fecha_proxima) FROM equipos_eventos ev
+                    WHERE ev.equipo_codigo = ep.codigo AND COALESCE(ev.fecha_proxima,'') <> '') AS prox
+            FROM equipos_planta ep
+            WHERE COALESCE(ep.activo,1) = 1
+        """).fetchall()
+        eq_items = []
+        for r in rows:
+            prox = (r[2] or '')[:10]
+            if not prox:
+                continue
+            try:
+                dias = (datetime.fromisoformat(prox) - datetime.fromisoformat(_hoy_eq[:10])).days
+            except Exception:
+                continue
+            if dias <= 30:
+                eq_items.append({'codigo': r[0], 'nombre': r[1] or r[0], 'fecha_proxima': prox,
+                                 'dias': dias, 'vencido': dias < 0})
+        eq_items.sort(key=lambda x: x['dias'])
+        out['secciones']['equipos_calibracion'] = {
+            'total': len(eq_items),
+            'vencidos': sum(1 for x in eq_items if x['vencido']),
+            'items': eq_items[:30],
+        }
+    except Exception as e:
+        log.info('bandeja equipos_calibracion (tabla puede no existir): %s', e)
+        out['secciones']['equipos_calibracion'] = {'total': 0, 'vencidos': 0, 'items': []}
+
     # ── 2. NCs abiertas ────────────────────────────────────────────────
     try:
         kpi_row = c.execute("""
@@ -529,22 +563,38 @@ def calidad_bandeja():
             SELECT COUNT(*) FROM calidad_oos
             WHERE COALESCE(estado, 'abierto') NOT IN ('cerrado', 'descartado')
         """).fetchone()
+        _hoy_oos = c.execute("SELECT date('now','-5 hours')").fetchone()[0]
         rows = c.execute("""
             SELECT id, fecha_deteccion, producto, lote, parametro, valor_obtenido,
                    especificacion, severidad, estado,
-                   CAST((julianday('now') - julianday(fecha_deteccion)) AS INTEGER) as dias_abierta
+                   CAST((julianday('now') - julianday(fecha_deteccion)) AS INTEGER) as dias_abierta,
+                   COALESCE(fecha_objetivo_cierre,'')
             FROM calidad_oos
             WHERE COALESCE(estado, 'abierto') NOT IN ('cerrado', 'descartado')
             ORDER BY fecha_deteccion ASC
             LIMIT 15
         """).fetchall()
-        items = [{
-            'id': r[0], 'fecha': r[1], 'producto': r[2], 'lote': r[3],
-            'parametro': r[4], 'valor': r[5], 'spec': r[6],
-            'severidad': r[7], 'estado': r[8], 'dias_abierta': r[9],
-        } for r in rows]
+        items = []
+        sla_vencidos = 0
+        for r in rows:
+            obj = (r[10] or '')[:10]
+            sla_vencido = False
+            if obj:
+                try:
+                    sla_vencido = datetime.fromisoformat(obj) < datetime.fromisoformat(_hoy_oos[:10])
+                except Exception:
+                    sla_vencido = False
+            if sla_vencido:
+                sla_vencidos += 1
+            items.append({
+                'id': r[0], 'fecha': r[1], 'producto': r[2], 'lote': r[3],
+                'parametro': r[4], 'valor': r[5], 'spec': r[6],
+                'severidad': r[7], 'estado': r[8], 'dias_abierta': r[9],
+                'fecha_objetivo_cierre': obj, 'sla_vencido': sla_vencido,
+            })
         out['secciones']['oos_abiertas'] = {
             'total': kpi_oos[0] or 0,
+            'sla_vencidos': sla_vencidos,
             'items': items,
         }
     except Exception as e:
@@ -758,6 +808,8 @@ def calidad_bandeja():
         'ebr_por_liberar': out['secciones']['ebr_por_liberar']['total'],
         'por_vencer': out['secciones'].get('por_vencer', {}).get('total', 0),
         'vencidos': out['secciones'].get('por_vencer', {}).get('vencidos', 0),
+        'equipos_calibracion_vencidos': out['secciones'].get('equipos_calibracion', {}).get('vencidos', 0),
+        'oos_sla_vencidos': out['secciones'].get('oos_abiertas', {}).get('sla_vencidos', 0),
     }
     # Total de "items que requieren acción del equipo Calidad"
     out['kpis']['total_pendientes'] = (
@@ -2493,7 +2545,7 @@ def calidad_oos_update(oos_id):
         return jsonify({'error': 'OOS no encontrado'}), 404
     sets = []; params = []
     for col in ('accion_inmediata','causa_raiz','disposicion','aprobado_por',
-                'fecha_objetivo_cierre','capa_id'):
+                'fecha_objetivo_cierre','capa_id','aprobado_gerencia'):
         if col in d:
             sets.append(f'{col}=?'); params.append(d[col])
     if 'estado' in d:
@@ -2509,6 +2561,18 @@ def calidad_oos_update(oos_id):
                 return jsonify({'error': 'No se puede cerrar un OOS sin causa raíz documentada (mín. 20 caracteres)'}), 422
             if not disp.strip():
                 return jsonify({'error': 'No se puede cerrar un OOS sin disposición del lote'}), 422
+            # DOBLE APROBACIÓN (GMP · 14-jun): rechazo/destrucción de producto exige una 2ª
+            # firma de GERENCIA, distinta del Jefe de Calidad que cierra.
+            if disp.strip().lower() in ('rechazado', 'rechazo', 'destruido', 'destruccion', 'destrucción'):
+                aprob_ger = str(d.get('aprobado_gerencia') or '').strip().lower()
+                if not aprob_ger or aprob_ger not in set(ADMIN_USERS):
+                    return jsonify({'error': 'Disposición de RECHAZO/DESTRUCCIÓN requiere aprobación de '
+                                             'gerencia (campo aprobado_gerencia = usuario de gerencia).',
+                                    'codigo': 'REQUIERE_APROBACION_GERENCIA'}), 422
+                if aprob_ger == (user or '').lower():
+                    return jsonify({'error': 'La aprobación de gerencia debe ser una persona distinta '
+                                             'de quien cierra el OOS (segregación de funciones).',
+                                    'codigo': 'DOBLE_APROBACION_MISMO_USUARIO'}), 422
         sets.append('estado=?'); params.append(nuevo)
         if nuevo == 'cerrado':
             sets.append('fecha_cierre=?'); params.append(datetime.now().date().isoformat())
