@@ -25,10 +25,8 @@ ASEGURAMIENTO_HTML = r'''<!DOCTYPE html>
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 :root{--bg:#0f172a;--card:#1e293b;--text:#e2e8f0;--muted:#94a3b8;--accent:#6d28d9;--good:#15803d;--warn:#fbbf24;--crit:#ef4444}
-body{font-family:system-ui,-apple-system,sans-serif;background:#f8fafc;margin:0;color:#0f172a}
-header{background:var(--cx-bg-alt);color:#f1f5f9;padding:14px 24px;display:flex;justify-content:space-between;align-items:center}
-.logo{font-weight:800;letter-spacing:.5px;font-size:1.05em;color:#6d28d9}
-.tabs{display:flex;gap:0;background:var(--cx-card);border-bottom:1px solid #334155;padding:0 24px;flex-wrap:wrap;overflow-x:auto}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--cx-bg,#f8fafc);margin:0;color:#0f172a}
+.tabs{display:flex;gap:0;background:var(--cx-card);border-bottom:1px solid var(--cx-hairline,#334155);padding:0 24px;flex-wrap:wrap;overflow-x:auto}
 .tab{padding:11px 20px;font-size:0.78em;font-weight:700;letter-spacing:.5px;color:#64748b;cursor:pointer;border-bottom:2px solid transparent;text-transform:uppercase;white-space:nowrap}
 .tab.active{color:#6d28d9;border-bottom-color:#6d28d9}
 .tab:hover{color:#cbd5e1}
@@ -48,7 +46,7 @@ th{background:#f8fafc;font-weight:700;color:#475569;font-size:0.76em;text-transf
 tr:hover{background:#fafafa}
 .empty{text-align:center;color:#94a3b8;padding:14px;font-style:italic}
 .btn{padding:6px 14px;border:none;border-radius:6px;cursor:pointer;font-size:0.85em;font-weight:600}
-.btn-primary{background:#6d28d9;color:#0f172a}.btn-primary:hover{background:#5fb8b5}
+.btn-primary{background:#6d28d9;color:#fff}.btn-primary:hover{background:#5b21b6}
 .btn-ghost{background:#f1f5f9;color:#475569;border:1px solid #cbd5e1}
 .btn-ghost:hover{background:#e2e8f0}
 .btn-sm{padding:4px 10px;font-size:0.78em}
@@ -82,13 +80,23 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 </head>
 <body>
 <div id="_toast-container" aria-live="polite" aria-atomic="true"></div>
-<header>
-  <div class="logo">EOS · ASEGURAMIENTO DE CALIDAD</div>
-  <div style="display:flex;gap:10px;align-items:center">
-    <a href="/calidad" class="btn btn-ghost btn-sm">&larr; Calidad</a>
-    <a href="/" class="btn btn-ghost btn-sm">Inicio</a>
+<header class="cx-mod-header cx-fade-in">
+  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:#6d28d9;"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
+  <div>
+    <div class="cx-mod-header__title">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#6d28d9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M12 2 4 5v6c0 5 3.4 8.5 8 11 4.6-2.5 8-6 8-11V5l-8-3z"/><path d="m9 12 2 2 4-4"/></svg>
+      Aseguramiento de Calidad
+    </div>
+    <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; Espagiria &middot; SGD, desviaciones, control de cambios, recall, gobierno GMP</div>
+  </div>
+  <div class="cx-mod-header__nav">
+    <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver a m&oacute;dulos">&larr; M&oacute;dulos</a>
+    <button class="cx-theme-toggle" onclick="cxToggleTheme()" title="Modo claro/oscuro">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4"/></svg>
+    </button>
   </div>
 </header>
+<script>function cxToggleTheme(){var h=document.documentElement;var c=h.getAttribute('data-theme');var n=c==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
 
 <div class="tabs">
   <div class="tab active" onclick="goTab('tab-dash')">&#x1F4CA; Dashboard</div>
