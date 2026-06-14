@@ -104,8 +104,25 @@ def _audit_log(c, *, usuario, accion, registro_id, tabla=None,
 def aseguramiento_page():
     if 'compras_user' not in session:
         from flask import redirect
-        return redirect('/login')
-    return Response(ASEGURAMIENTO_HTML, mimetype='text/html; charset=utf-8')
+        return redirect('/login?next=/aseguramiento')
+    # Cargo Aseguramiento de la Calidad (AC) · distinto de Control de Calidad. Admin y
+    # equipo de calidad también entran (mismo equipo hasta separar membresías).
+    u = session.get('compras_user', '')
+    try:
+        from config import ASEGURAMIENTO_USERS, CALIDAD_USERS as _CC, ADMIN_USERS as _ADM
+        permitidos = set(ASEGURAMIENTO_USERS) | set(_CC) | set(_ADM)
+    except Exception:
+        permitidos = set()
+    if permitidos and u not in permitidos:
+        from auth import sin_acceso_html
+        return Response(sin_acceso_html('Aseguramiento de la Calidad'), mimetype='text/html')
+    html = ASEGURAMIENTO_HTML
+    try:
+        from templates_py.ui_help import TOOLTIP_CSS
+        html = html.replace('</style>', TOOLTIP_CSS + '\n</style>', 1)
+    except Exception:
+        pass
+    return Response(html, mimetype='text/html; charset=utf-8')
 
 
 # ════════════════════════════════════════════════════════════════════════
