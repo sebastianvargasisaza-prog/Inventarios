@@ -100,6 +100,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   <div class="tab" onclick="goTab('tab-cambios')">&#x1F504; Control de Cambios</div>
   <div class="tab" onclick="goTab('tab-quejas')">&#x1F4AC; Quejas Clientes</div>
   <div class="tab" onclick="goTab('tab-recalls')">&#x1F6A8; Recall</div>
+  <div class="tab" onclick="goTab('tab-gob')">&#x1F3DB;&#xFE0F; Gobierno GMP</div>
   <div class="tab" onclick="goTab('tab-reportes')">&#x1F4CB; Reportes INVIMA</div>
   <div class="tab" onclick="goTab('tab-conf')">&#x26A0;&#xFE0F; Conflictos SGD</div>
 </div>
@@ -701,6 +702,82 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   </div>
 </div>
 
+<!-- GOBIERNO GMP -->
+<div id="tab-gob" class="pane">
+  <div class="card" style="background:#f5f3ff;border-left:4px solid #6d28d9">
+    <div style="font-weight:700;color:#4c1d95;margin-bottom:4px">🏛️ Gobierno de la Calidad (GMP / INVIMA)</div>
+    <div style="font-size:0.85em;color:#4c1d95">Procesos de Aseguramiento exigidos por GMP que cierran el ciclo del sistema: revisión por la dirección, calificación de proveedores, validación de equipos, gestión de riesgo (FMEA) y acuerdos de calidad con terceros. Edición: Aseguramiento / Calidad / Admin.</div>
+  </div>
+
+  <!-- Sub-nav -->
+  <div style="display:flex;gap:0;border-bottom:1px solid #cbd5e1;margin-bottom:14px;flex-wrap:wrap">
+    <div class="gob-sub active" data-sub="rev" onclick="gobSub('rev')" style="padding:8px 14px;cursor:pointer;border-bottom:2px solid transparent;font-size:0.88em" title="Revisión periódica del sistema de calidad por la dirección (INVIMA Res. 2214 art. 8). Toma un snapshot vivo de los KPIs y registra decisiones y acciones de mejora.">📅 Revisión por Dirección</div>
+    <div class="gob-sub" data-sub="prov" onclick="gobSub('prov')" style="padding:8px 14px;cursor:pointer;border-bottom:2px solid transparent;font-size:0.88em" title="Calificación formal de proveedores. Reusa el maestro de proveedores de Compras y su scorecard de desempeño (cumplimiento, on-time, rechazo QC). Define a quién se aprueba, quién es crítico y a quién se visita.">🏭 Calificación Proveedores</div>
+    <div class="gob-sub" data-sub="eq" onclick="gobSub('eq')" style="padding:8px 14px;cursor:pointer;border-bottom:2px solid transparent;font-size:0.88em" title="Validación de equipos e instrumentos: IQ/OQ/PQ, CSV (validación de sistemas computarizados) y revalidaciones periódicas. Complementa la calibración genérica de Planta.">🔬 Validación Equipos</div>
+    <div class="gob-sub" data-sub="fmea" onclick="gobSub('fmea')" style="padding:8px 14px;cursor:pointer;border-bottom:2px solid transparent;font-size:0.88em" title="Análisis de riesgo FMEA (ICH Q9): modo de falla × efecto × causa. RPN = Severidad × Ocurrencia × Detección (1-10). Prioriza dónde poner controles.">⚠️ Riesgo / FMEA</div>
+    <div class="gob-sub" data-sub="acu" onclick="gobSub('acu')" style="padding:8px 14px;cursor:pointer;border-bottom:2px solid transparent;font-size:0.88em" title="Acuerdos de calidad (quality agreements) con maquilas, proveedores críticos, clientes y laboratorios externos. Versión, vigencia y fecha de renovación.">🤝 Acuerdos de Calidad</div>
+  </div>
+
+  <!-- (rev) Revisión por la Dirección -->
+  <div id="gob-rev" class="gob-pane">
+    <div class="kpi-row" id="gob-rev-kpis" style="margin-bottom:12px"></div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div class="card-title" style="margin:0">📅 Revisiones por la Dirección</div>
+        <button class="btn btn-primary btn-sm gob-wbtn" onclick="gobNuevaRevision()">+ Programar revisión</button>
+      </div>
+      <div id="gob-rev-list"><p class="empty">Cargando...</p></div>
+    </div>
+  </div>
+
+  <!-- (prov) Calificación de proveedores -->
+  <div id="gob-prov" class="gob-pane" style="display:none">
+    <div class="kpi-row" id="gob-prov-kpis" style="margin-bottom:12px"></div>
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:8px">
+        <div class="card-title" style="margin:0">🏭 Proveedores (maestro de Compras + calificación AC)</div>
+        <input id="gob-prov-q" placeholder="Buscar proveedor" oninput="gobRenderProv()" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;min-width:200px">
+      </div>
+      <div style="font-size:0.8em;color:#64748b;margin-bottom:8px">El scorecard (cumplimiento, on-time, rechazo QC) viene del desempeño real registrado en Compras/Recepción. Define criticidad, si requiere visita y el estado de aprobación.</div>
+      <div id="gob-prov-list"><p class="empty">Cargando...</p></div>
+    </div>
+  </div>
+
+  <!-- (eq) Validación de equipos -->
+  <div id="gob-eq" class="gob-pane" style="display:none">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div class="card-title" style="margin:0">🔬 Validaciones IQ / OQ / PQ / CSV</div>
+        <button class="btn btn-primary btn-sm gob-wbtn" onclick="gobNuevaValidacion()">+ Registrar validación</button>
+      </div>
+      <div id="gob-eq-list"><p class="empty">Cargando...</p></div>
+    </div>
+  </div>
+
+  <!-- (fmea) FMEA -->
+  <div id="gob-fmea" class="gob-pane" style="display:none">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div class="card-title" style="margin:0">⚠️ Matriz FMEA · riesgo de producto/proceso (ICH Q9)</div>
+        <button class="btn btn-primary btn-sm gob-wbtn" onclick="gobNuevaFmea()">+ Nuevo modo de falla</button>
+      </div>
+      <div style="font-size:0.8em;color:#64748b;margin-bottom:8px">RPN = Severidad × Ocurrencia × Detección (cada uno 1-10). Ordenado por RPN descendente — lo más rojo arriba.</div>
+      <div id="gob-fmea-list"><p class="empty">Cargando...</p></div>
+    </div>
+  </div>
+
+  <!-- (acu) Acuerdos de calidad -->
+  <div id="gob-acu" class="gob-pane" style="display:none">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div class="card-title" style="margin:0">🤝 Acuerdos de Calidad con terceros</div>
+        <button class="btn btn-primary btn-sm gob-wbtn" onclick="gobNuevoAcuerdo()">+ Nuevo acuerdo</button>
+      </div>
+      <div id="gob-acu-list"><p class="empty">Cargando...</p></div>
+    </div>
+  </div>
+</div>
+
 <!-- REPORTES INVIMA -->
 <div id="tab-reportes" class="pane">
   <div class="card" style="background:#eff6ff;border-left:4px solid #0ea5e9">
@@ -1063,7 +1140,7 @@ async function withBusy(btn, fn){
   finally { btn.disabled = false; if(btn.textContent !== prev) btn.textContent = prev; }
 }
 
-var _tabIds = ['tab-dash','tab-mis-tareas','tab-sgd','tab-cap','tab-mis-cap','tab-desv','tab-cambios','tab-quejas','tab-recalls','tab-reportes','tab-conf'];
+var _tabIds = ['tab-dash','tab-mis-tareas','tab-sgd','tab-cap','tab-mis-cap','tab-desv','tab-cambios','tab-quejas','tab-recalls','tab-gob','tab-reportes','tab-conf'];
 function goTab(id){
   document.querySelectorAll('.tab').forEach((t,i)=>{t.classList.toggle('active',_tabIds[i]===id);});
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
@@ -1076,6 +1153,7 @@ function goTab(id){
   else if(id==='tab-cambios') loadCambios();
   else if(id==='tab-quejas') loadQuejas();
   else if(id==='tab-recalls') loadRecalls();
+  else if(id==='tab-gob') gobInit();
   else if(id==='tab-reportes') repInit();
   else if(id==='tab-conf') loadConflictos();
 }
@@ -2868,6 +2946,280 @@ async function resolverConf(id){
     if(d.ok){ loadConflictos(); }
     else alert('Error: '+(d.error||'?'));
   }catch(e){ alert('Error red: '+e.message); }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// GOBIERNO GMP · 5 procesos de Aseguramiento (revisión dirección,
+// calificación proveedores, validación equipos, FMEA, acuerdos)
+// ════════════════════════════════════════════════════════════════════
+var _gobInit = false;
+var _gobProvCache = [];
+function gobInit(){
+  if(!_gobInit){ _gobInit = true; gobSub('rev'); }
+}
+function gobSub(sub){
+  document.querySelectorAll('.gob-sub').forEach(function(t){
+    var on = t.getAttribute('data-sub')===sub;
+    t.classList.toggle('active', on);
+    t.style.borderBottomColor = on ? '#6d28d9' : 'transparent';
+    t.style.color = on ? '#6d28d9' : '';
+    t.style.fontWeight = on ? '700' : '';
+  });
+  ['rev','prov','eq','fmea','acu'].forEach(function(s){
+    var el = document.getElementById('gob-'+s); if(el) el.style.display = (s===sub?'':'none');
+  });
+  if(sub==='rev') gobLoadRevision();
+  else if(sub==='prov') gobLoadProv();
+  else if(sub==='eq') gobLoadEquipos();
+  else if(sub==='fmea') gobLoadFmea();
+  else if(sub==='acu') gobLoadAcuerdos();
+}
+function _gobErr(id, e){ var el=document.getElementById(id); if(el) el.innerHTML='<p class="empty">Error: '+_esc(e&&e.message||e)+'</p>'; }
+
+// ── (rev) Revisión por la Dirección ──────────────────────────────────
+var _GOB_KPI_LABELS = {
+  desviaciones_abiertas:'Desviaciones abiertas', desviaciones_criticas_abiertas:'Desv. críticas',
+  cambios_abiertos:'Cambios abiertos', cambios_invima_pendiente:'Cambios s/INVIMA',
+  quejas_abiertas:'Quejas abiertas', recalls_abiertos:'Recalls abiertos',
+  ncs_abiertas:'NC abiertas', sgd_vencidos:'SGD vencidos',
+  capacitaciones_pendientes:'Capacit. pendientes', proveedores_aprobados:'Prov. aprobados',
+  oos_abiertos:'OOS abiertos'
+};
+async function gobLoadRevision(){
+  try{
+    var r = await fetch('/api/aseguramiento/revision-direccion', {credentials:'same-origin'});
+    var d = await r.json();
+    if(!r.ok) throw new Error(d.error||'error');
+    // KPIs vivos
+    var k = d.kpis_actuales||{}; var kh='';
+    Object.keys(_GOB_KPI_LABELS).forEach(function(key){
+      var v = k[key]; if(v===undefined) return;
+      var crit = (key.indexOf('critic')>=0||key.indexOf('invima')>=0||key==='recalls_abiertos'||key==='sgd_vencidos'||key==='oos_abiertos');
+      var cls = (v>0 && crit) ? 'crit' : (v>0 ? 'warn' : 'good');
+      kh += '<div class="kpi"><div class="kpi-label">'+_esc(_GOB_KPI_LABELS[key])+'</div><div class="kpi-val '+cls+'">'+v+'</div></div>';
+    });
+    document.getElementById('gob-rev-kpis').innerHTML = kh;
+    // Lista
+    var rows = d.revisiones||[];
+    if(!rows.length){ document.getElementById('gob-rev-list').innerHTML='<p class="empty">Sin revisiones registradas. La revisión por la dirección debe hacerse al menos una vez al año (INVIMA Res. 2214 art. 8).</p>'; return; }
+    var html='<table class="tbl"><thead><tr><th>Periodo</th><th>Planeada</th><th>Ejecutada</th><th>Conduce</th><th>Estado</th><th></th></tr></thead><tbody>';
+    rows.forEach(function(x){
+      var badge = x.estado==='ejecutada'?'<span style="color:#16a34a;font-weight:700">✔ ejecutada</span>':(x.estado==='cerrada'?'<span style="color:#64748b">cerrada</span>':'<span style="color:#d97706;font-weight:700">planeada</span>');
+      var btn = (x.estado==='planeada')?'<button class="btn btn-primary btn-sm gob-wbtn" onclick="gobEjecutarRevision('+x.id+')">Ejecutar acta</button>':'';
+      html+='<tr><td><b>'+_esc(x.periodo)+'</b></td><td>'+_esc(x.fecha_planeada||'—')+'</td><td>'+_esc(x.fecha_ejecutada||'—')+'</td><td>'+_esc(x.conducido_por||'—')+'</td><td>'+badge+'</td><td>'+btn+'</td></tr>';
+    });
+    html+='</tbody></table>';
+    document.getElementById('gob-rev-list').innerHTML = html;
+  }catch(e){ _gobErr('gob-rev-list', e); }
+}
+async function gobNuevaRevision(){
+  var periodo = prompt('Periodo de la revisión (ej. 2026 o 2026-S1):');
+  if(!periodo) return;
+  var fecha = prompt('Fecha planeada (YYYY-MM-DD, opcional):')||'';
+  try{
+    var r = await fetch('/api/aseguramiento/revision-direccion', _fetchOpts('POST', {periodo:periodo, fecha_planeada:fecha, conducido_por:''}));
+    var d = await r.json();
+    if(r.ok && d.ok){ toast('Revisión programada','success'); gobLoadRevision(); }
+    else toast('Error: '+(d.error||'?'),'error');
+  }catch(e){ toast('Error red: '+e.message,'error'); }
+}
+async function gobEjecutarRevision(id){
+  var fortalezas = prompt('Fortalezas del sistema de calidad en este periodo:'); if(fortalezas===null) return;
+  var debilidades = prompt('Debilidades / oportunidades de mejora:')||'';
+  var decisiones = prompt('Decisiones tomadas por la dirección:')||'';
+  var acciones = prompt('Acciones de mejora acordadas (con responsable/fecha):')||'';
+  var conduce = prompt('¿Quién conduce/firma la revisión?')||'';
+  try{
+    var r = await fetch('/api/aseguramiento/revision-direccion/'+id+'/ejecutar', _fetchOpts('POST',
+      {fortalezas:fortalezas, debilidades:debilidades, decisiones:decisiones, acciones_mejora:acciones, conducido_por:conduce}));
+    var d = await r.json();
+    if(r.ok && d.ok){ toast('Acta de revisión guardada con snapshot de KPIs','success'); gobLoadRevision(); }
+    else toast('Error: '+(d.error||'?'),'error');
+  }catch(e){ toast('Error red: '+e.message,'error'); }
+}
+
+// ── (prov) Calificación de proveedores ───────────────────────────────
+async function gobLoadProv(){
+  try{
+    var r = await fetch('/api/aseguramiento/proveedores-calificacion', {credentials:'same-origin'});
+    var d = await r.json();
+    if(!r.ok) throw new Error(d.error||'error');
+    _gobProvCache = d.proveedores||[];
+    var s = d.resumen||{};
+    document.getElementById('gob-prov-kpis').innerHTML =
+      '<div class="kpi"><div class="kpi-label">Proveedores</div><div class="kpi-val">'+(s.total||0)+'</div></div>'+
+      '<div class="kpi"><div class="kpi-label">Aprobados</div><div class="kpi-val good">'+(s.aprobados||0)+'</div></div>'+
+      '<div class="kpi"><div class="kpi-label">Pendientes</div><div class="kpi-val warn">'+(s.pendientes||0)+'</div></div>'+
+      '<div class="kpi"><div class="kpi-label">Críticos</div><div class="kpi-val">'+(s.criticos||0)+'</div></div>'+
+      '<div class="kpi"><div class="kpi-label">Reeval. vencida</div><div class="kpi-val '+((s.reevaluacion_vencida||0)>0?'crit':'good')+'">'+(s.reevaluacion_vencida||0)+'</div></div>';
+    gobRenderProv();
+  }catch(e){ _gobErr('gob-prov-list', e); }
+}
+function _provEstadoBadge(est){
+  var m={aprobado:['#16a34a','✔ aprobado'],aprobado_condicional:['#d97706','aprob. condicional'],
+    en_evaluacion:['#0ea5e9','en evaluación'],pendiente:['#94a3b8','pendiente'],
+    rechazado:['#ef4444','rechazado'],suspendido:['#ef4444','suspendido']};
+  var x=m[est]||['#94a3b8',est||'—'];
+  return '<span style="color:'+x[0]+';font-weight:700">'+_esc(x[1])+'</span>';
+}
+function gobRenderProv(){
+  var q=(document.getElementById('gob-prov-q').value||'').toLowerCase().trim();
+  var rows=_gobProvCache.filter(function(x){ return !q || (x.proveedor||'').toLowerCase().indexOf(q)>=0; });
+  if(!rows.length){ document.getElementById('gob-prov-list').innerHTML='<p class="empty">Sin proveedores.</p>'; return; }
+  var html='<table class="tbl"><thead><tr><th>Proveedor</th><th>Criticidad</th><th>Visita</th><th>Estado AC</th><th>Reevaluación</th><th>Desempeño (Compras)</th><th></th></tr></thead><tbody>';
+  rows.forEach(function(x){
+    var crit = x.criticidad==='critico'?'<span style="color:#ef4444;font-weight:700">crítico</span>':'no crítico';
+    var visita = x.requiere_visita?'🚩 sí':'—';
+    var sid='sc-'+btoa(unescape(encodeURIComponent(x.proveedor))).replace(/[^a-zA-Z0-9]/g,'');
+    html+='<tr><td><b>'+_esc(x.proveedor)+'</b>'+(x.categoria?'<div style="font-size:0.78em;color:#94a3b8">'+_esc(x.categoria)+'</div>':'')+'</td>'
+      +'<td>'+crit+'</td><td>'+visita+'</td><td>'+_provEstadoBadge(x.estado)+'</td>'
+      +'<td>'+_esc(x.fecha_reevaluacion||'—')+'</td>'
+      +'<td><span id="'+sid+'" style="font-size:0.82em;color:#94a3b8;cursor:pointer" onclick="gobScorecard('+JSON.stringify(x.proveedor).replace(/"/g,'&quot;')+',\''+sid+'\')">ver scorecard ▸</span></td>'
+      +'<td><button class="btn btn-ghost btn-sm gob-wbtn" onclick="gobCalificarProv('+JSON.stringify(x.proveedor).replace(/"/g,'&quot;')+')">Calificar</button></td></tr>';
+  });
+  html+='</tbody></table>';
+  document.getElementById('gob-prov-list').innerHTML=html;
+}
+async function gobScorecard(prov, sid){
+  var el=document.getElementById(sid); if(el) el.textContent='cargando…';
+  try{
+    var r=await fetch('/api/compras/proveedor-scorecard/'+encodeURIComponent(prov), {credentials:'same-origin'});
+    var d=await r.json();
+    if(!r.ok) throw new Error(d.error||'error');
+    var score=(d.score_global!=null?d.score_global:'—');
+    var col = (score>=80?'#16a34a':(score>=60?'#d97706':'#ef4444'));
+    if(el) el.innerHTML='<b style="color:'+col+'">Score '+score+'</b> · OCs '+(d.ocs_total_12m||0)
+      +' · cumpl '+(d.cumplimiento_pct||0)+'% · on-time '+(d.on_time_pct||0)+'% · rechazo QC '+(d.rechazo_qc_pct||0)+'%';
+  }catch(e){ if(el) el.textContent='sin datos'; }
+}
+async function gobCalificarProv(prov){
+  var crit = confirm('¿'+prov+' es proveedor CRÍTICO? (Aceptar=crítico, Cancelar=no crítico)') ? 'critico':'no_critico';
+  var visita = (crit==='critico') ? confirm('¿Requiere VISITA/auditoría in situ? (Aceptar=sí)') : false;
+  var estado = prompt('Estado de calificación: aprobado / aprobado_condicional / en_evaluacion / rechazado / suspendido / pendiente','aprobado');
+  if(!estado) return;
+  var hoy = new Date().toISOString().slice(0,10);
+  var body = {proveedor:prov, criticidad:crit, requiere_visita:visita, estado:estado.trim().toLowerCase()};
+  if(body.estado==='aprobado'||body.estado==='aprobado_condicional'){
+    body.fecha_aprobacion = hoy;
+    // reevaluación: críticos 1 año, no críticos 2 años
+    var dd = new Date(); dd.setFullYear(dd.getFullYear()+(crit==='critico'?1:2));
+    body.fecha_reevaluacion = dd.toISOString().slice(0,10);
+  }
+  if(visita) body.fecha_ultima_visita = hoy;
+  try{
+    var r=await fetch('/api/aseguramiento/proveedores-calificacion', _fetchOpts('POST', body));
+    var d=await r.json();
+    if(r.ok && d.ok){ toast('Proveedor calificado','success'); gobLoadProv(); }
+    else toast('Error: '+(d.error||'?'),'error');
+  }catch(e){ toast('Error red: '+e.message,'error'); }
+}
+
+// ── (eq) Validación de equipos ───────────────────────────────────────
+async function gobLoadEquipos(){
+  try{
+    var r=await fetch('/api/aseguramiento/validacion-equipos', {credentials:'same-origin'});
+    var d=await r.json();
+    if(!r.ok) throw new Error(d.error||'error');
+    var rows=d.validaciones||[];
+    if(!rows.length){ document.getElementById('gob-eq-list').innerHTML='<p class="empty">Sin validaciones registradas.</p>'; return; }
+    var html='<table class="tbl"><thead><tr><th>Equipo</th><th>Tipo</th><th>Estado</th><th>Ejecución</th><th>Revalidación</th><th>Aprobó</th></tr></thead><tbody>';
+    rows.forEach(function(x){
+      var est=x.estado||'pendiente';
+      var col = (est==='aprobado'?'#16a34a':(est==='rechazado'?'#ef4444':'#d97706'));
+      html+='<tr><td><b>'+_esc(x.equipo_codigo)+'</b>'+(x.equipo_nombre?'<div style="font-size:0.78em;color:#94a3b8">'+_esc(x.equipo_nombre)+'</div>':'')+'</td>'
+        +'<td><b>'+_esc(x.tipo)+'</b></td><td><span style="color:'+col+';font-weight:700">'+_esc(est)+'</span></td>'
+        +'<td>'+_esc(x.fecha_ejecucion||'—')+'</td><td>'+_esc(x.fecha_revalidacion||'—')+'</td><td>'+_esc(x.aprobado_por||'—')+'</td></tr>';
+    });
+    html+='</tbody></table>';
+    document.getElementById('gob-eq-list').innerHTML=html;
+  }catch(e){ _gobErr('gob-eq-list', e); }
+}
+async function gobNuevaValidacion(){
+  var eq=prompt('Código del equipo (ej. EQ-MARMITA-01):'); if(!eq) return;
+  var tipo=prompt('Tipo: IQ / OQ / PQ / CSV / REVALIDACION','OQ'); if(!tipo) return;
+  var crit=prompt('Criterios de aceptación:')||'';
+  var estado=prompt('Estado: pendiente / en_ejecucion / aprobado / rechazado','aprobado')||'pendiente';
+  var fecha=prompt('Fecha de ejecución (YYYY-MM-DD, opcional):')||'';
+  var reval=prompt('Próxima revalidación (YYYY-MM-DD, opcional):')||'';
+  try{
+    var r=await fetch('/api/aseguramiento/validacion-equipos', _fetchOpts('POST',
+      {equipo_codigo:eq, tipo:tipo, criterios_aceptacion:crit, estado:estado, fecha_ejecucion:fecha, fecha_revalidacion:reval}));
+    var d=await r.json();
+    if(r.ok && d.ok){ toast('Validación registrada','success'); gobLoadEquipos(); }
+    else toast('Error: '+(d.error||'?'),'error');
+  }catch(e){ toast('Error red: '+e.message,'error'); }
+}
+
+// ── (fmea) Matriz FMEA ───────────────────────────────────────────────
+async function gobLoadFmea(){
+  try{
+    var r=await fetch('/api/aseguramiento/fmea', {credentials:'same-origin'});
+    var d=await r.json();
+    if(!r.ok) throw new Error(d.error||'error');
+    var rows=d.fmea||[];
+    if(!rows.length){ document.getElementById('gob-fmea-list').innerHTML='<p class="empty">Sin análisis de riesgo registrado.</p>'; return; }
+    var html='<table class="tbl"><thead><tr><th>Producto/Proceso</th><th>Modo de falla</th><th>Efecto</th><th>S</th><th>O</th><th>D</th><th>RPN</th><th>Control actual</th></tr></thead><tbody>';
+    rows.forEach(function(x){
+      var rpn=x.rpn||0;
+      var col=(rpn>=200?'#ef4444':(rpn>=100?'#d97706':'#16a34a'));
+      html+='<tr><td><b>'+_esc(x.producto_nombre)+'</b></td><td>'+_esc(x.modo_falla)+'</td><td>'+_esc(x.efecto||'—')+'</td>'
+        +'<td style="text-align:center">'+(x.severidad||'—')+'</td><td style="text-align:center">'+(x.ocurrencia||'—')+'</td><td style="text-align:center">'+(x.deteccion||'—')+'</td>'
+        +'<td style="text-align:center"><b style="color:'+col+'">'+(rpn||'—')+'</b></td><td>'+_esc(x.control_actual||'—')+'</td></tr>';
+    });
+    html+='</tbody></table>';
+    document.getElementById('gob-fmea-list').innerHTML=html;
+  }catch(e){ _gobErr('gob-fmea-list', e); }
+}
+async function gobNuevaFmea(){
+  var prod=prompt('Producto o proceso:'); if(!prod) return;
+  var modo=prompt('Modo de falla (qué puede salir mal):'); if(!modo) return;
+  var efecto=prompt('Efecto sobre el producto/paciente:')||'';
+  var causa=prompt('Causa potencial:')||'';
+  var s=prompt('Severidad (1-10):'); var o=prompt('Ocurrencia (1-10):'); var det=prompt('Detección (1-10):');
+  var ctrl=prompt('Control actual:')||'';
+  try{
+    var r=await fetch('/api/aseguramiento/fmea', _fetchOpts('POST',
+      {producto_nombre:prod, modo_falla:modo, efecto:efecto, causa:causa, severidad:s, ocurrencia:o, deteccion:det, control_actual:ctrl}));
+    var d=await r.json();
+    if(r.ok && d.ok){ toast('FMEA registrado · RPN '+(d.rpn||'—'),'success'); gobLoadFmea(); }
+    else toast('Error: '+(d.error||'?'),'error');
+  }catch(e){ toast('Error red: '+e.message,'error'); }
+}
+
+// ── (acu) Acuerdos de calidad ────────────────────────────────────────
+async function gobLoadAcuerdos(){
+  try{
+    var r=await fetch('/api/aseguramiento/acuerdos-calidad', {credentials:'same-origin'});
+    var d=await r.json();
+    if(!r.ok) throw new Error(d.error||'error');
+    var rows=d.acuerdos||[];
+    if(!rows.length){ document.getElementById('gob-acu-list').innerHTML='<p class="empty">Sin acuerdos de calidad registrados.</p>'; return; }
+    var html='<table class="tbl"><thead><tr><th>Tercero</th><th>Tipo</th><th>Versión</th><th>Vigencia</th><th>Renovación</th><th>Estado</th><th>Últ. auditoría</th></tr></thead><tbody>';
+    rows.forEach(function(x){
+      var est=x.estado||'vigente';
+      var col=(est==='vigente'?'#16a34a':(est==='vencido'?'#ef4444':'#94a3b8'));
+      html+='<tr><td><b>'+_esc(x.tercero)+'</b></td><td>'+_esc(x.tipo)+'</td><td>v'+_esc(x.version||'1')+'</td>'
+        +'<td>'+_esc(x.fecha_efectiva||'—')+'</td><td>'+_esc(x.fecha_renovacion||'—')+'</td>'
+        +'<td><span style="color:'+col+';font-weight:700">'+_esc(est)+'</span></td><td>'+_esc(x.ultima_auditoria||'—')+'</td></tr>';
+    });
+    html+='</tbody></table>';
+    document.getElementById('gob-acu-list').innerHTML=html;
+  }catch(e){ _gobErr('gob-acu-list', e); }
+}
+async function gobNuevoAcuerdo(){
+  var tercero=prompt('Tercero (maquila/proveedor/cliente/laboratorio):'); if(!tercero) return;
+  var tipo=prompt('Tipo: maquila / proveedor / cliente / laboratorio','maquila')||'maquila';
+  var version=prompt('Versión del acuerdo:','1')||'1';
+  var efectiva=prompt('Fecha efectiva (YYYY-MM-DD, opcional):')||'';
+  var renov=prompt('Fecha de renovación (YYYY-MM-DD, opcional):')||'';
+  var alcance=prompt('Alcance del acuerdo:')||'';
+  try{
+    var r=await fetch('/api/aseguramiento/acuerdos-calidad', _fetchOpts('POST',
+      {tercero:tercero, tipo:tipo, version:version, fecha_efectiva:efectiva, fecha_renovacion:renov, alcance:alcance}));
+    var d=await r.json();
+    if(r.ok && d.ok){ toast('Acuerdo registrado','success'); gobLoadAcuerdos(); }
+    else toast('Error: '+(d.error||'?'),'error');
+  }catch(e){ toast('Error red: '+e.message,'error'); }
 }
 
 window.addEventListener('DOMContentLoaded', function(){ loadDashboard(); });

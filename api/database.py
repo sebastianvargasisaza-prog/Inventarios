@@ -328,6 +328,116 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (252, "Aseguramiento · 5 elementos de gobierno GMP (14-jun): (a) revision_direccion "
+          "(Revisión por la Dirección / APR anual · INVIMA Res.2214 art.8), (b) "
+          "proveedores_calificacion (aprobación + reevaluación + protocolo de visita · reusa "
+          "proveedores de compras y su scorecard), (c) validacion_equipos (IQ/OQ/PQ/CSV · reusa "
+          "equipos_planta), (d) producto_fmea (riesgo ICH Q9), (e) acuerdos_calidad (quality "
+          "agreements maquila). Solo tablas; los datos base se reusan de los módulos existentes.", [
+        # (a) Revisión por la Dirección
+        """CREATE TABLE IF NOT EXISTS revision_direccion (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            periodo TEXT NOT NULL,
+            fecha_planeada TEXT,
+            fecha_ejecutada TEXT,
+            conducido_por TEXT,
+            participantes TEXT,
+            kpis_json TEXT,
+            fortalezas TEXT,
+            debilidades TEXT,
+            decisiones TEXT,
+            acciones_mejora TEXT,
+            acta_url TEXT,
+            estado TEXT NOT NULL DEFAULT 'planeada'
+                CHECK(estado IN ('planeada','ejecutada','cerrada')),
+            signature_id INTEGER,
+            creado_por TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_rev_dir_estado ON revision_direccion(estado, periodo)",
+        # (b) Calificación de proveedores (reusa proveedores de compras + scorecard)
+        """CREATE TABLE IF NOT EXISTS proveedores_calificacion (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            proveedor TEXT NOT NULL UNIQUE,
+            criticidad TEXT NOT NULL DEFAULT 'no_critico'
+                CHECK(criticidad IN ('critico','no_critico')),
+            requiere_visita INTEGER NOT NULL DEFAULT 0,
+            categoria TEXT,
+            estado TEXT NOT NULL DEFAULT 'pendiente'
+                CHECK(estado IN ('pendiente','en_evaluacion','aprobado','aprobado_condicional','rechazado','suspendido')),
+            cuestionario_url TEXT,
+            certificaciones TEXT,
+            fecha_aprobacion TEXT,
+            fecha_reevaluacion TEXT,
+            fecha_ultima_visita TEXT,
+            observaciones TEXT,
+            evaluado_por TEXT,
+            actualizado_en TEXT,
+            creado_por TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_provcal_estado ON proveedores_calificacion(estado)",
+        # (c) Validación de equipos IQ/OQ/PQ/CSV (reusa equipos_planta)
+        """CREATE TABLE IF NOT EXISTS validacion_equipos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            equipo_codigo TEXT NOT NULL,
+            tipo TEXT NOT NULL CHECK(tipo IN ('IQ','OQ','PQ','CSV','revalidacion')),
+            protocolo_url TEXT,
+            criterios_aceptacion TEXT,
+            resultado TEXT,
+            estado TEXT NOT NULL DEFAULT 'pendiente'
+                CHECK(estado IN ('pendiente','en_ejecucion','aprobado','rechazado')),
+            fecha_ejecucion TEXT,
+            ejecutado_por TEXT,
+            aprobado_por TEXT,
+            fecha_revalidacion TEXT,
+            observaciones TEXT,
+            creado_por TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_valeq_equipo ON validacion_equipos(equipo_codigo, tipo)",
+        # (d) FMEA / riesgo ICH Q9
+        """CREATE TABLE IF NOT EXISTS producto_fmea (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            producto_nombre TEXT NOT NULL,
+            modo_falla TEXT NOT NULL,
+            efecto TEXT,
+            causa TEXT,
+            severidad INTEGER,
+            ocurrencia INTEGER,
+            deteccion INTEGER,
+            rpn INTEGER,
+            control_actual TEXT,
+            accion_recomendada TEXT,
+            responsable TEXT,
+            estado TEXT NOT NULL DEFAULT 'abierto'
+                CHECK(estado IN ('abierto','mitigado','cerrado')),
+            creado_por TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_fmea_prod ON producto_fmea(producto_nombre)",
+        "CREATE INDEX IF NOT EXISTS idx_fmea_rpn ON producto_fmea(rpn DESC)",
+        # (e) Acuerdos de calidad (quality agreements) con maquila/terceros
+        """CREATE TABLE IF NOT EXISTS acuerdos_calidad (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tercero TEXT NOT NULL,
+            tipo TEXT NOT NULL DEFAULT 'maquila'
+                CHECK(tipo IN ('maquila','proveedor','cliente','laboratorio')),
+            documento_url TEXT,
+            version TEXT DEFAULT '1',
+            fecha_efectiva TEXT,
+            fecha_renovacion TEXT,
+            alcance TEXT,
+            estado TEXT NOT NULL DEFAULT 'vigente'
+                CHECK(estado IN ('borrador','vigente','expirado','suspendido')),
+            ultima_auditoria TEXT,
+            responsable TEXT,
+            observaciones TEXT,
+            creado_por TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_acuerdos_estado ON acuerdos_calidad(estado, tipo)",
+    ]),
     (251, "Siembra el catálogo de documentos que el sistema YA referencia en el SGD "
           "(biblioteca de Documentos · 14-jun). Registra como BORRADOR (pendiente de adjuntar "
           "PDF/versión en Aseguramiento) los 13 procedimientos conocidos (COC-PRO-002/006/008/"

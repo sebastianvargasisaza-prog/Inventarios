@@ -81,8 +81,14 @@ def _autorizados_lectura():
 
 
 def _autorizados_escritura():
-    """Escritura del SGD: solo CALIDAD + ADMIN (Aseguramiento gestiona docs)."""
-    return set(CALIDAD_USERS) | set(ADMIN_USERS)
+    """Escritura en Aseguramiento: ASEGURAMIENTO (Miguel · dueño del módulo) + CALIDAD + ADMIN.
+    FIX 14-jun: tras dividir los cargos, ASEGURAMIENTO_USERS quedó fuera y Miguel no podía
+    operar su propio módulo (clasificar desviaciones, cambios, calificar proveedores, etc.)."""
+    try:
+        from config import ASEGURAMIENTO_USERS as _AC
+    except Exception:
+        _AC = set()
+    return set(_AC) | set(CALIDAD_USERS) | set(ADMIN_USERS)
 
 
 # Helpers locales son ahora wrappers thin del módulo global api/audit_helpers.py
@@ -3249,3 +3255,281 @@ def reporte_lote_trazabilidad(lote):
             'recalls': len(recalls),
         },
     })
+
+
+# ════════════════════════════════════════════════════════════════════════
+# GOBIERNO GMP (14-jun) · 5 elementos: Revisión por la Dirección, Calificación de
+# proveedores (reusa proveedores+scorecard de compras), Validación de equipos (reusa
+# equipos_planta), FMEA (ICH Q9), Acuerdos de calidad (maquila/terceros).
+# ════════════════════════════════════════════════════════════════════════
+
+# --- (a) REVISIÓN POR LA DIRECCIÓN (APR anual · INVIMA Res.2214 art.8) ---
+def _kpis_consolidados(c):
+    """Snapshot en vivo de los KPIs del sistema de calidad para la revisión."""
+    def n(sql, p=()):
+        r = c.execute(sql, p).fetchone()
+        return (r[0] or 0) if r else 0
+    return {
+        'desviaciones_abiertas': n("SELECT COUNT(*) FROM desviaciones WHERE estado NOT IN ('cerrada','rechazada')"),
+        'desviaciones_criticas_abiertas': n("SELECT COUNT(*) FROM desviaciones WHERE clasificacion='critica' AND estado NOT IN ('cerrada','rechazada')"),
+        'cambios_abiertos': n("SELECT COUNT(*) FROM control_cambios WHERE estado NOT IN ('cerrado','rechazado')"),
+        'cambios_invima_pendiente': n("SELECT COUNT(*) FROM control_cambios WHERE requiere_invima=1 AND COALESCE(notificacion_invima_at,'')='' AND estado NOT IN ('cerrado','rechazado')"),
+        'quejas_abiertas': n("SELECT COUNT(*) FROM quejas_clientes WHERE estado NOT IN ('cerrada','rechazada')"),
+        'recalls_abiertos': n("SELECT COUNT(*) FROM recalls WHERE estado NOT IN ('cerrado','cancelado')"),
+        'ncs_abiertas': n("SELECT COUNT(*) FROM no_conformidades WHERE estado='Abierta'"),
+        'sgd_vencidos': n("SELECT COUNT(*) FROM sgd_documentos WHERE estado='vigente' AND COALESCE(proxima_revision,'')<>'' AND date(proxima_revision) < date('now','-5 hours')"),
+        'capacitaciones_pendientes': n("SELECT COUNT(*) FROM sgd_capacitaciones WHERE estado IN ('asignada','leida')"),
+        'proveedores_aprobados': n("SELECT COUNT(*) FROM proveedores_calificacion WHERE estado='aprobado'"),
+        'oos_abiertos': n("SELECT COUNT(*) FROM calidad_oos WHERE LOWER(COALESCE(estado,'')) NOT IN ('cerrado','rechazado','descartado')"),
+    }
+
+
+@bp.route('/api/aseguramiento/revision-direccion', methods=['GET', 'POST'])
+def revision_direccion():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'POST':
+        if user not in _autorizados_escritura():
+            return jsonify({'error': 'Solo Calidad/Aseguramiento o Admin'}), 403
+        d = request.get_json(silent=True) or {}
+        periodo = (d.get('periodo') or '').strip()
+        if not periodo:
+            return jsonify({'error': 'periodo requerido (ej. 2026 o 2026-S1)'}), 400
+        c.execute("INSERT INTO revision_direccion (periodo,fecha_planeada,conducido_por,estado,creado_por) "
+                  "VALUES (?,?,?, 'planeada', ?)",
+                  (periodo, (d.get('fecha_planeada') or '').strip() or None,
+                   (d.get('conducido_por') or '').strip() or None, user))
+        rid = c.lastrowid
+        _audit_log(c, usuario=user, accion='CREAR_REVISION_DIRECCION', tabla='revision_direccion',
+                   registro_id=rid, despues={'periodo': periodo})
+        conn.commit()
+        return jsonify({'ok': True, 'id': rid}), 201
+    rows = c.execute("SELECT id,periodo,fecha_planeada,fecha_ejecutada,conducido_por,estado,creado_en "
+                     "FROM revision_direccion ORDER BY id DESC LIMIT 50").fetchall()
+    cols = ['id', 'periodo', 'fecha_planeada', 'fecha_ejecutada', 'conducido_por', 'estado', 'creado_en']
+    return jsonify({'revisiones': [dict(zip(cols, r)) for r in rows], 'kpis_actuales': _kpis_consolidados(c)})
+
+
+@bp.route('/api/aseguramiento/revision-direccion/<int:rid>/ejecutar', methods=['POST'])
+def revision_direccion_ejecutar(rid):
+    if session.get('compras_user', '') not in _autorizados_escritura():
+        return jsonify({'error': 'Solo Calidad/Aseguramiento o Admin'}), 403
+    user = session.get('compras_user', '')
+    d = request.get_json(silent=True) or {}
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT estado FROM revision_direccion WHERE id=?", (rid,)).fetchone()
+    if not row:
+        return jsonify({'error': 'no encontrada'}), 404
+    import json as _json
+    kpis = _json.dumps(_kpis_consolidados(c), ensure_ascii=False)
+    c.execute("UPDATE revision_direccion SET estado='ejecutada', "
+              "fecha_ejecutada=date('now','-5 hours'), kpis_json=?, fortalezas=?, debilidades=?, "
+              "decisiones=?, acciones_mejora=?, participantes=?, acta_url=?, conducido_por=COALESCE(?,conducido_por) "
+              "WHERE id=? AND estado='planeada'",
+              (kpis, (d.get('fortalezas') or '')[:3000], (d.get('debilidades') or '')[:3000],
+               (d.get('decisiones') or '')[:3000], (d.get('acciones_mejora') or '')[:3000],
+               (d.get('participantes') or '')[:500], (d.get('acta_url') or '').strip() or None,
+               (d.get('conducido_por') or '').strip() or None, rid))
+    if c.rowcount != 1:
+        return jsonify({'error': 'la revisión ya fue ejecutada o cambió de estado'}), 409
+    _audit_log(c, usuario=user, accion='EJECUTAR_REVISION_DIRECCION', tabla='revision_direccion',
+               registro_id=rid, despues={'kpis': 'snapshot', 'decisiones': (d.get('decisiones') or '')[:200]})
+    conn.commit()
+    return jsonify({'ok': True})
+
+
+# --- (b) CALIFICACIÓN DE PROVEEDORES (reusa proveedores + scorecard de compras) ---
+@bp.route('/api/aseguramiento/proveedores-calificacion', methods=['GET', 'POST'])
+def proveedores_calificacion():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'POST':
+        if user not in _autorizados_escritura():
+            return jsonify({'error': 'Solo Calidad/Aseguramiento o Admin'}), 403
+        d = request.get_json(silent=True) or {}
+        prov = (d.get('proveedor') or '').strip()
+        if not prov:
+            return jsonify({'error': 'proveedor requerido'}), 400
+        estado = (d.get('estado') or 'pendiente').strip().lower()
+        crit = 'critico' if (d.get('criticidad') == 'critico') else 'no_critico'
+        visita = 1 if d.get('requiere_visita') else 0
+        c.execute(
+            "INSERT INTO proveedores_calificacion "
+            "(proveedor,criticidad,requiere_visita,categoria,estado,cuestionario_url,certificaciones,"
+            " fecha_aprobacion,fecha_reevaluacion,fecha_ultima_visita,observaciones,evaluado_por,actualizado_en,creado_por) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,date('now','-5 hours'),?) "
+            "ON CONFLICT(proveedor) DO UPDATE SET criticidad=excluded.criticidad, "
+            "requiere_visita=excluded.requiere_visita, categoria=excluded.categoria, estado=excluded.estado, "
+            "cuestionario_url=excluded.cuestionario_url, certificaciones=excluded.certificaciones, "
+            "fecha_aprobacion=excluded.fecha_aprobacion, fecha_reevaluacion=excluded.fecha_reevaluacion, "
+            "fecha_ultima_visita=excluded.fecha_ultima_visita, observaciones=excluded.observaciones, "
+            "evaluado_por=excluded.evaluado_por, actualizado_en=excluded.actualizado_en",
+            (prov, crit, visita, (d.get('categoria') or '').strip() or None, estado,
+             (d.get('cuestionario_url') or '').strip() or None, (d.get('certificaciones') or '').strip() or None,
+             (d.get('fecha_aprobacion') or '').strip() or None, (d.get('fecha_reevaluacion') or '').strip() or None,
+             (d.get('fecha_ultima_visita') or '').strip() or None, (d.get('observaciones') or '')[:1000], user, user))
+        _audit_log(c, usuario=user, accion='CALIFICAR_PROVEEDOR', tabla='proveedores_calificacion',
+                   registro_id=prov, despues={'estado': estado, 'criticidad': crit, 'requiere_visita': bool(visita)})
+        conn.commit()
+        return jsonify({'ok': True})
+    # GET: proveedores (de compras) + su calificación AC (LEFT JOIN · reusa el maestro existente)
+    rows = c.execute(
+        "SELECT p.nombre, COALESCE(pc.criticidad,'no_critico'), COALESCE(pc.requiere_visita,0), "
+        "       COALESCE(pc.estado,'pendiente'), pc.fecha_aprobacion, pc.fecha_reevaluacion, "
+        "       pc.fecha_ultima_visita, COALESCE(pc.categoria,'') "
+        "FROM proveedores p LEFT JOIN proveedores_calificacion pc ON pc.proveedor = p.nombre "
+        "WHERE COALESCE(p.activo,1)=1 "
+        "ORDER BY (COALESCE(pc.estado,'pendiente')='pendiente') DESC, p.nombre LIMIT 500"
+    ).fetchall()
+    cols = ['proveedor', 'criticidad', 'requiere_visita', 'estado', 'fecha_aprobacion',
+            'fecha_reevaluacion', 'fecha_ultima_visita', 'categoria']
+    items = [dict(zip(cols, r)) for r in rows]
+    # Huérfanos: una calificación AC NUNCA debe quedar invisible (proveedor inactivo
+    # o calificado a mano sin estar en el maestro) — la sumamos si no salió arriba.
+    vistos = {x['proveedor'] for x in items}
+    huerf = c.execute(
+        "SELECT proveedor, COALESCE(criticidad,'no_critico'), COALESCE(requiere_visita,0), "
+        "       COALESCE(estado,'pendiente'), fecha_aprobacion, fecha_reevaluacion, "
+        "       fecha_ultima_visita, COALESCE(categoria,'') FROM proveedores_calificacion "
+        "ORDER BY proveedor LIMIT 500"
+    ).fetchall()
+    for r in huerf:
+        if r[0] not in vistos:
+            items.append(dict(zip(cols, r)))
+            vistos.add(r[0])
+    hoy = c.execute("SELECT date('now','-5 hours')").fetchone()[0]
+    resumen = {
+        'total': len(items),
+        'aprobados': sum(1 for x in items if x['estado'] == 'aprobado'),
+        'pendientes': sum(1 for x in items if x['estado'] == 'pendiente'),
+        'criticos': sum(1 for x in items if x['criticidad'] == 'critico'),
+        'reevaluacion_vencida': sum(1 for x in items if (x['fecha_reevaluacion'] or '') and x['fecha_reevaluacion'][:10] < hoy),
+    }
+    return jsonify({'proveedores': items, 'resumen': resumen})
+
+
+# --- (c) VALIDACIÓN DE EQUIPOS (reusa equipos_planta) ---
+@bp.route('/api/aseguramiento/validacion-equipos', methods=['GET', 'POST'])
+def validacion_equipos():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'POST':
+        if user not in _autorizados_escritura():
+            return jsonify({'error': 'Solo Calidad/Aseguramiento o Admin'}), 403
+        d = request.get_json(silent=True) or {}
+        eq = (d.get('equipo_codigo') or '').strip()
+        tipo = (d.get('tipo') or '').strip().upper()
+        if not eq or tipo not in ('IQ', 'OQ', 'PQ', 'CSV', 'REVALIDACION'):
+            return jsonify({'error': 'equipo_codigo y tipo (IQ/OQ/PQ/CSV/revalidacion) requeridos'}), 400
+        c.execute("INSERT INTO validacion_equipos (equipo_codigo,tipo,protocolo_url,criterios_aceptacion,"
+                  "resultado,estado,fecha_ejecucion,ejecutado_por,aprobado_por,fecha_revalidacion,observaciones,creado_por) "
+                  "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                  (eq, ('revalidacion' if tipo == 'REVALIDACION' else tipo),
+                   (d.get('protocolo_url') or '').strip() or None, (d.get('criterios_aceptacion') or '')[:2000],
+                   (d.get('resultado') or '')[:2000], (d.get('estado') or 'pendiente').strip().lower(),
+                   (d.get('fecha_ejecucion') or '').strip() or None, user,
+                   (d.get('aprobado_por') or '').strip() or None,
+                   (d.get('fecha_revalidacion') or '').strip() or None, (d.get('observaciones') or '')[:1000], user))
+        vid = c.lastrowid
+        _audit_log(c, usuario=user, accion='VALIDACION_EQUIPO', tabla='validacion_equipos',
+                   registro_id=vid, despues={'equipo': eq, 'tipo': tipo})
+        conn.commit()
+        return jsonify({'ok': True, 'id': vid}), 201
+    rows = c.execute(
+        "SELECT v.id, v.equipo_codigo, COALESCE(ep.nombre,''), v.tipo, v.estado, v.fecha_ejecucion, "
+        "       v.fecha_revalidacion, v.aprobado_por FROM validacion_equipos v "
+        "LEFT JOIN equipos_planta ep ON ep.codigo = v.equipo_codigo ORDER BY v.id DESC LIMIT 300"
+    ).fetchall()
+    cols = ['id', 'equipo_codigo', 'equipo_nombre', 'tipo', 'estado', 'fecha_ejecucion', 'fecha_revalidacion', 'aprobado_por']
+    return jsonify({'validaciones': [dict(zip(cols, r)) for r in rows]})
+
+
+# --- (d) FMEA / riesgo ICH Q9 ---
+@bp.route('/api/aseguramiento/fmea', methods=['GET', 'POST'])
+def fmea_endpoint():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'POST':
+        if user not in _autorizados_escritura():
+            return jsonify({'error': 'Solo Calidad/Aseguramiento o Admin'}), 403
+        d = request.get_json(silent=True) or {}
+        prod = (d.get('producto_nombre') or '').strip()
+        modo = (d.get('modo_falla') or '').strip()
+        if not prod or not modo:
+            return jsonify({'error': 'producto_nombre y modo_falla requeridos'}), 400
+
+        def _i(v):
+            try:
+                return max(1, min(10, int(v)))
+            except (TypeError, ValueError):
+                return None
+        s, o, det = _i(d.get('severidad')), _i(d.get('ocurrencia')), _i(d.get('deteccion'))
+        rpn = (s * o * det) if (s and o and det) else None
+        c.execute("INSERT INTO producto_fmea (producto_nombre,modo_falla,efecto,causa,severidad,ocurrencia,"
+                  "deteccion,rpn,control_actual,accion_recomendada,responsable,creado_por) "
+                  "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                  (prod, modo, (d.get('efecto') or '')[:500], (d.get('causa') or '')[:500], s, o, det, rpn,
+                   (d.get('control_actual') or '')[:500], (d.get('accion_recomendada') or '')[:500],
+                   (d.get('responsable') or '').strip() or None, user))
+        fid = c.lastrowid
+        _audit_log(c, usuario=user, accion='CREAR_FMEA', tabla='producto_fmea',
+                   registro_id=fid, despues={'producto': prod, 'rpn': rpn})
+        conn.commit()
+        return jsonify({'ok': True, 'id': fid, 'rpn': rpn}), 201
+    prod = (request.args.get('producto') or '').strip()
+    where, params = [], []
+    if prod:
+        where.append('producto_nombre=?'); params.append(prod)
+    sql = ("SELECT id,producto_nombre,modo_falla,efecto,causa,severidad,ocurrencia,deteccion,rpn,"
+           "control_actual,accion_recomendada,estado FROM producto_fmea")
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY COALESCE(rpn,0) DESC, id DESC LIMIT 300"
+    rows = c.execute(sql, params).fetchall()
+    cols = ['id', 'producto_nombre', 'modo_falla', 'efecto', 'causa', 'severidad', 'ocurrencia',
+            'deteccion', 'rpn', 'control_actual', 'accion_recomendada', 'estado']
+    return jsonify({'fmea': [dict(zip(cols, r)) for r in rows]})
+
+
+# --- (e) ACUERDOS DE CALIDAD (maquila / terceros) ---
+@bp.route('/api/aseguramiento/acuerdos-calidad', methods=['GET', 'POST'])
+def acuerdos_calidad():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'POST':
+        if user not in _autorizados_escritura():
+            return jsonify({'error': 'Solo Calidad/Aseguramiento o Admin'}), 403
+        d = request.get_json(silent=True) or {}
+        tercero = (d.get('tercero') or '').strip()
+        if not tercero:
+            return jsonify({'error': 'tercero requerido'}), 400
+        tipo = (d.get('tipo') or 'maquila').strip().lower()
+        if tipo not in ('maquila', 'proveedor', 'cliente', 'laboratorio'):
+            tipo = 'maquila'
+        c.execute("INSERT INTO acuerdos_calidad (tercero,tipo,documento_url,version,fecha_efectiva,"
+                  "fecha_renovacion,alcance,estado,ultima_auditoria,responsable,observaciones,creado_por) "
+                  "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                  (tercero, tipo, (d.get('documento_url') or '').strip() or None, (d.get('version') or '1').strip(),
+                   (d.get('fecha_efectiva') or '').strip() or None, (d.get('fecha_renovacion') or '').strip() or None,
+                   (d.get('alcance') or '')[:1000], (d.get('estado') or 'vigente').strip().lower(),
+                   (d.get('ultima_auditoria') or '').strip() or None, (d.get('responsable') or '').strip() or None,
+                   (d.get('observaciones') or '')[:1000], user))
+        aid = c.lastrowid
+        _audit_log(c, usuario=user, accion='CREAR_ACUERDO_CALIDAD', tabla='acuerdos_calidad',
+                   registro_id=aid, despues={'tercero': tercero, 'tipo': tipo})
+        conn.commit()
+        return jsonify({'ok': True, 'id': aid}), 201
+    rows = c.execute("SELECT id,tercero,tipo,version,fecha_efectiva,fecha_renovacion,estado,ultima_auditoria "
+                     "FROM acuerdos_calidad ORDER BY id DESC LIMIT 200").fetchall()
+    cols = ['id', 'tercero', 'tipo', 'version', 'fecha_efectiva', 'fecha_renovacion', 'estado', 'ultima_auditoria']
+    return jsonify({'acuerdos': [dict(zip(cols, r)) for r in rows]})
