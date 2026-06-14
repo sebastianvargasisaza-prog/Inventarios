@@ -312,6 +312,21 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (243, "Alinea INCI al MAESTRO de Alejandro (FORMULAS_MAESTRO_v2_1 · unica verdad · "
+          "13-jun). Verificado: de 153 INCI del maestro, 148 YA coincidian con la app; solo "
+          "4 ajustes. (1) Llena los 2 vacios con el INCI del maestro: MP00040 Cetiol=DICAPRYLYL "
+          "CARBONATE (es Cetiol CC), MP00103 Beauty Oil Ceramidas=CERAMIDE NP. (2) Corrige "
+          "MP00101 Vainilla: el maestro dice FRUIT OIL (no EXTRACT). (3) Alinea formato del "
+          "blend MP00207 al maestro. NO toca MP00079 (la app ya tiene TOCOPHERYL ACETATE "
+          "confirmado por Sebastian · el maestro aun tiene el marcador 'pendiente', la app esta "
+          "mas al dia). La COMPOSICION de las formulas ya coincide con el maestro (sin extras "
+          "que borrar; MP00123 esta en 0% en el Excel = correctamente ausente; Lip Serum PIB-24 "
+          "q.s.p. es caso aparte). Idempotente.", [
+        "UPDATE maestro_mps SET nombre_inci='DICAPRYLYL CARBONATE' WHERE codigo_mp='MP00040'",
+        "UPDATE maestro_mps SET nombre_inci='CERAMIDE NP' WHERE codigo_mp='MP00103'",
+        "UPDATE maestro_mps SET nombre_inci='VANILLA PLANIFOLIA FRUIT OIL' WHERE codigo_mp='MP00101'",
+        "UPDATE maestro_mps SET nombre_inci='PHENETHYL ALCOHOL (AND) CAPRYLYL GLYCOL' WHERE codigo_mp='MP00207'",
+    ]),
     (242, "Backfill INCI confirmados POR SEBASTIAN/ALEJANDRO (13-jun · datos del dueno, no "
           "adivinados): Vit E liquida=TOCOPHEROL, Vit E polvo=TOCOPHERYL ACETATE (resuelve el "
           "'pendiente'), Tinogard TT, BM-956, Stabil (blend), PMSS, Microcristalina, Neroli, "
