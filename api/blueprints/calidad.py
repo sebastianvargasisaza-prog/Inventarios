@@ -218,8 +218,9 @@ def calidad_indicadores():
         return _ratio_pct(lib, lib + rech)
 
     def micro_ok(ini, fin):
-        tot = cont("SELECT COUNT(*) FROM calidad_micro_resultados WHERE COALESCE(fecha_analisis,fecha_muestreo) >= ? AND COALESCE(fecha_analisis,fecha_muestreo) < ?", (ini, fin))
-        fuera = cont("SELECT COUNT(*) FROM calidad_micro_resultados WHERE estado='fuera_industria' AND COALESCE(fecha_analisis,fecha_muestreo) >= ? AND COALESCE(fecha_analisis,fecha_muestreo) < ?", (ini, fin))
+        # Solo producto/MP (el monitoreo ambiental se mide aparte y no debe hundir el KPI).
+        tot = cont("SELECT COUNT(*) FROM calidad_micro_resultados WHERE COALESCE(categoria,'producto')<>'ambiente' AND COALESCE(fecha_analisis,fecha_muestreo) >= ? AND COALESCE(fecha_analisis,fecha_muestreo) < ?", (ini, fin))
+        fuera = cont("SELECT COUNT(*) FROM calidad_micro_resultados WHERE COALESCE(categoria,'producto')<>'ambiente' AND estado='fuera_industria' AND COALESCE(fecha_analisis,fecha_muestreo) >= ? AND COALESCE(fecha_analisis,fecha_muestreo) < ?", (ini, fin))
         return _ratio_pct(tot - fuera, tot)
 
     def agua_conforme(ini, fin):
@@ -1553,11 +1554,16 @@ def calidad_micro_resultados():
             ebr_id = int(ebr_id) if ebr_id not in (None, '') else None
         except (TypeError, ValueError):
             ebr_id = None
+        categoria = (d.get('categoria') or 'producto').strip().lower()
+        if categoria not in ('producto', 'materia_prima', 'ambiente'):
+            categoria = 'producto'
+        n_referencia = (d.get('n_referencia') or '').strip() or None
         c.execute("""INSERT INTO calidad_micro_resultados
             (lote, producto_nombre, fecha_muestreo, fecha_analisis,
              microorganismo, valor, valor_texto, unidad, estado, laboratorio,
-             analista, metodo, observaciones, creado_por, archivo_coa_url, ebr_id)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+             analista, metodo, observaciones, creado_por, archivo_coa_url, ebr_id,
+             categoria, n_referencia)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (lote, producto,
              (d.get('fecha_muestreo') or '').strip() or None,
              fecha_analisis,
@@ -1566,7 +1572,7 @@ def calidad_micro_resultados():
              (d.get('analista') or '').strip() or user,
              (d.get('metodo') or '').strip() or None,
              (d.get('observaciones') or '').strip() or None,
-             user, coa_url, ebr_id))
+             user, coa_url, ebr_id, categoria, n_referencia))
         new_id = c.lastrowid
 
         # Si fuera_industria → crear OOS automáticamente · race-safe
@@ -1647,10 +1653,14 @@ def calidad_micro_resultados():
     if estado: where.append('estado=?'); params.append(estado)
     if desde: where.append('fecha_analisis >= ?'); params.append(desde)
     if hasta: where.append('fecha_analisis <= ?'); params.append(hasta)
+    categoria_f = (request.args.get('categoria') or '').strip()
+    if categoria_f:
+        where.append('COALESCE(categoria,?)=?'); params.extend([categoria_f, categoria_f])
     sql = """SELECT id, lote, producto_nombre, fecha_muestreo, fecha_analisis,
                     microorganismo, valor, valor_texto, unidad, estado,
                     laboratorio, analista, metodo, observaciones, oos_id,
-                    COALESCE(archivo_coa_url,''), ebr_id
+                    COALESCE(archivo_coa_url,''), ebr_id,
+                    COALESCE(categoria,''), COALESCE(n_referencia,'')
              FROM calidad_micro_resultados"""
     if where:
         sql += " WHERE " + " AND ".join(where)
@@ -1659,7 +1669,7 @@ def calidad_micro_resultados():
     cols = ['id','lote','producto_nombre','fecha_muestreo','fecha_analisis',
             'microorganismo','valor','valor_texto','unidad','estado',
             'laboratorio','analista','metodo','observaciones','oos_id',
-            'archivo_coa_url','ebr_id']
+            'archivo_coa_url','ebr_id','categoria','n_referencia']
     return jsonify({'resultados': [dict(zip(cols, r)) for r in rows]})
 
 
@@ -1689,10 +1699,12 @@ def calidad_micro_heatmap():
     ).fetchall()]
     micros += extras
 
-    # Lista de productos con resultados en la ventana
+    # Lista de productos con resultados en la ventana. Excluye monitoreo AMBIENTAL
+    # (superficies/uniformes/agua) para que el heatmap sea producto×micro limpio.
     prods = [r[0] for r in c.execute(
         "SELECT DISTINCT producto_nombre FROM calidad_micro_resultados "
-        "WHERE fecha_analisis >= date('now', '-5 hours', '-' || ? || ' months') "
+        "WHERE COALESCE(categoria,'producto')<>'ambiente' "
+        "AND fecha_analisis >= date('now', '-5 hours', '-' || ? || ' months') "
         "ORDER BY producto_nombre", (meses,)
     ).fetchall()]
 
@@ -1731,15 +1743,16 @@ def calidad_micro_heatmap():
             })
         matriz.append(row)
 
-    # KPIs globales
+    # KPIs globales (solo producto/MP · el ambiente se mide aparte)
+    _noamb = "COALESCE(categoria,'producto')<>'ambiente' AND "
     total_res = c.execute(
-        "SELECT COUNT(*) FROM calidad_micro_resultados WHERE fecha_analisis >= date('now', '-5 hours', '-' || ? || ' months')", (meses,)
+        "SELECT COUNT(*) FROM calidad_micro_resultados WHERE " + _noamb + "fecha_analisis >= date('now', '-5 hours', '-' || ? || ' months')", (meses,)
     ).fetchone()[0] or 0
     total_fi = c.execute(
-        "SELECT COUNT(*) FROM calidad_micro_resultados WHERE estado='fuera_industria' AND fecha_analisis >= date('now', '-5 hours', '-' || ? || ' months')", (meses,)
+        "SELECT COUNT(*) FROM calidad_micro_resultados WHERE " + _noamb + "estado='fuera_industria' AND fecha_analisis >= date('now', '-5 hours', '-' || ? || ' months')", (meses,)
     ).fetchone()[0] or 0
     total_fm = c.execute(
-        "SELECT COUNT(*) FROM calidad_micro_resultados WHERE estado='fuera_meta' AND fecha_analisis >= date('now', '-5 hours', '-' || ? || ' months')", (meses,)
+        "SELECT COUNT(*) FROM calidad_micro_resultados WHERE " + _noamb + "estado='fuera_meta' AND fecha_analisis >= date('now', '-5 hours', '-' || ? || ' months')", (meses,)
     ).fetchone()[0] or 0
 
     return jsonify({

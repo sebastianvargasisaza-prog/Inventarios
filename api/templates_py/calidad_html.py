@@ -1444,12 +1444,16 @@ async function loadMicroHeatmap(){
     rb.innerHTML = lst.map(function(p){
       var estColor = {ok:'#34d399',fuera_meta:'#fcd34d',fuera_industria:'#fca5a5',observacion:'#94a3b8'}[p.estado] || '#94a3b8';
       var oosLink = p.oos_id ? '<a href="#" onclick="event.preventDefault();goTab(\'tab-oos\')" style="color:#dc2626">OOS</a>' : '';
-      var coaLink = p.archivo_coa_url ? '<a href="'+esc(p.archivo_coa_url)+'" target="_blank" rel="noopener" style="color:#6d28d9">&#128196; COA</a>' : '<span style="color:#cbd5e1">&mdash;</span>';
-      var loteTxt = esc(p.lote) + (p.ebr_id ? ' <span style="font-size:9px;color:#94a3b8">EBR#'+p.ebr_id+'</span>' : '');
+      var coaLink = p.archivo_coa_url
+        ? '<a href="'+esc(p.archivo_coa_url)+'" target="_blank" rel="noopener" style="color:#6d28d9">&#128196; COA</a>'
+        : (p.n_referencia ? '<span style="font-size:10px;color:#94a3b8" title="N° informe Microlab">Ref '+esc(p.n_referencia)+'</span>' : '<span style="color:#cbd5e1">&mdash;</span>');
+      var loteTxt = esc(p.lote||'') + (p.ebr_id ? ' <span style="font-size:9px;color:#94a3b8">EBR#'+p.ebr_id+'</span>' : '');
+      var catCol = {producto:'#0891b2', materia_prima:'#7c3aed', ambiente:'#a16207'}[p.categoria] || '#94a3b8';
+      var catBadge = p.categoria ? ' <span style="font-size:9px;color:#fff;background:'+catCol+';padding:1px 5px;border-radius:6px">'+esc(p.categoria.replace('materia_prima','MP').replace('producto','PT').replace('ambiente','AMB'))+'</span>' : '';
       return '<tr>'
         +'<td>'+fmt(p.fecha_analisis)+'</td>'
         +'<td>'+loteTxt+'</td>'
-        +'<td>'+esc(p.producto_nombre)+'</td>'
+        +'<td>'+esc(p.producto_nombre)+catBadge+'</td>'
         +'<td>'+esc(p.microorganismo)+'</td>'
         +'<td>'+(p.valor!=null?p.valor:esc(p.valor_texto||''))+' '+esc(p.unidad||'')+'</td>'
         +'<td><span style="color:'+estColor+';font-weight:700">'+p.estado+'</span></td>'

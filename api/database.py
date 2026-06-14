@@ -311,7 +311,27 @@ except ImportError:
     except ImportError:
         _MIG_137_STMTS = []
 
+try:
+    from mig_246_micro_microlab_data import STATEMENTS as _MIG_246_STMTS
+except ImportError:
+    try:
+        from api.mig_246_micro_microlab_data import STATEMENTS as _MIG_246_STMTS
+    except ImportError:
+        _MIG_246_STMTS = []
+
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (246, "Carga histórica de resultados micro de Microlab Cali (lab externo · 14-jun). "
+          "Agrega categoria (producto/materia_prima/ambiente) + n_referencia (N° informe del "
+          "lab, p.ej. 27861-26) a calidad_micro_resultados; luego siembra 458 resultados de "
+          "32 informes (.eml→PDF parseados localmente · 2025-05 a 2026-05) con el veredicto del "
+          "lab (C→ok, N.C→fuera_industria). El ambiente se etiqueta aparte para no ensuciar el "
+          "heatmap de producto. Idempotente (cada INSERT con NOT EXISTS por n_referencia+micro+lab).",
+        [
+            "ALTER TABLE calidad_micro_resultados ADD COLUMN categoria TEXT",
+            "ALTER TABLE calidad_micro_resultados ADD COLUMN n_referencia TEXT",
+            "CREATE INDEX IF NOT EXISTS idx_micro_res_ref ON calidad_micro_resultados(n_referencia)",
+            "CREATE INDEX IF NOT EXISTS idx_micro_res_cat ON calidad_micro_resultados(categoria)",
+        ] + _MIG_246_STMTS),
     (245, "Micro brutal (Fase 2 · 14-jun): liga los análisis micro al lote de PT/EBR y "
           "permite adjuntar el COA/informe del laboratorio. Agrega a "
           "calidad_micro_resultados: archivo_coa_url (URL del informe del lab) y ebr_id "
