@@ -39,3 +39,21 @@ def test_bandeja_surface_ebr_por_liberar(admin_client):
         conn.execute("DELETE FROM ebr_ejecuciones WHERE id=?", (ebr_id,))
         conn.execute("DELETE FROM mbr_templates WHERE id=?", (mbr_id,))
         conn.commit(); conn.close()
+
+
+def test_bandeja_por_vencer(app, db_clean):
+    import os, sqlite3
+    from .conftest import TEST_PASSWORD, csrf_headers
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10.0)
+    conn.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_comercial,activo) VALUES ('MP-VEN','MP Vencer',1)")
+    # lote con stock>0 y vencimiento pasado (vencido)
+    conn.execute("INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,lote,estado_lote,fecha_vencimiento) "
+                 "VALUES ('MP-VEN','MP Vencer',1000,'Entrada','2026-01-01','LV-1','VIGENTE','2026-01-15')")
+    conn.commit(); conn.close()
+    c = app.test_client(); c.post('/login', data={'username':'sebastian','password':TEST_PASSWORD}, headers=csrf_headers())
+    d = c.get('/api/calidad/bandeja').get_json()
+    pv = d['secciones'].get('por_vencer')
+    assert pv is not None, 'falta sección por_vencer'
+    mine = next((x for x in pv['items'] if x['lote']=='LV-1'), None)
+    assert mine and mine['vencido'] is True, f'el lote vencido con stock debe aparecer · {pv}'
+    assert d['kpis'].get('vencidos',0) >= 1

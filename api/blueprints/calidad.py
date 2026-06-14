@@ -453,6 +453,43 @@ def calidad_bandeja():
         log.warning('bandeja lotes_cuarentena fallo: %s', e)
         out['secciones']['lotes_cuarentena'] = {'total': 0, 'criticos': 0, 'items': []}
 
+    # ── 1b. MP/insumos VENCIDOS o por vencer (60d) · del kardex compartido con Planta ──
+    # Calidad debe vigilar vencimientos para decisiones de uso/liberación. Mismo patrón
+    # que Planta: agrupa por (material_id, lote) con stock>0 y mira fecha_vencimiento.
+    try:
+        _hoy = c.execute("SELECT date('now','-5 hours')").fetchone()[0]
+        rows = c.execute("""
+            SELECT m.material_id, MAX(m.material_nombre), m.lote,
+                   MIN(m.fecha_vencimiento) AS venc,
+                   SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad
+                            WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END) AS stock
+            FROM movimientos m
+            WHERE COALESCE(m.lote,'') <> '' AND COALESCE(m.fecha_vencimiento,'') <> ''
+            GROUP BY m.material_id, m.lote
+            HAVING stock > 0.01 AND MIN(m.fecha_vencimiento) <= date('now','-5 hours','+60 days')
+            ORDER BY venc ASC LIMIT 60
+        """).fetchall()
+        items = []
+        for r in rows:
+            venc = (r[3] or '')[:10]
+            try:
+                dias = (datetime.fromisoformat(venc) - datetime.fromisoformat(_hoy[:10])).days
+            except Exception:
+                dias = None
+            items.append({
+                'material_id': r[0], 'material_nombre': r[1] or r[0], 'lote': r[2],
+                'fecha_vencimiento': venc, 'stock_g': round(r[4] or 0, 1),
+                'dias': dias, 'vencido': (dias is not None and dias < 0),
+            })
+        out['secciones']['por_vencer'] = {
+            'total': len(items),
+            'vencidos': sum(1 for x in items if x['vencido']),
+            'items': items,
+        }
+    except Exception as e:
+        log.info('bandeja por_vencer (julianday/fecha): %s', e)
+        out['secciones']['por_vencer'] = {'total': 0, 'vencidos': 0, 'items': []}
+
     # ── 2. NCs abiertas ────────────────────────────────────────────────
     try:
         kpi_row = c.execute("""
@@ -719,6 +756,8 @@ def calidad_bandeja():
         'estabilidades_pendientes': out['secciones']['estabilidades_pendientes']['total'],
         'agua_registrada_hoy': out['secciones']['registro_agua_hoy'].get('registrado', False),
         'ebr_por_liberar': out['secciones']['ebr_por_liberar']['total'],
+        'por_vencer': out['secciones'].get('por_vencer', {}).get('total', 0),
+        'vencidos': out['secciones'].get('por_vencer', {}).get('vencidos', 0),
     }
     # Total de "items que requieren acción del equipo Calidad"
     out['kpis']['total_pendientes'] = (
@@ -728,6 +767,7 @@ def calidad_bandeja():
         + out['kpis']['calibraciones_vencidas']
         + out['kpis']['cola_liberacion_listos']
         + out['kpis']['ebr_por_liberar']
+        + out['kpis']['vencidos']
     )
     return jsonify(out)
 

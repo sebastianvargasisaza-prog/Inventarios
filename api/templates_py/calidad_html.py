@@ -921,7 +921,10 @@ async function loadDocumentos(){
     var sel = document.getElementById('doc-area');
     if(sel && sel.options.length<=1){
       var areas = Object.keys(d.resumen_por_area||{}).sort();
-      areas.forEach(function(a){ var o=document.createElement('option'); o.value=a; o.textContent=a; sel.appendChild(o); });
+      areas.forEach(function(a){ var o=document.createElement('option'); o.value=a; o.textContent=a+(a==='COC'?' (Control de Calidad)':''); sel.appendChild(o); });
+      // Por defecto: los procedimientos propios de Control de Calidad (COC). El resto (ASG…)
+      // se gestiona en Aseguramiento. El usuario puede cambiar a "Todas las áreas".
+      if((d.resumen_por_area||{}).COC){ sel.value='COC'; }
     }
     renderDocumentos();
   }catch(e){ tb.innerHTML = '<tr><td colspan="6" class="empty">Error: '+esc(e.message||e)+'</td></tr>'; }
@@ -1226,6 +1229,27 @@ async function loadBandeja(){
         }
       }
     }catch(e){}
+
+    // 0b. MP/insumos vencidos o por vencer (del kardex compartido con Planta)
+    if(s.por_vencer && s.por_vencer.items && s.por_vencer.items.length){
+      html += _bandejaCard({
+        titulo:'Vencidos / por vencer (60d)', icon:'&#9203;',
+        total: s.por_vencer.total,
+        accent: s.por_vencer.vencidos>0 ? 'red' : 'amber',
+        subtitulo: s.por_vencer.vencidos>0 ? ('&#x26A0;&#xFE0F; '+s.por_vencer.vencidos+' YA vencidos con stock') : 'Próximos a vencer · revisar uso/liberación',
+        items: s.por_vencer.items,
+        empty_msg:'Nada por vencer',
+        render_item: function(it){
+          var col = it.vencido ? '#dc2626' : (it.dias<=15 ? '#d97706' : '#64748b');
+          var txt = it.vencido ? ('VENCIDO hace '+Math.abs(it.dias||0)+'d') : ('vence en '+(it.dias!=null?it.dias:'?')+'d');
+          return '<div style="padding:6px 8px;border-bottom:1px solid #f1f5f9;font-size:0.82em">'
+            + '<b>'+_escBan(it.material_nombre||'')+'</b> · Lote <code>'+_escBan(it.lote||'s/n')+'</code><br>'
+            + '<span style="color:'+col+';font-weight:700">'+txt+'</span>'
+            + '<span style="color:var(--cx-text-mute)"> · '+_escBan(it.fecha_vencimiento||'')+' · '+(it.stock_g||0).toLocaleString('es-CO')+' g</span>'
+            + '</div>';
+        }
+      });
+    }
 
     // 1. Lotes en cuarentena
     html += _bandejaCard({
