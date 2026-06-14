@@ -90,3 +90,24 @@ def test_doble_anulacion_bloqueada(app, db_clean):
     assert r2.status_code == 409, f"la 2ª anulación debe bloquearse · {r2.status_code} {r2.data[:200]}"
     canon = float(_q1(_CANON, ('MP-AND',)))
     assert canon == 0, f"no debe quedar negativo tras intento de doble anulación · fue {canon}"
+
+
+def test_cas_claim_marca_entrada_y_bloquea(app, db_clean):
+    """P1 (revisión adversarial · M27): aísla el CAS. La fila Entrada queda marcada
+    tras anular; si se borra la marca del check `prev` (Salida), la 2ª anulación igual
+    se bloquea vía el CAS sobre la Entrada (rowcount==0 → ANULACION_YA_RECLAMADA)."""
+    mid = _seed_entrada('MP-CAS', 'L-CAS', 1000, 'VIGENTE')
+    c = _login(app)
+    r1 = c.post(f'/api/recepcion/{mid}/anular', json={'motivo': 'anulación que reclama el CAS'}, headers=csrf_headers())
+    assert r1.status_code in (200, 201), r1.data[:200]
+    # la Entrada original quedó marcada como anulada (claim permanente)
+    obs_entrada = _q1("SELECT observaciones FROM movimientos WHERE id=?", (mid,)) or ''
+    assert f'::ANULADA-mov#{mid}::' in obs_entrada, f"la Entrada debe quedar marcada por el CAS · {obs_entrada!r}"
+    # neutralizamos los dos gates previos: borramos la Salida de anulación → restaura
+    # RAW=1000 (pasa el guard LOTE_YA_MOVIDO) y elimina el fast-path `prev` → la 2ª
+    # pasada debe ser frenada EXCLUSIVAMENTE por el CAS de la Entrada (marca permanente)
+    _exec("DELETE FROM movimientos WHERE material_id='MP-CAS' AND tipo='Salida'")
+    r2 = c.post(f'/api/recepcion/{mid}/anular', json={'motivo': 'segundo intento debe morir en el CAS'}, headers=csrf_headers())
+    assert r2.status_code == 409, f"el CAS debe bloquear la 2ª anulación · {r2.status_code} {r2.data[:200]}"
+    assert (r2.get_json() or {}).get('codigo') == 'ANULACION_YA_RECLAMADA', \
+        f"debe frenar en el CAS, no en prev · {r2.data[:200]}"

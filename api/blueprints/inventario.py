@@ -232,7 +232,7 @@ def get_inventario():
     # canónico de stock disponible · zero-error protocol). Las Salidas
     # (estado_lote NULL) siguen restando.
     _avail_filter = ("(estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) "
-                     "NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO'))")
+                     "NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO'))")
     mps_sin_stock = _safe(f"""
         SELECT COUNT(*) FROM maestro_mps m
         LEFT JOIN (SELECT material_id, SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock
@@ -2687,7 +2687,7 @@ def produccion_auditar_formulas_huerfanas():
                           COALESCE(SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END), 0) as stock_act
                    FROM maestro_mps mp
                    LEFT JOIN movimientos m ON m.material_id = mp.codigo_mp
-                     AND (m.estado_lote IS NULL OR m.estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO'))
+                     AND (m.estado_lote IS NULL OR UPPER(COALESCE(m.estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO'))
                    WHERE COALESCE(mp.activo,1)=1
                      AND mp.codigo_mp != ?
                      AND (LOWER(COALESCE(mp.nombre_comercial,'')) LIKE ?
@@ -2834,7 +2834,7 @@ def produccion_auto_reparar_formula(producto):
                       COALESCE(SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END), 0) as stock_act
                FROM maestro_mps mp
                LEFT JOIN movimientos m ON m.material_id = mp.codigo_mp
-                 AND (m.estado_lote IS NULL OR m.estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO'))
+                 AND (m.estado_lote IS NULL OR UPPER(COALESCE(m.estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO'))
                WHERE COALESCE(mp.activo,1)=1
                  AND mp.codigo_mp != ?
                  AND (LOWER(COALESCE(mp.nombre_comercial,'')) LIKE ?
@@ -7488,11 +7488,14 @@ def anular_recepcion(mov_id):
             'error': f'ya hay anulación previa (mov #{prev[0]})',
             'anulacion_existente': prev[0],
         }), 409
-    # FIX 13-jun (audit recepción · BUG-3/4): solo anular si la cantidad recibida
-    # SIGUE disponible en el lote (no consumida ni ya anulada). Stock RAW del lote
-    # (todas las filas, SIN excluir estados · la cuarentena cuenta acá porque es lo
-    # recibido físico que vamos a revertir). Evita dejar el stock NEGATIVO al anular
-    # un lote ya consumido + bloquea la doble-anulación concurrente (la 2ª ve raw≈0).
+    # FIX 13-jun (audit recepción · BUG-3): solo anular si la cantidad recibida SIGUE
+    # disponible en el lote (no consumida). Stock RAW del lote (todas las filas, SIN
+    # excluir estados · la cuarentena cuenta acá porque es lo recibido físico que vamos
+    # a revertir). Evita dejar el stock NEGATIVO al anular un lote ya consumido.
+    # ⚠ LIMITACIÓN CONOCIDA (P2): el RAW agrega por (material_id, lote); si el MISMO nº
+    # de lote se reusa en 2 entregas distintas del mismo material y la 1ª ya se consumió,
+    # el guard no distingue cuál recepción concreta se anula (el kardex FEFO no liga
+    # Salida↔Entrada). Mitigado porque reusar nº de lote entre entregas es anti-patrón.
     _raw = c.execute(
         "SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad "
         "WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0) "
@@ -7503,6 +7506,25 @@ def anular_recepcion(mov_id):
             'error': (f'No se puede anular: el lote ya fue consumido/anulado · '
                       f'disponible {float(_raw):.0f}g < a anular {float(row[2] or 0):.0f}g'),
             'codigo': 'LOTE_YA_MOVIDO',
+        }), 409
+    # FIX 13-jun (P1 · revisión adversarial · M27): CLAIM atómico de la anulación sobre
+    # la fila Entrada original, gate por rowcount==1. El check `prev` y el guard RAW de
+    # arriba son check-then-act: en PostgreSQL (3 workers, READ COMMITTED) dos anulaciones
+    # concurrentes del mismo mov_id pasaban AMBAS → doble Salida → stock NEGATIVO. Este
+    # UPDATE condicional (observaciones NOT LIKE marcador) toma el row-lock: solo un worker
+    # marca (rowcount==1); el 2º, tras el commit del 1º, ve rowcount==0 → 409. Idempotencia
+    # real + anti-doble-anulación. El marcador queda en la Entrada como rastro permanente.
+    _marca = f' ::ANULADA-mov#{mov_id}::'
+    c.execute(
+        "UPDATE movimientos SET observaciones = COALESCE(observaciones,'') || ? "
+        "WHERE id=? AND COALESCE(observaciones,'') NOT LIKE ?",
+        (_marca, mov_id, f'%::ANULADA-mov#{mov_id}::%'),
+    )
+    if c.rowcount != 1:
+        conn.rollback()
+        return jsonify({
+            'error': 'esta recepción ya fue anulada (o se está anulando en paralelo)',
+            'codigo': 'ANULACION_YA_RECLAMADA',
         }), 409
     # Insertar movimiento Salida inverso. FIX 13-jun (BUG-1/2): la Salida ESPEJA el
     # estado_lote original (no 'ANULADO') → anulación net-zero EXACTO en toda vista:
