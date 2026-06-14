@@ -2032,15 +2032,40 @@ async function oosTransicion(id, nuevo){
   }catch(e){ alert('Error de red: '+e.message); }
 }
 
-async function oosCerrarConDatos(id){
-  var causa = prompt('Causa raiz identificada:');
-  if(!causa) return;
-  var disp = prompt('Disposicion (liberado/reprocesado/rechazado/destruido/reanalisis):', 'rechazado');
-  if(!disp) return;
+async function _firmarCalidad(record_table, record_id, meaning){
+  // Firma electrónica Part 11 reusable: challenge (password) → sign → signature_id.
+  var pwd = prompt('Firma electrónica (Part 11): ingresá tu contraseña para firmar:');
+  if(!pwd) return null;
   try{
-    var r = await fetch('/api/calidad/oos/'+id, _fetchOpts('PATCH', {estado:'cerrado', causa_raiz: causa, disposicion: disp}));
+    var rc = await fetch('/api/sign/challenge', _fetchOpts('POST', {password: pwd}));
+    var dc = await rc.json();
+    if(!rc.ok || !dc.token){ alert('Firma: '+(dc.error||'no se pudo autenticar')); return null; }
+    var rs = await fetch('/api/sign', _fetchOpts('POST', {record_table:record_table, record_id:String(record_id), meaning:meaning, challenge_token:dc.token}));
+    var ds = await rs.json();
+    if(!rs.ok || !ds.signature_id){ alert('Firma: '+(ds.error||'no se pudo firmar')); return null; }
+    return ds.signature_id;
+  }catch(e){ alert('Error de firma: '+(e.message||e)); return null; }
+}
+async function oosCerrarConDatos(id){
+  var causa = prompt('Causa raíz identificada (mín. 20 caracteres):');
+  if(!causa) return;
+  var disp = prompt('Disposición (liberado/reprocesado/rechazado/destruido/reanalisis):', 'rechazado');
+  if(!disp) return;
+  var body = {estado:'cerrado', causa_raiz: causa, disposicion: disp};
+  // Rechazo/destrucción → exige aprobación de gerencia (distinta de quien cierra)
+  if(/^(rechazado|rechazo|destruido|destruccion|destrucción)$/i.test(disp.trim())){
+    var ger = prompt('Disposición crítica: usuario de GERENCIA que aprueba (debe ser distinto a vos):');
+    if(!ger) return;
+    body.aprobado_gerencia = ger.trim();
+  }
+  // E-firma Part 11 obligatoria para cerrar
+  var sig = await _firmarCalidad('calidad_oos', id, 'aprueba');
+  if(!sig) return;
+  body.signature_id = sig;
+  try{
+    var r = await fetch('/api/calidad/oos/'+id, _fetchOpts('PATCH', body));
     var d = await r.json();
-    if(d.ok){ alert('OOS cerrado'); loadOOS(); }
+    if(d.ok){ alert('OOS cerrado y firmado · CAPA creada para seguimiento'); loadOOS(); }
     else alert('Error: '+(d.error||'?'));
   }catch(e){ alert('Error de red: '+e.message); }
 }

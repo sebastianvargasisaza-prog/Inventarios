@@ -30,6 +30,21 @@ def _require_calidad():
     if u not in (set(CALIDAD_USERS) | set(ADMIN_USERS)):
         return jsonify({'error': 'Solo Calidad/Admin pueden mutar registros de Calidad'}), 403
     return None, None
+
+
+def _validar_e_sign_cal(c, signature_id, *, record_table, record_id, meaning, signer):
+    """Valida una e-firma Part 11 (§11.200) sobre un registro de Calidad. La firma debe
+    existir en e_signatures, ser del usuario actual, sobre este registro y meaning."""
+    if not signature_id:
+        return False
+    try:
+        return c.execute(
+            "SELECT id FROM e_signatures WHERE id=? AND record_table=? AND record_id=? "
+            "AND meaning=? AND signer_username=?",
+            (int(signature_id), record_table, str(record_id), meaning, signer),
+        ).fetchone() is not None
+    except Exception:
+        return False
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
 from templates_py.home_html import HOME_HTML
@@ -1193,10 +1208,10 @@ def coa_list():
                     ORDER BY fecha DESC LIMIT 1
                 """, (equipo_id, equipo_id)).fetchone()
                 if eq and eq[1]:
-                    from datetime import date as _date
                     try:
-                        venc = _date.fromisoformat(str(eq[1])[:10])
-                        if venc < _date.today():
+                        # TZ Colombia (M24): "hoy" = date('now','-5 hours'), no UTC.
+                        _hoy_cal = c.execute("SELECT date('now','-5 hours')").fetchone()[0]
+                        if str(eq[1])[:10] < _hoy_cal:
                             return jsonify({
                                 'error': f"Equipo {eq[0]} con calibración vencida ({eq[1]}). No se puede registrar CoA.",
                                 'codigo': 'EQUIPO_VENCIDO',
@@ -2573,11 +2588,45 @@ def calidad_oos_update(oos_id):
                     return jsonify({'error': 'La aprobación de gerencia debe ser una persona distinta '
                                              'de quien cierra el OOS (segregación de funciones).',
                                     'codigo': 'DOBLE_APROBACION_MISMO_USUARIO'}), 422
+            # E-FIRMA Part 11 (§11.200 · 14-jun): cerrar un OOS exige firma electrónica
+            # (meaning='aprueba' sobre calidad_oos). El frontend firma con /api/sign.
+            if not _validar_e_sign_cal(c, d.get('signature_id'), record_table='calidad_oos',
+                                       record_id=oos_id, meaning='aprueba', signer=user):
+                return jsonify({
+                    'error': "Cerrar un OOS requiere firma electrónica (Part 11). Firmá con "
+                             "meaning='aprueba', record_table='calidad_oos', record_id=%d y reenviá "
+                             "signature_id." % oos_id,
+                    'codigo': 'FIRMA_REQUERIDA'}), 400
         sets.append('estado=?'); params.append(nuevo)
         if nuevo == 'cerrado':
             sets.append('fecha_cierre=?'); params.append(datetime.now().date().isoformat())
             sets.append('aprobado_por=?'); params.append(user)
             sets.append('fecha_aprobacion=?'); params.append(datetime.now().isoformat())
+            # AUTO-CAPA (14-jun): todo OOS cerrado debe tener una acción correctiva. Se crea
+            # la cadena OOS → NC → CAPA (capa_acciones · correctiva, plazo 30d). NOTA: NO se
+            # escribe calidad_oos.capa_id (esa columna tiene FK a capa_desviaciones, el CAPA de
+            # Aseguramiento, no a capa_acciones); el vínculo OOS↔NC es por el código del OOS en
+            # la descripción de la NC. Idempotente: no duplica si ya existe una NC de ese OOS.
+            try:
+                _oi = c.execute("SELECT COALESCE(codigo,''), COALESCE(lote,''), "
+                                "COALESCE(producto,''), COALESCE(parametro,'') "
+                                "FROM calidad_oos WHERE id=?", (oos_id,)).fetchone()
+                _marca = f"OOS {_oi[0]}:"
+                _ya = c.execute("SELECT id FROM no_conformidades WHERE descripcion LIKE ?",
+                                (_marca + '%',)).fetchone()
+                if not _ya:
+                    _desc = (f"{_marca} {_oi[3]} fuera de spec en {_oi[2]} lote {_oi[1]}")[:300]
+                    c.execute("INSERT INTO no_conformidades (fecha,tipo,descripcion,area,responsable,"
+                              "lote,impacto,estado,creado_por) VALUES "
+                              "(date('now','-5 hours'),'Producto',?,'Calidad',?,?,'Alto','Abierta',?)",
+                              (_desc, user, _oi[1], user))
+                    _nc_id = c.lastrowid
+                    c.execute("INSERT INTO capa_acciones (nc_id,tipo,descripcion,responsable,"
+                              "fecha_compromiso,estado) VALUES (?,'correctiva',?,?,"
+                              "date('now','-5 hours','+30 days'),'Pendiente')",
+                              (_nc_id, (f"Acción correctiva por OOS {_oi[0]} ({disp})")[:300], user))
+            except Exception as _ec:
+                log.warning('auto-CAPA OOS %s fallo: %s', oos_id, _ec)
     if not sets:
         return jsonify({'error': 'nada que actualizar'}), 400
     params.append(oos_id)
