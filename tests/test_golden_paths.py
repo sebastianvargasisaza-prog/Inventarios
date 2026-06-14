@@ -9763,7 +9763,12 @@ def test_golden_recepcion_anular_admin(app, db_clean):
                    (mov_anul,))
     assert rows[0][0] == 'Salida'
     assert rows[0][1] == 800
-    assert rows[0][2] == 'ANULADO'
+    # FIX 13-jun (M31 · audit recepción): la Salida de anulación ESPEJA el estado
+    # original del lote (net-zero exacto en toda vista), no la marca 'ANULADO' (que
+    # quedaba sin excluir en el canónico → stock NEGATIVO; y excluida en auditar-minimos
+    # → stock FANTASMA). El ingreso por /api/recepcion entra en CUARENTENA por defecto,
+    # así que el espejo de la Salida también es CUARENTENA → net-zero.
+    assert rows[0][2] == 'CUARENTENA'
 
     # Idempotencia: segundo intento → 409
     r_dup = cs.post(f'/api/recepcion/{mov_id}/anular',

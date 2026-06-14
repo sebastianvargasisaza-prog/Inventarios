@@ -7488,11 +7488,32 @@ def anular_recepcion(mov_id):
             'error': f'ya hay anulación previa (mov #{prev[0]})',
             'anulacion_existente': prev[0],
         }), 409
-    # Insertar movimiento Salida inverso
+    # FIX 13-jun (audit recepción · BUG-3/4): solo anular si la cantidad recibida
+    # SIGUE disponible en el lote (no consumida ni ya anulada). Stock RAW del lote
+    # (todas las filas, SIN excluir estados · la cuarentena cuenta acá porque es lo
+    # recibido físico que vamos a revertir). Evita dejar el stock NEGATIVO al anular
+    # un lote ya consumido + bloquea la doble-anulación concurrente (la 2ª ve raw≈0).
+    _raw = c.execute(
+        "SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad "
+        "WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0) "
+        "FROM movimientos WHERE material_id=? AND lote=?", (row[0], row[4]),
+    ).fetchone()[0] or 0
+    if float(_raw) + 0.01 < float(row[2] or 0):
+        return jsonify({
+            'error': (f'No se puede anular: el lote ya fue consumido/anulado · '
+                      f'disponible {float(_raw):.0f}g < a anular {float(row[2] or 0):.0f}g'),
+            'codigo': 'LOTE_YA_MOVIDO',
+        }), 409
+    # Insertar movimiento Salida inverso. FIX 13-jun (BUG-1/2): la Salida ESPEJA el
+    # estado_lote original (no 'ANULADO') → anulación net-zero EXACTO en toda vista:
+    # CUARENTENA→CUARENTENA (ambas excluidas) o VIGENTE→VIGENTE (ambas cuentan).
+    # Antes 'ANULADO' restaba en el canónico (negativo) y no en auditar-minimos
+    # (stock fantasma) → divergencia. La marca de anulación va en observaciones.
     obs_anul = (
         f'ANULACIÓN mov#{mov_id} · motivo: {motivo[:300]} · '
         f'por {u} {datetime.now().isoformat()}'
     )
+    _estado_anul = (row[8] or 'VIGENTE')
     c.execute(
         """INSERT INTO movimientos
              (material_id, material_nombre, cantidad, tipo, fecha,
@@ -7500,7 +7521,7 @@ def anular_recepcion(mov_id):
            VALUES (?,?,?,?,?,?,?,?,?,?)""",
         (row[0], row[1], row[2], 'Salida',
          datetime.now().isoformat(), obs_anul, row[4], row[5], u,
-         'ANULADO'),
+         _estado_anul),
     )
     mov_anul_id = c.lastrowid
     # Si tenía OC, descontar de cantidad_recibida_g
@@ -9702,7 +9723,13 @@ def cc_review():
          solubilidad, resultado_aql, d.get('observaciones_aql',''),
          1 if d.get('muestra_retencion') else 0, d.get('observaciones',''),
          user, estado_final, request.remote_addr))  # firmante = sesión autenticada (no spoofable por payload)
-    c.execute("UPDATE movimientos SET estado_lote=? WHERE id=?", (estado_final, mov_id))
+    # FIX 13-jun (audit recepción · M23): el kardex usa el estado CANÓNICO 'VIGENTE'
+    # (no 'APROBADO'). 'APROBADO' es la etiqueta del review (queda en cc_reviews.estado_final);
+    # escribirla en movimientos.estado_lote hacía que el cron de vencidos y los KPIs (filtros
+    # de inclusión ='VIGENTE') SALTARAN el lote → consumo de vencido (M25) + stock fantasma.
+    # Los otros 3 paths de liberación ya escriben VIGENTE.
+    _estado_kardex = 'VIGENTE' if estado_final == 'APROBADO' else estado_final
+    c.execute("UPDATE movimientos SET estado_lote=? WHERE id=?", (_estado_kardex, mov_id))
     # Ubicación final al LIBERAR (Sebastián 6-jun-2026): el flujo real es
     # "cuando Calidad libera, el lote pasa de la estantería CUARENTENA a su
     # ubicación final". Si al aprobar se indica estante/posición final, se mueve

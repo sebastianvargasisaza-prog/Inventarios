@@ -46,7 +46,10 @@ def test_liberar_cc_mueve_a_ubicacion_final(admin_client):
     c = sqlite3.connect(os.environ['DB_PATH'])
     row = c.execute("SELECT estado_lote, estanteria, posicion FROM movimientos WHERE id=?", (mov_id,)).fetchone()
     c.close()
-    assert row[0] == 'APROBADO', f'debe quedar APROBADO · {row[0]}'
+    # FIX 13-jun (M23 · audit recepción): el kardex usa el estado CANÓNICO 'VIGENTE'
+    # (no 'APROBADO', que el cron de vencidos y los KPIs ='VIGENTE' saltaban). La
+    # etiqueta del review 'APROBADO' queda en cc_reviews.estado_final.
+    assert row[0] == 'VIGENTE', f'el kardex debe quedar VIGENTE (canónico) · {row[0]}'
     assert row[1] == '14' and row[2] == 'E', f'debe moverse a la ubicación final · {row}'
 
 
