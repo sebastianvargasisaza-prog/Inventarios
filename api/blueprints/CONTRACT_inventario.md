@@ -192,10 +192,17 @@ Invariante nueva:
   JOIN con maestro_mps para INCI · incluye numero_oc + numero_factura.
   Sebastián 20-may-2026 Sprint Recepciones PRO #7+#13.
 - `POST /api/recepcion/<mov_id>/anular` · admin · crea movimiento Salida
-  inverso con `estado_lote='ANULADO'` + audit_log ANULAR_RECEPCION_MP.
-  Idempotente (segunda llamada → 409). Si la recepción venía de OC,
+  inverso + audit_log ANULAR_RECEPCION_MP. Si la recepción venía de OC,
   descuenta `cantidad_recibida_g` de `ordenes_compra_items`.
-  Sebastián 20-may-2026 fix #8.
+  Sebastián 20-may-2026 fix #8. **Audit 13-jun (M31):** la Salida ESPEJA el
+  `estado_lote` ORIGINAL (no `'ANULADO'`) → net-zero exacto en TODA vista
+  (canónico y auditar-minimos); antes 'ANULADO' dejaba stock negativo en
+  cuarentena o fantasma en VIGENTE. Guard `LOTE_YA_MOVIDO` (409): no anula si
+  el stock RAW del lote < cantidad (lote ya consumido). Idempotencia +
+  anti-doble-anulación concurrente vía **CAS** (UPDATE condicional sobre la
+  Entrada con chequeo de rowcount); doble llamada o carrera entre workers →
+  409 (`prev` ya-existe o `ANULACION_YA_RECLAMADA`). NO usar SELECT-luego-INSERT
+  para idempotencia en multi-worker PG.
 - `GET  /api/recepcion/<codigo_mp>/precio-historico` · últimos 10 precios
   para frontend (alerta delta).
 - `POST /api/proveedores-unificar` · acepta `dry_run` (cuenta sin tocar) o
