@@ -43,7 +43,9 @@ def test_pagina_calidad_tiene_tooltips_y_analisis(admin_client):
     body = admin_client.get('/calidad').get_data(as_text=True)
     assert 'data-tip=' in body, 'faltan tooltips para-qué-sirve'
     assert '[data-tip]' in body, 'falta el CSS de tooltips (ui_help)'
-    assert 'tab-analisis' in body and 'loadMicroAnalisis' in body, 'falta la pestaña Análisis'
+    # Análisis fusionado dentro de la pestaña Microbiología (sub-nav)
+    assert 'loadMicroAnalisis' in body and 'microSub' in body, 'falta el análisis (fusionado en Microbiología)'
+    assert 'micro-sub-anl' in body, 'falta la sub-sección de gráficas'
 
 
 def test_fisicoquimica_seed_y_post(admin_client):

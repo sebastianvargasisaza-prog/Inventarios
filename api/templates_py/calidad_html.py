@@ -132,8 +132,7 @@ textarea{resize:vertical;min-height:70px;}
   <div class="tab" data-tip="Lotes de materia prima en cuarentena esperando aprobación/rechazo." data-tip-pos="bottom" onclick="goTab('tab-cc')">&#x1F9EA; Control Calidad MP</div>
   <div class="tab" data-tip="Registro y cierre de No Conformidades (producto/proceso)." data-tip-pos="bottom" onclick="goTab('tab-nc')">&#x26A0; No Conformidades</div>
   <div class="tab" data-tip="Estado y vencimiento de calibraciones de instrumentos (COC-PRO-006/012)." data-tip-pos="bottom" onclick="goTab('tab-cal')">&#x1F527; Calibraciones</div>
-  <div class="tab" data-tip="Resultados microbiológicos por lote + mapa de calor producto×microorganismo. Registrá resultados con su COA y N° de informe." data-tip-pos="bottom" onclick="goTab('tab-micro')">&#x1F9EB; Micro &amp; Heatmap</div>
-  <div class="tab" data-tip="Gráficas de análisis: tendencia de OOS, conformidad por producto, hallazgos y monitoreo ambiental." data-tip-pos="bottom" onclick="goTab('tab-analisis')">&#128200; An&aacute;lisis</div>
+  <div class="tab" data-tip="Microbiología: resultados por lote, mapa de calor, gráficas (tendencia OOS, conformidad, hallazgos, ambiental) y fisicoquímico. Registrá con su COA y N° de informe." data-tip-pos="bottom" onclick="goTab('tab-micro')">&#x1F9EB; Microbiolog&iacute;a</div>
   <div class="tab" data-tip="Sistema de agua purificada: pH, conductividad, TOC, micro (COC-PRO-008) + tendencia y alertas." data-tip-pos="bottom" onclick="goTab('tab-agua')">&#x1F4A7; Sistema de Agua</div>
   <div class="tab" data-tip="Hoja de vida y cronograma de calibración de equipos de planta." data-tip-pos="bottom" onclick="goTab('tab-equipos')">&#x1F527; Equipos</div>
   <div class="tab" data-tip="Out Of Specification: investigación, causa raíz, disposición y cierre." data-tip-pos="bottom" onclick="goTab('tab-oos')">&#x26A0;&#xFE0F; OOS</div>
@@ -261,59 +260,56 @@ textarea{resize:vertical;min-height:70px;}
 </div>
 
 
-<!-- MICRO HEATMAP -->
+<!-- MICROBIOLOGÍA · resultados + heatmap + gráficas (fusión Micro+Análisis) -->
 <div id="tab-micro" class="pane">
-  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
     <div>
-      <div class="card-title" style="margin:0">\u{1F9EB} Mapa de calor microbiologico</div>
-      <div style="color:var(--cx-text-mute);font-size:12px;margin-top:2px">Doble limite: <b>industria</b> (INVIMA / farmacopea) y <b>meta lab</b> (interno mas estricto). Auto-OOS si supera limite industria.</div>
+      <div class="card-title" style="margin:0">&#x1F9EB; Microbiolog&iacute;a</div>
+      <div style="color:var(--cx-text-mute);font-size:12px;margin-top:2px">Resultados por lote, mapa de calor y gr&aacute;ficas de an&aacute;lisis &middot; doble l&iacute;mite industria/meta-lab &middot; auto-OOS.</div>
     </div>
-    <div style="display:flex;gap:8px;align-items:center">
-      <select id="micro-meses" onchange="loadMicroHeatmap()" style="padding:6px 10px;border:1px solid #e7e5e4;background:var(--cx-bg-alt);color:var(--cx-text);border-radius:6px;font-size:12px">
-        <option value="3">Ultimos 3 meses</option>
-        <option value="6">Ultimos 6 meses</option>
-        <option value="12" selected>Ultimos 12 meses</option>
-        <option value="24">Ultimos 24 meses</option>
-      </select>
-      <button class="btn btn-primary btn-sm" onclick="abrirModalNuevoResultadoMicro()">+ Registrar resultado</button>
-      <button class="btn btn-ghost btn-sm" onclick="loadMicroHeatmap()">\u21bb</button>
-    </div>
+    <button class="btn btn-primary btn-sm" data-tip="Registrar un resultado microbiológico (con su lote de planta, COA y N° de informe)." onclick="abrirModalNuevoResultadoMicro()">+ Registrar resultado</button>
   </div>
-  <div id="micro-gate-ctrl" style="margin-bottom:10px;font-size:12px;color:var(--cx-text-mute)"></div>
-  <div id="micro-kpis" class="kpi-row" style="margin-bottom:14px"></div>
-  <div class="card">
-    <div style="overflow-x:auto">
-      <table id="micro-heatmap-tbl" style="font-size:12px;min-width:900px">
-        <thead id="micro-heatmap-thead"></thead>
-        <tbody id="micro-heatmap-tbody"><tr><td class="empty">Cargando matriz...</td></tr></tbody>
+  <div style="display:flex;gap:6px;margin-bottom:12px;border-bottom:1px solid #e7e5e4;padding-bottom:8px">
+    <button id="msub-res" class="btn btn-primary btn-sm" onclick="microSub('res')">&#x1F4CB; Resultados &amp; Heatmap</button>
+    <button id="msub-anl" class="btn btn-ghost btn-sm" onclick="microSub('anl')">&#128200; Gr&aacute;ficas y an&aacute;lisis</button>
+  </div>
+
+  <div id="micro-sub-res">
+    <div style="display:flex;justify-content:flex-end;gap:8px;align-items:center;margin-bottom:8px">
+      <select id="micro-meses" onchange="loadMicroHeatmap()" style="padding:6px 10px;border:1px solid #e7e5e4;background:var(--cx-bg-alt);color:var(--cx-text);border-radius:6px;font-size:12px">
+        <option value="3">Ultimos 3 meses</option><option value="6">Ultimos 6 meses</option><option value="12" selected>Ultimos 12 meses</option><option value="24">Ultimos 24 meses</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" onclick="loadMicroHeatmap()">&#x21BB;</button>
+    </div>
+    <div id="micro-gate-ctrl" style="margin-bottom:10px;font-size:12px;color:var(--cx-text-mute)"></div>
+    <div id="micro-kpis" class="kpi-row" style="margin-bottom:14px"></div>
+    <div class="card">
+      <div style="overflow-x:auto">
+        <table id="micro-heatmap-tbl" style="font-size:12px;min-width:900px">
+          <thead id="micro-heatmap-thead"></thead>
+          <tbody id="micro-heatmap-tbody"><tr><td class="empty">Cargando matriz...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <div class="card-title">Ultimos resultados registrados</div>
+      <table>
+        <thead><tr><th>Fecha</th><th>Lote</th><th>Producto</th><th>Microorganismo</th><th>Valor</th><th>Estado</th><th>OOS</th><th>COA</th><th>Lab</th><th>Analista</th></tr></thead>
+        <tbody id="micro-res-tbody"><tr><td colspan="10" class="empty">Cargando...</td></tr></tbody>
       </table>
     </div>
   </div>
-  <div class="card" style="margin-top:14px">
-    <div class="card-title">Ultimos resultados registrados</div>
-    <table>
-      <thead><tr><th>Fecha</th><th>Lote</th><th>Producto</th><th>Microorganismo</th><th>Valor</th><th>Estado</th><th>OOS</th><th>COA</th><th>Lab</th><th>Analista</th></tr></thead>
-      <tbody id="micro-res-tbody"><tr><td colspan="10" class="empty">Cargando...</td></tr></tbody>
-    </table>
-  </div>
-</div>
 
-<!-- AN\u00c1LISIS \u00b7 panel de gr\u00e1ficas micro (tendencias, conformidad, hallazgos, ambiental) -->
-<div id="tab-analisis" class="pane">
-  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px">
-    <div>
-      <div class="card-title" style="margin:0">&#128200; An&aacute;lisis microbiol&oacute;gico</div>
-      <div style="color:var(--cx-text-mute);font-size:12px;margin-top:2px">Tendencias, conformidad por producto, hallazgos y monitoreo ambiental &middot; datos del laboratorio.</div>
-    </div>
-    <div style="display:flex;gap:8px;align-items:center">
+  <div id="micro-sub-anl" style="display:none">
+    <div style="display:flex;justify-content:flex-end;gap:8px;align-items:center;margin-bottom:12px">
       <select id="anl-meses" onchange="loadMicroAnalisis()" style="padding:6px 10px;border:1px solid #e7e5e4;background:var(--cx-bg-alt);color:var(--cx-text);border-radius:6px;font-size:12px">
         <option value="3">3 meses</option><option value="6" selected>6 meses</option><option value="12">12 meses</option><option value="24">24 meses</option>
       </select>
       <button class="btn btn-ghost btn-sm" onclick="loadMicroAnalisis()">&#x21BB;</button>
     </div>
-  </div>
-  <div id="anl-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px">
-    <p class="empty">Cargando...</p>
+    <div id="anl-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px">
+      <p class="empty">Cargando...</p>
+    </div>
   </div>
 </div>
 
@@ -796,7 +792,7 @@ function cambiarPagSize(tabla, valor){ TBL_STATE[tabla].size = parseInt(valor,10
 function buscarTabla(tabla, valor){ TBL_STATE[tabla].q = valor||''; TBL_STATE[tabla].page = 1; if(_PAG_REFRESH[tabla]) _PAG_REFRESH[tabla](); }
 
 
-var _tabIds=['tab-bandeja','tab-indic','tab-cron','tab-cc','tab-nc','tab-cal','tab-micro','tab-analisis','tab-agua','tab-equipos','tab-oos','tab-doc'];
+var _tabIds=['tab-bandeja','tab-indic','tab-cron','tab-cc','tab-nc','tab-cal','tab-micro','tab-agua','tab-equipos','tab-oos','tab-doc'];
 function goTab(id){
   document.querySelectorAll('.tab').forEach((t,i)=>{t.classList.toggle('active',_tabIds[i]===id);});
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
@@ -807,8 +803,7 @@ function goTab(id){
   else if(id==='tab-cc') loadCuarentena();
   else if(id==='tab-nc') loadNC();
   else if(id==='tab-cal') loadCal();
-  else if(id==='tab-micro') loadMicroHeatmap();
-  else if(id==='tab-analisis') loadMicroAnalisis();
+  else if(id==='tab-micro'){ if(window.microSub) microSub('res'); else loadMicroHeatmap(); }
   else if(id==='tab-agua') loadAguaRegistros();
   else if(id==='tab-equipos') loadEquiposCompleto();
   else if(id==='tab-oos') loadOOS();
@@ -1559,6 +1554,19 @@ async function toggleMicroGate(on){
     if(!r.ok||d.error){ alert('Error: '+(d.error||r.status)); return; }
     loadMicroGateCtrl();
   }catch(e){ alert('Error red: '+(e.message||e)); }
+}
+
+// === MICROBIOLOGÍA · sub-navegación (Resultados / Gráficas) =====================
+function microSub(name){
+  var res=document.getElementById('micro-sub-res'), anl=document.getElementById('micro-sub-anl');
+  var bres=document.getElementById('msub-res'), banl=document.getElementById('msub-anl');
+  if(!res||!anl) return;
+  var showAnl=(name==='anl');
+  res.style.display=showAnl?'none':'';
+  anl.style.display=showAnl?'':'none';
+  if(bres) bres.className='btn btn-sm '+(showAnl?'btn-ghost':'btn-primary');
+  if(banl) banl.className='btn btn-sm '+(showAnl?'btn-primary':'btn-ghost');
+  if(showAnl) loadMicroAnalisis(); else loadMicroHeatmap();
 }
 
 // === ANÁLISIS MICRO · panel de gráficas (sin librerías · barras/SVG/tablas) =====
