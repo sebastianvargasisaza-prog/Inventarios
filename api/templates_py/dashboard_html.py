@@ -517,7 +517,6 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <button class="tab-button" onclick="switchTab('programacion',this)">&#128225; Programación</button>
     <button class="tab-button" onclick="switchGroup('bar-prodHub','formulas',this)">&#127981; Producción</button>
     <button class="tab-button" onclick="switchGroup('bar-calidadHub','cuarentena',this)">&#128274; Calidad</button>
-    <button class="tab-button" onclick="switchTab('servicios',this)">&#127912; Servicios</button>
   </div>
   <div id="bar-bodegaMP" class="sub-tab-bar">
     <button class="sub-btn active" onclick="subSwitchTab('stock',this,'bar-bodegaMP')">&#128230; Inventario MP</button>
@@ -1179,18 +1178,6 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       </table>
     </div>
     <div id="mov-pager"></div>
-  </div>
-
-  <!-- Sebastián 31-may-2026 · Servicios (OS) en Planta · recibir/confirmar serigrafía/etiquetado -->
-  <div id="servicios" class="tab-content">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:12px">
-      <div>
-        <h2 style="margin:0;color:#0f766e">&#127912; Servicios · serigrafía / tampografía / etiquetado</h2>
-        <div style="font-size:12px;color:#64748b;margin-top:2px">Lo que Compras mandó al proveedor · marcá la recepción cuando llegue y confirmá. Lo que viene en camino arriba.</div>
-      </div>
-      <button onclick="loadServiciosPlanta()" style="background:#0f766e;color:#fff;border:none;padding:7px 14px;border-radius:6px;font-weight:700;cursor:pointer;font-size:12px">&#8635; Actualizar</button>
-    </div>
-    <div id="svc-planta-wrap">Cargando&hellip;</div>
   </div>
 
   <div id="cuarentena" class="tab-content">
@@ -2376,7 +2363,7 @@ document.addEventListener('DOMContentLoaded',function(){
     document.getElementById('modal-operador').style.display='flex';
     setTimeout(function(){var inp=document.getElementById('oper-input');if(inp)inp.focus();},150);
   }
-  // Sebastián 31-may-2026 · abrir pestaña según el hash de la URL (ej. /inventarios#servicios)
+  // Sebastián 31-may-2026 · abrir pestaña según el hash de la URL (ej. /inventarios#cuarentena)
   setTimeout(_openTabFromHash, 700);
 });
 // Abre la pestaña indicada en location.hash (deep-link desde el menú de módulos)
@@ -2384,7 +2371,7 @@ function _openTabFromHash(){
   var h = (location.hash || '').replace('#','').trim();
   if(!h) return;
   var valid = ['dashboard','stock','empaque','programacion','formulas','produccion',
-               'cuarentena','servicios','alertas','movimientos','ingreso','abc'];
+               'cuarentena','alertas','movimientos','ingreso','abc'];
   if(valid.indexOf(h) < 0) return;
   var btn = null;
   document.querySelectorAll('.tab-button').forEach(function(b){
@@ -3864,7 +3851,6 @@ function switchTab(n,btn){
   if(n==='conteo'){ cargarEstanterias(); cargarHistorialConteos(); cargarProgramacionCiclica(); }
   if(n==='empaque'){ cargarMeeAlertas(); cargarMeeStock(); cargarMeeHistorial(); }
   if(n==='alertas'){ loadAlertasAll(); }
-  if(n==='servicios'){ loadServiciosPlanta(); }
   // 'stock' (Inventario MP) ya NO incluye MEE · vive en tab 'empaque' aparte.
   if(n==='acondicionamiento'){loadAcond();cargarMeeParaAcond();}
   if(n==='liberacion'){loadLiberaciones('');cargarClientesLib();}
@@ -21378,63 +21364,10 @@ async function ckMarcar(itemId, estado){
     return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 
-  // Sebastián 31-may-2026 · Servicios (OS) en Planta · recibir + confirmar OS
-  async function loadServiciosPlanta(){
-    var wrap = document.getElementById('svc-planta-wrap');
-    if(!wrap) return;
-    wrap.innerHTML = 'Cargando…';
-    try{
-      var r = await fetch('/api/compras/ordenes-servicio', {credentials:'same-origin', cache:'no-store'});
-      if(r.status===401){ window.location.href='/login'; return; }
-      var d = await r.json();
-      var items = d.items || d.ordenes || [];
-      var esc = escapeHtmlNec;
-      var porLlegar = items.filter(function(o){ return ['Enviada','Recogida','En proceso'].indexOf(o.estado)>=0; });
-      var porConfirmar = items.filter(function(o){ return o.estado==='Entregada'; });
-      var hist = items.filter(function(o){ return o.estado==='Confirmada'; }).slice(0,30);
-      function card(o, btnHtml){
-        var col = {'Enviada':'#0891b2','Recogida':'#7c3aed','En proceso':'#b45309','Entregada':'#16a34a','Confirmada':'#15803d'}[o.estado] || '#475569';
-        var h = '<div style="border:1px solid #e2e8f0;border-left:4px solid '+col+';border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fff">';
-        h += '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px"><div><b style="font-family:monospace;color:#0f766e">'+esc(o.numero_os||'')+'</b> · '+esc(o.proveedor||'')+' <span style="background:#f1f5f9;color:'+col+';font-weight:700;font-size:10px;padding:1px 6px;border-radius:4px">'+esc(o.estado||'')+'</span></div><div style="font-size:11px;color:#64748b">'+esc(o.tipo_servicio||'')+' · '+(o.cantidad_unidades||0)+' uds</div></div>';
-        h += '<div style="font-size:12px;color:#334155;margin:4px 0">'+esc(o.producto_final||o.envase_descripcion||'')+'</div>';
-        if(o.fecha_requerida_entrega) h += '<div style="font-size:11px;color:#64748b">Requerida: '+esc(o.fecha_requerida_entrega)+'</div>';
-        h += (btnHtml||'') + '</div>';
-        return h;
-      }
-      var html = '';
-      html += '<h3 style="color:#b45309;font-size:14px;margin:6px 0">📦 Por llegar ('+porLlegar.length+')</h3>';
-      if(!porLlegar.length) html += '<div style="color:#94a3b8;font-size:12px;margin-bottom:10px">Nada en camino.</div>';
-      porLlegar.forEach(function(o){
-        var sig = {'Enviada':'Recogida','Recogida':'En proceso','En proceso':'Entregada'}[o.estado];
-        var lbl = {'Recogida':'Marcar recogida','En proceso':'Marcar en proceso','Entregada':'📥 Marcar entregada'}[sig];
-        var btn = '<div style="margin-top:8px"><button onclick="osPlantaTransicion(&quot;'+esc(o.numero_os)+'&quot;,&quot;'+sig+'&quot;)" style="background:#0f766e;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-weight:700;cursor:pointer;font-size:12px">'+lbl+'</button></div>';
-        html += card(o, btn);
-      });
-      html += '<h3 style="color:#16a34a;font-size:14px;margin:14px 0 6px">✅ Por confirmar recepción ('+porConfirmar.length+')</h3>';
-      if(!porConfirmar.length) html += '<div style="color:#94a3b8;font-size:12px;margin-bottom:10px">Nada por confirmar.</div>';
-      porConfirmar.forEach(function(o){
-        var btn = '<div style="margin-top:8px"><button onclick="osPlantaTransicion(&quot;'+esc(o.numero_os)+'&quot;,&quot;Confirmada&quot;)" style="background:#16a34a;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-weight:700;cursor:pointer;font-size:12px">✅ Confirmar recepción</button></div>';
-        html += card(o, btn);
-      });
-      html += '<h3 style="color:#64748b;font-size:14px;margin:14px 0 6px">🗂 Historial · confirmadas ('+hist.length+')</h3>';
-      if(!hist.length) html += '<div style="color:#94a3b8;font-size:12px">Sin historial.</div>';
-      hist.forEach(function(o){ html += card(o, ''); });
-      wrap.innerHTML = html;
-    }catch(e){ wrap.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+escapeHtmlNec(e.message||e)+'</div>'; }
-  }
-  async function osPlantaTransicion(num, nuevo){
-    if(!confirm('¿Marcar '+num+' como "'+nuevo+'"?')) return;
-    try{
-      var r = await fetch('/api/compras/ordenes-servicio/'+encodeURIComponent(num)+'/estado', {
-        method:'PATCH', credentials:'same-origin',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({estado_nuevo: nuevo, observaciones: 'Desde Planta · módulo Servicios'})
-      });
-      var d = await r.json();
-      if(!r.ok || d.error){ alert('Error: '+(d.error||r.status)); return; }
-      loadServiciosPlanta();
-    }catch(e){ alert('Error red: '+(e.message||e)); }
-  }
+  // Servicios (OS) · UI de Planta retirada 14-jun-2026 (decisión Sebastián · reduce
+  // ruido visual). El feature SIGUE vivo: tablas, datos y endpoints
+  // (/api/compras/ordenes-servicio, /planta/ordenes-servicio) intactos · Catalina
+  // crea/gestiona OS desde Compras. Solo se quitó el tile + la tab embebida en Planta.
 
   // Sebastián 31-may-2026 · salud del sync Shopify + filtro B2B (verificación config)
   async function verificarSyncSalud(){
