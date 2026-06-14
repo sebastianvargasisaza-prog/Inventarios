@@ -141,6 +141,193 @@ def calidad_dashboard():
     })
 
 # ════════════════════════════════════════════════════════════════════════
+# CUADRO DE MANDO DE INDICADORES DE CALIDAD · Fase 1 (14-jun-2026)
+# Cada indicador trae meta/objetivo (de calidad_kpi_metas) + valor actual +
+# semáforo verde/amarillo/rojo + tendencia 6 meses (para los de tasa). Le da a
+# la jefa de calidad un cuadro de mando con metas claras que cumplir.
+# Cálculos 100% cross-DB (sin julianday/strftime; ventanas de mes en Python).
+# ════════════════════════════════════════════════════════════════════════
+
+def _semaforo_kpi(valor, meta, umbral, direccion):
+    """verde = cumple meta · amarillo = entre meta y umbral · rojo = peor · gris = sin dato."""
+    if valor is None or meta is None:
+        return 'gris'
+    if direccion == 'mayor_mejor':
+        if valor >= meta:
+            return 'verde'
+        if umbral is not None and valor >= umbral:
+            return 'amarillo'
+        return 'rojo'
+    # menor_mejor
+    if valor <= meta:
+        return 'verde'
+    if umbral is not None and valor <= umbral:
+        return 'amarillo'
+    return 'rojo'
+
+
+def _meses_ventanas(c, n=6):
+    """Devuelve [(label 'YYYY-MM', ini 'YYYY-MM-01', fin_exclusivo 'YYYY-MM-01')] de los
+    últimos n meses (más viejo primero), anclado a la fecha de Colombia (M24)."""
+    hoy = c.execute("SELECT date('now','-5 hours')").fetchone()[0]  # 'YYYY-MM-DD'
+    y, m = int(hoy[0:4]), int(hoy[5:7])
+
+    def win(yy, mm):
+        ini = f"{yy:04d}-{mm:02d}-01"
+        ny, nm = (yy + 1, 1) if mm == 12 else (yy, mm + 1)
+        return ini, f"{ny:04d}-{nm:02d}-01"
+
+    out, yy, mm = [], y, m
+    for _ in range(n):
+        ini, fin = win(yy, mm)
+        out.append((f"{yy:04d}-{mm:02d}", ini, fin))
+        mm -= 1
+        if mm == 0:
+            mm, yy = 12, yy - 1
+    out.reverse()
+    return hoy, out
+
+
+def _ratio_pct(num, den):
+    return round(num / den * 100, 1) if den else None
+
+
+@bp.route('/api/calidad/indicadores', methods=['GET'])
+def calidad_indicadores():
+    """Cuadro de mando: indicadores con meta, valor actual, semáforo y tendencia."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    hoy, meses = _meses_ventanas(c, 6)
+    mes_ini, mes_fin = meses[-1][1], meses[-1][2]  # mes actual
+
+    def cont(sql, params=()):
+        r = c.execute(sql, params).fetchone()
+        return (r[0] or 0) if r else 0
+
+    # ── Tasas por ventana (para serie 6m + valor del mes actual) ──────────
+    def rft_y_rechazo(ini, fin):
+        aprob = cont("SELECT COUNT(*) FROM audit_log WHERE accion IN ('APROBAR_LOTE','CC_REVIEW_APROBADO') AND fecha >= ? AND fecha < ?", (ini, fin))
+        rech = cont("SELECT COUNT(*) FROM audit_log WHERE accion IN ('RECHAZAR_LOTE','CC_REVIEW_RECHAZADO') AND fecha >= ? AND fecha < ?", (ini, fin))
+        tot = aprob + rech
+        return _ratio_pct(aprob, tot), _ratio_pct(rech, tot)
+
+    def liberacion_pt(ini, fin):
+        lib = cont("SELECT COUNT(*) FROM liberaciones WHERE estado='Liberado' AND fecha_liberacion >= ? AND fecha_liberacion < ?", (ini, fin))
+        rech = cont("SELECT COUNT(*) FROM liberaciones WHERE estado='Rechazado' AND fecha_liberacion >= ? AND fecha_liberacion < ?", (ini, fin))
+        return _ratio_pct(lib, lib + rech)
+
+    def micro_ok(ini, fin):
+        tot = cont("SELECT COUNT(*) FROM calidad_micro_resultados WHERE COALESCE(fecha_analisis,fecha_muestreo) >= ? AND COALESCE(fecha_analisis,fecha_muestreo) < ?", (ini, fin))
+        fuera = cont("SELECT COUNT(*) FROM calidad_micro_resultados WHERE estado='fuera_industria' AND COALESCE(fecha_analisis,fecha_muestreo) >= ? AND COALESCE(fecha_analisis,fecha_muestreo) < ?", (ini, fin))
+        return _ratio_pct(tot - fuera, tot)
+
+    def agua_conforme(ini, fin):
+        tot = cont("SELECT COUNT(*) FROM calidad_sistema_agua WHERE fecha >= ? AND fecha < ?", (ini, fin))
+        fuera = cont("SELECT COUNT(*) FROM calidad_sistema_agua WHERE estado='fuera_spec' AND fecha >= ? AND fecha < ?", (ini, fin))
+        return _ratio_pct(tot - fuera, tot)
+
+    series = {'rft_mp': [], 'tasa_rechazo_mp': [], 'liberacion_pt': [], 'micro_ok': [], 'agua_conforme': []}
+    for label, ini, fin in meses:
+        rft, rech = rft_y_rechazo(ini, fin)
+        series['rft_mp'].append({'mes': label, 'valor': rft})
+        series['tasa_rechazo_mp'].append({'mes': label, 'valor': rech})
+        series['liberacion_pt'].append({'mes': label, 'valor': liberacion_pt(ini, fin)})
+        series['micro_ok'].append({'mes': label, 'valor': micro_ok(ini, fin)})
+        series['agua_conforme'].append({'mes': label, 'valor': agua_conforme(ini, fin)})
+
+    # ── Valores actuales ──────────────────────────────────────────────────
+    rft_now, rech_now = rft_y_rechazo(mes_ini, mes_fin)
+    valores = {
+        'rft_mp': rft_now,
+        'tasa_rechazo_mp': rech_now,
+        'liberacion_pt': liberacion_pt(mes_ini, mes_fin),
+        'micro_ok': micro_ok(mes_ini, mes_fin),
+        'agua_conforme': agua_conforme(mes_ini, mes_fin),
+        'nc_abiertas': cont("SELECT COUNT(*) FROM no_conformidades WHERE estado='Abierta'"),
+        'oos_abiertos': cont("SELECT COUNT(*) FROM calidad_oos WHERE LOWER(COALESCE(estado,'')) NOT IN ('cerrado','rechazado','descartado')"),
+        'capa_vencidas': cont("SELECT COUNT(*) FROM capa_acciones WHERE estado NOT IN ('Cerrada','Verificada') AND COALESCE(fecha_compromiso,'') <> '' AND fecha_compromiso < ?", (hoy,)),
+    }
+    # NC: tiempo promedio de cierre (últimos 90d) · en Python para ser cross-DB
+    rows = c.execute(
+        "SELECT fecha, fecha_cierre FROM no_conformidades WHERE estado='Cerrada' "
+        "AND COALESCE(fecha_cierre,'') <> '' AND fecha_cierre >= date('now','-5 hours','-90 days')"
+    ).fetchall()
+    difs = []
+    for r in rows:
+        try:
+            d0 = datetime.fromisoformat(str(r[0])[:10]); d1 = datetime.fromisoformat(str(r[1])[:10])
+            difs.append((d1 - d0).days)
+        except Exception:
+            pass
+    valores['nc_cierre_dias'] = round(sum(difs) / len(difs), 1) if difs else None
+    # CAPA cerradas a tiempo (fecha_ejecucion <= fecha_compromiso)
+    capa_cerr = cont("SELECT COUNT(*) FROM capa_acciones WHERE estado IN ('Cerrada','Verificada') AND COALESCE(fecha_compromiso,'')<>'' AND COALESCE(fecha_ejecucion,'')<>''")
+    capa_ok = cont("SELECT COUNT(*) FROM capa_acciones WHERE estado IN ('Cerrada','Verificada') AND COALESCE(fecha_compromiso,'')<>'' AND COALESCE(fecha_ejecucion,'')<>'' AND fecha_ejecucion <= fecha_compromiso")
+    valores['capa_a_tiempo'] = _ratio_pct(capa_ok, capa_cerr)
+    # Calibraciones vigentes
+    cal_tot = cont("SELECT COUNT(*) FROM calibraciones_instrumentos")
+    cal_venc = cont("SELECT COUNT(*) FROM calibraciones_instrumentos WHERE fecha_proxima < ? OR estado='Vencida'", (hoy,))
+    valores['calibraciones_vigentes'] = _ratio_pct(cal_tot - cal_venc, cal_tot)
+
+    # ── Ensamblar con las metas ───────────────────────────────────────────
+    metas = c.execute(
+        "SELECT codigo,nombre,descripcion,unidad,direccion,meta,umbral_amarillo,categoria,orden "
+        "FROM calidad_kpi_metas WHERE activo=1 ORDER BY orden, nombre"
+    ).fetchall()
+    indicadores = []
+    for m in metas:
+        cod = m[0]
+        val = valores.get(cod)
+        indicadores.append({
+            'codigo': cod, 'nombre': m[1], 'descripcion': m[2], 'unidad': m[3],
+            'direccion': m[4], 'meta': m[5], 'umbral_amarillo': m[6],
+            'categoria': m[7], 'orden': m[8],
+            'valor': val,
+            'semaforo': _semaforo_kpi(val, m[5], m[6], m[4]),
+            'serie': series.get(cod, []),
+        })
+    resumen = {
+        'verde': sum(1 for i in indicadores if i['semaforo'] == 'verde'),
+        'amarillo': sum(1 for i in indicadores if i['semaforo'] == 'amarillo'),
+        'rojo': sum(1 for i in indicadores if i['semaforo'] == 'rojo'),
+        'gris': sum(1 for i in indicadores if i['semaforo'] == 'gris'),
+    }
+    return jsonify({'indicadores': indicadores, 'resumen': resumen, 'mes_actual': meses[-1][0], 'hoy': hoy})
+
+
+@bp.route('/api/calidad/indicadores/metas/<codigo>', methods=['PATCH'])
+def calidad_indicador_meta_editar(codigo):
+    """Edita la meta/umbral de un indicador (solo Calidad/Admin)."""
+    err, code = _require_calidad()
+    if err:
+        return err, code
+    body = request.get_json(silent=True) or {}
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT meta, umbral_amarillo, activo FROM calidad_kpi_metas WHERE codigo=?", (codigo,)).fetchone()
+    if not row:
+        return jsonify({'error': f'indicador {codigo} no existe'}), 404
+    campos, vals = [], []
+    if 'meta' in body:
+        campos.append('meta=?'); vals.append(float(body['meta']) if body['meta'] is not None else None)
+    if 'umbral_amarillo' in body:
+        campos.append('umbral_amarillo=?'); vals.append(float(body['umbral_amarillo']) if body['umbral_amarillo'] is not None else None)
+    if 'activo' in body:
+        campos.append('activo=?'); vals.append(1 if body['activo'] else 0)
+    if not campos:
+        return jsonify({'error': 'nada que actualizar'}), 400
+    u = session.get('compras_user', '')
+    campos.append('actualizado_por=?'); vals.append(u)
+    campos.append("actualizado_at=datetime('now')")
+    vals.append(codigo)
+    audit_log(c, usuario=u, accion='EDITAR_KPI_META', tabla='calidad_kpi_metas',
+              registro_id=codigo, antes={'meta': row[0], 'umbral': row[1]}, despues=body)
+    c.execute(f"UPDATE calidad_kpi_metas SET {', '.join(campos)} WHERE codigo=?", vals)
+    conn.commit()
+    return jsonify({'ok': True})
+
+
+# ════════════════════════════════════════════════════════════════════════
 # BANDEJA QC DEL DÍA · centro de mando de Calidad
 # Sebastián 1-may-2026: "que le resuelva la vida al equipo de Calidad".
 # Una sola pantalla con TODO lo pendiente: lotes a liberar, equipos a

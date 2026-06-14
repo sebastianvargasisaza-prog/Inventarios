@@ -312,6 +312,53 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (244, "Cuadro de mando de indicadores de calidad (Fase 1 · 14-jun). Tabla "
+          "calidad_kpi_metas: cada indicador tiene meta/objetivo + umbral_amarillo + "
+          "direccion (mayor_mejor/menor_mejor) para semaforo verde/amarillo/rojo. Seed con "
+          "el set estandar de una planta cosmetica regulada INVIMA (RFT, tasa rechazo, NCs, "
+          "tiempo cierre NC, CAPA vencidas/a-tiempo, OOS, calibraciones, agua, micro, "
+          "liberacion PT). La jefa de calidad puede editar las metas. Idempotente.", [
+        """CREATE TABLE IF NOT EXISTS calidad_kpi_metas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo           TEXT UNIQUE NOT NULL,
+            nombre           TEXT NOT NULL,
+            descripcion      TEXT DEFAULT '',
+            unidad           TEXT DEFAULT '%',
+            direccion        TEXT NOT NULL DEFAULT 'mayor_mejor'
+                CHECK(direccion IN ('mayor_mejor','menor_mejor')),
+            meta             REAL,
+            umbral_amarillo  REAL,
+            categoria        TEXT DEFAULT 'General',
+            orden            INTEGER DEFAULT 100,
+            activo           INTEGER DEFAULT 1,
+            actualizado_por  TEXT DEFAULT '',
+            actualizado_at   TEXT DEFAULT (datetime('now'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_calidad_kpi_codigo ON calidad_kpi_metas(codigo)",
+        # Seed · meta = objetivo (verde si lo cumple), umbral_amarillo = frontera ámbar→rojo
+        "INSERT OR IGNORE INTO calidad_kpi_metas (codigo,nombre,descripcion,unidad,direccion,meta,umbral_amarillo,categoria,orden) VALUES "
+        "('rft_mp','Right-First-Time lotes MP','% de lotes de MP aprobados sin rechazo (mes)','%','mayor_mejor',95,90,'Liberación',10)",
+        "INSERT OR IGNORE INTO calidad_kpi_metas (codigo,nombre,descripcion,unidad,direccion,meta,umbral_amarillo,categoria,orden) VALUES "
+        "('tasa_rechazo_mp','Tasa de rechazo lotes MP','% de lotes de MP rechazados (mes)','%','menor_mejor',5,10,'Liberación',20)",
+        "INSERT OR IGNORE INTO calidad_kpi_metas (codigo,nombre,descripcion,unidad,direccion,meta,umbral_amarillo,categoria,orden) VALUES "
+        "('liberacion_pt','Tasa de liberación PT','% de PT liberados vs total decidido (mes)','%','mayor_mejor',95,85,'Liberación',30)",
+        "INSERT OR IGNORE INTO calidad_kpi_metas (codigo,nombre,descripcion,unidad,direccion,meta,umbral_amarillo,categoria,orden) VALUES "
+        "('nc_abiertas','No Conformidades abiertas','NC sin cerrar a la fecha','NC','menor_mejor',0,3,'Desviaciones',40)",
+        "INSERT OR IGNORE INTO calidad_kpi_metas (codigo,nombre,descripcion,unidad,direccion,meta,umbral_amarillo,categoria,orden) VALUES "
+        "('nc_cierre_dias','Tiempo promedio cierre NC','Días promedio entre apertura y cierre de NC (90d)','días','menor_mejor',15,30,'Desviaciones',50)",
+        "INSERT OR IGNORE INTO calidad_kpi_metas (codigo,nombre,descripcion,unidad,direccion,meta,umbral_amarillo,categoria,orden) VALUES "
+        "('capa_vencidas','CAPA vencidas','Acciones CAPA con fecha de compromiso vencida y sin cerrar','CAPA','menor_mejor',0,2,'Desviaciones',60)",
+        "INSERT OR IGNORE INTO calidad_kpi_metas (codigo,nombre,descripcion,unidad,direccion,meta,umbral_amarillo,categoria,orden) VALUES "
+        "('capa_a_tiempo','% CAPA cerradas a tiempo','% de CAPA cerradas dentro de la fecha de compromiso','%','mayor_mejor',90,75,'Desviaciones',70)",
+        "INSERT OR IGNORE INTO calidad_kpi_metas (codigo,nombre,descripcion,unidad,direccion,meta,umbral_amarillo,categoria,orden) VALUES "
+        "('oos_abiertos','OOS abiertos','Resultados fuera de especificación sin cerrar','OOS','menor_mejor',0,2,'Análisis',80)",
+        "INSERT OR IGNORE INTO calidad_kpi_metas (codigo,nombre,descripcion,unidad,direccion,meta,umbral_amarillo,categoria,orden) VALUES "
+        "('micro_ok','Tasa OK microbiología','% de resultados micro dentro de spec de industria (mes)','%','mayor_mejor',98,90,'Análisis',90)",
+        "INSERT OR IGNORE INTO calidad_kpi_metas (codigo,nombre,descripcion,unidad,direccion,meta,umbral_amarillo,categoria,orden) VALUES "
+        "('agua_conforme','Cumplimiento sistema de agua','% de registros de agua conformes (mes · COC-PRO-008)','%','mayor_mejor',100,95,'Análisis',100)",
+        "INSERT OR IGNORE INTO calidad_kpi_metas (codigo,nombre,descripcion,unidad,direccion,meta,umbral_amarillo,categoria,orden) VALUES "
+        "('calibraciones_vigentes','Cumplimiento calibraciones','% de equipos con calibración vigente','%','mayor_mejor',100,90,'Equipos',110)",
+    ]),
     (243, "Alinea INCI al MAESTRO de Alejandro (FORMULAS_MAESTRO_v2_1 · unica verdad · "
           "13-jun). Verificado: de 153 INCI del maestro, 148 YA coincidian con la app; solo "
           "4 ajustes. (1) Llena los 2 vacios con el INCI del maestro: MP00040 Cetiol=DICAPRYLYL "

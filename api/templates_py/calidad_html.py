@@ -128,6 +128,7 @@ textarea{resize:vertical;min-height:70px;}
 <div class="tabs">
   <div class="tab active" onclick="goTab('tab-bandeja')">&#x1F3AF; Bandeja del Dia</div>
   <div class="tab" onclick="goTab('tab-dash')">&#128202; Dashboard</div>
+  <div class="tab" onclick="goTab('tab-indic')">&#128201; Indicadores</div>
   <div class="tab" onclick="goTab('tab-cron')">&#128203; Cronograma del Dia</div>
   <div class="tab" onclick="goTab('tab-cc')">&#x1F9EA; Control Calidad MP</div>
   <div class="tab" onclick="goTab('tab-nc')">&#x26A0; No Conformidades</div>
@@ -179,6 +180,28 @@ textarea{resize:vertical;min-height:70px;}
     <div class="card">
     <div class="card-title">Actividad Reciente</div>
     <div class="actividad" id="act-list"><p class="empty">Cargando...</p></div>
+  </div>
+</div>
+
+<!-- INDICADORES DE CALIDAD · cuadro de mando con metas + semáforos + tendencia -->
+<div id="tab-indic" class="pane">
+  <div class="card" style="background:linear-gradient(135deg,#faf5ff,#e7e5e4);border:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+      <div>
+        <div style="font-size:0.78em;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.6px">Cuadro de mando de Calidad</div>
+        <div style="font-size:1.3em;font-weight:700;color:#6d28d9">Indicadores &middot; <span id="indic-mes">&mdash;</span></div>
+        <div style="font-size:0.78em;color:var(--cx-text-mute);margin-top:2px">Meta vs real &middot; sem&aacute;foro verde/amarillo/rojo &middot; tendencia 6 meses. Doble-clic una tarjeta para editar la meta.</div>
+      </div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
+        <div style="text-align:center"><div style="font-size:0.7em;color:var(--cx-text-mute)">EN META</div><div id="indic-verde" style="font-size:1.5em;font-weight:800;color:#16a34a">&mdash;</div></div>
+        <div style="text-align:center"><div style="font-size:0.7em;color:var(--cx-text-mute)">EN AVISO</div><div id="indic-amari" style="font-size:1.5em;font-weight:800;color:#d97706">&mdash;</div></div>
+        <div style="text-align:center"><div style="font-size:0.7em;color:var(--cx-text-mute)">FUERA</div><div id="indic-rojo" style="font-size:1.5em;font-weight:800;color:#dc2626">&mdash;</div></div>
+        <button class="btn btn-ghost btn-sm" onclick="loadIndicadores()">&#x21BB; Refrescar</button>
+      </div>
+    </div>
+  </div>
+  <div id="indic-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:14px">
+    <p class="empty">Cargando...</p>
   </div>
 </div>
 
@@ -730,13 +753,14 @@ function cambiarPagSize(tabla, valor){ TBL_STATE[tabla].size = parseInt(valor,10
 function buscarTabla(tabla, valor){ TBL_STATE[tabla].q = valor||''; TBL_STATE[tabla].page = 1; if(_PAG_REFRESH[tabla]) _PAG_REFRESH[tabla](); }
 
 
-var _tabIds=['tab-bandeja','tab-dash','tab-cron','tab-cc','tab-nc','tab-cal','tab-micro','tab-agua','tab-equipos','tab-oos'];
+var _tabIds=['tab-bandeja','tab-dash','tab-indic','tab-cron','tab-cc','tab-nc','tab-cal','tab-micro','tab-agua','tab-equipos','tab-oos'];
 function goTab(id){
   document.querySelectorAll('.tab').forEach((t,i)=>{t.classList.toggle('active',_tabIds[i]===id);});
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   if(id==='tab-bandeja') loadBandeja();
   else if(id==='tab-dash') loadDash();
+  else if(id==='tab-indic') loadIndicadores();
   else if(id==='tab-cron') loadCronograma();
   else if(id==='tab-cc') loadCuarentena();
   else if(id==='tab-nc') loadNC();
@@ -745,6 +769,89 @@ function goTab(id){
   else if(id==='tab-agua') loadAguaRegistros();
   else if(id==='tab-equipos') loadEquiposCompleto();
   else if(id==='tab-oos') loadOOS();
+}
+
+// === INDICADORES DE CALIDAD · cuadro de mando ==========================
+var _SEM_COLOR = {verde:'#16a34a', amarillo:'#d97706', rojo:'#dc2626', gris:'#94a3b8'};
+var _SEM_BG = {verde:'#f0fdf4', amarillo:'#fffbeb', rojo:'#fef2f2', gris:'#f8fafc'};
+var _SEM_LABEL = {verde:'EN META', amarillo:'EN AVISO', rojo:'FUERA DE META', gris:'SIN DATO'};
+function _fmtVal(v, unidad){
+  if(v===null||v===undefined) return '&mdash;';
+  var n = (unidad==='%') ? (Math.round(v*10)/10)+'%' : (Math.round(v*10)/10);
+  if(unidad && unidad!=='%') n = n + ' ' + unidad;
+  return n;
+}
+function _sparkline(serie, color){
+  // mini barras 6 meses · serie = [{mes,valor}]
+  if(!serie || !serie.length) return '';
+  var vals = serie.map(function(s){ return (s.valor===null||s.valor===undefined)?null:s.valor; });
+  var nums = vals.filter(function(x){ return x!==null; });
+  if(!nums.length) return '';
+  var mx = Math.max.apply(null, nums), mn = Math.min.apply(null, nums);
+  var rng = (mx-mn)||1;
+  var bars = serie.map(function(s){
+    if(s.valor===null||s.valor===undefined) return '<div title="'+s.mes+': s/d" style="flex:1;height:4px;background:#e5e7eb;align-self:flex-end"></div>';
+    var h = 6 + Math.round((s.valor-mn)/rng*26);
+    return '<div title="'+s.mes+': '+(Math.round(s.valor*10)/10)+'" style="flex:1;height:'+h+'px;background:'+color+';opacity:.55;border-radius:2px 2px 0 0"></div>';
+  }).join('');
+  return '<div style="display:flex;gap:3px;align-items:flex-end;height:34px;margin-top:10px">'+bars+'</div>'
+    + '<div style="font-size:9px;color:var(--cx-text-faint);text-align:right;margin-top:2px">tendencia 6m</div>';
+}
+async function loadIndicadores(){
+  var grid = document.getElementById('indic-grid');
+  if(!grid) return;
+  grid.innerHTML = '<p class="empty">Cargando...</p>';
+  try{
+    var r = await fetch('/api/calidad/indicadores', {credentials:'same-origin', cache:'no-store'});
+    if(r.status===401){ window.location.href='/login'; return; }
+    var d = await r.json();
+    document.getElementById('indic-mes').textContent = d.mes_actual || '';
+    var res = d.resumen||{};
+    document.getElementById('indic-verde').textContent = res.verde||0;
+    document.getElementById('indic-amari').textContent = res.amarillo||0;
+    document.getElementById('indic-rojo').textContent = res.rojo||0;
+    var inds = d.indicadores||[];
+    if(!inds.length){ grid.innerHTML = '<p class="empty">Sin indicadores configurados.</p>'; return; }
+    window._INDIC_MAP = {};
+    inds.forEach(function(it){ window._INDIC_MAP[it.codigo] = it; });
+    grid.innerHTML = inds.map(function(it){
+      var col = _SEM_COLOR[it.semaforo]||'#94a3b8';
+      var bg = _SEM_BG[it.semaforo]||'#f8fafc';
+      var metaTxt = (it.meta===null||it.meta===undefined) ? '' :
+        ((it.direccion==='mayor_mejor'?'meta &ge; ':'meta &le; ')+_fmtVal(it.meta, it.unidad));
+      return '<div class="card" style="border-left:5px solid '+col+';background:'+bg+';cursor:pointer" '
+        + 'ondblclick="editarMetaKpi(\'' + it.codigo + '\')" title="Doble-clic para editar la meta">'
+        + '<div style="font-size:0.72em;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.4px">'+_escH(it.categoria||'')+'</div>'
+        + '<div style="font-weight:700;color:var(--cx-text);margin:2px 0 6px">'+_escH(it.nombre)+'</div>'
+        + '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">'
+        +   '<div style="font-size:1.9em;font-weight:800;color:'+col+'">'+_fmtVal(it.valor, it.unidad)+'</div>'
+        +   '<div style="text-align:right"><div style="font-size:10px;font-weight:700;color:'+col+'">'+_SEM_LABEL[it.semaforo]+'</div>'
+        +     '<div style="font-size:11px;color:var(--cx-text-mute)">'+metaTxt+'</div></div>'
+        + '</div>'
+        + _sparkline(it.serie, col)
+        + '<div style="font-size:10px;color:var(--cx-text-faint);margin-top:6px">'+_escH(it.descripcion||'')+'</div>'
+        + '</div>';
+    }).join('');
+  }catch(e){ grid.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+(e.message||e)+'</div>'; }
+}
+function _escH(s){ var d=document.createElement('div'); d.textContent=(s===null||s===undefined)?'':String(s); return d.innerHTML; }
+async function editarMetaKpi(codigo){
+  var it = (window._INDIC_MAP||{})[codigo];
+  if(!it) return;
+  var dir = it.direccion==='mayor_mejor' ? 'mayor es mejor' : 'menor es mejor';
+  var nm = prompt('Meta para "'+it.nombre+'" ('+dir+', unidad '+(it.unidad||'')+'):', it.meta);
+  if(nm===null) return;
+  var um = prompt('Umbral de aviso (frontera amarillo→rojo) para "'+it.nombre+'":', it.umbral_amarillo);
+  if(um===null) return;
+  try{
+    var r = await fetch('/api/calidad/indicadores/metas/'+encodeURIComponent(it.codigo), {
+      method:'PATCH', credentials:'same-origin', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({meta: nm===''?null:parseFloat(nm), umbral_amarillo: um===''?null:parseFloat(um)})
+    });
+    var d = await r.json();
+    if(!r.ok || d.error){ alert('Error: '+(d.error||r.status)); return; }
+    loadIndicadores();
+  }catch(e){ alert('Error red: '+(e.message||e)); }
 }
 
 // === EQUIPOS Y CALIBRACIONES (COC-PRO-006/012 + PRD-PRO-004) ===========
