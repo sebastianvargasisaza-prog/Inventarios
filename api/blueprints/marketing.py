@@ -693,11 +693,19 @@ def mkt_pagos_influencer_urgencias():
     if err: return err, code
     conn = _db(); c = conn.cursor()
     try:
+        # FIX 13-jun (audit influencers · H2/M5): excluir los pagos cuya OC ligada
+        # YA está Pagada. Antes filtraba solo pi.estado='Pendiente' crudo, así que
+        # si el link pi↔OC quedaba desalineado (OC Pagada pero pi aún Pendiente)
+        # el pago aparecía como VENCIDO/urgente acá mientras la lista lo mostraba
+        # Pagado → KPI de urgencias divergente. Ahora consistente con la lista.
         rows = c.execute("""
             SELECT id, influencer_id, influencer_nombre, valor, fecha,
                    estado, concepto, numero_oc, fecha_contenido, vence_pago_at
             FROM pagos_influencers
             WHERE estado='Pendiente'
+              AND COALESCE(numero_oc,'') NOT IN (
+                    SELECT numero_oc FROM ordenes_compra
+                    WHERE estado='Pagada' AND COALESCE(numero_oc,'')!='' )
             ORDER BY COALESCE(vence_pago_at, fecha) ASC
             LIMIT 200
         """).fetchall()

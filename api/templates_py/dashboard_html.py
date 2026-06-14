@@ -774,7 +774,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           <div class="form-group"><label>Precio por kg (COP)</label><input type="number" id="nmp-ing-precio-kg" placeholder="Ej: 45000" step="0.01" min="0"></div>
         </div>
         <div style="display:flex;align-items:center;gap:10px;margin-top:10px;padding:9px 12px;background:#fff3e0;border-radius:6px;border:1px solid #ffe0b2;">
-          <input type="checkbox" id="nmp-ing-cuarentena" style="width:18px;height:18px;">
+          <input type="checkbox" id="nmp-ing-cuarentena" checked style="width:18px;height:18px;">
           <label for="nmp-ing-cuarentena" style="margin:0;cursor:pointer;font-weight:600;color:#e65100;font-size:0.9em;">
             &#128274; Ingresar en CUARENTENA (pendiente aprobaci&#243;n de Calidad)
           </label>
@@ -828,7 +828,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:10px;background:#fff3e0;border-radius:6px;border:1px solid #ffe0b2;">
-        <input type="checkbox" id="ing-cuarentena" style="width:18px;height:18px;">
+        <input type="checkbox" id="ing-cuarentena" checked style="width:18px;height:18px;">
         <label for="ing-cuarentena" style="margin:0;cursor:pointer;font-weight:600;color:#e65100;">
           &#128274; Ingresar en CUARENTENA (pendiente aprobacion de calidad)
         </label>
@@ -4658,7 +4658,7 @@ function engancharAutoSaveIngreso(){
 function limpiarIngreso(){
   ['ing-cod','ing-inci','ing-nombre','ing-tipo','ing-prov','ing-lote','ing-cant','ing-vence','ing-est','ing-pos','ing-obs','ing-factura','ing-precio-kg','ing-valor-total'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
   var ocSel=document.getElementById('ing-oc-sel');if(ocSel)ocSel.selectedIndex=0;
-  var cuar=document.getElementById('ing-cuarentena');if(cuar)cuar.checked=false;
+  var cuar=document.getElementById('ing-cuarentena');if(cuar)cuar.checked=true;  // INVIMA: cuarentena-first por defecto (13-jun)
   ocultarFormNuevaMP();
   var st=document.getElementById('ing-status');if(st){st.textContent='';st.style.color='#667eea';}
   document.getElementById('ing-msg').innerHTML='';

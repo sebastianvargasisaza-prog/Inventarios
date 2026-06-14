@@ -7181,7 +7181,11 @@ def registrar_recepcion():
     precio_kg = float(d.get('precio_kg') or 0)
     numero_factura = (d.get('numero_factura') or '').strip()
     numero_oc = (d.get('numero_oc') or '').strip()
-    cuarentena = bool(d.get('cuarentena', False))
+    # FIX 13-jun (audit compras · INVIMA cuarentena-first): default = CUARENTENA.
+    # La recepción por OC SIEMPRE entra en cuarentena; el ingreso manual debe ser
+    # consistente (MP recibida pasa por QC antes de usarse). El operario puede
+    # destildar la casilla para stock ya aprobado (ajustes/correcciones).
+    cuarentena = bool(d.get('cuarentena', True))
     estado_lote = 'CUARENTENA' if cuarentena else 'VIGENTE'
     # Si la MP es nueva y viene con datos, crearla en el catalogo
     if not mp and (d.get('nombre_inci') or d.get('nombre_comercial')):
