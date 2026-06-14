@@ -3138,8 +3138,20 @@ def liberar_ebr(ebr_id):
                           f"Resolvé el OOS micro antes de liberar."),
                 "codigo": "MICRO_OOS",
             }), 409
-        import os as _os_micro
-        if _os_micro.environ.get('BRD_MICRO_GATE', 'off').lower() == 'strict':
+        # Modo del gate "micro presente": app_settings.micro_gate_mode (toggle desde la
+        # UI de Calidad, sin tocar Render) → fallback env BRD_MICRO_GATE → 'off'.
+        _gate_mode = 'off'
+        try:
+            _gm = cur.execute("SELECT valor FROM app_settings WHERE clave='micro_gate_mode' LIMIT 1").fetchone()
+            if _gm and _gm[0]:
+                _gate_mode = str(_gm[0]).lower()
+            else:
+                import os as _os_micro
+                _gate_mode = _os_micro.environ.get('BRD_MICRO_GATE', 'off').lower()
+        except Exception:
+            import os as _os_micro
+            _gate_mode = _os_micro.environ.get('BRD_MICRO_GATE', 'off').lower()
+        if _gate_mode == 'strict':
             try:
                 _micro_ok = cur.execute(
                     "SELECT COUNT(*) FROM calidad_micro_resultados "

@@ -73,3 +73,20 @@ def test_micro_gate_bloquea_liberacion(app, db_clean):
         conn.execute("DELETE FROM ebr_ejecuciones WHERE id=?", (ebr_id,))
         conn.execute("DELETE FROM mbr_templates WHERE id=?", (mbr_id,))
         conn.commit(); conn.close()
+
+
+def test_micro_gate_config_toggle(admin_client):
+    # GET default
+    r = admin_client.get('/api/calidad/config/micro-gate')
+    assert r.status_code == 200, r.data[:200]
+    # POST strict (admin/calidad)
+    from .conftest import csrf_headers
+    r2 = admin_client.post('/api/calidad/config/micro-gate', json={'modo': 'strict'}, headers=csrf_headers())
+    assert r2.status_code == 200 and r2.get_json()['modo'] == 'strict', r2.data[:200]
+    r3 = admin_client.get('/api/calidad/config/micro-gate')
+    assert r3.get_json()['modo'] == 'strict'
+    # modo inválido
+    r4 = admin_client.post('/api/calidad/config/micro-gate', json={'modo': 'xx'}, headers=csrf_headers())
+    assert r4.status_code == 400
+    # volver a off para no afectar otros tests
+    admin_client.post('/api/calidad/config/micro-gate', json={'modo': 'off'}, headers=csrf_headers())

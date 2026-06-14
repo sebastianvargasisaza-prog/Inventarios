@@ -300,6 +300,7 @@ textarea{resize:vertical;min-height:70px;}
       <button class="btn btn-ghost btn-sm" onclick="loadMicroHeatmap()">\u21bb</button>
     </div>
   </div>
+  <div id="micro-gate-ctrl" style="margin-bottom:10px;font-size:12px;color:var(--cx-text-mute)"></div>
   <div id="micro-kpis" class="kpi-row" style="margin-bottom:14px"></div>
   <div class="card">
     <div style="overflow-x:auto">
@@ -1500,6 +1501,27 @@ async function guardarResultadoMicro(){
       loadMicroHeatmap();
     } else { alert('Error: '+(d.error||'?')); }
   }catch(e){ alert('Error de red: '+e.message); }
+}
+
+async function loadMicroGateCtrl(){
+  var el=document.getElementById('micro-gate-ctrl'); if(!el) return;
+  try{
+    var r=await fetch('/api/calidad/config/micro-gate',{credentials:'same-origin',cache:'no-store'});
+    var d=await r.json();
+    var on = d.modo==='strict';
+    el.innerHTML = '&#128274; Liberaci&oacute;n de PT por micro: '
+      + '<b style="color:'+(on?'#16a34a':'#64748b')+'">'+(on?'ESTRICTO &mdash; exige an&aacute;lisis micro presente':'solo bloquea micro fuera de spec')+'</b>'
+      + ' <button class="btn btn-ghost btn-sm" style="margin-left:8px;padding:2px 8px" onclick="toggleMicroGate('+(on?0:1)+')">'+(on?'Desactivar exigir-micro':'Activar exigir-micro')+'</button>';
+  }catch(e){ el.textContent=''; }
+}
+async function toggleMicroGate(on){
+  if(on && !confirm('Modo ESTRICTO: a partir de ahora NO se podrá liberar un lote de PT sin su análisis micro registrado. ¿Confirmás?')) return;
+  try{
+    var r=await fetch('/api/calidad/config/micro-gate', _fetchOpts('POST',{modo: on?'strict':'off'}));
+    var d=await r.json();
+    if(!r.ok||d.error){ alert('Error: '+(d.error||r.status)); return; }
+    loadMicroGateCtrl();
+  }catch(e){ alert('Error red: '+(e.message||e)); }
 }
 
 // === SISTEMA DE AGUA ====================================================

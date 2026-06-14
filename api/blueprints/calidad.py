@@ -328,6 +328,49 @@ def calidad_indicador_meta_editar(codigo):
     return jsonify({'ok': True})
 
 
+@bp.route('/api/calidad/config/micro-gate', methods=['GET', 'POST'])
+def calidad_micro_gate_config():
+    """Lee/define el modo del gate de micro para liberar PT (off|strict), guardado en
+    app_settings (toggle desde la UI · NO requiere variable de entorno en Render).
+    'strict' = no se libera un EBR sin el análisis micro del lote registrado."""
+    conn = get_db(); c = conn.cursor()
+    try:
+        c.execute("""CREATE TABLE IF NOT EXISTS app_settings (
+            clave TEXT PRIMARY KEY, valor TEXT NOT NULL, descripcion TEXT,
+            actualizado_at_utc TEXT, actualizado_por TEXT, tenant_id INTEGER DEFAULT 1)""")
+    except Exception:
+        pass
+    if request.method == 'POST':
+        err, code = _require_calidad()
+        if err:
+            return err, code
+        body = request.get_json(silent=True) or {}
+        modo = (body.get('modo') or '').strip().lower()
+        if modo not in ('off', 'strict'):
+            return jsonify({'error': "modo debe ser 'off' o 'strict'"}), 400
+        u = session.get('compras_user', '')
+        c.execute(
+            "INSERT INTO app_settings (clave,valor,descripcion,actualizado_at_utc,actualizado_por) "
+            "VALUES ('micro_gate_mode',?,?,datetime('now'),?) "
+            "ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor, "
+            "actualizado_at_utc=excluded.actualizado_at_utc, actualizado_por=excluded.actualizado_por",
+            (modo, 'Gate de micro presente para liberar PT', u))
+        audit_log(c, usuario=u, accion='SET_MICRO_GATE', tabla='app_settings',
+                  registro_id='micro_gate_mode', despues={'modo': modo})
+        conn.commit()
+        return jsonify({'ok': True, 'modo': modo})
+    # GET
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    row = c.execute("SELECT valor FROM app_settings WHERE clave='micro_gate_mode' LIMIT 1").fetchone()
+    modo = (row[0] if row and row[0] else None)
+    fuente = 'db'
+    if not modo:
+        import os as _os
+        modo = _os.environ.get('BRD_MICRO_GATE', 'off').lower(); fuente = 'env'
+    return jsonify({'modo': modo, 'fuente': fuente})
+
+
 # ════════════════════════════════════════════════════════════════════════
 # BANDEJA QC DEL DÍA · centro de mando de Calidad
 # Sebastián 1-may-2026: "que le resuelva la vida al equipo de Calidad".
