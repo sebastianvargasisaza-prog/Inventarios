@@ -3449,6 +3449,7 @@ async function loadPqrTriaje(){
         +'<div style="font-size:0.78em;color:#64748b">'+_esc(x.canal||'')+' · '+_esc(x.contacto_nombre||'anónimo')+' · '+_esc(x.recibido_en||'')+(x.ghl_message_id?' · <span style="color:#94a3b8">GHL:'+_esc(x.ghl_message_id)+'</span>':'')+'</div>'
         +'<div style="font-size:0.78em">'+sugTxt+'</div></div>'
         +'<div style="font-size:0.9em;color:#0f172a;margin:6px 0">'+_esc(x.mensaje||'')+'</div>'
+        +((x.producto||x.lote||x.pedido_numero)?'<div style="font-size:0.76em;color:#475569;margin-bottom:4px">'+(x.producto?'🧴 '+_esc(x.producto)+'  ':'')+(x.lote?'🏷️ Lote '+_esc(x.lote)+'  ':'')+(x.pedido_numero?'📦 Pedido '+_esc(x.pedido_numero):'')+'</div>':'')
         +(x.ia_razon?'<div style="font-size:0.74em;color:#94a3b8;font-style:italic">'+_esc(x.ia_razon)+'</div>':'')
         +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">'
         +'<span style="font-size:0.78em;color:#6d28d9;font-weight:700">→ Espagiria</span> <select id="tri-esp-'+x.id+'" class="btn-sm" style="padding:4px;border:1px solid #cbd5e1;border-radius:4px">'+opcEsp+'</select>'

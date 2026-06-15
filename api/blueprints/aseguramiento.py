@@ -3791,10 +3791,11 @@ def _enrutar_a_espagiria(c, row, tipo, user):
         cod = _generar_codigo_queja(c)
         c.execute(
             "INSERT INTO quejas_clientes (codigo, fecha_recepcion, recibido_por, canal, "
-            "cliente_nombre, cliente_contacto, tipo_queja, descripcion, impacto_salud, estado) "
-            "VALUES (?, date('now','-5 hours'), ?, ?, ?, ?, ?, ?, ?, 'nueva')",
+            "cliente_nombre, cliente_contacto, producto, lote, tipo_queja, descripcion, impacto_salud, estado) "
+            "VALUES (?, date('now','-5 hours'), ?, ?, ?, ?, ?, ?, ?, ?, ?, 'nueva')",
             (cod, user, canal_q, (row['contacto_nombre'] or 'Cliente GHL')[:200],
              ((row['contacto_email'] or '') + ' ' + (row['contacto_telefono'] or '')).strip()[:200],
+             (row.get('producto') or '')[:200], (row.get('lote') or '')[:100],
              tipo_q, (row['mensaje'] or '')[:3000], 1 if tipo_q == 'reaccion_adversa' else 0))
         return cod, c.lastrowid
     cod, qid = _intentar_insert_con_retry(_ins)
@@ -3809,11 +3810,12 @@ def _enrutar_a_animus(c, row, tipo, user):
     cod = _siguiente_codigo_secuencial(c, 'PQR-A', 'animus_pqr')
     c.execute(
         "INSERT INTO animus_pqr (codigo, canal, contacto_nombre, contacto_email, contacto_telefono, "
-        "ghl_contact_id, tipo, descripcion, origen_inbox_id, creado_por) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        "ghl_contact_id, tipo, descripcion, pedido_numero, origen_inbox_id, creado_por) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         (cod, (row['canal'] or 'otro'), (row['contacto_nombre'] or '')[:200],
          (row['contacto_email'] or '')[:200], (row['contacto_telefono'] or '')[:80],
-         row['ghl_contact_id'], tipo_a, (row['mensaje'] or '')[:3000], row['id'], user))
+         row['ghl_contact_id'], tipo_a, (row['mensaje'] or '')[:3000],
+         (row.get('pedido_numero') or '')[:80], row['id'], user))
     aid = c.lastrowid
     _audit_log(c, usuario=user, accion='CREAR_PQR_ANIMUS', tabla='animus_pqr',
                registro_id=aid, despues={'codigo': cod, 'tipo': tipo_a, 'inbox_id': row['id']})
@@ -3831,6 +3833,9 @@ def _marcar_inbox_enrutado(c, inbox_id, empresa, tabla, dest_id, dest_cod, user)
 # IDs de los campos personalizados de GHL (overridables por env si cambian)
 _GHL_CF_MENSAJE = os.environ.get('GHL_CF_PQR_MENSAJE', '6FFSOWuvBhGFAlNdevVk')
 _GHL_CF_CANAL = os.environ.get('GHL_CF_PQR_CANAL', 'N9OHPbhy24ODqxNwg1iQ')
+_GHL_CF_PRODUCTO = os.environ.get('GHL_CF_PQR_PRODUCTO', 'dwFfnc3xUFlKbYUBsSbd')
+_GHL_CF_LOTE = os.environ.get('GHL_CF_PQR_LOTE', 'Rry05obVdAQrOl1Nbxgv')
+_GHL_CF_PEDIDO = os.environ.get('GHL_CF_PQR_PEDIDO', 'd6rLMF7UoBqJvfdryu9V')
 # User-Agent real: sin esto, Cloudflare (escudo de GHL) bloquea con Error 1010
 # "browser signature blocked" la firma por defecto de urllib (Python-urllib/*).
 _GHL_UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
@@ -3851,7 +3856,8 @@ def _ghl_fetch_contact(c, contact_id):
     (custom field pqr_mensaje), canal, nombre, email y teléfono. GHL no resuelve
     los custom fields en el webhook → hay que jalarlos por la API. Devuelve dict
     con campos vacíos si falla (el caller decide qué hacer)."""
-    out = {'message': '', 'channel': '', 'fullName': '', 'email': '', 'phone': ''}
+    out = {'message': '', 'channel': '', 'fullName': '', 'email': '', 'phone': '',
+           'producto': '', 'lote': '', 'pedido': ''}
     token = _ghl_token(c)
     if not token or not contact_id:
         return out
@@ -3880,6 +3886,12 @@ def _ghl_fetch_contact(c, contact_id):
                 out['message'] = str(val)
             elif cid == _GHL_CF_CANAL:
                 out['channel'] = str(val)
+            elif cid == _GHL_CF_PRODUCTO:
+                out['producto'] = str(val)
+            elif cid == _GHL_CF_LOTE:
+                out['lote'] = str(val)
+            elif cid == _GHL_CF_PEDIDO:
+                out['pedido'] = str(val)
         return out
     except Exception as e:
         log.warning('GHL fetch contact %s falló: %s', contact_id, e)
@@ -3944,8 +3956,13 @@ def pqr_inbound():
 
     conn = get_db(); c = conn.cursor()
 
+    # Trazabilidad (llega solo por la API de GHL, no por el webhook)
+    producto = (d.get('producto') or '').strip()
+    lote = (d.get('lote') or '').strip()
+    pedido = (d.get('pedido') or d.get('pedido_numero') or '').strip()
+
     # GHL no resuelve los custom fields en el webhook → si el texto viene vacío
-    # pero hay contact_id, lo jalamos de la API de GHL (pqr_mensaje + pqr_canal).
+    # pero hay contact_id, lo jalamos de la API de GHL (mensaje + canal + trazabilidad).
     if not mensaje and ghl_contact_id:
         g = _ghl_fetch_contact(c, ghl_contact_id)
         if g.get('message'):
@@ -3955,6 +3972,9 @@ def pqr_inbound():
         contacto = contacto or g.get('fullName', '')
         email = email or g.get('email', '')
         telefono = telefono or g.get('phone', '')
+        producto = producto or g.get('producto', '')
+        lote = lote or g.get('lote', '')
+        pedido = pedido or g.get('pedido', '')
     canal = canal or 'otro'
     if not mensaje:
         return jsonify({'error': 'mensaje vacío'}), 400
@@ -3975,10 +3995,12 @@ def pqr_inbound():
     c.execute(
         "INSERT INTO pqr_inbox (ghl_message_id, ghl_contact_id, canal, contacto_nombre, contacto_email, "
         "contacto_telefono, mensaje, recibido_en, ia_empresa, ia_tipo, ia_severidad, ia_confianza, "
-        "ia_resumen, ia_razon, ia_fuente) VALUES (?,?,?,?,?,?,?,date('now','-5 hours'),?,?,?,?,?,?,?)",
+        "ia_resumen, ia_razon, ia_fuente, producto, lote, pedido_numero) "
+        "VALUES (?,?,?,?,?,?,?,date('now','-5 hours'),?,?,?,?,?,?,?,?,?,?)",
         (ghl_msg_id, ghl_contact_id, canal, contacto[:200], email[:200], telefono[:80], mensaje[:5000],
          clf['empresa'], clf['tipo'], clf['severidad'], clf['confianza'],
-         clf['resumen'], clf['razon'], clf['fuente']))
+         clf['resumen'], clf['razon'], clf['fuente'],
+         (producto or '')[:200], (lote or '')[:120], (pedido or '')[:80]))
     inbox_id = c.lastrowid
     rrow = c.execute("SELECT * FROM pqr_inbox WHERE id=?", (inbox_id,)).fetchone()
     row = dict(rrow) if rrow else {}
@@ -4005,11 +4027,12 @@ def pqr_inbox_listar():
     rows = c.execute(
         "SELECT id, ghl_message_id, canal, contacto_nombre, contacto_email, contacto_telefono, mensaje, recibido_en, "
         "ia_empresa, ia_tipo, ia_severidad, ia_confianza, ia_resumen, ia_razon, ia_fuente, estado, "
-        "destino_empresa, destino_tabla, destino_id FROM pqr_inbox WHERE estado=? "
+        "destino_empresa, destino_tabla, destino_id, producto, lote, pedido_numero FROM pqr_inbox WHERE estado=? "
         "ORDER BY (ia_confianza IS NULL) DESC, recibido_en DESC LIMIT 200", (estado,)).fetchall()
     cols = ['id', 'ghl_message_id', 'canal', 'contacto_nombre', 'contacto_email', 'contacto_telefono', 'mensaje',
             'recibido_en', 'ia_empresa', 'ia_tipo', 'ia_severidad', 'ia_confianza', 'ia_resumen',
-            'ia_razon', 'ia_fuente', 'estado', 'destino_empresa', 'destino_tabla', 'destino_id']
+            'ia_razon', 'ia_fuente', 'estado', 'destino_empresa', 'destino_tabla', 'destino_id',
+            'producto', 'lote', 'pedido_numero']
     items = [dict(zip(cols, r)) for r in rows]
     pend = c.execute("SELECT COUNT(*) FROM pqr_inbox WHERE estado='pendiente'").fetchone()[0]
     return jsonify({'inbox': items, 'pendientes': pend})

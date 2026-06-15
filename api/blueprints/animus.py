@@ -2159,7 +2159,7 @@ def animus_pqr_listar():
     estado = (request.args.get("estado") or "").strip()
     sql = ("SELECT id, codigo, canal, contacto_nombre, contacto_email, contacto_telefono, tipo, "
            "descripcion, prioridad, estado, asignado_a, respuesta, respondido_por, respondido_en, "
-           "creado_en FROM animus_pqr")
+           "pedido_numero, creado_en FROM animus_pqr")
     params = []
     if estado in _PQR_A_ESTADOS:
         sql += " WHERE estado=?"; params.append(estado)

@@ -1310,7 +1310,7 @@ async function loadAnimusPqr(){
           +'<td style="padding:6px"><b>'+(p.codigo||p.id)+'</b>'+pr+'</td>'
           +'<td>'+(_PQR_TIPO_LBL[p.tipo]||p.tipo)+'</td>'
           +'<td>'+(p.contacto_nombre||'—')+'</td>'
-          +'<td style="max-width:320px">'+(p.descripcion||'').replace(/</g,'&lt;')+'</td>'
+          +'<td style="max-width:320px">'+(p.descripcion||'').replace(/</g,'&lt;')+(p.pedido_numero?'<div style="font-size:0.82em;color:#0ea5e9">📦 Pedido '+String(p.pedido_numero).replace(/</g,'&lt;')+'</div>':'')+'</td>'
           +'<td><span style="color:'+est[1]+';font-weight:700">'+est[0]+'</span></td>'
           +'<td><button class="btn btn-outline" style="padding:3px 8px;font-size:0.8em" onclick="gestionarPqr('+p.id+',\''+p.estado+'\')">Gestionar</button></td>'
           +'</tr>';

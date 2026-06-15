@@ -102,6 +102,34 @@ def test_webhook_jala_mensaje_de_ghl_si_viene_vacio(app, db_clean, monkeypatch):
     assert r2.get_json().get('duplicado') is True
 
 
+def test_trazabilidad_producto_lote_pedido(app, db_clean, monkeypatch):
+    """Producto/lote (Espagiria) y pedido (Ánimus) se jalan de GHL y se guardan."""
+    import sys
+    A = sys.modules.get('blueprints.aseguramiento') or sys.modules.get('api.blueprints.aseguramiento')
+    monkeypatch.setattr(A, '_ghl_fetch_contact', lambda c, cid: {
+        'message': 'se me brotó la piel con el sérum', 'channel': 'instagram',
+        'fullName': 'Cli', 'email': '', 'phone': '',
+        'producto': 'Serum Vit C', 'lote': 'L240601', 'pedido': ''})
+    os.environ['PQR_WEBHOOK_SECRET'] = SECRET
+    cli = app.test_client()
+    cli.post('/api/pqr/inbound', json={'contact_id': 'C-esp'}, headers={'X-PQR-Token': SECRET})
+    c = _login(app, 'miguel')
+    inb = c.get('/api/aseguramiento/pqr-inbox').get_json()['inbox']
+    item = inb[0]
+    assert item['producto'] == 'Serum Vit C' and item['lote'] == 'L240601'
+    r = c.post('/api/aseguramiento/pqr-inbox/%d/enrutar' % item['id'],
+               json={'empresa': 'espagiria', 'tipo': 'reaccion_adversa'}, headers=csrf_headers())
+    assert r.status_code == 200
+    # la queja Espagiria quedó con producto/lote
+    import sqlite3
+    db = sqlite3.connect(os.environ['DB_PATH'])
+    try:
+        q = db.execute("SELECT producto, lote FROM quejas_clientes ORDER BY id DESC LIMIT 1").fetchone()
+    finally:
+        db.close()
+    assert q == ('Serum Vit C', 'L240601'), q
+
+
 def test_webhook_vacio_sin_contact_id_da_400(app, db_clean):
     os.environ['PQR_WEBHOOK_SECRET'] = SECRET
     c = app.test_client()

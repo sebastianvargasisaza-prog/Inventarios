@@ -328,6 +328,14 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (255, "PQR · trazabilidad desde GHL (14-jun): producto/lote (calidad) y nº de pedido "
+          "(comercial) leídos de los custom fields del contacto. Columnas en pqr_inbox + "
+          "pedido_numero en animus_pqr (quejas_clientes ya tiene producto/lote).", [
+        "ALTER TABLE pqr_inbox ADD COLUMN producto TEXT",
+        "ALTER TABLE pqr_inbox ADD COLUMN lote TEXT",
+        "ALTER TABLE pqr_inbox ADD COLUMN pedido_numero TEXT",
+        "ALTER TABLE animus_pqr ADD COLUMN pedido_numero TEXT",
+    ]),
     (254, "PQR omnicanal (14-jun): bandeja de triaje desde GHL (pqr_inbox · webhook "
           "/api/pqr/inbound · clasificación IA Espagiria vs Ánimus) + tabla animus_pqr "
           "(PQR comercial: envíos, producto equivocado, devoluciones, servicio). Los de "
