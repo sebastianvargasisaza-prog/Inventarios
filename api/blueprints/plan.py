@@ -10412,12 +10412,39 @@ def plan_auto_programar_sugeridas():
     except Exception:
         lote_kg_ovr = None
     conn = get_db()
+    # REEMPLAZAR (Sebastián 15-jun · "que no duplique · elimina lo que esté y programa
+    # lo nuevo"): al recalcular desde el modal por producto, primero CANCELA los lotes
+    # FUTUROS pendientes de ese producto (no iniciados ni terminados, no B2B, no
+    # retroactivo) → luego _auto_programar_sugeridas crea la cadena limpia. Es una
+    # acción explícita del usuario (no un proceso automático), por eso puede tocar Fijo.
+    n_reemplazados = 0
+    if d.get('reemplazar') and producto:
+        cur = conn.cursor()
+        _hoy_iso = _hoy_colombia().isoformat()
+        try:
+            _cancelar = cur.execute(
+                "SELECT id FROM produccion_programada "
+                "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) AND fin_real_at IS NULL "
+                "AND inicio_real_at IS NULL AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+                "AND COALESCE(origen,'') NOT IN ('eos_b2b','eos_retroactivo') "
+                "AND id NOT IN (SELECT COALESCE(lote_produccion_id,0) FROM pedidos_b2b_lote) "
+                "AND substr(fecha_programada,1,10) >= ?", (producto, _hoy_iso)).fetchall()
+        except Exception:
+            _cancelar = []
+        for _r in _cancelar:
+            cur.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id=?", (_r[0],))
+            audit_log(cur, usuario=user, accion='CANCELAR_LOTE_REEMPLAZO',
+                      tabla='produccion_programada', registro_id=_r[0],
+                      despues={'producto': producto, 'motivo': 'reemplazo_recalc_modal'})
+        if _cancelar:
+            conn.commit()
+        n_reemplazados = len(_cancelar)
     resultado = _auto_programar_sugeridas(
         conn, dias_horizonte=dh, cob_critico=cc, cob_alerta=ca,
         cob_vigilar=cv, usuario=user, producto_filtro=producto,
         origen_nuevo=origen, lote_kg_override=lote_kg_ovr,
     )
-    return jsonify({'ok': True, **resultado})
+    return jsonify({'ok': True, 'n_reemplazados': n_reemplazados, **resultado})
 
 
 @bp.route("/api/plan/limpiar-sugeridas-futuras", methods=["POST"])

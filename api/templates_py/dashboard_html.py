@@ -23925,32 +23925,46 @@ async function ckMarcar(itemId, estado){
       + '</div>';
   }
 
+  // Índices de productos que requieren acción (crítico/urgente) en orden de la lista ·
+  // para navegar con "Siguiente crítico" sin salir del modal.
+  function _navCriticos() {
+    const arr = window._NEC_PRODUCTOS_CACHE || [];
+    const out = [];
+    for (let i = 0; i < arr.length; i++) {
+      const u = (arr[i] || {}).urgencia;
+      if (u === 'CRITICO' || u === 'URGENTE') out.push(i);
+    }
+    return out;
+  }
+
   async function aplicarAccionSugerida(idx, btn) {
     const p = window._NEC_PRODUCTOS_CACHE[idx];
     if (!p) return;
     const st = document.getElementById('accion-sug-st-' + idx);
     const a = p.accion_sugerida, fobj = p.accion_fecha_objetivo;
+    const _cod = p.codigo_pt, _nom = p.producto_nombre;
     if (btn) { btn.disabled = true; }
-    if (st) st.innerHTML = '⏳ Aplicando...';
+    if (st) st.innerHTML = '⏳ Aplicando…';
     const _post = (url, body) => fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body), credentials:'same-origin'});
     try {
-      // 1) mover el lote existente (adelantar/atrasar)
+      // 1) adelantar/atrasar el lote existente (best-effort · el replan de abajo igual ajusta)
       if ((a === 'adelantar' || a === 'atrasar') && p.accion_lote_id && fobj) {
         let r = await _post('/api/plan/proximas/' + p.accion_lote_id + '/reprogramar', {nueva_fecha: fobj, razon: a + '_auto'});
-        let d = await r.json().catch(()=>({}));
-        if (!r.ok) {
-          // reintento forzando el día (override reglas de capacidad/festivo)
-          r = await _post('/api/plan/proximas/' + p.accion_lote_id + '/reprogramar', {nueva_fecha: fobj, razon: a + '_auto', skip_validacion_dia: true});
-          d = await r.json().catch(()=>({}));
-          if (!r.ok) { if (st) st.innerHTML = '<span style="color:#dc2626">No se pudo mover el lote: ' + (d.error || r.status) + '</span>'; if (btn) btn.disabled = false; return; }
-        }
+        if (!r.ok) { await _post('/api/plan/proximas/' + p.accion_lote_id + '/reprogramar', {nueva_fecha: fobj, razon: a + '_auto', skip_validacion_dia: true}); }
       }
-      // 2) recalcular el horizonte de ESTE producto (ajusta/crea lotes con la venta actual)
-      const r2 = await _post('/api/plan/auto-programar-sugeridas', {producto: p.producto_nombre, dias_horizonte: 365});
-      const d2 = await r2.json().catch(()=>({}));
-      if (!r2.ok) { if (st) st.innerHTML = '<span style="color:#dc2626">Error recalculando horizonte: ' + (d2.error || r2.status) + '</span>'; if (btn) btn.disabled = false; return; }
-      if (st) st.innerHTML = '<span style="color:#16a34a">✓ Aplicado (' + (d2.n_creados || 0) + ' lote(s) ajustados) · recargando…</span>';
-      setTimeout(() => { try { document.getElementById('solicitarModal').style.display = 'none'; } catch(e){} if (window.cargarNecesidades) cargarNecesidades(); }, 800);
+      // 2) recalcular REEMPLAZANDO: cancela los lotes futuros pendientes del producto
+      // (no iniciados/terminados, no B2B) y crea la cadena limpia · NO duplica.
+      const r2 = await _post('/api/plan/auto-programar-sugeridas', {producto: _nom, dias_horizonte: 365, reemplazar: true});
+      const d2 = await r2.json().catch(() => ({}));
+      if (!r2.ok) { if (st) st.innerHTML = '<span style="color:#dc2626">Error: ' + (d2.error || r2.status) + '</span>'; if (btn) btn.disabled = false; return; }
+      // 3) refrescar SIN cerrar el modal: recargar datos y re-renderizar el mismo producto
+      if (window.cargarNecesidades) { try { await cargarNecesidades(); } catch (e) {} }
+      const arr = window._NEC_PRODUCTOS_CACHE || [];
+      let ni = arr.findIndex(x => (x.codigo_pt && x.codigo_pt === _cod) || x.producto_nombre === _nom);
+      if (ni < 0) ni = idx;
+      abrirSolicitar(ni);
+      const st2 = document.getElementById('accion-sug-st-' + ni);
+      if (st2) st2.innerHTML = '<span style="color:#16a34a">✓ Hecho · ' + (d2.n_reemplazados || 0) + ' lote(s) viejos reemplazados · horizonte recalculado limpio.</span>';
     } catch (e) {
       if (st) st.innerHTML = '<span style="color:#dc2626">Error red: ' + e.message + '</span>';
       if (btn) btn.disabled = false;
@@ -24017,7 +24031,24 @@ async function ckMarcar(itemId, estado){
       avisos += '</details>';
     }
 
-    let html = '<div style="display:flex;gap:14px;margin-bottom:16px;align-items:center">';
+    // Navegación entre productos CRÍTICOS sin salir del modal (Sebastián 15-jun).
+    let html = '';
+    const _nav = _navCriticos();
+    const _pos = _nav.indexOf(idx);
+    if (_nav.length > 1) {
+      const _prev = (_pos > 0) ? _nav[_pos - 1] : null;
+      const _next = (_pos >= 0 && _pos < _nav.length - 1) ? _nav[_pos + 1] : (_pos === -1 ? _nav[0] : null);
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px">';
+      html += (_prev != null)
+        ? '<button onclick="abrirSolicitar(' + _prev + ')" style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">◀ Anterior</button>'
+        : '<span></span>';
+      html += '<span style="font-size:12px;color:#64748b;font-weight:700">' + (_pos >= 0 ? '🔴 Crítico ' + (_pos + 1) + ' de ' + _nav.length : 'Revisión de críticos') + '</span>';
+      html += (_next != null)
+        ? '<button onclick="abrirSolicitar(' + _next + ')" style="background:#6d28d9;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">Siguiente crítico ▶</button>'
+        : '<span></span>';
+      html += '</div>';
+    }
+    html += '<div style="display:flex;gap:14px;margin-bottom:16px;align-items:center">';
     html += imgHtml;
     html += '<div style="flex:1">' + presentacion + avisos + '</div>';
     html += '</div>';
