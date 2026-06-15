@@ -4181,8 +4181,8 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                 (p["dias_cobertura"] or 0) - cob_critico
                 if p["dias_cobertura"] is not None else 0
             )
-            from datetime import date as _date2, timedelta as _td2
-            hoy2 = _date2.today()
+            from datetime import timedelta as _td2
+            hoy2 = _hoy_colombia()  # M24 · Colombia, no date.today() UTC
             fecha_base = hoy2 + _td2(days=max(3, dias_hasta_critico))
             for d in (30, 60, 90):
                 kg_d = round(vel_kg_dia * d, 1)
@@ -4296,6 +4296,14 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         agendados = plan_por_producto.get(prod, [])
         p["planificacion"] = agendados
         proximo = next((a for a in agendados if a["estado"] != 'esperando_recurso'), None)
+        # M14 · marcar si el "próximo lote" tiene fecha PASADA (programado y nunca
+        # ejecutado) → es un lote ATRASADO, no una reposición que viene. La UI lo
+        # pinta en rojo en vez del badge azul de próximo lote.
+        if proximo and proximo.get("fecha"):
+            try:
+                proximo["atrasado"] = _date.fromisoformat(str(proximo["fecha"])[:10]) < hoy
+            except Exception:
+                proximo["atrasado"] = False
         p["proximo_lote"] = proximo
         pausados = [a for a in agendados if a["estado"] == 'esperando_recurso']
         p["lotes_pausados"] = pausados

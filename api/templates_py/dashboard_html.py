@@ -23627,23 +23627,32 @@ async function ckMarcar(itemId, estado){
         // programados/en producción) se muestra como anotación "+prod → Xd".
         const _dg = (p.dias_gondola != null) ? p.dias_gondola : null;
         const dias = _dg != null ? _dg + 'd' : (p.dias_cobertura != null ? p.dias_cobertura + 'd' : '—');
+        // El color del número = el MISMO del semáforo (urgencia del backend), para que
+        // número y emoji nunca se contradigan (M5). Fallback por días si no hay urgencia.
+        const _urgCol = {CRITICO:'#dc2626', URGENTE:'#ea580c', VIGILAR:'#d97706', OK:'#16a34a'};
         const diasColorReal = (_dg == null) ? cfg.text
-                            : (_dg < 20 ? '#dc2626' : (_dg < 40 ? '#d97706' : '#16a34a'));
+                            : (_urgCol[p.urgencia] || (_dg < 20 ? '#dc2626' : (_dg < 45 ? '#d97706' : '#16a34a')));
         // FIX 1-jun-2026 · en vez del confuso "+prod → Xd" (cobertura con el lote
         // grande / venta chica daba 355d), mostrar el PRÓXIMO LOTE: cuántas uds
         // entran para Animus DTC y cuándo. Más claro y accionable.
         let _prodInfo = '';
         const _pl = p.proximo_lote;
         if (_pl && _pl.fecha) {
-          const _mlu = p.ml_unidad || 30;
-          const _kgIn = (_pl.kg_dtc != null ? _pl.kg_dtc : _pl.kg) || 0;
-          const _udsIn = (_mlu > 0) ? Math.round(_kgIn * 1000 / _mlu) : 0;
-          if (_udsIn > 0) {
-            if (p.lote_tarde) {
-              // El stock se agota ANTES de que llegue este lote → adelantar
-              _prodInfo = '<div style="font-size:9px;color:#dc2626;font-weight:700" title="El stock físico se agota el ' + (p.agota_fecha||'') + ' pero el lote llega el ' + _pl.fecha.slice(0,10) + ' → ' + (p.dias_descubierto||0) + ' día(s) sin stock. Adelantá la producción.">⏩ lote TARDE ' + _pl.fecha.slice(5,10) + ' · ' + (p.dias_descubierto||0) + 'd sin stock</div>';
-            } else {
-              _prodInfo = '<div style="font-size:9px;color:#2563eb" title="próximo lote programado · unidades que entran para Animus DTC">📦 +' + _udsIn.toLocaleString('es-CO') + ' uds · ' + _pl.fecha.slice(5,10) + '</div>';
+          if (_pl.atrasado) {
+            // M14 · lote programado con fecha ya pasada que no se ejecutó → ATRASADO,
+            // no reposición que viene. Se pinta en rojo para que no dé falsa tranquilidad.
+            _prodInfo = '<div style="font-size:9px;color:#dc2626;font-weight:700" title="Hay un lote programado para una fecha YA PASADA que no se ha ejecutado. Está atrasado/atascado, no es reposición en camino. Revisá por qué no se produjo.">⚠ lote atrasado ' + _pl.fecha.slice(5,10) + ' · sin ejecutar</div>';
+          } else {
+            const _mlu = p.ml_unidad || 30;
+            const _kgIn = (_pl.kg_dtc != null ? _pl.kg_dtc : _pl.kg) || 0;
+            const _udsIn = (_mlu > 0) ? Math.round(_kgIn * 1000 / _mlu) : 0;
+            if (_udsIn > 0) {
+              if (p.lote_tarde) {
+                // El stock se agota ANTES de que llegue este lote → adelantar
+                _prodInfo = '<div style="font-size:9px;color:#dc2626;font-weight:700" title="El stock físico se agota el ' + (p.agota_fecha||'') + ' pero el lote llega el ' + _pl.fecha.slice(0,10) + ' → ' + (p.dias_descubierto||0) + ' día(s) sin stock. Adelantá la producción.">⏩ lote TARDE ' + _pl.fecha.slice(5,10) + ' · ' + (p.dias_descubierto||0) + 'd sin stock</div>';
+              } else {
+                _prodInfo = '<div style="font-size:9px;color:#2563eb" title="próximo lote programado · unidades que entran para Animus DTC">📦 +' + _udsIn.toLocaleString('es-CO') + ' uds · ' + _pl.fecha.slice(5,10) + '</div>';
+              }
             }
           }
         }
@@ -23663,8 +23672,12 @@ async function ckMarcar(itemId, estado){
         // Indicador "ya programado" minimal (cuántos lotes activos)
         let chipPlan = '';
         if ((p.planificacion || []).length) {
+          const _atr = !!(p.proximo_lote && p.proximo_lote.atrasado);
           const proxFecha = (p.proximo_lote && p.proximo_lote.fecha) ? p.proximo_lote.fecha.slice(5, 10) : '';
-          chipPlan = ' <span title="' + p.planificacion.length + ' lote(s) agendado(s) · click Programar para gestionar" style="background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700">📅 ' + proxFecha + '</span>';
+          const _cBg = _atr ? '#fee2e2' : '#dbeafe', _cFg = _atr ? '#991b1b' : '#1e40af';
+          const _cTit = _atr ? 'Lote programado para fecha pasada SIN ejecutar (atrasado) · click Programar para gestionar'
+                             : (p.planificacion.length + ' lote(s) agendado(s) · click Programar para gestionar');
+          chipPlan = ' <span title="' + _cTit + '" style="background:'+_cBg+';color:'+_cFg+';padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700">📅 ' + (_atr?'⚠ ':'') + proxFecha + '</span>';
         }
         // FEATURE B2B 24-may-2026 · chip B2B si algún lote tiene aportes B2B.
         // Muestra "+Xkg B2B" + tooltip con clientes (Fernando, etc.).
