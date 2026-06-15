@@ -10761,9 +10761,37 @@ def plan_diag_rescate():
             "FROM produccion_programada WHERE id IN (%s) AND COALESCE(estado,'')='cancelado' "
             "ORDER BY fecha_programada" % ph, tuple(bug_ids)).fetchall():
             aun_cancelados.append({'id': r[0], 'producto': r[1], 'fecha': r[2], 'origen': r[3]})
+    # 5) FORENSE: desglose por origen (futuro activo) — saber qué es Fijo vs Sugerido
+    origen_breakdown = [{'origen': r[0] or '(vacío)', 'lotes': r[1]} for r in cur.execute(
+        "SELECT COALESCE(origen,''), COUNT(*) FROM produccion_programada "
+        "WHERE substr(fecha_programada,1,10) >= ? AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+        "GROUP BY COALESCE(origen,'') ORDER BY COUNT(*) DESC", (hoy.isoformat(),)).fetchall()]
+    # 6) FORENSE: filas CREADAS recientemente (revela si un cron/sync las re-inyecta)
+    creados_recientes = []
+    try:
+        for r in cur.execute(
+            "SELECT substr(creado_en,1,10), COALESCE(origen,''), COUNT(*) FROM produccion_programada "
+            "WHERE creado_en >= ? GROUP BY substr(creado_en,1,10), COALESCE(origen,'') "
+            "ORDER BY substr(creado_en,1,10) DESC", ((hoy - _td5(days=4)).isoformat(),)).fetchall():
+            creados_recientes.append({'dia': r[0], 'origen': r[1] or '(vacío)', 'n': r[2]})
+    except Exception:
+        creados_recientes = []
+    # 7) FORENSE: acciones de audit_log sobre produccion_programada últimos 4 días
+    audit_reciente = []
+    try:
+        for r in cur.execute(
+            "SELECT accion, COUNT(*) FROM audit_log WHERE tabla='produccion_programada' "
+            "AND fecha >= ? GROUP BY accion ORDER BY COUNT(*) DESC",
+            ((hoy - _td5(days=4)).isoformat(),)).fetchall():
+            audit_reciente.append({'accion': r[0], 'n': r[1]})
+    except Exception:
+        audit_reciente = []
     return jsonify({
         'ok': True, 'hoy': hoy.isoformat(), 'ventana': [desde, hasta],
         'activos_por_mes': por_mes,
+        'origen_breakdown_futuro': origen_breakdown,
+        'creados_ultimos_4d': creados_recientes,
+        'audit_produccion_ultimos_4d': audit_reciente,
         'dias_con_lotes': dias,
         'restaurados_por_rescate': {'total': len(restaurados), 'detalle': restaurados},
         'aun_cancelados_por_bug': {'total': len(aun_cancelados), 'detalle': aun_cancelados[:80]},
