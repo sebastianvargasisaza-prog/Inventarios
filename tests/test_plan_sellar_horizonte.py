@@ -71,6 +71,26 @@ def test_sellar_protege_pasado_semana_y_b2b(app, db_clean):
     assert _estado(id_b2b) == 'pendiente'
 
 
+def test_reemplazar_no_hace_vanish(app, db_clean):
+    """BUG 15-jun: 'Aplicar y recalcular' (reemplazar) cancelaba el lote y, si el
+    planner no recreaba (sin velocidad/sin ancla), el producto desaparecía del
+    calendario. Ahora si no se recrea nada, RESTAURA lo cancelado (anti-vanish)."""
+    hoy = _hoy_co()
+    prod = 'PROD VANISH TEST'
+    fut = (hoy + _dt.timedelta(days=40)).isoformat()
+    lote_id = _seed(prod, fut)  # único lote futuro, producto sin velocidad en test
+    c = _login(app)
+    r = c.post('/api/plan/auto-programar-sugeridas',
+               json={'producto': prod, 'reemplazar': True, 'dias_horizonte': 365},
+               headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    j = r.get_json()
+    # sin velocidad → no recrea → restaura → el lote NO desaparece
+    assert j.get('n_creados', 0) == 0
+    assert j.get('restaurados', 0) >= 1
+    assert _estado(lote_id) == 'pendiente'  # restaurado, no cancelado
+
+
 def test_sellar_requiere_rol(app, db_clean):
     c = _login(app, 'valentina')  # sin admin/compras
     r = c.post('/api/plan/sellar-horizonte', json={'dry_run': True}, headers=csrf_headers())

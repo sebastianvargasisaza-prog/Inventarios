@@ -4090,6 +4090,20 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                 p["proxima_sugerida_fecha"] = None
                 p["proxima_sugerida_dias"] = None
                 p["proxima_clamped"] = False
+        elif p["velocidad_kg_dia"] > 0 and (lote_kg_efectivo or 0) > 0:
+            # FIX 15-jun-2026 · BOOTSTRAP sin historial: producto con VELOCIDAD pero
+            # SIN ancla (sin producción completada ni Fijo futuro) igual debe poder
+            # programarse · la próxima producción se basa en cuándo se agota la
+            # GÓNDOLA, no en una producción previa. Antes se saltaba ("sin última
+            # producción para calcular base") → al reemplazar (cancelar) desaparecía
+            # del calendario. La fecha base = hoy + (días góndola − buffer), clamp +3.
+            _dg = p.get("dias_gondola")
+            _dg = int(_dg) if _dg is not None else 0
+            proxima = max(hoy + _td(days=max(0, _dg - cob_alerta)), hoy + _td(days=3))
+            p["duracion_lote_dias"] = None
+            p["proxima_sugerida_fecha"] = proxima.isoformat()
+            p["proxima_sugerida_dias"] = (proxima - hoy).days
+            p["proxima_clamped"] = True
         else:
             p["duracion_lote_dias"] = None
             p["proxima_sugerida_fecha"] = None
@@ -10418,12 +10432,13 @@ def plan_auto_programar_sugeridas():
     # retroactivo) → luego _auto_programar_sugeridas crea la cadena limpia. Es una
     # acción explícita del usuario (no un proceso automático), por eso puede tocar Fijo.
     n_reemplazados = 0
+    _cancelados_ids = []
     if d.get('reemplazar') and producto:
         cur = conn.cursor()
         _hoy_iso = _hoy_colombia().isoformat()
         try:
             _cancelar = cur.execute(
-                "SELECT id FROM produccion_programada "
+                "SELECT id, COALESCE(estado,'pendiente') FROM produccion_programada "
                 "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) AND fin_real_at IS NULL "
                 "AND inicio_real_at IS NULL AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
                 "AND COALESCE(origen,'') NOT IN ('eos_b2b','eos_retroactivo') "
@@ -10438,12 +10453,26 @@ def plan_auto_programar_sugeridas():
                       despues={'producto': producto, 'motivo': 'reemplazo_recalc_modal'})
         if _cancelar:
             conn.commit()
+        _cancelados_ids = [(r[0], r[1]) for r in _cancelar]
         n_reemplazados = len(_cancelar)
     resultado = _auto_programar_sugeridas(
         conn, dias_horizonte=dh, cob_critico=cc, cob_alerta=ca,
         cob_vigilar=cv, usuario=user, producto_filtro=producto,
         origen_nuevo=origen, lote_kg_override=lote_kg_ovr,
     )
+    # ANTI-VANISH (FIX 15-jun): si reemplazamos pero el planner NO recreó nada para
+    # el producto, RESTAURAR lo cancelado · nunca dejar el producto sin lotes.
+    if _cancelados_ids and (resultado.get('n_creados', 0) or 0) == 0:
+        cur = conn.cursor()
+        for _id, _est in _cancelados_ids:
+            cur.execute("UPDATE produccion_programada SET estado=? WHERE id=? AND estado='cancelado'", (_est, _id))
+            audit_log(cur, usuario=user, accion='RESTAURAR_LOTE_REEMPLAZO',
+                      tabla='produccion_programada', registro_id=_id,
+                      despues={'producto': producto, 'motivo': 'replan_no_creo_nada_anti_vanish'})
+        conn.commit()
+        n_reemplazados = 0
+        resultado = {**resultado, 'restaurados': len(_cancelados_ids),
+                     'aviso': 'No se recalculó ningún lote nuevo (sin velocidad/datos base) · se conservó el plan existente.'}
     return jsonify({'ok': True, 'n_reemplazados': n_reemplazados, **resultado})
 
 
@@ -10487,6 +10516,8 @@ def plan_sellar_horizonte():
                'n_a_cancelar': len(rows), 'productos_afectados': len(por_prod)}
     if dry:
         return jsonify({'ok': True, 'dry_run': True, **preview})
+    # guardar (id, producto, estado_original) para poder restaurar anti-vanish
+    cancelados = [(r[0], r[1], 'pendiente') for r in rows]
     for r in rows:
         cur.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id=?", (r[0],))
         audit_log(cur, usuario=user, accion='SELLAR_CANCELAR_LOTE', tabla='produccion_programada',
@@ -10494,8 +10525,28 @@ def plan_sellar_horizonte():
     conn.commit()
     resultado = _auto_programar_sugeridas(conn, dias_horizonte=365, cob_critico=20,
                                           cob_alerta=25, cob_vigilar=45, usuario=user)
-    return jsonify({'ok': True, 'dry_run': False, 'n_cancelados': len(rows),
-                    'productos_afectados': len(por_prod), **resultado})
+    # ANTI-VANISH (FIX 15-jun): productos cuyo lote futuro se canceló y que el replan
+    # NO recreó (quedaron con CERO lote futuro activo) → restaurar lo cancelado.
+    restaurados = 0
+    cur2 = conn.cursor()
+    activos = set()
+    try:
+        for ar in cur2.execute(
+            "SELECT DISTINCT UPPER(TRIM(producto)) FROM produccion_programada "
+            "WHERE substr(fecha_programada,1,10) > ? AND COALESCE(estado,'') NOT IN ('cancelado','completado')",
+            (corte,)).fetchall():
+            activos.add(ar[0])
+    except Exception:
+        activos = None
+    if activos is not None:
+        for _id, _prod, _est in cancelados:
+            if (_prod or '').strip().upper() not in activos:
+                cur2.execute("UPDATE produccion_programada SET estado=? WHERE id=? AND estado='cancelado'", (_est, _id))
+                restaurados += 1
+        if restaurados:
+            conn.commit()
+    return jsonify({'ok': True, 'dry_run': False, 'n_cancelados': len(rows) - restaurados,
+                    'restaurados': restaurados, 'productos_afectados': len(por_prod), **resultado})
 
 
 @bp.route("/api/plan/limpiar-sugeridas-futuras", methods=["POST"])
