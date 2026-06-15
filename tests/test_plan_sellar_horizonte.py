@@ -121,6 +121,32 @@ def test_recuperar_cancelados_bug(app, db_clean):
     assert _estado(lote_id) == 'pendiente'  # recuperado
 
 
+def test_backfill_fabricacion(app, db_clean):
+    """CAUSA RAÍZ 15-jun: las producciones de Fabricación (tabla producciones) no
+    llegan al calendario ni al ancla → backfill las trae como completados
+    retroactivos (con fin_real_at) e idempotente."""
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    conn.execute("INSERT INTO producciones (producto,cantidad,fecha,estado,lote) VALUES (?,?,?,?,?)",
+                 ('PROD FAB TEST', 40, '2026-06-03T08:00:00', 'Completado', 'PROD-77001'))
+    conn.commit(); conn.close()
+    c = _login(app)
+    dg = c.post('/api/plan/backfill-fabricacion', json={'dry_run': True}, headers=csrf_headers())
+    assert dg.status_code == 200, dg.data[:300]
+    assert dg.get_json()['a_crear'] >= 1
+    r = c.post('/api/plan/backfill-fabricacion', json={'dry_run': False}, headers=csrf_headers())
+    assert r.status_code == 200
+    assert r.get_json()['creados'] >= 1
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    row = conn.execute("SELECT estado, origen, fin_real_at, COALESCE(kg_real,0) FROM produccion_programada "
+                       "WHERE producto='PROD FAB TEST'").fetchone()
+    conn.close()
+    assert row and row[0] == 'completado' and row[1] == 'eos_retroactivo'
+    assert row[2] is not None and row[3] == 40  # fin_real_at puesto (lo ve el ancla) + kg
+    # idempotente
+    r2 = c.post('/api/plan/backfill-fabricacion', json={'dry_run': False}, headers=csrf_headers())
+    assert r2.get_json()['creados'] == 0
+
+
 def test_sellar_requiere_rol(app, db_clean):
     c = _login(app, 'valentina')  # sin admin/compras
     r = c.post('/api/plan/sellar-horizonte', json={'dry_run': True}, headers=csrf_headers())

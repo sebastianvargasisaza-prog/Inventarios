@@ -10549,6 +10549,168 @@ def plan_sellar_horizonte():
                     'restaurados': restaurados, 'productos_afectados': len(por_prod), **resultado})
 
 
+@bp.route("/api/plan/backfill-fabricacion", methods=["GET", "POST"])
+def plan_backfill_fabricacion():
+    """Sebastián 15-jun · CAUSA RAÍZ del vanish + 'faltan los que ya produjimos'.
+
+    El ancla del cálculo (ultima_prod, ~3927) y el calendario leen SOLO
+    produccion_programada con fin_real_at. Pero las producciones registradas por
+    Fabricación (POST /api/producciones · inventario.py:2305) escriben SOLO en la
+    tabla `producciones` → no aparecen en el calendario NI le dan ancla al planner
+    (por eso SUERO MULTIPEPTIDOS, ya producido, se saltaba/desaparecía).
+
+    Este backfill crea un lote COMPLETADO retroactivo en produccion_programada por
+    cada producción de Fabricación que no esté ya representada → aparecen en su
+    fecha real Y sirven de base al cálculo. origen='eos_retroactivo' (Fijo,
+    intocable), inventario YA descontado (no re-descuenta). Idempotente: marca
+    [fab#<id>] en observaciones y nunca duplica.
+
+    GET o {dry_run:true} → preview · {dry_run:false} → ejecuta.
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    d = request.get_json(silent=True) or {}
+    dry = (request.method == 'GET') or bool(d.get('dry_run', True))
+    conn = get_db(); cur = conn.cursor()
+    # producciones de Fabricación ya hechas
+    prods = cur.execute(
+        "SELECT id, producto, COALESCE(cantidad,0), fecha, COALESCE(lote,''), COALESCE(estado,'') "
+        "FROM producciones WHERE COALESCE(cantidad,0) > 0 AND fecha IS NOT NULL AND TRIM(fecha) <> '' "
+        "ORDER BY fecha").fetchall()
+    # ya backfilleadas (marcador [fab#<id>])
+    ya = set()
+    import re as _re
+    for r in cur.execute("SELECT COALESCE(observaciones,'') FROM produccion_programada "
+                         "WHERE origen='eos_retroactivo' AND observaciones LIKE '%[fab#%'").fetchall():
+        for m in _re.findall(r'\[fab#(\d+)\]', r[0] or ''):
+            try:
+                ya.add(int(m))
+            except ValueError:
+                pass
+    # (producto, fecha) ya ejecutadas en el calendario → no duplicar
+    ejec = set()
+    for r in cur.execute(
+        "SELECT UPPER(TRIM(producto)), substr(fecha_programada,1,10) FROM produccion_programada "
+        "WHERE fin_real_at IS NOT NULL AND COALESCE(estado,'') NOT IN ('cancelado')").fetchall():
+        ejec.add((r[0], r[1]))
+    a_crear = []
+    saltados_dup = 0
+    saltados_ya = 0
+    for pid, prod, cant, fecha, lote, est in prods:
+        if pid in ya:
+            saltados_ya += 1
+            continue
+        fd = (fecha or '')[:10]
+        if len(fd) != 10 or fd[4] != '-':
+            continue
+        key = ((prod or '').strip().upper(), fd)
+        if key in ejec:
+            saltados_dup += 1
+            continue
+        a_crear.append({'prod_id': pid, 'producto': prod, 'cantidad_kg': round(float(cant), 3),
+                        'fecha': fd, 'fecha_full': fecha, 'lote': lote})
+    # resumen por mes para el preview
+    por_mes = {}
+    for it in a_crear:
+        por_mes[it['fecha'][:7]] = por_mes.get(it['fecha'][:7], 0) + 1
+    preview = {'producciones_total': len(prods), 'ya_backfilleadas': saltados_ya,
+               'saltadas_por_duplicado': saltados_dup, 'a_crear': len(a_crear),
+               'por_mes': [{'mes': k, 'n': por_mes[k]} for k in sorted(por_mes)],
+               'muestra': a_crear[:25]}
+    if dry:
+        return jsonify({'ok': True, 'dry_run': True, **preview})
+    # ejecutar · INSERT por columnas (valores Python, sin date() en DML)
+    creados = 0
+    for it in a_crear:
+        obs = ('Retroactivo de Fabricación [fab#%d]' % it['prod_id']) + (' lote=%s' % it['lote'] if it['lote'] else '')
+        cur.execute(
+            "INSERT INTO produccion_programada "
+            "(producto, fecha_programada, lotes, estado, origen, cantidad_kg, kg_real, "
+            " inicio_real_at, fin_real_at, inventario_descontado_at, observaciones, creado_en) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (it['producto'], it['fecha'], 1, 'completado', 'eos_retroactivo',
+             it['cantidad_kg'], it['cantidad_kg'], it['fecha_full'], it['fecha_full'],
+             it['fecha_full'], obs, it['fecha_full']))
+        nid = cur.lastrowid
+        creados += 1
+        audit_log(cur, usuario=user, accion='BACKFILL_FABRICACION', tabla='produccion_programada',
+                  registro_id=nid, despues={'producto': it['producto'], 'fecha': it['fecha'],
+                                            'kg': it['cantidad_kg'], 'fab_id': it['prod_id']})
+    conn.commit()
+    return jsonify({'ok': True, 'dry_run': False, 'creados': creados, **preview})
+
+
+@bp.route("/api/plan/diag-rescate", methods=["GET"])
+def plan_diag_rescate():
+    """Sebastián 15-jun · diagnóstico read-only del estado del calendario tras el
+    rescate · para ver QUÉ quedó por día, qué se restauró y qué sigue cancelado,
+    sin tocar nada. Abrir en el navegador (logueado)."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    conn = get_db(); cur = conn.cursor()
+    from datetime import timedelta as _td5
+    hoy = _hoy_colombia()
+    desde = (hoy - _td5(days=20)).isoformat()
+    hasta = (hoy + _td5(days=60)).isoformat()
+    # 1) activos por mes (lo que se vería en el calendario)
+    por_mes = [{'mes': r[0], 'lotes': r[1]} for r in cur.execute(
+        "SELECT substr(fecha_programada,1,7), COUNT(*) FROM produccion_programada "
+        "WHERE COALESCE(estado,'') NOT IN ('cancelado') GROUP BY substr(fecha_programada,1,7) "
+        "ORDER BY substr(fecha_programada,1,7)").fetchall()]
+    # 2) por día en la ventana visible (productos + origen + estado)
+    por_dia = {}
+    for r in cur.execute(
+        "SELECT substr(fecha_programada,1,10), producto, COALESCE(cantidad_kg,0), COALESCE(origen,''), "
+        "COALESCE(estado,'pendiente'), CASE WHEN inicio_real_at IS NOT NULL OR fin_real_at IS NOT NULL THEN 1 ELSE 0 END "
+        "FROM produccion_programada WHERE substr(fecha_programada,1,10) BETWEEN ? AND ? "
+        "AND COALESCE(estado,'') NOT IN ('cancelado') ORDER BY fecha_programada, producto", (desde, hasta)).fetchall():
+        por_dia.setdefault(r[0], []).append(
+            {'producto': r[1], 'kg': r[2], 'origen': r[3], 'estado': r[4], 'ejecutado': bool(r[5])})
+    dias = [{'fecha': k, 'n': len(v), 'lotes': v} for k, v in sorted(por_dia.items())]
+    # 3) restaurados por el rescate (audit RESTAURAR_BUG_VANISH)
+    rest_ids = set()
+    for r in cur.execute("SELECT DISTINCT registro_id FROM audit_log WHERE accion='RESTAURAR_BUG_VANISH'").fetchall():
+        try:
+            rest_ids.add(int(str(r[0]).strip()))
+        except (ValueError, TypeError):
+            pass
+    restaurados = []
+    if rest_ids:
+        ph = ",".join(["?"] * len(rest_ids))
+        for r in cur.execute(
+            "SELECT id, producto, substr(fecha_programada,1,10), COALESCE(estado,''), COALESCE(origen,'') "
+            "FROM produccion_programada WHERE id IN (%s) ORDER BY fecha_programada" % ph, tuple(rest_ids)).fetchall():
+            restaurados.append({'id': r[0], 'producto': r[1], 'fecha': r[2], 'estado': r[3], 'origen': r[4]})
+    # 4) aún cancelados por el bug (no recuperados)
+    bug_ids = set()
+    for r in cur.execute("SELECT DISTINCT registro_id FROM audit_log "
+                         "WHERE accion IN ('SELLAR_CANCELAR_LOTE','CANCELAR_LOTE_REEMPLAZO') "
+                         "AND registro_id IS NOT NULL").fetchall():
+        try:
+            bug_ids.add(int(str(r[0]).strip()))
+        except (ValueError, TypeError):
+            pass
+    aun_cancelados = []
+    if bug_ids:
+        ph = ",".join(["?"] * len(bug_ids))
+        for r in cur.execute(
+            "SELECT id, producto, substr(fecha_programada,1,10), COALESCE(origen,'') "
+            "FROM produccion_programada WHERE id IN (%s) AND COALESCE(estado,'')='cancelado' "
+            "ORDER BY fecha_programada" % ph, tuple(bug_ids)).fetchall():
+            aun_cancelados.append({'id': r[0], 'producto': r[1], 'fecha': r[2], 'origen': r[3]})
+    return jsonify({
+        'ok': True, 'hoy': hoy.isoformat(), 'ventana': [desde, hasta],
+        'activos_por_mes': por_mes,
+        'dias_con_lotes': dias,
+        'restaurados_por_rescate': {'total': len(restaurados), 'detalle': restaurados},
+        'aun_cancelados_por_bug': {'total': len(aun_cancelados), 'detalle': aun_cancelados[:80]},
+    })
+
+
 @bp.route("/api/plan/recuperar-cancelados-bug", methods=["GET", "POST"])
 def plan_recuperar_cancelados_bug():
     """Sebastián 15-jun · RESCATE del bug anti-vanish (commit 8c2a9dd · vivo hasta 9ed05f2).
@@ -13656,6 +13818,8 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
         style="font-size:14px;padding:10px 18px" title="Limpia duplicados y recalcula TODO el horizonte futuro · conserva lo pasado, esta semana, lo iniciado y los B2B">🔒 Sellar plan limpio</button>
       <button onclick="recuperarCancelados()" class="warning" id="btn-recuperar"
         style="font-size:14px;padding:10px 18px" title="Recupera lotes que se hayan perdido por el bug de cancelación (anti-vanish). No duplica: solo trae de vuelta lo que desapareció y lo de esta semana.">♻️ Recuperar lotes perdidos</button>
+      <button onclick="backfillFabricacion()" class="secondary" id="btn-backfill"
+        style="font-size:14px;padding:10px 18px" title="Trae al calendario las producciones que ya hiciste en Fabricación (lotes completados retroactivos). Aparecen en su fecha real y sirven de base al cálculo. No duplica.">🏭 Traer producciones de Fabricación</button>
       <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" style="display:none" disabled>✅ Confirmar y programar TODO</button>
     </div>
   </div>
@@ -13775,6 +13939,33 @@ async function recuperarCancelados(){
     if (typeof cargar === 'function') cargar();
   } catch(e){ alert('Error red: ' + e.message); }
   finally { if (btn){ btn.disabled = false; btn.textContent = '♻️ Recuperar lotes perdidos'; } }
+}
+
+// 🏭 Trae al calendario las producciones ya hechas en Fabricación (tabla producciones)
+// como lotes completados retroactivos · aparecen en su fecha real y dan ancla al cálculo.
+async function backfillFabricacion(){
+  const btn = document.getElementById('btn-backfill');
+  const _post = (body) => fetch('/api/plan/backfill-fabricacion', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()}, credentials:'same-origin', body: JSON.stringify(body)});
+  try {
+    if (btn){ btn.disabled = true; btn.textContent = '🏭 Revisando…'; }
+    const r = await _post({dry_run:true});
+    const d = await r.json();
+    if (!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+    if (!d.a_crear){
+      alert('✓ El calendario ya tiene todas las producciones de Fabricación.\\n\\n' + (d.producciones_total||0) + ' producción(es) revisadas · ' + (d.ya_backfilleadas||0) + ' ya traídas · ' + (d.saltadas_por_duplicado||0) + ' ya estaban en el calendario.');
+      return;
+    }
+    const meses = (d.por_mes||[]).map(m=>'• ' + m.mes + ': ' + m.n + ' lote(s)').join('\\n');
+    const ok = confirm('🏭 TRAER PRODUCCIONES DE FABRICACIÓN\\n\\nSe van a agregar al calendario ' + d.a_crear + ' producción(es) que ya hiciste (lotes COMPLETADOS retroactivos), en su fecha real:\\n\\n' + meses + '\\n\\nQuedan como Fijo intocable, con inventario ya descontado (no re-descuenta). Sirven de base al cálculo de planeación.\\n\\n¿Traerlas?');
+    if (!ok){ return; }
+    if (btn){ btn.textContent = '🏭 Trayendo…'; }
+    const r2 = await _post({dry_run:false});
+    const d2 = await r2.json();
+    if (!r2.ok){ alert('Error: ' + (d2.error || r2.status)); return; }
+    alert('✓ Traídas ' + (d2.creados||0) + ' producción(es) de Fabricación al calendario.\\n\\nYa aparecen en su fecha y el cálculo de próximas producciones tiene base. Ahora podés sellar el plan para recalcular el futuro limpio.');
+    if (typeof cargar === 'function') cargar();
+  } catch(e){ alert('Error red: ' + e.message); }
+  finally { if (btn){ btn.disabled = false; btn.textContent = '🏭 Traer producciones de Fabricación'; } }
 }
 
 async function cargar(){
