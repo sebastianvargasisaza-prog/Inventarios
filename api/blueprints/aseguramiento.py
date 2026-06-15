@@ -3831,6 +3831,11 @@ def _marcar_inbox_enrutado(c, inbox_id, empresa, tabla, dest_id, dest_cod, user)
 # IDs de los campos personalizados de GHL (overridables por env si cambian)
 _GHL_CF_MENSAJE = os.environ.get('GHL_CF_PQR_MENSAJE', '6FFSOWuvBhGFAlNdevVk')
 _GHL_CF_CANAL = os.environ.get('GHL_CF_PQR_CANAL', 'N9OHPbhy24ODqxNwg1iQ')
+# User-Agent real: sin esto, Cloudflare (escudo de GHL) bloquea con Error 1010
+# "browser signature blocked" la firma por defecto de urllib (Python-urllib/*).
+_GHL_UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+           '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36')
+_GHL_HEADERS_BASE = {'Version': '2021-07-28', 'Accept': 'application/json', 'User-Agent': _GHL_UA}
 
 
 def _ghl_token(c):
@@ -3852,10 +3857,8 @@ def _ghl_fetch_contact(c, contact_id):
         return out
     try:
         import urllib.request as _ur
-        req = _ur.Request(
-            "https://services.leadconnectorhq.com/contacts/" + str(contact_id),
-            headers={"Authorization": "Bearer " + token, "Version": "2021-07-28",
-                     "Accept": "application/json"})
+        _h = dict(_GHL_HEADERS_BASE); _h["Authorization"] = "Bearer " + token
+        req = _ur.Request("https://services.leadconnectorhq.com/contacts/" + str(contact_id), headers=_h)
         with _ur.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         ct = data.get('contact') or data
@@ -3904,8 +3907,8 @@ def pqr_ghl_test(contact_id):
     for label, url in (('v2', 'https://services.leadconnectorhq.com/contacts/' + contact_id),
                        ('v1', 'https://rest.gohighlevel.com/v1/contacts/' + contact_id)):
         try:
-            req = _ur.Request(url, headers={'Authorization': 'Bearer ' + token,
-                                            'Version': '2021-07-28', 'Accept': 'application/json'})
+            _h = dict(_GHL_HEADERS_BASE); _h['Authorization'] = 'Bearer ' + token
+            req = _ur.Request(url, headers=_h)
             with _ur.urlopen(req, timeout=15) as r:
                 res[label] = {'status': r.status, 'preview': r.read().decode('utf-8', 'replace')[:1000]}
         except _ue.HTTPError as e:
