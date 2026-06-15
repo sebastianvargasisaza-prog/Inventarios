@@ -147,6 +147,25 @@ def test_backfill_fabricacion(app, db_clean):
     assert r2.get_json()['creados'] == 0
 
 
+def test_dedup_mismo_dia(app, db_clean):
+    """15-jun: lotes duplicados del mismo producto el mismo día → mantiene el de
+    mayor kg, cancela el resto; no toca productos sin duplicado."""
+    hoy = _hoy_co()
+    f = (hoy + _dt.timedelta(days=2)).isoformat()
+    ids = [_seed('DEDUP TEST', f) for _ in range(3)]   # 3 iguales (30kg)
+    solo = _seed('SOLO TEST', f)                         # sin duplicado
+    c = _login(app)
+    dg = c.post('/api/plan/dedup-mismo-dia', json={'dry_run': True}, headers=csrf_headers())
+    assert dg.status_code == 200
+    j = dg.get_json()
+    assert j['grupos_con_duplicado'] == 1 and j['lotes_a_cancelar'] == 2
+    r = c.post('/api/plan/dedup-mismo-dia', json={'dry_run': False}, headers=csrf_headers())
+    assert r.status_code == 200 and r.get_json()['cancelados'] == 2
+    activos = [i for i in ids if _estado(i) != 'cancelado']
+    assert len(activos) == 1                              # queda uno
+    assert _estado(solo) == 'pendiente'                  # el sin-dup intacto
+
+
 def test_sellar_requiere_rol(app, db_clean):
     c = _login(app, 'valentina')  # sin admin/compras
     r = c.post('/api/plan/sellar-horizonte', json={'dry_run': True}, headers=csrf_headers())

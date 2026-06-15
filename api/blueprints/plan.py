@@ -10549,6 +10549,65 @@ def plan_sellar_horizonte():
                     'restaurados': restaurados, 'productos_afectados': len(por_prod), **resultado})
 
 
+@bp.route("/api/plan/dedup-mismo-dia", methods=["GET", "POST"])
+def plan_dedup_mismo_dia():
+    """Sebastián 15-jun · limpia lotes DUPLICADOS del mismo producto el MISMO día
+    (apilón del 16-jun tras el rescate · BOOSTER TENSOR ×4, etc.). Mantiene UNO por
+    (producto, fecha) — el de mayor kg (desempate: menor id) — y cancela el resto.
+    Solo toca pendientes futuros NO ejecutados, NO B2B/retroactivo. dry_run por
+    defecto → preview. Reversible (estado='cancelado' + audit)."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    d = request.get_json(silent=True) or {}
+    dry = (request.method == 'GET') or bool(d.get('dry_run', True))
+    conn = get_db(); cur = conn.cursor()
+    hoy = _hoy_colombia().isoformat()
+    rows = cur.execute(
+        "SELECT id, producto, substr(fecha_programada,1,10), COALESCE(cantidad_kg,0), COALESCE(origen,'') "
+        "FROM produccion_programada "
+        "WHERE substr(fecha_programada,1,10) >= ? AND fin_real_at IS NULL AND inicio_real_at IS NULL "
+        "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+        "AND COALESCE(origen,'') NOT IN ('eos_b2b','eos_retroactivo') "
+        "AND id NOT IN (SELECT COALESCE(lote_produccion_id,0) FROM pedidos_b2b_lote) "
+        "ORDER BY producto, substr(fecha_programada,1,10), COALESCE(cantidad_kg,0) DESC, id", (hoy,)).fetchall()
+    # agrupar por (producto_norm, fecha)
+    grupos = {}
+    for _id, prod, fecha, kg, origen in rows:
+        grupos.setdefault(((prod or '').strip().upper(), fecha),
+                          {'producto': prod, 'fecha': fecha, 'lotes': []})['lotes'].append(
+            {'id': _id, 'kg': kg, 'origen': origen})
+    detalle = []
+    a_cancelar = []
+    for g in grupos.values():
+        if len(g['lotes']) < 2:
+            continue
+        # ya vienen ordenados por kg DESC, id ASC → mantener el primero
+        mantener = g['lotes'][0]
+        cancelar = g['lotes'][1:]
+        detalle.append({'producto': g['producto'], 'fecha': g['fecha'],
+                        'total': len(g['lotes']), 'mantiene_id': mantener['id'],
+                        'mantiene_kg': mantener['kg'], 'cancela': len(cancelar),
+                        'cancela_kg': [x['kg'] for x in cancelar]})
+        a_cancelar.extend([x['id'] for x in cancelar])
+    detalle.sort(key=lambda x: (-x['cancela'], x['fecha'], x['producto']))
+    preview = {'grupos_con_duplicado': len(detalle), 'lotes_a_cancelar': len(a_cancelar), 'detalle': detalle}
+    if dry:
+        return jsonify({'ok': True, 'dry_run': True, **preview})
+    cancelados = 0
+    for _id in a_cancelar:
+        cur.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id=? "
+                    "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+                    "AND fin_real_at IS NULL AND inicio_real_at IS NULL", (_id,))
+        if cur.rowcount:
+            cancelados += 1
+            audit_log(cur, usuario=user, accion='DEDUP_MISMO_DIA', tabla='produccion_programada',
+                      registro_id=_id, despues={'motivo': 'duplicado_mismo_dia_mismo_producto'})
+    conn.commit()
+    return jsonify({'ok': True, 'dry_run': False, 'cancelados': cancelados, **preview})
+
+
 @bp.route("/api/plan/backfill-fabricacion", methods=["GET", "POST"])
 def plan_backfill_fabricacion():
     """Sebastián 15-jun · CAUSA RAÍZ del vanish + 'faltan los que ya produjimos'.
@@ -13820,6 +13879,8 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
         style="font-size:14px;padding:10px 18px" title="Recupera lotes que se hayan perdido por el bug de cancelación (anti-vanish). No duplica: solo trae de vuelta lo que desapareció y lo de esta semana.">♻️ Recuperar lotes perdidos</button>
       <button onclick="backfillFabricacion()" class="secondary" id="btn-backfill"
         style="font-size:14px;padding:10px 18px" title="Trae al calendario las producciones que ya hiciste en Fabricación (lotes completados retroactivos). Aparecen en su fecha real y sirven de base al cálculo. No duplica.">🏭 Traer producciones de Fabricación</button>
+      <button onclick="dedupMismoDia()" class="warning" id="btn-dedup"
+        style="font-size:14px;padding:10px 18px" title="Limpia lotes duplicados del MISMO producto el MISMO día (ej. el apilón del 16). Mantiene uno por día y cancela los repetidos. Vista previa antes de aplicar.">🧹 Limpiar duplicados del día</button>
       <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" style="display:none" disabled>✅ Confirmar y programar TODO</button>
     </div>
   </div>
@@ -13966,6 +14027,32 @@ async function backfillFabricacion(){
     if (typeof cargar === 'function') cargar();
   } catch(e){ alert('Error red: ' + e.message); }
   finally { if (btn){ btn.disabled = false; btn.textContent = '🏭 Traer producciones de Fabricación'; } }
+}
+
+// 🧹 Limpia lotes duplicados del mismo producto el mismo día (mantiene uno, cancela el resto).
+async function dedupMismoDia(){
+  const btn = document.getElementById('btn-dedup');
+  const _post = (body) => fetch('/api/plan/dedup-mismo-dia', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()}, credentials:'same-origin', body: JSON.stringify(body)});
+  try {
+    if (btn){ btn.disabled = true; btn.textContent = '🧹 Revisando…'; }
+    const r = await _post({dry_run:true});
+    const d = await r.json();
+    if (!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+    if (!d.lotes_a_cancelar){
+      alert('✓ No hay duplicados del mismo día. El calendario está limpio.');
+      return;
+    }
+    const lista = (d.detalle||[]).slice(0,15).map(g=>'• ' + g.fecha + ' · ' + g.producto + ': ' + g.total + ' lotes → mantener 1 (' + g.mantiene_kg + 'kg), cancelar ' + g.cancela).join('\\n');
+    const ok = confirm('🧹 LIMPIAR DUPLICADOS DEL MISMO DÍA\\n\\nHay ' + d.grupos_con_duplicado + ' producto(s)/día con repetidos · se van a cancelar ' + d.lotes_a_cancelar + ' lote(s) duplicado(s), manteniendo el de mayor kg:\\n\\n' + lista + ((d.detalle||[]).length>15 ? '\\n…' : '') + '\\n\\n(Reversible · queda en auditoría.) ¿Limpiar?');
+    if (!ok){ return; }
+    if (btn){ btn.textContent = '🧹 Limpiando…'; }
+    const r2 = await _post({dry_run:false});
+    const d2 = await r2.json();
+    if (!r2.ok){ alert('Error: ' + (d2.error || r2.status)); return; }
+    alert('✓ Cancelados ' + (d2.cancelados||0) + ' lote(s) duplicado(s). El calendario queda sin repetidos del mismo día.');
+    if (typeof cargar === 'function') cargar();
+  } catch(e){ alert('Error red: ' + e.message); }
+  finally { if (btn){ btn.disabled = false; btn.textContent = '🧹 Limpiar duplicados del día'; } }
 }
 
 async function cargar(){
