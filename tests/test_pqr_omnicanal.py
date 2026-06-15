@@ -84,6 +84,45 @@ def test_enrutar_requiere_rol(app, db_clean):
     assert r.status_code in (403, 404), r.data[:200]  # 403 por rol (o 404 si id no existe)
 
 
+def test_webhook_jala_mensaje_de_ghl_si_viene_vacio(app, db_clean, monkeypatch):
+    """GHL no resuelve custom fields en el webhook → si message viene vacío pero
+    hay contact_id, EOS lo jala de la API de GHL (pqr_mensaje)."""
+    import sys
+    A = sys.modules.get('blueprints.aseguramiento') or sys.modules.get('api.blueprints.aseguramiento')
+    monkeypatch.setattr(A, '_ghl_fetch_contact', lambda c, cid: {
+        'message': 'No me ha llegado mi pedido y ya pasaron 10 dias',
+        'channel': 'whatsapp', 'fullName': 'Cliente GHL', 'email': '', 'phone': '3001234567'})
+    os.environ['PQR_WEBHOOK_SECRET'] = SECRET
+    c = app.test_client()
+    r = c.post('/api/pqr/inbound', json={'contact_id': 'AbC123'}, headers={'X-PQR-Token': SECRET})
+    assert r.status_code == 201, r.data[:300]
+    assert r.get_json()['clasificacion']['empresa'] == 'animus'
+    # idempotencia por sha1(mensaje): mismo contacto + mismo texto → duplicado
+    r2 = c.post('/api/pqr/inbound', json={'contact_id': 'AbC123'}, headers={'X-PQR-Token': SECRET})
+    assert r2.get_json().get('duplicado') is True
+
+
+def test_webhook_vacio_sin_contact_id_da_400(app, db_clean):
+    os.environ['PQR_WEBHOOK_SECRET'] = SECRET
+    c = app.test_client()
+    r = c.post('/api/pqr/inbound', json={}, headers={'X-PQR-Token': SECRET})
+    assert r.status_code == 400
+
+
+def test_diagnostico_solo_admin(app, db_clean):
+    _webhook(app, {'message': 'se me brotó la piel', 'message_id': 'diag-1'})
+    # admin ve el diagnóstico con message_id
+    a = _login(app, 'sebastian')
+    r = a.get('/api/aseguramiento/pqr-inbox/diagnostico')
+    assert r.status_code == 200, r.data[:200]
+    d = r.get_json()
+    assert d['total'] >= 1
+    assert any(x['ghl_message_id'] == 'diag-1' for x in d['ultimas'])
+    # no-admin → 403
+    m = _login(app, 'miguel')
+    assert m.get('/api/aseguramiento/pqr-inbox/diagnostico').status_code == 403
+
+
 def test_animus_pqr_crud(app, db_clean):
     # sebastian tiene ANIMUS_ACCESS (admin)
     c = _login(app, 'sebastian')

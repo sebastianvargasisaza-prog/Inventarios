@@ -3828,6 +3828,61 @@ def _marcar_inbox_enrutado(c, inbox_id, empresa, tabla, dest_id, dest_cod, user)
     return c.rowcount == 1
 
 
+# IDs de los campos personalizados de GHL (overridables por env si cambian)
+_GHL_CF_MENSAJE = os.environ.get('GHL_CF_PQR_MENSAJE', '6FFSOWuvBhGFAlNdevVk')
+_GHL_CF_CANAL = os.environ.get('GHL_CF_PQR_CANAL', 'N9OHPbhy24ODqxNwg1iQ')
+
+
+def _ghl_token(c):
+    try:
+        r = c.execute("SELECT valor FROM animus_config WHERE clave='ghl_api_key'").fetchone()
+        return (r[0] if r else None) or os.environ.get('GHL_API_KEY')
+    except Exception:
+        return os.environ.get('GHL_API_KEY')
+
+
+def _ghl_fetch_contact(c, contact_id):
+    """Trae el contacto de GHL (API v2) por contact_id y extrae el texto del PQR
+    (custom field pqr_mensaje), canal, nombre, email y teléfono. GHL no resuelve
+    los custom fields en el webhook → hay que jalarlos por la API. Devuelve dict
+    con campos vacíos si falla (el caller decide qué hacer)."""
+    out = {'message': '', 'channel': '', 'fullName': '', 'email': '', 'phone': ''}
+    token = _ghl_token(c)
+    if not token or not contact_id:
+        return out
+    try:
+        import urllib.request as _ur
+        req = _ur.Request(
+            "https://services.leadconnectorhq.com/contacts/" + str(contact_id),
+            headers={"Authorization": "Bearer " + token, "Version": "2021-07-28",
+                     "Accept": "application/json"})
+        with _ur.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        ct = data.get('contact') or data
+        fn = (ct.get('firstName') or '').strip()
+        ln = (ct.get('lastName') or '').strip()
+        out['fullName'] = (fn + ' ' + ln).strip() or (ct.get('contactName') or ct.get('name') or '').strip()
+        out['email'] = (ct.get('email') or '').strip()
+        out['phone'] = (ct.get('phone') or '').strip()
+        for cf in (ct.get('customFields') or ct.get('customField') or []):
+            cid = cf.get('id') or cf.get('customFieldId')
+            val = cf.get('value')
+            if val is None:
+                val = cf.get('fieldValue')
+            if val is None:
+                val = cf.get('field_value')
+            if val is None:
+                continue
+            if cid == _GHL_CF_MENSAJE:
+                out['message'] = str(val)
+            elif cid == _GHL_CF_CANAL:
+                out['channel'] = str(val)
+        return out
+    except Exception as e:
+        log.warning('GHL fetch contact %s falló: %s', contact_id, e)
+        return out
+
+
 @bp.route('/api/pqr/inbound', methods=['POST'])
 def pqr_inbound():
     """Webhook server-to-server desde GHL. Valida secreto propio (no usa sesión).
@@ -3842,17 +3897,38 @@ def pqr_inbound():
 
     d = request.get_json(silent=True) or {}
     mensaje = (d.get('message') or d.get('body') or d.get('mensaje') or d.get('lastMessageBody') or '').strip()
-    if not mensaje:
-        return jsonify({'error': 'mensaje vacío'}), 400
     contacto = (d.get('full_name') or d.get('fullName') or d.get('contact_name')
                 or d.get('name') or d.get('contacto') or '').strip()
     email = (d.get('email') or d.get('contact_email') or '').strip()
     telefono = (d.get('phone') or d.get('telefono') or '').strip()
-    canal = (d.get('channel') or d.get('canal') or d.get('source') or 'otro').strip().lower()
+    canal = (d.get('channel') or d.get('canal') or d.get('source') or '').strip().lower()
     ghl_contact_id = (d.get('contact_id') or d.get('contactId') or d.get('ghl_contact_id') or '').strip() or None
     ghl_msg_id = (d.get('message_id') or d.get('messageId') or d.get('id') or '').strip() or None
 
     conn = get_db(); c = conn.cursor()
+
+    # GHL no resuelve los custom fields en el webhook → si el texto viene vacío
+    # pero hay contact_id, lo jalamos de la API de GHL (pqr_mensaje + pqr_canal).
+    if not mensaje and ghl_contact_id:
+        g = _ghl_fetch_contact(c, ghl_contact_id)
+        if g.get('message'):
+            mensaje = g['message'].strip()
+        if not canal and g.get('channel'):
+            canal = g['channel'].strip().lower()
+        contacto = contacto or g.get('fullName', '')
+        email = email or g.get('email', '')
+        telefono = telefono or g.get('phone', '')
+    canal = canal or 'otro'
+    if not mensaje:
+        return jsonify({'error': 'mensaje vacío'}), 400
+
+    # Idempotencia sin depender de un id nativo de GHL: contact_id + sha1(mensaje).
+    # Mismo texto = mismo id (anti-reintento); reclamo distinto = registro nuevo.
+    if not ghl_msg_id:
+        import hashlib
+        _h = hashlib.sha1(mensaje.encode('utf-8')).hexdigest()[:12]
+        ghl_msg_id = (str(ghl_contact_id) + '-' + _h) if ghl_contact_id else ('pqr-' + _h)
+
     if ghl_msg_id:
         ex = c.execute("SELECT id FROM pqr_inbox WHERE ghl_message_id=?", (ghl_msg_id,)).fetchone()
         if ex:
