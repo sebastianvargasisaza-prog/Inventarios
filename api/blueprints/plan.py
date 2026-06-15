@@ -4315,20 +4315,57 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         # (hoy + dias_gondola) ANTES de que llegue el próximo lote programado → hay días
         # descubiertos (stock-out) → alerta de ADELANTAR. Usa dias_gondola (físico), así
         # que si la venta sube, dias_gondola baja y la alerta salta sola.
+        # Regla Sebastián 15-jun-2026: "todo debe producirse 20 días ANTES de que se
+        # acabe". Buffer de producción = 20d. fecha_limite_produccion = agota − 20d.
+        # ACCIÓN SUGERIDA unificada (reemplaza la alerta roja + caja programar):
+        #   - lote programado llega DESPUÉS de la fecha límite → ADELANTAR (lo antes posible)
+        #   - lote MUY anticipado (>14d antes de lo necesario) → ATRASAR
+        #   - sin lote y necesita (crítico/urgente/vigilar) → PROGRAMAR
+        #   - cubierto → OK
+        BUFFER_PROD_DIAS = 20
         p["lote_tarde"] = False
         p["dias_descubierto"] = 0
         p["agota_fecha"] = None
+        p["fecha_limite_produccion"] = None
+        p["accion_sugerida"] = None
+        p["accion_fecha_objetivo"] = None
+        p["accion_lote_id"] = (proximo.get("id") if proximo else None)
         _dg_p = p.get("dias_gondola")
-        if proximo and proximo.get("fecha") and _dg_p is not None:
-            try:
-                _f_lote = _date.fromisoformat(str(proximo["fecha"])[:10])
-                _s_out = hoy + _td(days=int(_dg_p))
-                p["agota_fecha"] = _s_out.isoformat()
-                if _f_lote > _s_out:
-                    p["lote_tarde"] = True
-                    p["dias_descubierto"] = (_f_lote - _s_out).days
-            except Exception:
-                pass
+
+        def _next_biz(d0):
+            d1 = d0
+            for _ in range(40):
+                if d1.weekday() < 5 and not es_festivo_colombia(d1):
+                    return d1
+                d1 = d1 + _td(days=1)
+            return d1
+
+        if _dg_p is not None:
+            _s_out = hoy + _td(days=int(_dg_p))
+            p["agota_fecha"] = _s_out.isoformat()
+            _f_limite = _s_out - _td(days=BUFFER_PROD_DIAS)
+            p["fecha_limite_produccion"] = _f_limite.isoformat()
+            _objetivo = _next_biz(max(hoy + _td(days=1), _f_limite))
+            if proximo and proximo.get("fecha"):
+                try:
+                    _f_lote = _date.fromisoformat(str(proximo["fecha"])[:10])
+                    if _f_lote > _f_limite:
+                        # llega después de la fecha límite (20d antes de agotarse) → adelantar
+                        p["lote_tarde"] = True
+                        p["dias_descubierto"] = max(0, (_f_lote - _s_out).days)
+                        p["accion_sugerida"] = "adelantar"
+                        p["accion_fecha_objetivo"] = _objetivo.isoformat()
+                    elif _f_lote < (_f_limite - _td(days=14)):
+                        # programado mucho antes de lo necesario → atrasar
+                        p["accion_sugerida"] = "atrasar"
+                        p["accion_fecha_objetivo"] = _next_biz(_f_limite).isoformat()
+                    else:
+                        p["accion_sugerida"] = "ok"
+                except Exception:
+                    pass
+            elif p.get("urgencia") in ("CRITICO", "URGENTE", "VIGILAR"):
+                p["accion_sugerida"] = "programar"
+                p["accion_fecha_objetivo"] = _objetivo.isoformat()
 
         # Detectar duplicados · Sebastián 14-may-2026: "veo mucha cosa
         # repetida como producción esta semana y se repite la próxima, de

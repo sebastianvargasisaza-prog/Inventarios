@@ -23887,6 +23887,76 @@ async function ckMarcar(itemId, estado){
           'Producto: ' + prodNombre);
   }
 
+  // 🎯 Caja de acción sugerida unificada · una sola acción clara (adelantar/atrasar/
+  // programar/ok) en vez de alerta roja + caja programar sueltas. Regla 20d.
+  function _accionSugeridaHtml(p, idx) {
+    const a = p.accion_sugerida;
+    const fobj = (p.accion_fecha_objetivo || '').slice(0, 10);
+    const flim = (p.fecha_limite_produccion || '').slice(0, 10);
+    const fprox = (p.proximo_lote && p.proximo_lote.fecha) ? p.proximo_lote.fecha.slice(5, 10) : '?';
+    if (!a || a === 'ok') {
+      if (a === 'ok') {
+        return '<div style="background:#dcfce7;border-left:4px solid #16a34a;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#166534">✅ <strong>Cubierto</strong> · el lote del ' + fprox + ' llega a tiempo (regla: producir 20 días antes de agotarse). Sin acción.</div>';
+      }
+      return '';
+    }
+    let bg, bd, fg, titulo, detalle, btn;
+    if (a === 'adelantar') {
+      bg = '#fef2f2'; bd = '#dc2626'; fg = '#991b1b';
+      titulo = 'Adelantar producción';
+      detalle = 'El lote del <strong>' + fprox + '</strong> llega tarde: debes producir 20 días antes de agotarte (límite ' + (flim || '—') + ')' + ((p.dias_descubierto || 0) > 0 ? ' · te agotás ' + p.dias_descubierto + 'd antes de que llegue' : '') + '. Lo muevo a lo antes posible: <strong>' + (fobj || '—') + '</strong> y recalculo el resto del horizonte.';
+      btn = '⏩ Adelantar y recalcular';
+    } else if (a === 'atrasar') {
+      bg = '#eff6ff'; bd = '#2563eb'; fg = '#1e40af';
+      titulo = 'Atrasar producción';
+      detalle = 'El lote del <strong>' + fprox + '</strong> está muy adelantado. Lo muevo al <strong>' + (fobj || '—') + '</strong> (20 días antes de agotarte) y recalculo el horizonte.';
+      btn = '⏪ Atrasar y recalcular';
+    } else { // programar
+      bg = '#f5f3ff'; bd = '#7c3aed'; fg = '#5b21b6';
+      titulo = 'Programar producción';
+      detalle = 'No hay lote programado y lo necesitas (' + (p.urgencia || '') + '). Lo programo para <strong>' + (fobj || '—') + '</strong> (20 días antes de agotarte) y recalculo el horizonte con la venta actual.';
+      btn = '🤖 Programar y recalcular';
+    }
+    return '<div style="background:' + bg + ';border-left:4px solid ' + bd + ';border-radius:8px;padding:12px;margin-bottom:12px">'
+      + '<div style="font-weight:800;color:' + fg + ';margin-bottom:4px">🎯 Acción sugerida · ' + titulo + '</div>'
+      + '<div style="font-size:12px;color:#475569;margin-bottom:8px">' + detalle + '</div>'
+      + '<button onclick="aplicarAccionSugerida(' + idx + ',this)" style="background:' + bd + ';color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">' + btn + '</button>'
+      + '<div id="accion-sug-st-' + idx + '" style="font-size:11px;margin-top:8px"></div>'
+      + '</div>';
+  }
+
+  async function aplicarAccionSugerida(idx, btn) {
+    const p = window._NEC_PRODUCTOS_CACHE[idx];
+    if (!p) return;
+    const st = document.getElementById('accion-sug-st-' + idx);
+    const a = p.accion_sugerida, fobj = p.accion_fecha_objetivo;
+    if (btn) { btn.disabled = true; }
+    if (st) st.innerHTML = '⏳ Aplicando...';
+    const _post = (url, body) => fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body), credentials:'same-origin'});
+    try {
+      // 1) mover el lote existente (adelantar/atrasar)
+      if ((a === 'adelantar' || a === 'atrasar') && p.accion_lote_id && fobj) {
+        let r = await _post('/api/plan/proximas/' + p.accion_lote_id + '/reprogramar', {nueva_fecha: fobj, razon: a + '_auto'});
+        let d = await r.json().catch(()=>({}));
+        if (!r.ok) {
+          // reintento forzando el día (override reglas de capacidad/festivo)
+          r = await _post('/api/plan/proximas/' + p.accion_lote_id + '/reprogramar', {nueva_fecha: fobj, razon: a + '_auto', skip_validacion_dia: true});
+          d = await r.json().catch(()=>({}));
+          if (!r.ok) { if (st) st.innerHTML = '<span style="color:#dc2626">No se pudo mover el lote: ' + (d.error || r.status) + '</span>'; if (btn) btn.disabled = false; return; }
+        }
+      }
+      // 2) recalcular el horizonte de ESTE producto (ajusta/crea lotes con la venta actual)
+      const r2 = await _post('/api/plan/auto-programar-sugeridas', {producto: p.producto_nombre, dias_horizonte: 365});
+      const d2 = await r2.json().catch(()=>({}));
+      if (!r2.ok) { if (st) st.innerHTML = '<span style="color:#dc2626">Error recalculando horizonte: ' + (d2.error || r2.status) + '</span>'; if (btn) btn.disabled = false; return; }
+      if (st) st.innerHTML = '<span style="color:#16a34a">✓ Aplicado (' + (d2.n_creados || 0) + ' lote(s) ajustados) · recargando…</span>';
+      setTimeout(() => { try { document.getElementById('solicitarModal').style.display = 'none'; } catch(e){} if (window.cargarNecesidades) cargarNecesidades(); }, 800);
+    } catch (e) {
+      if (st) st.innerHTML = '<span style="color:#dc2626">Error red: ' + e.message + '</span>';
+      if (btn) btn.disabled = false;
+    }
+  }
+
   function abrirSolicitar(idx) {
     const p = window._NEC_PRODUCTOS_CACHE[idx];
     if (!p) { alert('Producto no encontrado'); return; }
@@ -23969,16 +24039,15 @@ async function ckMarcar(itemId, estado){
     // cobertura-con-pipeline. Así el número y el color (CRÍTICO/etc.) coinciden.
     html += '<div>Alcanza góndola: <strong style="color:' + cfg.text + '">' + (p.dias_gondola != null ? p.dias_gondola + ' días' : '—') + '</strong> ' + cfg.emoji + ' ' + p.urgencia + '</div>';
     html += '</div>';
-    // Producción EN CAMINO (pipeline = lotes en curso/programados, NO góndola) · se
-    // muestra aparte para no contradecir la urgencia (M6 físico vs en-camino).
+    // Producción EN CAMINO (pipeline = lotes en curso/programados, NO góndola) · info
+    // neutra (el consejo accionable va en la 🎯 Acción sugerida de abajo · M6).
     if (p.dias_cobertura != null && p.dias_gondola != null && (p.dias_cobertura - p.dias_gondola) >= 1) {
-      if (p.lote_tarde) {
-        html += '<div style="font-size:11px;color:#dc2626;font-weight:700;margin-top:6px;padding-top:6px;border-top:1px dashed #cbd5e1">⏩ Hay producción en camino (alcanza ~' + p.dias_cobertura + 'd) pero llega TARDE: te agotás ' + (p.dias_descubierto||0) + 'd antes. Adelantá ese lote en vez de programar uno nuevo.</div>';
-      } else {
-        html += '<div style="font-size:11px;color:#2563eb;margin-top:6px;padding-top:6px;border-top:1px dashed #cbd5e1">📦 Ya hay producción en camino (lotes en curso/programados): alcanza ~<strong>' + p.dias_cobertura + ' días</strong>. No programes de más — solo asegurá que llegue a tiempo.</div>';
-      }
+      html += '<div style="font-size:11px;color:#2563eb;margin-top:6px;padding-top:6px;border-top:1px dashed #cbd5e1">📦 Con producción en camino (lotes en curso/programados): alcanza ~<strong>' + p.dias_cobertura + ' días</strong></div>';
     }
     html += '</div>';
+    // 🎯 ACCIÓN SUGERIDA unificada (adelantar / atrasar / programar / ok) · reemplaza
+    // la alerta roja suelta + la caja "programar". Regla: producir 20d antes de agotarse.
+    html += _accionSugeridaHtml(p, idx);
 
     // ── Última producción + horizonte ──
     if (p.ultima_produccion_fecha) {
@@ -23995,12 +24064,8 @@ async function ckMarcar(itemId, estado){
         if (en != null) html += ' (' + (en > 0 ? 'en ' + en + 'd' : 'YA · ' + (-en) + 'd atrasado') + ')';
         html += '</div>';
       }
-      // FIX 23-may-2026 Sebastián · "cuando abra el producto, programar según sugiere + cuántas/en cuánto"
-      // Botón Preview Sugeridas que abre modal con cadena de fechas (90d) + permite programar todas
-      const prodEsc = (p.producto_nombre || '').replace(/'/g, "&#39;").replace(/"/g, '&quot;');
-      html += '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed #ca8a04;display:flex;gap:6px;flex-wrap:wrap">';
-      html += '<button onclick="previewSugeridasProducto(&quot;' + prodEsc + '&quot;)" style="background:#7c3aed;color:#fff;border:none;padding:6px 12px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">🤖 Programar</button>';
-      html += '</div>';
+      // El botón de programar se unificó en la 🎯 Acción sugerida (arriba) · esta caja
+      // queda solo informativa (última producción + horizonte).
       html += '</div>';
     } else {
       html += '<div style="background:#f1f5f9;border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;color:#64748b">📜 Sin producciones previas registradas · usá "Ya producido" abajo para back-fill</div>';
