@@ -328,6 +328,27 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (256, "PQR · limpieza one-time de las entradas de PRUEBA de la integración GHL (14-jun). "
+          "Borra los PQR de prueba de pqr_inbox y sus quejas/animus_pqr enrutados (vía el "
+          "vínculo destino_id). Marcadores distintivos de test → no toca datos reales; corre "
+          "una sola vez. En BD sin esos datos (test/fresca) no borra nada.", [
+        # Hijos enrutados DESDE un inbox de prueba (por linkage destino_id) — primero los hijos
+        "DELETE FROM quejas_clientes WHERE id IN (SELECT destino_id FROM pqr_inbox WHERE "
+        "destino_tabla='quejas_clientes' AND destino_id IS NOT NULL AND ("
+        "mensaje LIKE '%[PRUEBA%' OR contacto_nombre LIKE 'Demo %' OR contacto_nombre LIKE 'ZZ Prueba%' "
+        "OR ghl_message_id LIKE 'demo-%' OR ghl_message_id LIKE 'TEST-%' OR ghl_message_id LIKE 'AUTO35-%' "
+        "OR ghl_message_id LIKE 'trazabilidad-%' OR ghl_message_id LIKE 'diag-%'))",
+        "DELETE FROM animus_pqr WHERE id IN (SELECT destino_id FROM pqr_inbox WHERE "
+        "destino_tabla='animus_pqr' AND destino_id IS NOT NULL AND ("
+        "mensaje LIKE '%[PRUEBA%' OR contacto_nombre LIKE 'Demo %' OR contacto_nombre LIKE 'ZZ Prueba%' "
+        "OR ghl_message_id LIKE 'demo-%' OR ghl_message_id LIKE 'TEST-%' OR ghl_message_id LIKE 'AUTO35-%' "
+        "OR ghl_message_id LIKE 'trazabilidad-%' OR ghl_message_id LIKE 'diag-%'))",
+        # Y por fin las entradas de prueba del buzón
+        "DELETE FROM pqr_inbox WHERE "
+        "mensaje LIKE '%[PRUEBA%' OR contacto_nombre LIKE 'Demo %' OR contacto_nombre LIKE 'ZZ Prueba%' "
+        "OR ghl_message_id LIKE 'demo-%' OR ghl_message_id LIKE 'TEST-%' OR ghl_message_id LIKE 'AUTO35-%' "
+        "OR ghl_message_id LIKE 'trazabilidad-%' OR ghl_message_id LIKE 'diag-%'",
+    ]),
     (255, "PQR · trazabilidad desde GHL (14-jun): producto/lote (calidad) y nº de pedido "
           "(comercial) leídos de los custom fields del contacto. Columnas en pqr_inbox + "
           "pedido_numero en animus_pqr (quejas_clientes ya tiene producto/lote).", [
