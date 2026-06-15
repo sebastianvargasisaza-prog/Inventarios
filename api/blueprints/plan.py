@@ -14017,13 +14017,17 @@ async function cargarAlertasIA(){
       info: {bg:'#dbeafe', border:'#1e40af', txt:'#1e40af'},
     };
     const totals = d.por_severidad || {};
-    let html = '<div style="background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:12px;padding:12px 14px;color:#fff;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">';
-    html += '<div><span style="font-size:14px;font-weight:800">🤖 Alertas IA del Plan</span> <span style="font-size:11px;opacity:.85;margin-left:8px">' +
+    // Desplegable (Sebastián 15-jun): colapsado por defecto · header con conteos ·
+    // se expande al clic. Evita ocupar toda la pantalla con 20+ alertas.
+    const _abierto = (window._alertasIAabierto === true);
+    let html = '<div onclick="toggleAlertasIA()" style="background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:12px;padding:12px 14px;color:#fff;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;cursor:pointer" title="Click para desplegar/colapsar">';
+    html += '<div><span id="alertas-ia-chev" style="margin-right:6px">' + (_abierto ? '▾' : '▸') + '</span><span style="font-size:14px;font-weight:800">🤖 Alertas IA del Plan</span> <span style="font-size:11px;opacity:.85;margin-left:8px">' +
       (totals.critica || 0) + ' crítica(s) · ' +
       (totals.advertencia || 0) + ' advertencia(s) · ' +
       (totals.info || 0) + ' info</span></div>';
-    html += '<button onclick="cargarAlertasIA()" style="background:rgba(255,255,255,.12);border:1px solid #fff;color:#fff;padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer">↻ Refrescar</button>';
+    html += '<button onclick="event.stopPropagation();cargarAlertasIA()" style="background:rgba(255,255,255,.12);border:1px solid #fff;color:#fff;padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer">↻ Refrescar</button>';
     html += '</div>';
+    html += '<div id="alertas-ia-body" style="display:' + (_abierto ? 'block' : 'none') + '">';
     al.forEach((a, idx) => {
       const sev = SEV_STYLE[a.severidad] || SEV_STYLE.info;
       const accionBtn = _alertaAccionBtn(a, idx);
@@ -14038,12 +14042,25 @@ async function cargarAlertasIA(){
       html += '<button onclick="this.parentElement.parentElement.style.display=&quot;none&quot;" style="background:transparent;border:1px solid currentColor;color:inherit;padding:3px 8px;border-radius:4px;font-size:11px;cursor:pointer" title="Ocultar esta alerta">✕</button>';
       html += '</div></div>';
     });
+    html += '</div>';  // cierra alertas-ia-body
     wrap.innerHTML = html;
     wrap.style.display = 'block';
   } catch(e){
     console.warn('cargarAlertasIA falló:', e);
     wrap.style.display = 'none';
   }
+}
+
+// Desplegable de "Alertas IA del Plan" · recuerda el estado en window para que
+// un Refrescar no lo vuelva a colapsar.
+function toggleAlertasIA(){
+  var b = document.getElementById('alertas-ia-body');
+  var ch = document.getElementById('alertas-ia-chev');
+  if (!b) return;
+  var open = b.style.display !== 'none';
+  b.style.display = open ? 'none' : 'block';
+  window._alertasIAabierto = !open;
+  if (ch) ch.textContent = open ? '▸' : '▾';
 }
 
 function _alertaAccionBtn(a, idx){
