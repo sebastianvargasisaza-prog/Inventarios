@@ -23705,7 +23705,9 @@ async function ckMarcar(itemId, estado){
         html += '<td style="padding:10px 8px">';
         html += '<div style="display:flex;align-items:center;gap:6px"><span style="background:' + cfg.bg + ';color:' + cfg.text + ';padding:2px 8px;border-radius:6px;font-size:11px;font-weight:800">' + cfg.emoji + '</span>';
         html += '<span style="font-weight:700;color:#1e293b">' + escapeHtmlNec(p.producto_nombre) + '</span>';
-        html += alertSinSku + chipPlan + chipB2B + chipTonos;
+        // chipPlan (📅 fecha) removido del nombre · la fecha/estado del lote ya va
+        // en la columna Alcanza (uds + atrasado/tarde), evita duplicar la fecha.
+        html += alertSinSku + chipB2B + chipTonos;
         html += '</div>';
         html += '<div style="font-family:ui-monospace,monospace;font-size:10px;color:#94a3b8;margin-top:2px">' + codDisp + ' · ' + mlReal + 'ml</div>';
         html += '</td>';
