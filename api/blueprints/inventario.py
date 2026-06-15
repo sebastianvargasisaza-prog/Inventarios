@@ -1492,18 +1492,34 @@ def _shopify_sync_producto(conn, producto_nombre, token=None, shop=None, timeout
     except Exception:
         pass
 
-    # Estrategia 2-3: si no hubo match exacto, traer catalogo completo y matchear
+    # Estrategia 0-3: si no hubo match exacto por título, traer catálogo completo
     matched_strategy = 'exact'
     if not products:
         all_products = _shopify_get_all_products(token, shop, timeout=20)
+        # 0. (MÁS CONFIABLE) match por SKU mapeado del producto · el nombre en
+        # Shopify puede diferir del de la fórmula, pero el SKU es la llave exacta.
+        try:
+            _skus = {(r[0] or '').strip().upper() for r in conn.execute(
+                "SELECT sku FROM sku_producto_map WHERE COALESCE(activo,1)=1 "
+                "AND UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (producto_nombre,)).fetchall()}
+            _skus.discard('')
+        except Exception:
+            _skus = set()
+        if _skus:
+            for p in all_products:
+                if any((v.get('sku') or '').strip().upper() in _skus for v in (p.get('variants') or [])):
+                    products = [p]
+                    matched_strategy = 'sku'
+                    break
         target_norm = _normalizar_nombre(producto_nombre)
         # 2. Normalizado igual
-        for p in all_products:
-            if _normalizar_nombre(p.get('title', '')) == target_norm:
-                products = [p]
-                matched_strategy = 'normalized_eq'
-                break
-        # 3. Substring contains
+        if not products:
+            for p in all_products:
+                if _normalizar_nombre(p.get('title', '')) == target_norm:
+                    products = [p]
+                    matched_strategy = 'normalized_eq'
+                    break
+        # 3. Substring contains (Jaccard ≥ 0.5)
         if not products:
             target_words = set(target_norm.split())
             best = None; best_score = 0
@@ -1512,12 +1528,11 @@ def _shopify_sync_producto(conn, producto_nombre, token=None, shop=None, timeout
                 cand_words = set(cand_norm.split())
                 if not cand_words:
                     continue
-                # Jaccard score
                 inter = target_words & cand_words
                 if not inter:
                     continue
                 score = len(inter) / max(len(target_words), len(cand_words))
-                if score > best_score and score >= 0.5:  # al menos 50% de overlap
+                if score > best_score and score >= 0.5:
                     best = p; best_score = score
             if best:
                 products = [best]

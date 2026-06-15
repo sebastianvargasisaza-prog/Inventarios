@@ -328,6 +328,12 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (258, "Necesidades · forzar re-sync de imágenes Shopify (15-jun): limpia shopify_synced_at "
+          "de los productos SIN imagen para que el sync en background los vuelva a buscar con "
+          "el nuevo match por SKU (más confiable que por nombre) y traiga la foto al modal. "
+          "One-time; el sync lazy (al ver páginas) los re-procesa 50 a la vez.", [
+        "UPDATE formula_headers SET shopify_synced_at='' WHERE COALESCE(imagen_url,'')=''",
+    ]),
     (257, "PQRSF · alinear con el SOP real ASG-PRO-003 'Manejo de PQRSF' (15-jun): carga el "
           "documento vigente + su formato F01 en el SGD con link de Drive, corrige el código "
           "mal sembrado (ASG-PRO-013 → obsoleto), y agrega columnas PQRSF (clase + criticidad "
