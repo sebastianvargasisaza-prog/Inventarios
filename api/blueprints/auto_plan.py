@@ -601,6 +601,47 @@ def _producciones_programadas_futuro(c, producto):
     return int(r[0] if r else 0)
 
 
+def _proxima_prod_futura_fecha(c, producto):
+    """Fecha (ISO YYYY-MM-DD) de la próxima producción futura no cancelada/
+    completada de un producto, o None. Usado para no DUPLICAR propuestas del
+    auto-plan cuando ya hay un lote agendado que cubre la necesidad a tiempo."""
+    r = c.execute("""
+        SELECT MIN(substr(fecha_programada,1,10)) FROM produccion_programada
+        WHERE UPPER(TRIM(producto)) = UPPER(TRIM(?))
+          AND COALESCE(estado,'programado') NOT IN ('completado','cancelado')
+          AND substr(fecha_programada,1,10) >= date('now', '-5 hours')
+    """, (producto,)).fetchone()
+    return r[0] if r and r[0] else None
+
+
+def _futuro_cubre_a_tiempo(prox_fecha_iso, fecha_hoy, dias_inv_actual,
+                            dias_pipeline=7):
+    """¿La próxima producción futura ya agendada cubre la necesidad A TIEMPO, de
+    modo que NO hace falta que el auto-plan proponga OTRA ahora? (función pura ·
+    testeable sin DB).
+
+    Conservadora para NO causar quiebres:
+      - Sin lote futuro → False (sí proponer).
+      - Sin velocidad de venta (dias_inv_actual None) → True (no urge · cubre).
+      - Con venta → True solo si el lote estará DISPONIBLE (producido + ~pipeline
+        días para estar en Shopify) ANTES de agotarse el stock actual. Si llega
+        tarde → False (sí proponer · urgente).
+    """
+    if not prox_fecha_iso:
+        return False
+    try:
+        prox_d = datetime.strptime(str(prox_fecha_iso)[:10], '%Y-%m-%d').date()
+    except Exception:
+        return False
+    if dias_inv_actual is None:
+        return True
+    try:
+        agota = fecha_hoy + timedelta(days=int(dias_inv_actual))
+    except Exception:
+        return False
+    return (prox_d + timedelta(days=dias_pipeline)) <= agota
+
+
 # ───────────────────────────────────────────────────────────────────────
 # GENERADOR PRINCIPAL
 # ───────────────────────────────────────────────────────────────────────
@@ -702,6 +743,21 @@ def generar_plan(horizonte_dias=60, tipo='auto', usuario='cron'):
         if not toca and dias_inv_actual is not None and dias_inv_actual < cob_target and prog_futuro_lotes == 0:
             toca = True
             razon = f'cobertura {dias_inv_actual:.0f}d < target {cob_target}d (sin prods futuras)'
+
+        # FIX 15-jun-2026 (Sebastián · "el calendario se llena solo / vuelve a antes"):
+        # los triggers de cadencia y cob_min NO miraban prog_futuro_lotes → si el
+        # producto ya tiene un lote FUTURO agendado (Fijo del usuario), el auto-plan
+        # igual proponía OTRO en distinta fecha → se acumulaban lotes encima del plan.
+        # Guard CONSCIENTE DE FECHAS (no causa quiebres): si ya hay producción futura
+        # que llega A TIEMPO (disponible ~7d tras producirse, antes de agotarse el
+        # stock), NO duplicar. Si el stock se agota ANTES que ese lote, sí se propone
+        # (urgente). Sin velocidad (no se vende) → el lote futuro cubre → no duplicar.
+        if toca and prog_futuro_lotes > 0:
+            _prox = _proxima_prod_futura_fecha(c, producto)
+            if _futuro_cubre_a_tiempo(_prox, fecha_hoy, dias_inv_actual):
+                toca = False
+                log_lineas.append(
+                    f"   ⏸ {producto}: ya hay prod futura {_prox} que cubre — no se duplica")
 
         if not toca:
             continue
