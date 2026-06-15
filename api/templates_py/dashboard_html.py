@@ -24130,29 +24130,29 @@ async function ckMarcar(itemId, estado){
       html += '</div>';
     }
 
-    // ═══════ SECCIÓN 2 · PROGRAMAR PRODUCCIÓN ═══════
-    html += '<div style="font-size:11px;color:#6d28d9;font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:18px 0 6px;padding-bottom:4px;border-bottom:2px solid #6d28d9">② Programar producción</div>';
-
-    // FIX 23-may-2026 Sebastián · "la cantidad debe ir con el horizonte" ·
-    // unifica los 3 bloques anteriores (Cubrir 30/60/90, Lote único,
-    // Programación canónica recurrente) en un solo modal moderno con
-    // selector horizonte + tabla de lotes en cadena + cobertura calculada.
+    // ═══════ SECCIÓN 2 · PROGRAMACIÓN AVANZADA (colapsada) ═══════
+    // La acción del día a día vive en la 🎯 Acción sugerida (arriba · ya programa
+    // y recalcula el horizonte a 1 año). Acá queda lo AVANZADO: el planificador
+    // (editar tamaño de lote + previsualizar la cadena + elegir proyección) y el
+    // lote único manual. Sebastián 15-jun: "la acción sugerida ya incluye el horizonte".
     const prodNombreEsc = (p.producto_nombre || '').replace(/'/g, "&#39;").replace(/"/g, '&quot;');
-    html += '<div style="background:#f5f3ff;border-left:4px solid #7c3aed;border-radius:8px;padding:14px;margin-bottom:10px">';
-    html += '<div style="font-size:12px;color:#5b21b6;font-weight:700;margin-bottom:4px">🤖 Programar producción con horizonte</div>';
-    html += '<div style="font-size:11px;color:#64748b;margin-bottom:10px">Elegí cuántos meses cubrir · el sistema calcula automáticamente cuántos lotes y cuándo</div>';
-    html += '<button onclick="previewSugeridasProducto(&quot;' + prodNombreEsc + '&quot;)" style="background:#7c3aed;color:#fff;border:none;padding:10px 16px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">🤖 Abrir planificador</button>';
+    html += '<details style="margin:16px 0 8px"><summary style="cursor:pointer;font-size:12px;color:#5b21b6;font-weight:700;padding:8px 12px;background:#f5f3ff;border-radius:6px;border-left:3px solid #7c3aed">⚙ Programación avanzada · planificador + lote manual</summary>';
+    html += '<div style="padding:10px 0 0">';
+    // Planificador (tamaño de lote + previsualizar cadena)
+    html += '<div style="background:#f5f3ff;border-radius:8px;padding:12px;margin-bottom:8px">';
+    html += '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Cambiá el <strong>tamaño del lote</strong> (lotes más grandes = fabricar menos seguido), <strong>previsualizá la cadena</strong> y elegí hasta cuándo proyectar (30/60/90/180/365d).</div>';
+    html += '<button onclick="previewSugeridasProducto(&quot;' + prodNombreEsc + '&quot;)" style="background:#7c3aed;color:#fff;border:none;padding:9px 16px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">🤖 Abrir planificador</button>';
     html += '</div>';
-
-    // Lote único · sigue disponible para casos manuales/ad-hoc fuera de cadena
-    html += '<details style="margin-bottom:8px"><summary style="cursor:pointer;font-size:11px;color:#64748b;padding:6px 10px;background:#f1f5f9;border-radius:6px;font-weight:600">📅 Programar un único lote manual (avanzado)</summary>';
-    html += '<div style="background:#f0fdf4;border-left:4px solid #16a34a;border-radius:8px;padding:12px;margin-top:6px">';
+    // Lote único manual · ad-hoc fuera de cadena
+    html += '<div style="background:#f0fdf4;border-left:4px solid #16a34a;border-radius:8px;padding:12px">';
+    html += '<div style="font-size:11px;color:#166534;font-weight:700;margin-bottom:6px">📅 Programar un único lote manual</div>';
     html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px;margin-bottom:8px">';
     html += '<label style="color:#475569">Fecha<input id="ppd-fecha" type="date" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;width:100%"></label>';
     html += '<label style="color:#475569">Cantidad (kg)<input id="ppd-kg" type="number" step="0.1" min="0.1" value="' + (p.lote_bulk_kg || 30) + '" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;width:100%"></label>';
     html += '</div>';
     html += '<input id="ppd-idx" type="hidden" value="' + idx + '">';
     html += '<button onclick="programarUnicoDesdePlan()" style="background:#16a34a;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">Programar este lote</button>';
+    html += '</div>';
     html += '</div></details>';
 
     // ═══════ SECCIÓN 3 · LOTES AGENDADOS · ACCIONES ═══════
