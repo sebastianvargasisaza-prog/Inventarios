@@ -13455,13 +13455,17 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
     </div>
   </div>
   <div class="legend">
-    <span><span class="legend-dot" style="background:#6366f1"></span>🔁 Canónico (el plan real)</span>
+    <span><span class="legend-dot" style="background:#6366f1"></span>🔁 Canónico (auto)</span>
     <span><span class="legend-dot" style="background:#16a34a"></span>🟢 Plan / ajustado a mano</span>
-    <span><span class="legend-dot" style="background:#db2777"></span>📦 Pedido B2B (Fernando Mesa)</span>
-    <span><span class="legend-dot" style="background:#fca5a5"></span>Festivo colombiano</span>
+    <span><span class="legend-dot" style="background:#db2777"></span>📦 Pedido B2B</span>
+    <span>🔒 Fijo (intocable por automáticos)</span>
+    <span>✨ Sugerencia IA (sin confirmar)</span>
+    <span>🤝 Desglose DTC + B2B</span>
+    <span><span class="legend-dot" style="background:#fca5a5"></span>Festivo (FEST)</span>
+    <span><span style="background:#dc2626;color:#fff;font-size:9px;font-weight:700;padding:0 5px;border-radius:8px">⚠ N</span> Día sobrecargado (&gt;2 lotes)</span>
   </div>
-  <!-- Panel diag visible · Sebastián 14-may-2026 "no sale nada" -->
-  <div id="cal-diag" style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;margin:8px 0;font-size:11px;color:#854d0e;font-family:monospace"></div>
+  <!-- Resumen del mes (antes era un panel de debug · limpiado 15-jun) -->
+  <div id="cal-diag" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:7px 12px;margin:8px 0;font-size:12px;color:#475569"></div>
   <div id="cal-grid-wrap"></div>
 </div>
 
@@ -13771,9 +13775,17 @@ function render(){
       if (isWeekend && !isFestivo) cls += ' weekend';
       if (lotes.some(l => l.tipo === 'sugerido')) cls += ' suggest';
 
-      grid += '<div class="' + cls + '" data-date="' + fStr + '" data-weekend="' + (isWeekend ? '1':'0') + '" data-festivo="' + (isFestivo ? '1':'0') + '" style="' + (isOtroMes ? 'opacity:.4' : '') + '">';
+      // Indicador de capacidad del día · regla: máx 2 producciones/día, y un lote
+      // grande (>50kg) debería ir SOLO. Marca el día sobrecargado en rojo.
+      const _hayGrande = lotes.some(l => (l.kg || 0) > 50);
+      const _sobrecarga = !isOtroMes && (lotes.length > 2 || (_hayGrande && lotes.length > 1));
+      let _cellStyle = isOtroMes ? 'opacity:.4' : '';
+      if (_sobrecarga) _cellStyle += ';box-shadow:inset 0 0 0 2px #dc2626';
+
+      grid += '<div class="' + cls + '" data-date="' + fStr + '" data-weekend="' + (isWeekend ? '1':'0') + '" data-festivo="' + (isFestivo ? '1':'0') + '" style="' + _cellStyle + '">';
       grid += '<div class="day-num"><span>' + fecha.getDate() + '</span>';
       if (isFestivo) grid += '<span class="festivo-tag">FEST</span>';
+      if (_sobrecarga) grid += '<span title="Día sobrecargado: ' + lotes.length + ' lote(s)' + (_hayGrande ? ' · incluye un lote grande que debería ir solo' : ' · máx 2/día') + '" style="background:#dc2626;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;margin-left:4px">⚠ ' + lotes.length + '</span>';
       grid += '</div>';
 
       lotes.forEach((lt, lotIdx) => {
@@ -13843,11 +13855,10 @@ function render(){
     const ag = PLAN_DATA.agendadas || [];
     const _prodBackend = new Set(); ag.forEach(a => _prodBackend.add(a.producto));
     const mesMostrado = MESES[ref.getMonth()] + ' ' + ref.getFullYear();
-    let diagMsg = '📊 ' + mesMostrado +
-      ' · Backend devolvió <strong>' + ag.length + ' lotes</strong> en <strong>' + _prodBackend.size + ' productos</strong>' +
-      ' · Pintados en grid: <strong>' + _pintados.length + ' div.lote</strong>' +
-      ' · ' + _prodPintados.size + ' productos únicos visibles' +
-      ' · ' + _fechasConLotes.length + ' días con lote en ' + mesMostrado;
+    // Resumen limpio para el usuario (antes era texto de debug)
+    let diagMsg = '📅 <strong>' + mesMostrado + '</strong> · ' +
+      _pintados.length + ' lote(s) en ' + _fechasConLotes.length + ' día(s)' +
+      (ag.length > _pintados.length ? ' · ' + ag.length + ' programados en el año' : '');
     if (ag.length > 0 && _pintados.length === 0){
       // El mes navegado no tiene lotes · ver en qué meses SÍ hay
       const _meses = {};
