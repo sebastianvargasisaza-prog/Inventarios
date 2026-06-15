@@ -23964,9 +23964,21 @@ async function ckMarcar(itemId, estado){
     html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px">';
     html += '<div>Vende/día: <strong>' + p.velocidad_uds_dia.toFixed(1) + ' uds</strong></div>';
     html += '<div>Vende/mes: <strong>' + ventaMes + ' uds</strong></div>';
-    html += '<div>Stock: <strong>' + p.stock_uds_total + ' uds · ' + p.stock_kg_total + ' kg</strong></div>';
-    html += '<div>Alcanza: <strong style="color:' + cfg.text + '">' + (p.dias_cobertura != null ? p.dias_cobertura + ' días' : '—') + '</strong> ' + cfg.emoji + ' ' + p.urgencia + '</div>';
-    html += '</div></div>';
+    html += '<div>Stock góndola: <strong>' + p.stock_uds_total + ' uds</strong></div>';
+    // M5/M6 · "Alcanza" = días de GÓNDOLA físicos (lo que decide la urgencia), NO la
+    // cobertura-con-pipeline. Así el número y el color (CRÍTICO/etc.) coinciden.
+    html += '<div>Alcanza góndola: <strong style="color:' + cfg.text + '">' + (p.dias_gondola != null ? p.dias_gondola + ' días' : '—') + '</strong> ' + cfg.emoji + ' ' + p.urgencia + '</div>';
+    html += '</div>';
+    // Producción EN CAMINO (pipeline = lotes en curso/programados, NO góndola) · se
+    // muestra aparte para no contradecir la urgencia (M6 físico vs en-camino).
+    if (p.dias_cobertura != null && p.dias_gondola != null && (p.dias_cobertura - p.dias_gondola) >= 1) {
+      if (p.lote_tarde) {
+        html += '<div style="font-size:11px;color:#dc2626;font-weight:700;margin-top:6px;padding-top:6px;border-top:1px dashed #cbd5e1">⏩ Hay producción en camino (alcanza ~' + p.dias_cobertura + 'd) pero llega TARDE: te agotás ' + (p.dias_descubierto||0) + 'd antes. Adelantá ese lote en vez de programar uno nuevo.</div>';
+      } else {
+        html += '<div style="font-size:11px;color:#2563eb;margin-top:6px;padding-top:6px;border-top:1px dashed #cbd5e1">📦 Ya hay producción en camino (lotes en curso/programados): alcanza ~<strong>' + p.dias_cobertura + ' días</strong>. No programes de más — solo asegurá que llegue a tiempo.</div>';
+      }
+    }
+    html += '</div>';
 
     // ── Última producción + horizonte ──
     if (p.ultima_produccion_fecha) {
