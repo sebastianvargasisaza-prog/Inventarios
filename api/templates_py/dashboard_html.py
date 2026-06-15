@@ -23753,57 +23753,53 @@ async function ckMarcar(itemId, estado){
   // Renderiza lotes programados/pausados inline en Necesidades · Sebastián
   // 13-may-2026: "todo junto en necesidades asi esta integrado". Reemplaza
   // a Plan en curso · misma data, misma acciones, contexto del producto.
+  // Rediseño 15-jun · lista vertical tipo timeline (antes chips apretados) ·
+  // cada lote = una fila clara: fecha grande · estado · kg · origen · B2B · acciones.
+  const _MESES_ABR = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
   function renderLotesInline(lotes, producto) {
     if (!lotes || !lotes.length) return '';
     const ORIGEN_LABEL = {
-      'eos_plan': '🆕', 'eos_canonico': '🔁', 'eos_retroactivo': '📜',
-      'calendar': '📆', 'manual': '✋',
+      'eos_plan': '🆕 manual', 'eos_canonico': '🔁 auto', 'eos_retroactivo': '📜 histórico',
+      'calendar': '📆 calendar', 'manual': '✋ manual', 'auto_plan': '🤖 auto', 'sugerido': '🔁 auto',
     };
-    // FEATURE 24-may noche · primer bloque: distribución textual completa
-    // de cada lote (DTC + B2B desglosado). El chip morado tiene tooltip
-    // pero el usuario quería verlo a primera vista · ahora una línea
-    // dedicada por lote con la etiqueta automática.
-    let header = '<div style="margin-bottom:6px">';
-    lotes.forEach(lt => {
-      if (lt.distribucion_resumen) {
-        const fechaCorta = (lt.fecha || '').slice(5, 10);
-        header += '<div style="background:#fdf4ff;border-left:3px solid #7e22ce;border-radius:5px;padding:6px 10px;margin-bottom:4px;font-size:11px;color:#475569">'
-                + '<strong style="color:#7e22ce">📦 ' + fechaCorta + '</strong> · '
-                + escapeHtmlNec(lt.distribucion_resumen) + '</div>';
-      }
-    });
-    header += '</div>';
-    let html = (header.indexOf('📦') >= 0 ? header : '');
-    html += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11px">';
-    html += '<span style="color:#64748b;font-weight:700">📋 Lotes:</span>';
-    lotes.forEach(lt => {
+    const prodEsc = escapeHtmlNec(producto);
+    const arr = lotes.slice().sort((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')));
+    let html = '<div style="display:flex;flex-direction:column;gap:8px">';
+    arr.forEach(lt => {
       const cfg = PEC_ESTADO_COLORS[lt.estado] || {bg:'#e2e8f0', text:'#475569', emoji:''};
-      const orig = ORIGEN_LABEL[lt.origen] || '';
-      const motivoTxt = lt.motivo_pausa ? ' · ' + escapeHtmlNec(lt.motivo_pausa) : '';
-      const fechaCorta = (lt.fecha || '').slice(5, 10);
-      const prodEsc = escapeHtmlNec(producto);
-      // Chip estado + fecha + kg
-      html += '<span style="background:white;border:1px solid #cbd5e1;border-radius:6px;padding:3px 6px;display:inline-flex;gap:4px;align-items:center">';
-      html += '<span style="background:' + cfg.bg + ';color:' + cfg.text + ';padding:1px 5px;border-radius:3px;font-weight:700">' + cfg.emoji + ' ' + lt.estado + '</span>';
-      html += '<span style="font-family:ui-monospace,monospace;color:#1e40af;font-weight:700">' + fechaCorta + '</span>';
-      html += '<span style="color:#475569">' + lt.kg + 'kg</span>';
-      // FEATURE B2B 24-may · desglose si hay aportes B2B
+      const orig = ORIGEN_LABEL[lt.origen] || lt.origen || '';
+      const f = String(lt.fecha || '');
+      const dd = f.slice(8, 10), mm = parseInt(f.slice(5, 7), 10), yy = f.slice(0, 4);
+      const mesAbr = (mm >= 1 && mm <= 12) ? _MESES_ABR[mm - 1] : '';
+      let acc = '';
+      if (lt.estado === 'pendiente' || lt.estado === 'programado') {
+        acc += '<button onclick="moverPEC(' + lt.id + ',&#39;' + prodEsc + '&#39;,&#39;' + f + '&#39;)" title="Mover fecha" style="background:#fff;border:1px solid #c4b5fd;color:#6d28d9;width:28px;height:28px;border-radius:6px;font-size:13px;cursor:pointer">📅</button>';
+        acc += '<button onclick="pausarPEC(' + lt.id + ',&#39;' + prodEsc + '&#39;)" title="Pausar" style="background:#fff;border:1px solid #fde68a;color:#ca8a04;width:28px;height:28px;border-radius:6px;font-size:13px;cursor:pointer">⏸</button>';
+        acc += '<button onclick="cancelarPEC(' + lt.id + ')" title="Cancelar" style="background:#fff;border:1px solid #e2e8f0;color:#94a3b8;width:28px;height:28px;border-radius:6px;font-size:13px;cursor:pointer">✕</button>';
+      } else if (lt.estado === 'esperando_recurso') {
+        acc += '<button onclick="reactivarPEC(' + lt.id + ',&#39;' + prodEsc + '&#39;,&#39;' + f + '&#39;)" title="Reactivar" style="background:#16a34a;color:#fff;border:none;padding:0 10px;height:28px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">▶ Reactivar</button>';
+        acc += '<button onclick="cancelarPEC(' + lt.id + ')" title="Cancelar" style="background:#fff;border:1px solid #e2e8f0;color:#94a3b8;width:28px;height:28px;border-radius:6px;font-size:13px;cursor:pointer">✕</button>';
+      }
+      html += '<div style="display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #e2e8f0;border-left:4px solid ' + cfg.text + ';border-radius:8px;padding:8px 12px">';
+      // bloque fecha
+      html += '<div style="text-align:center;min-width:44px;line-height:1.1"><div style="font-size:17px;font-weight:800;color:#1e293b">' + dd + '</div><div style="font-size:10px;color:#94a3b8;text-transform:uppercase">' + mesAbr + ' ' + yy.slice(2) + '</div></div>';
+      // info central
+      html += '<div style="flex:1;min-width:0">';
+      html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">';
+      html += '<span style="background:' + cfg.bg + ';color:' + cfg.text + ';padding:2px 9px;border-radius:10px;font-size:10px;font-weight:700">' + cfg.emoji + ' ' + lt.estado + '</span>';
+      html += '<span style="font-size:13px;font-weight:700;color:#334155">' + lt.kg + ' kg</span>';
+      if (orig) html += '<span style="font-size:10px;color:#94a3b8">' + orig + '</span>';
+      html += '</div>';
       if (lt.tiene_b2b && lt.kg_b2b > 0) {
         const tt = (lt.aportes_b2b || []).map(a => a.cliente + ': ' + a.kg + 'kg (' + a.n_pedidos + ' pedido' + (a.n_pedidos === 1 ? '' : 's') + ')').join(' · ');
-        html += '<span title="' + tt + '" style="background:#fdf4ff;color:#7e22ce;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:700">🤝 ' + lt.kg_dtc + ' DTC + ' + lt.kg_b2b + ' B2B</span>';
+        html += '<div title="' + tt + '" style="font-size:10px;color:#7e22ce;margin-top:3px;font-weight:700">🤝 ' + lt.kg_dtc + ' DTC + ' + lt.kg_b2b + ' B2B</div>';
       }
-      html += '<span title="' + lt.origen + '">' + orig + '</span>';
-      if (motivoTxt) html += '<span style="color:#92400e">' + motivoTxt + '</span>';
-      // Botones acción inline
-      if (lt.estado === 'pendiente' || lt.estado === 'programado') {
-        html += '<button onclick="moverPEC(' + lt.id + ',&#39;' + prodEsc + '&#39;,&#39;' + (lt.fecha || '') + '&#39;)" style="background:transparent;border:1px solid #6d28d9;color:#6d28d9;padding:1px 6px;border-radius:3px;font-size:10px;cursor:pointer" title="Mover fecha">📅</button>';
-        html += '<button onclick="pausarPEC(' + lt.id + ',&#39;' + prodEsc + '&#39;)" style="background:transparent;border:1px solid #ca8a04;color:#ca8a04;padding:1px 6px;border-radius:3px;font-size:10px;cursor:pointer" title="Pausar">⏸</button>';
-        html += '<button onclick="cancelarPEC(' + lt.id + ')" style="background:transparent;border:1px solid #cbd5e1;color:#64748b;padding:1px 6px;border-radius:3px;font-size:10px;cursor:pointer" title="Cancelar">✕</button>';
-      } else if (lt.estado === 'esperando_recurso') {
-        html += '<button onclick="reactivarPEC(' + lt.id + ',&#39;' + prodEsc + '&#39;,&#39;' + (lt.fecha || '') + '&#39;)" style="background:#16a34a;color:white;border:none;padding:2px 7px;border-radius:3px;font-size:10px;cursor:pointer;font-weight:700" title="Reactivar">▶</button>';
-        html += '<button onclick="cancelarPEC(' + lt.id + ')" style="background:transparent;border:1px solid #cbd5e1;color:#64748b;padding:1px 6px;border-radius:3px;font-size:10px;cursor:pointer" title="Cancelar">✕</button>';
-      }
-      html += '</span>';
+      if (lt.distribucion_resumen) html += '<div style="font-size:10px;color:#64748b;margin-top:3px">' + escapeHtmlNec(lt.distribucion_resumen) + '</div>';
+      if (lt.motivo_pausa) html += '<div style="font-size:10px;color:#92400e;margin-top:3px">⏸ ' + escapeHtmlNec(lt.motivo_pausa) + '</div>';
+      html += '</div>';
+      // acciones
+      html += '<div style="display:flex;gap:5px;flex-shrink:0">' + acc + '</div>';
+      html += '</div>';
     });
     html += '</div>';
     return html;
