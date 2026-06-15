@@ -10447,6 +10447,57 @@ def plan_auto_programar_sugeridas():
     return jsonify({'ok': True, 'n_reemplazados': n_reemplazados, **resultado})
 
 
+@bp.route("/api/plan/sellar-horizonte", methods=["POST"])
+def plan_sellar_horizonte():
+    """Sebastián 15-jun · 'sellar' el plan completo: cancela los lotes FUTUROS
+    pendientes (duplicados/desordenados) de TODOS los productos y recalcula el
+    horizonte limpio con la lógica actual (20d · cob 20/25/45).
+
+    PROTEGE (no toca): lo PASADO y la SEMANA EN CURSO (≤ domingo de esta semana ·
+    lo que Alejandro puso), lo ya INICIADO o terminado, los B2B y lo retroactivo.
+    Lo pasado/iniciado SIRVE de base al cálculo (vía stock). dry_run=true por
+    defecto → devuelve preview de qué se cancelaría sin tocar nada.
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    from datetime import timedelta as _td3
+    d = request.get_json(silent=True) or {}
+    dry = d.get('dry_run', True)
+    hoy = _hoy_colombia()
+    fin_semana = hoy + _td3(days=(6 - hoy.weekday()))   # domingo de la semana en curso
+    corte = fin_semana.isoformat()
+    conn = get_db(); cur = conn.cursor()
+    base_sql = (
+        "SELECT id, producto, fecha_programada, COALESCE(cantidad_kg,0), COALESCE(origen,'') "
+        "FROM produccion_programada "
+        "WHERE substr(fecha_programada,1,10) > ? AND fin_real_at IS NULL AND inicio_real_at IS NULL "
+        "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+        "AND COALESCE(origen,'') NOT IN ('eos_b2b','eos_retroactivo') ")
+    try:
+        rows = cur.execute(base_sql + "AND id NOT IN (SELECT COALESCE(lote_produccion_id,0) "
+                           "FROM pedidos_b2b_lote) ORDER BY producto, fecha_programada", (corte,)).fetchall()
+    except Exception:
+        rows = cur.execute(base_sql + "ORDER BY producto, fecha_programada", (corte,)).fetchall()
+    por_prod = {}
+    for r in rows:
+        por_prod[r[1]] = por_prod.get(r[1], 0) + 1
+    preview = {'corte': corte, 'protege_hasta': corte,
+               'n_a_cancelar': len(rows), 'productos_afectados': len(por_prod)}
+    if dry:
+        return jsonify({'ok': True, 'dry_run': True, **preview})
+    for r in rows:
+        cur.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id=?", (r[0],))
+        audit_log(cur, usuario=user, accion='SELLAR_CANCELAR_LOTE', tabla='produccion_programada',
+                  registro_id=r[0], despues={'producto': r[1], 'fecha': str(r[2])[:10], 'motivo': 'sellar_horizonte'})
+    conn.commit()
+    resultado = _auto_programar_sugeridas(conn, dias_horizonte=365, cob_critico=20,
+                                          cob_alerta=25, cob_vigilar=45, usuario=user)
+    return jsonify({'ok': True, 'dry_run': False, 'n_cancelados': len(rows),
+                    'productos_afectados': len(por_prod), **resultado})
+
+
 @bp.route("/api/plan/limpiar-sugeridas-futuras", methods=["POST"])
 def plan_limpiar_sugeridas_futuras():
     """Sebastián 23-may-2026 · "el calendario salen muchas cosas · limpiarlo
@@ -13451,6 +13502,8 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
     <div>
       <button onclick="generarPlanIA()" class="success" id="btn-generar-ia-2"
         style="font-size:14px;padding:10px 18px">🤖 Generar plan IA</button>
+      <button onclick="sellarPlan()" class="secondary" id="btn-sellar"
+        style="font-size:14px;padding:10px 18px" title="Limpia duplicados y recalcula TODO el horizonte futuro · conserva lo pasado, esta semana, lo iniciado y los B2B">🔒 Sellar plan limpio</button>
       <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" style="display:none" disabled>✅ Confirmar y programar TODO</button>
     </div>
   </div>
@@ -13519,6 +13572,29 @@ function setHoriz(h){
 
 function cambiarMes(delta){ MES_OFFSET += delta; render(); }
 function irHoy(){ MES_OFFSET = 0; render(); }
+
+// 🔒 Sellar plan · limpia los lotes futuros pendientes (duplicados/desordenados)
+// de TODOS los productos y recalcula el horizonte limpio · conserva pasado,
+// semana en curso, iniciados y B2B. Preview → confirmar → ejecutar.
+async function sellarPlan(){
+  const btn = document.getElementById('btn-sellar');
+  const _post = (body) => fetch('/api/plan/sellar-horizonte', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()}, credentials:'same-origin', body: JSON.stringify(body)});
+  try {
+    if (btn){ btn.disabled = true; btn.textContent = '🔒 Calculando…'; }
+    const r = await _post({dry_run:true});
+    const d = await r.json();
+    if (!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+    const ok = confirm('🔒 SELLAR PLAN\\n\\nSe van a CANCELAR ' + d.n_a_cancelar + ' lote(s) futuros de ' + d.productos_afectados + ' producto(s) (del ' + d.corte + ' en adelante) y se recalculará el horizonte limpio con la lógica actual.\\n\\nSE CONSERVAN intactos:\\n• Todo lo PASADO (ya hecho · base del cálculo)\\n• La SEMANA EN CURSO (lo que puso Alejandro)\\n• Lo ya INICIADO o terminado\\n• Los pedidos B2B\\n\\n¿Continuar?');
+    if (!ok){ return; }
+    if (btn){ btn.textContent = '🔒 Sellando…'; }
+    const r2 = await _post({dry_run:false});
+    const d2 = await r2.json();
+    if (!r2.ok){ alert('Error: ' + (d2.error || r2.status)); return; }
+    alert('✓ Plan sellado.\\n\\n' + (d2.n_cancelados||0) + ' lote(s) viejos cancelados · ' + (d2.n_creados!=null ? d2.n_creados + ' lote(s) recalculados' : 'horizonte recalculado') + '.\\nEl calendario queda limpio y sin duplicados.');
+    if (typeof cargar === 'function') cargar();
+  } catch(e){ alert('Error red: ' + e.message); }
+  finally { if (btn){ btn.disabled = false; btn.textContent = '🔒 Sellar plan limpio'; } }
+}
 
 async function cargar(){
   document.getElementById('cal-grid-wrap').innerHTML = '<div class="muted" style="padding:30px;text-align:center">Cargando calendario…</div>';
