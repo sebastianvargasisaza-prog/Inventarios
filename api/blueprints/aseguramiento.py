@@ -3883,6 +3883,40 @@ def _ghl_fetch_contact(c, contact_id):
         return out
 
 
+@bp.route('/api/aseguramiento/pqr-inbox/ghl-test/<contact_id>', methods=['GET'])
+def pqr_ghl_test(contact_id):
+    """Solo admin · diagnóstico de la lectura de GHL: muestra si hay token, qué
+    responde la API v2 y v1 para ese contacto, y qué extrae el helper. Sirve para
+    saber por qué 'message' viene vacío (token ausente / sin scope / formato CF)."""
+    if session.get('compras_user', '') not in set(ADMIN_USERS):
+        return jsonify({'error': 'Solo admin'}), 403
+    conn = get_db(); c = conn.cursor()
+    token = _ghl_token(c)
+    out = {'contact_id': contact_id, 'token_encontrado': bool(token),
+           'token_preview': (token[:10] + '…') if token else None,
+           'cf_mensaje_id': _GHL_CF_MENSAJE, 'cf_canal_id': _GHL_CF_CANAL}
+    if not token:
+        out['error'] = 'No hay ghl_api_key en animus_config ni env GHL_API_KEY'
+        return jsonify(out)
+    import urllib.request as _ur
+    import urllib.error as _ue
+    res = {}
+    for label, url in (('v2', 'https://services.leadconnectorhq.com/contacts/' + contact_id),
+                       ('v1', 'https://rest.gohighlevel.com/v1/contacts/' + contact_id)):
+        try:
+            req = _ur.Request(url, headers={'Authorization': 'Bearer ' + token,
+                                            'Version': '2021-07-28', 'Accept': 'application/json'})
+            with _ur.urlopen(req, timeout=15) as r:
+                res[label] = {'status': r.status, 'preview': r.read().decode('utf-8', 'replace')[:1000]}
+        except _ue.HTTPError as e:
+            res[label] = {'status': e.code, 'body': e.read().decode('utf-8', 'replace')[:400]}
+        except Exception as ex:
+            res[label] = {'error': str(ex)}
+    out['tests'] = res
+    out['extraido_por_helper'] = _ghl_fetch_contact(c, contact_id)
+    return jsonify(out)
+
+
 @bp.route('/api/pqr/inbound', methods=['POST'])
 def pqr_inbound():
     """Webhook server-to-server desde GHL. Valida secreto propio (no usa sesión).

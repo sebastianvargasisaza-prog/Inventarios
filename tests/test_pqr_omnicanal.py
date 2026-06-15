@@ -123,6 +123,15 @@ def test_diagnostico_solo_admin(app, db_clean):
     assert m.get('/api/aseguramiento/pqr-inbox/diagnostico').status_code == 403
 
 
+def test_ghl_test_diagnostico_admin(app, db_clean):
+    a = _login(app, 'sebastian')
+    r = a.get('/api/aseguramiento/pqr-inbox/ghl-test/ABC123')
+    assert r.status_code == 200, r.data[:200]
+    assert 'token_encontrado' in r.get_json()
+    m = _login(app, 'miguel')
+    assert m.get('/api/aseguramiento/pqr-inbox/ghl-test/ABC123').status_code == 403
+
+
 def test_animus_pqr_crud(app, db_clean):
     # sebastian tiene ANIMUS_ACCESS (admin)
     c = _login(app, 'sebastian')
