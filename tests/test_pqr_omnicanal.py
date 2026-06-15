@@ -115,8 +115,9 @@ def test_trazabilidad_producto_lote_pedido(app, db_clean, monkeypatch):
     cli.post('/api/pqr/inbound', json={'contact_id': 'C-esp'}, headers={'X-PQR-Token': SECRET})
     c = _login(app, 'miguel')
     inb = c.get('/api/aseguramiento/pqr-inbox').get_json()['inbox']
-    item = inb[0]
-    assert item['producto'] == 'Serum Vit C' and item['lote'] == 'L240601'
+    item = next((x for x in inb if x.get('producto') == 'Serum Vit C'), None)
+    assert item is not None, 'no apareció la entrada de prueba en el buzón'
+    assert item['lote'] == 'L240601'
     r = c.post('/api/aseguramiento/pqr-inbox/%d/enrutar' % item['id'],
                json={'empresa': 'espagiria', 'tipo': 'reaccion_adversa'}, headers=csrf_headers())
     assert r.status_code == 200
@@ -128,6 +129,30 @@ def test_trazabilidad_producto_lote_pedido(app, db_clean, monkeypatch):
     finally:
         db.close()
     assert q == ('Serum Vit C', 'L240601'), q
+
+
+def test_notifica_animus_al_llegar_pqr_espagiria(app, db_clean, monkeypatch):
+    """Al enrutar un PQR a Espagiria, EOS dispara correo a Ánimus con el radicado."""
+    import sys
+    A = sys.modules.get('blueprints.aseguramiento') or sys.modules.get('api.blueprints.aseguramiento')
+    capt = {}
+    monkeypatch.setattr(A, '_enviar_email_pqr',
+                        lambda asunto, html, destinos: capt.update(
+                            {'asunto': asunto, 'destinos': destinos, 'radicado_en_html': 'QC-' in html}) or True)
+    monkeypatch.setenv('PQR_NOTIF_EMAILS', 'animus@test.com')
+    os.environ['PQR_WEBHOOK_SECRET'] = SECRET
+    c = app.test_client()
+    # enrutar manual a espagiria desde el triaje
+    c.post('/api/pqr/inbound', json={'message': 'se me brotó la piel con la crema',
+           'message_id': 'notif-1', 'contact_name': 'Cli'}, headers={'X-PQR-Token': SECRET})
+    cli = _login(app, 'miguel')
+    inb = cli.get('/api/aseguramiento/pqr-inbox').get_json()['inbox']
+    item = next(x for x in inb if x['id'] and 'brot' in x['mensaje'])
+    r = cli.post('/api/aseguramiento/pqr-inbox/%d/enrutar' % item['id'],
+                 json={'empresa': 'espagiria', 'tipo': 'reaccion_adversa'}, headers=csrf_headers())
+    assert r.status_code == 200
+    assert capt.get('destinos') == ['animus@test.com']
+    assert capt.get('radicado_en_html') is True
 
 
 def test_webhook_vacio_sin_contact_id_da_400(app, db_clean):

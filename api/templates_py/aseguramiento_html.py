@@ -1972,16 +1972,23 @@ async function loadQuejas(){
       var saludIcon = it.impacto_salud ? '<span title="Impacto salud" style="color:#ef4444">⚠</span> ' : '';
       var recallIcon = it.requiere_recall ? '<span title="Recall" style="color:#c2410c">●</span> ' : '';
       var prodLote = (it.producto||'') + (it.lote ? ' / '+it.lote : '');
+      var claseTxt = it.clase_pqrsf ? '<div style="font-size:0.72em;color:#6d28d9">'+_esc(it.clase_pqrsf)+(it.criticidad?' · '+_esc(it.criticidad):'')+'</div>' : '';
+      var slaTxt = '';
+      if(it.fecha_limite_respuesta && it.estado!=='cerrada' && it.estado!=='rechazada'){
+        var _dd = Math.ceil((new Date(it.fecha_limite_respuesta+'T00:00:00') - new Date())/86400000);
+        slaTxt = _dd<0 ? '<div style="font-size:0.7em;color:#dc2626;font-weight:700">SLA vencido</div>'
+               : '<div style="font-size:0.7em;color:'+(_dd<=3?'#d97706':'#16a34a')+'">vence '+_dd+'d</div>';
+      }
       return '<tr>'
         +'<td><b><code>'+_esc(it.codigo)+'</code></b></td>'
         +'<td>'+_esc(it.fecha_recepcion||'')+'</td>'
         +'<td>'+_esc(it.canal||'')+'</td>'
         +'<td>'+saludIcon+recallIcon+_esc((it.cliente_nombre||'').slice(0,40))+'</td>'
         +'<td>'+_esc(prodLote.slice(0,40))+'</td>'
-        +'<td>'+_esc(it.tipo_queja||'')+'</td>'
+        +'<td>'+_esc(it.tipo_queja||'')+claseTxt+'</td>'
         +'<td>'+sevBadge+'</td>'
         +'<td><span style="color:'+estadoCol+';font-weight:600;font-size:0.85em">'+_esc(estadoLabel)+'</span></td>'
-        +'<td>'+(it.dias_abierta||0)+'d</td>'
+        +'<td>'+(it.dias_abierta||0)+'d'+slaTxt+'</td>'
         +'<td><button class="btn btn-ghost btn-sm" onclick="verQueja('+it.id+')">Abrir</button></td>'
         +'</tr>';
     }).join('');
@@ -3441,7 +3448,9 @@ async function loadPqrTriaje(){
     box.innerHTML = items.map(function(x){
       var conf = x.ia_confianza!=null ? Math.round(x.ia_confianza*100)+'%' : '—';
       var emp = x.ia_empresa;
-      var sugTxt = emp ? ('IA sugiere <b style="color:'+(emp==='espagiria'?'#6d28d9':'#0ea5e9')+'">'+(emp==='espagiria'?'ESPAGIRIA':'ÁNIMUS')+'</b> ('+conf+' · '+_esc(x.ia_fuente||'')+')') : '<span style="color:#94a3b8">IA sin sugerencia</span>';
+      var critTxt = x.ia_criticidad ? (' · <b style="color:'+(x.ia_criticidad==='alto'?'#dc2626':(x.ia_criticidad==='medio'?'#d97706':'#16a34a'))+'">'+_esc(x.ia_criticidad.toUpperCase())+'</b>') : '';
+      var claseTxt = x.ia_clase ? (' · '+_esc(x.ia_clase)) : '';
+      var sugTxt = emp ? ('IA sugiere <b style="color:'+(emp==='espagiria'?'#6d28d9':'#0ea5e9')+'">'+(emp==='espagiria'?'ESPAGIRIA':'ÁNIMUS')+'</b> ('+conf+' · '+_esc(x.ia_fuente||'')+')'+claseTxt+critTxt) : '<span style="color:#94a3b8">IA sin sugerencia</span>';
       var opcEsp = _TIPO_ESP.map(function(t){return '<option value="'+t[0]+'"'+(x.ia_tipo===t[0]?' selected':'')+'>'+t[1]+'</option>';}).join('');
       var opcAni = _TIPO_ANI.map(function(t){return '<option value="'+t[0]+'"'+(x.ia_tipo===t[0]?' selected':'')+'>'+t[1]+'</option>';}).join('');
       return '<div class="card" style="margin:0 0 8px 0;border-left:3px solid '+(emp==='espagiria'?'#6d28d9':(emp==='animus'?'#0ea5e9':'#94a3b8'))+'">'

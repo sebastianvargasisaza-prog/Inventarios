@@ -328,6 +328,31 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (257, "PQRSF · alinear con el SOP real ASG-PRO-003 'Manejo de PQRSF' (15-jun): carga el "
+          "documento vigente + su formato F01 en el SGD con link de Drive, corrige el código "
+          "mal sembrado (ASG-PRO-013 → obsoleto), y agrega columnas PQRSF (clase + criticidad "
+          "Bajo/Medio/Alto) + SLA (fecha_limite_respuesta 15 días hábiles) + acuse de recibo.", [
+        # SGD: el código real es ASG-PRO-003, no 013 (que fue una suposición del seed)
+        "UPDATE sgd_documentos SET estado='obsoleto', observaciones='Código corregido → ASG-PRO-003 (Manejo de PQRSF)' WHERE codigo='ASG-PRO-013'",
+        "INSERT OR IGNORE INTO sgd_documentos (codigo,area,tipo_doc,numero,titulo,version_actual,"
+        "archivo_pdf_url,estado,vigente_desde,proxima_revision,aprobado_por,observaciones,creado_por) VALUES "
+        "('ASG-PRO-003','ASG','PRO',3,'Manejo de PQRSF','01',"
+        "'https://drive.google.com/file/d/1AeEtQqPmi3rd1alO_pqJHyR2YX0Duxqu/view',"
+        "'vigente','2025-05-30','2028-05-29','Director Técnico','Cargado del SGD (Drive)','seed_mig257')",
+        "INSERT OR IGNORE INTO sgd_documentos (codigo,area,tipo_doc,numero,subtipo,titulo,version_actual,"
+        "padre_codigo,archivo_pdf_url,estado,vigente_desde,proxima_revision,creado_por) VALUES "
+        "('ASG-PRO-003-F01','ASG','FOR',1,'F01','Reporte de PQRSF','01','ASG-PRO-003',"
+        "'https://drive.google.com/file/d/1hP2pZ8aNoWAjK5ysab8cDKkEEb_o0PNa/view',"
+        "'vigente','2025-05-27','2028-05-26','seed_mig257')",
+        # quejas_clientes: clase PQRSF + criticidad + SLA + acuse
+        "ALTER TABLE quejas_clientes ADD COLUMN clase_pqrsf TEXT",
+        "ALTER TABLE quejas_clientes ADD COLUMN criticidad TEXT",
+        "ALTER TABLE quejas_clientes ADD COLUMN fecha_limite_respuesta TEXT",
+        "ALTER TABLE quejas_clientes ADD COLUMN acuse_enviado_at TEXT",
+        # pqr_inbox: sugerencia IA de clase + criticidad (se ve en triaje)
+        "ALTER TABLE pqr_inbox ADD COLUMN ia_clase TEXT",
+        "ALTER TABLE pqr_inbox ADD COLUMN ia_criticidad TEXT",
+    ]),
     (256, "PQR · limpieza one-time de las entradas de PRUEBA de la integración GHL (14-jun). "
           "Borra los PQR de prueba de pqr_inbox y sus quejas/animus_pqr enrutados (vía el "
           "vínculo destino_id). Marcadores distintivos de test → no toca datos reales; corre "

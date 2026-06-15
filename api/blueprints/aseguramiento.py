@@ -1886,6 +1886,7 @@ def quejas_endpoint():
     sql = """SELECT id, codigo, fecha_recepcion, canal, cliente_nombre,
                     producto, lote, tipo_queja, severidad, estado,
                     impacto_salud, requiere_recall, fecha_compromiso, fecha_cierre,
+                    clase_pqrsf, criticidad, fecha_limite_respuesta,
                     CAST((julianday('now') - julianday(fecha_recepcion)) AS INTEGER) as dias_abierta
              FROM quejas_clientes"""
     if where: sql += ' WHERE ' + ' AND '.join(where)
@@ -1893,7 +1894,8 @@ def quejas_endpoint():
     rows = c.execute(sql, params).fetchall()
     cols = ['id','codigo','fecha_recepcion','canal','cliente_nombre',
             'producto','lote','tipo_queja','severidad','estado',
-            'impacto_salud','requiere_recall','fecha_compromiso','fecha_cierre','dias_abierta']
+            'impacto_salud','requiere_recall','fecha_compromiso','fecha_cierre',
+            'clase_pqrsf','criticidad','fecha_limite_respuesta','dias_abierta']
     items = [dict(zip(cols, r)) for r in rows]
     kpi_where = ('WHERE ' + ' AND '.join(where)) if where else ''
     kpi_row = c.execute(f"""
@@ -3724,7 +3726,8 @@ def _clasificar_pqr(c, mensaje, contacto_nombre=''):
     """Devuelve {empresa, tipo, severidad, confianza, resumen, razon, fuente}.
     Intenta Claude; si no hay key o falla, cae a reglas (confianza baja → triaje)."""
     base = {'empresa': None, 'tipo': None, 'severidad': None, 'confianza': 0.0,
-            'resumen': (mensaje or '')[:160], 'razon': '', 'fuente': 'reglas'}
+            'resumen': (mensaje or '')[:160], 'razon': '', 'fuente': 'reglas',
+            'clase': None, 'criticidad': None}
     api_key = _anthropic_key(c)
     if api_key and (mensaje or '').strip():
         prompt = (
@@ -3742,7 +3745,11 @@ def _clasificar_pqr(c, mensaje, contacto_nombre=''):
             "fecha_vencimiento,sabor_olor_textura,eficacia,documentacion,servicio,otro · para animus uno de: "
             "envio,producto_equivocado,faltante,devolucion,servicio,facturacion,comercial,otro), "
             "severidad ('critica'|'mayor'|'menor'|'informativa'), confianza (0 a 1), "
-            "resumen (1 frase), razon (1 frase de por qué).\n\nMensaje del cliente"
+            "resumen (1 frase), razon (1 frase de por qué), "
+            "clase (tipo PQRSF: 'peticion'|'queja'|'reclamo'|'sugerencia'|'felicitacion'|'incidente' · "
+            "petición=pide info, queja=mala experiencia/servicio sin falla técnica, reclamo=falla técnica "
+            "del producto, sugerencia=propuesta de mejora, felicitación=elogio, incidente=posible riesgo "
+            "de seguridad/eficacia del producto), criticidad ('bajo'|'medio'|'alto').\n\nMensaje del cliente"
             + (f" ({contacto_nombre})" if contacto_nombre else "") + ":\n" + (mensaje or '')[:1500]
         )
         try:
@@ -3766,6 +3773,8 @@ def _clasificar_pqr(c, mensaje, contacto_nombre=''):
                     'confianza': round(float(obj.get('confianza', 0.7)), 2),
                     'resumen': (obj.get('resumen') or base['resumen'])[:300],
                     'razon': (obj.get('razon') or '')[:300], 'fuente': 'ia',
+                    'clase': (obj.get('clase') or '').strip().lower() or None,
+                    'criticidad': (obj.get('criticidad') or '').strip().lower() or None,
                 })
                 return base
         except Exception as e:
@@ -3782,25 +3791,112 @@ def _tipo_para_destino(empresa, tipo):
     return tipo if tipo in _VALID_TIPO_ANIMUS else 'otro'
 
 
+_VALID_CLASE_PQRSF = ('peticion', 'queja', 'reclamo', 'sugerencia', 'felicitacion', 'incidente')
+_VALID_CRITICIDAD = ('bajo', 'medio', 'alto')
+_PQRSF_SLA_DIAS_HABILES = 15  # ASG-PRO-003: respuesta máx. 15 días hábiles
+
+
+def _mas_dias_habiles(fecha_iso, n=_PQRSF_SLA_DIAS_HABILES):
+    """Suma n días hábiles (Lun-Vie) a una fecha ISO. Festivos no se descuentan
+    (aproximación segura: la fecha límite real puede ser ligeramente posterior)."""
+    from datetime import date as _d, timedelta as _td
+    try:
+        y, m, dd = (int(x) for x in str(fecha_iso)[:10].split('-'))
+        cur = _d(y, m, dd)
+    except Exception:
+        return None
+    added = 0
+    while added < n:
+        cur += _td(days=1)
+        if cur.weekday() < 5:
+            added += 1
+    return cur.isoformat()
+
+
+def _enviar_email_pqr(asunto, html, destinos):
+    """Email interno async best-effort (no bloquea ni rompe el flujo del PQR)."""
+    if not destinos or not os.environ.get('EMAIL_PASSWORD'):
+        return False
+    try:
+        import sys as _sys
+        import threading as _th
+        _sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from notificaciones import SistemaNotificaciones
+        notif = SistemaNotificaciones()
+
+        def _send():
+            try:
+                notif._enviar_email(asunto, html, destinos)
+            except Exception as _e:
+                log.warning('PQR email fallo: %s', _e)
+        _th.Thread(target=_send, daemon=True).start()
+        return True
+    except Exception as e:
+        log.warning('PQR email setup fallo: %s', e)
+        return False
+
+
+def _notificar_animus_pqr(cod, row, clase, crit, f_limite):
+    """Avisa por correo a Ánimus (y a quien se configure) que llegó un PQR de
+    calidad a Espagiria, con su número de radicado. ASG-PRO-003."""
+    destinos = [e.strip() for e in os.environ.get('PQR_NOTIF_EMAILS', '').split(',') if e.strip()]
+    if not destinos:
+        return False
+
+    def _esc(s):
+        return (str(s or '')).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    cliente = _esc(row.get('contacto_nombre') or 'Cliente')
+    asunto = f'[PQR {cod}] Nuevo PQR de calidad recibido' + (f' · criticidad {crit.upper()}' if crit else '')
+    html = (
+        f"<h2 style='color:#6d28d9'>Nuevo PQR de calidad · Radicado {_esc(cod)}</h2>"
+        f"<p>Llegó un PQR a Aseguramiento (Espagiria). Notificación automática (ASG-PRO-003).</p>"
+        f"<ul>"
+        f"<li><b>Radicado:</b> {_esc(cod)}</li>"
+        f"<li><b>Clase:</b> {_esc(clase or '—')} &middot; <b>Criticidad:</b> {_esc(crit or '—')}</li>"
+        f"<li><b>Cliente:</b> {cliente}</li>"
+        f"<li><b>Producto:</b> {_esc(row.get('producto') or '—')} &middot; <b>Lote:</b> {_esc(row.get('lote') or '—')}</li>"
+        f"<li><b>Canal:</b> {_esc(row.get('canal') or '—')}</li>"
+        f"<li><b>Fecha límite de respuesta (SLA 15 días háb.):</b> {_esc(f_limite or '—')}</li>"
+        f"</ul>"
+        f"<p><b>Mensaje del cliente:</b><br>{_esc((row.get('mensaje') or '')[:1500])}</p>"
+        f"<p style='color:#888;font-size:0.9em'>Gestionar en EOS &rsaquo; Aseguramiento &rsaquo; Quejas.</p>"
+    )
+    return _enviar_email_pqr(asunto, html, destinos)
+
+
 def _enrutar_a_espagiria(c, row, tipo, user):
     """Crea una queja_clientes (Espagiria) desde un pqr_inbox. Devuelve (codigo, id)."""
     canal_q = _CANAL_GHL_A_QUEJA.get((row['canal'] or '').lower(), 'otro')
     tipo_q = _tipo_para_destino('espagiria', tipo)
 
+    clase = (row.get('ia_clase') or '').strip().lower()
+    clase = clase if clase in _VALID_CLASE_PQRSF else None
+    crit = (row.get('ia_criticidad') or '').strip().lower()
+    crit = crit if crit in _VALID_CRITICIDAD else None
+    f_limite = _mas_dias_habiles(_hoy_co().isoformat())
+
     def _ins():
         cod = _generar_codigo_queja(c)
         c.execute(
             "INSERT INTO quejas_clientes (codigo, fecha_recepcion, recibido_por, canal, "
-            "cliente_nombre, cliente_contacto, producto, lote, tipo_queja, descripcion, impacto_salud, estado) "
-            "VALUES (?, date('now','-5 hours'), ?, ?, ?, ?, ?, ?, ?, ?, ?, 'nueva')",
+            "cliente_nombre, cliente_contacto, producto, lote, tipo_queja, descripcion, impacto_salud, "
+            "clase_pqrsf, criticidad, fecha_limite_respuesta, estado) "
+            "VALUES (?, date('now','-5 hours'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'nueva')",
             (cod, user, canal_q, (row['contacto_nombre'] or 'Cliente GHL')[:200],
              ((row['contacto_email'] or '') + ' ' + (row['contacto_telefono'] or '')).strip()[:200],
              (row.get('producto') or '')[:200], (row.get('lote') or '')[:100],
-             tipo_q, (row['mensaje'] or '')[:3000], 1 if tipo_q == 'reaccion_adversa' else 0))
+             tipo_q, (row['mensaje'] or '')[:3000], 1 if tipo_q == 'reaccion_adversa' else 0,
+             clase, crit, f_limite))
         return cod, c.lastrowid
     cod, qid = _intentar_insert_con_retry(_ins)
     _audit_log(c, usuario=user, accion='CREAR_QUEJA', tabla='quejas_clientes',
                registro_id=qid, despues={'codigo': cod, 'origen': 'pqr_inbox', 'inbox_id': row['id']})
+    # Notifica a Ánimus por correo que llegó un PQR de calidad (con radicado · ASG-PRO-003)
+    try:
+        if _notificar_animus_pqr(cod, row, clase, crit, f_limite):
+            c.execute("UPDATE quejas_clientes SET acuse_enviado_at=date('now','-5 hours') WHERE id=?", (qid,))
+    except Exception as _e:
+        log.warning('notif animus PQR fallo (no crítico): %s', _e)
     return cod, qid
 
 
@@ -3995,12 +4091,13 @@ def pqr_inbound():
     c.execute(
         "INSERT INTO pqr_inbox (ghl_message_id, ghl_contact_id, canal, contacto_nombre, contacto_email, "
         "contacto_telefono, mensaje, recibido_en, ia_empresa, ia_tipo, ia_severidad, ia_confianza, "
-        "ia_resumen, ia_razon, ia_fuente, producto, lote, pedido_numero) "
-        "VALUES (?,?,?,?,?,?,?,date('now','-5 hours'),?,?,?,?,?,?,?,?,?,?)",
+        "ia_resumen, ia_razon, ia_fuente, producto, lote, pedido_numero, ia_clase, ia_criticidad) "
+        "VALUES (?,?,?,?,?,?,?,date('now','-5 hours'),?,?,?,?,?,?,?,?,?,?,?,?)",
         (ghl_msg_id, ghl_contact_id, canal, contacto[:200], email[:200], telefono[:80], mensaje[:5000],
          clf['empresa'], clf['tipo'], clf['severidad'], clf['confianza'],
          clf['resumen'], clf['razon'], clf['fuente'],
-         (producto or '')[:200], (lote or '')[:120], (pedido or '')[:80]))
+         (producto or '')[:200], (lote or '')[:120], (pedido or '')[:80],
+         clf.get('clase'), clf.get('criticidad')))
     inbox_id = c.lastrowid
     rrow = c.execute("SELECT * FROM pqr_inbox WHERE id=?", (inbox_id,)).fetchone()
     row = dict(rrow) if rrow else {}
@@ -4027,12 +4124,13 @@ def pqr_inbox_listar():
     rows = c.execute(
         "SELECT id, ghl_message_id, canal, contacto_nombre, contacto_email, contacto_telefono, mensaje, recibido_en, "
         "ia_empresa, ia_tipo, ia_severidad, ia_confianza, ia_resumen, ia_razon, ia_fuente, estado, "
-        "destino_empresa, destino_tabla, destino_id, producto, lote, pedido_numero FROM pqr_inbox WHERE estado=? "
+        "destino_empresa, destino_tabla, destino_id, producto, lote, pedido_numero, ia_clase, ia_criticidad "
+        "FROM pqr_inbox WHERE estado=? "
         "ORDER BY (ia_confianza IS NULL) DESC, recibido_en DESC LIMIT 200", (estado,)).fetchall()
     cols = ['id', 'ghl_message_id', 'canal', 'contacto_nombre', 'contacto_email', 'contacto_telefono', 'mensaje',
             'recibido_en', 'ia_empresa', 'ia_tipo', 'ia_severidad', 'ia_confianza', 'ia_resumen',
             'ia_razon', 'ia_fuente', 'estado', 'destino_empresa', 'destino_tabla', 'destino_id',
-            'producto', 'lote', 'pedido_numero']
+            'producto', 'lote', 'pedido_numero', 'ia_clase', 'ia_criticidad']
     items = [dict(zip(cols, r)) for r in rows]
     pend = c.execute("SELECT COUNT(*) FROM pqr_inbox WHERE estado='pendiente'").fetchone()[0]
     return jsonify({'inbox': items, 'pendientes': pend})
