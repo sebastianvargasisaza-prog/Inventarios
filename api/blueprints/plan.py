@@ -10549,6 +10549,105 @@ def plan_sellar_horizonte():
                     'restaurados': restaurados, 'productos_afectados': len(por_prod), **resultado})
 
 
+@bp.route("/api/plan/recuperar-cancelados-bug", methods=["GET", "POST"])
+def plan_recuperar_cancelados_bug():
+    """Sebastián 15-jun · RESCATE del bug anti-vanish (commit 8c2a9dd · vivo hasta 9ed05f2).
+
+    Antes del fix, "Aplicar y recalcular" (CANCELAR_LOTE_REEMPLAZO) y "Sellar plan"
+    (SELLAR_CANCELAR_LOTE) cancelaban lotes FUTUROS pendientes y, si el planner no
+    los recreaba (producto sin ancla = sin historial de producción · ej. SUERO
+    MULTIPEPTIDOS), el producto DESAPARECÍA del calendario. Cancelar no borra
+    (estado='cancelado' + audit_log) → esto los recupera.
+
+    GET o POST {dry_run:true} → diagnóstico (qué se canceló, qué se puede recuperar,
+    clasificado VANISH=producto sin lotes futuros activos vs REEMPLAZADO=el replan
+    sí recreó cadena nueva).
+    POST {dry_run:false, modo:'vanish'|'all'} → restaura.
+      - 'vanish' (default · seguro): restaura SOLO los productos VANISH (sin lote
+        futuro activo) + cualquier lote cancelado dentro de la semana en curso
+        (lo de Alejandro, intocable) → recupera lo perdido SIN duplicar las cadenas
+        que el replan sí recreó.
+      - 'all': restaura TODO lo cancelado por el bug (puede duplicar · re-sellar
+        después con la versión corregida deja todo limpio sin perder nada).
+    NUNCA toca lo ya iniciado/terminado (el bug tampoco los tocó).
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    d = request.get_json(silent=True) or {}
+    dry = (request.method == 'GET') or bool(d.get('dry_run', True))
+    modo = (d.get('modo') or 'vanish').strip().lower()
+    conn = get_db(); cur = conn.cursor()
+    from datetime import timedelta as _td4
+    hoy = _hoy_colombia()
+    corte = (hoy + _td4(days=(6 - hoy.weekday()))).isoformat()   # domingo de esta semana
+    # 1) ids cancelados por las acciones del bug (registro_id es TEXT en audit_log)
+    bug_ids = set()
+    for row in cur.execute(
+        "SELECT DISTINCT registro_id FROM audit_log "
+        "WHERE accion IN ('SELLAR_CANCELAR_LOTE','CANCELAR_LOTE_REEMPLAZO') "
+        "AND registro_id IS NOT NULL").fetchall():
+        try:
+            bug_ids.add(int(str(row[0]).strip()))
+        except (ValueError, TypeError):
+            pass
+    if not bug_ids:
+        return jsonify({'ok': True, 'dry_run': dry, 'recuperables': 0,
+                        'mensaje': 'No hay lotes cancelados por el bug en audit_log.'})
+    # 2) de esos, los que SIGUEN cancelados hoy (recuperables · si se re-cancelaron
+    #    por otra vía o ya se restauraron, no están 'cancelado' → no los tocamos)
+    ph = ",".join(["?"] * len(bug_ids))
+    cand = cur.execute(
+        "SELECT id, producto, substr(fecha_programada,1,10), COALESCE(cantidad_kg,0), COALESCE(origen,'') "
+        "FROM produccion_programada WHERE id IN (%s) AND COALESCE(estado,'')='cancelado' "
+        "AND fin_real_at IS NULL AND inicio_real_at IS NULL" % ph,
+        tuple(bug_ids)).fetchall()
+    if not cand:
+        return jsonify({'ok': True, 'dry_run': dry, 'recuperables': 0,
+                        'mensaje': 'Los lotes cancelados por el bug ya no están cancelados (recuperados o re-programados).'})
+    # 3) productos con lote futuro ACTIVO hoy (para clasificar VANISH vs REEMPLAZADO)
+    activos = set()
+    for row in cur.execute(
+        "SELECT DISTINCT UPPER(TRIM(producto)) FROM produccion_programada "
+        "WHERE substr(fecha_programada,1,10) > ? AND COALESCE(estado,'') NOT IN ('cancelado','completado')",
+        (hoy.isoformat(),)).fetchall():
+        activos.add(row[0])
+    # 4) clasificar + decidir qué restaurar
+    por_prod = {}
+    a_restaurar = []
+    for _id, prod, fecha, kg, origen in cand:
+        pkey = (prod or '').strip().upper()
+        es_vanish = pkey not in activos
+        es_semana = (fecha or '') <= corte           # esta semana / inminente (Alejandro)
+        restaurar = (modo == 'all') or es_vanish or es_semana
+        info = por_prod.setdefault(prod, {'producto': prod, 'cancelados': 0, 'fechas': [],
+                                          'clasificacion': 'VANISH' if es_vanish else 'REEMPLAZADO',
+                                          'a_restaurar': 0})
+        info['cancelados'] += 1
+        info['fechas'].append(fecha)
+        if restaurar:
+            info['a_restaurar'] += 1
+            a_restaurar.append((_id, prod, fecha))
+    detalle = sorted(por_prod.values(), key=lambda x: (-x['a_restaurar'], x['producto']))
+    for it in detalle:
+        it['fechas'] = sorted(it['fechas'])[:6]
+    preview = {'corte_semana': corte, 'recuperables_total': len(cand),
+               'a_restaurar': len(a_restaurar), 'productos': detalle, 'modo': modo}
+    if dry:
+        return jsonify({'ok': True, 'dry_run': True, **preview})
+    # 5) ejecutar restauración (CAS: solo si SIGUE cancelado)
+    restaurados = 0
+    for _id, prod, fecha in a_restaurar:
+        cur.execute("UPDATE produccion_programada SET estado='pendiente' WHERE id=? AND estado='cancelado'", (_id,))
+        if cur.rowcount:
+            restaurados += 1
+            audit_log(cur, usuario=user, accion='RESTAURAR_BUG_VANISH', tabla='produccion_programada',
+                      registro_id=_id, despues={'producto': prod, 'fecha': fecha, 'motivo': 'rescate_bug_anti_vanish', 'modo': modo})
+    conn.commit()
+    return jsonify({'ok': True, 'dry_run': False, 'restaurados': restaurados, **preview})
+
+
 @bp.route("/api/plan/limpiar-sugeridas-futuras", methods=["POST"])
 def plan_limpiar_sugeridas_futuras():
     """Sebastián 23-may-2026 · "el calendario salen muchas cosas · limpiarlo
@@ -13555,6 +13654,8 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
         style="font-size:14px;padding:10px 18px">🤖 Generar plan IA</button>
       <button onclick="sellarPlan()" class="secondary" id="btn-sellar"
         style="font-size:14px;padding:10px 18px" title="Limpia duplicados y recalcula TODO el horizonte futuro · conserva lo pasado, esta semana, lo iniciado y los B2B">🔒 Sellar plan limpio</button>
+      <button onclick="recuperarCancelados()" class="warning" id="btn-recuperar"
+        style="font-size:14px;padding:10px 18px" title="Recupera lotes que se hayan perdido por el bug de cancelación (anti-vanish). No duplica: solo trae de vuelta lo que desapareció y lo de esta semana.">♻️ Recuperar lotes perdidos</button>
       <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" style="display:none" disabled>✅ Confirmar y programar TODO</button>
     </div>
   </div>
@@ -13645,6 +13746,35 @@ async function sellarPlan(){
     if (typeof cargar === 'function') cargar();
   } catch(e){ alert('Error red: ' + e.message); }
   finally { if (btn){ btn.disabled = false; btn.textContent = '🔒 Sellar plan limpio'; } }
+}
+
+// ♻️ Recuperar lotes perdidos por el bug anti-vanish (cancelación sin recreación).
+// Diagnóstico → muestra qué desapareció → confirma → restaura. No duplica:
+// solo trae de vuelta los productos sin lote futuro activo (VANISH) + lo de esta semana.
+async function recuperarCancelados(){
+  const btn = document.getElementById('btn-recuperar');
+  const _post = (body) => fetch('/api/plan/recuperar-cancelados-bug', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()}, credentials:'same-origin', body: JSON.stringify(body)});
+  try {
+    if (btn){ btn.disabled = true; btn.textContent = '♻️ Buscando…'; }
+    const r = await _post({dry_run:true, modo:'vanish'});
+    const d = await r.json();
+    if (!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+    if (!d.a_restaurar){
+      alert('✓ No hay lotes perdidos por recuperar.\\n\\n' + (d.recuperables_total ? ('Se cancelaron ' + d.recuperables_total + ' lote(s) por el bug, pero el plan ya los recreó — no hace falta restaurar nada.') : 'No se encontraron cancelaciones del bug.'));
+      return;
+    }
+    const lista = (d.productos||[]).filter(p=>p.a_restaurar>0).slice(0,12)
+      .map(p=>'• ' + p.producto + ' (' + p.a_restaurar + ' · ' + p.clasificacion + ')').join('\\n');
+    const ok = confirm('♻️ RECUPERAR LOTES PERDIDOS\\n\\nSe van a RESTAURAR ' + d.a_restaurar + ' lote(s) que el bug canceló sin reemplazar:\\n\\n' + lista + ((d.productos||[]).filter(p=>p.a_restaurar>0).length>12 ? '\\n…' : '') + '\\n\\nNo se duplica nada (solo lo que desapareció + lo de esta semana).\\n\\n¿Restaurar?');
+    if (!ok){ return; }
+    if (btn){ btn.textContent = '♻️ Restaurando…'; }
+    const r2 = await _post({dry_run:false, modo:'vanish'});
+    const d2 = await r2.json();
+    if (!r2.ok){ alert('Error: ' + (d2.error || r2.status)); return; }
+    alert('✓ Recuperados ' + (d2.restaurados||0) + ' lote(s).\\n\\nVuelven a aparecer en el calendario. Si querés ordenar duplicados, podés sellar el plan (ya no pierde nada).');
+    if (typeof cargar === 'function') cargar();
+  } catch(e){ alert('Error red: ' + e.message); }
+  finally { if (btn){ btn.disabled = false; btn.textContent = '♻️ Recuperar lotes perdidos'; } }
 }
 
 async function cargar(){

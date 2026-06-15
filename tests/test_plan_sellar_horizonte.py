@@ -91,6 +91,36 @@ def test_reemplazar_no_hace_vanish(app, db_clean):
     assert _estado(lote_id) == 'pendiente'  # restaurado, no cancelado
 
 
+def test_recuperar_cancelados_bug(app, db_clean):
+    """RESCATE 15-jun: lote cancelado por el bug (audit CANCELAR_LOTE_REEMPLAZO /
+    SELLAR_CANCELAR_LOTE) y sin recrear → 'Recuperar lotes perdidos' lo restaura."""
+    hoy = _hoy_co()
+    prod = 'PROD RESCATE BUG'
+    fut = (hoy + _dt.timedelta(days=40)).isoformat()
+    lote_id = _seed(prod, fut)
+    # simular el bug: cancelar + dejar rastro de la acción culpable
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    conn.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id=?", (lote_id,))
+    conn.execute("INSERT INTO audit_log (usuario,accion,tabla,registro_id,fecha) "
+                 "VALUES ('sebastian','CANCELAR_LOTE_REEMPLAZO','produccion_programada',?,datetime('now'))",
+                 (str(lote_id),))
+    conn.commit(); conn.close()
+
+    c = _login(app)
+    # diagnóstico
+    dg = c.get('/api/plan/recuperar-cancelados-bug')
+    assert dg.status_code == 200, dg.data[:300]
+    jd = dg.get_json()
+    assert jd['recuperables_total'] >= 1 and jd['a_restaurar'] >= 1
+    assert any(p['clasificacion'] == 'VANISH' for p in jd['productos'])
+    assert _estado(lote_id) == 'cancelado'  # diag no toca
+    # ejecutar
+    r = c.post('/api/plan/recuperar-cancelados-bug', json={'dry_run': False, 'modo': 'vanish'}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    assert r.get_json()['restaurados'] >= 1
+    assert _estado(lote_id) == 'pendiente'  # recuperado
+
+
 def test_sellar_requiere_rol(app, db_clean):
     c = _login(app, 'valentina')  # sin admin/compras
     r = c.post('/api/plan/sellar-horizonte', json={'dry_run': True}, headers=csrf_headers())
