@@ -4976,10 +4976,14 @@ def job_proyeccion_2anios(app):
         # gate: respetar pausa explícita (default ON)
         try:
             r = c.execute("SELECT valor FROM app_settings WHERE clave='proyeccion_auto' LIMIT 1").fetchone()
-            if r is not None and str(r[0]).strip().lower() in ('0', 'false', 'no', 'off'):
-                return True, {'skipped': 'proyeccion_auto=0'}, 0
+            # Sebastián 16-jun · DEFAULT OFF: la proyección automática colocaba los
+            # lotes en 2027 (cobertura mal calculada · stock sobreestimado) → se apaga
+            # hasta corregirla. Sebastián planea MANUAL desde Necesidades (botón
+            # Programar). Solo corre si proyeccion_auto está EXPLÍCITAMENTE encendida.
+            if not (r is not None and str(r[0]).strip().lower() in ('1', 'true', 'yes', 'si', 'sí', 'on')):
+                return True, {'skipped': 'proyeccion_auto desactivada (planeación manual)'}, 0
         except Exception:
-            pass
+            return True, {'skipped': 'proyeccion_auto no resuelto · off por seguridad'}, 0
         try:
             res = _proyectar_horizonte_2y(conn, dias=730, usuario='cron-proyeccion')
         except Exception as e:

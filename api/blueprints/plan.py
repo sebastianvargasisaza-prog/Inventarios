@@ -11495,6 +11495,47 @@ def plan_proyectar_2anios():
     return jsonify({'ok': True, **res})
 
 
+@bp.route("/api/plan/limpiar-proyeccion", methods=["POST"])
+def plan_limpiar_proyeccion():
+    """Sebastián 16-jun · borra SOLO los lotes de la proyección automática
+    (origen='eos_proyeccion', no ejecutados) y APAGA el plan automático. No toca lo
+    Fijo/manual ni lo ya producido. Para volver a planeación 100% manual desde
+    Necesidades cuando la proyección automática quedó mal (lotes en 2027)."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute(
+        "SELECT id FROM produccion_programada WHERE origen='eos_proyeccion' "
+        "AND COALESCE(estado,'') NOT IN ('completado','cancelado') "
+        "AND fin_real_at IS NULL AND inicio_real_at IS NULL").fetchall()
+    n = 0
+    for (pid,) in rows:
+        c.execute("DELETE FROM produccion_programada WHERE id=? AND origen='eos_proyeccion' "
+                  "AND fin_real_at IS NULL AND inicio_real_at IS NULL", (pid,))
+        if c.rowcount:
+            n += 1
+    try:
+        c.execute("""CREATE TABLE IF NOT EXISTS app_settings (
+            clave TEXT PRIMARY KEY, valor TEXT NOT NULL, descripcion TEXT,
+            actualizado_at_utc TEXT, actualizado_por TEXT, tenant_id INTEGER DEFAULT 1)""")
+    except Exception:
+        pass
+    c.execute(
+        "INSERT INTO app_settings (clave,valor,descripcion,actualizado_at_utc,actualizado_por) "
+        "VALUES ('proyeccion_auto','0','Plan automático apagado · planeación manual',datetime('now'),?) "
+        "ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor, "
+        "actualizado_at_utc=excluded.actualizado_at_utc, actualizado_por=excluded.actualizado_por", (user,))
+    try:
+        audit_log(c, usuario=user, accion='LIMPIAR_PROYECCION_AUTO', tabla='produccion_programada',
+                  registro_id=0, despues={'eliminados': n, 'proyeccion_auto': 0})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'eliminados': n})
+
+
 def _mp_alcanza_para_lote(conn, producto):
     """¿Alcanza la materia prima para fabricar UN lote del producto AHORA?
     Devuelve (ok|None, faltantes[]). None = sin fórmula (desconocido)."""
@@ -15472,12 +15513,12 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
     <div>
       <button onclick="abrirNuevaProduccion('')" class="success" id="btn-nueva-prod"
         style="font-size:14px;padding:10px 18px;background:#0d9488;font-weight:700" title="Programa manualmente CUALQUIER producto: pilotos, productos de otros clientes o lo que no está en Necesidades. También puedes hacer clic en el ➕ de cualquier día del calendario.">➕ Programar producción</button>
-      <button onclick="actualizarPlan2a()" class="secondary" id="btn-plan2a"
-        style="font-size:14px;padding:10px 18px" title="El plan a 2 años se mantiene SOLO cada madrugada, anclado a la venta de Shopify y al stock real (incluye lo ya producido que aún no aparece en Shopify). Este botón lo recalcula AHORA si no quieres esperar.">🔄 Actualizar plan ahora</button>
+      <button onclick="limpiarPlanAuto()" class="danger" id="btn-limpiar-auto"
+        style="font-size:14px;padding:10px 18px;background:#b45309" title="Borra los lotes de la PROYECCIÓN AUTOMÁTICA (los que se fueron a 2027 por mal cálculo) y apaga el plan automático. NO toca lo que produjiste ni lo que programaste a mano. Quedás en planeación manual desde Necesidades.">🧹 Limpiar plan automático</button>
       <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" style="display:none" disabled>✅ Confirmar y programar TODO</button>
     </div>
   </div>
-  <div style="margin-top:6px;font-size:12px;color:#64748b">⚙️ <strong>Plan automático a 2 años:</strong> cada producto se proyecta solo según cómo se vende en Shopify y cuánto hay realmente producido. Se actualiza cada madrugada y adelanta solo la producción si la venta sube. Tú solo ajustas con ➕ lo manual. &nbsp;·&nbsp; <a onclick="cargarSugerenciasAdelanto(true)" style="color:#b45309;font-weight:700;cursor:pointer">⚡ Sugerencias de adelanto</a> &nbsp;·&nbsp; <a href="/admin/revisar-plan" style="color:#0d9488;font-weight:700">🔎 Revisar plan</a> &nbsp;·&nbsp; <a href="/admin/verificar-volumenes" style="color:#0d9488;font-weight:700">📏 Volúmenes</a></div>
+  <div style="margin-top:6px;font-size:12px;color:#64748b">📝 <strong>Planeación manual:</strong> programá cada producto desde <strong>Necesidades</strong> (botón Programar) o con ➕ en el calendario. El plan automático a 2 años está <strong>apagado</strong> (calculaba mal la cobertura · lo afinamos luego). &nbsp;·&nbsp; <a href="/admin/revisar-plan" style="color:#0d9488;font-weight:700">🔎 Revisar plan</a> &nbsp;·&nbsp; <a href="/admin/verificar-volumenes" style="color:#0d9488;font-weight:700">📏 Volúmenes</a></div>
   <div id="sugerencias-adelanto" style="margin-top:10px"></div>
   <div class="legend">
     <span><span class="legend-dot" style="background:#6366f1"></span>🔁 Canónico (auto)</span>
@@ -17113,25 +17154,23 @@ async function aceptarAdelanto(producto){
     cargarSugerenciasAdelanto();
   }catch(e){ alert('Error: ' + e); }
 }
-async function actualizarPlan2a(){
-  const btn = document.getElementById('btn-plan2a');
-  if(btn){ btn.disabled = true; btn.textContent = '🔄 Actualizando...'; }
+async function limpiarPlanAuto(){
+  if(!confirm('Limpiar el plan AUTOMÁTICO (borra los lotes de proyección que se fueron a 2027) y apagarlo?\n\nNO toca lo que ya produjiste ni lo que programaste a mano. Quedás en planeación manual desde Necesidades.')) return;
+  const btn = document.getElementById('btn-limpiar-auto');
+  if(btn){ btn.disabled = true; btn.textContent = '🧹 Limpiando...'; }
   try{
-    const r = await fetch('/api/plan/proyectar-2anios', {
+    const r = await fetch('/api/plan/limpiar-proyeccion', {
       method: 'POST', headers: {'Content-Type':'application/json', 'X-CSRFToken': getCSRF()},
-      body: JSON.stringify({dry_run: false, dias: 730})
+      body: JSON.stringify({})
     });
     const d = await r.json().catch(()=>({}));
-    if(!r.ok || !d.ok){ alert('No se pudo actualizar el plan: ' + (d.error || r.status)); }
+    if(!r.ok || !d.ok){ alert('No se pudo: ' + (d.error || r.status)); }
     else{
-      alert('✅ Plan a 2 años actualizado.\n\n' +
-        'Productos planeados: ' + (d.productos_planeados||0) + '\n' +
-        'Lotes proyectados: ' + (d.creados||0) + '\n\n' +
-        'Anclado a la venta de Shopify + lo ya producido. Se mantiene solo cada madrugada.');
+      alert('✅ Listo. Se quitaron ' + (d.eliminados||0) + ' lote(s) de la proyección automática y se apagó el plan automático.\n\nPrograma manual desde Necesidades (botón Programar).');
       if(typeof cargar === 'function') cargar();
     }
   }catch(e){ alert('Error: ' + e); }
-  if(btn){ btn.disabled = false; btn.innerHTML = '🔄 Actualizar plan ahora'; }
+  if(btn){ btn.disabled = false; btn.innerHTML = '🧹 Limpiar plan automático'; }
 }
 async function dejarSoloReal(){
   // Paso 1: vista previa (no toca nada)
