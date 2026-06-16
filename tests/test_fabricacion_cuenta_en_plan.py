@@ -199,6 +199,51 @@ def test_dejar_solo_real_rescata_limpia_y_pausa(app, db_clean):
         conn0.commit(); conn0.close()
 
 
+def test_cancelar_mover_completado_espejo(app, db_clean):
+    """16-jun · el espejo de Fabricación cierra lotes manuales como 'completado'. El
+    usuario debe poder cancelarlos/moverlos (son etiqueta, no kardex real); la
+    producción REAL de planta (sin marcador [fab#]) sigue protegida."""
+    from .conftest import TEST_PASSWORD, csrf_headers
+    import datetime as _dt2
+    hoy = (_dt2.datetime.utcnow() - _dt2.timedelta(hours=5)).date()
+    f5 = (hoy - _dt2.timedelta(days=5)).isoformat()
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    conn.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes,"
+                 "inicio_real_at,fin_real_at,inventario_descontado_at,observaciones) VALUES (?,?,?,?,?,1,?,?,?,?)",
+                 ('ESPEJO CXL', f5, 'completado', 'eos_plan', 14, f5, f5, f5, 'cerrado por Fabricación [fab#9991]'))
+    esp = conn.execute("SELECT id FROM produccion_programada WHERE producto='ESPEJO CXL'").fetchone()[0]
+    conn.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes,"
+                 "inicio_real_at,fin_real_at,inventario_descontado_at,observaciones) VALUES (?,?,?,?,?,1,?,?,?,?)",
+                 ('REAL PLANTA CXL', f5, 'completado', 'eos_plan', 14, f5, f5, f5, 'produccion real planta'))
+    real = conn.execute("SELECT id FROM produccion_programada WHERE producto='REAL PLANTA CXL'").fetchone()[0]
+    conn.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes,"
+                 "inicio_real_at,fin_real_at,inventario_descontado_at,observaciones) VALUES (?,?,?,?,?,1,?,?,?,?)",
+                 ('ESPEJO MOV', f5, 'completado', 'eos_retroactivo', 14, f5, f5, f5, 'Retroactivo de Fabricación [fab#9992]'))
+    mov = conn.execute("SELECT id FROM produccion_programada WHERE producto='ESPEJO MOV'").fetchone()[0]
+    conn.commit(); conn.close()
+    c = app.test_client()
+    c.post('/login', data={'username': 'sebastian', 'password': TEST_PASSWORD}, headers=csrf_headers())
+    # cancelar espejo → OK
+    r = c.delete('/api/plan/proximas/' + str(esp), headers=csrf_headers())
+    assert r.status_code == 200, r.data[:200]
+    # cancelar producción REAL (sin marcador) → 409 protegido
+    r2 = c.delete('/api/plan/proximas/' + str(real), headers=csrf_headers())
+    assert r2.status_code == 409, r2.data[:200]
+    # mover espejo → revive a pendiente (deja de figurar producido)
+    futuro = (hoy + _dt2.timedelta(days=30)).isoformat()
+    r3 = c.post('/api/plan/proximas/' + str(mov) + '/reprogramar',
+                json={'nueva_fecha': futuro, 'skip_validacion_dia': True}, headers=csrf_headers())
+    assert r3.status_code == 200, r3.data[:200]
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    try:
+        assert conn.execute("SELECT estado FROM produccion_programada WHERE id=?", (esp,)).fetchone()[0] == 'cancelado'
+        assert conn.execute("SELECT estado FROM produccion_programada WHERE id=?", (real,)).fetchone()[0] == 'completado'
+        row = conn.execute("SELECT estado, fin_real_at, substr(fecha_programada,1,10) FROM produccion_programada WHERE id=?", (mov,)).fetchone()
+        assert row[0] == 'pendiente' and row[1] is None and row[2] == futuro
+    finally:
+        conn.close()
+
+
 def test_self_heal_respeta_pausa_manual(app, db_clean):
     """Con la pausa manual puesta, el self-heal NO re-habilita el cron (antes lo
     re-encendía cada 7am y el calendario volvía a llenarse)."""

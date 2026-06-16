@@ -19752,7 +19752,16 @@ def cancelar_proxima(pid):
     if not row:
         return jsonify({"error": "lote no encontrado"}), 404
     estado_actual, producto, fecha = row
-    if estado_actual not in ('pendiente', 'programado'):
+    # Sebastián 16-jun · El espejo de Fabricación cierra como 'completado' los lotes
+    # manuales que coinciden (producto, fecha) y les pone inventario_descontado_at,
+    # PERO es solo una ETIQUETA (no movió el kardex de EOS · "no re-descuenta"). Esos
+    # lotes (marcador [fab#] o origen='eos_retroactivo') el usuario SÍ debe poder
+    # cancelarlos para re-planear manual. Las producciones REALES de planta (sin ese
+    # marcador) siguen protegidas.
+    es_espejo = bool(cur.execute(
+        "SELECT 1 FROM produccion_programada WHERE id=? AND (COALESCE(origen,'')='eos_retroactivo' "
+        "OR COALESCE(observaciones,'') LIKE '%[fab#%')", (pid,)).fetchone())
+    if estado_actual not in ('pendiente', 'programado') and not (estado_actual == 'completado' and es_espejo):
         return jsonify({
             "error": f"solo se puede cancelar pendiente/programado · estado actual: {estado_actual}",
         }), 409
@@ -19762,11 +19771,12 @@ def cancelar_proxima(pid):
     # inventario_descontado_at SIN cambiar estado (queda 'programado'). El guard
     # de arriba (solo estado) dejaba cancelar una producción YA iniciada con MP
     # descontada SIN revertir → la MP desaparecía del kardex (drift permanente).
-    # Ahora bloqueamos si ya arrancó/descontó: hay que revertir el descuento primero.
+    # Ahora bloqueamos si ya arrancó/descontó · SALVO los del espejo (etiqueta, sin
+    # kardex EOS real que revertir).
     ya = cur.execute(
         "SELECT COALESCE(inicio_real_at,''), COALESCE(inventario_descontado_at,'') "
         "FROM produccion_programada WHERE id=?", (pid,)).fetchone()
-    if ya and (ya[0] or ya[1]):
+    if ya and (ya[0] or ya[1]) and not es_espejo:
         return jsonify({
             "error": "no se puede cancelar: la producción ya inició o descontó inventario. "
                      "Revertí el descuento primero (revertir-completado).",
@@ -19841,16 +19851,22 @@ def reprogramar_proxima(pid):
     estado_actual, producto, fecha_antes, lote_kg, inicio_real, fin_real, origen = row
     lote_kg = float(lote_kg or 0)
 
-    # Inmutabilidad post-arranque · no reprogramar lotes en ejecución
-    if fin_real:
+    # Sebastián 16-jun · lotes cerrados por el espejo de Fabricación (marcador [fab#]
+    # o eos_retroactivo) son etiqueta (no kardex EOS real) → el usuario puede moverlos
+    # para re-planear manual. Producción REAL de planta sigue inmutable.
+    es_espejo = bool(cur.execute(
+        "SELECT 1 FROM produccion_programada WHERE id=? AND (COALESCE(origen,'')='eos_retroactivo' "
+        "OR COALESCE(observaciones,'') LIKE '%[fab#%')", (pid,)).fetchone())
+    # Inmutabilidad post-arranque · no reprogramar lotes en ejecución (salvo espejo)
+    if fin_real and not es_espejo:
         return jsonify({
             "error": f"lote ya completado · no reprogramable (fin_real_at={fin_real})",
         }), 409
-    if inicio_real:
+    if inicio_real and not es_espejo:
         return jsonify({
             "error": f"lote en curso · no reprogramable (inicio_real_at={inicio_real})",
         }), 409
-    if estado_actual not in ('pendiente', 'programado'):
+    if estado_actual not in ('pendiente', 'programado') and not (estado_actual == 'completado' and es_espejo):
         return jsonify({
             "error": f"solo se reprograma pendiente/programado · estado actual: {estado_actual}",
         }), 409
@@ -19927,6 +19943,13 @@ def reprogramar_proxima(pid):
            WHERE id = ?""",
         (nueva_fecha, fecha_antes, nueva_fecha, razon, razon, pid),
     )
+    # Sebastián 16-jun · si era un completado del espejo de Fabricación, al moverlo se
+    # REVIVE como plan pendiente (deja de figurar producido) · se conserva el marcador
+    # [fab#] para que el espejo no lo vuelva a crear.
+    if es_espejo:
+        cur.execute(
+            "UPDATE produccion_programada SET estado='pendiente', inicio_real_at=NULL, "
+            "fin_real_at=NULL, inventario_descontado_at=NULL, kg_real=NULL WHERE id=?", (pid,))
     conn.commit()
     audit_log(cur, usuario=user, accion="REPROGRAMAR_PRODUCCION_PROGRAMADA",
               tabla="produccion_programada", registro_id=pid,
