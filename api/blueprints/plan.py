@@ -15476,7 +15476,7 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
       <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" style="display:none" disabled>✅ Confirmar y programar TODO</button>
     </div>
   </div>
-  <div style="margin-top:6px;font-size:12px;color:#64748b">⚙️ <strong>Plan automático a 2 años:</strong> cada producto se proyecta solo según cómo se vende en Shopify y cuánto hay realmente producido. Se actualiza cada madrugada y adelanta solo la producción si la venta sube. Tú solo ajustas con ➕ lo manual. &nbsp;·&nbsp; <a href="/admin/revisar-plan" style="color:#0d9488;font-weight:700">🔎 Revisar plan</a> &nbsp;·&nbsp; <a href="/admin/verificar-volumenes" style="color:#0d9488;font-weight:700">📏 Volúmenes</a></div>
+  <div style="margin-top:6px;font-size:12px;color:#64748b">⚙️ <strong>Plan automático a 2 años:</strong> cada producto se proyecta solo según cómo se vende en Shopify y cuánto hay realmente producido. Se actualiza cada madrugada y adelanta solo la producción si la venta sube. Tú solo ajustas con ➕ lo manual. &nbsp;·&nbsp; <a onclick="cargarSugerenciasAdelanto(true)" style="color:#b45309;font-weight:700;cursor:pointer">⚡ Sugerencias de adelanto</a> &nbsp;·&nbsp; <a href="/admin/revisar-plan" style="color:#0d9488;font-weight:700">🔎 Revisar plan</a> &nbsp;·&nbsp; <a href="/admin/verificar-volumenes" style="color:#0d9488;font-weight:700">📏 Volúmenes</a></div>
   <div id="sugerencias-adelanto" style="margin-top:10px"></div>
   <div class="legend">
     <span><span class="legend-dot" style="background:#6366f1"></span>🔁 Canónico (auto)</span>
@@ -15916,8 +15916,9 @@ async function cargar(){
     if (typeof cargarAlertasIA === 'function') { cargarAlertasIA(); }
     // 30-may-2026: aviso de ventas sin mapear (no entran a la velocidad).
     if (typeof cargarAlertasVentas === 'function') { cargarAlertasVentas(); }
-    // 16-jun-2026: sugerencias de adelanto (venta subió → adelantar + MP).
-    if (typeof cargarSugerenciasAdelanto === 'function') { cargarSugerenciasAdelanto(); }
+    // 16-jun-2026: las sugerencias de adelanto NO se cargan en cada render (calcular
+    // la velocidad Shopify de todos los productos es caro y colgaba los workers) ·
+    // ahora se cargan SOLO al pulsar el botón "⚡ Sugerencias de adelanto".
   } catch(e){
     // Sebastián 16-may-2026: error visible en el grid + botón reintentar
     // (antes solo alert · el grid quedaba en "Cargando…" para siempre).
@@ -17069,14 +17070,15 @@ async function guardarPlanEnvasado(loteId, pblId){
   }
 }
 
-async function cargarSugerenciasAdelanto(){
+async function cargarSugerenciasAdelanto(manual){
   const cont = document.getElementById('sugerencias-adelanto');
   if(!cont) return;
+  if(manual){ cont.innerHTML = '<div style="font-size:12px;color:#64748b;padding:6px">⏳ Calculando sugerencias de adelanto (revisa la venta de Shopify de cada producto)…</div>'; }
   try{
     const r = await fetch('/api/plan/sugerencias-adelanto');
     const d = await r.json().catch(()=>({}));
     const sug = (d && d.sugerencias) || [];
-    if(!sug.length){ cont.innerHTML = ''; return; }
+    if(!sug.length){ cont.innerHTML = manual ? '<div style="font-size:12px;color:#166534;padding:6px;background:#f0fdf4;border:1px solid #86efac;border-radius:8px">✓ Nada por adelantar ahora · todo va a tiempo.</div>' : ''; return; }
     let h = '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:12px 16px">'
       + '<div style="font-weight:800;color:#92400e;margin-bottom:8px">⚡ Sugerencias de adelanto · la venta subió</div>';
     sug.forEach(function(s){
