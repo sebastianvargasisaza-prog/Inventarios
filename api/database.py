@@ -328,6 +328,24 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (260, "Renombrar MAXLASH → ANIMUSLASH (Sebastián 16-jun) en fórmula, Necesidades "
+          "(sku_planeacion_config + sku_producto_map), presentaciones y producciones "
+          "programadas. + arregla el Vit E de esa fórmula: MPTOCOFE01 (Sodium Tocoferil "
+          "Fosfato · código fantasma, no cruzaba) → MP00078 (Vitamina E líquida · "
+          "TOCOPHEROL, activo). Renombrado vía UPDATE de producto_nombre (NO toca "
+          "material_id · no dispara el trigger FK). 'no such table/column' es benigno.", [
+        "UPDATE formula_items SET producto_nombre='ANIMUSLASH' WHERE producto_nombre='MAXLASH'",
+        "UPDATE formula_headers SET producto_nombre='ANIMUSLASH', producto_canonico='ANIMUSLASH' WHERE producto_nombre='MAXLASH'",
+        "UPDATE formula_headers SET producto_canonico='ANIMUSLASH' WHERE producto_canonico='MAXLASH'",
+        # Vit E real (después del rename · WHERE ya es ANIMUSLASH) · UPDATE OF material_id pasa el trigger (MP00078 activo)
+        "UPDATE formula_items SET material_id='MP00078', material_nombre='Vitamina E liquida' WHERE producto_nombre='ANIMUSLASH' AND material_id='MPTOCOFE01'",
+        # Necesidades + ventas + presentaciones + calendario
+        "UPDATE sku_planeacion_config SET producto_nombre='ANIMUSLASH' WHERE producto_nombre='MAXLASH'",
+        "UPDATE sku_producto_map SET producto_nombre='ANIMUSLASH' WHERE producto_nombre='MAXLASH'",
+        "UPDATE producto_presentaciones SET producto_nombre='ANIMUSLASH' WHERE producto_nombre='MAXLASH'",
+        "UPDATE produccion_programada SET producto='ANIMUSLASH' WHERE producto='MAXLASH'",
+        "UPDATE producto_canonico_config SET producto_nombre='ANIMUSLASH' WHERE producto_nombre='MAXLASH'",
+    ]),
     (259, "Fórmula NUEVA · CREMA FACIAL UREA 10 (Sebastián 16-jun): carga la formulación "
           "final mapeada a los códigos MP exactos de la app para que descuente bien al "
           "producir. + normaliza MP00040 (Cetiol → Cetiol CC · INCI DICAPRYLYL CARBONATE, "

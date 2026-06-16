@@ -10814,6 +10814,39 @@ def plan_restaurar_a_hora():
                     'historial_sincronizado': (_syncf or {}).get('creados', 0), **preview})
 
 
+@bp.route("/api/plan/eliminar-dia", methods=["GET", "POST"])
+def plan_eliminar_dia():
+    """Sebastián 16-jun · 'las producciones de hoy no son reales, quedaron FIJAS y no
+    me deja eliminarlas · necesito borrarlas para poner las de verdad'. Cancela TODAS
+    las producciones de una fecha (default HOY Colombia), INCLUIDO lo Fijo y lo
+    completado (la UI bloquea borrar Fijo · esto no). dry_run preview · reversible
+    (soft-cancel + audit · el historial real se puede recuperar si hizo falta)."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    d = request.get_json(silent=True) or {}
+    dry = (request.method == 'GET') or bool(d.get('dry_run', True))
+    fecha = (str(d.get('fecha') or request.args.get('fecha') or _hoy_colombia().isoformat()))[:10]
+    conn = get_db(); cur = conn.cursor()
+    rows = cur.execute(
+        "SELECT id, producto, COALESCE(estado,''), COALESCE(origen,'') FROM produccion_programada "
+        "WHERE substr(fecha_programada,1,10)=? AND COALESCE(estado,'') <> 'cancelado'", (fecha,)).fetchall()
+    detalle = [{'id': r[0], 'producto': r[1], 'estado': r[2], 'origen': r[3]} for r in rows]
+    preview = {'fecha': fecha, 'a_eliminar': len(detalle), 'detalle': detalle[:60]}
+    if dry:
+        return jsonify({'ok': True, 'dry_run': True, **preview})
+    elim = 0
+    for it in detalle:
+        cur.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id=? AND COALESCE(estado,'')<>'cancelado'", (it['id'],))
+        if cur.rowcount:
+            elim += 1
+            audit_log(cur, usuario=user, accion='ELIMINAR_DIA', tabla='produccion_programada',
+                      registro_id=it['id'], despues={'producto': it['producto'], 'fecha': fecha})
+    conn.commit()
+    return jsonify({'ok': True, 'dry_run': False, 'eliminados': elim, **preview})
+
+
 @bp.route("/api/plan/limpiar-todo-calendario", methods=["GET", "POST"])
 def plan_limpiar_todo_calendario():
     """Sebastián 16-jun · 'limpia ABSOLUTAMENTE todo el calendario, no lograste
@@ -14585,6 +14618,8 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
         style="font-size:14px;padding:10px 18px" title="Reparte los días con demasiados lotes (ej. el 16) a los próximos días hábiles con cupo (máx 2/día). No toca lo iniciado ni B2B. Vista previa antes de aplicar.">📅 Repartir días sobrecargados</button>
       <button onclick="revertirHoy()" class="danger" id="btn-revertir-hoy"
         style="font-size:14px;padding:10px 18px" title="Deshace TODOS los cambios de hoy en el calendario: suprime lo que se creó hoy, restaura lo que se canceló hoy (lo de Alejandro) y revierte fechas movidas hoy. Conserva lo recuperado de Fabricación. Vista previa antes de aplicar.">↩️ Deshacer cambios de hoy</button>
+      <button onclick="eliminarDia()" class="danger" id="btn-eliminar-dia"
+        style="font-size:14px;padding:10px 18px;background:#ea580c" title="Elimina (cancela) TODAS las producciones de un día, incluido lo Fijo que la UI no deja borrar. Útil para vaciar un día y poner lo real. Vista previa antes de aplicar.">🗓️ Eliminar producciones de un día</button>
       <button onclick="limpiarTodoCalendario()" class="danger" id="btn-limpiar-todo"
         style="font-size:15px;padding:11px 20px;font-weight:700;background:#b91c1c" title="BORRÓN Y CUENTA NUEVA: cancela TODO el plan no ejecutado (futuro/pendiente, cualquier origen). CONSERVA solo lo ya producido (historial para el cálculo). Vista previa antes de aplicar.">🗑️ Limpiar TODO el calendario</button>
       <button onclick="volverDomingo()" class="success" id="btn-volver-domingo"
@@ -14788,6 +14823,34 @@ async function revertirHoy(){
     if (typeof cargar === 'function') cargar();
   } catch(e){ alert('Error red: ' + e.message); }
   finally { if (btn){ btn.disabled = false; btn.textContent = '↩️ Deshacer cambios de hoy'; } }
+}
+
+// 🗓️ Elimina TODAS las producciones de un día (Fijo incluido) · para vaciar y re-poner.
+async function eliminarDia(){
+  const btn = document.getElementById('btn-eliminar-dia');
+  const hoy = new Date(Date.now() - 5*3600*1000).toISOString().slice(0,10); // Colombia
+  const f = prompt('Eliminar TODAS las producciones de qué día (YYYY-MM-DD)?', hoy);
+  if (f === null) return;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(f.trim())){ alert('Fecha inválida (YYYY-MM-DD).'); return; }
+  const fecha = f.trim();
+  const _post = (body) => fetch('/api/plan/eliminar-dia', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()}, credentials:'same-origin', body: JSON.stringify(body)});
+  try {
+    if (btn){ btn.disabled = true; btn.textContent = '🗓️ Revisando…'; }
+    const r = await _post({dry_run:true, fecha});
+    const d = await r.json();
+    if (!r.ok){ alert('Error: ' + (d.error || d.mensaje || r.status)); return; }
+    if (!d.a_eliminar){ alert('✓ No hay producciones ese día (' + fecha + ').'); return; }
+    const lista = (d.detalle||[]).slice(0,15).map(x=>'• ' + x.producto + ' (' + (x.estado||'?') + '/' + (x.origen||'?') + ')').join('\\n');
+    const ok = confirm('🗓️ ELIMINAR producciones del ' + fecha + '\\n\\nSe van a CANCELAR ' + d.a_eliminar + ' producción(es), incluido lo Fijo:\\n\\n' + lista + ((d.detalle||[]).length>15?'\\n…':'') + '\\n\\n(Reversible · queda en auditoría.) ¿Eliminar todo ese día?');
+    if (!ok){ return; }
+    if (btn){ btn.textContent = '🗓️ Eliminando…'; }
+    const r2 = await _post({dry_run:false, fecha});
+    const d2 = await r2.json();
+    if (!r2.ok){ alert('Error: ' + (d2.error || d2.mensaje || r2.status)); return; }
+    alert('✓ ' + (d2.eliminados||0) + ' producción(es) del ' + fecha + ' eliminadas. Ya puedes poner las reales.');
+    if (typeof cargar === 'function') cargar();
+  } catch(e){ alert('Error red: ' + e.message); }
+  finally { if (btn){ btn.disabled = false; btn.textContent = '🗓️ Eliminar producciones de un día'; } }
 }
 
 // 🗑️ Borrón y cuenta nueva: cancela TODO el plan no ejecutado · conserva historial.
