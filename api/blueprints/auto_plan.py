@@ -12913,6 +12913,16 @@ def _factor_g_por_unidad_detalle(c, producto):
     sale el volumen del envase (exacto vs adivinado). pres = dict con lo cargado en
     producto_presentaciones (o None). La lógica/valores son IDÉNTICOS a la versión
     histórica para no cambiar el cálculo."""
+    # 0) VOLUMEN DIRECTO por producto (Sebastián 16-jun · sin envase · lo más simple).
+    # Si está cargado en sku_planeacion_config.volumen_ml_unidad, manda sobre todo.
+    try:
+        vr = c.execute(
+            "SELECT volumen_ml_unidad FROM sku_planeacion_config "
+            "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (producto,)).fetchone()
+        if vr and vr[0] and float(vr[0]) > 0:
+            return (float(vr[0]), 'volumen_directo', 'sku_planeacion_config.volumen_ml_unidad', None)
+    except Exception:
+        pass  # columna ausente (mig no aplicada) → sigue al fallback histórico
     # 1) Presentación default (volumen real del envase cargado)
     r = c.execute("""
         SELECT factor_g_por_unidad, peso_g, volumen_ml, etiqueta FROM producto_presentaciones

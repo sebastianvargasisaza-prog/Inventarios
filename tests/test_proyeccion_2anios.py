@@ -151,6 +151,36 @@ def test_verificar_volumenes_detecta_fuente(app, db_clean):
     assert resumen['envase_cargado'] >= 1 and resumen['volumen_adivinado'] >= 1
 
 
+def test_set_volumen_directo_manda(app, db_clean):
+    """Fijar el volumen por producto (sin envase) manda sobre el fallback y queda
+    como 'volumen_directo' en la verificación."""
+    from .conftest import TEST_PASSWORD, csrf_headers
+    _api()
+    from blueprints.plan import _verificar_volumenes_data
+    from blueprints.auto_plan import _factor_g_por_unidad_detalle
+    from database import get_db
+    _seed_producto(producto='VOL DIRECTO', sku='SKU-VD', vel=5, lote_kg=30)  # categoría suero → 30 por defecto
+    c = app.test_client()
+    c.post('/login', data={'username': 'sebastian', 'password': TEST_PASSWORD}, headers=csrf_headers())
+    r = c.post('/api/plan/set-volumen', json={'producto': 'VOL DIRECTO', 'volumen_ml': 200}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:200]
+    with app.app_context():
+        factor, fuente, det, pres = _factor_g_por_unidad_detalle(get_db().cursor(), 'VOL DIRECTO')
+        assert factor == 200 and fuente == 'volumen_directo'
+        _, prods = _verificar_volumenes_data(get_db())
+        row = [p for p in prods if p['producto'] == 'VOL DIRECTO'][0]
+        assert row['volumen'] == 200 and row['unidades_por_lote'] == 150  # 30000/200
+        assert row['fuente'] == 'volumen_directo'
+
+
+def test_set_volumen_producto_inexistente_404(app, db_clean):
+    from .conftest import TEST_PASSWORD, csrf_headers
+    c = app.test_client()
+    c.post('/login', data={'username': 'sebastian', 'password': TEST_PASSWORD}, headers=csrf_headers())
+    r = c.post('/api/plan/set-volumen', json={'producto': 'NO EXISTE XYZ', 'volumen_ml': 50}, headers=csrf_headers())
+    assert r.status_code == 404, r.data[:200]
+
+
 def test_verificar_volumenes_page_render(app, db_clean):
     from .conftest import TEST_PASSWORD, csrf_headers
     _seed_producto(producto='PROD PAGINA', sku='SKU-PG', vel=5, lote_kg=30)

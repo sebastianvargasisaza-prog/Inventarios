@@ -352,6 +352,12 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (261, "Planeación por VOLUMEN directo (Sebastián 16-jun): volumen_ml_unidad por "
+          "producto en sku_planeacion_config · si está, el cálculo kg→unidades lo usa "
+          "PRIMERO (exacto), sin depender de presentaciones/envase. 'duplicate column' "
+          "es benigno (idempotente).", [
+        "ALTER TABLE sku_planeacion_config ADD COLUMN volumen_ml_unidad REAL",
+    ]),
     (260, "Renombrar MAXLASH → ANIMUSLASH (Sebastián 16-jun) en fórmula, Necesidades "
           "(sku_planeacion_config + sku_producto_map), presentaciones y producciones "
           "programadas. + arregla el Vit E de esa fórmula: MPTOCOFE01 (Sodium Tocoferil "

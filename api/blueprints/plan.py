@@ -11555,6 +11555,39 @@ def plan_verificar_volumenes():
     return jsonify({'ok': True, 'resumen': resumen, 'productos': productos})
 
 
+@bp.route("/api/plan/set-volumen", methods=["POST"])
+def plan_set_volumen():
+    """Fija el VOLUMEN (ml por unidad) de un producto directamente en
+    sku_planeacion_config.volumen_ml_unidad. Es lo que usa el cálculo kg→unidades
+    (manda sobre presentaciones/categoría). volumen<=0 → limpia (vuelve al fallback)."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    d = request.get_json(silent=True) or {}
+    producto = (d.get('producto') or '').strip()
+    if not producto:
+        return jsonify({'ok': False, 'error': 'producto requerido'}), 400
+    try:
+        vol = float(d.get('volumen_ml') or 0)
+    except (ValueError, TypeError):
+        vol = 0
+    vol_val = vol if vol > 0 else None
+    conn = get_db(); c = conn.cursor()
+    c.execute(
+        "UPDATE sku_planeacion_config SET volumen_ml_unidad=? "
+        "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (vol_val, producto))
+    if c.rowcount == 0:
+        return jsonify({'ok': False, 'error': 'Producto no está en la config de planeación'}), 404
+    try:
+        audit_log(c, usuario=user, accion='SET_VOLUMEN_PRODUCTO', tabla='sku_planeacion_config',
+                  registro_id=producto, despues={'volumen_ml_unidad': vol_val})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'producto': producto, 'volumen_ml': vol_val})
+
+
 @bp.route("/admin/verificar-volumenes", methods=["GET"])
 def plan_verificar_volumenes_page():
     """Página de revisión (paso 1 de planeación) · qué volumen de envase usa cada
@@ -11567,15 +11600,17 @@ def plan_verificar_volumenes_page():
     resumen, productos = _verificar_volumenes_data(get_db())
 
     _badge = {
+        'volumen_directo': '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">✓ volumen fijado</span>',
         'presentacion': '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">✓ envase real</span>',
         'categoria':    '<span style="background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">≈ por categoría</span>',
         'nombre':       '<span style="background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">≈ por nombre</span>',
         'default':      '<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">⚠ adivinado 30</span>',
     }
     filas = []
-    for p in productos:
+    for idx, p in enumerate(productos):
         bg = '#fff7ed' if p['requiere_atencion'] else '#ffffff'
         nombre = _html.escape(p['producto'])
+        prod_attr = _html.escape(p['producto'], quote=True)
         pres = p['presentacion'] or {}
         pres_txt = ''
         if pres:
@@ -11598,7 +11633,12 @@ def plan_verificar_volumenes_page():
         filas.append(
             '<tr style="background:' + bg + '">'
             + '<td style="font-weight:600">' + nombre + '<br><span style="font-size:11px;color:#94a3b8">' + _html.escape(p['categoria']) + '</span></td>'
-            + '<td style="text-align:right;font-weight:700">' + format(p['volumen'], 'g') + ' <span style="font-size:11px;color:#94a3b8">ml/g</span></td>'
+            + '<td style="text-align:right;white-space:nowrap">'
+            + '<input type="number" step="0.1" min="0" value="' + format(p['volumen'], 'g') + '" id="vol_' + str(idx) + '" data-prod="' + prod_attr + '" '
+            + 'style="width:70px;text-align:right;padding:4px 6px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">'
+            + ' <button onclick="guardarVol(' + str(idx) + ')" title="Guardar volumen" '
+            + 'style="border:none;background:#0d9488;color:#fff;border-radius:6px;padding:4px 9px;cursor:pointer;font-weight:700">✓</button>'
+            + '<div style="font-size:10px;color:#94a3b8">ml por unidad</div></td>'
             + '<td>' + _badge.get(p['fuente'], p['fuente']) + '<br><span style="font-size:10px;color:#94a3b8">' + pres_txt + '</span></td>'
             + '<td style="text-align:right">' + str(p['lote_size_kg']) + ' kg<br><span style="font-size:11px;color:#0d9488;font-weight:700">' + format(p['unidades_por_lote'], ',') + ' u/lote</span></td>'
             + '<td style="text-align:right">' + format(p['velocidad_dia'], '.1f') + '/d' + (' <span style="color:#16a34a">↑x' + format(p['tendencia'], '.1f') + '</span>' if p['tendencia'] > 1.05 else '') + '</td>'
@@ -11636,8 +11676,27 @@ def plan_verificar_volumenes_page():
         '<th>Venta</th><th>Stock efectivo</th><th>Alcanza hasta</th><th>Alertas</th></tr></thead><tbody>'
         + ''.join(filas)
         + '</tbody></table>'
-        '<div class="sub" style="margin-top:14px">⚠/≈ = volumen adivinado → cargá la presentación real en el producto para que la fecha sea exacta. '
+        '<div class="sub" style="margin-top:14px">Escribí el <b>volumen en ml por unidad</b> de cada producto y dale ✓. '
+        'Ese volumen manda sobre todo (es lo que define para cuántos días alcanza y la fecha de producción). '
         '"Stock efectivo" ya incluye lo producido ≤7d que aún no aparece en Shopify (pipeline).</div>'
+        '<div id="vol-msg" style="position:fixed;bottom:16px;right:16px;padding:10px 16px;border-radius:8px;'
+        'font-weight:700;display:none;box-shadow:0 2px 8px rgba(0,0,0,.15)"></div>'
+        '<script>'
+        'function _csrf(){return document.cookie.split(";").find(function(c){return c.trim().indexOf("csrf_token=")===0})?.split("=")[1]||"";}'
+        'function _toast(txt,ok){var m=document.getElementById("vol-msg");m.textContent=txt;'
+        'm.style.background=ok?"#dcfce7":"#fee2e2";m.style.color=ok?"#166534":"#991b1b";m.style.display="block";'
+        'setTimeout(function(){m.style.display="none";},2500);}'
+        'async function guardarVol(idx){'
+        'var el=document.getElementById("vol_"+idx);if(!el)return;'
+        'var prod=el.dataset.prod;var vol=parseFloat(el.value||"0")||0;'
+        'try{var r=await fetch("/api/plan/set-volumen",{method:"POST",'
+        'headers:{"Content-Type":"application/json","X-CSRFToken":_csrf()},'
+        'body:JSON.stringify({producto:prod,volumen_ml:vol})});'
+        'var d=await r.json().catch(function(){return{};});'
+        'if(!r.ok||!d.ok){_toast("Error: "+(d.error||r.status),false);return;}'
+        'el.style.background="#dcfce7";_toast("✓ "+prod+" → "+vol+" ml",true);'
+        '}catch(e){_toast("Error: "+e,false);}}'
+        '</script>'
         '</div></body></html>')
     return Response(html_doc, mimetype="text/html")
 
