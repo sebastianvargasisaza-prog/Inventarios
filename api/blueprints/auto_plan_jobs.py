@@ -720,6 +720,11 @@ JOBS_SCHEDULE = [
     # calendario (produccion_programada retroactivo). Garantiza que TODA producción
     # ya realizada cuente para el ancla del cálculo, sin backfill manual. Idempotente.
     ('sync_fabricacion_calendario', 4, 50, None, None,          'job_sync_fabricacion_calendario'),
+    # ⭐ PLAN RODANTE 2 AÑOS 16-jun · 5:10 (tras sincronizar Fabricación 4:50, con el
+    # pipeline fresco) · reconstruye el plan anclado a Shopify + stock efectivo
+    # (incl. lo producido ≤7d aún no visible). Automático · idempotente · no toca
+    # ejecutado ni Fijo. Gobernado por app_settings.proyeccion_auto (default ON).
+    ('proyeccion_2anios',     5, 10, None, None,                'job_proyeccion_2anios'),
     # PQR SLA · Ley 1755/2015 CO · diario 8:15 AM
     ('pqr_sla_vencido',       8, 15, None, None,                'job_pqr_sla_vencido'),
     # MEE drift sync · cache vs SUM(movimientos_mee) · diario 3:00 AM
@@ -4952,6 +4957,33 @@ def job_sync_fabricacion_calendario(app):
             res = _sync_fabricacion_calendario(conn, usuario='cron-fab')
         except Exception as e:
             log.exception('sync_fabricacion_calendario fallo')
+            return False, {'error': str(e)[:200]}, 0
+        return True, res, 0
+
+
+def job_proyeccion_2anios(app):
+    """Sebastián 16-jun · PLAN RODANTE A 2 AÑOS · cron diario 5:10 AM.
+
+    Reconstruye el plan de producción a 2 años anclado a la venta de Shopify y al
+    stock efectivo (Shopify + pipeline de lo producido ≤7d aún no visible). Si la
+    venta sube, el próximo lote sale solo más temprano (adelanta). Idempotente; no
+    toca lo ejecutado ni lo Fijo. Gobernado por app_settings.proyeccion_auto:
+    default ON; se apaga poniéndolo en '0' (sin redeploy)."""
+    with app.app_context():
+        from database import get_db as _gdb
+        from blueprints.plan import _proyectar_horizonte_2y
+        conn = _gdb(); c = conn.cursor()
+        # gate: respetar pausa explícita (default ON)
+        try:
+            r = c.execute("SELECT valor FROM app_settings WHERE clave='proyeccion_auto' LIMIT 1").fetchone()
+            if r is not None and str(r[0]).strip().lower() in ('0', 'false', 'no', 'off'):
+                return True, {'skipped': 'proyeccion_auto=0'}, 0
+        except Exception:
+            pass
+        try:
+            res = _proyectar_horizonte_2y(conn, dias=730, usuario='cron-proyeccion')
+        except Exception as e:
+            log.exception('proyeccion_2anios fallo')
             return False, {'error': str(e)[:200]}, 0
         return True, res, 0
 

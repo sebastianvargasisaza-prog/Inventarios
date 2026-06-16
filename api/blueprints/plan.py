@@ -11323,6 +11323,175 @@ def _sync_fabricacion_calendario(conn, usuario='cron-fab'):
     return {'producciones_total': len(prods), 'creados': creados, 'cerrados': cerrados}
 
 
+def _proyectar_horizonte_2y(conn, dias=730, usuario='auto-proyeccion', dry_run=False):
+    """Sebastián 16-jun · PLAN RODANTE A 2 AÑOS por producto, automático.
+
+    Cada producto se ancla a su VENTA real en Shopify (velocidad + tendencia) y a su
+    STOCK EFECTIVO = Shopify disponible + PIPELINE (lo ya producido en los últimos
+    ~7d que todavía NO aparece en Shopify por el lag de disponibilidad). Simula la
+    venta hacia adelante y tiende un lote cada vez que la cobertura caería bajo el
+    margen (producir ~20d antes de agotarse), respetando días hábiles (L/M/V) y máx
+    2 lotes/día (compartido con lo ya agendado).
+
+    Cuenta como 'llegadas' lo Fijo/futuro ya agendado (no duplica encima del plan
+    del usuario). Si la venta sube, el próximo lote sale automáticamente más
+    temprano (adelanta solo). Idempotente: BORRA la proyección previa NO ejecutada
+    y la rehace · NUNCA toca lo ejecutado ni lo Fijo (eos_plan/eos_b2b/manual).
+    origen='eos_proyeccion'. dry_run → solo cuenta."""
+    from datetime import date as _date, timedelta as _td
+    import blueprints.auto_plan as _ap
+    c = conn.cursor()
+    hoy = _hoy_colombia()
+    LOTES_MAX = 2
+    PIPELINE_LAG = 7
+    MARGEN = 20
+
+    # Slots ocupados por fecha (todo lo NO cancelado · respeta Fijo + ejecutado)
+    slots = {}
+    for r in c.execute(
+        "SELECT substr(fecha_programada,1,10), COUNT(*) FROM produccion_programada "
+        "WHERE COALESCE(estado,'') NOT IN ('cancelado') GROUP BY substr(fecha_programada,1,10)").fetchall():
+        if r[0]:
+            slots[r[0]] = r[1]
+
+    # Proyección previa NO ejecutada → se borra (idempotente · libera sus slots)
+    prev = c.execute(
+        "SELECT id, substr(fecha_programada,1,10) FROM produccion_programada "
+        "WHERE origen='eos_proyeccion' AND COALESCE(estado,'') <> 'completado' "
+        "AND fin_real_at IS NULL AND inicio_real_at IS NULL").fetchall()
+    borrados = 0
+    for pid, f in prev:
+        if not dry_run:
+            c.execute("DELETE FROM produccion_programada WHERE id=? AND origen='eos_proyeccion' "
+                      "AND fin_real_at IS NULL AND inicio_real_at IS NULL", (pid,))
+            if c.rowcount == 0:
+                continue
+        borrados += 1
+        if f and slots.get(f, 0) > 0:
+            slots[f] -= 1
+
+    def _tomar_slot(desde):
+        fd = _ap._next_dia_produccion(desde)
+        for _ in range(160):
+            iso = fd.isoformat()
+            if slots.get(iso, 0) < LOTES_MAX:
+                slots[iso] = slots.get(iso, 0) + 1
+                return fd
+            fd = _ap._next_dia_produccion(fd + _td(days=1))
+        return fd
+
+    skus = c.execute(
+        "SELECT spc.producto_nombre, fh.lote_size_kg FROM sku_planeacion_config spc "
+        "LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(spc.producto_nombre)) "
+        "WHERE spc.activo=1 ORDER BY spc.prioridad, spc.producto_nombre").fetchall()
+
+    creados = 0
+    productos_planeados = 0
+    nuevos = []
+    for producto, lote_size_kg in skus:
+        if not lote_size_kg or float(lote_size_kg) <= 0:
+            continue
+        vel, factor = _ap._velocidad_total_producto(c, producto)
+        vel_proj = vel * (factor or 1.0)
+        if vel_proj <= 0.001:
+            continue  # no se vende → no se proyecta (no inventa demanda)
+        factor_g = _ap._factor_g_por_unidad(c, producto) or 1
+        lote_units = (float(lote_size_kg) * 1000.0) / max(factor_g, 1)
+        if lote_units <= 0:
+            continue
+
+        # Stock efectivo HOY = Shopify disponible + pipeline (producido ≤7d, aún no en Shopify)
+        stock_shopify = _ap._stock_actual_pt(c, producto)
+        pipe_kg = c.execute(
+            "SELECT COALESCE(SUM(COALESCE(kg_real, cantidad_kg, 0)),0) FROM produccion_programada "
+            "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) AND fin_real_at IS NOT NULL "
+            "AND substr(fin_real_at,1,10) >= ?",
+            (producto, (hoy - _td(days=PIPELINE_LAG)).isoformat())).fetchone()[0]
+        pipe_units = (float(pipe_kg or 0) * 1000.0) / max(factor_g, 1)
+        stock0 = stock_shopify + pipe_units
+
+        # Llegadas ya comprometidas (Fijo/futuro NO proyección · disponibles +7d) → no duplicar encima
+        arrivals = {}
+        for frow in c.execute(
+            "SELECT substr(fecha_programada,1,10), COALESCE(cantidad_kg,0), COALESCE(lotes,1) "
+            "FROM produccion_programada WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) "
+            "AND COALESCE(estado,'') NOT IN ('cancelado') AND COALESCE(origen,'')<>'eos_proyeccion' "
+            "AND fecha_programada >= ?", (producto, hoy.isoformat())).fetchall():
+            try:
+                fd = _date.fromisoformat((frow[0] or '')[:10])
+            except Exception:
+                continue
+            u = (float(frow[1] or lote_size_kg) * 1000.0) / max(factor_g, 1) * max(int(frow[2] or 1), 1)
+            ad = (fd - hoy).days + PIPELINE_LAG
+            if ad >= 0:
+                arrivals[ad] = arrivals.get(ad, 0) + u
+
+        threshold = MARGEN * vel_proj
+        stock = stock0
+        creados_prod = 0
+        d = 0
+        while d <= dias:
+            stock += arrivals.pop(d, 0)
+            if d > 0:
+                stock -= vel_proj
+            if stock <= threshold:
+                upcoming = any(d < ad <= d + PIPELINE_LAG + 3 for ad in arrivals)
+                if not upcoming:
+                    prod_date = _tomar_slot(max(hoy + _td(days=1), hoy + _td(days=d)))
+                    arr = (prod_date - hoy).days + PIPELINE_LAG
+                    arrivals[arr] = arrivals.get(arr, 0) + lote_units
+                    obs = ("Proyección 2a · venta " + format(vel, '.1f') + "/d"
+                           + (" (x" + format(factor, '.2f') + " tendencia↑)" if (factor or 1) > 1.05 else "")
+                           + " · stock efectivo " + format(stock0, '.0f') + "u (Shopify "
+                           + str(stock_shopify) + "+pipeline " + format(pipe_units, '.0f') + ")")
+                    nuevos.append((producto, prod_date.isoformat(), float(lote_size_kg), obs))
+                    creados_prod += 1
+            d += 1
+        if creados_prod:
+            productos_planeados += 1
+            creados += creados_prod
+
+    if not dry_run:
+        for producto, fiso, kg, obs in nuevos:
+            c.execute(
+                "INSERT INTO produccion_programada "
+                "(producto, fecha_programada, lotes, estado, observaciones, origen, cantidad_kg) "
+                "VALUES (?, ?, 1, 'pendiente', ?, 'eos_proyeccion', ?)",
+                (producto, fiso, obs, kg))
+        try:
+            audit_log(c, usuario=usuario, accion='PROYECTAR_HORIZONTE_2A',
+                      tabla='produccion_programada', registro_id=0,
+                      despues={'borrados': borrados, 'creados': creados,
+                               'productos': productos_planeados, 'dias': dias})
+        except Exception:
+            pass
+        conn.commit()
+    return {'borrados': borrados, 'creados': creados,
+            'productos_planeados': productos_planeados, 'dias': dias, 'dry_run': dry_run}
+
+
+@bp.route("/api/plan/proyectar-2anios", methods=["GET", "POST"])
+def plan_proyectar_2anios():
+    """Genera/actualiza el plan rodante a 2 años (ver _proyectar_horizonte_2y).
+    GET o {dry_run:true} → preview · POST {dry_run:false} → aplica. Normalmente
+    corre solo cada madrugada (job_proyeccion_2anios); este endpoint es el
+    'actualizar ahora' manual."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    d = request.get_json(silent=True) or {}
+    dry = (request.method == 'GET') or bool(d.get('dry_run', True))
+    try:
+        dias = int(d.get('dias') or 730)
+    except (ValueError, TypeError):
+        dias = 730
+    dias = max(30, min(dias, 1095))
+    conn = get_db()
+    res = _proyectar_horizonte_2y(conn, dias=dias, usuario=user, dry_run=dry)
+    return jsonify({'ok': True, **res})
+
+
 @bp.route("/api/plan/dejar-solo-real", methods=["GET", "POST"])
 def plan_dejar_solo_real():
     """Sebastián 16-jun · SOLUCIÓN DEFINITIVA al 'calendario sigue vuelto nada'.
@@ -14761,15 +14930,12 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
     <div>
       <button onclick="abrirNuevaProduccion('')" class="success" id="btn-nueva-prod"
         style="font-size:14px;padding:10px 18px;background:#0d9488;font-weight:700" title="Programa manualmente CUALQUIER producto: pilotos, productos de otros clientes o lo que no está en Necesidades. También puedes hacer clic en el ➕ de cualquier día del calendario.">➕ Programar producción</button>
-      <button onclick="generarPlanIA()" class="success" id="btn-generar-ia-2"
-        style="font-size:14px;padding:10px 18px">🤖 Generar plan IA</button>
-      <button onclick="sellarPlan()" class="secondary" id="btn-sellar"
-        style="font-size:14px;padding:10px 18px" title="Limpia duplicados y recalcula TODO el horizonte futuro · conserva lo pasado, esta semana, lo iniciado y los B2B">🔒 Sellar plan limpio</button>
-      <button onclick="dejarSoloReal()" class="danger" id="btn-solo-real"
-        style="font-size:14px;padding:10px 18px;background:#b45309;font-weight:700" title="SOLUCIÓN DEFINITIVA: deja el calendario con SOLO lo realmente producido (rescata el historial de Fabricación), borra todo el plan no ejecutado y PAUSA el plan automático para que no se vuelva a llenar de sugeridas. Reversible. Te muestra una vista previa antes.">🧹 Dejar SOLO lo producido</button>
+      <button onclick="actualizarPlan2a()" class="secondary" id="btn-plan2a"
+        style="font-size:14px;padding:10px 18px" title="El plan a 2 años se mantiene SOLO cada madrugada, anclado a la venta de Shopify y al stock real (incluye lo ya producido que aún no aparece en Shopify). Este botón lo recalcula AHORA si no quieres esperar.">🔄 Actualizar plan ahora</button>
       <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" style="display:none" disabled>✅ Confirmar y programar TODO</button>
     </div>
   </div>
+  <div style="margin-top:6px;font-size:12px;color:#64748b">⚙️ <strong>Plan automático a 2 años:</strong> cada producto se proyecta solo según cómo se vende en Shopify y cuánto hay realmente producido. Se actualiza cada madrugada y adelanta solo la producción si la venta sube. Tú solo ajustas con ➕ lo manual.</div>
   <div class="legend">
     <span><span class="legend-dot" style="background:#6366f1"></span>🔁 Canónico (auto)</span>
     <span><span class="legend-dot" style="background:#16a34a"></span>🟢 Plan / ajustado a mano</span>
@@ -16359,6 +16525,26 @@ async function guardarPlanEnvasado(loteId, pblId){
   }
 }
 
+async function actualizarPlan2a(){
+  const btn = document.getElementById('btn-plan2a');
+  if(btn){ btn.disabled = true; btn.textContent = '🔄 Actualizando...'; }
+  try{
+    const r = await fetch('/api/plan/proyectar-2anios', {
+      method: 'POST', headers: {'Content-Type':'application/json', 'X-CSRFToken': getCSRF()},
+      body: JSON.stringify({dry_run: false, dias: 730})
+    });
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok || !d.ok){ alert('No se pudo actualizar el plan: ' + (d.error || r.status)); }
+    else{
+      alert('✅ Plan a 2 años actualizado.\n\n' +
+        'Productos planeados: ' + (d.productos_planeados||0) + '\n' +
+        'Lotes proyectados: ' + (d.creados||0) + '\n\n' +
+        'Anclado a la venta de Shopify + lo ya producido. Se mantiene solo cada madrugada.');
+      if(typeof cargar === 'function') cargar();
+    }
+  }catch(e){ alert('Error: ' + e); }
+  if(btn){ btn.disabled = false; btn.innerHTML = '🔄 Actualizar plan ahora'; }
+}
 async function dejarSoloReal(){
   // Paso 1: vista previa (no toca nada)
   let pv;

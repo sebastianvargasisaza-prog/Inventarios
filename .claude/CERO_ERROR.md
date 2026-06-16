@@ -204,6 +204,22 @@ migración, otro job) -- apagar el estado sin bloquear al re-activador no sirve.
   Fabricación (`_sync_fabricacion_calendario`) + cancela todo lo no-ejecutado +
   pausa el cron. Calendario = solo lo realmente producido. Reversible.
 
+## 📈 M42 · Plan rodante a 2 años anclado a Shopify + pipeline · 16-jun
+
+`plan._proyectar_horizonte_2y(conn, dias=730)` = generador AUTOMÁTICO (cron 5:10
+`job_proyeccion_2anios`, gate `app_settings.proyeccion_auto` default ON). Por
+producto: velocidad+tendencia Shopify (`auto_plan._velocidad_total_producto`) +
+**stock efectivo = Shopify disponible + PIPELINE** (lo producido ≤7d con
+`fin_real_at` que aún no entra a Shopify · evita sobre-producir). Simula la venta
+hacia adelante y tiende un lote cada vez que la cobertura caería bajo 20d, máx
+2/día L/M/V. Cuenta lo Fijo/futuro ya agendado como "llegadas" (no duplica encima).
+origen='eos_proyeccion'. **Idempotente:** BORRA (hard-delete) la proyección previa
+NO ejecutada y la rehace → no acumula filas canceladas; NUNCA toca lo ejecutado ni
+lo Fijo. Si la venta sube, el próximo lote sale solo más temprano (adelanta sin
+botón). Reemplaza al viejo `auto_plan` ruidoso (que quedó pausado · M41).
+Reglas aprendidas: el pipeline se calcula de la tabla canónica
+(`produccion_programada.fin_real_at`), NO de eventos de Google Calendar (frágil).
+
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
 
 Al cerrar una sesión donde se encontró/arregló un bug con patrón no listado aquí:
