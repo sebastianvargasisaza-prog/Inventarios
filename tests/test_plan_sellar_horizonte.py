@@ -299,6 +299,29 @@ def test_restaurar_fecha_explicita_y_garantiza_historial(app, db_clean):
     assert _estado(h) == 'completado'     # historial → garantizado
 
 
+def test_limpiar_todo_calendario(app, db_clean):
+    """Borrón y cuenta nueva: cancela TODO el plan no ejecutado, conserva lo
+    ya producido (completado / ejecutado)."""
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    conn.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes) "
+                 "VALUES ('LTC PEND','2026-07-01','pendiente','eos_plan',30,1)")
+    p = conn.execute("SELECT id FROM produccion_programada WHERE producto='LTC PEND'").fetchone()[0]
+    conn.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes) "
+                 "VALUES ('LTC CANON','2026-07-02','programado','eos_canonico',30,1)")
+    cano = conn.execute("SELECT id FROM produccion_programada WHERE producto='LTC CANON'").fetchone()[0]
+    conn.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes,fin_real_at,inicio_real_at) "
+                 "VALUES ('LTC PROD','2026-06-04','completado','eos_retroactivo',30,1,'2026-06-04','2026-06-04')")
+    prod = conn.execute("SELECT id FROM produccion_programada WHERE producto='LTC PROD'").fetchone()[0]
+    conn.commit(); conn.close()
+
+    c = _login(app)
+    r = c.post('/api/plan/limpiar-todo-calendario', json={'dry_run': False}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    assert _estado(p) == 'cancelado'       # plan pendiente → limpiado
+    assert _estado(cano) == 'cancelado'    # canónico → limpiado
+    assert _estado(prod) == 'completado'   # producido → CONSERVADO
+
+
 def test_reconstruir_plan(app, db_clean):
     """Recuperación TOTAL: re-activa historial ya producido (eos_retroactivo
     cancelado→completado + sync de producciones), restaura plan Fijo UNO por

@@ -10814,6 +10814,46 @@ def plan_restaurar_a_hora():
                     'historial_sincronizado': (_syncf or {}).get('creados', 0), **preview})
 
 
+@bp.route("/api/plan/limpiar-todo-calendario", methods=["GET", "POST"])
+def plan_limpiar_todo_calendario():
+    """Sebastián 16-jun · 'limpia ABSOLUTAMENTE todo el calendario, no lograste
+    organizarlo'. Borrón y cuenta nueva del PLAN: cancela TODO lo no ejecutado
+    (pendiente/programado/sugerido/canónico/plan/b2b · cualquier origen, cualquier
+    fecha). CONSERVA SOLO lo ya producido (completado / con inicio_real_at o
+    fin_real_at) = el historial, base del cálculo, que el usuario NO quiere perder.
+    dry_run por defecto → preview. Reversible (soft-cancel + audit)."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    d = request.get_json(silent=True) or {}
+    dry = (request.method == 'GET') or bool(d.get('dry_run', True))
+    conn = get_db(); cur = conn.cursor()
+    rows = cur.execute(
+        "SELECT id FROM produccion_programada "
+        "WHERE COALESCE(estado,'') NOT IN ('cancelado','completado') "
+        "AND fin_real_at IS NULL AND inicio_real_at IS NULL").fetchall()
+    ids = [r[0] for r in rows]
+    # conteo de lo que se conserva (historial ya producido)
+    n_hist = cur.execute(
+        "SELECT COUNT(*) FROM produccion_programada "
+        "WHERE COALESCE(estado,'')='completado' OR fin_real_at IS NOT NULL OR inicio_real_at IS NOT NULL").fetchone()[0]
+    preview = {'a_limpiar': len(ids), 'historial_conservado': n_hist}
+    if dry:
+        return jsonify({'ok': True, 'dry_run': True, **preview})
+    limpiados = 0
+    for _id in ids:
+        cur.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id=? "
+                    "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+                    "AND fin_real_at IS NULL AND inicio_real_at IS NULL", (_id,))
+        if cur.rowcount:
+            limpiados += 1
+            audit_log(cur, usuario=user, accion='LIMPIAR_TODO_CALENDARIO', tabla='produccion_programada',
+                      registro_id=_id, despues={'motivo': 'borron_y_cuenta_nueva_plan'})
+    conn.commit()
+    return jsonify({'ok': True, 'dry_run': False, 'limpiados': limpiados, **preview})
+
+
 @bp.route("/api/plan/reconstruir-plan", methods=["GET", "POST"])
 def plan_reconstruir_plan():
     """Sebastián 16-jun (cansado · 'resuélvelo, debe quedar como antes de todo, el
@@ -14545,6 +14585,8 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
         style="font-size:14px;padding:10px 18px" title="Reparte los días con demasiados lotes (ej. el 16) a los próximos días hábiles con cupo (máx 2/día). No toca lo iniciado ni B2B. Vista previa antes de aplicar.">📅 Repartir días sobrecargados</button>
       <button onclick="revertirHoy()" class="danger" id="btn-revertir-hoy"
         style="font-size:14px;padding:10px 18px" title="Deshace TODOS los cambios de hoy en el calendario: suprime lo que se creó hoy, restaura lo que se canceló hoy (lo de Alejandro) y revierte fechas movidas hoy. Conserva lo recuperado de Fabricación. Vista previa antes de aplicar.">↩️ Deshacer cambios de hoy</button>
+      <button onclick="limpiarTodoCalendario()" class="danger" id="btn-limpiar-todo"
+        style="font-size:15px;padding:11px 20px;font-weight:700;background:#b91c1c" title="BORRÓN Y CUENTA NUEVA: cancela TODO el plan no ejecutado (futuro/pendiente, cualquier origen). CONSERVA solo lo ya producido (historial para el cálculo). Vista previa antes de aplicar.">🗑️ Limpiar TODO el calendario</button>
       <button onclick="volverDomingo()" class="success" id="btn-volver-domingo"
         style="font-size:16px;padding:12px 22px;font-weight:800;background:#0d9488;box-shadow:0 0 0 2px #0d9488" title="UN CLIC: deja el calendario tal como estaba el DOMINGO 14 a las 10am (antes de toda la cirugía) + garantiza el historial ya producido. Lo que falte después lo ajustas tú.">⭐ Volver al domingo 14 · 10am</button>
       <button onclick="reconstruirPlan()" class="success" id="btn-reconstruir"
@@ -14746,6 +14788,28 @@ async function revertirHoy(){
     if (typeof cargar === 'function') cargar();
   } catch(e){ alert('Error red: ' + e.message); }
   finally { if (btn){ btn.disabled = false; btn.textContent = '↩️ Deshacer cambios de hoy'; } }
+}
+
+// 🗑️ Borrón y cuenta nueva: cancela TODO el plan no ejecutado · conserva historial.
+async function limpiarTodoCalendario(){
+  const btn = document.getElementById('btn-limpiar-todo');
+  const _post = (body) => fetch('/api/plan/limpiar-todo-calendario', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()}, credentials:'same-origin', body: JSON.stringify(body)});
+  try {
+    if (btn){ btn.disabled = true; btn.textContent = '🗑️ Calculando…'; }
+    const r = await _post({dry_run:true});
+    const d = await r.json();
+    if (!r.ok){ alert('Error: ' + (d.error || d.mensaje || r.status)); return; }
+    if (!d.a_limpiar){ alert('✓ El calendario ya está limpio (no hay plan pendiente).'); return; }
+    const ok = confirm('🗑️ LIMPIAR TODO EL CALENDARIO (borrón y cuenta nueva)\\n\\nSe van a CANCELAR ' + d.a_limpiar + ' lote(s) del plan (todo lo no ejecutado).\\n\\nSE CONSERVA: ' + (d.historial_conservado||0) + ' lote(s) YA PRODUCIDOS (historial · base del cálculo).\\n\\n¿Limpiar todo el plan?');
+    if (!ok){ return; }
+    if (btn){ btn.textContent = '🗑️ Limpiando…'; }
+    const r2 = await _post({dry_run:false});
+    const d2 = await r2.json();
+    if (!r2.ok){ alert('Error: ' + (d2.error || d2.mensaje || r2.status)); return; }
+    alert('✓ Calendario limpio.\\n\\n• ' + (d2.limpiados||0) + ' lote(s) del plan cancelados\\n• ' + (d2.historial_conservado||0) + ' producidos conservados.\\n\\nEl futuro queda en blanco para reconstruir. (Recarga si hace falta · Ctrl+F5)');
+    if (typeof cargar === 'function') cargar();
+  } catch(e){ alert('Error red: ' + e.message); }
+  finally { if (btn){ btn.disabled = false; btn.textContent = '🗑️ Limpiar TODO el calendario'; } }
 }
 
 // ⭐ UN CLIC: vuelve al estado del domingo 14 · 10am (antes de toda la cirugía).
