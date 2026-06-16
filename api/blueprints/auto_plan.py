@@ -4699,6 +4699,22 @@ def cron_toggle():
     else:
         c.execute("UPDATE auto_plan_cron_state SET habilitado=0, notas=? WHERE id=1",
                   ('Desactivado desde UI',))
+    # Sebastián 16-jun · gestionar el flag de PAUSA MANUAL (app_settings) para que el
+    # self-heal de las 7am respete la decisión: activar → quita la pausa; desactivar
+    # → la fija (si no, el self-heal re-encendía el cron y el calendario volvía a
+    # llenarse de sugeridas).
+    try:
+        c.execute("""CREATE TABLE IF NOT EXISTS app_settings (
+            clave TEXT PRIMARY KEY, valor TEXT NOT NULL, descripcion TEXT,
+            actualizado_at_utc TEXT, actualizado_por TEXT, tenant_id INTEGER DEFAULT 1)""")
+    except Exception:
+        pass
+    c.execute(
+        "INSERT INTO app_settings (clave,valor,descripcion,actualizado_at_utc,actualizado_por) "
+        "VALUES ('auto_plan_pausa_manual',?,?,datetime('now'),?) "
+        "ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor, "
+        "actualizado_at_utc=excluded.actualizado_at_utc, actualizado_por=excluded.actualizado_por",
+        ('0' if habilitar else '1', 'Pausa manual del auto-plan · self-heal respeta', u))
     conn.commit()
     return jsonify({'ok': True, 'habilitado': habilitar})
 

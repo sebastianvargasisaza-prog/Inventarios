@@ -11323,6 +11323,105 @@ def _sync_fabricacion_calendario(conn, usuario='cron-fab'):
     return {'producciones_total': len(prods), 'creados': creados, 'cerrados': cerrados}
 
 
+@bp.route("/api/plan/dejar-solo-real", methods=["GET", "POST"])
+def plan_dejar_solo_real():
+    """Sebastián 16-jun · SOLUCIÓN DEFINITIVA al 'calendario sigue vuelto nada'.
+
+    En UN paso, deja el calendario con SOLO lo realmente producido y evita que se
+    vuelva a llenar:
+      1. RESCATA todas las producciones reales de Fabricación (tabla `producciones`)
+         al calendario como lotes completados retroactivos (idempotente · espejo).
+      2. CANCELA todo lo que NO está ejecutado (pendiente/programado/sugerido/
+         canónico/plan/b2b · cualquier origen, cualquier fecha). Conserva SOLO lo
+         ejecutado (completado / con inicio_real_at o fin_real_at) = el historial.
+      3. PAUSA el plan automático diario (auto_plan_cron_state.habilitado=0 +
+         flag app_settings.auto_plan_pausa_manual='1') para que el self-heal de las
+         7am NO lo re-encienda y vuelva a inundar de sugeridas. Reversible desde el
+         toggle del cron o reactivando 'Generar plan IA' cuando se quiera.
+
+    GET o {dry_run:true} → preview · {dry_run:false} → ejecuta. Reversible
+    (soft-cancel + audit · el rescate no re-descuenta inventario)."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    d = request.get_json(silent=True) or {}
+    dry = (request.method == 'GET') or bool(d.get('dry_run', True))
+    conn = get_db(); cur = conn.cursor()
+
+    # ── Preview de los 3 efectos ──────────────────────────────────────────────
+    prod_total = cur.execute(
+        "SELECT COUNT(*) FROM producciones WHERE COALESCE(cantidad,0) > 0 "
+        "AND fecha IS NOT NULL AND TRIM(fecha) <> ''").fetchone()[0]
+    a_cancelar = cur.execute(
+        "SELECT COUNT(*) FROM produccion_programada "
+        "WHERE COALESCE(estado,'') NOT IN ('cancelado','completado') "
+        "AND fin_real_at IS NULL AND inicio_real_at IS NULL").fetchone()[0]
+    historial_actual = cur.execute(
+        "SELECT COUNT(*) FROM produccion_programada "
+        "WHERE COALESCE(estado,'')='completado' OR fin_real_at IS NOT NULL "
+        "OR inicio_real_at IS NOT NULL").fetchone()[0]
+    preview = {'producciones_fabricacion': prod_total, 'a_cancelar': a_cancelar,
+               'historial_actual': historial_actual}
+    if dry:
+        return jsonify({'ok': True, 'dry_run': True, **preview})
+
+    # ── 1) Rescatar Fabricación al calendario (idempotente) ───────────────────
+    sync = _sync_fabricacion_calendario(conn, usuario=user)
+
+    # ── 2) Cancelar TODO lo no ejecutado (borrón del plan) ────────────────────
+    rows = cur.execute(
+        "SELECT id FROM produccion_programada "
+        "WHERE COALESCE(estado,'') NOT IN ('cancelado','completado') "
+        "AND fin_real_at IS NULL AND inicio_real_at IS NULL").fetchall()
+    cancelados = 0
+    for (_id,) in rows:
+        cur.execute(
+            "UPDATE produccion_programada SET estado='cancelado' WHERE id=? "
+            "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+            "AND fin_real_at IS NULL AND inicio_real_at IS NULL", (_id,))
+        if cur.rowcount:
+            cancelados += 1
+            audit_log(cur, usuario=user, accion='DEJAR_SOLO_REAL', tabla='produccion_programada',
+                      registro_id=_id, despues={'motivo': 'solo_historial_real'})
+
+    # ── 3) Pausar el plan automático para que no vuelva a llenarse ────────────
+    cron_pausado = False
+    try:
+        cur.execute("""CREATE TABLE IF NOT EXISTS app_settings (
+            clave TEXT PRIMARY KEY, valor TEXT NOT NULL, descripcion TEXT,
+            actualizado_at_utc TEXT, actualizado_por TEXT, tenant_id INTEGER DEFAULT 1)""")
+    except Exception:
+        pass
+    try:
+        cur.execute(
+            "UPDATE auto_plan_cron_state SET habilitado=0, "
+            "notas='Pausado por Dejar-solo-real', activado_por=?, "
+            "activado_at=datetime('now','-5 hours') WHERE id=1", (user,))
+        cur.execute(
+            "INSERT INTO app_settings (clave,valor,descripcion,actualizado_at_utc,actualizado_por) "
+            "VALUES ('auto_plan_pausa_manual','1',?,datetime('now'),?) "
+            "ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor, "
+            "actualizado_at_utc=excluded.actualizado_at_utc, actualizado_por=excluded.actualizado_por",
+            ('Pausa manual del auto-plan · self-heal respeta', user))
+        cron_pausado = True
+    except Exception as _e:
+        __import__('logging').getLogger('plan').warning('dejar-solo-real pausar cron: %s', _e)
+
+    conn.commit()
+
+    # historial final por mes (lo que queda visible)
+    por_mes = [{'mes': r[0], 'lotes': r[1]} for r in cur.execute(
+        "SELECT substr(fecha_programada,1,7), COUNT(*) FROM produccion_programada "
+        "WHERE COALESCE(estado,'') NOT IN ('cancelado') "
+        "GROUP BY substr(fecha_programada,1,7) ORDER BY substr(fecha_programada,1,7)").fetchall()]
+    return jsonify({'ok': True, 'dry_run': False,
+                    'rescatados_fabricacion': sync.get('creados', 0),
+                    'pendientes_cerrados': sync.get('cerrados', 0),
+                    'cancelados': cancelados, 'cron_pausado': cron_pausado,
+                    'historial_por_mes': por_mes, **preview})
+
+
 @bp.route("/api/plan/backfill-fabricacion", methods=["GET", "POST"])
 def plan_backfill_fabricacion():
     """Sebastián 15-jun · CAUSA RAÍZ del vanish + 'faltan los que ya produjimos'.
@@ -14666,6 +14765,8 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
         style="font-size:14px;padding:10px 18px">🤖 Generar plan IA</button>
       <button onclick="sellarPlan()" class="secondary" id="btn-sellar"
         style="font-size:14px;padding:10px 18px" title="Limpia duplicados y recalcula TODO el horizonte futuro · conserva lo pasado, esta semana, lo iniciado y los B2B">🔒 Sellar plan limpio</button>
+      <button onclick="dejarSoloReal()" class="danger" id="btn-solo-real"
+        style="font-size:14px;padding:10px 18px;background:#b45309;font-weight:700" title="SOLUCIÓN DEFINITIVA: deja el calendario con SOLO lo realmente producido (rescata el historial de Fabricación), borra todo el plan no ejecutado y PAUSA el plan automático para que no se vuelva a llenar de sugeridas. Reversible. Te muestra una vista previa antes.">🧹 Dejar SOLO lo producido</button>
       <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" style="display:none" disabled>✅ Confirmar y programar TODO</button>
     </div>
   </div>
@@ -16258,6 +16359,41 @@ async function guardarPlanEnvasado(loteId, pblId){
   }
 }
 
+async function dejarSoloReal(){
+  // Paso 1: vista previa (no toca nada)
+  let pv;
+  try{
+    const r = await fetch('/api/plan/dejar-solo-real');  // GET = dry_run
+    pv = await r.json();
+    if(!r.ok || !pv.ok){ alert('No se pudo calcular la vista previa: ' + (pv.error || r.status)); return; }
+  }catch(e){ alert('Error: ' + e); return; }
+  const msg = 'SOLUCIÓN DEFINITIVA · dejar el calendario con SOLO lo realmente producido:\n\n' +
+    '• Rescata ' + pv.producciones_fabricacion + ' producción(es) reales de Fabricación (historial).\n' +
+    '• Cancela ' + pv.a_cancelar + ' lote(s) NO ejecutados (todo el plan/sugeridas/canónicos).\n' +
+    '• Conserva el historial ya ejecutado (' + pv.historial_actual + ' lote(s) + lo rescatado).\n' +
+    '• PAUSA el plan automático diario para que NO se vuelva a llenar de sugeridas.\n\n' +
+    'Es reversible (queda auditado · no re-descuenta inventario). ¿Aplico?';
+  if(!confirm(msg)) return;
+  const btn = document.getElementById('btn-solo-real');
+  if(btn){ btn.disabled = true; btn.textContent = '🧹 Procesando...'; }
+  try{
+    const r2 = await fetch('/api/plan/dejar-solo-real', {
+      method: 'POST', headers: {'Content-Type':'application/json', 'X-CSRFToken': getCSRF()},
+      body: JSON.stringify({dry_run: false})
+    });
+    const d2 = await r2.json().catch(()=>({}));
+    if(!r2.ok || !d2.ok){ alert('Falló: ' + (d2.error || r2.status)); }
+    else{
+      alert('✅ Listo.\n\n' +
+        'Rescatadas de Fabricación: ' + (d2.rescatados_fabricacion||0) + '\n' +
+        'Lotes cancelados (plan/sugeridas): ' + (d2.cancelados||0) + '\n' +
+        'Plan automático: ' + (d2.cron_pausado ? 'PAUSADO (no volverá a llenar)' : 'no se pudo pausar') + '\n\n' +
+        'El calendario queda con SOLO lo realmente producido. Programa el futuro con ➕.');
+      if(typeof cargar === 'function') cargar();
+    }
+  }catch(e){ alert('Error: ' + e); }
+  if(btn){ btn.disabled = false; btn.innerHTML = '🧹 Dejar SOLO lo producido'; }
+}
 function abrirNuevaProduccion(fecha){
   // Prefill fecha: la del día clickeado, o hoy si se abrió desde el botón general.
   let f = fecha || '';

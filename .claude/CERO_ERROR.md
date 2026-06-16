@@ -184,6 +184,26 @@ automáticos) + `cantidad_kg`. Soporta productos que **no existen en Necesidades
 fórmula, descuenta al producir; si no, igual aparece para planear). No confundir
 con `/api/programacion/programar` (legacy, sin kg ni origen).
 
+## 🧹 M41 · El calendario "vuelve a llenarse" = cron diario + self-heal que lo re-enciende · 16-jun
+
+Síntoma: el usuario limpia el calendario y al día siguiente está lleno de
+sugeridas otra vez. **Causa raíz (no era el limpiador):**
+- El cron diario `auto_plan_diario` (7am L-V · `auto_plan_jobs._loop_cron`) corre
+  `generar_plan`+`aplicar_plan`, que INSERTA `produccion_programada` con
+  `origen='auto_plan', estado='pendiente'` (auto_plan.py:1082).
+- **`auto_plan_cron_state.habilitado=1` viene auto-seedeado por la migración 77**
+  (database.py:7965-7967) -> el cron está PRENDIDO en prod.
+- **Trampa:** `job_self_heal` (7am · auto_plan_jobs.py:1579) **re-habilitaba el
+  cron si estaba en 0** -> apagarlo con el toggle NO se quedaba.
+**Fix (definitivo):** flag `app_settings.auto_plan_pausa_manual`. El self-heal
+ahora NO re-enciende si el flag está en '1'; el toggle del cron y el endpoint
+`POST /api/plan/dejar-solo-real` setean/limpian ese flag. Para una pausa real de
+un cron auto-seedeado, busca SIEMPRE quién más lo re-activa (self-heal, otra
+migración, otro job) -- apagar el estado sin bloquear al re-activador no sirve.
+- `POST /api/plan/dejar-solo-real` (admin/compras · GET=preview): rescata
+  Fabricación (`_sync_fabricacion_calendario`) + cancela todo lo no-ejecutado +
+  pausa el cron. Calendario = solo lo realmente producido. Reversible.
+
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
 
 Al cerrar una sesión donde se encontró/arregló un bug con patrón no listado aquí:

@@ -148,3 +148,75 @@ def test_anclas_normaliza_nombre_M13(app, db_clean):
         assert clave == _norm_prod_fuerte('Suero Multipéptidos+')  # mismas tras normalizar
         # el cálculo corrió sin error con el espejo presente (no rompe)
         assert isinstance(productos, list)
+
+
+def test_dejar_solo_real_rescata_limpia_y_pausa(app, db_clean):
+    """16-jun · solución definitiva: rescata Fabricación, cancela todo lo no
+    ejecutado y PAUSA el cron (self-heal lo respeta)."""
+    from .conftest import TEST_PASSWORD, csrf_headers
+    # Seed: 1 producción real de Fabricación + ruido pendiente + 1 ejecutado real
+    conn0 = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    conn0.execute("INSERT INTO producciones (producto,cantidad,fecha,estado,lote) VALUES (?,?,?,?,?)",
+                  ('PROD SOLO REAL', 30, '2026-06-02T08:00:00', 'Completado', 'PSR-1'))
+    conn0.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes) "
+                  "VALUES (?,?,?,?,?,1)", ('RUIDO AUTO', '2026-07-20', 'pendiente', 'auto_plan', 50))
+    ruido = conn0.execute("SELECT id FROM produccion_programada WHERE producto='RUIDO AUTO'").fetchone()[0]
+    conn0.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes,inicio_real_at) "
+                  "VALUES (?,?,?,?,?,1,?)", ('YA EJECUTADO', '2026-06-09', 'en_proceso', 'eos_plan', 40, '2026-06-09'))
+    ejec = conn0.execute("SELECT id FROM produccion_programada WHERE producto='YA EJECUTADO'").fetchone()[0]
+    # cron arranca habilitado
+    conn0.execute("UPDATE auto_plan_cron_state SET habilitado=1 WHERE id=1")
+    conn0.commit(); conn0.close()
+
+    c = app.test_client()
+    c.post('/login', data={'username': 'sebastian', 'password': TEST_PASSWORD}, headers=csrf_headers())
+    # preview no toca nada
+    pv = c.get('/api/plan/dejar-solo-real')
+    assert pv.status_code == 200 and pv.get_json()['a_cancelar'] >= 1
+    # ejecutar
+    r = c.post('/api/plan/dejar-solo-real', json={'dry_run': False}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    j = r.get_json()
+    assert j['ok'] is True
+    assert j['rescatados_fabricacion'] >= 1
+    assert j['cancelados'] >= 1
+    assert j['cron_pausado'] is True
+
+    conn0 = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    try:
+        # ruido cancelado, ejecutado intacto
+        assert conn0.execute("SELECT estado FROM produccion_programada WHERE id=?", (ruido,)).fetchone()[0] == 'cancelado'
+        assert conn0.execute("SELECT estado FROM produccion_programada WHERE id=?", (ejec,)).fetchone()[0] == 'en_proceso'
+        # Fabricación rescatada (espejo completado)
+        resc = conn0.execute("SELECT estado, origen FROM produccion_programada WHERE producto='PROD SOLO REAL' ORDER BY id DESC LIMIT 1").fetchone()
+        assert resc and resc[0] == 'completado' and resc[1] == 'eos_retroactivo'
+        # cron pausado + flag de pausa manual
+        assert conn0.execute("SELECT habilitado FROM auto_plan_cron_state WHERE id=1").fetchone()[0] in (0, False)
+        assert conn0.execute("SELECT valor FROM app_settings WHERE clave='auto_plan_pausa_manual'").fetchone()[0] == '1'
+    finally:
+        conn0.execute("DELETE FROM app_settings WHERE clave='auto_plan_pausa_manual'")
+        conn0.execute("UPDATE auto_plan_cron_state SET habilitado=1 WHERE id=1")
+        conn0.commit(); conn0.close()
+
+
+def test_self_heal_respeta_pausa_manual(app, db_clean):
+    """Con la pausa manual puesta, el self-heal NO re-habilita el cron (antes lo
+    re-encendía cada 7am y el calendario volvía a llenarse)."""
+    _api()
+    from blueprints.auto_plan_jobs import job_self_heal
+    conn0 = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    conn0.execute("UPDATE auto_plan_cron_state SET habilitado=0 WHERE id=1")
+    conn0.execute("INSERT INTO app_settings (clave,valor,descripcion) VALUES ('auto_plan_pausa_manual','1','x') "
+                  "ON CONFLICT(clave) DO UPDATE SET valor='1'")
+    conn0.commit(); conn0.close()
+    try:
+        job_self_heal(app)
+        conn0 = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+        hab = conn0.execute("SELECT habilitado FROM auto_plan_cron_state WHERE id=1").fetchone()[0]
+        conn0.close()
+        assert hab in (0, False)   # respetó la pausa
+    finally:
+        conn0 = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+        conn0.execute("DELETE FROM app_settings WHERE clave='auto_plan_pausa_manual'")
+        conn0.execute("UPDATE auto_plan_cron_state SET habilitado=1 WHERE id=1")
+        conn0.commit(); conn0.close()

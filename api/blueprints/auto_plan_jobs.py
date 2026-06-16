@@ -1576,12 +1576,28 @@ def job_self_heal(app):
             return True, {'skipped': True, 'razon': 'lunes_7am ya cubrió esto'}, 0
         acciones = []
 
-        # 1) Habilitar cron si está deshabilitado
+        # 1) Habilitar cron si está deshabilitado — PERO respetar pausa manual.
+        # Sebastián 16-jun: si el usuario pausó el auto-plan a propósito (flag
+        # app_settings.auto_plan_pausa_manual='1', p.ej. desde 'Dejar solo lo
+        # producido' o el toggle), el self-heal NO lo re-enciende — antes lo
+        # re-habilitaba cada 7am y el calendario 'volvía a llenarse' de sugeridas.
         try:
+            _pausa = None
+            try:
+                _pr = c.execute(
+                    "SELECT valor FROM app_settings WHERE clave='auto_plan_pausa_manual' LIMIT 1"
+                ).fetchone()
+                _pausa = (_pr[0] if _pr else None)
+            except Exception:
+                _pausa = None
+            _pausado = str(_pausa or '').strip().lower() in ('1', 'true', 'yes', 'si', 'sí', 'on')
             r = c.execute("SELECT habilitado FROM auto_plan_cron_state WHERE id=1").fetchone()
             if r and not r[0]:
-                c.execute("UPDATE auto_plan_cron_state SET habilitado=1, notas='Self-heal auto-enable', activado_por='self-heal', activado_at=datetime('now', '-5 hours') WHERE id=1")
-                acciones.append('cron habilitado')
+                if _pausado:
+                    acciones.append('cron en pausa manual · self-heal NO re-habilita')
+                else:
+                    c.execute("UPDATE auto_plan_cron_state SET habilitado=1, notas='Self-heal auto-enable', activado_por='self-heal', activado_at=datetime('now', '-5 hours') WHERE id=1")
+                    acciones.append('cron habilitado')
         except Exception as _e:
             log.warning('self-heal habilitar cron fallo: %s', _e)
 
