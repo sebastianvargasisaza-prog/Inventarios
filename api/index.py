@@ -807,6 +807,15 @@ def _unhandled_exception(e):
     """
     from werkzeug.exceptions import HTTPException
     if isinstance(e, HTTPException):
+        # 15-jun · una ruta /api/* NUNCA debe devolver HTML a un fetch (rompe el
+        # JSON.parse del front con "Unexpected token '<'"). Devolvemos JSON con el
+        # código real. Las páginas (no /api/) conservan la página HTML de Werkzeug.
+        try:
+            if request.path.startswith('/api/'):
+                return jsonify({'error': getattr(e, 'description', str(e)) or 'Error',
+                                'code': getattr(e, 'code', 500)}), (getattr(e, 'code', 500) or 500)
+        except Exception:
+            pass
         return e
     import traceback as _tb
     import json as _json

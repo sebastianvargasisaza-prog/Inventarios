@@ -10777,9 +10777,13 @@ def test_golden_plan_factibilidad(app, db_clean):
     _exec("INSERT INTO movimientos (material_id, material_nombre, cantidad, "
           "tipo, fecha, lote) VALUES ('MPTESTFACT01','MP Test Factibilidad',"
           "3000,'Entrada','2026-05-01','LOTE-TESTFACT')")
+    # Fecha RELATIVA a hoy (+3d · día hábil-ish) · factibilidad es forward-only
+    # (M14) → una fecha hardcoded en el pasado rompe el test al rodar el calendario.
+    import datetime as _dtf
+    _f_fact = ((_dtf.datetime.utcnow() - _dtf.timedelta(hours=5)).date() + _dtf.timedelta(days=3)).isoformat()
     _exec("INSERT INTO produccion_programada (producto, fecha_programada, "
           "cantidad_kg, lotes, estado, origen) VALUES "
-          "('TEST_FACT_PRODUCTO','2026-06-15',10,1,'pendiente','eos_plan')")
+          "('TEST_FACT_PRODUCTO',?,10,1,'pendiente','eos_plan')", (_f_fact,))
 
     cs = _login(app, 'sebastian')
     r = cs.get('/api/plan/factibilidad?dias=120')

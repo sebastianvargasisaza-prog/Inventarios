@@ -10667,37 +10667,66 @@ def plan_restaurar_a_hora():
     import json as _json6
     d = request.get_json(silent=True) or {}
     dry = (request.method == 'GET') or bool(d.get('dry_run', True))
-    try:
-        hora_co = max(0, min(int(d.get('hora', 11)), 18))
-    except Exception:
-        hora_co = 11
-    hoy = _hoy_colombia()
-    T = "%s %02d:00:00" % (hoy.isoformat(), hora_co + 5)   # Colombia→UTC (+5) · formato audit
     conn = get_db(); cur = conn.cursor()
     CANCEL_T = {'SELLAR_CANCELAR_LOTE', 'CANCELAR_LOTE_REEMPLAZO', 'DEDUP_MISMO_DIA',
                 'REVERTIR_HOY_SUPRIMIR', 'REVERTIR_HOY_RECANCELAR', 'CERRAR_PENDIENTE_YA_PRODUCIDO',
-                'CANCELAR_PRODUCCION_PROGRAMADA'}
-    RESTORE_T = {'RESTAURAR_BUG_VANISH', 'REVERTIR_HOY_RESTAURAR'}
+                'CANCELAR_PRODUCCION_PROGRAMADA', 'RESTAURAR_A_HORA_CANCELAR'}
+    RESTORE_T = {'RESTAURAR_BUG_VANISH', 'REVERTIR_HOY_RESTAURAR', 'RESTAURAR_A_HORA'}
     CREATE_T = {'AUTO_PROGRAMAR_SUGERIDA', 'AUTO_PROGRAMAR_SUGERIDA_VARIANTE_SWITCH',
                 'APLICAR_AUTO_PLAN', 'PROGRAMAR_PRODUCCION'}
     DATE_T = {'REPROGRAMAR_PRODUCCION_PROGRAMADA', 'REPARTIR_SOBRECARGADO', 'REVERTIR_HOY_FECHA'}
-    # primera acción post-T por registro_id
+    # T = momento al que restaurar. ROBUSTO a cambio de día: si NO se pasa 'hora',
+    # auto-detecta el INICIO de la cirugía (primera acción reciente · últimas 48h),
+    # así "volver a antes del lío" funciona aunque ya sea otro día. Si se pasa 'hora',
+    # usa hoy(Colombia) a esa hora.
+    from datetime import datetime as _dtu, timedelta as _tdu
+    if d.get('hora') is not None:
+        try:
+            hora_co = max(0, min(int(d.get('hora')), 18))
+        except Exception:
+            hora_co = 11
+        T = "%s %02d:00:00" % (_hoy_colombia().isoformat(), hora_co + 5)
+    else:
+        _lo = (_dtu.utcnow() - _tdu(hours=48)).strftime('%Y-%m-%d %H:%M:%S')
+        _surg = sorted(CANCEL_T | RESTORE_T | CREATE_T | DATE_T | {'BACKFILL_FABRICACION'})
+        _ph = ",".join(["?"] * len(_surg))
+        try:
+            _r = cur.execute(
+                "SELECT MIN(fecha) FROM audit_log WHERE tabla='produccion_programada' "
+                "AND fecha >= ? AND accion IN (%s)" % _ph, tuple([_lo] + _surg)).fetchone()
+        except Exception:
+            _r = None
+        T = (_r[0] if _r and _r[0] else "%s 16:00:00" % _hoy_colombia().isoformat())
+    # creados a partir de T (no existían a esa hora) → se cancelan; y se EXCLUYEN de
+    # la reconstrucción por audit (su estado a T era "no existir").
+    creados_post = set(r[0] for r in cur.execute(
+        "SELECT id FROM produccion_programada WHERE creado_en >= ? "
+        "AND fin_real_at IS NULL AND inicio_real_at IS NULL "
+        "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+        "AND COALESCE(origen,'') <> 'eos_b2b'", (T,)).fetchall())
+    # primera acción >= T por registro_id (>= incluye la 1ª acción de la cirugía)
     a_pendiente, a_cancelar, a_fecha = [], [], []
     try:
         rows = cur.execute(
             "SELECT a.registro_id, a.accion, a.antes, a.despues FROM audit_log a "
             "JOIN (SELECT registro_id, MIN(fecha) mf FROM audit_log "
-            "      WHERE tabla='produccion_programada' AND fecha > ? AND registro_id IS NOT NULL "
+            "      WHERE tabla='produccion_programada' AND fecha >= ? AND registro_id IS NOT NULL "
             "        AND TRIM(registro_id)<>'' GROUP BY registro_id) m "
             "  ON a.registro_id=m.registro_id AND a.fecha=m.mf "
             "WHERE a.tabla='produccion_programada'", (T,)).fetchall()
     except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         rows = []
     for rid_s, accion, antes_s, despues_s in rows:
         try:
             rid = int(str(rid_s).strip())
         except (ValueError, TypeError):
             continue
+        if rid in creados_post:
+            continue   # no existía a T → lo maneja el cancelado por creado_en
         if accion in CANCEL_T:
             a_pendiente.append(rid)
         elif accion in RESTORE_T:
@@ -10728,15 +10757,9 @@ def plan_restaurar_a_hora():
                     break
             if fa:
                 a_fecha.append((rid, fa))
-    # creados después de T (incluye canónicos con registro_id vacío en audit)
-    creados_post = [r[0] for r in cur.execute(
-        "SELECT id FROM produccion_programada WHERE creado_en > ? "
-        "AND fin_real_at IS NULL AND inicio_real_at IS NULL "
-        "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
-        "AND COALESCE(origen,'') <> 'eos_b2b'", (T,)).fetchall()]
-    preview = {'hora_corte_colombia': hora_co, 'T_utc': T,
+    preview = {'T_utc': T, 'modo': ('hora' if d.get('hora') is not None else 'auto-inicio-cirugía'),
                'a_restaurar_pendiente': len(set(a_pendiente)),
-               'a_cancelar_post': len(set(a_cancelar) | set(creados_post)),
+               'a_cancelar_post': len(set(a_cancelar) | creados_post),
                'a_revertir_fecha': len(a_fecha)}
     if dry:
         return jsonify({'ok': True, 'dry_run': True, **preview})
@@ -14422,7 +14445,7 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
       <button onclick="revertirHoy()" class="danger" id="btn-revertir-hoy"
         style="font-size:14px;padding:10px 18px" title="Deshace TODOS los cambios de hoy en el calendario: suprime lo que se creó hoy, restaura lo que se canceló hoy (lo de Alejandro) y revierte fechas movidas hoy. Conserva lo recuperado de Fabricación. Vista previa antes de aplicar.">↩️ Deshacer cambios de hoy</button>
       <button onclick="restaurarAHora()" class="danger" id="btn-restaurar-hora"
-        style="font-size:14px;padding:10px 18px;background:#7c3aed" title="Reconstruye el calendario tal como estaba HOY a una hora exacta (default 11am), reversando por auditoría TODO lo posterior. Úsalo si el calendario quedó vacío o raro. Vista previa antes de aplicar.">🕚 Restaurar a hora de hoy</button>
+        style="font-size:14px;padding:10px 18px;background:#7c3aed" title="Reconstruye el calendario tal como estaba JUSTO ANTES de que empezara la cirugía de hoy (auto-detecta · robusto al cambio de día). Úsalo si el calendario quedó vacío o raro. Vista previa antes de aplicar.">🕚 Restaurar a antes de la cirugía</button>
       <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" style="display:none" disabled>✅ Confirmar y programar TODO</button>
     </div>
   </div>
@@ -14623,26 +14646,26 @@ async function revertirHoy(){
 // 🕚 Restaura el calendario al estado que tenía HOY a una hora exacta (default 11am).
 async function restaurarAHora(){
   const btn = document.getElementById('btn-restaurar-hora');
-  const horaTxt = prompt('Restaurar el calendario a como estaba HOY a las… (hora, 0-18, Colombia)', '11');
-  if (horaTxt === null) return;
-  const hora = parseInt(horaTxt, 10);
-  if (isNaN(hora) || hora < 0 || hora > 18){ alert('Hora inválida (0-18).'); return; }
   const _post = (body) => fetch('/api/plan/restaurar-a-hora', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()}, credentials:'same-origin', body: JSON.stringify(body)});
   try {
     if (btn){ btn.disabled = true; btn.textContent = '🕚 Calculando…'; }
-    const r = await _post({dry_run:true, hora});
+    // auto: reconstruye el estado JUSTO ANTES de que empezara la cirugía de hoy
+    // (robusto al cambio de día · no pide hora).
+    const r = await _post({dry_run:true});
     const d = await r.json();
-    if (!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
-    const ok = confirm('🕚 RESTAURAR a las ' + hora + ':00 de hoy\\n\\nEl calendario vuelve a como estaba a esa hora:\\n• Restaurar ' + (d.a_restaurar_pendiente||0) + ' lote(s) que se cancelaron después\\n• Quitar ' + (d.a_cancelar_post||0) + ' lote(s) creados/recuperados después\\n• Revertir ' + (d.a_revertir_fecha||0) + ' fecha(s) movidas después\\n\\nNo toca lo ejecutado ni B2B. ¿Restaurar?');
+    if (!r.ok){ alert('Error: ' + (d.error || d.mensaje || r.status)); return; }
+    const tot = (d.a_restaurar_pendiente||0) + (d.a_cancelar_post||0) + (d.a_revertir_fecha||0);
+    if (!tot){ alert('✓ No hay nada que restaurar: el calendario ya está como antes de la cirugía.'); return; }
+    const ok = confirm('🕚 RESTAURAR a antes de la cirugía de hoy\\n\\nEl calendario vuelve a ese momento:\\n• Restaurar ' + (d.a_restaurar_pendiente||0) + ' lote(s) que se cancelaron después\\n• Quitar ' + (d.a_cancelar_post||0) + ' lote(s) creados después\\n• Revertir ' + (d.a_revertir_fecha||0) + ' fecha(s) movidas después\\n\\nNo toca lo ejecutado ni B2B. ¿Restaurar?');
     if (!ok){ return; }
     if (btn){ btn.textContent = '🕚 Restaurando…'; }
-    const r2 = await _post({dry_run:false, hora});
+    const r2 = await _post({dry_run:false});
     const d2 = await r2.json();
-    if (!r2.ok){ alert('Error: ' + (d2.error || r2.status)); return; }
-    alert('✓ Restaurado a las ' + hora + ':00 de hoy.\\n\\n• ' + (d2.restaurados||0) + ' restaurados\\n• ' + (d2.cancelados||0) + ' quitados (creados después)\\n• ' + (d2.fechas_revertidas||0) + ' fechas revertidas.');
+    if (!r2.ok){ alert('Error: ' + (d2.error || d2.mensaje || r2.status)); return; }
+    alert('✓ Restaurado.\\n\\n• ' + (d2.restaurados||0) + ' restaurados\\n• ' + (d2.cancelados||0) + ' quitados (creados después)\\n• ' + (d2.fechas_revertidas||0) + ' fechas revertidas.');
     if (typeof cargar === 'function') cargar();
   } catch(e){ alert('Error red: ' + e.message); }
-  finally { if (btn){ btn.disabled = false; btn.textContent = '🕚 Restaurar a hora de hoy'; } }
+  finally { if (btn){ btn.disabled = false; btn.textContent = '🕚 Restaurar a antes de la cirugía'; } }
 }
 
 // 📅 Reparte días sobrecargados (>2 lotes) a los próximos días hábiles con cupo.
