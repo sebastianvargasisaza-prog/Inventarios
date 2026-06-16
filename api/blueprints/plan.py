@@ -14606,11 +14606,6 @@ async function revertirHoy(){
     const r = await _post({dry_run:true});
     const d = await r.json();
     if (!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
-    const tot = (d.a_suprimir_creadas_hoy||0) + (d.a_restaurar_canceladas||0) + (d.a_revertir_fecha||0);
-    if (!tot){
-      alert('✓ No hay cambios de hoy que deshacer en el calendario.');
-      return;
-    }
     const tot = (d.a_suprimir_creadas_hoy||0)+(d.a_restaurar_canceladas||0)+(d.a_recancelar_rescate||0)+(d.a_revertir_fecha||0);
     if (!tot){ alert('✓ No hay cambios de hoy que deshacer en el calendario.'); return; }
     const ok = confirm('↩️ DESHACER CAMBIOS DE HOY (vuelve EXACTO a antes · respeta lo de Alejandro)\\n\\n• Suprimir ' + (d.a_suprimir_creadas_hoy||0) + ' lote(s) creados hoy (apilón de sellar/recalcular)\\n• Restaurar ' + (d.a_restaurar_canceladas||0) + ' lote(s) cancelados hoy (lo de Alejandro y los originales)\\n• Quitar ' + (d.a_recancelar_rescate||0) + ' lote(s) que el rescate metió hoy (el apilón del 16)\\n• Revertir ' + (d.a_revertir_fecha||0) + ' fecha(s) movidas hoy\\n\\n(El historial real de Fabricación ya producido se conserva.)\\n\\n¿Deshacer?');
