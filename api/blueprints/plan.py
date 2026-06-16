@@ -10788,6 +10788,81 @@ def plan_restaurar_a_hora():
                     'fechas_revertidas': fch, **preview})
 
 
+@bp.route("/api/plan/reconstruir-plan", methods=["GET", "POST"])
+def plan_reconstruir_plan():
+    """Sebastián 16-jun (cansado · 'resuélvelo, debe quedar como antes de todo, el
+    martes 16 estaba urea, y NO puede faltar lo ya producido = base del cálculo').
+
+    Recuperación TOTAL, SIMPLE y CERTERA (sin reconstrucción frágil por audit):
+      1. HISTORIAL (lo crítico): re-activa TODO lo ya producido (eos_retroactivo
+         cancelado → completado) y re-sincroniza desde la tabla `producciones`
+         (fuente intacta de Fabricación) → el ancla del cálculo SIEMPRE lo cuenta.
+      2. PLAN de Alejandro: des-cancela los lotes Fijo (eos_plan/eos_b2b) futuros,
+         UNO por (producto, fecha) → trae de vuelta el plan SIN re-meter duplicados
+         (ej. UREA del martes 16 vuelve).
+      3. RUIDO: cancela los eos_canonico creados por la cirugía automática reciente.
+    NUNCA toca lo ejecutado (solo RESTAURA historial). dry_run por defecto → preview."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    from datetime import timedelta as _tdr
+    d = request.get_json(silent=True) or {}
+    dry = (request.method == 'GET') or bool(d.get('dry_run', True))
+    conn = get_db(); cur = conn.cursor()
+    hoy = _hoy_colombia()
+    desde_plan = (hoy - _tdr(days=1)).isoformat()      # plan futuro (incluye hoy)
+    desde_ruido = (hoy - _tdr(days=2)).isoformat()     # canónico creado por la cirugía
+    # PREVIEW counts
+    n_hist_canc = cur.execute(
+        "SELECT COUNT(*) FROM produccion_programada WHERE COALESCE(origen,'')='eos_retroactivo' "
+        "AND COALESCE(estado,'')='cancelado'").fetchone()[0]
+    n_hist_total_prod = cur.execute(
+        "SELECT COUNT(*) FROM producciones WHERE COALESCE(cantidad,0) > 0 "
+        "AND fecha IS NOT NULL AND TRIM(fecha) <> ''").fetchone()[0]
+    plan_ids = [r[0] for r in cur.execute(
+        "SELECT MIN(id) FROM produccion_programada "
+        "WHERE COALESCE(estado,'')='cancelado' AND COALESCE(origen,'') IN ('eos_plan','eos_b2b') "
+        "AND fin_real_at IS NULL AND inicio_real_at IS NULL "
+        "AND substr(fecha_programada,1,10) >= ? "
+        "GROUP BY UPPER(TRIM(producto)), substr(fecha_programada,1,10)", (desde_plan,)).fetchall()]
+    ruido_ids = [r[0] for r in cur.execute(
+        "SELECT id FROM produccion_programada "
+        "WHERE COALESCE(origen,'')='eos_canonico' AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+        "AND fin_real_at IS NULL AND inicio_real_at IS NULL AND substr(creado_en,1,10) >= ?",
+        (desde_ruido,)).fetchall()]
+    preview = {'historial_cancelado_a_reactivar': n_hist_canc, 'producciones_fabricacion': n_hist_total_prod,
+               'plan_fijo_a_restaurar': len(plan_ids), 'canonico_ruido_a_quitar': len(ruido_ids)}
+    if dry:
+        return jsonify({'ok': True, 'dry_run': True, **preview})
+    # 1. HISTORIAL · re-activar lo ya producido + re-sincronizar Fabricación
+    hist = 0
+    cur.execute("UPDATE produccion_programada SET estado='completado' "
+                "WHERE COALESCE(origen,'')='eos_retroactivo' AND COALESCE(estado,'')='cancelado'")
+    hist = cur.rowcount or 0
+    conn.commit()
+    sync = _sync_fabricacion_calendario(conn, usuario=user)
+    # 2. PLAN Fijo · des-cancelar uno por (producto, fecha)
+    plan = 0
+    for _id in plan_ids:
+        cur.execute("UPDATE produccion_programada SET estado='pendiente' WHERE id=? AND estado='cancelado'", (_id,))
+        if cur.rowcount:
+            plan += 1
+            audit_log(cur, usuario=user, accion='RECONSTRUIR_PLAN_RESTAURAR', tabla='produccion_programada', registro_id=_id)
+    # 3. RUIDO · cancelar canónico de la cirugía
+    ruido = 0
+    for _id in ruido_ids:
+        cur.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id=? "
+                    "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+                    "AND fin_real_at IS NULL AND inicio_real_at IS NULL", (_id,))
+        if cur.rowcount:
+            ruido += 1
+    conn.commit()
+    return jsonify({'ok': True, 'dry_run': False,
+                    'historial_reactivado': hist, 'historial_sincronizado': sync.get('creados', 0),
+                    'plan_restaurado': plan, 'canonico_quitado': ruido, **preview})
+
+
 @bp.route("/api/plan/revertir-hoy", methods=["GET", "POST"])
 def plan_revertir_hoy():
     """Sebastián 15-jun · 'quiero que el calendario vuelva a como estaba ANTES de
@@ -14444,6 +14519,8 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
         style="font-size:14px;padding:10px 18px" title="Reparte los días con demasiados lotes (ej. el 16) a los próximos días hábiles con cupo (máx 2/día). No toca lo iniciado ni B2B. Vista previa antes de aplicar.">📅 Repartir días sobrecargados</button>
       <button onclick="revertirHoy()" class="danger" id="btn-revertir-hoy"
         style="font-size:14px;padding:10px 18px" title="Deshace TODOS los cambios de hoy en el calendario: suprime lo que se creó hoy, restaura lo que se canceló hoy (lo de Alejandro) y revierte fechas movidas hoy. Conserva lo recuperado de Fabricación. Vista previa antes de aplicar.">↩️ Deshacer cambios de hoy</button>
+      <button onclick="reconstruirPlan()" class="success" id="btn-reconstruir"
+        style="font-size:15px;padding:11px 20px;font-weight:700;background:#059669" title="RECUPERACIÓN TOTAL: re-activa el historial ya producido (base del cálculo), trae de vuelta tu plan Fijo (uno por producto/día, sin duplicados) y quita el ruido automático. Úsalo si el calendario quedó vacío/raro. Vista previa antes de aplicar.">🔧 Reconstruir plan + historial</button>
       <button onclick="restaurarAHora()" class="danger" id="btn-restaurar-hora"
         style="font-size:14px;padding:10px 18px;background:#7c3aed" title="Reconstruye el calendario tal como estaba JUSTO ANTES de que empezara la cirugía de hoy (auto-detecta · robusto al cambio de día). Úsalo si el calendario quedó vacío o raro. Vista previa antes de aplicar.">🕚 Restaurar a antes de la cirugía</button>
       <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" style="display:none" disabled>✅ Confirmar y programar TODO</button>
@@ -14641,6 +14718,27 @@ async function revertirHoy(){
     if (typeof cargar === 'function') cargar();
   } catch(e){ alert('Error red: ' + e.message); }
   finally { if (btn){ btn.disabled = false; btn.textContent = '↩️ Deshacer cambios de hoy'; } }
+}
+
+// 🔧 Recuperación TOTAL: historial ya producido + plan Fijo + quita ruido.
+async function reconstruirPlan(){
+  const btn = document.getElementById('btn-reconstruir');
+  const _post = (body) => fetch('/api/plan/reconstruir-plan', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()}, credentials:'same-origin', body: JSON.stringify(body)});
+  try {
+    if (btn){ btn.disabled = true; btn.textContent = '🔧 Calculando…'; }
+    const r = await _post({dry_run:true});
+    const d = await r.json();
+    if (!r.ok){ alert('Error: ' + (d.error || d.mensaje || r.status)); return; }
+    const ok = confirm('🔧 RECONSTRUIR PLAN + HISTORIAL\\n\\n• HISTORIAL ya producido: re-activa ' + (d.historial_cancelado_a_reactivar||0) + ' lote(s) + asegura los ' + (d.producciones_fabricacion||0) + ' de Fabricación (base del cálculo)\\n• PLAN de Alejandro: restaura ' + (d.plan_fijo_a_restaurar||0) + ' lote(s) Fijo (uno por producto/día, sin duplicados)\\n• Quita ' + (d.canonico_ruido_a_quitar||0) + ' lote(s) auto creados por la cirugía\\n\\nNo toca lo ejecutado. ¿Reconstruir?');
+    if (!ok){ return; }
+    if (btn){ btn.textContent = '🔧 Reconstruyendo…'; }
+    const r2 = await _post({dry_run:false});
+    const d2 = await r2.json();
+    if (!r2.ok){ alert('Error: ' + (d2.error || d2.mensaje || r2.status)); return; }
+    alert('✓ Reconstruido.\\n\\n• Historial: ' + (d2.historial_reactivado||0) + ' re-activados + ' + (d2.historial_sincronizado||0) + ' sincronizados de Fabricación\\n• Plan: ' + (d2.plan_restaurado||0) + ' restaurados\\n• Ruido: ' + (d2.canonico_quitado||0) + ' quitados.\\n\\nEl historial y tu plan deberían estar de vuelta.');
+    if (typeof cargar === 'function') cargar();
+  } catch(e){ alert('Error red: ' + e.message); }
+  finally { if (btn){ btn.disabled = false; btn.textContent = '🔧 Reconstruir plan + historial'; } }
 }
 
 // 🕚 Restaura el calendario al estado que tenía HOY a una hora exacta (default 11am).

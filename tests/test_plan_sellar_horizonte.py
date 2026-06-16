@@ -269,6 +269,42 @@ def test_restaurar_a_hora(app, db_clean):
     assert _estado(idC) == 'cancelado'    # rescate después → a las 11am estaba cancelado
 
 
+def test_reconstruir_plan(app, db_clean):
+    """Recuperación TOTAL: re-activa historial ya producido (eos_retroactivo
+    cancelado→completado + sync de producciones), restaura plan Fijo UNO por
+    (producto,fecha) sin duplicados, y quita el canónico-ruido reciente."""
+    hoy = _hoy_co()
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    # historial ya producido pero CANCELADO → debe reactivarse
+    conn.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes,fin_real_at,inicio_real_at,observaciones) "
+                 "VALUES ('REC HIST','2026-06-10','cancelado','eos_retroactivo',14,1,'2026-06-10','2026-06-10','[fab#9991]')")
+    hid = conn.execute("SELECT id FROM produccion_programada WHERE producto='REC HIST'").fetchone()[0]
+    # produccion en Fabricación sin espejo → debe sincronizarse
+    conn.execute("INSERT INTO producciones (producto,cantidad,fecha,estado,lote) VALUES ('REC FAB SYNC',60,'2026-06-11T10:00:00','Completado','PR-1')")
+    # plan Fijo CANCELADO con 3 duplicados mismo día → vuelve UNO
+    f = hoy.isoformat()
+    for _ in range(3):
+        conn.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes) "
+                     "VALUES ('REC UREA',?,'cancelado','eos_plan',80,1)", (f,))
+    # canónico ruido creado hoy → quitar
+    conn.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes,creado_en) "
+                 "VALUES ('REC RUIDO','2026-07-01','pendiente','eos_canonico',30,1,?)", (_dt.datetime.utcnow().isoformat(),))
+    rid = conn.execute("SELECT id FROM produccion_programada WHERE producto='REC RUIDO'").fetchone()[0]
+    conn.commit(); conn.close()
+
+    c = _login(app)
+    r = c.post('/api/plan/reconstruir-plan', json={'dry_run': False}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    assert _estado(hid) == 'completado'    # historial reactivado
+    assert _estado(rid) == 'cancelado'     # ruido quitado
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    syncd = conn.execute("SELECT COUNT(*) FROM produccion_programada WHERE producto='REC FAB SYNC' AND estado='completado'").fetchone()[0]
+    urea = conn.execute("SELECT COUNT(*) FROM produccion_programada WHERE producto='REC UREA' AND COALESCE(estado,'')<>'cancelado'").fetchone()[0]
+    conn.close()
+    assert syncd == 1                      # Fabricación sincronizada
+    assert urea == 1                       # plan restaurado UNO (sin dups)
+
+
 def test_sellar_requiere_rol(app, db_clean):
     c = _login(app, 'valentina')  # sin admin/compras
     r = c.post('/api/plan/sellar-horizonte', json={'dry_run': True}, headers=csrf_headers())
