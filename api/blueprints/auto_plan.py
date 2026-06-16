@@ -12906,21 +12906,28 @@ def _producciones_futuras_kg(c, producto):
     return total_kg, eventos_count
 
 
-def _factor_g_por_unidad(c, producto):
-    """Devuelve el factor g/unidad. Fallback inteligente por categoría."""
-    # 1) Presentación default
+def _factor_g_por_unidad_detalle(c, producto):
+    """Igual que _factor_g_por_unidad pero devuelve (factor, fuente, detalle, pres).
+
+    fuente ∈ {'presentacion','categoria','nombre','default'} → para auditar de DÓNDE
+    sale el volumen del envase (exacto vs adivinado). pres = dict con lo cargado en
+    producto_presentaciones (o None). La lógica/valores son IDÉNTICOS a la versión
+    histórica para no cambiar el cálculo."""
+    # 1) Presentación default (volumen real del envase cargado)
     r = c.execute("""
-        SELECT factor_g_por_unidad, peso_g, volumen_ml FROM producto_presentaciones
+        SELECT factor_g_por_unidad, peso_g, volumen_ml, etiqueta FROM producto_presentaciones
         WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?)) AND activo=1
         ORDER BY es_default DESC, id ASC LIMIT 1
     """, (producto,)).fetchone()
+    pres = None
     if r:
+        pres = {'factor_g_por_unidad': r[0], 'peso_g': r[1], 'volumen_ml': r[2], 'etiqueta': r[3]}
         if r[0] and r[0] > 0:
-            return float(r[0])
+            return (float(r[0]), 'presentacion', 'factor_g_por_unidad', pres)
         if r[1] and r[1] > 0:
-            return float(r[1])
+            return (float(r[1]), 'presentacion', 'peso_g', pres)
         if r[2] and r[2] > 0:
-            return float(r[2])
+            return (float(r[2]), 'presentacion', 'volumen_ml', pres)
     # 2) Fallback por categoría
     cat_row = c.execute(
         "SELECT categoria FROM sku_planeacion_config WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
@@ -12942,22 +12949,28 @@ def _factor_g_por_unidad(c, producto):
         'esencia': 100.0,
     }
     if cat in factores_cat:
-        return factores_cat[cat]
+        return (factores_cat[cat], 'categoria', cat, pres)
     # 3) Heurística por nombre del producto
     nombre_upper = (producto or '').upper()
     if 'LIMPIADOR' in nombre_upper:
-        return 150.0
+        return (150.0, 'nombre', 'LIMPIADOR', pres)
     if 'HIDRATANTE' in nombre_upper or 'EMULSION' in nombre_upper:
-        return 50.0
+        return (50.0, 'nombre', 'HIDRATANTE/EMULSION', pres)
     if 'CONTORNO' in nombre_upper:
-        return 12.0
+        return (12.0, 'nombre', 'CONTORNO', pres)
     if 'MAXLASH' in nombre_upper:
-        return 4.5
+        return (4.5, 'nombre', 'MAXLASH', pres)
     if 'CREMA CORPORAL' in nombre_upper:
-        return 200.0
+        return (200.0, 'nombre', 'CREMA CORPORAL', pres)
     if 'MASCARILLA' in nombre_upper:
-        return 50.0
-    return 30.0  # default suero
+        return (50.0, 'nombre', 'MASCARILLA', pres)
+    return (30.0, 'default', 'default_suero_30', pres)
+
+
+def _factor_g_por_unidad(c, producto):
+    """Devuelve el factor g/unidad. Fallback inteligente por categoría.
+    (Wrapper sobre _factor_g_por_unidad_detalle · comportamiento idéntico.)"""
+    return _factor_g_por_unidad_detalle(c, producto)[0]
 
 
 def _calcular_demanda_suministro(c, producto, dias_horizonte=60):

@@ -124,6 +124,44 @@ def test_proyeccion_sin_ventas_no_planea(app, db_clean):
     assert len(_eos_proyeccion('PROD SIN VENTA')) == 0   # sin venta → no inventa demanda
 
 
+def test_verificar_volumenes_detecta_fuente(app, db_clean):
+    """Paso 1: el volumen real cargado (presentación) se distingue del adivinado."""
+    _api()
+    from blueprints.plan import _verificar_volumenes_data
+    from database import get_db
+    # producto CON presentación real (200 ml) → fuente 'presentacion'
+    _seed_producto(producto='CON ENVASE', sku='SKU-CE', vel=5, lote_kg=30)
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    conn.execute("DELETE FROM producto_presentaciones WHERE producto_nombre='CON ENVASE'")
+    conn.execute("INSERT INTO producto_presentaciones (producto_nombre,presentacion_codigo,etiqueta,"
+                 "volumen_ml,es_default,activo) VALUES (?,?,?,?,1,1)", ('CON ENVASE', 'PC-CE', '200ml', 200))
+    conn.commit(); conn.close()
+    # producto SIN presentación (categoría suero) → fuente 'categoria' (adivinado)
+    _seed_producto(producto='SIN ENVASE', sku='SKU-SE', vel=5, lote_kg=30)
+    with app.app_context():
+        resumen, prods = _verificar_volumenes_data(get_db())
+    by = {p['producto']: p for p in prods}
+    assert by['CON ENVASE']['fuente'] == 'presentacion'
+    assert by['CON ENVASE']['volumen'] == 200
+    assert by['SIN ENVASE']['fuente'] == 'categoria'
+    assert by['SIN ENVASE']['volumen'] == 30
+    # unidades/lote = 30kg*1000/volumen
+    assert by['CON ENVASE']['unidades_por_lote'] == 150   # 30000/200
+    assert by['SIN ENVASE']['unidades_por_lote'] == 1000  # 30000/30
+    assert resumen['envase_cargado'] >= 1 and resumen['volumen_adivinado'] >= 1
+
+
+def test_verificar_volumenes_page_render(app, db_clean):
+    from .conftest import TEST_PASSWORD, csrf_headers
+    _seed_producto(producto='PROD PAGINA', sku='SKU-PG', vel=5, lote_kg=30)
+    c = app.test_client()
+    c.post('/login', data={'username': 'sebastian', 'password': TEST_PASSWORD}, headers=csrf_headers())
+    r = c.get('/admin/verificar-volumenes')
+    assert r.status_code == 200
+    assert b'Verificar vol' in r.data
+    assert 'PROD PAGINA'.encode() in r.data
+
+
 def test_proyeccion_no_toca_fijo_ni_ejecutado(app, db_clean):
     _api()
     from blueprints.plan import _proyectar_horizonte_2y

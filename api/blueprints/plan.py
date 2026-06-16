@@ -11492,6 +11492,156 @@ def plan_proyectar_2anios():
     return jsonify({'ok': True, **res})
 
 
+def _verificar_volumenes_data(conn):
+    """Paso 1 de la planeación · por producto: qué VOLUMEN DE ENVASE mapea y de
+    DÓNDE sale (envase real cargado vs adivinado), unidades por lote, velocidad y
+    hasta cuándo alcanza el stock efectivo (Shopify + pipeline). Solo lectura."""
+    from datetime import timedelta as _td
+    import blueprints.auto_plan as _ap
+    c = conn.cursor()
+    hoy = _hoy_colombia()
+    rows = c.execute(
+        "SELECT spc.producto_nombre, spc.categoria, fh.lote_size_kg "
+        "FROM sku_planeacion_config spc "
+        "LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(spc.producto_nombre)) "
+        "WHERE spc.activo=1 ORDER BY spc.producto_nombre").fetchall()
+    out = []
+    for producto, categoria, lote_kg in rows:
+        factor, fuente, detalle, pres = _ap._factor_g_por_unidad_detalle(c, producto)
+        vel, fac = _ap._velocidad_total_producto(c, producto)
+        vel_proj = vel * (fac or 1.0)
+        lote_units = int(round((float(lote_kg or 0) * 1000.0) / max(factor, 1))) if lote_kg else 0
+        stock_shop = _ap._stock_actual_pt(c, producto)
+        pipe_kg = c.execute(
+            "SELECT COALESCE(SUM(COALESCE(kg_real,cantidad_kg,0)),0) FROM produccion_programada "
+            "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) AND fin_real_at IS NOT NULL "
+            "AND substr(fin_real_at,1,10) >= ?", (producto, (hoy - _td(days=7)).isoformat())).fetchone()[0]
+        pipe_units = (float(pipe_kg or 0) * 1000.0) / max(factor, 1)
+        stock_ef = stock_shop + pipe_units
+        alcanza_dias = (stock_ef / vel_proj) if vel_proj > 0.001 else None
+        alcanza_hasta = (hoy + _td(days=int(alcanza_dias))).isoformat() if alcanza_dias is not None else None
+        out.append({
+            'producto': producto, 'categoria': categoria or '',
+            'volumen': round(factor, 2), 'fuente': fuente, 'detalle': detalle,
+            'presentacion': pres, 'lote_size_kg': lote_kg or 0, 'unidades_por_lote': lote_units,
+            'velocidad_dia': round(vel, 2), 'tendencia': round(fac or 1.0, 2),
+            'stock_shopify_u': stock_shop, 'pipeline_u': int(round(pipe_units)),
+            'stock_efectivo_u': int(round(stock_ef)),
+            'alcanza_dias': round(alcanza_dias, 0) if alcanza_dias is not None else None,
+            'alcanza_hasta': alcanza_hasta,
+            'tiene_formula': bool(lote_kg and lote_kg > 0),
+            'tiene_venta': vel > 0,
+            'requiere_atencion': (fuente != 'presentacion') or (not lote_kg) or (vel <= 0),
+        })
+    out.sort(key=lambda x: (not x['requiere_atencion'], x['producto']))
+    resumen = {
+        'total': len(out),
+        'envase_cargado': sum(1 for x in out if x['fuente'] == 'presentacion'),
+        'volumen_adivinado': sum(1 for x in out if x['fuente'] != 'presentacion'),
+        'sin_formula': sum(1 for x in out if not x['tiene_formula']),
+        'sin_venta': sum(1 for x in out if not x['tiene_venta']),
+    }
+    return resumen, out
+
+
+@bp.route("/api/plan/verificar-volumenes", methods=["GET"])
+def plan_verificar_volumenes():
+    """JSON · paso 1: volumen de envase que mapea cada producto + de dónde sale."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    resumen, productos = _verificar_volumenes_data(get_db())
+    return jsonify({'ok': True, 'resumen': resumen, 'productos': productos})
+
+
+@bp.route("/admin/verificar-volumenes", methods=["GET"])
+def plan_verificar_volumenes_page():
+    """Página de revisión (paso 1 de planeación) · qué volumen de envase usa cada
+    producto y si es el REAL (cargado en presentaciones) o uno ADIVINADO."""
+    if not session.get("compras_user"):
+        from flask import redirect
+        return redirect("/login?next=/admin/verificar-volumenes")
+    from flask import Response
+    import html as _html
+    resumen, productos = _verificar_volumenes_data(get_db())
+
+    _badge = {
+        'presentacion': '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">✓ envase real</span>',
+        'categoria':    '<span style="background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">≈ por categoría</span>',
+        'nombre':       '<span style="background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">≈ por nombre</span>',
+        'default':      '<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">⚠ adivinado 30</span>',
+    }
+    filas = []
+    for p in productos:
+        bg = '#fff7ed' if p['requiere_atencion'] else '#ffffff'
+        nombre = _html.escape(p['producto'])
+        pres = p['presentacion'] or {}
+        pres_txt = ''
+        if pres:
+            partes = []
+            if pres.get('volumen_ml'):
+                partes.append(str(pres['volumen_ml']) + 'ml')
+            if pres.get('peso_g'):
+                partes.append(str(pres['peso_g']) + 'g')
+            if pres.get('etiqueta'):
+                partes.append(_html.escape(str(pres['etiqueta'])))
+            pres_txt = ' · '.join(partes)
+        else:
+            pres_txt = '<span style="color:#dc2626">sin presentación cargada</span>'
+        flags = []
+        if not p['tiene_formula']:
+            flags.append('<span style="color:#dc2626;font-weight:700">sin fórmula/lote</span>')
+        if not p['tiene_venta']:
+            flags.append('<span style="color:#b45309">sin venta Shopify</span>')
+        alcanza = (p['alcanza_hasta'] + ' (' + str(int(p['alcanza_dias'])) + 'd)') if p['alcanza_hasta'] else '—'
+        filas.append(
+            '<tr style="background:' + bg + '">'
+            + '<td style="font-weight:600">' + nombre + '<br><span style="font-size:11px;color:#94a3b8">' + _html.escape(p['categoria']) + '</span></td>'
+            + '<td style="text-align:right;font-weight:700">' + format(p['volumen'], 'g') + ' <span style="font-size:11px;color:#94a3b8">ml/g</span></td>'
+            + '<td>' + _badge.get(p['fuente'], p['fuente']) + '<br><span style="font-size:10px;color:#94a3b8">' + pres_txt + '</span></td>'
+            + '<td style="text-align:right">' + str(p['lote_size_kg']) + ' kg<br><span style="font-size:11px;color:#0d9488;font-weight:700">' + format(p['unidades_por_lote'], ',') + ' u/lote</span></td>'
+            + '<td style="text-align:right">' + format(p['velocidad_dia'], '.1f') + '/d' + (' <span style="color:#16a34a">↑x' + format(p['tendencia'], '.1f') + '</span>' if p['tendencia'] > 1.05 else '') + '</td>'
+            + '<td style="text-align:right">' + format(p['stock_efectivo_u'], ',') + ' u<br><span style="font-size:10px;color:#94a3b8">Shopify ' + format(p['stock_shopify_u'], ',') + ' + pipe ' + format(p['pipeline_u'], ',') + '</span></td>'
+            + '<td style="text-align:center;font-weight:600">' + alcanza + '</td>'
+            + '<td style="font-size:11px">' + ' · '.join(flags) + '</td>'
+            + '</tr>')
+
+    html_doc = (
+        '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        '<title>Verificar volúmenes · Planeación</title>'
+        '<style>body{font-family:system-ui,Segoe UI,Roboto,sans-serif;margin:0;background:#f8fafc;color:#1e293b}'
+        '.wrap{max-width:1200px;margin:0 auto;padding:20px}'
+        'h1{font-size:20px;margin:0 0 4px}.sub{color:#64748b;font-size:13px;margin-bottom:16px}'
+        '.cards{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}'
+        '.card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px 16px;min-width:120px}'
+        '.card b{font-size:22px;display:block}.card span{font-size:12px;color:#64748b}'
+        'table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)}'
+        'th{background:#0d9488;color:#fff;text-align:left;padding:9px 10px;font-size:12px}'
+        'td{padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:13px;vertical-align:top}'
+        'a.back{color:#0d9488;text-decoration:none;font-size:13px}</style></head><body><div class="wrap">'
+        '<a class="back" href="/admin/plan-calendario">← Volver al calendario</a>'
+        '<h1>📏 Verificar volúmenes de envase · paso 1 de planeación</h1>'
+        '<div class="sub">De aquí salen las fechas: kilos producidos ÷ volumen del envase = unidades → para cuántos días alcanzan. '
+        'Revisá que cada producto use su <b>envase real</b> (verde). Los marcados ⚠/≈ usan un valor <b>adivinado</b> y hay que cargarles la presentación real.</div>'
+        '<div class="cards">'
+        + '<div class="card"><b>' + str(resumen['total']) + '</b><span>productos activos</span></div>'
+        + '<div class="card" style="border-color:#86efac"><b style="color:#166534">' + str(resumen['envase_cargado']) + '</b><span>envase real cargado</span></div>'
+        + '<div class="card" style="border-color:#fde047"><b style="color:#854d0e">' + str(resumen['volumen_adivinado']) + '</b><span>volumen adivinado</span></div>'
+        + '<div class="card" style="border-color:#fecaca"><b style="color:#991b1b">' + str(resumen['sin_formula']) + '</b><span>sin fórmula/lote</span></div>'
+        + '<div class="card"><b>' + str(resumen['sin_venta']) + '</b><span>sin venta Shopify</span></div>'
+        + '</div>'
+        '<table><thead><tr><th>Producto</th><th>Volumen envase</th><th>Fuente</th><th>Lote</th>'
+        '<th>Venta</th><th>Stock efectivo</th><th>Alcanza hasta</th><th>Alertas</th></tr></thead><tbody>'
+        + ''.join(filas)
+        + '</tbody></table>'
+        '<div class="sub" style="margin-top:14px">⚠/≈ = volumen adivinado → cargá la presentación real en el producto para que la fecha sea exacta. '
+        '"Stock efectivo" ya incluye lo producido ≤7d que aún no aparece en Shopify (pipeline).</div>'
+        '</div></body></html>')
+    return Response(html_doc, mimetype="text/html")
+
+
 @bp.route("/api/plan/dejar-solo-real", methods=["GET", "POST"])
 def plan_dejar_solo_real():
     """Sebastián 16-jun · SOLUCIÓN DEFINITIVA al 'calendario sigue vuelto nada'.
