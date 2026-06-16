@@ -165,6 +165,27 @@ def test_set_volumen_sku_manda(app, db_clean):
         assert vol == 200 and fuente == 'sku'
 
 
+def test_set_volumenes_bulk(app, db_clean):
+    """Guardar TODOS los volúmenes de una (botón 'Guardar todos')."""
+    from .conftest import TEST_PASSWORD, csrf_headers
+    _api()
+    from blueprints.auto_plan import _volumen_sku
+    from database import get_db
+    _seed_producto(producto='BULK A', sku='SKU-BA', vel=5, lote_kg=30)
+    _seed_producto(producto='BULK B', sku='SKU-BB', vel=5, lote_kg=30)
+    c = app.test_client()
+    c.post('/login', data={'username': 'sebastian', 'password': TEST_PASSWORD}, headers=csrf_headers())
+    r = c.post('/api/plan/set-volumenes-bulk', json={'items': [
+        {'sku': 'SKU-BA', 'volumen_ml': 30}, {'sku': 'SKU-BB', 'volumen_ml': 10},
+        {'sku': 'SKU-NOPE', 'volumen_ml': 5}]}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:200]
+    j = r.get_json()
+    assert j['guardados'] == 2 and 'SKU-NOPE' in j['no_encontrados']
+    with app.app_context():
+        assert _volumen_sku(get_db().cursor(), 'SKU-BA', 'BULK A') == (30, 'sku')
+        assert _volumen_sku(get_db().cursor(), 'SKU-BB', 'BULK B') == (10, 'sku')
+
+
 def test_set_volumen_sku_inexistente_404(app, db_clean):
     from .conftest import TEST_PASSWORD, csrf_headers
     c = app.test_client()

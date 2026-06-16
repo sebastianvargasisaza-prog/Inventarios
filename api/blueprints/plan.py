@@ -11585,6 +11585,44 @@ def plan_set_volumen():
     return jsonify({'ok': False, 'error': 'sku o producto requerido'}), 400
 
 
+@bp.route("/api/plan/set-volumenes-bulk", methods=["POST"])
+def plan_set_volumenes_bulk():
+    """Guarda en bloque los volúmenes por SKU. Body: {items:[{sku, volumen_ml}, ...]}.
+    Cada volumen<=0 limpia (vuelve al fallback). Devuelve cuántos se guardaron."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    d = request.get_json(silent=True) or {}
+    items = d.get('items') or []
+    if not isinstance(items, list):
+        return jsonify({'ok': False, 'error': 'items debe ser una lista'}), 400
+    conn = get_db(); c = conn.cursor()
+    guardados = 0
+    no_encontrados = []
+    for it in items:
+        sku = (str(it.get('sku') or '')).strip()
+        if not sku:
+            continue
+        try:
+            vol = float(it.get('volumen_ml') or 0)
+        except (ValueError, TypeError):
+            vol = 0
+        vol_val = vol if vol > 0 else None
+        c.execute("UPDATE sku_producto_map SET volumen_ml=? WHERE sku=?", (vol_val, sku))
+        if c.rowcount:
+            guardados += 1
+        else:
+            no_encontrados.append(sku)
+    try:
+        audit_log(c, usuario=user, accion='SET_VOLUMENES_BULK', tabla='sku_producto_map',
+                  registro_id=0, despues={'guardados': guardados, 'no_encontrados': len(no_encontrados)})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'guardados': guardados, 'no_encontrados': no_encontrados})
+
+
 @bp.route("/admin/verificar-volumenes", methods=["GET"])
 def plan_verificar_volumenes_page():
     """Página de revisión (paso 1 de planeación) · qué volumen de envase usa cada
@@ -11668,8 +11706,12 @@ def plan_verificar_volumenes_page():
         '<a class="back" href="/admin/plan-calendario">← Volver al calendario</a>'
         '<h1>📏 Verificar volúmenes por tamaño · paso 1 de planeación</h1>'
         '<div class="sub">Un producto puede venderse en varios tamaños (ej. 30 ml + 10 ml). La planeación es en <b>gramos</b>: '
-        'demanda/día = Σ (ventas × volumen de cada tamaño); el bulk se fabrica junto. Escribí el <b>volumen (ml) de cada tamaño/SKU</b> y dale ✓. '
-        'Los ámbar (≈ adivinado) usan un valor supuesto hasta que les cargues el ml real.</div>'
+        'demanda/día = Σ (ventas × volumen de cada tamaño); el bulk se fabrica junto. Escribí el <b>volumen (ml) de cada tamaño/SKU</b> '
+        'y al final dale <b>💾 Guardar todos</b> (o el ✓ de cada fila). Los ámbar (≈ adivinado) usan un valor supuesto hasta que les cargues el ml real.</div>'
+        '<div style="position:sticky;top:0;background:#f8fafc;padding:8px 0;z-index:5;margin-bottom:8px">'
+        '<button onclick="guardarTodo()" id="btn-guardar-todo" style="background:#0d9488;color:#fff;border:none;'
+        'padding:11px 22px;border-radius:9px;font-weight:800;font-size:15px;cursor:pointer;box-shadow:0 2px 6px rgba(13,148,136,.3)">'
+        '💾 Guardar todos los volúmenes</button></div>'
         '<div class="cards">'
         + '<div class="card"><b>' + str(resumen['total']) + '</b><span>productos · ' + str(resumen['total_skus']) + ' tamaños</span></div>'
         + '<div class="card" style="border-color:#86efac"><b style="color:#166534">' + str(resumen['volumen_completo']) + '</b><span>volumen completo</span></div>'
@@ -11696,6 +11738,20 @@ def plan_verificar_volumenes_page():
         'if(!r.ok||!d.ok){_toast("Error: "+(d.error||r.status),false);return;}'
         'el.style.background="#dcfce7";_toast("✓ "+sku+" → "+vol+" ml",true);'
         '}catch(e){_toast("Error: "+e,false);}}'
+        'async function guardarTodo(){'
+        'var inputs=document.querySelectorAll("input[data-sku]");var items=[];'
+        'inputs.forEach(function(el){items.push({sku:el.dataset.sku,volumen_ml:parseFloat(el.value||"0")||0});});'
+        'var b=document.getElementById("btn-guardar-todo");b.disabled=true;b.textContent="💾 Guardando...";'
+        'try{var r=await fetch("/api/plan/set-volumenes-bulk",{method:"POST",'
+        'headers:{"Content-Type":"application/json","X-CSRFToken":_csrf()},'
+        'body:JSON.stringify({items:items})});'
+        'var d=await r.json().catch(function(){return{};});'
+        'if(!r.ok||!d.ok){_toast("Error: "+(d.error||r.status),false);}'
+        'else{inputs.forEach(function(el){el.style.background="#dcfce7";});'
+        '_toast("✓ Guardados "+d.guardados+" volúmenes",true);'
+        'setTimeout(function(){location.reload();},900);}'
+        '}catch(e){_toast("Error: "+e,false);}'
+        'b.disabled=false;b.textContent="💾 Guardar todos los volúmenes";}'
         '</script>'
         '</div></body></html>')
     return Response(html_doc, mimetype="text/html")
