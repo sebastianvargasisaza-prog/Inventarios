@@ -2468,6 +2468,25 @@ def _handle_produccion_inner():
             __import__('logging').getLogger('inventario').warning(
                 'costo_estimado_cop calc fallo: %s', _e_outer)
 
+        # 15-jun · CÁLCULO PERFECTO · espejo automático Fabricación → calendario.
+        # Cada producción registrada se refleja como lote COMPLETADO retroactivo en
+        # produccion_programada para que el ANCLA del cálculo (ultima_prod) la cuente
+        # y aparezca en el calendario, SIN backfill manual. Best-effort: la producción
+        # YA está commiteada · si el espejo falla, jamás rompe el registro (el cron
+        # job_sync_fabricacion_calendario lo reconcilia después). M22: audit + commit.
+        try:
+            from blueprints.plan import _mirror_produccion_a_calendario as _mirror_fab
+            if _mirror_fab(conn, prod_id, producto, cantidad_kg, fecha, lote_ref,
+                           usuario=(operador or 'fabricacion')):
+                conn.commit()
+        except Exception as _emir:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            __import__('logging').getLogger('inventario').warning(
+                'espejo Fabricación→calendario fallo (no bloquea · cron reconcilia): %s', _emir)
+
         # Stock PT se crea via Acondicionamiento → Liberacion (flujo BPM correcto)
         msg = f'Produccion registrada: {producto} x {cantidad_kg}kg (FEFO)'
         if descuentos:

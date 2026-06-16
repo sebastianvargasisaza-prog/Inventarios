@@ -716,6 +716,10 @@ JOBS_SCHEDULE = [
     # maestro_mee y los repara via mee_aliases. Equivalente MEE de
     # auto_reparar_huerfanas (MP). Pendientes manuales se loguean.
     ('auto_reparar_huerfanas_mee', 4, 45, None, None,           'job_auto_reparar_huerfanas_mee'),
+    # ⭐ CÁLCULO PERFECTO 15-jun · 4:50 · espejo Fabricación (tabla producciones) →
+    # calendario (produccion_programada retroactivo). Garantiza que TODA producción
+    # ya realizada cuente para el ancla del cálculo, sin backfill manual. Idempotente.
+    ('sync_fabricacion_calendario', 4, 50, None, None,          'job_sync_fabricacion_calendario'),
     # PQR SLA · Ley 1755/2015 CO · diario 8:15 AM
     ('pqr_sla_vencido',       8, 15, None, None,                'job_pqr_sla_vencido'),
     # MEE drift sync · cache vs SUM(movimientos_mee) · diario 3:00 AM
@@ -4913,6 +4917,27 @@ def job_auto_reparar_huerfanas(app):
             'reparados_auto': reparados,
             'pendientes_manual': len(huerfanos) - reparados,
         }, 0
+
+
+def job_sync_fabricacion_calendario(app):
+    """Sebastián 15-jun-2026 · CÁLCULO PERFECTO · cron diario 4:50 AM.
+
+    Espejo de reconciliación: toda producción de Fabricación (tabla `producciones`)
+    que aún no esté reflejada en el calendario (`produccion_programada`) se crea como
+    lote COMPLETADO retroactivo (origen='eos_retroactivo'). Así el ANCLA del cálculo
+    (ultima_prod) cuenta SIEMPRE lo realmente producido, sin depender del botón
+    manual ni del hook (que es best-effort). Idempotente (marcador [fab#<id>]).
+    """
+    with app.app_context():
+        from database import get_db as _gdb
+        from blueprints.plan import _sync_fabricacion_calendario
+        conn = _gdb()
+        try:
+            res = _sync_fabricacion_calendario(conn, usuario='cron-fab')
+        except Exception as e:
+            log.exception('sync_fabricacion_calendario fallo')
+            return False, {'error': str(e)[:200]}, 0
+        return True, res, 0
 
 
 def job_auto_reparar_huerfanas_mee(app):

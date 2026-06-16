@@ -211,22 +211,29 @@ def test_revertir_hoy(app, db_clean):
     idB = conn.execute("SELECT id FROM produccion_programada WHERE producto='REV ALEJANDRO'").fetchone()[0]
     conn.execute("INSERT INTO audit_log (usuario,accion,tabla,registro_id,fecha) "
                  "VALUES ('sebastian','SELLAR_CANCELAR_LOTE','produccion_programada',?,datetime('now'))", (str(idB),))
-    # C) retroactivo Fabricación creado hoy (conservar)
+    # C) retroactivo Fabricación creado hoy (conservar · historial real producido)
     conn.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes,creado_en,fin_real_at,inicio_real_at) "
                  "VALUES (?,?,?,?,?,1,?,?,?)", ('REV FAB', '2026-06-04', 'completado', 'eos_retroactivo', 20, ahora, '2026-06-04', '2026-06-04'))
     idC = conn.execute("SELECT id FROM produccion_programada WHERE producto='REV FAB'").fetchone()[0]
+    # D) restaurado HOY por el rescate (el apilón · antes estaba cancelado) → re-cancelar
+    conn.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes,creado_en) "
+                 "VALUES (?,?,?,?,?,1,?)", ('REV APILON', fut, 'pendiente', 'eos_plan', 35, ayer))
+    idD = conn.execute("SELECT id FROM produccion_programada WHERE producto='REV APILON'").fetchone()[0]
+    conn.execute("INSERT INTO audit_log (usuario,accion,tabla,registro_id,fecha) "
+                 "VALUES ('sebastian','RESTAURAR_BUG_VANISH','produccion_programada',?,datetime('now'))", (str(idD),))
     conn.commit(); conn.close()
 
     c = _login(app)
     dg = c.post('/api/plan/revertir-hoy', json={'dry_run': True}, headers=csrf_headers())
     assert dg.status_code == 200, dg.data[:300]
     j = dg.get_json()
-    assert j['a_suprimir_creadas_hoy'] >= 1 and j['a_restaurar_canceladas'] >= 1
+    assert j['a_suprimir_creadas_hoy'] >= 1 and j['a_restaurar_canceladas'] >= 1 and j['a_recancelar_rescate'] >= 1
     r = c.post('/api/plan/revertir-hoy', json={'dry_run': False}, headers=csrf_headers())
     assert r.status_code == 200
     assert _estado(idA) == 'cancelado'    # creado hoy → suprimido
     assert _estado(idB) == 'pendiente'    # cancelado hoy → restaurado
     assert _estado(idC) == 'completado'   # retroactivo Fabricación → conservado
+    assert _estado(idD) == 'cancelado'    # rescate de hoy → re-cancelado (limpia el apilón)
 
 
 def test_sellar_requiere_rol(app, db_clean):

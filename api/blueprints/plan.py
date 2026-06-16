@@ -3944,6 +3944,20 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         if r[0] not in ultima_prod:
             ultima_prod[r[0]] = {"fecha": r[1], "kg": round(float(r[2] or 0), 2)}
 
+    # M13 (15-jun · cálculo perfecto): índice NORMALIZADO del ancla. Una producción
+    # cuyo nombre no coincide EXACTO con la fórmula (ej. Fabricación que el operario
+    # escribió con acento/puntuación distinta) igual debe anclar → si no, el cálculo
+    # la ignora en silencio (demanda/ancla 0). Conserva la de fecha más reciente.
+    from blueprints.programacion import _norm_prod_fuerte as _npf
+    ultima_prod_norm = {}
+    for _k, _v in ultima_prod.items():
+        _nk = _npf(_k)
+        if not _nk:
+            continue
+        _prev = ultima_prod_norm.get(_nk)
+        if _prev is None or str(_v.get("fecha") or "") > str(_prev.get("fecha") or ""):
+            ultima_prod_norm[_nk] = _v
+
     # Inyectar lotes pendientes + horizonte en cada producto
     from datetime import date as _date, timedelta as _td
     hoy = _hoy_colombia()
@@ -3981,6 +3995,16 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         if r[0] not in ult_fijo_prog:
             ult_fijo_prog[r[0]] = r[1]
             ult_fijo_kg[r[0]] = float(r[2] or 0)
+    # M13: índice normalizado del Fijo futuro (mismo criterio que ultima_prod_norm).
+    ult_fijo_prog_norm = {}
+    ult_fijo_kg_norm = {}
+    for _k, _f in ult_fijo_prog.items():
+        _nk = _npf(_k)
+        if not _nk:
+            continue
+        if _nk not in ult_fijo_prog_norm or str(_f) > str(ult_fijo_prog_norm[_nk]):
+            ult_fijo_prog_norm[_nk] = _f
+            ult_fijo_kg_norm[_nk] = ult_fijo_kg.get(_k, 0.0)
 
     # FIX 1-jun-2026 Sebastián · kg B2B por (producto, fecha) del lote · para
     # restar del ancla y que la SUGERENCIA de próxima producción se base SOLO en
@@ -4012,9 +4036,19 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             p["lotes_pendientes_proximas_fechas"] = []
 
         # Horizonte: ancla = max(última completada, último Fijo programado)
-        up = ultima_prod.get(p["producto_nombre"])
-        fpf = ult_fijo_prog.get(p["producto_nombre"])
-        fpk = ult_fijo_kg.get(p["producto_nombre"]) or 0.0
+        # M13: match exacto primero, luego NORMALIZADO (sin acentos/puntuación) ·
+        # así una producción de Fabricación con nombre variante igual ancla.
+        _pn = p["producto_nombre"]
+        _pnn = _npf(_pn)
+        up = ultima_prod.get(_pn)
+        if up is None:
+            up = ultima_prod_norm.get(_pnn)
+        if ult_fijo_prog.get(_pn) is not None:
+            fpf = ult_fijo_prog.get(_pn)
+            fpk = ult_fijo_kg.get(_pn) or 0.0
+        else:
+            fpf = ult_fijo_prog_norm.get(_pnn)
+            fpk = ult_fijo_kg_norm.get(_pnn) or 0.0
         # Determinar mejor ancla
         ancla_fecha = None
         ancla_kg = 0.0
@@ -10664,24 +10698,47 @@ def plan_revertir_hoy():
             "WHERE id IN (%s) AND COALESCE(estado,'')='cancelado' "
             "AND fin_real_at IS NULL AND inicio_real_at IS NULL" % ph, tuple(canc_ids)).fetchall():
             restaurar.append({'id': r[0], 'producto': r[1], 'fecha': r[2]})
-    # 3. fechas movidas HOY (REPROGRAMAR) → revertir al 'antes' más temprano
-    revert_fecha = {}
+    # 3. RE-CANCELAR lo que el rescate RESTAURÓ hoy (antes de hoy estaban cancelados
+    #    /desaparecidos · es el apilón del 16). Solo si siguen activos y NO creados hoy.
+    rescate_ids = []
     for r in cur.execute(
-        "SELECT registro_id, antes FROM audit_log WHERE accion='REPROGRAMAR_PRODUCCION_PROGRAMADA' "
-        "AND substr(fecha,1,10) >= ? ORDER BY id ASC", (cutoff,)).fetchall():
+        "SELECT DISTINCT registro_id FROM audit_log WHERE accion='RESTAURAR_BUG_VANISH' "
+        "AND substr(fecha,1,10) >= ? AND registro_id IS NOT NULL", (cutoff,)).fetchall():
         try:
             rid = int(str(r[0]).strip())
         except (ValueError, TypeError):
             continue
-        if rid in c_ids or rid in revert_fecha:
-            continue
-        try:
-            antes = _json5.loads(r[1]) if r[1] else {}
-            fa = (antes.get('fecha_programada') or '')[:10]
-            if fa:
-                revert_fecha[rid] = fa
-        except Exception:
-            pass
+        if rid not in c_ids:
+            rescate_ids.append(rid)
+    recancelar = []
+    if rescate_ids:
+        ph = ",".join(["?"] * len(rescate_ids))
+        for r in cur.execute(
+            "SELECT id, producto, substr(fecha_programada,1,10) FROM produccion_programada "
+            "WHERE id IN (%s) AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+            "AND fin_real_at IS NULL AND inicio_real_at IS NULL" % ph, tuple(rescate_ids)).fetchall():
+            recancelar.append({'id': r[0], 'producto': r[1], 'fecha': r[2]})
+    # 4. fechas movidas HOY → revertir al original (REPROGRAMAR usa antes.fecha_programada;
+    #    REPARTIR_SOBRECARGADO usa despues.de). Earliest por id.
+    revert_fecha = {}
+    for accion, campo, fuente in (('REPROGRAMAR_PRODUCCION_PROGRAMADA', 'fecha_programada', 'antes'),
+                                   ('REPARTIR_SOBRECARGADO', 'de', 'despues')):
+        for r in cur.execute(
+            "SELECT registro_id, " + fuente + " FROM audit_log WHERE accion=? "
+            "AND substr(fecha,1,10) >= ? ORDER BY id ASC", (accion, cutoff)).fetchall():
+            try:
+                rid = int(str(r[0]).strip())
+            except (ValueError, TypeError):
+                continue
+            if rid in c_ids or rid in revert_fecha:
+                continue
+            try:
+                j = _json5.loads(r[1]) if r[1] else {}
+                fa = (j.get(campo) or '')[:10]
+                if fa:
+                    revert_fecha[rid] = fa
+            except Exception:
+                pass
     mover = []
     if revert_fecha:
         ph = ",".join(["?"] * len(revert_fecha))
@@ -10694,13 +10751,14 @@ def plan_revertir_hoy():
                 mover.append({'id': r[0], 'producto': r[2], 'de': r[1], 'a': fa})
     preview = {'cutoff': cutoff,
                'a_suprimir_creadas_hoy': len(C), 'a_restaurar_canceladas': len(restaurar),
-               'a_revertir_fecha': len(mover),
+               'a_recancelar_rescate': len(recancelar), 'a_revertir_fecha': len(mover),
                'muestra_suprimir': list(C.values())[:25],
-               'muestra_restaurar': restaurar[:25], 'muestra_mover': mover[:25],
-               'conserva': 'rescate anti-vanish + backfill de Fabricación (no se tocan)'}
+               'muestra_restaurar': restaurar[:25], 'muestra_recancelar': recancelar[:25],
+               'muestra_mover': mover[:25],
+               'nota': 'revert COMPLETO a antes de hoy · el backfill de Fabricación (historial real ya producido) se conserva'}
     if dry:
         return jsonify({'ok': True, 'dry_run': True, **preview})
-    suprimidas = restauradas = fechas_revertidas = 0
+    suprimidas = restauradas = recanceladas = fechas_revertidas = 0
     for _id in c_ids:
         cur.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id=? "
                     "AND fin_real_at IS NULL AND inicio_real_at IS NULL "
@@ -10715,6 +10773,14 @@ def plan_revertir_hoy():
             restauradas += 1
             audit_log(cur, usuario=user, accion='REVERTIR_HOY_RESTAURAR', tabla='produccion_programada',
                       registro_id=it['id'], despues={'producto': it['producto']})
+    for it in recancelar:
+        cur.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id=? "
+                    "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+                    "AND fin_real_at IS NULL AND inicio_real_at IS NULL", (it['id'],))
+        if cur.rowcount:
+            recanceladas += 1
+            audit_log(cur, usuario=user, accion='REVERTIR_HOY_RECANCELAR', tabla='produccion_programada',
+                      registro_id=it['id'], despues={'producto': it['producto'], 'motivo': 'revert rescate'})
     for it in mover:
         cur.execute("UPDATE produccion_programada SET fecha_programada=? WHERE id=? "
                     "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
@@ -10725,7 +10791,8 @@ def plan_revertir_hoy():
                       registro_id=it['id'], antes={'fecha': it['de']}, despues={'fecha': it['a']})
     conn.commit()
     return jsonify({'ok': True, 'dry_run': False, 'suprimidas': suprimidas,
-                    'restauradas': restauradas, 'fechas_revertidas': fechas_revertidas, **preview})
+                    'restauradas': restauradas, 'recanceladas': recanceladas,
+                    'fechas_revertidas': fechas_revertidas, **preview})
 
 
 @bp.route("/api/plan/repartir-sobrecargados", methods=["GET", "POST"])
@@ -10819,6 +10886,71 @@ def plan_repartir_sobrecargados():
     return jsonify({'ok': True, 'dry_run': False, 'movidos': movidos, **preview})
 
 
+def _mirror_produccion_a_calendario(conn, prod_id, producto, cantidad_kg,
+                                     fecha_full, lote='', usuario='cron-fab'):
+    """ESPEJO Fabricación → calendario (15-jun · cálculo perfecto). Crea, de forma
+    IDEMPOTENTE, la fila completada retroactiva en produccion_programada para una
+    producción de la tabla `producciones` (Fabricación), haciéndola visible al
+    calendario Y al ancla del cálculo (ultima_prod). origen='eos_retroactivo' (Fijo,
+    intocable), estado='completado', inventario YA descontado (no re-descuenta).
+
+    Idempotente: no duplica si ya existe el marcador [fab#<id>], ni si ya hay un lote
+    EJECUTADO de ese (producto, fecha). Devuelve 1 si creó, 0 si no. PG-safe (valores
+    Python, sin date() en DML). audit_log en la transacción del caller (commitea el
+    caller · M22)."""
+    try:
+        cant = round(float(cantidad_kg or 0), 3)
+    except (TypeError, ValueError):
+        return 0
+    if cant <= 0:
+        return 0
+    fd = (str(fecha_full) or '')[:10]
+    if len(fd) != 10 or fd[4] != '-':
+        return 0
+    try:
+        marca = '[fab#%d]' % int(prod_id)
+    except (TypeError, ValueError):
+        return 0
+    cur = conn.cursor()
+    if cur.execute("SELECT 1 FROM produccion_programada WHERE origen='eos_retroactivo' "
+                   "AND observaciones LIKE ? LIMIT 1", ('%' + marca + '%',)).fetchone():
+        return 0
+    if cur.execute("SELECT 1 FROM produccion_programada "
+                   "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) AND substr(fecha_programada,1,10)=? "
+                   "AND fin_real_at IS NOT NULL AND COALESCE(estado,'') NOT IN ('cancelado') LIMIT 1",
+                   (producto, fd)).fetchone():
+        return 0
+    obs = ('Retroactivo de Fabricación %s' % marca) + ((' lote=%s' % lote) if lote else '')
+    cur.execute(
+        "INSERT INTO produccion_programada "
+        "(producto, fecha_programada, lotes, estado, origen, cantidad_kg, kg_real, "
+        " inicio_real_at, fin_real_at, inventario_descontado_at, observaciones, creado_en) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        (producto, fd, 1, 'completado', 'eos_retroactivo', cant, cant,
+         str(fecha_full), str(fecha_full), str(fecha_full), obs, str(fecha_full)))
+    nid = cur.lastrowid
+    audit_log(cur, usuario=usuario, accion='BACKFILL_FABRICACION', tabla='produccion_programada',
+              registro_id=nid, despues={'producto': producto, 'fecha': fd, 'kg': cant, 'fab_id': prod_id})
+    return 1
+
+
+def _sync_fabricacion_calendario(conn, usuario='cron-fab'):
+    """Recorre TODA la tabla `producciones` (Fabricación) y asegura el espejo en el
+    calendario (idempotente). Backstop del hook · lo usa el cron diario y el botón
+    manual. Devuelve dict con conteos."""
+    cur = conn.cursor()
+    prods = cur.execute(
+        "SELECT id, producto, COALESCE(cantidad,0), fecha, COALESCE(lote,'') "
+        "FROM producciones WHERE COALESCE(cantidad,0) > 0 AND fecha IS NOT NULL AND TRIM(fecha) <> '' "
+        "ORDER BY fecha").fetchall()
+    creados = 0
+    for pid, prod, cant, fecha, lote in prods:
+        creados += _mirror_produccion_a_calendario(conn, pid, prod, cant, fecha, lote, usuario=usuario)
+    if creados:
+        conn.commit()
+    return {'producciones_total': len(prods), 'creados': creados}
+
+
 @bp.route("/api/plan/backfill-fabricacion", methods=["GET", "POST"])
 def plan_backfill_fabricacion():
     """Sebastián 15-jun · CAUSA RAÍZ del vanish + 'faltan los que ya produjimos'.
@@ -10891,23 +11023,12 @@ def plan_backfill_fabricacion():
                'muestra': a_crear[:25]}
     if dry:
         return jsonify({'ok': True, 'dry_run': True, **preview})
-    # ejecutar · INSERT por columnas (valores Python, sin date() en DML)
+    # ejecutar vía helper canónico (idempotente · misma lógica que hook+cron)
     creados = 0
     for it in a_crear:
-        obs = ('Retroactivo de Fabricación [fab#%d]' % it['prod_id']) + (' lote=%s' % it['lote'] if it['lote'] else '')
-        cur.execute(
-            "INSERT INTO produccion_programada "
-            "(producto, fecha_programada, lotes, estado, origen, cantidad_kg, kg_real, "
-            " inicio_real_at, fin_real_at, inventario_descontado_at, observaciones, creado_en) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (it['producto'], it['fecha'], 1, 'completado', 'eos_retroactivo',
-             it['cantidad_kg'], it['cantidad_kg'], it['fecha_full'], it['fecha_full'],
-             it['fecha_full'], obs, it['fecha_full']))
-        nid = cur.lastrowid
-        creados += 1
-        audit_log(cur, usuario=user, accion='BACKFILL_FABRICACION', tabla='produccion_programada',
-                  registro_id=nid, despues={'producto': it['producto'], 'fecha': it['fecha'],
-                                            'kg': it['cantidad_kg'], 'fab_id': it['prod_id']})
+        creados += _mirror_produccion_a_calendario(
+            conn, it['prod_id'], it['producto'], it['cantidad_kg'],
+            it['fecha_full'], it['lote'], usuario=user)
     conn.commit()
     return jsonify({'ok': True, 'dry_run': False, 'creados': creados, **preview})
 
@@ -14312,13 +14433,15 @@ async function revertirHoy(){
       alert('✓ No hay cambios de hoy que deshacer en el calendario.');
       return;
     }
-    const ok = confirm('↩️ DESHACER CAMBIOS DE HOY\\n\\nEl calendario vuelve a como estaba antes de la cirugía de hoy:\\n\\n• Suprimir ' + (d.a_suprimir_creadas_hoy||0) + ' lote(s) creados hoy (apilón de sellar/recalcular)\\n• Restaurar ' + (d.a_restaurar_canceladas||0) + ' lote(s) que se cancelaron hoy (lo de Alejandro y los originales)\\n• Revertir ' + (d.a_revertir_fecha||0) + ' fecha(s) movidas hoy\\n\\nSE CONSERVA: lo recuperado de Fabricación y el rescate (para no re-romper lo que estaba perdido).\\n\\n¿Deshacer?');
+    const tot = (d.a_suprimir_creadas_hoy||0)+(d.a_restaurar_canceladas||0)+(d.a_recancelar_rescate||0)+(d.a_revertir_fecha||0);
+    if (!tot){ alert('✓ No hay cambios de hoy que deshacer en el calendario.'); return; }
+    const ok = confirm('↩️ DESHACER CAMBIOS DE HOY (vuelve EXACTO a antes · respeta lo de Alejandro)\\n\\n• Suprimir ' + (d.a_suprimir_creadas_hoy||0) + ' lote(s) creados hoy (apilón de sellar/recalcular)\\n• Restaurar ' + (d.a_restaurar_canceladas||0) + ' lote(s) cancelados hoy (lo de Alejandro y los originales)\\n• Quitar ' + (d.a_recancelar_rescate||0) + ' lote(s) que el rescate metió hoy (el apilón del 16)\\n• Revertir ' + (d.a_revertir_fecha||0) + ' fecha(s) movidas hoy\\n\\n(El historial real de Fabricación ya producido se conserva.)\\n\\n¿Deshacer?');
     if (!ok){ return; }
     if (btn){ btn.textContent = '↩️ Deshaciendo…'; }
     const r2 = await _post({dry_run:false});
     const d2 = await r2.json();
     if (!r2.ok){ alert('Error: ' + (d2.error || r2.status)); return; }
-    alert('✓ Hecho.\\n\\n• ' + (d2.suprimidas||0) + ' creados hoy → suprimidos\\n• ' + (d2.restauradas||0) + ' restaurados (Alejandro/originales)\\n• ' + (d2.fechas_revertidas||0) + ' fechas revertidas\\n\\nEl calendario quedó como antes de hoy.');
+    alert('✓ Hecho.\\n\\n• ' + (d2.suprimidas||0) + ' creados hoy → suprimidos\\n• ' + (d2.restauradas||0) + ' restaurados (Alejandro/originales)\\n• ' + (d2.recanceladas||0) + ' del apilón del rescate → quitados\\n• ' + (d2.fechas_revertidas||0) + ' fechas revertidas\\n\\nEl calendario quedó como antes de hoy.');
     if (typeof cargar === 'function') cargar();
   } catch(e){ alert('Error red: ' + e.message); }
   finally { if (btn){ btn.disabled = false; btn.textContent = '↩️ Deshacer cambios de hoy'; } }
