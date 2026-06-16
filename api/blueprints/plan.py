@@ -10642,6 +10642,129 @@ def plan_dedup_mismo_dia():
     return jsonify({'ok': True, 'dry_run': False, 'cancelados': cancelados, **preview})
 
 
+@bp.route("/api/plan/restaurar-a-hora", methods=["GET", "POST"])
+def plan_restaurar_a_hora():
+    """Sebastián 15-jun · 'deja el calendario como estaba HOY a las 11am-12pm'.
+
+    Restauración PUNTO-EN-EL-TIEMPO: reconstruye el estado de produccion_programada
+    tal como estaba a una hora T de hoy (default 11:00 Colombia), reversando por
+    audit_log todas las mutaciones posteriores. Para cada lote, lo deja como estaba
+    JUSTO ANTES de su primera acción posterior a T (la 'antes' implícita por el tipo
+    de acción). Maneja TODAS las acciones (incl. las REVERTIR_HOY_* propias), por eso
+    es robusto donde el 'deshacer' simple sobre-cancelaba.
+
+    Reglas por tipo de primera-acción-post-T del lote:
+      • crear (AUTO_PROGRAMAR/BACKFILL insert/PROGRAMAR/APLICAR) → no existía → cancelar.
+      • cancelar (SELLAR/REEMPLAZO/DEDUP/REVERTIR_*_SUPRIMIR/RECANCELAR/CERRAR/CANCELAR) → estaba activo → pendiente.
+      • restaurar (RESTAURAR_BUG_VANISH/REVERTIR_HOY_RESTAURAR) → estaba cancelado → cancelar.
+      • mover fecha (REPROGRAMAR/REPARTIR/REVERTIR_HOY_FECHA) → volver a la fecha 'antes'.
+    + los lotes con creado_en > T (creados después) se cancelan (no existían a esa hora).
+    NUNCA toca lo ejecutado (inicio/fin_real_at) ni B2B. dry_run por defecto."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    import json as _json6
+    d = request.get_json(silent=True) or {}
+    dry = (request.method == 'GET') or bool(d.get('dry_run', True))
+    try:
+        hora_co = max(0, min(int(d.get('hora', 11)), 18))
+    except Exception:
+        hora_co = 11
+    hoy = _hoy_colombia()
+    T = "%s %02d:00:00" % (hoy.isoformat(), hora_co + 5)   # Colombia→UTC (+5) · formato audit
+    conn = get_db(); cur = conn.cursor()
+    CANCEL_T = {'SELLAR_CANCELAR_LOTE', 'CANCELAR_LOTE_REEMPLAZO', 'DEDUP_MISMO_DIA',
+                'REVERTIR_HOY_SUPRIMIR', 'REVERTIR_HOY_RECANCELAR', 'CERRAR_PENDIENTE_YA_PRODUCIDO',
+                'CANCELAR_PRODUCCION_PROGRAMADA'}
+    RESTORE_T = {'RESTAURAR_BUG_VANISH', 'REVERTIR_HOY_RESTAURAR'}
+    CREATE_T = {'AUTO_PROGRAMAR_SUGERIDA', 'AUTO_PROGRAMAR_SUGERIDA_VARIANTE_SWITCH',
+                'APLICAR_AUTO_PLAN', 'PROGRAMAR_PRODUCCION'}
+    DATE_T = {'REPROGRAMAR_PRODUCCION_PROGRAMADA', 'REPARTIR_SOBRECARGADO', 'REVERTIR_HOY_FECHA'}
+    # primera acción post-T por registro_id
+    a_pendiente, a_cancelar, a_fecha = [], [], []
+    try:
+        rows = cur.execute(
+            "SELECT a.registro_id, a.accion, a.antes, a.despues FROM audit_log a "
+            "JOIN (SELECT registro_id, MIN(fecha) mf FROM audit_log "
+            "      WHERE tabla='produccion_programada' AND fecha > ? AND registro_id IS NOT NULL "
+            "        AND TRIM(registro_id)<>'' GROUP BY registro_id) m "
+            "  ON a.registro_id=m.registro_id AND a.fecha=m.mf "
+            "WHERE a.tabla='produccion_programada'", (T,)).fetchall()
+    except Exception:
+        rows = []
+    for rid_s, accion, antes_s, despues_s in rows:
+        try:
+            rid = int(str(rid_s).strip())
+        except (ValueError, TypeError):
+            continue
+        if accion in CANCEL_T:
+            a_pendiente.append(rid)
+        elif accion in RESTORE_T:
+            a_cancelar.append(rid)
+        elif accion in CREATE_T:
+            a_cancelar.append(rid)
+        elif accion == 'BACKFILL_FABRICACION':
+            modo = ''
+            try:
+                modo = (_json6.loads(despues_s) or {}).get('modo', '') if despues_s else ''
+            except Exception:
+                modo = ''
+            if 'cerro_pendiente' in modo:
+                a_pendiente.append(rid)   # era un pendiente que se cerró → volver a pendiente
+            else:
+                a_cancelar.append(rid)    # fue insert → no existía
+        elif accion in DATE_T:
+            fa = ''
+            for src in (antes_s, despues_s):
+                try:
+                    j = _json6.loads(src) if src else {}
+                except Exception:
+                    j = {}
+                fa = (j.get('fecha_programada') or j.get('fecha') or j.get('de') or '')[:10]
+                if fa and accion != 'REPARTIR_SOBRECARGADO':
+                    break
+                if fa and accion == 'REPARTIR_SOBRECARGADO':
+                    break
+            if fa:
+                a_fecha.append((rid, fa))
+    # creados después de T (incluye canónicos con registro_id vacío en audit)
+    creados_post = [r[0] for r in cur.execute(
+        "SELECT id FROM produccion_programada WHERE creado_en > ? "
+        "AND fin_real_at IS NULL AND inicio_real_at IS NULL "
+        "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+        "AND COALESCE(origen,'') <> 'eos_b2b'", (T,)).fetchall()]
+    preview = {'hora_corte_colombia': hora_co, 'T_utc': T,
+               'a_restaurar_pendiente': len(set(a_pendiente)),
+               'a_cancelar_post': len(set(a_cancelar) | set(creados_post)),
+               'a_revertir_fecha': len(a_fecha)}
+    if dry:
+        return jsonify({'ok': True, 'dry_run': True, **preview})
+    rest = canc = fch = 0
+    for rid in set(a_pendiente):
+        cur.execute("UPDATE produccion_programada SET estado='pendiente' WHERE id=? "
+                    "AND COALESCE(estado,'')='cancelado' AND fin_real_at IS NULL AND inicio_real_at IS NULL", (rid,))
+        if cur.rowcount:
+            rest += 1
+            audit_log(cur, usuario=user, accion='RESTAURAR_A_HORA', tabla='produccion_programada', registro_id=rid)
+    for rid, fa in a_fecha:
+        cur.execute("UPDATE produccion_programada SET fecha_programada=? WHERE id=? "
+                    "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+                    "AND fin_real_at IS NULL AND inicio_real_at IS NULL", (fa, rid))
+        if cur.rowcount:
+            fch += 1
+    for rid in (set(a_cancelar) | set(creados_post)):
+        cur.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id=? "
+                    "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+                    "AND fin_real_at IS NULL AND inicio_real_at IS NULL", (rid,))
+        if cur.rowcount:
+            canc += 1
+            audit_log(cur, usuario=user, accion='RESTAURAR_A_HORA_CANCELAR', tabla='produccion_programada', registro_id=rid)
+    conn.commit()
+    return jsonify({'ok': True, 'dry_run': False, 'restaurados': rest, 'cancelados': canc,
+                    'fechas_revertidas': fch, **preview})
+
+
 @bp.route("/api/plan/revertir-hoy", methods=["GET", "POST"])
 def plan_revertir_hoy():
     """Sebastián 15-jun · 'quiero que el calendario vuelva a como estaba ANTES de
@@ -14298,6 +14421,8 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
         style="font-size:14px;padding:10px 18px" title="Reparte los días con demasiados lotes (ej. el 16) a los próximos días hábiles con cupo (máx 2/día). No toca lo iniciado ni B2B. Vista previa antes de aplicar.">📅 Repartir días sobrecargados</button>
       <button onclick="revertirHoy()" class="danger" id="btn-revertir-hoy"
         style="font-size:14px;padding:10px 18px" title="Deshace TODOS los cambios de hoy en el calendario: suprime lo que se creó hoy, restaura lo que se canceló hoy (lo de Alejandro) y revierte fechas movidas hoy. Conserva lo recuperado de Fabricación. Vista previa antes de aplicar.">↩️ Deshacer cambios de hoy</button>
+      <button onclick="restaurarAHora()" class="danger" id="btn-restaurar-hora"
+        style="font-size:14px;padding:10px 18px;background:#7c3aed" title="Reconstruye el calendario tal como estaba HOY a una hora exacta (default 11am), reversando por auditoría TODO lo posterior. Úsalo si el calendario quedó vacío o raro. Vista previa antes de aplicar.">🕚 Restaurar a hora de hoy</button>
       <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" style="display:none" disabled>✅ Confirmar y programar TODO</button>
     </div>
   </div>
@@ -14498,6 +14623,31 @@ async function revertirHoy(){
     if (typeof cargar === 'function') cargar();
   } catch(e){ alert('Error red: ' + e.message); }
   finally { if (btn){ btn.disabled = false; btn.textContent = '↩️ Deshacer cambios de hoy'; } }
+}
+
+// 🕚 Restaura el calendario al estado que tenía HOY a una hora exacta (default 11am).
+async function restaurarAHora(){
+  const btn = document.getElementById('btn-restaurar-hora');
+  const horaTxt = prompt('Restaurar el calendario a como estaba HOY a las… (hora, 0-18, Colombia)', '11');
+  if (horaTxt === null) return;
+  const hora = parseInt(horaTxt, 10);
+  if (isNaN(hora) || hora < 0 || hora > 18){ alert('Hora inválida (0-18).'); return; }
+  const _post = (body) => fetch('/api/plan/restaurar-a-hora', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()}, credentials:'same-origin', body: JSON.stringify(body)});
+  try {
+    if (btn){ btn.disabled = true; btn.textContent = '🕚 Calculando…'; }
+    const r = await _post({dry_run:true, hora});
+    const d = await r.json();
+    if (!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+    const ok = confirm('🕚 RESTAURAR a las ' + hora + ':00 de hoy\\n\\nEl calendario vuelve a como estaba a esa hora:\\n• Restaurar ' + (d.a_restaurar_pendiente||0) + ' lote(s) que se cancelaron después\\n• Quitar ' + (d.a_cancelar_post||0) + ' lote(s) creados/recuperados después\\n• Revertir ' + (d.a_revertir_fecha||0) + ' fecha(s) movidas después\\n\\nNo toca lo ejecutado ni B2B. ¿Restaurar?');
+    if (!ok){ return; }
+    if (btn){ btn.textContent = '🕚 Restaurando…'; }
+    const r2 = await _post({dry_run:false, hora});
+    const d2 = await r2.json();
+    if (!r2.ok){ alert('Error: ' + (d2.error || r2.status)); return; }
+    alert('✓ Restaurado a las ' + hora + ':00 de hoy.\\n\\n• ' + (d2.restaurados||0) + ' restaurados\\n• ' + (d2.cancelados||0) + ' quitados (creados después)\\n• ' + (d2.fechas_revertidas||0) + ' fechas revertidas.');
+    if (typeof cargar === 'function') cargar();
+  } catch(e){ alert('Error red: ' + e.message); }
+  finally { if (btn){ btn.disabled = false; btn.textContent = '🕚 Restaurar a hora de hoy'; } }
 }
 
 // 📅 Reparte días sobrecargados (>2 lotes) a los próximos días hábiles con cupo.

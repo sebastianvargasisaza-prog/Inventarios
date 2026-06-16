@@ -236,6 +236,39 @@ def test_revertir_hoy(app, db_clean):
     assert _estado(idD) == 'cancelado'    # rescate de hoy → re-cancelado (limpia el apilón)
 
 
+def test_restaurar_a_hora(app, db_clean):
+    """Restauración punto-en-el-tiempo: reconstruye el estado de hoy a las 11am
+    reversando lo posterior · lo creado/restaurado después se quita, lo cancelado
+    después se restaura."""
+    hoy = _hoy_co()
+    after = "%s 17:30:00" % hoy.isoformat()      # > T (11am CO = 16:00 UTC)
+    fut = (hoy + _dt.timedelta(days=20)).isoformat()
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+
+    def _ins(prod, estado, origen, creado):
+        conn.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes,creado_en) "
+                     "VALUES (?,?,?,?,?,1,?)", (prod, fut, estado, origen, 30, creado))
+        return conn.execute("SELECT id FROM produccion_programada WHERE producto=?", (prod,)).fetchone()[0]
+
+    idA = _ins('RAH EXISTIA', 'cancelado', 'eos_plan', (hoy - _dt.timedelta(days=1)).isoformat())
+    conn.execute("INSERT INTO audit_log (usuario,accion,tabla,registro_id,fecha) "
+                 "VALUES ('s','SELLAR_CANCELAR_LOTE','produccion_programada',?,?)", (str(idA), after))
+    idB = _ins('RAH NUEVO', 'pendiente', 'eos_canonico', "%s 18:00:00" % hoy.isoformat())  # creado después
+    idC = _ins('RAH RESCATE', 'pendiente', 'eos_plan', (hoy - _dt.timedelta(days=3)).isoformat())
+    conn.execute("INSERT INTO audit_log (usuario,accion,tabla,registro_id,fecha) "
+                 "VALUES ('s','RESTAURAR_BUG_VANISH','produccion_programada',?,?)", (str(idC), after))
+    conn.commit(); conn.close()
+
+    c = _login(app)
+    dg = c.post('/api/plan/restaurar-a-hora', json={'dry_run': True, 'hora': 11}, headers=csrf_headers())
+    assert dg.status_code == 200, dg.data[:300]
+    r = c.post('/api/plan/restaurar-a-hora', json={'dry_run': False, 'hora': 11}, headers=csrf_headers())
+    assert r.status_code == 200
+    assert _estado(idA) == 'pendiente'    # cancelado después → restaurado a las 11am
+    assert _estado(idB) == 'cancelado'    # creado después de las 11am → quitado
+    assert _estado(idC) == 'cancelado'    # rescate después → a las 11am estaba cancelado
+
+
 def test_sellar_requiere_rol(app, db_clean):
     c = _login(app, 'valentina')  # sin admin/compras
     r = c.post('/api/plan/sellar-horizonte', json={'dry_run': True}, headers=csrf_headers())
