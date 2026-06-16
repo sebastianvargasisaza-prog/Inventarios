@@ -220,6 +220,20 @@ botón). Reemplaza al viejo `auto_plan` ruidoso (que quedó pausado · M41).
 Reglas aprendidas: el pipeline se calcula de la tabla canónica
 (`produccion_programada.fin_real_at`), NO de eventos de Google Calendar (frágil).
 
+## 🐢 M43 · NUNCA computar velocidad Shopify de TODOS los productos en un endpoint de carga · 16-jun
+
+Síntoma: "no carga y sale Error: Unexpected token '<' ... is not valid JSON" + app entero
+sin responder (health timeout). Causa: `cargarSugerenciasAdelanto()` corría en CADA render
+del calendario y `_sugerencias_adelanto`→`_demanda_stock_gramos`→`_velocidad_y_tendencia`
+calcula la venta por SKU; en prod NO hay tabla `ventas_diarias` → parsea el JSON de TODAS
+las órdenes de Shopify por cada SKU de cada producto → segundos por request → los 3 workers
+Gunicorn se saturan → todo responde HTML 504 → el fetch del calendario hace `.json()` sobre
+HTML → "Unexpected token '<'". El error de JSON era SÍNTOMA, no causa.
+**Reglas:** (1) cálculos O(productos×SKUs×órdenes) van en CRON o bajo demanda (botón), NUNCA
+en el load de una página. (2) "Unexpected token '<'" casi siempre = 502/504/redirect HTML por
+endpoint lento o caído, no un bug de parseo → revisar timing/health, no el JSON. (3) un fetch
+de adorno (panel lateral) jamás debe ir en la ruta crítica de carga.
+
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
 
 Al cerrar una sesión donde se encontró/arregló un bug con patrón no listado aquí:
