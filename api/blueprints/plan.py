@@ -10608,6 +10608,217 @@ def plan_dedup_mismo_dia():
     return jsonify({'ok': True, 'dry_run': False, 'cancelados': cancelados, **preview})
 
 
+@bp.route("/api/plan/revertir-hoy", methods=["GET", "POST"])
+def plan_revertir_hoy():
+    """Sebastián 15-jun · 'quiero que el calendario vuelva a como estaba ANTES de
+    aplicar esto, respetando lo que Alejandro había puesto'.
+
+    Deshace la cirugía de hoy sobre produccion_programada (todo fue reversible +
+    audit_log):
+      1. SUPRIME (cancela) los lotes Sugerido/Plan CREADOS hoy (el apilón de
+         sellar/recalcular · creado_en >= cutoff · no ejecutados, no B2B, no
+         retroactivo).
+      2. RESTAURA (descancela) los lotes que la cirugía de hoy CANCELÓ
+         (SELLAR_CANCELAR_LOTE / CANCELAR_LOTE_REEMPLAZO / DEDUP_MISMO_DIA) — esto
+         devuelve lo de Alejandro y los originales.
+      3. REVIERTE las fechas movidas hoy (REPROGRAMAR · usa el 'antes' del audit).
+    CONSERVA a propósito lo RECUPERADO de verdad (rescate anti-vanish + backfill de
+    Fabricación) para no re-romper lo que estaba perdido. dry_run por defecto →
+    preview. Reversible (todo soft + audit REVERTIR_HOY_*)."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    import json as _json5
+    d = request.get_json(silent=True) or {}
+    dry = (request.method == 'GET') or bool(d.get('dry_run', True))
+    cutoff = (str(d.get('desde') or _hoy_colombia().isoformat()))[:10]
+    conn = get_db(); cur = conn.cursor()
+    # 1. creaciones de hoy (Sugerido/Plan futuras · suprimibles · NO retroactivo/B2B)
+    C = {}
+    for r in cur.execute(
+        "SELECT id, producto, substr(fecha_programada,1,10), COALESCE(origen,'') "
+        "FROM produccion_programada WHERE substr(creado_en,1,10) >= ? "
+        "AND COALESCE(origen,'') IN ('eos_canonico','eos_plan','auto_plan','sugerido','manual','calendar') "
+        "AND fin_real_at IS NULL AND inicio_real_at IS NULL "
+        "AND COALESCE(estado,'') NOT IN ('cancelado','completado')", (cutoff,)).fetchall():
+        C[r[0]] = {'id': r[0], 'producto': r[1], 'fecha': r[2], 'origen': r[3]}
+    c_ids = set(C.keys())
+    # 2. canceladas HOY por la cirugía (restaurables · excluye las creadas hoy)
+    canc_ids = []
+    for r in cur.execute(
+        "SELECT DISTINCT registro_id FROM audit_log "
+        "WHERE accion IN ('SELLAR_CANCELAR_LOTE','CANCELAR_LOTE_REEMPLAZO','DEDUP_MISMO_DIA') "
+        "AND substr(fecha,1,10) >= ? AND registro_id IS NOT NULL", (cutoff,)).fetchall():
+        try:
+            rid = int(str(r[0]).strip())
+        except (ValueError, TypeError):
+            continue
+        if rid not in c_ids:
+            canc_ids.append(rid)
+    restaurar = []
+    if canc_ids:
+        ph = ",".join(["?"] * len(canc_ids))
+        for r in cur.execute(
+            "SELECT id, producto, substr(fecha_programada,1,10) FROM produccion_programada "
+            "WHERE id IN (%s) AND COALESCE(estado,'')='cancelado' "
+            "AND fin_real_at IS NULL AND inicio_real_at IS NULL" % ph, tuple(canc_ids)).fetchall():
+            restaurar.append({'id': r[0], 'producto': r[1], 'fecha': r[2]})
+    # 3. fechas movidas HOY (REPROGRAMAR) → revertir al 'antes' más temprano
+    revert_fecha = {}
+    for r in cur.execute(
+        "SELECT registro_id, antes FROM audit_log WHERE accion='REPROGRAMAR_PRODUCCION_PROGRAMADA' "
+        "AND substr(fecha,1,10) >= ? ORDER BY id ASC", (cutoff,)).fetchall():
+        try:
+            rid = int(str(r[0]).strip())
+        except (ValueError, TypeError):
+            continue
+        if rid in c_ids or rid in revert_fecha:
+            continue
+        try:
+            antes = _json5.loads(r[1]) if r[1] else {}
+            fa = (antes.get('fecha_programada') or '')[:10]
+            if fa:
+                revert_fecha[rid] = fa
+        except Exception:
+            pass
+    mover = []
+    if revert_fecha:
+        ph = ",".join(["?"] * len(revert_fecha))
+        for r in cur.execute(
+            "SELECT id, substr(fecha_programada,1,10), producto FROM produccion_programada "
+            "WHERE id IN (%s) AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+            "AND fin_real_at IS NULL AND inicio_real_at IS NULL" % ph, tuple(revert_fecha.keys())).fetchall():
+            fa = revert_fecha.get(r[0])
+            if fa and r[1] != fa:
+                mover.append({'id': r[0], 'producto': r[2], 'de': r[1], 'a': fa})
+    preview = {'cutoff': cutoff,
+               'a_suprimir_creadas_hoy': len(C), 'a_restaurar_canceladas': len(restaurar),
+               'a_revertir_fecha': len(mover),
+               'muestra_suprimir': list(C.values())[:25],
+               'muestra_restaurar': restaurar[:25], 'muestra_mover': mover[:25],
+               'conserva': 'rescate anti-vanish + backfill de Fabricación (no se tocan)'}
+    if dry:
+        return jsonify({'ok': True, 'dry_run': True, **preview})
+    suprimidas = restauradas = fechas_revertidas = 0
+    for _id in c_ids:
+        cur.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id=? "
+                    "AND fin_real_at IS NULL AND inicio_real_at IS NULL "
+                    "AND COALESCE(estado,'') NOT IN ('cancelado','completado')", (_id,))
+        if cur.rowcount:
+            suprimidas += 1
+            audit_log(cur, usuario=user, accion='REVERTIR_HOY_SUPRIMIR', tabla='produccion_programada',
+                      registro_id=_id, despues={'producto': C[_id]['producto'], 'fecha': C[_id]['fecha']})
+    for it in restaurar:
+        cur.execute("UPDATE produccion_programada SET estado='pendiente' WHERE id=? AND estado='cancelado'", (it['id'],))
+        if cur.rowcount:
+            restauradas += 1
+            audit_log(cur, usuario=user, accion='REVERTIR_HOY_RESTAURAR', tabla='produccion_programada',
+                      registro_id=it['id'], despues={'producto': it['producto']})
+    for it in mover:
+        cur.execute("UPDATE produccion_programada SET fecha_programada=? WHERE id=? "
+                    "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+                    "AND fin_real_at IS NULL AND inicio_real_at IS NULL", (it['a'], it['id']))
+        if cur.rowcount:
+            fechas_revertidas += 1
+            audit_log(cur, usuario=user, accion='REVERTIR_HOY_FECHA', tabla='produccion_programada',
+                      registro_id=it['id'], antes={'fecha': it['de']}, despues={'fecha': it['a']})
+    conn.commit()
+    return jsonify({'ok': True, 'dry_run': False, 'suprimidas': suprimidas,
+                    'restauradas': restauradas, 'fechas_revertidas': fechas_revertidas, **preview})
+
+
+@bp.route("/api/plan/repartir-sobrecargados", methods=["GET", "POST"])
+def plan_repartir_sobrecargados():
+    """Sebastián 15-jun · reparte los días con DEMASIADOS lotes (ej. el 16-jun con
+    11, artefacto del rescate que devolvió cada producto a su fecha original) a los
+    próximos días hábiles con cupo (máx N/día · salta fines de semana y festivos).
+    Mueve hacia ADELANTE solo lotes pendientes NO ejecutados, NO B2B/retroactivo.
+    dry_run por defecto → preview · reversible (es solo cambio de fecha + audit)."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    from datetime import date as _date6, timedelta as _td6
+    d = request.get_json(silent=True) or {}
+    dry = (request.method == 'GET') or bool(d.get('dry_run', True))
+    try:
+        MAX = max(1, min(int(d.get('max_por_dia', 2)), 10))
+    except Exception:
+        MAX = 2
+    conn = get_db(); cur = conn.cursor()
+    hoy = _hoy_colombia()
+    rows = cur.execute(
+        "SELECT id, substr(fecha_programada,1,10), producto, COALESCE(cantidad_kg,0), COALESCE(origen,''), "
+        "CASE WHEN inicio_real_at IS NOT NULL OR fin_real_at IS NOT NULL THEN 1 ELSE 0 END "
+        "FROM produccion_programada "
+        "WHERE substr(fecha_programada,1,10) >= ? AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+        "ORDER BY substr(fecha_programada,1,10), COALESCE(cantidad_kg,0) DESC, id", (hoy.isoformat(),)).fetchall()
+    ocup = {}
+    por_fecha = {}
+    for r in rows:
+        ocup[r[1]] = ocup.get(r[1], 0) + 1
+        por_fecha.setdefault(r[1], []).append(r)
+
+    def _movable(r):
+        return r[5] == 0 and (r[4] or '') not in ('eos_b2b', 'eos_retroactivo')
+
+    def _next_slot(after_iso):
+        try:
+            d0 = _date6.fromisoformat(after_iso)
+        except Exception:
+            return None
+        for _ in range(120):
+            d0 = d0 + _td6(days=1)
+            if d0.weekday() >= 5 or es_festivo_colombia(d0):
+                continue
+            k = d0.isoformat()
+            if ocup.get(k, 0) < MAX:
+                return k
+        return None
+
+    movimientos = []
+    for fecha in sorted(por_fecha.keys()):
+        lst = por_fecha[fecha]
+        if len(lst) <= MAX:
+            continue
+        # Los INMOVIBLES (ejecutados/B2B/retroactivo) se quedan sí o sí · ocupan
+        # cupo. Con el cupo restante mantenemos los movibles de mayor kg; el resto
+        # se mueve. Así el día baja lo máximo posible sin tocar lo intocable.
+        inm = [r for r in lst if not _movable(r)]
+        mov = [r for r in lst if _movable(r)]   # ya en orden kg desc
+        keep_mov = max(0, MAX - len(inm))
+        for r in mov[keep_mov:]:
+            slot = _next_slot(fecha)
+            if not slot:
+                continue
+            ocup[fecha] = ocup.get(fecha, 1) - 1
+            ocup[slot] = ocup.get(slot, 0) + 1
+            movimientos.append({'id': r[0], 'producto': r[2], 'de': fecha, 'a': slot, 'kg': r[3]})
+
+    # resumen de días sobrecargados (antes)
+    sobre = [{'fecha': f, 'lotes': len(por_fecha[f])} for f in sorted(por_fecha) if len(por_fecha[f]) > MAX]
+    preview = {'max_por_dia': MAX, 'dias_sobrecargados': sobre,
+               'a_mover': len(movimientos), 'movimientos': movimientos[:60]}
+    if dry:
+        return jsonify({'ok': True, 'dry_run': True, **preview})
+    movidos = 0
+    for m in movimientos:
+        cur.execute(
+            "UPDATE produccion_programada SET fecha_programada=?, "
+            "observaciones=COALESCE(observaciones,'')||' [repartido del '||?||']' "
+            "WHERE id=? AND fin_real_at IS NULL AND inicio_real_at IS NULL "
+            "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+            "AND COALESCE(origen,'') NOT IN ('eos_b2b','eos_retroactivo')",
+            (m['a'], m['de'], m['id']))
+        if cur.rowcount:
+            movidos += 1
+            audit_log(cur, usuario=user, accion='REPARTIR_SOBRECARGADO', tabla='produccion_programada',
+                      registro_id=m['id'], despues={'producto': m['producto'], 'de': m['de'], 'a': m['a']})
+    conn.commit()
+    return jsonify({'ok': True, 'dry_run': False, 'movidos': movidos, **preview})
+
+
 @bp.route("/api/plan/backfill-fabricacion", methods=["GET", "POST"])
 def plan_backfill_fabricacion():
     """Sebastián 15-jun · CAUSA RAÍZ del vanish + 'faltan los que ya produjimos'.
@@ -13909,6 +14120,10 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
         style="font-size:14px;padding:10px 18px" title="Trae al calendario las producciones que ya hiciste en Fabricación (lotes completados retroactivos). Aparecen en su fecha real y sirven de base al cálculo. No duplica.">🏭 Traer producciones de Fabricación</button>
       <button onclick="dedupMismoDia()" class="warning" id="btn-dedup"
         style="font-size:14px;padding:10px 18px" title="Limpia lotes duplicados del MISMO producto el MISMO día (ej. el apilón del 16). Mantiene uno por día y cancela los repetidos. Vista previa antes de aplicar.">🧹 Limpiar duplicados del día</button>
+      <button onclick="repartirSobrecargados()" class="secondary" id="btn-repartir"
+        style="font-size:14px;padding:10px 18px" title="Reparte los días con demasiados lotes (ej. el 16) a los próximos días hábiles con cupo (máx 2/día). No toca lo iniciado ni B2B. Vista previa antes de aplicar.">📅 Repartir días sobrecargados</button>
+      <button onclick="revertirHoy()" class="danger" id="btn-revertir-hoy"
+        style="font-size:14px;padding:10px 18px" title="Deshace TODOS los cambios de hoy en el calendario: suprime lo que se creó hoy, restaura lo que se canceló hoy (lo de Alejandro) y revierte fechas movidas hoy. Conserva lo recuperado de Fabricación. Vista previa antes de aplicar.">↩️ Deshacer cambios de hoy</button>
       <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" style="display:none" disabled>✅ Confirmar y programar TODO</button>
     </div>
   </div>
@@ -14081,6 +14296,59 @@ async function dedupMismoDia(){
     if (typeof cargar === 'function') cargar();
   } catch(e){ alert('Error red: ' + e.message); }
   finally { if (btn){ btn.disabled = false; btn.textContent = '🧹 Limpiar duplicados del día'; } }
+}
+
+// ↩️ Deshace los cambios de HOY en el calendario (vuelve a antes de la cirugía).
+async function revertirHoy(){
+  const btn = document.getElementById('btn-revertir-hoy');
+  const _post = (body) => fetch('/api/plan/revertir-hoy', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()}, credentials:'same-origin', body: JSON.stringify(body)});
+  try {
+    if (btn){ btn.disabled = true; btn.textContent = '↩️ Calculando…'; }
+    const r = await _post({dry_run:true});
+    const d = await r.json();
+    if (!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+    const tot = (d.a_suprimir_creadas_hoy||0) + (d.a_restaurar_canceladas||0) + (d.a_revertir_fecha||0);
+    if (!tot){
+      alert('✓ No hay cambios de hoy que deshacer en el calendario.');
+      return;
+    }
+    const ok = confirm('↩️ DESHACER CAMBIOS DE HOY\\n\\nEl calendario vuelve a como estaba antes de la cirugía de hoy:\\n\\n• Suprimir ' + (d.a_suprimir_creadas_hoy||0) + ' lote(s) creados hoy (apilón de sellar/recalcular)\\n• Restaurar ' + (d.a_restaurar_canceladas||0) + ' lote(s) que se cancelaron hoy (lo de Alejandro y los originales)\\n• Revertir ' + (d.a_revertir_fecha||0) + ' fecha(s) movidas hoy\\n\\nSE CONSERVA: lo recuperado de Fabricación y el rescate (para no re-romper lo que estaba perdido).\\n\\n¿Deshacer?');
+    if (!ok){ return; }
+    if (btn){ btn.textContent = '↩️ Deshaciendo…'; }
+    const r2 = await _post({dry_run:false});
+    const d2 = await r2.json();
+    if (!r2.ok){ alert('Error: ' + (d2.error || r2.status)); return; }
+    alert('✓ Hecho.\\n\\n• ' + (d2.suprimidas||0) + ' creados hoy → suprimidos\\n• ' + (d2.restauradas||0) + ' restaurados (Alejandro/originales)\\n• ' + (d2.fechas_revertidas||0) + ' fechas revertidas\\n\\nEl calendario quedó como antes de hoy.');
+    if (typeof cargar === 'function') cargar();
+  } catch(e){ alert('Error red: ' + e.message); }
+  finally { if (btn){ btn.disabled = false; btn.textContent = '↩️ Deshacer cambios de hoy'; } }
+}
+
+// 📅 Reparte días sobrecargados (>2 lotes) a los próximos días hábiles con cupo.
+async function repartirSobrecargados(){
+  const btn = document.getElementById('btn-repartir');
+  const _post = (body) => fetch('/api/plan/repartir-sobrecargados', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()}, credentials:'same-origin', body: JSON.stringify(body)});
+  try {
+    if (btn){ btn.disabled = true; btn.textContent = '📅 Calculando…'; }
+    const r = await _post({dry_run:true});
+    const d = await r.json();
+    if (!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+    if (!d.a_mover){
+      alert('✓ No hay días sobrecargados. Ningún día tiene más de ' + (d.max_por_dia||2) + ' lotes movibles.');
+      return;
+    }
+    const dias = (d.dias_sobrecargados||[]).map(x=>'• ' + x.fecha + ': ' + x.lotes + ' lotes').join('\\n');
+    const muestra = (d.movimientos||[]).slice(0,10).map(m=>'• ' + m.producto + ': ' + m.de + ' → ' + m.a).join('\\n');
+    const ok = confirm('📅 REPARTIR DÍAS SOBRECARGADOS (máx ' + (d.max_por_dia||2) + '/día)\\n\\nDías llenos:\\n' + dias + '\\n\\nSe van a mover ' + d.a_mover + ' lote(s) al próximo día hábil con cupo:\\n\\n' + muestra + ((d.movimientos||[]).length>10 ? '\\n…' : '') + '\\n\\nNo toca lo iniciado ni B2B. Reversible. ¿Repartir?');
+    if (!ok){ return; }
+    if (btn){ btn.textContent = '📅 Repartiendo…'; }
+    const r2 = await _post({dry_run:false});
+    const d2 = await r2.json();
+    if (!r2.ok){ alert('Error: ' + (d2.error || r2.status)); return; }
+    alert('✓ Movidos ' + (d2.movidos||0) + ' lote(s) a días con cupo. El calendario queda repartido (máx ' + (d2.max_por_dia||2) + '/día).');
+    if (typeof cargar === 'function') cargar();
+  } catch(e){ alert('Error red: ' + e.message); }
+  finally { if (btn){ btn.disabled = false; btn.textContent = '📅 Repartir días sobrecargados'; } }
 }
 
 async function cargar(){

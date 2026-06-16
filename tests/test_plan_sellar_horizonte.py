@@ -166,6 +166,69 @@ def test_dedup_mismo_dia(app, db_clean):
     assert _estado(solo) == 'pendiente'                  # el sin-dup intacto
 
 
+def test_repartir_sobrecargados(app, db_clean):
+    """15-jun: día con muchos lotes (apilón del rescate) → se reparten a próximos
+    días hábiles con cupo (máx 2/día); lo ejecutado NO se mueve."""
+    hoy = _hoy_co()
+    # próximo lunes (día hábil estable)
+    base = hoy + _dt.timedelta(days=((7 - hoy.weekday()) % 7) or 7)
+    f = base.isoformat()
+    ids = [_seed('REPARTO %d' % i, f) for i in range(9)]   # 9 productos distintos mismo día
+    ejec = _seed('YA INICIADO', f, inicio=hoy.isoformat())  # ejecutado → no se mueve
+    c = _login(app)
+    dg = c.post('/api/plan/repartir-sobrecargados', json={'dry_run': True}, headers=csrf_headers())
+    assert dg.status_code == 200, dg.data[:300]
+    assert dg.get_json()['a_mover'] >= 1
+    r = c.post('/api/plan/repartir-sobrecargados', json={'dry_run': False}, headers=csrf_headers())
+    assert r.status_code == 200 and r.get_json()['movidos'] >= 1
+    # ningún día con >2 lotes activos
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    sobre = conn.execute(
+        "SELECT substr(fecha_programada,1,10), COUNT(*) FROM produccion_programada "
+        "WHERE COALESCE(estado,'') NOT IN ('cancelado','completado') "
+        "AND substr(fecha_programada,1,10) >= ? GROUP BY 1 HAVING COUNT(*) > 2", (hoy.isoformat(),)).fetchall()
+    fej = conn.execute("SELECT fecha_programada FROM produccion_programada WHERE id=?", (ejec,)).fetchone()[0]
+    conn.close()
+    assert not sobre, f"quedaron días sobrecargados: {sobre}"
+    assert str(fej)[:10] == f          # ejecutado no se movió
+
+
+def test_revertir_hoy(app, db_clean):
+    """15-jun: 'deshacer cambios de hoy' → suprime lo creado hoy, restaura lo que la
+    cirugía canceló hoy (Alejandro), conserva lo retroactivo de Fabricación."""
+    hoy = _hoy_co()
+    fut = (hoy + _dt.timedelta(days=30)).isoformat()
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    ahora = _dt.datetime.utcnow().isoformat()
+    ayer = (hoy - _dt.timedelta(days=2)).isoformat()
+    # A) creado HOY (suprimir)
+    conn.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes,creado_en) "
+                 "VALUES (?,?,?,?,?,1,?)", ('REV NUEVO', fut, 'pendiente', 'eos_canonico', 30, ahora))
+    idA = conn.execute("SELECT id FROM produccion_programada WHERE producto='REV NUEVO'").fetchone()[0]
+    # B) de ayer, CANCELADO hoy por la cirugía (restaurar)
+    conn.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes,creado_en) "
+                 "VALUES (?,?,?,?,?,1,?)", ('REV ALEJANDRO', fut, 'cancelado', 'eos_plan', 50, ayer))
+    idB = conn.execute("SELECT id FROM produccion_programada WHERE producto='REV ALEJANDRO'").fetchone()[0]
+    conn.execute("INSERT INTO audit_log (usuario,accion,tabla,registro_id,fecha) "
+                 "VALUES ('sebastian','SELLAR_CANCELAR_LOTE','produccion_programada',?,datetime('now'))", (str(idB),))
+    # C) retroactivo Fabricación creado hoy (conservar)
+    conn.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes,creado_en,fin_real_at,inicio_real_at) "
+                 "VALUES (?,?,?,?,?,1,?,?,?)", ('REV FAB', '2026-06-04', 'completado', 'eos_retroactivo', 20, ahora, '2026-06-04', '2026-06-04'))
+    idC = conn.execute("SELECT id FROM produccion_programada WHERE producto='REV FAB'").fetchone()[0]
+    conn.commit(); conn.close()
+
+    c = _login(app)
+    dg = c.post('/api/plan/revertir-hoy', json={'dry_run': True}, headers=csrf_headers())
+    assert dg.status_code == 200, dg.data[:300]
+    j = dg.get_json()
+    assert j['a_suprimir_creadas_hoy'] >= 1 and j['a_restaurar_canceladas'] >= 1
+    r = c.post('/api/plan/revertir-hoy', json={'dry_run': False}, headers=csrf_headers())
+    assert r.status_code == 200
+    assert _estado(idA) == 'cancelado'    # creado hoy → suprimido
+    assert _estado(idB) == 'pendiente'    # cancelado hoy → restaurado
+    assert _estado(idC) == 'completado'   # retroactivo Fabricación → conservado
+
+
 def test_sellar_requiere_rol(app, db_clean):
     c = _login(app, 'valentina')  # sin admin/compras
     r = c.post('/api/plan/sellar-horizonte', json={'dry_run': True}, headers=csrf_headers())
