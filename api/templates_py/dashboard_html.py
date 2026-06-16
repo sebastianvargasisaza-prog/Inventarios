@@ -1188,6 +1188,18 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     </div>
     <div id="cuar-msg"></div>
 
+    <div id="modo-inv-ctrl" style="display:none;align-items:center;gap:10px;flex-wrap:wrap;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px 18px;margin-bottom:14px;font-size:0.9em;color:#7c2d12;">
+      <strong>&#128230; Modo inventario:</strong>
+      <span id="modo-inv-estado" style="font-weight:700">&mdash;</span>
+      <button id="btn-modo-inv" onclick="toggleModoInventario()" style="background:#0d9488;color:#fff;border:none;padding:7px 14px;border-radius:8px;font-weight:700;cursor:pointer;">&mdash;</button>
+      <span style="font-size:0.85em;color:#9a3412">Activo &rarr; las recepciones nuevas entran directo a inventario (sin pasar por cuarentena de Calidad). Apagalo al terminar el inventario.</span>
+    </div>
+
+    <div id="cuar-inv-banner" style="display:none;background:#ecfdf5;border:1px solid #6ee7b7;border-radius:10px;padding:12px 18px;margin-bottom:14px;font-size:0.9em;color:#065f46;">
+      &#128197; <strong>Modo inventario ACTIVO:</strong> las recepciones nuevas entran directo a inventario (sin cuarentena). Si quedo algo aqui de antes, liberalo a inventario de una sola vez:
+      <button onclick="liberarCuarentenaInventario()" id="btn-liberar-inv" style="margin-left:10px;background:#0d9488;color:#fff;border:none;padding:8px 16px;border-radius:8px;font-weight:700;cursor:pointer;">&#9989; Liberar TODO a inventario</button>
+    </div>
+
     <!-- Tabla de lotes pendientes -->
     <table class="table" id="cuar-table">
       <thead><tr><th>Codigo</th><th>INCI</th><th>Nombre</th><th>Lote</th><th>Cant. (g)</th><th>Proveedor</th><th>OC</th><th>Fecha ingreso</th><th>Estado</th><th>Accion</th></tr></thead>
@@ -3839,7 +3851,7 @@ function switchTab(n,btn){
   if(n==='stock') loadStock();
   if(n==='formulas'||n==='produccion') loadFormulas();
   if(n==='produccion'){ if(typeof cargarPendientesFab==='function') cargarPendientesFab(); if(typeof cargarHistProd==='function') cargarHistProd(); if(typeof cargarAreasFab==='function') cargarAreasFab(); }
-  if(n==='cuarentena'){ cargarCuarentena(); cargarRetenido(); }
+  if(n==='cuarentena'){ cargarCuarentena(); cargarRetenido(); cargarModoInventario(); }
   if(n==='ingreso') initIngreso();
   if(n==='abc') loadABC();
   if(n==='conteo'){ cargarEstanterias(); cargarHistorialConteos(); cargarProgramacionCiclica(); }
@@ -3883,7 +3895,7 @@ function subSwitchTab(tabId,btn,barId){
   if(tabId==='envasado') cargarEnvasadoSimpleTab();
   if(tabId==='acondicionamiento') cargarAcondSimpleTab();
   if(tabId==='programacion') cargarProgramacion(null);
-  if(tabId==='cuarentena') cargarCuarentena();
+  if(tabId==='cuarentena'){ cargarCuarentena(); cargarModoInventario(); }
   if(tabId==='ingreso') initIngreso();
   if(tabId==='abc') loadABC();
   if(tabId==='conteo'){ cargarEstanterias(); cargarHistorialConteos(); cargarProgramacionCiclica(); }
@@ -3948,6 +3960,7 @@ async function loadDashboard(){
       ['ing-cuarentena','nmp-ing-cuarentena'].forEach(function(cid){
         var cb=document.getElementById(cid); if(cb) cb.checked=false;
       });
+      var _invb=document.getElementById('cuar-inv-banner'); if(_invb) _invb.style.display='block';
     }
     fetch('/api/alertas-reabastecimiento').then(function(r2){return r2.json();}).then(function(ar){
       var n=ar.alertas?ar.alertas.length:0;
@@ -6946,6 +6959,56 @@ async function crearNuevaMP(){
 }
 
 // ── Funciones CC / Trazabilidad / Conteo Ciclico ──
+async function cargarModoInventario(){
+  try{
+    var r=await fetch('/api/inventario/modo-inventario');
+    var d=await r.json().catch(function(){return {};});
+    var activo=!!d.activo;
+    window._RECEPCION_AUTO_VIGENTE=activo;
+    var ctrl=document.getElementById('modo-inv-ctrl');
+    var est=document.getElementById('modo-inv-estado');
+    var btn=document.getElementById('btn-modo-inv');
+    var banner=document.getElementById('cuar-inv-banner');
+    var esAdmin=(window._ES_ADMIN_DASH===true);
+    if(ctrl) ctrl.style.display = esAdmin ? 'flex' : 'none';
+    if(est) est.innerHTML = activo ? '<span style="color:#0d9488">ACTIVO &middot; recepciones directo a inventario</span>' : '<span style="color:#9a3412">apagado &middot; cuarentena INVIMA</span>';
+    if(btn) btn.textContent = activo ? 'Apagar modo inventario' : 'Activar modo inventario';
+    if(banner) banner.style.display = activo ? 'block' : 'none';
+    if(activo){ ['ing-cuarentena','nmp-ing-cuarentena'].forEach(function(cid){var cb=document.getElementById(cid); if(cb) cb.checked=false;}); }
+  }catch(e){}
+}
+async function toggleModoInventario(){
+  var nuevo = !window._RECEPCION_AUTO_VIGENTE;
+  if(nuevo && !confirm('Activar MODO INVENTARIO? Las recepciones nuevas entraran directo a inventario, SIN cuarentena de Calidad. Usalo solo durante el inventario y apagalo al terminar.')) return;
+  var btn=document.getElementById('btn-modo-inv'); if(btn){btn.disabled=true;}
+  try{
+    var r=await fetch('/api/inventario/modo-inventario',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({activo:nuevo})});
+    var d=await r.json().catch(function(){return {};});
+    if(!r.ok||!d.ok){ alert('No se pudo cambiar: '+(d.error||r.status)); }
+  }catch(e){ alert('Error: '+e); }
+  if(btn){btn.disabled=false;}
+  cargarModoInventario();
+}
+async function liberarCuarentenaInventario(){
+  if(!confirm('Liberar a inventario TODOS los lotes que están en cuarentena (pasan a VIGENTE/disponible)? Acción del día de inventario · queda auditada.')) return;
+  var btn=document.getElementById('btn-liberar-inv');
+  if(btn){btn.disabled=true;btn.textContent='Liberando...';}
+  try{
+    var r=await fetch('/api/lotes/cuarentena/liberar-inventario',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
+    var d=await r.json().catch(function(){return {};});
+    var msg=document.getElementById('cuar-msg');
+    if(!r.ok||!d.ok){
+      if(msg) msg.innerHTML='<div class="alert-error">No se pudo liberar: '+(d.error||r.status)+'</div>';
+    }else{
+      if(msg) msg.innerHTML='<div class="alert-success">&#9989; '+(d.liberados||0)+' lote(s) liberados a inventario.</div>';
+      if(typeof cargarCuarentena==='function') cargarCuarentena();
+      if(typeof cargarRetenido==='function') cargarRetenido();
+    }
+  }catch(e){
+    var m2=document.getElementById('cuar-msg'); if(m2) m2.innerHTML='<div class="alert-error">Error: '+e+'</div>';
+  }
+  if(btn){btn.disabled=false;btn.innerHTML='&#9989; Liberar TODO a inventario';}
+}
 async function cargarCuarentena(){
   try{
     var r=await fetch('/api/lotes/cuarentena');

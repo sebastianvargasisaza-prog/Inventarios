@@ -345,7 +345,7 @@ def get_inventario():
         'stock_total': round(stock_total, 2),
         # Sebastián 16-jun · interruptor recepción auto-VIGENTE (para que la UI
         # destilde la casilla "cuarentena" cuando está encendido).
-        'recepcion_auto_vigente': (lambda: __import__('config').recepcion_auto_vigente())(),
+        'recepcion_auto_vigente': (lambda: __import__('database').recepcion_auto_vigente())(),
         # KPIs nuevos del dashboard replanteado (zonas)
         'kpis': {
             'ahora': {
@@ -7230,8 +7230,8 @@ def registrar_recepcion():
     # casilla para stock ya aprobado (ajustes/correcciones).
     # Sebastián 16-jun · si RECEPCION_AUTO_VIGENTE está encendido, el default de la
     # casilla pasa a NO-cuarentena → carga automática como VIGENTE (sin Calidad).
-    from config import recepcion_auto_vigente as _rav
-    _cuar_default = (not _rav())
+    from database import recepcion_auto_vigente as _rav
+    _cuar_default = (not _rav(c))
     cuarentena = bool(d.get('cuarentena', _cuar_default))
     estado_lote = 'CUARENTENA' if cuarentena else 'VIGENTE'
     # Si la MP es nueva y viene con datos, crearla en el catalogo
@@ -10611,6 +10611,99 @@ def liberar_cuarentena(mov_id):
                str(mov_id), (d.get('observaciones','') + f' · e-sign #{sig_id}'), request.remote_addr))
     conn.commit()
     return jsonify({'ok':True, 'decision':decision, 'estado':nuevo_estado, 'signature_id': sig_id})
+
+
+@bp.route('/api/lotes/cuarentena/liberar-inventario', methods=['POST'])
+def liberar_cuarentena_inventario():
+    """Sebastián 16-jun · día de inventario · liberación rápida a inventario.
+
+    Saca de cuarentena a VIGENTE la MP recibida, SIN la firma Part 11 por lote
+    (fricción que no aplica el día de inventario). Es la contraparte del interruptor
+    RECEPCION_AUTO_VIGENTE: solo funciona mientras ese interruptor está ENCENDIDO y
+    solo para ADMIN. Queda 100% auditado (audit_log por lote). Al apagar el
+    interruptor tras el inventario, esta ruta se cierra y vuelve la liberación
+    formal con firma (cc-review / liberar_cuarentena).
+
+    Body: {mov_id?} · si se da mov_id libera ese lote; si no, libera TODOS los
+    lotes en CUARENTENA / CUARENTENA_EXTENDIDA.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.json or {}
+    mov_id = d.get('mov_id')
+    conn = get_db(); c = conn.cursor()
+    from database import recepcion_auto_vigente as _rav
+    if not _rav(c):
+        return jsonify({
+            'error': 'Liberación rápida deshabilitada (el modo inventario está apagado). '
+                     'Usá la liberación formal con firma desde Calidad → Cuarentena.',
+            'codigo': 'SWITCH_OFF',
+        }), 409
+    if mov_id:
+        filas = c.execute(
+            "SELECT id, material_id, lote FROM movimientos WHERE id=? "
+            "AND UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')",
+            (mov_id,)).fetchall()
+    else:
+        filas = c.execute(
+            "SELECT id, material_id, lote FROM movimientos "
+            "WHERE UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')"
+        ).fetchall()
+    liberados = []
+    for fid, fmat, flote in filas:
+        c.execute("UPDATE movimientos SET estado_lote='VIGENTE' WHERE id=?", (fid,))
+        try:
+            c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
+                         VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
+                      (u, 'LIBERAR_CUARENTENA_INVENTARIO', 'movimientos', str(fid),
+                       f'Liberación rápida día inventario · {fmat} lote {flote} → VIGENTE',
+                       request.remote_addr if request else ''))
+        except sqlite3.OperationalError:
+            pass
+        liberados.append({'mov_id': fid, 'material_id': fmat, 'lote': flote})
+    conn.commit()
+    return jsonify({'ok': True, 'liberados': len(liberados), 'detalle': liberados})
+
+
+@bp.route('/api/inventario/modo-inventario', methods=['GET', 'POST'])
+def modo_inventario_config():
+    """Sebastián 16-jun · toggle 'modo inventario' = recepciones entran directo a
+    inventario (VIGENTE) sin pasar por cuarentena de Calidad. Guardado en
+    app_settings (botón en la UI · ADMIN · sin tocar Render · efecto inmediato y
+    reversible). Default OFF = posición INVIMA. GET → estado; POST {activo:bool}."""
+    conn = get_db(); c = conn.cursor()
+    try:
+        c.execute("""CREATE TABLE IF NOT EXISTS app_settings (
+            clave TEXT PRIMARY KEY, valor TEXT NOT NULL, descripcion TEXT,
+            actualizado_at_utc TEXT, actualizado_por TEXT, tenant_id INTEGER DEFAULT 1)""")
+    except Exception:
+        pass
+    if request.method == 'POST':
+        u, err, code = _require_admin()
+        if err:
+            return err, code
+        body = request.get_json(silent=True) or {}
+        activo = bool(body.get('activo'))
+        val = '1' if activo else '0'
+        c.execute(
+            "INSERT INTO app_settings (clave,valor,descripcion,actualizado_at_utc,actualizado_por) "
+            "VALUES ('recepcion_auto_vigente',?,?,datetime('now'),?) "
+            "ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor, "
+            "actualizado_at_utc=excluded.actualizado_at_utc, actualizado_por=excluded.actualizado_por",
+            (val, 'Recepción entra directo a inventario sin cuarentena (modo inventario)', u))
+        try:
+            audit_log(c, usuario=u, accion='SET_MODO_INVENTARIO', tabla='app_settings',
+                      registro_id='recepcion_auto_vigente', despues={'activo': activo})
+        except Exception:
+            pass
+        conn.commit()
+        return jsonify({'ok': True, 'activo': activo})
+    # GET
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    from database import recepcion_auto_vigente as _rav
+    return jsonify({'ok': True, 'activo': bool(_rav(c))})
 
 @bp.route('/api/maestro-mp/<codigo>/precio', methods=['POST'])
 def actualizar_precio_mp(codigo):

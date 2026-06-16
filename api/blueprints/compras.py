@@ -5931,8 +5931,8 @@ def recibir_oc(numero_oc):
                 # Sebastián 16-jun · estado inicial controlado por interruptor
                 # RECEPCION_AUTO_VIGENTE (default CUARENTENA = INVIMA · ON = carga
                 # automática como VIGENTE, sin pasar por Calidad).
-                from config import recepcion_auto_vigente as _rav
-                _estado_recep = 'VIGENTE' if _rav() else 'CUARENTENA'
+                from database import recepcion_auto_vigente as _rav
+                _estado_recep = 'VIGENTE' if _rav(cur) else 'CUARENTENA'
                 _coa_ok = False
                 try:
                     cur.execute(

@@ -80,13 +80,11 @@ if EBR_MODE not in ("off", "warn", "strict"):
     EBR_MODE = "off"
 
 
-def recepcion_auto_vigente():
-    """Sebastián 16-jun · interruptor reversible (leído en cada request, no en
-    arranque). Cuando RECEPCION_AUTO_VIGENTE está encendido, la mercancía recibida
-    (recepción de OC + ingreso manual de MP) entra como VIGENTE directamente, SIN
-    pasar por cuarentena de Calidad → carga automática para días de inventario o
-    cuando QC no está disponible. Default OFF = posición INVIMA (cuarentena-first).
-    Apagarlo restaura el control de calidad sin tocar código."""
+def recepcion_auto_vigente_env():
+    """Parte ENV del interruptor (fallback). El valor efectivo lo resuelve
+    `database.recepcion_auto_vigente(conn)`, que da prioridad al toggle en BD
+    (app_settings · botón en la UI, sin tocar Render). Default OFF = INVIMA
+    cuarentena-first."""
     return os.environ.get("RECEPCION_AUTO_VIGENTE", "0").strip().lower() in (
         "1", "true", "yes", "si", "sí", "on")
 

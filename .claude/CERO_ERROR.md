@@ -155,15 +155,22 @@ relativa a hoy** en el input/assert, y que el test **limpie su fecha objetivo** 
 
 Cuando el negocio pide quitar temporalmente un control GMP/INVIMA (ej. "que las
 recepciones no pasen por cuarentena", "ajustar sin gerencia"), **no borres el
-control ni cambies el default permanente**: agrega un interruptor leído **en cada
-request** (`config.recepcion_auto_vigente()` lee `os.environ` al vuelo, NO en el
-arranque → se enciende/apaga sin redeploy). Reglas:
-- **Default = posición regulatoria** (cuarentena-first / control activo). El env
-  encendido es la excepción explícita, no al revés.
+control ni cambies el default permanente del código** (rompe el invariante y los
+golden que lo verifican — pasó: flipear el default de recepción a VIGENTE rompió
+`test_golden_recepcion_anular_admin`, que comprueba el espejo net-zero M31).
+Patrón correcto = **toggle en `app_settings` (BD) prendible con un botón**, leído
+por request:
+- `database.recepcion_auto_vigente(conn)` = **BD-primero** (`app_settings`), env
+  como fallback, **default OFF = posición regulatoria**. DB vacía → OFF → golden
+  verdes sin tocarlos. Botón admin `POST /api/inventario/modo-inventario` lo flipa
+  sin Render y sin redeploy (efecto inmediato, reversible). `config.x_env()` solo
+  guarda el fallback de env.
 - Si la UI manda el valor explícito (checkbox), el backend default no basta:
   exponé el flag en un endpoint que la página ya carga y deja que el JS destilde
   la casilla (si no, el checkbox `checked` pisa el interruptor).
 - El **explícito del operario gana** sobre el default del interruptor.
+- Acciones que dependen del modo (ej. liberar cuarentena en bloque sin e-sign)
+  van **gated por el mismo toggle**: si está OFF → 409 y vuelve el flujo formal.
 - Conteo cíclico (cierre) YA auto-ajusta TODO sin gerencia desde 12-jun
   (`pendientes_gerencia_lista` nunca se llena; `requiere_gerencia` es solo marca
   informativa). `_require_planta_write` = cualquier autenticado → "lo hacen todos".

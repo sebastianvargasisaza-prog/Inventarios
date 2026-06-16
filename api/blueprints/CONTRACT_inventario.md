@@ -316,3 +316,22 @@ Invariante nueva:
   (sin firma→400, firma de otro lote→400 binding, firma correcta→200).
 - Los 3 endpoints son el equivalente para MP del gate que `brd.py` ya tenía en
   EBR (producto terminado). Parte del reemplazo progresivo de MyBatch.
+
+## 🗓️ Modo inventario · recepción directo a inventario (16-jun)
+
+- **`database.recepcion_auto_vigente(conn)`** resuelve el interruptor: 1º
+  `app_settings.clave='recepcion_auto_vigente'` (toggle por botón · sin Render),
+  2º env `RECEPCION_AUTO_VIGENTE`. **Default OFF = INVIMA cuarentena-first.**
+  `config.recepcion_auto_vigente_env()` es solo el fallback de env.
+- Cuando está ON: recepción de OC (`compras.recibir_oc`) e ingreso manual
+  (`/api/recepcion`) entran `estado_lote='VIGENTE'` en vez de `'CUARENTENA'`. El
+  valor explícito del operario (`cuarentena` en el body) manda sobre el default.
+- **`GET/POST /api/inventario/modo-inventario`** (POST = ADMIN) lee/define el
+  toggle en `app_settings` (audit `SET_MODO_INVENTARIO`). UI: botón en la pestaña
+  Cuarentena del dashboard.
+- **`POST /api/lotes/cuarentena/liberar-inventario`** (ADMIN · solo si el modo está
+  ON): mueve CUARENTENA/_EXTENDIDA → VIGENTE en bloque, SIN e-sign (excepción del
+  día de inventario · audit `LIBERAR_CUARENTENA_INVENTARIO` por lote). Al apagar el
+  modo, esta ruta responde 409 y vuelve la liberación formal con firma.
+- ⚠ Cubierto por `tests/test_recepcion_auto_vigente.py`. El default OFF mantiene
+  verdes los golden de recepción/cuarentena (no cambiar el default en código).

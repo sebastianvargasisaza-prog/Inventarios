@@ -86,6 +86,30 @@ def get_db():
         return _abrir_conn()
 
 
+def recepcion_auto_vigente(conn=None):
+    """Sebastián 16-jun · interruptor 'recepción entra directo a inventario' (sin
+    cuarentena de Calidad · día de inventario). Resolución:
+      1) app_settings.clave='recepcion_auto_vigente' (toggle desde la UI · admin ·
+         NO requiere variable de entorno en Render · efecto inmediato y reversible).
+      2) si no hay fila en BD → variable de entorno RECEPCION_AUTO_VIGENTE.
+    Default OFF = posición INVIMA (cuarentena-first). Lo apaga el mismo botón.
+    """
+    try:
+        c = conn or get_db()
+        row = c.execute(
+            "SELECT valor FROM app_settings WHERE clave='recepcion_auto_vigente' LIMIT 1"
+        ).fetchone()
+        if row is not None and row[0] is not None:
+            return str(row[0]).strip().lower() in ("1", "true", "yes", "si", "sí", "on")
+    except Exception:
+        pass  # tabla ausente / sin conexión → cae al env
+    try:
+        from config import recepcion_auto_vigente_env
+        return recepcion_auto_vigente_env()
+    except Exception:
+        return False
+
+
 # ── Helper para migraciones idempotentes ──────────────────────────────────────
 # Errores benignos que indicam "el cambio ya está aplicado" — NO se loguean.
 # Cualquier otro OperationalError SE LOGUEA y SE RELANZA (típico de typo SQL,
