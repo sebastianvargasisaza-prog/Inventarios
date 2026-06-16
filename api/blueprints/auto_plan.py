@@ -12983,6 +12983,65 @@ def _factor_g_por_unidad(c, producto):
     return _factor_g_por_unidad_detalle(c, producto)[0]
 
 
+def _volumen_sku(c, sku, producto):
+    """Volumen (ml por unidad) de UN SKU/tamaño. Orden: 1) sku_producto_map.volumen_ml
+    (lo que carga el usuario por tamaño), 2) producto_presentaciones por sku_shopify,
+    3) fallback por producto (_factor_g_por_unidad_detalle). Devuelve (vol, fuente)."""
+    try:
+        r = c.execute("SELECT volumen_ml FROM sku_producto_map WHERE sku=?", (sku,)).fetchone()
+        if r and r[0] and float(r[0]) > 0:
+            return (float(r[0]), 'sku')
+    except Exception:
+        pass  # columna ausente (mig no aplicada) → fallback
+    try:
+        r = c.execute(
+            "SELECT volumen_ml, peso_g, factor_g_por_unidad FROM producto_presentaciones "
+            "WHERE sku_shopify=? AND activo=1 ORDER BY es_default DESC, id ASC LIMIT 1", (sku,)).fetchone()
+        if r:
+            for v in r:
+                if v and float(v) > 0:
+                    return (float(v), 'presentacion')
+    except Exception:
+        pass
+    f, fuente, _det, _pres = _factor_g_por_unidad_detalle(c, producto)
+    return (f, 'producto:' + fuente)
+
+
+def _demanda_stock_gramos(c, producto):
+    """Planeación MULTI-VOLUMEN en GRAMOS (Sebastián 16-jun). Un producto puede
+    venderse en varios tamaños (30+10, 30+15, solo 30). Suma por tamaño:
+      demanda_g/día = Σ (velocidad_sku × tendencia × volumen_sku)
+      stock_g       = Σ (unidades_disponible_sku × volumen_sku) + pipeline (bulk ≤7d)
+    Así el bulk se planea junto sin importar cuántos tamaños tenga. Devuelve dict."""
+    from datetime import datetime as _dt2, timedelta as _td2
+    skus = c.execute(
+        "SELECT sku, COALESCE(tono_label,'') FROM sku_producto_map "
+        "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1", (producto,)).fetchall()
+    detalle = []
+    demand_g = 0.0
+    stock_g = 0.0
+    for sku, tono in skus:
+        vel, fac = _velocidad_y_tendencia(c, sku)
+        vel_proj = vel * (fac or 1.0)
+        units = c.execute("SELECT COALESCE(SUM(unidades_disponible),0) FROM stock_pt WHERE sku=?", (sku,)).fetchone()[0] or 0
+        vol, vfuente = _volumen_sku(c, sku, producto)
+        demand_g += vel_proj * vol
+        stock_g += float(units) * vol
+        detalle.append({'sku': sku, 'tono': tono, 'velocidad': round(vel, 2),
+                        'tendencia': round(fac or 1.0, 2), 'unidades': int(units),
+                        'volumen': round(vol, 2), 'fuente_vol': vfuente})
+    hoy = (_dt2.utcnow() - _td2(hours=5)).date()
+    pipe_kg = c.execute(
+        "SELECT COALESCE(SUM(COALESCE(kg_real,cantidad_kg,0)),0) FROM produccion_programada "
+        "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) AND fin_real_at IS NOT NULL "
+        "AND substr(fin_real_at,1,10) >= ?", (producto, (hoy - _td2(days=7)).isoformat())).fetchone()[0]
+    pipe_g = float(pipe_kg or 0) * 1000.0
+    stock_total_g = stock_g + pipe_g
+    cobertura = (stock_total_g / demand_g) if demand_g > 0.001 else None
+    return {'demand_g': demand_g, 'stock_shopify_g': stock_g, 'pipe_g': pipe_g,
+            'stock_g': stock_total_g, 'cobertura_dias': cobertura, 'skus': detalle}
+
+
 def _calcular_demanda_suministro(c, producto, dias_horizonte=60):
     """Lógica MRP: demanda proyectada vs suministro disponible.
 

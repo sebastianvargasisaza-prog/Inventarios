@@ -352,6 +352,12 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (262, "Multi-volumen por SKU (Sebastián 16-jun): volumen_ml por SKU en "
+          "sku_producto_map · un producto puede venderse en varios tamaños (30+10, "
+          "30+15, o solo 30). La planeación pasa a GRAMOS (demanda = Σ ventas×volumen "
+          "por tamaño). 'duplicate column' benigno.", [
+        "ALTER TABLE sku_producto_map ADD COLUMN volumen_ml REAL",
+    ]),
     (261, "Planeación por VOLUMEN directo (Sebastián 16-jun): volumen_ml_unidad por "
           "producto en sku_planeacion_config · si está, el cálculo kg→unidades lo usa "
           "PRIMERO (exacto), sin depender de presentaciones/envase. 'duplicate column' "

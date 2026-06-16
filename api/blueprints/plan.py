@@ -11391,26 +11391,17 @@ def _proyectar_horizonte_2y(conn, dias=730, usuario='auto-proyeccion', dry_run=F
     for producto, lote_size_kg in skus:
         if not lote_size_kg or float(lote_size_kg) <= 0:
             continue
-        vel, factor = _ap._velocidad_total_producto(c, producto)
-        vel_proj = vel * (factor or 1.0)
-        if vel_proj <= 0.001:
+        # MULTI-VOLUMEN en GRAMOS: demanda y stock suman todos los tamaños del producto.
+        dsg = _ap._demanda_stock_gramos(c, producto)
+        demand_g = dsg['demand_g']
+        if demand_g <= 0.001:
             continue  # no se vende → no se proyecta (no inventa demanda)
-        factor_g = _ap._factor_g_por_unidad(c, producto) or 1
-        lote_units = (float(lote_size_kg) * 1000.0) / max(factor_g, 1)
-        if lote_units <= 0:
+        lote_g = float(lote_size_kg) * 1000.0
+        if lote_g <= 0:
             continue
+        stock0_g = dsg['stock_g']  # Shopify (Σ unidades×volumen) + pipeline (bulk ≤7d)
 
-        # Stock efectivo HOY = Shopify disponible + pipeline (producido ≤7d, aún no en Shopify)
-        stock_shopify = _ap._stock_actual_pt(c, producto)
-        pipe_kg = c.execute(
-            "SELECT COALESCE(SUM(COALESCE(kg_real, cantidad_kg, 0)),0) FROM produccion_programada "
-            "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) AND fin_real_at IS NOT NULL "
-            "AND substr(fin_real_at,1,10) >= ?",
-            (producto, (hoy - _td(days=PIPELINE_LAG)).isoformat())).fetchone()[0]
-        pipe_units = (float(pipe_kg or 0) * 1000.0) / max(factor_g, 1)
-        stock0 = stock_shopify + pipe_units
-
-        # Llegadas ya comprometidas (Fijo/futuro NO proyección · disponibles +7d) → no duplicar encima
+        # Llegadas ya comprometidas (Fijo/futuro NO proyección · disponibles +7d) → en gramos
         arrivals = {}
         for frow in c.execute(
             "SELECT substr(fecha_programada,1,10), COALESCE(cantidad_kg,0), COALESCE(lotes,1) "
@@ -11421,29 +11412,30 @@ def _proyectar_horizonte_2y(conn, dias=730, usuario='auto-proyeccion', dry_run=F
                 fd = _date.fromisoformat((frow[0] or '')[:10])
             except Exception:
                 continue
-            u = (float(frow[1] or lote_size_kg) * 1000.0) / max(factor_g, 1) * max(int(frow[2] or 1), 1)
+            g = float(frow[1] or lote_size_kg) * 1000.0 * max(int(frow[2] or 1), 1)
             ad = (fd - hoy).days + PIPELINE_LAG
             if ad >= 0:
-                arrivals[ad] = arrivals.get(ad, 0) + u
+                arrivals[ad] = arrivals.get(ad, 0) + g
 
-        threshold = MARGEN * vel_proj
-        stock = stock0
+        threshold_g = MARGEN * demand_g
+        n_tam = len(dsg['skus']) or 1
+        stock = stock0_g
         creados_prod = 0
         d = 0
         while d <= dias:
             stock += arrivals.pop(d, 0)
             if d > 0:
-                stock -= vel_proj
-            if stock <= threshold:
+                stock -= demand_g
+            if stock <= threshold_g:
                 upcoming = any(d < ad <= d + PIPELINE_LAG + 3 for ad in arrivals)
                 if not upcoming:
                     prod_date = _tomar_slot(max(hoy + _td(days=1), hoy + _td(days=d)))
                     arr = (prod_date - hoy).days + PIPELINE_LAG
-                    arrivals[arr] = arrivals.get(arr, 0) + lote_units
-                    obs = ("Proyección 2a · venta " + format(vel, '.1f') + "/d"
-                           + (" (x" + format(factor, '.2f') + " tendencia↑)" if (factor or 1) > 1.05 else "")
-                           + " · stock efectivo " + format(stock0, '.0f') + "u (Shopify "
-                           + str(stock_shopify) + "+pipeline " + format(pipe_units, '.0f') + ")")
+                    arrivals[arr] = arrivals.get(arr, 0) + lote_g
+                    obs = ("Proyección 2a · demanda " + format(demand_g, '.0f') + " g/d"
+                           + (" · " + str(n_tam) + " tamaños" if n_tam > 1 else "")
+                           + " · stock efectivo " + format(stock0_g, '.0f') + " g (Shopify "
+                           + format(dsg['stock_shopify_g'], '.0f') + "+pipeline " + format(dsg['pipe_g'], '.0f') + ")")
                     nuevos.append((producto, prod_date.isoformat(), float(lote_size_kg), obs))
                     creados_prod += 1
             d += 1
@@ -11507,39 +11499,37 @@ def _verificar_volumenes_data(conn):
         "WHERE spc.activo=1 ORDER BY spc.producto_nombre").fetchall()
     out = []
     for producto, categoria, lote_kg in rows:
-        factor, fuente, detalle, pres = _ap._factor_g_por_unidad_detalle(c, producto)
-        vel, fac = _ap._velocidad_total_producto(c, producto)
-        vel_proj = vel * (fac or 1.0)
-        lote_units = int(round((float(lote_kg or 0) * 1000.0) / max(factor, 1))) if lote_kg else 0
-        stock_shop = _ap._stock_actual_pt(c, producto)
-        pipe_kg = c.execute(
-            "SELECT COALESCE(SUM(COALESCE(kg_real,cantidad_kg,0)),0) FROM produccion_programada "
-            "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) AND fin_real_at IS NOT NULL "
-            "AND substr(fin_real_at,1,10) >= ?", (producto, (hoy - _td(days=7)).isoformat())).fetchone()[0]
-        pipe_units = (float(pipe_kg or 0) * 1000.0) / max(factor, 1)
-        stock_ef = stock_shop + pipe_units
-        alcanza_dias = (stock_ef / vel_proj) if vel_proj > 0.001 else None
-        alcanza_hasta = (hoy + _td(days=int(alcanza_dias))).isoformat() if alcanza_dias is not None else None
+        dsg = _ap._demanda_stock_gramos(c, producto)
+        demand_g = dsg['demand_g']
+        cob = dsg['cobertura_dias']
+        alcanza_hasta = (hoy + _td(days=int(cob))).isoformat() if cob is not None else None
+        skus = dsg['skus']
+        # un tamaño está "adivinado" si su volumen NO viene del SKU ni de presentación
+        skus_adivinados = sum(1 for s in skus if str(s['fuente_vol']).startswith('producto:'))
+        tiene_venta = any(s['velocidad'] > 0 for s in skus)
+        requiere = (not lote_kg) or (demand_g <= 0) or (not skus) or (skus_adivinados > 0)
         out.append({
             'producto': producto, 'categoria': categoria or '',
-            'volumen': round(factor, 2), 'fuente': fuente, 'detalle': detalle,
-            'presentacion': pres, 'lote_size_kg': lote_kg or 0, 'unidades_por_lote': lote_units,
-            'velocidad_dia': round(vel, 2), 'tendencia': round(fac or 1.0, 2),
-            'stock_shopify_u': stock_shop, 'pipeline_u': int(round(pipe_units)),
-            'stock_efectivo_u': int(round(stock_ef)),
-            'alcanza_dias': round(alcanza_dias, 0) if alcanza_dias is not None else None,
+            'lote_size_kg': lote_kg or 0, 'lote_g': int((lote_kg or 0) * 1000),
+            'demanda_g_dia': round(demand_g, 0),
+            'stock_shopify_g': int(round(dsg['stock_shopify_g'])),
+            'pipeline_g': int(round(dsg['pipe_g'])),
+            'stock_efectivo_g': int(round(dsg['stock_g'])),
+            'cobertura_dias': round(cob, 0) if cob is not None else None,
             'alcanza_hasta': alcanza_hasta,
+            'skus': skus, 'n_tamanos': len(skus), 'skus_adivinados': skus_adivinados,
             'tiene_formula': bool(lote_kg and lote_kg > 0),
-            'tiene_venta': vel > 0,
-            'requiere_atencion': (fuente != 'presentacion') or (not lote_kg) or (vel <= 0),
+            'tiene_venta': tiene_venta,
+            'requiere_atencion': requiere,
         })
     out.sort(key=lambda x: (not x['requiere_atencion'], x['producto']))
     resumen = {
         'total': len(out),
-        'envase_cargado': sum(1 for x in out if x['fuente'] == 'presentacion'),
-        'volumen_adivinado': sum(1 for x in out if x['fuente'] != 'presentacion'),
+        'volumen_completo': sum(1 for x in out if x['skus'] and x['skus_adivinados'] == 0),
+        'volumen_adivinado': sum(1 for x in out if x['skus_adivinados'] > 0 or not x['skus']),
         'sin_formula': sum(1 for x in out if not x['tiene_formula']),
         'sin_venta': sum(1 for x in out if not x['tiene_venta']),
+        'total_skus': sum(x['n_tamanos'] for x in out),
     }
     return resumen, out
 
@@ -11557,35 +11547,42 @@ def plan_verificar_volumenes():
 
 @bp.route("/api/plan/set-volumen", methods=["POST"])
 def plan_set_volumen():
-    """Fija el VOLUMEN (ml por unidad) de un producto directamente en
-    sku_planeacion_config.volumen_ml_unidad. Es lo que usa el cálculo kg→unidades
-    (manda sobre presentaciones/categoría). volumen<=0 → limpia (vuelve al fallback)."""
+    """Fija el VOLUMEN (ml por unidad) de un TAMAÑO/SKU en sku_producto_map.volumen_ml.
+    Es lo que usa la planeación en gramos (demanda = Σ ventas×volumen por tamaño).
+    volumen<=0 → limpia (vuelve al fallback). Acepta {sku, volumen_ml}; si en vez de
+    sku llega {producto} (single-size legacy) cae a sku_planeacion_config."""
     user, err = _require_admin_or_compras()
     if err:
         body, code = err
         return jsonify(body), code
     d = request.get_json(silent=True) or {}
+    sku = (d.get('sku') or '').strip()
     producto = (d.get('producto') or '').strip()
-    if not producto:
-        return jsonify({'ok': False, 'error': 'producto requerido'}), 400
     try:
         vol = float(d.get('volumen_ml') or 0)
     except (ValueError, TypeError):
         vol = 0
     vol_val = vol if vol > 0 else None
     conn = get_db(); c = conn.cursor()
-    c.execute(
-        "UPDATE sku_planeacion_config SET volumen_ml_unidad=? "
-        "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (vol_val, producto))
-    if c.rowcount == 0:
-        return jsonify({'ok': False, 'error': 'Producto no está en la config de planeación'}), 404
-    try:
-        audit_log(c, usuario=user, accion='SET_VOLUMEN_PRODUCTO', tabla='sku_planeacion_config',
-                  registro_id=producto, despues={'volumen_ml_unidad': vol_val})
-    except Exception:
-        pass
-    conn.commit()
-    return jsonify({'ok': True, 'producto': producto, 'volumen_ml': vol_val})
+    if sku:
+        c.execute("UPDATE sku_producto_map SET volumen_ml=? WHERE sku=?", (vol_val, sku))
+        if c.rowcount == 0:
+            return jsonify({'ok': False, 'error': 'SKU no encontrado en el mapa'}), 404
+        try:
+            audit_log(c, usuario=user, accion='SET_VOLUMEN_SKU', tabla='sku_producto_map',
+                      registro_id=sku, despues={'volumen_ml': vol_val})
+        except Exception:
+            pass
+        conn.commit()
+        return jsonify({'ok': True, 'sku': sku, 'volumen_ml': vol_val})
+    if producto:
+        c.execute("UPDATE sku_planeacion_config SET volumen_ml_unidad=? "
+                  "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (vol_val, producto))
+        if c.rowcount == 0:
+            return jsonify({'ok': False, 'error': 'Producto no está en la config'}), 404
+        conn.commit()
+        return jsonify({'ok': True, 'producto': producto, 'volumen_ml': vol_val})
+    return jsonify({'ok': False, 'error': 'sku o producto requerido'}), 400
 
 
 @bp.route("/admin/verificar-volumenes", methods=["GET"])
@@ -11606,79 +11603,82 @@ def plan_verificar_volumenes_page():
         'nombre':       '<span style="background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">≈ por nombre</span>',
         'default':      '<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">⚠ adivinado 30</span>',
     }
-    filas = []
-    for idx, p in enumerate(productos):
+    def _vol_badge(fuente):
+        if fuente == 'sku':
+            return '<span style="background:#dcfce7;color:#166534;padding:1px 7px;border-radius:9px;font-size:10px;font-weight:700">✓ fijado</span>'
+        if fuente == 'presentacion':
+            return '<span style="background:#dcfce7;color:#166534;padding:1px 7px;border-radius:9px;font-size:10px;font-weight:700">✓ presentación</span>'
+        return '<span style="background:#fef9c3;color:#854d0e;padding:1px 7px;border-radius:9px;font-size:10px;font-weight:700">≈ adivinado</span>'
+
+    secciones = []
+    sidx = 0
+    for p in productos:
         bg = '#fff7ed' if p['requiere_atencion'] else '#ffffff'
         nombre = _html.escape(p['producto'])
-        prod_attr = _html.escape(p['producto'], quote=True)
-        pres = p['presentacion'] or {}
-        pres_txt = ''
-        if pres:
-            partes = []
-            if pres.get('volumen_ml'):
-                partes.append(str(pres['volumen_ml']) + 'ml')
-            if pres.get('peso_g'):
-                partes.append(str(pres['peso_g']) + 'g')
-            if pres.get('etiqueta'):
-                partes.append(_html.escape(str(pres['etiqueta'])))
-            pres_txt = ' · '.join(partes)
-        else:
-            pres_txt = '<span style="color:#dc2626">sin presentación cargada</span>'
+        alcanza = (p['alcanza_hasta'] + ' · ' + str(int(p['cobertura_dias'])) + 'd') if p['alcanza_hasta'] else '—'
         flags = []
         if not p['tiene_formula']:
-            flags.append('<span style="color:#dc2626;font-weight:700">sin fórmula/lote</span>')
+            flags.append('<span style="color:#dc2626;font-weight:700">⚠ sin fórmula/lote</span>')
         if not p['tiene_venta']:
             flags.append('<span style="color:#b45309">sin venta Shopify</span>')
-        alcanza = (p['alcanza_hasta'] + ' (' + str(int(p['alcanza_dias'])) + 'd)') if p['alcanza_hasta'] else '—'
-        filas.append(
-            '<tr style="background:' + bg + '">'
-            + '<td style="font-weight:600">' + nombre + '<br><span style="font-size:11px;color:#94a3b8">' + _html.escape(p['categoria']) + '</span></td>'
-            + '<td style="text-align:right;white-space:nowrap">'
-            + '<input type="number" step="0.1" min="0" value="' + format(p['volumen'], 'g') + '" id="vol_' + str(idx) + '" data-prod="' + prod_attr + '" '
-            + 'style="width:70px;text-align:right;padding:4px 6px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">'
-            + ' <button onclick="guardarVol(' + str(idx) + ')" title="Guardar volumen" '
-            + 'style="border:none;background:#0d9488;color:#fff;border-radius:6px;padding:4px 9px;cursor:pointer;font-weight:700">✓</button>'
-            + '<div style="font-size:10px;color:#94a3b8">ml por unidad</div></td>'
-            + '<td>' + _badge.get(p['fuente'], p['fuente']) + '<br><span style="font-size:10px;color:#94a3b8">' + pres_txt + '</span></td>'
-            + '<td style="text-align:right">' + str(p['lote_size_kg']) + ' kg<br><span style="font-size:11px;color:#0d9488;font-weight:700">' + format(p['unidades_por_lote'], ',') + ' u/lote</span></td>'
-            + '<td style="text-align:right">' + format(p['velocidad_dia'], '.1f') + '/d' + (' <span style="color:#16a34a">↑x' + format(p['tendencia'], '.1f') + '</span>' if p['tendencia'] > 1.05 else '') + '</td>'
-            + '<td style="text-align:right">' + format(p['stock_efectivo_u'], ',') + ' u<br><span style="font-size:10px;color:#94a3b8">Shopify ' + format(p['stock_shopify_u'], ',') + ' + pipe ' + format(p['pipeline_u'], ',') + '</span></td>'
-            + '<td style="text-align:center;font-weight:600">' + alcanza + '</td>'
-            + '<td style="font-size:11px">' + ' · '.join(flags) + '</td>'
-            + '</tr>')
+        if not p['skus']:
+            flags.append('<span style="color:#dc2626;font-weight:700">sin SKUs mapeados</span>')
+        flags_html = ('<div style="font-size:11px;margin-top:4px">' + ' · '.join(flags) + '</div>') if flags else ''
+        sku_rows = ''
+        for s in p['skus']:
+            sku_attr = _html.escape(str(s['sku']), quote=True)
+            tono = (' · ' + _html.escape(str(s['tono']))) if s['tono'] else ''
+            tend = ' <span style="color:#16a34a">↑x' + format(s['tendencia'], '.1f') + '</span>' if s['tendencia'] > 1.05 else ''
+            sku_rows += (
+                '<tr style="border-top:1px solid #f1f5f9">'
+                + '<td style="font-size:12px">' + _html.escape(str(s['sku'])) + tono + '</td>'
+                + '<td style="font-size:12px;text-align:right">' + format(s['velocidad'], '.1f') + '/d' + tend + '</td>'
+                + '<td style="font-size:12px;text-align:right">' + format(s['unidades'], ',') + ' u</td>'
+                + '<td style="text-align:right;white-space:nowrap">'
+                + '<input type="number" step="0.1" min="0" value="' + format(s['volumen'], 'g') + '" id="vol_' + str(sidx) + '" data-sku="' + sku_attr + '" '
+                + 'style="width:64px;text-align:right;padding:3px 5px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px"> ml'
+                + ' <button onclick="guardarVol(' + str(sidx) + ')" style="border:none;background:#0d9488;color:#fff;border-radius:6px;padding:3px 8px;cursor:pointer;font-weight:700">✓</button></td>'
+                + '<td>' + _vol_badge(s['fuente_vol']) + '</td>'
+                + '</tr>')
+            sidx += 1
+        if not p['skus']:
+            sku_rows = '<tr><td colspan="5" style="font-size:12px;color:#dc2626;padding:6px 0">Sin SKUs en el mapa · no se puede calcular volumen.</td></tr>'
+        secciones.append(
+            '<div style="background:' + bg + ';border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin-bottom:10px">'
+            + '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:baseline">'
+            + '<div><b style="font-size:15px">' + nombre + '</b> <span style="color:#94a3b8;font-size:11px">' + _html.escape(p['categoria']) + '</span></div>'
+            + '<div style="font-size:12px;color:#475569">lote <b>' + str(p['lote_size_kg']) + ' kg</b> · demanda <b>' + format(p['demanda_g_dia'], ',.0f') + ' g/d</b> · stock <b>' + format(p['stock_efectivo_g'], ',') + ' g</b> · alcanza hasta <b>' + alcanza + '</b></div>'
+            + '</div>' + flags_html
+            + '<table style="width:100%;margin-top:8px;border-collapse:collapse">'
+            + '<tr style="color:#64748b;font-size:11px;text-align:left"><th style="padding:4px 0">Tamaño / SKU</th><th style="text-align:right">Venta</th><th style="text-align:right">Disponible</th><th style="text-align:right">Volumen</th><th>Fuente</th></tr>'
+            + sku_rows + '</table></div>')
 
     html_doc = (
         '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         '<title>Verificar volúmenes · Planeación</title>'
         '<style>body{font-family:system-ui,Segoe UI,Roboto,sans-serif;margin:0;background:#f8fafc;color:#1e293b}'
-        '.wrap{max-width:1200px;margin:0 auto;padding:20px}'
+        '.wrap{max-width:1100px;margin:0 auto;padding:20px}'
         'h1{font-size:20px;margin:0 0 4px}.sub{color:#64748b;font-size:13px;margin-bottom:16px}'
         '.cards{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}'
-        '.card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px 16px;min-width:120px}'
+        '.card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px 16px;min-width:110px}'
         '.card b{font-size:22px;display:block}.card span{font-size:12px;color:#64748b}'
-        'table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)}'
-        'th{background:#0d9488;color:#fff;text-align:left;padding:9px 10px;font-size:12px}'
-        'td{padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:13px;vertical-align:top}'
+        'th{font-weight:600}'
         'a.back{color:#0d9488;text-decoration:none;font-size:13px}</style></head><body><div class="wrap">'
         '<a class="back" href="/admin/plan-calendario">← Volver al calendario</a>'
-        '<h1>📏 Verificar volúmenes de envase · paso 1 de planeación</h1>'
-        '<div class="sub">De aquí salen las fechas: kilos producidos ÷ volumen del envase = unidades → para cuántos días alcanzan. '
-        'Revisá que cada producto use su <b>envase real</b> (verde). Los marcados ⚠/≈ usan un valor <b>adivinado</b> y hay que cargarles la presentación real.</div>'
+        '<h1>📏 Verificar volúmenes por tamaño · paso 1 de planeación</h1>'
+        '<div class="sub">Un producto puede venderse en varios tamaños (ej. 30 ml + 10 ml). La planeación es en <b>gramos</b>: '
+        'demanda/día = Σ (ventas × volumen de cada tamaño); el bulk se fabrica junto. Escribí el <b>volumen (ml) de cada tamaño/SKU</b> y dale ✓. '
+        'Los ámbar (≈ adivinado) usan un valor supuesto hasta que les cargues el ml real.</div>'
         '<div class="cards">'
-        + '<div class="card"><b>' + str(resumen['total']) + '</b><span>productos activos</span></div>'
-        + '<div class="card" style="border-color:#86efac"><b style="color:#166534">' + str(resumen['envase_cargado']) + '</b><span>envase real cargado</span></div>'
-        + '<div class="card" style="border-color:#fde047"><b style="color:#854d0e">' + str(resumen['volumen_adivinado']) + '</b><span>volumen adivinado</span></div>'
+        + '<div class="card"><b>' + str(resumen['total']) + '</b><span>productos · ' + str(resumen['total_skus']) + ' tamaños</span></div>'
+        + '<div class="card" style="border-color:#86efac"><b style="color:#166534">' + str(resumen['volumen_completo']) + '</b><span>volumen completo</span></div>'
+        + '<div class="card" style="border-color:#fde047"><b style="color:#854d0e">' + str(resumen['volumen_adivinado']) + '</b><span>con volumen adivinado</span></div>'
         + '<div class="card" style="border-color:#fecaca"><b style="color:#991b1b">' + str(resumen['sin_formula']) + '</b><span>sin fórmula/lote</span></div>'
         + '<div class="card"><b>' + str(resumen['sin_venta']) + '</b><span>sin venta Shopify</span></div>'
         + '</div>'
-        '<table><thead><tr><th>Producto</th><th>Volumen envase</th><th>Fuente</th><th>Lote</th>'
-        '<th>Venta</th><th>Stock efectivo</th><th>Alcanza hasta</th><th>Alertas</th></tr></thead><tbody>'
-        + ''.join(filas)
-        + '</tbody></table>'
-        '<div class="sub" style="margin-top:14px">Escribí el <b>volumen en ml por unidad</b> de cada producto y dale ✓. '
-        'Ese volumen manda sobre todo (es lo que define para cuántos días alcanza y la fecha de producción). '
-        '"Stock efectivo" ya incluye lo producido ≤7d que aún no aparece en Shopify (pipeline).</div>'
+        + ''.join(secciones)
+        + '<div class="sub" style="margin-top:8px">"stock" y "demanda" están en gramos del bulk. "Stock" ya incluye lo producido ≤7d que aún no aparece en Shopify (pipeline).</div>'
         '<div id="vol-msg" style="position:fixed;bottom:16px;right:16px;padding:10px 16px;border-radius:8px;'
         'font-weight:700;display:none;box-shadow:0 2px 8px rgba(0,0,0,.15)"></div>'
         '<script>'
@@ -11688,13 +11688,13 @@ def plan_verificar_volumenes_page():
         'setTimeout(function(){m.style.display="none";},2500);}'
         'async function guardarVol(idx){'
         'var el=document.getElementById("vol_"+idx);if(!el)return;'
-        'var prod=el.dataset.prod;var vol=parseFloat(el.value||"0")||0;'
+        'var sku=el.dataset.sku;var vol=parseFloat(el.value||"0")||0;'
         'try{var r=await fetch("/api/plan/set-volumen",{method:"POST",'
         'headers:{"Content-Type":"application/json","X-CSRFToken":_csrf()},'
-        'body:JSON.stringify({producto:prod,volumen_ml:vol})});'
+        'body:JSON.stringify({sku:sku,volumen_ml:vol})});'
         'var d=await r.json().catch(function(){return{};});'
         'if(!r.ok||!d.ok){_toast("Error: "+(d.error||r.status),false);return;}'
-        'el.style.background="#dcfce7";_toast("✓ "+prod+" → "+vol+" ml",true);'
+        'el.style.background="#dcfce7";_toast("✓ "+sku+" → "+vol+" ml",true);'
         '}catch(e){_toast("Error: "+e,false);}}'
         '</script>'
         '</div></body></html>')

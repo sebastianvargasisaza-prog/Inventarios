@@ -110,8 +110,8 @@ def test_proyeccion_incluye_pipeline(app, db_clean):
         res = _proyectar_horizonte_2y(get_db(), dias=300, usuario='test')
     assert res['creados'] >= 1
     lotes = _eos_proyeccion()
-    # el pipeline (1000 u) quedó contado en el stock efectivo (visible en la obs)
-    assert any('pipeline 1000' in (l[2] or '') for l in lotes), [l[2] for l in lotes][:3]
+    # el pipeline (30 kg = 30000 g) quedó contado en el stock efectivo (visible en la obs)
+    assert any('pipeline 30000' in (l[2] or '') for l in lotes), [l[2] for l in lotes][:3]
 
 
 def test_proyeccion_sin_ventas_no_planea(app, db_clean):
@@ -125,59 +125,51 @@ def test_proyeccion_sin_ventas_no_planea(app, db_clean):
 
 
 def test_verificar_volumenes_detecta_fuente(app, db_clean):
-    """Paso 1: el volumen real cargado (presentación) se distingue del adivinado."""
+    """Paso 1: por SKU, el volumen fijado (sku) se distingue del adivinado (fallback)."""
     _api()
     from blueprints.plan import _verificar_volumenes_data
     from database import get_db
-    # producto CON presentación real (200 ml) → fuente 'presentacion'
-    _seed_producto(producto='CON ENVASE', sku='SKU-CE', vel=5, lote_kg=30)
+    # SKU con volumen fijado (200 ml) → fuente_vol 'sku'
+    _seed_producto(producto='CON VOL', sku='SKU-CV', vel=5, lote_kg=30)
     conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
-    conn.execute("DELETE FROM producto_presentaciones WHERE producto_nombre='CON ENVASE'")
-    conn.execute("INSERT INTO producto_presentaciones (producto_nombre,presentacion_codigo,etiqueta,"
-                 "volumen_ml,es_default,activo) VALUES (?,?,?,?,1,1)", ('CON ENVASE', 'PC-CE', '200ml', 200))
+    conn.execute("UPDATE sku_producto_map SET volumen_ml=200 WHERE sku='SKU-CV'")
     conn.commit(); conn.close()
-    # producto SIN presentación (categoría suero) → fuente 'categoria' (adivinado)
-    _seed_producto(producto='SIN ENVASE', sku='SKU-SE', vel=5, lote_kg=30)
+    # SKU sin volumen → fallback por producto (categoría suero → 30), adivinado
+    _seed_producto(producto='SIN VOL', sku='SKU-SV2', vel=5, lote_kg=30)
     with app.app_context():
         resumen, prods = _verificar_volumenes_data(get_db())
     by = {p['producto']: p for p in prods}
-    assert by['CON ENVASE']['fuente'] == 'presentacion'
-    assert by['CON ENVASE']['volumen'] == 200
-    assert by['SIN ENVASE']['fuente'] == 'categoria'
-    assert by['SIN ENVASE']['volumen'] == 30
-    # unidades/lote = 30kg*1000/volumen
-    assert by['CON ENVASE']['unidades_por_lote'] == 150   # 30000/200
-    assert by['SIN ENVASE']['unidades_por_lote'] == 1000  # 30000/30
-    assert resumen['envase_cargado'] >= 1 and resumen['volumen_adivinado'] >= 1
+    cv = by['CON VOL']['skus'][0]
+    sv = by['SIN VOL']['skus'][0]
+    assert cv['fuente_vol'] == 'sku' and cv['volumen'] == 200
+    assert sv['fuente_vol'].startswith('producto:') and sv['volumen'] == 30
+    # demanda en gramos = velocidad × volumen (5 × 200 = 1000 g/d ; 5 × 30 = 150 g/d)
+    assert by['CON VOL']['demanda_g_dia'] == 1000
+    assert by['SIN VOL']['demanda_g_dia'] == 150
+    assert resumen['volumen_completo'] >= 1 and resumen['volumen_adivinado'] >= 1
 
 
-def test_set_volumen_directo_manda(app, db_clean):
-    """Fijar el volumen por producto (sin envase) manda sobre el fallback y queda
-    como 'volumen_directo' en la verificación."""
+def test_set_volumen_sku_manda(app, db_clean):
+    """Fijar el volumen de un SKU manda sobre el fallback (fuente 'sku')."""
     from .conftest import TEST_PASSWORD, csrf_headers
     _api()
-    from blueprints.plan import _verificar_volumenes_data
-    from blueprints.auto_plan import _factor_g_por_unidad_detalle
+    from blueprints.auto_plan import _volumen_sku
     from database import get_db
-    _seed_producto(producto='VOL DIRECTO', sku='SKU-VD', vel=5, lote_kg=30)  # categoría suero → 30 por defecto
+    _seed_producto(producto='VOL SKU', sku='SKU-VS', vel=5, lote_kg=30)
     c = app.test_client()
     c.post('/login', data={'username': 'sebastian', 'password': TEST_PASSWORD}, headers=csrf_headers())
-    r = c.post('/api/plan/set-volumen', json={'producto': 'VOL DIRECTO', 'volumen_ml': 200}, headers=csrf_headers())
+    r = c.post('/api/plan/set-volumen', json={'sku': 'SKU-VS', 'volumen_ml': 200}, headers=csrf_headers())
     assert r.status_code == 200, r.data[:200]
     with app.app_context():
-        factor, fuente, det, pres = _factor_g_por_unidad_detalle(get_db().cursor(), 'VOL DIRECTO')
-        assert factor == 200 and fuente == 'volumen_directo'
-        _, prods = _verificar_volumenes_data(get_db())
-        row = [p for p in prods if p['producto'] == 'VOL DIRECTO'][0]
-        assert row['volumen'] == 200 and row['unidades_por_lote'] == 150  # 30000/200
-        assert row['fuente'] == 'volumen_directo'
+        vol, fuente = _volumen_sku(get_db().cursor(), 'SKU-VS', 'VOL SKU')
+        assert vol == 200 and fuente == 'sku'
 
 
-def test_set_volumen_producto_inexistente_404(app, db_clean):
+def test_set_volumen_sku_inexistente_404(app, db_clean):
     from .conftest import TEST_PASSWORD, csrf_headers
     c = app.test_client()
     c.post('/login', data={'username': 'sebastian', 'password': TEST_PASSWORD}, headers=csrf_headers())
-    r = c.post('/api/plan/set-volumen', json={'producto': 'NO EXISTE XYZ', 'volumen_ml': 50}, headers=csrf_headers())
+    r = c.post('/api/plan/set-volumen', json={'sku': 'SKU-NOEXISTE-XYZ', 'volumen_ml': 50}, headers=csrf_headers())
     assert r.status_code == 404, r.data[:200]
 
 
