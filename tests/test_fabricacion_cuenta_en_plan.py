@@ -75,6 +75,58 @@ def test_sync_fabricacion_calendario_reconcilia(app, db_clean):
     assert r and r[0] == 'completado' and r[1] == 'eos_retroactivo' and r[2]
 
 
+def test_mirror_cierra_pendiente_en_vez_de_duplicar(app, db_clean):
+    """Si ya hay un lote PENDIENTE ese (producto, fecha), el espejo lo CIERRA como
+    completado en vez de crear un duplicado (caso 4-jun)."""
+    _api()
+    from blueprints.plan import _mirror_produccion_a_calendario
+    from database import get_db
+    conn0 = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    conn0.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes) "
+                  "VALUES (?,?,?,?,?,1)", ('SUERO EXF DUP', '2026-06-04', 'programado', 'eos_plan', 45))
+    pend = conn0.execute("SELECT id FROM produccion_programada WHERE producto='SUERO EXF DUP'").fetchone()[0]
+    conn0.commit(); conn0.close()
+    with app.app_context():
+        conn = get_db()
+        n = _mirror_produccion_a_calendario(conn, 80001, 'SUERO EXF DUP', 45,
+                                            '2026-06-04T10:00:00', 'L', usuario='test')
+        conn.commit()
+        assert n == 1
+    conn0 = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    estado = conn0.execute("SELECT estado FROM produccion_programada WHERE id=?", (pend,)).fetchone()[0]
+    total = conn0.execute("SELECT COUNT(*) FROM produccion_programada WHERE producto='SUERO EXF DUP' "
+                          "AND substr(fecha_programada,1,10)='2026-06-04'").fetchone()[0]
+    conn0.close()
+    assert estado == 'completado'   # cerró el pendiente
+    assert total == 1               # NO duplicó
+
+
+def test_cerrar_pendientes_ya_producidos(app, db_clean):
+    """Un pendiente cuyo mismo (producto, fecha) ya tiene un completado → se cancela."""
+    _api()
+    from blueprints.plan import _cerrar_pendientes_ya_producidos
+    from database import get_db
+    conn0 = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    conn0.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes,fin_real_at,inicio_real_at) "
+                  "VALUES (?,?,?,?,?,1,?,?)", ('GEL DUP', '2026-06-04', 'completado', 'eos_retroactivo', 45, '2026-06-04', '2026-06-04'))
+    conn0.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes) "
+                  "VALUES (?,?,?,?,?,1)", ('GEL DUP', '2026-06-04', 'programado', 'eos_plan', 45))
+    pend = conn0.execute("SELECT id FROM produccion_programada WHERE producto='GEL DUP' AND estado='programado'").fetchone()[0]
+    # un pendiente FUTURO de otro día NO debe tocarse
+    conn0.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes) "
+                  "VALUES (?,?,?,?,?,1)", ('GEL DUP', '2026-07-04', 'pendiente', 'eos_plan', 45))
+    otro = conn0.execute("SELECT id FROM produccion_programada WHERE producto='GEL DUP' AND substr(fecha_programada,1,10)='2026-07-04'").fetchone()[0]
+    conn0.commit(); conn0.close()
+    with app.app_context():
+        conn = get_db()
+        cerrados = _cerrar_pendientes_ya_producidos(conn, usuario='test')
+        assert cerrados >= 1
+    conn0 = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    assert conn0.execute("SELECT estado FROM produccion_programada WHERE id=?", (pend,)).fetchone()[0] == 'cancelado'
+    assert conn0.execute("SELECT estado FROM produccion_programada WHERE id=?", (otro,)).fetchone()[0] == 'pendiente'
+    conn0.close()
+
+
 def test_anclas_normaliza_nombre_M13(app, db_clean):
     """El espejo de Fabricación con nombre variante (acento/puntuación) igual debe
     contar como ancla: _calcular_animus_dtc indexa el ancla normalizada."""

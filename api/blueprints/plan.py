@@ -10912,14 +10912,36 @@ def _mirror_produccion_a_calendario(conn, prod_id, producto, cantidad_kg,
     except (TypeError, ValueError):
         return 0
     cur = conn.cursor()
-    if cur.execute("SELECT 1 FROM produccion_programada WHERE origen='eos_retroactivo' "
-                   "AND observaciones LIKE ? LIMIT 1", ('%' + marca + '%',)).fetchone():
+    # idempotencia: ya reflejada (marcador [fab#id] en cualquier fila)
+    if cur.execute("SELECT 1 FROM produccion_programada WHERE observaciones LIKE ? LIMIT 1",
+                   ('%' + marca + '%',)).fetchone():
         return 0
+    # ya hay un lote EJECUTADO de ese (producto, fecha) → no duplicar
     if cur.execute("SELECT 1 FROM produccion_programada "
                    "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) AND substr(fecha_programada,1,10)=? "
                    "AND fin_real_at IS NOT NULL AND COALESCE(estado,'') NOT IN ('cancelado') LIMIT 1",
                    (producto, fd)).fetchone():
         return 0
+    # Si YA hay un lote PENDIENTE ese (producto, fecha) = lo que se planeó y ahora se
+    # produjo → CERRARLO como completado (NO crear un duplicado · esto evitaba el caso
+    # del 4-jun: pendiente + retroactivo del mismo producto el mismo día).
+    pend = cur.execute(
+        "SELECT id FROM produccion_programada "
+        "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) AND substr(fecha_programada,1,10)=? "
+        "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+        "AND fin_real_at IS NULL AND inicio_real_at IS NULL "
+        "AND COALESCE(origen,'') <> 'eos_b2b' ORDER BY id LIMIT 1", (producto, fd)).fetchone()
+    if pend:
+        cur.execute(
+            "UPDATE produccion_programada SET estado='completado', kg_real=?, "
+            "inicio_real_at=?, fin_real_at=?, inventario_descontado_at=?, "
+            "observaciones=COALESCE(observaciones,'')||? WHERE id=?",
+            (cant, str(fecha_full), str(fecha_full), str(fecha_full),
+             ' · cerrado por Fabricación ' + marca, pend[0]))
+        audit_log(cur, usuario=usuario, accion='BACKFILL_FABRICACION', tabla='produccion_programada',
+                  registro_id=pend[0], despues={'producto': producto, 'fecha': fd, 'kg': cant,
+                                                'fab_id': prod_id, 'modo': 'cerro_pendiente_planeado'})
+        return 1
     obs = ('Retroactivo de Fabricación %s' % marca) + ((' lote=%s' % lote) if lote else '')
     cur.execute(
         "INSERT INTO produccion_programada "
@@ -10932,6 +10954,35 @@ def _mirror_produccion_a_calendario(conn, prod_id, producto, cantidad_kg,
     audit_log(cur, usuario=usuario, accion='BACKFILL_FABRICACION', tabla='produccion_programada',
               registro_id=nid, despues={'producto': producto, 'fecha': fd, 'kg': cant, 'fab_id': prod_id})
     return 1
+
+
+def _cerrar_pendientes_ya_producidos(conn, usuario='cron-fab'):
+    """Cancela los lotes PENDIENTES cuyo mismo (producto, fecha) ya tiene un lote
+    COMPLETADO (= se planeó y se produjo · el pendiente es redundante). Limpia el
+    caso 'producido + aún pendiente el mismo día'. Devuelve cuántos cerró."""
+    cur = conn.cursor()
+    rows = cur.execute(
+        "SELECT p.id, p.producto FROM produccion_programada p "
+        "WHERE COALESCE(p.estado,'') NOT IN ('cancelado','completado') "
+        "AND p.fin_real_at IS NULL AND p.inicio_real_at IS NULL "
+        "AND COALESCE(p.origen,'') <> 'eos_b2b' "
+        "AND EXISTS (SELECT 1 FROM produccion_programada c "
+        "  WHERE UPPER(TRIM(c.producto))=UPPER(TRIM(p.producto)) "
+        "  AND substr(c.fecha_programada,1,10)=substr(p.fecha_programada,1,10) "
+        "  AND c.id <> p.id AND c.estado='completado')").fetchall()
+    cerrados = 0
+    for rid, prod in rows:
+        cur.execute("UPDATE produccion_programada SET estado='cancelado', "
+                    "observaciones=COALESCE(observaciones,'')||' [ya producido ese día · cerrado]' "
+                    "WHERE id=? AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+                    "AND fin_real_at IS NULL AND inicio_real_at IS NULL", (rid,))
+        if cur.rowcount:
+            cerrados += 1
+            audit_log(cur, usuario=usuario, accion='CERRAR_PENDIENTE_YA_PRODUCIDO',
+                      tabla='produccion_programada', registro_id=rid, despues={'producto': prod})
+    if cerrados:
+        conn.commit()
+    return cerrados
 
 
 def _sync_fabricacion_calendario(conn, usuario='cron-fab'):
@@ -10948,7 +10999,8 @@ def _sync_fabricacion_calendario(conn, usuario='cron-fab'):
         creados += _mirror_produccion_a_calendario(conn, pid, prod, cant, fecha, lote, usuario=usuario)
     if creados:
         conn.commit()
-    return {'producciones_total': len(prods), 'creados': creados}
+    cerrados = _cerrar_pendientes_ya_producidos(conn, usuario=usuario)
+    return {'producciones_total': len(prods), 'creados': creados, 'cerrados': cerrados}
 
 
 @bp.route("/api/plan/backfill-fabricacion", methods=["GET", "POST"])
@@ -11030,7 +11082,8 @@ def plan_backfill_fabricacion():
             conn, it['prod_id'], it['producto'], it['cantidad_kg'],
             it['fecha_full'], it['lote'], usuario=user)
     conn.commit()
-    return jsonify({'ok': True, 'dry_run': False, 'creados': creados, **preview})
+    cerrados = _cerrar_pendientes_ya_producidos(conn, usuario=user)
+    return jsonify({'ok': True, 'dry_run': False, 'creados': creados, 'cerrados': cerrados, **preview})
 
 
 @bp.route("/api/plan/diag-rescate", methods=["GET"])
@@ -14731,15 +14784,18 @@ function render(){
 
       // Indicador de capacidad del día · regla: máx 2 producciones/día, y un lote
       // grande (>50kg) debería ir SOLO. Marca el día sobrecargado en rojo.
-      const _hayGrande = lotes.some(l => (l.kg || 0) > 50);
-      const _sobrecarga = !isOtroMes && (lotes.length > 2 || (_hayGrande && lotes.length > 1));
+      // FIX 15-jun: SOLO cuenta lo PENDIENTE (lo ya completado es historial · no
+      // satura el día ni debe disparar la alerta de sobrecarga · M5/M6).
+      const _pend = lotes.filter(l => (l.estado || '') !== 'completado');
+      const _hayGrande = _pend.some(l => (l.kg || 0) > 50);
+      const _sobrecarga = !isOtroMes && (_pend.length > 2 || (_hayGrande && _pend.length > 1));
       let _cellStyle = isOtroMes ? 'opacity:.4' : '';
       if (_sobrecarga) _cellStyle += ';box-shadow:inset 0 0 0 2px #dc2626';
 
       grid += '<div class="' + cls + '" data-date="' + fStr + '" data-weekend="' + (isWeekend ? '1':'0') + '" data-festivo="' + (isFestivo ? '1':'0') + '" style="' + _cellStyle + '">';
       grid += '<div class="day-num"><span>' + fecha.getDate() + '</span>';
       if (isFestivo) grid += '<span class="festivo-tag">FEST</span>';
-      if (_sobrecarga) grid += '<span title="Día sobrecargado: ' + lotes.length + ' lote(s)' + (_hayGrande ? ' · incluye un lote grande que debería ir solo' : ' · máx 2/día') + '" style="background:#dc2626;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;margin-left:4px">⚠ ' + lotes.length + '</span>';
+      if (_sobrecarga) grid += '<span title="Día sobrecargado: ' + _pend.length + ' lote(s) pendientes' + (_hayGrande ? ' · incluye un lote grande que debería ir solo' : ' · máx 2/día') + '" style="background:#dc2626;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;margin-left:4px">⚠ ' + _pend.length + '</span>';
       grid += '</div>';
 
       lotes.forEach((lt, lotIdx) => {
