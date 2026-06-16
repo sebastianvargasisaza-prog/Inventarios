@@ -242,6 +242,35 @@ def test_mp_alcanza_para_lote_con_faltante(app, db_clean):
     assert ok is False and faltantes
 
 
+def test_revisar_plan_detecta_vende_sin_plan(app, db_clean):
+    """La revisión cruza producido + necesidad Shopify + plan; marca 'vende sin plan'
+    y queda OK cuando hay lotes proyectados."""
+    from .conftest import TEST_PASSWORD, csrf_headers
+    _api()
+    from blueprints.plan import _revisar_plan_data, _proyectar_horizonte_2y
+    from database import get_db
+    _seed_producto(producto='REV SINPLAN', sku='SKU-RSP', vel=10, lote_kg=30, stock=10)
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=30)
+    conn.execute("UPDATE sku_producto_map SET volumen_ml=30 WHERE sku='SKU-RSP'")
+    conn.commit(); conn.close()
+    with app.app_context():
+        # sin proyectar todavía → se vende pero no hay plan
+        _, prods = _revisar_plan_data(get_db())
+        row = [p for p in prods if p['producto'] == 'REV SINPLAN'][0]
+        assert 'se vende pero SIN producción planeada' in row['razones']
+        # proyectar SOLO ese producto → ahora tiene plan → ok
+        _proyectar_horizonte_2y(get_db(), dias=200, usuario='test', solo_producto='REV SINPLAN')
+        _, prods2 = _revisar_plan_data(get_db())
+        row2 = [p for p in prods2 if p['producto'] == 'REV SINPLAN'][0]
+        assert row2['n_proyectados'] >= 1
+        assert 'se vende pero SIN producción planeada' not in row2['razones']
+
+    c = app.test_client()
+    c.post('/login', data={'username': 'sebastian', 'password': TEST_PASSWORD}, headers=csrf_headers())
+    r = c.get('/admin/revisar-plan')
+    assert r.status_code == 200 and b'Revisar plan' in r.data
+
+
 def test_set_volumen_sku_inexistente_404(app, db_clean):
     from .conftest import TEST_PASSWORD, csrf_headers
     c = app.test_client()

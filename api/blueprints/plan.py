@@ -11615,6 +11615,151 @@ def plan_aceptar_adelanto():
                     'dias_adelanto': s['dias_adelanto'], 'recalculado': res.get('creados', 0)})
 
 
+def _revisar_plan_data(conn):
+    """Revisión del plan a 2 años · por producto cruza: lo ya PRODUCIDO (última
+    producción real + pipeline), lo que SHOPIFY necesita (demanda/cobertura) y el
+    PLAN proyectado (próximos lotes). Marca lo que hay que revisar para dejarlo
+    perfecto. Solo lectura."""
+    from datetime import timedelta as _td
+    import blueprints.auto_plan as _ap
+    c = conn.cursor()
+    hoy = _hoy_colombia()
+    rows = c.execute(
+        "SELECT spc.producto_nombre, fh.lote_size_kg FROM sku_planeacion_config spc "
+        "LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(spc.producto_nombre)) "
+        "WHERE spc.activo=1 ORDER BY spc.producto_nombre").fetchall()
+    out = []
+    for producto, lote_kg in rows:
+        dsg = _ap._demanda_stock_gramos(c, producto)
+        demand_g = dsg['demand_g']
+        cob = dsg['cobertura_dias']
+        alcanza = (hoy + _td(days=int(cob))).isoformat() if cob is not None else None
+        ur = c.execute(
+            "SELECT substr(COALESCE(fin_real_at,inicio_real_at),1,10), COALESCE(kg_real,cantidad_kg,0) "
+            "FROM produccion_programada WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) "
+            "AND (fin_real_at IS NOT NULL OR inicio_real_at IS NOT NULL) "
+            "ORDER BY COALESCE(fin_real_at,inicio_real_at) DESC LIMIT 1", (producto,)).fetchone()
+        ultima_real = {'fecha': ur[0], 'kg': round(float(ur[1] or 0), 1)} if ur and ur[0] else None
+        fut = c.execute(
+            "SELECT substr(fecha_programada,1,10), COALESCE(cantidad_kg,0), COALESCE(origen,'') "
+            "FROM produccion_programada WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) "
+            "AND COALESCE(estado,'') NOT IN ('cancelado','completado') AND fin_real_at IS NULL "
+            "AND inicio_real_at IS NULL AND fecha_programada >= ? ORDER BY fecha_programada", (producto, hoy.isoformat())).fetchall()
+        proximos = [{'fecha': r[0], 'kg': round(float(r[1] or 0), 1), 'origen': r[2]} for r in fut]
+        tiene_venta = demand_g > 0
+        skus = dsg['skus']
+        vol_completo = bool(skus) and all(not str(s['fuente_vol']).startswith('producto:') for s in skus)
+        razones = []
+        if not (lote_kg and lote_kg > 0):
+            razones.append('sin fórmula/lote')
+        if not skus:
+            razones.append('sin SKUs mapeados')
+        elif not vol_completo:
+            razones.append('volumen adivinado')
+        if tiene_venta and lote_kg and not proximos:
+            razones.append('se vende pero SIN producción planeada')
+        if tiene_venta and cob is not None and cob < 0:
+            razones.append('ya agotado')
+        out.append({
+            'producto': producto, 'lote_kg': lote_kg or 0,
+            'demanda_g_dia': round(demand_g, 0),
+            'cobertura_dias': round(cob, 0) if cob is not None else None, 'alcanza_hasta': alcanza,
+            'ultima_real': ultima_real, 'pipeline_g': int(round(dsg['pipe_g'])),
+            'stock_g': int(round(dsg['stock_g'])), 'n_proyectados': len(proximos),
+            'proximos': proximos[:5], 'tiene_venta': tiene_venta,
+            'razones': razones, 'ok': not razones,
+        })
+    out.sort(key=lambda x: (x['ok'], -(x['demanda_g_dia'] or 0), x['producto']))
+    resumen = {
+        'total': len(out), 'ok': sum(1 for x in out if x['ok']),
+        'revisar': sum(1 for x in out if not x['ok']),
+        'vende_sin_plan': sum(1 for x in out if 'se vende pero SIN producción planeada' in x['razones']),
+        'sin_venta': sum(1 for x in out if not x['tiene_venta']),
+    }
+    return resumen, out
+
+
+@bp.route("/api/plan/revisar", methods=["GET"])
+def plan_revisar():
+    """JSON · revisión del plan a 2 años (producido + necesidad Shopify + plan)."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    resumen, productos = _revisar_plan_data(get_db())
+    return jsonify({'ok': True, 'resumen': resumen, 'productos': productos})
+
+
+@bp.route("/admin/revisar-plan", methods=["GET"])
+def plan_revisar_page():
+    """Página de revisión del plan a 2 años · cruza producido + necesidad Shopify +
+    plan proyectado, para dejarlo perfecto."""
+    if not session.get("compras_user"):
+        from flask import redirect
+        return redirect("/login?next=/admin/revisar-plan")
+    from flask import Response
+    import html as _html
+    resumen, productos = _revisar_plan_data(get_db())
+    filas = []
+    for p in productos:
+        bg = '#fff7ed' if not p['ok'] else '#ffffff'
+        nombre = _html.escape(p['producto'])
+        ur = p['ultima_real']
+        ur_txt = (ur['fecha'] + ' · ' + format(ur['kg'], 'g') + ' kg') if ur else '<span style="color:#dc2626">nunca</span>'
+        if p['pipeline_g'] > 0:
+            ur_txt += ' <span style="font-size:10px;color:#0d9488">(+pipeline ' + format(p['pipeline_g'], ',') + ' g)</span>'
+        cob = (str(int(p['cobertura_dias'])) + 'd → ' + (p['alcanza_hasta'] or '')) if p['cobertura_dias'] is not None else '<span style="color:#94a3b8">sin venta</span>'
+        prox = p['proximos']
+        if prox:
+            prox_txt = ' · '.join([(x['fecha'] + ' (' + format(x['kg'], 'g') + 'kg' + ('·Fijo' if x['origen'] in ('eos_plan', 'eos_b2b') else '') + ')') for x in prox[:4]])
+            if p['n_proyectados'] > 4:
+                prox_txt += ' … +' + str(p['n_proyectados'] - 4)
+        else:
+            prox_txt = '<span style="color:#dc2626;font-weight:700">— sin lotes planeados —</span>'
+        razones = (' '.join(['<span style="background:#fee2e2;color:#991b1b;padding:1px 7px;border-radius:9px;font-size:10px;font-weight:700">' + _html.escape(r) + '</span>' for r in p['razones']])) if p['razones'] else '<span style="color:#166534;font-weight:700">✓ ok</span>'
+        filas.append(
+            '<tr style="background:' + bg + '">'
+            + '<td style="font-weight:600">' + nombre + '<br><span style="font-size:11px;color:#94a3b8">' + str(p['lote_kg']) + ' kg/lote · ' + str(p['n_proyectados']) + ' lotes plan</span></td>'
+            + '<td style="font-size:12px">' + ur_txt + '</td>'
+            + '<td style="font-size:12px;text-align:right">' + format(p['demanda_g_dia'], ',.0f') + ' g/d<br><span style="color:#94a3b8">' + cob + '</span></td>'
+            + '<td style="font-size:11px">' + prox_txt + '</td>'
+            + '<td>' + razones + '</td>'
+            + '</tr>')
+    html_doc = (
+        '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        '<title>Revisar plan 2 años</title>'
+        '<style>body{font-family:system-ui,Segoe UI,Roboto,sans-serif;margin:0;background:#f8fafc;color:#1e293b}'
+        '.wrap{max-width:1250px;margin:0 auto;padding:20px}h1{font-size:20px;margin:0 0 4px}'
+        '.sub{color:#64748b;font-size:13px;margin-bottom:16px}.cards{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px}'
+        '.card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px 16px;min-width:110px}'
+        '.card b{font-size:22px;display:block}.card span{font-size:12px;color:#64748b}'
+        'table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)}'
+        'th{background:#0d9488;color:#fff;text-align:left;padding:9px 10px;font-size:12px}'
+        'td{padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:13px;vertical-align:top}'
+        'a.back{color:#0d9488;text-decoration:none;font-size:13px}</style></head><body><div class="wrap">'
+        '<a class="back" href="/admin/plan-calendario">← Volver al calendario</a> &nbsp; '
+        '<a class="back" href="/admin/verificar-volumenes">📏 Volúmenes</a>'
+        '<h1>🔎 Revisar plan a 2 años · producido + necesidad Shopify + plan</h1>'
+        '<div class="sub">Por producto: <b>última producción real</b> (lo del calendario/Fabricación, + pipeline ≤7d) · '
+        '<b>lo que Shopify necesita</b> (demanda/día → hasta cuándo alcanza) · <b>el plan proyectado</b> (próximos lotes). '
+        'En naranja lo que hay que revisar. Si cambiaste volúmenes, dale "🔄 Actualizar plan ahora" en el calendario para regenerar.</div>'
+        '<div class="cards">'
+        + '<div class="card"><b>' + str(resumen['total']) + '</b><span>productos</span></div>'
+        + '<div class="card" style="border-color:#86efac"><b style="color:#166534">' + str(resumen['ok']) + '</b><span>ok</span></div>'
+        + '<div class="card" style="border-color:#fde047"><b style="color:#854d0e">' + str(resumen['revisar']) + '</b><span>a revisar</span></div>'
+        + '<div class="card" style="border-color:#fecaca"><b style="color:#991b1b">' + str(resumen['vende_sin_plan']) + '</b><span>vende sin plan</span></div>'
+        + '<div class="card"><b>' + str(resumen['sin_venta']) + '</b><span>sin venta</span></div>'
+        + '</div>'
+        '<table><thead><tr><th>Producto</th><th>Última producción real</th><th>Shopify necesita</th>'
+        '<th>Plan proyectado (próximos)</th><th>Revisar</th></tr></thead><tbody>'
+        + ''.join(filas) + '</tbody></table>'
+        '<div class="sub" style="margin-top:10px">"se vende pero SIN producción planeada" = la proyección no le puso lotes (revisá fórmula/volumen) · '
+        '"volumen adivinado" = cargá el ml real en Volúmenes · todo en gramos del bulk.</div>'
+        '</div></body></html>')
+    return Response(html_doc, mimetype="text/html")
+
+
 def _verificar_volumenes_data(conn):
     """Paso 1 de la planeación · por producto: qué VOLUMEN DE ENVASE mapea y de
     DÓNDE sale (envase real cargado vs adivinado), unidades por lote, velocidad y
@@ -15331,7 +15476,7 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
       <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" style="display:none" disabled>✅ Confirmar y programar TODO</button>
     </div>
   </div>
-  <div style="margin-top:6px;font-size:12px;color:#64748b">⚙️ <strong>Plan automático a 2 años:</strong> cada producto se proyecta solo según cómo se vende en Shopify y cuánto hay realmente producido. Se actualiza cada madrugada y adelanta solo la producción si la venta sube. Tú solo ajustas con ➕ lo manual.</div>
+  <div style="margin-top:6px;font-size:12px;color:#64748b">⚙️ <strong>Plan automático a 2 años:</strong> cada producto se proyecta solo según cómo se vende en Shopify y cuánto hay realmente producido. Se actualiza cada madrugada y adelanta solo la producción si la venta sube. Tú solo ajustas con ➕ lo manual. &nbsp;·&nbsp; <a href="/admin/revisar-plan" style="color:#0d9488;font-weight:700">🔎 Revisar plan</a> &nbsp;·&nbsp; <a href="/admin/verificar-volumenes" style="color:#0d9488;font-weight:700">📏 Volúmenes</a></div>
   <div id="sugerencias-adelanto" style="margin-top:10px"></div>
   <div class="legend">
     <span><span class="legend-dot" style="background:#6366f1"></span>🔁 Canónico (auto)</span>
