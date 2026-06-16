@@ -339,6 +339,33 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         "WHERE codigo_mp='MP00040'",
         "UPDATE maestro_mps SET nombre_inci='TOCOPHEROL' "
         "WHERE codigo_mp='MP00078' AND COALESCE(nombre_inci,'')=''",
+        # CRÍTICO · trigger formula_items exige material_id en maestro_mps activo=1.
+        # Garantizamos que los 22 MP de la fórmula existan y estén ACTIVOS antes de
+        # insertar (si alguno quedó inactivo/ausente en prod desde el 28-may, la mig
+        # fallaba con 'FK violation'). Reversible: el usuario re-desactiva si aplica.
+        "UPDATE maestro_mps SET activo=1 WHERE codigo_mp IN ('MPAGUALI01','MP00107','MP00195','MP00043','MP00148','MP00262','MP00245','MP00215','MP00110','MP00226','MP00223','MP00008','MP00006','MP00254','MP00040','MP00184','MP00240','MP00078','MP00233','MP00163','MP00068','MP00123') AND COALESCE(activo,0)<>1",
+        "INSERT INTO maestro_mps (codigo_mp,nombre_comercial,tipo_material,activo) SELECT 'MPAGUALI01','Agua Desionizada','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MPAGUALI01')",
+        "INSERT INTO maestro_mps (codigo_mp,nombre_comercial,tipo_material,activo) SELECT 'MP00107','Urea','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00107')",
+        "INSERT INTO maestro_mps (codigo_mp,nombre_comercial,tipo_material,activo) SELECT 'MP00195','Glicerina','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00195')",
+        "INSERT INTO maestro_mps (codigo_mp,nombre_comercial,tipo_material,activo) SELECT 'MP00043','Propanediol','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00043')",
+        "INSERT INTO maestro_mps (codigo_mp,nombre_comercial,tipo_material,activo) SELECT 'MP00148','Niacinamida','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00148')",
+        "INSERT INTO maestro_mps (codigo_mp,nombre_comercial,tipo_material,activo) SELECT 'MP00262','N-acetil glucosamina','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00262')",
+        "INSERT INTO maestro_mps (codigo_mp,nombre_comercial,tipo_material,activo) SELECT 'MP00245','1,2-Hexanediol','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00245')",
+        "INSERT INTO maestro_mps (codigo_mp,nombre_comercial,tipo_material,activo) SELECT 'MP00215','Betaina','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00215')",
+        "INSERT INTO maestro_mps (codigo_mp,nombre_comercial,tipo_material,activo) SELECT 'MP00110','Pantenol','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00110')",
+        "INSERT INTO maestro_mps (codigo_mp,nombre_comercial,tipo_material,activo) SELECT 'MP00226','Ectoina','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00226')",
+        "INSERT INTO maestro_mps (codigo_mp,nombre_comercial,tipo_material,activo) SELECT 'MP00223','PDRN','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00223')",
+        "INSERT INTO maestro_mps (codigo_mp,nombre_comercial,tipo_material,activo) SELECT 'MP00008','Carbopol','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00008')",
+        "INSERT INTO maestro_mps (codigo_mp,nombre_comercial,tipo_material,activo) SELECT 'MP00006','Pemulen EZ-4U','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00006')",
+        "INSERT INTO maestro_mps (codigo_mp,nombre_comercial,tipo_material,activo) SELECT 'MP00254','C13-C15 Alkane','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00254')",
+        "INSERT INTO maestro_mps (codigo_mp,nombre_comercial,tipo_material,activo) SELECT 'MP00040','Cetiol CC','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00040')",
+        "INSERT INTO maestro_mps (codigo_mp,nombre_comercial,tipo_material,activo) SELECT 'MP00184','BM-939','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00184')",
+        "INSERT INTO maestro_mps (codigo_mp,nombre_comercial,tipo_material,activo) SELECT 'MP00240','Cetyl tranexamate','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00240')",
+        "INSERT INTO maestro_mps (codigo_mp,nombre_comercial,tipo_material,activo) SELECT 'MP00078','Vitamina E liquida','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00078')",
+        "INSERT INTO maestro_mps (codigo_mp,nombre_comercial,tipo_material,activo) SELECT 'MP00233','Ac. hialuronico 300 kD','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00233')",
+        "INSERT INTO maestro_mps (codigo_mp,nombre_comercial,tipo_material,activo) SELECT 'MP00163','Ac. hialuronico 50 kD','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00163')",
+        "INSERT INTO maestro_mps (codigo_mp,nombre_comercial,tipo_material,activo) SELECT 'MP00068','Biosure FE','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00068')",
+        "INSERT INTO maestro_mps (codigo_mp,nombre_comercial,tipo_material,activo) SELECT 'MP00123','Trietanolamina 85','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00123')",
         # Fórmula idempotente (sin '%' en el nombre · evita cualquier riesgo de paramstyle PG)
         "DELETE FROM formula_items WHERE producto_nombre='CREMA FACIAL UREA 10'",
         "DELETE FROM formula_headers WHERE producto_nombre='CREMA FACIAL UREA 10'",
