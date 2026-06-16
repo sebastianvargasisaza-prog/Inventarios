@@ -269,6 +269,36 @@ def test_restaurar_a_hora(app, db_clean):
     assert _estado(idC) == 'cancelado'    # rescate después → a las 11am estaba cancelado
 
 
+def test_restaurar_fecha_explicita_y_garantiza_historial(app, db_clean):
+    """Restaurar a una FECHA+hora explícita (ej. domingo 14 10am) revierte lo
+    posterior y GARANTIZA el historial (eos_retroactivo cancelado→completado)."""
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    post = '2026-06-15 20:00:00'   # > T (domingo 14 10am = 2026-06-14 15:00 UTC)
+
+    def _ins(prod, estado, origen, creado, **kw):
+        cols = "producto,fecha_programada,estado,origen,cantidad_kg,lotes,creado_en"
+        vals = [prod, '2026-07-20', estado, origen, 30, 1, creado]
+        for k, v in kw.items():
+            cols += "," + k; vals.append(v)
+        conn.execute("INSERT INTO produccion_programada (%s) VALUES (%s)" % (cols, ",".join(["?"] * len(vals))), vals)
+        return conn.execute("SELECT id FROM produccion_programada WHERE producto=? ORDER BY id DESC LIMIT 1", (prod,)).fetchone()[0]
+
+    a = _ins('RFE PLAN', 'cancelado', 'eos_plan', '2026-06-12')
+    conn.execute("INSERT INTO audit_log (usuario,accion,tabla,registro_id,fecha) "
+                 "VALUES ('s','SELLAR_CANCELAR_LOTE','produccion_programada',?,?)", (str(a), post))
+    b = _ins('RFE CANONICO', 'pendiente', 'eos_canonico', '2026-06-15 20:05:00')
+    h = _ins('RFE HIST', 'cancelado', 'eos_retroactivo', '2026-06-04', fin_real_at='2026-06-04', inicio_real_at='2026-06-04')
+    conn.commit(); conn.close()
+
+    c = _login(app)
+    r = c.post('/api/plan/restaurar-a-hora', json={'dry_run': False, 'desde_fecha': '2026-06-14', 'hora': 10}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    assert r.get_json().get('T_utc') == '2026-06-14 15:00:00'
+    assert _estado(a) == 'pendiente'      # cancelado después → restaurado
+    assert _estado(b) == 'cancelado'      # creado después → quitado
+    assert _estado(h) == 'completado'     # historial → garantizado
+
+
 def test_reconstruir_plan(app, db_clean):
     """Recuperación TOTAL: re-activa historial ya producido (eos_retroactivo
     cancelado→completado + sync de producciones), restaura plan Fijo UNO por

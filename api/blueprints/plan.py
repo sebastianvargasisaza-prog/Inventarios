@@ -10680,7 +10680,15 @@ def plan_restaurar_a_hora():
     # así "volver a antes del lío" funciona aunque ya sea otro día. Si se pasa 'hora',
     # usa hoy(Colombia) a esa hora.
     from datetime import datetime as _dtu, timedelta as _tdu
-    if d.get('hora') is not None:
+    _fecha_expl = (str(d.get('desde_fecha') or '')[:10]) if d.get('desde_fecha') else None
+    if _fecha_expl and len(_fecha_expl) == 10 and _fecha_expl[4] == '-':
+        # fecha + hora EXPLÍCITAS (ej. domingo 14 · 10am Colombia → +5 UTC)
+        try:
+            hora_co = max(0, min(int(d.get('hora', 10)), 18))
+        except Exception:
+            hora_co = 10
+        T = "%s %02d:00:00" % (_fecha_expl, hora_co + 5)
+    elif d.get('hora') is not None:
         try:
             hora_co = max(0, min(int(d.get('hora')), 18))
         except Exception:
@@ -10784,8 +10792,26 @@ def plan_restaurar_a_hora():
             canc += 1
             audit_log(cur, usuario=user, accion='RESTAURAR_A_HORA_CANCELAR', tabla='produccion_programada', registro_id=rid)
     conn.commit()
+    # GARANTÍA HISTORIAL (16-jun · base del cálculo NO puede faltar): re-activa lo ya
+    # producido (eos_retroactivo cancelado→completado) y re-sincroniza desde la tabla
+    # producciones (fuente intacta). Pase lo que pase con la reconstrucción, el
+    # historial de lo fabricado queda completo.
+    hist = 0
+    try:
+        cur.execute("UPDATE produccion_programada SET estado='completado' "
+                    "WHERE COALESCE(origen,'')='eos_retroactivo' AND COALESCE(estado,'')='cancelado'")
+        hist = cur.rowcount or 0
+        conn.commit()
+        _syncf = _sync_fabricacion_calendario(conn, usuario=user)
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        _syncf = {'creados': 0}
     return jsonify({'ok': True, 'dry_run': False, 'restaurados': rest, 'cancelados': canc,
-                    'fechas_revertidas': fch, **preview})
+                    'fechas_revertidas': fch, 'historial_reactivado': hist,
+                    'historial_sincronizado': (_syncf or {}).get('creados', 0), **preview})
 
 
 @bp.route("/api/plan/reconstruir-plan", methods=["GET", "POST"])
@@ -14519,6 +14545,8 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
         style="font-size:14px;padding:10px 18px" title="Reparte los días con demasiados lotes (ej. el 16) a los próximos días hábiles con cupo (máx 2/día). No toca lo iniciado ni B2B. Vista previa antes de aplicar.">📅 Repartir días sobrecargados</button>
       <button onclick="revertirHoy()" class="danger" id="btn-revertir-hoy"
         style="font-size:14px;padding:10px 18px" title="Deshace TODOS los cambios de hoy en el calendario: suprime lo que se creó hoy, restaura lo que se canceló hoy (lo de Alejandro) y revierte fechas movidas hoy. Conserva lo recuperado de Fabricación. Vista previa antes de aplicar.">↩️ Deshacer cambios de hoy</button>
+      <button onclick="volverDomingo()" class="success" id="btn-volver-domingo"
+        style="font-size:16px;padding:12px 22px;font-weight:800;background:#0d9488;box-shadow:0 0 0 2px #0d9488" title="UN CLIC: deja el calendario tal como estaba el DOMINGO 14 a las 10am (antes de toda la cirugía) + garantiza el historial ya producido. Lo que falte después lo ajustas tú.">⭐ Volver al domingo 14 · 10am</button>
       <button onclick="reconstruirPlan()" class="success" id="btn-reconstruir"
         style="font-size:15px;padding:11px 20px;font-weight:700;background:#059669" title="RECUPERACIÓN TOTAL: re-activa el historial ya producido (base del cálculo), trae de vuelta tu plan Fijo (uno por producto/día, sin duplicados) y quita el ruido automático. Úsalo si el calendario quedó vacío/raro. Vista previa antes de aplicar.">🔧 Reconstruir plan + historial</button>
       <button onclick="restaurarAHora()" class="danger" id="btn-restaurar-hora"
@@ -14718,6 +14746,28 @@ async function revertirHoy(){
     if (typeof cargar === 'function') cargar();
   } catch(e){ alert('Error red: ' + e.message); }
   finally { if (btn){ btn.disabled = false; btn.textContent = '↩️ Deshacer cambios de hoy'; } }
+}
+
+// ⭐ UN CLIC: vuelve al estado del domingo 14 · 10am (antes de toda la cirugía).
+async function volverDomingo(){
+  const btn = document.getElementById('btn-volver-domingo');
+  const body = {desde_fecha:'2026-06-14', hora:10};
+  const _post = (extra) => fetch('/api/plan/restaurar-a-hora', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()}, credentials:'same-origin', body: JSON.stringify(Object.assign({}, body, extra))});
+  try {
+    if (btn){ btn.disabled = true; btn.textContent = '⭐ Calculando…'; }
+    const r = await _post({dry_run:true});
+    const d = await r.json();
+    if (!r.ok){ alert('Error: ' + (d.error || d.mensaje || r.status)); return; }
+    const ok = confirm('⭐ VOLVER AL DOMINGO 14 · 10am (antes de toda la cirugía)\\n\\n• Restaurar ' + (d.a_restaurar_pendiente||0) + ' lote(s) cancelados después\\n• Quitar ' + (d.a_cancelar_post||0) + ' lote(s) creados después\\n• Revertir ' + (d.a_revertir_fecha||0) + ' fecha(s) movidas después\\n• + garantiza el historial ya producido\\n\\nLo que falte después lo ajustas tú. ¿Volver al domingo?');
+    if (!ok){ return; }
+    if (btn){ btn.textContent = '⭐ Volviendo…'; }
+    const r2 = await _post({dry_run:false});
+    const d2 = await r2.json();
+    if (!r2.ok){ alert('Error: ' + (d2.error || d2.mensaje || r2.status)); return; }
+    alert('✓ Calendario al domingo 14 · 10am.\\n\\n• ' + (d2.restaurados||0) + ' restaurados\\n• ' + (d2.cancelados||0) + ' quitados\\n• ' + (d2.fechas_revertidas||0) + ' fechas revertidas\\n• Historial: ' + (d2.historial_reactivado||0) + ' re-activados + ' + (d2.historial_sincronizado||0) + ' sincronizados.\\n\\nRecarga si no ves el cambio (Ctrl+F5).');
+    if (typeof cargar === 'function') cargar();
+  } catch(e){ alert('Error red: ' + e.message); }
+  finally { if (btn){ btn.disabled = false; btn.textContent = '⭐ Volver al domingo 14 · 10am'; } }
 }
 
 // 🔧 Recuperación TOTAL: historial ya producido + plan Fijo + quita ruido.
