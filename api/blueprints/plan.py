@@ -17272,7 +17272,16 @@ async function guardarNuevaProduccion(){
 async function abrirLoteModal(id, producto, fecha, kg){
   window._LOTE_MODAL_ACTUAL = {id: id, producto: producto, fecha: fecha, kg: kg};
   document.getElementById('lote-titulo').textContent = '📅 ' + producto;
-  document.getElementById('lote-body').innerHTML = '<div class="muted" style="padding:30px;text-align:center">Cargando datos del producto…</div>';
+  // Sebastián 16-jun · MOSTRAR LOS BOTONES (Mover/Cancelar) DE UNA, sin esperar la
+  // consulta de Necesidades (que es pesada y dejaba el modal "Cargando…" → "no me
+  // deja mover/eliminar"). Los detalles se enriquecen abajo cuando llegan.
+  document.getElementById('lote-body').innerHTML =
+    '<div class="metric-grid">'
+    + '<div class="metric-card"><div class="metric-lbl">Kg a producir</div><div class="metric-val">' + kg + ' kg</div></div>'
+    + '<div class="metric-card"><div class="metric-lbl">Fecha programada</div><div class="metric-val">' + fecha + '</div></div>'
+    + '</div>'
+    + _renderAccionesLote(id, producto, fecha)
+    + '<div id="lote-detalle-extra" class="muted" style="padding:12px 0 0;font-size:11px">Cargando detalles del producto…</div>';
   document.getElementById('loteModal').classList.add('show');
 
   // Obtener datos del producto desde /api/plan/necesidades
