@@ -11431,8 +11431,9 @@ def _proyectar_horizonte_2y(conn, dias=730, usuario='auto-proyeccion', dry_run=F
         n_tam = len(dsg['skus']) or 1
         stock = stock0_g
         creados_prod = 0
+        MAX_LOTES_PROD = 110  # tope sano por producto en 2 años (~semanal) · evita desborde
         d = 0
-        while d <= dias:
+        while d <= dias and creados_prod < MAX_LOTES_PROD:
             stock += arrivals.pop(d, 0)
             if d > 0:
                 stock -= demand_g

@@ -6667,13 +6667,25 @@ def listado_produccion_programada():
     # de fechas pasadas → solo llenan celdas pasadas, no ensucian el plan adelante. Default
     # (sin flag) = vista de plan (últimos 7 días + futuro, sin completadas · diag admin).
     _historico = (request.args.get('historico') or '').strip().lower() in ('1', 'true', 'si')
+    # Sebastián 16-jun · ACOTADO para que el calendario no se cuelgue cuando el plan a
+    # 2 años genera muchos lotes: historial pasado + futuro hasta +18 meses (ventana
+    # visible) + LIMIT de seguridad. Antes (historico) traía TODO incl. el año 2 entero
+    # → payload enorme → 504 → "Unexpected token '<'". Fechas en Python (multi-arg
+    # date() rompe en PG · pg_compat solo traduce mono-arg).
+    import datetime as _dt_l
+    _hoy_l = (_dt_l.datetime.utcnow() - _dt_l.timedelta(hours=5)).date()
+    _fut_cap = (_hoy_l + _dt_l.timedelta(days=550)).isoformat()
     if _historico:
         _where_clause = ("WHERE LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado') "
-                         "ORDER BY pp.fecha_programada ASC, pp.id ASC")
+                         "AND pp.fecha_programada <= ? "
+                         "ORDER BY pp.fecha_programada ASC, pp.id ASC LIMIT 6000")
+        _wparams = (_fut_cap,)
     else:
+        _pas_cap = (_hoy_l - _dt_l.timedelta(days=7)).isoformat()
         _where_clause = ("WHERE LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado') "
-                         "AND pp.fecha_programada >= date('now', '-5 hours', '-7 day') "
-                         "ORDER BY pp.fecha_programada ASC, pp.id ASC")
+                         "AND pp.fecha_programada >= ? AND pp.fecha_programada <= ? "
+                         "ORDER BY pp.fecha_programada ASC, pp.id ASC LIMIT 6000")
+        _wparams = (_pas_cap, _fut_cap)
     # Sebastián 25-may-2026 PM · agregar envase_codigo_override (mig 184)
     # Fallback al SELECT sin la columna si la mig no aplicó aún
     try:
@@ -6697,7 +6709,7 @@ def listado_produccion_programada():
             LEFT JOIN operarios_planta oe  ON oe.id  = pp.operario_elaboracion_id
             LEFT JOIN operarios_planta oen ON oen.id = pp.operario_envasado_id
             LEFT JOIN operarios_planta oa  ON oa.id  = pp.operario_acondicionamiento_id
-        """ + " " + _where_clause).fetchall()
+        """ + " " + _where_clause, _wparams).fetchall()
         _has_env_ovr = True
     except Exception:
         rows = conn.execute("""
@@ -6719,7 +6731,7 @@ def listado_produccion_programada():
             LEFT JOIN operarios_planta oe  ON oe.id  = pp.operario_elaboracion_id
             LEFT JOIN operarios_planta oen ON oen.id = pp.operario_envasado_id
             LEFT JOIN operarios_planta oa  ON oa.id  = pp.operario_acondicionamiento_id
-        """ + " " + _where_clause).fetchall()
+        """ + " " + _where_clause, _wparams).fetchall()
         _has_env_ovr = False
     lote_ids = [r[0] for r in rows]
     desglose_por_lote = {}
