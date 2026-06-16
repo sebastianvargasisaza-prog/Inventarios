@@ -151,6 +151,32 @@ fecha relativa que cae en la fecha fija de OTRO golden (hoy+7) lo ocupa → 422.
 relativa a hoy** en el input/assert, y que el test **limpie su fecha objetivo** antes de programar
 (auto-contención). No tocar el código (las reglas son correctas).
 
+## 🔀 M39 · Controles regulatorios (cuarentena/gerencia) se relajan con interruptor reversible, default-seguro · 16-jun
+
+Cuando el negocio pide quitar temporalmente un control GMP/INVIMA (ej. "que las
+recepciones no pasen por cuarentena", "ajustar sin gerencia"), **no borres el
+control ni cambies el default permanente**: agrega un interruptor leído **en cada
+request** (`config.recepcion_auto_vigente()` lee `os.environ` al vuelo, NO en el
+arranque → se enciende/apaga sin redeploy). Reglas:
+- **Default = posición regulatoria** (cuarentena-first / control activo). El env
+  encendido es la excepción explícita, no al revés.
+- Si la UI manda el valor explícito (checkbox), el backend default no basta:
+  exponé el flag en un endpoint que la página ya carga y deja que el JS destilde
+  la casilla (si no, el checkbox `checked` pisa el interruptor).
+- El **explícito del operario gana** sobre el default del interruptor.
+- Conteo cíclico (cierre) YA auto-ajusta TODO sin gerencia desde 12-jun
+  (`pendientes_gerencia_lista` nunca se llena; `requiere_gerencia` es solo marca
+  informativa). `_require_planta_write` = cualquier autenticado → "lo hacen todos".
+
+## 📅 M40 · Programar manual en el calendario = origen 'eos_plan' (Fijo) · 16-jun
+
+Clic en un día del calendario (botón ➕) → modal → `POST /api/plan/programar-manual`
+inserta en `produccion_programada` con `origen='eos_plan'` (Fijo · intocable por
+automáticos) + `cantidad_kg`. Soporta productos que **no existen en Necesidades**
+(pilotos, otros clientes): es texto libre, NO valida contra fórmula (si hay
+fórmula, descuenta al producir; si no, igual aparece para planear). No confundir
+con `/api/programacion/programar` (legacy, sin kg ni origen).
+
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
 
 Al cerrar una sesión donde se encontró/arregló un bug con patrón no listado aquí:

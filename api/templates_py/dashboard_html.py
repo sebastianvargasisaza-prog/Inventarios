@@ -3941,6 +3941,14 @@ async function loadDashboard(){
     setKpi('kpi-cuarentena', ce.lotes_cuarentena, true);
     setKpi('kpi-ocs-transito', ce.ocs_en_transito, true);
     setKpi('kpi-mees-bajo', ce.mees_bajo_minimo, true);
+    // Sebastián 16-jun · si RECEPCION_AUTO_VIGENTE está encendido, la mercancía
+    // entra disponible directo (sin Calidad): destildar la casilla de cuarentena.
+    if (d.recepcion_auto_vigente){
+      window._RECEPCION_AUTO_VIGENTE = true;
+      ['ing-cuarentena','nmp-ing-cuarentena'].forEach(function(cid){
+        var cb=document.getElementById(cid); if(cb) cb.checked=false;
+      });
+    }
     fetch('/api/alertas-reabastecimiento').then(function(r2){return r2.json();}).then(function(ar){
       var n=ar.alertas?ar.alertas.length:0;
       var el=document.getElementById('alertas-count');
@@ -4639,7 +4647,7 @@ function engancharAutoSaveIngreso(){
 function limpiarIngreso(){
   ['ing-cod','ing-inci','ing-nombre','ing-tipo','ing-prov','ing-lote','ing-cant','ing-vence','ing-est','ing-pos','ing-obs','ing-factura','ing-precio-kg','ing-valor-total'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
   var ocSel=document.getElementById('ing-oc-sel');if(ocSel)ocSel.selectedIndex=0;
-  var cuar=document.getElementById('ing-cuarentena');if(cuar)cuar.checked=true;  // INVIMA: cuarentena-first por defecto (13-jun)
+  var cuar=document.getElementById('ing-cuarentena');if(cuar)cuar.checked=!window._RECEPCION_AUTO_VIGENTE;  // INVIMA: cuarentena-first por defecto (13-jun) · salvo interruptor auto-VIGENTE (16-jun)
   ocultarFormNuevaMP();
   var st=document.getElementById('ing-status');if(st){st.textContent='';st.style.color='#667eea';}
   document.getElementById('ing-msg').innerHTML='';

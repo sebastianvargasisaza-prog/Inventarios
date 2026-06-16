@@ -5927,7 +5927,12 @@ def recibir_oc(numero_oc):
                         pass
 
                 # Fase 2 · INVIMA · INSERT con campos COA/lote_proveedor (mig 151)
-                # Si la columna no existe (mig no aplicó), cae a INSERT legacy
+                # Si la columna no existe (mig no aplicó), cae a INSERT legacy.
+                # Sebastián 16-jun · estado inicial controlado por interruptor
+                # RECEPCION_AUTO_VIGENTE (default CUARENTENA = INVIMA · ON = carga
+                # automática como VIGENTE, sin pasar por Calidad).
+                from config import recepcion_auto_vigente as _rav
+                _estado_recep = 'VIGENTE' if _rav() else 'CUARENTENA'
                 _coa_ok = False
                 try:
                     cur.execute(
@@ -5938,7 +5943,7 @@ def recibir_oc(numero_oc):
                         (codigo, nombre, cant_recibida, 'Entrada', fecha,
                          f'Recepcion OC {numero_oc}' + (f' | {notas_item}' if notas_item else ''),
                          prov_nombre, operador, lote_final,
-                         fv or None, 'CUARENTENA', numero_oc,
+                         fv or None, _estado_recep, numero_oc,
                          coa_url or None, coa_filename or None,
                          lote_proveedor or None, ficha_seguridad_url or None))
                     _coa_ok = True
@@ -5954,7 +5959,7 @@ def recibir_oc(numero_oc):
                         (codigo, nombre, cant_recibida, 'Entrada', fecha,
                          f'Recepcion OC {numero_oc}' + (f' | {notas_item}' if notas_item else ''),
                          prov_nombre, operador, lote_final,
-                         fv or None, 'CUARENTENA', numero_oc))
+                         fv or None, _estado_recep, numero_oc))
             ingresos += 1
         # Actualizar item OC · audit zero-error 2-may-2026: usar += en
         # cantidad_recibida_g para soportar recepciones múltiples parciales

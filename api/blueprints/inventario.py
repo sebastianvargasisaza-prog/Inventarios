@@ -343,6 +343,9 @@ def get_inventario():
         'producciones_proximas': prod_proximas,
         'alertas': alrt,
         'stock_total': round(stock_total, 2),
+        # Sebastián 16-jun · interruptor recepción auto-VIGENTE (para que la UI
+        # destilde la casilla "cuarentena" cuando está encendido).
+        'recepcion_auto_vigente': (lambda: __import__('config').recepcion_auto_vigente())(),
         # KPIs nuevos del dashboard replanteado (zonas)
         'kpis': {
             'ahora': {
@@ -7222,10 +7225,14 @@ def registrar_recepcion():
     numero_factura = (d.get('numero_factura') or '').strip()
     numero_oc = (d.get('numero_oc') or '').strip()
     # FIX 13-jun (audit compras · INVIMA cuarentena-first): default = CUARENTENA.
-    # La recepción por OC SIEMPRE entra en cuarentena; el ingreso manual debe ser
-    # consistente (MP recibida pasa por QC antes de usarse). El operario puede
-    # destildar la casilla para stock ya aprobado (ajustes/correcciones).
-    cuarentena = bool(d.get('cuarentena', True))
+    # La recepción por OC entra en cuarentena; el ingreso manual es consistente
+    # (MP recibida pasa por QC antes de usarse). El operario puede destildar la
+    # casilla para stock ya aprobado (ajustes/correcciones).
+    # Sebastián 16-jun · si RECEPCION_AUTO_VIGENTE está encendido, el default de la
+    # casilla pasa a NO-cuarentena → carga automática como VIGENTE (sin Calidad).
+    from config import recepcion_auto_vigente as _rav
+    _cuar_default = (not _rav())
+    cuarentena = bool(d.get('cuarentena', _cuar_default))
     estado_lote = 'CUARENTENA' if cuarentena else 'VIGENTE'
     # Si la MP es nueva y viene con datos, crearla en el catalogo
     if not mp and (d.get('nombre_inci') or d.get('nombre_comercial')):

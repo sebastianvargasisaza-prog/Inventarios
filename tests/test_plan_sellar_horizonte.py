@@ -362,3 +362,44 @@ def test_sellar_requiere_rol(app, db_clean):
     c = _login(app, 'valentina')  # sin admin/compras
     r = c.post('/api/plan/sellar-horizonte', json={'dry_run': True}, headers=csrf_headers())
     assert r.status_code == 403, r.data[:200]
+
+
+def test_programar_manual_crea_fijo(app, db_clean):
+    """16-jun · clic en el calendario → programar CUALQUIER producto (piloto/otro
+    cliente, no está en Necesidades). Debe quedar Fijo (eos_plan) con su kg."""
+    hoy = _hoy_co()
+    fecha = (hoy + _dt.timedelta(days=7)).isoformat()
+    c = _login(app)
+    r = c.post('/api/plan/programar-manual',
+               json={'producto': 'CREMA PILOTO CLIENTE X', 'fecha': fecha,
+                     'kg': 12.5, 'lotes': 1, 'cliente': 'Cliente X', 'observaciones': 'piloto'},
+               headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    j = r.get_json()
+    assert j['ok'] is True
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    try:
+        row = conn.execute(
+            "SELECT origen, estado, cantidad_kg, observaciones FROM produccion_programada WHERE id=?",
+            (j['id'],)).fetchone()
+    finally:
+        conn.close()
+    assert row[0] == 'eos_plan'      # Fijo · intocable por automáticos
+    assert row[1] == 'pendiente'
+    assert abs(float(row[2]) - 12.5) < 0.001
+    assert 'Cliente X' in (row[3] or '')
+
+
+def test_programar_manual_valida_campos(app, db_clean):
+    c = _login(app)
+    r = c.post('/api/plan/programar-manual', json={'producto': '', 'fecha': ''},
+               headers=csrf_headers())
+    assert r.status_code == 400, r.data[:200]
+
+
+def test_programar_manual_requiere_rol(app, db_clean):
+    c = _login(app, 'valentina')  # sin admin/compras
+    r = c.post('/api/plan/programar-manual',
+               json={'producto': 'X', 'fecha': _hoy_co().isoformat()},
+               headers=csrf_headers())
+    assert r.status_code == 403, r.data[:200]

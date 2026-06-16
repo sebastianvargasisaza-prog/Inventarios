@@ -11406,6 +11406,62 @@ def plan_backfill_fabricacion():
     return jsonify({'ok': True, 'dry_run': False, 'creados': creados, 'cerrados': cerrados, **preview})
 
 
+@bp.route("/api/plan/programar-manual", methods=["POST"])
+def plan_programar_manual():
+    """Sebastián 16-jun · clic en un día del calendario (o botón ➕) → programar
+    manualmente CUALQUIER producto: pilotos, productos de otros clientes o lo que
+    no existe en Necesidades. Queda Fijo (origen='eos_plan' · los automáticos NO
+    lo tocan). No depende de que exista la fórmula: si existe, descuenta al
+    producir; si no, igual aparece en el calendario para planear."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    d = request.get_json(force=True, silent=True) or {}
+    producto = (d.get('producto') or '').strip()
+    fecha = (d.get('fecha') or '').strip()[:10]
+    cliente = (d.get('cliente') or '').strip()
+    obs = (d.get('observaciones') or '').strip()
+    try:
+        lotes = max(1, int(d.get('lotes') or 1))
+    except (ValueError, TypeError):
+        lotes = 1
+    try:
+        kg = max(0.0, float(d.get('kg') or 0))
+    except (ValueError, TypeError):
+        kg = 0.0
+    if not producto or not fecha:
+        return jsonify({'ok': False, 'error': 'Producto y fecha son obligatorios'}), 400
+    try:
+        from datetime import date as _date
+        _date.fromisoformat(fecha)
+    except ValueError:
+        return jsonify({'ok': False, 'error': 'Fecha inválida (use YYYY-MM-DD)'}), 400
+    # No hay columna 'cliente' en produccion_programada → va en observaciones.
+    nota = 'Manual ({})'.format(user or 'sistema')
+    if cliente:
+        nota += ' · Cliente: ' + cliente
+    if obs:
+        nota += ' · ' + obs
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO produccion_programada "
+        "(producto, fecha_programada, lotes, cantidad_kg, origen, estado, observaciones) "
+        "VALUES (?, ?, ?, ?, 'eos_plan', 'pendiente', ?)",
+        (producto, fecha, lotes, kg, nota))
+    pid = cur.lastrowid
+    try:
+        audit_log(conn.cursor(), usuario=user or 'sistema',
+                  accion='PROGRAMAR_MANUAL_CALENDARIO', tabla='produccion_programada',
+                  registro_id=pid,
+                  despues={'producto': producto, 'fecha': fecha, 'lotes': lotes,
+                           'cantidad_kg': kg, 'cliente': cliente, 'origen': 'eos_plan'})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'id': pid, 'producto': producto, 'fecha': fecha})
+
+
 @bp.route("/api/plan/diag-rescate", methods=["GET"])
 def plan_diag_rescate():
     """Sebastián 15-jun · diagnóstico read-only del estado del calendario tras el
@@ -14604,30 +14660,12 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
       <button onclick="irHoy()" class="secondary">Hoy</button>
     </div>
     <div>
+      <button onclick="abrirNuevaProduccion('')" class="success" id="btn-nueva-prod"
+        style="font-size:14px;padding:10px 18px;background:#0d9488;font-weight:700" title="Programa manualmente CUALQUIER producto: pilotos, productos de otros clientes o lo que no está en Necesidades. También puedes hacer clic en el ➕ de cualquier día del calendario.">➕ Programar producción</button>
       <button onclick="generarPlanIA()" class="success" id="btn-generar-ia-2"
         style="font-size:14px;padding:10px 18px">🤖 Generar plan IA</button>
       <button onclick="sellarPlan()" class="secondary" id="btn-sellar"
         style="font-size:14px;padding:10px 18px" title="Limpia duplicados y recalcula TODO el horizonte futuro · conserva lo pasado, esta semana, lo iniciado y los B2B">🔒 Sellar plan limpio</button>
-      <button onclick="recuperarCancelados()" class="warning" id="btn-recuperar"
-        style="font-size:14px;padding:10px 18px" title="Recupera lotes que se hayan perdido por el bug de cancelación (anti-vanish). No duplica: solo trae de vuelta lo que desapareció y lo de esta semana.">♻️ Recuperar lotes perdidos</button>
-      <button onclick="backfillFabricacion()" class="secondary" id="btn-backfill"
-        style="font-size:14px;padding:10px 18px" title="Trae al calendario las producciones que ya hiciste en Fabricación (lotes completados retroactivos). Aparecen en su fecha real y sirven de base al cálculo. No duplica.">🏭 Traer producciones de Fabricación</button>
-      <button onclick="dedupMismoDia()" class="warning" id="btn-dedup"
-        style="font-size:14px;padding:10px 18px" title="Limpia lotes duplicados del MISMO producto el MISMO día (ej. el apilón del 16). Mantiene uno por día y cancela los repetidos. Vista previa antes de aplicar.">🧹 Limpiar duplicados del día</button>
-      <button onclick="repartirSobrecargados()" class="secondary" id="btn-repartir"
-        style="font-size:14px;padding:10px 18px" title="Reparte los días con demasiados lotes (ej. el 16) a los próximos días hábiles con cupo (máx 2/día). No toca lo iniciado ni B2B. Vista previa antes de aplicar.">📅 Repartir días sobrecargados</button>
-      <button onclick="revertirHoy()" class="danger" id="btn-revertir-hoy"
-        style="font-size:14px;padding:10px 18px" title="Deshace TODOS los cambios de hoy en el calendario: suprime lo que se creó hoy, restaura lo que se canceló hoy (lo de Alejandro) y revierte fechas movidas hoy. Conserva lo recuperado de Fabricación. Vista previa antes de aplicar.">↩️ Deshacer cambios de hoy</button>
-      <button onclick="eliminarDia()" class="danger" id="btn-eliminar-dia"
-        style="font-size:14px;padding:10px 18px;background:#ea580c" title="Elimina (cancela) TODAS las producciones de un día, incluido lo Fijo que la UI no deja borrar. Útil para vaciar un día y poner lo real. Vista previa antes de aplicar.">🗓️ Eliminar producciones de un día</button>
-      <button onclick="limpiarTodoCalendario()" class="danger" id="btn-limpiar-todo"
-        style="font-size:15px;padding:11px 20px;font-weight:700;background:#b91c1c" title="BORRÓN Y CUENTA NUEVA: cancela TODO el plan no ejecutado (futuro/pendiente, cualquier origen). CONSERVA solo lo ya producido (historial para el cálculo). Vista previa antes de aplicar.">🗑️ Limpiar TODO el calendario</button>
-      <button onclick="volverDomingo()" class="success" id="btn-volver-domingo"
-        style="font-size:16px;padding:12px 22px;font-weight:800;background:#0d9488;box-shadow:0 0 0 2px #0d9488" title="UN CLIC: deja el calendario tal como estaba el DOMINGO 14 a las 10am (antes de toda la cirugía) + garantiza el historial ya producido. Lo que falte después lo ajustas tú.">⭐ Volver al domingo 14 · 10am</button>
-      <button onclick="reconstruirPlan()" class="success" id="btn-reconstruir"
-        style="font-size:15px;padding:11px 20px;font-weight:700;background:#059669" title="RECUPERACIÓN TOTAL: re-activa el historial ya producido (base del cálculo), trae de vuelta tu plan Fijo (uno por producto/día, sin duplicados) y quita el ruido automático. Úsalo si el calendario quedó vacío/raro. Vista previa antes de aplicar.">🔧 Reconstruir plan + historial</button>
-      <button onclick="restaurarAHora()" class="danger" id="btn-restaurar-hora"
-        style="font-size:14px;padding:10px 18px;background:#7c3aed" title="Reconstruye el calendario tal como estaba JUSTO ANTES de que empezara la cirugía de hoy (auto-detecta · robusto al cambio de día). Úsalo si el calendario quedó vacío o raro. Vista previa antes de aplicar.">🕚 Restaurar a antes de la cirugía</button>
       <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" style="display:none" disabled>✅ Confirmar y programar TODO</button>
     </div>
   </div>
@@ -14673,6 +14711,49 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
       </div>
     </div>
     <div class="modal-body" id="lote-body"></div>
+  </div>
+</div>
+
+<div id="nuevaProdModal" class="modal-back" onclick="if(event.target===this)cerrarNuevaProduccion()">
+  <div class="modal-box" style="max-width:460px">
+    <div class="modal-head">
+      <h3 style="margin:0;font-size:16px;font-weight:800">➕ Programar producción</h3>
+      <button onclick="cerrarNuevaProduccion()" style="background:transparent;border:none;color:white;font-size:22px;cursor:pointer;line-height:1">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="margin:0 0 12px;font-size:12.5px;color:#64748b">Programa cualquier producto en el calendario — incluso pilotos o productos de otros clientes que no están en Necesidades. Queda <strong>Fijo</strong> (los automáticos no lo tocan).</p>
+      <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:3px">Producto *</label>
+      <input id="np-producto" list="np-productos-list" placeholder="Ej: CREMA FACIAL UREA 10" autocomplete="off"
+        style="width:100%;padding:9px 11px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:14px;margin-bottom:11px">
+      <datalist id="np-productos-list"></datalist>
+      <div style="display:flex;gap:10px;margin-bottom:11px">
+        <div style="flex:1">
+          <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:3px">Fecha *</label>
+          <input id="np-fecha" type="date" style="width:100%;padding:9px 11px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:14px">
+        </div>
+        <div style="flex:1">
+          <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:3px"># Lotes</label>
+          <input id="np-lotes" type="number" min="1" step="1" value="1" style="width:100%;padding:9px 11px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:14px">
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;margin-bottom:11px">
+        <div style="flex:1">
+          <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:3px">Cantidad (kg)</label>
+          <input id="np-kg" type="number" min="0" step="0.01" placeholder="opcional" style="width:100%;padding:9px 11px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:14px">
+        </div>
+        <div style="flex:1">
+          <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:3px">Cliente</label>
+          <input id="np-cliente" placeholder="opcional" style="width:100%;padding:9px 11px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:14px">
+        </div>
+      </div>
+      <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:3px">Observaciones</label>
+      <input id="np-obs" placeholder="opcional (ej: piloto, lote especial)" style="width:100%;padding:9px 11px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:14px;margin-bottom:14px">
+      <div id="np-msg" style="font-size:12.5px;margin-bottom:10px"></div>
+      <div style="display:flex;justify-content:flex-end;gap:8px">
+        <button onclick="cerrarNuevaProduccion()" class="secondary" style="padding:9px 16px">Cancelar</button>
+        <button onclick="guardarNuevaProduccion()" id="np-guardar" class="success" style="padding:9px 18px;font-weight:700;background:#0d9488">Programar</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -15239,6 +15320,7 @@ function render(){
       grid += '<div class="day-num"><span>' + fecha.getDate() + '</span>';
       if (isFestivo) grid += '<span class="festivo-tag">FEST</span>';
       if (_sobrecarga) grid += '<span title="Día sobrecargado: ' + _pend.length + ' lote(s) pendientes' + (_hayGrande ? ' · incluye un lote grande que debería ir solo' : ' · máx 2/día') + '" style="background:#dc2626;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;margin-left:4px">⚠ ' + _pend.length + '</span>';
+      grid += '<button class="addprod-btn" title="Programar una producción este día (cualquier producto · pilotos/otros clientes incluidos)" onclick="event.stopPropagation();abrirNuevaProduccion(&quot;' + fStr + '&quot;)" style="float:right;border:none;background:#0d9488;color:#fff;width:19px;height:19px;line-height:17px;border-radius:50%;font-size:14px;font-weight:700;cursor:pointer;padding:0;opacity:.85">+</button>';
       grid += '</div>';
 
       lotes.forEach((lt, lotIdx) => {
@@ -16176,6 +16258,68 @@ async function guardarPlanEnvasado(loteId, pblId){
   }
 }
 
+function abrirNuevaProduccion(fecha){
+  // Prefill fecha: la del día clickeado, o hoy si se abrió desde el botón general.
+  let f = fecha || '';
+  if (!f){
+    const h = new Date();
+    f = h.getFullYear() + '-' + String(h.getMonth()+1).padStart(2,'0') + '-' + String(h.getDate()).padStart(2,'0');
+  }
+  document.getElementById('np-fecha').value = f;
+  document.getElementById('np-producto').value = '';
+  document.getElementById('np-kg').value = '';
+  document.getElementById('np-lotes').value = '1';
+  document.getElementById('np-cliente').value = '';
+  document.getElementById('np-obs').value = '';
+  document.getElementById('np-msg').innerHTML = '';
+  // Sugerencias: nombres de productos ya conocidos (no obliga · se puede escribir libre).
+  try {
+    const ag = (PLAN_DATA && PLAN_DATA.agendadas) || [];
+    const vistos = new Set();
+    ag.forEach(a => { if (a.producto) vistos.add(a.producto); });
+    const dl = document.getElementById('np-productos-list');
+    dl.innerHTML = Array.from(vistos).sort().map(p => '<option value="' + escapeHtml(p) + '">').join('');
+  } catch(e){}
+  document.getElementById('nuevaProdModal').classList.add('show');
+  setTimeout(() => { try { document.getElementById('np-producto').focus(); } catch(e){} }, 60);
+}
+function cerrarNuevaProduccion(){
+  document.getElementById('nuevaProdModal').classList.remove('show');
+}
+async function guardarNuevaProduccion(){
+  const producto = (document.getElementById('np-producto').value || '').trim();
+  const fecha    = (document.getElementById('np-fecha').value || '').trim();
+  const kg       = parseFloat(document.getElementById('np-kg').value || '0') || 0;
+  const lotes    = parseInt(document.getElementById('np-lotes').value || '1', 10) || 1;
+  const cliente  = (document.getElementById('np-cliente').value || '').trim();
+  const obs      = (document.getElementById('np-obs').value || '').trim();
+  const msg = document.getElementById('np-msg');
+  if (!producto || !fecha){
+    msg.innerHTML = '<span style="color:#dc2626;font-weight:700">⚠ Producto y fecha son obligatorios.</span>';
+    return;
+  }
+  const btn = document.getElementById('np-guardar');
+  btn.disabled = true; btn.textContent = 'Programando…';
+  try {
+    const r = await fetch('/api/plan/programar-manual', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCSRF()},
+      body: JSON.stringify({producto: producto, fecha: fecha, kg: kg, lotes: lotes, cliente: cliente, observaciones: obs})
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.ok){
+      msg.innerHTML = '<span style="color:#dc2626;font-weight:700">⚠ ' + escapeHtml(d.error || ('Error ' + r.status)) + '</span>';
+      btn.disabled = false; btn.textContent = 'Programar';
+      return;
+    }
+    msg.innerHTML = '<span style="color:#16a34a;font-weight:700">✅ Programado.</span>';
+    cerrarNuevaProduccion();
+    if (typeof cargar === 'function') cargar();
+  } catch(e){
+    msg.innerHTML = '<span style="color:#dc2626;font-weight:700">⚠ ' + escapeHtml(String(e)) + '</span>';
+    btn.disabled = false; btn.textContent = 'Programar';
+  }
+}
 async function abrirLoteModal(id, producto, fecha, kg){
   window._LOTE_MODAL_ACTUAL = {id: id, producto: producto, fecha: fecha, kg: kg};
   document.getElementById('lote-titulo').textContent = '📅 ' + producto;
