@@ -328,6 +328,47 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (259, "Fórmula NUEVA · CREMA FACIAL UREA 10% (Sebastián 16-jun): carga la formulación "
+          "final mapeada a los códigos MP exactos de la app para que descuente bien al "
+          "producir. + normaliza MP00040 (Cetiol → Cetiol CC · INCI DICAPRYLYL CARBONATE, "
+          "estaba en blanco) y MP00078 (Vit E líquida · INCI TOCOPHEROL). Idempotente "
+          "(borra y recarga la fórmula). Lote default 30kg · ajustar al programar.", [
+        # Normalización de MPs (solo setea el INCI/nombre · no toca stock)
+        "UPDATE maestro_mps SET nombre_comercial='Cetiol CC', nombre_inci='DICAPRYLYL CARBONATE' "
+        "WHERE codigo_mp='MP00040'",
+        "UPDATE maestro_mps SET nombre_inci='TOCOPHEROL' "
+        "WHERE codigo_mp='MP00078' AND COALESCE(nombre_inci,'')=''",
+        # Fórmula idempotente
+        "DELETE FROM formula_items WHERE producto_nombre='CREMA FACIAL UREA 10%'",
+        "DELETE FROM formula_headers WHERE producto_nombre='CREMA FACIAL UREA 10%'",
+        "INSERT INTO formula_headers (producto_nombre, unidad_base_g, descripcion, fecha_creacion, "
+        "lote_size_kg, activo, producto_canonico) VALUES "
+        "('CREMA FACIAL UREA 10%', 1000, 'Crema facial úrea 10% · pH 6.5±0.1 · neutraliza TEA · "
+        "conserva BioSure FE 1%', '2026-06-16', 30, 1, 'CREMA FACIAL UREA 10%')",
+        "INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje) VALUES "
+        "('CREMA FACIAL UREA 10%','MPAGUALI01','Agua Desionizada',67.8),"
+        "('CREMA FACIAL UREA 10%','MP00107','Urea',10.0),"
+        "('CREMA FACIAL UREA 10%','MP00195','Glicerina',3.0),"
+        "('CREMA FACIAL UREA 10%','MP00043','Propanediol',3.0),"
+        "('CREMA FACIAL UREA 10%','MP00148','Niacinamida',3.0),"
+        "('CREMA FACIAL UREA 10%','MP00262','N-acetil glucosamina',1.0),"
+        "('CREMA FACIAL UREA 10%','MP00245','1,2-Hexanediol',0.5),"
+        "('CREMA FACIAL UREA 10%','MP00215','Betaína',0.3),"
+        "('CREMA FACIAL UREA 10%','MP00110','Pantenol',0.1),"
+        "('CREMA FACIAL UREA 10%','MP00226','Ectoína',0.05),"
+        "('CREMA FACIAL UREA 10%','MP00223','PDRN',0.05),"
+        "('CREMA FACIAL UREA 10%','MP00008','Carbopol',0.1),"
+        "('CREMA FACIAL UREA 10%','MP00006','Pemulen EZ-4U',0.4),"
+        "('CREMA FACIAL UREA 10%','MP00254','C13-C15 Alkane',3.0),"
+        "('CREMA FACIAL UREA 10%','MP00040','Cetiol CC',3.0),"
+        "('CREMA FACIAL UREA 10%','MP00184','BM-939 (PEG-12 Dimethicone)',2.0),"
+        "('CREMA FACIAL UREA 10%','MP00240','Cetyl tranexamate',1.0),"
+        "('CREMA FACIAL UREA 10%','MP00078','Vitamina E líquida',0.3),"
+        "('CREMA FACIAL UREA 10%','MP00233','Ác. hialurónico 300 kD',0.15),"
+        "('CREMA FACIAL UREA 10%','MP00163','Ác. hialurónico 50 kD',0.15),"
+        "('CREMA FACIAL UREA 10%','MP00068','Biosure FE',1.0),"
+        "('CREMA FACIAL UREA 10%','MP00123','Trietanolamina 85%',0.1)",
+    ]),
     (258, "Necesidades · forzar re-sync de imágenes Shopify (15-jun): limpia shopify_synced_at "
           "de los productos SIN imagen para que el sync en background los vuelva a buscar con "
           "el nuevo match por SKU (más confiable que por nombre) y traiga la foto al modal. "
