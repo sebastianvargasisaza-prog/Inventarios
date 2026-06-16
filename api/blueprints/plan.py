@@ -11323,8 +11323,11 @@ def _sync_fabricacion_calendario(conn, usuario='cron-fab'):
     return {'producciones_total': len(prods), 'creados': creados, 'cerrados': cerrados}
 
 
-def _proyectar_horizonte_2y(conn, dias=730, usuario='auto-proyeccion', dry_run=False):
+def _proyectar_horizonte_2y(conn, dias=730, usuario='auto-proyeccion', dry_run=False, solo_producto=None):
     """Sebastián 16-jun · PLAN RODANTE A 2 AÑOS por producto, automático.
+
+    solo_producto: si se pasa, regenera la proyección SOLO de ese producto (rápido ·
+    para 'aceptar adelanto' que recalcula la cadena de ese producto sin tocar el resto).
 
     Cada producto se ancla a su VENTA real en Shopify (velocidad + tendencia) y a su
     STOCK EFECTIVO = Shopify disponible + PIPELINE (lo ya producido en los últimos
@@ -11354,11 +11357,16 @@ def _proyectar_horizonte_2y(conn, dias=730, usuario='auto-proyeccion', dry_run=F
         if r[0]:
             slots[r[0]] = r[1]
 
+    _filtro_prod = ""
+    _params_prod = []
+    if solo_producto:
+        _filtro_prod = " AND UPPER(TRIM(producto))=UPPER(TRIM(?))"
+        _params_prod = [solo_producto]
     # Proyección previa NO ejecutada → se borra (idempotente · libera sus slots)
     prev = c.execute(
         "SELECT id, substr(fecha_programada,1,10) FROM produccion_programada "
         "WHERE origen='eos_proyeccion' AND COALESCE(estado,'') <> 'completado' "
-        "AND fin_real_at IS NULL AND inicio_real_at IS NULL").fetchall()
+        "AND fin_real_at IS NULL AND inicio_real_at IS NULL" + _filtro_prod, tuple(_params_prod)).fetchall()
     borrados = 0
     for pid, f in prev:
         if not dry_run:
@@ -11380,10 +11388,12 @@ def _proyectar_horizonte_2y(conn, dias=730, usuario='auto-proyeccion', dry_run=F
             fd = _ap._next_dia_produccion(fd + _td(days=1))
         return fd
 
+    _skus_filtro = " AND UPPER(TRIM(spc.producto_nombre))=UPPER(TRIM(?))" if solo_producto else ""
     skus = c.execute(
         "SELECT spc.producto_nombre, fh.lote_size_kg FROM sku_planeacion_config spc "
         "LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(spc.producto_nombre)) "
-        "WHERE spc.activo=1 ORDER BY spc.prioridad, spc.producto_nombre").fetchall()
+        "WHERE spc.activo=1" + _skus_filtro + " ORDER BY spc.prioridad, spc.producto_nombre",
+        tuple([solo_producto] if solo_producto else [])).fetchall()
 
     creados = 0
     productos_planeados = 0
@@ -11482,6 +11492,127 @@ def plan_proyectar_2anios():
     conn = get_db()
     res = _proyectar_horizonte_2y(conn, dias=dias, usuario=user, dry_run=dry)
     return jsonify({'ok': True, **res})
+
+
+def _mp_alcanza_para_lote(conn, producto):
+    """¿Alcanza la materia prima para fabricar UN lote del producto AHORA?
+    Devuelve (ok|None, faltantes[]). None = sin fórmula (desconocido)."""
+    c = conn.cursor()
+    items = c.execute(
+        "SELECT fi.material_id, COALESCE(fi.material_nombre,''), COALESCE(fi.cantidad_g_por_lote,0), "
+        "COALESCE(fi.porcentaje,0), COALESCE(fh.lote_size_kg,0) "
+        "FROM formula_items fi JOIN formula_headers fh "
+        "ON UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(fi.producto_nombre)) "
+        "WHERE UPPER(TRIM(fi.producto_nombre))=UPPER(TRIM(?)) AND COALESCE(fh.activo,1)=1 "
+        "AND fi.material_id IS NOT NULL AND TRIM(fi.material_id)<>''", (producto,)).fetchall()
+    if not items:
+        return (None, [])
+    try:
+        from blueprints.programacion import _get_mp_stock as _gms
+        stock = _gms(conn) or {}
+    except Exception:
+        stock = {}
+    faltantes = []
+    for mid, mnom, cant_g, pct, lote_kg in items:
+        nec = float(cant_g or 0)
+        if nec <= 0 and pct and lote_kg:
+            nec = (float(pct) / 100.0) * float(lote_kg) * 1000.0
+        if nec <= 0:
+            continue
+        disp = float(stock.get(mid) or stock.get((mnom or '').upper()) or 0)
+        if disp < nec:
+            faltantes.append({'material': mnom or mid, 'falta_g': round(nec - disp, 0)})
+    return (len(faltantes) == 0, faltantes)
+
+
+def _sugerencias_adelanto(conn):
+    """Detecta productos cuyo PRÓXIMO lote queda TARDE porque la venta subió → sugiere
+    adelantarlo. Solo lectura. Compara la cobertura ACTUAL (con la velocidad de hoy)
+    contra la fecha del próximo lote: si el lote llegaría (prod+7) después de que el
+    stock baje del margen (20d), conviene adelantar. Incluye chequeo de materia prima."""
+    from datetime import date as _date2, timedelta as _td2
+    import blueprints.auto_plan as _ap
+    c = conn.cursor()
+    hoy = _hoy_colombia()
+    rows = c.execute("SELECT producto_nombre FROM sku_planeacion_config WHERE activo=1").fetchall()
+    sugerencias = []
+    for (producto,) in rows:
+        dsg = _ap._demanda_stock_gramos(c, producto)
+        cob = dsg['cobertura_dias']
+        if cob is None:
+            continue  # sin venta → no aplica
+        nl = c.execute(
+            "SELECT id, substr(fecha_programada,1,10) FROM produccion_programada "
+            "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+            "AND fin_real_at IS NULL AND inicio_real_at IS NULL AND fecha_programada >= ? "
+            "ORDER BY fecha_programada LIMIT 1", (producto, hoy.isoformat())).fetchone()
+        if not nl:
+            continue
+        lote_id, fecha_actual = nl[0], nl[1]
+        try:
+            fa = _date2.fromisoformat(fecha_actual)
+        except Exception:
+            continue
+        ideal_offset = int(cob) - 20 - 7  # producir para que el lote (prod+7) llegue 20d antes de agotarse
+        dias_hasta_actual = (fa - hoy).days
+        if ideal_offset < dias_hasta_actual - 5:  # el lote actual queda >5d tarde
+            nueva = _ap._next_dia_produccion(max(hoy + _td2(days=1), hoy + _td2(days=max(ideal_offset, 1))))
+            if nueva < fa:
+                ok_mp, faltantes = _mp_alcanza_para_lote(conn, producto)
+                sugerencias.append({
+                    'producto': producto, 'lote_id': lote_id,
+                    'fecha_actual': fecha_actual, 'fecha_sugerida': nueva.isoformat(),
+                    'dias_adelanto': (fa - nueva).days, 'cobertura_dias': int(cob),
+                    'demanda_g_dia': round(dsg['demand_g'], 0),
+                    'mp_ok': ok_mp, 'mp_faltantes': faltantes[:5],
+                })
+    sugerencias.sort(key=lambda s: s['cobertura_dias'])  # los más urgentes primero
+    return sugerencias
+
+
+@bp.route("/api/plan/sugerencias-adelanto", methods=["GET"])
+def plan_sugerencias_adelanto():
+    """JSON · productos a los que conviene ADELANTAR la producción (la venta subió) +
+    si hay materia prima para hacerlo ya."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    return jsonify({'ok': True, 'sugerencias': _sugerencias_adelanto(get_db())})
+
+
+@bp.route("/api/plan/aceptar-adelanto", methods=["POST"])
+def plan_aceptar_adelanto():
+    """Acepta el adelanto sugerido de un producto: mueve su próximo lote a la fecha
+    sugerida (queda Fijo · eos_plan) y RECALCULA el plan siguiente (regenera la
+    proyección respetando el lote adelantado). Recalcula la sugerencia server-side
+    (no confía en datos viejos del cliente)."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    d = request.get_json(silent=True) or {}
+    producto = (d.get('producto') or '').strip()
+    if not producto:
+        return jsonify({'ok': False, 'error': 'producto requerido'}), 400
+    conn = get_db(); c = conn.cursor()
+    sug = [s for s in _sugerencias_adelanto(conn) if s['producto'] == producto]
+    if not sug:
+        return jsonify({'ok': False, 'error': 'Ya no hay sugerencia de adelanto para ese producto'}), 404
+    s = sug[0]
+    c.execute("UPDATE produccion_programada SET fecha_programada=?, origen='eos_plan' WHERE id=?",
+              (s['fecha_sugerida'], s['lote_id']))
+    try:
+        audit_log(c, usuario=user, accion='ACEPTAR_ADELANTO', tabla='produccion_programada',
+                  registro_id=s['lote_id'],
+                  despues={'producto': producto, 'de': s['fecha_actual'], 'a': s['fecha_sugerida']})
+    except Exception:
+        pass
+    conn.commit()
+    # recalcula SOLO la cadena de ese producto (rápido · no toca el resto del plan)
+    res = _proyectar_horizonte_2y(conn, dias=730, usuario=user, solo_producto=producto)
+    return jsonify({'ok': True, 'producto': producto, 'fecha_sugerida': s['fecha_sugerida'],
+                    'dias_adelanto': s['dias_adelanto'], 'recalculado': res.get('creados', 0)})
 
 
 def _verificar_volumenes_data(conn):
@@ -15201,6 +15332,7 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
     </div>
   </div>
   <div style="margin-top:6px;font-size:12px;color:#64748b">⚙️ <strong>Plan automático a 2 años:</strong> cada producto se proyecta solo según cómo se vende en Shopify y cuánto hay realmente producido. Se actualiza cada madrugada y adelanta solo la producción si la venta sube. Tú solo ajustas con ➕ lo manual.</div>
+  <div id="sugerencias-adelanto" style="margin-top:10px"></div>
   <div class="legend">
     <span><span class="legend-dot" style="background:#6366f1"></span>🔁 Canónico (auto)</span>
     <span><span class="legend-dot" style="background:#16a34a"></span>🟢 Plan / ajustado a mano</span>
@@ -15639,6 +15771,8 @@ async function cargar(){
     if (typeof cargarAlertasIA === 'function') { cargarAlertasIA(); }
     // 30-may-2026: aviso de ventas sin mapear (no entran a la velocidad).
     if (typeof cargarAlertasVentas === 'function') { cargarAlertasVentas(); }
+    // 16-jun-2026: sugerencias de adelanto (venta subió → adelantar + MP).
+    if (typeof cargarSugerenciasAdelanto === 'function') { cargarSugerenciasAdelanto(); }
   } catch(e){
     // Sebastián 16-may-2026: error visible en el grid + botón reintentar
     // (antes solo alert · el grid quedaba en "Cargando…" para siempre).
@@ -16790,6 +16924,47 @@ async function guardarPlanEnvasado(loteId, pblId){
   }
 }
 
+async function cargarSugerenciasAdelanto(){
+  const cont = document.getElementById('sugerencias-adelanto');
+  if(!cont) return;
+  try{
+    const r = await fetch('/api/plan/sugerencias-adelanto');
+    const d = await r.json().catch(()=>({}));
+    const sug = (d && d.sugerencias) || [];
+    if(!sug.length){ cont.innerHTML = ''; return; }
+    let h = '<div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:12px 16px">'
+      + '<div style="font-weight:800;color:#92400e;margin-bottom:8px">⚡ Sugerencias de adelanto · la venta subió</div>';
+    sug.forEach(function(s){
+      const mp = (s.mp_ok === true) ? '<span style="color:#166534;font-weight:700">✅ hay materia prima</span>'
+        : (s.mp_ok === false ? '<span style="color:#b91c1c;font-weight:700">⚠ falta MP</span>'
+        : '<span style="color:#64748b">MP sin fórmula</span>');
+      h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;'
+        + 'padding:8px 0;border-top:1px solid #fde68a">'
+        + '<div style="font-size:13px"><b>' + escapeHtml(s.producto) + '</b> · adelantar del <b>' + s.fecha_actual
+        + '</b> al <b style="color:#b45309">' + s.fecha_sugerida + '</b> (' + s.dias_adelanto + 'd antes) · '
+        + 'cobertura ' + s.cobertura_dias + 'd · ' + mp + '</div>'
+        + '<button onclick="aceptarAdelanto(&quot;' + escapeHtml(s.producto) + '&quot;)" '
+        + 'style="background:#0d9488;color:#fff;border:none;padding:7px 16px;border-radius:8px;font-weight:700;cursor:pointer;white-space:nowrap">Aceptar y recalcular</button>'
+        + '</div>';
+    });
+    h += '</div>';
+    cont.innerHTML = h;
+  }catch(e){ cont.innerHTML = ''; }
+}
+async function aceptarAdelanto(producto){
+  if(!confirm('Adelantar la producción de "' + producto + '" y recalcular el plan siguiente?')) return;
+  try{
+    const r = await fetch('/api/plan/aceptar-adelanto', {
+      method: 'POST', headers: {'Content-Type':'application/json', 'X-CSRFToken': getCSRF()},
+      body: JSON.stringify({producto: producto})
+    });
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok || !d.ok){ alert('No se pudo: ' + (d.error || r.status)); return; }
+    alert('✅ ' + producto + ' adelantado al ' + d.fecha_sugerida + '. Plan recalculado.');
+    if(typeof cargar === 'function') cargar();
+    cargarSugerenciasAdelanto();
+  }catch(e){ alert('Error: ' + e); }
+}
 async function actualizarPlan2a(){
   const btn = document.getElementById('btn-plan2a');
   if(btn){ btn.disabled = true; btn.textContent = '🔄 Actualizando...'; }

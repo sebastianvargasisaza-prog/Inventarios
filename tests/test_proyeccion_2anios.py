@@ -186,6 +186,62 @@ def test_set_volumenes_bulk(app, db_clean):
         assert _volumen_sku(get_db().cursor(), 'SKU-BB', 'BULK B') == (10, 'sku')
 
 
+def test_sugerencia_adelanto_y_aceptar(app, db_clean):
+    """La venta sube → cobertura corta vs un lote lejano → sugiere adelantar; al
+    aceptar, mueve el lote (Fijo) y recalcula."""
+    from .conftest import TEST_PASSWORD, csrf_headers
+    _api()
+    from blueprints.plan import _sugerencias_adelanto
+    from database import get_db
+    _seed_producto(producto='ADEL', sku='SKU-AD', vel=20, lote_kg=30, stock=50)
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    conn.execute("UPDATE sku_producto_map SET volumen_ml=30 WHERE sku='SKU-AD'")
+    # próximo lote MUY lejano (90d) → queda tarde porque la venta es alta
+    far = ((_dt.datetime.utcnow() - _dt.timedelta(hours=5)).date() + _dt.timedelta(days=90)).isoformat()
+    conn.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes) "
+                 "VALUES (?,?,?,?,?,1)", ('ADEL', far, 'pendiente', 'eos_proyeccion', 30))
+    lote_id = conn.execute("SELECT id FROM produccion_programada WHERE producto='ADEL'").fetchone()[0]
+    conn.commit(); conn.close()
+    with app.app_context():
+        sug = _sugerencias_adelanto(get_db())
+    mine = [s for s in sug if s['producto'] == 'ADEL']
+    assert mine, sug
+    assert mine[0]['fecha_sugerida'] < far and mine[0]['dias_adelanto'] > 5
+    assert mine[0]['mp_ok'] is None  # sin fórmula → MP desconocido
+
+    c = app.test_client()
+    c.post('/login', data={'username': 'sebastian', 'password': TEST_PASSWORD}, headers=csrf_headers())
+    r = c.post('/api/plan/aceptar-adelanto', json={'producto': 'ADEL'}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:200]
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    try:
+        row = conn.execute("SELECT fecha_programada, origen FROM produccion_programada WHERE id=?", (lote_id,)).fetchone()
+        assert row[0][:10] < far          # se movió antes
+        assert row[1] == 'eos_plan'        # quedó Fijo (decisión aceptada)
+    finally:
+        conn.close()
+
+
+def test_mp_alcanza_para_lote_con_faltante(app, db_clean):
+    """Chequeo de MP: con fórmula y stock insuficiente → mp_ok False + faltante."""
+    _api()
+    from blueprints.plan import _mp_alcanza_para_lote
+    from database import get_db
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=30)
+    # maestro_mps PRIMERO (formula_items tiene trigger FK que exige material activo)
+    conn.execute("INSERT INTO maestro_mps (codigo_mp,nombre_inci,activo) VALUES ('MPX-CHK','Mat X',1)")
+    conn.execute("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES ('MPCHK',10,1)")
+    conn.execute("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,cantidad_g_por_lote) "
+                 "VALUES ('MPCHK','MPX-CHK','Mat X',5000)")
+    # solo 1000 g en stock VIGENTE → falta para 5000
+    conn.execute("INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,lote,estado_lote) "
+                 "VALUES ('MPX-CHK','Mat X',1000,'Entrada','2026-06-10','L-CHK','VIGENTE')")
+    conn.commit(); conn.close()
+    with app.app_context():
+        ok, faltantes = _mp_alcanza_para_lote(get_db(), 'MPCHK')
+    assert ok is False and faltantes
+
+
 def test_set_volumen_sku_inexistente_404(app, db_clean):
     from .conftest import TEST_PASSWORD, csrf_headers
     c = app.test_client()
