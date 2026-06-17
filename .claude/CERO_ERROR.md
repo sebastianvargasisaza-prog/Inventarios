@@ -234,6 +234,30 @@ en el load de una página. (2) "Unexpected token '<'" casi siempre = 502/504/red
 endpoint lento o caído, no un bug de parseo → revisar timing/health, no el JSON. (3) un fetch
 de adorno (panel lateral) jamás debe ir en la ruta crítica de carga.
 
+## 📋 M44 · Plan MANUAL desde hoy por cadencia (no por stock) + fuente única de volumen · 16-jun
+
+El plan automático "por cobertura de stock" mandaba lotes a 2027 (stock sobreestimado).
+Solución definitiva pedida por Sebastián: **plan determinista por CADENCIA desde HOY**.
+`plan._generar_plan_desde_hoy(conn)` (botón "📋 Generar plan"): LIMPIA (borra
+eos_proyeccion, cancela pendiente/programado/pausado y los completado-espejo [fab#];
+conserva producción REAL de planta) y por producto con venta tiende lotes cada
+`cadencia = lote_g / demanda_g·día` (demanda de `_demanda_stock_gramos`, volumen por
+SKU) desde hoy, máx 2/día, 2 años, origen='eos_plan' (Fijo, movible), guardando
+`cadencia_dias` (mig 263). NO usa stock actual → nunca se va a 2027.
+**Mover recalcula la cadena:** `reprogramar_proxima`, si el lote tiene cadencia_dias,
+re-espacia los siguientes del producto a nueva_fecha + k×cadencia (día hábil). El
+usuario mueve a fechas pasadas lo ya producido y el resto se recoloca solo.
+
+**Auditoría ultracode (14 hallazgos · M1/M5):** Necesidades (_calcular_animus_dtc)
+NO leía el volumen que el usuario carga en `sku_producto_map.volumen_ml` (leía solo
+`producto_presentaciones`) → mostraba cobertura/alcanza/kg con un ml viejo, distinto al
+del motor en gramos. FIX: en _calcular_animus_dtc, sobrescribir ml_por_sku con
+sku_producto_map.volumen_ml (misma precedencia que `_volumen_sku`). Lección: un solo
+resolver de volumen para pantalla y motor. PENDIENTE (de la misma auditoría): unificar
+velocidad Necesidades vs grams (#2), programar-produccion match EXACTO sin UPPER/TRIM
+→ 404 pilotos (#3), lotes pausados no movibles (#5), _demanda_stock_gramos SUM crudo
+de stock_pt (#9).
+
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
 
 Al cerrar una sesión donde se encontró/arregló un bug con patrón no listado aquí:

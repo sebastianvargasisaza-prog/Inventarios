@@ -3293,6 +3293,19 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     except Exception:
         # Tabla puede no existir en tests antiguos
         pass
+    # Sebastián 16-jun (M1 · auditoría ultracode): el VOLUMEN que el usuario carga por
+    # tamaño se graba en sku_producto_map.volumen_ml (botón Volúmenes) y es la fuente de
+    # verdad que ya usa el motor en gramos (_volumen_sku). Necesidades leía SOLO
+    # producto_presentaciones → mostraba cobertura/alcanza/kg con un ml viejo/heurístico
+    # distinto al que el usuario fijó. Ahora ese volumen MANDA (sobrescribe), igual que
+    # en _volumen_sku · así la pantalla y el motor coinciden.
+    try:
+        for r in c.execute(
+            "SELECT UPPER(TRIM(sku)), volumen_ml FROM sku_producto_map "
+            "WHERE COALESCE(activo,1)=1 AND COALESCE(volumen_ml,0) > 0").fetchall():
+            ml_por_sku[r[0]] = float(r[1])
+    except Exception:
+        pass  # columna volumen_ml puede no existir (mig vieja) → queda producto_presentaciones
 
     # 3. Stock por SKU (re-uso helper)
     from blueprints.programacion import _resolved_stock_por_sku
@@ -11473,6 +11486,127 @@ def _proyectar_horizonte_2y(conn, dias=730, usuario='auto-proyeccion', dry_run=F
             'productos_planeados': productos_planeados, 'dias': dias, 'dry_run': dry_run}
 
 
+def _generar_plan_desde_hoy(conn, dias=730, usuario='plan-manual', dry_run=False):
+    """Botón PLAN (Sebastián 16-jun · 'la única forma que veo'): LIMPIA el calendario y
+    coloca, por producto, una cadena de lotes DESDE HOY cada 'cadencia' días, hasta 2
+    años. cadencia = cuánto dura un lote según la venta real (lote_g / demanda_g·día,
+    con volumen por SKU que el usuario cargó). NO depende del stock actual → evita el
+    bug que mandaba todo a 2027. Cada lote queda Fijo (eos_plan · movible) con
+    cadencia_dias guardada; al mover un lote se re-espacia la cadena. El usuario mueve a
+    fechas pasadas lo ya producido y la cadena se recalcula.
+
+    LIMPIA: borra la proyección automática vieja (eos_proyeccion no ejecutada), cancela
+    lo pendiente/programado/pausado (cualquier origen) y los 'completado' del espejo de
+    Fabricación ([fab#]/eos_retroactivo). CONSERVA la producción REAL de planta."""
+    from datetime import timedelta as _td
+    import blueprints.auto_plan as _ap
+    c = conn.cursor()
+    hoy = _hoy_colombia()
+    LOTES_MAX = 2
+    CAD_MIN, CAD_MAX = 5, 365
+
+    a_borrar_proy = c.execute(
+        "SELECT COUNT(*) FROM produccion_programada WHERE origen='eos_proyeccion' "
+        "AND COALESCE(estado,'') NOT IN ('completado','cancelado') "
+        "AND fin_real_at IS NULL AND inicio_real_at IS NULL").fetchone()[0]
+    a_cancelar = c.execute(
+        "SELECT COUNT(*) FROM produccion_programada "
+        "WHERE COALESCE(estado,'') IN ('pendiente','programado','esperando_recurso') "
+        "AND COALESCE(origen,'')<>'eos_proyeccion'").fetchone()[0]
+    a_cancelar_esp = c.execute(
+        "SELECT COUNT(*) FROM produccion_programada WHERE estado='completado' "
+        "AND (COALESCE(origen,'')='eos_retroactivo' OR COALESCE(observaciones,'') LIKE '%[fab#%')").fetchone()[0]
+    if dry_run:
+        return {'dry_run': True, 'a_borrar_proyeccion': a_borrar_proy,
+                'a_cancelar': a_cancelar, 'a_cancelar_espejo': a_cancelar_esp}
+
+    # 1) LIMPIAR
+    c.execute("DELETE FROM produccion_programada WHERE origen='eos_proyeccion' "
+              "AND COALESCE(estado,'') NOT IN ('completado','cancelado') "
+              "AND fin_real_at IS NULL AND inicio_real_at IS NULL")
+    c.execute("UPDATE produccion_programada SET estado='cancelado' "
+              "WHERE COALESCE(estado,'') IN ('pendiente','programado','esperando_recurso')")
+    c.execute("UPDATE produccion_programada SET estado='cancelado' WHERE estado='completado' "
+              "AND (COALESCE(origen,'')='eos_retroactivo' OR COALESCE(observaciones,'') LIKE '%[fab#%')")
+    conn.commit()
+
+    # 2) GENERAR cadenas desde hoy
+    slots = {}
+    for r in c.execute("SELECT substr(fecha_programada,1,10), COUNT(*) FROM produccion_programada "
+                       "WHERE COALESCE(estado,'') NOT IN ('cancelado') GROUP BY substr(fecha_programada,1,10)").fetchall():
+        if r[0]:
+            slots[r[0]] = r[1]
+
+    def _slot(desde):
+        fd = _ap._next_dia_produccion(desde)
+        for _ in range(220):
+            iso = fd.isoformat()
+            if slots.get(iso, 0) < LOTES_MAX:
+                slots[iso] = slots.get(iso, 0) + 1
+                return fd
+            fd = _ap._next_dia_produccion(fd + _td(days=1))
+        return fd
+
+    skus = c.execute(
+        "SELECT spc.producto_nombre, fh.lote_size_kg FROM sku_planeacion_config spc "
+        "LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(spc.producto_nombre)) "
+        "WHERE spc.activo=1 ORDER BY spc.prioridad, spc.producto_nombre").fetchall()
+    creados = 0
+    productos = 0
+    nuevos = []
+    sin_venta = 0
+    for producto, lote_kg in skus:
+        if not lote_kg or float(lote_kg) <= 0:
+            continue
+        dsg = _ap._demanda_stock_gramos(c, producto)
+        demand_g = dsg['demand_g']
+        if demand_g <= 0.001:
+            sin_venta += 1
+            continue
+        lote_g = float(lote_kg) * 1000.0
+        cad = int(round(lote_g / demand_g))
+        cad = max(CAD_MIN, min(cad, CAD_MAX))
+        n = 0
+        off = 0
+        while off <= dias and n < 130:
+            prod_date = _slot(max(hoy, hoy + _td(days=off)))
+            nuevos.append((producto, prod_date.isoformat(), float(lote_kg), cad,
+                           'Plan manual desde hoy · cadencia ~' + str(cad) + 'd · demanda ' + format(demand_g, '.0f') + ' g/d'))
+            n += 1
+            off = (prod_date - hoy).days + cad
+        if n:
+            productos += 1
+            creados += n
+    for producto, fiso, kg, cad, obs in nuevos:
+        c.execute(
+            "INSERT INTO produccion_programada (producto, fecha_programada, lotes, estado, "
+            "observaciones, origen, cantidad_kg, cadencia_dias) VALUES (?, ?, 1, 'pendiente', ?, 'eos_plan', ?, ?)",
+            (producto, fiso, obs, kg, cad))
+    try:
+        audit_log(c, usuario=usuario, accion='GENERAR_PLAN_DESDE_HOY', tabla='produccion_programada',
+                  registro_id=0, despues={'creados': creados, 'productos': productos,
+                                          'limpiados': a_cancelar + a_cancelar_esp + a_borrar_proy})
+    except Exception:
+        pass
+    conn.commit()
+    return {'dry_run': False, 'creados': creados, 'productos': productos, 'sin_venta': sin_venta,
+            'limpiados': a_cancelar + a_cancelar_esp + a_borrar_proy}
+
+
+@bp.route("/api/plan/generar-plan-desde-hoy", methods=["GET", "POST"])
+def plan_generar_desde_hoy():
+    """Botón PLAN: limpia y genera el plan a 2 años por cadencia DESDE HOY (manual,
+    movible). GET o {dry_run:true} → preview · POST {dry_run:false} → aplica."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    d = request.get_json(silent=True) or {}
+    dry = (request.method == 'GET') or bool(d.get('dry_run', True))
+    res = _generar_plan_desde_hoy(get_db(), dias=730, usuario=user, dry_run=dry)
+    return jsonify({'ok': True, **res})
+
+
 @bp.route("/api/plan/proyectar-2anios", methods=["GET", "POST"])
 def plan_proyectar_2anios():
     """Genera/actualiza el plan rodante a 2 años (ver _proyectar_horizonte_2y).
@@ -15513,12 +15647,12 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
     <div>
       <button onclick="abrirNuevaProduccion('')" class="success" id="btn-nueva-prod"
         style="font-size:14px;padding:10px 18px;background:#0d9488;font-weight:700" title="Programa manualmente CUALQUIER producto: pilotos, productos de otros clientes o lo que no está en Necesidades. También puedes hacer clic en el ➕ de cualquier día del calendario.">➕ Programar producción</button>
-      <button onclick="limpiarPlanAuto()" class="danger" id="btn-limpiar-auto"
-        style="font-size:14px;padding:10px 18px;background:#b45309" title="Borra los lotes de la PROYECCIÓN AUTOMÁTICA (los que se fueron a 2027 por mal cálculo) y apaga el plan automático. NO toca lo que produjiste ni lo que programaste a mano. Quedás en planeación manual desde Necesidades.">🧹 Limpiar plan automático</button>
+      <button onclick="generarPlanDesdeHoy()" class="success" id="btn-plan-hoy"
+        style="font-size:14px;padding:10px 18px;background:#7c3aed;font-weight:700" title="LIMPIA el calendario y coloca TODAS las producciones desde HOY, cada producto según su cadencia real (cuánto dura un lote según la venta), por 2 años. Luego mové a fechas pasadas las que ya produjiste y la cadena se recalcula sola.">📋 Generar plan (2 años desde hoy)</button>
       <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" style="display:none" disabled>✅ Confirmar y programar TODO</button>
     </div>
   </div>
-  <div style="margin-top:6px;font-size:12px;color:#64748b">📝 <strong>Planeación manual:</strong> programá cada producto desde <strong>Necesidades</strong> (botón Programar) o con ➕ en el calendario. El plan automático a 2 años está <strong>apagado</strong> (calculaba mal la cobertura · lo afinamos luego). &nbsp;·&nbsp; <a href="/admin/revisar-plan" style="color:#0d9488;font-weight:700">🔎 Revisar plan</a> &nbsp;·&nbsp; <a href="/admin/verificar-volumenes" style="color:#0d9488;font-weight:700">📏 Volúmenes</a></div>
+  <div style="margin-top:6px;font-size:12px;color:#64748b">📝 <strong>Planeación manual:</strong> <strong>📋 Generar plan</strong> coloca todo desde hoy por cadencia (2 años); luego <strong>mové</strong> los lotes (la cadena se recalcula) y programá extras con ➕. &nbsp;·&nbsp; <a href="/admin/revisar-plan" style="color:#0d9488;font-weight:700">🔎 Revisar plan</a> &nbsp;·&nbsp; <a href="/admin/verificar-volumenes" style="color:#0d9488;font-weight:700">📏 Volúmenes</a></div>
   <div id="sugerencias-adelanto" style="margin-top:10px"></div>
   <div class="legend">
     <span><span class="legend-dot" style="background:#6366f1"></span>🔁 Canónico (auto)</span>
@@ -17154,23 +17288,41 @@ async function aceptarAdelanto(producto){
     cargarSugerenciasAdelanto();
   }catch(e){ alert('Error: ' + e); }
 }
-async function limpiarPlanAuto(){
-  if(!confirm('Limpiar el plan AUTOMÁTICO (borra los lotes de proyección que se fueron a 2027) y apagarlo?\n\nNO toca lo que ya produjiste ni lo que programaste a mano. Quedás en planeación manual desde Necesidades.')) return;
-  const btn = document.getElementById('btn-limpiar-auto');
-  if(btn){ btn.disabled = true; btn.textContent = '🧹 Limpiando...'; }
+async function generarPlanDesdeHoy(){
+  // 1) preview
+  let pv;
   try{
-    const r = await fetch('/api/plan/limpiar-proyeccion', {
+    const r = await fetch('/api/plan/generar-plan-desde-hoy');
+    pv = await r.json().catch(()=>({}));
+    if(!r.ok || !pv.ok){ alert('No se pudo calcular la vista previa: ' + (pv.error || r.status)); return; }
+  }catch(e){ alert('Error: ' + e); return; }
+  const msg = 'GENERAR PLAN A 2 AÑOS DESDE HOY\n\n'
+    + 'Esto LIMPIA el calendario y coloca cada producto desde hoy según su cadencia real.\n\n'
+    + 'Se van a quitar:\n'
+    + '• ' + (pv.a_cancelar||0) + ' lote(s) pendientes/programados\n'
+    + '• ' + (pv.a_borrar_proyeccion||0) + ' de la proyección automática vieja\n'
+    + '• ' + (pv.a_cancelar_espejo||0) + ' "completados" del espejo de Fabricación\n\n'
+    + '(Se conserva la producción REAL de planta.)\n\nLuego mové a fechas pasadas las que ya produjiste y la cadena se recalcula sola. ¿Genero?';
+  if(!confirm(msg)) return;
+  const btn = document.getElementById('btn-plan-hoy');
+  if(btn){ btn.disabled = true; btn.textContent = '📋 Generando...'; }
+  try{
+    const r2 = await fetch('/api/plan/generar-plan-desde-hoy', {
       method: 'POST', headers: {'Content-Type':'application/json', 'X-CSRFToken': getCSRF()},
-      body: JSON.stringify({})
+      body: JSON.stringify({dry_run: false})
     });
-    const d = await r.json().catch(()=>({}));
-    if(!r.ok || !d.ok){ alert('No se pudo: ' + (d.error || r.status)); }
+    const d2 = await r2.json().catch(()=>({}));
+    if(!r2.ok || !d2.ok){ alert('Falló: ' + (d2.error || r2.status)); }
     else{
-      alert('✅ Listo. Se quitaron ' + (d.eliminados||0) + ' lote(s) de la proyección automática y se apagó el plan automático.\n\nPrograma manual desde Necesidades (botón Programar).');
+      alert('✅ Plan generado desde hoy.\n\n'
+        + 'Productos planeados: ' + (d2.productos||0) + '\n'
+        + 'Lotes colocados: ' + (d2.creados||0) + '\n'
+        + (d2.sin_venta ? (d2.sin_venta + ' producto(s) sin venta Shopify no se planearon.\n') : '')
+        + '\nMové los lotes que quieras (la cadena se recalcula al mover).');
       if(typeof cargar === 'function') cargar();
     }
   }catch(e){ alert('Error: ' + e); }
-  if(btn){ btn.disabled = false; btn.innerHTML = '🧹 Limpiar plan automático'; }
+  if(btn){ btn.disabled = false; btn.innerHTML = '📋 Generar plan (2 años desde hoy)'; }
 }
 async function dejarSoloReal(){
   // Paso 1: vista previa (no toca nada)
@@ -19950,6 +20102,31 @@ def reprogramar_proxima(pid):
         cur.execute(
             "UPDATE produccion_programada SET estado='pendiente', inicio_real_at=NULL, "
             "fin_real_at=NULL, inventario_descontado_at=NULL, kg_real=NULL WHERE id=?", (pid,))
+    # Sebastián 16-jun · "al moverlas se autocalcula y modifica": si el lote es parte de
+    # una cadena del Plan (tiene cadencia_dias), re-espaciar los lotes SIGUIENTES del
+    # mismo producto a nueva_fecha + k×cadencia (días hábiles). El usuario mueve a una
+    # fecha pasada lo ya producido y el resto de la cadena se recoloca solo.
+    try:
+        _cadr = cur.execute("SELECT cadencia_dias FROM produccion_programada WHERE id=?", (pid,)).fetchone()
+        _cad = int(_cadr[0]) if _cadr and _cadr[0] else 0
+        if _cad > 0:
+            import blueprints.auto_plan as _ap2
+            from datetime import date as _d2, timedelta as _t2
+            _base = _d2.fromisoformat(nueva_fecha)
+            _sig = cur.execute(
+                "SELECT id FROM produccion_programada WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) "
+                "AND id<>? AND COALESCE(cadencia_dias,0)>0 "
+                "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+                "AND fin_real_at IS NULL AND inicio_real_at IS NULL "
+                "AND substr(fecha_programada,1,10) > ? ORDER BY fecha_programada",
+                (producto, pid, (fecha_antes or '')[:10])).fetchall()
+            _k = 1
+            for (_sid,) in _sig:
+                _nf = _ap2._next_dia_produccion(_base + _t2(days=_cad * _k)).isoformat()
+                cur.execute("UPDATE produccion_programada SET fecha_programada=? WHERE id=?", (_nf, _sid))
+                _k += 1
+    except Exception:
+        pass
     conn.commit()
     audit_log(cur, usuario=user, accion="REPROGRAMAR_PRODUCCION_PROGRAMADA",
               tabla="produccion_programada", registro_id=pid,

@@ -271,6 +271,71 @@ def test_revisar_plan_detecta_vende_sin_plan(app, db_clean):
     assert r.status_code == 200 and b'Revisar plan' in r.data
 
 
+def test_generar_plan_desde_hoy(app, db_clean):
+    """Botón PLAN: limpia y coloca cada producto DESDE HOY por cadencia (no 2027)."""
+    _api()
+    from blueprints.plan import _generar_plan_desde_hoy
+    from database import get_db
+    _seed_producto(producto='PLAN HOY', sku='SKU-PH', vel=10, lote_kg=30, stock=999)
+    # un pendiente viejo que debe limpiarse
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    fut = ((_dt.datetime.utcnow() - _dt.timedelta(hours=5)).date() + _dt.timedelta(days=300)).isoformat()
+    conn.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes) "
+                 "VALUES (?,?,?,?,?,1)", ('PLAN HOY', fut, 'pendiente', 'eos_plan', 30))
+    viejo = conn.execute("SELECT id FROM produccion_programada WHERE producto='PLAN HOY' AND fecha_programada=?", (fut,)).fetchone()[0]
+    conn.commit(); conn.close()
+    with app.app_context():
+        res = _generar_plan_desde_hoy(get_db(), dias=200, usuario='test')
+    assert res['creados'] >= 1 and res['productos'] >= 1
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    try:
+        # el pendiente viejo quedó cancelado (se limpió)
+        assert conn.execute("SELECT estado FROM produccion_programada WHERE id=?", (viejo,)).fetchone()[0] == 'cancelado'
+        lotes = conn.execute("SELECT substr(fecha_programada,1,10), origen, cadencia_dias FROM produccion_programada "
+                             "WHERE producto='PLAN HOY' AND origen='eos_plan' AND COALESCE(estado,'')='pendiente' "
+                             "ORDER BY fecha_programada").fetchall()
+        assert len(lotes) >= 1
+        hoy = (_dt.datetime.utcnow() - _dt.timedelta(hours=5)).date().isoformat()
+        # el PRIMER lote arranca cerca de HOY (no en 2027)
+        assert lotes[0][0] <= (_dt.date.fromisoformat(hoy) + _dt.timedelta(days=7)).isoformat()
+        assert all(l[1] == 'eos_plan' and l[2] and l[2] > 0 for l in lotes)
+    finally:
+        conn.close()
+
+
+def test_mover_recalcula_cadena(app, db_clean):
+    """Al mover un lote de la cadena, los siguientes del producto se re-espacian."""
+    from .conftest import TEST_PASSWORD, csrf_headers
+    _api()
+    from blueprints.plan import _generar_plan_desde_hoy
+    from database import get_db
+    _seed_producto(producto='CADENA MOV', sku='SKU-CM', vel=20, lote_kg=30, stock=0)
+    with app.app_context():
+        _generar_plan_desde_hoy(get_db(), dias=200, usuario='test')
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    lotes = conn.execute("SELECT id, substr(fecha_programada,1,10), cadencia_dias FROM produccion_programada "
+                         "WHERE producto='CADENA MOV' AND COALESCE(estado,'')='pendiente' ORDER BY fecha_programada").fetchall()
+    conn.close()
+    assert len(lotes) >= 2, lotes
+    primero, cad = lotes[0][0], lotes[0][2]
+    # mover el primero a una fecha pasada conocida
+    nueva = ((_dt.datetime.utcnow() - _dt.timedelta(hours=5)).date() - _dt.timedelta(days=10)).isoformat()
+    c = app.test_client()
+    c.post('/login', data={'username': 'sebastian', 'password': TEST_PASSWORD}, headers=csrf_headers())
+    r = c.post('/api/plan/proximas/' + str(primero) + '/reprogramar',
+               json={'nueva_fecha': nueva, 'skip_validacion_dia': True}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:200]
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    try:
+        # el segundo lote se re-espació a ~ nueva + cadencia (día hábil)
+        seg = conn.execute("SELECT substr(fecha_programada,1,10) FROM produccion_programada WHERE id=?", (lotes[1][0],)).fetchone()[0]
+        objetivo = _dt.date.fromisoformat(nueva) + _dt.timedelta(days=cad)
+        diff = abs((_dt.date.fromisoformat(seg) - objetivo).days)
+        assert diff <= 4, (seg, objetivo.isoformat(), cad)  # día hábil más cercano
+    finally:
+        conn.close()
+
+
 def test_set_volumen_sku_inexistente_404(app, db_clean):
     from .conftest import TEST_PASSWORD, csrf_headers
     c = app.test_client()

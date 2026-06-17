@@ -352,6 +352,12 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (263, "Plan rodante MANUAL desde hoy (Sebastián 16-jun): cadencia_dias por lote "
+          "en produccion_programada · guarda cada cuántos días se repite el producto "
+          "para re-espaciar la cadena cuando el usuario mueve un lote. 'duplicate "
+          "column' benigno.", [
+        "ALTER TABLE produccion_programada ADD COLUMN cadencia_dias INTEGER",
+    ]),
     (262, "Multi-volumen por SKU (Sebastián 16-jun): volumen_ml por SKU en "
           "sku_producto_map · un producto puede venderse en varios tamaños (30+10, "
           "30+15, o solo 30). La planeación pasa a GRAMOS (demanda = Σ ventas×volumen "
