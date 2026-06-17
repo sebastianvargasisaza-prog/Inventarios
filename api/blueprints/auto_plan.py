@@ -290,6 +290,74 @@ def _ventas_diarias_por_sku(c, sku, dias=60):
     return []
 
 
+def velocidad_blended_uds_dia(v30, v60, v90, dias_creacion=None, ventana=60):
+    """FUENTE ÚNICA de velocidad predictiva (uds/día) · 17-jun unificación M1/M5.
+
+    Blend 30/60/90 con detección de aceleración — EXACTAMENTE la fórmula que la
+    pantalla de Necesidades (_calcular_animus_dtc) muestra, extraída para que el
+    motor del calendario use la MISMA. Antes pantalla y motor usaban algoritmos
+    distintos (blend vs regresión 30d) → cobertura mostrada ≠ cadencia programada.
+
+    Args:
+      v30/v60/v90: UNIDADES vendidas en esas ventanas (totales, no promedios).
+      dias_creacion: antigüedad del producto (ajusta el divisor para productos
+        nuevos · piso 7d) · None = producto establecido.
+      ventana: días de la ventana media (default 60).
+    Devuelve (velocidad_uds_dia, tendencia_str). La tendencia ya está HORNEADA en
+    la velocidad — NO volver a multiplicar por un factor.
+    """
+    if dias_creacion and dias_creacion > 0:
+        _div_30 = float(min(30, max(dias_creacion, 7)))
+        _div_60 = float(min(int(ventana), max(dias_creacion, 7)))
+        _div_90 = float(min(90, max(dias_creacion, 7)))
+    else:
+        _div_30, _div_60, _div_90 = 30.0, float(ventana), 90.0
+    vel_30d = (v30 or 0) / _div_30
+    vel_60d = (v60 or 0) / _div_60
+    vel_90d = (v90 or 0) / _div_90
+    if vel_60d < 0.001:
+        vel = max(vel_30d, vel_90d)
+        tendencia = 'sin_historico'
+    else:
+        ratio = vel_30d / vel_60d if vel_60d > 0 else 1.0
+        if ratio > 1.30:
+            vel = vel_30d * 1.10
+            tendencia = 'aceleracion_fuerte'
+        elif ratio > 1.15:
+            vel = vel_30d * 0.6 + vel_60d * 0.4
+            tendencia = 'aceleracion_moderada'
+        elif ratio < 0.70:
+            vel = vel_30d * 0.3 + vel_60d * 0.7
+            tendencia = 'caida_fuerte'
+        elif ratio < 0.85:
+            vel = vel_30d * 0.5 + vel_60d * 0.5
+            tendencia = 'caida_moderada'
+        else:
+            vel = vel_30d * 0.5 + vel_60d * 0.5
+            tendencia = 'estable'
+    if vel_90d > 0.001:
+        vel = max(vel, vel_90d * 0.5)
+        vel = min(vel, vel_90d * 2.0)
+    return (vel, tendencia)
+
+
+def _velocidad_blended_producto(c, producto, ventana=60):
+    """Velocidad blended uds/día por PRODUCTO usando la fuente única, agregando las
+    ventas de los SKUs NO-regalo (misma exclusión que Necesidades). Devuelve uds/día.
+    El motor del calendario (_demanda_stock_gramos) la usa para que la cadencia que
+    programa sea consistente con la cobertura que muestra Necesidades."""
+    skus = c.execute(
+        "SELECT sku FROM sku_producto_map WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) "
+        "AND COALESCE(activo,1)=1 AND COALESCE(es_regalo,0)=0", (producto,)).fetchall()
+    v30 = v60 = v90 = 0.0
+    for (sku,) in skus:
+        v30 += sum(q for _, q in _ventas_diarias_por_sku(c, sku, dias=30))
+        v60 += sum(q for _, q in _ventas_diarias_por_sku(c, sku, dias=ventana))
+        v90 += sum(q for _, q in _ventas_diarias_por_sku(c, sku, dias=90))
+    vel, _t = velocidad_blended_uds_dia(v30, v60, v90, None, ventana)
+    return vel
+
+
 def _velocidad_y_tendencia(c, sku):
     """Velocidad de venta diaria + factor de tendencia (regresión 30d).
 
@@ -13057,20 +13125,35 @@ def _demanda_stock_gramos(c, producto):
         _resolved = _rss(getattr(c, 'connection', c), empresa='ANIMUS')
     except Exception:
         _resolved = {}
+    # FIX 17-jun · UNIFICACIÓN de velocidad (M1/M5): la demanda usa la MISMA velocidad
+    # blended 30/60/90 por PRODUCTO que muestra Necesidades (velocidad_blended_uds_dia),
+    # no la regresión 30d por SKU. Antes pantalla y calendario usaban algoritmos
+    # distintos → cobertura mostrada ≠ cadencia programada. Además el viejo
+    # vel_proj = vel × factor DOBLE-aplicaba la tendencia (el blend ya la hornea).
+    # demanda_g/día = vel_producto(uds/d) × volumen ponderado por ventas (multi-volumen).
     detalle = []
-    demand_g = 0.0
     stock_g = 0.0
+    v30_tot = v60_tot = v90_tot = 0.0
+    _wvol = 0.0           # Σ ventas60_sku × volumen_sku (para el volumen ponderado)
+    _vol_simple = []
     for sku, tono in skus:
-        vel, fac = _velocidad_y_tendencia(c, sku)
-        vel_proj = vel * (fac or 1.0)
         _info = _resolved.get(str(sku or '').strip().upper())
         units = (_info or {}).get('uds', 0) or 0
         vol, vfuente = _volumen_sku(c, sku, producto)
-        demand_g += vel_proj * vol
         stock_g += float(units) * vol
-        detalle.append({'sku': sku, 'tono': tono, 'velocidad': round(vel, 2),
-                        'tendencia': round(fac or 1.0, 2), 'unidades': int(units),
-                        'volumen': round(vol, 2), 'fuente_vol': vfuente})
+        _v30 = sum(q for _, q in _ventas_diarias_por_sku(c, sku, dias=30))
+        _v60 = sum(q for _, q in _ventas_diarias_por_sku(c, sku, dias=60))
+        _v90 = sum(q for _, q in _ventas_diarias_por_sku(c, sku, dias=90))
+        v30_tot += _v30; v60_tot += _v60; v90_tot += _v90
+        _wvol += _v60 * vol
+        _vol_simple.append(vol)
+        detalle.append({'sku': sku, 'tono': tono, 'velocidad': round(_v30 / 30.0, 2),
+                        'unidades': int(units), 'volumen': round(vol, 2),
+                        'fuente_vol': vfuente})
+    vel_prod, _tend = velocidad_blended_uds_dia(v30_tot, v60_tot, v90_tot, None, 60)
+    vol_pond = (_wvol / v60_tot) if v60_tot > 0.001 else (
+        (sum(_vol_simple) / len(_vol_simple)) if _vol_simple else 0.0)
+    demand_g = vel_prod * vol_pond
     hoy = (_dt2.utcnow() - _td2(hours=5)).date()
     pipe_kg = c.execute(
         "SELECT COALESCE(SUM(COALESCE(kg_real,cantidad_kg,0)),0) FROM produccion_programada "

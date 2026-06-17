@@ -3629,35 +3629,18 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             _div_90 = float(min(90, max(_dias_prod_vel, 7)))
         else:
             _div_30, _div_60, _div_90 = 30.0, float(ventana), 90.0
+        # vel_30/60/90 para el detalle de la respuesta (display)
         vel_30d = ventas_30d_total / _div_30
         vel_60d = ventas_periodo_total / _div_60
         vel_90d = ventas_90d_total / _div_90
-        if vel_60d < 0.001:
-            # Sin histórico · usar lo poco que haya
-            velocidad_uds_dia = max(vel_30d, vel_90d)
-            tendencia = 'sin_historico'
-        else:
-            ratio_30_60 = vel_30d / vel_60d if vel_60d > 0 else 1.0
-            if ratio_30_60 > 1.30:
-                velocidad_uds_dia = vel_30d * 1.10  # aceleración + buffer
-                tendencia = 'aceleracion_fuerte'
-            elif ratio_30_60 > 1.15:
-                velocidad_uds_dia = vel_30d * 0.6 + vel_60d * 0.4
-                tendencia = 'aceleracion_moderada'
-            elif ratio_30_60 < 0.70:
-                velocidad_uds_dia = vel_30d * 0.3 + vel_60d * 0.7  # caída suave
-                tendencia = 'caida_fuerte'
-            elif ratio_30_60 < 0.85:
-                velocidad_uds_dia = vel_30d * 0.5 + vel_60d * 0.5
-                tendencia = 'caida_moderada'
-            else:
-                velocidad_uds_dia = vel_30d * 0.5 + vel_60d * 0.5
-                tendencia = 'estable'
-        # Cap con 90d para evitar locuras: nunca menor a vel_90d × 0.5 ni
-        # mayor a vel_90d × 2 (si hay histórico 90d significativo)
-        if vel_90d > 0.001:
-            velocidad_uds_dia = max(velocidad_uds_dia, vel_90d * 0.5)
-            velocidad_uds_dia = min(velocidad_uds_dia, vel_90d * 2.0)
+        # FUENTE ÚNICA de velocidad (17-jun · unificación M1/M5): el blend 30/60/90
+        # vive en auto_plan.velocidad_blended_uds_dia y lo usa TAMBIÉN el motor del
+        # calendario (_demanda_stock_gramos) → la cobertura mostrada acá y la cadencia
+        # que programa el calendario salen de la MISMA fórmula. (Extracción idéntica.)
+        from blueprints.auto_plan import velocidad_blended_uds_dia as _vblend
+        velocidad_uds_dia, tendencia = _vblend(
+            ventas_30d_total, ventas_periodo_total, ventas_90d_total,
+            _dias_prod_vel, ventana)
         velocidad_kg_dia = (velocidad_uds_dia * ml_promedio) / 1000.0
         # Stock kg = uds × ml / 1000 + pipeline reciente + Fijo pendiente
         # FIX P0 audit 24-may-2026 · sumar Fijo futuro (60d) al stock total

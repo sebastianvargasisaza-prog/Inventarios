@@ -3121,23 +3121,38 @@ def produccion_ajustar_cantidad(pid):
                 if _is_unl(mnom):
                     plan.append({'mid': mid, 'mnom': mnom, 'g': g_extra, 'lote': 'unlimited', 'unlimited': True})
                     continue
-                # FEFO
+                # FEFO · FIX 2026-06-17 · auditoría Planta · este path (ajustar
+                # cantidad +) descontaba MP con un filtro NO canónico: case-sensitive
+                # (M23 · 'Rechazado' != 'RECHAZADO' → lote rechazado se colaba a
+                # producción), sin BLOQUEADO (5 estados vs los 6 del descuento real
+                # en _handle_produccion_inner:2186) y SIN la defensa M25 de
+                # vencimiento-por-fecha (lote vencido que el cron aún no marcó
+                # entraba a producto regulado · INVIMA Res. 2214). Alineado al FEFO
+                # canónico: UPPER(COALESCE(...)) 6 estados + HAVING fecha cruda.
                 fefo = c.execute("""SELECT lote,
+                    MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) AS fv_real,
                     SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock
                     FROM movimientos
                     WHERE material_id=? AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
-                      AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO'))
-                    GROUP BY lote HAVING stock > 0
+                      AND (estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO'))
+                    GROUP BY lote HAVING stock > 0.01
+                      AND (fv_real IS NULL OR TRIM(CAST(fv_real AS TEXT))='' OR date(fv_real) >= date('now', '-5 hours'))
                     ORDER BY COALESCE(NULLIF(CAST(MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) AS TEXT),''),'9999-12-31') ASC""",
                     (mid,)).fetchall()
-                disp = sum(float(l[1] or 0) for l in fefo)
+                # fefo cols: 0=lote, 1=fv_real, 2=stock (M25 defense agregada)
+                disp = sum(float(l[2] or 0) for l in fefo)
                 if disp + 0.01 < g_extra:
                     faltantes.append({'material': mnom, 'falta_g': round(g_extra - disp, 2)})
                     continue
                 g_rest = g_extra
                 for l in fefo:
                     if g_rest <= 0: break
-                    g_use = round(min(g_rest, float(l[1])), 2)
+                    g_use = round(min(g_rest, float(l[2])), 2)
+                    # M18 · nunca insertar movimiento con cantidad ≤ 0 (trigger PG
+                    # fn_trg_mov_cantidad_positiva aborta TODA la tx → 500). Un
+                    # residuo <0.01g se salta (lo cubre otro lote).
+                    if g_use <= 0:
+                        continue
                     plan.append({'mid': mid, 'mnom': mnom, 'g': g_use, 'lote': l[0], 'unlimited': False})
                     g_rest = round(g_rest - g_use, 2)
             if faltantes:
