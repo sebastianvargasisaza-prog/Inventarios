@@ -8470,6 +8470,18 @@ def prog_revertir_completado(evento_id):
     producto, fecha, lotes, descontado_at = prod
     if not descontado_at:
         return jsonify({'error': 'Esta producción no tenía inventario descontado'}), 400
+    # FIX 17-jun (auditoría Planta · M27) · CLAIM ATÓMICO de la reversión: limpiar
+    # inventario_descontado_at SOLO si sigue puesto. Dos reversiones concurrentes de
+    # la MISMA producción insertaban ambas las Entradas compensatorias → doble
+    # devolución = stock inflado (el lado MEE ya tenía guard; el MP no). El que logra
+    # rowcount==1 es el dueño; el otro → 409. Va en la misma tx que las Entradas
+    # (commit al final): si la reversión falla y hace rollback, el claim se deshace.
+    c.execute("UPDATE produccion_programada SET inventario_descontado_at=NULL "
+              "WHERE id=? AND COALESCE(inventario_descontado_at,'')!=''", (evento_id,))
+    if c.rowcount == 0:
+        conn.rollback()
+        return jsonify({'error': 'La reversión ya fue procesada por otra acción',
+                        'codigo': 'YA_REVERTIDO'}), 409
 
     obs_filtro = f"Producción COMPLETADA: {producto} — {fecha}"
     # El descuento de MP puede haber ocurrido en /iniciar ("Producción

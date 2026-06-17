@@ -13136,14 +13136,21 @@ def _demanda_stock_gramos(c, producto):
     v30_tot = v60_tot = v90_tot = 0.0
     _wvol = 0.0           # Σ ventas60_sku × volumen_sku (para el volumen ponderado)
     _vol_simple = []
+    # PERF 17-jun · traer las ventas de 90d UNA vez por SKU y derivar 30/60 por fecha
+    # (30d⊂60d⊂90d) en vez de 3 llamadas a _ventas_diarias_por_sku (3× parsing JSON
+    # Shopify). _generar_plan_desde_hoy itera TODOS los productos → 3×→1× importa.
+    _hoy_v = (_dt2.utcnow() - _td2(hours=5)).date()
+    _cut30 = (_hoy_v - _td2(days=30)).isoformat()
+    _cut60 = (_hoy_v - _td2(days=60)).isoformat()
     for sku, tono in skus:
         _info = _resolved.get(str(sku or '').strip().upper())
         units = (_info or {}).get('uds', 0) or 0
         vol, vfuente = _volumen_sku(c, sku, producto)
         stock_g += float(units) * vol
-        _v30 = sum(q for _, q in _ventas_diarias_por_sku(c, sku, dias=30))
-        _v60 = sum(q for _, q in _ventas_diarias_por_sku(c, sku, dias=60))
-        _v90 = sum(q for _, q in _ventas_diarias_por_sku(c, sku, dias=90))
+        _rows90 = _ventas_diarias_por_sku(c, sku, dias=90)
+        _v90 = sum(q for _, q in _rows90)
+        _v60 = sum(q for f, q in _rows90 if str(f)[:10] >= _cut60)
+        _v30 = sum(q for f, q in _rows90 if str(f)[:10] >= _cut30)
         v30_tot += _v30; v60_tot += _v60; v90_tot += _v90
         _wvol += _v60 * vol
         _vol_simple.append(vol)
