@@ -10889,21 +10889,23 @@ def _resolver_codigo_mp_conteo(c, codigo, inci, comercial):
     return (None, 'sin_match')
 
 
-def _parse_conteo_xlsx(file_storage):
-    """Lee el Excel de conteo (encabezados por nombre). Devuelve lista de dicts crudos."""
+def _parse_conteo_xlsx(file_storage, solo_visibles=True):
+    """Lee el Excel de conteo (encabezados por nombre). RESPETA el filtro de Excel:
+    por defecto SOLO importa las filas VISIBLES (las ocultas por autofiltro se saltan),
+    así el usuario filtra en Excel lo que quiere cargar y se importa exactamente eso.
+    (Sin read_only para poder leer el flag hidden de cada fila.) Devuelve lista de dicts."""
     import openpyxl
-    wb = openpyxl.load_workbook(file_storage, data_only=True, read_only=True)
+    wb = openpyxl.load_workbook(file_storage, data_only=True)
     ws = wb.active
-    rows = list(ws.iter_rows(values_only=True))
-    if not rows:
+    if not ws or ws.max_row < 1:
         return []
-    hdr = [(_norm_acentos(str(h)) if h is not None else '') for h in rows[0]]
+    hdr = [(_norm_acentos(str(cell.value)) if cell.value is not None else '') for cell in ws[1]]
 
     def _idx(*names):
         for nm in names:
             n = _norm_acentos(nm)
             for i, h in enumerate(hdr):
-                if h == n or h.startswith(n):
+                if h == n or (n and h.startswith(n)):
                     return i
         return None
     i_cod = _idx('Codigo MP', 'Codigo')
@@ -10916,11 +10918,19 @@ def _parse_conteo_xlsx(file_storage):
     i_prov = _idx('Proveedor')
     i_venc = _idx('Fecha Vencimiento', 'Vencimiento')
     out = []
-    for r in rows[1:]:
-        if not any(x is not None and str(x).strip() for x in r):
+    for ridx in range(2, ws.max_row + 1):
+        if solo_visibles:
+            try:
+                if ws.row_dimensions[ridx].hidden:
+                    continue
+            except Exception:
+                pass
+        cells = ws[ridx]
+        if not any(c.value is not None and str(c.value).strip() for c in cells):
             continue
         def g(i):
-            return (str(r[i]).strip() if (i is not None and i < len(r) and r[i] is not None) else '')
+            return (str(cells[i].value).strip()
+                    if (i is not None and i < len(cells) and cells[i].value is not None) else '')
         try:
             cant = float(g(i_cant) or 0)
         except (ValueError, TypeError):
@@ -11082,9 +11092,9 @@ def importar_conteo_page():
         '.bad{background:#fef2f2}.warn{background:#fffbeb}</style></head><body><div class="wrap">'
         '<a class="back" href="/inventarios">← Volver a Inventarios</a>'
         '<h1>📥 Importar conteo físico</h1>'
-        '<div class="sub">Subí el Excel del conteo (Codigo MP · INCI · Comercial · Lote · Cantidad · Vencimiento…). '
-        'El sistema valida cada código contra el catálogo, corrige typos y matchea por nombre los que no calzan. '
-        'Revisá el mapeo y cargá. <b>Tip:</b> primero poné el inventario en cero (<a href="/admin/reset-inventario">reset</a>) para que quede limpio. No duplica si re-cargás (dedup por código+lote).</div>'
+        '<div class="sub">Subí el Excel del conteo (INCI · Lote · Cantidad · Vencimiento…). Cruza cada INCI contra el catálogo de la app. '
+        '<b>Importa SOLO las filas VISIBLES</b>: si filtrás en Excel (o subís un Excel con solo lo que contaste), se carga exactamente eso. '
+        'Revisá el mapeo y cargá. No duplica si re-cargás (dedup por código+lote). <b>Tip:</b> podés poner el inventario en cero primero (<a href="/admin/reset-inventario">reset</a>).</div>'
         '<div class="card" style="min-width:auto"><input type="file" id="file" accept=".xlsx"> '
         '<button class="go" id="btn-an" onclick="analizar()">Analizar mapeo</button></div>'
         '<div id="resumen" class="cards"></div>'
