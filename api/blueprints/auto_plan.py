@@ -342,7 +342,8 @@ def _stock_actual_pt(c, producto):
     'Ajustado' viejos → stock inflado 5-10× → déficit MRP=0 falso. M1/M2.
     """
     rows = c.execute(
-        "SELECT sku FROM sku_producto_map WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1",
+        "SELECT sku FROM sku_producto_map WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1 "
+        "AND COALESCE(es_regalo,0)=0",
         (producto,)
     ).fetchall()
     try:
@@ -13021,9 +13022,12 @@ def _demanda_stock_gramos(c, producto):
       stock_g       = Σ (unidades_disponible_sku × volumen_sku) + pipeline (bulk ≤7d)
     Así el bulk se planea junto sin importar cuántos tamaños tenga. Devuelve dict."""
     from datetime import datetime as _dt2, timedelta as _td2
+    # FIX 17-jun [6]: excluir SKUs es_regalo (igual que Necesidades · skus_regalo) —
+    # el motor los contaba en velocidad/stock e inflaba demanda → sobre-producía regalos.
     skus = c.execute(
         "SELECT sku, COALESCE(tono_label,'') FROM sku_producto_map "
-        "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1", (producto,)).fetchall()
+        "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1 "
+        "AND COALESCE(es_regalo,0)=0", (producto,)).fetchall()
     # FIX 17-jun (auditoría cálculo calendario · PENDIENTE #9): stock por el
     # resolver CANÓNICO (estado='Disponible' + regla CC-manda-sobre-SHOPIFY), el
     # MISMO que usa Necesidades (_calcular_animus_dtc). El SUM crudo por SKU

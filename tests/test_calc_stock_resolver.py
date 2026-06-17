@@ -62,6 +62,33 @@ def test_demanda_stock_gramos_usa_resolver_no_doble_cuenta(app, db_clean):
     assert abs(d['stock_shopify_g'] - 30000) < 1, d
 
 
+def test_demanda_excluye_sku_regalo(app, db_clean):
+    """17-jun [6]: el motor NO debe contar SKUs es_regalo (Necesidades los excluye).
+    Un SKU regalo del mismo producto no debe sumar a demanda ni a stock."""
+    from blueprints.auto_plan import _demanda_stock_gramos
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    try:
+        conn.execute("DELETE FROM sku_producto_map WHERE producto_nombre='CALC REGALO PROD'")
+        conn.execute("DELETE FROM stock_pt WHERE sku IN ('CALCREG-N','CALCREG-G')")
+        conn.execute("INSERT INTO sku_producto_map (sku, producto_nombre, volumen_ml, activo, es_regalo) "
+                     "VALUES ('CALCREG-N','CALC REGALO PROD',100,1,0)")
+        conn.execute("INSERT INTO sku_producto_map (sku, producto_nombre, volumen_ml, activo, es_regalo) "
+                     "VALUES ('CALCREG-G','CALC REGALO PROD',100,1,1)")
+        conn.execute("INSERT INTO stock_pt (sku, descripcion, lote_produccion, unidades_disponible, estado, empresa) "
+                     "VALUES ('CALCREG-N','x','L-N',50,'Disponible','ANIMUS')")
+        conn.execute("INSERT INTO stock_pt (sku, descripcion, lote_produccion, unidades_disponible, estado, empresa) "
+                     "VALUES ('CALCREG-G','x','L-G',999,'Disponible','ANIMUS')")
+        conn.commit()
+        d = _demanda_stock_gramos(conn.cursor(), 'CALC REGALO PROD')
+    finally:
+        conn.execute("DELETE FROM sku_producto_map WHERE producto_nombre='CALC REGALO PROD'")
+        conn.execute("DELETE FROM stock_pt WHERE sku IN ('CALCREG-N','CALCREG-G')")
+        conn.commit(); conn.close()
+    skus_vistos = {s['sku'] for s in d['skus']}
+    assert skus_vistos == {'CALCREG-N'}, f"el SKU regalo no debe entrar: {d}"
+    assert abs(d['stock_shopify_g'] - 50 * 100) < 1, d  # solo el no-regalo
+
+
 def test_stock_actual_pt_usa_resolver(app, db_clean):
     from blueprints.auto_plan import _stock_actual_pt
     _seed()
