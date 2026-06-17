@@ -334,19 +334,26 @@ def _velocidad_y_tendencia(c, sku):
 
 
 def _stock_actual_pt(c, producto):
-    """Stock total PT actual sumando todos los SKUs del producto."""
+    """Stock total PT actual sumando todos los SKUs del producto.
+
+    FIX 17-jun (auditoría cálculo calendario): usa el resolver canónico
+    `_resolved_stock_por_sku` (estado='Disponible' + regla CC-manda-sobre-SHOPIFY)
+    en vez del SUM crudo, que doble-contaba CC+Shopify e incluía snapshots
+    'Ajustado' viejos → stock inflado 5-10× → déficit MRP=0 falso. M1/M2.
+    """
     rows = c.execute(
         "SELECT sku FROM sku_producto_map WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1",
         (producto,)
     ).fetchall()
+    try:
+        from blueprints.programacion import _resolved_stock_por_sku as _rss
+        resolved = _rss(getattr(c, 'connection', c), empresa='ANIMUS')
+    except Exception:
+        resolved = {}
     total = 0
     for (sku,) in rows:
-        r = c.execute(
-            "SELECT COALESCE(SUM(unidades_disponible),0) FROM stock_pt WHERE sku=?",
-            (sku,)
-        ).fetchone()
-        if r:
-            total += r[0] or 0
+        info = resolved.get(str(sku or '').strip().upper())
+        total += (info or {}).get('uds', 0) or 0
     return int(total)
 
 
@@ -13017,13 +13024,25 @@ def _demanda_stock_gramos(c, producto):
     skus = c.execute(
         "SELECT sku, COALESCE(tono_label,'') FROM sku_producto_map "
         "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1", (producto,)).fetchall()
+    # FIX 17-jun (auditoría cálculo calendario · PENDIENTE #9): stock por el
+    # resolver CANÓNICO (estado='Disponible' + regla CC-manda-sobre-SHOPIFY), el
+    # MISMO que usa Necesidades (_calcular_animus_dtc). El SUM crudo por SKU
+    # doble-contaba CC+Shopify e incluía snapshots 'Ajustado' viejos → stock
+    # inflado 5-10× → el motor veía cobertura falsa y NO programaba lo que hacía
+    # falta + discrepaba de la pantalla (M1/M2/M5/M9).
+    try:
+        from blueprints.programacion import _resolved_stock_por_sku as _rss
+        _resolved = _rss(getattr(c, 'connection', c), empresa='ANIMUS')
+    except Exception:
+        _resolved = {}
     detalle = []
     demand_g = 0.0
     stock_g = 0.0
     for sku, tono in skus:
         vel, fac = _velocidad_y_tendencia(c, sku)
         vel_proj = vel * (fac or 1.0)
-        units = c.execute("SELECT COALESCE(SUM(unidades_disponible),0) FROM stock_pt WHERE sku=?", (sku,)).fetchone()[0] or 0
+        _info = _resolved.get(str(sku or '').strip().upper())
+        units = (_info or {}).get('uds', 0) or 0
         vol, vfuente = _volumen_sku(c, sku, producto)
         demand_g += vel_proj * vol
         stock_g += float(units) * vol

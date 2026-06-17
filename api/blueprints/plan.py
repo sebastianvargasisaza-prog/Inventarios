@@ -5094,11 +5094,19 @@ def programar_produccion():
     conn = get_db()
     cur = conn.cursor()
 
-    # Producto debe existir
-    if not cur.execute(
-        "SELECT 1 FROM formula_headers WHERE producto_nombre = ?", (producto,),
-    ).fetchone():
+    # Producto debe existir · FIX 17-jun (#3) · match NORMALIZADO (UPPER/TRIM),
+    # no exacto: el calendario muestra el nombre en caso mixto ('Suero Exfoliante
+    # Nova PHA') pero la fórmula está en mayúsculas → el match exacto daba 404 falso
+    # (M2/M13). Se guarda el nombre CANÓNICO de la fórmula para que cruce en todo
+    # el resto del sistema.
+    _fh = cur.execute(
+        "SELECT producto_nombre FROM formula_headers "
+        "WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?)) ORDER BY COALESCE(activo,1) DESC LIMIT 1",
+        (producto,),
+    ).fetchone()
+    if not _fh:
         return jsonify({"error": f"producto '{producto}' no existe"}), 404
+    producto = _fh[0]
 
     # Si area_id provisto, validar
     if area_id is not None:
@@ -11564,15 +11572,23 @@ def _generar_plan_desde_hoy(conn, dias=730, usuario='plan-manual', dry_run=False
             sin_venta += 1
             continue
         lote_g = float(lote_kg) * 1000.0
-        cad = int(round(lote_g / demand_g))
-        cad = max(CAD_MIN, min(cad, CAD_MAX))
+        cad_real = lote_g / demand_g            # días que un lote dura a la demanda actual
+        cad = max(CAD_MIN, min(int(round(cad_real)), CAD_MAX))  # solo para mostrar/espaciar
+        # FIX 17-jun [9]: si un solo lote cubre MÁS que el horizonte, emitir UNO solo.
+        # Antes el clamp a CAD_MAX=365 encadenaba ~2 lotes/año a productos de rotación
+        # muy lenta (cad_real de años) → sobre-producción masiva + MP comprada de más.
+        _emite_uno = cad_real > dias
         n = 0
         off = 0
         while off <= dias and n < 130:
             prod_date = _slot(max(hoy, hoy + _td(days=off)))
-            nuevos.append((producto, prod_date.isoformat(), float(lote_kg), cad,
-                           'Plan manual desde hoy · cadencia ~' + str(cad) + 'd · demanda ' + format(demand_g, '.0f') + ' g/d'))
+            _obs = ('Plan manual desde hoy · 1 lote cubre el horizonte (~' + format(cad_real, '.0f') + 'd)'
+                    if _emite_uno else
+                    'Plan manual desde hoy · cadencia ~' + str(cad) + 'd · demanda ' + format(demand_g, '.0f') + ' g/d')
+            nuevos.append((producto, prod_date.isoformat(), float(lote_kg), cad, _obs))
             n += 1
+            if _emite_uno:
+                break
             off = (prod_date - hoy).days + cad
         if n:
             productos += 1
@@ -20113,10 +20129,14 @@ def reprogramar_proxima(pid):
             import blueprints.auto_plan as _ap2
             from datetime import date as _d2, timedelta as _t2
             _base = _d2.fromisoformat(nueva_fecha)
+            # FIX 17-jun (#5): excluir 'esperando_recurso' del re-espaciado · un lote
+            # pausado por falta de recurso NO se puede mover directo (409), así que
+            # tampoco debe saltar de fecha como efecto colateral de mover otro (M5
+            # coherencia: la misma regla en move directo y en re-espaciado).
             _sig = cur.execute(
                 "SELECT id FROM produccion_programada WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) "
                 "AND id<>? AND COALESCE(cadencia_dias,0)>0 "
-                "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+                "AND COALESCE(estado,'') NOT IN ('cancelado','completado','esperando_recurso') "
                 "AND fin_real_at IS NULL AND inicio_real_at IS NULL "
                 "AND substr(fecha_programada,1,10) > ? ORDER BY fecha_programada",
                 (producto, pid, (fecha_antes or '')[:10])).fetchall()
