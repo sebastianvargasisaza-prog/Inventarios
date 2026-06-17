@@ -3916,27 +3916,51 @@ def crear_oc_desde_solicitudes():
                     raise
 
         # 5. Auto-crear proveedor si no existe (con audit_log)
+        # FIX · 16-jun-2026 · `proveedores.nombre` tiene UNIQUE GLOBAL (sin
+        # importar activo), pero la existencia se chequeaba con `AND activo=1`:
+        # un proveedor INACTIVO con el mismo nombre disparaba un INSERT que
+        # choca con el UNIQUE → IntegrityError. El `except` lo tragaba, PERO en
+        # PostgreSQL un INSERT fallido ABORTA toda la transacción → el INSERT de
+        # items siguiente moría con "transaction aborted" → 500 genérico
+        # "No se pudo crear la OC" (drift SQLite↔PG · CERO_ERROR). Dos defensas:
+        # (a) chequear existencia por nombre SIN filtrar activo (= match el
+        # UNIQUE) y reactivar si está inactivo; (b) SAVEPOINT para que cualquier
+        # fallo del bloque NO envenene la transacción del caller.
         try:
-            existe = c.execute(
-                "SELECT id FROM proveedores WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?)) AND activo=1",
-                (proveedor,),
-            ).fetchone()
-            if not existe:
-                c.execute(
-                    """INSERT INTO proveedores (nombre, categoria, condiciones_pago,
-                                                 activo, fecha_creacion)
-                       VALUES (?,?,?,1,?)""",
-                    (proveedor, categoria, '30 dias', datetime.now().isoformat()),
-                )
-                try:
+            c.execute('SAVEPOINT _prov_auto')
+            try:
+                existe = c.execute(
+                    "SELECT id, COALESCE(activo,0) FROM proveedores "
+                    "WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?)) ORDER BY activo DESC LIMIT 1",
+                    (proveedor,),
+                ).fetchone()
+                _prov_id, _prov_accion = None, None
+                if not existe:
+                    c.execute(
+                        """INSERT INTO proveedores (nombre, categoria, condiciones_pago,
+                                                     activo, fecha_creacion)
+                           VALUES (?,?,?,1,?)""",
+                        (proveedor, categoria, '30 dias', datetime.now().isoformat()),
+                    )
+                    _prov_id, _prov_accion = c.lastrowid, 'CREAR_PROVEEDOR'
+                elif not existe[1]:
+                    # existe pero INACTIVO → reactivar (re-INSERT chocaría el UNIQUE)
+                    c.execute("UPDATE proveedores SET activo=1 WHERE id=?", (existe[0],))
+                    _prov_id, _prov_accion = existe[0], 'REACTIVAR_PROVEEDOR'
+                if _prov_accion:
                     audit_log(
-                        c, usuario=usuario, accion='CREAR_PROVEEDOR',
-                        tabla='proveedores', registro_id=c.lastrowid,
+                        c, usuario=usuario, accion=_prov_accion,
+                        tabla='proveedores', registro_id=_prov_id,
                         despues={'nombre': proveedor[:200], 'categoria': categoria,
                                   'origen': 'auto_oc_desde_solicitudes',
                                   'oc_origen': numero_oc},
-                        detalle=f"Auto-creado al consolidar {len(nums)} solicitudes en {numero_oc}",
+                        detalle=f"Auto al consolidar {len(nums)} solicitudes en {numero_oc}",
                     )
+                c.execute('RELEASE SAVEPOINT _prov_auto')
+            except Exception:
+                try:
+                    c.execute('ROLLBACK TO SAVEPOINT _prov_auto')
+                    c.execute('RELEASE SAVEPOINT _prov_auto')
                 except Exception:
                     pass
         except Exception:
@@ -4111,7 +4135,9 @@ def crear_oc_desde_solicitudes():
         except Exception:
             pass
         log.exception('crear_oc_desde_solicitudes fallo: %s', e)
-        return jsonify({'error': 'No se pudo crear la OC desde las solicitudes'}), 500
+        # M4 · devolver la causa REAL (app interna) para diagnóstico, no tragarla
+        return jsonify({'error': 'No se pudo crear la OC desde las solicitudes',
+                        'detalle': str(e)[:300]}), 500
 
 
 # ── Sebastián 4-may-2026 (Catalina): consolidar AUTO-XXXX pendientes ────

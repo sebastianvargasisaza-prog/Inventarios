@@ -6552,6 +6552,7 @@ async function abrirCrearOCDesdeGrupo(gi){
         if(d.codigo === 'EXCEDE_LIMITE_APROBACION'){
           det = '\\n\\nMonto solicitado: '+fmt(d.monto_solicitado||0)+'\\nTu límite: '+fmt(d.limite_usuario||0)+'\\n\\nPedíle a un admin que la cree o autorice.';
         }
+        if(d.detalle) det += '\\n\\n'+d.detalle;
         alert('Error creando OC: '+(d.error || 'codigo '+r.status)+det);
         btn.disabled = false; btn.textContent = '✓ Confirmar y crear OC';
         return;

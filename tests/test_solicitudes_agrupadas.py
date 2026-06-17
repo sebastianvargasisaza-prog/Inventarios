@@ -232,6 +232,46 @@ def test_oc_desde_solicitudes_basico(app, db_clean):
             _cleanup_oc(oc_creada)
 
 
+def test_oc_desde_solicitudes_proveedor_inactivo_reactiva(app, db_clean):
+    """16-jun · regresión PG · un proveedor INACTIVO con el mismo nombre hacía
+    que el auto-create chocara el UNIQUE(proveedores.nombre) → en PostgreSQL ese
+    INSERT fallido abortaba TODA la transacción → el INSERT de items siguiente
+    moría → 500 'No se pudo crear la OC'. Ahora la existencia se chequea SIN
+    filtrar activo y, si está inactivo, se REACTIVA (sin re-INSERT) → la OC se
+    crea. (En SQLite no se envenena la tx, así que aquí lo que se valida es que
+    el proveedor quede activo=1 sin duplicar.)"""
+    cs = _login(app, "catalina")
+    PRV = 'Lyphar Test Inactivo'
+    nums = ['SOL-PRVINA-001']
+    _crear_solicitud_con_items(nums[0], [{'codigo_mp': 'MP-PRVINA', 'nombre_mp': 'Peptido',
+                                           'cantidad_g': 50, 'valor_estimado': 0,
+                                           'proveedor_sugerido': PRV}])
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM proveedores WHERE nombre=?", (PRV,))
+    conn.execute("INSERT INTO proveedores (nombre, categoria, activo, fecha_creacion) "
+                 "VALUES (?, 'MP', 0, '2026-01-01')", (PRV,))
+    conn.commit(); conn.close()
+    oc_creada = None
+    try:
+        r = cs.post('/api/compras/oc-desde-solicitudes',
+                    json={'proveedor': PRV, 'solicitudes': nums},
+                    headers=csrf_headers())
+        assert r.status_code == 201, r.data
+        oc_creada = r.get_json()['numero_oc']
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        rows = conn.execute("SELECT activo FROM proveedores WHERE nombre=?", (PRV,)).fetchall()
+        conn.close()
+        assert len(rows) == 1, 'no debe duplicar el proveedor (UNIQUE)'
+        assert (rows[0][0] or 0) == 1, 'el proveedor inactivo debe quedar reactivado'
+    finally:
+        _cleanup_solicitudes(nums)
+        if oc_creada:
+            _cleanup_oc(oc_creada)
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn.execute("DELETE FROM proveedores WHERE nombre=?", (PRV,))
+        conn.commit(); conn.close()
+
+
 def test_oc_desde_solicitudes_consolida_mismo_mp(app, db_clean):
     """2 solicitudes de la misma MP → 1 item consolidado en la OC."""
     cs = _login(app, "catalina")
