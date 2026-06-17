@@ -273,6 +273,19 @@ def main():
          'check_password_hash sin validar formato hash · verificar pbkdf2:/scrypt: prefix'),
         (r"_require_compras_session\(\)\s*$", 'WARN',
          'Endpoint con _require_compras_session · si toca PII upgrade a _require_compras_write'),
+        # 17-jun · M45/M46 · drift PG recurrente: CAST(SUBSTR(...)) sobre texto
+        # revienta en PostgreSQL si el sufijo no es 100% numérico (nº de OC con
+        # sufijo, códigos MP con letras). SQLite lo tolera con 0 → bug invisible
+        # en local. Extraer el correlativo en Python (audit_helpers.siguiente_numero_oc).
+        (r"CAST\(\s*SUBSTR\(", 'WARN',
+         'CAST(SUBSTR(...)) sobre texto revienta en PG si el sufijo no es numérico · '
+         'extraer el correlativo en Python (ver audit_helpers.siguiente_numero_oc)'),
+        # 17-jun · M46 · `.get(col,'')` devuelve None cuando la columna TEXT es NULL
+        # (la clave existe con valor None → el default NO aplica) → `.startswith`/etc
+        # revienta con 500 (bug anular_movimiento). Usar `(x.get(col) or '')`.
+        (r"\.get\([^,)]+,\s*['\"]['\"]\)\.(startswith|strip|upper|lower|split|replace|endswith|rstrip|lstrip)",
+         'WARN',
+         ".get(col,'') da None si la columna es NULL · usar (x.get(col) or '') antes de un método de string"),
     ]
     for f in files:
         if not f.endswith('.py') and not f.endswith('.html'):

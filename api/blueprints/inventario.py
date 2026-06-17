@@ -2990,15 +2990,21 @@ def produccion_diagnose(producto):
         } for r in todos[:10]]
         # 3. Stock DESPUÉS de aplicar filtros del FEFO
         try:
+            # FIX 17-jun (auditoría Planta · M5/M23/M25) · este diagnóstico ("stock
+            # disponible para el FEFO") debe usar EXACTAMENTE el filtro del FEFO real
+            # (UPPER 6 estados + guarda de vencimiento por fecha + umbral 0.01), si no
+            # el número mostrado difiere del que el descuento aplica.
             disp = c.execute(
                 """SELECT COUNT(*),
                           COALESCE(SUM(stock_t),0)
                    FROM (SELECT lote,
+                                MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) AS fv_real,
                                 SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock_t
                          FROM movimientos
                          WHERE material_id=? AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
-                           AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO'))
-                         GROUP BY lote HAVING stock_t > 0)""",
+                           AND (estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO'))
+                         GROUP BY lote HAVING stock_t > 0.01
+                           AND (fv_real IS NULL OR TRIM(CAST(fv_real AS TEXT))='' OR date(fv_real) >= date('now','-5 hours')))""",
                 (mid,),
             ).fetchone()
             info['fefo_disponibles'] = int(disp[0] or 0)
@@ -4067,8 +4073,11 @@ def alertas_all():
            GROUP BY material_id, lote
            HAVING stock > 0""",
     ).fetchall()
-    from datetime import date as _date
-    hoy = _date.today()
+    # FIX 17-jun (auditoría Planta · M24) · "hoy" anclado a Colombia (UTC-5), no
+    # _date.today() (UTC del server Render) — de noche UTC ya es mañana → el reporte
+    # de vencidos/próximos se desfasaba 1 día respecto al resto del sistema.
+    from datetime import datetime as _dtnow, timezone as _tznow, timedelta as _tdnow
+    hoy = (_dtnow.now(_tznow.utc) - _tdnow(hours=5)).date()
     lotes_vencidos = []
     lotes_proximos = []
     for r in rows_v:
@@ -9816,7 +9825,17 @@ def cc_review():
     # de inclusión ='VIGENTE') SALTARAN el lote → consumo de vencido (M25) + stock fantasma.
     # Los otros 3 paths de liberación ya escriben VIGENTE.
     _estado_kardex = 'VIGENTE' if estado_final == 'APROBADO' else estado_final
-    c.execute("UPDATE movimientos SET estado_lote=? WHERE id=?", (_estado_kardex, mov_id))
+    # FIX 17-jun (auditoría Planta · M27) · CAS: el lote solo se dispone si SIGUE en
+    # cuarentena (el check inicial es check-then-act) → dos disposiciones QC concurrentes
+    # del mismo lote no se cruzan (APROBADO vs RECHAZADO). rowcount 0 → 409 + rollback
+    # (descarta también el INSERT en cc_reviews de esta tx).
+    c.execute("UPDATE movimientos SET estado_lote=? "
+              "WHERE id=? AND UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')",
+              (_estado_kardex, mov_id))
+    if c.rowcount == 0:
+        conn.rollback()
+        return jsonify({'error': 'El lote ya fue dispuesto por otra acción · recargá',
+                        'codigo': 'ESTADO_CAMBIO'}), 409
     # Ubicación final al LIBERAR (Sebastián 6-jun-2026): el flujo real es
     # "cuando Calidad libera, el lote pasa de la estantería CUARENTENA a su
     # ubicación final". Si al aprobar se indica estante/posición final, se mueve

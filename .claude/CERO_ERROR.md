@@ -5,7 +5,7 @@
 > **Cuando encuentres o arregles un bug con un patrón nuevo, AGRÉGALO aquí en el mismo commit.**
 > Mantenlo denso y accionable (checklist, no narrativa). La historia detallada vive en `SESSION_LOG/`.
 
-Última actualización: **2026-06-16** (drift PG: CAST sobre texto con sufijo + chequeo-existencia vs UNIQUE · M4 exhibir causa real desbloqueó el diagnóstico)
+Última actualización: **2026-06-17** (M46 auditoría PLANTA: FEFO M25 en paths hermanos, CAS en transiciones, anular doble-roto, gate PG = la verificación que vale)
 
 ---
 
@@ -268,6 +268,19 @@ Workflow de 7 cazadores (por patrón cero-error) + verificación adversarial. **
 - **Over-payment race AR/AP (simetría):** `fp_pagar` (facturas proveedor · AP) y `cont_factura_pago` (cobranza cliente · AR) tenían el pre-check check-then-act SIN re-check atómico post-insert que pagar_oc YA tenía (M30). **Regla: cuando endurecés un guard de dinero (over-payment CAS), buscá TODOS los pagadores hermanos (AP y AR) — la simetría casi siempre falta en uno.** Fix: re-leer SUM post-insert → rollback+409 OVER_PAYMENT_RACE.
 - **Idempotencia de recepción (`recibir_oc`):** doble-submit concurrente del MISMO parcial pasaba el guard de sobre-recepción (1000≤tope) → doble Entrada. **NO se puede serializar por tiempo** (rompe recepciones parciales secuenciales legítimas, que difieren solo en lote/cantidad y son indistinguibles de un duplicado por contenido). Único fix correcto = **token de idempotencia del cliente** (`recepcion_id` por envío + UNIQUE en `oc_recepcion_dedup`, mig 265): mismo token → 409 RECEPCION_DUPLICADA; parcial nuevo → otro token → procede. **Lección: para deduplicar una acción repetible (parciales, cuotas), el token lo genera el CLIENTE; el servidor no puede distinguir duplicado de repetición legítima por los datos.**
 - **Descartados (bien):** 2 N+1 de perf (aliados/scores, atribución-influencers) — reales pero acotados por índice/padrón, no rompen PG ni corrompen → P2 latente, no bug.
+
+## 🫀 M46 · Auditoría ultracode de PLANTA (corazón) · 17-jun · 27 agentes · 17/18 confirmados (verificado golden-on-PG)
+
+Workflow de 9 cazadores por área/pestaña + conexiones entre módulos + verificación adversarial. Lecciones nuevas:
+- **Un patrón canónico (FEFO, estado_lote, descuento) NUNCA queda parchado solo en el path "principal" — hay paths hermanos que lo copiaron incompleto.** El FEFO canónico (UPPER 6 estados + guarda M25 de vencimiento-por-fecha) estaba en `_handle_produccion_inner`/`consumo_manual`, pero los hermanos **`_distribuir_fefo`+`_validar_stock_para_produccion` (el FEFO de "Iniciar producción", el flujo MÁS usado)** y `produccion_ajustar_cantidad` NO tenían la guarda M25 → consumían MP vencida-por-fecha (INVIMA). **Regla: tras blindar un FEFO/descuento, grepeá TODOS los `_distribuir`/`_validar`/`ajustar`/`simular` y verificá que el filtro sea idéntico (UPPER + 6 estados + M25 + umbral 0.01).** La validación debe usar EXACTAMENTE el mismo filtro que la distribución (M5), o "valida pero no alcanza".
+- **M29 también aplica al consumo de producción PROGRAMADA** (`_calcular_mp_consumo_produccion`, calendario/Kanban), no solo a la directa: filtrar `formula_headers.activo=0` con UPPER(TRIM) a ambos lados (el match es case-insensitive).
+- **CAS en TODA transición de estado de Planta** (M27): `prog_cancelar_evento`, `liberar_cuarentena`, `recepcion_aprobar_lote`, `cc_review` eran check-then-act → race multi-worker (cancelar producción ya descontada = stock fantasma; disposiciones QC cruzadas). Condición de estado en el WHERE + `rowcount==0 → 409`. **+ una ruta de disposición (`recepcion_aprobar_lote`) hacía UPDATE incondicional → podía REVIVIR un lote RECHAZADO a VIGENTE** (control INVIMA eludible): guard `WHERE ... IN ('CUARENTENA','CUARENTENA_EXTENDIDA')`.
+- **`conteo_cerrar` necesitaba el MISMO claim atómico que `conteo_ajustar`** (M20): `UPDATE conteo_items SET ajuste_aplicado=1 WHERE id=? AND ajuste_aplicado=0` + rowcount, ANTES de insertar el movimiento → no doble auto-ajuste del kardex en multi-worker.
+- **"Reemplazar/regenerar" (Generar plan) debe excluir lo que NO recrea** (regla #3): `_generar_plan_desde_hoy` cancelaba `pendiente/programado` sin excluir `eos_b2b` (compromisos de clientes) ni lo ejecutado (inicio_real_at) → los borraba y nunca los recreaba (solo recrea eos_plan). Excluir `origen='eos_b2b'` + ejecutado del UPDATE de LIMPIAR.
+- **Bug de display que NO usa el filtro de la decisión** (M5): el diagnóstico `fefo_disponibles` (produccion_detalle) usaba 3 estados case-sensitive sin M25 → mostraba un "disponible" distinto al que el FEFO real consume. Alinear el filtro del display al canónico.
+- **Doble-roto silencioso:** `anular_movimiento` tenía DOS bugs encadenados → 500 en TODA anulación de kardex: (a) SELECT de columna fantasma `mp.nombre` (maestro_mps no la tiene), (b) `mov.get('observaciones','')` devuelve None (la clave existe con None) → `.startswith` revienta. **Regla: `(x.get(k) or '')` para columnas TEXT nuleables; `.get(k,'')` NO protege contra valor None.** Sin test, ambos pasaban inadvertidos (no había golden de anular).
+- **[7] FALSO POSITIVO bien descartado:** "calendario vacío borra el plan" — el error de API ya hace early-return ANTES del cleanup (vacío legítimo SÍ borra huérfanos por diseño · golden lo fija; el HARD DELETE ya excluye Fijo+ejecutado). Verificar contra código real ANTES de tocar evitó romper un golden. ~50% de hallazgos de agentes alucinan.
+- ⚠ **Gobernanza:** un subagente del workflow (read-only) EDITÓ código pese a la instrucción — el cambio era correcto (lo verifiqué) pero hay que blindarlo: los cazadores de auditoría no deben tener Write/Edit.
 
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
 
