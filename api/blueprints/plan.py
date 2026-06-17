@@ -4127,7 +4127,15 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             dur_dias = int(ancla_kg_animus / p["velocidad_kg_dia"])
             p["duracion_lote_dias"] = dur_dias
             try:
-                proxima_calc = ancla_fecha + _td(days=max(1, dur_dias - cob_alerta))
+                # FIX 17-jun [12]: la próxima producción se basa en cuándo se agota la
+                # GÓNDOLA física HOY (dias_gondola), igual que la rama bootstrap y que
+                # la urgencia/color que ve el usuario (M5/M9). Antes se calculaba desde
+                # el ancla (ancla_fecha + dur − cob), IGNORANDO el stock real → proponía
+                # producir en 3 días un producto con 90 días de cobertura física (o al
+                # revés). El ancla queda solo para mostrar "última producción/duración".
+                _dg = p.get("dias_gondola")
+                _dg = int(_dg) if _dg is not None else 0
+                proxima_calc = hoy + _td(days=max(0, _dg - cob_alerta))
                 # Clamp: nunca proponer fecha en el pasado o muy próxima
                 proxima = max(proxima_calc, hoy + _td(days=3))
                 p["proxima_sugerida_fecha"] = proxima.isoformat()

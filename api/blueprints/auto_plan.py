@@ -311,8 +311,25 @@ def _velocidad_y_tendencia(c, sku):
         avg = sum(q for _, q in rows) / max(1, n)
         return (float(avg), 1.0)
 
-    # Regresión lineal sobre días reales (no índices) para captar tendencia
-    xs = list(range(n))
+    # Regresión lineal sobre días CALENDARIO reales · FIX 17-jun [4]: antes
+    # xs=range(n) usaba el ÍNDICE de las filas-con-venta, no el día calendario →
+    # para un SKU de venta esporádica (ej. solo lunes) comprimía el tiempo y la
+    # pendiente salía enorme → factor clamp 3.0 → sobre-proyección 3×. Ahora x =
+    # días desde la 1ª venta (el comentario viejo decía "días reales" pero el
+    # código no lo hacía).
+    from datetime import date as _dvt
+
+    def _to_day(f):
+        try:
+            return _dvt.fromisoformat(str(f)[:10])
+        except Exception:
+            return None
+    _days = [_to_day(f) for f, _ in rows]
+    if any(d is None for d in _days):
+        xs = list(range(n))  # fallback si alguna fecha no parsea
+    else:
+        _base = min(_days)
+        xs = [(d - _base).days for d in _days]
     ys = [q for _, q in rows]
     sum_x = sum(xs); sum_y = sum(ys)
     sum_xy = sum(x * y for x, y in zip(xs, ys))
@@ -323,8 +340,9 @@ def _velocidad_y_tendencia(c, sku):
     except ZeroDivisionError:
         b = 0
         a = sum_y / n
-    velocidad_actual = max(0.0, a + b * (n - 1))
-    velocidad_inicial = max(0.01, a + b * 0)
+    _xmax = max(xs); _xmin = min(xs)
+    velocidad_actual = max(0.0, a + b * _xmax)
+    velocidad_inicial = max(0.01, a + b * _xmin)
     factor = velocidad_actual / velocidad_inicial if velocidad_inicial > 0 else 1.0
     factor = max(0.3, min(factor, 3.0))
     # Velocidad observada simple (suma / días totales) como fallback
