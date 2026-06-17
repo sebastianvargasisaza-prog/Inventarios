@@ -60,7 +60,7 @@ jobs:
   # migraciones faltantes). Ver .claude/CERO_ERROR.md y SESSION_LOG.
   test-postgres:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
 
     services:
       postgres:

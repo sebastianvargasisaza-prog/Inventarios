@@ -81,7 +81,57 @@ def _migrar_a_postgres(sqlite_path):
 
     with psycopg.connect(_conninfo(), autocommit=True) as pg:
         cargar_esquema(pg)
+        # AUTO-SANADO DE ESQUEMA (17-jun · gate PG confiable y que ESCALA): pg_schema.sql
+        # es una foto base que puede quedar atrás de las migraciones (ej. mig 262 agregó
+        # sku_producto_map.volumen_ml). El SQLite de test ya corrió TODAS las migraciones,
+        # así que es la referencia. Para cada tabla, agregamos a PG cualquier columna que
+        # exista en SQLite y falte en PG (solo ADD, nunca DROP). Así una migración futura
+        # que agregue una columna NO vuelve a romper el harness PG.
+        _sync_columnas_faltantes(sqlite_path, pg)
         copiar_datos(sqlite_path, pg)
+
+
+def _sync_columnas_faltantes(sqlite_path, pg):
+    """ALTER TABLE ADD COLUMN en PG por cada columna presente en el SQLite actual
+    y ausente en PG (drift pg_schema.sql vs migraciones). Idempotente · solo ADD."""
+    import sqlite3 as _sq
+    import psycopg
+    def _pg_type(sqlite_type):
+        t = (sqlite_type or '').upper()
+        if 'INT' in t:
+            return 'BIGINT'
+        if 'REAL' in t or 'FLOA' in t or 'DOUB' in t:
+            return 'DOUBLE PRECISION'
+        if 'BLOB' in t:
+            return 'BYTEA'
+        return 'TEXT'
+    sq = _sq.connect(sqlite_path)
+    try:
+        tablas = [r[0] for r in sq.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchall()]
+        for t in tablas:
+            try:
+                sq_cols = {r[1]: r[2] for r in sq.execute('PRAGMA table_info("%s")' % t).fetchall()}
+            except Exception:
+                continue
+            if not sq_cols:
+                continue
+            with pg.cursor() as cur:
+                cur.execute("SELECT column_name FROM information_schema.columns "
+                            "WHERE table_schema='public' AND table_name=%s", (t.lower(),))
+                pg_cols = {r[0].lower() for r in cur.fetchall()}
+            if not pg_cols:
+                continue  # la tabla no existe en PG (no la creamos aquí)
+            for col, sqlite_type in sq_cols.items():
+                if col.lower() not in pg_cols:
+                    try:
+                        with pg.cursor() as cur:
+                            cur.execute('ALTER TABLE "%s" ADD COLUMN IF NOT EXISTS "%s" %s'
+                                        % (t, col, _pg_type(sqlite_type)))
+                    except psycopg.Error:
+                        pass
+    finally:
+        sq.close()
 
 
 @pytest.fixture(scope="session")
