@@ -10841,6 +10841,256 @@ def reset_inventario_page():
     return Response(html, mimetype="text/html")
 
 
+def _norm_acentos(s):
+    import unicodedata
+    return ''.join(ch for ch in unicodedata.normalize('NFD', (s or '').strip().upper())
+                   if unicodedata.category(ch) != 'Mn')
+
+
+def _resolver_codigo_mp_conteo(c, codigo, inci, comercial):
+    """Resuelve el código_mp REAL del sistema para una fila del Excel de conteo.
+    Devuelve (codigo_real|None, estado). estado: 'ok' (código existe) · 'corregido'
+    (typo PM→MP u otro) · 'por_inci' / 'por_comercial' (matcheó por nombre) · 'sin_match'."""
+    cu = (codigo or '').strip().upper()
+    def _existe(cod):
+        try:
+            r = c.execute("SELECT codigo_mp FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=? "
+                          "AND COALESCE(activo,1)=1", (cod,)).fetchone()
+            return r[0] if r else None
+        except Exception:
+            return None
+    if cu:
+        e = _existe(cu)
+        if e:
+            return (e, 'ok')
+        # typo común PM##### → MP#####
+        if cu.startswith('PM') and len(cu) > 2:
+            e = _existe('MP' + cu[2:])
+            if e:
+                return (e, 'corregido')
+    # por INCI exacto (normalizado)
+    ni = _norm_acentos(inci)
+    if ni:
+        try:
+            for r in c.execute("SELECT codigo_mp, nombre_inci FROM maestro_mps WHERE COALESCE(activo,1)=1").fetchall():
+                if _norm_acentos(r[1]) == ni:
+                    return (r[0], 'por_inci')
+        except Exception:
+            pass
+    # por nombre comercial exacto (normalizado)
+    nc = _norm_acentos(comercial)
+    if nc:
+        try:
+            for r in c.execute("SELECT codigo_mp, nombre_comercial FROM maestro_mps WHERE COALESCE(activo,1)=1").fetchall():
+                if _norm_acentos(r[1]) == nc:
+                    return (r[0], 'por_comercial')
+        except Exception:
+            pass
+    return (None, 'sin_match')
+
+
+def _parse_conteo_xlsx(file_storage):
+    """Lee el Excel de conteo (encabezados por nombre). Devuelve lista de dicts crudos."""
+    import openpyxl
+    wb = openpyxl.load_workbook(file_storage, data_only=True, read_only=True)
+    ws = wb.active
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        return []
+    hdr = [(_norm_acentos(str(h)) if h is not None else '') for h in rows[0]]
+
+    def _idx(*names):
+        for nm in names:
+            n = _norm_acentos(nm)
+            for i, h in enumerate(hdr):
+                if h == n or h.startswith(n):
+                    return i
+        return None
+    i_cod = _idx('Codigo MP', 'Codigo')
+    i_inci = _idx('Nombre INCI', 'INCI')
+    i_com = _idx('Nombre Comercial', 'Comercial')
+    i_lote = _idx('Lote')
+    i_cant = _idx('Cantidad (g)', 'Cantidad')
+    i_est = _idx('Estanteria')
+    i_pos = _idx('Posicion')
+    i_prov = _idx('Proveedor')
+    i_venc = _idx('Fecha Vencimiento', 'Vencimiento')
+    out = []
+    for r in rows[1:]:
+        if not any(x is not None and str(x).strip() for x in r):
+            continue
+        def g(i):
+            return (str(r[i]).strip() if (i is not None and i < len(r) and r[i] is not None) else '')
+        try:
+            cant = float(g(i_cant) or 0)
+        except (ValueError, TypeError):
+            cant = 0.0
+        venc = g(i_venc)
+        if venc and len(venc) >= 10:
+            venc = venc[:10]
+        out.append({'codigo': g(i_cod), 'inci': g(i_inci), 'comercial': g(i_com),
+                    'lote': g(i_lote), 'cantidad': cant, 'estanteria': g(i_est),
+                    'posicion': g(i_pos), 'proveedor': g(i_prov), 'vencimiento': venc})
+    return out
+
+
+@bp.route('/api/inventario/importar-conteo/analizar', methods=['POST'])
+def importar_conteo_analizar():
+    """Sube el Excel de conteo físico y MAPEA cada fila al código_mp REAL del sistema
+    (valida código, corrige typos, matchea por INCI/comercial). Solo lectura · devuelve
+    el reporte para que el usuario revise antes de cargar. ADMIN."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    f = request.files.get('archivo')
+    if not f:
+        return jsonify({'ok': False, 'error': 'Falta el archivo (campo archivo)'}), 400
+    try:
+        filas = _parse_conteo_xlsx(f)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': 'No se pudo leer el Excel: ' + str(e)[:160]}), 400
+    conn = get_db(); c = conn.cursor()
+    res = []
+    for fila in filas:
+        cod_real, estado = _resolver_codigo_mp_conteo(c, fila['codigo'], fila['inci'], fila['comercial'])
+        res.append({**fila, 'codigo_real': cod_real, 'match': estado,
+                    'cargable': bool(cod_real) and fila['cantidad'] > 0})
+    resumen = {
+        'total': len(res),
+        'ok': sum(1 for x in res if x['match'] == 'ok'),
+        'corregido': sum(1 for x in res if x['match'] == 'corregido'),
+        'por_nombre': sum(1 for x in res if x['match'] in ('por_inci', 'por_comercial')),
+        'sin_match': sum(1 for x in res if x['match'] == 'sin_match'),
+        'en_cero': sum(1 for x in res if x['cantidad'] <= 0),
+        'cargables': sum(1 for x in res if x['cargable']),
+    }
+    return jsonify({'ok': True, 'resumen': resumen, 'filas': res})
+
+
+@bp.route('/api/inventario/importar-conteo/cargar', methods=['POST'])
+def importar_conteo_cargar():
+    """Carga al inventario (movimientos Entrada VIGENTE) las filas mapeadas con código
+    real y cantidad>0. Dedup: salta (codigo_real, lote) que ya tenga una Entrada (no
+    duplica si se re-ejecuta). ADMIN. Body: {filas:[...del analizar...]}."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    body = request.get_json(silent=True) or {}
+    filas = body.get('filas') or []
+    conn = get_db(); c = conn.cursor()
+    import datetime as _dt_c
+    fnow = (_dt_c.datetime.utcnow() - _dt_c.timedelta(hours=5)).strftime('%Y-%m-%d %H:%M:%S')
+    cargados = 0
+    saltados_dup = 0
+    saltados = 0
+    for fila in filas:
+        cod = (fila.get('codigo_real') or '').strip()
+        try:
+            cant = float(fila.get('cantidad') or 0)
+        except (ValueError, TypeError):
+            cant = 0
+        if not cod or cant <= 0:
+            saltados += 1
+            continue
+        lote = (fila.get('lote') or '').strip() or ('CONTEO-' + cod)
+        # dedup por (material_id, lote) Entrada existente
+        dup = c.execute("SELECT 1 FROM movimientos WHERE UPPER(TRIM(material_id))=UPPER(TRIM(?)) "
+                        "AND COALESCE(lote,'')=? AND tipo='Entrada' LIMIT 1", (cod, lote)).fetchone()
+        if dup:
+            saltados_dup += 1
+            continue
+        nombre = c.execute("SELECT nombre_inci FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=UPPER(TRIM(?))", (cod,)).fetchone()
+        nombre = (nombre[0] if nombre else '') or fila.get('inci') or cod
+        venc = (fila.get('vencimiento') or '').strip() or None
+        c.execute(
+            "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, "
+            "observaciones, proveedor, operador, lote, fecha_vencimiento, estanteria, posicion, estado_lote) "
+            "VALUES (?,?,?,'Entrada',?,?,?,?,?,?,?,?, 'VIGENTE')",
+            (cod, nombre, cant, fnow, 'Carga conteo físico ' + fnow[:10],
+             (fila.get('proveedor') or '') or None, u, lote, venc,
+             (fila.get('estanteria') or ''), (fila.get('posicion') or '')))
+        cargados += 1
+    try:
+        audit_log(c, usuario=u, accion='IMPORTAR_CONTEO_FISICO', tabla='movimientos',
+                  registro_id=0, despues={'cargados': cargados, 'saltados_dup': saltados_dup, 'saltados': saltados})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'cargados': cargados, 'saltados_duplicado': saltados_dup, 'saltados': saltados})
+
+
+@bp.route('/admin/importar-conteo', methods=['GET'])
+def importar_conteo_page():
+    """Página ADMIN: subir el Excel del conteo físico, ver el MAPEO al código real y
+    cargar al inventario con el código correcto."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    from flask import Response
+    html = (
+        '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        '<title>Importar conteo físico</title>'
+        '<style>body{font-family:system-ui,Segoe UI,Roboto,sans-serif;margin:0;background:#f8fafc;color:#1e293b}'
+        '.wrap{max-width:1150px;margin:0 auto;padding:22px}h1{font-size:21px;margin:0 0 4px}'
+        '.sub{color:#64748b;font-size:13px;margin-bottom:14px}'
+        '.cards{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}'
+        '.card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 14px;min-width:90px}'
+        '.card b{font-size:20px;display:block}.card span{font-size:11px;color:#64748b}'
+        'table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;font-size:12.5px;box-shadow:0 1px 3px rgba(0,0,0,.06)}'
+        'th{background:#0d9488;color:#fff;text-align:left;padding:7px 8px;font-size:11px;position:sticky;top:0}'
+        'td{padding:6px 8px;border-bottom:1px solid #f1f5f9}'
+        'button{border:none;border-radius:9px;padding:10px 18px;font-weight:800;font-size:14px;cursor:pointer}'
+        '.go{background:#0d9488;color:#fff}.go:disabled{opacity:.4;cursor:not-allowed}'
+        'a.back{color:#0d9488;text-decoration:none;font-size:13px}'
+        '.bad{background:#fef2f2}.warn{background:#fffbeb}</style></head><body><div class="wrap">'
+        '<a class="back" href="/inventarios">← Volver a Inventarios</a>'
+        '<h1>📥 Importar conteo físico</h1>'
+        '<div class="sub">Subí el Excel del conteo (Codigo MP · INCI · Comercial · Lote · Cantidad · Vencimiento…). '
+        'El sistema valida cada código contra el catálogo, corrige typos y matchea por nombre los que no calzan. '
+        'Revisá el mapeo y cargá. <b>Tip:</b> primero poné el inventario en cero (<a href="/admin/reset-inventario">reset</a>) para que quede limpio. No duplica si re-cargás (dedup por código+lote).</div>'
+        '<div class="card" style="min-width:auto"><input type="file" id="file" accept=".xlsx"> '
+        '<button class="go" id="btn-an" onclick="analizar()">Analizar mapeo</button></div>'
+        '<div id="resumen" class="cards"></div>'
+        '<div id="acciones"></div>'
+        '<div id="tabla"></div>'
+        '<div id="msg" style="font-size:14px;margin-top:10px"></div>'
+        '<script>'
+        'var FILAS=[];'
+        'function _csrf(){return document.cookie.split(";").find(function(c){return c.trim().indexOf("csrf_token=")===0})?.split("=")[1]||"";}'
+        'function badge(m){var map={ok:["#dcfce7","#166534","✓ código ok"],corregido:["#dbeafe","#1e40af","↺ typo corregido"],por_inci:["#fef9c3","#854d0e","≈ por INCI"],por_comercial:["#fef9c3","#854d0e","≈ por nombre"],sin_match:["#fee2e2","#991b1b","⚠ sin match"]};var x=map[m]||["#eee","#333",m];return "<span style=\\"background:"+x[0]+";color:"+x[1]+";padding:1px 7px;border-radius:9px;font-size:10px;font-weight:700\\">"+x[2]+"</span>";}'
+        'async function analizar(){'
+        'var f=document.getElementById("file").files[0]; if(!f){alert("Elegí el Excel");return;}'
+        'var b=document.getElementById("btn-an"); b.disabled=true; b.textContent="Analizando…";'
+        'var fd=new FormData(); fd.append("archivo", f);'
+        'try{var r=await fetch("/api/inventario/importar-conteo/analizar",{method:"POST",headers:{"X-CSRFToken":_csrf()},body:fd});'
+        'var d=await r.json(); if(!r.ok||!d.ok){alert("Error: "+(d.error||r.status));b.disabled=false;b.textContent="Analizar mapeo";return;}'
+        'FILAS=d.filas; var rs=d.resumen;'
+        'document.getElementById("resumen").innerHTML='
+        '"<div class=card><b>"+rs.total+"</b><span>filas</span></div>"'
+        '+"<div class=card style=border-color:#86efac><b style=color:#166534>"+rs.ok+"</b><span>código ok</span></div>"'
+        '+"<div class=card><b>"+rs.corregido+"</b><span>typo corregido</span></div>"'
+        '+"<div class=card style=border-color:#fde047><b style=color:#854d0e>"+rs.por_nombre+"</b><span>por nombre</span></div>"'
+        '+"<div class=card style=border-color:#fecaca><b style=color:#991b1b>"+rs.sin_match+"</b><span>sin match</span></div>"'
+        '+"<div class=card><b>"+rs.en_cero+"</b><span>en 0</span></div>"'
+        '+"<div class=card style=border-color:#0d9488><b style=color:#0d9488>"+rs.cargables+"</b><span>a cargar</span></div>";'
+        'document.getElementById("acciones").innerHTML="<button class=go onclick=cargar()>📥 Cargar "+rs.cargables+" al inventario</button> <span style=font-size:12px;color:#64748b>(solo las que tienen código real y cantidad &gt; 0)</span>";'
+        'var h="<table><thead><tr><th>Excel código</th><th>INCI</th><th>→ Código real</th><th>Match</th><th>Lote</th><th>Cant (g)</th><th>Venc</th></tr></thead><tbody>";'
+        'd.filas.forEach(function(x){var cls=x.match==="sin_match"?"bad":(x.match==="por_inci"||x.match==="por_comercial"?"warn":"");'
+        'h+="<tr class="+cls+"><td>"+(x.codigo||"—")+"</td><td>"+(x.inci||"")+"</td><td><b>"+(x.codigo_real||"—")+"</b></td><td>"+badge(x.match)+"</td><td>"+(x.lote||"")+"</td><td style=text-align:right>"+x.cantidad+"</td><td>"+(x.vencimiento||"")+"</td></tr>";});'
+        'h+="</tbody></table>"; document.getElementById("tabla").innerHTML=h;'
+        'b.disabled=false; b.textContent="Analizar mapeo";'
+        '}catch(e){alert("Error: "+e);b.disabled=false;b.textContent="Analizar mapeo";}}'
+        'async function cargar(){'
+        'if(!FILAS.length){return;} if(!confirm("Cargar al inventario las filas mapeadas con cantidad>0? (no duplica si ya estaban)")) return;'
+        'try{var r=await fetch("/api/inventario/importar-conteo/cargar",{method:"POST",headers:{"Content-Type":"application/json","X-CSRFToken":_csrf()},body:JSON.stringify({filas:FILAS})});'
+        'var d=await r.json(); if(!r.ok||!d.ok){document.getElementById("msg").innerHTML="<span style=color:#991b1b>Error: "+(d.error||r.status)+"</span>";return;}'
+        'document.getElementById("msg").innerHTML="<span style=color:#166534;font-weight:700>✅ Cargados "+d.cargados+" · saltados duplicados "+d.saltados_duplicado+" · saltados (sin código/0) "+d.saltados+"</span>";'
+        '}catch(e){document.getElementById("msg").textContent="Error: "+e;}}'
+        '</script></div></body></html>')
+    return Response(html, mimetype="text/html")
+
+
 @bp.route('/api/maestro-mp/<codigo>/precio', methods=['POST'])
 def actualizar_precio_mp(codigo):
     """Actualiza precio_referencia de una MP · auditado.
