@@ -10950,15 +10950,40 @@ def importar_conteo_analizar():
     except Exception as e:
         return jsonify({'ok': False, 'error': 'No se pudo leer el Excel: ' + str(e)[:160]}), 400
     conn = get_db(); c = conn.cursor()
+    # Catálogo precalculado UNA vez (el Excel limpio trae solo INCI → todas las filas
+    # cruzan por nombre · sin esto sería un scan por fila). Mapas normalizados.
+    cod_actual = {}
+    inci_de_cod = {}
+    inci_map = {}
+    com_map = {}
+    for r in c.execute("SELECT codigo_mp, COALESCE(nombre_inci,''), COALESCE(nombre_comercial,'') "
+                       "FROM maestro_mps WHERE COALESCE(activo,1)=1").fetchall():
+        cu = (r[0] or '').strip().upper()
+        cod_actual[cu] = r[0]
+        inci_de_cod[cu] = r[1]
+        ni = _norm_acentos(r[1])
+        if ni and ni not in inci_map:
+            inci_map[ni] = r[0]
+        nc = _norm_acentos(r[2])
+        if nc and nc not in com_map:
+            com_map[nc] = r[0]
     res = []
     for fila in filas:
-        cod_real, estado = _resolver_codigo_mp_conteo(c, fila['codigo'], fila['inci'], fila['comercial'])
-        inci_app = ''
-        if cod_real:
-            rr = c.execute("SELECT nombre_inci FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=UPPER(TRIM(?))",
-                           (cod_real,)).fetchone()
-            inci_app = (rr[0] if rr else '') or ''
-        # ¿la app tiene TAL CUAL ese INCI? (compara el INCI del Excel vs el de la app)
+        cu = (fila['codigo'] or '').strip().upper()
+        cod_real = None
+        estado = 'sin_match'
+        if cu and cu in cod_actual:
+            cod_real, estado = cod_actual[cu], 'ok'
+        elif cu.startswith('PM') and ('MP' + cu[2:]) in cod_actual:
+            cod_real, estado = cod_actual['MP' + cu[2:]], 'corregido'
+        else:
+            ni = _norm_acentos(fila['inci'])
+            nc = _norm_acentos(fila['comercial'])
+            if ni and ni in inci_map:
+                cod_real, estado = inci_map[ni], 'por_inci'
+            elif nc and nc in com_map:
+                cod_real, estado = com_map[nc], 'por_comercial'
+        inci_app = inci_de_cod.get((cod_real or '').strip().upper(), '') if cod_real else ''
         inci_coincide = None
         if cod_real and fila['inci']:
             inci_coincide = (_norm_acentos(inci_app) == _norm_acentos(fila['inci']))
