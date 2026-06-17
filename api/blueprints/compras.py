@@ -16,7 +16,7 @@ from config import (
 )
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
-from audit_helpers import audit_log, intentar_insert_con_retry
+from audit_helpers import audit_log, intentar_insert_con_retry, siguiente_numero_oc as _siguiente_numero_oc
 from http_helpers import validate_money
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
@@ -43,35 +43,8 @@ ESTADOS_OC_ACTIVAS = ('Borrador', 'Autorizada', 'Recibida')  # NO cerradas (Paga
 ESTADOS_OC_LEGACY = ('Revisada', 'Parcial')                  # solo lectura · mig 157 los migró
 
 
-def _siguiente_numero_oc(c, anio=None):
-    """Devuelve el próximo 'OC-AAAA-NNNN' de forma PG-SAFE.
-
-    FIX · 16-jun-2026 · drift SQLite↔PG. Antes se hacía
-    `SELECT MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER))`. En SQLite el CAST de un
-    texto no numérico devuelve 0 (permisivo); en PostgreSQL lanza
-    "invalid input syntax for type integer". Las OCs de influencer se numeran con
-    sufijo de colisión (ej. 'OC-2026-0215-1'), así que `SUBSTR(.,9)`='0215-1' →
-    CAST revienta → 500 en TODA creación de OC del año. Solución: traer los
-    numero_oc del año y extraer el correlativo (dígitos iniciales tras el prefijo)
-    en Python, ignorando sufijos no numéricos. El correlativo se usa con un loop
-    de reintento por UNIQUE en el caller, así que un colapso de sufijos al mismo
-    base es inofensivo.
-    """
-    import re as _re
-    y = str(anio) if anio else datetime.now().strftime('%Y')
-    pref = f"OC-{y}-"
-    c.execute("SELECT numero_oc FROM ordenes_compra WHERE numero_oc LIKE ?", (pref + '%',))
-    mx = 0
-    for row in c.fetchall():
-        n = (row[0] if not isinstance(row, str) else row) or ''
-        suf = n[len(pref):]
-        m = _re.match(r'(\d+)', suf)
-        if m:
-            try:
-                mx = max(mx, int(m.group(1)))
-            except (ValueError, OverflowError):
-                pass
-    return f"{pref}{mx + 1:04d}"
+# _siguiente_numero_oc · PG-safe · vive en audit_helpers (compartido con
+# programacion.py y admin.py) · importado arriba como _siguiente_numero_oc.
 
 
 # ── Helpers de permisos granulares ────────────────────────────────────────────
@@ -1006,25 +979,43 @@ def handle_ordenes_compra():
         # Ahora si el proveedor no existe, se crea con datos basicos (Catalina
         # puede enriquecerlo despues en /compras → Proveedores). Si ya existe,
         # solo se hace upsert de campos no-vacios para no pisar datos buenos.
+        # FIX · 16-jun-2026 · mismo bug que crear_oc_desde_solicitudes: el UNIQUE
+        # de proveedores.nombre es global → chequear con AND activo=1 y luego
+        # INSERTar choca el UNIQUE si existe un proveedor INACTIVO con ese nombre
+        # → en PG la tx queda abortada → el INSERT de items siguiente muere → 500.
+        # Existencia SIN filtrar activo (= match el UNIQUE) + reactivar + SAVEPOINT.
         try:
-            existe = c.execute(
-                "SELECT id FROM proveedores WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?)) AND activo=1",
-                (d['proveedor'],)
-            ).fetchone()
-            if not existe:
-                c.execute("""INSERT INTO proveedores
-                             (nombre, categoria, condiciones_pago, activo, fecha_creacion)
-                             VALUES (?,?,?,1,?)""",
-                          (d['proveedor'], categoria, '30 dias',
-                           datetime.now().isoformat()))
-                try:
-                    audit_log(c, usuario=usuario, accion='CREAR_PROVEEDOR',
-                              tabla='proveedores', registro_id=c.lastrowid,
+            c.execute('SAVEPOINT _prov_auto')
+            try:
+                existe = c.execute(
+                    "SELECT id, COALESCE(activo,0) FROM proveedores "
+                    "WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?)) ORDER BY activo DESC LIMIT 1",
+                    (d['proveedor'],)
+                ).fetchone()
+                _pid, _pacc = None, None
+                if not existe:
+                    c.execute("""INSERT INTO proveedores
+                                 (nombre, categoria, condiciones_pago, activo, fecha_creacion)
+                                 VALUES (?,?,?,1,?)""",
+                              (d['proveedor'], categoria, '30 dias',
+                               datetime.now().isoformat()))
+                    _pid, _pacc = c.lastrowid, 'CREAR_PROVEEDOR'
+                elif not existe[1]:
+                    c.execute("UPDATE proveedores SET activo=1 WHERE id=?", (existe[0],))
+                    _pid, _pacc = existe[0], 'REACTIVAR_PROVEEDOR'
+                if _pacc:
+                    audit_log(c, usuario=usuario, accion=_pacc,
+                              tabla='proveedores', registro_id=_pid,
                               despues={'nombre': d['proveedor'][:200],
                                         'categoria': categoria,
                                         'origen': 'auto_oc',
                                         'oc_origen': numero_oc},
-                              detalle=f"Auto-creado al crear OC {numero_oc} · {d['proveedor'][:80]}")
+                              detalle=f"Auto al crear OC {numero_oc} · {d['proveedor'][:80]}")
+                c.execute('RELEASE SAVEPOINT _prov_auto')
+            except Exception:
+                try:
+                    c.execute('ROLLBACK TO SAVEPOINT _prov_auto')
+                    c.execute('RELEASE SAVEPOINT _prov_auto')
                 except Exception:
                     pass
         except Exception:

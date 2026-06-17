@@ -178,6 +178,34 @@ def siguiente_codigo_secuencial(c, prefijo, tabla, columna='codigo', anio=None):
     return f'{prefijo}-{anio}-0001'
 
 
+def siguiente_numero_oc(c, anio=None):
+    """Próximo 'OC-AAAA-NNNN' PG-SAFE (extrae el correlativo en Python).
+
+    FIX · 16-jun-2026 · drift SQLite↔PG. El patrón viejo
+    `SELECT MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER))` revienta en PostgreSQL
+    cuando una OC tiene sufijo no numérico (ej. 'OC-2026-0215-1', que generan las
+    OCs de influencer al colisionar): `CAST('0215-1' AS INTEGER)` → "invalid
+    input syntax for type integer" → 500 en TODA creación de OC del año. SQLite
+    lo toleraba devolviendo 0. Aquí se trae los numero_oc del año y se extrae el
+    correlativo (dígitos iniciales tras 'OC-AAAA-') ignorando sufijos. NO es
+    race-safe por sí solo: usar con un loop de reintento por UNIQUE en el caller.
+    """
+    import re as _re
+    y = str(anio) if anio else datetime.now().strftime('%Y')
+    pref = f'OC-{y}-'
+    c.execute("SELECT numero_oc FROM ordenes_compra WHERE numero_oc LIKE ?", (pref + '%',))
+    mx = 0
+    for row in c.fetchall():
+        n = (row[0] if not isinstance(row, str) else row) or ''
+        m = _re.match(r'(\d+)', n[len(pref):])
+        if m:
+            try:
+                mx = max(mx, int(m.group(1)))
+            except (ValueError, OverflowError):
+                pass
+    return f'{pref}{mx + 1:04d}'
+
+
 def intentar_insert_con_retry(insert_fn, *, max_intentos=5, columna='codigo'):
     """Ejecuta insert_fn() con retry si falla por UNIQUE (race condition).
 

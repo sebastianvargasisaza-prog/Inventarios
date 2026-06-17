@@ -19,7 +19,7 @@ from config import (
 )
 from database import db_connect
 from auth import _client_ip, _log_sec
-from audit_helpers import audit_log
+from audit_helpers import audit_log, siguiente_numero_oc
 from backup import (
     do_backup, list_backups, get_backup_path, BACKUPS_DIR,
     RETENTION_DAYS, BACKUP_INTERVAL_HOURS,
@@ -8632,9 +8632,9 @@ def admin_import_pagos_influencers_excel():
         c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero, 10) AS INTEGER)),0) "
                   "FROM solicitudes_compra WHERE numero LIKE ?", (f'SOL-{anio}-%',))
         n_sol = (c.fetchone()[0] or 0)
-        c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc, 9) AS INTEGER)),0) "
-                  "FROM ordenes_compra WHERE numero_oc LIKE ?", (f'OC-{anio}-%',))
-        n_oc = (c.fetchone()[0] or 0)
+        # PG-safe (drift CAST · 16-jun): el max int del correlativo, ignorando
+        # sufijos no numéricos (ej. OC-2026-0215-1) que rompen CAST en PostgreSQL.
+        n_oc = int(siguiente_numero_oc(c, anio).rsplit('-', 1)[1]) - 1
 
         importadas = []
         for plan in plan_import:

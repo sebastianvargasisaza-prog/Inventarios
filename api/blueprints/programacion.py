@@ -22,7 +22,7 @@ from datetime import datetime, timedelta, date, timezone
 from database import get_db
 from config import ADMIN_USERS, APP_BASE_URL, CALIDAD_USERS, COMPRAS_USERS, PLANTA_USERS, EBR_MODE
 from inventario_helpers import stock_mp_total, stock_mp_disponible
-from audit_helpers import audit_log
+from audit_helpers import audit_log, siguiente_numero_oc
 
 # Bug latente preexistente fixed 2-may-2026: el blueprint usaba `log.warning()`
 # y `logger.warning()` sin tener el logger definido. Cualquier call a un branch
@@ -8892,11 +8892,7 @@ def prog_regenerar_oc():
                 continue
             n_sol += 1
             sol_numero = f"SOL-{year}-{n_sol:04d}"
-            n_oc = (conn.execute(
-                "SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) FROM ordenes_compra WHERE numero_oc LIKE ?",
-                (f"OC-{year}-%",)
-            ).fetchone()[0] or 0) + 1
-            num_oc = f"OC-{year}-{n_oc:04d}"
+            num_oc = siguiente_numero_oc(conn, year)  # PG-safe (drift CAST · 16-jun)
 
             mps_resumen_items = sorted(items, key=lambda x: -x['deficit_g'])[:5]
             mps_resumen = ', '.join([
@@ -9056,11 +9052,7 @@ def prog_generar_oc():
                 continue
             n_sol += 1
             sol_numero = f"SOL-{year}-{n_sol:04d}"
-            n_oc = (conn.execute(
-                "SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) FROM ordenes_compra WHERE numero_oc LIKE ?",
-                (f"OC-{year}-%",)
-            ).fetchone()[0] or 0) + 1
-            num_oc = f"OC-{year}-{n_oc:04d}"
+            num_oc = siguiente_numero_oc(conn, year)  # PG-safe (drift CAST · 16-jun)
 
             # Resumen de MPs principales para observaciones (legibilidad)
             mps_resumen_items = sorted(items, key=lambda x: -x['deficit_g'])[:5]
@@ -15380,13 +15372,7 @@ def solicitudes_compra_anticipada_decidir(sol_id):
         try:
             from datetime import datetime as _dt
             year = _dt.now().year
-            row = c.execute(
-                "SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) "
-                "FROM ordenes_compra WHERE numero_oc LIKE ?",
-                (f'OC-{year}-%',)
-            ).fetchone()
-            seq = (row[0] or 0) + 1
-            oc_num = f'OC-{year}-{seq:04d}'
+            oc_num = siguiente_numero_oc(c, year)  # PG-safe (drift CAST · 16-jun)
             categoria = 'MEE'  # envases/etiquetas/decoracion siempre son MEE
             obs_oc = (
                 f'Auto-generada desde Solicitud #{sol_id} (decision: {decision}). '
