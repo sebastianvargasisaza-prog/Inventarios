@@ -66,6 +66,9 @@ def test_analizar_mapea_codigos(app, db_clean):
     sin_cod = [x for x in j['filas'] if not x['codigo']][0]
     assert sin_cod['codigo_real'] == 'MPCT77' and sin_cod['match'] == 'por_inci'
     assert by['MPNOEXISTE']['match'] == 'sin_match' and by['MPNOEXISTE']['codigo_real'] is None
+    # contrasta el INCI del Excel vs el de la app (tal cual)
+    assert by['MPCT01']['inci_app'] == 'HEXANEDIOL TEST' and by['MPCT01']['inci_coincide'] is True
+    assert 'inci_distinto' in j['resumen']
     assert j['resumen']['cargables'] == 3  # MPCT01, PMCT50→MPCT50, sin_cod→MPCT77 (los con cant>0 y match)
 
 

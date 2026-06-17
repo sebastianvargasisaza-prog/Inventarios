@@ -10953,7 +10953,17 @@ def importar_conteo_analizar():
     res = []
     for fila in filas:
         cod_real, estado = _resolver_codigo_mp_conteo(c, fila['codigo'], fila['inci'], fila['comercial'])
+        inci_app = ''
+        if cod_real:
+            rr = c.execute("SELECT nombre_inci FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=UPPER(TRIM(?))",
+                           (cod_real,)).fetchone()
+            inci_app = (rr[0] if rr else '') or ''
+        # ¿la app tiene TAL CUAL ese INCI? (compara el INCI del Excel vs el de la app)
+        inci_coincide = None
+        if cod_real and fila['inci']:
+            inci_coincide = (_norm_acentos(inci_app) == _norm_acentos(fila['inci']))
         res.append({**fila, 'codigo_real': cod_real, 'match': estado,
+                    'inci_app': inci_app, 'inci_coincide': inci_coincide,
                     'cargable': bool(cod_real) and fila['cantidad'] > 0})
     resumen = {
         'total': len(res),
@@ -10961,6 +10971,7 @@ def importar_conteo_analizar():
         'corregido': sum(1 for x in res if x['match'] == 'corregido'),
         'por_nombre': sum(1 for x in res if x['match'] in ('por_inci', 'por_comercial')),
         'sin_match': sum(1 for x in res if x['match'] == 'sin_match'),
+        'inci_distinto': sum(1 for x in res if x.get('inci_coincide') is False),
         'en_cero': sum(1 for x in res if x['cantidad'] <= 0),
         'cargables': sum(1 for x in res if x['cargable']),
     }
@@ -11072,20 +11083,34 @@ def importar_conteo_page():
         '+"<div class=card><b>"+rs.corregido+"</b><span>typo corregido</span></div>"'
         '+"<div class=card style=border-color:#fde047><b style=color:#854d0e>"+rs.por_nombre+"</b><span>por nombre</span></div>"'
         '+"<div class=card style=border-color:#fecaca><b style=color:#991b1b>"+rs.sin_match+"</b><span>sin match</span></div>"'
+        '+"<div class=card style=border-color:#fed7aa><b style=color:#9a3412>"+(rs.inci_distinto||0)+"</b><span>INCI distinto</span></div>"'
         '+"<div class=card><b>"+rs.en_cero+"</b><span>en 0</span></div>"'
         '+"<div class=card style=border-color:#0d9488><b style=color:#0d9488>"+rs.cargables+"</b><span>a cargar</span></div>";'
-        'document.getElementById("acciones").innerHTML="<button class=go onclick=cargar()>📥 Cargar "+rs.cargables+" al inventario</button> <span style=font-size:12px;color:#64748b>(solo las que tienen código real y cantidad &gt; 0)</span>";'
-        'var h="<table><thead><tr><th>Excel código</th><th>INCI</th><th>→ Código real</th><th>Match</th><th>Lote</th><th>Cant (g)</th><th>Venc</th></tr></thead><tbody>";'
-        'd.filas.forEach(function(x){var cls=x.match==="sin_match"?"bad":(x.match==="por_inci"||x.match==="por_comercial"?"warn":"");'
-        'h+="<tr class="+cls+"><td>"+(x.codigo||"—")+"</td><td>"+(x.inci||"")+"</td><td><b>"+(x.codigo_real||"—")+"</b></td><td>"+badge(x.match)+"</td><td>"+(x.lote||"")+"</td><td style=text-align:right>"+x.cantidad+"</td><td>"+(x.vencimiento||"")+"</td></tr>";});'
-        'h+="</tbody></table>"; document.getElementById("tabla").innerHTML=h;'
+        'var ests=Array.from(new Set(d.filas.filter(function(x){return x.cargable&&x.estanteria;}).map(function(x){return x.estanteria;}))).sort();'
+        'document.getElementById("acciones").innerHTML="<div style=\\"display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:6px 0\\">"'
+        '+"<button class=go id=btn-cargar onclick=cargar()>📥 Cargar marcadas</button>"'
+        '+"<button onclick=\\"marcarTodo(true)\\" style=\\"background:#e2e8f0;color:#1e293b\\">Marcar todas</button>"'
+        '+"<button onclick=\\"marcarTodo(false)\\" style=\\"background:#e2e8f0;color:#1e293b\\">Desmarcar</button>"'
+        '+"<span style=font-size:13px>Solo estantería: <select id=fest onchange=\\"filtrarEst(this.value)\\"><option value=__all>todas</option>"+ests.map(function(e){return \"<option>\"+e+\"</option>\";}).join(\"\")+"</select></span>"'
+        '+"<span style=\\"font-size:12px;color:#64748b\\">Para ir POCO A POCO: marcá solo lo que contaste (ej. un estante) y cargá. Solo se cargan filas con código real y cantidad &gt; 0.</span></div>";'
+        'var h="<table><thead><tr><th>✓</th><th>Excel código</th><th>INCI (Excel)</th><th>→ Código real</th><th>INCI en la app</th><th>Match</th><th>Est</th><th>Lote</th><th>Cant (g)</th><th>Venc</th></tr></thead><tbody>";'
+        'd.filas.forEach(function(x,i){var cls=x.match==="sin_match"?"bad":((x.match==="por_inci"||x.match==="por_comercial"||x.inci_coincide===false)?"warn":"");'
+        'var chk=x.cargable?("<input type=checkbox class=sel data-i="+i+" data-est=\\""+(x.estanteria||"")+"\\" checked onchange=actBtn()>"):"";'
+        'var im=x.inci_coincide===false?" <span style=\\"color:#9a3412;font-weight:700\\">⚠ distinto</span>":(x.inci_coincide===true?" <span style=color:#166534>✓</span>":"");'
+        'h+="<tr class="+cls+"><td>"+chk+"</td><td>"+(x.codigo||"—")+"</td><td>"+(x.inci||"")+"</td><td><b>"+(x.codigo_real||"—")+"</b></td><td>"+(x.inci_app||"")+im+"</td><td>"+badge(x.match)+"</td><td>"+(x.estanteria||"")+"</td><td>"+(x.lote||"")+"</td><td style=text-align:right>"+x.cantidad+"</td><td>"+(x.vencimiento||"")+"</td></tr>";});'
+        'h+="</tbody></table>"; document.getElementById("tabla").innerHTML=h; actBtn();'
         'b.disabled=false; b.textContent="Analizar mapeo";'
         '}catch(e){alert("Error: "+e);b.disabled=false;b.textContent="Analizar mapeo";}}'
+        'window.actBtn=function(){var n=document.querySelectorAll(".sel:checked").length;var b=document.getElementById("btn-cargar"); if(b) b.textContent="📥 Cargar marcadas ("+n+")";};'
+        'window.marcarTodo=function(v){document.querySelectorAll(".sel").forEach(function(cb){cb.checked=v;});actBtn();};'
+        'window.filtrarEst=function(val){document.querySelectorAll(".sel").forEach(function(cb){cb.checked=(val==="__all")||(cb.dataset.est===val);});actBtn();};'
         'async function cargar(){'
-        'if(!FILAS.length){return;} if(!confirm("Cargar al inventario las filas mapeadas con cantidad>0? (no duplica si ya estaban)")) return;'
-        'try{var r=await fetch("/api/inventario/importar-conteo/cargar",{method:"POST",headers:{"Content-Type":"application/json","X-CSRFToken":_csrf()},body:JSON.stringify({filas:FILAS})});'
+        'var sel=[];document.querySelectorAll(".sel:checked").forEach(function(cb){var i=parseInt(cb.dataset.i,10); if(FILAS[i]) sel.push(FILAS[i]);});'
+        'if(!sel.length){alert("No hay filas marcadas para cargar.");return;}'
+        'if(!confirm("Cargar "+sel.length+" fila(s) MARCADAS al inventario? (no duplica si ya estaban)")) return;'
+        'try{var r=await fetch("/api/inventario/importar-conteo/cargar",{method:"POST",headers:{"Content-Type":"application/json","X-CSRFToken":_csrf()},body:JSON.stringify({filas:sel})});'
         'var d=await r.json(); if(!r.ok||!d.ok){document.getElementById("msg").innerHTML="<span style=color:#991b1b>Error: "+(d.error||r.status)+"</span>";return;}'
-        'document.getElementById("msg").innerHTML="<span style=color:#166534;font-weight:700>✅ Cargados "+d.cargados+" · saltados duplicados "+d.saltados_duplicado+" · saltados (sin código/0) "+d.saltados+"</span>";'
+        'document.getElementById("msg").innerHTML="<span style=color:#166534;font-weight:700>✅ Cargadas "+d.cargados+" · ya estaban (saltadas) "+d.saltados_duplicado+"</span> · Podés marcar otro estante y seguir.";'
         '}catch(e){document.getElementById("msg").textContent="Error: "+e;}}'
         '</script></div></body></html>')
     return Response(html, mimetype="text/html")
