@@ -10705,6 +10705,142 @@ def modo_inventario_config():
     from database import recepcion_auto_vigente as _rav
     return jsonify({'ok': True, 'activo': bool(_rav(c))})
 
+
+@bp.route('/api/inventario/reset-inventario-cero', methods=['GET', 'POST'])
+def reset_inventario_cero():
+    """Sebastián 16-jun · app EN PRUEBA · pone TODO el stock en CERO conservando el
+    catálogo (maestro_mps con códigos/INCI/nombres, fórmulas, mapeos). Borra el kardex
+    de MP (movimientos) y, si se pide, el de envases (movimientos_mee + maestro_mee.
+    stock_actual=0) y los conteos viejos. Hace RESPALDO (tablas *_bak_<ts>) antes de
+    borrar. ADMIN · GET=preview · POST {confirmar:'CERO', incluir_mee, limpiar_conteos}.
+    NO toca maestro_mps/maestro_mee (filas), fórmulas, sku maps ni stock_pt."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+
+    def _count(q):
+        try:
+            return c.execute(q).fetchone()[0]
+        except Exception:
+            return 0
+    preview = {
+        'movimientos_mp': _count("SELECT COUNT(*) FROM movimientos"),
+        'mps_con_saldo': _count("SELECT COUNT(DISTINCT material_id) FROM movimientos"),
+        'movimientos_mee': _count("SELECT COUNT(*) FROM movimientos_mee"),
+        'conteos': _count("SELECT COUNT(*) FROM conteos_fisicos"),
+        'catalogo_mps_intacto': _count("SELECT COUNT(*) FROM maestro_mps"),
+    }
+    if request.method == 'GET' or not (request.get_json(silent=True) or {}).get('confirmar'):
+        return jsonify({'ok': True, 'dry_run': True, **preview,
+                        'nota': "POST con {confirmar:'CERO'} para ejecutar"})
+
+    body = request.get_json(silent=True) or {}
+    if (body.get('confirmar') or '').strip().upper() != 'CERO':
+        return jsonify({'ok': False, 'error': "Para ejecutar enviá confirmar='CERO'"}), 400
+    incluir_mee = bool(body.get('incluir_mee', True))
+    limpiar_conteos = bool(body.get('limpiar_conteos', True))
+
+    import datetime as _dt_r
+    ts = (_dt_r.datetime.utcnow() - _dt_r.timedelta(hours=5)).strftime('%Y%m%d_%H%M%S')
+    backups = []
+    # RESPALDO antes de borrar (CREATE TABLE AS SELECT · SQLite + PG)
+    try:
+        c.execute(f"CREATE TABLE movimientos_bak_{ts} AS SELECT * FROM movimientos")
+        backups.append(f"movimientos_bak_{ts}")
+    except Exception as _e:
+        log.warning("reset: backup movimientos falló: %s", _e)
+
+    mp_borrados = preview['movimientos_mp']
+    c.execute("DELETE FROM movimientos")
+
+    mee_borrados = 0
+    if incluir_mee:
+        try:
+            c.execute(f"CREATE TABLE movimientos_mee_bak_{ts} AS SELECT * FROM movimientos_mee")
+            backups.append(f"movimientos_mee_bak_{ts}")
+        except Exception:
+            pass
+        mee_borrados = preview['movimientos_mee']
+        c.execute("DELETE FROM movimientos_mee")
+        try:
+            c.execute("UPDATE maestro_mee SET stock_actual=0")
+        except Exception:
+            pass
+
+    conteos_borrados = 0
+    if limpiar_conteos:
+        conteos_borrados = preview['conteos']
+        try:
+            c.execute("DELETE FROM conteo_items")
+            c.execute("DELETE FROM conteos_fisicos")
+        except Exception:
+            pass
+
+    try:
+        audit_log(c, usuario=u, accion='RESET_INVENTARIO_CERO', tabla='movimientos',
+                  registro_id=0, despues={'mp_borrados': mp_borrados, 'mee_borrados': mee_borrados,
+                                          'conteos_borrados': conteos_borrados, 'backups': backups})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'dry_run': False, 'mp_borrados': mp_borrados,
+                    'mee_borrados': mee_borrados, 'conteos_borrados': conteos_borrados,
+                    'catalogo_conservado': preview['catalogo_mps_intacto'], 'backups': backups})
+
+
+@bp.route('/admin/reset-inventario', methods=['GET'])
+def reset_inventario_page():
+    """Página ADMIN para poner el inventario en CERO conservando el catálogo (app en
+    prueba). Muestra preview + confirmación tipeada antes de ejecutar."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    from flask import Response
+    html = (
+        '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        '<title>Reset inventario a cero</title>'
+        '<style>body{font-family:system-ui,Segoe UI,Roboto,sans-serif;margin:0;background:#f8fafc;color:#1e293b}'
+        '.wrap{max-width:720px;margin:0 auto;padding:24px}h1{font-size:21px;margin:0 0 6px}'
+        '.warn{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:14px 18px;margin:14px 0;font-size:14px}'
+        '.card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px 18px;margin:14px 0}'
+        '.k{font-size:26px;font-weight:800}label{display:block;margin:10px 0;font-size:14px}'
+        'input[type=text]{padding:9px 12px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:15px;width:160px}'
+        'button{border:none;border-radius:9px;padding:11px 20px;font-weight:800;font-size:15px;cursor:pointer}'
+        '.go{background:#b91c1c;color:#fff}.go:disabled{opacity:.4;cursor:not-allowed}'
+        'a.back{color:#0d9488;text-decoration:none;font-size:13px}</style></head><body><div class="wrap">'
+        '<a class="back" href="/inventarios">← Volver a Inventarios</a>'
+        '<h1>🧹 Reset de inventario a CERO</h1>'
+        '<div class="warn"><b>Solo para la app en prueba.</b> Pone TODO el stock en cero para cargar el conteo nuevo. '
+        '<b>Conserva</b> el catálogo (códigos, INCI, nombres), fórmulas y mapeos. <b>Borra</b> el kardex de MP (y envases) — se hace un respaldo antes.</div>'
+        '<div class="card" id="preview">Cargando preview…</div>'
+        '<div class="card">'
+        '<label><input type="checkbox" id="mee" checked> También poner envases/MEE en cero</label>'
+        '<label><input type="checkbox" id="conteos" checked> Borrar conteos físicos viejos</label>'
+        '<label>Escribí <b>CERO</b> para confirmar: <input type="text" id="confirmar" autocomplete="off" oninput="document.getElementById(\'go\').disabled = this.value.trim().toUpperCase() !== \'CERO\'"></label>'
+        '<button class="go" id="go" disabled onclick="ejecutar()">🧹 Poner inventario en CERO</button>'
+        '</div><div id="msg" style="font-size:14px;margin-top:10px"></div>'
+        '<script>'
+        'function _csrf(){return document.cookie.split(";").find(function(c){return c.trim().indexOf("csrf_token=")===0})?.split("=")[1]||"";}'
+        'async function cargar(){'
+        'try{var r=await fetch("/api/inventario/reset-inventario-cero");var d=await r.json();'
+        'document.getElementById("preview").innerHTML="<div class=k>"+d.movimientos_mp+"</div>movimientos de MP a borrar · "+d.mps_con_saldo+" MP con saldo<br>"+d.movimientos_mee+" movimientos de envases · "+d.conteos+" conteos<br><span style=color:#166534>✓ catálogo intacto: "+d.catalogo_mps_intacto+" MP (códigos/INCI/nombres se conservan)</span>";'
+        '}catch(e){document.getElementById("preview").textContent="No se pudo cargar preview: "+e;}}'
+        'async function ejecutar(){'
+        'if(!confirm("¿Seguro? Esto pone TODO el stock en cero (con respaldo). Conserva el catálogo.")) return;'
+        'var b=document.getElementById("go");b.disabled=true;b.textContent="Ejecutando…";'
+        'try{var r=await fetch("/api/inventario/reset-inventario-cero",{method:"POST",headers:{"Content-Type":"application/json","X-CSRFToken":_csrf()},body:JSON.stringify({confirmar:"CERO",incluir_mee:document.getElementById("mee").checked,limpiar_conteos:document.getElementById("conteos").checked})});'
+        'var d=await r.json();'
+        'if(!r.ok||!d.ok){document.getElementById("msg").innerHTML="<span style=color:#991b1b>Error: "+(d.error||r.status)+"</span>";b.disabled=false;b.textContent="🧹 Poner inventario en CERO";return;}'
+        'document.getElementById("msg").innerHTML="<span style=color:#166534;font-weight:700>✅ Listo. Stock en cero. MP borradas: "+d.mp_borrados+" · envases: "+d.mee_borrados+" · conteos: "+d.conteos_borrados+" · catálogo conservado: "+d.catalogo_conservado+". Respaldo: "+(d.backups||[]).join(", ")+"</span><br>Ya podés cargar el conteo nuevo desde Inventarios › Ingreso MP.";'
+        'b.textContent="✓ Hecho";cargar();'
+        '}catch(e){document.getElementById("msg").textContent="Error: "+e;b.disabled=false;b.textContent="🧹 Poner inventario en CERO";}}'
+        'cargar();'
+        '</script></div></body></html>')
+    return Response(html, mimetype="text/html")
+
+
 @bp.route('/api/maestro-mp/<codigo>/precio', methods=['POST'])
 def actualizar_precio_mp(codigo):
     """Actualiza precio_referencia de una MP · auditado.
