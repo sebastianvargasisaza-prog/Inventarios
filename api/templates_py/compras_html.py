@@ -7315,6 +7315,11 @@ function renderConsolCard(p, idx){
           +' style="padding:8px 14px;font-size:12px;white-space:nowrap;background:#3b82f6;border-radius:8px;">&#x1F4CB; Copiar</button>'
         +'<button class="btn bp" data-print-idx="'+idx+'" onclick="imprimirPedido(parseInt(this.dataset.printIdx))"'
           +' style="padding:8px 14px;font-size:12px;white-space:nowrap;border-radius:8px;">&#x1F5A8; Imprimir</button>'
+        // Eliminar · solo si el grupo tiene OCs en Borrador/Rechazada (backend valida igual)
+        +((p.ocs||[]).some(function(o){ return o.estado==='Borrador'||o.estado==='Rechazada'; })
+          ? '<button class="btn" data-consol-idx="'+idx+'" onclick="eliminarOCsGrupo(parseInt(this.dataset.consolIdx))"'
+            +' style="padding:8px 14px;font-size:12px;white-space:nowrap;background:#dc2626;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;">&#x1F5D1; Eliminar</button>'
+          : '')
       +'</div>'
     +'</div>'
     +'<div style="padding:12px 18px;">'+contenidoHtml+'</div>'
@@ -7533,6 +7538,28 @@ async function copiarPedido(idx){
     document.execCommand('copy'); document.body.removeChild(ta);
     alert('Copiado al portapapeles.');
   }
+}
+
+async function eliminarOCsGrupo(idx){
+  var p = _consolCache[idx];
+  if(!p) return;
+  // Solo Borrador/Rechazada (el backend valida lo mismo · no toca Autorizada/Recibida/Pagada).
+  var dels = (p.ocs||[]).filter(function(o){ return o.estado==='Borrador'||o.estado==='Rechazada'; });
+  if(!dels.length){ alert('Solo se pueden eliminar OCs en Borrador o Rechazada.'); return; }
+  var nums = dels.map(function(o){ return o.numero_oc; });
+  if(!confirm('¿Eliminar '+nums.length+' OC(s) en Borrador/Rechazada de '+(p.proveedor||'')+'?\\n\\n'
+              +nums.join(', ')+'\\n\\nSe revierten las solicitudes vinculadas (vuelven a Pendiente). No se puede deshacer.')) return;
+  var fail = [];
+  for(var i=0;i<nums.length;i++){
+    try{
+      var r = await fetch('/api/ordenes-compra/'+encodeURIComponent(nums[i]), _fetchOpts('DELETE'));
+      if(!r.ok){ var d = await r.json().catch(function(){return {};}); fail.push(nums[i]+': '+(d.error||('codigo '+r.status))); }
+    }catch(e){ fail.push(nums[i]+': '+e); }
+  }
+  if(fail.length) alert('No se pudieron eliminar:\\n'+fail.join('\\n'));
+  else alert('\\u2713 '+nums.length+' OC(s) eliminada(s).');
+  if(typeof loadConsolidado==='function') await loadConsolidado();
+  if(typeof loadData==='function') await loadData();
 }
 
 function imprimirPedido(idx){
