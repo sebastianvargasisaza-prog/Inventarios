@@ -2417,49 +2417,42 @@ function _wkpi(label, valor, sub, color){
 }
 
 async function loadData(){
-  loadDashboardEjecutivo();  // Sprint N3 · paralelo, no bloquea
-  try{
-    var r = await fetch('/api/ordenes-compra');
-    if(!r.ok) throw new Error('OC API '+r.status);
-    var d = await r.json();
-    OCS = d.ordenes||[];
-  }catch(e){ console.error('OC load error:',e); OCS=[]; }
-  try{
-    var r2 = await fetch('/api/proveedores-compras');
-    if(!r2.ok) throw new Error('Prov API '+r2.status);
-    var d2 = await r2.json();
-    PROVS = d2.proveedores||[];
-  }catch(e){ console.error('Prov load error:',e); PROVS=[]; }
-  try{
-    var r3 = await fetch('/api/maestro-mps');
-    if(!r3.ok) throw new Error('Cat API '+r3.status);
-    var d3 = await r3.json();
-    _MPCAT = d3.mps||[];
-  }catch(e){ console.error('MPCAT load error:',e); _MPCAT=[]; }
-  try{
-    // Usar Centro de Programación (con velocidad Shopify + producciones
-    // futuras) en vez de stock_actual<stock_minimo simple, que está
-    // basado en una columna que no se actualiza y daba data engañosa.
-    var r4 = await fetch('/api/programacion/mps-deficit');
-    if(!r4.ok) throw new Error('Programacion deficit API '+r4.status);
-    var d4 = await r4.json();
-    _ALERTAS_MP = (d4.mps||[]).map(function(m){
-      return {
-        codigo_mp: m.codigo_mp,
-        nombre: m.nombre,
-        stock_actual: m.stock_actual_g === -1 ? Infinity : m.stock_actual_g,
-        stock_minimo: 0, // ya no aplica el concepto de mínimo, es déficit real
-        deficit: m.deficit_g,
-        proveedor: m.proveedor || '',
-        productos: m.productos_afectados || [],
-        tipo: 'MP',
-        es_china: m.es_china || false,
-      };
-    });
-  }catch(e){ console.error('MPs deficit load error:',e); _ALERTAS_MP=[]; }
+  // PERF (16-jun · audit velocidad): los 4 fetches son independientes → en
+  // PARALELO (antes en serie, sumaban latencias) + se quitó el legacy
+  // loadDashboardEjecutivo (pintaba en un <div display:none>, trabajo perdido).
+  // mps-deficit usa caché de calendario server-side (60s) para no saturar workers.
+  await Promise.all([
+    fetch('/api/ordenes-compra').then(function(r){ if(!r.ok) throw new Error('OC API '+r.status); return r.json(); })
+      .then(function(d){ OCS = d.ordenes||[]; })
+      .catch(function(e){ console.error('OC load error:',e); OCS=[]; }),
+    fetch('/api/proveedores-compras').then(function(r){ if(!r.ok) throw new Error('Prov API '+r.status); return r.json(); })
+      .then(function(d){ PROVS = d.proveedores||[]; })
+      .catch(function(e){ console.error('Prov load error:',e); PROVS=[]; }),
+    fetch('/api/maestro-mps').then(function(r){ if(!r.ok) throw new Error('Cat API '+r.status); return r.json(); })
+      .then(function(d){ _MPCAT = d.mps||[]; })
+      .catch(function(e){ console.error('MPCAT load error:',e); _MPCAT=[]; }),
+    // Centro de Programación: déficit real (velocidad Shopify + producciones futuras)
+    fetch('/api/programacion/mps-deficit').then(function(r){ if(!r.ok) throw new Error('Programacion deficit API '+r.status); return r.json(); })
+      .then(function(d4){
+        _ALERTAS_MP = (d4.mps||[]).map(function(m){
+          return {
+            codigo_mp: m.codigo_mp,
+            nombre: m.nombre,
+            stock_actual: m.stock_actual_g === -1 ? Infinity : m.stock_actual_g,
+            stock_minimo: 0,
+            deficit: m.deficit_g,
+            proveedor: m.proveedor || '',
+            productos: m.productos_afectados || [],
+            tipo: 'MP',
+            es_china: m.es_china || false,
+          };
+        });
+      })
+      .catch(function(e){ console.error('MPs deficit load error:',e); _ALERTAS_MP=[]; })
+  ]);
   renderDash();
   renderMPAlerts();
-  // Load Programacion alerts (non-blocking)
+  // Alertas de programación (no bloquea la carga)
   cargarAlertasProgramacion();
 }
 

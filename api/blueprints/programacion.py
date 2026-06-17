@@ -1048,6 +1048,28 @@ LEAD_TIME_CHINA = int(os.environ.get('LEAD_TIME_CHINA') or 60)
 LEAD_TIME_LOCAL = int(os.environ.get('LEAD_TIME_LOCAL') or 21)
 
 
+# PERF · 16-jun · caché de eventos de calendario (60s, por horizonte). mps-deficit
+# se llama en CADA carga de /compras y _fetch_calendar_events hace una petición
+# externa iCal/Google SÍNCRONA (hasta 10s); sin caché, con 3 workers Gunicorn se
+# saturan y todo responde lento (M43). Cachea por proceso, preservando el horizonte
+# (a diferencia de auto_plan._calendar_events_cached que fija 180d y devuelve lista).
+_CAL_DEF_CACHE = {'ts': None, 'days': None, 'data': None}
+
+
+def _fetch_calendar_events_cached(days_ahead=90):
+    import datetime as _dtc
+    now = _dtc.datetime.now()
+    cc = _CAL_DEF_CACHE
+    if (cc['data'] is not None and cc['days'] == days_ahead and cc['ts']
+            and (now - cc['ts']).total_seconds() < 60):
+        return cc['data']
+    data = _fetch_calendar_events(days_ahead=days_ahead) or {}
+    cc['data'] = data
+    cc['days'] = days_ahead
+    cc['ts'] = now
+    return data
+
+
 def _compute_mp_deficit_aggregated(conn, days_ahead=90):
     """Calcula déficit REAL de MPs agregando primero, restando stock una sola vez.
 
@@ -1067,7 +1089,7 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
     import datetime as _dt
     import re as _re
 
-    cal = _fetch_calendar_events(days_ahead=days_ahead)
+    cal = _fetch_calendar_events_cached(days_ahead=days_ahead)
     events = cal.get('events', [])
     formulas = _get_formulas(conn)
     mp_stock = _get_mp_stock(conn)
