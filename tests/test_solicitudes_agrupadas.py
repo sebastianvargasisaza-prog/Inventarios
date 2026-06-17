@@ -272,6 +272,46 @@ def test_oc_desde_solicitudes_proveedor_inactivo_reactiva(app, db_clean):
         conn.commit(); conn.close()
 
 
+def test_oc_desde_solicitudes_con_oc_sufijada_existente(app, db_clean):
+    """16-jun · regresión PG · existe una OC con sufijo no numérico
+    (ej. 'OC-2026-0215-1', que generan las OCs de influencer al colisionar).
+    Antes el numerador hacía `MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER))` →
+    SUBSTR='0215-1' → en PostgreSQL `CAST('0215-1' AS INTEGER)` lanza
+    'invalid input syntax for type integer' → 500 en TODA creación de OC del
+    año. El helper PG-safe extrae el correlativo en Python ignorando el sufijo."""
+    cs = _login(app, "catalina")
+    # Sembrar una OC con sufijo no numérico (la que rompía el CAST)
+    yr = '2026'
+    oc_sufijada = f'OC-{yr}-0215-1'
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM ordenes_compra WHERE numero_oc=?", (oc_sufijada,))
+    conn.execute("INSERT INTO ordenes_compra (numero_oc, fecha, estado, proveedor) "
+                 "VALUES (?, '2026-06-16', 'Borrador', 'Influencer X')", (oc_sufijada,))
+    conn.commit(); conn.close()
+    nums = ['SOL-SUFX-001']
+    _crear_solicitud_con_items(nums[0], [{'codigo_mp': 'MP-SUFX', 'nombre_mp': 'Peptido',
+                                           'cantidad_g': 50, 'valor_estimado': 0,
+                                           'proveedor_sugerido': 'Prov Sufx'}])
+    oc_creada = None
+    try:
+        r = cs.post('/api/compras/oc-desde-solicitudes',
+                    json={'proveedor': 'Prov Sufx', 'solicitudes': nums},
+                    headers=csrf_headers())
+        assert r.status_code == 201, r.data
+        oc_creada = r.get_json()['numero_oc']
+        assert oc_creada.startswith(f'OC-{yr}-')
+        # el correlativo nuevo debe ser numérico válido y > 215 (extrajo 0215 del sufijo)
+        suf = oc_creada[len(f'OC-{yr}-'):]
+        assert suf.isdigit() and int(suf) >= 216, oc_creada
+    finally:
+        _cleanup_solicitudes(nums)
+        if oc_creada:
+            _cleanup_oc(oc_creada)
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn.execute("DELETE FROM ordenes_compra WHERE numero_oc=?", (oc_sufijada,))
+        conn.commit(); conn.close()
+
+
 def test_oc_desde_solicitudes_consolida_mismo_mp(app, db_clean):
     """2 solicitudes de la misma MP → 1 item consolidado en la OC."""
     cs = _login(app, "catalina")

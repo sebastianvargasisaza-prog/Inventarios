@@ -43,6 +43,37 @@ ESTADOS_OC_ACTIVAS = ('Borrador', 'Autorizada', 'Recibida')  # NO cerradas (Paga
 ESTADOS_OC_LEGACY = ('Revisada', 'Parcial')                  # solo lectura · mig 157 los migró
 
 
+def _siguiente_numero_oc(c, anio=None):
+    """Devuelve el próximo 'OC-AAAA-NNNN' de forma PG-SAFE.
+
+    FIX · 16-jun-2026 · drift SQLite↔PG. Antes se hacía
+    `SELECT MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER))`. En SQLite el CAST de un
+    texto no numérico devuelve 0 (permisivo); en PostgreSQL lanza
+    "invalid input syntax for type integer". Las OCs de influencer se numeran con
+    sufijo de colisión (ej. 'OC-2026-0215-1'), así que `SUBSTR(.,9)`='0215-1' →
+    CAST revienta → 500 en TODA creación de OC del año. Solución: traer los
+    numero_oc del año y extraer el correlativo (dígitos iniciales tras el prefijo)
+    en Python, ignorando sufijos no numéricos. El correlativo se usa con un loop
+    de reintento por UNIQUE en el caller, así que un colapso de sufijos al mismo
+    base es inofensivo.
+    """
+    import re as _re
+    y = str(anio) if anio else datetime.now().strftime('%Y')
+    pref = f"OC-{y}-"
+    c.execute("SELECT numero_oc FROM ordenes_compra WHERE numero_oc LIKE ?", (pref + '%',))
+    mx = 0
+    for row in c.fetchall():
+        n = (row[0] if not isinstance(row, str) else row) or ''
+        suf = n[len(pref):]
+        m = _re.match(r'(\d+)', suf)
+        if m:
+            try:
+                mx = max(mx, int(m.group(1)))
+            except (ValueError, OverflowError):
+                pass
+    return f"{pref}{mx + 1:04d}"
+
+
 # ── Helpers de permisos granulares ────────────────────────────────────────────
 # Los grupos:
 #   COMPRAS_ACCESS    = {catalina, mayra, alejandro, sebastian}
@@ -959,8 +990,7 @@ def handle_ordenes_compra():
         categoria = d.get('categoria', 'MP')
         # numero único con reintento ante carrera MAX+1 entre workers
         for _intento in range(6):
-            c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) FROM ordenes_compra WHERE numero_oc LIKE ?", (f"OC-{datetime.now().strftime('%Y')}-%",))
-            numero_oc = f"OC-{datetime.now().strftime('%Y')}-{(c.fetchone()[0] or 0)+1:04d}"
+            numero_oc = _siguiente_numero_oc(c)
             try:
                 c.execute("INSERT INTO ordenes_compra (numero_oc,fecha,estado,proveedor,observaciones,creado_por,fecha_entrega_est,categoria) VALUES (?,?,?,?,?,?,?,?)",
                           (numero_oc, datetime.now().isoformat(), 'Borrador', d['proveedor'],
@@ -3895,12 +3925,7 @@ def crear_oc_desde_solicitudes():
             obs = obs_extra + ' · ' + obs
         # numero único con reintento ante carrera MAX+1 entre workers
         for _intento in range(6):
-            c.execute(
-                "SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) "
-                "FROM ordenes_compra WHERE numero_oc LIKE ?",
-                (f"OC-{datetime.now().strftime('%Y')}-%",),
-            )
-            numero_oc = f"OC-{datetime.now().strftime('%Y')}-{(c.fetchone()[0] or 0)+1:04d}"
+            numero_oc = _siguiente_numero_oc(c)
             try:
                 c.execute(
                     """INSERT INTO ordenes_compra
@@ -5619,8 +5644,7 @@ def actualizar_estado_solicitud(numero):
                 fast_track_aplicado = False
         # numero único con reintento ante carrera MAX+1 entre workers
         for _intento in range(6):
-            cur.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) FROM ordenes_compra WHERE numero_oc LIKE ?", (f"OC-{datetime.now().year}-%",))
-            oc_num = f"OC-{datetime.now().year}-{(cur.fetchone()[0] or 0)+1:04d}"
+            oc_num = _siguiente_numero_oc(cur, datetime.now().year)
             try:
                 cur.execute(
                     "INSERT INTO ordenes_compra "
@@ -11849,12 +11873,7 @@ def elegir_ganadora(cot_id):
             }), 400
         # Generar numero_oc único con retry race-safe (mismo patrón que actualizar_estado_solicitud)
         for _intento in range(6):
-            c.execute(
-                "SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) "
-                "FROM ordenes_compra WHERE numero_oc LIKE ?",
-                (f"OC-{datetime.now().year}-%",),
-            )
-            oc_num_nuevo = f"OC-{datetime.now().year}-{(c.fetchone()[0] or 0)+1:04d}"
+            oc_num_nuevo = _siguiente_numero_oc(c, datetime.now().year)
             try:
                 obs_oc = (f"Generado desde cotización ganadora · ronda {ronda_id} · "
                           f"lead_time cotizado {lead_time}d" +
