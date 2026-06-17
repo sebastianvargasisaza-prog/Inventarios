@@ -352,6 +352,19 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (264, "Normalizar INCI del conteo (Sebastián 16-jun · app en prueba): MP00261 "
+          "RETINALDEHYDE→RETINAL (el INCI real es RETINAL · el matcher trata "
+          "RETINALDEHYDE como sinónimo de RETINAL), MP00274 sin el '98%', y "
+          "MYRISTOYL HEXAPEPTIDE-16 (rellena MPMYRIH16 si está vacío o crea MPMYRH16). "
+          "UPDATE a 0 filas e 'INSERT…WHERE NOT EXISTS' son benignos.", [
+        "UPDATE maestro_mps SET nombre_inci='RETINAL' WHERE codigo_mp='MP00261'",
+        "UPDATE maestro_mps SET nombre_inci='HYDROXYPINACOLONE RETINOATE' WHERE codigo_mp='MP00274'",
+        "UPDATE maestro_mps SET nombre_inci='MYRISTOYL HEXAPEPTIDE-16' "
+        "WHERE codigo_mp='MPMYRIH16' AND COALESCE(TRIM(nombre_inci),'')=''",
+        "INSERT INTO maestro_mps (codigo_mp, nombre_inci, nombre_comercial, activo) "
+        "SELECT 'MPMYRH16','MYRISTOYL HEXAPEPTIDE-16','Myristoyl Hexapeptide-16',1 "
+        "WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE UPPER(TRIM(nombre_inci))='MYRISTOYL HEXAPEPTIDE-16')",
+    ]),
     (263, "Plan rodante MANUAL desde hoy (Sebastián 16-jun): cadencia_dias por lote "
           "en produccion_programada · guarda cada cuántos días se repite el producto "
           "para re-espaciar la cadena cuando el usuario mueve un lote. 'duplicate "

@@ -99,6 +99,29 @@ def test_cargar_usa_codigo_real_y_dedup(app, db_clean):
     assert d2['cargados'] == 0 and d2['saltados_duplicado'] == 3, d2
 
 
+def test_norm_inci_match_transforms(app, db_clean):
+    import sys
+    api = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'api')
+    if api not in sys.path:
+        sys.path.insert(0, api)
+    from blueprints.inventario import _norm_inci_match
+    assert _norm_inci_match('RETINALDEHYDE') == 'RETINAL'           # sinónimo
+    assert _norm_inci_match('RETINAL') == 'RETINAL'
+    assert _norm_inci_match('HYDROXYPINACOLONE RETINOATE 98%') == 'HYDROXYPINACOLONE RETINOATE'  # quita %
+    # PÉPTIDO/PEPTIDO (esp) == PEPTIDE (en)
+    assert _norm_inci_match('MYRISTOYL HEXAPEPTIDO-16') == _norm_inci_match('MYRISTOYL HEXAPEPTIDE-16')
+    assert _norm_inci_match('ACETIL TETRAPÉPTIDO-3') == 'ACETIL TETRAPEPTIDE-3'
+
+
+def test_mig264_myristoyl_en_catalogo(app, db_clean):
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    try:
+        n = conn.execute("SELECT COUNT(*) FROM maestro_mps WHERE UPPER(TRIM(nombre_inci))='MYRISTOYL HEXAPEPTIDE-16'").fetchone()[0]
+    finally:
+        conn.close()
+    assert n >= 1   # mig 264 lo dejó (rellenó MPMYRIH16 o creó MPMYRH16, o ya existía)
+
+
 def test_importar_requiere_admin(app, db_clean):
     c = _login(app, 'valentina')
     r = c.post('/api/inventario/importar-conteo/analizar', data={}, headers=csrf_headers())

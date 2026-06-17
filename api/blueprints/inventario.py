@@ -10847,6 +10847,26 @@ def _norm_acentos(s):
                    if unicodedata.category(ch) != 'Mn')
 
 
+# Sinónimos de INCI para el cruce del conteo (Sebastián 16-jun). El INCI real es la
+# clave-valor: lo de la izquierda (como lo escriben) cae en lo de la derecha (canónico).
+_SINONIMOS_INCI = {
+    'RETINALDEHYDE': 'RETINAL',
+}
+
+
+def _norm_inci_match(s):
+    """Normaliza un INCI para CRUZAR conteo↔catálogo: sin acentos/mayúsculas, sin el
+    porcentaje final ('… 98%' → '…') y aplicando sinónimos (RETINALDEHYDE→RETINAL).
+    Se usa en ambos lados (Excel y maestro) para que coincidan tal cual el negocio."""
+    import re as _re
+    n = _norm_acentos(s)
+    # Unificar PÉPTIDO/PEPTIDO (español, con/ sin acento) ↔ PEPTIDE (inglés) en ambos
+    # lados → HEXAPEPTIDO-16 = HEXAPEPTIDE-16, TETRAPEPTIDO = TETRAPEPTIDE, etc.
+    n = n.replace('PEPTIDO', 'PEPTIDE')
+    n = _re.sub(r'\s*\(?\s*\d+(?:[.,]\d+)?\s*%\s*\)?\s*$', '', n).strip()
+    return _SINONIMOS_INCI.get(n, n)
+
+
 def _resolver_codigo_mp_conteo(c, codigo, inci, comercial):
     """Resuelve el código_mp REAL del sistema para una fila del Excel de conteo.
     Devuelve (codigo_real|None, estado). estado: 'ok' (código existe) · 'corregido'
@@ -10971,7 +10991,7 @@ def importar_conteo_analizar():
         cu = (r[0] or '').strip().upper()
         cod_actual[cu] = r[0]
         inci_de_cod[cu] = r[1]
-        ni = _norm_acentos(r[1])
+        ni = _norm_inci_match(r[1])
         if ni and ni not in inci_map:
             inci_map[ni] = r[0]
         nc = _norm_acentos(r[2])
@@ -10987,7 +11007,7 @@ def importar_conteo_analizar():
         elif cu.startswith('PM') and ('MP' + cu[2:]) in cod_actual:
             cod_real, estado = cod_actual['MP' + cu[2:]], 'corregido'
         else:
-            ni = _norm_acentos(fila['inci'])
+            ni = _norm_inci_match(fila['inci'])
             nc = _norm_acentos(fila['comercial'])
             if ni and ni in inci_map:
                 cod_real, estado = inci_map[ni], 'por_inci'
@@ -10996,7 +11016,7 @@ def importar_conteo_analizar():
         inci_app = inci_de_cod.get((cod_real or '').strip().upper(), '') if cod_real else ''
         inci_coincide = None
         if cod_real and fila['inci']:
-            inci_coincide = (_norm_acentos(inci_app) == _norm_acentos(fila['inci']))
+            inci_coincide = (_norm_inci_match(inci_app) == _norm_inci_match(fila['inci']))
         res.append({**fila, 'codigo_real': cod_real, 'match': estado,
                     'inci_app': inci_app, 'inci_coincide': inci_coincide,
                     'cargable': bool(cod_real) and fila['cantidad'] > 0})
