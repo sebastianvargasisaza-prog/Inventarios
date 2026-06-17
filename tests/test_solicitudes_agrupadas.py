@@ -312,6 +312,86 @@ def test_oc_desde_solicitudes_con_oc_sufijada_existente(app, db_clean):
         conn.commit(); conn.close()
 
 
+def test_consolidado_proveedor_trae_campos_doc_oc(app, db_clean):
+    """16-jun · el doc de OC necesita: dirección, solicitado_por, condiciones_pago,
+    justificación por MP (de la SOL) y datos bancarios (gated). El endpoint
+    consolidado-proveedor debe devolverlos sin romper (regresión del enriquecido)."""
+    cs = _login(app, "catalina")
+    PRV = 'Prov Doc OC'
+    nums = ['SOL-DOC-001']
+    _crear_solicitud_con_items(nums[0], [{'codigo_mp': 'MP-DOC', 'nombre_mp': 'Glicerina',
+                                           'cantidad_g': 1000, 'valor_estimado': 0,
+                                           'proveedor_sugerido': PRV}])
+    # darle justificación a la SOL item + datos al proveedor
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("UPDATE solicitudes_compra_items SET justificacion=? WHERE numero=?",
+                 ('usada por 2 producto(s): Serum A, Crema B', nums[0]))
+    conn.execute("UPDATE solicitudes_compra SET solicitante='catalina' WHERE numero=?", (nums[0],))
+    conn.execute("DELETE FROM proveedores WHERE nombre=?", (PRV,))
+    conn.execute("INSERT INTO proveedores (nombre, categoria, activo, direccion, condiciones_pago, banco, num_cuenta) "
+                 "VALUES (?, 'MP', 1, 'Calle 1 #2-3', '30 días', 'Bancolombia', '123-456')", (PRV,))
+    conn.commit(); conn.close()
+    oc_creada = None
+    try:
+        oc_creada = cs.post('/api/compras/oc-desde-solicitudes',
+                            json={'proveedor': PRV, 'solicitudes': nums},
+                            headers=csrf_headers()).get_json()['numero_oc']
+        r = cs.get('/api/compras/consolidado-proveedor?estados=Borrador&estados=Autorizada')
+        assert r.status_code == 200, r.data[:300]
+        provs = {x['proveedor']: x for x in r.get_json()['proveedores']}
+        g = provs.get(PRV)
+        assert g, 'el proveedor debe aparecer'
+        assert g['direccion'] == 'Calle 1 #2-3'
+        assert g['condiciones_pago'] == '30 días'
+        assert 'catalina' in g['solicitado_por']
+        # datos bancarios visibles para catalina (CONTADORA_USERS)
+        assert g['banco'] == 'Bancolombia'
+        it = [x for x in g['items'] if x['codigo_mp'] == 'MP-DOC'][0]
+        assert 'producto(s)' in it['justificacion']
+    finally:
+        _cleanup_solicitudes(nums)
+        if oc_creada:
+            _cleanup_oc(oc_creada)
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn.execute("DELETE FROM proveedores WHERE nombre=?", (PRV,))
+        conn.commit(); conn.close()
+
+
+def test_consolidado_proveedor_banco_gated_no_admin(app, db_clean):
+    """Datos bancarios NO se exponen a un rol sin permiso (Habeas Data)."""
+    PRV = 'Prov Banco Gated'
+    nums = ['SOL-BG-001']
+    cs = _login(app, "catalina")
+    _crear_solicitud_con_items(nums[0], [{'codigo_mp': 'MP-BG', 'nombre_mp': 'X',
+                                           'cantidad_g': 100, 'valor_estimado': 0,
+                                           'proveedor_sugerido': PRV}])
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM proveedores WHERE nombre=?", (PRV,))
+    conn.execute("INSERT INTO proveedores (nombre, categoria, activo, banco, num_cuenta) "
+                 "VALUES (?, 'MP', 1, 'Davivienda', '999')", (PRV,))
+    conn.commit(); conn.close()
+    oc_creada = None
+    try:
+        oc_creada = cs.post('/api/compras/oc-desde-solicitudes',
+                            json={'proveedor': PRV, 'solicitudes': nums},
+                            headers=csrf_headers()).get_json()['numero_oc']
+        # mayerlin = rol planta, NO admin ni contadora
+        cp = _login(app, "mayerlin")
+        r = cp.get('/api/compras/consolidado-proveedor?estados=Borrador&estados=Autorizada')
+        if r.status_code == 200:
+            provs = {x['proveedor']: x for x in r.get_json()['proveedores']}
+            g = provs.get(PRV)
+            if g:
+                assert g['banco'] == '' and g['num_cuenta'] == '', 'banco no debe exponerse a no-admin'
+    finally:
+        _cleanup_solicitudes(nums)
+        if oc_creada:
+            _cleanup_oc(oc_creada)
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn.execute("DELETE FROM proveedores WHERE nombre=?", (PRV,))
+        conn.commit(); conn.close()
+
+
 def test_oc_desde_solicitudes_consolida_mismo_mp(app, db_clean):
     """2 solicitudes de la misma MP → 1 item consolidado en la OC."""
     cs = _login(app, "catalina")

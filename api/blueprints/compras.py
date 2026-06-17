@@ -8489,6 +8489,9 @@ def consolidado_por_proveedor():
 
     estados_activos = request.args.getlist('estados') or ['Borrador', 'Revisada', 'Autorizada']
     placeholders = ','.join('?' * len(estados_activos))
+    # Habeas Data (Ley 1581 · CERO_ERROR regla 5): datos bancarios solo admin+contadora.
+    _u = session.get('compras_user') or ''
+    _puede_ver_banco = _u.lower() in {x.lower() for x in (set(ADMIN_USERS) | set(CONTADORA_USERS))}
 
     conn = get_db(); c = conn.cursor()
     c.execute(f"""
@@ -8512,7 +8515,13 @@ def consolidado_por_proveedor():
             pv.email,
             COALESCE(o.con_iva, 0) AS con_iva,
             COALESCE(o.valor_sin_iva, 0) AS valor_sin_iva,
-            COALESCE(mm.nombre_inci, '') AS nombre_inci
+            COALESCE(mm.nombre_inci, '') AS nombre_inci,
+            COALESCE(o.creado_por, '') AS creado_por,
+            COALESCE(pv.direccion, '') AS direccion,
+            COALESCE(pv.condiciones_pago, '') AS condiciones_pago,
+            COALESCE(pv.banco, '') AS banco,
+            COALESCE(pv.num_cuenta, '') AS num_cuenta,
+            COALESCE(pv.tipo_cuenta, '') AS tipo_cuenta
         FROM ordenes_compra o
         LEFT JOIN ordenes_compra_items i ON o.numero_oc = i.numero_oc
         LEFT JOIN maestro_mps mm ON mm.codigo_mp = i.codigo_mp
@@ -8530,7 +8539,8 @@ def consolidado_por_proveedor():
         (prov, oc, estado, fecha, valor_total_oc, cat, obs,
          item_id, cod_mp, nom_mp, cant, precio_u, subtotal,
          nit, contacto, telefono, email,
-         con_iva, valor_sin_iva, nom_inci) = row
+         con_iva, valor_sin_iva, nom_inci,
+         creado_por, direccion, condiciones_pago, banco, num_cuenta, tipo_cuenta) = row
         prov = prov or 'Sin proveedor'
 
         if prov not in proveedores:
@@ -8540,6 +8550,13 @@ def consolidado_por_proveedor():
                 'contacto': contacto or '',
                 'telefono': telefono or '',
                 'email': email or '',
+                'direccion': direccion or '',
+                'condiciones_pago': condiciones_pago or '',
+                # datos bancarios solo si el rol puede verlos (Habeas Data)
+                'banco': (banco or '') if _puede_ver_banco else '',
+                'num_cuenta': (num_cuenta or '') if _puede_ver_banco else '',
+                'tipo_cuenta': (tipo_cuenta or '') if _puede_ver_banco else '',
+                'solicitado_por': set(),
                 'ocs': {},
                 'items': {},
                 'valor_total': 0.0,
@@ -8551,6 +8568,11 @@ def consolidado_por_proveedor():
         if not p['contacto'] and contacto: p['contacto'] = contacto
         if not p['telefono'] and telefono: p['telefono'] = telefono
         if not p['email'] and email: p['email'] = email
+        if not p['direccion'] and direccion: p['direccion'] = direccion
+        if not p['condiciones_pago'] and condiciones_pago: p['condiciones_pago'] = condiciones_pago
+        # quién generó la orden (creado_por de la OC)
+        if creado_por:
+            p['solicitado_por'].add(creado_por)
 
         # Registrar OC (incluye observaciones, con_iva, items_raw para edicion)
         if oc and oc not in p['ocs']:
@@ -8590,12 +8612,45 @@ def consolidado_por_proveedor():
                     'precio_unitario': precio_u or 0,
                     'subtotal_total': 0.0,
                     'ocs_origen': [],
+                    'justificacion': '',   # de la SOL vinculada (en qué producción)
                 }
             item = p['items'][cod_mp]
             item['cantidad_total_g'] += cant or 0
             item['subtotal_total'] += subtotal or 0
             if oc and oc not in item['ocs_origen']:
                 item['ocs_origen'].append(oc)
+
+    # ── Enriquecer con las SOLICITUDES vinculadas a cada OC ────────────────────
+    # solicitante (quién pidió) → SOLICITADO POR · justificación por MP (incluye
+    # "usada por N producto(s): ..." = en qué producción se gasta) → JUSTIFICACIÓN.
+    _all_ocs = []
+    for _pd in proveedores.values():
+        _all_ocs.extend(_pd['ocs'].keys())
+    _just_por_oc_mp = {}   # numero_oc -> {codigo_mp: justificacion}
+    _solic_por_oc = {}     # numero_oc -> set(solicitantes)
+    if _all_ocs:
+        _ph2 = ','.join('?' * len(_all_ocs))
+        for srow in c.execute(f"""
+            SELECT s.numero_oc, COALESCE(s.solicitante,''), si.codigo_mp, si.justificacion
+            FROM solicitudes_compra s
+            LEFT JOIN solicitudes_compra_items si ON si.numero = s.numero
+            WHERE s.numero_oc IN ({_ph2})
+        """, _all_ocs).fetchall():
+            s_oc, s_solic, s_cod, s_just = srow
+            if s_solic and s_solic.upper() != 'AUTO-PLAN':
+                _solic_por_oc.setdefault(s_oc, set()).add(s_solic)
+            if s_cod and s_just:
+                _just_por_oc_mp.setdefault(s_oc, {})[s_cod] = s_just
+    # volcar a cada proveedor/ítem
+    for _pd in proveedores.values():
+        for _ocn in _pd['ocs'].keys():
+            _pd['solicitado_por'].update(_solic_por_oc.get(_ocn, set()))
+        for _cod, _it in _pd['items'].items():
+            for _ocn in _it['ocs_origen']:
+                _j = _just_por_oc_mp.get(_ocn, {}).get(_cod)
+                if _j:
+                    _it['justificacion'] = _j
+                    break
 
     result = []
     for prov, data in proveedores.items():
@@ -8605,6 +8660,12 @@ def consolidado_por_proveedor():
             'contacto': data['contacto'],
             'telefono': data['telefono'],
             'email': data['email'],
+            'direccion': data['direccion'],
+            'condiciones_pago': data['condiciones_pago'],
+            'banco': data['banco'],
+            'num_cuenta': data['num_cuenta'],
+            'tipo_cuenta': data['tipo_cuenta'],
+            'solicitado_por': ', '.join(sorted(data['solicitado_por'])),
             'ocs': sorted(data['ocs'].values(), key=lambda x: x['fecha'], reverse=True),
             'items': sorted(data['items'].values(), key=lambda x: x['nombre_mp']),
             'valor_total': data['valor_total'],
