@@ -352,6 +352,14 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (265, "Idempotencia de recepción de OC (16-jun · auditoría ultracode): tabla "
+          "oc_recepcion_dedup con UNIQUE(recepcion_id) para que un doble-submit "
+          "concurrente de la MISMA recepción (doble-click/retry) no inserte doble "
+          "Entrada en el kardex. NO bloquea recepciones parciales secuenciales "
+          "(cada una trae su propio token).", [
+        "CREATE TABLE IF NOT EXISTS oc_recepcion_dedup ("
+        "  recepcion_id TEXT UNIQUE, numero_oc TEXT, creado_en TEXT)",
+    ]),
     (264, "Normalizar INCI del conteo (Sebastián 16-jun · app en prueba): MP00261 "
           "RETINALDEHYDE→RETINAL (el INCI real es RETINAL · el matcher trata "
           "RETINALDEHYDE como sinónimo de RETINAL), MP00274 sin el '98%', y "

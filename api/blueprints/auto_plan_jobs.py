@@ -4303,14 +4303,29 @@ def _generar_codigo_mp_siguiente(c):
     """SHOPIFY-FIX · 22-may-2026 · generar próximo código MP00NNNN.
 
     Lee MAX(numero) de los códigos MP00xxxxx existentes y devuelve el siguiente.
+
+    FIX · 16-jun-2026 · drift SQLite↔PG (mismo patrón que audit_helpers.siguiente_numero_oc):
+    el viejo `MAX(CAST(SUBSTR(codigo_mp,3) AS INTEGER))` revienta en PostgreSQL porque
+    maestro_mps tiene códigos con sufijo ALFABÉTICO (MPBNIT01, MPAGUALI01, MPCAKY01...)
+    que cumplían el WHERE → `CAST('BNIT01' AS INTEGER)` → "invalid input syntax for type
+    integer" → aborta la tx del cron (job_auto_normalizar_formulas) en cascada. SQLite lo
+    toleraba devolviendo 0. Solución: extraer el correlativo en Python, ignorando los
+    códigos no puramente numéricos (regex), sin CAST sobre texto.
     """
+    import re as _re
     try:
-        row = c.execute(
-            """SELECT MAX(CAST(SUBSTR(codigo_mp, 3) AS INTEGER))
-               FROM maestro_mps
-               WHERE codigo_mp LIKE 'MP%' AND LENGTH(codigo_mp) >= 6"""
-        ).fetchone()
-        max_n = int(row[0] or 0) if row else 0
+        rows = c.execute(
+            "SELECT codigo_mp FROM maestro_mps WHERE codigo_mp LIKE 'MP00%'"
+        ).fetchall()
+        max_n = 0
+        for row in rows:
+            cod = (row[0] if not isinstance(row, str) else row) or ''
+            m = _re.match(r'^MP0*(\d+)$', cod)   # solo MP seguido de dígitos puros
+            if m:
+                try:
+                    max_n = max(max_n, int(m.group(1)))
+                except (ValueError, OverflowError):
+                    pass
     except Exception:
         max_n = 0
     return f'MP{max_n + 1:05d}'

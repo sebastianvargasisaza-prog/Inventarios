@@ -980,7 +980,10 @@ def handle_stock_pt():
         conn.commit()
         return jsonify({'message': f"Stock PT registrado: {d['sku']} — {unidades} uds",
                         'id': spt_id}), 201
-    c.execute("SELECT sku,descripcion,SUM(unidades_disponible) as disponible,SUM(unidades_inicial) as inicial,MAX(fecha_produccion) as ultima_prod,empresa,precio_base,COUNT(*) as lotes FROM stock_pt WHERE estado='Disponible' GROUP BY sku,empresa ORDER BY sku")
+    # FIX 16-jun · drift PG: descripcion/precio_base NO agregadas y la PK es `id`
+    # (no (sku,empresa)) → PostgreSQL aborta "must appear in GROUP BY". Envolver en
+    # MIN/MAX (mismo contrato de salida) · SQLite lo toleraba con valor arbitrario.
+    c.execute("SELECT sku,MIN(descripcion) as descripcion,SUM(unidades_disponible) as disponible,SUM(unidades_inicial) as inicial,MAX(fecha_produccion) as ultima_prod,empresa,MAX(precio_base) as precio_base,COUNT(*) as lotes FROM stock_pt WHERE estado='Disponible' GROUP BY sku,empresa ORDER BY sku")
     cols = ['sku','descripcion','disponible','inicial','ultima_prod','empresa','precio_base','lotes']
     rows = c.fetchall()
     return jsonify({'stock_pt': [dict(zip(cols, r)) for r in rows]})

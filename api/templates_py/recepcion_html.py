@@ -392,7 +392,10 @@ async function registrarRecepcion() {
     observaciones_recepcion: obs,
     tiene_discrepancias: discrepancias ? 1 : 0,
     items_recepcion: items,
-    receptor_nombre: receptor
+    receptor_nombre: receptor,
+    // idempotencia: token único por envío (evita doble Entrada por retry de red)
+    recepcion_id: ((window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+                   : ('rcp-' + Date.now() + '-' + Math.random().toString(36).slice(2)))
   };
   showMsg('submit-msg', 'Registrando...', '');
   var _submitBtn = document.querySelector('.btn-success');

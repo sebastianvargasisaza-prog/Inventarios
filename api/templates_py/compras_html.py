@@ -4287,7 +4287,9 @@ async function marcarRecibida(num){
     }
     try{
       var rr = await fetch('/api/ordenes-compra/'+encodeURIComponent(num)+'/recibir',
-        _fetchOpts('POST', {items: items_rec, forzar: (falta_lote_prov.length || falta_coa.length) > 0}));
+        _fetchOpts('POST', {items: items_rec, forzar: (falta_lote_prov.length || falta_coa.length) > 0,
+          recepcion_id: ((window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+                         : ('rcp-'+Date.now()+'-'+Math.random().toString(36).slice(2)))}));
       var dd = await rr.json();
       if(!rr.ok){
         alert('Error: '+(dd.error||rr.status));

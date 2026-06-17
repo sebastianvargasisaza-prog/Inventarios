@@ -570,6 +570,18 @@ def cont_factura_pago(numero):
     total_pagado = conn.execute(
         "SELECT COALESCE(SUM(monto),0) FROM facturas_pagos WHERE numero_factura=?", (numero,)
     ).fetchone()[0]
+    # FIX 16-jun · over-payment race ATÓMICO post-insert (M27/M30) · simétrico a
+    # pagar_oc (AP). El pre-check (555) es check-then-act: 2 cobros concurrentes de
+    # la misma factura leen el mismo total_actual y ambos pasan → over-cobro AR +
+    # doble espejo a flujo_ingresos (ref con seq distinto NO dedup) → P&L inflado.
+    # SQLite serializa; riesgo solo PG. Re-verificar el SUM real y revertir todo.
+    if total_pagado > (f_total + 0.01):
+        conn.rollback()
+        return jsonify({
+            'error': (f"Over-payment por cobro concurrente: total {total_pagado:.0f} "
+                      f"excede el de la factura {f_total:.0f}. No se registró este pago."),
+            'codigo': 'OVER_PAYMENT_RACE',
+        }), 409
     # Tolerancia de 1 centavo · evita que un redondeo deje la factura
     # eternamente 'Parcial' por un saldo fantasma de céntimos.
     nuevo_estado = 'Pagada' if total_pagado >= f_total - 0.01 else 'Parcial'

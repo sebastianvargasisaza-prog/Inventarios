@@ -143,6 +143,44 @@ def test_lotes_cuarentena_incluye_extendida(app, db_clean):
         conn.commit(); conn.close()
 
 
+def test_recibir_oc_idempotente_por_recepcion_id(app, db_clean):
+    """16-jun · idempotencia (mig 265): un re-envío con el MISMO recepcion_id
+    (doble-click/retry) NO debe insertar doble Entrada → 409 RECEPCION_DUPLICADA.
+    Un parcial nuevo con OTRO token SÍ procede (no rompe recepción parcial)."""
+    cs = _login(app, 'sebastian')
+    _seed_oc_autorizada('OC-IDEMP-001', [('MP-IDM', 'M-idemp', 10000)])
+
+    def _stock():
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        v = conn.execute("SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END),0) "
+                         "FROM movimientos WHERE material_id='MP-IDM'").fetchone()[0]
+        conn.close(); return float(v or 0)
+    try:
+        body = {'items_recepcion': [{'codigo_mp': 'MP-IDM', 'cantidad_recibida': 4000,
+                                     'lote': 'L-IDM-1', 'fecha_vencimiento': '2027-12-31'}],
+                'receptor_nombre': 'sebastian', 'recepcion_id': 'TOKEN-IDEMP-1'}
+        r1 = cs.post('/api/ordenes-compra/OC-IDEMP-001/recibir', json=body, headers=csrf_headers())
+        assert r1.status_code in (200, 201), r1.data
+        assert abs(_stock() - 4000) < 1
+        # mismo token → duplicado bloqueado (sin doble Entrada)
+        r2 = cs.post('/api/ordenes-compra/OC-IDEMP-001/recibir', json=body, headers=csrf_headers())
+        assert r2.status_code == 409, r2.data
+        assert r2.get_json().get('codigo') == 'RECEPCION_DUPLICADA'
+        assert abs(_stock() - 4000) < 1, 'el duplicado NO debe sumar stock'
+        # token NUEVO → parcial legítimo procede
+        body2 = {'items_recepcion': [{'codigo_mp': 'MP-IDM', 'cantidad_recibida': 6000,
+                                      'lote': 'L-IDM-2', 'fecha_vencimiento': '2027-12-31'}],
+                 'receptor_nombre': 'sebastian', 'recepcion_id': 'TOKEN-IDEMP-2'}
+        r3 = cs.post('/api/ordenes-compra/OC-IDEMP-001/recibir', json=body2, headers=csrf_headers())
+        assert r3.status_code in (200, 201), r3.data
+        assert abs(_stock() - 10000) < 1
+    finally:
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn.execute("DELETE FROM oc_recepcion_dedup WHERE numero_oc='OC-IDEMP-001'")
+        conn.commit(); conn.close()
+        _cleanup_oc('OC-IDEMP-001', ['MP-IDM'])
+
+
 # ── Bug 2 · Sobre-recepción bloqueada ─────────────────────────────────
 
 

@@ -455,7 +455,8 @@ def animus_solicitar_produccion():
         return jsonify({'error': 'SKU requerido'}), 400
     conn = get_db(); c = conn.cursor()
     # Get current stock info
-    c.execute("SELECT descripcion, SUM(unidades_disponible), stock_minimo_ud FROM stock_pt WHERE sku=? AND empresa='ANIMUS' AND estado='Disponible' GROUP BY sku", (sku,))
+    # FIX 16-jun · drift PG: descripcion/stock_minimo_ud no agregadas (PK=id) → envolver MIN.
+    c.execute("SELECT MIN(descripcion), SUM(unidades_disponible), MIN(stock_minimo_ud) FROM stock_pt WHERE sku=? AND empresa='ANIMUS' AND estado='Disponible' GROUP BY sku", (sku,))
     row = c.fetchone()
     if not row:
         return jsonify({'error': 'SKU no encontrado en stock ANIMUS'}), 404

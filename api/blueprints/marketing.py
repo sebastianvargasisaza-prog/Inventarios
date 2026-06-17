@@ -2957,8 +2957,11 @@ def mkt_analytics_influencers():
         promedio         = int(total_anio / total_colabs) if total_colabs else 0
 
         # Top creador
+        # FIX 16-jun · drift PG: se agrupa por EXPRESION LOWER(TRIM(...)) pero se
+        # proyecta influencer_nombre crudo → PG no deriva dependencia funcional →
+        # "must appear in GROUP BY". Envolver en MIN() (SQLite lo toleraba).
         top = c.execute("""
-            SELECT influencer_nombre, SUM(valor) as t FROM pagos_influencers
+            SELECT MIN(influencer_nombre), SUM(valor) as t FROM pagos_influencers
             WHERE estado='Pagada' AND fecha LIKE ?
             GROUP BY LOWER(TRIM(influencer_nombre)) ORDER BY t DESC LIMIT 1
         """, (f"{now_year}%",)).fetchone()
@@ -2995,12 +2998,14 @@ def mkt_analytics_influencers():
             })
 
         # Ranking por creador — ALL TIME
+        # FIX 16-jun · drift PG: GROUP BY por EXPRESION; p.influencer_nombre y m.estado
+        # (tabla unida) van crudos → envolver en MIN() para que PG no aborte.
         ranking_raw = c.execute("""
-            SELECT p.influencer_nombre,
+            SELECT MIN(p.influencer_nombre),
                    COUNT(CASE WHEN p.estado='Pagada' THEN 1 END) as colabs,
                    COALESCE(SUM(CASE WHEN p.estado='Pagada' THEN p.valor ELSE 0 END),0) as total,
                    COALESCE(SUM(CASE WHEN p.estado='Pendiente' THEN p.valor ELSE 0 END),0) as pendiente,
-                   COALESCE(m.estado, 'Activo') as estado_inf,
+                   COALESCE(MIN(m.estado), 'Activo') as estado_inf,
                    MIN(p.fecha) as primer_pago,
                    MAX(p.fecha) as ultimo_pago
             FROM pagos_influencers p

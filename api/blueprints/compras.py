@@ -2276,6 +2276,18 @@ def fp_pagar(fid):
         (f[0] or '', monto, medio, user, '',
          (d.get('observaciones') or '').strip(), fid))
     pago_id = c.lastrowid
+    # Guard over-payment ATÓMICO post-insert (M27/M30) · race multi-worker PG.
+    # El check de arriba es check-then-act: 2 pagos concurrentes de la misma factura
+    # leen el mismo `pagado` y ambos pasan → over-pago + doble espejo a la OC. El UNIQUE
+    # no aplica (numero_factura_proveedor='' queda fuera del índice parcial). Re-leer el
+    # SUM real ya con este pago insertado y revertir TODO si excede.
+    nuevo_total = float(c.execute(
+        "SELECT COALESCE(SUM(monto),0) FROM pagos_oc WHERE factura_proveedor_id=?",
+        (fid,)).fetchone()[0] or 0)
+    if total > 0 and nuevo_total > total + 0.01:
+        conn.rollback()
+        return jsonify({'error': 'el pago excede el saldo de la factura (pago concurrente)',
+                        'codigo': 'OVER_PAYMENT_RACE'}), 409
     _fp_recalc_estado(c, fid)
     # Reflejar el pago en el estado de la OC ligada (consistencia OC↔factura · FIX
     # 1-jun-2026) · mismo CAS que pagar_oc (Pagada/Parcial por SUM(pagos) vs valor_total).
@@ -3088,20 +3100,43 @@ def handle_proveedor(nombre):
     nuevo_nombre = (d.get('nombre') or '').strip()
     rename_propagado = {}
     if nuevo_nombre and nuevo_nombre != nombre:
-        # Verificar que no exista ya un proveedor activo con ese nombre
+        # FIX 16-jun · proveedores.nombre tiene UNIQUE GLOBAL (sin importar activo):
+        # chequear colisión SOLO contra activos dejaba pasar un homónimo INACTIVO →
+        # el UPDATE chocaba el UNIQUE → en PG abortaba la tx (propagaciones y commit
+        # caían) → 500 + rename perdido. Chequeo contra el UNIQUE COMPLETO + SAVEPOINT.
         existe = c.execute(
-            "SELECT 1 FROM proveedores WHERE nombre=? AND activo=1",
+            "SELECT id, COALESCE(activo,0) FROM proveedores "
+            "WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?)) ORDER BY activo DESC LIMIT 1",
             (nuevo_nombre,)
         ).fetchone()
-        if existe:
+        if existe and existe[1]:
             return jsonify({
                 'error': f"Ya existe otro proveedor activo con el nombre '{nuevo_nombre}'"
             }), 409
-        # Hacer el rename en transaccion
-        c.execute("UPDATE proveedores SET nombre=? WHERE nombre=? AND activo=1",
-                  (nuevo_nombre, nombre))
-        if c.rowcount == 0:
-            return jsonify({'error': 'Proveedor no encontrado'}), 404
+        if existe and not existe[1]:
+            return jsonify({
+                'error': (f"Ya existe un proveedor INACTIVO con el nombre '{nuevo_nombre}'. "
+                          f"Reactívalo o usá otro nombre (el nombre es único)."),
+                'codigo': 'NOMBRE_OCUPADO_INACTIVO'
+            }), 409
+        # Hacer el rename aislado en SAVEPOINT (un choque residual del UNIQUE NO
+        # debe envenenar la tx del caller).
+        try:
+            c.execute('SAVEPOINT _prov_rename')
+            c.execute("UPDATE proveedores SET nombre=? WHERE nombre=? AND activo=1",
+                      (nuevo_nombre, nombre))
+            if c.rowcount == 0:
+                c.execute('ROLLBACK TO SAVEPOINT _prov_rename')
+                c.execute('RELEASE SAVEPOINT _prov_rename')
+                return jsonify({'error': 'Proveedor no encontrado'}), 404
+            c.execute('RELEASE SAVEPOINT _prov_rename')
+        except Exception as _e_rn:
+            try:
+                c.execute('ROLLBACK TO SAVEPOINT _prov_rename')
+                c.execute('RELEASE SAVEPOINT _prov_rename')
+            except Exception:
+                pass
+            return jsonify({'error': f'No se pudo renombrar el proveedor: {_e_rn}'}), 409
         # Propagar a tablas referentes
         propagar = [
             ('ordenes_compra',     'proveedor'),
@@ -5742,6 +5777,25 @@ def recibir_oc(numero_oc):
             'codigo': 'OC_PAGO_DIRECTO_SIN_RECEPCION',
             'hint': 'Si necesitás cerrar el ciclo, usá registrar_pago_oc o marca como Pagada directo',
         }), 409
+    # IDEMPOTENCIA · M27 · evitar doble Entrada por doble-submit CONCURRENTE de la
+    # MISMA recepción (doble-click/retry de red). NO se puede serializar por tiempo
+    # (rompería recepciones parciales secuenciales legítimas). El cliente manda un
+    # `recepcion_id` único por envío; se reclama con UNIQUE: si ya existe → 409. Un
+    # parcial nuevo trae otro token. Si el cliente no manda token (cliente viejo),
+    # no se dedup (compat). Se reclama dentro de la misma tx: si la recepción
+    # falla/rollback, el token se libera y el reintento procede.
+    _rid = (request.get_json(silent=True) or {}).get('recepcion_id') if request.is_json else None
+    _rid = (str(_rid).strip()[:80] if _rid else '')
+    if _rid:
+        try:
+            cur.execute("INSERT INTO oc_recepcion_dedup (recepcion_id, numero_oc, creado_en) VALUES (?,?,?)",
+                        (_rid, numero_oc, (datetime.utcnow() - timedelta(hours=5)).isoformat()))
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            return jsonify({
+                'error': 'Esta recepción ya fue registrada (doble envío)',
+                'codigo': 'RECEPCION_DUPLICADA',
+            }), 409
     cur.execute("SELECT id, codigo_mp, nombre_mp, cantidad_g FROM ordenes_compra_items WHERE numero_oc=?", (numero_oc,))
     items_oc = cur.fetchall()
     # Etiqueta de INGRESO por INCI (Sebastian 12-jun): en recepcion el nombre
