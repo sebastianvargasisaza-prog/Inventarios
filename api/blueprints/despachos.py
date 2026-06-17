@@ -203,8 +203,21 @@ def recepcion_aprobar_lote():
     # NOT IN ('...','RECHAZADO') case-sensitive -> un lote RECHAZADO se colaba a
     # produccion. Aprobado->VIGENTE (usable), Rechazado->RECHAZADO (bloqueado).
     estado_canon = 'VIGENTE' if nuevo_estado == 'Aprobado' else 'RECHAZADO'
-    c.execute("UPDATE movimientos SET estado_lote=?, operador=? WHERE id=?",
+    # FIX 17-jun (auditoría Planta · M27/INVIMA) · esta ruta de disposición SOLO puede
+    # actuar sobre un lote EN CUARENTENA (igual que liberar_cuarentena). Sin este guard
+    # hacía UPDATE incondicional → podía REVIVIR un lote RECHAZADO a VIGENTE (material
+    # rechazado vuelto usable/vendible) o pisar un VIGENTE. CAS: condición en el WHERE +
+    # rowcount → dos disposiciones concurrentes del mismo lote no se cruzan.
+    c.execute("UPDATE movimientos SET estado_lote=?, operador=? "
+              "WHERE id=? AND UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')",
               (estado_canon, usuario, mov_id))
+    if c.rowcount == 0:
+        conn.rollback()
+        return jsonify({
+            'error': f"El lote no está en cuarentena (estado: {antes.get('estado_lote','')}) · "
+                     f"no se puede disponer por esta ruta",
+            'codigo': 'ESTADO_NO_LIBERABLE',
+        }), 409
     accion = 'APROBAR_LOTE' if nuevo_estado == 'Aprobado' else 'RECHAZAR_LOTE'
     audit_log(c, usuario=usuario, accion=accion, tabla='movimientos',
               registro_id=mov_id, antes=antes,

@@ -11523,8 +11523,14 @@ def _generar_plan_desde_hoy(conn, dias=730, usuario='plan-manual', dry_run=False
     c.execute("DELETE FROM produccion_programada WHERE origen='eos_proyeccion' "
               "AND COALESCE(estado,'') NOT IN ('completado','cancelado') "
               "AND fin_real_at IS NULL AND inicio_real_at IS NULL")
+    # FIX 17-jun (auditoría Planta · regla #3) · "Generar plan" reemplaza las cadenas
+    # eos_plan/sugeridas, pero NO debe cancelar compromisos B2B (eos_b2b = pedidos de
+    # clientes) ni nada YA ejecutado (inicio_real_at/inventario_descontado_at) — el
+    # regenerador solo recrea eos_plan, así que cancelar eos_b2b lo HARÍA DESAPARECER.
     c.execute("UPDATE produccion_programada SET estado='cancelado' "
-              "WHERE COALESCE(estado,'') IN ('pendiente','programado','esperando_recurso')")
+              "WHERE COALESCE(estado,'') IN ('pendiente','programado','esperando_recurso') "
+              "AND COALESCE(origen,'') <> 'eos_b2b' "
+              "AND COALESCE(inicio_real_at,'')='' AND COALESCE(inventario_descontado_at,'')=''")
     c.execute("UPDATE produccion_programada SET estado='cancelado' WHERE estado='completado' "
               "AND (COALESCE(origen,'')='eos_retroactivo' OR COALESCE(observaciones,'') LIKE '%[fab#%')")
     conn.commit()

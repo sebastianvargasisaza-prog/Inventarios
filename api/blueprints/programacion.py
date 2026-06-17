@@ -3181,10 +3181,23 @@ def prog_cancelar_evento(evento_id):
             'inventario_descontado_at': descontado_at or None,
         }), 409
     estado_anterior = estado_actual
+    # FIX 17-jun (auditoría Planta · M27) · CAS: el check de estado/descontado de
+    # arriba es check-then-act → en multi-worker otro request pudo completar+descontar
+    # entre el SELECT y este UPDATE → cancelaríamos una producción que YA descontó MP
+    # → stock fantasma. La condición va en el WHERE + chequeo de rowcount.
     c.execute(
-        "UPDATE produccion_programada SET estado='cancelado' WHERE id=?",
+        "UPDATE produccion_programada SET estado='cancelado' "
+        "WHERE id=? AND COALESCE(estado,'') NOT IN ('completado','cancelado') "
+        "AND COALESCE(inventario_descontado_at,'')=''",
         (evento_id,)
     )
+    if c.rowcount == 0:
+        conn.rollback()
+        return jsonify({
+            'ok': False,
+            'error': 'Producción ya completada/descontada · usar /revertir-completado',
+            'codigo': 'YA_COMPLETADA',
+        }), 409
     # Fix #4 · 21-may-2026 · liberar SOLs vinculadas a esta producción
     # (canal Pre-Producción · `produccion_checklist`). Antes quedaban
     # huérfanas · Catalina aprobaba compras para producción que ya no existía.
@@ -7464,12 +7477,19 @@ def _calcular_mp_consumo_produccion(c, evento_id):
     lotes = int(lotes or 1)
     cant_kg_total = float(cant_kg_exp or 0) or (lotes * float(lote_kg or 0))
 
+    # FIX 17-jun (auditoría Planta · M29) · NO consumir fórmula DESCONTINUADA
+    # (activo=0): descontinuar hace activo=0 pero conserva los formula_items → este
+    # path (consumo de producción programada · calendario/Kanban) los descontaba.
+    # Exclusión NORMALIZADA (el match acá es case-insensitive, igual a ambos lados).
     rows = c.execute("""
         SELECT material_id, material_nombre,
                COALESCE(porcentaje, 0)                as pct,
                COALESCE(cantidad_g_por_lote, 0)       as g_por_lote
         FROM formula_items
         WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))
+          AND UPPER(TRIM(producto_nombre)) NOT IN (
+              SELECT UPPER(TRIM(producto_nombre)) FROM formula_headers
+              WHERE COALESCE(activo,1)=0)
     """, (producto,)).fetchall()
     # FIX 1-jun-2026 audit MP/fórmulas (P0-1) · DEDUP por código de bodega resuelto:
     # formula_items no tiene UNIQUE → dos filas del mismo material (o dos ids de
@@ -7547,11 +7567,24 @@ def _validar_stock_para_produccion(c, mps_a_consumir):
     RECHAZADO / AGOTADO / BLOQUEADO (case-insensitive).
     """
     placeholders = ','.join(['?'] * len(_ESTADOS_LOTE_NO_PRODUCIBLES))
+    # FIX 17-jun (auditoría Planta · M25/M5) · la VALIDACIÓN debe coincidir con la
+    # DISTRIBUCIÓN (_distribuir_fefo): per-lote + excluir vencido-POR-FECHA aunque el
+    # cron aún no lo marcó. Antes sumaba todo sin guarda de fecha → validaba "alcanza"
+    # con un lote vencido que la distribución (ya M25-guarded) no consume → "validó
+    # pero no alcanzó". Stock distribuible = lotes usables no vencidos por fecha.
     sql = f"""
-        SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END), 0)
-        FROM movimientos
-        WHERE material_id=?
-          AND UPPER(COALESCE(estado_lote,'')) NOT IN ({placeholders})
+        SELECT COALESCE(SUM(stock_lote), 0) FROM (
+            SELECT lote,
+                   MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) AS fv_real,
+                   SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) AS stock_lote
+            FROM movimientos
+            WHERE material_id=? AND COALESCE(lote,'') != ''
+              AND UPPER(COALESCE(estado_lote,'')) NOT IN ({placeholders})
+            GROUP BY lote
+        ) sub
+        WHERE stock_lote > 0
+          AND (fv_real IS NULL OR TRIM(CAST(fv_real AS TEXT))=''
+               OR date(fv_real) >= date('now', '-5 hours'))
     """
     # 2-jun-2026 · TRANSPARENCIA "no jala lo que hay en bodega": cuando falta una
     # MP, también medimos cuánto stock de ese MISMO código está RETENIDO en estados
@@ -7845,9 +7878,16 @@ def _distribuir_fefo(c, codigo_mp, cantidad_a_descontar):
             GROUP BY lote
         ) sub
         WHERE stock_lote > 0
+          AND (fv_real IS NULL OR TRIM(CAST(fv_real AS TEXT))=''
+               OR date(fv_real) >= date('now', '-5 hours'))
         ORDER BY COALESCE(fv_real, '9999-12-31') ASC,
                  lote ASC
     """
+    # FIX 17-jun (auditoría Planta · M25/INV-6) · defensa de vencimiento POR FECHA:
+    # excluir lotes vencidos aunque el cron job_marcar_vencidos aún no los marcó
+    # (ventana de hasta ~24h). El descuento directo (_handle_produccion_inner) ya la
+    # tenía; este FEFO de la producción canónica (Iniciar producción) no → consumía
+    # MP vencida en producto regulado (INVIMA Res. 2214). Misma ventana -5h que el cron.
     params = (codigo_mp,) + _ESTADOS_LOTE_NO_PRODUCIBLES
     rows = c.execute(sql, params).fetchall()
 
@@ -14418,6 +14458,12 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90,
                  AND fecha_programada >= date('now', '-5 hours', '-14 days')"""
         ).fetchall()
         huerfanos = []
+        # NOTA (auditoría Planta 17-jun · [7] descartado): un calendario VACÍO no es
+        # peligroso aquí — el error de API ya se atrapa arriba (14174: cal_error/error
+        # → early-return SIN tocar nada). Un vacío legítimo (error=None) SÍ debe borrar
+        # huérfanos (diseño intencional · golden test_golden_sync_calendar_espejo_*).
+        # Además el HARD DELETE ya excluye Fijo (eos_plan/eos_b2b/eos_retroactivo) y lo
+        # ejecutado. No agregar guard de keys_calendar vacío (rompería el espejo).
         for r in candidatos:
             id_, prod, fecha, inicio, descontado, origen_val = r
             if (prod, fecha) in keys_calendar:

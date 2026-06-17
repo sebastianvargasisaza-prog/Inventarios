@@ -8362,6 +8362,15 @@ def conteo_cerrar(conteo_id):
             if diff == 0:
                 continue
             tipo_mov = 'Entrada' if diff > 0 else 'Salida'
+            # FIX 17-jun (auditoría Planta · M20/M27) · CLAIM ATÓMICO del ítem ANTES de
+            # ajustar: conteo_cerrar y conteo_ajustar (u otro worker) podían leer ambos
+            # ajuste_aplicado=0 y aplicar el ajuste DOS veces → doble Entrada/Salida en
+            # el kardex = stock corrupto. UPDATE condicional + rowcount → solo UN proceso
+            # ajusta cada ítem (mismo patrón que conteo_ajustar).
+            c.execute("UPDATE conteo_items SET ajuste_aplicado=1 "
+                      "WHERE id=? AND COALESCE(ajuste_aplicado,0)=0", (it_id,))
+            if c.rowcount == 0:
+                continue  # otro proceso ya reclamó/ajustó este ítem
 
             # Sebastian 12-jun: el jefe de produccion y los operarios ajustan el
             # inventario SIN aprobacion de Gerencia ni correo. Antes los items con
@@ -9906,16 +9915,21 @@ def anular_movimiento(mov_id):
     if not motivo:
         return jsonify({'error': 'Motivo de anulacion requerido'}), 400
     conn = get_db(); c = conn.cursor()
-    c.execute("""SELECT m.*, mp.nombre FROM movimientos m
-                 LEFT JOIN maestro_mps mp ON m.material_id = mp.codigo_mp
-                 WHERE m.id=?""", (mov_id,))
+    # FIX 17-jun (auditoría Planta) · maestro_mps NO tiene columna `nombre`
+    # (es nombre_inci/nombre_comercial) → el SELECT `mp.nombre` daba "no such
+    # column"/UndefinedColumn → 500 en TODA anulación de kardex (SQLite y PG). El
+    # valor no se usaba; se quita la columna y el JOIN.
+    c.execute("SELECT * FROM movimientos WHERE id=?", (mov_id,))
     row = c.fetchone()
     if not row:
         return jsonify({'error': 'Movimiento no encontrado'}), 404
     cols = [d[0] for d in c.description]
     mov = dict(zip(cols, row))
     # Verificar que no esté ya anulado
-    if mov.get('observaciones','').startswith('[ANULADO]'):
+    # FIX 17-jun (auditoría Planta) · observaciones suele ser NULL → mov.get(...,'')
+    # devuelve None (la clave existe con valor None) → .startswith reventaba con 500
+    # en TODA anulación de un movimiento sin observaciones. `or ''` lo blinda.
+    if (mov.get('observaciones') or '').startswith('[ANULADO]'):
         return jsonify({'error': 'Movimiento ya anulado'}), 400
     # Solo admin puede anular movimientos de otros usuarios.
     # El operario que registró el movimiento vive en la columna 'operador'
@@ -10619,7 +10633,16 @@ def liberar_cuarentena(mov_id):
                       f"record_table='movimientos', record_id='{mov_id}' y reenviá signature_id.",
         }), 400
     nuevo_estado = 'VIGENTE' if decision == 'Aprobado' else 'RECHAZADO'
-    c.execute("UPDATE movimientos SET estado_lote=? WHERE id=?", (nuevo_estado, mov_id))
+    # FIX 17-jun (auditoría Planta · M27) · CAS: condición de estado en el WHERE +
+    # rowcount. El check de arriba (10601) es check-then-act; dos liberaciones
+    # concurrentes del mismo lote no deben cruzarse (Aprobado vs Rechazado).
+    c.execute("UPDATE movimientos SET estado_lote=? "
+              "WHERE id=? AND UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')",
+              (nuevo_estado, mov_id))
+    if c.rowcount == 0:
+        conn.rollback()
+        return jsonify({'error': 'El lote ya fue dispuesto por otra acción · recargá',
+                        'codigo': 'ESTADO_CAMBIO'}), 409
     c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
                  VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
               (u, f'{decision.upper()}_CUARENTENA', 'movimientos',
