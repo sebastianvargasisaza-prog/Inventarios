@@ -352,6 +352,23 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (272, "Corregir % de fórmulas vs Excel maestro (18-jun · errores graves que inflaban "
+          "compra Y descuento de producción · reconciliación FORMULAS_MAESTRO_v2_1): "
+          "(1) MP00116 'Epi-On' estaba al 50-90% (el agua quedó codificada como el activo) "
+          "→ al % del maestro: BOOSTER TENSOR 1%, SUERO TRIACTIVE RETINOID NAD 2%, Suero "
+          "Exfoliante BHA 2% 0.5%, AZ HIBRID CLEAR 4%. (2) MP00175 'Acetyl tetrapeptide-5' "
+          "NO está en el maestro de Suero Niacinamida ni Contorno Retinaldehído → quitar. "
+          "Recalcula cantidad_g_por_lote = %·lote·1000 consistente. Reversible (valores "
+          "previos en esta descripción). PG-safe.", [
+        # (1) MP00116 → % del maestro (recalcula g_por_lote desde el lote_size de la fórmula)
+        "UPDATE formula_items SET porcentaje=1.0, cantidad_g_por_lote=ROUND(1.0/100.0*COALESCE((SELECT lote_size_kg FROM formula_headers fh WHERE UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(formula_items.producto_nombre)) LIMIT 1),0)*1000,4) WHERE UPPER(TRIM(producto_nombre))='BOOSTER TENSOR' AND UPPER(TRIM(material_id))='MP00116'",
+        "UPDATE formula_items SET porcentaje=2.0, cantidad_g_por_lote=ROUND(2.0/100.0*COALESCE((SELECT lote_size_kg FROM formula_headers fh WHERE UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(formula_items.producto_nombre)) LIMIT 1),0)*1000,4) WHERE UPPER(TRIM(producto_nombre))='SUERO TRIACTIVE RETINOID NAD' AND UPPER(TRIM(material_id))='MP00116'",
+        "UPDATE formula_items SET porcentaje=0.5, cantidad_g_por_lote=ROUND(0.5/100.0*COALESCE((SELECT lote_size_kg FROM formula_headers fh WHERE UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(formula_items.producto_nombre)) LIMIT 1),0)*1000,4) WHERE UPPER(TRIM(producto_nombre))='SUERO EXFOLIANTE BHA 2%' AND UPPER(TRIM(material_id))='MP00116'",
+        "UPDATE formula_items SET porcentaje=4.0, cantidad_g_por_lote=ROUND(4.0/100.0*COALESCE((SELECT lote_size_kg FROM formula_headers fh WHERE UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(formula_items.producto_nombre)) LIMIT 1),0)*1000,4) WHERE UPPER(TRIM(producto_nombre))='AZ HIBRID CLEAR' AND UPPER(TRIM(material_id))='MP00116'",
+        # (2) MP00175 fuera de las 2 fórmulas donde el maestro no lo lista
+        "DELETE FROM formula_items WHERE UPPER(TRIM(producto_nombre))='SUERO DE NIACINAMIDA 5% FORMULA NUEVA' AND UPPER(TRIM(material_id))='MP00175'",
+        "DELETE FROM formula_items WHERE UPPER(TRIM(producto_nombre))='CONTORNO DE OJOS RETINALDEHIDO 0.05%' AND UPPER(TRIM(material_id))='MP00175'",
+    ]),
     (271, "Bridge Vit E hidrosoluble MP00440→MP00079 (17-jun · confirmado Sebastián): "
           "la fórmula ANIMUSLASH usa MP00440 ('Vit E hidrosoluble') pero el físico del "
           "polvo hidrosoluble (2.850g · TOCOPHERYL ACETATE) entró bajo MP00079 ('Vit E polvo'). "

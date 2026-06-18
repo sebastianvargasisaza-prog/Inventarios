@@ -312,6 +312,28 @@ Workflow de 9 cazadores por área/pestaña + conexiones entre módulos + verific
 
 Síntoma: el pedido a 90 días salía absurdo (MP00175 péptido a 0.001–0.03% pedía 776g cuando lo real eran ~6g). El usuario tenía razón. **Causa raíz (workflow + verificación directa, NO el cálculo por-lote, que es correcto % × kg × 1000):** EOS tiene **3 generadores** que escriben `produccion_programada` para el MISMO producto en fechas distintas — el botón "Generar plan" (`origen='eos_plan'`, Fijo), el cron diario `auto_plan_diario` (`auto_plan`) y la proyección 2 años `_proyectar_horizonte_2y` (`eos_proyeccion`) — y el cálculo de compra **SUMABA las filas de los 3** (la pantalla `abastecimiento_consumo_horizontes` no deduplicaba; el motor de generar-OC `_compute_mp_deficit_aggregated` dedup solo por (prod,fecha), insuficiente con fechas distintas). Resultado: ~137 "días-producción" del mismo producto en 30 días = físicamente imposible = el 130x. La huella: consumo que SALTA en 15-30d y se aplana (muchos lotes apilados al frente). **Fix (prefer-Fijo, en AMBOS motores):** por PRODUCTO, si tiene plan FIJO (`eos_plan/eos_b2b/eos_retroactivo`), ignorar sus capas AUTO (`auto_plan/sugerido/eos_canonico/eos_proyeccion`) → no se suman planes solapados; productos que SOLO tienen sugeridas se conservan (no se sub-cuentan); + dedup por (producto,fecha) quedándose con la fila de más kg. **Regla: el cálculo de COMPRA cuenta UN plan por producto (el deliberado/Fijo manda), nunca la unión de varios generadores.** Falsos positivos del workflow descartados por datos reales: "lotes inflado" (todas las filas lotes=1), "ml vs gramos" (solo afecta cadencia del plan, no el consumo de MP que usa %×kg×1000). Pendiente complementario (M41/M36): el cron `auto_plan_diario` re-siembra a diario y `job_self_heal` re-habilita el cron pese a la pausa manual (default del flag) → el plan se llena solo; el prefer-Fijo lo neutraliza para la COMPRA, pero conviene pausar/limpiar los crons. Tests `test_inflacion_planes_solapados.py` + `test_motores_demanda_paridad.py`.
 
+## 🧪 M50 · Fórmulas de PROD divergieron del Excel maestro → % inflados (errores graves) · 18-jun
+
+Tras cazar la inflación de compra (M49), el usuario sospechó de las FÓRMULAS. Reconciliación
+formal: dump de las fórmulas activas de prod (`/api/plan/diag-formulas-dump`, excluye agua) vs
+el Excel maestro `FORMULAS_MAESTRO_v2_1` (la VERDAD · % = columna 'g/1kg' ÷ 10). Hallazgos
+GRAVES (las fórmulas de prod difieren del maestro · afectan compra Y descuento de producción):
+- **MP00116 'Epi-On' al 50-90%** en 4 fórmulas (BOOSTER TENSOR 90.8, SUERO TRIACTIVE NAD 73.9,
+  Suero Exfoliante BHA 68.9, AZ HIBRID 51.8) cuando el maestro dice 1-4% → **el agua quedó
+  codificada como el activo** → compra de Epi-On inflada ~30x. mig 272 lo baja al % del maestro.
+- **MP00175 'Acetyl tetrapeptide-5' a 0.5%/1.5%** en Suero Niacinamida y Contorno Retinaldehído
+  → NO está en el maestro → quitar (mig 272). (Un péptido a 0.5% = 575g/lote · imposible.)
+- Diferencias de GRADO/código (NO inflan · decisión de Alejandro · M19, NO auto-fix): Centella
+  MP00176 (triterpenos 80%) vs maestro MP00181 (extracto · ~10 fórmulas), Pantenol MP00110 vs
+  MP00236 (mismo material, ya puenteado), Vit E MP00079 (polvo) vs MP00078 (líquida).
+**Reglas:** (1) el Excel maestro es la fuente de verdad del % (ya en CERO_ERROR · mig 237). (2)
+**Unidades:** Excel 'g/1kg' ÷ 10 = `formula_items.porcentaje` (número de %, p.ej. 50 g/kg = 5).
+El motor consume `% × kg × 1000` priorizando porcentaje sobre cantidad_g_por_lote (seed roto). (3)
+Un activo/péptido con % de 2 dígitos suele ser el agua mal codificada o un typo → reconciliar
+contra el maestro. (4) **Pedí el dump SIN traducir** — el traductor del navegador corrompe el JSON
+(nombres "DE"→"Delaware", comas decimales, espacios en códigos) → no reconciliar sobre datos sucios.
+Pendiente durable: botón "reconciliar fórmulas vs maestro" (upload Excel → diff → corrige).
+
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
 
 Al cerrar una sesión donde se encontró/arregló un bug con patrón no listado aquí:
