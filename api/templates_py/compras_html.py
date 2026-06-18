@@ -2677,7 +2677,7 @@ function miniCard(o){
   // (skip "Revisada" cuando es Sebastian/admin creando OC manual). El endpoint
   // /autorizar acepta cualquier estado, lo unico que faltaba era el boton.
   if((o.estado==='Borrador'||o.estado==='Revisada')&&ES_AUTORIZA) btns+='<button class="btn bi bs" data-act="aut" data-oc="'+esc(o.numero_oc)+'">Autorizar</button>';
-  if(o.estado==='Autorizada'&&!ES_C) btns+='<button class="btn bg bs" data-act="pago" data-oc="'+esc(o.numero_oc)+'" data-val="'+parseFloat(o.valor_total||0)+'" data-prov="'+esc(o.proveedor||'')+'">Pagar</button>';
+  if(o.estado==='Autorizada'&&ES_AUTORIZA) btns+='<button class="btn bg bs" data-act="pago" data-oc="'+esc(o.numero_oc)+'" data-val="'+parseFloat(o.valor_total||0)+'" data-prov="'+esc(o.proveedor||'')+'">Pagar</button>';
   return '<div class="card" style="margin-bottom:8px;">'+
     '<div class="ch"><div><div class="cnum">'+esc(o.numero_oc)+'</div><div class="cprov">'+esc(o.proveedor||'-')+'</div></div>'+badge(o.estado)+'</div>'+
     '<div class="cval">'+fmt(o.valor_total)+(o.con_iva?'<span style="font-size:10px;background:#fde047;color:#92400e;border-radius:3px;padding:1px 5px;margin-left:5px;">+IVA</span>':'')+'</div>'+
@@ -2713,7 +2713,7 @@ function fullCard(o,grp){
   var btns='<button class="btn bo bs" data-act="det" data-oc="'+esc(o.numero_oc)+'">&#128203; Ver</button>';
   if(o.estado==='Borrador'&&ES_C) btns+='<button class="btn bw bs" data-act="rev" data-oc="'+esc(o.numero_oc)+'" data-prov="'+esc(o.proveedor||'')+'" data-val="'+parseFloat(o.valor_total||0)+'" data-obs="'+esc((o.observaciones||'').substring(0,80))+'">Revisar &amp; Asignar</button>';
   if((o.estado==='Revisada'||o.estado==='Borrador')&&ES_AUTORIZA) btns+='<button class="btn bi bs" data-act="aut" data-oc="'+esc(o.numero_oc)+'">Autorizar</button>';
-  if(o.estado==='Autorizada'&&!ES_C) btns+='<button class="btn bg bs" data-act="pago" data-oc="'+esc(o.numero_oc)+'" data-val="'+parseFloat(o.valor_total||0)+'" data-prov="'+esc(o.proveedor||'')+'">Registrar Pago</button>';
+  if(o.estado==='Autorizada'&&ES_AUTORIZA) btns+='<button class="btn bg bs" data-act="pago" data-oc="'+esc(o.numero_oc)+'" data-val="'+parseFloat(o.valor_total||0)+'" data-prov="'+esc(o.proveedor||'')+'">Registrar Pago</button>';
   var _effGrp=grp==='ocs'?(Object.keys(CMAP).find(function(k){return inGroup(o.categoria,k);})||'svc'):grp;
   if(o.estado==='Pagada'&&!ES_C&&(_effGrp==='mp'||_effGrp==='mee')) btns+='<button class="btn bo bs" data-act="rec" data-oc="'+esc(o.numero_oc)+'">Marcar Recibida</button>';
   // Botón Editar disponible en TODOS los estados editables (decision Catalina 2026-04-28).
@@ -4204,6 +4204,8 @@ async function confirmarPago(){
     await loadData();
     renderDash();
     if(PAGOS.length) loadPagos();
+    // refrescar vista agrupada si está activa (pagar desde ahí · 18-jun)
+    if(typeof loadConsolidado==='function'){ try{ await loadConsolidado(); }catch(e){} }
   }catch(e){ alert('Error: '+e); }
 }
 
@@ -4809,7 +4811,7 @@ async function openOCDetail(num){
     body.innerHTML=h;
     var fbtns='<button class="btn bo" onclick="_ocDetClose()">Cerrar</button>';
     if((o.estado==='Revisada'||o.estado==='Borrador')&&ES_AUTORIZA) fbtns+='<button class="btn bi" onclick="_ocDetAut()">Autorizar / Rechazar</button>';
-    if(o.estado==='Autorizada'&&!ES_C) fbtns+='<button class="btn bg" onclick="_ocDetPago()">Registrar Pago</button>';
+    if(o.estado==='Autorizada'&&ES_AUTORIZA) fbtns+='<button class="btn bg" onclick="_ocDetPago()">Registrar Pago</button>';
     if(o.estado==='Borrador'&&ES_C) fbtns+='<button class="btn bw" onclick="_ocDetRev()">Revisar &amp; Asignar</button>';
     footer.innerHTML=fbtns;
   }catch(e){ body.innerHTML='<p style="color:#dc2626;">Error: '+e.message+'</p>'; }
@@ -7329,6 +7331,12 @@ function renderConsolCard(p, idx){
         +(ES_AUTORIZA ? (p.ocs||[]).filter(function(o){ return o.estado==='Borrador'||o.estado==='Revisada'; }).map(function(o){
             return '<button class="btn" data-aut-oc="'+esc(o.numero_oc)+'" onclick="autorizarOC(this.dataset.autOc)"'
               +' style="padding:8px 14px;font-size:12px;white-space:nowrap;background:#16a34a;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;" title="Autorizar para poder recepcionar">&#10003; Autorizar '+esc(o.numero_oc)+'</button>';
+          }).join('') : '')
+        // Pagar (18-jun): para OCs ya Autorizadas, desde la misma vista agrupada · ES_AUTORIZA
+        +(ES_AUTORIZA ? (p.ocs||[]).filter(function(o){ return o.estado==='Autorizada'; }).map(function(o){
+            return '<button class="btn" data-pago-oc="'+esc(o.numero_oc)+'" data-pago-val="'+parseFloat(o.valor_total||p.valor_total||0)+'" data-pago-prov="'+esc(p.proveedor||'')+'"'
+              +' onclick="openPago(this.dataset.pagoOc, parseFloat(this.dataset.pagoVal), this.dataset.pagoProv)"'
+              +' style="padding:8px 14px;font-size:12px;white-space:nowrap;background:#0f766e;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;" title="Registrar pago">&#x1F4B8; Pagar '+esc(o.numero_oc)+'</button>';
           }).join('') : '')
         +'<button class="btn" data-consol-idx="'+idx+'" onclick="copiarPedido(parseInt(this.dataset.consolIdx))"'
           +' style="padding:8px 14px;font-size:12px;white-space:nowrap;background:#3b82f6;border-radius:8px;">&#x1F4CB; Copiar</button>'

@@ -125,11 +125,12 @@ LIMITES_APROBACION_OC = {
 # CONTADORA_USERS solo por el perfil financiero/bancario compartido, pero su rol
 # operativo es compras. El gate _require_authorize_oc (segregación de funciones)
 # bloquea a las contadoras EXCEPTO a quienes estén en este set explícito.
-# Mayra (contadora pura) NO está aquí: registra pagos, no autoriza (SoD).
-# ⚠ Nota SoD: que el mismo usuario autorice Y pague una OC concentra funciones;
-#   en una operación chica es decisión de gerencia y el audit_log es el control
-#   compensatorio (cada autorizar/pagar queda con usuario/fecha).
-OC_AUTORIZA_USERS = {"catalina"}
+# Sebastián 18-jun-2026: gerencia decide que Catalina, Mayra (y los admins) TODOS pueden
+# autorizar Y pagar OCs — operación chica, equipo de confianza. Se relaja la SoD a propósito.
+# ⚠ Nota SoD: que el mismo usuario autorice Y pague una OC concentra funciones; el control
+#   compensatorio es el audit_log (cada autorizar/pagar queda con usuario/fecha) + el límite
+#   de monto por usuario (LIMITES_APROBACION_OC: 5M Catalina/Mayra · admins sin tope).
+OC_AUTORIZA_USERS = {"catalina", "mayra"}
 
 # PIN para desbloquear vista de cantidades en Fórmulas.
 # DEBE setearse via env var FORMULA_PIN. Si falta, se genera un PIN
