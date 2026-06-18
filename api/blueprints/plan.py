@@ -4978,6 +4978,45 @@ def plan_factibilidad():
     })
 
 
+@bp.route("/api/plan/diag-plan-90d", methods=["GET"])
+def plan_diag_plan_90d():
+    """DIAGNÓSTICO (solo lectura) · 18-jun · cuántos lotes hay en produccion_programada
+    para los próximos 90 días, POR PRODUCTO y POR ORIGEN. Sirve para cazar la inflación
+    de solicitudes: si un producto tiene decenas de lotes, ese es el problema (plan
+    sobre-programado), y aquí se ve de qué generador vienen."""
+    if not session.get("compras_user"):
+        return jsonify({"error": "login requerido"}), 401
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+    conn = get_db(); c = conn.cursor()
+    hoy = (_dt.now(_tz.utc) - _td(hours=5)).date()
+    cutoff = (hoy + _td(days=90)).isoformat()
+    rows = c.execute(
+        """SELECT UPPER(TRIM(producto)) AS p, COALESCE(origen,'(vacío)') AS o,
+                  COUNT(*) AS n, COALESCE(SUM(COALESCE(cantidad_kg,0)),0) AS kg
+           FROM produccion_programada
+           WHERE LOWER(COALESCE(estado,'')) NOT IN ('completado','cancelado')
+             AND COALESCE(inventario_descontado_at,'') = ''
+             AND fecha_programada >= ? AND fecha_programada <= ?
+           GROUP BY UPPER(TRIM(producto)), COALESCE(origen,'(vacío)')""",
+        (hoy.isoformat(), cutoff)
+    ).fetchall()
+    por_prod = {}
+    por_origen = {}
+    for p, o, n, kg in rows:
+        d = por_prod.setdefault(p, {"total_lotes": 0, "origenes": {}})
+        d["total_lotes"] += int(n)
+        d["origenes"][o] = {"lotes": int(n), "kg": round(float(kg or 0), 1)}
+        por_origen[o] = por_origen.get(o, 0) + int(n)
+    top = sorted(por_prod.items(), key=lambda x: -x[1]["total_lotes"])[:25]
+    return jsonify({
+        "hoy": hoy.isoformat(), "cutoff_90d": cutoff,
+        "total_lotes_90d": sum(v["total_lotes"] for v in por_prod.values()),
+        "productos_distintos": len(por_prod),
+        "lotes_por_origen": por_origen,
+        "top_productos_por_lotes": [{"producto": p, **v} for p, v in top],
+    })
+
+
 _FACTIBILIDAD_PLAN_HTML = """<!doctype html>
 <html lang="es-CO"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
