@@ -5151,7 +5151,9 @@ def admin_formulas_reconciliar():
             if not cod.startswith('MP'):
                 continue
             g = row[g1] if (g1 is not None and g1 < len(row)) else None
-            if isinstance(g, (int, float)):
+            # g != 0: el maestro lista algunos ingredientes a 0 g (placeholders) que NO se
+            # consumen → no deben salir como 'falta en prod' (falso diff).
+            if isinstance(g, (int, float)) and g != 0:
                 its[cod] = round(its.get(cod, 0.0) + g / 10.0, 5)
         if its:
             EX[sh] = its
@@ -5174,14 +5176,30 @@ def admin_formulas_reconciliar():
     # matchear y diffear
     diffs = []
     n_extra = n_wrong = n_falta = 0
+    # Asignación ÚNICA hoja↔fórmula por mejor score (match exacto normalizado gana; si no,
+    # solapamiento de tokens ≥2, o nombre de UNA sola palabra que coincide · p.ej. 'HydraPeptide').
+    # Greedy con unicidad: dos productos de nombre parecido (Renova C vs Vitamina C) no se
+    # roban la misma hoja → evita falsos diffs por mal emparejamiento.
+    cand = []
     for sh, xit in EX.items():
         shn = _norm_prod_recon(sh); st = set(shn.split())
-        bk = None; bs = 0
         for k in PR:
-            ov = len(st & set(k.split()))
-            if ov > bs:
-                bs = ov; bk = k
-        if not bk or bs < 2:
+            if k == shn:
+                sc = 1000
+            else:
+                ov = len(st & set(k.split()))
+                sc = ov if (ov >= 2 or (len(st) <= 1 and ov >= 1)) else 0
+            if sc > 0:
+                cand.append((sc, sh, k))
+    cand.sort(key=lambda x: -x[0])
+    asign = {}; _usado_sh = set(); _usado_k = set()
+    for sc, sh, k in cand:
+        if sh in _usado_sh or k in _usado_k:
+            continue
+        asign[sh] = k; _usado_sh.add(sh); _usado_k.add(k)
+    for sh, xit in EX.items():
+        bk = asign.get(sh)
+        if not bk:
             continue
         prod_name, pit = PR[bk]
         extra = [{"mp": cmid, "pct_prod": pit[cmid]} for cmid in pit if cmid not in xit]
