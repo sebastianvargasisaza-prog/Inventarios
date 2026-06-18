@@ -4978,6 +4978,38 @@ def plan_factibilidad():
     })
 
 
+@bp.route("/api/plan/cobertura-planeacion", methods=["GET"])
+def plan_cobertura_planeacion():
+    """COBERTURA de planeación (read-only · 18-jun): ¿qué productos quedan FUERA del plan
+    a 2 años? La proyección (_generar_proyeccion_lotes) solo cubre lo que está en
+    sku_planeacion_config activo. Reporta:
+      - sin_config: fórmulas ACTIVAS (lote>0) que NO están en planeación → nunca se proyectan.
+      - huerfanos: entradas de planeación activas SIN fórmula activa (descontinuadas) → ruido.
+    Así se garantiza que TODOS los productos vendibles estén programados."""
+    if not session.get("compras_user"):
+        return jsonify({"error": "login requerido"}), 401
+    conn = get_db(); c = conn.cursor()
+    fa = {}  # norm -> nombre real
+    for (pn,) in c.execute("SELECT producto_nombre FROM formula_headers "
+                           "WHERE COALESCE(activo,1)=1 AND COALESCE(lote_size_kg,0)>0").fetchall():
+        fa[_norm_prod_recon(pn)] = pn
+    cfg = {}  # norm -> nombre real (config activa)
+    for (pn,) in c.execute("SELECT producto_nombre FROM sku_planeacion_config "
+                           "WHERE COALESCE(activo,1)=1 "
+                           "AND COALESCE(estado,'activo') NOT IN ('descontinuado','pausado')").fetchall():
+        cfg[_norm_prod_recon(pn)] = pn
+    sin_config = sorted(fa[k] for k in fa if k not in cfg)
+    huerfanos = sorted(cfg[k] for k in cfg if k not in fa)
+    return jsonify({
+        "n_formulas_activas": len(fa),
+        "n_en_planeacion": len(cfg),
+        "sin_config": sin_config,          # activos NO programados (el hueco real)
+        "n_sin_config": len(sin_config),
+        "huerfanos": huerfanos,            # programados sin fórmula activa (limpiar)
+        "n_huerfanos": len(huerfanos),
+    })
+
+
 @bp.route("/api/plan/diag-plan-90d", methods=["GET"])
 def plan_diag_plan_90d():
     """DIAGNÓSTICO (solo lectura) · 18-jun · cuántos lotes hay en produccion_programada
