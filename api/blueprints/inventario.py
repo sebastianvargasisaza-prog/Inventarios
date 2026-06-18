@@ -11785,13 +11785,28 @@ def mee_alertas_list():
     conn = get_db(); c = conn.cursor()
     hace90 = (date.today() - timedelta(days=90)).isoformat()
 
-    c.execute("""SELECT m.codigo, m.descripcion, m.categoria, m.stock_actual, m.stock_minimo, m.unidad
+    # FIX 17-jun (M26) · stock CANÓNICO = SUM(movimientos_mee), no el cache
+    # m.stock_actual (driftea) → la alerta bajo-mínimo de envases dejaba de avisar
+    # (o avisaba de más) cuando el cache divergía. Mismo patrón que /api/mee/stock.
+    c.execute("""SELECT m.codigo, m.descripcion, m.categoria,
+                        COALESCE(mv.stock_real, m.stock_actual, 0) as stock_real, m.stock_minimo, m.unidad
                  FROM maestro_mee m
-                 WHERE m.estado='Activo' AND m.stock_minimo>0 AND m.stock_actual < m.stock_minimo
-                 ORDER BY (m.stock_actual / m.stock_minimo) ASC""")
-    bajo_minimo = [{'codigo': r[0], 'descripcion': r[1], 'categoria': r[2],
-                    'stock_actual': r[3], 'stock_minimo': r[4], 'unidad': r[5],
-                    'ratio': round(r[3]/r[4], 2) if r[4] else 0} for r in c.fetchall()]
+                 LEFT JOIN (
+                     SELECT mee_codigo,
+                            SUM(CASE WHEN tipo IN ('Entrada','Ajuste +','Ajuste') THEN cantidad
+                                     WHEN tipo IN ('Salida','Ajuste -') THEN -cantidad ELSE 0 END) as stock_real
+                     FROM movimientos_mee WHERE COALESCE(anulado,0)=0 GROUP BY mee_codigo
+                 ) mv ON m.codigo = mv.mee_codigo
+                 WHERE m.estado='Activo' AND COALESCE(m.stock_minimo,0)>0""")
+    bajo_minimo = []
+    for r in c.fetchall():
+        s = max(float(r[3] or 0), 0)          # clamp >=0 (igual que el resto de MEE)
+        smin = float(r[4] or 0)
+        if smin > 0 and s < smin:
+            bajo_minimo.append({'codigo': r[0], 'descripcion': r[1], 'categoria': r[2],
+                                'stock_actual': s, 'stock_minimo': smin, 'unidad': r[5],
+                                'ratio': round(s / smin, 2)})
+    bajo_minimo.sort(key=lambda x: x['ratio'])
 
     c.execute("""SELECT m.codigo, m.descripcion, m.categoria, m.stock_actual, m.unidad,
                         MAX(mv.fecha) as ultimo_mov

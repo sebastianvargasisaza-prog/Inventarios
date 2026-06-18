@@ -1206,7 +1206,7 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
         #      del stock · contarlos = DOBLE conteo → sobre-compra).
         #  (2) traer cantidad_kg para respetar los kg editados por el usuario.
         local_rows = conn.execute(
-            """SELECT producto, fecha_programada, lotes, COALESCE(cantidad_kg, 0)
+            """SELECT producto, fecha_programada, lotes, COALESCE(cantidad_kg, 0), COALESCE(origen,'')
                FROM produccion_programada
                WHERE LOWER(COALESCE(estado,'')) NOT IN ('completado','cancelado','esperando_recurso')
                  AND COALESCE(inventario_descontado_at,'') = ''
@@ -1215,16 +1215,33 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
                ORDER BY fecha_programada""",
             (cutoff.isoformat(),)
         ).fetchall()
+        # FIX 18-jun · prefer-Fijo (igual que abastecimiento_consumo_horizontes · M49): si un
+        # producto tiene plan FIJO, ignorar las capas que ACUMULAN solas (auto_plan del cron +
+        # eos_proyeccion) → no apilar planes solapados (causa raíz del pedido ~130x). Conserva
+        # eos_canonico/sugerido y los productos que solo tienen sugeridas.
+        _FIJO_ORG = ('eos_plan', 'eos_b2b', 'eos_retroactivo')
+        _AUTO_FILL = ('auto_plan', 'eos_proyeccion')
+        def _rprod(praw):
+            return (praw if praw in formulas
+                    else _upper_to_prod.get(praw.upper())
+                    or _norm_to_prod.get(_norm_prod_fuerte(praw)))
+        _prod_con_fijo = set()
+        for row in local_rows:
+            if (row[4] or '') in _FIJO_ORG:
+                _pf = _rprod((row[0] or '').strip())
+                if _pf:
+                    _prod_con_fijo.add(_pf)
         for row in local_rows:
             prod_raw = (row[0] or '').strip()
             fecha_s = (row[1] or '').strip()
             lotes = int(row[2] or 1)
             cant_kg = float(row[3] or 0)
-            prod = (prod_raw if prod_raw in formulas
-                    else _upper_to_prod.get(prod_raw.upper())
-                    or _norm_to_prod.get(_norm_prod_fuerte(prod_raw)))
+            _org = row[4] or ''
+            prod = _rprod(prod_raw)
             if not prod or not fecha_s:
                 continue
+            if prod in _prod_con_fijo and _org in _AUTO_FILL:
+                continue   # el plan fijo manda · no apilar auto_plan/proyección de este producto
             # dedup CRUZADO: si el calendario ya aportó este producto+fecha, no
             # lo dupliques (el espejo GCal→produccion_programada es la misma prod).
             if (_norm_prod_fuerte(prod), fecha_s) in cal_prod_dates:
@@ -11143,6 +11160,38 @@ def abastecimiento_consumo_horizontes():
     # 8a. Producciones del Calendario (Fijo + Sugerida desde FIX #3 23-may)
     # FIX 24-may-2026 noche · normalizar espacios para que matchee con
     # _norm_prod usado en el diccionario formulas (colapsa espacios dobles).
+    # FIX 18-jun · DEDUP cruzado de planes solapados (alinea con el motor hermano
+    # _compute_mp_deficit_aggregated, que ya deduplica por (producto,fecha)): el MISMO
+    # producto+día puede estar programado bajo VARIOS orígenes (eos_plan manual + auto_plan
+    # del cron + eos_proyeccion) → antes se SUMABA el consumo de cada fila → demanda de MP
+    # inflada Nx (caso 17-jun: pedido a 90d hasta ~130x). Una misma producción (producto+día)
+    # cuenta UNA vez · nos quedamos con la fila de MÁS kg (la real, no la estimada).
+    # Paso 1: por PRODUCTO, si tiene plan FIJO (lo que el usuario fijó / "Generar plan"),
+    # ignorar las capas que ACUMULAN solas (auto_plan del cron diario + eos_proyeccion de
+    # la proyección 2 años) de ese producto → NO sumar planes solapados que se apilan en
+    # fechas distintas (causa raíz del pedido ~130x · M49). Se CONSERVAN eos_canonico/
+    # sugerido (sugeridas legítimas) y los productos que solo tienen sugeridas (no se
+    # sub-cuentan). Solo se dropean las 2 capas auto-generadas que re-siembran a diario.
+    _FIJO_ORG = ('eos_plan', 'eos_b2b', 'eos_retroactivo')
+    _AUTO_FILL = ('auto_plan', 'eos_proyeccion')
+    _prod_con_fijo = set()
+    for _pr in prod_rows:
+        if (_pr[6] if len(_pr) > 6 else '') in _FIJO_ORG:
+            _prod_con_fijo.add(_norm_prod(_pr[1]))
+    # Paso 2: dedup por (producto, fecha) quedándose con la fila de MÁS kg.
+    _ded_pp = {}
+    for _pr in prod_rows:
+        _pn = _norm_prod(_pr[1])
+        _org = _pr[6] if len(_pr) > 6 else ''
+        if _pn in _prod_con_fijo and _org in _AUTO_FILL:
+            continue   # el plan fijo manda · no apilar auto_plan/proyección de este producto
+        _fc = str(_pr[2] or '')[:10]
+        _ck = float(_pr[4] or 0)
+        _eff = _ck if _ck > 0 else (int(_pr[3] or 1) * float(_pr[5] or 0))
+        _kk = (_pn, _fc)
+        if _kk not in _ded_pp or _eff > _ded_pp[_kk][1]:
+            _ded_pp[_kk] = (_pr, _eff)
+    prod_rows = [v[0] for v in _ded_pp.values()]
     matched_lotes = 0
     sin_formula_lotes = []
     for _pr in prod_rows:
