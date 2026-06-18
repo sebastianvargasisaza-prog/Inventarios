@@ -352,6 +352,20 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (269, "Consolidar duplicado del conservante Fenoxietanol+Etilhexilglicerina (17-jun · "
+          "confirmado por Sebastián): el físico (SOLBROL PEH ~16.100g) se cargó por INCI bajo "
+          "MPETHPHE01 (INCI 'ETHYLHEXYLGLYCERIN PHENOXYETHANOL', creado por mig 266) mientras "
+          "las fórmulas usan MP00068 (INCI 'PHENOXYETHANOL (AND) ETHYLHEXYLGLYCERIN'). Mismo "
+          "material (la identidad es el INCI, no la marca Biosure/Solbrol · orden invertido del "
+          "INCI = no cruzó). Re-key de movimientos MPETHPHE01→MP00068 + re-apuntar formula_items "
+          "+ desactivar el duplicado (NO borra · GMP · reversible). Así la fórmula VE el stock. "
+          "Idempotente (mig por versión · no-op si MPETHPHE01 no tiene movimientos).", [
+        "UPDATE movimientos SET material_id='MP00068', "
+        "observaciones = COALESCE(observaciones,'') || ' [consolidado MPETHPHE01->MP00068 mig269]' "
+        "WHERE material_id='MPETHPHE01'",
+        "UPDATE formula_items SET material_id='MP00068' WHERE material_id='MPETHPHE01'",
+        "UPDATE maestro_mps SET activo=0 WHERE codigo_mp='MPETHPHE01'",
+    ]),
     (268, "Confirmaciones de Alejandro + tamaño de lote Triactive (17-jun · datos): "
           "(1) INCI Vitamina E = TOCOPHEROL para MP00078 (líquida) y MP00079 (polvo) "
           "— Alejandro: ambas son tocoferol, solo cambia la forma física, mismo INCI. "
