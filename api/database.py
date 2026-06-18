@@ -352,6 +352,24 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (273, "Alinear fórmulas al maestro · grado Centella + forma Vit E (18-jun · confirmado "
+          "Sebastián · 'Centella es extracto, Vit E la del maestro'): (1) las fórmulas usaban "
+          "MP00176 'Centella triterpenos 80%' pero el maestro usa MP00181 'Centella extract' → "
+          "re-key formula_items MP00176→MP00181 + bridge MP00181→MP00176 para que producción "
+          "encuentre el stock existente (M17 · reversible). (2) Emulsión Hidratante Iluminadora "
+          "usaba MP00079 'Vit E polvo' pero el maestro usa MP00078 'Vit E líquida' → re-key (la "
+          "líquida ya tiene stock). MP00181 se asegura activo antes (trigger FK · M38). PG-safe.", [
+        "UPDATE maestro_mps SET activo=1 WHERE codigo_mp='MP00181'",
+        "INSERT INTO mp_formula_bridge (formula_material_id, formula_material_nombre, "
+        "bodega_material_id, bodega_material_nombre, bodega_inci, notas, activo) "
+        "SELECT 'MP00181','Centella extract (fórmula·maestro)','MP00176','Centella triterpenos',"
+        "'CENTELLA ASIATICA EXTRACT','18-jun · maestro usa extracto MP00181 · stock está bajo MP00176',1 "
+        "WHERE NOT EXISTS (SELECT 1 FROM mp_formula_bridge WHERE formula_material_id='MP00181' AND bodega_material_id='MP00176')",
+        "UPDATE formula_items SET material_id='MP00181', material_nombre='Centella asiatica extract' "
+        "WHERE UPPER(TRIM(material_id))='MP00176'",
+        "UPDATE formula_items SET material_id='MP00078', material_nombre='Vitamina E líquida' "
+        "WHERE UPPER(TRIM(producto_nombre))='EMULSION HIDRATANTE ILUMINADORA' AND UPPER(TRIM(material_id))='MP00079'",
+    ]),
     (272, "Corregir % de fórmulas vs Excel maestro (18-jun · errores graves que inflaban "
           "compra Y descuento de producción · reconciliación FORMULAS_MAESTRO_v2_1): "
           "(1) MP00116 'Epi-On' estaba al 50-90% (el agua quedó codificada como el activo) "
