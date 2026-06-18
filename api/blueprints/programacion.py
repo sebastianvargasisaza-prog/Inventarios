@@ -12339,6 +12339,88 @@ def abastecimiento_consumo_bruto_excel():
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
+def _destino_produccion_por_mp(conn, dias=90):
+    """Por cada código de BODEGA: qué producciones lo consumen y cuántos gramos en el
+    horizonte (prefer-Fijo · igual que abastecimiento_consumo_horizontes). Para la
+    JUSTIFICACIÓN de la OC ('cuánto se gasta de cada MP en qué producción'). Devuelve
+    {codigo_upper: [(producto, gramos)] ordenado por gramos desc}. Best-effort (nunca rompe)."""
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+    out = {}
+    try:
+        formulas = _get_formulas(conn)
+        if not formulas:
+            return out
+        # _get_formulas está keyed por nombre EXACTO → mapa normalizado para cruzar (M13)
+        fnorm = {_norm_prod_fuerte(k): v for k, v in formulas.items()}
+        hoy = (_dt.now(_tz.utc) - _td(hours=5)).date()
+        cutoff = (hoy + _td(days=int(dias or 90))).isoformat()
+        rows = conn.execute(
+            """SELECT producto, fecha_programada, COALESCE(lotes,1), COALESCE(cantidad_kg,0), COALESCE(origen,'')
+               FROM produccion_programada
+               WHERE LOWER(COALESCE(estado,'')) NOT IN ('completado','cancelado','esperando_recurso')
+                 AND COALESCE(inventario_descontado_at,'') = ''
+                 AND fecha_programada >= ? AND fecha_programada <= ?""",
+            (hoy.isoformat(), cutoff)
+        ).fetchall()
+        _FIJO = ('eos_plan', 'eos_b2b', 'eos_retroactivo'); _AUTOF = ('auto_plan', 'eos_proyeccion')
+        con_fijo = set()
+        for r in rows:
+            if (r[4] or '') in _FIJO:
+                con_fijo.add(_norm_prod_fuerte(r[0]))
+        ded = {}
+        for r in rows:
+            pn = _norm_prod_fuerte(r[0]); org = r[4] or ''
+            if pn in con_fijo and org in _AUTOF:
+                continue
+            fc = str(r[1] or '')[:10]; ck = float(r[3] or 0)
+            eff = ck if ck > 0 else int(r[2] or 1) * float(fnorm.get(pn, {}).get('lote_size_kg', 0) or 0)
+            k = (pn, fc)
+            if k not in ded or eff > ded[k][1]:
+                ded[k] = ((r[0], ck, int(r[2] or 1)), eff)
+        acc = {}
+        for (producto, ck, lotes), eff in ded.values():
+            fm = fnorm.get(_norm_prod_fuerte(producto))
+            if not fm:
+                continue
+            lote_kg = float(fm.get('lote_size_kg', 0) or 0)
+            kg_ev = ck if ck > 0 else (lotes * lote_kg)
+            if kg_ev <= 0:
+                continue
+            for it in fm.get('items', []):
+                mid_raw = str(it.get('material_id') or '').strip()
+                if not mid_raw or mid_raw == 'MPAGUALI01':
+                    continue
+                try:
+                    code = (_resolver_material_bodega(conn, mid_raw, it.get('material_nombre', '')) or mid_raw).upper()
+                except Exception:
+                    code = mid_raw.upper()
+                pct = float(it.get('porcentaje', 0) or 0)
+                if pct > 0:
+                    g = pct / 100.0 * kg_ev * 1000.0
+                else:
+                    gpl = float(it.get('cantidad_g_por_lote', 0) or 0)
+                    g = gpl * (kg_ev / lote_kg) if (gpl > 0 and lote_kg > 0) else 0
+                if g <= 0:
+                    continue
+                acc.setdefault(code, {})[producto] = acc.get(code, {}).get(producto, 0.0) + g
+        for code, prods in acc.items():
+            out[code] = sorted(prods.items(), key=lambda x: -x[1])
+    except Exception:
+        pass
+    return out
+
+
+def _justif_destino(destino_list, dias):
+    """Texto de justificación: 'Abastecimiento Nd · 5.000g→SUERO X · 800g→CREMA Y'."""
+    if not destino_list:
+        return None
+    def _g(n):
+        return f"{n:,.0f}".replace(',', '.')
+    partes = [f"{_g(g)}g→{prod}" for prod, g in destino_list[:6]]
+    extra = '' if len(destino_list) <= 6 else f" · +{len(destino_list) - 6} más"
+    return f"Abastecimiento {int(dias or 90)}d · " + ' · '.join(partes) + extra
+
+
 @bp.route('/api/abastecimiento/solicitar-items', methods=['POST'])
 def abastecimiento_solicitar_items():
     """Crea SOLs agrupadas por proveedor a partir de items seleccionados
@@ -12447,6 +12529,9 @@ def abastecimiento_solicitar_items():
     obs_base = f"Auto-generada Abastecimiento"
     if cubrir_dias:
         obs_base += f" · cubrir {cubrir_dias}d"
+    # FIX 18-jun · justificación ESPECÍFICA: cuánto de cada MP va a qué producción
+    # (antes solo "Auto-generada Abastecimiento · cubrir 90d"). Best-effort.
+    destino_map = _destino_produccion_por_mp(conn, cubrir_dias or 90)
 
     creadas = []
     try:
@@ -12494,6 +12579,8 @@ def abastecimiento_solicitar_items():
             items_count = 0
             total_g_mps = 0.0
             for mp in mps_lst:
+                _just = (_justif_destino(destino_map.get((mp['codigo_mp'] or '').upper(), []), cubrir_dias or 90)
+                         or f"Abastecimiento · {obs_base}")
                 try:
                     c.execute("""
                         INSERT INTO solicitudes_compra_items
@@ -12501,9 +12588,7 @@ def abastecimiento_solicitar_items():
                            justificacion, valor_estimado, proveedor_sugerido)
                         VALUES (?, ?, ?, ?, 'g', ?, 0, ?)
                     """, (numero, mp['codigo_mp'], mp['nombre'],
-                          mp['cantidad_g'],
-                          f"Abastecimiento · {obs_base}",
-                          prov_label))
+                          mp['cantidad_g'], _just, prov_label))
                 except sqlite3.OperationalError:
                     c.execute("""
                         INSERT INTO solicitudes_compra_items
@@ -12511,8 +12596,7 @@ def abastecimiento_solicitar_items():
                            justificacion, valor_estimado)
                         VALUES (?, ?, ?, ?, 'g', ?, 0)
                     """, (numero, mp['codigo_mp'], mp['nombre'],
-                          mp['cantidad_g'],
-                          f"Abastecimiento · {obs_base}"))
+                          mp['cantidad_g'], _just))
                 items_count += 1
                 total_g_mps += mp['cantidad_g']
             for me in mees_lst:
@@ -12643,6 +12727,8 @@ def solicitar_faltantes_bulk():
     obs_base_horizonte = f"Auto-generada Centro Programación · horizonte {dias}d"
     if obs_extra:
         obs_base_horizonte = obs_extra + ' · ' + obs_base_horizonte
+    # FIX 18-jun · destino en producción por MP para la justificación específica
+    destino_map = _destino_produccion_por_mp(conn, dias)
 
     try:
         for prov, items in sorted(grupos.items()):
@@ -12695,6 +12781,10 @@ def solicitar_faltantes_bulk():
             items_count = 0
             total_g_mps = 0.0
             for mp in mps_lst:
+                _dst = _justif_destino(destino_map.get((mp['codigo_mp'] or '').upper(), []), dias)
+                _just = (f"Falta para producción {dias}d · stock {mp['stock_actual_g']}g de "
+                         f"{mp['necesario_total_g']}g necesarios"
+                         + (" · " + _dst if _dst else ""))
                 try:
                     c.execute("""
                         INSERT INTO solicitudes_compra_items
@@ -12702,9 +12792,7 @@ def solicitar_faltantes_bulk():
                            justificacion, valor_estimado, proveedor_sugerido)
                         VALUES (?, ?, ?, ?, 'g', ?, 0, ?)
                     """, (numero, mp['codigo_mp'], mp['nombre'],
-                          mp['faltante_g'],
-                          f"Falta para producción {dias}d · stock {mp['stock_actual_g']}g de {mp['necesario_total_g']}g necesarios",
-                          prov_label))
+                          mp['faltante_g'], _just, prov_label))
                 except sqlite3.OperationalError:
                     c.execute("""
                         INSERT INTO solicitudes_compra_items
@@ -12712,8 +12800,7 @@ def solicitar_faltantes_bulk():
                            justificacion, valor_estimado)
                         VALUES (?, ?, ?, ?, 'g', ?, 0)
                     """, (numero, mp['codigo_mp'], mp['nombre'],
-                          mp['faltante_g'],
-                          f"Falta para producción {dias}d · stock {mp['stock_actual_g']}g de {mp['necesario_total_g']}g"))
+                          mp['faltante_g'], _just))
                 items_count += 1
                 total_g_mps += float(mp.get('faltante_g') or 0)
 
