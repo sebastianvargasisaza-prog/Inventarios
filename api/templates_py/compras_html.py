@@ -660,6 +660,7 @@ async function cxIAPreguntar(pregunta){
       <label style="font-size:12px;"><input type="checkbox" class="consol-est" value="Revisada" checked> Revisada</label>
       <label style="font-size:12px;"><input type="checkbox" class="consol-est" value="Autorizada" checked> Autorizada</label>
       <button class="btn bp" onclick="loadConsolidado()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
+      <button class="btn" onclick="imprimirTodas()" style="padding:6px 14px;font-size:12px;background:#0f766e;color:#fff;border:none;border-radius:5px;font-weight:700;cursor:pointer;" title="Imprime TODAS las órdenes juntas (cada proveedor en su propia hoja) en un solo documento">&#x1F5A8; Imprimir todas</button>
       <!-- Sebastián 24-may-2026 · link directo al módulo /recepcion · bodega
            necesita acceso rápido para registrar mercancía que llega · evita
            que tengan que volver a /modulos para encontrarlo. -->
@@ -7562,9 +7563,9 @@ async function eliminarOCsGrupo(idx){
   if(typeof loadData==='function') await loadData();
 }
 
-function imprimirPedido(idx){
+function _pedidoDocHtml(idx){
   var p = _consolCache[idx];
-  if(!p) return;
+  if(!p) return '';
   var hoy = new Date();
   var fechaStr = hoy.toLocaleDateString('es-CO',{year:'numeric',month:'2-digit',day:'2-digit'});
   var numDoc = String(hoy.getFullYear()).slice(-2)
@@ -7871,11 +7872,55 @@ function recalcIVA(rate,sub){
 <\\/script>
 </body>
 </html>`;
+  return html;
+}
 
+function _abrirImpresion(html){
   var win = window.open('', '_blank', 'width=980,height=860');
   if(!win){ alert('Permite las ventanas emergentes para este sitio e intenta de nuevo.'); return; }
   win.document.write(html);
   win.document.close();
+}
+
+function imprimirPedido(idx){
+  var html = _pedidoDocHtml(idx);
+  if(html) _abrirImpresion(html);
+}
+
+// Imprime TODAS las órdenes consolidadas en UN solo documento, cada proveedor en
+// su propia hoja (page-break). Reutiliza el generador por-proveedor: extrae el bloque
+// .page de cada doc (con indexOf, sin regex/backslashes para no romper el escape Python)
+// y los concatena bajo un único shell con el mismo CSS. Mantiene el botón por-proveedor.
+function imprimirTodas(){
+  if(!_consolCache || !_consolCache.length){ alert('No hay órdenes para imprimir.'); return; }
+  var docs = [];
+  for(var i=0;i<_consolCache.length;i++){
+    var h = _pedidoDocHtml(i);
+    if(h) docs.push(h);
+  }
+  if(!docs.length){ alert('No hay órdenes para imprimir.'); return; }
+  // CSS del primer documento (todos comparten el mismo)
+  var css = '';
+  var s0 = docs[0].indexOf('<style>');
+  var s1 = docs[0].indexOf('</style>');
+  if(s0>=0 && s1>s0) css = docs[0].slice(s0+7, s1);
+  // Cada .page (incluye su toolbar .no-print y su script recalcIVA · ambos ocultos al imprimir)
+  var pages = [];
+  for(var k=0;k<docs.length;k++){
+    var a = docs[k].indexOf('<div class="page">');
+    var b = docs[k].indexOf('</body>');
+    if(a>=0 && b>a) pages.push(docs[k].slice(a, b));
+  }
+  if(!pages.length){ alert('No se pudo preparar la impresión.'); return; }
+  var saltos = pages.join('<div style="page-break-after:always;"></div>');
+  var barra = '<div class="no-print" style="position:sticky;top:0;background:#0f766e;padding:10px;text-align:center;z-index:99;">'
+    +'<button onclick="window.print()" style="padding:9px 22px;border:none;border-radius:5px;font-weight:700;cursor:pointer;background:#fff;color:#0f766e;margin:0 6px;">&#x1F5A8; Imprimir las '+pages.length+' &oacute;rdenes</button>'
+    +'<button onclick="window.close()" style="padding:9px 22px;border:none;border-radius:5px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#333;margin:0 6px;">Cerrar</button>'
+    +'</div>';
+  var html = '<!DOCTYPE html><html lang="es" translate="no"><head><meta charset="UTF-8">'
+    +'<title>Ordenes de compra - '+pages.length+'</title><style>'+css+'</style></head><body>'
+    +barra+saltos+'</body></html>';
+  _abrirImpresion(html);
 }
 
 
