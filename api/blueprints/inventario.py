@@ -10970,6 +10970,29 @@ def _resolver_codigo_mp_conteo(c, codigo, inci, comercial):
     return (None, 'sin_match')
 
 
+def _num_g(x):
+    """Parsea una cantidad en gramos tolerando sufijo de unidad ('980g'->980),
+    espacios y coma decimal ('996,5g'->996.5, '1.234,5'->1234.5). 17-jun: el conteo
+    físico viene con celdas como '980g'/'996,5g' y antes `float()` fallaba → la fila
+    se cargaba con 0 → se saltaba EN SILENCIO. Devuelve 0.0 si no parsea."""
+    if x is None:
+        return 0.0
+    if isinstance(x, (int, float)):
+        return float(x)
+    import re as _re_num
+    s = _re_num.sub(r'[^0-9.,\-]', '', str(x).strip())
+    if not s:
+        return 0.0
+    if ',' in s and '.' in s:
+        s = s.replace('.', '').replace(',', '.')   # 1.234,5 -> 1234.5 (miles + decimal)
+    elif ',' in s:
+        s = s.replace(',', '.')                     # 996,5 -> 996.5 (coma decimal)
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
+
+
 def _parse_conteo_xlsx(file_storage, solo_visibles=True):
     """Lee el Excel de conteo (encabezados por nombre). RESPETA el filtro de Excel:
     por defecto SOLO importa las filas VISIBLES (las ocultas por autofiltro se saltan),
@@ -11012,10 +11035,7 @@ def _parse_conteo_xlsx(file_storage, solo_visibles=True):
         def g(i):
             return (str(cells[i].value).strip()
                     if (i is not None and i < len(cells) and cells[i].value is not None) else '')
-        try:
-            cant = float(g(i_cant) or 0)
-        except (ValueError, TypeError):
-            cant = 0.0
+        cant = _num_g(g(i_cant))   # tolera '980g'/'996,5g' (antes float() fallaba → 0 → saltaba)
         venc = g(i_venc)
         if venc and len(venc) >= 10:
             venc = venc[:10]
@@ -11112,10 +11132,7 @@ def importar_conteo_cargar():
     saltados = 0
     for fila in filas:
         cod = (fila.get('codigo_real') or '').strip()
-        try:
-            cant = float(fila.get('cantidad') or 0)
-        except (ValueError, TypeError):
-            cant = 0
+        cant = _num_g(fila.get('cantidad'))   # robusto a '980g'/coma decimal (17-jun)
         if not cod or cant <= 0:
             saltados += 1
             continue

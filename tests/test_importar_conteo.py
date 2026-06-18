@@ -122,6 +122,37 @@ def test_mig264_myristoyl_en_catalogo(app, db_clean):
     assert n >= 1   # mig 264 lo dejó (rellenó MPMYRIH16 o creó MPMYRH16, o ya existía)
 
 
+def test_num_g_tolera_unidades_y_coma(app, db_clean):
+    """17-jun · el conteo físico trae cantidades como '980g' / '996,5g' · antes
+    float() fallaba → la fila se cargaba con 0 → se saltaba EN SILENCIO. _num_g las
+    parsea (clave para no perder filas al cargar el inventario real)."""
+    import sys
+    api = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'api')
+    if api not in sys.path:
+        sys.path.insert(0, api)
+    from blueprints.inventario import _num_g
+    assert _num_g('980g') == 980.0
+    assert _num_g('45 g') == 45.0
+    assert _num_g('996,5g') == 996.5      # coma decimal
+    assert _num_g('1.234,5') == 1234.5    # miles + decimal
+    assert _num_g(1217.52) == 1217.52
+    assert _num_g(None) == 0.0 and _num_g('') == 0.0 and _num_g('—') == 0.0
+
+
+def test_analizar_cantidad_con_unidad_es_cargable(app, db_clean):
+    """Una fila del Excel con cantidad '980g' debe quedar CARGABLE (no saltarse)."""
+    _seed_catalogo()
+    c = _login(app)
+    rows = [['MPCT01', 'HEXANEDIOL TEST', 'Hexanediol', 'L-UNIT', '980g', 50, 980, '', '', '', '', '']]
+    data = {'archivo': (io.BytesIO(_xlsx_bytes(rows)), 'conteo.xlsx')}
+    r = c.post('/api/inventario/importar-conteo/analizar', data=data,
+               content_type='multipart/form-data', headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    fila = r.get_json()['filas'][0]
+    assert fila['cantidad'] == 980.0, fila
+    assert fila['cargable'] is True, fila
+
+
 def test_importar_requiere_admin(app, db_clean):
     c = _login(app, 'valentina')
     r = c.post('/api/inventario/importar-conteo/analizar', data={}, headers=csrf_headers())
