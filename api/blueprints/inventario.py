@@ -10958,9 +10958,14 @@ def _resolver_codigo_mp_conteo(c, codigo, inci, comercial):
             e = _existe('MP' + cu[2:])
             if e:
                 return (e, 'corregido')
-    # por INCI exacto (normalizado)
+    # por INCI exacto (normalizado) · SALVO INCI genérico que NO identifica un material
+    # único (FIX 17-jun): PARFUM/AROMA/etc. los comparten TODAS las fragancias →
+    # el match por INCI agarraba el PRIMER código arbitrario (el pistacho caía en
+    # otra fragancia). Para esos, saltar INCI y resolver por nombre comercial.
+    _INCI_GENERICO_CONTEO = {'PARFUM', 'FRAGRANCE', 'AROMA', 'FLAVOR', 'PERFUME',
+                             'FRAGANCIA', 'AQUA', 'WATER'}
     ni = _norm_acentos(inci)
-    if ni:
+    if ni and ni not in _INCI_GENERICO_CONTEO:
         try:
             for r in c.execute("SELECT codigo_mp, nombre_inci FROM maestro_mps WHERE COALESCE(activo,1)=1").fetchall():
                 if _norm_acentos(r[1]) == ni:

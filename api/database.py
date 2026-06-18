@@ -352,6 +352,17 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (270, "Normalizar 3 typos de nombre en formula_items (17-jun · diagnóstico de cruce): "
+          "'Polyaguol Lw'→'Polyaquol LW' (MP00132), 'Phenoxyetanol'/'Fenoxietano'→'Fenoxietanol' "
+          "(MP00021). El código ya era correcto; solo el nombre de la línea estaba mal escrito "
+          "y disparaba MISMATCH_NOMBRE en el diagnóstico. Cosmético (no afecta descuento · la "
+          "identidad es el código). Idempotente.", [
+        "UPDATE formula_items SET material_nombre='Polyaquol LW' "
+        "WHERE UPPER(TRIM(material_nombre))='POLYAGUOL LW' AND UPPER(TRIM(material_id))='MP00132'",
+        "UPDATE formula_items SET material_nombre='Fenoxietanol' "
+        "WHERE UPPER(TRIM(material_nombre)) IN ('PHENOXYETANOL','FENOXIETANO') "
+        "AND UPPER(TRIM(material_id))='MP00021'",
+    ]),
     (269, "Consolidar duplicado del conservante Fenoxietanol+Etilhexilglicerina (17-jun · "
           "confirmado por Sebastián): el físico (SOLBROL PEH ~16.100g) se cargó por INCI bajo "
           "MPETHPHE01 (INCI 'ETHYLHEXYLGLYCERIN PHENOXYETHANOL', creado por mig 266) mientras "
