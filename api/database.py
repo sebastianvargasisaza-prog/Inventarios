@@ -352,6 +352,17 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (274, "Blush Balm canónico (18-jun · confirmado Sebastián + Excel): la mig 238 mapeó los 9 "
+          "SKUs de Shopify (BB101..BB801 + BBM) a 'Blush Balm' MINÚSCULA, pero esa fórmula está "
+          "activo=0/incompleta (17 MPs); la COMPLETA y activa es 'BLUSH BALM' MAYÚSCULA (21 MPs = "
+          "20 de la hoja Excel 'Blush Balm' + agua · verificado). Así las ventas caían en una "
+          "fórmula descontinuada mientras producción usa la mayúscula → demanda partida por case. "
+          "Re-apunta las ventas al canónico activo SOLO si 'BLUSH BALM' existe y está activo "
+          "(no destructivo · idempotente · no toca la fórmula minúscula que usa el seed de EBR).", [
+        "UPDATE sku_producto_map SET producto_nombre='BLUSH BALM' "
+        "WHERE producto_nombre='Blush Balm' "
+        "AND EXISTS (SELECT 1 FROM formula_headers WHERE producto_nombre='BLUSH BALM' AND COALESCE(activo,1)=1)",
+    ]),
     (273, "Alinear fórmulas al maestro · grado Centella + forma Vit E (18-jun · confirmado "
           "Sebastián · 'Centella es extracto, Vit E la del maestro'): (1) las fórmulas usaban "
           "MP00176 'Centella triterpenos 80%' pero el maestro usa MP00181 'Centella extract' → "
