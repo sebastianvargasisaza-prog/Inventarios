@@ -11803,9 +11803,19 @@ def _proyectar_horizonte_2y(conn, dias=730, usuario='auto-proyeccion', dry_run=F
             if d > 0:
                 stock -= demand_g
             if stock <= threshold_g:
-                upcoming = any(d < ad <= d + PIPELINE_LAG + 3 for ad in arrivals)
+                # NO pedir otro lote si YA hay uno en camino (cualquier llegada futura).
+                # Antes la ventana era d+PIPELINE_LAG+3: si los slots estaban llenos y el lote
+                # recién colocado se empujaba MÁS allá de esa ventana, la simulación no lo "veía"
+                # y colocaba un lote CADA día → sobre-proyección (lotes apilados al final). Con
+                # 'cualquier llegada futura' un producto espera a que llegue su lote en vuelo.
+                upcoming = any(ad > d for ad in arrivals)
                 if not upcoming:
                     prod_date = _tomar_slot(max(hoy + _td(days=1), hoy + _td(days=d)))
+                    # Guardrail de horizonte: si el ajuste a día hábil empujó el lote más
+                    # allá de los `dias` (2 años), no lo crees → la proyección queda
+                    # ESTRICTAMENTE dentro del horizonte (nunca lotes fuera de la ventana).
+                    if (prod_date - hoy).days > dias:
+                        break
                     arr = (prod_date - hoy).days + PIPELINE_LAG
                     arrivals[arr] = arrivals.get(arr, 0) + lote_g
                     obs = ("Proyección 2a · demanda " + format(demand_g, '.0f') + " g/d"

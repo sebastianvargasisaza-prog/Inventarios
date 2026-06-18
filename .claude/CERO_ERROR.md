@@ -334,6 +334,25 @@ contra el maestro. (4) **Pedí el dump SIN traducir** — el traductor del naveg
 (nombres "DE"→"Delaware", comas decimales, espacios en códigos) → no reconciliar sobre datos sucios.
 Pendiente durable: botón "reconciliar fórmulas vs maestro" (upload Excel → diff → corrige).
 
+## 🔭 M53 · Plan/Calendario/Abastecimiento/Factibilidad punta a punta (workflow 34 agentes) · 18-jun
+
+"Confirmar que son perfectos." Las 4 áreas volvieron SÓLIDAS (15 confirmaciones "✅ ninguno requerido":
+stock canónico, paridad de motores, prefer-Fijo dedup, M6 físico-vs-camino, resolver, %×kg×1000, Fijo intocable).
+**LECCIÓN ANTI-ALUCINACIÓN (refuerza la regla del ~50%):** el workflow marcó P0/P1 "el 2-año `_proyectar_horizonte_2y`
+carece del guard 'emite_uno' → encadena lotes a 2027" y "audit_log post-commit". **AMBOS FALSOS, verificados contra
+código real + empíricamente:** (1) `_proyectar_horizonte_2y` NO usa cadencia (como `_generar_plan_desde_hoy`) sino
+SIMULACIÓN DE AGOTAMIENTO día-a-día → es auto-limitante (test empírico: producto lento = 1 lote, no 110). El guard
+'emite_uno' es de otro algoritmo · aplicarlo a ciegas habría roto código correcto. (2) el `audit_log(c)` está ANTES
+del `conn.commit()` (atómico), no post-commit. **Varios agentes CONVERGIERON en la conclusión equivocada por
+pattern-matching entre dos funciones de nombre parecido pero algoritmo distinto.** Regla: ante un hallazgo de "le
+falta X que la función hermana sí tiene", verifica que AMBAS usan el mismo algoritmo antes de portar el fix.
+**Bug REAL encontrado (no el que decía el workflow):** bajo calendario CONGESTIONADO, `_proyectar_horizonte_2y`
+empujaba un lote recién colocado más allá de la ventana `upcoming` (d+10) → no lo "veía" como alivio en camino →
+colocaba un lote CADA día → sobre-proyección apilada al final del horizonte. Fix: `upcoming = any(ad > d)` (no pedir
+otro si YA hay uno en vuelo) + guardrail `if (prod_date-hoy).days > dias: break` (estrictamente dentro del horizonte).
+Test `test_proyeccion_no_pone_lotes_en_2027`. La proyección 2 años ahora es robusta; encenderla (proyeccion_auto)
+requiere además validar stock Shopify vs kardex en prod (no verificable local).
+
 ## 🫀 M52 · Verificación adversarial del corazón de planta (workflow 20 agentes) · 18-jun
 
 "Verificar paso a paso, área por área, sin romper." Workflow read-only por área (inventario MP, fórmulas→bodega,

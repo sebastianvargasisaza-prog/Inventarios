@@ -393,3 +393,37 @@ def test_proyeccion_no_toca_fijo_ni_ejecutado(app, db_clean):
         assert conn.execute("SELECT estado FROM produccion_programada WHERE id=?", (ejec,)).fetchone()[0] == 'en_proceso'
     finally:
         conn.close()
+
+
+def test_proyeccion_no_pone_lotes_en_2027(app, db_clean):
+    """BUG HISTÓRICO (16-jun · 'colocaba lotes en 2027'): verifica EMPÍRICAMENTE que la
+    proyección a 730d NO empuja lotes fuera del horizonte y que un producto de rotación
+    LENTA (1 lote cubre >horizonte) recibe POCOS lotes (la simulación de agotamiento es
+    auto-limitante · no encadena como la cadencia). Si esto pasa, la proyección es segura."""
+    _api()
+    from blueprints.plan import _proyectar_horizonte_2y
+    from database import get_db
+    # LENTO: 1 u/día × 30 g/u = 30 g/d ; lote 30kg = 30000 g → cubre ~1000 días > 730
+    _seed_producto(producto='LENTO 2A', sku='SKU-LENTO', vel=1, stock=0, lote_kg=30)
+    # RÁPIDO: 50 u/día → cadencia ~20 días → muchos lotes en 2 años
+    _seed_producto(producto='RAPIDO 2A', sku='SKU-RAPIDO', vel=50, stock=0, lote_kg=30)
+    # Determinismo en la suite completa: db_clean no resetea produccion_programada, así que
+    # otros tests dejan lotes que contaminan los slots. Neutralizamos lo pendiente.
+    _c = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    _c.execute("UPDATE produccion_programada SET estado='cancelado' "
+               "WHERE COALESCE(estado,'') NOT IN ('cancelado','completado') "
+               "AND producto NOT IN ('LENTO 2A','RAPIDO 2A')")
+    _c.commit(); _c.close()
+    with app.app_context():
+        _proyectar_horizonte_2y(get_db(), dias=730, usuario='test')
+    hoy = (_dt.datetime.utcnow() - _dt.timedelta(hours=5)).date()
+    tope = (hoy + _dt.timedelta(days=730)).isoformat()
+    lentos = _eos_proyeccion('LENTO 2A')
+    rapidos = _eos_proyeccion('RAPIDO 2A')
+    # (1) NINGÚN lote fuera del horizonte HOY..HOY+730 (el bug 2027)
+    for l in lentos + rapidos:
+        assert hoy.isoformat() <= l[1][:10] <= tope, f"lote fuera del horizonte (bug 2027): {l[1]}"
+    # (2) el LENTO recibe POCOS lotes (1 lote cubre >horizonte · auto-limitante)
+    assert len(lentos) <= 2, f"producto lento SOBRE-proyectado ({len(lentos)} lotes) · falta guard"
+    # (3) el RÁPIDO sí recibe varios (cadencia corta)
+    assert len(rapidos) >= 5, f"producto rápido sub-proyectado: {len(rapidos)}"
