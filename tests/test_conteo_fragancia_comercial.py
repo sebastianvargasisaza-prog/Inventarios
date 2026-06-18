@@ -39,6 +39,26 @@ def test_fragancia_resuelve_por_comercial(app, db_clean):
         conn.close()
 
 
+def test_blend_inci_orden_invertido_cruza(app, db_clean):
+    """Un blend con el INCI en distinto orden (y '(AND)') debe cruzar al código de
+    bodega (caso Solbrol/Biosure → MP00068). Antes daba 'sin match' tras desactivar
+    el duplicado."""
+    import sys
+    api = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'api')
+    if api not in sys.path:
+        sys.path.insert(0, api)
+    from blueprints.inventario import _resolver_codigo_mp_conteo
+    # INCI único (que no colisione con MP reales del seed) · blend de 2 componentes
+    _seed('MPBLEND01', 'Blend ZZ test', 'ZZALPHAGLYCOL (AND) ZZBETAPHENOL')
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    try:
+        # el conteo trae el INCI en orden invertido, sin '(AND)'
+        cod, how = _resolver_codigo_mp_conteo(conn, '', 'ZZBETAPHENOL ZZALPHAGLYCOL', 'otro nombre')
+        assert cod == 'MPBLEND01' and how == 'por_inci', f"blend debe cruzar por INCI ordenado · got {cod} ({how})"
+    finally:
+        conn.close()
+
+
 def test_inci_normal_sigue_por_inci(app, db_clean):
     """Un INCI específico (no genérico) sigue resolviendo por INCI."""
     import sys

@@ -10966,9 +10966,27 @@ def _resolver_codigo_mp_conteo(c, codigo, inci, comercial):
                              'FRAGANCIA', 'AQUA', 'WATER'}
     ni = _norm_acentos(inci)
     if ni and ni not in _INCI_GENERICO_CONTEO:
+        # FIX 17-jun · match por INCI EXACTO y también ORDER-INSENSITIVE: un blend
+        # multi-componente escrito en distinto orden ('ETHYLHEXYLGLYCERIN PHENOXYETHANOL'
+        # vs 'PHENOXYETHANOL (AND) ETHYLHEXYLGLYCERIN') debe cruzar igual al código de
+        # bodega (caso Biosure/Solbrol → MP00068). Usa formula_match.norm (quita parens/
+        # '(AND)') + tokens ordenados.
+        try:
+            from blueprints.formula_match import norm as _fnorm
+        except Exception:
+            try:
+                from api.blueprints.formula_match import norm as _fnorm
+            except Exception:
+                _fnorm = None
+        _ni_sorted = ' '.join(sorted(_fnorm(inci).split())) if _fnorm else ''
         try:
             for r in c.execute("SELECT codigo_mp, nombre_inci FROM maestro_mps WHERE COALESCE(activo,1)=1").fetchall():
                 if _norm_acentos(r[1]) == ni:
+                    return (r[0], 'por_inci')
+                # blend en distinto orden (>=2 tokens · evita falsos por INCI corto)
+                if (_fnorm and _ni_sorted and len(_ni_sorted) >= 8
+                        and len(_ni_sorted.split()) >= 2
+                        and ' '.join(sorted(_fnorm(r[1]).split())) == _ni_sorted):
                     return (r[0], 'por_inci')
         except Exception:
             pass
