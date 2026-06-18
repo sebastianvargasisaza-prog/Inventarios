@@ -11864,7 +11864,8 @@ def _generar_plan_desde_hoy(conn, dias=730, usuario='plan-manual', dry_run=False
     a_cancelar = c.execute(
         "SELECT COUNT(*) FROM produccion_programada "
         "WHERE COALESCE(estado,'') IN ('pendiente','programado','esperando_recurso') "
-        "AND COALESCE(origen,'')<>'eos_proyeccion'").fetchone()[0]
+        "AND COALESCE(origen,'') NOT IN ('eos_plan','eos_b2b','eos_retroactivo') "
+        "AND COALESCE(inicio_real_at,'')='' AND COALESCE(inventario_descontado_at,'')=''").fetchone()[0]
     a_cancelar_esp = c.execute(
         "SELECT COUNT(*) FROM produccion_programada WHERE estado='completado' "
         "AND (COALESCE(origen,'')='eos_retroactivo' OR COALESCE(observaciones,'') LIKE '%[fab#%')").fetchone()[0]
@@ -11876,13 +11877,14 @@ def _generar_plan_desde_hoy(conn, dias=730, usuario='plan-manual', dry_run=False
     c.execute("DELETE FROM produccion_programada WHERE origen='eos_proyeccion' "
               "AND COALESCE(estado,'') NOT IN ('completado','cancelado') "
               "AND fin_real_at IS NULL AND inicio_real_at IS NULL")
-    # FIX 17-jun (auditoría Planta · regla #3) · "Generar plan" reemplaza las cadenas
-    # eos_plan/sugeridas, pero NO debe cancelar compromisos B2B (eos_b2b = pedidos de
-    # clientes) ni nada YA ejecutado (inicio_real_at/inventario_descontado_at) — el
-    # regenerador solo recrea eos_plan, así que cancelar eos_b2b lo HARÍA DESAPARECER.
+    # FIX 18-jun (Sebastián: "debe preservar lo que Alejandro mueve a mano") · "Generar plan"
+    # SOLO recrea las SUGERIDAS automáticas; NUNCA toca lo FIJO (eos_plan = lo que Alejandro
+    # arrastró/editó · eos_b2b = pedidos de clientes · eos_retroactivo = histórico). El
+    # generador ahora crea 'eos_canonico' (Sugerido), así su propia salida sí se reemplaza pero
+    # las decisiones manuales sobreviven. Tampoco toca lo ya ejecutado.
     c.execute("UPDATE produccion_programada SET estado='cancelado' "
               "WHERE COALESCE(estado,'') IN ('pendiente','programado','esperando_recurso') "
-              "AND COALESCE(origen,'') <> 'eos_b2b' "
+              "AND COALESCE(origen,'') NOT IN ('eos_plan','eos_b2b','eos_retroactivo') "
               "AND COALESCE(inicio_real_at,'')='' AND COALESCE(inventario_descontado_at,'')=''")
     c.execute("UPDATE produccion_programada SET estado='cancelado' WHERE estado='completado' "
               "AND (COALESCE(origen,'')='eos_retroactivo' OR COALESCE(observaciones,'') LIKE '%[fab#%')")
@@ -11909,6 +11911,14 @@ def _generar_plan_desde_hoy(conn, dias=730, usuario='plan-manual', dry_run=False
         "SELECT spc.producto_nombre, fh.lote_size_kg FROM sku_planeacion_config spc "
         "LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(spc.producto_nombre)) "
         "WHERE spc.activo=1 ORDER BY spc.prioridad, spc.producto_nombre").fetchall()
+    # prefer-Fijo: NO autogenerar sugeridas para un producto que ya está FIJADO a mano en el
+    # horizonte (eos_plan/eos_b2b/eos_retroactivo) → respeta a Alejandro y evita duplicar.
+    _fijo_prods = set()
+    for (pn,) in c.execute(
+        "SELECT DISTINCT producto FROM produccion_programada "
+        "WHERE COALESCE(origen,'') IN ('eos_plan','eos_b2b','eos_retroactivo') "
+        "AND COALESCE(estado,'') NOT IN ('cancelado','completado')").fetchall():
+        _fijo_prods.add(_norm_prod_recon(pn))
     creados = 0
     productos = 0
     nuevos = []
@@ -11916,6 +11926,8 @@ def _generar_plan_desde_hoy(conn, dias=730, usuario='plan-manual', dry_run=False
     for producto, lote_kg in skus:
         if not lote_kg or float(lote_kg) <= 0:
             continue
+        if _norm_prod_recon(producto) in _fijo_prods:
+            continue  # ya fijado manualmente · no duplicar la sugerencia
         dsg = _ap._demanda_stock_gramos(c, producto)
         demand_g = dsg['demand_g']
         if demand_g <= 0.001:
@@ -11946,7 +11958,7 @@ def _generar_plan_desde_hoy(conn, dias=730, usuario='plan-manual', dry_run=False
     for producto, fiso, kg, cad, obs in nuevos:
         c.execute(
             "INSERT INTO produccion_programada (producto, fecha_programada, lotes, estado, "
-            "observaciones, origen, cantidad_kg, cadencia_dias) VALUES (?, ?, 1, 'pendiente', ?, 'eos_plan', ?, ?)",
+            "observaciones, origen, cantidad_kg, cadencia_dias) VALUES (?, ?, 1, 'pendiente', ?, 'eos_canonico', ?, ?)",
             (producto, fiso, obs, kg, cad))
     try:
         audit_log(c, usuario=usuario, accion='GENERAR_PLAN_DESDE_HOY', tabla='produccion_programada',

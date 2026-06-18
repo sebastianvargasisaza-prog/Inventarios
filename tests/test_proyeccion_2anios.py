@@ -272,33 +272,46 @@ def test_revisar_plan_detecta_vende_sin_plan(app, db_clean):
 
 
 def test_generar_plan_desde_hoy(app, db_clean):
-    """Botón PLAN: limpia y coloca cada producto DESDE HOY por cadencia (no 2027)."""
+    """Botón PLAN (18-jun · nueva conducta): recrea SUGERIDAS (eos_canonico) desde hoy y
+    PRESERVA lo FIJO a mano (eos_plan = lo que Alejandro mueve/hace). Sin duplicar."""
     _api()
     from blueprints.plan import _generar_plan_desde_hoy
     from database import get_db
     _seed_producto(producto='PLAN HOY', sku='SKU-PH', vel=10, lote_kg=30, stock=999)
-    # un pendiente viejo que debe limpiarse
     conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    # Determinismo en la suite completa: db_clean (SQLite) no resetea produccion_programada,
+    # así que el golden deja filas acumuladas. Como el botón nuevo PRESERVA Fijo, esas filas
+    # llenarían los slots cercanos. Neutralizamos lo pendiente antes de sembrar lo nuestro.
+    conn.execute("UPDATE produccion_programada SET estado='cancelado' "
+                 "WHERE COALESCE(estado,'') NOT IN ('cancelado','completado')")
     fut = ((_dt.datetime.utcnow() - _dt.timedelta(hours=5)).date() + _dt.timedelta(days=300)).isoformat()
+    # (a) una SUGERIDA vieja (eos_canonico) que SÍ debe limpiarse
     conn.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes) "
-                 "VALUES (?,?,?,?,?,1)", ('PLAN HOY', fut, 'pendiente', 'eos_plan', 30))
-    viejo = conn.execute("SELECT id FROM produccion_programada WHERE producto='PLAN HOY' AND fecha_programada=?", (fut,)).fetchone()[0]
+                 "VALUES (?,?,?,?,?,1)", ('PLAN HOY', fut, 'pendiente', 'eos_canonico', 30))
+    sug_viejo = conn.execute("SELECT id FROM produccion_programada WHERE producto='PLAN HOY' AND origen='eos_canonico'").fetchone()[0]
+    # (b) una FIJA a mano (eos_plan) de OTRO producto → debe SOBREVIVIR intacta
+    conn.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes) "
+                 "VALUES (?,?,?,?,?,1)", ('MANUAL PROD', fut, 'pendiente', 'eos_plan', 20))
+    fijo = conn.execute("SELECT id FROM produccion_programada WHERE producto='MANUAL PROD'").fetchone()[0]
     conn.commit(); conn.close()
     with app.app_context():
         res = _generar_plan_desde_hoy(get_db(), dias=200, usuario='test')
     assert res['creados'] >= 1 and res['productos'] >= 1
     conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
     try:
-        # el pendiente viejo quedó cancelado (se limpió)
-        assert conn.execute("SELECT estado FROM produccion_programada WHERE id=?", (viejo,)).fetchone()[0] == 'cancelado'
+        # la sugerida vieja quedó cancelada (se reemplaza)
+        assert conn.execute("SELECT estado FROM produccion_programada WHERE id=?", (sug_viejo,)).fetchone()[0] == 'cancelado'
+        # la FIJA a mano SOBREVIVE intacta (no la toca ningún automático)
+        f = conn.execute("SELECT estado, origen FROM produccion_programada WHERE id=?", (fijo,)).fetchone()
+        assert f[0] == 'pendiente' and f[1] == 'eos_plan', f"la fija a mano debe sobrevivir: {f}"
+        # el generador creó SUGERIDAS (eos_canonico) desde HOY
         lotes = conn.execute("SELECT substr(fecha_programada,1,10), origen, cadencia_dias FROM produccion_programada "
-                             "WHERE producto='PLAN HOY' AND origen='eos_plan' AND COALESCE(estado,'')='pendiente' "
+                             "WHERE producto='PLAN HOY' AND origen='eos_canonico' AND COALESCE(estado,'')='pendiente' "
                              "ORDER BY fecha_programada").fetchall()
         assert len(lotes) >= 1
         hoy = (_dt.datetime.utcnow() - _dt.timedelta(hours=5)).date().isoformat()
-        # el PRIMER lote arranca cerca de HOY (no en 2027)
         assert lotes[0][0] <= (_dt.date.fromisoformat(hoy) + _dt.timedelta(days=7)).isoformat()
-        assert all(l[1] == 'eos_plan' and l[2] and l[2] > 0 for l in lotes)
+        assert all(l[1] == 'eos_canonico' and l[2] and l[2] > 0 for l in lotes)
     finally:
         conn.close()
 
