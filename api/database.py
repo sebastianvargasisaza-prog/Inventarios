@@ -352,6 +352,27 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (275, "Cobertura de planeación a 2 años (18-jun · confirmado Sebastián): (1) AGREGA a "
+          "sku_planeacion_config toda fórmula ACTIVA (lote>0) que faltaba — quedaban 6 fuera "
+          "(BLUSH BALM, BOOSTER TENSOR, HYDRAPEPTIDE, HYDRA BALANCE, LIP SERUM VOLUMINIZADOR "
+          "PEPTIDOS, CREMA FACIAL UREA 10) → nunca se proyectaban. La cadencia real la calcula "
+          "el motor por velocidad; aquí solo entran al universo planeable. (2) DESACTIVA 8 "
+          "entradas huérfanas (productos descontinuados sin fórmula activa) para que no ensucien "
+          "ni se proyecten. Idempotente · no destructivo (solo activo/estado).", [
+        "INSERT INTO sku_planeacion_config (producto_nombre, categoria, cadencia_dias, prioridad, activo, estado, notas) "
+        "SELECT fh.producto_nombre, 'general', 30, 50, 1, 'activo', "
+        "'auto 18-jun · cobertura plan 2 años (cadencia la calcula el motor por velocidad)' "
+        "FROM formula_headers fh "
+        "WHERE COALESCE(fh.activo,1)=1 AND COALESCE(fh.lote_size_kg,0)>0 "
+        "AND UPPER(TRIM(fh.producto_nombre)) NOT IN (SELECT UPPER(TRIM(producto_nombre)) FROM sku_planeacion_config)",
+        "UPDATE sku_planeacion_config SET activo=0, estado='descontinuado', "
+        "razon_estado='auto 18-jun: sin fórmula activa' "
+        "WHERE producto_nombre IN ('SUERO ANTIOXIDANTE VITAMINA C+B3','EMULSION HIDRATANTE ANTIOXIDANTE',"
+        "'SUERO DE RETINALDEHIDO 0.05%','SUERO AZ + B3','Suero RETINAL +','CREMA DE UREA',"
+        "'ESENCIA ILUMINADORA','SUERO ILUMINADOR AHA+AH.') "
+        "AND COALESCE(activo,1)=1 "
+        "AND UPPER(TRIM(producto_nombre)) NOT IN (SELECT UPPER(TRIM(producto_nombre)) FROM formula_headers WHERE COALESCE(activo,1)=1)",
+    ]),
     (274, "Blush Balm canónico (18-jun · confirmado Sebastián + Excel): la mig 238 mapeó los 9 "
           "SKUs de Shopify (BB101..BB801 + BBM) a 'Blush Balm' MINÚSCULA, pero esa fórmula está "
           "activo=0/incompleta (17 MPs); la COMPLETA y activa es 'BLUSH BALM' MAYÚSCULA (21 MPs = "
