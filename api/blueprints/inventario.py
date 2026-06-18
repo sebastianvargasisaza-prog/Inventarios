@@ -2259,7 +2259,7 @@ def _handle_produccion_inner():
                                   COALESCE(SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END), 0) as stock_act
                            FROM maestro_mps mp
                            LEFT JOIN movimientos m ON m.material_id = mp.codigo_mp
-                             AND (m.estado_lote IS NULL OR m.estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO'))
+                             AND (m.estado_lote IS NULL OR UPPER(COALESCE(m.estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO'))
                            WHERE COALESCE(mp.activo,1)=1
                              AND mp.codigo_mp != ?
                              AND (LOWER(COALESCE(mp.nombre_comercial,'')) LIKE ?
@@ -2705,7 +2705,7 @@ def produccion_auditar_formulas_huerfanas():
                      SELECT lote, SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock_t
                      FROM movimientos
                      WHERE material_id=? AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
-                       AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO'))
+                       AND (estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO'))
                      GROUP BY lote HAVING stock_t > 0)""",
                 (mid,),
             ).fetchone()
@@ -2853,7 +2853,7 @@ def produccion_auto_reparar_formula(producto):
                      SELECT lote, SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock_t
                      FROM movimientos
                      WHERE material_id=? AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
-                       AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO'))
+                       AND (estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO'))
                      GROUP BY lote HAVING stock_t > 0)""",
                 (mid,),
             ).fetchone()
@@ -3810,7 +3810,7 @@ def get_analisis_abc():
         # MP path · LEFT JOIN desde maestro_mps + movimientos agregados
         cuarentena_filter = ""
         if excluir_cuarentena:
-            cuarentena_filter = " AND UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO')"
+            cuarentena_filter = " AND UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO')"
         # Stock agregado por material_id excluyendo cuarentena si aplica
         rows_stock = c.execute(
             f"""SELECT material_id,
@@ -4327,7 +4327,7 @@ def alertas_reabastecimiento():
                    FROM movimientos m
                    LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
                    WHERE m.estado_lote IS NULL
-                      OR UPPER(COALESCE(m.estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO')
+                      OR UPPER(COALESCE(m.estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO')
                    GROUP BY m.material_id
                  ) sub
                  WHERE stock_actual < stock_minimo AND stock_minimo > 0

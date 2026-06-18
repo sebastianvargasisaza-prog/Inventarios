@@ -1282,6 +1282,17 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
     except Exception:
         pass
 
+    # M16/M47 · paridad con abastecimiento_consumo_horizontes: excluir MP de fabricación
+    # propia/infinita por la columna controla_stock=0 (no solo por nombre · _is_unlimited_mp
+    # cubre 'agua' pero se le escaparía un controla_stock=0 con otro nombre → sobre-compra).
+    _no_controla = set()
+    try:
+        for (cod,) in conn.execute("SELECT UPPER(TRIM(codigo_mp)) FROM maestro_mps WHERE COALESCE(controla_stock,1)=0").fetchall():
+            if cod:
+                _no_controla.add(cod)
+    except Exception:
+        pass
+
     # Agregar necesidad por MP a través de TODAS las producciones
     mp_needed = {}  # mid → {nombre, total_g, productos, por_mes}
     for pr in producciones:
@@ -1309,7 +1320,7 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
                 g_need = (_pct / 100.0) * float(kg_ev or 0) * 1000.0
             if g_need <= 0 or not mid:
                 continue
-            if _is_unlimited_mp(nombre):
+            if _is_unlimited_mp(nombre) or (mid or '').upper() in _no_controla:
                 continue
             if mid not in mp_needed:
                 mp_needed[mid] = {

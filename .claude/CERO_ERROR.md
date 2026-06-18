@@ -334,6 +334,37 @@ contra el maestro. (4) **Pedí el dump SIN traducir** — el traductor del naveg
 (nombres "DE"→"Delaware", comas decimales, espacios en códigos) → no reconciliar sobre datos sucios.
 Pendiente durable: botón "reconciliar fórmulas vs maestro" (upload Excel → diff → corrige).
 
+## 🫀 M52 · Verificación adversarial del corazón de planta (workflow 20 agentes) · 18-jun
+
+"Verificar paso a paso, área por área, sin romper." Workflow read-only por área (inventario MP, fórmulas→bodega,
+consumos/demanda, solicitudes/OC, factibilidad) + verificación adversarial. **Las 5 áreas volvieron SÓLIDAS**
+(INV-1..6 de compras verificados, M6 físico-vs-camino correcto, stock canónico, M29 en las rutas principales).
+14 confirmados → verificados 1×1 contra código real. **LECCIÓN DURA (no romper por arreglar):** intenté aplicar el
+filtro M29 (activo=0) a TODA carga de formula_items, pero el golden `test_golden_brd_reconciliacion_pesajes_mp` se
+puso ROJO → el header `'Blush Balm'` está activo=0 en la BD migrada (descontinuado a favor de 'BLUSH BALM') pero el
+MBR/EBR seed usa 'Blush Balm' → mi filtro vació los teóricos del pesaje. **Regla refinada: el filtro activo=0 va SOLO
+en rutas de DEMANDA/PLANEACIÓN (no comprar/forecastear descontinuado), NUNCA en rutas de EJECUCIÓN (EBR/pesaje/MBR/
+rótulo) — un lote en curso usa SU fórmula comprometida sin importar que el header se descontinúe después.** (Mi check
+local de "0 colisiones" engañó: los .db locales tenían 'Blush Balm' activo=1, pero la BD migrada fresca lo tiene a 0.)
+- **Cluster M29 (filtro activo=0) REVERTIDO POR COMPLETO** tras la lección: ni ejecución ni planeación. Incluso la
+  vista de riesgo `_calcular_mp_requerido` se revirtió — si prod tiene producciones programadas de un header activo=0
+  (como 'Blush Balm'), filtrar subreportaría su demanda → posible sub-compra. El ÚNICO sitio donde el filtro activo=0
+  es confiable y está probado es `_handle_produccion_inner` (descuento de producción · fix original del dedup Blush
+  Balm minúscula vs mayúscula, estable). **No esparcir el filtro activo a otras rutas sin verificar el caso
+  header-descontinuado-con-formula-comprometida.** El verdadero arreglo de 'Blush Balm' es de DATOS (unificar la
+  grafía / migrar producciones a 'BLUSH BALM' activo=1) — pendiente, NO de código.
+- **Drift de exclusión de estado_lote (M1/M23):** `auditar_minimos` (faltaba BLOQUEADO), `excel_inventario` (faltaban
+  VENCIDO/AGOTADO/BLOQUEADO), 3× cálculos de stock por lote (excluían solo 3 estados sin UPPER). Alineados a los 6
+  estados con `UPPER(COALESCE(estado_lote,''))`. Regla: cualquier filtro de stock usable excluye los MISMOS 6 con UPPER.
+- **Paridad de los dos motores de demanda (M16/M47 · tarea #4):** `_compute_mp_deficit_aggregated` excluía MP infinita
+  solo por nombre (`_is_unlimited_mp`=agua); ahora TAMBIÉN por `controla_stock=0` (columna), igual que
+  `abastecimiento_consumo_horizontes` → un MP controla_stock=0 con otro nombre ya no se sobre-compra en un motor.
+NO tocados por decisión (no romper por arreglar): **`_generar_plan_desde_hoy` (plan.py:11851)** cancela todo salvo
+eos_b2b — contradice la regla Fijo pero es una decisión DELIBERADA documentada (FIX 17-jun: "Generar plan" regenera
+las cadenas eos_plan); cambiarlo podría duplicar/romper la regeneración → **decisión de producto de Sebastián**.
+`admin_consolidar_producto` (copia de fórmula al fusionar duplicados · filtrar activo rompería el merge) y
+`_get_formulas` (helper canónico, blast radius amplio, P2) → flageados, no tocados.
+
 ## 🩺 M51 · Barrido "qué más está dañado" (workflow 53 agentes) · 18-jun
 
 Tras M49/M50, barrido adversarial de todo el sistema. 32 candidatos confirmados → verificados
