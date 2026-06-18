@@ -4464,7 +4464,11 @@ def get_lotes():
     conn = get_db(); c = conn.cursor()
 
     # Construir query con filtros opcionales
-    sql = """SELECT m.material_id, MAX(m.material_nombre) as material_nombre, m.lote,
+    # FIX 17-jun (Sebastián) · DISPLAY = INCI, NUNCA comercial. El nombre mostrado
+    # del material sale del INCI del maestro (identidad sigue siendo el código);
+    # fallback al código si el INCI está vacío. El nombre_comercial queda en la BD
+    # solo para que Compras matchee con el proveedor, pero no se muestra en Bodega.
+    sql = """SELECT m.material_id, COALESCE(NULLIF(TRIM(MAX(mp.nombre_inci)),''), m.material_id) as material_nombre, m.lote,
                         SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END) as stock_neto,
                         MAX(m.fecha_vencimiento) as fecha_vencimiento,
                         MAX(m.estanteria) as estanteria, MAX(m.posicion) as posicion,
