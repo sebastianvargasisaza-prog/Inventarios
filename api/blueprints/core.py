@@ -1664,11 +1664,23 @@ def compras():
         return Response(sin_acceso, mimetype='text/html')
     usuario = username.capitalize()
     es_contadora = 'true' if username in CONTADORA_USERS else 'false'
-    es_admin = 'true' if (username or '').lower() in {x.lower() for x in ADMIN_USERS} else 'false'
+    _u_low = (username or '').lower()
+    _es_admin_b = _u_low in {x.lower() for x in ADMIN_USERS}
+    es_admin = 'true' if _es_admin_b else 'false'
+    # es_autorizador: quién puede AUTORIZAR OCs en la UI = admin O autorizador explícito
+    # (Catalina · OC_AUTORIZA_USERS). Antes los botones de autorizar se gateaban con !ES_C,
+    # lo que OCULTABA el botón a Catalina (es contadora) aunque el backend SÍ la deja → era
+    # cuello de botella en admins. Ahora la UI coincide con _require_authorize_oc.
+    try:
+        from config import OC_AUTORIZA_USERS as _OCA
+    except Exception:
+        _OCA = set()
+    es_autorizador = 'true' if (_es_admin_b or _u_low in {x.lower() for x in _OCA}) else 'false'
     html = (COMPRAS_HTML
             .replace('{usuario}', usuario)
             .replace('{es_contadora}', es_contadora)
-            .replace('{es_admin}', es_admin))
+            .replace('{es_admin}', es_admin)
+            .replace('{es_autorizador}', es_autorizador))
     resp = Response(html, mimetype='text/html; charset=utf-8')
     resp.headers['Content-Type'] = 'text/html; charset=utf-8'
     return resp

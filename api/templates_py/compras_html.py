@@ -1417,6 +1417,9 @@ var OCS = [];
 var PROVS = [];
 var ES_C = {es_contadora};
 var ES_ADMIN = {es_admin};
+// es_autorizador: puede AUTORIZAR OCs (admin o Catalina · OC_AUTORIZA_USERS). Reemplaza el
+// gate viejo !ES_C que ocultaba el botón a Catalina (es contadora pero SÍ autoriza).
+var ES_AUTORIZA = {es_autorizador};
 // Sebastián 21-may-2026 · mostrar [data-admin-only] solo a admins (Influencers)
 if(ES_ADMIN){
   document.addEventListener('DOMContentLoaded',function(){
@@ -2673,7 +2676,7 @@ function miniCard(o){
   // Sebastian (29-abr-2026): admin puede autorizar directo desde Borrador
   // (skip "Revisada" cuando es Sebastian/admin creando OC manual). El endpoint
   // /autorizar acepta cualquier estado, lo unico que faltaba era el boton.
-  if((o.estado==='Borrador'||o.estado==='Revisada')&&!ES_C) btns+='<button class="btn bi bs" data-act="aut" data-oc="'+esc(o.numero_oc)+'">Autorizar</button>';
+  if((o.estado==='Borrador'||o.estado==='Revisada')&&ES_AUTORIZA) btns+='<button class="btn bi bs" data-act="aut" data-oc="'+esc(o.numero_oc)+'">Autorizar</button>';
   if(o.estado==='Autorizada'&&!ES_C) btns+='<button class="btn bg bs" data-act="pago" data-oc="'+esc(o.numero_oc)+'" data-val="'+parseFloat(o.valor_total||0)+'" data-prov="'+esc(o.proveedor||'')+'">Pagar</button>';
   return '<div class="card" style="margin-bottom:8px;">'+
     '<div class="ch"><div><div class="cnum">'+esc(o.numero_oc)+'</div><div class="cprov">'+esc(o.proveedor||'-')+'</div></div>'+badge(o.estado)+'</div>'+
@@ -2709,7 +2712,7 @@ function renderCat(grp){
 function fullCard(o,grp){
   var btns='<button class="btn bo bs" data-act="det" data-oc="'+esc(o.numero_oc)+'">&#128203; Ver</button>';
   if(o.estado==='Borrador'&&ES_C) btns+='<button class="btn bw bs" data-act="rev" data-oc="'+esc(o.numero_oc)+'" data-prov="'+esc(o.proveedor||'')+'" data-val="'+parseFloat(o.valor_total||0)+'" data-obs="'+esc((o.observaciones||'').substring(0,80))+'">Revisar &amp; Asignar</button>';
-  if(o.estado==='Revisada'&&!ES_C) btns+='<button class="btn bi bs" data-act="aut" data-oc="'+esc(o.numero_oc)+'">Autorizar</button>';
+  if((o.estado==='Revisada'||o.estado==='Borrador')&&ES_AUTORIZA) btns+='<button class="btn bi bs" data-act="aut" data-oc="'+esc(o.numero_oc)+'">Autorizar</button>';
   if(o.estado==='Autorizada'&&!ES_C) btns+='<button class="btn bg bs" data-act="pago" data-oc="'+esc(o.numero_oc)+'" data-val="'+parseFloat(o.valor_total||0)+'" data-prov="'+esc(o.proveedor||'')+'">Registrar Pago</button>';
   var _effGrp=grp==='ocs'?(Object.keys(CMAP).find(function(k){return inGroup(o.categoria,k);})||'svc'):grp;
   if(o.estado==='Pagada'&&!ES_C&&(_effGrp==='mp'||_effGrp==='mee')) btns+='<button class="btn bo bs" data-act="rec" data-oc="'+esc(o.numero_oc)+'">Marcar Recibida</button>';
@@ -4059,6 +4062,12 @@ async function confirmarRev(){
 // ─── Autorizar (abre modal con opcion rechazar) ───────────────────
 function autorizarOC(num){
   var oc=OCS.find(function(o){ return o.numero_oc===num; })||{};
+  // Fallback: si se autoriza desde la vista agrupada, OCS puede no tener la OC → busca en
+  // _consolCache para mostrar proveedor/valor en el modal (la autorización funciona igual).
+  if(!oc.numero_oc && typeof _consolCache!=='undefined'){
+    (_consolCache||[]).forEach(function(p){ (p.ocs||[]).forEach(function(o){
+      if(o.numero_oc===num) oc={numero_oc:num, proveedor:p.proveedor, valor_total:o.valor_total||p.valor_total}; }); });
+  }
   document.getElementById('aut-num').value=num;
   document.getElementById('aut-motivo').value='';
   document.getElementById('m-aut-info').innerHTML=
@@ -4094,6 +4103,8 @@ async function decidirOC(decision){
   closeModal('m-aut');
   await loadData();
   renderDash();
+  // refrescar la vista agrupada por proveedor si está activa (autorizar desde ahí · 18-jun)
+  if(typeof loadConsolidado==='function'){ try{ await loadConsolidado(); }catch(e){} }
 }
 
 function openPago(num,val,prov){
@@ -4797,7 +4808,7 @@ async function openOCDetail(num){
     h+='</div>';
     body.innerHTML=h;
     var fbtns='<button class="btn bo" onclick="_ocDetClose()">Cerrar</button>';
-    if(o.estado==='Revisada'&&!ES_C) fbtns+='<button class="btn bi" onclick="_ocDetAut()">Autorizar / Rechazar</button>';
+    if((o.estado==='Revisada'||o.estado==='Borrador')&&ES_AUTORIZA) fbtns+='<button class="btn bi" onclick="_ocDetAut()">Autorizar / Rechazar</button>';
     if(o.estado==='Autorizada'&&!ES_C) fbtns+='<button class="btn bg" onclick="_ocDetPago()">Registrar Pago</button>';
     if(o.estado==='Borrador'&&ES_C) fbtns+='<button class="btn bw" onclick="_ocDetRev()">Revisar &amp; Asignar</button>';
     footer.innerHTML=fbtns;
@@ -7312,6 +7323,13 @@ function renderConsolCard(p, idx){
       +'<div style="display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap;">'
         +'<button class="btn" data-consol-idx="'+idx+'" onclick="toggleConsolEdit(parseInt(this.dataset.consolIdx))"'
           +' style="padding:8px 14px;font-size:12px;white-space:nowrap;background:#7c3aed;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;">&#x270F;&#xFE0F; Editar</button>'
+        // Autorizar (Sebastián 18-jun): faltaba aquí · una OC en Borrador/Revisada no se podía
+        // recepcionar porque nadie la autorizaba desde esta vista. Visible solo a autorizadores
+        // (admin/Catalina · ES_AUTORIZA). Un botón por cada OC del grupo que lo necesite.
+        +(ES_AUTORIZA ? (p.ocs||[]).filter(function(o){ return o.estado==='Borrador'||o.estado==='Revisada'; }).map(function(o){
+            return '<button class="btn" data-aut-oc="'+esc(o.numero_oc)+'" onclick="autorizarOC(this.dataset.autOc)"'
+              +' style="padding:8px 14px;font-size:12px;white-space:nowrap;background:#16a34a;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;" title="Autorizar para poder recepcionar">&#10003; Autorizar '+esc(o.numero_oc)+'</button>';
+          }).join('') : '')
         +'<button class="btn" data-consol-idx="'+idx+'" onclick="copiarPedido(parseInt(this.dataset.consolIdx))"'
           +' style="padding:8px 14px;font-size:12px;white-space:nowrap;background:#3b82f6;border-radius:8px;">&#x1F4CB; Copiar</button>'
         +'<button class="btn bp" data-print-idx="'+idx+'" onclick="imprimirPedido(parseInt(this.dataset.printIdx))"'
