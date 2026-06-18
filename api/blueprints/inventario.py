@@ -12625,12 +12625,19 @@ def envasado_detalle(eid):
         } for r in mee_rows]
     except Exception:
         mee_movs = []
-    # Costo estimado MEE
+    # Costo estimado MEE · 18-jun: maestro_mee NO tiene precio_unitario (la columna nunca
+    # existió → el costo salía SIEMPRE 0). El precio real del envase está en la ÚLTIMA OC de
+    # MEE de ese código (ordenes_compra_items.codigo_mp = código MEE · mismo linkage que usa
+    # la recepción). Lo leemos al vuelo → costo siempre actualizado, sin columna que se desfase.
     costo_total = 0.0
     for m in mee_movs:
         try:
             pr_row = c.execute(
-                "SELECT COALESCE(precio_unitario, 0) FROM maestro_mee WHERE codigo=?",
+                "SELECT oi.precio_unitario FROM ordenes_compra_items oi "
+                "JOIN ordenes_compra o ON o.numero_oc = oi.numero_oc "
+                "WHERE UPPER(TRIM(oi.codigo_mp)) = UPPER(TRIM(?)) "
+                "AND COALESCE(oi.precio_unitario,0) > 0 "
+                "ORDER BY o.fecha DESC LIMIT 1",
                 (m['codigo'],),
             ).fetchone()
             if pr_row and pr_row[0]:

@@ -352,6 +352,15 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (277, "Limpieza de duplicados en formula_items (18-jun): si una fórmula tenía dos filas del "
+          "MISMO (producto, material) el motor las sumaba (la dedup en lectura M51 ya lo neutraliza, "
+          "pero lectores directos como el pesaje EBR las verían 2×). Borra los duplicados dejando "
+          "UNA fila por (producto_nombre, material_id) — la de id más reciente. Idempotente "
+          "(sin duplicados es no-op). NO se agrega UNIQUE duro: rompería el guardado de fórmula si "
+          "el usuario mete el mismo material 2 veces · la dedup en lectura es el guard permanente.", [
+        "DELETE FROM formula_items WHERE id NOT IN "
+        "(SELECT MAX(id) FROM formula_items GROUP BY producto_nombre, material_id)",
+    ]),
     (276, "Encender la proyección automática a 2 años (18-jun · Sebastián 'dale a todo'): tras "
           "robustecer _proyectar_horizonte_2y (guard estricto de horizonte + no-pedir-otro-lote-"
           "si-ya-hay-uno-en-vuelo → ya NO pone lotes en 2027) y corregir la velocidad de productos "

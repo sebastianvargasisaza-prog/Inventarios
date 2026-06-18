@@ -348,6 +348,12 @@ Cierre de pendientes de Planta ("dale a todo menos Part 11"):
 - **prefer-Fijo en `regenerar_canonicos` y `generar_plan_perfecto`:** ambos generadores ahora SALTAN productos
   ya fijados a mano (eos_plan/eos_b2b/eos_retroactivo) en el horizonte → no duplican lo de Alejandro (igual que
   `_generar_plan_desde_hoy`). Regla: TODO generador de Sugeridas hace prefer-Fijo skip.
+- **formula_items dedup (mig 277):** había 1 duplicado real (mismo producto+material). Limpieza dejando la fila de
+  id más reciente. **NO se agregó UNIQUE duro a propósito** (rompería el guardado si el usuario mete el mismo material
+  2× · los paths de guardado borran-antes-de-insertar salvo consolidar) → la dedup en lectura (M51) es el guard permanente.
+- **Costo MEE en envasado:** `maestro_mee.precio_unitario` NUNCA existió → el costo salía SIEMPRE 0. Fix: leer el
+  precio al vuelo desde la ÚLTIMA OC de MEE del código (ordenes_compra_items.codigo_mp = código MEE · mismo linkage
+  que la recepción) → costo real y siempre al día, sin columna que se desfase.
 
 ## 🔭 M53 · Plan/Calendario/Abastecimiento/Factibilidad punta a punta (workflow 34 agentes) · 18-jun
 
