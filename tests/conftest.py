@@ -203,6 +203,18 @@ def app(test_workspace):
 
     from index import app as flask_app
     flask_app.config["TESTING"] = True
+    # Batch Record VISIBLE en tests: la funcionalidad EBR/MBR/legajos se prueba con el flag
+    # encendido. En prod queda OCULTO por defecto (app_settings.brd_visible ausente) hasta
+    # la validación Part 11 (Sebastián 18-jun). Test específico del gate: test_brd_oculto.
+    try:
+        import sqlite3 as _sqi
+        _cc = _sqi.connect(os.environ["DB_PATH"])
+        _cc.execute("INSERT INTO app_settings (clave, valor) SELECT 'brd_visible','1' "
+                    "WHERE NOT EXISTS (SELECT 1 FROM app_settings WHERE clave='brd_visible')")
+        _cc.execute("UPDATE app_settings SET valor='1' WHERE clave='brd_visible'")
+        _cc.commit(); _cc.close()
+    except Exception:
+        pass
     yield flask_app
 
 

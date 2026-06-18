@@ -515,7 +515,19 @@ def inventarios():
     usuario = session.get('compras_user', '').capitalize()
     from config import ADMIN_USERS
     es_admin = 'true' if session.get('compras_user','') in ADMIN_USERS else 'false'
-    html = DASHBOARD_HTML.replace('{usuario}', usuario).replace('{es_admin}', es_admin)
+    # Batch Record (EBR/MBR) oculto hasta validación Part 11 (Sebastián 18-jun): ocultar las
+    # secciones inline de crear-MBR y correr-legajos. Reversible vía app_settings.brd_visible='1'.
+    _brd_vis = False
+    try:
+        from database import get_db as _gdb
+        _r = _gdb().execute("SELECT valor FROM app_settings WHERE clave='brd_visible' LIMIT 1").fetchone()
+        _brd_vis = bool(_r) and str(_r[0]).strip().lower() in ('1', 'true', 'yes', 'si', 'sí', 'on')
+    except Exception:
+        _brd_vis = False
+    brd_hide_css = '' if _brd_vis else '<style>#mbr-secciones,#ebr-seccion{display:none!important;}</style>'
+    html = (DASHBOARD_HTML.replace('{usuario}', usuario)
+            .replace('{es_admin}', es_admin)
+            .replace('{brd_hide_css}', brd_hide_css))
     resp = Response(html, mimetype='text/html; charset=utf-8')
     resp.headers['Content-Type'] = 'text/html; charset=utf-8'
     return resp

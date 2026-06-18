@@ -52,6 +52,51 @@ from audit_helpers import audit_log
 bp = Blueprint("brd", __name__)
 log = logging.getLogger("brd")
 
+
+def _brd_visible(conn=None):
+    """¿El sistema de Batch Record (EBR/MBR/legajos) está VISIBLE para uso?
+
+    Sebastián 18-jun: el batch record digital requiere la validación de un tercero
+    (21 CFR Part 11) antes de usarse en regulado · se deja OCULTO hasta entonces.
+    Gobernado por app_settings.brd_visible (default OCULTO · se enciende poniéndolo
+    en '1' cuando Part 11 esté lista · sin redeploy). NO borra nada · es reversible."""
+    try:
+        c = conn or get_db()
+        r = c.execute("SELECT valor FROM app_settings WHERE clave='brd_visible' LIMIT 1").fetchone()
+        return bool(r) and str(r[0]).strip().lower() in ('1', 'true', 'yes', 'si', 'sí', 'on')
+    except Exception:
+        return False  # ante la duda, OCULTO (seguro · no exponer regulado sin validar)
+
+
+_BRD_OCULTO_HTML = (
+    "<!doctype html><html lang='es'><head><meta charset='utf-8'><title>Módulo en validación</title>"
+    "<style>body{font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;display:flex;"
+    "align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px}"
+    ".c{background:#1e293b;border:1px solid #334155;border-radius:16px;padding:40px;max-width:520px;text-align:center}"
+    "h2{color:#a78bfa;margin:0 0 12px}p{color:#94a3b8;line-height:1.5;margin:0 0 18px}"
+    "a{display:inline-block;background:#7c3aed;color:#fff;text-decoration:none;padding:10px 24px;border-radius:8px;font-weight:700}</style>"
+    "</head><body><div class='c'><div style='font-size:46px;margin-bottom:8px'>&#128272;</div>"
+    "<h2>Batch Record · en validación</h2>"
+    "<p>El registro digital de lote (EBR/MBR · GMP) está <b>oculto temporalmente</b> hasta completar "
+    "la validación por un tercero (21 CFR Part 11). El resto de Planta funciona normal.</p>"
+    "<a href='/planta'>&larr; Volver a Planta</a></div></body></html>"
+)
+
+
+@bp.before_request
+def _gate_brd_pages():
+    """Oculta las PÁGINAS del batch record (no las APIs · /api/brd/* siguen vivas para que
+    el historial de producción del dashboard no se rompa) hasta que Part 11 esté lista."""
+    try:
+        p = request.path or ''
+    except Exception:
+        return None
+    if p.startswith('/api/'):
+        return None
+    if _brd_visible():
+        return None
+    return Response(_BRD_OCULTO_HTML, mimetype='text/html; charset=utf-8')
+
 # Despeje de Línea · Dispensación (MyBatch estación ②) · checklist GMP canónico.
 # Sebastián 5-jun-2026: estas 13 verificaciones son el SOP de despeje de línea
 # (no son datos inventados, son los controles regulatorios estándar). El CUMPLE

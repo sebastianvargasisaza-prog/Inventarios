@@ -137,6 +137,7 @@ label { font-weight:600; font-size:0.88em; color:var(--cx-text-soft); }
 .msg.bot { background:white; border:1px solid #ddd; }
 h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700; letter-spacing:-0.3px; }
 </style>
+{brd_hide_css}
 </head>
 <body>
 <div id="modal-operador" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.82);z-index:9999;display:none;align-items:center;justify-content:center;">
