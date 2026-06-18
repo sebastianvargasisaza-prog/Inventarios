@@ -6716,6 +6716,14 @@ async function openSolicitudDetail(num){
     if(s.aprobado_por) h+='<span><span style="color:#78716c;">Gestionado por:</span> <strong>'+esc(s.aprobado_por)+'</strong></span>';
     if(s.fecha_requerida) h+='<span><span style="color:#78716c;">Fecha req:</span> <strong>'+esc(s.fecha_requerida)+'</strong></span>';
     h+='</div>';
+    // Detalle/justificación de la solicitud (la nota que escribió el solicitante · 18-jun:
+    // antes el modal no la mostraba → Catalina no veía QUÉ se pide). No se muestra si las
+    // observaciones son metadatos de pago (BANCO:...) · eso va en el resumen de pago abajo.
+    if(s.observaciones && s.observaciones.indexOf('BANCO:')<0){
+      h+='<div style="margin-bottom:16px;background:#f8fafc;border-left:3px solid #1F5F5B;border-radius:6px;padding:12px 14px;">';
+      h+='<div style="font-size:10px;color:#1F5F5B;text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px;">&#x1F4DD; Detalle de la solicitud</div>';
+      h+='<div style="font-size:13px;color:#44403c;white-space:pre-wrap;">'+esc(s.observaciones)+'</div></div>';
+    }
     // ── Payment summary for non-pending solicitudes ──
     if(s.estado!=='Pendiente'&&s.observaciones&&s.observaciones.indexOf('BANCO:')>=0){
       var _obs=s.observaciones;
@@ -6900,18 +6908,36 @@ async function openSolicitudDetail(num){
       // Los precios se editan inline en cada item de la tabla.
       // Esto elimina la duplicación que tenía el modal antes.
       h+='<div style="margin-top:16px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:14px;">';
+      // Sebastián 18-jun: una SOL del módulo (sin OC con proveedor confirmado) no tenía dónde
+      // asignar proveedor ni datos de OC → Catalina solo podía aprobar a ciegas ('Por definir',
+      // $0). Ahora, si no hay proveedor confirmado arriba, mostramos los CAMPOS DE LA OC aquí
+      // (proveedor + valor + fecha entrega), que gestionarSol envía con crear_oc → la OC nace
+      // completa, tipo orden de compra como todas. Si ya hay OC con proveedor, van ocultos.
+      var _tieneProvOC = !!(provName && oc);
+      if(!_tieneProvOC){
+        h+='<div style="font-weight:800;font-size:11px;color:#92400e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">&#x1F9FE; Datos de la orden de compra</div>';
+        h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">';
+        h+='<div style="grid-column:span 2;"><label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:4px;">Proveedor</label>';
+        h+='<input id="sol-prov-sel" list="prov-dl-sol" placeholder="Escribe o elige el proveedor..." style="width:100%;padding:8px 12px;border:1px solid #fcd34d;border-radius:6px;font-size:13px;">';
+        h+='<datalist id="prov-dl-sol">'; PROVS.forEach(function(p){ h+='<option value="'+esc(p.nombre)+'">'; }); h+='</datalist></div>';
+        h+='<div><label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:4px;">Valor total estimado ($)</label>';
+        h+='<input id="sol-valor" type="number" min="0" step="1000" placeholder="0" style="width:100%;padding:8px 12px;border:1px solid #fcd34d;border-radius:6px;font-size:13px;"></div>';
+        h+='<div><label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:4px;">Fecha entrega estimada</label>';
+        h+='<input id="sol-fent" type="date" style="width:100%;padding:8px 12px;border:1px solid #fcd34d;border-radius:6px;font-size:13px;"></div>';
+        h+='</div>';
+      }
       h+='<div class="fg" style="margin-bottom:0;"><label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:4px;">Motivo / Comentario (opcional)</label>';
       h+='<textarea id="sol-motivo" placeholder="Comentario al aprobar o motivo del rechazo..." rows="2" style="width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;resize:vertical;"></textarea></div>';
-      // Hidden state — los pickers que ya no existen visualmente quedan
-      // vacíos para que _solDetApr() use los defaults (proveedor de la OC,
-      // valor calculado de items, sin fecha entrega).
       h+='<input type="hidden" id="sol-det-num" value="'+esc(s.numero||num)+'">';
       h+='<input type="hidden" id="sol-det-cat" value="'+esc(s.categoria||'MP')+'">';
       h+='<input type="hidden" id="sol-det-area" value="'+esc(s.area||'')+'">';
-      h+='<input type="hidden" id="sol-prov-sel" value="">';
       h+='<input type="hidden" id="sol-tercero-txt" value="">';
-      h+='<input type="hidden" id="sol-valor" value="0">';
-      h+='<input type="hidden" id="sol-fent" value="">';
+      // Si ya hay proveedor confirmado en la card de arriba, estos van ocultos (se usan los de arriba).
+      if(_tieneProvOC){
+        h+='<input type="hidden" id="sol-prov-sel" value="">';
+        h+='<input type="hidden" id="sol-valor" value="0">';
+        h+='<input type="hidden" id="sol-fent" value="">';
+      }
       h+='</div>';
     }
     h+='</div>';
