@@ -19052,7 +19052,10 @@ def planta_plan_semanal():
             """, (sku,)).fetchone() if False else None  # legacy, may not exist
             # Stock PT
             sp = c.execute(
-                "SELECT COALESCE(SUM(unidades_disponible),0) FROM stock_pt WHERE sku=?",
+                # estado='Disponible' (igual que el resto del codebase): sin esto el SUM
+                # contaba las filas 'Ajustado' (carga previa invalidada en 2229 sin zerear
+                # unidades) → doble conteo → dias_inventario_pt inflado.
+                "SELECT COALESCE(SUM(unidades_disponible),0) FROM stock_pt WHERE sku=? AND estado='Disponible'",
                 (sku,)
             ).fetchone()
             if sp:

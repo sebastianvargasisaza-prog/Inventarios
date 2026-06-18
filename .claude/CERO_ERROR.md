@@ -370,6 +370,11 @@ sin `NOT IN activo=0` (fh ya filtra `activo=1` y · verificado · ningún nombre
   reventaban en prod PG (o no se ejecutaban). **Fix portable en AMBOS motores: `CASE WHEN x-? < 0 THEN
   0 ELSE x-? END`** (ojo: duplica el placeholder → duplicar el parámetro en la tupla). Regla: nunca
   `MAX/MIN` de 2+ args en SQL que corre en PG; usa `CASE WHEN` (o `GREATEST/LEAST` solo si pg-only).
+- **stock_pt SUM sin `estado='Disponible'` → doble conteo:** la carga inicial invalida la fila previa
+  marcándola `estado='Ajustado'` PERO sin zerear `unidades_disponible` (programacion.py:2229). Un SUM
+  que no filtre estado cuenta la fila vieja + la nueva → `dias_inventario_pt` inflado. Todo el resto
+  del codebase ya filtra `estado='Disponible'`; faltaba en programacion.py:19055. **Regla: cualquier
+  agregado sobre `stock_pt` lleva `estado='Disponible'` (las 'Ajustado'/'Agotado' son histórico).**
 Tests `test_barrido_dano_18jun.py`.
 
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
