@@ -5017,6 +5017,61 @@ def plan_diag_plan_90d():
     })
 
 
+@bp.route("/api/plan/diag-mp/<codigo>", methods=["GET"])
+def plan_diag_mp(codigo):
+    """DIAGNÓSTICO (solo lectura) · 18-jun · desglosa CÓMO se computa el consumo a 90d de
+    UN MP: por cada producto que lo usa, cuántas FILAS de formula_items tiene (si >1 =
+    duplicado que el motor suma), el % (suma de filas vs máx), cuántos lotes hay
+    programados y la contribución en gramos. Pin-pointea la inflación (duplicado vs % alto
+    vs muchos lotes)."""
+    if not session.get("compras_user"):
+        return jsonify({"error": "login requerido"}), 401
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+    conn = get_db(); c = conn.cursor()
+    cod = (codigo or "").strip().upper()
+    hoy = (_dt.now(_tz.utc) - _td(hours=5)).date()
+    cutoff = (hoy + _td(days=90)).isoformat()
+    # filas de formula_items que referencian este MP, por producto
+    items = c.execute(
+        """SELECT UPPER(TRIM(producto_nombre)), COUNT(*) AS n_filas,
+                  ROUND(SUM(COALESCE(porcentaje,0)),4) AS sum_pct,
+                  ROUND(MAX(COALESCE(porcentaje,0)),4) AS max_pct,
+                  ROUND(SUM(COALESCE(cantidad_g_por_lote,0)),2) AS sum_g
+           FROM formula_items WHERE UPPER(TRIM(material_id))=?
+           GROUP BY UPPER(TRIM(producto_nombre))""", (cod,)
+    ).fetchall()
+    # lotes programados 90d por producto (eos_plan etc · no cancelado/completado/descontado)
+    plan = c.execute(
+        """SELECT UPPER(TRIM(producto)), COUNT(*), COALESCE(SUM(COALESCE(cantidad_kg,0)),0)
+           FROM produccion_programada
+           WHERE LOWER(COALESCE(estado,'')) NOT IN ('completado','cancelado')
+             AND COALESCE(inventario_descontado_at,'') = ''
+             AND fecha_programada >= ? AND fecha_programada <= ?
+           GROUP BY UPPER(TRIM(producto))""", (hoy.isoformat(), cutoff)
+    ).fetchall()
+    plan_map = {r[0]: {"lotes": int(r[1]), "kg_total": round(float(r[2] or 0), 1)} for r in plan}
+    out = []
+    total = 0.0
+    for p, n_filas, sum_pct, max_pct, sum_g in items:
+        pl = plan_map.get(p)
+        if not pl:
+            continue
+        kg = pl["kg_total"]
+        # MISMA cuenta que abastecimiento (suma de TODAS las filas pct × kg × 1000)
+        cons = (float(sum_pct or 0) / 100.0) * kg * 1000.0
+        total += cons
+        out.append({
+            "producto": p, "n_filas_formula": int(n_filas),
+            "sum_pct": sum_pct, "max_pct": max_pct, "sum_g_por_lote": sum_g,
+            "lotes_90d": pl["lotes"], "kg_90d": kg,
+            "consumo_g_90d": round(cons, 1),
+            "DUPLICADO": int(n_filas) > 1,
+        })
+    out.sort(key=lambda x: -x["consumo_g_90d"])
+    return jsonify({"mp": cod, "consumo_total_estimado_g": round(total, 1),
+                    "por_producto": out})
+
+
 _FACTIBILIDAD_PLAN_HTML = """<!doctype html>
 <html lang="es-CO"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
