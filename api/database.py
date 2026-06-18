@@ -352,6 +352,19 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (271, "Bridge Vit E hidrosoluble MP00440→MP00079 (17-jun · confirmado Sebastián): "
+          "la fórmula ANIMUSLASH usa MP00440 ('Vit E hidrosoluble') pero el físico del "
+          "polvo hidrosoluble (2.850g · TOCOPHERYL ACETATE) entró bajo MP00079 ('Vit E polvo'). "
+          "Son el MISMO polvo hidrosoluble en dos códigos. Bridge para que ANIMUSLASH vea el "
+          "stock. NO toca la Vit E líquida liposoluble (MP00078, queda aparte · formas distintas). "
+          "Reversible (activo=0). Idempotente.", [
+        "INSERT INTO mp_formula_bridge (formula_material_id, formula_material_nombre, "
+        "bodega_material_id, bodega_material_nombre, bodega_inci, notas, activo) "
+        "SELECT 'MP00440','Vit E hidrosoluble (fórmula)','MP00079','Vitamina E polvo','TOCOPHEROL',"
+        "'17-jun · mismo polvo hidrosoluble · físico (2850g) entró bajo MP00079 · NO es la líquida MP00078',1 "
+        "WHERE NOT EXISTS (SELECT 1 FROM mp_formula_bridge "
+        "WHERE formula_material_id='MP00440' AND bodega_material_id='MP00079')",
+    ]),
     (270, "Normalizar 3 typos de nombre en formula_items (17-jun · diagnóstico de cruce): "
           "'Polyaguol Lw'→'Polyaquol LW' (MP00132), 'Phenoxyetanol'/'Fenoxietano'→'Fenoxietanol' "
           "(MP00021). El código ya era correcto; solo el nombre de la línea estaba mal escrito "
