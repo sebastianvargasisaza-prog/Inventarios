@@ -334,6 +334,24 @@ contra el maestro. (4) **Pedí el dump SIN traducir** — el traductor del naveg
 (nombres "DE"→"Delaware", comas decimales, espacios en códigos) → no reconciliar sobre datos sucios.
 Pendiente durable: botón "reconciliar fórmulas vs maestro" (upload Excel → diff → corrige).
 
+## 📦 M55 · Abastecimiento de ENVASES (MEE) unificado en producto_presentaciones · 18-jun
+
+Sebastián: "revisemos de dónde saca qué envase pertenece a qué producción · falta resolver envases."
+**Causa raíz:** había DOS fuentes de mapeo envase↔producto desconectadas — el DESCUENTO usaba
+`producto_presentaciones` (producto → volumen + envase, con UI en Planta›Configuración›Presentaciones),
+pero el ABASTECIMIENTO usaba `sku_mee_config` (por SKU · VACÍA: 0/35 productos mapeados) → el consumo de
+envases daba **0 para todo, en silencio** (M5: número mostrado ≠ realidad). Por eso "no funcionaba".
+**Fix (unificar la fuente · decisión Sebastián):** `abastecimiento_consumo_horizontes` ahora deriva los
+envases de `producto_presentaciones` (la MISMA que el descuento) — cada presentación aporta su envase con
+peso = share de ventas (`ventas_mes_referencia`) → reparte las unidades del producto entre presentaciones
+sin doble-contar. El VOLUMEN también cae a presentaciones si no hay `volumen_unitario_producto`. **Clave
+`_norm_prod` (M13)** en el build Y el lookup (antes el build keyeaba UPPER/TRIM y el lookup _norm_prod →
+mismatch latente con acentos). Resultado: lo que se COMPRA == lo que se DESCUENTA. Endpoint diagnóstico
+`/api/abastecimiento/envases-cobertura` (productos activos sin presentación+envase). `producciones_faltantes`
+(endpoint legacy) sigue en sku_mee_config — no se tocó (no es regresión · misma fuente vacía de antes).
+Regla: **el envase de un producto SIEMPRE sale de producto_presentaciones · una sola fuente para compra y
+descuento.** Tests `test_envases_abastecimiento.py`.
+
 ## 🚀 M54 · Encender proyección 2 años + velocidad de productos nuevos + prefer-Fijo en generadores · 18-jun
 
 Cierre de pendientes de Planta ("dale a todo menos Part 11"):

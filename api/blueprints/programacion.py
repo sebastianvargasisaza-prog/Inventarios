@@ -10684,6 +10684,44 @@ def limpiar_duplicados_producciones():
     }), 200
 
 
+@bp.route('/api/abastecimiento/envases-cobertura', methods=['GET'])
+def abastecimiento_envases_cobertura():
+    """Diagnóstico (read-only · 18-jun): ¿qué productos activos NO tienen presentación+envase?
+    El abastecimiento de envases sale de producto_presentaciones (producto → volumen + envase).
+    Un producto sin esa config → su consumo de envases es 0 (no se planea/compra su empaque).
+    Lista los que faltan para que se configuren en Planta › Configuración › 📦 Presentaciones."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    import unicodedata as _u, re as _r
+    def _nz(s):
+        n = _u.normalize('NFKD', str(s or '')).encode('ascii', 'ignore').decode().upper()
+        return _r.sub(r'[^A-Z0-9]+', ' ', n).strip()
+    activos = {}
+    for (pn,) in c.execute("SELECT producto_nombre FROM formula_headers "
+                           "WHERE COALESCE(activo,1)=1 AND COALESCE(lote_size_kg,0)>0").fetchall():
+        activos[_nz(pn)] = pn
+    con_env = {}  # norm -> [envases]
+    try:
+        for (pn, env, vol) in c.execute(
+            "SELECT producto_nombre, COALESCE(envase_codigo,''), COALESCE(volumen_ml,0) "
+            "FROM producto_presentaciones "
+            "WHERE COALESCE(activo,1)=1 AND COALESCE(envase_codigo,'')<>'' AND COALESCE(volumen_ml,0)>0").fetchall():
+            con_env.setdefault(_nz(pn), []).append({'envase': env, 'volumen_ml': vol})
+    except Exception:
+        pass
+    sin_config = sorted(activos[k] for k in activos if k not in con_env)
+    ok = [{'producto': activos[k], 'presentaciones': con_env[k]} for k in activos if k in con_env]
+    return jsonify({
+        'n_activos': len(activos),
+        'n_con_envase': len(ok),
+        'n_sin_envase': len(sin_config),
+        'sin_envase': sin_config,        # productos que NO se planearán sus envases (configurar)
+        'con_envase': sorted(ok, key=lambda x: x['producto']),
+        'donde_configurar': 'Planta › Configuración › 📦 Presentaciones',
+    })
+
+
 @bp.route('/api/abastecimiento/consumo-horizontes', methods=['GET'])
 def abastecimiento_consumo_horizontes():
     """MRP por múltiples horizontes · consumo de MP/MEE según producciones Fijas
@@ -10938,12 +10976,60 @@ def abastecimiento_consumo_horizontes():
         for sku_u, mees in sku_to_mee.items():
             if sku_u not in mee_por_producto:
                 mee_por_producto[sku_u] = mees
+        # PRIMARIO (18-jun · Sebastián · unificar fuente con el descuento): los envases por
+        # producto salen de producto_presentaciones (MISMA fuente que _composicion_envases_lote),
+        # no de sku_mee_config (que estaba vacía → envase abastecimiento daba 0). Cada presentación
+        # aporta su envase con peso = su share de ventas (ventas_mes_referencia) → reparte las
+        # unidades del producto entre sus presentaciones sin doble-contar. Clave _norm_prod (M13)
+        # para que el lookup del loop la encuentre. OVERRIDE de lo SKU-based (presentaciones manda).
+        try:
+            _pres_envases = {}
+            for r in c.execute("""
+                SELECT producto_nombre, COALESCE(envase_codigo,''), COALESCE(ventas_mes_referencia,0)
+                FROM producto_presentaciones
+                WHERE COALESCE(activo,1)=1 AND COALESCE(envase_codigo,'')<>'' AND COALESCE(volumen_ml,0)>0
+            """).fetchall():
+                _pres_envases.setdefault(_norm_prod(r[0]), []).append(
+                    {'env': (r[1] or '').strip().upper(), 'vmr': float(r[2] or 0)})
+            for _k, _lst in _pres_envases.items():
+                _tot_vmr = sum(x['vmr'] for x in _lst)
+                mee_por_producto[_k] = [
+                    {'codigo': x['env'],
+                     'cant_x_uds': (x['vmr'] / _tot_vmr) if _tot_vmr > 0 else (1.0 / len(_lst)),
+                     'tipo': 'envase'}
+                    for x in _lst]
+        except sqlite3.OperationalError:
+            pass
+        # Volumen por unidad (necesario para convertir kg→unidades→envases). Clave _norm_prod
+        # (M13) para que el lookup del loop la encuentre (antes UPPER/TRIM → fallaba con acentos).
         try:
             for r in c.execute("""
-                SELECT UPPER(TRIM(producto_nombre)), COALESCE(volumen_ml,0)
+                SELECT producto_nombre, COALESCE(volumen_ml,0)
                 FROM volumen_unitario_producto WHERE COALESCE(activo,1)=1
             """).fetchall():
-                volumen_por_producto[r[0]] = float(r[1] or 0)
+                if float(r[1] or 0) > 0:
+                    volumen_por_producto[_norm_prod(r[0])] = float(r[1] or 0)
+        except sqlite3.OperationalError:
+            pass
+        # Fallback de volumen desde producto_presentaciones (unificado · misma fuente que los
+        # envases y el descuento): volumen ponderado por ventas. Solo para productos que NO
+        # tienen volumen_unitario_producto → así un producto con presentaciones pero sin esa
+        # tabla igual computa unidades (y por ende consumo de envases).
+        try:
+            _vol_pres = {}
+            for r in c.execute("""
+                SELECT producto_nombre, COALESCE(volumen_ml,0), COALESCE(ventas_mes_referencia,0)
+                FROM producto_presentaciones
+                WHERE COALESCE(activo,1)=1 AND COALESCE(volumen_ml,0)>0
+            """).fetchall():
+                _vol_pres.setdefault(_norm_prod(r[0]), []).append((float(r[1]), float(r[2] or 0)))
+            for _k, _lst in _vol_pres.items():
+                if _k in volumen_por_producto:
+                    continue  # volumen_unitario_producto manda
+                _tw = sum(w for _, w in _lst)
+                _vol = (sum(v * w for v, w in _lst) / _tw) if _tw > 0 else (sum(v for v, _ in _lst) / len(_lst))
+                if _vol > 0:
+                    volumen_por_producto[_k] = _vol
         except sqlite3.OperationalError:
             pass
 
