@@ -4363,7 +4363,10 @@ def alertas_reabastecimiento():
                       COALESCE(SUM(oci.cantidad_g - COALESCE(oci.cantidad_recibida_g,0)), 0)
                FROM ordenes_compra_items oci
                JOIN ordenes_compra oc ON oc.numero_oc = oci.numero_oc
-               WHERE oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')
+               WHERE (
+                       oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')
+                    OR (oc.estado='Pagada' AND COALESCE(oc.fecha_recepcion,'')='')
+                 )
                  AND oci.codigo_mp IS NOT NULL AND TRIM(oci.codigo_mp) != ''
                GROUP BY oci.codigo_mp"""
         ).fetchall():

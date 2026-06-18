@@ -1125,7 +1125,10 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
     except Exception:
         pass
 
-    today = _dt.date.today()
+    # FIX 17-jun (M24): "hoy" anclado en Colombia (NO date.today() UTC, que de
+    # noche en el server de Render salta a mañana → excluiría las producciones de
+    # HOY del cálculo de compra → sub-compra). Igual que abastecimiento_consumo_horizontes.
+    today = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(hours=5)).date()
     cutoff = today + _dt.timedelta(days=days_ahead)
 
     # Tokens que no son SKUs en títulos del calendario
@@ -1155,6 +1158,12 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
 
     producciones = []
     seen_events = set()
+    # FIX 17-jun · dedup CRUZADO calendario↔produccion_programada por
+    # (producto_normalizado, fecha): una producción espejada de Google Calendar a
+    # produccion_programada se contaba 2 veces (las llaves de dedup eran distintas:
+    # titulo vs producto). Registramos el (prod_norm, fecha) que ya aportó el
+    # calendario para que el loop de DB local NO lo vuelva a sumar.
+    cal_prod_dates = set()
 
     # Calendario
     for ev in events:
@@ -1182,6 +1191,7 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
                     'fecha': fecha_s, 'mes': fecha.strftime('%Y-%m'),
                     'producto': prod, 'kg': kg or formulas[prod]['lote_size_kg'],
                 })
+                cal_prod_dates.add((_norm_prod_fuerte(prod), fecha_s))
                 break
 
     # produccion_programada (DB local) — complementa el calendario
@@ -1190,9 +1200,16 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
     # programación difiere por acento/'+'/paréntesis del nombre de la fórmula, igual cruza.
     _norm_to_prod = {_norm_prod_fuerte(p): p for p in formulas.keys()}
     try:
+        # FIX 17-jun · alinear al motor verificado abastecimiento_consumo_horizontes:
+        #  (1) excluir 'esperando_recurso' (lote pausado por falta de MP · contarlo
+        #      es circular) y los lotes con inventario ya descontado (su MP YA bajó
+        #      del stock · contarlos = DOBLE conteo → sobre-compra).
+        #  (2) traer cantidad_kg para respetar los kg editados por el usuario.
         local_rows = conn.execute(
-            """SELECT producto, fecha_programada, lotes FROM produccion_programada
-               WHERE estado NOT IN ('completado','cancelado')
+            """SELECT producto, fecha_programada, lotes, COALESCE(cantidad_kg, 0)
+               FROM produccion_programada
+               WHERE LOWER(COALESCE(estado,'')) NOT IN ('completado','cancelado','esperando_recurso')
+                 AND COALESCE(inventario_descontado_at,'') = ''
                  AND fecha_programada >= date('now', '-5 hours', '-7 days')
                  AND fecha_programada <= ?
                ORDER BY fecha_programada""",
@@ -1202,10 +1219,15 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
             prod_raw = (row[0] or '').strip()
             fecha_s = (row[1] or '').strip()
             lotes = int(row[2] or 1)
+            cant_kg = float(row[3] or 0)
             prod = (prod_raw if prod_raw in formulas
                     else _upper_to_prod.get(prod_raw.upper())
                     or _norm_to_prod.get(_norm_prod_fuerte(prod_raw)))
             if not prod or not fecha_s:
+                continue
+            # dedup CRUZADO: si el calendario ya aportó este producto+fecha, no
+            # lo dupliques (el espejo GCal→produccion_programada es la misma prod).
+            if (_norm_prod_fuerte(prod), fecha_s) in cal_prod_dates:
                 continue
             key = (prod, fecha_s)
             if key in seen_events:
@@ -1215,10 +1237,12 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
                 fecha = _dt.date.fromisoformat(fecha_s)
             except ValueError:
                 continue
+            # kg reales: prioriza cantidad_kg editada; fallback lote_size × lotes
             lote_kg = formulas[prod]['lote_size_kg']
+            kg_real = cant_kg if cant_kg > 0 else lote_kg * lotes
             producciones.append({
                 'fecha': fecha_s, 'mes': fecha.strftime('%Y-%m'),
-                'producto': prod, 'kg': lote_kg * lotes,
+                'producto': prod, 'kg': kg_real,
             })
     except Exception:
         pass
@@ -10686,8 +10710,11 @@ def abastecimiento_consumo_horizontes():
     if solo_fijo:
         origenes_in = ('eos_plan', 'eos_b2b', 'eos_retroactivo')
     else:
+        # FIX 17-jun · incluir 'eos_proyeccion' (plan rodante 2 años · M42): el
+        # calendario lo MUESTRA pero Abastecimiento no lo contaba → compraba para un
+        # plan distinto al visible. Dentro del horizonte ya acotado por cutoff_max.
         origenes_in = ('eos_plan', 'eos_b2b', 'eos_retroactivo',
-                        'eos_canonico', 'auto_plan', 'sugerido')
+                        'eos_canonico', 'auto_plan', 'sugerido', 'eos_proyeccion')
     placeholders = ','.join(['?'] * len(origenes_in))
     # Sebastián 25-may-2026 PM · incluir envase_codigo_override (mig 184).
     # Si el lote tiene override no vacío, el cálculo MEE prioriza ese envase
@@ -10945,7 +10972,10 @@ def abastecimiento_consumo_horizontes():
             FROM ordenes_compra_items oci
             JOIN ordenes_compra oc ON oc.numero_oc = oci.numero_oc
             LEFT JOIN solicitudes_compra sc ON sc.numero_oc = oc.numero_oc
-            WHERE oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')
+            WHERE (
+                    oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')
+                 OR (oc.estado='Pagada' AND COALESCE(oc.fecha_recepcion,'')='')
+              )
               AND oci.codigo_mp IS NOT NULL AND TRIM(oci.codigo_mp) != ''
               AND COALESCE(sc.categoria,'') NOT IN ('Empaque','Material de Empaque')
             GROUP BY UPPER(TRIM(oci.codigo_mp))
@@ -10984,7 +11014,10 @@ def abastecimiento_consumo_horizontes():
             FROM ordenes_compra_items oci
             JOIN ordenes_compra oc ON oc.numero_oc = oci.numero_oc
             LEFT JOIN solicitudes_compra sc ON sc.numero_oc = oc.numero_oc
-            WHERE oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')
+            WHERE (
+                    oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')
+                 OR (oc.estado='Pagada' AND COALESCE(oc.fecha_recepcion,'')='')
+              )
               AND oci.codigo_mp IS NOT NULL AND TRIM(oci.codigo_mp) != ''
         """).fetchall():
             solicitudes_en_curso.setdefault(r[0], []).append({
@@ -11021,7 +11054,10 @@ def abastecimiento_consumo_horizontes():
                 FROM ordenes_compra_items oci
                 JOIN ordenes_compra oc ON oc.numero_oc = oci.numero_oc
                 LEFT JOIN solicitudes_compra sc ON sc.numero_oc = oc.numero_oc
-                WHERE oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')
+                WHERE (
+                        oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')
+                     OR (oc.estado='Pagada' AND COALESCE(oc.fecha_recepcion,'')='')
+                  )
                   AND oci.codigo_mp IS NOT NULL AND TRIM(oci.codigo_mp) != ''
                   AND COALESCE(sc.categoria,'') IN ('Empaque','Material de Empaque')
                 GROUP BY UPPER(TRIM(oci.codigo_mp))

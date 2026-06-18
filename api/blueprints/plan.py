@@ -4648,7 +4648,10 @@ def plan_factibilidad():
                    COALESCE(SUM(oci.cantidad_g - COALESCE(oci.cantidad_recibida_g,0)),0)
             FROM ordenes_compra_items oci
             JOIN ordenes_compra oc ON oc.numero_oc = oci.numero_oc
-            WHERE oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')
+            WHERE (
+                    oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')
+                 OR (oc.estado='Pagada' AND COALESCE(oc.fecha_recepcion,'')='')
+              )
               AND oci.codigo_mp IS NOT NULL AND TRIM(oci.codigo_mp) != ''
             GROUP BY UPPER(TRIM(oci.codigo_mp)), COALESCE(oc.fecha_entrega_est,'')
         """).fetchall():
@@ -4764,6 +4767,14 @@ def plan_factibilidad():
     # Así un lote del 10-jun ve el stock ya consumido por los del 5-jun
     # MÁS las OC que llegaron entre 5-jun y 10-jun.
     stock = dict(mp_stock_g)
+    # FIX 17-jun (M6 · FÍSICO vs EN-CAMINO): `stock_fisico` simula SOLO con lo que
+    # hay en bodega HOY (no suma SOL/OC pendientes ni arribos) → responde "¿puedo
+    # hacerlo YA?". `stock` mantiene el simulado con compras en camino → "¿podré
+    # cuando llegue lo pedido?". Antes solo existía el mixto: un producto factible
+    # solo gracias a una compra en vuelo se veía idéntico a uno con stock físico
+    # → confundía (factibilidad decía "sí" mientras bodega tenía 2.4 g · caso
+    # Suero Multipéptidos · regla M6: físico y en-camino van SEPARADOS).
+    stock_fisico = dict(mp_stock_g)
     # Stock inicial incluye pendientes sin fecha (SOL en proceso + OC sin
     # fecha conocida · asumimos "ya disponibles" sin compromiso temporal).
     for mid, cant in pendientes_compras.items():
@@ -4801,7 +4812,9 @@ def plan_factibilidad():
     for _f_iso, _prio, ev in eventos:
         ev_tipo = ev[0]
         if ev_tipo == 'OC':
-            # Llegó OC · suma al stock antes de procesar producciones del día
+            # Llegó OC · suma al stock simulado (en-camino) antes de procesar las
+            # producciones del día. NO toca stock_fisico (un arribo de OC es
+            # compra en camino, no inventario físico de hoy · M6).
             mids = ev[1]
             for mid, cant in mids.items():
                 stock[mid] = stock.get(mid, 0.0) + float(cant or 0)
@@ -4832,6 +4845,7 @@ def plan_factibilidad():
                 "id": fid, "producto": prod, "fecha": fecha,
                 "cantidad_kg": round(float(cant_kg or 0), 1),
                 "factible": None, "sin_formula": True, "mps_faltantes": [],
+                "factible_fisico": None, "solo_con_compras": False, "mps_en_camino": [],
                 "origen": origen_v,
                 "atrasada": atrasada, "dias_atraso": dias_atraso,
             })
@@ -4860,6 +4874,7 @@ def plan_factibilidad():
             necesidad_total[mid] = necesidad_total.get(mid, 0.0) + need
             nombre_mp[mid] = it["material_nombre"]
         faltantes = []
+        faltantes_fisico = []   # M6 · faltantes contra SOLO el stock físico de hoy
         for mid, mnom, need in req:
             disp = stock.get(mid, 0.0)
             if need - disp > 0.01:
@@ -4869,7 +4884,20 @@ def plan_factibilidad():
                     "disponible_g": round(max(disp, 0.0), 1),
                     "faltante_g": round(need - disp, 1),
                 })
+            disp_f = stock_fisico.get(mid, 0.0)
+            if need - disp_f > 0.01:
+                faltantes_fisico.append({
+                    "material_id": mid, "material_nombre": mnom,
+                    "necesario_g": round(need, 1),
+                    "disponible_g": round(max(disp_f, 0.0), 1),
+                    "faltante_g": round(need - disp_f, 1),
+                })
         factible = len(faltantes) == 0
+        factible_fisico = len(faltantes_fisico) == 0
+        # MPs que SOLO se cubren con compras en camino (faltan en físico pero NO en
+        # el simulado con pendientes) → la dependencia que "engaña" el veredicto.
+        _falt_total_ids = {f["material_id"] for f in faltantes}
+        mps_en_camino = [f for f in faltantes_fisico if f["material_id"] not in _falt_total_ids]
         # F5 · consumir stock SIEMPRE (factible o bloqueada) · si A bloquea
         # MP-X, B que la comparte tampoco la tiene en su fecha posterior.
         # FIX 1-jun-2026 audit Abastecimiento (P1-2) · NO clavar en 0: arrastrar el
@@ -4879,11 +4907,15 @@ def plan_factibilidad():
         # max(disp,0) arriba (4747), así que el negativo no se muestra como stock.
         for mid, _mnom, need in req:
             stock[mid] = stock.get(mid, 0.0) - need
+            stock_fisico[mid] = stock_fisico.get(mid, 0.0) - need   # M6 · consumir de ambos
         producciones.append({
             "id": fid, "producto": prod, "fecha": fecha,
             "cantidad_kg": round(float(cant_kg or 0), 1),
             "factible": factible, "sin_formula": False,
+            "factible_fisico": factible_fisico,
+            "solo_con_compras": bool(factible and not factible_fisico),
             "mps_faltantes": faltantes,
+            "mps_en_camino": mps_en_camino,
             "origen": origen_v,
             "atrasada": atrasada, "dias_atraso": dias_atraso,
         })
@@ -4924,6 +4956,9 @@ def plan_factibilidad():
 
     n_fact = sum(1 for p in producciones if p["factible"] is True)
     n_bloq = sum(1 for p in producciones if p["factible"] is False)
+    # M6 · factibles SOLO gracias a compras en camino (físicamente NO alcanzan hoy)
+    n_solo_compras = sum(1 for p in producciones if p.get("solo_con_compras"))
+    n_fact_fisico = sum(1 for p in producciones if p.get("factible_fisico") is True)
     return jsonify({
         "horizonte_dias": dias,
         "solo_fijo": solo_fijo,
@@ -4931,6 +4966,8 @@ def plan_factibilidad():
         "resumen": {
             "total": len(producciones),
             "factibles": n_fact,
+            "factibles_fisico": n_fact_fisico,
+            "solo_con_compras": n_solo_compras,
             "bloqueadas": n_bloq,
             "sin_formula": sin_formula,
             "descontinuados_excluidos": descontinuados_n,
@@ -4962,6 +4999,7 @@ _FACTIBILIDAD_PLAN_HTML = """<!doctype html>
   .pill{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;}
   .pill.ok{background:#1f3b27;color:#3fb950;}
   .pill.bloq{background:#3d1f1f;color:#f85149;}
+  .pill.esp{background:#3a2f12;color:#d99a2b;}
   .pill.sf{background:#2a2a2a;color:#8b949e;}
   .falta{color:#f85149;font-size:12px;}
   #err{color:#f85149;margin:8px 0;}
@@ -4996,16 +5034,28 @@ function render(d){
   var s=d.resumen||{};
   document.getElementById('cards').innerHTML=
     card(s.total,'producciones','gris')+
-    card(s.factibles,'factibles','verde')+
+    card(s.factibles_fisico,'factibles HOY (stock fisico)','verde')+
+    ((s.solo_con_compras||0)?card(s.solo_con_compras,'solo si llega lo pedido','ama'):'')+
     card(s.bloqueadas,'bloqueadas','rojo')+
     card(s.mps_a_comprar,'MP a comprar','ama')+
     (s.sin_formula?card(s.sin_formula,'sin formula','gris'):'');
   var tb=document.querySelector('#tprod tbody');
   tb.innerHTML=(d.producciones||[]).map(function(p){
-    var pill=p.sin_formula?'<span class="pill sf">sin formula</span>':
-      (p.factible?'<span class="pill ok">factible</span>':'<span class="pill bloq">bloqueada</span>');
+    // M6 · 3 estados: bloqueada (ni con compras) · espera-compra (factible solo
+    // cuando llegue lo pedido · OJO: hoy NO alcanza) · factible HOY (stock fisico).
+    var pill;
+    if(p.sin_formula){ pill='<span class="pill sf">sin formula</span>'; }
+    else if(!p.factible){ pill='<span class="pill bloq">bloqueada</span>'; }
+    else if(p.solo_con_compras){ pill='<span class="pill esp">&#128666; espera compra</span>'; }
+    else { pill='<span class="pill ok">factible HOY</span>'; }
     var falta=(p.mps_faltantes||[]).map(function(m){
       return esc(m.material_nombre)+' (falta '+fmt(m.faltante_g)+' g)';}).join('<br>');
+    // si es factible solo con compras, mostrar QUE MP esta en camino (no alcanza fisico)
+    if(p.solo_con_compras && (p.mps_en_camino||[]).length){
+      falta='<span style="color:#b45309">&#128666; HOY no alcanza · espera: '+
+        (p.mps_en_camino||[]).map(function(m){
+          return esc(m.material_nombre)+' (faltan '+fmt(m.faltante_g)+' g)';}).join(', ')+'</span>';
+    }
     return '<tr><td>'+esc(p.producto)+'</td><td>'+esc(p.fecha)+'</td><td>'+
       (p.cantidad_kg||0)+' kg</td><td>'+pill+'</td><td class="falta">'+falta+'</td></tr>';
   }).join('')||'<tr><td colspan="5" class="gris">No hay producciones programadas en el horizonte</td></tr>';

@@ -352,6 +352,28 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (268, "Confirmaciones de Alejandro + tamaño de lote Triactive (17-jun · datos): "
+          "(1) INCI Vitamina E = TOCOPHEROL para MP00078 (líquida) y MP00079 (polvo) "
+          "— Alejandro: ambas son tocoferol, solo cambia la forma física, mismo INCI. "
+          "(2) Descontinuar SUERO TRIACTIVE RETINOID NAD+ (la versión de 49 ítems con "
+          "códigos legacy) — la vigente es NAD (40 ítems). activo=0, NO borra (GMP). "
+          "(3) Rebasear la fórmula NAD a lote de 15 kg (su batch real · venía cargada "
+          "como piloto de 0.2 kg): lote_size_kg=15 + cantidad_g_por_lote = % × 150 "
+          "(el % se mantiene idéntico · g = pct/100 × 15kg × 1000). Idempotente "
+          "(re-correr da el mismo valor · usa el % como fuente de verdad). PG-safe.", [
+        # (1) Vit E → TOCOPHEROL (ambas formas comparten INCI)
+        "UPDATE maestro_mps SET nombre_inci='TOCOPHEROL' WHERE codigo_mp IN ('MP00078','MP00079')",
+        # (2) Descontinuar NAD+ (reversible · conserva registros)
+        "UPDATE formula_headers SET activo=0 "
+        "WHERE UPPER(TRIM(producto_nombre))='SUERO TRIACTIVE RETINOID NAD+'",
+        # (3) Rebasear NAD a 15 kg · gramos recalculados desde el % (idempotente)
+        "UPDATE formula_items "
+        "SET cantidad_g_por_lote = ROUND(COALESCE(porcentaje,0)/100.0 * 15.0 * 1000.0, 4) "
+        "WHERE UPPER(TRIM(producto_nombre))='SUERO TRIACTIVE RETINOID NAD' "
+        "AND COALESCE(porcentaje,0) > 0",
+        "UPDATE formula_headers SET lote_size_kg=15 "
+        "WHERE UPPER(TRIM(producto_nombre))='SUERO TRIACTIVE RETINOID NAD'",
+    ]),
     (267, "Bridge Pantenol MP00236→MP00110 (17-jun · verificado contra el Excel real): "
           "el conteo físico cargó Pantenol líquido (460g) + polvo (530g) = 990g bajo "
           "MP00110 (INCI PANTHENOL · el importador matcheó por INCI); las fórmulas usan "

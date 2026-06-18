@@ -16056,7 +16056,8 @@ def admin_retirar_huerfanos_muertos():
     try:
         for r in c.execute("SELECT DISTINCT UPPER(TRIM(oci.codigo_mp)) FROM ordenes_compra_items oci "
                            "JOIN ordenes_compra oc ON oc.numero_oc=oci.numero_oc "
-                           "WHERE oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')").fetchall():
+                           "WHERE (oc.estado IN ('Borrador','Revisada','Autorizada','Parcial') "
+                           "    OR (oc.estado='Pagada' AND COALESCE(oc.fecha_recepcion,'')=''))").fetchall():
             con_oc.add(r[0])
     except Exception:
         pass
@@ -17180,6 +17181,7 @@ def diagnosticar_cruce_global():
     nombres = {}
     inci_de = {}
     por_inci = {}
+    por_inci_sorted = {}   # FIX 17-jun · INCI con tokens ORDENADOS (orden-insensible)
     _midx_rows = []
     # INCIs genéricos/ambiguos que NO identifican un material único (distintos
     # grados/fragancias comparten estos) → no usarlos para "duplicado INCI".
@@ -17196,6 +17198,11 @@ def diagnosticar_cruce_global():
         _midx_rows.append((cod, r[1], r[2]))
         if inci_n and inci_raw not in _INCI_GENERICO and len(inci_n) >= 4:
             por_inci.setdefault(inci_n, []).append(cod)
+            # FIX 17-jun · clave por tokens ORDENADOS → un INCI multi-componente escrito
+            # en distinto orden (ej. 'PHENOXYETHANOL (AND) ETHYLHEXYLGLYCERIN' vs
+            # 'ETHYLHEXYLGLYCERIN PHENOXYETHANOL') cruza igual (caso Biosure FE/Solbrol PEH).
+            _ikey = ' '.join(sorted(inci_n.split()))
+            por_inci_sorted.setdefault(_ikey, []).append(cod)
     maestro_index = build_maestro_index(_midx_rows)
 
     def _comercial_parecido(cod_a, cod_b):
@@ -17238,8 +17245,17 @@ def diagnosticar_cruce_global():
             inci_n = inci_de.get(mid, '')
             hermano = None
             if inci_n:
-                for c2 in por_inci.get(inci_n, []):
-                    if c2 != mid and disp.get(c2, 0) > 0.01 and _comercial_parecido(mid, c2):
+                # FIX 17-jun · buscar hermano por INCI con tokens ORDENADOS (cruza
+                # blends escritos en distinto orden · Biosure FE vs Solbrol PEH).
+                _ikey = ' '.join(sorted(inci_n.split()))
+                _ntok = len(inci_n.split())
+                for c2 in por_inci_sorted.get(_ikey, []):
+                    if c2 == mid or disp.get(c2, 0) <= 0.01:
+                        continue
+                    # INCI multi-componente (>=2 tokens) = blend específico → el INCI
+                    # BASTA (mismo material, marca/orden distinto). 1 token → exigir
+                    # nombre comercial parecido (evita falsos por INCI corto genérico).
+                    if _ntok >= 2 or _comercial_parecido(mid, c2):
                         if hermano is None or disp[c2] > hermano[1]:
                             hermano = (c2, disp[c2])
             if hermano:

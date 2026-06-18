@@ -13156,8 +13156,30 @@ def _demanda_stock_gramos(c, producto):
         _vol_simple.append(vol)
         detalle.append({'sku': sku, 'tono': tono, 'velocidad': round(_v30 / 30.0, 2),
                         'unidades': int(units), 'volumen': round(vol, 2),
-                        'fuente_vol': vfuente})
-    vel_prod, _tend = velocidad_blended_uds_dia(v30_tot, v60_tot, v90_tot, None, 60)
+                        'fuente_vol': vfuente,
+                        # FIX 17-jun · la tendencia ahora es por PRODUCTO (la hornea el
+                        # blend 30/60/90), ya no por SKU · neutral aquí para no romper la
+                        # página /admin/verificar-volumenes que lee s['tendencia'] (KeyError).
+                        'tendencia': 1.0})
+    # FIX 17-jun [6]: edad del producto desde formula_headers.fecha_creacion (MISMA
+    # fuente que Necesidades · _calcular_animus_dtc · M13 UPPER/TRIM) → el blend divide
+    # por la antigüedad real (piso 7d) para productos nuevos. Antes pasaba None →
+    # sub-estimaba la velocidad de un lanzamiento → sub-producía y sub-compraba MP,
+    # divergiendo de la cobertura que muestra Necesidades.
+    _dias_creacion = None
+    try:
+        _fc = c.execute(
+            "SELECT COALESCE(fecha_creacion,'') FROM formula_headers "
+            "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) "
+            "ORDER BY COALESCE(activo,1) DESC LIMIT 1", (producto,)).fetchone()
+        if _fc and _fc[0]:
+            _d = (_dt2.utcnow() - _td2(hours=5)).date()
+            _dias_creacion = (_d - _dt2.strptime(str(_fc[0])[:10], '%Y-%m-%d').date()).days
+            if _dias_creacion is not None and _dias_creacion <= 0:
+                _dias_creacion = None
+    except Exception:
+        _dias_creacion = None
+    vel_prod, _tend = velocidad_blended_uds_dia(v30_tot, v60_tot, v90_tot, _dias_creacion, 60)
     vol_pond = (_wvol / v60_tot) if v60_tot > 0.001 else (
         (sum(_vol_simple) / len(_vol_simple)) if _vol_simple else 0.0)
     demand_g = vel_prod * vol_pond
