@@ -7682,8 +7682,18 @@ def generar_plan_perfecto():
     plan_lotes = []
     conflictos = []
 
+    # prefer-Fijo (18-jun): no regenerar un canónico para un producto que ya está FIJADO
+    # a mano (eos_plan/eos_b2b/eos_retroactivo) en el horizonte → no duplica lo de Alejandro.
+    _fijo_prods = set()
+    for (pn,) in c.execute(
+        "SELECT DISTINCT producto FROM produccion_programada "
+        "WHERE COALESCE(origen,'') IN ('eos_plan','eos_b2b','eos_retroactivo') "
+        "AND COALESCE(estado,'') NOT IN ('cancelado','completado')").fetchall():
+        _fijo_prods.add(_norm_prod_recon(pn))
     for cfg in configs_ordenados:
         prod = cfg["producto"]
+        if _norm_prod_recon(prod) in _fijo_prods:
+            continue
         kg = cfg["kg"]
         freq = cfg["freq_final"]
 
@@ -13491,11 +13501,21 @@ def regenerar_canonicos():
         return cob if cob is not None else 99999
     configs = sorted(configs, key=_cob_orden)
 
+    # prefer-Fijo (18-jun): no regenerar un canónico para un producto ya FIJADO a mano
+    # (eos_plan/eos_b2b/eos_retroactivo) en el horizonte → respeta lo de Alejandro, no duplica.
+    _fijo_prods = set()
+    for (pn,) in c.execute(
+        "SELECT DISTINCT producto FROM produccion_programada "
+        "WHERE COALESCE(origen,'') IN ('eos_plan','eos_b2b','eos_retroactivo') "
+        "AND COALESCE(estado,'') NOT IN ('cancelado','completado')").fetchall():
+        _fijo_prods.add(_norm_prod_recon(pn))
     productos_saltados = []  # productos con datos inválidos · se reportan
     for cfg in configs:
         # Parseo defensivo · un dato sucio NO debe abortar todo el plan
         try:
             prod = cfg[0]
+            if _norm_prod_recon(prod) in _fijo_prods:
+                continue  # ya fijado manualmente · no duplicar el canónico
             kg = float(cfg[1])
             ml = int(cfg[2] or 30)
             freq = int(cfg[3])

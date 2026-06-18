@@ -352,6 +352,16 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (276, "Encender la proyección automática a 2 años (18-jun · Sebastián 'dale a todo'): tras "
+          "robustecer _proyectar_horizonte_2y (guard estricto de horizonte + no-pedir-otro-lote-"
+          "si-ya-hay-uno-en-vuelo → ya NO pone lotes en 2027) y corregir la velocidad de productos "
+          "nuevos (fallback a 1ª venta), se activa el cron diario job_proyeccion_2anios (5:10 AM) "
+          "que reconstruye el plan rodante a 2 años. proyeccion_auto='1'. Reversible desde la UI.", [
+        "INSERT INTO app_settings (clave, valor, descripcion) "
+        "SELECT 'proyeccion_auto','1','Plan rodante 2 años automático (cron 5:10 · 18-jun)' "
+        "WHERE NOT EXISTS (SELECT 1 FROM app_settings WHERE clave='proyeccion_auto')",
+        "UPDATE app_settings SET valor='1' WHERE clave='proyeccion_auto'",
+    ]),
     (275, "Cobertura de planeación a 2 años (18-jun · confirmado Sebastián): (1) AGREGA a "
           "sku_planeacion_config toda fórmula ACTIVA (lote>0) que faltaba — quedaban 6 fuera "
           "(BLUSH BALM, BOOSTER TENSOR, HYDRAPEPTIDE, HYDRA BALANCE, LIP SERUM VOLUMINIZADOR "

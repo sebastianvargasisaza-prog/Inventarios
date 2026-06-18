@@ -13139,6 +13139,7 @@ def _demanda_stock_gramos(c, producto):
     v30_tot = v60_tot = v90_tot = 0.0
     _wvol = 0.0           # Σ ventas60_sku × volumen_sku (para el volumen ponderado)
     _vol_simple = []
+    _min_fecha_v = None   # 1ª venta observada (fallback de antigüedad si no hay fecha_creacion)
     # PERF 17-jun · traer las ventas de 90d UNA vez por SKU y derivar 30/60 por fecha
     # (30d⊂60d⊂90d) en vez de 3 llamadas a _ventas_diarias_por_sku (3× parsing JSON
     # Shopify). _generar_plan_desde_hoy itera TODOS los productos → 3×→1× importa.
@@ -13151,6 +13152,11 @@ def _demanda_stock_gramos(c, producto):
         vol, vfuente = _volumen_sku(c, sku, producto)
         stock_g += float(units) * vol
         _rows90 = _ventas_diarias_por_sku(c, sku, dias=90)
+        for _f9, _q9 in _rows90:
+            if _q9 and _q9 > 0:
+                _s9 = str(_f9)[:10]
+                if _min_fecha_v is None or _s9 < _min_fecha_v:
+                    _min_fecha_v = _s9
         _v90 = sum(q for _, q in _rows90)
         _v60 = sum(q for f, q in _rows90 if str(f)[:10] >= _cut60)
         _v30 = sum(q for f, q in _rows90 if str(f)[:10] >= _cut30)
@@ -13182,6 +13188,18 @@ def _demanda_stock_gramos(c, producto):
                 _dias_creacion = None
     except Exception:
         _dias_creacion = None
+    # Fallback robusto (M5): si la fórmula no tiene fecha_creacion (datos legacy / seeds),
+    # usar la antigüedad desde la 1ª venta observada → NO sub-estimar la velocidad de un
+    # producto con poco historial pero sin fecha_creacion (antes dividía v90 por 90 aunque
+    # solo tuviera 30 días de ventas → velocidad ~33% baja → sub-planeaba/sub-compraba).
+    if _dias_creacion is None and _min_fecha_v:
+        try:
+            _d2 = (_dt2.utcnow() - _td2(hours=5)).date()
+            _da = (_d2 - _dt2.strptime(_min_fecha_v, '%Y-%m-%d').date()).days + 1
+            if _da > 0:
+                _dias_creacion = _da
+        except Exception:
+            pass
     vel_prod, _tend = velocidad_blended_uds_dia(v30_tot, v60_tot, v90_tot, _dias_creacion, 60)
     vol_pond = (_wvol / v60_tot) if v60_tot > 0.001 else (
         (sum(_vol_simple) / len(_vol_simple)) if _vol_simple else 0.0)

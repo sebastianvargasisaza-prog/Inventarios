@@ -334,6 +334,21 @@ contra el maestro. (4) **Pedí el dump SIN traducir** — el traductor del naveg
 (nombres "DE"→"Delaware", comas decimales, espacios en códigos) → no reconciliar sobre datos sucios.
 Pendiente durable: botón "reconciliar fórmulas vs maestro" (upload Excel → diff → corrige).
 
+## 🚀 M54 · Encender proyección 2 años + velocidad de productos nuevos + prefer-Fijo en generadores · 18-jun
+
+Cierre de pendientes de Planta ("dale a todo menos Part 11"):
+- **Velocidad de productos NUEVOS (M5):** `velocidad_blended_uds_dia` ajusta el divisor por `dias_creacion`,
+  pero `_demanda_stock_gramos` solo lo sacaba de `formula_headers.fecha_creacion`; si era NULL (legacy/seed)
+  → dividía v60/v90 por 60/90 aunque el producto tuviera 30d de historial → sub-estimaba ~33% → sub-planeaba.
+  Fix: **fallback a la fecha de la 1ª venta observada** cuando no hay fecha_creacion. (También arregló el test
+  largo-tiempo-rojo `test_verificar_volumenes` · 667→1000.) `_velocidad_blended_producto` era código muerto (0 callers).
+- **Proyección automática 2 años ENCENDIDA** (`proyeccion_auto='1'` · mig 276): antes OFF por el bug "lotes en
+  2027" — desmentido (M53: la simulación de agotamiento es auto-limitante) y robustecida (guard de horizonte +
+  `upcoming=any(ad>d)`). El cron `job_proyeccion_2anios` (5:10) ahora reconstruye el plan rodante. Reversible en UI.
+- **prefer-Fijo en `regenerar_canonicos` y `generar_plan_perfecto`:** ambos generadores ahora SALTAN productos
+  ya fijados a mano (eos_plan/eos_b2b/eos_retroactivo) en el horizonte → no duplican lo de Alejandro (igual que
+  `_generar_plan_desde_hoy`). Regla: TODO generador de Sugeridas hace prefer-Fijo skip.
+
 ## 🔭 M53 · Plan/Calendario/Abastecimiento/Factibilidad punta a punta (workflow 34 agentes) · 18-jun
 
 "Confirmar que son perfectos." Las 4 áreas volvieron SÓLIDAS (15 confirmaciones "✅ ninguno requerido":
