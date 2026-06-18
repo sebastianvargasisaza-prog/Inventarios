@@ -5426,7 +5426,7 @@ async function loadABC(){
       _charts.abc = new Chart(ctx.getContext('2d'),{
         type:'bar',
         data:{
-          labels: top.map(function(i){var n=(i.nombre_comercial||i.material_id||''); return n.length>14?n.substring(0,12)+'…':n;}),
+          labels: top.map(function(i){var n=(i.nombre_inci||i.material_id||''); return n.length>14?n.substring(0,12)+'…':n;}),
           datasets:[
             {type:'bar', label:d.metric_unit==='g'?'g':'$', data:top.map(function(i){return i.metric;}),
              backgroundColor: top.map(function(i){return i.clasificacion==='A'?'rgba(34,197,94,0.7)':i.clasificacion==='B'?'rgba(253,126,20,0.7)':'rgba(148,163,184,0.7)';}),
@@ -5450,7 +5450,7 @@ async function loadABC(){
       return;
     }
     var html = '<div style="overflow-x:auto"><table class="table" style="font-size:12px"><thead><tr>'+
-      '<th>#</th><th>Clase</th><th>Código</th><th>Material</th><th>INCI</th><th>Proveedor</th><th>Origen</th><th style="text-align:right">Stock g</th><th style="text-align:right">Precio/kg</th><th style="text-align:right">Valor COP</th><th style="text-align:right">Consumo 90d g</th><th style="text-align:right">% Acum</th></tr></thead><tbody>';
+      '<th>#</th><th>Clase</th><th>Código</th><th>INCI</th><th>Proveedor</th><th>Origen</th><th style="text-align:right">Stock g</th><th style="text-align:right">Precio/kg</th><th style="text-align:right">Valor COP</th><th style="text-align:right">Consumo 90d g</th><th style="text-align:right">% Acum</th></tr></thead><tbody>';
     items.forEach(function(i){
       var bg = i.clasificacion==='A'?'#28a745':i.clasificacion==='B'?'#fd7e14':(i.clasificacion==='C'?'#6c757d':'#94a3b8');
       var origenIcon = i.origen==='china'?'🇨🇳':i.origen==='colombia'?'🇨🇴':i.origen==='otro'?'🌐':'❓';
@@ -5458,8 +5458,7 @@ async function loadABC(){
         '<td style="text-align:right;color:#94a3b8;font-family:monospace">'+i.ranking+'</td>'+
         '<td><span style="background:'+bg+';color:white;padding:2px 8px;border-radius:8px;font-weight:700;font-size:10px">'+i.clasificacion+'</span></td>'+
         '<td style="font-family:monospace;color:#555">'+_escHTML(i.material_id)+'</td>'+
-        '<td style="font-size:11px;color:#888">'+_escHTML(i.nombre_comercial||'')+'</td>'+
-        '<td style="font-weight:600">'+_escHTML(i.nombre_inci||i.nombre_comercial||'—')+'</td>'+
+        '<td style="font-weight:600">'+_escHTML(i.nombre_inci||i.material_id||'—')+'</td>'+
         '<td style="font-size:11px;color:#475569">'+_escHTML(i.proveedor||'—')+'</td>'+
         '<td style="font-size:11px">'+origenIcon+' '+_escHTML(i.origen)+'</td>'+
         '<td style="text-align:right">'+Math.round(i.stock_g).toLocaleString()+'</td>'+

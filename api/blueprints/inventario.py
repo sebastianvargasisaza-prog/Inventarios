@@ -3947,7 +3947,7 @@ def get_analisis_abc():
         'items': abc_items,
         # Compat con UI vieja
         'items_legacy': [
-            {'material': it['nombre_comercial'] or it['material_id'],
+            {'material': it.get('nombre_inci') or it['material_id'],  # display=INCI (no comercial · 17-jun)
              'cantidad': it['stock_g'], 'valor': f'{it["pct_acumulado"]:.1f}%',
              'clasificacion': it['clasificacion']}
             for it in abc_items
