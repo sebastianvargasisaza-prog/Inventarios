@@ -712,18 +712,18 @@ def hub_despachar():
                    int(it.get('cantidad',0)), float(it.get('precio_unitario',0))))
         lote = it.get('lote_pt','')
         if lote:
-            c.execute("""UPDATE stock_pt SET unidades_disponible=MAX(0,unidades_disponible-?)
+            c.execute("""UPDATE stock_pt SET unidades_disponible = CASE WHEN unidades_disponible - ? < 0 THEN 0 ELSE unidades_disponible - ? END
                          WHERE sku=? AND lote_pt=?""",
-                      (int(it.get('cantidad',0)), it.get('sku',''), lote))
+                      (int(it.get('cantidad',0)), int(it.get('cantidad',0)), it.get('sku',''), lote))
         else:
             # SQLite estándar NO soporta ORDER BY/LIMIT en UPDATE (requiere
             # compilar con SQLITE_ENABLE_UPDATE_DELETE_LIMIT) · usar subquery
             # por rowid para descontar del lote FEFO más antiguo.
-            c.execute("""UPDATE stock_pt SET unidades_disponible=MAX(0,unidades_disponible-?)
+            c.execute("""UPDATE stock_pt SET unidades_disponible = CASE WHEN unidades_disponible - ? < 0 THEN 0 ELSE unidades_disponible - ? END
                          WHERE id = (SELECT id FROM stock_pt
                                         WHERE sku=? AND unidades_disponible>0
                                         ORDER BY fecha_produccion ASC LIMIT 1)""",
-                      (int(it.get('cantidad',0)), it.get('sku','')))
+                      (int(it.get('cantidad',0)), int(it.get('cantidad',0)), it.get('sku','')))
     num_ped = d.get('numero_pedido','')
     if num_ped:
         c.execute("UPDATE pedidos SET estado='Despachado',fecha_despacho=datetime('now', '-5 hours') WHERE numero=?", (num_ped,))

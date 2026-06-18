@@ -363,6 +363,13 @@ Descartados/diferidos por bajo riesgo verificado: gerencia.py MEE post-upload le
 inexistente → costo MEE en envasado siempre 0 (cosmético, sin fuente de precio); brd.py item-queries
 sin `NOT IN activo=0` (fh ya filtra `activo=1` y · verificado · ningún nombre colisiona activo+inactivo);
 `estado_lote=NULL` en Salidas (el SUM lo cuenta, la exclusión usa COALESCE · M48 ya evaluado bajo).
+- **`MAX(0, x-?)` en UPDATE rompe en PG (4 sitios):** SQLite usa `MAX(a,b)` como máximo ESCALAR;
+  PostgreSQL NO — `MAX` es agregado de 1 arg → `function max(integer,numeric) does not exist`. Y SQLite
+  no tiene `GREATEST` (el equivalente escalar de PG). pg_compat NO lo traducía → los UPDATE de cache
+  (`maestro_mee.stock_actual` en Salida/anulación, `stock_pt.unidades_disponible` en despacho maquila)
+  reventaban en prod PG (o no se ejecutaban). **Fix portable en AMBOS motores: `CASE WHEN x-? < 0 THEN
+  0 ELSE x-? END`** (ojo: duplica el placeholder → duplicar el parámetro en la tupla). Regla: nunca
+  `MAX/MIN` de 2+ args en SQL que corre en PG; usa `CASE WHEN` (o `GREATEST/LEAST` solo si pg-only).
 Tests `test_barrido_dano_18jun.py`.
 
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")

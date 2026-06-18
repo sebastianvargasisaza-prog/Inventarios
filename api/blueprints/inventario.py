@@ -11603,7 +11603,9 @@ def mee_registrar_movimiento():
     if tipo == 'Entrada':
         c.execute("UPDATE maestro_mee SET stock_actual = stock_actual + ? WHERE codigo=?", (cantidad, codigo))
     elif tipo == 'Salida':
-        c.execute("UPDATE maestro_mee SET stock_actual = MAX(0, stock_actual - ?) WHERE codigo=?", (cantidad, codigo))
+        # CASE WHEN portable (PG no tiene MAX de 2 args · MAX es agregado → erroraba en prod;
+        # SQLite no tiene GREATEST). Clamp a 0 idéntico en ambos motores.
+        c.execute("UPDATE maestro_mee SET stock_actual = CASE WHEN stock_actual - ? < 0 THEN 0 ELSE stock_actual - ? END WHERE codigo=?", (cantidad, cantidad, codigo))
     else:  # Ajuste · cantidad = stock objetivo absoluto
         c.execute("UPDATE maestro_mee SET stock_actual = ? WHERE codigo=?", (cantidad, codigo))
 
@@ -11903,8 +11905,8 @@ def mee_anular_movimiento(mov_id):
             'codigo': 'AJUSTE_LEGACY_NO_ANULABLE',
         }), 422
     if mv['tipo'] == 'Entrada':
-        c.execute("UPDATE maestro_mee SET stock_actual=MAX(0,stock_actual-?) WHERE codigo=?",
-                  (mv['cantidad'], mv['mee_codigo']))
+        c.execute("UPDATE maestro_mee SET stock_actual = CASE WHEN stock_actual - ? < 0 THEN 0 ELSE stock_actual - ? END WHERE codigo=?",
+                  (mv['cantidad'], mv['cantidad'], mv['mee_codigo']))
     elif mv['tipo'] == 'Salida':
         c.execute("UPDATE maestro_mee SET stock_actual=stock_actual+? WHERE codigo=?",
                   (mv['cantidad'], mv['mee_codigo']))
