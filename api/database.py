@@ -352,6 +352,18 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (266, "Alta de 2 MP del conteo físico que no estaban en el maestro (17-jun · "
+          "Sebastián carga Excel · mapean por INCI): GLYCERYL GLUCOSIDE (humectante) "
+          "y el conservante ETHYLHEXYLGLYCERIN/PHENOXYETHANOL. INCI verbatim del Excel "
+          "para que el importador mapee. Idempotente (no crea si el INCI ya existe). "
+          "Los 3 pigmentos perla del Excel los define Alejandro (INCI/grado · M19).", [
+        "INSERT INTO maestro_mps (codigo_mp, nombre_inci, nombre_comercial, tipo_material, activo) "
+        "SELECT 'MPGLYGLU01','GLYCERYL GLUCOSIDE','Glyceryl Glucoside','MP',1 "
+        "WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE UPPER(TRIM(nombre_inci))='GLYCERYL GLUCOSIDE')",
+        "INSERT INTO maestro_mps (codigo_mp, nombre_inci, nombre_comercial, tipo_material, activo) "
+        "SELECT 'MPETHPHE01','ETHYLHEXYLGLYCERIN PHENOXYETHANOL','Ethylhexilglicerina/Fenoxietanol','MP',1 "
+        "WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE UPPER(TRIM(nombre_inci))='ETHYLHEXYLGLYCERIN PHENOXYETHANOL')",
+    ]),
     (265, "Idempotencia de recepción de OC (16-jun · auditoría ultracode): tabla "
           "oc_recepcion_dedup con UNIQUE(recepcion_id) para que un doble-submit "
           "concurrente de la MISMA recepción (doble-click/retry) no inserte doble "
