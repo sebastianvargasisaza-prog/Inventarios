@@ -796,14 +796,32 @@ def _get_formulas(conn):
         "SELECT producto_nombre, material_id, material_nombre, porcentaje, cantidad_g_por_lote FROM formula_items"
     ).fetchall()
 
+    # Dedup defensivo (formula_items no tiene UNIQUE(producto,material_id)): si una fórmula
+    # tuviera dos filas del mismo material el motor las SUMARÍA → consumo/compra inflados N×.
+    # Colapsamos a una sola fila por material conservando el % (y g) mayor. Sin duplicados
+    # (caso normal) no cambia nada.
     items_map = {}
+    _seen = {}  # (producto, material_id) -> índice en su lista
     for row in items_all:
         p = row[0]
-        items_map.setdefault(p, []).append({
-            'material_id': row[1],
+        mid = row[1]
+        pct = float(row[3] or 0)
+        g = float(row[4] or 0)
+        key = (p, mid)
+        lst = items_map.setdefault(p, [])
+        if key in _seen:
+            it = lst[_seen[key]]
+            if pct > it['porcentaje']:
+                it['porcentaje'] = pct
+            if g > it['cantidad_g_por_lote']:
+                it['cantidad_g_por_lote'] = g
+            continue
+        _seen[key] = len(lst)
+        lst.append({
+            'material_id': mid,
             'material_nombre': row[2],
-            'porcentaje': float(row[3] or 0),
-            'cantidad_g_por_lote': float(row[4] or 0),
+            'porcentaje': pct,
+            'cantidad_g_por_lote': g,
         })
 
     formulas = {}

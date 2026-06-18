@@ -446,8 +446,11 @@ def _stock_actual_pt(c, producto):
 
 def _velocidad_total_producto(c, producto):
     """Suma velocidades + tendencia agregada de todos los SKUs del producto."""
+    # Excluir SKUs es_regalo (igual que las hermanas _velocidad_blended_producto:351
+    # y _stock_actual_pt:432): un mini-regalo con ventas propias inflaba la velocidad total.
     rows = c.execute(
-        "SELECT sku FROM sku_producto_map WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1",
+        "SELECT sku FROM sku_producto_map WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) "
+        "AND COALESCE(activo,1)=1 AND COALESCE(es_regalo,0)=0",
         (producto,)
     ).fetchall()
     vel_total = 0.0

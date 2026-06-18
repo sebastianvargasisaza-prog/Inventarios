@@ -334,6 +334,37 @@ contra el maestro. (4) **Pedí el dump SIN traducir** — el traductor del naveg
 (nombres "DE"→"Delaware", comas decimales, espacios en códigos) → no reconciliar sobre datos sucios.
 Pendiente durable: botón "reconciliar fórmulas vs maestro" (upload Excel → diff → corrige).
 
+## 🩺 M51 · Barrido "qué más está dañado" (workflow 53 agentes) · 18-jun
+
+Tras M49/M50, barrido adversarial de todo el sistema. 32 candidatos confirmados → verificados
+uno a uno contra código real (regla: ~50% de los hallazgos alucinan). Reales arreglados:
+- **TZ M24 en CoA (P0 regulatorio):** `calidad_micro_resultados` y `calidad_fisicoquimica_resultados`
+  usaban `_date.today()` (UTC) como fallback de `fecha_analisis` → CoA (evidencia primaria INVIMA)
+  con fecha +1 día en ventana nocturna. Ancla Colombia: `date('now','-5 hours')` (patrón del archivo).
+- **Filtro `activo` faltante (M29):** `produccion_ajustar_cantidad` (inventario.py) cargaba
+  `formula_items` SIN excluir headers `activo=0` (su hermano `_handle_produccion_inner` sí) → ajustar
+  un producto con fórmula descontinuada descontaba la receta vieja/incompleta. Añadido el `NOT IN`.
+- **Columnas FANTASMA tragadas por `except`:** `movimientos_mee` NO tiene `descripcion` ni
+  `material_id/material_nombre` (usa `mee_codigo`). Dos sitios escribían/leían esas columnas →
+  `OperationalError` tragado silenciosamente → (a) el ajuste de conteo MEE se PERDÍA (drift),
+  (b) la lista de MEE consumido en envasado salía SIEMPRE vacía. Fix: columnas reales + log en el
+  fallback (nunca `except: pass` mudo en una mutación · M4). **Regla: antes de escribir SQL con
+  nombres de columna, confírmalos con `PRAGMA table_info` — un except que traga oculta el typo.**
+- **display ≠ BD (M5/M30):** `actualizar-precios-oc` guardaba `valor_total` (×1.19 con IVA) pero la
+  respuesta devolvía `total` (subtotal sin IVA) → la UI mostraba 19% de menos. Devolver el valor guardado.
+- **agregación sin filtrar regalo (M8):** `_velocidad_total_producto` sumaba TODOS los SKUs incl.
+  `es_regalo=1`, mientras sus hermanas `_velocidad_blended_producto`/`_stock_actual_pt` sí filtran →
+  velocidad inflada → sobre-programación. Alineado con `AND COALESCE(es_regalo,0)=0`.
+- **`_get_formulas` sin dedup:** `formula_items` no tiene `UNIQUE(producto,material_id)`; dos filas del
+  mismo material se SUMABAN (50+50=100%). Dedup defensivo en el read-path (colapsa por material,
+  conserva el % mayor; sin duplicados no cambia nada). 0 duplicados en datos actuales = solo seguro.
+Descartados/diferidos por bajo riesgo verificado: gerencia.py MEE post-upload lee `stock_actual`
+(es el resumen de lo recién cargado, no stock operativo · OK); `maestro_mee.precio_unitario`
+inexistente → costo MEE en envasado siempre 0 (cosmético, sin fuente de precio); brd.py item-queries
+sin `NOT IN activo=0` (fh ya filtra `activo=1` y · verificado · ningún nombre colisiona activo+inactivo);
+`estado_lote=NULL` en Salidas (el SUM lo cuenta, la exclusión usa COALESCE · M48 ya evaluado bajo).
+Tests `test_barrido_dano_18jun.py`.
+
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
 
 Al cerrar una sesión donde se encontró/arregló un bug con patrón no listado aquí:

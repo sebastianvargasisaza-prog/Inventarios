@@ -3094,8 +3094,13 @@ def produccion_ajustar_cantidad(pid):
     except Exception:
         items = []
     if not items:
+        # M29 · excluir fórmula descontinuada (activo=0) · idéntico a _handle_produccion_inner
+        # (2070-2072): sin esto, ajustar un producto con header viejo descontaba la receta
+        # incompleta → delta de MP equivocado.
         items_rows = c.execute(
-            "SELECT material_id, material_nombre, porcentaje FROM formula_items WHERE producto_nombre=?",
+            "SELECT material_id, material_nombre, porcentaje FROM formula_items "
+            "WHERE producto_nombre=? AND producto_nombre NOT IN "
+            "(SELECT producto_nombre FROM formula_headers WHERE COALESCE(activo,1)=0)",
             (producto,),
         ).fetchall()
         items = [{'material_id': r[0], 'material_nombre': r[1], 'porcentaje': r[2]} for r in items_rows]
@@ -8445,16 +8450,21 @@ def conteo_cerrar(conteo_id):
                 except Exception as _e_mee:
                     # Fallback: INSERT directo en movimientos_mee si helper falla
                     try:
+                        # movimientos_mee NO tiene columna 'descripcion' · antes este INSERT
+                        # lanzaba OperationalError y el except lo tragaba → el ajuste de conteo
+                        # MEE se perdía en silencio (drift). Columnas reales solamente.
                         c.execute(
                             """INSERT INTO movimientos_mee
-                                 (mee_codigo, descripcion, tipo, cantidad,
+                                 (mee_codigo, tipo, cantidad,
                                   fecha, observaciones, lote_ref, batch_ref, responsable, anulado)
-                               VALUES (?,?,?,?,datetime('now', '-5 hours'),?,?,?,?,0)""",
-                            (codigo, nombre, tipo_mov, abs(diff),
+                               VALUES (?,?,?,datetime('now', '-5 hours'),?,?,?,?,0)""",
+                            (codigo, tipo_mov, abs(diff),
                              obs, str(conteo_id), lote_obj or '', user),
                         )
-                    except Exception:
-                        pass
+                    except Exception as _e_fb:
+                        __import__('logging').getLogger('inventario').warning(
+                            'Fallback movimientos_mee falló (%s) · conteo %s cod %s',
+                            _e_fb, conteo_id, codigo)
             else:
                 # Kardex MP (movimientos) · comportamiento original
                 c.execute("""INSERT INTO movimientos
@@ -12593,13 +12603,17 @@ def envasado_detalle(eid):
     # MEE descontados · buscar movimientos_mee con lote igual al envasado
     mee_movs = []
     try:
+        # movimientos_mee usa mee_codigo (NO material_id/material_nombre): antes este
+        # SELECT lanzaba y el except dejaba mee_descontados SIEMPRE vacío. Join al maestro
+        # para el nombre.
         mee_rows = c.execute(
-            """SELECT material_id, COALESCE(material_nombre,''),
-                      cantidad, COALESCE(observaciones,'')
-               FROM movimientos_mee
-               WHERE tipo='Salida'
-                 AND observaciones LIKE ?
-               ORDER BY id""",
+            """SELECT mm.mee_codigo, COALESCE(me.descripcion,''),
+                      mm.cantidad, COALESCE(mm.observaciones,'')
+               FROM movimientos_mee mm
+               LEFT JOIN maestro_mee me ON me.codigo = mm.mee_codigo
+               WHERE mm.tipo='Salida'
+                 AND mm.observaciones LIKE ?
+               ORDER BY mm.id""",
             (f"%Envasado #{eid}%",),
         ).fetchall()
         mee_movs = [{

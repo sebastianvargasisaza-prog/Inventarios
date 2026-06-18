@@ -1794,7 +1794,11 @@ def actualizar_precios_items_oc(numero_oc):
         'ok': True,
         'numero_oc': numero_oc,
         'items_actualizados': actualizados,
-        'valor_total_nuevo': round(float(total), 2),
+        # Devolver el total REALMENTE guardado (con IVA si aplica), no el subtotal sin IVA:
+        # antes la UI mostraba `total` (sin IVA) mientras la BD guardaba valor_total ×1.19.
+        'valor_total_nuevo': valor_total,
+        'valor_sin_iva': sub,
+        'con_iva': _con_iva,
     })
 
 

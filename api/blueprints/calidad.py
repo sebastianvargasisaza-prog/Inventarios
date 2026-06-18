@@ -1704,8 +1704,10 @@ def calidad_micro_resultados():
         estado = _calc_estado_micro(valor, valor_texto, spec_dict)
         unidad = (d.get('unidad') or (spec_dict['unidad'] if spec_dict else 'UFC/g'))
 
-        from datetime import date as _date
-        fecha_analisis = (d.get('fecha_analisis') or '').strip() or _date.today().isoformat()
+        # M24 · fecha_analisis ancla Colombia (UTC-5), NO _date.today() UTC: en CoA
+        # (evidencia primaria INVIMA) un desfase +1 día en ventana nocturna invalida la firma.
+        _hoy_col = c.execute("SELECT date('now','-5 hours')").fetchone()[0]
+        fecha_analisis = (d.get('fecha_analisis') or '').strip() or _hoy_col
         # Fase 2 · COA del laboratorio (URL http/https) + ligado al EBR/lote del PT
         coa_url = (d.get('archivo_coa_url') or '').strip() or None
         if coa_url and not (coa_url.startswith('http://') or coa_url.startswith('https://')):
@@ -2118,7 +2120,8 @@ def calidad_fisicoquimica_resultados():
         cat = (d.get('categoria') or 'producto').strip().lower()
         if cat not in ('producto', 'materia_prima', 'ambiente'):
             cat = 'producto'
-        from datetime import date as _date
+        # M24 · ancla Colombia (UTC-5) para el fallback de fecha_analisis (CoA INVIMA)
+        _hoy_col = c.execute("SELECT date('now','-5 hours')").fetchone()[0]
         c.execute(
             "INSERT INTO calidad_fisicoquimica_resultados "
             "(lote,producto_nombre,categoria,n_referencia,fecha_muestreo,fecha_analisis,parametro,"
@@ -2127,7 +2130,7 @@ def calidad_fisicoquimica_resultados():
             ((d.get('lote') or '').strip(), producto, cat,
              (d.get('n_referencia') or '').strip() or None,
              (d.get('fecha_muestreo') or '').strip() or None,
-             (d.get('fecha_analisis') or '').strip() or _date.today().isoformat(),
+             (d.get('fecha_analisis') or '').strip() or _hoy_col,
              parametro, (d.get('metodo') or '').strip() or None,
              (d.get('resultado') or '').strip() or None,
              (d.get('unidad') or '').strip() or None,
