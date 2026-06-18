@@ -5072,6 +5072,38 @@ def plan_diag_mp(codigo):
                     "por_producto": out})
 
 
+@bp.route("/api/plan/diag-formulas-dump", methods=["GET"])
+def plan_diag_formulas_dump():
+    """DUMP compacto (solo lectura) · 18-jun · fórmulas ACTIVAS de prod → {producto:
+    {material_id: porcentaje_sumado}} (excluye agua/controla_stock=0). Para reconciliar
+    contra el Excel maestro y cazar ingredientes de más / % equivocados (las fórmulas de
+    prod divergieron del maestro · ej. Acetyl tetrapeptide-5 a 0.5% en Suero Niacinamida)."""
+    if not session.get("compras_user"):
+        return jsonify({"error": "login requerido"}), 401
+    conn = get_db(); c = conn.cursor()
+    # códigos de agua / consumible infinito (no se compran) · excluir del dump
+    no_stock = set()
+    try:
+        for r in c.execute("SELECT UPPER(TRIM(codigo_mp)) FROM maestro_mps WHERE COALESCE(controla_stock,1)=0").fetchall():
+            no_stock.add(r[0])
+    except Exception:
+        pass
+    out = {}
+    for pn, in c.execute("SELECT producto_nombre FROM formula_headers WHERE COALESCE(activo,1)=1").fetchall():
+        its = {}
+        for mid, pct in c.execute(
+            "SELECT UPPER(TRIM(material_id)), COALESCE(porcentaje,0) FROM formula_items WHERE producto_nombre=?",
+            (pn,)
+        ).fetchall():
+            m = (mid or '').strip()
+            if not m or m in no_stock:
+                continue
+            its[m] = round(its.get(m, 0.0) + float(pct or 0), 5)
+        if its:
+            out[pn] = its
+    return jsonify({"n_formulas": len(out), "formulas": out})
+
+
 _FACTIBILIDAD_PLAN_HTML = """<!doctype html>
 <html lang="es-CO"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
