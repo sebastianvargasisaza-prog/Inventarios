@@ -196,3 +196,20 @@ def test_unify_repunta_bridge(app, db_clean):
     row = c.execute("SELECT bodega_material_id FROM mp_formula_bridge WHERE formula_material_id='MP-FORM-B'").fetchone()
     c.close()
     assert row and row[0] == "MP-CANON-B", f"el bridge debe repuntar al canónico · {row}"
+
+
+def test_bridge_pantenol_mp00236_a_mp00110(app, db_clean):
+    """17-jun · mig 267 · el conteo físico cargó Pantenol (990g) bajo MP00110 pero las
+    fórmulas usan MP00236 (mismo INCI PANTHENOL) · el bridge debe resolver MP00236→MP00110
+    para que Abastecimiento vea el stock y NO pida comprar Pantenol de más."""
+    import blueprints.programacion as prog
+    c = _conn()
+    # ambos PANTHENOL · MP00236 sin stock, MP00110 con 990g (como en prod tras la carga)
+    c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,tipo_material,activo) VALUES ('MP00236','PANTHENOL','MP',1)")
+    c.execute("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_inci,tipo_material,activo) VALUES ('MP00110','PANTHENOL','MP',1)")
+    c.execute("INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,estado_lote,fecha) VALUES ('MP00110','D-Pantenol','Entrada',990,'LPANT',date('now'),date('now'))" if False else
+              "INSERT INTO movimientos (material_id,material_nombre,tipo,cantidad,lote,estado_lote,fecha) VALUES ('MP00110','D-Pantenol','Entrada',990,'LPANT','VIGENTE',date('now'))")
+    c.commit()
+    res = prog._resolver_material_bodega(c, 'MP00236', 'Pantenol polvo')
+    c.close()
+    assert res == 'MP00110', f"el bridge debe resolver MP00236->MP00110 (Pantenol) · dio {res}"

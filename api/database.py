@@ -352,6 +352,19 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (267, "Bridge Pantenol MP00236→MP00110 (17-jun · verificado contra el Excel real): "
+          "el conteo físico cargó Pantenol líquido (460g) + polvo (530g) = 990g bajo "
+          "MP00110 (INCI PANTHENOL · el importador matcheó por INCI); las fórmulas usan "
+          "MP00236 (mismo INCI PANTHENOL). Sin bridge, Abastecimiento pedía comprar "
+          "Pantenol teniendo 990g. Mismo INCI = mismo material (polvo/líquido/sólido es "
+          "solo la forma). Reversible (activo=0). Idempotente.", [
+        "INSERT INTO mp_formula_bridge (formula_material_id, formula_material_nombre, "
+        "bodega_material_id, bodega_material_nombre, bodega_inci, notas, activo) "
+        "SELECT 'MP00236','Pantenol (fórmula)','MP00110','D-Pantenol sólido','PANTHENOL',"
+        "'17-jun · ambos INCI PANTHENOL · físico (990g) cargó bajo MP00110 · fórmulas usan MP00236',1 "
+        "WHERE NOT EXISTS (SELECT 1 FROM mp_formula_bridge "
+        "WHERE formula_material_id='MP00236' AND bodega_material_id='MP00110')",
+    ]),
     (266, "Alta de 2 MP del conteo físico que no estaban en el maestro (17-jun · "
           "Sebastián carga Excel · mapean por INCI): GLYCERYL GLUCOSIDE (humectante) "
           "y el conservante ETHYLHEXYLGLYCERIN/PHENOXYETHANOL. INCI verbatim del Excel "
