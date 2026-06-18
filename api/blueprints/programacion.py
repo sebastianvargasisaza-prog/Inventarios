@@ -7361,14 +7361,14 @@ def _resolver_material_bodega_impl(c, formula_mid, formula_nombre):
     # Audit 4-jun · antes cortaba por _tiene_mov (cualquier movimiento histórico)
     # → un código con neto 0 (típico tras unify, o canónico consumido) devolvía 0g
     # y NUNCA llegaba al match que halla el código duplicado CON stock.
-    if fmid and _stock_neto(fmid) > 0:
+    if fmid and _stock_neto(fmid) > 0.01:   # M21 · umbral polvo: residuo <0.01g NO bloquea el bridge
         return fmid
     # 2) bridge explícito (si el destino tiene stock)
     try:
         r = c.execute(
             "SELECT bodega_material_id FROM mp_formula_bridge "
             "WHERE TRIM(formula_material_id)=? AND COALESCE(activo,1)=1 LIMIT 1", (fmid,)).fetchone()
-        if r and r[0] and _stock_neto(str(r[0]).strip()) > 0:
+        if r and r[0] and _stock_neto(str(r[0]).strip()) > 0.01:
             return str(r[0]).strip()
     except Exception:
         pass
@@ -7384,7 +7384,7 @@ def _resolver_material_bodega_impl(c, formula_mid, formula_nombre):
                 _inci_cands = []
                 for r in c.execute("SELECT codigo_mp, COALESCE(nombre_inci,'') FROM maestro_mps WHERE COALESCE(activo,1)=1").fetchall():
                     cod = str(r[0] or '').strip()
-                    if cod and _norm_mp_name(r[1]) == _inci_f and _stock_neto(cod) > 0:
+                    if cod and _norm_mp_name(r[1]) == _inci_f and _stock_neto(cod) > 0.01:
                         _inci_cands.append(cod)
                 if _inci_cands:
                     return sorted(_inci_cands, key=lambda x: (-_stock_neto(x), x))[0]
@@ -7606,7 +7606,7 @@ def _validar_stock_para_produccion(c, mps_a_consumir):
               AND UPPER(COALESCE(estado_lote,'')) NOT IN ({placeholders})
             GROUP BY lote
         ) sub
-        WHERE stock_lote > 0
+        WHERE stock_lote > 0.01
           AND (fv_real IS NULL OR TRIM(CAST(fv_real AS TEXT))=''
                OR date(fv_real) >= date('now', '-5 hours'))
     """
@@ -7818,6 +7818,8 @@ def _descontar_mp_produccion(c, evento_id, user, forzar=False):
         distrib = _distribuir_fefo(c, mp['codigo_mp'], mp['cantidad_g'])
         mp['distribucion_fefo'] = []
         for d in distrib:
+            if float(d.get('cantidad') or 0) <= 0:
+                continue  # M18 · no insertar movimiento con cantidad 0 (trigger PG aborta la producción)
             lote_fragment = d['lote'] or '(sin lote — stock legacy)'
             obs_mp = (obs_base + f" | FEFO lote: {lote_fragment}" +
                        (f" (vence {d['fecha_vencimiento']})"
@@ -7901,7 +7903,7 @@ def _distribuir_fefo(c, codigo_mp, cantidad_a_descontar):
               AND UPPER(COALESCE(estado_lote, '')) NOT IN ({placeholders})
             GROUP BY lote
         ) sub
-        WHERE stock_lote > 0
+        WHERE stock_lote > 0.01
           AND (fv_real IS NULL OR TRIM(CAST(fv_real AS TEXT))=''
                OR date(fv_real) >= date('now', '-5 hours'))
         ORDER BY COALESCE(fv_real, '9999-12-31') ASC,
@@ -8330,6 +8332,8 @@ def prog_completar_evento(evento_id):
                 distrib = _distribuir_fefo(c, mp['codigo_mp'], mp['cantidad_g'])
                 mp['distribucion_fefo'] = []
                 for d in distrib:
+                    if float(d.get('cantidad') or 0) <= 0:
+                        continue  # M18 · no insertar movimiento con cantidad 0 (trigger PG aborta)
                     lote_fragment = d['lote'] or '(sin lote — stock legacy)'
                     obs_mp = (obs_base +
                               f" | FEFO lote: {lote_fragment}" +

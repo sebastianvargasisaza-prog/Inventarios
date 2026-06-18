@@ -1267,7 +1267,11 @@ def coa_list():
              d['parametro'], unidad, d['valor_obtenido'],
              valor_min_spec, valor_max_spec, conforme, metodo,
              analista_forzado,
-             d.get('fecha_analisis'),
+             # FIX 17-jun (M24): fecha Colombia explícita si no viene (antes None →
+             # NULL/DEFAULT UTC → el CoA del día no salía en lecturas ancladas a -5h · INVIMA).
+             (d.get('fecha_analisis')
+              or (__import__('datetime').datetime.now(__import__('datetime').timezone.utc)
+                  - __import__('datetime').timedelta(hours=5)).strftime('%Y-%m-%d')),
              d.get('equipo_id'), d.get('observaciones',''), decision))
         coa_id = c.lastrowid
         # Audit log INVIMA · CoA es evidencia primaria de calidad de MP

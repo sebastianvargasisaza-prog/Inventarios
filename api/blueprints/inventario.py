@@ -7622,11 +7622,17 @@ def anular_recepcion(mov_id):
     numero_oc = row[6]
     if numero_oc:
         try:
+            # FIX 17-jun (auditoría · PG drift): MAX(a,b) escalar NO existe en
+            # PostgreSQL (MAX es agregada) → el UPDATE fallaba y, al estar en
+            # try/except, abortaba la tx PG en silencio (no descontaba lo recibido
+            # al anular). CASE portable SQLite/PG, clamp >=0.
             c.execute(
                 """UPDATE ordenes_compra_items
-                   SET cantidad_recibida_g = MAX(0, cantidad_recibida_g - ?)
+                   SET cantidad_recibida_g = CASE
+                         WHEN COALESCE(cantidad_recibida_g,0) - ? < 0 THEN 0
+                         ELSE COALESCE(cantidad_recibida_g,0) - ? END
                    WHERE numero_oc = ? AND codigo_mp = ?""",
-                (row[2], numero_oc, row[0]),
+                (row[2], row[2], numero_oc, row[0]),
             )
         except Exception:
             pass

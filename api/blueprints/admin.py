@@ -11397,8 +11397,8 @@ def admin_auditoria_lotes():
     try:
         rows = c.execute("""
             SELECT material_id, lote,
-                   COALESCE(SUM(CASE WHEN tipo IN ('Entrada','Ajuste +') THEN cantidad
-                                     WHEN tipo IN ('Salida','Ajuste -') THEN -cantidad
+                   COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                                     WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
                                      ELSE 0 END), 0) as stock
             FROM movimientos
             WHERE COALESCE(lote,'') != ''
@@ -11491,8 +11491,8 @@ def admin_auditoria_lotes():
     try:
         rows_pasado = c.execute(f"""
             SELECT material_id, lote,
-                   COALESCE(SUM(CASE WHEN tipo IN ('Entrada','Ajuste +') THEN cantidad
-                                     WHEN tipo IN ('Salida','Ajuste -') THEN -cantidad
+                   COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                                     WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
                                      ELSE 0 END), 0) as stock
             FROM movimientos
             WHERE COALESCE(lote,'') != ''
