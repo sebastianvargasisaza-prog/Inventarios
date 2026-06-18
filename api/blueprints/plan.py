@@ -5104,6 +5104,133 @@ def plan_diag_formulas_dump():
     return jsonify({"n_formulas": len(out), "formulas": out})
 
 
+def _norm_prod_recon(s):
+    import unicodedata as _u, re as _r
+    n = _u.normalize('NFKD', str(s or '')).encode('ascii', 'ignore').decode().upper()
+    return _r.sub(r'[^A-Z0-9]+', ' ', n).strip()
+
+
+@bp.route("/api/admin/formulas-reconciliar", methods=["POST"])
+def admin_formulas_reconciliar():
+    """RECONCILIACIÓN (solo lectura · 18-jun) · sube el Excel maestro
+    (FORMULAS_MAESTRO) y compara CADA fórmula activa de prod contra él: ingredientes
+    DE MÁS (inflan), % distintos y faltantes. NO escribe nada (las correcciones van por
+    migración revisada). Unidades: Excel 'g/1kg' ÷ 10 = porcentaje de la app. Excluye agua."""
+    if not session.get("compras_user"):
+        return jsonify({"error": "login requerido"}), 401
+    f = request.files.get("archivo")
+    if not f:
+        return jsonify({"error": "Subí el Excel maestro (.xlsx)"}), 400
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(f, data_only=True, read_only=True)
+    except Exception as e:
+        return jsonify({"error": "No pude leer el Excel: " + str(e)[:120]}), 400
+    # parsear hojas → {mid: pct}
+    EX = {}
+    for sh in wb.sheetnames:
+        if _norm_prod_recon(sh) in ('RESUMEN', ''):
+            continue
+        ws = wb[sh]
+        hdr = None; cols = {}
+        for i, row in enumerate(ws.iter_rows(min_row=1, max_row=6, values_only=True), 1):
+            if any('BATCH' in _norm_prod_recon(x) or _norm_prod_recon(x) == 'CODIGO' for x in row):
+                hdr = i; cols = {_norm_prod_recon(v): j for j, v in enumerate(row)}; break
+        if not hdr:
+            continue
+        def _gi(*names):
+            for nm in names:
+                for k, j in cols.items():
+                    if nm in k:
+                        return j
+            return None
+        ci = _gi('BATCH', 'CODIGO'); g1 = _gi('G 1 KG', 'G1KG')
+        its = {}
+        for row in ws.iter_rows(min_row=hdr + 1, values_only=True):
+            cod = str(row[ci]).strip().upper() if (ci is not None and ci < len(row) and row[ci]) else ''
+            if not cod.startswith('MP'):
+                continue
+            g = row[g1] if (g1 is not None and g1 < len(row)) else None
+            if isinstance(g, (int, float)):
+                its[cod] = round(its.get(cod, 0.0) + g / 10.0, 5)
+        if its:
+            EX[sh] = its
+    # prod
+    conn = get_db(); c = conn.cursor()
+    no_stock = set()
+    try:
+        for r in c.execute("SELECT UPPER(TRIM(codigo_mp)) FROM maestro_mps WHERE COALESCE(controla_stock,1)=0").fetchall():
+            no_stock.add(r[0])
+    except Exception:
+        pass
+    PR = {}
+    for pn, in c.execute("SELECT producto_nombre FROM formula_headers WHERE COALESCE(activo,1)=1").fetchall():
+        its = {}
+        for mid, pct in c.execute("SELECT UPPER(TRIM(material_id)), COALESCE(porcentaje,0) FROM formula_items WHERE producto_nombre=?", (pn,)).fetchall():
+            m = (mid or '').strip()
+            if m and m not in no_stock:
+                its[m] = round(its.get(m, 0.0) + float(pct or 0), 5)
+        PR[_norm_prod_recon(pn)] = (pn, its)
+    # matchear y diffear
+    diffs = []
+    n_extra = n_wrong = n_falta = 0
+    for sh, xit in EX.items():
+        shn = _norm_prod_recon(sh); st = set(shn.split())
+        bk = None; bs = 0
+        for k in PR:
+            ov = len(st & set(k.split()))
+            if ov > bs:
+                bs = ov; bk = k
+        if not bk or bs < 2:
+            continue
+        prod_name, pit = PR[bk]
+        extra = [{"mp": cmid, "pct_prod": pit[cmid]} for cmid in pit if cmid not in xit]
+        wrong = [{"mp": cmid, "pct_maestro": xit[cmid], "pct_prod": pit[cmid]}
+                 for cmid in xit if cmid in pit and abs(xit[cmid] - pit[cmid]) > max(0.005, xit[cmid] * 0.2)]
+        falta = [{"mp": cmid, "pct_maestro": xit[cmid]} for cmid in xit if cmid not in pit]
+        if extra or wrong or falta:
+            diffs.append({"hoja_excel": sh, "formula_prod": prod_name,
+                          "extra_en_prod": sorted(extra, key=lambda x: -x["pct_prod"]),
+                          "pct_distinto": sorted(wrong, key=lambda x: -abs(x["pct_maestro"] - x["pct_prod"])),
+                          "faltan_en_prod": falta})
+            n_extra += len(extra); n_wrong += len(wrong); n_falta += len(falta)
+    diffs.sort(key=lambda d: -(len(d["extra_en_prod"]) + len(d["pct_distinto"])))
+    return jsonify({"n_formulas_excel": len(EX), "n_formulas_con_diff": len(diffs),
+                    "total_extra": n_extra, "total_pct_distinto": n_wrong, "total_faltan": n_falta,
+                    "diferencias": diffs})
+
+
+@bp.route("/admin/reconciliar-formulas", methods=["GET"])
+def admin_reconciliar_formulas_page():
+    if not session.get("compras_user"):
+        from flask import redirect
+        return redirect("/login?next=/admin/reconciliar-formulas")
+    return """<!doctype html><html lang=es><head><meta charset=utf-8><title>Reconciliar fórmulas vs maestro</title>
+<style>body{font-family:system-ui;background:#f8fafc;color:#1e293b;margin:0;padding:20px}.w{max-width:1000px;margin:0 auto}
+h1{color:#7c3aed;font-size:20px}.card{background:#fff;border-radius:10px;padding:14px;margin:10px 0;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.go{background:#7c3aed;color:#fff;border:0;border-radius:8px;padding:8px 14px;font-weight:700;cursor:pointer}
+.ex{color:#b91c1c;font-weight:700}.wr{color:#b45309}.fa{color:#64748b}table{width:100%;border-collapse:collapse;font-size:12px}
+td,th{padding:3px 6px;text-align:left;border-top:1px solid #f1f5f9}code{font-family:ui-monospace}</style></head><body><div class=w>
+<h1>🧪 Reconciliar fórmulas vs Excel maestro</h1>
+<div class=card>Sube el Excel maestro (FORMULAS_MAESTRO). Compara cada fórmula activa de producción contra él:
+<b class=ex>de más en prod</b> (inflan compra/descuento), <b class=wr>% distinto</b>, <b class=fa>faltantes</b>. Solo lectura.
+<div style=margin-top:8px><input type=file id=f accept=.xlsx> <button class=go onclick=run()>Analizar</button></div></div>
+<div id=res></div>
+<script>
+async function run(){var fl=document.getElementById('f').files[0];if(!fl){alert('Elegí el Excel');return;}
+var fd=new FormData();fd.append('archivo',fl);document.getElementById('res').innerHTML='Analizando…';
+var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+var r=await fetch('/api/admin/formulas-reconciliar',{method:'POST',body:fd,headers:{'X-CSRF-Token':t.csrf_token}});
+var d=await r.json();if(!r.ok){document.getElementById('res').innerHTML='Error: '+(d.error||r.status);return;}
+var h='<div class=card><b>'+d.n_formulas_con_diff+'</b> fórmulas con diferencias · <span class=ex>'+d.total_extra+' de más</span> · <span class=wr>'+d.total_pct_distinto+' % distinto</span> · <span class=fa>'+d.total_faltan+' faltan</span></div>';
+d.diferencias.forEach(function(f){h+='<div class=card><b>'+f.formula_prod+'</b> <span class=fa>(Excel: '+f.hoja_excel+')</span><table>';
+f.extra_en_prod.forEach(function(x){h+='<tr><td class=ex>DE MÁS</td><td><code>'+x.mp+'</code></td><td>prod '+x.pct_prod+'% · no en maestro</td></tr>';});
+f.pct_distinto.forEach(function(x){h+='<tr><td class=wr>% MAL</td><td><code>'+x.mp+'</code></td><td>maestro '+x.pct_maestro+'% vs prod '+x.pct_prod+'%</td></tr>';});
+f.faltan_en_prod.forEach(function(x){h+='<tr><td class=fa>FALTA</td><td><code>'+x.mp+'</code></td><td>maestro '+x.pct_maestro+'%</td></tr>';});
+h+='</table></div>';});document.getElementById('res').innerHTML=h;}
+</script></div></body></html>"""
+
+
 _FACTIBILIDAD_PLAN_HTML = """<!doctype html>
 <html lang="es-CO"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
