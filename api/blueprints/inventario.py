@@ -13001,8 +13001,8 @@ def alertas_vivas_planta():
         return err, code
 
     conn = get_db(); c = conn.cursor()
-    from datetime import date, timedelta
-    hoy = date.today()
+    from datetime import datetime as _dtA, date, timedelta
+    hoy = (_dtA.utcnow() - timedelta(hours=5)).date()  # Colombia (UTC-5) · no date.today() UTC
     in_30 = (hoy + timedelta(days=30)).isoformat()
     hace_5 = (hoy - timedelta(days=5)).isoformat()
 
@@ -13043,20 +13043,25 @@ def alertas_vivas_planta():
         })
 
     # ── 2. Stock bajo mínimo ──────────────────────────────────────────────────
+    # Stock CANÓNICO (M1 · 18-jun): usar _get_mp_stock (la MISMA fuente que todo el sistema ·
+    # excluye los 6 estados no-usables con UPPER) en vez de un SUM paralelo 'VIGENTE'-only que
+    # sub-contaba lotes en NULL/otros-usables → alertas de bajo-mínimo FALSAS. Una sola verdad de stock.
+    _stk_canon = {}
+    try:
+        from blueprints.programacion import _get_mp_stock as _gms_al
+        _stk_canon = _gms_al(conn) or {}
+    except Exception:
+        _stk_canon = {}
     c.execute("""
         SELECT mp.codigo_mp, mp.nombre_comercial, mp.stock_minimo,
-               COALESCE(mp.tipo_material,'MP') as tipo,
-               COALESCE((
-                   SELECT SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END)
-                   FROM movimientos m
-                   WHERE m.material_id = mp.codigo_mp AND UPPER(COALESCE(m.estado_lote,''))='VIGENTE'
-               ), 0) as stock_actual
+               COALESCE(mp.tipo_material,'MP') as tipo
         FROM maestro_mps mp
         WHERE mp.activo = 1 AND COALESCE(mp.stock_minimo, 0) > 0
     """)
     stock_bajo = []
     for r in c.fetchall():
-        codigo, nombre, st_min, tipo, st_act = r
+        codigo, nombre, st_min, tipo = r
+        st_act = float(_stk_canon.get(codigo) or _stk_canon.get((codigo or '').strip().upper()) or 0)
         if st_act < st_min:
             ratio = st_act / st_min if st_min else 0
             stock_bajo.append({
