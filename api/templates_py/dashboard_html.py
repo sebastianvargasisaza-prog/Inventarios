@@ -1885,6 +1885,14 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       title="Calendario IA · Vista calendario · Factibilidad de MPs">
       &#129302; Calendario IA
     </button>
+    <!-- Sebastián 18-jun-2026: la pestaña Configuración (Presentaciones=envase por producto,
+         Lead times, Cadencias…) NO tenía botón visible · solo se llegaba por deeplink → nadie
+         encontraba dónde configurar los envases. Botón directo a switchProgTab('config'). -->
+    <button data-prog-grp="config" onclick="switchProgTab('config')"
+      style="padding:9px 24px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#475569,#64748b);color:#fff;box-shadow:0 3px 10px rgba(71,85,105,.3)"
+      title="Configuración · 📦 Presentaciones (envase por producto) · Lead times · Cadencias · Emails">
+      &#9881; Configuración
+    </button>
     <!-- Sebastián 20-may-2026: Operación Live OCULTA completa · "no la
          logramos, después la repensamos". Mantiene el botón en DOM
          (display:none) para que switchProgGroup('opera_grp') siga
