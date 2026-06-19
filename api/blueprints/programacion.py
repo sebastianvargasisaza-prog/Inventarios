@@ -13961,6 +13961,23 @@ def _generar_checklist_produccion(c, produccion_id, producto_nombre, fecha_plane
         except Exception:
             pass
 
+        # Envase DEFAULT del producto desde producto_presentaciones (= la MISMA fuente que el
+        # abastecimiento · M55) → pre-llenar mee_codigo_asignado del item de envase primario para
+        # que el DESCUENTO use el mismo envase que se COMPRÓ (antes quedaba NULL → el operario
+        # debía asignar a mano y, si olvidaba, el envase no se descontaba ≠ compra · 18-jun).
+        env_default = ''
+        try:
+            _er = c.execute(
+                "SELECT envase_codigo FROM producto_presentaciones "
+                "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1 "
+                "AND COALESCE(envase_codigo,'')<>'' "
+                "ORDER BY COALESCE(es_default,0) DESC, COALESCE(ventas_mes_referencia,0) DESC LIMIT 1",
+                (producto_nombre,)).fetchone()
+            if _er:
+                env_default = (_er[0] or '').strip().upper()
+        except Exception:
+            pass
+
         # Calcular unidades objetivo con 5% de merma (estandar industrial)
         import math as _math
         if presentacion_g_ml > 0 and (cantidad_kg or 0) > 0:
@@ -14008,15 +14025,19 @@ def _generar_checklist_produccion(c, produccion_id, producto_nombre, fecha_plane
                 f"Auto: {cantidad_kg:.1f}kg / {presentacion_g_ml:.0f}{'ml' if (pres and (pres[0] or 0)>0) else 'g'} "
                 f"= {cant_ud} ud (+5% merma)"
             ) if cant_ud > 0 else ''
+            # Pre-llenar el envase desde presentaciones SOLO para el envase primario/frasco
+            # (presentaciones solo mapea el contenedor · tapa/caja/etiqueta se asignan aparte).
+            _mee_asig = env_default if (tipo or '').lower() in (
+                'envase_primario', 'envase', 'frasco', 'recipiente') else ''
             c.execute("""INSERT INTO produccion_checklist
                 (produccion_id, producto_nombre, fecha_planeada, cantidad_kg,
                  item_tipo, descripcion, cantidad_unidades, unidad,
                  estado, proveedor, dias_anticipacion, observaciones,
-                 actualizado_por)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                 actualizado_por, mee_codigo_asignado)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (produccion_id, producto_nombre, fecha_planeada, cantidad_kg,
                  tipo, desc, cant_ud, unidad_label,
-                 'pendiente', prov or '', dias or 30, obs_calc, usuario))
+                 'pendiente', prov or '', dias or 30, obs_calc, usuario, _mee_asig or None))
             items_creados += 1
     except Exception:
         pass

@@ -334,6 +334,27 @@ contra el maestro. (4) **Pedí el dump SIN traducir** — el traductor del naveg
 (nombres "DE"→"Delaware", comas decimales, espacios en códigos) → no reconciliar sobre datos sucios.
 Pendiente durable: botón "reconciliar fórmulas vs maestro" (upload Excel → diff → corrige).
 
+## 🫀 M56 · Revisión a fondo del núcleo (inventarios/consumos/necesidades · workflow 22 agentes) · 18-jun
+
+"Si falla cae el sistema corporativo." Necesidades=PERFECTO, cambios-de-hoy=PERFECTO (proyección/migs/TZ verificados).
+Reales arreglados (verificados 1×1; los de brd descartados, ver abajo):
+- **Columna fantasma MEE · 2ª instancia (P0):** `conteo_ajustar` tenía OTRO INSERT a `movimientos_mee` con `descripcion`
+  (no existe) dentro de try/except → el ajuste de conteo MEE se perdía (drift). Misma clase que M51 (la 1ª era ~8453).
+  Fix: columnas reales + log (no `except: pass` mudo · M4). **Lección: cuando arregles un patrón, GREP por TODAS sus instancias.**
+- **M23 case-insensitive estado_lote (3 sitios):** `liberar_lote` (UPDATE WHERE estado_lote IN sin UPPER → un lote legacy
+  'Cuarentena' no se liberaba), `diagnostico_alertas` vencimientos + stock-bajo-mínimo (filtros sin UPPER). Alineados a
+  `UPPER(COALESCE(estado_lote,''))`. (El stock-bajo usa solo 'VIGENTE' · más estricto que el canónico · es alerta, no decisión de compra.)
+- **Envase COMPRA ≠ DESCUENTO (P0 · el más importante):** tras M55 la COMPRA saca envases de producto_presentaciones, pero
+  el DESCUENTO (`_descontar_mee_envasado`) solo consume items del `produccion_checklist` con `mee_codigo_asignado` ≠ NULL, y
+  `_generar_checklist_produccion` los creaba en NULL → el operario debía asignar a mano; si olvidaba, el envase NO se descontaba
+  ≠ lo comprado. Fix: el item de envase primario se **pre-llena con el envase de presentaciones** (misma fuente que la compra)
+  → compra == descuento automático (corregible). tapa/caja/etiqueta siguen manuales (presentaciones solo mapea el contenedor).
+NO tocados (decisión firme · re-confirmada): **brd.py _calcular_teoricos_mp / ebr_vista_completa / _generar_mbr_desde_formula
+cargan formula_items sin filtro activo=0** — son rutas de EJECUCIÓN de un lote COMPROMETIDO: deben usar la fórmula congelada del
+batch, NO el estado activo actual. Filtrarlas rompe el golden (`'Blush Balm'` activo=0 con seed de EBR · ver M51). Además MBR-create
+ya está gateado por fh activo=1. Regla: **filtro activo=0 SOLO en demanda/planeación, NUNCA en ejecución de batch comprometido.**
+Tests `test_envase_checklist_autopreset.py`.
+
 ## 📦 M55 · Abastecimiento de ENVASES (MEE) unificado en producto_presentaciones · 18-jun
 
 Sebastián: "revisemos de dónde saca qué envase pertenece a qué producción · falta resolver envases."

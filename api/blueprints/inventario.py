@@ -7876,7 +7876,7 @@ def liberar_lote():
     # Antes: lotes en cuarentena extendida quedaban zombies (rowcount=0)
     c.execute(
         "UPDATE movimientos SET estado_lote=? "
-        "WHERE id=? AND estado_lote IN ('CUARENTENA','CUARENTENA_EXTENDIDA')",
+        "WHERE id=? AND UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')",
         (nuevo_estado, mov_id),
     )
     if c.rowcount == 0:
@@ -8696,16 +8696,21 @@ def conteo_ajustar(conteo_id):
             )
         except Exception:
             try:
+                # movimientos_mee NO tiene columna 'descripcion' (usa mee_codigo) · antes este
+                # INSERT lanzaba y el except lo tragaba → el ajuste de conteo MEE se PERDÍA (drift).
+                # 2ª instancia del bug de M51 (la otra era ~8453). Columnas reales + log.
                 c.execute(
                     """INSERT INTO movimientos_mee
-                         (mee_codigo, descripcion, tipo, cantidad,
+                         (mee_codigo, tipo, cantidad,
                           fecha, observaciones, lote_ref, batch_ref, responsable, anulado)
-                       VALUES (?,?,?,?,datetime('now', '-5 hours'),?,?,?,?,0)""",
-                    (it['codigo_mp'], it['nombre_mp'], tipo_mov, abs(diff),
+                       VALUES (?,?,?,datetime('now', '-5 hours'),?,?,?,?,0)""",
+                    (it['codigo_mp'], tipo_mov, abs(diff),
                      obs, str(conteo_id), lote_objetivo or '', user),
                 )
-            except Exception:
-                pass
+            except Exception as _e_fb2:
+                __import__('logging').getLogger('inventario').warning(
+                    'Fallback movimientos_mee falló (%s) · conteo %s cod %s',
+                    _e_fb2, conteo_id, it.get('codigo_mp'))
     else:
         c.execute("""INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,observaciones,lote,estanteria,estado_lote,operador)
                      VALUES (?,?,?,?,datetime('now', '-5 hours'),?,?,?,'VIGENTE',?)""",
@@ -13011,7 +13016,7 @@ def alertas_vivas_planta():
         LEFT JOIN maestro_mps mp ON m.material_id = mp.codigo_mp
         WHERE m.fecha_vencimiento != ''
           AND m.fecha_vencimiento <= ?
-          AND m.estado_lote IN ('VIGENTE','CUARENTENA')
+          AND UPPER(COALESCE(m.estado_lote,'')) IN ('VIGENTE','CUARENTENA')
         -- material_nombre/fecha_vencimiento/tipo son funcionalmente dependientes
         -- del lote, pero PG exige toda columna no-agregada en el GROUP BY (SQLite
         -- no) → si no, 500 'must appear in the GROUP BY clause'. Y PG tampoco
@@ -13044,7 +13049,7 @@ def alertas_vivas_planta():
                COALESCE((
                    SELECT SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END)
                    FROM movimientos m
-                   WHERE m.material_id = mp.codigo_mp AND m.estado_lote='VIGENTE'
+                   WHERE m.material_id = mp.codigo_mp AND UPPER(COALESCE(m.estado_lote,''))='VIGENTE'
                ), 0) as stock_actual
         FROM maestro_mps mp
         WHERE mp.activo = 1 AND COALESCE(mp.stock_minimo, 0) > 0
