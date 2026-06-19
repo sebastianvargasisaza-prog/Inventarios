@@ -1440,6 +1440,7 @@ var ITMS = 0;
 var MP_ITMS = 0;
 var _MPCAT = [];
 var _ALERTAS_MP = [];
+var _ALERTAS_MEE = [];   // envases (MEE) en déficit · consumo-horizontes?tipo=mee · 18-jun
 var _ocsCatFilter = 'ALL';
 var PAGOS = [];
 
@@ -2452,7 +2453,17 @@ async function loadData(){
           };
         });
       })
-      .catch(function(e){ console.error('MPs deficit load error:',e); _ALERTAS_MP=[]; })
+      .catch(function(e){ console.error('MPs deficit load error:',e); _ALERTAS_MP=[]; }),
+    // Déficit de ENVASES (MEE) · 18-jun · misma fuente unificada (producto_presentaciones)
+    fetch('/api/abastecimiento/consumo-horizontes?tipo=mee').then(function(r){ return r.ok ? r.json() : {mees:[],horizontes:[]}; })
+      .then(function(dm){
+        var hm=(dm.horizontes||[]); var hmax=hm.length?String(hm[hm.length-1]):'90';
+        _ALERTAS_MEE=(dm.mees||[]).filter(function(m){ return m.deficit && parseFloat(m.deficit[hmax]||0)>0.5; }).map(function(m){
+          return { codigo:m.codigo, nombre:m.nombre, deficit:parseFloat((m.deficit||{})[hmax]||0),
+                   proveedor:m.proveedor_sugerido||'', urgencia:m.urgencia||'' };
+        });
+      })
+      .catch(function(e){ console.error('MEE deficit load error:',e); _ALERTAS_MEE=[]; })
   ]);
   renderDash();
   renderMPAlerts();
@@ -3583,14 +3594,16 @@ function renderMPAlerts(){
   var text=document.getElementById('mp-alert-text');
   var list=document.getElementById('mp-alert-list');
   if(!banner) return;
-  if(!_ALERTAS_MP||!_ALERTAS_MP.length){ banner.style.display='none'; return; }
+  var _nMee = (_ALERTAS_MEE||[]).length;
+  if((!_ALERTAS_MP||!_ALERTAS_MP.length) && !_nMee){ banner.style.display='none'; return; }
   var total_def=_ALERTAS_MP.reduce(function(s,a){ return s+parseFloat(a.deficit||0); },0);
   var n_china = _ALERTAS_MP.filter(function(a){ return a.es_china; }).length;
   banner.style.display='block';
   var resumen = _ALERTAS_MP.length+' MPs en déficit real (Centro de Programación) — Faltante total: '+Math.round(total_def).toLocaleString('es-CO')+' g';
   if(n_china > 0) resumen += ' · ⚠ '+n_china+' de China (lead 60d)';
+  if(_nMee > 0) resumen += ' · 📦 '+_nMee+' envase'+(_nMee>1?'s':'')+' en déficit';
   text.textContent=resumen;
-  list.innerHTML=_ALERTAS_MP.slice(0,8).map(function(a){
+  var mpChips=_ALERTAS_MP.slice(0,8).map(function(a){
     var col = a.es_china ? '#b91c1c' : '#d97706';
     var deficit_g = Math.round(a.deficit||0);
     var deficit_str = deficit_g.toLocaleString('es-CO')+' g';
@@ -3601,7 +3614,14 @@ function renderMPAlerts(){
     return '<span style="background:#fff;border:1px solid '+col+';color:'+col
       +';border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;" title="Stock: '+stock_str+prov_str+'">'
       +china_mark+esc(a.nombre.substring(0,28))+' (faltan '+deficit_str+')</span>';
-  }).join('');
+  });
+  // Envases (MEE) en déficit · color teal para distinguir de MPs · 18-jun
+  var meeChips=(_ALERTAS_MEE||[]).slice(0,8).map(function(m){
+    var def_str=Math.round(m.deficit||0).toLocaleString('es-CO')+' u';
+    var prov=m.proveedor?' · '+m.proveedor:'';
+    return '<span style="background:#fff;border:1px solid #0f766e;color:#0f766e;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;" title="Envase'+prov+'">📦 '+esc((m.nombre||m.codigo||'').substring(0,28))+' (faltan '+def_str+')</span>';
+  });
+  list.innerHTML=mpChips.concat(meeChips).join('');
 }
 
 // ─── MP: Nueva OC con catálogo ───────────────────────────
