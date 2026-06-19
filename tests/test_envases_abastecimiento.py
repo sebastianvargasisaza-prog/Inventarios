@@ -57,6 +57,34 @@ def test_envase_abastecimiento_desde_presentaciones(app, db_clean):
     assert float(it["deficit"][hmax]) >= 99, f"déficit envase ~100 · got {it['deficit']}"
 
 
+def test_tapa_caja_aparecen_en_abastecimiento(app, db_clean):
+    """A+ (mig 278): tapa y caja SECUNDARIAS también se planean (compra), desde la
+    MISMA presentación que el envase primario → no dejar nada por fuera."""
+    prod = "ZZ TC PROD"
+    envase, tapa, caja = "ENV-TC-A-50ML", "TAPA-TC-A", "CAJA-TC-A"
+    _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp,nombre_comercial,nombre_inci,activo) "
+          "VALUES ('MP-TCA','Mat TCA','INCI TCA',1)")
+    _exec("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES (?,1,1)", (prod,))
+    _exec("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje,cantidad_g_por_lote) "
+          "VALUES (?, 'MP-TCA','Mat TCA',10,0)", (prod,))
+    for cod in (envase, tapa, caja):
+        _exec("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,stock_actual,stock_minimo) "
+              "VALUES (?, 'MEE TC','Envase',0,0)", (cod,))
+    _exec("INSERT INTO producto_presentaciones (producto_nombre,presentacion_codigo,etiqueta,volumen_ml,envase_codigo,tapa_codigo,caja_codigo,ventas_mes_referencia,activo) "
+          "VALUES (?, 'TC-50','50 ml',50,?,?,?,100,1)", (prod, envase, tapa, caja))
+    # 5 kg → 5000 g / 50 ml = 100 unidades → 100 de envase, tapa y caja c/u.
+    _exec("INSERT INTO produccion_programada (producto,fecha_programada,lotes,estado,cantidad_kg,origen) "
+          "VALUES (?, date('now','-5 hours','+5 days'),1,'pendiente',5,'eos_plan')", (prod,))
+    c = _login(app)
+    j = c.get("/api/abastecimiento/consumo-horizontes?tipo=mp,mee").get_json()
+    mees = {(m.get("codigo") or "").upper(): m for m in (j.get("mees") or [])}
+    hmax = str(max(j["horizontes"]))
+    for cod in (envase, tapa, caja):
+        it = mees.get(cod.upper())
+        assert it is not None, f"{cod} debe aparecer en abastecimiento · mees={list(mees)}"
+        assert float(it["consumo"][hmax]) >= 99, f"{cod} consumo ~100 · got {it['consumo']}"
+
+
 def test_envase_no_aparece_sin_presentacion(app, db_clean):
     """Control: un producto SIN presentación+envase no genera consumo MEE fantasma."""
     prod = "ZZ ENV SINPRES"

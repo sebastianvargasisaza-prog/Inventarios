@@ -7104,6 +7104,8 @@ def admin_producto_presentaciones_upsert():
     except (TypeError, ValueError):
         return jsonify({'error': 'volumen_ml debe ser numero'}), 400
     env = (d.get('envase_codigo') or '').strip()
+    tapa = (d.get('tapa_codigo') or '').strip()
+    caja = (d.get('caja_codigo') or '').strip()
     sku_shopify = (d.get('sku_shopify') or '').strip()
     es_default = 1 if d.get('es_default') else 0
     try:
@@ -7123,12 +7125,13 @@ def admin_producto_presentaciones_upsert():
         return jsonify({'error': 'volumen_ml debe ser > 0'}), 400
     conn = db_connect()
     c = conn.cursor()
-    # Validar envase existe (si fue provisto)
-    if env:
-        e_chk = c.execute("SELECT codigo FROM maestro_mee WHERE codigo=?", (env,)).fetchone()
-        if not e_chk:
-            conn.close()
-            return jsonify({'error': f'envase_codigo {env} no existe en maestro_mee'}), 400
+    # Validar envase/tapa/caja existen en maestro_mee (si fueron provistos)
+    for _campo, _val in (('envase_codigo', env), ('tapa_codigo', tapa), ('caja_codigo', caja)):
+        if _val:
+            _chk = c.execute("SELECT codigo FROM maestro_mee WHERE codigo=?", (_val,)).fetchone()
+            if not _chk:
+                conn.close()
+                return jsonify({'error': f'{_campo} {_val} no existe en maestro_mee'}), 400
     try:
         c.execute(
             """INSERT INTO producto_presentaciones
@@ -7150,6 +7153,20 @@ def admin_producto_presentaciones_upsert():
             (prod, pcod, etiq, vol, env, factor, sku_shopify, es_default,
              ventas_mes_ref)
         )
+        # Sebastián 18-jun-2026 · tapa/caja (mig 278) · envases SECUNDARIOS · misma
+        # fuente que la COMPRA (abastecimiento) y el DESCUENTO (checklist) → no dejar nada.
+        # UPDATE separado y guardado por OperationalError (instancia sin mig 278).
+        try:
+            c.execute(
+                "UPDATE producto_presentaciones SET tapa_codigo=?, caja_codigo=? "
+                "WHERE producto_nombre=? AND presentacion_codigo=?",
+                (tapa, caja, prod, pcod))
+        except sqlite3.OperationalError as _e:
+            try:
+                from flask import current_app as _ca
+                _ca.logger.warning(f'[presentaciones] tapa/caja no guardadas (columna ausente?): {_e}')
+            except Exception:
+                pass
         # Sebastián 30-may-2026 · cantidad FIJA (mig 204) · SOLO si el caller la
         # envía explícitamente · así editar el ratio (uds/mes) NO la borra.
         # Guard si la columna no existe (instancia sin mig 204).
@@ -7167,7 +7184,8 @@ def admin_producto_presentaciones_upsert():
                       tabla='producto_presentaciones',
                       registro_id=f'{prod}|{pcod}',
                       despues={'producto': prod, 'codigo': pcod, 'etiqueta': etiq,
-                               'volumen_ml': vol, 'envase': env})
+                               'volumen_ml': vol, 'envase': env,
+                               'tapa': tapa, 'caja': caja})
         except Exception:
             pass
         conn.commit()

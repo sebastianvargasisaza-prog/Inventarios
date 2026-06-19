@@ -10983,21 +10983,39 @@ def abastecimiento_consumo_horizontes():
         # unidades del producto entre sus presentaciones sin doble-contar. Clave _norm_prod (M13)
         # para que el lookup del loop la encuentre. OVERRIDE de lo SKU-based (presentaciones manda).
         try:
+            # tapa_codigo/caja_codigo (mig 278): si no existen las columnas (instancia vieja),
+            # caer a NULL · COALESCE en SQL + try del SELECT extendido con fallback al básico.
+            try:
+                _pres_rows = c.execute("""
+                    SELECT producto_nombre, COALESCE(envase_codigo,''), COALESCE(ventas_mes_referencia,0),
+                           COALESCE(tapa_codigo,''), COALESCE(caja_codigo,'')
+                    FROM producto_presentaciones
+                    WHERE COALESCE(activo,1)=1 AND COALESCE(envase_codigo,'')<>'' AND COALESCE(volumen_ml,0)>0
+                """).fetchall()
+            except sqlite3.OperationalError:
+                _pres_rows = [(r[0], r[1], r[2], '', '') for r in c.execute("""
+                    SELECT producto_nombre, COALESCE(envase_codigo,''), COALESCE(ventas_mes_referencia,0)
+                    FROM producto_presentaciones
+                    WHERE COALESCE(activo,1)=1 AND COALESCE(envase_codigo,'')<>'' AND COALESCE(volumen_ml,0)>0
+                """).fetchall()]
             _pres_envases = {}
-            for r in c.execute("""
-                SELECT producto_nombre, COALESCE(envase_codigo,''), COALESCE(ventas_mes_referencia,0)
-                FROM producto_presentaciones
-                WHERE COALESCE(activo,1)=1 AND COALESCE(envase_codigo,'')<>'' AND COALESCE(volumen_ml,0)>0
-            """).fetchall():
-                _pres_envases.setdefault(_norm_prod(r[0]), []).append(
-                    {'env': (r[1] or '').strip().upper(), 'vmr': float(r[2] or 0)})
+            for r in _pres_rows:
+                _pres_envases.setdefault(_norm_prod(r[0]), []).append({
+                    'env': (r[1] or '').strip().upper(), 'vmr': float(r[2] or 0),
+                    'tapa': (r[3] or '').strip().upper(), 'caja': (r[4] or '').strip().upper()})
             for _k, _lst in _pres_envases.items():
                 _tot_vmr = sum(x['vmr'] for x in _lst)
-                mee_por_producto[_k] = [
-                    {'codigo': x['env'],
-                     'cant_x_uds': (x['vmr'] / _tot_vmr) if _tot_vmr > 0 else (1.0 / len(_lst)),
-                     'tipo': 'envase'}
-                    for x in _lst]
+                _items = []
+                for x in _lst:
+                    _share = (x['vmr'] / _tot_vmr) if _tot_vmr > 0 else (1.0 / len(_lst))
+                    # frasco + (tapa) + (caja) · cada uno consume `share` unidades por unidad de PT
+                    # → suma de shares=1 · NO doble-cuenta (cada componente es 1 por unidad envasada).
+                    _items.append({'codigo': x['env'], 'cant_x_uds': _share, 'tipo': 'envase'})
+                    if x['tapa']:
+                        _items.append({'codigo': x['tapa'], 'cant_x_uds': _share, 'tipo': 'tapa'})
+                    if x['caja']:
+                        _items.append({'codigo': x['caja'], 'cant_x_uds': _share, 'tipo': 'caja'})
+                mee_por_producto[_k] = _items
         except sqlite3.OperationalError:
             pass
         # Volumen por unidad (necesario para convertir kg→unidades→envases). Clave _norm_prod
@@ -13965,16 +13983,28 @@ def _generar_checklist_produccion(c, produccion_id, producto_nombre, fecha_plane
         # abastecimiento · M55) → pre-llenar mee_codigo_asignado del item de envase primario para
         # que el DESCUENTO use el mismo envase que se COMPRÓ (antes quedaba NULL → el operario
         # debía asignar a mano y, si olvidaba, el envase no se descontaba ≠ compra · 18-jun).
-        env_default = ''
+        env_default = ''; tapa_default = ''; caja_default = ''
         try:
-            _er = c.execute(
-                "SELECT envase_codigo FROM producto_presentaciones "
-                "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1 "
-                "AND COALESCE(envase_codigo,'')<>'' "
-                "ORDER BY COALESCE(es_default,0) DESC, COALESCE(ventas_mes_referencia,0) DESC LIMIT 1",
-                (producto_nombre,)).fetchone()
+            # tapa_codigo/caja_codigo (mig 278) · fallback si la instancia es vieja sin columnas.
+            try:
+                _er = c.execute(
+                    "SELECT envase_codigo, COALESCE(tapa_codigo,''), COALESCE(caja_codigo,'') "
+                    "FROM producto_presentaciones "
+                    "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1 "
+                    "AND COALESCE(envase_codigo,'')<>'' "
+                    "ORDER BY COALESCE(es_default,0) DESC, COALESCE(ventas_mes_referencia,0) DESC LIMIT 1",
+                    (producto_nombre,)).fetchone()
+            except sqlite3.OperationalError:
+                _er = c.execute(
+                    "SELECT envase_codigo, '', '' FROM producto_presentaciones "
+                    "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1 "
+                    "AND COALESCE(envase_codigo,'')<>'' "
+                    "ORDER BY COALESCE(es_default,0) DESC, COALESCE(ventas_mes_referencia,0) DESC LIMIT 1",
+                    (producto_nombre,)).fetchone()
             if _er:
                 env_default = (_er[0] or '').strip().upper()
+                tapa_default = (_er[1] or '').strip().upper()
+                caja_default = (_er[2] or '').strip().upper()
         except Exception:
             pass
 
@@ -14025,10 +14055,17 @@ def _generar_checklist_produccion(c, produccion_id, producto_nombre, fecha_plane
                 f"Auto: {cantidad_kg:.1f}kg / {presentacion_g_ml:.0f}{'ml' if (pres and (pres[0] or 0)>0) else 'g'} "
                 f"= {cant_ud} ud (+5% merma)"
             ) if cant_ud > 0 else ''
-            # Pre-llenar el envase desde presentaciones SOLO para el envase primario/frasco
-            # (presentaciones solo mapea el contenedor · tapa/caja/etiqueta se asignan aparte).
-            _mee_asig = env_default if (tipo or '').lower() in (
-                'envase_primario', 'envase', 'frasco', 'recipiente') else ''
+            # Pre-llenar desde presentaciones (mig 278): frasco→envase_codigo, tapa→tapa_codigo,
+            # caja→caja_codigo · misma fuente que la COMPRA → lo que se compra == lo que se descuenta.
+            _t = (tipo or '').lower()
+            if _t in ('envase_primario', 'envase', 'frasco', 'recipiente'):
+                _mee_asig = env_default
+            elif _t == 'tapa':
+                _mee_asig = tapa_default
+            elif _t in ('caja_exterior', 'caja'):
+                _mee_asig = caja_default
+            else:
+                _mee_asig = ''
             c.execute("""INSERT INTO produccion_checklist
                 (produccion_id, producto_nombre, fecha_planeada, cantidad_kg,
                  item_tipo, descripcion, cantidad_unidades, unidad,
@@ -16122,21 +16159,32 @@ def planta_presentaciones_crear():
         return jsonify({'error': 'presentacion_codigo requerido'}), 400
     if not etiqueta:
         return jsonify({'error': 'etiqueta requerida'}), 400
+    # Validar envase/tapa/caja existen en maestro_mee (si fueron provistos) · no
+    # dejar un código fantasma que la compra/descuento no resuelva (M5).
+    env = (d.get('envase_codigo') or '').strip() or None
+    tapa = (d.get('tapa_codigo') or '').strip() or None
+    caja = (d.get('caja_codigo') or '').strip() or None
     conn = get_db(); c = conn.cursor()
+    for _campo, _val in (('envase_codigo', env), ('tapa_codigo', tapa), ('caja_codigo', caja)):
+        if _val:
+            _chk = c.execute("SELECT codigo FROM maestro_mee WHERE codigo=?", (_val,)).fetchone()
+            if not _chk:
+                return jsonify({'error': f'{_campo} {_val} no existe en maestro_mee'}), 400
     try:
         cur = c.execute("""
             INSERT INTO producto_presentaciones
               (producto_nombre, categoria, presentacion_codigo, etiqueta,
-               volumen_ml, peso_g, envase_codigo, factor_g_por_unidad,
+               volumen_ml, peso_g, envase_codigo, tapa_codigo, caja_codigo,
+               factor_g_por_unidad,
                sku_shopify, es_default, activo, notas, actualizado_en)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, datetime('now', '-5 hours'))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, datetime('now', '-5 hours'))
         """, (
             producto,
             (d.get('categoria') or '').strip() or None,
             pcode, etiqueta,
             d.get('volumen_ml'),
             d.get('peso_g'),
-            (d.get('envase_codigo') or '').strip() or None,
+            env, tapa, caja,
             d.get('factor_g_por_unidad'),
             (d.get('sku_shopify') or '').strip() or None,
             1 if d.get('es_default') else 0,
@@ -16163,6 +16211,7 @@ def planta_presentaciones_detail(pid):
     campos = []
     params = []
     for col in ('etiqueta', 'categoria', 'volumen_ml', 'peso_g', 'envase_codigo',
+                'tapa_codigo', 'caja_codigo',
                 'factor_g_por_unidad', 'sku_shopify', 'es_default', 'notas'):
         if col in d:
             campos.append(f'{col} = ?')

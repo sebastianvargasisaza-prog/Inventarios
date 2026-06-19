@@ -352,6 +352,13 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (278, "Envases SECUNDARIOS por presentación (18-jun · A+ · 'no dejar tapa/caja por fuera del "
+          "abastecimiento'): agrega tapa_codigo y caja_codigo a producto_presentaciones. Así el "
+          "ABASTECIMIENTO planea (compra) tapa+caja y el DESCUENTO (checklist) los pre-llena, desde "
+          "la MISMA fuente que el envase primario. 'duplicate column' benigno (idempotente).", [
+        "ALTER TABLE producto_presentaciones ADD COLUMN tapa_codigo TEXT",
+        "ALTER TABLE producto_presentaciones ADD COLUMN caja_codigo TEXT",
+    ]),
     (277, "Limpieza de duplicados en formula_items (18-jun): si una fórmula tenía dos filas del "
           "MISMO (producto, material) el motor las sumaba (la dedup en lectura M51 ya lo neutraliza, "
           "pero lectores directos como el pesaje EBR las verían 2×). Borra los duplicados dejando "

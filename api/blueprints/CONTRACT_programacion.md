@@ -258,3 +258,17 @@ Tests goldens que protegen:
   `brd.crear_ebr_desde_mbr` para crear/vincular el EBR del lote (audit
   CREAR_EBR_AUTO). Con 'strict' BLOQUEA (409 SIN_MBR_APROBADO) antes de mutar si
   el producto no tiene MBR aprobado. Default 'off' = sin cambios. Ver CONTRACT_brd.md.
+
+### 2026-06-18 · Envases SECUNDARIos (tapa/caja) por presentación (mig 278 · A+)
+- `producto_presentaciones` gana `tapa_codigo` + `caja_codigo` (mig 278).
+- **Fuente ÚNICA envase↔producción** = `producto_presentaciones` para COMPRA y
+  DESCUENTO de TODOS los componentes: `abastecimiento_consumo_horizontes` emite
+  envase + tapa + caja (share-split por `ventas_mes_referencia`); el checklist
+  (`_generar_checklist_produccion`) pre-llena `mee_codigo_asignado` del item
+  envase_primario→envase_codigo, tapa→tapa_codigo, caja_exterior→caja_codigo.
+  Lo COMPRADO == lo DESCONTADO (M5/M55/M56), sin asignación manual.
+- POST/PUT `/api/planta/presentaciones` aceptan/validan tapa_codigo+caja_codigo
+  contra `maestro_mee` (igual que envase_codigo). UI en Planta›Configuración›
+  Presentaciones (campos "Código tapa MEE" / "Código caja MEE").
+- Tests: `test_envases_abastecimiento.py::test_tapa_caja_aparecen_en_abastecimiento`,
+  `test_envase_checklist_autopreset.py::test_checklist_tapa_caja_se_prellenan_desde_presentaciones`.

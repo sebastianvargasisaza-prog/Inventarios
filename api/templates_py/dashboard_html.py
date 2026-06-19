@@ -11123,6 +11123,14 @@ function _renderProgramacion(d){
             <input id="pres-envase" placeholder="ej. ENV-AMBAR-30ML" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
           </div>
           <div>
+            <label style="font-size:11px;color:#64748b;font-weight:600">Código tapa MEE</label>
+            <input id="pres-tapa" placeholder="ej. TAPA-NEGRA-24" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#64748b;font-weight:600">Código caja MEE</label>
+            <input id="pres-caja" placeholder="ej. CAJA-30ML" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+          </div>
+          <div>
             <label style="font-size:11px;color:#64748b;font-weight:600">SKU Shopify</label>
             <input id="pres-sku" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
           </div>
@@ -14656,7 +14664,7 @@ async function ckMarcar(itemId, estado){
 
   function abrirNuevaPresentacion(productoPreset){
     _llenarSelectProductos('pres-producto', productoPreset||'');
-    ['pres-categoria','pres-codigo','pres-etiqueta','pres-volumen','pres-peso','pres-envase','pres-sku','pres-notas'].forEach(function(id){
+    ['pres-categoria','pres-codigo','pres-etiqueta','pres-volumen','pres-peso','pres-envase','pres-tapa','pres-caja','pres-sku','pres-notas'].forEach(function(id){
       var el = document.getElementById(id); if(el) el.value = '';
     });
     var m = document.getElementById('modal-pres-nueva');
@@ -14673,6 +14681,8 @@ async function ckMarcar(itemId, estado){
       volumen_ml: parseFloat(document.getElementById('pres-volumen').value)||null,
       peso_g: parseFloat(document.getElementById('pres-peso').value)||null,
       envase_codigo: (document.getElementById('pres-envase').value||'').trim(),
+      tapa_codigo: (document.getElementById('pres-tapa').value||'').trim(),
+      caja_codigo: (document.getElementById('pres-caja').value||'').trim(),
       sku_shopify: (document.getElementById('pres-sku').value||'').trim(),
       notas: (document.getElementById('pres-notas').value||'').trim(),
     };
