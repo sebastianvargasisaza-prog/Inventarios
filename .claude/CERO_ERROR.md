@@ -348,7 +348,10 @@ Reales arreglados (verificados 1×1; los de brd descartados, ver abajo):
   el DESCUENTO (`_descontar_mee_envasado`) solo consume items del `produccion_checklist` con `mee_codigo_asignado` ≠ NULL, y
   `_generar_checklist_produccion` los creaba en NULL → el operario debía asignar a mano; si olvidaba, el envase NO se descontaba
   ≠ lo comprado. Fix: el item de envase primario se **pre-llena con el envase de presentaciones** (misma fuente que la compra)
-  → compra == descuento automático (corregible). tapa/caja/etiqueta siguen manuales (presentaciones solo mapea el contenedor).
+  → compra == descuento automático (corregible). **A+ (mig 278): tapa+caja también** — `producto_presentaciones` gana
+  `tapa_codigo`/`caja_codigo`; el abastecimiento emite envase+tapa+caja (share-split por ventas_mes_referencia) y el checklist
+  pre-llena los 3 (`tapa`→tapa_codigo, `caja_exterior`→caja_codigo). UI en Presentaciones (campos tapa/caja, validados vs maestro_mee).
+  Etiqueta sigue manual (no es un MEE de presentación). Tests `test_envases_abastecimiento.py::test_tapa_caja_*` + checklist.
 NO tocados (decisión firme · re-confirmada): **brd.py _calcular_teoricos_mp / ebr_vista_completa / _generar_mbr_desde_formula
 cargan formula_items sin filtro activo=0** — son rutas de EJECUCIÓN de un lote COMPROMETIDO: deben usar la fórmula congelada del
 batch, NO el estado activo actual. Filtrarlas rompe el golden (`'Blush Balm'` activo=0 con seed de EBR · ver M51). Además MBR-create
