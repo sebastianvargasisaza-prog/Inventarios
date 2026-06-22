@@ -16527,6 +16527,111 @@ def admin_salud_formulas_page():
     return _SALUD_FORMULAS_HTML
 
 
+@bp.route("/api/admin/areas-planta", methods=["GET"])
+def admin_areas_planta():
+    """READ-ONLY · áreas de planta cruzadas con el maestro de EQUIPOS (equipos_planta · la
+    verdad). Por área: nº equipos, capacidad real (máx tanque litros/kg), nº producciones que
+    la referencian, y flags: oficial (tipo=produccion o DISP/ACOND · las que ve el jefe/rótulos)
+    y DUPLICADO (mismo nombre que otra área activa · ej. PROD vs FAB). Admin."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    import unicodedata, re as _re
+    from collections import defaultdict
+    from database import get_db
+    conn = get_db(); c = conn.cursor()
+    eq = {}
+    try:
+        for r in c.execute("SELECT UPPER(TRIM(area_codigo)), COUNT(*), "
+                           "MAX(COALESCE(capacidad_litros,0)), MAX(COALESCE(capacidad_kg,0)) "
+                           "FROM equipos_planta GROUP BY UPPER(TRIM(area_codigo))").fetchall():
+            eq[r[0]] = {'n': r[1], 'max_l': r[2] or 0, 'max_kg': r[3] or 0}
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    prod = {}
+    try:
+        for r in c.execute("SELECT area_id, COUNT(*) FROM produccion_programada "
+                           "WHERE area_id IS NOT NULL GROUP BY area_id").fetchall():
+            prod[r[0]] = r[1]
+    except Exception:
+        pass
+
+    def _norm(s):
+        s = unicodedata.normalize('NFKD', str(s or '')).encode('ascii', 'ignore').decode()
+        return _re.sub(r'[^a-z0-9]+', ' ', s.lower()).strip()
+
+    rows = c.execute("SELECT id, COALESCE(codigo,''), COALESCE(nombre,''), COALESCE(tipo,''), "
+                     "COALESCE(activo,1), COALESCE(puede_producir,0), COALESCE(puede_envasar,0), "
+                     "marmita_ml, COALESCE(estado,'') FROM areas_planta ORDER BY COALESCE(activo,1) DESC, orden, id").fetchall()
+    porn = defaultdict(list)
+    for r in rows:
+        if int(r[4] or 1) == 1:
+            porn[_norm(r[2])].append(r[1])
+    dups = {nm for v in porn.values() if len(v) > 1 for nm in v}
+
+    out = []
+    for r in rows:
+        cod = str(r[1]).strip().upper()
+        e = eq.get(cod, {'n': 0, 'max_l': 0, 'max_kg': 0})
+        oficial = (r[3] == 'produccion') or cod in ('DISP', 'ACOND')
+        out.append({'id': r[0], 'codigo': r[1], 'nombre': r[2], 'tipo': r[3], 'activo': int(r[4] or 1),
+                    'puede_producir': int(r[5] or 0), 'puede_envasar': int(r[6] or 0),
+                    'marmita_ml': r[7], 'estado': r[8], 'n_equipos': e['n'],
+                    'cap_litros': e['max_l'], 'cap_kg': e['max_kg'], 'n_producciones': prod.get(r[0], 0),
+                    'oficial': oficial, 'duplicado': (int(r[4] or 1) == 1 and r[1] in dups)})
+    return jsonify({'ok': True, 'areas': out})
+
+
+@bp.route("/api/admin/areas-planta/set", methods=["POST"])
+def admin_areas_planta_set():
+    """Set activo y/o capacidad (marmita_ml) de un área. Admin · audit · reversible."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.get_json(silent=True) or {}
+    try:
+        aid = int(d.get('area_id'))
+    except Exception:
+        return jsonify({'error': 'area_id requerido'}), 400
+    from database import get_db
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT codigo, nombre, COALESCE(activo,1) FROM areas_planta WHERE id=?", (aid,)).fetchone()
+    if not row:
+        return jsonify({'error': 'área no existe'}), 404
+    sets, args, despues = [], [], {}
+    if 'activo' in d:
+        sets.append("activo=?"); args.append(1 if d.get('activo') else 0); despues['activo'] = 1 if d.get('activo') else 0
+    if 'marmita_ml' in d:
+        try:
+            cap = float(d.get('marmita_ml')) if str(d.get('marmita_ml')).strip() != '' else None
+        except Exception:
+            return jsonify({'error': 'marmita_ml inválida'}), 400
+        sets.append("marmita_ml=?"); args.append(cap); despues['marmita_ml'] = cap
+    if not sets:
+        return jsonify({'error': 'nada para cambiar'}), 400
+    args.append(aid)
+    try:
+        c.execute(f"UPDATE areas_planta SET {', '.join(sets)} WHERE id=?", args)
+        audit_log(c, usuario=u, accion='SET_AREA_PLANTA', tabla='areas_planta',
+                  registro_id=str(aid), despues={'codigo': row[0], **despues})
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)[:300]}), 500
+    return jsonify({'ok': True, 'area_id': aid, 'codigo': row[0], **despues})
+
+
+@bp.route("/admin/areas-planta", methods=["GET"])
+def admin_areas_planta_page():
+    """Página · Áreas de Planta (limpiar duplicados + fijar capacidad desde equipos)."""
+    if 'compras_user' not in session:
+        return redirect("/login?next=/admin/areas-planta")
+    return _AREAS_PLANTA_HTML
+
+
 @bp.route("/api/admin/renombrar-producto", methods=["POST"])
 def admin_renombrar_producto():
     """Renombra un PRODUCTO de forma consistente en las tablas vivas (el nombre es la llave
@@ -17991,6 +18096,72 @@ inventario debe volver a su posici&oacute;n INVIMA. Read-only (salvo apagar el m
  }
  cargar();
  cargarBrd();
+</script>
+</div></body></html>"""
+
+
+_AREAS_PLANTA_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Áreas de Planta</title>
+<style>
+ body{font-family:system-ui,Arial;margin:0;background:#0f172a;color:#e2e8f0}
+ .wrap{max-width:1200px;margin:0 auto;padding:24px}
+ h1{font-size:21px}.muted{color:#94a3b8;font-size:13px}
+ .card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:14px;margin:12px 0}
+ .kpis{display:flex;gap:10px;flex-wrap:wrap}.kpi{background:#0b1220;border:1px solid #334155;border-radius:10px;padding:10px 14px;min-width:100px}
+ .kpi .v{font-size:22px;font-weight:800}.kpi .l{font-size:11px;color:#94a3b8}
+ table{width:100%;border-collapse:collapse;font-size:12.5px}
+ th,td{padding:5px 8px;border-bottom:1px solid #334155;text-align:left}th{color:#a5b4fc}
+ .ok{color:#34d399}.warn{color:#fbbf24}.bad{color:#f87171}.mono{font-family:ui-monospace,monospace}
+ tr.inact{opacity:.5}tr.dup{background:#3a1d1d}
+ .tag{display:inline-block;border-radius:5px;padding:1px 6px;font-size:10px}.t-of{background:#14532d}.t-dup{background:#7f1d1d}.t-no{background:#3f3f46}
+ input{width:64px;padding:4px;background:#0b1220;color:#e2e8f0;border:1px solid #334155;border-radius:6px}
+ button{padding:3px 9px;border:0;border-radius:6px;color:#fff;font-size:11px;cursor:pointer}
+ a{color:#a5b4fc}
+</style></head><body><div class="wrap">
+<a href="/admin">&larr; Volver al Hub</a>
+<h1>&#127981; &Aacute;reas de Planta</h1>
+<div class="muted">Cruzadas con el maestro de EQUIPOS (la verdad). <b>Oficial</b> = la ve el jefe/rótulos (producción + DISP/ACOND).
+<b>DUP</b> = nombre repetido (duplicado a desactivar). La capacidad real = el tanque más grande del área.</div>
+<div id="kpis" class="kpis" style="margin:12px 0"></div>
+<div id="msg" class="muted"></div>
+<div class="card"><div id="tabla"></div></div>
+<script>
+ var ESC=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch];});};
+ async function csrf(){try{var r=await fetch('/api/csrf-token',{credentials:'same-origin'});return (await r.json()).csrf_token;}catch(e){return '';}}
+ function kpi(v,l,cls){return '<div class="kpi"><div class="v '+(cls||'')+'">'+(v==null?'&mdash;':v)+'</div><div class="l">'+l+'</div></div>';}
+ async function setArea(aid,body){
+   var t=await csrf();
+   var r=await fetch('/api/admin/areas-planta/set',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(Object.assign({area_id:aid},body))});
+   var j=await r.json(); if(!r.ok){alert('Error: '+(j.error||r.status));return;} cargar();
+ }
+ async function cargar(){
+   document.getElementById('msg').textContent='Cargando...';
+   var r=await fetch('/api/admin/areas-planta'); var j=await r.json();
+   if(!j.ok){document.getElementById('msg').innerHTML='<span class="bad">Error: '+ESC(j.error||r.status)+'</span>';return;}
+   document.getElementById('msg').textContent='';
+   var A=j.areas||[]; window._A=A;
+   var act=A.filter(function(a){return a.activo;});
+   document.getElementById('kpis').innerHTML=
+     kpi(act.length,'áreas activas')+kpi(act.filter(function(a){return a.oficial;}).length,'oficiales','ok')+
+     kpi(act.filter(function(a){return a.duplicado;}).length,'duplicados',act.filter(function(a){return a.duplicado;}).length?'bad':'ok')+
+     kpi(act.filter(function(a){return a.puede_producir;}).length,'fabricación');
+   var h='<table><tr><th>Código</th><th>Nombre</th><th>Tipo</th><th>Flags</th><th>Equipos</th><th>Cap. real</th><th>Prod.</th><th>Capacidad</th><th>Acción</th></tr>';
+   A.forEach(function(a,gi){
+     var flags=(a.oficial?'<span class="tag t-of">OFICIAL</span> ':'<span class="tag t-no">no-of</span> ')+(a.duplicado?'<span class="tag t-dup">DUP</span>':'');
+     var capreal=(a.cap_litros?a.cap_litros+'L':'')+(a.cap_kg?(' '+a.cap_kg+'kg'):'')||'—';
+     var sug=a.cap_litros||a.cap_kg||'';
+     h+='<tr class="'+(a.activo?'':'inact')+(a.duplicado&&a.activo?' dup':'')+'"><td class="mono">'+ESC(a.codigo)+'</td><td><b>'+ESC(a.nombre)+'</b></td>'+
+        '<td class="muted">'+ESC(a.tipo)+'</td><td>'+flags+'</td><td>'+a.n_equipos+'</td><td>'+capreal+'</td><td>'+a.n_producciones+'</td>'+
+        '<td><input id="cap'+gi+'" value="'+(a.marmita_ml==null?'':a.marmita_ml)+'" placeholder="'+sug+'"> '+
+        (sug?('<button style="background:#0e7490" onclick="setArea('+a.id+',{marmita_ml:'+sug+'})">'+sug+'</button>'):'')+'</td>'+
+        '<td><button style="background:#7c3aed" onclick="setArea('+a.id+',{marmita_ml:document.getElementById(\\'cap'+gi+'\\').value})">Guardar cap</button> '+
+        (a.activo?('<button style="background:#dc2626" onclick="if(confirm(\\'Desactivar '+ESC(a.nombre).replace(/'/g,"")+'?\\'))setArea('+a.id+',{activo:false})">Desactivar</button>'):
+                  ('<button style="background:#16a34a" onclick="setArea('+a.id+',{activo:true})">Activar</button>'))+'</td></tr>';
+   });
+   document.getElementById('tabla').innerHTML=h+'</table>';
+ }
+ cargar();
 </script>
 </div></body></html>"""
 
