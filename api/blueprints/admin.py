@@ -16465,6 +16465,161 @@ def admin_formula_preflight_page():
     return _FORMULA_PREFLIGHT_HTML
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# INTELIGENCIA OPERACIONAL · Fase 1 (Sebastián 22-jun) · "saber TODO lo que pasa
+# con métricas de tiempo". READ-ONLY sobre datos que YA existen: security_events
+# (inicio de labores) + produccion_programada (marcas de tiempo por fase ya
+# capturadas: dispensación/elaboración/envasado/acondicionamiento). Duraciones en
+# Python (no julianday · M24). Gerencia (admin) por privacidad laboral.
+# ═══════════════════════════════════════════════════════════════════════════
+def _io_parse_ts(s):
+    """Parsea un timestamp ('YYYY-MM-DD HH:MM:SS' o ISO con 'T'/'Z') → datetime
+    naive (en la TZ en que se guardó). None si no parsea."""
+    if not s:
+        return None
+    from datetime import datetime as _d
+    txt = str(s).strip().replace('Z', '').replace('T', ' ').split('.')[0]
+    for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d'):
+        try:
+            return _d.strptime(txt, fmt)
+        except Exception:
+            continue
+    return None
+
+
+def _io_mins(a, b):
+    """Minutos entre dos timestamps (b - a). None si falta alguno o es negativo.
+    La TZ se cancela (ambos los escribe el mismo flujo) → duración fiable."""
+    da, db = _io_parse_ts(a), _io_parse_ts(b)
+    if not da or not db:
+        return None
+    diff = (db - da).total_seconds() / 60.0
+    return round(diff, 1) if diff >= 0 else None
+
+
+@bp.route("/api/admin/io/inicio-labores", methods=["GET"])
+def io_inicio_labores():
+    """READ-ONLY · por (día Colombia, usuario): PRIMERA hora de login = inicio de
+    labores en la app + nº de logins + última actividad. De security_events
+    (login_success). ?desde=YYYY-MM-DD&hasta=YYYY-MM-DD (fecha Colombia)."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    from datetime import timedelta as _td
+    desde = (request.args.get('desde') or '').strip()
+    hasta = (request.args.get('hasta') or '').strip()
+    from database import get_db
+    conn = get_db(); c = conn.cursor()
+    try:
+        rows = c.execute(
+            "SELECT ts, username, COALESCE(ip,'') FROM security_events "
+            "WHERE event LIKE 'login_success%' ORDER BY ts").fetchall()
+    except Exception:
+        rows = []
+    agg = {}
+    for ts, user, ip in rows:
+        dt = _io_parse_ts(ts)
+        if not dt or not user:
+            continue
+        col = dt - _td(hours=5)   # security_events.ts es UTC → Colombia
+        fecha = col.date().isoformat()
+        if desde and fecha < desde:
+            continue
+        if hasta and fecha > hasta:
+            continue
+        hora = col.strftime('%H:%M')
+        k = (fecha, user)
+        rec = agg.get(k)
+        if not rec:
+            agg[k] = {'fecha': fecha, 'usuario': user, 'inicio': hora,
+                      'ultima': hora, 'n_logins': 1, 'ip': ip}
+        else:
+            rec['ultima'] = hora
+            rec['n_logins'] += 1
+    items = sorted(agg.values(), key=lambda x: (x['fecha'], x['inicio']), reverse=True)
+    return jsonify({'ok': True, 'items': items[:2000]})
+
+
+@bp.route("/api/admin/io/tiempos-produccion", methods=["GET"])
+def io_tiempos_produccion():
+    """READ-ONLY · tiempos de PRODUCCIÓN por lote desde produccion_programada (marcas
+    de tiempo por fase ya capturadas). Por lote: duración de dispensación/elaboración/
+    envasado/acondicionamiento + total + kg_real/merma + operario por fase. Resumen:
+    promedio por fase, cuello de botella, top productos por tiempo total."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    desde = (request.args.get('desde') or '').strip()
+    hasta = (request.args.get('hasta') or '').strip()
+    from database import get_db
+    conn = get_db(); c = conn.cursor()
+    op = {}
+    try:
+        for r in c.execute("SELECT id, TRIM(COALESCE(nombre,'')||' '||COALESCE(apellido,'')) "
+                           "FROM operarios_planta").fetchall():
+            op[r[0]] = r[1] or ''
+    except Exception:
+        pass
+    try:
+        rows = c.execute(
+            "SELECT id, producto, COALESCE(fecha_programada,''), COALESCE(estado,''), "
+            "COALESCE(kg_real,0), COALESCE(unidades_real,0), COALESCE(merma_pct,0), "
+            "inicio_real_at, fin_real_at, etapa_disp_inicio_at, etapa_disp_fin_at, "
+            "etapa_elab_inicio_at, etapa_elab_fin_at, etapa_env_inicio_at, etapa_env_fin_at, "
+            "etapa_acond_inicio_at, etapa_acond_fin_at, operario_dispensacion_id, "
+            "operario_elaboracion_id, operario_envasado_id, operario_acondicionamiento_id "
+            "FROM produccion_programada "
+            "WHERE COALESCE(fin_real_at,'')<>'' OR COALESCE(inicio_real_at,'')<>'' "
+            "ORDER BY COALESCE(fin_real_at, inicio_real_at) DESC LIMIT 500").fetchall()
+    except Exception as e:
+        return jsonify({'error': str(e)[:200]}), 500
+    items = []
+    buckets = {'disp': [], 'elab': [], 'env': [], 'acond': [], 'total': []}
+    for r in rows:
+        fecha = (r[2] or '')[:10]
+        if desde and fecha and fecha < desde:
+            continue
+        if hasta and fecha and fecha > hasta:
+            continue
+        disp = _io_mins(r[9], r[10]); elab = _io_mins(r[11], r[12])
+        env = _io_mins(r[13], r[14]); acond = _io_mins(r[15], r[16])
+        total = _io_mins(r[7], r[8])
+        items.append({'id': r[0], 'producto': r[1], 'fecha': fecha, 'estado': r[3],
+                      'kg_real': r[4], 'unidades': r[5], 'merma_pct': r[6],
+                      'disp_min': disp, 'elab_min': elab, 'env_min': env,
+                      'acond_min': acond, 'total_min': total,
+                      'op_disp': op.get(r[17], ''), 'op_elab': op.get(r[18], ''),
+                      'op_env': op.get(r[19], ''), 'op_acond': op.get(r[20], '')})
+        for k, v in (('disp', disp), ('elab', elab), ('env', env), ('acond', acond), ('total', total)):
+            if v is not None:
+                buckets[k].append(v)
+
+    def _avg(lst):
+        return round(sum(lst) / len(lst), 1) if lst else None
+    fases = {'Dispensación': _avg(buckets['disp']), 'Elaboración': _avg(buckets['elab']),
+             'Envasado': _avg(buckets['env']), 'Acondicionamiento': _avg(buckets['acond'])}
+    cuello = max([(k, v) for k, v in fases.items() if v is not None],
+                 key=lambda x: x[1], default=(None, None))[0]
+    porprod = {}
+    for it in items:
+        if it['total_min'] is not None:
+            porprod.setdefault(it['producto'], []).append(it['total_min'])
+    por_producto = sorted(
+        [{'producto': k, 'prom_total_min': _avg(v), 'n': len(v)} for k, v in porprod.items()],
+        key=lambda x: -(x['prom_total_min'] or 0))[:25]
+    resumen = {'n_lotes': len(items), 'prom_por_fase': fases, 'prom_total_min': _avg(buckets['total']),
+               'cuello_botella': cuello, 'por_producto': por_producto}
+    return jsonify({'ok': True, 'items': items, 'resumen': resumen})
+
+
+@bp.route("/admin/inteligencia-operacional", methods=["GET"])
+def admin_inteligencia_operacional_page():
+    """Página · Inteligencia Operacional Fase 1 (inicio de labores + tiempos de producción)."""
+    if 'compras_user' not in session:
+        return redirect("/login?next=/admin/inteligencia-operacional")
+    return _INTELIGENCIA_OPERACIONAL_HTML
+
+
 @bp.route("/api/admin/formula-bodega-cruce", methods=["GET"])
 def admin_formula_bodega_cruce():
     """READ-ONLY · UNO POR UNO: cada material usado en fórmulas (formula_items de fórmulas
@@ -17045,6 +17200,93 @@ MP00068 | 0.95 | Biosure FE phenoxyethanol fenoxietanol</textarea>
        '</b>) entrar&aacute; a Necesidades para <b>'+ESC(body.producto_nombre)+'</b>. (El envase lo asign&aacute;s en Presentaciones si hace falta.)'
      : '<span class="bad">Error: '+ESC(j.error||r.status)+'</span>';
  }
+</script>
+</div></body></html>"""
+
+
+_INTELIGENCIA_OPERACIONAL_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inteligencia Operacional</title>
+<style>
+ body{font-family:system-ui,Arial;margin:0;background:#0f172a;color:#e2e8f0}
+ .wrap{max-width:1250px;margin:0 auto;padding:24px}
+ h1{font-size:21px}h2{font-size:16px;color:#a5b4fc;margin-top:26px}.muted{color:#94a3b8;font-size:13px}
+ .card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:16px;margin:12px 0}
+ .kpis{display:flex;gap:10px;flex-wrap:wrap}
+ .kpi{background:#0b1220;border:1px solid #334155;border-radius:10px;padding:12px 16px;min-width:120px}
+ .kpi .v{font-size:22px;font-weight:800}.kpi .l{font-size:11px;color:#94a3b8}
+ .ok{color:#34d399}.warn{color:#fbbf24}.bad{color:#f87171}
+ table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
+ th,td{padding:5px 8px;border-bottom:1px solid #334155;text-align:left;white-space:nowrap}
+ th{color:#a5b4fc}.mono{font-family:ui-monospace,monospace}
+ input{padding:7px;background:#0b1220;color:#e2e8f0;border:1px solid #334155;border-radius:8px}
+ button{padding:8px 14px;border:0;border-radius:8px;background:#7c3aed;color:#fff;font-weight:700;cursor:pointer}
+ a{color:#a5b4fc}.chip{background:#312e81;border-radius:6px;padding:1px 7px;font-size:11px}
+</style></head><body><div class="wrap">
+<a href="/admin">&larr; Volver al Hub</a>
+<h1>&#129504; Inteligencia Operacional <span class="muted">&middot; Fase 1</span></h1>
+<div class="card">
+ <span class="muted">Rango (fecha)</span>
+ Desde <input type="date" id="desde"> Hasta <input type="date" id="hasta">
+ <button onclick="cargar()">Actualizar</button>
+ <span id="msg" class="muted" style="margin-left:10px"></span>
+</div>
+
+<h2>&#9201;&#65039; Inicio de labores <span class="muted">(1&ordf; hora de login del d&iacute;a por persona)</span></h2>
+<div class="card"><div id="lab"></div></div>
+
+<h2>&#127981; Tiempos de producci&oacute;n <span class="muted">(por fase, de lo ya registrado)</span></h2>
+<div id="prodKpis" class="kpis"></div>
+<div class="card"><div id="prod"></div></div>
+<div class="card"><b>Top productos por tiempo total</b><div id="prodTop"></div></div>
+
+<script>
+ var ESC=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch];});};
+ function hm(m){ if(m==null) return '<span class="muted">&mdash;</span>'; var h=Math.floor(m/60), r=Math.round(m%60); return (h>0?(h+'h '):'')+r+'m'; }
+ function q(){ var d=document.getElementById('desde').value, h=document.getElementById('hasta').value; var p=[]; if(d)p.push('desde='+d); if(h)p.push('hasta='+h); return p.length?('?'+p.join('&')):''; }
+ async function cargar(){
+   document.getElementById('msg').textContent='Cargando...';
+   try{
+     var rl=await fetch('/api/admin/io/inicio-labores'+q()); var jl=await rl.json();
+     var rp=await fetch('/api/admin/io/tiempos-produccion'+q()); var jp=await rp.json();
+     document.getElementById('msg').textContent='';
+     pintarLab(jl.items||[]); pintarProd(jp);
+   }catch(e){ document.getElementById('msg').innerHTML='<span class="bad">Error: '+ESC(e.message)+'</span>'; }
+ }
+ function pintarLab(items){
+   if(!items.length){ document.getElementById('lab').innerHTML='<p class="muted">Sin logins en el rango.</p>'; return; }
+   var h='<table><tr><th>Fecha</th><th>Usuario</th><th>Inici&oacute; (hora)</th><th>&Uacute;ltima actividad</th><th>Logins</th><th>IP</th></tr>';
+   items.forEach(function(r){ h+='<tr><td>'+ESC(r.fecha)+'</td><td><b>'+ESC(r.usuario)+'</b></td><td class="ok"><b>'+ESC(r.inicio)+'</b></td><td>'+ESC(r.ultima)+'</td><td>'+r.n_logins+'</td><td class="mono muted">'+ESC(r.ip)+'</td></tr>'; });
+   document.getElementById('lab').innerHTML=h+'</table>';
+ }
+ function pintarProd(j){
+   var s=(j&&j.resumen)||{}; var f=s.prom_por_fase||{};
+   function kpi(v,l,cls){return '<div class="kpi"><div class="v '+(cls||'')+'">'+(v==null?'&mdash;':v)+'</div><div class="l">'+l+'</div></div>';}
+   document.getElementById('prodKpis').innerHTML=
+     kpi(s.n_lotes,'lotes',null)+
+     kpi(f['Dispensación']!=null?hm(f['Dispensación']):null,'prom dispensación')+
+     kpi(f['Elaboración']!=null?hm(f['Elaboración']):null,'prom elaboración')+
+     kpi(f['Envasado']!=null?hm(f['Envasado']):null,'prom envasado')+
+     kpi(f['Acondicionamiento']!=null?hm(f['Acondicionamiento']):null,'prom acond.')+
+     kpi(s.prom_total_min!=null?hm(s.prom_total_min):null,'prom total','ok')+
+     kpi(s.cuello_botella||'&mdash;','cuello de botella','warn');
+   var items=(j&&j.items)||[];
+   if(!items.length){ document.getElementById('prod').innerHTML='<p class="muted">Sin producciones con tiempos en el rango.</p>'; }
+   else{
+     var h='<table><tr><th>Fecha</th><th>Producto</th><th>Dispens.</th><th>Elaborac.</th><th>Envasado</th><th>Acond.</th><th>TOTAL</th><th>kg real</th><th>Merma</th><th>Operarios</th></tr>';
+     items.forEach(function(r){
+       var ops=[r.op_disp,r.op_elab,r.op_env,r.op_acond].filter(function(x){return x;}).join(', ');
+       h+='<tr><td>'+ESC(r.fecha)+'</td><td>'+ESC(r.producto)+'</td><td>'+hm(r.disp_min)+'</td><td>'+hm(r.elab_min)+'</td><td>'+hm(r.env_min)+'</td><td>'+hm(r.acond_min)+'</td><td class="ok"><b>'+hm(r.total_min)+'</b></td><td>'+(r.kg_real||0)+'</td><td>'+(r.merma_pct||0)+'%</td><td class="muted">'+ESC(ops)+'</td></tr>';
+     });
+     document.getElementById('prod').innerHTML=h+'</table>';
+   }
+   var tp=(s.por_producto)||[];
+   if(!tp.length){ document.getElementById('prodTop').innerHTML='<p class="muted">&mdash;</p>'; }
+   else{ var t='<table><tr><th>Producto</th><th>Prom. total</th><th>Lotes</th></tr>';
+     tp.forEach(function(r){ t+='<tr><td>'+ESC(r.producto)+'</td><td>'+hm(r.prom_total_min)+'</td><td>'+r.n+'</td></tr>'; });
+     document.getElementById('prodTop').innerHTML=t+'</table>'; }
+ }
+ cargar();
 </script>
 </div></body></html>"""
 
