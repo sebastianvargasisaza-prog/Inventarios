@@ -16431,6 +16431,91 @@ def admin_ajustar_formula_pct():
                     'reversible': 'sí · audit_log + re-ajustar a los valores previos'})
 
 
+@bp.route("/api/admin/salud-formulas", methods=["GET"])
+def admin_salud_formulas():
+    """READ-ONLY · salud de las FÓRMULAS MAESTRAS (vs PROD). Por fórmula activa: nº ítems,
+    suma de %, y qué ingredientes NO resuelven a un MP activo de bodega — usando el MISMO
+    resolver del descuento (_resolver_material_bodega · bridge incluido) para reflejar lo que
+    pasaría al producir. Banderas: SIN_ITEMS · SUMA≠100 · ROTOS (códigos que no resuelven o
+    resuelven a MP inactivo) · DUPLICADO (nombre repetido). Admin."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    import unicodedata, re as _re
+    from collections import defaultdict
+    from database import get_db
+    conn = get_db(); c = conn.cursor()
+    try:
+        from blueprints.programacion import _resolver_material_bodega as _resolver
+    except Exception:
+        from programacion import _resolver_material_bodega as _resolver
+
+    maestro = {}
+    for r in c.execute("SELECT codigo_mp, COALESCE(activo,1) FROM maestro_mps").fetchall():
+        maestro[str(r[0]).strip().upper()] = int(r[1] or 0)
+
+    def _norm(s):
+        s = unicodedata.normalize('NFKD', str(s or '')).encode('ascii', 'ignore').decode()
+        return _re.sub(r'[^a-z0-9]+', ' ', s.lower()).strip()
+
+    hdrs = c.execute("SELECT producto_nombre, COALESCE(activo,1), COALESCE(lote_size_kg,0) "
+                     "FROM formula_headers").fetchall()
+    porn = defaultdict(list)
+    for nom, act, _l in hdrs:
+        if int(act or 1) == 1:
+            porn[_norm(nom)].append(nom)
+    dups = {nom for v in porn.values() if len(v) > 1 for nom in v}
+
+    out = []
+    for nom, act, lote in hdrs:
+        if int(act or 1) != 1:
+            continue
+        its = c.execute("SELECT material_id, COALESCE(material_nombre,''), COALESCE(porcentaje,0) "
+                        "FROM formula_items WHERE producto_nombre=?", (nom,)).fetchall()
+        suma = round(sum(i[2] for i in its), 2)
+        rotos = []
+        for mid, mnom, _pct in its:
+            try:
+                res = _resolver(c, mid, mnom) or mid   # 3er arg = nombre del MATERIAL (igual que el descuento)
+            except Exception:
+                res = mid
+            ru = str(res).strip().upper()
+            estado = maestro.get(ru)
+            if estado is None:
+                rotos.append({'codigo': mid, 'nombre': mnom, 'motivo': 'no resuelve a maestro'})
+            elif estado != 1:
+                rotos.append({'codigo': mid, 'nombre': mnom, 'resuelto': res, 'motivo': 'MP inactivo'})
+        flags = []
+        if not its:
+            flags.append('SIN_ITEMS')
+        if abs(suma - 100) > 0.5:
+            flags.append('SUMA')
+        if rotos:
+            flags.append('ROTOS')
+        if nom in dups:
+            flags.append('DUPLICADO')
+        out.append({'producto': nom, 'lote_kg': lote, 'n_items': len(its), 'suma': suma,
+                    'rotos': rotos, 'flags': flags, 'ok': not flags})
+    out.sort(key=lambda x: (x['ok'], x['producto']))
+    resumen = {
+        'total': len(out),
+        'ok': sum(1 for x in out if x['ok']),
+        'suma_mala': sum(1 for x in out if 'SUMA' in x['flags']),
+        'con_rotos': sum(1 for x in out if 'ROTOS' in x['flags']),
+        'sin_items': sum(1 for x in out if 'SIN_ITEMS' in x['flags']),
+        'duplicados': sorted(dups),
+    }
+    return jsonify({'ok': True, 'resumen': resumen, 'formulas': out})
+
+
+@bp.route("/admin/salud-formulas", methods=["GET"])
+def admin_salud_formulas_page():
+    """Página · Salud de Fórmulas Maestras (read-only)."""
+    if 'compras_user' not in session:
+        return redirect("/login?next=/admin/salud-formulas")
+    return _SALUD_FORMULAS_HTML
+
+
 @bp.route("/api/admin/renombrar-producto", methods=["POST"])
 def admin_renombrar_producto():
     """Renombra un PRODUCTO de forma consistente en las tablas vivas (el nombre es la llave
@@ -17895,6 +17980,65 @@ inventario debe volver a su posici&oacute;n INVIMA. Read-only (salvo apagar el m
  }
  cargar();
  cargarBrd();
+</script>
+</div></body></html>"""
+
+
+_SALUD_FORMULAS_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Salud de Fórmulas Maestras</title>
+<style>
+ body{font-family:system-ui,Arial;margin:0;background:#0f172a;color:#e2e8f0}
+ .wrap{max-width:1150px;margin:0 auto;padding:24px}
+ h1{font-size:21px}.muted{color:#94a3b8;font-size:13px}
+ .card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:16px;margin:12px 0}
+ .kpis{display:flex;gap:10px;flex-wrap:wrap}
+ .kpi{background:#0b1220;border:1px solid #334155;border-radius:10px;padding:12px 16px;min-width:110px}
+ .kpi .v{font-size:24px;font-weight:800}.kpi .l{font-size:11px;color:#94a3b8}
+ .ok{color:#34d399}.warn{color:#fbbf24}.bad{color:#f87171}
+ table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px}
+ th,td{padding:5px 8px;border-bottom:1px solid #334155;text-align:left;vertical-align:top}
+ th{color:#a5b4fc}.mono{font-family:ui-monospace,monospace}
+ tr.row-bad{background:#3a1d1d}
+ .tag{display:inline-block;border-radius:5px;padding:1px 6px;font-size:11px;margin-right:3px}
+ .t-bad{background:#7f1d1d}.t-warn{background:#78350f}.t-dup{background:#3730a3}
+ a{color:#a5b4fc}
+</style></head><body><div class="wrap">
+<a href="/admin">&larr; Volver al Hub</a>
+<h1>&#129516; Salud de F&oacute;rmulas Maestras</h1>
+<div class="muted">Cada f&oacute;rmula activa vs prod: &iquest;suman 100%? &iquest;los ingredientes resuelven a un MP activo de
+bodega (mismo resolver del descuento · con puente)? &iquest;hay duplicados? Los problemas salen primero.</div>
+<div id="kpis" class="kpis" style="margin:12px 0"></div>
+<div id="msg" class="muted"></div>
+<div class="card"><div id="tabla"></div></div>
+<script>
+ var ESC=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch];});};
+ function kpi(v,l,cls){return '<div class="kpi"><div class="v '+(cls||'')+'">'+(v==null?'&mdash;':v)+'</div><div class="l">'+l+'</div></div>';}
+ async function cargar(){
+   document.getElementById('msg').textContent='Analizando fórmulas...';
+   var r=await fetch('/api/admin/salud-formulas'); var j=await r.json();
+   if(!j.ok){document.getElementById('msg').innerHTML='<span class="bad">Error: '+ESC(j.error||r.status)+'</span>';return;}
+   document.getElementById('msg').textContent='';
+   var s=j.resumen||{};
+   document.getElementById('kpis').innerHTML=
+     kpi(s.total,'fórmulas activas')+kpi(s.ok,'sanas','ok')+
+     kpi(s.suma_mala,'no suman 100',s.suma_mala?'bad':'ok')+
+     kpi(s.con_rotos,'con códigos rotos',s.con_rotos?'bad':'ok')+
+     kpi(s.sin_items,'sin ítems',s.sin_items?'bad':'ok')+
+     kpi((s.duplicados||[]).length,'nombres duplicados',(s.duplicados||[]).length?'warn':'ok');
+   var h='<table><tr><th>Producto</th><th>Lote</th><th>Ítems</th><th>Suma %</th><th>Estado</th><th>Detalle</th></tr>';
+   (j.formulas||[]).forEach(function(f){
+     var tags=(f.flags||[]).map(function(t){
+       var cls=t==='DUPLICADO'?'t-dup':(t==='SUMA'?'t-warn':'t-bad');
+       return '<span class="tag '+cls+'">'+t+'</span>';}).join('');
+     if(f.ok) tags='<span class="ok">OK</span>';
+     var det=(f.rotos||[]).map(function(x){return ESC(x.codigo)+' ('+ESC(x.nombre||'')+'): '+ESC(x.motivo);}).join('<br>');
+     h+='<tr class="'+(f.ok?'':'row-bad')+'"><td><b>'+ESC(f.producto)+'</b></td><td>'+f.lote_kg+'kg</td><td>'+f.n_items+
+        '</td><td class="'+(Math.abs(f.suma-100)>0.5?'bad':'')+'">'+f.suma+'</td><td>'+tags+'</td><td class="muted">'+det+'</td></tr>';
+   });
+   document.getElementById('tabla').innerHTML=h+'</table>';
+ }
+ cargar();
 </script>
 </div></body></html>"""
 
