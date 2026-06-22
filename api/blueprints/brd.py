@@ -54,18 +54,35 @@ log = logging.getLogger("brd")
 
 
 def _brd_visible(conn=None):
-    """¿El sistema de Batch Record (EBR/MBR/legajos) está VISIBLE para uso?
+    """¿El Batch Record (EBR/MBR/legajos) está VISIBLE para el usuario ACTUAL?
 
-    Sebastián 18-jun: el batch record digital requiere la validación de un tercero
-    (21 CFR Part 11) antes de usarse en regulado · se deja OCULTO hasta entonces.
-    Gobernado por app_settings.brd_visible (default OCULTO · se enciende poniéndolo
-    en '1' cuando Part 11 esté lista · sin redeploy). NO borra nada · es reversible."""
+    Gobernado por app_settings.brd_visible:
+      - '1'/'true'/'on'   → visible para TODOS
+      - '0'/''/ausente    → OCULTO para todos (default · seguro)
+      - 'admin'           → visible solo para ADMIN_USERS
+      - '<usuario>' (o lista coma-separada) → visible solo para ese/esos usuario(s)
+    Sebastián 18-jun: oculto hasta validación Part 11. 22-jun: modo por-usuario para que
+    Sebastián trabaje el batch digital sin que el resto lo vea. Reversible · sin redeploy."""
     try:
         c = conn or get_db()
         r = c.execute("SELECT valor FROM app_settings WHERE clave='brd_visible' LIMIT 1").fetchone()
-        return bool(r) and str(r[0]).strip().lower() in ('1', 'true', 'yes', 'si', 'sí', 'on')
+        val = (str(r[0]).strip().lower() if (r and r[0] is not None) else '')
     except Exception:
         return False  # ante la duda, OCULTO (seguro · no exponer regulado sin validar)
+    if val in ('1', 'true', 'yes', 'si', 'sí', 'on'):
+        return True
+    if val in ('', '0', 'false', 'no', 'off'):
+        return False
+    # modo restringido por usuario(s): 'admin' o username(s) coma-separados
+    try:
+        u = (session.get('compras_user') or '').strip().lower()
+    except Exception:
+        return False
+    if not u:
+        return False
+    if val == 'admin':
+        return u in {x.lower() for x in ADMIN_USERS}
+    return u in {x.strip() for x in val.split(',') if x.strip()}
 
 
 _BRD_OCULTO_HTML = (

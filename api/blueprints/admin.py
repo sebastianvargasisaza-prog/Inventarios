@@ -16908,6 +16908,60 @@ def admin_seguridad_planta_page():
     return _SEGURIDAD_PLANTA_HTML
 
 
+@bp.route("/api/admin/brd-visibilidad", methods=["GET", "POST"])
+def admin_brd_visibilidad():
+    """Visibilidad del Batch Digital (BRD/EBR · app_settings.brd_visible). Admin.
+    Sebastián 22-jun: poder trabajar el batch digital SIN que el resto lo vea.
+    POST {modo}: 'todos' (=1) | 'solo_yo' (=el admin actual) | 'oculto' (=0)."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    from database import get_db
+    conn = get_db(); c = conn.cursor()
+    try:
+        c.execute("""CREATE TABLE IF NOT EXISTS app_settings (
+            clave TEXT PRIMARY KEY, valor TEXT NOT NULL, descripcion TEXT,
+            actualizado_at_utc TEXT, actualizado_por TEXT, tenant_id INTEGER DEFAULT 1)""")
+    except Exception:
+        pass
+
+    def _estado():
+        r = c.execute("SELECT valor, COALESCE(actualizado_por,''), COALESCE(actualizado_at_utc,'') "
+                      "FROM app_settings WHERE clave='brd_visible' LIMIT 1").fetchone()
+        val = (str(r[0]).strip() if (r and r[0] is not None) else '')
+        low = val.lower()
+        if low in ('1', 'true', 'yes', 'si', 'sí', 'on'):
+            modo = 'todos'
+        elif low in ('', '0', 'false', 'no', 'off'):
+            modo = 'oculto'
+        elif low == 'admin':
+            modo = 'admins'
+        else:
+            modo = 'solo_usuario'
+        return {'valor': val, 'modo': modo, 'por': (r[1] if r else ''), 'at': (r[2] if r else '')}
+
+    if request.method == 'POST':
+        d = request.get_json(silent=True) or {}
+        modo = (d.get('modo') or '').strip().lower()
+        mapa = {'todos': '1', 'oculto': '0', 'solo_yo': u}
+        if modo not in mapa:
+            return jsonify({'error': "modo debe ser 'todos', 'solo_yo' u 'oculto'"}), 400
+        val = mapa[modo]
+        c.execute("INSERT INTO app_settings (clave,valor,descripcion,actualizado_at_utc,actualizado_por) "
+                  "VALUES ('brd_visible',?,?,datetime('now'),?) ON CONFLICT(clave) DO UPDATE SET "
+                  "valor=excluded.valor, actualizado_at_utc=excluded.actualizado_at_utc, "
+                  "actualizado_por=excluded.actualizado_por",
+                  (val, 'Visibilidad Batch Digital (BRD/EBR)', u))
+        try:
+            audit_log(c, usuario=u, accion='SET_BRD_VISIBLE', tabla='app_settings',
+                      registro_id='brd_visible', despues={'modo': modo, 'valor': val})
+        except Exception:
+            pass
+        conn.commit()
+        return jsonify({'ok': True, **_estado()})
+    return jsonify({'ok': True, **_estado()})
+
+
 @bp.route("/api/admin/formula-bodega-cruce", methods=["GET"])
 def admin_formula_bodega_cruce():
     """READ-ONLY · UNO POR UNO: cada material usado en fórmulas (formula_items de fórmulas
@@ -17652,9 +17706,34 @@ inventario debe volver a su posici&oacute;n INVIMA. Read-only (salvo apagar el m
  <b>&#128202; Exposici&oacute;n INVIMA</b> <span class="muted">(recepciones por OC, &uacute;ltimos 14 d&iacute;as)</span>
  <div id="expo" class="kpis" style="margin-top:10px"></div>
 </div>
+<div class="card" style="border-color:#7c3aed">
+ <b>&#129518; Visibilidad del Batch Digital (BRD/EBR)</b>
+ <div class="muted" style="margin:6px 0">Qui&eacute;n ve el m&oacute;dulo de batch record. Pod&eacute;s dejarlo <b>solo para vos</b>
+ mientras lo trabaj&aacute;s (el resto no lo ve).</div>
+ <div id="brdEstado" class="muted" style="margin-bottom:8px"></div>
+ <button onclick="setBrd('todos')" style="background:#16a34a">Todos</button>
+ <button onclick="setBrd('solo_yo')" style="background:#7c3aed">Solo yo</button>
+ <button onclick="setBrd('oculto')" style="background:#64748b">Oculto</button>
+ <span id="brdMsg" class="muted" style="margin-left:10px"></span>
+</div>
 <script>
  var ESC=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch];});};
  async function csrf(){try{var r=await fetch('/api/csrf-token',{credentials:'same-origin'});return (await r.json()).csrf_token;}catch(e){return '';}}
+ var _BRD_MODOS={todos:'Visible para TODOS',solo_yo:'Solo para vos',oculto:'Oculto para todos',admins:'Solo admins',solo_usuario:'Solo un usuario'};
+ async function cargarBrd(){
+   try{ var r=await fetch('/api/admin/brd-visibilidad'); var j=await r.json();
+     if(j.ok){ document.getElementById('brdEstado').innerHTML='Estado actual: <b>'+ESC(_BRD_MODOS[j.modo]||j.modo)+'</b>'+(j.valor&&j.modo==='solo_usuario'?(' ('+ESC(j.valor)+')'):'')+(j.por?(' &middot; por '+ESC(j.por)):''); }
+   }catch(e){}
+ }
+ async function setBrd(modo){
+   document.getElementById('brdMsg').textContent='Aplicando...';
+   var t=await csrf();
+   var r=await fetch('/api/admin/brd-visibilidad',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify({modo:modo})});
+   var j=await r.json();
+   if(!r.ok){document.getElementById('brdMsg').innerHTML='<span class="bad-t">Error: '+ESC(j.error||r.status)+'</span>';return;}
+   document.getElementById('brdMsg').innerHTML='<span class="ok-t">&#10004; '+ESC(_BRD_MODOS[j.modo]||j.modo)+'</span>';
+   cargarBrd();
+ }
  function kpi(v,l,cls){return '<div class="kpi"><div class="v '+(cls||'')+'">'+(v==null?'&mdash;':v)+'</div><div class="l">'+l+'</div></div>';}
  async function cargar(){
    var r=await fetch('/api/admin/seguridad-planta'); var j=await r.json();
@@ -17690,6 +17769,7 @@ inventario debe volver a su posici&oacute;n INVIMA. Read-only (salvo apagar el m
    cargar();
  }
  cargar();
+ cargarBrd();
 </script>
 </div></body></html>"""
 
