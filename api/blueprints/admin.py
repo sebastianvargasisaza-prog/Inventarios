@@ -16380,22 +16380,28 @@ def admin_renombrar_producto():
         return _re.sub(r'[^a-z0-9]+', ' ', s.lower()).strip()
 
     # nombre REAL del header (match normalizado · ve el string de prod)
-    objetivo = _norm(viejo)
-    cand = []
-    for r in c.execute("SELECT producto_nombre, COALESCE(activo,1) FROM formula_headers").fetchall():
-        if _norm(r[0]) == objetivo:
-            cand.append((r[0], int(r[1] or 1)))
-    activos = [r for r in cand if r[1] == 1]
-    if not activos:
-        return jsonify({'error': 'no hay fórmula ACTIVA que coincida', 'candidatos': [r[0] for r in cand]}), 404
-    if len(activos) > 1:
-        return jsonify({'error': 'múltiples activas coinciden (ambiguo)', 'candidatos': [r[0] for r in activos]}), 409
-    real = activos[0][0]
-
-    # ¿el nombre nuevo ya existe como header? (UNIQUE producto_nombre)
-    if c.execute("SELECT 1 FROM formula_headers WHERE producto_nombre=? AND producto_nombre<>?",
-                 (nuevo, real)).fetchone():
-        return jsonify({'error': f'ya existe una fórmula llamada "{nuevo}"'}), 409
+    headers = [(r[0], int(r[1] or 1)) for r in c.execute(
+        "SELECT producto_nombre, COALESCE(activo,1) FROM formula_headers").fetchall()]
+    activos_viejo = [h[0] for h in headers if _norm(h[0]) == _norm(viejo) and h[1] == 1]
+    activos_nuevo = [h[0] for h in headers if _norm(h[0]) == _norm(nuevo) and h[1] == 1]
+    modo_barrido = False
+    if len(activos_viejo) > 1:
+        return jsonify({'error': 'múltiples fórmulas activas coinciden con el nombre viejo (ambiguo)',
+                        'candidatos': activos_viejo}), 409
+    if len(activos_viejo) == 1:
+        real = activos_viejo[0]
+        # el nombre nuevo no debe existir ya como OTRO header ACTIVO (UNIQUE / colisión)
+        if activos_nuevo and activos_nuevo[0] != real:
+            return jsonify({'error': f'ya existe una fórmula ACTIVA llamada "{nuevo}"'}), 409
+    elif activos_nuevo:
+        # MODO BARRIDO: el producto YA se renombró (la fórmula activa está en el nombre
+        # nuevo) y solo quedan referencias rezagadas al nombre viejo (p.ej. un MBR borrador).
+        # Las barremos al nombre nuevo. real = el string exacto tipeado (donde viven los rezagos).
+        real = viejo
+        modo_barrido = True
+    else:
+        return jsonify({'error': 'no hay fórmula ACTIVA que coincida (ni con el nombre viejo ni con el nuevo)',
+                        'candidatos': [h[0] for h in headers if _norm(h[0]) == _norm(viejo)]}), 404
 
     def _count(sql, args):
         try:
@@ -16423,6 +16429,10 @@ def admin_renombrar_producto():
         'total': _count("SELECT COUNT(*) FROM mbr_templates WHERE producto_nombre=?", (real,)),
         'aprobados_inmutables': _count(
             "SELECT COUNT(*) FROM mbr_templates WHERE producto_nombre=? AND estado IN ('aprobado','obsoleto')", (real,)),
+        # borradores (no aprobados) SÍ se renombran (no inmutables)
+        'borrador_renombrables': _count(
+            "SELECT COUNT(*) FROM mbr_templates WHERE producto_nombre=? "
+            "AND COALESCE(estado,'') NOT IN ('aprobado','obsoleto')", (real,)),
     }
     skus = []
     try:
@@ -16437,11 +16447,11 @@ def admin_renombrar_producto():
 
     if dry_run:
         return jsonify({'ok': True, 'dry_run': True, 'nombre_real': real, 'nuevo': nuevo,
-                        'ocurrencias': counts, 'mbr': mbr_info, 'shopify_skus': skus,
-                        'shopify_mapeado': any(s['sku_shopify'] for s in skus)})
+                        'modo_barrido': modo_barrido, 'ocurrencias': counts, 'mbr': mbr_info,
+                        'shopify_skus': skus, 'shopify_mapeado': any(s['sku_shopify'] for s in skus)})
 
-    # Apply ATÓMICO (todo o nada · sin rollbacks parciales). Renombra solo tablas vivas;
-    # NUNCA mbr_templates (inmutable/regulado).
+    # Apply ATÓMICO (todo o nada · sin rollbacks parciales). Renombra tablas vivas + MBR
+    # BORRADOR (no aprobado · seguro · el trigger trg_mbr_aprobado_no_edit protege los aprobados).
     try:
         c.execute("UPDATE formula_items SET producto_nombre=? WHERE producto_nombre=?", (nuevo, real))
         c.execute("UPDATE producto_presentaciones SET producto_nombre=? WHERE producto_nombre=?", (nuevo, real))
@@ -16449,17 +16459,20 @@ def admin_renombrar_producto():
         c.execute("UPDATE producciones SET producto=? WHERE producto=?", (nuevo, real))
         c.execute("UPDATE produccion_checklist SET producto_nombre=? WHERE producto_nombre=?", (nuevo, real))
         c.execute("UPDATE produccion_envasado SET producto_nombre=? WHERE producto_nombre=?", (nuevo, real))
+        c.execute("UPDATE mbr_templates SET producto_nombre=? WHERE producto_nombre=? "
+                  "AND COALESCE(estado,'') NOT IN ('aprobado','obsoleto')", (nuevo, real))
         c.execute("UPDATE formula_headers SET producto_nombre=?, "
                   "producto_canonico=CASE WHEN producto_canonico=? THEN ? ELSE producto_canonico END "
                   "WHERE producto_nombre=?", (nuevo, real, nuevo, real))
         audit_log(c, usuario=u, accion='RENOMBRAR_PRODUCTO', tabla='formula_headers',
-                  registro_id=real, despues={'viejo': real, 'nuevo': nuevo, 'ocurrencias': counts})
+                  registro_id=real, despues={'viejo': real, 'nuevo': nuevo, 'modo_barrido': modo_barrido,
+                                             'ocurrencias': counts, 'mbr': mbr_info})
         conn.commit()
     except Exception as e:
         conn.rollback()
         return jsonify({'error': str(e)[:300]}), 500
     return jsonify({'ok': True, 'aplicado': True, 'viejo': real, 'nuevo': nuevo,
-                    'ocurrencias': counts, 'mbr': mbr_info, 'shopify_skus': skus,
+                    'modo_barrido': modo_barrido, 'ocurrencias': counts, 'mbr': mbr_info, 'shopify_skus': skus,
                     'reversible': 'sí · renombrar de vuelta + audit_log · los SKUs no cambiaron'})
 
 
@@ -17434,12 +17447,13 @@ MP00068 | 0.95 | Biosure FE phenoxyethanol fenoxietanol</textarea>
    var sk=(j.shopify_skus||[]).filter(function(s){return s.sku_shopify;}).map(function(s){return ESC(s.sku_shopify);});
    var shop = sk.length? '<span class="ok">Shopify mapeado: '+sk.join(', ')+'</span>'
                        : '<span class="warn">&#9888; SIN SKU de Shopify en presentaciones &rarr; no saldr&aacute; venta en Necesidades hasta mapear el SKU.</span>';
-   var mbr=j.mbr||{};
-   var mbrLine = (mbr.total>0)
-     ? ('<br><span class="warn">&#9888; MBR/legajo: '+mbr.total+' (de los cuales '+(mbr.aprobados_inmutables||0)+
-        ' aprobado(s) INMUTABLE(s)) conserva(n) el nombre viejo &mdash; el MBR no se renombra en bloque (GMP · se re-versiona).</span>')
+   var mbr=j.mbr||{}; var mTot=mbr.total||0, mApr=mbr.aprobados_inmutables||0, mBorr=mbr.borrador_renombrables||0;
+   var mbrLine = (mTot>0)
+     ? ('<br>MBR/legajo: '+mTot+(mBorr>0?(' &middot; <span class="ok">'+mBorr+' borrador(es) se renombran</span>'):'')+
+        (mApr>0?(' &middot; <span class="warn">'+mApr+' aprobado(s) INMUTABLE(s) conserva(n) el nombre viejo (se re-versiona · GMP)</span>'):''))
      : '';
-   return 'Hall&eacute; en prod: <b>'+ESC(j.nombre_real||j.nuevo)+'</b><br>Filas a renombrar &mdash; '+filas+'<br>'+shop+mbrLine;
+   var barrido = j.modo_barrido ? ' <span class="muted">(modo barrido: la f&oacute;rmula ya estaba renombrada · barriendo rezagos)</span>' : '';
+   return 'Hall&eacute; en prod: <b>'+ESC(j.nombre_real||j.nuevo)+'</b>'+barrido+'<br>Filas a renombrar &mdash; '+filas+'<br>'+shop+mbrLine;
  }
  async function previewRename(){
    document.getElementById('rnMsg').textContent='Previsualizando...';

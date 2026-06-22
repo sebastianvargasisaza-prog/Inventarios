@@ -124,6 +124,31 @@ def test_aborta_si_nuevo_ya_existe(app, db_clean):
     assert r.status_code == 409, r.data
 
 
+def test_modo_barrido_renombra_mbr_borrador(app, db_clean):
+    # Estado real de Sebastián: la fórmula YA está al nombre NUEVO; solo quedó un MBR
+    # borrador rezagado al nombre viejo. El modo barrido lo detecta y lo renombra.
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    for nom in (VIEJO, NUEVO):
+        conn.execute("DELETE FROM formula_headers WHERE producto_nombre=?", (nom,))
+        conn.execute("DELETE FROM mbr_templates WHERE producto_nombre=?", (nom,))
+    conn.execute("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo) VALUES (?,?,1)", (NUEVO, 10))
+    conn.execute("INSERT INTO mbr_templates (producto_nombre, version, estado, lote_size_g, creado_por) "
+                 "VALUES (?, 1, 'borrador', 10000, 'sebastian')", (VIEJO,))
+    conn.commit(); conn.close()
+    c = _login(app)
+    pre = c.post("/api/admin/renombrar-producto", json={"viejo": VIEJO, "nuevo": NUEVO, "dry_run": 1}, headers=_csrf(c))
+    assert pre.status_code == 200, pre.data
+    jp = pre.get_json()
+    assert jp["modo_barrido"] is True
+    assert jp["mbr"]["borrador_renombrables"] == 1
+    ap = c.post("/api/admin/renombrar-producto", json={"viejo": VIEJO, "nuevo": NUEVO, "dry_run": 0}, headers=_csrf(c))
+    assert ap.status_code == 200, ap.data
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    assert conn.execute("SELECT COUNT(*) FROM mbr_templates WHERE producto_nombre=?", (NUEVO,)).fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) FROM mbr_templates WHERE producto_nombre=?", (VIEJO,)).fetchone()[0] == 0
+    conn.close()
+
+
 def test_requiere_admin(app, db_clean):
     c = app.test_client()
     r = c.post("/api/admin/renombrar-producto", json={"viejo": "x", "nuevo": "y"}, headers=csrf_headers())
