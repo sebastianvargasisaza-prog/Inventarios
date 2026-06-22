@@ -16210,6 +16210,146 @@ def admin_formula_preflight():
     })
 
 
+@bp.route("/api/admin/cambiar-formula", methods=["POST"])
+def admin_cambiar_formula():
+    """Archiva la receta VIGENTE de un producto y carga una NUEVA (cambio de fórmula).
+    NUNCA DELETE del header (GMP/INVIMA): la receta vieja se conserva en un header
+    '<nombre> [ARCHIVADA <fecha>]' con activo=0 y SUS ítems movidos ahí (consultable). El
+    header canónico se conserva intacto (Shopify/SKU/precio/imagen) y solo se le cambian
+    los ítems y el lote default. Mover ítems con UPDATE de producto_nombre NO dispara el
+    trigger BEFORE INSERT/UPDATE OF material_id de formula_items → seguro con MPs viejos
+    inactivos. Los ítems NUEVOS se validan contra el maestro VIVO (misma lógica del
+    preflight) ANTES de escribir; si alguno no existe/inactivo o no suman 100, ABORTA sin
+    tocar nada. dry_run default 1 (muestra el nombre REAL hallado en prod + qué hará).
+    Reversible (la receta vieja queda en el [ARCHIVADA] + audit_log). M17/M19/M38."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    import unicodedata, re as _re
+    from datetime import datetime as _dtt, timezone as _tz, timedelta as _tdd
+    d = request.get_json(silent=True) or {}
+    producto = (d.get('producto') or '').strip()
+    items = d.get('items') or []
+    try:
+        lote_kg = float(d.get('lote_kg') or 0)
+    except Exception:
+        lote_kg = 0.0
+    dry_run = str(d.get('dry_run', 1)).lower() in ('1', 'true', 'yes')
+    if not producto or not items or lote_kg <= 0:
+        return jsonify({'error': 'faltan producto, items o lote_kg (>0)'}), 400
+
+    from database import get_db
+    conn = get_db(); c = conn.cursor()
+
+    def _norm(s):
+        s = unicodedata.normalize('NFKD', str(s or '')).encode('ascii', 'ignore').decode()
+        return _re.sub(r'[^a-z0-9]+', ' ', s.lower()).strip()
+
+    # 1) PREFLIGHT inline: validar cada código contra el maestro VIVO (defensa en profundidad)
+    suma = 0.0
+    faltan, inactivos = [], []
+    norm_items = []
+    for it in items:
+        cod = str((it or {}).get('codigo') or '').strip()
+        try:
+            pct = float((it or {}).get('pct') or 0)
+        except Exception:
+            pct = 0.0
+        nom = str((it or {}).get('nombre') or '').strip()
+        suma += pct
+        r = None
+        try:
+            r = c.execute("SELECT nombre_comercial, COALESCE(activo,1) FROM maestro_mps "
+                          "WHERE UPPER(TRIM(codigo_mp))=UPPER(?)", (cod,)).fetchone()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        if not r:
+            faltan.append(cod)
+        elif int(r[1] or 0) != 1:
+            inactivos.append(cod)
+        norm_items.append({'codigo': cod, 'pct': pct,
+                           'nombre': (nom or (r[0] if r else '') or cod)})
+    suma_ok = abs(suma - 100.0) < 0.01
+    if faltan or inactivos or not suma_ok:
+        return jsonify({'error': 'preflight falló · no se cargó nada', 'faltan': faltan,
+                        'inactivos': inactivos, 'suma': round(suma, 4), 'suma_100': suma_ok}), 400
+
+    # 2) hallar el header canónico por nombre NORMALIZADO (ve el nombre REAL de prod)
+    objetivo = _norm(producto)
+    cand = []
+    for r in c.execute("SELECT producto_nombre, COALESCE(activo,1) FROM formula_headers").fetchall():
+        if _norm(r[0]) == objetivo:
+            cand.append((r[0], int(r[1] or 1)))
+    activos = [r for r in cand if r[1] == 1]
+    if not activos:
+        return jsonify({'error': 'no encontré una fórmula ACTIVA que coincida con ese nombre',
+                        'candidatos': [r[0] for r in cand]}), 404
+    if len(activos) > 1:
+        return jsonify({'error': 'múltiples fórmulas activas coinciden (ambiguo)',
+                        'candidatos': [r[0] for r in activos]}), 409
+    nombre_real = activos[0][0]
+    n_actuales = c.execute("SELECT COUNT(*) FROM formula_items WHERE producto_nombre=?",
+                           (nombre_real,)).fetchone()[0]
+    lote_actual = c.execute("SELECT COALESCE(lote_size_kg,0) FROM formula_headers "
+                            "WHERE producto_nombre=?", (nombre_real,)).fetchone()[0]
+    hoy = (_dtt.now(_tz.utc) - _tdd(hours=5)).date().isoformat()
+    archivado = nombre_real + " [ARCHIVADA " + hoy + "]"
+
+    if dry_run:
+        return jsonify({'ok': True, 'dry_run': True, 'nombre_real': nombre_real,
+                        'items_actuales': n_actuales, 'lote_actual': lote_actual,
+                        'archivo_destino': archivado, 'items_nuevos': len(norm_items),
+                        'lote_nuevo': lote_kg, 'suma': round(suma, 4)})
+
+    # 3) APLICAR
+    if c.execute("SELECT 1 FROM formula_headers WHERE producto_nombre=?", (archivado,)).fetchone():
+        return jsonify({'error': f'ya existe un header "{archivado}" (¿ya se archivó hoy?)'}), 409
+    try:
+        # 3a · copiar el header canónico → archivado (INSERT dinámico por columnas reales ·
+        #      robusto al esquema PG/SQLite · activo=0 · sin Shopify para no duplicar enlace)
+        cur = c.execute("SELECT * FROM formula_headers WHERE producto_nombre=?", (nombre_real,))
+        cols = [dd[0] for dd in cur.description]
+        row = cur.fetchone()
+        data = {k: v for k, v in zip(cols, row) if k != 'id'}
+        data['producto_nombre'] = archivado
+        data['activo'] = 0
+        for blank in ('shopify_id', 'shopify_handle', 'sku_principal'):
+            if blank in data:
+                data[blank] = ''
+        if 'producto_canonico' in data:
+            data['producto_canonico'] = archivado
+        ins_cols = list(data.keys())
+        ph = ",".join(["?"] * len(ins_cols))
+        c.execute(f"INSERT INTO formula_headers ({','.join(ins_cols)}) VALUES ({ph})",
+                  [data[k] for k in ins_cols])
+        # 3b · mover los ítems VIEJOS al archivado (UPDATE → no dispara trigger INSERT)
+        c.execute("UPDATE formula_items SET producto_nombre=? WHERE producto_nombre=?",
+                  (archivado, nombre_real))
+        # 3c · cargar los ítems NUEVOS bajo el nombre canónico (trigger valida activo · pre-OK)
+        for it in norm_items:
+            g = round(it['pct'] / 100.0 * lote_kg * 1000.0, 4)
+            c.execute("INSERT INTO formula_items (producto_nombre, material_id, material_nombre, "
+                      "porcentaje, cantidad_g_por_lote, incluye_merma) VALUES (?,?,?,?,?,0)",
+                      (nombre_real, it['codigo'], it['nombre'], it['pct'], g))
+        # 3d · actualizar lote default + base del header canónico (queda intacto lo demás)
+        c.execute("UPDATE formula_headers SET lote_size_kg=?, unidad_base_g=?, activo=1 "
+                  "WHERE producto_nombre=?", (lote_kg, lote_kg * 1000.0, nombre_real))
+        audit_log(c, usuario=u, accion='CAMBIAR_FORMULA', tabla='formula_headers',
+                  registro_id=nombre_real,
+                  despues={'archivado': archivado, 'items_viejos': n_actuales,
+                           'items_nuevos': len(norm_items), 'lote_kg': lote_kg})
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)[:300]}), 500
+    return jsonify({'ok': True, 'aplicado': True, 'nombre': nombre_real, 'archivado': archivado,
+                    'items_cargados': len(norm_items), 'lote_kg': lote_kg,
+                    'reversible': 'sí · la receta vieja queda en el header [ARCHIVADA] activo=0 + audit_log'})
+
+
 @bp.route("/admin/formula-preflight", methods=["GET"])
 def admin_formula_preflight_page():
     """Página · preflight de carga de fórmula (valida códigos vs maestro vivo · read-only)."""
@@ -16623,6 +16763,21 @@ MP00068 | 0.95 | Biosure FE</textarea>
  <div id="kpis" class="kpis" style="margin-top:10px"></div>
 </div>
 <div id="res"></div>
+<div class="card" style="border-color:#7c3aed">
+ <b>&#128260; Cambiar f&oacute;rmula</b> &mdash; archiva la receta vigente (queda como
+ <span class="mono">[ARCHIVADA]</span> activo=0, consultable) y carga la de arriba.
+ <div class="muted" style="margin:8px 0">Pod&eacute;s previsualizar primero: te muestra el nombre REAL hallado en
+ prod y cu&aacute;ntos &iacute;tems reemplaza. <b>No</b> escribe nada hasta que aprietes Aplicar.</div>
+ <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end">
+   <div><div class="muted">Producto (nombre en la app)</div>
+     <input id="prod" value="LIMPIADOR ILUMINADOR ACIDO KOJICO" style="width:340px;padding:8px;background:#0b1220;color:#e2e8f0;border:1px solid #334155;border-radius:8px"></div>
+   <div><div class="muted">Lote default (kg)</div>
+     <input id="lote" type="number" step="0.1" value="10" style="width:120px;padding:8px;background:#0b1220;color:#e2e8f0;border:1px solid #334155;border-radius:8px"></div>
+   <button onclick="previsualizar()" style="background:#0e7490">Previsualizar cambio</button>
+   <button id="btnAplicar" onclick="aplicar()" disabled style="opacity:.5">Aplicar cambio</button>
+ </div>
+ <div id="cambioMsg" class="muted" style="margin-top:10px"></div>
+</div>
 <script>
  var ESC=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch];});};
  async function csrf(){try{var r=await fetch('/api/csrf-token',{credentials:'same-origin'});var j=await r.json();return j.csrf_token;}catch(e){return '';}}
@@ -16669,6 +16824,41 @@ MP00068 | 0.95 | Biosure FE</textarea>
    });
    h+='</table></div>';
    document.getElementById('res').innerHTML=h;
+ }
+ function _payload(dry){
+   var its=parse().map(function(x){return {codigo:x.codigo,pct:x.pct,nombre:''};});
+   return {producto:document.getElementById('prod').value.trim(),
+           lote_kg:parseFloat(document.getElementById('lote').value)||0,
+           items:its,dry_run:dry?1:0};
+ }
+ async function previsualizar(){
+   document.getElementById('cambioMsg').textContent='Previsualizando...';
+   var t=await csrf();
+   var r=await fetch('/api/admin/cambiar-formula',{method:'POST',
+     headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(_payload(true))});
+   var j=await r.json();
+   var btn=document.getElementById('btnAplicar');
+   if(!r.ok){btn.disabled=true;btn.style.opacity='.5';
+     document.getElementById('cambioMsg').innerHTML='<span class="bad">No se puede: '+ESC(j.error||r.status)+
+       (j.faltan&&j.faltan.length?' &middot; faltan: '+ESC(j.faltan.join(', ')):'')+
+       (j.candidatos?' &middot; candidatos: '+ESC((j.candidatos||[]).join(' | ')):'')+'</span>';return;}
+   btn.disabled=false;btn.style.opacity='1';
+   document.getElementById('cambioMsg').innerHTML='<span class="ok">Listo para aplicar.</span> Encontr&eacute; en prod: <b>'+
+     ESC(j.nombre_real)+'</b> (lote actual '+j.lote_actual+' kg, '+j.items_actuales+' &iacute;tems). '+
+     'Se archivar&aacute; como <span class="mono">'+ESC(j.archivo_destino)+'</span> y se cargar&aacute;n <b>'+
+     j.items_nuevos+'</b> &iacute;tems nuevos a lote '+j.lote_nuevo+' kg (suma '+j.suma+').';
+ }
+ async function aplicar(){
+   if(!confirm('Archivar la receta vigente y cargar la nueva? La vieja queda consultable como [ARCHIVADA]. Reversible.'))return;
+   document.getElementById('cambioMsg').textContent='Aplicando...';
+   var t=await csrf();
+   var r=await fetch('/api/admin/cambiar-formula',{method:'POST',
+     headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(_payload(false))});
+   var j=await r.json();
+   if(!r.ok){document.getElementById('cambioMsg').innerHTML='<span class="bad">Error: '+ESC(j.error||r.status)+'</span>';return;}
+   document.getElementById('cambioMsg').innerHTML='<span class="ok"><b>&#10004; Aplicado.</b></span> '+
+     ESC(j.nombre)+': '+j.items_cargados+' &iacute;tems cargados (lote '+j.lote_kg+' kg). Vieja archivada en <span class="mono">'+ESC(j.archivado)+'</span>.';
+   document.getElementById('btnAplicar').disabled=true;document.getElementById('btnAplicar').style.opacity='.5';
  }
 </script>
 </div></body></html>"""
