@@ -16899,6 +16899,19 @@ MP00068 | 0.95 | Biosure FE phenoxyethanol fenoxietanol</textarea>
  </div>
  <div id="rnMsg" class="muted" style="margin-top:10px"></div>
 </div>
+<div class="card" style="border-color:#16a34a">
+ <b>&#128722; Mapear a Shopify (Necesidades)</b> &mdash; crea/actualiza la presentaci&oacute;n con el SKU de
+ Shopify para que la venta entre a Necesidades (el join es por SKU). Reusa el upsert existente.
+ <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">
+   <div><div class="muted">Producto</div><input id="skProd" value="LIMPIADOR ILUMINADOR" style="width:280px;padding:8px;background:#0b1220;color:#e2e8f0;border:1px solid #334155;border-radius:8px"></div>
+   <div><div class="muted">SKU Shopify</div><input id="skSku" value="LKJ" style="width:120px;padding:8px;background:#0b1220;color:#e2e8f0;border:1px solid #334155;border-radius:8px"></div>
+   <div><div class="muted">Volumen (ml)</div><input id="skVol" type="number" step="1" value="150" style="width:100px;padding:8px;background:#0b1220;color:#e2e8f0;border:1px solid #334155;border-radius:8px"></div>
+   <div><div class="muted">Etiqueta</div><input id="skEtiq" value="150 ml" style="width:110px;padding:8px;background:#0b1220;color:#e2e8f0;border:1px solid #334155;border-radius:8px"></div>
+   <div><div class="muted">Cod. present.</div><input id="skCod" value="150ML" style="width:100px;padding:8px;background:#0b1220;color:#e2e8f0;border:1px solid #334155;border-radius:8px"></div>
+   <button onclick="mapearSku()" style="background:#16a34a">Mapear SKU</button>
+ </div>
+ <div id="skMsg" class="muted" style="margin-top:10px"></div>
+</div>
 <script>
  var ESC=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch];});};
  async function csrf(){try{var r=await fetch('/api/csrf-token',{credentials:'same-origin'});var j=await r.json();return j.csrf_token;}catch(e){return '';}}
@@ -17016,6 +17029,21 @@ MP00068 | 0.95 | Biosure FE phenoxyethanol fenoxietanol</textarea>
    if(!r.ok){document.getElementById('rnMsg').innerHTML='<span class="bad">Error: '+ESC(j.error||r.status)+'</span>';return;}
    document.getElementById('rnMsg').innerHTML='<span class="ok"><b>&#10004; Renombrado a '+ESC(j.nuevo)+'.</b></span> '+_rnResumen(j);
    document.getElementById('btnRename').disabled=true;document.getElementById('btnRename').style.opacity='.5';
+ }
+ function _val(id){return document.getElementById(id).value.trim();}
+ async function mapearSku(){
+   if(!confirm('Mapear el SKU de Shopify a este producto? (crea/actualiza la presentacion)'))return;
+   document.getElementById('skMsg').textContent='Mapeando...';
+   var body={producto_nombre:_val('skProd'),presentacion_codigo:_val('skCod'),etiqueta:_val('skEtiq'),
+     volumen_ml:parseFloat(_val('skVol'))||0,sku_shopify:_val('skSku'),es_default:true};
+   var t=await csrf();
+   var r=await fetch('/api/admin/producto-presentaciones-upsert',{method:'POST',
+     headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(body)});
+   var j=await r.json();
+   document.getElementById('skMsg').innerHTML = r.ok
+     ? '<span class="ok"><b>&#10004; Mapeado.</b></span> La venta de Shopify (SKU <b>'+ESC(body.sku_shopify)+
+       '</b>) entrar&aacute; a Necesidades para <b>'+ESC(body.producto_nombre)+'</b>. (El envase lo asign&aacute;s en Presentaciones si hace falta.)'
+     : '<span class="bad">Error: '+ESC(j.error||r.status)+'</span>';
  }
 </script>
 </div></body></html>"""
