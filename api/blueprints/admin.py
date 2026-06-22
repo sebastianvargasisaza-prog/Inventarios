@@ -16620,6 +16620,133 @@ def admin_inteligencia_operacional_page():
     return _INTELIGENCIA_OPERACIONAL_HTML
 
 
+@bp.route("/api/admin/seguridad-planta", methods=["GET"])
+def admin_seguridad_planta():
+    """READ-ONLY · postura de seguridad de planta: estado VIVO de los controles que se
+    aflojan/aprietan (modo inventario INVIMA, gate micro, EBR, FORMULA_PIN, sesión por
+    rol) + quién/cuándo los cambió + exposición (recepciones recientes que saltaron
+    cuarentena). Sirve para retomar lo que se aflojó por el día de inventario. NO cambia
+    nada (apagar el modo inventario se hace con /api/inventario/modo-inventario)."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    import os as _os
+    from database import get_db, recepcion_auto_vigente
+    conn = get_db(); c = conn.cursor()
+
+    def _setting(clave):
+        try:
+            r = c.execute("SELECT valor, COALESCE(actualizado_at_utc,''), COALESCE(actualizado_por,'') "
+                          "FROM app_settings WHERE clave=? LIMIT 1", (clave,)).fetchone()
+            return {'valor': (r[0] if r else None), 'at': (r[1] if r else ''), 'por': (r[2] if r else '')}
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            return {'valor': None, 'at': '', 'por': ''}
+
+    controles = []
+    # 1) Modo inventario (recepción sin cuarentena) — EL crítico
+    rav = bool(recepcion_auto_vigente(c))
+    s = _setting('recepcion_auto_vigente')
+    controles.append({
+        'clave': 'recepcion_auto_vigente',
+        'nombre': 'Modo inventario · recepción SIN cuarentena',
+        'estado': 'ENCENDIDO' if rav else 'APAGADO',
+        'ok': (not rav), 'critico': True, 'toggle_off': rav,
+        'invima': 'APAGADO = cuarentena INVIMA (posición segura)',
+        'nota': ('Recepción entra directo a VIGENTE y se libera sin firma Part 11. '
+                 'Apagar al terminar el inventario.') if rav
+                else 'Recepción pasa por cuarentena de Calidad. Correcto.',
+        'at': s['at'], 'por': s['por']})
+    # 2) Gate micro (liberación PT exige micro)
+    gm = _setting('micro_gate_mode')
+    gm_eff = (gm['valor'] or _os.environ.get('BRD_MICRO_GATE', 'off')).strip().lower()
+    controles.append({
+        'clave': 'micro_gate_mode', 'nombre': 'Gate micro (liberar PT exige micro)',
+        'estado': gm_eff.upper(), 'ok': (gm_eff == 'strict'), 'critico': False, 'toggle_off': False,
+        'invima': 'strict = bloquea liberar PT sin micro',
+        'nota': 'Encender (strict) cuando Calidad cargue micro.' if gm_eff != 'strict'
+                else 'Liberación de PT bloqueada sin micro. Correcto.',
+        'at': gm['at'], 'por': gm['por']})
+    # 3) EBR_MODE (batch record para producir)
+    try:
+        from config import EBR_MODE as _EBR
+    except Exception:
+        _EBR = _os.environ.get('EBR_MODE', 'off')
+    controles.append({
+        'clave': 'EBR_MODE', 'nombre': 'EBR (batch record digital)',
+        'estado': str(_EBR).upper(), 'ok': (str(_EBR).lower() in ('warn', 'strict')),
+        'critico': False, 'toggle_off': False,
+        'invima': 'strict = exige legajo EBR aprobado para producir',
+        'nota': 'Encender por fases (warn→strict) cuando los MBR estén aprobados.'
+                if str(_EBR).lower() == 'off' else 'EBR activo.',
+        'at': '(env Render)', 'por': ''})
+    # 4) FORMULA_PIN
+    try:
+        import config as _cfg
+        pin_inseguro = bool(getattr(_cfg, '_FORMULA_PIN_INSECURE', False))
+    except Exception:
+        pin_inseguro = False
+    controles.append({
+        'clave': 'FORMULA_PIN', 'nombre': 'PIN de desbloqueo de fórmulas',
+        'estado': 'SIN CONFIGURAR (efímero)' if pin_inseguro else 'CONFIGURADO',
+        'ok': (not pin_inseguro), 'critico': False, 'toggle_off': False,
+        'invima': 'Debe estar configurado en Render',
+        'nota': 'Definí FORMULA_PIN en Render (hoy usa un PIN aleatorio efímero).'
+                if pin_inseguro else 'PIN configurado.', 'at': '(env Render)', 'por': ''})
+    # 5) Sesión por rol
+    try:
+        from auth import SESSION_DIAS_ADMIN
+    except Exception:
+        SESSION_DIAS_ADMIN = 7
+    controles.append({
+        'clave': 'sesion', 'nombre': 'Sesión por rol',
+        'estado': f'admin {SESSION_DIAS_ADMIN}d · resto diario', 'ok': True,
+        'critico': False, 'toggle_off': False,
+        'invima': 'Admin largo / resto diario (captura inicio de labores)',
+        'nota': 'Activo.', 'at': '', 'por': ''})
+
+    # Exposición INVIMA: recepciones (Entrada con OC) por estado en los últimos 14 días
+    exposicion = {'vigente_directo': 0, 'cuarentena': 0, 'dias': 14}
+    try:
+        for r in c.execute(
+            "SELECT UPPER(COALESCE(estado_lote,'')), COUNT(*) FROM movimientos "
+            "WHERE tipo IN ('Entrada','entrada','ENTRADA') AND COALESCE(numero_oc,'')<>'' "
+            "AND date(fecha) >= date('now','-5 hours','-14 days') "
+            "GROUP BY UPPER(COALESCE(estado_lote,''))").fetchall():
+            est = (r[0] or '')
+            if est in ('CUARENTENA', 'CUARENTENA_EXTENDIDA'):
+                exposicion['cuarentena'] += r[1]
+            elif est == 'VIGENTE':
+                exposicion['vigente_directo'] += r[1]
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    # cuántos lotes hay HOY en cuarentena (pendientes de QC)
+    try:
+        exposicion['en_cuarentena_ahora'] = c.execute(
+            "SELECT COUNT(*) FROM movimientos WHERE tipo IN ('Entrada','entrada','ENTRADA') "
+            "AND UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')").fetchone()[0]
+    except Exception:
+        exposicion['en_cuarentena_ahora'] = None
+
+    n_alertas = sum(1 for x in controles if not x['ok'])
+    return jsonify({'ok': True, 'controles': controles, 'exposicion': exposicion,
+                    'alertas': n_alertas})
+
+
+@bp.route("/admin/seguridad-planta", methods=["GET"])
+def admin_seguridad_planta_page():
+    """Página · Centro de Seguridad de Planta (postura de controles · read-only + apagar modo inv)."""
+    if 'compras_user' not in session:
+        return redirect("/login?next=/admin/seguridad-planta")
+    return _SEGURIDAD_PLANTA_HTML
+
+
 @bp.route("/api/admin/formula-bodega-cruce", methods=["GET"])
 def admin_formula_bodega_cruce():
     """READ-ONLY · UNO POR UNO: cada material usado en fórmulas (formula_items de fórmulas
@@ -17285,6 +17412,76 @@ _INTELIGENCIA_OPERACIONAL_HTML = """<!doctype html><html lang="es"><head><meta c
    else{ var t='<table><tr><th>Producto</th><th>Prom. total</th><th>Lotes</th></tr>';
      tp.forEach(function(r){ t+='<tr><td>'+ESC(r.producto)+'</td><td>'+hm(r.prom_total_min)+'</td><td>'+r.n+'</td></tr>'; });
      document.getElementById('prodTop').innerHTML=t+'</table>'; }
+ }
+ cargar();
+</script>
+</div></body></html>"""
+
+
+_SEGURIDAD_PLANTA_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Centro de Seguridad de Planta</title>
+<style>
+ body{font-family:system-ui,Arial;margin:0;background:#0f172a;color:#e2e8f0}
+ .wrap{max-width:1050px;margin:0 auto;padding:24px}
+ h1{font-size:21px}.muted{color:#94a3b8;font-size:13px}
+ .card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:16px;margin:12px 0}
+ .ctrl{border-left:5px solid #334155;border-radius:10px;padding:12px 16px;margin:10px 0;background:#0b1220}
+ .ctrl.ok{border-left-color:#16a34a}.ctrl.bad{border-left-color:#f87171}
+ .ctrl.crit{border-left-color:#f59e0b}
+ .estado{font-weight:800;font-size:15px}.ok-t{color:#34d399}.bad-t{color:#f87171}.warn-t{color:#fbbf24}
+ .kpis{display:flex;gap:10px;flex-wrap:wrap}
+ .kpi{background:#0b1220;border:1px solid #334155;border-radius:10px;padding:12px 16px;min-width:120px}
+ .kpi .v{font-size:22px;font-weight:800}.kpi .l{font-size:11px;color:#94a3b8}
+ button{padding:9px 16px;border:0;border-radius:8px;background:#dc2626;color:#fff;font-weight:700;cursor:pointer}
+ a{color:#a5b4fc}
+</style></head><body><div class="wrap">
+<a href="/admin">&larr; Volver al Hub</a>
+<h1>&#128737;&#65039; Centro de Seguridad de Planta</h1>
+<div class="muted">Estado VIVO de los controles que se aflojan/aprietan. Lo que se relaj&oacute; para el d&iacute;a de
+inventario debe volver a su posici&oacute;n INVIMA. Read-only (salvo apagar el modo inventario).</div>
+<div id="banner"></div>
+<div id="ctrls"></div>
+<div class="card">
+ <b>&#128202; Exposici&oacute;n INVIMA</b> <span class="muted">(recepciones por OC, &uacute;ltimos 14 d&iacute;as)</span>
+ <div id="expo" class="kpis" style="margin-top:10px"></div>
+</div>
+<script>
+ var ESC=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch];});};
+ async function csrf(){try{var r=await fetch('/api/csrf-token',{credentials:'same-origin'});return (await r.json()).csrf_token;}catch(e){return '';}}
+ function kpi(v,l,cls){return '<div class="kpi"><div class="v '+(cls||'')+'">'+(v==null?'&mdash;':v)+'</div><div class="l">'+l+'</div></div>';}
+ async function cargar(){
+   var r=await fetch('/api/admin/seguridad-planta'); var j=await r.json();
+   if(!j.ok){document.getElementById('ctrls').innerHTML='<div class="card bad-t">Error: '+ESC(j.error||r.status)+'</div>';return;}
+   document.getElementById('banner').innerHTML = j.alertas
+     ? '<div class="card" style="border-color:#f59e0b"><span class="warn-t"><b>&#9888; '+j.alertas+' control(es) fuera de la posici&oacute;n INVIMA</b></span> &mdash; revis&aacute; abajo.</div>'
+     : '<div class="card" style="border-color:#16a34a"><span class="ok-t"><b>&#10004; Todos los controles en posici&oacute;n segura.</b></span></div>';
+   var h='';
+   (j.controles||[]).forEach(function(c){
+     var cls = c.ok ? 'ok' : (c.critico ? 'crit' : 'bad');
+     var et = c.ok ? 'ok-t' : (c.critico ? 'warn-t' : 'bad-t');
+     var quien = (c.por||c.at) ? ('<div class="muted" style="margin-top:4px">&uacute;ltimo cambio: '+ESC(c.por||'?')+' '+ESC(c.at||'')+'</div>') : '';
+     var btn = c.toggle_off ? ('<button onclick="apagarModoInv(this)" style="margin-top:8px">Apagar modo inventario</button>') : '';
+     h+='<div class="ctrl '+cls+'"><div><b>'+ESC(c.nombre)+'</b> &mdash; <span class="estado '+et+'">'+ESC(c.estado)+'</span></div>'+
+        '<div class="muted" style="margin-top:3px">'+ESC(c.nota)+'</div>'+
+        '<div class="muted" style="font-size:11px;margin-top:2px">Posici&oacute;n INVIMA: '+ESC(c.invima)+'</div>'+quien+btn+'</div>';
+   });
+   document.getElementById('ctrls').innerHTML=h;
+   var e=j.exposicion||{};
+   document.getElementById('expo').innerHTML=
+     kpi(e.vigente_directo,'recibido VIGENTE directo', e.vigente_directo? 'warn-t':'ok-t')+
+     kpi(e.cuarentena,'recibido en cuarentena','ok-t')+
+     kpi(e.en_cuarentena_ahora,'en cuarentena ahora');
+ }
+ async function apagarModoInv(btn){
+   if(!confirm('Apagar el modo inventario? La recepci\\u00f3n vuelve a CUARENTENA (posici\\u00f3n INVIMA).'))return;
+   btn.disabled=true;btn.textContent='Apagando...';
+   var t=await csrf();
+   var r=await fetch('/api/inventario/modo-inventario',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify({activo:false})});
+   var j=await r.json();
+   if(!r.ok){alert('Error: '+ESC(j.error||r.status));btn.disabled=false;btn.textContent='Apagar modo inventario';return;}
+   alert('Modo inventario APAGADO. Recepci\\u00f3n vuelve a cuarentena.');
+   cargar();
  }
  cargar();
 </script>
