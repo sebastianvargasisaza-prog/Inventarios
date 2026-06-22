@@ -16730,34 +16730,34 @@ una f&oacute;rmula. <b>NO escribe nada.</b> Una l&iacute;nea por ingrediente: <s
 Verde = existe + activo + coincide la mol&eacute;cula. Rojo = falta / inactivo / duplicado. &Aacute;mbar = existe pero el
 nombre NO coincide con lo esperado (revisar a mano).</div>
 <div class="card">
- <textarea id="ta">MP00286 | 77.99 | Agua desionizada
-MP00195 | 7.00 | Glicerina
-MP00215 | 0.15 | Betaina
-MP00214 | 0.15 | Betaglucano
-MP00142 | 0.10 | Acido hialuronico 1500 kD
-MP00046 | 0.10 | EDTA disodico
-MP00073 | 0.50 | Goma xanthan
-MP00298 | 0.50 | Aerosil 200 silica
-MP00092 | 2.50 | Decyl Glucoside
-MP00050 | 1.50 | Caprylyl Capryl Glucoside
-MP00080 | 1.50 | Probetaina Cocamidopropyl Betaine
-MP00049 | 0.60 | Poloxamer 184
-MP00082 | 0.50 | Tween 20 Polysorbate 20
-MP00301 | 1.75 | Propylheptyl Caprylate
-MP00184 | 1.25 | PEG-12 Dimethicone
-MP00300 | 0.10 | Ceramide NP
-MP00291 | 0.10 | Aceite de cacay
-MP00078 | 0.30 | Vitamina E liquida Tocopherol
-MP00063 | 0.10 | Tinogard TT
-MP00237 | 1.00 | Acido kojico
-MP00210 | 0.50 | Acido salicilico
-MP00138 | 0.15 | Acido lactico
-MP00260 | 0.05 | Acido succinico
-MP00160 | 0.05 | Ethyl Ascorbic Acid
-MP00307 | 0.10 | Oryza Sativa Extract arroz
-MP00035 | 0.50 | Extracto de te verde
-MP00252 | 0.01 | Centella Asiatica Extract
-MP00068 | 0.95 | Biosure FE</textarea>
+ <textarea id="ta">MPAGUALI01 | 77.99 | Agua desionizada aqua
+MP00195 | 7.00 | Glicerina glycerin
+MP00215 | 0.15 | Betaina betaine
+MP00214 | 0.15 | Betaglucano beta glucan
+MP00142 | 0.10 | Acido hialuronico hyaluronic 1500
+MP00046 | 0.10 | EDTA disodico disodium
+MP00073 | 0.50 | Goma xanthan xantana gum
+MP00112 | 0.50 | Aerosil 200 silica silice
+MP00092 | 2.50 | Decyl Glucoside decil glucosido
+MP00050 | 1.50 | Caprylyl Capryl Glucoside caprililo
+MP00084 | 1.50 | Probetaina Cocamidopropyl Betaine cocamidopropil
+MP00049 | 0.60 | Poloxamer 184 poloxamero
+MP00082 | 0.50 | Tween 20 Polysorbate Polisorbato 20
+MP00030 | 1.75 | Propylheptyl Caprylate Sensoft propilheptilo
+MP00184 | 1.25 | PEG-12 Dimethicone dimeticona
+MP00103 | 0.10 | Ceramide NP ceramida ceramidas
+MPCAKY01 | 0.10 | Aceite de cacay oil
+MP00078 | 0.30 | Vitamina E liquida Tocopherol tocoferol
+MP00063 | 0.10 | Tinogard TT pentaerythrityl pentaeritritilo
+MP00237 | 1.00 | Acido kojico kojic
+MP00210 | 0.50 | Acido salicilico salicylic
+MP00138 | 0.15 | Acido lactico lactic
+MP00260 | 0.05 | Acido succinico succinic
+MP00160 | 0.05 | Ethyl Ascorbic etil ascorbico
+MP00162 | 0.10 | Oryza Sativa Hydrolyzed Rice Extract arroz
+MP00035 | 0.50 | Extracto de te verde camellia
+MP00176 | 0.01 | Centella Asiatica triterpenos triterpenes
+MP00068 | 0.95 | Biosure FE phenoxyethanol fenoxietanol</textarea>
  <div style="margin-top:10px"><button onclick="run()">Validar contra el maestro vivo</button></div>
  <div id="msg" class="muted" style="margin-top:10px"></div>
  <div id="kpis" class="kpis" style="margin-top:10px"></div>
