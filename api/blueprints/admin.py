@@ -16133,6 +16133,91 @@ def admin_maestro_envases_page():
     return _MAESTRO_ENVASES_HTML
 
 
+@bp.route("/api/admin/formula-preflight", methods=["POST"])
+def admin_formula_preflight():
+    """READ-ONLY · valida una lista de códigos MP (+% +nombre esperado) contra el maestro
+    VIVO de producción ANTES de cargar/cambiar una fórmula. NO escribe nada. Es el candado
+    anti-error para cargar fórmulas cuyos códigos vienen de OTRA fuente (MyBatch, Excel) —
+    el maestro de prod (398 MPs) puede no tener el código, tenerlo inactivo, o ser OTRA
+    molécula (M19/M38). Para cada código devuelve: existe?, activo?, nombre_comercial,
+    nombre_inci, y un flag de coincidencia contra el nombre esperado (token-overlap · el
+    humano decide). Verifica además que los % sumen 100. NO escribe NADA."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    import unicodedata, re as _re
+    d = request.get_json(silent=True) or {}
+    items = d.get('items') or []
+    from database import get_db
+    conn = get_db(); c = conn.cursor()
+
+    def _norm(s):
+        s = unicodedata.normalize('NFKD', str(s or '')).encode('ascii', 'ignore').decode()
+        return _re.sub(r'[^a-z0-9]+', ' ', s.lower()).strip()
+
+    out = []
+    suma = 0.0
+    vistos = {}
+    for it in items:
+        cod = str((it or {}).get('codigo') or '').strip()
+        try:
+            pct = float((it or {}).get('pct') or 0)
+        except Exception:
+            pct = 0.0
+        esperado = str((it or {}).get('esperado') or '').strip()
+        suma += pct
+        cu = cod.upper()
+        row = {'codigo': cod, 'pct': pct, 'esperado': esperado, 'existe': False,
+               'activo': None, 'nombre_comercial': '', 'nombre_inci': '',
+               'coincide': None, 'dup_en_lista': cu in vistos}
+        vistos[cu] = vistos.get(cu, 0) + 1
+        if cod:
+            try:
+                r = c.execute("SELECT nombre_comercial, nombre_inci, COALESCE(activo,1) "
+                              "FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=UPPER(?)",
+                              (cod,)).fetchone()
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                r = None
+            if r:
+                row['existe'] = True
+                row['nombre_comercial'] = r[0] or ''
+                row['nombre_inci'] = r[1] or ''
+                row['activo'] = int(r[2] or 0)
+                if esperado:
+                    hay = _norm((r[0] or '') + ' ' + (r[1] or ''))
+                    toks = [t for t in _norm(esperado).split() if len(t) >= 3]
+                    hits = sum(1 for t in toks if t in hay)
+                    row['coincide'] = bool(toks) and hits >= max(1, len(toks) // 2)
+        out.append(row)
+
+    faltantes = [r['codigo'] for r in out if not r['existe']]
+    inactivos = [r['codigo'] for r in out if r['existe'] and r['activo'] != 1]
+    no_coinciden = [r['codigo'] for r in out if r['existe'] and r['coincide'] is False]
+    dups = [k for k, v in vistos.items() if v > 1]
+    suma_ok = abs(suma - 100.0) < 0.01
+    todo_verde = (not faltantes and not inactivos and not dups and suma_ok)
+    return jsonify({
+        'ok': True, 'total': len(out), 'suma_pct': round(suma, 4), 'suma_100': suma_ok,
+        'existen': sum(1 for r in out if r['existe']),
+        'activos': sum(1 for r in out if r['activo'] == 1),
+        'faltantes': faltantes, 'inactivos': inactivos,
+        'no_coinciden': no_coinciden, 'duplicados_en_lista': dups,
+        'todo_verde': todo_verde, 'items': out,
+    })
+
+
+@bp.route("/admin/formula-preflight", methods=["GET"])
+def admin_formula_preflight_page():
+    """Página · preflight de carga de fórmula (valida códigos vs maestro vivo · read-only)."""
+    if 'compras_user' not in session:
+        return redirect("/login?next=/admin/formula-preflight")
+    return _FORMULA_PREFLIGHT_HTML
+
+
 @bp.route("/api/admin/formula-bodega-cruce", methods=["GET"])
 def admin_formula_bodega_cruce():
     """READ-ONLY · UNO POR UNO: cada material usado en fórmulas (formula_items de fórmulas
@@ -16472,6 +16557,118 @@ canónico) y el stock se atribuye al canónico. <b>NO se toca el kardex (movimie
    var d=await r.json();
    if(!r.ok){alert('Error: '+(d.error||r.status));return;}
    alert('Nombres rellenados: '+d.aplicados);diag();
+ }
+</script>
+</div></body></html>"""
+
+
+_FORMULA_PREFLIGHT_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Preflight de fórmula · validar códigos</title>
+<style>
+ body{font-family:system-ui,Arial;margin:0;background:#0f172a;color:#e2e8f0}
+ .wrap{max-width:1150px;margin:0 auto;padding:24px}
+ h1{font-size:20px}.muted{color:#94a3b8;font-size:13px}
+ .card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:18px;margin:14px 0}
+ textarea{width:100%;min-height:300px;background:#0b1220;color:#e2e8f0;border:1px solid #334155;
+   border-radius:8px;padding:10px;font-family:ui-monospace,monospace;font-size:12.5px}
+ .kpis{display:flex;gap:10px;flex-wrap:wrap}
+ .kpi{background:#0b1220;border:1px solid #334155;border-radius:10px;padding:12px 16px;min-width:110px}
+ .kpi .v{font-size:24px;font-weight:800}.kpi .l{font-size:11px;color:#94a3b8}
+ .bad{color:#f87171}.warn{color:#fbbf24}.ok{color:#34d399}
+ table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px}
+ th,td{padding:5px 8px;border-bottom:1px solid #334155;text-align:left;vertical-align:top}
+ th{color:#a5b4fc}.mono{font-family:ui-monospace,monospace}
+ button{padding:9px 16px;border:0;border-radius:8px;background:#7c3aed;color:#fff;font-weight:700;cursor:pointer}
+ tr.row-bad{background:#3f1d1d}tr.row-warn{background:#3a2f12}tr.row-ok{background:#0f2a1c}
+ a{color:#a5b4fc}
+</style></head><body><div class="wrap">
+<a href="/admin">&larr; Volver al Hub</a>
+<h1>&#129514; Preflight de carga de f&oacute;rmula</h1>
+<div class="muted">Valida cada c&oacute;digo MP contra el <b>maestro VIVO de producci&oacute;n</b> antes de cargar
+una f&oacute;rmula. <b>NO escribe nada.</b> Una l&iacute;nea por ingrediente: <span class="mono">CODIGO | % | nombre esperado</span>.
+Verde = existe + activo + coincide la mol&eacute;cula. Rojo = falta / inactivo / duplicado. &Aacute;mbar = existe pero el
+nombre NO coincide con lo esperado (revisar a mano).</div>
+<div class="card">
+ <textarea id="ta">MP00286 | 77.99 | Agua desionizada
+MP00195 | 7.00 | Glicerina
+MP00215 | 0.15 | Betaina
+MP00214 | 0.15 | Betaglucano
+MP00142 | 0.10 | Acido hialuronico 1500 kD
+MP00046 | 0.10 | EDTA disodico
+MP00073 | 0.50 | Goma xanthan
+MP00298 | 0.50 | Aerosil 200 silica
+MP00092 | 2.50 | Decyl Glucoside
+MP00050 | 1.50 | Caprylyl Capryl Glucoside
+MP00080 | 1.50 | Probetaina Cocamidopropyl Betaine
+MP00049 | 0.60 | Poloxamer 184
+MP00082 | 0.50 | Tween 20 Polysorbate 20
+MP00301 | 1.75 | Propylheptyl Caprylate
+MP00184 | 1.25 | PEG-12 Dimethicone
+MP00300 | 0.10 | Ceramide NP
+MP00291 | 0.10 | Aceite de cacay
+MP00078 | 0.30 | Vitamina E liquida Tocopherol
+MP00063 | 0.10 | Tinogard TT
+MP00237 | 1.00 | Acido kojico
+MP00210 | 0.50 | Acido salicilico
+MP00138 | 0.15 | Acido lactico
+MP00260 | 0.05 | Acido succinico
+MP00160 | 0.05 | Ethyl Ascorbic Acid
+MP00307 | 0.10 | Oryza Sativa Extract arroz
+MP00035 | 0.50 | Extracto de te verde
+MP00252 | 0.01 | Centella Asiatica Extract
+MP00068 | 0.95 | Biosure FE</textarea>
+ <div style="margin-top:10px"><button onclick="run()">Validar contra el maestro vivo</button></div>
+ <div id="msg" class="muted" style="margin-top:10px"></div>
+ <div id="kpis" class="kpis" style="margin-top:10px"></div>
+</div>
+<div id="res"></div>
+<script>
+ var ESC=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch];});};
+ async function csrf(){try{var r=await fetch('/api/csrf-token',{credentials:'same-origin'});var j=await r.json();return j.csrf_token;}catch(e){return '';}}
+ function parse(){
+   var lines=document.getElementById('ta').value.split(/\\r?\\n/);
+   var items=[];
+   lines.forEach(function(ln){
+     if(!ln.trim())return;
+     var p=ln.split('|');
+     items.push({codigo:(p[0]||'').trim(),pct:parseFloat((p[1]||'0').trim())||0,esperado:(p[2]||'').trim()});
+   });
+   return items;
+ }
+ function kpi(v,l,cls){return '<div class="kpi"><div class="v '+(cls||'')+'">'+(v==null?'--':v)+'</div><div class="l">'+l+'</div></div>';}
+ async function run(){
+   document.getElementById('msg').textContent='Validando...';
+   var items=parse();
+   var t=await csrf();
+   var r=await fetch('/api/admin/formula-preflight',{method:'POST',
+     headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify({items:items})});
+   var j=await r.json();
+   if(!j.ok){document.getElementById('msg').textContent='Error: '+(j.error||r.status);return;}
+   document.getElementById('msg').innerHTML = j.todo_verde
+     ? '<span class="ok"><b>&#10004; TODO VERDE</b> &mdash; los '+j.total+' c&oacute;digos existen, est&aacute;n activos y suman 100. Lista para cargar.</span>'
+     : '<span class="bad"><b>&#9888; HAY PROBLEMAS</b> &mdash; revis&aacute; las filas rojas/&aacute;mbar antes de cargar.</span>';
+   document.getElementById('kpis').innerHTML=
+     kpi(j.total,'ingredientes')+
+     kpi(j.existen,'existen',j.existen===j.total?'ok':'bad')+
+     kpi(j.activos,'activos',j.activos===j.total?'ok':'bad')+
+     kpi((j.faltantes||[]).length,'faltan',(j.faltantes||[]).length?'bad':'ok')+
+     kpi((j.inactivos||[]).length,'inactivos',(j.inactivos||[]).length?'bad':'ok')+
+     kpi((j.no_coinciden||[]).length,'no coinciden',(j.no_coinciden||[]).length?'warn':'ok')+
+     kpi((j.duplicados_en_lista||[]).length,'duplicados',(j.duplicados_en_lista||[]).length?'bad':'ok')+
+     kpi(j.suma_pct,'suma %',j.suma_100?'ok':'bad');
+   var h='<div class="card"><table><tr><th>#</th><th>C&oacute;digo</th><th>%</th><th>Esperado</th><th>En la app (comercial / INCI)</th><th>Estado</th></tr>';
+   (j.items||[]).forEach(function(it,i){
+     var cls='row-ok',est='<span class="ok">OK</span>';
+     if(!it.existe){cls='row-bad';est='<span class="bad">NO EXISTE</span>';}
+     else if(it.activo!==1){cls='row-bad';est='<span class="bad">INACTIVO</span>';}
+     else if(it.dup_en_lista){cls='row-bad';est='<span class="bad">DUPLICADO</span>';}
+     else if(it.coincide===false){cls='row-warn';est='<span class="warn">&iquest;OTRA MOL&Eacute;CULA?</span>';}
+     h+='<tr class="'+cls+'"><td>'+(i+1)+'</td><td class="mono">'+ESC(it.codigo)+'</td><td>'+it.pct+'</td>'+
+        '<td>'+ESC(it.esperado)+'</td><td>'+(it.existe?(ESC(it.nombre_comercial)+' <span class="muted">/ '+ESC(it.nombre_inci)+'</span>'):'<span class="muted">&mdash;</span>')+'</td><td>'+est+'</td></tr>';
+   });
+   h+='</table></div>';
+   document.getElementById('res').innerHTML=h;
  }
 </script>
 </div></body></html>"""
