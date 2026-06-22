@@ -33,6 +33,9 @@ def _seed():
         conn.execute("DELETE FROM producto_presentaciones WHERE producto_nombre=?", (nom,))
         conn.execute("DELETE FROM produccion_programada WHERE producto=?", (nom,))
         conn.execute("DELETE FROM producciones WHERE producto=?", (nom,))
+        conn.execute("DELETE FROM produccion_checklist WHERE producto_nombre=?", (nom,))
+        conn.execute("DELETE FROM produccion_envasado WHERE producto_nombre=?", (nom,))
+        conn.execute("DELETE FROM mbr_templates WHERE producto_nombre=?", (nom,))
     conn.execute("DELETE FROM maestro_mps WHERE codigo_mp=?", ("MPRN01",))
     conn.execute("INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, proveedor, activo) "
                  "VALUES ('MPRN01','Glicerina','GLYCERIN','Test',1)")
@@ -45,6 +48,14 @@ def _seed():
     conn.execute("INSERT INTO produccion_programada (producto, fecha_programada, cantidad_kg, lotes, estado, origen) "
                  "VALUES (?, date('now','-5 hours','+5 days'), 10, 1, 'programado', 'eos_plan')", (VIEJO,))
     conn.execute("INSERT INTO producciones (producto, fecha) VALUES (?, date('now','-5 hours'))", (VIEJO,))
+    # tablas de producción/EBR que el rename ahora también cubre
+    conn.execute("INSERT INTO produccion_checklist (producto_nombre, fecha_planeada, item_tipo, descripcion, estado) "
+                 "VALUES (?, '2026-06-20', 'envase', 'check', 'pendiente')", (VIEJO,))
+    conn.execute("INSERT INTO produccion_envasado (produccion_id, producto_nombre, lote, iniciado_at, estado) "
+                 "VALUES (1, ?, 'L-RN', '2026-06-20 08:00:00', 'en_proceso')", (VIEJO,))
+    # MBR aprobado (inmutable) · NO se renombra · solo se reporta
+    conn.execute("INSERT INTO mbr_templates (producto_nombre, version, estado, lote_size_g, creado_por) "
+                 "VALUES (?, 1, 'aprobado', 10000, 'sebastian')", (VIEJO,))
     conn.commit()
     conn.close()
 
@@ -59,6 +70,9 @@ def test_dry_run_reporta_y_no_escribe(app, db_clean):
     assert j["nombre_real"] == VIEJO
     assert j["ocurrencias"]["formula_items"] == 1
     assert j["ocurrencias"]["produccion_programada"] == 1
+    assert j["ocurrencias"]["produccion_checklist"] == 1
+    assert j["ocurrencias"]["produccion_envasado"] == 1
+    assert j["mbr"]["total"] == 1 and j["mbr"]["aprobados_inmutables"] == 1
     assert j["shopify_mapeado"] is True
     assert any(s["sku_shopify"] == "LIMILUM150" for s in j["shopify_skus"])
     # no escribió: el viejo sigue
@@ -89,6 +103,12 @@ def test_aplica_rename_consistente_y_conserva_sku(app, db_clean):
     assert sku and sku[0] == "LIMILUM150"
     assert conn.execute("SELECT COUNT(*) FROM produccion_programada WHERE producto=?", (NUEVO,)).fetchone()[0] == 1
     assert conn.execute("SELECT COUNT(*) FROM producciones WHERE producto=?", (NUEVO,)).fetchone()[0] == 1
+    # producción/EBR vivas también renombradas
+    assert conn.execute("SELECT COUNT(*) FROM produccion_checklist WHERE producto_nombre=?", (NUEVO,)).fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) FROM produccion_envasado WHERE producto_nombre=?", (NUEVO,)).fetchone()[0] == 1
+    # MBR aprobado NO se renombra (inmutable · GMP) → conserva el nombre viejo
+    assert conn.execute("SELECT COUNT(*) FROM mbr_templates WHERE producto_nombre=?", (VIEJO,)).fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) FROM mbr_templates WHERE producto_nombre=?", (NUEVO,)).fetchone()[0] == 0
     conn.close()
 
 

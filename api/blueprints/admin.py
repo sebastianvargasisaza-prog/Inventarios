@@ -16413,6 +16413,16 @@ def admin_renombrar_producto():
         'producto_presentaciones': _count("SELECT COUNT(*) FROM producto_presentaciones WHERE producto_nombre=?", (real,)),
         'produccion_programada': _count("SELECT COUNT(*) FROM produccion_programada WHERE producto=?", (real,)),
         'producciones': _count("SELECT COUNT(*) FROM producciones WHERE producto=?", (real,)),
+        'produccion_checklist': _count("SELECT COUNT(*) FROM produccion_checklist WHERE producto_nombre=?", (real,)),
+        'produccion_envasado': _count("SELECT COUNT(*) FROM produccion_envasado WHERE producto_nombre=?", (real,)),
+    }
+    # MBR (legajo maestro): NO se renombra en bloque — es INMUTABLE si está aprobado
+    # (trigger trg_mbr_aprobado_no_edit · GMP). Solo se reporta para que el usuario sepa
+    # si un MBR conserva el nombre viejo (se cambia re-versionando el MBR, no por UPDATE).
+    mbr_info = {
+        'total': _count("SELECT COUNT(*) FROM mbr_templates WHERE producto_nombre=?", (real,)),
+        'aprobados_inmutables': _count(
+            "SELECT COUNT(*) FROM mbr_templates WHERE producto_nombre=? AND estado IN ('aprobado','obsoleto')", (real,)),
     }
     skus = []
     try:
@@ -16427,22 +16437,18 @@ def admin_renombrar_producto():
 
     if dry_run:
         return jsonify({'ok': True, 'dry_run': True, 'nombre_real': real, 'nuevo': nuevo,
-                        'ocurrencias': counts, 'shopify_skus': skus,
+                        'ocurrencias': counts, 'mbr': mbr_info, 'shopify_skus': skus,
                         'shopify_mapeado': any(s['sku_shopify'] for s in skus)})
 
+    # Apply ATÓMICO (todo o nada · sin rollbacks parciales). Renombra solo tablas vivas;
+    # NUNCA mbr_templates (inmutable/regulado).
     try:
         c.execute("UPDATE formula_items SET producto_nombre=? WHERE producto_nombre=?", (nuevo, real))
         c.execute("UPDATE producto_presentaciones SET producto_nombre=? WHERE producto_nombre=?", (nuevo, real))
         c.execute("UPDATE produccion_programada SET producto=? WHERE producto=?", (nuevo, real))
-        try:
-            c.execute("UPDATE producciones SET producto=? WHERE producto=?", (nuevo, real))
-        except Exception:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-            # producciones podría no existir en algún esquema · re-aplicar el resto requiere
-            # re-ejecutar (poco probable) — registramos y seguimos sin abortar el rename
+        c.execute("UPDATE producciones SET producto=? WHERE producto=?", (nuevo, real))
+        c.execute("UPDATE produccion_checklist SET producto_nombre=? WHERE producto_nombre=?", (nuevo, real))
+        c.execute("UPDATE produccion_envasado SET producto_nombre=? WHERE producto_nombre=?", (nuevo, real))
         c.execute("UPDATE formula_headers SET producto_nombre=?, "
                   "producto_canonico=CASE WHEN producto_canonico=? THEN ? ELSE producto_canonico END "
                   "WHERE producto_nombre=?", (nuevo, real, nuevo, real))
@@ -16453,7 +16459,7 @@ def admin_renombrar_producto():
         conn.rollback()
         return jsonify({'error': str(e)[:300]}), 500
     return jsonify({'ok': True, 'aplicado': True, 'viejo': real, 'nuevo': nuevo,
-                    'ocurrencias': counts, 'shopify_skus': skus,
+                    'ocurrencias': counts, 'mbr': mbr_info, 'shopify_skus': skus,
                     'reversible': 'sí · renombrar de vuelta + audit_log · los SKUs no cambiaron'})
 
 
@@ -17428,7 +17434,12 @@ MP00068 | 0.95 | Biosure FE phenoxyethanol fenoxietanol</textarea>
    var sk=(j.shopify_skus||[]).filter(function(s){return s.sku_shopify;}).map(function(s){return ESC(s.sku_shopify);});
    var shop = sk.length? '<span class="ok">Shopify mapeado: '+sk.join(', ')+'</span>'
                        : '<span class="warn">&#9888; SIN SKU de Shopify en presentaciones &rarr; no saldr&aacute; venta en Necesidades hasta mapear el SKU.</span>';
-   return 'Hall&eacute; en prod: <b>'+ESC(j.nombre_real||j.nuevo)+'</b><br>Filas a renombrar &mdash; '+filas+'<br>'+shop;
+   var mbr=j.mbr||{};
+   var mbrLine = (mbr.total>0)
+     ? ('<br><span class="warn">&#9888; MBR/legajo: '+mbr.total+' (de los cuales '+(mbr.aprobados_inmutables||0)+
+        ' aprobado(s) INMUTABLE(s)) conserva(n) el nombre viejo &mdash; el MBR no se renombra en bloque (GMP · se re-versiona).</span>')
+     : '';
+   return 'Hall&eacute; en prod: <b>'+ESC(j.nombre_real||j.nuevo)+'</b><br>Filas a renombrar &mdash; '+filas+'<br>'+shop+mbrLine;
  }
  async function previewRename(){
    document.getElementById('rnMsg').textContent='Previsualizando...';
