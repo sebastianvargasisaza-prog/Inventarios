@@ -3,7 +3,7 @@
 import os
 import sqlite3
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from flask import request, session, redirect, jsonify
 
@@ -13,6 +13,45 @@ from database import db_connect
 # ── Rate limiter persistente (SQLite — multi-worker safe) ────────────────────
 _MAX_ATTEMPTS = 5
 _LOCKOUT_SECS = 900   # 15 minutos
+
+# ── Duración de sesión por ROL (Sebastián 22-jun-2026) ───────────────────────
+# Antes: 8h fijas para TODOS → re-login varias veces al día. Ahora por rol:
+#  - Admins: sesión larga (días · default 7) → entran ~1 vez por semana.
+#  - Resto: re-login CADA DÍA (cambia la fecha Colombia) → la 1ª hora de login
+#    del día = inicio de labores (queda en security_events.login_success · base
+#    del reporte de jornada). Tope de turno largo como respaldo.
+# Configurable por env sin tocar código (SESSION_DIAS_ADMIN, SESSION_HORAS_MAX_NOADMIN).
+SESSION_DIAS_ADMIN = max(1, int(os.environ.get('SESSION_DIAS_ADMIN', '7') or 7))
+SESSION_HORAS_MAX_NOADMIN = max(1, int(os.environ.get('SESSION_HORAS_MAX_NOADMIN', '16') or 16))
+_OFFSET_COLOMBIA = timedelta(hours=5)  # Colombia = UTC-5
+
+
+def _fecha_colombia(ts):
+    """Fecha (date) Colombia de un epoch UTC."""
+    return (datetime.fromtimestamp(ts, tz=timezone.utc) - _OFFSET_COLOMBIA).date()
+
+
+def session_expirada(user, login_time, now=None):
+    """¿Expiró la sesión de `user` logueado en `login_time` (epoch)? PURA/testeable.
+
+    - Admin (ADMIN_USERS) → tope SESSION_DIAS_ADMIN días (default 7).
+    - No-admin → expira al cambiar de DÍA Colombia (re-login diario, captura
+      inicio de labores) o tras SESSION_HORAS_MAX_NOADMIN horas (turno largo).
+    - login_time inválido (0/None) → expirada (fuerza re-login limpio).
+    """
+    if not login_time:
+        return True
+    if now is None:
+        now = time.time()
+    elapsed = now - login_time
+    if elapsed < 0:
+        return False  # reloj del cliente/servidor desfasado · no expulsar
+    if user in ADMIN_USERS:
+        return elapsed > SESSION_DIAS_ADMIN * 86400
+    # No-admin: nuevo día Colombia = re-login (1ª hora del día = inicio jornada)
+    if _fecha_colombia(now) != _fecha_colombia(login_time):
+        return True
+    return elapsed > SESSION_HORAS_MAX_NOADMIN * 3600
 
 
 # ── MFA enforcement helpers ─────────────────────────────────────────────────
@@ -270,12 +309,14 @@ def register_hooks(app):
 
     @app.before_request
     def check_session_timeout():
-        if session.get('compras_user'):
-            if time.time() - session.get('login_time', 0) > 8 * 3600:
-                session.clear()
-                if request.path.startswith('/api/'):
-                    return jsonify({'error': 'Sesion expirada'}), 401
-                return redirect('/login')
+        u = session.get('compras_user')
+        if not u:
+            return
+        if session_expirada(u, session.get('login_time', 0)):
+            session.clear()
+            if request.path.startswith('/api/'):
+                return jsonify({'error': 'Sesion expirada'}), 401
+            return redirect('/login')
 
     @app.before_request
     def require_auth_for_api():
