@@ -18146,13 +18146,14 @@ _AREAS_PLANTA_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-
      kpi(act.length,'áreas activas')+kpi(act.filter(function(a){return a.oficial;}).length,'oficiales','ok')+
      kpi(act.filter(function(a){return a.duplicado;}).length,'duplicados',act.filter(function(a){return a.duplicado;}).length?'bad':'ok')+
      kpi(act.filter(function(a){return a.puede_producir;}).length,'fabricación');
-   var h='<table><tr><th>Código</th><th>Nombre</th><th>Tipo</th><th>Flags</th><th>Equipos</th><th>Cap. real</th><th>Prod.</th><th>Capacidad</th><th>Acción</th></tr>';
+   var h='<table><tr><th>Código</th><th>Nombre</th><th>Hace</th><th>Flags</th><th>Equipos</th><th>Cap. real</th><th>Prod.</th><th>Capacidad</th><th>Acción</th></tr>';
    A.forEach(function(a,gi){
      var flags=(a.oficial?'<span class="tag t-of">OFICIAL</span> ':'<span class="tag t-no">no-of</span> ')+(a.duplicado?'<span class="tag t-dup">DUP</span>':'');
+     var hace=(a.puede_producir?'<span class="ok">Fabrica</span> ':'')+(a.puede_envasar?'<span class="warn">Envasa</span>':'')||'<span class="muted">apoyo</span>';
      var capreal=(a.cap_litros?a.cap_litros+'L':'')+(a.cap_kg?(' '+a.cap_kg+'kg'):'')||'—';
      var sug=a.cap_litros||a.cap_kg||'';
      h+='<tr class="'+(a.activo?'':'inact')+(a.duplicado&&a.activo?' dup':'')+'"><td class="mono">'+ESC(a.codigo)+'</td><td><b>'+ESC(a.nombre)+'</b></td>'+
-        '<td class="muted">'+ESC(a.tipo)+'</td><td>'+flags+'</td><td>'+a.n_equipos+'</td><td>'+capreal+'</td><td>'+a.n_producciones+'</td>'+
+        '<td>'+hace+'</td><td>'+flags+'</td><td>'+a.n_equipos+'</td><td>'+capreal+'</td><td>'+a.n_producciones+'</td>'+
         '<td><input id="cap'+gi+'" value="'+(a.marmita_ml==null?'':a.marmita_ml)+'" placeholder="'+sug+'"> '+
         (sug?('<button style="background:#0e7490" onclick="setArea('+a.id+',{marmita_ml:'+sug+'})">'+sug+'</button>'):'')+'</td>'+
         '<td><button style="background:#7c3aed" onclick="setArea('+a.id+',{marmita_ml:document.getElementById(\\'cap'+gi+'\\').value})">Guardar cap</button> '+
