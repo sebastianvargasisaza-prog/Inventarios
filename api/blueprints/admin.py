@@ -16497,6 +16497,15 @@ def _io_mins(a, b):
     return round(diff, 1) if diff >= 0 else None
 
 
+def _io_days(a, b):
+    """Días entre dos fechas/timestamps (b - a). None si falta alguno o es negativo."""
+    da, db = _io_parse_ts(a), _io_parse_ts(b)
+    if not da or not db:
+        return None
+    diff = (db - da).total_seconds() / 86400.0
+    return round(diff, 1) if diff >= 0 else None
+
+
 @bp.route("/api/admin/io/inicio-labores", methods=["GET"])
 def io_inicio_labores():
     """READ-ONLY · por (día Colombia, usuario): PRIMERA hora de login = inicio de
@@ -16612,9 +16621,142 @@ def io_tiempos_produccion():
     return jsonify({'ok': True, 'items': items, 'resumen': resumen})
 
 
+@bp.route("/api/admin/io/lead-time-compras", methods=["GET"])
+def io_lead_time_compras():
+    """READ-ONLY · Fase 2 · lead time de COMPRAS por OC recibida: días Solicitud→OC→
+    Autorización→Pago→Recepción + total. De ordenes_compra (fecha/autorizacion/pago/
+    recepcion) + la SOL de origen (solicitudes_compra.fecha por numero_oc). Solo MP/
+    empaque (excluye servicios/CC/influencer). Resumen: promedio por etapa + por proveedor."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    desde = (request.args.get('desde') or '').strip()
+    hasta = (request.args.get('hasta') or '').strip()
+    from database import get_db
+    conn = get_db(); c = conn.cursor()
+    sol_fecha = {}
+    try:
+        for r in c.execute("SELECT numero_oc, MIN(fecha) FROM solicitudes_compra "
+                           "WHERE COALESCE(numero_oc,'')<>'' GROUP BY numero_oc").fetchall():
+            sol_fecha[r[0]] = r[1]
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    try:
+        rows = c.execute(
+            "SELECT numero_oc, COALESCE(proveedor,''), COALESCE(categoria,''), COALESCE(fecha,''), "
+            "COALESCE(fecha_autorizacion,''), COALESCE(fecha_pago,''), COALESCE(fecha_recepcion,'') "
+            "FROM ordenes_compra WHERE COALESCE(fecha_recepcion,'')<>'' "
+            "AND COALESCE(categoria,'') NOT IN ('SVC','CC','Influencer/Marketing Digital','Cuenta de Cobro') "
+            "ORDER BY fecha_recepcion DESC LIMIT 400").fetchall()
+    except Exception as e:
+        return jsonify({'error': str(e)[:200]}), 500
+    items = []
+    bk = {'sol_oc': [], 'oc_aut': [], 'aut_pago': [], 'pago_rec': [], 'total': []}
+    porprov = {}
+    for r in rows:
+        oc, prov, cat, f_oc, f_aut, f_pago, f_rec = r
+        if desde and f_rec and f_rec[:10] < desde:
+            continue
+        if hasta and f_rec and f_rec[:10] > hasta:
+            continue
+        f_sol = sol_fecha.get(oc) or ''
+        sol_oc = _io_days(f_sol, f_oc) if f_sol else None
+        oc_aut = _io_days(f_oc, f_aut)
+        aut_pago = _io_days(f_aut, f_pago)
+        pago_rec = _io_days(f_pago or f_aut or f_oc, f_rec)
+        total = _io_days(f_sol or f_oc, f_rec)
+        items.append({'numero_oc': oc, 'proveedor': prov, 'fecha_recepcion': f_rec[:10],
+                      'sol_oc_d': sol_oc, 'oc_aut_d': oc_aut, 'aut_pago_d': aut_pago,
+                      'pago_rec_d': pago_rec, 'total_d': total})
+        for k, v in (('sol_oc', sol_oc), ('oc_aut', oc_aut), ('aut_pago', aut_pago),
+                     ('pago_rec', pago_rec), ('total', total)):
+            if v is not None:
+                bk[k].append(v)
+        if total is not None and prov:
+            porprov.setdefault(prov, []).append(total)
+
+    def _avg(l):
+        return round(sum(l) / len(l), 1) if l else None
+    resumen = {'n_ocs': len(items),
+               'prom_sol_oc_d': _avg(bk['sol_oc']), 'prom_oc_aut_d': _avg(bk['oc_aut']),
+               'prom_aut_pago_d': _avg(bk['aut_pago']), 'prom_pago_rec_d': _avg(bk['pago_rec']),
+               'prom_total_d': _avg(bk['total']),
+               'por_proveedor': sorted([{'proveedor': k, 'prom_total_d': _avg(v), 'n': len(v)}
+                                        for k, v in porprov.items()],
+                                       key=lambda x: -(x['prom_total_d'] or 0))[:20]}
+    return jsonify({'ok': True, 'items': items, 'resumen': resumen})
+
+
+@bp.route("/api/admin/io/productividad-operario", methods=["GET"])
+def io_productividad_operario():
+    """READ-ONLY · Fase 2 · productividad por OPERARIO: lotes trabajados, tiempo total y
+    promedio por fase. De produccion_programada (operario_*_id + etapa_*_inicio/fin_at).
+    Métrica laboral sensible → admin/gerencia."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    desde = (request.args.get('desde') or '').strip()
+    hasta = (request.args.get('hasta') or '').strip()
+    from database import get_db
+    conn = get_db(); c = conn.cursor()
+    op = {}
+    try:
+        for r in c.execute("SELECT id, TRIM(COALESCE(nombre,'')||' '||COALESCE(apellido,'')) "
+                           "FROM operarios_planta").fetchall():
+            op[r[0]] = r[1] or ('op#' + str(r[0]))
+    except Exception:
+        pass
+    try:
+        rows = c.execute(
+            "SELECT id, COALESCE(fecha_programada,''), "
+            "operario_dispensacion_id, etapa_disp_inicio_at, etapa_disp_fin_at, "
+            "operario_elaboracion_id, etapa_elab_inicio_at, etapa_elab_fin_at, "
+            "operario_envasado_id, etapa_env_inicio_at, etapa_env_fin_at, "
+            "operario_acondicionamiento_id, etapa_acond_inicio_at, etapa_acond_fin_at "
+            "FROM produccion_programada "
+            "WHERE COALESCE(inicio_real_at,'')<>'' OR COALESCE(fin_real_at,'')<>'' "
+            "ORDER BY COALESCE(fin_real_at, inicio_real_at) DESC LIMIT 800").fetchall()
+    except Exception as e:
+        return jsonify({'error': str(e)[:200]}), 500
+    acc = {}
+    for r in rows:
+        fecha = (r[1] or '')[:10]
+        if desde and fecha and fecha < desde:
+            continue
+        if hasta and fecha and fecha > hasta:
+            continue
+        fases = (('Dispensación', r[2], r[3], r[4]), ('Elaboración', r[5], r[6], r[7]),
+                 ('Envasado', r[8], r[9], r[10]), ('Acondicionamiento', r[11], r[12], r[13]))
+        for fnombre, oid, ini, fin in fases:
+            mins = _io_mins(ini, fin)
+            if not oid or mins is None:
+                continue
+            a = acc.setdefault(oid, {'operario': op.get(oid, 'op#' + str(oid)),
+                                     'lotes': set(), 'total_min': 0.0, 'n_tareas': 0,
+                                     'por_fase': {}})
+            a['lotes'].add(r[0])
+            a['total_min'] += mins
+            a['n_tareas'] += 1
+            a['por_fase'].setdefault(fnombre, []).append(mins)
+    out = []
+    for oid, a in acc.items():
+        pf = {k: round(sum(v) / len(v), 1) for k, v in a['por_fase'].items()}
+        nlotes = len(a['lotes'])
+        out.append({'operario': a['operario'], 'n_lotes': nlotes, 'n_tareas': a['n_tareas'],
+                    'total_min': round(a['total_min'], 1),
+                    'prom_min_tarea': round(a['total_min'] / a['n_tareas'], 1) if a['n_tareas'] else None,
+                    'por_fase': pf})
+    out.sort(key=lambda x: -x['total_min'])
+    return jsonify({'ok': True, 'items': out})
+
+
 @bp.route("/admin/inteligencia-operacional", methods=["GET"])
 def admin_inteligencia_operacional_page():
-    """Página · Inteligencia Operacional Fase 1 (inicio de labores + tiempos de producción)."""
+    """Página · Inteligencia Operacional (F1 inicio labores + tiempos prod · F2 lead time
+    compras + productividad operario)."""
     if 'compras_user' not in session:
         return redirect("/login?next=/admin/inteligencia-operacional")
     return _INTELIGENCIA_OPERACIONAL_HTML
@@ -17367,18 +17509,57 @@ _INTELIGENCIA_OPERACIONAL_HTML = """<!doctype html><html lang="es"><head><meta c
 <div class="card"><div id="prod"></div></div>
 <div class="card"><b>Top productos por tiempo total</b><div id="prodTop"></div></div>
 
+<h2>&#128230; Lead time de compras <span class="muted">(d&iacute;as · Solicitud &rarr; OC &rarr; Autorizaci&oacute;n &rarr; Pago &rarr; Recepci&oacute;n)</span></h2>
+<div id="leadKpis" class="kpis"></div>
+<div class="card"><div id="lead"></div></div>
+<div class="card"><b>Por proveedor (tiempo total)</b><div id="leadProv"></div></div>
+
+<h2>&#128119; Productividad por operario <span class="muted">(lotes y tiempos por persona)</span></h2>
+<div class="card"><div id="prod2"></div></div>
+
 <script>
  var ESC=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch];});};
  function hm(m){ if(m==null) return '<span class="muted">&mdash;</span>'; var h=Math.floor(m/60), r=Math.round(m%60); return (h>0?(h+'h '):'')+r+'m'; }
+ function dd(d){ return d==null ? '<span class="muted">&mdash;</span>' : (d+'d'); }
  function q(){ var d=document.getElementById('desde').value, h=document.getElementById('hasta').value; var p=[]; if(d)p.push('desde='+d); if(h)p.push('hasta='+h); return p.length?('?'+p.join('&')):''; }
  async function cargar(){
    document.getElementById('msg').textContent='Cargando...';
    try{
      var rl=await fetch('/api/admin/io/inicio-labores'+q()); var jl=await rl.json();
      var rp=await fetch('/api/admin/io/tiempos-produccion'+q()); var jp=await rp.json();
+     var rc=await fetch('/api/admin/io/lead-time-compras'+q()); var jc=await rc.json();
+     var ro=await fetch('/api/admin/io/productividad-operario'+q()); var jo=await ro.json();
      document.getElementById('msg').textContent='';
-     pintarLab(jl.items||[]); pintarProd(jp);
+     pintarLab(jl.items||[]); pintarProd(jp); pintarLead(jc); pintarProd2(jo.items||[]);
    }catch(e){ document.getElementById('msg').innerHTML='<span class="bad">Error: '+ESC(e.message)+'</span>'; }
+ }
+ function pintarLead(j){
+   var s=(j&&j.resumen)||{};
+   function kpi(v,l,cls){return '<div class="kpi"><div class="v '+(cls||'')+'">'+(v==null?'&mdash;':(v+'d'))+'</div><div class="l">'+l+'</div></div>';}
+   document.getElementById('leadKpis').innerHTML=
+     '<div class="kpi"><div class="v">'+(s.n_ocs||0)+'</div><div class="l">OCs recibidas</div></div>'+
+     kpi(s.prom_sol_oc_d,'sol → OC')+kpi(s.prom_oc_aut_d,'OC → autoriz.')+
+     kpi(s.prom_aut_pago_d,'autoriz. → pago')+kpi(s.prom_pago_rec_d,'pago → recep.')+
+     kpi(s.prom_total_d,'TOTAL','ok');
+   var items=(j&&j.items)||[];
+   if(!items.length){ document.getElementById('lead').innerHTML='<p class="muted">Sin OCs recibidas en el rango.</p>'; }
+   else{ var h='<table><tr><th>OC</th><th>Proveedor</th><th>Recepci&oacute;n</th><th>sol&rarr;OC</th><th>OC&rarr;aut</th><th>aut&rarr;pago</th><th>pago&rarr;rec</th><th>TOTAL</th></tr>';
+     items.forEach(function(r){ h+='<tr><td class="mono">'+ESC(r.numero_oc)+'</td><td>'+ESC(r.proveedor)+'</td><td>'+ESC(r.fecha_recepcion)+'</td><td>'+dd(r.sol_oc_d)+'</td><td>'+dd(r.oc_aut_d)+'</td><td>'+dd(r.aut_pago_d)+'</td><td>'+dd(r.pago_rec_d)+'</td><td class="ok"><b>'+dd(r.total_d)+'</b></td></tr>'; });
+     document.getElementById('lead').innerHTML=h+'</table>'; }
+   var pp=s.por_proveedor||[];
+   if(!pp.length){ document.getElementById('leadProv').innerHTML='<p class="muted">&mdash;</p>'; }
+   else{ var t='<table><tr><th>Proveedor</th><th>Prom. total</th><th>OCs</th></tr>';
+     pp.forEach(function(r){ t+='<tr><td>'+ESC(r.proveedor)+'</td><td>'+dd(r.prom_total_d)+'</td><td>'+r.n+'</td></tr>'; });
+     document.getElementById('leadProv').innerHTML=t+'</table>'; }
+ }
+ function pintarProd2(items){
+   if(!items.length){ document.getElementById('prod2').innerHTML='<p class="muted">Sin tareas de producci&oacute;n con operario+tiempo en el rango.</p>'; return; }
+   var h='<table><tr><th>Operario</th><th>Lotes</th><th>Tareas</th><th>Tiempo total</th><th>Prom/tarea</th><th>Por fase</th></tr>';
+   items.forEach(function(r){
+     var pf=Object.keys(r.por_fase||{}).map(function(k){return k+': '+hm(r.por_fase[k]);}).join(' &middot; ');
+     h+='<tr><td><b>'+ESC(r.operario)+'</b></td><td>'+r.n_lotes+'</td><td>'+r.n_tareas+'</td><td class="ok">'+hm(r.total_min)+'</td><td>'+hm(r.prom_min_tarea)+'</td><td class="muted">'+ESC(pf)+'</td></tr>';
+   });
+   document.getElementById('prod2').innerHTML=h+'</table>';
  }
  function pintarLab(items){
    if(!items.length){ document.getElementById('lab').innerHTML='<p class="muted">Sin logins en el rango.</p>'; return; }
