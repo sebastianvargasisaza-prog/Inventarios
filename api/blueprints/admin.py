@@ -16451,8 +16451,8 @@ def admin_salud_formulas():
         from programacion import _resolver_material_bodega as _resolver
 
     maestro = {}
-    for r in c.execute("SELECT codigo_mp, COALESCE(activo,1) FROM maestro_mps").fetchall():
-        maestro[str(r[0]).strip().upper()] = int(r[1] or 0)
+    for r in c.execute("SELECT codigo_mp, COALESCE(activo,1), COALESCE(controla_stock,1) FROM maestro_mps").fetchall():
+        maestro[str(r[0]).strip().upper()] = (int(r[1] or 0), int(r[2] or 1))
 
     def _norm(s):
         s = unicodedata.normalize('NFKD', str(s or '')).encode('ascii', 'ignore').decode()
@@ -16474,16 +16474,20 @@ def admin_salud_formulas():
                         "FROM formula_items WHERE producto_nombre=?", (nom,)).fetchall()
         suma = round(sum(i[2] for i in its), 2)
         rotos = []
+        tiene_agua = False
         for mid, mnom, _pct in its:
             try:
                 res = _resolver(c, mid, mnom) or mid   # 3er arg = nombre del MATERIAL (igual que el descuento)
             except Exception:
                 res = mid
             ru = str(res).strip().upper()
-            estado = maestro.get(ru)
-            if estado is None:
+            est = maestro.get(ru)   # (activo, controla_stock) o None
+            _nm = _norm(mnom)
+            if (est is not None and est[1] == 0) or 'agua' in _nm or 'aqua' in _nm:
+                tiene_agua = True   # MP infinita (controla_stock=0) o nombre agua/aqua
+            if est is None:
                 rotos.append({'codigo': mid, 'nombre': mnom, 'motivo': 'no resuelve a maestro'})
-            elif estado != 1:
+            elif est[0] != 1:
                 rotos.append({'codigo': mid, 'nombre': mnom, 'resuelto': res, 'motivo': 'MP inactivo'})
         flags = []
         if not its:
@@ -16494,8 +16498,15 @@ def admin_salud_formulas():
             flags.append('ROTOS')
         if nom in dups:
             flags.append('DUPLICADO')
+        falta = round(100 - suma, 2)
+        diag = ''
+        if 'SUMA' in flags and its:
+            diag = (f'falta ~{falta}% · sin agua → probablemente le falta el AGUA'
+                    if not tiene_agua else
+                    f'falta ~{falta}% · YA tiene agua → falta un ACTIVO (revisar)')
         out.append({'producto': nom, 'lote_kg': lote, 'n_items': len(its), 'suma': suma,
-                    'rotos': rotos, 'flags': flags, 'ok': not flags})
+                    'falta': falta, 'tiene_agua': tiene_agua, 'rotos': rotos,
+                    'flags': flags, 'diag': diag, 'ok': not flags})
     out.sort(key=lambda x: (x['ok'], x['producto']))
     resumen = {
         'total': len(out),
@@ -18014,6 +18025,16 @@ bodega (mismo resolver del descuento · con puente)? &iquest;hay duplicados? Los
 <script>
  var ESC=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch];});};
  function kpi(v,l,cls){return '<div class="kpi"><div class="v '+(cls||'')+'">'+(v==null?'&mdash;':v)+'</div><div class="l">'+l+'</div></div>';}
+ async function csrf(){try{var r=await fetch('/api/csrf-token',{credentials:'same-origin'});return (await r.json()).csrf_token;}catch(e){return '';}}
+ async function desactivarIdx(i){
+   var f=(window._sf||[])[i]; if(!f)return;
+   if(!confirm('Desactivar (activo=0) la fórmula "'+f.producto+'"? No se borra · reversible. Sale de Necesidades/producción.'))return;
+   var t=await csrf();
+   var r=await fetch('/api/admin/formula-desactivar',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify({producto_nombre:f.producto})});
+   var j=await r.json();
+   if(!r.ok){alert('Error: '+(j.error||r.status));return;}
+   cargar();
+ }
  async function cargar(){
    document.getElementById('msg').textContent='Analizando fórmulas...';
    var r=await fetch('/api/admin/salud-formulas'); var j=await r.json();
@@ -18026,15 +18047,18 @@ bodega (mismo resolver del descuento · con puente)? &iquest;hay duplicados? Los
      kpi(s.con_rotos,'con códigos rotos',s.con_rotos?'bad':'ok')+
      kpi(s.sin_items,'sin ítems',s.sin_items?'bad':'ok')+
      kpi((s.duplicados||[]).length,'nombres duplicados',(s.duplicados||[]).length?'warn':'ok');
-   var h='<table><tr><th>Producto</th><th>Lote</th><th>Ítems</th><th>Suma %</th><th>Estado</th><th>Detalle</th></tr>';
-   (j.formulas||[]).forEach(function(f){
+   window._sf=j.formulas||[];
+   var h='<table><tr><th>Producto</th><th>Lote</th><th>Ítems</th><th>Suma %</th><th>Estado</th><th>Detalle / acción</th></tr>';
+   (j.formulas||[]).forEach(function(f,gi){
      var tags=(f.flags||[]).map(function(t){
        var cls=t==='DUPLICADO'?'t-dup':(t==='SUMA'?'t-warn':'t-bad');
        return '<span class="tag '+cls+'">'+t+'</span>';}).join('');
      if(f.ok) tags='<span class="ok">OK</span>';
      var det=(f.rotos||[]).map(function(x){return ESC(x.codigo)+' ('+ESC(x.nombre||'')+'): '+ESC(x.motivo);}).join('<br>');
+     if(f.diag) det=(det?det+'<br>':'')+'<span class="warn">'+ESC(f.diag)+'</span>';
+     var btn = f.ok ? '' : ('<button onclick="desactivarIdx('+gi+')" style="margin-top:4px;padding:3px 8px;border:0;border-radius:6px;background:#64748b;color:#fff;font-size:11px;cursor:pointer">Desactivar</button>');
      h+='<tr class="'+(f.ok?'':'row-bad')+'"><td><b>'+ESC(f.producto)+'</b></td><td>'+f.lote_kg+'kg</td><td>'+f.n_items+
-        '</td><td class="'+(Math.abs(f.suma-100)>0.5?'bad':'')+'">'+f.suma+'</td><td>'+tags+'</td><td class="muted">'+det+'</td></tr>';
+        '</td><td class="'+(Math.abs(f.suma-100)>0.5?'bad':'')+'">'+f.suma+'</td><td>'+tags+'</td><td class="muted">'+det+(btn?('<br>'+btn):'')+'</td></tr>';
    });
    document.getElementById('tabla').innerHTML=h+'</table>';
  }

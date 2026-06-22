@@ -8,7 +8,7 @@ import sqlite3
 
 from .conftest import TEST_PASSWORD, csrf_headers
 
-SANA, SUMA, ROTO = "ZZ SALUD SANA", "ZZ SALUD SUMA", "ZZ SALUD ROTO"
+SANA, SUMA, ROTO, CONAGUA = "ZZ SALUD SANA", "ZZ SALUD SUMA", "ZZ SALUD ROTO", "ZZ SALUD CONAGUA"
 
 
 def _login(app, user="sebastian"):
@@ -26,20 +26,25 @@ def _it(conn, prod, mid, mnom, pct):
 
 def _seed():
     conn = sqlite3.connect(os.environ["DB_PATH"])
-    for nom in (SANA, SUMA, ROTO):
+    for nom in (SANA, SUMA, ROTO, CONAGUA):
         conn.execute("DELETE FROM formula_headers WHERE producto_nombre=?", (nom,))
         conn.execute("DELETE FROM formula_items WHERE producto_nombre=?", (nom,))
-    # ambos ACTIVOS al insertar (el trigger SQLite/PG exige material activo en formula_items)
+    # ACTIVOS al insertar (el trigger SQLite/PG exige material activo en formula_items)
     for cod in ("MPSFOK", "MPSFLATER"):
         conn.execute("DELETE FROM maestro_mps WHERE codigo_mp=?", (cod,))
         conn.execute("INSERT INTO maestro_mps (codigo_mp, nombre_inci, proveedor, activo) VALUES (?,?,?,1)",
                      (cod, "ZZSALUD " + cod, "T"))
-    for nom in (SANA, SUMA, ROTO):
+    # MP agua: controla_stock=0 (infinita)
+    conn.execute("DELETE FROM maestro_mps WHERE codigo_mp='MPSFAGUA'")
+    conn.execute("INSERT INTO maestro_mps (codigo_mp, nombre_inci, proveedor, activo, controla_stock) "
+                 "VALUES ('MPSFAGUA','AGUA DESIONIZADA TEST','T',1,0)")
+    for nom in (SANA, SUMA, ROTO, CONAGUA):
         conn.execute("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo) VALUES (?,10,1)", (nom,))
     _it(conn, SANA, "MPSFOK", "ZZSALUDOKMAT", 100)          # ok
-    _it(conn, SUMA, "MPSFOK", "ZZSALUDOKMAT", 90)           # suma 90
+    _it(conn, SUMA, "MPSFOK", "ZZSALUDOKMAT", 90)           # suma 90 · SIN agua → falta agua
     _it(conn, ROTO, "MPSFOK", "ZZSALUDOKMAT", 50)           # ok
     _it(conn, ROTO, "MPSFLATER", "ZZSALUDLATERMAT", 50)     # válido al insertar
+    _it(conn, CONAGUA, "MPSFAGUA", "Agua desionizada", 80)  # suma 80 · CON agua → falta activo
     conn.commit()
     # MPSFLATER se DESCONTINÚA después → ROTO queda con 1 código inactivo (caso real)
     conn.execute("UPDATE maestro_mps SET activo=0 WHERE codigo_mp='MPSFLATER'")
@@ -56,6 +61,11 @@ def test_salud_formulas(app, db_clean):
     by = {f["producto"]: f for f in j["formulas"]}
     assert by[SANA]["ok"] is True and by[SANA]["suma"] == 100
     assert "SUMA" in by[SUMA]["flags"] and by[SUMA]["suma"] == 90
+    # incompleta SIN agua → diag apunta a falta de AGUA
+    assert by[SUMA]["falta"] == 10 and by[SUMA]["tiene_agua"] is False
+    assert "AGUA" in by[SUMA]["diag"]
+    # incompleta CON agua → diag apunta a falta de un ACTIVO
+    assert by[CONAGUA]["tiene_agua"] is True and "ACTIVO" in by[CONAGUA]["diag"]
     assert "ROTOS" in by[ROTO]["flags"]
     assert len(by[ROTO]["rotos"]) == 1     # MPSFLATER (desactivado después)
     assert by[ROTO]["rotos"][0]["codigo"] == "MPSFLATER"
