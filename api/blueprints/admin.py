@@ -16350,6 +16350,87 @@ def admin_cambiar_formula():
                     'reversible': 'sí · la receta vieja queda en el header [ARCHIVADA] activo=0 + audit_log'})
 
 
+@bp.route("/api/admin/ajustar-formula-pct", methods=["POST"])
+def admin_ajustar_formula_pct():
+    """Ajusta el % de ítems PUNTUALES de una fórmula (corrección fina · ej. alinear EOS con
+    MyBatch). Halla el header activo por nombre normalizado, actualiza porcentaje + recalcula
+    cantidad_g_por_lote (= pct/100 × lote_size_kg × 1000) de los material_id dados. dry_run
+    reporta actual→nuevo + la suma resultante. NO archiva ni recarga la fórmula. Audit +
+    reversible (re-ajustar a los valores previos). Sebastián 22-jun."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    import unicodedata, re as _re
+    d = request.get_json(silent=True) or {}
+    producto = (d.get('producto') or '').strip()
+    items = d.get('items') or []
+    dry_run = str(d.get('dry_run', 1)).lower() in ('1', 'true', 'yes')
+    if not producto or not items:
+        return jsonify({'error': 'faltan producto o items'}), 400
+    from database import get_db
+    conn = get_db(); c = conn.cursor()
+
+    def _norm(s):
+        s = unicodedata.normalize('NFKD', str(s or '')).encode('ascii', 'ignore').decode()
+        return _re.sub(r'[^a-z0-9]+', ' ', s.lower()).strip()
+
+    real = None
+    for r in c.execute("SELECT producto_nombre, COALESCE(activo,1) FROM formula_headers").fetchall():
+        if _norm(r[0]) == _norm(producto) and int(r[1] or 1) == 1:
+            real = r[0]
+            break
+    if not real:
+        return jsonify({'error': 'no hay fórmula ACTIVA con ese nombre'}), 404
+    lote_kg = c.execute("SELECT COALESCE(lote_size_kg,0) FROM formula_headers WHERE producto_nombre=?",
+                        (real,)).fetchone()[0] or 0
+    cambios = []
+    for it in items:
+        mid = str((it or {}).get('material_id') or '').strip()
+        try:
+            pct = float((it or {}).get('pct'))
+        except Exception:
+            pct = None
+        if not mid or pct is None or pct < 0:
+            cambios.append({'material_id': mid, 'error': 'material_id/pct inválido'})
+            continue
+        row = c.execute("SELECT COALESCE(porcentaje,0), COALESCE(material_nombre,'') FROM formula_items "
+                        "WHERE producto_nombre=? AND UPPER(TRIM(material_id))=UPPER(?)", (real, mid)).fetchone()
+        if not row:
+            cambios.append({'material_id': mid, 'error': 'no está en la fórmula'})
+            continue
+        g = round(pct / 100.0 * lote_kg * 1000.0, 4)
+        cambios.append({'material_id': mid, 'material_nombre': row[1], 'pct_actual': row[0],
+                        'pct_nuevo': pct, 'g_por_lote_nuevo': g})
+    validos = [x for x in cambios if 'error' not in x]
+    # suma resultante (aplicando los cambios en memoria sobre el resto de la fórmula)
+    nuevos = {x['material_id'].upper(): x['pct_nuevo'] for x in validos}
+    suma = 0.0
+    for r in c.execute("SELECT material_id, COALESCE(porcentaje,0) FROM formula_items "
+                       "WHERE producto_nombre=?", (real,)).fetchall():
+        suma += nuevos.get(str(r[0] or '').upper(), r[1] or 0)
+    suma = round(suma, 4)
+
+    if dry_run:
+        return jsonify({'ok': True, 'dry_run': True, 'nombre_real': real, 'lote_kg': lote_kg,
+                        'cambios': cambios, 'suma_resultante': suma, 'suma_100': abs(suma - 100) < 0.5})
+    if not validos:
+        return jsonify({'error': 'ningún cambio válido', 'cambios': cambios}), 400
+    try:
+        for x in validos:
+            c.execute("UPDATE formula_items SET porcentaje=?, cantidad_g_por_lote=? "
+                      "WHERE producto_nombre=? AND UPPER(TRIM(material_id))=UPPER(?)",
+                      (x['pct_nuevo'], x['g_por_lote_nuevo'], real, x['material_id']))
+        audit_log(c, usuario=u, accion='AJUSTAR_FORMULA_PCT', tabla='formula_items',
+                  registro_id=real, despues={'cambios': validos, 'suma': suma})
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)[:300]}), 500
+    return jsonify({'ok': True, 'aplicado': True, 'nombre_real': real, 'cambios': validos,
+                    'suma_resultante': suma,
+                    'reversible': 'sí · audit_log + re-ajustar a los valores previos'})
+
+
 @bp.route("/api/admin/renombrar-producto", methods=["POST"])
 def admin_renombrar_producto():
     """Renombra un PRODUCTO de forma consistente en las tablas vivas (el nombre es la llave
@@ -17409,6 +17490,21 @@ MP00068 | 0.95 | Biosure FE phenoxyethanol fenoxietanol</textarea>
  </div>
  <div id="skMsg" class="muted" style="margin-top:10px"></div>
 </div>
+<div class="card" style="border-color:#f59e0b">
+ <b>&#128295; Ajustar % de f&oacute;rmula</b> &mdash; corrige el % de ingredientes puntuales (ej. alinear EOS con
+ MyBatch). No archiva ni recarga: solo cambia esos %. Una l&iacute;nea por ingrediente: <span class="mono">CODIGO_MP | %</span>.
+ <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;margin-top:8px">
+   <div><div class="muted">Producto</div>
+     <input id="ajProd" value="LIMPIADOR FACIAL HIDRATANTE" style="width:320px;padding:8px;background:#0b1220;color:#e2e8f0;border:1px solid #334155;border-radius:8px"></div>
+   <div><div class="muted">Cambios (CODIGO | %)</div>
+     <textarea id="ajTa" style="width:280px;height:64px;background:#0b1220;color:#e2e8f0;border:1px solid #334155;border-radius:8px;padding:8px;font-family:ui-monospace,monospace;font-size:12.5px">MP00123 | 0.1
+MPAGUALI01 | 82.24</textarea></div>
+   <div style="align-self:flex-end">
+     <button onclick="previewAjuste()" style="background:#0e7490">Previsualizar</button>
+     <button id="btnAjuste" onclick="aplicarAjuste()" disabled style="opacity:.5">Aplicar</button></div>
+ </div>
+ <div id="ajMsg" class="muted" style="margin-top:10px"></div>
+</div>
 <script>
  var ESC=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch];});};
  async function csrf(){try{var r=await fetch('/api/csrf-token',{credentials:'same-origin'});var j=await r.json();return j.csrf_token;}catch(e){return '';}}
@@ -17547,6 +17643,35 @@ MP00068 | 0.95 | Biosure FE phenoxyethanol fenoxietanol</textarea>
      ? '<span class="ok"><b>&#10004; Mapeado.</b></span> La venta de Shopify (SKU <b>'+ESC(body.sku_shopify)+
        '</b>) entrar&aacute; a Necesidades para <b>'+ESC(body.producto_nombre)+'</b>. (El envase lo asign&aacute;s en Presentaciones si hace falta.)'
      : '<span class="bad">Error: '+ESC(j.error||r.status)+'</span>';
+ }
+ function _ajItems(){
+   return document.getElementById('ajTa').value.split(/\\r?\\n/).map(function(ln){
+     var p=ln.split('|'); return {material_id:(p[0]||'').trim(), pct:parseFloat((p[1]||'').trim())};
+   }).filter(function(x){return x.material_id;});
+ }
+ function _ajPayload(dry){return {producto:document.getElementById('ajProd').value.trim(), items:_ajItems(), dry_run:dry?1:0};}
+ async function previewAjuste(){
+   document.getElementById('ajMsg').textContent='Previsualizando...';
+   var t=await csrf();
+   var r=await fetch('/api/admin/ajustar-formula-pct',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(_ajPayload(true))});
+   var j=await r.json(); var btn=document.getElementById('btnAjuste');
+   if(!r.ok){btn.disabled=true;btn.style.opacity='.5';document.getElementById('ajMsg').innerHTML='<span class="bad">No se puede: '+ESC(j.error||r.status)+'</span>';return;}
+   var rows=(j.cambios||[]).map(function(ch){ return ch.error ? ('<div class="bad">'+ESC(ch.material_id)+': '+ESC(ch.error)+'</div>')
+     : ('<div>'+ESC(ch.material_id)+' '+ESC(ch.material_nombre||'')+': <b>'+ch.pct_actual+'% &rarr; '+ch.pct_nuevo+'%</b> ('+ch.g_por_lote_nuevo+' g/lote)</div>'); }).join('');
+   var sumcls=j.suma_100?'ok':'warn';
+   document.getElementById('ajMsg').innerHTML='Hall&eacute;: <b>'+ESC(j.nombre_real)+'</b> (lote '+j.lote_kg+'kg)'+rows+'<div class="'+sumcls+'">Suma resultante: '+j.suma_resultante+'%'+(j.suma_100?'':' &#9888; no da 100')+'</div>';
+   var hayValidos=(j.cambios||[]).some(function(ch){return !ch.error;});
+   btn.disabled=!hayValidos;btn.style.opacity=hayValidos?'1':'.5';
+ }
+ async function aplicarAjuste(){
+   if(!confirm('Aplicar el ajuste de % a la f\\u00f3rmula? Reversible (audit).'))return;
+   document.getElementById('ajMsg').textContent='Aplicando...';
+   var t=await csrf();
+   var r=await fetch('/api/admin/ajustar-formula-pct',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(_ajPayload(false))});
+   var j=await r.json();
+   if(!r.ok){document.getElementById('ajMsg').innerHTML='<span class="bad">Error: '+ESC(j.error||r.status)+'</span>';return;}
+   document.getElementById('ajMsg').innerHTML='<span class="ok"><b>&#10004; Ajustado.</b></span> '+(j.cambios||[]).length+' &iacute;tem(s) en '+ESC(j.nombre_real)+'. Suma: '+j.suma_resultante+'%.';
+   document.getElementById('btnAjuste').disabled=true;document.getElementById('btnAjuste').style.opacity='.5';
  }
 </script>
 </div></body></html>"""
