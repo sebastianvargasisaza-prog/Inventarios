@@ -250,8 +250,21 @@ Invariante nueva:
 - Alertas reabastecimiento excluyen CUARENTENA/RECHAZADO/VENCIDO
 
 **Helpers nuevos:**
-- `_mee_stock_real(c, codigo_mee)` · stock canonical desde SUM(movimientos_mee)
+- `_mee_stock_real(c, codigo_mee)` · stock de UN envase · Fase 0 (19-jun) ALINEADO a
+  `_get_mee_stock` (programacion): tipos case-insensitive + fallback a `stock_actual`
+  SOLO si no hay movimientos. Sin callers hoy (se mantiene fiel para uso futuro).
 - `_pendiente_en_compras_g` (import desde compras) · dedup cola SOLs+OCs
+
+**Fase 0 · Normalización de envases (MEE) · mig 279 (19-jun):**
+- `maestro_mee` gana `nombre_inci` (descripción canónica/atributo) + `material_referencia`
+  (envase base del que deriva un serigrafiado · Fase 2). Activo/Inactivo vive en `maestro_mee.estado`.
+- Resolver canónico de envases en programacion.py: `_norm_envase_name` (= `_norm_mp_name`),
+  `_resolver_envase_bodega(c, codigo)` (id → puente `mee_aliases` con `codigo_mee` set).
+- `_get_mee_stock` PASS-3: pliega el puente de duplicados → lookup por código duplicado
+  o canónico devuelve el TOTAL canónico (paridad con `_get_mp_stock` · el kardex NO se toca).
+- `/api/admin/maestro-envases-diff` (read-only · duplicados por nombre normalizado + stock) y
+  `/api/admin/maestro-envases-aplicar` (fusionar→puente+estado Inactivo · deshacer · backfill-inci).
+  NUNCA tocan `movimientos_mee` · reversibles por audit + acción `deshacer`. Página `/admin/maestro-envases`.
 
 **Cron `auto_reparar_huerfanas` (4 AM):**
 - Detecta `formula_items.material_id` sin movimientos asociados

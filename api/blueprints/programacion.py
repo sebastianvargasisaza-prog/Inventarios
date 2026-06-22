@@ -1038,11 +1038,64 @@ def _get_mee_stock(conn):
                 stock[k] = max(float(row[1] or 0), 0)
     except Exception:
         pass
+    # PASS 3 · Fase 0 (19-jun) · pliega el PUENTE de duplicados (mee_aliases con
+    # codigo_mee set) para que consultar por el código DUPLICADO o por el CANÓNICO
+    # devuelva el TOTAL canónico (paridad con _get_mp_stock pass-2 / bridge MP).
+    # El kardex (movimientos_mee) NO se toca: el código duplicado conserva sus
+    # movimientos; aquí solo se ATRIBUYE su stock al canónico para los lookups.
+    try:
+        for row in conn.execute(
+            "SELECT UPPER(TRIM(alias)), UPPER(TRIM(codigo_mee)) FROM mee_aliases "
+            "WHERE COALESCE(codigo_mee,'')<>'' AND COALESCE(activo,1)=1"
+        ).fetchall():
+            dup, canon = row[0], row[1]
+            if not dup or not canon or dup == canon:
+                continue
+            dup_stock = stock.get(dup, 0)
+            if dup_stock:
+                stock[canon] = stock.get(canon, 0) + dup_stock
+            # ambas claves reportan el total canónico (lookup por cualquiera)
+            stock[dup] = stock.get(canon, 0)
+    except Exception:
+        pass
     try:
         g._mee_stock_cache = stock
     except RuntimeError:
         pass
     return stock
+
+
+def _norm_envase_name(name):
+    """Normaliza el nombre/descripción de un ENVASE (MEE) para match difuso.
+    Reusa el normalizador canónico de MP (_norm_mp_name: sin acentos, puntuación→
+    espacio, UPPER, separa dígito/letra) → UN solo normalizador para todo el
+    inventario (M1/M2). Es la clave de agrupación de duplicados del resolver y del
+    diagnóstico /admin/maestro-envases."""
+    return _norm_mp_name(name)
+
+
+def _resolver_envase_bodega(c, codigo):
+    """Resuelve un código de ENVASE (MEE) a su código CANÓNICO en bodega — análogo a
+    _resolver_material_bodega para MP, pero más simple (el envase no tiene FEFO ni
+    INCI-como-llave). Tiers (solo redirige si hace falta · cero regresión):
+      1) el propio código si NO tiene un puente de duplicado activo → se devuelve igual.
+      2) mee_aliases (alias=código duplicado → codigo_mee=canónico · confirmado por
+         Sebastián en el diff, reversible con activo=0).
+    Devuelve el código canónico en MAYÚSCULAS, o el original si no hay puente.
+    NUNCA adivina por nombre (las fusiones las decide el humano en el diff · M19)."""
+    cod = str(codigo or '').strip().upper()
+    if not cod:
+        return cod
+    try:
+        r = c.execute(
+            "SELECT UPPER(TRIM(codigo_mee)) FROM mee_aliases "
+            "WHERE UPPER(TRIM(alias))=? AND COALESCE(codigo_mee,'')<>'' AND COALESCE(activo,1)=1 "
+            "LIMIT 1", (cod,)).fetchone()
+        if r and r[0] and r[0] != cod:
+            return r[0]
+    except Exception:
+        pass
+    return cod
 
 
 # ─── Stock projection ────────────────────────────────────────────────────────

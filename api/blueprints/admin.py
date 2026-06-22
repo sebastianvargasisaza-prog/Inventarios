@@ -15876,6 +15876,263 @@ def admin_maestro_inci_aplicar():
                     'reversible': 'sí · audit_log con antes/después por código'})
 
 
+@bp.route("/api/admin/maestro-envases-diff", methods=["GET"])
+def admin_maestro_envases_diff():
+    """READ-ONLY · Fase 0 (19-jun) · diagnóstico de coherencia del inventario de
+    ENVASES (MEE), análogo a maestro-inci pero SIN Excel (Sebastián los lleva a mano).
+    Detecta:
+      - duplicados: grupos de ≥2 códigos ACTIVOS con misma categoría + nombre
+        normalizado (_norm_envase_name) → candidatos a fusión · con stock de cada uno
+        (vía _get_mee_stock canónico) para decidir el canónico SIN adivinar (M19).
+      - ya_puenteados: puentes de duplicado existentes (mee_aliases con codigo_mee).
+      - huerfanos_presentaciones: códigos usados en producto_presentaciones
+        (envase/tapa/caja) que NO existen en maestro_mee.
+      - sin_inci: códigos sin nombre_inci (candidatos a backfill).
+    NO cambia nada."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    from database import get_db
+    from collections import defaultdict
+    conn = get_db(); c = conn.cursor()
+    try:
+        from blueprints.programacion import _get_mee_stock, _norm_envase_name
+    except Exception:
+        from programacion import _get_mee_stock, _norm_envase_name
+    stock = _get_mee_stock(conn)
+
+    def _has_col(tabla, col):
+        # PG-safe: PRAGMA es SQLite-only → un SELECT de prueba funciona en ambos
+        # motores (columna ausente → OperationalError/ProgrammingError).
+        try:
+            c.execute(f"SELECT {col} FROM {tabla} LIMIT 0")
+            try:
+                c.fetchall()
+            except Exception:
+                pass
+            return True
+        except Exception:
+            try:
+                conn.rollback()  # PG: una query fallida aborta la tx
+            except Exception:
+                pass
+            return False
+    tiene_inci = _has_col('maestro_mee', 'nombre_inci')
+
+    # códigos con movimientos (para flag tiene_mov)
+    con_mov = set()
+    try:
+        for r in c.execute("SELECT DISTINCT UPPER(TRIM(mee_codigo)) FROM movimientos_mee "
+                           "WHERE COALESCE(anulado,0)=0").fetchall():
+            if r[0]:
+                con_mov.add(r[0])
+    except Exception:
+        pass
+
+    rows = c.execute(
+        "SELECT codigo, COALESCE(descripcion,''), COALESCE(categoria,''), "
+        "COALESCE(estado,'Activo'), " + ("COALESCE(nombre_inci,'')" if tiene_inci else "''") +
+        " FROM maestro_mee").fetchall()
+    grupos = defaultdict(list)
+    sin_inci = []
+    for r in rows:
+        cod = str(r[0] or '').strip()
+        if not cod:
+            continue
+        cu = cod.upper()
+        item = {'codigo': cod, 'descripcion': r[1], 'categoria': r[2],
+                'estado': r[3], 'stock': round(stock.get(cu, 0), 2),
+                'tiene_mov': cu in con_mov}
+        if (r[3] or 'Activo').strip().lower() == 'activo':
+            clave = ((r[2] or '').strip().upper(), _norm_envase_name(r[1]))
+            grupos[clave].append(item)
+        if tiene_inci and not (r[4] or '').strip():
+            sin_inci.append({'codigo': cod, 'descripcion': r[1]})
+
+    duplicados = []
+    for (cat, norm), items in grupos.items():
+        if len(items) >= 2 and norm:
+            # canónico SUGERIDO = más stock, desempate por tener movimientos y por código
+            items_ord = sorted(items, key=lambda x: (-x['stock'], 0 if x['tiene_mov'] else 1, x['codigo']))
+            duplicados.append({'categoria': cat, 'nombre_normalizado': norm,
+                               'canonico_sugerido': items_ord[0]['codigo'], 'codigos': items_ord})
+
+    ya_puenteados = []
+    try:
+        for r in c.execute("SELECT alias, codigo_mee, COALESCE(descripcion_canonical,''), "
+                           "COALESCE(activo,1) FROM mee_aliases "
+                           "WHERE COALESCE(codigo_mee,'')<>''").fetchall():
+            ya_puenteados.append({'duplicado': r[0], 'canonico': r[1],
+                                  'descripcion': r[2], 'activo': r[3]})
+    except Exception:
+        pass
+
+    # huérfanos: códigos en producto_presentaciones no presentes en maestro_mee
+    maestro_set = {str(r[0] or '').strip().upper() for r in rows}
+    huerfanos = []
+    try:
+        pres_cols = []
+        for col in ('envase_codigo', 'tapa_codigo', 'caja_codigo'):
+            if _has_col('producto_presentaciones', col):
+                pres_cols.append(col)
+        vistos = set()
+        for col in pres_cols:
+            for r in c.execute(
+                f"SELECT DISTINCT producto_nombre, {col} FROM producto_presentaciones "
+                f"WHERE COALESCE({col},'')<>'' AND COALESCE(activo,1)=1").fetchall():
+                cu = str(r[1] or '').strip().upper()
+                if cu and cu not in maestro_set and (cu, col) not in vistos:
+                    vistos.add((cu, col))
+                    huerfanos.append({'codigo': r[1], 'campo': col, 'producto': r[0]})
+    except Exception:
+        pass
+
+    return jsonify({
+        'ok': True,
+        'total_envases': len(rows),
+        'mig_aplicada': tiene_inci,
+        'duplicados': sorted(duplicados, key=lambda x: (x['categoria'], x['nombre_normalizado'])),
+        'ya_puenteados': ya_puenteados,
+        'huerfanos_presentaciones': huerfanos,
+        'sin_inci': sin_inci,
+        'resumen': {
+            'grupos_duplicados': len(duplicados),
+            'codigos_duplicados': sum(len(d['codigos']) for d in duplicados),
+            'puentes_existentes': len(ya_puenteados),
+            'huerfanos_presentaciones': len(huerfanos),
+            'sin_inci': len(sin_inci),
+        },
+    })
+
+
+@bp.route("/api/admin/maestro-envases-aplicar", methods=["POST"])
+def admin_maestro_envases_aplicar():
+    """Aplica la normalización de ENVASES · NUNCA toca movimientos_mee (cero riesgo
+    de pérdida de stock · el kardex es intocable · M31). Reversible por audit.
+      accion='fusionar'     → por cada {duplicado, canonico}: escribe el PUENTE en
+                              mee_aliases (alias=duplicado → codigo_mee=canonico) y
+                              marca maestro_mee.estado='Inactivo' al duplicado. El
+                              stock del duplicado se ATRIBUYE al canónico vía
+                              _get_mee_stock pass-3 (no se mueve nada del kardex).
+      accion='deshacer'     → por cada {duplicado}: desactiva el puente (activo=0) y
+                              reactiva el código (estado='Activo'). Reversa exacta.
+      accion='backfill-inci'→ rellena nombre_inci = descripcion donde esté VACÍO
+                              (nombre canónico/atributo · nunca sobrescribe).
+    Body JSON: {accion, merges:[{duplicado,canonico}], dry_run}. dry_run default 1."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.get_json(silent=True) or {}
+    accion = (d.get('accion') or '').strip()
+    if accion not in ('fusionar', 'deshacer', 'backfill-inci'):
+        return jsonify({'error': "accion debe ser 'fusionar', 'deshacer' o 'backfill-inci'"}), 400
+    dry_run = str(d.get('dry_run', 1)).lower() in ('1', 'true', 'yes')
+    merges = d.get('merges') or []
+    from database import get_db
+    conn = get_db(); c = conn.cursor()
+
+    def _existe(cod):
+        try:
+            return c.execute("SELECT 1 FROM maestro_mee WHERE UPPER(codigo)=UPPER(?)",
+                             (cod,)).fetchone() is not None
+        except Exception:
+            return False
+
+    cambios = []
+    if accion == 'fusionar':
+        for m in merges:
+            dup = str((m or {}).get('duplicado') or '').strip()
+            canon = str((m or {}).get('canonico') or '').strip()
+            if not dup or not canon:
+                continue
+            if dup.upper() == canon.upper():
+                cambios.append({'duplicado': dup, 'canonico': canon, 'error': 'duplicado==canonico'})
+                continue
+            if not _existe(dup) or not _existe(canon):
+                cambios.append({'duplicado': dup, 'canonico': canon, 'error': 'código inexistente en maestro_mee'})
+                continue
+            cambios.append({'duplicado': dup, 'canonico': canon})
+    elif accion == 'deshacer':
+        for m in merges:
+            dup = str((m or {}).get('duplicado') or '').strip()
+            if dup:
+                cambios.append({'duplicado': dup})
+    elif accion == 'backfill-inci':
+        try:
+            for r in c.execute("SELECT codigo, COALESCE(descripcion,'') FROM maestro_mee "
+                               "WHERE COALESCE(NULLIF(TRIM(nombre_inci),''),'')='' "
+                               "AND COALESCE(descripcion,'')<>''").fetchall():
+                cambios.append({'codigo': r[0], 'inci': r[1]})
+        except Exception as e:
+            return jsonify({'error': f'maestro_mee sin columna nombre_inci? aplicar mig 279 · {str(e)[:120]}'}), 400
+
+    if dry_run:
+        return jsonify({'ok': True, 'dry_run': True, 'accion': accion,
+                        'total': len([x for x in cambios if 'error' not in x]),
+                        'con_error': [x for x in cambios if 'error' in x],
+                        'cambios': cambios[:500]})
+
+    aplicados = 0
+    errores = [x for x in cambios if 'error' in x]
+    validos = [x for x in cambios if 'error' not in x]
+    if not validos:
+        return jsonify({'ok': True, 'aplicado': True, 'accion': accion, 'total': 0,
+                        'aplicados': 0, 'con_error': errores})
+    try:
+        for ch in validos:
+            if accion == 'fusionar':
+                dup, canon = ch['duplicado'], ch['canonico']
+                desc = ''
+                try:
+                    rr = c.execute("SELECT COALESCE(descripcion,'') FROM maestro_mee WHERE UPPER(codigo)=UPPER(?)",
+                                   (canon,)).fetchone()
+                    desc = rr[0] if rr else ''
+                except Exception:
+                    pass
+                # idempotente: ¿ya existe el puente activo?
+                ya = c.execute("SELECT id FROM mee_aliases WHERE UPPER(TRIM(alias))=UPPER(?) "
+                               "AND UPPER(TRIM(COALESCE(codigo_mee,'')))=UPPER(?)", (dup, canon)).fetchone()
+                if ya:
+                    c.execute("UPDATE mee_aliases SET activo=1, descripcion_canonical=? WHERE id=?",
+                              (desc, ya[0]))
+                else:
+                    c.execute("INSERT INTO mee_aliases (alias, codigo_mee, descripcion_canonical, "
+                              "tipo, fuente, creado_por, activo) VALUES (?,?,?,?,?,?,1)",
+                              (dup, canon, desc, 'sinonimo', 'sebastian', u))
+                c.execute("UPDATE maestro_mee SET estado='Inactivo' WHERE UPPER(codigo)=UPPER(?)", (dup,))
+                audit_log(c, usuario=u, accion='MAESTRO_ENVASE_FUSIONAR', tabla='mee_aliases',
+                          registro_id=dup, despues={'duplicado': dup, 'canonico': canon})
+                aplicados += 1
+            elif accion == 'deshacer':
+                dup = ch['duplicado']
+                c.execute("UPDATE mee_aliases SET activo=0 WHERE UPPER(TRIM(alias))=UPPER(?) "
+                          "AND COALESCE(codigo_mee,'')<>''", (dup,))
+                c.execute("UPDATE maestro_mee SET estado='Activo' WHERE UPPER(codigo)=UPPER(?)", (dup,))
+                audit_log(c, usuario=u, accion='MAESTRO_ENVASE_DESHACER', tabla='mee_aliases',
+                          registro_id=dup, despues={'duplicado': dup})
+                aplicados += 1
+            elif accion == 'backfill-inci':
+                c.execute("UPDATE maestro_mee SET nombre_inci=? WHERE UPPER(codigo)=UPPER(?) "
+                          "AND COALESCE(NULLIF(TRIM(nombre_inci),''),'')=''", (ch['inci'], ch['codigo']))
+                if c.rowcount:
+                    aplicados += 1
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)[:300]}), 500
+    return jsonify({'ok': True, 'aplicado': True, 'accion': accion, 'total': len(validos),
+                    'aplicados': aplicados, 'con_error': errores,
+                    'reversible': 'sí · audit_log + accion=deshacer (no toca movimientos_mee)'})
+
+
+@bp.route("/admin/maestro-envases", methods=["GET"])
+def admin_maestro_envases_page():
+    """Página · normalizar inventario de envases (duplicados → puente · backfill INCI)."""
+    if 'compras_user' not in session:
+        return redirect("/login?next=/admin/maestro-envases")
+    return _MAESTRO_ENVASES_HTML
+
+
 @bp.route("/api/admin/formula-bodega-cruce", methods=["GET"])
 def admin_formula_bodega_cruce():
     """READ-ONLY · UNO POR UNO: cada material usado en fórmulas (formula_items de fórmulas
@@ -16117,6 +16374,107 @@ def admin_retirar_huerfanos_muertos():
     conn.commit()
     return jsonify({'ok': True, 'aplicado': True, 'total': len(muertos), 'retirados': retirados,
                     'backup': (bak.get('filename') or ''), 'reversible': 'sí · activo=1 + audit'})
+
+
+_MAESTRO_ENVASES_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Normalizar Envases (MEE)</title>
+<style>
+ body{font-family:system-ui,Arial;margin:0;background:#0f172a;color:#e2e8f0}
+ .wrap{max-width:1100px;margin:0 auto;padding:24px}
+ h1{font-size:20px}.muted{color:#94a3b8;font-size:13px}
+ .card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:18px;margin:14px 0}
+ .kpis{display:flex;gap:10px;flex-wrap:wrap}
+ .kpi{background:#0b1220;border:1px solid #334155;border-radius:10px;padding:12px 16px;min-width:120px}
+ .kpi .v{font-size:24px;font-weight:800}.kpi .l{font-size:11px;color:#94a3b8}
+ .bad{color:#f87171}.warn{color:#fbbf24}.ok{color:#34d399}
+ table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px}
+ th,td{padding:5px 8px;border-bottom:1px solid #334155;text-align:left}
+ th{color:#a5b4fc}.mono{font-family:ui-monospace,monospace}
+ button{padding:9px 16px;border:0;border-radius:8px;background:#7c3aed;color:#fff;font-weight:700;cursor:pointer}
+ .grp{border:1px solid #475569;border-radius:8px;padding:10px;margin:8px 0;background:#0b1220}
+ a{color:#a5b4fc}
+</style></head><body><div class="wrap">
+<a href="/admin">&larr; Volver al Hub</a>
+<h1>&#128230; Normalizar inventario de envases (MEE)</h1>
+<div class="muted">Detecta envases DUPLICADOS (mismo tipo y nombre con códigos distintos). Elegí el código
+canónico (el de más stock viene pre-seleccionado) y fusioná: se crea un PUENTE (el duplicado apunta al
+canónico) y el stock se atribuye al canónico. <b>NO se toca el kardex (movimientos_mee) — es reversible.</b></div>
+<div class="card">
+ <button onclick="diag()">Diagnosticar envases</button>
+ <button onclick="backfill()" style="background:#0e7490;margin-left:8px">Rellenar nombres (INCI) vacíos</button>
+ <div id="msg" class="muted" style="margin-top:10px"></div>
+ <div id="kpis" class="kpis" style="margin-top:10px"></div>
+</div>
+<div id="dups"></div>
+<div id="extra"></div>
+<script>
+ var ESC=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch];});};
+ async function csrf(){try{var r=await fetch('/api/csrf-token',{credentials:'same-origin'});var j=await r.json();return j.csrf_token;}catch(e){return '';}}
+ async function diag(){
+   document.getElementById('msg').textContent='Cargando…';
+   var r=await fetch('/api/admin/maestro-envases-diff');var j=await r.json();
+   if(!j.ok){document.getElementById('msg').textContent='Error: '+(j.error||r.status);return;}
+   if(!j.mig_aplicada){document.getElementById('msg').innerHTML='<span class="warn">Falta aplicar mig 279 (nombre_inci) — desplegá primero.</span>';}
+   else{document.getElementById('msg').textContent='';}
+   var s=j.resumen||{};
+   document.getElementById('kpis').innerHTML=
+     kpi(j.total_envases,'envases')+kpi(s.grupos_duplicados,'grupos duplicados')+
+     kpi(s.puentes_existentes,'puentes')+kpi(s.huerfanos_presentaciones,'huérfanos pres.')+kpi(s.sin_inci,'sin nombre');
+   var h='';
+   (j.duplicados||[]).forEach(function(g,gi){
+     h+='<div class="grp"><b>'+ESC(g.categoria)+'</b> · '+ESC(g.nombre_normalizado)+
+        ' <span class="muted">(elegí el canónico)</span><table><tr><th></th><th>Código</th><th>Descripción</th><th>Stock</th><th>Mov</th><th>Estado</th></tr>';
+     g.codigos.forEach(function(it,i){
+       var chk=(it.codigo===g.canonico_sugerido)?'checked':'';
+       h+='<tr><td><input type="radio" name="canon'+gi+'" value="'+ESC(it.codigo)+'" '+chk+'></td>'+
+          '<td class="mono">'+ESC(it.codigo)+'</td><td>'+ESC(it.descripcion)+'</td>'+
+          '<td>'+it.stock+'</td><td>'+(it.tiene_mov?'sí':'—')+'</td><td>'+ESC(it.estado)+'</td></tr>';
+     });
+     h+='</table></div>';
+   });
+   if(!(j.duplicados||[]).length){h='<div class="card ok">Sin duplicados detectados.</div>';}
+   else{h+='<div class="card"><button onclick="fusionar()">Fusionar grupos seleccionados</button> '+
+          '<span class="muted">el código NO marcado en cada grupo se vuelve un alias del canónico</span></div>';}
+   document.getElementById('dups').innerHTML=h;
+   window._diag=j;
+   var e='';
+   if((j.ya_puenteados||[]).length){e+='<div class="card"><b>Puentes existentes</b><table><tr><th>Duplicado</th><th>→ Canónico</th><th>Activo</th></tr>';
+     j.ya_puenteados.forEach(function(p){e+='<tr><td class="mono">'+ESC(p.duplicado)+'</td><td class="mono">'+ESC(p.canonico)+'</td><td>'+(p.activo?'sí':'no')+'</td></tr>';});e+='</table></div>';}
+   if((j.huerfanos_presentaciones||[]).length){e+='<div class="card"><b class="warn">Códigos en Presentaciones que NO existen en el maestro</b><table><tr><th>Código</th><th>Campo</th><th>Producto</th></tr>';
+     j.huerfanos_presentaciones.forEach(function(o){e+='<tr><td class="mono">'+ESC(o.codigo)+'</td><td>'+ESC(o.campo)+'</td><td>'+ESC(o.producto)+'</td></tr>';});e+='</table></div>';}
+   document.getElementById('extra').innerHTML=e;
+ }
+ function kpi(v,l){return '<div class="kpi"><div class="v">'+(v==null?'—':v)+'</div><div class="l">'+l+'</div></div>';}
+ async function fusionar(){
+   var j=window._diag;if(!j)return;
+   var merges=[];
+   (j.duplicados||[]).forEach(function(g,gi){
+     var sel=document.querySelector('input[name="canon'+gi+'"]:checked');
+     if(!sel)return;var canon=sel.value;
+     g.codigos.forEach(function(it){if(it.codigo!==canon){merges.push({duplicado:it.codigo,canonico:canon});}});
+   });
+   if(!merges.length){alert('Nada seleccionado');return;}
+   if(!confirm('Fusionar '+merges.length+' código(s) duplicado(s)? Reversible.'))return;
+   var t=await csrf();
+   var r=await fetch('/api/admin/maestro-envases-aplicar',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':t},
+     body:JSON.stringify({accion:'fusionar',merges:merges,dry_run:0})});
+   var d=await r.json();
+   if(!r.ok){alert('Error: '+(d.error||r.status));return;}
+   alert('Fusionados: '+d.aplicados+(d.con_error&&d.con_error.length?' · con error: '+d.con_error.length:''));
+   diag();
+ }
+ async function backfill(){
+   if(!confirm('Rellenar nombre (INCI) = descripción donde esté vacío?'))return;
+   var t=await csrf();
+   var r=await fetch('/api/admin/maestro-envases-aplicar',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':t},
+     body:JSON.stringify({accion:'backfill-inci',dry_run:0})});
+   var d=await r.json();
+   if(!r.ok){alert('Error: '+(d.error||r.status));return;}
+   alert('Nombres rellenados: '+d.aplicados);diag();
+ }
+</script>
+</div></body></html>"""
 
 
 _MAESTRO_INCI_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">

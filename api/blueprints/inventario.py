@@ -117,10 +117,13 @@ def _validar_e_sign(c, signature_id, *, record_table, record_id, meaning, signer
 
 
 def _mee_stock_real(c, codigo_mee):
-    """MEE-FIX · 22-may-2026 · stock CANONICAL desde SUM(movimientos_mee).
+    """Stock canónico de UN envase = MISMA semántica que _get_mee_stock
+    (programacion.py): SUM(movimientos_mee) con tipos case-insensitive +
+    fallback a maestro_mee.stock_actual SOLO si no hay movimientos.
 
-    Reemplaza lectura de cache `maestro_mee.stock_actual` que podía
-    drifear bajo carga. Ahora: una sola fuente de verdad = SUM movimientos.
+    Fase 0 (19-jun): antes era case-sensitive ('Entrada') y sin fallback →
+    podía drifear con el canónico (M1/M26). Hoy NO tiene callers, pero se
+    alinea para que cualquier uso futuro sea fiel (un solo resolver).
 
     Args:
         c: cursor SQLite/PG
@@ -129,20 +132,32 @@ def _mee_stock_real(c, codigo_mee):
     Returns:
         float · stock real (siempre >= 0)
     """
+    k = str(codigo_mee or '').strip()
     try:
         r = c.execute(
             """SELECT COALESCE(SUM(CASE
-                   WHEN tipo='Entrada' THEN cantidad
-                   WHEN tipo='Salida'  THEN -cantidad
-                   WHEN tipo='Ajuste'  THEN cantidad
-                   ELSE 0 END), 0)
+                   WHEN LOWER(tipo) IN ('entrada','ingreso','devolucion','devolución','ajuste')
+                       THEN cantidad
+                   WHEN LOWER(tipo) IN ('salida','consumo','rechazo')
+                       THEN -cantidad
+                   ELSE 0 END), 0), COUNT(*)
                FROM movimientos_mee
-               WHERE mee_codigo=? AND COALESCE(anulado,0)=0""",
-            (codigo_mee,),
+               WHERE UPPER(mee_codigo)=UPPER(?) AND COALESCE(anulado,0)=0""",
+            (k,),
         ).fetchone()
-        return max(float(r[0] or 0), 0)
+        if r and (r[1] or 0) > 0:
+            return max(float(r[0] or 0), 0)
     except Exception:
-        return 0.0
+        pass
+    # Fallback: cache stock_actual SOLO si no hay movimientos (saldo de apertura)
+    try:
+        r2 = c.execute("SELECT stock_actual FROM maestro_mee WHERE UPPER(codigo)=UPPER(?)",
+                       (k,)).fetchone()
+        if r2:
+            return max(float(r2[0] or 0), 0)
+    except Exception:
+        pass
+    return 0.0
 
 # ── Sebastian 5-may-2026: revisar stock_minimo desde Planta ────────
 # El equipo (no solo admin) necesita ver si los stock_minimo configurados

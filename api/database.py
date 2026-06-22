@@ -352,6 +352,19 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (279, "Fase 0 · Normalizar inventario de ENVASES (MEE) para que sea tan inteligente como MP "
+          "(19-jun · ultracode): maestro_mee gana nombre_inci (descripción canónica/atributo, NO "
+          "llave · igual que maestro_mps) y material_referencia (el envase BASE limpio del que "
+          "deriva un serigrafiado · prepara Fase 2). El estado Activo/Inactivo ya vive en "
+          "maestro_mee.estado (no se duplica). Índices para el resolver de envases + el puente de "
+          "duplicados en mee_aliases (alias=código duplicado → codigo_mee=canónico). 'duplicate "
+          "column' / 'already exists' benignos (idempotente · safe_alter).", [
+        "ALTER TABLE maestro_mee ADD COLUMN nombre_inci TEXT",
+        "ALTER TABLE maestro_mee ADD COLUMN material_referencia TEXT",
+        "CREATE INDEX IF NOT EXISTS idx_movimientos_mee_codigo ON movimientos_mee(mee_codigo)",
+        "CREATE INDEX IF NOT EXISTS idx_mee_aliases_alias ON mee_aliases(alias)",
+        "CREATE INDEX IF NOT EXISTS idx_mee_aliases_codigo ON mee_aliases(codigo_mee)",
+    ]),
     (278, "Envases SECUNDARIOS por presentación (18-jun · A+ · 'no dejar tapa/caja por fuera del "
           "abastecimiento'): agrega tapa_codigo y caja_codigo a producto_presentaciones. Así el "
           "ABASTECIMIENTO planea (compra) tapa+caja y el DESCUENTO (checklist) los pre-llena, desde "

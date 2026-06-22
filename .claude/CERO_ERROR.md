@@ -5,7 +5,7 @@
 > **Cuando encuentres o arregles un bug con un patrón nuevo, AGRÉGALO aquí en el mismo commit.**
 > Mantenlo denso y accionable (checklist, no narrativa). La historia detallada vive en `SESSION_LOG/`.
 
-Última actualización: **2026-06-17** (M47 auditoría ABASTECIMIENTO: dos motores de compra divergían — el de generar-OC no se alineaba al motor verificado · "Pagada-no-recibida" omitido en 4 hermanos)
+Última actualización: **2026-06-19** (M57 Fase 0 · normalización del inventario de ENVASES/MEE: resolver canónico + puente de duplicados en mee_aliases + diff/aplicar · lección PG `PRAGMA` es SQLite-only)
 
 ---
 
@@ -333,6 +333,32 @@ Un activo/péptido con % de 2 dígitos suele ser el agua mal codificada o un typ
 contra el maestro. (4) **Pedí el dump SIN traducir** — el traductor del navegador corrompe el JSON
 (nombres "DE"→"Delaware", comas decimales, espacios en códigos) → no reconciliar sobre datos sucios.
 Pendiente durable: botón "reconciliar fórmulas vs maestro" (upload Excel → diff → corrige).
+
+## 📦 M57 · Fase 0 · Inventario de ENVASES (MEE) tan inteligente como MP · 19-jun
+
+Sebastián: "los códigos de envases no son coherentes · normalicemos el inventario de envases y que sea igual de
+inteligente que el de materias primas." Diseño verificado contra datos reales (69 envases) + 4 decisiones de modelo:
+serigrafiado = código MEE propio · sin estados de calidad en MEE por ahora · coherencia = convención(nuevos)+alias(viejos)
+· ubicación texto libre. **Fase 0 (la base) construida:**
+- **Causa raíz de "no es inteligente":** MP tiene resolver 5-tier + `mp_formula_bridge` + INCI; MEE tenía `_get_mee_stock`
+  SUM plano sin tiers/puente → un código tipografiado distinto **parte el stock en silencio** (M5). Además `_mee_stock_real`
+  (inventario.py) era código MUERTO (0 callers) y case-sensitive → trampa latente que driftaba con el canónico.
+- **mig 279:** `maestro_mee` ADD `nombre_inci` (descripción canónica/atributo, NO llave) + `material_referencia` (envase base
+  del serigrafiado · Fase 2). Activo/Inactivo REUSA `maestro_mee.estado` (ya existía · no se duplica columna).
+- **Resolver canónico** (programacion.py): `_norm_envase_name` = `_norm_mp_name` (UN normalizador para todo · M1/M2);
+  `_resolver_envase_bodega` (id → puente `mee_aliases` donde `codigo_mee` está set · NUNCA adivina por nombre · las fusiones
+  las confirma el humano · M19). `_get_mee_stock` PASS-3 pliega el puente → consultar por duplicado o canónico devuelve el
+  TOTAL canónico (igual que `_get_mp_stock` pass-2 · el kardex `movimientos_mee` NO se toca).
+- **`mee_aliases` como puente de duplicados:** `alias`=código duplicado → `codigo_mee`=canónico, `tipo='sinonimo'` (el CHECK
+  NO permite 'duplicado' · usar un valor del CHECK existente), distinguido de las abreviaturas por `codigo_mee` no-nulo.
+- **Tooling** `/admin/maestro-envases`: diff read-only (agrupa por `(categoria, nombre_normalizado)`, muestra stock de cada
+  código para elegir el canónico SIN adivinar) + aplicar (fusionar→puente+estado Inactivo · deshacer reversa exacta ·
+  backfill-inci=descripción donde vacío). NUNCA toca `movimientos_mee`, reversible por audit. Sin Excel (Sebastián los lleva a mano).
+- **⚠ LECCIÓN PG-drift nueva: `PRAGMA table_info(tabla)` es SQLite-only → en PG devuelve VACÍO** (un check de "¿existe la
+  columna?" daría siempre False en prod). Para checar existencia de columna PG-safe: `SELECT col FROM tabla LIMIT 0` en try/except
+  (+ `conn.rollback()` en el except porque en PG una query fallida aborta la tx). NUNCA PRAGMA en un endpoint que corre en prod.
+- Pendiente Fase 1 (descuento autónomo: gate/alertas al canónico + reparar checklist NULL), Fase 2 (serigrafía/sobrante),
+  Fase 3 (ubicación estanteria/posicion/zona en movimientos_mee). Tests `test_envases_normalizacion_fase0.py`.
 
 ## 🫀 M56 · Revisión a fondo del núcleo (inventarios/consumos/necesidades · workflow 22 agentes) · 18-jun
 
