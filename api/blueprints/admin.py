@@ -18124,7 +18124,8 @@ _AREAS_PLANTA_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-
 <div class="muted">Cruzadas con el maestro de EQUIPOS (la verdad). <b>Oficial</b> = la ve el jefe/rótulos (producción + DISP/ACOND).
 <b>DUP</b> = nombre repetido (duplicado a desactivar). La capacidad real = el tanque más grande del área.</div>
 <div id="kpis" class="kpis" style="margin:12px 0"></div>
-<div id="msg" class="muted"></div>
+<div style="margin:6px 0"><label class="muted"><input type="checkbox" id="verInact" onchange="render()"> ver inactivas (para reactivar)</label>
+ <span id="msg" class="muted" style="margin-left:10px"></span></div>
 <div class="card"><div id="tabla"></div></div>
 <script>
  var ESC=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch];});};
@@ -18140,14 +18141,19 @@ _AREAS_PLANTA_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-
    var r=await fetch('/api/admin/areas-planta'); var j=await r.json();
    if(!j.ok){document.getElementById('msg').innerHTML='<span class="bad">Error: '+ESC(j.error||r.status)+'</span>';return;}
    document.getElementById('msg').textContent='';
-   var A=j.areas||[]; window._A=A;
+   window._A=j.areas||[]; render();
+ }
+ function render(){
+   var A=window._A||[];
+   var verInact=document.getElementById('verInact')&&document.getElementById('verInact').checked;
+   var DISP=verInact?A:A.filter(function(a){return a.activo;});
    var act=A.filter(function(a){return a.activo;});
    document.getElementById('kpis').innerHTML=
      kpi(act.length,'áreas activas')+kpi(act.filter(function(a){return a.oficial;}).length,'oficiales','ok')+
      kpi(act.filter(function(a){return a.duplicado;}).length,'duplicados',act.filter(function(a){return a.duplicado;}).length?'bad':'ok')+
      kpi(act.filter(function(a){return a.puede_producir;}).length,'fabricación');
    var h='<table><tr><th>Código</th><th>Nombre</th><th>Hace</th><th>Flags</th><th>Equipos</th><th>Cap. real</th><th>Prod.</th><th>Capacidad</th><th>Acción</th></tr>';
-   A.forEach(function(a,gi){
+   DISP.forEach(function(a,gi){
      var flags=(a.oficial?'<span class="tag t-of">OFICIAL</span> ':'<span class="tag t-no">no-of</span> ')+(a.duplicado?'<span class="tag t-dup">DUP</span>':'');
      var hace=(a.puede_producir?'<span class="ok">Fabrica</span> ':'')+(a.puede_envasar?'<span class="warn">Envasa</span>':'')||'<span class="muted">apoyo</span>';
      var capreal=(a.cap_litros?a.cap_litros+'L':'')+(a.cap_kg?(' '+a.cap_kg+'kg'):'')||'—';
