@@ -531,6 +531,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <button class="sub-btn" onclick="subSwitchTab('produccion',this,'bar-prodHub');cargarEBRs()">&#127981; Fabricación</button>
     <button class="sub-btn" onclick="subSwitchTab('envasado',this,'bar-prodHub');loadColaSinEnvasar()">&#128230; Envasado</button>
     <button class="sub-btn" onclick="subSwitchTab('acondicionamiento',this,'bar-prodHub');loadColaAcond()">&#128295; Acondicionamiento</button>
+    <button class="sub-btn" onclick="subSwitchTab('plano',this,'bar-prodHub');var f=document.getElementById('plano-frame');if(f)f.src=f.src;">&#128506;&#65039; Plano</button>
     <button class="sub-btn" onclick="subSwitchTab('rotuloslimp',this,'bar-prodHub');cargarRotulosLimp()">&#127991;&#65039; Rótulos de limpieza</button>
   </div>
   <div id="bar-calidadHub" class="sub-tab-bar">
@@ -939,6 +940,12 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <button onclick="cargarRotulosLimp()" style="padding:6px 12px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">&#8635; Refrescar</button>
     </div>
     <div id="rotuloslimp-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">Cargando…</div>
+  </div>
+
+  <div id="plano" class="tab-content">
+    <h2>&#128506;&#65039; Plano de Planta — en vivo</h2>
+    <p style="color:#666;margin-bottom:10px">Espejo en tiempo real: qué área está <b>ocupada</b>, <b>por quién</b> y <b>qué se fabrica</b>. Se actualiza solo cada 20s.</p>
+    <iframe id="plano-frame" src="/planta/plano?embed=1" title="Plano de planta en vivo" style="width:100%;height:620px;border:1px solid #e2e8f0;border-radius:12px;background:#0f172a"></iframe>
   </div>
 
   <div id="produccion" class="tab-content">
