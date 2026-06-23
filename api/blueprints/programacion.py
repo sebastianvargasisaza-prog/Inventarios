@@ -17600,6 +17600,20 @@ def fabricacion_reactivar_areas():
     return jsonify({'ok': True, 'reactivadas': cods, 'n': len(cods)})
 
 
+@bp.route('/planta/plano-imagen.png', methods=['GET'])
+def plano_imagen_png():
+    """Sirve el plano general de la planta (ASG-PRO-006-A01) · imagen de fondo del mapa en vivo."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    import os
+    from flask import send_file
+    p = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                     'assets', 'plano_planta.png')
+    if not os.path.exists(p):
+        return '', 404
+    return send_file(p, mimetype='image/png')
+
+
 @bp.route('/planta/plano', methods=['GET'])
 def planta_plano_page():
     """Plano de fabricación en vivo · Iniciar/Finalizar por área (mapa de salas)."""

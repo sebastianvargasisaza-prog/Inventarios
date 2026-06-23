@@ -944,7 +944,11 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
 
   <div id="plano" class="tab-content">
     <h2>&#128506;&#65039; Plano de Planta — en vivo</h2>
-    <p style="color:#666;margin-bottom:10px">Espejo en tiempo real: qué área está <b>ocupada</b>, <b>por quién</b> y <b>qué se fabrica</b>. Se actualiza solo cada 20s.</p>
+    <p style="color:#666;margin-bottom:10px">Espejo en tiempo real sobre el plano real de la planta. <b style="color:#16a34a">Verde</b>=libre · <b style="color:#d97706">Ámbar</b>=ocupada · <b style="color:#dc2626">Rojo</b>=sucia. Se actualiza solo cada 20s.</p>
+    <div id="plano-wrap" style="position:relative;max-width:920px;margin:0 auto 18px">
+      <img src="/planta/plano-imagen.png" alt="Plano general de la planta" style="width:100%;display:block;border:1px solid #ddd;border-radius:10px">
+      <div id="plano-markers"></div>
+    </div>
     <div id="plano-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-top:8px">Cargando…</div>
     <script>
     (function(){
@@ -967,6 +971,21 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
             h+='</div>';
           });
           g.innerHTML=h;
+          // overlay de markers sobre el plano real (posición % por código de área)
+          var POS={FAB1:{x:33,y:20},FAB2:{x:33,y:39},FAB3:{x:10,y:53},FAB_FLOAT:{x:20,y:52}};
+          var ml=document.getElementById('plano-markers');
+          if(ml){
+            var mh='';
+            A.forEach(function(a){
+              var pos=POS[(a.codigo||'').toUpperCase()]; if(!pos) return;
+              var e=a.estado||'libre'; var p=a.produccion; var c=col[e]||'#999';
+              mh+='<div style="position:absolute;left:'+pos.x+'%;top:'+pos.y+'%;transform:translate(-50%,-50%);z-index:2;text-align:center">';
+              mh+='<div style="background:'+c+';color:#fff;border-radius:8px;padding:3px 9px;font-size:11px;font-weight:800;box-shadow:0 1px 5px rgba(0,0,0,.45);white-space:nowrap;border:2px solid #fff">'+a.nombre+'</div>';
+              if(p){mh+='<div style="background:#fff;border:1px solid '+c+';border-radius:6px;padding:2px 7px;font-size:10px;margin-top:3px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.3);color:#222">&#129514; '+p.producto+(p.operario?(' &middot; &#128100;'+p.operario):'')+'</div>';}
+              mh+='</div>';
+            });
+            ml.innerHTML=mh;
+          }
         }catch(e){g.innerHTML='<div style="grid-column:1/-1;color:#b91c1c">Error cargando el plano</div>';}
       };
       setInterval(function(){var t=document.getElementById('plano');if(t&&t.classList.contains('active'))cargarPlanoGrid();},20000);
