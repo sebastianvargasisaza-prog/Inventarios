@@ -5775,11 +5775,14 @@ def recibir_oc(numero_oc):
     # Bug #3 fix · 21-may-2026 · OCs de pago directo (servicios/cuotas/CC)
     # no deben aceptar recepción · son pagos puros sin material físico.
     # Antes creaba movimientos fantasma con lote sintético si receptor confundía.
-    if categoria in CATEGORIAS_PAGO_DIRECTO:
+    if categoria in CATEGORIAS_SIN_KARDEX:
+        _es_consumo = categoria in _CATS_CONSUMO
         return jsonify({
-            'error': f'OC categoría {categoria} es pago directo · no recibe material físico',
-            'codigo': 'OC_PAGO_DIRECTO_SIN_RECEPCION',
-            'hint': 'Si necesitás cerrar el ciclo, usá registrar_pago_oc o marca como Pagada directo',
+            'error': (f'OC categoría "{categoria}" es de CONSUMO/gasto general · NO entra a la '
+                      f'Bodega de Materias Primas (se traza en Consumos).' if _es_consumo else
+                      f'OC categoría {categoria} es pago directo · no recibe material físico'),
+            'codigo': 'OC_CONSUMO_SIN_RECEPCION' if _es_consumo else 'OC_PAGO_DIRECTO_SIN_RECEPCION',
+            'hint': 'No se recibe en bodega MP · marcá la OC como Pagada / registrá el pago.',
         }), 409
     # IDEMPOTENCIA · M27 · evitar doble Entrada por doble-submit CONCURRENTE de la
     # MISMA recepción (doble-click/retry de red). NO se puede serializar por tiempo
@@ -7892,6 +7895,163 @@ CATEGORIAS_PAGO_DIRECTO = (
     'Servicio',
     'SVC',
 )
+
+# ── CONSUMOS / Gastos Generales (Sebastián 23-jun-2026) ──────────────────────
+# Todo lo que la empresa CONSUME y NO es materia prima ni material de empaque:
+# EPP, dotación, papelería, aseo, mantenimiento, etc. NO entran al kardex MP
+# (bodega de producción) · se registran/trazan como gasto por categoría para
+# detectar tendencias ("el gasto de papel está subiendo"). El objetivo es la
+# trazabilidad de consumo, no el stock. Material de Empaque NO va aquí (tiene su
+# propia bodega MEE). Influencer/Marketing tampoco (panel de Marketing).
+_CATS_CONSUMO = (
+    'EPP',
+    'Dotacion',
+    'Aseo/Limpieza',
+    'Papeleria/Oficina',
+    'Oficina',
+    'Mantenimiento',
+    'Repuestos',
+    'Software/Tecnologia',
+    'Servicios Profesionales',
+    'Reactivos/Laboratorio',
+    'Cafeteria',
+    'Otro',
+)
+# Categorías cuya recepción NO genera movimientos en el kardex MP.
+CATEGORIAS_SIN_KARDEX = CATEGORIAS_PAGO_DIRECTO + _CATS_CONSUMO
+
+
+@bp.route('/api/compras/consumos/tendencia', methods=['GET'])
+def consumos_tendencia():
+    """Tendencia de gasto de CONSUMOS (no-MP) por categoría y mes + alertas de subida.
+    Lee ordenes_compra Pagadas de las categorías de consumo (_CATS_CONSUMO). Detecta categorías
+    cuyo último mes supera el umbral (~30%) sobre su promedio previo → 'el gasto de X sube'.
+    Query PG-safe: SUBSTR(fecha,1,7), GROUP BY completo, '' (no \"\")."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    from database import get_db
+    from collections import defaultdict
+    try:
+        meses_n = max(2, min(24, int(request.args.get('meses', 8) or 8)))
+    except Exception:
+        meses_n = 8
+    try:
+        umbral = float(request.args.get('umbral', 30) or 30)
+    except Exception:
+        umbral = 30.0
+    conn = get_db(); c = conn.cursor()
+    cats = list(_CATS_CONSUMO)
+    ph = ','.join(['?'] * len(cats))
+    try:
+        rows = c.execute(
+            "SELECT SUBSTR(oc.fecha,1,7) AS mes, "
+            "COALESCE(NULLIF(TRIM(oc.categoria),''),'MP') AS cat, "
+            "COUNT(*) AS n, ROUND(SUM(COALESCE(oc.valor_total,0)),2) AS gasto "
+            "FROM ordenes_compra oc "
+            "WHERE LOWER(COALESCE(oc.estado,''))='pagada' "
+            "AND oc.fecha IS NOT NULL AND TRIM(oc.fecha)<>'' "
+            "AND COALESCE(NULLIF(TRIM(oc.categoria),''),'MP') IN (" + ph + ") "
+            "GROUP BY SUBSTR(oc.fecha,1,7), COALESCE(NULLIF(TRIM(oc.categoria),''),'MP') "
+            "ORDER BY mes", cats).fetchall()
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return jsonify({'error': str(e)[:200]}), 500
+    porcat = defaultdict(dict); porcat_n = defaultdict(dict); meses_set = set()
+    for r in rows:
+        mes, cat, n, gasto = r[0], r[1], r[2], float(r[3] or 0)
+        if not mes:
+            continue
+        porcat[cat][mes] = gasto; porcat_n[cat][mes] = n; meses_set.add(mes)
+    meses = sorted(meses_set)[-meses_n:]
+    cats_out = []; alertas = []
+    for cat in porcat.keys():
+        serie = [round(porcat[cat].get(m, 0.0), 2) for m in meses]
+        total = round(sum(serie), 2)
+        ultimo = serie[-1] if serie else 0.0
+        previos = [v for v in serie[:-1] if v > 0]
+        prom = round(sum(previos) / len(previos), 2) if previos else 0.0
+        var = round((ultimo - prom) / prom * 100, 1) if prom > 0 else None
+        alerta = bool(var is not None and var >= umbral and ultimo > 0)
+        cats_out.append({'categoria': cat, 'serie': serie, 'total': total, 'ultimo': ultimo,
+                         'promedio_previo': prom, 'variacion_pct': var, 'alerta': alerta,
+                         'num_ocs': sum(porcat_n[cat].get(m, 0) for m in meses)})
+        if alerta:
+            alertas.append({'categoria': cat, 'variacion_pct': var, 'ultimo': ultimo, 'promedio_previo': prom})
+    cats_out.sort(key=lambda x: x['total'], reverse=True)
+    alertas.sort(key=lambda x: (x['variacion_pct'] or 0), reverse=True)
+    return jsonify({'ok': True, 'meses': meses, 'categorias': cats_out,
+                    'alertas': alertas, 'umbral': umbral, 'gasto_total': round(sum(x['total'] for x in cats_out), 2)})
+
+
+@bp.route('/compras/consumos', methods=['GET'])
+def compras_consumos_page():
+    """Página · Consumos / Gastos Generales (tendencia + alertas)."""
+    if 'compras_user' not in session:
+        return redirect('/login?next=/compras/consumos')
+    return _CONSUMOS_HTML
+
+
+_CONSUMOS_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Consumos / Gastos Generales</title>
+<style>
+ body{font-family:system-ui,Arial;margin:0;background:#f7f7fb;color:#1f2937}
+ .wrap{max-width:1100px;margin:0 auto;padding:22px}
+ a{color:#7c3aed;text-decoration:none}h1{font-size:22px;margin:6px 0}
+ .muted{color:#6b7280;font-size:13px}
+ .kpis{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}
+ .kpi{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px 16px;min-width:130px}
+ .kpi .v{font-size:22px;font-weight:800}.kpi .l{font-size:11px;color:#6b7280}
+ .card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin:12px 0}
+ .alert{background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:10px 14px;margin:8px 0;color:#991b1b}
+ table{width:100%;border-collapse:collapse;font-size:13px}
+ th,td{padding:7px 9px;border-bottom:1px solid #eee;text-align:right}th{color:#6d28d9;text-align:right}
+ th:first-child,td:first-child{text-align:left}
+ .up{color:#dc2626;font-weight:800}.down{color:#16a34a;font-weight:700}.flat{color:#9ca3af}
+</style></head><body><div class="wrap">
+<a href="/compras">&larr; Compras</a>
+<h1>&#128202; Consumos / Gastos Generales</h1>
+<div class="muted">Todo lo que la empresa consume (EPP, papelería, aseo, dotación, mantenimiento…) — NO es materia prima. El sistema traza el gasto por categoría y te avisa cuando algo <b>sube</b>.</div>
+<div id="kpis" class="kpis"></div>
+<div id="alertas"></div>
+<div class="card"><div id="tabla">Cargando…</div></div>
+<div class="muted">Umbral de alerta: el último mes supera <b>30%</b> sobre el promedio de los meses previos. Gasto = OCs en estado Pagada (con IVA).</div>
+<script>
+ var FM=function(n){return '$'+(Math.round(n||0)).toLocaleString('es-CO');};
+ var ESC=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
+ async function cargar(){
+   var r=await fetch('/api/compras/consumos/tendencia?meses=8',{credentials:'same-origin'});
+   var j=await r.json();
+   if(!j.ok){document.getElementById('tabla').innerHTML='<span style="color:#b91c1c">Error: '+ESC(j.error||r.status)+'</span>';return;}
+   var meses=j.meses||[], cats=j.categorias||[], al=j.alertas||[];
+   document.getElementById('kpis').innerHTML=
+     '<div class="kpi"><div class="v">'+FM(j.gasto_total)+'</div><div class="l">gasto total ('+meses.length+' meses)</div></div>'+
+     '<div class="kpi"><div class="v">'+cats.length+'</div><div class="l">categorías con gasto</div></div>'+
+     '<div class="kpi"><div class="v" style="color:'+(al.length?'#dc2626':'#16a34a')+'">'+al.length+'</div><div class="l">alertas de subida</div></div>';
+   var ah='';
+   al.forEach(function(a){ah+='<div class="alert">&#9888;&#65039; <b>'+ESC(a.categoria)+'</b> subió <b>+'+a.variacion_pct+'%</b> este mes ('+FM(a.ultimo)+' vs promedio '+FM(a.promedio_previo)+').</div>';});
+   document.getElementById('alertas').innerHTML=ah||'<div class="muted" style="margin:8px 0">✓ Ninguna categoría con subida anormal.</div>';
+   var h='<table><tr><th>Categoría</th>';
+   meses.forEach(function(m){h+='<th>'+m+'</th>';});
+   h+='<th>Total</th><th>Tendencia</th></tr>';
+   cats.forEach(function(cat){
+     h+='<tr><td><b>'+ESC(cat.categoria)+'</b></td>';
+     cat.serie.forEach(function(v){h+='<td>'+(v?FM(v):'·')+'</td>';});
+     h+='<td><b>'+FM(cat.total)+'</b></td>';
+     if(cat.variacion_pct==null){h+='<td class="flat">—</td>';}
+     else if(cat.variacion_pct>=30){h+='<td class="up">&#9650; +'+cat.variacion_pct+'%</td>';}
+     else if(cat.variacion_pct<0){h+='<td class="down">&#9660; '+cat.variacion_pct+'%</td>';}
+     else{h+='<td class="flat">'+(cat.variacion_pct>0?'+':'')+cat.variacion_pct+'%</td>';}
+     h+='</tr>';
+   });
+   document.getElementById('tabla').innerHTML=cats.length?(h+'</table>'):'<div class="muted">Aún no hay compras de consumo registradas (OCs Pagadas en categorías de consumo).</div>';
+ }
+ cargar();
+</script>
+</div></body></html>"""
 
 
 def _autorreparar_ocs_vacias(cur):

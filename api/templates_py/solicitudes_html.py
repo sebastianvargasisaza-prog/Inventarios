@@ -145,6 +145,7 @@ textarea{resize:vertical;min-height:80px}
         <option value="Servicios Profesionales">Servicios Profesionales</option>
         <option value="Software/Tecnologia">Software / Tecnologia</option>
         <option value="Dotacion">Dotacion</option>
+        <option value="Cafeteria">Cafeteria</option>
         <option value="Influencer/Marketing Digital">Influencer / Marketing Digital</option>
         <option value="Reactivos/Laboratorio">Reactivos / Laboratorio</option>
         <option value="Cuenta de Cobro">Cuenta de Cobro</option>
