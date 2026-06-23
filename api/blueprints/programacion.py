@@ -17524,6 +17524,38 @@ def estado_salas_vivo():
     })
 
 
+@bp.route('/api/planta/plano-fabricacion', methods=['GET'])
+def plano_fabricacion_data():
+    """Datos del plano de fabricación · áreas con puede_producir=1 (NO depende de tipo) + estado
+    en vivo + la producción EN CURSO de cada una (inicio_real_at set, sin fin)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    areas = c.execute(
+        "SELECT id, codigo, nombre, COALESCE(estado,'libre'), COALESCE(marmita_ml,0) "
+        "FROM areas_planta WHERE COALESCE(activo,1)=1 AND COALESCE(puede_producir,0)=1 "
+        "ORDER BY orden, codigo").fetchall()
+    out = []
+    for a in areas:
+        prod = c.execute(
+            "SELECT pp.id, pp.producto, COALESCE(pp.cantidad_kg,0), COALESCE(pp.lotes,1), "
+            "pp.inicio_real_at, o.nombre "
+            "FROM produccion_programada pp "
+            "LEFT JOIN operarios_planta o ON o.id = pp.operario_elaboracion_id "
+            "WHERE pp.area_id=? AND COALESCE(pp.inicio_real_at,'')<>'' "
+            "AND COALESCE(pp.fin_real_at,'')='' "
+            "AND LOWER(COALESCE(pp.estado,'')) NOT IN ('completado','cancelado') "
+            "ORDER BY pp.inicio_real_at DESC LIMIT 1", (a[0],)).fetchone()
+        out.append({
+            'id': a[0], 'codigo': a[1], 'nombre': a[2], 'estado': a[3] or 'libre',
+            'capacidad': a[4],
+            'produccion': ({'id': prod[0], 'producto': prod[1], 'kg': prod[2],
+                            'lotes': prod[3], 'inicio': prod[4], 'operario': prod[5] or ''}
+                           if prod else None),
+        })
+    return jsonify({'ok': True, 'areas': out, 'total': len(out)})
+
+
 @bp.route('/planta/plano', methods=['GET'])
 def planta_plano_page():
     """Plano de fabricación en vivo · Iniciar/Finalizar por área (mapa de salas)."""
@@ -17588,16 +17620,17 @@ _PLANO_FAB_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
  async function csrf(){try{return (await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json()).csrf_token;}catch(e){return '';}}
  function badge(e){return '<span class="badge b-'+e+'">'+({libre:'LIBRE',ocupada:'OCUPADA',sucia:'SUCIA · a limpiar',limpiando:'EN LIMPIEZA'}[e]||e)+'</span>';}
  async function cargar(){
-   var r=await fetch('/api/planta/estado-salas-vivo',{credentials:'same-origin'});
+   var r=await fetch('/api/planta/plano-fabricacion',{credentials:'same-origin'});
    if(!r.ok){document.getElementById('msg').innerHTML='<span class="err">Error cargando el plano</span>';return;}
-   var j=await r.json(); var salas=(j.salas||[]).filter(function(s){return s.puede_producir;});
+   var j=await r.json(); var salas=j.areas||[];
    var h='';
    salas.forEach(function(s){
      var e=s.estado||'libre'; var p=s.produccion;
-     h+='<div class="card '+e+'"><div class="nom">'+ESC(s.nombre)+'</div>'+badge(e);
-     if(e==='ocupada'&&p){
+     h+='<div class="card '+e+'"><div class="nom">'+ESC(s.nombre)+'</div>'+
+        (s.capacidad?('<div class="cap">hasta '+s.capacidad+' L</div>'):'')+badge(e);
+     if(p){
        h+='<div class="prod">&#129514; <b>'+ESC(p.producto)+'</b><br>'+(p.kg?(p.kg+' kg · '):'')+(p.lotes||1)+' lote(s)'+
-          (p.op_elaboracion?('<br>&#128100; '+ESC(p.op_elaboracion)):'')+'</div>'+
+          (p.operario?('<br>&#128100; '+ESC(p.operario)):'')+(p.inicio?('<br>&#128337; '+ESC(String(p.inicio).slice(11,16))):'')+'</div>'+
           '<button class="b-finalizar" onclick="finalizar('+p.id+',\\''+ESC(s.nombre).replace(/'/g,'')+'\\')">&#9632; Finalizar</button>';
      } else if(e==='libre'){
        h+='<button class="b-iniciar" onclick="abrir('+s.id+',\\''+ESC(s.nombre).replace(/'/g,'')+'\\')">&#9654; Iniciar fabricaci&oacute;n</button>';
