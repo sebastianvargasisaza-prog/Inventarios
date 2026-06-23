@@ -17531,10 +17531,23 @@ def plano_fabricacion_data():
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
+    # truthy robusto en INT o BOOLEAN (drift PG): CAST a texto sin COALESCE sobre el crudo
+    _prod = "LOWER(COALESCE(CAST(puede_producir AS TEXT),'0')) IN ('1','t','true')"
+    _act = "LOWER(COALESCE(CAST(activo AS TEXT),'1')) IN ('1','t','true')"
+    dbg = {}
+    try:
+        dbg['total'] = c.execute("SELECT COUNT(*) FROM areas_planta").fetchone()[0]
+        dbg['activas'] = c.execute(f"SELECT COUNT(*) FROM areas_planta WHERE {_act}").fetchone()[0]
+        dbg['fabricacion'] = c.execute(
+            f"SELECT COUNT(*) FROM areas_planta WHERE {_act} AND {_prod}").fetchone()[0]
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
     areas = c.execute(
-        "SELECT id, codigo, nombre, COALESCE(estado,'libre'), COALESCE(marmita_ml,0) "
-        "FROM areas_planta WHERE COALESCE(activo,1)=1 AND COALESCE(puede_producir,0)=1 "
-        "ORDER BY orden, codigo").fetchall()
+        f"SELECT id, codigo, nombre, COALESCE(estado,'libre'), COALESCE(marmita_ml,0) "
+        f"FROM areas_planta WHERE {_act} AND {_prod} ORDER BY orden, codigo").fetchall()
     out = []
     for a in areas:
         prod = c.execute(
@@ -17553,7 +17566,7 @@ def plano_fabricacion_data():
                             'lotes': prod[3], 'inicio': prod[4], 'operario': prod[5] or ''}
                            if prod else None),
         })
-    return jsonify({'ok': True, 'areas': out, 'total': len(out)})
+    return jsonify({'ok': True, 'areas': out, 'total': len(out), 'debug': dbg})
 
 
 @bp.route('/planta/plano', methods=['GET'])
@@ -17641,7 +17654,12 @@ _PLANO_FAB_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
      }
      h+='</div>';
    });
-   document.getElementById('grid').innerHTML=h||'<div class="muted">No hay áreas de fabricación activas.</div>';
+   var dd=j.debug||{};
+   var vacio='<div class="muted">No hay áreas de fabricación activas.<br>Diagnóstico (v2): '+
+     (dd.total!=null?dd.total:'?')+' áreas en total · '+(dd.activas!=null?dd.activas:'?')+' activas · '+
+     '<b>'+(dd.fabricacion!=null?dd.fabricacion:'?')+'</b> con fabricación (puede_producir).<br>'+
+     'Si "con fabricación" es 0, hay que marcar puede_producir=1 en FAB1/2/3 desde /admin/areas-planta.</div>';
+   document.getElementById('grid').innerHTML=h||vacio;
  }
  async function abrir(aid,nom){
    _area=aid; document.getElementById('m-area').textContent='Iniciar en '+nom;
