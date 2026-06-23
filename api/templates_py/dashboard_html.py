@@ -965,6 +965,10 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <select id="prod-area"><option value="">-- Selecciona área --</option></select>
     </div>
     <div class="form-group">
+      <label>Operario que fabrica (para sistema en vivo)</label>
+      <select id="prod-operario"><option value="">-- opcional --</option></select>
+    </div>
+    <div class="form-group">
       <label>N° de Lote (opcional · si lo dejas vacío se genera automático)</label>
       <input type="text" id="prod-lote" placeholder="Ej: 261561">
     </div>
@@ -986,6 +990,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     </div>
     <div class="form-group"><label>Observaciones</label><textarea id="prod-obs" rows="2" placeholder="Opcional"></textarea></div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button onclick="iniciarFabVivo()" style="background:#16a34a;font-weight:700;">&#9654; Iniciar fabricación (en vivo)</button>
       <button onclick="simularProduccion()" style="background:#6c5ce7;">&#128269; Verificar Stock</button>
       <button onclick="iniciarRegistroProd()">&#9989; Registrar Producción</button>
       <button onclick="abrirRotulos()" style="background:#c0392b;">&#128209; Generar Rótulos</button>
@@ -995,6 +1000,56 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     </div>
     <div id="prod-simul-result" style="margin-top:12px;"></div>
     <div id="prod-msg"></div>
+    <div id="fab-enproceso"></div>
+    <script>
+    (function(){
+      async function _csrfFab(){try{return (await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json()).csrf_token;}catch(e){return '';}}
+      window.cargarOperariosFab=async function(){
+        var sel=document.getElementById('prod-operario'); if(!sel) return;
+        try{
+          var d=await (await fetch('/api/planta/operarios',{credentials:'same-origin'})).json();
+          var o='<option value="">-- opcional --</option>';
+          (d.operarios||d.items||[]).filter(function(x){return !x.fija_en_dispensacion;}).forEach(function(x){o+='<option value="'+x.id+'">'+((x.nombre||'')+' '+(x.apellido||'')).trim()+'</option>';});
+          sel.innerHTML=o;
+        }catch(e){}
+      };
+      window.iniciarFabVivo=async function(){
+        var prod=((document.getElementById('prod-sel')||{}).value||(document.getElementById('prod-manual')||{}).value||'').trim();
+        var kg=parseFloat((document.getElementById('prod-kg')||{}).value);
+        var area=(document.getElementById('prod-area')||{}).value;
+        var op=(document.getElementById('prod-operario')||{}).value;
+        var m=document.getElementById('prod-msg');
+        if(!prod){m.innerHTML='<div style="background:#fee2e2;color:#991b1b;padding:8px 12px;border-radius:6px">Elegí un producto.</div>';return;}
+        if(!kg||kg<=0){m.innerHTML='<div style="background:#fee2e2;color:#991b1b;padding:8px 12px;border-radius:6px">Ingresá la cantidad en kg.</div>';return;}
+        if(!area){m.innerHTML='<div style="background:#fee2e2;color:#991b1b;padding:8px 12px;border-radius:6px">Elegí un área de fabricación.</div>';return;}
+        var body={producto:prod,area_id:parseInt(area),cantidad_kg:kg}; if(op) body.operario_id=parseInt(op);
+        var t=await _csrfFab();
+        var r=await fetch('/api/planta/fabricacion/crear-iniciar',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(body)});
+        var j=await r.json();
+        if(!r.ok){m.innerHTML='<div style="background:#fee2e2;color:#991b1b;padding:8px 12px;border-radius:6px">'+(j.mensaje||j.error||('Error '+r.status))+'</div>';return;}
+        m.innerHTML='<div style="background:#dcfce7;color:#166534;padding:8px 12px;border-radius:6px;font-weight:700">&#9654; Fabricación iniciada · MP descontada · área ocupada</div>';
+        window.cargarEnProcesoFab();
+      };
+      window.cargarEnProcesoFab=async function(){
+        var cont=document.getElementById('fab-enproceso'); if(!cont) return;
+        try{
+          var d=await (await fetch('/api/planta/plano-fabricacion',{credentials:'same-origin'})).json();
+          var enc=(d.areas||[]).filter(function(a){return a.produccion;});
+          if(!enc.length){cont.innerHTML='';return;}
+          var h='<div style="margin-top:22px;border-top:2px solid #eee;padding-top:16px"><h3 style="color:#d97706;margin:0 0 10px">&#128309; En fabricación ahora</h3><table class="table"><thead><tr><th>Área</th><th>Producto</th><th>Operario</th><th>Inicio</th><th></th></tr></thead><tbody>';
+          enc.forEach(function(a){var p=a.produccion;h+='<tr><td><b>'+a.nombre+'</b></td><td>'+p.producto+'</td><td>'+(p.operario||'—')+'</td><td>'+(p.inicio?String(p.inicio).slice(11,16):'—')+'</td><td><button onclick="finalizarFabVivo('+p.id+')" style="background:#d97706">&#9632; Finalizar</button></td></tr>';});
+          cont.innerHTML=h+'</tbody></table></div>';
+        }catch(e){cont.innerHTML='';}
+      };
+      window.finalizarFabVivo=async function(pid){
+        if(!confirm('¿Finalizar esta fabricación? El área queda sucia hasta que la limpien.')) return;
+        var t=await _csrfFab();
+        var r=await fetch('/api/programacion/programar/'+pid+'/terminar',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:'{}'});
+        if(r.ok){document.getElementById('prod-msg').innerHTML='<div style="background:#dcfce7;color:#166534;padding:8px 12px;border-radius:6px">&#9632; Fabricación finalizada · área marcada sucia</div>';window.cargarEnProcesoFab();}
+      };
+      try{cargarOperariosFab();cargarEnProcesoFab();setInterval(cargarEnProcesoFab,20000);}catch(e){}
+    })();
+    </script>
     <div style="margin-top:28px;border-top:2px solid #eee;padding-top:20px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px"><h3 style="color:#6d28d9;margin:0;">&#128203; Órdenes de Producción</h3>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
