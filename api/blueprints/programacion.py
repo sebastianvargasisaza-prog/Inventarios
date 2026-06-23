@@ -17569,6 +17569,28 @@ def plano_fabricacion_data():
     return jsonify({'ok': True, 'areas': out, 'total': len(out), 'debug': dbg})
 
 
+@bp.route('/api/planta/fabricacion/reactivar-areas', methods=['POST'])
+def fabricacion_reactivar_areas():
+    """Reactiva las áreas de fabricación (puede_producir truthy, NO los PROD-duplicados) que
+    quedaron desactivadas por error en la limpieza. Admin · audit · reversible."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    if user not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admin'}), 403
+    conn = get_db(); c = conn.cursor()
+    cond = ("LOWER(COALESCE(CAST(puede_producir AS TEXT),'0')) IN ('1','t','true') "
+            "AND UPPER(COALESCE(codigo,'')) NOT LIKE 'PROD%' "
+            "AND LOWER(COALESCE(CAST(activo AS TEXT),'1')) NOT IN ('1','t','true')")
+    cods = [r[0] for r in c.execute(f"SELECT codigo FROM areas_planta WHERE {cond}").fetchall()]
+    if cods:
+        c.execute(f"UPDATE areas_planta SET activo=1 WHERE {cond}")
+        audit_log(c, usuario=user, accion='REACTIVAR_AREAS_FAB', tabla='areas_planta',
+                  registro_id=','.join(cods), despues={'reactivadas': cods})
+        conn.commit()
+    return jsonify({'ok': True, 'reactivadas': cods, 'n': len(cods)})
+
+
 @bp.route('/planta/plano', methods=['GET'])
 def planta_plano_page():
     """Plano de fabricación en vivo · Iniciar/Finalizar por área (mapa de salas)."""
@@ -17655,10 +17677,11 @@ _PLANO_FAB_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
      h+='</div>';
    });
    var dd=j.debug||{};
-   var vacio='<div class="muted">No hay áreas de fabricación activas.<br>Diagnóstico (v2): '+
+   var vacio='<div class="muted">No hay áreas de fabricación activas.<br>Diagnóstico (v3): '+
      (dd.total!=null?dd.total:'?')+' áreas en total · '+(dd.activas!=null?dd.activas:'?')+' activas · '+
      '<b>'+(dd.fabricacion!=null?dd.fabricacion:'?')+'</b> con fabricación (puede_producir).<br>'+
-     'Si "con fabricación" es 0, hay que marcar puede_producir=1 en FAB1/2/3 desde /admin/areas-planta.</div>';
+     'Las áreas FAB quedaron desactivadas por error en la limpieza. Reactivalas:<br>'+
+     '<button class="b-iniciar" style="width:auto;margin-top:10px;padding:10px 16px" onclick="reactivar()">&#128260; Reactivar áreas de fabricación (FAB1/2/3/FLOAT)</button></div>';
    document.getElementById('grid').innerHTML=h||vacio;
  }
  async function abrir(aid,nom){
@@ -17701,6 +17724,14 @@ _PLANO_FAB_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
    var j=await r.json();
    if(!r.ok){document.getElementById('msg').innerHTML='<span class="err">'+ESC(j.error||('Error '+r.status))+'</span>';return;}
    document.getElementById('msg').innerHTML='<span class="ok">&#9632; Fabricación finalizada · área marcada sucia</span>'; cargar();
+ }
+ async function reactivar(){
+   var t=await csrf();
+   var r=await fetch('/api/planta/fabricacion/reactivar-areas',{method:'POST',credentials:'same-origin',
+     headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:'{}'});
+   var j=await r.json();
+   if(!r.ok){document.getElementById('msg').innerHTML='<span class="err">'+ESC(j.error||('Error '+r.status))+'</span>';return;}
+   document.getElementById('msg').innerHTML='<span class="ok">&#9989; Reactivadas: '+ESC((j.reactivadas||[]).join(', ')||'ninguna')+'</span>'; cargar();
  }
  cargar(); setInterval(cargar, 20000);
 </script>
