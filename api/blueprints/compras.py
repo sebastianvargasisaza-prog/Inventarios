@@ -7986,6 +7986,90 @@ def consumos_tendencia():
                     'alertas': alertas, 'umbral': umbral, 'gasto_total': round(sum(x['total'] for x in cats_out), 2)})
 
 
+@bp.route('/api/compras/consumibles', methods=['GET', 'POST'])
+def consumibles_catalogo():
+    """Catálogo (maestro) de consumibles · GET lista activos (?q búsqueda) · POST crea uno nuevo
+    para reusar en solicitudes. Como el maestro de MP pero para gastos generales (no entra a MP)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    from database import get_db
+    conn = get_db(); c = conn.cursor()
+    user = session.get('compras_user', '')
+    if request.method == 'POST':
+        d = request.get_json(silent=True) or {}
+        nombre = (d.get('nombre') or '').strip()
+        if not nombre:
+            return jsonify({'error': 'nombre requerido'}), 400
+        categoria = (d.get('categoria') or 'Otro').strip() or 'Otro'
+        proveedor = (d.get('proveedor') or '').strip()
+        try:
+            precio = float(d.get('precio_referencia') or d.get('precio') or 0)
+        except Exception:
+            precio = 0.0
+        unidad = (d.get('unidad') or 'unidad').strip() or 'unidad'
+        ahora = datetime.now().isoformat()
+        try:
+            c.execute("INSERT INTO maestro_consumibles (nombre,categoria,proveedor,precio_referencia,unidad,activo,creado_por,creado_en) "
+                      "VALUES (?,?,?,?,?,1,?,?)", (nombre, categoria, proveedor, precio, unidad, user, ahora))
+            cid = c.lastrowid
+            audit_log(c, usuario=user, accion='CREAR_CONSUMIBLE', tabla='maestro_consumibles',
+                      registro_id=str(cid), despues={'nombre': nombre, 'categoria': categoria,
+                                                      'proveedor': proveedor, 'precio': precio})
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            return jsonify({'error': str(e)[:200]}), 500
+        return jsonify({'ok': True, 'id': cid}), 201
+    q = (request.args.get('q') or '').strip().lower()
+    try:
+        rows = c.execute("SELECT id, nombre, COALESCE(categoria,''), COALESCE(proveedor,''), "
+                         "COALESCE(precio_referencia,0), COALESCE(unidad,'unidad') "
+                         "FROM maestro_consumibles WHERE COALESCE(activo,1)=1 "
+                         "ORDER BY categoria, nombre").fetchall()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        rows = []
+    items = [{'id': r[0], 'nombre': r[1], 'categoria': r[2], 'proveedor': r[3],
+              'precio_referencia': r[4], 'unidad': r[5]}
+             for r in rows if (not q or q in (str(r[1]) + ' ' + str(r[2]) + ' ' + str(r[3])).lower())]
+    return jsonify({'ok': True, 'consumibles': items})
+
+
+@bp.route('/api/compras/consumibles/<int:cid>', methods=['PATCH', 'DELETE'])
+def consumible_editar(cid):
+    """Editar (PATCH) o desactivar (DELETE) un consumible del catálogo."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    from database import get_db
+    conn = get_db(); c = conn.cursor()
+    user = session.get('compras_user', '')
+    if request.method == 'DELETE':
+        c.execute("UPDATE maestro_consumibles SET activo=0 WHERE id=?", (cid,))
+        audit_log(c, usuario=user, accion='DESACTIVAR_CONSUMIBLE', tabla='maestro_consumibles', registro_id=str(cid))
+        conn.commit()
+        return jsonify({'ok': True})
+    d = request.get_json(silent=True) or {}
+    sets, args = [], []
+    for k, col in (('nombre', 'nombre'), ('categoria', 'categoria'), ('proveedor', 'proveedor'), ('unidad', 'unidad')):
+        if k in d:
+            sets.append(f"{col}=?"); args.append((d.get(k) or '').strip())
+    if 'precio_referencia' in d or 'precio' in d:
+        try:
+            sets.append("precio_referencia=?"); args.append(float(d.get('precio_referencia') or d.get('precio') or 0))
+        except Exception:
+            pass
+    if not sets:
+        return jsonify({'error': 'nada para cambiar'}), 400
+    args.append(cid)
+    c.execute(f"UPDATE maestro_consumibles SET {', '.join(sets)} WHERE id=?", args)
+    audit_log(c, usuario=user, accion='EDITAR_CONSUMIBLE', tabla='maestro_consumibles', registro_id=str(cid), despues=d)
+    conn.commit()
+    return jsonify({'ok': True})
+
+
 @bp.route('/compras/consumos', methods=['GET'])
 def compras_consumos_page():
     """Página · Consumos / Gastos Generales (tendencia + alertas)."""
@@ -8000,7 +8084,7 @@ _CONSUMOS_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
 <style>
  body{font-family:system-ui,Arial;margin:0;background:#f7f7fb;color:#1f2937}
  .wrap{max-width:1100px;margin:0 auto;padding:22px}
- a{color:#7c3aed;text-decoration:none}h1{font-size:22px;margin:6px 0}
+ a{color:#7c3aed;text-decoration:none}h1{font-size:22px;margin:6px 0}h2{font-size:17px;margin:4px 0 10px}
  .muted{color:#6b7280;font-size:13px}
  .kpis{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}
  .kpi{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px 16px;min-width:130px}
@@ -8011,18 +8095,137 @@ _CONSUMOS_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
  th,td{padding:7px 9px;border-bottom:1px solid #eee;text-align:right}th{color:#6d28d9;text-align:right}
  th:first-child,td:first-child{text-align:left}
  .up{color:#dc2626;font-weight:800}.down{color:#16a34a;font-weight:700}.flat{color:#9ca3af}
+ input,select{padding:7px;border:1px solid #d1d5db;border-radius:7px;font-size:13px}
+ .frow{display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-bottom:10px}
+ .frow label{font-size:11px;color:#6b7280;display:block;margin-bottom:2px}
+ button{padding:7px 13px;border:0;border-radius:7px;color:#fff;font-size:13px;font-weight:700;cursor:pointer}
+ .b-sol{background:#16a34a}.b-add{background:#7c3aed}.b-del{background:#dc2626}.b-cancel{background:#6b7280}
+ .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:50}
+ .modal.show{display:flex}.box{background:#fff;border-radius:14px;padding:20px;width:330px;max-width:92vw}
+ .tabs{display:flex;gap:6px;margin:12px 0}
+ .tab{padding:8px 16px;border-radius:9px 9px 0 0;background:#ede9fe;color:#6d28d9;cursor:pointer;font-weight:700;font-size:14px}
+ .tab.active{background:#7c3aed;color:#fff}
 </style></head><body><div class="wrap">
 <a href="/compras">&larr; Compras</a>
-<h1>&#128202; Consumos / Gastos Generales</h1>
-<div class="muted">Todo lo que la empresa consume (EPP, papelería, aseo, dotación, mantenimiento…) — NO es materia prima. El sistema traza el gasto por categoría y te avisa cuando algo <b>sube</b>.</div>
-<div id="kpis" class="kpis"></div>
-<div id="alertas"></div>
-<div class="card"><div id="tabla">Cargando…</div></div>
-<div class="muted">Umbral de alerta: el último mes supera <b>30%</b> sobre el promedio de los meses previos. Gasto = OCs en estado Pagada (con IVA).</div>
+<h1>&#128230; Consumos / Gastos Generales</h1>
+<div class="muted">Todo lo que la empresa consume (EPP, papelería, aseo, dotación, mantenimiento…) — NO es materia prima. Creá el consumible una vez y reusalo en cada solicitud. El sistema traza el gasto y te avisa cuando algo <b>sube</b>.</div>
+
+<div class="tabs">
+  <div class="tab active" id="tab-cat" onclick="verTab('cat')">&#128203; Catálogo + Solicitar</div>
+  <div class="tab" id="tab-ten" onclick="verTab('ten')">&#128202; Tendencia de gasto</div>
+</div>
+
+<div id="pane-cat">
+  <div class="card">
+    <h2>Nuevo consumible</h2>
+    <div class="frow">
+      <div><label>Nombre</label><input id="c-nombre" placeholder="Ej: Guantes nitrilo M" style="width:180px"></div>
+      <div><label>Categoría</label><select id="c-cat"></select></div>
+      <div><label>Proveedor</label><input id="c-prov" placeholder="Proveedor" style="width:150px"></div>
+      <div><label>Precio unit.</label><input id="c-precio" type="number" min="0" step="1" placeholder="0" style="width:100px"></div>
+      <div><label>Unidad</label><input id="c-unidad" placeholder="unidad" value="unidad" style="width:90px"></div>
+      <button class="b-add" onclick="guardarConsumible()">&#10133; Guardar consumible</button>
+    </div>
+    <div id="c-msg" class="muted"></div>
+  </div>
+  <div class="card">
+    <h2>Catálogo</h2>
+    <input id="c-buscar" placeholder="Buscar..." oninput="cargarCatalogo()" style="width:220px;margin-bottom:10px">
+    <div id="catalogo">Cargando…</div>
+  </div>
+</div>
+
+<div id="pane-ten" style="display:none">
+  <div id="kpis" class="kpis"></div>
+  <div id="alertas"></div>
+  <div class="card"><div id="tabla">Cargando…</div></div>
+  <div class="muted">Umbral de alerta: el último mes supera <b>30%</b> sobre el promedio de los meses previos. Gasto = OCs en estado Pagada (con IVA).</div>
+</div>
+
+<div id="modal" class="modal"><div class="box">
+  <div style="font-size:15px;font-weight:800" id="m-tit"></div>
+  <div class="muted" id="m-prov" style="margin:4px 0 10px"></div>
+  <label class="muted">Cantidad</label><input id="m-cant" type="number" min="0.01" step="1" style="width:100%;box-sizing:border-box;margin-bottom:8px">
+  <label class="muted">Precio unitario (editá si cambió)</label><input id="m-precio" type="number" min="0" step="1" style="width:100%;box-sizing:border-box">
+  <div id="m-tot" class="muted" style="margin:8px 0"></div>
+  <div id="m-msg" style="font-size:12px"></div>
+  <div style="display:flex;gap:8px;margin-top:12px"><button class="b-cancel" style="flex:1" onclick="cerrarM()">Cancelar</button><button class="b-sol" style="flex:1" id="m-go" onclick="confirmarSol()">&#128722; Solicitar compra</button></div>
+</div></div>
+
 <script>
+ var CATS=['EPP','Dotacion','Aseo/Limpieza','Papeleria/Oficina','Oficina','Mantenimiento','Repuestos','Software/Tecnologia','Servicios Profesionales','Reactivos/Laboratorio','Cafeteria','Otro'];
  var FM=function(n){return '$'+(Math.round(n||0)).toLocaleString('es-CO');};
  var ESC=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
- async function cargar(){
+ var _cat=[]; var _sel=null;
+ async function csrf(){try{return (await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json()).csrf_token;}catch(e){return '';}}
+ function verTab(t){
+   document.getElementById('pane-cat').style.display=(t==='cat')?'':'none';
+   document.getElementById('pane-ten').style.display=(t==='ten')?'':'none';
+   document.getElementById('tab-cat').classList.toggle('active',t==='cat');
+   document.getElementById('tab-ten').classList.toggle('active',t==='ten');
+   if(t==='ten') cargarTendencia();
+ }
+ (function(){var o='';CATS.forEach(function(c){o+='<option value="'+c+'">'+c+'</option>';});document.getElementById('c-cat').innerHTML=o;})();
+ async function guardarConsumible(){
+   var nombre=document.getElementById('c-nombre').value.trim();
+   var m=document.getElementById('c-msg');
+   if(!nombre){m.innerHTML='<span style="color:#b91c1c">Poné un nombre.</span>';return;}
+   var body={nombre:nombre,categoria:document.getElementById('c-cat').value,proveedor:document.getElementById('c-prov').value.trim(),precio_referencia:parseFloat(document.getElementById('c-precio').value)||0,unidad:document.getElementById('c-unidad').value.trim()||'unidad'};
+   var t=await csrf();
+   var r=await fetch('/api/compras/consumibles',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(body)});
+   var j=await r.json();
+   if(!r.ok){m.innerHTML='<span style="color:#b91c1c">'+ESC(j.error||r.status)+'</span>';return;}
+   m.innerHTML='<span style="color:#16a34a">✓ Guardado. Ya lo podés solicitar abajo.</span>';
+   document.getElementById('c-nombre').value='';document.getElementById('c-prov').value='';document.getElementById('c-precio').value='';
+   cargarCatalogo();
+ }
+ async function cargarCatalogo(){
+   var cont=document.getElementById('catalogo');
+   var q=document.getElementById('c-buscar').value.trim();
+   var r=await fetch('/api/compras/consumibles?q='+encodeURIComponent(q),{credentials:'same-origin'});
+   var j=await r.json(); _cat=j.consumibles||[];
+   if(!_cat.length){cont.innerHTML='<div class="muted">Aún no hay consumibles. Creá el primero arriba.</div>';return;}
+   var h='<table><tr><th>Nombre</th><th>Categoría</th><th>Proveedor</th><th>Precio</th><th>Unidad</th><th></th></tr>';
+   _cat.forEach(function(c,i){
+     h+='<tr><td><b>'+ESC(c.nombre)+'</b></td><td>'+ESC(c.categoria)+'</td><td>'+ESC(c.proveedor||'—')+'</td><td>'+FM(c.precio_referencia)+'</td><td>'+ESC(c.unidad)+'</td>'+
+        '<td style="white-space:nowrap"><button class="b-sol" onclick="abrirSol('+i+')">Solicitar</button> <button class="b-del" onclick="borrar('+c.id+')">&#128465;&#65039;</button></td></tr>';
+   });
+   cont.innerHTML=h+'</table>';
+ }
+ function abrirSol(i){
+   _sel=_cat[i];
+   document.getElementById('m-tit').textContent='Solicitar: '+_sel.nombre;
+   document.getElementById('m-prov').textContent=(_sel.proveedor||'sin proveedor')+' · '+_sel.categoria;
+   document.getElementById('m-cant').value='1';
+   document.getElementById('m-precio').value=_sel.precio_referencia||0;
+   document.getElementById('m-msg').textContent='';
+   recalc(); document.getElementById('modal').classList.add('show');
+ }
+ function recalc(){var c=parseFloat(document.getElementById('m-cant').value)||0;var p=parseFloat(document.getElementById('m-precio').value)||0;document.getElementById('m-tot').innerHTML='Total estimado: <b>'+FM(c*p)+'</b>';}
+ document.addEventListener('input',function(e){if(e.target&&(e.target.id==='m-cant'||e.target.id==='m-precio'))recalc();});
+ function cerrarM(){document.getElementById('modal').classList.remove('show');}
+ async function confirmarSol(){
+   var cant=parseFloat(document.getElementById('m-cant').value)||0;
+   var precio=parseFloat(document.getElementById('m-precio').value)||0;
+   var mm=document.getElementById('m-msg');
+   if(cant<=0){mm.innerHTML='<span style="color:#b91c1c">Cantidad mayor a 0.</span>';return;}
+   document.getElementById('m-go').disabled=true;mm.textContent='Creando solicitud...';
+   var body={categoria:_sel.categoria,urgencia:'Normal',observaciones:'Consumible: '+_sel.nombre,valor:Math.round(cant*precio),
+     items:[{codigo_mp:'',nombre_mp:_sel.nombre,cantidad_g:cant,unidad:_sel.unidad||'unidad',valor_estimado:Math.round(cant*precio),proveedor_sugerido:_sel.proveedor||''}]};
+   var t=await csrf();
+   var r=await fetch('/api/solicitudes-compra',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(body)});
+   var j=await r.json();document.getElementById('m-go').disabled=false;
+   if(!r.ok){mm.innerHTML='<span style="color:#b91c1c">'+ESC(j.error||r.status)+'</span>';return;}
+   cerrarM();
+   document.getElementById('c-msg').innerHTML='<span style="color:#16a34a">&#128722; Solicitud creada'+(j.numero?(' ('+ESC(j.numero)+')'):'')+' · '+ESC(_sel.nombre)+' x'+cant+'. Va a Compras para autorizar/pagar.</span>';
+ }
+ async function borrar(id){
+   if(!confirm('¿Quitar este consumible del catálogo?'))return;
+   var t=await csrf();
+   await fetch('/api/compras/consumibles/'+id,{method:'DELETE',credentials:'same-origin',headers:{'X-CSRF-Token':t}});
+   cargarCatalogo();
+ }
+ async function cargarTendencia(){
    var r=await fetch('/api/compras/consumos/tendencia?meses=8',{credentials:'same-origin'});
    var j=await r.json();
    if(!j.ok){document.getElementById('tabla').innerHTML='<span style="color:#b91c1c">Error: '+ESC(j.error||r.status)+'</span>';return;}
@@ -8049,7 +8252,7 @@ _CONSUMOS_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
    });
    document.getElementById('tabla').innerHTML=cats.length?(h+'</table>'):'<div class="muted">Aún no hay compras de consumo registradas (OCs Pagadas en categorías de consumo).</div>';
  }
- cargar();
+ cargarCatalogo();
 </script>
 </div></body></html>"""
 

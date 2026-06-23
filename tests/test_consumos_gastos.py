@@ -73,3 +73,33 @@ def test_pagina_render(app, db_clean):
     r = c.get("/compras/consumos")
     assert r.status_code == 200
     assert "Consumos / Gastos Generales" in r.get_data(as_text=True)
+
+
+def test_catalogo_consumibles_crear_listar_solicitar(app, db_clean):
+    c = _login(app)
+    # crear consumible
+    r = c.post("/api/compras/consumibles",
+               json={"nombre": "Guantes nitrilo M", "categoria": "EPP", "proveedor": "COMPETRI",
+                     "precio_referencia": 1200, "unidad": "caja"}, headers=_csrf(c))
+    assert r.status_code == 201, r.data
+    cid = r.get_json()["id"]
+    # listar
+    j = c.get("/api/compras/consumibles").get_json()
+    by = {x["nombre"]: x for x in j["consumibles"]}
+    assert "Guantes nitrilo M" in by and by["Guantes nitrilo M"]["categoria"] == "EPP"
+    # solicitar (vía el endpoint real de SOL, como hace la página) → SOL con categoría EPP
+    r2 = c.post("/api/solicitudes-compra",
+                json={"categoria": "EPP", "urgencia": "Normal", "observaciones": "Consumible",
+                      "items": [{"codigo_mp": "", "nombre_mp": "Guantes nitrilo M", "cantidad_g": 3,
+                                 "unidad": "caja", "valor_estimado": 3600, "proveedor_sugerido": "COMPETRI"}]},
+                headers=_csrf(c))
+    assert r2.status_code in (200, 201), r2.data
+    # la SOL quedó con categoría EPP (de consumo)
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cat = conn.execute("SELECT categoria FROM solicitudes_compra WHERE categoria='EPP' ORDER BY id DESC LIMIT 1").fetchone()
+    conn.close()
+    assert cat and cat[0] == "EPP"
+    # desactivar
+    assert c.delete(f"/api/compras/consumibles/{cid}", headers=_csrf(c)).status_code == 200
+    j2 = c.get("/api/compras/consumibles").get_json()
+    assert "Guantes nitrilo M" not in {x["nombre"] for x in j2["consumibles"]}

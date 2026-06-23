@@ -352,6 +352,23 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (280, "Catálogo de CONSUMIBLES / gastos generales (Sebastián 23-jun): maestro_consumibles "
+          "para que Catalina cree un consumible UNA vez (nombre+categoría+proveedor+precio) y lo "
+          "reuse en cada solicitud (lo elige, ajusta cantidad/precio, solicita compra). NO es "
+          "materia prima · no entra al kardex MP. 'already exists' benigno (idempotente).", [
+        "CREATE TABLE IF NOT EXISTS maestro_consumibles ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " nombre TEXT NOT NULL,"
+        " categoria TEXT,"
+        " proveedor TEXT,"
+        " precio_referencia REAL DEFAULT 0,"
+        " unidad TEXT DEFAULT 'unidad',"
+        " activo INTEGER DEFAULT 1,"
+        " creado_por TEXT,"
+        " creado_en TEXT,"
+        " tenant_id TEXT)",
+        "CREATE INDEX IF NOT EXISTS idx_consumibles_cat ON maestro_consumibles(categoria)",
+    ]),
     (279, "Fase 0 · Normalizar inventario de ENVASES (MEE) para que sea tan inteligente como MP "
           "(19-jun · ultracode): maestro_mee gana nombre_inci (descripción canónica/atributo, NO "
           "llave · igual que maestro_mps) y material_referencia (el envase BASE limpio del que "
