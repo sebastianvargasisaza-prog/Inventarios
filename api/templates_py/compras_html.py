@@ -244,6 +244,9 @@ async function cxIAPreguntar(pregunta){
   <button class="cx-grp-btn" data-cx-grp="maestros"      data-default-tab="prov"
     style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:#e2e8f0;color:#475569"
     title="Maestro de Proveedores + scorecard + ROI">🏭 Proveedores</button>
+  <a href="/compras/consumos"
+    style="padding:9px 22px;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:#ede9fe;color:#6d28d9;text-decoration:none;display:inline-flex;align-items:center"
+    title="Catálogo de consumibles + crear compra + reporte de gasto por categoría">🗂️ Catálogo / Gastos</a>
 </div>
 
 <!-- Sub-barras por grupo (1 visible a la vez) -->
