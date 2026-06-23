@@ -531,7 +531,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <button class="sub-btn" onclick="subSwitchTab('produccion',this,'bar-prodHub');cargarEBRs()">&#127981; Fabricación</button>
     <button class="sub-btn" onclick="subSwitchTab('envasado',this,'bar-prodHub');loadColaSinEnvasar()">&#128230; Envasado</button>
     <button class="sub-btn" onclick="subSwitchTab('acondicionamiento',this,'bar-prodHub');loadColaAcond()">&#128295; Acondicionamiento</button>
-    <button class="sub-btn" onclick="subSwitchTab('plano',this,'bar-prodHub');var f=document.getElementById('plano-frame');if(f)f.src=f.src;">&#128506;&#65039; Plano</button>
+    <button class="sub-btn" onclick="subSwitchTab('plano',this,'bar-prodHub');if(typeof cargarPlanoGrid==='function')cargarPlanoGrid();">&#128506;&#65039; Plano</button>
     <button class="sub-btn" onclick="subSwitchTab('rotuloslimp',this,'bar-prodHub');cargarRotulosLimp()">&#127991;&#65039; Rótulos de limpieza</button>
   </div>
   <div id="bar-calidadHub" class="sub-tab-bar">
@@ -945,7 +945,33 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   <div id="plano" class="tab-content">
     <h2>&#128506;&#65039; Plano de Planta — en vivo</h2>
     <p style="color:#666;margin-bottom:10px">Espejo en tiempo real: qué área está <b>ocupada</b>, <b>por quién</b> y <b>qué se fabrica</b>. Se actualiza solo cada 20s.</p>
-    <iframe id="plano-frame" src="/planta/plano?embed=1" title="Plano de planta en vivo" style="width:100%;height:620px;border:1px solid #e2e8f0;border-radius:12px;background:#0f172a"></iframe>
+    <div id="plano-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-top:8px">Cargando…</div>
+    <script>
+    (function(){
+      window.cargarPlanoGrid=async function(){
+        var g=document.getElementById('plano-grid'); if(!g) return;
+        try{
+          var d=await (await fetch('/api/planta/plano-fabricacion',{credentials:'same-origin'})).json();
+          var A=d.areas||[];
+          if(!A.length){g.innerHTML='<div style="grid-column:1/-1;color:#888">No hay áreas de fabricación activas. (Reactivalas en /admin/areas-planta)</div>';return;}
+          var col={libre:'#22c55e',ocupada:'#f59e0b',sucia:'#ef4444',limpiando:'#38bdf8'};
+          var lbl={libre:'LIBRE',ocupada:'OCUPADA',sucia:'SUCIA · a limpiar',limpiando:'EN LIMPIEZA'};
+          var h='';
+          A.forEach(function(a){
+            var e=a.estado||'libre'; var p=a.produccion; var c=col[e]||'#999';
+            h+='<div style="background:#fff;border:1px solid #e5e7eb;border-top:5px solid '+c+';border-radius:12px;padding:14px">';
+            h+='<div style="font-weight:800;font-size:15px;color:#111">'+a.nombre+'</div>';
+            h+='<div style="display:inline-block;margin:6px 0;padding:2px 9px;border-radius:6px;font-size:11px;font-weight:700;background:'+c+'22;color:'+c+'">'+(lbl[e]||e)+'</div>';
+            if(p){h+='<div style="font-size:13px;line-height:1.55;margin-top:4px;color:#333">&#129514; <b>'+p.producto+'</b>'+(p.kg?('<br>'+p.kg+' kg'):'')+(p.operario?('<br>&#128100; '+p.operario):'')+(p.inicio?('<br>&#128337; '+String(p.inicio).slice(11,16)):'')+'</div>';}
+            else{h+='<div style="color:#9ca3af;font-size:13px;margin-top:4px">disponible</div>';}
+            h+='</div>';
+          });
+          g.innerHTML=h;
+        }catch(e){g.innerHTML='<div style="grid-column:1/-1;color:#b91c1c">Error cargando el plano</div>';}
+      };
+      setInterval(function(){var t=document.getElementById('plano');if(t&&t.classList.contains('active'))cargarPlanoGrid();},20000);
+    })();
+    </script>
   </div>
 
   <div id="produccion" class="tab-content">
