@@ -4770,6 +4770,15 @@ def fabricacion_crear_iniciar():
     if (area[3] or 'libre') != 'libre':
         return jsonify({'error': f"el área {area[2]} está '{area[3]}' · debe estar LIBRE para iniciar",
                         'codigo': 'AREA_OCUPADA'}), 409
+    # Defensa: un operario fijo en dispensación NO puede ir a elaboración (trigger trg_pp_fija)
+    if operario_id is not None:
+        try:
+            _f = c.execute("SELECT COALESCE(fija_en_dispensacion,0) FROM operarios_planta WHERE id=?",
+                           (operario_id,)).fetchone()
+            if _f and str(_f[0]).strip().lower() in ('1', 't', 'true'):
+                operario_id = None
+        except Exception:
+            pass
 
     hoy = (datetime.now(timezone.utc) - timedelta(hours=5)).date().isoformat()
     cols = ['producto', 'fecha_programada', 'lotes', 'area_id', 'origen', 'estado']
@@ -17694,7 +17703,7 @@ _PLANO_FAB_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
    try{
      var ro=await fetch('/api/planta/operarios',{credentials:'same-origin'}); var dops=await ro.json();
      var opo='<option value="">-- opcional --</option>';
-     (dops.operarios||dops.items||[]).forEach(function(o){opo+='<option value="'+o.id+'">'+ESC((o.nombre||'')+' '+(o.apellido||''))+'</option>';});
+     (dops.operarios||dops.items||[]).filter(function(o){return !o.fija_en_dispensacion;}).forEach(function(o){opo+='<option value="'+o.id+'">'+ESC((o.nombre||'')+' '+(o.apellido||''))+'</option>';});
      document.getElementById('m-op').innerHTML=opo;
    }catch(e){}
    document.getElementById('modal').classList.add('show');
