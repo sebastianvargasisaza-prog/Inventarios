@@ -17524,6 +17524,138 @@ def estado_salas_vivo():
     })
 
 
+@bp.route('/planta/plano', methods=['GET'])
+def planta_plano_page():
+    """Plano de fabricación en vivo · Iniciar/Finalizar por área (mapa de salas)."""
+    if 'compras_user' not in session:
+        return redirect('/login?next=/planta/plano')
+    return _PLANO_FAB_HTML
+
+
+_PLANO_FAB_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plano de Fabricación</title>
+<style>
+ body{font-family:system-ui,Arial;margin:0;background:#0f172a;color:#e2e8f0}
+ .wrap{max-width:1100px;margin:0 auto;padding:20px}
+ h1{font-size:21px;margin:6px 0}.muted{color:#94a3b8;font-size:13px}
+ a{color:#a5b4fc;text-decoration:none}
+ .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px;margin-top:14px}
+ .card{background:#1e293b;border:1px solid #334155;border-radius:14px;padding:14px;border-top:5px solid #475569}
+ .card.libre{border-top-color:#22c55e}.card.ocupada{border-top-color:#f59e0b}
+ .card.sucia{border-top-color:#ef4444}.card.limpiando{border-top-color:#38bdf8}
+ .nom{font-size:16px;font-weight:800}.cap{font-size:11px;color:#94a3b8}
+ .badge{display:inline-block;border-radius:6px;padding:2px 9px;font-size:11px;font-weight:700;margin:6px 0}
+ .b-libre{background:#14532d;color:#bbf7d0}.b-ocupada{background:#78350f;color:#fde68a}
+ .b-sucia{background:#7f1d1d;color:#fecaca}.b-limpiando{background:#0c4a6e;color:#bae6fd}
+ .prod{font-size:13px;margin:6px 0;line-height:1.5}.prod b{color:#fde68a}
+ button{padding:8px 12px;border:0;border-radius:8px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;width:100%}
+ .b-iniciar{background:#16a34a}.b-finalizar{background:#d97706}
+ .modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:50}
+ .modal.show{display:flex}.box{background:#1e293b;border:1px solid #334155;border-radius:14px;padding:20px;width:340px;max-width:92vw}
+ label{font-size:12px;color:#cbd5e1;display:block;margin:9px 0 3px}
+ select,input{width:100%;padding:8px;background:#0b1220;color:#e2e8f0;border:1px solid #334155;border-radius:7px;box-sizing:border-box}
+ .row2{display:flex;gap:8px;margin-top:14px}.row2 button{flex:1}
+ .b-cancel{background:#475569}
+ #msg{margin:10px 0;font-size:13px}.err{color:#f87171}.ok{color:#34d399}
+</style></head><body><div class="wrap">
+<a href="/inventarios">&larr; Volver</a>
+<h1>&#127981; Plano de Fabricaci&oacute;n</h1>
+<div class="muted">En vivo. <b>Iniciar</b> &rarr; el &aacute;rea queda <b>ocupada</b> + descuenta MP. <b>Finalizar</b> &rarr; <b>sucia</b> hasta que la limpien.
+ <a href="/inventarios#produccion" style="margin-left:8px">rótulos de limpieza &rarr;</a></div>
+<div id="msg"></div>
+<div id="grid" class="grid"></div>
+</div>
+
+<div id="modal" class="modal"><div class="box">
+ <div style="font-size:16px;font-weight:800" id="m-area"></div>
+ <label>Producto a fabricar</label>
+ <select id="m-prod"></select>
+ <label>Cantidad a producir (kg)</label>
+ <input id="m-kg" type="number" min="0.1" step="0.1" placeholder="ej: 50">
+ <label>Operario (qui&eacute;n fabrica)</label>
+ <select id="m-op"><option value="">-- opcional --</option></select>
+ <div id="m-msg" style="font-size:12px;margin-top:8px"></div>
+ <div class="row2">
+   <button class="b-cancel" onclick="cerrar()">Cancelar</button>
+   <button class="b-iniciar" id="m-go" onclick="confirmar()">&#9654; Iniciar</button>
+ </div>
+</div></div>
+
+<script>
+ var ESC=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch];});};
+ var _area=null;
+ async function csrf(){try{return (await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json()).csrf_token;}catch(e){return '';}}
+ function badge(e){return '<span class="badge b-'+e+'">'+({libre:'LIBRE',ocupada:'OCUPADA',sucia:'SUCIA · a limpiar',limpiando:'EN LIMPIEZA'}[e]||e)+'</span>';}
+ async function cargar(){
+   var r=await fetch('/api/planta/estado-salas-vivo',{credentials:'same-origin'});
+   if(!r.ok){document.getElementById('msg').innerHTML='<span class="err">Error cargando el plano</span>';return;}
+   var j=await r.json(); var salas=(j.salas||[]).filter(function(s){return s.puede_producir;});
+   var h='';
+   salas.forEach(function(s){
+     var e=s.estado||'libre'; var p=s.produccion;
+     h+='<div class="card '+e+'"><div class="nom">'+ESC(s.nombre)+'</div>'+badge(e);
+     if(e==='ocupada'&&p){
+       h+='<div class="prod">&#129514; <b>'+ESC(p.producto)+'</b><br>'+(p.kg?(p.kg+' kg · '):'')+(p.lotes||1)+' lote(s)'+
+          (p.op_elaboracion?('<br>&#128100; '+ESC(p.op_elaboracion)):'')+'</div>'+
+          '<button class="b-finalizar" onclick="finalizar('+p.id+',\\''+ESC(s.nombre).replace(/'/g,'')+'\\')">&#9632; Finalizar</button>';
+     } else if(e==='libre'){
+       h+='<button class="b-iniciar" onclick="abrir('+s.id+',\\''+ESC(s.nombre).replace(/'/g,'')+'\\')">&#9654; Iniciar fabricaci&oacute;n</button>';
+     } else if(e==='sucia'){
+       h+='<div class="prod">&#129529; Pendiente de limpieza</div><a href="/inventarios#produccion">ir a limpieza &rarr;</a>';
+     } else {
+       h+='<div class="prod">&#129529; En limpieza...</div>';
+     }
+     h+='</div>';
+   });
+   document.getElementById('grid').innerHTML=h||'<div class="muted">No hay áreas de fabricación activas.</div>';
+ }
+ async function abrir(aid,nom){
+   _area=aid; document.getElementById('m-area').textContent='Iniciar en '+nom;
+   document.getElementById('m-kg').value=''; document.getElementById('m-msg').textContent='';
+   var rp=await fetch('/api/programacion/productos',{credentials:'same-origin'}); var dp=await rp.json();
+   var ops='<option value="">-- elegí producto --</option>';
+   (dp.formulas||[]).forEach(function(f){ops+='<option value="'+ESC(f.nombre)+'">'+ESC(f.nombre)+'</option>';});
+   document.getElementById('m-prod').innerHTML=ops;
+   try{
+     var ro=await fetch('/api/planta/operarios',{credentials:'same-origin'}); var dops=await ro.json();
+     var opo='<option value="">-- opcional --</option>';
+     (dops.operarios||dops.items||[]).forEach(function(o){opo+='<option value="'+o.id+'">'+ESC((o.nombre||'')+' '+(o.apellido||''))+'</option>';});
+     document.getElementById('m-op').innerHTML=opo;
+   }catch(e){}
+   document.getElementById('modal').classList.add('show');
+ }
+ function cerrar(){document.getElementById('modal').classList.remove('show');}
+ async function confirmar(){
+   var prod=document.getElementById('m-prod').value;
+   var kg=parseFloat(document.getElementById('m-kg').value);
+   var op=document.getElementById('m-op').value;
+   var mm=document.getElementById('m-msg');
+   if(!prod){mm.innerHTML='<span class="err">Elegí un producto</span>';return;}
+   if(!kg||kg<=0){mm.innerHTML='<span class="err">Cantidad en kg (mayor a 0)</span>';return;}
+   document.getElementById('m-go').disabled=true; mm.textContent='Iniciando...';
+   var body={producto:prod,area_id:_area,cantidad_kg:kg}; if(op) body.operario_id=parseInt(op);
+   var t=await csrf();
+   var r=await fetch('/api/planta/fabricacion/crear-iniciar',{method:'POST',credentials:'same-origin',
+     headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(body)});
+   var j=await r.json(); document.getElementById('m-go').disabled=false;
+   if(!r.ok){mm.innerHTML='<span class="err">'+ESC(j.mensaje||j.error||('Error '+r.status))+'</span>';return;}
+   cerrar(); document.getElementById('msg').innerHTML='<span class="ok">&#9654; Fabricación iniciada · MP descontada</span>'; cargar();
+ }
+ async function finalizar(pid,nom){
+   if(!confirm('¿Finalizar la fabricación en '+nom+'? El área quedará SUCIA hasta que la limpien.')) return;
+   var t=await csrf();
+   var r=await fetch('/api/programacion/programar/'+pid+'/terminar',{method:'POST',credentials:'same-origin',
+     headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:'{}'});
+   var j=await r.json();
+   if(!r.ok){document.getElementById('msg').innerHTML='<span class="err">'+ESC(j.error||('Error '+r.status))+'</span>';return;}
+   document.getElementById('msg').innerHTML='<span class="ok">&#9632; Fabricación finalizada · área marcada sucia</span>'; cargar();
+ }
+ cargar(); setInterval(cargar, 20000);
+</script>
+</body></html>"""
+
+
 @bp.route('/api/planta/auto-asignar/<int:prod_id>', methods=['POST'])
 def auto_asignar_endpoint(prod_id):
     """Auto-asigna área + envasado + operarios para 1 producción específica."""
