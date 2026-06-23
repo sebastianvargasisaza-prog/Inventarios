@@ -17635,8 +17635,9 @@ _PLANO_FAB_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
  .b-cancel{background:#475569}
  #msg{margin:10px 0;font-size:13px}.err{color:#f87171}.ok{color:#34d399}
 </style></head><body><div class="wrap">
-<a href="/inventarios">&larr; Volver</a>
+<a href="/inventarios" id="volver">&larr; Volver</a>
 <h1>&#127981; Plano de Fabricaci&oacute;n</h1>
+<script>if(location.search.indexOf('embed')>=0){var _v=document.getElementById('volver');if(_v)_v.style.display='none';}</script>
 <div class="muted">En vivo. <b>Iniciar</b> &rarr; el &aacute;rea queda <b>ocupada</b> + descuenta MP. <b>Finalizar</b> &rarr; <b>sucia</b> hasta que la limpien.
  <a href="/inventarios#produccion" style="margin-left:8px">rótulos de limpieza &rarr;</a></div>
 <div id="msg"></div>

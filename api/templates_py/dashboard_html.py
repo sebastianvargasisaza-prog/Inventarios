@@ -942,7 +942,13 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   </div>
 
   <div id="produccion" class="tab-content">
-    <h2>&#127981; Registrar Producción</h2>
+    <h2>&#127981; Plano de Fabricación — en vivo</h2>
+    <p style="color:#666;margin-bottom:10px;">Elegí un área &rarr; <b>Iniciar</b> (producto, cantidad, operario) &rarr; el área queda <b>ocupada</b> con el operario y la hora de inicio, <b>en tiempo real</b>. <b>Finalizar</b> &rarr; sucia hasta que la limpien. Los tiempos alimentan la Inteligencia Operacional.</p>
+    <iframe src="/planta/plano?embed=1" title="Plano de fabricación en vivo" style="width:100%;height:580px;border:1px solid #e2e8f0;border-radius:12px;background:#0f172a"></iframe>
+
+    <details style="margin-top:22px;margin-bottom:8px">
+    <summary style="cursor:pointer;color:#9aa;font-size:13px">&#9656; Registro simple (modo viejo · se retirará — usá el plano de arriba)</summary>
+    <h2 style="margin-top:12px">&#127981; Registrar Producción</h2>
     <p style="color:#666;margin-bottom:16px;">Si el producto tiene fórmula maestra, las MPs se descuentan automáticamente del inventario al registrar.</p>
     <!-- Sprint Fabricación PRO 20-may-2026: banner "Pendientes hoy" según programación -->
     <div id="fab-pendientes-banner" style="display:none;background:#fef3c7;border:1px solid #ca8a04;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#78350f"></div>
@@ -995,6 +1001,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     </div>
     <div id="prod-simul-result" style="margin-top:12px;"></div>
     <div id="prod-msg"></div>
+    </details>
     <div style="margin-top:28px;border-top:2px solid #eee;padding-top:20px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px"><h3 style="color:#6d28d9;margin:0;">&#128203; Órdenes de Producción</h3>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
