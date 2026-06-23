@@ -4715,6 +4715,96 @@ def _intentar_crear_ebr_auto(c, evento_id, producto, total_g_descontado, user):
                  'producto': producto}
 
 
+@bp.route('/api/planta/fabricacion/crear-iniciar', methods=['POST'])
+def fabricacion_crear_iniciar():
+    """PLANO de fabricación · arranca una fabricación EN un área desde el mapa de salas.
+    Crea la producción (producto + área + kg + operario, origen Fijo) y DELEGA en
+    `prog_iniciar_produccion` (M3: inicio_real_at + sala→ocupada + descuento de MP FEFO los
+    hace el motor canónico · NO se reimplementa el descuento). Si el motor falla (p.ej. stock
+    insuficiente 422), limpia la producción huérfana que acaba de crear.
+    Body: {producto, area_id, cantidad_kg?, lotes?, operario_id?}"""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    try:
+        if user not in (set(ADMIN_USERS) | set(PLANTA_USERS)):
+            return jsonify({'error': 'Solo planta/admin pueden iniciar fabricación'}), 403
+    except Exception:
+        pass
+    d = request.get_json(silent=True) or {}
+    producto = (d.get('producto') or '').strip()
+    if not producto:
+        return jsonify({'error': 'producto requerido'}), 400
+    try:
+        area_id = int(d.get('area_id'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'area_id requerido'}), 400
+    try:
+        lotes = max(1, int(d.get('lotes') or 1))
+    except (TypeError, ValueError):
+        lotes = 1
+    cantidad_kg = None
+    if d.get('cantidad_kg') not in (None, ''):
+        try:
+            cantidad_kg = float(d.get('cantidad_kg'))
+        except (TypeError, ValueError):
+            return jsonify({'error': 'cantidad_kg inválida'}), 400
+        if cantidad_kg <= 0:
+            return jsonify({'error': 'cantidad_kg debe ser > 0'}), 400
+    operario_id = None
+    if d.get('operario_id') not in (None, ''):
+        try:
+            operario_id = int(d.get('operario_id'))
+        except (TypeError, ValueError):
+            operario_id = None
+
+    conn = get_db(); c = conn.cursor()
+    area = c.execute("SELECT id, codigo, nombre, COALESCE(estado,'libre'), COALESCE(activo,1), "
+                     "COALESCE(puede_producir,0) FROM areas_planta WHERE id=?", (area_id,)).fetchone()
+    if not area:
+        return jsonify({'error': 'área no existe'}), 404
+    if int(area[4]) != 1:
+        return jsonify({'error': f"el área {area[2]} está inactiva"}), 400
+    if int(area[5]) != 1:
+        return jsonify({'error': f"el área {area[2]} no es de fabricación"}), 400
+    if (area[3] or 'libre') != 'libre':
+        return jsonify({'error': f"el área {area[2]} está '{area[3]}' · debe estar LIBRE para iniciar",
+                        'codigo': 'AREA_OCUPADA'}), 409
+
+    hoy = (datetime.now(timezone.utc) - timedelta(hours=5)).date().isoformat()
+    cols = ['producto', 'fecha_programada', 'lotes', 'area_id', 'origen', 'estado']
+    vals = [producto, hoy, lotes, area_id, 'eos_plan', 'programado']
+    if cantidad_kg is not None:
+        cols.append('cantidad_kg'); vals.append(cantidad_kg)
+    if operario_id is not None:
+        cols.append('operario_elaboracion_id'); vals.append(operario_id)
+    try:
+        c.execute(f"INSERT INTO produccion_programada ({','.join(cols)}) "
+                  f"VALUES ({','.join(['?'] * len(cols))})", vals)
+        eid = c.lastrowid
+        audit_log(c, usuario=user, accion='FABRICACION_CREAR_INICIAR',
+                  tabla='produccion_programada', registro_id=str(eid),
+                  despues={'producto': producto, 'area': area[1], 'cantidad_kg': cantidad_kg,
+                           'lotes': lotes, 'operario_id': operario_id})
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': f'no se pudo crear la producción: {str(e)[:200]}'}), 500
+
+    # M3 · DELEGA en el motor canónico: inicio_real_at + sala ocupada + descuento FEFO de MP.
+    resp = prog_iniciar_produccion(eid)
+    status = resp[1] if isinstance(resp, tuple) else getattr(resp, 'status_code', 200)
+    if status >= 400:
+        # el motor hizo rollback (no inició, no descontó) → borrar la producción huérfana
+        try:
+            c.execute("DELETE FROM produccion_programada WHERE id=? AND inicio_real_at IS NULL "
+                      "AND COALESCE(inventario_descontado_at,'')=''", (eid,))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+    return resp
+
+
 @bp.route('/api/programacion/programar/<int:evento_id>/terminar', methods=['POST'])
 def prog_terminar_produccion(evento_id):
     """Operario aprieta 'Terminar' — graba fin_real_at, marca sala 'sucia'
