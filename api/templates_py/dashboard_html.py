@@ -1084,7 +1084,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         window._PLANO_LIVE={};
         var sv='<svg viewBox="0 0 838 609" style="width:100%;height:auto;display:block;background:#fbfbf9">';
         POLYS.forEach(function(pp){ sv+='<polygon points="'+pp.pts+'" fill="none" stroke="'+WALL+'" stroke-width="0.9"/>'; });
-        var cards=''; var cnt={libre:0,ocupada:0,sucia:0,limpiando:0}; var totKg=0;
+        var cards=''; var cnt={libre:0,ocupada:0,sucia:0,limpiando:0}; var totKg=0; var nLate=0; var LATE=480;
         ROOMS.forEach(function(r){
           var live=r.cod?_pickArea(byCod,r.cod):null;
           var e=live?(live.estado||'libre'):null;
@@ -1096,7 +1096,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           sv+='<rect x="'+r.x+'" y="'+r.y+'" width="'+r.w+'" height="'+r.h+'" fill="none" stroke="'+(st?st.stroke:WALL)+'" stroke-width="'+(st?1.4:0.8)+'"'+(r.cod?(' style="cursor:pointer" onclick="planoAbrirSala(&#39;'+r.cod+'&#39;)"'):'')+'><title>'+_esc2(r.lab)+(e?(' · '+(LBL[e]||e)):'')+(r.cod?' · clic para acciones':'')+'</title></rect>';
           var cx=r.x+r.w/2, cy=r.y+r.h/2;
           sv+=_label(r.lab,cx,(hasP?cy-r.h*0.24:cy),r.fs,lw,r.rot||0,'#454545',(st?600:400));
-          if(hasP){var p=live.produccion;if(p.kg)totKg+=parseFloat(p.kg)||0;var t2=r.fs*0.92;sv+='<text text-anchor="middle" font-family="system-ui,sans-serif" fill="#1f2937" font-size="'+t2+'" font-weight="700"><tspan x="'+cx+'" y="'+(cy+r.h*0.04)+'">'+_esc2(String(p.producto||'').slice(0,18))+'</tspan>'+(p.operario?('<tspan x="'+cx+'" y="'+(cy+r.h*0.04+t2*1.15)+'">&#128100; '+_esc2(String(p.operario).slice(0,16))+'</tspan>'):'')+(p.mins!=null?('<tspan x="'+cx+'" y="'+(cy+r.h*0.04+t2*2.3)+'" fill="#b45309" font-weight="800">&#9201; '+_elapsed(p.mins)+'</tspan>'):'')+'</text>';}
+          if(hasP){var p=live.produccion;if(p.kg)totKg+=parseFloat(p.kg)||0;var lt=(p.mins!=null&&p.mins>LATE);if(lt)nLate++;var t2=r.fs*0.92;sv+='<text text-anchor="middle" font-family="system-ui,sans-serif" fill="#1f2937" font-size="'+t2+'" font-weight="700"><tspan x="'+cx+'" y="'+(cy+r.h*0.04)+'">'+_esc2(String(p.producto||'').slice(0,18))+'</tspan>'+(p.operario?('<tspan x="'+cx+'" y="'+(cy+r.h*0.04+t2*1.15)+'">&#128100; '+_esc2(String(p.operario).slice(0,16))+'</tspan>'):'')+(p.mins!=null?('<tspan x="'+cx+'" y="'+(cy+r.h*0.04+t2*2.3)+'" fill="'+(lt?'#dc2626':'#b45309')+'" font-weight="800">'+(lt?'&#9888;&#65039; ':'&#9201; ')+_elapsed(p.mins)+'</tspan>'):'')+'</text>';}
           if(r.cod){
             var cc=e?COL[e]:'#94a3b8';
             cards+='<div style="background:#fff;border:1px solid #e5e7eb;border-top:5px solid '+cc+';border-radius:12px;padding:12px">';
@@ -1116,7 +1116,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         mapa.innerHTML=sv;
         if(g) g.innerHTML=cards;
         var rs=document.getElementById('plano-resumen');
-        if(rs){ rs.innerHTML='<span style="background:#16a34a22;color:#15803d;padding:2px 8px;border-radius:8px;font-weight:700">'+cnt.libre+' libres</span><span style="background:#d9770622;color:#b45309;padding:2px 8px;border-radius:8px;font-weight:700">'+cnt.ocupada+' ocupadas</span><span style="background:#dc262622;color:#b91c1c;padding:2px 8px;border-radius:8px;font-weight:700">'+cnt.sucia+' sucias</span>'+(cnt.limpiando?('<span style="background:#0ea5e922;color:#0369a1;padding:2px 8px;border-radius:8px;font-weight:700">'+cnt.limpiando+' limpiando</span>'):'')+(totKg>0?('<span style="background:#7c3aed22;color:#6d28d9;padding:2px 8px;border-radius:8px;font-weight:700">'+Math.round(totKg)+' kg en producción</span>'):''); }
+        if(rs){ rs.innerHTML='<span style="background:#16a34a22;color:#15803d;padding:2px 8px;border-radius:8px;font-weight:700">'+cnt.libre+' libres</span><span style="background:#d9770622;color:#b45309;padding:2px 8px;border-radius:8px;font-weight:700">'+cnt.ocupada+' ocupadas</span><span style="background:#dc262622;color:#b91c1c;padding:2px 8px;border-radius:8px;font-weight:700">'+cnt.sucia+' sucias</span>'+(cnt.limpiando?('<span style="background:#0ea5e922;color:#0369a1;padding:2px 8px;border-radius:8px;font-weight:700">'+cnt.limpiando+' limpiando</span>'):'')+(totKg>0?('<span style="background:#7c3aed22;color:#6d28d9;padding:2px 8px;border-radius:8px;font-weight:700">'+Math.round(totKg)+' kg en producción</span>'):'')+(nLate?('<span style="background:#dc2626;color:#fff;padding:2px 8px;border-radius:8px;font-weight:700">&#9888;&#65039; '+nLate+' pasada(s) de tiempo</span>'):''); }
         var up=document.getElementById('plano-update');
         if(up){ var n=new Date(); up.textContent='actualizado '+('0'+n.getHours()).slice(-2)+':'+('0'+n.getMinutes()).slice(-2); }
       };
