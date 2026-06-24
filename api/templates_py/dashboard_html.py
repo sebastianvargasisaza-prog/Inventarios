@@ -1270,6 +1270,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         if(!kg||kg<=0){m.innerHTML='<div style="background:#fee2e2;color:#991b1b;padding:8px 12px;border-radius:6px">Ingresá la cantidad en kg.</div>';return;}
         if(!area){m.innerHTML='<div style="background:#fee2e2;color:#991b1b;padding:8px 12px;border-radius:6px">Elegí un área de fabricación.</div>';return;}
         var body={producto:prod,area_id:parseInt(area),cantidad_kg:kg}; if(op) body.operario_id=parseInt(op);
+        var _pres=((document.getElementById('prod-presentacion')||{}).value||'').trim(); if(_pres) body.presentacion=_pres;
         var t=await _csrfFab();
         var r=await fetch('/api/planta/fabricacion/crear-iniciar',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(body)});
         var j=await r.json();

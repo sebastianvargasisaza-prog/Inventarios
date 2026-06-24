@@ -4757,6 +4757,7 @@ def fabricacion_crear_iniciar():
             operario_id = int(d.get('operario_id'))
         except (TypeError, ValueError):
             operario_id = None
+    presentacion = (d.get('presentacion') or '').strip()[:60]
 
     conn = get_db(); c = conn.cursor()
     area = c.execute("SELECT id, codigo, nombre, COALESCE(estado,'libre'), COALESCE(activo,1), "
@@ -4787,6 +4788,8 @@ def fabricacion_crear_iniciar():
         cols.append('cantidad_kg'); vals.append(cantidad_kg)
     if operario_id is not None:
         cols.append('operario_elaboracion_id'); vals.append(operario_id)
+    if presentacion:
+        cols.append('presentacion'); vals.append(presentacion)
     try:
         c.execute(f"INSERT INTO produccion_programada ({','.join(cols)}) "
                   f"VALUES ({','.join(['?'] * len(cols))})", vals)
@@ -4915,8 +4918,50 @@ def prog_terminar_produccion(evento_id):
                       + (f" · cycle {cycle_min} min" if cycle_min else "")
                       + (f" · {kg_real} kg real" if kg_real is not None else "")
                       + (f" · merma {merma_pct}%" if merma_pct is not None else ""))
+    # ── HOOK DE CIERRE (Sebastián 24-jun · EBR OFF) ──────────────────────────────
+    # Al terminar la fabricación, el bulk queda AUTOMÁTICAMENTE en la cola de ENVASADO
+    # creando su fila en `producciones` con datos tipo batch (producto, lote auto, cantidad,
+    # fecha, operario, presentación, merma). Idempotente por marca [pp#id]. NO re-descuenta MP
+    # (ya se descontó al INICIAR). En SAVEPOINT: si algo falla NO aborta el finalizar (M33).
+    bulk_lote = None
+    try:
+        c.execute('SAVEPOINT _bulk_env')
+        _ya = c.execute("SELECT 1 FROM producciones WHERE COALESCE(observaciones,'') LIKE ? LIMIT 1",
+                        ('%[pp#' + str(evento_id) + ']%',)).fetchone()
+        if not _ya:
+            _info = c.execute(
+                "SELECT COALESCE(pp.presentacion,''), "
+                "COALESCE(o.nombre,'')||' '||COALESCE(o.apellido,'') "
+                "FROM produccion_programada pp "
+                "LEFT JOIN operarios_planta o ON o.id=pp.operario_elaboracion_id "
+                "WHERE pp.id=?", (evento_id,)).fetchone()
+            _pres = (_info[0] if _info else '') or ''
+            _opn = ((_info[1] if _info else '') or '').strip() or user
+            _cant = kg_real if kg_real is not None else (cantidad_kg or 0)
+            _co = datetime.now() - timedelta(hours=5)
+            bulk_lote = _co.strftime('%y%m%d') + '-' + str(evento_id)
+            _obs = 'Auto fabricación en vivo [pp#' + str(evento_id) + ']'
+            if merma_pct is not None:
+                _obs += ' · merma ' + str(merma_pct) + '%'
+            if kg_real is not None:
+                _obs += ' · ' + str(kg_real) + ' kg real'
+            c.execute("INSERT INTO producciones (producto, cantidad, fecha, estado, observaciones, "
+                      "operador, lote, presentacion) VALUES (?,?,?,?,?,?,?,?)",
+                      (pp[1], _cant, _co.strftime('%Y-%m-%d'), 'Terminado', _obs, _opn, bulk_lote, _pres))
+            audit_log(c, usuario=user, accion='BULK_ENVASAR_AUTO', tabla='producciones',
+                      registro_id=str(c.lastrowid),
+                      despues={'producto': pp[1], 'lote': bulk_lote, 'cantidad_kg': _cant,
+                               'presentacion': _pres, 'desde_pp': evento_id})
+        c.execute('RELEASE SAVEPOINT _bulk_env')
+    except Exception:
+        try:
+            c.execute('ROLLBACK TO SAVEPOINT _bulk_env')
+        except Exception:
+            pass
+        bulk_lote = None
     conn.commit()
     return jsonify({'ok': True, 'evento_id': evento_id,
+                    'bulk_lote': bulk_lote,
                     'cycle_time_min': cycle_min,
                     'kg_real': kg_real,
                     'unidades_real': unidades_real,

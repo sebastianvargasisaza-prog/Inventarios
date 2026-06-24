@@ -352,6 +352,11 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (282, "Fabricación en vivo → cola de envasado (Sebastián 24-jun · EBR OFF): produccion_programada "
+          "guarda la presentación capturada al iniciar, para arrastrarla al bulk de envasado al "
+          "finalizar. 'duplicate column' benigno.", [
+        "ALTER TABLE produccion_programada ADD COLUMN presentacion TEXT",
+    ]),
     (281, "Envasado/Acondicionamiento EN VIVO (Sebastián 24-jun): ocupación LIGERA de un área para "
           "el plano sin tocar produccion_programada ni descontar MP. El operario marca el área "
           "ocupada con producto+operario; al finalizar queda sucia. 'duplicate column' benigno.", [
