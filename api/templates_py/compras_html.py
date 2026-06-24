@@ -417,32 +417,9 @@ async function cxIAPreguntar(pregunta){
 </div>
 
 <div id="pane-solic" class="pane">
-  <!-- Alertas MP restock -->
-  <div id="mp-alert-banner" style="display:none;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-bottom:10px;">
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-      <span style="font-size:18px;">&#x26A0;&#xFE0F;</span>
-      <div id="mp-alert-text" style="flex:1;font-size:13px;font-weight:600;color:#92400e;"></div>
-      <button class="btn" style="background:#f59e0b;color:#fff;font-size:12px;padding:4px 12px;white-space:nowrap;" onclick="openOCSugerida()">&#x1F4CB; Crear OC Sugerida</button>
-    </div>
-    <div id="mp-alert-list" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;"></div>
-  </div>
-  <!-- Alertas Programacion -->
-  <div id="prog-alert-banner" style="display:none;background:#fde8e8;border:1px solid #dc3545;border-radius:8px;padding:10px 14px;margin-bottom:10px;">
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-      <span style="font-size:18px;">&#x1F4E1;</span>
-      <div style="flex:1;">
-        <div id="prog-alert-text" style="font-size:13px;font-weight:600;color:#7f1d1d;"></div>
-        <div style="font-size:11px;color:#991b1b;margin-top:2px;">Centro de Programaci&#xF3;n &mdash; velocidad Shopify + f&#xF3;rmulas + stock MP</div>
-      </div>
-      <a href="/planta" style="background:#dc3545;color:#fff;font-size:12px;padding:5px 12px;border-radius:5px;text-decoration:none;white-space:nowrap;font-weight:600;">&#x1F4CA; Ver Programaci&#xF3;n</a>
-      <button onclick="generarOCDesdeCompras(this)" style="background:#7f1d1d;color:#fff;border:none;border-radius:5px;font-size:12px;padding:5px 12px;cursor:pointer;font-weight:600;white-space:nowrap;">&#x1F6D2; Generar OC</button>
-    </div>
-  </div>
   <!-- Filtros de categoria -->
   <div id="solic-cat-bar" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
     <button class="ocs-cpill on" data-scat="ALL" onclick="setSolicCat(this)">&#x1F4CB; Todas</button>
-    <button class="ocs-cpill" data-scat="mp" onclick="setSolicCat(this)">&#x1F9EA; Mat. Primas</button>
-    <button class="ocs-cpill" data-scat="mee" onclick="setSolicCat(this)">&#x1F4E6; Empaque</button>
     <button class="ocs-cpill" data-scat="svc" onclick="setSolicCat(this)">&#x1F527; Servicios</button>
     <button class="ocs-cpill" data-scat="adm" onclick="setSolicCat(this)">&#x1F4CB; Adm</button>
     <button class="ocs-cpill" data-scat="inf" onclick="setSolicCat(this)">&#x1F3DB; Infra</button>
@@ -627,6 +604,26 @@ async function cxIAPreguntar(pregunta){
      valor), y los cambios se sincronizan globalmente a maestro_mps +
      mp_lead_time_config + precio_referencia (aplican en TODA la app). -->
 <div id="pane-planta" class="pane">
+  <!-- Alertas MP/envases en déficit (Centro de Programación) · 23-jun: movidas desde Solicitudes — son de PLANTA -->
+  <div id="mp-alert-banner" style="display:none;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-bottom:10px;">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <span style="font-size:18px;">&#x26A0;&#xFE0F;</span>
+      <div id="mp-alert-text" style="flex:1;font-size:13px;font-weight:600;color:#92400e;"></div>
+      <button class="btn" style="background:#f59e0b;color:#fff;font-size:12px;padding:4px 12px;white-space:nowrap;" onclick="openOCSugerida()">&#x1F4CB; Crear OC Sugerida</button>
+    </div>
+    <div id="mp-alert-list" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;"></div>
+  </div>
+  <div id="prog-alert-banner" style="display:none;background:#fde8e8;border:1px solid #dc3545;border-radius:8px;padding:10px 14px;margin-bottom:10px;">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+      <span style="font-size:18px;">&#x1F4E1;</span>
+      <div style="flex:1;">
+        <div id="prog-alert-text" style="font-size:13px;font-weight:600;color:#7f1d1d;"></div>
+        <div style="font-size:11px;color:#991b1b;margin-top:2px;">Centro de Programaci&#xF3;n &mdash; velocidad Shopify + f&#xF3;rmulas + stock MP</div>
+      </div>
+      <a href="/planta" style="background:#dc3545;color:#fff;font-size:12px;padding:5px 12px;border-radius:5px;text-decoration:none;white-space:nowrap;font-weight:600;">&#x1F4CA; Ver Programaci&#xF3;n</a>
+      <button onclick="generarOCDesdeCompras(this)" style="background:#7f1d1d;color:#fff;border:none;border-radius:5px;font-size:12px;padding:5px 12px;cursor:pointer;font-weight:600;white-space:nowrap;">&#x1F6D2; Generar OC</button>
+    </div>
+  </div>
   <div style="background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:10px 14px;margin-bottom:10px;display:flex;gap:10px;align-items:flex-start;">
     <span style="font-size:18px;line-height:1;">&#x1F4E1;</span>
     <div style="flex:1;font-size:12px;color:#713f12;line-height:1.5;">
