@@ -7767,7 +7767,7 @@ def admin_migraciones_pg_page():
 
 
 _MIGRACIONES_PG_HTML = r"""<!DOCTYPE html>
-<html lang="es"><head><meta charset="utf-8">
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Aplicar Migraciones PG · EOS</title>
 <style>
 body{font-family:system-ui,-apple-system,sans-serif;background:#0f172a;color:#f1f5f9;margin:0;padding:30px;max-width:980px;margin:auto}
@@ -11705,7 +11705,7 @@ def admin_backfill_debug_page():
     u = session.get("compras_user", "")
     if u not in ADMIN_USERS:
         return Response("403", status=403)
-    html = """<!DOCTYPE html><html><head><meta charset="utf-8">
+    html = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Backfill checklist — debug</title>
     <style>
       body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:1100px;margin:30px auto;padding:0 20px;color:#1e293b}
@@ -11988,7 +11988,7 @@ def admin_audit_inventario():
         body += '</tbody></table>'
         return body
 
-    html = ('''<!DOCTYPE html><html><head><meta charset="utf-8"><title>Auditoría inventario</title>
+    html = ('''<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Auditoría inventario</title>
     <style>body{font-family:-apple-system,Segoe UI,sans-serif;max-width:1300px;margin:24px auto;padding:0 16px;color:#1e293b}
     h1{font-size:22px;margin-bottom:6px}h2{font-size:15px;margin-top:28px;border-bottom:1px solid #e2e8f0;padding-bottom:6px}
     table{width:100%;border-collapse:collapse;font-size:12px;background:#fff;margin-top:8px}
@@ -12124,7 +12124,7 @@ def admin_influencers_limpieza():
         body += "</tbody></table>"
         return body
 
-    html = ("""<!DOCTYPE html><html><head><meta charset="utf-8"><title>Limpieza pagos influencers</title>
+    html = ("""<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Limpieza pagos influencers</title>
     <style>body{font-family:-apple-system,Segoe UI,sans-serif;max-width:1300px;margin:24px auto;padding:0 16px;color:#1e293b}
     h1{font-size:20px;margin-bottom:6px}h2{font-size:15px;margin-top:24px;color:#0f172a;border-bottom:1px solid #e2e8f0;padding-bottom:4px}
     table{width:100%;border-collapse:collapse;font-size:12px;background:#fff}
@@ -12494,7 +12494,7 @@ def admin_influencers_cargar_29abr():
             rows_html += (f"<tr><td>{i['nombre']}</td><td>{i['ciudad']}</td>"
                           f"<td>{i['telefono']}</td><td>{cost}</td>"
                           f"<td>{i['fecha_pub']}</td><td>{i['concepto']}</td></tr>")
-        html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+        html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
         <title>Cargar influencers 29abr</title>
         <style>body{{font-family:-apple-system,Segoe UI,sans-serif;max-width:1100px;margin:24px auto;padding:0 16px;color:#1e293b}}
         h1{{font-size:20px}}table{{width:100%;border-collapse:collapse;font-size:12px;margin-top:14px}}
@@ -12626,7 +12626,7 @@ def admin_influencers_hoy():
         body += "</tbody></table>"
         return body
 
-    html = ("""<!DOCTYPE html><html><head><meta charset="utf-8"><title>Influencers hoy</title>
+    html = ("""<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Influencers hoy</title>
     <style>body{font-family:-apple-system,Segoe UI,sans-serif;max-width:1200px;margin:24px auto;padding:0 16px;color:#1e293b}
     h1{font-size:20px;margin-bottom:6px}h2{font-size:15px;margin-top:24px;color:#0f172a;border-bottom:1px solid #e2e8f0;padding-bottom:4px}
     table{width:100%;border-collapse:collapse;font-size:12px;background:#fff}
@@ -12757,7 +12757,7 @@ def admin_sku_map_page():
     u = session.get("compras_user", "")
     if u not in ADMIN_USERS:
         return Response("403", status=403)
-    html = """<!DOCTYPE html><html><head><meta charset="utf-8">
+    html = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>SKU map editor</title>
     <style>
       body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:1100px;margin:30px auto;padding:0 20px;color:#1e293b}
@@ -13008,7 +13008,7 @@ def admin_mee_fugas_check_page():
     u = session.get("compras_user", "")
     if u not in ADMIN_USERS:
         return Response("403", status=403)
-    html = """<!DOCTYPE html><html><head><meta charset="utf-8">
+    html = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>MEE — verificación de fugas</title>
     <style>
       body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:1100px;margin:30px auto;padding:0 20px;color:#1e293b}
@@ -13135,7 +13135,7 @@ def admin_inventario_envase_import_page():
     u = session.get("compras_user", "")
     if u not in ADMIN_USERS:
         return Response("403", status=403)
-    html = """<!DOCTYPE html><html><head><meta charset="utf-8">
+    html = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Import Inventario Envase</title>
     <style>
       body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:760px;margin:30px auto;padding:0 20px;color:#1e293b}
@@ -13201,7 +13201,7 @@ def admin_producciones_debug_page():
     u = session.get("compras_user", "")
     if u not in ADMIN_USERS:
         return Response("403", status=403)
-    html = """<!DOCTYPE html><html><head><meta charset="utf-8">
+    html = """<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Producciones programadas — debug</title>
     <style>
       body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:1100px;margin:30px auto;padding:0 20px;color:#1e293b}
@@ -14907,7 +14907,7 @@ def admin_cruce_maestro():
                     'huerfanos': huerfanos_rep})
 
 
-_CRUCE_MAESTRO_HTML = """<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+_CRUCE_MAESTRO_HTML = """<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Cruce Maestro · Fórmulas ↔ Inventario</title>
 <style>
@@ -17487,7 +17487,7 @@ def admin_retirar_huerfanos_muertos():
                     'backup': (bak.get('filename') or ''), 'reversible': 'sí · activo=1 + audit'})
 
 
-_MAESTRO_ENVASES_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
+_MAESTRO_ENVASES_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Normalizar Envases (MEE)</title>
 <style>
@@ -17588,7 +17588,7 @@ canónico) y el stock se atribuye al canónico. <b>NO se toca el kardex (movimie
 </div></body></html>"""
 
 
-_FORMULA_PREFLIGHT_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
+_FORMULA_PREFLIGHT_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Preflight de fórmula · validar códigos</title>
 <style>
@@ -17878,7 +17878,7 @@ MPAGUALI01 | 82.24</textarea></div>
 </div></body></html>"""
 
 
-_INTELIGENCIA_OPERACIONAL_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
+_INTELIGENCIA_OPERACIONAL_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Inteligencia Operacional</title>
 <style>
@@ -17886,6 +17886,7 @@ _INTELIGENCIA_OPERACIONAL_HTML = """<!doctype html><html lang="es"><head><meta c
  .wrap{max-width:1250px;margin:0 auto;padding:24px}
  h1{font-size:21px}h2{font-size:16px;color:#a5b4fc;margin-top:26px}.muted{color:#94a3b8;font-size:13px}
  .card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:16px;margin:12px 0}
+@media(max-width:768px){table{display:block;overflow-x:auto;white-space:nowrap}.card{overflow-x:auto}input,select,textarea{font-size:16px}}
  .kpis{display:flex;gap:10px;flex-wrap:wrap}
  .kpi{background:#0b1220;border:1px solid #334155;border-radius:10px;padding:12px 16px;min-width:120px}
  .kpi .v{font-size:22px;font-weight:800}.kpi .l{font-size:11px;color:#94a3b8}
@@ -18004,7 +18005,7 @@ _INTELIGENCIA_OPERACIONAL_HTML = """<!doctype html><html lang="es"><head><meta c
 </div></body></html>"""
 
 
-_SEGURIDAD_PLANTA_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
+_SEGURIDAD_PLANTA_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Centro de Seguridad de Planta</title>
 <style>
@@ -18012,6 +18013,7 @@ _SEGURIDAD_PLANTA_HTML = """<!doctype html><html lang="es"><head><meta charset="
  .wrap{max-width:1050px;margin:0 auto;padding:24px}
  h1{font-size:21px}.muted{color:#94a3b8;font-size:13px}
  .card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:16px;margin:12px 0}
+@media(max-width:768px){table{display:block;overflow-x:auto;white-space:nowrap}.card{overflow-x:auto}input,select,textarea{font-size:16px}}
  .ctrl{border-left:5px solid #334155;border-radius:10px;padding:12px 16px;margin:10px 0;background:#0b1220}
  .ctrl.ok{border-left-color:#16a34a}.ctrl.bad{border-left-color:#f87171}
  .ctrl.crit{border-left-color:#f59e0b}
@@ -18100,7 +18102,7 @@ inventario debe volver a su posici&oacute;n INVIMA. Read-only (salvo apagar el m
 </div></body></html>"""
 
 
-_AREAS_PLANTA_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
+_AREAS_PLANTA_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Áreas de Planta</title>
 <style>
@@ -18173,7 +18175,7 @@ _AREAS_PLANTA_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-
 </div></body></html>"""
 
 
-_SALUD_FORMULAS_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
+_SALUD_FORMULAS_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Salud de Fórmulas Maestras</title>
 <style>
@@ -18181,6 +18183,7 @@ _SALUD_FORMULAS_HTML = """<!doctype html><html lang="es"><head><meta charset="ut
  .wrap{max-width:1150px;margin:0 auto;padding:24px}
  h1{font-size:21px}.muted{color:#94a3b8;font-size:13px}
  .card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:16px;margin:12px 0}
+@media(max-width:768px){table{display:block;overflow-x:auto;white-space:nowrap}.card{overflow-x:auto}input,select,textarea{font-size:16px}}
  .kpis{display:flex;gap:10px;flex-wrap:wrap}
  .kpi{background:#0b1220;border:1px solid #334155;border-radius:10px;padding:12px 16px;min-width:110px}
  .kpi .v{font-size:24px;font-weight:800}.kpi .l{font-size:11px;color:#94a3b8}
@@ -18245,7 +18248,7 @@ bodega (mismo resolver del descuento · con puente)? &iquest;hay duplicados? Los
 </div></body></html>"""
 
 
-_MAESTRO_INCI_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
+_MAESTRO_INCI_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Maestro INCI · Diagnóstico</title>
 <style>
@@ -23466,7 +23469,7 @@ def admin_normalizar_formulas_page():
 
 
 _NORMALIZAR_FORMULAS_HTML = """<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Normalizar Fórmulas · EOS</title>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Normalizar Fórmulas · EOS</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,Segoe UI,sans-serif;background:#0c0a09;color:#fafaf9;padding:24px}
@@ -23665,7 +23668,7 @@ def admin_stock_minimos_page():
 
 
 _STOCK_MINIMOS_HTML = """<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Stock Mínimos · EOS</title>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Stock Mínimos · EOS</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,Segoe UI,sans-serif;background:#0c0a09;color:#fafaf9;padding:24px}
@@ -23857,7 +23860,7 @@ def admin_integridad_planta_page():
 
 
 _INTEGRIDAD_PLANTA_HTML = """<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Integridad Planta · EOS</title>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Integridad Planta · EOS</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,Segoe UI,sans-serif;background:#0c0a09;color:#fafaf9;padding:24px}

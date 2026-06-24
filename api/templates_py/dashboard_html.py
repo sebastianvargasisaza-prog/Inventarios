@@ -95,6 +95,13 @@ body { font-family:var(--cx-font); background:var(--cx-bg); color:var(--cx-text)
   }
   #dashboard h2 { font-size:1.1em; }
 }
+/* P-6 (auditoría móvil) · grillas de muchas columnas (fuera de #dashboard) colapsan en móvil */
+@media (max-width:760px){
+  [style*="grid-template-columns:repeat(7"]{grid-template-columns:repeat(3,1fr)!important}
+  [style*="grid-template-columns: repeat(7"]{grid-template-columns:repeat(3,1fr)!important}
+  [style*="grid-template-columns:repeat(4"]{grid-template-columns:repeat(2,1fr)!important}
+  [style*="grid-template-columns: repeat(4"]{grid-template-columns:repeat(2,1fr)!important}
+}
 /* Safe area para iPhone notch */
 @supports (padding: max(0px)) {
   body { padding-top:max(20px, env(safe-area-inset-top)); padding-bottom:max(20px, env(safe-area-inset-bottom)); }
@@ -22300,6 +22307,7 @@ async function ckMarcar(itemId, estado){
     html += '</select></label>';
     html += '<button onclick="_abastSelectVisibles(true)" style="padding:5px 10px;background:#e2e8f0;color:#475569;border:0;border-radius:4px;font-size:11px;cursor:pointer">☑ todos visibles</button>';
     html += '<button onclick="_abastSelectVisibles(false)" style="padding:5px 10px;background:#e2e8f0;color:#475569;border:0;border-radius:4px;font-size:11px;cursor:pointer">☐ ninguno</button>';
+    html += '<button onclick="_abastSelectBarco()" style="padding:5px 12px;background:#0369a1;color:#fff;border:0;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Selecciona todas las MP que CONSUMEN 3 kg o más en 90 días y pone la cantidad a pedir = AÑO ENTERO (365d). Para importar por barco de una.">&#128674; &gt;3kg a 90d · pedir año</button>';
     html += '<span id="abast-sel-count" style="color:#7c3aed;font-weight:700"></span>';
     html += '<button onclick="_abastAbrirSolicitar()" style="padding:6px 14px;background:#16a34a;color:#fff;border:0;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">📩 Solicitar seleccionados</button>';
     html += '<button onclick="_abastExportExcel()" style="padding:6px 14px;background:#1e40af;color:#fff;border:0;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer" title="Déficit por horizonte (para jefe producción) · respeta filtros · 2 sheets: detalle + agrupado por proveedor">📊 Excel déficit</button>';
@@ -22419,6 +22427,41 @@ async function ckMarcar(itemId, estado){
       st.seleccionados[it.codigo].marcado = check;
     });
     renderTablaAbast();
+  }
+  // 🚢 Pedido por BARCO · Sebastián 24-jun: seleccionar las MP que CONSUMEN >=3 kg en 90 días
+  // y poner la cantidad a pedir = consumo de 1 AÑO + % de aumento por ventas − stock − en cola.
+  function _abastSelectBarco() {
+    const st = window._ABA_STATE;
+    const resp = prompt(
+      'Pedido por BARCO\\n\\n' +
+      'Selecciona las MP que CONSUMEN 3 kg o más en 90 días y calcula cuánto pedir para el AÑO ENTERO (365 días) + un % de aumento por crecimiento de ventas.\\n\\n' +
+      '¿Qué % de aumento por ventas querés aplicar? (0 = sin aumento)', '20');
+    if (resp === null) return; // canceló
+    const growth = Math.max(0, parseFloat(resp) || 0) / 100;
+    const UMBRAL_G = 3000; // 3 kg en 90 días
+    st.cubrir_dias = 365;
+    const selEl = document.getElementById('abast-cubrir');
+    if (selEl) selEl.value = '365';
+    const visibles = _aplicarFiltros(st.items);
+    let n = 0, totalG = 0;
+    visibles.forEach(it => {
+      if (it.tipo !== 'MP') return; // el corte de 3 kg es para materia prima (gramos)
+      const c90 = (it.consumo && Number(it.consumo['90'])) || 0;
+      if (c90 < UMBRAL_G) return;
+      const c365 = (it.consumo && Number(it.consumo['365'])) || 0;
+      const stock = Number(it.stock_actual_g) || 0;
+      const enCola = Number(it.pendiente_compras_g) || 0;
+      const pedir = Math.max(0, Math.round(c365 * (1 + growth) - stock - enCola));
+      if (!st.seleccionados[it.codigo]) st.seleccionados[it.codigo] = {};
+      st.seleccionados[it.codigo].marcado = true;
+      st.seleccionados[it.codigo].cantidad_override = pedir;
+      n++; totalG += pedir;
+    });
+    renderTablaAbast();
+    alert('Barco: ' + n + ' MP seleccionadas (consumo >=3 kg en 90 dias).\\n\\n' +
+          'Cantidad a pedir = consumo de 1 ano' + (growth > 0 ? ' +' + Math.round(growth*100) + '% por ventas' : '') +
+          ' - stock - en cola.\\nTotal a pedir: ' + Math.round(totalG).toLocaleString() + ' g (' + (totalG/1000).toFixed(1) + ' kg).\\n\\n' +
+          'Revisa la columna "Pedir" y dale "Solicitar seleccionados".');
   }
   function _abastActualizarContadorSel() {
     const st = window._ABA_STATE;

@@ -12547,18 +12547,22 @@ def test_golden_plan_escenarios_y_proximas(app, db_clean):
             assert 'fecha_sugerida' in e
             assert 'etiqueta' in e
 
-    # Caso 2: POST programar-produccion + GET proximas devuelve el lote
-    # Fecha 2026-06-16 (martes hábil) · 2026-06-15 es festivo Sagrado Corazón.
-    # Sebastián 14-may-2026 (audit W4): programar-produccion ahora valida reglas.
-    # FIX 9-jun-2026: limpiar la fecha objetivo antes de programar. Otro golden con
-    # fecha RELATIVA puede caer en 2026-06-16 (= hoy+7 cuando hoy=2026-06-09) y ocupar
-    # el día (regla lote grande = 1/día) → 422. Robustez ante contaminación full-suite
-    # (no es bug de código · la regla es same-day, plan.py:5009).
-    _exec("DELETE FROM produccion_programada WHERE date(fecha_programada) = '2026-06-16'")
+    # Caso 2: POST programar-produccion + GET proximas devuelve el lote.
+    # FIX 24-jun-2026: fecha RELATIVA a hoy (día hábil, no festivo) en vez de la hardcoded
+    # 2026-06-16, que al rodar el calendario quedó en el PASADO → /proximas (forward-only)
+    # ya no la devolvía → golden rojo SIN bug de código (date-frágil documentado en CLAUDE.md).
+    from api.blueprints.plan import _festivos_colombia_year as _fest_year
+    from datetime import date as _dd2, timedelta as _tdd2
+    _cand = _dd2.today() + _tdd2(days=10)
+    _fest = _fest_year(_cand.year) | _fest_year(_cand.year + 1)
+    while _cand.weekday() >= 5 or _cand in _fest:   # evita fin de semana y festivos
+        _cand += _tdd2(days=1)
+    _fecha_prox = _cand.isoformat()
+    _exec(f"DELETE FROM produccion_programada WHERE date(fecha_programada) = '{_fecha_prox}'")
     r2 = cs.post('/api/plan/programar-produccion', json={
         'producto_nombre': 'SUERO HIDRATANTE AH 1.5%',
         'cantidad_kg': 60,
-        'fecha_programada': '2026-06-16',
+        'fecha_programada': _fecha_prox,
         'notas': 'TEST_ESC_próximas',
     }, headers=csrf_headers())
     assert r2.status_code == 201, f'BUG: {r2.status_code} {r2.data}'

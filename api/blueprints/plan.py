@@ -15955,6 +15955,8 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
 .horiz-btn.active{border-color:#0f766e;background:#0f766e;color:white}
 .horiz-btn:hover{border-color:#0f766e}
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:8px}
+@media(max-width:640px){.cal-grid{grid-template-columns:repeat(7,minmax(118px,1fr));overflow-x:auto;-webkit-overflow-scrolling:touch}}
+@media(max-width:768px){table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}input,select,textarea{font-size:16px}}
 .cal-head{background:#f1f5f9;padding:8px;text-align:center;font-weight:800;color:#475569;font-size:12px;border-radius:6px}
 .cal-day{background:white;border:1px solid #e2e8f0;border-radius:8px;padding:6px;min-height:110px;position:relative;font-size:11px}
 .cal-day.festivo{background:#fef2f2;border-color:#fca5a5}
