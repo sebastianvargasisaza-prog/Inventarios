@@ -352,6 +352,14 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (281, "Envasado/Acondicionamiento EN VIVO (Sebastián 24-jun): ocupación LIGERA de un área para "
+          "el plano sin tocar produccion_programada ni descontar MP. El operario marca el área "
+          "ocupada con producto+operario; al finalizar queda sucia. 'duplicate column' benigno.", [
+        "ALTER TABLE areas_planta ADD COLUMN ocup_producto TEXT",
+        "ALTER TABLE areas_planta ADD COLUMN ocup_operario TEXT",
+        "ALTER TABLE areas_planta ADD COLUMN ocup_inicio TEXT",
+        "ALTER TABLE areas_planta ADD COLUMN ocup_fase TEXT",
+    ]),
     (280, "Catálogo de CONSUMIBLES / gastos generales (Sebastián 23-jun): maestro_consumibles "
           "para que Catalina cree un consumible UNA vez (nombre+categoría+proveedor+precio) y lo "
           "reuse en cada solicitud (lo elige, ajusta cantidad/precio, solicita compra). NO es "

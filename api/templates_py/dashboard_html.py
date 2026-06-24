@@ -964,10 +964,32 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <button onclick="planoFullscreen()" style="padding:4px 10px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700">&#9974; Pantalla completa</button>
       </span>
     </div>
-    <div id="plano-mapa" style="width:100%;max-width:1040px;margin:0 auto 16px;background:#fbfbf9;border:1px solid #e5e7eb;border-radius:14px;padding:12px;overflow:hidden">Cargando…</div>
+    <div id="plano-mapa" style="width:100%;max-width:1040px;margin:0 auto 10px;background:#fbfbf9;border:1px solid #e5e7eb;border-radius:14px;padding:12px;overflow:hidden">Cargando…</div>
+    <div style="max-width:1040px;margin:0 auto 14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:12px;color:#64748b;font-weight:700">Ocupar área en vivo:</span>
+      <button onclick="abrirIniciarVivo('envasado')" style="padding:6px 14px;background:#1a4a7a;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer">&#128230; Envasado</button>
+      <button onclick="abrirIniciarVivo('acondicionamiento')" style="padding:6px 14px;background:#0d47a1;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer">&#128295; Acondicionamiento</button>
+      <span style="font-size:11px;color:#94a3b8">(o tocá una sala libre en el plano)</span>
+    </div>
     <div id="plano-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-top:8px"></div>
     <div id="plano-sala-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:9000;align-items:center;justify-content:center" onclick="if(event.target===this)planoCerrarSala()">
       <div id="plano-sala-body" style="background:#fff;border-radius:14px;padding:20px 22px;max-width:380px;width:92%;box-shadow:0 20px 60px rgba(0,0,0,.3)"></div>
+    </div>
+    <div id="vivo-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:9100;align-items:center;justify-content:center" onclick="if(event.target===this)cerrarVivo()">
+      <div style="background:#fff;border-radius:14px;padding:22px;max-width:420px;width:92%;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+        <div id="vivo-titulo" style="font-weight:800;font-size:17px;color:#0f172a;margin-bottom:14px">&#9654; Iniciar en vivo</div>
+        <input type="hidden" id="vivo-fase">
+        <label style="font-size:12px;font-weight:700;color:#475569">Producto / lote</label>
+        <input id="vivo-producto" placeholder="Ej: Suero Hidratante AH" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:7px;font-size:14px;margin:4px 0 12px">
+        <label style="font-size:12px;font-weight:700;color:#475569">Área</label>
+        <select id="vivo-area" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:7px;font-size:14px;margin:4px 0 12px"></select>
+        <label style="font-size:12px;font-weight:700;color:#475569">Operario</label>
+        <select id="vivo-operario" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:7px;font-size:14px;margin:4px 0 16px"></select>
+        <div style="display:flex;gap:8px">
+          <button onclick="guardarVivo()" style="flex:1;padding:10px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">&#9654; Iniciar</button>
+          <button onclick="cerrarVivo()" style="padding:10px 16px;background:#fff;color:#475569;border:1px solid #cbd5e1;border-radius:8px;font-weight:700;cursor:pointer">Cancelar</button>
+        </div>
+      </div>
     </div>
     <script>
     (function(){
@@ -1069,12 +1091,51 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         h+='<div style="display:inline-block;margin:8px 0;padding:3px 12px;border-radius:8px;font-weight:800;font-size:12px;background:'+cc+'22;color:'+cc+'">'+(LP[e]||e)+'</div>';
         if(p){ h+='<div style="font-size:14px;line-height:1.7;color:#334155">&#129514; <b>'+_esc2(p.producto||'')+'</b>'+(p.kg?(' · '+p.kg+' kg'):'')+(p.operario?('<br>&#128100; '+_esc2(p.operario)):'')+(p.mins!=null?('<br>&#9201; '+_elapsed(p.mins)+' corriendo'):'')+'</div>'; }
         h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">';
-        if(p){ h+='<button onclick="planoFinalizar('+p.id+')" style="flex:1 1 100%;padding:10px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">&#127937; Finalizar producción</button>'; }
+        if(p){ if(p.vivo){ h+='<button onclick="planoFinalizarVivo('+(a.id||0)+')" style="flex:1 1 100%;padding:10px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">&#127937; Finalizar '+_esc2(p.fase||'envasado')+'</button>'; } else { h+='<button onclick="planoFinalizar('+p.id+')" style="flex:1 1 100%;padding:10px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">&#127937; Finalizar producción</button>'; } }
         if(e==='sucia'||e==='limpiando'){ h+='<button onclick="planoIrLimpieza()" style="flex:1 1 100%;padding:10px;background:#7c3aed;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">&#127991;&#65039; Registrar limpieza</button>'; }
         if(e==='libre'){ h+='<button onclick="planoIniciarAqui('+(a.id||0)+')" style="flex:1 1 100%;padding:10px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">&#9654; Iniciar fabricación aquí</button>'; }
         h+='<button onclick="planoCerrarSala()" style="flex:1;padding:9px;background:#fff;color:#475569;border:1px solid #cbd5e1;border-radius:8px;font-weight:700;cursor:pointer">Cerrar</button>';
         h+='</div>';
         b.innerHTML=h; m.style.display='flex';
+      };
+      async function _planoCsrf(){try{return (await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json()).csrf_token;}catch(e){return '';}}
+      function _planoPost(url,body,t){return fetch(url,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(body)});}
+      window.planoFinalizarVivo=async function(aid){planoCerrarSala();var t=await _planoCsrf();try{await _planoPost('/api/planta/area/liberar-vivo',{area_id:aid},t);}catch(e){}setTimeout(window.cargarPlanoGrid,400);};
+      window.abrirIniciarVivo=async function(fase){
+        var m=document.getElementById('vivo-modal'); if(!m) return;
+        fase=fase||'envasado';
+        document.getElementById('vivo-fase').value=fase;
+        document.getElementById('vivo-producto').value='';
+        document.getElementById('vivo-titulo').textContent='▶ Iniciar '+(fase==='acondicionamiento'?'acondicionamiento':'envasado')+' en vivo';
+        try{
+          var d=await (await fetch('/api/planta/areas',{credentials:'same-origin'})).json();
+          var areas=(d.areas||d.items||[]);
+          var filt=areas.filter(function(a){ return fase==='acondicionamiento' ? ((a.codigo||'').toUpperCase()==='ACOND') : a.puede_envasar; });
+          var s=document.getElementById('vivo-area'); s.innerHTML='<option value="">-- elegí área --</option>'+filt.map(function(a){return '<option value="'+a.id+'">'+_esc2(a.nombre)+(String(a.estado||'').toLowerCase()==='ocupada'?' (ocupada)':'')+'</option>';}).join('');
+        }catch(e){}
+        try{
+          var o=await (await fetch('/api/planta/operarios',{credentials:'same-origin'})).json();
+          var sel=document.getElementById('vivo-operario');
+          sel.innerHTML='<option value="">-- opcional --</option>'+(o.operarios||o.items||[]).map(function(x){return '<option value="'+x.id+'">'+_esc2(((x.nombre||'')+' '+(x.apellido||'')).trim())+'</option>';}).join('');
+        }catch(e){}
+        m.style.display='flex';
+      };
+      window.cerrarVivo=function(){var m=document.getElementById('vivo-modal');if(m)m.style.display='none';};
+      window.guardarVivo=async function(){
+        var producto=(document.getElementById('vivo-producto').value||'').trim();
+        var area=document.getElementById('vivo-area').value;
+        var op=document.getElementById('vivo-operario').value;
+        var fase=document.getElementById('vivo-fase').value;
+        if(!producto||!area){ alert('Producto y área son obligatorios'); return; }
+        var t=await _planoCsrf();
+        try{
+          var r=await _planoPost('/api/planta/area/ocupar-vivo',{area_id:parseInt(area,10),producto:producto,operario_id:op?parseInt(op,10):0,fase:fase},t);
+          var d=await r.json();
+          if(d.error){ alert('Error: '+d.error); return; }
+          cerrarVivo();
+          alert('✓ '+(fase==='acondicionamiento'?'Acondicionamiento':'Envasado')+' iniciado en '+(d.area||'')+' · míralo en el Plano');
+          if(window.cargarPlanoGrid) window.cargarPlanoGrid();
+        }catch(e){ alert('Error de conexión'); }
       };
       window.cargarPlanoGrid=async function(){
         var mapa=document.getElementById('plano-mapa'); var g=document.getElementById('plano-grid');

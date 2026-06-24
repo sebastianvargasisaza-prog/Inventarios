@@ -17558,7 +17558,8 @@ def plano_fabricacion_data():
     # no solo las de fabricación. Sin el param, comportamiento original (solo puede_producir).
     _filtro_areas = _act if request.args.get('todas') else f"{_act} AND {_prod}"
     areas = c.execute(
-        f"SELECT id, codigo, nombre, COALESCE(estado,'libre'), COALESCE(marmita_ml,0) "
+        f"SELECT id, codigo, nombre, COALESCE(estado,'libre'), COALESCE(marmita_ml,0), "
+        f"ocup_producto, ocup_operario, ocup_inicio, ocup_fase "
         f"FROM areas_planta WHERE {_filtro_areas} ORDER BY orden, codigo").fetchall()
     out = []
     for a in areas:
@@ -17571,22 +17572,100 @@ def plano_fabricacion_data():
             "AND COALESCE(pp.fin_real_at,'')='' "
             "AND LOWER(COALESCE(pp.estado,'')) NOT IN ('completado','cancelado') "
             "ORDER BY pp.inicio_real_at DESC LIMIT 1", (a[0],)).fetchone()
-        _mins = None
-        if prod and prod[4]:
+        def _mins_desde(_v):
+            if not _v:
+                return None
             try:
-                _ini = datetime.fromisoformat(str(prod[4]).replace(' ', 'T')[:19])
-                _mins = max(0, int((datetime.now() - _ini).total_seconds() // 60))
+                _i = datetime.fromisoformat(str(_v).replace(' ', 'T')[:19])
+                return max(0, int((datetime.now() - _i).total_seconds() // 60))
             except Exception:
-                _mins = None
+                return None
+        _prod_out = None
+        if prod:
+            _prod_out = {'id': prod[0], 'producto': prod[1], 'kg': prod[2],
+                         'lotes': prod[3], 'inicio': prod[4], 'operario': prod[5] or '',
+                         'mins': _mins_desde(prod[4])}
+        elif a[5]:  # ocupación LIGERA (envasado/acond en vivo · no es producción del plan)
+            _prod_out = {'id': None, 'producto': a[5], 'kg': 0, 'lotes': 1,
+                         'inicio': a[7], 'operario': a[6] or '', 'mins': _mins_desde(a[7]),
+                         'vivo': True, 'fase': a[8] or '', 'area_id': a[0]}
         out.append({
             'id': a[0], 'codigo': a[1], 'nombre': a[2], 'estado': a[3] or 'libre',
-            'capacidad': a[4],
-            'produccion': ({'id': prod[0], 'producto': prod[1], 'kg': prod[2],
-                            'lotes': prod[3], 'inicio': prod[4], 'operario': prod[5] or '',
-                            'mins': _mins}
-                           if prod else None),
+            'capacidad': a[4], 'produccion': _prod_out,
         })
     return jsonify({'ok': True, 'areas': out, 'total': len(out), 'debug': dbg})
+
+
+@bp.route('/api/planta/area/ocupar-vivo', methods=['POST'])
+def area_ocupar_vivo():
+    """Ocupación LIGERA de un área (Envasado/Acondicionamiento en vivo · Sebastián 24-jun): marca el
+    área ocupada con producto+operario SIN tocar produccion_programada ni descontar MP. El registro
+    real (descuento de envases) va por su flujo aparte. 'Finalizar' (liberar-vivo) la deja sucia."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    usuario = session.get('compras_user', '')
+    d = request.get_json(silent=True) or {}
+    try:
+        area_id = int(d.get('area_id') or 0)
+    except (TypeError, ValueError):
+        area_id = 0
+    producto = (d.get('producto') or '').strip()
+    if not area_id or not producto:
+        return jsonify({'error': 'area_id y producto requeridos'}), 400
+    conn = get_db(); c = conn.cursor()
+    area = c.execute("SELECT id, nombre, COALESCE(estado,'libre') FROM areas_planta WHERE id=? AND activo=1",
+                     (area_id,)).fetchone()
+    if not area:
+        return jsonify({'error': 'Área no existe'}), 404
+    if str(area[2]).lower() == 'ocupada':
+        return jsonify({'error': 'El área ya está ocupada'}), 409
+    op_nombre = ''
+    try:
+        op_id = int(d.get('operario_id') or 0)
+    except (TypeError, ValueError):
+        op_id = 0
+    if op_id:
+        _o = c.execute("SELECT nombre FROM operarios_planta WHERE id=?", (op_id,)).fetchone()
+        if _o:
+            op_nombre = _o[0] or ''
+    fase = (d.get('fase') or 'envasado').strip()[:40]
+    # CAS: solo ocupar si seguía libre (multi-worker) → rowcount==1
+    c.execute("UPDATE areas_planta SET estado='ocupada', ocup_producto=?, ocup_operario=?, "
+              "ocup_inicio=?, ocup_fase=? WHERE id=? AND LOWER(COALESCE(estado,'libre'))<>'ocupada'",
+              (producto[:120], op_nombre[:80], datetime.now().isoformat(), fase, area_id))
+    if c.rowcount != 1:
+        conn.rollback()
+        return jsonify({'error': 'El área ya está ocupada'}), 409
+    audit_log(c, usuario=usuario, accion='AREA_OCUPAR_VIVO', tabla='areas_planta',
+              registro_id=area_id, despues={'producto': producto[:120], 'operario': op_nombre, 'fase': fase})
+    conn.commit()
+    return jsonify({'ok': True, 'area': area[1], 'producto': producto, 'fase': fase})
+
+
+@bp.route('/api/planta/area/liberar-vivo', methods=['POST'])
+def area_liberar_vivo():
+    """Finaliza la ocupación ligera de un área → queda SUCIA + limpia los campos de ocupación."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    usuario = session.get('compras_user', '')
+    d = request.get_json(silent=True) or {}
+    try:
+        area_id = int(d.get('area_id') or 0)
+    except (TypeError, ValueError):
+        area_id = 0
+    if not area_id:
+        return jsonify({'error': 'area_id requerido'}), 400
+    conn = get_db(); c = conn.cursor()
+    area = c.execute("SELECT id, ocup_producto FROM areas_planta WHERE id=? AND activo=1",
+                     (area_id,)).fetchone()
+    if not area:
+        return jsonify({'error': 'Área no existe'}), 404
+    c.execute("UPDATE areas_planta SET estado='sucia', ocup_producto=NULL, ocup_operario=NULL, "
+              "ocup_inicio=NULL, ocup_fase=NULL WHERE id=?", (area_id,))
+    audit_log(c, usuario=usuario, accion='AREA_LIBERAR_VIVO', tabla='areas_planta',
+              registro_id=area_id, despues={'producto_previo': area[1] or ''})
+    conn.commit()
+    return jsonify({'ok': True})
 
 
 @bp.route('/api/planta/fabricacion/reactivar-areas', methods=['POST'])
