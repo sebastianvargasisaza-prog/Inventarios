@@ -609,6 +609,22 @@ body.cx-error::after {
 /* Imágenes y media · responsive por default */
 img, svg, video, canvas { max-width: 100%; height: auto; }
 
+/* ── Base táctil GLOBAL (auditoría móvil 23-jun) ──
+   16px en inputs evita el zoom automático de iOS al enfocar. Aplica SIEMPRE; en
+   desktop (≥769px) devolvemos 13px compactos SOLO en contenedores conocidos. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+select, textarea { font-size: max(16px, 1em); }
+@media (min-width: 769px) {
+  .itbl input, .bar input, .bar select, .fg input, .fg select, .fg textarea { font-size: 13px; }
+}
+
+/* ── FABs flotantes · pila coordinada en móvil (no se amontonan ni tapan contenido) ── */
+@media (max-width: 480px) {
+  #nw-fab { bottom: calc(80px + env(safe-area-inset-bottom)) !important; right: 14px !important; width: 44px; height: 44px; }
+  #ai-fab { bottom: calc(144px + env(safe-area-inset-bottom)) !important; right: 14px !important; }
+  #nw-panel, #ai-panel, #cm-asistente-modal { max-width: 92vw !important; right: 12px !important; }
+}
+
 /* Tablas en wrapper scroll horizontal · evita romper layout */
 .cx-table-wrap, .table-wrapper, .tabla-wrap {
   width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;

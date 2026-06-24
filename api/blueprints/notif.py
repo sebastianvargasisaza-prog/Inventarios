@@ -168,10 +168,10 @@ def notif_widget_js():
   // Estilos
   var s = document.createElement('style');
   s.textContent = ''+
-    '#nw-fab{position:fixed;bottom:20px;right:90px;width:48px;height:48px;border-radius:50%;background:#0f766e;color:#fff;border:none;cursor:pointer;font-size:20px;box-shadow:0 4px 16px rgba(15,118,110,.4);z-index:9997;display:flex;align-items:center;justify-content:center;transition:transform .15s}'+
+    '#nw-fab{position:fixed;bottom:84px;right:16px;width:48px;height:48px;border-radius:50%;background:#0f766e;color:#fff;border:none;cursor:pointer;font-size:20px;box-shadow:0 4px 16px rgba(15,118,110,.4);z-index:9997;display:flex;align-items:center;justify-content:center;transition:transform .15s}'+
     '#nw-fab:hover{transform:scale(1.08);background:#115e59}'+
     '#nw-badge{position:absolute;top:-4px;right:-4px;background:#dc2626;color:#fff;border-radius:50%;min-width:20px;height:20px;font-size:11px;font-weight:800;display:none;align-items:center;justify-content:center;padding:0 4px;border:2px solid #fff}'+
-    '#nw-panel{position:fixed;bottom:78px;right:20px;width:360px;max-width:92vw;max-height:60vh;background:#fff;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.18);z-index:9998;display:none;overflow:hidden;border:1px solid #e2e8f0}'+
+    '#nw-panel{position:fixed;bottom:140px;right:16px;width:360px;max-width:92vw;max-height:60vh;background:#fff;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.18);z-index:9998;display:none;overflow:hidden;border:1px solid #e2e8f0}'+
     '#nw-panel-header{background:#0f766e;color:#fff;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;font-weight:700;font-size:14px}'+
     '#nw-panel-list{overflow-y:auto;max-height:calc(60vh - 90px)}'+
     '.nw-item{padding:10px 14px;border-bottom:1px solid #f1f5f9;cursor:pointer;display:block;text-decoration:none;color:#0f172a;transition:background .15s}'+

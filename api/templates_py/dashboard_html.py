@@ -48,8 +48,8 @@ body { font-family:var(--cx-font); background:var(--cx-bg); color:var(--cx-text)
   .table-wrap, [style*="overflow-x:auto"] { -webkit-overflow-scrolling:touch; }
   .table { font-size:0.78em; }
   .table th, .table td { padding:6px 8px; }
-  /* Reducir padding de modales */
-  .modal-bk > div, [class*="modal"] > div { padding:14px !important; max-height:92vh; }
+  /* Reducir padding de modales + scroll interno (incluye los id="modal-...") */
+  .modal-bk > div, [class*="modal"] > div, [id^="modal-"] > div, [class*="Modal"] > div { padding:14px !important; max-height:92vh; overflow-y:auto; }
   /* Touch targets más grandes */
   button, .btn, [onclick] { min-height:38px; }
   input, select, textarea { font-size:16px !important; /* evita zoom iOS */ }
@@ -10875,7 +10875,7 @@ function _renderProgramacion(d){
     <button id="cm-asistente-btn" onclick="cmAbrirAsistente()"
       style="display:none"
       title="Asistente IA · Pregúntale a la planta">💬</button>
-    <div id="cm-asistente-modal" style="display:none;position:fixed;bottom:90px;right:24px;width:380px;max-height:600px;background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.25);z-index:9999;flex-direction:column;border:1px solid #cbd5e1">
+    <div id="cm-asistente-modal" style="display:none;position:fixed;bottom:90px;right:16px;width:380px;max-width:92vw;max-height:min(600px,80vh);background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.25);z-index:9999;flex-direction:column;border:1px solid #cbd5e1">
       <div style="background:linear-gradient(135deg,#6d28d9,#7c3aed);color:#fff;padding:12px 16px;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:center">
         <b style="font-size:14px">💬 Pregúntale a la planta</b>
         <button onclick="cmCerrarAsistente()" style="background:none;border:none;color:#fff;font-size:1.3em;cursor:pointer;padding:0 4px;line-height:1">×</button>

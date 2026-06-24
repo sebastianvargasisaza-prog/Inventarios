@@ -139,6 +139,7 @@ def footer_html() -> str:
 def meta_tags_html() -> str:
     """Meta tags para <head> consistentes en toda la app."""
     return (
+        f'<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">'
         f'<meta name="application-name" content="{PRODUCT_NAME}">'
         f'<meta name="apple-mobile-web-app-title" content="{PRODUCT_NAME}">'
         f'<meta name="apple-mobile-web-app-capable" content="yes">'

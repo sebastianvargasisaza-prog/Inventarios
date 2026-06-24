@@ -404,6 +404,7 @@ def seguridad_page():
 
 _SEGURIDAD_HTML = """<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Configurar MFA · EOS</title>
 <style>
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
@@ -944,6 +945,7 @@ def login_mfa_page():
 <html lang="es-CO">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Verificación 2FA · EOS</title>
 <style>
   body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #0d1117; color: #fff; margin: 0; padding: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
@@ -1152,6 +1154,7 @@ def login_mfa_backup():
 <html lang="es-CO">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Código de respaldo · EOS</title>
 <style>
   body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #0d1117; color: #fff; margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }

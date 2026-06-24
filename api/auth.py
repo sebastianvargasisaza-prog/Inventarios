@@ -290,6 +290,7 @@ def sin_acceso_html(modulo):
     """Pagina de acceso denegado consistente para todos los modulos."""
     return (
         '<!DOCTYPE html><html><head><meta charset=UTF-8>'
+        '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">'
         '<title>Sin acceso</title>'
         '<style>body{font-family:sans-serif;background:#0f172a;color:#fff;display:flex;'
         'align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:16px;}'
