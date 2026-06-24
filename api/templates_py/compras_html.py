@@ -1286,7 +1286,8 @@ function renderHistorico(){
     </div>
     <div style="margin-bottom:10px;">
       <label style="font-size:12px;font-weight:600;color:#57534e;display:block;margin-bottom:4px;">Nombre INCI (opcional)</label>
-      <input id="nmp-nominci" placeholder="Glycerin" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
+      <input id="nmp-nominci" placeholder="Glycerin" oninput="checkInciNuevaMP()" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
+      <div id="nmp-inci-warn" style="font-size:12px;margin-top:4px;"></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
       <div>
@@ -3832,8 +3833,29 @@ function abrirNuevaMP(prefillCodigo){
   if (provOC && provOC.value) {
     document.getElementById('nmp-prov-pref').value = provOC.value;
   }
+  var _w=document.getElementById('nmp-inci-warn'); if(_w) _w.textContent='';
   openModal('m-nueva-mp');
-  setTimeout(function(){ document.getElementById('nmp-codigo').focus(); }, 100);
+  // Auto-código (igual que recepción de planta · evita adivinar/duplicar el código)
+  if(!prefillCodigo){
+    var ci=document.getElementById('nmp-codigo');
+    if(ci){ ci.value='⏳...'; ci.disabled=true;
+      fetch('/api/maestro-mps/next-codigo').then(function(r){return r.json();}).then(function(d){
+        ci.disabled=false; ci.value=(d&&d.siguiente)?d.siguiente:'';
+        var h=document.getElementById('nmp-msg');
+        if(h&&d&&d.siguiente){ h.style.color='#16a34a'; h.textContent='Código auto-asignado: '+d.siguiente+' · '+(d.total_en_catalogo||0)+' MPs en catálogo'; }
+      }).catch(function(){ ci.disabled=false; ci.value=''; ci.placeholder='MP00350'; });
+    }
+  }
+  setTimeout(function(){ var f=document.getElementById('nmp-nomcomer'); if(f) f.focus(); }, 120);
+}
+// Check INCI existente (igual a recepción: te dice si ese INCI ya está en el catálogo → evita duplicar)
+function checkInciNuevaMP(){
+  var inci=((document.getElementById('nmp-nominci')||{}).value||'').trim().toLowerCase();
+  var w=document.getElementById('nmp-inci-warn'); if(!w) return;
+  if(inci.length<3){ w.textContent=''; return; }
+  var hit=(typeof _MPCAT!=='undefined'?_MPCAT:[]).filter(function(m){return ((m.nombre_inci||'').trim().toLowerCase())===inci;})[0];
+  if(hit){ w.style.color='#b45309'; w.innerHTML='&#9888;&#65039; Ya existe <b>'+_esc(hit.codigo_mp||'')+'</b> con ese INCI'+(hit.nombre_comercial?' ('+_esc(hit.nombre_comercial)+')':'')+' — mejor usá esa, no crees un duplicado.'; }
+  else{ w.style.color='#16a34a'; w.textContent='✓ INCI nuevo · no existe en el catálogo.'; }
 }
 
 async function guardarNuevaMP(){
