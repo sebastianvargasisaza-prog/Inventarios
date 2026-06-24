@@ -1247,6 +1247,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <div id="prod-simul-result" style="margin-top:12px;"></div>
     <div id="prod-msg"></div>
     <div id="fab-enproceso"></div>
+    <div id="fab-terminadas"></div>
     <script>
     (function(){
       async function _csrfFab(){try{return (await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json()).csrf_token;}catch(e){return '';}}
@@ -1287,13 +1288,27 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           cont.innerHTML=h+'</tbody></table></div>';
         }catch(e){cont.innerHTML='';}
       };
+      window.cargarFabTerminadas=async function(){
+        var cont=document.getElementById('fab-terminadas'); if(!cont) return;
+        var _e=function(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');};
+        var _dur=function(m){if(m==null)return '—';m=parseInt(m,10);var hh=Math.floor(m/60),mm=m%60;return (hh?hh+'h ':'')+mm+'m';};
+        var _hm=function(s){return s?String(s).slice(11,16):'—';};
+        try{
+          var d=await (await fetch('/api/planta/fabricaciones-recientes',{credentials:'same-origin'})).json();
+          var it=(d.items||[]);
+          if(!it.length){cont.innerHTML='';return;}
+          var h='<div style="margin-top:22px;border-top:2px solid #eee;padding-top:16px"><h3 style="color:#16a34a;margin:0 0 10px">&#9989; Fabricaciones terminadas <span style="font-size:12px;font-weight:400;color:#94a3b8">(inicio &rarr; fin &rarr; duración)</span></h3><div style="overflow-x:auto"><table class="table"><thead><tr><th>Producto</th><th>Área</th><th>Operario</th><th>Inicio</th><th>Fin</th><th>Duración</th></tr></thead><tbody>';
+          it.forEach(function(x){h+='<tr><td><b>'+_e(x.producto)+'</b>'+(x.kg?(' · '+x.kg+' kg'):'')+'</td><td>'+_e(x.area||'—')+'</td><td>'+_e(x.operario||'—')+'</td><td>'+_hm(x.inicio)+'</td><td>'+_hm(x.fin)+'</td><td><b style="color:#0f766e">'+_dur(x.duracion_min)+'</b></td></tr>';});
+          cont.innerHTML=h+'</tbody></table></div></div>';
+        }catch(e){cont.innerHTML='';}
+      };
       window.finalizarFabVivo=async function(pid){
         if(!confirm('¿Finalizar esta fabricación? El área queda sucia hasta que la limpien.')) return;
         var t=await _csrfFab();
         var r=await fetch('/api/programacion/programar/'+pid+'/terminar',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:'{}'});
-        if(r.ok){document.getElementById('prod-msg').innerHTML='<div style="background:#dcfce7;color:#166534;padding:8px 12px;border-radius:6px">&#9632; Fabricación finalizada · área marcada sucia</div>';window.cargarEnProcesoFab();}
+        if(r.ok){document.getElementById('prod-msg').innerHTML='<div style="background:#dcfce7;color:#166534;padding:8px 12px;border-radius:6px">&#9632; Fabricación finalizada · área marcada sucia</div>';window.cargarEnProcesoFab();window.cargarFabTerminadas();}
       };
-      try{cargarOperariosFab();cargarEnProcesoFab();setInterval(cargarEnProcesoFab,20000);}catch(e){}
+      try{cargarOperariosFab();cargarEnProcesoFab();cargarFabTerminadas();setInterval(function(){cargarEnProcesoFab();cargarFabTerminadas();},20000);}catch(e){}
     })();
     </script>
     <div style="margin-top:28px;border-top:2px solid #eee;padding-top:20px;">

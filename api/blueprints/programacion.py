@@ -17577,7 +17577,10 @@ def plano_fabricacion_data():
                 return None
             try:
                 _i = datetime.fromisoformat(str(_v).replace(' ', 'T')[:19])
-                return max(0, int((datetime.now() - _i).total_seconds() // 60))
+                # inicio_real_at/ocup_inicio se guardan en hora Colombia (-5h) → comparar contra
+                # un "ahora" también en Colombia, si no el elapsed se infla +5h (bug 24-jun).
+                _now_co = datetime.now() - timedelta(hours=5)
+                return max(0, int((_now_co - _i).total_seconds() // 60))
             except Exception:
                 return None
         _prod_out = None
@@ -17632,7 +17635,8 @@ def area_ocupar_vivo():
     # CAS: solo ocupar si seguía libre (multi-worker) → rowcount==1
     c.execute("UPDATE areas_planta SET estado='ocupada', ocup_producto=?, ocup_operario=?, "
               "ocup_inicio=?, ocup_fase=? WHERE id=? AND LOWER(COALESCE(estado,'libre'))<>'ocupada'",
-              (producto[:120], op_nombre[:80], datetime.now().isoformat(), fase, area_id))
+              (producto[:120], op_nombre[:80],
+               (datetime.now() - timedelta(hours=5)).isoformat(timespec='seconds'), fase, area_id))
     if c.rowcount != 1:
         conn.rollback()
         return jsonify({'error': 'El área ya está ocupada'}), 409
@@ -17666,6 +17670,35 @@ def area_liberar_vivo():
               registro_id=area_id, despues={'producto_previo': area[1] or ''})
     conn.commit()
     return jsonify({'ok': True})
+
+
+@bp.route('/api/planta/fabricaciones-recientes', methods=['GET'])
+def fabricaciones_recientes():
+    """Fabricaciones TERMINADAS recientes con hora de inicio + fin + duración (time-tracking del tab
+    Fabricación · Sebastián 24-jun: 'debe vivir a qué hora finaliza'). Duración en Python (no julianday)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute(
+        "SELECT pp.id, pp.producto, COALESCE(ap.nombre,''), pp.inicio_real_at, pp.fin_real_at, "
+        "COALESCE(oe.nombre,'')||' '||COALESCE(oe.apellido,''), COALESCE(pp.cantidad_kg,0) "
+        "FROM produccion_programada pp "
+        "LEFT JOIN areas_planta ap ON ap.id = pp.area_id "
+        "LEFT JOIN operarios_planta oe ON oe.id = pp.operario_elaboracion_id "
+        "WHERE COALESCE(pp.inicio_real_at,'')<>'' AND COALESCE(pp.fin_real_at,'')<>'' "
+        "ORDER BY pp.fin_real_at DESC LIMIT 40").fetchall()
+    out = []
+    for r in rows:
+        dur = None
+        try:
+            _i = datetime.fromisoformat(str(r[3]).replace(' ', 'T')[:19])
+            _f = datetime.fromisoformat(str(r[4]).replace(' ', 'T')[:19])
+            dur = max(0, int((_f - _i).total_seconds() // 60))
+        except Exception:
+            dur = None
+        out.append({'id': r[0], 'producto': r[1], 'area': r[2], 'inicio': r[3],
+                    'fin': r[4], 'operario': (r[5] or '').strip(), 'kg': r[6], 'duracion_min': dur})
+    return jsonify({'ok': True, 'items': out})
 
 
 @bp.route('/api/planta/fabricacion/reactivar-areas', methods=['POST'])
