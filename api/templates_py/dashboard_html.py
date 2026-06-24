@@ -1080,6 +1080,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       }
       window.planoFullscreen=function(){var el=document.getElementById('plano-mapa');if(!el)return;if(document.fullscreenElement){document.exitFullscreen();}else if(el.requestFullscreen){el.requestFullscreen();}};
       window.planoCerrarSala=function(){var m=document.getElementById('plano-sala-modal');if(m)m.style.display='none';};
+      window.planoImprimirRotulo=function(aid){ if(aid) window.open('/planta/rotulo-estado/'+aid,'_blank'); };
       window.planoFinalizar=function(pid){planoCerrarSala();if(window.finalizarFabVivo){var pr=window.finalizarFabVivo(pid);if(pr&&pr.then){pr.then(function(){setTimeout(window.cargarPlanoGrid,500);});}else{setTimeout(window.cargarPlanoGrid,900);}}};
       window.planoIrLimpieza=function(){planoCerrarSala();var b=document.querySelector('.sub-btn[onclick*="rotuloslimp"]');if(b)b.click();};
       window.planoIniciarAqui=function(aid){planoCerrarSala();var b=document.querySelector('.sub-btn[onclick*="produccion"]');if(b)b.click();setTimeout(function(){var s=document.getElementById('prod-area');if(s)s.value=aid;},600);};
@@ -1096,6 +1097,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         if(p){ if(p.vivo){ h+='<button onclick="planoFinalizarVivo('+(a.id||0)+')" style="flex:1 1 100%;padding:10px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">&#127937; Finalizar '+_esc2(p.fase||'envasado')+'</button>'; } else { h+='<button onclick="planoFinalizar('+p.id+')" style="flex:1 1 100%;padding:10px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">&#127937; Finalizar producción</button>'; } }
         if(e==='sucia'||e==='limpiando'){ h+='<button onclick="planoIrLimpieza()" style="flex:1 1 100%;padding:10px;background:#7c3aed;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">&#127991;&#65039; Registrar limpieza</button>'; }
         if(e==='libre'){ h+='<button onclick="planoIniciarAqui('+(a.id||0)+')" style="flex:1 1 100%;padding:10px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">&#9654; Iniciar fabricación aquí</button>'; }
+        h+='<button onclick="planoImprimirRotulo('+(a.id||0)+')" style="flex:1 1 100%;padding:9px;background:#0f766e;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">&#128424;&#65039; Imprimir rótulo de estado</button>';
         h+='<button onclick="planoCerrarSala()" style="flex:1;padding:9px;background:#fff;color:#475569;border:1px solid #cbd5e1;border-radius:8px;font-weight:700;cursor:pointer">Cerrar</button>';
         h+='</div>';
         b.innerHTML=h; m.style.display='flex';

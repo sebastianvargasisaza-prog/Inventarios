@@ -17746,6 +17746,93 @@ def fabricaciones_recientes():
     return jsonify({'ok': True, 'items': out})
 
 
+@bp.route('/planta/rotulo-estado/<int:area_id>', methods=['GET'])
+def rotulo_estado_area(area_id):
+    """Rótulo de ESTADO imprimible (LIMPIO / EN USO / SUCIO) de un área + un tag por cada EQUIPO,
+    auto-llenado desde el estado en vivo (Sebastián 24-jun: 'que sean automáticos, solo imprimirlos,
+    no a mano'). HTML print-ready (un tag por equipo, recortables)."""
+    if 'compras_user' not in session:
+        return 'No autorizado', 401
+    conn = get_db(); c = conn.cursor()
+    a = c.execute("SELECT id, codigo, nombre, COALESCE(estado,'libre') FROM areas_planta WHERE id=?",
+                  (area_id,)).fetchone()
+    if not a:
+        return 'Área no existe', 404
+    estado = (a[3] or 'libre').lower()
+    _twin = {'PROD1': 'FAB1', 'PROD2': 'FAB2', 'PROD3': 'FAB3', 'PROD4': 'FAB_FLOAT'}
+    _cods = list({a[1].upper(), _twin.get(a[1].upper(), a[1].upper())})
+    _ph = ','.join('?' for _ in _cods)
+    equipos = c.execute(
+        "SELECT codigo, nombre, tipo, COALESCE(estado_operacional,'operativo') "
+        "FROM equipos_planta WHERE UPPER(COALESCE(area_codigo,'')) IN (" + _ph + ") "
+        "AND COALESCE(activo,1)=1 ORDER BY tipo, nombre", tuple(_cods)).fetchall()
+    prod = c.execute(
+        "SELECT pp.producto, COALESCE(o.nombre,''), pp.inicio_real_at FROM produccion_programada pp "
+        "LEFT JOIN operarios_planta o ON o.id=pp.operario_elaboracion_id "
+        "WHERE pp.area_id=? AND COALESCE(pp.inicio_real_at,'')<>'' AND COALESCE(pp.fin_real_at,'')='' "
+        "ORDER BY pp.inicio_real_at DESC LIMIT 1", (area_id,)).fetchone()
+    MAP = {'libre': ('LIMPIO', '#16a34a'), 'ocupada': ('EN USO', '#d97706'),
+           'sucia': ('SUCIO', '#dc2626'), 'limpiando': ('EN LIMPIEZA', '#0ea5e9')}
+    MAP_OP = {'mantenimiento': ('MANTENIMIENTO', '#7c3aed'), 'calibracion': ('EN CALIBRACIÓN', '#0891b2'),
+              'baja': ('FUERA DE SERVICIO', '#64748b')}
+    et_lbl, et_col = MAP.get(estado, ('LIMPIO', '#16a34a'))
+    ahora = (datetime.now() - timedelta(hours=5)).strftime('%Y-%m-%d %H:%M')
+
+    def _esc(x):
+        return (str(x or '')).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+    tags = ''
+    for eq in equipos:
+        # el equipo hereda el estado de limpieza del área; si está en mant/calibración/baja, manda eso
+        op = (eq[3] or 'operativo').lower()
+        if op in MAP_OP:
+            lbl, col = MAP_OP[op]
+        else:
+            lbl, col = et_lbl, et_col
+        tags += (
+            '<div class="tag" style="border-color:' + col + '">'
+            '<div class="tn">' + _esc(eq[1]) + '</div>'
+            '<div class="tc">' + _esc(eq[0]) + ' · ' + _esc(eq[2]) + '</div>'
+            '<div class="ts" style="background:' + col + '">' + lbl + '</div>'
+            '<div class="tf">Vigente desde: ' + ahora + '<br>Firma: ____________</div>'
+            '</div>')
+    if not tags:
+        tags = '<div style="color:#888;padding:20px">Esta área no tiene equipos registrados.</div>'
+    prod_html = ''
+    if prod and estado == 'ocupada':
+        _hi = str(prod[2] or '')[11:16]
+        prod_html = ('<div class="prod">Producto: <b>' + _esc(prod[0]) + '</b>'
+                     + (' · Operario: ' + _esc(prod[1]) if prod[1] else '')
+                     + (' · Inicio: ' + _hi if _hi else '') + '</div>')
+
+    html = (
+        '<!DOCTYPE html><html><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        '<title>Rótulo de estado · ' + _esc(a[2]) + '</title><style>'
+        'body{font-family:system-ui,Arial,sans-serif;margin:0;padding:16px;background:#f8fafc;color:#0f172a}'
+        '.no-print{margin-bottom:14px}'
+        'button{padding:9px 18px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;font-size:14px;cursor:pointer}'
+        '.head{border:3px solid ' + et_col + ';border-radius:12px;padding:16px 20px;margin-bottom:18px;background:#fff;page-break-inside:avoid}'
+        '.head h1{margin:0;font-size:24px}.head .cod{color:#64748b;font-size:13px}'
+        '.bigstate{display:inline-block;margin-top:10px;padding:8px 26px;border-radius:10px;color:#fff;font-size:30px;font-weight:900;letter-spacing:2px;background:' + et_col + '}'
+        '.prod{margin-top:10px;font-size:13px;color:#334155}'
+        '.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}'
+        '.tag{border:2px solid #ccc;border-radius:10px;padding:10px;text-align:center;background:#fff;page-break-inside:avoid}'
+        '.tag .tn{font-weight:800;font-size:14px;line-height:1.2;min-height:34px;display:flex;align-items:center;justify-content:center}'
+        '.tag .tc{color:#64748b;font-size:10px;text-transform:uppercase;margin:2px 0 8px}'
+        '.tag .ts{color:#fff;font-size:18px;font-weight:900;padding:6px;border-radius:7px;letter-spacing:1px}'
+        '.tag .tf{font-size:9px;color:#94a3b8;margin-top:8px;line-height:1.5}'
+        '@media print{.no-print{display:none}body{background:#fff;padding:6px}}'
+        '</style></head><body>'
+        '<div class="no-print"><button onclick="window.print()">🖨️ Imprimir rótulos</button>'
+        ' <span style="color:#64748b;font-size:13px;margin-left:8px">Auto-generado desde el estado en vivo · ' + ahora + '</span></div>'
+        '<div class="head"><h1>' + _esc(a[2]) + '</h1><div class="cod">Área ' + _esc(a[1]) + ' · rótulo de estado</div>'
+        '<div class="bigstate">' + et_lbl + '</div>' + prod_html + '</div>'
+        '<div class="grid">' + tags + '</div>'
+        '</body></html>')
+    return html
+
+
 @bp.route('/api/planta/simulacro/limpiar', methods=['POST'])
 def simulacro_limpiar():
     """Borra los datos de SIMULACRO (demo · Sebastián 24-jun) · produccion_programada + producciones
