@@ -2184,7 +2184,7 @@ async function renderMisSolicWidget(){
     var d = await r.json();
     var sols = (d.solicitudes || d.items || []).slice(0, 5);
     if(!sols.length){ cont.innerHTML = ''; return; }
-    var html = '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px"><div style="font-weight:800;color:#0f172a;font-size:13px;margin-bottom:8px">👤 Tus solicitudes recientes</div>';
+    var html = '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px"><div style="font-weight:800;color:#0f172a;font-size:13px;margin-bottom:8px">👤 Solicitudes recientes</div>';
     html += '<div style="font-size:12px">';
     sols.forEach(function(s){
       var col = s.estado === 'Aprobada' ? '#16a34a' : (s.estado === 'Rechazada' ? '#dc2626' : (s.estado === 'Pendiente' ? '#ca8a04' : '#64748b'));

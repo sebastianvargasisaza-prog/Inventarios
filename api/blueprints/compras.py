@@ -10796,11 +10796,15 @@ def compras_cash_flow():
             # Sebastián 24-may-2026 · audit Por Pagar · KPI debe coincidir con el
             # endpoint /api/compras/por-pagar · excluir Borrador/Revisada (no están
             # listas para pagar todavía) e incluir Parcial (saldo pendiente).
+            # FIX · 23-jun-2026 · el cash flow 30/60/90 daba IDÉNTICO porque agrupaba por
+            # date(fecha)=creación (siempre ≤ hoy → todas las OCs caían en TODOS los buckets).
+            # Ahora agrupa por la fecha ESPERADA de pago (fecha_entrega_est); las OCs sin fecha
+            # estimada usan la de creación (pasada → "por pagar ya", entran en todos los buckets).
             r = c.execute(
                 """SELECT COUNT(*), COALESCE(SUM(valor_total),0)
                    FROM ordenes_compra
                    WHERE estado IN ('Autorizada','Aprobada','Recibida','Parcial')
-                     AND date(fecha) <= ?""",
+                     AND date(COALESCE(NULLIF(TRIM(fecha_entrega_est),''), fecha)) <= ?""",
                 (cutoff,),
             ).fetchone()
             v['ocs_por_pagar'] = {'count': int(r[0] or 0), 'monto': float(r[1] or 0)}
@@ -10820,14 +10824,17 @@ def compras_cash_flow():
         v['total_salida'] = v['ocs_por_pagar']['monto'] + v['influencers']['monto']
         out['proyecciones'].append(v)
     # Histórico últimos 30d (real pagado)
+    # FIX · 23-jun-2026 · M12 columna fantasma: pagos_oc tiene 'fecha_pago', NO 'fecha' →
+    # date(fecha) reventaba y el except lo tragaba → SIEMPRE $0. Ahora usa fecha_pago.
     try:
         r = c.execute(
             """SELECT COUNT(*), COALESCE(SUM(monto),0)
                FROM pagos_oc
-               WHERE date(fecha) >= date('now','-5 hours','-30 days')""",
+               WHERE date(fecha_pago) >= date('now','-5 hours','-30 days')""",
         ).fetchone()
         out['pagado_30d'] = {'count': int(r[0] or 0), 'monto': float(r[1] or 0)}
-    except Exception:
+    except Exception as _e:
+        __import__('logging').getLogger('compras.cashflow').warning('pagado_30d: %s', _e)
         out['pagado_30d'] = {'count': 0, 'monto': 0}
     return jsonify(out)
 
