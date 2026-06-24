@@ -966,6 +966,9 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     </div>
     <div id="plano-mapa" style="width:100%;max-width:1040px;margin:0 auto 16px;background:#fbfbf9;border:1px solid #e5e7eb;border-radius:14px;padding:12px;overflow:hidden">Cargando…</div>
     <div id="plano-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-top:8px"></div>
+    <div id="plano-sala-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:9000;align-items:center;justify-content:center" onclick="if(event.target===this)planoCerrarSala()">
+      <div id="plano-sala-body" style="background:#fff;border-radius:14px;padding:20px 22px;max-width:380px;width:92%;box-shadow:0 20px 60px rgba(0,0,0,.3)"></div>
+    </div>
     <script>
     (function(){
       // Plano esquemático dibujado · coords en % del contenedor · cod=null → sala de contexto (gris).
@@ -1052,11 +1055,33 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         return t+'</text>';
       }
       window.planoFullscreen=function(){var el=document.getElementById('plano-mapa');if(!el)return;if(document.fullscreenElement){document.exitFullscreen();}else if(el.requestFullscreen){el.requestFullscreen();}};
+      window.planoCerrarSala=function(){var m=document.getElementById('plano-sala-modal');if(m)m.style.display='none';};
+      window.planoFinalizar=function(pid){planoCerrarSala();if(window.finalizarFabVivo){var pr=window.finalizarFabVivo(pid);if(pr&&pr.then){pr.then(function(){setTimeout(window.cargarPlanoGrid,500);});}else{setTimeout(window.cargarPlanoGrid,900);}}};
+      window.planoIrLimpieza=function(){planoCerrarSala();var b=document.querySelector('.sub-btn[onclick*="rotuloslimp"]');if(b)b.click();};
+      window.planoIniciarAqui=function(aid){planoCerrarSala();var b=document.querySelector('.sub-btn[onclick*="produccion"]');if(b)b.click();setTimeout(function(){var s=document.getElementById('prod-area');if(s)s.value=aid;},600);};
+      window.planoAbrirSala=function(cod){
+        var a=(window._PLANO_LIVE||{})[cod]; if(!a) return;
+        var e=a.estado||'libre', p=a.produccion;
+        var m=document.getElementById('plano-sala-modal'), b=document.getElementById('plano-sala-body'); if(!m||!b) return;
+        var CP={libre:'#16a34a',ocupada:'#d97706',sucia:'#dc2626',limpiando:'#0ea5e9'}, LP={libre:'LIBRE',ocupada:'OCUPADA',sucia:'SUCIA · a limpiar',limpiando:'EN LIMPIEZA'};
+        var cc=CP[e]||'#64748b';
+        var h='<div style="font-weight:800;font-size:17px;color:#0f172a">'+_esc2(a.nombre||cod)+'</div>';
+        h+='<div style="display:inline-block;margin:8px 0;padding:3px 12px;border-radius:8px;font-weight:800;font-size:12px;background:'+cc+'22;color:'+cc+'">'+(LP[e]||e)+'</div>';
+        if(p){ h+='<div style="font-size:14px;line-height:1.7;color:#334155">&#129514; <b>'+_esc2(p.producto||'')+'</b>'+(p.kg?(' · '+p.kg+' kg'):'')+(p.operario?('<br>&#128100; '+_esc2(p.operario)):'')+(p.mins!=null?('<br>&#9201; '+_elapsed(p.mins)+' corriendo'):'')+'</div>'; }
+        h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">';
+        if(p){ h+='<button onclick="planoFinalizar('+p.id+')" style="flex:1 1 100%;padding:10px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">&#127937; Finalizar producción</button>'; }
+        if(e==='sucia'||e==='limpiando'){ h+='<button onclick="planoIrLimpieza()" style="flex:1 1 100%;padding:10px;background:#7c3aed;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">&#127991;&#65039; Registrar limpieza</button>'; }
+        if(e==='libre'){ h+='<button onclick="planoIniciarAqui('+(a.id||0)+')" style="flex:1 1 100%;padding:10px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">&#9654; Iniciar fabricación aquí</button>'; }
+        h+='<button onclick="planoCerrarSala()" style="flex:1;padding:9px;background:#fff;color:#475569;border:1px solid #cbd5e1;border-radius:8px;font-weight:700;cursor:pointer">Cerrar</button>';
+        h+='</div>';
+        b.innerHTML=h; m.style.display='flex';
+      };
       window.cargarPlanoGrid=async function(){
         var mapa=document.getElementById('plano-mapa'); var g=document.getElementById('plano-grid');
         if(!mapa) return;
         var data; try{ data=await (await fetch('/api/planta/plano-fabricacion?todas=1',{credentials:'same-origin'})).json(); }catch(e){ mapa.innerHTML='<div style="padding:20px;color:#b91c1c">Error cargando el plano</div>'; return; }
         var byCod={}; (data.areas||[]).forEach(function(a){ byCod[(a.codigo||'').toUpperCase()]=a; });
+        window._PLANO_LIVE={};
         var sv='<svg viewBox="0 0 838 609" style="width:100%;height:auto;display:block;background:#fbfbf9">';
         POLYS.forEach(function(pp){ sv+='<polygon points="'+pp.pts+'" fill="none" stroke="'+WALL+'" stroke-width="0.9"/>'; });
         var cards=''; var cnt={libre:0,ocupada:0,sucia:0,limpiando:0}; var totKg=0;
@@ -1067,7 +1092,8 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           var lw=r.rot?r.h:r.w, hasP=live&&live.produccion;
           if(e){cnt[e]=(cnt[e]||0)+1;}
           if(st){ var pulse=(e==='ocupada'||e==='sucia'); sv+='<rect x="'+r.x+'" y="'+r.y+'" width="'+r.w+'" height="'+r.h+'" fill="'+st.fill+'" fill-opacity="'+st.op+'">'+(pulse?('<animate attributeName="fill-opacity" values="'+st.op+';'+(st.op*0.5).toFixed(2)+';'+st.op+'" dur="2.4s" repeatCount="indefinite"/>'):'')+'</rect>'; }
-          sv+='<rect x="'+r.x+'" y="'+r.y+'" width="'+r.w+'" height="'+r.h+'" fill="none" stroke="'+(st?st.stroke:WALL)+'" stroke-width="'+(st?1.4:0.8)+'"><title>'+_esc2(r.lab)+(e?(' · '+(LBL[e]||e)):'')+'</title></rect>';
+          if(r.cod){ window._PLANO_LIVE[r.cod]=live?{id:live.id,nombre:live.nombre||r.lab,estado:e,produccion:live.produccion}:{id:0,nombre:r.lab,estado:'libre',produccion:null}; }
+          sv+='<rect x="'+r.x+'" y="'+r.y+'" width="'+r.w+'" height="'+r.h+'" fill="none" stroke="'+(st?st.stroke:WALL)+'" stroke-width="'+(st?1.4:0.8)+'"'+(r.cod?(' style="cursor:pointer" onclick="planoAbrirSala(&#39;'+r.cod+'&#39;)"'):'')+'><title>'+_esc2(r.lab)+(e?(' · '+(LBL[e]||e)):'')+(r.cod?' · clic para acciones':'')+'</title></rect>';
           var cx=r.x+r.w/2, cy=r.y+r.h/2;
           sv+=_label(r.lab,cx,(hasP?cy-r.h*0.24:cy),r.fs,lw,r.rot||0,'#454545',(st?600:400));
           if(hasP){var p=live.produccion;if(p.kg)totKg+=parseFloat(p.kg)||0;var t2=r.fs*0.92;sv+='<text text-anchor="middle" font-family="system-ui,sans-serif" fill="#1f2937" font-size="'+t2+'" font-weight="700"><tspan x="'+cx+'" y="'+(cy+r.h*0.04)+'">'+_esc2(String(p.producto||'').slice(0,18))+'</tspan>'+(p.operario?('<tspan x="'+cx+'" y="'+(cy+r.h*0.04+t2*1.15)+'">&#128100; '+_esc2(String(p.operario).slice(0,16))+'</tspan>'):'')+(p.mins!=null?('<tspan x="'+cx+'" y="'+(cy+r.h*0.04+t2*2.3)+'" fill="#b45309" font-weight="800">&#9201; '+_elapsed(p.mins)+'</tspan>'):'')+'</text>';}
