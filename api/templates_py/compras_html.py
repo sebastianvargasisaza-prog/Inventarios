@@ -1205,6 +1205,9 @@ async function cxIAPreguntar(pregunta){
     </div>
   </div>
   <div class="mf">
+    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#475569;margin-right:auto;cursor:pointer" title="Si lo dejás marcado, la OC se autoriza al crearla y va directo a Por Pagar (dentro de tu límite). Si el monto la excede, queda en Borrador para que la apruebe gerencia.">
+      <input type="checkbox" id="noc-mp-autorizar" checked> Autorizar al crear (va directo a Por Pagar)
+    </label>
     <button class="btn bo" onclick="closeModal('m-noc-mp')">Cancelar</button>
     <button class="btn bp" onclick="crearOCMP()">&#x2713; Crear Orden de Compra</button>
   </div>
@@ -3901,10 +3904,22 @@ async function crearOCMP(){
     var r=await fetch('/api/ordenes-compra',_fetchOpts('POST', body));
     var d=await r.json();
     if(d.error){ alert('Error: '+d.error); return; }
+    // 1-clic · Catalina: autorizar al crear → va directo a Por Pagar (reusa el autorizar canónico
+    // con su chequeo de límite + CAS · si excede el monto, queda en Borrador para gerencia).
+    var _auto=document.getElementById('noc-mp-autorizar');
+    var _msg='OC creada: '+d.numero_oc;
+    if(_auto && _auto.checked && d.numero_oc){
+      try{
+        var ra=await fetch('/api/ordenes-compra/'+encodeURIComponent(d.numero_oc)+'/autorizar',_fetchOpts('PATCH', {}));
+        var da=await ra.json();
+        if(ra.ok && !da.error){ _msg='✓ OC '+d.numero_oc+' creada y enviada a Por Pagar'; }
+        else{ _msg='OC '+d.numero_oc+' creada · quedó en Borrador (no se autorizó: '+(da.error||'monto/permiso')+')'; }
+      }catch(e){}
+    }
     closeModal('m-noc-mp');
     await loadData();
     renderDash();
-    alert('OC creada: '+d.numero_oc);
+    alert(_msg);
   }catch(e){ alert('Error de conexion: '+e); }
 }
 
