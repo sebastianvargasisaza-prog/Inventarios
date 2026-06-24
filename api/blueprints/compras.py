@@ -8469,6 +8469,35 @@ def get_por_pagar():
         for row in cur.fetchall()
     ]
 
+    # FIX · 23-jun-2026 · Sebastián: en Por Pagar mostrar QUÉ se paga, no solo a QUIÉN.
+    # Adjunta los ítems (productos/MP) de cada OC + un resumen corto para la tarjeta.
+    _todas = fisicas + servicios
+    _nums = [o.get('numero_oc') for o in _todas if o.get('numero_oc')]
+    _items_por_oc = {}
+    if _nums:
+        try:
+            _ph = ','.join('?' for _ in _nums)
+            for _r in cur.execute(
+                "SELECT numero_oc, COALESCE(NULLIF(TRIM(nombre_mp),''), codigo_mp, '') AS nom, "
+                "COALESCE(cantidad_g,0), COALESCE(unidad,'') "
+                "FROM ordenes_compra_items WHERE numero_oc IN (" + _ph + ") ORDER BY id",
+                _nums).fetchall():
+                _items_por_oc.setdefault(_r[0], []).append(
+                    {'nombre': _r[1] or '', 'cantidad': _r[2], 'unidad': _r[3]})
+        except Exception:
+            pass
+    for _o in _todas:
+        _its = _items_por_oc.get(_o.get('numero_oc'), [])
+        _o['items'] = _its
+        _nombres = [str(i['nombre']) for i in _its if i.get('nombre')]
+        if _nombres:
+            _resumen = ' · '.join(_nombres[:3])
+            if len(_nombres) > 3:
+                _resumen += f' (+{len(_nombres) - 3} más)'
+        else:
+            _resumen = (_o.get('observaciones') or '')[:90]
+        _o['items_resumen'] = _resumen
+
     # NOTA 28-abr-2026 (sesion #2 Sebastian): retiramos la seccion
     # "en_proceso" de Por Pagar. Las OCs en Borrador/Revisada/Pendiente/
     # Aprobada NO son "pendiente de pago" todavia — estan en proceso de

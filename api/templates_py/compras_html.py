@@ -693,7 +693,7 @@ function renderHistorico(){
       <span style="font-weight:700;color:#1e293b;font-size:15px;">&#x1F4E6; Órdenes de compra activas · agrupadas por proveedor</span>
       <div style="font-size:11px;color:#64748b;margin-top:2px">OCs ya creadas (Borrador / Revisada / Autorizada) · NO la cola de SOLs pendientes (esa va en tab "🏭 Planta")</div>
     </div>
-    <button class="btn bp" onclick="openNuevaOCMP()" style="background:#16a34a;color:#fff;font-weight:800;padding:8px 18px;font-size:14px;border:none;border-radius:7px;cursor:pointer" title="Crear una orden de compra nueva · MP existente (cruza stock + refleja precio en planta) o MP nueva, proveedor → autorizar al crear va directo a Por Pagar">&#10133; Crear OC</button>
+    <button class="btn bp" onclick="openNuevaOC('')" style="background:#16a34a;color:#fff;font-weight:800;padding:8px 18px;font-size:14px;border:none;border-radius:7px;cursor:pointer" title="Crear una orden de compra de CUALQUIER cosa · elegí la categoría (MP, empaque, servicios, EPP, papelería…) + ítems · autorizar al crear va directo a Por Pagar">&#10133; Crear OC</button>
     <div style="display:flex;gap:8px;margin-left:auto;align-items:center;flex-wrap:wrap;">
       <label style="font-size:12px;color:#64748b;">Estados:</label>
       <label style="font-size:12px;"><input type="checkbox" class="consol-est" value="Borrador" checked> Borrador</label>
@@ -1001,6 +1001,9 @@ function renderHistorico(){
     <div class="total-row">Total: <span id="noc-tot">$0</span></div>
   </div>
   <div class="mf">
+    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#475569;margin-right:auto;cursor:pointer" title="Autoriza la OC al crearla → va directo a Por Pagar (dentro de tu límite). Si el monto la excede, queda en Borrador para gerencia.">
+      <input type="checkbox" id="noc-autorizar" checked> Autorizar al crear (va directo a Por Pagar)
+    </label>
     <button class="btn bo" onclick="closeModal('m-noc')">Cancelar</button>
     <button class="btn bp" id="noc-submit-btn" onclick="submitOC()">Crear OC</button>
   </div>
@@ -3426,10 +3429,21 @@ async function submitOC(){
         con_iva:conIva,valor_sin_iva:sub})});
     var d=await r.json();
     if(d.error){ alert('Error: '+d.error); return; }
+    var _msg=(_ocMode==='edit'?'OC actualizada: '+_ocEditNum:'Creada: '+d.numero_oc);
+    // 1-clic Catalina: autorizar al CREAR → va directo a Por Pagar (reusa el autorizar canónico).
+    var _auto=document.getElementById('noc-autorizar');
+    if(_ocMode!=='edit' && _auto && _auto.checked && d.numero_oc){
+      try{
+        var ra=await fetch('/api/ordenes-compra/'+encodeURIComponent(d.numero_oc)+'/autorizar',_fetchOpts('PATCH', {}));
+        var da=await ra.json();
+        if(ra.ok && !da.error){ _msg='✓ OC '+d.numero_oc+' creada y enviada a Por Pagar'; }
+        else{ _msg='OC '+d.numero_oc+' creada · quedó en Borrador (no se autorizó: '+(da.error||'monto/permiso')+')'; }
+      }catch(e){}
+    }
     closeModal('m-noc');
     await loadData();
     renderDash();
-    alert(_ocMode==='edit'?'OC actualizada: '+_ocEditNum:'Creada: '+d.numero_oc);
+    alert(_msg);
   }catch(e){ alert('Error de conexion: '+e); }
 }
 var crearOC=submitOC;
@@ -8685,6 +8699,7 @@ async function loadPorPagar(){
           '</div>'+
           '<div style="font-size:13px;color:'+(esIncompleta?'#dc2626':'#1e293b')+';margin-top:4px;">'+_esc(prov||'(sin proveedor)')+'</div>'+
           '<div style="font-size:11px;color:#64748b;margin-top:2px;">'+_esc(o.categoria||'')+'</div>'+
+          (o.items_resumen? '<div style="font-size:12px;color:#334155;margin-top:5px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:5px;padding:5px 8px;"><b>&#129534; Paga:</b> '+_esc(o.items_resumen)+'</div>':'')+
           // FIX 23-may · datos bancarios visibles para admin · evita
           // abrir ficha del proveedor antes de pagar (Sebas: "que aparezca
           // numero de cuenta proveedor")
