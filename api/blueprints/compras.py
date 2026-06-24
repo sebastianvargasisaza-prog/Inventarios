@@ -1240,6 +1240,14 @@ def handle_oc_detalle(numero_oc):
                 ['banco', 'tipo_cuenta', 'num_cuenta', 'nit', 'email', 'telefono', 'contacto'],
                 prow
             ))
+            # FIX Habeas Data (Ley 1581 · 23-jun) · datos bancarios solo admin/contadora.
+            # Antes este endpoint exponía banco/cuenta a cualquier rol con acceso a Compras
+            # (planta/calidad/marketing), a diferencia de proveedor_ficha_360/consolidado.
+            _u = (session.get('compras_user', '') or '').lower()
+            if _u not in {x.lower() for x in (set(ADMIN_USERS) | set(CONTADORA_USERS))}:
+                for _k in ('banco', 'tipo_cuenta', 'num_cuenta'):
+                    if prov_data.get(_k):
+                        prov_data[_k] = '***'
     return jsonify({'oc': oc_dict, 'items': items, 'prov_data': prov_data})
 
 @bp.route('/api/ordenes-compra/<numero_oc>/editar', methods=['PATCH'])
