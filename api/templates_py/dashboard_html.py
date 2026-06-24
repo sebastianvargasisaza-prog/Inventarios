@@ -7018,9 +7018,12 @@ async function cargarAreasFab(){
   try{
     var r=await fetch('/api/planta/areas',{credentials:'same-origin'});
     var d=await r.json(); var arr=(d&&(d.areas||d.items))||(Array.isArray(d)?d:[]);
-    var opts='<option value="">-- Selecciona área --</option>';
+    // Dedup por NOMBRE: FAB1/PROD1 (y FAB2/PROD2, FAB3/PROD3) son el MISMO cuarto físico con
+    // códigos duplicados → mostrar "Fabricación 1" una sola vez (el plano ya los fusiona vía TWIN).
+    var opts='<option value="">-- Selecciona área --</option>'; var _seenAr={};
     arr.filter(function(a){return a.puede_producir;}).forEach(function(a){
-      opts+='<option value="'+_escHTML(a.codigo)+'">'+_escHTML(a.nombre)+' ('+_escHTML(a.codigo)+')</option>';
+      var _k=(a.nombre||'').trim().toLowerCase(); if(_seenAr[_k]) return; _seenAr[_k]=1;
+      opts+='<option value="'+_escHTML(a.codigo)+'">'+_escHTML(a.nombre)+'</option>';
     });
     sel.innerHTML=opts;
   }catch(e){}
