@@ -539,7 +539,6 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <button class="sub-btn" onclick="subSwitchTab('envasado',this,'bar-prodHub');loadColaSinEnvasar()">&#128230; Envasado</button>
     <button class="sub-btn" onclick="subSwitchTab('acondicionamiento',this,'bar-prodHub');loadColaAcond()">&#128295; Acondicionamiento</button>
     <button class="sub-btn" onclick="subSwitchTab('plano',this,'bar-prodHub');if(typeof cargarPlanoGrid==='function')cargarPlanoGrid();">&#128506;&#65039; Plano</button>
-    <button class="sub-btn" onclick="subSwitchTab('rotuloslimp',this,'bar-prodHub');cargarRotulosLimp()">&#127991;&#65039; Rótulos de limpieza</button>
   </div>
   <div id="bar-calidadHub" class="sub-tab-bar">
     <button class="sub-btn active" onclick="subSwitchTab('cuarentena',this,'bar-calidadHub')">&#128274; Cuarentena</button>
@@ -1080,7 +1079,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       }
       window.planoFullscreen=function(){var el=document.getElementById('plano-mapa');if(!el)return;if(document.fullscreenElement){document.exitFullscreen();}else if(el.requestFullscreen){el.requestFullscreen();}};
       window.planoCerrarSala=function(){var m=document.getElementById('plano-sala-modal');if(m)m.style.display='none';};
-      window.planoImprimirRotulo=function(aid){ if(aid) window.open('/planta/rotulo-estado/'+aid,'_blank'); };
+      window.planoImprimirRotulo=function(aid){ if(aid) window.open('/planta/rotulo-limpieza/'+aid+'/pdf','_blank'); };
       window.planoFinalizar=function(pid){planoCerrarSala();if(window.finalizarFabVivo){var pr=window.finalizarFabVivo(pid);if(pr&&pr.then){pr.then(function(){setTimeout(window.cargarPlanoGrid,500);});}else{setTimeout(window.cargarPlanoGrid,900);}}};
       window.planoIrLimpieza=function(){planoCerrarSala();var b=document.querySelector('.sub-btn[onclick*="rotuloslimp"]');if(b)b.click();};
       window.planoIniciarAqui=function(aid){planoCerrarSala();var b=document.querySelector('.sub-btn[onclick*="produccion"]');if(b)b.click();setTimeout(function(){var s=document.getElementById('prod-area');if(s)s.value=aid;},600);};
@@ -1095,9 +1094,9 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         if(p){ h+='<div style="font-size:14px;line-height:1.7;color:#334155">&#129514; <b>'+_esc2(p.producto||'')+'</b>'+(p.kg?(' · '+p.kg+' kg'):'')+(p.operario?('<br>&#128100; '+_esc2(p.operario)):'')+(p.mins!=null?('<br>&#9201; '+_elapsed(p.mins)+' corriendo'):'')+'</div>'; }
         h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">';
         if(p){ if(p.vivo){ h+='<button onclick="planoFinalizarVivo('+(a.id||0)+')" style="flex:1 1 100%;padding:10px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">&#127937; Finalizar '+_esc2(p.fase||'envasado')+'</button>'; } else { h+='<button onclick="planoFinalizar('+p.id+')" style="flex:1 1 100%;padding:10px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">&#127937; Finalizar producción</button>'; } }
-        if(e==='sucia'||e==='limpiando'){ h+='<button onclick="planoIrLimpieza()" style="flex:1 1 100%;padding:10px;background:#7c3aed;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">&#127991;&#65039; Registrar limpieza</button>'; }
+        if(e==='sucia'||e==='limpiando'){ h+='<button onclick="planoCerrarSala();abrirRotulo('+(a.id||0)+')" style="flex:1 1 100%;padding:10px;background:#7c3aed;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">'+(e==='limpiando'?'&#10003; Verificar limpieza (Calidad)':'&#129529; Registrar limpieza')+'</button>'; }
         if(e==='libre'){ h+='<button onclick="planoIniciarAqui('+(a.id||0)+')" style="flex:1 1 100%;padding:10px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">&#9654; Iniciar fabricación aquí</button>'; }
-        h+='<button onclick="planoImprimirRotulo('+(a.id||0)+')" style="flex:1 1 100%;padding:9px;background:#0f766e;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">&#128424;&#65039; Imprimir rótulo de estado</button>';
+        h+='<button onclick="planoImprimirRotulo('+(a.id||0)+')" style="flex:1 1 100%;padding:9px;background:#0f766e;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">&#128424;&#65039; Imprimir rótulo (F02)</button>';
         h+='<button onclick="planoCerrarSala()" style="flex:1;padding:9px;background:#fff;color:#475569;border:1px solid #cbd5e1;border-radius:8px;font-weight:700;cursor:pointer">Cerrar</button>';
         h+='</div>';
         b.innerHTML=h; m.style.display='flex';
@@ -1273,7 +1272,8 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <button onclick="iniciarFabVivo()" style="background:#16a34a;font-weight:800;padding:11px 24px;font-size:14px;">&#9654; Iniciar fabricación</button>
       <button onclick="simularProduccion()" style="background:#6c5ce7;">&#128269; Verificar Stock</button>
       <button onclick="iniciarRegistroProd()" style="display:none">&#9989; Registrar Producción</button>
-      <button onclick="abrirRotulos()" style="background:#c0392b;">&#128209; Generar Rótulos</button>
+      <button onclick="abrirRotulos()" style="background:#c0392b;">&#128209; Rótulos de MP</button>
+      <button onclick="subSwitchTab('rotuloslimp',this,'bar-prodHub');cargarRotulosLimp()" style="background:#7c3aed;" title="Estado de limpieza de áreas/equipos · registrar/verificar limpieza + imprimir rótulo F02 (ya no es pestaña aparte)">&#127991;&#65039; Rótulos de limpieza</button>
       <!-- 4-jun-2026 · removidos "Diagnosticar fórmula" y "Reparar TODAS las
            fórmulas huérfanas" (herramientas de estabilización · ya las cubre el
            cron diario salud-cruce + el auto-reparar-huérfanas). -->
