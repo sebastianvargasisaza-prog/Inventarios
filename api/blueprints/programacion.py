@@ -17554,9 +17554,12 @@ def plano_fabricacion_data():
             conn.rollback()
         except Exception:
             pass
+    # ?todas=1 → TODAS las áreas activas (para el plano esquemático en vivo · Sebastián 24-jun),
+    # no solo las de fabricación. Sin el param, comportamiento original (solo puede_producir).
+    _filtro_areas = _act if request.args.get('todas') else f"{_act} AND {_prod}"
     areas = c.execute(
         f"SELECT id, codigo, nombre, COALESCE(estado,'libre'), COALESCE(marmita_ml,0) "
-        f"FROM areas_planta WHERE {_act} AND {_prod} ORDER BY orden, codigo").fetchall()
+        f"FROM areas_planta WHERE {_filtro_areas} ORDER BY orden, codigo").fetchall()
     out = []
     for a in areas:
         prod = c.execute(

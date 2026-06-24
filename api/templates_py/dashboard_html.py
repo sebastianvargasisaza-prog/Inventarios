@@ -951,49 +951,76 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
 
   <div id="plano" class="tab-content">
     <h2>&#128506;&#65039; Plano de Planta — en vivo</h2>
-    <p style="color:#666;margin-bottom:10px">Espejo en tiempo real sobre el plano real de la planta. <b style="color:#16a34a">Verde</b>=libre · <b style="color:#d97706">Ámbar</b>=ocupada · <b style="color:#dc2626">Rojo</b>=sucia. Se actualiza solo cada 20s.</p>
-    <div id="plano-wrap" style="position:relative;max-width:920px;margin:0 auto 18px">
-      <img src="/planta/plano-imagen.png" alt="Plano general de la planta" style="width:100%;display:block;border:1px solid #ddd;border-radius:10px">
-      <div id="plano-markers"></div>
-    </div>
-    <div id="plano-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-top:8px">Cargando…</div>
+    <p style="color:#666;margin-bottom:10px">Plano esquemático en vivo · <b style="color:#16a34a">Verde</b>=libre · <b style="color:#d97706">Ámbar</b>=ocupada · <b style="color:#dc2626">Rojo</b>=sucia · <b style="color:#0ea5e9">Azul</b>=en limpieza. Se actualiza solo cada 20s.</p>
+    <div id="plano-mapa" style="position:relative;width:100%;max-width:1000px;margin:0 auto 16px;aspect-ratio:1000/640;min-height:380px;background:#fafafa;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden">Cargando…</div>
+    <div id="plano-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-top:8px"></div>
     <script>
     (function(){
+      // Plano esquemático dibujado · coords en % del contenedor · cod=null → sala de contexto (gris).
+      var ROOMS=[
+        {l:1.5,t:2,w:17,h:11,lab:'Recepción Insumos',cod:'RECEP'},
+        {l:19,t:2,w:14,h:11,lab:'Ingreso Mat. Prima',cod:null},
+        {l:33.5,t:2,w:11,h:11,lab:'Esclusa 1',cod:'ESC1'},
+        {l:45,t:2,w:16,h:11,lab:'Dispensación',cod:'DISP'},
+        {l:61.5,t:2,w:18,h:11,lab:'Almac. Mat. Prima',cod:'ALMP'},
+        {l:80,t:2,w:18.5,h:11,lab:'Ingreso cubierta',cod:null},
+        {l:1.5,t:15,w:23.5,h:22,lab:'Fabricación 1',cod:'FAB1'},
+        {l:25.5,t:15,w:23.5,h:22,lab:'Fabricación 2',cod:'FAB2'},
+        {l:49.5,t:15,w:23.5,h:22,lab:'Fabricación 3',cod:'FAB3'},
+        {l:73.5,t:15,w:25,h:22,lab:'Fab. según necesidad',cod:'FAB_FLOAT'},
+        {l:1.5,t:39,w:23.5,h:20,lab:'Envasado 1',cod:'ENV1'},
+        {l:25.5,t:39,w:23.5,h:20,lab:'Envasado 2',cod:'ENV2'},
+        {l:49.5,t:39,w:23.5,h:20,lab:'Acondicionamiento PT',cod:'ACOND'},
+        {l:73.5,t:39,w:25,h:20,lab:'Control de Calidad',cod:'CC'},
+        {l:1.5,t:61,w:18,h:15,lab:'Área de Lavado',cod:'LAV'},
+        {l:20,t:61,w:20,h:15,lab:'Almacenamiento PT',cod:'ALMPT'},
+        {l:40.5,t:61,w:17,h:15,lab:'Producto en proceso',cod:null},
+        {l:58,t:61,w:18,h:15,lab:'Rechazado / Devol.',cod:null},
+        {l:76.5,t:61,w:22,h:15,lab:'Material de envase',cod:null},
+        {l:1.5,t:78,w:30,h:13,lab:'Área administrativa',cod:null},
+        {l:32,t:78,w:18,h:13,lab:'Comedor',cod:null},
+        {l:50.5,t:78,w:15,h:13,lab:'Cocineta',cod:null},
+        {l:66,t:78,w:13.5,h:13,lab:'Baños / Lockers',cod:null},
+        {l:80,t:78,w:18.5,h:13,lab:'Ingreso escaleras',cod:null}
+      ];
+      var COL={libre:'#16a34a',ocupada:'#d97706',sucia:'#dc2626',limpiando:'#0ea5e9'};
+      var LBL={libre:'LIBRE',ocupada:'OCUPADA',sucia:'SUCIA',limpiando:'LIMPIANDO'};
+      var TWIN={FAB1:'PROD1',FAB2:'PROD2',FAB3:'PROD3',FAB_FLOAT:'PROD4'};
+      function _pickArea(byCod,cod){
+        var a=byCod[cod]; var t=TWIN[cod]?byCod[TWIN[cod]]:null;
+        if(t&&t.produccion&&!(a&&a.produccion)) return t;
+        if(t&&t.estado&&t.estado!=='libre'&&(!a||a.estado==='libre')) return t;
+        return a||t||null;
+      }
       window.cargarPlanoGrid=async function(){
-        var g=document.getElementById('plano-grid'); if(!g) return;
-        try{
-          var d=await (await fetch('/api/planta/plano-fabricacion',{credentials:'same-origin'})).json();
-          var A=d.areas||[];
-          if(!A.length){g.innerHTML='<div style="grid-column:1/-1;color:#888">No hay áreas de fabricación activas. (Reactivalas en /admin/areas-planta)</div>';return;}
-          var col={libre:'#22c55e',ocupada:'#f59e0b',sucia:'#ef4444',limpiando:'#38bdf8'};
-          var lbl={libre:'LIBRE',ocupada:'OCUPADA',sucia:'SUCIA · a limpiar',limpiando:'EN LIMPIEZA'};
-          var h='';
-          A.forEach(function(a){
-            var e=a.estado||'libre'; var p=a.produccion; var c=col[e]||'#999';
-            h+='<div style="background:#fff;border:1px solid #e5e7eb;border-top:5px solid '+c+';border-radius:12px;padding:14px">';
-            h+='<div style="font-weight:800;font-size:15px;color:#111">'+a.nombre+'</div>';
-            h+='<div style="display:inline-block;margin:6px 0;padding:2px 9px;border-radius:6px;font-size:11px;font-weight:700;background:'+c+'22;color:'+c+'">'+(lbl[e]||e)+'</div>';
-            if(p){h+='<div style="font-size:13px;line-height:1.55;margin-top:4px;color:#333">&#129514; <b>'+p.producto+'</b>'+(p.kg?('<br>'+p.kg+' kg'):'')+(p.operario?('<br>&#128100; '+p.operario):'')+(p.inicio?('<br>&#128337; '+String(p.inicio).slice(11,16)):'')+'</div>';}
-            else{h+='<div style="color:#9ca3af;font-size:13px;margin-top:4px">disponible</div>';}
-            h+='</div>';
-          });
-          g.innerHTML=h;
-          // overlay de markers sobre el plano real (posición % por código de área)
-          var POS={FAB1:{x:33,y:20},FAB2:{x:33,y:39},FAB3:{x:10,y:53},FAB_FLOAT:{x:20,y:52}};
-          var ml=document.getElementById('plano-markers');
-          if(ml){
-            var mh='';
-            A.forEach(function(a){
-              var pos=POS[(a.codigo||'').toUpperCase()]; if(!pos) return;
-              var e=a.estado||'libre'; var p=a.produccion; var c=col[e]||'#999';
-              mh+='<div style="position:absolute;left:'+pos.x+'%;top:'+pos.y+'%;transform:translate(-50%,-50%);z-index:2;text-align:center">';
-              mh+='<div style="background:'+c+';color:#fff;border-radius:8px;padding:3px 9px;font-size:11px;font-weight:800;box-shadow:0 1px 5px rgba(0,0,0,.45);white-space:nowrap;border:2px solid #fff">'+a.nombre+'</div>';
-              if(p){mh+='<div style="background:#fff;border:1px solid '+c+';border-radius:6px;padding:2px 7px;font-size:10px;margin-top:3px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.3);color:#222">&#129514; '+p.producto+(p.operario?(' &middot; &#128100;'+p.operario):'')+'</div>';}
-              mh+='</div>';
-            });
-            ml.innerHTML=mh;
+        var mapa=document.getElementById('plano-mapa'); var g=document.getElementById('plano-grid');
+        if(!mapa) return;
+        var data; try{ data=await (await fetch('/api/planta/plano-fabricacion?todas=1',{credentials:'same-origin'})).json(); }catch(e){ mapa.innerHTML='<div style="padding:20px;color:#b91c1c">Error cargando el plano</div>'; return; }
+        var byCod={}; (data.areas||[]).forEach(function(a){ byCod[(a.codigo||'').toUpperCase()]=a; });
+        var mh=''; var cards='';
+        ROOMS.forEach(function(r){
+          var live=r.cod?_pickArea(byCod,r.cod):null;
+          var e=live?(live.estado||'libre'):null;
+          var c=e?(COL[e]||'#999'):'#cbd5e1';
+          var bg=r.cod?(e?(c+'22'):'#f0fdf4'):'#f1f5f9';
+          mh+='<div title="'+r.lab+(e?(' · '+(LBL[e]||e)):'')+'" style="position:absolute;left:'+r.l+'%;top:'+r.t+'%;width:'+r.w+'%;height:'+r.h+'%;box-sizing:border-box;border:2px solid '+(r.cod?c:'#e2e8f0')+';border-radius:8px;background:'+bg+';padding:4px 6px;overflow:hidden;display:flex;flex-direction:column">';
+          mh+='<div style="font-weight:800;font-size:11px;line-height:1.1;color:'+(r.cod?'#0f172a':'#94a3b8')+'">'+r.lab+'</div>';
+          if(r.cod){
+            mh+='<div style="margin-top:2px;padding:1px 6px;border-radius:5px;font-size:9px;font-weight:800;background:'+c+';color:#fff;align-self:flex-start">'+(LBL[e]||'')+'</div>';
+            if(live&&live.produccion){var p=live.produccion;mh+='<div style="font-size:10px;line-height:1.25;color:#1f2937;margin-top:3px;overflow:hidden">&#129514; <b>'+(p.producto||'')+'</b>'+(p.operario?('<br>&#128100; '+p.operario):'')+(p.inicio?('<br>&#128337; '+String(p.inicio).slice(11,16)):'')+'</div>';}
           }
-        }catch(e){g.innerHTML='<div style="grid-column:1/-1;color:#b91c1c">Error cargando el plano</div>';}
+          mh+='</div>';
+          if(r.cod){
+            cards+='<div style="background:#fff;border:1px solid #e5e7eb;border-top:5px solid '+c+';border-radius:12px;padding:12px">';
+            cards+='<div style="font-weight:800;font-size:14px;color:#111">'+r.lab+'</div>';
+            cards+='<div style="display:inline-block;margin:5px 0;padding:2px 9px;border-radius:6px;font-size:11px;font-weight:700;background:'+c+'22;color:'+c+'">'+(LBL[e]||e||'—')+'</div>';
+            if(live&&live.produccion){var q=live.produccion;cards+='<div style="font-size:13px;line-height:1.5;color:#333">&#129514; <b>'+(q.producto||'')+'</b>'+(q.kg?('<br>'+q.kg+' kg'):'')+(q.operario?('<br>&#128100; '+q.operario):'')+(q.inicio?('<br>&#128337; '+String(q.inicio).slice(11,16)):'')+'</div>';}
+            else{cards+='<div style="color:#9ca3af;font-size:13px">disponible</div>';}
+            cards+='</div>';
+          }
+        });
+        mapa.innerHTML=mh;
+        if(g) g.innerHTML=cards;
       };
       setInterval(function(){var t=document.getElementById('plano');if(t&&t.classList.contains('active'))cargarPlanoGrid();},20000);
     })();
