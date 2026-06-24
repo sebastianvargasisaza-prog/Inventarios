@@ -1144,6 +1144,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         var byCod={}; (data.areas||[]).forEach(function(a){ byCod[(a.codigo||'').toUpperCase()]=a; });
         window._PLANO_LIVE={};
         var sv='<svg viewBox="0 0 838 609" style="width:100%;height:auto;display:block;background:#fbfbf9">';
+        sv+='<polygon points="36,40 722,40 722,87 760,53 793,576 700,562 700,587 33,587 33,40" fill="none" stroke="#2a2a2a" stroke-width="2.6" stroke-linejoin="round"/>';
         POLYS.forEach(function(pp){ sv+='<polygon points="'+pp.pts+'" fill="none" stroke="'+WALL+'" stroke-width="0.9"/>'; });
         var cards=''; var cnt={libre:0,ocupada:0,sucia:0,limpiando:0}; var totKg=0; var nLate=0; var LATE=480;
         ROOMS.forEach(function(r){
