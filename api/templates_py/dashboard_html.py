@@ -1246,8 +1246,8 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <label>Operario que fabrica (para sistema en vivo)</label>
       <select id="prod-operario"><option value="">-- opcional --</option></select>
     </div>
-    <div class="form-group">
-      <label>N° de Lote (opcional · si lo dejas vacío se genera automático)</label>
+    <div class="form-group" style="display:none">
+      <label>N° de Lote (automático)</label>
       <input type="text" id="prod-lote" placeholder="Ej: 261561">
     </div>
     <div id="prod-preview" style="background:#f0f8ff;border:1px solid #b8d4f0;border-radius:8px;padding:14px;margin-bottom:14px;display:none;">
@@ -1268,9 +1268,9 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     </div>
     <div class="form-group"><label>Observaciones</label><textarea id="prod-obs" rows="2" placeholder="Opcional"></textarea></div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <button onclick="iniciarFabVivo()" style="background:#16a34a;font-weight:700;">&#9654; Iniciar fabricación (en vivo)</button>
+      <button onclick="iniciarFabVivo()" style="background:#16a34a;font-weight:800;padding:11px 24px;font-size:14px;">&#9654; Iniciar fabricación</button>
       <button onclick="simularProduccion()" style="background:#6c5ce7;">&#128269; Verificar Stock</button>
-      <button onclick="iniciarRegistroProd()">&#9989; Registrar Producción</button>
+      <button onclick="iniciarRegistroProd()" style="display:none">&#9989; Registrar Producción</button>
       <button onclick="abrirRotulos()" style="background:#c0392b;">&#128209; Generar Rótulos</button>
       <!-- 4-jun-2026 · removidos "Diagnosticar fórmula" y "Reparar TODAS las
            fórmulas huérfanas" (herramientas de estabilización · ya las cubre el
