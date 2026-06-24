@@ -970,6 +970,8 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <button onclick="abrirIniciarVivo('envasado')" style="padding:6px 14px;background:#1a4a7a;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer">&#128230; Envasado</button>
       <button onclick="abrirIniciarVivo('acondicionamiento')" style="padding:6px 14px;background:#0d47a1;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer">&#128295; Acondicionamiento</button>
       <span style="font-size:11px;color:#94a3b8">(o tocá una sala libre en el plano)</span>
+      <button onclick="simularFlujoPlanta()" title="Corre una demo completa: inicia una fabricación, la ves ocupada en el plano, y se finaliza sola → el bulk va a Envasado" style="margin-left:auto;padding:6px 14px;background:#7c3aed;color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer">&#129514; Ver simulacro</button>
+      <button onclick="limpiarSimulacro()" title="Borra los datos del simulacro y libera las áreas" style="padding:6px 12px;background:#fff;color:#64748b;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer">&#129529; Limpiar</button>
     </div>
     <div id="plano-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-top:8px"></div>
     <div id="plano-sala-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:9000;align-items:center;justify-content:center" onclick="if(event.target===this)planoCerrarSala()">
@@ -1101,6 +1103,36 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       async function _planoCsrf(){try{return (await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json()).csrf_token;}catch(e){return '';}}
       function _planoPost(url,body,t){return fetch(url,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(body)});}
       window.planoFinalizarVivo=async function(aid){planoCerrarSala();var t=await _planoCsrf();try{await _planoPost('/api/planta/area/liberar-vivo',{area_id:aid},t);}catch(e){}setTimeout(window.cargarPlanoGrid,400);};
+      window.simularFlujoPlanta=async function(){
+        if(!confirm('SIMULACRO: voy a INICIAR una fabricación de demostración en un área libre — la vas a ver 🟠 ocupada en el plano — y en ~7s la FINALIZO (queda 🔴 sucia y el bulk va solo a Envasado). ¿Arranco?')) return;
+        var t=await _planoCsrf();
+        var areas=((await (await fetch('/api/planta/areas',{credentials:'same-origin'})).json()).areas)||[];
+        var seen={}, libre=null;
+        areas.filter(function(a){return a.puede_producir && String(a.estado||'libre').toLowerCase()==='libre';}).forEach(function(a){var k=(a.nombre||'').toLowerCase();if(!seen[k]){seen[k]=1;if(!libre)libre=a;}});
+        if(!libre){ alert('No hay un área de fabricación LIBRE para el simulacro. Liberá una (o dale 🧹 Limpiar).'); return; }
+        var r=await _planoPost('/api/planta/fabricacion/crear-iniciar',{producto:'🧪 SIMULACRO Demo',area_id:libre.id,cantidad_kg:10,presentacion:'30ml'},t);
+        var d=await r.json();
+        if(d&&d.error){ alert('No se pudo iniciar el simulacro: '+d.error); return; }
+        await cargarPlanoGrid();
+        alert('▶ Simulacro INICIADO en "'+libre.nombre+'". Mirá el plano: esa sala está 🟠 ocupada con producto + operario + ⏱️ tiempo. Dale OK y en ~7s la finalizo.');
+        setTimeout(async function(){
+          var pl=((await (await fetch('/api/planta/plano-fabricacion?todas=1',{credentials:'same-origin'})).json()).areas)||[];
+          var ar=pl.filter(function(a){return a.produccion && String(a.produccion.producto||'').indexOf('SIMULACRO')>=0 && a.produccion.id;})[0];
+          if(!ar){ await cargarPlanoGrid(); return; }
+          var t2=await _planoCsrf();
+          var rf=await _planoPost('/api/programacion/programar/'+ar.produccion.id+'/terminar',{kg_real:9.6},t2);
+          var df=await rf.json();
+          await cargarPlanoGrid();
+          alert('🏁 Simulacro FINALIZADO. La sala quedó 🔴 sucia y el bulk «🧪 SIMULACRO Demo» (lote '+(df.bulk_lote||'auto')+' · 30ml) ya está en la cola de ENVASADO. Andá a Producción → Envasado para verlo. Después dale 🧹 Limpiar simulacro.');
+        }, 7000);
+      };
+      window.limpiarSimulacro=async function(){
+        if(!confirm('¿Borrar los datos del SIMULACRO (producción demo + bulk en envasado) y liberar las áreas?')) return;
+        var t=await _planoCsrf();
+        var d=await (await _planoPost('/api/planta/simulacro/limpiar',{},t)).json();
+        await cargarPlanoGrid();
+        alert('🧹 Simulacro limpiado · '+(d.pp_borradas||0)+' demo + '+(d.bulk_borradas||0)+' bulk borrados · '+(d.areas_liberadas||0)+' áreas liberadas.');
+      };
       window.abrirIniciarVivo=async function(fase){
         var m=document.getElementById('vivo-modal'); if(!m) return;
         fase=fase||'envasado';

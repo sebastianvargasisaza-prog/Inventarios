@@ -17746,6 +17746,30 @@ def fabricaciones_recientes():
     return jsonify({'ok': True, 'items': out})
 
 
+@bp.route('/api/planta/simulacro/limpiar', methods=['POST'])
+def simulacro_limpiar():
+    """Borra los datos de SIMULACRO (demo · Sebastián 24-jun) · produccion_programada + producciones
+    + ocupaciones-vivo marcadas 'SIMULACRO' y libera las áreas. Reversible-by-design (solo demo)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+    aids = [r[0] for r in c.execute(
+        "SELECT DISTINCT area_id FROM produccion_programada "
+        "WHERE area_id IS NOT NULL AND UPPER(COALESCE(producto,'')) LIKE '%SIMULACRO%'").fetchall()]
+    n1 = c.execute("DELETE FROM produccion_programada WHERE UPPER(COALESCE(producto,'')) LIKE '%SIMULACRO%'").rowcount
+    n2 = c.execute("DELETE FROM producciones WHERE UPPER(COALESCE(producto,'')) LIKE '%SIMULACRO%'").rowcount
+    for aid in aids:
+        c.execute("UPDATE areas_planta SET estado='libre', ocup_producto=NULL, ocup_operario=NULL, "
+                  "ocup_inicio=NULL, ocup_fase=NULL WHERE id=?", (aid,))
+    c.execute("UPDATE areas_planta SET estado='libre', ocup_producto=NULL, ocup_operario=NULL, "
+              "ocup_inicio=NULL, ocup_fase=NULL WHERE UPPER(COALESCE(ocup_producto,'')) LIKE '%SIMULACRO%'")
+    audit_log(c, usuario=user, accion='SIMULACRO_LIMPIAR', tabla='produccion_programada',
+              registro_id='0', despues={'pp_borradas': n1, 'bulk_borradas': n2, 'areas': aids})
+    conn.commit()
+    return jsonify({'ok': True, 'pp_borradas': n1, 'bulk_borradas': n2, 'areas_liberadas': len(aids)})
+
+
 @bp.route('/api/planta/fabricacion/reactivar-areas', methods=['POST'])
 def fabricacion_reactivar_areas():
     """Reactiva las áreas de fabricación (puede_producir truthy, NO los PROD-duplicados) que
