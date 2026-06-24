@@ -271,6 +271,7 @@ async function cxIAPreguntar(pregunta){
     <button class="tn"      data-tab="consol" id="tn-consol" title="OCs activas (Borrador/Revisada/Autorizada) agrupadas por proveedor">📦 OCs Activas <span style="font-size:9px;background:#cbd5e1;color:#475569;padding:1px 5px;border-radius:6px;margin-left:2px;font-weight:600">activas</span></button>
     <button class="tn"      data-tab="por-pagar" id="tn-por-pagar" title="Pendientes · OCs autorizadas sin pagar">💰 Por Pagar</button>
     <button class="tn"      data-tab="pagos" id="tn-pagos" title="Histórico · pagos ya ejecutados">💸 Pagos</button>
+    <button class="tn"      data-tab="historico" id="tn-historico" title="Histórico · TODO lo que se ha pedido (todas las OCs, cualquier estado · buscable)">📜 Histórico</button>
     <button class="tn"      data-tab="facprov" id="tn-facprov" title="Libro de facturas de proveedor · cuentas por pagar formales con retenciones, vencimiento y saldos">🧾 Facturas <span id="facprov-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <button class="tn"      data-tab="atrasadas" id="tn-atrasadas" title="OCs sin recibir tras lead_time + buffer · Sebastián 23-may">🚨 Atrasadas <span id="atrasadas-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <button class="tn" style="display:none" data-tab="feedneed" id="tn-feedneed" title="Necesidades de compra · materias primas y envases por debajo del mínimo, en un solo lugar">🔔 Necesidades <span id="feedneed-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
@@ -322,6 +323,44 @@ async function cxIAPreguntar(pregunta){
   <div id="dash-chart-wrap"></div>
 </div>
 
+
+<div id="pane-historico" class="pane">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+    <span style="font-weight:800;color:#1e293b;font-size:15px;">&#x1F4DC; Histórico · todo lo que se ha pedido</span>
+    <input type="text" id="q-historico" placeholder="Buscar OC, proveedor, categoría..." oninput="renderHistorico()" style="padding:7px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;min-width:220px">
+    <select id="f-historico-est" onchange="renderHistorico()" style="padding:7px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+      <option value="">Todos los estados</option>
+      <option value="Borrador">Borrador</option><option value="Revisada">Revisada</option>
+      <option value="Autorizada">Autorizada</option><option value="Recibida">Recibida</option>
+      <option value="Parcial">Parcial</option><option value="Pagada">Pagada</option>
+    </select>
+    <button class="btn bp" onclick="loadData().then(renderHistorico)" style="padding:6px 12px;font-size:12px">&#x21BA; Actualizar</button>
+  </div>
+  <div id="historico-body"><div class="empty">Cargando&hellip;</div></div>
+</div>
+<script>
+function renderHistorico(){
+  var wrap=document.getElementById('historico-body'); if(!wrap) return;
+  var q=((document.getElementById('q-historico')||{}).value||'').toLowerCase().trim();
+  var est=((document.getElementById('f-historico-est')||{}).value||'');
+  var _f=function(n){return '$'+(Math.round(n||0)).toLocaleString('es-CO');};
+  var _e=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
+  var list=(typeof OCS!=='undefined'?OCS:[]).filter(function(o){
+    if(est && (o.estado||'')!==est) return false;
+    if(!q) return true;
+    return ((o.numero_oc||'')+' '+(o.proveedor||'')+' '+(o.categoria||'')+' '+(o.observaciones||'')).toLowerCase().indexOf(q)>=0;
+  });
+  list.sort(function(a,b){return String(b.fecha||'').localeCompare(String(a.fecha||''));});
+  var tot=list.reduce(function(s,o){return s+(parseFloat(o.valor_total)||0);},0);
+  var h='<div style="margin:4px 0 10px;color:#475569;font-size:13px"><b>'+list.length+'</b> órdenes · total <b>'+_f(tot)+'</b></div>';
+  if(!list.length){ wrap.innerHTML=h+'<div class="empty">No hay órdenes que coincidan.</div>'; return; }
+  h+='<table style="width:100%;border-collapse:collapse;font-size:13px"><tr style="text-align:left;color:#6d28d9"><th style="padding:6px 8px">N° OC</th><th style="padding:6px 8px">Fecha</th><th style="padding:6px 8px">Proveedor</th><th style="padding:6px 8px">Categoría</th><th style="padding:6px 8px">Estado</th><th style="padding:6px 8px;text-align:right">Valor</th></tr>';
+  list.forEach(function(o){
+    h+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 8px;font-weight:700">'+_e(o.numero_oc)+'</td><td style="padding:6px 8px">'+_e(String(o.fecha||'').slice(0,10))+'</td><td style="padding:6px 8px">'+_e(o.proveedor)+'</td><td style="padding:6px 8px">'+_e(o.categoria||'—')+'</td><td style="padding:6px 8px">'+_e(o.estado)+'</td><td style="padding:6px 8px;text-align:right">'+_f(parseFloat(o.valor_total)||0)+'</td></tr>';
+  });
+  wrap.innerHTML=h+'</table>';
+}
+</script>
 
 <div id="pane-pagos" class="pane">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
@@ -654,6 +693,7 @@ async function cxIAPreguntar(pregunta){
       <span style="font-weight:700;color:#1e293b;font-size:15px;">&#x1F4E6; Órdenes de compra activas · agrupadas por proveedor</span>
       <div style="font-size:11px;color:#64748b;margin-top:2px">OCs ya creadas (Borrador / Revisada / Autorizada) · NO la cola de SOLs pendientes (esa va en tab "🏭 Planta")</div>
     </div>
+    <button class="btn bp" onclick="openNuevaOCMP()" style="background:#16a34a;color:#fff;font-weight:800;padding:8px 18px;font-size:14px;border:none;border-radius:7px;cursor:pointer" title="Crear una orden de compra nueva · MP existente (cruza stock + refleja precio en planta) o MP nueva, proveedor → autorizar al crear va directo a Por Pagar">&#10133; Crear OC</button>
     <div style="display:flex;gap:8px;margin-left:auto;align-items:center;flex-wrap:wrap;">
       <label style="font-size:12px;color:#64748b;">Estados:</label>
       <label style="font-size:12px;"><input type="checkbox" class="consol-est" value="Borrador" checked> Borrador</label>
@@ -1520,7 +1560,7 @@ window._cxTabToGrp = {
   'planta':'entradas', 'solic':'entradas', 'solprod':'entradas',
   'influencer':'entradas',  // por compat · aunque oculto
   // OCs y Pagos
-  'consol':'ocs', 'por-pagar':'ocs', 'pagos':'ocs', 'ordserv':'ocs',
+  'consol':'ocs', 'por-pagar':'ocs', 'pagos':'ocs', 'historico':'ocs', 'ordserv':'ocs',
   'atrasadas':'ocs', 'discrep':'ocs', 'mailbox':'ocs',
   // Maestros
   'prov':'maestros',
@@ -1560,6 +1600,7 @@ document.querySelectorAll('.tn').forEach(function(btn){
     else if(tab==='influencer') loadInfluencers();
     else if(tab==='consol') loadConsolidado();
     else if(tab==='pagos'){ loadPagos(); }
+    else if(tab==='historico'){ renderHistorico(); }
     else if(tab==='por-pagar'){ loadPorPagar(); }
     else if(tab==='atrasadas'){ cargarOcsAtrasadas(); }
     else if(tab==='discrep'){ cargarDiscrepancias(); }
