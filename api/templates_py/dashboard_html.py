@@ -952,39 +952,64 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   <div id="plano" class="tab-content">
     <h2>&#128506;&#65039; Plano de Planta — en vivo</h2>
     <p style="color:#666;margin-bottom:10px">Plano esquemático en vivo · <b style="color:#16a34a">Verde</b>=libre · <b style="color:#d97706">Ámbar</b>=ocupada · <b style="color:#dc2626">Rojo</b>=sucia · <b style="color:#0ea5e9">Azul</b>=en limpieza. Se actualiza solo cada 20s.</p>
-    <div id="plano-mapa" style="position:relative;width:100%;max-width:1000px;margin:0 auto 16px;aspect-ratio:1000/640;min-height:380px;background:#fafafa;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden">Cargando…</div>
+    <div id="plano-mapa" style="width:100%;max-width:1040px;margin:0 auto 16px;background:#1a1d21;border:1px solid #2a2e33;border-radius:14px;padding:10px;overflow:hidden">Cargando…</div>
     <div id="plano-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-top:8px"></div>
     <script>
     (function(){
       // Plano esquemático dibujado · coords en % del contenedor · cod=null → sala de contexto (gris).
+      // Plano REAL de la planta (diseño de Sebastián · coords del SVG · cod = área con estado en vivo).
       var ROOMS=[
-        {l:1.5,t:2,w:17,h:11,lab:'Recepción Insumos',cod:'RECEP'},
-        {l:19,t:2,w:14,h:11,lab:'Ingreso Mat. Prima',cod:null},
-        {l:33.5,t:2,w:11,h:11,lab:'Esclusa 1',cod:'ESC1'},
-        {l:45,t:2,w:16,h:11,lab:'Dispensación',cod:'DISP'},
-        {l:61.5,t:2,w:18,h:11,lab:'Almac. Mat. Prima',cod:'ALMP'},
-        {l:80,t:2,w:18.5,h:11,lab:'Ingreso cubierta',cod:null},
-        {l:1.5,t:15,w:23.5,h:22,lab:'Fabricación 1',cod:'FAB1'},
-        {l:25.5,t:15,w:23.5,h:22,lab:'Fabricación 2',cod:'FAB2'},
-        {l:49.5,t:15,w:23.5,h:22,lab:'Fabricación 3',cod:'FAB3'},
-        {l:73.5,t:15,w:25,h:22,lab:'Fab. según necesidad',cod:'FAB_FLOAT'},
-        {l:1.5,t:39,w:23.5,h:20,lab:'Envasado 1',cod:'ENV1'},
-        {l:25.5,t:39,w:23.5,h:20,lab:'Envasado 2',cod:'ENV2'},
-        {l:49.5,t:39,w:23.5,h:20,lab:'Acondicionamiento PT',cod:'ACOND'},
-        {l:73.5,t:39,w:25,h:20,lab:'Control de Calidad',cod:'CC'},
-        {l:1.5,t:61,w:18,h:15,lab:'Área de Lavado',cod:'LAV'},
-        {l:20,t:61,w:20,h:15,lab:'Almacenamiento PT',cod:'ALMPT'},
-        {l:40.5,t:61,w:17,h:15,lab:'Producto en proceso',cod:null},
-        {l:58,t:61,w:18,h:15,lab:'Rechazado / Devol.',cod:null},
-        {l:76.5,t:61,w:22,h:15,lab:'Material de envase',cod:null},
-        {l:1.5,t:78,w:30,h:13,lab:'Área administrativa',cod:null},
-        {l:32,t:78,w:18,h:13,lab:'Comedor',cod:null},
-        {l:50.5,t:78,w:15,h:13,lab:'Cocineta',cod:null},
-        {l:66,t:78,w:13.5,h:13,lab:'Baños / Lockers',cod:null},
-        {l:80,t:78,w:18.5,h:13,lab:'Ingreso escaleras',cod:null}
+        {id:'lavado_ut',lab:'Lavado de utensilios',x:38,y:42,w:167,h:108,fs:8},
+        {id:'ducha1',lab:'Ducha',x:38,y:150,w:167,h:47,fs:8},
+        {id:'alm_mp',lab:'Almacenamiento materia prima',x:38,y:205,w:180,h:95,fs:7,cod:'ALMP'},
+        {id:'utens_aseo',lab:'Utensilios de aseo',x:218,y:205,w:27,h:150,fs:5.6,rot:-90},
+        {id:'prod3',lab:'Producción 3 líquido semisólido',x:38,y:300,w:262,h:140,fs:8,cod:'FAB3'},
+        {id:'lav_excl3',lab:'Lavado exclusa 3',x:300,y:355,w:100,h:85,fs:7,cod:'LAV'},
+        {id:'excl1',lab:'Exclusa 1',x:205,y:42,w:115,h:48,fs:7.5,cod:'ESC1'},
+        {id:'epp',lab:'EPP',x:205,y:90,w:22,h:115,fs:5,rot:-90},
+        {id:'zona_disp',lab:'Zona de dispensación',x:227,y:90,w:93,h:115,fs:7,cod:'DISP'},
+        {id:'ing_mp',lab:'Ingreso materia prima',x:320,y:42,w:110,h:48,fs:6.2},
+        {id:'escalera',lab:'Escalera',x:430,y:42,w:110,h:48,fs:7.5},
+        {id:'ing_cub',lab:'Ingreso cubierta',x:540,y:42,w:180,h:48,fs:7.5},
+        {id:'prod1',lab:'Producción 1 líquido semisólido',x:320,y:90,w:110,h:115,fs:7,cod:'FAB1'},
+        {id:'env1',lab:'Envasado 1',x:430,y:90,w:110,h:115,fs:7.5,cod:'ENV1'},
+        {id:'prod_proc',lab:'Producto en proceso',x:540,y:90,w:110,h:95,fs:7},
+        {id:'acond',lab:'Acondicionamiento de producto terminado',x:650,y:90,w:70,h:140,fs:6,cod:'ACOND'},
+        {id:'pasillo',lab:'Pasillo gris',x:245,y:205,w:335,h:33,fs:7.5},
+        {id:'excl2',lab:'Exclusa 2',x:580,y:205,w:70,h:45,fs:6.5},
+        {id:'prod2',lab:'Producción 2 líquido semisólido',x:320,y:238,w:135,h:82,fs:7,cod:'FAB2'},
+        {id:'env2',lab:'Envasado 2',x:455,y:238,w:95,h:82,fs:7,cod:'ENV2'},
+        {id:'cc',lab:'Control de calidad',x:550,y:238,w:100,h:82,fs:7,cod:'CC'},
+        {id:'rechazado',lab:'Rechazado',x:650,y:230,w:70,h:50,fs:6.5},
+        {id:'devol',lab:'Devoluciones',x:650,y:280,w:70,h:50,fs:6.2},
+        {id:'muestras',lab:'Muestras de retención',x:650,y:330,w:70,h:85,fs:6},
+        {id:'alm_pt',lab:'Almacenamiento producto terminado',x:550,y:320,w:100,h:120,fs:6.4,cod:'ALMPT'},
+        {id:'comedor',lab:'Comedor',x:340,y:450,w:130,h:80,fs:8},
+        {id:'ing_esc',lab:'Ingreso escaleras',x:340,y:530,w:130,h:55,fs:7},
+        {id:'cocineta',lab:'Cocineta',x:470,y:450,w:80,h:135,fs:7},
+        {id:'ac',lab:'AC',x:35,y:445,w:95,h:85,fs:8},
+        {id:'lockers',lab:'Lockers',x:175,y:440,w:185,h:85,fs:8},
+        {id:'ingreso',lab:'Ingreso',x:95,y:525,w:280,h:23,fs:7},
+        {id:'aseo',lab:'Aseo',x:35,y:525,w:60,h:23,fs:6},
+        {id:'bano1',lab:'Baño',x:35,y:548,w:75,h:37,fs:7},
+        {id:'bano2',lab:'Baño',x:110,y:548,w:90,h:37,fs:7},
+        {id:'ducha2',lab:'Ducha',x:200,y:548,w:35,h:37,fs:5,rot:-90},
+        {id:'utb',lab:'UTB',x:375,y:525,w:65,h:60,fs:7.5},
+        {id:'recep',lab:'Recepción mat. envase y empaque',x:550,y:440,w:150,h:30,fs:5.6,cod:'RECEP'},
+        {id:'mat_env1',lab:'Material de envase',x:550,y:470,w:150,h:115,fs:8}
+      ];
+      var POLYS=[
+        {lab:'Área administrativa',pts:'320,310 550,310 550,450 400,450 400,355 320,355',cx:435,cy:333,fs:8},
+        {lab:'Material de envase',pts:'720,90 760,55 792,575 700,562',cx:745,cy:330,fs:6.5}
       ];
       var COL={libre:'#16a34a',ocupada:'#d97706',sucia:'#dc2626',limpiando:'#0ea5e9'};
       var LBL={libre:'LIBRE',ocupada:'OCUPADA',sucia:'SUCIA',limpiando:'LIMPIANDO'};
+      var STY={
+        libre:{fill:'#16a34a',op:0.17,stroke:'#22c55e',lbl:'#bbf7d0'},
+        ocupada:{fill:'#d97706',op:0.9,stroke:'#fbbf24',lbl:'#ffffff'},
+        sucia:{fill:'#dc2626',op:0.9,stroke:'#fca5a5',lbl:'#ffffff'},
+        limpiando:{fill:'#0ea5e9',op:0.82,stroke:'#7dd3fc',lbl:'#ffffff'}
+      };
       var TWIN={FAB1:'PROD1',FAB2:'PROD2',FAB3:'PROD3',FAB_FLOAT:'PROD4'};
       function _pickArea(byCod,cod){
         var a=byCod[cod]; var t=TWIN[cod]?byCod[TWIN[cod]]:null;
@@ -992,34 +1017,43 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         if(t&&t.estado&&t.estado!=='libre'&&(!a||a.estado==='libre')) return t;
         return a||t||null;
       }
+      function _esc2(x){return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+      function _wrap(lab,w,fs){var words=String(lab).split(' ');var max=Math.max(1,Math.floor(w/(fs*0.55)));var lines=[],cur='';words.forEach(function(wd){if(((cur+' '+wd).trim()).length<=max){cur=(cur+' '+wd).trim();}else{if(cur)lines.push(cur);cur=wd;}});if(cur)lines.push(cur);return lines.slice(0,3);}
+      function _label(lab,cx,cy,fs,w,rot,color){
+        var lines=rot?[lab]:_wrap(lab,w,fs);var lh=fs*1.06;var y0=cy-(lines.length-1)*lh/2+fs*0.34;
+        var t='<text text-anchor="middle" fill="'+color+'" font-size="'+fs+'" font-weight="600" font-family="system-ui,sans-serif"'+(rot?(' transform="rotate('+rot+' '+cx+' '+cy+')"'):'')+'>';
+        lines.forEach(function(ln,i){t+='<tspan x="'+cx+'" y="'+(y0+i*lh)+'">'+_esc2(ln)+'</tspan>';});
+        return t+'</text>';
+      }
       window.cargarPlanoGrid=async function(){
         var mapa=document.getElementById('plano-mapa'); var g=document.getElementById('plano-grid');
         if(!mapa) return;
-        var data; try{ data=await (await fetch('/api/planta/plano-fabricacion?todas=1',{credentials:'same-origin'})).json(); }catch(e){ mapa.innerHTML='<div style="padding:20px;color:#b91c1c">Error cargando el plano</div>'; return; }
+        var data; try{ data=await (await fetch('/api/planta/plano-fabricacion?todas=1',{credentials:'same-origin'})).json(); }catch(e){ mapa.innerHTML='<div style="padding:20px;color:#f87171">Error cargando el plano</div>'; return; }
         var byCod={}; (data.areas||[]).forEach(function(a){ byCod[(a.codigo||'').toUpperCase()]=a; });
-        var mh=''; var cards='';
+        var sv='<svg viewBox="22 32 786 572" style="width:100%;height:auto;display:block"><rect x="22" y="32" width="786" height="572" fill="#1a1d21"/>';
+        var cards='';
+        POLYS.forEach(function(pp){ sv+='<polygon points="'+pp.pts+'" fill="#262a30" stroke="#454b53" stroke-width="1.4"/>'+_label(pp.lab,pp.cx,pp.cy,pp.fs,130,0,'#c7c5be'); });
         ROOMS.forEach(function(r){
           var live=r.cod?_pickArea(byCod,r.cod):null;
           var e=live?(live.estado||'libre'):null;
-          var c=e?(COL[e]||'#999'):'#cbd5e1';
-          var bg=r.cod?(e?(c+'22'):'#f0fdf4'):'#f1f5f9';
-          mh+='<div title="'+r.lab+(e?(' · '+(LBL[e]||e)):'')+'" style="position:absolute;left:'+r.l+'%;top:'+r.t+'%;width:'+r.w+'%;height:'+r.h+'%;box-sizing:border-box;border:2px solid '+(r.cod?c:'#e2e8f0')+';border-radius:8px;background:'+bg+';padding:4px 6px;overflow:hidden;display:flex;flex-direction:column">';
-          mh+='<div style="font-weight:800;font-size:11px;line-height:1.1;color:'+(r.cod?'#0f172a':'#94a3b8')+'">'+r.lab+'</div>';
+          var st=e?STY[e]:null;
+          var fill=st?st.fill:'#262a30', op=st?st.op:1, stroke=st?st.stroke:'#454b53', lblc=st?st.lbl:'#c7c5be';
+          sv+='<rect x="'+r.x+'" y="'+r.y+'" width="'+r.w+'" height="'+r.h+'" rx="2.5" fill="'+fill+'" fill-opacity="'+op+'" stroke="'+stroke+'" stroke-width="'+(st?1.8:1.3)+'"><title>'+_esc2(r.lab)+(e?(' · '+(LBL[e]||e)):'')+'</title></rect>';
+          var cx=r.x+r.w/2, cy=r.y+r.h/2, hasP=live&&live.produccion;
+          sv+=_label(r.lab,cx,(hasP?cy-r.h*0.20:cy),r.fs,r.w,r.rot||0,lblc);
+          if(hasP){var p=live.produccion;sv+='<text text-anchor="middle" font-family="system-ui,sans-serif" fill="#fff" font-size="'+(r.fs*0.85)+'" font-weight="700"><tspan x="'+cx+'" y="'+(cy+r.h*0.10)+'">'+_esc2(String(p.producto||'').slice(0,18))+'</tspan>'+(p.operario?('<tspan x="'+cx+'" y="'+(cy+r.h*0.10+r.fs)+'">&#128100; '+_esc2(String(p.operario).slice(0,16))+'</tspan>'):'')+(p.inicio?('<tspan x="'+cx+'" y="'+(cy+r.h*0.10+r.fs*2)+'">&#128337; '+_esc2(String(p.inicio).slice(11,16))+'</tspan>'):'')+'</text>';}
           if(r.cod){
-            mh+='<div style="margin-top:2px;padding:1px 6px;border-radius:5px;font-size:9px;font-weight:800;background:'+c+';color:#fff;align-self:flex-start">'+(LBL[e]||'')+'</div>';
-            if(live&&live.produccion){var p=live.produccion;mh+='<div style="font-size:10px;line-height:1.25;color:#1f2937;margin-top:3px;overflow:hidden">&#129514; <b>'+(p.producto||'')+'</b>'+(p.operario?('<br>&#128100; '+p.operario):'')+(p.inicio?('<br>&#128337; '+String(p.inicio).slice(11,16)):'')+'</div>';}
-          }
-          mh+='</div>';
-          if(r.cod){
-            cards+='<div style="background:#fff;border:1px solid #e5e7eb;border-top:5px solid '+c+';border-radius:12px;padding:12px">';
-            cards+='<div style="font-weight:800;font-size:14px;color:#111">'+r.lab+'</div>';
-            cards+='<div style="display:inline-block;margin:5px 0;padding:2px 9px;border-radius:6px;font-size:11px;font-weight:700;background:'+c+'22;color:'+c+'">'+(LBL[e]||e||'—')+'</div>';
-            if(live&&live.produccion){var q=live.produccion;cards+='<div style="font-size:13px;line-height:1.5;color:#333">&#129514; <b>'+(q.producto||'')+'</b>'+(q.kg?('<br>'+q.kg+' kg'):'')+(q.operario?('<br>&#128100; '+q.operario):'')+(q.inicio?('<br>&#128337; '+String(q.inicio).slice(11,16)):'')+'</div>';}
+            var cc=e?COL[e]:'#94a3b8';
+            cards+='<div style="background:#fff;border:1px solid #e5e7eb;border-top:5px solid '+cc+';border-radius:12px;padding:12px">';
+            cards+='<div style="font-weight:800;font-size:14px;color:#111">'+_esc2(r.lab)+'</div>';
+            cards+='<div style="display:inline-block;margin:5px 0;padding:2px 9px;border-radius:6px;font-size:11px;font-weight:700;background:'+cc+'22;color:'+cc+'">'+(LBL[e]||e||'—')+'</div>';
+            if(hasP){var q=live.produccion;cards+='<div style="font-size:13px;line-height:1.5;color:#333">&#129514; <b>'+_esc2(q.producto||'')+'</b>'+(q.kg?('<br>'+q.kg+' kg'):'')+(q.operario?('<br>&#128100; '+_esc2(q.operario)):'')+(q.inicio?('<br>&#128337; '+String(q.inicio).slice(11,16)):'')+'</div>';}
             else{cards+='<div style="color:#9ca3af;font-size:13px">disponible</div>';}
             cards+='</div>';
           }
         });
-        mapa.innerHTML=mh;
+        sv+='</svg>';
+        mapa.innerHTML=sv;
         if(g) g.innerHTML=cards;
       };
       setInterval(function(){var t=document.getElementById('plano');if(t&&t.classList.contains('active'))cargarPlanoGrid();},20000);
