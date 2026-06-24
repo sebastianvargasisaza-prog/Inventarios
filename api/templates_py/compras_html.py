@@ -306,6 +306,7 @@ async function cxIAPreguntar(pregunta){
   <div id="dash-kpis-grandes" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:14px"></div>
   <div id="dash-alertas-banner" style="margin-bottom:10px"></div>
   <div id="dash-home-2" style="margin-bottom:14px"></div>
+  <div id="dash-consumos-elev" style="margin-bottom:14px"></div>
   <div id="dash-mis-solic-widget" style="margin-bottom:14px"></div>
   <!-- Fallback legacy widgets (oculto por default · solo si dash-home falla) -->
   <div id="dashboard-ejecutivo" style="display:none"></div>
@@ -2367,6 +2368,7 @@ async function renderDashHome2(){
     }
 
     cont.innerHTML = html;
+    cargarConsumosElevados();
     // Cargar widgets extra (Cash Flow + Predicción) si admin
     if(d.role === 'admin'){
       cargarWidgetsExtra();
@@ -2374,6 +2376,23 @@ async function renderDashHome2(){
   }catch(e){
     cont.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+_esc(e.message)+'</div>';
   }
+}
+// Consumos elevados (gasto que sube) · reusa /api/compras/consumos/tendencia · Catalina + admin
+async function cargarConsumosElevados(){
+  var cont=document.getElementById('dash-consumos-elev'); if(!cont) return;
+  try{
+    var j=await (await fetch('/api/compras/consumos/tendencia?meses=8',{credentials:'same-origin'})).json();
+    var al=(j&&j.alertas)?j.alertas:[];
+    if(!al.length){ cont.innerHTML=''; return; }
+    var _f=function(n){return '$'+(Math.round(n||0)).toLocaleString('es-CO');};
+    var h='<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:12px 16px">'+
+      '<div style="font-weight:800;color:#9a3412;font-size:14px;margin-bottom:6px">&#128200; Consumos elevados <span style="font-size:11px;font-weight:600;color:#b45309">· gasto que subió este mes</span></div>';
+    al.slice(0,5).forEach(function(a){
+      h+='<div style="font-size:13px;color:#7c2d12;padding:3px 0">&#9888;&#65039; <b>'+_esc(a.categoria)+'</b> subió <b>+'+a.variacion_pct+'%</b> ('+_f(a.ultimo)+' vs prom '+_f(a.promedio_previo)+')</div>';
+    });
+    h+='<a href="/compras/consumos" style="font-size:12px;color:#9a3412;font-weight:700">ver tendencia completa &rarr;</a></div>';
+    cont.innerHTML=h;
+  }catch(e){ cont.innerHTML=''; }
 }
 // Gap #4 · widgets Cash Flow + Predicción demanda
 async function cargarWidgetsExtra(){

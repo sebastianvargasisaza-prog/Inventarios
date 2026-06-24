@@ -402,6 +402,47 @@ def centro_notificaciones():
     except Exception:
         pass
 
+    # ── Consumos: gasto que SUBE (alerta CEO · 23-jun · "que el sistema me avise") ──
+    try:
+        from collections import defaultdict as _dd
+        _cats = ('EPP', 'Dotacion', 'Aseo/Limpieza', 'Papeleria/Oficina', 'Oficina',
+                 'Mantenimiento', 'Repuestos', 'Software/Tecnologia', 'Servicios Profesionales',
+                 'Reactivos/Laboratorio', 'Cafeteria', 'Otro')
+        _ph = ','.join('?' for _ in _cats)
+        _rows = c.execute(
+            "SELECT SUBSTR(oc.fecha,1,7) AS mes, "
+            "COALESCE(NULLIF(TRIM(oc.categoria),''),'MP') AS cat, "
+            "ROUND(SUM(COALESCE(oc.valor_total,0)),2) AS g "
+            "FROM ordenes_compra oc "
+            "WHERE LOWER(COALESCE(oc.estado,''))='pagada' "
+            "AND oc.fecha IS NOT NULL AND TRIM(oc.fecha)<>'' "
+            "AND COALESCE(NULLIF(TRIM(oc.categoria),''),'MP') IN (" + _ph + ") "
+            "GROUP BY SUBSTR(oc.fecha,1,7), COALESCE(NULLIF(TRIM(oc.categoria),''),'MP') "
+            "ORDER BY mes", _cats).fetchall()
+        _por = _dd(dict); _meses = set()
+        for _r in _rows:
+            if _r[0]:
+                _por[_r[1]][_r[0]] = float(_r[2] or 0); _meses.add(_r[0])
+        _meses = sorted(_meses)[-8:]
+        for _cat, _sm in _por.items():
+            _serie = [_sm.get(_m, 0.0) for _m in _meses]
+            _ult = _serie[-1] if _serie else 0
+            _prev = [v for v in _serie[:-1] if v > 0]
+            _prom = (sum(_prev) / len(_prev)) if _prev else 0
+            if _prom > 0 and _ult > 0 and (_ult - _prom) / _prom * 100 >= 30:
+                _var = round((_ult - _prom) / _prom * 100, 1)
+                alertas.append({
+                    'severidad': 'media',
+                    'modulo': 'compras',
+                    'icono': '📈',
+                    'titulo': f'Gasto de {_cat} subió +{_var}%',
+                    'detalle': f'${_ult:,.0f} este mes vs ${_prom:,.0f} de promedio',
+                    'link': '/compras/consumos',
+                    'accion': 'Revisar tendencia de consumos',
+                })
+    except Exception:
+        pass
+
     # ── Inventario: lotes vencen en <=7 dias ──
     try:
         hoy = datetime.now().date().isoformat()
