@@ -17571,11 +17571,19 @@ def plano_fabricacion_data():
             "AND COALESCE(pp.fin_real_at,'')='' "
             "AND LOWER(COALESCE(pp.estado,'')) NOT IN ('completado','cancelado') "
             "ORDER BY pp.inicio_real_at DESC LIMIT 1", (a[0],)).fetchone()
+        _mins = None
+        if prod and prod[4]:
+            try:
+                _ini = datetime.fromisoformat(str(prod[4]).replace(' ', 'T')[:19])
+                _mins = max(0, int((datetime.now() - _ini).total_seconds() // 60))
+            except Exception:
+                _mins = None
         out.append({
             'id': a[0], 'codigo': a[1], 'nombre': a[2], 'estado': a[3] or 'libre',
             'capacidad': a[4],
             'produccion': ({'id': prod[0], 'producto': prod[1], 'kg': prod[2],
-                            'lotes': prod[3], 'inicio': prod[4], 'operario': prod[5] or ''}
+                            'lotes': prod[3], 'inicio': prod[4], 'operario': prod[5] or '',
+                            'mins': _mins}
                            if prod else None),
         })
     return jsonify({'ok': True, 'areas': out, 'total': len(out), 'debug': dbg})

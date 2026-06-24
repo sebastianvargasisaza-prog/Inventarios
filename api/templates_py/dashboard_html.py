@@ -951,8 +951,20 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
 
   <div id="plano" class="tab-content">
     <h2>&#128506;&#65039; Plano de Planta — en vivo</h2>
-    <p style="color:#666;margin-bottom:10px">Plano esquemático en vivo · <b style="color:#16a34a">Verde</b>=libre · <b style="color:#d97706">Ámbar</b>=ocupada · <b style="color:#dc2626">Rojo</b>=sucia · <b style="color:#0ea5e9">Azul</b>=en limpieza. Se actualiza solo cada 20s.</p>
-    <div id="plano-mapa" style="width:100%;max-width:1040px;margin:0 auto 16px;background:#1a1d21;border:1px solid #2a2e33;border-radius:14px;padding:10px;overflow:hidden">Cargando…</div>
+    <style>@keyframes planoPulse{0%{box-shadow:0 0 0 0 rgba(22,163,74,.55)}70%{box-shadow:0 0 0 7px rgba(22,163,74,0)}100%{box-shadow:0 0 0 0 rgba(22,163,74,0)}}#plano-mapa:fullscreen{background:#fbfbf9;display:flex;align-items:center;justify-content:center;padding:18px}</style>
+    <div id="plano-toolbar" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;max-width:1040px;margin:0 auto 8px">
+      <span style="display:flex;align-items:center;gap:7px;font-weight:800;color:#0f172a;font-size:13px"><span style="width:9px;height:9px;border-radius:50%;background:#16a34a;animation:planoPulse 1.6s infinite"></span>EN VIVO</span>
+      <span id="plano-resumen" style="display:flex;gap:6px;flex-wrap:wrap;font-size:12px"></span>
+      <span style="margin-left:auto;display:flex;gap:11px;align-items:center;font-size:11px;color:#64748b;flex-wrap:wrap">
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#16a34a;opacity:.5;vertical-align:middle"></span> libre</span>
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#d97706;vertical-align:middle"></span> ocupada</span>
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#dc2626;vertical-align:middle"></span> sucia</span>
+        <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#0ea5e9;vertical-align:middle"></span> limpiando</span>
+        <span id="plano-update" style="color:#94a3b8"></span>
+        <button onclick="planoFullscreen()" style="padding:4px 10px;border:1px solid #cbd5e1;background:#fff;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700">&#9974; Pantalla completa</button>
+      </span>
+    </div>
+    <div id="plano-mapa" style="width:100%;max-width:1040px;margin:0 auto 16px;background:#fbfbf9;border:1px solid #e5e7eb;border-radius:14px;padding:12px;overflow:hidden">Cargando…</div>
     <div id="plano-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-top:8px"></div>
     <script>
     (function(){
@@ -1004,12 +1016,25 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       ];
       var COL={libre:'#16a34a',ocupada:'#d97706',sucia:'#dc2626',limpiando:'#0ea5e9'};
       var LBL={libre:'LIBRE',ocupada:'OCUPADA',sucia:'SUCIA',limpiando:'LIMPIANDO'};
+      // Estilo PRO · blueprint claro (paredes #3a3a3a finas) + tinte de estado en las áreas de trabajo.
       var STY={
-        libre:{fill:'#16a34a',op:0.17,stroke:'#22c55e',lbl:'#bbf7d0'},
-        ocupada:{fill:'#d97706',op:0.9,stroke:'#fbbf24',lbl:'#ffffff'},
-        sucia:{fill:'#dc2626',op:0.9,stroke:'#fca5a5',lbl:'#ffffff'},
-        limpiando:{fill:'#0ea5e9',op:0.82,stroke:'#7dd3fc',lbl:'#ffffff'}
+        libre:{fill:'#16a34a',op:0.14,stroke:'#16a34a'},
+        ocupada:{fill:'#f59e0b',op:0.42,stroke:'#d97706'},
+        sucia:{fill:'#ef4444',op:0.38,stroke:'#dc2626'},
+        limpiando:{fill:'#0ea5e9',op:0.34,stroke:'#0284c7'}
       };
+      var WALL='#3a3a3a';
+      var DOORS=[
+        {hx:205,hy:150,r:34,a0:90,a1:180},{hx:227,hy:150,r:30,a0:0,a1:90},{hx:320,hy:150,r:34,a0:90,a1:180},
+        {hx:430,hy:150,r:30,a0:90,a1:180},{hx:540,hy:215,r:42,a0:180,a1:270},{hx:300,hy:438,r:34,a0:270,a1:360},
+        {hx:398,hy:400,r:30,a0:180,a1:270},{hx:130,hy:528,r:30,a0:270,a1:360},{hx:95,hy:548,r:26,a0:0,a1:90},
+        {hx:200,hy:472,r:30,a0:90,a1:180},{hx:470,hy:452,r:34,a0:0,a1:90},{hx:650,hy:255,r:28,a0:180,a1:270},
+        {hx:540,hy:96,r:28,a0:90,a1:180},{hx:360,hy:548,r:28,a0:0,a1:90}
+      ];
+      var STALLS=[{x:238,y:550,w:42,h:33},{x:284,y:550,w:42,h:33},{x:330,y:550,w:42,h:33}];
+      var EXTRAS=[{lab:'Equipo de agua',x:160,y:67,fs:5.2},{lab:'N',x:58,y:596,fs:7}];
+      function _bays(){var A=[720,92],B=[702,558],C=[760,60],D=[790,572],N=15,o=[];for(var i=0;i<=N;i++){var t=i/N;o.push([A[0]+(B[0]-A[0])*t,A[1]+(B[1]-A[1])*t,C[0]+(D[0]-C[0])*t,C[1]+(D[1]-C[1])*t]);}return o;}
+      function _doorPath(d){var R=Math.PI/180;var p0x=d.hx+d.r*Math.cos(d.a0*R),p0y=d.hy+d.r*Math.sin(d.a0*R);var p1x=d.hx+d.r*Math.cos(d.a1*R),p1y=d.hy+d.r*Math.sin(d.a1*R);var sw=d.a1>d.a0?1:0;return 'M '+d.hx+' '+d.hy+' L '+p0x.toFixed(1)+' '+p0y.toFixed(1)+' A '+d.r+' '+d.r+' 0 0 '+sw+' '+p1x.toFixed(1)+' '+p1y.toFixed(1);}
       var TWIN={FAB1:'PROD1',FAB2:'PROD2',FAB3:'PROD3',FAB_FLOAT:'PROD4'};
       function _pickArea(byCod,cod){
         var a=byCod[cod]; var t=TWIN[cod]?byCod[TWIN[cod]]:null;
@@ -1018,43 +1043,56 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         return a||t||null;
       }
       function _esc2(x){return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
-      function _wrap(lab,w,fs){var words=String(lab).split(' ');var max=Math.max(1,Math.floor(w/(fs*0.55)));var lines=[],cur='';words.forEach(function(wd){if(((cur+' '+wd).trim()).length<=max){cur=(cur+' '+wd).trim();}else{if(cur)lines.push(cur);cur=wd;}});if(cur)lines.push(cur);return lines.slice(0,3);}
-      function _label(lab,cx,cy,fs,w,rot,color){
-        var lines=rot?[lab]:_wrap(lab,w,fs);var lh=fs*1.06;var y0=cy-(lines.length-1)*lh/2+fs*0.34;
-        var t='<text text-anchor="middle" fill="'+color+'" font-size="'+fs+'" font-weight="600" font-family="system-ui,sans-serif"'+(rot?(' transform="rotate('+rot+' '+cx+' '+cy+')"'):'')+'>';
+      function _elapsed(m){m=parseInt(m,10);if(isNaN(m)||m<0)return '';var h=Math.floor(m/60),mm=m%60;return (h?h+'h ':'')+mm+'m';}
+      function _wrap(lab,lw,fs){var words=String(lab).toUpperCase().split(' ');var max=Math.max(5,Math.floor(lw/(fs*0.56)));var lines=[],cur='';words.forEach(function(wd){var tt=cur?cur+' '+wd:wd;if(tt.length<=max||!cur){cur=tt;}else{lines.push(cur);cur=wd;}});if(cur)lines.push(cur);return lines.slice(0,3);}
+      function _label(lab,cx,cy,fs,lw,rot,color,weight){
+        var lines=_wrap(lab,lw,fs);var lh=fs*1.08;var y0=cy-(lines.length-1)*lh/2+fs*0.34;
+        var t='<text text-anchor="middle" fill="'+color+'" font-size="'+fs+'" font-weight="'+(weight||500)+'" font-family="system-ui,sans-serif" letter-spacing="0.4"'+(rot?(' transform="rotate('+rot+' '+cx+' '+cy+')"'):'')+'>';
         lines.forEach(function(ln,i){t+='<tspan x="'+cx+'" y="'+(y0+i*lh)+'">'+_esc2(ln)+'</tspan>';});
         return t+'</text>';
       }
+      window.planoFullscreen=function(){var el=document.getElementById('plano-mapa');if(!el)return;if(document.fullscreenElement){document.exitFullscreen();}else if(el.requestFullscreen){el.requestFullscreen();}};
       window.cargarPlanoGrid=async function(){
         var mapa=document.getElementById('plano-mapa'); var g=document.getElementById('plano-grid');
         if(!mapa) return;
-        var data; try{ data=await (await fetch('/api/planta/plano-fabricacion?todas=1',{credentials:'same-origin'})).json(); }catch(e){ mapa.innerHTML='<div style="padding:20px;color:#f87171">Error cargando el plano</div>'; return; }
+        var data; try{ data=await (await fetch('/api/planta/plano-fabricacion?todas=1',{credentials:'same-origin'})).json(); }catch(e){ mapa.innerHTML='<div style="padding:20px;color:#b91c1c">Error cargando el plano</div>'; return; }
         var byCod={}; (data.areas||[]).forEach(function(a){ byCod[(a.codigo||'').toUpperCase()]=a; });
-        var sv='<svg viewBox="22 32 786 572" style="width:100%;height:auto;display:block"><rect x="22" y="32" width="786" height="572" fill="#1a1d21"/>';
-        var cards='';
-        POLYS.forEach(function(pp){ sv+='<polygon points="'+pp.pts+'" fill="#262a30" stroke="#454b53" stroke-width="1.4"/>'+_label(pp.lab,pp.cx,pp.cy,pp.fs,130,0,'#c7c5be'); });
+        var sv='<svg viewBox="0 0 838 609" style="width:100%;height:auto;display:block;background:#fbfbf9">';
+        POLYS.forEach(function(pp){ sv+='<polygon points="'+pp.pts+'" fill="none" stroke="'+WALL+'" stroke-width="0.9"/>'; });
+        var cards=''; var cnt={libre:0,ocupada:0,sucia:0,limpiando:0}; var totKg=0;
         ROOMS.forEach(function(r){
           var live=r.cod?_pickArea(byCod,r.cod):null;
           var e=live?(live.estado||'libre'):null;
           var st=e?STY[e]:null;
-          var fill=st?st.fill:'#262a30', op=st?st.op:1, stroke=st?st.stroke:'#454b53', lblc=st?st.lbl:'#c7c5be';
-          sv+='<rect x="'+r.x+'" y="'+r.y+'" width="'+r.w+'" height="'+r.h+'" rx="2.5" fill="'+fill+'" fill-opacity="'+op+'" stroke="'+stroke+'" stroke-width="'+(st?1.8:1.3)+'"><title>'+_esc2(r.lab)+(e?(' · '+(LBL[e]||e)):'')+'</title></rect>';
-          var cx=r.x+r.w/2, cy=r.y+r.h/2, hasP=live&&live.produccion;
-          sv+=_label(r.lab,cx,(hasP?cy-r.h*0.20:cy),r.fs,r.w,r.rot||0,lblc);
-          if(hasP){var p=live.produccion;sv+='<text text-anchor="middle" font-family="system-ui,sans-serif" fill="#fff" font-size="'+(r.fs*0.85)+'" font-weight="700"><tspan x="'+cx+'" y="'+(cy+r.h*0.10)+'">'+_esc2(String(p.producto||'').slice(0,18))+'</tspan>'+(p.operario?('<tspan x="'+cx+'" y="'+(cy+r.h*0.10+r.fs)+'">&#128100; '+_esc2(String(p.operario).slice(0,16))+'</tspan>'):'')+(p.inicio?('<tspan x="'+cx+'" y="'+(cy+r.h*0.10+r.fs*2)+'">&#128337; '+_esc2(String(p.inicio).slice(11,16))+'</tspan>'):'')+'</text>';}
+          var lw=r.rot?r.h:r.w, hasP=live&&live.produccion;
+          if(e){cnt[e]=(cnt[e]||0)+1;}
+          if(st){ var pulse=(e==='ocupada'||e==='sucia'); sv+='<rect x="'+r.x+'" y="'+r.y+'" width="'+r.w+'" height="'+r.h+'" fill="'+st.fill+'" fill-opacity="'+st.op+'">'+(pulse?('<animate attributeName="fill-opacity" values="'+st.op+';'+(st.op*0.5).toFixed(2)+';'+st.op+'" dur="2.4s" repeatCount="indefinite"/>'):'')+'</rect>'; }
+          sv+='<rect x="'+r.x+'" y="'+r.y+'" width="'+r.w+'" height="'+r.h+'" fill="none" stroke="'+(st?st.stroke:WALL)+'" stroke-width="'+(st?1.4:0.8)+'"><title>'+_esc2(r.lab)+(e?(' · '+(LBL[e]||e)):'')+'</title></rect>';
+          var cx=r.x+r.w/2, cy=r.y+r.h/2;
+          sv+=_label(r.lab,cx,(hasP?cy-r.h*0.24:cy),r.fs,lw,r.rot||0,'#454545',(st?600:400));
+          if(hasP){var p=live.produccion;if(p.kg)totKg+=parseFloat(p.kg)||0;var t2=r.fs*0.92;sv+='<text text-anchor="middle" font-family="system-ui,sans-serif" fill="#1f2937" font-size="'+t2+'" font-weight="700"><tspan x="'+cx+'" y="'+(cy+r.h*0.04)+'">'+_esc2(String(p.producto||'').slice(0,18))+'</tspan>'+(p.operario?('<tspan x="'+cx+'" y="'+(cy+r.h*0.04+t2*1.15)+'">&#128100; '+_esc2(String(p.operario).slice(0,16))+'</tspan>'):'')+(p.mins!=null?('<tspan x="'+cx+'" y="'+(cy+r.h*0.04+t2*2.3)+'" fill="#b45309" font-weight="800">&#9201; '+_elapsed(p.mins)+'</tspan>'):'')+'</text>';}
           if(r.cod){
             var cc=e?COL[e]:'#94a3b8';
             cards+='<div style="background:#fff;border:1px solid #e5e7eb;border-top:5px solid '+cc+';border-radius:12px;padding:12px">';
             cards+='<div style="font-weight:800;font-size:14px;color:#111">'+_esc2(r.lab)+'</div>';
             cards+='<div style="display:inline-block;margin:5px 0;padding:2px 9px;border-radius:6px;font-size:11px;font-weight:700;background:'+cc+'22;color:'+cc+'">'+(LBL[e]||e||'—')+'</div>';
-            if(hasP){var q=live.produccion;cards+='<div style="font-size:13px;line-height:1.5;color:#333">&#129514; <b>'+_esc2(q.producto||'')+'</b>'+(q.kg?('<br>'+q.kg+' kg'):'')+(q.operario?('<br>&#128100; '+_esc2(q.operario)):'')+(q.inicio?('<br>&#128337; '+String(q.inicio).slice(11,16)):'')+'</div>';}
+            if(hasP){var q=live.produccion;cards+='<div style="font-size:13px;line-height:1.5;color:#333">&#129514; <b>'+_esc2(q.producto||'')+'</b>'+(q.kg?('<br>'+q.kg+' kg'):'')+(q.operario?('<br>&#128100; '+_esc2(q.operario)):'')+(q.mins!=null?('<br>&#9201; '+_elapsed(q.mins)+' corriendo'):'')+'</div>';}
             else{cards+='<div style="color:#9ca3af;font-size:13px">disponible</div>';}
             cards+='</div>';
           }
         });
+        STALLS.forEach(function(s2){ sv+='<rect x="'+s2.x+'" y="'+s2.y+'" width="'+s2.w+'" height="'+s2.h+'" fill="none" stroke="'+WALL+'" stroke-width="0.7"/>'; });
+        DOORS.forEach(function(d){ sv+='<path d="'+_doorPath(d)+'" fill="none" stroke="'+WALL+'" stroke-width="0.7" opacity="0.65"/>'; });
+        _bays().forEach(function(b){ sv+='<line x1="'+b[0].toFixed(1)+'" y1="'+b[1].toFixed(1)+'" x2="'+b[2].toFixed(1)+'" y2="'+b[3].toFixed(1)+'" stroke="'+WALL+'" stroke-width="0.6" opacity="0.5"/>'; });
+        EXTRAS.forEach(function(x){ sv+=_label(x.lab,x.x,x.y,x.fs,80,0,'#8c8c8c',400); });
+        POLYS.forEach(function(pp){ var prot=(String(pp.lab).indexOf('Material')===0)?-82:0; sv+=_label(pp.lab,pp.cx,pp.cy,pp.fs,140,prot,'#454545',400); });
         sv+='</svg>';
         mapa.innerHTML=sv;
         if(g) g.innerHTML=cards;
+        var rs=document.getElementById('plano-resumen');
+        if(rs){ rs.innerHTML='<span style="background:#16a34a22;color:#15803d;padding:2px 8px;border-radius:8px;font-weight:700">'+cnt.libre+' libres</span><span style="background:#d9770622;color:#b45309;padding:2px 8px;border-radius:8px;font-weight:700">'+cnt.ocupada+' ocupadas</span><span style="background:#dc262622;color:#b91c1c;padding:2px 8px;border-radius:8px;font-weight:700">'+cnt.sucia+' sucias</span>'+(cnt.limpiando?('<span style="background:#0ea5e922;color:#0369a1;padding:2px 8px;border-radius:8px;font-weight:700">'+cnt.limpiando+' limpiando</span>'):'')+(totKg>0?('<span style="background:#7c3aed22;color:#6d28d9;padding:2px 8px;border-radius:8px;font-weight:700">'+Math.round(totKg)+' kg en producción</span>'):''); }
+        var up=document.getElementById('plano-update');
+        if(up){ var n=new Date(); up.textContent='actualizado '+('0'+n.getHours()).slice(-2)+':'+('0'+n.getMinutes()).slice(-2); }
       };
       setInterval(function(){var t=document.getElementById('plano');if(t&&t.classList.contains('active'))cargarPlanoGrid();},20000);
     })();
