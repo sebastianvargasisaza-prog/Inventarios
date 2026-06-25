@@ -4008,9 +4008,9 @@ def _persona_corta(c, username):
     return f'{nom} · {cargo}' if cargo else nom
 
 
-def _rotulo_f02_sheet(c, area_id):
-    """Devuelve el <div class="sheet"> del rótulo F02 de UN área (ciclo de limpieza vigente + equipos
-    auto-cargados). '' si el área no existe. Reusado por el rótulo individual y por 'imprimir todos'."""
+def _rotulo_f02_sheet(c, area_id, equipo=None):
+    """Devuelve el <div class="sheet"> del rótulo F02. Si equipo=(codigo,nombre), el rótulo es de ESE
+    equipo (uno por máquina · Sebastián 25-jun); si no, del área. '' si el área no existe."""
     from html import escape as _e
     base = _rotulo_derivar(c, area_id)
     if not base:
@@ -4051,6 +4051,15 @@ def _rotulo_f02_sheet(c, area_id):
             "SELECT codigo, nombre FROM equipos_planta WHERE UPPER(COALESCE(area_codigo,'')) IN (" + _ph + ") "
             "AND COALESCE(activo,1)=1 ORDER BY tipo, nombre", tuple(_cods)).fetchall()
         equipos_txt = ', '.join(f"{e[0]} {e[1]}" for e in _eqs) if _eqs else '—'
+    # Sujeto del rótulo: por EQUIPO (cada máquina su etiqueta) o por área. Si es por equipo, la sala
+    # pasa a una fila aparte y el encabezado es el equipo.
+    if equipo is not None:
+        area_label = f"{equipo[1]} · {equipo[0]}"
+        fila_equipo_lbl = 'Sala / área'
+        fila_equipo_val = f"{base['area_nombre']} · {base['area_codigo']}"
+    else:
+        fila_equipo_lbl = 'Equipos'
+        fila_equipo_val = equipos_txt
     estado_fisico = base['estado_fisico']
     realizado_full = _persona_corta(c, realizado_por)
     verificado_full = _persona_corta(c, verificado_por)
@@ -4086,7 +4095,7 @@ def _rotulo_f02_sheet(c, area_id):
   </div>
   <table>
     {_row('Área o equipo · código', area_label)}
-    {_row('Equipos', equipos_txt)}
+    {_row(fila_equipo_lbl, fila_equipo_val)}
     {_row('Producto a elaborar', prod_elab)}
     {_row('Lote', lote_elab, num=True)}
     {_row('Sanitizante', sanit)}
@@ -4161,40 +4170,63 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02'):
 </body></html>'''
 
 
+def _equipos_de_area(c, area_codigo):
+    """[(codigo, nombre), ...] de los equipos activos de la sala (TWIN FAB/PROD)."""
+    twin = {'PROD1': 'FAB1', 'PROD2': 'FAB2', 'PROD3': 'FAB3', 'PROD4': 'FAB_FLOAT'}
+    ac = (area_codigo or '').upper()
+    cods = list({ac, twin.get(ac, ac)})
+    ph = ','.join('?' for _ in cods)
+    return c.execute(
+        "SELECT codigo, nombre FROM equipos_planta WHERE UPPER(COALESCE(area_codigo,'')) IN (" + ph + ") "
+        "AND COALESCE(activo,1)=1 ORDER BY tipo, nombre", tuple(cods)).fetchall()
+
+
+def _rotulos_de_area(c, area_id, area_codigo):
+    """Lista de hojas F02 de una sala: UNA POR EQUIPO (cada máquina su etiqueta). Si la sala no tiene
+    equipos registrados, una sola hoja a nivel de área."""
+    equipos = _equipos_de_area(c, area_codigo)
+    if equipos:
+        return [s for s in (_rotulo_f02_sheet(c, area_id, equipo=(e[0], e[1])) for e in equipos) if s]
+    s = _rotulo_f02_sheet(c, area_id)
+    return [s] if s else []
+
+
 @bp.route('/planta/rotulo-limpieza/<int:area_id>/pdf', methods=['GET'])
 def planta_rotulo_limpieza_pdf(area_id):
-    """Rótulo imprimible PRD-PRO-002-F02 de UN área (Estado de Limpieza de Áreas/Equipos)."""
+    """Rótulos F02 de UN área: uno por equipo (cada máquina su etiqueta · Sebastián 25-jun)."""
     if 'compras_user' not in session:
         from flask import redirect
         return redirect('/login?next=/planta/rotulo-limpieza/%d/pdf' % area_id)
     from flask import Response
     conn = get_db(); c = conn.cursor()
-    sheet = _rotulo_f02_sheet(c, area_id)
-    if not sheet:
+    base = _rotulo_derivar(c, area_id)
+    if not base:
         return Response('<h1>Área no encontrada</h1>', mimetype='text/html', status=404)
-    return Response(_rotulo_f02_doc(sheet), mimetype='text/html')
+    sheets = _rotulos_de_area(c, area_id, base['area_codigo'])
+    body = ('\n'.join(sheets) if sheets
+            else '<div style="text-align:center;color:#888;padding:40px">Sin equipos en esta sala.</div>')
+    return Response(_rotulo_f02_doc(body, f"Rótulos de Limpieza F02 · {base['area_nombre']}"),
+                    mimetype='text/html')
 
 
 @bp.route('/planta/rotulos-limpieza', methods=['GET'])
 def planta_rotulos_limpieza_todas():
-    """TODOS los rótulos F02 en una hoja (uno por página) → el jefe imprime y entrega de una.
-    Mismas salas que la lista (produccion + DISP/ACOND), dedup por nombre."""
+    """TODOS los rótulos F02 (todas las salas, uno por equipo). Opción 'imprimir todo'."""
     if 'compras_user' not in session:
         from flask import redirect
         return redirect('/login?next=/planta/rotulos-limpieza')
     from flask import Response
     conn = get_db(); c = conn.cursor()
     areas = c.execute(
-        "SELECT id, nombre FROM areas_planta WHERE activo=1 "
+        "SELECT id, nombre, codigo FROM areas_planta WHERE activo=1 "
         "AND (tipo='produccion' OR codigo IN ('DISP','ACOND')) ORDER BY orden, codigo").fetchall()
     sheets, vistos = [], set()
     for a in areas:
         nm = (a[1] or '').strip().lower()
         if nm in vistos:
             continue
-        s = _rotulo_f02_sheet(c, a[0])
-        if s:
-            sheets.append(s); vistos.add(nm)
+        vistos.add(nm)
+        sheets.extend(_rotulos_de_area(c, a[0], a[2]))
     body = ('\n'.join(sheets) if sheets
             else '<div style="text-align:center;color:#888;padding:40px">No hay salas configuradas.</div>')
     return Response(_rotulo_f02_doc(body, 'Rótulos de Limpieza F02 · todas las salas'),
