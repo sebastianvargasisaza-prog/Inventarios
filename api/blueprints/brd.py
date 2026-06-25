@@ -5208,6 +5208,38 @@ def listar_despeje_ebr(ebr_id):
         return jsonify({"items": []})
 
 
+@bp.route("/api/brd/ebr/<int:ebr_id>/despeje-items", methods=["GET"])
+def listar_despeje_items_ebr(ebr_id):
+    """Checklist granular de despeje (13 ítems GMP estándar) por etapa: dispensacion + fabricacion
+    (MyBatch secciones 2 y 4). Cada ítem: idx, texto, cumple (1/0/None), observaciones, registrado_por."""
+    err = _require_login()
+    if err:
+        return err
+    conn = get_db()
+
+    def _chk(etapa):
+        reg = {}
+        try:
+            for dr in conn.execute(
+                "SELECT item_idx, cumple, COALESCE(observaciones,''), COALESCE(registrado_por,''), "
+                "COALESCE(registrado_at_utc,'') FROM ebr_despeje_items "
+                "WHERE ebr_id=? AND COALESCE(etapa,'dispensacion')=?", (ebr_id, etapa)).fetchall():
+                reg[int(dr[0])] = dr
+        except Exception:
+            reg = {}
+        out = []
+        for i, texto in enumerate(DESPEJE_LINEA_ITEMS):
+            r = reg.get(i)
+            out.append({'idx': i, 'texto': texto,
+                        'cumple': (int(r[1]) if r and r[1] is not None else None),
+                        'observaciones': (r[2] if r else ''),
+                        'registrado_por': (r[3] if r else ''),
+                        'registrado_at': (r[4] if r else '')})
+        return out
+
+    return jsonify({"dispensacion": _chk("dispensacion"), "fabricacion": _chk("fabricacion")})
+
+
 @bp.route("/api/brd/ebr/<int:ebr_id>/despeje", methods=["POST"])
 def registrar_despeje_ebr(ebr_id):
     """Registra el despeje de línea del legajo (checklist CUMPLE · MyBatch ②)."""

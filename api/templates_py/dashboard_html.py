@@ -7613,12 +7613,13 @@ async function abrirEBR(id, targetId){
       var rpr=await fetch('/api/brd/ebr/'+id+'/precauciones',{credentials:'same-origin'});var dpr=await rpr.json();prec=(dpr&&dpr.items)||[];
       var rrg=await fetch('/api/brd/ebr/'+id+'/registros-fisicos',{credentials:'same-origin'});var drg=await rrg.json();regs=(drg&&drg.items)||[];
     }catch(e){}
-    box.innerHTML=_ebrRender(d,(dp&&dp.items)||[],(dcm&&dcm.items)||[],(dar&&dar.items)||[],(dob&&dob.items)||[],ipcSpecs,ipcRes,despeje,prec,regs,ipcEstandar);
+    var despejeChk=await _ebrJson('/api/brd/ebr/'+id+'/despeje-items');
+    box.innerHTML=_ebrRender(d,(dp&&dp.items)||[],(dcm&&dcm.items)||[],(dar&&dar.items)||[],(dob&&dob.items)||[],ipcSpecs,ipcRes,despeje,prec,regs,ipcEstandar,despejeChk);
     box.scrollIntoView({behavior:'smooth',block:'start'});
   }catch(e){box.innerHTML='<div style="color:#c0392b;padding:8px">No se pudo abrir el legajo: '+_escHTML((e&&e.message)?e.message:String(e))+'</div>';}
 }
-function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, prec, regs, ipcEstandar){
-  ipcEstandar=ipcEstandar||[];
+function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, prec, regs, ipcEstandar, despejeChk){
+  ipcEstandar=ipcEstandar||[]; despejeChk=despejeChk||{};
   ipcSpecs=ipcSpecs||[]; ipcRes=ipcRes||[]; despeje=despeje||[]; prec=prec||[]; regs=regs||[];
   var editable=(d.estado==='iniciado'||d.estado==='en_proceso');
   var em={fabricacion:'🏭',envasado:'📦',acondicionamiento:'🔧'};
@@ -7639,17 +7640,26 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     h+='</ul>';
   } else {h+='<div style="color:#999;font-size:12px;">Sin precauciones/equipos registrados.</div>';}
   if(editable){h+='<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;"><button onclick="ebrAgregarPrecaucion('+d.id+',\\'precaucion\\')" style="background:#f59e0b;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;">+ Precaución</button><button onclick="ebrAgregarPrecaucion('+d.id+',\\'equipo\\')" style="background:#0891b2;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;">+ Equipo</button></div>';}
-  // Despeje de línea (MyBatch ②)
-  h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">🧹 Despeje de línea</h4>';
-  if(despeje.length){
-    var dl=despeje[0];
-    var chk=function(v){return v?'<span style="color:#16a34a;">✓</span>':'<span style="color:#dc2626;">✗</span>';};
-    h+='<div style="font-size:12px;">'+chk(dl.area_limpia)+' Área limpia &nbsp; '+chk(dl.sin_producto_anterior)+' Sin producto anterior &nbsp; '+chk(dl.equipos_limpios)+' Equipos limpios &nbsp; '+chk(dl.documentacion_ok)+' Documentación</div>';
-    h+='<div style="font-size:12px;margin-top:2px;">Resultado: '+(dl.conforme?'<span style="color:#16a34a;font-weight:700;">CONFORME</span>':'<span style="color:#dc2626;font-weight:700;">NO CONFORME</span>')+' · '+(dl.realizado_por||'')+'</div>';
-  } else {
-    h+='<div style="color:#999;font-size:12px;">Despeje de línea no registrado.</div>';
-    if(editable){h+='<button onclick="ebrRegistrarDespeje('+d.id+')" style="margin-top:6px;background:#16a34a;color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;cursor:pointer;">Registrar despeje</button>';}
+  // Despeje de línea · checklist 13 ítems × 2 etapas (MyBatch §2 Dispensación + §4 Fabricación)
+  function _despEtapa(titulo, etapa, items){
+    var oh='<h4 style="color:#6d28d9;margin:16px 0 6px;">🧹 '+titulo+'</h4>';
+    items=items||[];
+    var done=items.filter(function(it){return it.cumple===1;}).length;
+    var allOk=items.length>0 && done===items.length;
+    oh+='<div style="font-size:11px;color:'+(allOk?'#16a34a':'#94a3b8')+';margin-bottom:4px">'+done+'/'+items.length+' verificaciones cumplen'+(allOk?' ✓':'')+'</div>';
+    oh+='<table class="table" style="font-size:11px"><tbody>';
+    items.forEach(function(it){
+      var est=it.cumple===1?'<span style="color:#16a34a;font-weight:700">✓ Sí</span>':(it.cumple===0?'<span style="color:#dc2626;font-weight:700">✗ No</span>':'<span style="color:#94a3b8">pendiente</span>');
+      var mk=(editable&&it.cumple!==1)?' <button onclick="ebrMarcarDespeje('+d.id+','+it.idx+',&#39;'+etapa+'&#39;)" style="background:#16a34a;color:#fff;border:none;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">✓</button>':'';
+      oh+='<tr><td style="font-size:10px;line-height:1.3">'+_escHTML(it.texto)+(it.registrado_por?('<div style="font-size:9px;color:#94a3b8">'+_escHTML(it.registrado_por)+'</div>'):'')+'</td><td style="text-align:right;white-space:nowrap;vertical-align:top">'+est+mk+'</td></tr>';
+    });
+    oh+='</tbody></table>';
+    if(editable&&!allOk){ oh+='<button onclick="ebrDespejeTodoCumple('+d.id+',&#39;'+etapa+'&#39;)" style="margin-top:6px;background:#6d28d9;color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">✓ Marcar TODO cumple</button>'; }
+    return oh;
   }
+  var _dch=despejeChk||{};
+  h+=_despEtapa('Despeje de Línea · Dispensación', 'dispensacion', _dch.dispensacion);
+  h+=_despEtapa('Despeje de Línea · Fabricación', 'fabricacion', _dch.fabricacion);
   // Pesaje de MP (2ª firma · Batch 2)
   h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">⚖️ Pesaje de materias primas (2ª firma)</h4>';
   if(!pesajes.length){h+='<div style="color:#999;font-size:12px;">Sin pesajes registrados aún.</div>';}
@@ -7822,6 +7832,22 @@ async function ebrAgregarPrecaucion(ebrId, tipo){
     var j=await r.json(); if(!r.ok){alert(j.error||'Error');return;}
     abrirEBR(ebrId);
   }catch(e){alert('Error de red');}
+}
+async function ebrMarcarDespeje(ebrId, idx, etapa){
+  try{
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/despeje-item',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item_idx:idx,cumple:1,etapa:etapa})});
+    if(!r.ok){ var j=await r.json(); alert('Error: '+(j.error||r.status)); return; }
+    abrirEBR(ebrId);
+  }catch(e){ alert('Error: '+(e.message||e)); }
+}
+async function ebrDespejeTodoCumple(ebrId, etapa){
+  if(!confirm('\\u00bfMarcar TODAS las verificaciones de despeje como CUMPLE? (firm\\u00e1s como responsable)')) return;
+  try{
+    for(var i=0;i<13;i++){
+      await fetch('/api/brd/ebr/'+ebrId+'/despeje-item',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item_idx:i,cumple:1,etapa:etapa})});
+    }
+    abrirEBR(ebrId);
+  }catch(e){ alert('Error: '+(e.message||e)); }
 }
 async function ebrRegistrarDespeje(ebrId){
   if(!confirm('Registrar despeje de línea?\\n\\nConfirmá que se cumple: área limpia, sin producto anterior, equipos limpios e identificados, documentación presente.\\nAceptar = TODO cumple (CONFORME) · Cancelar = abrir checklist parcial'))
