@@ -7650,6 +7650,40 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   h+=_kv('Aprobado por (Calidad)', _escHTML(d.liberado_por||'')+(d.liberado_at_utc?(' · '+_dt(d.liberado_at_utc)):''));
   h+=_kv('Observaciones', _escHTML(d.notas||''));
   h+='</div>';
+  // ── Rol del usuario · la vista se adapta (segregación de funciones GMP) ──
+  var miRol=d.mi_rol||{tipo:'consulta',rol:'Consulta',realiza:false,verifica:false};
+  var _rc=({operario:'#16a34a',jefe_produccion:'#2563eb',calidad:'#0891b2',director_tecnico:'#7c3aed',aseguramiento:'#b45309',administrativo:'#64748b',admin:'#6d28d9',consulta:'#94a3b8'})[miRol.tipo]||'#94a3b8';
+  var _tareas=[];
+  if(editable&&miRol.realiza){
+    var _dp=(((despejeChk&&despejeChk.dispensacion)||[]).concat((despejeChk&&despejeChk.fabricacion)||[])).filter(function(it){return it.cumple!==1;}).length;
+    if(_dp)_tareas.push('Marcar '+_dp+' verificación(es) de despeje');
+    var _pw=(pesajes||[]).filter(function(p){return !(p.pesado_por||'').trim();}).length;
+    if(_pw)_tareas.push('Pesar '+_pw+' materia(s) prima(s)');
+    var _pp=(d.pasos||[]).filter(function(s){return s.estado==='pendiente'||s.estado==='en_proceso';}).length;
+    if(_pp)_tareas.push('Ejecutar '+_pp+' paso(s) de fabricación');
+  }
+  if(editable&&miRol.verifica){
+    var _pv=(pesajes||[]).filter(function(p){return (p.pesado_por||'').trim()&&!(p.verificado_por||'').trim();}).length;
+    if(_pv)_tareas.push('Verificar '+_pv+' pesaje(s)');
+    var _iv=(ipcSpecs||[]).filter(function(sp){return !(ipcRes||[]).some(function(r){return r.ipc_spec_id===sp.id;});}).length;
+    if(_iv)_tareas.push('Reportar '+_iv+' control(es) IPC');
+  }
+  h+='<div style="display:flex;align-items:center;gap:11px;background:'+_rc+'14;border:1px solid '+_rc+'55;border-radius:12px;padding:11px 14px;margin-bottom:14px;flex-wrap:wrap">';
+  h+='<span style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:'+_rc+';color:#fff;font-size:17px">&#128100;</span>';
+  h+='<div><div style="font-size:9px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.4px">Estás en este legajo como</div><div style="font-size:14px;font-weight:800;color:'+_rc+'">'+_escHTML(miRol.rol||'Usuario')+'</div></div>';
+  if(editable){
+    h+='<div style="margin-left:auto;min-width:180px;text-align:right">';
+    if(_tareas.length){
+      h+='<div style="font-size:11px;font-weight:800;color:'+_rc+';margin-bottom:2px">&#9203; TU TRABAJO &middot; '+_tareas.length+' pendiente(s)</div>';
+      _tareas.forEach(function(t){h+='<div style="font-size:11px;color:#475569">&bull; '+t+'</div>';});
+    } else if(miRol.realiza||miRol.verifica){
+      h+='<div style="font-size:12px;font-weight:700;color:#16a34a">&#10003; Sin tareas pendientes para tu rol</div>';
+    } else {
+      h+='<div style="font-size:11px;color:#94a3b8">Solo lectura (administrativo)</div>';
+    }
+    h+='</div>';
+  }
+  h+='</div>';
   // ── Secciones numeradas en tarjetas premium (estilo MyBatch) ──
   var _cn=0;
   function _secOpen(titulo){
@@ -7674,11 +7708,12 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     oh+='<table class="table" style="font-size:11px"><tbody>';
     items.forEach(function(it){
       var est=it.cumple===1?'<span style="color:#16a34a;font-weight:700">✓ Sí</span>':(it.cumple===0?'<span style="color:#dc2626;font-weight:700">✗ No</span>':'<span style="color:#94a3b8">pendiente</span>');
-      var mk=(editable&&it.cumple!==1)?' <button onclick="ebrMarcarDespeje('+d.id+','+it.idx+',&#39;'+etapa+'&#39;)" style="background:#16a34a;color:#fff;border:none;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">✓</button>':'';
+      var mk=(editable&&miRol.realiza&&it.cumple!==1)?' <button onclick="ebrMarcarDespeje('+d.id+','+it.idx+',&#39;'+etapa+'&#39;)" style="background:#16a34a;color:#fff;border:none;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">✓</button>':'';
       oh+='<tr><td style="font-size:10px;line-height:1.3">'+_escHTML(it.texto)+(it.registrado_por?('<div style="font-size:9px;color:#94a3b8">'+_escHTML(it.registrado_por)+'</div>'):'')+'</td><td style="text-align:right;white-space:nowrap;vertical-align:top">'+est+mk+'</td></tr>';
     });
     oh+='</tbody></table>';
-    if(editable&&!allOk){ oh+='<button onclick="ebrDespejeTodoCumple('+d.id+',&#39;'+etapa+'&#39;)" style="margin-top:6px;background:#6d28d9;color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">✓ Marcar TODO cumple</button>'; }
+    if(editable&&miRol.realiza&&!allOk){ oh+='<button onclick="ebrDespejeTodoCumple('+d.id+',&#39;'+etapa+'&#39;)" style="margin-top:6px;background:#6d28d9;color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">✓ Marcar TODO cumple</button>'; }
+    else if(editable&&!miRol.realiza&&!allOk){ oh+='<div style="margin-top:6px;font-size:11px;color:#94a3b8">&#9203; El operario marca el despeje</div>'; }
     return oh;
   }
   var _dch=despejeChk||{};
@@ -7692,7 +7727,8 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
       var p=pesajes[i];var verif=(p.verificado_por||'').trim();
       var verifCell=verif?('<span style="color:#16a34a;font-weight:700;">✓ '+verif+'</span>'):'<span style="color:#f59e0b;">pendiente</span>';
       var acc='<span style="color:#999;">—</span>';
-      if(!verif&&editable){acc='<button onclick="ebrVerificarPesaje('+d.id+','+p.id+')" style="background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Verificar</button>';}
+      if(!verif&&editable&&miRol.verifica){acc='<button onclick="ebrVerificarPesaje('+d.id+','+p.id+')" style="background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Verificar</button>';}
+      else if(!verif&&editable&&(p.pesado_por||'').trim()){acc='<span style="color:#f59e0b;font-size:11px;">&#9203; espera Calidad</span>';}
       var _pct=(d.cantidad_objetivo_g>0?((p.cantidad_teorica_g||0)/d.cantidad_objetivo_g*100):0);
       h+='<tr><td>'+(p.material_nombre||p.material_id||'')+'</td><td style="text-align:right;">'+(_pct?parseFloat(_pct.toFixed(3)):'—')+'</td><td style="font-family:monospace;font-size:11px">'+_escHTML(p.lote_mp||'—')+'</td><td style="text-align:right;">100</td><td style="text-align:right;">'+(p.cantidad_teorica_g||0)+'</td><td style="text-align:right;">'+(p.cantidad_real_g||0)+'</td><td>'+(p.pesado_por||'')+'</td><td>'+verifCell+'</td><td style="text-align:right;">'+acc+'</td></tr>';
     }
@@ -7709,7 +7745,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     h+='<table class="table" style="font-size:12px;"><thead><tr><th>#</th><th>Fase</th><th>Descripción</th><th>Estado</th><th>Realizó</th><th>Verificó</th><th></th></tr></thead><tbody>';
     for(var j=0;j<pasos.length;j++){
       var s=pasos[j];var acc2='<span style="color:#999;">'+(s.estado==='completado'?'✓':'—')+'</span>';
-      if(editable){
+      if(editable&&miRol.realiza){
         if(s.estado==='pendiente'){acc2='<button onclick="ebrIniciarPaso('+d.id+','+s.orden+')" style="background:#f59e0b;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Iniciar</button>';}
         else if(s.estado==='en_proceso'){acc2='<button onclick="ebrCompletarPaso('+d.id+','+s.orden+','+s.id+','+(s.requiere_e_sign?1:0)+','+(s.requiere_qc?1:0)+')" style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Completar</button>';}
       }
@@ -7730,7 +7766,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
       var resTxt = rr ? ((rr.valor_medido!=null?rr.valor_medido:'')+' '+(rr.valor_texto||'')) : '<span style="color:#f59e0b;">pendiente</span>';
       var confTxt = rr ? (rr.conforme===1?'<span style="color:#16a34a;font-weight:700;">✓</span>':(rr.conforme===0?'<span style="color:#dc2626;font-weight:700;">✗ OOS</span>':(rr.conforme===2?'<span style="color:#64748b;font-weight:700;">N/A</span>':'<span style="color:#999;">—</span>'))) : '';
       var oblig = sp.obligatorio?' <span title="obligatorio" style="color:#dc2626;">*</span>':'';
-      var ipcAcc = (!rr && editable) ? '<button onclick="ebrReportarIpc('+d.id+','+sp.id+','+((sp.valor_min!=null||sp.valor_max!=null)?1:0)+')" style="background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Reportar</button>' : '<span style="color:#999;">'+(rr?(rr.conforme===2?'N/A':'✓'):'—')+'</span>';
+      var ipcAcc = (!rr && editable && miRol.verifica) ? '<button onclick="ebrReportarIpc('+d.id+','+sp.id+','+((sp.valor_min!=null||sp.valor_max!=null)?1:0)+')" style="background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Reportar</button>' : '<span style="color:#999;">'+(rr?(rr.conforme===2?'N/A':'✓'):'—')+'</span>';
       h+='<tr><td>'+(sp.parametro||'')+oblig+'</td><td style="font-size:11px;color:#777;">'+rango+'</td><td>'+resTxt+'</td><td style="text-align:center;">'+confTxt+'</td><td style="font-size:11px;">'+((rr&&rr.medido_por)||'')+'</td><td style="text-align:right;">'+ipcAcc+'</td></tr>';
     }
     h+='</tbody></table>';
@@ -7742,7 +7778,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     var ec=ipcEstandar[e];
     var ecConf=ec.conforme===1?'<span style="color:#16a34a;font-weight:700;">✓</span>':(ec.conforme===0?'<span style="color:#dc2626;font-weight:700;">✗</span>':(ec.conforme===2?'<span style="color:#64748b;font-weight:700;">N/A</span>':'<span style="color:#999;">—</span>'));
     var ecRes=ec.conforme===2?'No aplica':(ec.valor_texto||'<span style="color:#f59e0b;">pendiente</span>');
-    var ecAcc=editable?'<button onclick="ebrReportarIpcEstandar('+d.id+',\\''+ec.control_codigo+'\\')" style="background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Registrar</button>':'<span style="color:#999;">—</span>';
+    var ecAcc=(editable&&miRol.verifica)?'<button onclick="ebrReportarIpcEstandar('+d.id+',\\''+ec.control_codigo+'\\')" style="background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Registrar</button>':'<span style="color:#999;">—</span>';
     h+='<tr><td>'+ec.control_nombre+'</td><td>'+ecRes+'</td><td style="text-align:center;">'+ecConf+'</td><td style="font-size:11px;">'+(ec.medido_por||'')+'</td><td style="text-align:right;">'+ecAcc+'</td></tr>';
   }
   h+='</tbody></table>';

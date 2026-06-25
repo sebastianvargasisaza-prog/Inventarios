@@ -53,7 +53,7 @@ ASEGURAMIENTO_USERS = {
         "ASEGURAMIENTO_USERS_OVERRIDE", "miguel,alejandro,sebastian"
     ).split(",") if u.strip()
 }
-PLANTA_USERS    = {"luis", "smurillo", "sergio", "mayerlin", "camilo"}
+PLANTA_USERS    = {"luis", "smurillo", "sergio", "mayerlin", "camilo", "jose", "milton"}
 
 DB_PATH = os.environ.get("DB_PATH", "/var/data/inventario.db")
 

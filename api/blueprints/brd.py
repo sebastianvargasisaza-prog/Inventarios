@@ -159,6 +159,48 @@ IPC_ESTANDAR = [
 ]
 
 
+def _batch_role_info(usuario):
+    """Rol del usuario en el batch record (segregación de funciones GMP · 25-jun).
+    UI-hint: el backend YA bloquea con 403; esto adapta la vista — quién REALIZA
+    (operario/jefe prod) vs quién VERIFICA (calidad/jefe prod/dir. téc.). Reusa los
+    sets de config.py. Roles finos: operario · jefe_produccion · calidad ·
+    aseguramiento · director_tecnico · admin · consulta."""
+    u = (usuario or "").strip().lower()
+    try:
+        from config import ASEGURAMIENTO_USERS, TECNICA_USERS
+    except Exception:
+        ASEGURAMIENTO_USERS, TECNICA_USERS = set(), set()
+    A, C, P = set(ADMIN_USERS), set(CALIDAD_USERS), set(PLANTA_USERS)
+    AS_, T = set(ASEGURAMIENTO_USERS), set(TECNICA_USERS)
+    if u in A:
+        tipo, rol = "admin", "Dirección / Admin"
+    elif u in (C - A):
+        tipo, rol = "calidad", "Control de Calidad"
+    elif u in (AS_ - A):
+        tipo, rol = "aseguramiento", "Aseguramiento"
+    elif u in (T - A - AS_):
+        tipo, rol = "director_tecnico", "Director Técnico"
+    elif u in {"jose"}:
+        tipo, rol = "jefe_produccion", "Jefe de Producción"
+    elif u in (P | {"milton"}):
+        tipo, rol = "operario", "Operario"
+    elif u in {"luz", "catalina"}:
+        tipo, rol = "administrativo", "Administrativo"
+    else:
+        tipo, rol = "consulta", "Consulta"
+    realiza = tipo in ("operario", "jefe_produccion", "admin")
+    verifica = tipo in ("calidad", "jefe_produccion", "director_tecnico", "admin")
+    return {
+        "usuario": u, "tipo": tipo, "rol": rol,
+        "realiza": realiza,
+        "verifica": verifica,
+        "puede_ejecutar": tipo in ("operario", "jefe_produccion", "calidad", "admin"),
+        "puede_verificar": verifica,
+        "puede_liberar": tipo in ("calidad", "aseguramiento", "director_tecnico", "admin"),
+        "puede_aprobar": tipo in ("calidad", "director_tecnico", "admin"),
+    }
+
+
 # ── UI dashboard (read-only listings) ──────────────────────────────────────
 
 @bp.route("/brd", methods=["GET"])
@@ -2687,6 +2729,8 @@ def detalle_ebr(ebr_id):
         d["area_nombre"] = (ar[0] if ar else "")
     except Exception:
         d["area_nombre"] = ""
+    # Rol del usuario en el batch (segregación de funciones GMP · el runner se adapta)
+    d["mi_rol"] = _batch_role_info(session.get("compras_user", ""))
     return jsonify(d)
 
 
