@@ -1591,6 +1591,43 @@ def legajo_rapido():
                     "link": f"/planta/orden/{r.get('id')}", "reusado": r.get("reusado", False)})
 
 
+@bp.route("/api/brd/demo-legajo", methods=["POST"])
+def demo_legajo():
+    """DEMO (Sebastián 25-jun) · crea una orden EN CURSO + su legajo EBR para VER el batch record inline
+    en Fabricación, SIN descontar MP (inserción directa · no pasa por el motor de descuento). Marcada
+    'DEMO_LEGAJO' en observaciones → se borra con 🧹 Limpiar. Solo para ver la UI."""
+    err = _require_login()
+    if err:
+        return err
+    from database import get_db
+    conn = get_db(); cur = conn.cursor()
+    row = cur.execute("SELECT producto_nombre FROM mbr_templates WHERE estado='aprobado' "
+                      "ORDER BY id DESC LIMIT 1").fetchone()
+    if not row:
+        return jsonify({"error": "No hay ningún MBR aprobado · activá los legajos primero en "
+                                 "/planta/activar-legajos"}), 400
+    producto = row[0]
+    from datetime import datetime, timedelta
+    _co = datetime.now() - timedelta(hours=5)
+    lote = 'DEMO-' + _co.strftime('%y%m%d%H%M%S')
+    user = session.get("compras_user", "")
+    cur.execute(
+        "INSERT INTO produccion_programada (producto, fecha_programada, cantidad_kg, lotes, "
+        "inicio_real_at, estado, origen, observaciones) VALUES (?,?,?,?,?,?,?,?)",
+        (producto, _co.strftime('%Y-%m-%d'), 10, 1, _co.isoformat(timespec='seconds'),
+         'programado', 'eos_plan', 'DEMO_LEGAJO · sin descuento de MP · borrar con 🧹 Limpiar'))
+    pid = cur.lastrowid
+    try:
+        r = crear_ebr_desde_mbr(cur, producto_nombre=producto, lote=lote, produccion_id=pid,
+                                cantidad_objetivo_g=10000, usuario=user, notas='DEMO')
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": "No se pudo crear el legajo demo: " + str(e)[:160]}), 500
+    conn.commit()
+    return jsonify({"ok": True, "producto": producto, "lote": lote, "produccion_id": pid,
+                    "ebr_id": (r.get("id") if isinstance(r, dict) else None)})
+
+
 @bp.route("/api/brd/ebr", methods=["GET"])
 def listar_ebr():
     err = _require_login()

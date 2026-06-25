@@ -17978,6 +17978,27 @@ def simulacro_limpiar():
             except Exception:
                 pass
             n_ebr = 0
+    # demos del batch record (orden con producto real pero marcada DEMO_LEGAJO en observaciones)
+    try:
+        _demo_ids = [r[0] for r in c.execute(
+            "SELECT id FROM produccion_programada WHERE UPPER(COALESCE(observaciones,'')) LIKE '%DEMO_LEGAJO%'"
+        ).fetchall()]
+        if _demo_ids:
+            _phd = ','.join('?' for _ in _demo_ids)
+            try:
+                c.execute('SAVEPOINT _demo_leg')
+                c.execute("UPDATE ebr_ejecuciones SET estado='descartado' WHERE produccion_id IN (" + _phd + ") "
+                          "AND COALESCE(liberado_at_utc,'')=''", tuple(_demo_ids))
+                c.execute('RELEASE SAVEPOINT _demo_leg')
+            except Exception:
+                try:
+                    c.execute('ROLLBACK TO SAVEPOINT _demo_leg')
+                except Exception:
+                    pass
+            n_ebr += c.execute("DELETE FROM produccion_programada "
+                               "WHERE UPPER(COALESCE(observaciones,'')) LIKE '%DEMO_LEGAJO%'").rowcount
+    except Exception:
+        pass
     n1 = c.execute("DELETE FROM produccion_programada WHERE " + _cond).rowcount
     n2 = c.execute("DELETE FROM producciones WHERE " + _cond).rowcount
     # rótulos de limpieza de prueba (snapshot Part 11 · best-effort en SAVEPOINT por si hay trigger)

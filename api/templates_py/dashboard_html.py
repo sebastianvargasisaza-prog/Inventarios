@@ -1346,6 +1346,18 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         if(window.cargarHistProd){ try{ window.cargarHistProd(); }catch(e){} }
       };
       window.cargarFabTerminadas=async function(){ /* absorbida en Órdenes / Históricos */ };
+      window.crearDemoLegajo=async function(btn){
+        if(btn){ btn.disabled=true; btn.textContent='Creando\\u2026'; }
+        try{
+          var t=await _csrfFab();
+          var r=await fetch('/api/brd/demo-legajo',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:'{}'});
+          var j=await r.json();
+          if(!r.ok){ alert('Error: '+(j.error||r.status)); return; }
+          alert('\\ud83e\\uddea Demo creado: '+j.producto+' \\u00b7 toc\\u00e1 \\ud83d\\udccb Pasos en su orden para ver el batch record (sin descontar MP). Borralo con \\ud83e\\uddf9 Limpiar en el Plano.');
+          if(window.cargarEnCurso) window.cargarEnCurso();
+        }catch(e){ alert('Error: '+(e.message||e)); }
+        finally{ if(btn){ btn.disabled=false; btn.innerHTML='\\ud83e\\uddea Demo legajo'; } }
+      };
       window.finalizarFabVivo=async function(pid){
         if(!confirm('¿Finalizar esta fabricación? El área queda sucia hasta que la limpien.')) return;
         var t=await _csrfFab();
@@ -1357,7 +1369,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     </script>
     <!-- 🔵 En fabricación · en curso (Sebastián 25-jun: Fabricación = lo activo, paso a paso) -->
     <div style="margin-top:28px;border-top:2px solid #eee;padding-top:20px;">
-      <h3 style="color:#d97706;margin:0 0 12px;">&#128309; En fabricación &middot; en curso</h3>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:0 0 12px;flex-wrap:wrap;gap:8px"><h3 style="color:#d97706;margin:0;">&#128309; En fabricación &middot; en curso</h3><button onclick="crearDemoLegajo(this)" style="background:#ede9fe;color:#6d28d9;border:1px solid #c4b5fd;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer" title="Crea una orden DEMO + legajo para ver los Pasos inline SIN descontar MP (se borra con 🧹 Limpiar)">&#129514; Demo legajo</button></div>
       <table class="table"><thead><tr><th>N&deg; orden</th><th>Producto</th><th>Operario</th><th style="text-align:right">Te&oacute;rica</th><th style="text-align:center">Estado</th><th style="text-align:center">Acci&oacute;n</th></tr></thead>
       <tbody id="encurso-body"><tr><td colspan="6" style="text-align:center;color:#999;padding:16px;">Cargando&hellip;</td></tr></tbody></table>
       <div id="encurso-runner" style="display:none;margin-top:14px;border:1px solid #ddd6fe;border-radius:10px;padding:16px;background:#faf8ff;"></div>
