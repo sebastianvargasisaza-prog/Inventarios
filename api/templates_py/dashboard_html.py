@@ -7583,6 +7583,7 @@ async function cargarEBRs(){
   }catch(e){cont.innerHTML='<div style="color:#c0392b;">Error cargando legajos.</div>';}
 }
 var _ebrTarget='ebr-runner';
+async function _ebrJson(url){ try{ var r=await fetch(url,{credentials:'same-origin'}); if(!r.ok) return {}; return await r.json(); }catch(e){ return {}; } }
 function ebrCerrarRunner(){var b=document.getElementById(_ebrTarget);if(b){b.style.display='none';b.innerHTML='';}}
 async function abrirEBR(id, targetId){
   if(targetId) _ebrTarget=targetId;   // 25-jun · runner inline en Fabricación (#encurso-runner) o en Históricos (#ebr-runner)
@@ -7594,14 +7595,10 @@ async function abrirEBR(id, targetId){
     var r=await fetch('/api/brd/ebr/'+id,{credentials:'same-origin'});
     var d=await r.json();
     if(!r.ok){box.innerHTML='<div style="color:#c0392b;">'+(d.error||'Error')+'</div>';return;}
-    var rp=await fetch('/api/brd/ebr/'+id+'/pesajes',{credentials:'same-origin'});
-    var dp=await rp.json();
-    var rc=await fetch('/api/brd/ebr/'+id+'/conciliacion-material',{credentials:'same-origin'});
-    var dcm=await rc.json();
-    var ra=await fetch('/api/brd/ebr/'+id+'/artes',{credentials:'same-origin'});
-    var dar=await ra.json();
-    var ro=await fetch('/api/brd/ebr/'+id+'/observaciones',{credentials:'same-origin'});
-    var dob=await ro.json();
+    var dp=await _ebrJson('/api/brd/ebr/'+id+'/pesajes');
+    var dcm=await _ebrJson('/api/brd/ebr/'+id+'/conciliacion-material');
+    var dar=await _ebrJson('/api/brd/ebr/'+id+'/artes');
+    var dob=await _ebrJson('/api/brd/ebr/'+id+'/observaciones');
     // IPC · controles en proceso (specs del MBR + resultados del EBR)
     var ipcSpecs=[],ipcRes=[],ipcEstandar=[];
     try{
