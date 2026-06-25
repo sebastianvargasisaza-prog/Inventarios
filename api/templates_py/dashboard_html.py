@@ -1132,7 +1132,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         var t=await _planoCsrf();
         var d=await (await _planoPost('/api/planta/simulacro/limpiar',{},t)).json();
         await cargarPlanoGrid();
-        alert('🧹 Prueba limpiada · '+(d.pp_borradas||0)+' fabricación + '+(d.bulk_borradas||0)+' bulk + '+(d.rotulos_borrados||0)+' rótulos borrados · '+(d.areas_liberadas||0)+' áreas liberadas.');
+        alert('🧹 Prueba limpiada · '+(d.pp_borradas||0)+' fabricación + '+(d.bulk_borradas||0)+' bulk + '+(d.rotulos_borrados||0)+' rótulos borrados · '+((d.areas_liberadas||0)+(d.areas_reset||0))+' áreas vueltas a LIMPIO.');
       };
       window.abrirIniciarVivo=async function(fase){
         var m=document.getElementById('vivo-modal'); if(!m) return;

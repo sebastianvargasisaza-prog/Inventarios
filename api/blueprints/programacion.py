@@ -17895,12 +17895,26 @@ def simulacro_limpiar():
     c.execute("UPDATE areas_planta SET estado='libre', ocup_producto=NULL, ocup_operario=NULL, "
               "ocup_inicio=NULL, ocup_fase=NULL WHERE UPPER(COALESCE(ocup_producto,'')) LIKE '%SIMULACRO%' "
               "OR UPPER(COALESCE(ocup_producto,'')) LIKE '%PRUEBA%'")
+    # RESET de prueba: las pruebas dejan áreas atascadas en sucia/limpiando/ocupada sin forma fácil de
+    # volverlas a Limpio. Liberamos TODAS las que NO tengan una producción ACTIVA corriendo (inicio sin
+    # fin) — así se destraban para seguir probando, sin interrumpir nada en curso.
+    _busy = set(r[0] for r in c.execute(
+        "SELECT DISTINCT area_id FROM produccion_programada WHERE area_id IS NOT NULL "
+        "AND COALESCE(inicio_real_at,'')<>'' AND COALESCE(fin_real_at,'')=''").fetchall())
+    n_reset = 0
+    for (aid,) in c.execute("SELECT id FROM areas_planta WHERE "
+                            "LOWER(COALESCE(estado,'libre')) IN ('sucia','limpiando','ocupada')").fetchall():
+        if aid not in _busy:
+            c.execute("UPDATE areas_planta SET estado='libre', ocup_producto=NULL, ocup_operario=NULL, "
+                      "ocup_inicio=NULL, ocup_fase=NULL WHERE id=?", (aid,))
+            n_reset += 1
     audit_log(c, usuario=user, accion='SIMULACRO_LIMPIAR', tabla='produccion_programada',
               registro_id='0',
-              despues={'pp_borradas': n1, 'bulk_borradas': n2, 'rotulos_borrados': n3, 'areas': aids})
+              despues={'pp_borradas': n1, 'bulk_borradas': n2, 'rotulos_borrados': n3,
+                       'areas': aids, 'areas_reset': n_reset})
     conn.commit()
     return jsonify({'ok': True, 'pp_borradas': n1, 'bulk_borradas': n2,
-                    'rotulos_borrados': n3, 'areas_liberadas': len(aids)})
+                    'rotulos_borrados': n3, 'areas_liberadas': len(aids), 'areas_reset': n_reset})
 
 
 @bp.route('/api/planta/fabricacion/reactivar-areas', methods=['POST'])
