@@ -5557,10 +5557,26 @@ def ordenes_unificadas():
     conn = get_db()
     items = []
 
+    # 0) Fabricaciones EN CURSO (produccion_programada · inicio sin fin) → para mostrar Finalizar en la
+    # orden. Si ya tienen legajo, se anota su produccion_id en la fila del legajo; si no, fila propia.
+    _enp = {}
+    if fase == "fabricacion":
+        try:
+            for r in conn.execute(
+                "SELECT pp.id, COALESCE(pp.producto,''), COALESCE(pp.cantidad_kg,0), pp.inicio_real_at, "
+                "COALESCE(o.nombre,'') FROM produccion_programada pp "
+                "LEFT JOIN operarios_planta o ON o.id=pp.operario_elaboracion_id "
+                "WHERE COALESCE(pp.inicio_real_at,'')<>'' AND COALESCE(pp.fin_real_at,'')='' "
+                "AND LOWER(COALESCE(pp.estado,'')) NOT IN ('completado','cancelado')").fetchall():
+                _enp[r[0]] = {'producto': r[1], 'kg': float(r[2] or 0),
+                              'inicio': r[3], 'operador': r[4]}
+        except Exception as _e:
+            log.warning("ordenes-unificadas en-curso query fallo: %s", _e)
+
     # 1) Legajos EBR (ya MyBatch-shaped) · producto vía mbr_templates
     try:
         ebr_rows = conn.execute(
-            """SELECT e.id, e.numero_op,
+            """SELECT e.id, e.numero_op, e.produccion_id,
                       COALESCE(e.lote_codigo, e.lote) AS lote, e.estado,
                       e.cantidad_objetivo_g, e.cantidad_real_g,
                       COALESCE(e.ml_envasable, NULL) AS ml_envasable,
@@ -5583,6 +5599,10 @@ def ordenes_unificadas():
         liberado = bool(rd.get("liberado_at_utc"))
         if rd.get("lote"):
             _lotes_con_legajo.add(str(rd["lote"]).strip())
+        _ppid = rd.get("produccion_id")
+        _en_curso = _ppid in _enp
+        if _en_curso:
+            _enp.pop(_ppid, None)  # se muestra como esta orden (con Finalizar)
         items.append({
             "origen": "legajo",
             "numero_op": rd.get("numero_op") or f"EBR-{rd['id']}",
@@ -5592,10 +5612,11 @@ def ordenes_unificadas():
             "producida_g": rd.get("cantidad_real_g"),
             "aprobada": (rd.get("cantidad_real_g") if liberado else None),
             "ml_envasable": rd.get("ml_envasable"),
-            "estado": _estado_orden_norm("legajo", rd.get("estado")),
+            "estado": ("En proceso" if _en_curso else _estado_orden_norm("legajo", rd.get("estado"))),
             "fecha": (rd.get("iniciado_at_utc") or "")[:10],
             "link": f"/planta/orden/{rd['id']}",
             "ebr_id": rd["id"],
+            "produccion_id": (_ppid if _en_curso else None),
         })
 
     # 2) Registros simples (producciones) · solo en fabricación
@@ -5702,12 +5723,29 @@ def ordenes_unificadas():
                 "operador": rd.get("operador") or "",
             })
 
-    # orden global por fecha desc
+    # en-curso SIN legajo (productos sin MBR aprobado) → fila propia "En proceso" con Finalizar
+    for _pid, _v in _enp.items():
+        items.append({
+            "origen": "en_proceso",
+            "numero_op": f"PROD-{_pid:05d}",
+            "lote_bulk": "",
+            "producto": _v['producto'],
+            "teorica_g": round(_v['kg'] * 1000, 1),
+            "producida_g": None, "aprobada": None, "ml_envasable": None,
+            "estado": "En proceso",
+            "fecha": (_v['inicio'] or "")[:10],
+            "link": None,
+            "produccion_id": _pid,
+            "operador": _v['operador'],
+        })
+    # orden: en-curso PRIMERO, luego por fecha desc (sort estable)
     items.sort(key=lambda x: (x.get("fecha") or ""), reverse=True)
+    items.sort(key=lambda x: 0 if (x.get("estado") or "").lower().startswith("en proceso") else 1)
     resumen = {
         "total": len(items),
         "legajos": sum(1 for i in items if i["origen"] == "legajo"),
-        "simples": sum(1 for i in items if i["origen"] == "simple"),
+        "simples": sum(1 for i in items if i["origen"] in ("simple", "en_proceso")),
+        "en_proceso": sum(1 for i in items if i.get("produccion_id")),
     }
     return jsonify({"ok": True, "fase": fase, "resumen": resumen, "ordenes": items})
 

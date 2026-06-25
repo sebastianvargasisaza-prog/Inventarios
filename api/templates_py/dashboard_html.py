@@ -1316,31 +1316,15 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         m.innerHTML='<div style="background:#dcfce7;color:#166534;padding:8px 12px;border-radius:6px;font-weight:700">&#9654; Fabricación iniciada · MP descontada · área ocupada</div>';
         window.cargarEnProcesoFab();
       };
+      // 25-jun · "En fabricación ahora" y "Fabricaciones terminadas" se ABSORBIERON en la tabla única
+      // "Órdenes de Producción" (las en-curso salen arriba con su botón Finalizar). Estos quedan como
+      // wrappers que refrescan esa tabla, para que todos los llamadores existentes sigan funcionando.
       window.cargarEnProcesoFab=async function(){
-        var cont=document.getElementById('fab-enproceso'); if(!cont) return;
-        try{
-          var d=await (await fetch('/api/planta/plano-fabricacion',{credentials:'same-origin'})).json();
-          var enc=(d.areas||[]).filter(function(a){return a.produccion;});
-          if(!enc.length){cont.innerHTML='';return;}
-          var h='<div style="margin-top:22px;border-top:2px solid #eee;padding-top:16px"><h3 style="color:#d97706;margin:0 0 10px">&#128309; En fabricación ahora</h3><table class="table"><thead><tr><th>Área</th><th>Producto</th><th>Operario</th><th>Inicio</th><th></th></tr></thead><tbody>';
-          enc.forEach(function(a){var p=a.produccion;h+='<tr><td><b>'+a.nombre+'</b></td><td>'+p.producto+'</td><td>'+(p.operario||'—')+'</td><td>'+(p.inicio?String(p.inicio).slice(11,16):'—')+'</td><td><button onclick="finalizarFabVivo('+p.id+')" style="background:#d97706">&#9632; Finalizar</button></td></tr>';});
-          cont.innerHTML=h+'</tbody></table></div>';
-        }catch(e){cont.innerHTML='';}
+        var a=document.getElementById('fab-enproceso'); if(a) a.innerHTML='';
+        var b=document.getElementById('fab-terminadas'); if(b) b.innerHTML='';
+        if(window.cargarHistProd){ try{ return window.cargarHistProd(); }catch(e){} }
       };
-      window.cargarFabTerminadas=async function(){
-        var cont=document.getElementById('fab-terminadas'); if(!cont) return;
-        var _e=function(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');};
-        var _dur=function(m){if(m==null)return '—';m=parseInt(m,10);var hh=Math.floor(m/60),mm=m%60;return (hh?hh+'h ':'')+mm+'m';};
-        var _hm=function(s){return s?String(s).slice(11,16):'—';};
-        try{
-          var d=await (await fetch('/api/planta/fabricaciones-recientes',{credentials:'same-origin'})).json();
-          var it=(d.items||[]);
-          if(!it.length){cont.innerHTML='';return;}
-          var h='<div style="margin-top:22px;border-top:2px solid #eee;padding-top:16px"><h3 style="color:#16a34a;margin:0 0 10px">&#9989; Fabricaciones terminadas <span style="font-size:12px;font-weight:400;color:#94a3b8">(inicio &rarr; fin &rarr; duración)</span></h3><div style="overflow-x:auto"><table class="table"><thead><tr><th>Producto</th><th>Área</th><th>Operario</th><th>Inicio</th><th>Fin</th><th>Duración</th></tr></thead><tbody>';
-          it.forEach(function(x){h+='<tr><td><b>'+_e(x.producto)+'</b>'+(x.kg?(' · '+x.kg+' kg'):'')+'</td><td>'+_e(x.area||'—')+'</td><td>'+_e(x.operario||'—')+'</td><td>'+_hm(x.inicio)+'</td><td>'+_hm(x.fin)+'</td><td><b style="color:#0f766e">'+_dur(x.duracion_min)+'</b></td></tr>';});
-          cont.innerHTML=h+'</tbody></table></div></div>';
-        }catch(e){cont.innerHTML='';}
-      };
+      window.cargarFabTerminadas=async function(){ /* absorbida en Órdenes de Producción */ };
       window.finalizarFabVivo=async function(pid){
         if(!confirm('¿Finalizar esta fabricación? El área queda sucia hasta que la limpien.')) return;
         var t=await _csrfFab();
@@ -3962,9 +3946,13 @@ async function cargarHistProd(){
       var _btnDescartar = _puedeDescartar
         ? ' <button data-descartar-ebr data-id="'+o.ebr_id+'" data-prod="'+_escHTML(o.producto||'')+'" data-op="'+_escHTML(o.numero_op||'')+'" title="Eliminar este legajo (creado por error del sistema · solo Admin)" style="background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:5px;padding:3px 7px;font-size:11px;cursor:pointer">🗑️</button>'
         : '';
-      var acc = o.link
-        ? '<a href="'+o.link+'" style="color:#7c3aed;font-weight:700;text-decoration:none;font-size:11px">Abrir →</a>'+_btnDescartar
-        : '<button data-crear-legajo data-prod="'+_escHTML(o.producto||'')+'" data-g="'+(o.producida_g||o.teorica_g||'')+'" data-lote="'+_escHTML(o.lote_bulk||'')+'" style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:10px;font-weight:700;cursor:pointer" title="Crear el legajo electrónico (batch record) de esta orden">➕ Crear legajo</button>';
+      var _btnFin = o.produccion_id
+        ? '<button onclick="finalizarFabVivo('+o.produccion_id+')" style="background:#d97706;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:10px;font-weight:700;cursor:pointer" title="Finalizar esta fabricación · el área queda sucia hasta limpiarla">&#9632; Finalizar</button>'
+        : '';
+      var acc;
+      if(o.link){ acc = (_btnFin?_btnFin+' ':'')+'<a href="'+o.link+'" style="color:#7c3aed;font-weight:700;text-decoration:none;font-size:11px">Abrir →</a>'+_btnDescartar; }
+      else if(o.produccion_id){ acc = _btnFin; }
+      else { acc = '<button data-crear-legajo data-prod="'+_escHTML(o.producto||'')+'" data-g="'+(o.producida_g||o.teorica_g||'')+'" data-lote="'+_escHTML(o.lote_bulk||'')+'" style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:10px;font-weight:700;cursor:pointer" title="Crear el legajo electrónico (batch record) de esta orden">➕ Crear legajo</button>'; }
       return '<tr>'+
         '<td style="font-family:monospace;font-weight:700;color:#1e40af">'+_escHTML(o.numero_op||'')+'</td>'+
         '<td style="font-family:monospace;color:#6d28d9">'+_escHTML(o.lote_bulk||'—')+'</td>'+
