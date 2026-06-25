@@ -7650,8 +7650,12 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   h+=_kv('Aprobado por (Calidad)', _escHTML(d.liberado_por||'')+(d.liberado_at_utc?(' · '+_dt(d.liberado_at_utc)):''));
   h+=_kv('Observaciones', _escHTML(d.notas||''));
   h+='</div>';
-  // Precauciones + equipos (MyBatch ①)
-  h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">⚠️ Precauciones y equipos</h4>';
+  // ── Secciones numeradas en tarjetas premium (estilo MyBatch) ──
+  function _secOpen(num, titulo){
+    return '<div style="background:#fff;border:1px solid #ececf0;border-radius:14px;box-shadow:0 1px 2px rgba(24,24,27,.04),0 6px 22px rgba(24,24,27,.05);padding:16px 18px;margin:0 0 14px"><div style="display:flex;align-items:center;gap:10px;margin-bottom:12px"><span style="display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:26px;padding:0 6px;border-radius:8px;background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;font-weight:800;font-size:13px;box-shadow:0 2px 6px rgba(109,40,217,.3)">'+num+'</span><div style="font-size:14px;font-weight:800;color:#1e293b;letter-spacing:.2px">'+titulo+'</div></div>';
+  }
+  // 1 · Precauciones + equipos (MyBatch ①)
+  h+=_secOpen('1','⚠️ Precauciones y equipos');
   if(prec.length){
     h+='<ul style="font-size:12px;margin:4px 0 0;padding-left:18px;">';
     for(var pi=0;pi<prec.length;pi++){var pp2=prec[pi];h+='<li><b>'+(pp2.tipo==='equipo'?'🔧 ':'⚠️ ')+'</b>'+(pp2.descripcion||'')+' <span style="color:#999;font-size:11px;">· '+(pp2.registrado_por||'')+'</span></li>';}
@@ -7660,7 +7664,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   if(editable){h+='<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;"><button onclick="ebrAgregarPrecaucion('+d.id+',\\'precaucion\\')" style="background:#f59e0b;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;">+ Precaución</button><button onclick="ebrAgregarPrecaucion('+d.id+',\\'equipo\\')" style="background:#0891b2;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;">+ Equipo</button></div>';}
   // Despeje de línea · checklist 13 ítems × 2 etapas (MyBatch §2 Dispensación + §4 Fabricación)
   function _despEtapa(titulo, etapa, items){
-    var oh='<h4 style="color:#6d28d9;margin:16px 0 6px;">🧹 '+titulo+'</h4>';
+    var oh=''; titulo=titulo;
     items=items||[];
     var done=items.filter(function(it){return it.cumple===1;}).length;
     var allOk=items.length>0 && done===items.length;
@@ -7676,10 +7680,10 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     return oh;
   }
   var _dch=despejeChk||{};
-  h+=_despEtapa('Despeje de Línea · Dispensación', 'dispensacion', _dch.dispensacion);
-  h+=_despEtapa('Despeje de Línea · Fabricación', 'fabricacion', _dch.fabricacion);
+  h+='</div>'+_secOpen('2','🧹 Despeje de Línea · Dispensación')+_despEtapa('Despeje de Línea · Dispensación', 'dispensacion', _dch.dispensacion);
+  h+='</div>'+_secOpen('3','🧹 Despeje de Línea · Fabricación')+_despEtapa('Despeje de Línea · Fabricación', 'fabricacion', _dch.fabricacion);
   // Pesaje de MP (2ª firma · Batch 2)
-  h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">⚖️ Pesaje de materias primas (2ª firma)</h4>';
+  h+='</div>'+_secOpen('4','⚖️ Dispensación de materias primas (pesaje · 2ª firma)');
   if(!pesajes.length){h+='<div style="color:#999;font-size:12px;">Sin pesajes registrados aún.</div>';}
   else{
     h+='<table class="table" style="font-size:12px;"><thead><tr><th>Material</th><th style="text-align:right;">%</th><th>N° lote</th><th style="text-align:right;">% pureza</th><th style="text-align:right;">Teórico g</th><th style="text-align:right;">Real g</th><th>Pesó</th><th>Verificó</th><th></th></tr></thead><tbody>';
@@ -7694,7 +7698,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     h+='</tbody></table>';
   }
   // Pasos del proceso (Realizó + Verificó QC)
-  h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">📋 Pasos del proceso (Realizó + Verificó)</h4>';
+  h+='</div>'+_secOpen('5','📋 Fabricación / Mezcla (pasos · Realizó + Verificó)');
   var pasos=d.pasos||[];
   if(!pasos.length){h+='<div style="color:#999;font-size:12px;">Este MBR no tiene pasos.</div>';}
   else{
@@ -7711,7 +7715,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     h+='</tbody></table>';
   }
   // IPC · Controles en proceso (spec del MBR + resultado del EBR) · MyBatch ⑤
-  h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">🔬 Controles en proceso (IPC)</h4>';
+  h+='</div>'+_secOpen('6','🔬 Controles en proceso (IPC)');
   if(!ipcSpecs.length){h+='<div style="color:#999;font-size:12px;">Este MBR no tiene IPCs definidos. Agregalos en /brd (specs del MBR).</div>';}
   else{
     var resBySpec={}; ipcRes.forEach(function(rr){resBySpec[rr.ipc_spec_id]=rr;});
@@ -7739,7 +7743,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   }
   h+='</tbody></table>';
   // Conciliación de material de envase/empaque (envasado/acondicionamiento)
-  h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">📦 Conciliación de material (envase/empaque)</h4>';
+  h+='</div>'+_secOpen('7','📦 Conciliación de material (envase/empaque)');
   if(conc&&conc.length){
     h+='<table class="table" style="font-size:12px;"><thead><tr><th>Tipo</th><th>Material</th><th>Lote</th><th style="text-align:right;">Req.</th><th style="text-align:right;">Recib.</th><th style="text-align:right;">Devuelta</th><th style="text-align:right;">Utilizada</th></tr></thead><tbody>';
     for(var k=0;k<conc.length;k++){var m=conc[k];
@@ -7761,7 +7765,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   }
   // Aprobación de Artes / Codificación (gate de etiquetado · solo acondicionamiento)
   if((d.fase||'')==='acondicionamiento'){
-    h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">🎨 Aprobación de Artes / Codificación</h4>';
+    h+='</div>'+_secOpen('8','🎨 Aprobación de Artes / Codificación');
     if(artes&&artes.length){
       h+='<table class="table" style="font-size:12px;"><thead><tr><th>Descripción</th><th>Cód. Lote</th><th>Cód. Vto.</th><th>Aprobó</th><th></th></tr></thead><tbody>';
       for(var a=0;a<artes.length;a++){var ar=artes[a];
@@ -7783,7 +7787,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     }
   }
   // Observaciones generales del proceso (bitácora)
-  h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">📝 Observaciones generales del proceso</h4>';
+  h+='</div>'+_secOpen('9','📝 Observaciones generales del proceso');
   if(obs&&obs.length){
     h+='<ul style="font-size:12px;color:#333;margin:0 0 8px;padding-left:18px;">';
     for(var o=0;o<obs.length;o++){var ob=obs[o];
@@ -7798,7 +7802,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     h+='</div>';
   }
   // Registros físicos (adjuntar PDF · MyBatch ⑦)
-  h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">📎 Registros físicos</h4>';
+  h+='</div>'+_secOpen('10','📎 Registros físicos');
   if(regs.length){
     h+='<ul style="font-size:12px;margin:0 0 8px;padding-left:18px;">';
     for(var rg=0;rg<regs.length;rg++){var rr2=regs[rg];
@@ -7808,6 +7812,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     h+='</ul>';
   } else {h+='<div style="color:#999;font-size:12px;">Sin registros físicos adjuntos.</div>';}
   if(editable){h+='<button onclick="ebrAgregarRegistroFisico('+d.id+')" style="margin-top:4px;background:#0891b2;color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;cursor:pointer;">+ Adjuntar registro/PDF</button>';}
+  h+='</div>';
   return h;
 }
 async function ebrAgregarObservacion(ebrId){
