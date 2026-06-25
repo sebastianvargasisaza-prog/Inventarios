@@ -539,6 +539,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <button class="sub-btn" onclick="subSwitchTab('envasado',this,'bar-prodHub');loadColaSinEnvasar()">&#128230; Envasado</button>
     <button class="sub-btn" onclick="subSwitchTab('acondicionamiento',this,'bar-prodHub');loadColaAcond()">&#128295; Acondicionamiento</button>
     <button class="sub-btn" onclick="subSwitchTab('plano',this,'bar-prodHub');if(typeof cargarPlanoGrid==='function')cargarPlanoGrid();">&#128506;&#65039; Plano</button>
+    <button class="sub-btn" onclick="subSwitchTab('historicos',this,'bar-prodHub');if(typeof cargarHistProd==='function')cargarHistProd();">&#128218; Históricos</button>
   </div>
   <div id="bar-calidadHub" class="sub-tab-bar">
     <button class="sub-btn active" onclick="subSwitchTab('cuarentena',this,'bar-calidadHub')">&#128274; Cuarentena</button>
@@ -1319,12 +1320,30 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       // 25-jun · "En fabricación ahora" y "Fabricaciones terminadas" se ABSORBIERON en la tabla única
       // "Órdenes de Producción" (las en-curso salen arriba con su botón Finalizar). Estos quedan como
       // wrappers que refrescan esa tabla, para que todos los llamadores existentes sigan funcionando.
-      window.cargarEnProcesoFab=async function(){
-        var a=document.getElementById('fab-enproceso'); if(a) a.innerHTML='';
-        var b=document.getElementById('fab-terminadas'); if(b) b.innerHTML='';
-        if(window.cargarHistProd){ try{ return window.cargarHistProd(); }catch(e){} }
+      window.cargarEnCurso=async function(){
+        var tb=document.getElementById('encurso-body'); if(!tb) return;
+        try{
+          var d=await (await fetch('/api/brd/ordenes-unificadas?fase=fabricacion',{credentials:'same-origin'})).json();
+          var enc=((d&&d.ordenes)||[]).filter(function(o){return o.produccion_id;});
+          if(!enc.length){ tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:18px">Nada en fabricaci\\u00f3n ahora \\u00b7 abr\\u00ed una orden arriba \\u25b2</td></tr>'; return; }
+          tb.innerHTML=enc.map(function(o){
+            var leg=o.link?'<a href="'+o.link+'" style="color:#7c3aed;font-weight:700;text-decoration:none;font-size:11px;margin-right:6px">Legajo \\u2192</a>':'';
+            return '<tr>'+
+              '<td style="font-family:monospace;font-weight:700;color:#1e40af">'+_escHTML(o.numero_op||'')+'</td>'+
+              '<td style="font-weight:600">'+_escHTML(o.producto||'\\u2014')+'</td>'+
+              '<td>'+_escHTML(o.operador||'\\u2014')+'</td>'+
+              '<td style="text-align:right">'+(o.teorica_g!=null?gfmt(o.teorica_g):'\\u2014')+'</td>'+
+              '<td style="text-align:center"><span style="background:#fef3c7;color:#b45309;padding:1px 8px;border-radius:8px;font-size:0.75em;font-weight:700">En proceso</span></td>'+
+              '<td style="text-align:center">'+leg+'<button onclick="finalizarFabVivo('+o.produccion_id+')" style="background:#d97706;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:10px;font-weight:700;cursor:pointer">\\u25a0 Finalizar</button></td>'+
+            '</tr>';
+          }).join('');
+        }catch(e){ tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#c00;padding:16px">Error: '+_escHTML(e.message||e)+'</td></tr>'; }
       };
-      window.cargarFabTerminadas=async function(){ /* absorbida en Órdenes de Producción */ };
+      window.cargarEnProcesoFab=async function(){
+        if(window.cargarEnCurso){ try{ window.cargarEnCurso(); }catch(e){} }
+        if(window.cargarHistProd){ try{ window.cargarHistProd(); }catch(e){} }
+      };
+      window.cargarFabTerminadas=async function(){ /* absorbida en Órdenes / Históricos */ };
       window.finalizarFabVivo=async function(pid){
         if(!confirm('¿Finalizar esta fabricación? El área queda sucia hasta que la limpien.')) return;
         var t=await _csrfFab();
@@ -1334,8 +1353,18 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       try{cargarOperariosFab();cargarEnProcesoFab();cargarFabTerminadas();setInterval(function(){cargarEnProcesoFab();cargarFabTerminadas();},20000);}catch(e){}
     })();
     </script>
+    <!-- 🔵 En fabricación · en curso (Sebastián 25-jun: Fabricación = lo activo, paso a paso) -->
     <div style="margin-top:28px;border-top:2px solid #eee;padding-top:20px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px"><h3 style="color:#6d28d9;margin:0;">&#128203; Órdenes de Producción</h3>
+      <h3 style="color:#d97706;margin:0 0 12px;">&#128309; En fabricación &middot; en curso</h3>
+      <table class="table"><thead><tr><th>N&deg; orden</th><th>Producto</th><th>Operario</th><th style="text-align:right">Te&oacute;rica</th><th style="text-align:center">Estado</th><th style="text-align:center">Acci&oacute;n</th></tr></thead>
+      <tbody id="encurso-body"><tr><td colspan="6" style="text-align:center;color:#999;padding:16px;">Cargando&hellip;</td></tr></tbody></table>
+      <p style="font-size:12px;color:#94a3b8;margin:8px 0 0">Lo terminado vive en la pesta&ntilde;a <b>Hist&oacute;ricos</b> &rarr;</p>
+    </div>
+  </div>
+  <!-- ═══ PESTAÑA HISTÓRICOS · órdenes finalizadas + legajos + trazabilidad (Sebastián 25-jun) ═══ -->
+  <div id="historicos" class="tab-content">
+    <div style="margin-top:8px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px"><h3 style="color:#6d28d9;margin:0;">&#128203; Órdenes de Producción <span style="font-weight:400;font-size:13px;color:#94a3b8">· histórico</span></h3>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <a href="/planta/activar-legajos" style="background:#7c3aed;color:#fff;text-decoration:none;padding:7px 14px;font-size:0.85em;border-radius:6px;font-weight:700">&#127981; Activar legajos automáticos</a>
           <button onclick="exportarExcelProducciones()" style="background:#217346;padding:7px 14px;font-size:0.85em;">&#128196; Descargar Excel</button>
@@ -4243,7 +4272,8 @@ function subSwitchTab(tabId,btn,barId){
   if(target) target.classList.add('active');
   if(tabId==='stock'){loadStock();}  /* MEE vive en tab 'empaque' separado */
   if(tabId==='formulas'||tabId==='produccion') loadFormulas();
-  if(tabId==='produccion'){ cargarHistProd(); if(typeof cargarAreasFab==='function') cargarAreasFab(); }
+  if(tabId==='produccion'){ if(typeof cargarEnCurso==='function')cargarEnCurso(); if(typeof cargarAreasFab==='function') cargarAreasFab(); }
+  if(tabId==='historicos'){ if(typeof cargarHistProd==='function')cargarHistProd(); }
   if(tabId==='envasado') cargarEnvasadoSimpleTab();
   if(tabId==='acondicionamiento') cargarAcondSimpleTab();
   if(tabId==='programacion') cargarProgramacion(null);
