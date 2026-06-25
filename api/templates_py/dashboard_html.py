@@ -7624,15 +7624,32 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   var editable=(d.estado==='iniciado'||d.estado==='en_proceso');
   var em={fabricacion:'🏭',envasado:'📦',acondicionamiento:'🔧'};
   var fa=d.fase||'fabricacion';
-  var h='<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">';
-  h+='<div><div style="font-weight:800;color:#4c1d95;font-size:15px;">'+(d.numero_op||('EBR #'+d.id))+' &middot; '+(em[fa]||'')+' '+fa+'</div>';
-  if(d.producto_nombre){ h+='<div style="font-weight:700;color:#1e293b;font-size:13px;margin-top:1px">'+_escHTML(d.producto_nombre)+'</div>'; }
-  var extra='';
-  if(d.ml_envasable){extra=' &middot; <b style="color:#0e7490;">'+d.ml_envasable+' mL envasables</b>'+(d.densidad_g_ml?(' (dens. '+d.densidad_g_ml+' g/mL)'):'');}
-  var loteBtn='';
-  if(editable){loteBtn=' <button onclick="ebrAsignarLoteFisico('+d.id+",'"+(d.lote||'')+"'"+')" title="Asignar el lote físico/comercial real (reemplaza el provisional)" style="background:#ddd6fe;color:#4c1d95;border:none;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer;">✏️ lote físico</button>';}
-  h+='<div style="color:#555;font-size:12px;">Lote <b>'+(d.lote||'')+'</b>'+loteBtn+' &middot; objetivo '+(d.cantidad_objetivo_g||0)+' g &middot; '+_ebrBadge(d.estado)+extra+(d.area_nombre?(' &middot; \\ud83d\\udccd '+_escHTML(d.area_nombre)):'')+'</div></div>';
-  h+='<div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end"><a href="/api/brd/ebr/'+d.id+'/pdf" target="_blank" style="background:#dc2626;color:#fff;border-radius:5px;padding:5px 12px;font-size:11px;text-decoration:none;font-weight:700">📄 Descargar PDF</a><button onclick="ebrCerrarRunner()" style="background:#94a3b8;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;">Cerrar ✕</button></div></div>';
+  var _dt=function(s){return s?String(s).replace('T',' ').slice(0,16):'';};
+  var _kv=function(lbl,val){return '<div><div style="font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.3px">'+lbl+'</div><div style="font-size:12px;color:#1e293b;font-weight:600;margin-top:2px;line-height:1.35">'+((val||val===0)&&val!==''?val:'<span style="color:#cbd5e1">—</span>')+'</div></div>';};
+  var loteBtn=editable?(' <button onclick="ebrAsignarLoteFisico('+d.id+",'"+(d.lote||'')+"'"+')" title="Asignar el lote físico/comercial real" style="background:#ddd6fe;color:#4c1d95;border:none;border-radius:4px;padding:1px 6px;font-size:9px;cursor:pointer;">✏️</button>'):'';
+  var prodMl=(d.cantidad_real_g?((d.cantidad_real_g)+' Gr'+(d.ml_envasable?(' - '+d.ml_envasable+' mL'):'')):'');
+  // Encabezado estilo MyBatch · INSTRUCCIONES DE MANUFACTURA
+  var h='<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;border-bottom:1px solid #e4e4e7;padding-bottom:10px;margin-bottom:12px">';
+  h+='<div><div style="font-weight:800;color:#6d28d9;font-size:12px;letter-spacing:.6px">'+(em[fa]||'')+' INSTRUCCIONES DE MANUFACTURA</div>';
+  h+='<div style="font-weight:800;color:#1e293b;font-size:17px;margin-top:4px">'+(d.numero_op||('EBR #'+d.id))+'</div>';
+  if(d.producto_nombre){ h+='<div style="font-weight:600;color:#334155;font-size:13px;margin-top:1px">'+_escHTML(d.producto_nombre)+'</div>'; }
+  h+='</div>';
+  h+='<div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end"><a href="/api/brd/ebr/'+d.id+'/pdf" target="_blank" style="background:#dc2626;color:#fff;border-radius:5px;padding:5px 12px;font-size:11px;text-decoration:none;font-weight:700">📄 Descargar</a><button onclick="ebrCerrarRunner()" style="background:#94a3b8;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;">Cerrar ✕</button></div></div>';
+  // Grilla de datos de la orden (como MyBatch)
+  h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:11px 18px;background:#fafafa;border:1px solid #f1f5f9;border-radius:10px;padding:13px 15px;margin-bottom:10px">';
+  h+=_kv('N° de Lote Bulk', _escHTML(d.lote||'')+loteBtn);
+  h+=_kv('Cantidad Ordenada', (d.cantidad_objetivo_g||0)+' Gr');
+  h+=_kv('Área o Línea', _escHTML(d.area_nombre||''));
+  h+=_kv('Fecha Inicio', _dt(d.iniciado_at_utc));
+  h+=_kv('Fecha Final', _dt(d.completado_at_utc||d.liberado_at_utc));
+  h+=_kv('Estado Actual', _ebrBadge(d.estado));
+  h+=_kv('Cant. Producida/Aprobada', prodMl);
+  h+=_kv('Densidad', d.densidad_g_ml?(d.densidad_g_ml+' g/mL'):'');
+  h+=_kv('Rendimiento', (d.yield_pct!=null&&d.yield_pct!=='')?(d.yield_pct+'%'):'');
+  h+=_kv('Elaborado por', _escHTML(d.iniciado_por||'')+(d.iniciado_at_utc?(' · '+_dt(d.iniciado_at_utc)):''));
+  h+=_kv('Aprobado por (Calidad)', _escHTML(d.liberado_por||'')+(d.liberado_at_utc?(' · '+_dt(d.liberado_at_utc)):''));
+  h+=_kv('Observaciones', _escHTML(d.notas||''));
+  h+='</div>';
   // Precauciones + equipos (MyBatch ①)
   h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">⚠️ Precauciones y equipos</h4>';
   if(prec.length){
