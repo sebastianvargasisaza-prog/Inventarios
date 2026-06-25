@@ -136,6 +136,23 @@ def ebr_mode(conn=None):
     return val if val in ('off', 'warn', 'strict') else 'off'
 
 
+def exigir_area_limpia(conn=None):
+    """¿Producir EXIGE que el área esté limpia (libre)? True = estricto (posición INVIMA).
+    Toggle app_settings.clave='exigir_area_limpia' (UI · admin). Default True. Sebastián 25-jun:
+    en beta lo apagamos (False) para cargar producción sin exigir limpieza mientras se pule; igual
+    se sigue bloqueando arrancar sobre un área OCUPADA (producción en curso)."""
+    try:
+        c = conn or get_db()
+        row = c.execute(
+            "SELECT valor FROM app_settings WHERE clave='exigir_area_limpia' LIMIT 1"
+        ).fetchone()
+        if row is not None and row[0] is not None:
+            return str(row[0]).strip().lower() in ("1", "true", "yes", "si", "sí", "on")
+    except Exception:
+        pass
+    return True  # default: estricto
+
+
 # ── Helper para migraciones idempotentes ──────────────────────────────────────
 # Errores benignos que indicam "el cambio ya está aplicado" — NO se loguean.
 # Cualquier otro OperationalError SE LOGUEA y SE RELANZA (típico de typo SQL,
@@ -378,6 +395,18 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (284, "Beta planta (Sebastián 25-jun): cargar producción SIN exigir área limpia mientras se pule + "
+          "dejar todas las salas en limpio. app_settings 'exigir_area_limpia'=0 (toggle reversible en "
+          "/admin/seguridad-planta · default estricto). Solo estado de salas, no inventario.", [
+        "INSERT INTO app_settings (clave, valor, descripcion) "
+        "SELECT 'exigir_area_limpia','0','Producir exige área limpia (1=estricto) o beta sin exigir (0)' "
+        "WHERE NOT EXISTS (SELECT 1 FROM app_settings WHERE clave='exigir_area_limpia')",
+        "UPDATE app_settings SET valor='0' WHERE clave='exigir_area_limpia'",
+        "UPDATE areas_planta SET estado='libre', ocup_producto=NULL, ocup_operario=NULL, "
+        "ocup_inicio=NULL, ocup_fase=NULL "
+        "WHERE LOWER(TRIM(COALESCE(estado,'libre'))) <> 'libre' "
+        "OR COALESCE(ocup_producto,'')<>'' OR COALESCE(ocup_inicio,'')<>''",
+    ]),
     (283, "RESET de planta (Sebastián 24-jun · fase de pruebas): las pruebas dejaron áreas atascadas en "
           "'sucia'/'ocupada' y producciones colgadas (inicio sin fin) que bloqueaban 'Iniciar "
           "fabricación'. Cierra toda producción colgada y deja TODAS las salas en 'libre'. Solo toca "

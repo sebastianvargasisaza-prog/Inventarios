@@ -4853,9 +4853,23 @@ def fabricacion_crear_iniciar():
         return jsonify({'error': f"el área {area[2]} está inactiva"}), 400
     if int(area[5]) != 1:
         return jsonify({'error': f"el área {area[2]} no es de fabricación"}), 400
-    if (area[3] or 'libre').strip().lower() != 'libre':
-        return jsonify({'error': f"el área {area[2]} está '{area[3]}' · debe estar LIBRE para iniciar",
-                        'codigo': 'AREA_OCUPADA'}), 409
+    _area_est = (area[3] or 'libre').strip().lower()
+    try:
+        from database import exigir_area_limpia as _exigir_limpia
+        _exige_limpia = _exigir_limpia(c)
+    except Exception:
+        _exige_limpia = True
+    if _exige_limpia:
+        # Estricto (posición INVIMA): el área debe estar LIBRE (limpia y verificada).
+        if _area_est != 'libre':
+            return jsonify({'error': f"el área {area[2]} está '{area[3]}' · debe estar LIBRE para iniciar",
+                            'codigo': 'AREA_OCUPADA'}), 409
+    else:
+        # Beta (Sebastián 25-jun): no exige limpieza, pero igual bloquea arrancar sobre un área con
+        # producción EN CURSO (evita doble producción en la misma sala).
+        if _area_est == 'ocupada':
+            return jsonify({'error': f"el área {area[2]} ya tiene una producción en curso",
+                            'codigo': 'AREA_OCUPADA'}), 409
     # Defensa: un operario fijo en dispensación NO puede ir a elaboración (trigger trg_pp_fija)
     if operario_id is not None:
         try:

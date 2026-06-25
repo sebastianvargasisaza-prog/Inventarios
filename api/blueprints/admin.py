@@ -17131,6 +17131,22 @@ def admin_seguridad_planta():
                  ('Piloto: cada producción crea su legajo, avisa pero NO bloquea. Pulir y subir a strict.'
                   if _ebr_low == 'warn' else 'Estricto: bloqueo BPM (exige legajo EBR completo).')),
         'at': _ebr_s['at'], 'por': _ebr_s['por']})
+    # 3.5) Exigir área limpia para producir (beta · Sebastián 25-jun)
+    try:
+        from database import exigir_area_limpia as _exi_fn
+        _exi = bool(_exi_fn(c))
+    except Exception:
+        _exi = True
+    _exi_s = _setting('exigir_area_limpia')
+    controles.append({
+        'clave': 'exigir_area_limpia', 'nombre': 'Exigir área limpia para producir',
+        'estado': 'EXIGE (estricto)' if _exi else 'BETA · no exige',
+        'ok': _exi, 'critico': False, 'toggle_off': False, 'toggle_limpia': True,
+        'invima': 'EXIGE = solo se produce en área limpia/verificada (posición INVIMA)',
+        'nota': ('Producción solo arranca en área LIBRE (limpia y verificada). Correcto.' if _exi else
+                 'BETA: carga producción sin exigir limpieza (igual bloquea área ocupada). '
+                 'Volvé a EXIGE cuando esté pulido.'),
+        'at': _exi_s['at'], 'por': _exi_s['por']})
     # 4) FORMULA_PIN
     try:
         import config as _cfg
@@ -17214,6 +17230,32 @@ def admin_set_ebr_mode():
         pass
     conn.commit()
     return jsonify({'ok': True, 'modo': modo})
+
+
+@bp.route("/api/admin/exigir-area-limpia", methods=["POST"])
+def admin_set_exigir_area_limpia():
+    """Toggle 'exigir área limpia para producir' (app_settings · efecto inmediato sin Render). Solo Admin.
+    activo=true → estricto (INVIMA) · false → beta (no exige limpieza). Auditado (Part 11)."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    from database import get_db
+    d = request.get_json(silent=True) or {}
+    activo = bool(d.get('activo'))
+    conn = get_db(); c = conn.cursor()
+    c.execute(
+        "INSERT INTO app_settings (clave,valor,descripcion,actualizado_at_utc,actualizado_por) "
+        "VALUES ('exigir_area_limpia',?,?,datetime('now'),?) ON CONFLICT(clave) DO UPDATE SET "
+        "valor=excluded.valor, actualizado_at_utc=excluded.actualizado_at_utc, "
+        "actualizado_por=excluded.actualizado_por",
+        ('1' if activo else '0', 'Producir exige área limpia (1=estricto) o beta (0)', u))
+    try:
+        audit_log(c, usuario=u, accion='SET_EXIGIR_AREA_LIMPIA', tabla='app_settings',
+                  registro_id='exigir_area_limpia', despues={'activo': activo})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'activo': activo})
 
 
 @bp.route("/admin/seguridad-planta", methods=["GET"])
@@ -18113,6 +18155,9 @@ inventario debe volver a su posici&oacute;n INVIMA. Read-only (salvo apagar el m
         '<button onclick="setEbr(&#39;off&#39;)">OFF</button>'+
         '<button onclick="setEbr(&#39;warn&#39;)" style="background:#16a34a">WARN (piloto)</button>'+
         '<button onclick="setEbr(&#39;strict&#39;)" style="background:#dc2626">STRICT</button></div>'; }
+     if(c.toggle_limpia){ btn = '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">'+
+        '<button onclick="setLimpia(true)" style="background:#16a34a">EXIGE (estricto)</button>'+
+        '<button onclick="setLimpia(false)" style="background:#f59e0b">BETA (no exige)</button></div>'; }
      h+='<div class="ctrl '+cls+'"><div><b>'+ESC(c.nombre)+'</b> &mdash; <span class="estado '+et+'">'+ESC(c.estado)+'</span></div>'+
         '<div class="muted" style="margin-top:3px">'+ESC(c.nota)+'</div>'+
         '<div class="muted" style="font-size:11px;margin-top:2px">Posici&oacute;n INVIMA: '+ESC(c.invima)+'</div>'+quien+btn+'</div>';
@@ -18123,6 +18168,15 @@ inventario debe volver a su posici&oacute;n INVIMA. Read-only (salvo apagar el m
      kpi(e.vigente_directo,'recibido VIGENTE directo', e.vigente_directo? 'warn-t':'ok-t')+
      kpi(e.cuarentena,'recibido en cuarentena','ok-t')+
      kpi(e.en_cuarentena_ahora,'en cuarentena ahora');
+ }
+ async function setLimpia(activo){
+   if(!confirm(activo?'Exigir area limpia para producir (estricto INVIMA)?':'BETA: permitir cargar produccion SIN exigir area limpia?'))return;
+   var t=await csrf();
+   var r=await fetch('/api/admin/exigir-area-limpia',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify({activo:activo})});
+   var j=await r.json();
+   if(!r.ok){alert('Error: '+ESC(j.error||r.status));return;}
+   alert(j.activo?'Ahora EXIGE area limpia para producir':'BETA: produce sin exigir area limpia');
+   cargar();
  }
  async function setEbr(modo){
    if(!confirm('Cambiar el modo EBR a '+modo.toUpperCase()+'? (warn = avisa y no bloquea · strict = bloqueo BPM)'))return;
