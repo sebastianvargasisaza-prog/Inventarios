@@ -1332,7 +1332,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
               '<td style="font-family:monospace;font-weight:700;color:#1e40af">'+_escHTML(o.numero_op||'')+'</td>'+
               '<td style="font-weight:600">'+_escHTML(o.producto||'\\u2014')+'</td>'+
               '<td>'+_escHTML(o.operador||'\\u2014')+'</td>'+
-              '<td style="text-align:right">'+(o.teorica_g!=null?gfmt(o.teorica_g):'\\u2014')+'</td>'+
+              '<td style="text-align:right">'+(o.teorica_g!=null?(Number(o.teorica_g).toLocaleString('es-CO')+' g'):'\\u2014')+'</td>'+
               '<td style="text-align:center"><span style="background:#fef3c7;color:#b45309;padding:1px 8px;border-radius:8px;font-size:0.75em;font-weight:700">En proceso</span></td>'+
               '<td style="text-align:center">'+leg+'<button onclick="finalizarFabVivo('+o.produccion_id+')" style="background:#d97706;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:10px;font-weight:700;cursor:pointer">\\u25a0 Finalizar</button></td>'+
             '</tr>';
