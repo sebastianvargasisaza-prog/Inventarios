@@ -352,6 +352,18 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (283, "RESET de planta (Sebastián 24-jun · fase de pruebas): las pruebas dejaron áreas atascadas en "
+          "'sucia'/'ocupada' y producciones colgadas (inicio sin fin) que bloqueaban 'Iniciar "
+          "fabricación'. Cierra toda producción colgada y deja TODAS las salas en 'libre'. Solo toca "
+          "el estado de las salas (no inventario). Aplica una vez al desplegar.", [
+        "UPDATE produccion_programada SET fin_real_at=COALESCE(NULLIF(fin_real_at,''), inicio_real_at), "
+        "estado='completado' WHERE COALESCE(inicio_real_at,'')<>'' AND COALESCE(fin_real_at,'')='' "
+        "AND LOWER(COALESCE(estado,'')) NOT IN ('completado','cancelado')",
+        "UPDATE areas_planta SET estado='libre', ocup_producto=NULL, ocup_operario=NULL, "
+        "ocup_inicio=NULL, ocup_fase=NULL "
+        "WHERE LOWER(TRIM(COALESCE(estado,'libre'))) <> 'libre' "
+        "OR COALESCE(ocup_producto,'')<>'' OR COALESCE(ocup_inicio,'')<>''",
+    ]),
     (282, "Fabricación en vivo → cola de envasado (Sebastián 24-jun · EBR OFF): produccion_programada "
           "guarda la presentación capturada al iniciar, para arrastrarla al bulk de envasado al "
           "finalizar. 'duplicate column' benigno.", [

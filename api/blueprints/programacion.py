@@ -4768,7 +4768,7 @@ def fabricacion_crear_iniciar():
         return jsonify({'error': f"el área {area[2]} está inactiva"}), 400
     if int(area[5]) != 1:
         return jsonify({'error': f"el área {area[2]} no es de fabricación"}), 400
-    if (area[3] or 'libre') != 'libre':
+    if (area[3] or 'libre').strip().lower() != 'libre':
         return jsonify({'error': f"el área {area[2]} está '{area[3]}' · debe estar LIBRE para iniciar",
                         'codigo': 'AREA_OCUPADA'}), 409
     # Defensa: un operario fijo en dispensación NO puede ir a elaboración (trigger trg_pp_fija)
