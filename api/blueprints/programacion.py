@@ -4043,14 +4043,8 @@ def _rotulo_f02_sheet(c, area_id, equipo=None):
     if equipos_lst:
         equipos_txt = ', '.join(str(x) for x in equipos_lst)
     else:
-        _twin = {'PROD1': 'FAB1', 'PROD2': 'FAB2', 'PROD3': 'FAB3', 'PROD4': 'FAB_FLOAT'}
-        _ac = (base['area_codigo'] or '').upper()
-        _cods = list({_ac, _twin.get(_ac, _ac)})
-        _ph = ','.join('?' for _ in _cods)
-        _eqs = c.execute(
-            "SELECT codigo, nombre FROM equipos_planta WHERE UPPER(COALESCE(area_codigo,'')) IN (" + _ph + ") "
-            "AND COALESCE(activo,1)=1 ORDER BY tipo, nombre", tuple(_cods)).fetchall()
-        equipos_txt = ', '.join(f"{e[0]} {e[1]}" for e in _eqs) if _eqs else '—'
+        _eqs = _equipos_de_area(c, base['area_codigo'])  # catálogo canónico (dicts)
+        equipos_txt = ', '.join(f"{e['codigo']} {e['nombre']}" for e in _eqs) if _eqs else '—'
     # Sujeto del rótulo: por EQUIPO (cada máquina su etiqueta) o por área. Si es por equipo, la sala
     # pasa a una fila aparte y el encabezado es el equipo.
     if equipo is not None:
@@ -4074,7 +4068,7 @@ def _rotulo_f02_sheet(c, area_id, equipo=None):
 
     def _row(lbl, val, num=False):
         vcls = ' class="num"' if num else ''
-        return f'<tr><td class="k">{_e(lbl)}</td><td{vcls}>{_e(str(val) or "—")}</td></tr>'
+        return f'<tr><td class="k">{_e(lbl)}</td><td{vcls}>{_e(str(val) if val else "—")}</td></tr>'
 
     return f'''<div class="sheet">
   <div class="accent"></div>
@@ -4161,6 +4155,7 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02'):
   .firma .f{{font-size:11.5px;color:var(--mute);margin-top:3px;font-variant-numeric:tabular-nums}}
   .printbar{{text-align:center;margin-top:18px}}
   .printbtn{{display:inline-flex;align-items:center;gap:8px;padding:11px 26px;background:var(--violet);color:#fff;text-decoration:none;border:none;border-radius:10px;font-weight:600;font-size:14px;font-family:'Inter';cursor:pointer;box-shadow:0 4px 14px rgba(109,40,217,.22)}}
+  @media(max-width:560px){{ .top{{flex-direction:column;gap:10px}} .ctrl{{text-align:left}} .firmas{{flex-direction:column}} .firma+.firma{{border-left:0;border-top:1px solid var(--line)}} }}
   @media print{{ body{{padding:0;background:#fff}} .sheet{{box-shadow:none;border:none;margin:0}} .printbar{{display:none}} }}
 </style></head><body>
 {sheets_html}
@@ -4170,23 +4165,13 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02'):
 </body></html>'''
 
 
-def _equipos_de_area(c, area_codigo):
-    """[(codigo, nombre), ...] de los equipos activos de la sala (TWIN FAB/PROD)."""
-    twin = {'PROD1': 'FAB1', 'PROD2': 'FAB2', 'PROD3': 'FAB3', 'PROD4': 'FAB_FLOAT'}
-    ac = (area_codigo or '').upper()
-    cods = list({ac, twin.get(ac, ac)})
-    ph = ','.join('?' for _ in cods)
-    return c.execute(
-        "SELECT codigo, nombre FROM equipos_planta WHERE UPPER(COALESCE(area_codigo,'')) IN (" + ph + ") "
-        "AND COALESCE(activo,1)=1 ORDER BY tipo, nombre", tuple(cods)).fetchall()
-
-
 def _rotulos_de_area(c, area_id, area_codigo):
-    """Lista de hojas F02 de una sala: UNA POR EQUIPO (cada máquina su etiqueta). Si la sala no tiene
-    equipos registrados, una sola hoja a nivel de área."""
+    """Lista de hojas F02 de una sala: UNA POR EQUIPO (cada máquina su etiqueta · reusa el catálogo
+    canónico _equipos_de_area, que devuelve dicts). Si la sala no tiene equipos, una hoja de área."""
     equipos = _equipos_de_area(c, area_codigo)
     if equipos:
-        return [s for s in (_rotulo_f02_sheet(c, area_id, equipo=(e[0], e[1])) for e in equipos) if s]
+        return [s for s in (_rotulo_f02_sheet(c, area_id, equipo=(e['codigo'], e['nombre']))
+                            for e in equipos) if s]
     s = _rotulo_f02_sheet(c, area_id)
     return [s] if s else []
 
@@ -17998,8 +17983,9 @@ def simulacro_limpiar():
     # sucia/limpiando/ocupada y producciones colgadas (inicio sin fin) que bloquean el "Iniciar".
     # 1) cerrar TODA producción en proceso colgada (inicio sin fin) → marcarla terminada, así no traba.
     n_colgadas = c.execute(
-        "UPDATE produccion_programada SET fin_real_at=datetime('now','-5 hours'), estado='completado' "
-        "WHERE COALESCE(inicio_real_at,'')<>'' AND COALESCE(fin_real_at,'')=''").rowcount
+        "UPDATE produccion_programada SET fin_real_at=?, estado='completado' "
+        "WHERE COALESCE(inicio_real_at,'')<>'' AND COALESCE(fin_real_at,'')=''",
+        (_now_co(),)).rowcount
     # diagnóstico: qué estados hay ANTES de resetear (por si 'sucia ' con espacio o 'Sucia' no matcheaba)
     diag_estados = {}
     try:

@@ -18089,7 +18089,7 @@ _SEGURIDAD_PLANTA_HTML = """<!doctype html><html lang="es"><head><meta charset="
  .wrap{max-width:1050px;margin:0 auto;padding:24px}
  h1{font-size:21px}.muted{color:#94a3b8;font-size:13px}
  .card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:16px;margin:12px 0}
-@media(max-width:768px){table{display:block;overflow-x:auto;white-space:nowrap}.card{overflow-x:auto}input,select,textarea{font-size:16px}}
+@media(max-width:768px){.wrap{padding:24px 12px}table{display:block;overflow-x:auto;white-space:nowrap}.card{overflow-x:auto}input,select,textarea{font-size:16px}button{padding:12px 16px;min-height:44px}.kpi{min-width:0;flex:1 1 45%}}
  .ctrl{border-left:5px solid #334155;border-radius:10px;padding:12px 16px;margin:10px 0;background:#0b1220}
  .ctrl.ok{border-left-color:#16a34a}.ctrl.bad{border-left-color:#f87171}
  .ctrl.crit{border-left-color:#f59e0b}
@@ -18097,7 +18097,8 @@ _SEGURIDAD_PLANTA_HTML = """<!doctype html><html lang="es"><head><meta charset="
  .kpis{display:flex;gap:10px;flex-wrap:wrap}
  .kpi{background:#0b1220;border:1px solid #334155;border-radius:10px;padding:12px 16px;min-width:120px}
  .kpi .v{font-size:22px;font-weight:800}.kpi .l{font-size:11px;color:#94a3b8}
- button{padding:9px 16px;border:0;border-radius:8px;background:#dc2626;color:#fff;font-weight:700;cursor:pointer}
+ button{padding:10px 16px;min-height:42px;border:0;border-radius:8px;background:#4f46e5;color:#fff;font-weight:700;cursor:pointer;transition:filter .12s}
+ button:hover{filter:brightness(1.08)}
  a{color:#a5b4fc}
 </style></head><body><div class="wrap">
 <a href="/admin">&larr; Volver al Hub</a>

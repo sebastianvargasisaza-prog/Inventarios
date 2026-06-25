@@ -7077,7 +7077,7 @@ async function cargarAreasFab(){
     var opts='<option value="">-- Selecciona área --</option>'; var _seenAr={};
     arr.filter(function(a){return a.puede_producir;}).forEach(function(a){
       var _k=(a.nombre||'').trim().toLowerCase(); if(_seenAr[_k]) return; _seenAr[_k]=1;
-      opts+='<option value="'+a.id+'">'+_escHTML(a.nombre)+'</option>';
+      opts+='<option value="'+a.id+'" data-codigo="'+_escHTML(a.codigo||'')+'">'+_escHTML(a.nombre)+'</option>';
     });
     sel.innerHTML=opts;
   }catch(e){}
@@ -7096,7 +7096,8 @@ async function iniciarRegistroProd(){
   }
   var obs=document.getElementById('prod-obs').value;
   var pres=document.getElementById('prod-presentacion').value;
-  var areaCod=(document.getElementById('prod-area')||{}).value||'';
+  var _selAr=document.getElementById('prod-area');
+  var areaCod=(_selAr&&_selAr.selectedOptions&&_selAr.selectedOptions[0]?(_selAr.selectedOptions[0].getAttribute('data-codigo')||''):'');
   var loteIn=((document.getElementById('prod-lote')||{}).value||'').trim();
   if(!pres || !pres.trim()){
     if(!confirm('⚠ Sin presentación · los rótulos saldrán incompletos. ¿Continuar sin presentación?')) return;
