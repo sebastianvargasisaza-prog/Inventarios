@@ -110,6 +110,32 @@ def recepcion_auto_vigente(conn=None):
         return False
 
 
+def ebr_mode(conn=None):
+    """Modo del Batch Record Digital (EBR/MyBatch): 'off' | 'warn' | 'strict'.
+    Resolución (igual patrón que recepcion_auto_vigente):
+      1) app_settings.clave='ebr_mode' (toggle desde la UI · admin/Calidad · sin tocar Render).
+      2) si no hay fila → variable de entorno EBR_MODE.
+    Default 'off'. 'warn' = avisa pero NO bloquea (piloto · pulir con uso). 'strict' = bloqueo BPM.
+    """
+    val = None
+    try:
+        c = conn or get_db()
+        row = c.execute(
+            "SELECT valor FROM app_settings WHERE clave='ebr_mode' LIMIT 1"
+        ).fetchone()
+        if row is not None and row[0] is not None:
+            val = str(row[0]).strip().lower()
+    except Exception:
+        pass  # tabla ausente / sin conexión → cae al env
+    if val not in ('off', 'warn', 'strict'):
+        try:
+            from config import EBR_MODE as _envm
+            val = str(_envm).strip().lower()
+        except Exception:
+            val = 'off'
+    return val if val in ('off', 'warn', 'strict') else 'off'
+
+
 # ── Helper para migraciones idempotentes ──────────────────────────────────────
 # Errores benignos que indicam "el cambio ya está aplicado" — NO se loguean.
 # Cualquier otro OperationalError SE LOGUEA y SE RELANZA (típico de typo SQL,

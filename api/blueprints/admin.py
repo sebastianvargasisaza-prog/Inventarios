@@ -17113,19 +17113,24 @@ def admin_seguridad_planta():
         'nota': 'Encender (strict) cuando Calidad cargue micro.' if gm_eff != 'strict'
                 else 'Liberación de PT bloqueada sin micro. Correcto.',
         'at': gm['at'], 'por': gm['por']})
-    # 3) EBR_MODE (batch record para producir)
+    # 3) EBR_MODE (batch record para producir) · ahora toggle DB (off/warn/strict · sin Render)
     try:
-        from config import EBR_MODE as _EBR
+        from database import ebr_mode as _ebr_mode_fn
+        _EBR = _ebr_mode_fn(c)
     except Exception:
         _EBR = _os.environ.get('EBR_MODE', 'off')
+    _ebr_s = _setting('ebr_mode')
+    _ebr_low = str(_EBR).lower()
     controles.append({
-        'clave': 'EBR_MODE', 'nombre': 'EBR (batch record digital)',
-        'estado': str(_EBR).upper(), 'ok': (str(_EBR).lower() in ('warn', 'strict')),
-        'critico': False, 'toggle_off': False,
-        'invima': 'strict = exige legajo EBR aprobado para producir',
-        'nota': 'Encender por fases (warn→strict) cuando los MBR estén aprobados.'
-                if str(_EBR).lower() == 'off' else 'EBR activo.',
-        'at': '(env Render)', 'por': ''})
+        'clave': 'ebr_mode', 'nombre': 'EBR (batch record digital)',
+        'estado': str(_EBR).upper(), 'ok': (_ebr_low in ('warn', 'strict')),
+        'critico': False, 'toggle_off': False, 'toggle_ebr': True,
+        'invima': 'warn = avisa (piloto) · strict = exige legajo EBR aprobado para producir',
+        'nota': ('Apagado. Encendé warn (avisa, no bloquea) cuando los MBR estén aprobados.'
+                 if _ebr_low == 'off' else
+                 ('Piloto: cada producción crea su legajo, avisa pero NO bloquea. Pulir y subir a strict.'
+                  if _ebr_low == 'warn' else 'Estricto: bloqueo BPM (exige legajo EBR completo).')),
+        'at': _ebr_s['at'], 'por': _ebr_s['por']})
     # 4) FORMULA_PIN
     try:
         import config as _cfg
@@ -17180,6 +17185,35 @@ def admin_seguridad_planta():
     n_alertas = sum(1 for x in controles if not x['ok'])
     return jsonify({'ok': True, 'controles': controles, 'exposicion': exposicion,
                     'alertas': n_alertas})
+
+
+@bp.route("/api/admin/ebr-mode", methods=["POST"])
+def admin_set_ebr_mode():
+    """Fija el modo del Batch Record (EBR): off | warn | strict en app_settings 'ebr_mode'.
+    Efecto inmediato sin tocar Render (los gates de brd.py leen este valor por request).
+    Solo Admin. Cambio auditado (Part 11). Sebastián 24-jun: activar warn → pulir → strict."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    from database import get_db
+    d = request.get_json(silent=True) or {}
+    modo = (d.get('modo') or '').strip().lower()
+    if modo not in ('off', 'warn', 'strict'):
+        return jsonify({'error': "modo debe ser 'off', 'warn' o 'strict'"}), 400
+    conn = get_db(); c = conn.cursor()
+    c.execute(
+        "INSERT INTO app_settings (clave,valor,descripcion,actualizado_at_utc,actualizado_por) "
+        "VALUES ('ebr_mode',?,?,datetime('now'),?) ON CONFLICT(clave) DO UPDATE SET "
+        "valor=excluded.valor, actualizado_at_utc=excluded.actualizado_at_utc, "
+        "actualizado_por=excluded.actualizado_por",
+        (modo, 'Modo Batch Record EBR (off/warn/strict)', u))
+    try:
+        audit_log(c, usuario=u, accion='SET_EBR_MODE', tabla='app_settings',
+                  registro_id='ebr_mode', despues={'modo': modo})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'modo': modo})
 
 
 @bp.route("/admin/seguridad-planta", methods=["GET"])
@@ -18075,6 +18109,10 @@ inventario debe volver a su posici&oacute;n INVIMA. Read-only (salvo apagar el m
      var et = c.ok ? 'ok-t' : (c.critico ? 'warn-t' : 'bad-t');
      var quien = (c.por||c.at) ? ('<div class="muted" style="margin-top:4px">&uacute;ltimo cambio: '+ESC(c.por||'?')+' '+ESC(c.at||'')+'</div>') : '';
      var btn = c.toggle_off ? ('<button onclick="apagarModoInv(this)" style="margin-top:8px">Apagar modo inventario</button>') : '';
+     if(c.toggle_ebr){ btn = '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+
+        '<button onclick="setEbr(&#39;off&#39;)">OFF</button>'+
+        '<button onclick="setEbr(&#39;warn&#39;)" style="background:#16a34a">WARN (piloto)</button>'+
+        '<button onclick="setEbr(&#39;strict&#39;)" style="background:#dc2626">STRICT</button></div>'; }
      h+='<div class="ctrl '+cls+'"><div><b>'+ESC(c.nombre)+'</b> &mdash; <span class="estado '+et+'">'+ESC(c.estado)+'</span></div>'+
         '<div class="muted" style="margin-top:3px">'+ESC(c.nota)+'</div>'+
         '<div class="muted" style="font-size:11px;margin-top:2px">Posici&oacute;n INVIMA: '+ESC(c.invima)+'</div>'+quien+btn+'</div>';
@@ -18085,6 +18123,15 @@ inventario debe volver a su posici&oacute;n INVIMA. Read-only (salvo apagar el m
      kpi(e.vigente_directo,'recibido VIGENTE directo', e.vigente_directo? 'warn-t':'ok-t')+
      kpi(e.cuarentena,'recibido en cuarentena','ok-t')+
      kpi(e.en_cuarentena_ahora,'en cuarentena ahora');
+ }
+ async function setEbr(modo){
+   if(!confirm('Cambiar el modo EBR a '+modo.toUpperCase()+'? (warn = avisa y no bloquea · strict = bloqueo BPM)'))return;
+   var t=await csrf();
+   var r=await fetch('/api/admin/ebr-mode',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify({modo:modo})});
+   var j=await r.json();
+   if(!r.ok){alert('Error: '+ESC(j.error||r.status));return;}
+   alert('EBR ahora en '+(j.modo||modo).toUpperCase());
+   cargar();
  }
  async function apagarModoInv(btn){
    if(!confirm('Apagar el modo inventario? La recepci\\u00f3n vuelve a CUARENTENA (posici\\u00f3n INVIMA).'))return;

@@ -47,6 +47,19 @@ try:
     from config import EBR_MODE
 except ImportError:  # deploy-safe
     EBR_MODE = "off"
+
+
+def _ebr_mode_now(c=None):
+    """Modo EBR EFECTIVO por request: app_settings 'ebr_mode' (toggle UI) → env EBR_MODE → 'off'.
+    Usar esto en los gates (no la constante de import) para que el interruptor de la UI tenga efecto
+    inmediato sin redeploy. Sebastián 24-jun: activar warn → pulir con uso → strict."""
+    try:
+        from database import ebr_mode
+    except ImportError:
+        from api.database import ebr_mode
+    return ebr_mode(c)
+
+
 from audit_helpers import audit_log
 
 bp = Blueprint("brd", __name__)
@@ -3232,7 +3245,7 @@ def liberar_ebr(ebr_id):
 
     # Audit 3-jun · GATE DE COMPLETITUD del legajo · solo EBR_MODE='strict' (BPM
     # duro). En 'warn' (piloto) NO bloquea, para no frenar mientras se adopta.
-    if EBR_MODE == 'strict':
+    if _ebr_mode_now(cur) == 'strict':
         try:
             _pes_sin_verif = cur.execute(
                 "SELECT COUNT(*) FROM ebr_pesajes "
@@ -4762,7 +4775,7 @@ def reportar_pesaje(ebr_id):
     # la 1ª firma del pesaje es OBLIGATORIA (Part 11 / dato de lote regulado).
     user = session.get("compras_user", "")
     signature_id = body.get("signature_id")
-    if not signature_id and EBR_MODE != "off":
+    if not signature_id and _ebr_mode_now(cur) != "off":
         return jsonify({
             "error": "Falta la e-firma del pesaje (firmá como ejecutor).",
             "codigo": "FIRMA_REQUERIDA",
