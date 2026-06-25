@@ -4042,9 +4042,22 @@ def planta_rotulo_limpieza_pdf(area_id):
         equipos_lst = json.loads(eq_json) if eq_json else []
     except Exception:
         equipos_lst = []
-    # Etiqueta de área/equipo: si el ciclo limpió UN solo equipo, mostrarlo.
+    # Etiqueta de área/equipo.
     area_label = f"{base['area_nombre']} · {base['area_codigo']}"
-    equipos_txt = ', '.join(str(x) for x in equipos_lst) if equipos_lst else '—'
+    # Equipos del rótulo: si el ciclo registró equipos limpiados, esos; si no, AUTO-cargar TODOS los
+    # equipos de la sala desde el maestro (número + nombre · Sebastián 24-jun) para que no salga vacío.
+    # TWIN FAB/PROD para hallar los equipos ligados al código de fabricación.
+    if equipos_lst:
+        equipos_txt = ', '.join(str(x) for x in equipos_lst)
+    else:
+        _twin = {'PROD1': 'FAB1', 'PROD2': 'FAB2', 'PROD3': 'FAB3', 'PROD4': 'FAB_FLOAT'}
+        _ac = (base['area_codigo'] or '').upper()
+        _cods = list({_ac, _twin.get(_ac, _ac)})
+        _ph = ','.join('?' for _ in _cods)
+        _eqs = c.execute(
+            "SELECT codigo, nombre FROM equipos_planta WHERE UPPER(COALESCE(area_codigo,'')) IN (" + _ph + ") "
+            "AND COALESCE(activo,1)=1 ORDER BY tipo, nombre", tuple(_cods)).fetchall()
+        equipos_txt = ', '.join(f"{e[0]} {e[1]}" for e in _eqs) if _eqs else '—'
     estado_fisico = base['estado_fisico']
     realizado_full = _persona_corta(c, realizado_por)
     verificado_full = _persona_corta(c, verificado_por)
