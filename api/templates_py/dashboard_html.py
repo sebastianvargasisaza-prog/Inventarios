@@ -7626,11 +7626,12 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   var fa=d.fase||'fabricacion';
   var h='<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">';
   h+='<div><div style="font-weight:800;color:#4c1d95;font-size:15px;">'+(d.numero_op||('EBR #'+d.id))+' &middot; '+(em[fa]||'')+' '+fa+'</div>';
+  if(d.producto_nombre){ h+='<div style="font-weight:700;color:#1e293b;font-size:13px;margin-top:1px">'+_escHTML(d.producto_nombre)+'</div>'; }
   var extra='';
   if(d.ml_envasable){extra=' &middot; <b style="color:#0e7490;">'+d.ml_envasable+' mL envasables</b>'+(d.densidad_g_ml?(' (dens. '+d.densidad_g_ml+' g/mL)'):'');}
   var loteBtn='';
   if(editable){loteBtn=' <button onclick="ebrAsignarLoteFisico('+d.id+",'"+(d.lote||'')+"'"+')" title="Asignar el lote físico/comercial real (reemplaza el provisional)" style="background:#ddd6fe;color:#4c1d95;border:none;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer;">✏️ lote físico</button>';}
-  h+='<div style="color:#555;font-size:12px;">Lote <b>'+(d.lote||'')+'</b>'+loteBtn+' &middot; objetivo '+(d.cantidad_objetivo_g||0)+' g &middot; '+_ebrBadge(d.estado)+extra+'</div></div>';
+  h+='<div style="color:#555;font-size:12px;">Lote <b>'+(d.lote||'')+'</b>'+loteBtn+' &middot; objetivo '+(d.cantidad_objetivo_g||0)+' g &middot; '+_ebrBadge(d.estado)+extra+(d.area_nombre?(' &middot; \\ud83d\\udccd '+_escHTML(d.area_nombre)):'')+'</div></div>';
   h+='<button onclick="ebrCerrarRunner()" style="background:#94a3b8;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;">Cerrar ✕</button></div>';
   // Precauciones + equipos (MyBatch ①)
   h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">⚠️ Precauciones y equipos</h4>';
@@ -7664,13 +7665,14 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">⚖️ Pesaje de materias primas (2ª firma)</h4>';
   if(!pesajes.length){h+='<div style="color:#999;font-size:12px;">Sin pesajes registrados aún.</div>';}
   else{
-    h+='<table class="table" style="font-size:12px;"><thead><tr><th>Material</th><th style="text-align:right;">Teórico g</th><th style="text-align:right;">Real g</th><th>Pesó</th><th>Verificó</th><th></th></tr></thead><tbody>';
+    h+='<table class="table" style="font-size:12px;"><thead><tr><th>Material</th><th style="text-align:right;">%</th><th>N° lote</th><th style="text-align:right;">% pureza</th><th style="text-align:right;">Teórico g</th><th style="text-align:right;">Real g</th><th>Pesó</th><th>Verificó</th><th></th></tr></thead><tbody>';
     for(var i=0;i<pesajes.length;i++){
       var p=pesajes[i];var verif=(p.verificado_por||'').trim();
       var verifCell=verif?('<span style="color:#16a34a;font-weight:700;">✓ '+verif+'</span>'):'<span style="color:#f59e0b;">pendiente</span>';
       var acc='<span style="color:#999;">—</span>';
       if(!verif&&editable){acc='<button onclick="ebrVerificarPesaje('+d.id+','+p.id+')" style="background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Verificar</button>';}
-      h+='<tr><td>'+(p.material_nombre||p.material_id||'')+'</td><td style="text-align:right;">'+(p.cantidad_teorica_g||0)+'</td><td style="text-align:right;">'+(p.cantidad_real_g||0)+'</td><td>'+(p.pesado_por||'')+'</td><td>'+verifCell+'</td><td style="text-align:right;">'+acc+'</td></tr>';
+      var _pct=(d.cantidad_objetivo_g>0?((p.cantidad_teorica_g||0)/d.cantidad_objetivo_g*100):0);
+      h+='<tr><td>'+(p.material_nombre||p.material_id||'')+'</td><td style="text-align:right;">'+(_pct?parseFloat(_pct.toFixed(3)):'—')+'</td><td style="font-family:monospace;font-size:11px">'+_escHTML(p.lote_mp||'—')+'</td><td style="text-align:right;">100</td><td style="text-align:right;">'+(p.cantidad_teorica_g||0)+'</td><td style="text-align:right;">'+(p.cantidad_real_g||0)+'</td><td>'+(p.pesado_por||'')+'</td><td>'+verifCell+'</td><td style="text-align:right;">'+acc+'</td></tr>';
     }
     h+='</tbody></table>';
   }

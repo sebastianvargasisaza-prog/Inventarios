@@ -2671,7 +2671,23 @@ def detalle_ebr(ebr_id):
         """SELECT * FROM ebr_pasos_ejecutados
            WHERE ebr_id = ? ORDER BY orden""", (ebr_id,),
     ).fetchall()
-    return jsonify(_ebr_to_dict(row, pasos))
+    d = _ebr_to_dict(row, pasos)
+    # producto + área para el header del legajo (alinear con MyBatch · Sebastián 25-jun)
+    try:
+        mb = conn.execute("SELECT producto_nombre FROM mbr_templates WHERE id=?",
+                          (d.get("mbr_template_id"),)).fetchone()
+        d["producto_nombre"] = (mb[0] if mb else "")
+    except Exception:
+        d["producto_nombre"] = ""
+    try:
+        ar = conn.execute(
+            "SELECT COALESCE(ap.nombre,'') FROM produccion_programada pp "
+            "LEFT JOIN areas_planta ap ON ap.id=pp.area_id WHERE pp.id=?",
+            (d.get("produccion_id"),)).fetchone()
+        d["area_nombre"] = (ar[0] if ar else "")
+    except Exception:
+        d["area_nombre"] = ""
+    return jsonify(d)
 
 
 @bp.route("/api/brd/ebr/<int:ebr_id>/pasos/<int:orden>/iniciar", methods=["POST"])
