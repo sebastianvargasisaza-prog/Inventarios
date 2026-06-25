@@ -17868,20 +17868,39 @@ def simulacro_limpiar():
         return jsonify({'error': 'No autorizado'}), 401
     user = session.get('compras_user', '')
     conn = get_db(); c = conn.cursor()
+    # datos de PRUEBA: producto contiene SIMULACRO o PRUEBA
+    _cond = ("(UPPER(COALESCE(producto,'')) LIKE '%SIMULACRO%' "
+             "OR UPPER(COALESCE(producto,'')) LIKE '%PRUEBA%')")
     aids = [r[0] for r in c.execute(
-        "SELECT DISTINCT area_id FROM produccion_programada "
-        "WHERE area_id IS NOT NULL AND UPPER(COALESCE(producto,'')) LIKE '%SIMULACRO%'").fetchall()]
-    n1 = c.execute("DELETE FROM produccion_programada WHERE UPPER(COALESCE(producto,'')) LIKE '%SIMULACRO%'").rowcount
-    n2 = c.execute("DELETE FROM producciones WHERE UPPER(COALESCE(producto,'')) LIKE '%SIMULACRO%'").rowcount
+        "SELECT DISTINCT area_id FROM produccion_programada WHERE area_id IS NOT NULL AND " + _cond).fetchall()]
+    n1 = c.execute("DELETE FROM produccion_programada WHERE " + _cond).rowcount
+    n2 = c.execute("DELETE FROM producciones WHERE " + _cond).rowcount
+    # rótulos de limpieza de prueba (snapshot Part 11 · best-effort en SAVEPOINT por si hay trigger)
+    n3 = 0
+    try:
+        c.execute('SAVEPOINT _rot_prueba')
+        n3 = c.execute("DELETE FROM rotulos_limpieza WHERE "
+                       "UPPER(COALESCE(producto_elaborar,'')) LIKE '%SIMULACRO%' "
+                       "OR UPPER(COALESCE(producto_elaborar,'')) LIKE '%PRUEBA%'").rowcount
+        c.execute('RELEASE SAVEPOINT _rot_prueba')
+    except Exception:
+        try:
+            c.execute('ROLLBACK TO SAVEPOINT _rot_prueba')
+        except Exception:
+            pass
+        n3 = 0
     for aid in aids:
         c.execute("UPDATE areas_planta SET estado='libre', ocup_producto=NULL, ocup_operario=NULL, "
                   "ocup_inicio=NULL, ocup_fase=NULL WHERE id=?", (aid,))
     c.execute("UPDATE areas_planta SET estado='libre', ocup_producto=NULL, ocup_operario=NULL, "
-              "ocup_inicio=NULL, ocup_fase=NULL WHERE UPPER(COALESCE(ocup_producto,'')) LIKE '%SIMULACRO%'")
+              "ocup_inicio=NULL, ocup_fase=NULL WHERE UPPER(COALESCE(ocup_producto,'')) LIKE '%SIMULACRO%' "
+              "OR UPPER(COALESCE(ocup_producto,'')) LIKE '%PRUEBA%'")
     audit_log(c, usuario=user, accion='SIMULACRO_LIMPIAR', tabla='produccion_programada',
-              registro_id='0', despues={'pp_borradas': n1, 'bulk_borradas': n2, 'areas': aids})
+              registro_id='0',
+              despues={'pp_borradas': n1, 'bulk_borradas': n2, 'rotulos_borrados': n3, 'areas': aids})
     conn.commit()
-    return jsonify({'ok': True, 'pp_borradas': n1, 'bulk_borradas': n2, 'areas_liberadas': len(aids)})
+    return jsonify({'ok': True, 'pp_borradas': n1, 'bulk_borradas': n2,
+                    'rotulos_borrados': n3, 'areas_liberadas': len(aids)})
 
 
 @bp.route('/api/planta/fabricacion/reactivar-areas', methods=['POST'])

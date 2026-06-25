@@ -1132,7 +1132,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         var t=await _planoCsrf();
         var d=await (await _planoPost('/api/planta/simulacro/limpiar',{},t)).json();
         await cargarPlanoGrid();
-        alert('🧹 Simulacro limpiado · '+(d.pp_borradas||0)+' demo + '+(d.bulk_borradas||0)+' bulk borrados · '+(d.areas_liberadas||0)+' áreas liberadas.');
+        alert('🧹 Prueba limpiada · '+(d.pp_borradas||0)+' fabricación + '+(d.bulk_borradas||0)+' bulk + '+(d.rotulos_borrados||0)+' rótulos borrados · '+(d.areas_liberadas||0)+' áreas liberadas.');
       };
       window.abrirIniciarVivo=async function(fase){
         var m=document.getElementById('vivo-modal'); if(!m) return;
@@ -7073,7 +7073,7 @@ async function cargarAreasFab(){
     var opts='<option value="">-- Selecciona área --</option>'; var _seenAr={};
     arr.filter(function(a){return a.puede_producir;}).forEach(function(a){
       var _k=(a.nombre||'').trim().toLowerCase(); if(_seenAr[_k]) return; _seenAr[_k]=1;
-      opts+='<option value="'+_escHTML(a.codigo)+'">'+_escHTML(a.nombre)+'</option>';
+      opts+='<option value="'+a.id+'">'+_escHTML(a.nombre)+'</option>';
     });
     sel.innerHTML=opts;
   }catch(e){}
