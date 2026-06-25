@@ -7615,7 +7615,7 @@ async function abrirEBR(id, targetId){
     }catch(e){}
     box.innerHTML=_ebrRender(d,(dp&&dp.items)||[],(dcm&&dcm.items)||[],(dar&&dar.items)||[],(dob&&dob.items)||[],ipcSpecs,ipcRes,despeje,prec,regs);
     box.scrollIntoView({behavior:'smooth',block:'start'});
-  }catch(e){box.innerHTML='<div style="color:#c0392b;">Error de red.</div>';}
+  }catch(e){box.innerHTML='<div style="color:#c0392b;padding:8px">No se pudo abrir el legajo: '+_escHTML((e&&e.message)?e.message:String(e))+'</div>';}
 }
 function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, prec, regs){
   ipcSpecs=ipcSpecs||[]; ipcRes=ipcRes||[]; despeje=despeje||[]; prec=prec||[]; regs=regs||[];
