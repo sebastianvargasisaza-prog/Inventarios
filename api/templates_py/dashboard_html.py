@@ -1277,7 +1277,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <button onclick="simularProduccion()" style="background:#6c5ce7;">&#128269; Verificar Stock</button>
       <button onclick="iniciarRegistroProd()" style="display:none">&#9989; Registrar Producción</button>
       <button onclick="abrirRotulos()" style="background:#c0392b;">&#128209; Rótulos de MP</button>
-      <button onclick="subSwitchTab('rotuloslimp',this,'bar-prodHub');cargarRotulosLimp()" style="background:#7c3aed;" title="Estado de limpieza de áreas/equipos · registrar/verificar limpieza + imprimir rótulo F02 (ya no es pestaña aparte)">&#127991;&#65039; Rótulos de limpieza</button>
+      <button onclick="window.open('/planta/rotulos-limpieza','_blank')" style="background:#0f766e;" title="Imprime TODOS los rótulos de estado/limpieza F02 (uno por sala, con sus equipos) en una hoja, para entregar — como los rótulos de MP">&#128424;&#65039; Rótulos de limpieza</button>
       <!-- 4-jun-2026 · removidos "Diagnosticar fórmula" y "Reparar TODAS las
            fórmulas huérfanas" (herramientas de estabilización · ya las cubre el
            cron diario salud-cruce + el auto-reparar-huérfanas). -->
