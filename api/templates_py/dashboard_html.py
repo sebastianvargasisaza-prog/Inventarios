@@ -7613,11 +7613,12 @@ async function abrirEBR(id, targetId){
       var rpr=await fetch('/api/brd/ebr/'+id+'/precauciones',{credentials:'same-origin'});var dpr=await rpr.json();prec=(dpr&&dpr.items)||[];
       var rrg=await fetch('/api/brd/ebr/'+id+'/registros-fisicos',{credentials:'same-origin'});var drg=await rrg.json();regs=(drg&&drg.items)||[];
     }catch(e){}
-    box.innerHTML=_ebrRender(d,(dp&&dp.items)||[],(dcm&&dcm.items)||[],(dar&&dar.items)||[],(dob&&dob.items)||[],ipcSpecs,ipcRes,despeje,prec,regs);
+    box.innerHTML=_ebrRender(d,(dp&&dp.items)||[],(dcm&&dcm.items)||[],(dar&&dar.items)||[],(dob&&dob.items)||[],ipcSpecs,ipcRes,despeje,prec,regs,ipcEstandar);
     box.scrollIntoView({behavior:'smooth',block:'start'});
   }catch(e){box.innerHTML='<div style="color:#c0392b;padding:8px">No se pudo abrir el legajo: '+_escHTML((e&&e.message)?e.message:String(e))+'</div>';}
 }
-function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, prec, regs){
+function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, prec, regs, ipcEstandar){
+  ipcEstandar=ipcEstandar||[];
   ipcSpecs=ipcSpecs||[]; ipcRes=ipcRes||[]; despeje=despeje||[]; prec=prec||[]; regs=regs||[];
   var editable=(d.estado==='iniciado'||d.estado==='en_proceso');
   var em={fabricacion:'🏭',envasado:'📦',acondicionamiento:'🔧'};
