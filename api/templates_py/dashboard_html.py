@@ -20207,7 +20207,8 @@ async function ckMarcar(itemId, estado){
         var h='<div style="border:2px solid '+c[0]+';border-radius:10px;padding:12px;background:#fff">';
         h+='<div style="display:flex;justify-content:space-between;align-items:center;gap:6px"><b style="font-size:13px">'+escapeHtml(s.nombre||s.codigo)+'</b><span style="background:'+c[0]+';color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;white-space:nowrap">'+c[1]+'</span></div>';
         if(s.producto) h+='<div style="font-size:11px;color:#64748b;margin-top:6px">🏭 '+escapeHtml(s.producto.substring(0,32))+'</div>';
-        h+='<button onclick="abrirRotulo('+s.id+')" style="margin-top:10px;width:100%;padding:8px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🏷️ Abrir rótulo de limpieza</button>';
+        h+='<button onclick="planoImprimirRotulo('+s.id+')" style="margin-top:10px;width:100%;padding:9px;background:#0f766e;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🖨️ Imprimir rótulo</button>';
+        h+='<button onclick="abrirRotulo('+s.id+')" style="margin-top:6px;width:100%;padding:7px;background:#fff;color:#7c3aed;border:1px solid #7c3aed;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">✍️ Registrar / verificar limpieza</button>';
         h+='</div>';
         return h;
       }).join('');
