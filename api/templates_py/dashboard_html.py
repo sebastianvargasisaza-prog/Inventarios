@@ -1327,7 +1327,9 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           var enc=((d&&d.ordenes)||[]).filter(function(o){return o.produccion_id;});
           if(!enc.length){ tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:18px">Nada en fabricaci\\u00f3n ahora \\u00b7 abr\\u00ed una orden arriba \\u25b2</td></tr>'; return; }
           tb.innerHTML=enc.map(function(o){
-            var leg=o.link?'<a href="'+o.link+'" style="color:#7c3aed;font-weight:700;text-decoration:none;font-size:11px;margin-right:6px">Legajo \\u2192</a>':'';
+            var leg=o.ebr_id
+              ? '<button onclick="abrirEBR('+o.ebr_id+',&#39;encurso-runner&#39;)" style="background:#6d28d9;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:10px;font-weight:700;cursor:pointer;margin-right:6px" title="Trabajar el batch record: despeje, pesaje, pasos, IPC, cierre">&#128203; Pasos</button>'
+              : (o.link?'<a href="'+o.link+'" style="color:#7c3aed;font-weight:700;text-decoration:none;font-size:11px;margin-right:6px">Legajo \\u2192</a>':'');
             return '<tr>'+
               '<td style="font-family:monospace;font-weight:700;color:#1e40af">'+_escHTML(o.numero_op||'')+'</td>'+
               '<td style="font-weight:600">'+_escHTML(o.producto||'\\u2014')+'</td>'+
@@ -1358,7 +1360,8 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <h3 style="color:#d97706;margin:0 0 12px;">&#128309; En fabricación &middot; en curso</h3>
       <table class="table"><thead><tr><th>N&deg; orden</th><th>Producto</th><th>Operario</th><th style="text-align:right">Te&oacute;rica</th><th style="text-align:center">Estado</th><th style="text-align:center">Acci&oacute;n</th></tr></thead>
       <tbody id="encurso-body"><tr><td colspan="6" style="text-align:center;color:#999;padding:16px;">Cargando&hellip;</td></tr></tbody></table>
-      <p style="font-size:12px;color:#94a3b8;margin:8px 0 0">Lo terminado vive en la pesta&ntilde;a <b>Hist&oacute;ricos</b> &rarr;</p>
+      <div id="encurso-runner" style="display:none;margin-top:14px;border:1px solid #ddd6fe;border-radius:10px;padding:16px;background:#faf8ff;"></div>
+      <p style="font-size:12px;color:#94a3b8;margin:8px 0 0">Toc&aacute; <b>&#128203; Pasos</b> en una orden para trabajar el batch record aqu&iacute; &middot; lo terminado vive en <b>Hist&oacute;ricos</b> &rarr;</p>
     </div>
   </div>
   <!-- ═══ PESTAÑA HISTÓRICOS · órdenes finalizadas + legajos + trazabilidad (Sebastián 25-jun) ═══ -->
@@ -7567,9 +7570,11 @@ async function cargarEBRs(){
     cont.innerHTML=h;
   }catch(e){cont.innerHTML='<div style="color:#c0392b;">Error cargando legajos.</div>';}
 }
-function ebrCerrarRunner(){var b=document.getElementById('ebr-runner');if(b){b.style.display='none';b.innerHTML='';}}
-async function abrirEBR(id){
-  var box=document.getElementById('ebr-runner');
+var _ebrTarget='ebr-runner';
+function ebrCerrarRunner(){var b=document.getElementById(_ebrTarget);if(b){b.style.display='none';b.innerHTML='';}}
+async function abrirEBR(id, targetId){
+  if(targetId) _ebrTarget=targetId;   // 25-jun · runner inline en Fabricación (#encurso-runner) o en Históricos (#ebr-runner)
+  var box=document.getElementById(_ebrTarget);
   if(!box){return;}
   box.style.display='block';
   box.innerHTML='<span style="color:#999;">Cargando legajo…</span>';
