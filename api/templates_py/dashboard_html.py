@@ -1366,10 +1366,10 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <tbody id="hist-prod-body"><tr><td colspan="10" style="text-align:center;color:#999;padding:16px;">Cargando...</td></tr></tbody></table>
       <div id="hist-prod-footer" style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:12px;color:#64748b"></div>
     </div>
-    <!-- ═══ Legajos electrónicos (EBR) · runner · reemplazo MyBatch ═══ -->
-    <div id="ebr-seccion" style="margin-top:28px;border-top:2px solid #eee;padding-top:20px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px;">
-        <h3 style="color:#6d28d9;margin:0;">&#128451;&#65039; Legajos electr&#243;nicos (EBR)</h3>
+    <!-- ═══ Legajos electrónicos (EBR) · colapsable (Sebastián 25-jun: simple, sin clutter) ═══ -->
+    <details id="ebr-seccion" style="margin-top:28px;border-top:2px solid #eee;padding-top:14px;">
+      <summary style="cursor:pointer;font-weight:700;color:#6d28d9;font-size:1.05em;padding:4px 0;">&#128451;&#65039; Legajos electr&#243;nicos (EBR) <span style="font-weight:400;font-size:12px;color:#94a3b8;">&middot; registro regulado de Calidad &middot; clic para abrir</span></summary>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0 6px;">
         <div id="ebr-fase-tabs" style="display:flex;gap:6px;flex-wrap:wrap;font-size:12px;">
           <button class="ebr-fbtn" data-fase="" onclick="ebrSetFase(this)" style="padding:5px 10px;border:1px solid #c4b5fd;border-radius:6px;background:#6d28d9;color:#fff;cursor:pointer;">Todos</button>
           <button class="ebr-fbtn" data-fase="fabricacion" onclick="ebrSetFase(this)" style="padding:5px 10px;border:1px solid #c4b5fd;border-radius:6px;background:#fff;color:#6d28d9;cursor:pointer;">&#127981; Fabricaci&#243;n</button>
@@ -1381,10 +1381,10 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <p style="font-size:0.85em;color:#718096;margin:0 0 12px;">Reemplazo MyBatch &middot; cada legajo vigila su fase (despeje &rarr; pesaje &rarr; pasos &rarr; IPC) con doble firma GMP (21 CFR Part 11).</p>
       <div id="ebr-list" style="font-size:13px;color:#999;">Cargando&hellip;</div>
       <div id="ebr-runner" style="display:none;margin-top:16px;border:1px solid #ddd6fe;border-radius:10px;padding:16px;background:#faf8ff;"></div>
-    </div>
-    <!-- TRAZABILIDAD INVIMA -->
-    <div style="margin-top:28px;border-top:2px solid #eee;padding-top:20px;">
-      <h3 style="color:#6c5ce7;margin:0 0 12px;">&#128203; Trazabilidad de Lotes (INVIMA)</h3>
+    </details>
+    <!-- TRAZABILIDAD INVIMA · colapsable -->
+    <details style="margin-top:28px;border-top:2px solid #eee;padding-top:14px;">
+      <summary style="cursor:pointer;font-weight:700;color:#6d28d9;font-size:1.05em;padding:4px 0;">&#128203; Trazabilidad de Lotes (INVIMA) <span style="font-weight:400;font-size:12px;color:#94a3b8;">&middot; buscar PT&harr;MP &middot; clic para abrir</span></summary>
       <p style="font-size:0.85em;color:#718096;margin:0 0 14px;">Dado un lote PT rastrea las MPs usadas y los clientes que lo recibieron. Dado un lote MP rastrea en qué producciones se consumio y a qué clientes llegó.</p>
       <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
         <div style="flex:1;min-width:220px;">
@@ -1401,7 +1401,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         </div>
       </div>
       <div id="trz-result" style="margin-top:10px;"></div>
-    </div>
+    </details>
   </div>
 
   <div id="abc" class="tab-content">

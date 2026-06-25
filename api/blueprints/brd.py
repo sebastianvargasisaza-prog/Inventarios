@@ -1604,6 +1604,9 @@ def listar_ebr():
     if estado:
         where.append("estado = ?")
         params.append(estado)
+    else:
+        # por defecto NO mostrar legajos descartados (p.ej. los de prueba que limpió el jefe)
+        where.append("LOWER(COALESCE(estado,'')) <> 'descartado'")
     if fase:
         # COALESCE → legajos viejos (fase NULL) cuentan como 'fabricacion'
         where.append("COALESCE(fase,'fabricacion') = ?")

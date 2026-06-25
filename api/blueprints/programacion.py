@@ -4694,6 +4694,10 @@ def _intentar_crear_ebr_auto(c, evento_id, producto, total_g_descontado, user):
     loguea para no romper el flujo de iniciar producción.
     """
     try:
+        # Sebastián 25-jun: los productos de PRUEBA/SIMULACRO NO generan legajo (evita ensuciar EBR).
+        _pu = (producto or '').upper()
+        if 'PRUEBA' in _pu or 'SIMULACRO' in _pu:
+            return {'ok': False, 'razon': 'producto de prueba · sin legajo'}
         mbr = c.execute(
             """SELECT id, version, lote_size_g
                FROM mbr_templates
@@ -17957,6 +17961,23 @@ def simulacro_limpiar():
              "OR UPPER(COALESCE(producto,'')) LIKE '%PRUEBA%')")
     aids = [r[0] for r in c.execute(
         "SELECT DISTINCT area_id FROM produccion_programada WHERE area_id IS NOT NULL AND " + _cond).fetchall()]
+    # descartar legajos EBR de prueba (best-effort · SAVEPOINT · solo NO liberados, no toca regulados)
+    _test_ids = [r[0] for r in c.execute("SELECT id FROM produccion_programada WHERE " + _cond).fetchall()]
+    n_ebr = 0
+    if _test_ids:
+        try:
+            c.execute('SAVEPOINT _ebr_prueba')
+            _phe = ','.join('?' for _ in _test_ids)
+            n_ebr = c.execute(
+                "UPDATE ebr_ejecuciones SET estado='descartado' WHERE produccion_id IN (" + _phe + ") "
+                "AND COALESCE(liberado_at_utc,'')=''", tuple(_test_ids)).rowcount
+            c.execute('RELEASE SAVEPOINT _ebr_prueba')
+        except Exception:
+            try:
+                c.execute('ROLLBACK TO SAVEPOINT _ebr_prueba')
+            except Exception:
+                pass
+            n_ebr = 0
     n1 = c.execute("DELETE FROM produccion_programada WHERE " + _cond).rowcount
     n2 = c.execute("DELETE FROM producciones WHERE " + _cond).rowcount
     # rótulos de limpieza de prueba (snapshot Part 11 · best-effort en SAVEPOINT por si hay trigger)
@@ -18006,7 +18027,7 @@ def simulacro_limpiar():
     conn.commit()
     return jsonify({'ok': True, 'pp_borradas': n1, 'bulk_borradas': n2, 'rotulos_borrados': n3,
                     'areas_liberadas': len(aids), 'areas_reset': n_reset, 'colgadas_cerradas': n_colgadas,
-                    'estados_antes': diag_estados})
+                    'legajos_descartados': n_ebr, 'estados_antes': diag_estados})
 
 
 @bp.route('/api/planta/fabricacion/reactivar-areas', methods=['POST'])
