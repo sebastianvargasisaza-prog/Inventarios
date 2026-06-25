@@ -1132,7 +1132,8 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         var t=await _planoCsrf();
         var d=await (await _planoPost('/api/planta/simulacro/limpiar',{},t)).json();
         await cargarPlanoGrid();
-        alert('🧹 Prueba limpiada · '+(d.pp_borradas||0)+' fabricación + '+(d.bulk_borradas||0)+' bulk + '+(d.rotulos_borrados||0)+' rótulos borrados · '+((d.areas_liberadas||0)+(d.areas_reset||0))+' áreas vueltas a LIMPIO.');
+        var _est=d.estados_antes?(' · estados que había: '+Object.keys(d.estados_antes).map(function(k){return k+'='+d.estados_antes[k];}).join(', ')):'';
+        alert('🧹 Prueba limpiada · '+(d.pp_borradas||0)+' fabricación + '+(d.bulk_borradas||0)+' bulk + '+(d.rotulos_borrados||0)+' rótulos borrados · '+((d.areas_liberadas||0)+(d.areas_reset||0))+' áreas vueltas a LIMPIO · '+(d.colgadas_cerradas||0)+' colgadas cerradas.'+_est);
       };
       window.abrirIniciarVivo=async function(fase){
         var m=document.getElementById('vivo-modal'); if(!m) return;

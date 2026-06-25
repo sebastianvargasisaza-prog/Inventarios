@@ -17901,18 +17901,27 @@ def simulacro_limpiar():
     n_colgadas = c.execute(
         "UPDATE produccion_programada SET fin_real_at=datetime('now','-5 hours'), estado='completado' "
         "WHERE COALESCE(inicio_real_at,'')<>'' AND COALESCE(fin_real_at,'')=''").rowcount
-    # 2) volver a LIBRE todas las áreas atascadas.
+    # diagnóstico: qué estados hay ANTES de resetear (por si 'sucia ' con espacio o 'Sucia' no matcheaba)
+    diag_estados = {}
+    try:
+        for r in c.execute("SELECT COALESCE(estado,'(null)'), COUNT(*) FROM areas_planta "
+                           "WHERE COALESCE(activo,1)=1 GROUP BY estado").fetchall():
+            diag_estados[str(r[0])] = r[1]
+    except Exception:
+        pass
+    # 2) volver a LIBRE CUALQUIER área cuyo estado no sea exactamente 'libre' (robusto a espacios/mayúsc).
     n_reset = c.execute(
         "UPDATE areas_planta SET estado='libre', ocup_producto=NULL, ocup_operario=NULL, "
         "ocup_inicio=NULL, ocup_fase=NULL "
-        "WHERE LOWER(COALESCE(estado,'libre')) IN ('sucia','limpiando','ocupada')").rowcount
+        "WHERE LOWER(TRIM(COALESCE(estado,'libre'))) <> 'libre' AND COALESCE(activo,1)=1").rowcount
     audit_log(c, usuario=user, accion='SIMULACRO_LIMPIAR', tabla='produccion_programada',
               registro_id='0',
               despues={'pp_borradas': n1, 'bulk_borradas': n2, 'rotulos_borrados': n3,
                        'areas': aids, 'areas_reset': n_reset, 'colgadas_cerradas': n_colgadas})
     conn.commit()
     return jsonify({'ok': True, 'pp_borradas': n1, 'bulk_borradas': n2, 'rotulos_borrados': n3,
-                    'areas_liberadas': len(aids), 'areas_reset': n_reset, 'colgadas_cerradas': n_colgadas})
+                    'areas_liberadas': len(aids), 'areas_reset': n_reset, 'colgadas_cerradas': n_colgadas,
+                    'estados_antes': diag_estados})
 
 
 @bp.route('/api/planta/fabricacion/reactivar-areas', methods=['POST'])
