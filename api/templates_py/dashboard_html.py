@@ -7632,7 +7632,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   var loteBtn='';
   if(editable){loteBtn=' <button onclick="ebrAsignarLoteFisico('+d.id+",'"+(d.lote||'')+"'"+')" title="Asignar el lote físico/comercial real (reemplaza el provisional)" style="background:#ddd6fe;color:#4c1d95;border:none;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer;">✏️ lote físico</button>';}
   h+='<div style="color:#555;font-size:12px;">Lote <b>'+(d.lote||'')+'</b>'+loteBtn+' &middot; objetivo '+(d.cantidad_objetivo_g||0)+' g &middot; '+_ebrBadge(d.estado)+extra+(d.area_nombre?(' &middot; \\ud83d\\udccd '+_escHTML(d.area_nombre)):'')+'</div></div>';
-  h+='<button onclick="ebrCerrarRunner()" style="background:#94a3b8;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;">Cerrar ✕</button></div>';
+  h+='<div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end"><a href="/api/brd/ebr/'+d.id+'/pdf" target="_blank" style="background:#dc2626;color:#fff;border-radius:5px;padding:5px 12px;font-size:11px;text-decoration:none;font-weight:700">📄 Descargar PDF</a><button onclick="ebrCerrarRunner()" style="background:#94a3b8;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;">Cerrar ✕</button></div></div>';
   // Precauciones + equipos (MyBatch ①)
   h+='<h4 style="color:#6d28d9;margin:16px 0 6px;">⚠️ Precauciones y equipos</h4>';
   if(prec.length){
