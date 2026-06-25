@@ -943,7 +943,10 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <h2 style="margin:0;color:#7c3aed">&#127991;&#65039; Rótulos de Limpieza · PRD-PRO-002-F02</h2>
         <p style="color:#666;font-size:13px;margin:4px 0 0">Estado de limpieza de cada sala · fluye con la producción · el operario registra la limpieza, Calidad verifica con firma. Click en una sala para abrir su rótulo.</p>
       </div>
-      <button onclick="cargarRotulosLimp()" style="padding:6px 12px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">&#8635; Refrescar</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button onclick="window.open('/planta/rotulos-limpieza','_blank')" style="padding:6px 14px;background:#0f766e;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Saca TODOS los rótulos F02 en una hoja (uno por página) para imprimir y entregar de una">&#128424;&#65039; Imprimir TODOS</button>
+        <button onclick="cargarRotulosLimp()" style="padding:6px 12px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">&#8635; Refrescar</button>
+      </div>
     </div>
     <div id="rotuloslimp-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">Cargando…</div>
   </div>

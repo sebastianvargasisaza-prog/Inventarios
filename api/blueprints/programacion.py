@@ -4008,20 +4008,13 @@ def _persona_corta(c, username):
     return f'{nom} · {cargo}' if cargo else nom
 
 
-@bp.route('/planta/rotulo-limpieza/<int:area_id>/pdf', methods=['GET'])
-def planta_rotulo_limpieza_pdf(area_id):
-    """Rótulo imprimible PRD-PRO-002-F02 (Estado de Limpieza de Áreas/Equipos).
-    Renderiza el ciclo de limpieza vigente del área (snapshot inmutable) sobre
-    el estado físico actual. HTML puro imprimible (sin scripts)."""
-    if 'compras_user' not in session:
-        from flask import redirect
-        return redirect('/login?next=/planta/rotulo-limpieza/%d/pdf' % area_id)
-    from flask import Response
+def _rotulo_f02_sheet(c, area_id):
+    """Devuelve el <div class="sheet"> del rótulo F02 de UN área (ciclo de limpieza vigente + equipos
+    auto-cargados). '' si el área no existe. Reusado por el rótulo individual y por 'imprimir todos'."""
     from html import escape as _e
-    conn = get_db(); c = conn.cursor()
     base = _rotulo_derivar(c, area_id)
     if not base:
-        return Response('<h1>Área no encontrada</h1>', mimetype='text/html', status=404)
+        return ''
     # Último ciclo (abierto o cerrado) para mostrar el registro F02 vigente.
     rot = c.execute(
         """SELECT producto_elaborar, lote_elaborar, producto_anterior, lote_anterior,
@@ -4074,47 +4067,7 @@ def planta_rotulo_limpieza_pdf(area_id):
         vcls = ' class="num"' if num else ''
         return f'<tr><td class="k">{_e(lbl)}</td><td{vcls}>{_e(str(val) or "—")}</td></tr>'
 
-    html = f'''<!doctype html><html lang="es"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Rótulo de Limpieza F02 · {_e(base['area_codigo'])}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-  :root{{--ink:#18181b;--soft:#3f3f46;--mute:#71717a;--line:#e4e4e7;--violet:#6d28d9;--violet-d:#4c1d95;--pale:#f5f3ff}}
-  *{{box-sizing:border-box}}
-  body{{font-family:'Inter',system-ui,Arial,sans-serif;margin:0;padding:28px;background:#f4f4f7;color:var(--ink);-webkit-font-smoothing:antialiased}}
-  .sheet{{max-width:760px;margin:0 auto;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(24,24,27,.05),0 12px 28px rgba(24,24,27,.08)}}
-  .accent{{height:5px;background:linear-gradient(90deg,#a78bfa,var(--violet))}}
-  .top{{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;padding:20px 26px 14px}}
-  .brand{{display:flex;align-items:center;gap:12px}}
-  .mark{{width:46px;height:46px;border-radius:13px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#a78bfa,var(--violet));box-shadow:0 4px 14px rgba(109,40,217,.22)}}
-  .brand .co{{font-size:16px;font-weight:800;letter-spacing:-.3px;line-height:1.1}}
-  .brand .sub{{font-size:11.5px;color:var(--mute);margin-top:2px;font-weight:500}}
-  .ctrl{{font-size:11px;color:var(--soft);text-align:right;line-height:1.7;background:var(--pale);border:1px solid #ede9fe;border-radius:10px;padding:9px 14px}}
-  .ctrl b{{color:var(--violet-d);font-weight:700}}
-  .title{{text-align:center;padding:6px 26px 16px}}
-  .title h1{{margin:0;font-size:19px;font-weight:800;letter-spacing:-.3px;color:var(--ink);text-transform:uppercase}}
-  .title .k{{font-size:11.5px;color:var(--mute);margin-top:4px;font-weight:600;letter-spacing:.4px}}
-  .estado{{text-align:center;padding:6px 20px 20px;border-bottom:1px solid var(--line)}}
-  .estado .elbl{{font-size:11px;font-weight:700;color:var(--mute);letter-spacing:.6px;margin-bottom:10px}}
-  .chip{{display:inline-block;padding:9px 20px;margin:0 5px;border-radius:10px;font-weight:700;font-size:14px;letter-spacing:.3px}}
-  .chip.on{{background:var(--violet);color:#fff;box-shadow:0 4px 14px rgba(109,40,217,.18)}}
-  .chip.off{{border:1px solid var(--line);color:var(--mute)}}
-  table{{width:100%;border-collapse:collapse}}
-  td{{padding:11px 16px;border-bottom:1px solid var(--line);vertical-align:middle;font-size:14px}}
-  td.k{{width:34%;color:var(--mute);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.4px;background:#fafafa}}
-  .num{{font-variant-numeric:tabular-nums;font-weight:600}}
-  .firmas{{display:flex;border-top:1px solid var(--line)}}
-  .firma{{flex:1;padding:18px 22px 22px}}
-  .firma+.firma{{border-left:1px solid var(--line)}}
-  .firma .l{{font-size:11px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.4px}}
-  .firma .v{{font-size:15px;font-weight:600;margin-top:18px;border-top:1px solid var(--ink);padding-top:6px}}
-  .firma .f{{font-size:11.5px;color:var(--mute);margin-top:3px;font-variant-numeric:tabular-nums}}
-  .printbar{{text-align:center;margin-top:18px}}
-  .printbtn{{display:inline-flex;align-items:center;gap:8px;padding:11px 26px;background:var(--violet);color:#fff;text-decoration:none;border:none;border-radius:10px;font-weight:600;font-size:14px;font-family:'Inter';cursor:pointer;box-shadow:0 4px 14px rgba(109,40,217,.22)}}
-  @media print{{ body{{padding:0;background:#fff}} .sheet{{box-shadow:none;border:none}} .printbar{{display:none}} }}
-</style></head><body>
-<div class="sheet">
+    return f'''<div class="sheet">
   <div class="accent"></div>
   <div class="top">
     <div class="brand">
@@ -4153,12 +4106,99 @@ def planta_rotulo_limpieza_pdf(area_id):
       <div class="f">Fecha: {_e(verificado_at or '—')}{' · firma electrónica ✔' if verificado_full else ''}</div>
     </div>
   </div>
-</div>
+</div>'''
+
+
+def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02'):
+    """Envuelve uno o varios <div class='sheet'> en la página imprimible (head + CSS + botón).
+    Con .sheet + .sheet → cada rótulo en su propia página al imprimir."""
+    from html import escape as _e
+    return f'''<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{_e(titulo)}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+  :root{{--ink:#18181b;--soft:#3f3f46;--mute:#71717a;--line:#e4e4e7;--violet:#6d28d9;--violet-d:#4c1d95;--pale:#f5f3ff}}
+  *{{box-sizing:border-box}}
+  body{{font-family:'Inter',system-ui,Arial,sans-serif;margin:0;padding:28px;background:#f4f4f7;color:var(--ink);-webkit-font-smoothing:antialiased}}
+  .sheet{{max-width:760px;margin:0 auto 22px;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(24,24,27,.05),0 12px 28px rgba(24,24,27,.08)}}
+  .sheet + .sheet{{page-break-before:always}}
+  .accent{{height:5px;background:linear-gradient(90deg,#a78bfa,var(--violet))}}
+  .top{{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;padding:20px 26px 14px}}
+  .brand{{display:flex;align-items:center;gap:12px}}
+  .mark{{width:46px;height:46px;border-radius:13px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#a78bfa,var(--violet));box-shadow:0 4px 14px rgba(109,40,217,.22)}}
+  .brand .co{{font-size:16px;font-weight:800;letter-spacing:-.3px;line-height:1.1}}
+  .brand .sub{{font-size:11.5px;color:var(--mute);margin-top:2px;font-weight:500}}
+  .ctrl{{font-size:11px;color:var(--soft);text-align:right;line-height:1.7;background:var(--pale);border:1px solid #ede9fe;border-radius:10px;padding:9px 14px}}
+  .ctrl b{{color:var(--violet-d);font-weight:700}}
+  .title{{text-align:center;padding:6px 26px 16px}}
+  .title h1{{margin:0;font-size:19px;font-weight:800;letter-spacing:-.3px;color:var(--ink);text-transform:uppercase}}
+  .title .k{{font-size:11.5px;color:var(--mute);margin-top:4px;font-weight:600;letter-spacing:.4px}}
+  .estado{{text-align:center;padding:6px 20px 20px;border-bottom:1px solid var(--line)}}
+  .estado .elbl{{font-size:11px;font-weight:700;color:var(--mute);letter-spacing:.6px;margin-bottom:10px}}
+  .chip{{display:inline-block;padding:9px 20px;margin:0 5px;border-radius:10px;font-weight:700;font-size:14px;letter-spacing:.3px}}
+  .chip.on{{background:var(--violet);color:#fff;box-shadow:0 4px 14px rgba(109,40,217,.18)}}
+  .chip.off{{border:1px solid var(--line);color:var(--mute)}}
+  table{{width:100%;border-collapse:collapse}}
+  td{{padding:11px 16px;border-bottom:1px solid var(--line);vertical-align:middle;font-size:14px}}
+  td.k{{width:34%;color:var(--mute);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.4px;background:#fafafa}}
+  .num{{font-variant-numeric:tabular-nums;font-weight:600}}
+  .firmas{{display:flex;border-top:1px solid var(--line)}}
+  .firma{{flex:1;padding:18px 22px 22px}}
+  .firma+.firma{{border-left:1px solid var(--line)}}
+  .firma .l{{font-size:11px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.4px}}
+  .firma .v{{font-size:15px;font-weight:600;margin-top:18px;border-top:1px solid var(--ink);padding-top:6px}}
+  .firma .f{{font-size:11.5px;color:var(--mute);margin-top:3px;font-variant-numeric:tabular-nums}}
+  .printbar{{text-align:center;margin-top:18px}}
+  .printbtn{{display:inline-flex;align-items:center;gap:8px;padding:11px 26px;background:var(--violet);color:#fff;text-decoration:none;border:none;border-radius:10px;font-weight:600;font-size:14px;font-family:'Inter';cursor:pointer;box-shadow:0 4px 14px rgba(109,40,217,.22)}}
+  @media print{{ body{{padding:0;background:#fff}} .sheet{{box-shadow:none;border:none;margin:0}} .printbar{{display:none}} }}
+</style></head><body>
+{sheets_html}
 <div class="printbar">
   <button class="printbtn" onclick="window.print()">🖨 Imprimir / Guardar PDF</button>
 </div>
 </body></html>'''
-    return Response(html, mimetype='text/html')
+
+
+@bp.route('/planta/rotulo-limpieza/<int:area_id>/pdf', methods=['GET'])
+def planta_rotulo_limpieza_pdf(area_id):
+    """Rótulo imprimible PRD-PRO-002-F02 de UN área (Estado de Limpieza de Áreas/Equipos)."""
+    if 'compras_user' not in session:
+        from flask import redirect
+        return redirect('/login?next=/planta/rotulo-limpieza/%d/pdf' % area_id)
+    from flask import Response
+    conn = get_db(); c = conn.cursor()
+    sheet = _rotulo_f02_sheet(c, area_id)
+    if not sheet:
+        return Response('<h1>Área no encontrada</h1>', mimetype='text/html', status=404)
+    return Response(_rotulo_f02_doc(sheet), mimetype='text/html')
+
+
+@bp.route('/planta/rotulos-limpieza', methods=['GET'])
+def planta_rotulos_limpieza_todas():
+    """TODOS los rótulos F02 en una hoja (uno por página) → el jefe imprime y entrega de una.
+    Mismas salas que la lista (produccion + DISP/ACOND), dedup por nombre."""
+    if 'compras_user' not in session:
+        from flask import redirect
+        return redirect('/login?next=/planta/rotulos-limpieza')
+    from flask import Response
+    conn = get_db(); c = conn.cursor()
+    areas = c.execute(
+        "SELECT id, nombre FROM areas_planta WHERE activo=1 "
+        "AND (tipo='produccion' OR codigo IN ('DISP','ACOND')) ORDER BY orden, codigo").fetchall()
+    sheets, vistos = [], set()
+    for a in areas:
+        nm = (a[1] or '').strip().lower()
+        if nm in vistos:
+            continue
+        s = _rotulo_f02_sheet(c, a[0])
+        if s:
+            sheets.append(s); vistos.add(nm)
+    body = ('\n'.join(sheets) if sheets
+            else '<div style="text-align:center;color:#888;padding:40px">No hay salas configuradas.</div>')
+    return Response(_rotulo_f02_doc(body, 'Rótulos de Limpieza F02 · todas las salas'),
+                    mimetype='text/html')
 
 
 @bp.route('/api/planta/operarios', methods=['GET', 'POST'])
