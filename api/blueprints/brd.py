@@ -5455,6 +5455,63 @@ def verificar_despeje_item_ebr(ebr_id):
     return jsonify({"ok": True, "verificados": n}), 200
 
 
+@bp.route("/api/brd/mi-trabajo", methods=["GET"])
+def mi_trabajo_brd():
+    """Bandeja por ROL (Nivel 2 · 25-jun): tareas pendientes del usuario en TODOS los legajos en curso.
+    realiza (operario/jefe) → despeje por marcar + pasos por ejecutar · verifica (calidad) → despeje y
+    pesajes por verificar. Una sola pantalla: cada quien ve SU cola de trabajo."""
+    err = _require_login()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    rinfo = _batch_role_info(user)
+    conn = get_db()
+
+    def _ct(sql, *p):
+        try:
+            r = conn.execute(sql, p).fetchone()
+            return int(r[0]) if r and r[0] is not None else 0
+        except Exception:
+            return 0
+
+    ebrs = conn.execute(
+        "SELECT id, COALESCE(numero_op,'') AS numero_op, COALESCE(lote_codigo,lote,'') AS lote, "
+        "mbr_template_id, COALESCE(fase,'fabricacion') AS fase "
+        "FROM ebr_ejecuciones WHERE estado IN ('iniciado','en_proceso') ORDER BY id DESC").fetchall()
+    items = []
+    n_items = len(DESPEJE_LINEA_ITEMS) * 2  # 13 × 2 etapas
+    for e in ebrs:
+        eid = e["id"]
+        prod = ""
+        try:
+            mb = conn.execute("SELECT producto_nombre FROM mbr_templates WHERE id=?",
+                              (e["mbr_template_id"],)).fetchone()
+            prod = (mb[0] if mb else "")
+        except Exception:
+            prod = ""
+        tareas = []
+        if rinfo.get("realiza"):
+            np = _ct("SELECT COUNT(*) FROM ebr_pasos_ejecutados WHERE ebr_id=? AND estado IN ('pendiente','en_proceso')", eid)
+            if np:
+                tareas.append({"tipo": "pasos", "n": np, "txt": f"{np} paso(s) por ejecutar"})
+            marc = _ct("SELECT COUNT(*) FROM ebr_despeje_items WHERE ebr_id=? AND cumple IS NOT NULL", eid)
+            dpend = n_items - marc
+            if dpend > 0:
+                tareas.append({"tipo": "despeje", "n": dpend, "txt": f"{dpend} verificación(es) de despeje por marcar"})
+        if rinfo.get("verifica"):
+            dv = _ct("SELECT COUNT(*) FROM ebr_despeje_items WHERE ebr_id=? AND cumple=1 AND COALESCE(verificado_por,'')=''", eid)
+            if dv:
+                tareas.append({"tipo": "verif_despeje", "n": dv, "txt": f"{dv} ítem(s) de despeje por verificar"})
+            pv = _ct("SELECT COUNT(*) FROM ebr_pesajes WHERE ebr_id=? AND COALESCE(pesado_por,'')<>'' AND COALESCE(verificado_por,'')=''", eid)
+            if pv:
+                tareas.append({"tipo": "verif_pesaje", "n": pv, "txt": f"{pv} pesaje(s) por verificar"})
+        if tareas:
+            items.append({"ebr_id": eid, "numero_op": e["numero_op"], "lote": e["lote"],
+                          "producto": prod, "fase": e["fase"], "tareas": tareas,
+                          "total": sum(t["n"] for t in tareas)})
+    return jsonify({"rol": rinfo, "items": items, "total_legajos": len(items)})
+
+
 # ── MyBatch ① · Precauciones + Equipos ──────────────────────────────────────
 @bp.route("/api/brd/ebr/<int:ebr_id>/precauciones", methods=["GET"])
 def listar_precauciones_ebr(ebr_id):

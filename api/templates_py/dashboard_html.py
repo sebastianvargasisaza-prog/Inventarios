@@ -1340,6 +1340,29 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
             '</tr>';
           }).join('');
         }catch(e){ tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#c00;padding:16px">Error: '+_escHTML(e.message||e)+'</td></tr>'; }
+        if(window.cargarMiTrabajo){ try{ window.cargarMiTrabajo(); }catch(e){} }
+      };
+      // Bandeja "Mi trabajo" por ROL (Nivel 2): cada quien ve su cola de tareas en los legajos en curso.
+      window.cargarMiTrabajo=async function(){
+        var box=document.getElementById('mi-trabajo-panel'); if(!box) return;
+        try{
+          var d=await (await fetch('/api/brd/mi-trabajo',{credentials:'same-origin'})).json();
+          if(!d||!d.rol||(!d.rol.realiza&&!d.rol.verifica)){ box.innerHTML=''; return; }
+          var rc=({operario:'#16a34a',jefe_produccion:'#2563eb',calidad:'#0891b2',director_tecnico:'#7c3aed',aseguramiento:'#b45309',admin:'#6d28d9'})[d.rol.tipo]||'#6d28d9';
+          var its=d.items||[];
+          var h='<div style="background:'+rc+'0d;border:1px solid '+rc+'40;border-radius:12px;padding:12px 14px">';
+          h+='<div style="font-size:13px;font-weight:800;color:'+rc+';margin-bottom:'+(its.length?'8px':'0')+'">&#128188; Mi trabajo &middot; '+_escHTML(d.rol.rol||'')+(its.length?(' &middot; '+d.total_legajos+' legajo(s)'):'')+'</div>';
+          if(!its.length){ h+='<div style="font-size:12px;color:#16a34a;font-weight:600">&#10003; No ten\\u00e9s tareas pendientes en los legajos en curso</div>'; }
+          else{ its.forEach(function(it){
+            var tt=(it.tareas||[]).map(function(t){return t.txt;}).join(' &middot; ');
+            h+='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-top:1px solid '+rc+'22;flex-wrap:wrap">';
+            h+='<div><b style="color:#1e293b">'+_escHTML(it.numero_op||('Lote '+it.lote))+'</b> <span style="color:#64748b;font-size:12px">'+_escHTML(it.producto||'')+'</span><div style="font-size:11px;color:'+rc+';font-weight:600">'+tt+'</div></div>';
+            h+='<button onclick="abrirEBR('+it.ebr_id+',&#39;encurso-runner&#39;)" style="background:'+rc+';color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer">Abrir &#8594;</button>';
+            h+='</div>';
+          }); }
+          h+='</div>';
+          box.innerHTML=h;
+        }catch(e){ box.innerHTML=''; }
       };
       window.cargarEnProcesoFab=async function(){
         if(window.cargarEnCurso){ try{ window.cargarEnCurso(); }catch(e){} }
@@ -1370,6 +1393,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <!-- 🔵 En fabricación · en curso (Sebastián 25-jun: Fabricación = lo activo, paso a paso) -->
     <div style="margin-top:28px;border-top:2px solid #eee;padding-top:20px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin:0 0 12px;flex-wrap:wrap;gap:8px"><h3 style="color:#d97706;margin:0;">&#128309; En fabricación &middot; en curso</h3><button onclick="crearDemoLegajo(this)" style="background:#ede9fe;color:#6d28d9;border:1px solid #c4b5fd;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer" title="Crea una orden DEMO + legajo para ver los Pasos inline SIN descontar MP (se borra con 🧹 Limpiar)">&#129514; Demo legajo</button></div>
+      <div id="mi-trabajo-panel" style="margin:0 0 14px"></div>
       <table class="table"><thead><tr><th>N&deg; orden</th><th>Producto</th><th>Operario</th><th style="text-align:right">Te&oacute;rica</th><th style="text-align:center">Estado</th><th style="text-align:center">Acci&oacute;n</th></tr></thead>
       <tbody id="encurso-body"><tr><td colspan="6" style="text-align:center;color:#999;padding:16px;">Cargando&hellip;</td></tr></tbody></table>
       <div id="encurso-runner" style="display:none;margin-top:14px;border:1px solid #ddd6fe;border-radius:10px;padding:16px;background:#faf8ff;"></div>
