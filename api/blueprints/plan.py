@@ -5120,19 +5120,19 @@ def plan_diag_formulas_dump():
             no_stock.add(r[0])
     except Exception:
         pass
+    # PERF 25-jun (ultracode) · era N+1 (1 query por producto) → 1 JOIN (match EXACTO igual que antes)
     out = {}
-    for pn, in c.execute("SELECT producto_nombre FROM formula_headers WHERE COALESCE(activo,1)=1").fetchall():
-        its = {}
-        for mid, pct in c.execute(
-            "SELECT UPPER(TRIM(material_id)), COALESCE(porcentaje,0) FROM formula_items WHERE producto_nombre=?",
-            (pn,)
-        ).fetchall():
-            m = (mid or '').strip()
-            if not m or m in no_stock:
-                continue
-            its[m] = round(its.get(m, 0.0) + float(pct or 0), 5)
-        if its:
-            out[pn] = its
+    for pn, mid, pct in c.execute(
+        "SELECT fh.producto_nombre, UPPER(TRIM(fi.material_id)), COALESCE(fi.porcentaje,0) "
+        "FROM formula_headers fh JOIN formula_items fi ON fi.producto_nombre=fh.producto_nombre "
+        "WHERE COALESCE(fh.activo,1)=1"
+    ).fetchall():
+        m = (mid or '').strip()
+        if not m or m in no_stock:
+            continue
+        dd = out.setdefault(pn, {})
+        dd[m] = round(dd.get(m, 0.0) + float(pct or 0), 5)
+    out = {k: v for k, v in out.items() if v}
     return jsonify({"n_formulas": len(out), "formulas": out})
 
 

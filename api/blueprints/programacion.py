@@ -15365,16 +15365,11 @@ def checklist_resumen_calendario():
     horizonte = int(request.args.get('dias', 60))
     conn = get_db(); c = conn.cursor()
 
-    # Auto-sync calendario → produccion_programada (idempotente, falla silenciosa)
+    # PERF 25-jun · Google Calendar YA NO SE USA (Sebastián) → quitado el sync-on-load. Antes cada
+    # carga del calendario llamaba a la API de Google + escribía en la BD = LA lentitud del calendario,
+    # sin valor (no se usa). La data ya viene de produccion_programada (el plan generado en EOS). El
+    # botón "Re-sync Calendar" (endpoint /sync-calendar) sigue por si alguna vez se quiere un import manual.
     sync_count = 0
-    try:
-        _sync_res = _sync_calendar_a_produccion_programada(conn, days_ahead=max(horizonte, 90))
-        if isinstance(_sync_res, dict):
-            sync_count = _sync_res.get('inserted', 0)
-        else:
-            sync_count = int(_sync_res or 0)
-    except Exception:
-        pass
 
     # Auto-sync masivo Shopify de productos pendientes en BACKGROUND.
     # No bloquea la respuesta — al refresh el usuario ya tiene fotos.
