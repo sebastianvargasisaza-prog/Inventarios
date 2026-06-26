@@ -5357,6 +5357,161 @@ def registrar_conciliacion_material(ebr_id):
     return jsonify({"ok": True, "id": rid, "cant_utilizada": utilizada}), 201
 
 
+# ── ENVASADO Fase 3 (Sebastián 26-jun) · captura de unidades por presentación + descuento de envases ──
+# Modelo: las presentaciones (15/30/50ml) salen de producto_presentaciones (envase/tapa/caja · MISMA
+# fuente que la compra → compra==descuento · M55/M56). El operario entra UNIDADES por presentación; al
+# CERRAR se descuenta envase+tapa+caja × unidades de movimientos_mee (canónico M26) UNA sola vez (CAS).
+@bp.route("/api/brd/ebr/<int:ebr_id>/envases-plan", methods=["GET"])
+def envases_plan_ebr(ebr_id):
+    """Plan de envasado · SOLO lectura: presentaciones del producto + unidades ya registradas."""
+    err = _require_login()
+    if err:
+        return err
+    conn = get_db()
+    erow = conn.execute(
+        "SELECT COALESCE(m.producto_nombre,''), COALESCE(e.lote_codigo, e.lote), "
+        "COALESCE(e.fase,'fabricacion'), COALESCE(e.envases_descontados_at,'') "
+        "FROM ebr_ejecuciones e LEFT JOIN mbr_templates m ON m.id=e.mbr_template_id WHERE e.id=?",
+        (ebr_id,)).fetchone()
+    if not erow:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    producto = erow[0] or ""
+    reg = {}
+    try:
+        for r in conn.execute(
+            "SELECT COALESCE(presentacion_codigo,''), COALESCE(unidades,0), COALESCE(registrado_por,'') "
+            "FROM ebr_envasado_unidades WHERE ebr_id=?", (ebr_id,)).fetchall():
+            reg[r[0]] = {"unidades": r[1], "registrado_por": r[2]}
+    except Exception:
+        pass
+    items = []
+    try:
+        for p in conn.execute(
+            "SELECT COALESCE(presentacion_codigo,''), COALESCE(etiqueta,''), COALESCE(volumen_ml,0), "
+            "COALESCE(envase_codigo,''), COALESCE(tapa_codigo,''), COALESCE(caja_codigo,'') "
+            "FROM producto_presentaciones "
+            "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1 "
+            "ORDER BY volumen_ml", (producto,)).fetchall():
+            pc = p[0]
+            items.append({
+                "presentacion_codigo": pc, "etiqueta": p[1], "volumen_ml": p[2],
+                "envase_codigo": p[3], "tapa_codigo": p[4], "caja_codigo": p[5],
+                "unidades": reg.get(pc, {}).get("unidades", 0),
+                "registrado_por": reg.get(pc, {}).get("registrado_por", ""),
+            })
+    except Exception as _e:
+        log.warning("envases-plan fallo: %s", _e)
+    return jsonify({"ok": True, "producto": producto, "lote": erow[1],
+                    "descontado": bool((erow[3] or "").strip()), "items": items})
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/registrar-unidades", methods=["POST"])
+def registrar_unidades_envasado(ebr_id):
+    """Guarda las unidades envasadas de una presentación (operario/ejecutor)."""
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    body = request.get_json(silent=True) or {}
+    pc = (body.get("presentacion_codigo") or "").strip()
+    if not pc:
+        return jsonify({"error": "presentacion_codigo requerido"}), 400
+    try:
+        unidades = float(body.get("unidades") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "unidades inválida"}), 400
+    if unidades < 0:
+        return jsonify({"error": "unidades no puede ser negativa"}), 400
+    conn = get_db(); cur = conn.cursor()
+    drow = cur.execute("SELECT COALESCE(envases_descontados_at,'') FROM ebr_ejecuciones WHERE id=?",
+                       (ebr_id,)).fetchone()
+    if drow and (drow[0] or "").strip():
+        return jsonify({"error": "el envasado ya se cerró/descontó · no editable", "codigo": "YA_CERRADO"}), 409
+    try:
+        volumen = float(body.get("volumen_ml") or 0)
+    except (TypeError, ValueError):
+        volumen = 0
+    cur.execute(
+        "INSERT INTO ebr_envasado_unidades (ebr_id, presentacion_codigo, etiqueta, volumen_ml, "
+        "unidades, registrado_por, registrado_at_utc) VALUES (?, ?, ?, ?, ?, ?, datetime('now','utc')) "
+        "ON CONFLICT(ebr_id, presentacion_codigo) DO UPDATE SET unidades=excluded.unidades, "
+        "etiqueta=excluded.etiqueta, volumen_ml=excluded.volumen_ml, "
+        "registrado_por=excluded.registrado_por, registrado_at_utc=excluded.registrado_at_utc",
+        (ebr_id, pc, (body.get("etiqueta") or "").strip(), volumen, unidades, user))
+    audit_log(cur, usuario=user, accion="REGISTRAR_UNIDADES_ENVASADO",
+              tabla="ebr_envasado_unidades", registro_id=ebr_id,
+              despues={"presentacion": pc, "unidades": unidades})
+    conn.commit()
+    return jsonify({"ok": True, "presentacion_codigo": pc, "unidades": unidades})
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/cerrar-envasado", methods=["POST"])
+def cerrar_envasado_ebr(ebr_id):
+    """Cierra el envasado: descuenta envase+tapa+caja × unidades (movimientos_mee) UNA vez (CAS) y marca
+    completado. Reversa segura: si el descuento falla, rollback (no queda marcado) y se puede reintentar."""
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    conn = get_db(); cur = conn.cursor()
+    erow = cur.execute(
+        "SELECT COALESCE(m.producto_nombre,''), COALESCE(e.lote_codigo, e.lote), COALESCE(e.fase,'fabricacion') "
+        "FROM ebr_ejecuciones e LEFT JOIN mbr_templates m ON m.id=e.mbr_template_id WHERE e.id=?",
+        (ebr_id,)).fetchone()
+    if not erow:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if str(erow[2]).strip().lower() != "envasado":
+        return jsonify({"error": "este cierre es solo para legajos de envasado"}), 400
+    producto = erow[0] or ""
+    lote = erow[1] or ""
+    uds = {}
+    for r in cur.execute(
+        "SELECT COALESCE(presentacion_codigo,''), COALESCE(unidades,0) FROM ebr_envasado_unidades "
+        "WHERE ebr_id=?", (ebr_id,)).fetchall():
+        if (r[1] or 0) > 0:
+            uds[r[0]] = r[1]
+    if not uds:
+        return jsonify({"error": "registrá las unidades envasadas (al menos una presentación) antes de cerrar"}), 400
+    # CAS idempotente: reclamar el descuento — solo 1 vez y solo si está en proceso (race multi-worker · M27)
+    cur.execute(
+        "UPDATE ebr_ejecuciones SET envases_descontados_at=datetime('now','utc'), estado='completado', "
+        "completado_at_utc=datetime('now','utc') "
+        "WHERE id=? AND COALESCE(fase,'')='envasado' AND COALESCE(envases_descontados_at,'')='' "
+        "AND estado IN ('iniciado','en_proceso')", (ebr_id,))
+    if cur.rowcount == 0:
+        conn.rollback()
+        return jsonify({"error": "El envasado ya se cerró/descontó o no está en proceso · refrescá",
+                        "codigo": "YA_CERRADO"}), 409
+    descuentos = []
+    try:
+        for p in cur.execute(
+            "SELECT COALESCE(presentacion_codigo,''), COALESCE(envase_codigo,''), COALESCE(tapa_codigo,''), "
+            "COALESCE(caja_codigo,'') FROM producto_presentaciones "
+            "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1", (producto,)).fetchall():
+            n = uds.get(p[0], 0)
+            if n <= 0:
+                continue
+            for cod, etq in ((p[1], "envase"), (p[2], "tapa"), (p[3], "caja")):
+                cod = (cod or "").strip()
+                if not cod:
+                    continue
+                cur.execute(
+                    "INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, observaciones, responsable, fecha) "
+                    "VALUES (?, 'Salida', ?, ?, ?, datetime('now','utc'))",
+                    (cod, n, "Envasado EBR-" + str(ebr_id) + " lote " + lote + " · " + etq + " " + p[0], user))
+                descuentos.append({"mee_codigo": cod, "tipo": etq, "cantidad": n, "presentacion": p[0]})
+    except Exception as _e:
+        conn.rollback()
+        log.warning("cerrar-envasado descuento MEE fallo (rollback): %s", _e)
+        return jsonify({"error": "falló el descuento de envases · reintentá", "detalle": str(_e)}), 500
+    conn.commit()
+    audit_log(None, usuario=user, accion="CERRAR_ENVASADO_DESCONTAR_MEE",
+              tabla="ebr_ejecuciones", registro_id=ebr_id,
+              despues={"lote": lote, "descuentos": descuentos})
+    return jsonify({"ok": True, "estado": "completado", "descuentos": descuentos,
+                    "n_descuentos": len(descuentos)})
+
+
 @bp.route("/api/brd/ebr/<int:ebr_id>/artes", methods=["GET"])
 def listar_artes_codificacion(ebr_id):
     """Artes/codificación del legajo (gate de etiquetado · MyBatch OA)."""

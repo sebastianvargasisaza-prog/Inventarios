@@ -7659,6 +7659,7 @@ async function abrirEBR(id, targetId){
     var ipcSpecs=_arr(P[4]),ipcRes=_arr(P[5]),ipcEstandar=_arr(P[6]);
     var despeje=_arr(P[7]),prec=_arr(P[8]),regs=_arr(P[9]),despejeChk=P[10]||{};
     box.innerHTML=_ebrRender(d,(dp&&dp.items)||[],(dcm&&dcm.items)||[],(dar&&dar.items)||[],(dob&&dob.items)||[],ipcSpecs,ipcRes,despeje,prec,regs,ipcEstandar,despejeChk);
+    if((d.fase||'fabricacion')==='envasado'){ try{ cargarEnvasesPlan(id); }catch(_e){} }  // Fase 3 · llena la sección de presentaciones
     box.scrollIntoView({behavior:'smooth',block:'start'});
   }catch(e){box.innerHTML='<div style="color:#c0392b;padding:8px">No se pudo abrir el legajo: '+_escHTML((e&&e.message)?e.message:String(e))+'</div>';}
 }
@@ -7848,6 +7849,9 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     h+='</tbody></table>';
   }
   // IPC · Controles en proceso (spec del MBR + resultado del EBR) · MyBatch ⑤
+  // ENVASADO Fase 3 (26-jun) · unidades por presentación + cerrar/descontar envases (gated a envasado ·
+  // se llena lazy con cargarEnvasesPlan desde abrirEBR · balance </div>: la sección IPC de abajo lo cierra).
+  if(fa==='envasado'){ h+='</div>'+_secOpen('📦 Presentaciones envasadas · unidades y descuento de envases')+'<div id="env-pres-'+d.id+'" style="font-size:12px;color:#64748b">Cargando&hellip;</div>'; }
   h+='</div>'+_secOpen('🔬 Controles en Proceso (IPC)');
   if(!ipcSpecs.length){h+='<div style="color:#999;font-size:12px;">Este MBR no tiene IPCs definidos. Agregalos en /brd (specs del MBR).</div>';}
   else{
@@ -7955,6 +7959,8 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   h+='<div style="font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.3px">Aprobado por &middot; Producción</div>';
   if(_est==='completado'||_est==='en_revision_qc'||_est==='liberado'){
     h+='<div style="font-size:13px;font-weight:700;color:#16a34a;margin-top:4px">&#10003; Producción terminada</div><div style="font-size:11px;color:#64748b">'+(d.completado_at_utc?String(d.completado_at_utc).replace('T',' ').slice(0,16):'')+(d.cantidad_real_g?(' &middot; '+d.cantidad_real_g+' g real'):'')+'</div>';
+  } else if(editable&&miRol.realiza&&fa==='envasado'){
+    h+='<div style="font-size:11px;color:#64748b;margin:5px 0">Cerr&aacute; el envasado en la secci&oacute;n <b>&#128230; Presentaciones envasadas</b> de arriba (registra unidades y descuenta los envases · marca completado).</div>';
   } else if(editable&&miRol.realiza){
     h+='<div style="font-size:11px;color:#64748b;margin:5px 0 7px">Cierra la producción con la cantidad real (requiere todos los pasos completos).</div><button onclick="ebrTerminarLote('+d.id+')" style="background:#d97706;color:#fff;border:none;border-radius:7px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer">&#10003; Terminar producción</button>';
   } else {
@@ -9919,6 +9925,43 @@ async function cargarEnvasadoRunner(){
     h+='</tbody></table></div>';
     wrap.innerHTML=h;
   }catch(e){ wrap.innerHTML='<div style="color:#dc2626;padding:10px">Error cargando &oacute;rdenes de envasado.</div>'; }
+}
+// ENVASADO Fase 3 (26-jun) · sección de presentaciones en el runner: unidades por presentación + cerrar/descontar.
+async function cargarEnvasesPlan(ebrId){
+  var wrap=document.getElementById('env-pres-'+ebrId);
+  if(!wrap) return;
+  try{
+    var d=await (await fetch('/api/brd/ebr/'+ebrId+'/envases-plan',{credentials:'same-origin'})).json();
+    if(!d.ok||!d.items||!d.items.length){ wrap.innerHTML='<div style="color:#94a3b8">Este producto no tiene presentaciones configuradas. Cargalas en <b>Planta &rsaquo; Presentaciones</b> (producto &rarr; 15/30/50ml &rarr; envase/tapa/caja).</div>'; return; }
+    var desc=d.descontado;
+    var h='<table class="table" style="font-size:12px"><thead><tr><th>Presentaci&oacute;n</th><th>Vol</th><th>Envase</th><th>Tapa</th><th>Caja</th><th>Unidades</th><th></th></tr></thead><tbody>';
+    d.items.forEach(function(it){
+      var pc=it.presentacion_codigo;
+      var inp=desc?('<b>'+(it.unidades||0)+'</b>'):('<input id="eu-'+ebrId+'-'+pc+'" type="number" min="0" value="'+(it.unidades||0)+'" style="width:80px;padding:4px;border:1px solid #cbd5e1;border-radius:4px">');
+      var btn=desc?'':('<button onclick="ebrRegistrarUnidades('+ebrId+',&#39;'+pc+'&#39;,'+(it.volumen_ml||0)+')" style="background:#16a34a;color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer">Guardar</button>');
+      h+='<tr><td>'+(it.etiqueta||pc)+'</td><td>'+(it.volumen_ml||0)+' ml</td><td style="font-family:monospace;font-size:10px">'+(it.envase_codigo||'&mdash;')+'</td><td style="font-family:monospace;font-size:10px">'+(it.tapa_codigo||'&mdash;')+'</td><td style="font-family:monospace;font-size:10px">'+(it.caja_codigo||'&mdash;')+'</td><td>'+inp+'</td><td>'+btn+'</td></tr>';
+    });
+    h+='</tbody></table>';
+    if(desc){ h+='<div style="margin-top:8px;color:#16a34a;font-weight:700">&#10003; Envases descontados (legajo cerrado).</div>'; }
+    else { h+='<button onclick="ebrCerrarEnvasado('+ebrId+')" style="margin-top:10px;background:#6d28d9;color:#fff;border:none;border-radius:6px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer">&#128274; Cerrar envasado y descontar envases</button> <span style="color:#94a3b8;font-size:11px">descuenta envase+tapa+caja &times; unidades de cada presentaci&oacute;n</span>'; }
+    wrap.innerHTML=h;
+  }catch(e){ wrap.innerHTML='<div style="color:#dc2626">Error cargando presentaciones.</div>'; }
+}
+async function ebrRegistrarUnidades(ebrId, pc, vol){
+  var el=document.getElementById('eu-'+ebrId+'-'+pc);
+  var u=el?parseFloat(el.value||'0'):0;
+  var r=await fetch('/api/brd/ebr/'+ebrId+'/registrar-unidades',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({presentacion_codigo:pc,unidades:u,volumen_ml:vol})});
+  var d=await r.json();
+  if(!r.ok){ alert(d.error||'Error'); return; }
+  cargarEnvasesPlan(ebrId);
+}
+async function ebrCerrarEnvasado(ebrId){
+  if(!confirm('Cerrar el envasado y descontar los envases (envase+tapa+caja por unidad)? Baja el stock de MEE y marca el legajo completado.')) return;
+  var r=await fetch('/api/brd/ebr/'+ebrId+'/cerrar-envasado',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({})});
+  var d=await r.json();
+  if(!r.ok){ alert(d.error||'No se pudo cerrar'); return; }
+  alert('Envasado cerrado · '+(d.n_descuentos||0)+' descuentos de envase registrados.');
+  if(typeof abrirEBR==='function') abrirEBR(ebrId);
 }
 function loadColaSinEnvasar(){
   if(typeof cargarOrdenesEnvasado==='function')cargarOrdenesEnvasado();

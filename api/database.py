@@ -395,6 +395,25 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (290, "Envasado Fase 3 (Sebastián 26-jun) · captura de UNIDADES envasadas por presentación + marca de "
+          "descuento de envases. ebr_envasado_unidades guarda cuántas unidades se envasaron de cada "
+          "presentación del producto (modelo producto_presentaciones · compra==descuento M55/M56); el "
+          "descuento de envase/tapa/caja (movimientos_mee · canónico M26) corre UNA vez al cerrar el "
+          "envasado (marca ebr_ejecuciones.envases_descontados_at · idempotente).", [
+        """CREATE TABLE IF NOT EXISTS ebr_envasado_unidades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ebr_id INTEGER NOT NULL,
+            presentacion_codigo TEXT NOT NULL DEFAULT '',
+            etiqueta TEXT DEFAULT '',
+            volumen_ml REAL DEFAULT 0,
+            unidades REAL DEFAULT 0,
+            registrado_por TEXT DEFAULT '',
+            registrado_at_utc TEXT DEFAULT '',
+            UNIQUE(ebr_id, presentacion_codigo)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ebr_env_uds ON ebr_envasado_unidades(ebr_id)",
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN envases_descontados_at TEXT DEFAULT ''",
+    ]),
     (289, "Cancelar EBRs de envasado de prueba/demo previos (Sebastián 26-jun · 'nunca se usaron, no existen "
           "esas órdenes de envasado actual'): el flujo nuevo crea el legajo de envasado SOLO al LIBERAR el "
           "granel de fabricación (Fase 2). Limpieza one-time · reversible (estado='cancelado', NO delete · "
