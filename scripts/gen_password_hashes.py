@@ -30,6 +30,7 @@ USUARIOS = [
     "sebastian", "alejandro", "hernando", "catalina", "luz", "daniela",
     "valentina", "jefferson", "felipe", "mayra", "gloria", "laura",
     "miguel", "yuliel", "luis", "smurillo", "sergio", "mayerlin", "camilo",
+    "jose", "milton",
 ]
 
 print("=" * 70)
