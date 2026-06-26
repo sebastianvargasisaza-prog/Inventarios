@@ -7873,6 +7873,32 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     h+='</ul>';
   } else {h+='<div style="color:#999;font-size:12px;">Sin registros físicos adjuntos.</div>';}
   if(editable){h+='<button onclick="ebrAgregarRegistroFisico('+d.id+')" style="margin-top:4px;background:#0891b2;color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;cursor:pointer;">+ Adjuntar registro/PDF</button>';}
+  // Cierre y Aprobaciones finales (Producción + Calidad · MyBatch pie del instructivo)
+  h+='</div>'+_secOpen('&#9989; Cierre y Aprobaciones');
+  var _est=(d.estado||'');
+  h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px">';
+  h+='<div style="border:1px solid #e2e8f0;border-radius:10px;padding:12px">';
+  h+='<div style="font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.3px">Aprobado por &middot; Producción</div>';
+  if(_est==='completado'||_est==='en_revision_qc'||_est==='liberado'){
+    h+='<div style="font-size:13px;font-weight:700;color:#16a34a;margin-top:4px">&#10003; Producción terminada</div><div style="font-size:11px;color:#64748b">'+(d.completado_at_utc?String(d.completado_at_utc).replace('T',' ').slice(0,16):'')+(d.cantidad_real_g?(' &middot; '+d.cantidad_real_g+' g real'):'')+'</div>';
+  } else if(editable&&miRol.realiza){
+    h+='<div style="font-size:11px;color:#64748b;margin:5px 0 7px">Cierra la producción con la cantidad real (requiere todos los pasos completos).</div><button onclick="ebrTerminarLote('+d.id+')" style="background:#d97706;color:#fff;border:none;border-radius:7px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer">&#10003; Terminar producción</button>';
+  } else {
+    h+='<div style="font-size:11px;color:#f59e0b;margin-top:4px">&#9203; Pendiente &middot; lo cierra Producción (Operario / Jefe)</div>';
+  }
+  h+='</div>';
+  h+='<div style="border:1px solid #e2e8f0;border-radius:10px;padding:12px">';
+  h+='<div style="font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.3px">Aprobado por &middot; Calidad (liberación)</div>';
+  if(_est==='liberado'){
+    h+='<div style="font-size:13px;font-weight:700;color:#16a34a;margin-top:4px">&#128275; Liberado por '+_escHTML(d.liberado_por||'')+'</div><div style="font-size:11px;color:#64748b">'+(d.liberado_at_utc?String(d.liberado_at_utc).replace('T',' ').slice(0,16):'')+'</div>';
+  } else if((_est==='completado'||_est==='en_revision_qc')&&miRol.puede_liberar){
+    h+='<div style="font-size:11px;color:#64748b;margin:5px 0 7px">Libera el lote con tu e-firma (cierra el batch record &middot; Part 11).</div><button onclick="ebrLiberarLote('+d.id+')" style="background:#15803d;color:#fff;border:none;border-radius:7px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer">&#128274; Liberar lote</button>';
+  } else if(_est==='completado'||_est==='en_revision_qc'){
+    h+='<div style="font-size:11px;color:#f59e0b;margin-top:4px">&#9203; Espera liberación de Calidad / Aseguramiento</div>';
+  } else {
+    h+='<div style="font-size:11px;color:#cbd5e1;margin-top:4px">&mdash; (primero Producción termina)</div>';
+  }
+  h+='</div></div>';
   // Correcciones del registro (Part 11 · enmiendas trazadas)
   h+='</div>'+_secOpen('✏️ Correcciones del Registro');
   h+='<div style="color:#94a3b8;font-size:12px;">Toda corrección a un registro firmado queda trazada aquí (motivo &middot; autor &middot; fecha &middot; 21 CFR Part 11). Sin correcciones registradas.</div>';
@@ -7934,6 +7960,29 @@ async function ebrDespejeTodoCumple(ebrId, etapa){
     for(var i=0;i<13;i++){
       await fetch('/api/brd/ebr/'+ebrId+'/despeje-item',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item_idx:i,cumple:1,etapa:etapa})});
     }
+    abrirEBR(ebrId);
+  }catch(e){ alert('Error: '+(e.message||e)); }
+}
+async function ebrTerminarLote(ebrId){
+  var v=prompt('Cantidad REAL producida (gramos) · cierra la producción:');
+  if(v===null)return;
+  var n=parseFloat(String(v).replace(',','.'));
+  if(!(n>0)){alert('Cantidad inválida');return;}
+  try{
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/completar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cantidad_real_g:n})});
+    if(!r.ok){ var j=await r.json(); alert('Error: '+(j.error||r.status)); return; }
+    abrirEBR(ebrId);
+  }catch(e){ alert('Error: '+(e.message||e)); }
+}
+async function ebrLiberarLote(ebrId){
+  if(!confirm('\\u00bfLiberar el lote? Vas a firmar electr\\u00f3nicamente (21 CFR Part 11). Cierra el batch record.'))return;
+  var f=await _firmarEsign('libera','ebr_ejecuciones',ebrId);
+  if(!f)return;
+  if(f.error){ alert(f.error); return; }
+  try{
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/liberar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({signature_id:f.signature_id})});
+    if(!r.ok){ var j=await r.json(); alert('Error: '+(j.error||r.status)); return; }
+    alert('\\u2713 Lote liberado \\u00b7 batch record cerrado');
     abrirEBR(ebrId);
   }catch(e){ alert('Error: '+(e.message||e)); }
 }
