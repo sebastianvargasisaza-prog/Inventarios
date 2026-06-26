@@ -195,6 +195,67 @@ def _proximo_dia_acond(desde_fecha):
     return f
 
 
+def _ventas_sku_map_orders(c, dias_max=200):
+    """PERF 25-jun (M43) · construye {sku: {fecha: qty}} de animus_shopify_orders UNA sola vez por
+    request (cacheado en flask.g) para NO re-consultar+re-parsear TODAS las órdenes por cada SKU/ventana
+    (era O(productos×SKUs×ventanas×órdenes) = segundos en cada carga de Necesidades/calendario). Mismos
+    filtros y matching que la Estrategia 2 de _ventas_diarias_por_sku → resultado idéntico, solo más rápido."""
+    try:
+        from flask import g as _g
+        cached = getattr(_g, '_ventas_sku_map', None)
+        if cached is not None:
+            return cached
+    except Exception:
+        _g = None
+    from datetime import datetime as _dt_l, timedelta as _td_l
+    cutoff = (_dt_l.utcnow() - _td_l(hours=5) - _td_l(days=dias_max)).strftime('%Y-%m-%d')
+    import os as _os_l
+    _b2b_raw = (_os_l.environ.get('SHOPIFY_B2B_TAGS') or '').strip()
+    _b2b_clauses = ''
+    _b2b_params = []
+    if _b2b_raw:
+        for _t in _b2b_raw.split(','):
+            _t = _t.strip().lower()
+            if _t:
+                _b2b_clauses += " AND LOWER(COALESCE(tags,'')) NOT LIKE ? AND LOWER(COALESCE(customer_tags,'')) NOT LIKE ?"
+                _b2b_params.extend(['%' + _t + '%', '%' + _t + '%'])
+    m = {}
+    try:
+        rows = c.execute(f"""
+            SELECT date(creado_en), sku_items FROM animus_shopify_orders
+            WHERE date(creado_en) >= ? AND sku_items IS NOT NULL AND sku_items != ''
+              AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')
+              AND LOWER(COALESCE(estado_pago,'')) NOT IN ('refunded','voided','partially_refunded')
+              {_b2b_clauses}
+        """, tuple([cutoff] + _b2b_params)).fetchall()
+        for fecha, sku_items_json in rows:
+            if not fecha or not sku_items_json:
+                continue
+            try:
+                items = json.loads(sku_items_json) if isinstance(sku_items_json, str) else sku_items_json
+            except Exception:
+                continue
+            if not isinstance(items, list):
+                continue
+            for it in items:
+                sk = (it.get('sku') or it.get('SKU') or '').strip()
+                if not sk:
+                    continue
+                cant = float(it.get('cantidad') or it.get('quantity') or it.get('qty') or 0)
+                if cant <= 0:
+                    continue
+                dd = m.setdefault(sk, {})
+                dd[fecha] = dd.get(fecha, 0) + cant
+    except Exception:
+        m = {}
+    if _g is not None:
+        try:
+            _g._ventas_sku_map = m
+        except Exception:
+            pass
+    return m
+
+
 def _ventas_diarias_por_sku(c, sku, dias=60):
     """Devuelve [(fecha, unidades)] de ventas del SKU en los últimos N días.
 
@@ -221,56 +282,14 @@ def _ventas_diarias_por_sku(c, sku, dias=60):
     except Exception:
         pass
 
-    # Estrategia 2: animus_shopify_orders con sku_items JSON
-    # SHOPIFY-AUDIT 23-may-2026 PM · agente cazó que refunds/cancelled
-    # contaban como ventas → velocidad inflada. Ahora filtramos.
-    # + filtro opt-in B2B vs DTC vía env var SHOPIFY_B2B_TAGS.
-    import os as _os_local
-    _b2b_raw = (_os_local.environ.get('SHOPIFY_B2B_TAGS') or '').strip()
-    _b2b_clauses = ''
-    _b2b_params = []
-    if _b2b_raw:
-        for _t in _b2b_raw.split(','):
-            _t = _t.strip().lower()
-            if _t:
-                _b2b_clauses += " AND LOWER(COALESCE(tags,'')) NOT LIKE ? AND LOWER(COALESCE(customer_tags,'')) NOT LIKE ?"
-                _b2b_params.extend(['%' + _t + '%', '%' + _t + '%'])
+    # Estrategia 2: animus_shopify_orders · PERF 25-jun (M43) · usa el mapa {sku:{fecha:qty}} construido
+    # UNA sola vez por request (mismos filtros: cancelados/refunds/B2B excluidos · mismo matching de SKU
+    # y campo qty) en vez de re-parsear TODAS las órdenes por cada SKU/ventana. Resultado IDÉNTICO.
     try:
-        rows = c.execute(f"""
-            SELECT date(creado_en), sku_items
-            FROM animus_shopify_orders
-            WHERE date(creado_en) >= ?
-              AND sku_items IS NOT NULL AND sku_items != ''
-              AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')
-              AND LOWER(COALESCE(estado_pago,'')) NOT IN ('refunded','voided','partially_refunded')
-              {_b2b_clauses}
-        """, tuple([cutoff_str] + _b2b_params)).fetchall()
-        if rows:
-            por_dia = {}
-            for fecha, sku_items_json in rows:
-                if not fecha or not sku_items_json:
-                    continue
-                try:
-                    items = json.loads(sku_items_json) if isinstance(sku_items_json, str) else sku_items_json
-                except Exception:
-                    continue
-                if not isinstance(items, list):
-                    continue
-                cantidad = 0
-                for it in items:
-                    sk = (it.get('sku') or it.get('SKU') or '').strip()
-                    if sk == sku:
-                        # SHOPIFY-FIX · 22-may-2026 · Bug #1 CRÍTICO audit Shopify→Necesidades
-                        # · 4 writers escriben 'qty' (auto_plan.py:7313, animus.py:129,
-                        #   marketing.py:1804, auto_plan_jobs.py:951)
-                        # · este reader buscaba solo 'cantidad' o 'quantity' · NUNCA matcheaba
-                        # · resultado: _ventas_diarias_por_sku devolvía [] siempre
-                        # · velocidad=0 → ningún producto entraba al plan nocturno
-                        # · CAUSA RAÍZ del síntoma "productos que se venden no aparecen"
-                        cantidad += float(it.get('cantidad') or it.get('quantity') or it.get('qty') or 0)
-                if cantidad > 0:
-                    por_dia[fecha] = por_dia.get(fecha, 0) + cantidad
-            return sorted([(f, q) for f, q in por_dia.items()])
+        _m = _ventas_sku_map_orders(c)
+        _v = _m.get((sku or '').strip())
+        if _v:
+            return sorted([(f, q) for f, q in _v.items() if f and f >= cutoff_str])
     except Exception:
         pass
 
