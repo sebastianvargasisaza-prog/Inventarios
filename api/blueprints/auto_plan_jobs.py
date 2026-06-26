@@ -678,6 +678,8 @@ JOBS_SCHEDULE = [
     ('pagos_influencer_urgencia', 9, 5, None, None,               'job_pagos_influencer_urgencia'),
     # Diarios
     ('sync_stock_shopify',    5, 30, None, None,                'job_sync_stock_shopify_diario'),
+    ('sync_stock_shopify_md', 13, 30, None, None,               'job_sync_stock_shopify_diario'),
+    ('sync_stock_shopify_pm', 21, 30, None, None,               'job_sync_stock_shopify_diario'),
     ('sync_shopify',          6,  0, None, None,                'job_sync_shopify'),
     ('auto_asignar_areas',    6, 30, None, None,                'job_auto_asignar_areas'),
     ('auto_d20',              8,  0, None, None,                'job_auto_d20'),
