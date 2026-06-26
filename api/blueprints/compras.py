@@ -403,6 +403,14 @@ def _check_monto_limit(usuario, monto):
     """
     if usuario in ADMIN_USERS:
         return None, None
+    # Sebastián 26-jun: autorizadores SIN tope de monto (ej. Catalina · "autorizar OCs sin importar el
+    # monto"). Tratada como admin SOLO para el límite de OC (no le da admin general). Reversible en config.
+    try:
+        from config import OC_SIN_LIMITE_MONTO as _OSL
+    except Exception:
+        _OSL = set()
+    if (usuario or '').lower() in {x.lower() for x in _OSL}:
+        return None, None
     limite = LIMITES_APROBACION_OC.get(usuario)
     if limite is None:
         # Usuario sin límite explícito: usar 0 (no puede autorizar nada)

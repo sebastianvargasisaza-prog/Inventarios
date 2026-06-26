@@ -134,6 +134,14 @@ LIMITES_APROBACION_OC = {
 #   de monto por usuario (LIMITES_APROBACION_OC: 5M Catalina/Mayra · admins sin tope).
 OC_AUTORIZA_USERS = {"catalina", "mayra"}
 
+# ── Quién autoriza/paga OCs SIN tope de monto (cualquier valor) ───────────────
+# Sebastián 26-jun-2026: Catalina autoriza OCs "sin importar el monto" — equipo de confianza, maneja
+# compras de punta a punta. Se la trata como admin SOLO para el límite de monto de OC (NO le da admin
+# general · sigue sin reset-password, hard-delete, etc.). Control compensatorio: audit_log (cada
+# autorizar/pagar queda con usuario+fecha+monto). Reversible: sacarla de este set → vuelve su tope de
+# LIMITES_APROBACION_OC (5M). Mayra NO está acá (mantiene su tope 5M).
+OC_SIN_LIMITE_MONTO = {"catalina"}
+
 # PIN para desbloquear vista de cantidades en Fórmulas.
 # DEBE setearse via env var FORMULA_PIN. Si falta, se genera un PIN
 # aleatorio efímero (cambia en cada redeploy) — equivalente a deshabilitar
