@@ -395,6 +395,13 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (289, "Cancelar EBRs de envasado de prueba/demo previos (Sebastián 26-jun · 'nunca se usaron, no existen "
+          "esas órdenes de envasado actual'): el flujo nuevo crea el legajo de envasado SOLO al LIBERAR el "
+          "granel de fabricación (Fase 2). Limpieza one-time · reversible (estado='cancelado', NO delete · "
+          "GMP conserva el registro). Los legajos creados después de esta migración (reales) no se tocan.", [
+        "UPDATE ebr_ejecuciones SET estado='cancelado' "
+        "WHERE COALESCE(fase,'')='envasado' AND estado IN ('iniciado','en_proceso','completado','en_revision_qc')",
+    ]),
     (288, "Ajustes de Materias Primas del legajo (Sebastián 25-jun · MyBatch §3 'Ajustes de MP'): registro de "
           "cualquier ajuste de cantidad de MP durante la fabricación (ej. + TEA para ajustar pH) con motivo "
           "+ quién + cuándo.", [
