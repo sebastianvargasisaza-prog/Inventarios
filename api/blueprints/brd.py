@@ -5466,7 +5466,9 @@ def registrar_despeje_item_ebr(ebr_id):
         "FROM ebr_despeje_items WHERE ebr_id=? AND item_idx=? AND COALESCE(etapa,'dispensacion')=?",
         (ebr_id, idx, etapa)).fetchone()
     es_correccion = bool(prev and prev[0] is not None)
-    es_calidad = (user in CALIDAD_USERS) or (user in ADMIN_USERS)
+    # Corregir un resultado ya registrado = atribución de quien CORRIGE (Calidad / Aseguramiento /
+    # Dir. Técnica / Admin · resolver canónico _batch_role_info, consistente con la sección Correcciones).
+    es_calidad = bool(_batch_role_info(user).get("corrige"))
     if es_correccion and not es_calidad:
         return jsonify({
             "error": "Corregir un resultado ya registrado es atribución de Calidad / "
