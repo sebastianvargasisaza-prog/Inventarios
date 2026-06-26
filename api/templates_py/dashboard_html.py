@@ -7619,25 +7619,24 @@ async function abrirEBR(id, targetId){
     var r=await fetch('/api/brd/ebr/'+id,{credentials:'same-origin'});
     var d=await r.json();
     if(!r.ok){box.innerHTML='<div style="color:#c0392b;">'+(d.error||'Error')+'</div>';return;}
-    var dp=await _ebrJson('/api/brd/ebr/'+id+'/pesajes-plan');
-    var dcm=await _ebrJson('/api/brd/ebr/'+id+'/conciliacion-material');
-    var dar=await _ebrJson('/api/brd/ebr/'+id+'/artes');
-    var dob=await _ebrJson('/api/brd/ebr/'+id+'/observaciones');
-    // IPC · controles en proceso (specs del MBR + resultados del EBR)
-    var ipcSpecs=[],ipcRes=[],ipcEstandar=[];
-    try{
-      if(d.mbr_template_id){var rs=await fetch('/api/brd/mbr/'+d.mbr_template_id+'/ipc-specs',{credentials:'same-origin'});var ds=await rs.json();ipcSpecs=(ds&&ds.items)||ds||[];}
-      var rir=await fetch('/api/brd/ebr/'+id+'/ipc-resultados',{credentials:'same-origin'});var dir=await rir.json();ipcRes=(dir&&dir.items)||dir||[];
-      var rie=await fetch('/api/brd/ebr/'+id+'/ipc-estandar',{credentials:'same-origin'});var die=await rie.json();ipcEstandar=(die&&die.items)||[];
-    }catch(e){}
-    // MyBatch ①②⑦ · precauciones, despeje de línea, registros físicos
-    var despeje=[],prec=[],regs=[];
-    try{
-      var rde=await fetch('/api/brd/ebr/'+id+'/despeje',{credentials:'same-origin'});var dde=await rde.json();despeje=(dde&&dde.items)||[];
-      var rpr=await fetch('/api/brd/ebr/'+id+'/precauciones',{credentials:'same-origin'});var dpr=await rpr.json();prec=(dpr&&dpr.items)||[];
-      var rrg=await fetch('/api/brd/ebr/'+id+'/registros-fisicos',{credentials:'same-origin'});var drg=await rrg.json();regs=(drg&&drg.items)||[];
-    }catch(e){}
-    var despejeChk=await _ebrJson('/api/brd/ebr/'+id+'/despeje-items');
+    // 25-jun PERF · todos los sub-recursos en PARALELO (antes 11 fetches en serie = ~1-2s de latencia)
+    var _arr=function(x){return (x&&x.items)?x.items:(Array.isArray(x)?x:[]);};
+    var P=await Promise.all([
+      _ebrJson('/api/brd/ebr/'+id+'/pesajes-plan'),
+      _ebrJson('/api/brd/ebr/'+id+'/conciliacion-material'),
+      _ebrJson('/api/brd/ebr/'+id+'/artes'),
+      _ebrJson('/api/brd/ebr/'+id+'/observaciones'),
+      (d.mbr_template_id?_ebrJson('/api/brd/mbr/'+d.mbr_template_id+'/ipc-specs'):Promise.resolve({})),
+      _ebrJson('/api/brd/ebr/'+id+'/ipc-resultados'),
+      _ebrJson('/api/brd/ebr/'+id+'/ipc-estandar'),
+      _ebrJson('/api/brd/ebr/'+id+'/despeje'),
+      _ebrJson('/api/brd/ebr/'+id+'/precauciones'),
+      _ebrJson('/api/brd/ebr/'+id+'/registros-fisicos'),
+      _ebrJson('/api/brd/ebr/'+id+'/despeje-items')
+    ]);
+    var dp=P[0],dcm=P[1],dar=P[2],dob=P[3];
+    var ipcSpecs=_arr(P[4]),ipcRes=_arr(P[5]),ipcEstandar=_arr(P[6]);
+    var despeje=_arr(P[7]),prec=_arr(P[8]),regs=_arr(P[9]),despejeChk=P[10]||{};
     box.innerHTML=_ebrRender(d,(dp&&dp.items)||[],(dcm&&dcm.items)||[],(dar&&dar.items)||[],(dob&&dob.items)||[],ipcSpecs,ipcRes,despeje,prec,regs,ipcEstandar,despejeChk);
     box.scrollIntoView({behavior:'smooth',block:'start'});
   }catch(e){box.innerHTML='<div style="color:#c0392b;padding:8px">No se pudo abrir el legajo: '+_escHTML((e&&e.message)?e.message:String(e))+'</div>';}
