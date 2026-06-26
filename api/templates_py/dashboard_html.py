@@ -7764,6 +7764,10 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     return oh;
   }
   var _dch=despejeChk||{};
+  // ENVASADO 26-jun · las secciones de MP (despeje dispensación, pesaje, ajustes, despeje fabricación)
+  // SOLO aplican a FABRICACIÓN. En envasado/acondicionamiento no hay pesaje de MP → se ocultan. El balance
+  // de </div> se mantiene: el </div> que abre la sección de Pasos cierra Precauciones cuando este bloque se salta.
+  if(fa==='fabricacion'){
   h+='</div>'+_secOpen('🧹 Despeje de Línea · Dispensación')+_despEtapa('Despeje de Línea · Dispensación', 'dispensacion', _dch.dispensacion);
   // 3 · Dispensado de Materias Primas (pesaje · 2ª firma)
   h+='</div>'+_secOpen('⚖️ Dispensado de Materias Primas');
@@ -7801,8 +7805,9 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   if(editable&&miRol.realiza){ h+='<button onclick="ebrAgregarAjusteMp('+d.id+')" style="margin-top:6px;background:#d97706;color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">+ Registrar ajuste de MP</button>'; }
   // 4 · Despeje de Línea · Fabricación (tras dispensar/pesar)
   h+='</div>'+_secOpen('🧹 Despeje de Línea · Fabricación')+_despEtapa('Despeje de Línea · Fabricación', 'fabricacion', _dch.fabricacion);
-  // 5 · Fabricación / Mezcla (pasos · Realizó + Verificó QC)
-  h+='</div>'+_secOpen('📋 Fabricación / Mezcla');
+  } // fin if(fa==='fabricacion') · secciones de MP solo en fabricación
+  // 5 · Pasos del proceso (Realizó + Verificó QC) · título por fase
+  h+='</div>'+_secOpen(fa==='envasado'?'📦 Envasado':(fa==='acondicionamiento'?'🎁 Acondicionamiento':'📋 Fabricación / Mezcla'));
   var pasos=d.pasos||[];
   if(!pasos.length){h+='<div style="color:#999;font-size:12px;">Este MBR no tiene pasos.</div>';}
   else{
