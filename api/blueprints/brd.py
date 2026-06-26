@@ -3616,8 +3616,34 @@ def liberar_ebr(ebr_id):
               tabla="ebr_ejecuciones", registro_id=ebr_id,
               despues={"liberado_por": user, "signature_id": signature_id,
                        "pt_lotes_promovidos": pt_lote_promovidos})
+    # ENVASADO Fase 2 (26-jun · Sebastián) · al LIBERAR el granel de FABRICACIÓN (QC aprobó → PT VIGENTE)
+    # se HABILITA automático el legajo de Envasado del MISMO lote físico (idempotente vía crear_ebr_desde_mbr
+    # · best-effort · NO bloquea la liberación si falla). SOLO fase='fabricacion' (no encadenar al liberar un
+    # envasado/acondicionamiento). Así Envasado queda "en blanco" hasta que algo se libera (no autocarga prod).
+    _envasado_habilitado = None
+    try:
+        _erow = conn.execute(
+            "SELECT COALESCE(e.fase,'fabricacion'), COALESCE(m.producto_nombre,''), "
+            "COALESCE(e.lote_codigo, e.lote) "
+            "FROM ebr_ejecuciones e LEFT JOIN mbr_templates m ON m.id=e.mbr_template_id "
+            "WHERE e.id=?", (ebr_id,)).fetchone()
+        if _erow and str(_erow[0]).strip().lower() == 'fabricacion' and _erow[1] and _erow[2]:
+            _res_env = crear_ebr_desde_mbr(conn.cursor(), producto_nombre=_erow[1],
+                                           lote=_erow[2], usuario=user, fase='envasado')
+            conn.commit()
+            if _res_env.get('ok'):
+                _envasado_habilitado = _res_env.get('id')
+                if not _res_env.get('reusado'):
+                    audit_log(None, usuario=user, accion="AUTO_CREAR_EBR_ENVASADO",
+                              tabla="ebr_ejecuciones", registro_id=_res_env.get('id'),
+                              despues={"origen_fabricacion_ebr": ebr_id, "lote": _erow[2]})
+    except Exception as _e2:
+        import logging as _log2
+        _log2.getLogger('inventario.brd').warning(
+            'auto-crear EBR envasado al liberar fallo (no bloquea): %s', _e2)
     return jsonify({"ok": True, "estado": "liberado",
-                    "pt_lotes_promovidos": pt_lote_promovidos})
+                    "pt_lotes_promovidos": pt_lote_promovidos,
+                    "envasado_ebr_id": _envasado_habilitado})
 
 
 @bp.route("/api/brd/ebr/<int:ebr_id>/rechazar", methods=["POST"])

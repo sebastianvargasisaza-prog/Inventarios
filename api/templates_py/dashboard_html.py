@@ -536,7 +536,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   <div id="bar-prodHub" class="sub-tab-bar">
     <button class="sub-btn active" onclick="subSwitchTab('formulas',this,'bar-prodHub')">&#129514; Fórmulas</button>
     <button class="sub-btn" onclick="subSwitchTab('produccion',this,'bar-prodHub');cargarEBRs()">&#127981; Fabricación</button>
-    <button class="sub-btn" onclick="subSwitchTab('envasado',this,'bar-prodHub');loadColaSinEnvasar()">&#128230; Envasado</button>
+    <button class="sub-btn" onclick="subSwitchTab('envasado',this,'bar-prodHub');cargarEnvasadoRunner()">&#128230; Envasado</button>
     <button class="sub-btn" onclick="subSwitchTab('acondicionamiento',this,'bar-prodHub');loadColaAcond()">&#128295; Acondicionamiento</button>
     <button class="sub-btn" onclick="subSwitchTab('plano',this,'bar-prodHub');if(typeof cargarPlanoGrid==='function')cargarPlanoGrid();">&#128506;&#65039; Plano</button>
     <button class="sub-btn" onclick="subSwitchTab('historicos',this,'bar-prodHub');if(typeof cargarHistProd==='function')cargarHistProd();">&#128218; Históricos</button>
@@ -1970,6 +1970,22 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
 <div id="envasado" class="tab-content">
 <div style="padding:18px">
   <h2 style="margin:0 0 8px;color:#1a4a7a">&#128230; Envasado</h2>
+  <!-- ENVASADO 26-jun (Sebastián) · vista LIMPIA: solo legajos de envasado HABILITADOS (cuando Calidad
+       LIBERA el granel · Fase 2). NO autocarga producción sin aprobar. Mismo runner role-aware que Fabricación. -->
+  <div style="background:#f5f3ff;border:1px solid #e9d5ff;border-radius:8px;padding:11px 14px;margin-bottom:16px;font-size:12.5px;color:#4c1d95;line-height:1.7">
+    <b>Cómo funciona:</b> cuando Calidad <b>LIBERA</b> el granel de un lote (aprobado), se habilita acá su
+    <b>Orden de Envasado</b> automáticamente. Abrí <b>&#128203; Pasos</b> y ejecutá el batch: alistamiento de
+    envase/tapa &rarr; llenado/control de peso &rarr; sellado &rarr; cierre. <i>No se autocarga producción sin aprobar.</i>
+  </div>
+  <div style="background:#fff;border:1px solid #e9d5ff;border-radius:10px;padding:14px;margin-bottom:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+      <h3 style="margin:0;font-size:14px;color:#6d28d9">&#128203; Órdenes de Envasado</h3>
+      <button onclick="cargarEnvasadoRunner()" style="background:#7c3aed;color:#fff;border:none;border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer">&#8635; Actualizar</button>
+    </div>
+    <div id="envasado-lista"><div style="color:#999;padding:10px">Cargando&hellip;</div></div>
+  </div>
+  <div id="envasado-runner"></div>
+  <div style="display:none" id="envasado-old-oculto"><!-- pestaña vieja de registro (Cola sin envasar / registro manual / historial) · reemplazada por el runner · 26-jun -->
   <div style="background:#f5f3ff;border:1px solid #e9d5ff;border-radius:8px;padding:11px 14px;margin-bottom:16px;font-size:12.5px;color:#4c1d95;line-height:1.8">
     <b>Cómo funciona el flujo:</b><br>
     &#9312; El lote producido cae a la <b>Cola: lotes listos para envasar</b>.
@@ -2117,6 +2133,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     </div>
     <div id="env-hist-footer" style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:12px;color:#64748b"></div>
   </div>
+  </div><!-- /envasado-old-oculto · pestaña vieja de registro reemplazada por el runner (26-jun) -->
 </div>
 </div>
 
@@ -4317,7 +4334,7 @@ function subSwitchTab(tabId,btn,barId){
   if(tabId==='formulas'||tabId==='produccion') loadFormulas();
   if(tabId==='produccion'){ if(typeof cargarEnCurso==='function')cargarEnCurso(); if(typeof cargarAreasFab==='function') cargarAreasFab(); }
   if(tabId==='historicos'){ if(typeof cargarHistProd==='function')cargarHistProd(); }
-  if(tabId==='envasado') cargarEnvasadoSimpleTab();
+  if(tabId==='envasado') cargarEnvasadoRunner();
   if(tabId==='acondicionamiento') cargarAcondSimpleTab();
   if(tabId==='programacion') cargarProgramacion(null);
   if(tabId==='cuarentena'){ cargarCuarentena(); cargarModoInventario(); }
@@ -9880,6 +9897,28 @@ function cargarOrdenesAcondicionamiento(){
         '<td style="padding:8px;text-align:center">'+leg+'</td></tr>';
     }).join('');
   }).catch(function(){tb.innerHTML='<tr><td colspan="6" style="color:#c00;text-align:center;padding:10px">Error cargando órdenes</td></tr>';});
+}
+// ENVASADO 26-jun (Sebastián) · loader LIMPIO de la pestaña Envasado: solo legajos de envasado
+// HABILITADOS (ebr_ejecuciones fase='envasado' · se crean cuando Calidad LIBERA el granel · Fase 2).
+// Espeja cargarEnCurso de Fabricación · abre el legajo en el MISMO runner role-aware (abrirEBR).
+async function cargarEnvasadoRunner(){
+  var wrap=document.getElementById('envasado-lista');
+  if(!wrap) return;
+  wrap.innerHTML='<div style="color:#999;padding:10px">Cargando&hellip;</div>';
+  try{
+    var d=await (await fetch('/api/brd/ordenes-unificadas?fase=envasado',{credentials:'same-origin'})).json();
+    var items=((d&&d.items)?d.items:[]).filter(function(o){return o&&o.ebr_id;});
+    if(!items.length){
+      wrap.innerHTML='<div style="color:#64748b;padding:16px;text-align:center;font-size:13px">Sin órdenes de envasado todav&iacute;a.<br>Cuando Calidad <b>libera</b> el granel de un lote, su Orden de Envasado aparece ac&aacute; autom&aacute;ticamente.</div>';
+      return;
+    }
+    var h='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:#f5f3ff;color:#5b21b6"><th style="text-align:left;padding:8px">N&deg; orden</th><th style="text-align:left;padding:8px">Producto</th><th style="text-align:left;padding:8px">Lote</th><th style="text-align:left;padding:8px">Estado</th><th style="padding:8px">Legajo</th></tr></thead><tbody>';
+    items.forEach(function(o){
+      h+='<tr style="border-bottom:1px solid #eee"><td style="padding:8px">'+(o.numero_op||('EBR-'+o.ebr_id))+'</td><td style="padding:8px">'+(o.producto||'')+'</td><td style="padding:8px;font-family:monospace;font-size:11px">'+(o.lote_bulk||'')+'</td><td style="padding:8px">'+(o.estado||'')+'</td><td style="padding:8px;text-align:center"><button onclick="abrirEBR('+o.ebr_id+',&#39;envasado-runner&#39;)" style="background:#6d28d9;color:#fff;border:none;border-radius:5px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer">&#128203; Pasos</button></td></tr>';
+    });
+    h+='</tbody></table></div>';
+    wrap.innerHTML=h;
+  }catch(e){ wrap.innerHTML='<div style="color:#dc2626;padding:10px">Error cargando &oacute;rdenes de envasado.</div>'; }
 }
 function loadColaSinEnvasar(){
   if(typeof cargarOrdenesEnvasado==='function')cargarOrdenesEnvasado();
