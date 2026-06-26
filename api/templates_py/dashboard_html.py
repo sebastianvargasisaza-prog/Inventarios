@@ -7756,6 +7756,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     oh+='</tbody></table>';
     if(editable&&miRol.realiza&&!allOk){ oh+='<button onclick="ebrDespejeTodoCumple('+d.id+',&#39;'+etapa+'&#39;)" style="margin-top:6px;margin-right:6px;background:#6d28d9;color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">✓ Marcar TODO cumple</button>'; }
     if(editable&&miRol.verifica&&done>verif){ oh+='<button onclick="ebrVerificarDespejeTodo('+d.id+',&#39;'+etapa+'&#39;)" style="margin-top:6px;background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">✓ Verificar TODO (Calidad)</button>'; }
+    if(editable&&miRol.realiza){ oh+=' <button onclick="ebrAgregarRegistroFisico('+d.id+',&#39;Rotulo limpieza '+etapa+'&#39;)" title="Adjuntar foto del rótulo de limpieza diligenciado" style="margin-top:6px;margin-left:6px;background:#fff;border:1px solid #cbd5e1;border-radius:5px;padding:6px 11px;font-size:11px;cursor:pointer">&#128247; Foto rótulo limpieza</button>'; }
     if(editable&&!miRol.realiza&&!miRol.verifica){ oh+='<div style="margin-top:6px;font-size:11px;color:#94a3b8">Solo lectura</div>'; }
     return oh;
   }
@@ -7782,7 +7783,8 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
         else { acc='<span style="color:#f59e0b;font-size:11px;">&#9203; espera Calidad</span>'; }
       }
       var _pctv=(p.porcentaje!=null?p.porcentaje:(d.cantidad_objetivo_g>0?((p.cantidad_teorica_g||0)/d.cantidad_objetivo_g*100):null));
-      h+='<tr style="'+(pesado?'':'background:#fffbeb')+'"><td>'+_escHTML(p.material_nombre||p.material_id||'')+'</td><td style="text-align:right;">'+(_pctv!=null?parseFloat(Number(_pctv).toFixed(3)):'—')+'</td><td style="font-family:monospace;font-size:11px">'+_escHTML(p.lote_mp||'—')+'</td><td style="text-align:right;">100</td><td style="text-align:right;">'+(p.cantidad_teorica_g!=null?Number(p.cantidad_teorica_g).toLocaleString("es-CO"):'—')+'</td><td style="text-align:right;font-weight:'+(pesado?'700':'400')+'">'+(p.cantidad_real_g!=null?Number(p.cantidad_real_g).toLocaleString("es-CO"):'<span style="color:#cbd5e1">&mdash;</span>')+'</td><td style="font-size:10px">'+_escHTML(pesado||'—')+'</td><td>'+verifCell+'</td><td style="text-align:right;">'+acc+'</td></tr>';
+      var _foto=(pesado&&editable&&miRol.realiza)?(' <button onclick="ebrAgregarRegistroFisico('+d.id+',&#39;Rotulo pesaje '+(p.material_id||'')+'&#39;)" title="Adjuntar foto del rótulo de pesaje (MyBatch)" style="background:#fff;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:12px;cursor:pointer">&#128247;</button>'):'';
+      h+='<tr style="'+(pesado?'':'background:#fffbeb')+'"><td>'+_escHTML(p.material_nombre||p.material_id||'')+'</td><td style="text-align:right;">'+(_pctv!=null?parseFloat(Number(_pctv).toFixed(3)):'—')+'</td><td style="font-family:monospace;font-size:11px">'+_escHTML(p.lote_mp||'—')+'</td><td style="text-align:right;">100</td><td style="text-align:right;">'+(p.cantidad_teorica_g!=null?Number(p.cantidad_teorica_g).toLocaleString("es-CO"):'—')+'</td><td style="text-align:right;font-weight:'+(pesado?'700':'400')+'">'+(p.cantidad_real_g!=null?Number(p.cantidad_real_g).toLocaleString("es-CO"):'<span style="color:#cbd5e1">&mdash;</span>')+'</td><td style="font-size:10px">'+_escHTML(pesado||'—')+'</td><td>'+verifCell+'</td><td style="text-align:right;white-space:nowrap;">'+acc+_foto+'</td></tr>';
     }
     h+='</tbody></table>';
   }
@@ -7918,8 +7920,8 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
       h+='<li>'+(rr2.descripcion||'')+pdfL+' <span style="color:#999;font-size:11px;">· '+(rr2.registrado_por||'')+'</span></li>';
     }
     h+='</ul>';
-  } else {h+='<div style="color:#999;font-size:12px;">Sin registros físicos adjuntos.</div>';}
-  if(editable){h+='<button onclick="ebrAgregarRegistroFisico('+d.id+')" style="margin-top:4px;background:#0891b2;color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;cursor:pointer;">+ Adjuntar registro/PDF</button>';}
+  } else {h+='<div style="color:#999;font-size:12px;">Sin registros físicos adjuntos. Acá van las FOTOS de los rótulos diligenciados a mano (pesaje, limpieza) — la evidencia física del lote.</div>';}
+  if(editable){h+='<button onclick="ebrAgregarRegistroFisico('+d.id+')" style="margin-top:4px;background:#0891b2;color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;cursor:pointer;">&#128247; Adjuntar foto / PDF</button>';}
   // Cierre y Aprobaciones finales (Producción + Calidad · MyBatch pie del instructivo)
   h+='</div>'+_secOpen('&#9989; Cierre y Aprobaciones');
   var _est=(d.estado||'');
@@ -8134,35 +8136,29 @@ async function _ebrPostDespeje(ebrId, body){
     abrirEBR(ebrId);
   }catch(e){alert('Error de red');}
 }
-async function ebrAgregarRegistroFisico(ebrId){
-  var desc=prompt('Descripción del registro físico (ej. "Bitácora pH pág 3", "Tirilla balanza"):');
-  if(desc===null)return; desc=(desc||'').trim(); if(!desc)return;
-  // file picker opcional para PDF
-  var inp=document.createElement('input'); inp.type='file'; inp.accept='application/pdf';
+async function ebrAgregarRegistroFisico(ebrId, descPre){
+  var desc;
+  if(descPre){ desc=descPre; }
+  else{
+    desc=prompt('Descripci\\u00f3n del registro f\\u00edsico (ej. "R\\u00f3tulo MP00138 \\u00c1cido L\\u00e1ctico", "R\\u00f3tulo limpieza Fabricaci\\u00f3n", "Tirilla balanza"):');
+    if(desc===null)return; desc=(desc||'').trim(); if(!desc)return;
+  }
+  // Foto del rótulo (lo único que se llena a mano) o PDF · en celular abre la cámara
+  var inp=document.createElement('input'); inp.type='file'; inp.accept='image/*,application/pdf';
+  try{ inp.setAttribute('capture','environment'); }catch(e){}
   inp.onchange=async function(){
-    var body={descripcion:desc};
     var f=inp.files&&inp.files[0];
-    if(f){
-      if(f.size>6*1024*1024){alert('PDF muy grande (max 6MB)');return;}
-      body.archivo_nombre=f.name;
-      body.archivo_b64=await new Promise(function(res){var rd=new FileReader();rd.onload=function(){res((rd.result||'').toString().split(',').pop());};rd.readAsDataURL(f);});
-    }
+    if(!f){ return; }
+    if(f.size>8*1024*1024){ alert('Archivo muy grande (m\\u00e1x 8MB)'); return; }
+    var body={descripcion:desc, archivo_nombre:f.name};
+    body.archivo_b64=await new Promise(function(res){var rd=new FileReader();rd.onload=function(){res((rd.result||'').toString().split(',').pop());};rd.readAsDataURL(f);});
     try{
       var r=await fetch('/api/brd/ebr/'+ebrId+'/registros-fisicos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       var j=await r.json(); if(!r.ok){alert(j.error||'Error');return;}
       abrirEBR(ebrId);
     }catch(e){alert('Error de red');}
   };
-  // permitir guardar sin PDF: si el usuario cancela el picker, igual guardamos solo descripción
-  var soloDesc=confirm('¿Adjuntar un PDF?\\nAceptar = elegir PDF · Cancelar = guardar solo la descripción');
-  if(soloDesc){inp.click();}
-  else{
-    try{
-      var r=await fetch('/api/brd/ebr/'+ebrId+'/registros-fisicos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({descripcion:desc})});
-      var j=await r.json(); if(!r.ok){alert(j.error||'Error');return;}
-      abrirEBR(ebrId);
-    }catch(e){alert('Error de red');}
-  }
+  inp.click();
 }
 async function ebrAgregarConciliacion(ebrId){
   var g=function(p){var el=document.getElementById(p+ebrId);return el?el.value:'';};
