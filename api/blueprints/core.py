@@ -549,6 +549,20 @@ def planta_app_js():
     resp.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
     return resp
 
+
+@bp.route('/planta-core.js')
+def planta_core_js():
+    # PERF 26-jun (Increment 2) · 1er bloque JS grande del dashboard como archivo externo cacheable.
+    # Mismo criterio que /planta-app.js (público · sin datos · immutable + ?v=HASH). Las interpolaciones
+    # {usuario}/{es_admin} NO están acá (van en un <script> inline previo) → el archivo es user-independiente.
+    from templates_py.dashboard_html import DASHBOARD_CORE_JS
+    if not DASHBOARD_CORE_JS:
+        return Response('/* planta-core.js no disponible (fallback inline activo) */',
+                        mimetype='application/javascript; charset=utf-8'), 404
+    resp = Response(DASHBOARD_CORE_JS, mimetype='application/javascript; charset=utf-8')
+    resp.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+    return resp
+
 # (rate limiter y hooks de seguridad → auth.py — registrados via register_hooks(app))
 
 @bp.route('/hub')

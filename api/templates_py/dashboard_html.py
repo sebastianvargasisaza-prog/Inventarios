@@ -2706,15 +2706,19 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       </div>
     </div>
   </div>
+<script>window.__DASH_USR='{usuario}';window.__DASH_ADMIN=({es_admin}===true);</script>
 <script>
 var fData=[], allStock=[], _cat={}, _ultimoIng=null;
 var formulasPin=false;
 var _lotes=[], _lotesFull=[], _meeData=[], _prodPendiente=null;
-var OPER_ACTUAL='{usuario}';
+// PERF 26-jun (Increment 2) · usuario/es_admin se inyectan en el script inline de arriba
+// (window.__DASH_USR/__DASH_ADMIN) para que ESTE bloque quede SIN interpolaciones y se pueda extraer
+// a /planta-core.js cacheable. Mismo valor que antes.
+var OPER_ACTUAL=window.__DASH_USR||'';
 // BUG-4 fix · 20-may-2026 Dashboard PRO audit · es_admin REAL desde
 // backend (core.py:444 inyecta el placeholder desde ADMIN_USERS).
 // Antes había listas hardcoded en JS que mentían a la UI.
-window._ES_ADMIN_DASH=({es_admin}===true);
+window._ES_ADMIN_DASH=(window.__DASH_ADMIN===true);
 // BUG-6 fix · 20-may-2026 Dashboard PRO audit: cargar CSRF token al boot
 // y guardar en window._csrfTok. Antes los helpers leían cookie inexistente.
 window._csrfTok=window._csrfTok||'';
@@ -7442,7 +7446,7 @@ async function cargarCuarentena(){
     var h='';
     data.forEach(function(l){
       // BUG-4 fix · 20-may-2026 Dashboard PRO audit: leer el placeholder
-      // {es_admin} que core.py:444 inyecta desde ADMIN_USERS de config.
+      // es_admin que core.py:444 inyecta desde ADMIN_USERS de config.
       // Antes la lista hardcoded incluía 'hernando' que NO es admin →
       // la UI le pintaba botones que el backend rechazaba con 403.
       var esAdmin=(window._ES_ADMIN_DASH===true);
@@ -25604,3 +25608,32 @@ try:
 except Exception:
     DASHBOARD_APP_JS = ""
     DASHBOARD_APP_JS_HASH = ""
+
+
+# ── PERF 26-jun (Increment 2) · extraer el 1er bloque JS grande a /planta-core.js cacheable ─────────
+# El 1er bloque (~8k líneas) quedó SIN interpolaciones ({usuario}/{es_admin} se inyectan en un <script>
+# inline PREVIO como window.__DASH_USR/__DASH_ADMIN, que permanece inline). Se extrae igual que el 2º.
+# Guard EXTRA: si el bloque aún tuviera {usuario}/{es_admin}, NO extrae (deja inline) → nunca hornea
+# un valor por-usuario en el archivo cacheado.
+DASHBOARD_CORE_JS = ""
+DASHBOARD_CORE_JS_HASH = ""
+try:
+    import hashlib as _hl_core
+    _mk_core = "var fData=[], allStock=[], _cat={}, _ultimoIng=null;"
+    _i_core = DASHBOARD_HTML.find(_mk_core)
+    if _i_core > 0:
+        _open_core = DASHBOARD_HTML.rfind("<script>", 0, _i_core)
+        _close_core = DASHBOARD_HTML.find("</script>", _i_core)
+        if _open_core > 0 and _close_core > _open_core:
+            _js_core = DASHBOARD_HTML[_open_core + len("<script>"):_close_core]
+            if len(_js_core) > 100000 and "{usuario}" not in _js_core and "{es_admin}" not in _js_core:
+                DASHBOARD_CORE_JS = _js_core
+                DASHBOARD_CORE_JS_HASH = _hl_core.md5(_js_core.encode("utf-8")).hexdigest()[:10]
+                DASHBOARD_HTML = (
+                    DASHBOARD_HTML[:_open_core]
+                    + '<script src="/planta-core.js?v=' + DASHBOARD_CORE_JS_HASH + '"></script>'
+                    + DASHBOARD_HTML[_close_core + len("</script>"):]
+                )
+except Exception:
+    DASHBOARD_CORE_JS = ""
+    DASHBOARD_CORE_JS_HASH = ""

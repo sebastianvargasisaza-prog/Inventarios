@@ -86,7 +86,7 @@ MFA_EXEMPT_PATHS = {
     '/api/mfa/status', '/api/mfa/setup', '/api/mfa/verify-setup', '/api/mfa/qr',
     '/login/mfa', '/login/mfa-backup',
     '/seguridad', '/seguridad/mfa',  # paginas HTML de setup
-    '/planta-app.js',  # JS estático del dashboard (sin datos · cacheable · igual que /static)
+    '/planta-app.js', '/planta-core.js',  # JS estático del dashboard (sin datos · cacheable · igual que /static)
 }
 MFA_EXEMPT_PREFIXES = ('/static/', '/favicon')
 
