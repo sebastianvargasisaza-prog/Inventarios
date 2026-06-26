@@ -596,6 +596,126 @@ def crear_mbr():
     return jsonify({"ok": True, "id": mbr_id, "version": version}), 201
 
 
+_INSTRUCTIVO_SUERO_MULTIP = """En un recipiente con capacidad adecuada, adicionar con agitación constante y a temperatura ambiente: Agua (60% de la fórmula), Niacinamida, Gluconolactona y Glucosamina.
+Adicionar uno por uno hasta total disolución (no adicionar la siguiente MP si la anterior no se disolvió). En esta primera parte ajustar el pH = 6.0 con Trietanolamina. pH final: ___ · Cantidad de TEA: ___ ml.
+Una vez ajustado el pH, adicionar lentamente y con agitación constante: Glicina, Copper tripeptide-1, Glutatión, Adenosina, PDRN, Dipeptide Diaminobutiroil benzalamida diacetato.
+Adicionar uno por uno hasta total disolución. En esta segunda parte ajustar el pH = 6.0 con Trietanolamina. pH final: ___ · Cantidad de TEA: ___ ml.
+Seguir agitando manteniendo el pH.
+Finalmente, adicionar con agitación constante y temperatura ambiente: Acetyl tetrapeptide-5, Acetyl hexapeptido-8, Palmitoyl Tripeptide-5, Colágeno hidrolizado, EDTA disódico. Verificar pH=6.0 y ajustar con TEA si es necesario.
+En otro recipiente, calentar el Propilenglicol a ~60°C. Al llegar a esa temperatura adicionar: Palmitoyl tripeptide-1, Palmitoyl tetrapeptide-7, Palmitoyl Pentapeptide-4.
+Enfriar de forma rápida; luego agregar esta solución a los Ácidos hialurónicos 50KDa, 300KDa y 1500KDa hasta total dispersión.
+Agregar esta dispersión con agitación constante al resto del agua de la fórmula (40%) y seguir agitando 20 minutos más, hasta total hidratación.
+Usar la batidora de mano para total homogenización y disolución de los péptidos.
+Una vez hidratados los AH y a temperatura menor de 40°C, adicionar la mezcla anterior suavemente y con agitación constante a la fase acuosa inicial.
+Adicionar a la mezcla anterior, con agitación constante: Gransil VX 419 y Biosure FE.
+Verificar pH=6.0 y ajustar con TEA si es necesario. pH final: ___ · TEA: ___ ml. Seguir agitando 20 minutos más. Tiempo real: ___ min."""
+
+
+@bp.route("/admin/cargar-instructivo", methods=["GET"])
+def cargar_instructivo_page():
+    """Página simple para cargar el instructivo de fabricación (pasos de proceso) en el MBR de un producto."""
+    err = _require_qa_or_admin()
+    if err:
+        return err
+    try:
+        prods = [r[0] for r in get_db().execute(
+            "SELECT DISTINCT producto_nombre FROM mbr_templates ORDER BY producto_nombre").fetchall()]
+    except Exception:
+        prods = []
+    import html as _html
+    opts = "".join(
+        f'<option value="{_html.escape(p)}"{" selected" if "MULTIP" in (p or "").upper() else ""}>{_html.escape(p)}</option>'
+        for p in prods)
+    pre = _html.escape(_INSTRUCTIVO_SUERO_MULTIP)
+    return f"""<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cargar instructivo de fabricación</title>
+<style>body{{font-family:system-ui,Segoe UI,Arial;background:#0f0f14;color:#e7e7ea;margin:0;padding:24px 14px}}
+.wrap{{max-width:780px;margin:0 auto}}h1{{font-size:19px;color:#a78bfa}}label{{display:block;font-size:13px;color:#a1a1aa;margin:14px 0 5px;font-weight:700}}
+select,textarea{{width:100%;box-sizing:border-box;background:#1a1a22;color:#e7e7ea;border:1px solid #34343f;border-radius:9px;padding:11px;font-size:14px}}
+textarea{{min-height:300px;line-height:1.5;font-family:inherit}}button{{margin-top:16px;background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;border:none;border-radius:9px;padding:13px 22px;font-size:15px;font-weight:800;cursor:pointer}}
+.hint{{font-size:12px;color:#71717a;margin-top:6px}}#res{{margin-top:16px;font-size:14px;font-weight:700;min-height:22px}}</style></head>
+<body><div class="wrap">
+<h1>📋 Cargar instructivo de fabricación al MBR</h1>
+<p class="hint">Cada línea = un paso del proceso de mezcla. El dispensado de MP sale solo de la fórmula (sección 3). Si el MBR está aprobado, se crea una versión NUEVA en borrador (la apruebás después con e-firma).</p>
+<label>Producto (MBR destino)</label><select id="prod">{opts}</select>
+<label>Pasos del proceso (uno por línea)</label><textarea id="pasos">{pre}</textarea>
+<div class="hint">Pre-cargado: instructivo del Suero Multipéptidos (de tu PDF). Editá o cambiá de producto.</div>
+<button onclick="cargar()">✓ Cargar instructivo</button>
+<div id="res"></div>
+</div>
+<script>
+async function cargar(){{
+  var prod=document.getElementById('prod').value;
+  var pasos=document.getElementById('pasos').value;
+  var res=document.getElementById('res');
+  res.style.color='#a1a1aa'; res.textContent='Cargando…';
+  try{{
+    var r=await fetch('/api/brd/mbr/cargar-instructivo',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{producto:prod,pasos:pasos}})}});
+    var d=await r.json();
+    if(!r.ok){{ res.style.color='#f87171'; res.textContent='Error: '+(d.error||r.status); return; }}
+    res.style.color='#34d399'; res.textContent='✓ '+d.pasos+' pasos cargados en '+d.producto+' · '+(d.aviso||'');
+  }}catch(e){{ res.style.color='#f87171'; res.textContent='Error de red'; }}
+}}
+</script></body></html>"""
+
+
+@bp.route("/api/brd/mbr/cargar-instructivo", methods=["POST"])
+def cargar_instructivo_mbr():
+    """Carga el INSTRUCTIVO de fabricación REAL (los pasos de proceso de mezcla) en el MBR de un
+    producto · Sebastián 25-jun. body: {producto, pasos: [texto...] o texto multilínea}.
+    Respeta inmutabilidad GMP: si el MBR activo está APROBADO, crea una versión NUEVA en borrador con
+    estos pasos (Calidad la aprueba con e-firma para que entre en vigor); si está en BORRADOR, reemplaza
+    sus pasos. El dispensado de MP sigue saliendo de la fórmula (sección 3), no de estos pasos."""
+    err = _require_qa_or_admin()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    producto_in = (body.get("producto") or "").strip()
+    pasos = body.get("pasos") or []
+    if isinstance(pasos, str):
+        pasos = pasos.split("\n")
+    pasos = [str(p).strip() for p in pasos if str(p or "").strip()][:80]
+    if not producto_in or not pasos:
+        return jsonify({"error": "producto y pasos requeridos"}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    user = session.get("compras_user", "")
+    mbr = cur.execute(
+        "SELECT id, estado, COALESCE(lote_size_g,0), producto_nombre FROM mbr_templates "
+        "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) ORDER BY version DESC LIMIT 1",
+        (producto_in,)).fetchone()
+    if not mbr:
+        return jsonify({"error": f"No hay MBR para '{producto_in}'. Generá el MBR del producto primero."}), 404
+    producto = mbr[3]  # nombre canónico
+    if (mbr[1] or "") == "draft":
+        target_id = mbr[0]
+        nueva_version = False
+        cur.execute("DELETE FROM mbr_pasos WHERE mbr_template_id=?", (target_id,))
+    else:
+        version = _next_version(conn, producto)
+        cur.execute(
+            "INSERT INTO mbr_templates (producto_nombre, version, estado, titulo, lote_size_g, creado_por) "
+            "VALUES (?, ?, 'draft', ?, ?, ?)",
+            (producto, version, f"{producto} v{version} · instructivo de fabricación", mbr[2], user))
+        target_id = cur.lastrowid
+        nueva_version = True
+    for i, txt in enumerate(pasos, start=1):
+        cur.execute(
+            "INSERT INTO mbr_pasos (mbr_template_id, orden, fase, descripcion, tipo_paso, requiere_qc) "
+            "VALUES (?, ?, 'fabricacion', ?, 'mezclado', 1)",
+            (target_id, i, txt[:1500]))
+    audit_log(cur, usuario=user, accion="CARGAR_INSTRUCTIVO_MBR", tabla="mbr_templates",
+              registro_id=target_id,
+              despues={"producto": producto, "pasos": len(pasos), "nueva_version": nueva_version})
+    conn.commit()
+    return jsonify({"ok": True, "mbr_id": target_id, "producto": producto, "pasos": len(pasos),
+                    "nueva_version": nueva_version,
+                    "aviso": ("Versión NUEVA en borrador creada · aprobala con e-firma en el módulo MBR "
+                              "para que entre en vigor (la anterior sigue activa hasta entonces)"
+                              if nueva_version else "Pasos del MBR en borrador reemplazados")}), 200
+
+
 @bp.route("/api/brd/mbr/<int:mbr_id>", methods=["PATCH"])
 def editar_mbr(mbr_id):
     err = _require_login()
