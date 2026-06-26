@@ -142,6 +142,13 @@ OC_AUTORIZA_USERS = {"catalina", "mayra"}
 # LIMITES_APROBACION_OC (5M). Mayra NO está acá (mantiene su tope 5M).
 OC_SIN_LIMITE_MONTO = {"catalina"}
 
+# ── Quién puede LIBERAR / APROBAR lotes de Materia Prima (además de Calidad) ──
+# Sebastián 26-jun-2026: Catalina también libera/aprueba materias primas (disposición QC del lote:
+# aprobar recepción, liberar de cuarentena → VIGENTE). Se suma al gate QC (QC_USERS) y al de aprobar-lote
+# en recepción — NO le da el módulo Calidad completo (KPIs/micro/desviaciones siguen CALIDAD_USERS).
+# La liberación sigue exigiendo e-firma (Part 11): firma como ella misma. Reversible: sacarla del set.
+MP_LIBERA_USERS = {"catalina"}
+
 # PIN para desbloquear vista de cantidades en Fórmulas.
 # DEBE setearse via env var FORMULA_PIN. Si falta, se genera un PIN
 # aleatorio efímero (cambia en cada redeploy) — equivalente a deshabilitar

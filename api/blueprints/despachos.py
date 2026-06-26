@@ -8,6 +8,10 @@ from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, CALIDAD_USERS
+try:
+    from config import MP_LIBERA_USERS
+except Exception:
+    MP_LIBERA_USERS = set()
 from database import get_db
 from audit_helpers import audit_log
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
@@ -174,7 +178,7 @@ def recepcion_aprobar_lote():
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     usuario = session.get('compras_user', '')
-    if usuario not in (set(CALIDAD_USERS) | set(ADMIN_USERS)):
+    if usuario not in (set(CALIDAD_USERS) | set(ADMIN_USERS) | set(MP_LIBERA_USERS)):
         return jsonify({'error': 'Solo Calidad/Admin puede aprobar lotes'}), 403
     d = request.get_json() or {}
     mov_id = d.get('mov_id')

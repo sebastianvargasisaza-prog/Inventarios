@@ -9,6 +9,10 @@ from database import db_connect
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, CALIDAD_USERS
+try:
+    from config import MP_LIBERA_USERS
+except Exception:
+    MP_LIBERA_USERS = set()
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
 from audit_helpers import audit_log
@@ -40,7 +44,7 @@ bp = Blueprint('inventario', __name__)
 #     u, err, code = _require_planta_write()
 #     if err: return err, code
 
-QC_USERS = CALIDAD_USERS | ADMIN_USERS
+QC_USERS = CALIDAD_USERS | ADMIN_USERS | MP_LIBERA_USERS  # Catalina libera/aprueba MP (Sebastián 26-jun)
 
 
 def _require_session():
