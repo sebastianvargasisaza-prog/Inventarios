@@ -33,6 +33,8 @@ COMPRAS_USERS = {
     "sergio":     _pwd("PASS_SERGIO"),
     "mayerlin":   _pwd("PASS_MAYERLIN"),
     "camilo":     _pwd("PASS_CAMILO"),
+    "jose":       _pwd("PASS_JOSE"),
+    "milton":     _pwd("PASS_MILTON"),
 }
 ADMIN_USERS     = {"sebastian", "alejandro"}
 # Mayra (contadora) + Catalina (asistente compras): mismo perfil financiero/contable
