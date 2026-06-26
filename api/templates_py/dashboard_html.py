@@ -25571,3 +25571,36 @@ async function ckMarcar(itemId, estado){
 </body>
 </html>
 """
+
+
+# ── PERF 26-jun (Increment 1) · extraer el 2º bloque JS grande a un archivo cacheable ──────────────
+# El dashboard es una página monolítica (~25k líneas) que el navegador re-parsea en cada carga. Este
+# 2º bloque (~12k líneas · SIN interpolaciones {usuario}/{es_admin}, esas viven en el 1er bloque) se
+# extrae EN MEMORIA al importar el módulo a /planta-app.js?v=HASH (servido con Cache-Control immutable):
+#   · el navegador cachea su bytecode compilado → cargas siguientes mucho más rápidas
+#   · la HTML servida se achica ~12k líneas
+# El CÓDIGO FUENTE no cambia (el JS sigue inline acá = única fuente de verdad + el reviewer lo node-chequea).
+# Fallback BLINDADO: si el bloque no se encuentra o no mide lo esperado, se deja el JS inline (no rompe nada).
+DASHBOARD_APP_JS = ""
+DASHBOARD_APP_JS_HASH = ""
+try:
+    import hashlib as _hl_dash
+    _mk_dash = "// Cache global de areas + operarios (cargado al abrir modal"
+    _i_dash = DASHBOARD_HTML.find(_mk_dash)
+    if _i_dash > 0:
+        _open_dash = DASHBOARD_HTML.rfind("<script>", 0, _i_dash)
+        _close_dash = DASHBOARD_HTML.find("</script>", _i_dash)
+        if _open_dash > 0 and _close_dash > _open_dash:
+            _js_dash = DASHBOARD_HTML[_open_dash + len("<script>"):_close_dash]
+            # sanity: debe ser el bloque gigante (~12k líneas · cientos de KB), no un script chico
+            if len(_js_dash) > 100000:
+                DASHBOARD_APP_JS = _js_dash
+                DASHBOARD_APP_JS_HASH = _hl_dash.md5(_js_dash.encode("utf-8")).hexdigest()[:10]
+                DASHBOARD_HTML = (
+                    DASHBOARD_HTML[:_open_dash]
+                    + '<script src="/planta-app.js?v=' + DASHBOARD_APP_JS_HASH + '"></script>'
+                    + DASHBOARD_HTML[_close_dash + len("</script>"):]
+                )
+except Exception:
+    DASHBOARD_APP_JS = ""
+    DASHBOARD_APP_JS_HASH = ""

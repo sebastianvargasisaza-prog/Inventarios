@@ -532,6 +532,23 @@ def inventarios():
     resp.headers['Content-Type'] = 'text/html; charset=utf-8'
     return resp
 
+
+@bp.route('/planta-app.js')
+def planta_app_js():
+    # PERF 26-jun (Increment 1) · sirve el 2º bloque JS grande del dashboard (~12k líneas, SIN
+    # interpolaciones) como ARCHIVO EXTERNO cacheable. La HTML servida lo referencia con
+    # <script src="/planta-app.js?v=HASH">. Es código de la app (sin datos sensibles · los datos
+    # vienen de APIs con login) → público + cache immutable: la URL lleva ?v=HASH, así que al cambiar
+    # el JS cambia la URL y el navegador baja la versión nueva. Si la extracción no corrió (fallback),
+    # DASHBOARD_APP_JS está vacío y el dashboard sigue con el JS inline (esta ruta no se usa).
+    from templates_py.dashboard_html import DASHBOARD_APP_JS
+    if not DASHBOARD_APP_JS:
+        return Response('/* planta-app.js no disponible (fallback inline activo) */',
+                        mimetype='application/javascript; charset=utf-8'), 404
+    resp = Response(DASHBOARD_APP_JS, mimetype='application/javascript; charset=utf-8')
+    resp.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+    return resp
+
 # (rate limiter y hooks de seguridad → auth.py — registrados via register_hooks(app))
 
 @bp.route('/hub')
