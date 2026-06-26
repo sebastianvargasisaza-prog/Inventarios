@@ -7801,7 +7801,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   var pasos=d.pasos||[];
   if(!pasos.length){h+='<div style="color:#999;font-size:12px;">Este MBR no tiene pasos.</div>';}
   else{
-    h+='<table class="table" style="font-size:12px;"><thead><tr><th>#</th><th>Fase</th><th>Descripción</th><th>Estado</th><th>Realizó</th><th>Verificó</th><th></th></tr></thead><tbody>';
+    h+='<table class="table" style="font-size:12px;"><thead><tr><th>#</th><th>Actividad</th><th>Estado</th><th>Realizó por</th><th>Verificó por</th><th></th></tr></thead><tbody>';
     for(var j=0;j<pasos.length;j++){
       var s=pasos[j];var acc2='<span style="color:#999;">'+(s.estado==='completado'?'✓':'—')+'</span>';
       if(editable&&miRol.realiza){
@@ -7809,7 +7809,14 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
         else if(s.estado==='en_proceso'){acc2='<button onclick="ebrCompletarPaso('+d.id+','+s.orden+','+s.id+','+(s.requiere_e_sign?1:0)+','+(s.requiere_qc?1:0)+')" style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Completar</button>';}
       }
       var qcTag=s.requiere_qc?' <span title="requiere 2ª firma QC" style="color:#0ea5e9;font-weight:700;">◆QC</span>':'';
-      h+='<tr><td>'+s.orden+'</td><td style="font-size:11px;color:#777;">'+(s.fase||'')+'</td><td>'+(s.descripcion||'')+qcTag+'</td><td>'+_ebrBadge(s.estado)+'</td><td>'+(s.operario_username||'')+'</td><td>'+(s.qc_username||'')+'</td><td style="text-align:right;">'+acc2+'</td></tr>';
+      var _res=(s.observaciones||'').trim();
+      var _rdt=s.completado_at_utc?String(s.completado_at_utc).replace('T',' ').slice(0,16):'';
+      h+='<tr style="vertical-align:top"><td style="font-weight:800;color:#6d28d9">'+s.orden+'</td>'+
+         '<td><div style="font-size:11px;line-height:1.4">'+_escHTML(s.descripcion||'')+qcTag+'</div>'+(_res?('<div style="margin-top:4px;font-size:11px;background:#f5f3ff;border-radius:5px;padding:3px 8px;display:inline-block"><b style="color:#6d28d9">Resultado:</b> '+_escHTML(_res)+'</div>'):'')+'</td>'+
+         '<td>'+_ebrBadge(s.estado)+'</td>'+
+         '<td style="font-size:11px">'+_escHTML(s.operario_username||'')+(_rdt?('<div style="font-size:9px;color:#94a3b8">'+_rdt+'</div>'):'')+'</td>'+
+         '<td style="font-size:11px">'+_escHTML(s.qc_username||'')+'</td>'+
+         '<td style="text-align:right;">'+acc2+'</td></tr>';
     }
     h+='</tbody></table>';
   }
@@ -8179,7 +8186,7 @@ async function ebrIniciarPaso(ebrId, orden){
   }catch(e){alert('Error de red');}
 }
 async function ebrCompletarPaso(ebrId, orden, pasoId, reqSign, reqQc){
-  var body={observaciones:(prompt('Observaciones del paso (opcional):')||'')};
+  var body={observaciones:(prompt('Resultado del paso (pH, temperatura, tiempo\\u2026 \\u00b7 opcional):')||'')};
   if(reqSign){
     var f=await _firmarEsign('ejecuta','ebr_pasos_ejecutados',pasoId);
     if(!f){return;}
