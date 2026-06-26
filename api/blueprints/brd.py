@@ -4504,6 +4504,23 @@ def pdf_ebr(ebr_id):
     despejes = _q("SELECT area_limpia, sin_producto_anterior, equipos_limpios, "
                   "documentacion_ok, conforme, observaciones, realizado_por, "
                   "realizado_at_utc FROM ebr_despeje_linea WHERE ebr_id=? ORDER BY id", ebr_id)
+
+    # Despeje GRANULAR por ítem (13 verificaciones × 2 etapas · Realizó/Verificó · MyBatch §2/§4 · 25-jun)
+    def _despeje_items_pdf(etapa):
+        reg = {}
+        for dr in _q("SELECT item_idx, cumple, COALESCE(registrado_por,''), "
+                     "COALESCE(verificado_por,'') FROM ebr_despeje_items "
+                     "WHERE ebr_id=? AND COALESCE(etapa,'dispensacion')=?", ebr_id, etapa):
+            reg[int(dr[0])] = dr
+        out = []
+        for i, texto in enumerate(DESPEJE_LINEA_ITEMS):
+            r = reg.get(i)
+            out.append((texto, (int(r[1]) if r and r[1] is not None else None),
+                        (r[2] if r else ''), (r[3] if r else '')))
+        return out
+    despeje_gran = [("Dispensación", _despeje_items_pdf("dispensacion")),
+                    ("Fabricación", _despeje_items_pdf("fabricacion"))]
+
     regfis = _q("SELECT descripcion, archivo_nombre, registrado_por, registrado_at_utc "
                 "FROM ebr_registros_fisicos WHERE ebr_id=? ORDER BY id", ebr_id)
     firmas = conn.execute(
@@ -4725,6 +4742,19 @@ def pdf_ebr(ebr_id):
                   + (f" · {dl['observaciones']}" if dl['observaciones'] else ""),
                   h=4, font_size=8)
         pdf.ln(2)
+
+    # Despeje granular · 13 verificaciones × 2 etapas (MyBatch §2 Dispensación + §4 Fabricación)
+    for _et_nom, _et_items in despeje_gran:
+        if any(it[1] is not None for it in _et_items):
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.cell(0, 6, _safe_pdf(f"Despeje de Línea · {_et_nom} (Realizó / Verificó)"),
+                     new_x="LMARGIN", new_y="NEXT")
+            for texto, cumple, reg_por, ver_por in _et_items:
+                _est = "SI" if cumple == 1 else ("NO" if cumple == 0 else "-")
+                _line(f"[{_est}] {texto}", h=4, font_size=8)
+                _line(f"      Realizo: {reg_por or '-'}  |  Verifico: {ver_por or '-'}",
+                      h=4, font_size=7)
+            pdf.ln(2)
 
     # Registros físicos (MyBatch ⑦)
     if regfis:
