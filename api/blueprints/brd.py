@@ -4963,6 +4963,69 @@ def listar_pesajes(ebr_id):
     return jsonify({"items": [dict(r) for r in rows]})
 
 
+@bp.route("/api/brd/ebr/<int:ebr_id>/pesajes-plan", methods=["GET"])
+def pesajes_plan_ebr(ebr_id):
+    """Lista COMPLETA de MP a dispensar (teóricos de la fórmula) + estado de pesaje de cada una.
+    Sección 3 'Dispensado de MP' (MyBatch §3): muestra QUÉ pesar ANTES de pesarlo (no solo lo ya
+    pesado). Los teóricos se calculan de formula_items × tamaño de lote (no se crean filas en BD)."""
+    err = _require_login()
+    if err:
+        return err
+    conn = get_db()
+    ebr = conn.execute(
+        "SELECT mbr_template_id, COALESCE(cantidad_objetivo_g,0) AS objetivo "
+        "FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
+    if not ebr:
+        return jsonify({"items": []})
+    producto = ""
+    lote_size = ebr["objetivo"] or 0
+    try:
+        mb = conn.execute("SELECT producto_nombre, COALESCE(lote_size_g,0) FROM mbr_templates WHERE id=?",
+                          (ebr["mbr_template_id"],)).fetchone()
+        if mb:
+            producto = mb[0] or ""
+            if not lote_size:
+                lote_size = mb[1] or 0
+    except Exception:
+        pass
+    teoricos = _calcular_teoricos_mp(conn, producto, lote_size)
+    pesados = {}
+    try:
+        for p in conn.execute(
+            "SELECT id, material_id, material_nombre, cantidad_teorica_g, cantidad_real_g, "
+            "COALESCE(lote_mp,'') AS lote_mp, COALESCE(pesado_por,'') AS pesado_por, "
+            "COALESCE(verificado_por,'') AS verificado_por FROM ebr_pesajes WHERE ebr_id=?",
+            (ebr_id,)).fetchall():
+            pesados[p["material_id"]] = dict(p)
+    except Exception:
+        pesados = {}
+    items = []
+    for mid, t in teoricos.items():
+        pp = pesados.get(mid)
+        items.append({
+            "material_id": mid,
+            "material_nombre": t["material_nombre"] or mid,
+            "porcentaje": t["porcentaje"],
+            "cantidad_teorica_g": round(t["cantidad_teorica_g"], 3),
+            "id": (pp["id"] if pp else None),
+            "cantidad_real_g": (pp["cantidad_real_g"] if pp else None),
+            "lote_mp": (pp["lote_mp"] if pp else ""),
+            "pesado_por": (pp["pesado_por"] if pp else ""),
+            "verificado_por": (pp["verificado_por"] if pp else ""),
+        })
+    for mid, pp in pesados.items():
+        if mid not in teoricos:
+            items.append({
+                "material_id": mid, "material_nombre": pp.get("material_nombre") or mid,
+                "porcentaje": None, "cantidad_teorica_g": pp.get("cantidad_teorica_g"),
+                "id": pp["id"], "cantidad_real_g": pp.get("cantidad_real_g"),
+                "lote_mp": pp.get("lote_mp", ""), "pesado_por": pp.get("pesado_por", ""),
+                "verificado_por": pp.get("verificado_por", ""),
+            })
+    items.sort(key=lambda x: -((x["porcentaje"] or 0)))
+    return jsonify({"items": items, "producto": producto, "lote_size_g": lote_size})
+
+
 @bp.route("/api/brd/ebr/<int:ebr_id>/pesajes/<int:pesaje_id>/verificar",
           methods=["POST"])
 def verificar_pesaje_ebr(ebr_id, pesaje_id):

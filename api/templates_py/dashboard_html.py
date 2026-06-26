@@ -7619,7 +7619,7 @@ async function abrirEBR(id, targetId){
     var r=await fetch('/api/brd/ebr/'+id,{credentials:'same-origin'});
     var d=await r.json();
     if(!r.ok){box.innerHTML='<div style="color:#c0392b;">'+(d.error||'Error')+'</div>';return;}
-    var dp=await _ebrJson('/api/brd/ebr/'+id+'/pesajes');
+    var dp=await _ebrJson('/api/brd/ebr/'+id+'/pesajes-plan');
     var dcm=await _ebrJson('/api/brd/ebr/'+id+'/conciliacion-material');
     var dar=await _ebrJson('/api/brd/ebr/'+id+'/artes');
     var dob=await _ebrJson('/api/brd/ebr/'+id+'/observaciones');
@@ -7763,17 +7763,26 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   h+='</div>'+_secOpen('🧹 Despeje de Línea · Dispensación')+_despEtapa('Despeje de Línea · Dispensación', 'dispensacion', _dch.dispensacion);
   // 3 · Dispensado de Materias Primas (pesaje · 2ª firma)
   h+='</div>'+_secOpen('⚖️ Dispensado de Materias Primas');
-  if(!pesajes.length){h+='<div style="color:#999;font-size:12px;">Sin pesajes registrados aún.</div>';}
+  if(!pesajes.length){h+='<div style="color:#999;font-size:12px;">Esta fórmula no tiene materias primas cargadas.</div>';}
   else{
+    var _pesados=pesajes.filter(function(p){return (p.pesado_por||'').trim();}).length;
+    h+='<div style="font-size:11px;color:#64748b;font-weight:700;margin-bottom:6px">'+_pesados+'/'+pesajes.length+' materias primas pesadas</div>';
     h+='<table class="table" style="font-size:12px;"><thead><tr><th>Material</th><th style="text-align:right;">%</th><th>N° lote</th><th style="text-align:right;">% pureza</th><th style="text-align:right;">Teórico g</th><th style="text-align:right;">Real g</th><th>Pesó</th><th>Verificó</th><th></th></tr></thead><tbody>';
     for(var i=0;i<pesajes.length;i++){
-      var p=pesajes[i];var verif=(p.verificado_por||'').trim();
-      var verifCell=verif?('<span style="color:#16a34a;font-weight:700;">✓ '+verif+'</span>'):'<span style="color:#f59e0b;">pendiente</span>';
+      var p=pesajes[i];
+      var pesado=(p.pesado_por||'').trim();
+      var verif=(p.verificado_por||'').trim();
+      var verifCell=verif?('<span style="color:#16a34a;font-weight:700;">✓ '+verif+'</span>'):(pesado?'<span style="color:#f59e0b;">pendiente</span>':'<span style="color:#cbd5e1;">—</span>');
       var acc='<span style="color:#999;">—</span>';
-      if(!verif&&editable&&miRol.verifica){acc='<button onclick="ebrVerificarPesaje('+d.id+','+p.id+')" style="background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Verificar</button>';}
-      else if(!verif&&editable&&(p.pesado_por||'').trim()){acc='<span style="color:#f59e0b;font-size:11px;">&#9203; espera Calidad</span>';}
-      var _pct=(d.cantidad_objetivo_g>0?((p.cantidad_teorica_g||0)/d.cantidad_objetivo_g*100):0);
-      h+='<tr><td>'+(p.material_nombre||p.material_id||'')+'</td><td style="text-align:right;">'+(_pct?parseFloat(_pct.toFixed(3)):'—')+'</td><td style="font-family:monospace;font-size:11px">'+_escHTML(p.lote_mp||'—')+'</td><td style="text-align:right;">100</td><td style="text-align:right;">'+(p.cantidad_teorica_g||0)+'</td><td style="text-align:right;">'+(p.cantidad_real_g||0)+'</td><td>'+(p.pesado_por||'')+'</td><td>'+verifCell+'</td><td style="text-align:right;">'+acc+'</td></tr>';
+      if(!pesado){
+        if(editable&&miRol.realiza){ acc='<button onclick="ebrPesarMp('+d.id+',&#39;'+(p.material_id||'')+'&#39;,'+(p.cantidad_teorica_g||0)+')" style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;">Pesar</button>'; }
+        else { acc='<span style="color:#f59e0b;font-size:11px;">&#9203; falta pesar</span>'; }
+      } else if(!verif){
+        if(editable&&miRol.verifica){ acc='<button onclick="ebrVerificarPesaje('+d.id+','+p.id+')" style="background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Verificar</button>'; }
+        else { acc='<span style="color:#f59e0b;font-size:11px;">&#9203; espera Calidad</span>'; }
+      }
+      var _pctv=(p.porcentaje!=null?p.porcentaje:(d.cantidad_objetivo_g>0?((p.cantidad_teorica_g||0)/d.cantidad_objetivo_g*100):null));
+      h+='<tr style="'+(pesado?'':'background:#fffbeb')+'"><td>'+_escHTML(p.material_nombre||p.material_id||'')+'</td><td style="text-align:right;">'+(_pctv!=null?parseFloat(Number(_pctv).toFixed(3)):'—')+'</td><td style="font-family:monospace;font-size:11px">'+_escHTML(p.lote_mp||'—')+'</td><td style="text-align:right;">100</td><td style="text-align:right;">'+(p.cantidad_teorica_g!=null?Number(p.cantidad_teorica_g).toLocaleString("es-CO"):'—')+'</td><td style="text-align:right;font-weight:'+(pesado?'700':'400')+'">'+(p.cantidad_real_g!=null?Number(p.cantidad_real_g).toLocaleString("es-CO"):'<span style="color:#cbd5e1">&mdash;</span>')+'</td><td style="font-size:10px">'+_escHTML(pesado||'—')+'</td><td>'+verifCell+'</td><td style="text-align:right;">'+acc+'</td></tr>';
     }
     h+='</tbody></table>';
   }
@@ -8031,6 +8040,21 @@ async function ebrLiberarLote(ebrId){
     var r=await fetch('/api/brd/ebr/'+ebrId+'/liberar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({signature_id:f.signature_id})});
     if(!r.ok){ var j=await r.json(); alert('Error: '+(j.error||r.status)); return; }
     alert('\\u2713 Lote liberado \\u00b7 batch record cerrado');
+    abrirEBR(ebrId);
+  }catch(e){ alert('Error: '+(e.message||e)); }
+}
+async function ebrPesarMp(ebrId, materialId, teorico){
+  var v=prompt('Cantidad REAL pesada de '+materialId+' (gramos)'+(teorico?(' \\u00b7 te\\u00f3rico '+teorico+' g'):'')+':');
+  if(v===null)return;
+  var n=parseFloat(String(v).replace(',','.'));
+  if(!(n>=0)){ alert('Cantidad inválida'); return; }
+  var lote=prompt('N\\u00b0 de lote de la materia prima (de la etiqueta):')||'';
+  var f=await _firmarEsign('ejecuta','ebr_pesajes',ebrId+':'+materialId);
+  if(!f)return;
+  if(f.error){ alert(f.error); return; }
+  try{
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/pesajes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({material_id:materialId,cantidad_real_g:n,lote_mp:lote,signature_id:f.signature_id})});
+    if(!r.ok){ var j=await r.json(); alert('Error: '+(j.error||r.status)); return; }
     abrirEBR(ebrId);
   }catch(e){ alert('Error: '+(e.message||e)); }
 }
