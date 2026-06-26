@@ -7663,6 +7663,8 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     if(_pp)_tareas.push('Ejecutar '+_pp+' paso(s) de fabricación');
   }
   if(editable&&miRol.verifica){
+    var _dvend=(((despejeChk&&despejeChk.dispensacion)||[]).concat((despejeChk&&despejeChk.fabricacion)||[])).filter(function(it){return it.cumple===1&&!(it.verificado_por||'').trim();}).length;
+    if(_dvend)_tareas.push('Verificar '+_dvend+' ítem(s) de despeje');
     var _pv=(pesajes||[]).filter(function(p){return (p.pesado_por||'').trim()&&!(p.verificado_por||'').trim();}).length;
     if(_pv)_tareas.push('Verificar '+_pv+' pesaje(s)');
     var _iv=(ipcSpecs||[]).filter(function(sp){return !(ipcRes||[]).some(function(r){return r.ipc_spec_id===sp.id;});}).length;
@@ -7703,17 +7705,34 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     var oh=''; titulo=titulo;
     items=items||[];
     var done=items.filter(function(it){return it.cumple===1;}).length;
+    var verif=items.filter(function(it){return (it.verificado_por||'').trim();}).length;
     var allOk=items.length>0 && done===items.length;
-    oh+='<div style="font-size:11px;color:'+(allOk?'#16a34a':'#94a3b8')+';margin-bottom:4px">'+done+'/'+items.length+' verificaciones cumplen'+(allOk?' ✓':'')+'</div>';
-    oh+='<table class="table" style="font-size:11px"><tbody>';
+    var allVer=items.length>0 && verif===items.length;
+    var pctR=items.length?Math.round(done/items.length*100):0;
+    var pctV=items.length?Math.round(verif/items.length*100):0;
+    // Doble barra · regla 2 personas: Realizó (Operario) + Verificó (Calidad)
+    oh+='<div style="display:flex;gap:14px;margin-bottom:9px;font-size:11px">';
+    oh+='<div style="flex:1"><div style="color:#64748b;font-weight:700;margin-bottom:2px">Realizó · Operario &middot; '+done+'/'+items.length+(allOk?' ✓':'')+'</div><div style="height:6px;background:#f1f5f9;border-radius:99px;overflow:hidden"><div style="height:100%;width:'+pctR+'%;background:'+(allOk?'#16a34a':'#a78bfa')+'"></div></div></div>';
+    oh+='<div style="flex:1"><div style="color:#64748b;font-weight:700;margin-bottom:2px">Verificó · Calidad &middot; '+verif+'/'+items.length+(allVer?' ✓':'')+'</div><div style="height:6px;background:#f1f5f9;border-radius:99px;overflow:hidden"><div style="height:100%;width:'+pctV+'%;background:'+(allVer?'#16a34a':'#0ea5e9')+'"></div></div></div>';
+    oh+='</div>';
+    oh+='<table class="table" style="font-size:11px"><thead><tr><th style="text-align:left">Verificación</th><th style="text-align:center">Realizó</th><th style="text-align:center">Verificó</th></tr></thead><tbody>';
     items.forEach(function(it){
-      var est=it.cumple===1?'<span style="color:#16a34a;font-weight:700">✓ Sí</span>':(it.cumple===0?'<span style="color:#dc2626;font-weight:700">✗ No</span>':'<span style="color:#94a3b8">pendiente</span>');
-      var mk=(editable&&miRol.realiza&&it.cumple!==1)?' <button onclick="ebrMarcarDespeje('+d.id+','+it.idx+',&#39;'+etapa+'&#39;)" style="background:#16a34a;color:#fff;border:none;border-radius:4px;padding:2px 7px;font-size:10px;cursor:pointer">✓</button>':'';
-      oh+='<tr><td style="font-size:10px;line-height:1.3">'+_escHTML(it.texto)+(it.registrado_por?('<div style="font-size:9px;color:#94a3b8">'+_escHTML(it.registrado_por)+'</div>'):'')+'</td><td style="text-align:right;white-space:nowrap;vertical-align:top">'+est+mk+'</td></tr>';
+      var rz;
+      if(it.cumple===1){ rz='<span style="color:#16a34a;font-weight:700">✓ Sí</span>'+(it.registrado_por?('<div style="font-size:9px;color:#94a3b8">'+_escHTML(it.registrado_por)+'</div>'):''); }
+      else if(it.cumple===0){ rz='<span style="color:#dc2626;font-weight:700">✗ No</span>'; }
+      else if(editable&&miRol.realiza){ rz='<button onclick="ebrMarcarDespeje('+d.id+','+it.idx+',&#39;'+etapa+'&#39;)" style="background:#16a34a;color:#fff;border:none;border-radius:4px;padding:2px 9px;font-size:10px;cursor:pointer">✓ Sí</button>'; }
+      else { rz='<span style="color:#94a3b8">pendiente</span>'; }
+      var vf;
+      if((it.verificado_por||'').trim()){ vf='<span style="color:#16a34a;font-weight:700">✓</span><div style="font-size:9px;color:#94a3b8">'+_escHTML(it.verificado_por)+'</div>'; }
+      else if(it.cumple===1&&editable&&miRol.verifica){ vf='<button onclick="ebrVerificarDespeje('+d.id+','+it.idx+',&#39;'+etapa+'&#39;)" style="background:#0ea5e9;color:#fff;border:none;border-radius:4px;padding:2px 9px;font-size:10px;cursor:pointer">Verificar</button>'; }
+      else if(it.cumple===1){ vf='<span style="color:#f59e0b;font-size:10px">&#9203; espera Calidad</span>'; }
+      else { vf='<span style="color:#cbd5e1">—</span>'; }
+      oh+='<tr><td style="font-size:10px;line-height:1.3">'+_escHTML(it.texto)+'</td><td style="text-align:center;white-space:nowrap;vertical-align:top">'+rz+'</td><td style="text-align:center;white-space:nowrap;vertical-align:top">'+vf+'</td></tr>';
     });
     oh+='</tbody></table>';
-    if(editable&&miRol.realiza&&!allOk){ oh+='<button onclick="ebrDespejeTodoCumple('+d.id+',&#39;'+etapa+'&#39;)" style="margin-top:6px;background:#6d28d9;color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">✓ Marcar TODO cumple</button>'; }
-    else if(editable&&!miRol.realiza&&!allOk){ oh+='<div style="margin-top:6px;font-size:11px;color:#94a3b8">&#9203; El operario marca el despeje</div>'; }
+    if(editable&&miRol.realiza&&!allOk){ oh+='<button onclick="ebrDespejeTodoCumple('+d.id+',&#39;'+etapa+'&#39;)" style="margin-top:6px;margin-right:6px;background:#6d28d9;color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">✓ Marcar TODO cumple</button>'; }
+    if(editable&&miRol.verifica&&done>verif){ oh+='<button onclick="ebrVerificarDespejeTodo('+d.id+',&#39;'+etapa+'&#39;)" style="margin-top:6px;background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">✓ Verificar TODO (Calidad)</button>'; }
+    if(editable&&!miRol.realiza&&!miRol.verifica){ oh+='<div style="margin-top:6px;font-size:11px;color:#94a3b8">Solo lectura</div>'; }
     return oh;
   }
   var _dch=despejeChk||{};
@@ -7915,6 +7934,23 @@ async function ebrDespejeTodoCumple(ebrId, etapa){
     for(var i=0;i<13;i++){
       await fetch('/api/brd/ebr/'+ebrId+'/despeje-item',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item_idx:i,cumple:1,etapa:etapa})});
     }
+    abrirEBR(ebrId);
+  }catch(e){ alert('Error: '+(e.message||e)); }
+}
+async function ebrVerificarDespeje(ebrId, idx, etapa){
+  try{
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/despeje-verificar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item_idx:idx,etapa:etapa})});
+    if(!r.ok){ var j=await r.json(); alert('Error: '+(j.error||r.status)); return; }
+    abrirEBR(ebrId);
+  }catch(e){ alert('Error: '+(e.message||e)); }
+}
+async function ebrVerificarDespejeTodo(ebrId, etapa){
+  if(!confirm('\\u00bfVerificar (2\\u00aa firma de Calidad) todas las verificaciones de despeje ya marcadas por el operario?')) return;
+  try{
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/despeje-verificar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({todos:true,etapa:etapa})});
+    if(!r.ok){ var j=await r.json(); alert('Error: '+(j.error||r.status)); return; }
+    var d=await r.json();
+    if(d.verificados===0){ alert('No se verific\\u00f3 nada: o no hay \\u00edtems marcados, o los marcaste vos mismo (la 2\\u00aa firma debe ser de otra persona \\u00b7 regla de las 2 personas).'); }
     abrirEBR(ebrId);
   }catch(e){ alert('Error: '+(e.message||e)); }
 }

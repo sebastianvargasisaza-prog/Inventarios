@@ -395,6 +395,12 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (285, "2ª firma de Calidad en el despeje de línea (Sebastián 25-jun · regla 2 personas REALIZA≠VERIFICA "
+          "como MyBatch): ebr_despeje_items gana verificado_por + verificado_at_utc. El operario marca cumple "
+          "(registrado_por); Calidad verifica después (verificado_por).", [
+        "ALTER TABLE ebr_despeje_items ADD COLUMN verificado_por TEXT DEFAULT ''",
+        "ALTER TABLE ebr_despeje_items ADD COLUMN verificado_at_utc TEXT DEFAULT ''",
+    ]),
     (284, "Beta planta (Sebastián 25-jun): cargar producción SIN exigir área limpia mientras se pule + "
           "dejar todas las salas en limpio. app_settings 'exigir_area_limpia'=0 (toggle reversible en "
           "/admin/seguridad-planta · default estricto). Solo estado de salas, no inventario.", [

@@ -5282,7 +5282,8 @@ def listar_despeje_items_ebr(ebr_id):
         try:
             for dr in conn.execute(
                 "SELECT item_idx, cumple, COALESCE(observaciones,''), COALESCE(registrado_por,''), "
-                "COALESCE(registrado_at_utc,'') FROM ebr_despeje_items "
+                "COALESCE(registrado_at_utc,''), COALESCE(verificado_por,''), COALESCE(verificado_at_utc,'') "
+                "FROM ebr_despeje_items "
                 "WHERE ebr_id=? AND COALESCE(etapa,'dispensacion')=?", (ebr_id, etapa)).fetchall():
                 reg[int(dr[0])] = dr
         except Exception:
@@ -5294,7 +5295,9 @@ def listar_despeje_items_ebr(ebr_id):
                         'cumple': (int(r[1]) if r and r[1] is not None else None),
                         'observaciones': (r[2] if r else ''),
                         'registrado_por': (r[3] if r else ''),
-                        'registrado_at': (r[4] if r else '')})
+                        'registrado_at': (r[4] if r else ''),
+                        'verificado_por': (r[5] if r and len(r) > 5 else ''),
+                        'verificado_at': (r[6] if r and len(r) > 6 else '')})
         return out
 
     return jsonify({"dispensacion": _chk("dispensacion"), "fabricacion": _chk("fabricacion")})
@@ -5399,6 +5402,57 @@ def registrar_despeje_item_ebr(ebr_id):
     conn.commit()
     return jsonify({"ok": True, "item_idx": idx, "cumple": cumple,
                     "correccion": es_correccion}), 201
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/despeje-verificar", methods=["POST"])
+def verificar_despeje_item_ebr(ebr_id):
+    """2ª firma de Calidad sobre el despeje (regla 2 personas · MyBatch · 25-jun).
+    El operario marca CUMPLE (registrado_por); Calidad/Jefe de Producción VERIFICA después
+    (verificado_por). body: {item_idx, etapa} verifica uno · {todos:true, etapa} verifica todos
+    los cumple sin verificar. Solo verifica ítems ya marcados cumple=1 (no se verifica lo no hecho)."""
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    etapa = (body.get("etapa") or "dispensacion").strip().lower()
+    if etapa not in ("dispensacion", "fabricacion"):
+        etapa = "dispensacion"
+    user = session.get("compras_user", "")
+    if not _batch_role_info(user).get("verifica"):
+        return jsonify({"error": "Verificar el despeje es atribución de Calidad / Jefe de Producción / "
+                                 "Dirección Técnica. El operario solo registra el despeje.",
+                        "codigo": "SOLO_VERIFICA_DESPEJE"}), 403
+    conn = get_db()
+    cur = conn.cursor()
+    ebr = cur.execute("SELECT estado FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
+    if not ebr:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if ebr["estado"] not in ("iniciado", "en_proceso"):
+        return jsonify({"error": f"EBR no editable (estado: {ebr['estado']})"}), 409
+    # No autoverificación: quien verifica no puede ser quien registró (2 personas).
+    if body.get("todos"):
+        cur.execute(
+            "UPDATE ebr_despeje_items SET verificado_por=?, verificado_at_utc=datetime('now','utc') "
+            "WHERE ebr_id=? AND COALESCE(etapa,'dispensacion')=? AND cumple=1 "
+            "AND COALESCE(verificado_por,'')='' AND COALESCE(registrado_por,'')<>?",
+            (user, ebr_id, etapa, user))
+        n = cur.rowcount
+    else:
+        try:
+            idx = int(body.get("item_idx"))
+        except (TypeError, ValueError):
+            return jsonify({"error": "item_idx inválido"}), 400
+        cur.execute(
+            "UPDATE ebr_despeje_items SET verificado_por=?, verificado_at_utc=datetime('now','utc') "
+            "WHERE ebr_id=? AND item_idx=? AND COALESCE(etapa,'dispensacion')=? AND cumple=1 "
+            "AND COALESCE(verificado_por,'')='' AND COALESCE(registrado_por,'')<>?",
+            (user, ebr_id, idx, etapa, user))
+        n = cur.rowcount
+    audit_log(cur, usuario=user, accion="VERIFICAR_DESPEJE_ITEM_EBR",
+              tabla="ebr_despeje_items", registro_id=ebr_id,
+              despues={"ebr_id": ebr_id, "etapa": etapa, "verificados": n, "por": user})
+    conn.commit()
+    return jsonify({"ok": True, "verificados": n}), 200
 
 
 # ── MyBatch ① · Precauciones + Equipos ──────────────────────────────────────
