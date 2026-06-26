@@ -7777,7 +7777,14 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     }
     h+='</tbody></table>';
   }
-  h+='<div style="margin-top:12px;font-size:12px;font-weight:700;color:#6d28d9;">Ajustes de Materias Primas</div><div style="color:#94a3b8;font-size:12px;">Sin registro de ajustes de materia prima.</div>';
+  h+='<div style="margin-top:14px;font-size:12px;font-weight:700;color:#6d28d9;">Ajustes de Materias Primas</div>';
+  var _adj=d.ajustes_mp||[];
+  if(_adj.length){
+    h+='<table class="table" style="font-size:11px"><thead><tr><th>Materia prima</th><th style="text-align:right">Cantidad</th><th>Motivo</th><th>Por</th></tr></thead><tbody>';
+    _adj.forEach(function(aj){ h+='<tr><td>'+_escHTML(aj.material||'')+'</td><td style="text-align:right">'+(aj.cantidad_g||0)+' g</td><td>'+_escHTML(aj.motivo||'')+'</td><td style="font-size:10px">'+_escHTML(aj.registrado_por||'')+'</td></tr>'; });
+    h+='</tbody></table>';
+  } else { h+='<div style="color:#94a3b8;font-size:12px;">Sin registro de ajustes de materia prima.</div>'; }
+  if(editable&&miRol.realiza){ h+='<button onclick="ebrAgregarAjusteMp('+d.id+')" style="margin-top:6px;background:#d97706;color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">+ Registrar ajuste de MP</button>'; }
   // 4 · Despeje de Línea · Fabricación (tras dispensar/pesar)
   h+='</div>'+_secOpen('🧹 Despeje de Línea · Fabricación')+_despEtapa('Despeje de Línea · Fabricación', 'fabricacion', _dch.fabricacion);
   // 5 · Fabricación / Mezcla (pasos · Realizó + Verificó QC)
@@ -7922,10 +7929,27 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   } else {
     h+='<div style="font-size:11px;color:#cbd5e1;margin-top:4px">&mdash; (primero Producción termina)</div>';
   }
+  h+='</div>';
+  h+='<div style="border:1px solid #e2e8f0;border-radius:10px;padding:12px">';
+  h+='<div style="font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.3px">Visto bueno &middot; Director Técnico</div>';
+  if((d.aprobado_dt_por||'').trim()){
+    h+='<div style="font-size:13px;font-weight:700;color:#16a34a;margin-top:4px">&#9989; '+_escHTML(d.aprobado_dt_por)+'</div><div style="font-size:11px;color:#64748b">'+(d.aprobado_dt_at?String(d.aprobado_dt_at).replace('T',' ').slice(0,16):'')+'</div>';
+  } else if((_est==='liberado'||_est==='completado'||_est==='en_revision_qc')&&miRol.aprueba_dt){
+    h+='<div style="font-size:11px;color:#64748b;margin:5px 0 7px">Visto bueno final del responsable técnico (INVIMA) con tu e-firma.</div><button onclick="ebrAprobarDt('+d.id+')" style="background:#7c3aed;color:#fff;border:none;border-radius:7px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer">&#9989; Dar visto bueno</button>';
+  } else {
+    h+='<div style="font-size:11px;color:#cbd5e1;margin-top:4px">&mdash; (lo firma el Director Técnico)</div>';
+  }
   h+='</div></div>';
   // Correcciones del registro (Part 11 · enmiendas trazadas)
   h+='</div>'+_secOpen('✏️ Correcciones del Registro');
-  h+='<div style="color:#94a3b8;font-size:12px;">Toda corrección a un registro firmado queda trazada aquí (motivo &middot; autor &middot; fecha &middot; 21 CFR Part 11). Sin correcciones registradas.</div>';
+  var _corr=d.correcciones||[];
+  if(_corr.length){
+    h+='<table class="table" style="font-size:11px"><thead><tr><th>Motivo</th><th>Descripción</th><th>Autor</th><th>Fecha</th></tr></thead><tbody>';
+    _corr.forEach(function(cc){ h+='<tr><td>'+_escHTML(cc.motivo||'')+(cc.campo_afectado?('<div style="font-size:9px;color:#94a3b8">campo: '+_escHTML(cc.campo_afectado)+'</div>'):'')+'</td><td>'+_escHTML(cc.descripcion||'')+'</td><td style="font-size:10px">'+_escHTML(cc.registrado_por||'')+'</td><td style="font-size:10px;color:#94a3b8">'+(cc.registrado_at_utc?String(cc.registrado_at_utc).replace('T',' ').slice(0,16):'')+'</td></tr>'; });
+    h+='</tbody></table>';
+  } else { h+='<div style="color:#94a3b8;font-size:12px;">Sin correcciones registradas. Toda enmienda a un registro firmado queda trazada aquí (motivo &middot; autor &middot; fecha &middot; 21 CFR Part 11).</div>'; }
+  if(editable&&miRol.corrige){ h+='<button onclick="ebrAgregarCorreccion('+d.id+')" style="margin-top:8px;background:#6d28d9;color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">+ Registrar corrección</button>'; }
+  else if(editable){ h+='<div style="margin-top:6px;font-size:11px;color:#94a3b8">Las correcciones las registra Calidad / Aseguramiento.</div>'; }
   h+='</div>';
   return h;
 }
@@ -8007,6 +8031,40 @@ async function ebrLiberarLote(ebrId){
     var r=await fetch('/api/brd/ebr/'+ebrId+'/liberar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({signature_id:f.signature_id})});
     if(!r.ok){ var j=await r.json(); alert('Error: '+(j.error||r.status)); return; }
     alert('\\u2713 Lote liberado \\u00b7 batch record cerrado');
+    abrirEBR(ebrId);
+  }catch(e){ alert('Error: '+(e.message||e)); }
+}
+async function ebrAprobarDt(ebrId){
+  if(!confirm('\\u00bfDar el visto bueno final como Director T\\u00e9cnico? Vas a firmar electr\\u00f3nicamente (21 CFR Part 11).'))return;
+  var f=await _firmarEsign('aprueba_dt','ebr_ejecuciones',ebrId);
+  if(!f)return;
+  if(f.error){ alert(f.error); return; }
+  try{
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/aprobar-dt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({signature_id:f.signature_id})});
+    if(!r.ok){ var j=await r.json(); alert('Error: '+(j.error||r.status)); return; }
+    abrirEBR(ebrId);
+  }catch(e){ alert('Error: '+(e.message||e)); }
+}
+async function ebrAgregarCorreccion(ebrId){
+  var motivo=prompt('Motivo de la corrección (qué se corrige y por qué):');
+  if(motivo===null)return;
+  motivo=(motivo||'').trim(); if(!motivo){ alert('Indicá el motivo'); return; }
+  var desc=prompt('Descripción de la corrección (opcional):')||'';
+  try{
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/correcciones',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({motivo:motivo,descripcion:desc})});
+    if(!r.ok){ var j=await r.json(); alert('Error: '+(j.error||r.status)); return; }
+    abrirEBR(ebrId);
+  }catch(e){ alert('Error: '+(e.message||e)); }
+}
+async function ebrAgregarAjusteMp(ebrId){
+  var mat=prompt('Materia prima ajustada (ej. Trietanolamina 85%):');
+  if(mat===null)return;
+  mat=(mat||'').trim(); if(!mat){ alert('Indicá la materia prima'); return; }
+  var cant=prompt('Cantidad ajustada en gramos (ej. 60):')||'0';
+  var mot=prompt('Motivo del ajuste (ej. ajustar pH a 6.0):')||'';
+  try{
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/ajustes-mp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({material:mat,cantidad_g:cant,motivo:mot})});
+    if(!r.ok){ var j=await r.json(); alert('Error: '+(j.error||r.status)); return; }
     abrirEBR(ebrId);
   }catch(e){ alert('Error: '+(e.message||e)); }
 }

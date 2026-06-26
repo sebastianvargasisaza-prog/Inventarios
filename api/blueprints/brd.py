@@ -194,6 +194,8 @@ def _batch_role_info(usuario):
         "usuario": u, "tipo": tipo, "rol": rol,
         "realiza": realiza,
         "verifica": verifica,
+        "corrige": tipo in ("calidad", "aseguramiento", "director_tecnico", "admin"),
+        "aprueba_dt": tipo in ("director_tecnico", "admin"),
         "puede_ejecutar": tipo in ("operario", "jefe_produccion", "calidad", "admin"),
         "puede_verificar": verifica,
         "puede_liberar": tipo in ("calidad", "aseguramiento", "director_tecnico", "admin"),
@@ -2731,6 +2733,31 @@ def detalle_ebr(ebr_id):
         d["area_nombre"] = ""
     # Rol del usuario en el batch (segregación de funciones GMP · el runner se adapta)
     d["mi_rol"] = _batch_role_info(session.get("compras_user", ""))
+    # Cierre · 3ª firma Director Técnico + correcciones (Part 11) + ajustes de MP
+    try:
+        dt = conn.execute("SELECT COALESCE(aprobado_dt_por,''), COALESCE(aprobado_dt_at_utc,'') "
+                          "FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
+        d["aprobado_dt_por"] = (dt[0] if dt else "")
+        d["aprobado_dt_at"] = (dt[1] if dt else "")
+    except Exception:
+        d["aprobado_dt_por"] = ""
+        d["aprobado_dt_at"] = ""
+    try:
+        d["correcciones"] = [dict(r) for r in conn.execute(
+            "SELECT COALESCE(campo_afectado,'') AS campo_afectado, COALESCE(motivo,'') AS motivo, "
+            "COALESCE(descripcion,'') AS descripcion, COALESCE(registrado_por,'') AS registrado_por, "
+            "COALESCE(registrado_at_utc,'') AS registrado_at_utc FROM ebr_correcciones "
+            "WHERE ebr_id=? ORDER BY id DESC", (ebr_id,)).fetchall()]
+    except Exception:
+        d["correcciones"] = []
+    try:
+        d["ajustes_mp"] = [dict(r) for r in conn.execute(
+            "SELECT COALESCE(material,'') AS material, COALESCE(cantidad_g,0) AS cantidad_g, "
+            "COALESCE(motivo,'') AS motivo, COALESCE(registrado_por,'') AS registrado_por, "
+            "COALESCE(registrado_at_utc,'') AS registrado_at_utc FROM ebr_ajustes_mp "
+            "WHERE ebr_id=? ORDER BY id DESC", (ebr_id,)).fetchall()]
+    except Exception:
+        d["ajustes_mp"] = []
     return jsonify(d)
 
 
@@ -5510,6 +5537,128 @@ def mi_trabajo_brd():
                           "producto": prod, "fase": e["fase"], "tareas": tareas,
                           "total": sum(t["n"] for t in tareas)})
     return jsonify({"rol": rinfo, "items": items, "total_legajos": len(items)})
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/aprobar-dt", methods=["POST"])
+def aprobar_dt_ebr(ebr_id):
+    """3ª firma · Director Técnico: visto bueno final (responsable INVIMA), además de Producción +
+    Calidad. Requiere e-firma (signature_id · meaning='aprueba_dt')."""
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    if not _batch_role_info(user).get("aprueba_dt"):
+        return jsonify({"error": "El visto bueno final es atribución del Director Técnico.",
+                        "codigo": "SOLO_DIRECTOR_TECNICO"}), 403
+    body = request.get_json(silent=True) or {}
+    signature_id = body.get("signature_id")
+    if not signature_id:
+        return jsonify({"error": "signature_id requerido · meaning='aprueba_dt' record_table='ebr_ejecuciones'"}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    ebr = cur.execute("SELECT estado, COALESCE(aprobado_dt_por,'') FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
+    if not ebr:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if (ebr[1] or "").strip():
+        return jsonify({"error": "Ya tiene visto bueno del Director Técnico"}), 409
+    cur.execute("UPDATE ebr_ejecuciones SET aprobado_dt_por=?, aprobado_dt_at_utc=datetime('now','utc'), "
+                "aprobado_dt_signature_id=? WHERE id=? AND COALESCE(aprobado_dt_por,'')=''",
+                (user, signature_id, ebr_id))
+    if cur.rowcount == 0:
+        conn.rollback()
+        return jsonify({"error": "Ya aprobado o EBR cambió de estado"}), 409
+    audit_log(cur, usuario=user, accion="APROBAR_DT_EBR", tabla="ebr_ejecuciones", registro_id=ebr_id,
+              despues={"aprobado_dt_por": user})
+    conn.commit()
+    return jsonify({"ok": True, "aprobado_dt_por": user}), 200
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/correcciones", methods=["GET"])
+def listar_correcciones_ebr(ebr_id):
+    err = _require_login()
+    if err:
+        return err
+    try:
+        rows = get_db().execute(
+            "SELECT COALESCE(campo_afectado,'') AS campo_afectado, COALESCE(motivo,'') AS motivo, "
+            "COALESCE(descripcion,'') AS descripcion, COALESCE(registrado_por,'') AS registrado_por, "
+            "COALESCE(registrado_at_utc,'') AS registrado_at_utc FROM ebr_correcciones "
+            "WHERE ebr_id=? ORDER BY id DESC", (ebr_id,)).fetchall()
+        return jsonify({"items": [dict(r) for r in rows]})
+    except Exception:
+        return jsonify({"items": []})
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/correcciones", methods=["POST"])
+def agregar_correccion_ebr(ebr_id):
+    """Registra una corrección/enmienda al registro (21 CFR Part 11): motivo + descripción + autor + fecha.
+    Atribución de Calidad / Aseguramiento / Dirección Técnica."""
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    if not _batch_role_info(user).get("corrige"):
+        return jsonify({"error": "Registrar una corrección es atribución de Calidad / Aseguramiento / "
+                                 "Dirección Técnica.", "codigo": "SOLO_CALIDAD_CORRIGE"}), 403
+    body = request.get_json(silent=True) or {}
+    motivo = (body.get("motivo") or "").strip()[:500]
+    desc = (body.get("descripcion") or "").strip()[:1000]
+    campo = (body.get("campo_afectado") or "").strip()[:200]
+    if not motivo and not desc:
+        return jsonify({"error": "Indicá el motivo de la corrección"}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO ebr_correcciones (ebr_id, campo_afectado, motivo, descripcion, registrado_por, "
+                "registrado_at_utc, signature_id) VALUES (?, ?, ?, ?, ?, datetime('now','utc'), ?)",
+                (ebr_id, campo, motivo, desc, user, body.get("signature_id")))
+    audit_log(cur, usuario=user, accion="CORRECCION_EBR", tabla="ebr_correcciones", registro_id=ebr_id,
+              despues={"motivo": motivo, "campo": campo, "por": user})
+    conn.commit()
+    return jsonify({"ok": True}), 201
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/ajustes-mp", methods=["GET"])
+def listar_ajustes_mp_ebr(ebr_id):
+    err = _require_login()
+    if err:
+        return err
+    try:
+        rows = get_db().execute(
+            "SELECT COALESCE(material,'') AS material, COALESCE(cantidad_g,0) AS cantidad_g, "
+            "COALESCE(motivo,'') AS motivo, COALESCE(registrado_por,'') AS registrado_por, "
+            "COALESCE(registrado_at_utc,'') AS registrado_at_utc FROM ebr_ajustes_mp "
+            "WHERE ebr_id=? ORDER BY id DESC", (ebr_id,)).fetchall()
+        return jsonify({"items": [dict(r) for r in rows]})
+    except Exception:
+        return jsonify({"items": []})
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/ajustes-mp", methods=["POST"])
+def agregar_ajuste_mp_ebr(ebr_id):
+    """Registra un ajuste de materia prima durante la fabricación (MyBatch §3 'Ajustes de MP' ·
+    ej. + Trietanolamina para ajustar pH). Lo hace el operario que ejecuta."""
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    material = (body.get("material") or "").strip()[:200]
+    motivo = (body.get("motivo") or "").strip()[:500]
+    try:
+        cant = float(str(body.get("cantidad_g") or 0).replace(",", "."))
+    except (TypeError, ValueError):
+        cant = 0.0
+    if not material:
+        return jsonify({"error": "Indicá la materia prima ajustada"}), 400
+    user = session.get("compras_user", "")
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO ebr_ajustes_mp (ebr_id, material, cantidad_g, motivo, registrado_por, "
+                "registrado_at_utc) VALUES (?, ?, ?, ?, ?, datetime('now','utc'))",
+                (ebr_id, material, cant, motivo, user))
+    audit_log(cur, usuario=user, accion="AJUSTE_MP_EBR", tabla="ebr_ajustes_mp", registro_id=ebr_id,
+              despues={"material": material, "cantidad_g": cant, "motivo": motivo, "por": user})
+    conn.commit()
+    return jsonify({"ok": True}), 201
 
 
 # ── MyBatch ① · Precauciones + Equipos ──────────────────────────────────────

@@ -395,6 +395,40 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (288, "Ajustes de Materias Primas del legajo (Sebastián 25-jun · MyBatch §3 'Ajustes de MP'): registro de "
+          "cualquier ajuste de cantidad de MP durante la fabricación (ej. + TEA para ajustar pH) con motivo "
+          "+ quién + cuándo.", [
+        """CREATE TABLE IF NOT EXISTS ebr_ajustes_mp (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ebr_id INTEGER NOT NULL,
+            material TEXT DEFAULT '',
+            cantidad_g REAL DEFAULT 0,
+            motivo TEXT DEFAULT '',
+            registrado_por TEXT DEFAULT '',
+            registrado_at_utc TEXT DEFAULT ''
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ebr_ajustes_mp ON ebr_ajustes_mp(ebr_id)",
+    ]),
+    (287, "Correcciones del registro (Sebastián 25-jun · 21 CFR Part 11): toda enmienda a un registro firmado "
+          "queda trazada con motivo + autor + fecha (+ e-firma opcional).", [
+        """CREATE TABLE IF NOT EXISTS ebr_correcciones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ebr_id INTEGER NOT NULL,
+            campo_afectado TEXT DEFAULT '',
+            motivo TEXT DEFAULT '',
+            descripcion TEXT DEFAULT '',
+            registrado_por TEXT DEFAULT '',
+            registrado_at_utc TEXT DEFAULT '',
+            signature_id INTEGER DEFAULT NULL
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ebr_correcciones ON ebr_correcciones(ebr_id)",
+    ]),
+    (286, "3ª firma · Director Técnico en el cierre del legajo (Sebastián 25-jun): visto bueno final del "
+          "responsable técnico (INVIMA) además de Producción + Calidad. ebr_ejecuciones gana aprobado_dt_*.", [
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN aprobado_dt_por TEXT DEFAULT ''",
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN aprobado_dt_at_utc TEXT DEFAULT ''",
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN aprobado_dt_signature_id INTEGER DEFAULT NULL",
+    ]),
     (285, "2ª firma de Calidad en el despeje de línea (Sebastián 25-jun · regla 2 personas REALIZA≠VERIFICA "
           "como MyBatch): ebr_despeje_items gana verificado_por + verificado_at_utc. El operario marca cumple "
           "(registrado_por); Calidad verifica después (verificado_por).", [
