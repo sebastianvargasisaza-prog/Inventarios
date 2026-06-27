@@ -1673,6 +1673,46 @@ def actualizar_pedido_b2b(pid):
     return jsonify({"ok": True, "id": pid, "reversion_plan": reversion})
 
 
+@bp.route("/api/pedidos-b2b/<int:pid>/match-preview", methods=["GET"])
+def match_preview_pedido_b2b(pid):
+    """Preview READ-ONLY del match (Sebastián 27-jun): replica la selección de lote de
+    _integrar_pedido_b2b_al_plan (mismo producto · ±10d de la fecha-10) SIN tocar nada, para mostrar en la
+    bandeja a qué lote de Ánimus se SUMARÁ el pedido antes de confirmar (la fecha de Ánimus manda)."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    from datetime import date as _date, timedelta as _td
+    conn = get_db(); cur = conn.cursor()
+    row = cur.execute("SELECT producto_nombre, fecha_estimada FROM pedidos_b2b WHERE id=?", (pid,)).fetchone()
+    if not row:
+        return jsonify({"ok": False, "error": "pedido no encontrado"}), 404
+    producto = row[0] or ''
+    fecha_estimada = row[1] or ''
+    hoy = _hoy_colombia()
+    if fecha_estimada and _valida_fecha_iso(fecha_estimada):
+        f_target = _date.fromisoformat(fecha_estimada[:10]) - _td(days=10)
+    else:
+        f_target = hoy + _td(days=7)
+    if f_target < hoy:
+        f_target = hoy + _td(days=3)
+    cercano = cur.execute(
+        """SELECT id, fecha_programada, COALESCE(cantidad_kg,0)
+           FROM produccion_programada
+           WHERE UPPER(TRIM(producto)) = UPPER(TRIM(?))
+             AND estado IN ('pendiente','programado','esperando_recurso')
+             AND inicio_real_at IS NULL AND fin_real_at IS NULL
+             AND ABS(julianday(fecha_programada) - julianday(?)) <= 10
+           ORDER BY ABS(julianday(fecha_programada) - julianday(?)) ASC
+           LIMIT 1""",
+        (producto, f_target.isoformat(), f_target.isoformat()),
+    ).fetchone()
+    if cercano:
+        return jsonify({"ok": True, "match": True, "lote_id": cercano[0],
+                        "fecha": (str(cercano[1] or ''))[:10], "kg_actual": float(cercano[2] or 0)})
+    return jsonify({"ok": True, "match": False})
+
+
 @bp.route("/api/pedidos-b2b/<int:pid>/confirmar", methods=["POST"])
 def confirmar_pedido_b2b(pid):
     """CONFIRMACIÓN 26-jun (Sebastián) · el equipo (Catalina) revisa el pedido del portal y lo CONFIRMA:

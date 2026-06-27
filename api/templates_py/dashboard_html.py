@@ -22761,6 +22761,7 @@ async function ckMarcar(itemId, estado){
           + '<span style="font-size:11px;color:#94a3b8">×'+(p.ml_unidad||30)+'ml ≈ '+kg+'kg</span>'
           + '<label style="font-size:11px;color:#64748b">Fecha <input id="b2bf-'+p.id+'" type="date" value="'+((p.fecha_estimada||'').slice(0,10))+'" style="padding:3px 5px;border:1px solid #cbd5e1;border-radius:4px"></label>'
           + '<button onclick="confirmarPedidoB2B('+p.id+',this)" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer">&#10003; Confirmar &rarr; al plan</button>'
+          + '<div id="b2bmatch-'+p.id+'" style="flex-basis:100%;font-size:11px;color:#94a3b8;margin-top:2px">🔗 buscando lote de Ánimus…</div>'
           + '</div>';
       }).join('');
       var html = '<div id="nec-b2b-pend" style="background:linear-gradient(90deg,#f5f3ff,#faf5ff);border:1px solid #c4b5fd;border-left:4px solid #7c3aed;border-radius:10px;padding:12px 14px;margin-bottom:12px">'
@@ -22768,7 +22769,24 @@ async function ckMarcar(itemId, estado){
         + '<div style="font-size:11px;color:#64748b;margin-bottom:2px">Revisá cantidad y fecha · confirmá → entra al plan como producción Fija del cliente.</div>'
         + rows + '</div>';
       host.insertAdjacentHTML('afterbegin', html);
+      items.forEach(function(p){ _matchPreviewB2B(p.id); });
     }catch(e){ /* silencioso · nunca romper Necesidades por la bandeja */ }
+  }
+
+  // Preview del match: a qué lote de Ánimus se sumará el pedido (la fecha de Ánimus manda) · Sebastián 27-jun.
+  async function _matchPreviewB2B(pid){
+    var box = document.getElementById('b2bmatch-' + pid);
+    if(!box) return;
+    try{
+      var d = await (await fetch('/api/pedidos-b2b/' + pid + '/match-preview', {cache:'no-store'})).json();
+      if(d && d.match){
+        box.innerHTML = '🔗 Se suma al lote de Ánimus del <b>' + escapeHtmlNec(d.fecha) + '</b> (hoy ' + (d.kg_actual||0) + 'kg) · la fecha de Ánimus manda';
+        box.style.color = '#15803d';
+      } else {
+        box.innerHTML = '🆕 No hay lote cercano · se creará un lote dedicado para este cliente';
+        box.style.color = '#b45309';
+      }
+    }catch(e){ box.innerHTML = ''; }
   }
 
   async function confirmarPedidoB2B(pid, btn){
