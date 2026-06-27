@@ -138,3 +138,16 @@ def test_liberar_strict_gates_pesaje_y_yield(app, db_clean):
         assert r3.status_code == 409 and r3.get_json().get("codigo") == "PESAJES_SIN_VERIFICAR", r3.data
     finally:
         _exec("DELETE FROM app_settings WHERE clave='ebr_mode'")
+
+
+def test_crear_planta_demo(app, db_clean):
+    c = _login(app, "sebastian")
+    r = c.post("/api/admin/planta-demo/crear", json={}, headers=_h())
+    assert r.status_code == 200, r.data
+    d = r.get_json()
+    assert d["fabricacion_ebr"] and d["envasado_ebr"], d
+    assert _q1("SELECT COUNT(*) FROM ebr_ejecuciones WHERE COALESCE(lote_codigo,lote)='DEMO-PLANTA-1'")[0] == 2
+    # idempotente: 2do click reusa (no duplica)
+    r2 = c.post("/api/admin/planta-demo/crear", json={}, headers=_h())
+    assert r2.status_code == 200 and r2.get_json().get("reusado") is True, r2.data
+    assert _q1("SELECT COUNT(*) FROM ebr_ejecuciones WHERE COALESCE(lote_codigo,lote)='DEMO-PLANTA-1'")[0] == 2

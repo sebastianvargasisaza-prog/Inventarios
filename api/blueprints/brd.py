@@ -32,7 +32,7 @@ Permisos:
 """
 import json as _json
 import logging
-from flask import Blueprint, Response, jsonify, request, session
+from flask import Blueprint, Response, jsonify, redirect, request, session
 
 from database import get_db
 from config import ADMIN_USERS, CALIDAD_USERS, PLANTA_USERS
@@ -5618,6 +5618,114 @@ def cerrar_acondicionamiento_ebr(ebr_id):
               despues={"lote": lote, "descuentos": descuentos})
     return jsonify({"ok": True, "estado": "completado", "descuentos": descuentos,
                     "n_descuentos": len(descuentos)})
+
+
+# ── DEMO de planta (27-jun · Sebastián) · seeder one-click para ver el flujo fabricación→envasado ─────────
+_DEMO_PLANTA_PROD = "DEMO PLANTA (BORRAR)"
+_DEMO_PLANTA_LOTE = "DEMO-PLANTA-1"
+
+
+@bp.route("/api/admin/planta-demo/crear", methods=["POST"])
+def crear_planta_demo():
+    """Crea (idempotente) un legajo DEMO de planta: producto+fórmula+MBR aprobado+presentación, y los legajos
+    de FABRICACIÓN y ENVASADO del mismo lote, para ver el flujo paso a paso. Producto/lote claramente marcados
+    DEMO → se borran luego con 🗑️. Solo admin."""
+    try:
+        from config import ADMIN_USERS as _ADM
+    except Exception:
+        _ADM = {"sebastian", "alejandro"}
+    if session.get("compras_user", "") not in _ADM:
+        return jsonify({"error": "solo admin"}), 403
+    user = session.get("compras_user", "")
+    PROD, LOTE = _DEMO_PLANTA_PROD, _DEMO_PLANTA_LOTE
+    conn = get_db(); cur = conn.cursor()
+    try:
+        for c_, n_ in (("MP-DEMO1", "Demo Base"), ("MP-DEMO2", "Demo Activo")):
+            cur.execute("INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_inci, activo) VALUES (?,?,1)", (c_, n_))
+        cur.execute("INSERT OR IGNORE INTO maestro_mee (codigo, descripcion, stock_actual, estado) "
+                    "VALUES ('ENV-DEMO','Frasco demo 30ml',1000,'Activo')")
+        if not cur.execute("SELECT 1 FROM formula_headers WHERE producto_nombre=?", (PROD,)).fetchone():
+            cur.execute("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo) VALUES (?, 1, 1)", (PROD,))
+        if not cur.execute("SELECT 1 FROM formula_items WHERE producto_nombre=?", (PROD,)).fetchone():
+            for c_, n_, pct in (("MP-DEMO1", "Demo Base", 90), ("MP-DEMO2", "Demo Activo", 10)):
+                cur.execute("INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje, "
+                            "cantidad_g_por_lote) VALUES (?,?,?,?,?)", (PROD, c_, n_, pct, pct * 10))
+        if not cur.execute("SELECT 1 FROM producto_presentaciones WHERE producto_nombre=?", (PROD,)).fetchone():
+            cur.execute("INSERT INTO producto_presentaciones (producto_nombre, presentacion_codigo, etiqueta, "
+                        "volumen_ml, envase_codigo, activo) VALUES (?, 'DEMO30', '30ml', 30, 'ENV-DEMO', 1)", (PROD,))
+        mbr = cur.execute("SELECT id FROM mbr_templates WHERE producto_nombre=? AND estado='aprobado'",
+                          (PROD,)).fetchone()
+        if not mbr:
+            cur.execute("INSERT INTO mbr_templates (producto_nombre, version, estado, lote_size_g, creado_por) "
+                        "VALUES (?, 1, 'draft', 1000, ?)", (PROD, user))
+            mbr_id = cur.lastrowid
+            for o, dsc in ((1, "Dispensar materias primas"), (2, "Mezclar 20 min a 40°C"),
+                           (3, "Control de pH y viscosidad"), (4, "Enfriar y envasar")):
+                cur.execute("INSERT INTO mbr_pasos (mbr_template_id, orden, descripcion) VALUES (?,?,?)",
+                            (mbr_id, o, dsc))
+            cur.execute("UPDATE mbr_templates SET estado='aprobado' WHERE id=?", (mbr_id,))
+        def _legajo(_fase):
+            # Idempotente: si el legajo del lote demo ya existe, reusarlo (crear_ebr_desde_mbr solo reusa por
+            # produccion_id, que acá es None → sin esto daría LOTE_DUPLICADO al re-crear el demo).
+            _ex = cur.execute("SELECT id FROM ebr_ejecuciones WHERE COALESCE(lote_codigo,lote)=? "
+                              "AND COALESCE(fase,'fabricacion')=?", (LOTE, _fase)).fetchone()
+            if _ex:
+                return {'ok': True, 'id': _ex[0], 'reusado': True}
+            return crear_ebr_desde_mbr(cur, producto_nombre=PROD, lote=LOTE, usuario=user, fase=_fase)
+        op = _legajo('fabricacion')
+        of = _legajo('envasado')
+        if not op.get('ok') or not of.get('ok'):
+            conn.rollback()
+            return jsonify({"error": "no se pudieron crear los legajos", "op": op, "of": of}), 500
+        audit_log(cur, usuario=user, accion="CREAR_PLANTA_DEMO", tabla="ebr_ejecuciones",
+                  registro_id=op.get('id'), despues={"producto": PROD, "lote": LOTE})
+        conn.commit()
+        return jsonify({"ok": True, "producto": PROD, "lote": LOTE,
+                        "fabricacion_ebr": op.get('id'), "envasado_ebr": of.get('id'),
+                        "reusado": bool(op.get('reusado') and of.get('reusado'))})
+    except Exception as e:
+        conn.rollback()
+        log.warning("crear_planta_demo fallo: %s", e)
+        return jsonify({"error": str(e)}), 500
+
+
+@bp.route("/admin/planta-demo", methods=["GET"])
+def planta_demo_pagina():
+    if 'compras_user' not in session:
+        return redirect('/login?next=/admin/planta-demo')
+    try:
+        from config import ADMIN_USERS as _ADM
+    except Exception:
+        _ADM = {"sebastian", "alejandro"}
+    if session.get('compras_user', '') not in _ADM:
+        return ("<html><body style='font-family:system-ui;padding:48px'><h2>Solo admin</h2></body></html>"), 403
+    return Response(_PLANTA_DEMO_HTML, mimetype='text/html')
+
+
+_PLANTA_DEMO_HTML = """<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Demo de planta · EOS</title><style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:#f5f3ff;color:#1e1b4b;padding:32px;max-width:640px;margin:0 auto}
+h1{font-size:22px;color:#5b21b6}.card{background:#fff;border:1px solid #e9d5ff;border-radius:14px;padding:20px;margin-top:16px}
+button{background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;border:none;border-radius:10px;padding:12px 20px;font-size:14px;font-weight:700;cursor:pointer}
+.ok{background:#ecfdf5;border:1px solid #6ee7b7;border-radius:10px;padding:14px;margin-top:14px;font-size:13px;display:none}
+a{color:#6d28d9;font-weight:700}</style></head><body>
+<h1>🎬 Demo de planta</h1>
+<div class="card">
+<p>Crea un lote <b>DEMO</b> (producto "DEMO PLANTA (BORRAR)" · lote DEMO-PLANTA-1) con su legajo de
+<b>fabricación</b> (4 pasos) y de <b>envasado</b> (presentación 30ml), para recorrer el flujo paso a paso.</p>
+<p style="color:#64748b;font-size:13px">Cuando termines de verlo, borralo con el botón 🗑️ en la lista de órdenes (Fabricación / Envasado).</p>
+<button onclick="crear()">Crear demo de planta</button>
+<div class="ok" id="ok"></div></div>
+<script>
+async function crear(){
+  var t=''; try{ t=(await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json()).csrf_token||''; }catch(e){}
+  var r=await fetch('/api/admin/planta-demo/crear',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':t},credentials:'same-origin',body:'{}'});
+  var d=await r.json(); var ok=document.getElementById('ok');
+  if(!r.ok){ ok.style.display='block'; ok.style.background='#fee2e2'; ok.textContent=d.error||'Error'; return; }
+  ok.style.display='block';
+  ok.innerHTML='\\u2705 Demo '+(d.reusado?'ya exist\\u00eda':'creado')+' \\u00b7 producto <b>'+d.producto+'</b> \\u00b7 lote <b>'+d.lote+'</b>.<br>And\\u00e1 a la pesta\\u00f1a <b>Fabricaci\\u00f3n</b> y abr\\u00ed el legajo del lote DEMO-PLANTA-1 (record\\u00e9 los 4 pasos), y a <b>Envasado</b> para ver su presentaci\\u00f3n. <a href="/planta" target="_blank">Abrir planta \\u2192</a>';
+}
+</script></body></html>"""
 
 
 @bp.route("/api/brd/ebr/<int:ebr_id>/artes", methods=["GET"])
