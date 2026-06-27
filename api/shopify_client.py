@@ -143,7 +143,13 @@ def sync_shopify_orders(conn, *, days: int = 90,
                      o.get('email', ''),
                      float(o.get('total_price', 0)),
                      o.get('currency', 'COP'),
-                     o.get('fulfillment_status', ''),
+                     # FIX 27-jun (auditoría Shopify→Necesidades) · Shopify NO escribe 'cancelled' en
+                     # fulfillment_status (queda null/unfulfilled); la marca de cancelación es cancelled_at.
+                     # Antes el filtro de velocidad `estado NOT IN ('cancelled',...)` era letra muerta y las
+                     # órdenes CANCELADAS contaban como ventas → velocidad inflada de Ánimus. Ahora si la
+                     # orden está cancelada el estado queda 'cancelled' y el filtro existente la excluye.
+                     ('cancelled' if (o.get('cancelled_at') or '').strip()
+                      else (o.get('fulfillment_status') or '')),
                      o.get('financial_status', ''),
                      items_sku,
                      total_uds,

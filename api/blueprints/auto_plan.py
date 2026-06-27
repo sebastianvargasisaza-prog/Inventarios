@@ -238,7 +238,10 @@ def _ventas_sku_map_orders(c, dias_max=200):
             if not isinstance(items, list):
                 continue
             for it in items:
-                sk = (it.get('sku') or it.get('SKU') or '').strip()
+                # FIX 27-jun (auditoría Shopify→Necesidades · P1 case) · keyear el SKU en MAYÚSCULAS · los
+                # SKU de sku_producto_map (UI) y los del JSON de la orden (Shopify) no comparten case → el
+                # motor del calendario (case-sensitive) daba velocidad 0 mientras Necesidades (upper) la veía.
+                sk = (it.get('sku') or it.get('SKU') or '').strip().upper()
                 if not sk:
                     continue
                 cant = float(it.get('cantidad') or it.get('quantity') or it.get('qty') or 0)
@@ -269,14 +272,17 @@ def _ventas_diarias_por_sku(c, sku, dias=60):
     # (TZ Bogotá) y pasado como param string YYYY-MM-DD
     from datetime import datetime as _dt_local, timedelta as _td_local
     cutoff_str = (_dt_local.utcnow() - _td_local(hours=5) - _td_local(days=dias)).strftime('%Y-%m-%d')
+    # FIX 27-jun (case · P1) · el SKU se busca en MAYÚSCULAS en las 3 estrategias (consistente con el map de
+    # órdenes ahora keyeado en upper y con Necesidades) · antes case-sensitive → velocidad 0 silenciosa.
+    _sku_u = (sku or '').strip().upper()
 
     # Estrategia 1: tabla agregada
     try:
         r = c.execute("""
             SELECT fecha, COALESCE(SUM(cantidad),0)
-            FROM ventas_diarias WHERE sku=? AND fecha >= ?
+            FROM ventas_diarias WHERE UPPER(TRIM(sku))=? AND fecha >= ?
             GROUP BY fecha ORDER BY fecha
-        """, (sku, cutoff_str)).fetchall()
+        """, (_sku_u, cutoff_str)).fetchall()
         if r:
             return [(row[0], float(row[1] or 0)) for row in r]
     except Exception:
@@ -287,7 +293,7 @@ def _ventas_diarias_por_sku(c, sku, dias=60):
     # y campo qty) en vez de re-parsear TODAS las órdenes por cada SKU/ventana. Resultado IDÉNTICO.
     try:
         _m = _ventas_sku_map_orders(c)
-        _v = _m.get((sku or '').strip())
+        _v = _m.get(_sku_u)
         if _v:
             return sorted([(f, q) for f, q in _v.items() if f and f >= cutoff_str])
     except Exception:
@@ -298,9 +304,9 @@ def _ventas_diarias_por_sku(c, sku, dias=60):
         r = c.execute("""
             SELECT date(fecha), COALESCE(SUM(cantidad),0)
             FROM ordenes_shopify_items
-            WHERE sku=? AND date(fecha) >= ?
+            WHERE UPPER(TRIM(sku))=? AND date(fecha) >= ?
             GROUP BY date(fecha) ORDER BY 1
-        """, (sku, cutoff_str)).fetchall()
+        """, (_sku_u, cutoff_str)).fetchall()
         if r:
             return [(row[0], float(row[1] or 0)) for row in r]
     except Exception:
@@ -13104,7 +13110,8 @@ def _volumen_sku(c, sku, producto):
     (lo que carga el usuario por tamaño), 2) producto_presentaciones por sku_shopify,
     3) fallback por producto (_factor_g_por_unidad_detalle). Devuelve (vol, fuente)."""
     try:
-        r = c.execute("SELECT volumen_ml FROM sku_producto_map WHERE sku=?", (sku,)).fetchone()
+        r = c.execute("SELECT volumen_ml FROM sku_producto_map WHERE UPPER(TRIM(sku))=UPPER(TRIM(?))",
+                      (sku,)).fetchone()  # FIX 27-jun · case-insensitive (P1) · igual que Necesidades
         if r and r[0] and float(r[0]) > 0:
             return (float(r[0]), 'sku')
     except Exception:
@@ -13112,7 +13119,7 @@ def _volumen_sku(c, sku, producto):
     try:
         r = c.execute(
             "SELECT volumen_ml, peso_g, factor_g_por_unidad FROM producto_presentaciones "
-            "WHERE sku_shopify=? AND activo=1 ORDER BY es_default DESC, id ASC LIMIT 1", (sku,)).fetchone()
+            "WHERE UPPER(TRIM(sku_shopify))=UPPER(TRIM(?)) AND activo=1 ORDER BY es_default DESC, id ASC LIMIT 1", (sku,)).fetchone()
         if r:
             for v in r:
                 if v and float(v) > 0:

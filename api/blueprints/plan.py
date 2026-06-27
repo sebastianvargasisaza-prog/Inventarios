@@ -3632,10 +3632,15 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         # FIX 23-may-2026 · lookup case-insensitive · sku_producto_map y
         # formula_headers pueden tener diferencias de case/espacios · antes
         # case-sensitive perdía matches válidos
-        _prod_key_lc = (prod_nombre or '').strip().lower()
+        # FIX 27-jun (M13 · auditoría Shopify→Necesidades) · normalización FUERTE (sin acentos/puntuación) en
+        # AMBOS lados (igual que el ancla) · antes solo .lower() → un acento/'+'/paréntesis distinto entre
+        # sku_producto_map.producto_nombre y formula_headers dejaba el SKU sin cruzar = demanda 0 SILENCIOSA.
+        from blueprints.programacion import _norm_prod_fuerte as _npf_sku
+        _prod_key_lc = (prod_nombre or '').strip().lower()  # se sigue usando para extra_stock_by_prod_lc
+        _prod_key_n = _npf_sku(prod_nombre)
         skus_de_prod = [
             sku for sku, pname in sku_to_prod.items()
-            if (pname or '').strip().lower() == _prod_key_lc
+            if _npf_sku(pname) == _prod_key_n
         ]
 
         # Stock total uds + ventas en 3 ventanas (predictiva 24-may PM)
