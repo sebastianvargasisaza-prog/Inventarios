@@ -836,7 +836,10 @@ async function cargarMisPedidos(){
       var urgChip = '<span style="display:inline-block;margin-left:6px;padding:2px 7px;border-radius:10px;background:#f1f5f9;font-size:10px;color:#475569">' + urgIco + ' ' + urgTxt + '</span>';
       return '<div class="pedido '+esc(p.estado)+'">'
         + '<div class="pedido-prod">'+esc(p.producto_nombre)+'</div>'
-        + '<div class="pedido-meta">'+p.cantidad_uds+' uds × '+p.ml_unidad+' ml · '+(p.kg_equivalente||0)+' kg' + (p.fecha_estimada?(' · entrega ~'+esc(p.fecha_estimada)):'')+'</div>'
+        + '<div class="pedido-meta">'+p.cantidad_uds+' uds × '+p.ml_unidad+' ml · '+(p.kg_equivalente||0)+' kg</div>'
+        + (p.fecha_lista
+             ? '<div class="pedido-meta" style="color:#15803d;font-weight:700">📅 Listo estimado: '+esc(p.fecha_lista)+'</div>'
+             : (p.fecha_estimada ? '<div class="pedido-meta" style="color:#92400e">📅 Fecha pedida: ~'+esc(p.fecha_estimada)+' · <span style="font-weight:400">a confirmar</span></div>' : ''))
         + '<span class="chip '+estChipCls+'" style="margin-top:4px;display:inline-block">'+esc(estLbl)+'</span>'
         + urgChip
         + (p.notas?'<div style="font-size:11px;color:#64748b;margin-top:6px">📝 '+esc(p.notas)+'</div>':'')
@@ -1661,6 +1664,17 @@ def portal_mis_pedidos():
                 estado_visible_lbl = step['label']
                 estado_visible_est = step['estado']
         urg = (r[8] if _has_urgencia and len(r) > 8 else 'media') or 'media'
+        # Fecha que el CLIENTE ve como su lead time · sale del lote YA ASIGNADO (fecha_programada + 7d de
+        # pipeline producción→disponible) · solo aparece cuando ya hicimos el match (post-confirmar) ·
+        # Sebastián 27-jun: privado el calendario interno, pero "apenas se les asigna fecha, que les aparezca".
+        _lote_r = lotes_pre.get(pid)
+        fecha_lista = ''
+        if _lote_r and _lote_r[6]:
+            try:
+                from datetime import datetime as _dtl, timedelta as _tdl
+                fecha_lista = (_dtl.fromisoformat(str(_lote_r[6])[:10]) + _tdl(days=7)).date().isoformat()
+            except Exception:
+                fecha_lista = str(_lote_r[6])[:10]
         out.append({
             'id': pid,
             'producto_nombre': r[1] or '',
@@ -1668,6 +1682,7 @@ def portal_mis_pedidos():
             'ml_unidad': ml,
             'kg_equivalente': round(uds * ml / 1000.0, 2),
             'fecha_estimada': r[4] or '',
+            'fecha_lista': fecha_lista,
             'estado': estado,
             'notas': r[6] or '',
             'creado_at': creado,
