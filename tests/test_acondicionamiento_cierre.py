@@ -151,3 +151,18 @@ def test_crear_planta_demo(app, db_clean):
     r2 = c.post("/api/admin/planta-demo/crear", json={}, headers=_h())
     assert r2.status_code == 200 and r2.get_json().get("reusado") is True, r2.data
     assert _q1("SELECT COUNT(*) FROM ebr_ejecuciones WHERE COALESCE(lote_codigo,lote)='DEMO-PLANTA-1'")[0] == 2
+
+
+def test_lote_fases_endpoint(app, db_clean):
+    c = _login(app, "sebastian")
+    mbr_id = _exec("INSERT INTO mbr_templates (producto_nombre, version, estado, lote_size_g, creado_por) "
+                   "VALUES ('ZZ-FASES', 1, 'aprobado', 1000, 'sebastian')")
+    for fase, suf in (('fabricacion', ''), ('envasado', '-OF'), ('acondicionamiento', '-OA')):
+        _exec("INSERT INTO ebr_ejecuciones (mbr_template_id, mbr_version, lote, lote_codigo, estado, fase, "
+              "iniciado_por, iniciado_at_utc, cantidad_objetivo_g) VALUES (?, 1, ?, 'LOTEFASES', 'iniciado', ?, "
+              "'sebastian', datetime('now','utc'), 1000)", (mbr_id, 'LOTEFASES' + suf, fase))
+    r = c.get("/api/brd/lote/LOTEFASES/fases")
+    assert r.status_code == 200, r.data
+    d = r.get_json()
+    assert d["total"] == 3, d
+    assert [f["fase"] for f in d["fases"]] == ['fabricacion', 'envasado', 'acondicionamiento'], d["fases"]

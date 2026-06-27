@@ -18367,12 +18367,28 @@ async function loteAccion(id, accion, producto, fecha){
     cargar();
   } else if (accion === 'C'){
     if (!confirm('¿Cancelar lote?')) return;
-    const r = await fetch('/api/plan/proximas/' + id, {
+    let r = await fetch('/api/plan/proximas/' + id, {
       method:'DELETE',
       headers:{'X-CSRF-Token':getCSRF()},
       credentials: 'same-origin',
     });
-    if (!r.ok){ const d = await r.json(); alert('Error: ' + (d.error || r.status)); return; }
+    if (!r.ok){
+      let d = {}; try{ d = await r.json(); }catch(e){}
+      if (d && d.codigo === 'YA_EN_EJECUCION'){
+        if (confirm('Esta producción ya inició o descontó inventario.\\n\\n¿Forzar la eliminación? Revierte el descuento (re-agrega la MP/MEE al inventario) y elimina el lote. Solo admin.')){
+          r = await fetch('/api/plan/proximas/' + id, {
+            method:'DELETE',
+            headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+            credentials: 'same-origin',
+            body: JSON.stringify({force:true}),
+          });
+          if (!r.ok){ let d2={}; try{ d2 = await r.json(); }catch(e){} alert('Error: ' + (d2.error || r.status)); return; }
+          cargar(); return;
+        }
+        return;
+      }
+      alert('Error: ' + (d.error || r.status)); return;
+    }
     cargar();
   } else if (accion === 'R'){
     const r = await fetch('/api/plan/proximas/' + id + '/reactivar', {

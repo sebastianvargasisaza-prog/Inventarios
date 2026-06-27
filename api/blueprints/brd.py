@@ -5728,6 +5728,28 @@ async function crear(){
 </script></body></html>"""
 
 
+@bp.route("/api/brd/lote/<lote>/fases", methods=["GET"])
+def lote_fases_ebr(lote):
+    """Trazabilidad de un LOTE físico end-to-end (#8 auditoría planta · INVIMA) · sus legajos de Fabricación
+    (OP) + Envasado (OF) + Acondicionamiento (OA) JUNTOS, ordenados por fase. Antes el mismo lote aparecía
+    3 veces aislado (ordenes-unificadas filtra por UNA fase)."""
+    err = _require_login()
+    if err:
+        return err
+    conn = get_db()
+    _ORD = {'fabricacion': 1, 'envasado': 2, 'acondicionamiento': 3}
+    rows = conn.execute(
+        "SELECT id, COALESCE(fase,'fabricacion'), COALESCE(numero_op,''), COALESCE(estado,''), "
+        "COALESCE(iniciado_por,''), COALESCE(iniciado_at_utc,''), COALESCE(completado_at_utc,''), "
+        "COALESCE(yield_pct,0) FROM ebr_ejecuciones "
+        "WHERE COALESCE(NULLIF(lote_codigo,''), lote)=?", (lote,)).fetchall()
+    items = sorted([{
+        'ebr_id': r[0], 'fase': r[1], 'numero_op': r[2], 'estado': r[3],
+        'iniciado_por': r[4], 'iniciado_at': r[5], 'completado_at': r[6], 'yield_pct': r[7],
+    } for r in rows], key=lambda x: _ORD.get(x['fase'], 9))
+    return jsonify({"ok": True, "lote": lote, "fases": items, "total": len(items)})
+
+
 @bp.route("/api/brd/ebr/<int:ebr_id>/artes", methods=["GET"])
 def listar_artes_codificacion(ebr_id):
     """Artes/codificación del legajo (gate de etiquetado · MyBatch OA)."""

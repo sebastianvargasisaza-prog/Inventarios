@@ -7681,7 +7681,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   if(d.producto_nombre){ h+='<div style="font-weight:600;color:#334155;font-size:13px;margin-top:1px">'+_escHTML(d.producto_nombre)+'</div>'; }
   h+='</div>';
   var _loteDoss=encodeURIComponent(d.lote_codigo||d.lote||'');
-  h+='<div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end"><a href="/api/brd/ebr/'+d.id+'/pdf" target="_blank" style="background:#dc2626;color:#fff;border-radius:5px;padding:5px 12px;font-size:11px;text-decoration:none;font-weight:700">📄 Descargar</a><a href="/api/planta/dossier-lote/'+_loteDoss+'" target="_blank" title="Expediente completo del lote: producción + envasado + micro + MP consumidas" style="background:#6d28d9;color:#fff;border-radius:5px;padding:5px 12px;font-size:11px;text-decoration:none;font-weight:700">📦 Dossier lote</a><button onclick="ebrCerrarRunner()" style="background:#94a3b8;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;">Cerrar ✕</button></div></div>';
+  h+='<div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end"><a href="/api/brd/ebr/'+d.id+'/pdf" target="_blank" style="background:#dc2626;color:#fff;border-radius:5px;padding:5px 12px;font-size:11px;text-decoration:none;font-weight:700">📄 Descargar</a><a href="/api/planta/dossier-lote/'+_loteDoss+'" target="_blank" title="Expediente completo del lote: producción + envasado + micro + MP consumidas" style="background:#6d28d9;color:#fff;border-radius:5px;padding:5px 12px;font-size:11px;text-decoration:none;font-weight:700">📦 Dossier lote</a><button onclick="verLoteFases(&#39;'+_loteDoss+'&#39;)" title="Ver Fabricación + Envasado + Acondicionamiento de este lote juntos" style="background:#7c3aed;color:#fff;border:none;border-radius:5px;padding:5px 12px;font-size:11px;cursor:pointer;font-weight:700">🔗 Lote completo</button><button onclick="ebrCerrarRunner()" style="background:#94a3b8;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;">Cerrar ✕</button></div></div>';
   // Grilla de datos de la orden (como MyBatch)
   h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:11px 18px;background:#fafafa;border:1px solid #f1f5f9;border-radius:10px;padding:13px 15px;margin-bottom:10px">';
   h+=_kv('N° de Lote Bulk', _escHTML(d.lote||'')+loteBtn);
@@ -10012,6 +10012,28 @@ async function ebrCerrarAcond(ebrId){
   if(!r.ok){ alert(d.error||'No se pudo cerrar'); return; }
   alert('Acondicionamiento cerrado · '+(d.n_descuentos||0)+' material(es) descontado(s).');
   if(typeof abrirEBR==='function') abrirEBR(ebrId);
+}
+// 🔗 Lote completo (27-jun · #8 · INVIMA) · muestra OP+OF+OA de un lote físico juntos en un overlay.
+async function verLoteFases(loteEnc){
+  try{
+    var d=await (await fetch('/api/brd/lote/'+loteEnc+'/fases',{credentials:'same-origin'})).json();
+    var fa=d.fases||[];
+    var LB={fabricacion:'📋 Fabricación (OP)',envasado:'📦 Envasado (OF)',acondicionamiento:'🎁 Acondicionamiento (OA)'};
+    var rows=fa.map(function(f){
+      var est=(typeof _ebrBadge==='function')?_ebrBadge(f.estado):_escHTML(f.estado||'');
+      var fin=f.completado_at?String(f.completado_at).replace('T',' ').slice(0,16):'—';
+      return '<tr><td style="font-weight:700">'+(LB[f.fase]||_escHTML(f.fase))+'</td><td>'+_escHTML(f.numero_op||'')+'</td><td>'+est+'</td><td style="font-size:11px">'+_escHTML(f.iniciado_por||'—')+'</td><td style="font-size:11px;color:#94a3b8">'+fin+'</td><td><button class="lf-open" data-ebr="'+f.ebr_id+'" style="background:#ede9fe;color:#6d28d9;border:none;border-radius:5px;padding:3px 9px;font-size:11px;cursor:pointer;font-weight:700">Abrir</button></td></tr>';
+    }).join('');
+    var ov=document.createElement('div'); ov.id='lote-fases-ov';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    ov.innerHTML='<div style="background:#fff;border-radius:14px;max-width:680px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.3)"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h3 style="margin:0;color:#5b21b6">🔗 Lote '+_escHTML(d.lote||'')+' · trazabilidad de fases</h3><button class="lf-close" style="background:#94a3b8;color:#fff;border:none;border-radius:6px;padding:5px 10px;cursor:pointer">✕</button></div>'+(fa.length?('<table class="table" style="font-size:12px"><thead><tr><th>Fase</th><th>Orden</th><th>Estado</th><th>Inició</th><th>Terminó</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>'):'<div style="color:#94a3b8">Sin fases registradas para este lote.</div>')+'<div style="font-size:10px;color:#94a3b8;margin-top:8px">El mismo lote físico de punta a punta (Fabricación → Envasado → Acondicionamiento) · INVIMA.</div></div>';
+    ov.addEventListener('click',function(e){
+      if(e.target===ov || (e.target.classList && e.target.classList.contains('lf-close'))){ ov.remove(); return; }
+      var b=e.target.closest && e.target.closest('.lf-open');
+      if(b){ ov.remove(); if(typeof abrirEBR==='function') abrirEBR(parseInt(b.getAttribute('data-ebr'),10)); }
+    });
+    document.body.appendChild(ov);
+  }catch(e){ alert('Error: '+e.message); }
 }
 function loadColaSinEnvasar(){
   if(typeof cargarOrdenesEnvasado==='function')cargarOrdenesEnvasado();
