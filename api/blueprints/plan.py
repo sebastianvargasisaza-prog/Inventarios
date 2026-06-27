@@ -18150,6 +18150,11 @@ async function abrirLoteModal(id, producto, fecha, kg){
 
   let html = '';
 
+  // 🖼️ Foto del producto (Shopify · formula_headers.imagen_url · viene en /api/plan/necesidades) · Sebastián 27-jun
+  if (info.imagen_url){
+    html += '<div style="text-align:center;margin-bottom:10px"><img src="' + escapeHtml(info.imagen_url) + '" style="max-height:130px;max-width:100%;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.12)" alt=""></div>';
+  }
+
   // Sebastián 25-may-2026 PM · selector envase override del lote.
   // Dropdown que carga de /api/programacion/mees-disponibles (maestro_mee)
   // · evita typos · match perfecto con la BD.
