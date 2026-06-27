@@ -1093,10 +1093,11 @@ def job_sync_stock_shopify_diario(app):
             # SHOPIFY-FIX · 22-may-2026 · Bug #4 audit · NO skipear SKU agotado
             # · Antes: qty<=0 → skip · _velocidad lookup vía sku_producto_map se rompía
             # · Ahora: insert qty=0 con estado='Agotado' · señal "existe pero sin stock"
-            producto = sku_map.get(sku)
-            if not producto:
-                prefix = sku.split('-')[0] if '-' in sku else sku[:6]
-                producto = sku_map.get(prefix) or v['titulo']
+            # FIX 27-jun (auditoría Shopify→Necesidades) · lookup case-insensitive (sku_map keyea en UPPER ·
+            # antes buscaba con sku raw → miss) + SIN fallback por prefijo (atribuía stock al producto
+            # equivocado en familias con prefijo compartido tipo Blush Balm). Un SKU no mapeado queda bajo su
+            # título Shopify = HUÉRFANO visible en el diagnóstico, no mal-atribuido en silencio.
+            producto = sku_map.get((sku or '').strip().upper()) or v['titulo']
             estado_pt = 'Disponible' if qty > 0 else 'Agotado'
             qty_safe = max(qty, 0)
             conn.execute(

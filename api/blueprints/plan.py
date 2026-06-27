@@ -2137,6 +2137,20 @@ def diagnostico_shopify_skus():
     uds_huerf = {'30': 0, '60': 0, '90': 0}
     uds_regalo = {'30': 0, '60': 0, '90': 0}
     n_map = n_huerf = n_regalo = 0
+    # Detector "mapeo zombi" (27-jun · auditoría Shopify→Necesidades) · un SKU mapeado a un producto que NO
+    # existe en formula_headers (normalizado M13) → su demanda se pierde sin que nada lo marque. El fix M13 ya
+    # cruza los casos de solo-acento; esto caza los de nombre realmente distinto / producto renombrado.
+    from blueprints.programacion import _norm_prod_fuerte as _npf_d
+    _formulas_norm = None
+    try:
+        _formulas_norm = set()
+        for _fr in cur.execute("SELECT producto_nombre FROM formula_headers WHERE COALESCE(activo,1)=1 "
+                               "AND producto_nombre IS NOT NULL AND TRIM(producto_nombre)!=''").fetchall():
+            _formulas_norm.add(_npf_d(_fr[0]))
+    except Exception:
+        _formulas_norm = None  # si falla, no marcamos zombi (no romper el diag)
+    n_zombi = 0
+    uds_zombi = {'30': 0, '60': 0, '90': 0}
     for sku, d in por_sku.items():
         if sku in skus_regalo:
             estado, prod = 'REGALO', sku_to_prod.get(sku)
@@ -2144,10 +2158,18 @@ def diagnostico_shopify_skus():
             for k in ('30', '60', '90'):
                 uds_regalo[k] += d[k]
         elif sku in sku_to_prod:
-            estado, prod = 'MAPEADO', sku_to_prod[sku]
-            n_map += 1
-            for k in ('30', '60', '90'):
-                uds_map[k] += d[k]
+            _pn = sku_to_prod[sku]
+            if _formulas_norm is not None and _npf_d(_pn) not in _formulas_norm:
+                # ZOMBI: mapeado pero el nombre NO cruza a ninguna fórmula activa → la venta se pierde.
+                estado, prod = 'MAPEADO_SIN_FORMULA', _pn
+                n_zombi += 1
+                for k in ('30', '60', '90'):
+                    uds_zombi[k] += d[k]
+            else:
+                estado, prod = 'MAPEADO', _pn
+                n_map += 1
+                for k in ('30', '60', '90'):
+                    uds_map[k] += d[k]
         else:
             estado, prod = 'HUERFANO', None
             n_huerf += 1
@@ -2178,6 +2200,9 @@ def diagnostico_shopify_skus():
         'n_skus_mapeados': n_map,
         'n_skus_huerfanos': n_huerf,
         'n_skus_regalo': n_regalo,
+        'n_skus_mapeo_zombi': n_zombi,
+        'uds_zombi_90d': uds_zombi['90'],
+        'pct_perdido_zombi': round(100.0 * uds_zombi['90'] / tot90, 1),
     }
     return jsonify({
         'ok': True,

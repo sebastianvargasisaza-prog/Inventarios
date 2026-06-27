@@ -26,3 +26,27 @@ def test_ventas_diarias_sku_case_insensitive(app, db_clean):
         ventas = _ventas_diarias_por_sku(c, 'ABC-30', dias=30)
     total = sum(q for _, q in ventas)
     assert total == 5, ('SKU case-insensitive falló · velocidad quedaría en 0', ventas)
+
+
+def _login(app, user="sebastian"):
+    from .conftest import TEST_PASSWORD, csrf_headers
+    c = app.test_client()
+    r = c.post("/login", data={"username": user, "password": TEST_PASSWORD},
+               headers=csrf_headers(), follow_redirects=False)
+    assert r.status_code == 302, r.data
+    return c
+
+
+def test_diag_detecta_mapeo_zombi(app, db_clean):
+    # SKU mapeado a un producto que NO existe en formula_headers (zombi) + una venta
+    _exec("INSERT INTO sku_producto_map (sku, producto_nombre, activo) VALUES ('ZOMBI-30','XX NO EXISTE EN FORMULAS XX',1)")
+    _exec("INSERT INTO animus_shopify_orders (shopify_id, estado, estado_pago, sku_items, unidades_total, "
+          "tags, customer_tags, creado_en) VALUES ('TZ1','','paid',?,3,'','',datetime('now','-5 hours'))",
+          (json.dumps([{'sku': 'ZOMBI-30', 'qty': 3}]),))
+    c = _login(app)
+    r = c.get("/api/plan/diagnostico-shopify")
+    assert r.status_code == 200, r.data
+    d = r.get_json()
+    zombi = [x for x in d['por_sku'] if x['sku'] == 'ZOMBI-30']
+    assert zombi and zombi[0]['estado'] == 'MAPEADO_SIN_FORMULA', (zombi, d['reconciliacion'])
+    assert d['reconciliacion']['n_skus_mapeo_zombi'] >= 1, d['reconciliacion']

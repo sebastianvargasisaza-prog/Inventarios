@@ -2907,10 +2907,10 @@ def prog_sync_stock_shopify():
                 qty = max(int(avail_map[iid]), 0)
             else:
                 qty = int(v['inv_qty'])
-            producto = sku_map.get(sku)
-            if not producto:
-                prefix = sku.split('-')[0] if '-' in sku else sku[:6]
-                producto = sku_map.get(prefix) or v['titulo']
+            # FIX 27-jun (auditoría Shopify→Necesidades) · lookup case-insensitive (sku_map keyea en UPPER) +
+            # SIN fallback por prefijo (atribuía stock al producto equivocado en familias con prefijo compartido
+            # tipo Blush Balm). Un SKU no mapeado queda bajo su título = HUÉRFANO visible, no mal-atribuido.
+            producto = sku_map.get((sku or '').strip().upper()) or v['titulo']
             # FIX 23-may-2026 · auditoría · Bug #4 del 22-may estaba aplicado
             # solo en auto_plan_jobs.job_sync_stock_shopify_diario · este
             # endpoint (botón manual) seguía skippeando qty<=0 · lookup vía
