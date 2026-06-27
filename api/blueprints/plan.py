@@ -1950,12 +1950,16 @@ def plan_desglose_tonos():
                 ml_por_sku[r[0]] = float(r[1])
     except Exception:
         pass
-    # Ventas por SKU en ventana
+    # Ventas por SKU en ventana · + ventana RECIENTE (mitad) para estimar tendencia (Sebastián 27-jun:
+    # "si la venta viene en ascenso, redondeá para arriba"). tendencia = cuánto sube el ritmo reciente.
     desde = (_dt2.utcnow() - _td2(days=ventana)).strftime('%Y-%m-%dT00:00:00')
+    _dias_rec = max(7, ventana // 2)
+    desde_rec = (_dt2.utcnow() - _td2(days=_dias_rec)).strftime('%Y-%m-%dT00:00:00')
     ventas = {sk: 0 for sk in skus}
+    ventas_rec = {sk: 0 for sk in skus}
     try:
         for r in cur.execute(
-            """SELECT sku_items FROM animus_shopify_orders
+            """SELECT sku_items, creado_en FROM animus_shopify_orders
                 WHERE creado_en >= ?
                   AND sku_items IS NOT NULL AND sku_items != ''
                   AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')
@@ -1968,15 +1972,24 @@ def plan_desglose_tonos():
                 continue
             if not isinstance(items, list):
                 continue
+            _es_rec = (r[1] or '') >= desde_rec
             for it in items:
                 sk = (it.get('sku') or '').upper().strip()
                 if sk not in ventas:
                     continue
                 qty = float(it.get('qty') or it.get('quantity') or it.get('cantidad') or 0)
                 ventas[sk] += qty
+                if _es_rec:
+                    ventas_rec[sk] += qty
     except Exception as e:
         return jsonify({'error': f'query ventas: {e}'}), 500
     total_uds = sum(ventas.values())
+    # tendencia (0..0.5): ritmo reciente vs ritmo de toda la ventana · SOLO positiva (ascenso) · 0 si baja/plano
+    _rate_win = (total_uds / ventana) if ventana > 0 else 0
+    _rate_rec = (sum(ventas_rec.values()) / _dias_rec) if _dias_rec > 0 else 0
+    tendencia = 0.0
+    if _rate_win > 0:
+        tendencia = max(0.0, min(0.5, (_rate_rec / _rate_win) - 1.0))
     items = []
     if total_uds <= 0:
         # Sin ventas en ventana · distribuir equitativamente
@@ -2005,6 +2018,7 @@ def plan_desglose_tonos():
         'ok': True, 'producto': producto, 'n_tonos': len(skus),
         'ventana_dias': ventana, 'cantidad_kg': cantidad_kg,
         'total_uds_ventana': int(total_uds), 'items': items,
+        'tendencia': round(tendencia, 3),
     })
 
 
@@ -18370,32 +18384,65 @@ async function cargarDesgloseEditableLote(producto, kgActual, mlProm){
   mlProm = parseFloat(mlProm) || 30;
   try{
     var d = await (await fetch('/api/plan/desglose-tonos?producto=' + encodeURIComponent(producto), {cache:'no-store'})).json();
-    var items = (d && d.items) || [];
-    if(items.length < 2){ host.innerHTML = ''; return; }  // solo multi-SKU (tonos o tamaños)
+    var allItems = (d && d.items) || [];
+    // Sebastián 27-jun · OCULTAR las referencias SIN ventas (SKU muertos · "hay muchos así") · solo las que venden
+    var items = allItems.filter(function(it){ return (it.uds_ventana||0) > 0; });
+    if(items.length < 2){ host.innerHTML = ''; return; }  // solo multi-SKU que efectivamente vende
+    var venWin = d.ventana_dias || 60;
+    window._DESG = { mlProm: mlProm, tendencia: (d.tendencia||0), kg: (parseFloat(kgActual)||0) };
     var totalUds = Math.round((parseFloat(kgActual)||0) * 1000 / mlProm);
+    var pctTot = items.reduce(function(a,it){ return a + (it.porcentaje||0); }, 0) || 100;
     var rows = items.map(function(it){
       var ml = parseFloat(it.ml_unidad) || mlProm;
-      var pre = Math.round(totalUds * (it.porcentaje||0) / 100);
+      var pre = Math.round(totalUds * (it.porcentaje||0) / pctTot);
       var lbl = (it.tono_label && it.tono_label !== it.sku) ? (escapeHtml(it.sku)+' · '+escapeHtml(it.tono_label)) : escapeHtml(it.sku||'');
       return '<tr style="border-top:1px solid #e2e8f0">'
         + '<td style="padding:4px 8px;font-family:monospace;font-weight:700">'+lbl+'</td>'
         + '<td style="padding:4px 8px;text-align:center;color:#64748b">'+ml+' ml</td>'
-        + '<td style="padding:4px 8px;text-align:right;color:#94a3b8;font-size:10px">'+(it.uds_ventana||0)+' vend</td>'
-        + '<td style="padding:4px 8px;text-align:right"><input type="number" min="0" class="dsk-uds" data-ml="'+ml+'" value="'+pre+'" oninput="_recalcKgDesglose(true)" style="width:82px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:4px;text-align:right;font-weight:700"></td>'
+        + '<td style="padding:4px 8px;text-align:right;color:#94a3b8;font-size:10px">'+(it.uds_ventana||0)+'</td>'
+        + '<td style="padding:4px 8px;text-align:right"><input type="number" min="0" class="dsk-uds" data-pct="'+(it.porcentaje||0)+'" data-ml="'+ml+'" value="'+pre+'" oninput="_recalcKgDesglose(true)" style="width:82px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:4px;text-align:right;font-weight:700"></td>'
         + '</tr>';
     }).join('');
+    var tendTxt = ((d.tendencia||0) > 0.02) ? (' · 📈 +'+Math.round(d.tendencia*100)+'% en ascenso') : '';
     host.innerHTML = '<div style="background:#f5f3ff;border:1px solid #c4b5fd;border-radius:8px;padding:10px 12px;margin:4px 0 12px">'
-      + '<div style="font-size:12px;font-weight:700;color:#5b21b6;margin-bottom:2px">📊 Desglose por referencia · editá las unidades → calcula los kg</div>'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:2px">'
+      + '<span style="font-size:12px;font-weight:700;color:#5b21b6">📊 Desglose por referencia'+tendTxt+'</span>'
+      + '<button onclick="autoCalcDesglose()" title="Calcula las unidades por la venta (con la tendencia) y redondea al número cerrado de arriba" style="background:#7c3aed;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer">🧮 Calcular por venta &uarr;</button>'
+      + '</div>'
       + '<table style="width:100%;font-size:11px;border-collapse:collapse"><thead><tr style="color:#64748b">'
       + '<th style="text-align:left;padding:4px 8px">SKU / referencia</th><th style="padding:4px 8px">ml</th>'
-      + '<th style="text-align:right;padding:4px 8px">vende</th><th style="text-align:right;padding:4px 8px">unidades</th></tr></thead><tbody>'
+      + '<th style="text-align:right;padding:4px 8px" title="vendidas en los últimos '+venWin+' días (referencia)">vende '+venWin+'d</th>'
+      + '<th style="text-align:right;padding:4px 8px">a producir</th></tr></thead><tbody>'
       + rows + '</tbody></table>'
       + '<div style="text-align:right;margin-top:8px;border-top:1px dashed #c4b5fd;padding-top:6px">'
       + '<span id="dsk-total" style="font-size:13px;font-weight:800;color:#5b21b6"></span>'
-      + '<div style="font-size:10px;color:#94a3b8">se aplica a "Kg a producir" automáticamente · luego 💾 Guardar</div></div>'
+      + '<div style="font-size:10px;color:#94a3b8">"a producir" = cuántas sacar de cada referencia · la suma calcula los kg → 💾 Guardar</div></div>'
       + '</div>';
     _recalcKgDesglose(false);  // al abrir: solo muestra el total, no pisa el kg original
   }catch(e){ host.innerHTML = ''; }
+}
+
+// 🧮 Calcula las unidades por la VENTA con la tendencia de ascenso y redondea el total al número cerrado de
+// arriba (Sebastián 27-jun: "si da 756 calcula a 800"). Distribuye por el mix de ventas entre las referencias.
+function autoCalcDesglose(){
+  var D = window._DESG; if(!D) return;
+  var inputs = Array.prototype.slice.call(document.querySelectorAll('.dsk-uds'));
+  if(!inputs.length) return;
+  var baseUds = Math.round((D.kg||0) * 1000 / (D.mlProm||30));   // unidades del lote según el plan (ya por venta)
+  var conTend = baseUds * (1 + (D.tendencia||0));                 // sube si la venta viene en ascenso
+  var total = Math.ceil(conTend / 50) * 50;                       // número cerrado por encima (756 → 800)
+  if(total < 50) total = 50;
+  var pctTot = 0; inputs.forEach(function(inp){ pctTot += parseFloat(inp.getAttribute('data-pct'))||0; });
+  if(pctTot <= 0) pctTot = 100;
+  var asignado = 0;
+  inputs.forEach(function(inp, i){
+    var pct = parseFloat(inp.getAttribute('data-pct'))||0;
+    var u = (i === inputs.length-1) ? (total - asignado)          // la última referencia cuadra el total exacto
+                                    : Math.round(total * pct / pctTot);
+    if(u < 0) u = 0;
+    inp.value = u; asignado += u;
+  });
+  _recalcKgDesglose(true);
 }
 
 function _recalcKgDesglose(applyToKg){
