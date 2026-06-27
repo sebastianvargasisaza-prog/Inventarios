@@ -148,3 +148,24 @@ def test_portal_pedido_sin_ml_deriva(app, db_clean):
     assert r.status_code == 201, r.data
     ml = _q("SELECT ml_unidad FROM pedidos_b2b WHERE cliente_id='PM1'")[0][0]
     assert ml == 30, ('sin presentación → fallback 30', ml)  # con producto_presentaciones derivaría el volumen real
+
+
+def test_comunicacion_nuevo_producto_y_reunion(app, db_clean):
+    c = app.test_client()
+    with c.session_transaction() as sess:
+        sess['portal_cliente_id'] = 'CC1'
+        sess['portal_cliente_nombre'] = 'Comm Cli'
+        sess['portal_email'] = 'cc1@x.com'
+        sess['portal_activo_check_ts'] = 9999999999
+    # nuevo producto (requiere producto)
+    r = c.post('/api/portal/solicitudes', json={'tipo': 'nuevo_producto', 'producto_nombre': 'Serum X',
+               'mensaje': 'quiero que lo desarrollen'}, headers=csrf_headers())
+    assert r.status_code == 201, r.data
+    # reunión SIN producto (debe pasar · producto opcional)
+    r2 = c.post('/api/portal/solicitudes', json={'tipo': 'reunion',
+                'mensaje': 'reunirnos por volúmenes', 'fecha_requerida': '2026-08-01'}, headers=csrf_headers())
+    assert r2.status_code == 201, r2.data
+    rows = _q("SELECT tipo, producto_nombre FROM portal_solicitudes WHERE cliente_id='CC1' ORDER BY id")
+    pares = [(x[0], x[1]) for x in rows]
+    assert ('nuevo_producto', 'Serum X') in pares, pares
+    assert any(x[0] == 'reunion' for x in rows), pares

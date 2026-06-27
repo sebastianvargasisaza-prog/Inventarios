@@ -441,6 +441,7 @@ button.primary:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:
     <button class="tab" data-tab="mis" onclick="setTab('mis')">📋 Mis pedidos</button>
     <button class="tab" data-tab="pqr" onclick="setTab('pqr')">💬 PQR</button>
     <button class="tab" data-tab="mis-pqr" onclick="setTab('mis-pqr')">📜 Mis PQR</button>
+    <button class="tab" data-tab="comm" onclick="setTab('comm')">✨ Comunicación</button>
   </div>
 
   <div id="panel-solicitar">
@@ -512,6 +513,31 @@ button.primary:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:
     </div>
   </div>
 
+  <div id="panel-comm" style="display:none">
+    <div class="card">
+      <h2>✨ Comunicación con nosotros</h2>
+      <p style="color:#94a3b8;font-size:13px;margin-bottom:14px">Pedí un producto nuevo, una reunión con gerencia o mandanos una consulta · te respondemos.</p>
+      <label>Tipo</label>
+      <select id="comm-tipo" onchange="commTipoChange()">
+        <option value="nuevo_producto">🆕 Solicitar producto nuevo</option>
+        <option value="reunion">📅 Reunión con gerencia</option>
+        <option value="consulta">💬 Consulta general</option>
+      </select>
+      <label id="comm-prod-lbl">¿Qué producto querés que desarrollemos?</label>
+      <input id="comm-prod" placeholder="Ej. Serum de niacinamida 30ml">
+      <label id="comm-fecha-lbl" style="display:none">Fecha deseada (opcional)</label>
+      <input id="comm-fecha" type="date" style="display:none">
+      <label>Mensaje / detalle</label>
+      <textarea id="comm-msg" rows="4" placeholder="Contanos lo que necesitás…"></textarea>
+      <button class="primary" id="comm-btn" onclick="enviarComunicacion()">📨 Enviar</button>
+      <div class="msg" id="comm-msg-out"></div>
+    </div>
+    <div class="card">
+      <h2>📜 Mis solicitudes</h2>
+      <div id="mis-sol-lista" class="lista"><div class="empty">Cargando...</div></div>
+    </div>
+  </div>
+
   <!-- panel cotizar removido 25-may-2026 PM · Sebastián: "no me sirve, el
        cliente debe pedir productos del catálogo sin valores" · backend RFQ
        queda inactivo sin UI · si en el futuro se reactiva, restaurar tab -->
@@ -525,8 +551,53 @@ function setTab(t){
   document.getElementById('panel-mis').style.display = (t==='mis')?'block':'none';
   document.getElementById('panel-pqr').style.display = (t==='pqr')?'block':'none';
   document.getElementById('panel-mis-pqr').style.display = (t==='mis-pqr')?'block':'none';
+  document.getElementById('panel-comm').style.display = (t==='comm')?'block':'none';
   if(t==='mis') cargarMisPedidos();
   if(t==='mis-pqr') cargarMisPqr();
+  if(t==='comm') cargarMisSolicitudes();
+}
+// ✨ Comunicación 26-jun (Sebastián) · nuevo producto / reunión / consulta · reusa /api/portal/solicitudes.
+function commTipoChange(){
+  var t=document.getElementById('comm-tipo').value;
+  var pl=document.getElementById('comm-prod-lbl'), pi=document.getElementById('comm-prod');
+  var fl=document.getElementById('comm-fecha-lbl'), fi=document.getElementById('comm-fecha');
+  if(t==='nuevo_producto'){ pl.textContent='¿Qué producto querés que desarrollemos?'; pl.style.display='block'; pi.style.display='block'; fl.style.display='none'; fi.style.display='none'; }
+  else if(t==='reunion'){ pl.textContent='Tema de la reunión'; pl.style.display='block'; pi.style.display='block'; fl.style.display='block'; fi.style.display='block'; }
+  else { pl.style.display='none'; pi.style.display='none'; fl.style.display='none'; fi.style.display='none'; }
+}
+async function enviarComunicacion(){
+  var tipo=document.getElementById('comm-tipo').value;
+  var prod=document.getElementById('comm-prod').value.trim();
+  var fecha=document.getElementById('comm-fecha').value;
+  var msg=document.getElementById('comm-msg').value.trim();
+  var out=document.getElementById('comm-msg-out'), btn=document.getElementById('comm-btn');
+  if(tipo==='nuevo_producto' && !prod){ out.className='msg err'; out.textContent='Decinos qué producto querés.'; return; }
+  if(!msg){ out.className='msg err'; out.textContent='Escribí un mensaje con el detalle.'; return; }
+  btn.disabled=true; btn.textContent='Enviando...';
+  try{
+    var r=await fetch('/api/portal/solicitudes',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({tipo:tipo,producto_nombre:prod,mensaje:msg,fecha_requerida:fecha})});
+    var d=await r.json();
+    if(!r.ok){ out.className='msg err'; out.textContent=d.error||'Error'; return; }
+    out.className='msg ok'; out.textContent=d.mensaje||'Enviado · te respondemos pronto.';
+    document.getElementById('comm-prod').value=''; document.getElementById('comm-msg').value=''; document.getElementById('comm-fecha').value='';
+    cargarMisSolicitudes();
+  }catch(e){ out.className='msg err'; out.textContent='Error de red'; }
+  finally{ btn.disabled=false; btn.textContent='📨 Enviar'; }
+}
+async function cargarMisSolicitudes(){
+  var box=document.getElementById('mis-sol-lista'); if(!box) return;
+  try{
+    var d=await (await fetch('/api/portal/mis-solicitudes',{credentials:'same-origin'})).json();
+    var items=d.solicitudes||d.items||[];
+    if(!items.length){ box.innerHTML='<div class="empty">Sin solicitudes todavía.</div>'; return; }
+    var EM={nuevo_producto:'🆕',reunion:'📅',consulta:'💬',cotizacion:'💰',muestras:'🧪',ficha_tecnica:'📄'};
+    var LB={nuevo_producto:'Nuevo producto',reunion:'Reunión con gerencia',consulta:'Consulta',cotizacion:'Cotización',muestras:'Muestras',ficha_tecnica:'Ficha técnica'};
+    box.innerHTML=items.map(function(s){
+      var pn=(s.producto_nombre&&s.producto_nombre!=='—')?(' · '+esc(s.producto_nombre)):'';
+      var resp=s.respuesta_notas?('<div style="font-size:12px;color:#16a34a;margin-top:6px;border-left:3px solid #6ee7b7;padding-left:8px">💬 '+esc(s.respuesta_notas)+'</div>'):'';
+      return '<div class="pedido"><div class="pedido-prod">'+(EM[s.tipo]||'•')+' '+esc(LB[s.tipo]||s.tipo)+pn+'</div>'+(s.mensaje?'<div style="font-size:12px;color:#94a3b8;margin-top:4px">'+esc(s.mensaje)+'</div>':'')+'<span class="chip area" style="margin-top:4px;display:inline-block">'+esc(s.estado||'nueva')+'</span>'+resp+'</div>';
+    }).join('');
+  }catch(e){ box.innerHTML='<div class="empty">Error</div>'; }
 }
 
 // Funciones enviarCotizacion / aceptarCotizacion / actualizarBadge /
@@ -2225,7 +2296,10 @@ function copiar(el){
 # · cliente convierte a pedido o lo deja en histórico.
 # ════════════════════════════════════════════════════════════════════════
 
-_PORTAL_SOL_TIPOS = ('cotizacion', 'muestras', 'ficha_tecnica')
+_PORTAL_SOL_TIPOS = ('cotizacion', 'muestras', 'ficha_tecnica',
+                     'nuevo_producto', 'reunion', 'consulta')  # +comunicación 26-jun
+# Tipos que NO necesitan producto (el cliente escribe en el mensaje)
+_SOL_TIPOS_SIN_PRODUCTO = ('reunion', 'consulta')
 _PORTAL_SOL_ESTADOS = ('nueva', 'en_revision', 'respondida',
                         'convertida', 'cerrada', 'rechazada')
 
@@ -2256,7 +2330,10 @@ def portal_crear_solicitud():
         return jsonify({'error': f'tipo inválido · usar {_PORTAL_SOL_TIPOS}'}), 400
     producto = (body.get('producto_nombre') or '').strip()
     if not producto:
-        return jsonify({'error': 'producto_nombre requerido'}), 400
+        if tipo in _SOL_TIPOS_SIN_PRODUCTO:
+            producto = '—'  # reunión/consulta · el detalle va en el mensaje
+        else:
+            return jsonify({'error': 'producto_nombre requerido'}), 400
     try:
         cantidad = int(body.get('cantidad_estimada') or 0)
     except (TypeError, ValueError):
@@ -2289,6 +2366,19 @@ def portal_crear_solicitud():
     except Exception:
         pass
     conn.commit()
+    # Comunicación 26-jun · avisar al equipo por campana (Sebastián + Catalina)
+    try:
+        from blueprints.notif import push_notif as _pn
+        _lbl = {'nuevo_producto': '🆕 Nuevo producto', 'reunion': '📅 Reunión con gerencia',
+                'consulta': '💬 Consulta', 'cotizacion': '💰 Cotización', 'muestras': '🧪 Muestras',
+                'ficha_tecnica': '📄 Ficha técnica'}.get(tipo, tipo)
+        _body = ((producto + ' · ') if (producto and producto != '—') else '') + (mensaje[:140] or 'sin detalle')
+        for _d in ('sebastian', 'catalina'):
+            _pn(destinatario=_d, tipo='portal_solicitud_nueva',
+                titulo=f'{_lbl} · {cnom}', body=_body,
+                link='/admin/portal-rfq', remitente=f'portal:{email}', importante=True)
+    except Exception:
+        pass
     return jsonify({
         'ok': True, 'id': sol_id, 'tipo': tipo, 'estado': 'nueva',
         'mensaje': f"Solicitud #{sol_id} recibida · te respondemos en 24-48h hábiles",
