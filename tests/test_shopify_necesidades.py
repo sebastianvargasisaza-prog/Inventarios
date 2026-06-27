@@ -142,3 +142,12 @@ def test_desglose_tonos_usa_volumen_sku_producto_map(app, db_clean):
     d = r.get_json()
     mls = {it['sku']: it['ml_unidad'] for it in d['items']}
     assert mls.get('PDT-30') == 30 and mls.get('PDT-15') == 15, ('ml no salió de sku_producto_map', mls)
+
+
+def test_mig297_envases_normalizados_cargados(app, db_clean):
+    # los 57 envases del Excel deben quedar ACTIVOS en maestro_mee (reemplazan a los viejos)
+    n = _q1("SELECT COUNT(*) FROM maestro_mee WHERE estado='Activo' AND (codigo LIKE 'FR-%' "
+            "OR codigo LIKE 'IMP-%' OR codigo LIKE 'ETQ-%' OR codigo LIKE 'CJA-%')")[0]
+    assert n >= 50, ('no se cargaron los envases normalizados activos', n)
+    assert _q1("SELECT estado FROM maestro_mee WHERE codigo='FR-GLOSS-10-PEACH'")[0] == 'Activo', 'gloss peach no activo'
+    assert _q1("SELECT estado FROM maestro_mee WHERE codigo='CJA-TRX'")[0] == 'Activo', 'caja TRX no activa'
