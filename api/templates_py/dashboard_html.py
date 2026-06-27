@@ -22709,6 +22709,7 @@ async function ckMarcar(itemId, estado){
       renderResumenNec(d.resumen);
       renderClientesNec(d.clientes);
       renderSyncBanner(d.sync_ventas);
+      cargarPedidosB2BPendientes();
     } catch(e) {
       div.innerHTML = '<div style="text-align:center;color:#dc2626;padding:40px">Error: ' + escapeHtmlNec(e.message) + '</div>';
     }
@@ -22740,6 +22741,55 @@ async function ckMarcar(itemId, estado){
       'padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">🔄 Sincronizar ahora</button>' +
       '</div>';
     host.insertAdjacentHTML('afterbegin', html);
+  }
+
+  // 🤝 Bandeja "Pedidos B2B por confirmar" en Necesidades (Sebastián 27-jun): los pedidos del portal
+  // aterrizan acá · el equipo revisa (ajusta cantidad/fecha) y con 1 click los confirma → al plan (Fijo).
+  async function cargarPedidosB2BPendientes(){
+    var host = document.getElementById('nec-contenido');
+    if(!host) return;
+    var old = document.getElementById('nec-b2b-pend'); if(old) old.remove();
+    try{
+      var d = await (await fetch('/api/pedidos-b2b?estado=pendiente', {cache:'no-store'})).json();
+      var items = (d.items || []).filter(function(p){ return p.estado === 'pendiente'; });
+      if(!items.length) return;
+      var rows = items.map(function(p){
+        var kg = ((p.cantidad_uds||0) * (p.ml_unidad||30) / 1000).toFixed(1);
+        return '<div data-pid="'+p.id+'" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fff;border:1px solid #ddd6fe;border-radius:8px;padding:8px 12px;margin-top:8px">'
+          + '<div style="flex:1;min-width:200px"><b style="color:#5b21b6">'+escapeHtmlNec(p.cliente_nombre||p.cliente_id||'cliente')+'</b> · '+escapeHtmlNec(p.producto_nombre||'')+(p.notas?('<div style="font-size:10px;color:#94a3b8">'+escapeHtmlNec(p.notas)+'</div>'):'')+'</div>'
+          + '<label style="font-size:11px;color:#64748b">Cant <input id="b2bc-'+p.id+'" type="number" min="1" value="'+(p.cantidad_uds||0)+'" style="width:72px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:4px;text-align:right"> uds</label>'
+          + '<span style="font-size:11px;color:#94a3b8">×'+(p.ml_unidad||30)+'ml ≈ '+kg+'kg</span>'
+          + '<label style="font-size:11px;color:#64748b">Fecha <input id="b2bf-'+p.id+'" type="date" value="'+((p.fecha_estimada||'').slice(0,10))+'" style="padding:3px 5px;border:1px solid #cbd5e1;border-radius:4px"></label>'
+          + '<button onclick="confirmarPedidoB2B('+p.id+',this)" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer">&#10003; Confirmar &rarr; al plan</button>'
+          + '</div>';
+      }).join('');
+      var html = '<div id="nec-b2b-pend" style="background:linear-gradient(90deg,#f5f3ff,#faf5ff);border:1px solid #c4b5fd;border-left:4px solid #7c3aed;border-radius:10px;padding:12px 14px;margin-bottom:12px">'
+        + '<div style="font-weight:800;color:#5b21b6;font-size:14px">🤝 '+items.length+' pedido'+(items.length===1?'':'s')+' B2B por confirmar</div>'
+        + '<div style="font-size:11px;color:#64748b;margin-bottom:2px">Revisá cantidad y fecha · confirmá → entra al plan como producción Fija del cliente.</div>'
+        + rows + '</div>';
+      host.insertAdjacentHTML('afterbegin', html);
+    }catch(e){ /* silencioso · nunca romper Necesidades por la bandeja */ }
+  }
+
+  async function confirmarPedidoB2B(pid, btn){
+    if(btn){ btn.disabled = true; btn.textContent = '…'; }
+    var cant = parseInt((document.getElementById('b2bc-'+pid)||{}).value || '0');
+    var fecha = (document.getElementById('b2bf-'+pid)||{}).value || '';
+    var body = {};
+    if(cant > 0) body.cantidad_uds = cant;
+    if(fecha) body.fecha_estimada = fecha;
+    var t=''; try{ t=(await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json()).csrf_token||''; }catch(e){}
+    try{
+      var r = await fetch('/api/pedidos-b2b/'+pid+'/confirmar', {method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json','X-CSRF-Token':t}, body: JSON.stringify(body)});
+      var d = await r.json();
+      if(!r.ok){ alert('Error: '+(d.error||r.status)); if(btn){ btn.disabled=false; btn.innerHTML='&#10003; Confirmar &rarr; al plan'; } return; }
+      var row = document.querySelector('#nec-b2b-pend [data-pid="'+pid+'"]'); if(row) row.remove();
+      var box = document.getElementById('nec-b2b-pend');
+      if(box && !box.querySelector('[data-pid]')) box.remove();
+      if(typeof _toast === 'function') _toast('✓ Pedido confirmado · '+(d.kg_b2b||'')+'kg al plan', 1);
+      cargarNecesidades();
+    }catch(e){ alert('Error de red: '+e.message); if(btn){ btn.disabled=false; btn.innerHTML='&#10003; Confirmar &rarr; al plan'; } }
   }
 
   // ═══════════════════════════════════════════════════════════════════

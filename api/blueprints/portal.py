@@ -2376,14 +2376,16 @@ def portal_crear_solicitud():
     except Exception:
         pass
     conn.commit()
-    # Comunicación 26-jun · avisar al equipo por campana (Sebastián + Catalina)
+    # Comunicación · enrutado 27-jun (Sebastián): lo "nuevo" (producto nuevo / reunión / consulta) NO va a
+    # Compras (Catalina) sino a ESPAGIRIA · asistente de gerencia (luz) + al CEO (sebastian) por su módulo.
+    # (A futuro estas solicitudes alimentan el módulo de Investigación y Desarrollo.)
     try:
         from blueprints.notif import push_notif as _pn
         _lbl = {'nuevo_producto': '🆕 Nuevo producto', 'reunion': '📅 Reunión con gerencia',
                 'consulta': '💬 Consulta', 'cotizacion': '💰 Cotización', 'muestras': '🧪 Muestras',
                 'ficha_tecnica': '📄 Ficha técnica'}.get(tipo, tipo)
         _body = ((producto + ' · ') if (producto and producto != '—') else '') + (mensaje[:140] or 'sin detalle')
-        for _d in ('sebastian', 'catalina'):
+        for _d in ('luz', 'sebastian'):
             _pn(destinatario=_d, tipo='portal_solicitud_nueva',
                 titulo=f'{_lbl} · {cnom}', body=_body,
                 link='/admin/portal-rfq', remitente=f'portal:{email}', importante=True)
