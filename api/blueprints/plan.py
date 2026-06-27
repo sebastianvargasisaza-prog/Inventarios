@@ -1935,6 +1935,21 @@ def plan_desglose_tonos():
                 ml_por_sku[r[0]] = float(r[1])
     except Exception:
         pass
+    # M44 (27-jun) · el volumen CANÓNICO es sku_producto_map.volumen_ml (lo que el usuario carga en el
+    # diagnóstico/ml-inline) · tiene PRECEDENCIA sobre producto_presentaciones · así el desglose usa el
+    # mismo ml que el motor de gramos y los multi-tamaño (30+15ml) calculan los kg correctos.
+    try:
+        _qs2 = ','.join(['?'] * len(skus))
+        for r in cur.execute(
+            f"""SELECT UPPER(TRIM(sku)), volumen_ml FROM sku_producto_map
+                 WHERE UPPER(TRIM(sku)) IN ({_qs2})
+                   AND volumen_ml IS NOT NULL AND volumen_ml > 0""",
+            tuple(skus),
+        ).fetchall():
+            if r[1]:
+                ml_por_sku[r[0]] = float(r[1])
+    except Exception:
+        pass
     # Ventas por SKU en ventana
     desde = (_dt2.utcnow() - _td2(days=ventana)).strftime('%Y-%m-%dT00:00:00')
     ventas = {sk: 0 for sk in skus}
@@ -18253,6 +18268,9 @@ async function abrirLoteModal(id, producto, fecha, kg){
   html += '<div class="metric-card"><div class="metric-lbl">Cobertura</div><div class="metric-val">' + (diasCob != null ? diasCob + 'd' : '—') + '</div><div class="metric-sub">' + (info.urgencia || '') + '</div></div>';
   html += '</div>';
 
+  // 📊 Desglose EDITABLE por referencia (Sebastián 27-jun) · se llena async tras pintar el modal.
+  html += '<div id="lote-desglose-edit"></div>';
+
   // Sección 1.5: Composición del lote · Sebastián 19-may-2026
   // "extensión de marca · la misma producción sirve para varios clientes".
   // Parsea observaciones para extraer aportes B2B y muestra el desglose.
@@ -18340,6 +18358,66 @@ async function abrirLoteModal(id, producto, fecha, kg){
   // Sección 4: Acciones
   html += _renderAccionesLote(id, producto, fecha);
   document.getElementById('lote-body').innerHTML = html;
+  cargarDesgloseEditableLote(producto, kg, ml);
+}
+
+// 📊 Desglose EDITABLE por referencia en el modal del lote (Sebastián 27-jun): muestra cada SKU del producto
+// con cuántas unidades, editable · la SUMA (Σ uds_sku × ml_sku) calcula los kg a producir y los aplica al
+// campo "Kg a producir". Reusa /api/plan/desglose-tonos (ml canónico de sku_producto_map · M44).
+async function cargarDesgloseEditableLote(producto, kgActual, mlProm){
+  var host = document.getElementById('lote-desglose-edit');
+  if(!host) return;
+  mlProm = parseFloat(mlProm) || 30;
+  try{
+    var d = await (await fetch('/api/plan/desglose-tonos?producto=' + encodeURIComponent(producto), {cache:'no-store'})).json();
+    var items = (d && d.items) || [];
+    if(items.length < 2){ host.innerHTML = ''; return; }  // solo multi-SKU (tonos o tamaños)
+    var totalUds = Math.round((parseFloat(kgActual)||0) * 1000 / mlProm);
+    var rows = items.map(function(it){
+      var ml = parseFloat(it.ml_unidad) || mlProm;
+      var pre = Math.round(totalUds * (it.porcentaje||0) / 100);
+      var lbl = (it.tono_label && it.tono_label !== it.sku) ? (escapeHtml(it.sku)+' · '+escapeHtml(it.tono_label)) : escapeHtml(it.sku||'');
+      return '<tr style="border-top:1px solid #e2e8f0">'
+        + '<td style="padding:4px 8px;font-family:monospace;font-weight:700">'+lbl+'</td>'
+        + '<td style="padding:4px 8px;text-align:center;color:#64748b">'+ml+' ml</td>'
+        + '<td style="padding:4px 8px;text-align:right;color:#94a3b8;font-size:10px">'+(it.uds_ventana||0)+' vend</td>'
+        + '<td style="padding:4px 8px;text-align:right"><input type="number" min="0" class="dsk-uds" data-ml="'+ml+'" value="'+pre+'" oninput="_recalcKgDesglose(true)" style="width:82px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:4px;text-align:right;font-weight:700"></td>'
+        + '</tr>';
+    }).join('');
+    host.innerHTML = '<div style="background:#f5f3ff;border:1px solid #c4b5fd;border-radius:8px;padding:10px 12px;margin:4px 0 12px">'
+      + '<div style="font-size:12px;font-weight:700;color:#5b21b6;margin-bottom:2px">📊 Desglose por referencia · editá las unidades → calcula los kg</div>'
+      + '<table style="width:100%;font-size:11px;border-collapse:collapse"><thead><tr style="color:#64748b">'
+      + '<th style="text-align:left;padding:4px 8px">SKU / referencia</th><th style="padding:4px 8px">ml</th>'
+      + '<th style="text-align:right;padding:4px 8px">vende</th><th style="text-align:right;padding:4px 8px">unidades</th></tr></thead><tbody>'
+      + rows + '</tbody></table>'
+      + '<div style="text-align:right;margin-top:8px;border-top:1px dashed #c4b5fd;padding-top:6px">'
+      + '<span id="dsk-total" style="font-size:13px;font-weight:800;color:#5b21b6"></span>'
+      + '<div style="font-size:10px;color:#94a3b8">se aplica a "Kg a producir" automáticamente · luego 💾 Guardar</div></div>'
+      + '</div>';
+    _recalcKgDesglose(false);  // al abrir: solo muestra el total, no pisa el kg original
+  }catch(e){ host.innerHTML = ''; }
+}
+
+function _recalcKgDesglose(applyToKg){
+  var inputs = document.querySelectorAll('.dsk-uds');
+  if(!inputs.length) return;
+  var totUds = 0, totMl = 0;
+  inputs.forEach(function(inp){
+    var u = parseFloat(inp.value) || 0;
+    var ml = parseFloat(inp.getAttribute('data-ml')) || 30;
+    totUds += u; totMl += u * ml;
+  });
+  var kg = totMl / 1000;
+  var el = document.getElementById('dsk-total');
+  if(el) el.textContent = totUds.toLocaleString('es-CO') + ' uds → ' + kg.toFixed(2) + ' kg';
+  if(applyToKg){
+    var f = document.getElementById('edit-kg-lote');
+    if(f){
+      f.value = Math.round(kg * 100) / 100;
+      var u = document.getElementById('edit-kg-uds');
+      if(u) u.textContent = totUds.toLocaleString('es-CO') + ' uds (del desglose)';
+    }
+  }
 }
 
 // Sebastián 15-may-2026: editar kg a producir desde el popup del lote

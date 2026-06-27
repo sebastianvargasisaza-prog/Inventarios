@@ -126,3 +126,19 @@ def test_mig296_blush_consolida(app, db_clean):
     _exec(_u)
     assert _q1("SELECT producto_nombre FROM sku_producto_map WHERE sku='BBTEST401'")[0] == 'BLUSH BALM', \
         'no consolidó a BLUSH BALM'
+
+
+def test_desglose_tonos_usa_volumen_sku_producto_map(app, db_clean):
+    # M44 · el desglose por referencia debe usar el volumen canónico de sku_producto_map.volumen_ml
+    _exec("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo) VALUES ('PROD DESG TEST',1,1)")
+    _exec("INSERT INTO sku_producto_map (sku, producto_nombre, volumen_ml, activo) VALUES ('PDT-30','PROD DESG TEST',30,1)")
+    _exec("INSERT INTO sku_producto_map (sku, producto_nombre, volumen_ml, activo) VALUES ('PDT-15','PROD DESG TEST',15,1)")
+    _exec("INSERT INTO animus_shopify_orders (shopify_id, estado, estado_pago, sku_items, unidades_total, "
+          "tags, customer_tags, creado_en) VALUES ('TDESG1','','paid',?,10,'','',datetime('now','-5 hours'))",
+          (json.dumps([{'sku': 'PDT-30', 'qty': 6}, {'sku': 'PDT-15', 'qty': 4}]),))
+    c = _login(app)
+    r = c.get('/api/plan/desglose-tonos?producto=PROD%20DESG%20TEST')
+    assert r.status_code == 200, r.data
+    d = r.get_json()
+    mls = {it['sku']: it['ml_unidad'] for it in d['items']}
+    assert mls.get('PDT-30') == 30 and mls.get('PDT-15') == 15, ('ml no salió de sku_producto_map', mls)
