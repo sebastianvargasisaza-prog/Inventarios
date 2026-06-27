@@ -24706,7 +24706,7 @@ async function ckMarcar(itemId, estado){
         // Sub-fila colapsable con desglose por tono (solo si hay ≥2 tonos)
         if (_tonos.length >= 2) {
           html += '<tr style="background:#fdf2f8"><td colspan="6" style="padding:8px 14px">';
-          html += '<details><summary style="cursor:pointer;font-size:11px;color:#be185d;font-weight:700">🎨 Desglose por tono · click para expandir</summary>';
+          html += '<details><summary style="cursor:pointer;font-size:11px;color:#be185d;font-weight:700">🎨 Desglose por referencia (tonos/tamaños) · click para expandir</summary>';
           html += '<table style="width:100%;margin-top:8px;border-collapse:collapse;font-size:11px">';
           html += '<thead><tr style="color:#9d174d"><th style="text-align:left;padding:4px 6px">Tono</th><th style="padding:4px 6px">SKU</th><th style="padding:4px 6px">ml</th><th style="padding:4px 6px">Vende ventana</th><th style="padding:4px 6px">% mix</th><th style="padding:4px 6px">Uds est. lote</th></tr></thead><tbody>';
           _tonos.forEach(t => {

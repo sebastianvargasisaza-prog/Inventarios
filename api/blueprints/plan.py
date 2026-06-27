@@ -3862,34 +3862,33 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         try:
             skus_del_prod = [s for s in prod_to_skus.get(prod_nombre, [])
                               if s not in skus_regalo]
-            # Tonos únicos no vacíos
-            _con_tono = [(s, tono_por_sku.get(s, '')) for s in skus_del_prod]
-            _con_tono = [(s, t) for s, t in _con_tono if t]
-            if len(_con_tono) >= 2:
-                # Calcular ventas por tono en la ventana principal
-                ventas_por_tono = {}
-                for sku_u, tono in _con_tono:
-                    ventas_por_tono[tono] = ventas_por_tono.get(tono, 0) + int(
-                        ventas_por_sku.get(sku_u, 0))
-                _total_uds_tonos = sum(ventas_por_tono.values()) or 1
-                # uds estimadas del próximo lote por tono · proporcional al mix
+            # Desglose por REFERENCIA (27-jun): antes exigía tono_label no vacío en ≥2 SKU, pero los
+            # multi-SKU (Blush, gloss, multi-tamaño 30+15ml) tienen el tono vacío → no desplegaba nada.
+            # Ahora arma el desglose con CUALQUIER ≥2 SKU del producto, etiquetando con tono_label si
+            # está, si no con el propio SKU. Cubre tonos Y tamaños.
+            if len(skus_del_prod) >= 2:
+                _total_uds_skus = sum(int(ventas_por_sku.get(s, 0)) for s in skus_del_prod) or 1
+                # uds estimadas del próximo lote por referencia · proporcional al mix de ventas
                 uds_lote_total = 0
                 if ml_promedio > 0 and lote_kg_efectivo > 0:
                     uds_lote_total = int(round(lote_kg_efectivo * 1000.0 / ml_promedio))
-                for sku_u, tono in _con_tono:
+                for sku_u in skus_del_prod:
                     v_t = int(ventas_por_sku.get(sku_u, 0))
-                    pct = round(100.0 * v_t / _total_uds_tonos, 1) if _total_uds_tonos > 0 else 0
+                    pct = round(100.0 * v_t / _total_uds_skus, 1) if _total_uds_skus > 0 else 0
                     uds_estim_lote = int(round(uds_lote_total * pct / 100.0))
                     tonos_arr.append({
                         'sku': sku_u,
-                        'tono_label': tono,
+                        'tono_label': (tono_por_sku.get(sku_u, '') or sku_u),
                         'ml_unidad': ml_por_sku.get(sku_u, ml_promedio),
                         'ventas_ventana_uds': v_t,
                         'porcentaje_mix': pct,
                         'uds_estim_lote': uds_estim_lote,
                     })
-                # Ordenar por % mix descendente · más vendido primero
-                tonos_arr.sort(key=lambda t: -t['porcentaje_mix'])
+                # Si ninguna referencia vendió en la ventana, no mostrar (evita ruido)
+                if sum(t['ventas_ventana_uds'] for t in tonos_arr) <= 0:
+                    tonos_arr = []
+                else:
+                    tonos_arr.sort(key=lambda t: -t['porcentaje_mix'])
         except Exception:
             tonos_arr = []
 
