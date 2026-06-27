@@ -169,3 +169,14 @@ def test_comunicacion_nuevo_producto_y_reunion(app, db_clean):
     pares = [(x[0], x[1]) for x in rows]
     assert ('nuevo_producto', 'Serum X') in pares, pares
     assert any(x[0] == 'reunion' for x in rows), pares
+
+
+def test_cliente_id_unico(app, db_clean):
+    c = _login(app)  # admin
+    r1 = c.post('/api/admin/portal/credenciales', json={'cliente_id': 'dup-x', 'cliente_nombre': 'A',
+                'email': 'a@x.com', 'password': '12345678'}, headers=_h())
+    assert r1.status_code == 201, r1.data
+    # mismo cliente_id, otro email → 409 (aislamiento multi-cliente)
+    r2 = c.post('/api/admin/portal/credenciales', json={'cliente_id': 'dup-x', 'cliente_nombre': 'B',
+                'email': 'b@x.com', 'password': '12345678'}, headers=_h())
+    assert r2.status_code == 409, r2.data

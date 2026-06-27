@@ -1004,6 +1004,8 @@ def portal_crear_pedido():
             ml = 30.0
         if ml <= 0:
             ml = 30.0
+    if ml > 5_000:
+        ml = 5_000.0  # cap defensivo también para el ml derivado (consistente con el guard del input)
 
     # Validar envase si fue solicitado.
     if envase_codigo:
@@ -1246,6 +1248,14 @@ def admin_portal_credenciales():
     ).fetchone()
     if existe:
         return jsonify({'error': f'email ya registrado (id={existe[0]})'}), 409
+    # Aislamiento multi-cliente · cliente_id debe ser único entre credenciales ACTIVAS · toda la ownership
+    # de pedidos/solicitudes se gatea por cliente_id (dos slugs iguales = un cliente vería pedidos del otro).
+    dup_cid = c.execute(
+        "SELECT id FROM portal_clientes_credenciales WHERE cliente_id = ? AND COALESCE(activo,1)=1",
+        (cid,),
+    ).fetchone()
+    if dup_cid:
+        return jsonify({'error': f'cliente_id "{cid}" ya está en uso (id={dup_cid[0]}) · usá otro ID'}), 409
     pw_hash = generate_password_hash(pw)
     c.execute(
         """INSERT INTO portal_clientes_credenciales
@@ -1955,7 +1965,7 @@ th{text-align:left;padding:8px;color:#5b21b6;border-bottom:2px solid #e9d5ff}td{
 var BASE=location.origin, _CSRF='';
 fetch('/api/csrf-token',{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(t){_CSRF=t.csrf_token||'';}).catch(function(){});
 function _hdr(){ return {'Content-Type':'application/json','X-CSRF-Token':_CSRF}; }
-function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
 function autoId(){ var n=document.getElementById('c-nom').value||''; document.getElementById('c-id').value=n.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40); }
 function genClave(){ var ch='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789',s=''; for(var i=0;i<10;i++)s+=ch[Math.floor(Math.random()*ch.length)]; document.getElementById('c-pass').value=s; return s; }
 var _acc='';

@@ -4045,9 +4045,10 @@ def job_b2b_recurrentes(app):
                     base = _dt.strptime((prox or '')[:10], '%Y-%m-%d')
                 except Exception:
                     base = _dt.utcnow() - _td(hours=5)
-                base = base + _td(days=int(frec or 30))
+                _paso = max(1, int(frec or 30))  # blindaje: frec<=0 colgaría el while (loop infinito)
+                base = base + _td(days=_paso)
                 while base.strftime('%Y-%m-%d') <= hoy:
-                    base = base + _td(days=int(frec or 30))
+                    base = base + _td(days=_paso)
                 c.execute("UPDATE pedidos_b2b_recurrentes SET proximo_at=?, "
                           "ultimo_generado_at=datetime('now','utc') WHERE id=?",
                           (base.strftime('%Y-%m-%d'), rid))
