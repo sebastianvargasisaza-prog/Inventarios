@@ -24270,16 +24270,26 @@ async function ckMarcar(itemId, estado){
     div.innerHTML = html;
   }
 
+  // Eliminar un lote agendado · con opción de FORZAR (admin · revierte el descuento) si ya inició/descontó.
+  async function _eliminarProxFuerza(id){
+    let r = await fetch('/api/plan/proximas/' + id, {method:'DELETE', headers:{'X-CSRF-Token': csrfTokenNec()}});
+    if(r.ok) return true;
+    let d={}; try{ d = await r.json(); }catch(e){}
+    if(d && d.codigo === 'YA_EN_EJECUCION'){
+      if(confirm('Esta producción ya inició o descontó inventario.\\n\\n¿Forzar la eliminación? Revierte el descuento (re-agrega la MP/MEE al inventario) y elimina el lote. Solo admin.')){
+        r = await fetch('/api/plan/proximas/' + id, {method:'DELETE', headers:{'Content-Type':'application/json','X-CSRF-Token': csrfTokenNec()}, body: JSON.stringify({force:true})});
+        if(r.ok) return true;
+        let d2={}; try{ d2 = await r.json(); }catch(e){}
+        alert('Error: ' + (d2.error || r.status)); return false;
+      }
+      return false;
+    }
+    alert('Error: ' + (d.error || r.status)); return false;
+  }
   async function cancelarProxima(id) {
     if (!confirm('¿Cancelar este lote agendado?')) return;
-    try {
-      const r = await fetch('/api/plan/proximas/' + id, {
-        method: 'DELETE',
-        headers: {'X-CSRF-Token': csrfTokenNec()},
-      });
-      if (!r.ok) { const d = await r.json(); alert('Error: ' + (d.error || r.status)); return; }
-      cargarNecesidades();
-    } catch(e) { alert('Error: ' + e.message); }
+    try { if(await _eliminarProxFuerza(id)) cargarNecesidades(); }
+    catch(e) { alert('Error: ' + e.message); }
   }
 
   // ── Plan en curso · bitácora de lotes agendados ─────────────────
@@ -24380,14 +24390,8 @@ async function ckMarcar(itemId, estado){
 
   async function cancelarPEC(id) {
     if (!confirm('¿Cancelar este lote agendado?')) return;
-    try {
-      const r = await fetch('/api/plan/proximas/' + id, {
-        method: 'DELETE',
-        headers: {'X-CSRF-Token': csrfTokenNec()},
-      });
-      if (!r.ok) { const d = await r.json(); alert('Error: ' + (d.error || r.status)); return; }
-      cargarPlanEnCurso();
-    } catch(e) { alert('Error: ' + e.message); }
+    try { if(await _eliminarProxFuerza(id)) cargarPlanEnCurso(); }
+    catch(e) { alert('Error: ' + e.message); }
   }
 
   async function moverPEC(id, producto, fechaActual) {

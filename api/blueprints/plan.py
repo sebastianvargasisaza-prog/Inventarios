@@ -20401,6 +20401,31 @@ def cancelar_proxima(pid):
     if not row:
         return jsonify({"error": "lote no encontrado"}), 404
     estado_actual, producto, fecha = row
+    # FORZAR-ELIMINAR (27-jun · Sebastián/Alejandro) · admin puede eliminar una producción que "no se hizo"
+    # (auto/demo/errónea) aunque haya iniciado o descontado: revierte el descuento (re-agrega MP/MEE al kardex
+    # vía revertir-completado · canónico) y limpia los flags de ejecución, luego cae al cancel normal. Auditado.
+    _force = False
+    try:
+        _force = bool((request.get_json(silent=True) or {}).get('force')) or (request.args.get('force') in ('1', 'true'))
+    except Exception:
+        _force = (request.args.get('force') in ('1', 'true'))
+    if _force and user in ADMIN_USERS and estado_actual != 'cancelado':
+        _ydesc = cur.execute(
+            "SELECT COALESCE(inventario_descontado_at,'') FROM produccion_programada WHERE id=?", (pid,)).fetchone()
+        if _ydesc and _ydesc[0]:
+            try:
+                from blueprints.programacion import prog_revertir_completado as _revc
+                _rr = _revc(pid)
+                _code = _rr[1] if isinstance(_rr, tuple) else 200
+                if _code not in (200, 400, 409):  # 400=no había descuento · 409=ya revertido → ambos ok
+                    return jsonify({"error": "no se pudo revertir el descuento para forzar la eliminación",
+                                    "codigo": "REVERT_FALLO"}), 500
+            except Exception as _e:
+                return jsonify({"error": f"falló la reversión del descuento: {_e}",
+                                "codigo": "REVERT_FALLO"}), 500
+        cur.execute("UPDATE produccion_programada SET estado='programado', inicio_real_at=NULL, "
+                    "inventario_descontado_at=NULL WHERE id=? AND COALESCE(estado,'')!='cancelado'", (pid,))
+        estado_actual = 'programado'  # ya sin descuento ni flags → pasa los guards de abajo
     # Sebastián 16-jun · El espejo de Fabricación cierra como 'completado' los lotes
     # manuales que coinciden (producto, fecha) y les pone inventario_descontado_at,
     # PERO es solo una ETIQUETA (no movió el kardex de EOS · "no re-descuenta"). Esos
