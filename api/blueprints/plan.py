@@ -17680,24 +17680,53 @@ async function _cargarComposicionMee(loteId){
 async function _cargarOpcionesEnvases(loteId, envActual){
   const sel = document.getElementById('env-ovr-' + loteId);
   if(!sel) return;
-  // Cache hit · usar directo
-  if(window._MEES_CACHE){
-    _pintarOpcionesEnvase(sel, window._MEES_CACHE, envActual);
-    return;
+  // 1) catálogo de MEE (cache global)
+  let mees = window._MEES_CACHE;
+  if(!mees){
+    try{
+      const r = await fetch('/api/programacion/mees-disponibles');
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      mees = window._MEES_CACHE = ((await r.json()).items) || [];
+    }catch(e){
+      sel.innerHTML = '<option value="">Error cargando: ' + e.message + '</option>';
+      return;
+    }
   }
+  // 2) envase(s) ORIGINAL(es) del producto (de su composición · producto_presentaciones · Sebastián 27-jun)
+  //    → el dropdown muestra el envase REAL del producto, no solo "sin override".
+  let defaults = [];
   try{
-    const r = await fetch('/api/programacion/mees-disponibles');
-    if(!r.ok) throw new Error('HTTP ' + r.status);
-    const d = await r.json();
-    window._MEES_CACHE = d.items || [];
-    _pintarOpcionesEnvase(sel, window._MEES_CACHE, envActual);
-  }catch(e){
-    sel.innerHTML = '<option value="">Error cargando: ' + e.message + '</option>';
-  }
+    const rc = await fetch('/api/programacion/programar/' + loteId + '/composicion-mee', {credentials:'same-origin'});
+    if(rc.ok){
+      const dc = await rc.json();
+      (dc.variantes || []).forEach(v => { if(v.envase_codigo && defaults.indexOf(v.envase_codigo) < 0) defaults.push(v.envase_codigo); });
+    }
+  }catch(e){ /* si falla, el dropdown igual sirve para forzar */ }
+  _pintarOpcionesEnvase(sel, mees, envActual, defaults);
 }
-function _pintarOpcionesEnvase(sel, mees, envActual){
-  let html = '<option value="">— Sin override (usa default del producto) —</option>';
-  // Agrupar por categoría para optgroups
+function _pintarOpcionesEnvase(sel, mees, envActual, defaults){
+  defaults = defaults || [];
+  const meeByCode = {};
+  mees.forEach(m => { meeByCode[m.codigo] = m; });
+  // Primera opción = el envase ORIGINAL del producto (sin forzar) · si lo conocemos
+  let html;
+  if(defaults.length){
+    const defLbl = defaults.map(function(c){ const m = meeByCode[c]; return c + (m && m.descripcion ? (' · ' + m.descripcion) : ''); }).join('  +  ').slice(0, 88);
+    html = '<option value="">📦 Envase del producto: ' + defLbl.replace(/</g,'&lt;').replace(/"/g,'&quot;') + ' (sin forzar)</option>';
+  } else {
+    html = '<option value="">— Sin override (usa el envase default del producto) —</option>';
+  }
+  // Grupo destacado con el/los envase(s) del producto arriba (fácil de re-elegir)
+  if(defaults.length){
+    html += '<optgroup label="📦 Del producto">';
+    defaults.forEach(function(c){
+      const m = meeByCode[c];
+      const selAttr = c === envActual ? ' selected' : '';
+      html += '<option value="' + c.replace(/"/g,'&quot;') + '"' + selAttr + '>' + (c + ' · ' + ((m && m.descripcion) || '')).slice(0,90) + '</option>';
+    });
+    html += '</optgroup>';
+  }
+  // Resto del catálogo por categoría
   const porCat = {};
   mees.forEach(m => {
     const cat = m.categoria || 'Sin categoría';
