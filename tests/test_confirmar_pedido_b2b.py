@@ -84,3 +84,35 @@ def test_despachar_pedido_b2b(app, db_clean):
     # re-despachar → 409 (ya no está confirmado/en_produccion)
     r2 = c.post(f'/api/pedidos-b2b/{pid}/despachar', json={}, headers=_h())
     assert r2.status_code == 409, r2.data
+
+
+def test_job_b2b_recurrentes(app, db_clean):
+    import datetime
+    rid = _exec("INSERT INTO pedidos_b2b_recurrentes (cliente_id,cliente_nombre,producto_nombre,"
+                "cantidad_uds,ml_unidad,frecuencia_dias,proximo_at,activo,creado_por) "
+                "VALUES ('CR1','Recur Uno','ZZ RECUR PROD',100,30,30,'2026-01-01',1,'portal:cr1@x.com')")
+    from blueprints.auto_plan_jobs import job_b2b_recurrentes
+    job_b2b_recurrentes(app)
+    peds = _q("SELECT estado, producto_nombre, cantidad_uds FROM pedidos_b2b WHERE cliente_id='CR1'")
+    assert peds and peds[0][0] == 'pendiente' and peds[0][1] == 'ZZ RECUR PROD' and peds[0][2] == 100, peds
+    prox = _q("SELECT proximo_at FROM pedidos_b2b_recurrentes WHERE id=?", (rid,))[0][0]
+    hoy = (datetime.datetime.utcnow() - datetime.timedelta(hours=5)).strftime('%Y-%m-%d')
+    assert prox > hoy, ('proximo no avanzó al futuro', prox, hoy)
+
+
+def test_portal_editar_pedido_pendiente(app, db_clean):
+    pid = _exec("INSERT INTO pedidos_b2b (cliente_id,cliente_nombre,producto_nombre,cantidad_uds,"
+                "ml_unidad,estado,creado_por) VALUES ('PC1','Portal Cli','ZZ PROD',50,30,'pendiente','portal:pc1@x.com')")
+    c = app.test_client()
+    with c.session_transaction() as sess:
+        sess['portal_cliente_id'] = 'PC1'
+        sess['portal_cliente_nombre'] = 'Portal Cli'
+        sess['portal_email'] = 'pc1@x.com'
+        sess['portal_activo_check_ts'] = 9999999999
+    r = c.patch('/api/portal/pedidos/' + str(pid), json={'cantidad_uds': 80}, headers=csrf_headers())
+    assert r.status_code == 200, r.data
+    assert _q("SELECT cantidad_uds FROM pedidos_b2b WHERE id=?", (pid,))[0][0] == 80
+    # confirmado → ya no editable por el cliente
+    _exec("UPDATE pedidos_b2b SET estado='confirmado' WHERE id=?", (pid,))
+    r2 = c.patch('/api/portal/pedidos/' + str(pid), json={'cantidad_uds': 99}, headers=csrf_headers())
+    assert r2.status_code == 409, r2.data

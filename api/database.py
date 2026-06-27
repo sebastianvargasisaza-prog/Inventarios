@@ -395,6 +395,26 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (292, "B2B mejora 3/4 · pedidos recurrentes (Sebastián 26-jun): el cliente programa un pedido que se "
+          "repite cada N días; un cron crea el pedido (pendiente, pasa por confirmación) cuando vence.", [
+        """CREATE TABLE IF NOT EXISTS pedidos_b2b_recurrentes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cliente_id TEXT NOT NULL,
+            cliente_nombre TEXT DEFAULT '',
+            producto_nombre TEXT NOT NULL,
+            cantidad_uds INTEGER DEFAULT 0,
+            ml_unidad REAL DEFAULT 30,
+            envase_codigo TEXT DEFAULT '',
+            frecuencia_dias INTEGER NOT NULL DEFAULT 30,
+            proximo_at TEXT DEFAULT '',
+            activo INTEGER NOT NULL DEFAULT 1,
+            creado_por TEXT DEFAULT '',
+            creado_at_utc TEXT DEFAULT '',
+            ultimo_generado_at TEXT DEFAULT ''
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_b2b_recur_cli ON pedidos_b2b_recurrentes(cliente_id, activo)",
+        "CREATE INDEX IF NOT EXISTS idx_b2b_recur_prox ON pedidos_b2b_recurrentes(activo, proximo_at)",
+    ]),
     (291, "B2B mejora 2/4 · visibilidad de despacho (Sebastián 26-jun): el cliente ve cuándo se despachó su "
           "pedido + guía/transportadora. Columnas en pedidos_b2b para registrar el despacho.", [
         "ALTER TABLE pedidos_b2b ADD COLUMN despachado_at TEXT DEFAULT ''",

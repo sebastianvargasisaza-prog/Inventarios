@@ -682,6 +682,7 @@ JOBS_SCHEDULE = [
     ('sync_stock_shopify_pm', 21, 30, None, None,               'job_sync_stock_shopify_diario'),
     ('sync_shopify',          6,  0, None, None,                'job_sync_shopify'),
     ('auto_asignar_areas',    6, 30, None, None,                'job_auto_asignar_areas'),
+    ('b2b_recurrentes',       6, 20, None, None,                'job_b2b_recurrentes'),
     ('auto_d20',              8,  0, None, None,                'job_auto_d20'),
     ('self_heal',             7,  5, None, None,                'job_self_heal'),  # 5 min después del lunes_7am
     ('cleanup_logs',          2,  0, None, None,                'job_cleanup_logs'),
@@ -4007,6 +4008,55 @@ def job_mailbox_factura_proveedor(app):
             except Exception:
                 pass
             return False, {'error': str(e)[:200]}, 0
+
+
+def job_b2b_recurrentes(app):
+    """B2B mejora 3/4 (Sebastián 26-jun) · crea pedidos B2B (pendiente) desde los recurrentes VENCIDOS
+    (proximo_at <= hoy CO) y avanza proximo_at += frecuencia. Los pedidos creados pasan por la confirmación
+    normal del equipo (no entran solos al plan · mejora 1/4)."""
+    import logging as _lg
+    from datetime import datetime as _dt, timedelta as _td
+    with app.app_context():
+        from database import get_db as _gdb
+        conn = _gdb()
+        c = conn.cursor()
+        hoy = (_dt.utcnow() - _td(hours=5)).strftime('%Y-%m-%d')
+        try:
+            rows = c.execute(
+                "SELECT id, cliente_id, COALESCE(cliente_nombre,''), producto_nombre, "
+                "COALESCE(cantidad_uds,0), COALESCE(ml_unidad,30), COALESCE(envase_codigo,''), "
+                "COALESCE(frecuencia_dias,30), COALESCE(proximo_at,''), COALESCE(creado_por,'') "
+                "FROM pedidos_b2b_recurrentes WHERE COALESCE(activo,1)=1 "
+                "AND COALESCE(proximo_at,'')!='' AND date(proximo_at) <= date(?)", (hoy,)).fetchall()
+        except Exception as _e:
+            _lg.warning("job_b2b_recurrentes select fallo: %s", _e)
+            return
+        creados = 0
+        for r in rows:
+            rid, cli_id, cli_nom, prod, cant, ml, env, frec, prox, creado_por = r
+            try:
+                c.execute(
+                    "INSERT INTO pedidos_b2b (cliente_id, cliente_nombre, producto_nombre, cantidad_uds, "
+                    "ml_unidad, envase_codigo, estado, notas, creado_por, creado_at_utc) "
+                    "VALUES (?,?,?,?,?,?, 'pendiente', ?, ?, datetime('now','utc'))",
+                    (cli_id, cli_nom, prod, cant, ml, env, 'Pedido recurrente (cada %sd)' % frec,
+                     creado_por or ('recurrente:%s' % cli_id)))
+                try:
+                    base = _dt.strptime((prox or '')[:10], '%Y-%m-%d')
+                except Exception:
+                    base = _dt.utcnow() - _td(hours=5)
+                base = base + _td(days=int(frec or 30))
+                while base.strftime('%Y-%m-%d') <= hoy:
+                    base = base + _td(days=int(frec or 30))
+                c.execute("UPDATE pedidos_b2b_recurrentes SET proximo_at=?, "
+                          "ultimo_generado_at=datetime('now','utc') WHERE id=?",
+                          (base.strftime('%Y-%m-%d'), rid))
+                creados += 1
+            except Exception as _e2:
+                _lg.warning("job_b2b_recurrentes pedido fallo recur=%s: %s", rid, _e2)
+        if creados:
+            conn.commit()
+            _lg.info("job_b2b_recurrentes · %s pedidos creados", creados)
 
 
 def job_mee_drift_sync(app):

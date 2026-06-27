@@ -472,6 +472,14 @@ button.primary:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:
       </select>
       <label>Notas (opcional)</label>
       <textarea id="sol-notas" rows="3" placeholder="Detalles, color, arte, etc."></textarea>
+      <label>🔁 Repetir este pedido (opcional)</label>
+      <select id="sol-repetir">
+        <option value="0">No repetir (pedido único)</option>
+        <option value="15">Cada 15 días</option>
+        <option value="30">Cada mes (30 días)</option>
+        <option value="60">Cada 2 meses</option>
+        <option value="90">Cada 3 meses</option>
+      </select>
       <button class="primary" id="btn-enviar" onclick="enviarPedido()">📨 Enviar solicitud</button>
       <div class="msg" id="sol-msg"></div>
     </div>
@@ -697,6 +705,7 @@ async function enviarPedido(){
         fecha_estimada: fecha,
         urgencia: urgencia,
         notas: notas,
+        repetir_cada_dias: (parseInt((document.getElementById('sol-repetir')||{}).value||'0',10)||0),
       }),
     });
     var d = await r.json();
@@ -767,12 +776,34 @@ async function cargarMisPedidos(){
         + '<span class="chip '+estChipCls+'" style="margin-top:4px;display:inline-block">'+esc(estLbl)+'</span>'
         + urgChip
         + (p.notas?'<div style="font-size:11px;color:#64748b;margin-top:6px">📝 '+esc(p.notas)+'</div>':'')
+        + (p.estado === 'pendiente' ? '<div style="margin-top:8px"><button onclick="editarPedidoPortal('+p.id+')" style="background:#fff;border:1px solid #6d28d9;color:#6d28d9;border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer;font-weight:600">✏️ Editar</button></div>' : '')
         + tlHtml
         + '</div>';
     }).join('');
   } catch(e){
     box.innerHTML = '<div class="empty">Error: '+esc(e.message)+'</div>';
   }
+}
+
+// B2B mejora 4/4 (Sebastián 26-jun) · el cliente edita su pedido mientras esté pendiente.
+async function editarPedidoPortal(pid){
+  var cant = prompt('Nueva cantidad de unidades (vacío = no cambiar):', '');
+  if (cant === null) return;
+  var fecha = prompt('Nueva fecha de entrega deseada YYYY-MM-DD (vacío = no cambiar):', '');
+  if (fecha === null) return;
+  var body = {};
+  if (cant && cant.trim()) { var n = parseInt(cant, 10); if (n > 0) body.cantidad_uds = n; }
+  if (fecha && fecha.trim()) body.fecha_estimada = fecha.trim();
+  if (!Object.keys(body).length) { return; }
+  try{
+    var r = await fetch('/api/portal/pedidos/' + pid, {
+      method: 'PATCH', headers: {'Content-Type': 'application/json'},
+      credentials: 'same-origin', body: JSON.stringify(body),
+    });
+    var d = await r.json();
+    if (!r.ok) { alert(d.error || 'No se pudo editar'); return; }
+    cargarMisPedidos();
+  } catch(e){ alert('Error al editar el pedido'); }
 }
 
 cargarSesionYProductos();
@@ -972,6 +1003,31 @@ def portal_crear_pedido():
     # en producción). Así un cliente no modifica el plan en silencio. La integración la hace /confirmar.
     integracion = {'estado': 'pendiente_confirmacion',
                    'detalle': 'Tu pedido quedó registrado y espera confirmación del equipo.'}
+    # MEJORA 3/4 (recurrentes · 26-jun) · si el cliente pidió repetir cada N días, registrar el recurrente ·
+    # un cron (job_b2b_recurrentes) crea los próximos pedidos (pendiente) cuando vencen.
+    recurrente = None
+    try:
+        _rb = request.get_json(silent=True) or {}
+        _frec = int(_rb.get('repetir_cada_dias') or 0)
+    except (TypeError, ValueError):
+        _frec = 0
+    if _frec >= 7:
+        try:
+            from datetime import datetime as _dtr, timedelta as _tdr
+            _base = (fecha or (_dtr.utcnow() - _tdr(hours=5)).strftime('%Y-%m-%d'))[:10]
+            try:
+                _prox = (_dtr.strptime(_base, '%Y-%m-%d') + _tdr(days=_frec)).strftime('%Y-%m-%d')
+            except Exception:
+                _prox = ((_dtr.utcnow() - _tdr(hours=5)) + _tdr(days=_frec)).strftime('%Y-%m-%d')
+            cur.execute(
+                "INSERT INTO pedidos_b2b_recurrentes (cliente_id, cliente_nombre, producto_nombre, "
+                "cantidad_uds, ml_unidad, envase_codigo, frecuencia_dias, proximo_at, activo, creado_por, "
+                "creado_at_utc) VALUES (?,?,?,?,?,?,?,?,1,?, datetime('now','utc'))",
+                (cid, cnom, producto, cantidad, ml, envase_codigo or '', _frec, _prox, f'portal:{email}'))
+            conn.commit()
+            recurrente = {'frecuencia_dias': _frec, 'proximo_at': _prox}
+        except Exception as _er:
+            log.warning('crear recurrente B2B fallo: %s', _er)
 
     # Notif in-app a Sebastián+Catalina (no email · CLAUDE.md memoria)
     try:
@@ -994,12 +1050,59 @@ def portal_crear_pedido():
     return jsonify({
         'ok': True, 'id': pid, 'kg_b2b': kg_b2b,
         'integracion_plan': integracion,
+        'recurrente': recurrente,
     }), 201
 
 
 # ────────────────────────────────────────────────────────────────────
 # API: mis pedidos
 # ────────────────────────────────────────────────────────────────────
+
+@bp.route('/api/portal/pedidos/<int:pid>', methods=['PATCH'])
+def portal_editar_pedido(pid):
+    """B2B mejora 4/4 (Sebastián 26-jun) · el cliente edita SU pedido mientras esté 'pendiente'
+    (cantidad/fecha/notas). Confirmado/en producción ya no se edita (solo cancelar)."""
+    auth = _require_portal_login()
+    if not auth:
+        return jsonify({'error': 'No autorizado'}), 401
+    cid, cnom, email = auth
+    body = request.get_json(silent=True) or {}
+    conn = get_db()
+    cur = conn.cursor()
+    row = cur.execute("SELECT cliente_id, estado FROM pedidos_b2b WHERE id=?", (pid,)).fetchone()
+    if not row or str(row[0]) != str(cid):
+        return jsonify({'error': 'pedido no encontrado'}), 404
+    if row[1] != 'pendiente':
+        return jsonify({'error': 'solo podés editar un pedido pendiente · ya está en proceso',
+                        'codigo': 'NO_EDITABLE'}), 409
+    fields, params = [], []
+    if 'cantidad_uds' in body:
+        try:
+            cu = int(body['cantidad_uds'])
+        except (ValueError, TypeError):
+            return jsonify({'error': 'cantidad inválida'}), 400
+        if cu <= 0 or cu > 50000:
+            return jsonify({'error': 'cantidad fuera de rango (1 a 50.000)'}), 400
+        fields.append('cantidad_uds=?')
+        params.append(cu)
+    if 'fecha_estimada' in body:
+        fields.append('fecha_estimada=?')
+        params.append((body['fecha_estimada'] or '').strip() or None)
+    if 'notas' in body:
+        fields.append('notas=?')
+        params.append((body['notas'] or '').strip()[:500])
+    if not fields:
+        return jsonify({'error': 'sin cambios'}), 400
+    params.append(pid)
+    cur.execute(f"UPDATE pedidos_b2b SET {', '.join(fields)} WHERE id=? AND estado='pendiente'", params)
+    if cur.rowcount == 0:
+        conn.rollback()
+        return jsonify({'error': 'el pedido cambió de estado · recargá', 'codigo': 'ESTADO_CAMBIO'}), 409
+    audit_log(cur, usuario=f'portal:{email}', accion='PORTAL_EDITAR_PEDIDO',
+              tabla='pedidos_b2b', registro_id=pid, despues=body)
+    conn.commit()
+    return jsonify({'ok': True, 'id': pid})
+
 
 # ────────────────────────────────────────────────────────────────────
 # ADMIN · CRUD de credenciales (sólo admin backoffice)
