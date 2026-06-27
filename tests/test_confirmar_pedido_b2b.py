@@ -68,3 +68,19 @@ def test_confirmar_con_ajuste_cantidad(app, db_clean):
     r = c.post(f'/api/pedidos-b2b/{pid}/confirmar', json={'cantidad_uds': 200}, headers=_h())
     assert r.status_code == 200, r.data
     assert _q("SELECT cantidad_uds FROM pedidos_b2b WHERE id=?", (pid,))[0][0] == 200
+
+
+def test_despachar_pedido_b2b(app, db_clean):
+    prod = 'ZZ B2B DESP'
+    _exec("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES (?,10,1)", (prod,))
+    pid = _exec("INSERT INTO pedidos_b2b (cliente_id,cliente_nombre,producto_nombre,cantidad_uds,"
+                "ml_unidad,estado,creado_por) VALUES ('C3','Tres',?,50,30,'confirmado','portal:c3@x.com')", (prod,))
+    c = _login(app)
+    r = c.post(f'/api/pedidos-b2b/{pid}/despachar',
+               json={'transportadora': 'Servientrega', 'guia': 'ABC123'}, headers=_h())
+    assert r.status_code == 200, r.data
+    row = _q("SELECT estado, despachado_at, despacho_guia, despacho_transportadora FROM pedidos_b2b WHERE id=?", (pid,))[0]
+    assert row[0] == 'despachado' and row[1] and row[2] == 'ABC123' and row[3] == 'Servientrega'
+    # re-despachar → 409 (ya no está confirmado/en_produccion)
+    r2 = c.post(f'/api/pedidos-b2b/{pid}/despachar', json={}, headers=_h())
+    assert r2.status_code == 409, r2.data

@@ -395,6 +395,12 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (291, "B2B mejora 2/4 · visibilidad de despacho (Sebastián 26-jun): el cliente ve cuándo se despachó su "
+          "pedido + guía/transportadora. Columnas en pedidos_b2b para registrar el despacho.", [
+        "ALTER TABLE pedidos_b2b ADD COLUMN despachado_at TEXT DEFAULT ''",
+        "ALTER TABLE pedidos_b2b ADD COLUMN despacho_guia TEXT DEFAULT ''",
+        "ALTER TABLE pedidos_b2b ADD COLUMN despacho_transportadora TEXT DEFAULT ''",
+    ]),
     (290, "Envasado Fase 3 (Sebastián 26-jun) · captura de UNIDADES envasadas por presentación + marca de "
           "descuento de envases. ebr_envasado_unidades guarda cuántas unidades se envasaron de cada "
           "presentación del producto (modelo producto_presentaciones · compra==descuento M55/M56); el "

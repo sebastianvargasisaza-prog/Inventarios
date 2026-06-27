@@ -1316,13 +1316,23 @@ def _construir_timeline_pedido(conn, pedido_id, pedido_creado_at, pedido_estado,
                              'estado': 'pendiente', 'fecha': None,
                              'detalle': None})
 
-    # 8) Enviado · pedidos_b2b.estado='despachado'
+    # 8) Enviado · pedidos_b2b.estado='despachado' (mejora 2/4 · 26-jun: muestra fecha + guía/transportadora)
     estado_pedido = (pedido_estado or '').lower()
     if estado_pedido == 'despachado':
+        _dat, _guia, _transp = '', '', ''
+        try:
+            _dr = conn.execute(
+                "SELECT COALESCE(despachado_at,''), COALESCE(despacho_guia,''), "
+                "COALESCE(despacho_transportadora,'') FROM pedidos_b2b WHERE id=?", (pedido_id,)).fetchone()
+            if _dr:
+                _dat, _guia, _transp = _dr[0], _dr[1], _dr[2]
+        except Exception:
+            pass
+        _extra = ' · '.join([x for x in (_transp, ('guía ' + _guia) if _guia else '') if x])
         timeline.append({
             'key': 'enviado', 'label': 'Enviado', 'icon': '🚚',
-            'estado': 'completado', 'fecha': None,
-            'detalle': 'Despachado al cliente',
+            'estado': 'completado', 'fecha': (_dat or '')[:10] or None,
+            'detalle': ('Despachado · ' + _extra) if _extra else 'Despachado al cliente',
         })
     else:
         timeline.append({

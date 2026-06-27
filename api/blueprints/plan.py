@@ -1731,6 +1731,35 @@ def confirmar_pedido_b2b(pid):
                     "integracion_plan": integracion})
 
 
+@bp.route("/api/pedidos-b2b/<int:pid>/despachar", methods=["POST"])
+def despachar_pedido_b2b(pid):
+    """B2B mejora 2/4 (Sebastián 26-jun) · marca el pedido DESPACHADO con fecha + guía/transportadora.
+    El cliente lo ve en su timeline del portal. CAS: solo desde confirmado/en_produccion (no re-despachar)."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    body = request.get_json(silent=True) or {}
+    guia = (body.get("guia") or "").strip()[:120]
+    transp = (body.get("transportadora") or "").strip()[:120]
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE pedidos_b2b SET estado='despachado', despachado_at=datetime('now','utc'), "
+        "despacho_guia=?, despacho_transportadora=? "
+        "WHERE id=? AND estado IN ('confirmado','en_produccion')",
+        (guia, transp, pid))
+    if cur.rowcount == 0:
+        conn.rollback()
+        return jsonify({"error": "solo se despacha un pedido confirmado o en producción · refrescá",
+                        "codigo": "ESTADO_NO_DESPACHABLE"}), 409
+    audit_log(cur, usuario=user, accion="DESPACHAR_PEDIDO_B2B",
+              tabla="pedidos_b2b", registro_id=pid,
+              despues={"guia": guia, "transportadora": transp})
+    conn.commit()
+    return jsonify({"ok": True, "id": pid, "estado": "despachado"})
+
+
 @bp.route("/api/pedidos-b2b/<int:pid>", methods=["DELETE"])
 def cancelar_pedido_b2b(pid):
     user, err = _require_admin_or_compras()

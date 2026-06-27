@@ -25364,6 +25364,11 @@ async function ckMarcar(itemId, estado){
       if ((p.estado || '') === 'pendiente') {
         btnConfirmar = '<button onclick="confirmarB2B('+p.id+')" style="background:#6d28d9;color:#fff;border:none;padding:3px 10px;border-radius:4px;font-size:10px;cursor:pointer;font-weight:700;margin-right:4px" title="Revisar y confirmar · recién acá entra al plan de producción">✅ Confirmar</button>';
       }
+      // DESPACHO 26-jun (mejora 2/4) · marcar despachado (fecha+guía) · el cliente lo ve en su portal
+      let btnDespachar = '';
+      if ((p.estado || '') === 'confirmado' || (p.estado || '') === 'en_produccion') {
+        btnDespachar = '<button onclick="despacharB2B('+p.id+')" style="background:#0891b2;color:#fff;border:none;padding:3px 10px;border-radius:4px;font-size:10px;cursor:pointer;font-weight:700;margin-right:4px" title="Marcar despachado (fecha + guía/transportadora) · el cliente lo ve">📦 Despachar</button>';
+      }
       const estadoBg = p.estado === 'confirmado' ? '#dcfce7' : (p.estado === 'cancelado' ? '#fee2e2' : '#e0e7ff');
       const estadoColor = p.estado === 'confirmado' ? '#15803d' : (p.estado === 'cancelado' ? '#991b1b' : '#3730a3');
       // Sebastián 25-may-2026 PM · columna urgencia visible
@@ -25379,7 +25384,7 @@ async function ckMarcar(itemId, estado){
         + '<td style="padding:6px 10px;text-align:center">' + (p.fecha_estimada || '—') + '</td>'
         + '<td style="padding:6px 10px;text-align:center"><span style="background:'+estadoBg+';color:'+estadoColor+';padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">' + p.estado + '</span></td>'
         + '<td style="padding:6px 10px;text-align:center">' + loteHtml + '</td>'
-        + '<td style="padding:6px 10px;text-align:right">' + btnConfirmar + btnAsignar + '<button onclick="cancelarB2B(' + p.id + ')" style="background:transparent;border:1px solid #cbd5e1;color:#64748b;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer">Cancelar</button></td>'
+        + '<td style="padding:6px 10px;text-align:right">' + btnConfirmar + btnDespachar + btnAsignar + '<button onclick="cancelarB2B(' + p.id + ')" style="background:transparent;border:1px solid #cbd5e1;color:#64748b;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer">Cancelar</button></td>'
         + '</tr>';
     });
     html += '</tbody></table></div></details>';
@@ -25495,6 +25500,24 @@ async function ckMarcar(itemId, estado){
       alert('\\u2713 Pedido confirmado \\u00b7 entr\\u00f3 al plan (' + (d.kg_b2b || 0) + ' kg).');
       cargarNecesidades();
     } catch (e) { alert('Error confirmando el pedido'); }
+  };
+
+  // DESPACHO 26-jun (mejora 2/4) · marca el pedido despachado con guía/transportadora · el cliente lo ve.
+  window.despacharB2B = async function(pid) {
+    var transp = prompt('Transportadora (opcional):', '');
+    if (transp === null) return;
+    var guia = prompt('N\\u00b0 de gu\\u00eda / tracking (opcional):', '') || '';
+    try {
+      const r = await fetch('/api/pedidos-b2b/' + pid + '/despachar', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfTokenNec()},
+        body: JSON.stringify({transportadora: transp, guia: guia}),
+      });
+      const d = await r.json();
+      if (!r.ok) { alert(d.error || 'No se pudo despachar'); return; }
+      alert('\\u2713 Pedido marcado DESPACHADO \\u00b7 el cliente lo ve en su portal.');
+      cargarNecesidades();
+    } catch (e) { alert('Error al despachar'); }
   };
 
   // Asigna un pedido B2B a un lote Animus DTC existente
