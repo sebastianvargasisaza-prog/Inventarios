@@ -395,6 +395,17 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (296, "Necesidades · consolidar BLUSH BALM = BLUSH BÁLSAMO (Sebastián 27-jun · canónico = 'BLUSH BALM') · "
+          "los tonos BB* estaban partidos entre 2 nombres → la demanda se dividía en dos. Re-apuntar los SKU "
+          "mapeados a 'BLUSH BÁLSAMO' al nombre EXACTO de la fórmula 'BLUSH BALM'. Guarded · no-op si no existe.", [
+        "UPDATE sku_producto_map SET producto_nombre = ("
+        " SELECT producto_nombre FROM formula_headers WHERE COALESCE(activo,1)=1"
+        " AND UPPER(TRIM(producto_nombre))='BLUSH BALM' LIMIT 1)"
+        " WHERE UPPER(TRIM(producto_nombre)) LIKE '%BLUSH%'"
+        " AND (UPPER(TRIM(producto_nombre)) LIKE '%BALSAMO%' OR UPPER(TRIM(producto_nombre)) LIKE '%BÁLSAMO%')"
+        " AND EXISTS (SELECT 1 FROM formula_headers WHERE COALESCE(activo,1)=1"
+        " AND UPPER(TRIM(producto_nombre))='BLUSH BALM')",
+    ]),
     (295, "Necesidades · arreglar 2 zombis + 1 huérfano del diagnóstico Shopify (Sebastián 27-jun): (a) tonos "
           "del gloss GLOSSMALVA/GLOSSMERLOT estaban mapeados a su propio nombre sin fórmula → re-apuntar al "
           "MISMO producto que GLOSSPEACH (serum de labios, que SÍ cruza); (b) HYDBALANCE (Hidrabalance) estaba "

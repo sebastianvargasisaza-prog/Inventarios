@@ -111,3 +111,18 @@ def test_mig295_gloss_y_hidrabalance(app, db_clean):
         'SERUM VOLUMINIZADOR DE LABIOS PEPTIDOS', 'gloss no re-apuntó'
     assert 'balance' in (_q1("SELECT producto_nombre FROM sku_producto_map WHERE sku='HYDBALANCE'")[0] or '').lower(), \
         'Hidrabalance no se mapeó'
+
+
+def test_mig296_blush_consolida(app, db_clean):
+    _exec("INSERT OR IGNORE INTO formula_headers (producto_nombre, lote_size_kg, activo) VALUES ('BLUSH BALM',1,1)")
+    _exec("INSERT INTO sku_producto_map (sku, producto_nombre, activo) VALUES ('BBTEST401','BLUSH BÁLSAMO',1)")
+    _u = ("UPDATE sku_producto_map SET producto_nombre = ("
+          " SELECT producto_nombre FROM formula_headers WHERE COALESCE(activo,1)=1"
+          " AND UPPER(TRIM(producto_nombre))='BLUSH BALM' LIMIT 1)"
+          " WHERE UPPER(TRIM(producto_nombre)) LIKE '%BLUSH%'"
+          " AND (UPPER(TRIM(producto_nombre)) LIKE '%BALSAMO%' OR UPPER(TRIM(producto_nombre)) LIKE '%BÁLSAMO%')"
+          " AND EXISTS (SELECT 1 FROM formula_headers WHERE COALESCE(activo,1)=1"
+          " AND UPPER(TRIM(producto_nombre))='BLUSH BALM')")
+    _exec(_u)
+    assert _q1("SELECT producto_nombre FROM sku_producto_map WHERE sku='BBTEST401'")[0] == 'BLUSH BALM', \
+        'no consolidó a BLUSH BALM'

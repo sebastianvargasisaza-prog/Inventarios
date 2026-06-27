@@ -24901,6 +24901,24 @@ async function ckMarcar(itemId, estado){
       + '</div>';
   }
 
+  // 🎨 Desglose por referencia/tono (multi-SKU · 27-jun) · reusa /api/plan/desglose-tonos · muestra cómo se
+  // reparte la demanda entre los SKU del producto (tonos/tamaños) según el mix de ventas reciente.
+  async function verDesgloseTonos(producto){
+    function _e(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+    try{
+      var d = await (await fetch('/api/plan/desglose-tonos?producto=' + encodeURIComponent(producto), {cache:'no-store'})).json();
+      var items = d.items || [];
+      var rows = items.map(function(it){
+        return '<tr style="border-top:1px solid #f1f5f9"><td style="padding:5px 8px;font-family:ui-monospace;font-weight:700">'+_e(it.sku||'')+'</td><td style="padding:5px 8px">'+_e(it.tono_label||it.tono||'')+'</td><td style="padding:5px 8px;text-align:right">'+(it.ml_unidad||'—')+'</td><td style="padding:5px 8px;text-align:right;font-weight:700">'+(it.uds_ventana||0)+'</td><td style="padding:5px 8px;text-align:right;color:#6d28d9;font-weight:700">'+(it.porcentaje!=null?it.porcentaje+'%':'—')+'</td></tr>';
+      }).join('');
+      var ov = document.createElement('div'); ov.id='desglose-tonos-ov';
+      ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px';
+      ov.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:640px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.3)"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><h3 style="margin:0;color:#5b21b6">🎨 '+_e(d.producto||producto)+' · referencias / tonos</h3><button class="dt-close" style="background:#94a3b8;color:#fff;border:none;border-radius:6px;padding:5px 10px;cursor:pointer">✕</button></div>'+(items.length?('<div style="font-size:11px;color:#64748b;margin-bottom:8px">Mismo bulk · se reparte entre las referencias según el mix de ventas (últimos 60d).</div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f8fafc;color:#475569"><th style="padding:5px 8px;text-align:left">SKU</th><th style="padding:5px 8px;text-align:left">Tono</th><th style="padding:5px 8px;text-align:right">ml</th><th style="padding:5px 8px;text-align:right">uds 60d</th><th style="padding:5px 8px;text-align:right">% mix</th></tr></thead><tbody>'+rows+'</tbody></table>'):'<div style="color:#94a3b8;padding:20px;text-align:center">'+_e(d.mensaje||'Sin referencias mapeadas a este producto.')+'</div>')+'</div>';
+      ov.addEventListener('click', function(e){ if(e.target===ov || (e.target.classList && e.target.classList.contains('dt-close'))) ov.remove(); });
+      document.body.appendChild(ov);
+    }catch(e){ alert('Error: '+e.message); }
+  }
+
   // Índices de productos que requieren acción (crítico/urgente) en orden de la lista ·
   // para navegar con "Siguiente crítico" sin salir del modal.
   function _navCriticos() {
@@ -25052,6 +25070,8 @@ async function ckMarcar(itemId, estado){
       html += '<div style="font-size:11px;color:#2563eb;margin-top:6px;padding-top:6px;border-top:1px dashed #cbd5e1">📦 Con producción en camino (lotes en curso/programados): alcanza ~<strong>' + p.dias_cobertura + ' días</strong></div>';
     }
     html += '</div>';
+    // 🎨 Desglose por referencia/tono (multi-SKU · 27-jun) · siempre disponible (abre el mix de ventas por SKU).
+    html += '<button onclick="verDesgloseTonos(' + JSON.stringify((p.producto_nombre||p.producto||'')).replace(/"/g,'&quot;') + ')" style="background:#fff;border:1px solid #c4b5fd;color:#6d28d9;border-radius:6px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;margin-bottom:10px">🎨 Ver referencias / tonos</button>';
     // 🎯 ACCIÓN SUGERIDA unificada (adelantar / atrasar / programar / ok) · reemplaza
     // la alerta roja suelta + la caja "programar". Regla: producir 20d antes de agotarse.
     html += _accionSugeridaHtml(p, idx);
