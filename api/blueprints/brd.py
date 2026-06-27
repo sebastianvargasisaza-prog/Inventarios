@@ -3493,6 +3493,30 @@ def liberar_ebr(ebr_id):
     # Audit 3-jun · GATE DE COMPLETITUD del legajo · solo EBR_MODE='strict' (BPM
     # duro). En 'warn' (piloto) NO bloquea, para no frenar mientras se adopta.
     if _ebr_mode_now(cur) == 'strict':
+        # #5/#6 (27-jun · auditoría de planta · solo FABRICACIÓN del granel) · cerrar 2 huecos del gate.
+        _fase_lib = str((cur.execute("SELECT COALESCE(fase,'fabricacion') FROM ebr_ejecuciones WHERE id=?",
+                                     (ebr_id,)).fetchone() or ['fabricacion'])[0]).strip().lower()
+        if _fase_lib == 'fabricacion':
+            # #5 · sin registro de pesaje/dispensado de MP no se libera (antes un EBR con CERO pesajes pasaba:
+            # el gate de 2ª firma de abajo cuenta 0 sin-verificar → ok). Un lote sin dispensado es inadmisible.
+            try:
+                _n_pes = cur.execute("SELECT COUNT(*) FROM ebr_pesajes WHERE ebr_id=?", (ebr_id,)).fetchone()[0]
+            except Exception:
+                _n_pes = 0
+            if _n_pes == 0:
+                return jsonify({"error": "No se puede liberar: no hay registro de pesaje/dispensado de "
+                                "materias primas del lote.", "codigo": "SIN_PESAJES"}), 409
+            # #6 · rendimiento (yield) fuera de rango razonable (80-115%) exige justificación (GMP · un yield
+            # anómalo —pérdida de batch o error de tara— no puede liberarse en silencio · queda en el audit).
+            try:
+                _yp = (cur.execute("SELECT yield_pct FROM ebr_ejecuciones WHERE id=?",
+                                   (ebr_id,)).fetchone() or [None])[0]
+            except Exception:
+                _yp = None
+            if _yp is not None and (_yp < 80 or _yp > 115) and not (body.get('yield_justificacion') or '').strip():
+                return jsonify({"error": f"Rendimiento fuera de rango ({_yp}%) · GMP exige justificar un yield "
+                                f"anómalo (<80% o >115%) antes de liberar.",
+                                "codigo": "YIELD_FUERA_RANGO", "yield_pct": _yp}), 409
         try:
             _pes_sin_verif = cur.execute(
                 "SELECT COUNT(*) FROM ebr_pesajes "
@@ -3615,7 +3639,8 @@ def liberar_ebr(ebr_id):
     audit_log(None, usuario=user, accion="LIBERAR_EBR",
               tabla="ebr_ejecuciones", registro_id=ebr_id,
               despues={"liberado_por": user, "signature_id": signature_id,
-                       "pt_lotes_promovidos": pt_lote_promovidos})
+                       "pt_lotes_promovidos": pt_lote_promovidos,
+                       "yield_justificacion": (body.get('yield_justificacion') or '').strip() or None})
     # ENVASADO Fase 2 (26-jun · Sebastián) · al LIBERAR el granel de FABRICACIÓN (QC aprobó → PT VIGENTE)
     # se HABILITA automático el legajo de Envasado del MISMO lote físico (idempotente vía crear_ebr_desde_mbr
     # · best-effort · NO bloquea la liberación si falla). SOLO fase='fabricacion' (no encadenar al liberar un

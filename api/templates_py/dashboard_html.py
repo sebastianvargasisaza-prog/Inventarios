@@ -7680,7 +7680,8 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   h+='<div style="font-weight:800;color:#1e293b;font-size:17px;margin-top:4px">'+(d.numero_op||('EBR #'+d.id))+'</div>';
   if(d.producto_nombre){ h+='<div style="font-weight:600;color:#334155;font-size:13px;margin-top:1px">'+_escHTML(d.producto_nombre)+'</div>'; }
   h+='</div>';
-  h+='<div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end"><a href="/api/brd/ebr/'+d.id+'/pdf" target="_blank" style="background:#dc2626;color:#fff;border-radius:5px;padding:5px 12px;font-size:11px;text-decoration:none;font-weight:700">📄 Descargar</a><button onclick="ebrCerrarRunner()" style="background:#94a3b8;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;">Cerrar ✕</button></div></div>';
+  var _loteDoss=encodeURIComponent(d.lote_codigo||d.lote||'');
+  h+='<div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end"><a href="/api/brd/ebr/'+d.id+'/pdf" target="_blank" style="background:#dc2626;color:#fff;border-radius:5px;padding:5px 12px;font-size:11px;text-decoration:none;font-weight:700">📄 Descargar</a><a href="/api/planta/dossier-lote/'+_loteDoss+'" target="_blank" title="Expediente completo del lote: producción + envasado + micro + MP consumidas" style="background:#6d28d9;color:#fff;border-radius:5px;padding:5px 12px;font-size:11px;text-decoration:none;font-weight:700">📦 Dossier lote</a><button onclick="ebrCerrarRunner()" style="background:#94a3b8;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;">Cerrar ✕</button></div></div>';
   // Grilla de datos de la orden (como MyBatch)
   h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:11px 18px;background:#fafafa;border:1px solid #f1f5f9;border-radius:10px;padding:13px 15px;margin-bottom:10px">';
   h+=_kv('N° de Lote Bulk', _escHTML(d.lote||'')+loteBtn);
