@@ -133,3 +133,18 @@ def test_catalogo_nombre_generico(app, db_clean):
     d = pc.get('/api/portal/productos').get_json()
     item = next((p for p in d['productos'] if p['nombre'] == prod), None)
     assert item and item['mostrar'] == 'Niacinamida', item
+
+
+def test_portal_pedido_sin_ml_deriva(app, db_clean):
+    _exec("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES ('ZZ SIN ML',10,1)")
+    c = app.test_client()
+    with c.session_transaction() as sess:
+        sess['portal_cliente_id'] = 'PM1'
+        sess['portal_cliente_nombre'] = 'X'
+        sess['portal_email'] = 'pm1@x.com'
+        sess['portal_activo_check_ts'] = 9999999999
+    # el cliente NO manda ml (ahora oculto · pide 500 frascos y ya)
+    r = c.post('/api/portal/pedidos', json={'producto_nombre': 'ZZ SIN ML', 'cantidad_uds': 500, 'ml_unidad': 0}, headers=csrf_headers())
+    assert r.status_code == 201, r.data
+    ml = _q("SELECT ml_unidad FROM pedidos_b2b WHERE cliente_id='PM1'")[0][0]
+    assert ml == 30, ('sin presentación → fallback 30', ml)  # con producto_presentaciones derivaría el volumen real

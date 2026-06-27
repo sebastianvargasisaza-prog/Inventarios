@@ -451,16 +451,9 @@ button.primary:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:
       <select id="sol-producto">
         <option value="">— Cargando productos —</option>
       </select>
-      <div class="row">
-        <div>
-          <label>Cantidad (unidades)</label>
-          <input id="sol-cant" type="number" min="1" step="1" placeholder="Ej. 100">
-        </div>
-        <div>
-          <label>ml por unidad</label>
-          <input id="sol-ml" type="number" min="1" step="1" value="30">
-        </div>
-      </div>
+      <label>Cantidad (unidades)</label>
+      <input id="sol-cant" type="number" min="1" step="1" placeholder="Ej. 500 frascos">
+      <input type="hidden" id="sol-ml" value="0">
       <label>Fecha estimada de entrega</label>
       <input id="sol-fecha" type="date">
       <div id="sol-fecha-aviso" style="display:none;margin-top:6px;padding:8px 10px;background:#fef3c7;border-left:3px solid #f59e0b;border-radius:4px;font-size:12px;color:#92400e"></div>
@@ -887,7 +880,7 @@ def portal_crear_pedido():
     except (TypeError, ValueError):
         return jsonify({'error': 'cantidad_uds inválida'}), 400
     try:
-        ml = float(body.get('ml_unidad') or 30)
+        ml = float(body.get('ml_unidad') or 0)
     except (TypeError, ValueError):
         return jsonify({'error': 'ml_unidad inválida'}), 400
     fecha = (body.get('fecha_estimada') or '').strip() or None
@@ -907,8 +900,6 @@ def portal_crear_pedido():
         return jsonify({'error': 'producto_nombre requerido'}), 400
     if cantidad <= 0:
         return jsonify({'error': 'cantidad_uds debe ser > 0'}), 400
-    if ml <= 0:
-        return jsonify({'error': 'ml_unidad debe ser > 0'}), 400
     # SEC-FIX · 22-may-2026 · límites superiores (Bug #7 audit Portal)
     # · Antes: cantidad=2e9 + ml=1e6 → kg_b2b=2e15 polluía plan canonical
     # · Ahora: límites razonables · cliente debe contactar comercial para >50k uds
@@ -929,6 +920,19 @@ def portal_crear_pedido():
     ).fetchone()
     if not prod_row:
         return jsonify({'error': f"producto '{producto}' no disponible"}), 404
+    # ml POR UNIDAD ya no lo pide el cliente (Sebastián 26-jun · "ellos piden 500 frascos y ya") · se deriva
+    # del producto: presentación default de producto_presentaciones · fallback 30 ml.
+    if ml <= 0:
+        try:
+            _pr = cur.execute(
+                "SELECT COALESCE(volumen_ml,0) FROM producto_presentaciones "
+                "WHERE producto_nombre=? AND COALESCE(activo,1)=1 "
+                "ORDER BY es_default DESC, volumen_ml LIMIT 1", (producto,)).fetchone()
+            ml = float(_pr[0]) if (_pr and _pr[0]) else 30.0
+        except Exception:
+            ml = 30.0
+        if ml <= 0:
+            ml = 30.0
 
     # Validar envase si fue solicitado.
     if envase_codigo:
