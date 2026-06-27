@@ -71,3 +71,20 @@ def test_job_alerta_skus_sin_mapear(app, db_clean):
     n = _q1("SELECT COUNT(*) FROM notificaciones_app WHERE destinatario='sebastian' "
             "AND tipo='shopify_sku_sin_mapear'")[0]
     assert n >= 1, 'no se creó el aviso de SKU sin mapear'
+
+
+def test_mig294_limpiador_iluminador_remapea(app, db_clean):
+    # SKU mapeado al nombre VIEJO (kójico) + la fórmula con el nombre NUEVO (iluminador)
+    _exec("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo) VALUES ('Limpiador Iluminador',1,1)")
+    _exec("INSERT INTO sku_producto_map (sku, producto_nombre, activo) "
+          "VALUES ('LIMPILU-30','Limpiador Ácido Kójico',1)")
+    _upd = ("UPDATE sku_producto_map SET producto_nombre = ("
+            " SELECT producto_nombre FROM formula_headers WHERE COALESCE(activo,1)=1"
+            " AND LOWER(producto_nombre) LIKE '%iluminador%' AND LOWER(producto_nombre) LIKE '%limpiador%'"
+            " ORDER BY id LIMIT 1)"
+            " WHERE (LOWER(producto_nombre) LIKE '%kojico%' OR LOWER(producto_nombre) LIKE '%kójico%')"
+            " AND EXISTS (SELECT 1 FROM formula_headers WHERE COALESCE(activo,1)=1"
+            " AND LOWER(producto_nombre) LIKE '%iluminador%' AND LOWER(producto_nombre) LIKE '%limpiador%')")
+    _exec(_upd)
+    n = _q1("SELECT producto_nombre FROM sku_producto_map WHERE sku='LIMPILU-30'")[0]
+    assert 'luminador' in (n or '').lower(), ('el SKU no se re-apuntó a Iluminador', n)

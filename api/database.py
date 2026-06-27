@@ -395,6 +395,18 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (294, "Necesidades · re-apuntar el mapeo de SKU del 'Limpiador Iluminador' (renombrado desde 'Limpiador "
+          "Ácido Kójico') al nombre EXACTO de su fórmula activa, para que CRUCE en Necesidades (antes salía "
+          "'sin match'; M13 cruza acentos pero NO nombres distintos · rename). Guarded: solo si la fórmula "
+          "existe · no-op si no matchea (sin daño).", [
+        "UPDATE sku_producto_map SET producto_nombre = ("
+        " SELECT producto_nombre FROM formula_headers WHERE COALESCE(activo,1)=1"
+        " AND LOWER(producto_nombre) LIKE '%iluminador%' AND LOWER(producto_nombre) LIKE '%limpiador%'"
+        " ORDER BY id LIMIT 1)"
+        " WHERE (LOWER(producto_nombre) LIKE '%kojico%' OR LOWER(producto_nombre) LIKE '%kójico%')"
+        " AND EXISTS (SELECT 1 FROM formula_headers WHERE COALESCE(activo,1)=1"
+        " AND LOWER(producto_nombre) LIKE '%iluminador%' AND LOWER(producto_nombre) LIKE '%limpiador%')",
+    ]),
     (293, "B2B catálogo · nombre genérico (Sebastián 26-jun): el portal del cliente muestra nombres "
           "GENÉRICOS (niacinamida, limpiador BHA...) en vez de los comerciales de Ánimus, mientras se "
           "cargan los productos propios de los clientes. Columna nombre_generico en formula_headers.", [
