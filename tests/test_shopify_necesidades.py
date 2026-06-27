@@ -88,3 +88,26 @@ def test_mig294_limpiador_iluminador_remapea(app, db_clean):
     _exec(_upd)
     n = _q1("SELECT producto_nombre FROM sku_producto_map WHERE sku='LIMPILU-30'")[0]
     assert 'luminador' in (n or '').lower(), ('el SKU no se re-apuntó a Iluminador', n)
+
+
+def test_mig295_gloss_y_hidrabalance(app, db_clean):
+    _exec("INSERT INTO sku_producto_map (sku, producto_nombre, activo) "
+          "VALUES ('GLOSSPEACH','SERUM VOLUMINIZADOR DE LABIOS PEPTIDOS',1)")
+    _exec("INSERT INTO sku_producto_map (sku, producto_nombre, activo) VALUES ('GLOSSMALVA','Brillo Malva',1)")
+    _exec("INSERT OR IGNORE INTO formula_headers (producto_nombre, lote_size_kg, activo) VALUES ('HYDRA BALANCE',1,1)")
+    _g = ("UPDATE sku_producto_map SET producto_nombre = ("
+          " SELECT producto_nombre FROM sku_producto_map WHERE UPPER(TRIM(sku))='GLOSSPEACH' LIMIT 1)"
+          " WHERE UPPER(TRIM(sku)) IN ('GLOSSMALVA','GLOSSMERLOT')"
+          " AND EXISTS (SELECT 1 FROM sku_producto_map WHERE UPPER(TRIM(sku))='GLOSSPEACH')")
+    _h = ("INSERT INTO sku_producto_map (sku, producto_nombre, activo)"
+          " SELECT 'HYDBALANCE', producto_nombre, 1 FROM formula_headers"
+          " WHERE COALESCE(activo,1)=1 AND LOWER(producto_nombre) LIKE '%balance%'"
+          " AND (LOWER(producto_nombre) LIKE '%hydra%' OR LOWER(producto_nombre) LIKE '%hidra%')"
+          " AND NOT EXISTS (SELECT 1 FROM sku_producto_map WHERE UPPER(TRIM(sku))='HYDBALANCE')"
+          " ORDER BY id LIMIT 1")
+    _exec(_g)
+    _exec(_h)
+    assert _q1("SELECT producto_nombre FROM sku_producto_map WHERE sku='GLOSSMALVA'")[0] == \
+        'SERUM VOLUMINIZADOR DE LABIOS PEPTIDOS', 'gloss no re-apuntó'
+    assert 'balance' in (_q1("SELECT producto_nombre FROM sku_producto_map WHERE sku='HYDBALANCE'")[0] or '').lower(), \
+        'Hidrabalance no se mapeó'

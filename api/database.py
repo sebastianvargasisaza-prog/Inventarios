@@ -395,6 +395,21 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (295, "Necesidades · arreglar 2 zombis + 1 huérfano del diagnóstico Shopify (Sebastián 27-jun): (a) tonos "
+          "del gloss GLOSSMALVA/GLOSSMERLOT estaban mapeados a su propio nombre sin fórmula → re-apuntar al "
+          "MISMO producto que GLOSSPEACH (serum de labios, que SÍ cruza); (b) HYDBALANCE (Hidrabalance) estaba "
+          "HUÉRFANO (sin mapear) → mapear a la fórmula HYDRA/HIDRA BALANCE. Guarded · no-op si no existe.", [
+        "UPDATE sku_producto_map SET producto_nombre = ("
+        " SELECT producto_nombre FROM sku_producto_map WHERE UPPER(TRIM(sku))='GLOSSPEACH' LIMIT 1)"
+        " WHERE UPPER(TRIM(sku)) IN ('GLOSSMALVA','GLOSSMERLOT')"
+        " AND EXISTS (SELECT 1 FROM sku_producto_map WHERE UPPER(TRIM(sku))='GLOSSPEACH')",
+        "INSERT INTO sku_producto_map (sku, producto_nombre, activo)"
+        " SELECT 'HYDBALANCE', producto_nombre, 1 FROM formula_headers"
+        " WHERE COALESCE(activo,1)=1 AND LOWER(producto_nombre) LIKE '%balance%'"
+        " AND (LOWER(producto_nombre) LIKE '%hydra%' OR LOWER(producto_nombre) LIKE '%hidra%')"
+        " AND NOT EXISTS (SELECT 1 FROM sku_producto_map WHERE UPPER(TRIM(sku))='HYDBALANCE')"
+        " ORDER BY id LIMIT 1",
+    ]),
     (294, "Necesidades · re-apuntar el mapeo de SKU del 'Limpiador Iluminador' (renombrado desde 'Limpiador "
           "Ácido Kójico') al nombre EXACTO de su fórmula activa, para que CRUCE en Necesidades (antes salía "
           "'sin match'; M13 cruza acentos pero NO nombres distintos · rename). Guarded: solo si la fórmula "
