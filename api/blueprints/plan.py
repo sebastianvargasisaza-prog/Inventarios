@@ -12775,6 +12775,15 @@ def plan_dejar_solo_real():
             "ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor, "
             "actualizado_at_utc=excluded.actualizado_at_utc, actualizado_por=excluded.actualizado_por",
             ('Pausa manual del auto-plan · self-heal respeta', user))
+        # #A (27-jun · Alejandro: "el calendario se sigue llenando solo") · apagar TAMBIÉN la proyección a
+        # 2 años · si no, el cron job_proyeccion_2anios re-agrega eos_proyeccion al día siguiente y el
+        # calendario se re-llena pese a pausar el auto_plan (eran DOS generadores, solo se apagaba uno).
+        cur.execute(
+            "INSERT INTO app_settings (clave,valor,descripcion,actualizado_at_utc,actualizado_por) "
+            "VALUES ('proyeccion_auto','0',?,datetime('now'),?) "
+            "ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor, "
+            "actualizado_at_utc=excluded.actualizado_at_utc, actualizado_por=excluded.actualizado_por",
+            ('Proyección 2 años apagada por Dejar-solo-real · no re-llenar', user))
         cron_pausado = True
     except Exception as _e:
         __import__('logging').getLogger('plan').warning('dejar-solo-real pausar cron: %s', _e)

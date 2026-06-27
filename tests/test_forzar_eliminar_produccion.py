@@ -46,3 +46,14 @@ def test_forzar_eliminar_produccion_descontada(app, db_clean):
     row = _q1("SELECT estado, COALESCE(inventario_descontado_at,''), COALESCE(inicio_real_at,'') "
               "FROM produccion_programada WHERE id=?", (pid,))
     assert row[0] == "cancelado" and row[1] == "" and row[2] == "", row
+
+
+def test_dejar_solo_real_apaga_ambos_generadores(app, db_clean):
+    """#A · Dejar-solo-real apaga AUTO_PLAN y la PROYECCIÓN 2 años (antes solo el primero → el calendario
+    se re-llenaba con la proyección)."""
+    c = _login(app, "sebastian")
+    _exec("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('proyeccion_auto','1')")
+    r = c.post("/api/plan/dejar-solo-real", json={"dry_run": False}, headers=_h())
+    assert r.status_code == 200, r.data
+    assert _q1("SELECT valor FROM app_settings WHERE clave='proyeccion_auto'")[0] == '0', 'proyección no se apagó'
+    assert _q1("SELECT valor FROM app_settings WHERE clave='auto_plan_pausa_manual'")[0] == '1', 'auto_plan no pausó'
