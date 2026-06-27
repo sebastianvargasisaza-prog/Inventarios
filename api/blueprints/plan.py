@@ -12532,7 +12532,8 @@ def plan_set_volumen():
     vol_val = vol if vol > 0 else None
     conn = get_db(); c = conn.cursor()
     if sku:
-        c.execute("UPDATE sku_producto_map SET volumen_ml=? WHERE sku=?", (vol_val, sku))
+        # case-insensitive (27-jun) · el SKU del diagnóstico viene en MAYÚS; el de la tabla puede tener otro case
+        c.execute("UPDATE sku_producto_map SET volumen_ml=? WHERE UPPER(TRIM(sku))=UPPER(TRIM(?))", (vol_val, sku))
         if c.rowcount == 0:
             return jsonify({'ok': False, 'error': 'SKU no encontrado en el mapa'}), 404
         try:

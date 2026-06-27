@@ -22598,9 +22598,13 @@ async function ckMarcar(itemId, estado){
       det.forEach(function(it, idx){
         var badge, bg = '#fff';
         if(it.estado === 'MAPEADO'){ badge = '<span style="background:#dcfce7;color:#15803d;padding:1px 7px;border-radius:4px;font-weight:700">MAPEADO</span>'; }
+        else if(it.estado === 'MAPEADO_SIN_FORMULA'){ badge = '<span title="Mapeado a un nombre que NO cruza a ninguna fórmula · la venta se pierde" style="background:#ede9fe;color:#6d28d9;padding:1px 7px;border-radius:4px;font-weight:700">SIN FÓRMULA</span>'; bg = '#faf5ff'; }
         else if(it.estado === 'REGALO'){ badge = '<span style="background:#f1f5f9;color:#64748b;padding:1px 7px;border-radius:4px;font-weight:700">REGALO</span>'; }
         else { badge = '<span style="background:#fee2e2;color:#b91c1c;padding:1px 7px;border-radius:4px;font-weight:700">HUÉRFANO</span>'; bg = '#fff7ed'; }
-        var mlTxt = it.ml_faltante ? '<span style="color:#b45309;font-weight:700" title="Producto mapeado pero sin volumen_ml · no se puede convertir uds→kg">⚠ falta</span>' : (it.ml ? it.ml : '—');
+        var _mlEd = (it.estado === 'MAPEADO' || it.estado === 'MAPEADO_SIN_FORMULA');
+        var mlTxt = _mlEd
+          ? '<input id="mlx-' + idx + '" type="number" min="0" step="1" value="' + (it.ml || '') + '" placeholder="ml" style="width:50px;padding:2px 4px;border:1px solid ' + (it.ml_faltante ? '#f59e0b' : '#cbd5e1') + ';border-radius:4px;font-size:11px;text-align:right"><button onclick="setMlSku(' + idx + ')" title="Guardar el ml (volumen) de este SKU" style="margin-left:3px;background:#0f766e;color:#fff;border:none;border-radius:4px;padding:2px 6px;font-size:11px;cursor:pointer">&#10003;</button>'
+          : (it.ml_faltante ? '<span style="color:#b45309;font-weight:700">&#9888; falta</span>' : (it.ml ? it.ml : '&mdash;'));
         var sattr = ((it.sku||'') + ' ' + (it.producto||'') + ' ' + (it.tono||'')).toLowerCase();
         html += '<tr data-s="' + esc(sattr) + '" style="border-top:1px solid #f1f5f9;background:' + bg + '">';
         html += '<td style="padding:6px 8px;font-family:ui-monospace;font-weight:700">' + esc(it.sku||'') + '</td>';
@@ -22636,6 +22640,24 @@ async function ckMarcar(itemId, estado){
       var s = rows[i].getAttribute('data-s') || '';
       rows[i].style.display = (!q || s.indexOf(q) >= 0) ? '' : 'none';
     }
+  }
+  // Fija el ml (volumen) de un SKU MAPEADO desde el diagnóstico · reusa /api/plan/set-volumen (multi-tamaño).
+  async function setMlSku(idx){
+    var det = (window._SHOPIFY_DIAG || {}).por_sku || [];
+    var it = det[idx]; if(!it) return;
+    var inp = document.getElementById('mlx-' + idx);
+    var v = parseFloat((inp || {}).value || '0');
+    if(!(v > 0)){ alert('Poné un ml válido (> 0).'); return; }
+    var t = ''; try{ t = (await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json()).csrf_token || ''; }catch(e){}
+    try{
+      var r = await fetch('/api/plan/set-volumen', {method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json','X-CSRF-Token':t}, body: JSON.stringify({sku: it.sku, volumen_ml: v})});
+      var d = await r.json();
+      if(!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+      it.ml = v; it.ml_faltante = false;
+      if(inp){ inp.style.borderColor = '#16a34a'; }
+      if(typeof _toast === 'function') _toast('✓ ' + it.sku + ' = ' + v + ' ml', 1);
+    }catch(e){ alert('Error de red: ' + e.message); }
   }
   // Mapea un SKU huérfano a un producto (o lo marca regalo) desde el modal.
   async function mapearHuerfano(idx){
