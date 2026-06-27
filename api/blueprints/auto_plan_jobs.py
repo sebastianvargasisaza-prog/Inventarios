@@ -683,6 +683,7 @@ JOBS_SCHEDULE = [
     ('sync_shopify',          6,  0, None, None,                'job_sync_shopify'),
     ('auto_asignar_areas',    6, 30, None, None,                'job_auto_asignar_areas'),
     ('b2b_recurrentes',       6, 20, None, None,                'job_b2b_recurrentes'),
+    ('alerta_skus_sin_mapear', 6, 45, None, None,               'job_alerta_skus_sin_mapear'),
     ('auto_d20',              8,  0, None, None,                'job_auto_d20'),
     ('self_heal',             7,  5, None, None,                'job_self_heal'),  # 5 min después del lunes_7am
     ('cleanup_logs',          2,  0, None, None,                'job_cleanup_logs'),
@@ -4009,6 +4010,74 @@ def job_mailbox_factura_proveedor(app):
             except Exception:
                 pass
             return False, {'error': str(e)[:200]}, 0
+
+
+def job_alerta_skus_sin_mapear(app):
+    """Aviso por campana (27-jun · Sebastián) de SKUs de Shopify que VENDEN pero NO llegan a Necesidades:
+    HUÉRFANOS (sin fila en sku_producto_map) o ZOMBIS (mapeados a un nombre que no cruza a ninguna fórmula).
+    Sirve para no perder productos NUEVOS (ej. Hidrabalance: Shopify 'Hidra...' vs fórmula 'HYDRA...')."""
+    import logging as _lg
+    with app.app_context():
+        from database import get_db as _gdb
+        conn = _gdb()
+        c = conn.cursor()
+        try:
+            from blueprints.auto_plan import _ventas_sku_map_orders
+            from blueprints.programacion import _norm_prod_fuerte as _npf
+        except Exception as _e:
+            _lg.warning("job_alerta_skus_sin_mapear import fallo: %s", _e)
+            return
+        try:
+            ventas = _ventas_sku_map_orders(c, dias_max=90) or {}
+        except Exception as _e:
+            _lg.warning("job_alerta_skus_sin_mapear ventas fallo: %s", _e)
+            return
+        sku_map = {}
+        try:
+            for r in c.execute("SELECT UPPER(TRIM(sku)), producto_nombre FROM sku_producto_map "
+                               "WHERE COALESCE(activo,1)=1 AND COALESCE(es_regalo,0)=0").fetchall():
+                sku_map[r[0]] = r[1]
+        except Exception:
+            pass
+        formulas = None
+        try:
+            formulas = set()
+            for r in c.execute("SELECT producto_nombre FROM formula_headers WHERE COALESCE(activo,1)=1 "
+                               "AND producto_nombre IS NOT NULL AND TRIM(producto_nombre)!=''").fetchall():
+                formulas.add(_npf(r[0]))
+        except Exception:
+            formulas = None
+        n_huerf = n_zombi = 0
+        uds = 0.0
+        ejemplos = []
+        for _sku, _dias in ventas.items():
+            try:
+                _u = sum(_dias.values())
+            except Exception:
+                _u = 0
+            if _u <= 0:
+                continue
+            if _sku not in sku_map:
+                n_huerf += 1
+                uds += _u
+                if len(ejemplos) < 5:
+                    ejemplos.append(_sku)
+            elif formulas is not None and _npf(sku_map[_sku]) not in formulas:
+                n_zombi += 1
+                uds += _u
+                if len(ejemplos) < 5:
+                    ejemplos.append(_sku + '→' + str(sku_map[_sku]))
+        if n_huerf + n_zombi > 0:
+            try:
+                from blueprints.notif import push_notif as _pn
+                _body = (f"{n_huerf} sin mapear + {n_zombi} mapeado(s) sin fórmula · ~{int(uds)} uds/90d. "
+                         f"Ej: {', '.join(ejemplos[:5])}. Conectalos (fórmula + SKU) para que entren al plan.")
+                _pn(destinatario='sebastian', tipo='shopify_sku_sin_mapear',
+                    titulo=f"🆕 {n_huerf + n_zombi} SKU vendiendo sin llegar al plan",
+                    body=_body, link='/inventarios', importante=False)
+                _lg.info("job_alerta_skus_sin_mapear · %s huérfanos + %s zombis avisados", n_huerf, n_zombi)
+            except Exception as _e:
+                _lg.warning("job_alerta_skus_sin_mapear notif fallo: %s", _e)
 
 
 def job_b2b_recurrentes(app):

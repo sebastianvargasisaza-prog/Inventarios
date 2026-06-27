@@ -50,3 +50,24 @@ def test_diag_detecta_mapeo_zombi(app, db_clean):
     zombi = [x for x in d['por_sku'] if x['sku'] == 'ZOMBI-30']
     assert zombi and zombi[0]['estado'] == 'MAPEADO_SIN_FORMULA', (zombi, d['reconciliacion'])
     assert d['reconciliacion']['n_skus_mapeo_zombi'] >= 1, d['reconciliacion']
+
+
+def _q1(sql, params=()):
+    import os as _o, sqlite3 as _s
+    conn = _s.connect(_o.environ["DB_PATH"], timeout=10.0)
+    try:
+        return conn.execute(sql, params).fetchone()
+    finally:
+        conn.close()
+
+
+def test_job_alerta_skus_sin_mapear(app, db_clean):
+    # orden con un SKU NUEVO sin mapear (huérfano) que vende
+    _exec("INSERT INTO animus_shopify_orders (shopify_id, estado, estado_pago, sku_items, unidades_total, "
+          "tags, customer_tags, creado_en) VALUES ('TALERT1','','paid',?,7,'','',datetime('now','-5 hours'))",
+          (json.dumps([{'sku': 'NUEVO-SIN-MAPEAR-99', 'qty': 7}]),))
+    from blueprints.auto_plan_jobs import job_alerta_skus_sin_mapear
+    job_alerta_skus_sin_mapear(app)
+    n = _q1("SELECT COUNT(*) FROM notificaciones_app WHERE destinatario='sebastian' "
+            "AND tipo='shopify_sku_sin_mapear'")[0]
+    assert n >= 1, 'no se creó el aviso de SKU sin mapear'
