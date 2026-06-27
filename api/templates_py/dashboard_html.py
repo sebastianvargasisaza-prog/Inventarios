@@ -8014,6 +8014,21 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   if(editable&&miRol.corrige){ h+='<button onclick="ebrAgregarCorreccion('+d.id+')" style="margin-top:8px;background:#6d28d9;color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">+ Registrar corrección</button>'; }
   else if(editable){ h+='<div style="margin-top:6px;font-size:11px;color:#94a3b8">Las correcciones las registra Calidad / Aseguramiento.</div>'; }
   h+='</div>';
+  // 🔍 TRAZABILIDAD (27-jun · Sebastián · INVIMA) · quién hizo qué + cuándo, consolidado del audit trail del
+  // EBR (vista-completa ya trae d.audit · acciones a nivel orden + por paso/pesaje/IPC/despeje). Cronológico.
+  h+=_secOpen('🔍 Trazabilidad de responsables (quién hizo qué · INVIMA)');
+  var _aud=(d.audit||[]).slice().reverse();
+  if(!_aud.length){ h+='<div style="color:#94a3b8;font-size:12px;">Sin acciones registradas todavía. Cada acción del lote (iniciar/pesar/verificar/completar/liberar) queda con responsable, fecha y hora (21 CFR Part 11).</div>'; }
+  else{
+    h+='<table class="table" style="font-size:11px"><thead><tr><th>Fecha y hora</th><th>Responsable</th><th>Acción</th><th>Detalle</th></tr></thead><tbody>';
+    _aud.forEach(function(a){
+      var _f=a.fecha?String(a.fecha).replace('T',' ').slice(0,16):'';
+      var _ac=String(a.accion||'').replace(/_/g,' ').toLowerCase();
+      h+='<tr style="vertical-align:top"><td style="font-size:10px;color:#94a3b8;white-space:nowrap">'+_escHTML(_f)+'</td><td style="font-weight:700;color:#6d28d9">'+_escHTML(a.usuario||'—')+'</td><td style="font-size:11px">'+_escHTML(_ac)+'</td><td style="font-size:10px;color:#64748b">'+_escHTML(a.detalle||'')+'</td></tr>';
+    });
+    h+='</tbody></table><div style="font-size:10px;color:#94a3b8;margin-top:6px">Registro inmutable de acciones del lote · responsable + fecha/hora de cada operación (INVIMA / 21 CFR Part 11).</div>';
+  }
+  h+='</div>';
   return h;
 }
 async function ebrAgregarObservacion(ebrId){
