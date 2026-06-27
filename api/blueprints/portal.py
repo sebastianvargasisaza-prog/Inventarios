@@ -967,18 +967,11 @@ def portal_crear_pedido():
     conn.commit()
 
     kg_b2b = round(cantidad * ml / 1000.0, 2)
-    integracion = None
-    try:
-        from blueprints.plan import _integrar_pedido_b2b_al_plan
-        integracion = _integrar_pedido_b2b_al_plan(
-            cur, pid, producto, kg_b2b, fecha, cnom, f'portal:{email}',
-            unidades=cantidad, ml_unidad=ml, envase_codigo=envase_codigo)
-        conn.commit()
-    except Exception as _e:
-        try: conn.rollback()
-        except Exception: pass
-        log.warning('integracion B2B portal fallo pid=%s: %s', pid, _e)
-        integracion = {'error': str(_e)[:200]}
+    # CONFIRMACIÓN 26-jun (Sebastián) · el pedido del portal YA NO entra solo al plan. Queda 'pendiente'
+    # hasta que el equipo (Catalina) lo CONFIRME en el backoffice (revisa/ajusta cantidad+fecha y lo ubica
+    # en producción). Así un cliente no modifica el plan en silencio. La integración la hace /confirmar.
+    integracion = {'estado': 'pendiente_confirmacion',
+                   'detalle': 'Tu pedido quedó registrado y espera confirmación del equipo.'}
 
     # Notif in-app a Sebastián+Catalina (no email · CLAUDE.md memoria)
     try:
@@ -987,12 +980,13 @@ def portal_crear_pedido():
             _push_notif(
                 destinatario=dest,
                 tipo='portal_pedido_nuevo',
-                titulo=f'📦 Nuevo pedido portal · {cnom}',
+                titulo=f'📦 Pedido B2B para CONFIRMAR · {cnom}',
                 body=f'{producto} · {cantidad} uds × {ml} ml · {kg_b2b} kg' +
-                      (f' para {fecha}' if fecha else ''),
+                      (f' para {fecha}' if fecha else '') +
+                      ' · revisá y confirmá para que entre al plan',
                 link='/dashboard#programacion',
                 remitente=f'portal:{email}',
-                importante=False,
+                importante=True,
             )
     except Exception:
         pass

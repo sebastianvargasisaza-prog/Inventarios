@@ -25359,6 +25359,11 @@ async function ckMarcar(itemId, estado){
       if (!lote || lote.modo !== 'sumado_a_lote_canonico') {
         btnAsignar = '<button onclick="asignarB2BaAnimus('+p.id+')" style="background:#16a34a;color:#fff;border:none;padding:3px 10px;border-radius:4px;font-size:10px;cursor:pointer;font-weight:700;margin-right:4px" title="Buscar lote Animus DTC del mismo producto ±30d y sumar este pedido">🔗 Asignar a Animus</button>';
       }
+      // CONFIRMACIÓN 26-jun · el pedido del portal queda 'pendiente' (no entra solo al plan) · el equipo lo CONFIRMA acá
+      let btnConfirmar = '';
+      if ((p.estado || '') === 'pendiente') {
+        btnConfirmar = '<button onclick="confirmarB2B('+p.id+')" style="background:#6d28d9;color:#fff;border:none;padding:3px 10px;border-radius:4px;font-size:10px;cursor:pointer;font-weight:700;margin-right:4px" title="Revisar y confirmar · recién acá entra al plan de producción">✅ Confirmar</button>';
+      }
       const estadoBg = p.estado === 'confirmado' ? '#dcfce7' : (p.estado === 'cancelado' ? '#fee2e2' : '#e0e7ff');
       const estadoColor = p.estado === 'confirmado' ? '#15803d' : (p.estado === 'cancelado' ? '#991b1b' : '#3730a3');
       // Sebastián 25-may-2026 PM · columna urgencia visible
@@ -25374,7 +25379,7 @@ async function ckMarcar(itemId, estado){
         + '<td style="padding:6px 10px;text-align:center">' + (p.fecha_estimada || '—') + '</td>'
         + '<td style="padding:6px 10px;text-align:center"><span style="background:'+estadoBg+';color:'+estadoColor+';padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">' + p.estado + '</span></td>'
         + '<td style="padding:6px 10px;text-align:center">' + loteHtml + '</td>'
-        + '<td style="padding:6px 10px;text-align:right">' + btnAsignar + '<button onclick="cancelarB2B(' + p.id + ')" style="background:transparent;border:1px solid #cbd5e1;color:#64748b;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer">Cancelar</button></td>'
+        + '<td style="padding:6px 10px;text-align:right">' + btnConfirmar + btnAsignar + '<button onclick="cancelarB2B(' + p.id + ')" style="background:transparent;border:1px solid #cbd5e1;color:#64748b;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer">Cancelar</button></td>'
         + '</tr>';
     });
     html += '</tbody></table></div></details>';
@@ -25474,6 +25479,22 @@ async function ckMarcar(itemId, estado){
     document.getElementById('b2b-cliente-id').value = cli_id;
     document.getElementById('b2b-cliente-nombre').value = cli_nom;
     abrirFormB2B();
+  };
+
+  // CONFIRMACIÓN 26-jun (Sebastián) · Catalina confirma un pedido PENDIENTE del portal → recién acá entra al plan.
+  window.confirmarB2B = async function(pid) {
+    if (!confirm('Confirmar este pedido? Va a entrar al plan de producción.\\n\\n(Si querés ajustar cantidad/fecha, editá el pedido antes.)')) return;
+    try {
+      const r = await fetch('/api/pedidos-b2b/' + pid + '/confirmar', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfTokenNec()},
+        body: '{}',
+      });
+      const d = await r.json();
+      if (!r.ok) { alert(d.error || 'No se pudo confirmar'); return; }
+      alert('\\u2713 Pedido confirmado \\u00b7 entr\\u00f3 al plan (' + (d.kg_b2b || 0) + ' kg).');
+      cargarNecesidades();
+    } catch (e) { alert('Error confirmando el pedido'); }
   };
 
   // Asigna un pedido B2B a un lote Animus DTC existente

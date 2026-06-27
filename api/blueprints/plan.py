@@ -1673,6 +1673,64 @@ def actualizar_pedido_b2b(pid):
     return jsonify({"ok": True, "id": pid, "reversion_plan": reversion})
 
 
+@bp.route("/api/pedidos-b2b/<int:pid>/confirmar", methods=["POST"])
+def confirmar_pedido_b2b(pid):
+    """CONFIRMACIÓN 26-jun (Sebastián) · el equipo (Catalina) revisa el pedido del portal y lo CONFIRMA:
+    opcionalmente ajusta cantidad/fecha, lo INTEGRA al plan (auto-ubica · _integrar_pedido_b2b_al_plan) y lo
+    marca 'confirmado'. Así un cliente NO modifica el plan en silencio (antes el portal auto-integraba).
+    CAS sobre estado='pendiente' (un solo worker · race-safe) → integra → rollback si la integración falla."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    body = request.get_json(silent=True) or {}
+    conn = get_db()
+    cur = conn.cursor()
+    row = cur.execute(
+        "SELECT cliente_id, COALESCE(cliente_nombre,''), producto_nombre, COALESCE(cantidad_uds,0), "
+        "COALESCE(ml_unidad,30), fecha_estimada, estado, COALESCE(envase_codigo,'') "
+        "FROM pedidos_b2b WHERE id=?", (pid,)).fetchone()
+    if not row:
+        return jsonify({"error": "pedido no encontrado"}), 404
+    if row[6] != 'pendiente':
+        return jsonify({"error": f"solo se confirma un pedido 'pendiente' (actual: {row[6]})",
+                        "codigo": "ESTADO_NO_PENDIENTE"}), 409
+    cantidad = int(row[3] or 0)
+    ml = float(row[4] or 30)
+    fecha = row[5]
+    if "cantidad_uds" in body:
+        try:
+            cantidad = int(body["cantidad_uds"])
+        except (ValueError, TypeError):
+            return jsonify({"error": "cantidad_uds inválida"}), 400
+        if cantidad <= 0:
+            return jsonify({"error": "cantidad_uds debe ser > 0"}), 400
+    if "fecha_estimada" in body:
+        fecha = (body["fecha_estimada"] or "").strip() or None
+    # CAS: reclamar pendiente → confirmado (un solo worker · M27) + guardar ajustes
+    cur.execute("UPDATE pedidos_b2b SET estado='confirmado', cantidad_uds=?, fecha_estimada=? "
+                "WHERE id=? AND estado='pendiente'", (cantidad, fecha, pid))
+    if cur.rowcount == 0:
+        conn.rollback()
+        return jsonify({"error": "el pedido ya fue confirmado/cancelado o cambió · refrescá",
+                        "codigo": "ESTADO_CAMBIO"}), 409
+    kg_b2b = round(cantidad * ml / 1000.0, 2)
+    try:
+        integracion = _integrar_pedido_b2b_al_plan(
+            cur, pid, row[2], kg_b2b, fecha, row[1], user,
+            unidades=cantidad, ml_unidad=ml, envase_codigo=row[7])
+    except Exception as _e:
+        conn.rollback()  # deshace el CAS → vuelve a 'pendiente', reintentable
+        log.warning("confirmar B2B integracion fallo pid=%s: %s", pid, _e)
+        return jsonify({"error": "falló la integración al plan · reintentá", "detalle": str(_e)[:200]}), 500
+    audit_log(cur, usuario=user, accion="CONFIRMAR_PEDIDO_B2B",
+              tabla="pedidos_b2b", registro_id=pid,
+              despues={"cantidad_uds": cantidad, "fecha": fecha, "kg_b2b": kg_b2b})
+    conn.commit()
+    return jsonify({"ok": True, "id": pid, "estado": "confirmado", "kg_b2b": kg_b2b,
+                    "integracion_plan": integracion})
+
+
 @bp.route("/api/pedidos-b2b/<int:pid>", methods=["DELETE"])
 def cancelar_pedido_b2b(pid):
     user, err = _require_admin_or_compras()
