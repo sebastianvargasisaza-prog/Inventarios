@@ -6491,6 +6491,67 @@ def maestro_mps_export_lista_simple():
     return resp
 
 
+@bp.route('/api/lotes/export-xlsx', methods=['GET'])
+def lotes_export_xlsx():
+    """Stock por Lote en .xlsx NATIVO (Sebastián 27-jun) · antes el botón usaba el truco HTML-como-Excel
+    (abría con advertencia "formato y extensión no coinciden"). Reusa la data EXACTA de /api/lotes."""
+    from flask import make_response
+    import io as _io
+    from datetime import datetime as _dtx
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill
+        from openpyxl.utils import get_column_letter
+    except Exception:
+        return jsonify({'error': 'openpyxl no disponible'}), 500
+    try:
+        data = get_lotes().get_json()  # misma data que la tabla (respeta los filtros del request)
+    except Exception:
+        data = None
+    lotes = (data or {}).get('lotes', []) if isinstance(data, dict) else []
+    HEADERS = ['Codigo MP', 'Nombre INCI', 'Nombre Comercial', 'Lote', 'Cantidad (g)', 'Stock Min (g)',
+               'Total MP (g)', 'Estanteria', 'Posicion', 'Proveedor', 'Fecha Vencimiento', 'Dias',
+               'Estado', 'Estado Lote', 'Tipo']
+
+    def _num(x):
+        try:
+            return float(x or 0)
+        except (TypeError, ValueError):
+            return 0
+    rows = [[
+        i.get('material_id', ''), i.get('nombre_inci', ''), i.get('material_nombre', ''), i.get('lote', ''),
+        _num(i.get('cantidad_g')), _num(i.get('stock_min_g')), _num(i.get('stock_total_mp_g')),
+        i.get('estanteria', ''), i.get('posicion', ''), i.get('proveedor', ''),
+        i.get('fecha_vencimiento', ''),
+        ('' if i.get('dias_para_vencer') is None else i.get('dias_para_vencer')),
+        i.get('alerta', ''), i.get('estado_lote', ''), i.get('tipo', ''),
+    ] for i in lotes]
+    wb = Workbook(); ws = wb.active; ws.title = 'Stock por Lote'
+    _hf = Font(bold=True, color='FFFFFF', size=11)
+    _fill = PatternFill(start_color='6D28D9', end_color='6D28D9', fill_type='solid')
+    for col_idx, h in enumerate(HEADERS, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=h); cell.font = _hf; cell.fill = _fill
+    for r_idx, r in enumerate(rows, start=2):
+        for c_idx, val in enumerate(r, start=1):
+            ws.cell(row=r_idx, column=c_idx, value=val)
+    for col_idx, _h in enumerate(HEADERS, start=1):
+        letra = get_column_letter(col_idx); max_len = len(HEADERS[col_idx - 1])
+        for r_idx in range(2, len(rows) + 2):
+            v = ws.cell(row=r_idx, column=col_idx).value
+            if v is not None:
+                max_len = max(max_len, len(str(v)))
+        ws.column_dimensions[letra].width = min(max_len + 2, 60)
+    ws.freeze_panes = 'A2'
+    ws.auto_filter.ref = ws.dimensions
+    buf = _io.BytesIO(); wb.save(buf); buf.seek(0)
+    fecha_str = _dtx.utcnow().strftime('%Y-%m-%d')
+    resp = make_response(buf.getvalue())
+    resp.headers['Content-Type'] = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    resp.headers['Content-Disposition'] = f'attachment; filename="stock-bodega-mp-{fecha_str}.xlsx"'
+    resp.headers['X-Content-Type-Options'] = 'nosniff'
+    return resp
+
+
 @bp.route('/api/maestro-mps/next-codigo', methods=['GET'])
 def maestro_mps_next_codigo():
     """Devuelve el SIGUIENTE código MP disponible.

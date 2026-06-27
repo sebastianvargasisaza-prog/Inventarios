@@ -701,7 +701,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
       <input type="text" id="stock-search" placeholder="MP, INCI, proveedor..." oninput="filterStock()" style="width:200px;margin-top:0;">
       <input type="text" id="stock-search-lote" placeholder="&#127991; Solo por lote" oninput="filterStock()" style="width:170px;margin-top:0;border:2px solid #1e63a8;background:#f0f8ff;">
-      <div style="display:flex;gap:10px;flex-wrap:wrap;"><button onclick="loadStock()">&#8635; Actualizar</button><button onclick="exportarExcelStock()" style="background:#217346;">&#128196; Descargar Excel</button><button onclick="abrirLimpiezaProveedores()" style="background:#7c3aed;" title="Detecta proveedores duplicados por typo y los unifica">&#129529; Limpiar proveedores</button><button onclick="abrirUnificarMPs()" style="background:#be185d;" title="Detecta MPs con dos códigos (purisil, etc) y unifica en uno · admin">&#129529; Unificar MPs</button><button onclick="abrirRevisarMinimos()" style="background:#7c3aed;" title="Audita stock minimo de cada MP vs consumo proyectado · evita alertas falsas">&#128202; Revisar m&iacute;nimos</button></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;"><button onclick="loadStock()">&#8635; Actualizar</button><button onclick="exportarExcelStock()" style="background:#217346;">&#128196; Descargar Excel</button></div>
       <label style="font-size:0.85em;color:#555;display:inline-flex;align-items:center;gap:4px;cursor:pointer;" title="Por defecto la bodega muestra solo lo que hay fisicamente. Marca para ver tambien las MPs en 0 (catalogo / a comprar)."><input type="checkbox" id="stock-ver-sin" onchange="loadStock()"> Ver MPs en 0 (a comprar)</label>
       <span id="stock-count" style="color:#888;font-size:0.88em;"></span>
     </div>
@@ -3908,26 +3908,11 @@ function dlExcelHTML(nombre, cols, rows){
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
-async function exportarExcelStock(){
-  // Sprint Bodega MP PRO · 20-may-2026 fix #2: reusa _lotes en memoria.
-  // Solo refresca con fetch si _lotes está vacío (primer load).
-  var L = (Array.isArray(_lotes) && _lotes.length) ? _lotes : null;
-  if(!L){
-    try{ var r=await fetch('/api/lotes'); var d=await r.json(); L=d.lotes||[]; }
-    catch(e){ alert('Error de red: '+e.message); return; }
-  }
-  if(!L.length){alert('Sin datos');return;}
-  var cols=['Codigo MP','Nombre INCI','Nombre Comercial','Lote','Cantidad (g)',
-            'Stock Min (g)','Total MP (g)','Estanteria','Posicion','Proveedor',
-            'Fecha Vencimiento','Dias','Estado','Estado Lote','Tipo'];
-  var rows=L.map(function(i){return [
-    i.material_id||'', i.nombre_inci||'', i.material_nombre||'', i.lote||'',
-    Number(i.cantidad_g)||0, Number(i.stock_min_g)||0, Number(i.stock_total_mp_g)||0,
-    i.estanteria||'', i.posicion||'', i.proveedor||'',
-    i.fecha_vencimiento||'', (i.dias_para_vencer==null?'':i.dias_para_vencer),
-    i.alerta||'', i.estado_lote||'', i.tipo||''
-  ];});
-  dlExcelHTML('Stock_BodegaMP_'+fhoy(), cols, rows);
+function exportarExcelStock(){
+  // .xlsx NATIVO desde el backend (openpyxl · Sebastián 27-jun) · antes usaba dlExcelHTML = tabla HTML
+  // servida como Excel → abría con advertencia "el formato y la extensión no coinciden". Ahora descarga
+  // el archivo .xlsx real directamente.
+  window.location = '/api/lotes/export-xlsx';
 }
 async function exportarExcelMovimientos(){
   var r=await fetch('/api/movimientos'),d=await r.json(),M=d.movimientos||[];
