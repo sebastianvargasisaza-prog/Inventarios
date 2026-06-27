@@ -116,3 +116,20 @@ def test_portal_editar_pedido_pendiente(app, db_clean):
     _exec("UPDATE pedidos_b2b SET estado='confirmado' WHERE id=?", (pid,))
     r2 = c.patch('/api/portal/pedidos/' + str(pid), json={'cantidad_uds': 99}, headers=csrf_headers())
     assert r2.status_code == 409, r2.data
+
+
+def test_catalogo_nombre_generico(app, db_clean):
+    prod = 'ZZ COMERCIAL ANIMUS'
+    _exec("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES (?,10,1)", (prod,))
+    c = _login(app)  # admin
+    r = c.post('/api/admin/portal/catalogo', json={'producto': prod, 'nombre_generico': 'Niacinamida'}, headers=_h())
+    assert r.status_code == 200, r.data
+    pc = app.test_client()
+    with pc.session_transaction() as sess:
+        sess['portal_cliente_id'] = 'PC9'
+        sess['portal_cliente_nombre'] = 'X'
+        sess['portal_email'] = 'x@x.com'
+        sess['portal_activo_check_ts'] = 9999999999
+    d = pc.get('/api/portal/productos').get_json()
+    item = next((p for p in d['productos'] if p['nombre'] == prod), None)
+    assert item and item['mostrar'] == 'Niacinamida', item

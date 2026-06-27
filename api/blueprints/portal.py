@@ -615,7 +615,7 @@ async function cargarSesionYProductos(){
     document.getElementById('hdr-cliente').textContent = d.cliente_nombre ? ('Hola, ' + d.cliente_nombre) : '';
     var sel = document.getElementById('sol-producto');
     sel.innerHTML = '<option value="">— Elegí un producto —</option>' +
-      (d.productos||[]).map(p=>'<option value="'+esc(p.nombre)+'">'+esc(p.nombre)+'</option>').join('');
+      (d.productos||[]).map(p=>'<option value="'+esc(p.nombre)+'">'+esc(p.mostrar||p.nombre)+'</option>').join('');
   } catch(e){
     document.getElementById('hdr-cliente').textContent = 'Error: ' + e.message;
   }
@@ -840,15 +840,24 @@ def portal_productos():
         return jsonify({'error': 'No autorizado'}), 401
     cid, cnom, email = auth
     conn = get_db()
-    rows = conn.execute(
-        """SELECT DISTINCT producto_nombre
-           FROM formula_headers
-           WHERE COALESCE(activo, 1) = 1
-             AND producto_nombre IS NOT NULL
-             AND TRIM(producto_nombre) != ''
-           ORDER BY producto_nombre ASC""",
-    ).fetchall()
-    productos = [{'nombre': r[0]} for r in rows if r[0]]
+    # Catálogo B2B (26-jun) · el cliente ve el nombre GENÉRICO (niacinamida, limpiador BHA...) si está
+    # cargado; si no, cae al comercial. El `nombre` (valor del pedido) SIEMPRE es el real (para producir).
+    try:
+        rows = conn.execute(
+            """SELECT producto_nombre, COALESCE(MAX(nombre_generico),'')
+               FROM formula_headers
+               WHERE COALESCE(activo, 1) = 1
+                 AND producto_nombre IS NOT NULL AND TRIM(producto_nombre) != ''
+               GROUP BY producto_nombre
+               ORDER BY producto_nombre ASC""",
+        ).fetchall()
+        productos = [{'nombre': r[0], 'mostrar': ((r[1] or '').strip() or r[0])} for r in rows if r[0]]
+    except Exception:
+        rows = conn.execute(
+            "SELECT DISTINCT producto_nombre FROM formula_headers WHERE COALESCE(activo,1)=1 "
+            "AND producto_nombre IS NOT NULL AND TRIM(producto_nombre) != '' ORDER BY producto_nombre ASC"
+        ).fetchall()
+        productos = [{'nombre': r[0], 'mostrar': r[0]} for r in rows if r[0]]
     return jsonify({
         'productos': productos,
         'total': len(productos),
@@ -1238,6 +1247,36 @@ def admin_portal_credencial_uno(cred_id):
               despues={'cambios': cambios})
     conn.commit()
     return jsonify({'ok': True, 'cambios': cambios})
+
+
+@bp.route('/api/admin/portal/catalogo', methods=['GET', 'POST'])
+def admin_portal_catalogo():
+    """Catálogo B2B · nombres GENÉRICOS que ve el cliente en el portal (en vez del comercial de Ánimus).
+    Sebastián 26-jun · interino mientras se cargan los productos propios de los clientes. Admin."""
+    u, err = _require_admin_backoffice()
+    if err:
+        return err
+    conn = get_db()
+    c = conn.cursor()
+    if request.method == 'GET':
+        try:
+            rows = c.execute(
+                "SELECT producto_nombre, COALESCE(MAX(nombre_generico),'') FROM formula_headers "
+                "WHERE COALESCE(activo,1)=1 AND producto_nombre IS NOT NULL AND TRIM(producto_nombre)!='' "
+                "GROUP BY producto_nombre ORDER BY producto_nombre").fetchall()
+        except Exception:
+            rows = []
+        return jsonify({'items': [{'producto': r[0], 'generico': r[1]} for r in rows]})
+    body = request.get_json(silent=True) or {}
+    prod = (body.get('producto') or '').strip()
+    gen = (body.get('nombre_generico') or '').strip()[:120]
+    if not prod:
+        return jsonify({'error': 'producto requerido'}), 400
+    c.execute("UPDATE formula_headers SET nombre_generico=? WHERE producto_nombre=?", (gen, prod))
+    audit_log(c, usuario=u, accion='PORTAL_SET_NOMBRE_GENERICO', tabla='formula_headers',
+              registro_id=0, despues={'producto': prod, 'generico': gen})
+    conn.commit()
+    return jsonify({'ok': True, 'producto': prod, 'generico': gen})
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -1787,6 +1826,124 @@ def admin_portal_pqr_responder(pqr_id):
 # resetea) la credencial demo y muestra password en plain · solo accesible
 # desde sesión admin.
 # ════════════════════════════════════════════════════════════════════════
+
+@bp.route('/admin/clientes-b2b', methods=['GET'])
+def admin_clientes_b2b_pagina():
+    """Panel admin para crear/gestionar clientes del portal B2B (Sebastián 26-jun).
+    Reusa /api/admin/portal/credenciales (crear/listar/resetear-clave/activar)."""
+    if 'compras_user' not in session:
+        return redirect('/login?next=/admin/clientes-b2b')
+    if session.get('compras_user', '') not in ADMIN_USERS:
+        return ("<html><body style='font-family:system-ui;padding:48px'><h2>Solo admin</h2></body></html>"), 403
+    return Response(_CLIENTES_B2B_HTML, mimetype='text/html')
+
+
+_CLIENTES_B2B_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Clientes B2B · EOS</title><style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:#f5f3ff;color:#1e1b4b;padding:24px}
+.wrap{max-width:1000px;margin:0 auto}
+h1{font-size:24px;color:#5b21b6;margin-bottom:4px}.sub{color:#64748b;font-size:13px;margin-bottom:20px}
+.card{background:#fff;border:1px solid #e9d5ff;border-radius:14px;padding:18px;margin-bottom:18px;box-shadow:0 2px 10px rgba(109,40,217,.05)}
+.card h2{font-size:15px;color:#6d28d9;margin-bottom:12px}
+label{display:block;font-size:12px;font-weight:600;color:#475569;margin:8px 0 3px}
+input{width:100%;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px}
+.row{display:flex;gap:10px;flex-wrap:wrap}.row>div{flex:1;min-width:180px}
+button{border:none;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer}
+.primary{background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff}
+.ghost{background:#fff;border:1px solid #c4b5fd;color:#6d28d9}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:8px;color:#5b21b6;border-bottom:2px solid #e9d5ff}td{padding:8px;border-bottom:1px solid #f1f5f9}
+.acceso{background:#ecfdf5;border:1px solid #6ee7b7;border-radius:10px;padding:14px;margin-top:12px;font-size:13px;display:none}
+.acceso pre{background:#fff;border:1px solid #d1fae5;border-radius:8px;padding:10px;margin:8px 0;white-space:pre-wrap;font-family:monospace;font-size:12px}
+.chip{padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700}.on{background:#dcfce7;color:#15803d}.off{background:#fee2e2;color:#991b1b}
+</style></head><body><div class="wrap">
+<h1>👥 Clientes B2B</h1>
+<div class="sub">Creá clientes del portal, copiales el acceso y gestioná sus claves. Entran por <b>/portal/login</b>.</div>
+<div class="card"><h2>➕ Crear cliente</h2>
+<div class="row"><div><label>Nombre del cliente</label><input id="c-nom" placeholder="Ej. Kelly Cosméticos" oninput="autoId()"></div>
+<div><label>Email (con esto entra)</label><input id="c-email" type="email" placeholder="contacto@kelly.com"></div></div>
+<div class="row"><div><label>ID del cliente (automático · editable)</label><input id="c-id" placeholder="kelly-cosmeticos"></div>
+<div><label>Clave</label><div style="display:flex;gap:6px"><input id="c-pass" placeholder="(generar)"><button class="ghost" type="button" onclick="genClave()">🎲</button></div></div></div>
+<button class="primary" style="margin-top:12px" onclick="crearCliente()">Crear cliente</button>
+<div class="acceso" id="acceso-box"><b>✓ Cliente creado · copiale este acceso:</b><pre id="acceso-txt"></pre><button class="ghost" onclick="copiarAcceso()">📋 Copiar acceso</button></div>
+<div id="c-msg" style="margin-top:8px;font-size:13px"></div></div>
+<div class="card"><h2>📋 Clientes (<span id="n-cli">0</span>)</h2>
+<div style="overflow-x:auto"><table><thead><tr><th>Cliente</th><th>Email</th><th>Estado</th><th>Último ingreso</th><th></th></tr></thead>
+<tbody id="cli-tbody"><tr><td colspan="5" style="color:#94a3b8;padding:14px">Cargando&hellip;</td></tr></tbody></table></div></div>
+<div class="card"><h2>🛒 Catálogo B2B · nombres genéricos</h2>
+<div class="sub" style="margin-bottom:10px">El cliente ve el <b>nombre genérico</b> (ej. "Niacinamida", "Limpiador BHA") en vez del comercial de Ánimus. Vacío = ve el comercial. <i>Interino mientras cargás los productos propios.</i></div>
+<div style="overflow-x:auto"><table><thead><tr><th>Producto (real · Ánimus)</th><th>Nombre genérico que ve el cliente</th><th></th></tr></thead>
+<tbody id="cat-tbody"><tr><td colspan="3" style="color:#94a3b8;padding:14px">Cargando&hellip;</td></tr></tbody></table></div></div>
+</div><script>
+var BASE=location.origin, _CSRF='';
+fetch('/api/csrf-token',{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(t){_CSRF=t.csrf_token||'';}).catch(function(){});
+function _hdr(){ return {'Content-Type':'application/json','X-CSRF-Token':_CSRF}; }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+function autoId(){ var n=document.getElementById('c-nom').value||''; document.getElementById('c-id').value=n.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,40); }
+function genClave(){ var ch='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789',s=''; for(var i=0;i<10;i++)s+=ch[Math.floor(Math.random()*ch.length)]; document.getElementById('c-pass').value=s; return s; }
+var _acc='';
+async function crearCliente(){
+  var nom=document.getElementById('c-nom').value.trim(),email=document.getElementById('c-email').value.trim(),id=document.getElementById('c-id').value.trim(),pass=document.getElementById('c-pass').value.trim(),msg=document.getElementById('c-msg');
+  if(!pass) pass=genClave();
+  if(!nom||!email||!id){ msg.style.color='#dc2626'; msg.textContent='Completá nombre, email e ID.'; return; }
+  try{
+    var r=await fetch('/api/admin/portal/credenciales',{method:'POST',headers:_hdr(),credentials:'same-origin',body:JSON.stringify({cliente_id:id,cliente_nombre:nom,email:email,password:pass})});
+    var d=await r.json();
+    if(!r.ok){ msg.style.color='#dc2626'; msg.textContent=d.error||'Error'; return; }
+    msg.textContent='';
+    _acc='Portal HHA \\u00b7 acceso\\n\\nLink: '+BASE+'/portal/login\\nEmail: '+email+'\\nClave: '+pass;
+    document.getElementById('acceso-txt').textContent=_acc; document.getElementById('acceso-box').style.display='block';
+    document.getElementById('c-nom').value='';document.getElementById('c-email').value='';document.getElementById('c-id').value='';document.getElementById('c-pass').value='';
+    cargarClientes();
+  }catch(e){ msg.style.color='#dc2626'; msg.textContent='Error de red'; }
+}
+function copiarAcceso(){ navigator.clipboard.writeText(_acc).then(function(){ alert('Acceso copiado \\u00b7 peg\\u00e1selo al cliente'); }); }
+async function resetClave(id,email){
+  var s=genClave();
+  if(!confirm('Resetear la clave de '+email+'? La nueva ser\\u00e1: '+s)) return;
+  var r=await fetch('/api/admin/portal/credenciales/'+id,{method:'PATCH',headers:_hdr(),credentials:'same-origin',body:JSON.stringify({password:s})});
+  var d=await r.json(); if(!r.ok){ alert(d.error||'Error'); return; }
+  var txt='Portal HHA \\u00b7 nuevo acceso\\n\\nLink: '+BASE+'/portal/login\\nEmail: '+email+'\\nClave: '+s;
+  navigator.clipboard.writeText(txt).then(function(){ alert('Clave reseteada y acceso copiado \\u00b7 peg\\u00e1selo al cliente'); });
+}
+async function toggleActivo(id,nuevo){ var r=await fetch('/api/admin/portal/credenciales/'+id,{method:'PATCH',headers:_hdr(),credentials:'same-origin',body:JSON.stringify({activo:nuevo})}); if(r.ok)cargarClientes(); else alert('Error'); }
+async function cargarClientes(){
+  var tb=document.getElementById('cli-tbody');
+  try{
+    var d=await (await fetch('/api/admin/portal/credenciales',{credentials:'same-origin'})).json();
+    var items=d.items||[]; document.getElementById('n-cli').textContent=items.length;
+    if(!items.length){ tb.innerHTML='<tr><td colspan="5" style="color:#94a3b8;padding:14px">Sin clientes todav\\u00eda \\u00b7 cre\\u00e1 el primero arriba.</td></tr>'; return; }
+    tb.innerHTML=items.map(function(c){
+      var est=c.activo?'<span class="chip on">activo</span>':'<span class="chip off">inactivo</span>';
+      var ult=c.ultimo_login_at_utc?esc(String(c.ultimo_login_at_utc).slice(0,16).replace('T',' ')):'<span style="color:#cbd5e1">nunca</span>';
+      var tog=c.activo?('<button class="ghost" onclick="toggleActivo('+c.id+',false)">🚫 Desactivar</button>'):('<button class="ghost" onclick="toggleActivo('+c.id+',true)">✓ Activar</button>');
+      return '<tr><td><b>'+esc(c.cliente_nombre)+'</b><br><span style="font-size:10px;color:#94a3b8">'+esc(c.cliente_id)+'</span></td><td>'+esc(c.email)+'</td><td>'+est+'</td><td style="font-size:12px">'+ult+'</td><td style="white-space:nowrap"><button class="ghost" onclick="resetClave('+c.id+',&#39;'+esc(c.email)+'&#39;)">🔄 Clave</button> '+tog+'</td></tr>';
+    }).join('');
+  }catch(e){ tb.innerHTML='<tr><td colspan="5" style="color:#dc2626">Error cargando</td></tr>'; }
+}
+var _CAT=[];
+async function cargarCatalogo(){
+  var tb=document.getElementById('cat-tbody');
+  try{
+    var d=await (await fetch('/api/admin/portal/catalogo',{credentials:'same-origin'})).json();
+    _CAT=d.items||[];
+    if(!_CAT.length){ tb.innerHTML='<tr><td colspan="3" style="color:#94a3b8;padding:14px">Sin productos.</td></tr>'; return; }
+    tb.innerHTML=_CAT.map(function(it,i){
+      return '<tr><td style="font-size:12px">'+esc(it.producto)+'</td><td><input id="gen-'+i+'" value="'+esc(it.generico)+'" placeholder="(gen\\u00e9rico)" style="width:100%"></td><td><button class="ghost" onclick="setGenerico('+i+')">Guardar</button></td></tr>';
+    }).join('');
+  }catch(e){ tb.innerHTML='<tr><td colspan="3" style="color:#dc2626">Error</td></tr>'; }
+}
+async function setGenerico(i){
+  var prod=(_CAT[i]||{}).producto, gen=(document.getElementById('gen-'+i)||{}).value||'';
+  if(!prod) return;
+  var r=await fetch('/api/admin/portal/catalogo',{method:'POST',headers:_hdr(),credentials:'same-origin',body:JSON.stringify({producto:prod,nombre_generico:gen})});
+  if(r.ok){ alert('Guardado \\u00b7 el cliente ahora ve "'+(gen||prod)+'"'); cargarCatalogo(); } else alert('Error');
+}
+genClave(); cargarClientes(); cargarCatalogo();
+</script></body></html>"""
+
 
 _PORTAL_DEMO_EMAIL = 'demo-cliente@hha.com'
 _PORTAL_DEMO_CLIENTE_ID = 'DEMO_CLI_SEBASTIAN'

@@ -395,6 +395,11 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (293, "B2B catálogo · nombre genérico (Sebastián 26-jun): el portal del cliente muestra nombres "
+          "GENÉRICOS (niacinamida, limpiador BHA...) en vez de los comerciales de Ánimus, mientras se "
+          "cargan los productos propios de los clientes. Columna nombre_generico en formula_headers.", [
+        "ALTER TABLE formula_headers ADD COLUMN nombre_generico TEXT DEFAULT ''",
+    ]),
     (292, "B2B mejora 3/4 · pedidos recurrentes (Sebastián 26-jun): el cliente programa un pedido que se "
           "repite cada N días; un cron crea el pedido (pendiente, pasa por confirmación) cuando vence.", [
         """CREATE TABLE IF NOT EXISTS pedidos_b2b_recurrentes (
