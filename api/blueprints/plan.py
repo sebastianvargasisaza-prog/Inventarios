@@ -17732,17 +17732,22 @@ async function _cargarOpcionesEnvases(loteId, envActual){
       return;
     }
   }
-  // 2) envase(s) ORIGINAL(es) del producto (de su composición · producto_presentaciones · Sebastián 27-jun)
-  //    → el dropdown muestra el envase REAL del producto, no solo "sin override".
-  let defaults = [];
+  // Render INMEDIATO con el catálogo · NUNCA quedar pegado en "Cargando" (FIX 27-jun · antes esperaba a
+  // composicion-mee, que escanea Shopify y es lento → dejaba el dropdown colgado).
+  _pintarOpcionesEnvase(sel, mees, envActual, []);
+  // 2) enriquecer con el/los envase(s) del producto (composición · con timeout 4s · NO bloquea el dropdown)
   try{
-    const rc = await fetch('/api/programacion/programar/' + loteId + '/composicion-mee', {credentials:'same-origin'});
+    const ctrl = new AbortController();
+    const _to = setTimeout(function(){ try{ ctrl.abort(); }catch(_e){} }, 4000);
+    const rc = await fetch('/api/programacion/programar/' + loteId + '/composicion-mee', {credentials:'same-origin', signal: ctrl.signal});
+    clearTimeout(_to);
     if(rc.ok){
       const dc = await rc.json();
+      const defaults = [];
       (dc.variantes || []).forEach(v => { if(v.envase_codigo && defaults.indexOf(v.envase_codigo) < 0) defaults.push(v.envase_codigo); });
+      if(defaults.length) _pintarOpcionesEnvase(sel, mees, (sel.value || envActual), defaults);
     }
-  }catch(e){ /* si falla, el dropdown igual sirve para forzar */ }
-  _pintarOpcionesEnvase(sel, mees, envActual, defaults);
+  }catch(e){ /* timeout o fallo · el dropdown ya está usable */ }
 }
 function _pintarOpcionesEnvase(sel, mees, envActual, defaults){
   defaults = defaults || [];
