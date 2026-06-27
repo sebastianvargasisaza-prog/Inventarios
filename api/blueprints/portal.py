@@ -148,7 +148,7 @@ input[type=email]:focus,input[type=password]:focus{border-color:#a78bfa;backgrou
       </svg>
     </span>
     <div class="brand-name">EOS</div>
-    <div class="brand-tag">Todo el holding, al frente</div>
+    <div class="brand-tag">Tu marca, nuestra fórmula</div>
     <div class="brand-sub">Portal Clientes B2B</div>
     <div class="brand-by">by <strong>HHA Group</strong></div>
   </div>
@@ -429,7 +429,7 @@ button.primary:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:
     </span>
     <div>
       <h1>EOS · Portal Clientes</h1>
-      <div class="sub">Todo el holding, al frente</div>
+      <div class="sub">Tu marca, nuestra fórmula</div>
       <div class="meta" id="hdr-cliente">Cargando...</div>
     </div>
   </div>
