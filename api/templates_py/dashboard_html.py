@@ -7660,6 +7660,7 @@ async function abrirEBR(id, targetId){
     var despeje=_arr(P[7]),prec=_arr(P[8]),regs=_arr(P[9]),despejeChk=P[10]||{};
     box.innerHTML=_ebrRender(d,(dp&&dp.items)||[],(dcm&&dcm.items)||[],(dar&&dar.items)||[],(dob&&dob.items)||[],ipcSpecs,ipcRes,despeje,prec,regs,ipcEstandar,despejeChk);
     if((d.fase||'fabricacion')==='envasado'){ try{ cargarEnvasesPlan(id); }catch(_e){} }  // Fase 3 · llena la sección de presentaciones
+    if((d.fase||'fabricacion')==='acondicionamiento'){ try{ acondAddMat(id); }catch(_e){} }  // OA · siembra 1 fila de material
     box.scrollIntoView({behavior:'smooth',block:'start'});
   }catch(e){box.innerHTML='<div style="color:#c0392b;padding:8px">No se pudo abrir el legajo: '+_escHTML((e&&e.message)?e.message:String(e))+'</div>';}
 }
@@ -7852,6 +7853,18 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   // ENVASADO Fase 3 (26-jun) · unidades por presentación + cerrar/descontar envases (gated a envasado ·
   // se llena lazy con cargarEnvasesPlan desde abrirEBR · balance </div>: la sección IPC de abajo lo cierra).
   if(fa==='envasado'){ h+='</div>'+_secOpen('📦 Presentaciones envasadas · unidades y descuento de envases')+'<div id="env-pres-'+d.id+'" style="font-size:12px;color:#64748b">Cargando&hellip;</div>'; }
+  // ACONDICIONAMIENTO (27-jun · huecos #2/#3) · materiales consumidos + cierre canónico (movimientos_mee · CAS).
+  if(fa==='acondicionamiento'){
+    h+='</div>'+_secOpen('🎁 Materiales de acondicionamiento · cierre y descuento');
+    var _adesc=(String(d.envases_descontados_at||'').trim()!=='')||['completado','liberado','rechazado'].indexOf(String(d.estado||'').toLowerCase())>=0;
+    if(_adesc){ h+='<div style="font-size:12px;color:#16a34a">&#10003; Acondicionamiento cerrado &middot; materiales descontados.</div>'; }
+    else if(editable&&miRol.realiza){
+      h+='<div style="font-size:11px;color:#64748b;margin-bottom:6px">List&aacute; los materiales consumidos (etiquetas, estuches, insertos&hellip;) y cerr&aacute; para descontarlos del inventario.</div>';
+      h+='<div id="acond-mat-rows-'+d.id+'"></div>';
+      h+='<button onclick="acondAddMat('+d.id+')" style="background:#fff;border:1px solid #c4b5fd;color:#6d28d9;border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer;margin:4px 0">&#43; material</button><br>';
+      h+='<button onclick="ebrCerrarAcond('+d.id+')" style="margin-top:8px;background:#6d28d9;color:#fff;border:none;border-radius:6px;padding:8px 18px;font-size:13px;font-weight:700;cursor:pointer">&#128274; Cerrar acondicionamiento y descontar</button>';
+    } else { h+='<div style="font-size:12px;color:#94a3b8">Solo el ejecutor puede registrar y cerrar el acondicionamiento.</div>'; }
+  }
   h+='</div>'+_secOpen('🔬 Controles en Proceso (IPC)');
   if(!ipcSpecs.length){h+='<div style="color:#999;font-size:12px;">Este MBR no tiene IPCs definidos. Agregalos en /brd (specs del MBR).</div>';}
   else{
@@ -9961,6 +9974,27 @@ async function ebrCerrarEnvasado(ebrId){
   var d=await r.json();
   if(!r.ok){ alert(d.error||'No se pudo cerrar'); return; }
   alert('Envasado cerrado · '+(d.n_descuentos||0)+' descuentos de envase registrados.');
+  if(typeof abrirEBR==='function') abrirEBR(ebrId);
+}
+function acondAddMat(ebrId){
+  var wrap=document.getElementById('acond-mat-rows-'+ebrId); if(!wrap) return;
+  var div=document.createElement('div'); div.className='acond-mat-row'; div.style.cssText='display:flex;gap:6px;margin-bottom:5px;align-items:center';
+  div.innerHTML='<input class="acond-cod" placeholder="Código MEE" style="flex:2;padding:6px;border:1px solid #ccc;border-radius:4px;font-size:12px"><input class="acond-cant" type="number" min="0" step="1" placeholder="Cantidad" style="flex:1;padding:6px;border:1px solid #ccc;border-radius:4px;font-size:12px"><button onclick="this.parentNode.remove()" style="background:#fee2e2;color:#991b1b;border:none;border-radius:4px;padding:5px 9px;font-size:12px;cursor:pointer">&times;</button>';
+  wrap.appendChild(div);
+}
+async function ebrCerrarAcond(ebrId){
+  var rows=document.querySelectorAll('#acond-mat-rows-'+ebrId+' .acond-mat-row');
+  var mats=[];
+  rows.forEach(function(r){
+    var cod=((r.querySelector('.acond-cod')||{}).value||'').trim(), cant=parseFloat((r.querySelector('.acond-cant')||{}).value||'0');
+    if(cod&&cant>0) mats.push({codigo:cod, cantidad:cant});
+  });
+  if(!mats.length){ alert('Agregá al menos un material con cantidad.'); return; }
+  if(!confirm('Cerrar el acondicionamiento y descontar '+mats.length+' material(es)? Baja el stock de MEE y marca el legajo completado.')) return;
+  var r=await fetch('/api/brd/ebr/'+ebrId+'/cerrar-acondicionamiento',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({materiales:mats})});
+  var d=await r.json();
+  if(!r.ok){ alert(d.error||'No se pudo cerrar'); return; }
+  alert('Acondicionamiento cerrado · '+(d.n_descuentos||0)+' material(es) descontado(s).');
   if(typeof abrirEBR==='function') abrirEBR(ebrId);
 }
 function loadColaSinEnvasar(){

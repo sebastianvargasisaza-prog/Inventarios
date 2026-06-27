@@ -5508,6 +5508,89 @@ def cerrar_envasado_ebr(ebr_id):
     audit_log(None, usuario=user, accion="CERRAR_ENVASADO_DESCONTAR_MEE",
               tabla="ebr_ejecuciones", registro_id=ebr_id,
               despues={"lote": lote, "descuentos": descuentos})
+    # CADENA OF→OA (27-jun · Sebastián) · al CERRAR el envasado se HABILITA automático el legajo de
+    # ACONDICIONAMIENTO del mismo lote físico (idempotente vía crear_ebr_desde_mbr · best-effort · NO
+    # bloquea el cierre si falla). Espeja el hook fabricación→envasado de liberar_ebr. Así OF→OA deja de
+    # ser manual/silencioso (hueco #1): el operario ve el siguiente paso al terminar el envasado.
+    _acond_habilitado = None
+    try:
+        if producto and lote:
+            _res_oa = crear_ebr_desde_mbr(conn.cursor(), producto_nombre=producto,
+                                          lote=lote, usuario=user, fase='acondicionamiento')
+            conn.commit()
+            if _res_oa.get('ok'):
+                _acond_habilitado = _res_oa.get('id')
+                if not _res_oa.get('reusado'):
+                    audit_log(None, usuario=user, accion="AUTO_CREAR_EBR_ACONDICIONAMIENTO",
+                              tabla="ebr_ejecuciones", registro_id=_res_oa.get('id'),
+                              despues={"origen_envasado_ebr": ebr_id, "lote": lote})
+    except Exception as _e2:
+        log.warning("auto-crear EBR acondicionamiento al cerrar envasado fallo (no bloquea): %s", _e2)
+    return jsonify({"ok": True, "estado": "completado", "descuentos": descuentos,
+                    "n_descuentos": len(descuentos), "acond_ebr_id": _acond_habilitado})
+
+
+# ── ACONDICIONAMIENTO · cierre canónico (27-jun · Sebastián · hueco #2) ──────────────────────────────
+# El operario lista los materiales de acondicionamiento consumidos (etiquetas/estuches/insertos · código +
+# cantidad); al CERRAR se descuentan vía movimientos_mee (canónico M26 · NUNCA el cache stock_actual) UNA
+# sola vez (CAS · M27). Reemplaza el descuento de la ruta legacy /api/acondicionamiento (que tocaba el cache
+# sin CAS → drift + doble descuento). Reusa la marca envases_descontados_at como "materiales descontados".
+@bp.route("/api/brd/ebr/<int:ebr_id>/cerrar-acondicionamiento", methods=["POST"])
+def cerrar_acondicionamiento_ebr(ebr_id):
+    """Cierra el acondicionamiento: descuenta los materiales listados × cantidad (movimientos_mee) UNA vez
+    (CAS) y marca completado. Body: {materiales:[{codigo, cantidad}]}. Reversa segura: si el descuento falla,
+    rollback (no queda marcado) y se puede reintentar."""
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    body = request.get_json(silent=True) or {}
+    conn = get_db(); cur = conn.cursor()
+    erow = cur.execute(
+        "SELECT COALESCE(e.lote_codigo, e.lote), COALESCE(e.fase,'fabricacion') "
+        "FROM ebr_ejecuciones e WHERE e.id=?", (ebr_id,)).fetchone()
+    if not erow:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if str(erow[1]).strip().lower() != "acondicionamiento":
+        return jsonify({"error": "este cierre es solo para legajos de acondicionamiento"}), 400
+    lote = erow[0] or ""
+    items = []
+    for it in (body.get("materiales") or []):
+        cod = str((it or {}).get("codigo") or (it or {}).get("mee_codigo") or "").strip()
+        try:
+            cant = float((it or {}).get("cantidad") or 0)
+        except (TypeError, ValueError):
+            cant = 0
+        if cod and cant > 0:
+            items.append((cod, cant))
+    if not items:
+        return jsonify({"error": "listá al menos un material consumido (código + cantidad) antes de cerrar"}), 400
+    # CAS idempotente (M27): reclamar el cierre — solo 1 vez y solo si está en proceso (race multi-worker).
+    cur.execute(
+        "UPDATE ebr_ejecuciones SET envases_descontados_at=datetime('now','utc'), estado='completado', "
+        "completado_at_utc=datetime('now','utc') "
+        "WHERE id=? AND COALESCE(fase,'')='acondicionamiento' AND COALESCE(envases_descontados_at,'')='' "
+        "AND estado IN ('iniciado','en_proceso')", (ebr_id,))
+    if cur.rowcount == 0:
+        conn.rollback()
+        return jsonify({"error": "El acondicionamiento ya se cerró/descontó o no está en proceso · refrescá",
+                        "codigo": "YA_CERRADO"}), 409
+    descuentos = []
+    try:
+        for cod, cant in items:
+            cur.execute(
+                "INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, observaciones, responsable, fecha) "
+                "VALUES (?, 'Salida', ?, ?, ?, datetime('now','utc'))",
+                (cod, cant, "Acondicionamiento EBR-" + str(ebr_id) + " lote " + lote, user))
+            descuentos.append({"mee_codigo": cod, "cantidad": cant})
+    except Exception as _e:
+        conn.rollback()
+        log.warning("cerrar-acondicionamiento descuento MEE fallo (rollback): %s", _e)
+        return jsonify({"error": "falló el descuento de materiales · reintentá", "detalle": str(_e)}), 500
+    conn.commit()
+    audit_log(None, usuario=user, accion="CERRAR_ACONDICIONAMIENTO_DESCONTAR_MEE",
+              tabla="ebr_ejecuciones", registro_id=ebr_id,
+              despues={"lote": lote, "descuentos": descuentos})
     return jsonify({"ok": True, "estado": "completado", "descuentos": descuentos,
                     "n_descuentos": len(descuentos)})
 
