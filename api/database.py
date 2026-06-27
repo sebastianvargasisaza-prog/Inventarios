@@ -397,7 +397,7 @@ except ImportError:
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
     (297, "Envases · cargar el inventario normalizado al maestro_mee (Sebastián 27-jun · 57 envases del Excel con códigos FR/IMP/ETQ/CJA + tono + ml). REEMPLAZA los viejos (NO existían · Sebastián): desactiva (Inactivo) todo lo previo y carga los 57 Activos · stock_actual = saldo inicial del Excel (saldo de apertura · se reconcilia con conteo cíclico · M26). Reversible: estado='Inactivo' por código (prefijo FR-/IMP-/ETQ-/CJA-).", [
         "UPDATE maestro_mee SET estado='Inactivo' WHERE COALESCE(estado,'') <> 'Inactivo'",
-        """INSERT OR REPLACE INTO maestro_mee (codigo, descripcion, categoria, stock_actual, estado, fecha_creacion) VALUES
+        """INSERT INTO maestro_mee (codigo, descripcion, categoria, stock_actual, estado, fecha_creacion) VALUES
 ('FR-TRX-30','SUERO ILUMINADOR TRX 30ml','Frasco',254,'Activo','2026-06-27'),
 ('FR-NIA-30','SUERO NIACINAMIDA 30ml','Frasco',248,'Activo','2026-06-27'),
 ('FR-PLASTICBOT-30','PLASTIC BOTTLE NO PRINT 30ml','Frasco',3483,'Activo','2026-06-27'),
@@ -454,7 +454,8 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
 ('CJA-SAH','SUERO ACIDO HIDRATANTE AH','Plegadiza',982,'Activo','2026-06-27'),
 ('CJA-RECN','SUERO RENOVA C10','Plegadiza',932,'Activo','2026-06-27'),
 ('CJA-TRX','SUERO ILUMINADOR TRX','Plegadiza',1128,'Activo','2026-06-27'),
-('CJA-BOOST','BOOSTER','Plegadiza',1375,'Activo','2026-06-27')""",
+('CJA-BOOST','BOOSTER','Plegadiza',1375,'Activo','2026-06-27')
+ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=excluded.categoria, stock_actual=excluded.stock_actual, estado=excluded.estado, fecha_creacion=excluded.fecha_creacion""",
     ]),
     (296, "Necesidades · consolidar BLUSH BALM = BLUSH BÁLSAMO (Sebastián 27-jun · canónico = 'BLUSH BALM') · "
           "los tonos BB* estaban partidos entre 2 nombres → la demanda se dividía en dos. Re-apuntar los SKU "

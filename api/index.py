@@ -354,7 +354,11 @@ try:
                         continue
                     try:
                         _stmt_pg = translate_ddl(_stmt)
-                        if es_insert_or(_stmt_pg):
+                        # FIX 27-jun · solo pre-reescribir IGNORE acá; REPLACE lo maneja el cursor del adapter
+                        # (pg_adapter dispatch). Antes esto llamaba el rewriter de IGNORE también para REPLACE →
+                        # le anexaba 'ON CONFLICT DO NOTHING' sin quitar 'OR REPLACE' y el adapter agregaba OTRO
+                        # ON CONFLICT → doble → syntax error en PG (rompió mig 297). Espeja pg_adapter:297-301.
+                        if es_insert_or(_stmt_pg) == 'ignore':
                             _stmt_pg = reescribir_insert_or_ignore(_stmt_pg)
                         _cur.execute(_stmt_pg)
                         _c.commit()
