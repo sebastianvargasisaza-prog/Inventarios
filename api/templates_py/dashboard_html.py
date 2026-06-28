@@ -1897,9 +1897,13 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     </div>
     <div id="mee-alertas-panel" style="margin-bottom:18px;"></div>
     <a name="mee-bajo-anchor"></a>
-    <!-- Sprint MEE PRO · grid responsive (sidebar abajo en mobile) -->
-    <div class="mee-grid" style="display:grid;grid-template-columns:1fr 370px;gap:18px;margin-bottom:22px;">
-      <div>
+    <!-- Sub-pestañas Bodega MEE · Sebastián 28-jun (estilo Bodega MP) -->
+    <div style="display:flex;gap:4px;border-bottom:2px solid #e2e8f0;margin-bottom:16px;flex-wrap:wrap">
+      <button id="meest-recepcion" onclick="meeSubTab('recepcion')" style="background:none;border:none;border-bottom:3px solid #6d28d9;padding:8px 16px;font-size:13px;font-weight:700;color:#6d28d9;cursor:pointer">&#128666; Recepci&oacute;n</button>
+      <button id="meest-inventario" onclick="meeSubTab('inventario')" style="background:none;border:none;border-bottom:3px solid transparent;padding:8px 16px;font-size:13px;font-weight:700;color:#64748b;cursor:pointer">&#128230; Inventario</button>
+    </div>
+    <div style="margin-bottom:22px;">
+      <div id="meepane-inventario" style="display:none">
         <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
           <select id="mee-cat-filter-bodega" style="flex:1;min-width:180px;width:auto;" onchange="cargarMeeStock()"><option value="">Todas las categorias</option></select>
           <input id="mee-search-input" type="text" placeholder="Buscar..." oninput="cargarMeeStock()" style="padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px">
@@ -1913,8 +1917,9 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         </div>
         <div id="mee-agrupado-wrap" style="display:none"></div>
       </div>
-      <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:18px;">
-        <h3 style="margin-bottom:14px;color:#6d28d9;font-size:1em;">&#9998; Registrar Movimiento</h3>
+      <div id="meepane-recepcion">
+      <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:18px;max-width:560px;">
+        <h3 style="margin-bottom:14px;color:#6d28d9;font-size:1em;">&#128666; Recepci&oacute;n de envases</h3>
         <div class="form-group"><label>Tipo</label>
           <select id="mee-tipo" onchange="meeActualizarTipo(this.value)">
             <option value="Entrada">&#128229; Entrada - recepcion</option>
@@ -1932,6 +1937,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <div class="form-group"><label>Observaciones</label><textarea id="mee-obs" rows="2" placeholder="Opcional..."></textarea></div>
         <button style="width:100%;" onclick="registrarMeeMovimiento()">&#10003; Registrar</button>
         <div id="mee-form-msg" style="margin-top:8px;"></div>
+      </div>
       </div>
     </div>
     <div style="margin-bottom:22px;">
@@ -9494,6 +9500,13 @@ function renderMeeAgrupado(){
   }).join('');
 }
 function meeActualizarTipo(tipo){ var iS=tipo==='Salida'; var lg=document.getElementById('mee-lote-group'); var bg=document.getElementById('mee-batch-group'); if(lg) lg.style.display=iS?'none':'block'; if(bg) bg.style.display=iS?'block':'none'; }
+function meeSubTab(name){
+  ['recepcion','inventario'].forEach(function(t){
+    var p=document.getElementById('meepane-'+t); if(p) p.style.display=(t===name?'block':'none');
+    var b=document.getElementById('meest-'+t); if(b){ b.style.color=(t===name?'#6d28d9':'#64748b'); b.style.borderBottom=(t===name?'3px solid #6d28d9':'3px solid transparent'); }
+  });
+  if(name==='inventario' && typeof cargarMeeStock==='function'){ try{ cargarMeeStock(); }catch(e){} }
+}
 function _meeFoto(cod){ var box=document.getElementById('mee-foto-box'); var img=document.getElementById('mee-foto-img'); if(!box||!img) return; var u=(window._MEE_IMG||{})[cod]||''; if(u){ img.src=u; box.style.display='block'; } else { box.style.display='none'; } }
 function meeSelChange(){ var sel=document.getElementById('mee-codigo-sel'); var prev=document.getElementById('mee-stock-preview'); var und=document.getElementById('mee-unidad'); if(!sel||!sel.value){if(prev)prev.style.display='none'; _meeFoto(''); return;} _meeFoto(sel.value); var opt=sel.options[sel.selectedIndex]; var st=opt.getAttribute('data-stock'); var u=opt.getAttribute('data-unidad')||'und'; var mn=opt.getAttribute('data-min'); if(prev){var r=mn>0?(st/mn*100).toFixed(0):null; var col=!r?'#666':(r<100?'#e74c3c':'#27ae60'); prev.style.display='block'; prev.innerHTML='&#128230; Stock: <strong style="color:'+col+';">'+st+' '+u+'</strong> | Minimo: <strong>'+mn+' '+u+'</strong>'+(r?' ('+r+'%)':'');} if(und) und.value=u; }
 async function registrarMeeMovimiento(){ var tipo=(document.getElementById('mee-tipo')||{}).value; var codigo=(document.getElementById('mee-codigo-sel')||{}).value; var cantidad=parseFloat((document.getElementById('mee-cantidad')||{}).value); var unidad=(document.getElementById('mee-unidad')||{}).value||'und'; var lote=(document.getElementById('mee-lote')||{}).value||''; var batch=(document.getElementById('mee-batch')||{}).value||''; var obs=(document.getElementById('mee-obs')||{}).value||''; var msg=document.getElementById('mee-form-msg');
