@@ -11546,6 +11546,19 @@ def mee_crear():
         except Exception as _ae:
             import logging as _lg
             _lg.getLogger('inventario').warning('audit crear_mee fallo: %s', _ae)
+        # Partes del empaque (mig 298 · mee_partes) · Sebastián 28-jun · el envase se compone de gotero/tapa/plegadiza
+        _partes = d.get('partes') or []
+        if isinstance(_partes, list):
+            for _p in _partes:
+                _pcod = str((_p or {}).get('codigo') or '').strip().upper()
+                if not _pcod:
+                    continue
+                try:
+                    _pcant = float((_p or {}).get('cantidad') or 1)
+                except (ValueError, TypeError):
+                    _pcant = 1
+                c.execute("INSERT INTO mee_partes (mee_codigo, parte_codigo, descripcion, cantidad, creado_at) "
+                          "VALUES (?,?,?,?,datetime('now','-5 hours'))", (codigo, _pcod, '', _pcant))
         conn.commit()
     except Exception as e:
         return jsonify({'error': str(e)}), 400

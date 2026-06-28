@@ -176,3 +176,17 @@ def test_mig300_recepcion_mee_columnas(app, db_clean):
             "WHERE mee_codigo='FR-VIDRIOOPAL-30' AND oc_numero='OC-1'")
     assert r[0] == 'Cafarcol' and r[1] == 'Zona A' and float(r[2]) == 1200 and r[3] == 'OC-1' and r[4] == 'FAC-1', \
         ('columnas de recepción MEE no funcionan', r)
+
+
+def test_mee_crear_con_partes(app, db_clean):
+    # el wizard "Material nuevo" crea el envase + sus partes (gotero/plegadiza) en mee_partes
+    from .conftest import csrf_headers
+    c = _login(app)
+    r = c.post('/api/mee', json={'codigo': 'FR-TESTPARTES-30', 'descripcion': 'test partes',
+                                 'categoria': 'Frasco',
+                                 'partes': [{'codigo': 'GOT-X', 'cantidad': 1},
+                                            {'codigo': 'CJA-X', 'cantidad': 2}]},
+               headers=csrf_headers())
+    assert r.status_code == 200, r.data
+    n = _q1("SELECT COUNT(*) FROM mee_partes WHERE mee_codigo='FR-TESTPARTES-30'")[0]
+    assert n == 2, ('las partes del empaque no se guardaron', n)

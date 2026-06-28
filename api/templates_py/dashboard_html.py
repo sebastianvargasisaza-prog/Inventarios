@@ -1965,6 +1965,15 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
             <div id="mee-wiz-code" style="font-family:ui-monospace,monospace;font-size:18px;font-weight:800;color:#166534;">&mdash;</div>
             <div class="form-group" style="margin:8px 0 0"><label style="font-size:11px">Nombre / descripci&oacute;n (editable)</label><input type="text" id="mee-wiz-desc" oninput="this.dataset.touched='1'" placeholder="Auto"></div>
           </div>
+          <div class="form-group" style="margin:0 0 10px"><label>Partes del empaque (opcional)</label>
+            <div id="mee-wiz-partes-list" style="margin-bottom:6px"></div>
+            <div style="display:flex;gap:6px;align-items:center">
+              <select id="mee-wiz-parte-sel" style="flex:2;font-size:12px"><option value="">-- componente (gotero, tapa, plegadiza…) --</option></select>
+              <input id="mee-wiz-parte-cant" type="number" min="1" step="1" value="1" style="width:60px" title="cantidad por unidad">
+              <button type="button" onclick="meeWizAddParte()" style="background:#7c3aed;color:#fff;border:none;border-radius:6px;padding:7px 10px;font-weight:700;cursor:pointer">&#43;</button>
+            </div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:4px">El gotero/plegadiza son materiales propios — si no existen, creálos primero y luego los agregás como parte.</div>
+          </div>
           <div id="mee-wiz-msg" style="font-size:12px;margin-bottom:8px;"></div>
           <div style="display:flex;gap:10px;">
             <button type="button" onclick="meeWizClose()" style="flex:1;background:#e2e8f0;color:#334155;border:none;border-radius:8px;padding:10px;font-weight:700;cursor:pointer;">Cancelar</button>
@@ -9547,7 +9556,12 @@ function _meeFoto(cod){ var box=document.getElementById('mee-foto-box'); var img
 function _meeAutofill(cod){ var dd=(window._MEE_DATA||{})[cod]||{}; var de=document.getElementById('mee-descripcion'); if(de)de.value=dd.desc||''; var ce=document.getElementById('mee-categoria'); if(ce)ce.value=dd.cat||''; var pe=document.getElementById('mee-proveedor'); if(pe)pe.value=dd.prov||''; }
 function meeCalcValor(){ var q=parseFloat((document.getElementById('mee-cantidad')||{}).value)||0; var p=parseFloat((document.getElementById('mee-precio')||{}).value)||0; var v=document.getElementById('mee-valor'); if(v){ var t=q*p; v.value=t>0?('$'+t.toLocaleString('es-CO')):''; } }
 function _meeWizNorm(s){ return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
-function meeWizOpen(){ var m=document.getElementById('mee-wiz-modal'); if(m) m.style.display='block'; ['mee-wiz-tipo','mee-wiz-material','mee-wiz-metodo','mee-wiz-prod','mee-wiz-ml','mee-wiz-tono','mee-wiz-desc'].forEach(function(idd){var el=document.getElementById(idd); if(el){el.value=''; if(el.dataset) delete el.dataset.touched;}}); meeWizGen(); }
+var _meeWizPartes=[];
+function meeWizFillPartes(){ var sel=document.getElementById('mee-wiz-parte-sel'); if(!sel) return; var h='<option value="">-- componente (gotero, tapa, plegadiza…) --</option>'; Object.keys(window._MEE_DATA||{}).sort().forEach(function(cod){ var dd=(window._MEE_DATA||{})[cod]||{}; h+='<option value="'+cod+'">'+cod+' — '+(dd.desc||'')+'</option>'; }); sel.innerHTML=h; }
+function meeWizRenderPartes(){ var box=document.getElementById('mee-wiz-partes-list'); if(!box) return; box.innerHTML=_meeWizPartes.map(function(p,i){ return '<span style="display:inline-block;background:#ede9fe;color:#5b21b6;border-radius:8px;padding:2px 8px;margin:2px 4px 2px 0;font-size:12px;font-weight:600">'+p.codigo+' &times;'+p.cantidad+' <a onclick="meeWizDelParte('+i+')" style="color:#dc2626;cursor:pointer;font-weight:800;margin-left:3px">&times;</a></span>'; }).join('') || '<span style="font-size:11px;color:#cbd5e1">— sin partes —</span>'; }
+function meeWizAddParte(){ var sel=document.getElementById('mee-wiz-parte-sel'); var cant=document.getElementById('mee-wiz-parte-cant'); if(!sel||!sel.value) return; var c=parseFloat(cant.value)||1; if(_meeWizPartes.some(function(p){return p.codigo===sel.value;})) return; _meeWizPartes.push({codigo:sel.value, cantidad:c}); sel.value=''; if(cant) cant.value='1'; meeWizRenderPartes(); }
+function meeWizDelParte(i){ _meeWizPartes.splice(i,1); meeWizRenderPartes(); }
+function meeWizOpen(){ var m=document.getElementById('mee-wiz-modal'); if(m) m.style.display='block'; ['mee-wiz-tipo','mee-wiz-material','mee-wiz-metodo','mee-wiz-prod','mee-wiz-ml','mee-wiz-tono','mee-wiz-desc'].forEach(function(idd){var el=document.getElementById(idd); if(el){el.value=''; if(el.dataset) delete el.dataset.touched;}}); _meeWizPartes=[]; meeWizFillPartes(); meeWizRenderPartes(); meeWizGen(); }
 function meeWizClose(){ var m=document.getElementById('mee-wiz-modal'); if(m) m.style.display='none'; }
 function meeWizGen(){
   var tipo=(document.getElementById('mee-wiz-tipo')||{}).value||'';
@@ -9577,7 +9591,7 @@ async function meeWizCrear(){
   var tipo=(document.getElementById('mee-wiz-tipo')||{}).value||'';
   var cat={Frasco:'Frasco',Tapa:'Tapa',Gotero:'Gotero',Etiqueta:'Etiqueta',Impresion:'Impresión',Caja:'Plegadiza'}[tipo]||'Otro';
   try{
-    var r=await fetch('/api/mee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({codigo:code,descripcion:desc,categoria:cat,stock_actual:0,stock_minimo:0})});
+    var r=await fetch('/api/mee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({codigo:code,descripcion:desc,categoria:cat,stock_actual:0,stock_minimo:0,partes:_meeWizPartes})});
     var res=await r.json();
     if(r.ok && !res.error){ await cargarMeeStock(); if(s){ s.value=code; meeSelChange(); } meeWizClose(); }
     else { alert('Error: '+(res.error||'No se pudo crear')); }
