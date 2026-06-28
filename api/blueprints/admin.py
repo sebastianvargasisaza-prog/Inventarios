@@ -7075,8 +7075,8 @@ _RECOD_ENVASES_HTML = r"""<!DOCTYPE html><html lang="es"><head>
 </style></head><body>
 <header><h1>&#128284; Re-codificar envases</h1><div class="sub">Asigná material/producto a cada uno &middot; genera el código con la MISMA lógica del wizard &middot; renombra arrastrando stock + referencias</div></header>
 <div class="container">
-<table><thead><tr><th>Actual</th><th>Tipo</th><th>Material/M&eacute;todo</th><th>Producto/uso</th><th>ml</th><th>Tono</th><th>Nuevo c&oacute;digo</th><th></th></tr></thead>
-<tbody id="tb"><tr><td colspan="8">Cargando&hellip;</td></tr></tbody></table>
+<table><thead><tr><th>Actual</th><th>Tipo</th><th>Material/M&eacute;todo</th><th>Caracter&iacute;stica</th><th>Producto (serigrafiados)</th><th>ml</th><th>Tono</th><th>Nuevo c&oacute;digo</th><th></th></tr></thead>
+<tbody id="tb"><tr><td colspan="9">Cargando&hellip;</td></tr></tbody></table>
 </div>
 <script>
 var VIEJO=[];
@@ -7095,6 +7095,7 @@ function gen(i){
   show('rc-mat-'+i,isFr); show('rc-met-'+i,tipo==='Impresion');
   if(isFr){var m=val('rc-mat-'+i);if(m)seg.push(m);}
   if(tipo==='Impresion'){var me=val('rc-met-'+i);if(me)seg.push(me);}
+  var car=norm(val('rc-car-'+i)); if(car)seg.push(car);
   var prod=norm(val('rc-prod-'+i)); if(prod)seg.push(prod);
   var ml=val('rc-ml-'+i); if(ml)seg.push(String(parseInt(ml,10)));
   var tono=norm(val('rc-tono-'+i)); if(tono)seg.push(tono);
@@ -7114,6 +7115,7 @@ async function cargar(){
     h+='<tr><td><code>'+esc(m.codigo)+'</code><br><small>'+esc(m.descripcion)+'</small></td>';
     h+='<td><select id="rc-tipo-'+i+'" onchange="gen('+i+')">'+topts+'</select></td>';
     h+='<td><select id="rc-mat-'+i+'" onchange="gen('+i+')">'+matOpts+'</select><select id="rc-met-'+i+'" onchange="gen('+i+')" style="display:none">'+metOpts+'</select></td>';
+    h+='<td><input id="rc-car-'+i+'" oninput="gen('+i+')" placeholder="cuadrado, redondo…"></td>';
     h+='<td><input id="rc-prod-'+i+'" oninput="gen('+i+')" placeholder="NIA, SUERO, VITC…"></td>';
     h+='<td class="ml"><input id="rc-ml-'+i+'" value="'+esc(ml)+'" oninput="gen('+i+')"></td>';
     h+='<td><input id="rc-tono-'+i+'" oninput="gen('+i+')" placeholder="opc" style="width:80px"></td>';

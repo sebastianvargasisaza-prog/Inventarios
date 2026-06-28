@@ -1982,8 +1982,10 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
             <select id="mee-wiz-material" onchange="meeWizGen()"><option value="">--</option><option value="VID">Vidrio</option><option value="PLA">Pl&aacute;stico</option><option value="AIR">Airless</option><option value="AL">Aluminio</option></select></div>
           <div class="form-group" id="mee-wiz-metodo-grp" style="margin:0 0 10px;display:none"><label>2. M&eacute;todo</label>
             <select id="mee-wiz-metodo" onchange="meeWizGen()"><option value="">--</option><option value="TP">Tampograf&iacute;a</option><option value="SG">Serigraf&iacute;a</option></select></div>
-          <div class="form-group" style="margin:0 0 10px"><label>3. Producto / l&iacute;nea (corto)</label>
-            <input type="text" id="mee-wiz-prod" oninput="meeWizGen()" placeholder="Ej: SUERO, NIA, VITC, BLUSH"></div>
+          <div class="form-group" style="margin:0 0 10px"><label>3a. Caracter&iacute;stica / forma (gen&eacute;ricos · para varios productos)</label>
+            <input type="text" id="mee-wiz-car" oninput="meeWizGen()" placeholder="Ej: cuadrado, redondo, cil&iacute;ndrico"></div>
+          <div class="form-group" style="margin:0 0 10px"><label>3b. Producto / l&iacute;nea (serigrafiados de un solo producto)</label>
+            <input type="text" id="mee-wiz-prod" oninput="meeWizGen()" placeholder="Ej: NIA, VITC, MULP"></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
             <div class="form-group" style="margin:0"><label>4. Capacidad (ml)</label><input type="number" id="mee-wiz-ml" oninput="meeWizGen()" placeholder="30"></div>
             <div class="form-group" style="margin:0"><label>5. Tono/Color (opc.)</label><input type="text" id="mee-wiz-tono" oninput="meeWizGen()" placeholder="Malva"></div>
@@ -9665,7 +9667,7 @@ function meeWizFillPartes(){ var sel=document.getElementById('mee-wiz-parte-sel'
 function meeWizRenderPartes(){ var box=document.getElementById('mee-wiz-partes-list'); if(!box) return; box.innerHTML=_meeWizPartes.map(function(p,i){ return '<span style="display:inline-block;background:#ede9fe;color:#5b21b6;border-radius:8px;padding:2px 8px;margin:2px 4px 2px 0;font-size:12px;font-weight:600">'+p.codigo+' &times;'+p.cantidad+' <a onclick="meeWizDelParte('+i+')" style="color:#dc2626;cursor:pointer;font-weight:800;margin-left:3px">&times;</a></span>'; }).join('') || '<span style="font-size:11px;color:#cbd5e1">— sin partes —</span>'; }
 function meeWizAddParte(){ var sel=document.getElementById('mee-wiz-parte-sel'); var cant=document.getElementById('mee-wiz-parte-cant'); if(!sel||!sel.value) return; var c=parseFloat(cant.value)||1; if(_meeWizPartes.some(function(p){return p.codigo===sel.value;})) return; _meeWizPartes.push({codigo:sel.value, cantidad:c}); sel.value=''; if(cant) cant.value='1'; meeWizRenderPartes(); }
 function meeWizDelParte(i){ _meeWizPartes.splice(i,1); meeWizRenderPartes(); }
-function meeWizOpen(){ var m=document.getElementById('mee-wiz-modal'); if(m) m.style.display='block'; ['mee-wiz-tipo','mee-wiz-material','mee-wiz-metodo','mee-wiz-prod','mee-wiz-ml','mee-wiz-tono','mee-wiz-desc'].forEach(function(idd){var el=document.getElementById(idd); if(el){el.value=''; if(el.dataset) delete el.dataset.touched;}}); _meeWizPartes=[]; meeWizFillPartes(); meeWizRenderPartes(); meeWizGen(); }
+function meeWizOpen(){ var m=document.getElementById('mee-wiz-modal'); if(m) m.style.display='block'; ['mee-wiz-tipo','mee-wiz-material','mee-wiz-metodo','mee-wiz-car','mee-wiz-prod','mee-wiz-ml','mee-wiz-tono','mee-wiz-desc'].forEach(function(idd){var el=document.getElementById(idd); if(el){el.value=''; if(el.dataset) delete el.dataset.touched;}}); _meeWizPartes=[]; meeWizFillPartes(); meeWizRenderPartes(); meeWizGen(); }
 function meeWizClose(){ var m=document.getElementById('mee-wiz-modal'); if(m) m.style.display='none'; }
 function meeWizGen(){
   var tipo=(document.getElementById('mee-wiz-tipo')||{}).value||'';
@@ -9677,12 +9679,13 @@ function meeWizGen(){
   var seg=[pref];
   if(tipo==='Frasco'||tipo==='Tapa'||tipo==='Gotero'){ if(mat) seg.push(mat); }
   if(tipo==='Impresion'){ if(met) seg.push(met); }
+  var carRaw=(document.getElementById('mee-wiz-car')||{}).value||''; var car=_meeWizNorm(carRaw); if(car) seg.push(car);
   var prod=_meeWizNorm(prodRaw); if(prod) seg.push(prod);
   if(ml) seg.push(String(parseInt(ml,10)));
   var tono=_meeWizNorm(tonoRaw); if(tono) seg.push(tono);
   var code=seg.filter(function(x){return x;}).join('-');
   var cd=document.getElementById('mee-wiz-code'); if(cd) cd.textContent=code||'—';
-  var nm=[tipo, {VID:'vidrio',PLA:'plástico',AIR:'airless',AL:'aluminio'}[mat]||'', {TP:'tampografía',SG:'serigrafía'}[met]||'', prodRaw, ml?(ml+'ml'):'', tonoRaw].filter(function(x){return x;}).join(' ');
+  var nm=[tipo, {VID:'vidrio',PLA:'plástico',AIR:'airless',AL:'aluminio'}[mat]||'', {TP:'tampografía',SG:'serigrafía'}[met]||'', carRaw, prodRaw, ml?(ml+'ml'):'', tonoRaw].filter(function(x){return x;}).join(' ');
   var de=document.getElementById('mee-wiz-desc'); if(de && !de.dataset.touched) de.value=nm;
   var msg=document.getElementById('mee-wiz-msg'); if(msg){ msg.innerHTML=(code && (window._MEE_DATA||{})[code])?'<span style="color:#b45309;">&#9888; '+code+' ya existe — al crear, te lo selecciono.</span>':''; }
 }
