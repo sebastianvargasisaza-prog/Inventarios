@@ -257,3 +257,17 @@ def test_mee_gate_cuarentena_no_cuenta_produccion(app, db_clean):
     finally:
         conn.close()
     assert st2.get('FR-GATE-30', 0) == 100, ('liberado debe contar', st2.get('FR-GATE-30'))
+
+
+def test_mee_shopify_fotos_bulk(app, db_clean):
+    # el bulk trae la foto del producto Shopify que matchea al envase sin foto
+    from .conftest import csrf_headers
+    c = _login(app)
+    _exec("INSERT INTO formula_headers (producto_nombre, imagen_url, activo) VALUES "
+          "('SUERO DE NIACINAMIDA FOTOTEST','http://x/nia.jpg',1)")
+    _exec("INSERT INTO maestro_mee (codigo,descripcion,categoria,estado,imagen_url,stock_actual,stock_minimo,unidad,fecha_creacion) "
+          "VALUES ('FR-NIAFOTO-30','SUERO NIACINAMIDA FOTOTEST 30ml','Frasco','Activo','',0,0,'und','')")
+    r = c.post('/api/mee/shopify-fotos-bulk', headers=csrf_headers())
+    assert r.status_code == 200, r.data
+    img = _q1("SELECT imagen_url FROM maestro_mee WHERE codigo='FR-NIAFOTO-30'")[0]
+    assert img == 'http://x/nia.jpg', ('no trajo la foto de Shopify por match', img)

@@ -11909,6 +11909,52 @@ def mee_calificar():
     conn.commit()
     return jsonify({'ok': True, 'codigo': cod})
 
+@bp.route('/api/mee/shopify-fotos-bulk', methods=['POST'])
+def mee_shopify_fotos_bulk():
+    """Trae fotos de Shopify para los envases SIN foto, por match de producto (Sebastián 28-jun)."""
+    _u, _err, _code = _require_planta_write()
+    if _err:
+        return _err, _code
+    import unicodedata as _ud
+    import re as _re
+    _STOP = {'SUERO', 'CREMA', 'FORMULA', 'NUEVA', 'FACIAL', 'CORPORAL', 'ANIMU', 'ANIMUS', 'LAB',
+             'CON', 'TAMPOGRAFIA', 'SERIGRAFIA', 'FRASCO', 'ENVASE', 'SIN', 'SERG', 'SERIG',
+             'LIPS', 'LIP', 'GLOSS', 'PLASTIC', 'BOTTLE', 'NO', 'PRINT', 'BLANCO', 'VIDRIO'}
+
+    def _palabras(s):
+        s = _ud.normalize('NFKD', str(s)).encode('ascii', 'ignore').decode().upper()
+        s = _re.sub(r'\b\d+[,\.]?\d*\s*ML\b', ' ', s)
+        s = _re.sub(r'[^A-Z0-9 ]', ' ', s)
+        return set(w for w in s.split() if len(w) >= 3 and w not in _STOP)
+    conn = get_db(); c = conn.cursor()
+    prods = []
+    try:
+        for r in c.execute("SELECT producto_nombre, COALESCE(imagen_url,'') FROM formula_headers "
+                           "WHERE COALESCE(imagen_url,'')<>'' AND COALESCE(activo,1)=1").fetchall():
+            prods.append((_palabras(r[0]), r[1]))
+    except Exception:
+        pass
+    n = 0
+    try:
+        rows = c.execute("SELECT codigo, COALESCE(descripcion,'') FROM maestro_mee "
+                        "WHERE COALESCE(estado,'Activo')='Activo' AND COALESCE(imagen_url,'')=''").fetchall()
+        for cod, desc in rows:
+            bw = _palabras(desc)
+            if not bw:
+                continue
+            best = None
+            for pw, img in prods:
+                common = pw & bw
+                if common and (not best or len(common) > best[0]):
+                    best = (len(common), img)
+            if best:
+                c.execute("UPDATE maestro_mee SET imagen_url=? WHERE codigo=?", (best[1], cod))
+                n += 1
+        conn.commit()
+    except Exception as e:
+        return jsonify({'error': str(e)[:150]}), 500
+    return jsonify({'ok': True, 'actualizados': n})
+
 @bp.route('/api/mee/movimientos', methods=['GET'])
 def mee_historial_movimientos():
     """Historial paginado de movimientos MEE. Sprint MEE PRO 20-may-2026.

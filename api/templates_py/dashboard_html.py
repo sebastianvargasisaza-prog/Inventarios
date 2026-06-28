@@ -1903,10 +1903,11 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           <button onclick="cargarMeeStock()" style="white-space:nowrap;background:#15803d;color:#fff;">&#8635; Actualizar</button>
           <button onclick="meeImportarExcel()" style="white-space:nowrap;background:#7c3aed;color:#fff;" title="Importar inventario desde scripts/mee_excel_import.json (admin)">&#128194; Importar Excel</button>
           <button onclick="meeAgrupadoToggle()" id="mee-agrupado-btn" style="white-space:nowrap;background:#7c3aed;color:#fff;">&#128221; Agrupado</button>
+          <button onclick="meeFotosShopify()" style="white-space:nowrap;background:#16a34a;color:#fff;" title="Trae fotos de Shopify por match de producto (Ánimus)">&#128717; Fotos Shopify</button>
         </div>
         <div style="overflow-x:auto;">
-          <table class="table" id="mee-tabla-estandar"><thead><tr><th>Codigo</th><th>Descripcion</th><th>Categoria</th><th>Stock</th><th>Minimo</th><th>Estado</th><th>Proveedor</th><th>Acciones</th></tr></thead>
-          <tbody id="mee-stock-tbody"><tr><td colspan="8" style="text-align:center;color:#999;">Cargando...</td></tr></tbody></table>
+          <table class="table" id="mee-tabla-estandar"><thead><tr><th>Foto</th><th>Codigo</th><th>Descripcion</th><th>Categoria</th><th>Stock</th><th>Minimo</th><th>Estado</th><th>Proveedor</th><th>Acciones</th></tr></thead>
+          <tbody id="mee-stock-tbody"><tr><td colspan="9" style="text-align:center;color:#999;">Cargando...</td></tr></tbody></table>
         </div>
         <div id="mee-agrupado-wrap" style="display:none"></div>
       </div>
@@ -9277,6 +9278,9 @@ function meeScrollToObsoletos(anchor){
   var el = document.getElementById(anchor) || document.getElementsByName(anchor)[0];
   if(el) el.scrollIntoView({behavior:'smooth'});
 }
+async function meeFotosShopify(){
+  if(!confirm('¿Traer fotos de Shopify para los envases SIN foto (por match de producto Ánimus)?')) return;
+  try{ var r=await fetch('/api/mee/shopify-fotos-bulk',{method:'POST'}); var d=await r.json(); if(d.ok){ alert('✓ '+d.actualizados+' envases ahora tienen foto de Shopify'); cargarMeeStock(); } else { alert('Error: '+(d.error||'')); } }catch(e){ alert('Error de conexión'); } }
 async function meeVerificarStock(){
   if(!confirm('Recalcular stock_actual de TODOS los MEE desde SUM(movimientos_mee)? Detecta drift entre cache y movimientos. Solo admin para masivo.')) return;
   try{
@@ -9367,7 +9371,7 @@ async function cargarMeeStock(){
     var cVal = document.getElementById('mee-c-valor');
     if(cVal) cVal.textContent = '$'+Math.round(valorTotal).toLocaleString('es-CO');
     if(!items.length){
-      tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#999;">Sin items activos</td></tr>'; return;
+      tb.innerHTML='<tr><td colspan="9" style="text-align:center;color:#999;">Sin items activos</td></tr>'; return;
     }
     var aC={critico:'#e74c3c',bajo:'#e67e22',advertencia:'#f39c12',ok:'#27ae60',sin_minimo:'#95a5a6'};
     var aL={critico:'&#9940; Critico',bajo:'&#9888; Bajo',advertencia:'&#128993; Alerta',ok:'&#10003; OK',sin_minimo:'—'};
@@ -9377,6 +9381,7 @@ async function cargarMeeStock(){
       var lbl=aL[m.alerta]||'';
       var ob=m.obsoleto?' <span style="background:#ffc107;color:#856404;border-radius:3px;padding:1px 5px;font-size:0.75em;">+90d</span>':'';
       h+='<tr data-cod="'+_escHTML(m.codigo)+'">';
+      h+='<td>'+(m.imagen_url?'<img src="'+_escHTML(m.imagen_url)+'" loading="lazy" style="width:40px;height:40px;object-fit:contain;border-radius:5px;border:1px solid #eee;background:#fafafa">':'<span style="color:#cbd5e1;font-size:11px">&mdash;</span>')+'</td>';
       h+='<td style="font-family:monospace;font-size:0.78em;color:#555;">'+_escHTML(m.codigo)+'</td>';
       h+='<td style="font-size:0.88em;">'+_escHTML(m.descripcion)+ob+'</td>';
       h+='<td style="font-size:0.8em;color:#777;">'+_escHTML(m.categoria||'')+'</td>';
