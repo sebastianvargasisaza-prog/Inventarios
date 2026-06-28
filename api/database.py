@@ -395,6 +395,20 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (298, "Envases · Fase 1 del rediseño (Sebastián 28-jun): foto + partes. `maestro_mee.imagen_url` (foto del "
+          "envase · obligatoria al ingresar · se ve en bodega + dropdown + composición) + tabla `mee_partes` "
+          "(un envase puede tener componentes: tapa/gotero/inner cup… = código MEE + cantidad, o descripción "
+          "libre · vacío por ahora · se llenan al verificar uno por uno).", [
+        "ALTER TABLE maestro_mee ADD COLUMN imagen_url TEXT DEFAULT ''",
+        """CREATE TABLE IF NOT EXISTS mee_partes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mee_codigo TEXT NOT NULL,
+            parte_codigo TEXT DEFAULT '',
+            descripcion TEXT DEFAULT '',
+            cantidad REAL DEFAULT 1,
+            creado_at TEXT DEFAULT ''
+        )""",
+    ]),
     (297, "Envases · cargar el inventario normalizado al maestro_mee (Sebastián 27-jun · 57 envases del Excel con códigos FR/IMP/ETQ/CJA + tono + ml). REEMPLAZA los viejos (NO existían · Sebastián): desactiva (Inactivo) todo lo previo y carga los 57 Activos · stock_actual = saldo inicial del Excel (saldo de apertura · se reconcilia con conteo cíclico · M26). Reversible: estado='Inactivo' por código (prefijo FR-/IMP-/ETQ-/CJA-).", [
         "UPDATE maestro_mee SET estado='Inactivo' WHERE COALESCE(estado,'') <> 'Inactivo'",
         """INSERT INTO maestro_mee (codigo, descripcion, categoria, stock_actual, estado, fecha_creacion) VALUES

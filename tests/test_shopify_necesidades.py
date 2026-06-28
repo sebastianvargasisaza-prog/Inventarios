@@ -151,3 +151,11 @@ def test_mig297_envases_normalizados_cargados(app, db_clean):
     assert n >= 50, ('no se cargaron los envases normalizados activos', n)
     assert _q1("SELECT estado FROM maestro_mee WHERE codigo='FR-GLOSS-10-PEACH'")[0] == 'Activo', 'gloss peach no activo'
     assert _q1("SELECT estado FROM maestro_mee WHERE codigo='CJA-TRX'")[0] == 'Activo', 'caja TRX no activa'
+
+
+def test_mig298_envase_foto_partes(app, db_clean):
+    # imagen_url en maestro_mee + tabla mee_partes (Fase 1 rediseño envases)
+    _exec("UPDATE maestro_mee SET imagen_url='http://x/foto.jpg' WHERE codigo='CJA-TRX'")
+    assert _q1("SELECT imagen_url FROM maestro_mee WHERE codigo='CJA-TRX'")[0] == 'http://x/foto.jpg', 'imagen_url no quedó'
+    _exec("INSERT INTO mee_partes (mee_codigo, parte_codigo, cantidad) VALUES ('FR-VIDRIOOPAL-30','TAP-X',2)")
+    assert _q1("SELECT cantidad FROM mee_partes WHERE mee_codigo='FR-VIDRIOOPAL-30' AND parte_codigo='TAP-X'")[0] == 2, 'parte no quedó'
