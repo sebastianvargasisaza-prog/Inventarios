@@ -1886,15 +1886,8 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       </div>
     </div>
     <p style="color:#666;font-size:0.9em;margin-bottom:14px;">Control de stock, recepciones, consumos y trazabilidad de material de empaque por batch de producción.</p>
-    <!-- 5 cards (agregada Valor COP) · grid responsive -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px">
-      <div style="background:#6d28d9;color:white;padding:14px;border-radius:10px;text-align:center;"><div style="font-size:1.3em;">&#128230;</div><div style="font-size:1.7em;font-weight:700;" id="mee-c-total">0</div><div style="font-size:0.78em;opacity:0.9;">MEE Activos</div></div>
-      <div id="mee-card-bajo" style="background:#e74c3c;color:white;padding:14px;border-radius:10px;text-align:center;cursor:pointer" onclick="meeScrollToObsoletos('mee-bajo-anchor')"><div style="font-size:1.3em;">&#9888;</div><div style="font-size:1.7em;font-weight:700;" id="mee-c-bajo">0</div><div style="font-size:0.78em;opacity:0.9;">Bajo Mínimo</div></div>
-      <div style="background:#3498db;color:white;padding:14px;border-radius:10px;text-align:center;"><div style="font-size:1.3em;">&#128202;</div><div style="font-size:1.7em;font-weight:700;" id="mee-c-semana">0</div><div style="font-size:0.78em;opacity:0.9;">Movs / sem</div></div>
-      <div style="background:#9b59b6;color:white;padding:14px;border-radius:10px;text-align:center;"><div style="font-size:1.3em;">&#128229;</div><div style="font-size:1.7em;font-weight:700;" id="mee-c-mes">0</div><div style="font-size:0.78em;opacity:0.9;">Entradas / mes</div></div>
-      <div style="background:#16a34a;color:white;padding:14px;border-radius:10px;text-align:center;"><div style="font-size:1.3em;">💰</div><div style="font-size:1.4em;font-weight:700;" id="mee-c-valor">$0</div><div style="font-size:0.78em;opacity:0.9;">Valor stock COP</div></div>
-      <div id="mee-card-obs" style="background:#ca8a04;color:white;padding:14px;border-radius:10px;text-align:center;cursor:pointer" onclick="meeScrollToObsoletos('mee-obs-anchor')"><div style="font-size:1.3em;">⏰</div><div style="font-size:1.7em;font-weight:700;" id="mee-c-obs">0</div><div style="font-size:0.78em;opacity:0.9;">Obsoletos >90d</div></div>
-    </div>
+    <!-- tarjetas KPI quitadas · Sebastián 28-jun · irán a sus sub-pestañas (Valor en Inventario, Bajo Mínimo/Obsoletos en Alertas) -->
+    <span id="mee-c-total" style="display:none">0</span><span id="mee-c-bajo" style="display:none">0</span><span id="mee-c-semana" style="display:none">0</span><span id="mee-c-mes" style="display:none">0</span><span id="mee-c-valor" style="display:none">0</span><span id="mee-c-obs" style="display:none">0</span>
     <!-- banner de alertas quitado · vivirá en la sub-pestaña Alertas (Sebastián 28-jun) -->
     <a name="mee-bajo-anchor"></a>
     <!-- Sub-pestañas Bodega MEE · Sebastián 28-jun (estilo Bodega MP) -->
