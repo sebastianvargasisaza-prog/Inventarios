@@ -1921,12 +1921,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px;align-items:start">
       <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:18px;">
         <h3 style="margin-bottom:14px;color:#6d28d9;font-size:1em;">&#128666; Recepci&oacute;n de envases</h3>
-        <div class="form-group"><label>Tipo</label>
-          <select id="mee-tipo" onchange="meeActualizarTipo(this.value)">
-            <option value="Entrada">&#128229; Entrada - recepcion</option>
-            <option value="Salida">&#128228; Salida - consumo en produccion</option>
-            <option value="Ajuste">&#9878; Ajuste de inventario</option>
-          </select></div>
+        <input type="hidden" id="mee-tipo" value="Entrada">
         <div class="form-group"><label>Material MEE</label>
           <select id="mee-codigo-sel" onchange="meeSelChange()"><option value="">-- Seleccionar material --</option></select></div>
         <div id="mee-stock-preview" style="display:none;background:#e8f4fd;border-radius:6px;padding:7px 12px;margin-bottom:10px;font-size:0.88em;color:#1a4a6b;"></div>
