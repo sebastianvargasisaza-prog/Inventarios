@@ -10431,7 +10431,7 @@ def rotulo_recepcion_mee(codigo, cantidad_str):
         conn = get_db(); c = conn.cursor()
         c.execute("SELECT descripcion, categoria, proveedor, unidad FROM maestro_mee WHERE codigo=?", (codigo,))
         mee = c.fetchone()
-        c.execute("SELECT lote_ref, responsable, fecha, observaciones FROM movimientos_mee WHERE mee_codigo=? AND tipo='Entrada' AND anulado=0 ORDER BY id DESC LIMIT 1", (codigo,))
+        c.execute("SELECT lote_ref, responsable, fecha, observaciones, COALESCE(zona,'') FROM movimientos_mee WHERE mee_codigo=? AND tipo='Entrada' AND anulado=0 ORDER BY id DESC LIMIT 1", (codigo,))
         mov = c.fetchone()
     except Exception as e:
         return f"<h2>Error DB: {e}</h2>", 500
@@ -10442,6 +10442,7 @@ def rotulo_recepcion_mee(codigo, cantidad_str):
     lote  = lote_ref or (mov[0] if mov else '')
     oper  = mov[1] if mov else ''
     obs   = mov[3] if mov and len(mov)>3 else ''
+    zona  = mov[4] if mov and len(mov)>4 else ''
     nr    = "REC-MEE-" + date.today().strftime('%Y%m%d') + "-" + codigo[-4:]
     # M.ENV: envases primarios / M.EMP: empaque secundario
     env_cats = {'Envase','Frasco','Tapa','Gotero','Contorno'}
@@ -10502,6 +10503,7 @@ def rotulo_recepcion_mee(codigo, cantidad_str):
                 f'<td style="text-align:center;width:18%;">{chk_emp} M.EMP</td></tr>')
         lbl += f'<tr><td class="lbl">C&Oacute;DIGO INTERNO</td><td class="val">{codigo}</td><td class="lbl">LOTE</td><td class="val">{lote}</td></tr>'
         lbl += f'<tr><td class="lbl">CANTIDAD</td><td class="val">{cant_str}</td><td class="lbl">PROVEEDOR</td><td class="val">{prov}</td></tr>'
+        lbl += f'<tr><td class="lbl">UBICACI&Oacute;N / ZONA</td><td class="val" colspan="3">{zona or "&mdash;"}</td></tr>'
         lbl += f'<tr><td class="lbl">FECHA DE RECEPCI&Oacute;N</td><td class="val">{hoy}</td><td class="lbl">FECHA DE AN&Aacute;LISIS</td><td style="height:26px;background:#fffde7;"></td></tr>'
         lbl += f'<tr><td class="lbl">OBSERVACIONES</td><td colspan="3" style="height:24px;">{obs}</td></tr>'
         lbl += f'<tr><td class="lbl">FECHA DE VENCIMIENTO</td><td colspan="3">N/A &mdash; Material de envase/empaque</td></tr>'
