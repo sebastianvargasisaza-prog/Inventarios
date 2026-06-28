@@ -6793,19 +6793,151 @@ def admin_maestro_mees_list():
     conn = db_connect()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    rows = c.execute(
-        """SELECT codigo, COALESCE(descripcion,'') AS descripcion,
-                  COALESCE(categoria,'') AS categoria,
-                  COALESCE(estado,'Activo') AS estado
-           FROM maestro_mee
-           WHERE COALESCE(estado,'Activo')='Activo'
-           ORDER BY categoria, codigo"""
-    ).fetchall()
+    # imagen_url (mig 298) + material_referencia (frasco base del serigrafiado · Fase 0) · con fallback PG-safe
+    _cols = "codigo, COALESCE(descripcion,'') AS descripcion, COALESCE(categoria,'') AS categoria, COALESCE(estado,'Activo') AS estado"
+    try:
+        rows = c.execute(
+            f"""SELECT {_cols}, COALESCE(imagen_url,'') AS imagen_url,
+                       COALESCE(material_referencia,'') AS material_referencia
+                FROM maestro_mee WHERE COALESCE(estado,'Activo')='Activo'
+                ORDER BY categoria, codigo""").fetchall()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        rows = c.execute(
+            f"""SELECT {_cols} FROM maestro_mee WHERE COALESCE(estado,'Activo')='Activo'
+                ORDER BY categoria, codigo""").fetchall()
     conn.close()
     return jsonify({
         'total': len(rows),
         'mees': [dict(r) for r in rows]
     })
+
+
+@bp.route("/api/admin/mee-imagen", methods=["POST"])
+def admin_mee_imagen():
+    """Setea la foto de un envase (maestro_mee.imagen_url · URL o data-uri base64) · Sebastián 28-jun."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.get_json(silent=True) or {}
+    cod = (d.get('codigo') or '').strip()
+    img = (d.get('imagen_url') or '').strip()
+    if not cod:
+        return jsonify({'error': 'codigo requerido'}), 400
+    conn = db_connect()
+    c = conn.cursor()
+    c.execute("UPDATE maestro_mee SET imagen_url=? WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))", (img, cod))
+    if c.rowcount == 0:
+        conn.rollback()
+        return jsonify({'error': 'envase no encontrado'}), 404
+    try:
+        from audit_helpers import audit_log
+        audit_log(c, usuario=u, accion='SET_MEE_IMAGEN', tabla='maestro_mee',
+                  registro_id=cod, despues={'tiene_imagen': bool(img)})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'codigo': cod})
+
+
+@bp.route("/api/admin/mee-base", methods=["POST"])
+def admin_mee_base():
+    """Setea el frasco BASE de un envase serigrafiado (maestro_mee.material_referencia) · Sebastián 28-jun."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.get_json(silent=True) or {}
+    cod = (d.get('codigo') or '').strip()
+    base = (d.get('base') or '').strip()
+    if not cod:
+        return jsonify({'error': 'codigo requerido'}), 400
+    conn = db_connect()
+    c = conn.cursor()
+    try:
+        c.execute("UPDATE maestro_mee SET material_referencia=? WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))", (base, cod))
+    except Exception as _e:
+        conn.rollback()
+        return jsonify({'error': str(_e)[:150]}), 500
+    if c.rowcount == 0:
+        conn.rollback()
+        return jsonify({'error': 'envase no encontrado'}), 404
+    conn.commit()
+    return jsonify({'ok': True, 'codigo': cod, 'base': base})
+
+
+@bp.route("/admin/envases-verificacion", methods=["GET"])
+def admin_envases_verificacion_pagina():
+    """Pantalla de verificación uno-por-uno de envases (Sebastián 28-jun): foto + frasco base."""
+    u, err, code = _require_admin()
+    if err:
+        return ("<html><body style='font-family:system-ui;padding:48px'><h2>Solo admin</h2>"
+                "<a href='/login'>Ir a login</a></body></html>"), code
+    return _ENVASES_VERIF_HTML
+
+
+_ENVASES_VERIF_HTML = r"""<!DOCTYPE html><html lang="es"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Verificación de Envases · EOS</title>
+<style>
+ *{box-sizing:border-box} body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f1f5f9;margin:0;color:#0f172a}
+ header{background:linear-gradient(135deg,#7c3aed,#0891b2);color:#fff;padding:16px 22px;box-shadow:0 2px 8px rgba(0,0,0,.1)}
+ header h1{margin:0;font-size:19px} header .sub{font-size:12px;opacity:.85;margin-top:2px}
+ .container{max-width:1280px;margin:16px auto;padding:0 16px}
+ h2{font-size:14px;color:#5b21b6;margin:18px 0 8px;border-bottom:2px solid #c4b5fd;padding-bottom:4px}
+ .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
+ .card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+ .foto{width:100%;height:130px;object-fit:contain;border-radius:8px;background:#f8fafc}
+ .nofoto{width:100%;height:130px;display:flex;align-items:center;justify-content:center;background:#f1f5f9;border-radius:8px;color:#94a3b8;font-size:12px;border:1px dashed #cbd5e1}
+ .cod{font-family:ui-monospace,monospace;font-weight:800;font-size:12px;color:#0f766e;margin-top:6px}
+ .desc{font-size:10px;color:#64748b;min-height:24px;margin:2px 0}
+ select{width:100%;font-size:10px;padding:3px;border:1px solid #cbd5e1;border-radius:5px;margin-top:4px}
+ .acc{display:flex;gap:4px;justify-content:center;margin-top:6px}
+ .acc button{flex:1;background:#7c3aed;color:#fff;border:none;border-radius:5px;padding:5px;font-size:11px;font-weight:700;cursor:pointer}
+ .acc button.url{background:#0891b2}
+</style></head><body>
+<header><h1>&#128230; Verificación de Envases</h1><div class="sub">Subí la foto de cada envase y, si es serigrafiado, elegí su frasco base &middot; el sistema ya tiene los códigos normalizados</div></header>
+<div class="container"><div id="cont">Cargando&hellip;</div></div>
+<script>
+var CSRF='';
+async function csrf(){ if(CSRF) return CSRF; try{ CSRF=(await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json()).csrf_token||''; }catch(e){} return CSRF; }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+async function postJSON(url,body){ var t=await csrf(); var r=await fetch(url,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(body)}); return r.json(); }
+var FRASCOS=[];
+async function cargar(){
+  var d=await (await fetch('/api/admin/maestro-mees-list',{cache:'no-store'})).json();
+  var todos=d.mees||[];
+  FRASCOS=todos.filter(function(m){ return (m.categoria||'').toLowerCase().indexOf('frasco')>=0; });
+  var porCat={};
+  todos.forEach(function(m){ var k=m.categoria||'Otro'; (porCat[k]=porCat[k]||[]).push(m); });
+  var conFoto=todos.filter(function(m){return m.imagen_url;}).length;
+  var h='<div style="font-size:12px;color:#64748b;margin-bottom:8px">'+conFoto+' de '+todos.length+' envases con foto</div>';
+  Object.keys(porCat).sort().forEach(function(cat){
+    h+='<h2>'+esc(cat)+' ('+porCat[cat].length+')</h2><div class="grid">';
+    porCat[cat].forEach(function(m){
+      var img = m.imagen_url ? ('<img src="'+esc(m.imagen_url)+'" class="foto" alt="">') : '<div class="nofoto">sin foto</div>';
+      var baseSel='';
+      if((cat||'').toLowerCase().indexOf('frasco')>=0){
+        var opts='<option value="">— frasco base (si es serigrafiado) —</option>';
+        FRASCOS.forEach(function(f){ if(f.codigo!==m.codigo){ opts+='<option value="'+esc(f.codigo)+'"'+(f.codigo===m.material_referencia?' selected':'')+'>'+esc(f.codigo)+'</option>'; } });
+        baseSel='<select data-cod="'+esc(m.codigo)+'" onchange="setBase(this)">'+opts+'</select>';
+      }
+      h+='<div class="card">'+img+'<div class="cod">'+esc(m.codigo)+'</div><div class="desc">'+esc(m.descripcion)+'</div>'+baseSel+
+        '<div class="acc"><button class="url" data-cod="'+esc(m.codigo)+'" onclick="fotoURL(this)">&#128279; URL</button>'+
+        '<button data-cod="'+esc(m.codigo)+'" onclick="subir(this)">&#128228; Subir</button></div></div>';
+    });
+    h+='</div>';
+  });
+  document.getElementById('cont').innerHTML=h;
+}
+async function setFoto(cod,img){ var d=await postJSON('/api/admin/mee-imagen',{codigo:cod,imagen_url:img}); if(d.ok){ cargar(); } else { alert('Error: '+(d.error||'')); } }
+function fotoURL(btn){ var u=prompt('Pegá la URL de la foto del envase:'); if(u && u.trim()) setFoto(btn.getAttribute('data-cod'), u.trim()); }
+function subir(btn){ var cod=btn.getAttribute('data-cod'); var i=document.createElement('input'); i.type='file'; i.accept='image/*'; i.onchange=function(){ var f=i.files[0]; if(!f) return; if(f.size>2000000){ alert('Foto muy grande (máx 2MB) · usá una más liviana o una URL'); return; } var rd=new FileReader(); rd.onload=function(){ setFoto(cod, rd.result); }; rd.readAsDataURL(f); }; i.click(); }
+async function setBase(sel){ var d=await postJSON('/api/admin/mee-base',{codigo:sel.getAttribute('data-cod'),base:sel.value}); if(!d.ok){ alert('Error: '+(d.error||'')); } }
+cargar();
+</script></body></html>"""
 
 
 @bp.route("/api/admin/mees-mapping-upsert", methods=["POST"])
