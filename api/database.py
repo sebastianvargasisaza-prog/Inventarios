@@ -395,6 +395,14 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (299, "Envases · limpiar el stock/mínimo PLACEHOLDER de los 57 normalizados (Sebastián 28-jun: 'eliminá lo "
+          "que no es real, construyamos desde cero'). stock_actual=0 (la carga del Excel era un snapshot viejo · "
+          "el stock real entra por recepción/conteo) + stock_minimo=0 (el default 1000 disparaba 57 falsos "
+          "'bajo mínimo'). Los códigos + foto + partes quedan · se construye el inventario real con la "
+          "verificación + el ingreso.", [
+        "UPDATE maestro_mee SET stock_actual=0, stock_minimo=0 "
+        "WHERE codigo LIKE 'FR-%' OR codigo LIKE 'IMP-%' OR codigo LIKE 'ETQ-%' OR codigo LIKE 'CJA-%'",
+    ]),
     (298, "Envases · Fase 1 del rediseño (Sebastián 28-jun): foto + partes. `maestro_mee.imagen_url` (foto del "
           "envase · obligatoria al ingresar · se ve en bodega + dropdown + composición) + tabla `mee_partes` "
           "(un envase puede tener componentes: tapa/gotero/inner cup… = código MEE + cantidad, o descripción "

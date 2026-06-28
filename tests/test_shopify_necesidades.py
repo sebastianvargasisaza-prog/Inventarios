@@ -159,3 +159,9 @@ def test_mig298_envase_foto_partes(app, db_clean):
     assert _q1("SELECT imagen_url FROM maestro_mee WHERE codigo='CJA-TRX'")[0] == 'http://x/foto.jpg', 'imagen_url no quedó'
     _exec("INSERT INTO mee_partes (mee_codigo, parte_codigo, cantidad) VALUES ('FR-VIDRIOOPAL-30','TAP-X',2)")
     assert _q1("SELECT cantidad FROM mee_partes WHERE mee_codigo='FR-VIDRIOOPAL-30' AND parte_codigo='TAP-X'")[0] == 2, 'parte no quedó'
+
+
+def test_mig299_envases_stock_limpio(app, db_clean):
+    # los 57 envases normalizados quedan con stock 0 y sin mínimo falso (no disparan bajo-mínimo)
+    r = _q1("SELECT stock_actual, stock_minimo FROM maestro_mee WHERE codigo='CJA-TRX'")
+    assert r[0] == 0 and r[1] == 0, ('stock/mínimo placeholder no limpiado', r)
