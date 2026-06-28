@@ -1920,7 +1920,8 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <div id="mee-foto-vacio" style="text-align:center;color:#94a3b8;padding:22px;border:2px dashed #cbd5e1;border-radius:12px;margin-bottom:16px;font-size:13px;">&#128247; Seleccion&aacute; un envase para ver su foto</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;">
           <div class="form-group" style="margin:0"><label>Material MEE *</label>
-            <select id="mee-codigo-sel" onchange="meeSelChange()"><option value="">-- Seleccionar material --</option></select></div>
+            <select id="mee-codigo-sel" onchange="meeSelChange()"><option value="">-- Seleccionar material --</option></select>
+            <button type="button" onclick="meeWizOpen()" style="margin-top:6px;width:100%;background:#16a34a;color:#fff;border:none;border-radius:6px;padding:7px;font-size:12px;font-weight:700;cursor:pointer">&#10133; Material nuevo (genera el c&oacute;digo)</button></div>
           <div class="form-group" style="margin:0"><label>Descripci&oacute;n</label><input type="text" id="mee-descripcion" readonly placeholder="Auto" style="background:#f1f5f9"></div>
           <div class="form-group" style="margin:0"><label>Categor&iacute;a</label><input type="text" id="mee-categoria" readonly placeholder="Auto" style="background:#f1f5f9"></div>
           <div class="form-group" style="margin:0"><label>Proveedor</label><input type="text" id="mee-proveedor" placeholder="Auto &mdash; o escribe"></div>
@@ -1942,6 +1943,34 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         </div>
         <button style="width:100%;background:#6d28d9;color:#fff;padding:12px;font-weight:700;border:none;border-radius:8px;cursor:pointer;" onclick="registrarMeeMovimiento()">&#10003; Registrar ingreso</button>
         <div id="mee-form-msg" style="margin-top:8px;"></div>
+      </div>
+      <div id="mee-wiz-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;overflow:auto;padding:24px;">
+        <div style="background:#fff;border-radius:12px;padding:24px;max-width:560px;margin:0 auto;box-shadow:0 10px 40px rgba(0,0,0,.3);">
+          <h3 style="margin:0 0 4px;color:#16a34a;">&#10133; Crear material nuevo</h3>
+          <p style="color:#64748b;font-size:13px;margin:0 0 14px;">Respond&eacute; y el sistema arma el c&oacute;digo normalizado.</p>
+          <div class="form-group" style="margin:0 0 10px"><label>1. Tipo *</label>
+            <select id="mee-wiz-tipo" onchange="meeWizGen()"><option value="">-- Elegir --</option><option value="Frasco">Frasco</option><option value="Tapa">Tapa</option><option value="Gotero">Gotero</option><option value="Etiqueta">Etiqueta</option><option value="Impresion">Impresi&oacute;n / Serigraf&iacute;a</option><option value="Caja">Caja / Plegadiza</option></select></div>
+          <div class="form-group" id="mee-wiz-material-grp" style="margin:0 0 10px;display:none"><label>2. Material</label>
+            <select id="mee-wiz-material" onchange="meeWizGen()"><option value="">--</option><option value="VID">Vidrio</option><option value="PLA">Pl&aacute;stico</option><option value="AIR">Airless</option><option value="AL">Aluminio</option></select></div>
+          <div class="form-group" id="mee-wiz-metodo-grp" style="margin:0 0 10px;display:none"><label>2. M&eacute;todo</label>
+            <select id="mee-wiz-metodo" onchange="meeWizGen()"><option value="">--</option><option value="TP">Tampograf&iacute;a</option><option value="SG">Serigraf&iacute;a</option></select></div>
+          <div class="form-group" style="margin:0 0 10px"><label>3. Producto / l&iacute;nea (corto)</label>
+            <input type="text" id="mee-wiz-prod" oninput="meeWizGen()" placeholder="Ej: SUERO, NIA, VITC, BLUSH"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div class="form-group" style="margin:0"><label>4. Capacidad (ml)</label><input type="number" id="mee-wiz-ml" oninput="meeWizGen()" placeholder="30"></div>
+            <div class="form-group" style="margin:0"><label>5. Tono/Color (opc.)</label><input type="text" id="mee-wiz-tono" oninput="meeWizGen()" placeholder="Malva"></div>
+          </div>
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px;margin:12px 0;">
+            <div style="font-size:11px;color:#15803d;font-weight:700;">C&Oacute;DIGO GENERADO</div>
+            <div id="mee-wiz-code" style="font-family:ui-monospace,monospace;font-size:18px;font-weight:800;color:#166534;">&mdash;</div>
+            <div class="form-group" style="margin:8px 0 0"><label style="font-size:11px">Nombre / descripci&oacute;n (editable)</label><input type="text" id="mee-wiz-desc" oninput="this.dataset.touched='1'" placeholder="Auto"></div>
+          </div>
+          <div id="mee-wiz-msg" style="font-size:12px;margin-bottom:8px;"></div>
+          <div style="display:flex;gap:10px;">
+            <button type="button" onclick="meeWizClose()" style="flex:1;background:#e2e8f0;color:#334155;border:none;border-radius:8px;padding:10px;font-weight:700;cursor:pointer;">Cancelar</button>
+            <button type="button" onclick="meeWizCrear()" style="flex:2;background:#16a34a;color:#fff;border:none;border-radius:8px;padding:10px;font-weight:700;cursor:pointer;">&#10003; Crear y usar</button>
+          </div>
+        </div>
       </div>
       </div>
     </div>
@@ -9517,6 +9546,43 @@ function meeSubTab(name){
 function _meeFoto(cod){ var box=document.getElementById('mee-foto-box'); var img=document.getElementById('mee-foto-img'); var vac=document.getElementById('mee-foto-vacio'); if(!box||!img) return; var u=(window._MEE_IMG||{})[cod]||''; if(u){ img.src=u; box.style.display='block'; if(vac) vac.style.display='none'; } else { box.style.display='none'; if(vac) vac.style.display='block'; } }
 function _meeAutofill(cod){ var dd=(window._MEE_DATA||{})[cod]||{}; var de=document.getElementById('mee-descripcion'); if(de)de.value=dd.desc||''; var ce=document.getElementById('mee-categoria'); if(ce)ce.value=dd.cat||''; var pe=document.getElementById('mee-proveedor'); if(pe)pe.value=dd.prov||''; }
 function meeCalcValor(){ var q=parseFloat((document.getElementById('mee-cantidad')||{}).value)||0; var p=parseFloat((document.getElementById('mee-precio')||{}).value)||0; var v=document.getElementById('mee-valor'); if(v){ var t=q*p; v.value=t>0?('$'+t.toLocaleString('es-CO')):''; } }
+function _meeWizNorm(s){ return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+function meeWizOpen(){ var m=document.getElementById('mee-wiz-modal'); if(m) m.style.display='block'; ['mee-wiz-tipo','mee-wiz-material','mee-wiz-metodo','mee-wiz-prod','mee-wiz-ml','mee-wiz-tono','mee-wiz-desc'].forEach(function(idd){var el=document.getElementById(idd); if(el){el.value=''; if(el.dataset) delete el.dataset.touched;}}); meeWizGen(); }
+function meeWizClose(){ var m=document.getElementById('mee-wiz-modal'); if(m) m.style.display='none'; }
+function meeWizGen(){
+  var tipo=(document.getElementById('mee-wiz-tipo')||{}).value||'';
+  var pref={Frasco:'FR',Tapa:'TA',Gotero:'GOT',Etiqueta:'ETQ',Impresion:'IMP',Caja:'CJA'}[tipo]||'';
+  var matGrp=document.getElementById('mee-wiz-material-grp'); if(matGrp) matGrp.style.display=(tipo==='Frasco'||tipo==='Tapa'||tipo==='Gotero')?'block':'none';
+  var metGrp=document.getElementById('mee-wiz-metodo-grp'); if(metGrp) metGrp.style.display=(tipo==='Impresion')?'block':'none';
+  var mat=(document.getElementById('mee-wiz-material')||{}).value||''; var met=(document.getElementById('mee-wiz-metodo')||{}).value||'';
+  var ml=(document.getElementById('mee-wiz-ml')||{}).value||''; var prodRaw=(document.getElementById('mee-wiz-prod')||{}).value||''; var tonoRaw=(document.getElementById('mee-wiz-tono')||{}).value||'';
+  var seg=[pref];
+  if(tipo==='Frasco'||tipo==='Tapa'||tipo==='Gotero'){ if(mat) seg.push(mat); }
+  if(tipo==='Impresion'){ if(met) seg.push(met); }
+  var prod=_meeWizNorm(prodRaw); if(prod) seg.push(prod);
+  if(ml) seg.push(String(parseInt(ml,10)));
+  var tono=_meeWizNorm(tonoRaw); if(tono) seg.push(tono);
+  var code=seg.filter(function(x){return x;}).join('-');
+  var cd=document.getElementById('mee-wiz-code'); if(cd) cd.textContent=code||'—';
+  var nm=[tipo, {VID:'vidrio',PLA:'plástico',AIR:'airless',AL:'aluminio'}[mat]||'', {TP:'tampografía',SG:'serigrafía'}[met]||'', prodRaw, ml?(ml+'ml'):'', tonoRaw].filter(function(x){return x;}).join(' ');
+  var de=document.getElementById('mee-wiz-desc'); if(de && !de.dataset.touched) de.value=nm;
+  var msg=document.getElementById('mee-wiz-msg'); if(msg){ msg.innerHTML=(code && (window._MEE_DATA||{})[code])?'<span style="color:#b45309;">&#9888; '+code+' ya existe — al crear, te lo selecciono.</span>':''; }
+}
+async function meeWizCrear(){
+  var code=((document.getElementById('mee-wiz-code')||{}).textContent||'').trim();
+  if(!code||code==='—'){ alert('Completá al menos el tipo y el producto.'); return; }
+  var s=document.getElementById('mee-codigo-sel');
+  if((window._MEE_DATA||{})[code]){ meeWizClose(); if(s){ s.value=code; meeSelChange(); } return; }
+  var desc=(document.getElementById('mee-wiz-desc')||{}).value||code;
+  var tipo=(document.getElementById('mee-wiz-tipo')||{}).value||'';
+  var cat={Frasco:'Frasco',Tapa:'Tapa',Gotero:'Gotero',Etiqueta:'Etiqueta',Impresion:'Impresión',Caja:'Plegadiza'}[tipo]||'Otro';
+  try{
+    var r=await fetch('/api/mee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({codigo:code,descripcion:desc,categoria:cat,stock_actual:0,stock_minimo:0})});
+    var res=await r.json();
+    if(r.ok && !res.error){ await cargarMeeStock(); if(s){ s.value=code; meeSelChange(); } meeWizClose(); }
+    else { alert('Error: '+(res.error||'No se pudo crear')); }
+  }catch(e){ alert('Error de conexión'); }
+}
 function meeSelChange(){ var sel=document.getElementById('mee-codigo-sel'); var prev=document.getElementById('mee-stock-preview'); var und=document.getElementById('mee-unidad'); if(!sel||!sel.value){if(prev)prev.style.display='none'; _meeFoto(''); _meeAutofill(''); return;} _meeFoto(sel.value); _meeAutofill(sel.value); var opt=sel.options[sel.selectedIndex]; var st=opt.getAttribute('data-stock'); var u=opt.getAttribute('data-unidad')||'und'; var mn=opt.getAttribute('data-min'); if(prev){var r=mn>0?(st/mn*100).toFixed(0):null; var col=!r?'#666':(r<100?'#e74c3c':'#27ae60'); prev.style.display='block'; prev.innerHTML='&#128230; Stock: <strong style="color:'+col+';">'+st+' '+u+'</strong> | Minimo: <strong>'+mn+' '+u+'</strong>'+(r?' ('+r+'%)':'');} if(und) und.value=u; }
 async function registrarMeeMovimiento(){ var tipo=(document.getElementById('mee-tipo')||{}).value; var codigo=(document.getElementById('mee-codigo-sel')||{}).value; var cantidad=parseFloat((document.getElementById('mee-cantidad')||{}).value); var unidad=(document.getElementById('mee-unidad')||{}).value||'und'; var lote=(document.getElementById('mee-lote')||{}).value||''; var batch=(document.getElementById('mee-batch')||{}).value||''; var obs=(document.getElementById('mee-obs')||{}).value||''; var prov=(document.getElementById('mee-proveedor')||{}).value||''; var zona=(document.getElementById('mee-zona')||{}).value||''; var precio=parseFloat((document.getElementById('mee-precio')||{}).value)||0; var fvenc=(document.getElementById('mee-fecha-venc')||{}).value||''; var oc=(document.getElementById('mee-oc')||{}).value||''; var factura=(document.getElementById('mee-factura')||{}).value||''; var msg=document.getElementById('mee-form-msg');
   if(!codigo){if(msg)msg.innerHTML='<div class="alert-error">Selecciona un material MEE</div>';return;}
