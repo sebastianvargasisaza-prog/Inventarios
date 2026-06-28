@@ -11562,6 +11562,7 @@ def mee_stock_list():
     sql = """
         SELECT m.codigo, m.descripcion, m.categoria, m.unidad,
                COALESCE(mv.stock_real, m.stock_actual, 0) as stock_actual, m.stock_minimo, m.estado, m.proveedor,
+               COALESCE(m.imagen_url,'') as imagen_url,
                COALESCE(mv.ultima_entrada,'') as ultima_entrada,
                COALESCE(mv.ultima_salida,'')  as ultima_salida,
                COALESCE(mv.total_entradas,0)  as total_entradas,
