@@ -11534,8 +11534,8 @@ def mee_crear():
     conn = get_db(); c = conn.cursor()
     try:
         c.execute("""INSERT INTO maestro_mee (codigo, descripcion, categoria, unidad, proveedor,
-                                              stock_actual, stock_minimo, estado)
-                     VALUES (?,?,?,?,?,?,?,'Activo')""",
+                                              stock_actual, stock_minimo, estado, calificado)
+                     VALUES (?,?,?,?,?,?,?,'Activo',0)""",
                   (codigo, descripcion, categoria, unidad, proveedor, stock_actual, stock_minimo))
         # Audit log creación MEE
         try:
@@ -11561,6 +11561,17 @@ def mee_crear():
                     _pcant = 1
                 c.execute("INSERT INTO mee_partes (mee_codigo, parte_codigo, descripcion, cantidad, creado_at) "
                           "VALUES (?,?,?,?,datetime('now','-5 hours'))", (codigo, _pcod, '', _pcant))
+        # Alerta a las 2 de calidad · material nuevo por calificar (Nivel 1 · Sebastián 28-jun)
+        try:
+            from blueprints.notif import push_notif_multi
+            from config import CALIDAD_USERS, ASEGURAMIENTO_USERS
+            _qc = sorted((set(CALIDAD_USERS) | set(ASEGURAMIENTO_USERS)) - {'sebastian'})
+            push_notif_multi(_qc, 'mee_por_calificar',
+                             f'Material nuevo por calificar: {descripcion or codigo}',
+                             body=f'{codigo} · revisar capacidad de llenado, material, medidas y documentos',
+                             link='/inventarios', importante=True)
+        except Exception:
+            pass
         conn.commit()
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -11846,6 +11857,57 @@ def mee_cuarentena_resolver(mov_id, accion):
         pass
     conn.commit()
     return jsonify({'ok': True, 'estado': nuevo})
+
+@bp.route('/api/mee/por-calificar', methods=['GET'])
+def mee_por_calificar():
+    """Materiales nuevos pendientes de calificación (Nivel 1) · Sebastián 28-jun."""
+    _u, _err, _code = _require_planta_write()
+    if _err:
+        return _err, _code
+    conn = get_db(); c = conn.cursor()
+    out = []
+    try:
+        rows = c.execute(
+            "SELECT codigo, COALESCE(descripcion,''), COALESCE(categoria,''), COALESCE(proveedor,'') "
+            "FROM maestro_mee WHERE COALESCE(estado,'Activo')='Activo' AND COALESCE(calificado,1)=0 "
+            "ORDER BY codigo").fetchall()
+        for r in rows:
+            out.append({'codigo': r[0], 'descripcion': r[1], 'categoria': r[2], 'proveedor': r[3]})
+    except Exception:
+        pass
+    return jsonify({'pendientes': out, 'total': len(out)})
+
+
+@bp.route('/api/mee/calificar', methods=['POST'])
+def mee_calificar():
+    """Calidad califica un material nuevo (una sola vez · checklist obligatorio) · Sebastián 28-jun."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'no autenticado'}), 401
+    _user = session.get('compras_user', '')
+    if _user not in QC_USERS:
+        return jsonify({'error': 'solo Calidad puede calificar'}), 403
+    d = request.json or {}
+    cod = (d.get('codigo') or '').strip()
+    detalle = d.get('detalle') or {}
+    if not cod:
+        return jsonify({'error': 'codigo requerido'}), 400
+    if not all(bool(detalle.get(k)) for k in ('capacidad', 'material', 'medidas', 'documentos')):
+        return jsonify({'error': 'faltan items del checklist (capacidad, material, medidas, documentos)'}), 400
+    import json as _json
+    conn = get_db(); c = conn.cursor()
+    c.execute("UPDATE maestro_mee SET calificado=1, calificado_at=datetime('now','-5 hours'), "
+              "calificado_por=?, calificacion_detalle=? WHERE codigo=?",
+              (_user, _json.dumps(detalle)[:2000], cod))
+    if c.rowcount == 0:
+        return jsonify({'error': 'material no encontrado'}), 404
+    try:
+        from audit_helpers import audit_log as _al
+        _al(c, usuario=_user, accion='MEE_CALIFICAR', tabla='maestro_mee', registro_id=cod,
+            despues={'calificado': 1, 'por': _user})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'codigo': cod})
 
 @bp.route('/api/mee/movimientos', methods=['GET'])
 def mee_historial_movimientos():

@@ -1018,7 +1018,10 @@ def _get_mee_stock(conn):
         for row in conn.execute("""
             SELECT mee_codigo,
                    COALESCE(SUM(CASE
-                       WHEN LOWER(tipo) IN ('entrada','ingreso','devolucion','devolución','ajuste')
+                       WHEN LOWER(tipo) IN ('entrada','ingreso','devolucion','devolución')
+                            AND UPPER(COALESCE(estado,'VIGENTE')) NOT IN ('CUARENTENA','RECHAZADO')
+                           THEN cantidad
+                       WHEN LOWER(tipo) = 'ajuste'
                            THEN cantidad
                        WHEN LOWER(tipo) IN ('salida','consumo','rechazo')
                            THEN -cantidad

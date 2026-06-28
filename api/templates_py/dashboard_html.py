@@ -1952,6 +1952,26 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <h3 style="margin:0 0 10px;color:#c2410c;font-size:1em;">&#128737; En cuarentena &mdash; Calidad debe liberar (<span id="mee-cuar-count">0</span>)</h3>
         <div id="mee-cuarentena-list"></div>
       </div>
+      <div id="mee-calificar-box" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:16px;margin-top:16px;">
+        <h3 style="margin:0 0 10px;color:#1d4ed8;font-size:1em;">&#127381; Material nuevo por calificar &mdash; Calidad (<span id="mee-calif-count">0</span>)</h3>
+        <div id="mee-calificar-list"></div>
+      </div>
+      <div id="mee-calif-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;overflow:auto;padding:24px;">
+        <div style="background:#fff;border-radius:12px;padding:24px;max-width:440px;margin:0 auto;box-shadow:0 10px 40px rgba(0,0,0,.3);">
+          <h3 style="margin:0 0 4px;color:#1d4ed8;">&#127381; Calificar material</h3>
+          <p style="color:#64748b;font-size:13px;margin:0 0 14px;" id="mee-calif-nombre">&mdash;</p>
+          <label style="display:block;margin-bottom:8px;font-size:14px"><input type="checkbox" id="mc-capacidad"> Capacidad de llenado</label>
+          <label style="display:block;margin-bottom:8px;font-size:14px"><input type="checkbox" id="mc-material"> Material correcto</label>
+          <label style="display:block;margin-bottom:8px;font-size:14px"><input type="checkbox" id="mc-medidas"> Medidas / dimensiones</label>
+          <label style="display:block;margin-bottom:12px;font-size:14px"><input type="checkbox" id="mc-documentos"> Documentos (ficha t&eacute;cnica / COA)</label>
+          <div class="form-group" style="margin:0 0 12px"><label>Notas (opcional)</label><textarea id="mc-notas" rows="2" placeholder="Observaciones de calidad..."></textarea></div>
+          <input type="hidden" id="mc-codigo" value="">
+          <div style="display:flex;gap:10px;">
+            <button type="button" onclick="meeCalifClose()" style="flex:1;background:#e2e8f0;color:#334155;border:none;border-radius:8px;padding:10px;font-weight:700;cursor:pointer;">Cancelar</button>
+            <button type="button" onclick="meeCalificar()" style="flex:2;background:#1d4ed8;color:#fff;border:none;border-radius:8px;padding:10px;font-weight:700;cursor:pointer;">&#10003; Calificar</button>
+          </div>
+        </div>
+      </div>
       <div id="mee-wiz-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;overflow:auto;padding:24px;">
         <div style="background:#fff;border-radius:12px;padding:24px;max-width:560px;margin:0 auto;box-shadow:0 10px 40px rgba(0,0,0,.3);">
           <h3 style="margin:0 0 4px;color:#16a34a;">&#10133; Crear material nuevo</h3>
@@ -4339,7 +4359,7 @@ function switchTab(n,btn){
   if(n==='ingreso') initIngreso();
   if(n==='abc') loadABC();
   if(n==='conteo'){ cargarEstanterias(); cargarHistorialConteos(); cargarProgramacionCiclica(); }
-  if(n==='empaque'){ cargarMeeAlertas(); cargarMeeStock(); cargarMeeHistorial(); meeCargarCuarentena(); }
+  if(n==='empaque'){ cargarMeeAlertas(); cargarMeeStock(); cargarMeeHistorial(); meeCargarCuarentena(); meeCargarPorCalificar(); }
   if(n==='alertas'){ loadAlertasAll(); }
   // 'stock' (Inventario MP) ya NO incluye MEE · vive en tab 'empaque' aparte.
   if(n==='acondicionamiento'){loadAcond();cargarMeeParaAcond();}
@@ -9561,6 +9581,24 @@ function meeSubTab(name){
   if(name==='inventario' && typeof cargarMeeStock==='function'){ try{ cargarMeeStock(); }catch(e){} }
 }
 function _meeFoto(cod){ var box=document.getElementById('mee-foto-box'); var img=document.getElementById('mee-foto-img'); var vac=document.getElementById('mee-foto-vacio'); if(!box||!img) return; var u=(window._MEE_IMG||{})[cod]||''; if(u){ img.src=u; box.style.display='block'; if(vac) vac.style.display='none'; } else { box.style.display='none'; if(vac) vac.style.display='block'; } }
+async function meeCargarPorCalificar(){
+  var box=document.getElementById('mee-calificar-box'); var list=document.getElementById('mee-calificar-list'); var cnt=document.getElementById('mee-calif-count');
+  if(!box||!list) return;
+  try{
+    var r=await fetch('/api/mee/por-calificar'); var d=await r.json(); var ps=d.pendientes||[];
+    if(cnt) cnt.textContent=ps.length;
+    if(!ps.length){ box.style.display='none'; list.innerHTML=''; return; }
+    list.innerHTML=ps.map(function(p){ return '<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;background:#fff;border:1px solid #bfdbfe;border-radius:6px;padding:8px 10px;margin-bottom:6px;flex-wrap:wrap"><span style="font-size:12px"><b>'+_escHTML(p.codigo)+'</b> — '+_escHTML(p.descripcion)+'</span><button data-cod="'+_escHTML(p.codigo)+'" data-desc="'+_escHTML(p.descripcion)+'" onclick="meeAbrirCalificar(this)" style="background:#1d4ed8;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer">Calificar</button></div>'; }).join('');
+    box.style.display='block';
+  }catch(e){}
+}
+function meeAbrirCalificar(btn){ var cod=btn.getAttribute('data-cod'); var desc=btn.getAttribute('data-desc'); var m=document.getElementById('mee-calif-modal'); if(!m) return; var cc=document.getElementById('mc-codigo'); if(cc)cc.value=cod; var nn=document.getElementById('mee-calif-nombre'); if(nn)nn.textContent=cod+' — '+(desc||''); ['mc-capacidad','mc-material','mc-medidas','mc-documentos'].forEach(function(idd){var e=document.getElementById(idd); if(e)e.checked=false;}); var nt=document.getElementById('mc-notas'); if(nt)nt.value=''; m.style.display='block'; }
+function meeCalifClose(){ var m=document.getElementById('mee-calif-modal'); if(m) m.style.display='none'; }
+async function meeCalificar(){
+  var cod=(document.getElementById('mc-codigo')||{}).value||'';
+  var det={capacidad:!!(document.getElementById('mc-capacidad')||{}).checked, material:!!(document.getElementById('mc-material')||{}).checked, medidas:!!(document.getElementById('mc-medidas')||{}).checked, documentos:!!(document.getElementById('mc-documentos')||{}).checked, notas:(document.getElementById('mc-notas')||{}).value||''};
+  if(!det.capacidad||!det.material||!det.medidas||!det.documentos){ alert('Marcá los 4 items del checklist para calificar.'); return; }
+  try{ var r=await fetch('/api/mee/calificar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({codigo:cod,detalle:det})}); var d=await r.json(); if(d.ok){ meeCalifClose(); meeCargarPorCalificar(); } else { alert('Error: '+(d.error||'')); } }catch(e){ alert('Error de conexión'); } }
 async function meeCargarCuarentena(){
   var box=document.getElementById('mee-cuarentena-box'); var list=document.getElementById('mee-cuarentena-list'); var cnt=document.getElementById('mee-cuar-count');
   if(!box||!list) return;
@@ -9632,7 +9670,7 @@ async function meeWizCrear(){
   try{
     var r=await fetch('/api/mee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({codigo:code,descripcion:desc,categoria:cat,stock_actual:0,stock_minimo:0,partes:_meeWizPartes})});
     var res=await r.json();
-    if(r.ok && !res.error){ await cargarMeeStock(); if(s){ s.value=code; meeSelChange(); } meeWizClose(); }
+    if(r.ok && !res.error){ await cargarMeeStock(); if(s){ s.value=code; meeSelChange(); } meeWizClose(); meeCargarPorCalificar(); }
     else { alert('Error: '+(res.error||'No se pudo crear')); }
   }catch(e){ alert('Error de conexión'); }
 }

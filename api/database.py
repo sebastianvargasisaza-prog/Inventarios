@@ -395,6 +395,15 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (302, "Calidad de envases · calificación de material NUEVO una sola vez (Sebastián 28-jun · Nivel 1). "
+          "maestro_mee.calificado (1=existente ya revisado por default; los nuevos del wizard entran 0=por "
+          "calificar) + calificado_at + calificado_por + calificacion_detalle (JSON del checklist: "
+          "capacidad de llenado / material / medidas / documentos).", [
+        "ALTER TABLE maestro_mee ADD COLUMN calificado INTEGER DEFAULT 1",
+        "ALTER TABLE maestro_mee ADD COLUMN calificado_at TEXT DEFAULT ''",
+        "ALTER TABLE maestro_mee ADD COLUMN calificado_por TEXT DEFAULT ''",
+        "ALTER TABLE maestro_mee ADD COLUMN calificacion_detalle TEXT DEFAULT ''",
+    ]),
     (301, "Calidad de envases · estado de cuarentena en la recepción (Sebastián 28-jun): movimientos_mee.estado "
           "(VIGENTE por defecto para lo existente; las Entradas nuevas entran en CUARENTENA y Calidad libera). "
           "Espeja la cuarentena de MP. Primer caso del sistema de alertas a las 2 de calidad.", [

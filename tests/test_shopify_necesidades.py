@@ -215,3 +215,45 @@ def test_mee_cuarentena_calidad(app, db_clean):
     assert rl.status_code == 200, rl.data
     est2 = _q1("SELECT estado FROM movimientos_mee WHERE id=?", (mov[0]['id'],))[0]
     assert est2 == 'VIGENTE', ('Calidad no liberó la cuarentena', est2)
+
+
+def test_mee_calificar_material_nuevo(app, db_clean):
+    # material nuevo entra "por calificar" (Nivel 1) · Calidad lo califica con el checklist completo
+    from .conftest import csrf_headers
+    c = _login(app)
+    c.post('/api/mee', json={'codigo': 'FR-CALIFTEST-30', 'descripcion': 'calif test', 'categoria': 'Frasco'},
+           headers=csrf_headers())
+    assert _q1("SELECT calificado FROM maestro_mee WHERE codigo='FR-CALIFTEST-30'")[0] == 0, 'nuevo debe entrar por calificar'
+    pend = c.get('/api/mee/por-calificar').get_json()['pendientes']
+    assert any(p['codigo'] == 'FR-CALIFTEST-30' for p in pend), 'no aparece en por-calificar'
+    # sin los 4 items → rechaza
+    r0 = c.post('/api/mee/calificar', json={'codigo': 'FR-CALIFTEST-30', 'detalle': {'capacidad': True}},
+                headers=csrf_headers())
+    assert r0.status_code == 400, r0.data
+    # checklist completo → calificado
+    r = c.post('/api/mee/calificar', json={'codigo': 'FR-CALIFTEST-30',
+               'detalle': {'capacidad': True, 'material': True, 'medidas': True, 'documentos': True}},
+               headers=csrf_headers())
+    assert r.status_code == 200, r.data
+    assert _q1("SELECT calificado FROM maestro_mee WHERE codigo='FR-CALIFTEST-30'")[0] == 1, 'no quedó calificado'
+
+
+def test_mee_gate_cuarentena_no_cuenta_produccion(app, db_clean):
+    # GATE: el stock en CUARENTENA no cuenta para producción (_get_mee_stock); al liberar, sí
+    import sqlite3
+    import os
+    from blueprints.programacion import _get_mee_stock
+    _exec("INSERT INTO movimientos_mee (mee_codigo,tipo,cantidad,estado) VALUES ('FR-GATE-30','Entrada',100,'CUARENTENA')")
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    try:
+        st = _get_mee_stock(conn)
+    finally:
+        conn.close()
+    assert st.get('FR-GATE-30', 0) == 0, ('cuarentena no debe contar para producción', st.get('FR-GATE-30'))
+    _exec("UPDATE movimientos_mee SET estado='VIGENTE' WHERE mee_codigo='FR-GATE-30'")
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    try:
+        st2 = _get_mee_stock(conn)
+    finally:
+        conn.close()
+    assert st2.get('FR-GATE-30', 0) == 100, ('liberado debe contar', st2.get('FR-GATE-30'))
