@@ -190,3 +190,7 @@ def test_mee_crear_con_partes(app, db_clean):
     assert r.status_code == 200, r.data
     n = _q1("SELECT COUNT(*) FROM mee_partes WHERE mee_codigo='FR-TESTPARTES-30'")[0]
     assert n == 2, ('las partes del empaque no se guardaron', n)
+    # y el endpoint de partes las devuelve (para la recepción múltiple)
+    rp = c.get('/api/mee/partes?codigo=FR-TESTPARTES-30')
+    assert rp.status_code == 200, rp.data
+    assert len(rp.get_json().get('partes', [])) == 2, rp.data

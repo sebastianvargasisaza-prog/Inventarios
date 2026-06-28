@@ -1941,6 +1941,10 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
             <div class="form-group" style="margin:0"><label>N&deg; Factura / Remisi&oacute;n</label><input type="text" id="mee-factura" placeholder="Ej: FAC-1234"></div>
           </div>
         </div>
+        <div id="mee-partes-recep" style="display:none;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:12px;margin:12px 0;">
+          <div style="font-weight:700;color:#6d28d9;margin-bottom:8px;font-size:0.9em;">&#129513; Partes del empaque &mdash; cu&aacute;nto lleg&oacute; de cada una</div>
+          <div id="mee-partes-recep-list"></div>
+        </div>
         <button style="width:100%;background:#6d28d9;color:#fff;padding:12px;font-weight:700;border:none;border-radius:8px;cursor:pointer;" onclick="registrarMeeMovimiento()">&#10003; Registrar ingreso</button>
         <div id="mee-form-msg" style="margin-top:8px;"></div>
       </div>
@@ -9553,6 +9557,23 @@ function meeSubTab(name){
   if(name==='inventario' && typeof cargarMeeStock==='function'){ try{ cargarMeeStock(); }catch(e){} }
 }
 function _meeFoto(cod){ var box=document.getElementById('mee-foto-box'); var img=document.getElementById('mee-foto-img'); var vac=document.getElementById('mee-foto-vacio'); if(!box||!img) return; var u=(window._MEE_IMG||{})[cod]||''; if(u){ img.src=u; box.style.display='block'; if(vac) vac.style.display='none'; } else { box.style.display='none'; if(vac) vac.style.display='block'; } }
+async function meeCargarPartesRecep(cod){
+  var box=document.getElementById('mee-partes-recep'); var list=document.getElementById('mee-partes-recep-list');
+  if(!box||!list) return;
+  if(!cod){ box.style.display='none'; list.innerHTML=''; return; }
+  try{
+    var r=await fetch('/api/mee/partes?codigo='+encodeURIComponent(cod)); var d=await r.json(); var ps=d.partes||[];
+    if(!ps.length){ box.style.display='none'; list.innerHTML=''; return; }
+    list.innerHTML=ps.map(function(p){ return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><span style="flex:2;font-size:12px"><b>'+_escHTML(p.codigo)+'</b> — '+_escHTML(p.descripcion||'')+'</span><input type="number" min="0" step="1" id="mprc-'+_escHTML(p.codigo)+'" placeholder="0" style="flex:1;max-width:100px" title="cantidad recibida de esta parte"></div>'; }).join('');
+    box.style.display='block';
+  }catch(e){ box.style.display='none'; }
+}
+async function meeRegistrarPartes(){
+  var inputs=document.querySelectorAll('[id^="mprc-"]'); var n=0;
+  for(var i=0;i<inputs.length;i++){ var el=inputs[i]; var q=parseFloat(el.value)||0; if(q>0){ var cod=el.id.substring(5);
+    try{ var rr=await fetch('/api/mee/movimiento',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tipo:'Entrada',codigo:cod,cantidad:q,unidad:'und',lote_ref:'',observaciones:'Parte recibida con el empaque'})}); var dd=await rr.json(); if(rr.ok && !dd.error) n++; }catch(e){} } }
+  return n;
+}
 function _meeAutofill(cod){ var dd=(window._MEE_DATA||{})[cod]||{}; var de=document.getElementById('mee-descripcion'); if(de)de.value=dd.desc||''; var ce=document.getElementById('mee-categoria'); if(ce)ce.value=dd.cat||''; var pe=document.getElementById('mee-proveedor'); if(pe)pe.value=dd.prov||''; }
 function meeCalcValor(){ var q=parseFloat((document.getElementById('mee-cantidad')||{}).value)||0; var p=parseFloat((document.getElementById('mee-precio')||{}).value)||0; var v=document.getElementById('mee-valor'); if(v){ var t=q*p; v.value=t>0?('$'+t.toLocaleString('es-CO')):''; } }
 function _meeWizNorm(s){ return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
@@ -9597,12 +9618,12 @@ async function meeWizCrear(){
     else { alert('Error: '+(res.error||'No se pudo crear')); }
   }catch(e){ alert('Error de conexión'); }
 }
-function meeSelChange(){ var sel=document.getElementById('mee-codigo-sel'); var prev=document.getElementById('mee-stock-preview'); var und=document.getElementById('mee-unidad'); if(!sel||!sel.value){if(prev)prev.style.display='none'; _meeFoto(''); _meeAutofill(''); return;} _meeFoto(sel.value); _meeAutofill(sel.value); var opt=sel.options[sel.selectedIndex]; var st=opt.getAttribute('data-stock'); var u=opt.getAttribute('data-unidad')||'und'; var mn=opt.getAttribute('data-min'); if(prev){var r=mn>0?(st/mn*100).toFixed(0):null; var col=!r?'#666':(r<100?'#e74c3c':'#27ae60'); prev.style.display='block'; prev.innerHTML='&#128230; Stock: <strong style="color:'+col+';">'+st+' '+u+'</strong> | Minimo: <strong>'+mn+' '+u+'</strong>'+(r?' ('+r+'%)':'');} if(und) und.value=u; }
+function meeSelChange(){ var sel=document.getElementById('mee-codigo-sel'); var prev=document.getElementById('mee-stock-preview'); var und=document.getElementById('mee-unidad'); if(!sel||!sel.value){if(prev)prev.style.display='none'; _meeFoto(''); _meeAutofill(''); meeCargarPartesRecep(''); return;} _meeFoto(sel.value); _meeAutofill(sel.value); meeCargarPartesRecep(sel.value); var opt=sel.options[sel.selectedIndex]; var st=opt.getAttribute('data-stock'); var u=opt.getAttribute('data-unidad')||'und'; var mn=opt.getAttribute('data-min'); if(prev){var r=mn>0?(st/mn*100).toFixed(0):null; var col=!r?'#666':(r<100?'#e74c3c':'#27ae60'); prev.style.display='block'; prev.innerHTML='&#128230; Stock: <strong style="color:'+col+';">'+st+' '+u+'</strong> | Minimo: <strong>'+mn+' '+u+'</strong>'+(r?' ('+r+'%)':'');} if(und) und.value=u; }
 async function registrarMeeMovimiento(){ var tipo=(document.getElementById('mee-tipo')||{}).value; var codigo=(document.getElementById('mee-codigo-sel')||{}).value; var cantidad=parseFloat((document.getElementById('mee-cantidad')||{}).value); var unidad=(document.getElementById('mee-unidad')||{}).value||'und'; var lote=(document.getElementById('mee-lote')||{}).value||''; var batch=(document.getElementById('mee-batch')||{}).value||''; var obs=(document.getElementById('mee-obs')||{}).value||''; var prov=(document.getElementById('mee-proveedor')||{}).value||''; var zona=(document.getElementById('mee-zona')||{}).value||''; var precio=parseFloat((document.getElementById('mee-precio')||{}).value)||0; var fvenc=(document.getElementById('mee-fecha-venc')||{}).value||''; var oc=(document.getElementById('mee-oc')||{}).value||''; var factura=(document.getElementById('mee-factura')||{}).value||''; var msg=document.getElementById('mee-form-msg');
   if(!codigo){if(msg)msg.innerHTML='<div class="alert-error">Selecciona un material MEE</div>';return;}
   if(!cantidad||cantidad<=0){if(msg)msg.innerHTML='<div class="alert-error">Ingresa una cantidad valida</div>';return;}
   try{ var r=await fetch('/api/mee/movimiento',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tipo:tipo,codigo:codigo,cantidad:cantidad,unidad:unidad,lote_ref:lote,batch_ref:batch,observaciones:obs,proveedor:prov,zona:zona,precio_unitario:precio,fecha_vencimiento:fvenc,oc_numero:oc,factura_numero:factura})}); var res=await r.json();
-    if(res.ok){ var al=res.alerta?'<br><strong style="color:#e74c3c;">&#9888; '+res.alerta+'</strong>':''; if(msg)msg.innerHTML='<div class="alert-success">'+res.message+' - Stock: <strong>'+res.stock_nuevo+'</strong>'+al+'</div>'; var loteSave=lote; document.getElementById('mee-cantidad').value=''; document.getElementById('mee-lote').value=''; document.getElementById('mee-batch').value=''; document.getElementById('mee-obs').value=''; ['mee-zona','mee-precio','mee-valor','mee-fecha-venc','mee-oc','mee-factura'].forEach(function(idd){var el=document.getElementById(idd); if(el)el.value='';}); cargarMeeStock();cargarMeeAlertas();cargarMeeHistorial(); if(tipo==='Entrada'){window.open('/rotulo-recepcion-mee/'+encodeURIComponent(codigo)+'/'+cantidad+'?lote='+encodeURIComponent(loteSave),'_blank');}
+    if(res.ok){ var np=await meeRegistrarPartes(); var al=res.alerta?'<br><strong style="color:#e74c3c;">&#9888; '+res.alerta+'</strong>':''; if(msg)msg.innerHTML='<div class="alert-success">'+res.message+(np>0?(' · +'+np+' parte(s)'):'')+' - Stock: <strong>'+res.stock_nuevo+'</strong>'+al+'</div>'; var loteSave=lote; document.getElementById('mee-cantidad').value=''; document.getElementById('mee-lote').value=''; document.getElementById('mee-batch').value=''; document.getElementById('mee-obs').value=''; ['mee-zona','mee-precio','mee-valor','mee-fecha-venc','mee-oc','mee-factura'].forEach(function(idd){var el=document.getElementById(idd); if(el)el.value='';}); meeCargarPartesRecep(codigo); cargarMeeStock();cargarMeeAlertas();cargarMeeHistorial(); if(tipo==='Entrada'){window.open('/rotulo-recepcion-mee/'+encodeURIComponent(codigo)+'/'+cantidad+'?lote='+encodeURIComponent(loteSave),'_blank');}
     } else { if(msg)msg.innerHTML='<div class="alert-error">'+(res.error||'Error al registrar')+'</div>'; }
   }catch(e){if(msg)msg.innerHTML='<div class="alert-error">Error de conexion</div>';}
 }

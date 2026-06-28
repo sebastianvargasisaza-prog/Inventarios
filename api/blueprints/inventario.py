@@ -11564,6 +11564,33 @@ def mee_crear():
         return jsonify({'error': str(e)}), 400
     return jsonify({'ok': True, 'codigo': codigo, 'message': f'Material {codigo} creado exitosamente'})
 
+@bp.route('/api/mee/partes', methods=['GET'])
+def mee_partes_de_empaque():
+    """Partes (componentes) de un empaque · para la recepción múltiple (Sebastián 28-jun)."""
+    _u, _err, _code = _require_planta_write()
+    if _err:
+        return _err, _code
+    cod = (request.args.get('codigo') or '').strip()
+    if not cod:
+        return jsonify({'partes': []})
+    conn = get_db(); c = conn.cursor()
+    out = []
+    try:
+        rows = c.execute(
+            """SELECT p.parte_codigo,
+                      COALESCE(NULLIF(p.descripcion,''), m.descripcion, p.parte_codigo) AS descripcion,
+                      COALESCE(p.cantidad,1)
+               FROM mee_partes p
+               LEFT JOIN maestro_mee m ON UPPER(TRIM(m.codigo))=UPPER(TRIM(p.parte_codigo))
+               WHERE UPPER(TRIM(p.mee_codigo))=UPPER(TRIM(?))
+               ORDER BY p.id""", (cod,)).fetchall()
+        for r in rows:
+            if r[0]:
+                out.append({'codigo': r[0], 'descripcion': r[1], 'cantidad_por_unidad': r[2]})
+    except Exception:
+        pass
+    return jsonify({'partes': out})
+
 @bp.route('/api/mee/stock', methods=['GET'])
 def mee_stock_list():
     """Lista maestro_mee con stock, alertas y metricas de movimiento."""
