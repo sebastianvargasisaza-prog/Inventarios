@@ -1918,7 +1918,8 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <div id="mee-agrupado-wrap" style="display:none"></div>
       </div>
       <div id="meepane-recepcion">
-      <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:18px;max-width:560px;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px;align-items:start">
+      <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:18px;">
         <h3 style="margin-bottom:14px;color:#6d28d9;font-size:1em;">&#128666; Recepci&oacute;n de envases</h3>
         <div class="form-group"><label>Tipo</label>
           <select id="mee-tipo" onchange="meeActualizarTipo(this.value)">
@@ -1928,7 +1929,6 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           </select></div>
         <div class="form-group"><label>Material MEE</label>
           <select id="mee-codigo-sel" onchange="meeSelChange()"><option value="">-- Seleccionar material --</option></select></div>
-        <div id="mee-foto-box" style="display:none;text-align:center;margin-bottom:10px;"><img id="mee-foto-img" alt="" style="max-height:130px;max-width:100%;border-radius:8px;border:1px solid #ddd;box-shadow:0 1px 4px rgba(0,0,0,.1)"></div>
         <div id="mee-stock-preview" style="display:none;background:#e8f4fd;border-radius:6px;padding:7px 12px;margin-bottom:10px;font-size:0.88em;color:#1a4a6b;"></div>
         <div class="form-group"><label>Cantidad</label><input type="number" id="mee-cantidad" min="1" step="1" placeholder="0"></div>
         <div class="form-group"><label>Unidad</label><input type="text" id="mee-unidad" value="und" placeholder="und / cajas / frascos"></div>
@@ -1937,6 +1937,11 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <div class="form-group"><label>Observaciones</label><textarea id="mee-obs" rows="2" placeholder="Opcional..."></textarea></div>
         <button style="width:100%;" onclick="registrarMeeMovimiento()">&#10003; Registrar</button>
         <div id="mee-form-msg" style="margin-top:8px;"></div>
+      </div>
+      <div style="position:sticky;top:12px;">
+        <div id="mee-foto-box" style="display:none;text-align:center;"><img id="mee-foto-img" alt="" style="max-width:100%;max-height:440px;border-radius:12px;border:1px solid #ddd;box-shadow:0 2px 14px rgba(0,0,0,.12)"></div>
+        <div id="mee-foto-vacio" style="text-align:center;color:#94a3b8;padding:70px 20px;border:2px dashed #cbd5e1;border-radius:12px;font-size:14px;">&#128247;<br>Seleccion&aacute; un envase para ver su foto</div>
+      </div>
       </div>
       </div>
     </div>
@@ -9507,7 +9512,7 @@ function meeSubTab(name){
   });
   if(name==='inventario' && typeof cargarMeeStock==='function'){ try{ cargarMeeStock(); }catch(e){} }
 }
-function _meeFoto(cod){ var box=document.getElementById('mee-foto-box'); var img=document.getElementById('mee-foto-img'); if(!box||!img) return; var u=(window._MEE_IMG||{})[cod]||''; if(u){ img.src=u; box.style.display='block'; } else { box.style.display='none'; } }
+function _meeFoto(cod){ var box=document.getElementById('mee-foto-box'); var img=document.getElementById('mee-foto-img'); var vac=document.getElementById('mee-foto-vacio'); if(!box||!img) return; var u=(window._MEE_IMG||{})[cod]||''; if(u){ img.src=u; box.style.display='block'; if(vac) vac.style.display='none'; } else { box.style.display='none'; if(vac) vac.style.display='block'; } }
 function meeSelChange(){ var sel=document.getElementById('mee-codigo-sel'); var prev=document.getElementById('mee-stock-preview'); var und=document.getElementById('mee-unidad'); if(!sel||!sel.value){if(prev)prev.style.display='none'; _meeFoto(''); return;} _meeFoto(sel.value); var opt=sel.options[sel.selectedIndex]; var st=opt.getAttribute('data-stock'); var u=opt.getAttribute('data-unidad')||'und'; var mn=opt.getAttribute('data-min'); if(prev){var r=mn>0?(st/mn*100).toFixed(0):null; var col=!r?'#666':(r<100?'#e74c3c':'#27ae60'); prev.style.display='block'; prev.innerHTML='&#128230; Stock: <strong style="color:'+col+';">'+st+' '+u+'</strong> | Minimo: <strong>'+mn+' '+u+'</strong>'+(r?' ('+r+'%)':'');} if(und) und.value=u; }
 async function registrarMeeMovimiento(){ var tipo=(document.getElementById('mee-tipo')||{}).value; var codigo=(document.getElementById('mee-codigo-sel')||{}).value; var cantidad=parseFloat((document.getElementById('mee-cantidad')||{}).value); var unidad=(document.getElementById('mee-unidad')||{}).value||'und'; var lote=(document.getElementById('mee-lote')||{}).value||''; var batch=(document.getElementById('mee-batch')||{}).value||''; var obs=(document.getElementById('mee-obs')||{}).value||''; var msg=document.getElementById('mee-form-msg');
   if(!codigo){if(msg)msg.innerHTML='<div class="alert-error">Selecciona un material MEE</div>';return;}
