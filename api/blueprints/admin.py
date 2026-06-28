@@ -6809,11 +6809,63 @@ def admin_maestro_mees_list():
         rows = c.execute(
             f"""SELECT {_cols} FROM maestro_mee WHERE COALESCE(estado,'Activo')='Activo'
                 ORDER BY categoria, codigo""").fetchall()
+    mees = [dict(r) for r in rows]
+    # partes (mig 298) por envase · defensivo si la tabla no existe
+    try:
+        pmap = {}
+        for pr in c.execute("SELECT id, mee_codigo, COALESCE(parte_codigo,''), "
+                            "COALESCE(descripcion,''), COALESCE(cantidad,1) FROM mee_partes").fetchall():
+            pmap.setdefault(str(pr[1]).strip().upper(), []).append(
+                {'id': pr[0], 'parte_codigo': pr[2], 'descripcion': pr[3], 'cantidad': pr[4]})
+        for m in mees:
+            m['partes'] = pmap.get(str(m.get('codigo', '')).strip().upper(), [])
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        for m in mees:
+            m['partes'] = []
     conn.close()
-    return jsonify({
-        'total': len(rows),
-        'mees': [dict(r) for r in rows]
-    })
+    return jsonify({'total': len(mees), 'mees': mees})
+
+
+@bp.route("/api/admin/mee-parte", methods=["POST"])
+def admin_mee_parte_add():
+    """Agrega una PARTE a un envase (mee_partes · tapa/gotero/inner cup… = código MEE o texto libre + cantidad).
+    Sebastián 28-jun: dejamos la opción · ellos confirman en físico al organizar el inventario."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.get_json(silent=True) or {}
+    mee = (d.get('mee_codigo') or '').strip()
+    parte = (d.get('parte_codigo') or '').strip()
+    desc = (d.get('descripcion') or '').strip()
+    try:
+        cant = float(d.get('cantidad') or 1)
+    except (ValueError, TypeError):
+        cant = 1
+    if not mee or (not parte and not desc):
+        return jsonify({'error': 'mee_codigo + (parte_codigo o descripcion) requeridos'}), 400
+    conn = db_connect()
+    c = conn.cursor()
+    c.execute("INSERT INTO mee_partes (mee_codigo, parte_codigo, descripcion, cantidad, creado_at) "
+              "VALUES (?, ?, ?, ?, datetime('now','-5 hours'))", (mee, parte, desc, cant))
+    conn.commit()
+    return jsonify({'ok': True})
+
+
+@bp.route("/api/admin/mee-parte/<int:parte_id>", methods=["DELETE"])
+def admin_mee_parte_del(parte_id):
+    """Quita una parte de un envase."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    conn = db_connect()
+    c = conn.cursor()
+    c.execute("DELETE FROM mee_partes WHERE id=?", (parte_id,))
+    conn.commit()
+    return jsonify({'ok': True})
 
 
 @bp.route("/api/admin/mee-imagen", methods=["POST"])
@@ -6897,6 +6949,12 @@ _ENVASES_VERIF_HTML = r"""<!DOCTYPE html><html lang="es"><head>
  .acc{display:flex;gap:4px;justify-content:center;margin-top:6px}
  .acc button{flex:1;background:#7c3aed;color:#fff;border:none;border-radius:5px;padding:5px;font-size:11px;font-weight:700;cursor:pointer}
  .acc button.url{background:#0891b2}
+ .partes{margin-top:6px;text-align:left;font-size:10px}
+ .plbl{color:#94a3b8;font-weight:700;text-transform:uppercase;font-size:9px;margin-bottom:2px}
+ .pnone{color:#cbd5e1}
+ .chip{display:inline-block;background:#ede9fe;color:#5b21b6;border-radius:8px;padding:1px 6px;margin:2px 2px 0 0;font-weight:600}
+ .chip a{color:#dc2626;cursor:pointer;margin-left:3px;font-weight:800}
+ .addp{display:block;width:100%;margin-top:4px;background:#fff;color:#7c3aed;border:1px dashed #c4b5fd;border-radius:5px;padding:3px;font-size:10px;font-weight:700;cursor:pointer}
 </style></head><body>
 <header><h1>&#128230; Verificación de Envases</h1><div class="sub">Subí la foto de cada envase y, si es serigrafiado, elegí su frasco base &middot; el sistema ya tiene los códigos normalizados</div></header>
 <div class="container"><div id="cont">Cargando&hellip;</div></div>
@@ -6924,7 +6982,9 @@ async function cargar(){
         FRASCOS.forEach(function(f){ if(f.codigo!==m.codigo){ opts+='<option value="'+esc(f.codigo)+'"'+(f.codigo===m.material_referencia?' selected':'')+'>'+esc(f.codigo)+'</option>'; } });
         baseSel='<select data-cod="'+esc(m.codigo)+'" onchange="setBase(this)">'+opts+'</select>';
       }
-      h+='<div class="card">'+img+'<div class="cod">'+esc(m.codigo)+'</div><div class="desc">'+esc(m.descripcion)+'</div>'+baseSel+
+      var partes=(m.partes||[]).map(function(p){ return '<span class="chip">'+esc(p.descripcion||p.parte_codigo)+' x'+p.cantidad+' <a onclick="quitarParte('+p.id+')" title="quitar">&times;</a></span>'; }).join('');
+      var partesBox='<div class="partes"><div class="plbl">Partes</div>'+(partes||'<span class="pnone">&mdash; sin partes &mdash;</span>')+'<button class="addp" data-cod="'+esc(m.codigo)+'" onclick="agregarParte(this)">&#43; parte</button></div>';
+      h+='<div class="card">'+img+'<div class="cod">'+esc(m.codigo)+'</div><div class="desc">'+esc(m.descripcion)+'</div>'+baseSel+partesBox+
         '<div class="acc"><button class="url" data-cod="'+esc(m.codigo)+'" onclick="fotoURL(this)">&#128279; URL</button>'+
         '<button data-cod="'+esc(m.codigo)+'" onclick="subir(this)">&#128228; Subir</button></div></div>';
     });
@@ -6936,6 +6996,8 @@ async function setFoto(cod,img){ var d=await postJSON('/api/admin/mee-imagen',{c
 function fotoURL(btn){ var u=prompt('Pegá la URL de la foto del envase:'); if(u && u.trim()) setFoto(btn.getAttribute('data-cod'), u.trim()); }
 function subir(btn){ var cod=btn.getAttribute('data-cod'); var i=document.createElement('input'); i.type='file'; i.accept='image/*'; i.onchange=function(){ var f=i.files[0]; if(!f) return; if(f.size>2000000){ alert('Foto muy grande (máx 2MB) · usá una más liviana o una URL'); return; } var rd=new FileReader(); rd.onload=function(){ setFoto(cod, rd.result); }; rd.readAsDataURL(f); }; i.click(); }
 async function setBase(sel){ var d=await postJSON('/api/admin/mee-base',{codigo:sel.getAttribute('data-cod'),base:sel.value}); if(!d.ok){ alert('Error: '+(d.error||'')); } }
+async function agregarParte(btn){ var cod=btn.getAttribute('data-cod'); var p=prompt('Parte que se le agrega (tapa, gotero, inner cup, válvula…):'); if(!p||!p.trim()) return; var q=prompt('Cantidad por unidad:','1'); var d=await postJSON('/api/admin/mee-parte',{mee_codigo:cod,descripcion:p.trim(),cantidad:parseFloat(q)||1}); if(d.ok){ cargar(); } else { alert('Error: '+(d.error||'')); } }
+async function quitarParte(id){ if(!confirm('¿Quitar esta parte?')) return; var t=await csrf(); var r=await fetch('/api/admin/mee-parte/'+id,{method:'DELETE',credentials:'same-origin',headers:{'X-CSRF-Token':t}}); var d=await r.json(); if(d.ok){ cargar(); } else { alert('Error'); } }
 cargar();
 </script></body></html>"""
 
