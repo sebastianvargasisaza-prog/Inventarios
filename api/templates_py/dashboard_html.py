@@ -1918,25 +1918,37 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <div id="mee-agrupado-wrap" style="display:none"></div>
       </div>
       <div id="meepane-recepcion">
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px;align-items:start">
-      <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:18px;">
-        <h3 style="margin-bottom:14px;color:#6d28d9;font-size:1em;">&#128666; Recepci&oacute;n de envases</h3>
+      <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:20px;max-width:1100px;">
+        <h3 style="margin:0 0 16px;color:#6d28d9;font-size:1.05em;">&#128666; Recepci&oacute;n de envases</h3>
         <input type="hidden" id="mee-tipo" value="Entrada">
-        <div class="form-group"><label>Material MEE</label>
-          <select id="mee-codigo-sel" onchange="meeSelChange()"><option value="">-- Seleccionar material --</option></select></div>
-        <div id="mee-stock-preview" style="display:none;background:#e8f4fd;border-radius:6px;padding:7px 12px;margin-bottom:10px;font-size:0.88em;color:#1a4a6b;"></div>
-        <div class="form-group"><label>Cantidad</label><input type="number" id="mee-cantidad" min="1" step="1" placeholder="0"></div>
-        <div class="form-group"><label>Unidad</label><input type="text" id="mee-unidad" value="und" placeholder="und / cajas / frascos"></div>
-        <div id="mee-lote-group" class="form-group"><label>Lote / Ref. proveedor</label><input type="text" id="mee-lote" placeholder="Ej: LOT-2026-001"></div>
-        <div id="mee-batch-group" class="form-group" style="display:none;"><label>Batch de produccion</label><input type="text" id="mee-batch" placeholder="Ej: BATCH-2026-001"></div>
-        <div class="form-group"><label>Observaciones</label><textarea id="mee-obs" rows="2" placeholder="Opcional..."></textarea></div>
-        <button style="width:100%;" onclick="registrarMeeMovimiento()">&#10003; Registrar</button>
+        <input type="hidden" id="mee-unidad" value="und">
+        <input type="hidden" id="mee-batch" value="">
+        <div id="mee-foto-box" style="display:none;text-align:center;margin-bottom:16px;"><img id="mee-foto-img" alt="" style="max-height:190px;max-width:100%;border-radius:12px;border:1px solid #ddd;box-shadow:0 2px 12px rgba(0,0,0,.12)"></div>
+        <div id="mee-foto-vacio" style="text-align:center;color:#94a3b8;padding:22px;border:2px dashed #cbd5e1;border-radius:12px;margin-bottom:16px;font-size:13px;">&#128247; Seleccion&aacute; un envase para ver su foto</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;">
+          <div class="form-group" style="margin:0"><label>Material MEE *</label>
+            <select id="mee-codigo-sel" onchange="meeSelChange()"><option value="">-- Seleccionar material --</option></select></div>
+          <div class="form-group" style="margin:0"><label>Descripci&oacute;n</label><input type="text" id="mee-descripcion" readonly placeholder="Auto" style="background:#f1f5f9"></div>
+          <div class="form-group" style="margin:0"><label>Categor&iacute;a</label><input type="text" id="mee-categoria" readonly placeholder="Auto" style="background:#f1f5f9"></div>
+          <div class="form-group" style="margin:0"><label>Proveedor</label><input type="text" id="mee-proveedor" placeholder="Auto &mdash; o escribe"></div>
+          <div class="form-group" style="margin:0"><label>N Lote / Ref. proveedor (vac&iacute;o = auto)</label><input type="text" id="mee-lote" placeholder="Ej: LOT-2026-001"></div>
+          <div class="form-group" style="margin:0"><label>Cantidad recibida (und) *</label><input type="number" id="mee-cantidad" min="1" step="1" placeholder="0" oninput="meeCalcValor()"></div>
+          <div class="form-group" style="margin:0"><label>Zona</label><input type="text" id="mee-zona" placeholder="Ej: Zona A"></div>
+          <div class="form-group" style="margin:0"><label>Fecha de vencimiento</label><input type="date" id="mee-fecha-venc"></div>
+          <div class="form-group" style="margin:0"><label>Precio por unidad (COP)</label><input type="number" id="mee-precio" min="0" step="any" placeholder="Ej: 1200" oninput="meeCalcValor()"></div>
+          <div class="form-group" style="margin:0"><label>Valor total estimado (COP)</label><input type="text" id="mee-valor" readonly placeholder="Se calcula" style="background:#ecfdf5;color:#065f46;font-weight:700"></div>
+        </div>
+        <div id="mee-stock-preview" style="display:none;background:#e8f4fd;border-radius:6px;padding:7px 12px;margin:12px 0;font-size:0.88em;color:#1a4a6b;"></div>
+        <div class="form-group" style="margin:12px 0 0"><label>Observaciones</label><textarea id="mee-obs" rows="2" placeholder="Opcional..."></textarea></div>
+        <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px;margin:14px 0;">
+          <div style="font-weight:700;color:#b45309;margin-bottom:8px;font-size:0.9em;">&#128230; Vincular a orden de compra (opcional)</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">
+            <div class="form-group" style="margin:0"><label>N&deg; OC</label><input type="text" id="mee-oc" placeholder="Ej: OC-2026-045"></div>
+            <div class="form-group" style="margin:0"><label>N&deg; Factura / Remisi&oacute;n</label><input type="text" id="mee-factura" placeholder="Ej: FAC-1234"></div>
+          </div>
+        </div>
+        <button style="width:100%;background:#6d28d9;color:#fff;padding:12px;font-weight:700;border:none;border-radius:8px;cursor:pointer;" onclick="registrarMeeMovimiento()">&#10003; Registrar ingreso</button>
         <div id="mee-form-msg" style="margin-top:8px;"></div>
-      </div>
-      <div style="position:sticky;top:12px;">
-        <div id="mee-foto-box" style="display:none;text-align:center;"><img id="mee-foto-img" alt="" style="max-width:100%;max-height:440px;border-radius:12px;border:1px solid #ddd;box-shadow:0 2px 14px rgba(0,0,0,.12)"></div>
-        <div id="mee-foto-vacio" style="text-align:center;color:#94a3b8;padding:70px 20px;border:2px dashed #cbd5e1;border-radius:12px;font-size:14px;">&#128247;<br>Seleccion&aacute; un envase para ver su foto</div>
-      </div>
       </div>
       </div>
     </div>
@@ -9263,8 +9275,10 @@ async function cargarMeeStock(){
       var cur2 = codSel.value;
       var optsCod = '<option value="">-- Seleccionar material --</option>';
       window._MEE_IMG = window._MEE_IMG || {};
+      window._MEE_DATA = window._MEE_DATA || {};
       d.items.forEach(function(m){
         window._MEE_IMG[m.codigo] = m.imagen_url || '';
+        window._MEE_DATA[m.codigo] = {desc:m.descripcion||'', cat:m.categoria||'', prov:m.proveedor||''};
         optsCod += '<option value="'+_escHTML(m.codigo)+'" data-stock="'+_escHTML(m.stock_actual)+'" data-unidad="'+_escHTML(m.unidad)+'" data-min="'+_escHTML(m.stock_minimo)+'">'+_escHTML(m.codigo)+' — '+_escHTML(m.descripcion)+'</option>';
       });
       codSel.innerHTML = optsCod;
@@ -9508,12 +9522,14 @@ function meeSubTab(name){
   if(name==='inventario' && typeof cargarMeeStock==='function'){ try{ cargarMeeStock(); }catch(e){} }
 }
 function _meeFoto(cod){ var box=document.getElementById('mee-foto-box'); var img=document.getElementById('mee-foto-img'); var vac=document.getElementById('mee-foto-vacio'); if(!box||!img) return; var u=(window._MEE_IMG||{})[cod]||''; if(u){ img.src=u; box.style.display='block'; if(vac) vac.style.display='none'; } else { box.style.display='none'; if(vac) vac.style.display='block'; } }
-function meeSelChange(){ var sel=document.getElementById('mee-codigo-sel'); var prev=document.getElementById('mee-stock-preview'); var und=document.getElementById('mee-unidad'); if(!sel||!sel.value){if(prev)prev.style.display='none'; _meeFoto(''); return;} _meeFoto(sel.value); var opt=sel.options[sel.selectedIndex]; var st=opt.getAttribute('data-stock'); var u=opt.getAttribute('data-unidad')||'und'; var mn=opt.getAttribute('data-min'); if(prev){var r=mn>0?(st/mn*100).toFixed(0):null; var col=!r?'#666':(r<100?'#e74c3c':'#27ae60'); prev.style.display='block'; prev.innerHTML='&#128230; Stock: <strong style="color:'+col+';">'+st+' '+u+'</strong> | Minimo: <strong>'+mn+' '+u+'</strong>'+(r?' ('+r+'%)':'');} if(und) und.value=u; }
-async function registrarMeeMovimiento(){ var tipo=(document.getElementById('mee-tipo')||{}).value; var codigo=(document.getElementById('mee-codigo-sel')||{}).value; var cantidad=parseFloat((document.getElementById('mee-cantidad')||{}).value); var unidad=(document.getElementById('mee-unidad')||{}).value||'und'; var lote=(document.getElementById('mee-lote')||{}).value||''; var batch=(document.getElementById('mee-batch')||{}).value||''; var obs=(document.getElementById('mee-obs')||{}).value||''; var msg=document.getElementById('mee-form-msg');
+function _meeAutofill(cod){ var dd=(window._MEE_DATA||{})[cod]||{}; var de=document.getElementById('mee-descripcion'); if(de)de.value=dd.desc||''; var ce=document.getElementById('mee-categoria'); if(ce)ce.value=dd.cat||''; var pe=document.getElementById('mee-proveedor'); if(pe)pe.value=dd.prov||''; }
+function meeCalcValor(){ var q=parseFloat((document.getElementById('mee-cantidad')||{}).value)||0; var p=parseFloat((document.getElementById('mee-precio')||{}).value)||0; var v=document.getElementById('mee-valor'); if(v){ var t=q*p; v.value=t>0?('$'+t.toLocaleString('es-CO')):''; } }
+function meeSelChange(){ var sel=document.getElementById('mee-codigo-sel'); var prev=document.getElementById('mee-stock-preview'); var und=document.getElementById('mee-unidad'); if(!sel||!sel.value){if(prev)prev.style.display='none'; _meeFoto(''); _meeAutofill(''); return;} _meeFoto(sel.value); _meeAutofill(sel.value); var opt=sel.options[sel.selectedIndex]; var st=opt.getAttribute('data-stock'); var u=opt.getAttribute('data-unidad')||'und'; var mn=opt.getAttribute('data-min'); if(prev){var r=mn>0?(st/mn*100).toFixed(0):null; var col=!r?'#666':(r<100?'#e74c3c':'#27ae60'); prev.style.display='block'; prev.innerHTML='&#128230; Stock: <strong style="color:'+col+';">'+st+' '+u+'</strong> | Minimo: <strong>'+mn+' '+u+'</strong>'+(r?' ('+r+'%)':'');} if(und) und.value=u; }
+async function registrarMeeMovimiento(){ var tipo=(document.getElementById('mee-tipo')||{}).value; var codigo=(document.getElementById('mee-codigo-sel')||{}).value; var cantidad=parseFloat((document.getElementById('mee-cantidad')||{}).value); var unidad=(document.getElementById('mee-unidad')||{}).value||'und'; var lote=(document.getElementById('mee-lote')||{}).value||''; var batch=(document.getElementById('mee-batch')||{}).value||''; var obs=(document.getElementById('mee-obs')||{}).value||''; var prov=(document.getElementById('mee-proveedor')||{}).value||''; var zona=(document.getElementById('mee-zona')||{}).value||''; var precio=parseFloat((document.getElementById('mee-precio')||{}).value)||0; var fvenc=(document.getElementById('mee-fecha-venc')||{}).value||''; var oc=(document.getElementById('mee-oc')||{}).value||''; var factura=(document.getElementById('mee-factura')||{}).value||''; var msg=document.getElementById('mee-form-msg');
   if(!codigo){if(msg)msg.innerHTML='<div class="alert-error">Selecciona un material MEE</div>';return;}
   if(!cantidad||cantidad<=0){if(msg)msg.innerHTML='<div class="alert-error">Ingresa una cantidad valida</div>';return;}
-  try{ var r=await fetch('/api/mee/movimiento',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tipo:tipo,codigo:codigo,cantidad:cantidad,unidad:unidad,lote_ref:lote,batch_ref:batch,observaciones:obs})}); var res=await r.json();
-    if(res.ok){ var al=res.alerta?'<br><strong style="color:#e74c3c;">&#9888; '+res.alerta+'</strong>':''; if(msg)msg.innerHTML='<div class="alert-success">'+res.message+' - Stock: <strong>'+res.stock_nuevo+'</strong>'+al+'</div>'; var loteSave=lote; document.getElementById('mee-cantidad').value=''; document.getElementById('mee-lote').value=''; document.getElementById('mee-batch').value=''; document.getElementById('mee-obs').value=''; cargarMeeStock();cargarMeeAlertas();cargarMeeHistorial(); if(tipo==='Entrada'){window.open('/rotulo-recepcion-mee/'+encodeURIComponent(codigo)+'/'+cantidad+'?lote='+encodeURIComponent(loteSave),'_blank');}
+  try{ var r=await fetch('/api/mee/movimiento',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tipo:tipo,codigo:codigo,cantidad:cantidad,unidad:unidad,lote_ref:lote,batch_ref:batch,observaciones:obs,proveedor:prov,zona:zona,precio_unitario:precio,fecha_vencimiento:fvenc,oc_numero:oc,factura_numero:factura})}); var res=await r.json();
+    if(res.ok){ var al=res.alerta?'<br><strong style="color:#e74c3c;">&#9888; '+res.alerta+'</strong>':''; if(msg)msg.innerHTML='<div class="alert-success">'+res.message+' - Stock: <strong>'+res.stock_nuevo+'</strong>'+al+'</div>'; var loteSave=lote; document.getElementById('mee-cantidad').value=''; document.getElementById('mee-lote').value=''; document.getElementById('mee-batch').value=''; document.getElementById('mee-obs').value=''; ['mee-zona','mee-precio','mee-valor','mee-fecha-venc','mee-oc','mee-factura'].forEach(function(idd){var el=document.getElementById(idd); if(el)el.value='';}); cargarMeeStock();cargarMeeAlertas();cargarMeeHistorial(); if(tipo==='Entrada'){window.open('/rotulo-recepcion-mee/'+encodeURIComponent(codigo)+'/'+cantidad+'?lote='+encodeURIComponent(loteSave),'_blank');}
     } else { if(msg)msg.innerHTML='<div class="alert-error">'+(res.error||'Error al registrar')+'</div>'; }
   }catch(e){if(msg)msg.innerHTML='<div class="alert-error">Error de conexion</div>';}
 }

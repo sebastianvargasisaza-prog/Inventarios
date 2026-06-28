@@ -11649,6 +11649,16 @@ def mee_registrar_movimiento():
     batch_ref   = d.get('batch_ref','').strip()
     responsable = d.get('responsable', session.get('compras_user','')).strip()
     obs         = d.get('observaciones','').strip()
+    # Recepción MEE estilo MP (mig 300) · solo se llenan en Entrada
+    proveedor_r = d.get('proveedor','').strip()
+    zona_r      = d.get('zona','').strip()
+    try:
+        precio_r = float(d.get('precio_unitario') or 0)
+    except (ValueError, TypeError):
+        precio_r = 0
+    fvenc_r     = d.get('fecha_vencimiento','').strip()
+    oc_r        = d.get('oc_numero','').strip()
+    factura_r   = d.get('factura_numero','').strip()
 
     if not codigo or tipo not in ('Entrada','Salida','Ajuste'):
         return jsonify({'error': 'codigo, tipo (Entrada/Salida/Ajuste) requeridos'}), 400
@@ -11681,13 +11691,17 @@ def mee_registrar_movimiento():
     mov_cantidad = round(cantidad - stock_ant, 2) if tipo == 'Ajuste' else cantidad
 
     c.execute("""INSERT INTO movimientos_mee
-                 (mee_codigo, tipo, cantidad, unidad, lote_ref, batch_ref, responsable, observaciones)
-                 VALUES (?,?,?,?,?,?,?,?)""",
-              (codigo, tipo, mov_cantidad, unidad, lote_ref, batch_ref, responsable, obs))
+                 (mee_codigo, tipo, cantidad, unidad, lote_ref, batch_ref, responsable, observaciones,
+                  proveedor, zona, precio_unitario, fecha_vencimiento, oc_numero, factura_numero)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+              (codigo, tipo, mov_cantidad, unidad, lote_ref, batch_ref, responsable, obs,
+               proveedor_r, zona_r, precio_r, fvenc_r, oc_r, factura_r))
     mov_id = c.lastrowid
 
     if tipo == 'Entrada':
         c.execute("UPDATE maestro_mee SET stock_actual = stock_actual + ? WHERE codigo=?", (cantidad, codigo))
+        if proveedor_r:  # guardar último proveedor recibido en el maestro
+            c.execute("UPDATE maestro_mee SET proveedor=? WHERE codigo=?", (proveedor_r, codigo))
     elif tipo == 'Salida':
         # CASE WHEN portable (PG no tiene MAX de 2 args · MAX es agregado → erroraba en prod;
         # SQLite no tiene GREATEST). Clamp a 0 idéntico en ambos motores.

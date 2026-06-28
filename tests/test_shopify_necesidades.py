@@ -165,3 +165,14 @@ def test_mig299_envases_stock_limpio(app, db_clean):
     # los 57 envases normalizados quedan con stock 0 y sin mínimo falso (no disparan bajo-mínimo)
     r = _q1("SELECT stock_actual, stock_minimo FROM maestro_mee WHERE codigo='CJA-TRX'")
     assert r[0] == 0 and r[1] == 0, ('stock/mínimo placeholder no limpiado', r)
+
+
+def test_mig300_recepcion_mee_columnas(app, db_clean):
+    # columnas de recepción MP-style en movimientos_mee (proveedor/zona/precio/fecha venc/OC/factura)
+    _exec("INSERT INTO movimientos_mee (mee_codigo,tipo,cantidad,proveedor,zona,precio_unitario,"
+          "fecha_vencimiento,oc_numero,factura_numero) "
+          "VALUES ('FR-VIDRIOOPAL-30','Entrada',10,'Cafarcol','Zona A',1200,'2027-01-01','OC-1','FAC-1')")
+    r = _q1("SELECT proveedor, zona, precio_unitario, oc_numero, factura_numero FROM movimientos_mee "
+            "WHERE mee_codigo='FR-VIDRIOOPAL-30' AND oc_numero='OC-1'")
+    assert r[0] == 'Cafarcol' and r[1] == 'Zona A' and float(r[2]) == 1200 and r[3] == 'OC-1' and r[4] == 'FAC-1', \
+        ('columnas de recepción MEE no funcionan', r)

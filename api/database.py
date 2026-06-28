@@ -395,6 +395,16 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (300, "Recepción MEE estilo Materia Prima (Sebastián 28-jun): columnas de recepción en movimientos_mee "
+          "para el formulario 2-columnas (proveedor, zona [no estantería · no tienen], precio_unitario, "
+          "fecha_vencimiento, oc_numero, factura_numero). Se llenan en la Entrada; Salida/Ajuste las dejan vacías.", [
+        "ALTER TABLE movimientos_mee ADD COLUMN proveedor TEXT DEFAULT ''",
+        "ALTER TABLE movimientos_mee ADD COLUMN zona TEXT DEFAULT ''",
+        "ALTER TABLE movimientos_mee ADD COLUMN precio_unitario REAL DEFAULT 0",
+        "ALTER TABLE movimientos_mee ADD COLUMN fecha_vencimiento TEXT DEFAULT ''",
+        "ALTER TABLE movimientos_mee ADD COLUMN oc_numero TEXT DEFAULT ''",
+        "ALTER TABLE movimientos_mee ADD COLUMN factura_numero TEXT DEFAULT ''",
+    ]),
     (299, "Envases · limpiar el stock/mínimo PLACEHOLDER de los 57 normalizados (Sebastián 28-jun: 'eliminá lo "
           "que no es real, construyamos desde cero'). stock_actual=0 (la carga del Excel era un snapshot viejo · "
           "el stock real entra por recepción/conteo) + stock_minimo=0 (el default 1000 disparaba 57 falsos "
