@@ -1948,6 +1948,10 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <button style="width:100%;background:#6d28d9;color:#fff;padding:12px;font-weight:700;border:none;border-radius:8px;cursor:pointer;" onclick="registrarMeeMovimiento()">&#10003; Registrar ingreso</button>
         <div id="mee-form-msg" style="margin-top:8px;"></div>
       </div>
+      <div id="mee-cuarentena-box" style="display:none;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:16px;margin-top:16px;">
+        <h3 style="margin:0 0 10px;color:#c2410c;font-size:1em;">&#128737; En cuarentena &mdash; Calidad debe liberar (<span id="mee-cuar-count">0</span>)</h3>
+        <div id="mee-cuarentena-list"></div>
+      </div>
       <div id="mee-wiz-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;overflow:auto;padding:24px;">
         <div style="background:#fff;border-radius:12px;padding:24px;max-width:560px;margin:0 auto;box-shadow:0 10px 40px rgba(0,0,0,.3);">
           <h3 style="margin:0 0 4px;color:#16a34a;">&#10133; Crear material nuevo</h3>
@@ -4335,7 +4339,7 @@ function switchTab(n,btn){
   if(n==='ingreso') initIngreso();
   if(n==='abc') loadABC();
   if(n==='conteo'){ cargarEstanterias(); cargarHistorialConteos(); cargarProgramacionCiclica(); }
-  if(n==='empaque'){ cargarMeeAlertas(); cargarMeeStock(); cargarMeeHistorial(); }
+  if(n==='empaque'){ cargarMeeAlertas(); cargarMeeStock(); cargarMeeHistorial(); meeCargarCuarentena(); }
   if(n==='alertas'){ loadAlertasAll(); }
   // 'stock' (Inventario MP) ya NO incluye MEE · vive en tab 'empaque' aparte.
   if(n==='acondicionamiento'){loadAcond();cargarMeeParaAcond();}
@@ -9557,6 +9561,20 @@ function meeSubTab(name){
   if(name==='inventario' && typeof cargarMeeStock==='function'){ try{ cargarMeeStock(); }catch(e){} }
 }
 function _meeFoto(cod){ var box=document.getElementById('mee-foto-box'); var img=document.getElementById('mee-foto-img'); var vac=document.getElementById('mee-foto-vacio'); if(!box||!img) return; var u=(window._MEE_IMG||{})[cod]||''; if(u){ img.src=u; box.style.display='block'; if(vac) vac.style.display='none'; } else { box.style.display='none'; if(vac) vac.style.display='block'; } }
+async function meeCargarCuarentena(){
+  var box=document.getElementById('mee-cuarentena-box'); var list=document.getElementById('mee-cuarentena-list'); var cnt=document.getElementById('mee-cuar-count');
+  if(!box||!list) return;
+  try{
+    var r=await fetch('/api/mee/cuarentena-pendientes'); var d=await r.json(); var ps=d.pendientes||[];
+    if(cnt) cnt.textContent=ps.length;
+    if(!ps.length){ box.style.display='none'; list.innerHTML=''; return; }
+    list.innerHTML=ps.map(function(p){ return '<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;background:#fff;border:1px solid #fed7aa;border-radius:6px;padding:8px 10px;margin-bottom:6px;flex-wrap:wrap"><span style="font-size:12px"><b>'+_escHTML(p.codigo)+'</b> — '+_escHTML(p.descripcion)+' · '+p.cantidad+' '+_escHTML(p.unidad)+(p.zona?(' · zona '+_escHTML(p.zona)):'')+(p.lote?(' · lote '+_escHTML(p.lote)):'')+'</span><span style="display:flex;gap:6px"><button onclick="meeCuarLiberar('+p.id+')" style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer">&#10003; Liberar</button><button onclick="meeCuarRechazar('+p.id+')" style="background:#dc2626;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer">Rechazar</button></span></div>'; }).join('');
+    box.style.display='block';
+  }catch(e){}
+}
+function meeCuarLiberar(id){ meeCuarentena(id,'liberar'); }
+function meeCuarRechazar(id){ meeCuarentena(id,'rechazar'); }
+async function meeCuarentena(id, accion){ if(accion==='rechazar' && !confirm('¿Rechazar esta recepción de envase?')) return; try{ var r=await fetch('/api/mee/cuarentena/'+id+'/'+accion,{method:'POST'}); var d=await r.json(); if(d.ok){ meeCargarCuarentena(); cargarMeeStock(); } else { alert('Error: '+(d.error||'')); } }catch(e){ alert('Error de conexión'); } }
 async function meeCargarPartesRecep(cod){
   var box=document.getElementById('mee-partes-recep'); var list=document.getElementById('mee-partes-recep-list');
   if(!box||!list) return;
@@ -9623,7 +9641,7 @@ async function registrarMeeMovimiento(){ var tipo=(document.getElementById('mee-
   if(!codigo){if(msg)msg.innerHTML='<div class="alert-error">Selecciona un material MEE</div>';return;}
   if(!cantidad||cantidad<=0){if(msg)msg.innerHTML='<div class="alert-error">Ingresa una cantidad valida</div>';return;}
   try{ var r=await fetch('/api/mee/movimiento',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tipo:tipo,codigo:codigo,cantidad:cantidad,unidad:unidad,lote_ref:lote,batch_ref:batch,observaciones:obs,proveedor:prov,zona:zona,precio_unitario:precio,fecha_vencimiento:fvenc,oc_numero:oc,factura_numero:factura})}); var res=await r.json();
-    if(res.ok){ var np=await meeRegistrarPartes(); var al=res.alerta?'<br><strong style="color:#e74c3c;">&#9888; '+res.alerta+'</strong>':''; if(msg)msg.innerHTML='<div class="alert-success">'+res.message+(np>0?(' · +'+np+' parte(s)'):'')+' - Stock: <strong>'+res.stock_nuevo+'</strong>'+al+'</div>'; var loteSave=lote; document.getElementById('mee-cantidad').value=''; document.getElementById('mee-lote').value=''; document.getElementById('mee-batch').value=''; document.getElementById('mee-obs').value=''; ['mee-zona','mee-precio','mee-valor','mee-fecha-venc','mee-oc','mee-factura'].forEach(function(idd){var el=document.getElementById(idd); if(el)el.value='';}); meeCargarPartesRecep(codigo); cargarMeeStock();cargarMeeAlertas();cargarMeeHistorial(); if(tipo==='Entrada'){window.open('/rotulo-recepcion-mee/'+encodeURIComponent(codigo)+'/'+cantidad+'?lote='+encodeURIComponent(loteSave),'_blank');}
+    if(res.ok){ var np=await meeRegistrarPartes(); var al=res.alerta?'<br><strong style="color:#e74c3c;">&#9888; '+res.alerta+'</strong>':''; if(msg)msg.innerHTML='<div class="alert-success">'+res.message+(np>0?(' · +'+np+' parte(s)'):'')+' - Stock: <strong>'+res.stock_nuevo+'</strong>'+al+'</div>'; var loteSave=lote; document.getElementById('mee-cantidad').value=''; document.getElementById('mee-lote').value=''; document.getElementById('mee-batch').value=''; document.getElementById('mee-obs').value=''; ['mee-zona','mee-precio','mee-valor','mee-fecha-venc','mee-oc','mee-factura'].forEach(function(idd){var el=document.getElementById(idd); if(el)el.value='';}); meeCargarPartesRecep(codigo); cargarMeeStock();cargarMeeAlertas();cargarMeeHistorial();meeCargarCuarentena(); if(tipo==='Entrada'){window.open('/rotulo-recepcion-mee/'+encodeURIComponent(codigo)+'/'+cantidad+'?lote='+encodeURIComponent(loteSave),'_blank');}
     } else { if(msg)msg.innerHTML='<div class="alert-error">'+(res.error||'Error al registrar')+'</div>'; }
   }catch(e){if(msg)msg.innerHTML='<div class="alert-error">Error de conexion</div>';}
 }

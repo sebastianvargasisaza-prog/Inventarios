@@ -194,3 +194,24 @@ def test_mee_crear_con_partes(app, db_clean):
     rp = c.get('/api/mee/partes?codigo=FR-TESTPARTES-30')
     assert rp.status_code == 200, rp.data
     assert len(rp.get_json().get('partes', [])) == 2, rp.data
+
+
+def test_mee_cuarentena_calidad(app, db_clean):
+    # recibir un envase → entra en CUARENTENA · Calidad lo libera → VIGENTE
+    from .conftest import csrf_headers
+    c = _login(app)
+    c.post('/api/mee', json={'codigo': 'FR-CUARTEST-30', 'descripcion': 'cuar test', 'categoria': 'Frasco'},
+           headers=csrf_headers())
+    r = c.post('/api/mee/movimiento', json={'tipo': 'Entrada', 'codigo': 'FR-CUARTEST-30', 'cantidad': 10,
+                                            'unidad': 'und'}, headers=csrf_headers())
+    assert r.status_code == 200, r.data
+    est = _q1("SELECT estado FROM movimientos_mee WHERE mee_codigo='FR-CUARTEST-30' AND tipo='Entrada' "
+              "ORDER BY id DESC LIMIT 1")[0]
+    assert est == 'CUARENTENA', ('la recepción no entró en cuarentena', est)
+    pend = c.get('/api/mee/cuarentena-pendientes').get_json()['pendientes']
+    mov = [p for p in pend if p['codigo'] == 'FR-CUARTEST-30']
+    assert mov, 'no aparece en cuarentena pendientes'
+    rl = c.post('/api/mee/cuarentena/' + str(mov[0]['id']) + '/liberar', headers=csrf_headers())
+    assert rl.status_code == 200, rl.data
+    est2 = _q1("SELECT estado FROM movimientos_mee WHERE id=?", (mov[0]['id'],))[0]
+    assert est2 == 'VIGENTE', ('Calidad no liberó la cuarentena', est2)

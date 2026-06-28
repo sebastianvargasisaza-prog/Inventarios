@@ -395,6 +395,11 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (301, "Calidad de envases · estado de cuarentena en la recepción (Sebastián 28-jun): movimientos_mee.estado "
+          "(VIGENTE por defecto para lo existente; las Entradas nuevas entran en CUARENTENA y Calidad libera). "
+          "Espeja la cuarentena de MP. Primer caso del sistema de alertas a las 2 de calidad.", [
+        "ALTER TABLE movimientos_mee ADD COLUMN estado TEXT DEFAULT 'VIGENTE'",
+    ]),
     (300, "Recepción MEE estilo Materia Prima (Sebastián 28-jun): columnas de recepción en movimientos_mee "
           "para el formulario 2-columnas (proveedor, zona [no estantería · no tienen], precio_unitario, "
           "fecha_vencimiento, oc_numero, factura_numero). Se llenan en la Entrada; Salida/Ajuste las dejan vacías.", [

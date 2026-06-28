@@ -11732,12 +11732,23 @@ def mee_registrar_movimiento():
     # registran su propia magnitud (ya son deltas).
     mov_cantidad = round(cantidad - stock_ant, 2) if tipo == 'Ajuste' else cantidad
 
+    # Calidad de envases (Sebastián 28-jun · espeja MP) · las Entradas entran en CUARENTENA salvo auto-vigente
+    if tipo == 'Entrada':
+        try:
+            from database import recepcion_auto_vigente as _rav
+            _cuar_def = (not _rav(c))
+        except Exception:
+            _cuar_def = True
+        estado_mee = 'CUARENTENA' if bool(d.get('cuarentena', _cuar_def)) else 'VIGENTE'
+    else:
+        estado_mee = 'VIGENTE'
+
     c.execute("""INSERT INTO movimientos_mee
                  (mee_codigo, tipo, cantidad, unidad, lote_ref, batch_ref, responsable, observaciones,
-                  proveedor, zona, precio_unitario, fecha_vencimiento, oc_numero, factura_numero)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                  proveedor, zona, precio_unitario, fecha_vencimiento, oc_numero, factura_numero, estado)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
               (codigo, tipo, mov_cantidad, unidad, lote_ref, batch_ref, responsable, obs,
-               proveedor_r, zona_r, precio_r, fvenc_r, oc_r, factura_r))
+               proveedor_r, zona_r, precio_r, fvenc_r, oc_r, factura_r, estado_mee))
     mov_id = c.lastrowid
 
     if tipo == 'Entrada':
@@ -11763,6 +11774,19 @@ def mee_registrar_movimiento():
         pass
     conn.commit()
 
+    # Alerta a las 2 de calidad cuando una recepción de envase entra en cuarentena (Sebastián 28-jun · seed del sistema de alertas)
+    if tipo == 'Entrada' and estado_mee == 'CUARENTENA':
+        try:
+            from blueprints.notif import push_notif_multi
+            from config import CALIDAD_USERS, ASEGURAMIENTO_USERS
+            _qc = sorted((set(CALIDAD_USERS) | set(ASEGURAMIENTO_USERS)) - {'sebastian'})
+            push_notif_multi(_qc, 'mee_cuarentena',
+                             f'Envase en cuarentena: {mee[1]}',
+                             body=f'{cantidad:.0f} {unidad} de {codigo} · zona {zona_r or "sin zona"} · revisar y liberar',
+                             link='/inventarios', importante=True)
+        except Exception:
+            pass
+
     alerta = None
     if s_min and s_min > 0 and s_new < s_min:
         alerta = f'Stock bajo minimo: {s_new:.0f} {unidad} (minimo: {s_min:.0f})'
@@ -11770,6 +11794,58 @@ def mee_registrar_movimiento():
         'ok': True, 'movimiento_id': mov_id, 'stock_nuevo': s_new, 'alerta': alerta,
         'message': f'{tipo} de {cantidad:.0f} {unidad} registrada para {mee[1]}'
     })
+
+@bp.route('/api/mee/cuarentena-pendientes', methods=['GET'])
+def mee_cuarentena_pendientes():
+    """Recepciones de envases en cuarentena (esperando que Calidad libere) · Sebastián 28-jun."""
+    _u, _err, _code = _require_planta_write()
+    if _err:
+        return _err, _code
+    conn = get_db(); c = conn.cursor()
+    out = []
+    try:
+        rows = c.execute(
+            """SELECT mv.id, mv.mee_codigo, COALESCE(m.descripcion, mv.mee_codigo), mv.cantidad, mv.unidad,
+                      COALESCE(mv.lote_ref,''), COALESCE(mv.zona,''), COALESCE(mv.proveedor,''),
+                      COALESCE(mv.responsable,''), mv.fecha
+               FROM movimientos_mee mv
+               LEFT JOIN maestro_mee m ON UPPER(TRIM(m.codigo))=UPPER(TRIM(mv.mee_codigo))
+               WHERE mv.tipo='Entrada' AND COALESCE(mv.anulado,0)=0
+                 AND UPPER(COALESCE(mv.estado,'VIGENTE'))='CUARENTENA'
+               ORDER BY mv.id DESC LIMIT 100""").fetchall()
+        for r in rows:
+            out.append({'id': r[0], 'codigo': r[1], 'descripcion': r[2], 'cantidad': r[3],
+                        'unidad': r[4], 'lote': r[5], 'zona': r[6], 'proveedor': r[7],
+                        'responsable': r[8], 'fecha': r[9]})
+    except Exception:
+        pass
+    return jsonify({'pendientes': out, 'total': len(out)})
+
+
+@bp.route('/api/mee/cuarentena/<int:mov_id>/<accion>', methods=['POST'])
+def mee_cuarentena_resolver(mov_id, accion):
+    """Calidad LIBERA (→VIGENTE) o RECHAZA (→RECHAZADO) una recepción de envase en cuarentena · Sebastián 28-jun."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'no autenticado'}), 401
+    _user = session.get('compras_user', '')
+    if _user not in QC_USERS:
+        return jsonify({'error': 'solo Calidad puede liberar/rechazar'}), 403
+    if accion not in ('liberar', 'rechazar'):
+        return jsonify({'error': 'acción inválida'}), 400
+    nuevo = 'VIGENTE' if accion == 'liberar' else 'RECHAZADO'
+    conn = get_db(); c = conn.cursor()
+    c.execute("UPDATE movimientos_mee SET estado=? WHERE id=? AND tipo='Entrada' "
+              "AND UPPER(COALESCE(estado,'VIGENTE'))='CUARENTENA'", (nuevo, mov_id))
+    if c.rowcount == 0:
+        return jsonify({'error': 'movimiento no encontrado o ya resuelto'}), 404
+    try:
+        from audit_helpers import audit_log as _al
+        _al(c, usuario=_user, accion='MEE_CUARENTENA_' + accion.upper(), tabla='movimientos_mee',
+            registro_id=str(mov_id), despues={'estado': nuevo})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'estado': nuevo})
 
 @bp.route('/api/mee/movimientos', methods=['GET'])
 def mee_historial_movimientos():
