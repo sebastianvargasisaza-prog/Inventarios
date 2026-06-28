@@ -11955,6 +11955,24 @@ def mee_shopify_fotos_bulk():
         return jsonify({'error': str(e)[:150]}), 500
     return jsonify({'ok': True, 'actualizados': n})
 
+@bp.route('/api/mee/set-imagen', methods=['POST'])
+def mee_set_imagen():
+    """Setea la foto de un envase (maestro_mee.imagen_url) desde la bodega · Sebastián 28-jun."""
+    _u, _err, _code = _require_planta_write()
+    if _err:
+        return _err, _code
+    d = request.json or {}
+    cod = (d.get('codigo') or '').strip()
+    img = (d.get('imagen_url') or '').strip()
+    if not cod:
+        return jsonify({'error': 'codigo requerido'}), 400
+    conn = get_db(); c = conn.cursor()
+    c.execute("UPDATE maestro_mee SET imagen_url=? WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))", (img, cod))
+    if c.rowcount == 0:
+        return jsonify({'error': 'envase no encontrado'}), 404
+    conn.commit()
+    return jsonify({'ok': True, 'codigo': cod})
+
 @bp.route('/api/mee/movimientos', methods=['GET'])
 def mee_historial_movimientos():
     """Historial paginado de movimientos MEE. Sprint MEE PRO 20-may-2026.

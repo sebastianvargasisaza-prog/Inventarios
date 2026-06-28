@@ -271,3 +271,15 @@ def test_mee_shopify_fotos_bulk(app, db_clean):
     assert r.status_code == 200, r.data
     img = _q1("SELECT imagen_url FROM maestro_mee WHERE codigo='FR-NIAFOTO-30'")[0]
     assert img == 'http://x/nia.jpg', ('no trajo la foto de Shopify por match', img)
+
+
+def test_mee_set_imagen(app, db_clean):
+    # subir/setear la foto de un envase desde la bodega
+    from .conftest import csrf_headers
+    c = _login(app)
+    _exec("INSERT INTO maestro_mee (codigo,descripcion,categoria,estado,imagen_url,stock_actual,stock_minimo,unidad,fecha_creacion) "
+          "VALUES ('FR-SETIMG-30','test','Frasco','Activo','',0,0,'und','')")
+    r = c.post('/api/mee/set-imagen', json={'codigo': 'FR-SETIMG-30', 'imagen_url': 'data:image/jpeg;base64,ZZZ'},
+               headers=csrf_headers())
+    assert r.status_code == 200, r.data
+    assert _q1("SELECT imagen_url FROM maestro_mee WHERE codigo='FR-SETIMG-30'")[0] == 'data:image/jpeg;base64,ZZZ'

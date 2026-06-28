@@ -9278,6 +9278,22 @@ function meeScrollToObsoletos(anchor){
   var el = document.getElementById(anchor) || document.getElementsByName(anchor)[0];
   if(el) el.scrollIntoView({behavior:'smooth'});
 }
+function meeFotoUpload(codigo){
+  var i=document.createElement('input'); i.type='file'; i.accept='image/*';
+  i.onchange=function(){ var f=i.files[0]; if(!f) return; var rd=new FileReader();
+    rd.onload=function(){ var img=new Image(); img.onload=function(){
+      var max=440; var sc=Math.min(1, max/Math.max(img.width,img.height));
+      var cv=document.createElement('canvas'); cv.width=Math.round(img.width*sc); cv.height=Math.round(img.height*sc);
+      cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+      var data; try{ data=cv.toDataURL('image/jpeg',0.82); }catch(e){ data=rd.result; }
+      _meeSetFoto(codigo, data);
+    }; img.onerror=function(){ _meeSetFoto(codigo, rd.result); }; img.src=rd.result; };
+    rd.readAsDataURL(f); };
+  i.click();
+}
+async function _meeSetFoto(codigo, data){
+  try{ var r=await fetch('/api/mee/set-imagen',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({codigo:codigo,imagen_url:data})}); var d=await r.json(); if(d.ok){ cargarMeeStock(); } else { alert('Error: '+(d.error||'')); } }catch(e){ alert('Error de conexión'); }
+}
 async function meeFotosShopify(){
   if(!confirm('¿Traer fotos de Shopify para los envases SIN foto (por match de producto Ánimus)?')) return;
   try{ var r=await fetch('/api/mee/shopify-fotos-bulk',{method:'POST'}); var d=await r.json(); if(d.ok){ alert('✓ '+d.actualizados+' envases ahora tienen foto de Shopify'); cargarMeeStock(); } else { alert('Error: '+(d.error||'')); } }catch(e){ alert('Error de conexión'); } }
@@ -9390,6 +9406,7 @@ async function cargarMeeStock(){
       h+='<td><span style="color:'+c+';font-weight:600;font-size:0.82em;">'+lbl+'</span></td>';
       h+='<td style="font-size:0.78em;color:#666;max-width:120px;overflow:hidden;text-overflow:ellipsis">'+_escHTML(m.proveedor||'-')+'</td>';
       h+='<td style="white-space:nowrap">';
+      h+='<button onclick="meeFotoUpload(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Subir foto del envase" style="padding:4px 7px;border:none;background:#16a34a;color:#fff;border-radius:4px;cursor:pointer;font-size:11px;margin-right:2px">&#128247;</button>';
       h+='<button onclick="meeAjustar(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Ajustar stock" style="padding:4px 7px;border:none;background:#7c3aed;color:#fff;border-radius:4px;cursor:pointer;font-size:11px;margin-right:2px">&#9878;</button>';
       h+='<button onclick="meeProveedor(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Cambiar proveedor" style="padding:4px 7px;border:none;background:#6d28d9;color:#fff;border-radius:4px;cursor:pointer;font-size:11px;margin-right:2px">&#127981;</button>';
       h+='<button onclick="meeMin(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;,'+(m.stock_minimo||0)+')" title="Stock mínimo" style="padding:4px 7px;border:none;background:#d97706;color:#fff;border-radius:4px;cursor:pointer;font-size:11px;margin-right:2px">&#128208;</button>';
