@@ -1903,7 +1903,6 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           <button onclick="cargarMeeStock()" style="white-space:nowrap;background:#15803d;color:#fff;">&#8635; Actualizar</button>
           <button onclick="meeImportarExcel()" style="white-space:nowrap;background:#7c3aed;color:#fff;" title="Importar inventario desde scripts/mee_excel_import.json (admin)">&#128194; Importar Excel</button>
           <button onclick="meeAgrupadoToggle()" id="mee-agrupado-btn" style="white-space:nowrap;background:#7c3aed;color:#fff;">&#128221; Agrupado</button>
-          <button onclick="meeFotosShopify()" style="white-space:nowrap;background:#16a34a;color:#fff;" title="Trae fotos de Shopify por match de producto (Ánimus)">&#128717; Fotos Shopify</button>
         </div>
         <div style="overflow-x:auto;">
           <table class="table" id="mee-tabla-estandar"><thead><tr><th>Foto</th><th>Codigo</th><th>Descripcion</th><th>Categoria</th><th>Stock</th><th>Minimo</th><th>Estado</th><th>Proveedor</th><th>Acciones</th></tr></thead>
@@ -9403,7 +9402,7 @@ async function cargarMeeStock(){
       var lbl=aL[m.alerta]||'';
       var ob=m.obsoleto?' <span style="background:#ffc107;color:#856404;border-radius:3px;padding:1px 5px;font-size:0.75em;">+90d</span>':'';
       h+='<tr data-cod="'+_escHTML(m.codigo)+'">';
-      h+='<td>'+(m.imagen_url?'<img src="'+_escHTML(m.imagen_url)+'" loading="lazy" style="width:40px;height:40px;object-fit:contain;border-radius:5px;border:1px solid #eee;background:#fafafa">':'<span style="color:#cbd5e1;font-size:11px">&mdash;</span>')+'</td>';
+      h+='<td>'+(m.imagen_url?'<img src="'+_escHTML(m.imagen_url)+'" loading="lazy" style="width:72px;height:72px;object-fit:contain;border-radius:6px;border:1px solid #eee;background:#fafafa">':'<span style="color:#cbd5e1;font-size:11px">&mdash;</span>')+'</td>';
       h+='<td style="font-family:monospace;font-size:0.78em;color:#555;">'+_escHTML(m.codigo)+'</td>';
       h+='<td style="font-size:0.88em;">'+_escHTML(m.descripcion)+ob+'</td>';
       h+='<td style="font-size:0.8em;color:#777;">'+_escHTML(m.categoria||'')+'</td>';

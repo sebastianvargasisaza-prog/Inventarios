@@ -395,6 +395,11 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (304, "Envases · borrar las fotos traídas de Shopify (Sebastián 28-jun · el match no era confiable · los "
+          "empleados suben las fotos a mano). Limpia imagen_url cuando es URL de Shopify (http...); conserva "
+          "las subidas manualmente (data-uri base64).", [
+        "UPDATE maestro_mee SET imagen_url='' WHERE imagen_url LIKE 'http%'",
+    ]),
     (302, "Calidad de envases · calificación de material NUEVO una sola vez (Sebastián 28-jun · Nivel 1). "
           "maestro_mee.calificado (1=existente ya revisado por default; los nuevos del wizard entran 0=por "
           "calificar) + calificado_at + calificado_por + calificacion_detalle (JSON del checklist: "
