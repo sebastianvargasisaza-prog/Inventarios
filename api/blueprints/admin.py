@@ -6920,6 +6920,46 @@ def admin_mee_base():
     return jsonify({'ok': True, 'codigo': cod, 'base': base})
 
 
+@bp.route("/api/admin/mee-shopify-foto", methods=["POST"])
+def admin_mee_shopify_foto():
+    """Auto-asigna al envase la foto de Shopify del producto que matchea por nombre (Sebastián 28-jun)."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    import unicodedata as _ud
+    import re as _re
+    d = request.get_json(silent=True) or {}
+    cod = (d.get('codigo') or '').strip()
+    desc = (d.get('descripcion') or '')
+    if not cod:
+        return jsonify({'error': 'codigo requerido'}), 400
+    _STOP = {'SUERO', 'CREMA', 'FORMULA', 'NUEVA', 'FACIAL', 'CORPORAL', 'ANIMU', 'ANIMUS', 'LAB',
+             'CON', 'TAMPOGRAFIA', 'SERIGRAFIA', 'FRASCO', 'ENVASE', 'SIN', 'SERG', 'SERIG',
+             'LIPS', 'LIP', 'GLOSS', 'PLASTIC', 'BOTTLE', 'NO', 'PRINT', 'BLANCO', 'VIDRIO'}
+
+    def palabras(s):
+        s = _ud.normalize('NFKD', str(s)).encode('ascii', 'ignore').decode().upper()
+        s = _re.sub(r'\b\d+[,\.]?\d*\s*ML\b', ' ', s)
+        s = _re.sub(r'[^A-Z0-9 ]', ' ', s)
+        return set(w for w in s.split() if len(w) >= 3 and w not in _STOP)
+    bw = palabras(desc)
+    if not bw:
+        return jsonify({'ok': True, 'encontrado': False})
+    conn = db_connect()
+    c = conn.cursor()
+    best = None
+    for r in c.execute("SELECT producto_nombre, COALESCE(imagen_url,'') FROM formula_headers "
+                       "WHERE COALESCE(imagen_url,'')<>'' AND COALESCE(activo,1)=1").fetchall():
+        common = palabras(r[0]) & bw
+        if common and (not best or len(common) > best[0]):
+            best = (len(common), r[0], r[1])
+    if not best:
+        return jsonify({'ok': True, 'encontrado': False})
+    c.execute("UPDATE maestro_mee SET imagen_url=? WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))", (best[2], cod))
+    conn.commit()
+    return jsonify({'ok': True, 'encontrado': True, 'producto': best[1]})
+
+
 @bp.route("/admin/envases-verificacion", methods=["GET"])
 def admin_envases_verificacion_pagina():
     """Pantalla de verificación uno-por-uno de envases (Sebastián 28-jun): foto + frasco base."""
@@ -6955,6 +6995,7 @@ _ENVASES_VERIF_HTML = r"""<!DOCTYPE html><html lang="es"><head>
  .chip{display:inline-block;background:#ede9fe;color:#5b21b6;border-radius:8px;padding:1px 6px;margin:2px 2px 0 0;font-weight:600}
  .chip a{color:#dc2626;cursor:pointer;margin-left:3px;font-weight:800}
  .addp{display:block;width:100%;margin-top:4px;background:#fff;color:#7c3aed;border:1px dashed #c4b5fd;border-radius:5px;padding:3px;font-size:10px;font-weight:700;cursor:pointer}
+ .shop{display:block;width:100%;margin-top:6px;background:#16a34a;color:#fff;border:none;border-radius:5px;padding:5px;font-size:11px;font-weight:700;cursor:pointer}
 </style></head><body>
 <header><h1>&#128230; Verificación de Envases</h1><div class="sub">Subí la foto de cada envase y, si es serigrafiado, elegí su frasco base &middot; el sistema ya tiene los códigos normalizados</div></header>
 <div class="container"><div id="cont">Cargando&hellip;</div></div>
@@ -6985,6 +7026,7 @@ async function cargar(){
       var partes=(m.partes||[]).map(function(p){ return '<span class="chip">'+esc(p.descripcion||p.parte_codigo)+' x'+p.cantidad+' <a onclick="quitarParte('+p.id+')" title="quitar">&times;</a></span>'; }).join('');
       var partesBox='<div class="partes"><div class="plbl">Partes</div>'+(partes||'<span class="pnone">&mdash; sin partes &mdash;</span>')+'<button class="addp" data-cod="'+esc(m.codigo)+'" onclick="agregarParte(this)">&#43; parte</button></div>';
       h+='<div class="card">'+img+'<div class="cod">'+esc(m.codigo)+'</div><div class="desc">'+esc(m.descripcion)+'</div>'+baseSel+partesBox+
+        '<button class="shop" data-cod="'+esc(m.codigo)+'" data-desc="'+esc(m.descripcion)+'" onclick="shopFoto(this)">&#128717; Foto de Shopify</button>'+
         '<div class="acc"><button class="url" data-cod="'+esc(m.codigo)+'" onclick="fotoURL(this)">&#128279; URL</button>'+
         '<button data-cod="'+esc(m.codigo)+'" onclick="subir(this)">&#128228; Subir</button></div></div>';
     });
@@ -6998,6 +7040,7 @@ function subir(btn){ var cod=btn.getAttribute('data-cod'); var i=document.create
 async function setBase(sel){ var d=await postJSON('/api/admin/mee-base',{codigo:sel.getAttribute('data-cod'),base:sel.value}); if(!d.ok){ alert('Error: '+(d.error||'')); } }
 async function agregarParte(btn){ var cod=btn.getAttribute('data-cod'); var p=prompt('Parte que se le agrega (tapa, gotero, inner cup, válvula…):'); if(!p||!p.trim()) return; var q=prompt('Cantidad por unidad:','1'); var d=await postJSON('/api/admin/mee-parte',{mee_codigo:cod,descripcion:p.trim(),cantidad:parseFloat(q)||1}); if(d.ok){ cargar(); } else { alert('Error: '+(d.error||'')); } }
 async function quitarParte(id){ if(!confirm('¿Quitar esta parte?')) return; var t=await csrf(); var r=await fetch('/api/admin/mee-parte/'+id,{method:'DELETE',credentials:'same-origin',headers:{'X-CSRF-Token':t}}); var d=await r.json(); if(d.ok){ cargar(); } else { alert('Error'); } }
+async function shopFoto(btn){ btn.textContent='buscando…'; var d=await postJSON('/api/admin/mee-shopify-foto',{codigo:btn.getAttribute('data-cod'),descripcion:btn.getAttribute('data-desc')}); if(d.ok && d.encontrado){ cargar(); } else if(d.ok){ btn.innerHTML='&#128717; Foto de Shopify'; alert('No encontré un producto de Shopify que matchee este envase · subí la foto manual (URL o archivo)'); } else { btn.innerHTML='&#128717; Foto de Shopify'; alert('Error: '+(d.error||'')); } }
 cargar();
 </script></body></html>"""
 
