@@ -7045,6 +7045,100 @@ cargar();
 </script></body></html>"""
 
 
+@bp.route("/admin/recodificar-envases", methods=["GET"])
+def admin_recodificar_envases_pagina():
+    """Re-codificar los envases con la lógica del wizard (Sebastián 28-jun · normalizar todo)."""
+    u, err, code = _require_admin()
+    if err:
+        return ("<html><body style='font-family:system-ui;padding:48px'><h2>Solo admin</h2>"
+                "<a href='/login'>Ir a login</a></body></html>"), code
+    return _RECOD_ENVASES_HTML
+
+
+_RECOD_ENVASES_HTML = r"""<!DOCTYPE html><html lang="es"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Re-codificar envases · EOS</title>
+<style>
+ *{box-sizing:border-box} body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f1f5f9;margin:0;color:#0f172a}
+ header{background:linear-gradient(135deg,#7c3aed,#0891b2);color:#fff;padding:16px 22px}
+ header h1{margin:0;font-size:19px} header .sub{font-size:12px;opacity:.85;margin-top:2px}
+ .container{max-width:1280px;margin:16px auto;padding:0 16px}
+ table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+ th{background:#ede9fe;color:#5b21b6;font-size:12px;text-align:left;padding:8px 10px}
+ td{border-top:1px solid #f1f5f9;padding:7px 10px;font-size:13px;vertical-align:middle}
+ code{font-family:ui-monospace,monospace;font-weight:700;color:#0f766e;font-size:12px}
+ select,input{padding:5px 7px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px}
+ input{width:110px} .ml input{width:54px}
+ .nuevo{font-family:ui-monospace,monospace;font-weight:800;color:#166534;font-size:13px}
+ .ren{background:#16a34a;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-weight:700;font-size:12px;cursor:pointer}
+ small{color:#64748b}
+</style></head><body>
+<header><h1>&#128284; Re-codificar envases</h1><div class="sub">Asigná material/producto a cada uno &middot; genera el código con la MISMA lógica del wizard &middot; renombra arrastrando stock + referencias</div></header>
+<div class="container">
+<table><thead><tr><th>Actual</th><th>Tipo</th><th>Material/M&eacute;todo</th><th>Producto/uso</th><th>ml</th><th>Tono</th><th>Nuevo c&oacute;digo</th><th></th></tr></thead>
+<tbody id="tb"><tr><td colspan="8">Cargando&hellip;</td></tr></tbody></table>
+</div>
+<script>
+var VIEJO=[];
+var TLIST=['Frasco','Tapa','Gotero','Etiqueta','Impresion','Caja'];
+var PREF={Frasco:'FR',Tapa:'TA',Gotero:'GOT',Etiqueta:'ETQ',Impresion:'IMP',Caja:'CJA'};
+var ORD={Frasco:1,Etiqueta:2,Impresion:3,Serigrafia:3,Plegadiza:4,Caja:4,Tapa:5,Gotero:6};
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function norm(s){return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z0-9]/g,'');}
+function val(id){var e=document.getElementById(id);return e?e.value:'';}
+function show(id,b){var e=document.getElementById(id);if(e)e.style.display=b?'':'none';}
+function prefTipo(cod){var p=(cod||'').split('-')[0];return {FR:'Frasco',TA:'Tapa',GOT:'Gotero',ETQ:'Etiqueta',IMP:'Impresion',CJA:'Caja'}[p]||'Frasco';}
+function mlDe(cod){var m=(cod||'').match(/-(\d+)(?:-|$)/);return m?m[1]:'';}
+function gen(i){
+  var tipo=val('rc-tipo-'+i); var pref=PREF[tipo]||''; var seg=[pref];
+  var isFr=(tipo==='Frasco'||tipo==='Tapa'||tipo==='Gotero');
+  show('rc-mat-'+i,isFr); show('rc-met-'+i,tipo==='Impresion');
+  if(isFr){var m=val('rc-mat-'+i);if(m)seg.push(m);}
+  if(tipo==='Impresion'){var me=val('rc-met-'+i);if(me)seg.push(me);}
+  var prod=norm(val('rc-prod-'+i)); if(prod)seg.push(prod);
+  var ml=val('rc-ml-'+i); if(ml)seg.push(String(parseInt(ml,10)));
+  var tono=norm(val('rc-tono-'+i)); if(tono)seg.push(tono);
+  var code=seg.filter(function(x){return x;}).join('-');
+  document.getElementById('rc-new-'+i).textContent=code||'—';
+}
+async function cargar(){
+  var d=await (await fetch('/api/admin/maestro-mees-list',{cache:'no-store'})).json();
+  var items=(d.mees||[]).slice().sort(function(a,b){var oa=ORD[a.categoria]||50,ob=ORD[b.categoria]||50;if(oa!==ob)return oa-ob;return (a.codigo||'').localeCompare(b.codigo||'');});
+  VIEJO=items.map(function(m){return m.codigo;});
+  var matOpts='<option value="">—</option><option value="VID">Vidrio</option><option value="PLA">Pl&aacute;stico</option><option value="AIR">Airless</option><option value="AL">Aluminio</option>';
+  var metOpts='<option value="">—</option><option value="TP">Tampograf&iacute;a</option><option value="SG">Serigraf&iacute;a</option>';
+  var h='';
+  items.forEach(function(m,i){
+    var tipo=prefTipo(m.codigo); var ml=mlDe(m.codigo);
+    var topts=TLIST.map(function(t){return '<option'+(t===tipo?' selected':'')+'>'+t+'</option>';}).join('');
+    h+='<tr><td><code>'+esc(m.codigo)+'</code><br><small>'+esc(m.descripcion)+'</small></td>';
+    h+='<td><select id="rc-tipo-'+i+'" onchange="gen('+i+')">'+topts+'</select></td>';
+    h+='<td><select id="rc-mat-'+i+'" onchange="gen('+i+')">'+matOpts+'</select><select id="rc-met-'+i+'" onchange="gen('+i+')" style="display:none">'+metOpts+'</select></td>';
+    h+='<td><input id="rc-prod-'+i+'" oninput="gen('+i+')" placeholder="NIA, SUERO, VITC…"></td>';
+    h+='<td class="ml"><input id="rc-ml-'+i+'" value="'+esc(ml)+'" oninput="gen('+i+')"></td>';
+    h+='<td><input id="rc-tono-'+i+'" oninput="gen('+i+')" placeholder="opc" style="width:80px"></td>';
+    h+='<td><span class="nuevo" id="rc-new-'+i+'">—</span></td>';
+    h+='<td><button class="ren" onclick="renombrar('+i+')">Renombrar</button></td></tr>';
+  });
+  document.getElementById('tb').innerHTML=h;
+  items.forEach(function(m,i){gen(i);});
+}
+async function renombrar(i){
+  var nuevo=(document.getElementById('rc-new-'+i)||{}).textContent||'';
+  var viejo=VIEJO[i];
+  if(!nuevo||nuevo==='—'){alert('Completá tipo + producto');return;}
+  if(nuevo===viejo){alert('El código no cambió');return;}
+  if(!confirm('¿Renombrar '+viejo+' → '+nuevo+'?\n(arrastra stock + referencias)'))return;
+  try{
+    var r=await fetch('/api/mee/recodificar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({codigo_viejo:viejo,codigo_nuevo:nuevo})});
+    var d=await r.json();
+    if(d.ok){ cargar(); } else { alert('Error: '+(d.error||'')); }
+  }catch(e){ alert('Error de conexión'); }
+}
+cargar();
+</script></body></html>"""
+
+
 @bp.route("/api/admin/mees-mapping-upsert", methods=["POST"])
 def admin_mees_mapping_upsert():
     """Crea o actualiza una entry en sku_mee_config.

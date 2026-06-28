@@ -283,3 +283,23 @@ def test_mee_set_imagen(app, db_clean):
                headers=csrf_headers())
     assert r.status_code == 200, r.data
     assert _q1("SELECT imagen_url FROM maestro_mee WHERE codigo='FR-SETIMG-30'")[0] == 'data:image/jpeg;base64,ZZZ'
+
+
+def test_mee_recodificar(app, db_clean):
+    # re-codificar un envase con la lógica del wizard · arrastra stock + referencias
+    from .conftest import csrf_headers
+    c = _login(app)
+    _exec("INSERT INTO maestro_mee (codigo,descripcion,categoria,estado,stock_actual,stock_minimo,unidad,fecha_creacion) "
+          "VALUES ('FR-OLDCODE-30','test','Frasco','Activo',0,0,'und','')")
+    _exec("INSERT INTO movimientos_mee (mee_codigo,tipo,cantidad) VALUES ('FR-OLDCODE-30','Entrada',5)")
+    r = c.post('/api/mee/recodificar', json={'codigo_viejo': 'FR-OLDCODE-30', 'codigo_nuevo': 'FR-VID-NIA-30'},
+               headers=csrf_headers())
+    assert r.status_code == 200, r.data
+    assert _q1("SELECT COUNT(*) FROM maestro_mee WHERE codigo='FR-VID-NIA-30'")[0] == 1, 'no renombró el maestro'
+    assert _q1("SELECT COUNT(*) FROM maestro_mee WHERE codigo='FR-OLDCODE-30'")[0] == 0, 'quedó el viejo'
+    assert _q1("SELECT COUNT(*) FROM movimientos_mee WHERE mee_codigo='FR-VID-NIA-30'")[0] == 1, 'no arrastró movimientos'
+    # no permite chocar con un código existente
+    _exec("INSERT INTO maestro_mee (codigo,descripcion,categoria,estado) VALUES ('FR-EXISTE-30','x','Frasco','Activo')")
+    r2 = c.post('/api/mee/recodificar', json={'codigo_viejo': 'FR-VID-NIA-30', 'codigo_nuevo': 'FR-EXISTE-30'},
+                headers=csrf_headers())
+    assert r2.status_code == 409, r2.data

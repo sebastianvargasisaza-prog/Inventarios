@@ -11973,6 +11973,42 @@ def mee_set_imagen():
     conn.commit()
     return jsonify({'ok': True, 'codigo': cod})
 
+@bp.route('/api/mee/recodificar', methods=['POST'])
+def mee_recodificar():
+    """Renombra el código de un envase (lógica del wizard) + cascada de referencias · Sebastián 28-jun."""
+    _u, _err, _code = _require_planta_write()
+    if _err:
+        return _err, _code
+    d = request.json or {}
+    viejo = (d.get('codigo_viejo') or '').strip()
+    nuevo = (d.get('codigo_nuevo') or '').strip().upper()
+    if not viejo or not nuevo:
+        return jsonify({'error': 'codigo_viejo y codigo_nuevo requeridos'}), 400
+    if viejo.upper() == nuevo:
+        return jsonify({'ok': True, 'sin_cambio': True, 'codigo_nuevo': nuevo})
+    conn = get_db(); c = conn.cursor()
+    if c.execute("SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=?", (nuevo,)).fetchone():
+        return jsonify({'error': 'El código %s ya existe' % nuevo}), 409
+    if not c.execute("SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))", (viejo,)).fetchone():
+        return jsonify({'error': 'El código %s no existe' % viejo}), 404
+    c.execute("UPDATE maestro_mee SET codigo=? WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))", (nuevo, viejo))
+    # cascada de referencias (defensivo · cada tabla puede no existir)
+    for tbl, col in (('movimientos_mee', 'mee_codigo'), ('mee_partes', 'mee_codigo'),
+                     ('mee_partes', 'parte_codigo'), ('maestro_mee', 'material_referencia'),
+                     ('sku_mee_config', 'mee_codigo')):
+        try:
+            c.execute("UPDATE %s SET %s=? WHERE UPPER(TRIM(%s))=UPPER(TRIM(?))" % (tbl, col, col), (nuevo, viejo))
+        except Exception:
+            pass
+    try:
+        from audit_helpers import audit_log as _al
+        _al(c, usuario=_u, accion='MEE_RECODIFICAR', tabla='maestro_mee', registro_id=nuevo,
+            despues={'codigo_viejo': viejo, 'codigo_nuevo': nuevo})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'codigo_nuevo': nuevo})
+
 @bp.route('/api/mee/movimientos', methods=['GET'])
 def mee_historial_movimientos():
     """Historial paginado de movimientos MEE. Sprint MEE PRO 20-may-2026.
