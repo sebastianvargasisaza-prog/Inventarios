@@ -1895,7 +1895,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <div style="background:#16a34a;color:white;padding:14px;border-radius:10px;text-align:center;"><div style="font-size:1.3em;">💰</div><div style="font-size:1.4em;font-weight:700;" id="mee-c-valor">$0</div><div style="font-size:0.78em;opacity:0.9;">Valor stock COP</div></div>
       <div id="mee-card-obs" style="background:#ca8a04;color:white;padding:14px;border-radius:10px;text-align:center;cursor:pointer" onclick="meeScrollToObsoletos('mee-obs-anchor')"><div style="font-size:1.3em;">⏰</div><div style="font-size:1.7em;font-weight:700;" id="mee-c-obs">0</div><div style="font-size:0.78em;opacity:0.9;">Obsoletos >90d</div></div>
     </div>
-    <div id="mee-alertas-panel" style="margin-bottom:18px;"></div>
+    <!-- banner de alertas quitado · vivirá en la sub-pestaña Alertas (Sebastián 28-jun) -->
     <a name="mee-bajo-anchor"></a>
     <!-- Sub-pestañas Bodega MEE · Sebastián 28-jun (estilo Bodega MP) -->
     <div style="display:flex;gap:4px;border-bottom:2px solid #e2e8f0;margin-bottom:16px;flex-wrap:wrap">
@@ -1918,7 +1918,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <div id="mee-agrupado-wrap" style="display:none"></div>
       </div>
       <div id="meepane-recepcion">
-      <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:20px;max-width:1100px;">
+      <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:20px;">
         <h3 style="margin:0 0 16px;color:#6d28d9;font-size:1.05em;">&#128666; Recepci&oacute;n de envases</h3>
         <input type="hidden" id="mee-tipo" value="Entrada">
         <input type="hidden" id="mee-unidad" value="und">
