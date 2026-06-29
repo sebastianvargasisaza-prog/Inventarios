@@ -379,3 +379,24 @@ def test_mees_disponibles_responde(app):
     assert r.status_code == 200, r.data
     d = r.get_json()
     assert 'items' in d, d
+
+
+
+def test_envase_override_propaga_a_futuras(app, db_clean):
+    # Sebastián 29-jun: el envase elegido en un lote queda para TODAS las producciones futuras del producto.
+    from .conftest import csrf_headers
+    prod = "ZZ PROPAGA ENV"
+    env = "ENV-PROP-30"
+    _exec("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,stock_actual,stock_minimo) "
+          "VALUES (?, 'Frasco prop','Envase',0,0)", (env,))
+    id1 = _exec("INSERT INTO produccion_programada (producto,fecha_programada,lotes,estado,cantidad_kg,origen) "
+                "VALUES (?, date('now','-5 hours','+5 days'),1,'pendiente',5,'eos_plan')", (prod,))
+    id2 = _exec("INSERT INTO produccion_programada (producto,fecha_programada,lotes,estado,cantidad_kg,origen) "
+                "VALUES (?, date('now','-5 hours','+40 days'),1,'pendiente',5,'eos_plan')", (prod,))
+    c = _login(app)
+    r = c.patch('/api/programacion/lote/%d/envase-override' % id1,
+                json={'envase_codigo_override': env}, headers=csrf_headers())
+    assert r.status_code == 200, r.data
+    for _id in (id1, id2):  # este lote + el del mes siguiente quedan con el envase
+        rr = _q1("SELECT envase_codigo_override FROM produccion_programada WHERE id=?", (_id,))
+        assert (rr[0] or '').upper() == env, ('lote sin envase propagado', _id, rr)

@@ -6213,6 +6213,20 @@ def patch_envase_override_lote(lote_id):
         if 'no such column' in emsg or 'does not exist' in emsg:
             return jsonify({'error': 'Migración 184 no aplicada · contactar admin'}), 500
         return jsonify({'error': str(e)[:200]}), 500
+    # Sebastian 29-jun: "debe quedar para TODAS las producciones futuras" → propagar el envase a los lotes
+    # futuros no-iniciados del MISMO producto (asi el del mes siguiente tambien lo toma · no solo este lote).
+    _n_prop = 0
+    if envase:
+        try:
+            _cp = cur.execute(
+                "UPDATE produccion_programada SET envase_codigo_override=? "
+                "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) AND id<>? "
+                "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado') "
+                "AND COALESCE(inicio_real_at,'')='' AND COALESCE(fin_real_at,'')=''",
+                (envase, lote[1], lote_id))
+            _n_prop = _cp.rowcount or 0
+        except Exception:
+            _n_prop = 0
     try:
         from audit_helpers import audit_log as _al
         _al(cur, usuario=user, accion='PATCH_ENVASE_OVERRIDE_LOTE',
@@ -6224,7 +6238,7 @@ def patch_envase_override_lote(lote_id):
     conn.commit()
     return jsonify({'ok': True, 'lote_id': lote_id,
                      'envase_codigo_override': envase,
-                     'mensaje': ('✓ Envase ' + envase + ' asignado al lote · MEE recalculará')
+                     'mensaje': ('✓ Envase ' + envase + ' asignado a este lote' + ((' + ' + str(_n_prop) + ' producciones futuras del producto') if _n_prop else '') + ' · MEE recalculará')
                                  if envase else
                                  '✓ Envase override limpiado · vuelve al default del producto'})
 
