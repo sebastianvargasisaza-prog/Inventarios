@@ -16139,8 +16139,8 @@ def plan_calendario_page():
                          'label': (_r[0] or '') + ' - ' + ((_r[1] or '')[:80]) + ((' (' + _r[2] + ')') if _r[2] else '')})
     except Exception:
         _cat = []
-    _html = _PLAN_CALENDARIO_HTML.replace('[/*MEES_CATALOGO_INJECT*/]', _json.dumps(_cat, ensure_ascii=False), 1)
-    return Response(_html, mimetype="text/html")
+    _html = _PLAN_CALENDARIO_HTML.replace('[/*MEES_CATALOGO_INJECT*/]', _json.dumps(_cat, ensure_ascii=False).replace('<', chr(92) + 'u003c'), 1)
+    return Response(_html, mimetype="text/html", headers={'Cache-Control': 'no-store'})
 
 
 _PLAN_CALENDARIO_HTML = r"""<!DOCTYPE html>
@@ -16366,7 +16366,6 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
 let HORIZONTE = 365;  // Sebastián 15-may-2026: default 365 · "elegi 365 pero solo programa mayo"
 let MES_OFFSET = 0;  // 0 = mes actual · -1/+1 navegar
 let PLAN_DATA = null;
-window._MEES_CACHE = [/*MEES_CATALOGO_INJECT*/];  // catalogo de envases embebido server-side (sin fetch · Sebastian 29-jun · el fetch se colgaba)
 let _MES_NAVEGADO = false;  // FIX 24-may PM · true después de primer cargar() · cargar() preserva MES_OFFSET
 const DIAS = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
@@ -17528,7 +17527,7 @@ function _parsearComposicionLote(loteData, kgTotal){
 
 // Sebastián 25-may-2026 PM · cache de envases para el dropdown.
 // Se llena en primera carga · subsecuentes lotes usan el mismo cache.
-window._MEES_CACHE = null;
+window._MEES_CACHE = [/*MEES_CATALOGO_INJECT*/];  // catalogo de envases embebido server-side (Sebastian 29-jun · antes =null pisaba la inyeccion)
 
 // FIX 27-may-2026 PM · Sebastián · "el calendario debe colocar la realidad
 // del envase, que lo tenga cada producción". Cache por lote_id de la
@@ -17740,6 +17739,14 @@ async function _cargarComposicionMee(loteId){
   } catch(e){
     box.innerHTML = '<span style="color:#dc2626">⚠ Error cargando composición: ' + escapeHtml(e.message || '') + '</span>';
   }
+}
+
+function _opcionesEnvaseInline(sel){
+  var mees = window._MEES_CACHE;
+  if(!mees || !mees.length) return '<option value="">— Cargando envases —</option>';
+  var h = '<option value="">— Envase default del producto —</option>';
+  for(var i=0;i<mees.length;i++){ var m=mees[i]; h += '<option value="'+escapeHtml(m.codigo)+'"'+(m.codigo===sel?' selected':'')+'>'+escapeHtml(m.label||m.codigo)+'</option>'; }
+  return h;
 }
 
 async function _cargarOpcionesEnvases(loteId, envActual){
@@ -18231,7 +18238,7 @@ async function abrirLoteModal(id, producto, fecha, kg){
     html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">';
     html += '<span style="font-size:11px;font-weight:800;color:#0e7490;text-transform:uppercase;letter-spacing:.5px">📦 Envase del lote</span>';
     html += '<select id="env-ovr-' + id + '" data-actual="' + escapeHtml(envActual) + '" style="flex:1;min-width:240px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;font-family:inherit;background:#fff">';
-    html += '<option value="">— Cargando envases —</option>';
+    html += _opcionesEnvaseInline(envActual);
     html += '</select>';
     html += '<button onclick="guardarEnvaseOverride(' + id + ')" style="padding:6px 14px;font-size:11px;background:#0891b2;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">💾 Guardar</button>';
     html += '<span id="env-ovr-ok-' + id + '" style="color:#15803d;font-size:11px;display:none">✓</span>';
