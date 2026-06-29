@@ -7075,6 +7075,7 @@ _RECOD_ENVASES_HTML = r"""<!DOCTYPE html><html lang="es"><head>
 </style></head><body>
 <header><h1>&#128284; Re-codificar envases</h1><div class="sub">Asigná material/producto a cada uno &middot; genera el código con la MISMA lógica del wizard &middot; renombra arrastrando stock + referencias</div></header>
 <div class="container">
+<div style="margin-bottom:10px;font-size:13px;color:#475569"><label style="cursor:pointer"><input type="checkbox" id="rc-todos" onchange="cargar()"> Mostrar todos (incluso los ya normalizados)</label> &nbsp;&middot;&nbsp; <b id="rc-cuenta"></b></div>
 <table><thead><tr><th>Actual</th><th>Tipo</th><th>Material/M&eacute;todo</th><th>Caracter&iacute;stica</th><th>Producto (serigrafiados)</th><th>ml</th><th>Tono</th><th>Nuevo c&oacute;digo</th><th></th></tr></thead>
 <tbody id="tb"><tr><td colspan="9">Cargando&hellip;</td></tr></tbody></table>
 </div>
@@ -7102,9 +7103,20 @@ function gen(i){
   var code=seg.filter(function(x){return x;}).join('-');
   document.getElementById('rc-new-'+i).textContent=code||'—';
 }
+function yaNormalizado(cod){
+  var s=(cod||'').split('-'); var p=s[0]; var seg2=s[1]||'';
+  if(p==='FR'||p==='TA'||p==='GOT') return ['VID','PLA','AIR','AL'].indexOf(seg2)>=0;
+  if(p==='IMP') return ['TP','SG'].indexOf(seg2)>=0;
+  if(p==='ETQ'||p==='CJA') return true;
+  return false;
+}
 async function cargar(){
   var d=await (await fetch('/api/admin/maestro-mees-list',{cache:'no-store'})).json();
-  var items=(d.mees||[]).slice().sort(function(a,b){var oa=ORD[a.categoria]||50,ob=ORD[b.categoria]||50;if(oa!==ob)return oa-ob;return (a.codigo||'').localeCompare(b.codigo||'');});
+  var all=(d.mees||[]).slice().sort(function(a,b){var oa=ORD[a.categoria]||50,ob=ORD[b.categoria]||50;if(oa!==ob)return oa-ob;return (a.codigo||'').localeCompare(b.codigo||'');});
+  var falt=all.filter(function(m){return !yaNormalizado(m.codigo);}).length;
+  var td=document.getElementById('rc-todos');
+  var items=(td&&td.checked)?all:all.filter(function(m){return !yaNormalizado(m.codigo);});
+  var cu=document.getElementById('rc-cuenta'); if(cu) cu.textContent=falt+' por normalizar (de '+all.length+')';
   VIEJO=items.map(function(m){return m.codigo;});
   var matOpts='<option value="">—</option><option value="VID">Vidrio</option><option value="PLA">Pl&aacute;stico</option><option value="AIR">Airless</option><option value="AL">Aluminio</option>';
   var metOpts='<option value="">—</option><option value="TP">Tampograf&iacute;a</option><option value="SG">Serigraf&iacute;a</option>';
