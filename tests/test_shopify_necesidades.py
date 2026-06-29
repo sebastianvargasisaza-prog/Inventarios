@@ -321,3 +321,15 @@ def test_mig305_saldo_inicial_excel(app):
     finally:
         conn.close()
     assert st.get('FR-TRX-30', 0) == 254, ('_get_mee_stock TRX', st.get('FR-TRX-30'))
+
+
+
+def test_mig306_cliente(app):
+    # auto-marca Kelly Guerra las 2 serigrafías de urea + set-cliente funciona
+    from .conftest import csrf_headers
+    assert _q1("SELECT cliente FROM maestro_mee WHERE codigo='IMP-SG-CCUREA'")[0] == 'Kelly Guerra', 'auto Kelly'
+    c = _login(app)
+    rs = c.post('/api/mee/set-cliente', json={'codigo': 'FR-VIDRIOOPAL-30', 'cliente': 'Kelly Guerra'},
+                headers=csrf_headers())
+    assert rs.status_code == 200, rs.data
+    assert _q1("SELECT cliente FROM maestro_mee WHERE codigo='FR-VIDRIOOPAL-30'")[0] == 'Kelly Guerra'

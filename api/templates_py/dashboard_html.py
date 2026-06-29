@@ -1899,6 +1899,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <div id="meepane-inventario" style="display:none">
         <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
           <select id="mee-cat-filter-bodega" style="flex:1;min-width:180px;width:auto;" onchange="cargarMeeStock()"><option value="">Todas las categorias</option></select>
+          <select id="mee-cli-filter" style="flex:1;min-width:160px;width:auto;" onchange="cargarMeeStock()"><option value="">Todos los clientes</option><option>&Aacute;nimus Lab</option><option>Kelly Guerra</option><option value="__GEN__">General (sin cliente)</option></select>
           <input id="mee-search-input" type="text" placeholder="Buscar..." oninput="cargarMeeStock()" style="padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px">
           <button onclick="cargarMeeStock()" style="white-space:nowrap;background:#15803d;color:#fff;">&#8635; Actualizar</button>
           <button onclick="meeImportarExcel()" style="white-space:nowrap;background:#7c3aed;color:#fff;" title="Importar inventario desde scripts/mee_excel_import.json (admin)">&#128194; Importar Excel</button>
@@ -1925,6 +1926,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           <div class="form-group" style="margin:0"><label>Descripci&oacute;n</label><input type="text" id="mee-descripcion" readonly placeholder="Auto" style="background:#f1f5f9"></div>
           <div class="form-group" style="margin:0"><label>Categor&iacute;a</label><input type="text" id="mee-categoria" readonly placeholder="Auto" style="background:#f1f5f9"></div>
           <div class="form-group" style="margin:0"><label>Proveedor</label><input type="text" id="mee-proveedor" placeholder="Auto &mdash; o escribe"></div>
+          <div class="form-group" style="margin:0"><label>Cliente (opcional &middot; vac&iacute;o = General)</label><input type="text" id="mee-cliente" list="mee-cli-dl" placeholder="&Aacute;nimus Lab / Kelly Guerra"><datalist id="mee-cli-dl"><option>&Aacute;nimus Lab</option><option>Kelly Guerra</option></datalist></div>
           <div class="form-group" style="margin:0"><label>N Lote / Ref. proveedor (vac&iacute;o = auto)</label><input type="text" id="mee-lote" placeholder="Ej: LOT-2026-001"></div>
           <div class="form-group" style="margin:0"><label>Cantidad recibida (und) *</label><input type="number" id="mee-cantidad" min="1" step="1" placeholder="0" oninput="meeCalcValor()"></div>
           <div class="form-group" style="margin:0"><label>Zona</label><input type="text" id="mee-zona" placeholder="Ej: Zona A"></div>
@@ -1986,6 +1988,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
             <input type="text" id="mee-wiz-car" oninput="meeWizGen()" placeholder="Ej: cuadrado, redondo, cil&iacute;ndrico"></div>
           <div class="form-group" style="margin:0 0 10px"><label>3b. Producto / l&iacute;nea (serigrafiados de un solo producto)</label>
             <input type="text" id="mee-wiz-prod" oninput="meeWizGen()" placeholder="Ej: NIA, VITC, MULP"></div>
+          <div class="form-group" style="margin:0 0 10px"><label>Cliente (opcional &middot; vac&iacute;o = General)</label><input type="text" id="mee-wiz-cliente" list="mee-wiz-cli-dl" placeholder="&Aacute;nimus Lab / Kelly Guerra"><datalist id="mee-wiz-cli-dl"><option>&Aacute;nimus Lab</option><option>Kelly Guerra</option></datalist></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
             <div class="form-group" style="margin:0"><label>4. Capacidad (ml)</label><input type="number" id="mee-wiz-ml" oninput="meeWizGen()" placeholder="30"></div>
             <div class="form-group" style="margin:0"><label>5. Tono/Color (opc.)</label><input type="text" id="mee-wiz-tono" oninput="meeWizGen()" placeholder="Malva"></div>
@@ -9279,6 +9282,8 @@ function meeScrollToObsoletos(anchor){
   var el = document.getElementById(anchor) || document.getElementsByName(anchor)[0];
   if(el) el.scrollIntoView({behavior:'smooth'});
 }
+function _cliChip(m){ var cli=(m.cliente||'').trim(); var txt=cli||'General'; var col=cli?'#1d4ed8':'#94a3b8'; var bg=cli?'#dbeafe':'#f1f5f9'; return ' <span onclick="meeSetCliente(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;,&quot;'+_escHTML(txt)+'&quot;)" title="cambiar cliente" style="cursor:pointer;background:'+bg+';color:'+col+';border-radius:8px;padding:1px 7px;font-size:10px;font-weight:700">&#128100; '+_escHTML(txt)+'</span>'; }
+async function meeSetCliente(cod, actual){ var c=prompt('Cliente para '+cod+' (vacío = General):', actual==='General'?'':actual); if(c===null) return; try{ var r=await fetch('/api/mee/set-cliente',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({codigo:cod,cliente:c.trim()})}); var d=await r.json(); if(d.ok){ cargarMeeStock(); } else { alert('Error: '+(d.error||'')); } }catch(e){ alert('Error de conexión'); } }
 function meeFotoUpload(codigo){
   var i=document.createElement('input'); i.type='file'; i.accept='image/*';
   i.onchange=function(){ var f=i.files[0]; if(!f) return; var rd=new FileReader();
@@ -9376,6 +9381,9 @@ async function cargarMeeStock(){
                (m.proveedor||'').toLowerCase().indexOf(q)>=0;
       });
     }
+    var _cliF=(document.getElementById('mee-cli-filter')||{}).value||'';
+    if(_cliF==='__GEN__'){ items=items.filter(function(m){return !((m.cliente||'').trim());}); }
+    else if(_cliF){ items=items.filter(function(m){return (m.cliente||'')===_cliF;}); }
     window._meeItems = items;  // cache para vista agrupada
     _MEE_LAST_DATA = d;  // Sprint MEE PRO · para Excel + dashboard
     // Sprint MEE PRO · calcular valor total stock COP
@@ -9406,7 +9414,7 @@ async function cargarMeeStock(){
       h+='<tr data-cod="'+_escHTML(m.codigo)+'">';
       h+='<td>'+(m.imagen_url?'<img src="'+_escHTML(m.imagen_url)+'" loading="lazy" style="width:72px;height:72px;object-fit:contain;border-radius:6px;border:1px solid #eee;background:#fafafa">':'<span style="color:#cbd5e1;font-size:11px">&mdash;</span>')+'</td>';
       h+='<td style="font-family:monospace;font-size:0.78em;color:#555;">'+_escHTML(m.codigo)+'</td>';
-      h+='<td style="font-size:0.88em;">'+_escHTML(m.descripcion)+ob+'</td>';
+      h+='<td style="font-size:0.88em;">'+_escHTML(m.descripcion)+ob+_cliChip(m)+'</td>';
       h+='<td style="font-size:0.8em;color:#777;">'+_escHTML(m.categoria||'')+'</td>';
       h+='<td style="font-weight:700;">'+m.stock_actual+' <span style="color:#999;font-size:0.8em;">'+_escHTML(m.unidad||'und')+'</span></td>';
       h+='<td style="color:#aaa;font-size:0.88em;">'+(m.stock_minimo||'—')+'</td>';
@@ -9667,7 +9675,7 @@ function meeWizFillPartes(){ var sel=document.getElementById('mee-wiz-parte-sel'
 function meeWizRenderPartes(){ var box=document.getElementById('mee-wiz-partes-list'); if(!box) return; box.innerHTML=_meeWizPartes.map(function(p,i){ return '<span style="display:inline-block;background:#ede9fe;color:#5b21b6;border-radius:8px;padding:2px 8px;margin:2px 4px 2px 0;font-size:12px;font-weight:600">'+p.codigo+' &times;'+p.cantidad+' <a onclick="meeWizDelParte('+i+')" style="color:#dc2626;cursor:pointer;font-weight:800;margin-left:3px">&times;</a></span>'; }).join('') || '<span style="font-size:11px;color:#cbd5e1">— sin partes —</span>'; }
 function meeWizAddParte(){ var sel=document.getElementById('mee-wiz-parte-sel'); var cant=document.getElementById('mee-wiz-parte-cant'); if(!sel||!sel.value) return; var c=parseFloat(cant.value)||1; if(_meeWizPartes.some(function(p){return p.codigo===sel.value;})) return; _meeWizPartes.push({codigo:sel.value, cantidad:c}); sel.value=''; if(cant) cant.value='1'; meeWizRenderPartes(); }
 function meeWizDelParte(i){ _meeWizPartes.splice(i,1); meeWizRenderPartes(); }
-function meeWizOpen(){ var m=document.getElementById('mee-wiz-modal'); if(m) m.style.display='block'; ['mee-wiz-tipo','mee-wiz-material','mee-wiz-metodo','mee-wiz-car','mee-wiz-prod','mee-wiz-ml','mee-wiz-tono','mee-wiz-desc'].forEach(function(idd){var el=document.getElementById(idd); if(el){el.value=''; if(el.dataset) delete el.dataset.touched;}}); _meeWizPartes=[]; meeWizFillPartes(); meeWizRenderPartes(); meeWizGen(); }
+function meeWizOpen(){ var m=document.getElementById('mee-wiz-modal'); if(m) m.style.display='block'; ['mee-wiz-tipo','mee-wiz-material','mee-wiz-metodo','mee-wiz-car','mee-wiz-prod','mee-wiz-ml','mee-wiz-tono','mee-wiz-desc','mee-wiz-cliente'].forEach(function(idd){var el=document.getElementById(idd); if(el){el.value=''; if(el.dataset) delete el.dataset.touched;}}); _meeWizPartes=[]; meeWizFillPartes(); meeWizRenderPartes(); meeWizGen(); }
 function meeWizClose(){ var m=document.getElementById('mee-wiz-modal'); if(m) m.style.display='none'; }
 function meeWizGen(){
   var tipo=(document.getElementById('mee-wiz-tipo')||{}).value||'';
@@ -9698,7 +9706,7 @@ async function meeWizCrear(){
   var tipo=(document.getElementById('mee-wiz-tipo')||{}).value||'';
   var cat={Frasco:'Frasco',Tapa:'Tapa',Gotero:'Gotero',Etiqueta:'Etiqueta',Impresion:'Impresión',Caja:'Plegadiza'}[tipo]||'Otro';
   try{
-    var r=await fetch('/api/mee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({codigo:code,descripcion:desc,categoria:cat,stock_actual:0,stock_minimo:0,partes:_meeWizPartes})});
+    var r=await fetch('/api/mee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({codigo:code,descripcion:desc,categoria:cat,stock_actual:0,stock_minimo:0,partes:_meeWizPartes,cliente:(document.getElementById('mee-wiz-cliente')||{}).value||''})});
     var res=await r.json();
     if(r.ok && !res.error){ await cargarMeeStock(); if(s){ s.value=code; meeSelChange(); } meeWizClose(); meeCargarPorCalificar(); }
     else { alert('Error: '+(res.error||'No se pudo crear')); }
@@ -9708,7 +9716,7 @@ function meeSelChange(){ var sel=document.getElementById('mee-codigo-sel'); var 
 async function registrarMeeMovimiento(){ var tipo=(document.getElementById('mee-tipo')||{}).value; var codigo=(document.getElementById('mee-codigo-sel')||{}).value; var cantidad=parseFloat((document.getElementById('mee-cantidad')||{}).value); var unidad=(document.getElementById('mee-unidad')||{}).value||'und'; var lote=(document.getElementById('mee-lote')||{}).value||''; var batch=(document.getElementById('mee-batch')||{}).value||''; var obs=(document.getElementById('mee-obs')||{}).value||''; var prov=(document.getElementById('mee-proveedor')||{}).value||''; var zona=(document.getElementById('mee-zona')||{}).value||''; var precio=parseFloat((document.getElementById('mee-precio')||{}).value)||0; var fvenc=(document.getElementById('mee-fecha-venc')||{}).value||''; var oc=(document.getElementById('mee-oc')||{}).value||''; var factura=(document.getElementById('mee-factura')||{}).value||''; var msg=document.getElementById('mee-form-msg');
   if(!codigo){if(msg)msg.innerHTML='<div class="alert-error">Selecciona un material MEE</div>';return;}
   if(!cantidad||cantidad<=0){if(msg)msg.innerHTML='<div class="alert-error">Ingresa una cantidad valida</div>';return;}
-  try{ var r=await fetch('/api/mee/movimiento',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tipo:tipo,codigo:codigo,cantidad:cantidad,unidad:unidad,lote_ref:lote,batch_ref:batch,observaciones:obs,proveedor:prov,zona:zona,precio_unitario:precio,fecha_vencimiento:fvenc,oc_numero:oc,factura_numero:factura})}); var res=await r.json();
+  try{ var r=await fetch('/api/mee/movimiento',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tipo:tipo,codigo:codigo,cantidad:cantidad,unidad:unidad,lote_ref:lote,batch_ref:batch,observaciones:obs,proveedor:prov,zona:zona,precio_unitario:precio,fecha_vencimiento:fvenc,oc_numero:oc,factura_numero:factura,cliente:(document.getElementById('mee-cliente')||{}).value||''})}); var res=await r.json();
     if(res.ok){ var np=await meeRegistrarPartes(); var al=res.alerta?'<br><strong style="color:#e74c3c;">&#9888; '+res.alerta+'</strong>':''; if(msg)msg.innerHTML='<div class="alert-success">'+res.message+(np>0?(' · +'+np+' parte(s)'):'')+' - Stock: <strong>'+res.stock_nuevo+'</strong>'+al+'</div>'; var loteSave=lote; document.getElementById('mee-cantidad').value=''; document.getElementById('mee-lote').value=''; document.getElementById('mee-batch').value=''; document.getElementById('mee-obs').value=''; ['mee-zona','mee-precio','mee-valor','mee-fecha-venc','mee-oc','mee-factura'].forEach(function(idd){var el=document.getElementById(idd); if(el)el.value='';}); meeCargarPartesRecep(codigo); cargarMeeStock();cargarMeeAlertas();cargarMeeHistorial();meeCargarCuarentena(); if(tipo==='Entrada'){window.open('/rotulo-recepcion-mee/'+encodeURIComponent(codigo)+'/'+cantidad+'?lote='+encodeURIComponent(loteSave),'_blank');}
     } else { if(msg)msg.innerHTML='<div class="alert-error">'+(res.error||'Error al registrar')+'</div>'; }
   }catch(e){if(msg)msg.innerHTML='<div class="alert-error">Error de conexion</div>';}

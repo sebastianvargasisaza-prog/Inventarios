@@ -11533,10 +11533,11 @@ def mee_crear():
         return jsonify({'error': 'codigo y descripcion requeridos'}), 400
     conn = get_db(); c = conn.cursor()
     try:
+        _cliente = (d.get('cliente') or '').strip()
         c.execute("""INSERT INTO maestro_mee (codigo, descripcion, categoria, unidad, proveedor,
-                                              stock_actual, stock_minimo, estado, calificado)
-                     VALUES (?,?,?,?,?,?,?,'Activo',0)""",
-                  (codigo, descripcion, categoria, unidad, proveedor, stock_actual, stock_minimo))
+                                              stock_actual, stock_minimo, estado, calificado, cliente)
+                     VALUES (?,?,?,?,?,?,?,'Activo',0,?)""",
+                  (codigo, descripcion, categoria, unidad, proveedor, stock_actual, stock_minimo, _cliente))
         # Audit log creación MEE
         try:
             from audit_helpers import audit_log as _al
@@ -11616,6 +11617,7 @@ def mee_stock_list():
         SELECT m.codigo, m.descripcion, m.categoria, m.unidad,
                COALESCE(mv.stock_real, m.stock_actual, 0) as stock_actual, m.stock_minimo, m.estado, m.proveedor,
                COALESCE(m.imagen_url,'') as imagen_url,
+               COALESCE(m.cliente,'') as cliente,
                COALESCE(mv.ultima_entrada,'') as ultima_entrada,
                COALESCE(mv.ultima_salida,'')  as ultima_salida,
                COALESCE(mv.total_entradas,0)  as total_entradas,
@@ -11766,6 +11768,9 @@ def mee_registrar_movimiento():
         c.execute("UPDATE maestro_mee SET stock_actual = stock_actual + ? WHERE codigo=?", (cantidad, codigo))
         if proveedor_r:  # guardar último proveedor recibido en el maestro
             c.execute("UPDATE maestro_mee SET proveedor=? WHERE codigo=?", (proveedor_r, codigo))
+        _cliente_r = (d.get('cliente') or '').strip()
+        if _cliente_r:
+            c.execute("UPDATE maestro_mee SET cliente=? WHERE codigo=?", (_cliente_r, codigo))
     elif tipo == 'Salida':
         # CASE WHEN portable (PG no tiene MAX de 2 args · MAX es agregado → erroraba en prod;
         # SQLite no tiene GREATEST). Clamp a 0 idéntico en ambos motores.
@@ -12008,6 +12013,23 @@ def mee_recodificar():
         pass
     conn.commit()
     return jsonify({'ok': True, 'codigo_nuevo': nuevo})
+
+@bp.route('/api/mee/set-cliente', methods=['POST'])
+def mee_set_cliente():
+    """Setea el cliente dueno de un envase (vacio = General) - Sebastian 28-jun."""
+    _u, _err, _code = _require_planta_write()
+    if _err:
+        return _err, _code
+    d = request.json or {}
+    cod = (d.get('codigo') or '').strip(); cli = (d.get('cliente') or '').strip()
+    if not cod:
+        return jsonify({'error': 'codigo requerido'}), 400
+    conn = get_db(); c = conn.cursor()
+    c.execute("UPDATE maestro_mee SET cliente=? WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))", (cli, cod))
+    if c.rowcount == 0:
+        return jsonify({'error': 'envase no encontrado'}), 404
+    conn.commit()
+    return jsonify({'ok': True, 'codigo': cod, 'cliente': cli})
 
 @bp.route('/api/mee/movimientos', methods=['GET'])
 def mee_historial_movimientos():

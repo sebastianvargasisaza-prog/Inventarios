@@ -395,6 +395,10 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (306, "Envases - cliente dueno del envase (Sebastian 28-jun - dividir bodega por cliente). maestro_mee.cliente (vacio = banco General, Animus Lab, Kelly Guerra). Auto-marca Kelly Guerra las 2 serigrafias de urea del Excel. Opcional en ingreso/creacion; vacio = General.", [
+        "ALTER TABLE maestro_mee ADD COLUMN cliente TEXT DEFAULT ''",
+        "UPDATE maestro_mee SET cliente='Kelly Guerra' WHERE codigo IN ('IMP-SG-CFUREA','IMP-SG-CCUREA')",
+    ]),
     (305, "Envases · cargar el inventario REAL del Excel como SALDO INICIAL (Sebastian 28-jun · columna TOTAL). 1 movimiento Entrada VIGENTE por envase (lote SALDO-EXCEL · idempotente NOT EXISTS · sin fecha=usa default PG-safe) matcheado por descripcion -> se MUESTRA en bodega. Recalcula stock_actual. ~66k uds.", [
         "INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, unidad, lote_ref, responsable, observaciones, estado) SELECT codigo, 'Entrada', 254, 'und', 'SALDO-EXCEL', 'inventario', 'Saldo inicial Excel 28-jun', 'VIGENTE' FROM maestro_mee WHERE UPPER(TRIM(descripcion))=UPPER(TRIM('SUERO ILUMINADOR TRX 30ml')) AND COALESCE(estado,'Activo')='Activo' AND NOT EXISTS (SELECT 1 FROM movimientos_mee mv2 JOIN maestro_mee mm2 ON mv2.mee_codigo=mm2.codigo WHERE UPPER(TRIM(mm2.descripcion))=UPPER(TRIM('SUERO ILUMINADOR TRX 30ml')) AND mv2.lote_ref='SALDO-EXCEL')",
         "INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, unidad, lote_ref, responsable, observaciones, estado) SELECT codigo, 'Entrada', 248, 'und', 'SALDO-EXCEL', 'inventario', 'Saldo inicial Excel 28-jun', 'VIGENTE' FROM maestro_mee WHERE UPPER(TRIM(descripcion))=UPPER(TRIM('SUERO NIACINAMIDA 30ml')) AND COALESCE(estado,'Activo')='Activo' AND NOT EXISTS (SELECT 1 FROM movimientos_mee mv2 JOIN maestro_mee mm2 ON mv2.mee_codigo=mm2.codigo WHERE UPPER(TRIM(mm2.descripcion))=UPPER(TRIM('SUERO NIACINAMIDA 30ml')) AND mv2.lote_ref='SALDO-EXCEL')",
