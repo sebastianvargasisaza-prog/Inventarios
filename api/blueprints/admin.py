@@ -7069,19 +7069,79 @@ def admin_mapear_envase():
     c = conn.cursor()
     if not c.execute("SELECT codigo FROM maestro_mee WHERE codigo=?", (env,)).fetchone():
         return jsonify({"error": f"envase {env} no existe en maestro_mee"}), 400
-    c.execute("DELETE FROM producto_presentaciones WHERE producto_nombre=? AND "
-              "(COALESCE(es_default,0)=1 OR presentacion_codigo='PPAL' OR presentacion_codigo LIKE 'AUTO-%')",
-              (prod,))
-    etq = (str(int(vol)) + "ml") if (vol and float(vol).is_integer()) else ((str(vol) + "ml") if vol else "PPAL")
+    _vstr = (str(int(vol)) if float(vol).is_integer() else str(vol)) if vol else None
+    vcode = ("V" + _vstr) if _vstr else "PPAL"
+    etq = (_vstr + "ml") if _vstr else "PPAL"
+    c.execute("DELETE FROM producto_presentaciones WHERE producto_nombre=? AND presentacion_codigo=?", (prod, vcode))
+    if vol is not None:
+        c.execute("DELETE FROM producto_presentaciones WHERE producto_nombre=? AND "
+                  "(presentacion_codigo='PPAL' OR presentacion_codigo LIKE 'AUTO-%') AND COALESCE(volumen_ml,0)=?",
+                  (prod, vol))
+    else:
+        c.execute("DELETE FROM producto_presentaciones WHERE producto_nombre=? AND "
+                  "(presentacion_codigo='PPAL' OR presentacion_codigo LIKE 'AUTO-%')", (prod,))
     c.execute("INSERT INTO producto_presentaciones "
               "(producto_nombre, presentacion_codigo, etiqueta, volumen_ml, envase_codigo, es_default, activo) "
-              "VALUES (?, 'PPAL', ?, ?, ?, 1, 1)", (prod, etq, vol, env))
+              "VALUES (?, ?, ?, ?, ?, 1, 1)", (prod, vcode, etq, vol, env))
     try:
         audit_log(None, u, "MAPEAR_ENVASE", "producto_presentaciones", prod, f"envase={env} vol={vol}")
     except Exception:
         pass
     conn.commit()
     return jsonify({"ok": True, "producto": prod, "envase": env, "volumen_ml": vol})
+
+
+@bp.route("/api/admin/productos-envase-estado", methods=["GET"])
+def admin_productos_envase_estado():
+    """Estado de envases por producto para el tool (Sebastian 28-jun · slots por volumen 15/30).
+    Por producto activo: un slot por cada volumen de sku_producto_map + el envase ya asignado a ese volumen."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    import unicodedata as _ud
+    import re as _re
+    def _nz(s):
+        n = _ud.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode().upper()
+        return _re.sub(r"[^A-Z0-9]+", " ", n).strip()
+    conn = db_connect()
+    c = conn.cursor()
+    prods = {}
+    for (pn,) in c.execute("SELECT producto_nombre FROM formula_headers "
+                           "WHERE COALESCE(activo,1)=1 AND COALESCE(lote_size_kg,0)>0").fetchall():
+        prods[_nz(pn)] = pn
+    vols = {}
+    try:
+        for (pn, v) in c.execute("SELECT producto_nombre, volumen_ml FROM sku_producto_map "
+                                 "WHERE COALESCE(volumen_ml,0)>0 AND COALESCE(activo,1)=1").fetchall():
+            vols.setdefault(_nz(pn), set()).add(round(float(v), 2))
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    pres = {}
+    for (pn, vol, env) in c.execute("SELECT producto_nombre, COALESCE(volumen_ml,0), COALESCE(envase_codigo,'') "
+                                    "FROM producto_presentaciones WHERE COALESCE(activo,1)=1").fetchall():
+        pres.setdefault(_nz(pn), []).append({"vol": float(vol or 0), "env": env})
+    out = []
+    for k, nombre in prods.items():
+        vset = sorted(vols.get(k, set()))
+        plist = pres.get(k, [])
+        slots = []
+        if vset:
+            for v in vset:
+                match = next((p for p in plist if abs(p["vol"] - v) < 0.01 and p["env"]), None)
+                slots.append({"volumen_ml": v, "envase": match["env"] if match else ""})
+        elif plist:
+            for p in plist:
+                slots.append({"volumen_ml": (p["vol"] or ""), "envase": p["env"]})
+        else:
+            slots.append({"volumen_ml": "", "envase": ""})
+        falta = any(not s["envase"] for s in slots)
+        out.append({"producto": nombre, "slots": slots, "multi": len(slots) > 1, "falta": falta})
+    out.sort(key=lambda x: (not x["falta"], x["producto"]))
+    n_falta = sum(1 for x in out if x["falta"])
+    return jsonify({"productos": out, "n_falta": n_falta, "n_ok": len(out) - n_falta, "total": len(out)})
 
 
 @bp.route("/admin/mapeo-producto-envase", methods=["GET"])
@@ -7132,12 +7192,11 @@ function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replac
 async function csrf(){var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();return t.csrf_token;}
 async function cargar(){
   try{
-    var cob=await (await fetch('/api/abastecimiento/envases-cobertura',{cache:'no-store'})).json();
+    var st=await (await fetch('/api/admin/productos-envase-estado',{cache:'no-store'})).json();
     var m=await (await fetch('/api/admin/maestro-mees-list',{cache:'no-store'})).json();
     ENV=(m.mees||[]).filter(function(e){return /^FR-/.test(e.codigo||'');});
     ROWS=[];
-    (cob.sin_envase||[]).forEach(function(p){ROWS.push({prod:p,env:'',vol:'',falta:true});});
-    (cob.con_envase||[]).forEach(function(o){var pp=(o.presentaciones||[])[0]||{};ROWS.push({prod:o.producto,env:pp.envase||'',vol:pp.volumen_ml||'',falta:false});});
+    (st.productos||[]).forEach(function(p){(p.slots||[]).forEach(function(s){ROWS.push({prod:p.producto,vol:(s.volumen_ml||''),env:s.envase||'',falta:!s.envase,multi:p.multi});});});
     recount(); render();
   }catch(e){ document.getElementById('tb').innerHTML='<tr><td colspan=5 style="color:#dc2626;padding:24px">Error cargando: '+e+'</td></tr>'; }
 }
@@ -7154,7 +7213,7 @@ function render(){
   vis.forEach(function(r){
     var i=ROWS.indexOf(r);
     var tr=document.createElement('tr'); if(r.falta) tr.className='falta';
-    tr.innerHTML='<td><b>'+esc(r.prod)+'</b></td>'+
+    tr.innerHTML='<td><b>'+esc(r.prod)+'</b>'+(r.multi?' <span class="chip" style="background:#e0e7ff;color:#3730a3">'+esc(String(r.vol))+'ml</span>':'')+'</td>'+
       '<td>'+(r.falta?'<span class="chip falta">falta</span>':'<span class="chip ok">ok</span>')+'</td>'+
       '<td><select id="env-'+i+'">'+opciones(r.env)+'</select></td>'+
       '<td><input class="vol" id="vol-'+i+'" type="number" value="'+esc(String(r.vol||''))+'" placeholder="ml"></td>'+

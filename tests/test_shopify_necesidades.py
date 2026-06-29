@@ -345,7 +345,7 @@ def test_mapear_envase(app):
                 headers=csrf_headers())
     assert rs.status_code == 200, rs.data
     r = _q1("SELECT envase_codigo, volumen_ml FROM producto_presentaciones "
-            "WHERE producto_nombre='PROD MAP TEST' AND presentacion_codigo='PPAL'")
+            "WHERE producto_nombre='PROD MAP TEST' AND presentacion_codigo='V30'")
     assert r and r[0] == 'FR-VIDRIOOPAL-30', r
     # envase inexistente -> 400 (no deja fantasma)
     r2 = c.post('/api/admin/mapear-envase', json={'producto': 'X', 'envase_codigo': 'NO-EXISTE-99'},
