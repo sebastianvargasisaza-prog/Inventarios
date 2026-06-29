@@ -361,3 +361,10 @@ def test_gloss_tonos_preview(app):
     assert r.status_code == 200, r.data
     d = r.get_json()
     assert 'pares' in d and 'frascos_sin_match' in d, d
+
+
+
+def test_mig309_envases_nuevos(app):
+    # los 3 frascos nuevos quedan creados en el maestro
+    for cod in ('FR-AL-BLUSH-6', 'FR-VID-GOTERO-10', 'FR-VID-OPALIZADO-50'):
+        assert _q1("SELECT 1 FROM maestro_mee WHERE codigo=?", (cod,)), ('falta envase', cod)
