@@ -7091,8 +7091,16 @@ def admin_gloss_tonos_preview():
         if best:
             pares.append({"producto": best[1]["producto"], "sku": best[1]["sku"],
                           "envase_codigo": f["codigo"], "envase_desc": f["desc"],
-                          "volumen_ml": 10, "tono": " ".join(best[2])})
+                          "volumen_ml": 10, "tono": " ".join(best[2]), "via": "sku"})
             usados.add(f["codigo"])
+    if len(prods) == 1:
+        _solo = prods[0]
+        for f in frascos:
+            if f["codigo"] not in usados:
+                pares.append({"producto": _solo, "sku": "", "envase_codigo": f["codigo"],
+                              "envase_desc": f["desc"], "volumen_ml": 10,
+                              "tono": " ".join(f["tono"]), "via": "producto"})
+                usados.add(f["codigo"])
     sin_match = [{"codigo": f["codigo"], "desc": f["desc"], "tono": " ".join(f["tono"])}
                  for f in frascos if f["codigo"] not in usados]
     return jsonify({"pares": pares, "frascos_sin_match": sin_match,
@@ -7184,7 +7192,7 @@ async function cargar(){
       PARES.forEach(function(p,i){
         h+='<tr><td><input type="checkbox" class="c" id="c'+i+'" checked></td><td><b>'+esc(p.producto)+'</b></td>'+
            '<td class="tono">'+esc(p.tono)+'</td><td>'+esc(p.envase_codigo)+'<br><span class="muted">'+esc(p.envase_desc)+'</span></td>'+
-           '<td>'+esc(p.sku)+'</td></tr>';
+           '<td>'+(p.sku?esc(p.sku):'<span class="muted">sin SKU (por producto)</span>')+'</td></tr>';
       });
       h+='</tbody></table>';
       document.getElementById('btn').style.display='inline-block';
