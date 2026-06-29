@@ -101,3 +101,41 @@ def test_envase_no_aparece_sin_presentacion(app, db_clean):
     mees = r.get_json().get("mees") or []
     # no debe inventar un envase para este producto (no tiene presentación)
     assert all('SINPRES' not in (m.get('codigo') or '').upper() for m in mees)
+
+
+
+def test_envase_multipresentacion_reparte_por_ventas(app, db_clean):
+    # M58: producto con 2 presentaciones (15/30ml) con ventas_mes_referencia=0 → el envase NO se reparte
+    # uniforme (50/50) sino por VENTAS Shopify por volumen (= desglose por referencia). 30ml vende 100, 15ml 1.
+    import json as _j
+    prod = "ZZ MULTIPRES"
+    envA, envB = "ENV-ZZ-15", "ENV-ZZ-30"
+    _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp,nombre_comercial,nombre_inci,activo) VALUES ('MP-ZZMP','Mat','INCI',1)")
+    _exec("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES (?,1,1)", (prod,))
+    _exec("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje,cantidad_g_por_lote) "
+          "VALUES (?, 'MP-ZZMP','Mat',10,0)", (prod,))
+    for cod, d in ((envA, 'Frasco 15ml'), (envB, 'Frasco 30ml')):
+        _exec("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,stock_actual,stock_minimo) "
+              "VALUES (?,?,'Envase',0,0)", (cod, d))
+    _exec("INSERT INTO producto_presentaciones (producto_nombre,presentacion_codigo,etiqueta,volumen_ml,envase_codigo,ventas_mes_referencia,activo) "
+          "VALUES (?, 'V15','15 ml',15,?,0,1)", (prod, envA))
+    _exec("INSERT INTO producto_presentaciones (producto_nombre,presentacion_codigo,etiqueta,volumen_ml,envase_codigo,ventas_mes_referencia,activo) "
+          "VALUES (?, 'V30','30 ml',30,?,0,1)", (prod, envB))
+    _exec("INSERT INTO sku_producto_map (sku,producto_nombre,volumen_ml,activo) VALUES ('ZZSKU15',?,15,1)", (prod,))
+    _exec("INSERT INTO sku_producto_map (sku,producto_nombre,volumen_ml,activo) VALUES ('ZZSKU30',?,30,1)", (prod,))
+    _exec("INSERT INTO animus_shopify_orders (shopify_id,estado,estado_pago,sku_items,unidades_total,tags,customer_tags,creado_en) "
+          "VALUES ('ZZO1','','paid',?,101,'','',datetime('now','-5 hours'))",
+          (_j.dumps([{'sku': 'ZZSKU30', 'qty': 100}, {'sku': 'ZZSKU15', 'qty': 1}]),))
+    _exec("INSERT INTO produccion_programada (producto,fecha_programada,lotes,estado,cantidad_kg,origen) "
+          "VALUES (?, date('now','-5 hours','+5 days'),1,'pendiente',5,'eos_plan')", (prod,))
+    c = _login(app)
+    j = c.get("/api/abastecimiento/consumo-horizontes?tipo=mp,mee").get_json()
+    mees = j.get("mees") or []
+    hmax = str(max(j["horizontes"]))
+    a_it = next((m for m in mees if (m.get("codigo") or "").upper() == envA.upper()), None)
+    b_it = next((m for m in mees if (m.get("codigo") or "").upper() == envB.upper()), None)
+    assert b_it is not None, ('falta el frasco 30ml en abastecimiento', [m.get('codigo') for m in mees])
+    cb = float(b_it["consumo"][hmax])
+    ca = float(a_it["consumo"][hmax]) if a_it else 0.0
+    # 30ml vende 100x más → demanda mucho mayor (uniforme daría cb≈ca)
+    assert cb > ca * 5, f"el frasco 30ml debe demandar mucho mas que el 15ml (no uniforme) · 30={cb} 15={ca}"

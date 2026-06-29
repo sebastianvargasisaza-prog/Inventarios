@@ -6455,8 +6455,10 @@ def _ventas_sku_180d(c):
     FIX 1-jun-2026 (audit escalabilidad): antes se re-escaneaba animus_shopify_orders
     + se parseaba JSON por CADA producción (N+1 O(N·M)). Ahora se calcula 1 vez."""
     import time as _tV
+    import os as _osV
     _gnow = _tV.time()
-    if _VENTAS_SKU_180D_CACHE.get('data') is not None and (_gnow - _VENTAS_SKU_180D_CACHE.get('ts', 0)) < 600:
+    _no_cache = bool(_osV.environ.get('PYTEST_CURRENT_TEST'))  # en tests, sin cache global (ve órdenes nuevas)
+    if not _no_cache and _VENTAS_SKU_180D_CACHE.get('data') is not None and (_gnow - _VENTAS_SKU_180D_CACHE.get('ts', 0)) < 600:
         return _VENTAS_SKU_180D_CACHE['data']
     _g = None
     try:
@@ -11255,18 +11257,34 @@ def abastecimiento_consumo_horizontes():
         # unidades del producto entre sus presentaciones sin doble-contar. Clave _norm_prod (M13)
         # para que el lookup del loop la encuentre. OVERRIDE de lo SKU-based (presentaciones manda).
         try:
+            # Ventas Shopify por (producto_norm, volumen_ml) · para repartir envases igual que el
+            # "Desglose por referencia" del modal (M58): un producto multi-presentación reparte por las
+            # ventas REALES de cada volumen, NO uniforme (ventas_mes_referencia suele estar en 0 tras los
+            # mapeos → caería a 50/50, erróneo p.ej. Renova C10 30ml=392 vs 15ml=1).
+            _ventas_prod_vol = {}
+            try:
+                _vsku_ab = _ventas_sku_180d(c)
+                for (_sk, _pn, _vl) in c.execute(
+                        "SELECT sku, producto_nombre, COALESCE(volumen_ml,0) FROM sku_producto_map "
+                        "WHERE COALESCE(volumen_ml,0)>0 AND COALESCE(activo,1)=1").fetchall():
+                    _q = _vsku_ab.get((_sk or '').strip(), 0)
+                    if _q:
+                        _kpv = (_norm_prod(_pn), round(float(_vl), 2))
+                        _ventas_prod_vol[_kpv] = _ventas_prod_vol.get(_kpv, 0) + _q
+            except Exception:
+                _ventas_prod_vol = {}
             # tapa_codigo/caja_codigo (mig 278): si no existen las columnas (instancia vieja),
             # caer a NULL · COALESCE en SQL + try del SELECT extendido con fallback al básico.
             try:
                 _pres_rows = c.execute("""
                     SELECT producto_nombre, COALESCE(envase_codigo,''), COALESCE(ventas_mes_referencia,0),
-                           COALESCE(tapa_codigo,''), COALESCE(caja_codigo,'')
+                           COALESCE(tapa_codigo,''), COALESCE(caja_codigo,''), COALESCE(volumen_ml,0)
                     FROM producto_presentaciones
                     WHERE COALESCE(activo,1)=1 AND COALESCE(envase_codigo,'')<>'' AND COALESCE(volumen_ml,0)>0
                 """).fetchall()
             except sqlite3.OperationalError:
-                _pres_rows = [(r[0], r[1], r[2], '', '') for r in c.execute("""
-                    SELECT producto_nombre, COALESCE(envase_codigo,''), COALESCE(ventas_mes_referencia,0)
+                _pres_rows = [(r[0], r[1], r[2], '', '', r[3]) for r in c.execute("""
+                    SELECT producto_nombre, COALESCE(envase_codigo,''), COALESCE(ventas_mes_referencia,0), COALESCE(volumen_ml,0)
                     FROM producto_presentaciones
                     WHERE COALESCE(activo,1)=1 AND COALESCE(envase_codigo,'')<>'' AND COALESCE(volumen_ml,0)>0
                 """).fetchall()]
@@ -11274,12 +11292,21 @@ def abastecimiento_consumo_horizontes():
             for r in _pres_rows:
                 _pres_envases.setdefault(_norm_prod(r[0]), []).append({
                     'env': (r[1] or '').strip().upper(), 'vmr': float(r[2] or 0),
-                    'tapa': (r[3] or '').strip().upper(), 'caja': (r[4] or '').strip().upper()})
+                    'tapa': (r[3] or '').strip().upper(), 'caja': (r[4] or '').strip().upper(),
+                    'vol': float(r[5] or 0)})
             for _k, _lst in _pres_envases.items():
-                _tot_vmr = sum(x['vmr'] for x in _lst)
+                # peso por presentación: ventas Shopify de ESE volumen (= desglose por referencia) ·
+                # fallback ventas_mes_referencia · fallback uniforme. share×total_units = uds de la presentación.
+                for x in _lst:
+                    x['_w'] = _ventas_prod_vol.get((_k, round(x['vol'], 2)), 0)
+                _tot_w = sum(x['_w'] for x in _lst)
+                if _tot_w <= 0:
+                    for x in _lst:
+                        x['_w'] = x['vmr']
+                    _tot_w = sum(x['_w'] for x in _lst)
                 _items = []
                 for x in _lst:
-                    _share = (x['vmr'] / _tot_vmr) if _tot_vmr > 0 else (1.0 / len(_lst))
+                    _share = (x['_w'] / _tot_w) if _tot_w > 0 else (1.0 / len(_lst))
                     # frasco + (tapa) + (caja) · cada uno consume `share` unidades por unidad de PT
                     # → suma de shares=1 · NO doble-cuenta (cada componente es 1 por unidad envasada).
                     _items.append({'codigo': x['env'], 'cant_x_uds': _share, 'tipo': 'envase'})
@@ -11316,8 +11343,14 @@ def abastecimiento_consumo_horizontes():
             for _k, _lst in _vol_pres.items():
                 if _k in volumen_por_producto:
                     continue  # volumen_unitario_producto manda
-                _tw = sum(w for _, w in _lst)
-                _vol = (sum(v * w for v, w in _lst) / _tw) if _tw > 0 else (sum(v for v, _ in _lst) / len(_lst))
+                # peso = ventas Shopify por volumen (MISMO que el reparto de envases · consistente) ·
+                # fallback ventas_mes_referencia · fallback uniforme.
+                _pares = [(_v, _ventas_prod_vol.get((_k, round(_v, 2)), 0)) for (_v, _vmr) in _lst]
+                _tw = sum(w for _, w in _pares)
+                if _tw <= 0:
+                    _pares = _lst
+                    _tw = sum(w for _, w in _pares)
+                _vol = (sum(v * w for v, w in _pares) / _tw) if _tw > 0 else (sum(v for v, _ in _lst) / len(_lst))
                 if _vol > 0:
                     volumen_por_producto[_k] = _vol
         except sqlite3.OperationalError:
