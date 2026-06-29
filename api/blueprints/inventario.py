@@ -1406,7 +1406,7 @@ def producto_imagen(producto_nombre):
     # POST
     d = request.json or {}
     url = (d.get('imagen_url') or '').strip()
-    if url and not url.startswith(('http://', 'https://', '/static/')):
+    if url and not url.startswith(('http://', 'https://', '/static/', 'data:image/')):
         return jsonify({'error': 'URL invalida (debe empezar con http(s):// o /static/)'}), 400
     cur = c.execute(
         "UPDATE formula_headers SET imagen_url=?, imagen_actualizada_at=datetime('now', '-5 hours') "
@@ -1554,7 +1554,7 @@ def _shopify_sync_producto(conn, producto_nombre, token=None, shop=None, timeout
                 if not inter:
                     continue
                 score = len(inter) / max(len(target_words), len(cand_words))
-                if score > best_score and score >= 0.5:
+                if score > best_score and score >= 0.75:  # endurecido (Sebastian 29-jun · evitar cruces de foto)
                     best = p; best_score = score
             if best:
                 products = [best]

@@ -162,9 +162,10 @@ def test_mig298_envase_foto_partes(app, db_clean):
 
 
 def test_mig299_envases_stock_limpio(app, db_clean):
-    # los 57 envases normalizados quedan con stock 0 y sin mínimo falso (no disparan bajo-mínimo)
+    # mig 299 limpió el mínimo placeholder (no dispara bajo-mínimo falso); mig 305 cargó después el saldo REAL del Excel.
     r = _q1("SELECT stock_actual, stock_minimo FROM maestro_mee WHERE codigo='CJA-TRX'")
-    assert r[0] == 0 and r[1] == 0, ('stock/mínimo placeholder no limpiado', r)
+    assert r[1] == 0, ('stock_minimo placeholder no limpiado', r)
+    assert float(r[0]) == 1128, ('mig 305 no cargó el saldo real del Excel para CJA-TRX', r)
 
 
 def test_mig300_recepcion_mee_columnas(app, db_clean):

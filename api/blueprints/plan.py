@@ -17742,7 +17742,7 @@ async function _cargarComposicionMee(loteId){
 }
 
 function _opcionesEnvaseInline(sel){
-  var mees = window._MEES_CACHE;
+  var mees = (window._MEES_CACHE||[]).filter(function(m){return /^FR-/.test((m.codigo||''));});  // ENVASE DEL LOTE = solo frascos (no etiquetas/tapas/cajas · Sebastian 29-jun)
   if(!mees || !mees.length) return '<option value="">— Cargando envases —</option>';
   var h = '<option value="">— Envase default del producto —</option>';
   for(var i=0;i<mees.length;i++){ var m=mees[i]; h += '<option value="'+escapeHtml(m.codigo)+'"'+(m.codigo===sel?' selected':'')+'>'+escapeHtml(m.label||m.codigo)+'</option>'; }
@@ -17766,6 +17766,7 @@ async function _cargarOpcionesEnvases(loteId, envActual){
   }
   // Render INMEDIATO con el catálogo · NUNCA quedar pegado en "Cargando" (FIX 27-jun · antes esperaba a
   // composicion-mee, que escanea Shopify y es lento → dejaba el dropdown colgado).
+  mees = (mees||[]).filter(function(m){return /^FR-/.test((m.codigo||''));});  // solo frascos en el dropdown del lote
   _pintarOpcionesEnvase(sel, mees, envActual, []);
   // 2) enriquecer con el/los envase(s) del producto (composición · con timeout 4s · NO bloquea el dropdown)
   try{
@@ -17856,6 +17857,34 @@ async function envasePropagarFuturos(loteId){
 // Sebastián 25-may-2026 PM · guardar envase override del lote.
 // Sobreescribe el envase default del producto · MEE Abastecimiento usa
 // este código para calcular el consumo. Vacío = limpiar, volver al default.
+function corregirFotoProducto(btn){
+  var prod = btn.getAttribute('data-prod') || '';
+  if(!prod) return;
+  var inp = document.createElement('input'); inp.type='file'; inp.accept='image/*';
+  inp.onchange = function(){
+    var f = inp.files && inp.files[0]; if(!f) return;
+    var rd = new FileReader();
+    rd.onload = function(){
+      var img = new Image();
+      img.onload = async function(){
+        var mx=440, sc=Math.min(1, mx/Math.max(img.width,img.height));
+        var cv=document.createElement('canvas'); cv.width=Math.round(img.width*sc); cv.height=Math.round(img.height*sc);
+        cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height);
+        var b64=cv.toDataURL('image/jpeg',0.82);
+        btn.textContent='Subiendo...'; btn.disabled=true;
+        try{
+          var r=await fetch('/api/formulas/'+encodeURIComponent(prod)+'/imagen',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':(window._csrfTokPlan||'')},credentials:'same-origin',body:JSON.stringify({imagen_url:b64})});
+          var d=await r.json();
+          if(d.ok){ btn.textContent='\u2713 Guardada'; location.reload(); } else { alert('Error: '+(d.error||'')); btn.disabled=false; }
+        }catch(e){ alert('Error de conexion'); btn.disabled=false; }
+      };
+      img.src = rd.result;
+    };
+    rd.readAsDataURL(f);
+  };
+  inp.click();
+}
+
 async function guardarEnvaseOverride(loteId){
   const input = document.getElementById('env-ovr-' + loteId);
   const ok = document.getElementById('env-ovr-ok-' + loteId);
@@ -18224,9 +18253,12 @@ async function abrirLoteModal(id, producto, fecha, kg){
   let html = '';
 
   // 🖼️ Foto del producto (Shopify · formula_headers.imagen_url · viene en /api/plan/necesidades) · Sebastián 27-jun
+  html += '<div style="text-align:center;margin-bottom:10px">';
   if (info.imagen_url){
-    html += '<div style="text-align:center;margin-bottom:10px"><img src="' + escapeHtml(info.imagen_url) + '" style="max-height:130px;max-width:100%;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.12)" alt=""></div>';
+    html += '<img src="' + escapeHtml(info.imagen_url) + '" style="max-height:130px;max-width:100%;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.12)" alt=""><br>';
   }
+  html += '<button onclick="corregirFotoProducto(this)" data-prod="' + escapeHtml(producto) + '" style="margin-top:6px;padding:4px 10px;font-size:11px;background:#0891b2;color:#fff;border:none;border-radius:5px;cursor:pointer">' + (info.imagen_url ? '&#128247; Corregir foto' : '&#128247; Subir foto') + '</button>';
+  html += '</div>';
 
   // Sebastián 25-may-2026 PM · selector envase override del lote.
   // Dropdown que carga de /api/programacion/mees-disponibles (maestro_mee)
