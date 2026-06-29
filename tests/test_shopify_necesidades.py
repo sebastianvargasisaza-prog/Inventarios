@@ -303,3 +303,21 @@ def test_mee_recodificar(app, db_clean):
     r2 = c.post('/api/mee/recodificar', json={'codigo_viejo': 'FR-VID-NIA-30', 'codigo_nuevo': 'FR-EXISTE-30'},
                 headers=csrf_headers())
     assert r2.status_code == 409, r2.data
+
+
+def test_mig305_saldo_inicial_excel(app):
+    # el inventario real del Excel se cargó como movimiento de saldo inicial (se muestra en la bodega)
+    r = _q1("SELECT cantidad FROM movimientos_mee WHERE mee_codigo='FR-TRX-30' AND lote_ref='SALDO-EXCEL'")
+    assert r and int(r[0]) == 254, ('saldo inicial TRX no cargó', r)
+    r2 = _q1("SELECT cantidad FROM movimientos_mee WHERE mee_codigo='FR-VIDRIOOPAL-30' AND lote_ref='SALDO-EXCEL'")
+    assert r2 and int(r2[0]) == 7510, ('saldo Vidrio Opal', r2)
+    # y el stock canónico de producción lo refleja
+    import sqlite3
+    import os
+    from blueprints.programacion import _get_mee_stock
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    try:
+        st = _get_mee_stock(conn)
+    finally:
+        conn.close()
+    assert st.get('FR-TRX-30', 0) == 254, ('_get_mee_stock TRX', st.get('FR-TRX-30'))
