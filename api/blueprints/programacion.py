@@ -6447,10 +6447,17 @@ def prog_composicion_mee(evento_id):
     return jsonify(_res)
 
 
+_VENTAS_SKU_180D_CACHE = {'data': None, 'ts': 0.0}  # cache global TTL · escaneo Shopify 180d es pesado (M43)
+
+
 def _ventas_sku_180d(c):
     """Ventas por SKU (Shopify) últimos 180d · memoizado por request en flask.g.
     FIX 1-jun-2026 (audit escalabilidad): antes se re-escaneaba animus_shopify_orders
     + se parseaba JSON por CADA producción (N+1 O(N·M)). Ahora se calcula 1 vez."""
+    import time as _tV
+    _gnow = _tV.time()
+    if _VENTAS_SKU_180D_CACHE.get('data') is not None and (_gnow - _VENTAS_SKU_180D_CACHE.get('ts', 0)) < 600:
+        return _VENTAS_SKU_180D_CACHE['data']
     _g = None
     try:
         from flask import g as _g
@@ -6480,6 +6487,11 @@ def _ventas_sku_180d(c):
             except Exception:
                 continue
     except sqlite3.OperationalError:
+        pass
+    try:
+        _VENTAS_SKU_180D_CACHE['data'] = ventas
+        _VENTAS_SKU_180D_CACHE['ts'] = _gnow
+    except Exception:
         pass
     if _g is not None:
         try:
