@@ -368,3 +368,13 @@ def test_mig309_envases_nuevos(app):
     # los 3 frascos nuevos quedan creados en el maestro
     for cod in ('FR-AL-BLUSH-6', 'FR-VID-GOTERO-10', 'FR-VID-OPALIZADO-50'):
         assert _q1("SELECT 1 FROM maestro_mee WHERE codigo=?", (cod,)), ('falta envase', cod)
+
+
+
+def test_mees_disponibles_responde(app):
+    # el catálogo del dropdown del calendario responde 200 con items (no 500/cuelgue)
+    c = _login(app)
+    r = c.get('/api/programacion/mees-disponibles')
+    assert r.status_code == 200, r.data
+    d = r.get_json()
+    assert 'items' in d, d

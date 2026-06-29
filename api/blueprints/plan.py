@@ -16126,7 +16126,21 @@ def plan_calendario_page():
         from flask import redirect
         return redirect("/login?next=/admin/plan-calendario")
     from flask import Response
-    return Response(_PLAN_CALENDARIO_HTML, mimetype="text/html")
+    import json as _json
+    _cat = []
+    try:
+        _db = get_db()
+        for _r in _db.execute(
+                "SELECT codigo, COALESCE(descripcion,''), COALESCE(categoria,''), COALESCE(stock_actual,0) "
+                "FROM maestro_mee WHERE COALESCE(estado,'Activo')='Activo' "
+                "ORDER BY categoria, descripcion, codigo").fetchall():
+            _cat.append({'codigo': _r[0], 'descripcion': _r[1] or '', 'categoria': _r[2] or '',
+                         'stock_actual': float(_r[3] or 0),
+                         'label': (_r[0] or '') + ' - ' + ((_r[1] or '')[:80]) + ((' (' + _r[2] + ')') if _r[2] else '')})
+    except Exception:
+        _cat = []
+    _html = _PLAN_CALENDARIO_HTML.replace('[/*MEES_CATALOGO_INJECT*/]', _json.dumps(_cat, ensure_ascii=False), 1)
+    return Response(_html, mimetype="text/html")
 
 
 _PLAN_CALENDARIO_HTML = r"""<!DOCTYPE html>
@@ -16352,6 +16366,7 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
 let HORIZONTE = 365;  // Sebastián 15-may-2026: default 365 · "elegi 365 pero solo programa mayo"
 let MES_OFFSET = 0;  // 0 = mes actual · -1/+1 navegar
 let PLAN_DATA = null;
+window._MEES_CACHE = [/*MEES_CATALOGO_INJECT*/];  // catalogo de envases embebido server-side (sin fetch · Sebastian 29-jun · el fetch se colgaba)
 let _MES_NAVEGADO = false;  // FIX 24-may PM · true después de primer cargar() · cargar() preserva MES_OFFSET
 const DIAS = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
@@ -17732,7 +17747,7 @@ async function _cargarOpcionesEnvases(loteId, envActual){
   if(!sel) return;
   // 1) catálogo de MEE (cache global)
   let mees = window._MEES_CACHE;
-  if(!mees){
+  if(!mees || !mees.length){
     try{
       const r = await fetch('/api/programacion/mees-disponibles');
       if(!r.ok) throw new Error('HTTP ' + r.status);
