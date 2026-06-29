@@ -7045,6 +7045,144 @@ cargar();
 </script></body></html>"""
 
 
+@bp.route("/api/admin/mapear-envase", methods=["POST"])
+def admin_mapear_envase():
+    """Asignar el envase (frasco) + ml de un producto -> producto_presentaciones.
+    Sebastián 28-jun · que el plan JALE envases. Reemplaza la presentación principal/auto
+    del producto por una sola (evita doble conteo en abastecimiento)."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.json or {}
+    prod = (d.get("producto") or "").strip()
+    env = (d.get("envase_codigo") or "").strip()
+    vol = d.get("volumen_ml")
+    if not prod:
+        return jsonify({"error": "producto requerido"}), 400
+    if not env:
+        return jsonify({"error": "envase requerido"}), 400
+    try:
+        vol = float(vol) if vol not in (None, "") else None
+    except (TypeError, ValueError):
+        vol = None
+    conn = db_connect()
+    c = conn.cursor()
+    if not c.execute("SELECT codigo FROM maestro_mee WHERE codigo=?", (env,)).fetchone():
+        return jsonify({"error": f"envase {env} no existe en maestro_mee"}), 400
+    c.execute("DELETE FROM producto_presentaciones WHERE producto_nombre=? AND "
+              "(COALESCE(es_default,0)=1 OR presentacion_codigo='PPAL' OR presentacion_codigo LIKE 'AUTO-%')",
+              (prod,))
+    etq = (str(int(vol)) + "ml") if (vol and float(vol).is_integer()) else ((str(vol) + "ml") if vol else "PPAL")
+    c.execute("INSERT INTO producto_presentaciones "
+              "(producto_nombre, presentacion_codigo, etiqueta, volumen_ml, envase_codigo, es_default, activo) "
+              "VALUES (?, 'PPAL', ?, ?, ?, 1, 1)", (prod, etq, vol, env))
+    try:
+        audit_log(None, u, "MAPEAR_ENVASE", "producto_presentaciones", prod, f"envase={env} vol={vol}")
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({"ok": True, "producto": prod, "envase": env, "volumen_ml": vol})
+
+
+@bp.route("/admin/mapeo-producto-envase", methods=["GET"])
+def admin_mapeo_producto_envase_pagina():
+    """Tool: asignar el envase de cada producto para que el plan jale envases (Sebastián 28-jun)."""
+    u, err, code = _require_admin()
+    if err:
+        return ("<html><body style='font-family:system-ui;padding:48px'><h2>Solo admin</h2>"
+                "<a href='/login'>Ir a login</a></body></html>"), code
+    return _MAPEO_PROD_ENVASE_HTML
+
+
+_MAPEO_PROD_ENVASE_HTML = r"""<!DOCTYPE html><html lang="es"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Mapear producto -> envase</title>
+<style>
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#f8fafc;color:#1e293b}
+.wrap{max-width:1100px;margin:0 auto;padding:24px}
+h1{font-size:22px;margin:0 0 4px}.sub{color:#64748b;font-size:14px;margin:0 0 16px}
+.kpis{display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.kpi{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 16px;font-size:13px}
+.kpi b{font-size:20px;display:block}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden}
+th,td{padding:8px 10px;text-align:left;font-size:13px;border-bottom:1px solid #f1f5f9}
+th{background:#f1f5f9;font-weight:700;font-size:12px}
+tr.falta{background:#fff7ed}
+select,input{padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px}
+input.vol{width:70px}
+button{padding:6px 12px;border:none;border-radius:6px;background:#7c3aed;color:#fff;cursor:pointer;font-size:12px;font-weight:600}
+button.ok{background:#16a34a}
+.chip{font-size:10px;font-weight:700;border-radius:8px;padding:1px 7px}
+.chip.falta{background:#fed7aa;color:#9a3412}.chip.ok{background:#dcfce7;color:#166534}
+.search{margin-bottom:12px;padding:8px 12px;width:280px;border:1px solid #cbd5e1;border-radius:8px}
+</style></head><body><div class="wrap">
+<h1>&#128230; Mapear producto &rarr; envase</h1>
+<p class="sub">El plan JALA envases desde aqui. Asigna el frasco y los ml de cada producto. Los <b>faltantes</b> (sin envase) salen arriba en naranja.</p>
+<div class="kpis">
+  <div class="kpi" style="border-color:#fdba74"><b id="k-falta">&mdash;</b>sin envase</div>
+  <div class="kpi" style="border-color:#86efac"><b id="k-ok">&mdash;</b>con envase</div>
+</div>
+<input class="search" id="q" placeholder="Buscar producto..." oninput="render()">
+<table><thead><tr><th>Producto</th><th>Estado</th><th>Envase (frasco)</th><th>ml</th><th></th></tr></thead>
+<tbody id="tb"><tr><td colspan="5" style="padding:24px;text-align:center;color:#94a3b8">Cargando...</td></tr></tbody></table>
+</div>
+<script>
+var ROWS=[], ENV=[];
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+async function csrf(){var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();return t.csrf_token;}
+async function cargar(){
+  try{
+    var cob=await (await fetch('/api/abastecimiento/envases-cobertura',{cache:'no-store'})).json();
+    var m=await (await fetch('/api/admin/maestro-mees-list',{cache:'no-store'})).json();
+    ENV=(m.mees||[]).filter(function(e){return /^FR-/.test(e.codigo||'');});
+    ROWS=[];
+    (cob.sin_envase||[]).forEach(function(p){ROWS.push({prod:p,env:'',vol:'',falta:true});});
+    (cob.con_envase||[]).forEach(function(o){var pp=(o.presentaciones||[])[0]||{};ROWS.push({prod:o.producto,env:pp.envase||'',vol:pp.volumen_ml||'',falta:false});});
+    recount(); render();
+  }catch(e){ document.getElementById('tb').innerHTML='<tr><td colspan=5 style="color:#dc2626;padding:24px">Error cargando: '+e+'</td></tr>'; }
+}
+function opciones(sel){
+  var h='<option value="">- elegir frasco -</option>';
+  ENV.forEach(function(e){h+='<option value="'+esc(e.codigo)+'"'+(e.codigo===sel?' selected':'')+'>'+esc(e.codigo)+' - '+esc(e.descripcion)+'</option>';});
+  return h;
+}
+function render(){
+  var q=(document.getElementById('q').value||'').toLowerCase();
+  var tb=document.getElementById('tb'); tb.innerHTML='';
+  var vis=ROWS.filter(function(r){return !q || (r.prod||'').toLowerCase().indexOf(q)>=0;});
+  if(!vis.length){tb.innerHTML='<tr><td colspan=5 style="padding:24px;text-align:center;color:#94a3b8">Sin resultados</td></tr>';return;}
+  vis.forEach(function(r){
+    var i=ROWS.indexOf(r);
+    var tr=document.createElement('tr'); if(r.falta) tr.className='falta';
+    tr.innerHTML='<td><b>'+esc(r.prod)+'</b></td>'+
+      '<td>'+(r.falta?'<span class="chip falta">falta</span>':'<span class="chip ok">ok</span>')+'</td>'+
+      '<td><select id="env-'+i+'">'+opciones(r.env)+'</select></td>'+
+      '<td><input class="vol" id="vol-'+i+'" type="number" value="'+esc(String(r.vol||''))+'" placeholder="ml"></td>'+
+      '<td><button id="b-'+i+'" onclick="guardar('+i+')">Guardar</button></td>';
+    tb.appendChild(tr);
+  });
+}
+async function guardar(i){
+  var env=document.getElementById('env-'+i).value;
+  var vol=document.getElementById('vol-'+i).value;
+  if(!env){alert('Elegi un frasco');return;}
+  var b=document.getElementById('b-'+i); b.textContent='...'; b.disabled=true;
+  try{
+    var r=await fetch('/api/admin/mapear-envase',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({producto:ROWS[i].prod,envase_codigo:env,volumen_ml:vol?parseFloat(vol):null})});
+    var d=await r.json();
+    if(d.ok){ ROWS[i].falta=false; ROWS[i].env=env; ROWS[i].vol=vol; b.textContent='✓ Guardado'; b.className='ok'; recount(); }
+    else { alert('Error: '+(d.error||'')); b.textContent='Guardar'; b.disabled=false; }
+  }catch(e){ alert('Error de conexion'); b.textContent='Guardar'; b.disabled=false; }
+}
+function recount(){
+  var f=ROWS.filter(function(r){return r.falta;}).length;
+  document.getElementById('k-falta').textContent=f;
+  document.getElementById('k-ok').textContent=ROWS.length-f;
+}
+cargar();
+</script></body></html>"""
+
+
 @bp.route("/admin/recodificar-envases", methods=["GET"])
 def admin_recodificar_envases_pagina():
     """Re-codificar los envases con la lógica del wizard (Sebastián 28-jun · normalizar todo)."""

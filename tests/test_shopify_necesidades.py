@@ -333,3 +333,21 @@ def test_mig306_cliente(app):
                 headers=csrf_headers())
     assert rs.status_code == 200, rs.data
     assert _q1("SELECT cliente FROM maestro_mee WHERE codigo='FR-VIDRIOOPAL-30'")[0] == 'Kelly Guerra'
+
+
+
+def test_mapear_envase(app):
+    # tool de mapeo producto->envase: upsert en producto_presentaciones + valida envase
+    from .conftest import csrf_headers
+    c = _login(app)
+    rs = c.post('/api/admin/mapear-envase',
+                json={'producto': 'PROD MAP TEST', 'envase_codigo': 'FR-VIDRIOOPAL-30', 'volumen_ml': 30},
+                headers=csrf_headers())
+    assert rs.status_code == 200, rs.data
+    r = _q1("SELECT envase_codigo, volumen_ml FROM producto_presentaciones "
+            "WHERE producto_nombre='PROD MAP TEST' AND presentacion_codigo='PPAL'")
+    assert r and r[0] == 'FR-VIDRIOOPAL-30', r
+    # envase inexistente -> 400 (no deja fantasma)
+    r2 = c.post('/api/admin/mapear-envase', json={'producto': 'X', 'envase_codigo': 'NO-EXISTE-99'},
+                headers=csrf_headers())
+    assert r2.status_code == 400, r2.data
