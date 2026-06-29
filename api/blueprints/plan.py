@@ -17660,6 +17660,17 @@ async function _fijarUdsPresentacion(loteId, productoEnc, codigo, etiqueta, volM
     alert('Error red: ' + e.message);
   }
 }
+// Sebastian 29-jun · UNA sola llamada a composicion-mee por lote (3 consumidores la compartian -> saturaba
+// los 3 workers con el escaneo Shopify 180d -> 502 -> dropdown "Cargando" pegado · M43). Promesa memoizada.
+window._COMP_MEE_PROMISE = window._COMP_MEE_PROMISE || {};
+function _fetchCompMee(loteId){
+  if(window._COMP_MEE_PROMISE[loteId]) return window._COMP_MEE_PROMISE[loteId];
+  const pr = fetch('/api/programacion/programar/' + loteId + '/composicion-mee', {credentials:'same-origin'})
+    .then(function(r){ return r.ok ? r.json() : null; }).catch(function(){ return null; });
+  window._COMP_MEE_PROMISE[loteId] = pr;
+  return pr;
+}
+
 async function _cargarComposicionMee(loteId){
   const box = document.getElementById('comp-mee-' + loteId);
   if(!box) return;
@@ -17669,9 +17680,8 @@ async function _cargarComposicionMee(loteId){
     return;
   }
   try{
-    const r = await fetch('/api/programacion/programar/' + loteId + '/composicion-mee', {credentials:'same-origin'});
-    if(!r.ok){ box.style.display='none'; return; }
-    const d = await r.json();
+    const d = await _fetchCompMee(loteId);
+    if(!d){ box.style.display='none'; return; }
     if(!d.ok || !d.variantes || d.variantes.length === 0){
       box.innerHTML = '<span style="font-weight:700">📐 Composición:</span> <span style="opacity:.7">producto sin variantes configuradas · usa envase default</span>';
       return;
@@ -17737,17 +17747,13 @@ async function _cargarOpcionesEnvases(loteId, envActual){
   _pintarOpcionesEnvase(sel, mees, envActual, []);
   // 2) enriquecer con el/los envase(s) del producto (composición · con timeout 4s · NO bloquea el dropdown)
   try{
-    const ctrl = new AbortController();
-    const _to = setTimeout(function(){ try{ ctrl.abort(); }catch(_e){} }, 4000);
-    const rc = await fetch('/api/programacion/programar/' + loteId + '/composicion-mee', {credentials:'same-origin', signal: ctrl.signal});
-    clearTimeout(_to);
-    if(rc.ok){
-      const dc = await rc.json();
+    const dc = await _fetchCompMee(loteId);
+    if(dc){
       const defaults = [];
       (dc.variantes || []).forEach(v => { if(v.envase_codigo && defaults.indexOf(v.envase_codigo) < 0) defaults.push(v.envase_codigo); });
       if(defaults.length) _pintarOpcionesEnvase(sel, mees, (sel.value || envActual), defaults);
     }
-  }catch(e){ /* timeout o fallo · el dropdown ya está usable */ }
+  }catch(e){ /* el dropdown ya esta usable */ }
 }
 function _pintarOpcionesEnvase(sel, mees, envActual, defaults){
   defaults = defaults || [];
@@ -18259,8 +18265,8 @@ async function abrirLoteModal(id, producto, fecha, kg){
     // cuántos 30ml para Kelly). Backend computa DTC = composición − B2B.
     let _planCli = [];
     try {
-      const _rcomp = await fetch('/api/programacion/programar/' + id + '/composicion-mee', {credentials:'same-origin'});
-      if (_rcomp.ok){ const _dcomp = await _rcomp.json(); if (_dcomp && _dcomp.plan_por_cliente) _planCli = _dcomp.plan_por_cliente; }
+      const _dcomp = await _fetchCompMee(id);
+      if (_dcomp && _dcomp.plan_por_cliente) _planCli = _dcomp.plan_por_cliente;
     } catch(_eC){}
     const _envTxt = (cli) => !cli ? '' : (cli.envases||[]).filter(e=>e.uds>0).map(e =>
       '<b>' + (e.uds).toLocaleString('es-CO') + '</b>×' + escapeHtml(e.etiqueta)
