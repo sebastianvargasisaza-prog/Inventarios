@@ -351,3 +351,13 @@ def test_mapear_envase(app):
     r2 = c.post('/api/admin/mapear-envase', json={'producto': 'X', 'envase_codigo': 'NO-EXISTE-99'},
                 headers=csrf_headers())
     assert r2.status_code == 400, r2.data
+
+
+
+def test_gloss_tonos_preview(app):
+    # el auto-mapeo de tonos no revienta y trae la estructura esperada
+    c = _login(app)
+    r = c.get('/api/admin/gloss-tonos-preview')
+    assert r.status_code == 200, r.data
+    d = r.get_json()
+    assert 'pares' in d and 'frascos_sin_match' in d, d

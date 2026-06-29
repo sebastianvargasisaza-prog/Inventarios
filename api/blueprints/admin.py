@@ -7045,6 +7045,174 @@ cargar();
 </script></body></html>"""
 
 
+@bp.route("/api/admin/gloss-tonos-preview", methods=["GET"])
+def admin_gloss_tonos_preview():
+    """Empareja cada frasco GLOSS con el SKU del lip serum por TONO (vista previa · Sebastián 28-jun).
+    No escribe nada · devuelve los pares propuestos para que se confirmen."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    import unicodedata as _ud
+    import re as _re
+    def _nz(s):
+        n = _ud.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode().upper()
+        return _re.sub(r"[^A-Z0-9]+", " ", n).strip()
+    NOISE = {"LIPS", "LIP", "GLOSS", "SERUM", "LABIAL", "LABIO", "LABIOS", "VOLUMINIZADOR", "PEPTIDOS",
+             "SIN", "SERG", "SERIG", "SERIGRAFIA", "TAMPOGRAFIA", "CON", "DE", "ML", "ENVASE", "FRASCO",
+             "NUEVA", "FORMULA", "COLAPSIBLE", "FR", "VID", "PLA", "TONO", "COLOR", "LOTE"}
+    def toks(s):
+        return [t for t in _nz(s).split() if t not in NOISE and not t.isdigit() and len(t) > 2]
+    conn = db_connect()
+    c = conn.cursor()
+    frascos = []
+    for (cod, desc) in c.execute(
+            "SELECT codigo, COALESCE(descripcion,'') FROM maestro_mee "
+            "WHERE (UPPER(codigo) LIKE '%GLOSS%' OR UPPER(descripcion) LIKE '%GLOSS%') "
+            "AND COALESCE(estado,'Activo')='Activo'").fetchall():
+        ft = list(dict.fromkeys(toks(cod) + toks(desc)))
+        frascos.append({"codigo": cod, "desc": desc, "tono": ft})
+    prods = [pn for (pn,) in c.execute(
+        "SELECT producto_nombre FROM formula_headers WHERE COALESCE(activo,1)=1 AND "
+        "(UPPER(producto_nombre) LIKE '%VOLUMINIZ%' OR UPPER(producto_nombre) LIKE '%GLOSS%' "
+        "OR UPPER(producto_nombre) LIKE '%LIP %')").fetchall()]
+    pset = set(prods)
+    skus = []
+    for (sku, pn) in c.execute("SELECT sku, producto_nombre FROM sku_producto_map").fetchall():
+        if pn in pset:
+            skus.append({"sku": sku, "producto": pn, "n": _nz(sku).replace(" ", "")})
+    pares = []
+    usados = set()
+    for f in frascos:
+        best = None
+        for s in skus:
+            common = [t for t in f["tono"] if t in s["n"]]
+            if common and (not best or len(common) > best[0]):
+                best = (len(common), s, common)
+        if best:
+            pares.append({"producto": best[1]["producto"], "sku": best[1]["sku"],
+                          "envase_codigo": f["codigo"], "envase_desc": f["desc"],
+                          "volumen_ml": 10, "tono": " ".join(best[2])})
+            usados.add(f["codigo"])
+    sin_match = [{"codigo": f["codigo"], "desc": f["desc"], "tono": " ".join(f["tono"])}
+                 for f in frascos if f["codigo"] not in usados]
+    return jsonify({"pares": pares, "frascos_sin_match": sin_match,
+                    "n_frascos": len(frascos), "n_skus": len(skus), "productos": prods})
+
+
+@bp.route("/api/admin/gloss-tonos-aplicar", methods=["POST"])
+def admin_gloss_tonos_aplicar():
+    """Crea la presentación por tono (producto -> frasco gloss + SKU) confirmada en la vista previa."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.json or {}
+    pares = d.get("pares") or []
+    conn = db_connect()
+    c = conn.cursor()
+    n = 0
+    for p in pares:
+        prod = (p.get("producto") or "").strip()
+        env = (p.get("envase_codigo") or "").strip()
+        sku = (p.get("sku") or "").strip()
+        vol = p.get("volumen_ml") or 10
+        if not prod or not env:
+            continue
+        if not c.execute("SELECT codigo FROM maestro_mee WHERE codigo=?", (env,)).fetchone():
+            continue
+        pcode = "TONO-" + (sku or env)
+        c.execute("DELETE FROM producto_presentaciones WHERE producto_nombre=? AND presentacion_codigo=?",
+                  (prod, pcode))
+        c.execute("INSERT INTO producto_presentaciones "
+                  "(producto_nombre, presentacion_codigo, etiqueta, volumen_ml, envase_codigo, sku_shopify, es_default, activo) "
+                  "VALUES (?, ?, ?, ?, ?, ?, 0, 1)",
+                  (prod, pcode, (p.get("tono") or sku or "tono"), vol, env, sku or None))
+        n += 1
+    try:
+        audit_log(None, u, "MAPEAR_GLOSS_TONOS", "producto_presentaciones", "gloss", f"{n} pares")
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({"ok": True, "creados": n})
+
+
+@bp.route("/admin/mapeo-tonos", methods=["GET"])
+def admin_mapeo_tonos_pagina():
+    """Vista previa + aplicar del auto-mapeo de tonos gloss (Sebastián 28-jun)."""
+    u, err, code = _require_admin()
+    if err:
+        return ("<html><body style='font-family:system-ui;padding:48px'><h2>Solo admin</h2>"
+                "<a href='/login'>Ir a login</a></body></html>"), code
+    return _MAPEO_TONOS_HTML
+
+
+_MAPEO_TONOS_HTML = r"""<!DOCTYPE html><html lang="es"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Mapeo de tonos (gloss)</title>
+<style>
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#f8fafc;color:#1e293b}
+.wrap{max-width:1000px;margin:0 auto;padding:24px}
+h1{font-size:22px;margin:0 0 4px}.sub{color:#64748b;font-size:14px;margin:0 0 16px}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;margin-bottom:18px}
+th,td{padding:8px 10px;text-align:left;font-size:13px;border-bottom:1px solid #f1f5f9}
+th{background:#f1f5f9;font-weight:700;font-size:12px}
+.tono{font-weight:700;color:#7c3aed}
+button{padding:9px 18px;border:none;border-radius:8px;background:#16a34a;color:#fff;cursor:pointer;font-size:14px;font-weight:700}
+.warn{background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px;font-size:13px;color:#9a3412;margin-bottom:16px}
+.muted{color:#94a3b8;font-size:12px}
+</style></head><body><div class="wrap">
+<h1>&#127872; Auto-mapeo de tonos &mdash; Lip Gloss</h1>
+<p class="sub">Cada SKU del lip serum se empareja con su frasco gloss <b>por tono</b>. Revisa los pares y aplica.</p>
+<div id="info" class="muted">Cargando...</div>
+<div id="cont"></div>
+<button id="btn" onclick="aplicar()" style="display:none">&#10003; Aplicar pares seleccionados</button>
+<div id="msg" style="margin-top:12px;font-weight:600"></div>
+</div>
+<script>
+var PARES=[];
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+async function csrf(){var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();return t.csrf_token;}
+async function cargar(){
+  try{
+    var d=await (await fetch('/api/admin/gloss-tonos-preview',{cache:'no-store'})).json();
+    PARES=d.pares||[];
+    document.getElementById('info').innerHTML='Frascos gloss: <b>'+d.n_frascos+'</b> &middot; SKUs del lip serum: <b>'+d.n_skus+'</b> &middot; productos: '+esc((d.productos||[]).join(', '));
+    var h='';
+    if(!PARES.length){
+      h+='<div class="warn">No se encontraron pares automaticos (los SKU no traen el tono o el producto no matchea). Cont&aacute;me la estructura y lo ajusto.</div>';
+    }else{
+      h+='<table><thead><tr><th><input type="checkbox" id="all" checked onchange="toggleAll()"></th><th>Producto</th><th>Tono</th><th>Frasco</th><th>SKU</th></tr></thead><tbody>';
+      PARES.forEach(function(p,i){
+        h+='<tr><td><input type="checkbox" class="c" id="c'+i+'" checked></td><td><b>'+esc(p.producto)+'</b></td>'+
+           '<td class="tono">'+esc(p.tono)+'</td><td>'+esc(p.envase_codigo)+'<br><span class="muted">'+esc(p.envase_desc)+'</span></td>'+
+           '<td>'+esc(p.sku)+'</td></tr>';
+      });
+      h+='</tbody></table>';
+      document.getElementById('btn').style.display='inline-block';
+    }
+    if((d.frascos_sin_match||[]).length){
+      h+='<div class="warn"><b>Frascos gloss sin SKU emparejado ('+d.frascos_sin_match.length+'):</b><br>'+
+         d.frascos_sin_match.map(function(f){return esc(f.codigo)+' &middot; '+esc(f.desc)+' ('+esc(f.tono)+')';}).join('<br>')+
+         '<br><span class="muted">Estos hay que asignarlos a mano o decirme el tono.</span></div>';
+    }
+    document.getElementById('cont').innerHTML=h;
+  }catch(e){ document.getElementById('info').innerHTML='<span style="color:#dc2626">Error: '+e+'</span>'; }
+}
+function toggleAll(){var on=document.getElementById('all').checked;document.querySelectorAll('.c').forEach(function(x){x.checked=on;});}
+async function aplicar(){
+  var sel=PARES.filter(function(p,i){return document.getElementById('c'+i).checked;});
+  if(!sel.length){alert('Selecciona al menos un par');return;}
+  var b=document.getElementById('btn'); b.disabled=true; b.textContent='Aplicando...';
+  try{
+    var r=await fetch('/api/admin/gloss-tonos-aplicar',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({pares:sel})});
+    var d=await r.json();
+    document.getElementById('msg').innerHTML = d.ok ? ('&#10003; '+d.creados+' tonos mapeados. El plan ya jala estos frascos.') : ('Error: '+(d.error||''));
+    b.textContent='&#10003; Aplicar pares seleccionados'; b.disabled=false;
+  }catch(e){ document.getElementById('msg').textContent='Error de conexion'; b.disabled=false; b.textContent='Aplicar'; }
+}
+cargar();
+</script></body></html>"""
+
+
 @bp.route("/api/admin/mapear-envase", methods=["POST"])
 def admin_mapear_envase():
     """Asignar el envase (frasco) + ml de un producto -> producto_presentaciones.
