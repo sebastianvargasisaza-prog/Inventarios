@@ -2532,8 +2532,8 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
             <option value="run_rate">Run-rate (+ ventas)</option>
           </select>
         </label>
-        <input type="hidden" id="abast-mp" checked>
-        <input type="hidden" id="abast-mee" checked>
+        <label style="font-size:11px;font-weight:700;color:#475569;margin-left:6px;cursor:pointer"><input type="checkbox" id="abast-mp" checked onchange="cargarAbastecimiento()"> Materias primas</label>
+        <label style="font-size:11px;font-weight:700;color:#0a66c2;margin-left:8px;cursor:pointer"><input type="checkbox" id="abast-mee" checked onchange="cargarAbastecimiento()"> &#128230; Envases</label>
         <button onclick="cargarAbastecimiento()" style="background:#7c3aed;color:#fff;border:none;padding:6px 11px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">↻ Recargar</button>
         <a href="/admin/llenar-calendario" target="_blank" style="background:#16a34a;color:#fff;border:none;padding:6px 11px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block" title="Llenar el calendario con Sugeridas a 365 días">🚀 365d</a>
       </div>
