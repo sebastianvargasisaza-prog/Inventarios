@@ -7081,18 +7081,18 @@ _RECOD_ENVASES_HTML = r"""<!DOCTYPE html><html lang="es"><head>
 </div>
 <script>
 var VIEJO=[];
-var TLIST=['Frasco','Tapa','Gotero','Etiqueta','Impresion','Caja'];
-var PREF={Frasco:'FR',Tapa:'TA',Gotero:'GOT',Etiqueta:'ETQ',Impresion:'IMP',Caja:'CJA'};
-var ORD={Frasco:1,Etiqueta:2,Impresion:3,Serigrafia:3,Plegadiza:4,Caja:4,Tapa:5,Gotero:6};
+var TLIST=['Frasco','Tapa','Gotero','Componente','Etiqueta','Impresion','Caja'];
+var PREF={Frasco:'FR',Tapa:'TA',Gotero:'GOT',Componente:'PZ',Etiqueta:'ETQ',Impresion:'IMP',Caja:'CJA'};
+var ORD={Frasco:1,Etiqueta:2,Impresion:3,Serigrafia:3,Plegadiza:4,Caja:4,Tapa:5,Gotero:6,Componente:7};
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 function norm(s){return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z0-9]/g,'');}
 function val(id){var e=document.getElementById(id);return e?e.value:'';}
 function show(id,b){var e=document.getElementById(id);if(e)e.style.display=b?'':'none';}
-function prefTipo(cod){var p=(cod||'').split('-')[0];return {FR:'Frasco',TA:'Tapa',GOT:'Gotero',ETQ:'Etiqueta',IMP:'Impresion',CJA:'Caja'}[p]||'Frasco';}
+function prefTipo(cod){var p=(cod||'').split('-')[0];return {FR:'Frasco',TA:'Tapa',GOT:'Gotero',PZ:'Componente',ETQ:'Etiqueta',IMP:'Impresion',CJA:'Caja'}[p]||'Frasco';}
 function mlDe(cod){var m=(cod||'').match(/-(\d+)(?:-|$)/);return m?m[1]:'';}
 function gen(i){
   var tipo=val('rc-tipo-'+i); var pref=PREF[tipo]||''; var seg=[pref];
-  var isFr=(tipo==='Frasco'||tipo==='Tapa'||tipo==='Gotero');
+  var isFr=(tipo==='Frasco'||tipo==='Tapa'||tipo==='Gotero'||tipo==='Componente');
   show('rc-mat-'+i,isFr); show('rc-met-'+i,tipo==='Impresion');
   if(isFr){var m=val('rc-mat-'+i);if(m)seg.push(m);}
   if(tipo==='Impresion'){var me=val('rc-met-'+i);if(me)seg.push(me);}
@@ -7105,7 +7105,7 @@ function gen(i){
 }
 function yaNormalizado(cod){
   var s=(cod||'').split('-'); var p=s[0]; var seg2=s[1]||'';
-  if(p==='FR'||p==='TA'||p==='GOT') return ['VID','PLA','AIR','AL'].indexOf(seg2)>=0;
+  if(p==='FR'||p==='TA'||p==='GOT'||p==='PZ') return ['VID','PLA','AIR','AL'].indexOf(seg2)>=0;
   if(p==='IMP') return ['TP','SG'].indexOf(seg2)>=0;
   if(p==='ETQ'||p==='CJA') return true;
   return false;

@@ -1977,7 +1977,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           <h3 style="margin:0 0 4px;color:#16a34a;">&#10133; Crear material nuevo</h3>
           <p style="color:#64748b;font-size:13px;margin:0 0 14px;">Respond&eacute; y el sistema arma el c&oacute;digo normalizado.</p>
           <div class="form-group" style="margin:0 0 10px"><label>1. Tipo *</label>
-            <select id="mee-wiz-tipo" onchange="meeWizGen()"><option value="">-- Elegir --</option><option value="Frasco">Frasco</option><option value="Tapa">Tapa</option><option value="Gotero">Gotero</option><option value="Etiqueta">Etiqueta</option><option value="Impresion">Impresi&oacute;n / Serigraf&iacute;a</option><option value="Caja">Caja / Plegadiza</option></select></div>
+            <select id="mee-wiz-tipo" onchange="meeWizGen()"><option value="">-- Elegir --</option><option value="Frasco">Frasco</option><option value="Tapa">Tapa</option><option value="Gotero">Gotero</option><option value="Componente">Componente / Pieza (va dentro de otro envase)</option><option value="Etiqueta">Etiqueta</option><option value="Impresion">Impresi&oacute;n / Serigraf&iacute;a</option><option value="Caja">Caja / Plegadiza</option></select></div>
           <div class="form-group" id="mee-wiz-material-grp" style="margin:0 0 10px;display:none"><label>2. Material</label>
             <select id="mee-wiz-material" onchange="meeWizGen()"><option value="">--</option><option value="VID">Vidrio</option><option value="PLA">Pl&aacute;stico</option><option value="AIR">Airless</option><option value="AL">Aluminio</option></select></div>
           <div class="form-group" id="mee-wiz-metodo-grp" style="margin:0 0 10px;display:none"><label>2. M&eacute;todo</label>
@@ -9671,13 +9671,13 @@ function meeWizOpen(){ var m=document.getElementById('mee-wiz-modal'); if(m) m.s
 function meeWizClose(){ var m=document.getElementById('mee-wiz-modal'); if(m) m.style.display='none'; }
 function meeWizGen(){
   var tipo=(document.getElementById('mee-wiz-tipo')||{}).value||'';
-  var pref={Frasco:'FR',Tapa:'TA',Gotero:'GOT',Etiqueta:'ETQ',Impresion:'IMP',Caja:'CJA'}[tipo]||'';
-  var matGrp=document.getElementById('mee-wiz-material-grp'); if(matGrp) matGrp.style.display=(tipo==='Frasco'||tipo==='Tapa'||tipo==='Gotero')?'block':'none';
+  var pref={Frasco:'FR',Tapa:'TA',Gotero:'GOT',Componente:'PZ',Etiqueta:'ETQ',Impresion:'IMP',Caja:'CJA'}[tipo]||'';
+  var matGrp=document.getElementById('mee-wiz-material-grp'); if(matGrp) matGrp.style.display=(tipo==='Frasco'||tipo==='Tapa'||tipo==='Gotero'||tipo==='Componente')?'block':'none';
   var metGrp=document.getElementById('mee-wiz-metodo-grp'); if(metGrp) metGrp.style.display=(tipo==='Impresion')?'block':'none';
   var mat=(document.getElementById('mee-wiz-material')||{}).value||''; var met=(document.getElementById('mee-wiz-metodo')||{}).value||'';
   var ml=(document.getElementById('mee-wiz-ml')||{}).value||''; var prodRaw=(document.getElementById('mee-wiz-prod')||{}).value||''; var tonoRaw=(document.getElementById('mee-wiz-tono')||{}).value||'';
   var seg=[pref];
-  if(tipo==='Frasco'||tipo==='Tapa'||tipo==='Gotero'){ if(mat) seg.push(mat); }
+  if(tipo==='Frasco'||tipo==='Tapa'||tipo==='Gotero'||tipo==='Componente'){ if(mat) seg.push(mat); }
   if(tipo==='Impresion'){ if(met) seg.push(met); }
   var carRaw=(document.getElementById('mee-wiz-car')||{}).value||''; var car=_meeWizNorm(carRaw); if(car) seg.push(car);
   var prod=_meeWizNorm(prodRaw); if(prod) seg.push(prod);
