@@ -13057,7 +13057,7 @@ def plan_diag_rescate():
     # 1) activos por mes (lo que se vería en el calendario)
     por_mes = [{'mes': r[0], 'lotes': r[1]} for r in cur.execute(
         "SELECT substr(fecha_programada,1,7), COUNT(*) FROM produccion_programada "
-        "WHERE COALESCE(estado,'') NOT IN ('cancelado') GROUP BY substr(fecha_programada,1,7) "
+        "WHERE COALESCE(estado,'') NOT IN ('cancelado') " + "AND UPPER(COALESCE(observaciones,'')) NOT LIKE '%DEMO_LEGAJO%' " + "GROUP BY substr(fecha_programada,1,7) "
         "ORDER BY substr(fecha_programada,1,7)").fetchall()]
     # 2) por día en la ventana visible (productos + origen + estado)
     por_dia = {}
@@ -13065,7 +13065,7 @@ def plan_diag_rescate():
         "SELECT substr(fecha_programada,1,10), producto, COALESCE(cantidad_kg,0), COALESCE(origen,''), "
         "COALESCE(estado,'pendiente'), CASE WHEN inicio_real_at IS NOT NULL OR fin_real_at IS NOT NULL THEN 1 ELSE 0 END "
         "FROM produccion_programada WHERE substr(fecha_programada,1,10) BETWEEN ? AND ? "
-        "AND COALESCE(estado,'') NOT IN ('cancelado') ORDER BY fecha_programada, producto", (desde, hasta)).fetchall():
+        "AND COALESCE(estado,'') NOT IN ('cancelado') " + "AND UPPER(COALESCE(observaciones,'')) NOT LIKE '%DEMO_LEGAJO%' " + "ORDER BY fecha_programada, producto", (desde, hasta)).fetchall():
         por_dia.setdefault(r[0], []).append(
             {'producto': r[1], 'kg': r[2], 'origen': r[3], 'estado': r[4], 'ejecutado': bool(r[5])})
     dias = [{'fecha': k, 'n': len(v), 'lotes': v} for k, v in sorted(por_dia.items())]

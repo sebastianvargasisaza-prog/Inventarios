@@ -1755,6 +1755,55 @@ def legajo_rapido():
                     "link": f"/planta/orden/{r.get('id')}", "reusado": r.get("reusado", False)})
 
 
+@bp.route("/api/brd/limpiar-demos", methods=["POST"])
+def limpiar_demos():
+    """Borra TODOS los demos del batch record (produccion_programada marcada DEMO_LEGAJO + descarta sus legajos +
+    legajos DEMO-* sin liberar). NO toca producciones reales. Sebastian 30-jun."""
+    err = _require_login()
+    if err:
+        return err
+    from database import get_db
+    conn = get_db()
+    c = conn.cursor()
+    n_prod = 0
+    n_leg = 0
+    try:
+        _ids = [r[0] for r in c.execute(
+            "SELECT id FROM produccion_programada WHERE UPPER(COALESCE(observaciones,'')) LIKE '%DEMO_LEGAJO%'"
+        ).fetchall()]
+        if _ids:
+            _ph = ','.join('?' for _ in _ids)
+            try:
+                c.execute('SAVEPOINT _lim_demo')
+                c.execute("UPDATE ebr_ejecuciones SET estado='descartado' WHERE produccion_id IN (" + _ph + ") "
+                          "AND COALESCE(liberado_at_utc,'')=''", tuple(_ids))
+                n_leg += (c.rowcount or 0)
+                c.execute('RELEASE SAVEPOINT _lim_demo')
+            except Exception:
+                try:
+                    c.execute('ROLLBACK TO SAVEPOINT _lim_demo')
+                except Exception:
+                    pass
+            n_prod = c.execute("DELETE FROM produccion_programada "
+                               "WHERE UPPER(COALESCE(observaciones,'')) LIKE '%DEMO_LEGAJO%'").rowcount or 0
+        try:
+            c.execute('SAVEPOINT _lim_demo2')
+            c.execute("UPDATE ebr_ejecuciones SET estado='descartado' WHERE UPPER(COALESCE(lote,'')) LIKE 'DEMO-%' "
+                      "AND COALESCE(liberado_at_utc,'')='' AND COALESCE(estado,'') <> 'descartado'")
+            n_leg += (c.rowcount or 0)
+            c.execute('RELEASE SAVEPOINT _lim_demo2')
+        except Exception:
+            try:
+                c.execute('ROLLBACK TO SAVEPOINT _lim_demo2')
+            except Exception:
+                pass
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)[:180]}), 500
+    conn.commit()
+    return jsonify({"ok": True, "producciones_borradas": n_prod, "legajos_descartados": n_leg})
+
+
 @bp.route("/api/brd/demo-legajo", methods=["POST"])
 def demo_legajo():
     """DEMO (Sebastián 25-jun) · crea una orden EN CURSO + su legajo EBR para VER el batch record inline
