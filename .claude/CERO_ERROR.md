@@ -559,6 +559,10 @@ Auditoría 2-agentes del módulo marcación encontró que **código nuevo reintr
 - **SAVEPOINT para INSERTs best-effort en tablas con UNIQUE/CHECK (PG).** Un `try/except:pass` alrededor de un INSERT que choca la UNIQUE **aborta la transacción ENTERA en PG** → el commit posterior muere o pierde todo. Envolvé el bloque opcional en `SAVEPOINT sp; ...; RELEASE sp` / `ROLLBACK TO sp` en el except. (Combina con M62: el INSERT puede fallar por CHECK de case además de UNIQUE.)
 - **Loops que llaman un helper pesado por fila = N+1.** serigrafia-cola llamaba `_composicion_envases_lote` (3 queries + scan de maestro_mee) por cada producción futura a 2 años. **Fix rápido:** acotar el horizonte (180d); **fix de fondo:** pre-cargar catálogos fuera del loop y pasarlos al helper. Ver [[project_shopify_necesidades_audit_27jun]].
 
+## 💥 M64 · Emoji surrogate en string Python → trunca el archivo a 0 bytes · 30-jun
+
+Metí `'🔬'` (par surrogate de 🔬) en el JS de un edit. Al hacer `open(p,'w',encoding='utf-8').write(a)`: Python **trunca el archivo primero** (modo 'w'), luego `.write()` intenta encodear el surrogate → `UnicodeEncodeError: surrogates not allowed` → **el archivo queda en 0 bytes** (truncado, nada escrito). `dashboard_html.py` (1.8MB) desapareció. **Reglas:** (1) en strings que van a archivos UTF-8 usá la **entidad HTML** (`&#128300;`) o el carácter emoji real directo — NUNCA el par surrogate `\udXXX\udXXX`. (2) Si una escritura falla, el archivo puede haber quedado truncado → `git checkout <archivo>` ANTES de seguir (lo hice, se restauró sin pérdida). (3) Validá el TAMAÑO del archivo tras escribir (`len(s)` / `wc -c`), no solo AST — un archivo vacío pasa el `ast.parse`. Ver [[project_shopify_necesidades_audit_27jun]].
+
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
 
 Al cerrar una sesión donde se encontró/arregló un bug con patrón no listado aquí:
