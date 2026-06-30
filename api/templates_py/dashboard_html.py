@@ -23397,6 +23397,7 @@ async function ckMarcar(itemId, estado){
     html += '<th style="text-align:right;padding:8px;font-weight:700" title="Lead time del proveedor">LT</th>';
     html += '<th style="text-align:right;padding:8px;font-weight:700">Stock</th>';
     html += '<th style="text-align:right;padding:8px;font-weight:700">En cola</th>';
+    html += '<th style="text-align:right;padding:8px;font-weight:700" title="Ya lleg&oacute; - esperando liberaci&oacute;n de Calidad">&#128300; Cuarentena</th>';
     (st.horizontes || []).forEach(h => {
       html += '<th style="text-align:right;padding:8px;font-weight:700;background:#f1f5f9">' + h + 'd</th>';
     });
@@ -23437,9 +23438,11 @@ async function ckMarcar(itemId, estado){
       html += '<td style="padding:6px 8px;text-align:right;color:' + ltCol + ';font-weight:' + (ltCol==='#dc2626'?'700':'400') + '" title="' + ltTip + '">' + lt + 'd</td>';
       const stockKey = it.tipo === 'MP' ? 'stock_actual_g' : 'stock_actual_u';
       const colaKey = it.tipo === 'MP' ? 'pendiente_compras_g' : 'pendiente_compras_u';
+      const cuarKey = it.tipo === 'MP' ? 'cuarentena_g' : 'cuarentena_u';
       const unit = it.tipo === 'MP' ? 'g' : 'u';
       html += '<td style="padding:6px 8px;text-align:right;font-family:ui-monospace">' + _fmtAba(it[stockKey]) + (it[stockKey]?' '+unit:'') + '</td>';
       html += '<td style="padding:6px 8px;text-align:right;font-family:ui-monospace;color:' + (it[colaKey]>0?'#15803d':'#94a3b8') + '">' + _fmtAba(it[colaKey]) + (it[colaKey]?' '+unit:'') + '</td>';
+      html += '<td style="padding:6px 8px;text-align:right;font-family:ui-monospace;color:' + (it[cuarKey]>0?'#b45309':'#cbd5e1') + (it[cuarKey]>0?';font-weight:700':'') + '" title="' + (it[cuarKey]>0?'Ya lleg&oacute; - esperando liberaci&oacute;n de Calidad (cuarentena)':'') + '">' + (it[cuarKey]>0?('&#128300; '+_fmtAba(it[cuarKey])+' '+unit):'&mdash;') + '</td>';
       (st.horizontes || []).forEach(h => {
         const def = it.deficit[String(h)] || 0;
         const cons = it.consumo[String(h)] || 0;

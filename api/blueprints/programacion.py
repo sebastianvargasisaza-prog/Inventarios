@@ -12419,6 +12419,22 @@ def abastecimiento_consumo_horizontes():
                 _no_controla.add(str(_r[0]).upper().strip())
     except Exception:
         pass
+    # CUARENTENA (Sebastián 30-jun): material que YA llegó pero espera liberación de Calidad.
+    # Hoy es invisible (ni stock VIGENTE ni en-cola) → se re-pedía. Se muestra + cuenta como 'ya viene'.
+    _cuar_mp = {}
+    try:
+        for (cc, qg) in c.execute("SELECT mm.codigo, COALESCE(SUM(CASE WHEN mv.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN mv.cantidad WHEN mv.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -mv.cantidad ELSE 0 END),0) FROM movimientos mv JOIN maestro_mps mm ON mm.id = mv.material_id WHERE UPPER(COALESCE(mv.estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA') GROUP BY mm.codigo").fetchall():
+            if cc:
+                _cuar_mp[str(cc).upper().strip()] = max(float(qg or 0), 0)
+    except Exception:
+        _cuar_mp = {}
+    _cuar_mee = {}
+    try:
+        for (mc, qu) in c.execute("SELECT mee_codigo, COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad WHEN tipo='Salida' THEN -cantidad ELSE 0 END),0) FROM movimientos_mee WHERE COALESCE(anulado,0)=0 AND UPPER(COALESCE(estado,''))='CUARENTENA' GROUP BY mee_codigo").fetchall():
+            if mc:
+                _cuar_mee[str(mc).upper().strip()] = max(float(qu or 0), 0)
+    except Exception:
+        _cuar_mee = {}
     items_out_mp = []
     if incluir_mp:
         for cod, consumo in consumo_mp.items():
@@ -12430,7 +12446,8 @@ def abastecimiento_consumo_horizontes():
             # variante de nombre no bridgeada daba stock 0 → déficit falso).
             stock_g = _lookup_stock_5tier(stock_mp, cod, info.get('nombre') or '')
             pend_g = float(pendientes_mp.get(cod.upper(), 0) or 0)
-            disponible = stock_g + pend_g
+            cuar_g = float(_cuar_mp.get(cod.upper().strip(), 0) or 0)
+            disponible = stock_g + pend_g + cuar_g
             deficits = {h: round(max(consumo[h] - disponible, 0), 1) for h in horizontes}
             urg, h_urg = _urgencia_de(deficits)
             if urg == 'OK' and max(consumo.values()) <= 0.01:
@@ -12443,6 +12460,7 @@ def abastecimiento_consumo_horizontes():
                 'tipo': 'MP',
                 'stock_actual_g': round(stock_g, 1),
                 'pendiente_compras_g': round(pend_g, 1),
+                'cuarentena_g': round(cuar_g, 1),
                 'consumo': {str(h): round(consumo[h], 1) for h in horizontes},
                 'deficit': {str(h): deficits[h] for h in horizontes},
                 'urgencia': urg,
@@ -12458,7 +12476,8 @@ def abastecimiento_consumo_horizontes():
             info = mee_info.get(cod, {'descripcion': cod, 'proveedor': ''})
             stock_u = float(stock_mee.get(cod, 0) or 0)
             pend_u = float(pendientes_mee.get(cod, 0) or 0)
-            disponible = stock_u + pend_u
+            cuar_u = float(_cuar_mee.get(str(cod).upper().strip(), 0) or 0)
+            disponible = stock_u + pend_u + cuar_u
             deficits = {h: round(max(consumo[h] - disponible, 0), 1) for h in horizontes}
             urg, h_urg = _urgencia_de(deficits)
             if urg == 'OK' and max(consumo.values()) <= 0.01:
@@ -12470,6 +12489,7 @@ def abastecimiento_consumo_horizontes():
                 'tipo': 'MEE',
                 'stock_actual_u': round(stock_u, 1),
                 'pendiente_compras_u': round(pend_u, 1),
+                'cuarentena_u': round(cuar_u, 1),
                 'consumo': {str(h): round(consumo[h], 1) for h in horizontes},
                 'deficit': {str(h): deficits[h] for h in horizontes},
                 'urgencia': urg,
