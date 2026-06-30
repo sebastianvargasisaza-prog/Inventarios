@@ -7449,6 +7449,8 @@ button.ok{background:#16a34a}
 <p class="sub">Compras define el <b>m&eacute;todo</b> y el <b>proveedor</b> de cada envase, y ve qu&eacute; enviar a marcar y <b>para cu&aacute;ndo</b> (15 d&iacute;as antes de la producci&oacute;n). Los pre-impresos de China no aparecen.</p>
 <input class="search" id="q" placeholder="Buscar producto/envase..." oninput="render()">
 <div id="cont"><div class="muted" style="padding:20px">Cargando...</div></div>
+<h2 style="font-size:16px;margin:26px 0 8px;color:#0f766e">&#128230; Órdenes de marcación en curso</h2>
+<div id="ordenes"><div class="muted">&mdash;</div></div>
 </div>
 <script>
 var ROWS=[];
@@ -7479,7 +7481,7 @@ function render(){
       '<td style="font-weight:700;color:#5b21b6">'+(Math.round(r.unidades||0).toLocaleString('es-CO'))+'</td>'+
       '<td><select id="m-'+i+'">'+opt('',r.marcacion_tipo,'- definir -')+opt('serigrafia',r.marcacion_tipo,'Serigraf&iacute;a')+opt('tampografia',r.marcacion_tipo,'Tampograf&iacute;a')+opt('pre_impreso',r.marcacion_tipo,'Pre-impreso (China)')+opt('ninguno',r.marcacion_tipo,'Ninguno')+'</select></td>'+
       '<td><input class="prov" id="p-'+i+'" value="'+esc(r.marcacion_proveedor||'')+'" placeholder="proveedor"></td>'+
-      '<td><button id="b-'+i+'" onclick="guardar('+i+')">Guardar</button></td>'+
+      '<td style="white-space:nowrap"><button id="b-'+i+'" onclick="guardar('+i+')">Guardar</button> <button onclick="enviar('+i+')" style="background:#5b21b6">&#9993; Enviar a marcar</button></td>'+
       '</tr>';
   });
   h+='</tbody></table>';
@@ -7497,7 +7499,45 @@ async function guardar(i){
     else { alert('Error: '+(d.error||'')); b.textContent='Guardar'; b.disabled=false; }
   }catch(e){ alert('Error de conexion'); b.textContent='Guardar'; b.disabled=false; }
 }
-cargar();
+async function enviar(i){
+  var r0=ROWS[i];
+  var tipo=document.getElementById('m-'+i).value;
+  var prov=document.getElementById('p-'+i).value;
+  if(!tipo||tipo==='pre_impreso'||tipo==='ninguno'){ alert('Definí el método (serigrafía/tampografía) antes de enviar'); return; }
+  var cant=prompt('¿Cuántos enviar a marcar?', Math.round(r0.unidades||0));
+  if(cant===null) return; cant=parseFloat(cant); if(!(cant>0)){ alert('Cantidad inválida'); return; }
+  try{
+    var r=await fetch('/api/programacion/marcacion-orden/enviar',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({serigrafiado_codigo:r0.envase_codigo,cantidad:cant,metodo:tipo,proveedor:prov,producto:r0.producto,produccion_id:r0.produccion_id})});
+    var d=await r.json();
+    if(d.ok){ alert('✓ Enviado a marcar · Salida del base '+d.base+' registrada en el kardex'); cargarOrdenes(); }
+    else alert('Error: '+(d.error||''));
+  }catch(e){ alert('Error de conexión'); }
+}
+async function cargarOrdenes(){
+  var box=document.getElementById('ordenes'); if(!box) return;
+  try{
+    var d=await (await fetch('/api/programacion/marcacion-ordenes',{cache:'no-store'})).json();
+    var its=d.items||[];
+    if(!its.length){ box.innerHTML='<div class="muted">Sin órdenes todavía.</div>'; return; }
+    var h='<table><thead><tr><th>#</th><th>Producto</th><th>Base &rarr; Serigrafiado</th><th>Método</th><th>Proveedor</th><th>Enviado</th><th>Recibido</th><th>Estado</th><th></th></tr></thead><tbody>';
+    its.forEach(function(o){
+      h+='<tr><td>'+o.id+'</td><td><b>'+esc(o.producto)+'</b></td><td>'+esc(o.base)+' &rarr; '+esc(o.serigrafiado)+'</td><td>'+esc(o.metodo)+'</td><td>'+esc(o.proveedor)+'</td><td>'+Math.round(o.cantidad_enviada||0)+' <span class="muted">('+esc(o.fecha_envio)+')</span></td><td>'+(o.cantidad_recibida?Math.round(o.cantidad_recibida)+' <span class="muted">('+esc(o.fecha_retorno)+')</span>':'<span class="muted">&mdash;</span>')+'</td><td>'+(o.estado==='enviado'?'<span style="color:#b45309;font-weight:700">en marcación</span>':'<span style="color:#16a34a;font-weight:700">recibido &middot; cuarentena</span>')+'</td><td>'+(o.estado==='enviado'?'<button class="ok" onclick="recibir('+o.id+','+(o.cantidad_enviada||0)+')">Recibir</button>':'')+'</td></tr>';
+    });
+    h+='</tbody></table>';
+    box.innerHTML=h;
+  }catch(e){ box.innerHTML='<div style="color:#dc2626">Error: '+e+'</div>'; }
+}
+async function recibir(oid, env){
+  var cant=prompt('¿Cuántos volvieron serigrafiados? (merma = menos)', Math.round(env));
+  if(cant===null) return; cant=parseFloat(cant); if(!(cant>0)){ alert('Cantidad inválida'); return; }
+  try{
+    var r=await fetch('/api/programacion/marcacion-orden/'+oid+'/recibir',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({cantidad_recibida:cant})});
+    var d=await r.json();
+    if(d.ok){ alert('✓ Recibido en CUARENTENA · lo libera Calidad en Bodega MEE'); cargarOrdenes(); }
+    else alert('Error: '+(d.error||''));
+  }catch(e){ alert('Error de conexión'); }
+}
+cargar(); cargarOrdenes();
 </script></body></html>"""
 
 

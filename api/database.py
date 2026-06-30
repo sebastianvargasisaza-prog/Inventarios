@@ -395,6 +395,9 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (313, "Marcacion Fase B: tabla marcacion_ordenes (orden de serigrafia/tampografia). Enviar=Salida del base en el kardex; recibir=Entrada del serigrafiado en CUARENTENA (Calidad libera). Trazabilidad base->serigrafiado.", [
+        "CREATE TABLE IF NOT EXISTS marcacion_ordenes (id INTEGER PRIMARY KEY AUTOINCREMENT, base_codigo TEXT, serigrafiado_codigo TEXT, producto_nombre TEXT, metodo TEXT, proveedor TEXT, cantidad_enviada REAL DEFAULT 0, cantidad_recibida REAL DEFAULT 0, produccion_id INTEGER, fecha_envio TEXT, fecha_retorno TEXT, estado TEXT DEFAULT 'enviado', creado_por TEXT, creado_en TEXT)",
+    ]),
     (312, "Envases - marcacion (serigrafia/tampografia): maestro_mee + marcacion_tipo + marcacion_proveedor. Auto-marca pre_impreso los que vienen de China ya serigrafiados (Niacinamida/Multipeptidos/TRX) → NO entran a la cola. El resto los define Compras (ella sabe que va a serig vs tampo).", [
         "ALTER TABLE maestro_mee ADD COLUMN marcacion_tipo TEXT DEFAULT ''",
         "ALTER TABLE maestro_mee ADD COLUMN marcacion_proveedor TEXT DEFAULT ''",

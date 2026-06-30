@@ -420,3 +420,29 @@ def test_dedup_presentacion_duplicada(app, db_clean):
     env = _q1("SELECT activo FROM producto_presentaciones WHERE producto_nombre=? AND envase_codigo='ENV-DEDUP-30ML'", (prod,))
     assert fr and fr[0] == 1, ('el FR- debe quedar activo', fr)
     assert env and env[0] == 0, ('el ENV- duplicado debe desactivarse', env)
+
+
+
+def test_marcacion_enviar_y_recibir(app, db_clean):
+    # Fase B: enviar = Salida del base · recibir = Entrada del serigrafiado en CUARENTENA · CAS anti-doble.
+    from .conftest import csrf_headers
+    base = "FR-MBASE-30"
+    serig = "SG-MARC-30"
+    _exec("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,stock_actual,stock_minimo) "
+          "VALUES (?, 'Base 30','Frasco',0,0)", (base,))
+    _exec("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,stock_actual,stock_minimo,material_referencia) "
+          "VALUES (?, 'Serig 30','Frasco',0,0,?)", (serig, base))
+    c = _login(app)
+    r = c.post('/api/programacion/marcacion-orden/enviar',
+               json={'serigrafiado_codigo': serig, 'cantidad': 100, 'metodo': 'serigrafia', 'proveedor': 'P', 'producto': 'X'},
+               headers=csrf_headers())
+    assert r.status_code == 200, r.data
+    oid = r.get_json()['orden_id']
+    sal = _q1("SELECT cantidad FROM movimientos_mee WHERE mee_codigo=? AND tipo='Salida' AND lote_ref='MARCACION'", (base,))
+    assert sal and float(sal[0]) == 100, ('falta Salida del base', sal)
+    r2 = c.post('/api/programacion/marcacion-orden/%d/recibir' % oid, json={'cantidad_recibida': 95}, headers=csrf_headers())
+    assert r2.status_code == 200, r2.data
+    ent = _q1("SELECT cantidad, COALESCE(estado,'') FROM movimientos_mee WHERE mee_codigo=? AND tipo='Entrada' AND lote_ref='MARCACION-RET'", (serig,))
+    assert ent and float(ent[0]) == 95 and ent[1] == 'CUARENTENA', ('falta Entrada serigrafiado en cuarentena', ent)
+    r3 = c.post('/api/programacion/marcacion-orden/%d/recibir' % oid, json={'cantidad_recibida': 5}, headers=csrf_headers())
+    assert r3.status_code == 409, ('debe rechazar doble recepción (CAS)', r3.status_code)

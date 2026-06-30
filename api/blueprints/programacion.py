@@ -11030,6 +11030,136 @@ def serigrafia_cola():
     return jsonify({'items': out, 'total': len(out)})
 
 
+@bp.route('/api/programacion/marcacion-orden/enviar', methods=['POST'])
+def marcacion_orden_enviar():
+    """Fase B · Enviar envases a marcar: Salida del BASE en el kardex + crea la orden (estado=enviado).
+    El base = material_referencia del serigrafiado (Fase 0) o el mismo envase si no hay referencia."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    serig = (d.get('serigrafiado_codigo') or d.get('envase_codigo') or '').strip()
+    try:
+        cantidad = float(d.get('cantidad') or 0)
+    except (TypeError, ValueError):
+        cantidad = 0
+    metodo = (d.get('metodo') or '').strip()
+    proveedor = (d.get('proveedor') or '').strip()
+    producto = (d.get('producto') or '').strip()
+    prod_id = d.get('produccion_id')
+    if not serig or cantidad <= 0:
+        return jsonify({'error': 'serigrafiado_codigo y cantidad (>0) requeridos'}), 400
+    from datetime import datetime as _dtM, timedelta as _tdM
+    _hoy = (_dtM.utcnow() - _tdM(hours=5)).date().isoformat()
+    conn = get_db()
+    c = conn.cursor()
+    if not c.execute("SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))", (serig,)).fetchone():
+        return jsonify({'error': f'envase {serig} no existe'}), 400
+    base = serig
+    try:
+        r = c.execute("SELECT COALESCE(material_referencia,'') FROM maestro_mee WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))", (serig,)).fetchone()
+        if r and (r[0] or '').strip():
+            base = r[0].strip()
+    except Exception:
+        pass
+    # Salida del base (sale a marcar)
+    try:
+        c.execute("INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, unidad, lote_ref, responsable, observaciones) "
+                  "VALUES (?, 'Salida', ?, 'und', 'MARCACION', ?, ?)",
+                  (base, cantidad, user, ('Enviado a ' + (metodo or 'marcar') + (' (' + proveedor + ')' if proveedor else ''))))
+    except Exception as e:
+        return jsonify({'error': 'No se pudo registrar la salida: ' + str(e)[:150]}), 500
+    c.execute("INSERT INTO marcacion_ordenes (base_codigo, serigrafiado_codigo, producto_nombre, metodo, proveedor, "
+              "cantidad_enviada, produccion_id, fecha_envio, estado, creado_por, creado_en) "
+              "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'enviado', ?, ?)",
+              (base, serig, producto, metodo, proveedor, cantidad, prod_id, _hoy, user, _hoy))
+    oid = c.lastrowid
+    try:
+        from audit_helpers import audit_log as _al
+        _al(c, usuario=user, accion='MARCACION_ENVIAR', tabla='marcacion_ordenes', registro_id=oid,
+            despues={'base': base, 'serigrafiado': serig, 'cantidad': cantidad})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'orden_id': oid, 'base': base, 'serigrafiado': serig})
+
+
+@bp.route('/api/programacion/marcacion-orden/<int:oid>/recibir', methods=['POST'])
+def marcacion_orden_recibir(oid):
+    """Fase B · Recibir el retorno de marcacion: Entrada del SERIGRAFIADO en CUARENTENA (Calidad libera con el
+    flujo MEE existente). CAS: reclama la orden (estado=enviado) antes de insertar (anti-doble-recepcion)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    from datetime import datetime as _dtM, timedelta as _tdM
+    _hoy = (_dtM.utcnow() - _tdM(hours=5)).date().isoformat()
+    conn = get_db()
+    c = conn.cursor()
+    o = c.execute("SELECT serigrafiado_codigo, cantidad_enviada, COALESCE(estado,'') FROM marcacion_ordenes WHERE id=?", (oid,)).fetchone()
+    if not o:
+        return jsonify({'error': 'Orden no existe'}), 404
+    if o[2] != 'enviado':
+        return jsonify({'error': f'Orden en estado {o[2]} · ya recibida o cerrada'}), 409
+    serig = o[0]
+    try:
+        cant = float(d.get('cantidad_recibida') or 0)
+    except (TypeError, ValueError):
+        cant = 0
+    if cant <= 0:
+        cant = float(o[1] or 0)
+    # CAS: reclamar la orden primero
+    c.execute("UPDATE marcacion_ordenes SET cantidad_recibida=?, fecha_retorno=?, estado='recibido' WHERE id=? AND COALESCE(estado,'')='enviado'",
+              (cant, _hoy, oid))
+    if (c.rowcount or 0) == 0:
+        conn.rollback()
+        return jsonify({'error': 'Orden ya reclamada por otro', 'codigo': 'YA_RECIBIDA'}), 409
+    # Entrada del serigrafiado en CUARENTENA → Calidad libera con el flujo MEE existente
+    try:
+        c.execute("INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, unidad, lote_ref, responsable, observaciones, estado) "
+                  "VALUES (?, 'Entrada', ?, 'und', 'MARCACION-RET', ?, ?, 'CUARENTENA')",
+                  (serig, cant, user, ('Retorno de marcacion · orden ' + str(oid) + ' · cuarentena (revisa Calidad)')))
+    except Exception:
+        # si el kardex no tiene estado, intentar sin estado (instancia vieja)
+        try:
+            c.execute("INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, unidad, lote_ref, responsable, observaciones) "
+                      "VALUES (?, 'Entrada', ?, 'und', 'MARCACION-RET', ?, ?)",
+                      (serig, cant, user, ('Retorno de marcacion · orden ' + str(oid))))
+        except Exception as e:
+            conn.rollback()
+            return jsonify({'error': 'No se pudo registrar la entrada: ' + str(e)[:150]}), 500
+    try:
+        from audit_helpers import audit_log as _al
+        _al(c, usuario=user, accion='MARCACION_RECIBIR', tabla='marcacion_ordenes', registro_id=oid,
+            despues={'serigrafiado': serig, 'cantidad_recibida': cant})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'orden_id': oid, 'cantidad_recibida': cant})
+
+
+@bp.route('/api/programacion/marcacion-ordenes', methods=['GET'])
+def marcacion_ordenes_lista():
+    """Fase B · Lista las ordenes de marcacion (en curso primero)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db()
+    c = conn.cursor()
+    out = []
+    try:
+        for r in c.execute("SELECT id, base_codigo, serigrafiado_codigo, COALESCE(producto_nombre,''), "
+                           "COALESCE(metodo,''), COALESCE(proveedor,''), COALESCE(cantidad_enviada,0), "
+                           "COALESCE(cantidad_recibida,0), COALESCE(fecha_envio,''), COALESCE(fecha_retorno,''), "
+                           "COALESCE(estado,'') FROM marcacion_ordenes "
+                           "ORDER BY CASE WHEN COALESCE(estado,'')='enviado' THEN 0 ELSE 1 END, id DESC LIMIT 300").fetchall():
+            out.append({'id': r[0], 'base': r[1], 'serigrafiado': r[2], 'producto': r[3], 'metodo': r[4],
+                        'proveedor': r[5], 'cantidad_enviada': r[6], 'cantidad_recibida': r[7],
+                        'fecha_envio': r[8], 'fecha_retorno': r[9], 'estado': r[10]})
+    except Exception as e:
+        return jsonify({'error': str(e)[:200], 'items': []}), 500
+    return jsonify({'items': out, 'total': len(out)})
+
+
 @bp.route('/api/admin/marcacion-envase', methods=['POST'])
 def marcacion_envase_set():
     """Compras define el metodo de marcacion (serigrafia/tampografia/pre_impreso/ninguno) + proveedor de un envase.
