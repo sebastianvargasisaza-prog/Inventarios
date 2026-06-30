@@ -21,6 +21,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .sp-tab:hover{color:#292524;}
 .sp-tab.sp-on{color:#7c3aed;border-bottom-color:#7c3aed;font-weight:800;}
 .pane{display:none;padding:18px 20px;max-width:1400px;margin:0 auto;}
+#pane-planta{max-width:96vw;}
 .pane.on{display:block;}
 /* KPI */
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:18px;}
