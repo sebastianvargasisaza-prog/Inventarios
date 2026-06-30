@@ -563,6 +563,12 @@ Auditoría 2-agentes del módulo marcación encontró que **código nuevo reintr
 
 Metí `'🔬'` (par surrogate de 🔬) en el JS de un edit. Al hacer `open(p,'w',encoding='utf-8').write(a)`: Python **trunca el archivo primero** (modo 'w'), luego `.write()` intenta encodear el surrogate → `UnicodeEncodeError: surrogates not allowed` → **el archivo queda en 0 bytes** (truncado, nada escrito). `dashboard_html.py` (1.8MB) desapareció. **Reglas:** (1) en strings que van a archivos UTF-8 usá la **entidad HTML** (`&#128300;`) o el carácter emoji real directo — NUNCA el par surrogate `\udXXX\udXXX`. (2) Si una escritura falla, el archivo puede haber quedado truncado → `git checkout <archivo>` ANTES de seguir (lo hice, se restauró sin pérdida). (3) Validá el TAMAÑO del archivo tras escribir (`len(s)` / `wc -c`), no solo AST — un archivo vacío pasa el `ast.parse`. Ver [[project_shopify_necesidades_audit_27jun]].
 
+## 🧨 M65 · Validar JS embebido = node-check del RENDERIZADO, no del fuente ni de un atributo inventado · 30-jun
+
+Un botón nuevo en Fabricación quedó con un **salto de línea REAL dentro de un string `confirm('...')`** → rompía TODO el bloque `<script>` (IIFE) de Fabricación, y **se desplegó a prod** (golden verde no node-checkea JS). Dos fallas combinadas:
+1. **El node-check era hueco:** usaba `getattr(D,'DASHBOARD_CORE_JS','')` — ese atributo NO existe → devolvía `''` → node-check de string vacío SIEMPRE pasa. **Regla:** para validar JS de un template Python, importá el módulo, buscá el **string-constante REAL** que contiene la función (`for k in dir(m): v=getattr(m,k); if isinstance(v,str) and 'miFuncion' in v`), extraé sus `<script>` y node-checkeá ESE bloque renderizado. NO node-checkees el fuente .py crudo (tiene escapes Python `\\'` `\\n` que dan falsos positivos) ni un atributo adivinado.
+2. **El salto de línea entró por un heredoc:** generar JS con escapes (`\\u00bf`, `\\n`) vía `python << 'PYEOF'` inline mangló los escapes → `\n` se volvió newline real. **Regla:** para scripts con JS/escapes usá la **herramienta Write** (escribe el .py directo, sin heredoc) y **strings de UNA línea** en `alert/confirm/prompt` (sin `\n`). Tras escribir, node-check del renderizado + balance + tamaño de archivo (M64). Combina con M59 (modal "Cargando") y M61.
+
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
 
 Al cerrar una sesión donde se encontró/arregló un bug con patrón no listado aquí:

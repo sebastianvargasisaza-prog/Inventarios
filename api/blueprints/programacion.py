@@ -4764,6 +4764,58 @@ def _intentar_crear_ebr_auto(c, evento_id, producto, total_g_descontado, user):
                  'producto': producto}
 
 
+@bp.route('/api/programacion/programar/<int:pid>/corregir-cantidad', methods=['POST'])
+def corregir_cantidad_produccion(pid):
+    """Admin · corrige la cantidad_kg de una producción que YA descontó (cantidad equivocada): revierte el
+    descuento viejo + actualiza kg + re-descuenta al nuevo valor. NO borra la producción. Sebastián 30-jun."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    if user not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admin puede corregir cantidades'}), 403
+    d = request.get_json(silent=True) or {}
+    try:
+        new_kg = float(d.get('cantidad_kg') or 0)
+    except (TypeError, ValueError):
+        new_kg = 0
+    if new_kg <= 0:
+        return jsonify({'error': 'cantidad invalida (kg > 0)'}), 400
+    conn = get_db()
+    c = conn.cursor()
+    row = c.execute("SELECT COALESCE(cantidad_kg,0), COALESCE(inventario_descontado_at,'') "
+                    "FROM produccion_programada WHERE id=?", (pid,)).fetchone()
+    if not row:
+        return jsonify({'error': 'produccion no existe'}), 404
+    _old_kg = row[0]
+    # 1) revertir el descuento viejo (si descontó) · re-acredita la MP al kardex (canónico)
+    if row[1]:
+        try:
+            _rr = prog_revertir_completado(pid)
+            _code = _rr[1] if isinstance(_rr, tuple) else 200
+            if _code not in (200, 400, 409):
+                return jsonify({'error': 'no se pudo revertir el descuento viejo', 'codigo': 'REVERT_FALLO'}), 500
+        except Exception as e:
+            return jsonify({'error': 'fallo la reversion: ' + str(e)[:120]}), 500
+    # 2) actualizar la cantidad (queda Fijo)
+    c.execute("UPDATE produccion_programada SET cantidad_kg=?, origen='eos_plan' WHERE id=?", (new_kg, pid))
+    # 3) re-descontar al nuevo valor
+    try:
+        _descontar_mp_produccion(c, pid, user, forzar=True)
+    except Exception as e:
+        conn.rollback()
+        _m = str(getattr(e, 'mensaje', None) or e)[:150]
+        return jsonify({'error': 'No se pudo descontar al nuevo valor: ' + _m,
+                        'codigo': getattr(e, 'codigo', '')}), 409
+    try:
+        from audit_helpers import audit_log as _al
+        _al(c, usuario=user, accion='CORREGIR_CANTIDAD_PRODUCCION', tabla='produccion_programada', registro_id=pid,
+            antes={'cantidad_kg': _old_kg}, despues={'cantidad_kg': new_kg})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'cantidad_kg': new_kg})
+
+
 @bp.route('/api/planta/fabricacion/crear-iniciar', methods=['POST'])
 def fabricacion_crear_iniciar():
     """PLANO de fabricación · arranca una fabricación EN un área desde el mapa de salas.
