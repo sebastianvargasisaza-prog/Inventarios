@@ -10998,6 +10998,12 @@ def serigrafia_cola():
             _marc[(mc or '').strip().upper()] = (mt or '', mp or '')
     except Exception:
         _marc = {}
+    _stock = {}
+    try:
+        for (mc, st) in c.execute("SELECT mee_codigo, COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad WHEN tipo='Salida' THEN -cantidad ELSE 0 END),0) FROM movimientos_mee WHERE COALESCE(anulado,0)=0 GROUP BY mee_codigo").fetchall():
+            _stock[(mc or '').strip().upper()] = float(st or 0)
+    except Exception:
+        _stock = {}
     from datetime import datetime as _dtSC, timedelta as _tdSC
     out = []
     for (lid, prod, fecha, kg) in rows:
@@ -11026,6 +11032,7 @@ def serigrafia_cola():
                 'etiqueta': v.get('etiqueta', ''), 'volumen_ml': v.get('volumen_ml', 0),
                 'unidades': uds, 'kg': float(kg or 0),
                 'marcacion_tipo': _mt, 'marcacion_proveedor': _mp,
+                'stock_envase': _stock.get(env.upper(), 0),
             })
     return jsonify({'items': out, 'total': len(out)})
 
