@@ -1395,7 +1395,8 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <!-- 🔵 En fabricación · en curso (Sebastián 25-jun: Fabricación = lo activo, paso a paso) -->
     <div style="margin-top:28px;border-top:2px solid #eee;padding-top:20px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin:0 0 12px;flex-wrap:wrap;gap:8px"><h3 style="color:#d97706;margin:0;">&#128309; En fabricación &middot; en curso</h3><button onclick="crearDemoLegajo(this)" style="background:#ede9fe;color:#6d28d9;border:1px solid #c4b5fd;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer" title="Crea una orden DEMO + legajo para ver los Pasos inline SIN descontar MP (se borra con 🧹 Limpiar)">&#129514; Demo legajo</button></div>
-      <div id="mi-trabajo-panel" style="margin:0 0 14px"></div>
+      <!-- Sebastián 30-jun: cards "Mi trabajo" (cola EBR por rol) removidas de Fabricación · redundantes con la tabla de abajo. cargarMiTrabajo() no-opea sin este div; vuelve cuando se encienda EBR. -->
+      <div id="mi-trabajo-panel" style="display:none"></div>
       <table class="table"><thead><tr><th>N&deg; orden</th><th>Producto</th><th>Operario</th><th style="text-align:right">Te&oacute;rica</th><th style="text-align:center">Estado</th><th style="text-align:center">Acci&oacute;n</th></tr></thead>
       <tbody id="encurso-body"><tr><td colspan="6" style="text-align:center;color:#999;padding:16px;">Cargando&hellip;</td></tr></tbody></table>
       <div id="encurso-runner" style="display:none;margin-top:14px;border:1px solid #ddd6fe;border-radius:10px;padding:16px;background:#faf8ff;"></div>
