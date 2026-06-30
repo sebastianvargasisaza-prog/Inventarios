@@ -10972,6 +10972,47 @@ def limpiar_duplicados_producciones():
     }), 200
 
 
+@bp.route('/api/programacion/serigrafia-cola', methods=['GET'])
+def serigrafia_cola():
+    """Cola de envases por produccion (Planta · Sebastian 29-jun): por cada produccion futura no-iniciada,
+    EN ORDEN DE FECHA, el envase y la cantidad teorica de envases que va a gastar (unidades = kg*1000/ml,
+    repartido por presentacion via _composicion_envases_lote). Base para la logistica de serigrafia
+    (enviar los envases a serigrafia con tiempo antes de la produccion)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db()
+    c = conn.cursor()
+    try:
+        rows = c.execute(
+            "SELECT id, producto, fecha_programada, COALESCE(cantidad_kg,0) FROM produccion_programada "
+            "WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado') "
+            "AND COALESCE(inicio_real_at,'')='' AND COALESCE(fin_real_at,'')='' "
+            "AND COALESCE(fecha_programada,'') >= date('now','-5 hours') "
+            "ORDER BY fecha_programada, producto").fetchall()
+    except Exception as e:
+        return jsonify({'error': str(e)[:200], 'items': []}), 500
+    out = []
+    for (lid, prod, fecha, kg) in rows:
+        try:
+            comp = _composicion_envases_lote(c, lid)
+        except Exception:
+            comp = None
+        if not comp or not comp.get('variantes'):
+            continue
+        for v in (comp.get('variantes') or []):
+            env = (v.get('envase_codigo') or '').strip()
+            uds = int(round(float(v.get('unidades_estimadas') or 0)))
+            if not env or uds <= 0:
+                continue
+            out.append({
+                'produccion_id': lid, 'producto': prod, 'fecha': fecha,
+                'envase_codigo': env, 'envase_desc': v.get('envase_descripcion', ''),
+                'etiqueta': v.get('etiqueta', ''), 'volumen_ml': v.get('volumen_ml', 0),
+                'unidades': uds, 'kg': float(kg or 0),
+            })
+    return jsonify({'items': out, 'total': len(out)})
+
+
 @bp.route('/api/abastecimiento/envases-cobertura', methods=['GET'])
 def abastecimiento_envases_cobertura():
     """Diagnóstico (read-only · 18-jun): ¿qué productos activos NO tienen presentación+envase?

@@ -139,3 +139,57 @@ def test_envase_multipresentacion_reparte_por_ventas(app, db_clean):
     ca = float(a_it["consumo"][hmax]) if a_it else 0.0
     # 30ml vende 100x más → demanda mucho mayor (uniforme daría cb≈ca)
     assert cb > ca * 5, f"el frasco 30ml debe demandar mucho mas que el 15ml (no uniforme) · 30={cb} 15={ca}"
+
+
+
+def test_envase_abastecimiento_acumula_por_horizonte(app, db_clean):
+    # M16/M58: la demanda de envases ACUMULA por horizonte (15⊂30⊂60⊂90) igual que MP · 2 producciones del
+    # mismo producto a distinta fecha → el horizonte mayor incluye más envases.
+    prod = "ZZ HORIZ ENV"
+    env = "ENV-HZ-50"
+    _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp,nombre_comercial,nombre_inci,activo) VALUES ('MP-HZ','Mat','INCI',1)")
+    _exec("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES (?,1,1)", (prod,))
+    _exec("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje,cantidad_g_por_lote) "
+          "VALUES (?, 'MP-HZ','Mat',10,0)", (prod,))
+    _exec("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,stock_actual,stock_minimo) "
+          "VALUES (?, 'Frasco 50','Envase',0,0)", (env,))
+    _exec("INSERT INTO producto_presentaciones (producto_nombre,presentacion_codigo,etiqueta,volumen_ml,envase_codigo,ventas_mes_referencia,activo) "
+          "VALUES (?, 'V50','50 ml',50,?,100,1)", (prod, env))
+    # +5 días (entra a todos los horizontes) · +45 días (solo el grande)
+    _exec("INSERT INTO produccion_programada (producto,fecha_programada,lotes,estado,cantidad_kg,origen) "
+          "VALUES (?, date('now','-5 hours','+5 days'),1,'pendiente',5,'eos_plan')", (prod,))
+    _exec("INSERT INTO produccion_programada (producto,fecha_programada,lotes,estado,cantidad_kg,origen) "
+          "VALUES (?, date('now','-5 hours','+45 days'),1,'pendiente',5,'eos_plan')", (prod,))
+    c = _login(app)
+    j = c.get("/api/abastecimiento/consumo-horizontes?tipo=mp,mee").get_json()
+    it = next((m for m in (j.get("mees") or []) if (m.get("codigo") or "").upper() == env.upper()), None)
+    assert it is not None, ('falta envase', [m.get('codigo') for m in (j.get('mees') or [])])
+    hs = sorted(int(h) for h in it["consumo"].keys())
+    h_chico = next((h for h in hs if 5 <= h < 45), None)
+    h_grande = next((h for h in hs if h >= 45), None)
+    assert h_chico and h_grande, ('horizontes inesperados', hs)
+    c1 = float(it["consumo"][str(h_chico)]); c2 = float(it["consumo"][str(h_grande)])
+    assert c1 >= 99, f"horizonte chico ~100 uds (1 producción) · {h_chico}d={c1}"
+    assert c2 > c1 + 50, f"acumula por horizonte ({h_grande}d > {h_chico}d) · {h_chico}={c1} {h_grande}={c2}"
+
+
+
+def test_serigrafia_cola(app, db_clean):
+    # Cola de envases por producción: un producto con presentación mapeada aparece con su envase + unidades teóricas.
+    prod = "ZZ SERIG PROD"
+    env = "ENV-SG-50"
+    _exec("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES (?,1,1)", (prod,))
+    _exec("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,stock_actual,stock_minimo) "
+          "VALUES (?, 'Frasco SG 50','Envase',0,0)", (env,))
+    _exec("INSERT INTO producto_presentaciones (producto_nombre,presentacion_codigo,etiqueta,volumen_ml,envase_codigo,ventas_mes_referencia,activo) "
+          "VALUES (?, 'V50','50 ml',50,?,100,1)", (prod, env))
+    _exec("INSERT INTO produccion_programada (producto,fecha_programada,lotes,estado,cantidad_kg,origen) "
+          "VALUES (?, date('now','-5 hours','+10 days'),1,'pendiente',5,'eos_plan')", (prod,))
+    c = _login(app)
+    r = c.get('/api/programacion/serigrafia-cola')
+    assert r.status_code == 200, r.data
+    d = r.get_json()
+    it = next((x for x in (d.get('items') or []) if x.get('producto') == prod), None)
+    assert it is not None, ('falta la producción en la cola', [x.get('producto') for x in (d.get('items') or [])])
+    assert (it['envase_codigo'] or '').upper() == env, it
+    assert it['unidades'] >= 99, ('~100 uds (5000g / 50ml)', it)

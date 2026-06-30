@@ -2442,6 +2442,11 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       title="¿Alcanzan las MP para todo el plan?">
       &#9989; Factibilidad
     </button>
+    <button data-prog-sub="calendario_grp" onclick="switchProgTab('serigrafia');cargarSerigrafiaCola()"
+      style="padding:6px 14px;border:1px solid #5b21b6;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#fff;color:#5b21b6"
+      title="Envases por producción · enviar a serigrafía con tiempo">
+      &#128424; Serigrafía
+    </button>
   </div>
   <div id="prog-sub-opera_grp" class="prog-subbar" style="display:none;gap:8px;margin-bottom:14px;padding:8px 4px;border-bottom:1px dashed #cbd5e1;flex-wrap:wrap">
     <!-- Sebastián 20-may-2026: Centro de Mando OCULTO · "no lo logramos"
@@ -2485,6 +2490,16 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       title="Kanban de Planta"></iframe>
   </div>
   <!-- Tab "Factibilidad" · iframe a /admin/factibilidad-plan · ¿alcanzan las MP? -->
+  <div id="ptab-serigrafia" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+      <div>
+        <h3 style="margin:0;color:#5b21b6;font-size:15px;font-weight:800">&#128424; Cola de envases por producción</h3>
+        <p style="margin:4px 0 0;color:#64748b;font-size:12px">Cada producción futura (en orden de fecha) con su envase y la cantidad teórica que va a gastar &middot; para enviar a serigrafía con tiempo.</p>
+      </div>
+      <button onclick="cargarSerigrafiaCola()" style="background:#7c3aed;color:#fff;border:none;padding:6px 11px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">&#8635; Recargar</button>
+    </div>
+    <div id="serig-cola-body" style="font-size:12px;color:#64748b">&mdash;</div>
+  </div>
   <div id="ptab-factibilidad" style="display:none">
     <iframe id="factibilidad-iframe" src="about:blank"
       style="width:100%;height:calc(100vh - 200px);min-height:700px;border:1px solid #e2e8f0;border-radius:12px;background:#0d1117"
@@ -14062,6 +14077,7 @@ async function ckMarcar(itemId, estado){
     'abastecimiento': 'calendario_grp',
     'calendario': 'calendario_grp',
     'factibilidad': 'calendario_grp',
+    'serigrafia': 'calendario_grp',
     'mando': 'opera_grp',
     'kanban': 'opera_grp',
     'midia': 'opera_grp',
@@ -14119,6 +14135,22 @@ async function ckMarcar(itemId, estado){
       }
     });
   }
+  async function cargarSerigrafiaCola(){
+    var box=document.getElementById('serig-cola-body'); if(!box) return;
+    box.innerHTML='Cargando&hellip;';
+    try{
+      var d=await (await fetch('/api/programacion/serigrafia-cola',{cache:'no-store'})).json();
+      var its=(d&&d.items)||[];
+      if(!its.length){ box.innerHTML='<div style="padding:20px;color:#94a3b8;text-align:center">Sin producciones futuras con envase mapeado.</div>'; return; }
+      var h='<table style="width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden"><thead><tr style="background:#f1f5f9;font-size:11px;text-transform:uppercase"><th style="text-align:left;padding:7px 9px">Fecha</th><th style="text-align:left;padding:7px 9px">Producción</th><th style="text-align:left;padding:7px 9px">Envase</th><th style="padding:7px 9px">ml</th><th style="padding:7px 9px">Unidades</th></tr></thead><tbody>';
+      its.forEach(function(it){
+        h+='<tr style="border-bottom:1px solid #f1f5f9;font-size:12px"><td style="padding:7px 9px;white-space:nowrap">'+_escHTML(String(it.fecha||''))+'</td><td style="padding:7px 9px"><b>'+_escHTML(it.producto)+'</b></td><td style="padding:7px 9px">'+_escHTML(it.envase_codigo)+'<br><span style="color:#94a3b8;font-size:11px">'+_escHTML(it.envase_desc||'')+'</span></td><td style="padding:7px 9px;text-align:center">'+(it.volumen_ml||'')+'</td><td style="padding:7px 9px;text-align:center;font-weight:700;color:#5b21b6">'+(Math.round(it.unidades||0).toLocaleString('es-CO'))+'</td></tr>';
+      });
+      h+='</tbody></table>';
+      box.innerHTML=h;
+    }catch(e){ box.innerHTML='<div style="color:#dc2626;padding:20px">Error: '+e+'</div>'; }
+  }
+
   function switchProgTab(tab){
     try {
       // Auto-sincronizar grupo + sub-tab activo (Opción A 20-may-2026)
@@ -14142,6 +14174,7 @@ async function ckMarcar(itemId, estado){
         'necesidades': 'ptab-necesidades',
         'abastecimiento': 'ptab-abastecimiento',
         'factibilidad': 'ptab-factibilidad',
+        'serigrafia': 'ptab-serigrafia',
         // 'asignacion' eliminado · redirige a 'mando' (unificado en mapa)
         'asignacion': 'ptab-plano',
         'mando': 'ptab-plano',
