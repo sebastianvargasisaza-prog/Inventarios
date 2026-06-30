@@ -12437,6 +12437,17 @@ def abastecimiento_consumo_horizontes():
             _kn = _norm_mp_name(_ns)
             if _kn and _kn not in _cuar_mp:
                 _cuar_mp[_kn] = _v
+        # fallback: filas legacy sin material_id (por nombre) · idéntico al stock canónico
+        for (nombre, sg) in c.execute("SELECT material_nombre, COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0) FROM movimientos WHERE (material_id IS NULL OR material_id = '') AND material_nombre IS NOT NULL AND material_nombre != '' AND UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA') GROUP BY material_nombre").fetchall():
+            _v2 = max(float(sg or 0), 0)
+            if _v2 <= 0:
+                continue
+            _ke = str(nombre).strip().upper()
+            if _ke not in _cuar_mp:
+                _cuar_mp[_ke] = _v2
+            _kn2 = _norm_mp_name(str(nombre))
+            if _kn2 and _kn2 not in _cuar_mp:
+                _cuar_mp[_kn2] = _v2
     except Exception:
         _cuar_mp = {}
     _cuar_mee = {}
