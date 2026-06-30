@@ -395,6 +395,9 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (316, "Marcacion: fecha_alistar (deadline) en marcacion_ordenes - Planta sabe alistar antes de tal dia.", [
+        "ALTER TABLE marcacion_ordenes ADD COLUMN fecha_alistar TEXT DEFAULT ''",
+    ]),
     (315, "Marcacion Fase D: marcacion_ordenes + liberado_at/liberado_por (revision tecnica + Calidad libera).", [
         "ALTER TABLE marcacion_ordenes ADD COLUMN liberado_at TEXT DEFAULT ''",
         "ALTER TABLE marcacion_ordenes ADD COLUMN liberado_por TEXT DEFAULT ''",

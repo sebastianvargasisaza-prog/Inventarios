@@ -7536,7 +7536,7 @@ async function enviar(i){
   var sob=Math.round(r0.stock_envase||0);
   if(sob>0 && !confirm('\u26a0\ufe0f Ya ten\u00e9s '+sob.toLocaleString('es-CO')+' unidades de '+r0.envase_codigo+' en bodega (sobrante de producciones anteriores).\n\nVas a pedir '+cant.toLocaleString('es-CO')+'. \u00bfSeguro? Ajust\u00e1 la cantidad arriba o cancel\u00e1 para no gastar de m\u00e1s.')){ return; }
   try{
-    var r=await fetch('/api/programacion/marcacion-orden/enviar',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({serigrafiado_codigo:r0.envase_codigo,cantidad:cant,metodo:tipo,proveedor:prov,producto:r0.producto,produccion_id:r0.produccion_id})});
+    var r=await fetch('/api/programacion/marcacion-orden/enviar',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({serigrafiado_codigo:r0.envase_codigo,cantidad:cant,metodo:tipo,proveedor:prov,producto:r0.producto,produccion_id:r0.produccion_id,fecha_alistar:r0.fecha_envio})});
     var d=await r.json();
     if(d.ok){ alert('✓ Solicitado a Planta para alistar · Salida del base '+d.base+' registrada'); cargarOrdenes(); }
     else alert('Error: '+(d.error||''));

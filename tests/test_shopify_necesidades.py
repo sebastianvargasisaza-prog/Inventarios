@@ -495,3 +495,22 @@ def test_marcacion_liberar(app, db_clean):
     assert pc and pc[0] == 'aprobado', ('proveedor auto-calificado', pc)
     r4 = c.post('/api/programacion/marcacion-orden/%d/liberar' % oid, json={}, headers=csrf_headers())
     assert r4.status_code == 409, ('CAS doble liberación', r4.status_code)
+
+
+
+def test_marcacion_alistar_urgencia(app, db_clean):
+    # La orden lleva fecha_alistar (deadline) → marcacion-ordenes calcula urgencia para Planta.
+    from .conftest import csrf_headers
+    serig = "SG-URG-30"
+    _exec("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,stock_actual,stock_minimo) "
+          "VALUES (?, 'Serig urg','Frasco',0,0)", (serig,))
+    c = _login(app)
+    r = c.post('/api/programacion/marcacion-orden/enviar',
+               json={'serigrafiado_codigo': serig, 'cantidad': 10, 'metodo': 'serigrafia', 'proveedor': 'P',
+                     'producto': 'X', 'fecha_alistar': '2020-01-01'}, headers=csrf_headers())
+    assert r.status_code == 200, r.data
+    d = c.get('/api/programacion/marcacion-ordenes').get_json()
+    it = next((o for o in (d.get('items') or []) if o.get('serigrafiado') == serig), None)
+    assert it and it.get('fecha_alistar') == '2020-01-01', it
+    assert it.get('urgencia') == 'vencido', ('deadline pasado → vencido', it)
+    assert it.get('dias_restantes') is not None and it['dias_restantes'] < 0, it

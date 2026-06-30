@@ -11054,6 +11054,7 @@ def marcacion_orden_enviar():
     proveedor = (d.get('proveedor') or '').strip()
     producto = (d.get('producto') or '').strip()
     prod_id = d.get('produccion_id')
+    fecha_alistar = (d.get('fecha_alistar') or '').strip()
     if not serig or cantidad <= 0:
         return jsonify({'error': 'serigrafiado_codigo y cantidad (>0) requeridos'}), 400
     from datetime import datetime as _dtM, timedelta as _tdM
@@ -11077,9 +11078,9 @@ def marcacion_orden_enviar():
     except Exception as e:
         return jsonify({'error': 'No se pudo registrar la salida: ' + str(e)[:150]}), 500
     c.execute("INSERT INTO marcacion_ordenes (base_codigo, serigrafiado_codigo, producto_nombre, metodo, proveedor, "
-              "cantidad_enviada, produccion_id, fecha_envio, estado, creado_por, creado_en) "
-              "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'enviado', ?, ?)",
-              (base, serig, producto, metodo, proveedor, cantidad, prod_id, _hoy, user, _hoy))
+              "cantidad_enviada, produccion_id, fecha_envio, fecha_alistar, estado, creado_por, creado_en) "
+              "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'enviado', ?, ?)",
+              (base, serig, producto, metodo, proveedor, cantidad, prod_id, _hoy, fecha_alistar, user, _hoy))
     oid = c.lastrowid
     try:
         from audit_helpers import audit_log as _al
@@ -11213,14 +11214,26 @@ def marcacion_ordenes_lista():
     c = conn.cursor()
     out = []
     try:
+        from datetime import datetime as _dtO, timedelta as _tdO
+        _hoy_o = (_dtO.utcnow() - _tdO(hours=5)).date()
         for r in c.execute("SELECT id, base_codigo, serigrafiado_codigo, COALESCE(producto_nombre,''), "
                            "COALESCE(metodo,''), COALESCE(proveedor,''), COALESCE(cantidad_enviada,0), "
                            "COALESCE(cantidad_recibida,0), COALESCE(fecha_envio,''), COALESCE(fecha_retorno,''), "
-                           "COALESCE(estado,'') FROM marcacion_ordenes "
+                           "COALESCE(estado,''), COALESCE(fecha_alistar,'') FROM marcacion_ordenes "
                            "ORDER BY CASE WHEN COALESCE(estado,'')='enviado' THEN 0 ELSE 1 END, id DESC LIMIT 300").fetchall():
+            _fa = r[11]
+            _dias = None
+            _urg = 'ok'
+            try:
+                if _fa:
+                    _dias = (_dtO.fromisoformat(_fa[:10]).date() - _hoy_o).days
+                    _urg = 'vencido' if _dias < 0 else ('urgente' if _dias <= 3 else ('proximo' if _dias <= 8 else 'ok'))
+            except Exception:
+                _dias = None
             out.append({'id': r[0], 'base': r[1], 'serigrafiado': r[2], 'producto': r[3], 'metodo': r[4],
                         'proveedor': r[5], 'cantidad_enviada': r[6], 'cantidad_recibida': r[7],
-                        'fecha_envio': r[8], 'fecha_retorno': r[9], 'estado': r[10]})
+                        'fecha_envio': r[8], 'fecha_retorno': r[9], 'estado': r[10],
+                        'fecha_alistar': _fa, 'dias_restantes': _dias, 'urgencia': _urg})
     except Exception as e:
         return jsonify({'error': str(e)[:200], 'items': []}), 500
     return jsonify({'items': out, 'total': len(out)})
