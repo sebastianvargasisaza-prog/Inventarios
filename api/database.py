@@ -395,6 +395,10 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (315, "Marcacion Fase D: marcacion_ordenes + liberado_at/liberado_por (revision tecnica + Calidad libera).", [
+        "ALTER TABLE marcacion_ordenes ADD COLUMN liberado_at TEXT DEFAULT ''",
+        "ALTER TABLE marcacion_ordenes ADD COLUMN liberado_por TEXT DEFAULT ''",
+    ]),
     (314, "Envases - normalizar: volumen_ml + precio_referencia en maestro_mee (modal crear envase en marcacion · Sebastian 30-jun).", [
         'ALTER TABLE maestro_mee ADD COLUMN volumen_ml REAL DEFAULT 0',
         'ALTER TABLE maestro_mee ADD COLUMN precio_referencia REAL DEFAULT 0',

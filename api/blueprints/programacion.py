@@ -11091,6 +11091,65 @@ def marcacion_orden_enviar():
     return jsonify({'ok': True, 'orden_id': oid, 'base': base, 'serigrafiado': serig})
 
 
+@bp.route('/api/programacion/marcacion-orden/<int:oid>/liberar', methods=['POST'])
+def marcacion_orden_liberar(oid):
+    """Fase D · Revision tecnica + Calidad libera el retorno de marcacion: saca de CUARENTENA (VIGENTE), califica
+    el envase serigrafiado + auto-califica el proveedor que creamos, cierra la orden. CAS recibido->liberado."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    from datetime import datetime as _dtM, timedelta as _tdM
+    _hoy = (_dtM.utcnow() - _tdM(hours=5)).date().isoformat()
+    conn = get_db()
+    c = conn.cursor()
+    o = c.execute("SELECT serigrafiado_codigo, COALESCE(proveedor,''), COALESCE(estado,'') FROM marcacion_ordenes WHERE id=?", (oid,)).fetchone()
+    if not o:
+        return jsonify({'error': 'Orden no existe'}), 404
+    if o[2] != 'recibido':
+        return jsonify({'error': f'Orden en estado {o[2]} · debe estar recibida para liberar'}), 409
+    serig, prov = o[0], o[1]
+    # CAS: reclamar la liberacion
+    c.execute("UPDATE marcacion_ordenes SET estado='liberado', liberado_at=?, liberado_por=? WHERE id=? AND COALESCE(estado,'')='recibido'",
+              (_hoy, user, oid))
+    if (c.rowcount or 0) == 0:
+        conn.rollback()
+        return jsonify({'error': 'Orden ya liberada por otro', 'codigo': 'YA_LIBERADA'}), 409
+    # 1) sacar de cuarentena (VIGENTE) la entrada de ESTA orden
+    try:
+        c.execute("UPDATE movimientos_mee SET estado='VIGENTE' WHERE UPPER(TRIM(mee_codigo))=UPPER(TRIM(?)) "
+                  "AND lote_ref='MARCACION-RET' AND COALESCE(estado,'')='CUARENTENA' AND COALESCE(observaciones,'') LIKE ?",
+                  (serig, '%orden ' + str(oid) + ' %'))
+    except Exception:
+        pass
+    # 2) calificar el envase serigrafiado (material calificado)
+    try:
+        c.execute("UPDATE maestro_mee SET calificado=1, calificado_at=?, calificado_por=? WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))",
+                  (_hoy, user, serig))
+    except Exception:
+        pass
+    # 3) auto-calificar el proveedor (recepcion conforme · auditable)
+    if prov:
+        try:
+            ex = c.execute("SELECT 1 FROM proveedores_calificacion WHERE LOWER(TRIM(proveedor))=LOWER(TRIM(?))", (prov,)).fetchone()
+            if ex:
+                c.execute("UPDATE proveedores_calificacion SET estado='aprobado', fecha_aprobacion=?, evaluado_por=? "
+                          "WHERE LOWER(TRIM(proveedor))=LOWER(TRIM(?))", (_hoy, user, prov))
+            else:
+                c.execute("INSERT INTO proveedores_calificacion (proveedor, estado, categoria, fecha_aprobacion, evaluado_por, observaciones, creado_por, creado_en) "
+                          "VALUES (?, 'aprobado', 'Envases/Marcacion', ?, ?, 'Auto - recepcion conforme de marcacion', ?, ?)",
+                          (prov, _hoy, user, user, _hoy))
+        except Exception:
+            pass
+    try:
+        from audit_helpers import audit_log as _al
+        _al(c, usuario=user, accion='MARCACION_LIBERAR', tabla='marcacion_ordenes', registro_id=oid,
+            despues={'serigrafiado': serig, 'proveedor': prov, 'liberado_por': user})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'orden_id': oid})
+
+
 @bp.route('/api/programacion/marcacion-orden/<int:oid>/recibir', methods=['POST'])
 def marcacion_orden_recibir(oid):
     """Fase B · Recibir el retorno de marcacion: Entrada del SERIGRAFIADO en CUARENTENA (Calidad libera con el

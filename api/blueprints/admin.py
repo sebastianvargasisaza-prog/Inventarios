@@ -7550,11 +7550,20 @@ async function cargarOrdenes(){
     if(!its.length){ box.innerHTML='<div class="muted">Sin órdenes todavía.</div>'; return; }
     var h='<table><thead><tr><th>#</th><th>Producto</th><th>Base &rarr; Serigrafiado</th><th>Método</th><th>Proveedor</th><th>Enviado</th><th>Recibido</th><th>Estado</th><th></th></tr></thead><tbody>';
     its.forEach(function(o){
-      h+='<tr><td>'+o.id+'</td><td><b>'+esc(o.producto)+'</b></td><td>'+esc(o.base)+' &rarr; '+esc(o.serigrafiado)+'</td><td>'+esc(o.metodo)+'</td><td>'+esc(o.proveedor)+'</td><td>'+Math.round(o.cantidad_enviada||0)+' <span class="muted">('+esc(o.fecha_envio)+')</span></td><td>'+(o.cantidad_recibida?Math.round(o.cantidad_recibida)+' <span class="muted">('+esc(o.fecha_retorno)+')</span>':'<span class="muted">&mdash;</span>')+'</td><td>'+(o.estado==='enviado'?'<span style="color:#b45309;font-weight:700">en marcación</span>':'<span style="color:#16a34a;font-weight:700">recibido &middot; cuarentena</span>')+'</td><td>'+(o.estado==='enviado'?'<button class="ok" onclick="recibir('+o.id+','+(o.cantidad_enviada||0)+')">Recibir</button>':'')+'</td></tr>';
+      h+='<tr><td>'+o.id+'</td><td><b>'+esc(o.producto)+'</b></td><td>'+esc(o.base)+' &rarr; '+esc(o.serigrafiado)+'</td><td>'+esc(o.metodo)+'</td><td>'+esc(o.proveedor)+'</td><td>'+Math.round(o.cantidad_enviada||0)+' <span class="muted">('+esc(o.fecha_envio)+')</span></td><td>'+(o.cantidad_recibida?Math.round(o.cantidad_recibida)+' <span class="muted">('+esc(o.fecha_retorno)+')</span>':'<span class="muted">&mdash;</span>')+'</td><td>'+(o.estado==='enviado'?'<span style="color:#b45309;font-weight:700">en marcación</span>':(o.estado==='recibido'?'<span style="color:#0891b2;font-weight:700">recibido &middot; cuarentena</span>':'<span style="color:#16a34a;font-weight:700">&#10003; liberado</span>'))+'</td><td>'+(o.estado==='enviado'?'<button class="ok" onclick="recibir('+o.id+','+(o.cantidad_enviada||0)+')">Recibir</button>':(o.estado==='recibido'?'<button onclick="liberarMarc('+o.id+')" style="background:#7c3aed">&#10003; Liberar (rev. técnica)</button>':'<span class="muted">&#10003;</span>'))+'</td></tr>';
     });
     h+='</tbody></table>';
     box.innerHTML=h;
   }catch(e){ box.innerHTML='<div style="color:#dc2626">Error: '+e+'</div>'; }
+}
+async function liberarMarc(oid){
+  if(!confirm('\u00bfLiberar esta marcaci\u00f3n? (revisi\u00f3n t\u00e9cnica + Calidad)\nSale de cuarentena \u2192 VIGENTE, califica el envase y el proveedor.')) return;
+  try{
+    var r=await fetch('/api/programacion/marcacion-orden/'+oid+'/liberar',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin'});
+    var d=await r.json();
+    if(d.ok){ alert('\u2713 Liberado \u00b7 envase y proveedor calificados.'); cargarOrdenes(); }
+    else alert('Error: '+(d.error||''));
+  }catch(e){ alert('Error de conexi\u00f3n'); }
 }
 async function recibir(oid, env){
   var cant=prompt('¿Cuántos volvieron serigrafiados? (merma = menos)', Math.round(env));

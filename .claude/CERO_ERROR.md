@@ -547,6 +547,10 @@ Sebastián: los envases van a serigrafía/tampografía ~15d antes de producir (p
 
 Bug (sub-pestañas Planta en Compras desaparecían al click): puse botones con `class="tn"` (la clase de las pestañas principales). Hay un `querySelectorAll('.tn').forEach(btn => btn.addEventListener('click', ()=>showTab(btn.dataset.tab)))` global → mis botones SIN `data-tab` llamaban `showTab(undefined)` → ocultaba TODOS los panes (pantalla en blanco). Además `class="tab-nav"` en el contenedor les daba el look de barra principal. **Regla:** para UI nueva NO reuses una clase del framework que pueda tener un handler delegado (`.tn`, `.tab-nav`, `.btn-primary`, etc.) — usá una clase propia (`.sp-tab`) con su CSS. Y al insertar un `<script>`/UI en una página enorme de líneas largas, **node-check el bloque** (extraé tu `<script>` con regex) + verificá el balance de divs vs HEAD (no romper). Ver [[project_shopify_necesidades_audit_27jun]] (Bandeja Planta → Materias Primas | Envases · marcación embebida).
 
+## 🔤 M62 · CHECK constraint case-sensitive · INSERT con valor mal-capitalizado falla en silencio si lo tragás · 30-jun
+
+`proveedores_calificacion.estado` tiene `CHECK(estado IN ('pendiente','en_evaluacion','aprobado',...))` — **minúscula**. Inserté `'Aprobado'` → el CHECK lo rechazó → como el INSERT estaba en `try/except: pass` (auto-califica best-effort), **falló sin avisar** y el test cazó que el registro no existía. **Reglas:** (1) al escribir a una tabla nueva, **verificá los CHECK/enum de su CREATE TABLE** (mayúsc/minúsc, valores exactos) antes de inventar el valor. (2) Un `try/except: pass` alrededor de un INSERT esconde estos fallos — **siempre un test que verifique el efecto** (que el registro/columna quedó como esperás), no solo que el endpoint devolvió 200. Ver marcación Fase D ([[project_shopify_necesidades_audit_27jun]]).
+
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
 
 Al cerrar una sesión donde se encontró/arregló un bug con patrón no listado aquí:

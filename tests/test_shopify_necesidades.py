@@ -465,3 +465,33 @@ def test_marcacion_generar_oc_crea_sol(app, db_clean):
     assert row and row[0] == 'Material de Empaque', ('SOL mal categorizada', row)
     it = _q1("SELECT nombre_mp FROM solicitudes_compra_items WHERE numero=?", (num,))
     assert it and 'FR-OCTEST-30' in (it[0] or ''), ('item mal', it)
+
+
+
+def test_marcacion_liberar(app, db_clean):
+    # Fase D: liberar = sale de cuarentena (VIGENTE) + califica envase + auto-califica proveedor · CAS.
+    from .conftest import csrf_headers
+    base = "FR-LBASE-30"
+    serig = "SG-LIB-30"
+    prov = "ProvLibTest"
+    _exec("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,stock_actual,stock_minimo,calificado) "
+          "VALUES (?, 'Serig lib','Frasco',0,0,0)", (serig,))
+    _exec("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,stock_actual,stock_minimo) "
+          "VALUES (?, 'Base lib','Frasco',0,0)", (base,))
+    _exec("UPDATE maestro_mee SET material_referencia=? WHERE codigo=?", (base, serig))
+    c = _login(app)
+    r = c.post('/api/programacion/marcacion-orden/enviar',
+               json={'serigrafiado_codigo': serig, 'cantidad': 50, 'metodo': 'serigrafia', 'proveedor': prov, 'producto': 'X'},
+               headers=csrf_headers())
+    oid = r.get_json()['orden_id']
+    c.post('/api/programacion/marcacion-orden/%d/recibir' % oid, json={'cantidad_recibida': 50}, headers=csrf_headers())
+    r3 = c.post('/api/programacion/marcacion-orden/%d/liberar' % oid, json={}, headers=csrf_headers())
+    assert r3.status_code == 200, r3.data
+    assert (_q1("SELECT estado FROM marcacion_ordenes WHERE id=?", (oid,)) or [''])[0] == 'liberado'
+    vig = _q1("SELECT COALESCE(estado,'') FROM movimientos_mee WHERE mee_codigo=? AND lote_ref='MARCACION-RET'", (serig,))
+    assert vig and vig[0] == 'VIGENTE', ('debe salir de cuarentena', vig)
+    assert (_q1("SELECT calificado FROM maestro_mee WHERE codigo=?", (serig,)) or [0])[0] == 1, 'envase calificado'
+    pc = _q1("SELECT estado FROM proveedores_calificacion WHERE LOWER(proveedor)=LOWER(?)", (prov,))
+    assert pc and pc[0] == 'aprobado', ('proveedor auto-calificado', pc)
+    r4 = c.post('/api/programacion/marcacion-orden/%d/liberar' % oid, json={}, headers=csrf_headers())
+    assert r4.status_code == 409, ('CAS doble liberación', r4.status_code)
