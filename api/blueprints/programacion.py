@@ -11160,6 +11160,78 @@ def marcacion_ordenes_lista():
     return jsonify({'items': out, 'total': len(out)})
 
 
+@bp.route('/api/programacion/marcacion-catalogos', methods=['GET'])
+def marcacion_catalogos():
+    """Listas para editar en la bandeja de marcación: proveedores existentes + todos los envases (para cambiar)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db()
+    c = conn.cursor()
+    provs = []
+    envs = []
+    try:
+        for r in c.execute("SELECT nombre FROM proveedores WHERE COALESCE(activo,1)=1 AND COALESCE(nombre,'')<>'' ORDER BY nombre").fetchall():
+            provs.append(r[0])
+    except Exception:
+        pass
+    try:
+        for r in c.execute("SELECT codigo, COALESCE(descripcion,''), COALESCE(volumen_ml,0) FROM maestro_mee "
+                           "WHERE COALESCE(estado,'Activo') NOT IN ('Inactivo','Descontinuado','Descontinuo') "
+                           "ORDER BY descripcion").fetchall():
+            envs.append({'codigo': r[0], 'descripcion': r[1], 'volumen': r[2]})
+    except Exception:
+        # maestro_mee puede no tener volumen_ml en instancias viejas
+        try:
+            for r in c.execute("SELECT codigo, COALESCE(descripcion,'') FROM maestro_mee ORDER BY descripcion").fetchall():
+                envs.append({'codigo': r[0], 'descripcion': r[1], 'volumen': 0})
+        except Exception:
+            pass
+    return jsonify({'proveedores': provs, 'envases': envs})
+
+
+@bp.route('/api/programacion/marcacion-cambiar-envase', methods=['POST'])
+def marcacion_cambiar_envase():
+    """Catalina cambia el envase de una presentación (se agotó / es otro). Actualiza producto_presentaciones →
+    la cola, el abastecimiento y la marcación lo reflejan. Sebastián 30-jun."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    producto = (d.get('producto') or '').strip()
+    env_old = (d.get('envase_actual') or '').strip()
+    env_new = (d.get('envase_nuevo') or '').strip()
+    try:
+        vol = float(d.get('volumen_ml') or 0)
+    except (TypeError, ValueError):
+        vol = 0
+    if not producto or not env_new:
+        return jsonify({'error': 'producto y envase_nuevo requeridos'}), 400
+    conn = get_db()
+    c = conn.cursor()
+    if not c.execute("SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))", (env_new,)).fetchone():
+        return jsonify({'error': f'el envase {env_new} no existe'}), 400
+    c.execute("UPDATE producto_presentaciones SET envase_codigo=? "
+              "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND ROUND(COALESCE(volumen_ml,0),2)=ROUND(?,2) "
+              "AND UPPER(TRIM(COALESCE(envase_codigo,'')))=UPPER(TRIM(?))",
+              (env_new, producto, vol, env_old))
+    n = c.rowcount or 0
+    if n == 0:
+        c.execute("UPDATE producto_presentaciones SET envase_codigo=? "
+                  "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND ROUND(COALESCE(volumen_ml,0),2)=ROUND(?,2)",
+                  (env_new, producto, vol))
+        n = c.rowcount or 0
+    if n == 0:
+        return jsonify({'error': 'no encontré la presentación a cambiar'}), 404
+    try:
+        from audit_helpers import audit_log as _al
+        _al(c, usuario=user, accion='MARCACION_CAMBIAR_ENVASE', tabla='producto_presentaciones', registro_id=producto,
+            antes={'envase': env_old}, despues={'envase': env_new, 'volumen_ml': vol})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'cambiadas': n})
+
+
 @bp.route('/api/admin/marcacion-envase', methods=['POST'])
 def marcacion_envase_set():
     """Compras define el metodo de marcacion (serigrafia/tampografia/pre_impreso/ninguno) + proveedor de un envase.

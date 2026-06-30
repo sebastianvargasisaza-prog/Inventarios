@@ -7448,6 +7448,7 @@ button.ok{background:#16a34a}
 <h1>&#127991; Marcaci&oacute;n de envases &middot; serigraf&iacute;a / tampograf&iacute;a</h1>
 <p class="sub">Compras define el <b>m&eacute;todo</b> y el <b>proveedor</b> de cada envase, y ve qu&eacute; enviar a marcar y <b>para cu&aacute;ndo</b> (15 d&iacute;as antes de la producci&oacute;n). Los pre-impresos de China no aparecen.</p>
 <input class="search" id="q" placeholder="Buscar producto/envase..." oninput="render()">
+<datalist id="provlist"></datalist>
 <div id="cont"><div class="muted" style="padding:20px">Cargando...</div></div>
 <h2 style="font-size:16px;margin:26px 0 8px;color:#0f766e">&#128230; Órdenes de marcación en curso</h2>
 <div id="ordenes"><div class="muted">&mdash;</div></div>
@@ -7481,10 +7482,10 @@ function render(){
       '<td class="'+(urge?'urg':'')+'">'+(urge?'&#128308; ':'')+esc(r.fecha_envio||'')+'</td>'+
       '<td><b>'+esc(r.producto)+'</b></td>'+
       '<td class="muted">'+esc(String(r.fecha||''))+'</td>'+
-      '<td>'+esc(r.envase_codigo)+'<br><span class="muted">'+esc(r.envase_desc||'')+' &middot; '+(r.volumen_ml||'')+'ml</span></td>'+
-      '<td style="font-weight:700;color:#5b21b6">'+(Math.round(r.unidades||0).toLocaleString('es-CO'))+'</td>'+
+      '<td><select id="e-'+i+'" onchange="cambiarEnvase('+i+')" style="max-width:235px;font-size:11px">'+envOpts(r.envase_codigo)+'</select> <button onclick="crearEnvase('+i+')" title="Crear nuevo envase" style="background:#0d9488;padding:4px 9px">&#10133;</button><br><span class="muted" style="font-size:10px">'+esc(r.envase_desc||'')+' &middot; '+(r.volumen_ml||'')+'ml</span></td>'+
+      '<td><input id="u-'+i+'" type="number" min="1" value="'+Math.round(r.unidades||0)+'" style="width:80px;font-weight:700;color:#5b21b6;text-align:right"></td>'+
       '<td><select id="m-'+i+'">'+opt('',r.marcacion_tipo,'- definir -')+opt('serigrafia',r.marcacion_tipo,'Serigraf&iacute;a')+opt('tampografia',r.marcacion_tipo,'Tampograf&iacute;a')+opt('etiqueta',r.marcacion_tipo,'Etiqueta (solicitada)')+opt('pre_impreso',r.marcacion_tipo,'Pre-impreso (China)')+opt('ninguno',r.marcacion_tipo,'Ninguno')+'</select></td>'+
-      '<td><input class="prov" id="p-'+i+'" value="'+esc(r.marcacion_proveedor||'')+'" placeholder="proveedor"></td>'+
+      '<td><input class="prov" id="p-'+i+'" list="provlist" value="'+esc(r.marcacion_proveedor||'')+'" placeholder="proveedor"></td>'+
       '<td style="white-space:nowrap"><button id="b-'+i+'" onclick="guardar('+i+')">Guardar</button> '+(r.marcacion_tipo==='etiqueta'?'<span style="display:inline-block;background:#dcfce7;color:#15803d;font-weight:700;padding:5px 10px;border-radius:6px;font-size:11px">&#127991; Lleva etiqueta</span>':'<button onclick="enviar('+i+')" style="background:#5b21b6">&#9993; Enviar a marcar</button>')+'</td>'+
       '</tr>';
   });
@@ -7508,8 +7509,8 @@ async function enviar(i){
   var tipo=document.getElementById('m-'+i).value;
   var prov=document.getElementById('p-'+i).value;
   if(!tipo||tipo==='pre_impreso'||tipo==='ninguno'||tipo==='etiqueta'){ alert('Este envase lleva etiqueta o no se marca — no se envía a serigrafía.'); return; }
-  var cant=prompt('¿Cuántos enviar a marcar?', Math.round(r0.unidades||0));
-  if(cant===null) return; cant=parseFloat(cant); if(!(cant>0)){ alert('Cantidad inválida'); return; }
+  var ui=document.getElementById('u-'+i); var cant=ui?parseFloat(ui.value):Math.round(r0.unidades||0);
+  if(!(cant>0)){ alert('Cantidad inválida'); return; }
   try{
     var r=await fetch('/api/programacion/marcacion-orden/enviar',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({serigrafiado_codigo:r0.envase_codigo,cantidad:cant,metodo:tipo,proveedor:prov,producto:r0.producto,produccion_id:r0.produccion_id})});
     var d=await r.json();
@@ -7541,7 +7542,45 @@ async function recibir(oid, env){
     else alert('Error: '+(d.error||''));
   }catch(e){ alert('Error de conexión'); }
 }
-cargar(); cargarOrdenes();
+function envOpts(sel){
+  var list=(window._ENV||[]); var has=false; var o='';
+  list.forEach(function(e){ if(e.codigo===sel)has=true; o+='<option value="'+esc(e.codigo)+'"'+(e.codigo===sel?' selected':'')+'>'+esc(e.codigo)+(e.descripcion?(' \u00b7 '+esc((e.descripcion||'').slice(0,38))):'')+'</option>'; });
+  if(sel && !has){ o='<option value="'+esc(sel)+'" selected>'+esc(sel)+'</option>'+o; }
+  return o;
+}
+async function cargarCatalogos(){
+  try{
+    var d=await (await fetch('/api/programacion/marcacion-catalogos',{cache:'no-store'})).json();
+    window._PROV=d.proveedores||[]; window._ENV=d.envases||[];
+    var dl=document.getElementById('provlist'); if(dl){ dl.innerHTML=(window._PROV).map(function(p){return '<option value="'+esc(p)+'">';}).join(''); }
+    render();
+  }catch(e){}
+}
+async function cambiarEnvase(i){
+  var r0=ROWS[i]; var selEl=document.getElementById('e-'+i); var sel=selEl?selEl.value:'';
+  if(!sel||sel===r0.envase_codigo) return;
+  if(!confirm('\u00bfCambiar el envase de '+r0.producto+' ('+(r0.volumen_ml||'')+'ml) a '+sel+'?\nAplica a TODAS las producciones de esa presentaci\u00f3n.')){ render(); return; }
+  try{
+    var r=await fetch('/api/programacion/marcacion-cambiar-envase',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({producto:r0.producto,volumen_ml:r0.volumen_ml,envase_actual:r0.envase_codigo,envase_nuevo:sel})});
+    var d=await r.json();
+    if(d.ok){ cargar(); } else { alert('Error: '+(d.error||'')); render(); }
+  }catch(e){ alert('Error de conexi\u00f3n'); render(); }
+}
+async function crearEnvase(i){
+  var cod=prompt('C\u00f3digo del nuevo envase (ej. FR-PLA-NUEVO-30):'); if(!cod) return; cod=cod.trim().toUpperCase();
+  var desc=prompt('Descripci\u00f3n (ej. FRASCO PL\u00c1STICO NUEVO 30ml):'); if(!desc) return;
+  try{
+    var r=await fetch('/api/mee/crear',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({codigo:cod,descripcion:desc,categoria:'Envase',unidad:'und'})});
+    var d=await r.json();
+    if(d.error){ alert('Error: '+d.error); return; }
+    await cargarCatalogos();
+    var r0=ROWS[i];
+    await fetch('/api/programacion/marcacion-cambiar-envase',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({producto:r0.producto,volumen_ml:r0.volumen_ml,envase_actual:r0.envase_codigo,envase_nuevo:cod})});
+    alert('\u2713 Envase creado y asignado. Cuando llegue, recib\u00edlo en cuarentena (Bodega MEE).');
+    cargar();
+  }catch(e){ alert('Error de conexi\u00f3n'); }
+}
+cargar(); cargarOrdenes(); cargarCatalogos();
 </script></body></html>"""
 
 
