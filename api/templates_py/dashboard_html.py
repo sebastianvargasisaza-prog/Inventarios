@@ -898,7 +898,9 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <div id="formula-msg"></div>
 
       <!-- Integración MyBatch · paso 1 · Procedimiento + IPC = el MBR maestro -->
-      <div id="mbr-secciones" style="margin-top:18px;border-top:1px dashed #c4b5fd;padding-top:14px">
+      <!-- Sebastián 30-jun: el MBR (batch record) NO va en la vista de fórmulas — vive en el módulo BRD/Calidad.
+           Se oculta con display:none (queda en el DOM para no romper el JS que referencia mbr-pasos/mbr-ipc/etc.). -->
+      <div id="mbr-secciones" style="display:none">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
           <label style="font-weight:800;font-size:0.95em;color:#5b21b6">🏭 Registro de lote (MBR) · procedimiento + controles</label>
           <span id="mbr-estado-badge" style="font-size:11px;color:#64748b"></span>
