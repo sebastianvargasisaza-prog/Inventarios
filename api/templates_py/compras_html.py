@@ -17,6 +17,9 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .tn{padding:11px 14px;font-size:13px;font-weight:500;color:#78716c;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;}
 .tn:hover{color:#292524;background:#fafaf9;}
 .tn.on{color:#292524;border-bottom-color:#292524;font-weight:700;}
+.sp-tab{padding:9px 18px;font-size:13px;font-weight:600;color:#78716c;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;}
+.sp-tab:hover{color:#292524;}
+.sp-tab.sp-on{color:#7c3aed;border-bottom-color:#7c3aed;font-weight:800;}
 .pane{display:none;padding:18px 20px;max-width:1400px;margin:0 auto;}
 .pane.on{display:block;}
 /* KPI */
@@ -644,9 +647,9 @@ function renderHistorico(){
      valor), y los cambios se sincronizan globalmente a maestro_mps +
      mp_lead_time_config + precio_referencia (aplican en TODA la app). -->
 <div id="pane-planta" class="pane">
-  <div class="tab-nav" style="margin-bottom:14px;border-bottom:1px dashed #cbd5e1;padding-bottom:6px">
-    <button class="tn on" id="sptn-mp" onclick="showSubPlanta('mp')">&#129514; Materias Primas</button>
-    <button class="tn" id="sptn-env" onclick="showSubPlanta('env')">&#128230; Envases</button>
+  <div style="display:flex;gap:6px;margin-bottom:16px;border-bottom:2px solid #e2e8f0;padding-top:2px">
+    <button type="button" class="sp-tab sp-on" id="sptn-mp" onclick="showSubPlanta('mp')">&#129514; Materias Primas</button>
+    <button type="button" class="sp-tab" id="sptn-env" onclick="showSubPlanta('env')">&#128230; Envases</button>
   </div>
   <div id="subplanta-mp">
   <!-- Alertas MP/envases en déficit (Centro de Programación) · 23-jun: movidas desde Solicitudes — son de PLANTA -->
@@ -701,7 +704,7 @@ function showSubPlanta(w){
   document.getElementById('subplanta-mp').style.display=(w==='mp')?'':'none';
   document.getElementById('subplanta-env').style.display=(w==='env')?'':'none';
   var a=document.getElementById('sptn-mp'),b=document.getElementById('sptn-env');
-  if(a)a.className='tn'+(w==='mp'?' on':'');if(b)b.className='tn'+(w==='env'?' on':'');
+  if(a)a.className='sp-tab'+(w==='mp'?' sp-on':'');if(b)b.className='sp-tab'+(w==='env'?' sp-on':'');
   if(w==='env'){var f=document.getElementById('marcacion-iframe');if(f&&(f.src||'').indexOf('marcacion-envases')<0)f.src='/admin/marcacion-envases';}
 }
 </script>
