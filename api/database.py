@@ -150,7 +150,9 @@ def exigir_area_limpia(conn=None):
             return str(row[0]).strip().lower() in ("1", "true", "yes", "si", "sí", "on")
     except Exception:
         pass
-    return True  # default: estricto
+    # Default BETA (Sebastián 30-jun · planta en adaptación): NO exige área limpia para producir hasta que
+    # activen el modo estricto INVIMA desde /admin/seguridad-planta. Igual bloquea arrancar sobre área OCUPADA.
+    return False
 
 
 # ── Helper para migraciones idempotentes ──────────────────────────────────────
