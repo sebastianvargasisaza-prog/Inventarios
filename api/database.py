@@ -397,6 +397,9 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (318, "Planta BETA: forzar exigir_area_limpia=0 en app_settings (una fila en 1 pisaba el default beta y seguia exigiendo area limpia · Sebastian 30-jun).", [
+        "UPDATE app_settings SET valor='0' WHERE clave='exigir_area_limpia'",
+    ]),
     (317, "Marcacion: hora_alistar + urgencia (Catalina los define al solicitar el alistamiento).", [
         "ALTER TABLE marcacion_ordenes ADD COLUMN hora_alistar TEXT DEFAULT ''",
         "ALTER TABLE marcacion_ordenes ADD COLUMN urgencia TEXT DEFAULT ''",
