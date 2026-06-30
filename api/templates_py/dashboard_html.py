@@ -1643,7 +1643,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
 
         <!-- Checklist COC-PRO-001 -->
         <div style="margin-bottom:20px;">
-          <h4 style="color:#2c3e50;margin-bottom:14px;font-size:0.95em;text-transform:uppercase;letter-spacing:1px;">6. Revision Documental</h4>
+          <h4 style="color:#2c3e50;margin-bottom:14px;font-size:0.95em;text-transform:uppercase;letter-spacing:1px;">Revision Documental</h4>
           <div style="display:flex;flex-direction:column;gap:10px;">
             <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:0.9em;">
               <input type="checkbox" id="cc-coa-ok" style="width:18px;height:18px;">
@@ -1665,7 +1665,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         </div>
 
         <div style="margin-bottom:20px;">
-          <h4 style="color:#2c3e50;margin-bottom:14px;font-size:0.95em;text-transform:uppercase;letter-spacing:1px;">9. Prueba de Solubilidad / Compatibilidad</h4>
+          <h4 style="color:#2c3e50;margin-bottom:14px;font-size:0.95em;text-transform:uppercase;letter-spacing:1px;">Prueba de Solubilidad / Compatibilidad</h4>
           <div style="display:flex;gap:12px;">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:10px 18px;border:2px solid #dde;border-radius:8px;font-size:0.9em;font-weight:600;">
               <input type="radio" name="cc-solub" value="ACEPTACION" id="cc-solub-ok"> <span style="color:#27ae60;">ACEPTACION</span>
