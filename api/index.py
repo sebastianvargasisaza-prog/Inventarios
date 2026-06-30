@@ -633,10 +633,14 @@ def _inject_chat_widget(response):
         # cx-ready se aplique antes que el browser pinte loader 8s permanente
         snippet = '<script src="/static/cortex.js?v=eos2"></script>'
         # chat-widget + notif solo si autenticado y NO en /chat /login /logout
+        # 29-jun · estas páginas van EMBEBIDAS en iframe dentro del dashboard → NO inyectar el chat+campana
+        # (si no, aparecen duplicados/solapados DENTRO del calendario · el dashboard padre ya los tiene).
+        _embebidas = ('/admin/plan-calendario', '/planta/kanban', '/admin/factibilidad-plan')
         if (session.get('compras_user')
                 and not (path.startswith('/chat')
                          or path.startswith('/login')
-                         or path.startswith('/logout'))):
+                         or path.startswith('/logout')
+                         or path in _embebidas)):
             snippet += ('<script src="/api/chat/widget.js" async></script>'
                         '<script src="/api/notif/widget.js" async></script>')
         # Usar rsplit (último </body>) para evitar inyectar dentro de strings JS
