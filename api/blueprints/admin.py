@@ -7483,9 +7483,9 @@ function render(){
       '<td class="muted">'+esc(String(r.fecha||''))+'</td>'+
       '<td>'+esc(r.envase_codigo)+'<br><span class="muted">'+esc(r.envase_desc||'')+' &middot; '+(r.volumen_ml||'')+'ml</span></td>'+
       '<td style="font-weight:700;color:#5b21b6">'+(Math.round(r.unidades||0).toLocaleString('es-CO'))+'</td>'+
-      '<td><select id="m-'+i+'">'+opt('',r.marcacion_tipo,'- definir -')+opt('serigrafia',r.marcacion_tipo,'Serigraf&iacute;a')+opt('tampografia',r.marcacion_tipo,'Tampograf&iacute;a')+opt('pre_impreso',r.marcacion_tipo,'Pre-impreso (China)')+opt('ninguno',r.marcacion_tipo,'Ninguno')+'</select></td>'+
+      '<td><select id="m-'+i+'">'+opt('',r.marcacion_tipo,'- definir -')+opt('serigrafia',r.marcacion_tipo,'Serigraf&iacute;a')+opt('tampografia',r.marcacion_tipo,'Tampograf&iacute;a')+opt('etiqueta',r.marcacion_tipo,'Etiqueta (solicitada)')+opt('pre_impreso',r.marcacion_tipo,'Pre-impreso (China)')+opt('ninguno',r.marcacion_tipo,'Ninguno')+'</select></td>'+
       '<td><input class="prov" id="p-'+i+'" value="'+esc(r.marcacion_proveedor||'')+'" placeholder="proveedor"></td>'+
-      '<td style="white-space:nowrap"><button id="b-'+i+'" onclick="guardar('+i+')">Guardar</button> <button onclick="enviar('+i+')" style="background:#5b21b6">&#9993; Enviar a marcar</button></td>'+
+      '<td style="white-space:nowrap"><button id="b-'+i+'" onclick="guardar('+i+')">Guardar</button> '+(r.marcacion_tipo==='etiqueta'?'<span style="display:inline-block;background:#dcfce7;color:#15803d;font-weight:700;padding:5px 10px;border-radius:6px;font-size:11px">&#127991; Lleva etiqueta</span>':'<button onclick="enviar('+i+')" style="background:#5b21b6">&#9993; Enviar a marcar</button>')+'</td>'+
       '</tr>';
   });
   h+='</tbody></table>';
@@ -7507,7 +7507,7 @@ async function enviar(i){
   var r0=ROWS[i];
   var tipo=document.getElementById('m-'+i).value;
   var prov=document.getElementById('p-'+i).value;
-  if(!tipo||tipo==='pre_impreso'||tipo==='ninguno'){ alert('Definí el método (serigrafía/tampografía) antes de enviar'); return; }
+  if(!tipo||tipo==='pre_impreso'||tipo==='ninguno'||tipo==='etiqueta'){ alert('Este envase lleva etiqueta o no se marca — no se envía a serigrafía.'); return; }
   var cant=prompt('¿Cuántos enviar a marcar?', Math.round(r0.unidades||0));
   if(cant===null) return; cant=parseFloat(cant); if(!(cant>0)){ alert('Cantidad inválida'); return; }
   try{

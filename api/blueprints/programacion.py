@@ -11172,7 +11172,7 @@ def marcacion_envase_set():
     prov = (d.get('marcacion_proveedor') or '').strip()
     if not cod:
         return jsonify({'error': 'codigo requerido'}), 400
-    if tipo and tipo not in ('serigrafia', 'tampografia', 'pre_impreso', 'ninguno'):
+    if tipo and tipo not in ('serigrafia', 'tampografia', 'etiqueta', 'pre_impreso', 'ninguno'):
         return jsonify({'error': 'tipo invalido'}), 400
     conn = get_db()
     c = conn.cursor()
