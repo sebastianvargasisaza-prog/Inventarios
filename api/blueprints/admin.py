@@ -7508,7 +7508,7 @@ function render(){
       '<td><input id="u-'+i+'" type="number" min="1" value="'+Math.round(r.unidades||0)+'" style="width:80px;font-weight:700;color:#5b21b6;text-align:right"></td>'+
       '<td><select id="m-'+i+'">'+opt('',r.marcacion_tipo,'- definir -')+opt('serigrafia',r.marcacion_tipo,'Serigraf&iacute;a')+opt('tampografia',r.marcacion_tipo,'Tampograf&iacute;a')+opt('etiqueta',r.marcacion_tipo,'Etiqueta (solicitada)')+opt('pre_impreso',r.marcacion_tipo,'Pre-impreso (China)')+opt('ninguno',r.marcacion_tipo,'Ninguno')+'</select></td>'+
       '<td><input class="prov" id="p-'+i+'" list="provlist" value="'+esc(r.marcacion_proveedor||'')+'" placeholder="proveedor"></td>'+
-      '<td style="white-space:nowrap"><button id="b-'+i+'" onclick="guardar('+i+')">Guardar</button> '+(r.marcacion_tipo==='etiqueta'?'<span style="display:inline-block;background:#dcfce7;color:#15803d;font-weight:700;padding:5px 10px;border-radius:6px;font-size:11px">&#127991; Lleva etiqueta</span>':'<button onclick="enviar('+i+')" style="background:#5b21b6">&#128203; Solicitar alistamiento</button>')+'</td>'+
+      '<td style="white-space:nowrap"><button id="b-'+i+'" onclick="guardar('+i+')">Guardar</button> <button onclick="generarOC('+i+')" style="background:#7c3aed" title="Crea la OC de la marcaci\u00f3n (servicio o etiquetas), agrupa por proveedor">&#128722; Generar OC</button> '+(r.marcacion_tipo==='etiqueta'?'<span style="display:inline-block;background:#dcfce7;color:#15803d;font-weight:700;padding:5px 10px;border-radius:6px;font-size:11px">&#127991; Lleva etiqueta</span>':'<button onclick="enviar('+i+')" style="background:#5b21b6">&#128203; Solicitar alistamiento</button>')+'</td>'+
       '</tr>';
   });
   h+='</tbody></table>';
@@ -7589,6 +7589,25 @@ async function cambiarEnvase(i){
     var d=await r.json();
     if(d.ok){ cargar(); } else { alert('Error: '+(d.error||'')); render(); }
   }catch(e){ alert('Error de conexi\u00f3n'); render(); }
+}
+async function generarOC(i){
+  var r0=ROWS[i];
+  var tipo=document.getElementById('m-'+i).value;
+  var prov=document.getElementById('p-'+i).value;
+  if(!tipo||tipo==='pre_impreso'||tipo==='ninguno'){ alert('Defin\u00ed el m\u00e9todo (serigraf\u00eda/tampograf\u00eda/etiqueta) antes de generar la OC'); return; }
+  if(!prov){ alert('Defin\u00ed el proveedor antes de generar la OC'); return; }
+  var ui=document.getElementById('u-'+i); var cant=ui?parseFloat(ui.value):Math.round(r0.unidades||0);
+  if(!(cant>0)){ alert('Cantidad inv\u00e1lida'); return; }
+  var sob=Math.round(r0.stock_envase||0);
+  if(sob>0 && !confirm('\u26a0\ufe0f Ya ten\u00e9s '+sob.toLocaleString('es-CO')+' de '+r0.envase_codigo+' en bodega (de antes). Vas a pedir '+cant.toLocaleString('es-CO')+'. \u00bfSeguro?')){ return; }
+  var concepto=(tipo==='etiqueta'?'Etiquetas':(tipo==='serigrafia'?'Serigraf\u00eda':'Tampograf\u00eda'))+' '+r0.envase_codigo+' ('+r0.producto+')';
+  if(!confirm('Generar OC de "'+concepto+'"\n'+cant.toLocaleString('es-CO')+' u \u00b7 proveedor '+prov+'?')) return;
+  try{
+    var r=await fetch('/api/solicitudes-compra',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({categoria:'Material de Empaque',tipo:'Compra',solicitante:'Marcaci\u00f3n (Compras)',observaciones:'Marcaci\u00f3n de envases \u00b7 '+r0.producto,items:[{codigo_mp:r0.envase_codigo,nombre_mp:concepto,cantidad_g:cant,unidad:'und',justificacion:'Marcaci\u00f3n '+tipo+' \u00b7 prod '+(r0.fecha||''),proveedor_sugerido:prov}]})});
+    var d=await r.json();
+    if(d.numero){ alert('\u2713 OC generada como '+d.numero+'\nVe a Bandeja \u2192 se agrupa por proveedor \u2192 Catalina la autoriza/paga.'); }
+    else { alert('Error: '+(d.error||'no se pudo crear la OC')); }
+  }catch(e){ alert('Error de conexi\u00f3n'); }
 }
 function crearEnvase(i){
   window._crearTarget=i; var r0=ROWS[i]||{};

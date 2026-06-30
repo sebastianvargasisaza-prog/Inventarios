@@ -446,3 +446,22 @@ def test_marcacion_enviar_y_recibir(app, db_clean):
     assert ent and float(ent[0]) == 95 and ent[1] == 'CUARENTENA', ('falta Entrada serigrafiado en cuarentena', ent)
     r3 = c.post('/api/programacion/marcacion-orden/%d/recibir' % oid, json={'cantidad_recibida': 5}, headers=csrf_headers())
     assert r3.status_code == 409, ('debe rechazar doble recepción (CAS)', r3.status_code)
+
+
+
+def test_marcacion_generar_oc_crea_sol(app, db_clean):
+    # "Generar OC" de marcación reusa /api/solicitudes-compra → SOL de Material de Empaque (servicio/etiquetas).
+    from .conftest import csrf_headers
+    c = _login(app)
+    r = c.post('/api/solicitudes-compra', json={
+        'categoria': 'Material de Empaque', 'tipo': 'Compra', 'solicitante': 'Marcación (Compras)',
+        'items': [{'codigo_mp': 'FR-OCTEST-30', 'nombre_mp': 'Serigrafía FR-OCTEST-30 (X)', 'cantidad_g': 100,
+                   'unidad': 'und', 'justificacion': 'Marcación serigrafia', 'proveedor_sugerido': 'SerigProvTest'}],
+    }, headers=csrf_headers())
+    assert r.status_code == 201, r.data
+    num = (r.get_json() or {}).get('numero')
+    assert num, r.data
+    row = _q1("SELECT categoria FROM solicitudes_compra WHERE numero=?", (num,))
+    assert row and row[0] == 'Material de Empaque', ('SOL mal categorizada', row)
+    it = _q1("SELECT nombre_mp FROM solicitudes_compra_items WHERE numero=?", (num,))
+    assert it and 'FR-OCTEST-30' in (it[0] or ''), ('item mal', it)
