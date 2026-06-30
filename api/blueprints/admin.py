@@ -7508,7 +7508,7 @@ function render(){
       '<td><input id="u-'+i+'" type="number" min="1" value="'+Math.round(r.unidades||0)+'" style="width:80px;font-weight:700;color:#5b21b6;text-align:right"></td>'+
       '<td><select id="m-'+i+'">'+opt('',r.marcacion_tipo,'- definir -')+opt('serigrafia',r.marcacion_tipo,'Serigraf&iacute;a')+opt('tampografia',r.marcacion_tipo,'Tampograf&iacute;a')+opt('etiqueta',r.marcacion_tipo,'Etiqueta (solicitada)')+opt('pre_impreso',r.marcacion_tipo,'Pre-impreso (China)')+opt('ninguno',r.marcacion_tipo,'Ninguno')+'</select></td>'+
       '<td><input class="prov" id="p-'+i+'" list="provlist" value="'+esc(r.marcacion_proveedor||'')+'" placeholder="proveedor"></td>'+
-      '<td style="white-space:nowrap"><button id="b-'+i+'" onclick="guardar('+i+')">Guardar</button> '+(r.marcacion_tipo==='etiqueta'?'<span style="display:inline-block;background:#dcfce7;color:#15803d;font-weight:700;padding:5px 10px;border-radius:6px;font-size:11px">&#127991; Lleva etiqueta</span>':'<button onclick="enviar('+i+')" style="background:#5b21b6">&#9993; Enviar a marcar</button>')+'</td>'+
+      '<td style="white-space:nowrap"><button id="b-'+i+'" onclick="guardar('+i+')">Guardar</button> '+(r.marcacion_tipo==='etiqueta'?'<span style="display:inline-block;background:#dcfce7;color:#15803d;font-weight:700;padding:5px 10px;border-radius:6px;font-size:11px">&#127991; Lleva etiqueta</span>':'<button onclick="enviar('+i+')" style="background:#5b21b6">&#128203; Solicitar alistamiento</button>')+'</td>'+
       '</tr>';
   });
   h+='</tbody></table>';
@@ -7538,7 +7538,7 @@ async function enviar(i){
   try{
     var r=await fetch('/api/programacion/marcacion-orden/enviar',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({serigrafiado_codigo:r0.envase_codigo,cantidad:cant,metodo:tipo,proveedor:prov,producto:r0.producto,produccion_id:r0.produccion_id})});
     var d=await r.json();
-    if(d.ok){ alert('✓ Enviado a marcar · Salida del base '+d.base+' registrada en el kardex'); cargarOrdenes(); }
+    if(d.ok){ alert('✓ Solicitado a Planta para alistar · Salida del base '+d.base+' registrada'); cargarOrdenes(); }
     else alert('Error: '+(d.error||''));
   }catch(e){ alert('Error de conexión'); }
 }
