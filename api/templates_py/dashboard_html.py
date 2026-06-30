@@ -1338,7 +1338,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
               '<td>'+_escHTML(o.operador||'\\u2014')+'</td>'+
               '<td style="text-align:right">'+(o.teorica_g!=null?(Number(o.teorica_g).toLocaleString('es-CO')+' g'):'\\u2014')+'</td>'+
               '<td style="text-align:center"><span style="background:#fef3c7;color:#b45309;padding:1px 8px;border-radius:8px;font-size:0.75em;font-weight:700">En proceso</span></td>'+
-              '<td style="text-align:center">'+leg+'<button onclick="corregirCantidadFab('+o.produccion_id+')" title="Corregir la cantidad (revierte y re-descuenta la MP)" style="background:#ede9fe;color:#6d28d9;border:1px solid #c4b5fd;border-radius:5px;padding:4px 8px;font-size:10px;font-weight:700;cursor:pointer;margin-right:5px">&#9999;&#65039;</button><button onclick="finalizarFabVivo('+o.produccion_id+')" style="background:#d97706;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:10px;font-weight:700;cursor:pointer">\\u25a0 Finalizar</button></td>'+
+              '<td style="text-align:center">'+leg+'<button onclick="eliminarFabVivo('+o.produccion_id+')" title="Eliminar esta produccion y revertir la MP - para borrar las mal registradas" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:5px;padding:4px 8px;font-size:10px;font-weight:700;cursor:pointer;margin-right:5px">&#128465;</button><button onclick="finalizarFabVivo('+o.produccion_id+')" style="background:#d97706;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:10px;font-weight:700;cursor:pointer">\\u25a0 Finalizar</button></td>'+
             '</tr>';
           }).join('');
         }catch(e){ tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#c00;padding:16px">Error: '+_escHTML(e.message||e)+'</td></tr>'; }
@@ -1396,15 +1396,13 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         }catch(e){ alert('Error: '+(e.message||e)); }
         finally{ if(btn){ btn.disabled=false; btn.innerHTML='\\ud83e\\uddea Demo legajo'; } }
       };
-      window.corregirCantidadFab=async function(pid){
-        var v=prompt('Nueva cantidad en KG (ej: 80 = 80.000 g) - revierte el descuento viejo y descuenta la nueva cantidad de MP:');
-        if(v===null)return; var kg=parseFloat(v);
-        if(!(kg>0)){ alert('Cantidad invalida'); return; }
+      window.eliminarFabVivo=async function(pid){
+        if(!confirm('Eliminar esta produccion y REVERTIR el descuento de MP? Para borrar las mal registradas y volver a empezar limpio.'))return;
         var t=await _csrfFab();
-        var r=await fetch('/api/programacion/programar/'+pid+'/corregir-cantidad',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify({cantidad_kg:kg})});
+        var r=await fetch('/api/plan/proximas/'+pid,{method:'DELETE',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify({force:true})});
         var j=await r.json();
         if(!r.ok){ alert('Error: '+(j.error||r.status)); return; }
-        alert('Cantidad corregida a '+kg+' kg - MP ajustada.');
+        alert('Eliminada - MP revertida al inventario.');
         if(window.cargarEnCurso) window.cargarEnCurso();
       };
       window.finalizarFabVivo=async function(pid){
