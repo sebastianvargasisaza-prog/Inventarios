@@ -534,6 +534,15 @@ El dropdown "ENVASE DEL LOTE" del calendario quedaba pegado en "— Cargando env
 - **Para datos que DEBEN aparecer sí o sí, embebé server-side en la página (placeholder reemplazado en la ruta), NO fetch** (el fetch puede colgarse/502). Construí las `<option>` del dropdown INLINE y SÍNCRONAS en el HTML del modal desde el global embebido (no `setTimeout`+async). Hardening del inyectado: **escapá `<`→`\u003c`** en `json.dumps(..., ensure_ascii=False)` (NO escapa `</script>` → una descripción con `</script>` cierra el bloque y mata el JS) + `Cache-Control: no-store` en la ruta.
 - **Validar JS de un `r"""..."""` (raw string): extraé ESE raw string y pasá node-check DIRECTO (sin de-escape).** El node-check del archivo Python entero da FALSOS positivos por los escapes de Python (`\'`) de OTROS strings no-raw del mismo archivo. Para datos inyectados, simulá la inyección con un catálogo de ejemplo antes del node-check.
 
+## 🏷️ M60 · Marcación de envases (serigrafía/tampografía) · transformación base→serigrafiado con paso externo · 29-jun
+
+Sebastián: los envases van a serigrafía/tampografía ~15d antes de producir (ponerles el nombre). Compras DECIDE el método+proveedor (ella sabe), Planta ALISTA. Modelo construido (Fase A+B):
+- **El serigrafiado es OTRO envase** (otro código, con el nombre · "el envase pasa a tener otro nombre"). La relación base→serigrafiado es `maestro_mee.material_referencia` (de Fase 0). Pre-impresos de China (Nia/Mulp/TRX) = `marcacion_tipo='pre_impreso'` → NO entran a la cola.
+- **Transformación con paso externo (patrón reusable):** el base SALE (Salida en `movimientos_mee`, lote_ref 'MARCACION') → vuelve como serigrafiado (Entrada en **CUARENTENA**, lote_ref 'MARCACION-RET') → **Calidad libera con el flujo MEE de cuarentena que YA existía** (no se duplica). La orden (`marcacion_ordenes`) enlaza base↔serigrafiado = trazabilidad. Lo que sobra queda como serigrafiado del producto (su propio stock). Merma = `cantidad_recibida < enviada`.
+- **CAS al recibir (M27/M31):** reclamar la orden (`UPDATE ... SET estado='recibido' WHERE id=? AND estado='enviado'` + `rowcount==1`) ANTES de insertar la Entrada → anti-doble-recepción multi-worker (si no, 2 recibir concurrentes = doble Entrada).
+- **Fechas en DML calculadas en Python** (`(datetime.utcnow()-timedelta(hours=5)).date().isoformat()`), nunca `date('now')` en el INSERT (M24/PG).
+- `maestro_mee.marcacion_tipo` (serigrafia/tampografia/pre_impreso/ninguno) + `marcacion_proveedor` (mig 312) · Compras los setea por envase (se recuerda). La cola (`serigrafia-cola`) excluye pre_impreso + agrega `fecha_envio` (producción−15d). Bandeja Compras `/admin/marcacion-envases` (decidir+enviar+recibir); Planta "Alistar envases" (preparar). migs 312-313. Tests `test_marcacion_*`. ⚠ pendiente: poblar `material_referencia` (base↔serigrafiado) para los que el serigrafiado ≠ base.
+
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
 
 Al cerrar una sesión donde se encontró/arregló un bug con patrón no listado aquí:
