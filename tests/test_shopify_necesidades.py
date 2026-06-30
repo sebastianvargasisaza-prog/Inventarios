@@ -400,3 +400,23 @@ def test_envase_override_propaga_a_futuras(app, db_clean):
     for _id in (id1, id2):  # este lote + el del mes siguiente quedan con el envase
         rr = _q1("SELECT envase_codigo_override FROM produccion_programada WHERE id=?", (_id,))
         assert (rr[0] or '').upper() == env, ('lote sin envase propagado', _id, rr)
+
+
+
+def test_dedup_presentacion_duplicada(app, db_clean):
+    # mig 311: 2 códigos para el MISMO frasco (FR-X + ENV-Y, misma descripción) → se desactiva el ENV-, queda el FR-.
+    # NO toca presentaciones de distinta descripción (tonos del gloss).
+    prod = "ZZ DEDUP PROD"
+    _exec("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,stock_actual,stock_minimo) "
+          "VALUES ('FR-DEDUP-30','FRASCO DEDUP 30ml','Frasco',0,0)")
+    _exec("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,stock_actual,stock_minimo) "
+          "VALUES ('ENV-DEDUP-30ML','FRASCO DEDUP 30ml','Frasco',0,0)")
+    _exec("INSERT INTO producto_presentaciones (producto_nombre,presentacion_codigo,etiqueta,volumen_ml,envase_codigo,activo) "
+          "VALUES (?,'V30A','30ml',30,'FR-DEDUP-30',1)", (prod,))
+    _exec("INSERT INTO producto_presentaciones (producto_nombre,presentacion_codigo,etiqueta,volumen_ml,envase_codigo,activo) "
+          "VALUES (?,'V30B','30ml',30,'ENV-DEDUP-30ML',1)", (prod,))
+    _exec("UPDATE producto_presentaciones SET activo=0 WHERE COALESCE(activo,1)=1 AND UPPER(TRIM(envase_codigo)) NOT LIKE 'FR-%' AND EXISTS (SELECT 1 FROM producto_presentaciones pp2 JOIN maestro_mee mm2 ON UPPER(TRIM(mm2.codigo))=UPPER(TRIM(pp2.envase_codigo)) JOIN maestro_mee mm1 ON UPPER(TRIM(mm1.codigo))=UPPER(TRIM(producto_presentaciones.envase_codigo)) WHERE pp2.id<>producto_presentaciones.id AND COALESCE(pp2.activo,1)=1 AND UPPER(TRIM(pp2.producto_nombre))=UPPER(TRIM(producto_presentaciones.producto_nombre)) AND UPPER(TRIM(mm2.descripcion))=UPPER(TRIM(mm1.descripcion)) AND UPPER(TRIM(pp2.envase_codigo)) LIKE 'FR-%')")
+    fr = _q1("SELECT activo FROM producto_presentaciones WHERE producto_nombre=? AND envase_codigo='FR-DEDUP-30'", (prod,))
+    env = _q1("SELECT activo FROM producto_presentaciones WHERE producto_nombre=? AND envase_codigo='ENV-DEDUP-30ML'", (prod,))
+    assert fr and fr[0] == 1, ('el FR- debe quedar activo', fr)
+    assert env and env[0] == 0, ('el ENV- duplicado debe desactivarse', env)
