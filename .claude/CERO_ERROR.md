@@ -551,6 +551,14 @@ Bug (sub-pestañas Planta en Compras desaparecían al click): puse botones con `
 
 `proveedores_calificacion.estado` tiene `CHECK(estado IN ('pendiente','en_evaluacion','aprobado',...))` — **minúscula**. Inserté `'Aprobado'` → el CHECK lo rechazó → como el INSERT estaba en `try/except: pass` (auto-califica best-effort), **falló sin avisar** y el test cazó que el registro no existía. **Reglas:** (1) al escribir a una tabla nueva, **verificá los CHECK/enum de su CREATE TABLE** (mayúsc/minúsc, valores exactos) antes de inventar el valor. (2) Un `try/except: pass` alrededor de un INSERT esconde estos fallos — **siempre un test que verifique el efecto** (que el registro/columna quedó como esperás), no solo que el endpoint devolvió 200. Ver marcación Fase D ([[project_shopify_necesidades_audit_27jun]]).
 
+## 🔍 M63 · Lecciones de la auditoría de marcación (código NUEVO que reintroduce viejos bugs) · 30-jun
+
+Auditoría 2-agentes del módulo marcación encontró que **código nuevo reintrodujo patrones que el cerebro ya prohíbe**:
+- **Stock MEE: SIEMPRE `_get_mee_stock(conn)`, nunca un SUM inline.** En serigrafia-cola armé `SUM(CASE WHEN tipo='Entrada'...)` propio → case-sensitive, ignoraba 'Ajuste', y **NO excluía CUARENTENA** → el "sobrante" contaba envases en cuarentena como disponibles (viola M26/M5). El canónico `_get_mee_stock` (keys UPPER, memoizado en flask.g) ya hace todo bien. Igual para MP: `_get_mp_stock`. **Antes de escribir un SUM de stock, buscá el helper canónico.**
+- **CAS protege transiciones de estado, NO la creación.** recibir/liberar tienen CAS (anti-doble), pero "Solicitar alistamiento"/"Generar OC" CREAN filas nuevas cada vez → doble-click = doble orden + doble Salida + doble OC. **Fix:** guard de cliente `if(window._xBusy)return; window._xBusy=true; setTimeout(reset,2000)` antes del fetch en TODA acción que inserta.
+- **SAVEPOINT para INSERTs best-effort en tablas con UNIQUE/CHECK (PG).** Un `try/except:pass` alrededor de un INSERT que choca la UNIQUE **aborta la transacción ENTERA en PG** → el commit posterior muere o pierde todo. Envolvé el bloque opcional en `SAVEPOINT sp; ...; RELEASE sp` / `ROLLBACK TO sp` en el except. (Combina con M62: el INSERT puede fallar por CHECK de case además de UNIQUE.)
+- **Loops que llaman un helper pesado por fila = N+1.** serigrafia-cola llamaba `_composicion_envases_lote` (3 queries + scan de maestro_mee) por cada producción futura a 2 años. **Fix rápido:** acotar el horizonte (180d); **fix de fondo:** pre-cargar catálogos fuera del loop y pasarlos al helper. Ver [[project_shopify_necesidades_audit_27jun]].
+
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
 
 Al cerrar una sesión donde se encontró/arregló un bug con patrón no listado aquí:
