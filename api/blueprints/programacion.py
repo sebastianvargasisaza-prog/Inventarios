@@ -12423,9 +12423,20 @@ def abastecimiento_consumo_horizontes():
     # Hoy es invisible (ni stock VIGENTE ni en-cola) → se re-pedía. Se muestra + cuenta como 'ya viene'.
     _cuar_mp = {}
     try:
-        for (cc, qg) in c.execute("SELECT mm.codigo, COALESCE(SUM(CASE WHEN mv.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN mv.cantidad WHEN mv.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -mv.cantidad ELSE 0 END),0) FROM movimientos mv JOIN maestro_mps mm ON mm.id = mv.material_id WHERE UPPER(COALESCE(mv.estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA') GROUP BY mm.codigo").fetchall():
-            if cc:
-                _cuar_mp[str(cc).upper().strip()] = max(float(qg or 0), 0)
+        _cuar_id = {}
+        for (mid, qg) in c.execute("SELECT material_id, COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0) FROM movimientos WHERE material_id IS NOT NULL AND material_id != '' AND UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA') GROUP BY material_id").fetchall():
+            _cuar_id[str(mid).strip()] = max(float(qg or 0), 0)
+        _cuar_mp = dict(_cuar_id)
+        for (mid, nombre) in c.execute("SELECT DISTINCT material_id, material_nombre FROM movimientos WHERE material_nombre IS NOT NULL AND material_nombre != ''").fetchall():
+            _v = _cuar_id.get(str(mid or '').strip(), 0)
+            if _v <= 0:
+                continue
+            _ns = str(nombre).strip()
+            if _ns.upper() not in _cuar_mp:
+                _cuar_mp[_ns.upper()] = _v
+            _kn = _norm_mp_name(_ns)
+            if _kn and _kn not in _cuar_mp:
+                _cuar_mp[_kn] = _v
     except Exception:
         _cuar_mp = {}
     _cuar_mee = {}
@@ -12446,7 +12457,7 @@ def abastecimiento_consumo_horizontes():
             # variante de nombre no bridgeada daba stock 0 → déficit falso).
             stock_g = _lookup_stock_5tier(stock_mp, cod, info.get('nombre') or '')
             pend_g = float(pendientes_mp.get(cod.upper(), 0) or 0)
-            cuar_g = float(_cuar_mp.get(cod.upper().strip(), 0) or 0)
+            cuar_g = float(_lookup_stock_5tier(_cuar_mp, cod, info.get('nombre') or '') or 0)
             disponible = stock_g + pend_g + cuar_g
             deficits = {h: round(max(consumo[h] - disponible, 0), 1) for h in horizontes}
             urg, h_urg = _urgencia_de(deficits)
