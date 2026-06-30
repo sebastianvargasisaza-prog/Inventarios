@@ -20744,6 +20744,13 @@ def cancelar_proxima(pid):
                                 "codigo": "REVERT_FALLO"}), 500
         cur.execute("UPDATE produccion_programada SET estado='programado', inicio_real_at=NULL, "
                     "inventario_descontado_at=NULL WHERE id=? AND COALESCE(estado,'')!='cancelado'", (pid,))
+        # Sebastian 30-jun: liberar el area que ocupaba (produccion erronea que se borra) -> libre
+        try:
+            _arf = cur.execute("SELECT area_id FROM produccion_programada WHERE id=?", (pid,)).fetchone()
+            if _arf and _arf[0]:
+                cur.execute("UPDATE areas_planta SET estado='libre' WHERE id=? AND estado='ocupada'", (_arf[0],))
+        except Exception:
+            pass
         estado_actual = 'programado'  # ya sin descuento ni flags → pasa los guards de abajo
     # Sebastián 16-jun · El espejo de Fabricación cierra como 'completado' los lotes
     # manuales que coinciden (producto, fecha) y les pone inventario_descontado_at,
