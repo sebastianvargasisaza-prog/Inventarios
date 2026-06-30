@@ -11160,6 +11160,62 @@ def marcacion_ordenes_lista():
     return jsonify({'items': out, 'total': len(out)})
 
 
+@bp.route('/api/programacion/marcacion-crear-envase', methods=['POST'])
+def marcacion_crear_envase():
+    """Crea un envase nuevo desde el modal de marcacion (normaliza: volumen, stock, proveedor, costo). Si el
+    proveedor no existe, lo crea. Sebastian 30-jun."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    cod = (d.get('codigo') or '').strip().upper()
+    desc = (d.get('descripcion') or '').strip()
+    cat = (d.get('categoria') or 'Envase').strip()
+    prov = (d.get('proveedor') or '').strip()
+    def _f(k):
+        try:
+            return float(d.get(k) or 0)
+        except (TypeError, ValueError):
+            return 0
+    vol = _f('volumen_ml')
+    stock = _f('stock_actual')
+    smin = _f('stock_minimo')
+    precio = _f('precio')
+    if not cod or not desc:
+        return jsonify({'error': 'codigo y descripcion requeridos'}), 400
+    from datetime import datetime as _dtM, timedelta as _tdM
+    _hoy = (_dtM.utcnow() - _tdM(hours=5)).date().isoformat()
+    conn = get_db()
+    c = conn.cursor()
+    if c.execute("SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))", (cod,)).fetchone():
+        return jsonify({'error': f'el envase {cod} ya existe'}), 409
+    # proveedor: crear si no existe (para ir normalizando)
+    if prov:
+        try:
+            if not c.execute("SELECT 1 FROM proveedores WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?))", (prov,)).fetchone():
+                c.execute("INSERT INTO proveedores (nombre, categoria, activo, fecha_creacion) VALUES (?, 'Envases', 1, ?)",
+                          (prov, _hoy))
+        except Exception:
+            pass
+    # crear envase (columnas nuevas si existen; si no, fallback)
+    try:
+        c.execute("INSERT INTO maestro_mee (codigo, descripcion, categoria, unidad, proveedor, stock_actual, "
+                  "stock_minimo, volumen_ml, precio_referencia, estado) VALUES (?,?,?,?,?,?,?,?,?,'Activo')",
+                  (cod, desc, cat, 'und', prov, stock, smin, vol, precio))
+    except Exception:
+        c.execute("INSERT INTO maestro_mee (codigo, descripcion, categoria, unidad, proveedor, stock_actual, "
+                  "stock_minimo, estado) VALUES (?,?,?,?,?,?,?,'Activo')",
+                  (cod, desc, cat, 'und', prov, stock, smin))
+    try:
+        from audit_helpers import audit_log as _al
+        _al(c, usuario=user, accion='CREAR_ENVASE_MARCACION', tabla='maestro_mee', registro_id=cod,
+            despues={'descripcion': desc[:80], 'volumen_ml': vol, 'stock': stock, 'proveedor': prov, 'precio': precio})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'codigo': cod})
+
+
 @bp.route('/api/programacion/marcacion-catalogos', methods=['GET'])
 def marcacion_catalogos():
     """Listas para editar en la bandeja de marcación: proveedores existentes + todos los envases (para cambiar)."""

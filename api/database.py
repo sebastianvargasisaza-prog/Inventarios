@@ -395,6 +395,10 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (314, "Envases - normalizar: volumen_ml + precio_referencia en maestro_mee (modal crear envase en marcacion · Sebastian 30-jun).", [
+        'ALTER TABLE maestro_mee ADD COLUMN volumen_ml REAL DEFAULT 0',
+        'ALTER TABLE maestro_mee ADD COLUMN precio_referencia REAL DEFAULT 0',
+    ]),
     (313, "Marcacion Fase B: tabla marcacion_ordenes (orden de serigrafia/tampografia). Enviar=Salida del base en el kardex; recibir=Entrada del serigrafiado en CUARENTENA (Calidad libera). Trazabilidad base->serigrafiado.", [
         "CREATE TABLE IF NOT EXISTS marcacion_ordenes (id INTEGER PRIMARY KEY AUTOINCREMENT, base_codigo TEXT, serigrafiado_codigo TEXT, producto_nombre TEXT, metodo TEXT, proveedor TEXT, cantidad_enviada REAL DEFAULT 0, cantidad_recibida REAL DEFAULT 0, produccion_id INTEGER, fecha_envio TEXT, fecha_retorno TEXT, estado TEXT DEFAULT 'enviado', creado_por TEXT, creado_en TEXT)",
     ]),

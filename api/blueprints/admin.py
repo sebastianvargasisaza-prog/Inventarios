@@ -7444,11 +7444,33 @@ button.ok{background:#16a34a}
 .urg{color:#dc2626;font-weight:800}
 .muted{color:#94a3b8}
 .search{margin-bottom:12px;padding:8px 12px;width:280px;border:1px solid #cbd5e1;border-radius:8px}
+#crear-modal label{display:block;font-size:11px;font-weight:600;color:#475569;margin:8px 0 3px}
+#crear-modal input,#crear-modal select{width:100%}
+#crear-modal .mrow{display:flex;gap:10px}
+#crear-modal .mrow>div{flex:1}
 </style></head><body><div class="wrap">
 <h1>&#127991; Marcaci&oacute;n de envases &middot; serigraf&iacute;a / tampograf&iacute;a</h1>
 <p class="sub">Compras define el <b>m&eacute;todo</b> y el <b>proveedor</b> de cada envase, y ve qu&eacute; enviar a marcar y <b>para cu&aacute;ndo</b> (15 d&iacute;as antes de la producci&oacute;n). Los pre-impresos de China no aparecen.</p>
 <input class="search" id="q" placeholder="Buscar producto/envase..." oninput="render()">
 <datalist id="provlist"></datalist>
+<div id="crear-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;padding:16px">
+  <div style="background:#fff;border-radius:12px;padding:22px;max-width:480px;width:100%;max-height:92vh;overflow:auto">
+    <h3 style="margin:0 0 4px;color:#0f766e">&#10133; Crear nuevo envase</h3>
+    <p class="muted" style="margin:0 0 12px;font-size:12px">Complet&aacute; los datos para normalizar. Si el proveedor no existe, se crea.</p>
+    <label>C&oacute;digo *</label><input id="ce-cod" placeholder="FR-PLA-NUEVO-30">
+    <label>Descripci&oacute;n *</label><input id="ce-desc" placeholder="FRASCO PL&Aacute;STICO NUEVO 30ml">
+    <div class="mrow"><div><label>Volumen (ml)</label><input id="ce-vol" type="number" min="0"></div>
+      <div><label>Categor&iacute;a</label><select id="ce-cat"><option>Envase</option><option>Frasco</option><option>Tapa</option><option>Caja</option><option>Componente</option></select></div></div>
+    <div class="mrow"><div><label>&iquest;Cu&aacute;ntos hay? (stock)</label><input id="ce-stock" type="number" min="0" value="0"></div>
+      <div><label>Stock m&iacute;nimo</label><input id="ce-smin" type="number" min="0" value="0"></div></div>
+    <div class="mrow"><div><label>Proveedor</label><input id="ce-prov" list="provlist" placeholder="se crea si no existe"></div>
+      <div><label>Costo unitario ($)</label><input id="ce-precio" type="number" min="0"></div></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+      <button onclick="closeCrearModal()" style="background:#e2e8f0;color:#334155">Cancelar</button>
+      <button onclick="submitCrearEnvase()" style="background:#0d9488">Crear y asignar</button>
+    </div>
+  </div>
+</div>
 <div id="cont"><div class="muted" style="padding:20px">Cargando...</div></div>
 <h2 style="font-size:16px;margin:26px 0 8px;color:#0f766e">&#128230; Órdenes de marcación en curso</h2>
 <div id="ordenes"><div class="muted">&mdash;</div></div>
@@ -7566,17 +7588,29 @@ async function cambiarEnvase(i){
     if(d.ok){ cargar(); } else { alert('Error: '+(d.error||'')); render(); }
   }catch(e){ alert('Error de conexi\u00f3n'); render(); }
 }
-async function crearEnvase(i){
-  var cod=prompt('C\u00f3digo del nuevo envase (ej. FR-PLA-NUEVO-30):'); if(!cod) return; cod=cod.trim().toUpperCase();
-  var desc=prompt('Descripci\u00f3n (ej. FRASCO PL\u00c1STICO NUEVO 30ml):'); if(!desc) return;
+function crearEnvase(i){
+  window._crearTarget=i; var r0=ROWS[i]||{};
+  document.getElementById('ce-cod').value=''; document.getElementById('ce-desc').value='';
+  document.getElementById('ce-vol').value=(r0.volumen_ml||''); document.getElementById('ce-cat').value='Envase';
+  document.getElementById('ce-stock').value='0'; document.getElementById('ce-smin').value='0';
+  document.getElementById('ce-prov').value=''; document.getElementById('ce-precio').value='';
+  document.getElementById('crear-modal').style.display='flex';
+}
+function closeCrearModal(){ document.getElementById('crear-modal').style.display='none'; }
+async function submitCrearEnvase(){
+  var cod=(document.getElementById('ce-cod').value||'').trim().toUpperCase();
+  var desc=(document.getElementById('ce-desc').value||'').trim();
+  if(!cod||!desc){ alert('C\u00f3digo y descripci\u00f3n son obligatorios'); return; }
+  var body={codigo:cod,descripcion:desc,categoria:document.getElementById('ce-cat').value,volumen_ml:document.getElementById('ce-vol').value,stock_actual:document.getElementById('ce-stock').value,stock_minimo:document.getElementById('ce-smin').value,proveedor:document.getElementById('ce-prov').value,precio:document.getElementById('ce-precio').value};
   try{
-    var r=await fetch('/api/mee/crear',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({codigo:cod,descripcion:desc,categoria:'Envase',unidad:'und'})});
+    var r=await fetch('/api/programacion/marcacion-crear-envase',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify(body)});
     var d=await r.json();
     if(d.error){ alert('Error: '+d.error); return; }
     await cargarCatalogos();
-    var r0=ROWS[i];
-    await fetch('/api/programacion/marcacion-cambiar-envase',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({producto:r0.producto,volumen_ml:r0.volumen_ml,envase_actual:r0.envase_codigo,envase_nuevo:cod})});
-    alert('\u2713 Envase creado y asignado. Cuando llegue, recib\u00edlo en cuarentena (Bodega MEE).');
+    var i=window._crearTarget; var r0=ROWS[i];
+    if(r0){ await fetch('/api/programacion/marcacion-cambiar-envase',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({producto:r0.producto,volumen_ml:r0.volumen_ml,envase_actual:r0.envase_codigo,envase_nuevo:cod})}); }
+    closeCrearModal();
+    alert('\u2713 Envase creado y asignado.');
     cargar();
   }catch(e){ alert('Error de conexi\u00f3n'); }
 }
