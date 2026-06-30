@@ -395,6 +395,11 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (312, "Envases - marcacion (serigrafia/tampografia): maestro_mee + marcacion_tipo + marcacion_proveedor. Auto-marca pre_impreso los que vienen de China ya serigrafiados (Niacinamida/Multipeptidos/TRX) → NO entran a la cola. El resto los define Compras (ella sabe que va a serig vs tampo).", [
+        "ALTER TABLE maestro_mee ADD COLUMN marcacion_tipo TEXT DEFAULT ''",
+        "ALTER TABLE maestro_mee ADD COLUMN marcacion_proveedor TEXT DEFAULT ''",
+        "UPDATE maestro_mee SET marcacion_tipo='pre_impreso' WHERE codigo LIKE 'FR-%' AND (UPPER(descripcion) LIKE '%NIACINAMIDA%' OR UPPER(descripcion) LIKE '%MULTIPEPTIDOS%' OR UPPER(descripcion) LIKE '%ILUMINADOR TRX%')",
+    ]),
     (311, "Envases - dedup presentaciones duplicadas (Sebastian 29-jun): el mismo frasco mapeado con DOS codigos (re-codificado FR-... + viejo ENV-...) doblaba la demanda (Vitamina C+ cuadrado, Triactive). Desactiva el ENV- (no-FR) cuando existe un FR- con la MISMA descripcion de frasco para el mismo producto. NO toca tonos (descripciones distintas). Reversible (activo=0).", [
         "UPDATE producto_presentaciones SET activo=0 WHERE COALESCE(activo,1)=1 AND UPPER(TRIM(envase_codigo)) NOT LIKE 'FR-%' AND EXISTS (SELECT 1 FROM producto_presentaciones pp2 JOIN maestro_mee mm2 ON UPPER(TRIM(mm2.codigo))=UPPER(TRIM(pp2.envase_codigo)) JOIN maestro_mee mm1 ON UPPER(TRIM(mm1.codigo))=UPPER(TRIM(producto_presentaciones.envase_codigo)) WHERE pp2.id<>producto_presentaciones.id AND COALESCE(pp2.activo,1)=1 AND UPPER(TRIM(pp2.producto_nombre))=UPPER(TRIM(producto_presentaciones.producto_nombre)) AND UPPER(TRIM(mm2.descripcion))=UPPER(TRIM(mm1.descripcion)) AND UPPER(TRIM(pp2.envase_codigo)) LIKE 'FR-%')",
     ]),

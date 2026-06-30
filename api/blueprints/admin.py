@@ -7418,6 +7418,89 @@ cargar();
 </script></body></html>"""
 
 
+@bp.route("/admin/marcacion-envases", methods=["GET"])
+def admin_marcacion_envases_pagina():
+    """Bandeja de Compras: marcación de envases (serigrafía/tampografía) · Sebastián 29-jun."""
+    if not session.get("compras_user"):
+        from flask import redirect
+        return redirect("/login?next=/admin/marcacion-envases")
+    return _MARCACION_ENVASES_HTML
+
+
+_MARCACION_ENVASES_HTML = r"""<!DOCTYPE html><html lang="es"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Marcacion de envases</title>
+<style>
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#f8fafc;color:#1e293b}
+.wrap{max-width:1200px;margin:0 auto;padding:24px}
+h1{font-size:22px;margin:0 0 4px}.sub{color:#64748b;font-size:14px;margin:0 0 16px}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden}
+th,td{padding:7px 9px;text-align:left;font-size:12px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+th{background:#f1f5f9;font-weight:700;font-size:11px;text-transform:uppercase}
+select,input{padding:5px 7px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px}
+input.prov{width:130px}
+button{padding:5px 11px;border:none;border-radius:6px;background:#0891b2;color:#fff;cursor:pointer;font-size:11px;font-weight:700}
+button.ok{background:#16a34a}
+.urg{color:#dc2626;font-weight:800}
+.muted{color:#94a3b8}
+.search{margin-bottom:12px;padding:8px 12px;width:280px;border:1px solid #cbd5e1;border-radius:8px}
+</style></head><body><div class="wrap">
+<h1>&#127991; Marcaci&oacute;n de envases &middot; serigraf&iacute;a / tampograf&iacute;a</h1>
+<p class="sub">Compras define el <b>m&eacute;todo</b> y el <b>proveedor</b> de cada envase, y ve qu&eacute; enviar a marcar y <b>para cu&aacute;ndo</b> (15 d&iacute;as antes de la producci&oacute;n). Los pre-impresos de China no aparecen.</p>
+<input class="search" id="q" placeholder="Buscar producto/envase..." oninput="render()">
+<div id="cont"><div class="muted" style="padding:20px">Cargando...</div></div>
+</div>
+<script>
+var ROWS=[];
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+async function csrf(){var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();return t.csrf_token;}
+function hoy(){return new Date().toISOString().slice(0,10);}
+async function cargar(){
+  try{
+    var d=await (await fetch('/api/programacion/serigrafia-cola',{cache:'no-store'})).json();
+    ROWS=d.items||[];
+    render();
+  }catch(e){ document.getElementById('cont').innerHTML='<div style="color:#dc2626;padding:20px">Error: '+e+'</div>'; }
+}
+function opt(v,sel,txt){return '<option value="'+v+'"'+(sel===v?' selected':'')+'>'+txt+'</option>';}
+function render(){
+  var q=(document.getElementById('q').value||'').toLowerCase();
+  var vis=ROWS.filter(function(r){return !q || (r.producto+' '+r.envase_codigo+' '+(r.envase_desc||'')).toLowerCase().indexOf(q)>=0;});
+  if(!vis.length){ document.getElementById('cont').innerHTML='<div class="muted" style="padding:20px;text-align:center">Sin envases a marcar (o no hay producciones futuras mapeadas).</div>'; return; }
+  var h='<table><thead><tr><th>Enviar antes de</th><th>Producci&oacute;n</th><th>Fecha prod.</th><th>Envase</th><th>Unidades</th><th>M&eacute;todo</th><th>Proveedor</th><th></th></tr></thead><tbody>';
+  vis.forEach(function(r){
+    var i=ROWS.indexOf(r);
+    var urge=(r.fecha_envio && r.fecha_envio<=hoy());
+    h+='<tr>'+
+      '<td class="'+(urge?'urg':'')+'">'+(urge?'&#128308; ':'')+esc(r.fecha_envio||'')+'</td>'+
+      '<td><b>'+esc(r.producto)+'</b></td>'+
+      '<td class="muted">'+esc(String(r.fecha||''))+'</td>'+
+      '<td>'+esc(r.envase_codigo)+'<br><span class="muted">'+esc(r.envase_desc||'')+' &middot; '+(r.volumen_ml||'')+'ml</span></td>'+
+      '<td style="font-weight:700;color:#5b21b6">'+(Math.round(r.unidades||0).toLocaleString('es-CO'))+'</td>'+
+      '<td><select id="m-'+i+'">'+opt('',r.marcacion_tipo,'- definir -')+opt('serigrafia',r.marcacion_tipo,'Serigraf&iacute;a')+opt('tampografia',r.marcacion_tipo,'Tampograf&iacute;a')+opt('pre_impreso',r.marcacion_tipo,'Pre-impreso (China)')+opt('ninguno',r.marcacion_tipo,'Ninguno')+'</select></td>'+
+      '<td><input class="prov" id="p-'+i+'" value="'+esc(r.marcacion_proveedor||'')+'" placeholder="proveedor"></td>'+
+      '<td><button id="b-'+i+'" onclick="guardar('+i+')">Guardar</button></td>'+
+      '</tr>';
+  });
+  h+='</tbody></table>';
+  document.getElementById('cont').innerHTML=h;
+}
+async function guardar(i){
+  var cod=ROWS[i].envase_codigo;
+  var tipo=document.getElementById('m-'+i).value;
+  var prov=document.getElementById('p-'+i).value;
+  var b=document.getElementById('b-'+i); b.textContent='...'; b.disabled=true;
+  try{
+    var r=await fetch('/api/admin/marcacion-envase',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({codigo:cod,marcacion_tipo:tipo,marcacion_proveedor:prov})});
+    var d=await r.json();
+    if(d.ok){ b.textContent='✓'; b.className='ok'; cargar(); }
+    else { alert('Error: '+(d.error||'')); b.textContent='Guardar'; b.disabled=false; }
+  }catch(e){ alert('Error de conexion'); b.textContent='Guardar'; b.disabled=false; }
+}
+cargar();
+</script></body></html>"""
+
+
 @bp.route("/admin/recodificar-envases", methods=["GET"])
 def admin_recodificar_envases_pagina():
     """Re-codificar los envases con la lógica del wizard (Sebastián 28-jun · normalizar todo)."""

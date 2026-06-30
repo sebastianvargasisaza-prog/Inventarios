@@ -10991,6 +10991,14 @@ def serigrafia_cola():
             "ORDER BY fecha_programada, producto").fetchall()
     except Exception as e:
         return jsonify({'error': str(e)[:200], 'items': []}), 500
+    # marcación por envase (mig 312) · tipo (serigrafia/tampografia/pre_impreso) + proveedor · pre_impreso NO entra
+    _marc = {}
+    try:
+        for (mc, mt, mp) in c.execute("SELECT codigo, COALESCE(marcacion_tipo,''), COALESCE(marcacion_proveedor,'') FROM maestro_mee").fetchall():
+            _marc[(mc or '').strip().upper()] = (mt or '', mp or '')
+    except Exception:
+        _marc = {}
+    from datetime import datetime as _dtSC, timedelta as _tdSC
     out = []
     for (lid, prod, fecha, kg) in rows:
         try:
@@ -11004,13 +11012,49 @@ def serigrafia_cola():
             uds = int(round(float(v.get('unidades_estimadas') or 0)))
             if not env or uds <= 0:
                 continue
+            _mt, _mp = _marc.get(env.upper(), ('', ''))
+            if _mt == 'pre_impreso':
+                continue  # viene ya serigrafiado de China · no se alista ni envía a marcar
+            _fenv = ''
+            try:
+                _fenv = (_dtSC.fromisoformat(str(fecha)[:10]) - _tdSC(days=15)).date().isoformat()
+            except Exception:
+                _fenv = ''
             out.append({
-                'produccion_id': lid, 'producto': prod, 'fecha': fecha,
+                'produccion_id': lid, 'producto': prod, 'fecha': fecha, 'fecha_envio': _fenv,
                 'envase_codigo': env, 'envase_desc': v.get('envase_descripcion', ''),
                 'etiqueta': v.get('etiqueta', ''), 'volumen_ml': v.get('volumen_ml', 0),
                 'unidades': uds, 'kg': float(kg or 0),
+                'marcacion_tipo': _mt, 'marcacion_proveedor': _mp,
             })
     return jsonify({'items': out, 'total': len(out)})
+
+
+@bp.route('/api/admin/marcacion-envase', methods=['POST'])
+def marcacion_envase_set():
+    """Compras define el metodo de marcacion (serigrafia/tampografia/pre_impreso/ninguno) + proveedor de un envase.
+    Se recuerda (fijo por envase, editable). Sebastian 29-jun."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    d = request.json or {}
+    cod = (d.get('codigo') or '').strip()
+    tipo = (d.get('marcacion_tipo') or '').strip()
+    prov = (d.get('marcacion_proveedor') or '').strip()
+    if not cod:
+        return jsonify({'error': 'codigo requerido'}), 400
+    if tipo and tipo not in ('serigrafia', 'tampografia', 'pre_impreso', 'ninguno'):
+        return jsonify({'error': 'tipo invalido'}), 400
+    conn = get_db()
+    c = conn.cursor()
+    try:
+        c.execute("UPDATE maestro_mee SET marcacion_tipo=?, marcacion_proveedor=? WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))",
+                  (tipo, prov, cod))
+    except Exception as e:
+        return jsonify({'error': str(e)[:200]}), 500
+    if c.rowcount == 0:
+        return jsonify({'error': 'envase no encontrado'}), 404
+    conn.commit()
+    return jsonify({'ok': True, 'codigo': cod, 'marcacion_tipo': tipo, 'marcacion_proveedor': prov})
 
 
 @bp.route('/api/abastecimiento/envases-cobertura', methods=['GET'])

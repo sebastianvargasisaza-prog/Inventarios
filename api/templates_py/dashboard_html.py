@@ -2445,7 +2445,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <button data-prog-sub="calendario_grp" onclick="switchProgTab('serigrafia');cargarSerigrafiaCola()"
       style="padding:6px 14px;border:1px solid #5b21b6;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#fff;color:#5b21b6"
       title="Envases por producción · enviar a serigrafía con tiempo">
-      &#128424; Serigrafía
+      &#128230; Alistar envases
     </button>
   </div>
   <div id="prog-sub-opera_grp" class="prog-subbar" style="display:none;gap:8px;margin-bottom:14px;padding:8px 4px;border-bottom:1px dashed #cbd5e1;flex-wrap:wrap">
@@ -2493,8 +2493,8 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   <div id="ptab-serigrafia" style="display:none">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
       <div>
-        <h3 style="margin:0;color:#5b21b6;font-size:15px;font-weight:800">&#128424; Cola de envases por producción</h3>
-        <p style="margin:4px 0 0;color:#64748b;font-size:12px">Cada producción futura (en orden de fecha) con su envase y la cantidad teórica que va a gastar &middot; para enviar a serigrafía con tiempo.</p>
+        <h3 style="margin:0;color:#5b21b6;font-size:15px;font-weight:800">&#128230; Alistar envases para marcación</h3>
+        <p style="margin:4px 0 0;color:#64748b;font-size:12px">Qué envases <b>alistar</b> y para cuándo (15 días antes de la producción se llevan a marcar). El método/proveedor los define Compras en <a href="/admin/marcacion-envases" target="_blank" style="color:#5b21b6;font-weight:700">&#127991; Marcación de envases</a>.</p>
       </div>
       <button onclick="cargarSerigrafiaCola()" style="background:#7c3aed;color:#fff;border:none;padding:6px 11px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">&#8635; Recargar</button>
     </div>
@@ -14142,9 +14142,9 @@ async function ckMarcar(itemId, estado){
       var d=await (await fetch('/api/programacion/serigrafia-cola',{cache:'no-store'})).json();
       var its=(d&&d.items)||[];
       if(!its.length){ box.innerHTML='<div style="padding:20px;color:#94a3b8;text-align:center">Sin producciones futuras con envase mapeado.</div>'; return; }
-      var h='<table style="width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden"><thead><tr style="background:#f1f5f9;font-size:11px;text-transform:uppercase"><th style="text-align:left;padding:7px 9px">Fecha</th><th style="text-align:left;padding:7px 9px">Producción</th><th style="text-align:left;padding:7px 9px">Envase</th><th style="padding:7px 9px">ml</th><th style="padding:7px 9px">Unidades</th></tr></thead><tbody>';
+      var h='<table style="width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden"><thead><tr style="background:#f1f5f9;font-size:11px;text-transform:uppercase"><th style="text-align:left;padding:7px 9px">Fecha prod.</th><th style="text-align:left;padding:7px 9px">Enviar antes de</th><th style="text-align:left;padding:7px 9px">Producción</th><th style="text-align:left;padding:7px 9px">Envase</th><th style="padding:7px 9px">ml</th><th style="padding:7px 9px">Unidades</th></tr></thead><tbody>';
       its.forEach(function(it){
-        h+='<tr style="border-bottom:1px solid #f1f5f9;font-size:12px"><td style="padding:7px 9px;white-space:nowrap">'+_escHTML(String(it.fecha||''))+'</td><td style="padding:7px 9px"><b>'+_escHTML(it.producto)+'</b></td><td style="padding:7px 9px">'+_escHTML(it.envase_codigo)+'<br><span style="color:#94a3b8;font-size:11px">'+_escHTML(it.envase_desc||'')+'</span></td><td style="padding:7px 9px;text-align:center">'+(it.volumen_ml||'')+'</td><td style="padding:7px 9px;text-align:center;font-weight:700;color:#5b21b6">'+(Math.round(it.unidades||0).toLocaleString('es-CO'))+'</td></tr>';
+        var _ur=(it.fecha_envio&&it.fecha_envio<=new Date().toISOString().slice(0,10));h+='<tr style="border-bottom:1px solid #f1f5f9;font-size:12px"><td style="padding:7px 9px;white-space:nowrap">'+_escHTML(String(it.fecha||''))+'</td><td style="padding:7px 9px;white-space:nowrap;font-weight:600;color:'+(_ur?'#dc2626':'#b45309')+'">'+(_ur?'&#128308; ':'')+_escHTML(it.fecha_envio||'')+'</td><td style="padding:7px 9px"><b>'+_escHTML(it.producto)+'</b></td><td style="padding:7px 9px">'+_escHTML(it.envase_codigo)+'<br><span style="color:#94a3b8;font-size:11px">'+_escHTML(it.envase_desc||'')+'</span></td><td style="padding:7px 9px;text-align:center">'+(it.volumen_ml||'')+'</td><td style="padding:7px 9px;text-align:center;font-weight:700;color:#5b21b6">'+(Math.round(it.unidades||0).toLocaleString('es-CO'))+'</td></tr>';
       });
       h+='</tbody></table>';
       box.innerHTML=h;

@@ -193,3 +193,45 @@ def test_serigrafia_cola(app, db_clean):
     assert it is not None, ('falta la producción en la cola', [x.get('producto') for x in (d.get('items') or [])])
     assert (it['envase_codigo'] or '').upper() == env, it
     assert it['unidades'] >= 99, ('~100 uds (5000g / 50ml)', it)
+
+
+
+def test_marcacion_envase_set_y_cola(app, db_clean):
+    # Compras define el método+proveedor del envase y aparece en la cola con fecha_envio (producción-15d).
+    from .conftest import csrf_headers
+    prod = "ZZ MARC PROD"
+    base = "FR-MARC-30"
+    _exec("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES (?,1,1)", (prod,))
+    _exec("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,stock_actual,stock_minimo) "
+          "VALUES (?, 'Frasco marc 30','Frasco',0,0)", (base,))
+    _exec("INSERT INTO producto_presentaciones (producto_nombre,presentacion_codigo,etiqueta,volumen_ml,envase_codigo,ventas_mes_referencia,activo) "
+          "VALUES (?,'V30','30ml',30,?,100,1)", (prod, base))
+    _exec("INSERT INTO produccion_programada (producto,fecha_programada,lotes,estado,cantidad_kg,origen) "
+          "VALUES (?, date('now','-5 hours','+20 days'),1,'pendiente',5,'eos_plan')", (prod,))
+    c = _login(app)
+    r = c.post('/api/admin/marcacion-envase',
+               json={'codigo': base, 'marcacion_tipo': 'serigrafia', 'marcacion_proveedor': 'ProvX'},
+               headers=csrf_headers())
+    assert r.status_code == 200, r.data
+    d = c.get('/api/programacion/serigrafia-cola').get_json()
+    it = next((x for x in (d.get('items') or []) if x.get('envase_codigo') == base), None)
+    assert it is not None, ('base no en la cola', [x.get('envase_codigo') for x in (d.get('items') or [])])
+    assert it['marcacion_tipo'] == 'serigrafia' and it['marcacion_proveedor'] == 'ProvX', it
+    assert it.get('fecha_envio'), ('falta fecha_envio (producción-15d)', it)
+
+
+def test_cola_excluye_pre_impreso(app, db_clean):
+    # un envase marcado pre_impreso (viene de China serigrafiado) NO entra a la cola de alistar/marcar.
+    prod = "ZZ PREIMP PROD"
+    pre = "FR-PREIMP-X-30"
+    _exec("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES (?,1,1)", (prod,))
+    _exec("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,stock_actual,stock_minimo,marcacion_tipo) "
+          "VALUES (?, 'Frasco preimp','Frasco',0,0,'pre_impreso')", (pre,))
+    _exec("INSERT INTO producto_presentaciones (producto_nombre,presentacion_codigo,etiqueta,volumen_ml,envase_codigo,ventas_mes_referencia,activo) "
+          "VALUES (?,'V30','30ml',30,?,100,1)", (prod, pre))
+    _exec("INSERT INTO produccion_programada (producto,fecha_programada,lotes,estado,cantidad_kg,origen) "
+          "VALUES (?, date('now','-5 hours','+20 days'),1,'pendiente',5,'eos_plan')", (prod,))
+    c = _login(app)
+    d = c.get('/api/programacion/serigrafia-cola').get_json()
+    it = next((x for x in (d.get('items') or []) if x.get('envase_codigo') == pre), None)
+    assert it is None, ('el pre_impreso NO debe aparecer en la cola', [x.get('envase_codigo') for x in (d.get('items') or [])])
