@@ -635,7 +635,7 @@ def _inject_chat_widget(response):
         # chat-widget + notif solo si autenticado y NO en /chat /login /logout
         # 29-jun · estas páginas van EMBEBIDAS en iframe dentro del dashboard → NO inyectar el chat+campana
         # (si no, aparecen duplicados/solapados DENTRO del calendario · el dashboard padre ya los tiene).
-        _embebidas = ('/admin/plan-calendario', '/planta/kanban', '/admin/factibilidad-plan')
+        _embebidas = ('/admin/plan-calendario', '/planta/kanban', '/admin/factibilidad-plan', '/admin/marcacion-envases')
         if (session.get('compras_user')
                 and not (path.startswith('/chat')
                          or path.startswith('/login')

@@ -150,7 +150,6 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   </div>
   <div class="cx-mod-header__nav">
     <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver">&larr; Módulos</a>
-    <a href="/admin/marcacion-envases" class="cx-btn cx-btn-ghost cx-btn-sm" title="Serigrafía/tampografía: definir método+proveedor, enviar a marcar y recibir">&#127991; Marcación de envases</a>
     <button class="cx-theme-toggle" onclick="cxToggleTheme()" title="Modo claro/oscuro">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4"/></svg>
     </button>
@@ -645,6 +644,11 @@ function renderHistorico(){
      valor), y los cambios se sincronizan globalmente a maestro_mps +
      mp_lead_time_config + precio_referencia (aplican en TODA la app). -->
 <div id="pane-planta" class="pane">
+  <div class="tab-nav" style="margin-bottom:14px;border-bottom:1px dashed #cbd5e1;padding-bottom:6px">
+    <button class="tn on" id="sptn-mp" onclick="showSubPlanta('mp')">&#129514; Materias Primas</button>
+    <button class="tn" id="sptn-env" onclick="showSubPlanta('env')">&#128230; Envases</button>
+  </div>
+  <div id="subplanta-mp">
   <!-- Alertas MP/envases en déficit (Centro de Programación) · 23-jun: movidas desde Solicitudes — son de PLANTA -->
   <div id="mp-alert-banner" style="display:none;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-bottom:10px;">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -687,7 +691,20 @@ function renderHistorico(){
   <div id="planta-body" style="display:flex;flex-direction:column;gap:12px;">
     <div style="color:#94a3b8;text-align:center;padding:40px;">Cargando...</div>
   </div>
+  </div>
+  <div id="subplanta-env" style="display:none">
+    <iframe id="marcacion-iframe" src="about:blank" style="width:100%;height:80vh;border:none;border-radius:8px" title="Marcación de envases"></iframe>
+  </div>
 </div>
+<script>
+function showSubPlanta(w){
+  document.getElementById('subplanta-mp').style.display=(w==='mp')?'':'none';
+  document.getElementById('subplanta-env').style.display=(w==='env')?'':'none';
+  var a=document.getElementById('sptn-mp'),b=document.getElementById('sptn-env');
+  if(a)a.className='tn'+(w==='mp'?' on':'');if(b)b.className='tn'+(w==='env'?' on':'');
+  if(w==='env'){var f=document.getElementById('marcacion-iframe');if(f&&(f.src||'').indexOf('marcacion-envases')<0)f.src='/admin/marcacion-envases';}
+}
+</script>
 
 <div id="pane-consol" class="pane">
   <div class="bar" style="flex-wrap:wrap;gap:8px;">
