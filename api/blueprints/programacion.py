@@ -10988,6 +10988,7 @@ def serigrafia_cola():
             "WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado') "
             "AND COALESCE(inicio_real_at,'')='' AND COALESCE(fin_real_at,'')='' "
             "AND COALESCE(fecha_programada,'') >= date('now','-5 hours') "
+            "AND COALESCE(fecha_programada,'') <= date('now','-5 hours','+180 days') "
             "ORDER BY fecha_programada, producto").fetchall()
     except Exception as e:
         return jsonify({'error': str(e)[:200], 'items': []}), 500
@@ -10998,10 +10999,9 @@ def serigrafia_cola():
             _marc[(mc or '').strip().upper()] = (mt or '', mp or '')
     except Exception:
         _marc = {}
-    _stock = {}
+    # stock canónico (M26/M57): _get_mee_stock excluye CUARENTENA/RECHAZADO + case-insensitive + Ajuste.
     try:
-        for (mc, st) in c.execute("SELECT mee_codigo, COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad WHEN tipo='Salida' THEN -cantidad ELSE 0 END),0) FROM movimientos_mee WHERE COALESCE(anulado,0)=0 GROUP BY mee_codigo").fetchall():
-            _stock[(mc or '').strip().upper()] = float(st or 0)
+        _stock = _get_mee_stock(conn)
     except Exception:
         _stock = {}
     from datetime import datetime as _dtSC, timedelta as _tdSC
@@ -11055,6 +11055,8 @@ def marcacion_orden_enviar():
     producto = (d.get('producto') or '').strip()
     prod_id = d.get('produccion_id')
     fecha_alistar = (d.get('fecha_alistar') or '').strip()
+    hora_alistar = (d.get('hora_alistar') or '').strip()
+    urgencia_m = (d.get('urgencia') or 'media').strip()
     if not serig or cantidad <= 0:
         return jsonify({'error': 'serigrafiado_codigo y cantidad (>0) requeridos'}), 400
     from datetime import datetime as _dtM, timedelta as _tdM
@@ -11078,9 +11080,9 @@ def marcacion_orden_enviar():
     except Exception as e:
         return jsonify({'error': 'No se pudo registrar la salida: ' + str(e)[:150]}), 500
     c.execute("INSERT INTO marcacion_ordenes (base_codigo, serigrafiado_codigo, producto_nombre, metodo, proveedor, "
-              "cantidad_enviada, produccion_id, fecha_envio, fecha_alistar, estado, creado_por, creado_en) "
-              "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'enviado', ?, ?)",
-              (base, serig, producto, metodo, proveedor, cantidad, prod_id, _hoy, fecha_alistar, user, _hoy))
+              "cantidad_enviada, produccion_id, fecha_envio, fecha_alistar, hora_alistar, urgencia, estado, creado_por, creado_en) "
+              "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'enviado', ?, ?)",
+              (base, serig, producto, metodo, proveedor, cantidad, prod_id, _hoy, fecha_alistar, hora_alistar, urgencia_m, user, _hoy))
     oid = c.lastrowid
     try:
         from audit_helpers import audit_log as _al
@@ -11131,6 +11133,7 @@ def marcacion_orden_liberar(oid):
     # 3) auto-calificar el proveedor (recepcion conforme · auditable)
     if prov:
         try:
+            c.execute("SAVEPOINT sp_marc_cal")
             ex = c.execute("SELECT 1 FROM proveedores_calificacion WHERE LOWER(TRIM(proveedor))=LOWER(TRIM(?))", (prov,)).fetchone()
             if ex:
                 c.execute("UPDATE proveedores_calificacion SET estado='aprobado', fecha_aprobacion=?, evaluado_por=? "
@@ -11139,8 +11142,12 @@ def marcacion_orden_liberar(oid):
                 c.execute("INSERT INTO proveedores_calificacion (proveedor, estado, categoria, fecha_aprobacion, evaluado_por, observaciones, creado_por, creado_en) "
                           "VALUES (?, 'aprobado', 'Envases/Marcacion', ?, ?, 'Auto - recepcion conforme de marcacion', ?, ?)",
                           (prov, _hoy, user, user, _hoy))
+            c.execute("RELEASE SAVEPOINT sp_marc_cal")
         except Exception:
-            pass
+            try:
+                c.execute("ROLLBACK TO SAVEPOINT sp_marc_cal")
+            except Exception:
+                pass
     try:
         from audit_helpers import audit_log as _al
         _al(c, usuario=user, accion='MARCACION_LIBERAR', tabla='marcacion_ordenes', registro_id=oid,
@@ -11219,7 +11226,7 @@ def marcacion_ordenes_lista():
         for r in c.execute("SELECT id, base_codigo, serigrafiado_codigo, COALESCE(producto_nombre,''), "
                            "COALESCE(metodo,''), COALESCE(proveedor,''), COALESCE(cantidad_enviada,0), "
                            "COALESCE(cantidad_recibida,0), COALESCE(fecha_envio,''), COALESCE(fecha_retorno,''), "
-                           "COALESCE(estado,''), COALESCE(fecha_alistar,'') FROM marcacion_ordenes "
+                           "COALESCE(estado,''), COALESCE(fecha_alistar,''), COALESCE(hora_alistar,''), COALESCE(urgencia,'') FROM marcacion_ordenes "
                            "ORDER BY CASE WHEN COALESCE(estado,'')='enviado' THEN 0 ELSE 1 END, id DESC LIMIT 300").fetchall():
             _fa = r[11]
             _dias = None
@@ -11233,7 +11240,7 @@ def marcacion_ordenes_lista():
             out.append({'id': r[0], 'base': r[1], 'serigrafiado': r[2], 'producto': r[3], 'metodo': r[4],
                         'proveedor': r[5], 'cantidad_enviada': r[6], 'cantidad_recibida': r[7],
                         'fecha_envio': r[8], 'fecha_retorno': r[9], 'estado': r[10],
-                        'fecha_alistar': _fa, 'dias_restantes': _dias, 'urgencia': _urg})
+                        'fecha_alistar': _fa, 'dias_restantes': _dias, 'hora_alistar': r[12], 'urgencia': (r[13] or _urg)})
     except Exception as e:
         return jsonify({'error': str(e)[:200], 'items': []}), 500
     return jsonify({'items': out, 'total': len(out)})
@@ -11271,11 +11278,16 @@ def marcacion_crear_envase():
     # proveedor: crear si no existe (para ir normalizando)
     if prov:
         try:
+            c.execute("SAVEPOINT sp_marc_prov")
             if not c.execute("SELECT 1 FROM proveedores WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?))", (prov,)).fetchone():
                 c.execute("INSERT INTO proveedores (nombre, categoria, activo, fecha_creacion) VALUES (?, 'Envases', 1, ?)",
                           (prov, _hoy))
+            c.execute("RELEASE SAVEPOINT sp_marc_prov")
         except Exception:
-            pass
+            try:
+                c.execute("ROLLBACK TO SAVEPOINT sp_marc_prov")
+            except Exception:
+                pass
     # crear envase (columnas nuevas si existen; si no, fallback)
     try:
         c.execute("INSERT INTO maestro_mee (codigo, descripcion, categoria, unidad, proveedor, stock_actual, "

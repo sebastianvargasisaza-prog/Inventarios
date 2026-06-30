@@ -395,6 +395,10 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (317, "Marcacion: hora_alistar + urgencia (Catalina los define al solicitar el alistamiento).", [
+        "ALTER TABLE marcacion_ordenes ADD COLUMN hora_alistar TEXT DEFAULT ''",
+        "ALTER TABLE marcacion_ordenes ADD COLUMN urgencia TEXT DEFAULT ''",
+    ]),
     (316, "Marcacion: fecha_alistar (deadline) en marcacion_ordenes - Planta sabe alistar antes de tal dia.", [
         "ALTER TABLE marcacion_ordenes ADD COLUMN fecha_alistar TEXT DEFAULT ''",
     ]),

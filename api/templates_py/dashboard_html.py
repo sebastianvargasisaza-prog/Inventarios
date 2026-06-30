@@ -14143,11 +14143,12 @@ async function ckMarcar(itemId, estado){
       var its=((d&&d.items)||[]).filter(function(o){return o.estado==='enviado';});
       if(!its.length){ box.innerHTML='<div style="padding:24px;color:#94a3b8;text-align:center">Sin envases solicitados por Compras todav&iacute;a.<br><span style="font-size:11px">Cuando Compras env&iacute;e envases a marcar, aparecen ac&aacute; para alistar.</span></div>'; return; }
       its.sort(function(a,b){ return (a.fecha_alistar||'9999')<(b.fecha_alistar||'9999')?-1:1; });
-      var U={vencido:['&#128308;','#dc2626'],urgente:['&#128992;','#ea580c'],proximo:['&#128993;','#ca8a04'],ok:['&#128994;','#16a34a']};
+      var U={vencido:['&#128308;','#dc2626'],critica:['&#128308;','#dc2626'],urgente:['&#128992;','#ea580c'],alta:['&#128992;','#ea580c'],proximo:['&#128993;','#ca8a04'],media:['&#128993;','#ca8a04'],normal:['&#128994;','#16a34a'],ok:['&#128994;','#16a34a']};
       var h='<table style="width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden"><thead><tr style="background:#f1f5f9;font-size:11px;text-transform:uppercase"><th style="text-align:left;padding:7px 9px">Alistar antes de</th><th style="text-align:left;padding:7px 9px">Producci&oacute;n</th><th style="text-align:left;padding:7px 9px">Envase a alistar</th><th style="padding:7px 9px">Cantidad</th><th style="text-align:left;padding:7px 9px">M&eacute;todo</th><th style="text-align:left;padding:7px 9px">Proveedor</th></tr></thead><tbody>';
       its.forEach(function(o){
-        var u=U[o.urgencia||'ok']||U.ok;
-        var dr=(o.dias_restantes!=null)?('<br><span style="font-size:10px;color:'+u[1]+'">'+(o.dias_restantes<0?('hace '+(-o.dias_restantes)+'d'):(o.dias_restantes===0?'HOY':('en '+o.dias_restantes+'d')))+' &middot; antes 10am</span>'):'';
+        var u=U[o.urgencia||'media']||U.media;
+        var hr=(o.hora_alistar||'10:00');
+        var dr=(o.dias_restantes!=null)?('<br><span style="font-size:10px;color:'+u[1]+'">'+(o.dias_restantes<0?('hace '+(-o.dias_restantes)+'d'):(o.dias_restantes===0?'HOY':('en '+o.dias_restantes+'d')))+' &middot; antes '+hr+'</span>'):('<br><span style="font-size:10px;color:'+u[1]+'">antes '+hr+'</span>');
         h+='<tr style="border-bottom:1px solid #f1f5f9;font-size:12px"><td style="padding:7px 9px;white-space:nowrap"><b style="color:'+u[1]+'">'+u[0]+' '+_escHTML(o.fecha_alistar||o.fecha_envio||'')+'</b>'+dr+'</td><td style="padding:7px 9px"><b>'+_escHTML(o.producto||'')+'</b></td><td style="padding:7px 9px">'+_escHTML(o.base||o.serigrafiado||'')+'</td><td style="padding:7px 9px;text-align:center;font-weight:700;color:#5b21b6">'+(Math.round(o.cantidad_enviada||0).toLocaleString('es-CO'))+'</td><td style="padding:7px 9px">'+_escHTML(o.metodo||'')+'</td><td style="padding:7px 9px">'+_escHTML(o.proveedor||'')+'</td></tr>';
       });
       h+='</tbody></table>';

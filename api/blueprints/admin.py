@@ -7444,15 +7444,29 @@ button.ok{background:#16a34a}
 .urg{color:#dc2626;font-weight:800}
 .muted{color:#94a3b8}
 .search{margin-bottom:12px;padding:8px 12px;width:280px;border:1px solid #cbd5e1;border-radius:8px}
-#crear-modal label{display:block;font-size:11px;font-weight:600;color:#475569;margin:8px 0 3px}
-#crear-modal input,#crear-modal select{width:100%}
+#crear-modal label,#alistar-modal label{display:block;font-size:11px;font-weight:600;color:#475569;margin:8px 0 3px}
+#crear-modal input,#crear-modal select,#alistar-modal input,#alistar-modal select{width:100%}
 #crear-modal .mrow{display:flex;gap:10px}
 #crear-modal .mrow>div{flex:1}
 </style></head><body><div class="wrap">
 <h1>&#127991; Marcaci&oacute;n de envases &middot; serigraf&iacute;a / tampograf&iacute;a</h1>
 <p class="sub">Compras define el <b>m&eacute;todo</b> y el <b>proveedor</b> de cada envase, y ve qu&eacute; enviar a marcar y <b>para cu&aacute;ndo</b> (15 d&iacute;as antes de la producci&oacute;n). Los pre-impresos de China no aparecen.</p>
-<input class="search" id="q" placeholder="Buscar producto/envase..." oninput="render()">
+<input class="search" id="q" placeholder="Buscar producto/envase..." oninput="_dr()">
 <datalist id="provlist"></datalist>
+<div id="alistar-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;padding:16px">
+  <div style="background:#fff;border-radius:12px;padding:22px;max-width:420px;width:100%">
+    <h3 style="margin:0 0 4px;color:#5b21b6">&#128203; Solicitar alistamiento a Planta</h3>
+    <p class="muted" style="margin:0 0 12px;font-size:12px">Defin&iacute; cu&aacute;ndo y con qu&eacute; urgencia debe alistar Planta.</p>
+    <label>Alistar antes de (fecha)</label><input id="al-fecha" type="date">
+    <label>Hora l&iacute;mite</label><input id="al-hora" type="time" value="10:00">
+    <label>Urgencia</label>
+    <select id="al-urg"><option value="normal">&#128994; Normal</option><option value="media" selected>&#128993; Media</option><option value="alta">&#128992; Alta</option><option value="critica">&#128308; Cr&iacute;tica</option></select>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+      <button onclick="closeAlistarModal()" style="background:#e2e8f0;color:#334155">Cancelar</button>
+      <button onclick="submitAlistar()" style="background:#5b21b6">Enviar a Planta</button>
+    </div>
+  </div>
+</div>
 <div id="crear-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;padding:16px">
   <div style="background:#fff;border-radius:12px;padding:22px;max-width:480px;width:100%;max-height:92vh;overflow:auto">
     <h3 style="margin:0 0 4px;color:#0f766e">&#10133; Crear nuevo envase</h3>
@@ -7488,6 +7502,7 @@ async function cargar(){
   }catch(e){ document.getElementById('cont').innerHTML='<div style="color:#dc2626;padding:20px">Error: '+e+'</div>'; }
 }
 function opt(v,sel,txt){return '<option value="'+v+'"'+(sel===v?' selected':'')+'>'+txt+'</option>';}
+var _drt; function _dr(){ clearTimeout(_drt); _drt=setTimeout(render,170); }
 function render(){
   var q=(document.getElementById('q').value||'').toLowerCase();
   var vis=ROWS.filter(function(r){return !q || (r.producto+' '+r.envase_codigo+' '+(r.envase_desc||'')).toLowerCase().indexOf(q)>=0;});
@@ -7530,17 +7545,31 @@ async function enviar(i){
   var r0=ROWS[i];
   var tipo=document.getElementById('m-'+i).value;
   var prov=document.getElementById('p-'+i).value;
-  if(!tipo||tipo==='pre_impreso'||tipo==='ninguno'||tipo==='etiqueta'){ alert('Este envase lleva etiqueta o no se marca — no se envía a serigrafía.'); return; }
+  if(!tipo||tipo==='pre_impreso'||tipo==='ninguno'||tipo==='etiqueta'){ alert('Este envase lleva etiqueta o no se marca \u2014 no se env\u00eda a serigraf\u00eda.'); return; }
+  if(!prov){ alert('Defin\u00ed el proveedor antes de solicitar'); return; }
   var ui=document.getElementById('u-'+i); var cant=ui?parseFloat(ui.value):Math.round(r0.unidades||0);
-  if(!(cant>0)){ alert('Cantidad inválida'); return; }
+  if(!(cant>0)){ alert('Cantidad inv\u00e1lida'); return; }
   var sob=Math.round(r0.stock_envase||0);
-  if(sob>0 && !confirm('\u26a0\ufe0f Ya ten\u00e9s '+sob.toLocaleString('es-CO')+' unidades de '+r0.envase_codigo+' en bodega (sobrante de producciones anteriores).\n\nVas a pedir '+cant.toLocaleString('es-CO')+'. \u00bfSeguro? Ajust\u00e1 la cantidad arriba o cancel\u00e1 para no gastar de m\u00e1s.')){ return; }
+  if(sob>0 && !confirm('\u26a0\ufe0f Ya ten\u00e9s '+sob.toLocaleString('es-CO')+' de '+r0.envase_codigo+' en bodega (de antes). Vas a pedir '+cant.toLocaleString('es-CO')+'. \u00bfSeguro?')){ return; }
+  window._alistarTarget=i; window._alistarCant=cant;
+  document.getElementById('al-fecha').value=(r0.fecha_envio||'');
+  document.getElementById('al-hora').value='10:00';
+  document.getElementById('al-urg').value='media';
+  document.getElementById('alistar-modal').style.display='flex';
+}
+function closeAlistarModal(){ document.getElementById('alistar-modal').style.display='none'; }
+async function submitAlistar(){
+  var i=window._alistarTarget; var r0=ROWS[i]; if(!r0){ closeAlistarModal(); return; }
+  var tipo=document.getElementById('m-'+i).value, prov=document.getElementById('p-'+i).value;
+  var fecha=document.getElementById('al-fecha').value, hora=document.getElementById('al-hora').value, urg=document.getElementById('al-urg').value;
+  if(!fecha){ alert('Pon\u00e9 la fecha l\u00edmite'); return; }
+  if(window._alBusy) return; window._alBusy=true; setTimeout(function(){window._alBusy=false;},2000);
   try{
-    var r=await fetch('/api/programacion/marcacion-orden/enviar',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({serigrafiado_codigo:r0.envase_codigo,cantidad:cant,metodo:tipo,proveedor:prov,producto:r0.producto,produccion_id:r0.produccion_id,fecha_alistar:r0.fecha_envio})});
+    var r=await fetch('/api/programacion/marcacion-orden/enviar',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({serigrafiado_codigo:r0.envase_codigo,cantidad:window._alistarCant,metodo:tipo,proveedor:prov,producto:r0.producto,produccion_id:r0.produccion_id,fecha_alistar:fecha,hora_alistar:hora,urgencia:urg})});
     var d=await r.json();
-    if(d.ok){ alert('✓ Solicitado a Planta para alistar · Salida del base '+d.base+' registrada'); cargarOrdenes(); }
+    if(d.ok){ closeAlistarModal(); alert('\u2713 Solicitado a Planta para alistar \u00b7 Salida del base '+d.base+' registrada'); cargarOrdenes(); }
     else alert('Error: '+(d.error||''));
-  }catch(e){ alert('Error de conexión'); }
+  }catch(e){ alert('Error de conexi\u00f3n'); }
 }
 async function cargarOrdenes(){
   var box=document.getElementById('ordenes'); if(!box) return;
@@ -7611,6 +7640,7 @@ async function generarOC(i){
   if(sob>0 && !confirm('\u26a0\ufe0f Ya ten\u00e9s '+sob.toLocaleString('es-CO')+' de '+r0.envase_codigo+' en bodega (de antes). Vas a pedir '+cant.toLocaleString('es-CO')+'. \u00bfSeguro?')){ return; }
   var concepto=(tipo==='etiqueta'?'Etiquetas':(tipo==='serigrafia'?'Serigraf\u00eda':'Tampograf\u00eda'))+' '+r0.envase_codigo+' ('+r0.producto+')';
   if(!confirm('Generar OC de "'+concepto+'"\n'+cant.toLocaleString('es-CO')+' u \u00b7 proveedor '+prov+'?')) return;
+  if(window._ocBusy) return; window._ocBusy=true; setTimeout(function(){window._ocBusy=false;},2000);
   try{
     var r=await fetch('/api/solicitudes-compra',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({categoria:'Material de Empaque',tipo:'Compra',solicitante:'Marcaci\u00f3n (Compras)',observaciones:'Marcaci\u00f3n de envases \u00b7 '+r0.producto,items:[{codigo_mp:r0.envase_codigo,nombre_mp:concepto,cantidad_g:cant,unidad:'und',justificacion:'Marcaci\u00f3n '+tipo+' \u00b7 prod '+(r0.fecha||''),proveedor_sugerido:prov}]})});
     var d=await r.json();

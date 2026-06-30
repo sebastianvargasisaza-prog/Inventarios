@@ -507,10 +507,12 @@ def test_marcacion_alistar_urgencia(app, db_clean):
     c = _login(app)
     r = c.post('/api/programacion/marcacion-orden/enviar',
                json={'serigrafiado_codigo': serig, 'cantidad': 10, 'metodo': 'serigrafia', 'proveedor': 'P',
-                     'producto': 'X', 'fecha_alistar': '2020-01-01'}, headers=csrf_headers())
+                     'producto': 'X', 'fecha_alistar': '2020-01-01', 'hora_alistar': '09:00', 'urgencia': 'alta'},
+               headers=csrf_headers())
     assert r.status_code == 200, r.data
     d = c.get('/api/programacion/marcacion-ordenes').get_json()
     it = next((o for o in (d.get('items') or []) if o.get('serigrafiado') == serig), None)
     assert it and it.get('fecha_alistar') == '2020-01-01', it
-    assert it.get('urgencia') == 'vencido', ('deadline pasado → vencido', it)
-    assert it.get('dias_restantes') is not None and it['dias_restantes'] < 0, it
+    assert it.get('hora_alistar') == '09:00', it
+    assert it.get('urgencia') == 'alta', ('urgencia manual de Catalina', it)
+    assert it.get('dias_restantes') is not None and it['dias_restantes'] < 0, ('dias_restantes de ayuda', it)
