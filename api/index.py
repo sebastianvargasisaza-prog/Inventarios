@@ -631,7 +631,7 @@ def _inject_chat_widget(response):
             return response
         # cortex.js para TODOS (incluso /login /logout) · sin async para que
         # cx-ready se aplique antes que el browser pinte loader 8s permanente
-        snippet = '<script src="/static/cortex.js?v=eos2"></script>'
+        snippet = '<script src="/static/cortex.js?v=eos3"></script>'
         # chat-widget + notif solo si autenticado y NO en /chat /login /logout
         # 29-jun · estas páginas van EMBEBIDAS en iframe dentro del dashboard → NO inyectar el chat+campana
         # (si no, aparecen duplicados/solapados DENTRO del calendario · el dashboard padre ya los tiene).

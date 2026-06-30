@@ -36,4 +36,16 @@
   window.cxClearError = function () {
     try { document.body.classList.remove('cx-error'); document.body.removeAttribute('data-cx-error'); } catch (_) {}
   };
+
+  // Sebastián 30-jun · el scroll del mouse sobre un <input type="number"> ENFOCADO le cambiaba el valor sin querer
+  // (bug UX clásico que hizo cambiar cantidades de producción). Prevenir: cancelar el wheel mientras el number
+  // tiene foco (el valor deja de cambiar; para scrollear la página, el usuario mueve el mouse fuera del campo).
+  try {
+    document.addEventListener('wheel', function (e) {
+      var el = e.target;
+      if (el && el.tagName === 'INPUT' && el.type === 'number' && el === document.activeElement) {
+        e.preventDefault();
+      }
+    }, { passive: false });
+  } catch (_) {}
 })();
