@@ -7432,7 +7432,7 @@ _MARCACION_ENVASES_HTML = r"""<!DOCTYPE html><html lang="es"><head>
 <title>Marcacion de envases</title>
 <style>
 body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#f8fafc;color:#1e293b}
-.wrap{max-width:1200px;margin:0 auto;padding:24px}
+.wrap{max-width:100%;margin:0 auto;padding:14px 28px}
 h1{font-size:22px;margin:0 0 4px}.sub{color:#64748b;font-size:14px;margin:0 0 16px}
 table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden}
 th,td{padding:7px 9px;text-align:left;font-size:12px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
@@ -7469,9 +7469,13 @@ function render(){
   var q=(document.getElementById('q').value||'').toLowerCase();
   var vis=ROWS.filter(function(r){return !q || (r.producto+' '+r.envase_codigo+' '+(r.envase_desc||'')).toLowerCase().indexOf(q)>=0;});
   if(!vis.length){ document.getElementById('cont').innerHTML='<div class="muted" style="padding:20px;text-align:center">Sin envases a marcar (o no hay producciones futuras mapeadas).</div>'; return; }
+  var MES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  var curMes='';
   var h='<table><thead><tr><th>Enviar antes de</th><th>Producci&oacute;n</th><th>Fecha prod.</th><th>Envase</th><th>Unidades</th><th>M&eacute;todo</th><th>Proveedor</th><th></th></tr></thead><tbody>';
   vis.forEach(function(r){
     var i=ROWS.indexOf(r);
+    var ym=String(r.fecha||'').slice(0,7);
+    if(ym && ym!==curMes){ curMes=ym; var pp=ym.split('-'); var lbl=(pp.length===2 && MES[parseInt(pp[1],10)-1])?(MES[parseInt(pp[1],10)-1]+' '+pp[0]):ym; h+='<tr><td colspan="8" style="background:#ede9fe;color:#5b21b6;font-weight:800;padding:9px;font-size:13px;border-top:2px solid #c4b5fd">&#128197; '+lbl+'</td></tr>'; }
     var urge=(r.fecha_envio && r.fecha_envio<=hoy());
     h+='<tr>'+
       '<td class="'+(urge?'urg':'')+'">'+(urge?'&#128308; ':'')+esc(r.fecha_envio||'')+'</td>'+

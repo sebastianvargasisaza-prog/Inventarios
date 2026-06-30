@@ -696,7 +696,7 @@ function renderHistorico(){
   </div>
   </div>
   <div id="subplanta-env" style="display:none">
-    <iframe id="marcacion-iframe" src="about:blank" style="width:100%;height:80vh;border:none;border-radius:8px" title="Marcación de envases"></iframe>
+    <iframe id="marcacion-iframe" src="about:blank" style="width:100%;height:86vh;border:none;border-radius:8px" title="Marcación de envases"></iframe>
   </div>
 </div>
 <script>
