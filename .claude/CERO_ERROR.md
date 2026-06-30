@@ -543,6 +543,10 @@ Sebastián: los envases van a serigrafía/tampografía ~15d antes de producir (p
 - **Fechas en DML calculadas en Python** (`(datetime.utcnow()-timedelta(hours=5)).date().isoformat()`), nunca `date('now')` en el INSERT (M24/PG).
 - `maestro_mee.marcacion_tipo` (serigrafia/tampografia/pre_impreso/ninguno) + `marcacion_proveedor` (mig 312) · Compras los setea por envase (se recuerda). La cola (`serigrafia-cola`) excluye pre_impreso + agrega `fecha_envio` (producción−15d). Bandeja Compras `/admin/marcacion-envases` (decidir+enviar+recibir); Planta "Alistar envases" (preparar). migs 312-313. Tests `test_marcacion_*`. ⚠ pendiente: poblar `material_referencia` (base↔serigrafiado) para los que el serigrafiado ≠ base.
 
+## 🧩 M61 · No reusar una clase CSS que tiene handler global delegado · 29-jun
+
+Bug (sub-pestañas Planta en Compras desaparecían al click): puse botones con `class="tn"` (la clase de las pestañas principales). Hay un `querySelectorAll('.tn').forEach(btn => btn.addEventListener('click', ()=>showTab(btn.dataset.tab)))` global → mis botones SIN `data-tab` llamaban `showTab(undefined)` → ocultaba TODOS los panes (pantalla en blanco). Además `class="tab-nav"` en el contenedor les daba el look de barra principal. **Regla:** para UI nueva NO reuses una clase del framework que pueda tener un handler delegado (`.tn`, `.tab-nav`, `.btn-primary`, etc.) — usá una clase propia (`.sp-tab`) con su CSS. Y al insertar un `<script>`/UI en una página enorme de líneas largas, **node-check el bloque** (extraé tu `<script>` con regex) + verificá el balance de divs vs HEAD (no romper). Ver [[project_shopify_necesidades_audit_27jun]] (Bandeja Planta → Materias Primas | Envases · marcación embebida).
+
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
 
 Al cerrar una sesión donde se encontró/arregló un bug con patrón no listado aquí:
