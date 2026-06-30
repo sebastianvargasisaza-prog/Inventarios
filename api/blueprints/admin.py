@@ -18210,6 +18210,37 @@ def admin_set_ebr_mode():
     return jsonify({'ok': True, 'modo': modo})
 
 
+@bp.route("/api/admin/modo-beta-planta", methods=["POST"])
+def admin_modo_beta_planta():
+    """Pone los controles de PRODUCCION en BETA de una (Sebastian 30-jun · mientras se adapta planta):
+    exigir_area_limpia=0 (no exige sala limpia) + ebr_mode=off (no exige EBR). Auditado, reversible. Solo Admin.
+    Volver a estricto: cada toggle individual en esta misma pagina."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    from database import get_db
+    conn = get_db()
+    c = conn.cursor()
+    _sets = [
+        ('exigir_area_limpia', '0', 'Producir exige area limpia (1=estricto) o beta (0)'),
+        ('ebr_mode', 'off', 'Modo EBR efectivo (off/warn/strict)'),
+    ]
+    for clave, valor, desc in _sets:
+        c.execute(
+            "INSERT INTO app_settings (clave,valor,descripcion,actualizado_at_utc,actualizado_por) "
+            "VALUES (?,?,?,datetime('now'),?) ON CONFLICT(clave) DO UPDATE SET "
+            "valor=excluded.valor, actualizado_at_utc=excluded.actualizado_at_utc, "
+            "actualizado_por=excluded.actualizado_por",
+            (clave, valor, desc, u))
+    try:
+        audit_log(c, usuario=u, accion='SET_MODO_BETA_PLANTA', tabla='app_settings',
+                  registro_id='modo_beta_planta', despues={'exigir_area_limpia': '0', 'ebr_mode': 'off'})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'beta': True, 'aplicado': ['exigir_area_limpia=beta', 'ebr_mode=off']})
+
+
 @bp.route("/api/admin/exigir-area-limpia", methods=["POST"])
 def admin_set_exigir_area_limpia():
     """Toggle 'exigir área limpia para producir' (app_settings · efecto inmediato sin Render). Solo Admin.
@@ -19081,6 +19112,7 @@ _SEGURIDAD_PLANTA_HTML = """<!doctype html><html lang="es"><head><meta charset="
 </style></head><body><div class="wrap">
 <a href="/admin">&larr; Volver al Hub</a>
 <h1>&#128737;&#65039; Centro de Seguridad de Planta</h1>
+<div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:10px;padding:14px 16px;margin:10px 0;display:flex;gap:12px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:240px;font-size:13px;color:#92400e"><b>&#129514; Modo BETA de planta</b> &middot; mientras se adapta el equipo: registrar producciones SIN exigir sala limpia ni EBR. Reversible y auditado. (Volv&eacute;s a estricto con cada toggle de abajo.)</div><button onclick="setBetaTodo()" style="background:#f59e0b;color:#fff;border:none;padding:10px 18px;border-radius:8px;font-weight:700;cursor:pointer;font-size:13px">&#129514; Poner TODO en BETA</button></div>
 <div class="muted">Estado VIVO de los controles que se aflojan/aprietan. Lo que se relaj&oacute; para el d&iacute;a de
 inventario debe volver a su posici&oacute;n INVIMA. Read-only (salvo apagar el modo inventario).</div>
 <div id="banner"></div>
@@ -19147,6 +19179,15 @@ inventario debe volver a su posici&oacute;n INVIMA. Read-only (salvo apagar el m
      kpi(e.vigente_directo,'recibido VIGENTE directo', e.vigente_directo? 'warn-t':'ok-t')+
      kpi(e.cuarentena,'recibido en cuarentena','ok-t')+
      kpi(e.en_cuarentena_ahora,'en cuarentena ahora');
+ }
+ async function setBetaTodo(){
+   if(!confirm('Poner TODA la produccion en BETA? Area limpia NO exigida + EBR OFF. Se pueden registrar producciones sin esos controles (reversible y auditado).'))return;
+   var t=await csrf();
+   var r=await fetch('/api/admin/modo-beta-planta',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':t}});
+   var j=await r.json();
+   if(!r.ok){alert('Error: '+ESC(j.error||r.status));return;}
+   alert('✓ Planta en BETA: produccion sin exigir area limpia ni EBR');
+   cargar();
  }
  async function setLimpia(activo){
    if(!confirm(activo?'Exigir area limpia para producir (estricto INVIMA)?':'BETA: permitir cargar produccion SIN exigir area limpia?'))return;
