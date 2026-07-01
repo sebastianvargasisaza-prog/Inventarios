@@ -576,6 +576,14 @@ Un botón nuevo en Fabricación quedó con un **salto de línea REAL dentro de u
 2. **Un test que valida un modo ESTRICTO debe FIJAR ese modo explícitamente**, nunca confiar en el default. Fix: `INSERT OR REPLACE INTO app_settings (clave,valor) VALUES ('exigir_area_limpia','1')` al inicio del test, antes de ejercitar el gate. Así valida lo que dice validar (INVIMA estricto) sin acoplarse al default global.
 3. **Al cambiar un default de gate, grep los golden que lo ejercitan** (`grep -rn NOMBRE_GATE tests/`) y fijá el modo en cada uno. Un solo default cambiado puede volver rojo un test que "no tocaste".
 
+## 📏 M67 · La magnitud de un lote (cantidad_objetivo_g del EBR) sale de la cantidad REAL a producir, no de un default de dominio · 30-jun
+
+El EBR auto-creado ponía `cantidad_objetivo_g = total_g_descontado or mbr.lote_size_g`. Cuando el descuento de MP se **difería** (fórmula sin stock — faltaba un ácido kójico — o sin_formula → `total_g=0`), caía al `lote_size_g` del MBR: un **default genérico de 100 g** que NO refleja el lote. Resultado: la columna TEÓRICA mostraba `100 g` para producciones de 12 kg / 100 kg, y el batch record quedaba con pesajes teóricos y **rendimiento (yield) falsos** (yield = real/objetivo). El inventario NO se afectó — el descuento de MP sale de `produccion_programada.cantidad_kg` vía `_calcular_mp_consumo_produccion`, camino independiente y correcto. Lecciones:
+1. **La fuente de verdad de "cuánto se produce" es lo que el usuario fijó** (`produccion_programada.cantidad_kg × 1000`). Derivá de ahí primero; `total_g_descontado` y el default del MBR son fallbacks **explícitos y ordenados**, nunca la fuente primaria.
+2. **Un default de dominio silencioso (100 g) se confunde con un dato real** — no lanza error, se ve plausible, y contamina todo lo aguas abajo (M5 display=decisión, M9 snapshot vs vivo). Si una magnitud puede venir de varias fuentes, ordená por confiabilidad y comentá el porqué.
+3. **Multi-lote:** el objetivo por legajo = total_g / n_lotes (1 BPR por lote físico). Pasalo al hook (`crear_ebr_desde_mbr(cantidad_objetivo_g=...)`), no dejes que cada lote herede el default completo del MBR.
+4. **Display robusto:** en vistas EN VIVO (ordenes-unificadas en-curso) preferí recomputar la magnitud desde el dato vivo (`produccion_programada.cantidad_kg`) sobre el valor congelado del EBR, así un EBR viejo con objetivo stale igual se ve bien.
+
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
 
 Al cerrar una sesión donde se encontró/arregló un bug con patrón no listado aquí:

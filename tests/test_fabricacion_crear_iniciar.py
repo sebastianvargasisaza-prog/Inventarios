@@ -91,6 +91,15 @@ def test_area_ocupada_409(app, db_clean):
     aid = _seed()
     conn = sqlite3.connect(os.environ["DB_PATH"])
     conn.execute("UPDATE areas_planta SET estado='ocupada' WHERE id=?", (aid,))
+    # El 409 correcto exige una producción REALMENTE activa ocupando el área
+    # (inicio_real sin fin_real, no cancelada/completada). Beta 30-jun: un 'ocupada'
+    # HUÉRFANO (sin producción activa) se auto-libera en vez de bloquear (M66/FIX1),
+    # así que sembramos la ocupante real para validar el bloqueo legítimo.
+    conn.execute("INSERT INTO produccion_programada "
+                 "(producto, fecha_programada, area_id, cantidad_kg, estado, inicio_real_at, origen) "
+                 "VALUES (?,?,?,?,?,?,?)",
+                 ("ZZ OCUPANTE ACTIVA", "2026-06-30", aid, 1, "en_proceso",
+                  "2026-06-30 08:00:00", "eos_plan"))
     conn.commit()
     conn.close()
     c = _login(app)

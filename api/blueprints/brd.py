@@ -6673,14 +6673,18 @@ def ordenes_unificadas():
             _lotes_con_legajo.add(str(rd["lote"]).strip())
         _ppid = rd.get("produccion_id")
         _en_curso = _ppid in _enp
+        _kg_pp = None
         if _en_curso:
+            _kg_pp = _enp[_ppid].get('kg')
             _enp.pop(_ppid, None)  # se muestra como esta orden (con Finalizar)
         items.append({
             "origen": "legajo",
             "numero_op": rd.get("numero_op") or f"EBR-{rd['id']}",
             "lote_bulk": rd.get("lote") or "",
             "producto": rd.get("producto") or "",
-            "teorica_g": rd.get("cantidad_objetivo_g"),
+            # En-curso: la cantidad REAL a producir manda (produccion_programada.cantidad_kg);
+            # el cantidad_objetivo_g del EBR puede haber quedado con el default del MBR.
+            "teorica_g": (round(_kg_pp * 1000, 1) if (_en_curso and _kg_pp) else rd.get("cantidad_objetivo_g")),
             "producida_g": rd.get("cantidad_real_g"),
             "aprobada": (rd.get("cantidad_real_g") if liberado else None),
             "ml_envasable": rd.get("ml_envasable"),

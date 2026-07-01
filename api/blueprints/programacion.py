@@ -4706,9 +4706,18 @@ def _intentar_crear_ebr_auto(c, evento_id, producto, total_g_descontado, user):
         prod_short = ''.join(p[:3].upper() for p in palabras)[:12]
         lote = f"{prod_short}-{evento_id}-{fecha}"
 
-        # cantidad_objetivo_g: usar total descontado si existe (más preciso),
-        # o lote_size_g del MBR como fallback
-        cantidad_obj = total_g_descontado or mbr[2]
+        # cantidad_objetivo_g: MANDA la cantidad REAL a producir (cantidad_kg × 1000),
+        # que es lo que el usuario fijó para ESTE lote. Si no está, el total realmente
+        # descontado; y solo como último recurso el lote_size_g del MBR (un default
+        # genérico de 100 g que NO refleja este lote → daba TEÓRICA/rendimiento falsos).
+        try:
+            _ckg = c.execute(
+                "SELECT COALESCE(cantidad_kg,0) FROM produccion_programada WHERE id=?",
+                (evento_id,)).fetchone()
+            _obj_por_kg = round(float(_ckg[0]) * 1000, 1) if (_ckg and _ckg[0]) else 0
+        except Exception:
+            _obj_por_kg = 0
+        cantidad_obj = _obj_por_kg or total_g_descontado or mbr[2]
 
         # numero_op MyBatch-compat (mig 117) · atómico via op_counters
         from blueprints.brd import assign_numero_op
@@ -20742,12 +20751,12 @@ def planta_aceptar_produccion(produccion_id):
     conn = get_db(); c = conn.cursor()
 
     pp_row = c.execute("""
-        SELECT id, producto, fecha_programada, lotes, area_id, estado
+        SELECT id, producto, fecha_programada, lotes, area_id, estado, COALESCE(cantidad_kg,0)
         FROM produccion_programada WHERE id=?
     """, (produccion_id,)).fetchone()
     if not pp_row:
         return jsonify({'error': 'Producción no existe'}), 404
-    prod_id, producto, fecha_prog, lotes, area_id, estado = pp_row
+    prod_id, producto, fecha_prog, lotes, area_id, estado, _cant_kg_pp = pp_row
     lotes = lotes or 1
 
     # Reemplazo MyBatch · fase 1 · BPM estricto: no se acepta producción sin un
@@ -20922,11 +20931,16 @@ def planta_aceptar_produccion(produccion_id):
         try:
             from blueprints.brd import crear_ebr_desde_mbr
             _n_lotes = lotes or 1
+            # objetivo REAL por lote = (cantidad_kg total × 1000) / n_lotes. Si no hay
+            # cantidad_kg fijada, se pasa None y crear_ebr_desde_mbr usa el default del MBR.
+            _obj_g_lote = (round(float(_cant_kg_pp) * 1000 / _n_lotes, 1)
+                           if _cant_kg_pp and float(_cant_kg_pp) > 0 else None)
             for _i in range(1, _n_lotes + 1):
                 _lote_ebr = f'PP{produccion_id}' if _n_lotes == 1 else f'PP{produccion_id}-L{_i}'
                 _r = crear_ebr_desde_mbr(
                     c, producto_nombre=producto, lote=_lote_ebr,
-                    produccion_id=produccion_id, usuario=user)
+                    produccion_id=produccion_id, cantidad_objetivo_g=_obj_g_lote,
+                    usuario=user)
                 ebrs.append(_r)
                 if _r.get('ok'):
                     log.append('✓ EBR ' + str(_r.get('numero_op', '')) +
