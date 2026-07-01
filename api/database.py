@@ -397,6 +397,9 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (323, "AZ HIBRID CLEAR: corregir el GRADO de Centella - la app tiene el extracto PLANO (MP00181) pero la formula usa el de TRITERPENOS 80% (MP00176), mismo 0.050% (M19). Se MANTIENE la version del jefe de mig 319 (sin Vit E, Gransil 0.8, NaOH 0.9 · Sebastian confirma 'dejemos la del jefe'). Solo swap de codigo de Centella. 1-jul.", [
+        "UPDATE formula_items SET material_id='MP00176', material_nombre='Centella triterpenos' WHERE UPPER(TRIM(producto_nombre))='AZ HIBRID CLEAR' AND UPPER(TRIM(material_id))='MP00181' AND NOT EXISTS (SELECT 1 FROM formula_items fi2 WHERE UPPER(TRIM(fi2.producto_nombre))='AZ HIBRID CLEAR' AND UPPER(TRIM(fi2.material_id))='MP00176')",
+    ]),
     (322, "SUERO DE NIACINAMIDA 5% FORMULA NUEVA: corregir el GRADO de Centella - la app tenia el extracto PLANO (MP00181) pero la formula usa el de TRITERPENOS 80% (MP00176), mismo 0.010% (M19 · Sebastian confirma el grado con la formula correcta). Swap de codigo, sin cambio de % ni de total. 1-jul.", [
         "UPDATE formula_items SET material_id='MP00176', material_nombre='Centella triterpenos' WHERE UPPER(TRIM(producto_nombre))='SUERO DE NIACINAMIDA 5% FORMULA NUEVA' AND UPPER(TRIM(material_id))='MP00181' AND NOT EXISTS (SELECT 1 FROM formula_items fi2 WHERE UPPER(TRIM(fi2.producto_nombre))='SUERO DE NIACINAMIDA 5% FORMULA NUEVA' AND UPPER(TRIM(fi2.material_id))='MP00176')",
     ]),
