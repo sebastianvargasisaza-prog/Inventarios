@@ -370,27 +370,45 @@ def animus_productos():
         # PERF-FIX 27-may-2026 PM · antes N+1 (3 SELECT por SKU · 50 SKUs =
         # 150+ queries al abrir ANIMUS Lab). Ahora 3 queries globales GROUP BY
         # + dict lookup O(1) en el loop.
+        # Claves en UPPER(TRIM) · stock_pt/liberaciones/Shopify no comparten case (M2/M58);
+        # sin normalizar, rotación/cobertura/ABC salían en 0 o clase C errónea en silencio.
+        def _kup(x):
+            return str(x or '').strip().upper()
         _lib90_por_sku = {}
         for _r in c.execute(
             "SELECT sku, COALESCE(SUM(unidades),0) FROM liberaciones "
             "WHERE creado_en>=? GROUP BY sku", (hace90,)).fetchall():
-            _lib90_por_sku[_r[0]] = _r[1] or 0
+            _lib90_por_sku[_kup(_r[0])] = _lib90_por_sku.get(_kup(_r[0]), 0) + (_r[1] or 0)
         _lib30_por_sku = {}
         for _r in c.execute(
             "SELECT sku, COALESCE(SUM(unidades),0) FROM liberaciones "
             "WHERE creado_en>=? GROUP BY sku", (hace30,)).fetchall():
-            _lib30_por_sku[_r[0]] = _r[1] or 0
-        # Shopify · parsear sku_items 1 sola vez · acumular uds por sku presente
-        import re as _re_an
+            _lib30_por_sku[_kup(_r[0])] = _lib30_por_sku.get(_kup(_r[0]), 0) + (_r[1] or 0)
+        # Shopify · parsear el JSON de sku_items con json.loads e iterar los ítems (sku + qty).
+        # Antes: regex de comillas → capturaba las CLAVES del JSON ('sku','qty') como SKUs y sumaba
+        # el TOTAL de la orden por cada token → ventas infladas/mal atribuidas.
+        import json as _json_an
         _shopify_por_sku = {}
         try:
             for _r in c.execute(
-                "SELECT sku_items, COALESCE(unidades_total,0) FROM animus_shopify_orders "
+                "SELECT sku_items FROM animus_shopify_orders "
                 "WHERE creado_en >= ? AND COALESCE(sku_items,'') != ''", (hace30,)).fetchall():
-                _items_str = _r[0] or ''
-                _uds = _r[1] or 0
-                for _sk in set(_re_an.findall(r'"([^"]+)"', _items_str)):
-                    _shopify_por_sku[_sk] = _shopify_por_sku.get(_sk, 0) + _uds
+                try:
+                    _items = _json_an.loads(_r[0]) if isinstance(_r[0], str) else _r[0]
+                except Exception:
+                    continue
+                if not isinstance(_items, list):
+                    continue
+                for _it in _items:
+                    if not isinstance(_it, dict):
+                        continue
+                    _sk = _kup(_it.get('sku') or _it.get('SKU'))
+                    try:
+                        _qty = int(_it.get('qty') or _it.get('quantity') or _it.get('cantidad') or 0)
+                    except Exception:
+                        _qty = 0
+                    if _sk and _qty > 0:
+                        _shopify_por_sku[_sk] = _shopify_por_sku.get(_sk, 0) + _qty
         except Exception:
             _shopify_por_sku = {}
 
@@ -400,8 +418,9 @@ def animus_productos():
             stock = s["stock"] or 0
             precio = s["precio"] or 0
 
-            lib_90 = _lib90_por_sku.get(sku, 0)
-            lib_30 = _lib30_por_sku.get(sku, 0)
+            _sk_up = _kup(sku)
+            lib_90 = _lib90_por_sku.get(_sk_up, 0)
+            lib_30 = _lib30_por_sku.get(_sk_up, 0)
             rotacion_mes = (lib_90 / 3.0) if lib_90 > 0 else 0
             meses_cob = round(stock / rotacion_mes, 1) if rotacion_mes > 0 else 99
             revenue_30 = round(lib_30 * precio, 0)
@@ -414,8 +433,8 @@ def animus_productos():
             else:
                 clase = "C"
 
-            # Shopify: ventas del SKU · lookup O(1)
-            shopify_uds = _shopify_por_sku.get(sku, 0)
+            # Shopify: ventas del SKU · lookup O(1) normalizado
+            shopify_uds = _shopify_por_sku.get(_sk_up, 0)
 
             resultado.append({
                 "sku": sku, "stock": stock, "precio": precio,

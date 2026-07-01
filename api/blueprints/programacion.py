@@ -3081,7 +3081,7 @@ def _blush_tonos_data(conn, dias_objetivo=60):
     filas = []
     tot_v180 = tot_stock = tot_sug = 0
     for sku, nombre in BLUSH_TONOS:
-        v180 = int(ventas180.get(sku, 0) or 0)
+        v180 = int(ventas180.get(str(sku).strip().upper(), 0) or 0)
         vdia = v180 / 180.0
         vmes = round(vdia * 30, 1)
         st = int((stock_sku.get(sku.upper()) or {}).get('uds', 0) or 0)
@@ -6581,7 +6581,11 @@ def _ventas_sku_180d(c):
                 if not isinstance(items, list):
                     continue
                 for li in items:
-                    sk = (li.get('sku') or '').strip()
+                    # Clave SKU en UPPER(TRIM) · el SKU del JSON de Shopify y los de
+                    # producto_presentaciones/sku_producto_map no comparten case (M2/M13/M58);
+                    # sin normalizar, el reparto de envases y la cobertura por tono daban 0
+                    # en silencio. Los consumidores también miran con .strip().upper().
+                    sk = (li.get('sku') or '').strip().upper()
                     qty = int(li.get('qty') or 0)
                     if sk and qty > 0:
                         ventas[sk] = ventas.get(sk, 0) + qty
@@ -6704,7 +6708,7 @@ def _composicion_envases_lote(c, evento_id):
     else:
         total = 0
         for p in presentaciones:
-            sk = (p['sku_shopify'] or '').strip()
+            sk = (p['sku_shopify'] or '').strip().upper()
             v = ventas_sku.get(sk, 0) if sk else 0
             p['_ventas_90d'] = v
             total += v
@@ -7574,7 +7578,7 @@ def debug_producto_estado(producto):
     sku_match = []
     try:
         sku_rows = c.execute(
-            "SELECT sku, activo FROM sku_producto_map WHERE UPPER(producto_nombre)=?",
+            "SELECT sku, activo FROM sku_producto_map WHERE UPPER(TRIM(producto_nombre))=?",
             (producto_norm,)
         ).fetchall()
         for s, act in sku_rows:
@@ -8499,8 +8503,14 @@ def _descontar_mee_envasado(c, produccion_id, lote, unidades_envasadas,
                 continue
             b2b_envases_custom.append((env_cod, uds_real_b2b, ar[2] or ''))
             uds_b2b_custom_total += uds_real_b2b
-    except Exception:
-        pass  # mig 171/172 no aplicada · split deshabilitado, descuenta default
+    except Exception as _e_b2b:
+        _es = str(_e_b2b).lower()
+        if ('no such table' in _es or 'does not exist' in _es or 'undefined table' in _es):
+            pass  # mig 171/172 no aplicada · split B2B deshabilitado (la tabla no existe aún)
+        else:
+            # NO tragar un fallo REAL (tipo/constraint/tx abortada): dejaría el split a medias →
+            # sobre-descuenta el envase DEFAULT y no descuenta los B2B custom (drift MEE · M4/M63).
+            raise
 
     # Construir whitelist de tipos en SQL
     placeholders = ','.join(['?'] * len(TIPOS_MEE_AL_ENVASAR))
@@ -8592,11 +8602,14 @@ def _descontar_mee_envasado(c, produccion_id, lote, unidades_envasadas,
                 'cliente_b2b': cliente,
             })
         except sqlite3.OperationalError as e:
-            log.warning(f'Descuento MEE B2B custom skip {env_cod}: {e}')
+            log.warning(f'Descuento MEE B2B custom skip {env_cod} (esquema): {e}')
             continue
         except Exception as e:
-            log.warning(f'Descuento MEE B2B custom err {env_cod}: {e}')
-            continue
+            # NO tragar: un fallo REAL aquí deja un envase B2B físicamente consumido SIN descontar
+            # → stock MEE sobreestimado en silencio (M4/M26/M63). Propaga para abortar el envasado
+            # y que se corrija la causa, en vez de seguir con inventario inconsistente.
+            log.error(f'Descuento MEE B2B custom FALLÓ {env_cod}: {e}')
+            raise
 
     return descontados
 
@@ -11826,7 +11839,7 @@ def abastecimiento_consumo_horizontes():
                 for (_sk, _pn, _vl) in c.execute(
                         "SELECT sku, producto_nombre, COALESCE(volumen_ml,0) FROM sku_producto_map "
                         "WHERE COALESCE(volumen_ml,0)>0 AND COALESCE(activo,1)=1").fetchall():
-                    _q = _vsku_ab.get((_sk or '').strip(), 0)
+                    _q = _vsku_ab.get((_sk or '').strip().upper(), 0)
                     if _q:
                         _kpv = (_norm_prod(_pn), round(float(_vl), 2))
                         _ventas_prod_vol[_kpv] = _ventas_prod_vol.get(_kpv, 0) + _q
@@ -12436,17 +12449,11 @@ def abastecimiento_consumo_horizontes():
             if kg_dia <= 0:
                 continue
             items = formulas.get(prod_up) or []
-            lote_size_rr = 0.0
-            try:
-                r_ls = c.execute(
-                    "SELECT COALESCE(lote_size_kg,0) FROM formula_headers "
-                    "WHERE UPPER(TRIM(producto_nombre))=?",
-                    (prod_up,)
-                ).fetchone()
-                if r_ls:
-                    lote_size_rr = float(r_ls[0] or 0)
-            except Exception:
-                pass
+            # lote_size con la MISMA normalización que la clave (prod_up = _norm_prod): reusar el
+            # dict lote_size_por_prod (también keyed por _norm_prod), NO un SELECT con UPPER(TRIM)
+            # crudo — eran asimétricos (M2/M13) y un '+'/acento en el nombre daba lote_size=0 →
+            # el MP se salteaba en el fallback g_por_lote (demanda de MP subcontada en silencio).
+            lote_size_rr = float(lote_size_por_prod.get(prod_up, 0) or 0)
             fijo_acum = kg_fijo_acum_por_prod.get(prod_up, _zero_mp)
             for h in horizontes:
                 kg_proyectado = kg_dia * h

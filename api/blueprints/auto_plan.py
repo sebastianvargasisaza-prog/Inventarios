@@ -249,8 +249,18 @@ def _ventas_sku_map_orders(c, dias_max=200):
                     continue
                 dd = m.setdefault(sk, {})
                 dd[fecha] = dd.get(fecha, 0) + cant
-    except Exception:
-        m = {}
+    except Exception as _e:
+        # NO borrar lo ya acumulado (antes: m={}) · un fallo a mitad de loop reportaba 'sin
+        # ventas' para TODOS los SKUs → el auto-plan sub-planeaba en silencio (velocidad 0).
+        # Preservamos lo parcial y LOGUEAMOS el fallo para que sea visible (M4/M69). Si el
+        # SELECT falló de entrada, m ya está vacío igual, pero ahora queda registrado por qué.
+        try:
+            import logging as _lg
+            _lg.getLogger('auto_plan').warning(
+                'ventas_sku_map_orders falló (velocidad de venta podría quedar incompleta · '
+                '%d SKUs acumulados): %s', len(m), _e)
+        except Exception:
+            pass
     if _g is not None:
         try:
             _g._ventas_sku_map = m
