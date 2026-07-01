@@ -8118,6 +8118,30 @@ def _validar_stock_para_produccion(c, mps_a_consumir):
     return faltantes
 
 
+def _movimientos_tiene_pid(c):
+    """True si la tabla movimientos tiene la columna produccion_id (mig 201, ya aplicada
+    hace tiempo en prod). Se detecta UNA vez por request (cache en flask.g) para ELEGIR el
+    INSERT correcto en vez de tragar toda excepción con try/except (M4/M63): así un fallo
+    REAL del INSERT de Salida (constraint, trigger, tx abortada) propaga en vez de disfrazarse
+    de 'mig 201 no aplicada' y perder la trazabilidad del descuento."""
+    try:
+        cache = getattr(g, '_mov_has_pid', None)
+    except Exception:
+        cache = None
+    if cache is not None:
+        return cache
+    val = True
+    try:
+        c.execute("SELECT produccion_id FROM movimientos LIMIT 0")
+    except Exception:
+        val = False
+    try:
+        g._mov_has_pid = val
+    except Exception:
+        pass
+    return val
+
+
 def _descontar_mp_produccion(c, evento_id, user, forzar=False):
     """Helper compartido: claim atomico + descuenta MPs FEFO de una producción.
 
@@ -8243,7 +8267,7 @@ def _descontar_mp_produccion(c, evento_id, user, forzar=False):
             obs_mp = (obs_base + f" | FEFO lote: {lote_fragment}" +
                        (f" (vence {d['fecha_vencimiento']})"
                         if d['fecha_vencimiento'] else ""))
-            try:
+            if _movimientos_tiene_pid(c):
                 c.execute("""
                     INSERT INTO movimientos
                       (material_id, material_nombre, cantidad, tipo, fecha,
@@ -8251,9 +8275,10 @@ def _descontar_mp_produccion(c, evento_id, user, forzar=False):
                     VALUES (?, ?, ?, 'Salida', ?, ?, ?, ?, ?)
                 """, (mp['codigo_mp'], mp['nombre'], d['cantidad'],
                       fecha_iso, obs_mp, user, d['lote'], evento_id))
-            except Exception:
-                # mig 201 aún no aplicada (PG sin produccion_id) · fallback sin
-                # la columna · la reversión cae al LIKE legacy hasta aplicarla.
+            else:
+                # mig 201 no aplicada (columna produccion_id ausente) · fallback legacy
+                # sin la columna · la reversión cae al LIKE hasta aplicar la mig. (Un fallo
+                # REAL del INSERT ya NO se disfraza de esto: propaga · M4/M63.)
                 c.execute("""
                     INSERT INTO movimientos
                       (material_id, material_nombre, cantidad, tipo, fecha,
@@ -8757,7 +8782,7 @@ def prog_completar_evento(evento_id):
                     obs_mp = (obs_base +
                               f" | FEFO lote: {lote_fragment}" +
                               (f" (vence {d['fecha_vencimiento']})" if d['fecha_vencimiento'] else ""))
-                    try:
+                    if _movimientos_tiene_pid(c):
                         c.execute("""
                             INSERT INTO movimientos
                               (material_id, material_nombre, cantidad, tipo, fecha,
@@ -8765,8 +8790,9 @@ def prog_completar_evento(evento_id):
                             VALUES (?, ?, ?, 'Salida', ?, ?, ?, ?, ?)
                         """, (mp['codigo_mp'], mp['nombre'], d['cantidad'],
                               fecha_iso, obs_mp, user, d['lote'], evento_id))
-                    except Exception:
-                        # mig 201 aún no aplicada (PG) · fallback sin la columna.
+                    else:
+                        # mig 201 no aplicada · fallback legacy sin la columna (un fallo REAL
+                        # del INSERT ya NO se disfraza de esto: propaga · M4/M63).
                         c.execute("""
                             INSERT INTO movimientos
                               (material_id, material_nombre, cantidad, tipo, fecha,

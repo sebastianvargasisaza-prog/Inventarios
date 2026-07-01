@@ -594,6 +594,13 @@ El gate de estado de área en beta se relajó a medias: "no exige limpieza, pero
 3. **El estado ('ocupada'/'sucia') sigue siendo informativo** aunque no bloquee — no hay que dejar de escribirlo, solo dejar de gatear registro por él en beta.
 4. **Tests que fijan el modo explícito:** estricto → 409 (`exigir_area_limpia=1`), beta → NO 409 aunque la sala tenga producción en curso (`test_fabricacion_crear_iniciar.py`). Combina con M66 (default global beta) y M62.
 
+## 🕳️ M69 · No uses try/except como sonda de esquema alrededor de una mutación crítica · 30-jun
+
+En el descuento de MP había `try: INSERT ...produccion_id...  except Exception: INSERT sin produccion_id` (comentado "mig 201 aún no aplicada"). El `except Exception` amplio suponía que TODA falla del INSERT era "columna ausente" → reintentaba sin la columna. Pero cualquier fallo REAL (constraint, trigger de cantidad>0, tx PG abortada) quedaba disfrazado de drift de esquema, sin log ni re-raise, y en PG el 2º INSERT moría igual por tx abortada → o se perdía la trazabilidad `produccion_id` de la Salida. Regla:
+1. **Para saber si una columna existe, detectalo UNA vez** (`SELECT col FROM t LIMIT 0`, cacheado en `flask.g`) y RAMIFICÁ (`if _tiene_col: ... else: ...`). No uses el `except` del INSERT real como detector de esquema — mezcla "columna ausente" con "el INSERT falló de verdad".
+2. **Un `except` alrededor de una mutación de inventario/EBR/OC nunca debe tragar** (M4): si captura, que sea la firma exacta del caso esperado y re-raise el resto. Los mig-legacy ya aplicados (201, 219…) hacen que ese `except` sea código muerto peligroso.
+3. **El patrón vive en varios sitios** (M45): grepear `mig 201`, `sin la columna`, `except Exception:` cerca de INSERT movimientos/movimientos_mee y barrer todos (había 3 · se ramificaron los 2 de Salida de MP con `_movimientos_tiene_pid`).
+
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
 
 Al cerrar una sesión donde se encontró/arregló un bug con patrón no listado aquí:
