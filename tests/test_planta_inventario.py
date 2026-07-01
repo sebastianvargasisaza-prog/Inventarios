@@ -360,7 +360,7 @@ def test_fefo_sugiere_lote_mas_viejo(app, db_clean):
     cu.execute(
         "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, "
         "fecha, lote, fecha_vencimiento, estado_lote) "
-        "VALUES (?, ?, ?, 'Entrada', '2026-02-01', 'L_VIEJO', '2026-06-30', 'OK')",
+        "VALUES (?, ?, ?, 'Entrada', '2026-02-01', 'L_VIEJO', date('now','+30 day'), 'OK')",
         ("MP_FEFO", "MP fefo", 5000)
     )
     cu.execute(
@@ -787,7 +787,7 @@ def test_fefo_distribuye_entre_varios_lotes(app, db_clean):
     cu.execute(
         "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, "
         "fecha, lote, fecha_vencimiento, estado_lote) "
-        "VALUES (?, ?, ?, 'Entrada', '2026-01-01', 'L_A', '2026-06-30', 'OK')",
+        "VALUES (?, ?, ?, 'Entrada', '2026-01-01', 'L_A', date('now','+30 day'), 'OK')",
         ("MP_FRD", "MP frd", 700)
     )
     cu.execute(

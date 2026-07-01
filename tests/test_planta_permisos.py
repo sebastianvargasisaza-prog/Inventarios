@@ -159,7 +159,9 @@ def test_cc_review_blocked_for_marketing(app, db_clean):
 
 
 def test_cc_review_allowed_for_calidad(app, db_clean):
-    c = _login(app, "miguel")
+    # laura ∈ CALIDAD_USERS (QC). Antes el test usaba 'miguel', que el split de roles movió
+    # a ASEGURAMIENTO (gobierno GMP), fuera de QC_USERS · cc-review es acción de CALIDAD/QC.
+    c = _login(app, "laura")
     r = c.post("/api/lotes/cc-review",
                json={"mov_id": 1},
                headers=csrf_headers())

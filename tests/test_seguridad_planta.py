@@ -45,7 +45,8 @@ def test_modo_inventario_encendido_da_alerta(app, db_clean):
     assert j["alertas"] >= 1
     # controles esperados presentes
     claves = {x["clave"] for x in j["controles"]}
-    assert {"recepcion_auto_vigente", "micro_gate_mode", "EBR_MODE", "FORMULA_PIN", "sesion"} <= claves
+    # el endpoint emite la clave 'ebr_mode' (minúscula, como el resto de settings de dominio)
+    assert {"recepcion_auto_vigente", "micro_gate_mode", "ebr_mode", "FORMULA_PIN", "sesion"} <= claves
 
 
 def test_modo_inventario_apagado_ok(app, db_clean):

@@ -85,10 +85,13 @@ def test_admin_auditar_minimos_misma_logica_que_planta(app, db_clean):
 
 def test_dashboard_html_expone_boton_revisar_minimos(app, db_clean):
     cs = _login(app, 'luis')
-    body = cs.get('/inventarios').get_data(as_text=True)
+    # El JS del dashboard va en archivos servidos aparte (cacheables): combinar.
+    body = (cs.get('/inventarios').get_data(as_text=True)
+            + cs.get('/planta-core.js').get_data(as_text=True)
+            + cs.get('/planta-app.js').get_data(as_text=True))
     # Botón en barra
     assert 'abrirRevisarMinimos' in body
-    assert 'Revisar m' in body  # 'minimos' (sin acento o con HTML entity)
+    assert 'Revisar M' in body  # 'Revisar M&iacute;nimos' (label con mayúscula + entidad)
     # Modal
     assert 'modal-revisar-minimos' in body
     # Funciones JS
