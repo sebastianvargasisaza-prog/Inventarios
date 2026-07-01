@@ -33,12 +33,12 @@ bp = Blueprint("plan", __name__)
 log = logging.getLogger("plan")
 
 # Buffer de re-orden · "producir N días ANTES de agotar el stock".
-# Fuente de verdad única (Sebastián 23-may-2026: "las sugerencias deben ser 25
-# días antes de que se acabe"). Antes había 20 hardcodeado en varios cálculos
-# (timing_status, generadores de plan, frecuencia óptima) y 25 en otros
-# (proxima_sugerida, cob_alerta) → fechas inconsistentes. Unificado a 25 ·
-# coincide con cob_alerta default. Audit 30-may-2026.
-BUFFER_REORDEN_DIAS = 25
+# Fuente de verdad ÚNICA del buffer de producción. Sebastián 1-jul-2026: "20 días
+# es el ideal" → unificado a 20 en TODOS los cálculos de fecha (proxima_sugerida,
+# modal óptimo/próxima, generadores, frecuencia óptima, auto-programar). NO confundir
+# con cob_alerta (umbral de URGENCIA/color = 25, cosa distinta que NO se toca).
+# Antes había 20 y 25 mezclados → fechas inconsistentes (auditoría motor 1-jul · M70).
+BUFFER_REORDEN_DIAS = 20
 
 
 def _require_admin_or_compras():
@@ -4381,7 +4381,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                 # revés). El ancla queda solo para mostrar "última producción/duración".
                 _dg = p.get("dias_gondola")
                 _dg = int(_dg) if _dg is not None else 0
-                proxima_calc = hoy + _td(days=max(0, _dg - cob_alerta))
+                proxima_calc = hoy + _td(days=max(0, _dg - BUFFER_REORDEN_DIAS))  # buffer 20d (M70) · NO cob_alerta (color)
                 # Clamp: nunca proponer fecha en el pasado o muy próxima
                 proxima = max(proxima_calc, hoy + _td(days=3))
                 p["proxima_sugerida_fecha"] = proxima.isoformat()
@@ -4400,7 +4400,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             # del calendario. La fecha base = hoy + (días góndola − buffer), clamp +3.
             _dg = p.get("dias_gondola")
             _dg = int(_dg) if _dg is not None else 0
-            proxima = max(hoy + _td(days=max(0, _dg - cob_alerta)), hoy + _td(days=3))
+            proxima = max(hoy + _td(days=max(0, _dg - BUFFER_REORDEN_DIAS)), hoy + _td(days=3))  # buffer 20d (M70)
             p["duracion_lote_dias"] = None
             p["proxima_sugerida_fecha"] = proxima.isoformat()
             p["proxima_sugerida_dias"] = (proxima - hoy).days
@@ -6130,7 +6130,7 @@ def comparar_calendar_necesidades():
     # NUEVA lógica · "producir 20 días antes de agotamiento"
     # - stock_efectivo = stock_gondola + pipeline_7d (ya producido)
     # - fecha_agotamiento = hoy + stock_efectivo / velocidad
-    # - fecha_producir_sugerida = agotamiento - BUFFER_REORDEN_DIAS (25) días
+    # - fecha_producir_sugerida = agotamiento - BUFFER_REORDEN_DIAS (20) días
     # - Comparar FECHA del PRIMER lote Calendar vs sugerido
     out = []
     for nec in necesidades:
@@ -8342,7 +8342,7 @@ def _auto_programar_sugeridas(conn, dias_horizonte=365, ventana_velocidad=60,
                     try:
                         f_base = _date2.fromisoformat(fp['fecha'])
                         dur = max(1, int(fp['kg'] / vel))
-                        psf = (f_base + _td2(days=max(1, dur - cob_alerta))).isoformat()
+                        psf = (f_base + _td2(days=max(1, dur - BUFFER_REORDEN_DIAS))).isoformat()  # buffer 20d (M70)
                     except Exception:
                         psf = None
 
@@ -8402,7 +8402,7 @@ def _auto_programar_sugeridas(conn, dias_horizonte=365, ventana_velocidad=60,
 
             # CADENA · Sebastián 23-may-2026 · "cuántas producciones o en cuánto"
             # Generar TODAS las sugeridas que caen en el horizonte, no solo la próxima.
-            # Cada lote dura (lote_kg / vel) días · próxima = anterior + (dur - cob_alerta).
+            # Cada lote dura (lote_kg / vel) días · próxima = anterior + (dur - BUFFER_REORDEN_DIAS · 20d).
             # P0-10 23-may-PM · auditoría · paso mínimo 7d (era 1d) · si el lote
             # bulk es chico vs velocidad alta, paso podía ser 1d → avalancha
             # de 90 lotes en 90 días. Mínimo semanal para evitar spam.
@@ -17403,7 +17403,7 @@ async function abrirSugerenciaModal(producto, fecha, kg, motivo){
     if (velKgDia > 0.001 && kg > 0){
       const diasDura = Math.round(kg / velKgDia);
       const fProx = new Date(fecha + 'T12:00:00');
-      fProx.setDate(fProx.getDate() + Math.max(diasDura - 25, 1));
+      fProx.setDate(fProx.getDate() + Math.max(diasDura - 20, 1));  // buffer 20d (M70)
       html += '<div class="banner-inline ok">🔁 Este lote durará ~' + diasDura + ' días · próxima producción sugerida: <strong>' + fechaLocalStr(fProx) + '</strong></div>';
     }
   }
@@ -18284,12 +18284,12 @@ async function abrirLoteModal(id, producto, fecha, kg){
     const diasCobFisica = Math.round(stockFisicoKg / velKgDia);
     const hoy = new Date();
     const fAgot = new Date(hoy); fAgot.setDate(fAgot.getDate() + diasCobFisica);
-    const fOpt = new Date(fAgot); fOpt.setDate(fOpt.getDate() - 25);
+    const fOpt = new Date(fAgot); fOpt.setDate(fOpt.getDate() - 20);  // buffer 20d (M70)
     const fProg = new Date(fecha + 'T12:00:00');
     const diffDias = Math.round((fProg - fOpt) / 86400000);
     const _cobTxt = stockFisicoKg.toFixed(1) + 'kg físico ≈ ' + diasCobFisica + 'd (sin contar este lote)';
     if (Math.abs(diffDias) <= 7){
-      diagFecha = 'ok'; diagFechaTxt = '✅ A tiempo · dentro de ±7d del óptimo · produce ~25d antes de agotar el stock físico · ' + _cobTxt;
+      diagFecha = 'ok'; diagFechaTxt = '✅ A tiempo · dentro de ±7d del óptimo · produce ~20d antes de agotar el stock físico · ' + _cobTxt;
     } else if (diffDias > 0){
       diagFecha = 'tarde'; diagFechaTxt = '⚠ TARDE · ' + diffDias + ' días después del óptimo · el stock físico se agota antes · ' + _cobTxt;
     } else {
@@ -18318,7 +18318,7 @@ async function abrirLoteModal(id, producto, fecha, kg){
     } catch(e){}
     const kgB2B = Math.max(0, kg - kgAnimus);
     const diasDura = kgAnimus / velKgDia;
-    const diasHastaProx = Math.max(Math.round(diasDura) - 25, 1);  // 25d antes de agotar · mín 1
+    const diasHastaProx = Math.max(Math.round(diasDura) - 20, 1);  // buffer 20d antes de agotar · mín 1 (M70)
     const fProx = new Date(fecha + 'T12:00:00');
     fProx.setDate(fProx.getDate() + diasHastaProx);
     proximaSugerida = fechaLocalStr(fProx);
