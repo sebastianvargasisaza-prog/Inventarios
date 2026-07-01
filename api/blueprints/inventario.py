@@ -10199,6 +10199,16 @@ def generar_rotulos(producto_nombre, cantidad_str):
     from datetime import date; import urllib.parse
     hoy = date.today().strftime('%d-%b-%Y').upper()
     prod = urllib.parse.unquote(producto_nombre); op_num = "OP-"+date.today().strftime('%Y%m%d'); cant_g = cantidad_kg*1000
+    # Tamaño de la etiqueta térmica (mm) · configurable con ?w=100&h=150 · default 100×150 (4×6",
+    # el rollo más común y el que acomoda el diseño completo). Antes imprimía en hoja carta a 2
+    # columnas (@page letter landscape) → salía mal en la impresora térmica de calor.
+    try:
+        _lw = int(round(float(request.args.get('w') or 100)))
+        _lh = int(round(float(request.args.get('h') or 150)))
+    except Exception:
+        _lw, _lh = 100, 150
+    _lw = max(50, min(_lw, 210)); _lh = max(30, min(_lh, 297))
+    _scan_base = (request.host_url or '').rstrip('/')
     conn = get_db(); c = conn.cursor()
     c.execute("SELECT material_id,material_nombre,porcentaje FROM formula_items WHERE producto_nombre=?", (prod,))
     items = c.fetchall()
@@ -10251,6 +10261,9 @@ def generar_rotulos(producto_nombre, cantidad_str):
         cod_real=cods.get(mid,mid)
         ubicacion=('Est. '+str(info.get('est',''))+str(info.get('pos',''))).strip(); vence=info.get('vence',''); inci=incis.get(mid,'')
         bv=cod_real+'|'+lote_mp; barcodes+=f'try{{JsBarcode("#bc{i}","{bv}",{{format:"CODE128",width:1.2,height:35,displayValue:false,margin:0}})}}catch(e){{}};'
+        # QR resoluble: al escanear con el celular abre /scan/<código>/<lote> con la info REAL del lote.
+        _scan_url = _scan_base + '/scan/' + urllib.parse.quote(str(cod_real), safe='') + '/' + urllib.parse.quote(str(lote_mp), safe='')
+        barcodes += f'try{{new QRCode(document.getElementById("qr{i}"),{{text:{json.dumps(_scan_url)},width:66,height:66,correctLevel:QRCode.CorrectLevel.M}})}}catch(e){{}};'
         rhtml+='<div class="r"><div class="rh"><span class="rt">RÓTULO PARA DISPENSAR MATERIA PRIMA</span><span class="rc">PRD-PRO-001-F08 | v1<br>04-Mar-2025 / 03-Mar-2028</span></div>'
         rhtml+='<table><tr><td class="l">OP:</td><td class="v">'+op_num+'</td><td class="l">Fecha:</td><td class="v">'+hoy+'</td></tr>'
         rhtml+='<tr><td class="l">Producto:</td><td class="v big" colspan="3"><b>'+prod+'</b> &mdash; '+str(cantidad_kg)+' kg</td></tr>'
@@ -10262,10 +10275,11 @@ def generar_rotulos(producto_nombre, cantidad_str):
         rhtml+='<tr><td class="l">Tara:</td><td class="blank"></td><td class="l">Peso Neto:</td><td class="blank"></td></tr>'
         rhtml+='<tr><td class="l">Pesado por:</td><td class="blank firma"></td><td class="l">Verificado:</td><td class="blank firma"></td></tr>'
         rhtml+='</table>'
-        rhtml+='<div style="text-align:center;padding:4px;"><svg id="bc'+str(i)+'"></svg></div>'
+        rhtml+='<div class="bcq"><div class="bcwrap"><svg id="bc'+str(i)+'"></svg></div><div class="qrwrap"><div id="qr'+str(i)+'"></div><div class="qrlbl">Escaneá<br>info real</div></div></div>'
         rhtml+='<div class="rf">'+cod_real+'|'+lote_mp+' | #'+str(i+1)+' de '+str(len(items))+'</div></div>'
     css=('<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script><title>Rotulos</title>'
          '<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>'
+         '<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>'
          '<style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Arial,sans-serif;font-size:9pt;background:#eee;}'
          '.ph{background:#4c1d95;color:white;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;}'
          '.pbtn{background:#6d28d9;color:white;border:none;padding:8px 20px;border-radius:8px;cursor:pointer;font-weight:600;}'
@@ -10278,14 +10292,131 @@ def generar_rotulos(producto_nombre, cantidad_str):
          '.v{font-size:8.5pt;width:23%;}.bold{font-size:9pt;}.big{font-size:9pt;}'
          '.peso{background:#fff3cd;color:#c0392b;font-size:12pt;font-weight:bold;}'
          '.blank{height:20px;width:23%;}.firma{height:26px;}.rf{background:#ecf0f1;padding:2px 6px;font-size:6.5pt;color:#888;text-align:right;}'
-         '@media print{body{background:white;}.ph{display:none;}.wrap{padding:0;gap:3px;}.r{width:48%;}@page{size:letter landscape;margin:7mm;}}'
+         '.bcq{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:4px 6px;}'
+         '.bcwrap{flex:1;text-align:center;overflow:hidden;}.bcwrap svg{max-width:100%;}'
+         '.qrwrap{flex:0 0 auto;text-align:center;}.qrwrap img,.qrwrap canvas{display:block;}'
+         '.qrlbl{font-size:5.5pt;color:#4c1d95;font-weight:bold;line-height:1.1;margin-top:1px;}'
+         # Impresión térmica · UNA etiqueta por sticker al tamaño del rollo (default 100×150mm ·
+         # configurable ?w&h). Cada rótulo llena el ancho de la etiqueta y salta de página.
+         f'@media print{{body{{background:white;font-size:8.5pt;}}.ph{{display:none;}}'
+         f'.wrap{{display:block;padding:0;gap:0;}}'
+         f'.r{{width:{_lw-3}mm;max-width:{_lw-3}mm;border-width:1px;margin:0 auto;'
+         f'page-break-after:always;page-break-inside:avoid;}}'
+         f'.r:last-child{{page-break-after:auto;}}'
+         f'@page{{size:{_lw}mm {_lh}mm;margin:1.5mm;}}}}'
          '</style></head><body>')
-    return (css+'<div class="ph"><div><h2>Rotulos &mdash; '+prod+' &mdash; '+str(cantidad_kg)+' kg</h2>'
-            '<div style="font-size:8pt;opacity:0.8;">'+op_num+' | '+str(len(items))+' MPs | '+hoy+'</div></div>'
-            '<button class="pbtn" onclick="window.print()">Imprimir todos</button></div>'
-            '<div class="wrap">'+rhtml+'</div>'
-            '<script>window.onload=function(){'+barcodes+'};</script>'
+    _base_path = '/rotulos/' + urllib.parse.quote(prod) + '/' + str(cantidad_kg)
+    _sizes = [(100, 150, '4×6"'), (100, 75, '4×3"'), (100, 50, '4×2"'), (50, 30, 'chica')]
+    _size_links = ''.join(
+        '<a href="' + _base_path + '?w=' + str(w) + '&h=' + str(h) + '" style="'
+        'display:inline-block;padding:4px 9px;margin-left:5px;border-radius:6px;font-size:8pt;'
+        'text-decoration:none;font-weight:600;' +
+        ('background:#fff;color:#4c1d95;' if (w == _lw and h == _lh) else 'background:#6d28d9;color:#fff;') +
+        '">' + lbl + ' · ' + str(w) + '×' + str(h) + 'mm</a>'
+        for w, h, lbl in _sizes)
+    return (css + '<div class="ph"><div><h2>Rotulos &mdash; ' + prod + ' &mdash; ' + str(cantidad_kg) + ' kg</h2>'
+            '<div style="font-size:8pt;opacity:0.8;">' + op_num + ' | ' + str(len(items)) + ' MPs | ' + hoy +
+            ' | etiqueta ' + str(_lw) + '×' + str(_lh) + 'mm</div></div>'
+            '<div style="display:flex;align-items:center;gap:4px;"><span style="font-size:8pt;opacity:.8;">Tamaño:</span>' +
+            _size_links +
+            '<button class="pbtn" style="margin-left:12px;" onclick="window.print()">Imprimir todos</button></div></div>'
+            '<div class="wrap">' + rhtml + '</div>'
+            '<script>window.onload=function(){' + barcodes + '};</script>'
             '</body></html>')
+
+@bp.route('/scan/<path:codigo>/<path:lote>')
+def scan_rotulo(codigo, lote):
+    """Escaneo del QR/código de barras de un rótulo → info REAL del lote de MP, en vivo.
+    'Cualquier código que generemos debe traer información real' (Sebastián 1-jul): el QR del
+    rótulo abre esta página con MP, lote, vencimiento, ubicación, stock canónico y estado."""
+    import urllib.parse as _up
+    import html as _hh
+    if 'compras_user' not in session:
+        return redirect('/login?next=' + _up.quote('/scan/' + codigo + '/' + lote))
+    cod = _up.unquote(codigo or '').strip()
+    lot = _up.unquote(lote or '').strip()
+    conn = get_db(); c = conn.cursor()
+    mp = c.execute(
+        "SELECT COALESCE(NULLIF(TRIM(nombre_comercial),''),NULLIF(TRIM(nombre_inci),''),codigo_mp), "
+        "COALESCE(nombre_inci,''), COALESCE(tipo,'') FROM maestro_mps WHERE codigo_mp=?",
+        (cod,)).fetchone()
+    nombre = (mp[0] if mp else cod) or cod
+    inci = (mp[1] if mp else '') or ''
+    cat = (mp[2] if mp else '') or ''
+    row = c.execute(
+        """SELECT
+             SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                      WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) AS stock,
+             MAX(estanteria), MAX(posicion),
+             MAX(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA') THEN fecha_vencimiento END) AS vence,
+             MAX(estado_lote), MAX(fecha)
+           FROM movimientos WHERE material_id=? AND lote=?""",
+        (cod, lot)).fetchone()
+    stock = float(row[0] or 0) if row and row[0] is not None else 0.0
+    est = str((row[1] if row else '') or '').strip()
+    pos = str((row[2] if row else '') or '').strip()
+    vence = str(row[3])[:10] if row and row[3] else ''
+    estado = str((row[4] if row else '') or '').strip().upper() or 'VIGENTE'
+    ult = str(row[5])[:10] if row and row[5] else ''
+    existe = bool(row and (row[5] is not None))
+    movs = c.execute(
+        "SELECT fecha, tipo, cantidad, COALESCE(observaciones,'') FROM movimientos "
+        "WHERE material_id=? AND lote=? ORDER BY id DESC LIMIT 6", (cod, lot)).fetchall()
+    _col = {'VIGENTE': '#16a34a', 'APROBADO': '#16a34a', 'CUARENTENA': '#d97706',
+            'CUARENTENA_EXTENDIDA': '#d97706', 'RECHAZADO': '#dc2626', 'VENCIDO': '#dc2626',
+            'BLOQUEADO': '#dc2626', 'AGOTADO': '#6b7280'}.get(estado, '#4c1d95')
+    ubic = ('Est. ' + est + pos).strip() if (est or pos) else '—'
+    def _row(k, v, big=False):
+        return ('<div style="display:flex;justify-content:space-between;gap:10px;padding:9px 2px;'
+                'border-bottom:1px solid #eee;"><span style="color:#6b7280;font-size:13px;">' + _hh.escape(k) +
+                '</span><span style="font-weight:700;text-align:right;font-size:' + ('18px' if big else '14px') +
+                ';color:#111;">' + v + '</span></div>')
+    movrows = ''
+    for m in movs:
+        _t = str(m[1] or ''); _cant = float(m[2] or 0)
+        _sg = '#16a34a' if _t.lower().startswith('entrada') or 'Ajuste +' in _t else '#dc2626'
+        movrows += ('<tr><td style="padding:5px 6px;color:#6b7280;font-size:12px;">' + _hh.escape(str(m[0])[:10]) +
+                    '</td><td style="padding:5px 6px;font-size:12px;">' + _hh.escape(_t) +
+                    '</td><td style="padding:5px 6px;text-align:right;font-weight:700;color:' + _sg +
+                    ';font-size:12px;">' + '{:,.1f} g'.format(_cant) + '</td></tr>')
+    if not movrows:
+        movrows = '<tr><td colspan="3" style="padding:8px;color:#9ca3af;font-size:12px;">Sin movimientos para este lote.</td></tr>'
+    aviso = ('' if existe else
+             '<div style="background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;padding:10px 12px;'
+             'border-radius:10px;margin:10px 0;font-size:13px;font-weight:600;">⚠ No se encontraron movimientos '
+             'para el lote <b>' + _hh.escape(lot) + '</b> del código <b>' + _hh.escape(cod) + '</b>. '
+             'Verificá el rótulo o que el lote esté cargado en bodega.</div>')
+    html_out = (
+        '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        '<title>' + _hh.escape(nombre) + ' · ' + _hh.escape(lot) + '</title>'
+        '<style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:-apple-system,Arial,sans-serif;'
+        'background:#f3f4f6;color:#111;padding:14px;max-width:520px;margin:0 auto;}'
+        '.card{background:#fff;border-radius:16px;box-shadow:0 2px 12px rgba(0,0,0,.08);overflow:hidden;margin-bottom:14px;}'
+        '.hd{background:#4c1d95;color:#fff;padding:16px 18px;}.hd h1{font-size:20px;line-height:1.2;}'
+        '.hd .sub{opacity:.85;font-size:13px;margin-top:3px;}.bd{padding:6px 18px 14px;}'
+        '.chip{display:inline-block;padding:5px 12px;border-radius:999px;color:#fff;font-weight:700;font-size:13px;margin-top:8px;}'
+        '</style></head><body>'
+        '<div class="card"><div class="hd"><h1>' + _hh.escape(nombre) + '</h1>'
+        '<div class="sub">' + _hh.escape(cod) + (' · ' + _hh.escape(cat) if cat else '') + '</div>'
+        '<span class="chip" style="background:' + _col + ';">' + _hh.escape(estado) + '</span></div>'
+        '<div class="bd">' + aviso +
+        _row('Lote', _hh.escape(lot) or '—', big=True) +
+        _row('Stock disponible', '{:,.1f} g'.format(stock)) +
+        _row('Vencimiento', _hh.escape(vence) or '—') +
+        _row('Ubicación', _hh.escape(ubic)) +
+        (_row('Nombre INCI', _hh.escape(inci)) if inci else '') +
+        _row('Último movimiento', _hh.escape(ult) or '—') +
+        '</div></div>'
+        '<div class="card"><div class="hd" style="background:#6d28d9;padding:12px 18px;">'
+        '<h1 style="font-size:16px;">Últimos movimientos</h1></div>'
+        '<div class="bd" style="padding:8px 12px 12px;"><table style="width:100%;border-collapse:collapse;">' +
+        movrows + '</table></div></div>'
+        '<div style="text-align:center;color:#9ca3af;font-size:11px;padding:4px;">EOS · Rótulo escaneado · '
+        'info en vivo del kardex</div>'
+        '</body></html>')
+    return html_out
+
 
 @bp.route('/rotulo-recepcion/<codigo>/<lote>/<cantidad_str>')
 def rotulo_recepcion(codigo, lote, cantidad_str):
