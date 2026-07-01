@@ -397,6 +397,12 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (319, "AZ HIBRID CLEAR: dejar la formula IDENTICA a la orden de produccion del jefe (OP-2026-90, PT-AZHYBRID-15-001) - quita Vitamina E (tocopherol · MP00079) + Gransil 1.0->0.8 + NaOH 0.95->0.9; el 1.05% liberado va al AGUA (QS a 100%: 47.767->48.817). Mantiene los codigos del catalogo de la app (la unificacion de codigos duplicados es aparte). Sebastian/jefe produccion 1-jul.", [
+        "DELETE FROM formula_items WHERE UPPER(TRIM(producto_nombre))='AZ HIBRID CLEAR' AND (UPPER(TRIM(material_id)) IN ('MP00079','MPVITESO01') OR UPPER(material_nombre) LIKE '%VITAMINA E%' OR UPPER(material_nombre) LIKE '%TOCOPHER%')",
+        "UPDATE formula_items SET porcentaje=0.8, cantidad_g_por_lote=ROUND(0.8/100.0*COALESCE((SELECT lote_size_kg FROM formula_headers fh WHERE UPPER(TRIM(fh.producto_nombre))='AZ HIBRID CLEAR' LIMIT 1),0)*1000,4) WHERE UPPER(TRIM(producto_nombre))='AZ HIBRID CLEAR' AND UPPER(TRIM(material_id))='MP00072'",
+        "UPDATE formula_items SET porcentaje=0.9, cantidad_g_por_lote=ROUND(0.9/100.0*COALESCE((SELECT lote_size_kg FROM formula_headers fh WHERE UPPER(TRIM(fh.producto_nombre))='AZ HIBRID CLEAR' LIMIT 1),0)*1000,4) WHERE UPPER(TRIM(producto_nombre))='AZ HIBRID CLEAR' AND UPPER(TRIM(material_id))='MP00297'",
+        "UPDATE formula_items SET porcentaje=48.817, cantidad_g_por_lote=ROUND(48.817/100.0*COALESCE((SELECT lote_size_kg FROM formula_headers fh WHERE UPPER(TRIM(fh.producto_nombre))='AZ HIBRID CLEAR' LIMIT 1),0)*1000,4) WHERE UPPER(TRIM(producto_nombre))='AZ HIBRID CLEAR' AND UPPER(TRIM(material_id))='MPAGUALI01'",
+    ]),
     (318, "Planta BETA: forzar exigir_area_limpia=0 en app_settings (una fila en 1 pisaba el default beta y seguia exigiendo area limpia · Sebastian 30-jun).", [
         "UPDATE app_settings SET valor='0' WHERE clave='exigir_area_limpia'",
     ]),
