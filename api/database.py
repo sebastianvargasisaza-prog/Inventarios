@@ -397,6 +397,10 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (320, "ESENCIA ILUMINADORA: catalogar Bicarbonato de sodio como MP00131 (el destino del bridge 46 MPBISOSO01->MP00131 que NUNCA se creo en maestro_mps -> el descuento no podia resolver ese MP -> los 90g de bicarbonato no salian del kardex) + reactivar la formula (Sebastian confirma que se produce). Falta que bodega RECIBA bicarbonato bajo MP00131 para que haya stock. 1-jul.", [
+        "INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, tipo_material, activo) SELECT 'MP00131','Bicarbonato de sodio','SODIUM BICARBONATE','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00131')",
+        "UPDATE formula_headers SET activo=1 WHERE UPPER(TRIM(producto_nombre))='ESENCIA ILUMINADORA'",
+    ]),
     (319, "AZ HIBRID CLEAR: dejar la formula IDENTICA a la orden de produccion del jefe (OP-2026-90, PT-AZHYBRID-15-001) - quita Vitamina E (tocopherol · MP00079) + Gransil 1.0->0.8 + NaOH 0.95->0.9; el 1.05% liberado va al AGUA (QS a 100%: 47.767->48.817). Mantiene los codigos del catalogo de la app (la unificacion de codigos duplicados es aparte). Sebastian/jefe produccion 1-jul.", [
         "DELETE FROM formula_items WHERE UPPER(TRIM(producto_nombre))='AZ HIBRID CLEAR' AND (UPPER(TRIM(material_id)) IN ('MP00079','MPVITESO01') OR UPPER(material_nombre) LIKE '%VITAMINA E%' OR UPPER(material_nombre) LIKE '%TOCOPHER%')",
         "UPDATE formula_items SET porcentaje=0.8, cantidad_g_por_lote=ROUND(0.8/100.0*COALESCE((SELECT lote_size_kg FROM formula_headers fh WHERE UPPER(TRIM(fh.producto_nombre))='AZ HIBRID CLEAR' LIMIT 1),0)*1000,4) WHERE UPPER(TRIM(producto_nombre))='AZ HIBRID CLEAR' AND UPPER(TRIM(material_id))='MP00072'",
