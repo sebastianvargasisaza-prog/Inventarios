@@ -13245,11 +13245,15 @@ def _demanda_stock_gramos(c, producto):
         "SELECT COALESCE(SUM(COALESCE(kg_real,cantidad_kg,0)),0) FROM produccion_programada "
         "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) AND fin_real_at IS NOT NULL "
         "AND substr(fin_real_at,1,10) >= ? "
+        # FIX 1-jul · tope superior = hoy (igual que el plan plan.py L3649): fin_real_at es una
+        # fecha PASADA (el lote ya terminó) · un valor futuro es basura de datos y no debe contar
+        # como 'pipeline en camino'.
+        "AND substr(fin_real_at,1,10) <= ? "
         # FIX 1-jul · MISMA exclusión que el plan (plan.py L3653): un lote 'completado' ya pasó
         # a stock_pt (liberación QC) y está en stock_g → contarlo también como pipeline lo
         # doble-contaba → el motor sobre-estimaba cobertura y SUB-programaba (display≠cadencia).
         "AND LOWER(COALESCE(estado,'')) NOT IN ('completado','cancelado')",
-        (producto, (hoy - _td2(days=7)).isoformat())).fetchone()[0]
+        (producto, (hoy - _td2(days=7)).isoformat(), hoy.isoformat())).fetchone()[0]
     pipe_g = float(pipe_kg or 0) * 1000.0
     stock_total_g = stock_g + pipe_g
     cobertura = (stock_total_g / demand_g) if demand_g > 0.001 else None

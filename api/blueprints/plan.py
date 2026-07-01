@@ -3782,7 +3782,11 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         ventas_90d_total = 0
         for sku in skus_de_prod:
             stk = resolved_stock.get(sku, {})
-            stock_uds_total += int(stk.get("uds", 0) or 0)
+            # FIX 1-jul · el SKU es_regalo NO es stock vendible (= motor _demanda_stock_gramos, que
+            # filtra es_regalo=0) · antes inflaba stock_uds_total → cobertura mayor que la del motor
+            # para productos con regalo (BLUSH BALM · M6). Las ventas YA vienen regalo-free (loop 3632).
+            if str(sku).strip().upper() not in skus_regalo:
+                stock_uds_total += int(stk.get("uds", 0) or 0)
             ventas_periodo_total += int(ventas_por_sku.get(sku, 0) or 0)
             ventas_30d_total += int(ventas_30d_por_sku.get(sku, 0) or 0)
             ventas_90d_total += int(ventas_90d_por_sku.get(sku, 0) or 0)
@@ -3799,8 +3803,25 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         ml_inferido = False
         ml_total_pond = 0.0
         uds_total_pond = 0
+        # FIX 1-jul · el ml debe salir del MISMO resolver que el motor (_volumen_sku): para SKUs sin
+        # volumen en sku_producto_map, el motor usa el volumen a NIVEL PRODUCTO de producto_presentaciones,
+        # pero el display caía a la heurística por nombre → ml (y por ende kg/cobertura) distinto al motor
+        # en ~13 productos (ej. BOOSTER TENSOR 15 real vs 30 heurístico · 2×). Ahora el display usa el
+        # resolver del motor como fallback antes de la heurística → pantalla y cadencia coinciden.
+        def _ml_de_sku(_sk):
+            _v = ml_por_sku.get(str(_sk).upper().strip())
+            if _v:
+                return _v
+            try:
+                from blueprints.auto_plan import _volumen_sku as _vs_motor
+                _vv, _ = _vs_motor(c, _sk, prod_nombre)
+                if _vv and _vv > 0:
+                    return _vv
+            except Exception:
+                pass
+            return None
         for _sku in skus_de_prod:
-            ml_sku = ml_por_sku.get(_sku.upper().strip())
+            ml_sku = _ml_de_sku(_sku)
             uds_sku = int(ventas_por_sku.get(_sku, 0) or 0)
             if ml_sku and uds_sku > 0:
                 ml_total_pond += ml_sku * uds_sku
@@ -3808,11 +3829,11 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         if uds_total_pond > 0:
             ml_promedio = ml_total_pond / uds_total_pond
         else:
-            # Fallback: 1) ml de cualquier SKU mapeado aunque no haya vendido
-            #          2) heurística por nombre (legacy)
+            # Fallback: 1) ml de cualquier SKU (incl. resolver del motor) aunque no haya vendido
+            #          2) heurística por nombre (legacy · solo si el motor tampoco lo resuelve)
             ml_fallback_sku = None
             for _sku in skus_de_prod:
-                ml_sku = ml_por_sku.get(_sku.upper().strip())
+                ml_sku = _ml_de_sku(_sku)
                 if ml_sku:
                     ml_fallback_sku = ml_sku
                     break
