@@ -211,40 +211,43 @@ def test_limite_aprobacion_admin_sin_limite(app, db_clean):
     assert r.status_code != 403
 
 
-def test_contadora_no_autoriza_oc_grande(app, db_clean):
-    """Segregación de duties: la contadora PURA (mayra) NO autoriza OCs, sin
-    importar el monto → SEGREGATION_OF_DUTIES, no EXCEDE_LIMITE_APROBACION.
-    NOTA 13-jun: Catalina SÍ autoriza ahora (OC_AUTORIZA_USERS · pedido Sebastián);
-    el test usa MAYRA, que es la contadora pura aún bloqueada por SoD.
-    """
+def test_mayra_no_autoriza_oc_sobre_su_limite(app, db_clean):
+    """Política vigente (config 18-jun-2026): la SoD de autorización se relajó a propósito —
+    Mayra y Catalina PUEDEN autorizar OCs (equipo chico de confianza · control compensatorio =
+    audit_log + LÍMITE DE MONTO por usuario). El control que SÍ sigue: una OC que EXCEDE el
+    límite de Mayra (5M) la rechaza con EXCEDE_LIMITE_APROBACION (requiere admin)."""
     conn = sqlite3.connect(os.environ["DB_PATH"])
     conn.execute("""INSERT INTO ordenes_compra
                     (numero_oc, fecha, estado, proveedor, valor_total)
                     VALUES ('OC-EXCEDE', date('now'), 'Revisada', 'P', 10_000_000)""")
+    conn.execute("INSERT INTO ordenes_compra_items (numero_oc, codigo_mp, cantidad_g) "
+                 "VALUES ('OC-EXCEDE','MP-X',1000)")
     conn.commit()
     conn.close()
 
     c = _login(app, "mayra")
     r = c.patch("/api/ordenes-compra/OC-EXCEDE/autorizar", headers=csrf_headers())
-    assert r.status_code == 403
-    assert r.get_json().get("codigo") == "SEGREGATION_OF_DUTIES"
+    assert r.status_code == 403, r.data
+    assert r.get_json().get("codigo") == "EXCEDE_LIMITE_APROBACION"
 
 
-def test_contadora_no_autoriza_oc_pequena(app, db_clean):
-    """Segregación de duties: ni una OC pequeña la autoriza la contadora pura
-    (mayra). Solo admin/compras (y Catalina, autorizador explícito) autorizan.
-    """
+def test_mayra_autoriza_oc_dentro_de_su_limite(app, db_clean):
+    """Contraparte: una OC dentro del límite de Mayra (5M) SÍ la autoriza (SoD relajada
+    a propósito · 18-jun). Antes el test asumía SoD estricta (Mayra bloqueada) — quedó stale
+    tras la decisión de gerencia."""
     conn = sqlite3.connect(os.environ["DB_PATH"])
     conn.execute("""INSERT INTO ordenes_compra
                     (numero_oc, fecha, estado, proveedor, valor_total)
                     VALUES ('OC-OK', date('now'), 'Revisada', 'P', 3_000_000)""")
+    conn.execute("INSERT INTO ordenes_compra_items (numero_oc, codigo_mp, cantidad_g) "
+                 "VALUES ('OC-OK','MP-X',1000)")
     conn.commit()
     conn.close()
 
     c = _login(app, "mayra")
     r = c.patch("/api/ordenes-compra/OC-OK/autorizar", headers=csrf_headers())
-    assert r.status_code == 403
-    assert r.get_json().get("codigo") == "SEGREGATION_OF_DUTIES"
+    assert r.status_code == 200, r.data
+    assert r.get_json().get("estado") == "Autorizada"
 
 
 # ═══ Sprint 5: cotizaciones + centro de costos ════════════════════════════

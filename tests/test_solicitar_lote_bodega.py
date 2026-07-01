@@ -111,9 +111,13 @@ def test_lotes_marca_tiene_solicitud_pendiente(app, db_clean):
 
 
 def test_dashboard_html_tiene_funcion_toast(app, db_clean):
-    """HTML debe exponer _toastSolicitudCreada · feedback visible al click."""
+    """El dashboard debe exponer _toastSolicitudCreada · feedback visible al click.
+    El JS del dashboard se sirve en archivos cacheables separados (/planta-core.js +
+    /planta-app.js), no inline · el contenido a validar es el combinado."""
     cs = _login(app, 'luis')
-    body = cs.get('/inventarios').get_data(as_text=True)
+    body = (cs.get('/inventarios').get_data(as_text=True)
+            + cs.get('/planta-core.js').get_data(as_text=True)
+            + cs.get('/planta-app.js').get_data(as_text=True))
     assert '_toastSolicitudCreada' in body
     assert 'toast-sol-creada' in body
     assert 'Solicitud enviada a Compras' in body

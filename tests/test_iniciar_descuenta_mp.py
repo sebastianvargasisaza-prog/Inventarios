@@ -334,9 +334,12 @@ def test_iniciar_terminada_devuelve_idempotente(app, db_clean):
 
 
 def test_dashboard_html_popup_stock_insuficiente_visible(app, db_clean):
-    """UI tiene la funcion popup + el handler de errores con detalle."""
+    """UI tiene la funcion popup + el handler de errores con detalle.
+    El JS va en archivos servidos aparte (cacheables): validar el contenido combinado."""
     cs = _login(app)
-    body = cs.get('/inventarios').get_data(as_text=True)
+    body = (cs.get('/inventarios').get_data(as_text=True)
+            + cs.get('/planta-core.js').get_data(as_text=True)
+            + cs.get('/planta-app.js').get_data(as_text=True))
     assert '_showStockInsuficientePopup' in body
     assert 'No se puede fabricar' in body
     assert 'popup-stock-insuf' in body
@@ -387,15 +390,17 @@ def test_iniciar_fefo_distribuye_entre_lotes_por_vencimiento(app, db_clean):
            (material_id, material_nombre, cantidad, tipo, fecha,
             observaciones, lote, fecha_vencimiento, operador, estado_lote)
            VALUES ('MP-FEFO', 'FEFO test', 1000, 'Entrada', date('now'),
-                   'Lote viejo', 'LV-001', '2026-06-01', 'test', 'Aprobado')"""
+                   'Lote viejo', 'LV-001', date('now','+45 day'), 'test', 'Aprobado')"""
     )
-    # Lote nuevo (vence tarde): 5000g
+    # Lote nuevo (vence tarde): 5000g · fechas RELATIVAS para que el test no caduque
+    # (antes hardcodeadas · LV-001 quedó vencido con el paso del tiempo → FEFO lo
+    # excluía por INV-6/M25 y consumía todo del nuevo · era drift del test, no bug).
     conn.execute(
         """INSERT INTO movimientos
            (material_id, material_nombre, cantidad, tipo, fecha,
             observaciones, lote, fecha_vencimiento, operador, estado_lote)
            VALUES ('MP-FEFO', 'FEFO test', 5000, 'Entrada', date('now'),
-                   'Lote nuevo', 'LN-001', '2028-12-31', 'test', 'Aprobado')"""
+                   'Lote nuevo', 'LN-001', date('now','+800 day'), 'test', 'Aprobado')"""
     )
     conn.commit(); conn.close()
     _seed_formula('PROD-FEFO', [

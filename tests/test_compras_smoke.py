@@ -193,6 +193,7 @@ def test_compras_no_orphan_fetch_urls():
         "/api/proveedores-unicos",  # autocompletado de proveedores en tab Planta
         "/api/conteo/", "/api/admin/",
         "/api/precio-historico/",
+        "/api/abastecimiento/",  # motor run-rate (programacion.abastecimiento_consumo_horizontes)
         "/api/csrf-token",  # Pre-fetch defense-in-depth (core.csrf_token)
     ]
     orphans = []

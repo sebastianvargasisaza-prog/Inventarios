@@ -72,6 +72,9 @@ def test_bodega_pagina_tiene_toggle_0stock(app, db_clean):
     c = _login(app)
     r = c.get('/inventarios')
     assert r.status_code == 200
-    body = r.data.decode('utf-8', 'replace')
+    # El JS del dashboard va en archivos servidos aparte (cacheables): combinar.
+    body = (r.data.decode('utf-8', 'replace')
+            + c.get('/planta-core.js').get_data(as_text=True)
+            + c.get('/planta-app.js').get_data(as_text=True))
     assert 'stock-ver-sin' in body, "la Bodega debe tener el checkbox 'Ver MPs en 0'"
     assert "fetch('/api/lotes'+(_verSin" in body, "loadStock debe pedir con-stock por defecto"

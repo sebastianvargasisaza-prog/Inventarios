@@ -703,7 +703,10 @@ def test_realizada_no_clona_con_pendiente_misma_kg(app, db_clean):
 
 def test_dashboard_html_expone_vista_simple(app, db_clean):
     cs = _login(app, 'luis')
-    body = cs.get('/inventarios').get_data(as_text=True)
+    # El JS del dashboard se sirve en archivos cacheables aparte: combinar los 3.
+    body = (cs.get('/inventarios').get_data(as_text=True)
+            + cs.get('/planta-core.js').get_data(as_text=True)
+            + cs.get('/planta-app.js').get_data(as_text=True))
     # Vista calendario por sala (Sebastian 5-may-2026)
     assert 'pv2-vista-simple' in body
     assert 'pv2CargarProdFaltantes' in body

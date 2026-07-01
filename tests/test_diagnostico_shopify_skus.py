@@ -34,7 +34,9 @@ def test_diagnostico_shopify_reconciliacion(app, db_clean):
     db = sqlite3.connect(os.environ["DB_PATH"])
     db.execute("DELETE FROM animus_shopify_orders")
     db.execute("DELETE FROM sku_producto_map")
-    # SKU mapeado a un producto (no regalo)
+    # SKU mapeado a un producto REAL (existe en formula_headers) · si no existiera, el detector
+    # mapeo-zombi (27-jun) lo contaría como zombi en vez de mapeado. Sembramos la fórmula.
+    db.execute("INSERT OR IGNORE INTO formula_headers (producto_nombre) VALUES ('SUERO VIT C B3')")
     db.execute(
         "INSERT INTO sku_producto_map (sku, producto_nombre, activo) VALUES (?,?,1)",
         ("SVITC33", "SUERO VIT C B3"),
