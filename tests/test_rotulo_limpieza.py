@@ -171,3 +171,22 @@ def test_usuario_no_planta_no_puede_realizar(logged_client, app):
     r = logged_client.post(
         f"/api/planta/rotulo-limpieza/{area_id}/realizar", json={})
     assert r.status_code == 403
+
+
+def test_rotulos_limpieza_impresion_termica(admin_client, app):
+    """La página de rótulos de limpieza F02 imprime en etiqueta TÉRMICA (una por sticker),
+    igual que los de MP · @page en mm configurable, no en hoja carta (Sebastián 1-jul)."""
+    _area_sucia(app)
+    r = admin_client.get("/planta/rotulos-limpieza")
+    assert r.status_code == 200, r.data
+    body = r.get_data(as_text=True)
+    assert "@page{size:100mm 150mm" in body        # térmico default
+    assert "Tamaño:" in body                        # selector de tamaño
+    assert "landscape" not in body                  # ya no es hoja carta landscape
+
+
+def test_rotulos_limpieza_tamano_configurable(admin_client, app):
+    _area_sucia(app)
+    r = admin_client.get("/planta/rotulos-limpieza?w=100&h=75")
+    assert r.status_code == 200
+    assert "@page{size:100mm 75mm" in r.get_data(as_text=True)

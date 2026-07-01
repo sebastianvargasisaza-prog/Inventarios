@@ -4087,10 +4087,25 @@ def _rotulo_f02_sheet(c, area_id, equipo=None):
 </div>'''
 
 
-def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02'):
+def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=150, base_path=None):
     """Envuelve uno o varios <div class='sheet'> en la página imprimible (head + CSS + botón).
-    Con .sheet + .sheet → cada rótulo en su propia página al imprimir."""
+    Con .sheet + .sheet → cada rótulo en su propia página al imprimir.
+    Impresión TÉRMICA (igual que /rotulos de MP · Sebastián 1-jul): @page en mm (default 100×150),
+    una etiqueta por sticker · tamaño configurable con ?w&h + selector en la barra."""
     from html import escape as _e
+    try:
+        lw = max(50, min(int(round(float(lw))), 210)); lh = max(30, min(int(round(float(lh))), 297))
+    except Exception:
+        lw, lh = 100, 150
+    _sel = ''
+    if base_path:
+        _sizes = [(100, 150, '4×6"'), (100, 75, '4×3"'), (100, 100, '4×4"'), (50, 30, 'chica')]
+        _sel = '<span style="font-size:12px;color:#71717a;margin-right:6px">Tamaño:</span>' + ''.join(
+            ('<a href="' + base_path + '?w=' + str(w) + '&h=' + str(h) + '" style="display:inline-block;'
+             'padding:6px 12px;margin:0 3px;border-radius:8px;font-size:12px;text-decoration:none;font-weight:600;' +
+             ('background:#ede9fe;color:#4c1d95;border:1px solid #c4b5fd;' if (w == lw and h == lh)
+              else 'background:#6d28d9;color:#fff;') + '">' + lbl + ' · ' + str(w) + '×' + str(h) + '</a>')
+            for w, h, lbl in _sizes)
     return f'''<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{_e(titulo)}</title>
@@ -4131,10 +4146,17 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02'):
   .printbar{{text-align:center;margin-top:18px}}
   .printbtn{{display:inline-flex;align-items:center;gap:8px;padding:11px 26px;background:var(--violet);color:#fff;text-decoration:none;border:none;border-radius:10px;font-weight:600;font-size:14px;font-family:'Inter';cursor:pointer;box-shadow:0 4px 14px rgba(109,40,217,.22)}}
   @media(max-width:560px){{ .top{{flex-direction:column;gap:10px}} .ctrl{{text-align:left}} .firmas{{flex-direction:column}} .firma+.firma{{border-left:0;border-top:1px solid var(--line)}} }}
-  @media print{{ body{{padding:0;background:#fff}} .sheet{{box-shadow:none;border:none;margin:0}} .printbar{{display:none}} }}
+  @media print{{
+    body{{padding:0;background:#fff;font-size:8.5pt}}
+    .sheet{{box-shadow:none;border:1px solid #ddd;border-radius:0;margin:0 auto;max-width:{lw-3}mm;width:{lw-3}mm;page-break-inside:avoid}}
+    .sheet + .sheet{{page-break-before:always}}
+    .printbar{{display:none}}
+    @page{{size:{lw}mm {lh}mm;margin:2mm}}
+  }}
 </style></head><body>
 {sheets_html}
 <div class="printbar">
+  <div style="margin-bottom:10px">{_sel}</div>
   <button class="printbtn" onclick="window.print()">🖨 Imprimir / Guardar PDF</button>
 </div>
 </body></html>'''
@@ -4165,7 +4187,9 @@ def planta_rotulo_limpieza_pdf(area_id):
     sheets = _rotulos_de_area(c, area_id, base['area_codigo'])
     body = ('\n'.join(sheets) if sheets
             else '<div style="text-align:center;color:#888;padding:40px">Sin equipos en esta sala.</div>')
-    return Response(_rotulo_f02_doc(body, f"Rótulos de Limpieza F02 · {base['area_nombre']}"),
+    _lw = request.args.get('w') or 100; _lh = request.args.get('h') or 150
+    return Response(_rotulo_f02_doc(body, f"Rótulos de Limpieza F02 · {base['area_nombre']}",
+                                    lw=_lw, lh=_lh, base_path='/planta/rotulo-limpieza/%d/pdf' % area_id),
                     mimetype='text/html')
 
 
@@ -4189,7 +4213,9 @@ def planta_rotulos_limpieza_todas():
         sheets.extend(_rotulos_de_area(c, a[0], a[2]))
     body = ('\n'.join(sheets) if sheets
             else '<div style="text-align:center;color:#888;padding:40px">No hay salas configuradas.</div>')
-    return Response(_rotulo_f02_doc(body, 'Rótulos de Limpieza F02 · todas las salas'),
+    _lw = request.args.get('w') or 100; _lh = request.args.get('h') or 150
+    return Response(_rotulo_f02_doc(body, 'Rótulos de Limpieza F02 · todas las salas',
+                                    lw=_lw, lh=_lh, base_path='/planta/rotulos-limpieza'),
                     mimetype='text/html')
 
 
