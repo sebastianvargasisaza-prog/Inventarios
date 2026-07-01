@@ -25,11 +25,13 @@ def test_aseguramiento_pagina_redirect_sin_login(client, db_clean):
 
 
 def test_aseguramiento_pagina_con_login(app, db_clean):
-    """GET /aseguramiento con login retorna HTML."""
-    c = _login(app, "laura")
+    """GET /aseguramiento con un usuario de ASEGURAMIENTO retorna HTML.
+    (El split de roles restringió la PÁGINA a ASEGURAMIENTO_USERS|ADMIN · laura es
+    CALIDAD y ya no accede a la página, aunque sí a las APIs del dashboard.)"""
+    c = _login(app, "miguel")
     r = c.get("/aseguramiento")
     assert r.status_code == 200
-    assert b"ASEGURAMIENTO" in r.data
+    assert b"seguramiento" in r.data  # 'Aseguramiento'/'ASEGURAMIENTO' · robusto al case
 
 
 def test_dashboard_estructura(app, db_clean):
