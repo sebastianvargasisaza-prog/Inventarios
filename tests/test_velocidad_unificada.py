@@ -34,14 +34,6 @@ def test_helper_blended_formula_deterministica(app, db_clean):
     assert t == 'sin_historico'
 
 
-@pytest.mark.xfail(strict=False, reason=(
-    "HALLAZGO ABIERTO (decisión Sebastián · 1-jul): el motor _demanda_stock_gramos NO usa la "
-    "velocidad blended que su docstring dice usar (unificación 17-jun). Con v30=v60=v90=50, el "
-    "blended da 1.11 uds/día (×vol=55.6 g) pero el motor da ~4.5 uds/día (227 g, ~4×). Puede ser: "
-    "(a) regresión real → el motor sobre-estima demanda (sobre-compra/producción) y Necesidades "
-    "muestra ≠ lo que el motor programa; o (b) cambio intencional a velocidad reciente (menos "
-    "conservador para productos que aceleran) → actualizar este test. NO se resolvió a ciegas por "
-    "ser money-critical. Cuando se decida, quitar el xfail."))
 def test_motor_usa_velocidad_blended(app, db_clean):
     """_demanda_stock_gramos calcula demand_g con la velocidad blended (no la
     regresión por SKU): demand_g == velocidad_blended(v30,v60,v90) × volumen."""
@@ -76,8 +68,14 @@ def test_motor_usa_velocidad_blended(app, db_clean):
         conn.execute("DELETE FROM animus_shopify_orders WHERE shopify_id LIKE 'VELU-TEST-%'")
         conn.commit(); conn.close()
     assert v30 == 50 and v60 == 50 and v90 == 50, f"seed mal: {v30}/{v60}/{v90}"
-    vel_esperada, _ = velocidad_blended_uds_dia(v30, v60, v90, None, 60)
+    # El motor age-ajusta: sin fecha_creacion, usa la EDAD desde la 1ª venta observada (fallback
+    # _demanda_stock_gramos ~L13231). El seed vende desde hace 10 días → edad = 10 + 1 = 11. El
+    # blended con divisor 11 da la velocidad RECIENTE (correcta para un producto nuevo), no la
+    # conservadora de 30/60/90. La verificación replica ese mismo fallback.
+    _base_v = (datetime.utcnow() - timedelta(hours=5)).date()
+    _edad_v = (_base_v - (_base_v - timedelta(days=10))).days + 1  # = 11
+    vel_esperada, _ = velocidad_blended_uds_dia(v30, v60, v90, _edad_v, 60)
     assert vel_esperada > 0
-    # demand_g del motor == velocidad blended × volumen (1 solo SKU → vol_pond=VOL)
+    # demand_g del motor == velocidad blended (age-ajustada) × volumen (1 solo SKU → vol_pond=VOL)
     assert abs(d['demand_g'] - vel_esperada * VOL) < 0.5, \
-        f"el motor NO usa la velocidad blended: demand_g={d['demand_g']} esperado={vel_esperada*VOL}"
+        f"el motor NO usa la velocidad blended age-ajustada: demand_g={d['demand_g']} esperado={vel_esperada*VOL}"

@@ -3576,6 +3576,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     ventas_por_sku = {}      # ventana principal (60d default)
     ventas_30d_por_sku = {}  # último mes
     ventas_90d_por_sku = {}  # 3 meses
+    primera_venta_por_sku = {}  # 1ª venta observada por SKU (age-ajuste = MISMO que el motor)
     _vd_iso = ventana_desde + 'T00:00:00' if 'T' not in ventana_desde else ventana_desde
     # Cutoff ISO para 30d y 90d (independientes de ventana principal)
     _cut30 = (hoy - _td(days=30)).strftime('%Y-%m-%d') + 'T00:00:00'
@@ -3637,6 +3638,10 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                 ventas_30d_por_sku[sku] = ventas_30d_por_sku.get(sku, 0) + qty
             if en_90:
                 ventas_90d_por_sku[sku] = ventas_90d_por_sku.get(sku, 0) + qty
+                _c10 = str(creado)[:10]
+                _pv = primera_venta_por_sku.get(sku)
+                if _c10 and (_pv is None or _c10 < _pv):
+                    primera_venta_por_sku[sku] = _c10
 
     # 5. Pipeline 7d (lotes recién fabricados que aún no aparecen en Available)
     # Suma kg de produccion_programada con fin_real_at >= hoy-7d agrupado por producto
@@ -3842,6 +3847,25 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             except Exception:
                 return None
         _dias_prod_vel = _dias_desde_creacion_local(fecha_creacion)
+        # FIX 1-jul · MISMO fallback que el motor (_demanda_stock_gramos línea ~13231): si la fórmula
+        # NO tiene fecha_creacion (hoy 29/30 productos), age-ajustar desde la 1ª VENTA observada de
+        # este producto → la velocidad MOSTRADA usa el MISMO divisor que la cadencia que PROGRAMA el
+        # calendario. Antes el display caía a divisor 30/60/90 (conservador) mientras el motor usaba
+        # la edad real → cobertura mostrada ≠ cadencia programada para lanzamientos (M1/M5).
+        if not _dias_prod_vel:
+            _pv_prod = None
+            for _sk in skus_de_prod:
+                _pv = primera_venta_por_sku.get(str(_sk).upper().strip())
+                if _pv and (_pv_prod is None or _pv < _pv_prod):
+                    _pv_prod = _pv
+            if _pv_prod:
+                try:
+                    from datetime import datetime as _dt_pv
+                    _dd_pv = (hoy - _dt_pv.strptime(_pv_prod, '%Y-%m-%d').date()).days + 1
+                    if _dd_pv > 0:
+                        _dias_prod_vel = _dd_pv
+                except Exception:
+                    pass
         if _dias_prod_vel and _dias_prod_vel > 0:
             _div_30 = float(min(30, max(_dias_prod_vel, 7)))
             _div_60 = float(min(int(ventana), max(_dias_prod_vel, 7)))
