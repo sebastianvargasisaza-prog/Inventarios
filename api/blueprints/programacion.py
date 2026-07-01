@@ -4812,6 +4812,23 @@ def corregir_cantidad_produccion(pid):
             return jsonify({'error': 'fallo la reversion: ' + str(e)[:120]}), 500
     # 2) actualizar la cantidad (queda Fijo)
     c.execute("UPDATE produccion_programada SET cantidad_kg=?, origen='eos_plan' WHERE id=?", (new_kg, pid))
+    # 2b) re-sincronizar el objetivo del/los EBR de FABRICACIÓN NO liberados de este lote (M67):
+    # la fuente de verdad (cantidad_kg) cambió → el batch record no debe quedar con el objetivo
+    # y el rendimiento viejos. Los EBR liberados son INMUTABLES (mig 111) y NO se tocan.
+    try:
+        _ebrs_pp = c.execute(
+            "SELECT id FROM ebr_ejecuciones WHERE produccion_id=? "
+            "AND COALESCE(fase,'fabricacion')='fabricacion' "
+            "AND COALESCE(liberado_at_utc,'')='' "
+            "AND LOWER(COALESCE(estado,'')) NOT IN ('liberado','rechazado','cancelado','completado')",
+            (pid,)).fetchall()
+        if _ebrs_pp:
+            _obj_cada = round(new_kg * 1000 / len(_ebrs_pp), 1)
+            for _er in _ebrs_pp:
+                c.execute("UPDATE ebr_ejecuciones SET cantidad_objetivo_g=? WHERE id=?",
+                          (_obj_cada, _er[0]))
+    except Exception:
+        pass
     # 3) re-descontar al nuevo valor
     try:
         _descontar_mp_produccion(c, pid, user, forzar=True)

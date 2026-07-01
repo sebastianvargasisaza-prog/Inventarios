@@ -1142,7 +1142,23 @@ def crear_ebr_desde_mbr(cur, *, producto_nombre, lote, produccion_id=None,
     while cur.execute("SELECT 1 FROM ebr_ejecuciones WHERE lote=?", (lote_key,)).fetchone():
         _n += 1
         lote_key = f"{_base_key}-{_n}"
-    cant = cantidad_objetivo_g if cantidad_objetivo_g is not None else mbr[2]
+    # Magnitud del lote (M67): manda lo que el caller pasa; si no lo pasó pero hay
+    # produccion_id, deriva de la FUENTE DE VERDAD produccion_programada.cantidad_kg × 1000;
+    # solo como ÚLTIMO recurso el lote_size_g del MBR (default genérico de dominio que NO
+    # refleja este lote → daba TEÓRICA/rendimiento/pesajes falsos). Blinda a los callers
+    # (envasado/acondicionamiento) que crean el EBR sin pasar la cantidad.
+    cant = cantidad_objetivo_g
+    if cant is None and produccion_id is not None:
+        try:
+            _ck = cur.execute(
+                "SELECT COALESCE(cantidad_kg,0) FROM produccion_programada WHERE id=?",
+                (produccion_id,)).fetchone()
+            if _ck and _ck[0]:
+                cant = round(float(_ck[0]) * 1000, 1)
+        except Exception:
+            pass
+    if cant is None:
+        cant = mbr[2]
     numero_op = assign_numero_op(cur)
     try:
         cur.execute(
@@ -1672,8 +1688,23 @@ def iniciar_ebr():
     if cur.execute("SELECT id FROM ebr_ejecuciones WHERE lote = ?", (lote,)).fetchone():
         return jsonify({"error": f"lote '{lote}' ya tiene un EBR"}), 409
 
+    # Magnitud del lote (M67): si el body no trae cantidad_objetivo_g pero sí produccion_id,
+    # deriva de la FUENTE DE VERDAD produccion_programada.cantidad_kg × 1000 antes de caer al
+    # lote_size_g genérico del MBR (mismo orden que _intentar_crear_ebr_auto y crear_ebr_desde_mbr).
     try:
-        cantidad_obj = float(body.get("cantidad_objetivo_g") or mbr["lote_size_g"])
+        _obj_body = body.get("cantidad_objetivo_g")
+        if _obj_body in (None, ''):
+            _obj_por_kg = 0.0
+            _pid_body = body.get("produccion_id")
+            if _pid_body:
+                _ckb = cur.execute(
+                    "SELECT COALESCE(cantidad_kg,0) FROM produccion_programada WHERE id=?",
+                    (_pid_body,)).fetchone()
+                if _ckb and _ckb[0]:
+                    _obj_por_kg = round(float(_ckb[0]) * 1000, 1)
+            cantidad_obj = _obj_por_kg or float(mbr["lote_size_g"])
+        else:
+            cantidad_obj = float(_obj_body)
     except (ValueError, TypeError):
         return jsonify({"error": "cantidad_objetivo_g inválida"}), 400
 
@@ -2237,6 +2268,24 @@ def ebr_vista_completa(ebr_id):
             'densidad_g_ml': (float(row[20]) if row[20] else None),
             'ml_envasable': (float(row[21]) if row[21] else None),
         }
+        # Objetivo EN VIVO (M67 punto 4): mientras el EBR NO esté liberado/completado/rechazado,
+        # la magnitud del lote la manda la fuente de verdad produccion_programada.cantidad_kg — no
+        # el cantidad_objetivo_g congelado (que pudo nacer con el default del MBR o quedar stale si
+        # se corrigió la cantidad). Así la hoja de pesaje teórica y el rendimiento salen correctos.
+        # Una vez liberado/completado, se respeta el valor congelado (batch comprometido, inmutable).
+        try:
+            _pid_h = out['header'].get('produccion_id')
+            _est_h = (out['header'].get('estado') or '').lower()
+            if (_pid_h and not out['header'].get('liberado_at_utc')
+                    and _est_h not in ('liberado', 'rechazado', 'completado')
+                    and out['header'].get('fase', 'fabricacion') == 'fabricacion'):
+                _ckv = conn.execute(
+                    "SELECT COALESCE(cantidad_kg,0) FROM produccion_programada WHERE id=?",
+                    (_pid_h,)).fetchone()
+                if _ckv and _ckv[0]:
+                    out['header']['cantidad_objetivo_g'] = round(float(_ckv[0]) * 1000, 1)
+        except Exception:
+            pass
         # Área o Línea: resolver el nombre legible desde areas_planta.
         try:
             _ac = out['header'].get('area_codigo') or ''
@@ -9063,11 +9112,27 @@ def dispensado_imprimible(ebr_id):
     try:
         row = conn.execute(
             "SELECT COALESCE(lote,''), COALESCE(numero_op,''), mbr_template_id, "
-            "COALESCE(estado,''), COALESCE(iniciado_at_utc,''), COALESCE(cantidad_objetivo_g,0) "
+            "COALESCE(estado,''), COALESCE(iniciado_at_utc,''), COALESCE(cantidad_objetivo_g,0), "
+            "produccion_id, COALESCE(liberado_at_utc,''), COALESCE(fase,'fabricacion') "
             "FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
         if row:
             hdr = {'lote': row[0], 'numero_op': row[1], 'mbr': row[2],
-                   'estado': row[3], 'iniciado': row[4], 'obj_g': float(row[5] or 0)}
+                   'estado': row[3], 'iniciado': row[4], 'obj_g': float(row[5] or 0),
+                   'produccion_id': row[6], 'liberado': row[7], 'fase': row[8]}
+            # Objetivo EN VIVO (M67 punto 4): la hoja de dispensado imprimible es un documento
+            # regulado que el operario sigue en piso · mientras el EBR no esté liberado/completado,
+            # el peso teórico a pesar sale de la fuente de verdad cantidad_kg, no del valor congelado.
+            try:
+                if (hdr['produccion_id'] and not hdr['liberado']
+                        and hdr['estado'].lower() not in ('liberado', 'rechazado', 'completado')
+                        and hdr['fase'] == 'fabricacion'):
+                    _ckd = conn.execute(
+                        "SELECT COALESCE(cantidad_kg,0) FROM produccion_programada WHERE id=?",
+                        (hdr['produccion_id'],)).fetchone()
+                    if _ckd and _ckd[0]:
+                        hdr['obj_g'] = round(float(_ckd[0]) * 1000, 1)
+            except Exception:
+                pass
     except Exception:
         hdr = {}
     producto = ''

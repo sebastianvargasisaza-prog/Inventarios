@@ -584,6 +584,8 @@ El EBR auto-creado ponía `cantidad_objetivo_g = total_g_descontado or mbr.lote_
 3. **Multi-lote:** el objetivo por legajo = total_g / n_lotes (1 BPR por lote físico). Pasalo al hook (`crear_ebr_desde_mbr(cantidad_objetivo_g=...)`), no dejes que cada lote herede el default completo del MBR.
 4. **Display robusto:** en vistas EN VIVO (ordenes-unificadas en-curso) preferí recomputar la magnitud desde el dato vivo (`produccion_programada.cantidad_kg`) sobre el valor congelado del EBR, así un EBR viejo con objetivo stale igual se ve bien.
 
+**Barrido escalón 1 (30-jun · ~6 rastreadores):** el patrón NO vivía en un solo sitio (M45/M63). Se cerró la clase en TODOS los hermanos: `crear_ebr_desde_mbr` (helper canónico ahora deriva de cantidad_kg si el caller pasa None + produccion_id → blinda los hooks de envasado/acondicionamiento de un solo golpe), `iniciar_ebr` (deriva del body/cantidad_kg), `corregir-cantidad` (re-sincroniza el objetivo del EBR de fabricación NO liberado; el liberado es inmutable mig 111), y las vistas que imprimían teóricos congelados: `ebr_vista_completa` (hoja de pesaje) y `dispensado_imprimible` (documento de piso) ahora recomputan en vivo mientras el EBR no esté liberado/completado. Lección de proceso: **cuando arregles un `X or DEFAULT` de magnitud, grepéa el resto de callers del mismo helper/columna y barré la clase entera** — el fix puntual del primer sitio deja gemelos vivos. Tests: `tests/test_ebr_objetivo_m67.py`.
+
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
 
 Al cerrar una sesión donde se encontró/arregló un bug con patrón no listado aquí:
