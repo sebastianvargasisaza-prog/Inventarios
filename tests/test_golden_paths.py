@@ -2894,11 +2894,19 @@ def test_golden_anular_oc_borrador(app, db_clean):
                precio_unitario, subtotal)
               VALUES (?, ?, 'MP test anular', 3000, 10, 30000)""",
           (oc_num, codigo))
-    # OC en Autorizada (NO anulable)
+    # OC en Autorizada CON recepción (NO anulable · ya entró stock)
+    # Sebastián 1-jul: una Autorizada SIN pago/recepción SÍ se anula ahora (Catalina
+    # se equivocó al autorizar · ver test_oc_eliminar_autorizada). Pero con recepción
+    # (o pago) sigue protegida → este golden verifica ESA protección.
     _exec("""INSERT OR REPLACE INTO ordenes_compra
               (numero_oc, fecha, proveedor, estado, valor_total, creado_por)
               VALUES (?, date('now'), 'ProvAut', 'Autorizada', 50000, 'sebastian')""",
           (oc_num_aut,))
+    _exec("""INSERT INTO ordenes_compra_items
+              (numero_oc, codigo_mp, nombre_mp, cantidad_g, cantidad_recibida_g,
+               precio_unitario, subtotal)
+              VALUES (?, ?, 'MP test anular', 5000, 5000, 10, 50000)""",
+          (oc_num_aut, codigo))
 
     try:
         # Acción 1: anular OC Borrador
@@ -2914,11 +2922,11 @@ def test_golden_anular_oc_borrador(app, db_clean):
                        (oc_num,))
         assert not items, 'BUG: items de OC anulada no se eliminaron'
 
-        # Acción 2: intentar anular Autorizada → debe rechazar 400
+        # Acción 2: intentar anular Autorizada CON recepción → debe rechazar 400
         r2 = cs.delete(f'/api/ordenes-compra/{oc_num_aut}',
                        headers=csrf_headers())
         assert r2.status_code == 400, \
-            f'BUG: DELETE OC Autorizada debe rechazar 400 · got {r2.status_code}'
+            f'BUG: DELETE OC Autorizada con recepción debe rechazar 400 · got {r2.status_code}'
 
         # Verif: OC autorizada sigue existiendo
         rows2 = _query("SELECT estado FROM ordenes_compra WHERE numero_oc=?",

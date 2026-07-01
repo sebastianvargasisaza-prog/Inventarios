@@ -1123,8 +1123,27 @@ def handle_oc_detalle(numero_oc):
         _row = c.fetchone()
         if not _row:
             return jsonify({'error': 'OC no encontrada'}), 404
-        if _row[0] not in ('Borrador', 'Rechazada'):
-            return jsonify({'error': f'No se puede eliminar una OC en estado {_row[0]}. Solo Borrador o Rechazada.'}), 400
+        _est_oc = _row[0]
+        # Sebastián 1-jul: Catalina puede eliminar una OC que AUTORIZÓ por error, siempre que
+        # todavía NO tenga pago ni recepción (si ya movió plata o entró stock, se anula primero
+        # el pago/recepción, no se borra). Borrador/Rechazada siguen borrándose sin más.
+        if _est_oc not in ('Borrador', 'Rechazada', 'Autorizada'):
+            return jsonify({'error': f'No se puede eliminar una OC en estado {_est_oc}. Solo Borrador, Rechazada o Autorizada (sin pagar).'}), 400
+        if _est_oc == 'Autorizada':
+            try:
+                _n_pag = c.execute("SELECT COUNT(*) FROM pagos_oc WHERE numero_oc=?", (numero_oc,)).fetchone()[0] or 0
+            except Exception:
+                _n_pag = 0
+            try:
+                _n_pag_inf = c.execute("SELECT COUNT(*) FROM pagos_influencers WHERE numero_oc=? AND COALESCE(estado,'')='Pagada'", (numero_oc,)).fetchone()[0] or 0
+            except Exception:
+                _n_pag_inf = 0
+            try:
+                _n_rec = c.execute("SELECT COUNT(*) FROM ordenes_compra_items WHERE numero_oc=? AND COALESCE(cantidad_recibida_g,0) > 0", (numero_oc,)).fetchone()[0] or 0
+            except Exception:
+                _n_rec = 0
+            if _n_pag or _n_pag_inf or _n_rec:
+                return jsonify({'error': 'No se puede eliminar: la OC ya tiene pago o recepción registrada. Primero anulá el pago o la recepción.', 'codigo': 'OC_CON_PAGO_O_RECEPCION'}), 400
         # Fix #3 · 21-may-2026 · revertir SOLs vinculadas a Pendiente antes
         # de borrar la OC · sino quedaban con numero_oc apuntando a fantasma
         # y estado='Aprobada' · invisible al regenerar.
@@ -1141,6 +1160,11 @@ def handle_oc_detalle(numero_oc):
         except Exception as e:
             log.warning('revert SOLs fallo (eliminar OC): %s', e)
             sols_revertidas = []
+        # Limpiar pagos_influencers PENDIENTES ligados (nunca los Pagada · esos ya bloquearon arriba)
+        try:
+            c.execute("DELETE FROM pagos_influencers WHERE numero_oc=? AND COALESCE(estado,'') != 'Pagada'", (numero_oc,))
+        except Exception:
+            pass
         c.execute('DELETE FROM ordenes_compra_items WHERE numero_oc=?', (numero_oc,))
         c.execute('DELETE FROM ordenes_compra WHERE numero_oc=?', (numero_oc,))
         try:

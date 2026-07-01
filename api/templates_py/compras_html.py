@@ -7517,6 +7517,12 @@ function renderConsolCard(p, idx){
               +' onclick="openPago(this.dataset.pagoOc, parseFloat(this.dataset.pagoVal), this.dataset.pagoProv)"'
               +' style="padding:8px 14px;font-size:12px;white-space:nowrap;background:#0f766e;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;" title="Registrar pago">&#x1F4B8; Pagar '+esc(o.numero_oc)+'</button>';
           }).join('') : '')
+        // Eliminar una OC AUTORIZADA por error (Sebastián 1-jul · Catalina) · solo autorizadores ·
+        // el backend solo la borra si NO tiene pago ni recepción · revierte la SOL a Pendiente.
+        +(ES_AUTORIZA ? (p.ocs||[]).filter(function(o){ return o.estado==='Autorizada'; }).map(function(o){
+            return '<button class="btn" data-del-oc="'+esc(o.numero_oc)+'" onclick="eliminarOCAutorizada(this.dataset.delOc)"'
+              +' style="padding:8px 14px;font-size:12px;white-space:nowrap;background:#dc2626;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;" title="Eliminar esta OC autorizada por error (solo si no tiene pago ni recepción)">&#x1F5D1; Eliminar '+esc(o.numero_oc)+'</button>';
+          }).join('') : '')
         +'<button class="btn" data-consol-idx="'+idx+'" onclick="copiarPedido(parseInt(this.dataset.consolIdx))"'
           +' style="padding:8px 14px;font-size:12px;white-space:nowrap;background:#3b82f6;border-radius:8px;">&#x1F4CB; Copiar</button>'
         +'<button class="btn bp" data-print-idx="'+idx+'" onclick="imprimirPedido(parseInt(this.dataset.printIdx))"'
@@ -7764,6 +7770,20 @@ async function eliminarOCsGrupo(idx){
   }
   if(fail.length) alert('No se pudieron eliminar:\\n'+fail.join('\\n'));
   else alert('\\u2713 '+nums.length+' OC(s) eliminada(s).');
+  if(typeof loadConsolidado==='function') await loadConsolidado();
+  if(typeof loadData==='function') await loadData();
+}
+
+// Eliminar UNA OC autorizada por error (Catalina) · el backend rechaza si ya tiene pago/recepción.
+async function eliminarOCAutorizada(num){
+  if(!num) return;
+  if(!confirm('¿Eliminar la OC AUTORIZADA '+num+'?\\n\\nUsala solo si la autorizaste por error. Solo se puede si la OC NO tiene pago ni recepción.\\nLa solicitud vinculada vuelve a Pendiente. No se puede deshacer.')) return;
+  try{
+    var r = await fetch('/api/ordenes-compra/'+encodeURIComponent(num), _fetchOpts('DELETE'));
+    var d = await r.json().catch(function(){ return {}; });
+    if(!r.ok){ alert('No se pudo eliminar '+num+':\\n'+(d.error||('codigo '+r.status))); return; }
+    alert('\\u2713 OC '+num+' eliminada. La solicitud volvió a Pendiente.');
+  }catch(e){ alert('Error eliminando '+num+': '+e); }
   if(typeof loadConsolidado==='function') await loadConsolidado();
   if(typeof loadData==='function') await loadData();
 }
