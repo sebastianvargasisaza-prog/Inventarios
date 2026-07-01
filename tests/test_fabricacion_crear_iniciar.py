@@ -88,18 +88,13 @@ def test_area_inexistente_404(app, db_clean):
 
 
 def test_area_ocupada_409(app, db_clean):
+    """En modo ESTRICTO (INVIMA) el área debe estar LIBRE: 'ocupada' bloquea con 409."""
     aid = _seed()
     conn = sqlite3.connect(os.environ["DB_PATH"])
     conn.execute("UPDATE areas_planta SET estado='ocupada' WHERE id=?", (aid,))
-    # El 409 correcto exige una producción REALMENTE activa ocupando el área
-    # (inicio_real sin fin_real, no cancelada/completada). Beta 30-jun: un 'ocupada'
-    # HUÉRFANO (sin producción activa) se auto-libera en vez de bloquear (M66/FIX1),
-    # así que sembramos la ocupante real para validar el bloqueo legítimo.
-    conn.execute("INSERT INTO produccion_programada "
-                 "(producto, fecha_programada, area_id, cantidad_kg, estado, inicio_real_at, origen) "
-                 "VALUES (?,?,?,?,?,?,?)",
-                 ("ZZ OCUPANTE ACTIVA", "2026-06-30", aid, 1, "en_proceso",
-                  "2026-06-30 08:00:00", "eos_plan"))
+    # El gate de estado de área SOLO aplica en estricto (M68): en beta el estado NUNCA
+    # bloquea el registro. Forzamos estricto para validar el gate INVIMA legítimo.
+    conn.execute("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('exigir_area_limpia', '1')")
     conn.commit()
     conn.close()
     c = _login(app)
@@ -107,6 +102,31 @@ def test_area_ocupada_409(app, db_clean):
                json={"producto": PROD, "area_id": aid, "cantidad_kg": 1}, headers=_csrf(c))
     assert r.status_code == 409
     assert r.get_json().get("codigo") == "AREA_OCUPADA"
+
+
+def test_area_ocupada_beta_no_bloquea(app, db_clean):
+    """Beta (M68): el estado del área NO bloquea el registro · se pueden registrar varias
+    producciones en la misma sala aunque esté 'ocupada' con una producción en curso. Esto es
+    lo que Sebastián pidió mientras se termina de construir el flujo de planta (30-jun)."""
+    aid = _seed()
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("UPDATE areas_planta SET estado='ocupada' WHERE id=?", (aid,))
+    # una producción REALMENTE activa ya ocupa la sala (el caso que antes trababa)
+    conn.execute("INSERT INTO produccion_programada "
+                 "(producto, fecha_programada, area_id, cantidad_kg, estado, inicio_real_at, origen) "
+                 "VALUES (?,?,?,?,?,?,?)",
+                 ("ZZ OCUPANTE ACTIVA", "2026-06-30", aid, 1, "en_proceso",
+                  "2026-06-30 08:00:00", "eos_plan"))
+    # asegurar beta explícito (default) · el estado del área no debe frenar
+    conn.execute("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('exigir_area_limpia', '0')")
+    conn.commit()
+    conn.close()
+    c = _login(app)
+    r = c.post("/api/planta/fabricacion/crear-iniciar",
+               json={"producto": PROD, "area_id": aid, "cantidad_kg": 1}, headers=_csrf(c))
+    # NO 409 por área · se registra (200) pese a la sala ocupada con producción en curso
+    assert r.status_code != 409, r.data
+    assert r.get_json().get("codigo") != "AREA_OCUPADA"
 
 
 def test_stock_insuficiente_limpia_huerfana(app, db_clean):

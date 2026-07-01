@@ -4912,21 +4912,13 @@ def fabricacion_crear_iniciar():
             return jsonify({'error': f"el área {area[2]} está '{area[3]}' · debe estar LIBRE para iniciar",
                             'codigo': 'AREA_OCUPADA'}), 409
     else:
-        # Beta (Sebastián 25/30-jun): no exige limpieza. Solo bloquea si hay producción REALMENTE en curso en
-        # la sala (doble producción). Si el área quedó 'ocupada' HUÉRFANA (sin lote activo · basura de estado),
-        # se auto-libera y continúa (evita el bloqueo fantasma).
-        if _area_est == 'ocupada':
-            _activa_area = c.execute(
-                "SELECT 1 FROM produccion_programada WHERE area_id=? AND inicio_real_at IS NOT NULL "
-                "AND fin_real_at IS NULL AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado') LIMIT 1",
-                (area[0],)).fetchone()
-            if _activa_area:
-                return jsonify({'error': f"el área {area[2]} ya tiene una producción en curso",
-                                'codigo': 'AREA_OCUPADA'}), 409
-            try:
-                c.execute("UPDATE areas_planta SET estado='libre' WHERE id=?", (area[0],))
-            except Exception:
-                pass
+        # Beta (Sebastián 30-jun): mientras se termina de construir el flujo de planta, el ESTADO
+        # del área NO bloquea el registro de producción. Ni 'sucia' ni 'ocupada' frenan — se pueden
+        # registrar varias producciones en la misma sala sin quedar trabado. El estado sigue siendo
+        # informativo; el gate INVIMA (área debe estar LIBRE) vuelve solo con exigir_area_limpia=1
+        # (modo estricto · /admin/seguridad-planta). M68: en beta el gate de estado de área es un
+        # NO-OP total, no un bloqueo condicional (un bloqueo condicional dejaba trabas fantasma).
+        pass
     # Defensa: un operario fijo en dispensación NO puede ir a elaboración (trigger trg_pp_fija)
     if operario_id is not None:
         try:

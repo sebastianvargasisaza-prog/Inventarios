@@ -586,6 +586,14 @@ El EBR auto-creado ponía `cantidad_objetivo_g = total_g_descontado or mbr.lote_
 
 **Barrido escalón 1 (30-jun · ~6 rastreadores):** el patrón NO vivía en un solo sitio (M45/M63). Se cerró la clase en TODOS los hermanos: `crear_ebr_desde_mbr` (helper canónico ahora deriva de cantidad_kg si el caller pasa None + produccion_id → blinda los hooks de envasado/acondicionamiento de un solo golpe), `iniciar_ebr` (deriva del body/cantidad_kg), `corregir-cantidad` (re-sincroniza el objetivo del EBR de fabricación NO liberado; el liberado es inmutable mig 111), y las vistas que imprimían teóricos congelados: `ebr_vista_completa` (hoja de pesaje) y `dispensado_imprimible` (documento de piso) ahora recomputan en vivo mientras el EBR no esté liberado/completado. Lección de proceso: **cuando arregles un `X or DEFAULT` de magnitud, grepéa el resto de callers del mismo helper/columna y barré la clase entera** — el fix puntual del primer sitio deja gemelos vivos. Tests: `tests/test_ebr_objetivo_m67.py`.
 
+## 🚧 M68 · Un modo "beta/relajado" de un gate debe ser NO-OP TOTAL, no un bloqueo condicional · 30-jun
+
+El gate de estado de área en beta se relajó a medias: "no exige limpieza, pero SÍ bloquea si hay una producción realmente en curso en la sala". En la práctica eso volvió a trabar a Sebastián: registró 3 producciones (cada una deja la sala 'ocupada' y queda en-curso), y la 4ª chocaba con una producción activa → 409 AREA_OCUPADA. El "bloqueo condicional" recreó exactamente el problema que el beta quería evitar. Lección:
+1. **Si el usuario pide que un estado NO frene mientras se construye el flujo, el gate en beta es un NO-OP completo** (`pass`), no un "bloquea solo en el caso X". Cualquier rama que aún devuelva 409 en beta es una traba fantasma esperando a aparecer.
+2. **El bloqueo real vuelve con el modo estricto** (`exigir_area_limpia=1` desde /admin/seguridad-planta), que es la posición INVIMA: el área debe estar LIBRE. Ese es el único lugar donde el estado de área bloquea.
+3. **El estado ('ocupada'/'sucia') sigue siendo informativo** aunque no bloquee — no hay que dejar de escribirlo, solo dejar de gatear registro por él en beta.
+4. **Tests que fijan el modo explícito:** estricto → 409 (`exigir_area_limpia=1`), beta → NO 409 aunque la sala tenga producción en curso (`test_fabricacion_crear_iniciar.py`). Combina con M66 (default global beta) y M62.
+
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
 
 Al cerrar una sesión donde se encontró/arregló un bug con patrón no listado aquí:
