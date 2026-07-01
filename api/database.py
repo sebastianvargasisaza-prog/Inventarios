@@ -397,6 +397,9 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (321, "ESENCIA DE CENTELLA ASIATICA: agregar Centella triterpenos 80% (MP00176 · 0.100%) que faltaba en la formula de la app - tenia SOLO el extracto plano MP00181 (0.150%) pero la formula usa AMBOS grados (M19). Total 99.900->100.000%. cantidad_g = 0.1% * 40kg = 40g. Revision formula-por-formula Sebastian 1-jul.", [
+        "INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje, cantidad_g_por_lote) SELECT 'ESENCIA DE CENTELLA ASIATICA','MP00176','Centella triterpenos',0.1,ROUND(0.1/100.0*COALESCE((SELECT lote_size_kg FROM formula_headers WHERE UPPER(TRIM(producto_nombre))='ESENCIA DE CENTELLA ASIATICA' LIMIT 1),0)*1000,4) WHERE NOT EXISTS (SELECT 1 FROM formula_items WHERE UPPER(TRIM(producto_nombre))='ESENCIA DE CENTELLA ASIATICA' AND UPPER(TRIM(material_id))='MP00176')",
+    ]),
     (320, "ESENCIA ILUMINADORA: catalogar Bicarbonato de sodio como MP00131 (el destino del bridge 46 MPBISOSO01->MP00131 que NUNCA se creo en maestro_mps -> el descuento no podia resolver ese MP -> los 90g de bicarbonato no salian del kardex) + reactivar la formula (Sebastian confirma que se produce). Falta que bodega RECIBA bicarbonato bajo MP00131 para que haya stock. 1-jul.", [
         "INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, tipo_material, activo) SELECT 'MP00131','Bicarbonato de sodio','SODIUM BICARBONATE','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00131')",
         "UPDATE formula_headers SET activo=1 WHERE UPPER(TRIM(producto_nombre))='ESENCIA ILUMINADORA'",
