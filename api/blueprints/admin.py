@@ -25985,8 +25985,9 @@ async function ejecutarFusionBulk(){
       }),
       motivo: motivo,
     };
+    var _ct=''; try{ _ct=(await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json()).csrf_token||''; }catch(e){}
     var r = await fetch('/api/admin/maestro-mps-unificar-bulk', {
-      method:'POST', headers:{'Content-Type':'application/json'},
+      method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':_ct},
       body: JSON.stringify(payload),
     });
     var d = {}; try{d = await r.json();}catch(e){}

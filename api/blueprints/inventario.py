@@ -9546,7 +9546,8 @@ function setTab(tab){
 
 async function normalizarDescripciones(){
   if(!confirm('¿Aplicar TRIM + colapsar espacios dobles en todas las descripciones?')) return;
-  const r=await fetch('/api/admin/mee/normalizar-descripciones',{method:'POST',headers:{'Content-Type':'application/json'}});
+  var _ct=''; try{ _ct=(await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json()).csrf_token||''; }catch(e){}
+  const r=await fetch('/api/admin/mee/normalizar-descripciones',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':_ct}});
   const d=await r.json();
   if(!r.ok){msg('Error: '+(d.error||r.status));return}
   msg('✓ '+d.normalizadas+' descripciones normalizadas',true);

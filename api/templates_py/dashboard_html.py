@@ -3336,7 +3336,7 @@ async function aplicarRevisarMinimos(){
     var bodyApl = {token: token, proyeccion_dias: parseInt(proy)};
     if(cob) bodyApl.dias_cobertura_minimo = parseInt(cob);
     var r = await fetch('/api/admin/aplicar-minimos', {
-      method:'POST', headers:{'Content-Type':'application/json'},
+      method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':window._csrfTok||''},
       body: JSON.stringify(bodyApl)
     });
     var d = await r.json();
@@ -3655,7 +3655,7 @@ async function archivarMP(){
   var mid=_ajDat&&_ajDat.mid;if(!mid)return;
   if(!confirm('Archivar '+mid+' — '+(_ajDat.mn||'')+'. Quedará oculto del catálogo activo. ¿Confirmar?'))return;
   try{
-    var r=await fetch('/api/maestro-mps/'+encodeURIComponent(mid)+'/archivar',{method:'PUT',headers:{'Content-Type':'application/json'}});
+    var r=await fetch('/api/maestro-mps/'+encodeURIComponent(mid)+'/archivar',{method:'PUT',headers:{'Content-Type':'application/json','X-CSRF-Token':window._csrfTok||''}});
     var d={}; try{d=await r.json();}catch(je){}
     document.getElementById('ajuste-arch-msg').innerHTML=r.ok?'<span style="color:#28a745;">✓ Archivado</span>':'<span style="color:red;">'+(d.error||'Error al archivar')+'</span>';
     setTimeout(function(){cerrarAjuste();loadStock();},1500);
@@ -7447,7 +7447,7 @@ async function crearNuevaMP(){
   var msgEl = document.getElementById('nmp-msg');
   msgEl.innerHTML = '<div style="color:#666">⏳ Creando...</div>';
   try{
-    var r=await fetch('/api/maestro-mps',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    var r=await fetch('/api/maestro-mps',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':window._csrfTok||''},body:JSON.stringify(data)});
     var res=await r.json();
     if(!r.ok){
       msgEl.innerHTML='<div class="alert-error">'+(res.error||'Error al crear catálogo')+'</div>';
