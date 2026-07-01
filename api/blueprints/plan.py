@@ -20748,7 +20748,7 @@ def cancelar_proxima(pid):
         try:
             _arf = cur.execute("SELECT area_id FROM produccion_programada WHERE id=?", (pid,)).fetchone()
             if _arf and _arf[0]:
-                cur.execute("UPDATE areas_planta SET estado='libre' WHERE id=? AND estado='ocupada'", (_arf[0],))
+                cur.execute("UPDATE areas_planta SET estado='libre' WHERE id=? AND LOWER(TRIM(COALESCE(estado,'libre')))<>'libre'", (_arf[0],))
         except Exception:
             pass
         estado_actual = 'programado'  # ya sin descuento ni flags → pasa los guards de abajo

@@ -569,6 +569,13 @@ Un botón nuevo en Fabricación quedó con un **salto de línea REAL dentro de u
 1. **El node-check era hueco:** usaba `getattr(D,'DASHBOARD_CORE_JS','')` — ese atributo NO existe → devolvía `''` → node-check de string vacío SIEMPRE pasa. **Regla:** para validar JS de un template Python, importá el módulo, buscá el **string-constante REAL** que contiene la función (`for k in dir(m): v=getattr(m,k); if isinstance(v,str) and 'miFuncion' in v`), extraé sus `<script>` y node-checkeá ESE bloque renderizado. NO node-checkees el fuente .py crudo (tiene escapes Python `\\'` `\\n` que dan falsos positivos) ni un atributo adivinado.
 2. **El salto de línea entró por un heredoc:** generar JS con escapes (`\\u00bf`, `\\n`) vía `python << 'PYEOF'` inline mangló los escapes → `\n` se volvió newline real. **Regla:** para scripts con JS/escapes usá la **herramienta Write** (escribe el .py directo, sin heredoc) y **strings de UNA línea** en `alert/confirm/prompt` (sin `\n`). Tras escribir, node-check del renderizado + balance + tamaño de archivo (M64). Combina con M59 (modal "Cargando") y M61.
 
+## 🚦 M66 · Cambiar un default global de un gate rompe los golden que asumían el viejo default · 30-jun
+
+`exigir_area_limpia()` pasó de default **estricto** (`True`) a **beta** (`False`) para que Planta registre sin bloqueo mientras se adaptan. Eso apagó el gate `SALA_SUCIA` por defecto y **rompió `test_golden_ola1_gates_invima_op_live`**, que asumía el viejo default estricto y esperaba 409. Lecciones:
+1. **El código es correcto en beta** (el gate NO debe disparar) — NO se toca el código para pasar el test (regla dura: el código no se deforma para el golden). El que se equivoca es el test: asumía un default que cambió.
+2. **Un test que valida un modo ESTRICTO debe FIJAR ese modo explícitamente**, nunca confiar en el default. Fix: `INSERT OR REPLACE INTO app_settings (clave,valor) VALUES ('exigir_area_limpia','1')` al inicio del test, antes de ejercitar el gate. Así valida lo que dice validar (INVIMA estricto) sin acoplarse al default global.
+3. **Al cambiar un default de gate, grep los golden que lo ejercitan** (`grep -rn NOMBRE_GATE tests/`) y fijá el modo en cada uno. Un solo default cambiado puede volver rojo un test que "no tocaste".
+
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
 
 Al cerrar una sesión donde se encontró/arregló un bug con patrón no listado aquí:

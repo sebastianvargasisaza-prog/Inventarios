@@ -9194,6 +9194,11 @@ def test_golden_ola1_gates_invima_op_live(app, db_clean):
     _exec("DELETE FROM areas_planta WHERE codigo='TEST_OLA1_SALA'")
     _exec("DELETE FROM despeje_linea_checklist WHERE area_codigo='TEST_OLA1_SALA'")
 
+    # Este test valida los gates INVIMA en modo ESTRICTO. El default global pasó a beta
+    # (30-jun · exigir_area_limpia=False) para que Planta pueda registrar sin bloqueo mientras
+    # se adaptan; el gate sala-sucia SOLO dispara en estricto, así que lo forzamos aquí.
+    _exec("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('exigir_area_limpia', '1')")
+
     # Sala sucia
     sala_id = _exec("""INSERT INTO areas_planta
                        (codigo, nombre, tipo, estado, activo)

@@ -4555,7 +4555,12 @@ def prog_iniciar_produccion(evento_id):
     # (registrado en audit_log con motivo).
     area_id = pp[2]
     force_sucia = bool(body.get('force_sucia'))
-    if area_id and not force_sucia:
+    try:
+        from database import exigir_area_limpia as _exig_sucia
+        _sucia_estricto = _exig_sucia(c)
+    except Exception:
+        _sucia_estricto = True
+    if area_id and not force_sucia and _sucia_estricto:
         area_row = c.execute(
             "SELECT estado, codigo FROM areas_planta WHERE id=? AND activo=1",
             (area_id,),
@@ -4881,11 +4886,21 @@ def fabricacion_crear_iniciar():
             return jsonify({'error': f"el área {area[2]} está '{area[3]}' · debe estar LIBRE para iniciar",
                             'codigo': 'AREA_OCUPADA'}), 409
     else:
-        # Beta (Sebastián 25-jun): no exige limpieza, pero igual bloquea arrancar sobre un área con
-        # producción EN CURSO (evita doble producción en la misma sala).
+        # Beta (Sebastián 25/30-jun): no exige limpieza. Solo bloquea si hay producción REALMENTE en curso en
+        # la sala (doble producción). Si el área quedó 'ocupada' HUÉRFANA (sin lote activo · basura de estado),
+        # se auto-libera y continúa (evita el bloqueo fantasma).
         if _area_est == 'ocupada':
-            return jsonify({'error': f"el área {area[2]} ya tiene una producción en curso",
-                            'codigo': 'AREA_OCUPADA'}), 409
+            _activa_area = c.execute(
+                "SELECT 1 FROM produccion_programada WHERE area_id=? AND inicio_real_at IS NOT NULL "
+                "AND fin_real_at IS NULL AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado') LIMIT 1",
+                (area[0],)).fetchone()
+            if _activa_area:
+                return jsonify({'error': f"el área {area[2]} ya tiene una producción en curso",
+                                'codigo': 'AREA_OCUPADA'}), 409
+            try:
+                c.execute("UPDATE areas_planta SET estado='libre' WHERE id=?", (area[0],))
+            except Exception:
+                pass
     # Defensa: un operario fijo en dispensación NO puede ir a elaboración (trigger trg_pp_fija)
     if operario_id is not None:
         try:
