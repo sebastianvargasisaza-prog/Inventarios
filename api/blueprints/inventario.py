@@ -299,11 +299,18 @@ def get_inventario():
     # (uppercase). UPPER normaliza ambos.
     # FIX 30-may-2026 · contar LOTES distintos, no filas de movimiento (un lote
     # con varias Entradas en cuarentena se contaba múltiples veces).
+    # El contador debe alinear con la lista /api/lotes/cuarentena (M5 display=decisión): solo
+    # MATERIA PRIMA · excluye EPP/dotación (OC de categoría no-MP) igual que la lista.
     lotes_cuarentena = _safe("""
         SELECT COUNT(*) FROM (
-          SELECT DISTINCT material_id, lote FROM movimientos
-          WHERE tipo='Entrada' AND COALESCE(lote,'') != ''
-            AND UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')
+          SELECT DISTINCT m.material_id, m.lote FROM movimientos m
+          LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
+          LEFT JOIN ordenes_compra oc ON oc.numero_oc = m.numero_oc
+          WHERE m.tipo='Entrada' AND COALESCE(m.lote,'') != ''
+            AND UPPER(COALESCE(m.estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')
+            AND UPPER(COALESCE(mp.tipo_material,'MP'))='MP'
+            AND UPPER(COALESCE(oc.categoria,'MATERIA PRIMA')) IN
+                ('MATERIA PRIMA','MATERIA_PRIMA','MP','')
         )
     """)
     # Vencimientos críticos próximos 30d · Sebastian 5-may-2026 (audit
