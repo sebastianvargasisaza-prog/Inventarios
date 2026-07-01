@@ -5300,65 +5300,47 @@ def get_solicitud_estado(numero):
             it['precio_unit_g'] = 0
             it['proveedor_sugerido'] = ''
 
-    # Enriquecer cada item con stock_actual_g (suma de movimientos) +
-    # precio_referencia + proveedor de maestro_mps. Para que el modal de
-    # solicitud muestre 'Tienes X, faltan Y' y el contexto financiero.
+    # Enriquecer cada item con stock + precio_referencia + proveedor. PERF (Sebastián 1-jul):
+    # antes N+1 · 1 SUM sobre movimientos + 1 SELECT maestro_mps POR ÍTEM. Ahora: stock del
+    # helper CANÓNICO memoizado _get_mp_stock (mismas exclusiones INVIMA que el SUM anterior,
+    # keyea por código Y nombre) + un dict maestro_mps precargado UNA vez. Mismo resultado, sin N+1.
+    try:
+        from blueprints.programacion import _get_mp_stock as _gmps
+        _mpstk = _gmps(conn)
+    except Exception:
+        _mpstk = {}
+    _mp_meta = {}
+    try:
+        for _mr in c.execute("SELECT codigo_mp, COALESCE(proveedor,''), "
+                             "COALESCE(precio_referencia,0) FROM maestro_mps").fetchall():
+            _mp_meta[str(_mr[0] or '').strip()] = (_mr[1], float(_mr[2] or 0))
+    except sqlite3.OperationalError:
+        _mp_meta = {}
     for it in items:
         cod = (it.get('codigo_mp') or '').strip()
         nombre = (it.get('nombre_mp') or '').strip()
         it['stock_actual_g'] = 0
         if not cod and not nombre:
             continue
-        # Estrategia de búsqueda escalonada:
-        # 1. material_id exacto con código
-        # 2. material_nombre LIKE con nombre (caso-insensitive)
-        # Si la primera tiene resultado, no probamos la segunda.
-        stock_total = 0
-        try:
-            if cod:
-                # FIX 2-jun audit abastecimiento · excluir estados no-producibles
-                # (AGOTADO del reset/CUARENTENA/etc) · antes mostraba stock fantasma
-                # en el modal que dispara la compra → comprador sub-compraba.
-                r = c.execute("""SELECT
-                    COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END), 0),
-                    COUNT(*)
-                    FROM movimientos WHERE material_id=?
-                      AND (estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO'))""", (cod,)).fetchone()
-                if r and r[1] > 0:  # hubo movimientos con ese código
-                    stock_total = float(r[0] or 0)
-                elif nombre:
-                    # Fallback: buscar por nombre exacto upper
-                    r2 = c.execute("""SELECT
-                        COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END), 0)
-                        FROM movimientos
-                        WHERE UPPER(TRIM(material_nombre)) = UPPER(TRIM(?))
-                          AND (estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO'))""",
-                        (nombre,)).fetchone()
-                    stock_total = float(r2[0] or 0) if r2 else 0
-            elif nombre:
-                r = c.execute("""SELECT
-                    COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END), 0)
-                    FROM movimientos
-                    WHERE UPPER(TRIM(material_nombre)) = UPPER(TRIM(?))
-                      AND (estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO'))""",
-                    (nombre,)).fetchone()
-                stock_total = float(r[0] or 0) if r else 0
-            it['stock_actual_g'] = max(0, stock_total)  # nunca negativo en display
-        except sqlite3.OperationalError:
-            pass
-        try:
-            r = c.execute("""SELECT COALESCE(proveedor,''),
-                                    COALESCE(precio_referencia,0)
-                             FROM maestro_mps WHERE codigo_mp=?""", (cod,)).fetchone()
-            if r:
-                it['proveedor'] = r[0]
-                it['precio_referencia'] = float(r[1] or 0)
-                # Si no hay valor estimado pero tenemos precio referencia, calcular
-                if not it.get('valor_estimado') and it['precio_referencia'] > 0:
-                    cant_g = float(it.get('cantidad_g') or 0)
-                    it['valor_estimado_calculado'] = round(cant_g / 1000.0 * it['precio_referencia'], 0)
-        except sqlite3.OperationalError:
-            pass
+        # Búsqueda escalonada (idéntica al SUM anterior): código exacto primero; si el código no
+        # tiene movimientos (get devuelve None, NO 0), cae al nombre en UPPER. El check `is None`
+        # es clave: un stock legítimo de 0 NO debe caer al fallback.
+        _v = None
+        if cod:
+            _v = _mpstk.get(cod)
+            if _v is None and nombre:
+                _v = _mpstk.get(nombre.upper())
+        elif nombre:
+            _v = _mpstk.get(nombre.upper())
+        it['stock_actual_g'] = max(0, float(_v or 0))  # nunca negativo en display
+        _meta = _mp_meta.get(cod)
+        if _meta:
+            it['proveedor'] = _meta[0]
+            it['precio_referencia'] = _meta[1]
+            # Si no hay valor estimado pero tenemos precio referencia, calcular
+            if not it.get('valor_estimado') and _meta[1] > 0:
+                cant_g = float(it.get('cantidad_g') or 0)
+                it['valor_estimado_calculado'] = round(cant_g / 1000.0 * _meta[1], 0)
 
     # Datos de la OC asociada (proveedor, valor_total, estado) si existe
     oc_info = None
