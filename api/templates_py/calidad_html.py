@@ -886,10 +886,8 @@ async function editarMetaKpi(codigo){
   var um = prompt('Umbral de aviso (frontera amarillo→rojo) para "'+it.nombre+'":', it.umbral_amarillo);
   if(um===null) return;
   try{
-    var r = await fetch('/api/calidad/indicadores/metas/'+encodeURIComponent(it.codigo), {
-      method:'PATCH', credentials:'same-origin', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({meta: nm===''?null:parseFloat(nm), umbral_amarillo: um===''?null:parseFloat(um)})
-    });
+    var r = await fetch('/api/calidad/indicadores/metas/'+encodeURIComponent(it.codigo),
+      _fetchOpts('PATCH', {meta: nm===''?null:parseFloat(nm), umbral_amarillo: um===''?null:parseFloat(um)}));
     var d = await r.json();
     if(!r.ok || d.error){ alert('Error: '+(d.error||r.status)); return; }
     loadIndicadores();

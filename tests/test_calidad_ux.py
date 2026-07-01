@@ -24,8 +24,13 @@ def test_pagina_calidad_tiene_csrf_helpers(app, db_clean):
     assert "X-CSRF-Token" in body
     # Pre-fetch del token al cargar
     assert "/api/csrf-token" in body
-    # Ningún fetch directo con method:'POST' sin _fetchOpts
-    assert "method:'POST'" not in body
+    # Los fetch que MUTAN usan _fetchOpts (agrega CSRF). Única excepción legítima: la subida de
+    # archivo (importar-eml · un FormData no puede usar el wrapper JSON), pero DEBE poner el token
+    # a mano — verificamos que a lo sumo haya UN POST crudo y que sea CSRF-safe.
+    n_post = body.count("method:'POST'")
+    assert n_post <= 1, f"POST crudo inesperado (deben usar _fetchOpts): {n_post}"
+    if n_post == 1:
+        assert "headers['X-CSRF-Token']" in body, "el POST de subida de archivo debe añadir CSRF a mano"
     assert "method:'PATCH'" not in body
     assert "method:'DELETE'" not in body
 

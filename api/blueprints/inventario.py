@@ -7877,12 +7877,21 @@ def diagnostico_post_incidente():
 @bp.route('/api/lotes/cuarentena', methods=['GET'])
 def lotes_cuarentena():
     conn = get_db(); c = conn.cursor()
+    # La cuarentena de CALIDAD (COC-PRO-001) es SOLO para MATERIA PRIMA. Antes no filtraba por tipo
+    # → EPP, dotación y OCs de categorías no-MP (una OC 'EPP' cae al kardex de MP porque no es MEE
+    # ni sin-kardex) aparecían aquí. Doble filtro robusto: (a) el material catalogado como MP
+    # (tipo_material) y (b) la OC de origen NO es de una categoría no-MP (EPP/Dotación/etc.) — esta
+    # última es la señal confiable, ya que EPP puede tener el tipo_material mal. Sebastián 1-jul.
     c.execute("""SELECT m.id, m.material_id, m.material_nombre, m.lote, m.cantidad,
                       m.fecha, m.proveedor, m.numero_factura, m.numero_oc, m.observaciones,
                       mp.nombre_inci, m.estado_lote
                FROM movimientos m
                LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
+               LEFT JOIN ordenes_compra oc ON oc.numero_oc = m.numero_oc
                WHERE m.estado_lote IN ('CUARENTENA','CUARENTENA_EXTENDIDA') AND m.tipo='Entrada'
+                 AND UPPER(COALESCE(mp.tipo_material,'MP'))='MP'
+                 AND UPPER(COALESCE(oc.categoria,'MATERIA PRIMA')) IN
+                     ('MATERIA PRIMA','MATERIA_PRIMA','MP','')
                ORDER BY m.fecha DESC""")
     rows = c.fetchall()
     cols = ['id','codigo_mp','nombre','lote','cantidad','fecha','proveedor','numero_factura','numero_oc','observaciones','nombre_inci','estado_lote']
