@@ -22,8 +22,10 @@ def test_users_list_admin_returns_19_users(admin_client, db_clean):
     r = admin_client.get("/api/admin/users")
     assert r.status_code == 200
     data = r.get_json()
-    assert data["total"] == 19
-    assert len(data["users"]) == 19
+    # El equipo crece (jose/milton sumados) · robusto: al menos los 19 base,
+    # y total == longitud de la lista (consistencia interna).
+    assert data["total"] >= 19
+    assert len(data["users"]) == data["total"]
 
 
 def test_users_list_includes_groups_and_password_source(admin_client, db_clean):
@@ -288,11 +290,11 @@ def test_config_status_no_values_exposed(admin_client, db_clean):
 
 
 def test_config_status_lists_all_user_passwords(admin_client, db_clean):
-    """Las 19 PASS_<USER> aparecen."""
+    """Las PASS_<USER> aparecen (>= 19 base · el equipo crece)."""
     r = admin_client.get("/api/admin/config-status")
     data = r.get_json()
     user_pass_names = {v["name"] for v in data["user_passwords"]}
-    assert len(user_pass_names) == 19
+    assert len(user_pass_names) >= 19
     assert "PASS_SEBASTIAN" in user_pass_names
 
 

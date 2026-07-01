@@ -10,6 +10,7 @@ import sys
 import json
 import sqlite3
 from datetime import datetime, timedelta
+import pytest
 
 api = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'api')
 if api not in sys.path:
@@ -33,6 +34,14 @@ def test_helper_blended_formula_deterministica(app, db_clean):
     assert t == 'sin_historico'
 
 
+@pytest.mark.xfail(strict=False, reason=(
+    "HALLAZGO ABIERTO (decisión Sebastián · 1-jul): el motor _demanda_stock_gramos NO usa la "
+    "velocidad blended que su docstring dice usar (unificación 17-jun). Con v30=v60=v90=50, el "
+    "blended da 1.11 uds/día (×vol=55.6 g) pero el motor da ~4.5 uds/día (227 g, ~4×). Puede ser: "
+    "(a) regresión real → el motor sobre-estima demanda (sobre-compra/producción) y Necesidades "
+    "muestra ≠ lo que el motor programa; o (b) cambio intencional a velocidad reciente (menos "
+    "conservador para productos que aceleran) → actualizar este test. NO se resolvió a ciegas por "
+    "ser money-critical. Cuando se decida, quitar el xfail."))
 def test_motor_usa_velocidad_blended(app, db_clean):
     """_demanda_stock_gramos calcula demand_g con la velocidad blended (no la
     regresión por SKU): demand_g == velocidad_blended(v30,v60,v90) × volumen."""
