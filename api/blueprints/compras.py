@@ -1798,6 +1798,14 @@ def actualizar_precios_items_oc(numero_oc):
                 )
             except sqlite3.OperationalError:
                 pass
+            # WRITE-THROUGH al maestro (Sebastián 1-jul · "último precio manda"): el precio que
+            # Catalina guarda en la OC se graba como precio_referencia del MP → se CONSERVA y
+            # auto-carga en la próxima OC (antes solo iba al histórico, que la auto-carga NO lee
+            # → parecía que "no quedaba guardado"). Si el código no es un MP (consumible), 0 filas.
+            try:
+                c.execute("UPDATE maestro_mps SET precio_referencia=? WHERE codigo_mp=?", (precio, cod))
+            except Exception:
+                pass
 
     # Recalcular valor_total de la OC · FIX 13-jun (audit compras · M12(f)): RESPETAR
     # con_iva. Antes este endpoint (el que usa Catalina para guardar precios) guardaba
