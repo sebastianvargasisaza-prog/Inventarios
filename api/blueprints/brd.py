@@ -1170,8 +1170,14 @@ def crear_ebr_desde_mbr(cur, *, producto_nombre, lote, produccion_id=None,
             (mbr[0], mbr[1], produccion_id, lote_key, numero_op, usuario,
              float(cant or 0), notas, _fase_norm, (area_codigo or '')),
         )
-    except Exception:
-        # Fallback si la columna area_codigo aún no existe (mig 219 sin aplicar)
+    except Exception as _e_ac:
+        # Fallback SOLO si la columna area_codigo aún no existe (mig 219 sin aplicar). Un fallo
+        # REAL del INSERT (UNIQUE lote, tipo, tx PG abortada) NO se disfraza de drift: propaga
+        # para no crear el EBR silenciosamente mal (M4/M69).
+        _es = str(_e_ac).lower()
+        if not ('area_codigo' in _es and ('no such column' in _es or 'does not exist' in _es
+                                          or 'undefined column' in _es)):
+            raise
         cur.execute(
             """INSERT INTO ebr_ejecuciones
                  (mbr_template_id, mbr_version, produccion_id, lote, numero_op,

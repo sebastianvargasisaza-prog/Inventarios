@@ -22992,7 +22992,7 @@ async function ckMarcar(itemId, estado){
       window._NEC_SKUS_HUERFANOS = (d.resumen && d.resumen.skus_huerfanos_vendiendo) || [];
       renderResumenNec(d.resumen);
       renderClientesNec(d.clientes);
-      renderSyncBanner(d.sync_ventas);
+      renderSyncBanner(d.sync_ventas, d.sync_stock);
       cargarPedidosB2BPendientes();
     } catch(e) {
       div.innerHTML = '<div style="text-align:center;color:#dc2626;padding:40px">Error: ' + escapeHtmlNec(e.message) + '</div>';
@@ -23002,29 +23002,49 @@ async function ckMarcar(itemId, estado){
   // Sebastián 30-may-2026 · banner de ATRASO del sync de ventas. Si pasa >36h
   // sin sincronizar Shopify, el plan corre con ventas viejas (caso 25-may: 5
   // días stale → velocidad baja). Hace visible el fallo que antes era silencioso.
-  function renderSyncBanner(sv){
+  function renderSyncBanner(sv, ss){
     var host = document.getElementById('nec-contenido');
     if(!host) return;
-    var old = document.getElementById('nec-sync-banner');
-    if(old) old.remove();
-    if(!sv) return;
-    var h = sv.horas_desde;
-    var stale = (h == null) || (h > 36);
-    if(!stale) return;
-    var cuanto = (h == null) ? 'tiempo desconocido'
-                 : (h >= 48 ? (h/24).toFixed(1) + ' días' : Math.round(h) + ' horas');
-    var ultimo = sv.ultimo ? String(sv.ultimo).slice(0,16).replace('T',' ') : '—';
-    var msg = '⚠ Ventas Shopify sin sincronizar hace <b>' + cuanto + '</b> (último: ' +
-              escapeHtmlNec(ultimo) + '). El plan puede estar usando ventas viejas · ' +
-              'la velocidad y la cobertura saldrán bajas.';
-    var html = '<div id="nec-sync-banner" style="background:#fef2f2;border:1px solid #fecaca;' +
-      'border-left:4px solid #dc2626;border-radius:8px;padding:10px 14px;margin-bottom:12px;' +
-      'color:#991b1b;font-size:13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
-      '<span style="flex:1;min-width:220px">' + msg + '</span>' +
-      '<button onclick="syncVentasNec(this)" style="background:#dc2626;color:#fff;border:none;' +
-      'padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">🔄 Sincronizar ahora</button>' +
-      '</div>';
-    host.insertAdjacentHTML('afterbegin', html);
+    ['nec-sync-banner','nec-sync-banner-stock'].forEach(function(id){var o=document.getElementById(id); if(o) o.remove();});
+    function fmtCuanto(h){ return (h==null)?'tiempo desconocido':(h>=48?(h/24).toFixed(1)+' días':Math.round(h)+' horas'); }
+    // Banner de VENTAS (>36h stale) · el plan usaría ventas viejas.
+    if(sv){
+      var h = sv.horas_desde;
+      if(h == null || h > 36){
+        var cuanto = fmtCuanto(h);
+        var ultimo = sv.ultimo ? String(sv.ultimo).slice(0,16).replace('T',' ') : '—';
+        var msg = '⚠ Ventas Shopify sin sincronizar hace <b>' + cuanto + '</b> (último: ' +
+                  escapeHtmlNec(ultimo) + '). El plan puede estar usando ventas viejas · ' +
+                  'la velocidad y la cobertura saldrán bajas.';
+        var html = '<div id="nec-sync-banner" style="background:#fef2f2;border:1px solid #fecaca;' +
+          'border-left:4px solid #dc2626;border-radius:8px;padding:10px 14px;margin-bottom:12px;' +
+          'color:#991b1b;font-size:13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+          '<span style="flex:1;min-width:220px">' + msg + '</span>' +
+          '<button onclick="syncVentasNec(this)" style="background:#dc2626;color:#fff;border:none;' +
+          'padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">🔄 Sincronizar ahora</button>' +
+          '</div>';
+        host.insertAdjacentHTML('afterbegin', html);
+      }
+    }
+    // Banner de STOCK (>12h stale) · se inserta al final para quedar ARRIBA (afterbegin) · el
+    // stock decide días-de-góndola y urgencia; antes solo se vigilaba la frescura de ventas (M9).
+    if(ss){
+      var hs = ss.horas_desde;
+      if(hs == null || hs > 12){
+        var ults = ss.ultimo ? String(ss.ultimo).slice(0,16).replace('T',' ') : '—';
+        var msgs = '⚠ Stock Shopify sin sincronizar hace <b>' + fmtCuanto(hs) + '</b> (último: ' +
+                   escapeHtmlNec(ults) + '). Los días de góndola y la urgencia pueden estar ' +
+                   'desactualizados.';
+        var htmls = '<div id="nec-sync-banner-stock" style="background:#fffbeb;border:1px solid #fde68a;' +
+          'border-left:4px solid #d97706;border-radius:8px;padding:10px 14px;margin-bottom:12px;' +
+          'color:#92400e;font-size:13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+          '<span style="flex:1;min-width:220px">' + msgs + '</span>' +
+          '<button onclick="location.reload()" style="background:#d97706;color:#fff;border:none;' +
+          'padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">🔄 Recargar</button>' +
+          '</div>';
+        host.insertAdjacentHTML('afterbegin', htmls);
+      }
+    }
   }
 
   // 🤝 Bandeja "Pedidos B2B por confirmar" en Necesidades (Sebastián 27-jun): los pedidos del portal

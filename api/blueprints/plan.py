@@ -3111,12 +3111,45 @@ def plan_necesidades():
     except Exception:
         pass
 
+    # Frescura del STOCK · distinta a la de ventas (M9). Necesidades decide días-de-góndola y
+    # urgencia con el STOCK de Shopify (cron job_sync_stock_shopify → animus_config.last_stock_sync_at),
+    # NO con las órdenes. Antes solo se medía la frescura de órdenes (sync_ventas); si el cron de
+    # STOCK fallaba, el snapshot envejecía sin ninguna alerta. Exponemos también la del stock para
+    # que el frontend pinte banner de atraso cuando el STOCK esté viejo, no solo las ventas.
+    ultimo_sync_stock = None
+    horas_desde_stock = None
+    try:
+        _rs = conn.execute(
+            "SELECT valor FROM animus_config WHERE clave='last_stock_sync_at'"
+        ).fetchone()
+        ultimo_sync_stock = _rs[0] if (_rs and _rs[0]) else None
+        if ultimo_sync_stock:
+            from datetime import datetime as _dts2
+            try:
+                from tz_colombia import now_colombia as _nowcol2
+                _ahora2 = _nowcol2().replace(tzinfo=None)
+            except Exception:
+                _ahora2 = None
+            try:
+                _s2 = str(ultimo_sync_stock)[:19].replace('T', ' ')
+                _ts2 = _dts2.strptime(_s2, '%Y-%m-%d %H:%M:%S')
+                if _ahora2 is not None:
+                    horas_desde_stock = round((_ahora2 - _ts2).total_seconds() / 3600.0, 1)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
     return jsonify({
         "clientes": clientes,
         "resumen": resumen,
         "sync_ventas": {
             "ultimo": ultimo_sync_ventas,
             "horas_desde": horas_desde_sync,
+        },
+        "sync_stock": {
+            "ultimo": ultimo_sync_stock,
+            "horas_desde": horas_desde_stock,
         },
         "parametros": {
             "cobertura_dias_minimo": cob_critico,
