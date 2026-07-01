@@ -8897,13 +8897,21 @@ def compras_feed_necesidades():
                           'pct': round(st / mn * 100, 0) if mn > 0 else 0, 'unidad': 'g'})
     except Exception:
         pass
-    # Envases (MEE) bajo mínimo
+    # Envases (MEE) bajo mínimo · stock CANÓNICO SUM(movimientos_mee), no el cache
+    # maestro_mee.stock_actual (que driftea) · igual que /api/alertas-mee (M26/M63).
+    try:
+        from blueprints.programacion import _get_mee_stock as _gms_feed
+        _canon_mee = _gms_feed(conn)
+    except Exception:
+        _canon_mee = {}
     try:
         for r in c.execute(
             "SELECT codigo, COALESCE(descripcion,''), COALESCE(proveedor,''), "
             "COALESCE(stock_actual,0), COALESCE(stock_minimo,0) "
             "FROM maestro_mee WHERE estado='Activo' AND COALESCE(stock_minimo,0) > 0").fetchall():
-            mn = float(r[4] or 0); st = float(r[3] or 0)
+            mn = float(r[4] or 0)
+            _cod_up = str(r[0] or '').strip().upper()
+            st = float(_canon_mee.get(_cod_up, r[3] or 0))
             if st < mn:
                 items.append({'tipo': 'MEE', 'codigo': r[0], 'nombre': r[1], 'proveedor': r[2],
                               'stock': round(st, 1), 'minimo': round(mn, 1),

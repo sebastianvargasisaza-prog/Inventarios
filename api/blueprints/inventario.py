@@ -12222,22 +12222,36 @@ def mee_alertas_list():
                                 'ratio': round(s / smin, 2)})
     bajo_minimo.sort(key=lambda x: x['ratio'])
 
+    # Stock canónico (SUM movimientos_mee) para obsolescencia y contador · NO el cache
+    # m.stock_actual (M26/M5 display=decisión). Se pide sin el filtro de stock en SQL y
+    # se filtra por canónico en Python (atrapa drift en ambos sentidos).
+    try:
+        from blueprints.programacion import _get_mee_stock as _gms_al
+        _canon_al = _gms_al(conn)
+    except Exception:
+        _canon_al = {}
     c.execute("""SELECT m.codigo, m.descripcion, m.categoria, m.stock_actual, m.unidad,
                         MAX(mv.fecha) as ultimo_mov
                  FROM maestro_mee m
                  LEFT JOIN movimientos_mee mv ON m.codigo=mv.mee_codigo AND mv.anulado=0
-                 WHERE m.estado='Activo' AND m.stock_actual>0
-                 GROUP BY m.codigo
-                 HAVING ultimo_mov IS NULL OR ultimo_mov < ?
-                 ORDER BY ultimo_mov ASC LIMIT 15""", (hace90,))
-    obsolescencia = [{'codigo': r[0], 'descripcion': r[1], 'categoria': r[2],
-                      'stock_actual': r[3], 'unidad': r[4], 'ultimo_mov': r[5] or 'Nunca'}
-                     for r in c.fetchall()]
+                 WHERE m.estado='Activo'
+                 GROUP BY m.codigo, m.descripcion, m.categoria, m.stock_actual, m.unidad
+                 HAVING MAX(mv.fecha) IS NULL OR MAX(mv.fecha) < ?
+                 ORDER BY ultimo_mov ASC LIMIT 60""", (hace90,))
+    obsolescencia = []
+    for r in c.fetchall():
+        _st = float(_canon_al.get(str(r[0] or '').strip().upper(), r[3] or 0))
+        if _st > 0:   # obsoleto = tiene stock REAL y no se mueve hace 90d
+            obsolescencia.append({'codigo': r[0], 'descripcion': r[1], 'categoria': r[2],
+                                  'stock_actual': round(_st, 2), 'unidad': r[4],
+                                  'ultimo_mov': r[5] or 'Nunca'})
+        if len(obsolescencia) >= 15:
+            break
 
     c.execute("SELECT COUNT(*) FROM maestro_mee WHERE estado='Activo'")
     total = c.fetchone()[0]
-    c.execute("SELECT COUNT(*) FROM maestro_mee WHERE estado='Activo' AND stock_minimo>0 AND stock_actual<stock_minimo")
-    n_bajo = c.fetchone()[0]
+    # contador = la MISMA lista canónica de bajo-mínimo (no re-contar sobre el cache)
+    n_bajo = len(bajo_minimo)
     c.execute("SELECT COUNT(*) FROM movimientos_mee WHERE anulado=0 AND fecha>=date('now', '-5 hours', '-7 days')")
     mov_sem = c.fetchone()[0]
     c.execute("SELECT COUNT(*) FROM movimientos_mee WHERE tipo='Entrada' AND anulado=0 AND fecha>=date('now', '-5 hours', '-30 days')")
@@ -12805,19 +12819,22 @@ def envasado_list():
                     'error': f'item está {estado}, no Activo',
                 })
                 continue
-            if (stock_actual or 0) < cant:
+            # Gate de stock sobre el CANÓNICO SUM(movimientos_mee), no el cache stock_actual
+            # (que driftea) · el mismo número con el que se descuenta y se decide (M5/M26/M63).
+            stock_real = _mee_stock_real(c, codigo_mee)
+            if stock_real < cant:
                 errores_mee.append({
                     'tipo': tipo_mee,
                     'codigo': codigo_mee,
                     'descripcion': descripcion,
-                    'stock_disponible': stock_actual,
+                    'stock_disponible': stock_real,
                     'requerido': cant,
-                    'falta': cant - (stock_actual or 0),
+                    'falta': cant - stock_real,
                     'error': 'stock insuficiente',
                 })
                 continue
             plan_mee.append((codigo_mee, cant, descripcion or '',
-                             stock_actual, stock_minimo))
+                             stock_real, stock_minimo))
 
         if errores_mee:
             return jsonify({
