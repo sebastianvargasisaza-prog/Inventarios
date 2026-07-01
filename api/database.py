@@ -397,6 +397,9 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (322, "SUERO DE NIACINAMIDA 5% FORMULA NUEVA: corregir el GRADO de Centella - la app tenia el extracto PLANO (MP00181) pero la formula usa el de TRITERPENOS 80% (MP00176), mismo 0.010% (M19 · Sebastian confirma el grado con la formula correcta). Swap de codigo, sin cambio de % ni de total. 1-jul.", [
+        "UPDATE formula_items SET material_id='MP00176', material_nombre='Centella triterpenos' WHERE UPPER(TRIM(producto_nombre))='SUERO DE NIACINAMIDA 5% FORMULA NUEVA' AND UPPER(TRIM(material_id))='MP00181' AND NOT EXISTS (SELECT 1 FROM formula_items fi2 WHERE UPPER(TRIM(fi2.producto_nombre))='SUERO DE NIACINAMIDA 5% FORMULA NUEVA' AND UPPER(TRIM(fi2.material_id))='MP00176')",
+    ]),
     (321, "ESENCIA DE CENTELLA ASIATICA: agregar Centella triterpenos 80% (MP00176 · 0.100%) que faltaba en la formula de la app - tenia SOLO el extracto plano MP00181 (0.150%) pero la formula usa AMBOS grados (M19). Total 99.900->100.000%. cantidad_g = 0.1% * 40kg = 40g. Revision formula-por-formula Sebastian 1-jul.", [
         "INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje, cantidad_g_por_lote) SELECT 'ESENCIA DE CENTELLA ASIATICA','MP00176','Centella triterpenos',0.1,ROUND(0.1/100.0*COALESCE((SELECT lote_size_kg FROM formula_headers WHERE UPPER(TRIM(producto_nombre))='ESENCIA DE CENTELLA ASIATICA' LIMIT 1),0)*1000,4) WHERE NOT EXISTS (SELECT 1 FROM formula_items WHERE UPPER(TRIM(producto_nombre))='ESENCIA DE CENTELLA ASIATICA' AND UPPER(TRIM(material_id))='MP00176')",
     ]),
