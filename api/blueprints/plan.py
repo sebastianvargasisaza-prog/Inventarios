@@ -17784,16 +17784,25 @@ function _parsearComposicionLote(loteData, kgTotal){
     const porPed = {};   // dedupe defensivo por pedido_id
     desg.forEach(function(x){
       const key = (x.pedido_id != null) ? ('p' + x.pedido_id) : ((x.cliente||'') + '|' + x.kg);
-      porPed[key] = { cliente: x.cliente || 'B2B', kg: parseFloat(x.kg) || 0 };
+      // F1 (2-jul) · uds reales del cliente: plan editado > unidades > calculadas por ml
+      const uds = parseInt(x.plan_envasado_uds || x.unidades || x.unidades_calculadas || 0, 10) || 0;
+      porPed[key] = { cliente: x.cliente || 'B2B', kg: parseFloat(x.kg) || 0, uds: uds };
     });
     let b2bTot = 0;
     Object.keys(porPed).forEach(function(k){
-      entradas.push({ cliente: porPed[k].cliente, kg: porPed[k].kg, color: _color() });
+      entradas.push({ cliente: porPed[k].cliente, kg: porPed[k].kg, uds: porPed[k].uds, color: _color() });
       b2bTot += porPed[k].kg;
     });
     const kgDTC = (loteData.kg_dtc != null) ? parseFloat(loteData.kg_dtc) : Math.max(kgT - b2bTot, 0);
     if (kgDTC > 0.01){
-      entradas.unshift({ cliente: 'Animus DTC', kg: Math.round(kgDTC * 100) / 100, color: '#0f766e' });
+      // F1 · uds Animus DTC = suma del override por SKU si existe (exacto); si no, se estima
+      // en el render por ml. esDTC marca la fila para el cálculo por ml de respaldo.
+      let udsDTC = 0;
+      try {
+        const _ov = loteData.fija_override_json ? JSON.parse(loteData.fija_override_json) : null;
+        if (_ov) { Object.keys(_ov).forEach(function(k){ udsDTC += parseInt(_ov[k], 10) || 0; }); }
+      } catch(_e){ udsDTC = 0; }
+      entradas.unshift({ cliente: 'Animus DTC', kg: Math.round(kgDTC * 100) / 100, uds: udsDTC, esDTC: true, color: '#0f766e' });
     }
     return { kg_total: kgT, entradas, kg_residual_dtc: Math.max(kgDTC, 0) };
   }
@@ -18928,8 +18937,15 @@ async function abrirLoteModal(id, producto, fecha, kg){
       html += '<table style="width:100%;font-size:11px;border-collapse:collapse">';
       composicion.entradas.forEach(e => {
         const pct = composicion.kg_total > 0 ? Math.round((e.kg / composicion.kg_total) * 100) : 0;
+        // F1 (2-jul) · mostrar UDS por cliente. Animus DTC (esDTC) sin override: estimar por ml.
+        let uds = e.uds || 0;
+        if (!uds && e.esDTC){
+          const _ml = (window._DESG && window._DESG.mlProm) || 30;
+          uds = Math.round(e.kg * 1000 / _ml);
+        }
         html += '<tr style="border-top:1px solid #e2e8f0">';
         html += '<td style="padding:4px 8px"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:' + e.color + ';margin-right:6px;vertical-align:middle"></span>' + escapeHtml(e.cliente) + '</td>';
+        html += '<td style="padding:4px 8px;text-align:right;font-weight:700;color:#0f766e">' + (uds ? uds.toLocaleString('es-CO') + ' uds' : '—') + '</td>';
         html += '<td style="padding:4px 8px;text-align:right;font-weight:600">' + e.kg.toFixed(2) + ' kg</td>';
         html += '<td style="padding:4px 8px;text-align:right;color:#64748b">' + pct + '%</td>';
         html += '</tr>';
@@ -19020,7 +19036,7 @@ async function cargarDesgloseEditableLote(producto, kgActual, mlProm){
     var items = allItems.filter(function(it){ return (it.uds_ventana||0) > 0; });
     if(items.length < 2){ host.innerHTML = ''; return; }  // solo multi-SKU que efectivamente vende
     var venWin = d.ventana_dias || 60;
-    window._DESG = { mlProm: mlProm, tendencia: (d.tendencia||0), kg: (parseFloat(kgActual)||0) };
+    window._DESG = { mlProm: mlProm, tendencia: (d.tendencia||0), kg: (parseFloat(kgActual)||0), venWin: venWin };
     var totalUds = Math.round((parseFloat(kgActual)||0) * 1000 / mlProm);
     var pctTot = items.reduce(function(a,it){ return a + (it.porcentaje||0); }, 0) || 100;
     var rows = items.map(function(it){
@@ -19030,19 +19046,23 @@ async function cargarDesgloseEditableLote(producto, kgActual, mlProm){
       return '<tr style="border-top:1px solid #e2e8f0">'
         + '<td style="padding:4px 8px;font-family:monospace;font-weight:700">'+lbl+'</td>'
         + '<td style="padding:4px 8px;text-align:center;color:#64748b">'+ml+' ml</td>'
-        + '<td style="padding:4px 8px;text-align:right;color:#94a3b8;font-size:10px">'+(it.uds_ventana||0)+'</td>'
-        + '<td style="padding:4px 8px;text-align:right"><input type="number" min="0" class="dsk-uds" data-sku="'+escapeHtml(it.sku||'')+'" data-pct="'+(it.porcentaje||0)+'" data-ml="'+ml+'" value="'+pre+'" oninput="_recalcKgDesglose(true)" style="width:82px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:4px;text-align:right;font-weight:700"></td>'
+        + '<td style="padding:4px 8px;text-align:right;color:#64748b;font-size:11px" title="'+(it.uds_ventana||0)+' uds vendidas en '+venWin+'d">'+Math.round((it.uds_ventana||0)/venWin*30).toLocaleString('es-CO')+'</td>'
+        + '<td style="padding:4px 8px;text-align:right"><input type="number" min="0" class="dsk-uds" data-sku="'+escapeHtml(it.sku||'')+'" data-pct="'+(it.porcentaje||0)+'" data-ml="'+ml+'" data-vende-mes="'+Math.round((it.uds_ventana||0)/venWin*30)+'" value="'+pre+'" oninput="_recalcKgDesglose(true)" style="width:82px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:4px;text-align:right;font-weight:700"></td>'
         + '</tr>';
     }).join('');
     var tendTxt = ((d.tendencia||0) > 0.02) ? (' · 📈 +'+Math.round(d.tendencia*100)+'% en ascenso') : '';
     host.innerHTML = '<div style="background:#f5f3ff;border:1px solid #c4b5fd;border-radius:8px;padding:10px 12px;margin:4px 0 12px">'
-      + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:2px">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:6px">'
       + '<span style="font-size:12px;font-weight:700;color:#5b21b6">📊 Desglose por referencia'+tendTxt+'</span>'
-      + '<button onclick="autoCalcDesglose()" title="Calcula las unidades por la venta (con la tendencia) y redondea al número cerrado de arriba" style="background:#7c3aed;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer">🧮 Calcular por venta &uarr;</button>'
+      + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
+      + '<span style="font-size:11px;color:#5b21b6;font-weight:700">Producir para <input id="dsk-meses" type="number" min="1" max="24" step="1" value="2" style="width:44px;padding:3px 4px;border:1px solid #c4b5fd;border-radius:4px;text-align:center;font-weight:700"> meses</span>'
+      + '<button onclick="calcMeses()" title="Calcula cuántas producir de cada SKU para cubrir X meses de venta (con la tendencia de ascenso)" style="background:#7c3aed;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer">🗓️ Calcular X meses</button>'
+      + '<button onclick="autoCalcDesglose()" title="Alternativa: calcula por el kg que ya tiene el lote (no por meses)" style="background:#e9d5ff;color:#5b21b6;border:none;border-radius:5px;padding:4px 8px;font-size:10px;font-weight:700;cursor:pointer">🧮 por kg</button>'
+      + '</div>'
       + '</div>'
       + '<table style="width:100%;font-size:11px;border-collapse:collapse"><thead><tr style="color:#64748b">'
       + '<th style="text-align:left;padding:4px 8px">SKU / referencia</th><th style="padding:4px 8px">ml</th>'
-      + '<th style="text-align:right;padding:4px 8px" title="vendidas en los últimos '+venWin+' días (referencia)">vende '+venWin+'d</th>'
+      + '<th style="text-align:right;padding:4px 8px" title="unidades que vende por mes (de las ventas de '+venWin+'d)">vende/mes</th>'
       + '<th style="text-align:right;padding:4px 8px">a producir</th></tr></thead><tbody>'
       + rows + '</tbody></table>'
       + '<div style="text-align:right;margin-top:8px;border-top:1px dashed #c4b5fd;padding-top:6px">'
@@ -19055,6 +19075,23 @@ async function cargarDesgloseEditableLote(producto, kgActual, mlProm){
 
 // 🧮 Calcula las unidades por la VENTA con la tendencia de ascenso y redondea el total al número cerrado de
 // arriba (Sebastián 27-jun: "si da 756 calcula a 800"). Distribuye por el mix de ventas entre las referencias.
+// 🗓️ F4 (2-jul) · Calcula cuántas producir de cada SKU para cubrir X MESES de venta.
+// uds_sku = venta_mensual_sku × meses × (1 + tendencia_ascenso). El usuario elige los meses;
+// el kg total es derivado (Σ uds×ml). Sebastián: "traiga la opción calcular para cuántos meses".
+function calcMeses(){
+  var D = window._DESG; if(!D) return;
+  var mEl = document.getElementById('dsk-meses');
+  var m = mEl ? parseFloat(mEl.value) : 0;
+  if(!(m > 0) || m > 24){ alert('Meses inválido · poné un número entre 1 y 24'); return; }
+  var inputs = Array.prototype.slice.call(document.querySelectorAll('.dsk-uds'));
+  if(!inputs.length) return;
+  var tend = 1 + (D.tendencia || 0);
+  inputs.forEach(function(inp){
+    var vm = parseFloat(inp.getAttribute('data-vende-mes')) || 0;
+    inp.value = Math.max(0, Math.round(vm * m * tend));
+  });
+  _recalcKgDesglose(true);
+}
 function autoCalcDesglose(){
   var D = window._DESG; if(!D) return;
   var inputs = Array.prototype.slice.call(document.querySelectorAll('.dsk-uds'));
