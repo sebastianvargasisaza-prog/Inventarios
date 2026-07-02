@@ -6934,7 +6934,6 @@ async function openSolicitudDetail(num){
         h+='<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:13%;">PRECIO UNIT (g)</th>';
       }
       h+='<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:'+(puedeEditarPrecios?'13':'15')+'%;">VALOR EST.</th>';
-      h+='<th style="text-align:right;padding:11px 14px;font-weight:700;font-size:11px;letter-spacing:.5px;width:6%;"></th>';
       h+='</tr></thead><tbody>';
       // Formatea cantidades preservando decimales en péptidos (< 10g):
       // 0.4g → "0.4 g", 7g → "7 g", 1500g → "1.5 kg"
@@ -7009,12 +7008,8 @@ async function openSolicitudDetail(num){
           h+='</td>';
         }
         h+='<td class="td-valor-est" style="padding:11px 14px;text-align:right;">'+valorHtml+'</td>';
-        // Boton historico de precios
-        if(puedeEditarPrecios && it.codigo_mp){
-          h+='<td style="padding:8px 6px;text-align:center;"><button onclick="verHistoricoPrecio(&quot;'+esc(it.codigo_mp)+'&quot;)" title="Ver histórico de precios" style="background:#f5f3ff;color:#6d28d9;border:1px solid #c4b5fd;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;">📈</button></td>';
-        } else {
-          h+='<td></td>';
-        }
+        // Histórico de precios redundante quitado (1-jul): el precio vive en el catálogo
+        // (maestro_mps.precio_referencia · "Ref: $/g") · una sola fuente (M9).
         h+='</tr>';
       });
       // Fila de total — colspan 3 para cubrir CÓDIGO + MATERIAL + PROVEEDOR
