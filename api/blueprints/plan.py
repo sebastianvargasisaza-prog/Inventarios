@@ -2630,7 +2630,25 @@ def plan_producto_presentaciones_get(producto):
         except Exception:
             pres = []
             continue
-    return jsonify({'ok': True, 'producto': canonico, 'presentaciones': pres})
+    # SKUs reales del producto + sus ventas 180d → el editor los ofrece para ENLAZAR cada
+    # presentación a su SKU (así el reparto de envases usa ventas reales, no "uniforme").
+    skus = []
+    try:
+        from blueprints.programacion import _ventas_sku_180d
+        ventas = _ventas_sku_180d(conn)
+    except Exception:
+        ventas = {}
+    try:
+        for r in conn.execute(
+            "SELECT DISTINCT UPPER(TRIM(sku)) FROM sku_producto_map "
+            "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1 ORDER BY 1",
+            (canonico,)).fetchall():
+            sk = r[0]
+            if sk:
+                skus.append({'sku': sk, 'ventas_180d': int(ventas.get(sk, 0) or 0)})
+    except Exception:
+        skus = []
+    return jsonify({'ok': True, 'producto': canonico, 'presentaciones': pres, 'skus': skus})
 
 
 @bp.route("/api/plan/producto/<path:producto>/presentaciones", methods=["POST"])
@@ -2681,6 +2699,7 @@ def plan_producto_presentaciones_save(producto):
         if ml <= 0:
             continue  # sin volumen no es una presentación válida
         if pid:
+            _sku_up = str(it.get('sku_shopify') or '').strip().upper()
             sets = ["volumen_ml=?", "activo=1"]
             params = [ml]
             if has_env:
@@ -2689,6 +2708,9 @@ def plan_producto_presentaciones_save(producto):
             if has_fija:
                 sets.append("cantidad_fija_uds=?")
                 params.append(fija)
+            if _sku_up:  # enlazar la presentación a su SKU real (para ventas por presentación)
+                sets.append("sku_shopify=?")
+                params.append(_sku_up)
             params.append(pid)
             c.execute("UPDATE producto_presentaciones SET " + ",".join(sets) + " WHERE id=?", tuple(params))
             aplicados.append({'id': pid, 'accion': 'UPDATE'})
@@ -18050,12 +18072,30 @@ async function _cargarOpcionesEnvases(loteId, envActual){
 }
 // Sebastián 2-jul · editor de presentaciones (multi-envase) del producto · persiste en
 // producto_presentaciones vía /api/plan/producto/<prod>/presentaciones.
-function _presRowHtml(p){
+function _presSkuSelect(id, cur){
+  // dropdown de SKUs reales del producto (con ventas 180d) → ENLAZA la presentación a su
+  // SKU para que el reparto use ventas reales por presentación (no uniforme). Sebastián 2-jul.
+  cur = (cur || '').toUpperCase();
+  var skus = (window._PRES_SKUS && window._PRES_SKUS[id]) || [];
+  var h = '<select class="pres-sku" title="SKU de Shopify de esta presentación · al elegirlo, el reparto de envases usa las VENTAS REALES de ese SKU (deja de ser uniforme)" style="min-width:150px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px;background:#fff">';
+  h += '<option value="">&#8212; SKU / ventas &#8212;</option>';
+  var found = false;
+  for(var i=0;i<skus.length;i++){
+    var s = skus[i]; var sel = (s.sku === cur) ? ' selected' : '';
+    if(s.sku === cur) found = true;
+    h += '<option value="' + (s.sku||'').replace(/"/g,'&quot;') + '"' + sel + '>' + (s.sku||'') + ' &middot; ' + (s.ventas_180d||0) + ' vend</option>';
+  }
+  if(cur && !found){ h += '<option value="' + cur.replace(/"/g,'&quot;') + '" selected>' + cur + ' (sin ventas)</option>'; }
+  h += '</select>';
+  return h;
+}
+function _presRowHtml(p, id){
   p = p || {};
   return '<div class="pres-row" data-pid="' + (p.id || '') + '" style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:5px;background:#fffbeb;padding:5px;border-radius:5px">'
     + '<input class="pres-ml" type="number" min="1" step="1" value="' + (p.volumen_ml || '') + '" placeholder="ml" title="Volumen en ml" style="width:62px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px"> ml'
     + '<select class="pres-env" style="flex:1;min-width:150px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px;background:#fff">' + _opcionesEnvaseInline(p.envase_codigo || '') + '</select>'
-    + '<input class="pres-fija" type="number" min="0" step="1" value="' + (p.cantidad_fija_uds || '') + '" placeholder="uds fijas (opc)" title="OPCIONAL · unidades FIJAS de esta presentación por lote. Vacío = el sistema reparte por venta / automático. Solo se usa si querés forzar una cantidad exacta (ej. 1200 uds de 10ml siempre)." style="width:104px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px">'
+    + _presSkuSelect(id, p.sku_shopify || '')
+    + '<input class="pres-fija" type="number" min="0" step="1" value="' + (p.cantidad_fija_uds || '') + '" placeholder="uds fijas (opc)" title="OPCIONAL · unidades FIJAS de esta presentación por lote. Vacío = el sistema reparte por VENTAS del SKU (o uniforme si el SKU no tiene ventas). Solo para forzar una cantidad exacta." style="width:104px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px">'
     + '<button onclick="_removePresRow(this)" title="Quitar" style="padding:3px 8px;font-size:11px;background:#ef4444;color:#fff;border:none;border-radius:4px;cursor:pointer">&#10005;</button>'
     + '</div>';
 }
@@ -18077,15 +18117,17 @@ async function _cargarPresentaciones(id, _try){
     const r = await fetch('/api/plan/producto/' + encodeURIComponent(prod) + '/presentaciones');
     const d = await r.json().catch(()=>({}));
     const pres = (d && d.presentaciones) || [];
+    window._PRES_SKUS = window._PRES_SKUS || {};
+    window._PRES_SKUS[id] = (d && d.skus) || [];   // SKUs reales + ventas para el dropdown
     if(!pres.length){ list.innerHTML = '<div style="opacity:.7">Sin presentaciones definidas &middot; agreg&aacute; una.</div>'; return; }
-    list.innerHTML = pres.map(_presRowHtml).join('');
+    list.innerHTML = pres.map(function(p){ return _presRowHtml(p, id); }).join('');
   }catch(e){ list.innerHTML = '<div style="color:#b91c1c">Error cargando presentaciones</div>'; }
 }
 function addPresentacionRow(id){
   const list = document.getElementById('pres-list-' + id);
   if(!list) return;
   if(!list.querySelector('.pres-row')) list.innerHTML = '';
-  list.insertAdjacentHTML('beforeend', _presRowHtml({}));
+  list.insertAdjacentHTML('beforeend', _presRowHtml({}, id));
 }
 async function guardarPresentaciones(id){
   const box = document.getElementById('pres-box-' + id);
@@ -18098,10 +18140,11 @@ async function guardarPresentaciones(id){
     const rm = row.getAttribute('data-remove') === '1';
     const ml = parseFloat((row.querySelector('.pres-ml') || {}).value || '0') || 0;
     const env = ((row.querySelector('.pres-env') || {}).value || '').trim();
+    const sku = ((row.querySelector('.pres-sku') || {}).value || '').trim();
     const fija = parseInt((row.querySelector('.pres-fija') || {}).value || '0', 10) || 0;
     if(rm && !pid) return;      // fila nueva quitada → no mandar
     if(!rm && ml <= 0) return;  // fila incompleta → ignorar
-    const o = { volumen_ml: ml, envase_codigo: env, cantidad_fija_uds: fija };
+    const o = { volumen_ml: ml, envase_codigo: env, cantidad_fija_uds: fija, sku_shopify: sku };
     if(pid) o.id = parseInt(pid, 10);
     if(rm) o.remove = true;
     rows.push(o);

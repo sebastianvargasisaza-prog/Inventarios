@@ -71,6 +71,37 @@ def test_presentaciones_no_duplica_identica(app, db_clean):
     assert len(pres) == 1, f"idénticas deben colapsar a 1 · {pres}"
 
 
+def test_presentaciones_get_devuelve_skus_del_producto(app, db_clean):
+    _seed_prod('PROD SKU')
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    try:
+        conn.execute("INSERT OR REPLACE INTO sku_producto_map (sku,producto_nombre,activo) VALUES ('SKU-30','PROD SKU',1)")
+        conn.execute("INSERT OR REPLACE INTO sku_producto_map (sku,producto_nombre,activo) VALUES ('SKU-10','PROD SKU',1)")
+        conn.commit()
+    finally:
+        conn.close()
+    c = _login(app)
+    d = c.get('/api/plan/producto/PROD%20SKU/presentaciones').get_json()
+    skus = {s['sku'] for s in d.get('skus', [])}
+    assert 'SKU-30' in skus and 'SKU-10' in skus, d.get('skus')
+
+
+def test_presentaciones_enlaza_sku_al_editar(app, db_clean):
+    _seed_prod('PROD LINK')
+    c = _login(app)
+    # crear presentación sin SKU real
+    c.post('/api/plan/producto/PROD%20LINK/presentaciones', json={'presentaciones': [
+        {'volumen_ml': 30, 'envase_codigo': 'FR-30'}]}, headers=csrf_headers())
+    pid = c.get('/api/plan/producto/PROD%20LINK/presentaciones').get_json()['presentaciones'][0]['id']
+    # editar enlazando su SKU real
+    r = c.post('/api/plan/producto/PROD%20LINK/presentaciones', json={'presentaciones': [
+        {'id': pid, 'volumen_ml': 30, 'envase_codigo': 'FR-30', 'sku_shopify': 'SKU-REAL-30'}]},
+        headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    pres = c.get('/api/plan/producto/PROD%20LINK/presentaciones').get_json()['presentaciones'][0]
+    assert pres['sku_shopify'] == 'SKU-REAL-30', pres
+
+
 def test_presentaciones_producto_inexistente_404(app, db_clean):
     c = _login(app)
     r = c.post('/api/plan/producto/NO%20EXISTE%20XYZ/presentaciones',
