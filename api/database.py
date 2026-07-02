@@ -397,6 +397,11 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (332, "LIMPIADOR ILUMINADOR vs MyBatch (pesaje OP · Sebastian 1-jul): prod estaba casi perfecta (suma 22.01% = MyBatch). 2 fixes: (1) MP00162 era un codigo FANTASMA en la formula (Oryza sativa extract, no estaba en el catalogo) -> se cataloga MP00162='Extracto de arroz' (ORYZA SATIVA EXTRACT) para que resuelva y descuente; (2) grado Centella MP00176 (triterpenos) -> MP00181 (plano) 0.01%. OJO: el master de 16 MPs anterior era OTRA cosa; el pesaje MyBatch (27 MP) es el real. Verificado inyectando prod == MyBatch mapeado por INCI.", [
+        "INSERT INTO maestro_mps (codigo_mp,nombre_comercial,nombre_inci,tipo_material,activo) SELECT 'MP00162','Extracto de arroz','ORYZA SATIVA EXTRACT','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00162')",
+        "UPDATE maestro_mps SET activo=1 WHERE codigo_mp IN ('MP00181','MP00162') AND COALESCE(activo,1)=0",
+        "UPDATE formula_items SET material_id='MP00181', material_nombre='Centella asiatica extract' WHERE UPPER(TRIM(producto_nombre))='LIMPIADOR ILUMINADOR' AND UPPER(TRIM(material_id))='MP00176'",
+    ]),
     (331, "ANIMUSLASH reconstruida desde MyBatch (OP-2026-74 · Sebastian: MyBatch=verdad · 1-jul). MyBatch usa CODIGOS distintos a EOS -> mapeo por INCI: 27 coinciden, Cafeina MyBatch MP00069 -> EOS MP00118, Butylene Glycol (MyBatch MP00258) NO existia en EOS -> se crea MP00298. La formula EOS estaba vieja/distinta -> rebuild completo (delete + 29 MP + agua 87.71%). sin agua 12.29%. Verificado == MyBatch mapeado. nombres desde el catalogo por subquery.", [
         "INSERT INTO maestro_mps (codigo_mp,nombre_comercial,nombre_inci,tipo_material,activo) SELECT 'MP00298','Butylene glycol','BUTYLENE GLYCOL','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00298')",
         "UPDATE maestro_mps SET activo=1 WHERE codigo_mp IN ('MP00169','MP00079','MP00147','MP00178','MP00194','MP00170','MP00164','MP00193','MP00187','MP00168','MP00236','MP00118','MP00285','MP00245','MP00256','MP00298','MP00171','MP00231','MP00151','MP00072','MP00241','MP00215','MP00150','MP00142','MP00068','MP00163','MP00174','MP00046','MP00148','MPAGUALI01') AND COALESCE(activo,1)=0",
