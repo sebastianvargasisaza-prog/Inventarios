@@ -13249,10 +13249,14 @@ def _demanda_stock_gramos(c, producto):
         # fecha PASADA (el lote ya terminó) · un valor futuro es basura de datos y no debe contar
         # como 'pipeline en camino'.
         "AND substr(fin_real_at,1,10) <= ? "
-        # FIX 1-jul · MISMA exclusión que el plan (plan.py L3653): un lote 'completado' ya pasó
-        # a stock_pt (liberación QC) y está en stock_g → contarlo también como pipeline lo
-        # doble-contaba → el motor sobre-estimaba cobertura y SUB-programaba (display≠cadencia).
-        "AND LOWER(COALESCE(estado,'')) NOT IN ('completado','cancelado')",
+        # FIX 1-jul (2ª pasada · Sebastián): el PIPELINE del motor de proyección SÍ cuenta los
+        # lotes 'completado' recientes (≤7d). Un lote producido SIEMPRE queda estado='completado';
+        # y solo entra a stock_pt/stock_g al LIBERARSE por Calidad (paso posterior). Un lote hecho
+        # ayer aún NO está liberado → NO está en stock_g → debe contar como pipeline (bulk en camino,
+        # aún no en Shopify). Excluir 'completado' lo ponía en 0 → sub-contaba stock reciente →
+        # SOBRE-producía. La ventana ≤7d ya aproxima 'aún no reflejado en Shopify'. Solo se excluye
+        # 'cancelado'. (El display plan.py usa físico-vs-pipeline separado · M6 · es otra vista.)
+        "AND LOWER(COALESCE(estado,'')) <> 'cancelado'",
         (producto, (hoy - _td2(days=7)).isoformat(), hoy.isoformat())).fetchone()[0]
     pipe_g = float(pipe_kg or 0) * 1000.0
     stock_total_g = stock_g + pipe_g
