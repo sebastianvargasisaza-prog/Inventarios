@@ -18112,7 +18112,8 @@ async function proyectar2AniosSinMover(){
     + 'Extiende el plan 2 años hacia adelante RESPETANDO lo que ya tenés:\n'
     + '• NO mueve ni borra tus lotes Fijos (🔒) ni lo ya producido.\n'
     + '• Solo regenera la proyección automática alrededor de ellos.\n\n'
-    + 'Se reemplazan ' + (pv.a_borrar_proyeccion||0) + ' lote(s) de la proyección vieja por la nueva.\n\n¿Proyecto?';
+    + 'Va a colocar ~' + (pv.creados||0) + ' lote(s) para ' + (pv.productos_planeados||0) + ' producto(s)'
+    + ' (reemplaza ' + (pv.borrados||0) + ' de la proyección vieja).\n\n¿Proyecto?';
   if(!confirm(msg)) return;
   const btn = document.getElementById('btn-proy-2a');
   if(btn){ btn.disabled = true; btn.textContent = '🔮 Proyectando...'; }
@@ -18124,11 +18125,11 @@ async function proyectar2AniosSinMover(){
     const d2 = await r2.json().catch(()=>({}));
     if(!r2.ok || !d2.ok){ alert('Falló: ' + (d2.error || r2.status)); }
     else{
-      var sv = d2.sin_venta; var svn = (sv && sv.length!==undefined) ? sv.length : (sv||0);
       alert('✅ Proyección a 2 años lista (sin mover lo tuyo).\n\n'
-        + 'Productos proyectados: ' + (d2.productos||0) + '\n'
+        + 'Productos proyectados: ' + (d2.productos_planeados||0) + '\n'
         + 'Lotes colocados: ' + (d2.creados||0) + '\n'
-        + (svn ? (svn + ' producto(s) sin venta no se proyectaron.\n') : ''));
+        + 'Reemplazó ' + (d2.borrados||0) + ' de la proyección vieja.\n\n'
+        + 'Respetó todos tus lotes Fijos (🔒) y lo ya producido.');
       if(typeof cargar === 'function') cargar();
     }
   }catch(e){ alert('Error: ' + e); }
