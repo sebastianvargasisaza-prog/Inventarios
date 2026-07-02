@@ -248,9 +248,14 @@ async function cxIAPreguntar(pregunta){
   <button class="cx-grp-btn" data-cx-grp="maestros"      data-default-tab="prov"
     style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:#e2e8f0;color:#475569"
     title="Maestro de Proveedores + scorecard + ROI">🏭 Proveedores</button>
-  <a href="/compras/consumos"
-    style="padding:9px 22px;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:#ede9fe;color:#6d28d9;text-decoration:none;display:inline-flex;align-items:center"
-    title="Catálogo de consumibles + crear compra + reporte de gasto por categoría">🗂️ Catálogo / Gastos</a>
+  <button class="cx-grp-btn" data-cx-grp="catalogo" data-default-tab="catalogo"
+    style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:#e2e8f0;color:#475569"
+    title="Catálogo de consumibles + crear compra + reporte de gasto por categoría">🗂️ Catálogo / Gastos</button>
+  <span data-cx-sub="catalogo" style="display:none;gap:6px;flex-wrap:wrap">
+    <button class="tn" data-tab="catalogo" id="tn-catalogo"
+      onclick="(function(f){ if(f && !f.getAttribute('src')) f.setAttribute('src', f.getAttribute('data-src')); })(document.getElementById('cat-iframe'))"
+      title="Catálogo de consumibles + reporte de gasto (papelería, EPP, servicios…)">🗂️ Catálogo / Gastos</button>
+  </span>
 </div>
 
 <!-- Sub-barras por grupo (1 visible a la vez) -->
@@ -303,6 +308,11 @@ async function cxIAPreguntar(pregunta){
 </div>
 
 <!-- PANES -->
+<div id="pane-catalogo" class="pane">
+  <div style="font-size:12px;color:#64748b;margin-bottom:8px">🗂️ Catálogo de consumibles + gastos generales · sin salir de Compras. Aquí viven papelería, EPP, servicios, aseo… con su proveedor y precio, editables y reutilizables.</div>
+  <iframe id="cat-iframe" data-src="/compras/consumos" title="Catálogo / Gastos"
+    style="width:100%;height:80vh;border:1px solid #e2e8f0;border-radius:12px;background:#fff"></iframe>
+</div>
 <div id="pane-dash" class="pane on">
   <!-- Compras PRO · Sebastián 21-may-2026 · Dashboard CONSOLIDADO con 4 KPIs grandes. -->
   <!-- Franja superior · 4 KPIs CLAVE que el consultor procurement recomendó:
