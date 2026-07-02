@@ -1519,6 +1519,7 @@ if (ES_C) {
 var ITMS = 0;
 var MP_ITMS = 0;
 var _MPCAT = [];
+var _CONSUM = [];  // catálogo de consumibles (papelería/EPP/servicios) para el buscador de Crear OC
 var _ALERTAS_MP = [];
 var _ALERTAS_MEE = [];   // envases (MEE) en déficit · consumo-horizontes?tipo=mee · 18-jun
 var _ocsCatFilter = 'ALL';
@@ -2535,6 +2536,10 @@ async function loadData(){
     fetch('/api/maestro-mps').then(function(r){ if(!r.ok) throw new Error('Cat API '+r.status); return r.json(); })
       .then(function(d){ _MPCAT = d.mps||[]; })
       .catch(function(e){ console.error('MPCAT load error:',e); _MPCAT=[]; }),
+    // Catálogo de CONSUMIBLES (papelería/EPP/servicios) para el buscador de Crear OC · Sebastián 1-jul
+    fetch('/api/compras/consumibles').then(function(r){ return r.ok?r.json():{consumibles:[]}; })
+      .then(function(d){ _CONSUM = d.consumibles||[]; if(typeof buildConsumDL==='function') buildConsumDL(); })
+      .catch(function(e){ console.error('Consumibles load error:',e); _CONSUM=[]; }),
     // Centro de Programación: déficit real (velocidad Shopify + producciones futuras)
     fetch('/api/programacion/mps-deficit').then(function(r){ if(!r.ok) throw new Error('Programacion deficit API '+r.status); return r.json(); })
       .then(function(d4){
@@ -3391,6 +3396,8 @@ function addRow(){
   ITMS++;
   var n=ITMS;
   var isMP=(document.getElementById('noc-cat').value==='MP');
+  // Gastos generales (papelería/EPP/servicios/aseo…) usan el catálogo de consumibles · NO MP/MEE/INF/CC.
+  var isGasto=(['MP','MEE','INF','CC'].indexOf(document.getElementById('noc-cat').value)<0);
   var _ph={'MP':'Buscar MP...','MEE':'Ref. MEE','SVC':'Servicio','ADM':'Concepto','INF':'Ref.','CC':'Concepto'};
   var _ph_val=_ph[document.getElementById('noc-cat').value]||'COD';
   var _w=isMP?'width:115px':'width:80px';
@@ -3400,7 +3407,9 @@ function addRow(){
   var tr=document.createElement('tr');
   tr.id='ir'+n;
   tr.innerHTML=codCell+
-    '<td><input id="in'+n+'" placeholder="Descripcion" style="width:150px"></td>'+
+    (isGasto
+      ? '<td><input id="in'+n+'" list="consum-dl" placeholder="Buscar en catálogo o escribir…" oninput="autoFillConsumible('+n+')" autocomplete="off" style="width:150px"></td>'
+      : '<td><input id="in'+n+'" placeholder="Descripcion" style="width:150px"></td>')+
     '<td><input id="iq'+n+'" type="number" value="1" min="0" oninput="calcTot()" style="width:55px"></td>'+
     '<td><input id="ip'+n+'" type="number" value="0" min="0" step="0.01" oninput="calcTot()" style="width:75px"></td>'+
     '<td id="is'+n+'" style="white-space:nowrap">$0</td>'+
@@ -3481,6 +3490,21 @@ async function submitOC(){
         con_iva:conIva,valor_sin_iva:sub})});
     var d=await r.json();
     if(d.error){ alert('Error: '+d.error); return; }
+    // Save-back al catálogo (Sebastián 1-jul): los ítems de GASTO GENERAL (no MP/MEE/INF/CC) que
+    // no estén ya en el catálogo se guardan en maestro_consumibles → reutilizables + su precio la
+    // próxima vez. Así Catalina nunca crea lo mismo desde cero.
+    if(_ocMode!=='edit' && ['MP','MEE','INF','CC'].indexOf(cat)<0){
+      for(var _si=0; _si<items.length; _si++){
+        var _nm=((items[_si].nombre_mp)||'').trim();
+        if(!_nm) continue;
+        if((_CONSUM||[]).some(function(x){ return (x.nombre||'').trim().toLowerCase()===_nm.toLowerCase(); })) continue;
+        try{
+          await fetch('/api/compras/consumibles', _fetchOpts('POST', {nombre:_nm, categoria:cat, proveedor:prov, precio_referencia:items[_si].precio_unitario||0}));
+          _CONSUM.push({nombre:_nm, categoria:cat, proveedor:prov, precio_referencia:items[_si].precio_unitario||0});
+        }catch(e){}
+      }
+      if(typeof buildConsumDL==='function') buildConsumDL();
+    }
     var _msg=(_ocMode==='edit'?'OC actualizada: '+_ocEditNum:'Creada: '+d.numero_oc);
     // 1-clic Catalina: autorizar al CREAR → va directo a Por Pagar (reusa el autorizar canónico).
     var _auto=document.getElementById('noc-autorizar');
@@ -3587,6 +3611,30 @@ function autoFillMP(n){
     var nameEl=document.getElementById('in'+n);
     if(nameEl&&!nameEl.value) nameEl.value=mp.nombre_comercial||mp.nombre_material||'';
   }
+}
+// ─── Catálogo de consumibles en Crear OC (Sebastián 1-jul) · papelería/EPP/servicios ───
+// Buscar en el catálogo (maestro_consumibles) al escribir la descripción → autocompleta el
+// precio (y proveedor si está vacío). Los ítems nuevos se guardan al catálogo al crear la OC.
+function buildConsumDL(){
+  var dl=document.getElementById('consum-dl');
+  if(!dl){ dl=document.createElement('datalist'); dl.id='consum-dl'; document.body.appendChild(dl); }
+  dl.innerHTML=(_CONSUM||[]).map(function(x){
+    var meta=(x.proveedor||'')+((x.precio_referencia>0)?(' · $'+parseFloat(x.precio_referencia).toLocaleString('es-CO')):'');
+    return '<option value="'+esc(x.nombre)+'">'+esc(meta)+'</option>';
+  }).join('');
+}
+function autoFillConsumible(n){
+  var nomEl=document.getElementById('in'+n);
+  if(!nomEl) return;
+  var val=(nomEl.value||'').trim().toLowerCase();
+  if(!val) return;
+  var hit=(_CONSUM||[]).find(function(x){ return (x.nombre||'').trim().toLowerCase()===val; });
+  if(!hit) return;
+  var pEl=document.getElementById('ip'+n);
+  if(pEl && (!pEl.value||parseFloat(pEl.value)===0) && hit.precio_referencia>0){ pEl.value=parseFloat(hit.precio_referencia).toFixed(2); }
+  var provEl=document.getElementById('noc-prov');
+  if(provEl && !provEl.value && hit.proveedor){ provEl.value=hit.proveedor; }
+  if(typeof calcTot==='function') calcTot();
 }
 // ─── Inline provider creation ─────────────────────────────────────────
 function showNewProvForm(){

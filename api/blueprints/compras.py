@@ -1806,6 +1806,12 @@ def actualizar_precios_items_oc(numero_oc):
                 c.execute("UPDATE maestro_mps SET precio_referencia=? WHERE codigo_mp=?", (precio, cod))
             except Exception:
                 pass
+            # Igual para ENVASES (MEE · Sebastián 1-jul): el precio de empaque también persiste en
+            # su maestro (maestro_mee.precio_referencia · mig 314). Si el código no es MEE, 0 filas.
+            try:
+                c.execute("UPDATE maestro_mee SET precio_referencia=? WHERE codigo=?", (precio, cod))
+            except Exception:
+                pass
 
     # Recalcular valor_total de la OC · FIX 13-jun (audit compras · M12(f)): RESPETAR
     # con_iva. Antes este endpoint (el que usa Catalina para guardar precios) guardaba

@@ -52,3 +52,21 @@ def test_precio_oc_se_graba_en_maestro(app, db_clean):
     assert r2.status_code == 200
     ref2 = _one("SELECT precio_referencia FROM maestro_mps WHERE codigo_mp=?", (cod,))
     assert ref2 and abs(float(ref2[0]) - 73.5) < 0.001, f"debe sobrescribir a 73.5 · got {ref2}"
+
+
+def test_precio_oc_se_graba_en_maestro_mee(app, db_clean):
+    cod = 'MEE-PWT-1'
+    _exec("INSERT OR REPLACE INTO maestro_mee (codigo,descripcion,estado,precio_referencia) "
+          "VALUES (?,'Envase write-through','Activo',0)", (cod,))
+    _exec("INSERT OR REPLACE INTO ordenes_compra (numero_oc,fecha,estado,proveedor,categoria,con_iva,valor_total) "
+          "VALUES ('OC-PWT-MEE', date('now','-5 hours'),'Borrador','Prov','Material de Empaque',0,0)")
+    _exec("DELETE FROM ordenes_compra_items WHERE numero_oc='OC-PWT-MEE'")
+    _exec("INSERT INTO ordenes_compra_items (numero_oc,codigo_mp,nombre_mp,cantidad_g,precio_unitario,subtotal) "
+          "VALUES ('OC-PWT-MEE',?,'Envase write-through',100,0,0)", (cod,))
+    c = _login(app, 'catalina')
+    r = c.patch('/api/ordenes-compra/OC-PWT-MEE/items-precios',
+                json={'items': [{'codigo_mp': cod, 'precio_unitario': 120}]},
+                headers=csrf_headers())
+    assert r.status_code == 200, f"{r.status_code} {r.data[:200]}"
+    ref = _one("SELECT precio_referencia FROM maestro_mee WHERE codigo=?", (cod,))
+    assert ref and abs(float(ref[0]) - 120) < 0.001, f"precio de ENVASE debe persistir en maestro_mee · got {ref}"
