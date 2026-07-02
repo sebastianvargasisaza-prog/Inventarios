@@ -397,6 +397,10 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (329, "EMULSION HIDRATANTE ILUMINADORA vs MASTER (Sebastian · dump prod 1-jul): 2 porcentajes distintos - MP00186 (4-Butilresorcinol) 0.2->0.3% + MP00127 (BM-956) 1.75->2.0%. La Trietanolamina (MP00123) prod 0.1% se MANTIENE: el master la lista al 0.000% = pH QS (ajustador), quitarla dejaria el gel sin neutralizar. Resto (24 MPs) coincide. Verificado inyectando estado prod (fijos == master).", [
+        "UPDATE formula_items SET porcentaje=0.3, cantidad_g_por_lote=ROUND(0.3/100.0*COALESCE((SELECT lote_size_kg FROM formula_headers WHERE UPPER(TRIM(producto_nombre))='EMULSION HIDRATANTE ILUMINADORA' LIMIT 1),0)*1000,4) WHERE UPPER(TRIM(producto_nombre))='EMULSION HIDRATANTE ILUMINADORA' AND UPPER(TRIM(material_id))='MP00186'",
+        "UPDATE formula_items SET porcentaje=2.0, cantidad_g_por_lote=ROUND(2.0/100.0*COALESCE((SELECT lote_size_kg FROM formula_headers WHERE UPPER(TRIM(producto_nombre))='EMULSION HIDRATANTE ILUMINADORA' LIMIT 1),0)*1000,4) WHERE UPPER(TRIM(producto_nombre))='EMULSION HIDRATANTE ILUMINADORA' AND UPPER(TRIM(material_id))='MP00127'",
+    ]),
     (328, "EMULSION LIMPIADORA vs MASTER (Sebastian · dump prod 1-jul): grado Centella MP00176 (triterpenos 80%) -> MP00181 (extracto plano) 0.01% - unica diferencia, el resto (20 MPs) coincide = 24.940%. La Trietanolamina al 0% correctamente no esta. Verificado inyectando estado prod == master.", [
         "UPDATE formula_items SET material_id='MP00181', material_nombre='Centella asiatica extract' WHERE UPPER(TRIM(producto_nombre))='EMULSION LIMPIADORA' AND UPPER(TRIM(material_id))='MP00176'",
     ]),
