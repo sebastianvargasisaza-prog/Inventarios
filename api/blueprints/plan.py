@@ -18693,23 +18693,21 @@ async function abrirLoteModal(id, producto, fecha, kg){
       html += '<strong>↪ Propagar</strong>: sobreescribe override en cada lote futuro · no toca config global · útil cuando es cambio temporal';
       html += '</div></details>';
     }
+    // Sebastián 2-jul · PRESENTACIONES del producto (multi-envase) DENTRO del área azul de
+    // envase · UNA sola área. Persisten en producto_presentaciones (aplican a TODOS los lotes).
+    html += '<div id="pres-box-' + id + '" data-prod="' + escapeHtml(producto) + '" style="margin-top:10px;border-top:1px dashed #67e8f9;padding-top:10px">';
+    html += '<div style="font-size:11px;font-weight:800;color:#0e7490;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">&#128230; Presentaciones del producto <span style="font-weight:600;text-transform:none;color:#155e75">· si tiene 2+ envases · se guarda para siempre</span></div>';
+    html += '<div id="pres-list-' + id + '" style="font-size:12px;color:#0f766e">cargando&#8230;</div>';
+    html += '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center">';
+    html += '<button onclick="addPresentacionRow(' + id + ')" style="padding:6px 12px;font-size:11px;background:#0891b2;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">&#10133; Agregar presentaci&oacute;n</button>';
+    html += '<button onclick="guardarPresentaciones(' + id + ')" style="padding:6px 12px;font-size:11px;background:#16a34a;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">&#128190; Guardar presentaciones</button>';
+    html += '<span id="pres-ok-' + id + '" style="color:#15803d;font-size:11px;display:none">&#10003; guardado</span>';
+    html += '</div>';
+    html += '<div style="font-size:10px;color:#0e7490;margin-top:6px">Cada fila = un frasco + su volumen (ml). La cantidad FIJA es opcional (vac&iacute;a = reparte por venta). Aplica a TODOS los lotes del producto.</div>';
+    html += '</div>';
+    setTimeout(function(){ _cargarPresentaciones(id); }, 60);
     html += '</div>';
   } catch(_e_env){ /* sin lote en PLAN_DATA · no mostrar */ }
-
-  // Sebastián 2-jul · editor de PRESENTACIONES del producto (multi-envase). El de arriba
-  // es override de UN frasco para el lote; este define las 2+ presentaciones (frasco +
-  // volumen) que persisten en producto_presentaciones y aplican a TODOS los lotes.
-  html += '<div id="pres-box-' + id + '" data-prod="' + escapeHtml(producto) + '" style="background:#fefce8;border:1px solid #fde047;border-radius:8px;padding:10px 14px;margin-bottom:12px">';
-  html += '<div style="font-size:11px;font-weight:800;color:#a16207;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">&#128230; Presentaciones del producto <span style="font-weight:600;text-transform:none;color:#854d0e">· si tiene 2+ envases · se guarda para siempre</span></div>';
-  html += '<div id="pres-list-' + id + '" style="font-size:12px;color:#713f12">cargando&#8230;</div>';
-  html += '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center">';
-  html += '<button onclick="addPresentacionRow(' + id + ')" style="padding:6px 12px;font-size:11px;background:#ca8a04;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">&#10133; Agregar presentaci&oacute;n</button>';
-  html += '<button onclick="guardarPresentaciones(' + id + ')" style="padding:6px 12px;font-size:11px;background:#16a34a;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">&#128190; Guardar presentaciones</button>';
-  html += '<span id="pres-ok-' + id + '" style="color:#15803d;font-size:11px;display:none">&#10003; guardado</span>';
-  html += '</div>';
-  html += '<div style="font-size:10px;color:#a16207;margin-top:6px">Cada fila = un frasco + su volumen (ml). La cantidad FIJA es opcional (vac&iacute;a = reparte por venta). Aplica a TODOS los lotes del producto.</div>';
-  html += '</div>';
-  setTimeout(function(){ _cargarPresentaciones(id); }, 60);
 
   // Sebastián 27-may-2026 PM · "el calendario debe colocar la realidad
   // del envase, que lo tenga cada producción". Bloque composición de
