@@ -18793,14 +18793,10 @@ async function abrirLoteModal(id, producto, fecha, kg){
     html += '</div>';
   } catch(_e_env){ /* sin lote en PLAN_DATA · no mostrar */ }
 
-  // Sebastián 27-may-2026 PM · "el calendario debe colocar la realidad
-  // del envase, que lo tenga cada producción". Bloque composición de
-  // variantes auto-derivado desde Shopify · async post-render para no
-  // bloquear modal · placeholder + fetch + replace.
-  html += '<div id="comp-mee-' + id + '" style="background:#f0fdfa;border:1px solid #5eead4;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#0f766e">'
-    + '<span style="font-weight:700">📐 Composición de envases:</span> <span style="opacity:.7">cargando...</span>'
-    + '</div>';
-  setTimeout(function(){ _cargarComposicionMee(id); }, 50);
+  // Sebastián 2-jul · QUITADO el box "Composición de envases" (read-only 180d): era
+  // REDUNDANTE con el "Desglose por referencia" (editable · más abajo) y encima daba
+  // números distintos (180d vs 60d). El Desglose editable es la única fuente: lo que
+  // ponés en "a producir" se guarda (fija_override_json) y Abastecimiento usa eso.
 
   // Sebastián 25-may-2026 PM · Desglose B2B vs DTC del lote + plan
   // envasado editable. "como ya estas primeras producciones estan
