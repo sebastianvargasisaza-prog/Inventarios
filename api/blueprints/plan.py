@@ -2638,16 +2638,33 @@ def plan_producto_presentaciones_get(producto):
         ventas = _ventas_sku_180d(conn)
     except Exception:
         ventas = {}
+    import unicodedata as _ud
+
+    def _na(s):  # normaliza SIN acentos + UPPER (M13: los SKUs están mapeados bajo nombres con
+        return _ud.normalize('NFKD', str(s or '')).encode('ascii', 'ignore').decode().strip().upper()
+
+    _tgt = _na(canonico)
+    _seen = set()
     try:
-        for r in conn.execute(
-            "SELECT DISTINCT UPPER(TRIM(sku)) FROM sku_producto_map "
-            "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1 ORDER BY 1",
-            (canonico,)).fetchall():
-            sk = r[0]
-            if sk:
+        # 1) SKUs de sku_producto_map con match de nombre SIN acentos (evita el hueco por acento/escritura)
+        for r in conn.execute("SELECT sku, producto_nombre FROM sku_producto_map WHERE COALESCE(activo,1)=1").fetchall():
+            if _na(r[1]) == _tgt:
+                sk = (r[0] or '').strip().upper()
+                if sk and sk not in _seen:
+                    _seen.add(sk)
+                    skus.append({'sku': sk, 'ventas_180d': int(ventas.get(sk, 0) or 0)})
+    except Exception:
+        pass
+    try:
+        # 2) SKUs ya guardados en las presentaciones (por si alguno no está en sku_producto_map)
+        for p in pres:
+            sk = (p.get('sku_shopify') or '').strip().upper()
+            if sk and sk not in _seen:
+                _seen.add(sk)
                 skus.append({'sku': sk, 'ventas_180d': int(ventas.get(sk, 0) or 0)})
     except Exception:
-        skus = []
+        pass
+    skus.sort(key=lambda x: (-x['ventas_180d'], x['sku']))
     return jsonify({'ok': True, 'producto': canonico, 'presentaciones': pres, 'skus': skus})
 
 
@@ -18078,7 +18095,7 @@ function _presSkuSelect(id, cur){
   cur = (cur || '').toUpperCase();
   var skus = (window._PRES_SKUS && window._PRES_SKUS[id]) || [];
   var h = '<select class="pres-sku" title="SKU de Shopify de esta presentación · al elegirlo, el reparto de envases usa las VENTAS REALES de ese SKU (deja de ser uniforme)" style="min-width:150px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px;background:#fff">';
-  h += '<option value="">&#8212; SKU / ventas &#8212;</option>';
+  h += '<option value="">' + (skus.length ? '&#8212; SKU / ventas &#8212;' : '&#8212; sin SKUs mapeados &#8212;') + '</option>';
   var found = false;
   for(var i=0;i<skus.length;i++){
     var s = skus[i]; var sel = (s.sku === cur) ? ' selected' : '';

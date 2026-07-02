@@ -86,6 +86,23 @@ def test_presentaciones_get_devuelve_skus_del_producto(app, db_clean):
     assert 'SKU-30' in skus and 'SKU-10' in skus, d.get('skus')
 
 
+def test_presentaciones_skus_match_sin_acentos(app, db_clean):
+    # formula con acento, SKU mapeado SIN acento → igual debe encontrarlo (M13)
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    try:
+        conn.execute("INSERT OR REPLACE INTO formula_headers (producto_nombre,lote_size_kg,activo) "
+                     "VALUES (?,30,1)", ('CRÉMA ÚREA',))
+        conn.execute("INSERT OR REPLACE INTO sku_producto_map (sku,producto_nombre,activo) "
+                     "VALUES ('SKU-UREA','CREMA UREA',1)")
+        conn.commit()
+    finally:
+        conn.close()
+    c = _login(app)
+    d = c.get('/api/plan/producto/CR%C3%89MA%20%C3%9AREA/presentaciones').get_json()
+    skus = {s['sku'] for s in d.get('skus', [])}
+    assert 'SKU-UREA' in skus, f"debe matchear sin acentos · {d.get('skus')}"
+
+
 def test_presentaciones_enlaza_sku_al_editar(app, db_clean):
     _seed_prod('PROD LINK')
     c = _login(app)
