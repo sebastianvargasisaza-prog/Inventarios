@@ -58,6 +58,19 @@ def test_presentaciones_crear_listar_editar_quitar(app, db_clean):
     assert pres2[0]['volumen_ml'] == 150 and pres2[0]['envase_codigo'] == 'FR-OTRO'
 
 
+def test_presentaciones_no_duplica_identica(app, db_clean):
+    _seed_prod('PROD DUP')
+    c = _login(app)
+    # dos filas IDÉNTICAS (mismo ml + mismo frasco) → debe quedar UNA sola
+    r = c.post('/api/plan/producto/PROD%20DUP/presentaciones', json={'presentaciones': [
+        {'volumen_ml': 150, 'envase_codigo': 'FR-150'},
+        {'volumen_ml': 150, 'envase_codigo': 'FR-150'},
+    ]}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    pres = c.get('/api/plan/producto/PROD%20DUP/presentaciones').get_json()['presentaciones']
+    assert len(pres) == 1, f"idénticas deben colapsar a 1 · {pres}"
+
+
 def test_presentaciones_producto_inexistente_404(app, db_clean):
     c = _login(app)
     r = c.post('/api/plan/producto/NO%20EXISTE%20XYZ/presentaciones',

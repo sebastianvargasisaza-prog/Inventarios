@@ -2693,6 +2693,16 @@ def plan_producto_presentaciones_save(producto):
             c.execute("UPDATE producto_presentaciones SET " + ",".join(sets) + " WHERE id=?", tuple(params))
             aplicados.append({'id': pid, 'accion': 'UPDATE'})
         else:
+            # Anti-duplicado (Sebastián 2-jul): no insertar una presentación idéntica
+            # (mismo volumen_ml + mismo frasco) que ya existe activa → evita las filas
+            # repetidas (ej. dos 150ml del mismo frasco).
+            _dup = c.execute(
+                "SELECT id FROM producto_presentaciones WHERE LOWER(TRIM(producto_nombre))=LOWER(TRIM(?)) "
+                "AND ABS(COALESCE(volumen_ml,0)-?)<0.001 AND UPPER(TRIM(COALESCE(envase_codigo,'')))=? "
+                "AND COALESCE(activo,1)=1", (canonico, ml, env)).fetchone()
+            if _dup:
+                aplicados.append({'id': _dup[0], 'accion': 'DUP_SKIP'})
+                continue
             sku = str(it.get('sku_shopify') or '').strip().upper() or (canonico.upper() + '-' + str(int(ml)) + 'ML')
             cols = ["producto_nombre", "categoria", "presentacion_codigo", "etiqueta",
                     "volumen_ml", "sku_shopify", "es_default", "activo"]
@@ -17942,9 +17952,12 @@ function _fetchCompMee(loteId){
   return pr;
 }
 
-async function _cargarComposicionMee(loteId){
+async function _cargarComposicionMee(loteId, _try){
+  _try = _try || 0;
   const box = document.getElementById('comp-mee-' + loteId);
-  if(!box) return;
+  // FIX 2-jul · si el modal aún no montó el elemento (carrera de tiempos), reintentar en
+  // vez de rendirse dejando "cargando..." para siempre.
+  if(!box){ if(_try < 10){ setTimeout(function(){ _cargarComposicionMee(loteId, _try + 1); }, 120); } return; }
   // Cache hit
   if(window._COMP_MEE_CACHE[loteId]){
     box.innerHTML = window._COMP_MEE_CACHE[loteId];
@@ -18042,7 +18055,7 @@ function _presRowHtml(p){
   return '<div class="pres-row" data-pid="' + (p.id || '') + '" style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:5px;background:#fffbeb;padding:5px;border-radius:5px">'
     + '<input class="pres-ml" type="number" min="1" step="1" value="' + (p.volumen_ml || '') + '" placeholder="ml" title="Volumen en ml" style="width:62px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px"> ml'
     + '<select class="pres-env" style="flex:1;min-width:150px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px;background:#fff">' + _opcionesEnvaseInline(p.envase_codigo || '') + '</select>'
-    + '<input class="pres-fija" type="number" min="0" step="1" value="' + (p.cantidad_fija_uds || '') + '" placeholder="fija" title="Cantidad FIJA de unidades (opcional · vacío = reparte por venta)" style="width:66px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px">'
+    + '<input class="pres-fija" type="number" min="0" step="1" value="' + (p.cantidad_fija_uds || '') + '" placeholder="uds fijas (opc)" title="OPCIONAL · unidades FIJAS de esta presentación por lote. Vacío = el sistema reparte por venta / automático. Solo se usa si querés forzar una cantidad exacta (ej. 1200 uds de 10ml siempre)." style="width:104px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px">'
     + '<button onclick="_removePresRow(this)" title="Quitar" style="padding:3px 8px;font-size:11px;background:#ef4444;color:#fff;border:none;border-radius:4px;cursor:pointer">&#10005;</button>'
     + '</div>';
 }
@@ -18053,10 +18066,12 @@ function _removePresRow(btn){
   row.style.opacity = 0.4;
   btn.disabled = true;
 }
-async function _cargarPresentaciones(id){
+async function _cargarPresentaciones(id, _try){
+  _try = _try || 0;
   const box = document.getElementById('pres-box-' + id);
   const list = document.getElementById('pres-list-' + id);
-  if(!box || !list) return;
+  // FIX 2-jul · reintentar si el modal aún no montó (evita "cargando..." trabado).
+  if(!box || !list){ if(_try < 10){ setTimeout(function(){ _cargarPresentaciones(id, _try + 1); }, 120); } return; }
   const prod = box.getAttribute('data-prod') || '';
   try{
     const r = await fetch('/api/plan/producto/' + encodeURIComponent(prod) + '/presentaciones');
@@ -18704,7 +18719,7 @@ async function abrirLoteModal(id, producto, fecha, kg){
     html += '<button onclick="guardarPresentaciones(' + id + ')" style="padding:6px 12px;font-size:11px;background:#16a34a;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">&#128190; Guardar presentaciones</button>';
     html += '<span id="pres-ok-' + id + '" style="color:#15803d;font-size:11px;display:none">&#10003; guardado</span>';
     html += '</div>';
-    html += '<div style="font-size:10px;color:#0e7490;margin-top:6px">Cada fila = un frasco + su volumen (ml). La cantidad FIJA es opcional (vac&iacute;a = reparte por venta). Aplica a TODOS los lotes del producto.</div>';
+    html += '<div style="font-size:10px;color:#0e7490;margin-top:6px;line-height:1.5">Cada fila = <b>un frasco + su volumen (ml)</b>. Con eso el sistema calcula solo cu&aacute;ntos envases pedir en Abastecimiento (kg &rarr; ml &rarr; unidades). Si el producto tiene 1 sola presentaci&oacute;n, dej&aacute; 1 fila. <b>&laquo;uds fijas&raquo;</b> es OPCIONAL: d&eacute;jala vac&iacute;a y reparte autom&aacute;tico; solo la us&aacute;s para forzar una cantidad exacta (ej. 1200 uds de 10&nbsp;ml siempre). Aplica a TODOS los lotes del producto.</div>';
     html += '</div>';
     setTimeout(function(){ _cargarPresentaciones(id); }, 60);
     html += '</div>';
