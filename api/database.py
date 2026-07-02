@@ -397,6 +397,9 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (326, "BOOSTER TENSOR vs MASTER (Sebastian · dump prod 1-jul): quita MP00187 (Myristoyl pentapeptide-17, 0.003%) que NO va en el master - el MISMO peptido equivocado que sacamos de SUERO EXFOLIANTE BHA (mig 324). El resto (20 MPs) coincide exacto = 10.211%. La Trietanolamina al 0% correctamente no esta.", [
+        "DELETE FROM formula_items WHERE UPPER(TRIM(producto_nombre))='BOOSTER TENSOR' AND UPPER(TRIM(material_id))='MP00187'",
+    ]),
     (325, "GEL HIDRATANTE vs MASTER (Sebastian · dump prod 1-jul): (1) prod tiene MP00137 (Argania/Argan) donde el master pide MP00030 (Beauty Sensoft · Propylheptyl caprylate) - material DISTINTO, swap (caso M19, mismo 3.0%). (2) faltaba MP00127 (BM-956 · Phenyl trimethicone) 1.75% - agregar. (3) grado Centella MP00176->MP00181 (plano) 0.03%. (4) sacar MP00245 (1,2-Hexanediol 0.3%) que sobra. Panthenol MP00110~MP00236 se deja. Verificado inyectando estado prod == master.", [
         "UPDATE formula_items SET material_id='MP00030', material_nombre='Beauty Sensoft' WHERE UPPER(TRIM(producto_nombre))='GEL HIDRATANTE' AND UPPER(TRIM(material_id))='MP00137' AND NOT EXISTS (SELECT 1 FROM formula_items f2 WHERE UPPER(TRIM(f2.producto_nombre))='GEL HIDRATANTE' AND UPPER(TRIM(f2.material_id))='MP00030')",
         "UPDATE formula_items SET material_id='MP00181', material_nombre='Centella asiatica extract' WHERE UPPER(TRIM(producto_nombre))='GEL HIDRATANTE' AND UPPER(TRIM(material_id))='MP00176' AND NOT EXISTS (SELECT 1 FROM formula_items f2 WHERE UPPER(TRIM(f2.producto_nombre))='GEL HIDRATANTE' AND UPPER(TRIM(f2.material_id))='MP00181')",
