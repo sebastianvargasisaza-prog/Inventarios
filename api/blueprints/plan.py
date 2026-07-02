@@ -16346,6 +16346,8 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
         style="font-size:14px;padding:10px 18px;background:#0d9488;font-weight:700" title="Programa manualmente CUALQUIER producto: pilotos, productos de otros clientes o lo que no está en Necesidades. También puedes hacer clic en el ➕ de cualquier día del calendario.">➕ Programar producción</button>
       <button onclick="generarPlanDesdeHoy()" class="success" id="btn-plan-hoy"
         style="font-size:14px;padding:10px 18px;background:#7c3aed;font-weight:700" title="LIMPIA el calendario y coloca TODAS las producciones desde HOY, cada producto según su cadencia real (cuánto dura un lote según la venta), por 2 años. Luego mové a fechas pasadas las que ya produjiste y la cadena se recalcula sola.">📋 Generar plan (2 años desde hoy)</button>
+      <button onclick="proyectar2AniosSinMover()" class="success" id="btn-proy-2a"
+        style="font-size:14px;padding:10px 18px;background:#0891b2;font-weight:700" title="Extiende el plan 2 años hacia adelante RESPETANDO lo que ya tenés: NO mueve ni borra tus lotes Fijos ni lo ya producido; solo regenera la proyección automática alrededor de ellos (a partir de lo que hay hoy en el calendario).">🔮 Proyectar 2 años (sin mover lo actual)</button>
       <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" style="display:none" disabled>✅ Confirmar y programar TODO</button>
     </div>
   </div>
@@ -18097,6 +18099,40 @@ async function generarPlanDesdeHoy(){
     }
   }catch(e){ alert('Error: ' + e); }
   if(btn){ btn.disabled = false; btn.innerHTML = '📋 Generar plan (2 años desde hoy)'; }
+}
+async function proyectar2AniosSinMover(){
+  // Proyección rodante 2 años que RESPETA lo Fijo/ejecutado y NO lo mueve (Sebastián 1-jul).
+  let pv;
+  try{
+    const r = await fetch('/api/plan/proyectar-2anios');
+    pv = await r.json().catch(()=>({}));
+    if(!r.ok || !pv.ok){ alert('No se pudo calcular la vista previa: ' + (pv.error || r.status)); return; }
+  }catch(e){ alert('Error: ' + e); return; }
+  const msg = 'PROYECTAR 2 AÑOS DESDE LO ACTUAL\n\n'
+    + 'Extiende el plan 2 años hacia adelante RESPETANDO lo que ya tenés:\n'
+    + '• NO mueve ni borra tus lotes Fijos (🔒) ni lo ya producido.\n'
+    + '• Solo regenera la proyección automática alrededor de ellos.\n\n'
+    + 'Se reemplazan ' + (pv.a_borrar_proyeccion||0) + ' lote(s) de la proyección vieja por la nueva.\n\n¿Proyecto?';
+  if(!confirm(msg)) return;
+  const btn = document.getElementById('btn-proy-2a');
+  if(btn){ btn.disabled = true; btn.textContent = '🔮 Proyectando...'; }
+  try{
+    const r2 = await fetch('/api/plan/proyectar-2anios', {
+      method: 'POST', headers: {'Content-Type':'application/json', 'X-CSRFToken': getCSRF()},
+      body: JSON.stringify({dry_run: false})
+    });
+    const d2 = await r2.json().catch(()=>({}));
+    if(!r2.ok || !d2.ok){ alert('Falló: ' + (d2.error || r2.status)); }
+    else{
+      var sv = d2.sin_venta; var svn = (sv && sv.length!==undefined) ? sv.length : (sv||0);
+      alert('✅ Proyección a 2 años lista (sin mover lo tuyo).\n\n'
+        + 'Productos proyectados: ' + (d2.productos||0) + '\n'
+        + 'Lotes colocados: ' + (d2.creados||0) + '\n'
+        + (svn ? (svn + ' producto(s) sin venta no se proyectaron.\n') : ''));
+      if(typeof cargar === 'function') cargar();
+    }
+  }catch(e){ alert('Error: ' + e); }
+  if(btn){ btn.disabled = false; btn.innerHTML = '🔮 Proyectar 2 años (sin mover lo actual)'; }
 }
 async function dejarSoloReal(){
   // Paso 1: vista previa (no toca nada)
