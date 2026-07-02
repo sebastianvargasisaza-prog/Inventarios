@@ -2603,6 +2603,121 @@ def admin_ml_fix_todos_skus():
                     'aplicados': aplicados})
 
 
+@bp.route("/api/plan/producto/<path:producto>/presentaciones", methods=["GET"])
+def plan_producto_presentaciones_get(producto):
+    """Sebastián 2-jul · lista las presentaciones (envases) del producto para el editor
+    del modal · cada una = frasco (envase_codigo) + volumen_ml + cantidad fija opcional.
+    Persisten en producto_presentaciones → el cálculo de composición de envases las usa."""
+    err = _require_login()
+    if err:
+        return err
+    conn = get_db()
+    row = conn.execute(
+        "SELECT producto_nombre FROM formula_headers WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
+        (producto,)).fetchone()
+    canonico = row[0] if row else producto
+    pres = []
+    for _fija in ("COALESCE(cantidad_fija_uds,0)", "0"):
+        try:
+            for r in conn.execute(
+                "SELECT id, COALESCE(volumen_ml,0), COALESCE(envase_codigo,''), COALESCE(etiqueta,''), "
+                + _fija + ", COALESCE(sku_shopify,'') FROM producto_presentaciones "
+                "WHERE LOWER(TRIM(producto_nombre))=LOWER(TRIM(?)) AND COALESCE(activo,1)=1 "
+                "ORDER BY volumen_ml DESC", (canonico,)).fetchall():
+                pres.append({'id': r[0], 'volumen_ml': float(r[1] or 0), 'envase_codigo': r[2],
+                             'etiqueta': r[3], 'cantidad_fija_uds': int(r[4] or 0), 'sku_shopify': r[5]})
+            break
+        except Exception:
+            pres = []
+            continue
+    return jsonify({'ok': True, 'producto': canonico, 'presentaciones': pres})
+
+
+@bp.route("/api/plan/producto/<path:producto>/presentaciones", methods=["POST"])
+def plan_producto_presentaciones_save(producto):
+    """Sebastián 2-jul · guarda (upsert) las presentaciones del producto. Body:
+    {presentaciones:[{id?, volumen_ml, envase_codigo, cantidad_fija_uds?, sku_shopify?, remove?}]}.
+    Persiste en producto_presentaciones → el cálculo de envases (composición) las usa siempre
+    para TODOS los lotes del producto (no solo el lote origen)."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    d = request.get_json(silent=True) or {}
+    lista = d.get('presentaciones')
+    if not isinstance(lista, list):
+        return jsonify({'error': 'presentaciones debe ser una lista'}), 400
+    conn = get_db()
+    c = conn.cursor()
+    row = c.execute(
+        "SELECT producto_nombre FROM formula_headers WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
+        (producto,)).fetchone()
+    if not row:
+        return jsonify({'error': "producto '%s' no existe" % producto}), 404
+    canonico = row[0]
+    _cols = set()
+    try:
+        for r in c.execute("PRAGMA table_info(producto_presentaciones)").fetchall():
+            _cols.add(r[1])
+    except Exception:
+        pass
+    has_env = 'envase_codigo' in _cols
+    has_fija = 'cantidad_fija_uds' in _cols
+    aplicados = []
+    for it in lista:
+        if not isinstance(it, dict):
+            continue
+        try:
+            ml = float(it.get('volumen_ml') or 0)
+        except (ValueError, TypeError):
+            ml = 0
+        env = str(it.get('envase_codigo') or '').strip().upper()
+        try:
+            fija = int(float(it.get('cantidad_fija_uds') or 0))
+        except (ValueError, TypeError):
+            fija = 0
+        pid = it.get('id')
+        if it.get('remove') and pid:
+            c.execute("UPDATE producto_presentaciones SET activo=0 WHERE id=?", (pid,))
+            aplicados.append({'id': pid, 'accion': 'REMOVE'})
+            continue
+        if ml <= 0:
+            continue  # sin volumen no es una presentación válida
+        if pid:
+            sets = ["volumen_ml=?", "activo=1"]
+            params = [ml]
+            if has_env:
+                sets.append("envase_codigo=?")
+                params.append(env)
+            if has_fija:
+                sets.append("cantidad_fija_uds=?")
+                params.append(fija)
+            params.append(pid)
+            c.execute("UPDATE producto_presentaciones SET " + ",".join(sets) + " WHERE id=?", tuple(params))
+            aplicados.append({'id': pid, 'accion': 'UPDATE'})
+        else:
+            sku = str(it.get('sku_shopify') or '').strip().upper() or (canonico.upper() + '-' + str(int(ml)) + 'ML')
+            cols = ["producto_nombre", "categoria", "presentacion_codigo", "etiqueta",
+                    "volumen_ml", "sku_shopify", "es_default", "activo"]
+            vals = [canonico, '', str(int(ml)) + 'ml', str(int(ml)) + 'ml', ml, sku, 0, 1]
+            if has_env:
+                cols.append("envase_codigo")
+                vals.append(env)
+            if has_fija:
+                cols.append("cantidad_fija_uds")
+                vals.append(fija)
+            c.execute("INSERT INTO producto_presentaciones (" + ",".join(cols) + ") VALUES ("
+                      + ",".join(["?"] * len(vals)) + ")", tuple(vals))
+            aplicados.append({'accion': 'INSERT', 'sku': sku})
+    try:
+        audit_log(c, usuario=user, accion='GUARDAR_PRESENTACIONES', tabla='producto_presentaciones',
+                  registro_id=0, despues={'producto': canonico, 'n': len(aplicados), 'aplicados': aplicados})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'producto': canonico, 'aplicados': aplicados})
+
+
 @bp.route("/api/admin/ml-fix", methods=["POST"])
 def admin_ml_fix():
     """Sebastián 23-may-2026 PM · "triactive no tiene tamaño envase y
@@ -17923,6 +18038,75 @@ async function _cargarOpcionesEnvases(loteId, envActual){
     }
   }catch(e){ /* el dropdown ya esta usable */ }
 }
+// Sebastián 2-jul · editor de presentaciones (multi-envase) del producto · persiste en
+// producto_presentaciones vía /api/plan/producto/<prod>/presentaciones.
+function _presRowHtml(p){
+  p = p || {};
+  return '<div class="pres-row" data-pid="' + (p.id || '') + '" style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:5px;background:#fffbeb;padding:5px;border-radius:5px">'
+    + '<input class="pres-ml" type="number" min="1" step="1" value="' + (p.volumen_ml || '') + '" placeholder="ml" title="Volumen en ml" style="width:62px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px"> ml'
+    + '<select class="pres-env" style="flex:1;min-width:150px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px;background:#fff">' + _opcionesEnvaseInline(p.envase_codigo || '') + '</select>'
+    + '<input class="pres-fija" type="number" min="0" step="1" value="' + (p.cantidad_fija_uds || '') + '" placeholder="fija" title="Cantidad FIJA de unidades (opcional · vacío = reparte por venta)" style="width:66px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px">'
+    + '<button onclick="_removePresRow(this)" title="Quitar" style="padding:3px 8px;font-size:11px;background:#ef4444;color:#fff;border:none;border-radius:4px;cursor:pointer">&#10005;</button>'
+    + '</div>';
+}
+function _removePresRow(btn){
+  var row = btn.closest('.pres-row');
+  if(!row) return;
+  row.setAttribute('data-remove', '1');
+  row.style.opacity = 0.4;
+  btn.disabled = true;
+}
+async function _cargarPresentaciones(id){
+  const box = document.getElementById('pres-box-' + id);
+  const list = document.getElementById('pres-list-' + id);
+  if(!box || !list) return;
+  const prod = box.getAttribute('data-prod') || '';
+  try{
+    const r = await fetch('/api/plan/producto/' + encodeURIComponent(prod) + '/presentaciones');
+    const d = await r.json().catch(()=>({}));
+    const pres = (d && d.presentaciones) || [];
+    if(!pres.length){ list.innerHTML = '<div style="opacity:.7">Sin presentaciones definidas &middot; agreg&aacute; una.</div>'; return; }
+    list.innerHTML = pres.map(_presRowHtml).join('');
+  }catch(e){ list.innerHTML = '<div style="color:#b91c1c">Error cargando presentaciones</div>'; }
+}
+function addPresentacionRow(id){
+  const list = document.getElementById('pres-list-' + id);
+  if(!list) return;
+  if(!list.querySelector('.pres-row')) list.innerHTML = '';
+  list.insertAdjacentHTML('beforeend', _presRowHtml({}));
+}
+async function guardarPresentaciones(id){
+  const box = document.getElementById('pres-box-' + id);
+  const list = document.getElementById('pres-list-' + id);
+  if(!box || !list) return;
+  const prod = box.getAttribute('data-prod') || '';
+  const rows = [];
+  list.querySelectorAll('.pres-row').forEach(function(row){
+    const pid = row.getAttribute('data-pid') || '';
+    const rm = row.getAttribute('data-remove') === '1';
+    const ml = parseFloat((row.querySelector('.pres-ml') || {}).value || '0') || 0;
+    const env = ((row.querySelector('.pres-env') || {}).value || '').trim();
+    const fija = parseInt((row.querySelector('.pres-fija') || {}).value || '0', 10) || 0;
+    if(rm && !pid) return;      // fila nueva quitada → no mandar
+    if(!rm && ml <= 0) return;  // fila incompleta → ignorar
+    const o = { volumen_ml: ml, envase_codigo: env, cantidad_fija_uds: fija };
+    if(pid) o.id = parseInt(pid, 10);
+    if(rm) o.remove = true;
+    rows.push(o);
+  });
+  try{
+    const r = await fetch('/api/plan/producto/' + encodeURIComponent(prod) + '/presentaciones', {
+      method: 'POST', headers: {'Content-Type':'application/json', 'X-CSRFToken': getCSRF()},
+      body: JSON.stringify({presentaciones: rows})
+    });
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok || !d.ok){ alert('No se pudo guardar: ' + (d.error || r.status)); return; }
+    const ok = document.getElementById('pres-ok-' + id);
+    if(ok){ ok.style.display = 'inline'; setTimeout(function(){ ok.style.display = 'none'; }, 2500); }
+    _cargarPresentaciones(id);
+    if(typeof _cargarComposicionMee === 'function') _cargarComposicionMee(id);
+  }catch(e){ alert('Error: ' + e); }
+}
 function _pintarOpcionesEnvase(sel, mees, envActual, defaults){
   defaults = defaults || [];
   const meeByCode = {};
@@ -18511,6 +18695,21 @@ async function abrirLoteModal(id, producto, fecha, kg){
     }
     html += '</div>';
   } catch(_e_env){ /* sin lote en PLAN_DATA · no mostrar */ }
+
+  // Sebastián 2-jul · editor de PRESENTACIONES del producto (multi-envase). El de arriba
+  // es override de UN frasco para el lote; este define las 2+ presentaciones (frasco +
+  // volumen) que persisten en producto_presentaciones y aplican a TODOS los lotes.
+  html += '<div id="pres-box-' + id + '" data-prod="' + escapeHtml(producto) + '" style="background:#fefce8;border:1px solid #fde047;border-radius:8px;padding:10px 14px;margin-bottom:12px">';
+  html += '<div style="font-size:11px;font-weight:800;color:#a16207;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">&#128230; Presentaciones del producto <span style="font-weight:600;text-transform:none;color:#854d0e">· si tiene 2+ envases · se guarda para siempre</span></div>';
+  html += '<div id="pres-list-' + id + '" style="font-size:12px;color:#713f12">cargando&#8230;</div>';
+  html += '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center">';
+  html += '<button onclick="addPresentacionRow(' + id + ')" style="padding:6px 12px;font-size:11px;background:#ca8a04;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">&#10133; Agregar presentaci&oacute;n</button>';
+  html += '<button onclick="guardarPresentaciones(' + id + ')" style="padding:6px 12px;font-size:11px;background:#16a34a;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">&#128190; Guardar presentaciones</button>';
+  html += '<span id="pres-ok-' + id + '" style="color:#15803d;font-size:11px;display:none">&#10003; guardado</span>';
+  html += '</div>';
+  html += '<div style="font-size:10px;color:#a16207;margin-top:6px">Cada fila = un frasco + su volumen (ml). La cantidad FIJA es opcional (vac&iacute;a = reparte por venta). Aplica a TODOS los lotes del producto.</div>';
+  html += '</div>';
+  setTimeout(function(){ _cargarPresentaciones(id); }, 60);
 
   // Sebastián 27-may-2026 PM · "el calendario debe colocar la realidad
   // del envase, que lo tenga cada producción". Bloque composición de
