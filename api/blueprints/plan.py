@@ -18176,6 +18176,14 @@ async function guardarPresentaciones(id){
     const ok = document.getElementById('pres-ok-' + id);
     if(ok){ ok.style.display = 'inline'; setTimeout(function(){ ok.style.display = 'none'; }, 2500); }
     _cargarPresentaciones(id);
+    // FIX 2-jul · invalidar cachés de composición para que RECALCULE el reparto con las
+    // presentaciones/SKU recién guardados (antes mostraba el ratio viejo · ej. 50/50 cacheado).
+    try{
+      if(window._COMP_MEE_CACHE) delete window._COMP_MEE_CACHE[id];
+      if(window._COMP_MEE_PROMISE) delete window._COMP_MEE_PROMISE[id];
+    }catch(_e){}
+    const _cb = document.getElementById('comp-mee-' + id);
+    if(_cb){ _cb.innerHTML = '<span style="font-weight:700">&#128208; Composici&oacute;n de envases:</span> <span style="opacity:.7">recalculando...</span>'; }
     if(typeof _cargarComposicionMee === 'function') _cargarComposicionMee(id);
   }catch(e){ alert('Error: ' + e); }
 }
