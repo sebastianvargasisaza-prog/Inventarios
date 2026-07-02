@@ -397,6 +397,9 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (333, "produccion_programada.meses_cobertura REAL · guarda los MESES elegidos en 'producir para X meses' (rediseno modal F4/F5 · Sebastian 2-jul). Informativo/recalculo: NO es fuente del descuento MP (eso sigue siendo cantidad_kg · M1/M9). Nullable, additiva, PG-safe.", [
+        "ALTER TABLE produccion_programada ADD COLUMN meses_cobertura REAL",
+    ]),
     (332, "LIMPIADOR ILUMINADOR vs MyBatch (pesaje OP · Sebastian 1-jul): prod estaba casi perfecta (suma 22.01% = MyBatch). 2 fixes: (1) MP00162 era un codigo FANTASMA en la formula (Oryza sativa extract, no estaba en el catalogo) -> se cataloga MP00162='Extracto de arroz' (ORYZA SATIVA EXTRACT) para que resuelva y descuente; (2) grado Centella MP00176 (triterpenos) -> MP00181 (plano) 0.01%. OJO: el master de 16 MPs anterior era OTRA cosa; el pesaje MyBatch (27 MP) es el real. Verificado inyectando prod == MyBatch mapeado por INCI.", [
         "INSERT INTO maestro_mps (codigo_mp,nombre_comercial,nombre_inci,tipo_material,activo) SELECT 'MP00162','Extracto de arroz','ORYZA SATIVA EXTRACT','MP',1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00162')",
         "UPDATE maestro_mps SET activo=1 WHERE codigo_mp IN ('MP00181','MP00162') AND COALESCE(activo,1)=0",

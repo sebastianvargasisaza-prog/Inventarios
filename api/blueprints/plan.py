@@ -4701,15 +4701,16 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             """SELECT pp.producto, pp.id, pp.fecha_programada, pp.estado,
                       pp.origen, COALESCE(pp.cantidad_kg, 0),
                       pp.motivo_pausa, pp.pausado_at, pp.observaciones,
-                      COALESCE(pp.distribucion_resumen, '')
+                      COALESCE(pp.distribucion_resumen, ''),
+                      COALESCE(pp.meses_cobertura, 0)
                FROM produccion_programada pp
                WHERE pp.estado IN ('pendiente','programado','en_curso','esperando_recurso')
                  AND pp.fin_real_at IS NULL
                ORDER BY pp.fecha_programada ASC""",
         ).fetchall()
     except Exception:
-        # Fallback si mig 176 aún no aplicada
-        prod_rows_plan = [tuple(list(r) + ['']) for r in c.execute(
+        # Fallback si mig 176/333 aún no aplicada (pad distribucion_resumen + meses_cobertura)
+        prod_rows_plan = [tuple(list(r) + ['', 0]) for r in c.execute(
             """SELECT pp.producto, pp.id, pp.fecha_programada, pp.estado,
                       pp.origen, COALESCE(pp.cantidad_kg, 0),
                       pp.motivo_pausa, pp.pausado_at, pp.observaciones
@@ -4734,6 +4735,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             "pausado_at": r[7],
             "obs_preview": (r[8] or "")[:80],
             "distribucion_resumen": (r[9] or "")[:300],
+            "meses_cobertura": (float(r[10]) if len(r) > 10 and r[10] else 0),
         })
 
     # FEATURE B2B 24-may-2026 · enriquecer cada lote con su desglose B2B
@@ -19019,15 +19021,17 @@ async function abrirLoteModal(id, producto, fecha, kg){
   // Sección 4: Acciones
   html += _renderAccionesLote(id, producto, fecha);
   document.getElementById('lote-body').innerHTML = html;
-  cargarDesgloseEditableLote(producto, kg, ml);
+  var _ldMeses = (PLAN_DATA.agendadas || []).find(a => a.id === id);
+  cargarDesgloseEditableLote(producto, kg, ml, (_ldMeses && _ldMeses.meses_cobertura) ? _ldMeses.meses_cobertura : null);
 }
 
 // 📊 Desglose EDITABLE por referencia en el modal del lote (Sebastián 27-jun): muestra cada SKU del producto
 // con cuántas unidades, editable · la SUMA (Σ uds_sku × ml_sku) calcula los kg a producir y los aplica al
 // campo "Kg a producir". Reusa /api/plan/desglose-tonos (ml canónico de sku_producto_map · M44).
-async function cargarDesgloseEditableLote(producto, kgActual, mlProm){
+async function cargarDesgloseEditableLote(producto, kgActual, mlProm, mesesGuard){
   var host = document.getElementById('lote-desglose-edit');
   if(!host) return;
+  var _mesesDefault = (mesesGuard && parseFloat(mesesGuard) > 0) ? parseFloat(mesesGuard) : 2;
   mlProm = parseFloat(mlProm) || 30;
   try{
     var d = await (await fetch('/api/plan/desglose-tonos?producto=' + encodeURIComponent(producto), {cache:'no-store'})).json();
@@ -19055,7 +19059,7 @@ async function cargarDesgloseEditableLote(producto, kgActual, mlProm){
       + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:6px">'
       + '<span style="font-size:12px;font-weight:700;color:#5b21b6">📊 Desglose por referencia'+tendTxt+'</span>'
       + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
-      + '<span style="font-size:11px;color:#5b21b6;font-weight:700">Producir para <input id="dsk-meses" type="number" min="1" max="24" step="1" value="2" style="width:44px;padding:3px 4px;border:1px solid #c4b5fd;border-radius:4px;text-align:center;font-weight:700"> meses</span>'
+      + '<span style="font-size:11px;color:#5b21b6;font-weight:700">Producir para <input id="dsk-meses" type="number" min="1" max="24" step="1" value="'+_mesesDefault+'" style="width:44px;padding:3px 4px;border:1px solid #c4b5fd;border-radius:4px;text-align:center;font-weight:700"> meses</span>'
       + '<button onclick="calcMeses()" title="Calcula cuántas producir de cada SKU para cubrir X meses de venta (con la tendencia de ascenso)" style="background:#7c3aed;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer">🗓️ Calcular X meses</button>'
       + '<button onclick="autoCalcDesglose()" title="Alternativa: calcula por el kg que ya tiene el lote (no por meses)" style="background:#e9d5ff;color:#5b21b6;border:none;border-radius:5px;padding:4px 8px;font-size:10px;font-weight:700;cursor:pointer">🧮 por kg</button>'
       + '</div>'
@@ -19153,12 +19157,14 @@ async function guardarKgLote(id){
     var u = parseInt(inp.value, 10);
     if(sk && !isNaN(u) && u > 0) _desg[sk] = u;
   });
+  var _mesesEl = document.getElementById('dsk-meses');
+  var _meses = _mesesEl ? parseFloat(_mesesEl.value) : null;
   try {
     const r = await fetch('/api/plan/proximas/' + id + '/cantidad', {
       method:'POST',
       headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
       credentials:'same-origin',
-      body: JSON.stringify({cantidad_kg: nuevo, desglose_uds: _desg}),
+      body: JSON.stringify({cantidad_kg: nuevo, desglose_uds: _desg, meses_cobertura: _meses}),
     });
     const d = await r.json();
     if (!r.ok){ alert('❌ ' + (d.error || ('Error ' + r.status))); return; }
@@ -21654,6 +21660,16 @@ def actualizar_cantidad_proxima(pid):
                     pass  # columna no existe (instancia vieja) · no bloquear el guardado de kg
         except Exception:
             pass
+    # F4/F5 · persistir los MESES de cobertura elegidos (informativo · NO toca el descuento MP,
+    # que sigue leyendo cantidad_kg). Columna meses_cobertura (mig 333). try/except si no existe.
+    try:
+        _mc = body.get("meses_cobertura")
+        if _mc is not None:
+            _mcf = float(_mc)
+            if 0 < _mcf <= 24:
+                cur.execute("UPDATE produccion_programada SET meses_cobertura=? WHERE id=?", (round(_mcf, 2), pid))
+    except Exception:
+        pass
     conn.commit()
     return jsonify({"ok": True, "id": pid, "producto": producto,
                     "kg_antes": kg_antes, "kg_nuevo": nueva_kg,
