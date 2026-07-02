@@ -26,7 +26,7 @@ import logging
 from flask import Blueprint, jsonify, request, session
 
 from database import get_db
-from config import ADMIN_USERS, COMPRAS_ACCESS
+from config import ADMIN_USERS, COMPRAS_ACCESS, CLIENTES_ACCESS
 from audit_helpers import audit_log
 
 bp = Blueprint("plan", __name__)
@@ -54,6 +54,19 @@ def _require_login():
     if not session.get("compras_user"):
         return jsonify({"error": "login requerido"}), 401
     return None
+
+
+def _require_clientes_access():
+    """Gestión de CLIENTES B2B + sus pedidos. Sebastián 2-jul: Luz (asistente Espagiria que
+    maneja clientes) y el equipo comercial (Valentina, Daniela) deben poder crear clientes y
+    pedidos B2B — se cargan solos al plan. Antes exigía admin/compras (COMPRAS_ACCESS) y Luz
+    quedaba afuera. CLIENTES_ACCESS = {mayra,catalina,valentina,daniela,luz,alejandro,sebastian}."""
+    user = session.get("compras_user", "")
+    if not user:
+        return None, ({"error": "login requerido"}, 401)
+    if user in ADMIN_USERS or user in CLIENTES_ACCESS or user in COMPRAS_ACCESS:
+        return user, None
+    return None, ({"error": "requiere acceso a Clientes B2B"}, 403)
 
 
 # ─── CRUD pedidos_b2b ──────────────────────────────────────────────────────
@@ -758,7 +771,7 @@ def admin_b2b_envases_cliente(cliente_id):
     """FEATURE B2B 24-may-2026 · whitelist envases por cliente.
     Devuelve envases actualmente permitidos para el cliente. Lista vacía
     significa "todos los activos" (default permisivo)."""
-    user, err = _require_admin_or_compras()
+    user, err = _require_clientes_access()
     if err:
         body, code = err
         return jsonify(body), code
@@ -795,7 +808,7 @@ def admin_b2b_envases_cliente_set(cliente_id):
     """Asigna envases permitidos para un cliente · operación REPLACE bulk:
     el set recibido reemplaza al anterior. Body: {items: [{envase_codigo,
     envase_descripcion?, notas?}], reemplazar: true|false}"""
-    user, err = _require_admin_or_compras()
+    user, err = _require_clientes_access()
     if err:
         body, code = err
         return jsonify(body), code
@@ -1115,7 +1128,7 @@ def _check_mp_para_pedido_b2b(c, producto, kg_b2b):
 
 @bp.route("/api/pedidos-b2b", methods=["POST"])
 def crear_pedido_b2b():
-    user, err = _require_admin_or_compras()
+    user, err = _require_clientes_access()
     if err:
         body, code = err
         return jsonify(body), code
@@ -1618,7 +1631,7 @@ def _revertir_pedido_b2b_del_plan(cur, pedido_id, user):
 
 @bp.route("/api/pedidos-b2b/<int:pid>", methods=["PATCH"])
 def actualizar_pedido_b2b(pid):
-    user, err = _require_admin_or_compras()
+    user, err = _require_clientes_access()
     if err:
         body, code = err
         return jsonify(body), code
@@ -2861,7 +2874,7 @@ def clientes_b2b_listar():
       activo=1 (default) · solo activos
       incluir_pedidos=1 · adjunta count de pedidos por cliente
     """
-    user, err = _require_admin_or_compras()
+    user, err = _require_clientes_access()
     if err:
         body, code = err
         return jsonify(body), code
@@ -2910,7 +2923,7 @@ def clientes_b2b_crear():
     Requiere email válido para generar credencial portal · si no viene,
     devuelve 400 con hint.
     """
-    user, err = _require_admin_or_compras()
+    user, err = _require_clientes_access()
     if err:
         body, code = err
         return jsonify(body), code
@@ -3027,7 +3040,7 @@ def clientes_b2b_crear():
 @bp.route("/api/clientes-b2b/<cliente_id>", methods=["DELETE"])
 def clientes_b2b_desactivar(cliente_id):
     """Soft-delete · marca activo=0 · NUNCA borra para preservar pedidos."""
-    user, err = _require_admin_or_compras()
+    user, err = _require_clientes_access()
     if err:
         body, code = err
         return jsonify(body), code
@@ -9763,8 +9776,8 @@ def admin_clientes_b2b_pagina():
     if 'compras_user' not in session:
         return "<html><body><h2>No autorizado</h2></body></html>", 401
     user = session.get('compras_user', '')
-    if user not in (set(ADMIN_USERS) | set(COMPRAS_ACCESS)):
-        return "<html><body><h2>Solo admin/compras</h2></body></html>", 403
+    if user not in (set(ADMIN_USERS) | set(COMPRAS_ACCESS) | set(CLIENTES_ACCESS)):
+        return "<html><body><h2>Solo admin/compras/clientes</h2></body></html>", 403
 
     return """<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Clientes B2B</title>
