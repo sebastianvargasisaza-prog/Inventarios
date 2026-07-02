@@ -1887,17 +1887,21 @@ def sugerir_mp_bulk():
     for col_precio in ('precio_unitario', 'precio_kg'):
         rows = []
         try:
-            for cod in codigos:
-                r = c.execute(
+            # PERF 1-jul: una sola query con IN (antes 1 SELECT por código · hasta 200). El
+            # ORDER BY fecha/id DESC + dedup por código en Python da "el más reciente por código".
+            _seen_cod = set()
+            for r in c.execute(
                     f"""SELECT codigo_mp, {col_precio}, COALESCE(proveedor,''),
                               COALESCE(fecha,''), COALESCE(numero_oc,'')
                        FROM precios_mp_historico
-                       WHERE codigo_mp=?
-                       ORDER BY fecha DESC, id DESC LIMIT 1""",
-                    (cod,),
-                ).fetchone()
-                if r:
-                    rows.append((r[0], r[1], r[2], r[3], r[4], r[3]))
+                       WHERE codigo_mp IN ({placeholders})
+                       ORDER BY fecha DESC, id DESC""",
+                    tuple(codigos),
+                ).fetchall():
+                if r[0] in _seen_cod:
+                    continue
+                _seen_cod.add(r[0])
+                rows.append((r[0], r[1], r[2], r[3], r[4], r[3]))
             break  # query exitosa, salir del for
         except Exception:
             try: conn.rollback()
@@ -2829,17 +2833,25 @@ def listar_recepciones_discrepancias():
         return jsonify({'error': f'query fallo: {e}'}), 500
 
     ocs_lista = []
+    # PERF 1-jul: precargar los items de TODAS las OCs con discrepancia en UNA query
+    # (evita N+1 · antes 1 SELECT de items por cada OC del rango).
+    _items_por_oc = {}
+    _oc_nums = [r[0] for r in rows if r and r[0]]
+    if _oc_nums:
+        try:
+            _ph_oc = ','.join(['?'] * len(_oc_nums))
+            for _ir in c.execute(
+                    "SELECT numero_oc, codigo_mp, COALESCE(nombre_mp,''), COALESCE(cantidad_g,0), "
+                    "COALESCE(cantidad_recibida_g,0) FROM ordenes_compra_items WHERE numero_oc IN ("
+                    + _ph_oc + ")", tuple(_oc_nums)).fetchall():
+                _items_por_oc.setdefault(_ir[0], []).append((_ir[1], _ir[2], _ir[3], _ir[4]))
+        except Exception:
+            pass
     for r in rows:
-        # Items con faltante
+        # Items con faltante (precargados arriba)
         items_faltantes = []
         try:
-            item_rows = c.execute("""
-                SELECT codigo_mp, COALESCE(nombre_mp,''),
-                       COALESCE(cantidad_g, 0),
-                       COALESCE(cantidad_recibida_g, 0)
-            FROM ordenes_compra_items
-            WHERE numero_oc=?
-            """, (r[0],)).fetchall()
+            item_rows = _items_por_oc.get(r[0], [])
             for it in item_rows:
                 ped = float(it[2] or 0)
                 recib = float(it[3] or 0)
@@ -3563,13 +3575,26 @@ def handle_solicitudes_compra():
                 'inf_nombre','inf_banco','inf_cuenta','inf_tipo_cuenta','inf_cedula','inf_email','inf_ciudad','inf_instagram',
                 'vence_pago_at','fecha_contenido']
     rows_sol = []
-    for r in c.fetchall():
+    _all_r = c.fetchall()
+    # PERF 1-jul: precargar la suma de items por SOL en UNA query (evita N+1). Antes hacía
+    # 1 SELECT por cada SOL con valor=0 (típico de las auto-plan) → hasta ~300 SELECTs por
+    # carga del tab Solicitudes (Catalina). 'numero' es cols_sol[0] → r[0].
+    _sum_items = {}
+    _nums_all = [r[0] for r in _all_r if r and r[0]]
+    if _nums_all:
+        try:
+            _ph_si = ','.join(['?'] * len(_nums_all))
+            for _ri in conn.cursor().execute(
+                    "SELECT numero, COALESCE(SUM(valor_estimado),0) FROM solicitudes_compra_items "
+                    "WHERE numero IN (" + _ph_si + ") GROUP BY numero", tuple(_nums_all)).fetchall():
+                _sum_items[_ri[0]] = _ri[1] or 0
+        except Exception:
+            pass
+    for r in _all_r:
         row = dict(zip(cols_sol, r))
-        # valor comes from OC join; fallback to items sum if still 0
+        # valor comes from OC join; fallback to items sum (precargado arriba) if still 0
         if not row.get('valor'):
-            c2 = conn.cursor()
-            c2.execute("SELECT COALESCE(SUM(valor_estimado),0) FROM solicitudes_compra_items WHERE numero=?", (row['numero'],))
-            row['valor'] = c2.fetchone()[0] or 0
+            row['valor'] = _sum_items.get(row['numero'], 0) or 0
         # Last fallback: parse VALOR from OBS string (influencer SOLs without OC)
         if not row.get('valor'):
             obs_str = row.get('observaciones') or ''

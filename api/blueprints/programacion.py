@@ -6748,13 +6748,30 @@ def _composicion_envases_lote(c, evento_id):
                 p['_ratio'] = ratio_uni
             fuente = 'uniforme'
 
-    # Calcular unidades estimadas + descripción envase
+    # Calcular unidades estimadas + descripción envase.
+    # PERF 1-jul (M59/M63): este helper se llama 1× por LOTE en serigrafia-cola /
+    # preparacion-envases / minimos-envases-sugeridos → antes re-escaneaba maestro_mee
+    # ENTERO en cada llamada (N full-scans del catálogo). Ahora el scan se memoiza en
+    # flask.g (1 sola vez por request); fallback al scan directo si no hay contexto.
     mee_descs = {}
     try:
-        for r in c.execute("SELECT codigo, COALESCE(descripcion,'') FROM maestro_mee").fetchall():
-            mee_descs[r[0]] = r[1]
+        from flask import g as _g_md
+        _md_cache = getattr(_g_md, '_mee_descs_cache', None)
+        if _md_cache is None:
+            _md_cache = {}
+            for r in c.execute("SELECT codigo, COALESCE(descripcion,'') FROM maestro_mee").fetchall():
+                _md_cache[r[0]] = r[1]
+            try:
+                _g_md._mee_descs_cache = _md_cache
+            except Exception:
+                pass
+        mee_descs = _md_cache
     except Exception:
-        pass
+        try:
+            for r in c.execute("SELECT codigo, COALESCE(descripcion,'') FROM maestro_mee").fetchall():
+                mee_descs[r[0]] = r[1]
+        except Exception:
+            pass
 
     # Sebastián 30-may-2026 · presentaciones con CANTIDAD FIJA (mig 204):
     # se reservan PRIMERO sus uds (y su kg); el bulk RESTANTE se reparte por
