@@ -11961,8 +11961,12 @@ def _sync_fabricacion_calendario(conn, usuario='cron-fab'):
     return {'producciones_total': len(prods), 'creados': creados, 'cerrados': cerrados}
 
 
-def _proyectar_horizonte_2y(conn, dias=730, usuario='auto-proyeccion', dry_run=False, solo_producto=None):
+def _proyectar_horizonte_2y(conn, dias=730, usuario='auto-proyeccion', dry_run=False, solo_producto=None, desde_floor=None):
     """Sebastián 16-jun · PLAN RODANTE A 2 AÑOS por producto, automático.
+
+    desde_floor (ISO 'YYYY-MM-DD', opcional · Sebastián 2-jul): si se pasa, NINGÚN lote
+    proyectado se coloca ANTES de esa fecha (piso). Se usa desde 'reprogramar-desde-mes'
+    para fijar un mes (ej. julio) y recalcular solo de ahí en adelante.
 
     solo_producto: si se pasa, regenera la proyección SOLO de ese producto (rápido ·
     para 'aceptar adelanto' que recalcula la cadena de ese producto sin tocar el resto).
@@ -12016,7 +12020,16 @@ def _proyectar_horizonte_2y(conn, dias=730, usuario='auto-proyeccion', dry_run=F
         if f and slots.get(f, 0) > 0:
             slots[f] -= 1
 
+    _floor_d = None
+    if desde_floor:
+        try:
+            _floor_d = _date.fromisoformat(str(desde_floor)[:10])
+        except Exception:
+            _floor_d = None
+
     def _tomar_slot(desde):
+        if _floor_d and desde < _floor_d:
+            desde = _floor_d  # piso: no colocar lotes antes del ancla (ej. agosto)
         fd = _ap._next_dia_produccion(desde)
         for _ in range(160):
             iso = fd.isoformat()
@@ -12288,6 +12301,56 @@ def plan_proyectar_2anios():
     conn = get_db()
     res = _proyectar_horizonte_2y(conn, dias=dias, usuario=user, dry_run=dry)
     return jsonify({'ok': True, **res})
+
+
+@bp.route("/api/plan/reprogramar-desde-mes", methods=["GET", "POST"])
+def plan_reprogramar_desde_mes():
+    """Sebastián 2-jul · FIJA todo lo de ANTES del ancla (ej. julio) y RECALCULA de ahí
+    en adelante: cancela lo NO ejecutado con fecha >= ancla y regenera la cadencia a 2
+    años con desde_floor=ancla. Decisión Sebastián: 'borrar TODO ago+' PERO se PRESERVAN
+    los pedidos B2B reales de clientes (eos_b2b) y lo histórico (eos_retroactivo) — esos
+    son compromisos, no plan; el motor los cuenta como llegadas. NUNCA toca lo ejecutado.
+    GET/dry_run → preview (cuántos cancela + cuántos crearía) · POST dry_run:false → aplica."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    d = request.get_json(silent=True) or {}
+    dry = (request.method == 'GET') or bool(d.get('dry_run', True))
+    ancla = (d.get('desde') or '').strip()
+    if not ancla:
+        # default: primer día del PRÓXIMO mes (fija el mes actual completo)
+        hoy = _hoy_colombia()
+        if hoy.month == 12:
+            ancla = "%04d-01-01" % (hoy.year + 1)
+        else:
+            ancla = "%04d-%02d-01" % (hoy.year, hoy.month + 1)
+    conn = get_db()
+    c = conn.cursor()
+    # candidatos a cancelar: >= ancla, NO ejecutado, y NO B2B/histórico (se preservan).
+    _sel = ("SELECT id FROM produccion_programada WHERE substr(fecha_programada,1,10) >= ? "
+            "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+            "AND inicio_real_at IS NULL AND fin_real_at IS NULL "
+            "AND COALESCE(inventario_descontado_at,'')='' "
+            "AND COALESCE(origen,'') NOT IN ('eos_b2b','eos_retroactivo')")
+    ids = [r[0] for r in c.execute(_sel, (ancla,)).fetchall()]
+    if dry:
+        res = _proyectar_horizonte_2y(conn, dias=730, usuario=user, dry_run=True, desde_floor=ancla)
+        return jsonify({'ok': True, 'dry_run': True, 'ancla': ancla, 'a_cancelar': len(ids),
+                        'creados': res.get('creados', 0),
+                        'productos_planeados': res.get('productos_planeados', 0)})
+    if ids:
+        _ph = ','.join(['?'] * len(ids))
+        c.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id IN (" + _ph + ")", tuple(ids))
+        try:
+            audit_log(c, usuario=user, accion='REPROGRAMAR_DESDE_MES', tabla='produccion_programada',
+                      registro_id=0, despues={'ancla': ancla, 'cancelados': len(ids),
+                                              'preserva': 'eos_b2b+eos_retroactivo+ejecutado'})
+        except Exception:
+            pass
+        conn.commit()
+    res = _proyectar_horizonte_2y(conn, dias=730, usuario=user, dry_run=False, desde_floor=ancla)
+    return jsonify({'ok': True, 'dry_run': False, 'ancla': ancla, 'cancelados': len(ids), **res})
 
 
 @bp.route("/api/plan/limpiar-proyeccion", methods=["POST"])
@@ -16348,6 +16411,8 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
         style="font-size:14px;padding:10px 18px;background:#7c3aed;font-weight:700" title="LIMPIA el calendario y coloca TODAS las producciones desde HOY, cada producto según su cadencia real (cuánto dura un lote según la venta), por 2 años. Luego mové a fechas pasadas las que ya produjiste y la cadena se recalcula sola.">📋 Generar plan (2 años desde hoy)</button>
       <button onclick="proyectar2AniosSinMover()" class="success" id="btn-proy-2a"
         style="font-size:14px;padding:10px 18px;background:#0891b2;font-weight:700" title="Extiende el plan 2 años hacia adelante RESPETANDO lo que ya tenés: NO mueve ni borra tus lotes Fijos ni lo ya producido; solo regenera la proyección automática alrededor de ellos (a partir de lo que hay hoy en el calendario).">🔮 Proyectar 2 años (sin mover lo actual)</button>
+      <button onclick="reprogramarDesdeMes()" class="success" id="btn-reprog-mes"
+        style="font-size:14px;padding:10px 18px;background:#b45309;font-weight:700" title="FIJA el mes actual tal cual está y RECALCULA todo del mes siguiente en adelante por 2 años con la cadencia óptima. Cancela el plan viejo de ago+ pero PRESERVA los pedidos B2B de clientes y lo ya producido. Úsalo cuando sientas el plan 'descuadrado' hacia adelante.">📅 Fijar mes + recalcular 2 años</button>
       <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" style="display:none" disabled>✅ Confirmar y programar TODO</button>
     </div>
   </div>
@@ -18134,6 +18199,41 @@ async function proyectar2AniosSinMover(){
     }
   }catch(e){ alert('Error: ' + e); }
   if(btn){ btn.disabled = false; btn.innerHTML = '🔮 Proyectar 2 años (sin mover lo actual)'; }
+}
+async function reprogramarDesdeMes(){
+  // Fija el mes actual y RECALCULA de ahí en adelante (Sebastián 2-jul · "está descuadrado").
+  let pv;
+  try{
+    const r = await fetch('/api/plan/reprogramar-desde-mes');
+    pv = await r.json().catch(()=>({}));
+    if(!r.ok || !pv.ok){ alert('No se pudo calcular la vista previa: ' + (pv.error || r.status)); return; }
+  }catch(e){ alert('Error: ' + e); return; }
+  const msg = 'FIJAR EL MES ACTUAL Y RECALCULAR 2 AÑOS\n\n'
+    + 'Deja INTACTO todo lo anterior al ' + (pv.ancla||'') + ' (queda tal cual lo dejaste).\n\n'
+    + 'Del ' + (pv.ancla||'') + ' en adelante:\n'
+    + '• Cancela ' + (pv.a_cancelar||0) + ' lote(s) del plan viejo.\n'
+    + '• NO toca pedidos B2B de clientes ni lo ya producido.\n'
+    + '• Coloca ~' + (pv.creados||0) + ' lote(s) nuevos para ' + (pv.productos_planeados||0) + ' producto(s), con la cadencia óptima.\n\n¿Recalculo?';
+  if(!confirm(msg)) return;
+  const btn = document.getElementById('btn-reprog-mes');
+  if(btn){ btn.disabled = true; btn.textContent = '📅 Recalculando...'; }
+  try{
+    const r2 = await fetch('/api/plan/reprogramar-desde-mes', {
+      method: 'POST', headers: {'Content-Type':'application/json', 'X-CSRFToken': getCSRF()},
+      body: JSON.stringify({dry_run: false})
+    });
+    const d2 = await r2.json().catch(()=>({}));
+    if(!r2.ok || !d2.ok){ alert('Falló: ' + (d2.error || r2.status)); }
+    else{
+      alert('✅ Plan recalculado desde el ' + (d2.ancla||'') + '.\n\n'
+        + 'Canceló del plan viejo: ' + (d2.cancelados||0) + '\n'
+        + 'Productos proyectados: ' + (d2.productos_planeados||0) + '\n'
+        + 'Lotes colocados: ' + (d2.creados||0) + '\n\n'
+        + 'Se preservaron los pedidos B2B y lo ya producido.');
+      if(typeof cargar === 'function') cargar();
+    }
+  }catch(e){ alert('Error: ' + e); }
+  if(btn){ btn.disabled = false; btn.innerHTML = '📅 Fijar mes + recalcular 2 años'; }
 }
 async function dejarSoloReal(){
   // Paso 1: vista previa (no toca nada)
