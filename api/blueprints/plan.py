@@ -19035,7 +19035,7 @@ async function cargarDesgloseEditableLote(producto, kgActual, mlProm){
         + '<td style="padding:4px 8px;font-family:monospace;font-weight:700">'+lbl+'</td>'
         + '<td style="padding:4px 8px;text-align:center;color:#64748b">'+ml+' ml</td>'
         + '<td style="padding:4px 8px;text-align:right;color:#94a3b8;font-size:10px">'+(it.uds_ventana||0)+'</td>'
-        + '<td style="padding:4px 8px;text-align:right"><input type="number" min="0" class="dsk-uds" data-pct="'+(it.porcentaje||0)+'" data-ml="'+ml+'" value="'+pre+'" oninput="_recalcKgDesglose(true)" style="width:82px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:4px;text-align:right;font-weight:700"></td>'
+        + '<td style="padding:4px 8px;text-align:right"><input type="number" min="0" class="dsk-uds" data-sku="'+escapeHtml(it.sku||'')+'" data-pct="'+(it.porcentaje||0)+'" data-ml="'+ml+'" value="'+pre+'" oninput="_recalcKgDesglose(true)" style="width:82px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:4px;text-align:right;font-weight:700"></td>'
         + '</tr>';
     }).join('');
     var tendTxt = ((d.tendencia||0) > 0.02) ? (' · 📈 +'+Math.round(d.tendencia*100)+'% en ascenso') : '';
@@ -19111,16 +19111,28 @@ async function guardarKgLote(id){
     alert('Kg inválido · debe estar entre 1 y 1000');
     return;
   }
+  // Sebastián 2-jul · "el desglose manda": mandar también las uds POR SKU del desglose editable
+  // → el backend las guarda como override por lote (fija_override_json) y la Composición de
+  // envases / Abastecimiento usan EXACTAMENTE esas cantidades.
+  var _desg = {};
+  document.querySelectorAll('.dsk-uds').forEach(function(inp){
+    var sk = (inp.getAttribute('data-sku') || '').trim();
+    var u = parseInt(inp.value, 10);
+    if(sk && !isNaN(u) && u > 0) _desg[sk] = u;
+  });
   try {
     const r = await fetch('/api/plan/proximas/' + id + '/cantidad', {
       method:'POST',
       headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
       credentials:'same-origin',
-      body: JSON.stringify({cantidad_kg: nuevo}),
+      body: JSON.stringify({cantidad_kg: nuevo, desglose_uds: _desg}),
     });
     const d = await r.json();
     if (!r.ok){ alert('❌ ' + (d.error || ('Error ' + r.status))); return; }
-    alert('✅ Kg actualizado: ' + d.kg_antes + ' → ' + d.kg_nuevo + ' kg');
+    // invalidar caché de composición para que recalcule con el override recién guardado
+    try{ if(window._COMP_MEE_CACHE) delete window._COMP_MEE_CACHE[id]; if(window._COMP_MEE_PROMISE) delete window._COMP_MEE_PROMISE[id]; }catch(_e){}
+    var _extra = (d.override_presentaciones ? ('\n📦 Envases fijados por presentación: ' + d.override_presentaciones + ' (Abastecimiento usará esas cantidades)') : '');
+    alert('✅ Kg actualizado: ' + d.kg_antes + ' → ' + d.kg_nuevo + ' kg' + _extra);
     cerrarLoteModal();
     cargar();  // recargar calendario con el cambio
   } catch(e){ alert('Error de red: ' + e.message); }
@@ -21574,9 +21586,45 @@ def actualizar_cantidad_proxima(pid):
               tabla="produccion_programada", registro_id=pid,
               antes={"cantidad_kg": kg_antes, "producto": producto},
               despues={"cantidad_kg": nueva_kg})
+    # Sebastián 2-jul · "el Desglose editable manda": persistir las uds POR SKU del desglose
+    # como override POR LOTE (fija_override_json). Así la Composición de envases y Abastecimiento
+    # usan EXACTAMENTE lo que decidís producir de cada presentación (no un ratio 180d aparte).
+    override_guardado = 0
+    _desg = body.get("desglose_uds")
+    if isinstance(_desg, dict) and _desg:
+        try:
+            import json as _jd
+            _sku2pc = {}  # SKU real → presentacion_codigo de este producto
+            for r in cur.execute(
+                "SELECT UPPER(TRIM(COALESCE(sku_shopify,''))), UPPER(TRIM(COALESCE(presentacion_codigo,''))) "
+                "FROM producto_presentaciones WHERE LOWER(TRIM(producto_nombre))=LOWER(TRIM(?)) "
+                "AND COALESCE(activo,1)=1", (producto,)).fetchall():
+                if r[0] and r[1]:
+                    _sku2pc[r[0]] = r[1]
+            _ovr = {}
+            for _sk, _u in _desg.items():
+                try:
+                    _uu = int(float(_u or 0))
+                except (ValueError, TypeError):
+                    continue
+                if _uu <= 0:
+                    continue
+                _pc = _sku2pc.get(str(_sk).strip().upper())
+                if _pc:
+                    _ovr[_pc] = _uu
+            if _ovr:
+                try:
+                    cur.execute("UPDATE produccion_programada SET fija_override_json=? WHERE id=?",
+                                (_jd.dumps(_ovr), pid))
+                    override_guardado = len(_ovr)
+                except Exception:
+                    pass  # columna no existe (instancia vieja) · no bloquear el guardado de kg
+        except Exception:
+            pass
     conn.commit()
     return jsonify({"ok": True, "id": pid, "producto": producto,
-                    "kg_antes": kg_antes, "kg_nuevo": nueva_kg})
+                    "kg_antes": kg_antes, "kg_nuevo": nueva_kg,
+                    "override_presentaciones": override_guardado})
 
 
 @bp.route("/api/admin/diagnostico-migracion", methods=["GET"])
