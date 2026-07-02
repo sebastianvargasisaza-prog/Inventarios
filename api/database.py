@@ -397,6 +397,9 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (328, "EMULSION LIMPIADORA vs MASTER (Sebastian · dump prod 1-jul): grado Centella MP00176 (triterpenos 80%) -> MP00181 (extracto plano) 0.01% - unica diferencia, el resto (20 MPs) coincide = 24.940%. La Trietanolamina al 0% correctamente no esta. Verificado inyectando estado prod == master.", [
+        "UPDATE formula_items SET material_id='MP00181', material_nombre='Centella asiatica extract' WHERE UPPER(TRIM(producto_nombre))='EMULSION LIMPIADORA' AND UPPER(TRIM(material_id))='MP00176'",
+    ]),
     (327, "BLUSH BALM vs MASTER (Sebastian · dump prod 1-jul): prod tiene MPCAKY01 (Aceite de cacay · CACAY OIL) donde el master pide MP00101 (AE Vainilla · VANILLA PLANIFOLIA) al 0.035% - aceites DISTINTOS, swap. El resto (19 MPs) coincide; los Pigmentos CI 7.5% (sin codigo) van por tono. OJO M29: hay 'BLUSH BALM' (activa) y 'Blush Balm' (inactiva) - se targetea la ACTIVA con TRIM case-sensitive (no UPPER) para no tocar la inactiva ni bloquear por su MP00101. Verificado inyectando estado prod == master.", [
         "UPDATE formula_items SET material_id='MP00101', material_nombre='AE Vainilla' WHERE TRIM(producto_nombre)='BLUSH BALM' AND UPPER(TRIM(material_id))='MPCAKY01'",
     ]),
