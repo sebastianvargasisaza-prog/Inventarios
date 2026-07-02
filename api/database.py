@@ -397,6 +397,9 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (330, "LIP SERUM VOLUMINIZADOR PEPTIDOS vs MASTER (Sebastian · dump prod 1-jul): prod tiene MP00292 (codigo FANTASMA - NO existe en maestro_mps, por eso esa fragancia no descontaba) donde el master pide MP00005 (Mocaccino Lips · PARFUM, activo) al 0.3% - swap. Arregla el match Y el descuento. El resto (20 MPs) coincide; el PIB-24 (MP00209 q.s.p. 100%) y los Pigmentos CI van aparte (base/tono). Verificado inyectando estado prod == master.", [
+        "UPDATE formula_items SET material_id='MP00005', material_nombre='Mocaccino Lips (Disaromas)' WHERE UPPER(TRIM(producto_nombre))='LIP SERUM VOLUMINIZADOR PEPTIDOS' AND UPPER(TRIM(material_id))='MP00292'",
+    ]),
     (329, "EMULSION HIDRATANTE ILUMINADORA vs MASTER (Sebastian · dump prod 1-jul): 2 porcentajes distintos - MP00186 (4-Butilresorcinol) 0.2->0.3% + MP00127 (BM-956) 1.75->2.0%. La Trietanolamina (MP00123) prod 0.1% se MANTIENE: el master la lista al 0.000% = pH QS (ajustador), quitarla dejaria el gel sin neutralizar. Resto (24 MPs) coincide. Verificado inyectando estado prod (fijos == master).", [
         "UPDATE formula_items SET porcentaje=0.3, cantidad_g_por_lote=ROUND(0.3/100.0*COALESCE((SELECT lote_size_kg FROM formula_headers WHERE UPPER(TRIM(producto_nombre))='EMULSION HIDRATANTE ILUMINADORA' LIMIT 1),0)*1000,4) WHERE UPPER(TRIM(producto_nombre))='EMULSION HIDRATANTE ILUMINADORA' AND UPPER(TRIM(material_id))='MP00186'",
         "UPDATE formula_items SET porcentaje=2.0, cantidad_g_por_lote=ROUND(2.0/100.0*COALESCE((SELECT lote_size_kg FROM formula_headers WHERE UPPER(TRIM(producto_nombre))='EMULSION HIDRATANTE ILUMINADORA' LIMIT 1),0)*1000,4) WHERE UPPER(TRIM(producto_nombre))='EMULSION HIDRATANTE ILUMINADORA' AND UPPER(TRIM(material_id))='MP00127'",
