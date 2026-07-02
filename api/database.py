@@ -397,6 +397,9 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (327, "BLUSH BALM vs MASTER (Sebastian · dump prod 1-jul): prod tiene MPCAKY01 (Aceite de cacay · CACAY OIL) donde el master pide MP00101 (AE Vainilla · VANILLA PLANIFOLIA) al 0.035% - aceites DISTINTOS, swap. El resto (19 MPs) coincide; los Pigmentos CI 7.5% (sin codigo) van por tono. OJO M29: hay 'BLUSH BALM' (activa) y 'Blush Balm' (inactiva) - se targetea la ACTIVA con TRIM case-sensitive (no UPPER) para no tocar la inactiva ni bloquear por su MP00101. Verificado inyectando estado prod == master.", [
+        "UPDATE formula_items SET material_id='MP00101', material_nombre='AE Vainilla' WHERE TRIM(producto_nombre)='BLUSH BALM' AND UPPER(TRIM(material_id))='MPCAKY01'",
+    ]),
     (326, "BOOSTER TENSOR vs MASTER (Sebastian · dump prod 1-jul): quita MP00187 (Myristoyl pentapeptide-17, 0.003%) que NO va en el master - el MISMO peptido equivocado que sacamos de SUERO EXFOLIANTE BHA (mig 324). El resto (20 MPs) coincide exacto = 10.211%. La Trietanolamina al 0% correctamente no esta.", [
         "DELETE FROM formula_items WHERE UPPER(TRIM(producto_nombre))='BOOSTER TENSOR' AND UPPER(TRIM(material_id))='MP00187'",
     ]),
