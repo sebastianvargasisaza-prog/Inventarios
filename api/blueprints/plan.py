@@ -2655,14 +2655,11 @@ def plan_producto_presentaciones_save(producto):
     if not row:
         return jsonify({'error': "producto '%s' no existe" % producto}), 404
     canonico = row[0]
-    _cols = set()
-    try:
-        for r in c.execute("PRAGMA table_info(producto_presentaciones)").fetchall():
-            _cols.add(r[1])
-    except Exception:
-        pass
-    has_env = 'envase_codigo' in _cols
-    has_fija = 'cantidad_fija_uds' in _cols
+    # envase_codigo (mig 204) y cantidad_fija_uds (mig 204) existen en el esquema base y en
+    # prod (migrado). NO usar PRAGMA table_info: no existe en PostgreSQL → daba has_env=False
+    # en prod y NO guardaba el frasco. Se incluyen siempre.
+    has_env = True
+    has_fija = True
     aplicados = []
     for it in lista:
         if not isinstance(it, dict):
@@ -18666,7 +18663,10 @@ async function abrirLoteModal(id, producto, fecha, kg){
     const _loteFull0 = (PLAN_DATA.agendadas || []).find(a => a.id === id);
     const envActual = (_loteFull0 && _loteFull0.envase_codigo_override) || '';
     html += '<div style="background:#ecfeff;border:1px solid #67e8f9;border-radius:8px;padding:10px 14px;margin-bottom:12px">';
-    html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">';
+    // Sebastián 2-jul · el override de SOLO este lote va COLAPSADO (menos carga visual) ·
+    // lo principal son las Presentaciones (abajo · aplican a TODOS los lotes y auto-calculan).
+    html += '<details style="margin-bottom:4px"><summary style="cursor:pointer;font-size:11px;color:#0e7490;font-weight:700">&#9656; Envase de SOLO este lote (avanzado)' + (envActual ? ' &middot; ' + escapeHtml(envActual) : '') + '</summary>';
+    html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">';
     html += '<span style="font-size:11px;font-weight:800;color:#0e7490;text-transform:uppercase;letter-spacing:.5px">📦 Envase del lote</span>';
     html += '<select id="env-ovr-' + id + '" data-actual="' + escapeHtml(envActual) + '" style="flex:1;min-width:240px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;font-family:inherit;background:#fff">';
     html += _opcionesEnvaseInline(envActual);
@@ -18693,6 +18693,7 @@ async function abrirLoteModal(id, producto, fecha, kg){
       html += '<strong>↪ Propagar</strong>: sobreescribe override en cada lote futuro · no toca config global · útil cuando es cambio temporal';
       html += '</div></details>';
     }
+    html += '</details>';
     // Sebastián 2-jul · PRESENTACIONES del producto (multi-envase) DENTRO del área azul de
     // envase · UNA sola área. Persisten en producto_presentaciones (aplican a TODOS los lotes).
     html += '<div id="pres-box-' + id + '" data-prod="' + escapeHtml(producto) + '" style="margin-top:10px;border-top:1px dashed #67e8f9;padding-top:10px">';
