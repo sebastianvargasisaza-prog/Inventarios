@@ -67,3 +67,24 @@ def test_cadena_producto_sin_kg_error(app, db_clean):
     r = c.post('/api/plan/programar-cadencia-producto', json={'producto': 'X', 'kg_por_lote': 0},
                headers=csrf_headers())
     assert r.status_code == 400
+
+
+def test_cadena_producto_ancla_fecha(app, db_clean):
+    """Con ancla_fecha (base = producción EJECUTADA sin id): la cadena se cuenta desde esa fecha,
+    no desde hoy · y cancela lo posterior a la base."""
+    import datetime as _dt2
+    hoy = (_dt2.datetime.utcnow() - _dt2.timedelta(hours=5)).date()
+    base = (hoy - _dt2.timedelta(days=3)).isoformat()   # producción base 3 días atrás
+    # un lote futuro (posterior a la base) que debe cancelarse
+    fut = _ins('PROD ANCLA', (hoy + _dt2.timedelta(days=100)).isoformat(), 'eos_plan')
+    c = _login(app)
+    r = c.post('/api/plan/programar-cadencia-producto',
+               json={'producto': 'PROD ANCLA', 'kg_por_lote': 20, 'interval_dias': 90,
+                     'dias_hasta_primera': 70, 'ancla_fecha': base, 'anios': 2},
+               headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    d = r.get_json()
+    # 1ª cae base + 70 días
+    esperada = (_dt2.date.fromisoformat(base) + _dt2.timedelta(days=70)).isoformat()
+    assert d['fechas'][0] == esperada, (d['fechas'][0], esperada)
+    assert _estado(fut) == 'cancelado'

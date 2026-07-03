@@ -12729,7 +12729,7 @@ def plan_programar_cadencia_producto():
     if err:
         body, code = err
         return jsonify(body), code
-    from datetime import timedelta as _tdP
+    from datetime import timedelta as _tdP, date as _dCP
     body = request.get_json(silent=True) or {}
     producto = (body.get("producto") or "").strip()
     if not producto:
@@ -12761,26 +12761,36 @@ def plan_programar_cadencia_producto():
     conn = get_db()
     c = conn.cursor()
     hoy = _hoy_colombia()
+    # ANCLA (Sebastián 3-jul): la producción REAL de julio (base). Si el front la manda (ancla_fecha ·
+    # cuando la base es una producción EJECUTADA sin id programado), la cadena se cuenta desde ahí; si
+    # no, desde hoy. La 1ª de la cadena = base + dias_hasta_primera (cuando se agota la base).
+    _ancla_raw = (body.get("ancla_fecha") or "").strip()[:10]
+    base = hoy
+    if _ancla_raw and _valida_fecha_iso(_ancla_raw):
+        try:
+            base = _dCP.fromisoformat(_ancla_raw)
+        except Exception:
+            base = hoy
     meses_col = round(interval_dias / 30.44, 2)
-    # 1) cancelar TODA producción futura del producto (> hoy) salvo B2B/ejecutado/histórico (Sebastián 3-jul)
+    # 1) cancelar TODA producción futura del producto (> base) salvo B2B/ejecutado/histórico (Sebastián 3-jul)
     _sel = ("SELECT id FROM produccion_programada WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) "
             "AND substr(fecha_programada,1,10) > ? "
             "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
             "AND inicio_real_at IS NULL AND fin_real_at IS NULL "
             "AND COALESCE(inventario_descontado_at,'')='' "
             "AND COALESCE(origen,'') NOT IN ('eos_b2b','eos_retroactivo')")
-    ids = [r[0] for r in c.execute(_sel, (producto, hoy.isoformat())).fetchall()]
+    ids = [r[0] for r in c.execute(_sel, (producto, base.isoformat())).fetchall()]
     if ids:
         _ph = ','.join(['?'] * len(ids))
         c.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id IN (" + _ph + ")", tuple(ids))
-    # 2) crear la cadena: 1ª a hoy + dias_hasta_primera, luego cada interval_dias por 2 años.
+    # 2) crear la cadena: 1ª a base + dias_hasta_primera, luego cada interval_dias por 2 años.
     horizonte = anios * 365
     creados = []
     for k in range(0, 82):
         _off = dias_hasta_primera + k * interval_dias
         if _off > horizonte:
             break
-        f_k = hoy + _tdP(days=_off)
+        f_k = base + _tdP(days=_off)
         _kg = kg_por_lote + (kg_otro if k == 0 else 0.0)  # la 1ª suma la reserva de otro cliente
         _otro = kg_otro if k == 0 else 0.0
         c.execute(

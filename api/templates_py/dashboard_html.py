@@ -25611,13 +25611,19 @@ async function ckMarcar(itemId, estado){
   // Sebastián 3-jul · cadencia desde Necesidades (motor completo · "aquí debería ser todo").
   // Calcula la porción Animus, el intervalo por cobertura (kg÷venta) y cuándo cae la 1ª (stock−buffer).
   // OJO M65: DASHBOARD_HTML es un string REGULAR → alert/confirm usan salto escapado con doble backslash.
-  // Ancla = la producción REAL del producto en el plan (julio · ya hecha o programada) · la más
-  // temprana no-cancelada. La cadena se monta DESDE ese punto (Sebastián 3-jul).
+  // Ancla = la producción REAL más RECIENTE que ya pasó (<= hoy) del producto · sea EJECUTADA (lo
+  // que ya se hizo · última producción) o AGENDADA. Así toma la del 30-jun, no un atrasado más viejo
+  // (Sebastián 3-jul). Desde ese punto se monta la cadena.
   function _anclaProd(p){
-    var lotes = (p.planificacion || []).filter(function(l){ return (l.estado||'') !== 'cancelado' && l.fecha; });
-    if(!lotes.length) return null;
-    lotes.sort(function(a,b){ return (a.fecha||'') < (b.fecha||'') ? -1 : 1; });
-    return lotes[0];  // {id, fecha, kg, estado, origen}
+    var hoy = new Date().toISOString().slice(0,10);
+    var cands = (p.planificacion || []).filter(function(l){ return (l.estado||'') !== 'cancelado' && l.fecha; })
+      .map(function(l){ return {id:l.id, fecha:(''+l.fecha).slice(0,10), kg:(l.kg||0), ejec:false}; });
+    if(p.ultima_produccion_fecha){ cands.push({id:null, fecha:(''+p.ultima_produccion_fecha).slice(0,10), kg:(p.ultima_produccion_kg||0), ejec:true}); }
+    if(!cands.length) return null;
+    var pasadas = cands.filter(function(c){ return c.fecha <= hoy; });
+    if(pasadas.length){ pasadas.sort(function(a,b){ return a.fecha > b.fecha ? -1 : 1; }); return pasadas[0]; }  // más reciente <= hoy
+    cands.sort(function(a,b){ return a.fecha < b.fecha ? -1 : 1; });  // ninguna pasó → la más temprana futura
+    return cands[0];
   }
   function _cadenaProdCalc(idx){
     var p = window._NEC_PRODUCTOS_CACHE[idx]; if(!p) return null;
@@ -25648,7 +25654,7 @@ async function ckMarcar(itemId, estado){
     var cc = _cadenaProdCalc(idx);
     if(!cc){ el.innerHTML = '<span style="color:#94a3b8">Sin velocidad de venta · no se puede calcular la cadencia.</span>'; return; }
     var baseTxt = cc.ancla
-      ? ('🏭 Producción base <b>' + cc.ancla.fecha + '</b> · <b>' + (cc.ancla.kg||0).toFixed(1) + ' kg</b> (ya programada)' + (cc.otro > 0 ? (' · ' + cc.otro.toFixed(1) + ' otro cliente') : ''))
+      ? ('🏭 Producción base <b>' + cc.ancla.fecha + '</b> · <b>' + (cc.ancla.kg||0).toFixed(1) + ' kg</b> ' + (cc.ancla.ejec ? '(ya producida)' : '(ya programada)') + (cc.otro > 0 ? (' · ' + cc.otro.toFixed(1) + ' otro cliente') : ''))
       : ('🏭 Sin producción base en el plan → la 1ª arranca según el stock');
     el.innerHTML = baseTxt + '<br>'
       + '📦 Cada lote de la cadena <b>' + cc.kgAnimus.toFixed(1) + ' kg</b> (Animus ' + cc.meses + ' meses) · vende <b>' + (cc.vel*30).toFixed(1) + ' kg/mes</b><br>'
@@ -25666,11 +25672,12 @@ async function ckMarcar(itemId, estado){
       var t = (await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json()).csrf_token;
       var url, bodyObj;
       if(cc.ancla && cc.ancla.id){
-        url = '/api/plan/programar-cadencia-desde-lote/' + cc.ancla.id;   // ancla a la producción real de julio
+        url = '/api/plan/programar-cadencia-desde-lote/' + cc.ancla.id;   // base = lote programado (tiene id)
         bodyObj = {interval_dias: cc.intervalDias, first_offset_dias: cc.firstOffset, kg_por_lote: cc.kgAnimus, anios: 2};
       } else {
-        url = '/api/plan/programar-cadencia-producto';                    // sin base → desde el stock
+        url = '/api/plan/programar-cadencia-producto';                    // base = producción ejecutada (sin id) o desde stock
         bodyObj = {producto: p.producto_nombre, kg_por_lote: cc.kgAnimus, interval_dias: cc.intervalDias, dias_hasta_primera: cc.firstOffset, kg_otro_cliente: cc.otro, anios: 2};
+        if(cc.ancla && cc.ancla.fecha){ bodyObj.ancla_fecha = cc.ancla.fecha; }  // ancla a la producción real que ya se hizo
       }
       var r = await fetch(url, {method:'POST', credentials:'same-origin',
         headers:{'Content-Type':'application/json','X-CSRF-Token':t}, body: JSON.stringify(bodyObj)});
