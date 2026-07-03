@@ -31,7 +31,7 @@ if('serviceWorker' in navigator){
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 body { font-family:var(--cx-font); background:var(--cx-bg); color:var(--cx-text); min-height:100vh; padding:20px; }
-.container { max-width:1400px; margin:0 auto; background:var(--cx-card); border-radius:var(--cx-r-lg); box-shadow:var(--cx-sh-card-hover); border:1px solid var(--cx-hairline); overflow:hidden; }
+.container { max-width:min(1800px, 97vw); margin:0 auto; background:var(--cx-card); border-radius:var(--cx-r-lg); box-shadow:var(--cx-sh-card-hover); border:1px solid var(--cx-hairline); overflow:hidden; }
 
 /* ── Mobile/tablet (Sebastian 30-abr-2026: "haz lo del mobil") ── */
 @media (max-width: 768px) {

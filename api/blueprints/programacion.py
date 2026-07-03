@@ -6870,6 +6870,7 @@ def _plan_envasado_por_cliente(c, evento_id, variantes):
             dtc_envases.append({
                 'etiqueta': v.get('etiqueta') or (f'{int(ml)}ml' if ml else '—'),
                 'ml': ml, 'uds': uds_dtc, 'es_fija': bool(v.get('es_fija')),
+                'envase': v.get('envase_codigo') or '',  # frasco a usar (Sebastián 2-jul)
             })
 
     out = []
@@ -6881,6 +6882,7 @@ def _plan_envasado_por_cliente(c, evento_id, variantes):
             'envases': [{
                 'etiqueta': (f"{int(a['ml'])}ml" if a['ml'] else (a['envase'] or '—')),
                 'ml': a['ml'], 'uds': a['uds'], 'es_fija': False,
+                'envase': a['envase'] or '',  # frasco del cliente (Sebastián 2-jul)
             }],
         })
     return out

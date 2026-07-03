@@ -18889,6 +18889,7 @@ async function abrirLoteModal(id, producto, fecha, kg){
     } catch(_eC){}
     const _envTxt = (cli) => !cli ? '' : (cli.envases||[]).filter(e=>e.uds>0).map(e =>
       '<b>' + (e.uds).toLocaleString('es-CO') + '</b>×' + escapeHtml(e.etiqueta)
+      + (e.envase ? ' <span style="font-family:monospace;color:#0e7490;font-size:10px" title="frasco a usar">' + escapeHtml(e.envase) + '</span>' : '')
       + (e.es_fija ? ' <span style="color:#7c3aed;font-size:10px">(fijo/regalo)</span>' : '')
     ).join(' &nbsp;·&nbsp; ');
     if (_desg.length > 0 || (_loteFull && _loteFull.kg_b2b_total > 0)){
@@ -18925,10 +18926,14 @@ async function abrirLoteModal(id, producto, fecha, kg){
       _desg.forEach((d, idx) => {
         const cli = (d.cliente || 'B2B');
         const cliEsc = cli.replace(/'/g, "&#39;");
-        // envase real desde plan_por_cliente (ej. "30ml") · si no, el de desglose
+        // FRASCO real del cliente (envase_codigo) · Sebastián 2-jul. Si el pedido no tiene
+        // envase, avisar para elegirlo en la tabla de Necesidades del cliente (columna Envase).
         const _cliPlan = _planCli.find(x => !x.es_dtc && x.cliente === cli);
-        const envase = (_cliPlan && _cliPlan.envases && _cliPlan.envases[0] && _cliPlan.envases[0].etiqueta)
-                       ? _cliPlan.envases[0].etiqueta : (d.envase || '—');
+        const _e0 = _cliPlan && _cliPlan.envases && _cliPlan.envases[0];
+        const _fr = ((_e0 && _e0.envase) || d.envase || '').toString().trim();
+        const envaseCell = _fr
+          ? '<span style="font-family:monospace">' + escapeHtml(_fr) + '</span>' + ((_e0 && _e0.etiqueta) ? ' <span style="color:#94a3b8;font-size:10px">· ' + escapeHtml(_e0.etiqueta) + '</span>' : '')
+          : '<span style="color:#b45309;font-weight:700" title="elegí el envase en la tabla de Necesidades del cliente (columna Envase)">&#9888; sin envase</span>';
         const udsCalc = d.unidades_calculadas || 0;
         // FIX 30-may-2026 · Sebastián (caso Kelly BHA): el campo arrancaba en 0
         // cuando no se había llenado → una orden quedaba en 0 y NO se envasaba.
@@ -18945,7 +18950,7 @@ async function abrirLoteModal(id, producto, fecha, kg){
         dHtml += '<tr style="border-top:1px solid #e2e8f0;background:#fce7f3">'
           + '<td style="padding:6px 8px;font-weight:700;color:#9d174d" title="pedido B2B #' + (d.pedido_id||'') + '">📦 ' + escapeHtml(cli) + '</td>'
           + '<td style="padding:6px 8px;text-align:center;font-weight:700">' + d.kg + ' kg</td>'
-          + '<td style="padding:6px 8px;text-align:center;font-size:10px">' + escapeHtml(envase) + '</td>'
+          + '<td style="padding:6px 8px;text-align:center;font-size:10px">' + envaseCell + '</td>'
           + '<td style="padding:6px 8px;text-align:center;color:#64748b" title="' + d.kg + 'kg × 1000 ÷ ' + (d.ml||0) + 'ml">' + udsCalc + ' uds</td>'
           + '<td style="padding:6px 8px;text-align:center"><input id="' + inputId + '" type="number" min="0" max="10000000" value="' + planUds + '" placeholder="' + udsCalc + '" style="width:90px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;text-align:center"></td>'
           + '<td style="padding:6px 8px"><input id="' + notaId + '" type="text" maxlength="500" value="' + planNotas + '" placeholder="etiqueta, color, arte..." style="width:100%;padding:4px 8px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px"></td>'
