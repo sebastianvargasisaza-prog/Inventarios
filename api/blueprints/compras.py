@@ -1258,6 +1258,12 @@ def handle_oc_detalle(numero_oc):
     items = [dict(row) for row in c.fetchall()]
     if not oc_row: return jsonify({'error': 'OC no encontrada'}), 404
     oc_dict = dict(zip(oc_cols, oc_row))
+    # PERF 3-jul (audit velocidad): NO enviar el blob comprobante_imagen (hasta 4MB base64) en el
+    # detalle · el frontend usa el flag tiene_comprobante + lo baja aparte por /comprobante.
+    _cimg = oc_dict.get('comprobante_imagen')
+    oc_dict['tiene_comprobante'] = 1 if (_cimg and str(_cimg).strip()) else 0
+    if 'comprobante_imagen' in oc_dict:
+        oc_dict['comprobante_imagen'] = ''
     prov_data = None
     prov_name = oc_dict.get('proveedor', '')
     if prov_name:

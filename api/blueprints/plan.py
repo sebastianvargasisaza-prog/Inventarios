@@ -3625,6 +3625,61 @@ def _inferir_ml_presentacion(producto_nombre):
     return 30.0
 
 
+_VMAPS_CACHE = {}
+
+
+def _ventas_maps_shopify(c, vd_base, vd_iso, cut30, cut90, b2b_sql_extra, b2b_params, skus_regalo):
+    """PERF 3-jul (audit velocidad · hotspot #1): el parseo de TODAS las órdenes Shopify es el costo
+    dominante de /necesidades (se hacía por request, sin cache). Memoiza los 4 mapas de ventas por SKU
+    (60/30/90d + 1ª venta observada) en cache de módulo con TTL 300s, keyeado por ventanas+filtro
+    B2B+regalos. Devuelve COPIAS (el caller muta los dicts aguas abajo · no compartir referencia con el
+    cache). Mismo patrón que _ventas_sku_180d (M59): sin cache bajo PYTEST (ve órdenes nuevas por test)."""
+    import time as _tVm, json as _jVm, os as _osVm
+    _no_cache = bool(_osVm.environ.get('PYTEST_CURRENT_TEST'))
+    key = (vd_base, vd_iso, cut30, cut90, b2b_sql_extra, tuple(b2b_params), tuple(sorted(skus_regalo)))
+    if not _no_cache:
+        hit = _VMAPS_CACHE.get(key)
+        if hit and (_tVm.time() - hit[0]) < 300:
+            return (dict(hit[1]), dict(hit[2]), dict(hit[3]), dict(hit[4]))
+    base_sql = ("SELECT sku_items, creado_en FROM animus_shopify_orders "
+                "WHERE creado_en >= ? AND sku_items IS NOT NULL AND sku_items != '' "
+                "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') "
+                "AND LOWER(COALESCE(estado_pago,'')) NOT IN ('refunded','voided','partially_refunded')")
+    try:
+        rows = c.execute(base_sql + b2b_sql_extra, tuple([vd_base] + b2b_params)).fetchall()
+    except Exception as _eVm:
+        log.warning('velocidad · filtro B2B falló (%s) · degradando sin filtro', _eVm)
+        rows = c.execute(base_sql, (vd_base,)).fetchall()
+    v60, v30, v90, pv = {}, {}, {}, {}
+    for r in rows:
+        try:
+            items = _jVm.loads(r[0]) if r[0] else []
+        except Exception:
+            continue
+        creado = (r[1] or '')
+        en60 = creado >= vd_iso
+        en30 = creado >= cut30
+        en90 = creado >= cut90
+        for it in items:
+            sku = str(it.get("sku", "") or "").strip().upper()
+            qty = int(it.get("qty") or it.get("cantidad") or it.get("quantity") or 0)
+            if not sku or qty <= 0 or sku in skus_regalo:
+                continue
+            if en60:
+                v60[sku] = v60.get(sku, 0) + qty
+            if en30:
+                v30[sku] = v30.get(sku, 0) + qty
+            if en90:
+                v90[sku] = v90.get(sku, 0) + qty
+                c10 = str(creado)[:10]
+                _p = pv.get(sku)
+                if c10 and (_p is None or c10 < _p):
+                    pv[sku] = c10
+    if not _no_cache:
+        _VMAPS_CACHE[key] = (_tVm.time(), v60, v30, v90, pv)
+    return (dict(v60), dict(v30), dict(v90), dict(pv))
+
+
 def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     """Calcula necesidades Animus DTC con lógica semáforo Sebastián.
 
@@ -3822,43 +3877,11 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
              AND sku_items IS NOT NULL AND sku_items != ''
              AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')
              AND LOWER(COALESCE(estado_pago,'')) NOT IN ('refunded','voided','partially_refunded')"""
-    try:
-        _vel_rows = c.execute(_vel_base_sql + _b2b_clauses,
-                              tuple([_vd_base] + _b2b_params)).fetchall()
-    except Exception as _e_b2b:
-        log.warning('velocidad · filtro B2B falló (%s) · degradando sin filtro', _e_b2b)
-        _vel_rows = c.execute(_vel_base_sql, (_vd_base,)).fetchall()
-    for r in _vel_rows:
-        try:
-            items = _json.loads(r[0]) if r[0] else []
-        except Exception:
-            continue
-        creado = (r[1] or '')
-        # Comparaciones string-wise (ISO 8601 ordena correctamente)
-        en_60 = creado >= _vd_iso
-        en_30 = creado >= _cut30
-        en_90 = creado >= _cut90
-        for it in items:
-            sku = str(it.get("sku", "") or "").strip().upper()
-            qty = int(it.get("qty") or it.get("cantidad") or it.get("quantity") or 0)
-            if not sku or qty <= 0:
-                continue
-            # FEATURE 24-may-2026 · Sebastián: SKUs marcados es_regalo=1 no
-            # cuentan para velocidad (BBM mini es regalo, no se vende).
-            # Sin esto, los regalos inflaban la velocidad y planificación
-            # producía bulk para satisfacer demanda ficticia.
-            if sku in skus_regalo:
-                continue
-            if en_60:
-                ventas_por_sku[sku] = ventas_por_sku.get(sku, 0) + qty
-            if en_30:
-                ventas_30d_por_sku[sku] = ventas_30d_por_sku.get(sku, 0) + qty
-            if en_90:
-                ventas_90d_por_sku[sku] = ventas_90d_por_sku.get(sku, 0) + qty
-                _c10 = str(creado)[:10]
-                _pv = primera_venta_por_sku.get(sku)
-                if _c10 and (_pv is None or _c10 < _pv):
-                    primera_venta_por_sku[sku] = _c10
+    # PERF 3-jul (audit velocidad · hotspot #1): parseo de órdenes Shopify memoizado (TTL 300s) en
+    # _ventas_maps_shopify · antes se parseaban TODAS las órdenes por request (costo dominante de
+    # /necesidades · M43). skus_regalo/filtro B2B forman parte de la clave del cache.
+    ventas_por_sku, ventas_30d_por_sku, ventas_90d_por_sku, primera_venta_por_sku = _ventas_maps_shopify(
+        c, _vd_base, _vd_iso, _cut30, _cut90, _b2b_clauses, _b2b_params, skus_regalo)
 
     # 5. Pipeline 7d (lotes recién fabricados que aún no aparecen en Available)
     # Suma kg de produccion_programada con fin_real_at >= hoy-7d agrupado por producto
