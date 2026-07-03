@@ -4422,6 +4422,11 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     # PERF FIX 24-may PM · auditoría agente · era N+1 (~70 productos × 1
     # query = 70 queries) · ahora 1 sola query con CTE/JOIN para traer
     # fecha + kg en un solo pass.
+    # Sebastián 3-jul · "realizada" = fin_real_at (completado formal) O inventario_descontado_at
+    # (ya descontó MP · las del 30-jun se cargaron así). Antes solo fin_real_at → ignoraba las que
+    # produjeron y descontaron MP pero no se marcaron "completado" → el ancla quedaba en una vieja.
+    _prod_hecha = "(pp.fin_real_at IS NOT NULL OR COALESCE(pp.inventario_descontado_at,'') != '')"
+    _prod_hecha_i = "(fin_real_at IS NOT NULL OR COALESCE(inventario_descontado_at,'') != '')"
     ultima_prod = {}
     for r in c.execute(
         """SELECT pp.producto,
@@ -4431,12 +4436,12 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
            JOIN (
                SELECT producto, MAX(fecha_programada) AS f
                FROM produccion_programada
-               WHERE fin_real_at IS NOT NULL
+               WHERE """ + _prod_hecha_i + """
                  AND COALESCE(kg_real, cantidad_kg, 0) > 0
                GROUP BY producto
            ) ultimo ON ultimo.producto = pp.producto
                     AND ultimo.f = pp.fecha_programada
-           WHERE pp.fin_real_at IS NOT NULL
+           WHERE """ + _prod_hecha + """
              AND COALESCE(pp.kg_real, pp.cantidad_kg, 0) > 0""",
     ).fetchall():
         # Una fila puede haber varias por mismo (producto, fecha) · tomamos primera
