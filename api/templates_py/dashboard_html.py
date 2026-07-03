@@ -12773,7 +12773,7 @@ function _renderProgramacion(d){
   </div><!-- /ptab-maquila -->
 
   <!-- ── Asistente conversacional EOS Planta · Claude API ── -->
-  <button id="ai-fab" onclick="aiTogglePanel()" title="Asistente EOS Planta · Pregúntame lo que necesites" style="position:fixed;bottom:80px;right:20px;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#dc2626);color:#fff;border:none;font-size:24px;box-shadow:0 6px 16px rgba(124,58,237,.4);cursor:pointer;z-index:9998;display:flex;align-items:center;justify-content:center">🤖</button>
+  <button id="ai-fab" onclick="aiTogglePanel()" title="Asistente EOS Planta · Pregúntame lo que necesites" style="position:fixed;bottom:80px;right:20px;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#dc2626);color:#fff;border:none;font-size:24px;box-shadow:0 6px 16px rgba(124,58,237,.4);cursor:pointer;z-index:9998;display:none;align-items:center;justify-content:center">🤖</button>
   <div id="ai-panel" style="display:none;position:fixed;bottom:150px;right:20px;width:380px;max-width:92vw;height:520px;max-height:80vh;background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.25);z-index:9998;overflow:hidden;flex-direction:column">
     <div style="background:linear-gradient(135deg,#7c3aed,#dc2626);color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center">
       <div>
@@ -25817,7 +25817,9 @@ async function ckMarcar(itemId, estado){
     let html = '<details style="background:white;border-radius:14px;margin-bottom:14px;border:1px solid #e2e8f0;overflow:hidden">';
     html += '<summary style="cursor:pointer;padding:14px 18px;background:linear-gradient(90deg,#eef2ff,#e0e7ff);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">';
     html += '<div><span style="color:#3730a3;font-size:16px;font-weight:800">📦 ' + escapeHtmlNec(cli.cliente_nombre) + '</span>';
-    html += ' <span style="font-size:11px;font-weight:500;color:#94a3b8">· B2B · ' + (cli.pedidos||[]).length + ' pedidos · ' + cli.kg_total.toFixed(1) + ' kg</span></div>';
+    // Sebastián 2-jul · tipo REAL del cliente (Espagiria = Maquila 360, no B2B genérico)
+    var _tipoLbl = ({maquila:'Maquila 360', b2b:'B2B', influencer:'Influencer'})[cli.tipo_cliente || 'b2b'] || (cli.tipo_cliente ? cli.tipo_cliente.toUpperCase() : 'B2B');
+    html += ' <span style="font-size:11px;font-weight:500;color:#94a3b8">· ' + _tipoLbl + ' · ' + (cli.pedidos||[]).length + ' pedidos · ' + cli.kg_total.toFixed(1) + ' kg</span></div>';
     html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' + chipUrgHeader + chips;
     html += '<button onclick="event.preventDefault();event.stopPropagation();revisarB2BCliente(\\''+cliEsc+'\\',\\''+cliNomEsc+'\\')" style="background:#0f766e;color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-left:8px" title="Revisar cobertura y duplicados de este cliente (read-only)">🔍 Revisar</button>';
     html += '<button onclick="event.preventDefault();event.stopPropagation();abrirFormB2BCliente(\\''+cliEsc+'\\',\\''+cliNomEsc+'\\')" style="background:#7c3aed;color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-left:8px">+ Producto</button>';
@@ -26078,7 +26080,7 @@ async function ckMarcar(itemId, estado){
     if (ov) { ov.style.display = 'flex'; var f = ov.querySelector('iframe'); if (f) f.src = f.src; return; }
     ov = document.createElement('div');
     ov.id = 'cliB2bOverlay';
-    ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:20px';
     ov.innerHTML =
       '<div style="background:#fff;border-radius:12px;width:min(1150px,97vw);height:min(90vh,940px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 44px rgba(0,0,0,.35)">'
       + '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 16px;background:#0d9488;color:#fff;flex:0 0 auto">'

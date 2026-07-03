@@ -3179,15 +3179,20 @@ def plan_necesidades():
             b2b_por_cliente[cid]["max_urgencia"] = urg
             b2b_por_cliente[cid]["max_urgencia_rank"] = rank
 
-    # Sebastián 2-jul · "que los clientes aparezcan aunque tengan 0 pedidos": los clientes NO
-    # usan el modal · es Luz quien pide POR ellos. Así que cada cliente ACTIVO se muestra como
-    # sección en Necesidades (con su botón "+ Producto") aunque todavía no tenga pedido → Luz
-    # puede empezar a cargar y unir a producción. Se agregan los que faltan (kg_total=0).
+    # Sebastián 2-jul · (a) "que los clientes aparezcan aunque tengan 0 pedidos": los clientes NO
+    # usan el modal · es Luz quien pide POR ellos → cada cliente ACTIVO se muestra como sección
+    # (con "+ Producto") aunque no tenga pedido. (b) mostrar el TIPO REAL (maquila/b2b/influencer)
+    # de cada cliente, no "B2B" hardcodeado (Espagiria = Maquila 360, no B2B tradicional).
+    _tipo_por_cliente = {}
     try:
         for cr in c.execute(
-                "SELECT cliente_id, cliente_nombre FROM clientes_b2b_maestro WHERE activo=1").fetchall():
+                "SELECT cliente_id, cliente_nombre, COALESCE(tipo,'b2b') FROM clientes_b2b_maestro "
+                "WHERE activo=1").fetchall():
             _cid = cr[0]
-            if _cid and _cid not in b2b_por_cliente:
+            if not _cid:
+                continue
+            _tipo_por_cliente[_cid] = (cr[2] or 'b2b').strip().lower()
+            if _cid not in b2b_por_cliente:
                 b2b_por_cliente[_cid] = {
                     "cliente_id": _cid,
                     "cliente_nombre": cr[1] or "Cliente",
@@ -3200,6 +3205,9 @@ def plan_necesidades():
                 }
     except Exception:
         pass
+    # tipo real por cliente (default 'b2b' si no está en el maestro)
+    for _cid, _cli in b2b_por_cliente.items():
+        _cli["tipo_cliente"] = _tipo_por_cliente.get(_cid, 'b2b')
 
     # Ordenar clientes B2B por max_urgencia (alta primero), luego alfabético
     b2b_lista = sorted(b2b_por_cliente.values(),
@@ -16526,7 +16534,7 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
 .lote[draggable=true]:active{cursor:grabbing}
 .cal-day.drop-target{background:#dcfce7 !important;border:2px dashed #16a34a !important}
 .cal-day.drop-invalid{background:#fee2e2 !important;border:2px dashed #dc2626 !important}
-.modal-back{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);z-index:1000;justify-content:center;align-items:center;padding:20px;overflow-y:auto}
+.modal-back{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);z-index:2147483000;justify-content:center;align-items:center;padding:20px;overflow-y:auto}
 .modal-back.show{display:flex}
 .modal-box{background:white;border-radius:14px;max-width:560px;width:100%;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.4)}
 .modal-head{background:linear-gradient(90deg,#0f766e,#0891b2);padding:14px 22px;border-radius:14px 14px 0 0;color:white;display:flex;justify-content:space-between;align-items:center}
