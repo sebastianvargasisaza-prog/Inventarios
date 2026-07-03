@@ -19624,8 +19624,20 @@ async function guardarKgLote(id){
       credentials:'same-origin',
       body: JSON.stringify({cantidad_kg: nuevo, desglose_uds: _desg, meses_cobertura: _meses}),
     });
-    const d = await r.json();
-    if (!r.ok){ alert('❌ ' + (d.error || ('Error ' + r.status))); return; }
+    let d = await r.json();
+    if (r.status === 409 && d && d.puede_forzar){
+      // Sebastián 3-jul · lote YA ejecutado/en curso · FORZAR (normalizar) para cuadrar con MyBatch ·
+      // solo ajusta el registro (cantidad_kg), NO re-descuenta materias primas.
+      if (confirm('⚠ ' + (d.error||'') + '\n\n¿FORZAR el cambio de kg para normalizar el calendario?\n\n(solo ajusta el registro · NO re-descuenta materias primas · la producción ya se hizo)')){
+        const rf = await fetch('/api/plan/proximas/' + id + '/cantidad', {
+          method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()}, credentials:'same-origin',
+          body: JSON.stringify({cantidad_kg: nuevo, desglose_uds: _desg, meses_cobertura: _meses, forzar_normalizar: true}),
+        });
+        let df = null; try { df = await rf.json(); } catch(e){ df = {}; }
+        if (!rf.ok){ alert('❌ No se pudo (normalizar): ' + (df.error || ('Error ' + rf.status))); return; }
+        d = df;
+      } else { return; }
+    } else if (!r.ok){ alert('❌ ' + (d.error || ('Error ' + r.status))); return; }
     // invalidar caché de composición para que recalcule con el override recién guardado
     try{ if(window._COMP_MEE_CACHE) delete window._COMP_MEE_CACHE[id]; if(window._COMP_MEE_PROMISE) delete window._COMP_MEE_PROMISE[id]; }catch(_e){}
     var _extra = (d.override_presentaciones ? ('\n📦 Envases fijados por presentación: ' + d.override_presentaciones + ' (Abastecimiento usará esas cantidades)') : '');
@@ -19756,6 +19768,23 @@ async function reprogramarLote(id, nuevaFecha, razon){
       } else {
         return;  // usuario canceló
       }
+    } else if (r.status === 409 && d && d.puede_forzar){
+      // Sebastián 3-jul · lote YA ejecutado/en curso · ofrecer FORZAR (normalizar) para cuadrar el
+      // calendario con MyBatch · solo mueve la FECHA (registro), NO toca el inventario.
+      if (confirm('⚠ ' + errMsg + '\n\n¿FORZAR el movimiento para normalizar el calendario?\n\n(solo cambia la fecha · NO revierte materias primas · la producción ya se hizo)')){
+        const r3 = await fetch('/api/plan/proximas/' + id + '/reprogramar', {
+          method:'POST',
+          headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+          credentials: 'same-origin',
+          body: JSON.stringify({nueva_fecha: nuevaFecha, razon: razon || 'normalizar_calendario', forzar_normalizar: true}),
+        });
+        let d3 = null; let txt3 = '';
+        try { d3 = await r3.json(); } catch(e){ txt3 = await r3.text(); }
+        if (!r3.ok){
+          alert('❌ No se pudo mover (normalizar):\n\n' + ((d3 && (d3.error||d3.message)) || txt3 || ('HTTP '+r3.status)));
+          return;
+        }
+      } else { return; }
     } else if (!r.ok){
       alert('❌ No se pudo mover:\\n\\n' + errMsg +
             '\\n\\nStatus: ' + r.status +
@@ -21834,6 +21863,11 @@ def reprogramar_proxima(pid):
     nueva_fecha = (body.get("nueva_fecha") or "").strip()
     razon = (body.get("razon") or "").strip()
     skip_val = bool(body.get("skip_validacion_dia"))
+    # Sebastián 3-jul · "forzar (normalizar)": mover un lote YA ejecutado para organizar el calendario
+    # según MyBatch · cambia SOLO la fecha (registro), NO toca el inventario (la producción ya se hizo).
+    forzar_norm = bool(body.get("forzar_normalizar"))
+    if forzar_norm:
+        skip_val = True
 
     if not nueva_fecha or not _valida_fecha_iso(nueva_fecha):
         return jsonify({"error": "nueva_fecha YYYY-MM-DD requerida"}), 400
@@ -21862,18 +21896,21 @@ def reprogramar_proxima(pid):
     es_espejo = bool(cur.execute(
         "SELECT 1 FROM produccion_programada WHERE id=? AND (COALESCE(origen,'')='eos_retroactivo' "
         "OR COALESCE(observaciones,'') LIKE '%[fab#%')", (pid,)).fetchone())
-    # Inmutabilidad post-arranque · no reprogramar lotes en ejecución (salvo espejo)
-    if fin_real and not es_espejo:
+    # Inmutabilidad post-arranque · no reprogramar lotes en ejecución (salvo espejo o forzar_normalizar)
+    if fin_real and not es_espejo and not forzar_norm:
         return jsonify({
             "error": f"lote ya completado · no reprogramable (fin_real_at={fin_real})",
+            "codigo": "INMUTABLE", "puede_forzar": True,
         }), 409
-    if inicio_real and not es_espejo:
+    if inicio_real and not es_espejo and not forzar_norm:
         return jsonify({
             "error": f"lote en curso · no reprogramable (inicio_real_at={inicio_real})",
+            "codigo": "INMUTABLE", "puede_forzar": True,
         }), 409
-    if estado_actual not in ('pendiente', 'programado') and not (estado_actual == 'completado' and es_espejo):
+    if estado_actual not in ('pendiente', 'programado') and not (estado_actual == 'completado' and es_espejo) and not forzar_norm:
         return jsonify({
             "error": f"solo se reprograma pendiente/programado · estado actual: {estado_actual}",
+            "codigo": "INMUTABLE", "puede_forzar": True,
         }), 409
 
     # Same date · no-op pero no error
@@ -22034,16 +22071,24 @@ def actualizar_cantidad_proxima(pid):
     # Sebastián 3-jul · la porción "para otro cliente" (kg_otro_cliente) + los meses son METADATA de
     # cobertura · se editan AUNQUE el lote esté en curso/completado (no cambian la producción ni el
     # inventario). Solo el CAMBIO REAL de kg está bloqueado en lotes en curso/completados.
+    # Sebastián 3-jul · "forzar (normalizar)": editar el kg (registro) de un lote YA ejecutado para
+    # cuadrar el calendario con MyBatch · cambia SOLO cantidad_kg, NO re-descuenta MP (la producción
+    # ya se hizo · el UPDATE no toca movimientos).
+    _forzar_norm = bool(body.get("forzar_normalizar"))
     _cambia_kg = abs(nueva_kg - float(kg_antes or 0)) > 0.001
-    if _cambia_kg:
+    if _cambia_kg and _forzar_norm:
+        if not (0 < nueva_kg <= 1000):
+            return jsonify({"error": "cantidad_kg debe estar entre 0 y 1000"}), 400
+    elif _cambia_kg:
         if not (0 < nueva_kg <= 1000):
             return jsonify({"error": "cantidad_kg debe estar entre 0 y 1000"}), 400
         if fin_real:
-            return jsonify({"error": "lote ya completado · no editable"}), 409
+            return jsonify({"error": "lote ya completado · no editable", "codigo": "INMUTABLE", "puede_forzar": True}), 409
         if inicio_real:
-            return jsonify({"error": "lote en curso · no editable"}), 409
+            return jsonify({"error": "lote en curso · no editable", "codigo": "INMUTABLE", "puede_forzar": True}), 409
         if estado_actual not in ('pendiente', 'programado', 'esperando_recurso'):
             return jsonify({
+                "codigo": "INMUTABLE", "puede_forzar": True,
                 "error": f"solo editable en pendiente/programado · estado: {estado_actual}",
             }), 409
 
