@@ -3884,14 +3884,17 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         c, _vd_base, _vd_iso, _cut30, _cut90, _b2b_clauses, _b2b_params, skus_regalo)
 
     # 5. Pipeline 7d (lotes recién fabricados que aún no aparecen en Available)
-    # Suma kg de produccion_programada con fin_real_at >= hoy-7d agrupado por producto
+    # Suma kg de produccion_programada REALIZADA >= hoy-7d agrupado por producto.
+    # Sebastián 3-jul · "realizada" = fin_real_at O inventario_descontado_at (ya descontó MP · las del
+    # 30-jun se cargaron así, sin fin_real_at formal). Antes solo fin_real_at → NO contaba la del
+    # 30-jun como pipeline → stock efectivo 0 → urgencia CRÍTICA + próxima "ya" pese a haber producido.
     pipeline_kg_por_prod = {}
     for r in c.execute(
         """SELECT producto, COALESCE(SUM(COALESCE(kg_real, cantidad_kg, 0)), 0)
            FROM produccion_programada
-           WHERE fin_real_at IS NOT NULL
-             AND date(fin_real_at) >= ?
-             AND date(fin_real_at) <= date('now', '-5 hours')
+           WHERE (fin_real_at IS NOT NULL OR COALESCE(inventario_descontado_at,'') != '')
+             AND date(COALESCE(fin_real_at, inventario_descontado_at)) >= ?
+             AND date(COALESCE(fin_real_at, inventario_descontado_at)) <= date('now', '-5 hours')
              -- FIX 30-may-2026 · evitar doble conteo con góndola CC: un lote
              -- 'completado' ya pasó a stock_pt (liberación QC) · contarlo además
              -- como pipeline lo sumaba 2 veces e inflaba la cobertura ~7d.
@@ -4296,6 +4299,10 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             "pipeline_fijo_kg": round(pipeline_fijo_kg, 2),
             "b2b_comprometido_kg": round(b2b_fijo_kg, 2),
             "stock_kg_total": round(stock_kg_total, 2),
+            # Sebastián 3-jul · góndola física + pipeline RECIENTE (lo producido ≤7d en camino · ej.
+            # la del 30-jun), SIN el Fijo futuro → para la PRÓXIMA sugerida (no doble-producir lo que
+            # ya se hizo y está por llegar a la góndola). dias_gondola=solo física; dias_cobertura=+Fijo.
+            "dias_con_pipeline": (round((stock_kg_gondola + pipeline_kg) / velocidad_kg_dia, 1) if velocidad_kg_dia > 0 else None),
             "ventas_periodo_uds": ventas_periodo_total,
             "ventas_30d_uds": ventas_30d_total,
             "ventas_90d_uds": ventas_90d_total,
@@ -4624,7 +4631,12 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                 # el ancla (ancla_fecha + dur − cob), IGNORANDO el stock real → proponía
                 # producir en 3 días un producto con 90 días de cobertura física (o al
                 # revés). El ancla queda solo para mostrar "última producción/duración".
-                _dg = p.get("dias_gondola")
+                # Sebastián 3-jul · la próxima cuenta góndola física + pipeline RECIENTE (lo producido
+                # ≤7d en camino · ej. la del 30-jun) → si acabás de producir NO propone producir "ya"
+                # aunque la góndola esté en 0 (evita doble-producir). Fallback a dias_gondola.
+                _dg = p.get("dias_con_pipeline")
+                if _dg is None:
+                    _dg = p.get("dias_gondola")
                 _dg = int(_dg) if _dg is not None else 0
                 proxima_calc = hoy + _td(days=max(0, _dg - BUFFER_REORDEN_DIAS))  # buffer 20d (M70) · NO cob_alerta (color)
                 # Clamp: nunca proponer fecha en el pasado o muy próxima
@@ -4643,7 +4655,9 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             # GÓNDOLA, no en una producción previa. Antes se saltaba ("sin última
             # producción para calcular base") → al reemplazar (cancelar) desaparecía
             # del calendario. La fecha base = hoy + (días góndola − buffer), clamp +3.
-            _dg = p.get("dias_gondola")
+            _dg = p.get("dias_con_pipeline")
+            if _dg is None:
+                _dg = p.get("dias_gondola")
             _dg = int(_dg) if _dg is not None else 0
             proxima = max(hoy + _td(days=max(0, _dg - BUFFER_REORDEN_DIAS)), hoy + _td(days=3))  # buffer 20d (M70)
             p["duracion_lote_dias"] = None
@@ -4897,7 +4911,12 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         p["accion_sugerida"] = None
         p["accion_fecha_objetivo"] = None
         p["accion_lote_id"] = (proximo.get("id") if proximo else None)
-        _dg_p = p.get("dias_gondola")
+        # Sebastián 3-jul · el timing (adelantar/atrasar) cuenta góndola física + pipeline RECIENTE
+        # (lo producido ≤7d en camino · ej. la del 30-jun) · así no dice "adelantar/llega tarde" si
+        # acabás de producir y está por llegar. Fallback a dias_gondola.
+        _dg_p = p.get("dias_con_pipeline")
+        if _dg_p is None:
+            _dg_p = p.get("dias_gondola")
 
         def _next_biz(d0):
             d1 = d0
