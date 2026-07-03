@@ -25611,6 +25611,14 @@ async function ckMarcar(itemId, estado){
   // Sebastián 3-jul · cadencia desde Necesidades (motor completo · "aquí debería ser todo").
   // Calcula la porción Animus, el intervalo por cobertura (kg÷venta) y cuándo cae la 1ª (stock−buffer).
   // OJO M65: DASHBOARD_HTML es un string REGULAR → alert/confirm usan salto escapado con doble backslash.
+  // Ancla = la producción REAL del producto en el plan (julio · ya hecha o programada) · la más
+  // temprana no-cancelada. La cadena se monta DESDE ese punto (Sebastián 3-jul).
+  function _anclaProd(p){
+    var lotes = (p.planificacion || []).filter(function(l){ return (l.estado||'') !== 'cancelado' && l.fecha; });
+    if(!lotes.length) return null;
+    lotes.sort(function(a,b){ return (a.fecha||'') < (b.fecha||'') ? -1 : 1; });
+    return lotes[0];  // {id, fecha, kg, estado, origen}
+  }
   function _cadenaProdCalc(idx){
     var p = window._NEC_PRODUCTOS_CACHE[idx]; if(!p) return null;
     var vel = p.velocidad_kg_dia || 0;   // kg/día Animus
@@ -25618,34 +25626,54 @@ async function ckMarcar(itemId, estado){
     var meses = parseFloat((document.getElementById('cadp-meses')||{}).value) || 2;
     var otro = parseFloat((document.getElementById('cadp-otro')||{}).value) || 0;
     if(otro < 0) otro = 0;
-    var kgAnimus = Math.round(vel * meses * 30.44 * 10) / 10;        // demanda Animus de X meses
+    var kgAnimus = Math.round(vel * meses * 30.44 * 10) / 10;        // demanda Animus de X meses (kg de cada lote de la cadena)
     if(!(kgAnimus > 0)) return null;
-    var intervalDias = Math.max(Math.round(kgAnimus / vel), 15);     // días que alcanza (= ~meses)
-    var diasGond = (p.dias_gondola != null) ? p.dias_gondola : 0;
-    var primera = Math.max(diasGond - 20, 0);                        // 1ª: 20d antes de agotar el stock
+    var intervalDias = Math.max(Math.round(kgAnimus / vel), 15);     // días que alcanza cada lote (= ~meses)
     var nLotes = Math.max(1, Math.round(730 / intervalDias));
     var cadaTxt = intervalDias >= 26 ? ('~' + (Math.round(intervalDias/30.44*10)/10) + ' meses') : ('~' + intervalDias + ' días');
-    return {meses:meses, otro:otro, kgAnimus:kgAnimus, intervalDias:intervalDias, primera:primera, nLotes:nLotes, cadaTxt:cadaTxt, vel:vel, diasGond:diasGond};
+    var diasGond = (p.dias_gondola != null) ? p.dias_gondola : 0;
+    var ancla = _anclaProd(p);
+    var firstOffset;
+    if(ancla){
+      // 1ª de la cadena = cuando se agota la porción Animus de la producción base (base − otro cliente).
+      var anclaAnimusKg = Math.max(0, (ancla.kg || 0) - otro);
+      firstOffset = Math.max(Math.round(anclaAnimusKg / vel) - 20, 1);
+    } else {
+      firstOffset = Math.max(diasGond - 20, 0);   // sin base en el plan → desde el stock (hoy)
+    }
+    return {meses:meses, otro:otro, kgAnimus:kgAnimus, intervalDias:intervalDias, firstOffset:firstOffset, nLotes:nLotes, cadaTxt:cadaTxt, vel:vel, diasGond:diasGond, ancla:ancla};
   }
   function _updateCadenaProdPreview(idx){
     var el = document.getElementById('cadp-preview'); if(!el) return;
     var cc = _cadenaProdCalc(idx);
     if(!cc){ el.innerHTML = '<span style="color:#94a3b8">Sin velocidad de venta · no se puede calcular la cadencia.</span>'; return; }
-    el.innerHTML = '📦 Cada lote <b>' + cc.kgAnimus.toFixed(1) + ' kg</b> (Animus ' + cc.meses + ' meses'
-      + (cc.otro > 0 ? (' + <b>' + cc.otro.toFixed(1) + '</b> otro cliente en la 1ª') : '') + ') · vende <b>' + (cc.vel*30).toFixed(1) + ' kg/mes</b><br>'
-      + '⏳ Alcanza <b>~' + cc.intervalDias + ' días</b> → un lote cada <b>' + cc.cadaTxt + '</b> · ~<b>' + cc.nLotes + '</b> en 2 años<br>'
-      + '🗓️ La 1ª en <b>' + cc.primera + ' días</b> (el stock actual alcanza ' + cc.diasGond + 'd).';
+    var baseTxt = cc.ancla
+      ? ('🏭 Producción base <b>' + cc.ancla.fecha + '</b> · <b>' + (cc.ancla.kg||0).toFixed(1) + ' kg</b> (ya programada)' + (cc.otro > 0 ? (' · ' + cc.otro.toFixed(1) + ' otro cliente') : ''))
+      : ('🏭 Sin producción base en el plan → la 1ª arranca según el stock');
+    el.innerHTML = baseTxt + '<br>'
+      + '📦 Cada lote de la cadena <b>' + cc.kgAnimus.toFixed(1) + ' kg</b> (Animus ' + cc.meses + ' meses) · vende <b>' + (cc.vel*30).toFixed(1) + ' kg/mes</b><br>'
+      + '⏳ Un lote cada <b>' + cc.cadaTxt + '</b> · ~<b>' + cc.nLotes + '</b> en 2 años · la 1ª de la cadena <b>' + cc.firstOffset + ' días</b> ' + (cc.ancla ? 'después de la base' : 'desde hoy') + '.';
   }
   async function programarCadenaProducto(idx){
     var p = window._NEC_PRODUCTOS_CACHE[idx]; if(!p){ alert('Producto no encontrado'); return; }
     var cc = _cadenaProdCalc(idx);
     if(!cc){ alert('Este producto no tiene velocidad de venta · no se puede calcular la cadencia.'); return; }
-    if(!confirm('Programar la cadena de "' + (p.producto_nombre || '') + '":\\n\\n• Cada lote ' + cc.kgAnimus.toFixed(1) + ' kg (Animus ' + cc.meses + ' meses)' + (cc.otro > 0 ? (' + ' + cc.otro.toFixed(1) + ' kg otro cliente en la 1ª') : '') + '\\n• Cada ' + cc.cadaTxt + ' · ~' + cc.nLotes + ' producciones en 2 años\\n• La 1ª en ' + cc.primera + ' días (cuando se agota el stock)\\n\\nBORRA todas las producciones futuras de ese producto (Fijo, auto, proyección) y deja solo esta cadena. Conserva pedidos B2B y lo ya producido.')) return;
+    var msg = 'Programar la cadena de "' + (p.producto_nombre || '') + '":\\n\\n';
+    if(cc.ancla){ msg += '• Base: producción del ' + cc.ancla.fecha + ' (' + (cc.ancla.kg||0).toFixed(1) + ' kg) · se conserva y se cuenta desde ahí\\n'; }
+    msg += '• Cada lote ' + cc.kgAnimus.toFixed(1) + ' kg (Animus ' + cc.meses + ' meses)\\n• Cada ' + cc.cadaTxt + ' · ~' + cc.nLotes + ' producciones en 2 años\\n• La 1ª de la cadena ' + cc.firstOffset + ' días ' + (cc.ancla ? 'después de la base' : 'desde hoy') + '\\n\\nBORRA todas las producciones futuras de ese producto (Fijo, auto, proyección) y deja solo esta cadena. Conserva pedidos B2B y lo ya producido.';
+    if(!confirm(msg)) return;
     try{
       var t = (await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json()).csrf_token;
-      var r = await fetch('/api/plan/programar-cadencia-producto', {method:'POST', credentials:'same-origin',
-        headers:{'Content-Type':'application/json','X-CSRF-Token':t},
-        body: JSON.stringify({producto: p.producto_nombre, kg_por_lote: cc.kgAnimus, interval_dias: cc.intervalDias, dias_hasta_primera: cc.primera, kg_otro_cliente: cc.otro, anios: 2})});
+      var url, bodyObj;
+      if(cc.ancla && cc.ancla.id){
+        url = '/api/plan/programar-cadencia-desde-lote/' + cc.ancla.id;   // ancla a la producción real de julio
+        bodyObj = {interval_dias: cc.intervalDias, first_offset_dias: cc.firstOffset, kg_por_lote: cc.kgAnimus, anios: 2};
+      } else {
+        url = '/api/plan/programar-cadencia-producto';                    // sin base → desde el stock
+        bodyObj = {producto: p.producto_nombre, kg_por_lote: cc.kgAnimus, interval_dias: cc.intervalDias, dias_hasta_primera: cc.firstOffset, kg_otro_cliente: cc.otro, anios: 2};
+      }
+      var r = await fetch(url, {method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json','X-CSRF-Token':t}, body: JSON.stringify(bodyObj)});
       var d = await r.json();
       if(!r.ok){ alert('No se pudo: ' + ((d && d.error) || r.status)); return; }
       var _f1 = (d.fechas && d.fechas[0]) || '';
