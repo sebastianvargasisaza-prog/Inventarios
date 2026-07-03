@@ -18933,16 +18933,22 @@ async function abrirLoteModal(id, producto, fecha, kg){
         + '<th style="padding:6px 8px;background:#fef3c7">Uds a envasar ✏</th>'
         + '<th style="padding:6px 8px;background:#fef3c7">Observaciones ✏</th>'
         + '</tr></thead><tbody>';
-      // Fila DTC (no editable) · ahora muestra el desglose por envase (10ml/30ml)
+      // Fila DTC · Sebastián 2-jul: MISMAS columnas que las filas B2B (antes colspan=4 no
+      // cuadraba con Animus). Envase / Uds calc / Uds a envasar / Observaciones alineadas.
       if (kgDTC > 0.05){
         const _dtcCli = _planCli.find(x => x.es_dtc);
-        const _dtcEnv = _envTxt(_dtcCli);
+        const _dtcEnvs = ((_dtcCli && _dtcCli.envases) || []).filter(e => e.uds > 0);
+        const _dtcEnvCell = _dtcEnvs.length
+          ? _dtcEnvs.map(e => (e.envase ? '<span style="font-family:monospace">' + escapeHtml(e.envase) + '</span>' : '') + (e.etiqueta ? ' <span style="color:#94a3b8;font-size:10px">· ' + escapeHtml(e.etiqueta) + '</span>' : '') + (e.es_fija ? ' <span style="color:#7c3aed;font-size:10px">(fijo/regalo)</span>' : '')).join('<br>')
+          : '<em style="color:#94a3b8">DTC automático</em>';
+        const _dtcUds = _dtcEnvs.reduce((s, e) => s + (e.uds || 0), 0);
         dHtml += '<tr style="border-top:1px solid #e2e8f0;background:#eff6ff">'
           + '<td style="padding:6px 8px;font-weight:700;color:#1e40af">🛍️ Animus DTC</td>'
           + '<td style="padding:6px 8px;text-align:center;font-weight:700">' + kgDTC + ' kg<br><span style="font-size:10px;font-weight:600;color:#64748b">' + (kg > 0 ? Math.round(kgDTC / kg * 100) : 0) + '%</span></td>'
-          + '<td colspan="4" style="padding:6px 8px;font-size:11px;color:#1e293b">'
-            + (_dtcEnv || '<em style="color:#94a3b8">DTC automático</em>')
-            + ' <span style="color:#94a3b8;font-size:10px">· auto · no editable</span></td>'
+          + '<td style="padding:6px 8px;text-align:center;font-size:11px;color:#1e293b">' + _dtcEnvCell + '</td>'
+          + '<td style="padding:6px 8px;text-align:center;color:#475569">' + (_dtcUds ? _dtcUds.toLocaleString('es-CO') + ' uds' : '—') + '</td>'
+          + '<td style="padding:6px 8px;text-align:center;color:#94a3b8;font-size:10px">auto · no editable</td>'
+          + '<td style="padding:6px 8px;text-align:center;color:#cbd5e1">—</td>'
           + '</tr>';
       }
       // Filas B2B (editables)
