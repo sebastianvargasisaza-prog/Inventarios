@@ -19735,6 +19735,23 @@ async function programarProxima(producto, fecha, kg){
   } catch(e){ alert('Error de red: ' + e.message); }
 }
 
+// Sebastián 3-jul · tras mover un lote NO re-descargar todo el calendario (lento) · actualizar el
+// dato local (fecha_programada) y re-dibujar (render() no hace red). Devuelve true si actualizó.
+function _moverLoteLocal(id, nuevaFecha){
+  try{
+    if(PLAN_DATA && PLAN_DATA.agendadas && PLAN_DATA.agendadas.length){
+      var ok = false;
+      for(var i=0;i<PLAN_DATA.agendadas.length;i++){
+        if(String(PLAN_DATA.agendadas[i].id) === String(id)){
+          PLAN_DATA.agendadas[i].fecha_programada = nuevaFecha;
+          ok = true; break;
+        }
+      }
+      if(ok){ render(); return true; }
+    }
+  }catch(e){}
+  return false;
+}
 async function reprogramarLote(id, nuevaFecha, razon){
   try {
     let r = await fetch('/api/plan/proximas/' + id + '/reprogramar', {
@@ -19792,7 +19809,9 @@ async function reprogramarLote(id, nuevaFecha, razon){
              (r.status === 401 ? '\n\nProbable causa: sesión expirada. Recargá la página.' : '')));
       return;
     }
-    cargar();
+    // Sebastián 3-jul · actualizar en el sitio (sin re-descargar todo) · fallback a cargar() si el
+    // lote no está en el cache local (ej. otra vista).
+    if(!_moverLoteLocal(id, nuevaFecha)){ cargar(); }
   } catch(e){
     alert('❌ Error de red: ' + e.message);
   }
