@@ -19094,7 +19094,11 @@ async function cargarDesgloseEditableLote(producto, kgActual, mlProm, mesesGuard
     var allItems = (d && d.items) || [];
     // Sebastián 27-jun · OCULTAR las referencias SIN ventas (SKU muertos · "hay muchos así") · solo las que venden
     var items = allItems.filter(function(it){ return (it.uds_ventana||0) > 0; });
-    if(items.length < 2){ host.innerHTML = ''; return; }  // solo multi-SKU que efectivamente vende
+    // Sebastián 2-jul · el modal de cálculo ("producir X meses") debe salir en TODAS las
+    // producciones, no solo multi-SKU. Si tras ocultar los SKU sin venta no queda ninguno pero
+    // el producto SÍ tiene referencias, usamos todas (aunque no vendan) → siempre sale.
+    if(!items.length && allItems.length){ items = allItems.slice(); }
+    if(items.length < 1){ host.innerHTML = ''; return; }  // solo se oculta si NO hay ninguna referencia mapeada
     var venWin = d.ventana_dias || 60;
     window._DESG = { mlProm: mlProm, tendencia: (d.tendencia||0), kg: (parseFloat(kgActual)||0), venWin: venWin };
     var totalUds = Math.round((parseFloat(kgActual)||0) * 1000 / mlProm);
