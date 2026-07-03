@@ -19139,7 +19139,7 @@ async function abrirLoteModal(id, producto, fecha, kg){
   var _kgOtroActual = (_lfOtro && _lfOtro.kg_otro_cliente) ? _lfOtro.kg_otro_cliente : 0;
   html += '<div class="metric-card" style="border-color:#fcd34d;background:#fffbeb"><div class="metric-lbl" title="kg de este lote que van para OTRO cliente (sin pedido B2B) · se restan de la cobertura de Animus">Para otro cliente</div>' +
     '<div style="display:flex;gap:4px;align-items:center;margin-top:2px">' +
-    '<input id="kg-otro-cli" type="number" min="0" max="1000" step="1" value="' + _kgOtroActual + '" style="width:60px;font-size:16px;font-weight:800;padding:3px 5px;border:1px solid #fcd34d;border-radius:5px">' +
+    '<input id="kg-otro-cli" type="number" min="0" max="1000" step="1" value="' + _kgOtroActual + '" oninput="try{_updateCadenciaPreview()}catch(e){}" style="width:60px;font-size:16px;font-weight:800;padding:3px 5px;border:1px solid #fcd34d;border-radius:5px">' +
     '<span style="font-size:12px;color:#92400e">kg</span>' +
     '<button onclick="guardarKgOtroCliente(' + id + ')" style="padding:5px 9px;font-size:11px;margin:0;background:#d97706">💾 Guardar</button>' +
     '</div>' +
@@ -19329,13 +19329,24 @@ function _desgloseTotalKg(){
 function _calcCadencia(){
   var m = window._LOTE_MODAL_ACTUAL || {};
   var cad = window._LOTE_CADENCIA || {};
-  var kg = _desgloseTotalKg();
-  if(!(kg > 0)){ kg = (m.kg || 0); }
-  if(!(kg > 0)) return null;
-  var vel = cad.velKgDia || 0;   // kg/día Animus
+  var kgTotal = _desgloseTotalKg();
+  if(!(kgTotal > 0)){ kgTotal = (m.kg || 0); }
+  if(!(kgTotal > 0)) return null;
+  // Sebastián 3-jul · SOLO la porción Animus manda la cadencia: restar lo que va para OTROS
+  // (reserva manual "para otro cliente" · live desde el input, aunque no se haya guardado) + B2B formal.
+  var kgOtroEl = document.getElementById('kg-otro-cli');
+  var kgOtro = kgOtroEl ? (parseFloat(kgOtroEl.value) || 0) : 0;
+  var lf = (PLAN_DATA.agendadas || []).find(function(a){ return a.id === m.id; });
+  var kgB2B = (lf && parseFloat(lf.kg_b2b)) || 0;
+  var kg = kgTotal - kgOtro - kgB2B;   // porción Animus (la que consume la venta DTC)
+  var vel = cad.velKgDia || 0;         // kg/día Animus
+  if(!(kg > 0.01)){
+    return {intervalDias: 0, firstOffset: 0, kg: 0, kgTotal: kgTotal, kgOtro: kgOtro, kgB2B: kgB2B,
+            vel: vel, cadaTxt: '', base: 'todo-otros', allOtros: true};
+  }
   var intervalDias, firstOffset, base;
   if(vel > 0.0001){
-    intervalDias = Math.max(Math.round(kg / vel), 15);   // días que ALCANZA este lote
+    intervalDias = Math.max(Math.round(kg / vel), 15);   // días que ALCANZA la porción Animus
     firstOffset = Math.max(intervalDias - 20, 1);         // 1er lote: 20d antes de agotar
     base = 'cobertura';
   } else {
@@ -19344,7 +19355,8 @@ function _calcCadencia(){
     intervalDias = Math.round(meses * 30.44); firstOffset = intervalDias; base = 'meses';
   }
   var cadaTxt = intervalDias >= 26 ? ('~' + (Math.round(intervalDias/30.44*10)/10) + ' meses') : ('~' + intervalDias + ' días');
-  return {intervalDias: intervalDias, firstOffset: firstOffset, kg: kg, vel: vel, cadaTxt: cadaTxt, base: base};
+  return {intervalDias: intervalDias, firstOffset: firstOffset, kg: kg, kgTotal: kgTotal, kgOtro: kgOtro,
+          kgB2B: kgB2B, vel: vel, cadaTxt: cadaTxt, base: base};
 }
 // Panel de claridad (Sebastián 3-jul): "este lote alcanza N días → cadena cada X" · base jun/jul.
 function _updateCadenciaPreview(){
@@ -19357,12 +19369,21 @@ function _updateCadenciaPreview(){
     el.innerHTML = '<span style="color:#94a3b8">Definí "Producir para X meses" arriba para ver la cadencia.</span>';
     return;
   }
+  var otrosTot = (cc.kgOtro || 0) + (cc.kgB2B || 0);
+  if(cc.allOtros || !(cc.kg > 0.01)){
+    el.innerHTML = '<span style="color:#b45309">⚠ Todo el lote (' + cc.kgTotal.toFixed(1) + ' kg) va para otros clientes → no hay porción Animus. Bajá "Para otro cliente" o subí el kg a producir.</span>';
+    return;
+  }
   var velMes = cad.velKgDia * 30;
   var agota = '';
   try{ var da = new Date((m.fecha || '') + 'T12:00:00'); da.setDate(da.getDate() + cc.intervalDias); agota = fechaLocalStr(da); }catch(e){}
   var nLotes = Math.max(1, Math.round(730 / cc.intervalDias));
-  el.innerHTML = '📦 Producción base <b>' + (m.fecha || '') + '</b> · <b>' + cc.kg.toFixed(1) + ' kg</b> · vende <b>' + velMes.toFixed(1) + ' kg/mes</b><br>'
-    + '⏳ Alcanza <b>~' + cc.intervalDias + ' días</b>' + (agota ? (' → hasta <b>~' + agota + '</b>') : '')
+  // Si hay porción para otros, mostrar el split (total = Animus + otros)
+  var splitTxt = otrosTot > 0.01
+    ? '<b>' + cc.kgTotal.toFixed(1) + ' kg</b> (<b style="color:#0e7490">' + cc.kg.toFixed(1) + ' Animus</b> + ' + otrosTot.toFixed(1) + ' otros)'
+    : '<b>' + cc.kg.toFixed(1) + ' kg</b>';
+  el.innerHTML = '📦 Producción base <b>' + (m.fecha || '') + '</b> · ' + splitTxt + ' · vende <b>' + velMes.toFixed(1) + ' kg/mes</b><br>'
+    + '⏳ La porción <b>Animus</b> alcanza <b>~' + cc.intervalDias + ' días</b>' + (agota ? (' → hasta <b>~' + agota + '</b>') : '')
     + ' · el botón programa un lote cada <b>' + cc.cadaTxt + '</b> (~' + nLotes + ' en 2 años).';
 }
 async function programarCadenciaDesdeLote(){
@@ -19371,8 +19392,11 @@ async function programarCadenciaDesdeLote(){
   if(!id){ alert('Abrí un lote primero'); return; }
   var cc = _calcCadencia();
   if(!cc){ alert('No hay kg a producir · calculá el desglose ("Calcular X meses") primero.'); return; }
+  if(cc.allOtros || !(cc.kg > 0.01)){ alert('Todo el lote va para otros clientes → no hay porción Animus para la cadena. Bajá "Para otro cliente" o subí el kg a producir.'); return; }
   var nLotes = Math.max(1, Math.round(730 / cc.intervalDias));
-  if(!confirm('Programar la cadena de "' + (m.producto || '') + '":\n\n• Este lote (' + cc.kg.toFixed(1) + ' kg) alcanza ~' + cc.intervalDias + ' días al ritmo actual\n• → un lote cada ' + cc.cadaTxt + ' (~' + nLotes + ' producciones en 2 años)\n• La 1ª cae ' + cc.firstOffset + ' días después del ancla (antes de agotar)\n\nReemplaza las AUTOMÁTICAS futuras de ese producto. NO toca lo Fijo, B2B, ni lo ya producido.')) return;
+  var _otrosTot = (cc.kgOtro || 0) + (cc.kgB2B || 0);
+  var _splitTxt = _otrosTot > 0.01 ? ('• Porción Animus: ' + cc.kg.toFixed(1) + ' kg (del total ' + cc.kgTotal.toFixed(1) + ' kg · ' + _otrosTot.toFixed(1) + ' para otros)\n') : '';
+  if(!confirm('Programar la cadena de "' + (m.producto || '') + '":\n\n' + _splitTxt + '• La porción Animus (' + cc.kg.toFixed(1) + ' kg) alcanza ~' + cc.intervalDias + ' días al ritmo actual\n• → un lote cada ' + cc.cadaTxt + ' (~' + nLotes + ' producciones en 2 años)\n• La 1ª cae ' + cc.firstOffset + ' días después del ancla (antes de agotar)\n\nReemplaza las AUTOMÁTICAS futuras de ese producto. NO toca lo Fijo, B2B, ni lo ya producido.')) return;
   try{
     var t = (await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json()).csrf_token;
     var r = await fetch('/api/plan/programar-cadencia-desde-lote/' + id, {method:'POST', credentials:'same-origin',
