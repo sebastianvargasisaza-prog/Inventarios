@@ -25545,7 +25545,8 @@ async function ckMarcar(itemId, estado){
       html += '<div style="background:linear-gradient(135deg,#f5f3ff,#faf5ff);border:1px solid #ddd6fe;border-radius:10px;padding:14px;margin:14px 0">';
       html += '<div style="font-size:13px;font-weight:800;color:#5b21b6;margin-bottom:8px">📅 Programar la cadena · 2 años</div>';
       html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">';
-      html += '<span style="font-size:12px;color:#5b21b6;font-weight:700">Producir para <input id="cadp-meses" type="number" min="1" max="12" value="2" oninput="_updateCadenaProdPreview(' + idx + ')" style="width:44px;padding:3px 4px;border:1px solid #c4b5fd;border-radius:4px;text-align:center;font-weight:700"> meses</span>';
+      html += '<span style="font-size:12px;color:#5b21b6;font-weight:700">Producir para <input id="cadp-meses" type="number" min="1" max="12" value="2" oninput="_cadpMesesToKg(' + idx + ')" style="width:44px;padding:3px 4px;border:1px solid #c4b5fd;border-radius:4px;text-align:center;font-weight:700"> meses</span>';
+      html += '<span style="font-size:12px;color:#5b21b6;font-weight:700">= <input id="cadp-kg" type="number" min="0.1" step="0.1" oninput="_updateCadenaProdPreview(' + idx + ')" title="kg de cada lote de la cadena · editalo para programar la cantidad exacta" style="width:56px;padding:3px 4px;border:1px solid #7c3aed;border-radius:4px;text-align:center;font-weight:800;color:#5b21b6"> kg/lote</span>';
       html += '<span style="font-size:11px;color:#92400e">· Para otro cliente <input id="cadp-otro" type="number" min="0" value="0" oninput="_updateCadenaProdPreview(' + idx + ')" style="width:52px;padding:3px 4px;border:1px solid #fcd34d;border-radius:4px;text-align:center"> kg</span>';
       html += '</div>';
       html += '<div id="cadp-preview" style="font-size:11px;color:#5b21b6;background:#fff;border:1px solid #ede9fe;border-radius:6px;padding:8px 10px;line-height:1.5;margin-bottom:8px"></div>';
@@ -25603,7 +25604,7 @@ async function ckMarcar(itemId, estado){
       t.setDate(t.getDate() + 7);
       document.getElementById('ppd-fecha').value = t.toISOString().slice(0, 10);
     }
-    setTimeout(function(){ try{ _updateCadenaProdPreview(idx); }catch(e){} }, 40);  // preview de cadencia (Sebastián 3-jul)
+    setTimeout(function(){ try{ _cadpMesesToKg(idx); }catch(e){} }, 40);  // poblar kg del lote + preview (Sebastián 3-jul)
   }
 
   // Sebastián 3-jul · cadencia desde Necesidades (motor completo · "aquí debería ser todo").
@@ -25623,6 +25624,16 @@ async function ckMarcar(itemId, estado){
     cands.sort(function(a,b){ return a.fecha < b.fecha ? -1 : 1; });  // ninguna pasó → la más temprana futura
     return cands[0];
   }
+  // Sebastián 3-jul · al cambiar los meses, recalcula el kg del lote (campo editable) · así ves los
+  // kilos y podés ajustarlos para programar la cantidad exacta ("full").
+  function _cadpMesesToKg(idx){
+    var p = window._NEC_PRODUCTOS_CACHE[idx]; if(!p) return;
+    var vel = p.velocidad_kg_dia || 0;
+    var meses = parseFloat((document.getElementById('cadp-meses')||{}).value) || 2;
+    var kgEl = document.getElementById('cadp-kg');
+    if(kgEl && vel > 0.0001){ kgEl.value = (Math.round(vel * meses * 30.44 * 10) / 10).toFixed(1); }
+    _updateCadenaProdPreview(idx);
+  }
   function _cadenaProdCalc(idx){
     var p = window._NEC_PRODUCTOS_CACHE[idx]; if(!p) return null;
     var vel = p.velocidad_kg_dia || 0;   // kg/día Animus
@@ -25630,9 +25641,13 @@ async function ckMarcar(itemId, estado){
     var meses = parseFloat((document.getElementById('cadp-meses')||{}).value) || 2;
     var otro = parseFloat((document.getElementById('cadp-otro')||{}).value) || 0;
     if(otro < 0) otro = 0;
-    var kgAnimus = Math.round(vel * meses * 30.44 * 10) / 10;        // demanda Animus de X meses (kg de cada lote de la cadena)
+    // el KG del lote es EDITABLE (cadp-kg) · si el user lo puso, manda; si no, = demanda de X meses.
+    var _kgEl = document.getElementById('cadp-kg');
+    var _kgOverride = _kgEl ? (parseFloat(_kgEl.value) || 0) : 0;
+    var kgAnimus = _kgOverride > 0 ? _kgOverride : Math.round(vel * meses * 30.44 * 10) / 10;
     if(!(kgAnimus > 0)) return null;
-    var intervalDias = Math.max(Math.round(kgAnimus / vel), 15);     // días que alcanza cada lote (= ~meses)
+    var mesesEf = Math.round((kgAnimus / (vel * 30.44)) * 10) / 10;  // meses que ese kg cubre (coherente con el kg editado)
+    var intervalDias = Math.max(Math.round(kgAnimus / vel), 15);     // días que alcanza cada lote
     var nLotes = Math.max(1, Math.round(730 / intervalDias));
     var cadaTxt = intervalDias >= 26 ? ('~' + (Math.round(intervalDias/30.44*10)/10) + ' meses') : ('~' + intervalDias + ' días');
     var diasGond = (p.dias_gondola != null) ? p.dias_gondola : 0;
@@ -25645,7 +25660,7 @@ async function ckMarcar(itemId, estado){
     } else {
       firstOffset = Math.max(diasGond - 20, 0);   // sin base en el plan → desde el stock (hoy)
     }
-    return {meses:meses, otro:otro, kgAnimus:kgAnimus, intervalDias:intervalDias, firstOffset:firstOffset, nLotes:nLotes, cadaTxt:cadaTxt, vel:vel, diasGond:diasGond, ancla:ancla};
+    return {meses:mesesEf, otro:otro, kgAnimus:kgAnimus, intervalDias:intervalDias, firstOffset:firstOffset, nLotes:nLotes, cadaTxt:cadaTxt, vel:vel, diasGond:diasGond, ancla:ancla};
   }
   function _updateCadenaProdPreview(idx){
     var el = document.getElementById('cadp-preview'); if(!el) return;
@@ -25655,7 +25670,8 @@ async function ckMarcar(itemId, estado){
     // la muestra) · solo referenciar la fecha base concisa aquí.
     el.innerHTML = '📦 Cada lote de la cadena <b>' + cc.kgAnimus.toFixed(1) + ' kg</b> (Animus ' + cc.meses + ' meses) · vende <b>' + (cc.vel*30).toFixed(1) + ' kg/mes</b>'
       + (cc.otro > 0 ? (' · ' + cc.otro.toFixed(1) + ' kg otro cliente en la base') : '') + '<br>'
-      + '⏳ Un lote cada <b>' + cc.cadaTxt + '</b> · ~<b>' + cc.nLotes + '</b> en 2 años · la 1ª <b>' + cc.firstOffset + ' días</b> ' + (cc.ancla ? ('después de la base (' + cc.ancla.fecha + ')') : 'desde hoy') + '.';
+      + '⏳ Un lote cada <b>' + cc.cadaTxt + '</b> · ~<b>' + cc.nLotes + '</b> lotes · total <b>' + (cc.kgAnimus * cc.nLotes).toFixed(0) + ' kg</b> en 2 años<br>'
+      + '🗓️ La 1ª de la cadena <b>' + cc.firstOffset + ' días</b> ' + (cc.ancla ? ('después de la base (' + cc.ancla.fecha + ')') : 'desde hoy') + '.';
   }
   async function programarCadenaProducto(idx){
     var p = window._NEC_PRODUCTOS_CACHE[idx]; if(!p){ alert('Producto no encontrado'); return; }
