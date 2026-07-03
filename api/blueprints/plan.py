@@ -8779,7 +8779,13 @@ def pedidos_b2b_asignar_a_animus(pid):
                    LIMIT 1""",
                 (cli_id, env_cod),
             ).fetchone()
-            if not _permitido:
+            # Sebastián 2-jul · si el cliente NO tiene NINGÚN envase en whitelist (cliente nuevo
+            # sin configurar), se permite cualquiera → no frena a Luz. Solo bloquea si el cliente
+            # SÍ tiene whitelist y este envase no está.
+            _tiene_wl = cur.execute(
+                "SELECT 1 FROM clientes_b2b_envases WHERE cliente_id=? AND COALESCE(activo,1)=1 LIMIT 1",
+                (cli_id,)).fetchone()
+            if not _permitido and _tiene_wl:
                 return jsonify({
                     'error': (f"Envase '{env_cod}' no está en whitelist del "
                               f"cliente {cli_nom or cli_id} · agregarlo en "
@@ -8839,7 +8845,7 @@ def pedidos_b2b_asignar_a_animus(pid):
              ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
            WHERE (UPPER(TRIM(pp.producto)) = UPPER(TRIM(?))
                   OR UPPER(TRIM(COALESCE(fh.producto_canonico,''))) = UPPER(TRIM(?)))
-             AND COALESCE(pp.origen,'') IN ('eos_plan','eos_canonico','calendar','manual','auto_plan','sugerido')
+             AND COALESCE(pp.origen,'') IN ('eos_plan','eos_canonico','calendar','manual','auto_plan','sugerido','eos_proyeccion')
              AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado','esperando_recurso')
              AND pp.inicio_real_at IS NULL AND pp.fin_real_at IS NULL
              AND ABS(julianday(pp.fecha_programada) - julianday(?)) <= 30
@@ -8862,7 +8868,7 @@ def pedidos_b2b_asignar_a_animus(pid):
                      ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
                    WHERE (UPPER(TRIM(pp.producto)) = UPPER(TRIM(?))
                           OR UPPER(TRIM(COALESCE(fh.producto_canonico,''))) = UPPER(TRIM(?)))
-                     AND COALESCE(pp.origen,'') IN ('eos_plan','eos_canonico','calendar','manual','auto_plan','sugerido')
+                     AND COALESCE(pp.origen,'') IN ('eos_plan','eos_canonico','calendar','manual','auto_plan','sugerido','eos_proyeccion')
                      AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
                      AND pp.inicio_real_at IS NULL AND pp.fin_real_at IS NULL
                      AND pp.fecha_programada >= date('now','-5 hours','-7 day')
