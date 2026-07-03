@@ -16578,7 +16578,7 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
 .cal-day.drop-invalid{background:#fee2e2 !important;border:2px dashed #dc2626 !important}
 .modal-back{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);z-index:2147483000;justify-content:center;align-items:center;padding:20px;overflow-y:auto}
 .modal-back.show{display:flex}
-.modal-box{background:white;border-radius:14px;max-width:560px;width:100%;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.4)}
+.modal-box{background:white;border-radius:14px;max-width:min(860px,96vw);width:100%;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.4)}
 .modal-head{background:linear-gradient(90deg,#0f766e,#0891b2);padding:14px 22px;border-radius:14px 14px 0 0;color:white;display:flex;justify-content:space-between;align-items:center}
 .modal-body{padding:18px 22px}
 .metric-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
@@ -18939,7 +18939,7 @@ async function abrirLoteModal(id, producto, fecha, kg){
         const _dtcEnv = _envTxt(_dtcCli);
         dHtml += '<tr style="border-top:1px solid #e2e8f0;background:#eff6ff">'
           + '<td style="padding:6px 8px;font-weight:700;color:#1e40af">🛍️ Animus DTC</td>'
-          + '<td style="padding:6px 8px;text-align:center;font-weight:700">' + kgDTC + ' kg</td>'
+          + '<td style="padding:6px 8px;text-align:center;font-weight:700">' + kgDTC + ' kg<br><span style="font-size:10px;font-weight:600;color:#64748b">' + (kg > 0 ? Math.round(kgDTC / kg * 100) : 0) + '%</span></td>'
           + '<td colspan="4" style="padding:6px 8px;font-size:11px;color:#1e293b">'
             + (_dtcEnv || '<em style="color:#94a3b8">DTC automático</em>')
             + ' <span style="color:#94a3b8;font-size:10px">· auto · no editable</span></td>'
@@ -18972,7 +18972,7 @@ async function abrirLoteModal(id, producto, fecha, kg){
         const okId = 'env-ok-' + pblId;
         dHtml += '<tr style="border-top:1px solid #e2e8f0;background:#fce7f3">'
           + '<td style="padding:6px 8px;font-weight:700;color:#9d174d" title="pedido B2B #' + (d.pedido_id||'') + '">📦 ' + escapeHtml(cli) + '</td>'
-          + '<td style="padding:6px 8px;text-align:center;font-weight:700">' + d.kg + ' kg</td>'
+          + '<td style="padding:6px 8px;text-align:center;font-weight:700">' + d.kg + ' kg<br><span style="font-size:10px;font-weight:600;color:#64748b">' + (kg > 0 ? Math.round(d.kg / kg * 100) : 0) + '%</span></td>'
           + '<td style="padding:6px 8px;text-align:center;font-size:10px">' + envaseCell + '</td>'
           + '<td style="padding:6px 8px;text-align:center;color:#64748b" title="' + d.kg + 'kg × 1000 ÷ ' + (d.ml||0) + 'ml">' + udsCalc + ' uds</td>'
           + '<td style="padding:6px 8px;text-align:center"><input id="' + inputId + '" type="number" min="0" max="10000000" value="' + planUds + '" placeholder="' + udsCalc + '" style="width:90px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;text-align:center"></td>'
@@ -19017,38 +19017,10 @@ async function abrirLoteModal(id, producto, fecha, kg){
   // 📊 Desglose EDITABLE por referencia (Sebastián 27-jun) · se llena async tras pintar el modal.
   html += '<div id="lote-desglose-edit"></div>';
 
-  // Sección 1.5: Composición del lote · Sebastián 19-may-2026
-  // "extensión de marca · la misma producción sirve para varios clientes".
-  // Parsea observaciones para extraer aportes B2B y muestra el desglose.
-  try {
-    const loteData = (PLAN_DATA.agendadas || []).find(a => a.id === id);
-    const composicion = _parsearComposicionLote(loteData, kg);
-    if (composicion && composicion.entradas.length > 0){
-      html += '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;margin:8px 0">';
-      html += '<div style="font-size:12px;font-weight:700;color:#0f766e;margin-bottom:6px">👥 Composición del lote · este lote atiende a:</div>';
-      html += '<table style="width:100%;font-size:11px;border-collapse:collapse">';
-      composicion.entradas.forEach(e => {
-        const pct = composicion.kg_total > 0 ? Math.round((e.kg / composicion.kg_total) * 100) : 0;
-        // F1 (2-jul) · mostrar UDS por cliente. Animus DTC (esDTC) sin override: estimar por ml.
-        let uds = e.uds || 0;
-        if (!uds && e.esDTC){
-          const _ml = (window._DESG && window._DESG.mlProm) || 30;
-          uds = Math.round(e.kg * 1000 / _ml);
-        }
-        html += '<tr style="border-top:1px solid #e2e8f0">';
-        html += '<td style="padding:4px 8px"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:' + e.color + ';margin-right:6px;vertical-align:middle"></span>' + escapeHtml(e.cliente) + '</td>';
-        html += '<td style="padding:4px 8px;text-align:right;font-weight:700;color:#0f766e">' + (uds ? uds.toLocaleString('es-CO') + ' uds' : '—') + '</td>';
-        html += '<td style="padding:4px 8px;text-align:right;font-weight:600">' + e.kg.toFixed(2) + ' kg</td>';
-        html += '<td style="padding:4px 8px;text-align:right;color:#64748b">' + pct + '%</td>';
-        html += '</tr>';
-      });
-      html += '</table>';
-      if (composicion.kg_residual_dtc > 0.01){
-        html += '<div style="font-size:10px;color:#64748b;margin-top:4px;font-style:italic">DTC (Animus / inventario) = total − suma B2B</div>';
-      }
-      html += '</div>';
-    }
-  } catch(e){ console.warn('composicion lote falló:', e); }
+  // Sección 1.5 QUITADA (Sebastián 2-jul · "estos dos hacen lo mismo"): la "Composición del lote"
+  // (read-only · cliente/uds/kg/%) era REDUNDANTE con el "Plan de envasado" de arriba, que ahora
+  // muestra el % por cliente y además es editable (uds a envasar + envase + observaciones). Una sola
+  // sección para el desglose por cliente. (El "Desglose por referencia" por SKU sigue, es distinto.)
 
   // Sección 2: Diagnóstico fecha programada
   if (diagFechaTxt){
