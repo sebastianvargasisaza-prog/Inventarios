@@ -4781,15 +4781,16 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                       pp.origen, COALESCE(pp.cantidad_kg, 0),
                       pp.motivo_pausa, pp.pausado_at, pp.observaciones,
                       COALESCE(pp.distribucion_resumen, ''),
-                      COALESCE(pp.meses_cobertura, 0)
+                      COALESCE(pp.meses_cobertura, 0),
+                      COALESCE(pp.kg_otro_cliente, 0)
                FROM produccion_programada pp
                WHERE pp.estado IN ('pendiente','programado','en_curso','esperando_recurso')
                  AND pp.fin_real_at IS NULL
                ORDER BY pp.fecha_programada ASC""",
         ).fetchall()
     except Exception:
-        # Fallback si mig 176/333 aún no aplicada (pad distribucion_resumen + meses_cobertura)
-        prod_rows_plan = [tuple(list(r) + ['', 0]) for r in c.execute(
+        # Fallback si mig 176/333/334 aún no aplicada (pad distribucion_resumen + meses_cobertura + kg_otro_cliente)
+        prod_rows_plan = [tuple(list(r) + ['', 0, 0]) for r in c.execute(
             """SELECT pp.producto, pp.id, pp.fecha_programada, pp.estado,
                       pp.origen, COALESCE(pp.cantidad_kg, 0),
                       pp.motivo_pausa, pp.pausado_at, pp.observaciones
@@ -4815,6 +4816,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             "obs_preview": (r[8] or "")[:80],
             "distribucion_resumen": (r[9] or "")[:300],
             "meses_cobertura": (float(r[10]) if len(r) > 10 and r[10] else 0),
+            "kg_otro_cliente": (float(r[11]) if len(r) > 11 and r[11] else 0),
         })
 
     # FEATURE B2B 24-may-2026 · enriquecer cada lote con su desglose B2B
@@ -4844,8 +4846,11 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             ap = aportes_por_lote.get(lote['id'], [])
             lote['aportes_b2b'] = ap
             kg_b2b = sum(a['kg'] for a in ap)
+            _kg_otro = float(lote.get('kg_otro_cliente') or 0)
             lote['kg_b2b'] = round(kg_b2b, 2)
-            lote['kg_dtc'] = round(max(lote['kg'] - kg_b2b, 0), 2)
+            # Sebastián 2-jul · kg_otro_cliente (RESERVA MANUAL · sin pedido B2B formal) también sale
+            # de la porción Animus → cobertura/próxima usa cantidad_kg − B2B − otro_cliente (Renova Body).
+            lote['kg_dtc'] = round(max(lote['kg'] - kg_b2b - _kg_otro, 0), 2)
             lote['tiene_b2b'] = bool(ap)
 
     for p in out:
@@ -18806,21 +18811,25 @@ async function abrirLoteModal(id, producto, fecha, kg){
     // La duración la determina SOLO la porción que consume Animus al ritmo DTC ·
     // los kg comprometidos a B2B (Fernando Meza, etc.) salen del lote y no cubren
     // demanda diaria · usar kg_residual_dtc de la composición, no el lote completo.
+    // Sebastián 2-jul · la duración la determina SOLO la porción Animus = kg_dtc (backend:
+    // cantidad_kg − B2B formal − kg_otro_cliente manual). Antes solo restaba el B2B con pedido;
+    // ahora también la reserva manual "para otro cliente" (caso Renova Body 80% de otra marca).
     let kgAnimus = kg;
     try {
-      const _c = _parsearComposicionLote((PLAN_DATA.agendadas || []).find(a => a.id === id), kg);
-      if (_c && _c.entradas.length > 0 && _c.kg_residual_dtc != null && _c.kg_residual_dtc > 0.01) {
-        kgAnimus = _c.kg_residual_dtc;
+      const _lf = (PLAN_DATA.agendadas || []).find(a => a.id === id);
+      if (_lf && _lf.kg_dtc != null) {
+        const _d = parseFloat(_lf.kg_dtc);
+        if (!isNaN(_d) && _d < kg - 0.01) kgAnimus = Math.max(0, _d);  // hay porción para otros
       }
     } catch(e){}
-    const kgB2B = Math.max(0, kg - kgAnimus);
+    const kgOtros = Math.max(0, kg - kgAnimus);
     const diasDura = kgAnimus / velKgDia;
     const diasHastaProx = Math.max(Math.round(diasDura) - 20, 1);  // buffer 20d antes de agotar · mín 1 (M70)
     const fProx = new Date(fecha + 'T12:00:00');
     fProx.setDate(fProx.getDate() + diasHastaProx);
     proximaSugerida = fechaLocalStr(fProx);
-    const _kgTxt = kgB2B > 0.01
-      ? kg + 'kg (' + kgAnimus.toFixed(1) + ' Animus + ' + kgB2B.toFixed(1) + ' B2B)'
+    const _kgTxt = kgOtros > 0.01
+      ? kg + 'kg (' + kgAnimus.toFixed(1) + ' Animus + ' + kgOtros.toFixed(1) + ' otros clientes)'
       : kg + 'kg';
     proximaTxt = '✓ Lote programado para <strong>' + fecha + '</strong> · ' + _kgTxt + ' · cubre Animus ~' + Math.round(diasDura) + ' días al ritmo actual · próxima producción sugerida: <strong>' + proximaSugerida + '</strong>';
   }
@@ -19010,6 +19019,17 @@ async function abrirLoteModal(id, producto, fecha, kg){
     '<button onclick="guardarKgLote(' + id + ')" style="padding:5px 9px;font-size:11px;margin:0">💾 Guardar</button>' +
     '</div>' +
     '<div class="metric-sub" id="edit-kg-uds">' + Math.round(kg * 1000 / ml) + ' uds aprox</div></div>';
+  // Sebastián 2-jul · reserva MANUAL de kg para OTRO cliente (sin pedido B2B) · se resta de la
+  // cobertura/próxima de Animus (caso Renova Body: 80% del lote iba para otra marca).
+  var _lfOtro = (PLAN_DATA.agendadas || []).find(function(a){ return a.id === id; });
+  var _kgOtroActual = (_lfOtro && _lfOtro.kg_otro_cliente) ? _lfOtro.kg_otro_cliente : 0;
+  html += '<div class="metric-card" style="border-color:#fcd34d;background:#fffbeb"><div class="metric-lbl" title="kg de este lote que van para OTRO cliente (sin pedido B2B) · se restan de la cobertura de Animus">Para otro cliente</div>' +
+    '<div style="display:flex;gap:4px;align-items:center;margin-top:2px">' +
+    '<input id="kg-otro-cli" type="number" min="0" max="1000" step="1" value="' + _kgOtroActual + '" style="width:60px;font-size:16px;font-weight:800;padding:3px 5px;border:1px solid #fcd34d;border-radius:5px">' +
+    '<span style="font-size:12px;color:#92400e">kg</span>' +
+    '<button onclick="guardarKgOtroCliente(' + id + ')" style="padding:5px 9px;font-size:11px;margin:0;background:#d97706">💾 Guardar</button>' +
+    '</div>' +
+    '<div class="metric-sub" style="color:#92400e">no es de Animus · resta cobertura</div></div>';
   html += '<div class="metric-card"><div class="metric-lbl">Vende/día</div><div class="metric-val">' + velUds.toFixed(1) + '</div><div class="metric-sub">' + velKgDia.toFixed(2) + ' kg/día</div></div>';
   html += '<div class="metric-card"><div class="metric-lbl">Vende/mes</div><div class="metric-val">' + velMes + '</div><div class="metric-sub">' + (velKgDia * 30).toFixed(1) + ' kg/mes</div></div>';
   // FIX 30-may-2026 · "237 uds / 72.1 kg" era incoherente · 237 uds × 30ml = 7.1kg,
@@ -19212,6 +19232,26 @@ function _recalcKgDesglose(applyToKg){
 }
 
 // Sebastián 15-may-2026: editar kg a producir desde el popup del lote
+// Sebastián 2-jul · guardar la reserva MANUAL de kg para otro cliente · reabre el modal para
+// que la cobertura/próxima se recalcule con la porción Animus actualizada.
+async function guardarKgOtroCliente(id){
+  var el = document.getElementById('kg-otro-cli');
+  if(!el) return;
+  var val = parseFloat(el.value) || 0;
+  var kgEl = document.getElementById('edit-kg-lote');
+  var m = window._LOTE_MODAL_ACTUAL || {};
+  var kgActual = kgEl ? (parseFloat(kgEl.value) || 0) : (m.kg || 0);
+  el.disabled = true;
+  try{
+    var t = (await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json()).csrf_token;
+    var r = await fetch('/api/plan/proximas/' + id + '/cantidad', {method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':t},
+      body: JSON.stringify({cantidad_kg: kgActual, kg_otro_cliente: val})});
+    if(!r.ok){ var d = await r.json().catch(function(){return {};}); alert('No se pudo guardar: ' + (d.error || r.status)); el.disabled = false; return; }
+    if(window.cargarNecesidades){ try{ await cargarNecesidades(); }catch(e){} }  // refrescar kg_dtc
+    abrirLoteModal(id, m.producto, m.fecha, m.kg);  // reabrir → recalcula la próxima con la porción Animus
+  }catch(e){ alert('Error: ' + e); el.disabled = false; }
+}
 async function guardarKgLote(id){
   const inp = document.getElementById('edit-kg-lote');
   if (!inp) return;
@@ -21740,6 +21780,20 @@ def actualizar_cantidad_proxima(pid):
             _mcf = float(_mc)
             if 0 < _mcf <= 24:
                 cur.execute("UPDATE produccion_programada SET meses_cobertura=? WHERE id=?", (round(_mcf, 2), pid))
+    except Exception:
+        pass
+    # Sebastián 2-jul · reserva MANUAL de kg para OTRO cliente (sin pedido B2B formal). La cobertura /
+    # próxima producción de Animus la resta (kg_dtc = cantidad_kg − B2B − kg_otro_cliente · caso Renova
+    # Body 80% de otra marca). Columna kg_otro_cliente (mig 334). Clamp 0..kg del lote.
+    try:
+        _ko = body.get("kg_otro_cliente")
+        if _ko is not None:
+            _kof = float(_ko)
+            if _kof < 0:
+                _kof = 0.0
+            if nueva_kg and _kof > float(nueva_kg):
+                _kof = float(nueva_kg)
+            cur.execute("UPDATE produccion_programada SET kg_otro_cliente=? WHERE id=?", (round(_kof, 2), pid))
     except Exception:
         pass
     conn.commit()

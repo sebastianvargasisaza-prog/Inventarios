@@ -397,6 +397,9 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (334, "produccion_programada.kg_otro_cliente REAL · kg del lote RESERVADOS manualmente para OTRO cliente (sin pedido B2B formal · caso Renova Body 80% para otro cliente). La cobertura/proxima produccion de Animus se calcula con la porcion Animus = cantidad_kg - kg_b2b - kg_otro_cliente (Sebastian 2-jul). Nullable default 0, additiva, PG-safe.", [
+        "ALTER TABLE produccion_programada ADD COLUMN kg_otro_cliente REAL DEFAULT 0",
+    ]),
     (333, "produccion_programada.meses_cobertura REAL · guarda los MESES elegidos en 'producir para X meses' (rediseno modal F4/F5 · Sebastian 2-jul). Informativo/recalculo: NO es fuente del descuento MP (eso sigue siendo cantidad_kg · M1/M9). Nullable, additiva, PG-safe.", [
         "ALTER TABLE produccion_programada ADD COLUMN meses_cobertura REAL",
     ]),
