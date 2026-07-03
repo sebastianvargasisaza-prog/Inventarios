@@ -25447,11 +25447,9 @@ async function ckMarcar(itemId, estado){
     // cobertura-con-pipeline. Así el número y el color (CRÍTICO/etc.) coinciden.
     html += '<div>Alcanza góndola: <strong style="color:' + cfg.text + '">' + (p.dias_gondola != null ? p.dias_gondola + ' días' : '—') + '</strong> ' + cfg.emoji + ' ' + p.urgencia + '</div>';
     html += '</div>';
-    // Producción EN CAMINO (pipeline = lotes en curso/programados, NO góndola) · info
-    // neutra (el consejo accionable va en la 🎯 Acción sugerida de abajo · M6).
-    if (p.dias_cobertura != null && p.dias_gondola != null && (p.dias_cobertura - p.dias_gondola) >= 1) {
-      html += '<div style="font-size:11px;color:#2563eb;margin-top:6px;padding-top:6px;border-top:1px dashed #cbd5e1">📦 Con producción en camino (lotes en curso/programados): alcanza ~<strong>' + p.dias_cobertura + ' días</strong></div>';
-    }
+    // Sebastián 3-jul · QUITADA la línea "Con producción en camino: alcanza ~Xd" · era la MISMA
+    // referencia (~120d) que la caja "Última producción · horizonte" de abajo (Alcanza para ~120 días).
+    // Una sola referencia del alcance.
     html += '</div>';
     // 🎨 Desglose por referencia/tono (multi-SKU · 27-jun) · siempre disponible (abre el mix de ventas por SKU).
     html += '<button onclick="verDesgloseTonos(' + JSON.stringify((p.producto_nombre||p.producto||'')).replace(/"/g,'&quot;') + ')" style="background:#fff;border:1px solid #c4b5fd;color:#6d28d9;border-radius:6px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;margin-bottom:10px">🎨 Ver referencias / tonos</button>';
