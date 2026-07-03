@@ -5,7 +5,7 @@
 > **Cuando encuentres o arregles un bug con un patrón nuevo, AGRÉGALO aquí en el mismo commit.**
 > Mantenlo denso y accionable (checklist, no narrativa). La historia detallada vive en `SESSION_LOG/`.
 
-Última actualización: **2026-06-29** (M57 Fase 0 · normalización del inventario de ENVASES/MEE: resolver canónico + puente de duplicados en mee_aliases + diff/aplicar · lección PG `PRAGMA` es SQLite-only)
+Última actualización: **2026-07-03** (M65 REINCIDENCIA · `\n` crudo en template REGULAR rompió /inventarios · node-check DEBE ser del valor EVALUADO de DASHBOARD_HTML, TODOS los `<script>`, antes de push)
 
 ---
 
@@ -568,6 +568,10 @@ Metí `'🔬'` (par surrogate de 🔬) en el JS de un edit. Al hacer `open(p,'w'
 Un botón nuevo en Fabricación quedó con un **salto de línea REAL dentro de un string `confirm('...')`** → rompía TODO el bloque `<script>` (IIFE) de Fabricación, y **se desplegó a prod** (golden verde no node-checkea JS). Dos fallas combinadas:
 1. **El node-check era hueco:** usaba `getattr(D,'DASHBOARD_CORE_JS','')` — ese atributo NO existe → devolvía `''` → node-check de string vacío SIEMPRE pasa. **Regla:** para validar JS de un template Python, importá el módulo, buscá el **string-constante REAL** que contiene la función (`for k in dir(m): v=getattr(m,k); if isinstance(v,str) and 'miFuncion' in v`), extraé sus `<script>` y node-checkeá ESE bloque renderizado. NO node-checkees el fuente .py crudo (tiene escapes Python `\\'` `\\n` que dan falsos positivos) ni un atributo adivinado.
 2. **El salto de línea entró por un heredoc:** generar JS con escapes (`\\u00bf`, `\\n`) vía `python << 'PYEOF'` inline mangló los escapes → `\n` se volvió newline real. **Regla:** para scripts con JS/escapes usá la **herramienta Write** (escribe el .py directo, sin heredoc) y **strings de UNA línea** en `alert/confirm/prompt` (sin `\n`). Tras escribir, node-check del renderizado + balance + tamaño de archivo (M64). Combina con M59 (modal "Cargando") y M61.
+
+**+ REINCIDENCIA 3-jul (rompí prod otra vez · misma clase):** agregué una sección + funciones en `dashboard_html.py` (`DASHBOARD_HTML` es un `"""..."""` REGULAR, no raw) usando `\n` CRUDO en `confirm/alert` — Y, colmo de la ironía, **en el propio comentario que advertía del bug** (`// ...van con \\n, no \n.` ← ese `\n` se volvió salto real, dejó `.` suelto en una línea → rompió TODO el `<script>` → `switchProgTab is not defined` → /inventarios en blanco). **DOS lecciones duras:**
+   - **(a) En un string Python REGULAR, TODO `\n` es un salto real — incluidos los de COMENTARIOS `//`.** Para un salto de línea en JS embebido usá SIEMPRE `\\n` (doble backslash), y en comentarios que mencionen `\n` escribí "doble backslash n" en palabras o `\\n`, nunca el `\n` literal. Preferí `<br>` (HTML) o `·` para separar, y `alert/confirm` de una sola línea.
+   - **(b) El node-check tiene que ser del VALOR EVALUADO del string, y de TODOS sus `<script>`, no de una extracción parcial.** Node-checkear solo mis funciones (`src[i:j]` del fuente crudo) pasó VERDE mientras el error real vivía en el mismo bloque. La verificación correcta: `ast.parse` del .py → hallá el `ast.Assign` cuyo `ast.Constant` string es el grande (`len>500000` = `DASHBOARD_HTML`) → `ast.literal_eval`/`.value` para el valor EVALUADO (escapes resueltos) → `re.findall(r'<script[^>]*>(.*?)</script>')` → `node --check` CADA bloque. Node-check del fuente crudo da falsos `\\'`; node-check parcial esconde el error de al lado. **Regla dura: antes de push de cualquier edición a `dashboard_html.py`/templates con JS embebido, node-check de los N bloques del valor EVALUADO — cero fallas — o no se despliega.**
 
 ## 🚦 M66 · Cambiar un default global de un gate rompe los golden que asumían el viejo default · 30-jun
 
