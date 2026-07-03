@@ -19319,9 +19319,13 @@ async function programarCadenciaDesdeLote(){
       body: JSON.stringify({meses: meses, kg_por_lote: kgPorLote, anios: 2})});
     var d = await r.json();
     if(!r.ok){ alert('No se pudo: ' + ((d && d.error) || r.status)); return; }
-    alert('✓ Cadena programada · ' + d.creados + ' producciones cada ' + meses + ' meses × 2 años (se cancelaron ' + d.cancelados + ' automáticas). Recargando el calendario…');
-    if(window.cargarNecesidades){ try{ await cargarNecesidades(); }catch(e){} }
+    var _f1 = (d.fechas && d.fechas[0]) || '';
+    var _fN = (d.fechas && d.fechas[d.fechas.length-1]) || '';
+    alert('✓ Cadena programada · ' + d.creados + ' producciones cada ' + meses + ' meses (se cancelaron ' + d.cancelados + ' automáticas).\n\nCaen desde ' + _f1 + ' hasta ' + _fN + ' · navegá con "Siguiente →" para verlas.');
     if(typeof cerrarLoteModal === 'function') cerrarLoteModal();
+    // refrescar el CALENDARIO (cargar()), no solo Necesidades · si no, no se ven las nuevas
+    if(typeof cargar === 'function'){ try{ await cargar(); }catch(e){} }
+    else if(window.cargarNecesidades){ try{ await cargarNecesidades(); }catch(e){} }
   }catch(e){ alert('Error: ' + e); }
 }
 function autoCalcDesglose(){
@@ -19384,7 +19388,8 @@ async function guardarKgOtroCliente(id){
       headers:{'Content-Type':'application/json','X-CSRF-Token':t},
       body: JSON.stringify({cantidad_kg: kgActual, kg_otro_cliente: val})});
     if(!r.ok){ var d = await r.json().catch(function(){return {};}); alert('No se pudo guardar: ' + (d.error || r.status)); el.disabled = false; return; }
-    if(window.cargarNecesidades){ try{ await cargarNecesidades(); }catch(e){} }  // refrescar kg_dtc
+    if(typeof cargar === 'function'){ try{ await cargar(); }catch(e){} }  // refrescar calendario + kg_dtc
+    else if(window.cargarNecesidades){ try{ await cargarNecesidades(); }catch(e){} }
     abrirLoteModal(id, m.producto, m.fecha, m.kg);  // reabrir → recalcula la próxima con la porción Animus
   }catch(e){ alert('Error: ' + e); el.disabled = false; }
 }
