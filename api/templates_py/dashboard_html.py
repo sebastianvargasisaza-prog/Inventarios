@@ -2544,8 +2544,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <label style="color:#475569">Alerta ≤
           <input type="number" id="nec-cob-alerta" value="25" min="14" max="60" style="width:42px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:3px;font-size:11px">d
         </label>
-        <button onclick="abrirFormB2B()" style="background:#1e40af;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">+ Pedido B2B</button>
-        <a href="/admin/clientes-b2b" title="Crear/gestionar clientes B2B (Luz, Valentina, Daniela) · sus pedidos se cargan solos al plan" style="background:#0d9488;color:#fff;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;text-decoration:none">👥 Clientes B2B</a>
+        <button onclick="abrirClientesB2B()" title="Crear/gestionar clientes B2B (Luz, Valentina, Daniela) · cada cliente agrega sus pedidos con '+ Producto' · se cargan solos al plan" style="background:#0d9488;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">👥 Clientes B2B</button>
         <button onclick="abrirHerramientasLimpieza()" style="background:#475569;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Limpia Sugeridas viejas del calendario + arregla productos con lote_size_kg absurdo">⚙ Herramientas</button>
         <button onclick="cargarNecesidades()" style="background:#6d28d9;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">↻ Recargar</button>
       </div>
@@ -26067,6 +26066,28 @@ async function ckMarcar(itemId, estado){
       }
     } catch(e) { alert('Error red: ' + e.message); }
   };
+
+  // Sebastián 2-jul · Clientes B2B como POPUP (iframe) sin salir de Necesidades.
+  // Cierre por addEventListener (evita comillas escapadas en onclick · lección M65).
+  function abrirClientesB2B() {
+    var ov = document.getElementById('cliB2bOverlay');
+    if (ov) { ov.style.display = 'flex'; var f = ov.querySelector('iframe'); if (f) f.src = f.src; return; }
+    ov = document.createElement('div');
+    ov.id = 'cliB2bOverlay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+    ov.innerHTML =
+      '<div style="background:#fff;border-radius:12px;width:min(1150px,97vw);height:min(90vh,940px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 12px 44px rgba(0,0,0,.35)">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 16px;background:#0d9488;color:#fff;flex:0 0 auto">'
+      + '<span style="font-weight:800;font-size:14px">&#128101; Clientes B2B</span>'
+      + '<button id="cliB2bClose" style="background:rgba(255,255,255,.25);color:#fff;border:none;border-radius:6px;padding:5px 13px;cursor:pointer;font-weight:700">&#10005; Cerrar</button>'
+      + '</div>'
+      + '<iframe src="/admin/clientes-b2b" style="flex:1 1 auto;border:none;width:100%"></iframe>'
+      + '</div>';
+    ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
+    document.body.appendChild(ov);
+    var _cb = document.getElementById('cliB2bClose');
+    if (_cb) _cb.addEventListener('click', function () { ov.remove(); });
+  }
 
   async function abrirFormB2B() {
     // Cargar productos activos al select si está vacío
