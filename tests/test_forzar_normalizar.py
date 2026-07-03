@@ -76,3 +76,33 @@ def test_editar_kg_ejecutado_forzar_cambia_registro(app, db_clean):
     _fecha, kg, inv_despues = _row(pid)
     assert abs(float(kg) - 42) < 0.01
     assert inv_despues == inv_antes  # NO re-descuenta MP
+
+
+def _otro_lote_mismo_dia(fecha='2026-06-30'):
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    try:
+        conn.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes) "
+                     "VALUES ('OTRO MISMO DIA',?,'programado','eos_plan',5,1)", (fecha,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_editar_a_lote_grande_sin_forzar_409_puede_forzar(app, db_clean):
+    """Renova 30-jun = 70kg (>50 grande) pero el día tiene otros lotes → sin forzar 409 con puede_forzar."""
+    pid = _lote_ejecutado(kg=16, fecha='2026-06-30')
+    _otro_lote_mismo_dia('2026-06-30')
+    c = _login(app)
+    r = c.post('/api/plan/proximas/%d/cantidad' % pid, json={'cantidad_kg': 70}, headers=csrf_headers())
+    assert r.status_code == 409, r.data[:300]
+    assert (r.get_json() or {}).get('puede_forzar') is True
+
+
+def test_editar_a_lote_grande_forzar_ok(app, db_clean):
+    pid = _lote_ejecutado(kg=16, fecha='2026-06-30')
+    _otro_lote_mismo_dia('2026-06-30')
+    c = _login(app)
+    r = c.post('/api/plan/proximas/%d/cantidad' % pid,
+               json={'cantidad_kg': 70, 'forzar_normalizar': True}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    assert abs(float(_row(pid)[1]) - 70) < 0.01

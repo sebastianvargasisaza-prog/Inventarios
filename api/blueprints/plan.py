@@ -19749,7 +19749,7 @@ async function reprogramarLote(id, nuevaFecha, razon){
     const errMsg = (d && (d.error || d.message)) || txt || ('HTTP ' + r.status);
 
     if (r.status === 422){
-      if (confirm('⚠ ' + errMsg + '\\n\\n¿Forzar la reprogramación de todos modos?')){
+      if (confirm('⚠ ' + errMsg + '\n\n¿Forzar la reprogramación de todos modos?')){
         const r2 = await fetch('/api/plan/proximas/' + id + '/reprogramar', {
           method:'POST',
           headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
@@ -19760,9 +19760,9 @@ async function reprogramarLote(id, nuevaFecha, razon){
         try { d2 = await r2.json(); } catch(e){ txt2 = await r2.text(); }
         if (!r2.ok){
           const errMsg2 = (d2 && (d2.error || d2.message)) || txt2 || ('HTTP ' + r2.status);
-          alert('❌ No se pudo mover (forzado):\\n\\n' + errMsg2 +
-                '\\n\\nStatus: ' + r2.status +
-                (r2.status === 403 ? '\\n\\nProbable causa: MFA no activado. Ir a /seguridad para configurar.' : ''));
+          alert('❌ No se pudo mover (forzado):\n\n' + errMsg2 +
+                '\n\nStatus: ' + r2.status +
+                (r2.status === 403 ? '\n\nProbable causa: MFA no activado. Ir a /seguridad para configurar.' : ''));
           return;
         }
       } else {
@@ -19786,10 +19786,10 @@ async function reprogramarLote(id, nuevaFecha, razon){
         }
       } else { return; }
     } else if (!r.ok){
-      alert('❌ No se pudo mover:\\n\\n' + errMsg +
-            '\\n\\nStatus: ' + r.status +
-            (r.status === 403 ? '\\n\\nProbable causa: MFA no activado. Ir a /seguridad para configurar MFA.' :
-             (r.status === 401 ? '\\n\\nProbable causa: sesión expirada. Recargá la página.' : '')));
+      alert('❌ No se pudo mover:\n\n' + errMsg +
+            '\n\nStatus: ' + r.status +
+            (r.status === 403 ? '\n\nProbable causa: MFA no activado. Ir a /seguridad para configurar MFA.' :
+             (r.status === 401 ? '\n\nProbable causa: sesión expirada. Recargá la página.' : '')));
       return;
     }
     cargar();
@@ -22095,7 +22095,9 @@ def actualizar_cantidad_proxima(pid):
     # Sebastián 16-may-2026: si la nueva cantidad convierte el lote en
     # GRANDE (>50kg), ese día debe quedar SOLO. Si el día ya tiene otro
     # lote, avisar · salvo que se pase forzar=true.
-    if _cambia_kg and nueva_kg > LOTE_GRANDE_KG and not body.get("forzar"):
+    # Sebastián 3-jul · forzar_normalizar TAMBIÉN salta esto: al cuadrar con MyBatch (ej. Renova del
+    # 30-jun = 70kg pero el día tiene muchos lotes) el objetivo es corregir el registro, no re-planear.
+    if _cambia_kg and nueva_kg > LOTE_GRANDE_KG and not body.get("forzar") and not _forzar_norm:
         fila_fecha = cur.execute(
             "SELECT fecha_programada FROM produccion_programada WHERE id = ?",
             (pid,),
@@ -22115,6 +22117,7 @@ def actualizar_cantidad_proxima(pid):
                               f"ese día ya tiene {otros} producción(es). Movelo a "
                               f"otro día o reintentá marcando forzar."),
                     "lote_grande_conflicto": True,
+                    "puede_forzar": True,
                     "otros_ese_dia": otros,
                 }), 409
 
