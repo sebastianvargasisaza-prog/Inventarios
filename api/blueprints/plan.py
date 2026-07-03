@@ -3179,6 +3179,28 @@ def plan_necesidades():
             b2b_por_cliente[cid]["max_urgencia"] = urg
             b2b_por_cliente[cid]["max_urgencia_rank"] = rank
 
+    # Sebastián 2-jul · "que los clientes aparezcan aunque tengan 0 pedidos": los clientes NO
+    # usan el modal · es Luz quien pide POR ellos. Así que cada cliente ACTIVO se muestra como
+    # sección en Necesidades (con su botón "+ Producto") aunque todavía no tenga pedido → Luz
+    # puede empezar a cargar y unir a producción. Se agregan los que faltan (kg_total=0).
+    try:
+        for cr in c.execute(
+                "SELECT cliente_id, cliente_nombre FROM clientes_b2b_maestro WHERE activo=1").fetchall():
+            _cid = cr[0]
+            if _cid and _cid not in b2b_por_cliente:
+                b2b_por_cliente[_cid] = {
+                    "cliente_id": _cid,
+                    "cliente_nombre": cr[1] or "Cliente",
+                    "tipo": "b2b_manual",
+                    "pedidos": [],
+                    "kg_total": 0,
+                    "max_urgencia": 'baja',
+                    "max_urgencia_rank": 2,
+                    "sin_pedidos": True,
+                }
+    except Exception:
+        pass
+
     # Ordenar clientes B2B por max_urgencia (alta primero), luego alfabético
     b2b_lista = sorted(b2b_por_cliente.values(),
                         key=lambda x: (x["max_urgencia_rank"], x["cliente_nombre"]))

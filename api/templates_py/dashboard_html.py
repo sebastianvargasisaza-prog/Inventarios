@@ -25825,7 +25825,11 @@ async function ckMarcar(itemId, estado){
     html += '<div style="padding:14px 18px;overflow-x:auto">';
     html += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
     html += '<thead><tr style="background:#f1f5f9"><th style="padding:6px 10px">Urg.</th><th style="text-align:left;padding:6px 10px">Producto</th><th style="padding:6px 10px">Uds</th><th style="padding:6px 10px">kg</th><th style="padding:6px 10px">Fecha</th><th style="padding:6px 10px">Estado</th><th style="padding:6px 10px">Lote</th><th style="padding:6px 10px"></th></tr></thead><tbody>';
-    cli.pedidos.forEach(p => {
+    // Sebastián 2-jul · cliente sin pedidos (Luz aún no le cargó) · guía para empezar
+    if (!(cli.pedidos && cli.pedidos.length)) {
+      html += '<tr><td colspan="8" style="padding:14px;text-align:center;color:#94a3b8">Sin pedidos aún &middot; toc&aacute; <b>+ Producto</b> para cargarle un pedido y que entre a producci&oacute;n</td></tr>';
+    }
+    (cli.pedidos || []).forEach(p => {
       const lote = p.lote_consolidado || null;
       let loteHtml = '<span style="color:#94a3b8;font-size:10px">sin asignar</span>';
       if (lote) {
