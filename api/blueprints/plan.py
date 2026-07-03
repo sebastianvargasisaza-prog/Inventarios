@@ -19593,8 +19593,10 @@ async function guardarKgOtroCliente(id){
       headers:{'Content-Type':'application/json','X-CSRF-Token':t},
       body: JSON.stringify({kg_otro_cliente: val})});
     if(!r.ok){ var d = await r.json().catch(function(){return {};}); alert('No se pudo guardar: ' + (d.error || r.status)); el.disabled = false; return; }
-    if(typeof cargar === 'function'){ try{ await cargar(); }catch(e){} }  // refrescar calendario + kg_dtc
-    else if(window.cargarNecesidades){ try{ await cargarNecesidades(); }catch(e){} }
+    // Sebastián 3-jul · el total del lote NO cambia (solo la porción para otro cliente) → NO recargar
+    // todo el grid · patch local + reabrir el modal (recalcula la próxima con la porción Animus).
+    if(typeof _patchLoteLocal === 'function'){ _patchLoteLocal(id, {kg_otro_cliente: val}); }
+    _toastCal('✅ Para otro cliente: ' + val + ' kg');
     abrirLoteModal(id, m.producto, m.fecha, m.kg);  // reabrir → recalcula la próxima con la porción Animus
   }catch(e){ alert('Error: ' + e); el.disabled = false; }
 }
@@ -19640,10 +19642,10 @@ async function guardarKgLote(id){
     } else if (!r.ok){ alert('❌ ' + (d.error || ('Error ' + r.status))); return; }
     // invalidar caché de composición para que recalcule con el override recién guardado
     try{ if(window._COMP_MEE_CACHE) delete window._COMP_MEE_CACHE[id]; if(window._COMP_MEE_PROMISE) delete window._COMP_MEE_PROMISE[id]; }catch(_e){}
-    var _extra = (d.override_presentaciones ? ('\n📦 Envases fijados por presentación: ' + d.override_presentaciones + ' (Abastecimiento usará esas cantidades)') : '');
-    alert('✅ Kg actualizado: ' + d.kg_antes + ' → ' + d.kg_nuevo + ' kg' + _extra);
     cerrarLoteModal();
-    cargar();  // recargar calendario con el cambio
+    // Sebastián 3-jul · toast + patch local (sin recargar todo · no interrumpe al normalizar en fila).
+    _toastCal('✅ Kg: ' + d.kg_antes + ' → ' + d.kg_nuevo + (d.override_presentaciones ? ' · envases fijados' : ''));
+    if(!_patchLoteLocal(id, {kg: d.kg_nuevo, cantidad_kg: d.kg_nuevo})){ cargar(); }
   } catch(e){ alert('Error de red: ' + e.message); }
 }
 
@@ -19751,6 +19753,30 @@ function _moverLoteLocal(id, nuevaFecha){
     }
   }catch(e){}
   return false;
+}
+// Sebastián 3-jul · actualizar campos de un lote en el cache local + re-dibujar (sin re-descargar).
+function _patchLoteLocal(id, campos){
+  try{
+    if(PLAN_DATA && PLAN_DATA.agendadas && PLAN_DATA.agendadas.length){
+      for(var i=0;i<PLAN_DATA.agendadas.length;i++){
+        if(String(PLAN_DATA.agendadas[i].id) === String(id)){
+          for(var k in campos){ if(campos[k] != null) PLAN_DATA.agendadas[i][k] = campos[k]; }
+          render(); return true;
+        }
+      }
+    }
+  }catch(e){}
+  return false;
+}
+// Toast no-bloqueante del calendario (Sebastián 3-jul) · reemplaza los alert de confirmación al
+// normalizar en fila (no interrumpe · no recarga).
+function _toastCal(msg){
+  try{
+    var t = document.getElementById('cal-toast');
+    if(!t){ t = document.createElement('div'); t.id='cal-toast'; t.style.cssText='position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#16a34a;color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;font-weight:700;box-shadow:0 8px 24px rgba(0,0,0,.25)'; document.body.appendChild(t); }
+    t.textContent = msg; t.style.display='block';
+    clearTimeout(window._calToastT); window._calToastT = setTimeout(function(){ if(t) t.style.display='none'; }, 2000);
+  }catch(e){}
 }
 async function reprogramarLote(id, nuevaFecha, razon){
   try {
