@@ -49,3 +49,24 @@ def test_clamp_no_excede_el_lote(app, db_clean):
                headers=csrf_headers())
     assert r.status_code == 200, r.data[:300]
     assert _get_kg_otro(pid) == 30
+
+
+def test_kg_otro_en_lote_en_curso(app, db_clean):
+    """Sebastián 3-jul: la porción 'para otro cliente' es metadata · se puede guardar aunque el lote
+    esté EN CURSO (inicio_real_at) · sin cantidad_kg no dispara el guard de inmutabilidad."""
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    try:
+        conn.execute("INSERT INTO produccion_programada (producto,fecha_programada,estado,origen,cantidad_kg,lotes,inicio_real_at) "
+                     "VALUES ('PROD ENCURSO','2026-06-30','programado','eos_plan',50,1,'2026-06-30 08:00:00')")
+        conn.commit()
+        pid = conn.execute("SELECT id FROM produccion_programada WHERE producto='PROD ENCURSO'").fetchone()[0]
+    finally:
+        conn.close()
+    c = _login(app)
+    # solo kg_otro_cliente (sin cantidad_kg) → debe pasar aunque esté en curso
+    r = c.post('/api/plan/proximas/%d/cantidad' % pid, json={'kg_otro_cliente': 35}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    assert _get_kg_otro(pid) == 35
+    # pero CAMBIAR el kg sí debe bloquearse en curso
+    r2 = c.post('/api/plan/proximas/%d/cantidad' % pid, json={'cantidad_kg': 80}, headers=csrf_headers())
+    assert r2.status_code == 409, r2.data[:200]

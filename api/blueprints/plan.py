@@ -19583,15 +19583,15 @@ async function guardarKgOtroCliente(id){
   var el = document.getElementById('kg-otro-cli');
   if(!el) return;
   var val = parseFloat(el.value) || 0;
-  var kgEl = document.getElementById('edit-kg-lote');
   var m = window._LOTE_MODAL_ACTUAL || {};
-  var kgActual = kgEl ? (parseFloat(kgEl.value) || 0) : (m.kg || 0);
   el.disabled = true;
   try{
     var t = (await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json()).csrf_token;
+    // Sebastián 3-jul · SOLO metadata (kg_otro_cliente) · sin cantidad_kg → el backend no lo bloquea
+    // aunque el lote esté en curso (la porción "para otro cliente" no cambia la producción).
     var r = await fetch('/api/plan/proximas/' + id + '/cantidad', {method:'POST', credentials:'same-origin',
       headers:{'Content-Type':'application/json','X-CSRF-Token':t},
-      body: JSON.stringify({cantidad_kg: kgActual, kg_otro_cliente: val})});
+      body: JSON.stringify({kg_otro_cliente: val})});
     if(!r.ok){ var d = await r.json().catch(function(){return {};}); alert('No se pudo guardar: ' + (d.error || r.status)); el.disabled = false; return; }
     if(typeof cargar === 'function'){ try{ await cargar(); }catch(e){} }  // refrescar calendario + kg_dtc
     else if(window.cargarNecesidades){ try{ await cargarNecesidades(); }catch(e){} }
@@ -22015,13 +22015,6 @@ def actualizar_cantidad_proxima(pid):
         return jsonify(body), code
 
     body = request.get_json(silent=True) or {}
-    try:
-        nueva_kg = float(body.get("cantidad_kg") or 0)
-    except (ValueError, TypeError):
-        return jsonify({"error": "cantidad_kg inválida"}), 400
-    if not (0 < nueva_kg <= 1000):
-        return jsonify({"error": "cantidad_kg debe estar entre 0 y 1000"}), 400
-
     conn = get_db()
     cur = conn.cursor()
     row = cur.execute(
@@ -22032,20 +22025,32 @@ def actualizar_cantidad_proxima(pid):
     if not row:
         return jsonify({"error": "lote no encontrado"}), 404
     estado_actual, producto, kg_antes, inicio_real, fin_real = row
-
-    if fin_real:
-        return jsonify({"error": "lote ya completado · no editable"}), 409
-    if inicio_real:
-        return jsonify({"error": "lote en curso · no editable"}), 409
-    if estado_actual not in ('pendiente', 'programado', 'esperando_recurso'):
-        return jsonify({
-            "error": f"solo editable en pendiente/programado · estado: {estado_actual}",
-        }), 409
+    try:
+        nueva_kg = float(body.get("cantidad_kg") or 0)
+    except (ValueError, TypeError):
+        return jsonify({"error": "cantidad_kg inválida"}), 400
+    if nueva_kg <= 0:
+        nueva_kg = float(kg_antes or 0)  # sin cantidad_kg en el body → mantener (solo se edita metadata)
+    # Sebastián 3-jul · la porción "para otro cliente" (kg_otro_cliente) + los meses son METADATA de
+    # cobertura · se editan AUNQUE el lote esté en curso/completado (no cambian la producción ni el
+    # inventario). Solo el CAMBIO REAL de kg está bloqueado en lotes en curso/completados.
+    _cambia_kg = abs(nueva_kg - float(kg_antes or 0)) > 0.001
+    if _cambia_kg:
+        if not (0 < nueva_kg <= 1000):
+            return jsonify({"error": "cantidad_kg debe estar entre 0 y 1000"}), 400
+        if fin_real:
+            return jsonify({"error": "lote ya completado · no editable"}), 409
+        if inicio_real:
+            return jsonify({"error": "lote en curso · no editable"}), 409
+        if estado_actual not in ('pendiente', 'programado', 'esperando_recurso'):
+            return jsonify({
+                "error": f"solo editable en pendiente/programado · estado: {estado_actual}",
+            }), 409
 
     # Sebastián 16-may-2026: si la nueva cantidad convierte el lote en
     # GRANDE (>50kg), ese día debe quedar SOLO. Si el día ya tiene otro
     # lote, avisar · salvo que se pase forzar=true.
-    if nueva_kg > LOTE_GRANDE_KG and not body.get("forzar"):
+    if _cambia_kg and nueva_kg > LOTE_GRANDE_KG and not body.get("forzar"):
         fila_fecha = cur.execute(
             "SELECT fecha_programada FROM produccion_programada WHERE id = ?",
             (pid,),
@@ -22068,21 +22073,23 @@ def actualizar_cantidad_proxima(pid):
                     "otros_ese_dia": otros,
                 }), 409
 
-    # Sebastián 19-may-2026: editar los kg también FIJA la producción.
-    cur.execute(
-        """UPDATE produccion_programada
-           SET cantidad_kg = ?,
-               origen = 'eos_plan',
-               observaciones = COALESCE(observaciones,'') ||
-                 ' · KG editado de ' || COALESCE(CAST(? AS TEXT),'?') ||
-                 ' a ' || CAST(? AS TEXT) || ' · FIJADO · ' || datetime('now','-5 hours')
-           WHERE id = ?""",
-        (nueva_kg, kg_antes, nueva_kg, pid),
-    )
-    audit_log(cur, usuario=user, accion="EDITAR_KG_PRODUCCION",
-              tabla="produccion_programada", registro_id=pid,
-              antes={"cantidad_kg": kg_antes, "producto": producto},
-              despues={"cantidad_kg": nueva_kg})
+    # Sebastián 19-may-2026: editar los kg también FIJA la producción. Solo si el kg REALMENTE cambia
+    # (Sebastián 3-jul · si solo se edita metadata de un lote en curso, NO tocar cantidad_kg/origen).
+    if _cambia_kg:
+        cur.execute(
+            """UPDATE produccion_programada
+               SET cantidad_kg = ?,
+                   origen = 'eos_plan',
+                   observaciones = COALESCE(observaciones,'') ||
+                     ' · KG editado de ' || COALESCE(CAST(? AS TEXT),'?') ||
+                     ' a ' || CAST(? AS TEXT) || ' · FIJADO · ' || datetime('now','-5 hours')
+               WHERE id = ?""",
+            (nueva_kg, kg_antes, nueva_kg, pid),
+        )
+        audit_log(cur, usuario=user, accion="EDITAR_KG_PRODUCCION",
+                  tabla="produccion_programada", registro_id=pid,
+                  antes={"cantidad_kg": kg_antes, "producto": producto},
+                  despues={"cantidad_kg": nueva_kg})
     # Sebastián 2-jul · "el Desglose editable manda": persistir las uds POR SKU del desglose
     # como override POR LOTE (fija_override_json). Así la Composición de envases y Abastecimiento
     # usan EXACTAMENTE lo que decidís producir de cada presentación (no un ratio 180d aparte).
