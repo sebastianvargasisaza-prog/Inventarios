@@ -12718,6 +12718,90 @@ def plan_programar_cadencia_desde_lote(lote_id):
                     "creados": len(creados), "cancelados": len(ids), "fechas": creados})
 
 
+@bp.route("/api/plan/programar-cadencia-producto", methods=["POST"])
+def plan_programar_cadencia_producto():
+    """Sebastián 3-jul · programar la CADENA de un producto DESDE NECESIDADES (sin lote ancla previo,
+    'aquí debería ser todo'). Crea la 1ª producción AUTO (hoy + dias_hasta_primera = cuando se agota
+    el stock − buffer) + la cadena cada interval_dias por 2 años, con el kg de X meses de demanda
+    Animus. REEMPLAZA toda producción futura del producto (Fijo/auto/proyección/sugerida) salvo B2B,
+    ejecutado e histórico. La 1ª lleva la reserva 'para otro cliente' (una vez); el resto es Animus puro."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    from datetime import timedelta as _tdP
+    body = request.get_json(silent=True) or {}
+    producto = (body.get("producto") or "").strip()
+    if not producto:
+        return jsonify({"error": "producto requerido"}), 400
+    try:
+        kg_por_lote = float(body.get("kg_por_lote") or 0)
+    except Exception:
+        kg_por_lote = 0.0
+    if kg_por_lote <= 0:
+        return jsonify({"error": "no hay kg a producir · definí 'producir para X meses'"}), 400
+    kg_por_lote = min(kg_por_lote, 2000.0)
+    try:
+        interval_dias = int(round(float(body.get("interval_dias") or 0)))
+    except Exception:
+        interval_dias = 0
+    interval_dias = max(7, min(interval_dias, 400))
+    try:
+        dias_hasta_primera = int(round(float(body.get("dias_hasta_primera") or 0)))
+    except Exception:
+        dias_hasta_primera = 0
+    dias_hasta_primera = max(0, min(dias_hasta_primera, 400))
+    try:
+        kg_otro = float(body.get("kg_otro_cliente") or 0)
+    except Exception:
+        kg_otro = 0.0
+    if kg_otro < 0:
+        kg_otro = 0.0
+    anios = 2
+    conn = get_db()
+    c = conn.cursor()
+    hoy = _hoy_colombia()
+    meses_col = round(interval_dias / 30.44, 2)
+    # 1) cancelar TODA producción futura del producto (> hoy) salvo B2B/ejecutado/histórico (Sebastián 3-jul)
+    _sel = ("SELECT id FROM produccion_programada WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) "
+            "AND substr(fecha_programada,1,10) > ? "
+            "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+            "AND inicio_real_at IS NULL AND fin_real_at IS NULL "
+            "AND COALESCE(inventario_descontado_at,'')='' "
+            "AND COALESCE(origen,'') NOT IN ('eos_b2b','eos_retroactivo')")
+    ids = [r[0] for r in c.execute(_sel, (producto, hoy.isoformat())).fetchall()]
+    if ids:
+        _ph = ','.join(['?'] * len(ids))
+        c.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id IN (" + _ph + ")", tuple(ids))
+    # 2) crear la cadena: 1ª a hoy + dias_hasta_primera, luego cada interval_dias por 2 años.
+    horizonte = anios * 365
+    creados = []
+    for k in range(0, 82):
+        _off = dias_hasta_primera + k * interval_dias
+        if _off > horizonte:
+            break
+        f_k = hoy + _tdP(days=_off)
+        _kg = kg_por_lote + (kg_otro if k == 0 else 0.0)  # la 1ª suma la reserva de otro cliente
+        _otro = kg_otro if k == 0 else 0.0
+        c.execute(
+            "INSERT INTO produccion_programada (producto, fecha_programada, lotes, estado, origen, "
+            "cantidad_kg, meses_cobertura, kg_otro_cliente) VALUES (?, ?, 1, 'pendiente', 'eos_plan', ?, ?, ?)",
+            (producto, f_k.isoformat(), round(_kg, 2), meses_col, round(_otro, 2)))
+        creados.append(f_k.isoformat())
+    try:
+        audit_log(c, usuario=user, accion='PROGRAMAR_CADENCIA_PRODUCTO', tabla='produccion_programada',
+                  registro_id=0, despues={'producto': producto, 'interval_dias': interval_dias,
+                                          'dias_hasta_primera': dias_hasta_primera,
+                                          'kg_por_lote': round(kg_por_lote, 2),
+                                          'creados': len(creados), 'cancelados': len(ids)})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({"ok": True, "producto": producto, "interval_dias": interval_dias,
+                    "dias_hasta_primera": dias_hasta_primera, "kg_por_lote": round(kg_por_lote, 2),
+                    "creados": len(creados), "cancelados": len(ids), "fechas": creados})
+
+
 @bp.route("/api/plan/limpiar-proyeccion", methods=["POST"])
 def plan_limpiar_proyeccion():
     """Sebastián 16-jun · borra SOLO los lotes de la proyección automática
