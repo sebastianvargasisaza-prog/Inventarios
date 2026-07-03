@@ -12675,14 +12675,16 @@ def plan_programar_cadencia_desde_lote(lote_id):
         f_ancla = _dC.fromisoformat(fecha_ancla)
     except Exception:
         return jsonify({"error": "fecha del ancla inválida"}), 400
-    # 1) REEMPLAZAR: cancelar las automáticas futuras de ESTE producto (post-ancla). Preserva Fijo
-    #    (eos_plan), B2B (eos_b2b), histórico (eos_retroactivo), ejecutado y el ancla misma.
+    # 1) REEMPLAZAR (Sebastián 3-jul): cancelar TODA producción futura de ESTE producto post-ancla
+    #    SIN importar el origen (Fijo eos_plan, auto, proyección, sugerida, manual, calendar). Solo se
+    #    preservan: pedidos B2B de clientes (eos_b2b · compromiso real · orfanarlos sería peligroso),
+    #    lo ya EJECUTADO (inicio/fin_real_at · no se puede des-fabricar) y lo histórico (eos_retroactivo).
     _sel = ("SELECT id FROM produccion_programada WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) "
             "AND substr(fecha_programada,1,10) > ? "
             "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
             "AND inicio_real_at IS NULL AND fin_real_at IS NULL "
             "AND COALESCE(inventario_descontado_at,'')='' "
-            "AND COALESCE(origen,'') NOT IN ('eos_plan','eos_b2b','eos_retroactivo')")
+            "AND COALESCE(origen,'') NOT IN ('eos_b2b','eos_retroactivo')")
     ids = [r[0] for r in c.execute(_sel, (producto, fecha_ancla)).fetchall()]
     if ids:
         _ph = ','.join(['?'] * len(ids))
@@ -19281,7 +19283,7 @@ async function cargarDesgloseEditableLote(producto, kgActual, mlProm, mesesGuard
       // Sebastián 2-jul · programar la CADENA desde este lote (ancla) cada X meses × 2 años.
       // Preview del razonamiento (Sebastián 3-jul): este lote alcanza N días → cadencia real.
       + '<div id="cadencia-preview" style="font-size:11px;color:#5b21b6;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;padding:7px 10px;margin-top:8px;text-align:left;line-height:1.5"></div>'
-      + '<button onclick="programarCadenciaDesdeLote()" title="Desde ESTE lote (ancla · producciones reales de jun/jul) calcula cuántos DÍAS alcanza (kg÷venta) y programa la cadena por 2 años a ese ritmo. Reemplaza las automáticas futuras del producto · no toca lo Fijo/B2B/ya producido." style="margin-top:8px;background:linear-gradient(90deg,#7c3aed,#5b21b6);color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:800;cursor:pointer;box-shadow:0 2px 8px -2px rgba(124,58,237,.5)">📅 Programar la cadena · 2 años</button>'
+      + '<button onclick="programarCadenciaDesdeLote()" title="Desde ESTE lote (ancla · producciones reales de jun/jul) calcula cuántos DÍAS alcanza la porción Animus (kg÷venta) y programa la cadena por 2 años a ese ritmo. BORRA todas las futuras del producto (Fijo, auto, proyección) y deja solo esta cadena · conserva pedidos B2B y lo ya producido." style="margin-top:8px;background:linear-gradient(90deg,#7c3aed,#5b21b6);color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:800;cursor:pointer;box-shadow:0 2px 8px -2px rgba(124,58,237,.5)">📅 Programar la cadena · 2 años</button>'
       + '</div>'
       + '</div>';
     _recalcKgDesglose(false);  // al abrir: solo muestra el total, no pisa el kg original
@@ -19396,7 +19398,7 @@ async function programarCadenciaDesdeLote(){
   var nLotes = Math.max(1, Math.round(730 / cc.intervalDias));
   var _otrosTot = (cc.kgOtro || 0) + (cc.kgB2B || 0);
   var _splitTxt = _otrosTot > 0.01 ? ('• Porción Animus: ' + cc.kg.toFixed(1) + ' kg (del total ' + cc.kgTotal.toFixed(1) + ' kg · ' + _otrosTot.toFixed(1) + ' para otros)\n') : '';
-  if(!confirm('Programar la cadena de "' + (m.producto || '') + '":\n\n' + _splitTxt + '• La porción Animus (' + cc.kg.toFixed(1) + ' kg) alcanza ~' + cc.intervalDias + ' días al ritmo actual\n• → un lote cada ' + cc.cadaTxt + ' (~' + nLotes + ' producciones en 2 años)\n• La 1ª cae ' + cc.firstOffset + ' días después del ancla (antes de agotar)\n\nReemplaza las AUTOMÁTICAS futuras de ese producto. NO toca lo Fijo, B2B, ni lo ya producido.')) return;
+  if(!confirm('Programar la cadena de "' + (m.producto || '') + '":\n\n' + _splitTxt + '• La porción Animus (' + cc.kg.toFixed(1) + ' kg) alcanza ~' + cc.intervalDias + ' días al ritmo actual\n• → un lote cada ' + cc.cadaTxt + ' (~' + nLotes + ' producciones en 2 años)\n• La 1ª cae ' + cc.firstOffset + ' días después del ancla (antes de agotar)\n\nBORRA TODAS las producciones futuras de ese producto (Fijo, auto, proyección, sugeridas) y deja solo esta cadena. Solo conserva los pedidos B2B de clientes y lo ya producido.')) return;
   try{
     var t = (await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json()).csrf_token;
     var r = await fetch('/api/plan/programar-cadencia-desde-lote/' + id, {method:'POST', credentials:'same-origin',

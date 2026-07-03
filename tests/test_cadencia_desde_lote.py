@@ -36,16 +36,18 @@ def _estado(pid):
 def test_cadena_reemplaza_auto_preserva_fijo(app, db_clean):
     ancla = _ins('PROD CAD', '2026-07-15', 'eos_plan', kg=100)
     auto = _ins('PROD CAD', '2026-09-01', 'eos_proyeccion')      # automática futura → cancela
-    fijo = _ins('PROD CAD', '2026-10-01', 'eos_plan')            # Fijo futuro → preserva
+    fijo = _ins('PROD CAD', '2026-10-01', 'eos_plan')            # Fijo futuro → AHORA también cancela
+    b2b  = _ins('PROD CAD', '2026-11-01', 'eos_b2b')             # pedido B2B → SE PRESERVA
     c = _login(app)
     r = c.post('/api/plan/programar-cadencia-desde-lote/%d' % ancla,
                json={'interval_dias': 90, 'first_offset_dias': 70, 'kg_por_lote': 100, 'anios': 2}, headers=csrf_headers())
     assert r.status_code == 200, r.data[:300]
     d = r.get_json()
     assert d['creados'] == 8, d           # cada 90d desde +70d en 730d = 8 producciones
-    assert d['cancelados'] == 1, d        # solo la eos_proyeccion
+    assert d['cancelados'] == 2, d        # la eos_proyeccion Y el eos_plan (Fijo)
     assert _estado(auto) == 'cancelado', 'la automática futura debe cancelarse'
-    assert _estado(fijo) != 'cancelado', 'lo Fijo debe preservarse'
+    assert _estado(fijo) == 'cancelado', 'el Fijo posterior AHORA también se cancela (Sebastián 3-jul)'
+    assert _estado(b2b) != 'cancelado', 'el pedido B2B de cliente se preserva'
     assert _estado(ancla) != 'cancelado', 'el ancla debe preservarse'
     # las 12 nuevas son eos_plan (Fijo) cada 2 meses desde el ancla
     conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
