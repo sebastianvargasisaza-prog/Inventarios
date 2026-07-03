@@ -22984,6 +22984,14 @@ async function ckMarcar(itemId, estado){
     const qs = `?cobertura_dias_minimo=${cobC}&cobertura_dias_alerta=${cobA}&cobertura_dias_vigilar=45`;
     const div = document.getElementById('nec-contenido');
     div.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:40px">Cargando…</div>';
+    // Sebastián 2-jul · precargar frascos (FR-*) para el select de envase por pedido B2B
+    if (!window._NEC_ENVASES) {
+      try {
+        const _er = await fetch('/api/programacion/mees-disponibles');
+        const _ed = await _er.json();
+        window._NEC_ENVASES = ((_ed && _ed.items) || []).filter(function(m){ return /^FR-/.test((m.codigo||'')); });
+      } catch(e){ window._NEC_ENVASES = []; }
+    }
     try {
       const r = await fetch('/api/plan/necesidades' + qs);
       if (r.status === 401) { window.location.href = '/login'; return; }
@@ -25775,6 +25783,35 @@ async function ckMarcar(itemId, estado){
     } catch(e) { alert('Error: ' + e.message); }
   }
 
+  // Sebastián 2-jul · select de ENVASE (frasco) por pedido B2B · guarda vía PATCH.
+  function _pedEnvaseSelect(id, cur){
+    cur = (cur || '').toUpperCase();
+    var list = window._NEC_ENVASES || [];
+    var h = '<select class="ped-fld" data-id="'+id+'" data-field="envase_codigo" onchange="savePedidoField(this)" title="Envase de este pedido · al confirmar/programar cae al calendario con este envase" style="border:1px solid #cbd5e1;border-radius:4px;font-size:10px;padding:2px 4px;max-width:160px;cursor:pointer">';
+    h += '<option value="">&#8212; envase &#8212;</option>';
+    var found = false;
+    for(var i=0;i<list.length;i++){
+      var e = list[i]; var sel = (e.codigo === cur) ? ' selected' : '';
+      if(e.codigo === cur) found = true;
+      h += '<option value="'+(e.codigo||'').replace(/"/g,'&quot;')+'"'+sel+'>'+((e.codigo||'')+(e.descripcion?(' · '+e.descripcion):'')).slice(0,42)+'</option>';
+    }
+    if(cur && !found){ h += '<option value="'+cur.replace(/"/g,'&quot;')+'" selected>'+cur+'</option>'; }
+    h += '</select>';
+    return h;
+  }
+  async function savePedidoField(el){
+    if(!el) return;
+    var id = el.getAttribute('data-id'), field = el.getAttribute('data-field'), val = el.value;
+    if(!id || !field) return;
+    var body = {}; body[field] = val;
+    try{
+      var t = (await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json()).csrf_token;
+      var r = await fetch('/api/pedidos-b2b/' + id, {method:'PATCH',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(body)});
+      if(!r.ok){ var d = await r.json().catch(function(){return {};}); alert('No se pudo guardar: ' + (d.error || r.status)); return; }
+      el.style.borderColor = '#16a34a';
+      setTimeout(function(){ el.style.borderColor = '#cbd5e1'; }, 1200);
+    }catch(e){ alert('Error: ' + e); }
+  }
   function renderB2BSection(cli) {
     const cliEsc = (cli.cliente_id || '').replace(/'/g, '&#39;').replace(/"/g, '&quot;');
     const cliNomEsc = (cli.cliente_nombre || '').replace(/'/g, '&#39;').replace(/"/g, '&quot;');
@@ -25826,10 +25863,10 @@ async function ckMarcar(itemId, estado){
     html += '</div></summary>';
     html += '<div style="padding:14px 18px;overflow-x:auto">';
     html += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
-    html += '<thead><tr style="background:#f1f5f9"><th style="padding:6px 10px">Urg.</th><th style="text-align:left;padding:6px 10px">Producto</th><th style="padding:6px 10px">Uds</th><th style="padding:6px 10px">kg</th><th style="padding:6px 10px">Fecha</th><th style="padding:6px 10px">Estado</th><th style="padding:6px 10px">Lote</th><th style="padding:6px 10px"></th></tr></thead><tbody>';
+    html += '<thead><tr style="background:#f1f5f9"><th style="padding:6px 10px">Urg.</th><th style="text-align:left;padding:6px 10px">Producto</th><th style="padding:6px 10px">Uds</th><th style="padding:6px 10px">kg</th><th style="padding:6px 10px">Fecha</th><th style="padding:6px 10px">Estado</th><th style="padding:6px 10px">Lote</th><th style="padding:6px 10px">Envase</th><th style="padding:6px 10px"></th></tr></thead><tbody>';
     // Sebastián 2-jul · cliente sin pedidos (Luz aún no le cargó) · guía para empezar
     if (!(cli.pedidos && cli.pedidos.length)) {
-      html += '<tr><td colspan="8" style="padding:14px;text-align:center;color:#94a3b8">Sin pedidos aún &middot; toc&aacute; <b>+ Producto</b> para cargarle un pedido y que entre a producci&oacute;n</td></tr>';
+      html += '<tr><td colspan="9" style="padding:14px;text-align:center;color:#94a3b8">Sin pedidos aún &middot; toc&aacute; <b>+ Producto</b> para cargarle un pedido y que entre a producci&oacute;n</td></tr>';
     }
     (cli.pedidos || []).forEach(p => {
       const lote = p.lote_consolidado || null;
@@ -25848,27 +25885,27 @@ async function ckMarcar(itemId, estado){
       if ((p.estado || '') === 'pendiente') {
         btnConfirmar = '<button onclick="confirmarB2B('+p.id+')" style="background:#6d28d9;color:#fff;border:none;padding:3px 10px;border-radius:4px;font-size:10px;cursor:pointer;font-weight:700;margin-right:4px" title="Revisar y confirmar · recién acá entra al plan de producción">✅ Confirmar</button>';
       }
-      // DESPACHO 26-jun (mejora 2/4) · marcar despachado (fecha+guía) · el cliente lo ve en su portal
-      let btnDespachar = '';
-      if ((p.estado || '') === 'confirmado' || (p.estado || '') === 'en_produccion') {
-        btnDespachar = '<button onclick="despacharB2B('+p.id+')" style="background:#0891b2;color:#fff;border:none;padding:3px 10px;border-radius:4px;font-size:10px;cursor:pointer;font-weight:700;margin-right:4px" title="Marcar despachado (fecha + guía/transportadora) · el cliente lo ve">📦 Despachar</button>';
-      }
+      // Sebastián 2-jul · "despachar no va acá (eso se hace en Producto Terminado)" → quitado.
       const estadoBg = p.estado === 'confirmado' ? '#dcfce7' : (p.estado === 'cancelado' ? '#fee2e2' : '#e0e7ff');
       const estadoColor = p.estado === 'confirmado' ? '#15803d' : (p.estado === 'cancelado' ? '#991b1b' : '#3730a3');
-      // Sebastián 25-may-2026 PM · columna urgencia visible
       const urgP = (p.urgencia || 'media').toLowerCase();
-      const urgIco = {alta:'🔴', media:'🟡', baja:'🟢'}[urgP] || '🟡';
-      const urgTitle = {alta:'Alta · prioridad', media:'Media · normal', baja:'Baja · sin apuro'}[urgP] || 'Media';
       const rowHi = urgP === 'alta' ? 'background:#fef2f2;' : '';
+      // URGENCIA editable (Sebastián 2-jul) · alta = el cliente necesita adelantar producción.
+      var urgOpts = ['alta','media','baja'].map(function(u){ return '<option value="'+u+'"'+(u===urgP?' selected':'')+'>'+({alta:'🔴 Alta',media:'🟡 Media',baja:'🟢 Baja'}[u])+'</option>'; }).join('');
+      var urgSel = '<select class="ped-fld" data-id="'+p.id+'" data-field="urgencia" onchange="savePedidoField(this)" style="border:1px solid #cbd5e1;border-radius:4px;font-size:10px;padding:2px 4px;font-weight:700;cursor:pointer">'+urgOpts+'</select>';
+      var urgAlert = (urgP === 'alta') ? '<div style="font-size:9px;color:#b91c1c;font-weight:800;margin-top:2px" title="El cliente lo necesita urgente · considerá adelantar la producción">⚡ adelantar</div>' : '';
+      // ENVASE seleccionable + guardar (Sebastián 2-jul) · cae al calendario con el envase unido.
+      var envSel = _pedEnvaseSelect(p.id, p.envase || '');
       html += '<tr style="border-bottom:1px solid #e2e8f0;' + rowHi + '">'
-        + '<td style="padding:6px 10px;text-align:center;font-size:14px" title="' + urgTitle + '">' + urgIco + '</td>'
+        + '<td style="padding:6px 10px;text-align:center">' + urgSel + urgAlert + '</td>'
         + '<td style="padding:6px 10px"><strong>' + escapeHtmlNec(p.producto_nombre) + '</strong></td>'
         + '<td style="padding:6px 10px;text-align:center">' + p.cantidad_uds + ' × ' + p.ml_unidad + 'ml</td>'
         + '<td style="padding:6px 10px;text-align:center;font-weight:700">' + p.kg_equivalente + '</td>'
         + '<td style="padding:6px 10px;text-align:center">' + (p.fecha_estimada || '—') + '</td>'
         + '<td style="padding:6px 10px;text-align:center"><span style="background:'+estadoBg+';color:'+estadoColor+';padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">' + p.estado + '</span></td>'
         + '<td style="padding:6px 10px;text-align:center">' + loteHtml + '</td>'
-        + '<td style="padding:6px 10px;text-align:right">' + btnConfirmar + btnDespachar + btnAsignar + '<button onclick="cancelarB2B(' + p.id + ')" style="background:transparent;border:1px solid #cbd5e1;color:#64748b;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer">Cancelar</button></td>'
+        + '<td style="padding:6px 10px;text-align:center">' + envSel + '</td>'
+        + '<td style="padding:6px 10px;text-align:right">' + btnConfirmar + btnAsignar + '<button onclick="cancelarB2B(' + p.id + ')" style="background:transparent;border:1px solid #cbd5e1;color:#64748b;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer">Cancelar</button></td>'
         + '</tr>';
     });
     html += '</tbody></table></div></details>';

@@ -1668,6 +1668,17 @@ def actualizar_pedido_b2b(pid):
     if "notas" in body:
         fields.append("notas = ?")
         params.append((body["notas"] or "").strip())
+    # Sebastián 2-jul · guardar el ENVASE elegido acá → cuando el pedido cae en el calendario
+    # va con el envase unido. Y la URGENCIA editable (dispara la alerta de adelantar producción).
+    if "envase_codigo" in body:
+        fields.append("envase_codigo = ?")
+        params.append((body["envase_codigo"] or "").strip().upper())
+    if "urgencia" in body:
+        _u = (body["urgencia"] or "").strip().lower()
+        if _u not in ('alta', 'media', 'baja'):
+            return jsonify({"error": "urgencia inválida (alta/media/baja)"}), 400
+        fields.append("urgencia = ?")
+        params.append(_u)
 
     if not fields:
         return jsonify({"error": "sin campos para actualizar"}), 400
@@ -3120,7 +3131,7 @@ def plan_necesidades():
         pedidos_b2b = c.execute(
             """SELECT id, cliente_id, cliente_nombre, producto_nombre,
                       cantidad_uds, ml_unidad, fecha_estimada, estado, notas,
-                      COALESCE(urgencia,'media')
+                      COALESCE(urgencia,'media'), COALESCE(envase_codigo,'')
                FROM pedidos_b2b
                WHERE estado NOT IN ('despachado','cancelado')
                ORDER BY
@@ -3134,7 +3145,8 @@ def plan_necesidades():
     except Exception:
         pedidos_b2b = c.execute(
             """SELECT id, cliente_id, cliente_nombre, producto_nombre,
-                      cantidad_uds, ml_unidad, fecha_estimada, estado, notas
+                      cantidad_uds, ml_unidad, fecha_estimada, estado, notas,
+                      COALESCE(envase_codigo,'')
                FROM pedidos_b2b
                WHERE estado NOT IN ('despachado','cancelado')
                ORDER BY cliente_nombre ASC, fecha_estimada ASC""",
@@ -3171,6 +3183,7 @@ def plan_necesidades():
             "estado": r[7],
             "notas": r[8] or "",
             "urgencia": urg,
+            "envase": (r[-1] or ""),  # envase elegido del pedido (Sebastián 2-jul)
         })
         b2b_por_cliente[cid]["kg_total"] += kg
         # max_urgencia del cliente = la más alta de sus pedidos
