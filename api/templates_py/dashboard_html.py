@@ -25651,12 +25651,11 @@ async function ckMarcar(itemId, estado){
     var el = document.getElementById('cadp-preview'); if(!el) return;
     var cc = _cadenaProdCalc(idx);
     if(!cc){ el.innerHTML = '<span style="color:#94a3b8">Sin velocidad de venta · no se puede calcular la cadencia.</span>'; return; }
-    var baseTxt = cc.ancla
-      ? ('🏭 Producción base <b>' + cc.ancla.fecha + '</b> · <b>' + (cc.ancla.kg||0).toFixed(1) + ' kg</b> ' + (cc.ancla.ejec ? '(ya producida)' : '(ya programada)') + (cc.otro > 0 ? (' · ' + cc.otro.toFixed(1) + ' otro cliente') : ''))
-      : ('🏭 Sin producción base en el plan → la 1ª arranca según el stock');
-    el.innerHTML = baseTxt + '<br>'
-      + '📦 Cada lote de la cadena <b>' + cc.kgAnimus.toFixed(1) + ' kg</b> (Animus ' + cc.meses + ' meses) · vende <b>' + (cc.vel*30).toFixed(1) + ' kg/mes</b><br>'
-      + '⏳ Un lote cada <b>' + cc.cadaTxt + '</b> · ~<b>' + cc.nLotes + '</b> en 2 años · la 1ª de la cadena <b>' + cc.firstOffset + ' días</b> ' + (cc.ancla ? 'después de la base' : 'desde hoy') + '.';
+    // Sebastián 3-jul · NO repetir "Producción base · kg" (la caja "Última producción" de arriba ya
+    // la muestra) · solo referenciar la fecha base concisa aquí.
+    el.innerHTML = '📦 Cada lote de la cadena <b>' + cc.kgAnimus.toFixed(1) + ' kg</b> (Animus ' + cc.meses + ' meses) · vende <b>' + (cc.vel*30).toFixed(1) + ' kg/mes</b>'
+      + (cc.otro > 0 ? (' · ' + cc.otro.toFixed(1) + ' kg otro cliente en la base') : '') + '<br>'
+      + '⏳ Un lote cada <b>' + cc.cadaTxt + '</b> · ~<b>' + cc.nLotes + '</b> en 2 años · la 1ª <b>' + cc.firstOffset + ' días</b> ' + (cc.ancla ? ('después de la base (' + cc.ancla.fecha + ')') : 'desde hoy') + '.';
   }
   async function programarCadenaProducto(idx){
     var p = window._NEC_PRODUCTOS_CACHE[idx]; if(!p){ alert('Producto no encontrado'); return; }
