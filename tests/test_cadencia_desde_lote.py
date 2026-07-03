@@ -1,0 +1,65 @@
+"""Sebastián 2-jul: programar la CADENA desde un lote ancla (julio) cada X meses × 2 años.
+Reemplaza las automáticas futuras del producto (proyeccion/sugerido) pero PRESERVA lo Fijo
+(eos_plan) y los pedidos B2B. El ancla se produce; la cadena arranca en ancla + X meses."""
+import os
+import sqlite3
+
+from .conftest import TEST_PASSWORD, csrf_headers
+
+
+def _login(app, user='sebastian'):
+    c = app.test_client()
+    c.post('/login', data={'username': user, 'password': TEST_PASSWORD}, headers=csrf_headers())
+    return c
+
+
+def _ins(producto, fecha, origen, estado='pendiente', kg=100):
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    try:
+        conn.execute("INSERT INTO produccion_programada (producto,fecha_programada,lotes,estado,origen,cantidad_kg) "
+                     "VALUES (?,?,1,?,?,?)", (producto, fecha, estado, origen, kg))
+        conn.commit()
+        return conn.execute("SELECT id FROM produccion_programada WHERE producto=? AND fecha_programada=? AND origen=?",
+                            (producto, fecha, origen)).fetchone()[0]
+    finally:
+        conn.close()
+
+
+def _estado(pid):
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    try:
+        return conn.execute("SELECT estado FROM produccion_programada WHERE id=?", (pid,)).fetchone()[0]
+    finally:
+        conn.close()
+
+
+def test_cadena_reemplaza_auto_preserva_fijo(app, db_clean):
+    ancla = _ins('PROD CAD', '2026-07-15', 'eos_plan', kg=100)
+    auto = _ins('PROD CAD', '2026-09-01', 'eos_proyeccion')      # automática futura → cancela
+    fijo = _ins('PROD CAD', '2026-10-01', 'eos_plan')            # Fijo futuro → preserva
+    c = _login(app)
+    r = c.post('/api/plan/programar-cadencia-desde-lote/%d' % ancla,
+               json={'meses': 2, 'kg_por_lote': 100, 'anios': 2}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    d = r.get_json()
+    assert d['creados'] == 12, d          # 24 meses / 2 = 12 producciones
+    assert d['cancelados'] == 1, d        # solo la eos_proyeccion
+    assert _estado(auto) == 'cancelado', 'la automática futura debe cancelarse'
+    assert _estado(fijo) != 'cancelado', 'lo Fijo debe preservarse'
+    assert _estado(ancla) != 'cancelado', 'el ancla debe preservarse'
+    # las 12 nuevas son eos_plan (Fijo) cada 2 meses desde el ancla
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    try:
+        nuevas = conn.execute(
+            "SELECT COUNT(*) FROM produccion_programada WHERE producto='PROD CAD' AND origen='eos_plan' "
+            "AND estado='pendiente' AND fecha_programada > '2026-07-15'").fetchone()[0]
+    finally:
+        conn.close()
+    assert nuevas >= 12, nuevas  # 12 de la cadena + el fijo de octubre
+
+
+def test_sin_meses_error(app, db_clean):
+    ancla = _ins('PROD CAD2', '2026-07-15', 'eos_plan', kg=100)
+    c = _login(app)
+    r = c.post('/api/plan/programar-cadencia-desde-lote/%d' % ancla, json={'meses': 0}, headers=csrf_headers())
+    assert r.status_code == 400

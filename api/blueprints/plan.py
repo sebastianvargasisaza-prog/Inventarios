@@ -12606,6 +12606,103 @@ def plan_reprogramar_desde_mes():
     return jsonify({'ok': True, 'dry_run': False, 'ancla': ancla, 'cancelados': len(ids), **res})
 
 
+@bp.route("/api/plan/programar-cadencia-desde-lote/<int:lote_id>", methods=["POST"])
+def plan_programar_cadencia_desde_lote(lote_id):
+    """Sebastián 2-jul · desde un lote ANCLA (las producciones reales de julio) programa la CADENA
+    de producciones futuras: un lote cada X MESES (la cadencia = los meses de 'producir para X meses'),
+    con el kg de X meses de demanda real, por 1-2 años. REEMPLAZA las automáticas futuras de ESE
+    producto (cancela auto/proyeccion/sugerido/manual post-ancla) pero PRESERVA lo Fijo (eos_plan),
+    los pedidos B2B (eos_b2b), lo histórico (eos_retroactivo) y lo ya ejecutado + el propio ancla.
+    El ancla se produce; la cadena arranca en ancla + X meses. Cada lote nuevo es eos_plan (Fijo)."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    from datetime import date as _dC
+    body = request.get_json(silent=True) or {}
+    conn = get_db()
+    c = conn.cursor()
+    row = c.execute(
+        "SELECT producto, substr(fecha_programada,1,10), COALESCE(cantidad_kg,0), "
+        "COALESCE(meses_cobertura,0) FROM produccion_programada WHERE id=?", (lote_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "lote ancla no encontrado"}), 404
+    producto = (row[0] or "").strip()
+    fecha_ancla = (row[1] or "")[:10]
+    kg_ancla = float(row[2] or 0)
+    meses_lote = float(row[3] or 0)
+    try:
+        meses = float(body.get("meses") or meses_lote or 0)
+    except Exception:
+        meses = 0.0
+    if meses <= 0:
+        return jsonify({"error": "definí primero 'producir para X meses' arriba (en el desglose) y guardá"}), 400
+    meses = min(meses, 12.0)
+    try:
+        kg_por_lote = float(body.get("kg_por_lote") or 0)
+    except Exception:
+        kg_por_lote = 0.0
+    if kg_por_lote <= 0:
+        kg_por_lote = kg_ancla
+    if kg_por_lote <= 0:
+        return jsonify({"error": "no hay kg a producir · guardá el desglose/kg del lote primero"}), 400
+    kg_por_lote = min(kg_por_lote, 2000.0)
+    try:
+        anios = int(body.get("anios") or 2)
+    except Exception:
+        anios = 2
+    anios = anios if anios in (1, 2) else 2
+    if not producto or not fecha_ancla:
+        return jsonify({"error": "el ancla no tiene producto/fecha válidos"}), 400
+    try:
+        f_ancla = _dC.fromisoformat(fecha_ancla)
+    except Exception:
+        return jsonify({"error": "fecha del ancla inválida"}), 400
+    # 1) REEMPLAZAR: cancelar las automáticas futuras de ESTE producto (post-ancla). Preserva Fijo
+    #    (eos_plan), B2B (eos_b2b), histórico (eos_retroactivo), ejecutado y el ancla misma.
+    _sel = ("SELECT id FROM produccion_programada WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) "
+            "AND substr(fecha_programada,1,10) > ? "
+            "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+            "AND inicio_real_at IS NULL AND fin_real_at IS NULL "
+            "AND COALESCE(inventario_descontado_at,'')='' "
+            "AND COALESCE(origen,'') NOT IN ('eos_plan','eos_b2b','eos_retroactivo')")
+    ids = [r[0] for r in c.execute(_sel, (producto, fecha_ancla)).fetchall()]
+    if ids:
+        _ph = ','.join(['?'] * len(ids))
+        c.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id IN (" + _ph + ")", tuple(ids))
+    # 2) PROGRAMAR la cadena: un lote cada `meses` meses por `anios` años (máx 60 lotes de guardia).
+    n_lotes = min(60, int(round((anios * 12) / meses)))
+
+    def _add_months(d, m):
+        total = (d.year * 12 + (d.month - 1)) + int(round(m))
+        y, mo = total // 12, total % 12 + 1
+        try:
+            return d.replace(year=y, month=mo)
+        except ValueError:
+            return _dC(y, mo, 15)  # día seguro si el mes no tiene ese día
+
+    creados = []
+    for k in range(1, n_lotes + 1):
+        f_k = _add_months(f_ancla, meses * k)
+        c.execute(
+            "INSERT INTO produccion_programada (producto, fecha_programada, lotes, estado, origen, "
+            "cantidad_kg, meses_cobertura) VALUES (?, ?, 1, 'pendiente', 'eos_plan', ?, ?)",
+            (producto, f_k.isoformat(), round(kg_por_lote, 2), round(meses, 2)))
+        creados.append(f_k.isoformat())
+    try:
+        audit_log(c, usuario=user, accion='PROGRAMAR_CADENCIA_DESDE_LOTE',
+                  tabla='produccion_programada', registro_id=lote_id,
+                  despues={'producto': producto, 'ancla': fecha_ancla, 'meses': meses,
+                           'kg_por_lote': round(kg_por_lote, 2), 'anios': anios,
+                           'creados': len(creados), 'cancelados': len(ids)})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({"ok": True, "producto": producto, "ancla": fecha_ancla, "meses": meses,
+                    "kg_por_lote": round(kg_por_lote, 2), "anios": anios,
+                    "creados": len(creados), "cancelados": len(ids), "fechas": creados})
+
+
 @bp.route("/api/plan/limpiar-proyeccion", methods=["POST"])
 def plan_limpiar_proyeccion():
     """Sebastián 16-jun · borra SOLO los lotes de la proyección automática
@@ -19163,7 +19260,10 @@ async function cargarDesgloseEditableLote(producto, kgActual, mlProm, mesesGuard
       + rows + '</tbody></table>'
       + '<div style="text-align:right;margin-top:8px;border-top:1px dashed #c4b5fd;padding-top:6px">'
       + '<span id="dsk-total" style="font-size:13px;font-weight:800;color:#5b21b6"></span>'
-      + '<div style="font-size:10px;color:#94a3b8">"a producir" = cuántas sacar de cada referencia · la suma calcula los kg → 💾 Guardar</div></div>'
+      + '<div style="font-size:10px;color:#94a3b8">"a producir" = cuántas sacar de cada referencia · la suma calcula los kg → 💾 Guardar</div>'
+      // Sebastián 2-jul · programar la CADENA desde este lote (ancla) cada X meses × 2 años.
+      + '<button onclick="programarCadenciaDesdeLote()" title="Desde ESTE lote (ancla) programa un lote cada X meses (los de arriba) por 2 años, con este kg. Reemplaza las automáticas futuras del producto · no toca lo Fijo/B2B/ya producido." style="margin-top:8px;background:linear-gradient(90deg,#7c3aed,#5b21b6);color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:800;cursor:pointer;box-shadow:0 2px 8px -2px rgba(124,58,237,.5)">📅 Programar la cadena cada X meses · 2 años</button>'
+      + '</div>'
       + '</div>';
     _recalcKgDesglose(false);  // al abrir: solo muestra el total, no pisa el kg original
   }catch(e){ host.innerHTML = ''; }
@@ -19187,6 +19287,42 @@ function calcMeses(){
     inp.value = Math.max(0, Math.round(vm * m * tend));
   });
   _recalcKgDesglose(true);
+}
+// Sebastián 2-jul · kg total del desglose (suma de "a producir" × ml) · = kg de X meses de demanda.
+function _desgloseTotalKg(){
+  var inputs = document.querySelectorAll('.dsk-uds');
+  var totMl = 0;
+  inputs.forEach(function(inp){
+    var u = parseFloat(inp.value) || 0;
+    var ml = parseFloat(inp.getAttribute('data-ml')) || 30;
+    totMl += u * ml;
+  });
+  return totMl / 1000;
+}
+// Sebastián 2-jul · desde ESTE lote (ancla · las producciones reales de julio) programa la cadena:
+// un lote cada X meses × 2 años, con el kg de X meses. Reemplaza las automáticas futuras del producto.
+async function programarCadenciaDesdeLote(){
+  var m = window._LOTE_MODAL_ACTUAL || {};
+  var id = m.id;
+  if(!id){ alert('Abrí un lote primero'); return; }
+  var mesesEl = document.getElementById('dsk-meses');
+  var meses = mesesEl ? (parseFloat(mesesEl.value) || 0) : 0;
+  if(meses <= 0){ alert('Primero poné "Producir para X meses" arriba (en el desglose).'); return; }
+  var kgPorLote = _desgloseTotalKg();
+  if(!(kgPorLote > 0)){ kgPorLote = (m.kg || 0); }
+  var nLotes = Math.round(24 / meses);
+  if(!confirm('Programar la cadena de "' + (m.producto || '') + '":\n\n• Un lote cada ' + meses + ' meses × 2 años (~' + nLotes + ' producciones)\n• ' + kgPorLote.toFixed(1) + ' kg cada uno\n• Arranca en ' + (m.fecha || '') + ' + ' + meses + ' meses\n\nReemplaza las producciones AUTOMATICAS futuras de ese producto. NO toca lo Fijo, los pedidos B2B, ni lo ya producido.')) return;
+  try{
+    var t = (await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json()).csrf_token;
+    var r = await fetch('/api/plan/programar-cadencia-desde-lote/' + id, {method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':t},
+      body: JSON.stringify({meses: meses, kg_por_lote: kgPorLote, anios: 2})});
+    var d = await r.json();
+    if(!r.ok){ alert('No se pudo: ' + ((d && d.error) || r.status)); return; }
+    alert('✓ Cadena programada · ' + d.creados + ' producciones cada ' + meses + ' meses × 2 años (se cancelaron ' + d.cancelados + ' automáticas). Recargando el calendario…');
+    if(window.cargarNecesidades){ try{ await cargarNecesidades(); }catch(e){} }
+    if(typeof cerrarLoteModal === 'function') cerrarLoteModal();
+  }catch(e){ alert('Error: ' + e); }
 }
 function autoCalcDesglose(){
   var D = window._DESG; if(!D) return;
