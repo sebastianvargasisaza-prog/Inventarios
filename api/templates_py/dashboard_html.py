@@ -25711,12 +25711,31 @@ async function ckMarcar(itemId, estado){
         headers:{'Content-Type':'application/json','X-CSRF-Token':t}, body: JSON.stringify(bodyObj)});
       var d = await r.json();
       if(!r.ok){ alert('No se pudo: ' + ((d && d.error) || r.status)); return; }
-      var _f1 = (d.fechas && d.fechas[0]) || '';
-      var _fN = (d.fechas && d.fechas[d.fechas.length-1]) || '';
-      alert('✓ Cadena de "' + (p.producto_nombre || '') + '" programada · ' + d.creados + ' producciones cada ' + cc.cadaTxt + ' (se cancelaron ' + d.cancelados + ' futuras).\\n\\nDesde ' + _f1 + ' hasta ' + _fN + '.');
-      if(typeof cerrarSolicitar === 'function') cerrarSolicitar();
-      if(window.cargarNecesidades){ try{ await cargarNecesidades(); }catch(e){} }
+      // Sebastián 3-jul · NO cerrar ni recargar todo · avanzar al SIGUIENTE producto para hacerlos en
+      // fila. Toast no-bloqueante + abrirSolicitar(next) reusa el cache (rápido, sin recargar Necesidades).
+      try{ if(window._NEC_PRODUCTOS_CACHE[idx]) window._NEC_PRODUCTOS_CACHE[idx]._cadena_programada = true; }catch(e){}
+      _toastCadena('✓ ' + (p.producto_nombre || '') + ' · ' + d.creados + ' lotes programados');
+      var _nav = (typeof _navCriticos === 'function') ? _navCriticos() : [];
+      var _pos = _nav.indexOf(idx);
+      var _next = null;
+      for(var _k = 0; _k < _nav.length; _k++){ if(_nav[_k] === idx){ if(_k + 1 < _nav.length) _next = _nav[_k + 1]; break; } }
+      if(_next != null){
+        abrirSolicitar(_next);   // avanza al siguiente · mantiene el modal, sin recargar Necesidades
+      } else {
+        _toastCadena('✓ Era el último · recargá Necesidades para ver el calendario');
+        if(window.cargarNecesidades){ try{ await cargarNecesidades(); }catch(e){} }
+      }
     }catch(e){ alert('Error: ' + e); }
+  }
+  // Toast no-bloqueante para la cadena (Sebastián 3-jul) · no interrumpe el flujo producto-a-producto.
+  function _toastCadena(msg){
+    try{
+      var t = document.getElementById('cadena-toast');
+      if(!t){ t = document.createElement('div'); t.id = 'cadena-toast'; t.style.cssText = 'position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#16a34a;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;box-shadow:0 8px 24px rgba(0,0,0,.25)'; document.body.appendChild(t); }
+      t.textContent = msg; t.style.display = 'block';
+      clearTimeout(window._cadenaToastT);
+      window._cadenaToastT = setTimeout(function(){ if(t) t.style.display = 'none'; }, 2200);
+    }catch(e){}
   }
 
   // Programar único desde el modal Plan de producción · Sebastián 14-may-2026
