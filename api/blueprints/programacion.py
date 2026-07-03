@@ -6668,31 +6668,49 @@ def _composicion_envases_lote(c, evento_id):
     # Cargar presentaciones activas del producto. cantidad_fija_uds (mig 204)
     # puede no existir en instancias viejas → fallback graceful a 0.
     presentaciones = []
-    _pp_base = (
-        "presentacion_codigo, COALESCE(etiqueta,''), COALESCE(volumen_ml,0), "
-        "COALESCE(envase_codigo,''), COALESCE(sku_shopify,''), "
-        "COALESCE(ventas_mes_referencia,0), {fija} "
-        "FROM producto_presentaciones "
-        "WHERE LOWER(TRIM(producto_nombre))=LOWER(TRIM(?)) "
-        "AND COALESCE(activo,1)=1 AND COALESCE(volumen_ml,0) > 0 "
-        "ORDER BY volumen_ml DESC")
-    _rows_pp = None
-    for _fija_expr in ("COALESCE(cantidad_fija_uds,0)", "0"):
-        try:
-            _rows_pp = c.execute(
-                "SELECT " + _pp_base.format(fija=_fija_expr), (producto,)).fetchall()
-            break
-        except Exception:
-            _rows_pp = None
-            continue
-    for r in (_rows_pp or []):
-        presentaciones.append({
-            'codigo': r[0], 'etiqueta': r[1],
-            'volumen_ml': float(r[2]), 'envase_codigo': r[3],
-            'sku_shopify': r[4],
-            'ventas_mes_referencia': float(r[5] or 0),
-            'cantidad_fija_uds': float(r[6] or 0),
-        })
+    # PERF 3-jul (audit velocidad · N+1 en tabs de envases · M63): memoizar las presentaciones por
+    # producto en flask.g · compras_preparacion_envases / minimos-MEE llaman este helper por CADA lote
+    # del horizonte (2 años) → sin cache era 1 query de producto_presentaciones por lote.
+    _pp_key = 'pp:' + (producto or '').strip().lower()
+    _pp_cache = None
+    try:
+        from flask import g as _g_pp
+        _pp_cache = getattr(_g_pp, '_pp_por_prod_cache', None)
+        if _pp_cache is None:
+            _pp_cache = {}
+            _g_pp._pp_por_prod_cache = _pp_cache
+    except Exception:
+        _pp_cache = None
+    if _pp_cache is not None and _pp_key in _pp_cache:
+        presentaciones = [dict(p) for p in _pp_cache[_pp_key]]
+    else:
+        _pp_base = (
+            "presentacion_codigo, COALESCE(etiqueta,''), COALESCE(volumen_ml,0), "
+            "COALESCE(envase_codigo,''), COALESCE(sku_shopify,''), "
+            "COALESCE(ventas_mes_referencia,0), {fija} "
+            "FROM producto_presentaciones "
+            "WHERE LOWER(TRIM(producto_nombre))=LOWER(TRIM(?)) "
+            "AND COALESCE(activo,1)=1 AND COALESCE(volumen_ml,0) > 0 "
+            "ORDER BY volumen_ml DESC")
+        _rows_pp = None
+        for _fija_expr in ("COALESCE(cantidad_fija_uds,0)", "0"):
+            try:
+                _rows_pp = c.execute(
+                    "SELECT " + _pp_base.format(fija=_fija_expr), (producto,)).fetchall()
+                break
+            except Exception:
+                _rows_pp = None
+                continue
+        for r in (_rows_pp or []):
+            presentaciones.append({
+                'codigo': r[0], 'etiqueta': r[1],
+                'volumen_ml': float(r[2]), 'envase_codigo': r[3],
+                'sku_shopify': r[4],
+                'ventas_mes_referencia': float(r[5] or 0),
+                'cantidad_fija_uds': float(r[6] or 0),
+            })
+        if _pp_cache is not None:
+            _pp_cache[_pp_key] = [dict(p) for p in presentaciones]
 
     if not presentaciones:
         # Fallback · solo 1 volumen sin presentaciones definidas
