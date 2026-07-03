@@ -17284,7 +17284,12 @@ async function repartirSobrecargados(){
 }
 
 async function cargar(){
-  document.getElementById('cal-grid-wrap').innerHTML = '<div class="muted" style="padding:30px;text-align:center">Cargando calendario…</div>';
+  // Sebastián 3-jul · SOLO blanquear con "Cargando…" en la 1ª carga. En los refresh tras cualquier
+  // acción (mover/editar/cancelar/agregar/pausar…) NO blanquear el grid → queda visible y se actualiza
+  // en el sitio cuando vuelve la respuesta. Elimina la sensación de "recarga" en TODAS las acciones.
+  if(!window._YA_CARGO_CAL){
+    document.getElementById('cal-grid-wrap').innerHTML = '<div class="muted" style="padding:30px;text-align:center">Cargando calendario…</div>';
+  }
   try {
     // Sebastián 14-may-2026: "siento que canónico era el perfecto · muy
     // en la realidad". Por default solo mostramos lotes AGENDADOS en BD
@@ -17335,6 +17340,7 @@ async function cargar(){
       _MES_NAVEGADO = true;
     }
     render();
+    window._YA_CARGO_CAL = true;  // Sebastián 3-jul · ya no blanquear en refresh (soft-reload)
     // Sebastián 19-may-2026: cargar alertas IA en paralelo (no bloqueante).
     if (typeof cargarAlertasIA === 'function') { cargarAlertasIA(); }
     // 30-may-2026: aviso de ventas sin mapear (no entran a la velocidad).
