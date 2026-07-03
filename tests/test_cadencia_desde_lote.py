@@ -39,10 +39,10 @@ def test_cadena_reemplaza_auto_preserva_fijo(app, db_clean):
     fijo = _ins('PROD CAD', '2026-10-01', 'eos_plan')            # Fijo futuro → preserva
     c = _login(app)
     r = c.post('/api/plan/programar-cadencia-desde-lote/%d' % ancla,
-               json={'meses': 2, 'kg_por_lote': 100, 'anios': 2}, headers=csrf_headers())
+               json={'interval_dias': 90, 'first_offset_dias': 70, 'kg_por_lote': 100, 'anios': 2}, headers=csrf_headers())
     assert r.status_code == 200, r.data[:300]
     d = r.get_json()
-    assert d['creados'] == 12, d          # 24 meses / 2 = 12 producciones
+    assert d['creados'] == 8, d           # cada 90d desde +70d en 730d = 8 producciones
     assert d['cancelados'] == 1, d        # solo la eos_proyeccion
     assert _estado(auto) == 'cancelado', 'la automática futura debe cancelarse'
     assert _estado(fijo) != 'cancelado', 'lo Fijo debe preservarse'
@@ -55,11 +55,11 @@ def test_cadena_reemplaza_auto_preserva_fijo(app, db_clean):
             "AND estado='pendiente' AND fecha_programada > '2026-07-15'").fetchone()[0]
     finally:
         conn.close()
-    assert nuevas >= 12, nuevas  # 12 de la cadena + el fijo de octubre
+    assert nuevas >= 8, nuevas   # 8 de la cadena + el fijo de octubre
 
 
 def test_sin_meses_error(app, db_clean):
     ancla = _ins('PROD CAD2', '2026-07-15', 'eos_plan', kg=100)
     c = _login(app)
-    r = c.post('/api/plan/programar-cadencia-desde-lote/%d' % ancla, json={'meses': 0}, headers=csrf_headers())
+    r = c.post('/api/plan/programar-cadencia-desde-lote/%d' % ancla, json={}, headers=csrf_headers())
     assert r.status_code == 400

@@ -12618,7 +12618,7 @@ def plan_programar_cadencia_desde_lote(lote_id):
     if err:
         body, code = err
         return jsonify(body), code
-    from datetime import date as _dC
+    from datetime import date as _dC, timedelta as _tdC
     body = request.get_json(silent=True) or {}
     conn = get_db()
     c = conn.cursor()
@@ -12631,13 +12631,29 @@ def plan_programar_cadencia_desde_lote(lote_id):
     fecha_ancla = (row[1] or "")[:10]
     kg_ancla = float(row[2] or 0)
     meses_lote = float(row[3] or 0)
+    # CADENCIA por DÍAS DE COBERTURA (Sebastián 3-jul): cuánto ALCANZA cada lote = kg Animus ÷
+    # velocidad (base = las producciones reales de junio/julio). first_offset = producir el buffer
+    # antes de agotar. Fallback compat: meses de calendario si el front no manda días.
     try:
-        meses = float(body.get("meses") or meses_lote or 0)
+        interval_dias = int(round(float(body.get("interval_dias") or 0)))
     except Exception:
-        meses = 0.0
-    if meses <= 0:
-        return jsonify({"error": "definí primero 'producir para X meses' arriba (en el desglose) y guardá"}), 400
-    meses = min(meses, 12.0)
+        interval_dias = 0
+    try:
+        first_offset_dias = int(round(float(body.get("first_offset_dias") or 0)))
+    except Exception:
+        first_offset_dias = 0
+    if interval_dias <= 0:
+        try:
+            meses = float(body.get("meses") or meses_lote or 0)
+        except Exception:
+            meses = 0.0
+        if meses <= 0:
+            return jsonify({"error": "definí primero 'producir para X meses' arriba (en el desglose) y guardá"}), 400
+        interval_dias = int(round(min(meses, 12.0) * 30.44))
+    interval_dias = max(7, min(interval_dias, 400))
+    if first_offset_dias <= 0:
+        first_offset_dias = interval_dias
+    first_offset_dias = max(1, min(first_offset_dias, 400))
     try:
         kg_por_lote = float(body.get("kg_por_lote") or 0)
     except Exception:
@@ -12652,6 +12668,7 @@ def plan_programar_cadencia_desde_lote(lote_id):
     except Exception:
         anios = 2
     anios = anios if anios in (1, 2) else 2
+    meses_col = round(interval_dias / 30.44, 2)  # informativo (meses_cobertura)
     if not producto or not fecha_ancla:
         return jsonify({"error": "el ancla no tiene producto/fecha válidos"}), 400
     try:
@@ -12670,35 +12687,31 @@ def plan_programar_cadencia_desde_lote(lote_id):
     if ids:
         _ph = ','.join(['?'] * len(ids))
         c.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id IN (" + _ph + ")", tuple(ids))
-    # 2) PROGRAMAR la cadena: un lote cada `meses` meses por `anios` años (máx 60 lotes de guardia).
-    n_lotes = min(60, int(round((anios * 12) / meses)))
-
-    def _add_months(d, m):
-        total = (d.year * 12 + (d.month - 1)) + int(round(m))
-        y, mo = total // 12, total % 12 + 1
-        try:
-            return d.replace(year=y, month=mo)
-        except ValueError:
-            return _dC(y, mo, 15)  # día seguro si el mes no tiene ese día
-
+    # 2) PROGRAMAR la cadena por DÍAS DE COBERTURA: el 1er lote a ancla + first_offset (buffer antes
+    #    de agotar), luego uno cada `interval_dias`. Cada producto queda con SU ritmo real.
+    horizonte = anios * 365
     creados = []
-    for k in range(1, n_lotes + 1):
-        f_k = _add_months(f_ancla, meses * k)
+    for k in range(0, 82):  # tope de guardia
+        _off = first_offset_dias + k * interval_dias
+        if _off > horizonte:
+            break
+        f_k = f_ancla + _tdC(days=_off)
         c.execute(
             "INSERT INTO produccion_programada (producto, fecha_programada, lotes, estado, origen, "
             "cantidad_kg, meses_cobertura) VALUES (?, ?, 1, 'pendiente', 'eos_plan', ?, ?)",
-            (producto, f_k.isoformat(), round(kg_por_lote, 2), round(meses, 2)))
+            (producto, f_k.isoformat(), round(kg_por_lote, 2), meses_col))
         creados.append(f_k.isoformat())
     try:
         audit_log(c, usuario=user, accion='PROGRAMAR_CADENCIA_DESDE_LOTE',
                   tabla='produccion_programada', registro_id=lote_id,
-                  despues={'producto': producto, 'ancla': fecha_ancla, 'meses': meses,
-                           'kg_por_lote': round(kg_por_lote, 2), 'anios': anios,
-                           'creados': len(creados), 'cancelados': len(ids)})
+                  despues={'producto': producto, 'ancla': fecha_ancla, 'interval_dias': interval_dias,
+                           'first_offset_dias': first_offset_dias, 'kg_por_lote': round(kg_por_lote, 2),
+                           'anios': anios, 'creados': len(creados), 'cancelados': len(ids)})
     except Exception:
         pass
     conn.commit()
-    return jsonify({"ok": True, "producto": producto, "ancla": fecha_ancla, "meses": meses,
+    return jsonify({"ok": True, "producto": producto, "ancla": fecha_ancla,
+                    "interval_dias": interval_dias, "first_offset_dias": first_offset_dias,
                     "kg_por_lote": round(kg_por_lote, 2), "anios": anios,
                     "creados": len(creados), "cancelados": len(ids), "fechas": creados})
 
@@ -18922,6 +18935,10 @@ async function abrirLoteModal(id, producto, fecha, kg){
     const kgOtros = Math.max(0, kg - kgAnimus);
     const diasDura = kgAnimus / velKgDia;
     const diasHastaProx = Math.max(Math.round(diasDura) - 20, 1);  // buffer 20d antes de agotar · mín 1 (M70)
+    // Sebastián 3-jul · guardar para "Programar la cadena": la cadencia sale de la COBERTURA real
+    // (kg Animus ÷ velocidad = días que alcanza), NO de meses de calendario. Así cada producto queda
+    // con su ritmo natural (mensual / cada 2 / cada 3) según cuánto dure su lote.
+    window._LOTE_CADENCIA = {diasDura: diasDura, diasHastaProx: diasHastaProx, velKgDia: velKgDia};
     const fProx = new Date(fecha + 'T12:00:00');
     fProx.setDate(fProx.getDate() + diasHastaProx);
     proximaSugerida = fechaLocalStr(fProx);
@@ -19262,10 +19279,16 @@ async function cargarDesgloseEditableLote(producto, kgActual, mlProm, mesesGuard
       + '<span id="dsk-total" style="font-size:13px;font-weight:800;color:#5b21b6"></span>'
       + '<div style="font-size:10px;color:#94a3b8">"a producir" = cuántas sacar de cada referencia · la suma calcula los kg → 💾 Guardar</div>'
       // Sebastián 2-jul · programar la CADENA desde este lote (ancla) cada X meses × 2 años.
-      + '<button onclick="programarCadenciaDesdeLote()" title="Desde ESTE lote (ancla) programa un lote cada X meses (los de arriba) por 2 años, con este kg. Reemplaza las automáticas futuras del producto · no toca lo Fijo/B2B/ya producido." style="margin-top:8px;background:linear-gradient(90deg,#7c3aed,#5b21b6);color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:800;cursor:pointer;box-shadow:0 2px 8px -2px rgba(124,58,237,.5)">📅 Programar la cadena cada X meses · 2 años</button>'
+      // Preview del razonamiento (Sebastián 3-jul): este lote alcanza N días → cadencia real.
+      + '<div id="cadencia-preview" style="font-size:11px;color:#5b21b6;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;padding:7px 10px;margin-top:8px;text-align:left;line-height:1.5"></div>'
+      + '<button onclick="programarCadenciaDesdeLote()" title="Desde ESTE lote (ancla · producciones reales de jun/jul) calcula cuántos DÍAS alcanza (kg÷venta) y programa la cadena por 2 años a ese ritmo. Reemplaza las automáticas futuras del producto · no toca lo Fijo/B2B/ya producido." style="margin-top:8px;background:linear-gradient(90deg,#7c3aed,#5b21b6);color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:800;cursor:pointer;box-shadow:0 2px 8px -2px rgba(124,58,237,.5)">📅 Programar la cadena · 2 años</button>'
       + '</div>'
       + '</div>';
     _recalcKgDesglose(false);  // al abrir: solo muestra el total, no pisa el kg original
+    // el preview de cadencia depende de _LOTE_CADENCIA (lo setea el cálculo de la próxima, que puede
+    // correr después) → reintentar un par de veces.
+    setTimeout(function(){ try{ _updateCadenciaPreview(); }catch(e){} }, 300);
+    setTimeout(function(){ try{ _updateCadenciaPreview(); }catch(e){} }, 900);
   }catch(e){ host.innerHTML = ''; }
 }
 
@@ -19301,29 +19324,66 @@ function _desgloseTotalKg(){
 }
 // Sebastián 2-jul · desde ESTE lote (ancla · las producciones reales de julio) programa la cadena:
 // un lote cada X meses × 2 años, con el kg de X meses. Reemplaza las automáticas futuras del producto.
+// Cadencia por COBERTURA real: días que alcanza = kg Animus ÷ velocidad (base = producciones
+// reales jun/jul). Devuelve {intervalDias, firstOffset, kg, cadaTxt} o null si falta info.
+function _calcCadencia(){
+  var m = window._LOTE_MODAL_ACTUAL || {};
+  var cad = window._LOTE_CADENCIA || {};
+  var kg = _desgloseTotalKg();
+  if(!(kg > 0)){ kg = (m.kg || 0); }
+  if(!(kg > 0)) return null;
+  var vel = cad.velKgDia || 0;   // kg/día Animus
+  var intervalDias, firstOffset, base;
+  if(vel > 0.0001){
+    intervalDias = Math.max(Math.round(kg / vel), 15);   // días que ALCANZA este lote
+    firstOffset = Math.max(intervalDias - 20, 1);         // 1er lote: 20d antes de agotar
+    base = 'cobertura';
+  } else {
+    var mEl = document.getElementById('dsk-meses');
+    var meses = mEl ? (parseFloat(mEl.value) || 2) : 2;
+    intervalDias = Math.round(meses * 30.44); firstOffset = intervalDias; base = 'meses';
+  }
+  var cadaTxt = intervalDias >= 26 ? ('~' + (Math.round(intervalDias/30.44*10)/10) + ' meses') : ('~' + intervalDias + ' días');
+  return {intervalDias: intervalDias, firstOffset: firstOffset, kg: kg, vel: vel, cadaTxt: cadaTxt, base: base};
+}
+// Panel de claridad (Sebastián 3-jul): "este lote alcanza N días → cadena cada X" · base jun/jul.
+function _updateCadenciaPreview(){
+  var el = document.getElementById('cadencia-preview');
+  if(!el) return;
+  var m = window._LOTE_MODAL_ACTUAL || {};
+  var cad = window._LOTE_CADENCIA || {};
+  var cc = _calcCadencia();
+  if(!cc || !(cad.velKgDia > 0)){
+    el.innerHTML = '<span style="color:#94a3b8">Definí "Producir para X meses" arriba para ver la cadencia.</span>';
+    return;
+  }
+  var velMes = cad.velKgDia * 30;
+  var agota = '';
+  try{ var da = new Date((m.fecha || '') + 'T12:00:00'); da.setDate(da.getDate() + cc.intervalDias); agota = fechaLocalStr(da); }catch(e){}
+  var nLotes = Math.max(1, Math.round(730 / cc.intervalDias));
+  el.innerHTML = '📦 Producción base <b>' + (m.fecha || '') + '</b> · <b>' + cc.kg.toFixed(1) + ' kg</b> · vende <b>' + velMes.toFixed(1) + ' kg/mes</b><br>'
+    + '⏳ Alcanza <b>~' + cc.intervalDias + ' días</b>' + (agota ? (' → hasta <b>~' + agota + '</b>') : '')
+    + ' · el botón programa un lote cada <b>' + cc.cadaTxt + '</b> (~' + nLotes + ' en 2 años).';
+}
 async function programarCadenciaDesdeLote(){
   var m = window._LOTE_MODAL_ACTUAL || {};
   var id = m.id;
   if(!id){ alert('Abrí un lote primero'); return; }
-  var mesesEl = document.getElementById('dsk-meses');
-  var meses = mesesEl ? (parseFloat(mesesEl.value) || 0) : 0;
-  if(meses <= 0){ alert('Primero poné "Producir para X meses" arriba (en el desglose).'); return; }
-  var kgPorLote = _desgloseTotalKg();
-  if(!(kgPorLote > 0)){ kgPorLote = (m.kg || 0); }
-  var nLotes = Math.round(24 / meses);
-  if(!confirm('Programar la cadena de "' + (m.producto || '') + '":\n\n• Un lote cada ' + meses + ' meses × 2 años (~' + nLotes + ' producciones)\n• ' + kgPorLote.toFixed(1) + ' kg cada uno\n• Arranca en ' + (m.fecha || '') + ' + ' + meses + ' meses\n\nReemplaza las producciones AUTOMATICAS futuras de ese producto. NO toca lo Fijo, los pedidos B2B, ni lo ya producido.')) return;
+  var cc = _calcCadencia();
+  if(!cc){ alert('No hay kg a producir · calculá el desglose ("Calcular X meses") primero.'); return; }
+  var nLotes = Math.max(1, Math.round(730 / cc.intervalDias));
+  if(!confirm('Programar la cadena de "' + (m.producto || '') + '":\n\n• Este lote (' + cc.kg.toFixed(1) + ' kg) alcanza ~' + cc.intervalDias + ' días al ritmo actual\n• → un lote cada ' + cc.cadaTxt + ' (~' + nLotes + ' producciones en 2 años)\n• La 1ª cae ' + cc.firstOffset + ' días después del ancla (antes de agotar)\n\nReemplaza las AUTOMÁTICAS futuras de ese producto. NO toca lo Fijo, B2B, ni lo ya producido.')) return;
   try{
     var t = (await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json()).csrf_token;
     var r = await fetch('/api/plan/programar-cadencia-desde-lote/' + id, {method:'POST', credentials:'same-origin',
       headers:{'Content-Type':'application/json','X-CSRF-Token':t},
-      body: JSON.stringify({meses: meses, kg_por_lote: kgPorLote, anios: 2})});
+      body: JSON.stringify({interval_dias: cc.intervalDias, first_offset_dias: cc.firstOffset, kg_por_lote: cc.kg, anios: 2})});
     var d = await r.json();
     if(!r.ok){ alert('No se pudo: ' + ((d && d.error) || r.status)); return; }
     var _f1 = (d.fechas && d.fechas[0]) || '';
     var _fN = (d.fechas && d.fechas[d.fechas.length-1]) || '';
-    alert('✓ Cadena programada · ' + d.creados + ' producciones cada ' + meses + ' meses (se cancelaron ' + d.cancelados + ' automáticas).\n\nCaen desde ' + _f1 + ' hasta ' + _fN + ' · navegá con "Siguiente →" para verlas.');
+    alert('✓ Cadena programada · ' + d.creados + ' producciones (cada ' + cc.cadaTxt + ', se cancelaron ' + d.cancelados + ' automáticas).\n\nDesde ' + _f1 + ' hasta ' + _fN + ' · navegá con "Siguiente →".');
     if(typeof cerrarLoteModal === 'function') cerrarLoteModal();
-    // refrescar el CALENDARIO (cargar()), no solo Necesidades · si no, no se ven las nuevas
     if(typeof cargar === 'function'){ try{ await cargar(); }catch(e){} }
     else if(window.cargarNecesidades){ try{ await cargarNecesidades(); }catch(e){} }
   }catch(e){ alert('Error: ' + e); }
@@ -19369,6 +19429,7 @@ function _recalcKgDesglose(applyToKg){
       if(u) u.textContent = totUds.toLocaleString('es-CO') + ' uds (del desglose)';
     }
   }
+  try{ _updateCadenciaPreview(); }catch(e){}  // refrescar el preview de cadencia (Sebastián 3-jul)
 }
 
 // Sebastián 15-may-2026: editar kg a producir desde el popup del lote
