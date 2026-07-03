@@ -24904,9 +24904,9 @@ async function ckMarcar(itemId, estado){
       ['📦 Pedidos B2B', res.n_pedidos_b2b_pendientes, '#1e40af'],
     ];
     document.getElementById('nec-resumen').innerHTML = items.map(it =>
-      '<div style="background:white;border:2px solid '+it[2]+';border-radius:10px;padding:10px 16px;flex:1;min-width:120px;text-align:center">'
-      + '<div style="font-size:11px;color:#64748b">'+it[0]+'</div>'
-      + '<div style="font-size:24px;font-weight:800;color:'+it[2]+'">'+it[1]+'</div>'
+      '<div style="background:var(--cx-card,#fff);border:1px solid var(--cx-hairline,#ece9f5);border-top:3px solid '+it[2]+';border-radius:14px;padding:14px 18px;flex:1;min-width:120px;text-align:center;box-shadow:0 1px 3px rgba(16,15,45,.06),0 12px 26px -14px rgba(16,15,45,.14)">'
+      + '<div style="font-size:11px;color:var(--cx-text-mute,#64748b);font-weight:700;letter-spacing:.02em">'+it[0]+'</div>'
+      + '<div style="font-size:26px;font-weight:800;color:'+it[2]+';line-height:1.1;margin-top:3px">'+it[1]+'</div>'
       + '</div>'
     ).join('');
   }
