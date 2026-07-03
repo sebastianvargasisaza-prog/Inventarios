@@ -6954,6 +6954,20 @@ def compras_preparacion_envases():
         except Exception:
             fl = None
         atrasado = bool(fl and fl < hoy.isoformat())
+        # Sebastián 2-jul · segregar por CLIENTE (Animus DTC vs cada B2B) por envase · el mismo
+        # frasco suma entre marcas. Mapa envase_codigo → [{cliente, es_dtc, uds}] desde plan_por_cliente.
+        _por_cli_por_env = {}
+        for _cli in (comp.get('plan_por_cliente') or []):
+            for _e in (_cli.get('envases') or []):
+                _ec = (_e.get('envase') or '').strip()
+                _eu = int(_e.get('uds') or 0)
+                if not _ec or _eu <= 0:
+                    continue
+                _por_cli_por_env.setdefault(_ec, []).append({
+                    'cliente': _cli.get('cliente') or 'Animus DTC',
+                    'es_dtc': bool(_cli.get('es_dtc')),
+                    'uds': _eu,
+                })
         for v in (comp.get('variantes') or []):
             env = (v.get('envase_codigo') or '').strip()
             if not env:
@@ -6968,6 +6982,7 @@ def compras_preparacion_envases():
                 'volumen_ml': v.get('volumen_ml'),
                 'uds': int(v.get('unidades_estimadas') or 0),
                 'os_existentes': os_por_envase.get(env, 0),
+                'por_cliente': _por_cli_por_env.get(env, []),  # split Animus vs B2B (2-jul)
             })
     items.sort(key=lambda x: (x.get('fecha_lista_sugerida') or '9999'))
     return jsonify({'ok': True, 'dias': dias, 'anticipo_dias': anticipo,

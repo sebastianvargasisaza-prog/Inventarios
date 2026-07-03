@@ -1888,9 +1888,22 @@ async function loadPreparacionEnvases(){
       var fl = it.fecha_lista_sugerida||'';
       var flStyle = it.lista_atrasada ? 'background:#fee2e2;color:#991b1b;font-weight:700' : '';
       var osTag = it.os_existentes ? ' <span title="ya hay OS para este envase" style="background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px;font-size:10px">OS×'+it.os_existentes+'</span>' : '';
+      // Sebastián 2-jul · desglose COLAPSABLE por cliente (Animus vs cada B2B) · solo si hay B2B
+      var pc = it.por_cliente||[];
+      var hasB2B = pc.some(function(x){ return !x.es_dtc; });
+      var pcHtml = '';
+      if(pc.length && hasB2B){
+        var pcRows = pc.map(function(x){
+          return '<div style="display:flex;justify-content:space-between;gap:10px;padding:1px 0">'+
+                 '<span>'+(x.es_dtc?'🛍️':'📦')+' '+_esc(x.cliente||'')+'</span>'+
+                 '<b>'+(x.uds||0).toLocaleString('es-CO')+' uds</b></div>';
+        }).join('');
+        pcHtml = '<details style="margin-top:4px"><summary style="cursor:pointer;color:#0f766e;font-size:10px;font-weight:700">&#9656; por cliente ('+pc.length+')</summary>'+
+                 '<div style="font-size:10px;color:#475569;padding:4px 0 0 10px;border-left:2px solid #99f6e4;margin-top:2px">'+pcRows+'</div></details>';
+      }
       h+='<tr id="prep-row-'+i+'" style="border-top:1px solid #e2e8f0">'+
         '<td style="padding:6px">'+_esc(it.producto||'')+osTag+'</td>'+
-        '<td style="padding:6px;font-family:ui-monospace;font-size:11px">'+_esc(it.envase_codigo||'')+'<div style="color:#64748b;font-size:10px">'+_esc(it.presentacion||'')+'</div></td>'+
+        '<td style="padding:6px;font-family:ui-monospace;font-size:11px">'+_esc(it.envase_codigo||'')+'<div style="color:#64748b;font-size:10px">'+_esc(it.presentacion||'')+'</div>'+pcHtml+'</td>'+
         '<td style="padding:6px;text-align:right"><input id="prep-cant-'+i+'" type="number" min="1" value="'+(it.uds||0)+'" style="width:78px;padding:3px;border:1px solid #cbd5e1;border-radius:4px;text-align:right"></td>'+
         '<td style="padding:6px;white-space:nowrap;color:#475569">'+_esc(it.fecha_produccion||'')+'</td>'+
         '<td style="padding:6px"><input id="prep-fecha-'+i+'" type="date" value="'+_esc(fl)+'" style="padding:3px;border:1px solid #cbd5e1;border-radius:4px;'+flStyle+'"></td>'+
