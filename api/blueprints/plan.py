@@ -12715,6 +12715,39 @@ def plan_reprogramar_desde_mes():
     return jsonify({'ok': True, 'dry_run': False, 'ancla': ancla, 'cancelados': len(ids), **res})
 
 
+def _lock_cadena(conn, cur, producto):
+    """Sebastián 3-jul · CAS lock por producto para la cadena · anti DOBLE-cadena concurrente
+    multi-worker (M27/M45: la idempotencia NO se garantiza con SELECT-luego-INSERT · usa CAS/UNIQUE).
+    Reusa cron_locks (UNIQUE job_name) con token. Devuelve (job,token) si ganó, None si otro lo tiene,
+    ('','') si cron_locks no existe (best-effort · no bloquear)."""
+    import uuid as _uuidL
+    from datetime import datetime as _dtL, timedelta as _tdL
+    job = 'cadena:' + (producto or '').strip().upper()[:80]
+    tok = 'cad:' + _uuidL.uuid4().hex
+    try:
+        _cut = (_dtL.utcnow() - _tdL(minutes=3)).isoformat()
+        cur.execute("DELETE FROM cron_locks WHERE job_name=? AND locked_at < ?", (job, _cut))
+        cur.execute("INSERT INTO cron_locks (job_name, locked_at, locked_by) VALUES (?, ?, ?) "
+                    "ON CONFLICT(job_name) DO NOTHING", (job, _dtL.utcnow().isoformat(), tok))
+        conn.commit()
+        row = cur.execute("SELECT locked_by FROM cron_locks WHERE job_name=?", (job,)).fetchone()
+        if row and row[0] == tok:
+            return (job, tok)
+        return None  # otro request tiene el lock
+    except Exception:
+        return ('', '')  # cron_locks ausente → best-effort
+
+
+def _unlock_cadena(conn, cur, lk):
+    if not lk or not lk[0]:
+        return
+    try:
+        cur.execute("DELETE FROM cron_locks WHERE job_name=? AND locked_by=?", (lk[0], lk[1]))
+        conn.commit()
+    except Exception:
+        pass
+
+
 @bp.route("/api/plan/programar-cadencia-desde-lote/<int:lote_id>", methods=["POST"])
 def plan_programar_cadencia_desde_lote(lote_id):
     """Sebastián 2-jul · desde un lote ANCLA (las producciones reales de julio) programa la CADENA
@@ -12798,6 +12831,10 @@ def plan_programar_cadencia_desde_lote(lote_id):
             d = d + _tdC(days=1)
         return d
 
+    # LOCK anti doble-cadena concurrente (Sebastián 3-jul · M27/M45 · el guard de cliente no basta multi-worker)
+    _lk = _lock_cadena(conn, c, producto)
+    if _lk is None:
+        return jsonify({"error": "ya se está programando la cadena de este producto · esperá unos segundos"}), 409
     # 1) REEMPLAZAR (Sebastián 3-jul): cancelar TODA producción futura de ESTE producto post-ancla
     #    SIN importar el origen (Fijo eos_plan, auto, proyección, sugerida, manual, calendar). Solo se
     #    preservan: pedidos B2B de clientes (eos_b2b · compromiso real · orfanarlos sería peligroso),
@@ -12812,6 +12849,7 @@ def plan_programar_cadencia_desde_lote(lote_id):
     if ids:
         _ph = ','.join(['?'] * len(ids))
         c.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id IN (" + _ph + ")", tuple(ids))
+    _dw = min(14, max(2, interval_dias - 2))  # ventana dedup adaptable · nunca > intervalo (no borra lotes de cadencias cortas)
     # Lotes PRESERVADOS post-ancla (B2B/ejecutado/histórico) → NO crear un lote de la cadena encima (±14d).
     _preservados = []
     for r in c.execute(
@@ -12832,8 +12870,8 @@ def plan_programar_cadencia_desde_lote(lote_id):
         if _off > horizonte:
             break
         f_k = _dia_habil(f_ancla + _tdC(days=_off))
-        # dedup · NO doblar el mismo producto: saltar si hay un lote preservado o ya-creado a ±14 días
-        if any(abs((f_k - _fp).days) < 14 for _fp in _preservados) or any(abs((f_k - _fu).days) < 14 for _fu in _usadas):
+        # dedup · NO doblar el mismo producto: saltar si hay un lote preservado o ya-creado a <_dw días
+        if any(abs((f_k - _fp).days) < _dw for _fp in _preservados) or any(abs((f_k - _fu).days) < _dw for _fu in _usadas):
             continue
         c.execute(
             "INSERT INTO produccion_programada (producto, fecha_programada, lotes, estado, origen, "
@@ -12850,6 +12888,7 @@ def plan_programar_cadencia_desde_lote(lote_id):
     except Exception:
         pass
     conn.commit()
+    _unlock_cadena(conn, c, _lk)
     return jsonify({"ok": True, "producto": producto, "ancla": fecha_ancla,
                     "interval_dias": interval_dias, "first_offset_dias": first_offset_dias,
                     "kg_por_lote": round(kg_por_lote, 2), "anios": anios,
@@ -12910,6 +12949,11 @@ def plan_programar_cadencia_producto():
         except Exception:
             base = hoy
     meses_col = round(interval_dias / 30.44, 2)
+    # LOCK anti doble-cadena concurrente (Sebastián 3-jul · M27/M45)
+    _lk = _lock_cadena(conn, c, producto)
+    if _lk is None:
+        return jsonify({"error": "ya se está programando la cadena de este producto · esperá unos segundos"}), 409
+    _dw = min(14, max(2, interval_dias - 2))  # ventana dedup adaptable (nunca > intervalo)
     # 1) cancelar TODA producción futura del producto (> base) salvo B2B/ejecutado/histórico (Sebastián 3-jul)
     _sel = ("SELECT id FROM produccion_programada WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) "
             "AND substr(fecha_programada,1,10) > ? "
@@ -12945,8 +12989,8 @@ def plan_programar_cadencia_producto():
         if _off > horizonte:
             break
         f_k = _dia_habil(base + _tdP(days=_off))
-        # dedup · NO doblar el mismo producto (contra preservados y ya-creados a ±14 días)
-        if any(abs((f_k - _fp).days) < 14 for _fp in _preservados) or any(abs((f_k - _fu).days) < 14 for _fu in _usadas):
+        # dedup · NO doblar el mismo producto (contra preservados y ya-creados a <_dw días)
+        if any(abs((f_k - _fp).days) < _dw for _fp in _preservados) or any(abs((f_k - _fu).days) < _dw for _fu in _usadas):
             continue
         # cada lote reserva la porción "para otro cliente" (recurrente · ej. Renova 80% otro cliente) ·
         # cantidad_kg = Animus + otro; la cobertura Animus usa (cantidad_kg − otro).
@@ -12965,6 +13009,7 @@ def plan_programar_cadencia_producto():
     except Exception:
         pass
     conn.commit()
+    _unlock_cadena(conn, c, _lk)
     return jsonify({"ok": True, "producto": producto, "interval_dias": interval_dias,
                     "dias_hasta_primera": dias_hasta_primera, "kg_por_lote": round(kg_por_lote, 2),
                     "creados": len(creados), "cancelados": len(ids), "fechas": creados})

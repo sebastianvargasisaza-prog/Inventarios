@@ -110,3 +110,24 @@ def test_cadena_desde_lote_propaga_kg_otro(app, db_clean):
         "ORDER BY fecha_programada LIMIT 1").fetchone()
     assert abs(float(row[0]) - 70) < 0.01, ('total = Animus+otro', row[0])   # 20 + 50
     assert abs(float(row[1]) - 50) < 0.01, ('kg_otro guardado', row[1])
+
+
+def test_cadena_lock_concurrente_409(app, db_clean):
+    """Sebastián 3-jul: con un lock de cadena activo del producto, el 2º request da 409 (anti doble-cadena)."""
+    ancla = _ins('PROD LOCK', '2026-07-15', 'eos_plan', kg=100)
+    from datetime import datetime
+    conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
+    try:
+        try:
+            conn.execute("INSERT INTO cron_locks (job_name, locked_at, locked_by) VALUES (?, ?, ?)",
+                         ('cadena:PROD LOCK', datetime.utcnow().isoformat(), 'cad:otro'))
+            conn.commit()
+        except Exception:
+            import pytest
+            pytest.skip('cron_locks no existe en el schema de test')
+    finally:
+        conn.close()
+    c = _login(app)
+    r = c.post('/api/plan/programar-cadencia-desde-lote/%d' % ancla,
+               json={'interval_dias': 60, 'first_offset_dias': 40, 'kg_por_lote': 20, 'anios': 1}, headers=csrf_headers())
+    assert r.status_code == 409, r.data[:200]
