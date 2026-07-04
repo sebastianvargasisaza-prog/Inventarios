@@ -3891,7 +3891,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     # (COALESCE fin/descuento/programada). 'completado' se excluye (ya pasó a Available · anti doble-cuenta).
     pipeline_kg_por_prod = {}
     for r in c.execute(
-        """SELECT producto, COALESCE(SUM(COALESCE(kg_real, cantidad_kg, 0)), 0)
+        """SELECT producto, COALESCE(SUM(COALESCE(kg_real, cantidad_kg, 0) - COALESCE(kg_otro_cliente, 0)), 0)
            FROM produccion_programada
            WHERE date(COALESCE(fin_real_at, inventario_descontado_at, fecha_programada)) >= ?
              AND date(COALESCE(fin_real_at, inventario_descontado_at, fecha_programada)) <= date('now', '-5 hours')
@@ -3899,11 +3899,31 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
              -- 'completado' ya pasó a stock_pt (liberación QC) · contarlo además
              -- como pipeline lo sumaba 2 veces e inflaba la cobertura ~7d.
              AND LOWER(COALESCE(estado,'')) NOT IN ('completado','cancelado')
+           -- Sebastián 3-jul · restar kg_otro_cliente: la porción para otro cliente NO cubre demanda
+           -- DTC Animus (RENOVA 70kg con 50 para otro → solo 20 cuentan como pipeline · antes 70 → próxima 2027).
            GROUP BY producto""",
         (pipeline_desde,),
     ).fetchall():
         if r[0]:
-            pipeline_kg_por_prod[r[0]] = float(r[1] or 0)
+            pipeline_kg_por_prod[r[0]] = max(0.0, float(r[1] or 0))
+    # Sebastián 3-jul · restar también la porción B2B de los lotes RECIENTES (igual que el Fijo · un
+    # lote reciente comprometido a B2B tampoco cubre demanda DTC). Misma ventana que el pipeline.
+    b2b_reciente_kg_por_prod = {}
+    try:
+        for r in c.execute(
+            """SELECT pp.producto, COALESCE(SUM(COALESCE(pbl.kg_aporte, 0)), 0)
+               FROM produccion_programada pp
+               JOIN pedidos_b2b_lote pbl ON pbl.lote_produccion_id = pp.id
+               WHERE date(COALESCE(pp.fin_real_at, pp.inventario_descontado_at, pp.fecha_programada)) >= ?
+                 AND date(COALESCE(pp.fin_real_at, pp.inventario_descontado_at, pp.fecha_programada)) <= date('now', '-5 hours')
+                 AND LOWER(COALESCE(pp.estado,'')) NOT IN ('completado','cancelado')
+               GROUP BY pp.producto""",
+            (pipeline_desde,),
+        ).fetchall():
+            if r[0]:
+                b2b_reciente_kg_por_prod[r[0]] = float(r[1] or 0)
+    except Exception:
+        pass
 
     # 5.b · FIX P0 audit 24-may-2026 · doble-cuenta Fijo↔Sugerida.
     # Antes el cron auto-sugerir veía cobertura insuficiente (porque Fijo
@@ -4154,6 +4174,8 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         # para evitar doble-cuenta cuando el cron auto-sugerir corra de nuevo.
         stock_kg_gondola = (stock_uds_total * ml_promedio) / 1000.0
         pipeline_kg = pipeline_kg_por_prod.get(prod_nombre, 0.0)
+        # Sebastián 3-jul · restar B2B reciente (kg_otro ya restado en el SUM del query) → pipeline = solo Animus DTC.
+        pipeline_kg = max(0.0, pipeline_kg - b2b_reciente_kg_por_prod.get(prod_nombre, 0.0))
         pipeline_fijo_kg = pipeline_fijo_kg_por_prod.get(prod_nombre, 0.0)
         # FIX 30-may-2026 · restar la porción B2B de los lotes Fijo: lo comprometido
         # a otros clientes (Fernando Meza, etc.) NO cubre demanda Animus DTC, así que
@@ -4532,18 +4554,27 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     # los kg que van para Animus DTC (la parte B2B va a otro cliente y NO cubre
     # la venta de Animus · sumar el total hacía durar de más → sugería tarde).
     b2b_kg_por_lote_fecha = {}
+    b2b_kg_por_lote_fecha_norm = {}  # Sebastián 3-jul · M13 · clave por nombre NORMALIZADO fuerte
+    # (acentos/puntuación/dobles espacios) · si el ancla se resolvió por nombre normalizado, la resta
+    # B2B por UPPER(TRIM) fallaba en silencio → ancla_kg_animus inflado → próxima tarde. Fallback aquí.
     try:
         for r in c.execute(
-            """SELECT UPPER(TRIM(pp.producto)), substr(pp.fecha_programada,1,10),
+            """SELECT pp.producto, substr(pp.fecha_programada,1,10),
                       COALESCE(SUM(pbl.kg_aporte),0)
                FROM pedidos_b2b_lote pbl
                JOIN produccion_programada pp ON pp.id = pbl.lote_produccion_id
-               GROUP BY UPPER(TRIM(pp.producto)), substr(pp.fecha_programada,1,10)"""
+               GROUP BY pp.producto, substr(pp.fecha_programada,1,10)"""
         ).fetchall():
             if r[0]:
-                b2b_kg_por_lote_fecha[(r[0], r[1])] = float(r[2] or 0)
+                _kgb = float(r[2] or 0)
+                _uk = (r[0] or "").strip().upper()
+                b2b_kg_por_lote_fecha[(_uk, r[1])] = b2b_kg_por_lote_fecha.get((_uk, r[1]), 0.0) + _kgb
+                _nkb = _npf(r[0])
+                if _nkb:
+                    b2b_kg_por_lote_fecha_norm[(_nkb, r[1])] = b2b_kg_por_lote_fecha_norm.get((_nkb, r[1]), 0.0) + _kgb
     except Exception:
         b2b_kg_por_lote_fecha = {}  # mig 171/172 no aplicada
+        b2b_kg_por_lote_fecha_norm = {}
 
     for p in out:
         info = lotes_pendientes.get(p["producto_nombre"])
@@ -4630,7 +4661,10 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             # SOLO la parte Animus del ancla (resta B2B) · la sugerencia de próxima
             # producción debe basarse en lo que cubre Animus, no en el total del lote.
             _ancla_b2b = b2b_kg_por_lote_fecha.get(
-                ((p["producto_nombre"] or "").strip().upper(), ancla_fecha.isoformat()), 0.0)
+                ((p["producto_nombre"] or "").strip().upper(), ancla_fecha.isoformat()), None)
+            if _ancla_b2b is None:  # M13 · fallback por nombre normalizado (el ancla puede venir de ahí)
+                _ancla_b2b = b2b_kg_por_lote_fecha_norm.get(
+                    (_npf(p["producto_nombre"]), ancla_fecha.isoformat()), 0.0)
             # Sebastián 3-jul · restar TAMBIÉN la porción "para otro cliente" (kg_otro_cliente) del ancla ·
             # Renova = 70kg pero 50 eran de otro cliente → Animus real = 20kg (antes usaba 70 → próxima 2027).
             ancla_kg_animus = max(0.0, ancla_kg - _ancla_b2b - ancla_kg_otro)
@@ -12744,12 +12778,26 @@ def plan_programar_cadencia_desde_lote(lote_id):
         anios = 2
     anios = anios if anios in (1, 2) else 2
     meses_col = round(interval_dias / 30.44, 2)  # informativo (meses_cobertura)
+    # Sebastián 3-jul · porción "para otro cliente" de cada lote de la cadena (pre-llenada desde el ancla).
+    # Se guarda en kg_otro_cliente y se SUMA al total (cantidad_kg = Animus + otro) · la cobertura usa Animus.
+    try:
+        kg_otro_lote = max(0.0, float(body.get("kg_otro_cliente") or 0))
+    except Exception:
+        kg_otro_lote = 0.0
     if not producto or not fecha_ancla:
         return jsonify({"error": "el ancla no tiene producto/fecha válidos"}), 400
     try:
         f_ancla = _dC.fromisoformat(fecha_ancla)
     except Exception:
         return jsonify({"error": "fecha del ancla inválida"}), 400
+
+    def _dia_habil(d):  # Sebastián 3-jul · la cadena NO cae en fin de semana/festivo (planta no produce)
+        for _ in range(30):
+            if d.weekday() < 5 and not es_festivo_colombia(d):
+                return d
+            d = d + _tdC(days=1)
+        return d
+
     # 1) REEMPLAZAR (Sebastián 3-jul): cancelar TODA producción futura de ESTE producto post-ancla
     #    SIN importar el origen (Fijo eos_plan, auto, proyección, sugerida, manual, calendar). Solo se
     #    preservan: pedidos B2B de clientes (eos_b2b · compromiso real · orfanarlos sería peligroso),
@@ -12764,20 +12812,35 @@ def plan_programar_cadencia_desde_lote(lote_id):
     if ids:
         _ph = ','.join(['?'] * len(ids))
         c.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id IN (" + _ph + ")", tuple(ids))
+    # Lotes PRESERVADOS post-ancla (B2B/ejecutado/histórico) → NO crear un lote de la cadena encima (±14d).
+    _preservados = []
+    for r in c.execute(
+        "SELECT substr(fecha_programada,1,10) FROM produccion_programada "
+        "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) AND substr(fecha_programada,1,10) > ? "
+        "AND COALESCE(estado,'') NOT IN ('cancelado','completado')", (producto, fecha_ancla)).fetchall():
+        try:
+            _preservados.append(_dC.fromisoformat((r[0] or '')[:10]))
+        except Exception:
+            pass
     # 2) PROGRAMAR la cadena por DÍAS DE COBERTURA: el 1er lote a ancla + first_offset (buffer antes
     #    de agotar), luego uno cada `interval_dias`. Cada producto queda con SU ritmo real.
     horizonte = anios * 365
     creados = []
+    _usadas = []
     for k in range(0, 82):  # tope de guardia
         _off = first_offset_dias + k * interval_dias
         if _off > horizonte:
             break
-        f_k = f_ancla + _tdC(days=_off)
+        f_k = _dia_habil(f_ancla + _tdC(days=_off))
+        # dedup · NO doblar el mismo producto: saltar si hay un lote preservado o ya-creado a ±14 días
+        if any(abs((f_k - _fp).days) < 14 for _fp in _preservados) or any(abs((f_k - _fu).days) < 14 for _fu in _usadas):
+            continue
         c.execute(
             "INSERT INTO produccion_programada (producto, fecha_programada, lotes, estado, origen, "
-            "cantidad_kg, meses_cobertura) VALUES (?, ?, 1, 'pendiente', 'eos_plan', ?, ?)",
-            (producto, f_k.isoformat(), round(kg_por_lote, 2), meses_col))
+            "cantidad_kg, meses_cobertura, kg_otro_cliente) VALUES (?, ?, 1, 'pendiente', 'eos_plan', ?, ?, ?)",
+            (producto, f_k.isoformat(), round(kg_por_lote + kg_otro_lote, 2), meses_col, round(kg_otro_lote, 2)))
         creados.append(f_k.isoformat())
+        _usadas.append(f_k)
     try:
         audit_log(c, usuario=user, accion='PROGRAMAR_CADENCIA_DESDE_LOTE',
                   tabla='produccion_programada', registro_id=lote_id,
@@ -12859,20 +12922,40 @@ def plan_programar_cadencia_producto():
         _ph = ','.join(['?'] * len(ids))
         c.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id IN (" + _ph + ")", tuple(ids))
     # 2) crear la cadena: 1ª a base + dias_hasta_primera, luego cada interval_dias por 2 años.
+    def _dia_habil(d):  # Sebastián 3-jul · la cadena NO cae en fin de semana/festivo
+        for _ in range(30):
+            if d.weekday() < 5 and not es_festivo_colombia(d):
+                return d
+            d = d + _tdP(days=1)
+        return d
+    _preservados = []  # lotes B2B/ejecutado/histórico preservados → no doblar encima (±14d)
+    for r in c.execute(
+        "SELECT substr(fecha_programada,1,10) FROM produccion_programada "
+        "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) AND substr(fecha_programada,1,10) > ? "
+        "AND COALESCE(estado,'') NOT IN ('cancelado','completado')", (producto, base.isoformat())).fetchall():
+        try:
+            _preservados.append(_dCP.fromisoformat((r[0] or '')[:10]))
+        except Exception:
+            pass
     horizonte = anios * 365
     creados = []
+    _usadas = []
     for k in range(0, 82):
         _off = dias_hasta_primera + k * interval_dias
         if _off > horizonte:
             break
-        f_k = base + _tdP(days=_off)
-        _kg = kg_por_lote + (kg_otro if k == 0 else 0.0)  # la 1ª suma la reserva de otro cliente
-        _otro = kg_otro if k == 0 else 0.0
+        f_k = _dia_habil(base + _tdP(days=_off))
+        # dedup · NO doblar el mismo producto (contra preservados y ya-creados a ±14 días)
+        if any(abs((f_k - _fp).days) < 14 for _fp in _preservados) or any(abs((f_k - _fu).days) < 14 for _fu in _usadas):
+            continue
+        # cada lote reserva la porción "para otro cliente" (recurrente · ej. Renova 80% otro cliente) ·
+        # cantidad_kg = Animus + otro; la cobertura Animus usa (cantidad_kg − otro).
         c.execute(
             "INSERT INTO produccion_programada (producto, fecha_programada, lotes, estado, origen, "
             "cantidad_kg, meses_cobertura, kg_otro_cliente) VALUES (?, ?, 1, 'pendiente', 'eos_plan', ?, ?, ?)",
-            (producto, f_k.isoformat(), round(_kg, 2), meses_col, round(_otro, 2)))
+            (producto, f_k.isoformat(), round(kg_por_lote + kg_otro, 2), meses_col, round(kg_otro, 2)))
         creados.append(f_k.isoformat())
+        _usadas.append(f_k)
     try:
         audit_log(c, usuario=user, accion='PROGRAMAR_CADENCIA_PRODUCTO', tabla='produccion_programada',
                   registro_id=0, despues={'producto': producto, 'interval_dias': interval_dias,

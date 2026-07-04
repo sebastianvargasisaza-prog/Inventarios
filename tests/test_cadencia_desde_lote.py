@@ -65,3 +65,48 @@ def test_sin_meses_error(app, db_clean):
     c = _login(app)
     r = c.post('/api/plan/programar-cadencia-desde-lote/%d' % ancla, json={}, headers=csrf_headers())
     assert r.status_code == 400
+
+
+def test_cadena_no_dobla_sobre_b2b_cercano(app, db_clean):
+    """Sebastián 3-jul: la cadena NO crea un lote a <14d de un B2B preservado (sin duplicados)."""
+    ancla = _ins('PROD DEDUP', '2026-07-15', 'eos_plan', kg=100)
+    _ins('PROD DEDUP', '2026-09-25', 'eos_b2b')   # justo donde caería el 1er slot (ancla+70=09-23)
+    c = _login(app)
+    r = c.post('/api/plan/programar-cadencia-desde-lote/%d' % ancla,
+               json={'interval_dias': 90, 'first_offset_dias': 70, 'kg_por_lote': 100, 'anios': 2}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    from datetime import date
+    fechas = [x[0][:10] for x in sqlite3.connect(os.environ['DB_PATH']).execute(
+        "SELECT fecha_programada FROM produccion_programada WHERE producto='PROD DEDUP' "
+        "AND estado NOT IN ('cancelado','completado') ORDER BY fecha_programada").fetchall()]
+    ds = sorted(date.fromisoformat(f) for f in fechas)
+    for i in range(1, len(ds)):
+        assert (ds[i] - ds[i - 1]).days >= 14, ('doble a <14d', str(ds[i - 1]), str(ds[i]))
+
+
+def test_cadena_no_cae_finde(app, db_clean):
+    """Sebastián 3-jul: ningún lote de la cadena cae en sábado/domingo."""
+    ancla = _ins('PROD FINDE', '2026-07-15', 'eos_plan', kg=100)
+    c = _login(app)
+    r = c.post('/api/plan/programar-cadencia-desde-lote/%d' % ancla,
+               json={'interval_dias': 30, 'first_offset_dias': 20, 'kg_por_lote': 100, 'anios': 2}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    from datetime import date
+    for f in r.get_json()['fechas']:
+        assert date.fromisoformat(f).weekday() < 5, ('cae en finde', f)
+
+
+def test_cadena_desde_lote_propaga_kg_otro(app, db_clean):
+    """Sebastián 3-jul: el path desde-lote propaga kg_otro_cliente a cada lote (antes se perdía)."""
+    ancla = _ins('PROD OTRO CAD', '2026-07-15', 'eos_plan', kg=100)
+    c = _login(app)
+    r = c.post('/api/plan/programar-cadencia-desde-lote/%d' % ancla,
+               json={'interval_dias': 60, 'first_offset_dias': 40, 'kg_por_lote': 20,
+                     'kg_otro_cliente': 50, 'anios': 1}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    row = sqlite3.connect(os.environ['DB_PATH']).execute(
+        "SELECT cantidad_kg, kg_otro_cliente FROM produccion_programada WHERE producto='PROD OTRO CAD' "
+        "AND origen='eos_plan' AND estado='pendiente' AND fecha_programada > '2026-07-15' "
+        "ORDER BY fecha_programada LIMIT 1").fetchone()
+    assert abs(float(row[0]) - 70) < 0.01, ('total = Animus+otro', row[0])   # 20 + 50
+    assert abs(float(row[1]) - 50) < 0.01, ('kg_otro guardado', row[1])

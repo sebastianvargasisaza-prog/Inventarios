@@ -25696,12 +25696,16 @@ async function ckMarcar(itemId, estado){
     if(cc.ancla){ msg += '• Base: producción del ' + cc.ancla.fecha + ' (' + (cc.ancla.kg||0).toFixed(1) + ' kg) · se conserva y se cuenta desde ahí\\n'; }
     msg += '• Cada lote ' + cc.kgAnimus.toFixed(1) + ' kg (cubre ~' + cc.mesesCubre + ' meses de venta)\\n• Cada ' + cc.cadaTxt + ' · ~' + cc.nLotes + ' producciones · total ' + (cc.kgAnimus * cc.nLotes).toFixed(0) + ' kg en 2 años\\n• La 1ª de la cadena el ' + (cc.prox || (cc.firstOffset + ' días después de la base')) + '\\n\\nBORRA todas las producciones futuras de ese producto (Fijo, auto, proyección) y deja solo esta cadena. Conserva pedidos B2B y lo ya producido.';
     if(!confirm(msg)) return;
+    // Sebastián 3-jul · guard anti doble-click (idempotencia) · un 2º POST cancelaría y recrearía la
+    // cadena recién hecha (o en concurrencia duplicaría). No programar dos veces el mismo producto.
+    if(window._cadenaBusy){ return; }
+    window._cadenaBusy = true;
     try{
       var t = (await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json()).csrf_token;
       var url, bodyObj;
       if(cc.ancla && cc.ancla.id){
         url = '/api/plan/programar-cadencia-desde-lote/' + cc.ancla.id;   // base = lote programado (tiene id)
-        bodyObj = {interval_dias: cc.intervalDias, first_offset_dias: cc.firstOffset, kg_por_lote: cc.kgAnimus, anios: 2};
+        bodyObj = {interval_dias: cc.intervalDias, first_offset_dias: cc.firstOffset, kg_por_lote: cc.kgAnimus, kg_otro_cliente: cc.otro, anios: 2};
       } else {
         url = '/api/plan/programar-cadencia-producto';                    // base = producción ejecutada (sin id) o desde stock
         bodyObj = {producto: p.producto_nombre, kg_por_lote: cc.kgAnimus, interval_dias: cc.intervalDias, dias_hasta_primera: cc.firstOffset, kg_otro_cliente: cc.otro, anios: 2};
@@ -25710,7 +25714,8 @@ async function ckMarcar(itemId, estado){
       var r = await fetch(url, {method:'POST', credentials:'same-origin',
         headers:{'Content-Type':'application/json','X-CSRF-Token':t}, body: JSON.stringify(bodyObj)});
       var d = await r.json();
-      if(!r.ok){ alert('No se pudo: ' + ((d && d.error) || r.status)); return; }
+      if(!r.ok){ window._cadenaBusy = false; alert('No se pudo: ' + ((d && d.error) || r.status)); return; }
+      window._cadenaBusy = false;
       // Sebastián 3-jul · NO cerrar ni recargar todo · avanzar al SIGUIENTE producto para hacerlos en
       // fila. Toast no-bloqueante + abrirSolicitar(next) reusa el cache (rápido, sin recargar Necesidades).
       try{ if(window._NEC_PRODUCTOS_CACHE[idx]) window._NEC_PRODUCTOS_CACHE[idx]._cadena_programada = true; }catch(e){}
@@ -25725,7 +25730,7 @@ async function ckMarcar(itemId, estado){
         _toastCadena('✓ Era el último · recargá Necesidades para ver el calendario');
         if(window.cargarNecesidades){ try{ await cargarNecesidades(); }catch(e){} }
       }
-    }catch(e){ alert('Error: ' + e); }
+    }catch(e){ window._cadenaBusy = false; alert('Error: ' + e); }
   }
   // Toast no-bloqueante para la cadena (Sebastián 3-jul) · no interrumpe el flujo producto-a-producto.
   function _toastCadena(msg){

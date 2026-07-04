@@ -7368,12 +7368,21 @@ def listado_produccion_programada():
             # · log + seguir sin desglose · no romper /admin/plan-calendario.
             log = logging.getLogger('inventario.programacion')
             log.warning('desglose B2B fallo: %s', _e_b2b)
+    # Sebastián 3-jul · kg_otro_cliente (reserva manual para otro cliente) también sale de la porción
+    # Animus → el calendario debe restarlo igual que Necesidades (antes kg_dtc = kg − B2B mostraba 70
+    # cuando Necesidades mostraba 20 · dos números para el mismo lote · Renova).
+    kg_otro_por_id = {}
+    try:
+        for _ro in conn.execute("SELECT id, COALESCE(kg_otro_cliente,0) FROM produccion_programada WHERE COALESCE(kg_otro_cliente,0) > 0").fetchall():
+            kg_otro_por_id[_ro[0]] = float(_ro[1] or 0)
+    except Exception:
+        pass
     out = []
     for r in rows:
         kg_total = float(r[7] or 0)
         desglose = desglose_por_lote.get(r[0], [])
         kg_b2b_sum = sum(d['kg'] for d in desglose)
-        kg_dtc = round(kg_total - kg_b2b_sum, 2)
+        kg_dtc = round(kg_total - kg_b2b_sum - kg_otro_por_id.get(r[0], 0.0), 2)
         # "Lote inflado": tiene B2B y el DTC queda > 0 (caso normal). Si
         # kg_dtc < 0 → más B2B atribuido que el lote total · data
         # inconsistente · frontend muestra warning. Si kg_b2b_sum == 0
