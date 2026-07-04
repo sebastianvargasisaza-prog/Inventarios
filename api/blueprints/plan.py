@@ -19545,7 +19545,10 @@ async function abrirLoteModal(id, producto, fecha, kg){
   // Sebastián 30-may-2026 · "¿la próxima ya está programada?" · cruza la fecha
   // sugerida contra las producciones YA agendadas de ESTE producto y deja
   // programarla / ajustarla desde el mismo modal.
-  if (proximaSugerida){
+  // Sebastián 3-jul (workflow ultracode) · SOLO en el PRIMER lote del producto (el ancla). En los lotes
+  // de la serie ya programada la próxima cae por cadencia → marcarlos "N días DESPUÉS" era falso
+  // positivo en TODAS las producciones (misma guarda que el diagnóstico TARDE/a-tiempo de arriba).
+  if (_esPrimerLote && proximaSugerida){
     const _toD = s => new Date((s || '').slice(0,10) + 'T12:00:00');
     let prox = null;
     (PLAN_DATA.agendadas || []).forEach(a => {
@@ -19559,16 +19562,21 @@ async function abrirLoteModal(id, producto, fecha, kg){
     });
     if (prox){
       const pf = (prox.fecha_programada || '').slice(0,10);
+      // Sebastián 3-jul (workflow ultracode) · si la próxima es una CADENA deliberada (eos_plan · lo que
+      // programaste vos), NO la second-guessea (no "N días DESPUÉS / Adelantar") · la cadencia es TU
+      // decisión. El aviso de adelantar solo aplica a lotes auto/proyección re-sembrados por los crons.
+      const _esCadena = (prox.origen || '') === 'eos_plan';
       const dd = Math.round((_toD(pf) - _toD(proximaSugerida)) / 86400000);  // + = después
       let txt, col;
-      if (Math.abs(dd) <= 7){ txt = '✅ alineada con la sugerida'; col = '#15803d'; }
+      if (_esCadena){ txt = 'en la cadena programada'; col = '#15803d'; }
+      else if (Math.abs(dd) <= 7){ txt = '✅ alineada con la sugerida'; col = '#15803d'; }
       else if (dd < 0){ txt = '📌 ' + Math.abs(dd) + ' días ANTES de la sugerida'; col = '#7c3aed'; }
       else { txt = '⚠ ' + dd + ' días DESPUÉS de la sugerida (stock se agota antes)'; col = '#b45309'; }
       // Sebastián 30-may-2026 · botón "Aplicar recomendación": mueve la próxima
       // a la fecha sugerida automáticamente (adelanta/atrasa según corresponda),
-      // en vez de tener que abrir y mover a mano. Solo si NO está alineada (±7d).
+      // en vez de tener que abrir y mover a mano. Solo si NO está alineada (±7d) y NO es cadena.
       let accionBtn = '';
-      if (Math.abs(dd) > 7){
+      if (!_esCadena && Math.abs(dd) > 7){
         const verbo = dd > 0 ? 'Adelantar' : 'Atrasar';
         accionBtn = '<button onclick="aplicarRecomendacionProxima(' + prox.id + ',&quot;' + proximaSugerida + '&quot;,' + id + ',&quot;' + escapeHtml(producto) + '&quot;,&quot;' + fecha + '&quot;,' + kg + ')" '
           + 'style="margin-left:8px;background:#16a34a;color:#fff;border:none;padding:3px 11px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" '

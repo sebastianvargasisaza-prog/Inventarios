@@ -7234,7 +7234,10 @@ def listado_produccion_programada():
     # date() rompe en PG · pg_compat solo traduce mono-arg).
     import datetime as _dt_l
     _hoy_l = (_dt_l.datetime.utcnow() - _dt_l.timedelta(hours=5)).date()
-    _fut_cap = (_hoy_l + _dt_l.timedelta(days=550)).isoformat()
+    # Sebastián 3-jul (workflow ultracode) · 550→760d: las cadenas de 2 años crean lotes hasta hoy+730d;
+    # con el cap en 550 los ~3 lotes del 2º año quedaban INVISIBLES (existían en BD pero fuera de la
+    # ventana) → "faltan lotes" + el modal cerca del borde no veía la próxima y ofrecía re-programar (dup).
+    _fut_cap = (_hoy_l + _dt_l.timedelta(days=760)).isoformat()
     if _historico:
         _where_clause = ("WHERE LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado') "
                          "AND pp.fecha_programada <= ? "
