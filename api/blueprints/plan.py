@@ -12415,12 +12415,27 @@ def _proyectar_horizonte_2y(conn, dias=730, usuario='auto-proyeccion', dry_run=F
         "WHERE spc.activo=1" + _skus_filtro + " ORDER BY spc.prioridad, spc.producto_nombre",
         tuple([solo_producto] if solo_producto else [])).fetchall()
 
+    # Sebastián 4-jul (workflow ultracode · SELLAR la planeación) · prefer-Fijo: NO proyectar (sembrar
+    # azules eos_proyeccion) sobre un producto que YA tiene cadena FIJA a mano en el horizonte
+    # (eos_plan/eos_b2b/eos_retroactivo). Era el ÚNICO de los 5 generadores sin este skip → re-sembraba
+    # encima de las cadenas del usuario. Los productos SIN cadena se siguen proyectando normal.
+    _fijo_prods_proy = set()
+    try:
+        for (pn,) in c.execute(
+            "SELECT DISTINCT producto FROM produccion_programada "
+            "WHERE COALESCE(origen,'') IN ('eos_plan','eos_b2b','eos_retroactivo') "
+            "AND COALESCE(estado,'') NOT IN ('cancelado','completado')").fetchall():
+            _fijo_prods_proy.add(_norm_prod_recon(pn))
+    except Exception:
+        pass
     creados = 0
     productos_planeados = 0
     nuevos = []
     for producto, lote_size_kg in skus:
         if not lote_size_kg or float(lote_size_kg) <= 0:
             continue
+        if _norm_prod_recon(producto) in _fijo_prods_proy:
+            continue  # ya tiene cadena Fijo del usuario · no sembrar auto encima (sellado)
         # MULTI-VOLUMEN en GRAMOS: demanda y stock suman todos los tamaños del producto.
         dsg = _ap._demanda_stock_gramos(c, producto)
         demand_g = dsg['demand_g']

@@ -1167,7 +1167,24 @@ def aplicar_plan(plan, usuario='cron'):
     creadas_compras = []
     creadas_conteos = []
 
+    # Sebastián 4-jul (workflow ultracode · SELLAR la planeación) · NO sembrar auto_plan (azul) sobre un
+    # producto que YA tiene cadena FIJA del usuario en el horizonte (eos_plan/eos_b2b/eos_retroactivo).
+    # Antes el guard era solo por timing/cobertura → re-sembraba en los huecos de la cadena. Los productos
+    # SIN cadena se siguen planeando normal.
+    _fijo_prods = set()
+    try:
+        for (pn,) in c.execute(
+            "SELECT DISTINCT UPPER(TRIM(producto)) FROM produccion_programada "
+            "WHERE COALESCE(origen,'') IN ('eos_plan','eos_b2b','eos_retroactivo') "
+            "AND COALESCE(estado,'') NOT IN ('cancelado','completado')").fetchall():
+            if pn:
+                _fijo_prods.add(pn)
+    except Exception:
+        pass
+
     for prop in plan['producciones_propuestas']:
+        if (prop.get('producto') or '').strip().upper() in _fijo_prods:
+            continue  # ya tiene cadena Fijo del usuario · no sembrar auto encima (sellado)
         # Verificar si ya hay una producción para ese mismo producto+fecha
         existing = c.execute("""
             SELECT id FROM produccion_programada
