@@ -4702,7 +4702,14 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                     _ancla_remanente = max(0, dur_dias - _dias_desde_ancla)
                 else:
                     _ancla_remanente = 0
-                _cob_efectiva = max(_dg, _ancla_remanente)
+                # Sebastián 3-jul (H4 · caso LIMP): el remanente del ancla SOLO rescata cuando la góndola
+                # + pipeline está casi vacía (<7d) → producción real NO reflejada en Shopify (sin registrar).
+                # Si la góndola tiene stock REAL (LIMP 548 uds = 22.7d URGENTE), ELLA manda: ya cuenta las
+                # ventas reales · una producción vieja que se vendió más rápido que lineal NO debe inflar la
+                # cobertura con un remanente teórico (antes MAX(22.7, 59)=59 → próxima Ago pese a URGENTE).
+                _cob_efectiva = _dg
+                if _dg < 7 and _ancla_remanente > _dg:
+                    _cob_efectiva = _ancla_remanente
                 p["cobertura_efectiva_dias"] = _cob_efectiva
                 # "Alcanza para X días" (amarillo) = cobertura EFECTIVA actual desde HOY (góndola vs
                 # remanente del ancla), NO la cobertura total del ancla desde su fecha. Así es consistente
