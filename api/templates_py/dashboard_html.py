@@ -25615,12 +25615,24 @@ async function ckMarcar(itemId, estado){
   // (Sebastián 3-jul). Desde ese punto se monta la cadena.
   function _anclaProd(p){
     var hoy = new Date().toISOString().slice(0,10);
-    var cands = (p.planificacion || []).filter(function(l){ return (l.estado||'') !== 'cancelado' && l.fecha; })
-      .map(function(l){ return {id:l.id, fecha:(''+l.fecha).slice(0,10), kg:(l.kg||0), ejec:false}; });
-    if(p.ultima_produccion_fecha){ cands.push({id:null, fecha:(''+p.ultima_produccion_fecha).slice(0,10), kg:(p.ultima_produccion_kg||0), ejec:true}); }
+    // Sebastián 4-jul (workflow ultracode · BUG cadena de 1 lote) · un lote PENDIENTE pasado (el 1er slot
+    // de una cadena previa que NUNCA se produjo) NO es un ancla · solo anclan producciones REALES
+    // (ejecutadas: inicio/fin/inventario_descontado) o lotes FUTUROS. Antes marcaba todos ejec:false y el
+    // pending pasado con id ganaba → rutéo a desde-lote/<id> con ancla falsa → cadena colapsada a 1 lote.
+    var cands = (p.planificacion || []).filter(function(l){
+      if((l.estado || '') === 'cancelado' || !l.fecha) return false;
+      var f = ('' + l.fecha).slice(0, 10);
+      if(f < hoy && !l.ejecutado) return false;   // pending pasado (no ejecutado) → NO puede ser ancla
+      return true;
+    }).map(function(l){ return {id: l.id, fecha: ('' + l.fecha).slice(0, 10), kg: (l.kg || 0), ejec: !!l.ejecutado}; });
+    if(p.ultima_produccion_fecha){ cands.push({id: null, fecha: ('' + p.ultima_produccion_fecha).slice(0, 10), kg: (p.ultima_produccion_kg || 0), ejec: true}); }
     if(!cands.length) return null;
     var pasadas = cands.filter(function(c){ return c.fecha <= hoy; });
-    if(pasadas.length){ pasadas.sort(function(a,b){ return a.fecha > b.fecha ? -1 : 1; }); return pasadas[0]; }  // más reciente <= hoy
+    if(pasadas.length){
+      // más reciente <= hoy · desempate DETERMINÍSTICO: ante misma fecha, preferir la ejecutada (real).
+      pasadas.sort(function(a,b){ if(a.fecha !== b.fecha) return a.fecha > b.fecha ? -1 : 1; return (b.ejec ? 1 : 0) - (a.ejec ? 1 : 0); });
+      return pasadas[0];
+    }
     cands.sort(function(a,b){ return a.fecha < b.fecha ? -1 : 1; });  // ninguna pasó → la más temprana futura
     return cands[0];
   }
@@ -25714,6 +25726,13 @@ async function ckMarcar(itemId, estado){
       var r = await fetch(url, {method:'POST', credentials:'same-origin',
         headers:{'Content-Type':'application/json','X-CSRF-Token':t}, body: JSON.stringify(bodyObj)});
       var d = await r.json();
+      // Sebastián 4-jul (workflow ultracode) · si el lock está ocupado (409 · request previo del mismo
+      // producto), reintentar 1 vez tras 1.5s antes de rendirse (evita el "No se pudo" al programar rápido).
+      if(r.status === 409 && d && (('' + (d.error || '')).indexOf('ya se está programando') >= 0)){
+        await new Promise(function(res){ setTimeout(res, 1500); });
+        r = await fetch(url, {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json','X-CSRF-Token':t}, body: JSON.stringify(bodyObj)});
+        d = await r.json();
+      }
       if(!r.ok){ window._cadenaBusy = false; alert('No se pudo: ' + ((d && d.error) || r.status)); return; }
       window._cadenaBusy = false;
       // Sebastián 4-jul · FEEDBACK CLARO: mostrar creados vs esperados · si la cadena quedó INCOMPLETA,

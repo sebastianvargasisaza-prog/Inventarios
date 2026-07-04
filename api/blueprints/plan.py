@@ -4879,15 +4879,17 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                       pp.motivo_pausa, pp.pausado_at, pp.observaciones,
                       COALESCE(pp.distribucion_resumen, ''),
                       COALESCE(pp.meses_cobertura, 0),
-                      COALESCE(pp.kg_otro_cliente, 0)
+                      COALESCE(pp.kg_otro_cliente, 0),
+                      COALESCE(pp.inicio_real_at, ''),
+                      COALESCE(pp.inventario_descontado_at, '')
                FROM produccion_programada pp
                WHERE pp.estado IN ('pendiente','programado','en_curso','esperando_recurso')
                  AND pp.fin_real_at IS NULL
                ORDER BY pp.fecha_programada ASC""",
         ).fetchall()
     except Exception:
-        # Fallback si mig 176/333/334 aún no aplicada (pad distribucion_resumen + meses_cobertura + kg_otro_cliente)
-        prod_rows_plan = [tuple(list(r) + ['', 0, 0]) for r in c.execute(
+        # Fallback si mig 176/333/334 aún no aplicada (pad distribucion_resumen + meses_cobertura + kg_otro_cliente + flags ejec)
+        prod_rows_plan = [tuple(list(r) + ['', 0, 0, '', '']) for r in c.execute(
             """SELECT pp.producto, pp.id, pp.fecha_programada, pp.estado,
                       pp.origen, COALESCE(pp.cantidad_kg, 0),
                       pp.motivo_pausa, pp.pausado_at, pp.observaciones
@@ -4914,6 +4916,9 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             "distribucion_resumen": (r[9] or "")[:300],
             "meses_cobertura": (float(r[10]) if len(r) > 10 and r[10] else 0),
             "kg_otro_cliente": (float(r[11]) if len(r) > 11 and r[11] else 0),
+            # Sebastián 4-jul (workflow ultracode) · flag ejecutado → _anclaProd NO debe anclar a un lote
+            # PENDIENTE pasado (1er slot de una cadena previa) · solo a producciones REALES o futuras.
+            "ejecutado": bool((len(r) > 12 and r[12]) or (len(r) > 13 and r[13])),
         })
 
     # FEATURE B2B 24-may-2026 · enriquecer cada lote con su desglose B2B
@@ -12747,7 +12752,7 @@ def _lock_cadena(conn, cur, producto):
     job = 'cadena:' + (producto or '').strip().upper()[:80]
     tok = 'cad:' + _uuidL.uuid4().hex
     try:
-        _cut = (_dtL.utcnow() - _tdL(minutes=3)).isoformat()
+        _cut = (_dtL.utcnow() - _tdL(seconds=45)).isoformat()  # TTL corto (una cadena tarda <1s · Sebastián 4-jul)
         cur.execute("DELETE FROM cron_locks WHERE job_name=? AND locked_at < ?", (job, _cut))
         cur.execute("INSERT INTO cron_locks (job_name, locked_at, locked_by) VALUES (?, ?, ?) "
                     "ON CONFLICT(job_name) DO NOTHING", (job, _dtL.utcnow().isoformat(), tok))
