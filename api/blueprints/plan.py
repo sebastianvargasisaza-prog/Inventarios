@@ -13063,6 +13063,39 @@ def plan_limpiar_proyeccion():
     return jsonify({'ok': True, 'eliminados': n})
 
 
+@bp.route("/api/plan/limpiar-futuro-auto", methods=["POST"])
+def plan_limpiar_futuro_auto():
+    """Sebastián 3-jul · deja el FUTURO limpio: cancela TODA producción AUTO/canónica futura (>hoy) para
+    reconstruir solo con las cadenas nuevas. "Hasta hoy = base; de mañana en adelante todo nuevo."
+    Cancela (soft · reversible) los lotes futuros con origen AUTO (eos_canonico/eos_proyeccion/sugerido/
+    auto_plan/calendar/manual/auto/'' ...). PRESERVA: Fijo eos_plan (incluye las cadenas que ya programaste),
+    B2B eos_b2b, histórico eos_retroactivo, y todo lo ya ejecutado. Solo admin/compras · auditado."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    conn = get_db()
+    c = conn.cursor()
+    _hoy = _hoy_colombia().isoformat()
+    _sel = ("SELECT id FROM produccion_programada "
+            "WHERE substr(fecha_programada,1,10) > ? "
+            "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+            "AND inicio_real_at IS NULL AND fin_real_at IS NULL "
+            "AND COALESCE(inventario_descontado_at,'')='' "
+            "AND COALESCE(origen,'') NOT IN ('eos_plan','eos_b2b','eos_retroactivo')")
+    ids = [r[0] for r in c.execute(_sel, (_hoy,)).fetchall()]
+    if ids:
+        _ph = ','.join(['?'] * len(ids))
+        c.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id IN (" + _ph + ")", tuple(ids))
+    try:
+        audit_log(c, usuario=user, accion='LIMPIAR_FUTURO_AUTO', tabla='produccion_programada',
+                  registro_id=0, despues={'cancelados': len(ids), 'desde': _hoy})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'cancelados': len(ids), 'desde': _hoy})
+
+
 def _mp_alcanza_para_lote(conn, producto):
     """¿Alcanza la materia prima para fabricar UN lote del producto AHORA?
     Devuelve (ok|None, faltantes[]). None = sin fórmula (desconocido)."""
@@ -17082,6 +17115,8 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
         style="font-size:14px;padding:10px 18px;background:#0891b2;font-weight:700" title="Extiende el plan 2 años hacia adelante RESPETANDO lo que ya tenés: NO mueve ni borra tus lotes Fijos ni lo ya producido; solo regenera la proyección automática alrededor de ellos (a partir de lo que hay hoy en el calendario).">🔮 Proyectar 2 años (sin mover lo actual)</button>
       <button onclick="reprogramarDesdeMes()" class="success" id="btn-reprog-mes"
         style="font-size:14px;padding:10px 18px;background:#b45309;font-weight:700" title="FIJA el mes actual tal cual está y RECALCULA todo del mes siguiente en adelante por 2 años con la cadencia óptima. Cancela el plan viejo de ago+ pero PRESERVA los pedidos B2B de clientes y lo ya producido. Úsalo cuando sientas el plan 'descuadrado' hacia adelante.">📅 Fijar mes + recalcular 2 años</button>
+      <button onclick="limpiarFuturoAuto()" class="success" id="btn-limpiar-auto"
+        style="font-size:14px;padding:10px 18px;background:#dc2626;font-weight:700" title="Deja el FUTURO limpio: cancela TODAS las producciones AZULES (auto/canónicas) de mañana en adelante para reconstruir solo con las cadenas nuevas. CONSERVA lo verde (Fijo · tus cadenas), los pedidos B2B y lo ya producido. Hasta hoy = base; de mañana en adelante todo nuevo.">🧹 Limpiar auto futuro (azules)</button>
       <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" style="display:none" disabled>✅ Confirmar y programar TODO</button>
     </div>
   </div>
@@ -18951,6 +18986,24 @@ async function generarPlanDesdeHoy(){
     }
   }catch(e){ alert('Error: ' + e); }
   if(btn){ btn.disabled = false; btn.innerHTML = '📋 Generar plan (2 años desde hoy)'; }
+}
+// Sebastián 3-jul · deja el futuro limpio: cancela los AZULES (auto/canónicos) de mañana en adelante.
+async function limpiarFuturoAuto(){
+  if(!confirm('LIMPIAR AUTO FUTURO (azules)\n\nCancela TODAS las producciones AZULES (auto/canónicas) de mañana en adelante, para reconstruir solo con tus cadenas.\n\nCONSERVA: lo verde (Fijo · tus cadenas), los pedidos B2B, y todo lo ya producido (hasta hoy).\n\n¿Limpiar el futuro auto?')) return;
+  const btn = document.getElementById('btn-limpiar-auto');
+  if(btn){ btn.disabled = true; btn.textContent = '🧹 Limpiando...'; }
+  try{
+    const r = await fetch('/api/plan/limpiar-futuro-auto', {
+      method: 'POST', headers: {'Content-Type':'application/json', 'X-CSRFToken': getCSRF()}, body: '{}'
+    });
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok || !d.ok){ alert('No se pudo: ' + (d.error || r.status)); }
+    else{
+      _toastCal('🧹 ' + (d.cancelados||0) + ' producciones auto futuras canceladas · reprogramá con las cadenas');
+      if(typeof cargar === 'function') cargar();
+    }
+  }catch(e){ alert('Error: ' + e); }
+  if(btn){ btn.disabled = false; btn.innerHTML = '🧹 Limpiar auto futuro (azules)'; }
 }
 async function proyectar2AniosSinMover(){
   // Proyección rodante 2 años que RESPETA lo Fijo/ejecutado y NO lo mueve (Sebastián 1-jul).
