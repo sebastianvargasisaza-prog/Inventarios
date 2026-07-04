@@ -13096,9 +13096,12 @@ def plan_diag_lotes_producto():
         "SELECT substr(fecha_programada,1,10), COALESCE(origen,''), COALESCE(estado,''), "
         "COALESCE(cantidad_kg,0), COALESCE(kg_otro_cliente,0), COALESCE(inicio_real_at,''), "
         "COALESCE(fin_real_at,''), COALESCE(inventario_descontado_at,'') "
-        "FROM produccion_programada WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) "
+        "FROM produccion_programada WHERE (UPPER(TRIM(producto))=UPPER(TRIM(?)) "
+        # Sebastián 4-jul · fallback robusto: el '+' del nombre (ej. VITAMINA C+) se vuelve espacio en la URL
+        # → match también ignorando espacios y '+' en ambos lados.
+        "OR REPLACE(REPLACE(UPPER(TRIM(producto)),' ',''),'+','')=REPLACE(REPLACE(UPPER(TRIM(?)),' ',''),'+','')) "
         "AND substr(fecha_programada,1,10) >= date('now','-40 days','-5 hours') "
-        "ORDER BY fecha_programada", (producto,)).fetchall():
+        "ORDER BY fecha_programada", (producto, producto)).fetchall():
         lotes.append({"fecha": r[0], "origen": r[1], "estado": r[2], "kg": round(float(r[3] or 0), 2),
                       "kg_otro": round(float(r[4] or 0), 2), "ejecutado": bool(r[5] or r[6] or r[7])})
     _hoy = _hoy_colombia().isoformat()
