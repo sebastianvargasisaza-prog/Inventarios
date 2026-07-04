@@ -22873,7 +22873,7 @@ async function ckMarcar(itemId, estado){
       html += '</div>';
       html += '<div style="overflow-x:auto;border:1px solid #e2e8f0;border-radius:8px">';
       html += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
-      html += '<thead><tr style="background:#f8fafc;color:#475569">';
+      html += '<thead><tr class="necx-thead" style="background:#f8fafc;color:#475569">';
       ['SKU','Producto','Estado','Tono','ml','30d','60d','90d'].forEach(function(h, i){
         var al = i >= 5 ? 'right' : (i===2||i===4?'center':'left');
         html += '<th style="text-align:' + al + ';padding:7px 8px;font-weight:700;white-space:nowrap">' + h + '</th>';
@@ -24915,7 +24915,45 @@ async function ckMarcar(itemId, estado){
   // puede colisionar: varios "CONT..." o "SUER..." con fallback de 4 letras).
   window._NEC_PRODUCTOS_CACHE = [];
 
+  // Sebastián 4-jul · pasada de diseño premium de Necesidades (tabla + desglose wow). CSS inyectado
+  // 1 sola vez con clases propias (prefijo necx- · M61 no reusar clases del framework).
+  function _ensureNecxStyle(){
+    if(document.getElementById('necx-style')) return;
+    var s = document.createElement('style'); s.id = 'necx-style';
+    s.textContent = '.necx-thead th{text-transform:uppercase;letter-spacing:.04em;font-size:11px;color:#64748b;font-weight:700}'
+      + '.necx-prow{transition:box-shadow .14s ease}'
+      + '.necx-prow:hover{box-shadow:inset 0 0 0 9999px rgba(99,102,241,.035)}'
+      + '.necx-exp{margin-top:2px}'
+      + '.necx-sum{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:800;color:#be185d;background:linear-gradient(135deg,#fdf2f8,#fce7f3);border:1px solid #fbcfe8;border-radius:999px;padding:5px 14px;transition:all .18s ease;user-select:none}'
+      + '.necx-sum::-webkit-details-marker{display:none}'
+      + '.necx-sum::marker{content:""}'
+      + '.necx-sum:hover{background:linear-gradient(135deg,#fce7f3,#fbcfe8);box-shadow:0 2px 10px rgba(190,24,93,.18)}'
+      + '.necx-chev{display:inline-block;transition:transform .2s ease;font-size:9px}'
+      + '.necx-exp[open] .necx-chev{transform:rotate(90deg)}'
+      + '.necx-expbody{margin-top:10px;animation:necxIn .25s ease}'
+      + '@keyframes necxIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}'
+      + '.necx-ttbl{width:100%;border-collapse:separate;border-spacing:0;font-size:11px;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 4px rgba(157,23,109,.08)}'
+      + '.necx-ttbl thead th{text-align:center;padding:7px 8px;font-weight:700;color:#9d174d;background:#fdf2f8;font-size:10px;text-transform:uppercase;letter-spacing:.03em}'
+      + '.necx-ttbl thead th:first-child{text-align:left}'
+      + '.necx-trow td{padding:7px 8px;text-align:center;border-top:1px solid #fbe4ef;transition:background .12s}'
+      + '.necx-trow:hover td{background:#fdf6fa}'
+      + '.necx-ttbl td:first-child{text-align:left;font-weight:700;color:#9d174d}'
+      + '.necx-swatch{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:7px;vertical-align:-1px;box-shadow:0 0 0 1px rgba(0,0,0,.1)}'
+      + '.necx-mono{font-family:ui-monospace,monospace;color:#64748b}'
+      + '.necx-mix{font-weight:800;color:#be185d}'
+      + '.necx-uds{font-weight:800;color:#9d174d}'
+      + '.necx-note{font-size:10px;color:#94a3b8;margin-top:7px;padding-left:2px}';
+    document.head.appendChild(s);
+  }
+  // color estable por tono (hash del nombre → HSL) para el swatch del desglose.
+  function _tonoColor(lbl){
+    var s = String(lbl || ''), h = 0, i;
+    for(i = 0; i < s.length; i++){ h = (h * 31 + s.charCodeAt(i)) % 360; }
+    return 'hsl(' + h + ',60%,58%)';
+  }
+
   function renderClientesNec(clientes) {
+    _ensureNecxStyle();
     const div = document.getElementById('nec-contenido');
     if (!clientes || !clientes.length) { div.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:40px">Sin datos.</div>'; return; }
     window._NEC_PRODUCTOS_CACHE = [];  // reset cache en cada render
@@ -24966,7 +25004,7 @@ async function ckMarcar(itemId, estado){
       // Solo: producto + urgencia · demanda · cobertura · stock · botón
       // Todo lo complejo (plan / MPs / IA / horizonte) vive en /admin/plan-calendario
       html += '<table style="width:100%;border-collapse:collapse;font-size:13px">';
-      html += '<thead><tr style="background:#f8fafc;color:#475569">';
+      html += '<thead><tr class="necx-thead" style="background:#f8fafc;color:#475569">';
       html += '<th style="text-align:left;padding:10px 8px;font-weight:700">Producto</th>';
       html += '<th style="text-align:center;padding:10px 8px;font-weight:700">Vende/día</th>';
       html += '<th style="text-align:center;padding:10px 8px;font-weight:700">Vende/mes</th>';
@@ -25085,7 +25123,7 @@ async function ckMarcar(itemId, estado){
         else if(_tend >= 0.04){ _al = '📈 ventas +' + _tp + '% en ascenso'; _alc = '#7c3aed'; }
         else { _al = '✅ al día'; _alc = '#16a34a'; }
         var _proxTxt = p.proxima_sugerida_fecha ? ('próxima ' + ('' + p.proxima_sugerida_fecha).slice(5,10)) : '';
-        html += '<tr style="border-top:1px solid #e2e8f0;background:' + _rowBg + ';border-left:' + _rowBorderL + ';opacity:' + _rowOpacity + '">';
+        html += '<tr class="necx-prow" style="border-top:1px solid #e2e8f0;background:' + _rowBg + ';border-left:' + _rowBorderL + ';opacity:' + _rowOpacity + '">';
         // Producto + urgencia
         html += '<td style="padding:10px 8px">';
         html += '<div style="display:flex;align-items:center;gap:6px"><span style="background:' + cfg.bg + ';color:' + cfg.text + ';padding:2px 8px;border-radius:6px;font-size:11px;font-weight:800">' + cfg.emoji + '</span>';
@@ -25116,23 +25154,23 @@ async function ckMarcar(itemId, estado){
         html += '</tr>';
         // Sub-fila colapsable con desglose por tono (solo si hay ≥2 tonos)
         if (_tonos.length >= 2) {
-          html += '<tr style="background:#fdf2f8"><td colspan="7" style="padding:8px 14px">';
-          html += '<details><summary style="cursor:pointer;font-size:11px;color:#be185d;font-weight:700">🎨 Desglose por referencia (tonos/tamaños) · click para expandir</summary>';
-          html += '<table style="width:100%;margin-top:8px;border-collapse:collapse;font-size:11px">';
-          html += '<thead><tr style="color:#9d174d"><th style="text-align:left;padding:4px 6px">Tono</th><th style="padding:4px 6px">SKU</th><th style="padding:4px 6px">ml</th><th style="padding:4px 6px">Vende ventana</th><th style="padding:4px 6px">% mix</th><th style="padding:4px 6px">Uds est. lote</th></tr></thead><tbody>';
+          html += '<tr style="background:#fdf2f8"><td colspan="7" style="padding:2px 14px 12px">';
+          html += '<details class="necx-exp"><summary class="necx-sum"><span class="necx-chev">▸</span>🎨 Desglose por referencia · <span style="opacity:.75">' + _tonos.length + ' tonos/tamaños</span></summary>';
+          html += '<div class="necx-expbody">';
+          html += '<table class="necx-ttbl"><thead><tr><th>Tono</th><th>SKU</th><th>ml</th><th>Vende</th><th>% mix</th><th>Uds/lote</th></tr></thead><tbody>';
           _tonos.forEach(t => {
-            html += '<tr style="border-top:1px solid #fbcfe8">'
-              + '<td style="padding:4px 6px;font-weight:700;color:#9d174d">' + escapeHtmlNec(t.tono_label) + '</td>'
-              + '<td style="padding:4px 6px;font-family:monospace;color:#64748b">' + escapeHtmlNec(t.sku) + '</td>'
-              + '<td style="padding:4px 6px;text-align:center">' + t.ml_unidad + '</td>'
-              + '<td style="padding:4px 6px;text-align:center">' + t.ventas_ventana_uds + ' uds</td>'
-              + '<td style="padding:4px 6px;text-align:center;font-weight:700">' + t.porcentaje_mix + '%</td>'
-              + '<td style="padding:4px 6px;text-align:center;color:#9d174d;font-weight:700">' + t.uds_estim_lote + '</td>'
+            html += '<tr class="necx-trow">'
+              + '<td><span class="necx-swatch" style="background:' + _tonoColor(t.tono_label) + '"></span>' + escapeHtmlNec(t.tono_label) + '</td>'
+              + '<td class="necx-mono">' + escapeHtmlNec(t.sku) + '</td>'
+              + '<td>' + t.ml_unidad + '</td>'
+              + '<td>' + t.ventas_ventana_uds + '</td>'
+              + '<td class="necx-mix">' + t.porcentaje_mix + '%</td>'
+              + '<td class="necx-uds">' + t.uds_estim_lote + '</td>'
               + '</tr>';
           });
           html += '</tbody></table>';
-          html += '<div style="font-size:10px;color:#64748b;margin-top:6px">Mix calculado con ventas de la ventana actual · uds estimadas asumen lote bulk completo (' + (p.lote_bulk_kg||0) + 'kg)</div>';
-          html += '</details></td></tr>';
+          html += '<div class="necx-note">Mix con ventas de la ventana actual · uds asumen lote bulk completo (' + (p.lote_bulk_kg||0) + 'kg)</div>';
+          html += '</div></details></td></tr>';
         }
       });
       html += '</tbody></table>';
@@ -26144,7 +26182,7 @@ async function ckMarcar(itemId, estado){
       html += '<button onclick="document.getElementById(&quot;modal-b2b-diag&quot;).remove()" style="background:#e2e8f0;color:#475569;border:none;width:36px;height:36px;border-radius:50%;font-size:20px;cursor:pointer">×</button>';
       html += '</div>';
       html += '<div style="overflow-x:auto;border:1px solid #e2e8f0;border-radius:8px"><table style="width:100%;border-collapse:collapse;font-size:12px">';
-      html += '<thead><tr style="background:#f8fafc;color:#475569">';
+      html += '<thead><tr class="necx-thead" style="background:#f8fafc;color:#475569">';
       ['Producto','Uds','kg','Fecha','Estado','En calendario','Cobertura','Acción'].forEach(function(h,i){
         var al = (i===1||i===2) ? 'right' : 'left';
         html += '<th style="text-align:' + al + ';padding:7px 8px;font-weight:700;white-space:nowrap">' + h + '</th>';
