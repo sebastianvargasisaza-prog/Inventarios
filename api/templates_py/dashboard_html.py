@@ -24953,6 +24953,26 @@ async function ckMarcar(itemId, estado){
     for(i = 0; i < s.length; i++){ h = (h * 31 + s.charCodeAt(i)) % 360; }
     return 'hsl(' + h + ',60%,58%)';
   }
+  // Sebastián 4-jul · traer la foto del producto desde Shopify al vuelo (el rebuild de fórmula del 1-jul
+  // borró imagen_url) · matchea por SKU mapeado. Click en el placeholder 📦 del modal.
+  async function _traerFotoShopify(el){
+    var prod = el.getAttribute('data-prod'); if(!prod) return;
+    var _orig = el.innerHTML, _w = el.style.width || '80px', _h = el.style.height || '80px';
+    el.style.opacity = '.6'; el.innerHTML = '<span style="font-size:12px">⏳</span>';
+    try{
+      var t = (await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json()).csrf_token;
+      var r = await fetch('/api/formulas/' + encodeURIComponent(prod) + '/imagen-shopify-sync', {method:'POST', credentials:'same-origin', headers:{'X-CSRF-Token':t}});
+      var d = await r.json().catch(function(){ return {}; });
+      var _img = d && (d.imagen_url || d.imagen);
+      if(r.ok && _img){
+        el.outerHTML = '<img src="' + _img + '" alt="" style="width:' + _w + ';height:' + _h + ';object-fit:cover;border-radius:8px">';
+      } else if(r.ok){
+        el.style.opacity = '1'; el.innerHTML = _orig; alert('Sincronizó, pero Shopify no tiene foto para "' + prod + '".');
+      } else {
+        el.style.opacity = '1'; el.innerHTML = _orig; alert('No se pudo traer la foto: ' + ((d && d.error) || r.status));
+      }
+    }catch(e){ el.style.opacity = '1'; el.innerHTML = _orig; alert('Error: ' + e); }
+  }
 
   function renderClientesNec(clientes) {
     _ensureNecxStyle();
@@ -25241,7 +25261,7 @@ async function ckMarcar(itemId, estado){
     const cfg = URG_COLORS[p.urgencia] || URG_COLORS.OK;
     const imgHtml = p.imagen_url
       ? '<img loading="lazy" decoding="async" src="' + escapeHtmlNec(p.imagen_url) + '" alt="" style="width:100px;height:100px;object-fit:cover;border-radius:10px;background:#f1f5f9" onerror="this.style.display=&#39;none&#39;">'
-      : '<div style="width:100px;height:100px;background:linear-gradient(135deg,#e2e8f0,#cbd5e1);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:36px;color:#64748b">📦</div>';
+      : '<div onclick="_traerFotoShopify(this)" data-prod="' + escapeHtmlNec(p.producto_nombre) + '" title="Click para traer la foto de Shopify" style="width:100px;height:100px;background:linear-gradient(135deg,#e2e8f0,#cbd5e1);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:30px;color:#64748b;cursor:pointer">📦<span style="font-size:9px;color:#475569;font-weight:700;margin-top:2px">traer foto</span></div>';
     let html = '<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">';
     html += imgHtml;
     html += '<div style="flex:1;min-width:260px">';
@@ -25427,7 +25447,7 @@ async function ckMarcar(itemId, estado){
 
     const imgHtml = p.imagen_url
       ? '<img loading="lazy" decoding="async" src="' + escapeHtmlNec(p.imagen_url) + '" alt="" style="width:80px;height:80px;object-fit:cover;border-radius:8px" onerror="this.style.display=&#39;none&#39;">'
-      : '<div style="width:80px;height:80px;background:linear-gradient(135deg,#e2e8f0,#cbd5e1);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:32px">📦</div>';
+      : '<div onclick="_traerFotoShopify(this)" data-prod="' + escapeHtmlNec(p.producto_nombre) + '" title="Click para traer la foto de Shopify" style="width:80px;height:80px;background:linear-gradient(135deg,#e2e8f0,#cbd5e1);border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:26px;cursor:pointer">📦<span style="font-size:8px;color:#475569;font-weight:700;margin-top:1px">traer foto</span></div>';
 
     // Presentación + 10ml info · usa ml_unidad real (Sebastián 13-may-2026:
     // "los sueros son de 30, los limpiadores de 150, geles e hidratantes de 50")
