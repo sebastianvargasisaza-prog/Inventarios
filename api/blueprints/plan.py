@@ -13102,6 +13102,84 @@ def plan_diag_lotes_producto():
                     "lotes": lotes})
 
 
+@bp.route("/api/plan/verificar-cadenas", methods=["GET"])
+def plan_verificar_cadenas():
+    """Sebastián 4-jul (workflow ultracode) · verifica TODAS las cadenas de una (en vez de uno por uno):
+    por producto con venta, cuántos lotes eos_plan FUTUROS tiene, el rango que cubren, el hueco más
+    grande, y un flag: ok / incompleta / sin_cadena / hueco_grande / azules_encima. Devuelve ordenado
+    por severidad para revisar SOLO lo que tiene algo."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    from datetime import date as _dV
+    conn = get_db()
+    c = conn.cursor()
+    _hoy = _hoy_colombia()
+    _hoy_s = _hoy.isoformat()
+    # productos relevantes: los de sku_planeacion_config activos (con venta) + los que ya tienen lotes futuros
+    prods = set()
+    try:
+        for (pn,) in c.execute("SELECT producto_nombre FROM sku_planeacion_config WHERE COALESCE(activo,1)=1").fetchall():
+            if pn:
+                prods.add(pn.strip())
+    except Exception:
+        pass
+    fut_plan = {}   # producto -> [fechas eos_plan futuras]
+    fut_azul = {}   # producto -> nº de futuros AUTO (no eos_plan/b2b/retroactivo)
+    for r in c.execute(
+        "SELECT producto, substr(fecha_programada,1,10), COALESCE(origen,'') "
+        "FROM produccion_programada WHERE substr(fecha_programada,1,10) > ? "
+        "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+        "AND inicio_real_at IS NULL AND fin_real_at IS NULL AND COALESCE(inventario_descontado_at,'')='' "
+        "ORDER BY fecha_programada", (_hoy_s,)).fetchall():
+        if not r[0]:
+            continue
+        p = r[0].strip()
+        prods.add(p)
+        if r[2] == 'eos_plan':
+            fut_plan.setdefault(p, []).append(r[1])
+        elif r[2] not in ('eos_b2b', 'eos_retroactivo'):
+            fut_azul[p] = fut_azul.get(p, 0) + 1
+    reporte = []
+    _sev = {'sin_cadena': 0, 'incompleta': 1, 'hueco_grande': 2, 'azules_encima': 3, 'ok': 9}
+    for p in prods:
+        fechas = sorted(fut_plan.get(p, []))
+        n = len(fechas)
+        azules = fut_azul.get(p, 0)
+        primer = fechas[0] if fechas else None
+        ultimo = fechas[-1] if fechas else None
+        # hueco máximo entre lotes consecutivos (en días)
+        hueco = 0
+        try:
+            ds = [_dV.fromisoformat(f) for f in fechas]
+            for i in range(1, len(ds)):
+                hueco = max(hueco, (ds[i] - ds[i - 1]).days)
+            span = (ds[-1] - ds[0]).days if len(ds) >= 2 else 0
+        except Exception:
+            span = 0
+        if n == 0:
+            estado = 'sin_cadena'
+        elif n < 4:
+            estado = 'incompleta'
+        elif span < 480:            # una cadena de 2 años debería abarcar ~700d
+            estado = 'incompleta'
+        elif hueco > 150:           # hueco > ~5 meses entre lotes = algo se comió slots
+            estado = 'hueco_grande'
+        elif azules > 0:
+            estado = 'azules_encima'
+        else:
+            estado = 'ok'
+        reporte.append({"producto": p, "lotes_cadena": n, "primer": primer, "ultimo": ultimo,
+                        "span_dias": span, "hueco_max_dias": hueco, "azules_futuros": azules, "estado": estado})
+    reporte.sort(key=lambda x: (_sev.get(x["estado"], 5), -x["azules_futuros"], x["producto"]))
+    resumen = {}
+    for x in reporte:
+        resumen[x["estado"]] = resumen.get(x["estado"], 0) + 1
+    return jsonify({"ok": True, "hoy": _hoy_s, "total_productos": len(reporte),
+                    "resumen": resumen, "productos": reporte})
+
+
 @bp.route("/api/plan/limpiar-proyeccion", methods=["POST"])
 def plan_limpiar_proyeccion():
     """Sebastián 16-jun · borra SOLO los lotes de la proyección automática
@@ -17197,6 +17275,8 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
         style="font-size:14px;padding:10px 18px;background:#b45309;font-weight:700" title="FIJA el mes actual tal cual está y RECALCULA todo del mes siguiente en adelante por 2 años con la cadencia óptima. Cancela el plan viejo de ago+ pero PRESERVA los pedidos B2B de clientes y lo ya producido. Úsalo cuando sientas el plan 'descuadrado' hacia adelante.">📅 Fijar mes + recalcular 2 años</button>
       <button onclick="limpiarFuturoAuto()" class="success" id="btn-limpiar-auto"
         style="font-size:14px;padding:10px 18px;background:#dc2626;font-weight:700" title="Deja el FUTURO limpio: cancela TODAS las producciones AZULES (auto/canónicas) de mañana en adelante para reconstruir solo con las cadenas nuevas. CONSERVA lo verde (Fijo · tus cadenas), los pedidos B2B y lo ya producido. Hasta hoy = base; de mañana en adelante todo nuevo.">🧹 Limpiar auto futuro (azules)</button>
+      <button onclick="verificarPlanCompleto()" class="success" id="btn-verificar-plan"
+        style="font-size:14px;padding:10px 18px;background:#0d9488;font-weight:700" title="Revisa TODAS las cadenas de una: marca qué productos están OK y cuáles necesitan atención (sin cadena, incompleta, con hueco, o con azules encima). Así revisás solo lo que tiene algo, no uno por uno.">🔎 Verificar plan (todos)</button>
       <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" style="display:none" disabled>✅ Confirmar y programar TODO</button>
     </div>
   </div>
@@ -19084,6 +19164,37 @@ async function limpiarFuturoAuto(){
     }
   }catch(e){ alert('Error: ' + e); }
   if(btn){ btn.disabled = false; btn.innerHTML = '🧹 Limpiar auto futuro (azules)'; }
+}
+// Sebastián 4-jul · verifica TODAS las cadenas de una y muestra un panel con lo que necesita atención.
+async function verificarPlanCompleto(){
+  var btn = document.getElementById('btn-verificar-plan');
+  if(btn){ btn.disabled = true; btn.textContent = '🔎 Revisando...'; }
+  try{
+    var r = await fetch('/api/plan/verificar-cadenas');
+    var d = await r.json().catch(function(){return {};});
+    if(!r.ok || !d.ok){ alert('No se pudo verificar: ' + (d.error || r.status)); return; }
+    var LBL = {sin_cadena:'🔴 SIN CADENA (falta programar)', incompleta:'🟠 INCOMPLETA (pocos lotes)', hueco_grande:'🟡 HUECO grande entre lotes', azules_encima:'🔵 azules encima (limpiar)', ok:'🟢 OK'};
+    var COL = {sin_cadena:'#dc2626', incompleta:'#d97706', hueco_grande:'#ca8a04', azules_encima:'#2563eb', ok:'#16a34a'};
+    var wrap = document.getElementById('verif-plan-panel');
+    if(!wrap){ wrap = document.createElement('div'); wrap.id='verif-plan-panel'; wrap.style.cssText='position:fixed;top:60px;right:20px;bottom:20px;width:420px;max-width:92vw;z-index:99999;background:#fff;border:1px solid #cbd5e1;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.28);overflow:auto;padding:14px'; document.body.appendChild(wrap); }
+    var rs = d.resumen || {};
+    var html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><strong style="font-size:15px">🔎 Verificación del plan · ' + (d.total_productos||0) + ' productos</strong><button onclick="var w=document.getElementById(\'verif-plan-panel\'); if(w) w.remove();" style="background:#e2e8f0;border:none;border-radius:6px;padding:3px 9px;cursor:pointer;font-weight:700">✕</button></div>';
+    html += '<div style="font-size:12px;color:#475569;margin-bottom:10px">';
+    ['sin_cadena','incompleta','hueco_grande','azules_encima','ok'].forEach(function(k){ if(rs[k]) html += '<span style="color:'+COL[k]+';font-weight:700;margin-right:10px">'+ (rs[k]) + ' ' + LBL[k].replace(/^..\s/,'') + '</span>'; });
+    html += '</div>';
+    (d.productos||[]).forEach(function(p){
+      if(p.estado === 'ok') return;  // solo mostramos lo que necesita atención
+      html += '<div style="border-left:3px solid '+COL[p.estado]+';background:#f8fafc;border-radius:6px;padding:7px 10px;margin-bottom:6px;font-size:12px">'
+        + '<div style="font-weight:700;color:'+COL[p.estado]+'">' + LBL[p.estado] + '</div>'
+        + '<div style="color:#0f172a;font-weight:600">' + p.producto + '</div>'
+        + '<div style="color:#64748b">' + p.lotes_cadena + ' lotes cadena · ' + (p.primer? ('desde ' + p.primer + ' a ' + p.ultimo) : 'sin lotes futuros') + (p.hueco_max_dias>150? (' · hueco máx ' + p.hueco_max_dias + 'd') : '') + (p.azules_futuros? (' · ' + p.azules_futuros + ' azules') : '') + '</div></div>';
+    });
+    var _okN = rs.ok || 0;
+    if(_okN === (d.total_productos||0)){ html += '<div style="color:#16a34a;font-weight:700;padding:12px;text-align:center">✅ Todas las cadenas están perfectas.</div>'; }
+    else { html += '<div style="color:#64748b;font-size:11px;margin-top:8px">✅ ' + _okN + ' productos OK (no se listan). Revisá los de arriba: los 🔴 necesitan cadena; 🔵 dale "Limpiar auto futuro".</div>'; }
+    wrap.innerHTML = html;
+  }catch(e){ alert('Error: ' + e); }
+  if(btn){ btn.disabled = false; btn.innerHTML = '🔎 Verificar plan (todos)'; }
 }
 async function proyectar2AniosSinMover(){
   // Proyección rodante 2 años que RESPETA lo Fijo/ejecutado y NO lo mueve (Sebastián 1-jul).
