@@ -12856,13 +12856,20 @@ def plan_programar_cadencia_desde_lote(lote_id):
     if ids:
         _ph = ','.join(['?'] * len(ids))
         c.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id IN (" + _ph + ")", tuple(ids))
-    _dw = min(14, max(2, interval_dias - 2))  # ventana dedup adaptable · nunca > intervalo (no borra lotes de cadencias cortas)
-    # Lotes PRESERVADOS post-ancla (B2B/ejecutado/histórico) → NO crear un lote de la cadena encima (±14d).
+    _dw = min(14, max(2, interval_dias - 2))  # ventana dedup del propio ritmo (evita 2 lotes de la cadena juntos)
+    # Sebastián 4-jul (workflow ultracode · BUG cadena de 1 solo lote): _preservados debe ser SIMÉTRICO
+    # con el CANCEL — SOLO lo que el cancel NO tocó (B2B/histórico/ejecutado). Antes traía TODO futuro no
+    # cancelado; si el producto tenía muchos lotes preservados densos (cada <14d), la dedup ±14 mataba
+    # CADA slot de la cadena → creaba 1 lote (SUERO MULTIPEPTIDOS). Y el bloqueo contra preservados es de
+    # MISMO DÍA (un B2B/otro cliente NO cubre demanda Animus · no debe borrar un lote de la cadena a 10d).
     _preservados = []
     for r in c.execute(
         "SELECT substr(fecha_programada,1,10) FROM produccion_programada "
         "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) AND substr(fecha_programada,1,10) > ? "
-        "AND COALESCE(estado,'') NOT IN ('cancelado','completado')", (producto, fecha_ancla)).fetchall():
+        "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+        "AND (COALESCE(origen,'') IN ('eos_b2b','eos_retroactivo') "
+        "     OR inicio_real_at IS NOT NULL OR fin_real_at IS NOT NULL "
+        "     OR COALESCE(inventario_descontado_at,'') <> '')", (producto, fecha_ancla)).fetchall():
         try:
             _preservados.append(_dC.fromisoformat((r[0] or '')[:10]))
         except Exception:
@@ -12872,13 +12879,15 @@ def plan_programar_cadencia_desde_lote(lote_id):
     horizonte = anios * 365
     creados = []
     _usadas = []
+    _saltados = 0
     for k in range(0, 82):  # tope de guardia
         _off = first_offset_dias + k * interval_dias
         if _off > horizonte:
             break
         f_k = _dia_habil(f_ancla + _tdC(days=_off))
-        # dedup · NO doblar el mismo producto: saltar si hay un lote preservado o ya-creado a <_dw días
-        if any(abs((f_k - _fp).days) < _dw for _fp in _preservados) or any(abs((f_k - _fu).days) < _dw for _fu in _usadas):
+        # dedup · MISMO día contra preservados (B2B/ejecutado · no borrar la cadena) · _dw contra la propia cadena
+        if any(abs((f_k - _fp).days) < 2 for _fp in _preservados) or any(abs((f_k - _fu).days) < _dw for _fu in _usadas):
+            _saltados += 1
             continue
         c.execute(
             "INSERT INTO produccion_programada (producto, fecha_programada, lotes, estado, origen, "
@@ -12896,10 +12905,17 @@ def plan_programar_cadencia_desde_lote(lote_id):
         pass
     conn.commit()
     _unlock_cadena(conn, c, _lk)
+    # Anti-vanish (M35 · workflow ultracode 4-jul): si cabían varios lotes pero la dedup dejó ~1, avisar
+    # (antes fallaba silencioso · el usuario solo veía "1 lote programado" sin entender por qué).
+    _esperados = sum(1 for _k in range(82) if first_offset_dias + _k * interval_dias <= horizonte)
+    _aviso = None
+    if _esperados >= 3 and len(creados) < max(2, _esperados // 2):
+        _aviso = ("Se crearon %d de ~%d lotes · %d slots chocaban con producciones ya agendadas de este "
+                  "producto (B2B/ejecutado). Revisá si esas deberían estar ahí." % (len(creados), _esperados, _saltados))
     return jsonify({"ok": True, "producto": producto, "ancla": fecha_ancla,
                     "interval_dias": interval_dias, "first_offset_dias": first_offset_dias,
-                    "kg_por_lote": round(kg_por_lote, 2), "anios": anios,
-                    "creados": len(creados), "cancelados": len(ids), "fechas": creados})
+                    "kg_por_lote": round(kg_por_lote, 2), "anios": anios, "esperados": _esperados,
+                    "creados": len(creados), "cancelados": len(ids), "fechas": creados, "aviso": _aviso})
 
 
 @bp.route("/api/plan/programar-cadencia-producto", methods=["POST"])
@@ -12979,11 +12995,16 @@ def plan_programar_cadencia_producto():
                 return d
             d = d + _tdP(days=1)
         return d
-    _preservados = []  # lotes B2B/ejecutado/histórico preservados → no doblar encima (±14d)
+    # Sebastián 4-jul (workflow ultracode · fix cadena de 1 lote) · _preservados SIMÉTRICO con el cancel
+    # (solo B2B/histórico/ejecutado · lo que NO se canceló) · dedup contra ellos de MISMO día.
+    _preservados = []
     for r in c.execute(
         "SELECT substr(fecha_programada,1,10) FROM produccion_programada "
         "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) AND substr(fecha_programada,1,10) > ? "
-        "AND COALESCE(estado,'') NOT IN ('cancelado','completado')", (producto, base.isoformat())).fetchall():
+        "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+        "AND (COALESCE(origen,'') IN ('eos_b2b','eos_retroactivo') "
+        "     OR inicio_real_at IS NOT NULL OR fin_real_at IS NOT NULL "
+        "     OR COALESCE(inventario_descontado_at,'') <> '')", (producto, base.isoformat())).fetchall():
         try:
             _preservados.append(_dCP.fromisoformat((r[0] or '')[:10]))
         except Exception:
@@ -12991,13 +13012,15 @@ def plan_programar_cadencia_producto():
     horizonte = anios * 365
     creados = []
     _usadas = []
+    _saltados = 0
     for k in range(0, 82):
         _off = dias_hasta_primera + k * interval_dias
         if _off > horizonte:
             break
         f_k = _dia_habil(base + _tdP(days=_off))
-        # dedup · NO doblar el mismo producto (contra preservados y ya-creados a <_dw días)
-        if any(abs((f_k - _fp).days) < _dw for _fp in _preservados) or any(abs((f_k - _fu).days) < _dw for _fu in _usadas):
+        # dedup · MISMO día contra preservados (B2B/ejecutado no cubre Animus) · _dw contra la propia cadena
+        if any(abs((f_k - _fp).days) < 2 for _fp in _preservados) or any(abs((f_k - _fu).days) < _dw for _fu in _usadas):
+            _saltados += 1
             continue
         # cada lote reserva la porción "para otro cliente" (recurrente · ej. Renova 80% otro cliente) ·
         # cantidad_kg = Animus + otro; la cobertura Animus usa (cantidad_kg − otro).
@@ -13017,9 +13040,51 @@ def plan_programar_cadencia_producto():
         pass
     conn.commit()
     _unlock_cadena(conn, c, _lk)
+    _esperados = sum(1 for _k in range(82) if dias_hasta_primera + _k * interval_dias <= horizonte)
+    _aviso = None
+    if _esperados >= 3 and len(creados) < max(2, _esperados // 2):
+        _aviso = ("Se crearon %d de ~%d lotes · %d slots chocaban con producciones ya agendadas (B2B/ejecutado)."
+                  % (len(creados), _esperados, _saltados))
     return jsonify({"ok": True, "producto": producto, "interval_dias": interval_dias,
                     "dias_hasta_primera": dias_hasta_primera, "kg_por_lote": round(kg_por_lote, 2),
-                    "creados": len(creados), "cancelados": len(ids), "fechas": creados})
+                    "creados": len(creados), "cancelados": len(ids), "fechas": creados,
+                    "esperados": _esperados, "aviso": _aviso})
+
+
+@bp.route("/api/plan/diag-lotes-producto", methods=["GET"])
+def plan_diag_lotes_producto():
+    """Sebastián 4-jul (workflow ultracode) · diagnóstico read-only: los lotes REALES de un producto
+    (fecha/origen/estado/kg/flags) para confirmar si la cadena quedó completa o con 1 lote, + conteo por
+    origen de los FUTUROS activos (lo que bloquearía la dedup). Uso: /api/plan/diag-lotes-producto?producto=X"""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    producto = (request.args.get('producto') or '').strip()
+    if not producto:
+        return jsonify({"error": "?producto= requerido"}), 400
+    conn = get_db()
+    c = conn.cursor()
+    lotes = []
+    for r in c.execute(
+        "SELECT substr(fecha_programada,1,10), COALESCE(origen,''), COALESCE(estado,''), "
+        "COALESCE(cantidad_kg,0), COALESCE(kg_otro_cliente,0), COALESCE(inicio_real_at,''), "
+        "COALESCE(fin_real_at,''), COALESCE(inventario_descontado_at,'') "
+        "FROM produccion_programada WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) "
+        "AND substr(fecha_programada,1,10) >= date('now','-40 days','-5 hours') "
+        "ORDER BY fecha_programada", (producto,)).fetchall():
+        lotes.append({"fecha": r[0], "origen": r[1], "estado": r[2], "kg": round(float(r[3] or 0), 2),
+                      "kg_otro": round(float(r[4] or 0), 2), "ejecutado": bool(r[5] or r[6] or r[7])})
+    _hoy = _hoy_colombia().isoformat()
+    _activo = lambda l: l["estado"] not in ('cancelado', 'completado')
+    cadena_fut = sum(1 for l in lotes if l["fecha"] > _hoy and l["origen"] == 'eos_plan' and _activo(l))
+    por_origen = {}
+    for l in lotes:
+        if l["fecha"] > _hoy and _activo(l):
+            por_origen[l["origen"] or '(vacío)'] = por_origen.get(l["origen"] or '(vacío)', 0) + 1
+    return jsonify({"ok": True, "producto": producto, "hoy": _hoy, "total_lotes": len(lotes),
+                    "cadena_futura_eos_plan": cadena_fut, "futuros_activos_por_origen": por_origen,
+                    "lotes": lotes})
 
 
 @bp.route("/api/plan/limpiar-proyeccion", methods=["POST"])

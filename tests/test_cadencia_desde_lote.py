@@ -67,21 +67,20 @@ def test_sin_meses_error(app, db_clean):
     assert r.status_code == 400
 
 
-def test_cadena_no_dobla_sobre_b2b_cercano(app, db_clean):
-    """Sebastián 3-jul: la cadena NO crea un lote a <14d de un B2B preservado (sin duplicados)."""
+def test_cadena_no_dobla_mismo_dia(app, db_clean):
+    """Sebastián 4-jul: la cadena NO crea un lote el MISMO día que un B2B preservado (dedup mismo día).
+    Puede caer CERCA (distinta demanda: B2B otro cliente vs Animus), pero NUNCA dos lotes el mismo día."""
     ancla = _ins('PROD DEDUP', '2026-07-15', 'eos_plan', kg=100)
-    _ins('PROD DEDUP', '2026-09-25', 'eos_b2b')   # justo donde caería el 1er slot (ancla+70=09-23)
+    _ins('PROD DEDUP', '2026-09-23', 'eos_b2b')   # EXACTO donde caería el 1er slot (ancla+70=09-23)
     c = _login(app)
     r = c.post('/api/plan/programar-cadencia-desde-lote/%d' % ancla,
                json={'interval_dias': 90, 'first_offset_dias': 70, 'kg_por_lote': 100, 'anios': 2}, headers=csrf_headers())
     assert r.status_code == 200, r.data[:300]
-    from datetime import date
     fechas = [x[0][:10] for x in sqlite3.connect(os.environ['DB_PATH']).execute(
         "SELECT fecha_programada FROM produccion_programada WHERE producto='PROD DEDUP' "
         "AND estado NOT IN ('cancelado','completado') ORDER BY fecha_programada").fetchall()]
-    ds = sorted(date.fromisoformat(f) for f in fechas)
-    for i in range(1, len(ds)):
-        assert (ds[i] - ds[i - 1]).days >= 14, ('doble a <14d', str(ds[i - 1]), str(ds[i]))
+    assert len(fechas) == len(set(fechas)), ('no dos lotes el MISMO día', fechas)
+    assert r.get_json()['creados'] >= 6, ('la cadena igual se crea completa', r.get_json())
 
 
 def test_cadena_no_cae_finde(app, db_clean):
@@ -131,3 +130,46 @@ def test_cadena_lock_concurrente_409(app, db_clean):
     r = c.post('/api/plan/programar-cadencia-desde-lote/%d' % ancla,
                json={'interval_dias': 60, 'first_offset_dias': 40, 'kg_por_lote': 20, 'anios': 1}, headers=csrf_headers())
     assert r.status_code == 409, r.data[:200]
+
+
+def test_cadena_no_la_mata_proyeccion_densa(app, db_clean):
+    """Sebastián 4-jul (workflow ultracode · BUG cadena de 1 lote): eos_proyeccion DENSA no debe matar
+    la cadena · el cancel la borra y _preservados (simétrico) no la cuenta. Antes creaba 1."""
+    from datetime import date, timedelta
+    ancla = _ins('PROD DENSA', '2026-07-15', 'eos_plan', kg=100)
+    d = date(2026, 8, 1)
+    for _ in range(22):
+        _ins('PROD DENSA', d.isoformat(), 'eos_proyeccion')
+        d = d + timedelta(days=20)
+    c = _login(app)
+    r = c.post('/api/plan/programar-cadencia-desde-lote/%d' % ancla,
+               json={'interval_dias': 61, 'first_offset_dias': 41, 'kg_por_lote': 100, 'anios': 2}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    assert r.get_json()['creados'] >= 8, ('la cadena NO debe quedar en 1', r.get_json())
+
+
+def test_cadena_no_la_mata_b2b_denso(app, db_clean):
+    """B2B denso preservado NO mata la cadena (dedup contra preservados = mismo día, no ±14)."""
+    from datetime import date, timedelta
+    ancla = _ins('PROD B2B DENSO', '2026-07-15', 'eos_plan', kg=100)
+    d = date(2026, 8, 10)
+    for _ in range(22):
+        _ins('PROD B2B DENSO', d.isoformat(), 'eos_b2b')
+        d = d + timedelta(days=20)
+    c = _login(app)
+    r = c.post('/api/plan/programar-cadencia-desde-lote/%d' % ancla,
+               json={'interval_dias': 61, 'first_offset_dias': 41, 'kg_por_lote': 100, 'anios': 2}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    assert r.get_json()['creados'] >= 8, r.get_json()
+
+
+def test_diag_lotes_producto(app, db_clean):
+    from datetime import date, timedelta
+    fut = (date.today() + timedelta(days=30)).isoformat()
+    _ins('PROD DIAG', fut, 'eos_plan')
+    c = _login(app)
+    r = c.get('/api/plan/diag-lotes-producto?producto=PROD DIAG', headers=csrf_headers())
+    assert r.status_code == 200, r.data[:200]
+    d = r.get_json()
+    assert d['cadena_futura_eos_plan'] >= 1
+    assert 'eos_plan' in d['futuros_activos_por_origen']
