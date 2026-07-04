@@ -4659,10 +4659,22 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                 # efectiva = MÁXIMO entre (góndola+pipeline) y lo que le queda al ANCLA (dur − días desde
                 # el ancla). Así una producción reciente cuenta aunque su stock aún no esté en Shopify;
                 # y si el ancla ya venció (vieja), su remanente=0 y manda la góndola (no propone en pasado).
-                _dias_desde_ancla = max(0, (hoy - ancla_fecha).days)
-                _ancla_remanente = max(0, dur_dias - _dias_desde_ancla)
+                # SOLO cuenta el remanente si el ancla es una producción PASADA (ya en stock o en camino).
+                # Un ancla FUTURA (Fijo programado, aún NO producido · ej. TRIAC 07-07) es un PLAN, no
+                # stock en mano → NO debe inflar la cobertura (si no, propone la próxima demasiado lejos).
+                # Su reposición la maneja el timing (adelantar/atrasar ese Fijo). Sebastián 3-jul.
+                if ancla_fecha <= hoy:
+                    _dias_desde_ancla = max(0, (hoy - ancla_fecha).days)
+                    _ancla_remanente = max(0, dur_dias - _dias_desde_ancla)
+                else:
+                    _ancla_remanente = 0
                 _cob_efectiva = max(_dg, _ancla_remanente)
                 p["cobertura_efectiva_dias"] = _cob_efectiva
+                # "Alcanza para X días" (amarillo) = cobertura EFECTIVA actual desde HOY (góndola vs
+                # remanente del ancla), NO la cobertura total del ancla desde su fecha. Así es consistente
+                # con la próxima (= hoy + cobertura − 20) · antes decía "alcanza 89 días · próxima en 3d"
+                # (contradicción · TRIAC 373 uds = 20 días CRÍTICO pero próxima Sept). Sebastián 3-jul.
+                p["duracion_lote_dias"] = _cob_efectiva
                 proxima_calc = hoy + _td(days=max(0, _cob_efectiva - BUFFER_REORDEN_DIAS))  # buffer 20d (M70)
                 # Clamp: nunca proponer fecha en el pasado o muy próxima
                 proxima = max(proxima_calc, hoy + _td(days=3))
