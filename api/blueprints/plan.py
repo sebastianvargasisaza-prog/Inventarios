@@ -4022,6 +4022,10 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
 
     # 6. Procesar cada producto
     out = []
+    # PERF (Sebastián 4-jul) · cache request-scope del volumen por (sku, producto): _ml_de_sku llamaba
+    # _volumen_sku (2 queries) por CADA sku de CADA producto, sin memoria → ~N×M queries repetidas en el
+    # load de Necesidades (lo hacía lento · M43/M59). El volumen es estable dentro del request.
+    _ml_cache = {}
     for prod_nombre, codigo, lote_kg, tiene_10ml, uds_10ml, tipo_10ml, imagen, fecha_creacion in productos:
         # SKUs de este producto (puede haber varios: 30ml, 10ml, etc)
         # FIX 23-may-2026 · lookup case-insensitive · sku_producto_map y
@@ -4072,17 +4076,19 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         # en ~13 productos (ej. BOOSTER TENSOR 15 real vs 30 heurístico · 2×). Ahora el display usa el
         # resolver del motor como fallback antes de la heurística → pantalla y cadencia coinciden.
         def _ml_de_sku(_sk):
+            _k = (str(_sk).upper().strip(), prod_nombre)
+            if _k in _ml_cache:                 # memoizado (evita re-query del mismo sku · PERF)
+                return _ml_cache[_k]
             _v = ml_por_sku.get(str(_sk).upper().strip())
-            if _v:
-                return _v
-            try:
-                from blueprints.auto_plan import _volumen_sku as _vs_motor
-                _vv, _ = _vs_motor(c, _sk, prod_nombre)
-                if _vv and _vv > 0:
-                    return _vv
-            except Exception:
-                pass
-            return None
+            if not _v:
+                try:
+                    from blueprints.auto_plan import _volumen_sku as _vs_motor
+                    _vv, _ = _vs_motor(c, _sk, prod_nombre)
+                    _v = _vv if (_vv and _vv > 0) else None
+                except Exception:
+                    _v = None
+            _ml_cache[_k] = _v
+            return _v
         for _sku in skus_de_prod:
             ml_sku = _ml_de_sku(_sku)
             uds_sku = int(ventas_por_sku.get(_sku, 0) or 0)
