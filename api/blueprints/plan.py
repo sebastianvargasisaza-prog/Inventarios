@@ -19205,7 +19205,7 @@ async function verificarPlanCompleto(){
 // puede ajustar kg individualmente después. Reusa el mismo endpoint que el botón por-producto.
 async function programarCadenasFaltantes(){
   var pf = document.getElementById('btn-prog-faltan');
-  if(!confirm('Programar la cadena de 2 años de TODOS los productos que están SIN CADENA o incompletos, con la cadencia por defecto (cada 2 meses).\n\nConserva los que ya están OK, los pedidos B2B y lo producido. Después podés ajustar los kg de cada uno.\n\n¿Programar las que faltan?')) return;
+  if(!confirm('Programar la cadena de 2 años de TODOS los productos SIN CADENA o incompletos.\n\nCada uno con SU cadencia natural (según cuánto dura su lote: el que hacés cada 3 meses queda cada 3, el de 2 cada 2). Mismo tamaño de lote que su última producción. Los nuevos (sin historial) = cada 2 meses por defecto.\n\nConserva los que ya están OK, los B2B y lo producido. Después ajustás los kg individualmente.\n\n¿Programar las que faltan?')) return;
   if(pf){ pf.disabled = true; pf.textContent = '⚡ Programando...'; }
   try{
     var rn = await fetch('/api/plan/necesidades'); var dn = await rn.json();
@@ -19221,9 +19221,19 @@ async function programarCadenasFaltantes(){
       if(!p){ skip++; continue; }
       var vel = p.velocidad_kg_dia || 0;
       if(!(vel > 0.0001)){ skip++; continue; }   // sin venta → no se programa
-      var interval = Math.max(Math.round(2*30.44), 15);      // cada 2 meses (default)
-      var kg = Math.round(vel * 2 * 30.44 * 10) / 10;        // demanda de 2 meses
       var otro = p.ancla_kg_otro_cliente || 0;
+      // CADENCIA NATURAL de cada producto = cuánto dura su lote (kg Animus ÷ venta) · respeta si lo hacés
+      // cada 2, 3 o los meses que sea (Sebastián: "no todos los hago cada 2 meses"). Reproduce el MISMO
+      // tamaño de lote que la última producción. Fallback 2 meses solo si no tiene historial (producto nuevo).
+      var kgAnimusLote = (p.ancla_kg_animus != null && p.ancla_kg_animus > 0) ? p.ancla_kg_animus : 0;
+      var interval, kg;   // kg = porción ANIMUS del lote (el endpoint le SUMA kg_otro_cliente aparte)
+      if(kgAnimusLote > 0){
+        interval = Math.max(Math.round(kgAnimusLote / vel), 15);   // días que dura el lote = cadencia natural
+        kg = Math.round(kgAnimusLote * 10) / 10;                   // mismo tamaño Animus que la última producción
+      } else {
+        interval = Math.max(Math.round(2*30.44), 15);   // sin historial → default 2 meses
+        kg = Math.round(vel * 2 * 30.44 * 10) / 10;      // Animus de 2 meses
+      }
       var ancla = p.ultima_produccion_fecha ? (''+p.ultima_produccion_fecha).slice(0,10) : null;
       var dhp;
       if(ancla && p.proxima_sugerida_fecha){ dhp = Math.max(Math.round((new Date((''+p.proxima_sugerida_fecha).slice(0,10)+'T12:00:00') - new Date(ancla+'T12:00:00'))/86400000), 1); }
