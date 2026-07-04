@@ -25716,10 +25716,15 @@ async function ckMarcar(itemId, estado){
       var d = await r.json();
       if(!r.ok){ window._cadenaBusy = false; alert('No se pudo: ' + ((d && d.error) || r.status)); return; }
       window._cadenaBusy = false;
-      // Sebastián 3-jul · NO cerrar ni recargar todo · avanzar al SIGUIENTE producto para hacerlos en
-      // fila. Toast no-bloqueante + abrirSolicitar(next) reusa el cache (rápido, sin recargar Necesidades).
+      // Sebastián 4-jul · FEEDBACK CLARO: mostrar creados vs esperados · si la cadena quedó INCOMPLETA,
+      // alertar (no avanzar en silencio) para que el usuario SEPA que ese producto necesita atención.
+      var _cr = d.creados || 0, _esp = d.esperados || _cr;
+      if(d.aviso || (_esp >= 3 && _cr < 3)){
+        alert('⚠ ' + (p.producto_nombre || '') + '\\n\\nSe crearon ' + _cr + ' de ~' + _esp + ' lotes.' + (d.aviso ? ('\\n' + d.aviso) : '') + '\\n\\nEste producto tiene producciones agendadas que chocan con la cadena. Revisalo con "Verificar plan".');
+      }
+      // NO cerrar ni recargar todo · avanzar al SIGUIENTE producto (fila). Toast + abrirSolicitar(next).
       try{ if(window._NEC_PRODUCTOS_CACHE[idx]) window._NEC_PRODUCTOS_CACHE[idx]._cadena_programada = true; }catch(e){}
-      _toastCadena('✓ ' + (p.producto_nombre || '') + ' · ' + d.creados + ' lotes programados');
+      _toastCadena('✓ ' + (p.producto_nombre || '') + ' · ' + _cr + '/' + _esp + ' lotes');
       var _nav = (typeof _navCriticos === 'function') ? _navCriticos() : [];
       var _pos = _nav.indexOf(idx);
       var _next = null;
