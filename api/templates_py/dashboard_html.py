@@ -25615,7 +25615,8 @@ async function ckMarcar(itemId, estado){
       html += '<div style="font-size:13px;font-weight:800;color:#5b21b6;margin-bottom:8px">📅 Programar la cadena · 2 años</div>';
       html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">';
       html += '<span style="font-size:12px;color:#5b21b6;font-weight:700">Producir para <input id="cadp-meses" type="number" min="1" max="12" value="2" oninput="_cadpMesesToKg(' + idx + ')" style="width:44px;padding:3px 4px;border:1px solid #c4b5fd;border-radius:4px;text-align:center;font-weight:700"> meses</span>';
-      html += '<span style="font-size:12px;color:#5b21b6;font-weight:700">= <input id="cadp-kg" type="number" min="0.1" step="0.1" oninput="_updateCadenaProdPreview(' + idx + ')" title="kg de cada lote de la cadena · editalo para programar la cantidad exacta" style="width:56px;padding:3px 4px;border:1px solid #7c3aed;border-radius:4px;text-align:center;font-weight:800;color:#5b21b6"> kg/lote</span>';
+      html += '<span style="font-size:12px;color:#5b21b6;font-weight:700">= <input id="cadp-kg" type="number" min="0.1" step="0.1" oninput="_cadpKgManual(' + idx + ')" title="kg de cada lote de la cadena · editalo para programar la cantidad exacta · marcá 🔒 para fijarlo" style="width:56px;padding:3px 4px;border:1px solid #7c3aed;border-radius:4px;text-align:center;font-weight:800;color:#5b21b6"> kg/lote</span>';
+      html += '<label style="font-size:10px;color:#7c3aed;font-weight:700;cursor:pointer;user-select:none;display:inline-flex;align-items:center;gap:3px" title="Fijar los kg a mano: al cambiar los MESES ya NO se recalculan (hacés de más y producís cada X meses igual)"><input id="cadp-kg-fijo" type="checkbox" onchange="_updateCadenaProdPreview(' + idx + ')" style="margin:0;cursor:pointer"> 🔒 fijar kg</label>';
       html += '<span style="font-size:11px;color:#92400e">· Para otro cliente <input id="cadp-otro" type="number" min="0" value="' + (Math.round((p.ancla_kg_otro_cliente||0)*10)/10) + '" oninput="_updateCadenaProdPreview(' + idx + ')" title="pre-llenado con la porción para otro cliente del lote base · editá si la cadena reserva distinto" style="width:52px;padding:3px 4px;border:1px solid #fcd34d;border-radius:4px;text-align:center"> kg</span>';
       html += '</div>';
       html += '<div id="cadp-preview" style="font-size:11px;color:#5b21b6;background:#fff;border:1px solid #ede9fe;border-radius:6px;padding:8px 10px;line-height:1.5;margin-bottom:8px"></div>';
@@ -25707,12 +25708,20 @@ async function ckMarcar(itemId, estado){
   }
   // Sebastián 3-jul · al cambiar los meses, recalcula el kg del lote (campo editable) · así ves los
   // kilos y podés ajustarlos para programar la cantidad exacta ("full").
+  // Sebastián 4-jul · el usuario escribió los kg a mano → FIJARLOS (marcar el candado) para que al
+  // cambiar los meses NO se recalculen. Así hace de más y produce cada X meses igual. Aplica a todos.
+  function _cadpKgManual(idx){
+    var f = document.getElementById('cadp-kg-fijo'); if(f) f.checked = true;
+    _updateCadenaProdPreview(idx);
+  }
   function _cadpMesesToKg(idx){
     var p = window._NEC_PRODUCTOS_CACHE[idx]; if(!p) return;
     var vel = p.velocidad_kg_dia || 0;
     var meses = parseFloat((document.getElementById('cadp-meses')||{}).value) || 2;
     var kgEl = document.getElementById('cadp-kg');
-    if(kgEl && vel > 0.0001){ kgEl.value = (Math.round(vel * meses * 30.44 * 10) / 10).toFixed(1); }
+    var fijo = document.getElementById('cadp-kg-fijo');
+    // si el kg está FIJADO (candado) NO recalcular al cambiar meses · la cadencia sale de los meses igual.
+    if(kgEl && vel > 0.0001 && !(fijo && fijo.checked)){ kgEl.value = (Math.round(vel * meses * 30.44 * 10) / 10).toFixed(1); }
     _updateCadenaProdPreview(idx);
   }
   function _cadenaProdCalc(idx){
@@ -25763,10 +25772,13 @@ async function ckMarcar(itemId, estado){
     // Sebastián 3-jul · NO repetir "Producción base · kg" (la caja "Última producción" de arriba ya
     // la muestra) · solo referenciar la fecha base concisa aquí.
     var _surplus = cc.mesesCubre > (cc.meses + 0.3);
-    el.innerHTML = '📦 Cada lote de la cadena <b>' + cc.kgAnimus.toFixed(1) + ' kg</b> (cubre ~' + cc.mesesCubre + ' meses de venta'
+    var _fijo = !!(document.getElementById('cadp-kg-fijo') || {}).checked;
+    el.innerHTML = '📦 Cada lote de la cadena <b>' + cc.kgAnimus.toFixed(1) + ' kg</b>'
+      + (_fijo ? ' <span style="background:#ede9fe;color:#6d28d9;padding:0 5px;border-radius:4px;font-weight:800">🔒 fijo</span>' : '')
+      + ' (cubre ~' + cc.mesesCubre + ' meses de venta'
       + (_surplus ? ' · hacés de más' : '') + ') · vende <b>' + (cc.vel*30).toFixed(1) + ' kg/mes</b>'
       + (cc.otro > 0 ? (' · ' + cc.otro.toFixed(1) + ' kg otro cliente en la base') : '') + '<br>'
-      + '⏳ Un lote cada <b>' + cc.cadaTxt + '</b> (respeta el ritmo · no cambia si subís los kg) · ~<b>' + cc.nLotes + '</b> lotes · total <b>' + (cc.kgAnimus * cc.nLotes).toFixed(0) + ' kg</b> en 2 años<br>'
+      + '⏳ Un lote cada <b>' + cc.cadaTxt + '</b> (' + (_fijo ? 'kg fijos · igual producís cada ' + cc.meses + ' meses' : 'respeta el ritmo · no cambia si subís los kg') + ') · ~<b>' + cc.nLotes + '</b> lotes · total <b>' + (cc.kgAnimus * cc.nLotes).toFixed(0) + ' kg</b> en 2 años<br>'
       + '🗓️ La 1ª de la cadena el <b>' + (cc.prox || (cc.ancla ? '~' + cc.firstOffset + 'd desde la base' : 'según stock')) + '</b>' + (cc.prox ? ' (la próxima sugerida)' : '') + '.';
   }
   async function programarCadenaProducto(idx){
