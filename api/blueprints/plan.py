@@ -13191,6 +13191,65 @@ def plan_verificar_cadenas():
                     "resumen": resumen, "productos": reporte})
 
 
+@bp.route("/api/plan/diag-sku-ventas", methods=["GET"])
+def plan_diag_sku_ventas():
+    """Sebastián 4-jul · diagnóstico de ventas por SKU de Shopify (crudo). Dado ?q=<substring>, lista TODOS
+    los SKUs de animus_shopify_orders que lo contienen, con ventas 30/60/90d + si están mapeados a un
+    producto. Sirve para cazar ventas que entran bajo un SKU NO mapeado (ej. tras renombrar un producto:
+    MAXLASH→ANIMUSLASH · las ventas nuevas caen en otro SKU y la velocidad sale baja)."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    import json as _j
+    from datetime import datetime as _dt, timedelta as _td
+    q = (request.args.get('q') or '').strip().upper()
+    conn = get_db()
+    c = conn.cursor()
+    _hoy = _dt.utcnow() - _td(hours=5)
+    cut90 = (_hoy - _td(days=90)).isoformat()
+    cut60 = (_hoy - _td(days=60)).isoformat()
+    cut30 = (_hoy - _td(days=30)).isoformat()
+    rows = c.execute(
+        "SELECT sku_items, creado_en FROM animus_shopify_orders WHERE creado_en >= ? "
+        "AND sku_items IS NOT NULL AND sku_items != '' "
+        "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')", (cut90,)).fetchall()
+    agg = {}
+    for r in rows:
+        try:
+            items = _j.loads(r[0]) if r[0] else []
+        except Exception:
+            continue
+        creado = r[1] or ''
+        for it in items:
+            sku = str(it.get('sku', '') or '').strip().upper()
+            qty = int(it.get('qty') or it.get('cantidad') or it.get('quantity') or 0)
+            if not sku or qty <= 0:
+                continue
+            if q and q not in sku:
+                continue
+            a = agg.setdefault(sku, {'d30': 0, 'd60': 0, 'd90': 0})
+            if creado >= cut90:
+                a['d90'] += qty
+            if creado >= cut60:
+                a['d60'] += qty
+            if creado >= cut30:
+                a['d30'] += qty
+    mapped = {}
+    try:
+        for (sk, pn) in c.execute("SELECT UPPER(TRIM(sku)), producto_nombre FROM sku_producto_map "
+                                  "WHERE COALESCE(activo,1)=1").fetchall():
+            mapped[sk] = pn
+    except Exception:
+        pass
+    out = []
+    for sku, a in agg.items():
+        out.append({'sku': sku, 'd30': a['d30'], 'd60': a['d60'], 'd90': a['d90'],
+                    'mes_aprox': round(a['d90'] / 3.0, 1), 'mapeado_a': mapped.get(sku)})
+    out.sort(key=lambda x: -x['d90'])
+    return jsonify({'ok': True, 'q': q, 'total_skus': len(out), 'skus': out})
+
+
 @bp.route("/api/plan/limpiar-proyeccion", methods=["POST"])
 def plan_limpiar_proyeccion():
     """Sebastián 16-jun · borra SOLO los lotes de la proyección automática
