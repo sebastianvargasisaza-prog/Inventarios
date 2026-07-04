@@ -24972,6 +24972,7 @@ async function ckMarcar(itemId, estado){
       html += '<th style="text-align:center;padding:10px 8px;font-weight:700">Vende/mes</th>';
       html += '<th style="text-align:center;padding:10px 8px;font-weight:700">Stock</th>';
       html += '<th style="text-align:center;padding:10px 8px;font-weight:700">Alcanza</th>';
+      html += '<th style="text-align:left;padding:10px 8px;font-weight:700">Plan 2 años · acción</th>';
       html += '<th style="text-align:right;padding:10px 8px;font-weight:700">Programar</th>';
       html += '</tr></thead><tbody>';
       prods.forEach((p, j) => {
@@ -25063,6 +25064,27 @@ async function ckMarcar(itemId, estado){
         if (_tonos.length >= 2) {
           chipTonos = ' <span title="' + _tonos.length + ' tonos · click fila para desglose" style="background:#fdf2f8;color:#be185d;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer">🎨 ' + _tonos.length + ' tonos</span>';
         }
+        // ===== Sebastián 4-jul · ESTADO DE CADENA (plan 2 años) + ALERTA inteligente por producto =====
+        var _hoyN = new Date().toISOString().slice(0,10);
+        var _cad = (p.planificacion || []).filter(function(l){ var f = ('' + (l.fecha || '')).slice(0,10); return l.origen === 'eos_plan' && f > _hoyN && (l.estado||'') !== 'cancelado' && (l.estado||'') !== 'completado'; });
+        var _nCad = _cad.length;
+        var _fc = _cad.map(function(l){ return ('' + l.fecha).slice(0,10); }).sort();
+        var _spanC = _fc.length >= 2 ? Math.round((new Date(_fc[_fc.length-1] + 'T12:00:00') - new Date(_fc[0] + 'T12:00:00')) / 86400000) : 0;
+        var _cadEst = (_nCad === 0) ? 'sin' : ((_nCad < 4 || _spanC < 480) ? 'inc' : 'ok');
+        var _cadBadge = _cadEst === 'ok' ? '<span title="Cadena de 2 años completa" style="background:#dcfce7;color:#15803d;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:800">✅ ' + _nCad + ' lotes</span>'
+                      : _cadEst === 'inc' ? '<span title="Cadena incompleta · reprogramá" style="background:#fef3c7;color:#b45309;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:800">🟠 ' + _nCad + ' lote' + (_nCad === 1 ? '' : 's') + '</span>'
+                      : '<span title="Sin cadena de 2 años · programala" style="background:#fee2e2;color:#b91c1c;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:800">🔴 sin plan</span>';
+        var _tend = p.tendencia || 0, _tp = Math.round(_tend * 100);   // tendencia 0..0.5 · positiva = ascenso
+        var _al, _alc;
+        if(!(p.velocidad_uds_dia > 0.001)){ _al = '🛒 sin ventas mapeadas · revisá el SKU'; _alc = '#94a3b8'; }
+        else if(_cadEst === 'sin'){ _al = '🔴 programá la cadena de 2 años'; _alc = '#dc2626'; }
+        else if(_cadEst === 'inc'){ _al = '🟠 cadena incompleta · reprogramá'; _alc = '#d97706'; }
+        else if(_tend >= 0.08){ _al = '📈 ventas +' + _tp + '% · considerá adelantar'; _alc = '#7c3aed'; }
+        else if(p.lote_tarde || p.accion_sugerida === 'adelantar'){ _al = '⏩ adelantá la próxima'; _alc = '#dc2626'; }
+        else if(p.accion_sugerida === 'atrasar'){ _al = '📉 vas holgado · podés atrasar'; _alc = '#0891b2'; }
+        else if(_tend >= 0.04){ _al = '📈 ventas +' + _tp + '% en ascenso'; _alc = '#7c3aed'; }
+        else { _al = '✅ al día'; _alc = '#16a34a'; }
+        var _proxTxt = p.proxima_sugerida_fecha ? ('próxima ' + ('' + p.proxima_sugerida_fecha).slice(5,10)) : '';
         html += '<tr style="border-top:1px solid #e2e8f0;background:' + _rowBg + ';border-left:' + _rowBorderL + ';opacity:' + _rowOpacity + '">';
         // Producto + urgencia
         html += '<td style="padding:10px 8px">';
@@ -25078,17 +25100,23 @@ async function ckMarcar(itemId, estado){
         html += '<td style="padding:10px 8px;text-align:center">' + p.velocidad_uds_dia.toFixed(1) + '</td>';
         html += '<td style="padding:10px 8px;text-align:center">' + ventaMes + '</td>';
         html += '<td style="padding:10px 8px;text-align:center">' + p.stock_uds_total + '</td>';
+        // Alcanza · LIMPIO (Sebastián 4-jul): cobertura (color) + próxima sugerida · sin el ruido
+        // "lote atrasado sin ejecutar" (eso ahora va como alerta accionable en la columna Plan·acción).
         html += '<td style="padding:10px 8px;text-align:center">'
               + '<div style="font-weight:700;color:' + diasColorReal + '">' + dias + '</div>'
-              + _prodInfo
-              + estadoProgHtml
+              + (_proxTxt ? ('<div style="font-size:9px;color:#64748b">' + _proxTxt + '</div>') : '')
+              + '</td>';
+        // Plan 2 años · alerta inteligente (estado de cadena + sugerencia accionable)
+        html += '<td style="padding:10px 8px;text-align:left">'
+              + '<div>' + _cadBadge + '</div>'
+              + '<div style="font-size:10px;color:' + _alc + ';font-weight:700;margin-top:3px">' + _al + '</div>'
               + '</td>';
         // Programar
         html += '<td style="padding:10px 8px;text-align:right"><button onclick="abrirPlanProduccion(' + idx + ')" style="background:#6d28d9;color:#fff;border:none;padding:7px 16px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">📅 Programar</button></td>';
         html += '</tr>';
         // Sub-fila colapsable con desglose por tono (solo si hay ≥2 tonos)
         if (_tonos.length >= 2) {
-          html += '<tr style="background:#fdf2f8"><td colspan="6" style="padding:8px 14px">';
+          html += '<tr style="background:#fdf2f8"><td colspan="7" style="padding:8px 14px">';
           html += '<details><summary style="cursor:pointer;font-size:11px;color:#be185d;font-weight:700">🎨 Desglose por referencia (tonos/tamaños) · click para expandir</summary>';
           html += '<table style="width:100%;margin-top:8px;border-collapse:collapse;font-size:11px">';
           html += '<thead><tr style="color:#9d174d"><th style="text-align:left;padding:4px 6px">Tono</th><th style="padding:4px 6px">SKU</th><th style="padding:4px 6px">ml</th><th style="padding:4px 6px">Vende ventana</th><th style="padding:4px 6px">% mix</th><th style="padding:4px 6px">Uds est. lote</th></tr></thead><tbody>';
