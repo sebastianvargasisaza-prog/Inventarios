@@ -24927,7 +24927,9 @@ async function ckMarcar(itemId, estado){
       + '.necx-sum{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:800;color:#be185d;background:linear-gradient(135deg,#fdf2f8,#fce7f3);border:1px solid #fbcfe8;border-radius:999px;padding:5px 14px;transition:all .18s ease;user-select:none}'
       + '.necx-sum::-webkit-details-marker{display:none}'
       + '.necx-sum::marker{content:""}'
-      + '.necx-sum:hover{background:linear-gradient(135deg,#fce7f3,#fbcfe8);box-shadow:0 2px 10px rgba(190,24,93,.18)}'
+      + '.necx-sum:hover{background:linear-gradient(135deg,#fce7f3,#fbcfe8);box-shadow:0 2px 10px rgba(190,24,93,.18);transform:translateY(-1px)}'
+      + '.necx-swstrip{display:inline-flex;gap:3px;margin-left:5px}'
+      + '.necx-swdot{width:10px;height:10px;border-radius:50%;box-shadow:0 0 0 1.5px #fff,0 0 0 2.5px rgba(0,0,0,.08)}'
       + '.necx-chev{display:inline-block;transition:transform .2s ease;font-size:9px}'
       + '.necx-exp[open] .necx-chev{transform:rotate(90deg)}'
       + '.necx-expbody{margin-top:10px;animation:necxIn .25s ease}'
@@ -25155,7 +25157,8 @@ async function ckMarcar(itemId, estado){
         // Sub-fila colapsable con desglose por tono (solo si hay ≥2 tonos)
         if (_tonos.length >= 2) {
           html += '<tr style="background:#fdf2f8"><td colspan="7" style="padding:2px 14px 12px">';
-          html += '<details class="necx-exp"><summary class="necx-sum"><span class="necx-chev">▸</span>🎨 Desglose por referencia · <span style="opacity:.75">' + _tonos.length + ' tonos/tamaños</span></summary>';
+          var _swdots = _tonos.map(function(t){ return '<span class="necx-swdot" style="background:' + _tonoColor(t.tono_label) + '"></span>'; }).join('');
+          html += '<details class="necx-exp"><summary class="necx-sum"><span class="necx-chev">▸</span>🎨 Desglose por referencia · <span style="opacity:.75">' + _tonos.length + ' tonos/tamaños</span><span class="necx-swstrip">' + _swdots + '</span></summary>';
           html += '<div class="necx-expbody">';
           html += '<table class="necx-ttbl"><thead><tr><th>Tono</th><th>SKU</th><th>ml</th><th>Vende</th><th>% mix</th><th>Uds/lote</th></tr></thead><tbody>';
           _tonos.forEach(t => {
