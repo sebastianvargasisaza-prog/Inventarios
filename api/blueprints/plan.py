@@ -13250,6 +13250,45 @@ def plan_diag_sku_ventas():
     return jsonify({'ok': True, 'q': q, 'total_skus': len(out), 'skus': out})
 
 
+@bp.route("/api/plan/producciones-sin-descontar", methods=["GET"])
+def plan_producciones_sin_descontar():
+    """Sebastián 4-jul · visibilidad de producciones que YA pasaron pero no tienen el descuento de MP
+    registrado (el jefe de producción a veces se le olvida). Lista lotes Fijos (eos_plan/b2b/retroactivo)
+    con fecha < hoy, activos (pendiente/programado/en_curso), fin_real_at NULL e inventario_descontado_at
+    vacío. INFORMATIVO (no descuenta nada). Las de junio (pre-inventario) van marcadas 'NO descontar'
+    (el conteo físico ya reflejó ese consumo · descontarlas = doble)."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    from datetime import date as _dV
+    conn = get_db()
+    c = conn.cursor()
+    _hoy = _hoy_colombia()
+    _hoy_s = _hoy.isoformat()
+    rows = c.execute(
+        "SELECT producto, substr(fecha_programada,1,10), COALESCE(cantidad_kg,0), COALESCE(origen,''), "
+        "estado, COALESCE(kg_otro_cliente,0) FROM produccion_programada "
+        "WHERE substr(fecha_programada,1,10) < ? "
+        "AND estado IN ('pendiente','programado','en_curso','esperando_recurso') "
+        "AND fin_real_at IS NULL AND COALESCE(inventario_descontado_at,'')='' "
+        "AND COALESCE(origen,'') IN ('eos_plan','eos_b2b','eos_retroactivo') "
+        "ORDER BY fecha_programada", (_hoy_s,)).fetchall()
+    out = []
+    for r in rows:
+        f = r[1] or ''
+        try:
+            da = (_hoy - _dV.fromisoformat(f)).days
+        except Exception:
+            da = 0
+        out.append({"producto": r[0], "fecha": f, "kg": round(float(r[2] or 0), 1), "origen": r[3],
+                    "estado": r[4], "kg_otro": round(float(r[5] or 0), 1), "dias_atraso": da,
+                    "pre_inventario": (f < '2026-07-01')})   # junio y antes = pre-inventario · NO descontar
+    n_junio = sum(1 for x in out if x["pre_inventario"])
+    return jsonify({"ok": True, "hoy": _hoy_s, "total": len(out),
+                    "pre_inventario": n_junio, "revisar": len(out) - n_junio, "producciones": out})
+
+
 @bp.route("/api/plan/limpiar-proyeccion", methods=["POST"])
 def plan_limpiar_proyeccion():
     """Sebastián 16-jun · borra SOLO los lotes de la proyección automática
@@ -17347,6 +17386,8 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
         style="font-size:14px;padding:10px 18px;background:#dc2626;font-weight:700" title="Deja el FUTURO limpio: cancela TODAS las producciones AZULES (auto/canónicas) de mañana en adelante para reconstruir solo con las cadenas nuevas. CONSERVA lo verde (Fijo · tus cadenas), los pedidos B2B y lo ya producido. Hasta hoy = base; de mañana en adelante todo nuevo.">🧹 Limpiar auto futuro (azules)</button>
       <button onclick="verificarPlanCompleto()" class="success" id="btn-verificar-plan"
         style="font-size:14px;padding:10px 18px;background:#0d9488;font-weight:700" title="Revisa TODAS las cadenas de una: marca qué productos están OK y cuáles necesitan atención (sin cadena, incompleta, con hueco, o con azules encima). Así revisás solo lo que tiene algo, no uno por uno.">🔎 Verificar plan (todos)</button>
+      <button onclick="verSinDescontar()" class="success" id="btn-sin-descontar"
+        style="font-size:14px;padding:10px 18px;background:#b45309;font-weight:700" title="Producciones que YA pasaron pero no tienen el descuento de MP registrado (el jefe a veces se olvida). Solo informativo · las de junio (pre-inventario) van marcadas para NO descontar.">⚠️ Sin descontar</button>
       <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" style="display:none" disabled>✅ Confirmar y programar TODO</button>
     </div>
   </div>
@@ -19321,6 +19362,40 @@ async function programarCadenasFaltantes(){
     var w = document.getElementById('verif-plan-panel'); if(w) w.remove();
   }catch(e){ alert('Error: ' + e); }
   if(pf){ pf.disabled = false; pf.textContent = '⚡ Programar las que faltan'; }
+}
+// Sebastián 4-jul · producciones que ya pasaron sin descontar la MP (el jefe se olvida) · informativo ·
+// junio (pre-inventario) separado y marcado NO descontar.
+async function verSinDescontar(){
+  var btn = document.getElementById('btn-sin-descontar');
+  if(btn){ btn.disabled = true; btn.textContent = '⚠️ Revisando...'; }
+  try{
+    var r = await fetch('/api/plan/producciones-sin-descontar');
+    var d = await r.json().catch(function(){ return {}; });
+    if(!r.ok || !d.ok){ alert('No se pudo: ' + (d.error || r.status)); return; }
+    var wrap = document.getElementById('sindesc-panel');
+    if(!wrap){ wrap = document.createElement('div'); wrap.id = 'sindesc-panel'; wrap.style.cssText = 'position:fixed;top:60px;right:20px;bottom:20px;width:440px;max-width:92vw;z-index:99999;background:#fff;border:1px solid #cbd5e1;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.28);overflow:auto;padding:14px'; document.body.appendChild(wrap); }
+    var prods = d.producciones || [];
+    var html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><strong style="font-size:15px">⚠️ Producciones sin descontar · ' + d.total + '</strong><button onclick="var w=document.getElementById(\'sindesc-panel\'); if(w) w.remove();" style="background:#e2e8f0;border:none;border-radius:6px;padding:3px 9px;cursor:pointer;font-weight:700">✕</button></div>';
+    if(!prods.length){ html += '<div style="color:#16a34a;font-weight:700;padding:12px;text-align:center">✅ No hay producciones pasadas sin descontar.</div>'; wrap.innerHTML = html; if(btn){ btn.disabled = false; btn.innerHTML = '⚠️ Sin descontar'; } return; }
+    html += '<div style="font-size:11px;color:#475569;margin-bottom:10px">Lotes con fecha ya pasada, sin el descuento de MP registrado. <b>Solo informativo</b> · para descontar de verdad se hace desde Fabricación.</div>';
+    var junio = prods.filter(function(p){ return p.pre_inventario; });
+    var revisar = prods.filter(function(p){ return !p.pre_inventario; });
+    var fila = function(p, col){
+      return '<div style="border-left:3px solid ' + col + ';background:#f8fafc;border-radius:6px;padding:6px 9px;margin-bottom:5px;font-size:12px">'
+        + '<div style="font-weight:700;color:#0f172a">' + p.producto + '</div>'
+        + '<div style="color:#64748b">' + p.fecha + ' · ' + p.kg + ' kg' + (p.kg_otro > 0 ? (' (' + p.kg_otro + ' otro cliente)') : '') + ' · ' + p.origen + ' · atrasado ' + p.dias_atraso + 'd</div></div>';
+    };
+    if(revisar.length){
+      html += '<div style="font-weight:800;color:#b45309;margin:8px 0 5px">🟠 REVISAR · ' + revisar.length + ' (julio en adelante · ¿el jefe las descontó?)</div>';
+      revisar.forEach(function(p){ html += fila(p, '#d97706'); });
+    }
+    if(junio.length){
+      html += '<div style="font-weight:800;color:#16a34a;margin:12px 0 5px">🟢 JUNIO · ' + junio.length + ' · NO descontar (pre-inventario · ya está en el conteo físico)</div>';
+      junio.forEach(function(p){ html += fila(p, '#16a34a'); });
+    }
+    wrap.innerHTML = html;
+  }catch(e){ alert('Error: ' + e); }
+  if(btn){ btn.disabled = false; btn.innerHTML = '⚠️ Sin descontar'; }
 }
 async function proyectar2AniosSinMover(){
   // Proyección rodante 2 años que RESPETA lo Fijo/ejecutado y NO lo mueve (Sebastián 1-jul).
