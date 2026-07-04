@@ -4444,7 +4444,8 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     for r in c.execute(
         """SELECT pp.producto,
                   pp.fecha_programada,
-                  COALESCE(pp.kg_real, pp.cantidad_kg, 0) AS kg
+                  COALESCE(pp.kg_real, pp.cantidad_kg, 0) AS kg,
+                  COALESCE(pp.kg_otro_cliente, 0) AS kg_otro
            FROM produccion_programada pp
            JOIN (
                SELECT producto, MAX(fecha_programada) AS f
@@ -4459,7 +4460,10 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     ).fetchall():
         # Una fila puede haber varias por mismo (producto, fecha) · tomamos primera
         if r[0] not in ultima_prod:
-            ultima_prod[r[0]] = {"fecha": r[1], "kg": round(float(r[2] or 0), 2)}
+            # kg_otro_cliente (mig 334) · porción del lote reservada a OTRO cliente (no Animus) ·
+            # Sebastián 3-jul: se resta de la cobertura del ancla (Renova = 70kg, 50 para otro cliente).
+            ultima_prod[r[0]] = {"fecha": r[1], "kg": round(float(r[2] or 0), 2),
+                                 "kg_otro": round(float(r[3] or 0), 2)}
 
     # M13 (15-jun · cálculo perfecto): índice NORMALIZADO del ancla. Una producción
     # cuyo nombre no coincide EXACTO con la fórmula (ej. Fabricación que el operario
@@ -4569,6 +4573,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         # Determinar mejor ancla
         ancla_fecha = None
         ancla_kg = 0.0
+        ancla_kg_otro = 0.0  # Sebastián 3-jul · porción del ancla para OTRO cliente (kg_otro_cliente)
         ancla_es_fijo_futuro = False
         if up and up.get("fecha"):
             try:
@@ -4587,9 +4592,11 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                 else:
                     ancla_fecha = f_up
                     ancla_kg = float(up.get("kg") or 0)
+                    ancla_kg_otro = float(up.get("kg_otro") or 0)
             else:
                 ancla_fecha = f_up
                 ancla_kg = float(up.get("kg") or 0)
+                ancla_kg_otro = float(up.get("kg_otro") or 0)
         elif fpf:
             try:
                 ancla_fecha = _date.fromisoformat(fpf)
@@ -4624,7 +4631,10 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             # producción debe basarse en lo que cubre Animus, no en el total del lote.
             _ancla_b2b = b2b_kg_por_lote_fecha.get(
                 ((p["producto_nombre"] or "").strip().upper(), ancla_fecha.isoformat()), 0.0)
-            ancla_kg_animus = max(0.0, ancla_kg - _ancla_b2b)
+            # Sebastián 3-jul · restar TAMBIÉN la porción "para otro cliente" (kg_otro_cliente) del ancla ·
+            # Renova = 70kg pero 50 eran de otro cliente → Animus real = 20kg (antes usaba 70 → próxima 2027).
+            ancla_kg_animus = max(0.0, ancla_kg - _ancla_b2b - ancla_kg_otro)
+            p["ancla_kg_otro_cliente"] = round(ancla_kg_otro, 2)
             p["ancla_kg_animus"] = round(ancla_kg_animus, 2)
             p["ancla_kg_b2b"] = round(_ancla_b2b, 2)
             # Si todo el ancla fue B2B (Animus=0) → dur_dias=0 → sugiere producir ya.
@@ -4949,23 +4959,35 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             _f_limite = _s_out - _td(days=BUFFER_PROD_DIAS)
             p["fecha_limite_produccion"] = _f_limite.isoformat()
             _objetivo = _next_biz(max(hoy + _td(days=1), _f_limite))
-            if proximo and proximo.get("fecha"):
+            # Sebastián 3-jul · el TIMING solo cuenta el próximo lote FUTURO (fecha >= hoy) como la
+            # "reposición que viene". Un lote PASADO (ya producido / atrasado · ej. el ancla 06-17) NO
+            # es una reposición → si no hay ninguno futuro agendado, la acción cae a "programar" (hay
+            # que agendar la próxima) · así no dice "Cubierto/llega a tiempo" apuntando a algo ya pasado.
+            _prox_fut = None
+            for _a in agendados:
+                if _a.get("estado") == 'esperando_recurso' or not _a.get("fecha"):
+                    continue
                 try:
-                    _f_lote = _date.fromisoformat(str(proximo["fecha"])[:10])
-                    if _f_lote > _f_limite:
-                        # llega después de la fecha límite (20d antes de agotarse) → adelantar
-                        p["lote_tarde"] = True
-                        p["dias_descubierto"] = max(0, (_f_lote - _s_out).days)
-                        p["accion_sugerida"] = "adelantar"
-                        p["accion_fecha_objetivo"] = _objetivo.isoformat()
-                    elif _f_lote < (_f_limite - _td(days=14)):
-                        # programado mucho antes de lo necesario → atrasar
-                        p["accion_sugerida"] = "atrasar"
-                        p["accion_fecha_objetivo"] = _next_biz(_f_limite).isoformat()
-                    else:
-                        p["accion_sugerida"] = "ok"
+                    _fa = _date.fromisoformat(str(_a["fecha"])[:10])
                 except Exception:
-                    pass
+                    continue
+                if _fa >= hoy and (_prox_fut is None or _fa < _prox_fut[1]):
+                    _prox_fut = (_a, _fa)
+            if _prox_fut:
+                _f_lote = _prox_fut[1]
+                p["accion_lote_id"] = _prox_fut[0].get("id")
+                if _f_lote > _f_limite:
+                    # llega después de la fecha límite (20d antes de agotarse) → adelantar
+                    p["lote_tarde"] = True
+                    p["dias_descubierto"] = max(0, (_f_lote - _s_out).days)
+                    p["accion_sugerida"] = "adelantar"
+                    p["accion_fecha_objetivo"] = _objetivo.isoformat()
+                elif _f_lote < (_f_limite - _td(days=14)):
+                    # programado mucho antes de lo necesario → atrasar
+                    p["accion_sugerida"] = "atrasar"
+                    p["accion_fecha_objetivo"] = _next_biz(_f_limite).isoformat()
+                else:
+                    p["accion_sugerida"] = "ok"
             elif p.get("urgencia") in ("CRITICO", "URGENTE", "VIGILAR"):
                 p["accion_sugerida"] = "programar"
                 p["accion_fecha_objetivo"] = _objetivo.isoformat()
