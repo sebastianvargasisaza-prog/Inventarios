@@ -25154,7 +25154,7 @@ async function ckMarcar(itemId, estado){
         // en la columna Alcanza (uds + atrasado/tarde), evita duplicar la fecha.
         html += alertSinSku + chipB2B + chipTonos;
         html += '</div>';
-        html += '<div style="font-family:ui-monospace,monospace;font-size:10px;color:#94a3b8;margin-top:2px">' + codDisp + ' · ' + mlReal + 'ml</div>';
+        html += '<div style="font-family:ui-monospace,monospace;font-size:10px;color:#94a3b8;margin-top:2px">' + codDisp + ' · ' + (Math.round(mlReal * 10) / 10) + 'ml</div>';
         html += '</td>';
         // Vende día / mes / stock / cobertura
         html += '<td style="padding:10px 8px;text-align:center">' + p.velocidad_uds_dia.toFixed(1) + '</td>';
@@ -25457,7 +25457,7 @@ async function ckMarcar(itemId, estado){
     // Presentación + 10ml info · usa ml_unidad real (Sebastián 13-may-2026:
     // "los sueros son de 30, los limpiadores de 150, geles e hidratantes de 50")
     const mlReal = p.ml_unidad || 30;
-    let presentacion = '<strong>' + mlReal + ' ml</strong> (presentación DTC)';
+    let presentacion = '<strong>' + (Math.round(mlReal * 10) / 10) + ' ml</strong> (presentación DTC)';  // Sebastián 4-jul · redondeo display (ml_unidad es promedio ponderado → salía 29.0909…)
     if (p.tiene_10ml) {
       const tipo10 = p.tipo_10ml === 'regalo' ? 'regalo automático' : 'venta';
       presentacion += '<br><span style="background:#fdf4ff;color:#7e22ce;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">10ml · ' + p.uds_10ml_por_lote + ' uds/lote · ' + tipo10 + '</span>';
@@ -25487,7 +25487,7 @@ async function ckMarcar(itemId, estado){
     }
     if (p.ml_inferido) {
       const prodEscMl = (p.producto_nombre || '').replace(/'/g, "&#39;").replace(/"/g, '&quot;');
-      const html_m = '<div style="background:#fef3c7;color:#92400e;border-left:3px solid #f59e0b;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:8px"><span>⚠ ml inferido = ' + (p.ml_unidad || 0) + 'ml · definí el real</span><button onclick="fixVolumenMl(&quot;' + prodEscMl + '&quot;,' + (p.ml_unidad || 30) + ')" style="background:#f59e0b;color:#fff;border:none;padding:3px 10px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap">✏️ Fijar ml</button></div>';
+      const html_m = '<div style="background:#fef3c7;color:#92400e;border-left:3px solid #f59e0b;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:8px"><span>⚠ ml inferido = ' + (Math.round((p.ml_unidad || 0) * 10) / 10) + 'ml · definí el real</span><button onclick="fixVolumenMl(&quot;' + prodEscMl + '&quot;,' + (p.ml_unidad || 30) + ')" style="background:#f59e0b;color:#fff;border:none;padding:3px 10px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap">✏️ Fijar ml</button></div>';
       _avisos.push({prio: 3, label: '⚠ ml inferido', html: html_m});
     }
     let avisos = '';
