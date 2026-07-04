@@ -4644,7 +4644,16 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                 if _dg is None:
                     _dg = p.get("dias_gondola")
                 _dg = int(_dg) if _dg is not None else 0
-                proxima_calc = hoy + _td(days=max(0, _dg - BUFFER_REORDEN_DIAS))  # buffer 20d (M70) · NO cob_alerta (color)
+                # Sebastián 3-jul · ROBUSTO para producciones de junio NO reflejadas en góndola (el jefe
+                # no las registró · el usuario las normalizó en el calendario contra MyBatch): la cobertura
+                # efectiva = MÁXIMO entre (góndola+pipeline) y lo que le queda al ANCLA (dur − días desde
+                # el ancla). Así una producción reciente cuenta aunque su stock aún no esté en Shopify;
+                # y si el ancla ya venció (vieja), su remanente=0 y manda la góndola (no propone en pasado).
+                _dias_desde_ancla = max(0, (hoy - ancla_fecha).days)
+                _ancla_remanente = max(0, dur_dias - _dias_desde_ancla)
+                _cob_efectiva = max(_dg, _ancla_remanente)
+                p["cobertura_efectiva_dias"] = _cob_efectiva
+                proxima_calc = hoy + _td(days=max(0, _cob_efectiva - BUFFER_REORDEN_DIAS))  # buffer 20d (M70)
                 # Clamp: nunca proponer fecha en el pasado o muy próxima
                 proxima = max(proxima_calc, hoy + _td(days=3))
                 p["proxima_sugerida_fecha"] = proxima.isoformat()
@@ -4917,10 +4926,12 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         p["accion_sugerida"] = None
         p["accion_fecha_objetivo"] = None
         p["accion_lote_id"] = (proximo.get("id") if proximo else None)
-        # Sebastián 3-jul · el timing (adelantar/atrasar) cuenta góndola física + pipeline RECIENTE
-        # (lo producido ≤7d en camino · ej. la del 30-jun) · así no dice "adelantar/llega tarde" si
-        # acabás de producir y está por llegar. Fallback a dias_gondola.
-        _dg_p = p.get("dias_con_pipeline")
+        # Sebastián 3-jul · el timing (adelantar/atrasar) usa la MISMA cobertura efectiva que la próxima
+        # (MÁX góndola+pipeline vs remanente del ancla de junio) · así no dice "adelantar/llega tarde"
+        # si ya produjiste (aunque el stock aún no esté en góndola). Fallback pipeline → góndola.
+        _dg_p = p.get("cobertura_efectiva_dias")
+        if _dg_p is None:
+            _dg_p = p.get("dias_con_pipeline")
         if _dg_p is None:
             _dg_p = p.get("dias_gondola")
 
