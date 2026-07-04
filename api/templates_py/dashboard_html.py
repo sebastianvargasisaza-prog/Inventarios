@@ -25457,7 +25457,18 @@ async function ckMarcar(itemId, estado){
     // Presentación + 10ml info · usa ml_unidad real (Sebastián 13-may-2026:
     // "los sueros son de 30, los limpiadores de 150, geles e hidratantes de 50")
     const mlReal = p.ml_unidad || 30;
-    let presentacion = '<strong>' + (Math.round(mlReal * 10) / 10) + ' ml</strong> (presentación DTC)';  // Sebastián 4-jul · redondeo display (ml_unidad es promedio ponderado → salía 29.0909…)
+    // Sebastián 4-jul · mostrar el tamaño DOMINANTE (el que más vende), NO el promedio ponderado
+    // (ml_unidad mezcla 30ml+10ml → salía 29.09 · el promedio es correcto para el CÁLCULO pero engaña
+    // en el display: no existe una botella de 29.1ml, son de 30). El cálculo de kg NO se toca.
+    var _mlShow = Math.round(mlReal * 10) / 10;
+    try {
+      var _tt = (p.tonos || []).filter(function(t){ return t.ml_unidad; });
+      if (_tt.length >= 2) {
+        var _dom = _tt.slice().sort(function(a,b){ return (b.ventas_ventana_uds || 0) - (a.ventas_ventana_uds || 0); })[0];
+        if (_dom && _dom.ml_unidad) _mlShow = Math.round(_dom.ml_unidad * 10) / 10;
+      }
+    } catch(e){}
+    let presentacion = '<strong>' + _mlShow + ' ml</strong> (presentación DTC)';
     if (p.tiene_10ml) {
       const tipo10 = p.tipo_10ml === 'regalo' ? 'regalo automático' : 'venta';
       presentacion += '<br><span style="background:#fdf4ff;color:#7e22ce;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">10ml · ' + p.uds_10ml_por_lote + ' uds/lote · ' + tipo10 + '</span>';
