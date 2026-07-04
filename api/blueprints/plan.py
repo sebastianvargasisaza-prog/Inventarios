@@ -3885,16 +3885,16 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
 
     # 5. Pipeline 7d (lotes recién fabricados que aún no aparecen en Available)
     # Suma kg de produccion_programada REALIZADA >= hoy-7d agrupado por producto.
-    # Sebastián 3-jul · "realizada" = fin_real_at O inventario_descontado_at (ya descontó MP · las del
-    # 30-jun se cargaron así, sin fin_real_at formal). Antes solo fin_real_at → NO contaba la del
-    # 30-jun como pipeline → stock efectivo 0 → urgencia CRÍTICA + próxima "ya" pese a haber producido.
+    # Sebastián 3-jul · "realizada" = fin_real_at O inventario_descontado_at O **cualquier lote PASADO
+    # (fecha ≤ hoy) no cancelado/completado**. El usuario normaliza junio contra MyBatch → todo lo
+    # producido (esté "finalizada" o no) debe contar como stock reciente en camino. Usa la fecha real
+    # (COALESCE fin/descuento/programada). 'completado' se excluye (ya pasó a Available · anti doble-cuenta).
     pipeline_kg_por_prod = {}
     for r in c.execute(
         """SELECT producto, COALESCE(SUM(COALESCE(kg_real, cantidad_kg, 0)), 0)
            FROM produccion_programada
-           WHERE (fin_real_at IS NOT NULL OR COALESCE(inventario_descontado_at,'') != '')
-             AND date(COALESCE(fin_real_at, inventario_descontado_at)) >= ?
-             AND date(COALESCE(fin_real_at, inventario_descontado_at)) <= date('now', '-5 hours')
+           WHERE date(COALESCE(fin_real_at, inventario_descontado_at, fecha_programada)) >= ?
+             AND date(COALESCE(fin_real_at, inventario_descontado_at, fecha_programada)) <= date('now', '-5 hours')
              -- FIX 30-may-2026 · evitar doble conteo con góndola CC: un lote
              -- 'completado' ya pasó a stock_pt (liberación QC) · contarlo además
              -- como pipeline lo sumaba 2 veces e inflaba la cobertura ~7d.
@@ -4430,10 +4430,16 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     # query = 70 queries) · ahora 1 sola query con CTE/JOIN para traer
     # fecha + kg en un solo pass.
     # Sebastián 3-jul · "realizada" = fin_real_at (completado formal) O inventario_descontado_at
-    # (ya descontó MP · las del 30-jun se cargaron así). Antes solo fin_real_at → ignoraba las que
-    # produjeron y descontaron MP pero no se marcaron "completado" → el ancla quedaba en una vieja.
-    _prod_hecha = "(pp.fin_real_at IS NOT NULL OR COALESCE(pp.inventario_descontado_at,'') != '')"
-    _prod_hecha_i = "(fin_real_at IS NOT NULL OR COALESCE(inventario_descontado_at,'') != '')"
+    # (ya descontó MP) O **cualquier lote PASADO (fecha ≤ hoy) no cancelado**. El usuario normaliza el
+    # calendario contra MyBatch → todo lo de junio (esté "finalizada" o no) es producción real y debe
+    # contar como base/punto de partida. Lo FUTURO (fecha > hoy) sigue siendo plan, no producción.
+    # (Si algo pasado NO se produjo → se cancela · queda fuera.)
+    _prod_hecha = ("(pp.fin_real_at IS NOT NULL OR COALESCE(pp.inventario_descontado_at,'') != '' "
+                   "OR (date(pp.fecha_programada) <= date('now','-5 hours') "
+                   "AND LOWER(COALESCE(pp.estado,'')) != 'cancelado'))")
+    _prod_hecha_i = ("(fin_real_at IS NOT NULL OR COALESCE(inventario_descontado_at,'') != '' "
+                     "OR (date(fecha_programada) <= date('now','-5 hours') "
+                     "AND LOWER(COALESCE(estado,'')) != 'cancelado'))")
     ultima_prod = {}
     for r in c.execute(
         """SELECT pp.producto,
