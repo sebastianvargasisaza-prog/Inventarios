@@ -19304,17 +19304,13 @@ async function abrirLoteModal(id, producto, fecha, kg){
     // (kg Animus ÷ velocidad = días que alcanza), NO de meses de calendario. Así cada producto queda
     // con su ritmo natural (mensual / cada 2 / cada 3) según cuánto dure su lote.
     window._LOTE_CADENCIA = {diasDura: diasDura, diasHastaProx: diasHastaProx, velKgDia: velKgDia};
-    // Sebastián 3-jul · la PRÓXIMA usa el valor CANÓNICO de Necesidades (proxima_sugerida_fecha = hoy +
-    // cobertura_efectiva − 20, que SÍ cuenta el stock físico + pipeline), NO la cobertura del lote solo.
-    // Antes recalculaba fecha_lote + (lote/vel − 20) ignorando la góndola → marcaba cadenas CORRECTAS
-    // como "21 días DESPUÉS de la sugerida" (caso RETINALDEHIDO). Fallback al cálculo por lote.
-    if (info.proxima_sugerida_fecha) {
-      proximaSugerida = ('' + info.proxima_sugerida_fecha).slice(0, 10);
-    } else {
-      const fProx = new Date(fecha + 'T12:00:00');
-      fProx.setDate(fProx.getDate() + diasHastaProx);
-      proximaSugerida = fechaLocalStr(fProx);
-    }
+    // Sebastián 3-jul · la PRÓXIMA después de ESTE lote = fecha_lote + cobertura del lote (el INTERVALO
+    // de la cadena · steady-state: producís cada cobertura). El buffer NO se resta acá porque este lote
+    // se produce en el punto-buffer (su timing "a tiempo" ya lo valida contra la góndola). Así coincide
+    // con la cadencia que programa la cadena (un lote cada ~cobertura) → sin warning "N días DESPUÉS".
+    const fProx = new Date(fecha + 'T12:00:00');
+    fProx.setDate(fProx.getDate() + Math.max(Math.round(diasDura), 1));
+    proximaSugerida = fechaLocalStr(fProx);
     const _kgTxt = kgOtros > 0.01
       ? kg + 'kg (' + kgAnimus.toFixed(1) + ' Animus + ' + kgOtros.toFixed(1) + ' otros clientes)'
       : kg + 'kg';
