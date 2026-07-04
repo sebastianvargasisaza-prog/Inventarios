@@ -19190,11 +19190,57 @@ async function verificarPlanCompleto(){
         + '<div style="color:#64748b">' + p.lotes_cadena + ' lotes cadena · ' + (p.primer? ('desde ' + p.primer + ' a ' + p.ultimo) : 'sin lotes futuros') + (p.hueco_max_dias>150? (' · hueco máx ' + p.hueco_max_dias + 'd') : '') + (p.azules_futuros? (' · ' + p.azules_futuros + ' azules') : '') + '</div></div>';
     });
     var _okN = rs.ok || 0;
+    var _faltan = (d.productos||[]).filter(function(p){ return p.estado==='sin_cadena' || p.estado==='incompleta'; }).length;
     if(_okN === (d.total_productos||0)){ html += '<div style="color:#16a34a;font-weight:700;padding:12px;text-align:center">✅ Todas las cadenas están perfectas.</div>'; }
-    else { html += '<div style="color:#64748b;font-size:11px;margin-top:8px">✅ ' + _okN + ' productos OK (no se listan). Revisá los de arriba: los 🔴 necesitan cadena; 🔵 dale "Limpiar auto futuro".</div>'; }
+    else {
+      if(_faltan > 0){ html = '<button onclick="programarCadenasFaltantes()" id="btn-prog-faltan" style="width:100%;background:#7c3aed;color:#fff;border:none;padding:10px;border-radius:8px;font-weight:800;font-size:13px;cursor:pointer;margin-bottom:10px">⚡ Programar las ' + _faltan + ' cadenas que faltan</button>' + html; }
+      html += '<div style="color:#64748b;font-size:11px;margin-top:8px">✅ ' + _okN + ' productos OK (no se listan). Los 🔴/🟠 se arreglan con el botón morado de arriba (o abrí cada uno para ajustar kg). 🔵 → "Limpiar auto futuro".</div>';
+    }
     wrap.innerHTML = html;
   }catch(e){ alert('Error: ' + e); }
   if(btn){ btn.disabled = false; btn.innerHTML = '🔎 Verificar plan (todos)'; }
+}
+// Sebastián 4-jul · programa de una la cadena de 2 años de TODOS los productos sin cadena / incompletos,
+// con la cadencia por DEFAULT (2 meses · kg = demanda de 2 meses · 1ª en la próxima sugerida). El usuario
+// puede ajustar kg individualmente después. Reusa el mismo endpoint que el botón por-producto.
+async function programarCadenasFaltantes(){
+  var pf = document.getElementById('btn-prog-faltan');
+  if(!confirm('Programar la cadena de 2 años de TODOS los productos que están SIN CADENA o incompletos, con la cadencia por defecto (cada 2 meses).\n\nConserva los que ya están OK, los pedidos B2B y lo producido. Después podés ajustar los kg de cada uno.\n\n¿Programar las que faltan?')) return;
+  if(pf){ pf.disabled = true; pf.textContent = '⚡ Programando...'; }
+  try{
+    var rn = await fetch('/api/plan/necesidades'); var dn = await rn.json();
+    var animus = (dn.clientes||[]).find(function(c){ return c.cliente_id==='ANIMUS_DTC'; });
+    var prods = (animus && animus.productos) || [];
+    var byName = {}; prods.forEach(function(p){ byName[_norm(p.producto_nombre)] = p; });
+    var rv = await fetch('/api/plan/verificar-cadenas'); var dv = await rv.json();
+    var faltan = (dv.productos||[]).filter(function(x){ return x.estado==='sin_cadena' || x.estado==='incompleta'; });
+    var t = (await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json()).csrf_token;
+    var ok=0, skip=0, err=0, errList=[];
+    for(var i=0;i<faltan.length;i++){
+      var p = byName[_norm(faltan[i].producto)];
+      if(!p){ skip++; continue; }
+      var vel = p.velocidad_kg_dia || 0;
+      if(!(vel > 0.0001)){ skip++; continue; }   // sin venta → no se programa
+      var interval = Math.max(Math.round(2*30.44), 15);      // cada 2 meses (default)
+      var kg = Math.round(vel * 2 * 30.44 * 10) / 10;        // demanda de 2 meses
+      var otro = p.ancla_kg_otro_cliente || 0;
+      var ancla = p.ultima_produccion_fecha ? (''+p.ultima_produccion_fecha).slice(0,10) : null;
+      var dhp;
+      if(ancla && p.proxima_sugerida_fecha){ dhp = Math.max(Math.round((new Date((''+p.proxima_sugerida_fecha).slice(0,10)+'T12:00:00') - new Date(ancla+'T12:00:00'))/86400000), 1); }
+      else { dhp = Math.max(Math.round((p.cobertura_efectiva_dias!=null?p.cobertura_efectiva_dias:(p.dias_gondola||0)) - 20), 1); }
+      var body = {producto: p.producto_nombre, kg_por_lote: kg, interval_dias: interval, dias_hasta_primera: dhp, kg_otro_cliente: otro, anios: 2};
+      if(ancla){ body.ancla_fecha = ancla; }
+      try{
+        var rr = await fetch('/api/plan/programar-cadencia-producto', {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json','X-CSRF-Token':t}, body: JSON.stringify(body)});
+        if(rr.ok){ ok++; } else { err++; errList.push(p.producto_nombre); }
+      }catch(e){ err++; errList.push(p.producto_nombre); }
+      if(pf){ pf.textContent = '⚡ Programando ' + (i+1) + '/' + faltan.length + '...'; }
+    }
+    alert('✅ Cadenas programadas: ' + ok + '\n· Saltadas (sin venta): ' + skip + '\n· Errores: ' + err + (errList.length? ('\n  ' + errList.slice(0,6).join(', ')) : '') + '\n\nSe recarga el calendario.');
+    if(typeof cargar === 'function') cargar();
+    var w = document.getElementById('verif-plan-panel'); if(w) w.remove();
+  }catch(e){ alert('Error: ' + e); }
+  if(pf){ pf.disabled = false; pf.textContent = '⚡ Programar las que faltan'; }
 }
 async function proyectar2AniosSinMover(){
   // Proyección rodante 2 años que RESPETA lo Fijo/ejecutado y NO lo mueve (Sebastián 1-jul).
