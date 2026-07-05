@@ -25189,19 +25189,27 @@ async function ckMarcar(itemId, estado){
           html += '<tr><td colspan="7" style="padding:0 14px 9px">';
           html += '<details class="necx-exp"><summary class="necx-sum"><span class="necx-chev">▸</span>Desglose por referencia · ' + _tonos.length + ' tonos/tamaños</summary>';
           html += '<div class="necx-expbody">';
-          html += '<table class="necx-ttbl"><thead><tr><th>Tono</th><th>SKU</th><th>ml</th><th>Vende</th><th>% mix</th><th>Uds/lote</th></tr></thead><tbody>';
+          var _minCob = null;
+          _tonos.forEach(function(t){ if(t.dias_cobertura_tono!=null && (_minCob===null || t.dias_cobertura_tono<_minCob)) _minCob=t.dias_cobertura_tono; });
+          html += '<table class="necx-ttbl"><thead><tr><th>Tono</th><th>SKU</th><th>ml</th><th>Vende</th><th>Stock</th><th>% mix</th><th>Uds/lote</th><th>Cobertura</th></tr></thead><tbody>';
           _tonos.forEach(t => {
+            var _cob = (t.dias_cobertura_tono != null) ? t.dias_cobertura_tono : null;
+            var _esCuello = (_cob != null && _minCob != null && _cob === _minCob && _tonos.length > 1);
+            var _cobCell = (_cob == null) ? '<span style="color:#cbd5e1">—</span>'
+              : ('<span style="font-weight:800;color:' + (_esCuello ? '#dc2626' : (_cob < 25 ? '#d97706' : '#16a34a')) + '">' + _cob + 'd' + (_esCuello ? ' ⚠️' : '') + '</span>');
             html += '<tr class="necx-trow">'
               + '<td><span class="necx-swatch" style="background:' + _tonoColor(t.tono_label) + '"></span>' + escapeHtmlNec(t.tono_label) + '</td>'
               + '<td class="necx-mono">' + escapeHtmlNec(t.sku) + '</td>'
               + '<td>' + t.ml_unidad + '</td>'
               + '<td>' + t.ventas_ventana_uds + '</td>'
+              + '<td>' + (t.stock_uds != null ? t.stock_uds : '—') + '</td>'
               + '<td class="necx-mix">' + t.porcentaje_mix + '%</td>'
               + '<td class="necx-uds">' + t.uds_estim_lote + '</td>'
+              + '<td>' + _cobCell + '</td>'
               + '</tr>';
           });
           html += '</tbody></table>';
-          html += '<div class="necx-note">Mix con ventas de la ventana actual · uds asumen lote bulk completo (' + (p.lote_bulk_kg||0) + 'kg)</div>';
+          html += '<div class="necx-note">Mix con ventas de la ventana actual · uds asumen lote bulk completo (' + (p.lote_bulk_kg||0) + 'kg) · Cobertura = stock del tono ÷ su velocidad · <span style="color:#dc2626;font-weight:700">⚠️ = el tono que se agota PRIMERO</span> (manda la próxima producción)</div>';
           html += '</div></details></td></tr>';
         }
       });
