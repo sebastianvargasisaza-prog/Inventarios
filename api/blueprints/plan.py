@@ -17507,19 +17507,19 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
     </div>
     <div>
       <button onclick="abrirNuevaProduccion('')" class="success" id="btn-nueva-prod"
-        style="font-size:14px;padding:10px 18px;background:#0d9488;font-weight:700" title="Programa manualmente CUALQUIER producto: pilotos, productos de otros clientes o lo que no está en Necesidades. También puedes hacer clic en el ➕ de cualquier día del calendario.">➕ Programar producción</button>
+        style="font-size:13.5px;padding:9px 16px;border-radius:8px;background:#7c3aed;font-weight:700;box-shadow:0 1px 3px rgba(124,58,237,.25)" title="Programa manualmente CUALQUIER producto: pilotos, productos de otros clientes o lo que no está en Necesidades. También puedes hacer clic en el ➕ de cualquier día del calendario.">➕ Programar producción</button>
       <button onclick="generarPlanDesdeHoy()" class="success" id="btn-plan-hoy"
-        style="font-size:14px;padding:10px 18px;background:#7c3aed;font-weight:700" title="LIMPIA el calendario y coloca TODAS las producciones desde HOY, cada producto según su cadencia real (cuánto dura un lote según la venta), por 2 años. Luego mové a fechas pasadas las que ya produjiste y la cadena se recalcula sola.">📋 Generar plan (2 años desde hoy)</button>
+        style="font-size:13.5px;padding:9px 16px;border-radius:8px;background:#7c3aed;font-weight:700;box-shadow:0 1px 3px rgba(124,58,237,.25)" title="LIMPIA el calendario y coloca TODAS las producciones desde HOY, cada producto según su cadencia real (cuánto dura un lote según la venta), por 2 años. Luego mové a fechas pasadas las que ya produjiste y la cadena se recalcula sola.">📋 Generar plan (2 años desde hoy)</button>
       <button onclick="proyectar2AniosSinMover()" class="success" id="btn-proy-2a"
-        style="font-size:14px;padding:10px 18px;background:#0891b2;font-weight:700" title="Extiende el plan 2 años hacia adelante RESPETANDO lo que ya tenés: NO mueve ni borra tus lotes Fijos ni lo ya producido; solo regenera la proyección automática alrededor de ellos (a partir de lo que hay hoy en el calendario).">🔮 Proyectar 2 años (sin mover lo actual)</button>
+        style="font-size:13.5px;padding:9px 16px;border-radius:8px;background:#475569;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.12)" title="Extiende el plan 2 años hacia adelante RESPETANDO lo que ya tenés: NO mueve ni borra tus lotes Fijos ni lo ya producido; solo regenera la proyección automática alrededor de ellos (a partir de lo que hay hoy en el calendario).">🔮 Proyectar 2 años (sin mover lo actual)</button>
       <button onclick="reprogramarDesdeMes()" class="success" id="btn-reprog-mes"
-        style="font-size:14px;padding:10px 18px;background:#b45309;font-weight:700" title="FIJA el mes actual tal cual está y RECALCULA todo del mes siguiente en adelante por 2 años con la cadencia óptima. Cancela el plan viejo de ago+ pero PRESERVA los pedidos B2B de clientes y lo ya producido. Úsalo cuando sientas el plan 'descuadrado' hacia adelante.">📅 Fijar mes + recalcular 2 años</button>
+        style="font-size:13.5px;padding:9px 16px;border-radius:8px;background:#475569;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.12)" title="FIJA el mes actual tal cual está y RECALCULA todo del mes siguiente en adelante por 2 años con la cadencia óptima. Cancela el plan viejo de ago+ pero PRESERVA los pedidos B2B de clientes y lo ya producido. Úsalo cuando sientas el plan 'descuadrado' hacia adelante.">📅 Fijar mes + recalcular 2 años</button>
       <button onclick="limpiarFuturoAuto()" class="success" id="btn-limpiar-auto"
-        style="font-size:14px;padding:10px 18px;background:#dc2626;font-weight:700" title="Deja el FUTURO limpio: cancela TODAS las producciones AZULES (auto/canónicas) de mañana en adelante para reconstruir solo con las cadenas nuevas. CONSERVA lo verde (Fijo · tus cadenas), los pedidos B2B y lo ya producido. Hasta hoy = base; de mañana en adelante todo nuevo.">🧹 Limpiar auto futuro (azules)</button>
+        style="font-size:13.5px;padding:9px 16px;border-radius:8px;background:#dc2626;font-weight:700;box-shadow:0 1px 3px rgba(220,38,38,.25)" title="Deja el FUTURO limpio: cancela TODAS las producciones AZULES (auto/canónicas) de mañana en adelante para reconstruir solo con las cadenas nuevas. CONSERVA lo verde (Fijo · tus cadenas), los pedidos B2B y lo ya producido. Hasta hoy = base; de mañana en adelante todo nuevo.">🧹 Limpiar auto futuro (azules)</button>
       <button onclick="verificarPlanCompleto()" class="success" id="btn-verificar-plan"
-        style="font-size:14px;padding:10px 18px;background:#0d9488;font-weight:700" title="Revisa TODAS las cadenas de una: marca qué productos están OK y cuáles necesitan atención (sin cadena, incompleta, con hueco, o con azules encima). Así revisás solo lo que tiene algo, no uno por uno.">🔎 Verificar plan (todos)</button>
+        style="font-size:13.5px;padding:9px 16px;border-radius:8px;background:#475569;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.12)" title="Revisa TODAS las cadenas de una: marca qué productos están OK y cuáles necesitan atención (sin cadena, incompleta, con hueco, o con azules encima). Así revisás solo lo que tiene algo, no uno por uno.">🔎 Verificar plan (todos)</button>
       <button onclick="verSinDescontar()" class="success" id="btn-sin-descontar"
-        style="font-size:14px;padding:10px 18px;background:#b45309;font-weight:700" title="Producciones que YA pasaron pero no tienen el descuento de MP registrado (el jefe a veces se olvida). Solo informativo · las de junio (pre-inventario) van marcadas para NO descontar.">⚠️ Sin descontar</button>
+        style="font-size:13.5px;padding:9px 16px;border-radius:8px;background:#d97706;font-weight:700;box-shadow:0 1px 3px rgba(217,119,6,.25)" title="Producciones que YA pasaron pero no tienen el descuento de MP registrado (el jefe a veces se olvida). Solo informativo · las de junio (pre-inventario) van marcadas para NO descontar.">⚠️ Sin descontar</button>
       <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" style="display:none" disabled>✅ Confirmar y programar TODO</button>
     </div>
   </div>
@@ -18344,12 +18344,12 @@ async function cargarAlertasIA(){
     // Desplegable (Sebastián 15-jun): colapsado por defecto · header con conteos ·
     // se expande al clic. Evita ocupar toda la pantalla con 20+ alertas.
     const _abierto = (window._alertasIAabierto === true);
-    let html = '<div onclick="toggleAlertasIA()" style="background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:12px;padding:12px 14px;color:#fff;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;cursor:pointer" title="Click para desplegar/colapsar">';
-    html += '<div><span id="alertas-ia-chev" style="margin-right:6px">' + (_abierto ? '▾' : '▸') + '</span><span style="font-size:14px;font-weight:800">🤖 Alertas IA del Plan</span> <span style="font-size:11px;opacity:.85;margin-left:8px">' +
+    let html = '<div onclick="toggleAlertasIA()" style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #f59e0b;border-radius:12px;padding:12px 16px;color:#0f172a;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.06)" title="Click para desplegar/colapsar">';
+    html += '<div><span id="alertas-ia-chev" style="margin-right:6px;color:#94a3b8">' + (_abierto ? '▾' : '▸') + '</span><span style="font-size:14px;font-weight:800">🚦 Alertas del Plan</span> <span style="font-size:11px;color:#64748b;margin-left:8px">' +
       (totals.critica || 0) + ' crítica(s) · ' +
       (totals.advertencia || 0) + ' advertencia(s) · ' +
       (totals.info || 0) + ' info</span></div>';
-    html += '<button onclick="event.stopPropagation();cargarAlertasIA()" style="background:rgba(255,255,255,.12);border:1px solid #fff;color:#fff;padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer">↻ Refrescar</button>';
+    html += '<button onclick="event.stopPropagation();cargarAlertasIA()" style="background:#f8fafc;border:1px solid #cbd5e1;color:#475569;padding:5px 12px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">↻ Refrescar</button>';
     html += '</div>';
     html += '<div id="alertas-ia-body" style="display:' + (_abierto ? 'block' : 'none') + '">';
     al.forEach((a, idx) => {
