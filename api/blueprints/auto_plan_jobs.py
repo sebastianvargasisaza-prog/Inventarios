@@ -1049,6 +1049,7 @@ def job_sync_stock_shopify_diario(app):
 
         avail_map = {}
         avail_esp = {}   # Paso 2 (Sebastián 5-jul) · Espagiria "por entrar"
+        _esp_onhand = {}
         _por_entrar = {}
         if _fetch_shopify_available is not None:
             inv_item_ids = [v.get('inv_item_id') for v in all_variants if v.get('inv_item_id')]
@@ -1073,10 +1074,24 @@ def job_sync_stock_shopify_diario(app):
             except Exception:
                 _loc_esp = None
             if _loc_esp and str(_loc_esp).strip() and str(_loc_esp).strip() != str(_loc_id or '').strip():
+                # ON HAND (GraphQL · 'En existencias') = lo físico producido en Espagiria · leftovers de
+                # entregas parciales tienen on_hand pero available='-' → REST los salta. Fallback a available.
                 try:
-                    avail_esp = _fetch_shopify_available(token, shop, inv_item_ids, location_id=_loc_esp) or {}
+                    from .programacion import _shopify_onhand_location_graphql as _oh_gql
                 except Exception:
-                    avail_esp = {}
+                    try:
+                        from blueprints.programacion import _shopify_onhand_location_graphql as _oh_gql
+                    except Exception:
+                        _oh_gql = None
+                try:
+                    _esp_onhand = (_oh_gql(token, shop, _loc_esp) or {}) if _oh_gql else {}
+                except Exception:
+                    _esp_onhand = {}
+                if not _esp_onhand:
+                    try:
+                        avail_esp = _fetch_shopify_available(token, shop, inv_item_ids, location_id=_loc_esp) or {}
+                    except Exception:
+                        avail_esp = {}
         used_available = bool(avail_map)
         # FIX 30-may-2026 · audit Plan · si NO se obtuvo "Available" real, el sync
         # cae a "On hand" (incluye Committed = ya vendido) → infla el stock de
@@ -1124,7 +1139,10 @@ def job_sync_stock_shopify_diario(app):
             )
             synced += 1
 
-        # Paso 2 · refrescar 'por entrar' de Espagiria (full refresh · idempotente)
+        # Paso 2 · si GraphQL trajo el ON HAND de Espagiria (incluye leftovers con available='-'), usar eso
+        if _esp_onhand:
+            _por_entrar = {_sk: int(_v) for _sk, _v in _esp_onhand.items() if int(_v) > 0}
+        # refrescar 'por entrar' de Espagiria (full refresh · idempotente)
         try:
             conn.execute("DELETE FROM stock_por_entrar")
             for _sk, _q in _por_entrar.items():

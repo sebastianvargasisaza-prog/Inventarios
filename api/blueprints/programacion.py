@@ -2466,6 +2466,114 @@ def _shopify_available_por_location(token, shop, inv_item_ids, max_items=500):
     return out
 
 
+def _shopify_niveles_de_location(token, shop, location_id, timeout=25, max_pag=40):
+    """TODOS los inventory_levels de UNA location (paginado por Link) · {inv_item_id(str): available(int)}.
+    A diferencia de _fetch_shopify_available (que filtra por una lista de inv_item_ids de productos ACTIVOS),
+    esto trae el inventario COMPLETO de la bodega — incluye leftovers de entregas parciales en productos
+    archivados/descontinuados que no salen en products.json activos. Sebastián 5-jul (caso Espagiria)."""
+    import time as _time
+    out = {}
+    if not location_id:
+        return out
+    url = ('https://' + shop + '/admin/api/2024-01/inventory_levels.json?location_ids='
+           + str(location_id) + '&limit=250')
+    _pag = 0
+    while url and _pag < max_pag:
+        _pag += 1
+        data = None
+        link = ''
+        for intento in range(3):
+            req = urllib.request.Request(url, headers={'X-Shopify-Access-Token': token})
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as r:
+                    data = json.loads(r.read())
+                    link = r.headers.get('Link', '') or ''
+                break
+            except Exception:
+                if intento < 2:
+                    _time.sleep(2 ** (intento + 1))
+                    continue
+                return out
+        if data is None:
+            return out
+        for lvl in data.get('inventory_levels', []) or []:
+            iid = lvl.get('inventory_item_id')
+            av = lvl.get('available')
+            if iid is None or av is None:
+                continue
+            try:
+                out[str(iid)] = int(av)
+            except Exception:
+                pass
+        nxt = None
+        for part in link.split(','):
+            if 'rel="next"' in part:
+                s = part.find('<') + 1
+                e = part.find('>')
+                if s > 0 and e > s:
+                    nxt = part[s:e].strip()
+        url = nxt if nxt else None
+    return out
+
+
+def _shopify_onhand_location_graphql(token, shop, location_id, timeout=25, max_pag=60):
+    """{sku_upper: on_hand(int)} de UNA location vía GraphQL · Sebastián 5-jul (caso Espagiria · entregas
+    parciales). inventory_levels.json (REST) SOLO da 'available'; los leftovers producidos en Espagiria tienen
+    ON HAND ('En existencias') pero available='-' (no trackeado para venta) → el REST los salta. Para el bucket
+    'por entrar' (físico producido en el lab que se transferirá) necesitamos ON HAND. All-or-nothing: si una
+    página falla o GraphQL da errors → devuelve {} (el caller cae al 'available' REST · sin regresión)."""
+    import time as _time
+    out = {}
+    if not location_id:
+        return out
+    gid = 'gid://shopify/Location/' + str(location_id)
+    url = 'https://' + shop + '/admin/api/2024-01/graphql.json'
+    q = ('query($cursor:String){productVariants(first:100,after:$cursor){pageInfo{hasNextPage endCursor}'
+         'nodes{sku inventoryItem{inventoryLevel(locationId:"' + gid + '"){'
+         'quantities(names:["on_hand"]){name quantity}}}}}}')
+    cursor = None
+    _pag = 0
+    while _pag < max_pag:
+        _pag += 1
+        body = json.dumps({'query': q, 'variables': {'cursor': cursor}}).encode('utf-8')
+        data = None
+        for intento in range(3):
+            req = urllib.request.Request(url, data=body, headers={
+                'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'})
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as r:
+                    data = json.loads(r.read())
+                break
+            except Exception:
+                if intento < 2:
+                    _time.sleep(2 ** (intento + 1))
+                    continue
+                return {}   # all-or-nothing → caller usa fallback REST
+        if not data or data.get('errors'):
+            return {}
+        pv = (((data.get('data') or {}).get('productVariants')) or {})
+        for node in (pv.get('nodes') or []):
+            sku = str(node.get('sku') or '').strip().upper()
+            if not sku:
+                continue
+            lvl = ((node.get('inventoryItem') or {}).get('inventoryLevel')) or {}
+            for _q in (lvl.get('quantities') or []):
+                if _q.get('name') == 'on_hand':
+                    try:
+                        v = int(_q.get('quantity') or 0)
+                        if v > 0:
+                            out[sku] = out.get(sku, 0) + v
+                    except Exception:
+                        pass
+        page = pv.get('pageInfo') or {}
+        if page.get('hasNextPage') and page.get('endCursor'):
+            cursor = page['endCursor']
+            _time.sleep(0.3)   # respetar el costo GraphQL (restore 50pts/s)
+        else:
+            break
+    return out
+
+
 def _shopify_locations(token, shop, timeout=12):
     """Lista de locations de Shopify: [{'id','name','active','legacy'}]. [] si falla."""
     try:
@@ -2608,8 +2716,8 @@ def prog_diag_inventarios_shopify():
     try:
         _iids = []
         _iid_to_sku = {}
-        url = 'https://' + shop + '/admin/api/2024-01/products.json?limit=250'
-        while url:  # TODAS las páginas (diag on-demand · no perder ningún SKU de Espagiria)
+        url = 'https://' + shop + '/admin/api/2024-01/products.json?limit=250&status=any'
+        while url:  # TODAS las páginas + status=any (incluye archivados · leftovers de entregas parciales)
             req = urllib.request.Request(url, headers={'X-Shopify-Access-Token': token})
             with urllib.request.urlopen(req, timeout=25) as r:
                 data = json.loads(r.read())
@@ -2631,20 +2739,28 @@ def prog_diag_inventarios_shopify():
         raw = _shopify_available_por_location(token, shop, _iids, max_items=(len(_iids) or 1))
         por_location = [{'location_id': k, 'total_available': v['total_available'], 'n_items': v['n_items']}
                         for k, v in sorted(raw.items(), key=lambda kv: -kv[1]['total_available'])]
-        # Per-SKU de la location de ESPAGIRIA (config) · LIVE de Shopify → revela qué SKUs y cuánto hay allí
+        # Per-SKU de la location de ESPAGIRIA (config) · ON HAND (GraphQL · 'En existencias') que es lo físico
+        # producido · con fallback a 'available' REST si GraphQL no responde.
         if cfg_esp:
             _sku_map = {}
             for _row in conn.execute("SELECT UPPER(TRIM(sku)), producto_nombre FROM sku_producto_map "
                                      "WHERE COALESCE(activo,1)=1").fetchall():
                 _sku_map[_row[0]] = _row[1]
-            _esp_av = _fetch_shopify_available(token, shop, _iids, location_id=cfg_esp) or {}
-            _lst = []
-            for _iid, _av in _esp_av.items():
-                if int(_av or 0) > 0:
-                    _sku = _iid_to_sku.get(str(_iid), '?')
-                    _lst.append({'sku': _sku, 'uds': int(_av), 'producto': _sku_map.get(_sku, '(sin mapeo)')})
+            _esp_oh = _shopify_onhand_location_graphql(token, shop, cfg_esp)  # {sku: on_hand}
+            _fuente = 'on_hand (GraphQL · En existencias)'
+            if not _esp_oh:
+                _esp_av = _fetch_shopify_available(token, shop, _iids, location_id=cfg_esp) or {}
+                _esp_oh = {}
+                for _iid, _av in _esp_av.items():
+                    if int(_av or 0) > 0:
+                        _sk = _iid_to_sku.get(str(_iid), '?')
+                        _esp_oh[_sk] = _esp_oh.get(_sk, 0) + int(_av)
+                _fuente = 'available (REST · fallback · GraphQL no devolvió on_hand)'
+            _lst = [{'sku': _sk, 'uds': int(_oh), 'producto': _sku_map.get(_sk, '(sin mapeo)')}
+                    for _sk, _oh in _esp_oh.items() if int(_oh) > 0]
             _lst.sort(key=lambda x: -x['uds'])
-            espagiria_por_sku = {'location_id': cfg_esp, 'total_uds': sum(x['uds'] for x in _lst),
+            espagiria_por_sku = {'location_id': cfg_esp, 'fuente': _fuente,
+                                 'total_uds': sum(x['uds'] for x in _lst),
                                  'n_skus': len(_lst), 'skus': _lst}
     except Exception as e:
         por_location = {'error': str(e)}
@@ -3082,11 +3198,19 @@ def prog_sync_stock_shopify():
         # Ánimus). Se lee su location APARTE → stock_por_entrar → suma a la PRÓXIMA, no a la góndola/urgencia.
         _loc_esp = _cfg('shopify_location_espagiria_id')
         avail_esp = {}
+        _esp_onhand = {}
         if _loc_esp and str(_loc_esp).strip() and str(_loc_esp).strip() != str(_loc_id or '').strip():
+            # ON HAND (GraphQL · 'En existencias') = lo físico producido en Espagiria · los leftovers de
+            # entregas parciales tienen on_hand pero available='-' (REST los saltaba). Fallback a available.
             try:
-                avail_esp = _fetch_shopify_available(token, shop, inv_item_ids, location_id=_loc_esp) or {}
+                _esp_onhand = _shopify_onhand_location_graphql(token, shop, _loc_esp) or {}
             except Exception:
-                avail_esp = {}
+                _esp_onhand = {}
+            if not _esp_onhand:
+                try:
+                    avail_esp = _fetch_shopify_available(token, shop, inv_item_ids, location_id=_loc_esp) or {}
+                except Exception:
+                    avail_esp = {}
         _por_entrar = {}
 
         conn.execute("UPDATE stock_pt SET estado='Ajustado' WHERE lote_produccion LIKE 'SHOPIFY-%'")
@@ -3134,7 +3258,11 @@ def prog_sync_stock_shopify():
             )
             synced += 1
 
-        # Paso 2 · refrescar el 'por entrar' de Espagiria (full refresh · idempotente)
+        # Paso 2 · si GraphQL trajo el ON HAND de Espagiria (incluye leftovers con available='-'), usar eso
+        # (por SKU · más completo que el available REST del loop).
+        if _esp_onhand:
+            _por_entrar = {_sk: int(_v) for _sk, _v in _esp_onhand.items() if int(_v) > 0}
+        # refrescar el 'por entrar' de Espagiria (full refresh · idempotente)
         try:
             conn.execute("DELETE FROM stock_por_entrar")
             for _sk, _q in _por_entrar.items():
