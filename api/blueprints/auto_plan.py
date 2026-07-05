@@ -13181,6 +13181,16 @@ def _demanda_stock_gramos(c, producto):
         _resolved = _rss(getattr(c, 'connection', c), empresa='ANIMUS')
     except Exception:
         _resolved = {}
+    # Paso 2 (Sebastián 5-jul) · stock "POR ENTRAR" de Espagiria (producido en el lab · aún no en la góndola
+    # de Ánimus). Mismo bucket que el display (_calcular_animus_dtc): cuenta como bulk EN CAMINO → el motor de
+    # proyección/agotamiento NO re-programa producción de lo que el lab YA hizo. MAX con el pipeline de 7d abajo.
+    _por_entrar = {}
+    try:
+        for _r in c.execute("SELECT UPPER(TRIM(sku)), COALESCE(uds,0) FROM stock_por_entrar").fetchall():
+            if _r[0]:
+                _por_entrar[_r[0]] = int(_r[1] or 0)
+    except Exception:
+        _por_entrar = {}
     # FIX 17-jun · UNIFICACIÓN de velocidad (M1/M5): la demanda usa la MISMA velocidad
     # blended 30/60/90 por PRODUCTO que muestra Necesidades (velocidad_blended_uds_dia),
     # no la regresión 30d por SKU. Antes pantalla y calendario usaban algoritmos
@@ -13189,6 +13199,7 @@ def _demanda_stock_gramos(c, producto):
     # demanda_g/día = vel_producto(uds/d) × volumen ponderado por ventas (multi-volumen).
     detalle = []
     stock_g = 0.0
+    por_entrar_g = 0.0    # Paso 2 · Espagiria (por entrar) en gramos
     v30_tot = v60_tot = v90_tot = 0.0
     _wvol = 0.0           # Σ ventas60_sku × volumen_sku (para el volumen ponderado)
     _vol_simple = []
@@ -13204,6 +13215,7 @@ def _demanda_stock_gramos(c, producto):
         units = (_info or {}).get('uds', 0) or 0
         vol, vfuente = _volumen_sku(c, sku, producto)
         stock_g += float(units) * vol
+        por_entrar_g += float(_por_entrar.get(str(sku or '').strip().upper(), 0)) * vol
         _rows90 = _ventas_diarias_por_sku(c, sku, dias=90)
         for _f9, _q9 in _rows90:
             if _q9 and _q9 > 0:
@@ -13282,10 +13294,14 @@ def _demanda_stock_gramos(c, producto):
         "AND LOWER(COALESCE(pp.estado,'')) <> 'cancelado'",
         (producto, (hoy - _td2(days=7)).isoformat(), hoy.isoformat())).fetchone()[0]
     pipe_g = max(0.0, float(pipe_kg or 0)) * 1000.0  # clamp ≥0 (kg_otro+B2B > bulk = dato malo · plan.py:3915)
-    stock_total_g = stock_g + pipe_g
+    # Paso 2 · el "por entrar" de Espagiria es el MISMO bulk que viene (MAX con el pipeline de 7d · nunca los
+    # dos sumados = no doble-contar · igual que el display plan.py:_pipe_efectivo). El motor lo cuenta como
+    # stock en camino → no re-programa producción de lo que Espagiria ya hizo.
+    _en_camino_g = max(pipe_g, por_entrar_g)
+    stock_total_g = stock_g + _en_camino_g
     cobertura = (stock_total_g / demand_g) if demand_g > 0.001 else None
     return {'demand_g': demand_g, 'stock_shopify_g': stock_g, 'pipe_g': pipe_g,
-            'stock_g': stock_total_g, 'cobertura_dias': cobertura, 'skus': detalle}
+            'por_entrar_g': por_entrar_g, 'stock_g': stock_total_g, 'cobertura_dias': cobertura, 'skus': detalle}
 
 
 def _calcular_demanda_suministro(c, producto, dias_horizonte=60):
