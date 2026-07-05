@@ -2545,7 +2545,6 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           <input type="number" id="nec-cob-alerta" value="25" min="14" max="60" style="width:42px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:3px;font-size:11px">d
         </label>
         <button onclick="abrirClientesB2B()" title="Crear/gestionar clientes B2B (Luz, Valentina, Daniela) · cada cliente agrega sus pedidos con '+ Producto' · se cargan solos al plan" style="background:#0d9488;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">👥 Clientes B2B</button>
-        <button onclick="abrirHerramientasLimpieza()" style="background:#475569;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Limpia Sugeridas viejas del calendario + arregla productos con lote_size_kg absurdo">⚙ Herramientas</button>
         <button onclick="cargarNecesidades()" style="background:#6d28d9;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">↻ Recargar</button>
       </div>
     </div>
@@ -24461,7 +24460,7 @@ async function ckMarcar(itemId, estado){
       const diasCob = (d.velocidad_kg_dia > 0) ? Math.round(kgTotal / d.velocidad_kg_dia) : 0;
       let avisoLote = '';
       if (d.lote_calculado) {
-        avisoLote = '<div style="background:#fef3c7;color:#92400e;border-left:3px solid #f59e0b;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600;margin-top:8px">⚠ lote_size_kg en BD = ' + d.lote_bulk_kg_bd + ' kg (absurdo) · usando ' + d.lote_bulk_kg + ' kg calculado (~' + (d.dur_lote_dias || 60) + 'd cobertura) · andá a ⚙ Herramientas para arreglar BD</div>';
+        avisoLote = '<div style="background:#fef3c7;color:#92400e;border-left:3px solid #f59e0b;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600;margin-top:8px">⚠ lote_size_kg en BD = ' + d.lote_bulk_kg_bd + ' kg (absurdo) · usando ' + d.lote_bulk_kg + ' kg calculado (~' + (d.dur_lote_dias || 60) + 'd cobertura) · corregí el lote_size_kg en el maestro de fórmulas</div>';
       }
       if (d.ml_inferido) {
         avisoLote += '<div style="background:#fef3c7;color:#92400e;border-left:3px solid #f59e0b;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600;margin-top:6px">⚠ ml inferido por nombre · agregá envase en producto_presentaciones para precisión</div>';
@@ -25493,7 +25492,7 @@ async function ckMarcar(itemId, estado){
       const tieneCalc = p.lote_calculado;
       const html_l = '<div style="background:#fee2e2;color:#991b1b;border-left:3px solid #dc2626;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600">⚠ lote_size_kg en BD = ' + valBd + ' kg ' +
         (tieneCalc ? '(usando ' + p.lote_bulk_kg + ' kg calculado · ~60d cobertura)' : '') +
-        ' · andá a ⚙ Herramientas para arreglarlo</div>';
+        ' · corregí el lote_size_kg en el maestro de fórmulas</div>';
       _avisos.push({prio: 2, label: '⚠ lote_size mal', html: html_l});
     }
     if (p.ml_inferido) {
