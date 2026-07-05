@@ -9755,6 +9755,14 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "UPDATE formula_headers SET activo=0 WHERE UPPER(TRIM(producto_nombre)) LIKE '%B3%BHA%'",
         "UPDATE sku_planeacion_config SET activo=0 WHERE UPPER(TRIM(producto_nombre)) LIKE '%B3%BHA%'",
     ]),
+    (337, "PERF Necesidades (Sebastián 4-jul): cache COMPARTIDA en BD de los mapas de ventas Shopify. El "
+          "parseo de 90 días de órdenes (hotspot de /necesidades) se cacheaba solo en memoria POR-WORKER → "
+          "en PG multi-worker cada worker frío lo re-parseaba → carga lenta intermitente. Esta tabla lo "
+          "comparte entre workers: se computa 1 vez y todos LEEN. TTL corto en código. payload = JSON de "
+          "los 4 mapas (v60/v30/v90/primera_venta).", [
+        "CREATE TABLE IF NOT EXISTS plan_vmaps_cache ("
+        " cache_key TEXT PRIMARY KEY, computed_at TEXT, payload TEXT)",
+    ]),
 ]
 
 

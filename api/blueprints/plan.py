@@ -3105,6 +3105,8 @@ def plan_necesidades():
 
     conn = get_db()
     c = conn.cursor()
+    import time as _tNec
+    _t_nec0 = _tNec.time()  # PERF diag · para el header Server-Timing
 
     # EN VIVO · Sebastián 1-jun-2026: "que lea Shopify en vivo, no el snapshot".
     # Antes de calcular, refresca el stock de Shopify si el snapshot está viejo
@@ -3357,7 +3359,7 @@ def plan_necesidades():
     except Exception:
         pass
 
-    return jsonify({
+    _resp_nec = jsonify({
         "clientes": clientes,
         "resumen": resumen,
         "sync_ventas": {
@@ -3375,6 +3377,14 @@ def plan_necesidades():
             "ventana_ventas": ventana,
         },
     })
+    # PERF diag (Sebastián 4-jul) · tiempo de cómputo backend visible en el Network tab (Server-Timing) ·
+    # para medir la mejora del cache compartido de ventas · overhead nulo.
+    try:
+        _resp_nec.headers['Server-Timing'] = 'app;dur=%.0f;desc="necesidades-backend-ms"' % (
+            (_tNec.time() - _t_nec0) * 1000.0)
+    except Exception:
+        pass
+    return _resp_nec
 
 
 @bp.route("/api/plan/alertas-ia", methods=["GET"])
@@ -3641,6 +3651,24 @@ def _ventas_maps_shopify(c, vd_base, vd_iso, cut30, cut90, b2b_sql_extra, b2b_pa
         hit = _VMAPS_CACHE.get(key)
         if hit and (_tVm.time() - hit[0]) < 300:
             return (dict(hit[1]), dict(hit[2]), dict(hit[3]), dict(hit[4]))
+    # PERF (Sebastián 4-jul · mig 337) · cache COMPARTIDA en BD. El parseo de 90d de órdenes es el hotspot y
+    # el cache de módulo es POR-WORKER → en PG multi-worker cada worker frío re-parsea (carga lenta
+    # intermitente). Esta capa lo comparte: si OTRO worker ya lo computó hace <20min, se LEE (rápido · 1
+    # query) y se rellena el cache de módulo. Best-effort: si falla, cae al parseo en vivo (nunca rompe).
+    import hashlib as _hVm
+    _dbkey = _hVm.md5(repr(key).encode('utf-8')).hexdigest()
+    if not _no_cache:
+        try:
+            _row = c.execute("SELECT computed_at, payload FROM plan_vmaps_cache WHERE cache_key=?",
+                             (_dbkey,)).fetchone()
+            if _row and _row[0] and (_tVm.time() - float(_row[0])) < 1200:
+                _pl = _jVm.loads(_row[1] or '{}')
+                _c60, _c30, _c90, _cpv = (_pl.get('v60', {}), _pl.get('v30', {}),
+                                          _pl.get('v90', {}), _pl.get('pv', {}))
+                _VMAPS_CACHE[key] = (_tVm.time(), _c60, _c30, _c90, _cpv)
+                return (dict(_c60), dict(_c30), dict(_c90), dict(_cpv))
+        except Exception:
+            pass
     base_sql = ("SELECT sku_items, creado_en FROM animus_shopify_orders "
                 "WHERE creado_en >= ? AND sku_items IS NOT NULL AND sku_items != '' "
                 "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') "
@@ -3677,6 +3705,14 @@ def _ventas_maps_shopify(c, vd_base, vd_iso, cut30, cut90, b2b_sql_extra, b2b_pa
                     pv[sku] = c10
     if not _no_cache:
         _VMAPS_CACHE[key] = (_tVm.time(), v60, v30, v90, pv)
+        try:  # persistir en la cache COMPARTIDA (best-effort · para los demás workers)
+            _pl = _jVm.dumps({'v60': v60, 'v30': v30, 'v90': v90, 'pv': pv})
+            c.execute("DELETE FROM plan_vmaps_cache WHERE cache_key=?", (_dbkey,))
+            c.execute("INSERT INTO plan_vmaps_cache (cache_key, computed_at, payload) VALUES (?,?,?)",
+                      (_dbkey, str(_tVm.time()), _pl))
+            c.connection.commit()
+        except Exception:
+            pass
     return (dict(v60), dict(v30), dict(v90), dict(pv))
 
 
