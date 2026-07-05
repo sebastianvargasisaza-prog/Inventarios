@@ -4480,7 +4480,9 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         """SELECT pp.producto,
                   pp.fecha_programada,
                   COALESCE(pp.kg_real, pp.cantidad_kg, 0) AS kg,
-                  COALESCE(pp.kg_otro_cliente, 0) AS kg_otro
+                  COALESCE(pp.kg_otro_cliente, 0) AS kg_otro,
+                  CASE WHEN (pp.inicio_real_at IS NOT NULL OR pp.fin_real_at IS NOT NULL
+                             OR pp.inventario_descontado_at IS NOT NULL) THEN 1 ELSE 0 END AS ejecutado
            FROM produccion_programada pp
            JOIN (
                SELECT producto, MAX(fecha_programada) AS f
@@ -4497,8 +4499,11 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         if r[0] not in ultima_prod:
             # kg_otro_cliente (mig 334) · porción del lote reservada a OTRO cliente (no Animus) ·
             # Sebastián 3-jul: se resta de la cobertura del ancla (Renova = 70kg, 50 para otro cliente).
+            # ejecutado = tiene inicio_real/fin_real/inventario_descontado → su stock YA está en góndola
+            # (NOVA PHA). Si es false = producción hecha pero SIN registrar → NO está en góndola (CENTELLA).
             ultima_prod[r[0]] = {"fecha": r[1], "kg": round(float(r[2] or 0), 2),
-                                 "kg_otro": round(float(r[3] or 0), 2)}
+                                 "kg_otro": round(float(r[3] or 0), 2),
+                                 "ejecutado": bool(len(r) > 4 and r[4])}
 
     # M13 (15-jun · cálculo perfecto): índice NORMALIZADO del ancla. Una producción
     # cuyo nombre no coincide EXACTO con la fórmula (ej. Fabricación que el operario
@@ -4619,6 +4624,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         ancla_kg = 0.0
         ancla_kg_otro = 0.0  # Sebastián 3-jul · porción del ancla para OTRO cliente (kg_otro_cliente)
         ancla_es_fijo_futuro = False
+        ancla_ejecutada = False  # Sebastián 4-jul · el ancla-producción ya se registró (stock en góndola)?
         if up and up.get("fecha"):
             try:
                 f_up = _date.fromisoformat(up["fecha"][:10])
@@ -4637,10 +4643,12 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                     ancla_fecha = f_up
                     ancla_kg = float(up.get("kg") or 0)
                     ancla_kg_otro = float(up.get("kg_otro") or 0)
+                    ancla_ejecutada = bool(up.get("ejecutado"))
             else:
                 ancla_fecha = f_up
                 ancla_kg = float(up.get("kg") or 0)
                 ancla_kg_otro = float(up.get("kg_otro") or 0)
+                ancla_ejecutada = bool(up.get("ejecutado"))
         elif fpf:
             try:
                 ancla_fecha = _date.fromisoformat(fpf)
@@ -4720,8 +4728,17 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                 # Si la góndola tiene stock REAL (LIMP 548 uds = 22.7d URGENTE), ELLA manda: ya cuenta las
                 # ventas reales · una producción vieja que se vendió más rápido que lineal NO debe inflar la
                 # cobertura con un remanente teórico (antes MAX(22.7, 59)=59 → próxima Ago pese a URGENTE).
+                # ⚠ Sebastián 4-jul (CENTELLA/ANIMUSLASH): además rescata cuando el ancla es una producción
+                # HECHA pero NO registrada (ejecutado=false → su stock aún NO está en góndola). Ahí la góndola
+                # NO refleja lo de junio (23d) mientras al lote de junio le quedan ~80d → sin esto proponía
+                # producir YA el 07-jul, 2 semanas después de haber producido. Un ancla EJECUTADA sí está en
+                # góndola (NOVA PHA 291 uds) → NO rescata, manda la góndola (evita el doble-conteo opuesto).
+                # Guard `_ancla_remanente > _dg`: si la góndola ya es mayor, ELLA manda igual (no infla).
                 _cob_efectiva = _dg
-                if _dg < 7 and _ancla_remanente > _dg:
+                _ancla_pasada_sin_registrar = (
+                    not ancla_ejecutada and ancla_fecha is not None and ancla_fecha <= hoy
+                    and not ancla_es_fijo_futuro)
+                if _ancla_remanente > _dg and (_dg < 7 or _ancla_pasada_sin_registrar):
                     _cob_efectiva = _ancla_remanente
                 p["cobertura_efectiva_dias"] = _cob_efectiva
                 # "Alcanza para X días" (amarillo) = cobertura EFECTIVA actual desde HOY (góndola vs
