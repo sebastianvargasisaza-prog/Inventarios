@@ -3981,6 +3981,31 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     except Exception:
         pass
 
+    # ⚠ Sebastián 4-jul (P1-D · audit): índice NORMALIZADO de los 4 dicts del pipeline (igual que
+    # ultima_prod_norm/M13) · produccion_programada.producto puede diferir de la fórmula por acento/'+'/
+    # espacios (operario de Fabricación · TRIACTIVE 'NAD' vs 'NAD+'). Sin fallback, pipeline_kg caía a 0 en
+    # SILENCIO → dias_con_pipeline subcontaba → próxima adelantada → producir/comprar de más (y se perdía el
+    # anti-doble-conteo NOVA PHA justo para nombres inconsistentes). Consumo = exacto → normalizado.
+    from blueprints.programacion import _norm_prod_fuerte as _npf_pipe
+
+    def _idx_norm_pipe(_d):
+        _o = {}
+        for _k, _v in _d.items():
+            _nk = _npf_pipe(_k)
+            if _nk and _nk not in _o:
+                _o[_nk] = _v
+        return _o
+    pipeline_kg_por_prod_norm = _idx_norm_pipe(pipeline_kg_por_prod)
+    b2b_reciente_kg_por_prod_norm = _idx_norm_pipe(b2b_reciente_kg_por_prod)
+    pipeline_fijo_kg_por_prod_norm = _idx_norm_pipe(pipeline_fijo_kg_por_prod)
+    b2b_fijo_kg_por_prod_norm = _idx_norm_pipe(b2b_fijo_kg_por_prod)
+
+    def _pipe_get(_raw, _norm, _ek, _nk):
+        _v = _raw.get(_ek)
+        if _v is None:
+            _v = _norm.get(_nk, 0.0)
+        return _v or 0.0
+
     # FIX 24-may PM · auto-sugerencia Nivel 1 (Sebastián) · detectar
     # huérfanos vendiendo y sugerirlos al producto cuyo nombre contiene
     # substrings del SKU. Pre-calcular el set de huérfanos para evitar
@@ -4186,14 +4211,15 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         # FIX P0 audit 24-may-2026 · sumar Fijo futuro (60d) al stock total
         # para evitar doble-cuenta cuando el cron auto-sugerir corra de nuevo.
         stock_kg_gondola = (stock_uds_total * ml_promedio) / 1000.0
-        pipeline_kg = pipeline_kg_por_prod.get(prod_nombre, 0.0)
+        # P1-D (audit 4-jul): exacto → normalizado (M13) · no perder el pipeline por nombre variante.
+        pipeline_kg = _pipe_get(pipeline_kg_por_prod, pipeline_kg_por_prod_norm, prod_nombre, _prod_key_n)
         # Sebastián 3-jul · restar B2B reciente (kg_otro ya restado en el SUM del query) → pipeline = solo Animus DTC.
-        pipeline_kg = max(0.0, pipeline_kg - b2b_reciente_kg_por_prod.get(prod_nombre, 0.0))
-        pipeline_fijo_kg = pipeline_fijo_kg_por_prod.get(prod_nombre, 0.0)
+        pipeline_kg = max(0.0, pipeline_kg - _pipe_get(b2b_reciente_kg_por_prod, b2b_reciente_kg_por_prod_norm, prod_nombre, _prod_key_n))
+        pipeline_fijo_kg = _pipe_get(pipeline_fijo_kg_por_prod, pipeline_fijo_kg_por_prod_norm, prod_nombre, _prod_key_n)
         # FIX 30-may-2026 · restar la porción B2B de los lotes Fijo: lo comprometido
         # a otros clientes (Fernando Meza, etc.) NO cubre demanda Animus DTC, así que
         # no debe inflar la cobertura. Antes "durará 191d" usaba el lote completo.
-        b2b_fijo_kg = b2b_fijo_kg_por_prod.get(prod_nombre, 0.0)
+        b2b_fijo_kg = _pipe_get(b2b_fijo_kg_por_prod, b2b_fijo_kg_por_prod_norm, prod_nombre, _prod_key_n)
         pipeline_fijo_kg = max(0.0, pipeline_fijo_kg - b2b_fijo_kg)
         stock_kg_total = stock_kg_gondola + pipeline_kg + pipeline_fijo_kg
 
@@ -4469,12 +4495,17 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     # calendario contra MyBatch → todo lo de junio (esté "finalizada" o no) es producción real y debe
     # contar como base/punto de partida. Lo FUTURO (fecha > hoy) sigue siendo plan, no producción.
     # (Si algo pasado NO se produjo → se cancela · queda fuera.)
+    # ⚠ Sebastián 4-jul (P1-A · audit): el 3er camino excluye 'esperando_recurso' (lote PAUSADO por falta de
+    # MP = NO se produjo · el resto del código ya lo excluye · programacion.py:1278, plan.py:5412). Sin esto,
+    # un lote pausado pasado se volvía "última producción" ancla y con el rescate inflaba la cobertura de un
+    # bulk inexistente → próxima tarde → sub-compra/quiebre. 'pendiente'/'programado' pasados SÍ cuentan (la
+    # normalización de junio contra MyBatch los deja así · CENTELLA 06-23 pendiente = producción real).
     _prod_hecha = ("(pp.fin_real_at IS NOT NULL OR COALESCE(pp.inventario_descontado_at,'') != '' "
                    "OR (date(pp.fecha_programada) <= date('now','-5 hours') "
-                   "AND LOWER(COALESCE(pp.estado,'')) != 'cancelado'))")
+                   "AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','esperando_recurso')))")
     _prod_hecha_i = ("(fin_real_at IS NOT NULL OR COALESCE(inventario_descontado_at,'') != '' "
                      "OR (date(fecha_programada) <= date('now','-5 hours') "
-                     "AND LOWER(COALESCE(estado,'')) != 'cancelado'))")
+                     "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','esperando_recurso')))")
     ultima_prod = {}
     for r in c.execute(
         """SELECT pp.producto,
@@ -4735,10 +4766,17 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                 # góndola (NOVA PHA 291 uds) → NO rescata, manda la góndola (evita el doble-conteo opuesto).
                 # Guard `_ancla_remanente > _dg`: si la góndola ya es mayor, ELLA manda igual (no infla).
                 _cob_efectiva = _dg
-                _ancla_pasada_sin_registrar = (
-                    not ancla_ejecutada and ancla_fecha is not None and ancla_fecha <= hoy
-                    and not ancla_es_fijo_futuro)
-                if _ancla_remanente > _dg and (_dg < 7 or _ancla_pasada_sin_registrar):
+                # P1-A (audit 4-jul) + review Fable 5: rescatar el remanente del ancla (stock producido que
+                # aún NO se refleja en góndola) SOLO si el ancla es RECIENTE (≤45d · cubre toda la
+                # normalización de junio: CENTELLA 06-23, ANIMUSLASH 06-11). Un ancla VIEJA (>45d) ya está en
+                # góndola o se agotó → su remanente teórico = zombie (programado y nunca producido) → inflaría
+                # la cobertura → sub-compra/quiebre. Aplica a AMBAS ramas (unificado): góndola casi vacía
+                # (<7d · H4 · producción real no reflejada en Shopify) y ancla hecha-sin-registrar
+                # (ejecutado=false · CENTELLA). Un ancla EJECUTADA con góndola sana NO rescata (ya está en
+                # góndola · NOVA PHA · manda la góndola · evita el doble-conteo opuesto). Dirección segura.
+                _ancla_reciente = (ancla_fecha is not None and ancla_fecha <= hoy
+                                   and not ancla_es_fijo_futuro and (hoy - ancla_fecha).days <= 45)
+                if _ancla_remanente > _dg and _ancla_reciente and (_dg < 7 or not ancla_ejecutada):
                     _cob_efectiva = _ancla_remanente
                 p["cobertura_efectiva_dias"] = _cob_efectiva
                 # "Alcanza para X días" (amarillo) = cobertura EFECTIVA actual desde HOY (góndola vs
@@ -12482,17 +12520,34 @@ def _proyectar_horizonte_2y(conn, dias=730, usuario='auto-proyeccion', dry_run=F
         stock0_g = dsg['stock_g']  # Shopify (Σ unidades×volumen) + pipeline (bulk ≤7d)
 
         # Llegadas ya comprometidas (Fijo/futuro NO proyección · disponibles +7d) → en gramos
+        # ⚠ Sebastián 4-jul (P1-B · audit): solo la porción ANIMUS de cada lote cubre la demanda Animus →
+        # restar kg_otro_cliente + B2B (igual que la fuente de verdad plan.py:3901/4683). Sin esto, un lote
+        # con parte comprometida a otro cliente (RENOVA 80% otro) "cubría" a Animus el bulk completo →
+        # cobertura simulada inflada → menos lotes proyectados → SUB-producción/SUB-compra. El lote
+        # PROYECTADO nuevo (abajo) SÍ queda Animus-completo: una proyección futura no tiene reserva a otro
+        # cliente comprometida (RENOVA · el otro cliente entra como B2B adicional cuando pide, no en la proy).
         arrivals = {}
         for frow in c.execute(
-            "SELECT substr(fecha_programada,1,10), COALESCE(cantidad_kg,0), COALESCE(lotes,1) "
-            "FROM produccion_programada WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) "
-            "AND COALESCE(estado,'') NOT IN ('cancelado') AND COALESCE(origen,'')<>'eos_proyeccion' "
-            "AND fecha_programada >= ?", (producto, hoy.isoformat())).fetchall():
+            "SELECT substr(pp.fecha_programada,1,10), COALESCE(pp.cantidad_kg,0), COALESCE(pp.lotes,1), "
+            "       COALESCE(pp.kg_otro_cliente,0), "
+            "       COALESCE((SELECT SUM(pbl.kg_aporte) FROM pedidos_b2b_lote pbl "
+            "                 WHERE pbl.lote_produccion_id=pp.id),0) "
+            "FROM produccion_programada pp WHERE UPPER(TRIM(pp.producto))=UPPER(TRIM(?)) "
+            "AND COALESCE(pp.estado,'') NOT IN ('cancelado') AND COALESCE(pp.origen,'')<>'eos_proyeccion' "
+            "AND pp.fecha_programada >= ?", (producto, hoy.isoformat())).fetchall():
             try:
                 fd = _date.fromisoformat((frow[0] or '')[:10])
             except Exception:
                 continue
-            g = float(frow[1] or lote_size_kg) * 1000.0 * max(int(frow[2] or 1), 1)
+            # review Fable 5: cantidad_kg es el TOTAL de la fila (M49) → NO multiplicar por lotes cuando
+            # está seteada; sin cantidad → lote_size × lotes. Restar B2B (frow[4]) en AMBAS ramas.
+            _cant = float(frow[1] or 0)
+            _b2b_lote = float(frow[4] or 0)
+            if _cant > 0:
+                _animus_kg = max(0.0, _cant - float(frow[3] or 0) - _b2b_lote)
+            else:
+                _animus_kg = max(0.0, float(lote_size_kg) * max(int(frow[2] or 1), 1) - _b2b_lote)
+            g = _animus_kg * 1000.0
             ad = (fd - hoy).days + PIPELINE_LAG
             if ad >= 0:
                 arrivals[ad] = arrivals.get(ad, 0) + g
@@ -12926,15 +12981,19 @@ def plan_programar_cadencia_desde_lote(lote_id):
             pass
     # 2) PROGRAMAR la cadena por DÍAS DE COBERTURA: el 1er lote a ancla + first_offset (buffer antes
     #    de agotar), luego uno cada `interval_dias`. Cada producto queda con SU ritmo real.
+    # ⚠ Sebastián 4-jul (P1-A · audit): CLAMP a hoy. Si el ancla está muy atrás y first_offset es chico, el
+    # 1er lote caería en fecha PASADA → se volvería "producción hecha-sin-registrar" ancla-fantasma que
+    # infla la cobertura (loop con el rescate) → próxima tarde → sub-compra. Nunca sembrar lotes en el pasado.
     horizonte = anios * 365
     creados = []
     _usadas = []
     _saltados = 0
+    _hoy_co = _dC.fromisoformat(c.execute("SELECT date('now','-5 hours')").fetchone()[0])
     for k in range(0, 82):  # tope de guardia
         _off = first_offset_dias + k * interval_dias
         if _off > horizonte:
             break
-        f_k = _dia_habil(f_ancla + _tdC(days=_off))
+        f_k = _dia_habil(max(f_ancla + _tdC(days=_off), _hoy_co))
         # dedup · MISMO día contra preservados (B2B/ejecutado · no borrar la cadena) · _dw contra la propia cadena
         if any(abs((f_k - _fp).days) < 2 for _fp in _preservados) or any(abs((f_k - _fu).days) < _dw for _fu in _usadas):
             _saltados += 1

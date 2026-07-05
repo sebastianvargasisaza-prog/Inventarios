@@ -23,7 +23,7 @@ def _login_as(app, user):
     return c
 
 
-def _seed_prod(db, prod, sku, ejecutado):
+def _seed_prod(db, prod, sku, ejecutado, dias_ancla=11, estado_ancla="programado", kg_ancla=27):
     db.execute("DELETE FROM formula_headers WHERE producto_nombre=?", (prod,))
     db.execute("DELETE FROM sku_producto_map WHERE producto_nombre=?", (prod,))
     db.execute("DELETE FROM produccion_programada WHERE producto=?", (prod,))
@@ -45,14 +45,14 @@ def _seed_prod(db, prod, sku, ejecutado):
                VALUES (?,?,?,?,?,?,?,?,?)""",
             (f"{sku}-{i}", f"Cli {i}", 100000.0, "COP", "", "paid",
              json.dumps([{"sku": sku, "qty": 80}]), 80, fecha))
-    # ancla = producción de hace 11 días, 27kg (~90d de cobertura) · past + no cancelada
+    # ancla = producción pasada de 27kg (~90d de cobertura) · past + no cancelada
     _exec_cols = ", inventario_descontado_at" if ejecutado else ""
     _exec_vals = ", datetime('now','-1 days')" if ejecutado else ""
     db.execute(
         f"""INSERT INTO produccion_programada
             (producto, fecha_programada, cantidad_kg, estado, origen, lotes{_exec_cols})
-            VALUES (?, date('now','-11 days','-5 hours'), 27, 'programado', 'eos_plan', 1{_exec_vals})""",
-        (prod,))
+            VALUES (?, date('now',?,'-5 hours'), ?, ?, 'eos_plan', 1{_exec_vals})""",
+        (prod, f"-{int(dias_ancla)} days", float(kg_ancla), estado_ancla))
 
 
 def _cobertura(app, c, prod):
@@ -84,3 +84,33 @@ def test_ancla_sin_registrar_rescata_cobertura(app, db_clean):
         "ancla ejecutada ya está en góndola → NO debe inflar con el remanente", cob_ejec)
     # y la diferencia es clara (el rescate solo aplica al no-registrado)
     assert cob_sinreg > cob_ejec + 20, (cob_sinreg, cob_ejec)
+
+
+def test_ancla_zombie_vieja_no_rescata(app, db_clean):
+    """P1-A · un lote PASADO no-ejecutado pero VIEJO (>45d · sospechoso de zombie nunca producido) NO debe
+    rescatar la cobertura con su remanente teórico (aunque sea enorme). Manda la góndola → produce antes."""
+    c = _login_as(app, "sebastian")
+    db = sqlite3.connect(os.environ["DB_PATH"])
+    # ancla de hace 70 días, 60kg (remanente teórico enorme ~110d) pero NUNCA ejecutada = zombie
+    _seed_prod(db, "PROD-ZOMBIE", "ZOMBIE30", ejecutado=False, dias_ancla=70, kg_ancla=60)
+    db.commit()
+    db.close()
+    cob, _ = _cobertura(app, c, "PROD-ZOMBIE")
+    # NO debe inflarse al remanente (~110d): manda la góndola (~18d)
+    assert cob is not None and cob <= 30, (
+        "un zombie viejo (>45d) NO debe inflar la cobertura con su remanente → riesgo de sub-compra", cob)
+
+
+def test_ancla_esperando_recurso_no_es_ancla(app, db_clean):
+    """P1-A · un lote pasado en 'esperando_recurso' (pausado por falta de MP = NO se produjo) NO debe
+    contar como 'última producción' ancla ni rescatar la cobertura."""
+    c = _login_as(app, "sebastian")
+    db = sqlite3.connect(os.environ["DB_PATH"])
+    _seed_prod(db, "PROD-ESPRECURSO", "ESPREC30", ejecutado=False, dias_ancla=11,
+               estado_ancla="esperando_recurso", kg_ancla=60)
+    db.commit()
+    db.close()
+    cob, _ = _cobertura(app, c, "PROD-ESPRECURSO")
+    # pausado por MP no es producción → no rescata → manda la góndola (~18d)
+    assert cob is not None and cob <= 30, (
+        "un lote 'esperando_recurso' pasado NO debe anclar/rescatar la cobertura", cob)

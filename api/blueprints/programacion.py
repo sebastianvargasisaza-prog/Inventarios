@@ -1166,6 +1166,30 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
     cal = _fetch_calendar_events_cached(days_ahead=days_ahead)
     events = cal.get('events', [])
     formulas = _get_formulas(conn)
+    # ⚠ Sebastián 4-jul (P1-C · audit): _get_formulas NO filtra activo (se usa en EBR/pesaje · M52 · NO tocar
+    # ahí). Acá, en el MOTOR DE COMPRA (alimenta /generar-oc /regenerar-oc /mps-deficit), excluir los
+    # productos DESCONTINUADOS (activo=0) para paridad con la pantalla (abastecimiento_consumo_horizontes
+    # filtra fh.activo=1) → NO comprar MP de un producto que ya no se vende aunque le quede un lote futuro
+    # huérfano en el calendario (migs 335/336 apagan la fórmula pero NO cancelan produccion_programada · M29).
+    # Filtra la copia LOCAL → _upper_to_prod/_norm_to_prod (1272/1275) tampoco lo resuelven → 0 demanda MP.
+    # ⚠ P0 (review Fable 5 · 4-jul): NO borrar por UPPER a secas. Existe el case-dup 'Blush Balm' activo=0
+    # (mig 230) conviviendo con 'BLUSH BALM' activo=1 (la fórmula EN PRODUCCIÓN · 21 MPs) → UPPER las colapsa
+    # y borraría la ACTIVA → BLUSH BALM compraría 0 MP (sub-compra). Solo borrar un UPPER INACTIVO que NO
+    # tenga TAMBIÉN un header ACTIVO con el mismo UPPER (la activa siempre gana).
+    try:
+        _inactivos_up, _activos_up = set(), set()
+        for _r in conn.execute("SELECT producto_nombre, COALESCE(activo,1) FROM formula_headers").fetchall():
+            if not _r[0]:
+                continue
+            _ku = str(_r[0]).strip().upper()
+            (_activos_up if _r[1] else _inactivos_up).add(_ku)
+        _borrar_up = _inactivos_up - _activos_up
+        if _borrar_up:
+            for _k in list(formulas.keys()):
+                if str(_k).strip().upper() in _borrar_up:
+                    del formulas[_k]
+    except Exception:
+        pass
     mp_stock = _get_mp_stock(conn)
     if not formulas:
         return {}

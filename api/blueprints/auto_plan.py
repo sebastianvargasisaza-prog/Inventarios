@@ -13258,24 +13258,30 @@ def _demanda_stock_gramos(c, producto):
         (sum(_vol_simple) / len(_vol_simple)) if _vol_simple else 0.0)
     demand_g = vel_prod * vol_pond
     hoy = (_dt2.utcnow() - _td2(hours=5)).date()
+    # ⚠ Sebastián 4-jul (P1-B · audit): restar la porción NO-Animus (kg_otro_cliente + B2B) del pipeline,
+    # igual que la fuente de verdad (plan.py:3901/3915). Sin esto, el MOTOR de proyección creía que un lote
+    # reciente cubría a Animus TODO el bulk (incluida la parte de otro cliente/B2B) → cobertura inflada →
+    # menos lotes proyectados → SUB-compra de MP, justo para productos con reserva a otro cliente (RENOVA).
     pipe_kg = c.execute(
-        "SELECT COALESCE(SUM(COALESCE(kg_real,cantidad_kg,0)),0) FROM produccion_programada "
-        "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) AND fin_real_at IS NOT NULL "
-        "AND substr(fin_real_at,1,10) >= ? "
-        # FIX 1-jul · tope superior = hoy (igual que el plan plan.py L3649): fin_real_at es una
-        # fecha PASADA (el lote ya terminó) · un valor futuro es basura de datos y no debe contar
-        # como 'pipeline en camino'.
-        "AND substr(fin_real_at,1,10) <= ? "
-        # FIX 1-jul (2ª pasada · Sebastián): el PIPELINE del motor de proyección SÍ cuenta los
-        # lotes 'completado' recientes (≤7d). Un lote producido SIEMPRE queda estado='completado';
-        # y solo entra a stock_pt/stock_g al LIBERARSE por Calidad (paso posterior). Un lote hecho
-        # ayer aún NO está liberado → NO está en stock_g → debe contar como pipeline (bulk en camino,
-        # aún no en Shopify). Excluir 'completado' lo ponía en 0 → sub-contaba stock reciente →
-        # SOBRE-producía. La ventana ≤7d ya aproxima 'aún no reflejado en Shopify'. Solo se excluye
-        # 'cancelado'. (El display plan.py usa físico-vs-pipeline separado · M6 · es otra vista.)
-        "AND LOWER(COALESCE(estado,'')) <> 'cancelado'",
+        "SELECT COALESCE(SUM(COALESCE(pp.kg_real,pp.cantidad_kg,0) - COALESCE(pp.kg_otro_cliente,0) "
+        "  - COALESCE((SELECT SUM(pbl.kg_aporte) FROM pedidos_b2b_lote pbl "
+        "              WHERE pbl.lote_produccion_id=pp.id),0)),0) FROM produccion_programada pp "
+        "WHERE UPPER(TRIM(pp.producto))=UPPER(TRIM(?)) AND pp.fin_real_at IS NOT NULL "
+        # ⚠ P1 (review Fable 5 · 4-jul): la ventana va por la fecha FÍSICA (fecha_programada), NO por
+        # fin_real_at. Igual que el fix NOVA PHA del display (plan.py): al normalizar junio, un lote
+        # FÍSICO del 22-jun se REGISTRA esta semana → fin_real_at queda reciente → un lote de hace 12d
+        # (YA en góndola/stock_g) se sumaba OTRA vez como pipe_g → doble-conteo → cobertura del MOTOR
+        # inflada → menos lotes proyectados → SUB-compra de MP. Con fecha_programada: físico >7d = ya en
+        # góndola (no re-suma); ≤7d = recién hecho (cuenta). Se mantiene fin_real_at NOT NULL (terminado).
+        "AND substr(pp.fecha_programada,1,10) >= ? "
+        "AND substr(pp.fecha_programada,1,10) <= ? "
+        # El PIPELINE del motor cuenta los lotes TERMINADOS (fin_real_at) recientes por fecha física ≤7d:
+        # un lote producido queda 'completado' y solo entra a stock_pt/stock_g al LIBERARse por Calidad
+        # (paso posterior) → un lote hecho hace pocos días aún NO está en Shopify → debe contar como bulk
+        # en camino. Solo se excluye 'cancelado'. (El display plan.py usa físico-vs-pipeline separado · M6.)
+        "AND LOWER(COALESCE(pp.estado,'')) <> 'cancelado'",
         (producto, (hoy - _td2(days=7)).isoformat(), hoy.isoformat())).fetchone()[0]
-    pipe_g = float(pipe_kg or 0) * 1000.0
+    pipe_g = max(0.0, float(pipe_kg or 0)) * 1000.0  # clamp ≥0 (kg_otro+B2B > bulk = dato malo · plan.py:3915)
     stock_total_g = stock_g + pipe_g
     cobertura = (stock_total_g / demand_g) if demand_g > 0.001 else None
     return {'demand_g': demand_g, 'stock_shopify_g': stock_g, 'pipe_g': pipe_g,
