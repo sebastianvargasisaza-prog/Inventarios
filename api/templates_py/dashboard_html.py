@@ -30,6 +30,9 @@ if('serviceWorker' in navigator){
 </script>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
+/* Sombra base de color para botones de acción inline (Pesar/Verificar/Agregar/Aprobar/Crear legajo) · aspecto premium sin editar cada string inline */
+button[style*="background:#16a34a"]{box-shadow:0 1px 2px rgba(22,163,74,.25)}
+button[style*="background:#dc2626"]{box-shadow:0 1px 2px rgba(220,38,38,.25)}
 body { font-family:var(--cx-font); background:var(--cx-bg); color:var(--cx-text); min-height:100vh; padding:20px; }
 .container { max-width:min(1800px, 97vw); margin:0 auto; background:var(--cx-card); border-radius:var(--cx-r-lg); box-shadow:var(--cx-sh-card-hover); border:1px solid var(--cx-hairline); overflow:hidden; }
 
@@ -125,7 +128,8 @@ body { font-family:var(--cx-font); background:var(--cx-bg); color:var(--cx-text)
 .card h3 { font-size:0.78em; color:var(--cx-text-mute); margin-bottom:6px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; }
 .card p { font-size:1.85em; font-weight:800; color:var(--cx-text); letter-spacing:-0.5px; font-variant-numeric:tabular-nums; line-height:1.05; }
 button { background:var(--cx-primary); color:white; border:none; padding:10px 18px; border-radius:var(--cx-r-md); cursor:pointer; font-size:0.9em; font-weight:600; transition:background var(--cx-tr-base), box-shadow var(--cx-tr-base), transform var(--cx-tr-base); }
-button:hover { background:var(--cx-primary-dark); box-shadow:var(--cx-sh-violet-sm); }
+button:hover { background:var(--cx-primary-dark); box-shadow:0 4px 12px rgba(0,0,0,.16); transform:translateY(-1px); }
+button[style*="background:#"]:hover, a[style*="background:#"][onclick]:hover { box-shadow:0 4px 12px rgba(0,0,0,.16); transform:translateY(-1px); filter:brightness(1.06); }
 button:active { transform:translateY(1px); }
 input,select,textarea { width:100%; padding:9px 12px; border:1px solid var(--cx-border); border-radius:var(--cx-r-md); font-size:0.95em; margin-top:3px; background:var(--cx-card); color:var(--cx-text); transition:border-color var(--cx-tr-base), box-shadow var(--cx-tr-base); }
 input:focus,select:focus,textarea:focus { outline:none; border-color:var(--cx-primary); box-shadow:0 0 0 3px rgba(109,40,217,0.14); }
@@ -1276,10 +1280,10 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     </div>
     <div class="form-group"><label>Observaciones</label><textarea id="prod-obs" rows="2" placeholder="Opcional"></textarea></div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <button onclick="iniciarFabVivo()" class="cx-btn cx-btn-success" style="font-size:15px;padding:11px 26px;font-weight:800;">&#9654; Iniciar fabricación</button>
-      <button onclick="simularProduccion()" class="cx-btn cx-btn-ghost">&#128269; Verificar Stock</button>
+      <button onclick="iniciarFabVivo()" title="Arranca la fabricación del lote EN VIVO: reserva la sala y descuenta las MP por FEFO (acción real, no un borrador). Verificá el stock antes con el botón Verificar Stock." class="cx-btn cx-btn-success" style="font-size:15px;padding:11px 26px;font-weight:800;">&#9654; Iniciar fabricación</button>
+      <button onclick="simularProduccion()" title="Simula el lote: revisa si las MP alcanzan (FEFO) y estima el costo. No descuenta nada, solo verifica antes de fabricar." class="cx-btn cx-btn-ghost">&#128269; Verificar Stock</button>
       <button onclick="iniciarRegistroProd()" style="display:none">&#9989; Registrar Producción</button>
-      <button onclick="abrirRotulos()" class="cx-btn cx-btn-ghost">&#128209; Rótulos de MP</button>
+      <button onclick="abrirRotulos()" title="Genera los rótulos de las MP a dispensar para el producto y los kg cargados · se abren en pestaña nueva, listos para imprimir." class="cx-btn cx-btn-ghost">&#128209; Rótulos de MP</button>
       <button onclick="window.open('/planta/rotulos-limpieza','_blank')" class="cx-btn cx-btn-ghost" title="Abre los rótulos de limpieza F02 listos para imprimir en etiqueta térmica (igual que los de MP · uno por equipo)">&#127991;&#65039; Rótulos de limpieza</button>
       <!-- 4-jun-2026 · removidos "Diagnosticar fórmula" y "Reparar TODAS las
            fórmulas huérfanas" (herramientas de estabilización · ya las cubre el
@@ -1624,7 +1628,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <div id="modo-inv-ctrl" style="display:none;align-items:center;gap:10px;flex-wrap:wrap;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px 18px;margin-bottom:14px;font-size:0.9em;color:#7c2d12;">
       <strong>&#128230; Modo inventario:</strong>
       <span id="modo-inv-estado" style="font-weight:700">&mdash;</span>
-      <button id="btn-modo-inv" onclick="toggleModoInventario()" style="background:#0d9488;color:#fff;border:none;padding:7px 14px;border-radius:8px;font-weight:700;cursor:pointer;">&mdash;</button>
+      <button id="btn-modo-inv" onclick="toggleModoInventario()" title="Prende/apaga el modo inventario · con él ACTIVO las recepciones nuevas entran directo a stock sin cuarentena de Calidad. Acordate de apagarlo al terminar el conteo físico." style="background:#0d9488;color:#fff;border:none;padding:7px 14px;border-radius:8px;font-weight:700;cursor:pointer;">&mdash;</button>
       <span style="font-size:0.85em;color:#9a3412">Activo &rarr; las recepciones nuevas entran directo a inventario (sin pasar por cuarentena de Calidad). Apagalo al terminar el inventario.</span>
     </div>
 
@@ -1846,7 +1850,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.88em;color:#555;">Responsable</label>
         <input type="text" id="cnt-responsable" placeholder="Nombre operario" style="padding:10px;border:1px solid #dde;border-radius:8px;">
       </div>
-      <button onclick="iniciarConteo()" style="padding:10px 22px;background:#6d28d9;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;">Iniciar Conteo</button>
+      <button onclick="iniciarConteo()" title="Arranca el conteo cíclico de la estantería seleccionada · vas a ingresar el peso físico de cada MP para cuadrar el stock." style="padding:10px 22px;background:#6d28d9;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;">Iniciar Conteo</button>
     </div>
 
     <!-- Panel de conteo activo -->
@@ -1857,8 +1861,8 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           <span style="margin-left:12px;font-size:0.85em;color:#888;">Estanteria: <strong id="cnt-est-label"></strong></span>
         </div>
         <div style="display:flex;gap:10px;">
-          <button onclick="guardarConteo()" style="padding:8px 18px;background:#27ae60;color:#fff;border:none;border-radius:7px;font-weight:600;cursor:pointer;">Guardar</button>
-          <button onclick="cerrarConteo()" style="padding:8px 18px;background:#e67e22;color:#fff;border:none;border-radius:7px;font-weight:600;cursor:pointer;">Cerrar Conteo</button>
+          <button onclick="guardarConteo()" title="Guarda los pesos ingresados sin cerrar el conteo · podés seguir contando más MPs." style="padding:8px 18px;background:#27ae60;color:#fff;border:none;border-radius:7px;font-weight:600;cursor:pointer;">Guardar</button>
+          <button onclick="cerrarConteo()" title="Cierra el conteo y AJUSTA el inventario a lo que contaste físicamente (el conteo cíclico corrige el stock del sistema)." style="padding:8px 18px;background:#e67e22;color:#fff;border:none;border-radius:7px;font-weight:600;cursor:pointer;">Cerrar Conteo</button>
         </div>
       </div>
 
@@ -16172,7 +16176,7 @@ async function ckMarcar(itemId, estado){
         var mpCol = it.alcanza_mp ? '#15803d' : '#dc2626';
         var mpTxt = it.alcanza_mp ? '✓ MP listas' : '✗ Faltan '+(it.mp_deficit||[]).length+' MP';
         var img = it.imagen_url
-          ? '<img src="'+_escAttr(it.imagen_url)+'" style="width:100%;height:120px;object-fit:cover;border-radius:8px 8px 0 0" alt="">'
+          ? '<img loading="lazy" decoding="async" src="'+_escAttr(it.imagen_url)+'" style="width:100%;height:120px;object-fit:cover;border-radius:8px 8px 0 0" alt="">'
           : '<div style="width:100%;height:120px;background:linear-gradient(135deg,#1a4a7a,#7c3aed);border-radius:8px 8px 0 0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:36px">📦</div>';
         var pres = (it.presentaciones||[]).slice(0,2).map(function(p){
           return '<span style="background:#f0f9ff;color:#0369a1;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600">'+_escHTML(p.etiqueta)+'</span>';
@@ -19474,7 +19478,7 @@ async function ckMarcar(itemId, estado){
         var esProy = it.origen === 'proyeccion';
         var borderCol = esProy ? '#7c3aed' : '#e2e8f0';
         var img = it.imagen_url
-          ? '<img src="'+_escAttr(it.imagen_url)+'" style="width:100%;height:110px;object-fit:cover" alt="">'
+          ? '<img loading="lazy" decoding="async" src="'+_escAttr(it.imagen_url)+'" style="width:100%;height:110px;object-fit:cover" alt="">'
           : '<div style="width:100%;height:110px;background:linear-gradient(135deg,'+(esProy?'#7c3aed,#dc2626':'#6d28d9,#7c3aed')+');display:flex;align-items:center;justify-content:center;color:#fff;font-size:32px">📦</div>';
         var fechaTxt = '';
         try { fechaTxt = new Date(it.fecha_programada+'T00:00:00').toLocaleDateString('es-CO',{weekday:'short',day:'numeric',month:'short'}); } catch(e){ fechaTxt = it.fecha_programada; }
@@ -19731,7 +19735,7 @@ async function ckMarcar(itemId, estado){
         var diasTxt = it.dias_inventario===null?'—':it.dias_inventario+'d';
         var mpCol = it.alcanza_mp?'#15803d':'#dc2626';
         var img = it.imagen_url
-          ? '<img src="'+_escAttr(it.imagen_url)+'" style="width:100%;height:110px;object-fit:cover" alt="">'
+          ? '<img loading="lazy" decoding="async" src="'+_escAttr(it.imagen_url)+'" style="width:100%;height:110px;object-fit:cover" alt="">'
           : '<div style="width:100%;height:110px;background:linear-gradient(135deg,#6d28d9,#7c3aed);display:flex;align-items:center;justify-content:center;color:#fff;font-size:32px">📦</div>';
         return '<div onclick="abrirPlanSemModal('+it.produccion_id+')" style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;cursor:pointer;transition:transform .12s">'
           + img
