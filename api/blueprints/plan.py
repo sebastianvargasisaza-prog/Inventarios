@@ -3885,16 +3885,21 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
 
     # 5. Pipeline 7d (lotes recién fabricados que aún no aparecen en Available)
     # Suma kg de produccion_programada REALIZADA >= hoy-7d agrupado por producto.
-    # Sebastián 3-jul · "realizada" = fin_real_at O inventario_descontado_at O **cualquier lote PASADO
-    # (fecha ≤ hoy) no cancelado/completado**. El usuario normaliza junio contra MyBatch → todo lo
-    # producido (esté "finalizada" o no) debe contar como stock reciente en camino. Usa la fecha real
-    # (COALESCE fin/descuento/programada). 'completado' se excluye (ya pasó a Available · anti doble-cuenta).
+    # Pipeline = lo producido en los últimos 7 días que aún NO llegó a góndola (Shopify tarda ~7d en
+    # reflejar un lote fabricado). Se cuenta aparte del stock físico para no doble-producir.
+    # ⚠ Sebastián 4-jul (BUG DOBLE-CONTEO · NOVA PHA): la ventana usa la fecha FÍSICA (fin_real_at real, o
+    # fecha_programada), NO inventario_descontado_at. Motivo: al normalizar junio, el jefe DESCONTA la MP
+    # esta semana de un lote fabricado el 22-jun → inventario_descontado_at reciente hacía que un lote de
+    # hace 12 días (YA en góndola, contado en el stock) se sumara OTRA VEZ como "pipeline" → cobertura y
+    # próxima infladas (207 días → próxima enero, cuando lo real era ~86d → septiembre). Con la fecha
+    # física: >7 días = ya está en góndola (no se re-suma); ≤7 días = recién hecho, en camino (sí cuenta).
+    # 'completado' se excluye (ya pasó a Available por QC · anti doble-cuenta).
     pipeline_kg_por_prod = {}
     for r in c.execute(
         """SELECT producto, COALESCE(SUM(COALESCE(kg_real, cantidad_kg, 0) - COALESCE(kg_otro_cliente, 0)), 0)
            FROM produccion_programada
-           WHERE date(COALESCE(fin_real_at, inventario_descontado_at, fecha_programada)) >= ?
-             AND date(COALESCE(fin_real_at, inventario_descontado_at, fecha_programada)) <= date('now', '-5 hours')
+           WHERE date(COALESCE(fin_real_at, fecha_programada)) >= ?
+             AND date(COALESCE(fin_real_at, fecha_programada)) <= date('now', '-5 hours')
              -- FIX 30-may-2026 · evitar doble conteo con góndola CC: un lote
              -- 'completado' ya pasó a stock_pt (liberación QC) · contarlo además
              -- como pipeline lo sumaba 2 veces e inflaba la cobertura ~7d.
@@ -3914,8 +3919,8 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             """SELECT pp.producto, COALESCE(SUM(COALESCE(pbl.kg_aporte, 0)), 0)
                FROM produccion_programada pp
                JOIN pedidos_b2b_lote pbl ON pbl.lote_produccion_id = pp.id
-               WHERE date(COALESCE(pp.fin_real_at, pp.inventario_descontado_at, pp.fecha_programada)) >= ?
-                 AND date(COALESCE(pp.fin_real_at, pp.inventario_descontado_at, pp.fecha_programada)) <= date('now', '-5 hours')
+               WHERE date(COALESCE(pp.fin_real_at, pp.fecha_programada)) >= ?
+                 AND date(COALESCE(pp.fin_real_at, pp.fecha_programada)) <= date('now', '-5 hours')
                  AND LOWER(COALESCE(pp.estado,'')) NOT IN ('completado','cancelado')
                GROUP BY pp.producto""",
             (pipeline_desde,),
