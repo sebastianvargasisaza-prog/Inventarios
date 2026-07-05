@@ -3949,7 +3949,9 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                WHERE fin_real_at IS NULL
                  AND COALESCE(estado, 'programado') NOT IN ('cancelado', 'completado')
                  AND COALESCE(origen, '') IN ('eos_plan', 'eos_b2b', 'eos_retroactivo')
-                 AND date(fecha_programada) >= date('now', '-5 hours')
+                 -- P2-A (audit 4-jul): estrictamente FUTURO (> hoy) · un Fijo con fecha == hoy ya lo cuenta
+                 -- pipeline_kg (ventana ≤hoy, cualquier origen) → evita doble-conteo en stock_kg_total.
+                 AND date(fecha_programada) > date('now', '-5 hours')
                  AND date(fecha_programada) <= date('now', '-5 hours', '+60 days')
                GROUP BY producto"""
         ).fetchall():
@@ -3972,7 +3974,8 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                WHERE pp.fin_real_at IS NULL
                  AND COALESCE(pp.estado, 'programado') NOT IN ('cancelado', 'completado')
                  AND COALESCE(pp.origen, '') IN ('eos_plan', 'eos_b2b', 'eos_retroactivo')
-                 AND date(pp.fecha_programada) >= date('now', '-5 hours')
+                 -- P2-A (audit 4-jul): estrictamente FUTURO (> hoy) · paralelo al pipeline_fijo de arriba.
+                 AND date(pp.fecha_programada) > date('now', '-5 hours')
                  AND date(pp.fecha_programada) <= date('now', '-5 hours', '+60 days')
                GROUP BY pp.producto"""
         ).fetchall():
@@ -13367,12 +13370,19 @@ def plan_producciones_sin_descontar():
             da = (_hoy - _dV.fromisoformat(f)).days
         except Exception:
             da = 0
+        # Sebastián 4-jul (audit P1-A · higiene) · PROBABLE ZOMBIE = lote pasado que casi seguro NUNCA se
+        # produjo → candidato a CANCELAR (no a registrar): 'esperando_recurso' (pausado por MP) o atraso
+        # >45d (fuera de toda la ventana de normalización de junio · junio real es ≤34d desde hoy). Ya no
+        # infla la cobertura (el rescate del ancla se acota a ≤45d), pero conviene limpiarlos del calendario.
+        _zombie = (da > 45) or ((r[4] or '') == 'esperando_recurso')
         out.append({"producto": r[0], "fecha": f, "kg": round(float(r[2] or 0), 1), "origen": r[3],
                     "estado": r[4], "kg_otro": round(float(r[5] or 0), 1), "dias_atraso": da,
-                    "pre_inventario": (f < '2026-07-01')})   # junio y antes = pre-inventario · NO descontar
+                    "pre_inventario": (f < '2026-07-01'),   # junio y antes = pre-inventario · NO descontar
+                    "probable_zombie": _zombie})
     n_junio = sum(1 for x in out if x["pre_inventario"])
-    return jsonify({"ok": True, "hoy": _hoy_s, "total": len(out),
-                    "pre_inventario": n_junio, "revisar": len(out) - n_junio, "producciones": out})
+    n_zombie = sum(1 for x in out if x["probable_zombie"])
+    return jsonify({"ok": True, "hoy": _hoy_s, "total": len(out), "pre_inventario": n_junio,
+                    "zombie": n_zombie, "revisar": len(out) - n_junio, "producciones": out})
 
 
 @bp.route("/api/plan/limpiar-proyeccion", methods=["POST"])
@@ -19464,13 +19474,18 @@ async function verSinDescontar(){
     var html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><strong style="font-size:15px">⚠️ Producciones sin descontar · ' + d.total + '</strong><button onclick="var w=document.getElementById(\'sindesc-panel\'); if(w) w.remove();" style="background:#e2e8f0;border:none;border-radius:6px;padding:3px 9px;cursor:pointer;font-weight:700">✕</button></div>';
     if(!prods.length){ html += '<div style="color:#16a34a;font-weight:700;padding:12px;text-align:center">✅ No hay producciones pasadas sin descontar.</div>'; wrap.innerHTML = html; if(btn){ btn.disabled = false; btn.innerHTML = '⚠️ Sin descontar'; } return; }
     html += '<div style="font-size:11px;color:#475569;margin-bottom:10px">Lotes con fecha ya pasada, sin el descuento de MP registrado. <b>Solo informativo</b> · para descontar de verdad se hace desde Fabricación.</div>';
-    var junio = prods.filter(function(p){ return p.pre_inventario; });
-    var revisar = prods.filter(function(p){ return !p.pre_inventario; });
+    var zombies = prods.filter(function(p){ return p.probable_zombie; });
+    var junio = prods.filter(function(p){ return p.pre_inventario && !p.probable_zombie; });
+    var revisar = prods.filter(function(p){ return !p.pre_inventario && !p.probable_zombie; });
     var fila = function(p, col){
       return '<div style="border-left:3px solid ' + col + ';background:#f8fafc;border-radius:6px;padding:6px 9px;margin-bottom:5px;font-size:12px">'
         + '<div style="font-weight:700;color:#0f172a">' + p.producto + '</div>'
-        + '<div style="color:#64748b">' + p.fecha + ' · ' + p.kg + ' kg' + (p.kg_otro > 0 ? (' (' + p.kg_otro + ' otro cliente)') : '') + ' · ' + p.origen + ' · atrasado ' + p.dias_atraso + 'd</div></div>';
+        + '<div style="color:#64748b">' + p.fecha + ' · ' + p.kg + ' kg' + (p.kg_otro > 0 ? (' (' + p.kg_otro + ' otro cliente)') : '') + ' · ' + p.origen + ' · ' + p.estado + ' · atrasado ' + p.dias_atraso + 'd</div></div>';
     };
+    if(zombies.length){
+      html += '<div style="font-weight:800;color:#dc2626;margin:8px 0 5px">🔴 PROBABLE ZOMBIE · ' + zombies.length + ' (>45d atrás o pausado · casi seguro NO se produjo → CANCELAR para limpiar el calendario)</div>';
+      zombies.forEach(function(p){ html += fila(p, '#dc2626'); });
+    }
     if(revisar.length){
       html += '<div style="font-weight:800;color:#b45309;margin:8px 0 5px">🟠 REVISAR · ' + revisar.length + ' (julio en adelante · ¿el jefe las descontó?)</div>';
       revisar.forEach(function(p){ html += fila(p, '#d97706'); });
