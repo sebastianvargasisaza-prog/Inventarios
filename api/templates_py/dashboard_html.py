@@ -22551,6 +22551,7 @@ async function ckMarcar(itemId, estado){
     'CRITICO':         {bg:'#fee2e2', border:'#dc2626', text:'#991b1b', emoji:'🔴'},
     'URGENTE':         {bg:'#fff7ed', border:'#ea580c', text:'#9a3412', emoji:'🟠'},
     'VIGILAR':         {bg:'#fefce8', border:'#ca8a04', text:'#854d0e', emoji:'🟡'},
+    'POR_ENTRAR':      {bg:'#ecfeff', border:'#0891b2', text:'#155e75', emoji:'🔵'},
     'OK':              {bg:'#f0fdf4', border:'#16a34a', text:'#15803d', emoji:'🟢'},
     'SIN_VENTAS':      {bg:'#f1f5f9', border:'#94a3b8', text:'#475569', emoji:'⚪'},
     // FIX 23-may-2026 · auditoría · backend emite estos sub-estados pero UI los caía a OK
@@ -24924,6 +24925,7 @@ async function ckMarcar(itemId, estado){
       ['🔴 Crítico', res.n_critico, '#dc2626'],
       ['🟠 Urgente', res.n_urgente, '#ea580c'],
       ['🟡 Vigilar', res.n_vigilar, '#ca8a04'],
+      ['🔵 Por entrar', res.n_por_entrar, '#0891b2'],
       ['🟢 OK', res.n_ok, '#16a34a'],
       ['⚪ Sin ventas', res.n_sin_ventas, '#64748b'],
       ['📦 Pedidos B2B', res.n_pedidos_b2b_pendientes, '#1e40af'],
@@ -25025,10 +25027,10 @@ async function ckMarcar(itemId, estado){
     const baseIdx = window._NEC_PRODUCTOS_CACHE.length;
     prods.forEach(p => { window._NEC_PRODUCTOS_CACHE.push(p); });
     // Chips resumen por urgencia
-    const conteos = {CRITICO:0, URGENTE:0, VIGILAR:0, OK:0, SIN_VENTAS:0, SIN_MAPEO:0, SIN_HISTORIAL:0, SIN_VENTAS_REAL:0};
+    const conteos = {CRITICO:0, URGENTE:0, VIGILAR:0, POR_ENTRAR:0, OK:0, SIN_VENTAS:0, SIN_MAPEO:0, SIN_HISTORIAL:0, SIN_VENTAS_REAL:0};
     prods.forEach(p => { if (conteos[p.urgencia] !== undefined) conteos[p.urgencia]++; });
     let chips = '';
-    ['CRITICO','URGENTE','VIGILAR','OK','SIN_VENTAS','SIN_MAPEO','SIN_HISTORIAL','SIN_VENTAS_REAL'].forEach(u => {
+    ['CRITICO','URGENTE','VIGILAR','POR_ENTRAR','OK','SIN_VENTAS','SIN_MAPEO','SIN_HISTORIAL','SIN_VENTAS_REAL'].forEach(u => {
       if (conteos[u] > 0) {
         const cfg = URG_COLORS[u];
         chips += '<span style="background:'+cfg.bg+';color:'+cfg.text+';padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;margin-left:4px">' + cfg.emoji + ' ' + conteos[u] + '</span>';
@@ -25079,7 +25081,7 @@ async function ckMarcar(itemId, estado){
         const dias = _dg != null ? _dg + 'd' : (p.dias_cobertura != null ? p.dias_cobertura + 'd' : '—');
         // El color del número = el MISMO del semáforo (urgencia del backend), para que
         // número y emoji nunca se contradigan (M5). Fallback por días si no hay urgencia.
-        const _urgCol = {CRITICO:'#dc2626', URGENTE:'#ea580c', VIGILAR:'#d97706', OK:'#16a34a'};
+        const _urgCol = {CRITICO:'#dc2626', URGENTE:'#ea580c', VIGILAR:'#d97706', POR_ENTRAR:'#0891b2', OK:'#16a34a'};
         const diasColorReal = (_dg == null) ? cfg.text
                             : (_urgCol[p.urgencia] || (_dg < 20 ? '#dc2626' : (_dg < 45 ? '#d97706' : '#16a34a')));
         // FIX 1-jun-2026 · en vez del confuso "+prod → Xd" (cobertura con el lote
@@ -25145,9 +25147,10 @@ async function ckMarcar(itemId, estado){
         // de fondo + borde izquierdo grueso si crítico/urgente. OK/sin-ventas
         // se atenúan para que los rojos canten.
         const _esGrave = (p.urgencia === 'CRITICO' || p.urgencia === 'URGENTE');
+        const _esPorEntrar = (p.urgencia === 'POR_ENTRAR');
         const _esIgnorable = (p.urgencia === 'OK' || p.urgencia === 'SIN_VENTAS' || p.urgencia === 'SIN_VENTAS_REAL');
-        const _rowBg = _esGrave ? cfg.bg : '#fff';
-        const _rowBorderL = _esGrave ? ('4px solid ' + cfg.border) : '4px solid transparent';
+        const _rowBg = _esGrave ? cfg.bg : (_esPorEntrar ? '#ecfeff' : '#fff');
+        const _rowBorderL = _esGrave ? ('4px solid ' + cfg.border) : (_esPorEntrar ? '4px solid #0891b2' : '4px solid transparent');
         const _rowOpacity = _esIgnorable ? '0.55' : '1';
         // Sebastián 25-may-2026 PM · chip 🎨 si producto tiene ≥2 tonos
         // (caso LIP SERUM 5 tonos · cada tono envase distinto).
@@ -25191,7 +25194,9 @@ async function ckMarcar(itemId, estado){
         // Vende día / mes / stock / cobertura
         html += '<td style="padding:10px 8px;text-align:center">' + p.velocidad_uds_dia.toFixed(1) + '</td>';
         html += '<td style="padding:10px 8px;text-align:center">' + ventaMes + '</td>';
-        html += '<td style="padding:10px 8px;text-align:center">' + p.stock_uds_total + '</td>';
+        html += '<td style="padding:10px 8px;text-align:center">' + p.stock_uds_total
+              + ((p.por_entrar_uds||0) > 0 ? '<div style="font-size:9px;color:#0891b2;font-weight:700" title="Producido en Espagiria, aún no trasladado a Ánimus · ya cuenta para la próxima">🔵 +' + p.por_entrar_uds + ' por entrar</div>' : '')
+              + '</td>';
         // Alcanza · LIMPIO (Sebastián 4-jul): cobertura (color) + próxima sugerida · sin el ruido
         // "lote atrasado sin ejecutar" (eso ahora va como alerta accionable en la columna Plan·acción).
         html += '<td style="padding:10px 8px;text-align:center">'
@@ -25211,15 +25216,15 @@ async function ckMarcar(itemId, estado){
           html += '<tr><td colspan="7" style="padding:0 14px 9px">';
           html += '<details class="necx-exp"><summary class="necx-sum"><span class="necx-chev">▸</span>Desglose por referencia · ' + _tonos.length + ' tonos/tamaños</summary>';
           html += '<div class="necx-expbody">';
-          var _minCob = null;
-          _tonos.forEach(function(t){ if(t.dias_cobertura_tono!=null && (_minCob===null || t.dias_cobertura_tono<_minCob)) _minCob=t.dias_cobertura_tono; });
           html += '<table class="necx-ttbl"><thead><tr><th>Tono</th><th>SKU</th><th>ml</th><th>Vende</th><th>Stock</th><th>% mix</th><th>Uds/lote</th><th>Cobertura</th></tr></thead><tbody>';
           _tonos.forEach(t => {
             var _cob = (t.dias_cobertura_tono != null) ? t.dias_cobertura_tono : null;
-            var _esCuello = (_cob != null && _minCob != null && _cob === _minCob && _tonos.length > 1);
+            var _esCuello = !!t.cuello;   // el tono que fija el cuello de botella (solo entre los de mix ≥5%)
+            var _bajo = !!t.mix_bajo;     // tono marginal (<5% del mix) · no manda la alarma del producto
+            var _cobColor = _esCuello ? '#dc2626' : (_bajo ? '#94a3b8' : (_cob != null && _cob < 25 ? '#d97706' : '#16a34a'));
             var _cobCell = (_cob == null) ? '<span style="color:#cbd5e1">—</span>'
-              : ('<span style="font-weight:800;color:' + (_esCuello ? '#dc2626' : (_cob < 25 ? '#d97706' : '#16a34a')) + '">' + _cob + 'd' + (_esCuello ? ' ⚠️' : '') + '</span>');
-            html += '<tr class="necx-trow">'
+              : ('<span style="font-weight:800;color:' + _cobColor + '">' + _cob + 'd' + (_esCuello ? ' ⚠️' : '') + '</span>');
+            html += '<tr class="necx-trow"' + (_bajo ? ' style="opacity:.55"' : '') + '>'
               + '<td><span class="necx-swatch" style="background:' + _tonoColor(t.tono_label) + '"></span>' + escapeHtmlNec(t.tono_label) + '</td>'
               + '<td class="necx-mono">' + escapeHtmlNec(t.sku) + '</td>'
               + '<td>' + t.ml_unidad + '</td>'
@@ -25231,7 +25236,7 @@ async function ckMarcar(itemId, estado){
               + '</tr>';
           });
           html += '</tbody></table>';
-          html += '<div class="necx-note">Mix con ventas de la ventana actual · uds asumen lote bulk completo (' + (p.lote_bulk_kg||0) + 'kg) · Cobertura = stock del tono ÷ su velocidad · <span style="color:#dc2626;font-weight:700">⚠️ = el tono que se agota PRIMERO</span> (manda la próxima producción)</div>';
+          html += '<div class="necx-note">Mix con ventas de la ventana actual · uds asumen lote bulk completo (' + (p.lote_bulk_kg||0) + 'kg) · Cobertura = stock del tono ÷ su velocidad · <span style="color:#dc2626;font-weight:700">⚠️ = el tono que se agota PRIMERO</span> (manda la próxima) · los tonos marginales en gris (menos del 5% del mix) NO disparan la alarma del producto</div>';
           html += '</div></details></td></tr>';
         }
       });

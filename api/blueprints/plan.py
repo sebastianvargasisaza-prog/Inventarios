@@ -3291,6 +3291,7 @@ def plan_necesidades():
         "n_critico": sum(1 for p in productos_animus if p["urgencia"] == "CRITICO"),
         "n_urgente": sum(1 for p in productos_animus if p["urgencia"] == "URGENTE"),
         "n_vigilar": sum(1 for p in productos_animus if p["urgencia"] == "VIGILAR"),
+        "n_por_entrar": sum(1 for p in productos_animus if p["urgencia"] == "POR_ENTRAR"),
         "n_ok": sum(1 for p in productos_animus if p["urgencia"] == "OK"),
         "n_sin_ventas": sum(1 for p in productos_animus if p["urgencia"] == "SIN_VENTAS"),
         "n_sin_mapeo": sum(1 for p in productos_animus if p["urgencia"] == "SIN_MAPEO"),
@@ -4378,6 +4379,8 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                 if ml_promedio > 0 and lote_kg_efectivo > 0:
                     uds_lote_total = int(round(lote_kg_efectivo * 1000.0 / ml_promedio))
                 _pipe_uds_prod = (pipeline_kg * 1000.0 / ml_promedio) if ml_promedio > 0 else 0.0
+                _sku_cuello = None          # el tono que fija el cuello de botella (solo entre los de mix ≥5%)
+                _MIX_MIN_CUELLO = 5.0       # umbral: un tono que vende <5% del mix NO manda la alarma del producto
                 for sku_u in skus_del_prod:
                     v_t = int(ventas_por_sku.get(sku_u, 0))
                     pct = round(100.0 * v_t / _total_uds_skus, 1) if _total_uds_skus > 0 else 0
@@ -4390,10 +4393,14 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                     _td_gond = round(_tono_stock / _tono_vel, 1) if _tono_vel > 0.001 else None
                     _td_pipe = (round((_tono_stock + _pipe_uds_prod * v_t / _total_uds_skus) / _tono_vel, 1)
                                 if _tono_vel > 0.001 else None)
-                    if _td_gond is not None and (_dias_tono_bottleneck is None or _td_gond < _dias_tono_bottleneck):
-                        _dias_tono_bottleneck = _td_gond
-                    if _td_pipe is not None and (_dias_tono_bottleneck_pipe is None or _td_pipe < _dias_tono_bottleneck_pipe):
-                        _dias_tono_bottleneck_pipe = _td_pipe
+                    # Solo los tonos con mix ≥5% mandan el cuello de botella (Sebastián 5-jul · evita que un
+                    # tono marginal en 0 pinte de rojo un producto con stock · igual se muestra en el desglose).
+                    if pct >= _MIX_MIN_CUELLO:
+                        if _td_gond is not None and (_dias_tono_bottleneck is None or _td_gond < _dias_tono_bottleneck):
+                            _dias_tono_bottleneck = _td_gond
+                            _sku_cuello = sku_u
+                        if _td_pipe is not None and (_dias_tono_bottleneck_pipe is None or _td_pipe < _dias_tono_bottleneck_pipe):
+                            _dias_tono_bottleneck_pipe = _td_pipe
                     tonos_arr.append({
                         'sku': sku_u,
                         'tono_label': (tono_por_sku.get(sku_u, '') or sku_u),
@@ -4403,6 +4410,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                         'uds_estim_lote': uds_estim_lote,
                         'stock_uds': _tono_stock,
                         'dias_cobertura_tono': _td_gond,
+                        'mix_bajo': (pct < _MIX_MIN_CUELLO),
                     })
                 # Si ninguna referencia vendió en la ventana, no mostrar (evita ruido)
                 if sum(t['ventas_ventana_uds'] for t in tonos_arr) <= 0:
@@ -4411,6 +4419,8 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                     _dias_tono_bottleneck_pipe = None
                 else:
                     tonos_arr.sort(key=lambda t: -t['porcentaje_mix'])
+                    for _t in tonos_arr:
+                        _t['cuello'] = (_t['sku'] == _sku_cuello)
         except Exception:
             tonos_arr = []
             _dias_tono_bottleneck = None
@@ -4437,6 +4447,17 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                     urgencia = "VIGILAR"
                 else:
                     urgencia = "OK"
+
+        # 🔵 Espagiria "por entrar" (Sebastián 5-jul): producto YA producido en el lab, solo falta trasladarlo
+        # a la góndola de Ánimus → NO urge PROGRAMAR una producción (urge trasladar). Si la góndola urge pero
+        # lo que viene de Espagiria la cubre más allá del umbral de alerta → estado POR_ENTRAR (color aparte,
+        # sale de los críticos). Distinto del pipeline/lote-programado (M6): esto es producto TERMINADO, no una
+        # producción agendada-y-no-hecha. Baja los críticos "para programar" sin esconder el faltante de góndola.
+        if (_por_entrar_kg > 0 and velocidad_kg_dia > 0
+                and urgencia in ("CRITICO", "URGENTE", "VIGILAR")):
+            _dias_con_entrar = (stock_kg_gondola + _por_entrar_kg) / velocidad_kg_dia
+            if _dias_con_entrar > cob_alerta:
+                urgencia = "POR_ENTRAR"
 
         out.append({
             "codigo_pt": codigo,

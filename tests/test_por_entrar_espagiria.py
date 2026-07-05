@@ -61,6 +61,9 @@ def test_por_entrar_suma_a_proxima_no_a_gondola(app, db_clean):
     assert fila["dias_con_pipeline"] >= fila["dias_gondola"] + 20, (
         "el por-entrar de Espagiria debe sumar a la próxima (dias_con_pipeline)",
         fila["dias_con_pipeline"], fila["dias_gondola"])
-    # la GÓNDOLA (urgencia) NO cuenta el por-entrar → sigue siendo lo físico en Ánimus (~10 días)
+    # la GÓNDOLA (dias_gondola) NO cuenta el por-entrar → sigue siendo lo físico en Ánimus (~10 días)
     assert fila["dias_gondola"] < 20, (
-        "la góndola/urgencia NO debe inflarse con el por-entrar de Espagiria", fila["dias_gondola"])
+        "la góndola física NO debe inflarse con el por-entrar de Espagiria", fila["dias_gondola"])
+    # pero el ESTADO sale del rojo: como Espagiria lo cubre, no urge PROGRAMAR (urge trasladar) → POR_ENTRAR
+    assert fila["urgencia"] == "POR_ENTRAR", (
+        "góndola baja pero cubierta por Espagiria → POR_ENTRAR (color aparte), no CRÍTICO", fila["urgencia"])
