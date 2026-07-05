@@ -2517,6 +2517,55 @@ def prog_test_shopify():
         return jsonify({'ok': False, 'paso': 'exception', 'error': str(e)})
 
 
+@bp.route('/api/programacion/diag-inventarios-shopify', methods=['GET'])
+def prog_diag_inventarios_shopify():
+    """Sebastián 5-jul · diag de las LOCATIONS de Shopify (Ánimus Lab vs Espagiria). El motor de stock DEBE
+    leer SOLO la tienda ÁNIMUS LAB (DTC) · Espagiria es la maquila/lab que produce, su inventario NO cuenta
+    como góndola vendible. Muestra todas las locations, cuál usa el sistema y por qué."""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db()
+
+    def _cfg(k):
+        r = conn.execute("SELECT valor FROM animus_config WHERE clave=?", (k,)).fetchone()
+        return (r[0] if r else None)
+    token = _cfg('shopify_token'); shop = _cfg('shopify_shop')
+    if not token or not shop:
+        return jsonify({'ok': False, 'error': 'shopify_token/shop no configurados en animus_config'})
+    try:
+        locs = _shopify_locations(token, shop)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': 'no se pudieron listar las locations: ' + str(e)})
+    cfg_loc = (_cfg('shopify_location_id') or '').strip()
+    picked = _shopify_location_id(conn, token, shop)
+    picked_name = next((l.get('name') for l in locs if str(l.get('id')) == str(picked)), None) if picked else None
+    _pn_up = (picked_name or '').upper()
+    if cfg_loc:
+        motivo = "config manual shopify_location_id=" + cfg_loc
+    elif picked and 'ANIMUS' in _pn_up:
+        motivo = "autodetectada por nombre 'ANIMUS'"
+    elif picked:
+        motivo = "única location activa (nombre no tiene 'ANIMUS')"
+    else:
+        motivo = "⚠️ NINGUNA fija → cae al MÁXIMO por ítem entre TODAS las locations (podría mezclar Espagiria)"
+    if picked and 'ANIMUS' in _pn_up:
+        verdict = "✅ Lee SOLO '" + str(picked_name) + "' (Ánimus Lab) · Espagiria NO se cuenta"
+    elif picked:
+        verdict = "⚠️ Lee la location '" + str(picked_name or picked) + "' · verificá que sea la tienda Ánimus Lab (no Espagiria)"
+    else:
+        verdict = "⚠️ SIN location fija → toma el MÁXIMO por ítem entre locations · si Espagiria tiene más stock de un ítem, ese domina (riesgo). Seteá shopify_location_id a la de Ánimus Lab."
+    return jsonify({
+        'ok': True, 'shop': shop,
+        'locations': [{'id': str(l.get('id')), 'name': l.get('name'),
+                       'active': l.get('active'), 'legacy': l.get('legacy')} for l in locs],
+        'config_location_id': cfg_loc or None,
+        'location_usada_id': picked,
+        'location_usada_nombre': picked_name,
+        'motivo': motivo,
+        'verdict': verdict,
+    })
+
+
 @bp.route('/api/programacion/sync-salud', methods=['GET'])
 def prog_sync_salud():
     """Salud del sync Shopify (local, sin llamada externa) + diagnóstico del filtro
