@@ -2868,6 +2868,93 @@ def prog_diag_formula_anomalia():
     })
 
 
+@bp.route('/api/programacion/diag-mp-demanda', methods=['GET'])
+def prog_diag_mp_demanda():
+    """Sebastián 5-jul · para UN MP, lista las PRODUCCIONES del calendario que mueven su demanda + los gramos
+    que aporta cada una (% de la fórmula × kg programados × 1000) + el total ACUMULADO por horizonte. Para
+    revisar MP por MP y ver por qué una sale 'plana' varios meses (¿1 solo lote de su producto, o varios?).
+    Uso: /api/programacion/diag-mp-demanda?codigo=MPBNIT01"""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db(); c = conn.cursor()
+    cod = (request.args.get('codigo') or '').strip().upper()
+    if not cod:
+        return jsonify({'ok': False, 'error': 'pasá ?codigo=MPXXXXX'})
+    # 1) productos cuya fórmula ACTIVA usa este MP (por código directo o resuelto a bodega · M1/M11)
+    prod_pct = {}   # producto_upper → {pct, material, material_id}
+    for pn, mid, mnom, pct in c.execute(
+            "SELECT fi.producto_nombre, fi.material_id, fi.material_nombre, COALESCE(fi.porcentaje,0) "
+            "FROM formula_items fi WHERE UPPER(TRIM(fi.producto_nombre)) NOT IN ("
+            "  SELECT UPPER(TRIM(producto_nombre)) FROM formula_headers WHERE COALESCE(activo,1)=0)").fetchall():
+        if float(pct or 0) <= 0:
+            continue
+        try:
+            resu = _resolver_material_bodega(c, mid or '', mnom or '') or (mid or '')
+        except Exception:
+            resu = mid or ''
+        if str(resu).strip().upper() == cod or str(mid or '').strip().upper() == cod:
+            prod_pct[str(pn).strip().upper()] = {'pct': float(pct), 'material': mnom, 'material_id': mid}
+    if not prod_pct:
+        return jsonify({'ok': True, 'codigo': cod, 'productos_que_lo_usan': [],
+                        'nota': 'ninguna fórmula ACTIVA usa este MP (o no resuelve a este código de bodega)'})
+    # 2) producciones futuras NO ejecutadas del calendario
+    from datetime import datetime as _dt, timedelta as _td, date as _date
+    hoy = (_dt.utcnow() - _td(hours=5)).date()
+    hoy_iso = hoy.isoformat()
+    prods = c.execute(
+        "SELECT id, producto, substr(fecha_programada,1,10), COALESCE(lotes,1), COALESCE(cantidad_kg,0), "
+        "       COALESCE(origen,''), COALESCE(estado,'') "
+        "FROM produccion_programada WHERE substr(fecha_programada,1,10) >= ? "
+        "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado','esperando_recurso') "
+        "AND COALESCE(inventario_descontado_at,'')='' ORDER BY fecha_programada", (hoy_iso,)).fetchall()
+    lote_by = {}
+    for pn, lk in c.execute("SELECT UPPER(TRIM(producto_nombre)), COALESCE(lote_size_kg,0) FROM formula_headers").fetchall():
+        lote_by[pn] = float(lk or 0)
+    _pp_norm = {}
+    try:
+        for k, v in prod_pct.items():
+            _pp_norm[_norm_prod_fuerte(k)] = v
+    except Exception:
+        _pp_norm = {}
+    HOR = [15, 30, 60, 90, 120, 180, 365]
+    tot_hor = {h: 0.0 for h in HOR}
+    filas = []
+    for pid, prod, fecha, lotes, ckg, origen, estado in prods:
+        pu = str(prod or '').strip().upper()
+        info = prod_pct.get(pu)
+        if not info and _pp_norm:
+            try:
+                info = _pp_norm.get(_norm_prod_fuerte(prod or ''))
+            except Exception:
+                info = None
+        if not info:
+            continue
+        kg = float(ckg or 0) or (int(lotes or 1) * lote_by.get(pu, 0))
+        g = info['pct'] / 100.0 * kg * 1000.0
+        try:
+            dd = (_date.fromisoformat(fecha) - hoy).days
+        except Exception:
+            dd = 0
+        for h in HOR:
+            if dd <= h:
+                tot_hor[h] += g
+        filas.append({'produccion_id': pid, 'producto': prod, 'fecha': fecha, 'dias_desde_hoy': dd,
+                      'cantidad_kg': round(kg, 3), 'porcentaje_formula': info['pct'],
+                      'gramos_aportados': round(g, 2), 'origen': origen, 'estado': estado})
+    return jsonify({
+        'ok': True, 'codigo': cod,
+        'productos_que_lo_usan': [{'producto': k, 'porcentaje': v['pct'], 'material_en_formula': v['material'],
+                                   'material_id': v['material_id']} for k, v in prod_pct.items()],
+        'n_producciones_que_lo_mueven': len(filas),
+        'producciones': filas,
+        'total_gramos_por_horizonte': {str(h): round(tot_hor[h], 1) for h in HOR},
+        'nota': 'gramos_aportados = porcentaje_formula/100 × cantidad_kg × 1000. El total por horizonte es '
+                'ACUMULADO (suma los lotes cuya fecha ≤ ese horizonte). Si un MP sale plano varios meses es '
+                'porque solo hay 1 lote de su producto en ese rango — correcto. Si ves 2 lotes idénticos '
+                'seguidos que NO suman, avisá (posible dedup de más).',
+    })
+
+
 @bp.route('/api/programacion/sync-salud', methods=['GET'])
 def prog_sync_salud():
     """Salud del sync Shopify (local, sin llamada externa) + diagnóstico del filtro
