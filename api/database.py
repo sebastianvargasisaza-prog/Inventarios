@@ -9783,6 +9783,21 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
           "la góndola/urgencia. Al trasladar a Ánimus, Shopify mueve las uds → cero doble-conteo.", [
         "CREATE TABLE IF NOT EXISTS stock_por_entrar (sku TEXT PRIMARY KEY, uds INTEGER, actualizado_at TEXT)",
     ]),
+    (340, "Limpiar formula_items.cantidad_g_por_lote (Sebastián 5-jul · auditoría ultracode). La columna quedó "
+          "con BASES MEZCLADAS: reconciliaciones parciales (mig 329, etc.) recalcularon SOLO algunos ingredientes "
+          "a base = lote_size_kg, dejando el resto en base 100g (= el % crudo). El descuento programado la usaba "
+          "cruda → descontaba MP mal (mezcla de bases). Ya se corrigió el código a %-first (usa porcentaje × kg "
+          "real), pero se recalcula la columna para que quede CONSISTENTE = porcentaje × lote_size_kg × 10 "
+          "(= %/100 × kg × 1000) donde el header tiene lote_size_kg>0. Derivado del %, reversible recalculando. "
+          "NO cambia ningún descuento (ya usa %); solo alinea el fallback + evita confusión.", [
+        "UPDATE formula_items SET cantidad_g_por_lote = ROUND(COALESCE(porcentaje,0) * ("
+        "  SELECT COALESCE(fh.lote_size_kg,0) FROM formula_headers fh "
+        "  WHERE UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(formula_items.producto_nombre)) LIMIT 1"
+        " ) * 10.0, 4) "
+        "WHERE EXISTS (SELECT 1 FROM formula_headers fh "
+        "  WHERE UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(formula_items.producto_nombre)) "
+        "  AND COALESCE(fh.lote_size_kg,0) > 0)",
+    ]),
 ]
 
 
