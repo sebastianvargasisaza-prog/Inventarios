@@ -2550,6 +2550,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         </label>
         <button onclick="abrirClientesB2B()" title="Crear/gestionar clientes B2B (Luz, Valentina, Daniela) · cada cliente agrega sus pedidos con '+ Producto' · se cargan solos al plan" style="background:#0d9488;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">👥 Clientes B2B</button>
         <button onclick="cargarNecesidades()" style="background:#6d28d9;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">↻ Recargar</button>
+        <button onclick="syncStockAhora(this)" title="Trae el stock ACTUAL de Shopify: Ánimus Lab = góndola vendible · Espagiria = por entrar (producido en el lab, sin entregar). Úsalo tras producir o entregar para ver los números al día." style="background:#0891b2;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">🔄 Sync stock</button>
       </div>
     </div>
     <div id="nec-resumen" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"></div>
@@ -22978,6 +22979,27 @@ async function ckMarcar(itemId, estado){
     } catch(e) {
       alert('Error de red: ' + e.message);
       if(btn){ btn.disabled = false; btn.textContent = 'Mapear'; }
+    }
+  }
+
+  // Sebastián 5-jul · forzar el sync de stock de Shopify de un clic (antes había que ir al modal de salud).
+  // Trae Ánimus Lab (góndola) + Espagiria (por entrar) y recarga Necesidades con los números al día.
+  async function syncStockAhora(btn){
+    var _t = btn ? btn.textContent : '';
+    if(btn){ btn.disabled = true; btn.textContent = '🔄 Sincronizando…'; }
+    try{
+      var r = await fetch('/api/programacion/sync-stock-shopify', {method:'POST', headers:{'Content-Type':'application/json'}});
+      var d = await r.json().catch(function(){ return {}; });
+      if(r.ok && d.ok){
+        if(btn){ btn.textContent = '✓ Stock al día'; }
+        setTimeout(function(){ if(btn){ btn.disabled=false; btn.textContent=_t; } cargarNecesidades(); }, 700);
+      } else {
+        alert('No se pudo sincronizar: ' + (d.error || ('HTTP ' + r.status)));
+        if(btn){ btn.disabled=false; btn.textContent=_t; }
+      }
+    }catch(e){
+      alert('Error de red: ' + e);
+      if(btn){ btn.disabled=false; btn.textContent=_t; }
     }
   }
 
