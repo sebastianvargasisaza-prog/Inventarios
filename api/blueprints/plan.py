@@ -17470,13 +17470,14 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
 .suggest-row .actions{display:flex;gap:3px}
 </style></head><body>
 <div class="wrap">
-<a href="/modulos" style="color:#0f766e;font-weight:700;font-size:13px">&larr; Volver</a>
-
-<!-- Banner alertas IA · Sebastián 19-may-2026 · proactivas y accionables -->
 <div id="alertas-ia-wrap" style="display:none;margin-bottom:14px"></div>
 
 <div class="card">
-  <h1>📅 Calendario EOS <span style="font-size:12px;font-weight:700;color:#7c3aed;background:#f5f3ff;border:1px solid #ddd6fe;padding:3px 11px;border-radius:999px;vertical-align:middle;letter-spacing:0">Plan autónomo</span></h1>
+  <h1 style="display:flex;align-items:center;gap:12px;margin:0;flex-wrap:wrap">
+    <span style="display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;background:linear-gradient(135deg,#7c3aed,#6d28d9);border-radius:13px;font-size:22px;box-shadow:0 5px 14px rgba(124,58,237,.32)">📅</span>
+    <span style="font-size:25px;font-weight:800;color:#0f172a;letter-spacing:-.02em">Calendario EOS</span>
+    <span style="font-size:11.5px;font-weight:700;color:#7c3aed;background:#f5f3ff;border:1px solid #ddd6fe;padding:4px 12px;border-radius:999px">Plan autónomo</span>
+  </h1>
   <div class="muted">Calendario propio · reemplaza Google Calendar · genera autoplan según ventas Shopify + lote_size del Excel + reglas operativas (festivos · lun-vie · max 2/día · grandes solos · Vit C/Triactive lun-mié)</div>
   <div class="actions-bar" style="margin-top:10px">
     <div>
@@ -17532,19 +17533,7 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
       </div>
     </details>
   </div>
-  <div style="margin-top:6px;font-size:12px;color:#64748b">📝 <strong>Planeación manual:</strong> <strong>📋 Generar plan</strong> coloca todo desde hoy por cadencia (2 años); luego <strong>mové</strong> los lotes (la cadena se recalcula) y programá extras con ➕. &nbsp;·&nbsp; <a href="/admin/revisar-plan" style="color:#0d9488;font-weight:700">🔎 Revisar plan</a> &nbsp;·&nbsp; <a href="/admin/verificar-volumenes" style="color:#0d9488;font-weight:700">📏 Volúmenes</a></div>
   <div id="sugerencias-adelanto" style="margin-top:10px"></div>
-  <details style="margin-top:8px"><summary style="cursor:pointer;font-size:11px;color:#94a3b8;font-weight:700">🎨 Leyenda de colores</summary>
-  <div class="legend" style="margin-top:6px">
-    <span><span class="legend-dot" style="background:#6366f1"></span>🔁 Canónico (auto)</span>
-    <span><span class="legend-dot" style="background:#16a34a"></span>🟢 Plan / ajustado a mano</span>
-    <span><span class="legend-dot" style="background:#db2777"></span>📦 Pedido B2B</span>
-    <span>🔒 Fijo (intocable por automáticos)</span>
-    <span>✨ Sugerencia IA (sin confirmar)</span>
-    <span>🤝 Desglose DTC + B2B</span>
-    <span><span class="legend-dot" style="background:#fca5a5"></span>Festivo (FEST)</span>
-    <span><span style="background:#dc2626;color:#fff;font-size:9px;font-weight:700;padding:0 5px;border-radius:8px">⚠ N</span> Día sobrecargado (&gt;2 lotes)</span>
-  </div></details>
   <!-- Resumen del mes (antes era un panel de debug · limpiado 15-jun) -->
   <div id="cal-diag" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:7px 12px;margin:8px 0;font-size:12px;color:#475569"></div>
   <div id="cal-grid-wrap"></div>
@@ -18336,6 +18325,7 @@ async function cargarAlertasVentas(){
 async function cargarAlertasIA(){
   const wrap = document.getElementById('alertas-ia-wrap');
   if (!wrap) return;
+  wrap.style.display = 'none'; return;  // Sebastián 5-jul · barra de alertas OCULTA por ahora (se repiensa · el resto de la lógica queda intacto)
   try {
     const r = await fetch('/api/plan/alertas-ia', {cache: 'no-store'});
     if (!r.ok){ wrap.style.display = 'none'; return; }
