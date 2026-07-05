@@ -5,7 +5,7 @@
 > **Cuando encuentres o arregles un bug con un patrón nuevo, AGRÉGALO aquí en el mismo commit.**
 > Mantenlo denso y accionable (checklist, no narrativa). La historia detallada vive en `SESSION_LOG/`.
 
-Última actualización: **2026-07-03** (M65 REINCIDENCIA · `\n` crudo en template REGULAR rompió /inventarios · node-check DEBE ser del valor EVALUADO de DASHBOARD_HTML, TODOS los `<script>`, antes de push)
+Última actualización: **2026-07-05** (M71 · cantidad_g_por_lote DERIVADA del % · bases mezcladas por reconciliación parcial · descuento %-first + mig 340 + self-heal cron · diag-formula-anomalia)
 
 ---
 
@@ -616,6 +616,15 @@ Auditoría ultracode del motor de planeación (el cálculo que sugiere CUÁNDO/C
 **Regla madre: el cálculo que SUGIERE producir tiene N inputs (velocidad, edad, stock, pipeline, volumen, es_regalo, split B2B, buffer) — CADA uno debe salir del MISMO helper/fuente en el display y en el motor, o "lo que ves ≠ lo que programa". Al tocar uno, verificá los DOS caminos.**
 
 **BUFFER DE PRODUCCIÓN = 20 días (RESUELTO · Sebastián 1-jul: "20 días es el ideal").** El buffer "producir N días ANTES de agotar" se unificó a **20** en TODOS los cálculos de fecha: `BUFFER_REORDEN_DIAS` 25→20 (constante única · afecta timing_status/generadores/frecuencia-óptima), el modal (fecha óptima = agota−20, próxima = diasDura−20), y `proxima_sugerida_fecha` + la cadena auto-programar ahora usan `BUFFER_REORDEN_DIAS` en vez de `cob_alerta`. **cob_critico/cob_alerta/cob_vigilar (20/25/45) NO se tocan — son los umbrales de URGENCIA/color, cosa distinta del buffer.** Regla: el buffer de producción sale SIEMPRE de `BUFFER_REORDEN_DIAS` (una constante), nunca de un literal ni de cob_alerta. DECISIÓN aún abierta: si `_generar_plan_desde_hoy` debe restar la porción B2B del lote antes de la cadencia (hoy usa el lote completo → sobre-espacia productos con B2B). Tests `test_velocidad_unificada.py`.
+
+## 🧪 M71 · `formula_items.cantidad_g_por_lote` es DERIVADA del % — el descuento/compra/EBR usan %-first, y un self-heal la mantiene consistente · 5-jul
+
+Auditoría ultracode fórmula→descuento (anomalía "butylresorcinol 60g vs HA 0.1g" en los movimientos de una producción). Hallazgos:
+- **La fórmula (% en `formula_items.porcentaje`) estaba BIEN.** La anomalía era la columna DERIVADA `cantidad_g_por_lote`, que quedó con **BASES MEZCLADAS**: reconciliaciones PARCIALES (ej. mig 329) recalcularon SOLO algunos ítems con base `lote_size_kg` (×1000) dejando el resto en base 100g (= el % crudo). Dentro de la MISMA fórmula convivían dos bases → gramos absurdos.
+- **BUG DE CÓDIGO real (era ACTIVO, no latente):** el descuento PROGRAMADO (`_calcular_mp_consumo_produccion`, programacion.py:8391) usaba `cantidad_g_por_lote × lotes` CRUDO primero → (a) ignoraba el kg EDITADO por el usuario (M44) → kardex ≠ compra; (b) propagaba la columna corrupta/stale al kardex → **descontaba la mayoría de la MP ~200× de menos → stock de MP sobre-estimado**. Los OTROS 3 consumidores (descuento directo inventario.py:2170, abastecimiento programacion.py:8688, teóricos EBR brd.py:5146) ya usaban `%` → **el programado era el ÚNICO desalineado** (justo la firma "kardex mal, compra bien, divergen en silencio").
+- **Fix (regla canónica M16/M50, ahora en los 4):** el descuento usa **PORCENTAJE-first reescalado al kg REAL** (`(%/100) × cant_kg_total × 1000`); `cantidad_g_por_lote` queda SOLO como fallback y SIEMPRE reescalado por `(cant_kg_real / lote_base)`, NUNCA crudo × lotes. Test `test_descuento_kg_editado` (kg editado: 200g vs 100g · dientes).
+- **Limpieza + garantía permanente (cero-error):** mig 340 recalculó la columna una vez (`= % × lote_size_kg × 10`); y el **self-heal cron `job_reconciliar_formula_gpl`** (diario 2:20) la re-deriva + alinea `unidad_base_g = lote_size×1000` → **nunca puede volver a quedar corrupta**, pase lo que pase con una migración/edición futura. Diag read-only `/api/programacion/diag-formula-anomalia?producto=NOMBRE` (dump %, g_por_lote, gramos esperados, suma de %, outlier MAD).
+- **REGLAS DURAS:** (1) `cantidad_g_por_lote` es DERIVADA de `porcentaje × lote_size_kg × 10` — NUNCA es la fuente de verdad; la fuente es `porcentaje`. (2) Todo cálculo de gramos-de-MP (descuento, compra, EBR) usa **%-first × kg real**, jamás `cantidad_g_por_lote` crudo. (3) Una reconciliación de fórmula que recalcula g_por_lote debe hacerlo para TODOS los ítems de la fórmula con la MISMA base (`lote_size_kg`), nunca parcial (M45: un fix parcial deja bases mezcladas). (4) Columnas derivadas/denormalizadas propensas a drift (cache MEE, cantidad_g_por_lote, stock_actual) llevan self-heal cron + no se leen como fuente de verdad (M26/M9). Tests `test_descuento_kg_editado.py`.
 
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
 

@@ -687,6 +687,8 @@ JOBS_SCHEDULE = [
     ('auto_d20',              8,  0, None, None,                'job_auto_d20'),
     ('self_heal',             7,  5, None, None,                'job_self_heal'),  # 5 min después del lunes_7am
     ('cleanup_logs',          2,  0, None, None,                'job_cleanup_logs'),
+    # ⭐ Cero-error · diario 2:20 · re-deriva formula_items.cantidad_g_por_lote (nunca corrupta · self-heal)
+    ('reconciliar_formula_gpl', 2, 20, None, None,              'job_reconciliar_formula_gpl'),
     # Mensuales (primeros 5 días del mes a las 12:00)
     ('auto_sc_mensual',      12,  0, None, [1, 2, 3, 4, 5],     'job_auto_sc_mensual'),
     ('auto_sc_mee_mensual',  12, 30, None, [1, 2, 3, 4, 5],     'job_auto_sc_mee_mensual'),
@@ -4171,6 +4173,41 @@ def job_b2b_recurrentes(app):
         if creados:
             conn.commit()
             _lg.info("job_b2b_recurrentes · %s pedidos creados", creados)
+
+
+def job_reconciliar_formula_gpl(app):
+    """Self-heal DIARIO (Sebastián 5-jul · cero-error · auditoría fórmula→descuento). Re-deriva
+    formula_items.cantidad_g_por_lote = porcentaje × lote_size_kg × 10 (= %/100 × kg × 1000) + alinea
+    unidad_base_g = lote_size_kg × 1000. La columna es DERIVADA del %; reconciliaciones parciales (ej. mig
+    329, que recalculó SOLO algunos ítems con base lote_size dejando el resto en base 100g) la dejaron con
+    BASES MEZCLADAS → el descuento viejo descontaba MP mal. El descuento ya usa %-first (no depende de la
+    columna), pero este cron la mantiene consistente PARA SIEMPRE (fallback + display), pase lo que pase con
+    futuras migraciones/ediciones. Solo toca cantidad_g_por_lote/unidad_base_g, NUNCA el porcentaje."""
+    with app.app_context():
+        from database import get_db as _gdb
+        conn = _gdb(); c = conn.cursor()
+        try:
+            c.execute(
+                "UPDATE formula_items SET cantidad_g_por_lote = ROUND(COALESCE(porcentaje,0) * ("
+                "  SELECT COALESCE(fh.lote_size_kg,0) FROM formula_headers fh "
+                "  WHERE UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(formula_items.producto_nombre)) LIMIT 1"
+                " ) * 10.0, 4) "
+                "WHERE EXISTS (SELECT 1 FROM formula_headers fh "
+                "  WHERE UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(formula_items.producto_nombre)) "
+                "  AND COALESCE(fh.lote_size_kg,0) > 0)")
+            n = c.rowcount or 0
+            c.execute(
+                "UPDATE formula_headers SET unidad_base_g = ROUND(lote_size_kg*1000.0, 2) "
+                "WHERE COALESCE(lote_size_kg,0) > 0 "
+                "AND COALESCE(unidad_base_g,0) <> ROUND(lote_size_kg*1000.0, 2)")
+            conn.commit()
+            return True, {'items_rederivados': n}, n
+        except Exception as e:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            return False, {'error': str(e)[:200]}, 0
 
 
 def job_mee_drift_sync(app):
