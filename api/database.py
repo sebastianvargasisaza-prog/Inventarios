@@ -9733,6 +9733,21 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "ALTER TABLE produccion_programada ADD COLUMN etapa_acond_inicio_at TEXT",
         "ALTER TABLE produccion_programada ADD COLUMN etapa_acond_fin_at TEXT",
     ]),
+    (335, "Descontinuar 4 productos que salían como 'sin cadena' pero NO deben planearse (Sebastián 4-jul, "
+          "revisión producto×producto): EMULSION HIDRATANTE B3+BHA (ya no se vende), MASCARILLA HIDRATANTE "
+          "(ya no se vende), LIMPIADOR ILUMINADOR ACIDO KOJICO (pasó a ser LIMPIADOR ILUMINADOR · nombre "
+          "viejo), SUERO TRIACTIVE RETINOID NAD+ (DUPLICADA de la buena 'SUERO TRIACTIVE RETINOID NAD' sin "
+          "'+', que sí tiene cadena · su fórmula ya estaba activo=0 por mig 268 pero la config de planeación "
+          "seguía activa → falsa alarma 'sin cadena'). activo=0 en fórmula + config de planeación · NUNCA "
+          "borrar (INVIMA conserva histórico) · reversible. NO toca 'SUERO TRIACTIVE RETINOID NAD' (sin '+', "
+          "la canónica) ni CREMA FACIAL UREA (B2B otro cliente) ni HYDRAPEPTIDE (aún no lanzado).", [
+        "UPDATE formula_headers SET activo=0 WHERE UPPER(TRIM(producto_nombre)) IN "
+        "('EMULSION HIDRATANTE B3+BHA','MASCARILLA HIDRATANTE','LIMPIADOR ILUMINADOR ACIDO KOJICO',"
+        "'SUERO TRIACTIVE RETINOID NAD+')",
+        "UPDATE sku_planeacion_config SET activo=0 WHERE UPPER(TRIM(producto_nombre)) IN "
+        "('EMULSION HIDRATANTE B3+BHA','MASCARILLA HIDRATANTE','LIMPIADOR ILUMINADOR ACIDO KOJICO',"
+        "'SUERO TRIACTIVE RETINOID NAD+')",
+    ]),
 ]
 
 
