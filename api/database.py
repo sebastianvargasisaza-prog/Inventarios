@@ -9763,6 +9763,20 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "CREATE TABLE IF NOT EXISTS plan_vmaps_cache ("
         " cache_key TEXT PRIMARY KEY, computed_at TEXT, payload TEXT)",
     ]),
+    (338, "Shopify LOCATIONS · Ánimus Lab vs Espagiria (Sebastián 5-jul · diag-inventarios-shopify). El token "
+          "no tiene read_locations → el sistema caía al MÁXIMO por ítem entre locations → metía el stock de "
+          "Espagiria (lab · producido NO entregado · ej. ácido hialurónico) a la GÓNDOLA vendible = sobre-"
+          "conteo. Fija shopify_location_id a ÁNIMUS LAB (72866627864 · 10398 uds/86 ítems · la tienda) para "
+          "que la góndola lea SOLO ahí. Guarda también shopify_location_espagiria_id (106359554328 · 208 "
+          "uds/2 ítems) para el bucket 'por entrar' (los location_id salen del desglose por magnitud · "
+          "verificables en Shopify admin · reversibles). idempotente.", [
+        "INSERT INTO animus_config (clave, valor) SELECT 'shopify_location_id', '72866627864' "
+        "WHERE NOT EXISTS (SELECT 1 FROM animus_config WHERE clave='shopify_location_id')",
+        "UPDATE animus_config SET valor='72866627864' WHERE clave='shopify_location_id'",
+        "INSERT INTO animus_config (clave, valor) SELECT 'shopify_location_espagiria_id', '106359554328' "
+        "WHERE NOT EXISTS (SELECT 1 FROM animus_config WHERE clave='shopify_location_espagiria_id')",
+        "UPDATE animus_config SET valor='106359554328' WHERE clave='shopify_location_espagiria_id'",
+    ]),
 ]
 
 
