@@ -24943,7 +24943,14 @@ async function ckMarcar(itemId, estado){
       + '.necx-mono{font-family:ui-monospace,monospace;color:#64748b}'
       + '.necx-mix{font-weight:800;color:#be185d}'
       + '.necx-uds{font-weight:800;color:#9d174d}'
-      + '.necx-note{font-size:10px;color:#94a3b8;margin-top:7px;padding-left:2px}';
+      + '.necx-note{font-size:10px;color:#94a3b8;margin-top:7px;padding-left:2px}'
+      + '.b2bx{border:none;border-radius:7px;padding:5px 12px;font-size:10.5px;font-weight:700;cursor:pointer;transition:all .15s ease;display:inline-flex;align-items:center;gap:4px;margin-left:5px;box-shadow:0 1px 2px rgba(0,0,0,.1);letter-spacing:.01em}'
+      + '.b2bx:hover{transform:translateY(-1px);box-shadow:0 4px 10px rgba(0,0,0,.16)}'
+      + '.b2bx:active{transform:translateY(0);box-shadow:0 1px 2px rgba(0,0,0,.1)}'
+      + '.b2bx-assign{background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff}'
+      + '.b2bx-confirm{background:linear-gradient(135deg,#8b5cf6,#6d28d9);color:#fff}'
+      + '.b2bx-ghost{background:#fff;border:1px solid #e2e8f0;color:#94a3b8;box-shadow:none;font-weight:600}'
+      + '.b2bx-ghost:hover{background:#fef2f2;border-color:#fca5a5;color:#dc2626;transform:none;box-shadow:none}';
     document.head.appendChild(s);
   }
   // color estable por tono (hash del nombre → HSL) para el swatch del desglose.
@@ -26192,12 +26199,12 @@ async function ckMarcar(itemId, estado){
       // Botón Asignar a Animus · solo si NO está ya sumado a canónico
       let btnAsignar = '';
       if (!lote || lote.modo !== 'sumado_a_lote_canonico') {
-        btnAsignar = '<button onclick="asignarB2BaAnimus('+p.id+')" style="background:#16a34a;color:#fff;border:none;padding:3px 10px;border-radius:4px;font-size:10px;cursor:pointer;font-weight:700;margin-right:4px" title="Buscar lote Animus DTC del mismo producto ±30d y sumar este pedido">🔗 Asignar a Animus</button>';
+        btnAsignar = '<button onclick="asignarB2BaAnimus('+p.id+')" class="b2bx b2bx-assign" title="Busca el lote de Animus DTC del mismo producto (±30 días) y suma este pedido B2B a ese lote · así se produce todo junto en vez de un lote aparte">🔗 Asignar a Animus</button>';
       }
       // CONFIRMACIÓN 26-jun · el pedido del portal queda 'pendiente' (no entra solo al plan) · el equipo lo CONFIRMA acá
       let btnConfirmar = '';
       if ((p.estado || '') === 'pendiente') {
-        btnConfirmar = '<button onclick="confirmarB2B('+p.id+')" style="background:#6d28d9;color:#fff;border:none;padding:3px 10px;border-radius:4px;font-size:10px;cursor:pointer;font-weight:700;margin-right:4px" title="Revisar y confirmar · recién acá entra al plan de producción">✅ Confirmar</button>';
+        btnConfirmar = '<button onclick="confirmarB2B('+p.id+')" class="b2bx b2bx-confirm" title="Revisar y confirmar el pedido · recién al confirmarlo entra al plan de producción (antes queda pendiente, sin producirse)">✅ Confirmar</button>';
       }
       // Sebastián 2-jul · "despachar no va acá (eso se hace en Producto Terminado)" → quitado.
       const estadoBg = p.estado === 'confirmado' ? '#dcfce7' : (p.estado === 'cancelado' ? '#fee2e2' : '#e0e7ff');
@@ -26219,7 +26226,7 @@ async function ckMarcar(itemId, estado){
         + '<td style="padding:6px 10px;text-align:center"><span style="background:'+estadoBg+';color:'+estadoColor+';padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">' + p.estado + '</span></td>'
         + '<td style="padding:6px 10px;text-align:center">' + loteHtml + '</td>'
         + '<td style="padding:6px 10px;text-align:center">' + envSel + '</td>'
-        + '<td style="padding:6px 10px;text-align:right">' + btnConfirmar + btnAsignar + '<button onclick="cancelarB2B(' + p.id + ')" style="background:transparent;border:1px solid #cbd5e1;color:#64748b;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer">Cancelar</button></td>'
+        + '<td style="padding:6px 10px;text-align:right">' + btnConfirmar + btnAsignar + '<button onclick="cancelarB2B(' + p.id + ')" class="b2bx b2bx-ghost" title="Cancelar este pedido B2B · no se produce (se puede volver a cargar con + Producto)">Cancelar</button></td>'
         + '</tr>';
     });
     html += '</tbody></table></div></details>';
