@@ -23421,40 +23421,39 @@ async function ckMarcar(itemId, estado){
     const items = _aplicarFiltros(allItems);
 
     // Barra de filtros + acciones
-    let html = '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;background:#f8fafc;padding:10px;border-radius:8px;margin-bottom:10px;font-size:12px">';
-    html += '<input type="text" id="abast-buscar" placeholder="🔍 buscar código/nombre/proveedor…" value="' + escapeHtmlNec(st.filtros.busqueda) + '" oninput="_abastFiltroBusq(this.value)" style="flex:1;min-width:180px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px">';
-    html += '<select data-campo="urgencia" onchange="_abastFiltro(this.dataset.campo,this.value)" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px"><option value="TODAS">Urg: TODAS</option>';
+    // Barra de filtros PREMIUM (Sebastián 5-jul) · una sola línea limpia · sin el dropdown "MP+MEE" (ya está
+    // el tab MP/MEE arriba · redundante). El filtro tipo queda en 'TODOS' (no oculta nada del tab activo).
+    st.filtros.tipo = 'TODOS';
+    const _abaSel = 'padding:8px 13px;border:1px solid #e6e1f2;border-radius:10px;font-size:12px;background:#fff;color:#334155;font-weight:600;cursor:pointer;outline:none;box-shadow:0 1px 2px rgba(16,15,45,.04)';
+    let html = '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:linear-gradient(180deg,#fbfaff,#f4f2fb);padding:12px 14px;border:1px solid #ece9f5;border-radius:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(16,15,45,.05),0 14px 30px -20px rgba(16,15,45,.16);font-size:12px">';
+    html += '<input type="text" id="abast-buscar" placeholder="🔍 Buscar código, nombre o proveedor…" value="' + escapeHtmlNec(st.filtros.busqueda) + '" oninput="_abastFiltroBusq(this.value)" style="flex:1;min-width:220px;padding:9px 15px;border:1px solid #e6e1f2;border-radius:11px;font-size:12.5px;background:#fff;outline:none;box-shadow:0 1px 2px rgba(16,15,45,.04)">';
+    html += '<select data-campo="urgencia" onchange="_abastFiltro(this.dataset.campo,this.value)" style="' + _abaSel + '"><option value="TODAS">Urgencia · todas</option>';
     urgencias.forEach(u => {
       const sel = st.filtros.urgencia === u ? ' selected' : '';
       const cfg = _ABA_URG_COLORS[u] || {emoji:''};
       html += '<option value="' + u + '"' + sel + '>' + cfg.emoji + ' ' + u + '</option>';
     });
     html += '</select>';
-    html += '<select data-campo="proveedor" onchange="_abastFiltro(this.dataset.campo,this.value)" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;max-width:200px"><option value="TODOS">Proveedor: TODOS</option>';
+    html += '<select data-campo="proveedor" onchange="_abastFiltro(this.dataset.campo,this.value)" style="' + _abaSel + ';max-width:230px"><option value="TODOS">Proveedor · todos</option>';
     proveedores.forEach(p => {
       const sel = st.filtros.proveedor === p ? ' selected' : '';
       html += '<option value="' + escapeHtmlNec(p) + '"' + sel + '>' + escapeHtmlNec(p) + '</option>';
     });
     html += '</select>';
-    html += '<select data-campo="tipo" onchange="_abastFiltro(this.dataset.campo,this.value)" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px"><option value="TODOS">MP+MEE</option>';
-    ['MP','MEE'].forEach(t => {
-      const sel = st.filtros.tipo === t ? ' selected' : '';
-      html += '<option value="' + t + '"' + sel + '>' + t + '</option>';
-    });
-    html += '</select>';
-    html += '<label style="display:flex;align-items:center;gap:4px;color:#475569">Cubrir <select id="abast-cubrir" onchange="_abastCubrir(this.value)" style="padding:5px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px">';
+    html += '<label style="display:flex;align-items:center;gap:6px;color:#64748b;font-weight:600">Cubrir <select id="abast-cubrir" onchange="_abastCubrir(this.value)" style="' + _abaSel + '">';
     (st.horizontes || []).forEach(h => {
       const sel = st.cubrir_dias === h ? ' selected' : '';
       html += '<option value="' + h + '"' + sel + '>' + h + 'd</option>';
     });
     html += '</select></label>';
-    html += '<button onclick="_abastSelectVisibles(true)" style="padding:5px 10px;background:#e2e8f0;color:#475569;border:0;border-radius:4px;font-size:11px;cursor:pointer">☑ todos visibles</button>';
-    html += '<button onclick="_abastSelectVisibles(false)" style="padding:5px 10px;background:#e2e8f0;color:#475569;border:0;border-radius:4px;font-size:11px;cursor:pointer">☐ ninguno</button>';
-    html += '<button onclick="_abastSelectBarco()" style="padding:5px 12px;background:#0369a1;color:#fff;border:0;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Selecciona todas las MP que CONSUMEN 3 kg o más en 90 días y pone la cantidad a pedir = AÑO ENTERO (365d). Para importar por barco de una.">&#128674; &gt;3kg a 90d · pedir año</button>';
-    html += '<span id="abast-sel-count" style="color:#7c3aed;font-weight:700"></span>';
-    html += '<button onclick="_abastAbrirSolicitar()" style="padding:6px 14px;background:#16a34a;color:#fff;border:0;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">📩 Solicitar seleccionados</button>';
-    html += '<button onclick="_abastExportExcel()" style="padding:6px 14px;background:#1e40af;color:#fff;border:0;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer" title="Déficit por horizonte (para jefe producción) · respeta filtros · 2 sheets: detalle + agrupado por proveedor">📊 Excel déficit</button>';
-    html += '<button onclick="_abastExportConsumoBruto()" style="padding:6px 14px;background:#047857;color:#fff;border:0;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer" title="Consumo TOTAL en gramos/unidades sin restar inventario (para Alejandro · visión gerencial)">📦 Excel consumo</button>';
+    const _abaBtn = 'padding:9px 14px;border:0;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:0 3px 10px -3px rgba(16,15,45,.3);color:#fff';
+    html += '<button onclick="_abastSelectVisibles(true)" style="padding:8px 12px;background:#fff;color:#64748b;border:1px solid #e6e1f2;border-radius:10px;font-size:11.5px;font-weight:600;cursor:pointer">☑ Todos</button>';
+    html += '<button onclick="_abastSelectVisibles(false)" style="padding:8px 12px;background:#fff;color:#64748b;border:1px solid #e6e1f2;border-radius:10px;font-size:11.5px;font-weight:600;cursor:pointer">☐ Ninguno</button>';
+    html += '<button onclick="_abastSelectBarco()" style="' + _abaBtn + ';background:linear-gradient(180deg,#0ea5e9,#0369a1)" title="Selecciona todas las MP que CONSUMEN 3 kg o más en 90 días y pone la cantidad a pedir = AÑO ENTERO (365d). Para importar por barco de una.">&#128674; &gt;3kg a 90d · pedir año</button>';
+    html += '<span id="abast-sel-count" style="color:#7c3aed;font-weight:800"></span>';
+    html += '<button onclick="_abastAbrirSolicitar()" style="' + _abaBtn + ';background:linear-gradient(180deg,#22c55e,#16a34a)">📩 Solicitar seleccionados</button>';
+    html += '<button onclick="_abastExportExcel()" style="' + _abaBtn + ';background:linear-gradient(180deg,#3b82f6,#1e40af)" title="Déficit por horizonte (para jefe producción) · respeta filtros · 2 sheets: detalle + agrupado por proveedor">📊 Excel déficit</button>';
+    html += '<button onclick="_abastExportConsumoBruto()" style="' + _abaBtn + ';background:linear-gradient(180deg,#10b981,#047857)" title="Consumo TOTAL en gramos/unidades sin restar inventario (para Alejandro · visión gerencial)">📦 Excel consumo</button>';
     html += '</div>';
 
     if (!items.length) {
@@ -23465,9 +23464,9 @@ async function ckMarcar(itemId, estado){
     }
 
     // Tabla
-    html += '<div style="overflow-x:auto;background:white;border-radius:10px;border:1px solid #e2e8f0">';
+    html += '<div style="overflow-x:auto;background:white;border-radius:14px;border:1px solid #ece9f5;box-shadow:0 1px 3px rgba(16,15,45,.05),0 18px 40px -28px rgba(16,15,45,.2)">';
     html += '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1100px">';
-    html += '<thead><tr style="background:#f8fafc;color:#475569">';
+    html += '<thead><tr style="background:linear-gradient(180deg,#faf9ff,#f3f1fb);color:#6d28d9;border-bottom:1px solid #ece9f5">';
     html += '<th style="text-align:center;padding:8px;font-weight:700;width:32px"><input type="checkbox" onchange="_abastSelectVisibles(this.checked)"></th>';
     html += '<th style="text-align:left;padding:8px;font-weight:700">Código</th>';
     html += '<th style="text-align:left;padding:8px;font-weight:700">Nombre</th>';
