@@ -44,12 +44,14 @@ def test_pipeline_usa_fecha_fisica_no_descuento(app, db_clean):
                VALUES (?,?,?,?,?,?,?,?,?)""",
             (f"PIPET-{i}", f"Cli {i}", 100000.0, "COP", "", "paid",
              json.dumps([{"sku": "SKUPIP1", "qty": 10}]), 10, fecha))
-    # Producción A: física hace 12 días (>7 → ya en góndola) pero DESCONTADA hace 1 día (registro tardío,
-    # claramente dentro de la ventana de 7d) → con el bug se contaría; con el fix NO (usa la fecha física).
+    # Producción A: física hace 12 días (>7 → ya en góndola) pero REGISTRADA hace poco → tanto
+    # inventario_descontado_at COMO fin_real_at quedan recientes (fecha de registro, no física). Con el bug
+    # (cualquiera de esos dos) se contaría de nuevo como pipeline; con el fix (fecha_programada) NO.
     db.execute(
         """INSERT INTO produccion_programada
-           (producto, fecha_programada, cantidad_kg, estado, origen, lotes, inventario_descontado_at)
-           VALUES (?, date('now','-12 days','-5 hours'), 12, 'programado', 'eos_plan', 1, datetime('now','-1 days'))""",
+           (producto, fecha_programada, cantidad_kg, estado, origen, lotes, inventario_descontado_at, fin_real_at)
+           VALUES (?, date('now','-12 days','-5 hours'), 12, 'programado', 'eos_plan', 1,
+                   datetime('now','-1 days'), datetime('now','-1 days'))""",
         (PROD,))
     # Producción B: física hace 3 días (≤7 → recién hecha, en camino) → SÍ pipeline
     db.execute(
