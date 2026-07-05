@@ -2422,6 +2422,50 @@ def _fetch_shopify_available(token, shop, inv_item_ids, location_id=None):
     return out
 
 
+def _shopify_available_por_location(token, shop, inv_item_ids, max_items=500):
+    """Diag Ánimus Lab vs Espagiria (Sebastián 5-jul): agrupa inventory_levels por location_id → revela
+    las locations y su stock total AUNQUE el token no tenga read_locations (los location_id vienen en los
+    niveles de inventario). Devuelve {location_id(str): {'total_available': int, 'n_items': int}}."""
+    import time as _time
+    out = {}
+    unique_ids = sorted({int(x) for x in inv_item_ids if x})[:max_items]
+    if not unique_ids:
+        return out
+    chunk = 50
+    for i in range(0, len(unique_ids), chunk):
+        sub = unique_ids[i:i + chunk]
+        url = ('https://' + shop + '/admin/api/2024-01/inventory_levels.json'
+               '?inventory_item_ids=' + ','.join(str(x) for x in sub) + '&limit=' + str(chunk * 5))
+        data = None
+        for intento in range(3):
+            req = urllib.request.Request(url, headers={'X-Shopify-Access-Token': token})
+            try:
+                with urllib.request.urlopen(req, timeout=20) as r:
+                    data = json.loads(r.read())
+                break
+            except Exception:
+                if intento < 2:
+                    _time.sleep(2 ** (intento + 1))
+                    continue
+                return out
+        if data is None:
+            return out
+        for lvl in data.get('inventory_levels', []) or []:
+            lid = lvl.get('location_id')
+            av = lvl.get('available')
+            if lid is None or av is None:
+                continue
+            try:
+                lid = str(lid)
+                av = int(av)
+            except Exception:
+                continue
+            d = out.setdefault(lid, {'total_available': 0, 'n_items': 0})
+            d['total_available'] += av
+            d['n_items'] += 1
+    return out
+
+
 def _shopify_locations(token, shop, timeout=12):
     """Lista de locations de Shopify: [{'id','name','active','legacy'}]. [] si falla."""
     try:
@@ -2554,6 +2598,37 @@ def prog_diag_inventarios_shopify():
         verdict = "⚠️ Lee la location '" + str(picked_name or picked) + "' · verificá que sea la tienda Ánimus Lab (no Espagiria)"
     else:
         verdict = "⚠️ SIN location fija → toma el MÁXIMO por ítem entre locations · si Espagiria tiene más stock de un ítem, ese domina (riesgo). Seteá shopify_location_id a la de Ánimus Lab."
+    # Desglose por location desde los NIVELES de inventario (no requiere read_locations). Trae una muestra
+    # de ítems y agrupa por location_id → revela las locations reales y su stock total, para identificar
+    # Ánimus Lab (tienda · la de más stock vendible) vs Espagiria (lab · lo producido/no entregado).
+    por_location = None
+    try:
+        _iids = []
+        url = 'https://' + shop + '/admin/api/2024-01/products.json?limit=250'
+        for _pg in range(2):  # muestra: hasta 2 páginas (~500 variantes)
+            req = urllib.request.Request(url, headers={'X-Shopify-Access-Token': token})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                data = json.loads(r.read())
+                link = r.headers.get('Link', '') or ''
+            for p in data.get('products', []):
+                for v in p.get('variants', []):
+                    if v.get('inventory_item_id'):
+                        _iids.append(v['inventory_item_id'])
+            nxt = None
+            for part in link.split(','):
+                if 'rel="next"' in part:
+                    s = part.find('<') + 1
+                    e = part.find('>')
+                    if s > 0 and e > s:
+                        nxt = part[s:e].strip()
+            if not nxt:
+                break
+            url = nxt
+        raw = _shopify_available_por_location(token, shop, _iids)
+        por_location = [{'location_id': k, 'total_available': v['total_available'], 'n_items': v['n_items']}
+                        for k, v in sorted(raw.items(), key=lambda kv: -kv[1]['total_available'])]
+    except Exception as e:
+        por_location = {'error': str(e)}
     return jsonify({
         'ok': True, 'shop': shop,
         'locations': [{'id': str(l.get('id')), 'name': l.get('name'),
@@ -2563,6 +2638,10 @@ def prog_diag_inventarios_shopify():
         'location_usada_nombre': picked_name,
         'motivo': motivo,
         'verdict': verdict,
+        'stock_por_location': por_location,
+        'nota_por_location': 'Cada location con su stock total (muestra ~500 ítems). La de MÁS stock suele '
+                             'ser Ánimus Lab (tienda vendible); la otra probablemente Espagiria (lab · '
+                             'producido no entregado). Con estos location_id armamos góndola vs por-entrar.',
     })
 
 
