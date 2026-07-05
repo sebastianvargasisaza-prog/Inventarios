@@ -2813,6 +2813,61 @@ def prog_diag_inventarios_shopify():
     })
 
 
+@bp.route('/api/programacion/diag-formula-anomalia', methods=['GET'])
+def prog_diag_formula_anomalia():
+    """Sebastián 5-jul (auditoría ultracode) · dump de una fórmula para cazar ingredientes con % mal cargado
+    (patrón M50 · agua/base codificada como activo). Por ingrediente: porcentaje, cantidad_g_por_lote, gramos
+    esperados a un kg dado, y marca el OUTLIER (diverge) cuyo % se desvía del resto. Read-only.
+    Uso: /api/programacion/diag-formula-anomalia?producto=EMULSION HIDRATANTE ILUMINADORA[&kg=12]"""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db(); c = conn.cursor()
+    prod = (request.args.get('producto') or '').strip()
+    try:
+        kg = float(request.args.get('kg') or 0)
+    except Exception:
+        kg = 0.0
+    if not prod:
+        return jsonify({'ok': False, 'error': 'pasá ?producto=NOMBRE_DEL_PRODUCTO'})
+    hdr = c.execute("SELECT producto_nombre, COALESCE(lote_size_kg,0), COALESCE(activo,1) "
+                    "FROM formula_headers WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) LIMIT 1",
+                    (prod,)).fetchone()
+    if not hdr:
+        _sim = [r[0] for r in c.execute(
+            "SELECT DISTINCT producto_nombre FROM formula_headers WHERE UPPER(producto_nombre) LIKE ? LIMIT 15",
+            ('%' + prod.upper() + '%',)).fetchall()]
+        return jsonify({'ok': False, 'error': 'no encontré esa fórmula exacta', 'similares': _sim})
+    lote_kg = float(hdr[1] or 0)
+    kg_efectivo = kg or lote_kg or 0.1   # sin kg → lote_size; si 0 → 100g (para ver gramos relativos)
+    items = c.execute("SELECT material_id, material_nombre, COALESCE(porcentaje,0), COALESCE(cantidad_g_por_lote,0) "
+                      "FROM formula_items WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) "
+                      "ORDER BY porcentaje DESC", (prod,)).fetchall()
+    filas, pcts = [], []
+    for mid, nom, pct, gpl in items:
+        _p = float(pct or 0)
+        pcts.append(_p)
+        filas.append({'codigo': mid, 'material': nom, 'porcentaje': round(_p, 4),
+                      'cantidad_g_por_lote': round(float(gpl or 0), 4),
+                      'gramos_esperados': round(_p / 100.0 * kg_efectivo * 1000.0, 3)})
+    suma_pct = round(sum(pcts), 2)
+    if len(pcts) >= 3:
+        import statistics as _st
+        med = _st.median(pcts)
+        mad = _st.median([abs(p - med) for p in pcts]) or 0.0001
+        for f in filas:
+            f['diverge'] = bool(f['porcentaje'] - med > 6 * mad)
+    return jsonify({
+        'ok': True, 'producto': hdr[0], 'activo': bool(hdr[2]), 'lote_size_kg': lote_kg,
+        'kg_usado_para_esperados': kg_efectivo, 'n_items': len(filas),
+        'suma_porcentajes': suma_pct,
+        'alerta_suma': ('⚠️ la suma de % supera 100 → hay al menos un ingrediente con % inflado'
+                        if suma_pct > 100.5 else 'ok (suma ≤ 100)'),
+        'items': filas,
+        'nota': 'diverge=true marca el ingrediente cuyo % se desvía MUCHO del resto (candidato a mal cargado · '
+                'patrón M50). gramos_esperados = %/100 × kg × 1000. Reconciliar contra el Excel maestro (g/1kg ÷ 10 = %).',
+    })
+
+
 @bp.route('/api/programacion/sync-salud', methods=['GET'])
 def prog_sync_salud():
     """Salud del sync Shopify (local, sin llamada externa) + diagnóstico del filtro
@@ -8388,10 +8443,20 @@ def _calcular_mp_consumo_produccion(c, evento_id):
     # fórmula que mapean a la misma bodega) descontaban el DOBLE. Acumulamos por el
     # código de bodega resuelto y SUMAMOS los gramos · una sola Salida por MP.
     _acc = {}   # cod_bodega → {nombre, codigo_mp_formula, cantidad_g}
+    # FIX · 5-jul-2026 · auditoría ultracode fórmula→descuento · unificar a la regla canónica M16/M50:
+    # PORCENTAJE-first reescalado al kg REAL (cant_kg_total, que respeta el kg EDITADO por el usuario · M44).
+    # Antes usaba `g_por_lote × lotes` CRUDO primero → (a) ignoraba el kg editado (kardex ≠ compra), (b)
+    # propagaba un cantidad_g_por_lote stale/corrupto al kardex mientras la compra (que usa %) lo enmascaraba.
+    # g_por_lote queda SOLO como fallback y SIEMPRE reescalado por (cant_kg_total / lote_base), nunca crudo.
     for cod, nom, pct, g_lote in rows:
-        g_total = float(g_lote or 0) * lotes
-        if g_total <= 0 and cant_kg_total > 0:
-            g_total = (float(pct or 0) / 100.0) * cant_kg_total * 1000.0
+        _pct = float(pct or 0)
+        _gl = float(g_lote or 0)
+        if _pct > 0 and cant_kg_total > 0:
+            g_total = (_pct / 100.0) * cant_kg_total * 1000.0
+        elif _gl > 0 and float(lote_kg or 0) > 0:
+            g_total = _gl * (cant_kg_total / float(lote_kg))   # g_por_lote REESCALADO al kg real
+        else:
+            g_total = _gl * lotes                              # último recurso (sin % ni lote_base)
         if g_total <= 0:
             continue
         # resolver el id de fórmula → id de bodega (movimientos) · caso glucosamina
