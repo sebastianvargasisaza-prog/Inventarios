@@ -4348,6 +4348,12 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         # tono_label · cada tono con sus ventas + porcentaje del mix +
         # uds estimadas del próximo lote. Si solo hay 1 tono o ninguno,
         # `tonos: []` (frontend no muestra desglose).
+        # ⚠ Alejandro 5-jul (MULTI-TONO · money-critical): la cobertura de un multi-tono la manda el tono que
+        # se AGOTA PRIMERO (cuello de botella), NO el promedio. El bulk se produce junto (repone todos por el
+        # mix) pero si un tono está bajo se agota antes que el agregado → se llegaba SIN ese tono. Cobertura
+        # por tono = stock_tono / velocidad_tono (vel_tono = mix% de la vel agregada). Se rastrea el mínimo.
+        _dias_tono_bottleneck = None       # solo góndola (urgencia)
+        _dias_tono_bottleneck_pipe = None  # góndola + pipeline repartido por mix (próxima)
         tonos_arr = []
         try:
             skus_del_prod = [s for s in prod_to_skus.get(prod_nombre, [])
@@ -4362,10 +4368,23 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                 uds_lote_total = 0
                 if ml_promedio > 0 and lote_kg_efectivo > 0:
                     uds_lote_total = int(round(lote_kg_efectivo * 1000.0 / ml_promedio))
+                _pipe_uds_prod = (pipeline_kg * 1000.0 / ml_promedio) if ml_promedio > 0 else 0.0
                 for sku_u in skus_del_prod:
                     v_t = int(ventas_por_sku.get(sku_u, 0))
                     pct = round(100.0 * v_t / _total_uds_skus, 1) if _total_uds_skus > 0 else 0
                     uds_estim_lote = int(round(uds_lote_total * pct / 100.0))
+                    # cobertura del tono (Alejandro 5-jul): stock del tono / su velocidad. vel_tono = mix% de
+                    # la vel agregada (misma metodología). El bulk que viene (pipeline) repone por mix.
+                    _rs = resolved_stock.get(sku_u) or resolved_stock.get(str(sku_u).strip().upper()) or {}
+                    _tono_stock = int(_rs.get('uds', 0) or 0)
+                    _tono_vel = (velocidad_uds_dia * v_t / _total_uds_skus) if _total_uds_skus > 0 else 0.0
+                    _td_gond = round(_tono_stock / _tono_vel, 1) if _tono_vel > 0.001 else None
+                    _td_pipe = (round((_tono_stock + _pipe_uds_prod * v_t / _total_uds_skus) / _tono_vel, 1)
+                                if _tono_vel > 0.001 else None)
+                    if _td_gond is not None and (_dias_tono_bottleneck is None or _td_gond < _dias_tono_bottleneck):
+                        _dias_tono_bottleneck = _td_gond
+                    if _td_pipe is not None and (_dias_tono_bottleneck_pipe is None or _td_pipe < _dias_tono_bottleneck_pipe):
+                        _dias_tono_bottleneck_pipe = _td_pipe
                     tonos_arr.append({
                         'sku': sku_u,
                         'tono_label': (tono_por_sku.get(sku_u, '') or sku_u),
@@ -4373,14 +4392,37 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                         'ventas_ventana_uds': v_t,
                         'porcentaje_mix': pct,
                         'uds_estim_lote': uds_estim_lote,
+                        'stock_uds': _tono_stock,
+                        'dias_cobertura_tono': _td_gond,
                     })
                 # Si ninguna referencia vendió en la ventana, no mostrar (evita ruido)
                 if sum(t['ventas_ventana_uds'] for t in tonos_arr) <= 0:
                     tonos_arr = []
+                    _dias_tono_bottleneck = None
+                    _dias_tono_bottleneck_pipe = None
                 else:
                     tonos_arr.sort(key=lambda t: -t['porcentaje_mix'])
         except Exception:
             tonos_arr = []
+            _dias_tono_bottleneck = None
+            _dias_tono_bottleneck_pipe = None
+        # Multi-tono: acotar dias_gondola (urgencia) + preparar dias_con_pipeline (próxima) al cuello de
+        # botella (solo BAJA la cobertura, nunca la sube · el tono que se agota primero manda). Re-evalúa
+        # la urgencia con la cobertura real del cuello de botella.
+        _dcp = round((stock_kg_gondola + pipeline_kg) / velocidad_kg_dia, 1) if velocidad_kg_dia > 0 else None
+        if _dias_tono_bottleneck is not None:
+            dias_gondola = _dias_tono_bottleneck if dias_gondola is None else min(dias_gondola, _dias_tono_bottleneck)
+            if _dias_tono_bottleneck_pipe is not None:
+                _dcp = _dias_tono_bottleneck_pipe if _dcp is None else min(_dcp, _dias_tono_bottleneck_pipe)
+            if velocidad_uds_dia > 0.01 and dias_gondola is not None:
+                if dias_gondola <= cob_critico:
+                    urgencia = "CRITICO"
+                elif dias_gondola <= cob_alerta:
+                    urgencia = "URGENTE"
+                elif dias_gondola <= cob_vigilar:
+                    urgencia = "VIGILAR"
+                else:
+                    urgencia = "OK"
 
         out.append({
             "codigo_pt": codigo,
@@ -4402,7 +4444,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             # Sebastián 3-jul · góndola física + pipeline RECIENTE (lo producido ≤7d en camino · ej.
             # la del 30-jun), SIN el Fijo futuro → para la PRÓXIMA sugerida (no doble-producir lo que
             # ya se hizo y está por llegar a la góndola). dias_gondola=solo física; dias_cobertura=+Fijo.
-            "dias_con_pipeline": (round((stock_kg_gondola + pipeline_kg) / velocidad_kg_dia, 1) if velocidad_kg_dia > 0 else None),
+            "dias_con_pipeline": _dcp,  # Alejandro 5-jul · multi-tono: acotado al cuello de botella (arriba)
             "ventas_periodo_uds": ventas_periodo_total,
             "ventas_30d_uds": ventas_30d_total,
             "ventas_90d_uds": ventas_90d_total,
