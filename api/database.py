@@ -9777,6 +9777,12 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "WHERE NOT EXISTS (SELECT 1 FROM animus_config WHERE clave='shopify_location_espagiria_id')",
         "UPDATE animus_config SET valor='106359554328' WHERE clave='shopify_location_espagiria_id'",
     ]),
+    (339, "Stock 'POR ENTRAR' · Paso 2 Espagiria (Sebastián 5-jul): lo producido en el lab Espagiria que aún "
+          "NO se entregó a la góndola de Ánimus. Se sincroniza aparte (location Espagiria) y suma a la "
+          "PRÓXIMA (dias_con_pipeline · MAX con el pipeline de 7d para no doble-contar un lote reciente), NO a "
+          "la góndola/urgencia. Al trasladar a Ánimus, Shopify mueve las uds → cero doble-conteo.", [
+        "CREATE TABLE IF NOT EXISTS stock_por_entrar (sku TEXT PRIMARY KEY, uds INTEGER, actualizado_at TEXT)",
+    ]),
 ]
 
 

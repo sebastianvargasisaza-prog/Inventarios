@@ -1048,6 +1048,8 @@ def job_sync_stock_shopify_diario(app):
                 _fetch_shopify_available = None
 
         avail_map = {}
+        avail_esp = {}   # Paso 2 (Sebastián 5-jul) · Espagiria "por entrar"
+        _por_entrar = {}
         if _fetch_shopify_available is not None:
             inv_item_ids = [v.get('inv_item_id') for v in all_variants if v.get('inv_item_id')]
             # FIX 1-jun-2026 · SOLO tienda ÁNIMUS LAB (no sumar locations fantasma
@@ -1064,6 +1066,17 @@ def job_sync_stock_shopify_diario(app):
                 avail_map = _fetch_shopify_available(token, shop, inv_item_ids, location_id=_loc_id) or {}
             except Exception:
                 avail_map = {}
+            # Paso 2 · Espagiria (por entrar) · location aparte
+            try:
+                _re = conn.execute("SELECT valor FROM animus_config WHERE clave='shopify_location_espagiria_id'").fetchone()
+                _loc_esp = (_re[0] if _re else None)
+            except Exception:
+                _loc_esp = None
+            if _loc_esp and str(_loc_esp).strip() and str(_loc_esp).strip() != str(_loc_id or '').strip():
+                try:
+                    avail_esp = _fetch_shopify_available(token, shop, inv_item_ids, location_id=_loc_esp) or {}
+                except Exception:
+                    avail_esp = {}
         used_available = bool(avail_map)
         # FIX 30-may-2026 · audit Plan · si NO se obtuvo "Available" real, el sync
         # cae a "On hand" (incluye Committed = ya vendido) → infla el stock de
@@ -1088,6 +1101,10 @@ def job_sync_stock_shopify_diario(app):
             else:
                 qty = int(v['inv_qty'] or 0)
                 fuente = 'On hand'
+            if iid and iid in avail_esp:
+                _pe = max(int(avail_esp.get(iid, 0)), 0)
+                if _pe > 0 and sku:
+                    _por_entrar[sku] = _por_entrar.get(sku, 0) + _pe
             if not sku:
                 skipped += 1
                 continue
@@ -1107,6 +1124,14 @@ def job_sync_stock_shopify_diario(app):
             )
             synced += 1
 
+        # Paso 2 · refrescar 'por entrar' de Espagiria (full refresh · idempotente)
+        try:
+            conn.execute("DELETE FROM stock_por_entrar")
+            for _sk, _q in _por_entrar.items():
+                conn.execute("INSERT INTO stock_por_entrar (sku, uds, actualizado_at) VALUES (?,?,?)",
+                             (_sk, int(_q), today))
+        except Exception:
+            pass
         # Marca el momento del sync (habilita auto-refresh en vivo de Necesidades)
         try:
             from datetime import datetime as _dtnow

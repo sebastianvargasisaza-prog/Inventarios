@@ -3047,6 +3047,16 @@ def prog_sync_stock_shopify():
         _loc_id = _shopify_location_id(conn, token, shop)
         avail_map = _fetch_shopify_available(token, shop, inv_item_ids, location_id=_loc_id)
         used_available = bool(avail_map)  # True si Shopify nos dio Available (fix activo)
+        # Paso 2 (Sebastián 5-jul) · Espagiria = "por entrar" (producido en el lab · aún NO en la góndola de
+        # Ánimus). Se lee su location APARTE → stock_por_entrar → suma a la PRÓXIMA, no a la góndola/urgencia.
+        _loc_esp = _cfg('shopify_location_espagiria_id')
+        avail_esp = {}
+        if _loc_esp and str(_loc_esp).strip() and str(_loc_esp).strip() != str(_loc_id or '').strip():
+            try:
+                avail_esp = _fetch_shopify_available(token, shop, inv_item_ids, location_id=_loc_esp) or {}
+            except Exception:
+                avail_esp = {}
+        _por_entrar = {}
 
         conn.execute("UPDATE stock_pt SET estado='Ajustado' WHERE lote_produccion LIKE 'SHOPIFY-%'")
         synced = 0
@@ -3062,6 +3072,11 @@ def prog_sync_stock_shopify():
                 qty = max(int(avail_map[iid]), 0)
             else:
                 qty = int(v['inv_qty'])
+            # Paso 2 · acumular lo de Espagiria (por entrar) por SKU
+            if iid and iid in avail_esp:
+                _pe = max(int(avail_esp.get(iid, 0)), 0)
+                if _pe > 0 and sku:
+                    _por_entrar[sku] = _por_entrar.get(sku, 0) + _pe
             # FIX 27-jun (auditoría Shopify→Necesidades) · lookup case-insensitive (sku_map keyea en UPPER) +
             # SIN fallback por prefijo (atribuía stock al producto equivocado en familias con prefijo compartido
             # tipo Blush Balm). Un SKU no mapeado queda bajo su título = HUÉRFANO visible, no mal-atribuido.
@@ -3088,6 +3103,14 @@ def prog_sync_stock_shopify():
             )
             synced += 1
 
+        # Paso 2 · refrescar el 'por entrar' de Espagiria (full refresh · idempotente)
+        try:
+            conn.execute("DELETE FROM stock_por_entrar")
+            for _sk, _q in _por_entrar.items():
+                conn.execute("INSERT INTO stock_por_entrar (sku, uds, actualizado_at) VALUES (?,?,?)",
+                             (_sk, int(_q), today))
+        except Exception:
+            pass
         _stamp_stock_sync(conn)  # habilita auto-refresh en vivo de Necesidades
         conn.commit()
         return jsonify({

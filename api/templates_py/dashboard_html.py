@@ -25565,6 +25565,7 @@ async function ckMarcar(itemId, estado){
     html += '<div>Vende/día: <strong>' + p.velocidad_uds_dia.toFixed(1) + ' uds</strong></div>';
     html += '<div>Vende/mes: <strong>' + ventaMes + ' uds</strong></div>';
     html += '<div>Stock góndola: <strong>' + p.stock_uds_total + ' uds</strong></div>';
+    html += ((p.por_entrar_uds || 0) > 0 ? '<div>🔵 Por entrar (Espagiria): <strong style="color:#0891b2">' + p.por_entrar_uds + ' uds</strong> <span style="font-size:10px;color:#94a3b8">producido en el lab · aún no en góndola · ya cuenta para la próxima, no para la urgencia</span></div>' : '');
     // M5/M6 · "Alcanza" = días de GÓNDOLA físicos (lo que decide la urgencia), NO la
     // cobertura-con-pipeline. Así el número y el color (CRÍTICO/etc.) coinciden.
     html += '<div>Alcanza góndola: <strong style="color:' + cfg.text + '">' + (p.dias_gondola != null ? p.dias_gondola + ' días' : '—') + '</strong> ' + cfg.emoji + ' ' + p.urgencia + '</div>';

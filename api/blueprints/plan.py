@@ -3833,6 +3833,15 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     from blueprints.programacion import _resolved_stock_por_sku
     resolved_stock = _resolved_stock_por_sku(c.connection, empresa='ANIMUS')
     # resolved_stock: {sku_upper: {descripcion, uds, fuente}}
+    # Paso 2 (Sebastián 5-jul) · stock "por entrar" de Espagiria por SKU (producido en el lab · aún NO
+    # entregado a la góndola de Ánimus). Suma a la PRÓXIMA (no a la góndola). MAX con el pipeline de 7d abajo.
+    por_entrar_por_sku = {}
+    try:
+        for _r in c.execute("SELECT UPPER(TRIM(sku)), COALESCE(uds,0) FROM stock_por_entrar").fetchall():
+            if _r[0]:
+                por_entrar_por_sku[_r[0]] = int(_r[1] or 0)
+    except Exception:
+        por_entrar_por_sku = {}
 
     # FIX 1-jun-2026 Sebastián · caso "Limpiador BHA: vende pero stock 0".
     # El stock se atribuía SOLO por los SKU de sku_producto_map (skus_de_prod).
@@ -4409,7 +4418,12 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         # Multi-tono: acotar dias_gondola (urgencia) + preparar dias_con_pipeline (próxima) al cuello de
         # botella (solo BAJA la cobertura, nunca la sube · el tono que se agota primero manda). Re-evalúa
         # la urgencia con la cobertura real del cuello de botella.
-        _dcp = round((stock_kg_gondola + pipeline_kg) / velocidad_kg_dia, 1) if velocidad_kg_dia > 0 else None
+        # Paso 2 · sumar el "por entrar" de Espagiria (producido en el lab · MAX con el pipeline de 7d · son
+        # el mismo bulk que viene · nunca sumar los dos = no doble-contar). Va a la próxima, no a la góndola.
+        _por_entrar_uds = sum(int(por_entrar_por_sku.get(str(s).strip().upper(), 0)) for s in skus_de_prod)
+        _por_entrar_kg = (_por_entrar_uds * ml_promedio) / 1000.0 if ml_promedio > 0 else 0.0
+        _pipe_efectivo = max(pipeline_kg, _por_entrar_kg)
+        _dcp = round((stock_kg_gondola + _pipe_efectivo) / velocidad_kg_dia, 1) if velocidad_kg_dia > 0 else None
         if _dias_tono_bottleneck is not None:
             dias_gondola = _dias_tono_bottleneck if dias_gondola is None else min(dias_gondola, _dias_tono_bottleneck)
             if _dias_tono_bottleneck_pipe is not None:
@@ -4445,6 +4459,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             # la del 30-jun), SIN el Fijo futuro → para la PRÓXIMA sugerida (no doble-producir lo que
             # ya se hizo y está por llegar a la góndola). dias_gondola=solo física; dias_cobertura=+Fijo.
             "dias_con_pipeline": _dcp,  # Alejandro 5-jul · multi-tono: acotado al cuello de botella (arriba)
+            "por_entrar_uds": _por_entrar_uds,  # Paso 2 · producido en Espagiria, aún no en góndola Ánimus
             "ventas_periodo_uds": ventas_periodo_total,
             "ventas_30d_uds": ventas_30d_total,
             "ventas_90d_uds": ventas_90d_total,
