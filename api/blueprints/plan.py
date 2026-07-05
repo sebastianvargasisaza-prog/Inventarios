@@ -4456,7 +4456,10 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         if (_por_entrar_kg > 0 and velocidad_kg_dia > 0
                 and urgencia in ("CRITICO", "URGENTE", "VIGILAR")):
             _dias_con_entrar = (stock_kg_gondola + _por_entrar_kg) / velocidad_kg_dia
-            if _dias_con_entrar > cob_alerta:
+            # con lo que viene de Espagiria SALE de la zona crítica (≥ cob_critico) → POR_ENTRAR: ya no urge
+            # PRODUCIR (urge trasladar). Umbral = cob_critico (no cob_alerta) para que un producto cubierto por
+            # el lab aparezca en la categoría aunque quede en la banda de alerta (Sebastián 5-jul).
+            if _dias_con_entrar > cob_critico:
                 urgencia = "POR_ENTRAR"
 
         out.append({

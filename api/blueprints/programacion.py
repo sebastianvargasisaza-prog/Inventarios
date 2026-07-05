@@ -2602,18 +2602,24 @@ def prog_diag_inventarios_shopify():
     # de ítems y agrupa por location_id → revela las locations reales y su stock total, para identificar
     # Ánimus Lab (tienda · la de más stock vendible) vs Espagiria (lab · lo producido/no entregado).
     por_location = None
+    espagiria_por_sku = None
+    stock_por_entrar_db = None
+    cfg_esp = (_cfg('shopify_location_espagiria_id') or '').strip()
     try:
         _iids = []
+        _iid_to_sku = {}
         url = 'https://' + shop + '/admin/api/2024-01/products.json?limit=250'
-        for _pg in range(2):  # muestra: hasta 2 páginas (~500 variantes)
+        while url:  # TODAS las páginas (diag on-demand · no perder ningún SKU de Espagiria)
             req = urllib.request.Request(url, headers={'X-Shopify-Access-Token': token})
-            with urllib.request.urlopen(req, timeout=20) as r:
+            with urllib.request.urlopen(req, timeout=25) as r:
                 data = json.loads(r.read())
                 link = r.headers.get('Link', '') or ''
             for p in data.get('products', []):
                 for v in p.get('variants', []):
-                    if v.get('inventory_item_id'):
-                        _iids.append(v['inventory_item_id'])
+                    iid = v.get('inventory_item_id')
+                    if iid:
+                        _iids.append(iid)
+                        _iid_to_sku[str(iid)] = str(v.get('sku', '') or '').strip().upper()
             nxt = None
             for part in link.split(','):
                 if 'rel="next"' in part:
@@ -2621,27 +2627,52 @@ def prog_diag_inventarios_shopify():
                     e = part.find('>')
                     if s > 0 and e > s:
                         nxt = part[s:e].strip()
-            if not nxt:
-                break
-            url = nxt
-        raw = _shopify_available_por_location(token, shop, _iids)
+            url = nxt if nxt else None
+        raw = _shopify_available_por_location(token, shop, _iids, max_items=(len(_iids) or 1))
         por_location = [{'location_id': k, 'total_available': v['total_available'], 'n_items': v['n_items']}
                         for k, v in sorted(raw.items(), key=lambda kv: -kv[1]['total_available'])]
+        # Per-SKU de la location de ESPAGIRIA (config) · LIVE de Shopify → revela qué SKUs y cuánto hay allí
+        if cfg_esp:
+            _sku_map = {}
+            for _row in conn.execute("SELECT UPPER(TRIM(sku)), producto_nombre FROM sku_producto_map "
+                                     "WHERE COALESCE(activo,1)=1").fetchall():
+                _sku_map[_row[0]] = _row[1]
+            _esp_av = _fetch_shopify_available(token, shop, _iids, location_id=cfg_esp) or {}
+            _lst = []
+            for _iid, _av in _esp_av.items():
+                if int(_av or 0) > 0:
+                    _sku = _iid_to_sku.get(str(_iid), '?')
+                    _lst.append({'sku': _sku, 'uds': int(_av), 'producto': _sku_map.get(_sku, '(sin mapeo)')})
+            _lst.sort(key=lambda x: -x['uds'])
+            espagiria_por_sku = {'location_id': cfg_esp, 'total_uds': sum(x['uds'] for x in _lst),
+                                 'n_skus': len(_lst), 'skus': _lst}
     except Exception as e:
         por_location = {'error': str(e)}
+    # Lo que el ÚLTIMO SYNC escribió en stock_por_entrar (lo que el sistema USA hoy)
+    try:
+        _rows = conn.execute("SELECT UPPER(TRIM(sku)), COALESCE(uds,0) FROM stock_por_entrar "
+                             "ORDER BY uds DESC").fetchall()
+        stock_por_entrar_db = {'total_uds': sum(int(r[1] or 0) for r in _rows), 'n_skus': len(_rows),
+                               'skus': [{'sku': r[0], 'uds': int(r[1] or 0)} for r in _rows]}
+    except Exception as e:
+        stock_por_entrar_db = {'error': str(e)}
     return jsonify({
         'ok': True, 'shop': shop,
         'locations': [{'id': str(l.get('id')), 'name': l.get('name'),
                        'active': l.get('active'), 'legacy': l.get('legacy')} for l in locs],
         'config_location_id': cfg_loc or None,
+        'config_espagiria_id': cfg_esp or None,
         'location_usada_id': picked,
         'location_usada_nombre': picked_name,
         'motivo': motivo,
         'verdict': verdict,
         'stock_por_location': por_location,
-        'nota_por_location': 'Cada location con su stock total (muestra ~500 ítems). La de MÁS stock suele '
-                             'ser Ánimus Lab (tienda vendible); la otra probablemente Espagiria (lab · '
-                             'producido no entregado). Con estos location_id armamos góndola vs por-entrar.',
+        'espagiria_por_sku': espagiria_por_sku,
+        'stock_por_entrar_db': stock_por_entrar_db,
+        'nota': 'espagiria_por_sku = lo que Shopify reporta HOY en la location de Espagiria (LIVE, todos los '
+                'SKUs). stock_por_entrar_db = lo que el ÚLTIMO sync guardó (lo que el sistema usa). Si difieren '
+                '→ correr "Sync stock". Si Shopify muestra MENOS que lo físico real → falta cargar el inventario '
+                'producido en la location de Espagiria dentro de Shopify (el sistema solo ve lo que está en Shopify).',
     })
 
 
