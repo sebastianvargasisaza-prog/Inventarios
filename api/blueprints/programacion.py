@@ -1389,15 +1389,16 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
             # /generar-oc, /regenerar-oc, /mps-deficit).
             _mid_raw = str(item['material_id']).strip()
             mid = _resolver_material_bodega(conn, _mid_raw, nombre) or _mid_raw
-            g_lote = float(item.get('cantidad_g_por_lote', 0) or 0)
-            if g_lote > 0:
-                g_need = g_lote * factor
-            else:
-                # FIX 10-jun audit factibilidad (BUG 2) · ítems cargados SOLO con %
-                # (sin gramos) NO aportaban demanda → déficit subestimado / sub-compra.
-                # Convertir % → gramos del evento (igual que plan.py / simular_produccion).
-                _pct = float(item.get('porcentaje', 0) or 0)
+            # FIX 5-jul-2026 · auditoría ultracode abastecimiento · %-FIRST (M71/M47): igualar el motor de
+            # compra a la pantalla (%-first × kg real). Antes usaba cantidad_g_por_lote × factor PRIMERO → si
+            # esa columna derivada estaba stale/con bases mezcladas (M71), /generar-oc pedía DISTINTO a lo que
+            # muestra la pantalla → sobre/sub-compra silenciosa. g_por_lote queda como fallback reescalado.
+            _pct = float(item.get('porcentaje', 0) or 0)
+            if _pct > 0 and float(kg_ev or 0) > 0:
                 g_need = (_pct / 100.0) * float(kg_ev or 0) * 1000.0
+            else:
+                g_lote = float(item.get('cantidad_g_por_lote', 0) or 0)
+                g_need = g_lote * factor
             if g_need <= 0 or not mid:
                 continue
             if _is_unlimited_mp(nombre) or (mid or '').upper() in _no_controla:
@@ -1455,12 +1456,28 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
     except Exception:
         _pendiente = {}
 
-    # Calcular déficit (UNA sola resta — total_g - stock - pendiente)
+    # FIX 5-jul-2026 · auditoría ultracode · acreditar CUARENTENA (igual que la pantalla · 13139/13187): el
+    # material recibido-en-cuarentena (esperando liberación de Calidad) NO está en el stock canónico ni en el
+    # pendiente → sin esto /generar-oc lo RE-COMPRABA. Cuarentena por material_id (query canónica UPPER).
+    _cuar = {}
+    try:
+        for (mid_c, qg) in conn.execute(
+                "SELECT material_id, COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') "
+                "THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0) "
+                "FROM movimientos WHERE material_id IS NOT NULL AND material_id != '' "
+                "AND UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA') "
+                "GROUP BY material_id").fetchall():
+            _cuar[str(mid_c or '').strip().upper()] = max(float(qg or 0), 0)
+    except Exception:
+        _cuar = {}
+
+    # Calcular déficit (UNA sola resta — total_g - stock - pendiente - cuarentena)
     out = {}
     for mid, data in mp_needed.items():
         stock_g = _lookup_stock(mid, data['nombre'])
         pend_g = float(_pendiente.get((mid or '').upper().strip(), 0) or 0)
-        deficit = max(0.0, data['total_g'] - stock_g - pend_g)
+        cuar_g = float(_cuar.get((mid or '').upper().strip(), 0) or 0)
+        deficit = max(0.0, data['total_g'] - stock_g - pend_g - cuar_g)
         if deficit <= 0:
             continue
         out[mid] = {

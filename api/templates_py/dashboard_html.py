@@ -23597,7 +23597,8 @@ async function ckMarcar(itemId, estado){
       const c365 = (it.consumo && Number(it.consumo['365'])) || 0;
       const stock = Number(it.stock_actual_g) || 0;
       const enCola = Number(it.pendiente_compras_g) || 0;
-      const pedir = Math.max(0, Math.round(c365 * (1 + growth) - stock - enCola));
+      const cuar = Number(it.cuarentena_g) || 0;   // FIX 5-jul · acreditar cuarentena (igual que el déficit normal)
+      const pedir = Math.max(0, Math.round(c365 * (1 + growth) - stock - enCola - cuar));
       if (!st.seleccionados[it.codigo]) st.seleccionados[it.codigo] = {};
       st.seleccionados[it.codigo].marcado = true;
       st.seleccionados[it.codigo].cantidad_override = pedir;
