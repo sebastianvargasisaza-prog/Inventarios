@@ -17390,9 +17390,15 @@ _PLAN_CALENDARIO_HTML = r"""<!DOCTYPE html>
 <title>📅 Calendario EOS · Plan autónomo</title>
 <style>
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:18px}
-.wrap{max-width:1500px;margin:0 auto}
-.card{background:white;border-radius:12px;padding:16px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
-h1{margin:0 0 4px;color:#0f766e;font-size:20px}
+.wrap{max-width:min(1780px,97vw);margin:0 auto}
+.card{background:white;border-radius:14px;padding:18px;margin-bottom:14px;box-shadow:0 2px 8px rgba(15,23,42,.05)}
+h1{margin:0 0 4px;color:#0f172a;font-size:22px;font-weight:800;letter-spacing:-.01em}
+summary::-webkit-details-marker{display:none}
+summary{list-style:none;outline:none}
+.acc-sum{cursor:pointer;display:inline-flex;align-items:center;gap:6px;background:#f1f5f9;border:1px solid #e2e8f0;color:#475569;font-weight:700;font-size:12.5px;padding:8px 15px;border-radius:9px;user-select:none;transition:all .15s;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.acc-sum:hover{background:#e2e8f0;color:#334155}
+.navq{background:#f1f5f9;border:1px solid #e2e8f0;color:#475569;height:36px;min-width:36px;padding:0 13px;border-radius:9px;font-size:15px;font-weight:800;cursor:pointer;transition:all .15s}
+.navq:hover{background:#e2e8f0;color:#1e293b}
 .muted{color:#64748b;font-size:12px}
 button{background:#0f766e;color:white;border:none;padding:8px 14px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;margin:2px}
 button:hover{background:#0d635c}
@@ -17470,7 +17476,7 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
 <div id="alertas-ia-wrap" style="display:none;margin-bottom:14px"></div>
 
 <div class="card">
-  <h1>📅 Calendario EOS · Plan autónomo</h1>
+  <h1>📅 Calendario EOS <span style="font-size:12px;font-weight:700;color:#7c3aed;background:#f5f3ff;border:1px solid #ddd6fe;padding:3px 11px;border-radius:999px;vertical-align:middle;letter-spacing:0">Plan autónomo</span></h1>
   <div class="muted">Calendario propio · reemplaza Google Calendar · genera autoplan según ventas Shopify + lote_size del Excel + reglas operativas (festivos · lun-vie · max 2/día · grandes solos · Vit C/Triactive lun-mié)</div>
   <div class="actions-bar" style="margin-top:10px">
     <div>
@@ -17499,13 +17505,15 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
 
 <div class="card">
   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-    <div>
-      <button onclick="cambiarMes(-1)" class="secondary">← Anterior</button>
-      <strong id="mesActual" style="font-size:16px;margin:0 10px;color:#1e293b">—</strong>
-      <button onclick="cambiarMes(1)" class="secondary">Siguiente →</button>
-      <button onclick="irHoy()" class="secondary">Hoy</button>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button onclick="cambiarMes(-1)" class="navq" title="Mes anterior">&lsaquo;</button>
+      <strong id="mesActual" style="font-size:17px;font-weight:800;color:#0f172a;min-width:132px;text-align:center">—</strong>
+      <button onclick="cambiarMes(1)" class="navq" title="Mes siguiente">&rsaquo;</button>
+      <button onclick="irHoy()" class="navq" style="font-size:12.5px;font-weight:700" title="Ir al mes actual">Hoy</button>
     </div>
-    <div>
+    <details class="acc-plan">
+      <summary class="acc-sum">&#9881; Acciones del plan &#9662;</summary>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:9px">
       <button onclick="abrirNuevaProduccion('')" class="success" id="btn-nueva-prod"
         style="font-size:13.5px;padding:9px 16px;border-radius:8px;background:#7c3aed;font-weight:700;box-shadow:0 1px 3px rgba(124,58,237,.25)" title="Programa manualmente CUALQUIER producto: pilotos, productos de otros clientes o lo que no está en Necesidades. También puedes hacer clic en el ➕ de cualquier día del calendario.">➕ Programar producción</button>
       <button onclick="generarPlanDesdeHoy()" class="success" id="btn-plan-hoy"
@@ -17521,11 +17529,13 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
       <button onclick="verSinDescontar()" class="success" id="btn-sin-descontar"
         style="font-size:13.5px;padding:9px 16px;border-radius:8px;background:#d97706;font-weight:700;box-shadow:0 1px 3px rgba(217,119,6,.25)" title="Producciones que YA pasaron pero no tienen el descuento de MP registrado (el jefe a veces se olvida). Solo informativo · las de junio (pre-inventario) van marcadas para NO descontar.">⚠️ Sin descontar</button>
       <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" style="display:none" disabled>✅ Confirmar y programar TODO</button>
-    </div>
+      </div>
+    </details>
   </div>
   <div style="margin-top:6px;font-size:12px;color:#64748b">📝 <strong>Planeación manual:</strong> <strong>📋 Generar plan</strong> coloca todo desde hoy por cadencia (2 años); luego <strong>mové</strong> los lotes (la cadena se recalcula) y programá extras con ➕. &nbsp;·&nbsp; <a href="/admin/revisar-plan" style="color:#0d9488;font-weight:700">🔎 Revisar plan</a> &nbsp;·&nbsp; <a href="/admin/verificar-volumenes" style="color:#0d9488;font-weight:700">📏 Volúmenes</a></div>
   <div id="sugerencias-adelanto" style="margin-top:10px"></div>
-  <div class="legend">
+  <details style="margin-top:8px"><summary style="cursor:pointer;font-size:11px;color:#94a3b8;font-weight:700">🎨 Leyenda de colores</summary>
+  <div class="legend" style="margin-top:6px">
     <span><span class="legend-dot" style="background:#6366f1"></span>🔁 Canónico (auto)</span>
     <span><span class="legend-dot" style="background:#16a34a"></span>🟢 Plan / ajustado a mano</span>
     <span><span class="legend-dot" style="background:#db2777"></span>📦 Pedido B2B</span>
@@ -17534,7 +17544,7 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
     <span>🤝 Desglose DTC + B2B</span>
     <span><span class="legend-dot" style="background:#fca5a5"></span>Festivo (FEST)</span>
     <span><span style="background:#dc2626;color:#fff;font-size:9px;font-weight:700;padding:0 5px;border-radius:8px">⚠ N</span> Día sobrecargado (&gt;2 lotes)</span>
-  </div>
+  </div></details>
   <!-- Resumen del mes (antes era un panel de debug · limpiado 15-jun) -->
   <div id="cal-diag" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:7px 12px;margin:8px 0;font-size:12px;color:#475569"></div>
   <div id="cal-grid-wrap"></div>
