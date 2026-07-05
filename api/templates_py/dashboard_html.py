@@ -25148,10 +25148,13 @@ async function ckMarcar(itemId, estado){
         // se atenúan para que los rojos canten.
         const _esGrave = (p.urgencia === 'CRITICO' || p.urgencia === 'URGENTE');
         const _esPorEntrar = (p.urgencia === 'POR_ENTRAR');
-        const _esIgnorable = (p.urgencia === 'OK' || p.urgencia === 'SIN_VENTAS' || p.urgencia === 'SIN_VENTAS_REAL');
-        const _rowBg = _esGrave ? cfg.bg : (_esPorEntrar ? '#ecfeff' : '#fff');
-        const _rowBorderL = _esGrave ? ('4px solid ' + cfg.border) : (_esPorEntrar ? '4px solid #0891b2' : '4px solid transparent');
-        const _rowOpacity = _esIgnorable ? '0.55' : '1';
+        const _esOk = (p.urgencia === 'OK');
+        // OK ya NO se atenúa (se veía gris/apagado · Sebastián 5-jul) → tinte verde suave + borde + opacidad
+        // plena, se ve "sano". Solo se atenúan los SIN_VENTAS (realmente ignorables). Los rojos cantan por su fondo.
+        const _esIgnorable = (p.urgencia === 'SIN_VENTAS' || p.urgencia === 'SIN_VENTAS_REAL');
+        const _rowBg = _esGrave ? cfg.bg : (_esPorEntrar ? '#ecfeff' : (_esOk ? '#f3fdf7' : '#fff'));
+        const _rowBorderL = _esGrave ? ('4px solid ' + cfg.border) : (_esPorEntrar ? '4px solid #0891b2' : (_esOk ? '4px solid #4ade80' : '4px solid transparent'));
+        const _rowOpacity = _esIgnorable ? '0.6' : '1';
         // Sebastián 25-may-2026 PM · chip 🎨 si producto tiene ≥2 tonos
         // (caso LIP SERUM 5 tonos · cada tono envase distinto).
         let chipTonos = '';
