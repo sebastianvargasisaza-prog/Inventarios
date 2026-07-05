@@ -9748,6 +9748,13 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "('EMULSION HIDRATANTE B3+BHA','MASCARILLA HIDRATANTE','LIMPIADOR ILUMINADOR ACIDO KOJICO',"
         "'SUERO TRIACTIVE RETINOID NAD+')",
     ]),
+    (336, "Descontinuar EMULSION HIDRATANTE B3+BHA · la mig 335 no la matcheó (acento 'EMULSIÓN' o espacios "
+          "en el nombre real de BD · Sebastián 4-jul). Match ROBUSTO por patrón '%B3%BHA%' (único producto "
+          "con esa combinación · no toca 'BHA 2%' ni 'SUERO AZ + B3' que no llevan BHA tras B3). activo=0 "
+          "fórmula + config · reversible.", [
+        "UPDATE formula_headers SET activo=0 WHERE UPPER(TRIM(producto_nombre)) LIKE '%B3%BHA%'",
+        "UPDATE sku_planeacion_config SET activo=0 WHERE UPPER(TRIM(producto_nombre)) LIKE '%B3%BHA%'",
+    ]),
 ]
 
 
