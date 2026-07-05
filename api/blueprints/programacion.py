@@ -16129,7 +16129,33 @@ def checklist_resumen_calendario():
     else:
         legacy_sql = ""
     try:
-        rows = c.execute(f"""
+        # PERF 05-jul · UN solo scan de produccion_checklist agregado por produccion_id
+        # (antes: 8 subqueries correlacionadas POR CADA fila del horizonte = 8xM lookups).
+        # El {legacy_sql} es el MISMO filtro (item_tipo NOT IN legacy) que usaban las subqueries.
+        chk_map = {}
+        for cr in c.execute(f"""
+            SELECT produccion_id,
+                   COUNT(*)                                                              as total_items,
+                   SUM(CASE WHEN estado IN ('verificado_ok','recibido','listo') THEN 1 ELSE 0 END) as completados,
+                   SUM(CASE WHEN estado='pendiente'   THEN 1 ELSE 0 END)                 as pendientes,
+                   SUM(CASE WHEN estado='solicitado'  THEN 1 ELSE 0 END)                 as solicitados,
+                   SUM(CASE WHEN estado='en_transito' THEN 1 ELSE 0 END)                 as en_transito,
+                   SUM(CASE WHEN estado='recibido'    THEN 1 ELSE 0 END)                 as recibidos,
+                   SUM(CASE WHEN estado='no_aplica'   THEN 1 ELSE 0 END)                 as no_aplica
+            FROM produccion_checklist
+            WHERE 1=1{legacy_sql}
+            GROUP BY produccion_id
+        """).fetchall():
+            chk_map[cr[0]] = {
+                'total_items':  cr[1] or 0,
+                'completados':  cr[2] or 0,
+                'pendientes':   cr[3] or 0,
+                'solicitados':  cr[4] or 0,
+                'en_transito':  cr[5] or 0,
+                'recibidos':    cr[6] or 0,
+                'no_aplica':    cr[7] or 0,
+            }
+        rows = c.execute("""
             SELECT pp.id,
                    pp.producto                                       as producto_nombre,
                    pp.fecha_programada                               as fecha_planeada,
@@ -16138,20 +16164,7 @@ def checklist_resumen_calendario():
                    pp.estado                                         as estado_prod,
                    COALESCE(pp.origen, 'manual')                     as origen,
                    COALESCE(pp.inventario_descontado_at, '')         as descontado_at,
-                   (julianday(pp.fecha_programada) - julianday('now')) as dias_faltan,
-                   (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id{legacy_sql}) as total_items,
-                   (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id{legacy_sql}
-                       AND estado IN ('verificado_ok','recibido','listo')) as completados,
-                   (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id{legacy_sql}
-                       AND estado='pendiente') as pendientes,
-                   (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id{legacy_sql}
-                       AND estado='solicitado') as solicitados,
-                   (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id{legacy_sql}
-                       AND estado='en_transito') as en_transito,
-                   (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id{legacy_sql}
-                       AND estado='recibido') as recibidos,
-                   (SELECT COUNT(*) FROM produccion_checklist WHERE produccion_id=pp.id{legacy_sql}
-                       AND estado='no_aplica') as no_aplica
+                   (julianday(pp.fecha_programada) - julianday('now')) as dias_faltan
             FROM produccion_programada pp
             LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
             WHERE LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
@@ -16160,9 +16173,12 @@ def checklist_resumen_calendario():
             ORDER BY pp.fecha_programada ASC
         """, (horizonte,)).fetchall()
         cols = [x[0] for x in c.description]
+        _CHK_ZERO = {'total_items': 0, 'completados': 0, 'pendientes': 0,
+                     'solicitados': 0, 'en_transito': 0, 'recibidos': 0, 'no_aplica': 0}
         out = []
         for r in rows:
             d = dict(zip(cols, r))
+            d.update(chk_map.get(d['id'], _CHK_ZERO))
             total = d['total_items'] or 0
             comp = d['completados'] or 0
             d['porcentaje'] = round(comp / total * 100, 1) if total > 0 else 0
