@@ -13200,6 +13200,7 @@ def _demanda_stock_gramos(c, producto):
     detalle = []
     stock_g = 0.0
     por_entrar_g = 0.0    # Paso 2 · Espagiria (por entrar) en gramos
+    _sku_cover = []       # (B) (units_góndola, v60) por SKU · para el cuello de botella multi-tono
     v30_tot = v60_tot = v90_tot = 0.0
     _wvol = 0.0           # Σ ventas60_sku × volumen_sku (para el volumen ponderado)
     _vol_simple = []
@@ -13226,6 +13227,7 @@ def _demanda_stock_gramos(c, producto):
         _v60 = sum(q for f, q in _rows90 if str(f)[:10] >= _cut60)
         _v30 = sum(q for f, q in _rows90 if str(f)[:10] >= _cut30)
         v30_tot += _v30; v60_tot += _v60; v90_tot += _v90
+        _sku_cover.append((int(units), float(_v60)))   # (B) góndola + velocidad 60d por SKU
         _wvol += _v60 * vol
         _vol_simple.append(vol)
         detalle.append({'sku': sku, 'tono': tono, 'velocidad': round(_v30 / 30.0, 2),
@@ -13299,9 +13301,31 @@ def _demanda_stock_gramos(c, producto):
     # stock en camino → no re-programa producción de lo que Espagiria ya hizo.
     _en_camino_g = max(pipe_g, por_entrar_g)
     stock_total_g = stock_g + _en_camino_g
+    # (B) CUELLO DE BOTELLA multi-tono (Sebastián 5-jul · MISMO criterio que el display _calcular_animus_dtc):
+    # el PRIMER lote lo manda el tono que se agota primero, no el promedio. Cobertura por tono (góndola) =
+    # tono_units / (vel_prod × mix60). Umbral 5% del mix (un tono marginal no adelanta el lote). SOLO afecta el
+    # TIMING de la proyección (stock_proyeccion_g), NO stock_g (que Abastecimiento usa para la MP = bulk completo).
+    cuello_gondola_dias = None
+    if v60_tot > 0 and vel_prod > 0.001:
+        _sig = [(_u, _v) for (_u, _v) in _sku_cover if (_v / v60_tot) >= 0.05]
+        if len(_sig) >= 2:
+            for _u, _v in _sig:
+                _mix = _v / v60_tot
+                if _mix <= 0:
+                    continue
+                _cov = _u / (vel_prod * _mix)
+                if cuello_gondola_dias is None or _cov < cuello_gondola_dias:
+                    cuello_gondola_dias = round(_cov, 1)
+    # stock EFECTIVO para la proyección: si hay cuello de botella, la cobertura inicial baja al tono que se
+    # agota primero (góndola) + lo que viene (que rebalancea por mix) → el 1er lote sale a tiempo. Nunca sube.
+    stock_proyeccion_g = stock_total_g
+    if cuello_gondola_dias is not None and demand_g > 0.001:
+        stock_proyeccion_g = min(stock_total_g, cuello_gondola_dias * demand_g + _en_camino_g)
     cobertura = (stock_total_g / demand_g) if demand_g > 0.001 else None
     return {'demand_g': demand_g, 'stock_shopify_g': stock_g, 'pipe_g': pipe_g,
-            'por_entrar_g': por_entrar_g, 'stock_g': stock_total_g, 'cobertura_dias': cobertura, 'skus': detalle}
+            'por_entrar_g': por_entrar_g, 'stock_g': stock_total_g,
+            'stock_proyeccion_g': stock_proyeccion_g, 'cuello_gondola_dias': cuello_gondola_dias,
+            'cobertura_dias': cobertura, 'skus': detalle}
 
 
 def _calcular_demanda_suministro(c, producto, dias_horizonte=60):

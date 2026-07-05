@@ -12634,7 +12634,9 @@ def _proyectar_horizonte_2y(conn, dias=730, usuario='auto-proyeccion', dry_run=F
         lote_g = float(lote_size_kg) * 1000.0
         if lote_g <= 0:
             continue
-        stock0_g = dsg['stock_g']  # Shopify (Σ unidades×volumen) + pipeline (bulk ≤7d)
+        # (B) 5-jul · usar el stock EFECTIVO acotado al cuello de botella multi-tono (el 1er lote lo manda el
+        # tono que se agota primero, no el promedio) · = stock_g si no es multi-tono desbalanceado.
+        stock0_g = dsg.get('stock_proyeccion_g', dsg['stock_g'])  # Shopify + pipeline/por-entrar, acotado a cuello
 
         # Llegadas ya comprometidas (Fijo/futuro NO proyección · disponibles +7d) → en gramos
         # ⚠ Sebastián 4-jul (P1-B · audit): solo la porción ANIMUS de cada lote cubre la demanda Animus →
