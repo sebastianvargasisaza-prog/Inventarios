@@ -2772,26 +2772,26 @@ def prog_diag_inventarios_shopify():
                                'skus': [{'sku': r[0], 'uds': int(r[1] or 0)} for r in _rows]}
     except Exception as e:
         stock_por_entrar_db = {'error': str(e)}
-    # DEBUG GraphQL on_hand · muestra el error EXACTO si la query falla (scope read_locations, versión, etc.)
+    # DEBUG GraphQL · vuelca TODAS las locations (con on_hand + available) de unos SKUs que en el UI mostraban
+    # stock en Espagiria → revela DÓNDE está realmente el inventario (¿otra location? ¿no rastreado?).
     gql_onhand_debug = None
-    if cfg_esp:
-        try:
-            _gid = 'gid://shopify/Location/' + str(cfg_esp)
-            _q = ('{productVariants(first:5){nodes{sku inventoryItem{inventoryLevel(locationId:"' + _gid +
-                  '"){quantities(names:["on_hand"]){name quantity}}}}}}')
-            _body = json.dumps({'query': _q}).encode('utf-8')
-            _req = urllib.request.Request('https://' + shop + '/admin/api/2024-01/graphql.json', data=_body,
-                                          headers={'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'})
-            with urllib.request.urlopen(_req, timeout=20) as _r:
-                _rd = json.loads(_r.read())
-            gql_onhand_debug = {
-                'errors': _rd.get('errors'),
-                'sample_nodes': (((_rd.get('data') or {}).get('productVariants') or {}).get('nodes') or [])[:5],
-            }
-        except urllib.error.HTTPError as _he:
-            gql_onhand_debug = {'http_error': _he.code, 'body': _he.read().decode('utf-8', errors='replace')[:600]}
-        except Exception as _e:
-            gql_onhand_debug = {'exception': str(_e)}
+    try:
+        _q = ('{productVariants(first:10,query:"sku:EMLIM OR sku:ECENT OR sku:GELH OR sku:HYDBALANCE"){nodes{'
+              'sku inventoryItem{tracked inventoryLevels(first:10){nodes{location{id} '
+              'quantities(names:["on_hand","available"]){name quantity}}}}}}}')
+        _body = json.dumps({'query': _q}).encode('utf-8')
+        _req = urllib.request.Request('https://' + shop + '/admin/api/2024-01/graphql.json', data=_body,
+                                      headers={'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'})
+        with urllib.request.urlopen(_req, timeout=20) as _r:
+            _rd = json.loads(_r.read())
+        gql_onhand_debug = {
+            'errors': _rd.get('errors'),
+            'nodes': (((_rd.get('data') or {}).get('productVariants') or {}).get('nodes') or []),
+        }
+    except urllib.error.HTTPError as _he:
+        gql_onhand_debug = {'http_error': _he.code, 'body': _he.read().decode('utf-8', errors='replace')[:600]}
+    except Exception as _e:
+        gql_onhand_debug = {'exception': str(_e)}
     return jsonify({
         'ok': True, 'shop': shop,
         'graphql_onhand_debug': gql_onhand_debug,
