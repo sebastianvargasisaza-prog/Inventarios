@@ -2635,6 +2635,67 @@ def _shopify_onhand_location_graphql(token, shop, location_id, timeout=25, max_p
     return out
 
 
+def _shopify_onhand_no_principal(token, shop, main_location_id, timeout=25, max_pag=60):
+    """{sku_upper: on_hand} sumando el on_hand de TODAS las locations EXCEPTO la principal (Ánimus Lab).
+    Sebastián 6-jul: la consulta por location_id ESPECÍFICO de Espagiria devolvía 0 (el ID configurado no
+    coincide con la bodega real, o la API no devuelve ese nivel). Esto es robusto: 'por entrar' = todo el
+    on_hand físico que NO está en la góndola de venta (Ánimus Lab) = producido en el lab, por transferir.
+    Usa inventoryLevels (plural · todas las locations) y excluye la principal. All-or-nothing (errors → {})."""
+    import time as _time
+    out = {}
+    main_num = str(main_location_id or '').strip()
+    url = 'https://' + shop + '/admin/api/2024-01/graphql.json'
+    q = ('query($cursor:String){productVariants(first:100,after:$cursor){pageInfo{hasNextPage endCursor}'
+         'nodes{sku inventoryItem{inventoryLevels(first:10){nodes{location{id} '
+         'quantities(names:["on_hand"]){name quantity}}}}}}}')
+    cursor = None
+    _pag = 0
+    while _pag < max_pag:
+        _pag += 1
+        body = json.dumps({'query': q, 'variables': {'cursor': cursor}}).encode('utf-8')
+        data = None
+        for intento in range(3):
+            req = urllib.request.Request(url, data=body, headers={
+                'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'})
+            try:
+                with urllib.request.urlopen(req, timeout=timeout) as r:
+                    data = json.loads(r.read())
+                break
+            except Exception:
+                if intento < 2:
+                    _time.sleep(2 ** (intento + 1))
+                    continue
+                return {}
+        if not data or data.get('errors'):
+            return {}
+        pv = (((data.get('data') or {}).get('productVariants')) or {})
+        for node in (pv.get('nodes') or []):
+            sku = str(node.get('sku') or '').strip().upper()
+            if not sku:
+                continue
+            levels = (((node.get('inventoryItem') or {}).get('inventoryLevels')) or {}).get('nodes') or []
+            for lvl in levels:
+                loc_gid = str(((lvl.get('location') or {}).get('id')) or '')
+                loc_num = loc_gid.rsplit('/', 1)[-1] if loc_gid else ''
+                if loc_num and main_num and loc_num == main_num:
+                    continue   # la principal (Ánimus Lab) = góndola de venta, NO 'por entrar'
+                for _q in (lvl.get('quantities') or []):
+                    if _q.get('name') == 'on_hand':
+                        try:
+                            v = int(_q.get('quantity') or 0)
+                            if v > 0:
+                                out[sku] = out.get(sku, 0) + v
+                        except Exception:
+                            pass
+        page = pv.get('pageInfo') or {}
+        if page.get('hasNextPage') and page.get('endCursor'):
+            cursor = page['endCursor']
+            _time.sleep(0.3)
+        else:
+            break
+    return out
+
+
 def _shopify_locations(token, shop, timeout=12):
     """Lista de locations de Shopify: [{'id','name','active','legacy'}]. [] si falla."""
     try:
@@ -2773,7 +2834,9 @@ def prog_diag_inventarios_shopify():
     por_location = None
     espagiria_por_sku = None
     stock_por_entrar_db = None
+    no_principal_por_sku = None
     cfg_esp = (_cfg('shopify_location_espagiria_id') or '').strip()
+    cfg_main = (_cfg('shopify_location_id') or '').strip()
     try:
         _iids = []
         _iid_to_sku = {}
@@ -2823,6 +2886,14 @@ def prog_diag_inventarios_shopify():
             espagiria_por_sku = {'location_id': cfg_esp, 'fuente': _fuente,
                                  'total_uds': sum(x['uds'] for x in _lst),
                                  'n_skus': len(_lst), 'skus': _lst}
+            # Sebastián 6-jul · LÓGICA NUEVA: on_hand en TODA location que NO sea la principal (Ánimus Lab)
+            _np = _shopify_onhand_no_principal(token, shop, cfg_main)
+            _lst_np = [{'sku': _sk, 'uds': int(_oh), 'producto': _sku_map.get(_sk, '(sin mapeo)')}
+                       for _sk, _oh in _np.items() if int(_oh) > 0]
+            _lst_np.sort(key=lambda x: -x['uds'])
+            no_principal_por_sku = {'main_location_excluida': cfg_main,
+                                    'total_uds': sum(x['uds'] for x in _lst_np),
+                                    'n_skus': len(_lst_np), 'skus': _lst_np}
     except Exception as e:
         por_location = {'error': str(e)}
     # Lo que el ÚLTIMO SYNC escribió en stock_por_entrar (lo que el sistema USA hoy)
@@ -2866,6 +2937,7 @@ def prog_diag_inventarios_shopify():
         'verdict': verdict,
         'stock_por_location': por_location,
         'espagiria_por_sku': espagiria_por_sku,
+        'no_principal_por_sku': no_principal_por_sku,
         'stock_por_entrar_db': stock_por_entrar_db,
         'nota': 'espagiria_por_sku = lo que Shopify reporta HOY en la location de Espagiria (LIVE, todos los '
                 'SKUs). stock_por_entrar_db = lo que el ÚLTIMO sync guardó (lo que el sistema usa). Si difieren '
@@ -4151,9 +4223,16 @@ def prog_sync_stock_shopify():
         _loc_esp = _cfg('shopify_location_espagiria_id')
         avail_esp = {}
         _esp_onhand = {}
-        if _loc_esp and str(_loc_esp).strip() and str(_loc_esp).strip() != str(_loc_id or '').strip():
-            # ON HAND (GraphQL · 'En existencias') = lo físico producido en Espagiria · los leftovers de
-            # entregas parciales tienen on_hand pero available='-' (REST los saltaba). Fallback a available.
+        # Sebastián 6-jul · "por entrar" = on_hand en TODA location que NO sea la principal (Ánimus Lab).
+        # ROBUSTO: la consulta por-location específica de Espagiria devolvía 0 (el ID configurado no coincide
+        # con la bodega real / la API no devuelve ese nivel) → los 907/540/441 de SAH/ANIMUSLASH no se veían.
+        # Excluir la principal captura todo el físico producido fuera de la góndola de venta.
+        try:
+            _esp_onhand = _shopify_onhand_no_principal(token, shop, _loc_id) or {}
+        except Exception:
+            _esp_onhand = {}
+        # Fallback legacy: la location específica de Espagiria (por si no_principal falla y el ID sí sirve).
+        if not _esp_onhand and _loc_esp and str(_loc_esp).strip() and str(_loc_esp).strip() != str(_loc_id or '').strip():
             try:
                 _esp_onhand = _shopify_onhand_location_graphql(token, shop, _loc_esp) or {}
             except Exception:

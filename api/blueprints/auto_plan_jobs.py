@@ -1074,31 +1074,42 @@ def job_sync_stock_shopify_diario(app):
                 avail_map = _fetch_shopify_available(token, shop, inv_item_ids, location_id=_loc_id) or {}
             except Exception:
                 avail_map = {}
-            # Paso 2 · Espagiria (por entrar) · location aparte
+            # Paso 2 · "por entrar" = on_hand en TODA location que NO sea la principal (Ánimus Lab).
+            # Sebastián 6-jul · ROBUSTO: la consulta por-location específica de Espagiria daba 0 (ID mal
+            # configurado / la API no devuelve ese nivel) → 907/540/441 no se veían. Excluir la principal
+            # captura todo el físico producido fuera de la góndola de venta.
             try:
-                _re = conn.execute("SELECT valor FROM animus_config WHERE clave='shopify_location_espagiria_id'").fetchone()
-                _loc_esp = (_re[0] if _re else None)
+                from .programacion import _shopify_onhand_no_principal as _oh_np
             except Exception:
-                _loc_esp = None
-            if _loc_esp and str(_loc_esp).strip() and str(_loc_esp).strip() != str(_loc_id or '').strip():
-                # ON HAND (GraphQL · 'En existencias') = lo físico producido en Espagiria · leftovers de
-                # entregas parciales tienen on_hand pero available='-' → REST los salta. Fallback a available.
                 try:
-                    from .programacion import _shopify_onhand_location_graphql as _oh_gql
+                    from blueprints.programacion import _shopify_onhand_no_principal as _oh_np
                 except Exception:
+                    _oh_np = None
+            try:
+                _esp_onhand = (_oh_np(token, shop, _loc_id) or {}) if _oh_np else {}
+            except Exception:
+                _esp_onhand = {}
+            # Fallback legacy · location específica de Espagiria (si no_principal falla y el ID sí sirve).
+            if not _esp_onhand:
+                try:
+                    _re = conn.execute("SELECT valor FROM animus_config WHERE clave='shopify_location_espagiria_id'").fetchone()
+                    _loc_esp = (_re[0] if _re else None)
+                except Exception:
+                    _loc_esp = None
+                if _loc_esp and str(_loc_esp).strip() and str(_loc_esp).strip() != str(_loc_id or '').strip():
                     try:
                         from blueprints.programacion import _shopify_onhand_location_graphql as _oh_gql
                     except Exception:
                         _oh_gql = None
-                try:
-                    _esp_onhand = (_oh_gql(token, shop, _loc_esp) or {}) if _oh_gql else {}
-                except Exception:
-                    _esp_onhand = {}
-                if not _esp_onhand:
                     try:
-                        avail_esp = _fetch_shopify_available(token, shop, inv_item_ids, location_id=_loc_esp) or {}
+                        _esp_onhand = (_oh_gql(token, shop, _loc_esp) or {}) if _oh_gql else {}
                     except Exception:
-                        avail_esp = {}
+                        _esp_onhand = {}
+                    if not _esp_onhand:
+                        try:
+                            avail_esp = _fetch_shopify_available(token, shop, inv_item_ids, location_id=_loc_esp) or {}
+                        except Exception:
+                            avail_esp = {}
         used_available = bool(avail_map)
         # FIX 30-may-2026 · audit Plan · si NO se obtuvo "Available" real, el sync
         # cae a "On hand" (incluye Committed = ya vendido) → infla el stock de
