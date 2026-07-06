@@ -3149,7 +3149,28 @@ def prog_diag_inventarios_shopify():
                             key=lambda x: -x['uds'])
             espagiria_location_side = {'total_uds': sum(x['uds'] for x in _elist),
                                        'n_skus': len(_elist), 'skus': _elist[:60]}
+    # RAW de la location de Espagiria (primeros 15 niveles · todos los campos) → ver si devuelve nodos o vacío
+    espagiria_raw = None
+    if cfg_esp:
+        try:
+            _gq = ('{location(id:"gid://shopify/Location/' + cfg_esp + '"){name inventoryLevels(first:15){nodes{'
+                   'quantities(names:["on_hand","available","committed"]){name quantity} '
+                   'item{id sku variant{sku title}}}}}}')
+            _b = json.dumps({'query': _gq}).encode('utf-8')
+            _rq = urllib.request.Request('https://' + shop + '/admin/api/2024-01/graphql.json', data=_b,
+                                         headers={'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'})
+            with urllib.request.urlopen(_rq, timeout=20) as _r:
+                _rd = json.loads(_r.read())
+            _loc = ((_rd.get('data') or {}).get('location')) or {}
+            espagiria_raw = {'errors': _rd.get('errors'), 'name': _loc.get('name'),
+                             'n_nodos': len((_loc.get('inventoryLevels') or {}).get('nodes') or []),
+                             'nodes': (_loc.get('inventoryLevels') or {}).get('nodes') or []}
+        except urllib.error.HTTPError as _he:
+            espagiria_raw = {'http_error': _he.code, 'body': _he.read().decode('utf-8', errors='replace')[:500]}
+        except Exception as _e:
+            espagiria_raw = {'exception': str(_e)}
     return jsonify({
+        'espagiria_raw': espagiria_raw,
         'ok': True, 'shop': shop,
         'graphql_onhand_debug': gql_onhand_debug,
         'debug_sku_result': debug_sku_result,
