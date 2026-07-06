@@ -13325,17 +13325,19 @@ def abastecimiento_consumo_horizontes():
 
 
 def _trail_envase(c, codigo_up, mee_row):
-    """Sebastián 5-jul · trail de un ENVASE (MEE): productos cuya presentación usa este envase
-    (producto_presentaciones) + lotes futuros × unidades (kg×1000/ml). Antes el trail-mp solo manejaba MP →
-    clic en un envase tiraba 'MP no existe'. Muestra CÓMO SUMA la demanda de envases."""
+    """Sebastián 5-jul · trail de un ENVASE (MEE): productos cuya presentación usa este envase + lotes futuros
+    × unidades. ⚠ Aplica el SHARE por presentación (igual que el abastecimiento real _ratio_presentaciones):
+    un producto multi-presentación (15+30ml, tonos) reparte cada lote por VENTAS → el frasco 15ml solo recibe
+    su porción, NO el lote completo. Share = ventas_mes_referencia (manual) → ventas Shopify 90d por SKU →
+    uniforme. Antes contaba el kg entero en cada presentación (sobre-conteo · lo cazó Sebastián)."""
     from datetime import date as _d, timedelta as _td
+    import json as _json
     hoy = _d.today()
     hoy_iso = hoy.isoformat()
     cutoff = (hoy + _td(days=365)).isoformat()
 
     def _np(s):
         return ' '.join((s or '').strip().upper().split())
-    # códigos equivalentes: el canónico + sus alias (mee_aliases)
     cods = {codigo_up}
     try:
         for (a,) in c.execute("SELECT alias FROM mee_aliases WHERE UPPER(TRIM(codigo_mee))=?", (codigo_up,)).fetchall():
@@ -13343,19 +13345,51 @@ def _trail_envase(c, codigo_up, mee_row):
                 cods.add(str(a).strip().upper())
     except Exception:
         pass
-    _cods = tuple(cods)
-    _ph = ','.join('?' for _ in _cods)
-    # productos cuya presentación ACTIVA usa este envase (+ su volumen)
-    prod_ml = {}
+    # TODAS las presentaciones por producto (para el ratio · marcá cuáles usan ESTE envase)
+    pres_by_prod = {}
     try:
-        for pn, vol in c.execute(
-                "SELECT producto_nombre, COALESCE(volumen_ml,0) FROM producto_presentaciones "
-                "WHERE COALESCE(activo,1)=1 AND UPPER(TRIM(COALESCE(envase_codigo,''))) IN (" + _ph + ")",
-                _cods).fetchall():
-            prod_ml[_np(pn)] = float(vol or 0)
+        for pn, pcod, env, vol, vmr, sk in c.execute(
+                "SELECT producto_nombre, COALESCE(codigo,''), COALESCE(envase_codigo,''), COALESCE(volumen_ml,0), "
+                "COALESCE(ventas_mes_referencia,0), COALESCE(sku_shopify,'') FROM producto_presentaciones "
+                "WHERE COALESCE(activo,1)=1").fetchall():
+            pres_by_prod.setdefault(_np(pn), []).append({
+                'codigo': pcod, 'envase': str(env).strip().upper(), 'vol': float(vol or 0),
+                'vmr': float(vmr or 0), 'sku': str(sk or '').strip().upper(),
+                'usa': str(env).strip().upper() in cods})
     except Exception:
         pass
-    # lotes futuros de esos productos (o con override a este envase)
+    # ventas 90d por SKU (Shopify) para el ratio (prioridad 2)
+    ventas_sku = {}
+    try:
+        cut90 = (hoy - _td(days=90)).isoformat()
+        for (si,) in c.execute("SELECT sku_items FROM animus_shopify_orders WHERE creado_en >= ? "
+                               "AND sku_items IS NOT NULL", (cut90,)).fetchall():
+            try:
+                items = _json.loads(si)
+            except Exception:
+                continue
+            for it in (items or []):
+                k = str(it.get('sku', '') or '').strip().upper()
+                q = int(it.get('qty') or it.get('quantity') or 0)
+                if k and q > 0:
+                    ventas_sku[k] = ventas_sku.get(k, 0) + q
+    except Exception:
+        pass
+
+    def _ratio(pres):
+        if not pres:
+            return {}
+        if len(pres) == 1:
+            return {pres[0]['codigo']: 1.0}
+        s = sum(p['vmr'] for p in pres)
+        if s > 0:
+            return {p['codigo']: p['vmr'] / s for p in pres}   # 1) override manual
+        vt = {p['codigo']: ventas_sku.get(p['sku'], 0) for p in pres}
+        tt = sum(vt.values())
+        if tt > 0:
+            return {k: v / tt for k, v in vt.items()}           # 2) ventas Shopify 90d por SKU
+        return {p['codigo']: 1.0 / len(pres) for p in pres}     # 3) uniforme
+
     rows = c.execute(
         "SELECT id, producto, substr(fecha_programada,1,10), COALESCE(cantidad_kg,0), COALESCE(origen,''), "
         "COALESCE(envase_codigo_override,'') FROM produccion_programada "
@@ -13368,14 +13402,24 @@ def _trail_envase(c, codigo_up, mee_row):
     for pid, prod, fecha, kg, origen, ovr in rows:
         pu = _np(prod)
         ovr_up = str(ovr or '').strip().upper()
+        kgf = float(kg or 0)
+        pres = pres_by_prod.get(pu, [])
         if ovr_up and ovr_up in cods:
-            ml = prod_ml.get(pu, 0.0)
-        elif not ovr_up and pu in prod_ml:
-            ml = prod_ml.get(pu, 0.0)
+            # override: TODO el lote va a este envase (a su ml)
+            ml = next((p['vol'] for p in pres if p['usa'] and p['vol'] > 0), float(mee_row[2] or 0))
+            uds = int(round(kgf * 1000.0 / ml)) if ml > 0 else 0
+            share = 1.0
+        elif (not ovr_up) and any(p['usa'] for p in pres):
+            rats = _ratio(pres)
+            uds = 0
+            share = 0.0
+            for p in pres:
+                if p['usa'] and p['vol'] > 0:
+                    r = rats.get(p['codigo'], 0)
+                    share += r
+                    uds += int(round(kgf * r * 1000.0 / p['vol']))
         else:
-            continue   # este lote no usa este envase
-        ml = float(ml or 0)
-        uds = int(round(float(kg or 0) * 1000.0 / ml)) if ml > 0 else 0
+            continue
         try:
             dd = (_d.fromisoformat(fecha) - hoy).days
         except Exception:
@@ -13384,13 +13428,18 @@ def _trail_envase(c, codigo_up, mee_row):
             if dd <= h:
                 tot[h] += uds
         filas.append({'produccion_id': pid, 'producto': prod, 'fecha': fecha, 'dias': dd,
-                      'cantidad_kg': round(float(kg or 0), 2), 'volumen_ml': ml, 'unidades': uds, 'origen': origen})
+                      'cantidad_kg': round(kgf, 2), 'share_pct': round(share * 100, 1),
+                      'unidades': uds, 'origen': origen})
     return jsonify({
         'ok': True, 'es_mee': True, 'codigo_mp': mee_row[0],
         'nombre_comercial': mee_row[1], 'volumen_ml': mee_row[2],
-        'productos_que_usan': [{'producto': k.title(), 'volumen_ml': v} for k, v in prod_ml.items()],
+        'productos_que_usan': [{'producto': pn.title()} for pn, pres in pres_by_prod.items()
+                               if any(p['usa'] for p in pres)],
         'n_producciones': len(filas), 'producciones': filas,
         'total_unidades_por_horizonte': {str(h): int(tot[h]) for h in HOR},
+        'nota': 'unidades = kg × share × 1000 ÷ ml. El share es la porción del lote que va a ESTA presentación '
+                '(por ventas_mes_referencia manual, o ventas Shopify 90d por SKU, o uniforme si falta data). '
+                'Si ves share 50%/50% parejo en un multi-presentación, falta configurar sus ventas por presentación.',
     })
 
 
