@@ -3436,6 +3436,52 @@ def prog_pres_quitar():
     return jsonify({'ok': True, 'producto': prod, 'presentacion_codigo': cod})
 
 
+@bp.route('/api/programacion/pres-crear', methods=['GET', 'POST'])
+def prog_pres_crear():
+    """M58/5-jul · asignar envase a un producto que no tenía (crea la presentación producto→volumen→envase).
+    Si ya existe (producto, V<vol>) la reactiva/actualiza."""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    d = request.get_json(silent=True) or {}
+    prod = (request.args.get('producto') or d.get('producto') or '').strip()
+    env = (request.args.get('envase') or d.get('envase') or '').strip()
+    try:
+        vol = float(request.args.get('volumen_ml') if request.args.get('volumen_ml') is not None else (d.get('volumen_ml') or 0))
+    except Exception:
+        vol = 0
+    if not (prod and env and vol > 0):
+        return jsonify({'ok': False, 'error': 'falta producto, envase o volumen (>0)'})
+    conn = get_db()
+    cod = 'V' + str(int(round(vol)))
+    ex = conn.execute("SELECT id FROM producto_presentaciones WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) "
+                      "AND presentacion_codigo=?", (prod, cod)).fetchone()
+    if ex:
+        conn.execute("UPDATE producto_presentaciones SET envase_codigo=?, volumen_ml=?, activo=1 WHERE id=?",
+                     (env.upper(), vol, ex[0]))
+    else:
+        conn.execute("INSERT INTO producto_presentaciones (producto_nombre, presentacion_codigo, etiqueta, "
+                     "volumen_ml, envase_codigo, activo) VALUES (?,?,?,?,?,1)",
+                     (prod, cod, str(int(round(vol))) + ' ml', vol, env.upper()))
+    conn.commit()
+    return jsonify({'ok': True, 'producto': prod, 'volumen_ml': vol, 'envase': env.upper()})
+
+
+@bp.route('/api/programacion/envases-lista', methods=['GET'])
+def prog_envases_lista():
+    """Lista de códigos MEE (envases) activos para los dropdowns de asignación."""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db(); c = conn.cursor()
+    out = []
+    try:
+        for cod, desc in c.execute("SELECT codigo, COALESCE(descripcion,'') FROM maestro_mee "
+                                   "WHERE COALESCE(estado,'Activo')<>'Inactivo' ORDER BY codigo").fetchall():
+            out.append({'codigo': cod, 'descripcion': desc})
+    except Exception:
+        pass
+    return jsonify({'ok': True, 'envases': out})
+
+
 @bp.route('/api/programacion/envases-por-tamano', methods=['GET'])
 def prog_envases_por_tamano():
     """M58/5-jul · agrupa TODAS las presentaciones activas por VOLUMEN y muestra qué ENVASE usa cada producto en

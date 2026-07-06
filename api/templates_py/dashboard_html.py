@@ -20096,6 +20096,24 @@ async function ckMarcar(itemId, estado){
     var el = document.getElementById('reparto-panel'); if(!el) return;
     el.innerHTML = '<div style="color:#94a3b8;padding:20px">Cargando…</div>';
     var h = '';
+    // === Sección 0 · Productos SIN envase asignado ===
+    try{
+      var cov = await (await fetch('/api/abastecimiento/envases-cobertura')).json();
+      var envs = ((await (await fetch('/api/programacion/envases-lista')).json()).envases)||[];
+      var envOpts = envs.map(function(e){ return '<option value="'+escapeHtmlNec(e.codigo)+'">'+escapeHtmlNec(e.codigo)+' · '+escapeHtmlNec(e.descripcion)+'</option>'; }).join('');
+      var faltan = cov.sin_envase||[];
+      h += '<div style="font-weight:800;color:'+(faltan.length?'#b91c1c':'#065f46')+';font-size:16px;margin-bottom:4px">'+(faltan.length?'⚠️ '+faltan.length+' producto(s) SIN envase':'✅ Todos los productos activos tienen envase')+'</div>';
+      if(faltan.length){
+        h += '<div style="font-size:12px;color:#475569;margin-bottom:8px">Estos se producen pero su envase NO se planea/compra (demanda 0). Asignales el frasco (tamaño + envase):</div>';
+        faltan.forEach(function(pn,i){
+          h += '<div style="display:flex;gap:8px;align-items:center;margin:3px 0;font-size:12px;flex-wrap:wrap"><span style="min-width:240px;color:#334155;font-weight:600">'+escapeHtmlNec(pn)+'</span>'
+            +'<label style="color:#64748b">ml <input type="number" id="nv-'+i+'" style="width:56px;padding:4px;border:1px solid #f59e0b;border-radius:6px"></label>'
+            +'<select id="ne-'+i+'" style="padding:4px;border:1px solid #e6e1f2;border-radius:6px;font-size:11px;max-width:280px">'+envOpts+'</select>'
+            +'<button data-prod="'+escapeHtmlNec(pn)+'" data-idx="'+i+'" onclick="asignarEnvase(this)" style="background:#16a34a;color:#fff;border:none;padding:4px 12px;border-radius:7px;font-weight:700;cursor:pointer;font-size:12px">Asignar</button></div>';
+        });
+      }
+      h += '<div style="border-top:2px solid #ece9f5;margin:16px 0 12px"></div>';
+    }catch(e){}
     // === Sección 1 · Envase por tamaño (todos los 10ml en el mismo frasco) ===
     try{
       var t = await (await fetch('/api/programacion/envases-por-tamano')).json();
@@ -20141,6 +20159,14 @@ async function ckMarcar(itemId, estado){
       if(!(d.productos||[]).length) h += '<div style="color:#94a3b8;padding:20px">No hay productos con 2+ presentaciones.</div>';
       el.innerHTML = h;
     }catch(e){ el.innerHTML = '<div style="color:#dc2626;padding:20px">Error: '+e+'</div>'; }
+  }
+  async function asignarEnvase(btn){
+    var pn=btn.dataset.prod, i=btn.dataset.idx;
+    var vol=document.getElementById('nv-'+i), env=document.getElementById('ne-'+i);
+    if(!vol||!vol.value||!env||!env.value){ alert('Poné el tamaño (ml) y elegí el envase'); return; }
+    btn.disabled=true; btn.textContent='…';
+    try{ await fetch('/api/programacion/pres-crear?producto='+encodeURIComponent(pn)+'&volumen_ml='+encodeURIComponent(vol.value)+'&envase='+encodeURIComponent(env.value)); }catch(e){}
+    cargarReparto();
   }
   async function setSkuVol(sku,v){ try{ await fetch('/api/programacion/sku-volumen?sku='+encodeURIComponent(sku)+'&volumen_ml='+encodeURIComponent(v)); }catch(e){} cargarReparto(); }
   async function setPresVentas(prod,cod,v){ try{ await fetch('/api/programacion/pres-ventas?producto='+encodeURIComponent(prod)+'&presentacion_codigo='+encodeURIComponent(cod)+'&ventas_mes='+encodeURIComponent(v)); }catch(e){} cargarReparto(); }
