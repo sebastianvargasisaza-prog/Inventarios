@@ -1415,7 +1415,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         var r=await fetch('/api/programacion/programar/'+pid+'/terminar',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:'{}'});
         if(r.ok){document.getElementById('prod-msg').innerHTML='<div style="background:#dcfce7;color:#166534;padding:8px 12px;border-radius:6px">&#9632; Fabricación finalizada · área marcada sucia</div>';window.cargarEnProcesoFab();window.cargarFabTerminadas();}
       };
-      try{cargarOperariosFab();cargarEnProcesoFab();cargarFabTerminadas();setInterval(function(){cargarEnProcesoFab();cargarFabTerminadas();},20000);}catch(e){}
+      try{cargarOperariosFab();cargarEnProcesoFab();cargarFabTerminadas();setInterval(function(){ if(document.hidden) return; var _el=document.getElementById('encurso-body'); if(_el && _el.offsetParent===null) return; cargarEnProcesoFab();cargarFabTerminadas(); },20000);}catch(e){}
     })();
     </script>
     <!-- 🔵 En fabricación · en curso (Sebastián 25-jun: Fabricación = lo activo, paso a paso) -->
@@ -15529,10 +15529,9 @@ async function ckMarcar(itemId, estado){
       if(this.checked) cmStartAutoRefresh();
       else cmStopAutoRefresh();
     });}
-    // Default tab: Necesidades cuando abres Programación · Sebastián 13-may-2026
-    setTimeout(function(){
-      if(typeof switchProgTab==='function') switchProgTab('necesidades');
-    }, 100);
+    // PERF 6-jul (diag fable): NO cargar Necesidades en CADA apertura de la app · es el endpoint más pesado
+    // (parsea velocidad) y casi siempre la pestaña Programación no está visible al arrancar. Se carga LAZY
+    // cuando se abre Programación (showTab('programacion') → switchProgTab('necesidades'), línea ~4424).
   });
 
   // KPIs de actividades (turnos, horas por operario, por tipo)

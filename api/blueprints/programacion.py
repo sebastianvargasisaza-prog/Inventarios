@@ -1999,8 +1999,9 @@ def prog_resumen():
     # 1. Shopify velocity
     vel_data = _shopify_velocity(conn, days=60)
 
-    # 2. Calendar events
-    cal = _fetch_calendar_events(days_ahead=90)
+    # 2. Calendar events · PERF 6-jul (fable): usar la versión CACHEADA (TTL 60s) · antes hacía HTTP iCal
+    # directo (timeout 10s) en CADA carga de Programación · se sumaba a la IA para rozar el timeout de 30s.
+    cal = _fetch_calendar_events_cached(days_ahead=90)
 
     # 3. MP stock
     mp_stock = _get_mp_stock(conn)
@@ -2021,10 +2022,16 @@ def prog_resumen():
         china_mps=china_mps_set
     )
 
-    # 6. AI narrative (non-blocking)
+    # 6. AI narrative · PERF 6-jul (fable): cache 15min · era HTTP síncrono ~15s a Anthropic en CADA carga.
     narrativa = None
     try:
-        narrativa = _generate_narrative(projection, alerts, vel_data, conn=conn)
+        import time as _tnar
+        if _NARRATIVE_CACHE.get('text') is not None and (_tnar.time() - _NARRATIVE_CACHE.get('ts', 0)) < 900:
+            narrativa = _NARRATIVE_CACHE['text']
+        else:
+            narrativa = _generate_narrative(projection, alerts, vel_data, conn=conn)
+            _NARRATIVE_CACHE['text'] = narrativa
+            _NARRATIVE_CACHE['ts'] = _tnar.time()
     except Exception:
         pass
 
@@ -7852,6 +7859,7 @@ def prog_composicion_mee(evento_id):
 
 
 _VENTAS_SKU_180D_CACHE = {'data': None, 'ts': 0.0}  # cache global TTL · escaneo Shopify 180d es pesado (M43)
+_NARRATIVE_CACHE = {'text': None, 'ts': 0.0}  # PERF 6-jul (fable) · la narrativa IA es HTTP síncrono ~15s a Anthropic · cache 15min
 
 
 def _ventas_sku_180d(c):
