@@ -3085,22 +3085,36 @@ def prog_sync_historico_shopify():
     except Exception:
         meses = 15
     meses = max(3, min(meses, 30))
-    conn = get_db()
+    # Corre EN SEGUNDO PLANO (el sync profundo tarda minutos → una petición sola se cuelga/timeout). Commitea
+    # por página, así que el progreso se ve al re-consultar el rango. Sebastián 5-jul.
+    from flask import current_app
+    _app = current_app._get_current_object()
+
+    def _run_deep():
+        with _app.app_context():
+            try:
+                from database import get_db as _gdb
+                from shopify_client import sync_shopify_orders as _sso
+                _sso(_gdb(), days=meses * 31, incluir_movimientos=False)
+            except Exception:
+                pass
     try:
-        from shopify_client import sync_shopify_orders as _sso
-        d = _sso(conn, days=meses * 31, incluir_movimientos=False)
+        import threading
+        threading.Thread(target=_run_deep, daemon=True).start()
     except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
+        return jsonify({'ok': False, 'error': 'no se pudo iniciar: ' + str(e)}), 500
+    conn = get_db()
     try:
         rango = conn.execute("SELECT MIN(substr(creado_en,1,10)), MAX(substr(creado_en,1,10)), COUNT(*) "
                              "FROM animus_shopify_orders").fetchone()
     except Exception:
         rango = (None, None, None)
     return jsonify({
-        'ok': bool(d.get('ok')), 'meses_pedidos': meses, 'synced': d.get('synced'), 'error': d.get('error'),
-        'rango_en_eos': {'desde': rango[0], 'hasta': rango[1], 'total_ordenes': rango[2]},
-        'nota': 'Si "desde" ya llega al año pasado, corré diag-estacionalidad de nuevo → el noviembre real '
-                'debería aparecer con su multiplicador. Si NO llegó tan atrás, re-corré este endpoint (continúa).',
+        'ok': True, 'iniciado_en_segundo_plano': True, 'meses_pedidos': meses,
+        'rango_actual_en_eos': {'desde': rango[0], 'hasta': rango[1], 'total_ordenes': rango[2]},
+        'nota': 'El sync corre EN SEGUNDO PLANO (puede tardar varios minutos). VOLVÉ a abrir esta misma URL '
+                'cada 1-2 min y mirá cómo "desde" retrocede hacia el año pasado. Cuando llegue a ~mediados de '
+                '2025, corré diag-estacionalidad → el noviembre real aparece.',
     })
 
 
