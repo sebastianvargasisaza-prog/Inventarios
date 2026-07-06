@@ -178,33 +178,65 @@ def _shopify_velocity(conn, days=60):
     Lookup de producto: exacto primero, luego parte antes del primer guión
     (pero NUNCA trunca a 6 chars — eso rompía SVITC33 y RECN-2).
     """
-    since = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
-    # FIX 1-jun-2026 (audit): excluir canceladas/reembolsadas (inflan la velocidad →
-    # sobreproducción). Mismo filtro que plan.py/auto_plan. Fallback si faltan columnas.
-    _vel_base = ("SELECT sku_items, unidades_total, creado_en FROM animus_shopify_orders "
-                 "WHERE creado_en >= ? AND sku_items IS NOT NULL")
-    _vel_filtro = (" AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') "
-                   "AND LOWER(COALESCE(estado_pago,'')) NOT IN "
-                   "('refunded','voided','partially_refunded')")
+    # PERF 6-jul (M43 · Sebastián) · memo flask.g (el badge /n-alertas + /resumen + /alertas lo llaman repetido)
     try:
-        rows = conn.execute(_vel_base + _vel_filtro, (since,)).fetchall()
+        from flask import g as _g
+        _memo = getattr(_g, '_shopvel_memo', None)
+        if _memo is None:
+            _memo = {}
+            _g._shopvel_memo = _memo
+        if days in _memo:
+            return _memo[days]
     except Exception:
-        rows = conn.execute(_vel_base, (since,)).fetchall()
-
-    sku_units = {}  # full_sku -> total units in period
-
-    for row in rows:
+        _g = None
+        _memo = None
+    since = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+    sku_units = {}   # full_sku -> total units in period
+    all_dates = []
+    n_rows = 0
+    _vd_ok = False
+    # FAST PATH: ventas_diarias precalculada por cron 3×/día (mismos filtros cancelados/refunds/B2B) → evita
+    # parsear el JSON de ~16-39k órdenes en CADA carga (este helper no tenía NINGÚN cache). Fallback si vacía.
+    try:
+        _vd = conn.execute("SELECT sku, fecha, cantidad FROM ventas_diarias WHERE fecha >= ?", (since,)).fetchall()
+        if _vd:
+            for _sk, _fe, _q in _vd:
+                sku = str(_sk or '').strip().upper()
+                qty = float(_q or 0)
+                if not sku or qty <= 0:
+                    continue
+                sku_units[sku] = sku_units.get(sku, 0) + qty
+                if _fe:
+                    all_dates.append(_fe)
+            n_rows = len(_vd)
+            _vd_ok = True
+    except Exception:
+        _vd_ok = False
+    if not _vd_ok:
+        # FIX 1-jun-2026 (audit): excluir canceladas/reembolsadas (inflan la velocidad → sobreproducción).
+        _vel_base = ("SELECT sku_items, unidades_total, creado_en FROM animus_shopify_orders "
+                     "WHERE creado_en >= ? AND sku_items IS NOT NULL")
+        _vel_filtro = (" AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') "
+                       "AND LOWER(COALESCE(estado_pago,'')) NOT IN "
+                       "('refunded','voided','partially_refunded')")
         try:
-            items = json.loads(row[0]) if row[0] else []
+            rows = conn.execute(_vel_base + _vel_filtro, (since,)).fetchall()
         except Exception:
-            items = []
-        for item in items:
-            raw_sku = str(item.get('sku', '') or '').strip().upper()
-            qty = int(item.get('qty', 0) or 0)
-            if not raw_sku or qty <= 0:
-                continue
-            # Store full SKU — no truncation
-            sku_units[raw_sku] = sku_units.get(raw_sku, 0) + qty
+            rows = conn.execute(_vel_base, (since,)).fetchall()
+        for row in rows:
+            try:
+                items = json.loads(row[0]) if row[0] else []
+            except Exception:
+                items = []
+            for item in items:
+                raw_sku = str(item.get('sku', '') or '').strip().upper()
+                qty = int(item.get('qty', 0) or 0)
+                if not raw_sku or qty <= 0:
+                    continue
+                sku_units[raw_sku] = sku_units.get(raw_sku, 0) + qty
+            if row[2]:
+                all_dates.append(row[2])
+        n_rows = len(rows)
 
     # Denominador inteligente: prefiere ventana real solicitada (`days`) si
     # hay cobertura suficiente; sino cae a `actual_days` PERO marca data
@@ -216,8 +248,7 @@ def _shopify_velocity(conn, days=60):
     actual_days = days  # default conservador
     data_quality = 'ok'
     coverage_pct = 100
-    if rows:
-        all_dates = [r[2] for r in rows if r[2]]
+    if n_rows:
         if len(all_dates) >= 2:
             from datetime import date as _dt
             d_min = _dt.fromisoformat(min(all_dates)[:10])
@@ -260,16 +291,22 @@ def _shopify_velocity(conn, days=60):
         if prod:
             prod_vel[prod] = round(prod_vel.get(prod, 0) + vel, 1)
 
-    return {
+    _result = {
         'sku_velocity': sku_vel,
         'prod_velocity': prod_vel,
-        'total_orders': len(rows),
+        'total_orders': n_rows,
         'days_requested': days,
         'actual_days_data': actual_days,
         'months_analyzed': round(months, 2),
         'data_quality': data_quality,    # ok|low|very_low|no_data
         'coverage_pct': coverage_pct,
     }
+    if _memo is not None:
+        try:
+            _memo[days] = _result
+        except Exception:
+            pass
+    return _result
 
 # ─── Google Calendar ─────────────────────────────────────────────────────────
 

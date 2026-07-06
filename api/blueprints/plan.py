@@ -3670,16 +3670,41 @@ def _ventas_maps_shopify(c, vd_base, vd_iso, cut30, cut90, b2b_sql_extra, b2b_pa
                 return (dict(_c60), dict(_c30), dict(_c90), dict(_cpv))
         except Exception:
             pass
+    # PERF 6-jul (M43 · Sebastián) · FAST PATH: leer ventas_diarias (precalculada por cron 3×/día · MISMOS
+    # filtros cancelados/refunds/B2B ya aplicados) en vez de parsear el JSON de ~16-39k órdenes en cold-miss.
+    # Si la tabla está vacía (cron aún no corrió) cae al parse de abajo. Resultado idéntico.
+    v60, v30, v90, pv = {}, {}, {}, {}
+    _vd_ok = False
+    try:
+        _vdrows = c.execute("SELECT sku, fecha, cantidad FROM ventas_diarias WHERE fecha >= ?", (vd_base,)).fetchall()
+        if _vdrows:
+            for _sk, _fe, _q in _vdrows:
+                sku = str(_sk or '').strip().upper()
+                qty = float(_q or 0)
+                if not sku or qty <= 0 or not _fe or sku in skus_regalo:
+                    continue
+                c10 = str(_fe)[:10]
+                if c10 >= vd_iso:
+                    v60[sku] = v60.get(sku, 0) + qty
+                if c10 >= cut30:
+                    v30[sku] = v30.get(sku, 0) + qty
+                if c10 >= cut90:
+                    v90[sku] = v90.get(sku, 0) + qty
+                    _p = pv.get(sku)
+                    if _p is None or c10 < _p:
+                        pv[sku] = c10
+            _vd_ok = True
+    except Exception:
+        _vd_ok = False
     base_sql = ("SELECT sku_items, creado_en FROM animus_shopify_orders "
                 "WHERE creado_en >= ? AND sku_items IS NOT NULL AND sku_items != '' "
                 "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') "
                 "AND LOWER(COALESCE(estado_pago,'')) NOT IN ('refunded','voided','partially_refunded')")
     try:
-        rows = c.execute(base_sql + b2b_sql_extra, tuple([vd_base] + b2b_params)).fetchall()
+        rows = [] if _vd_ok else c.execute(base_sql + b2b_sql_extra, tuple([vd_base] + b2b_params)).fetchall()
     except Exception as _eVm:
         log.warning('velocidad · filtro B2B falló (%s) · degradando sin filtro', _eVm)
         rows = c.execute(base_sql, (vd_base,)).fetchall()
-    v60, v30, v90, pv = {}, {}, {}, {}
     for r in rows:
         try:
             items = _jVm.loads(r[0]) if r[0] else []
