@@ -2636,18 +2636,20 @@ def _shopify_onhand_location_graphql(token, shop, location_id, timeout=25, max_p
 
 
 def _shopify_onhand_no_principal(token, shop, main_location_id, timeout=25, max_pag=60):
-    """{sku_upper: on_hand} sumando el on_hand de TODAS las locations EXCEPTO la principal (Ánimus Lab).
-    Sebastián 6-jul: la consulta por location_id ESPECÍFICO de Espagiria devolvía 0 (el ID configurado no
-    coincide con la bodega real, o la API no devuelve ese nivel). Esto es robusto: 'por entrar' = todo el
-    on_hand físico que NO está en la góndola de venta (Ánimus Lab) = producido en el lab, por transferir.
-    Usa inventoryLevels (plural · todas las locations) y excluye la principal. All-or-nothing (errors → {})."""
+    """{sku_upper: uds} del "por entrar" AUTOMÁTICO = producido/en camino pero AÚN NO en la góndola de venta.
+    Sebastián 6-jul: el usuario NO quiere cargar nada a mano → se lee de Shopify. Dos señales, sumadas por SKU:
+      · on_hand en TODA location que NO sea la principal (Ánimus Lab) = producido en Espagiria, sin transferir.
+      · incoming en la location PRINCIPAL (Ánimus Lab) = en TRÁNSITO por una transferencia (Espagiria→Ánimus).
+        Esta es la señal ROBUSTA: cuando Sebastián crea la transferencia en Shopify, el destino queda 'incoming'
+        y la API SÍ lo expone (a diferencia del on_hand de Espagiria, que el token no devolvía).
+    Usa inventoryLevels (plural · todas las locations). All-or-nothing (errors → {})."""
     import time as _time
     out = {}
     main_num = str(main_location_id or '').strip()
     url = 'https://' + shop + '/admin/api/2024-01/graphql.json'
     q = ('query($cursor:String){productVariants(first:100,after:$cursor){pageInfo{hasNextPage endCursor}'
          'nodes{sku inventoryItem{inventoryLevels(first:10){nodes{location{id} '
-         'quantities(names:["on_hand"]){name quantity}}}}}}}')
+         'quantities(names:["on_hand","incoming"]){name quantity}}}}}}}')
     cursor = None
     _pag = 0
     while _pag < max_pag:
@@ -2677,10 +2679,11 @@ def _shopify_onhand_no_principal(token, shop, main_location_id, timeout=25, max_
             for lvl in levels:
                 loc_gid = str(((lvl.get('location') or {}).get('id')) or '')
                 loc_num = loc_gid.rsplit('/', 1)[-1] if loc_gid else ''
-                if loc_num and main_num and loc_num == main_num:
-                    continue   # la principal (Ánimus Lab) = góndola de venta, NO 'por entrar'
+                es_main = bool(loc_num and main_num and loc_num == main_num)
+                # principal → 'incoming' (transferencia en tránsito) · otra bodega → 'on_hand' (producido allí)
+                _qname = 'incoming' if es_main else 'on_hand'
                 for _q in (lvl.get('quantities') or []):
-                    if _q.get('name') == 'on_hand':
+                    if _q.get('name') == _qname:
                         try:
                             v = int(_q.get('quantity') or 0)
                             if v > 0:
