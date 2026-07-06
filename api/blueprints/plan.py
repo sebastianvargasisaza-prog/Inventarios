@@ -3900,6 +3900,19 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                 por_entrar_por_sku[_r[0]] = int(_r[1] or 0)
     except Exception:
         por_entrar_por_sku = {}
+    # Carga MANUAL del "por entrar" (Sebastián 6-jul) · cuando EOS no puede leer la bodega de Espagiria por
+    # Shopify (tienda/location fuera del alcance del token), Sebastián carga a mano cuántas unidades hay por
+    # SKU. GANA sobre lo del sync (es lo que él sabe físicamente). app_settings 'por_entrar_manual' {sku:uds}.
+    try:
+        import json as _jpe
+        _rpe = c.execute("SELECT valor FROM app_settings WHERE clave='por_entrar_manual'").fetchone()
+        if _rpe and _rpe[0]:
+            for _sk, _u in (_jpe.loads(_rpe[0]) or {}).items():
+                _sku_u = str(_sk).strip().upper()
+                if _sku_u:
+                    por_entrar_por_sku[_sku_u] = int(_u or 0)
+    except Exception:
+        pass
 
     # FIX 1-jun-2026 Sebastián · caso "Limpiador BHA: vende pero stock 0".
     # El stock se atribuía SOLO por los SKU de sku_producto_map (skus_de_prod).

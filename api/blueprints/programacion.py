@@ -2696,6 +2696,30 @@ def _shopify_onhand_no_principal(token, shop, main_location_id, timeout=25, max_
     return out
 
 
+def _shopify_sku_inventory_full(token, shop, sku, timeout=20):
+    """DEBUG (Sebastián 6-jul) · para UN sku, todas las locations con TODOS los tipos de cantidad (on_hand,
+    available, committed, reserved, damaged, safety_stock, quality_control, incoming) → ubica dónde está el
+    stock que el UI muestra pero la lectura no toma. Devuelve el nodo crudo de Shopify (o {'error':...})."""
+    sku = (sku or '').strip()
+    if not sku:
+        return {'error': 'sin sku'}
+    url = 'https://' + shop + '/admin/api/2024-01/graphql.json'
+    _qtys = '["on_hand","available","committed","reserved","damaged","safety_stock","quality_control","incoming"]'
+    q = ('query($q:String){productVariants(first:10,query:$q){nodes{sku title inventoryItem{tracked '
+         'inventoryLevels(first:20){nodes{location{id name} quantities(names:' + _qtys + '){name quantity}}}}}}}')
+    try:
+        body = json.dumps({'query': q, 'variables': {'q': 'sku:' + sku}}).encode('utf-8')
+        req = urllib.request.Request(url, data=body, headers={
+            'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read())
+        if data.get('errors'):
+            return {'errors': data.get('errors')}
+        return (((data.get('data') or {}).get('productVariants')) or {}).get('nodes') or []
+    except Exception as e:
+        return {'error': str(e)[:200]}
+
+
 def _shopify_locations(token, shop, timeout=12):
     """Lista de locations de Shopify: [{'id','name','active','legacy'}]. [] si falla."""
     try:
@@ -2924,9 +2948,15 @@ def prog_diag_inventarios_shopify():
         gql_onhand_debug = {'http_error': _he.code, 'body': _he.read().decode('utf-8', errors='replace')[:600]}
     except Exception as _e:
         gql_onhand_debug = {'exception': str(_e)}
+    # DEBUG por SKU (?debug_sku=SAH) · TODAS las locations + TODOS los tipos de cantidad → ubica el stock real
+    debug_sku_result = None
+    _dsku = (request.args.get('debug_sku') or '').strip()
+    if _dsku:
+        debug_sku_result = _shopify_sku_inventory_full(token, shop, _dsku)
     return jsonify({
         'ok': True, 'shop': shop,
         'graphql_onhand_debug': gql_onhand_debug,
+        'debug_sku_result': debug_sku_result,
         'locations': [{'id': str(l.get('id')), 'name': l.get('name'),
                        'active': l.get('active'), 'legacy': l.get('legacy')} for l in locs],
         'config_location_id': cfg_loc or None,
