@@ -4404,28 +4404,30 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                 if ml_promedio > 0 and lote_kg_efectivo > 0:
                     uds_lote_total = int(round(lote_kg_efectivo * 1000.0 / ml_promedio))
                 _pipe_uds_prod = (pipeline_kg * 1000.0 / ml_promedio) if ml_promedio > 0 else 0.0
-                _sku_cuello = None          # el tono que fija el cuello de botella (solo entre los de mix ≥5%)
+                _sku_cuello = None          # el tono que MARCA LA PAUTA del producto (el dominante)
                 _MIX_MIN_CUELLO = 5.0       # umbral: un tono que vende <5% del mix NO manda la alarma del producto
+                # Sebastián 6-jul: el tono DOMINANTE (mayor % del mix) marca la pauta del producto, NO el mínimo
+                # (bottleneck). Un tamaño/tono secundario en 0 (ej. VITAMINA C 15ml al 17%, o el 15ml de AZ) NO
+                # tira el producto a crítico: se envasa junto al dominante cuando ESTE lo pide. El secundario
+                # agotado igual se VE en el desglose (su cobertura 0d), pero no cambia la urgencia del producto.
+                _mix_dominante = -1.0
                 for sku_u in skus_del_prod:
                     v_t = int(ventas_por_sku.get(sku_u, 0))
                     pct = round(100.0 * v_t / _total_uds_skus, 1) if _total_uds_skus > 0 else 0
                     uds_estim_lote = int(round(uds_lote_total * pct / 100.0))
-                    # cobertura del tono (Alejandro 5-jul): stock del tono / su velocidad. vel_tono = mix% de
-                    # la vel agregada (misma metodología). El bulk que viene (pipeline) repone por mix.
+                    # cobertura del tono: stock del tono / su velocidad (vel_tono = mix% de la vel agregada).
                     _rs = resolved_stock.get(sku_u) or resolved_stock.get(str(sku_u).strip().upper()) or {}
                     _tono_stock = int(_rs.get('uds', 0) or 0)
                     _tono_vel = (velocidad_uds_dia * v_t / _total_uds_skus) if _total_uds_skus > 0 else 0.0
                     _td_gond = round(_tono_stock / _tono_vel, 1) if _tono_vel > 0.001 else None
                     _td_pipe = (round((_tono_stock + _pipe_uds_prod * v_t / _total_uds_skus) / _tono_vel, 1)
                                 if _tono_vel > 0.001 else None)
-                    # Solo los tonos con mix ≥5% mandan el cuello de botella (Sebastián 5-jul · evita que un
-                    # tono marginal en 0 pinte de rojo un producto con stock · igual se muestra en el desglose).
-                    if pct >= _MIX_MIN_CUELLO:
-                        if _td_gond is not None and (_dias_tono_bottleneck is None or _td_gond < _dias_tono_bottleneck):
-                            _dias_tono_bottleneck = _td_gond
-                            _sku_cuello = sku_u
-                        if _td_pipe is not None and (_dias_tono_bottleneck_pipe is None or _td_pipe < _dias_tono_bottleneck_pipe):
-                            _dias_tono_bottleneck_pipe = _td_pipe
+                    # El tono DOMINANTE (mayor mix ≥5% con cobertura válida) marca la pauta del producto.
+                    if pct >= _MIX_MIN_CUELLO and pct > _mix_dominante and _td_gond is not None:
+                        _mix_dominante = pct
+                        _dias_tono_bottleneck = _td_gond
+                        _dias_tono_bottleneck_pipe = _td_pipe
+                        _sku_cuello = sku_u
                     tonos_arr.append({
                         'sku': sku_u,
                         'tono_label': (tono_por_sku.get(sku_u, '') or sku_u),
@@ -4460,9 +4462,13 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         _pipe_efectivo = max(pipeline_kg, _por_entrar_kg)
         _dcp = round((stock_kg_gondola + _pipe_efectivo) / velocidad_kg_dia, 1) if velocidad_kg_dia > 0 else None
         if _dias_tono_bottleneck is not None:
-            dias_gondola = _dias_tono_bottleneck if dias_gondola is None else min(dias_gondola, _dias_tono_bottleneck)
+            # El tono DOMINANTE marca la cobertura del producto DIRECTAMENTE (no min con el agregado · Sebastián
+            # 6-jul). El agregado (Σstock ÷ vel_total) SUBESTIMA cuando un tamaño grande tiene stock y uno chico
+            # está en 0 (divide el stock del grande por la velocidad total) → daría crítico falso. La cobertura
+            # del dominante (su stock ÷ su velocidad) es la real "cuántos días hasta que se agote el importante".
+            dias_gondola = _dias_tono_bottleneck
             if _dias_tono_bottleneck_pipe is not None:
-                _dcp = _dias_tono_bottleneck_pipe if _dcp is None else min(_dcp, _dias_tono_bottleneck_pipe)
+                _dcp = _dias_tono_bottleneck_pipe
             if velocidad_uds_dia > 0.01 and dias_gondola is not None:
                 if dias_gondola <= cob_critico:
                     urgencia = "CRITICO"

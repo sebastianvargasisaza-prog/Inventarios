@@ -161,3 +161,52 @@ def test_az_hibrid_30ml_con_stock_15ml_cero_no_critico(app, db_clean):
     assert fila["urgencia"] != "CRITICO", (
         "el 15ml marginal (0.1%) en 0 NO debe hacer crítico al producto · lo manda el 30ml (con stock)",
         fila.get("urgencia"), fila.get("dias_gondola"), _tonos)
+
+
+def test_vitaminac_dominante_marca_secundario_significativo_en_cero(app, db_clean):
+    """Sebastián 6-jul (VITAMINA C): el tono DOMINANTE marca la pauta · un tamaño SECUNDARIO ≥5% (15ml al 17%)
+    en 0 NO tira el producto a crítico si el dominante (30ml, 83%) tiene stock. DISTINTO de los marginales <5%:
+    acá el secundario SÍ pasa el umbral 5% pero igual NO manda (antes el 'min' lo hacía crítico falso)."""
+    import json as _j
+    from datetime import date as _d, timedelta as _td
+    PROD = "PROD-VITCTEST"
+    D30 = "VITCT30"     # 30ml · 83% · CON mucho stock
+    S15 = "VITCT15"     # 15ml · 17% (≥5%) · stock 0
+    c = _login_as(app, "sebastian")
+    db = sqlite3.connect(os.environ["DB_PATH"])
+    for t in ("formula_headers", "sku_producto_map"):
+        db.execute(f"DELETE FROM {t} WHERE producto_nombre=?", (PROD,))
+    db.execute("DELETE FROM stock_pt WHERE sku IN (?,?)", (D30, S15))
+    db.execute("DELETE FROM animus_shopify_orders WHERE shopify_id LIKE 'VITCT-%'")
+    db.execute("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo, fecha_creacion) "
+               "VALUES (?, 20, 1, '2025-01-01')", (PROD,))
+    db.execute("INSERT INTO sku_producto_map (sku, producto_nombre, volumen_ml, activo) VALUES (?,?,30,1)", (D30, PROD))
+    db.execute("INSERT INTO sku_producto_map (sku, producto_nombre, volumen_ml, activo) VALUES (?,?,15,1)", (S15, PROD))
+    # 30ml: MUCHO stock (2000 uds ≈ 80d) · 15ml: 0
+    db.execute("INSERT INTO stock_pt (sku, descripcion, lote_produccion, unidades_disponible, estado, empresa) "
+               "VALUES (?,?,?,2000,'Disponible','ANIMUS')", (D30, PROD, "L-30"))
+    db.execute("INSERT INTO stock_pt (sku, descripcion, lote_produccion, unidades_disponible, estado, empresa) "
+               "VALUES (?,?,?,0,'Disponible','ANIMUS')", (S15, PROD, "L-15"))
+    # ventas: 30ml ~83% (25/día ≈ 750/30d) · 15ml ~17% (5/día ≈ 150/30d · ≥5% del mix)
+    today = _d.today()
+    for i in range(30):
+        f = (today - _td(days=i + 1)).isoformat()
+        db.execute("INSERT INTO animus_shopify_orders (shopify_id, nombre, total, moneda, estado, estado_pago, sku_items, unidades_total, creado_en) "
+                   "VALUES (?,?,?,?,?,?,?,?,?)",
+                   (f"VITCT-D{i}", "c", 1000.0, "COP", "", "paid", _j.dumps([{"sku": D30, "qty": 25}, {"sku": S15, "qty": 5}]), 30, f))
+    db.commit(); db.close()
+    r = c.get("/api/plan/necesidades")
+    assert r.status_code == 200, r.data
+    d = r.get_json()
+    animus = next((x for x in d["clientes"] if x["cliente_id"] == "ANIMUS_DTC"), None)
+    fila = next((p for p in animus["productos"] if p["producto_nombre"] == PROD), None)
+    assert fila is not None, "producto no apareció"
+    _tonos = [(t.get('sku'), t.get('stock_uds'), t.get('porcentaje_mix'), t.get('dias_cobertura_tono'))
+              for t in (fila.get('tonos') or [])]
+    # el 30ml (83%, 80d de stock) manda → NO crítico, aunque el 15ml (17% ≥5%) esté en 0d
+    assert fila["urgencia"] != "CRITICO", (
+        "el secundario 15ml (17%) en 0 NO debe hacer crítico si el dominante 30ml tiene stock",
+        fila.get("urgencia"), fila.get("dias_gondola"), _tonos)
+    # la cobertura debe reflejar el 30ml (alta), no el 15ml (0d)
+    assert (fila.get("dias_gondola") or 0) > 30, (
+        "la cobertura debe reflejar el dominante 30ml (~80d), no el 15ml (0d)", fila.get("dias_gondola"), _tonos)

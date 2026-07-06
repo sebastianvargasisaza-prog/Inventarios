@@ -25440,7 +25440,7 @@ async function ckMarcar(itemId, estado){
               + '</tr>';
           });
           html += '</tbody></table>';
-          html += '<div class="necx-note">Mix con ventas de la ventana actual · uds asumen lote bulk completo (' + (p.lote_bulk_kg||0) + 'kg) · Cobertura = stock del tono ÷ su velocidad · <span style="color:#dc2626;font-weight:700">⚠️ = el tono que se agota PRIMERO</span> (manda la próxima) · los tonos marginales en gris (menos del 5% del mix) NO disparan la alarma del producto</div>';
+          html += '<div class="necx-note">Mix con ventas de la ventana actual · uds asumen lote bulk completo (' + (p.lote_bulk_kg||0) + 'kg) · Cobertura = stock del tono ÷ su velocidad · <span style="color:#dc2626;font-weight:700">⚠️ = el tono DOMINANTE</span> (el de mayor mix · marca la pauta del producto) · un tono/tamaño secundario en 0 NO tira el producto a crítico (se envasa junto al dominante · igual verás su cobertura acá)</div>';
           html += '</div></details></td></tr>';
         }
       });
