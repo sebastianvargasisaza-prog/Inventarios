@@ -12553,6 +12553,17 @@ def _proyectar_horizonte_2y(conn, dias=730, usuario='auto-proyeccion', dry_run=F
     PIPELINE_LAG = 7
     MARGEN = 20
 
+    # Fase 1 forecast (Sebastián 5-jul · Black Friday) · factor de estacionalidad por DÍA (mes ÷ mes_actual).
+    # OFF por defecto → todos 1.0 (sin efecto) hasta que se prenda el interruptor estacionalidad_plan_activa.
+    # La demanda diaria proyectada se multiplica por este factor → antes de un mes fuerte (nov 1.62) el stock
+    # se agota más rápido en la simulación → adelanta lotes → MP + envases suben solos.
+    try:
+        from blueprints.programacion import _factores_estacionales as _facest
+        _fac_mes = _facest(conn)
+    except Exception:
+        _fac_mes = {m: 1.0 for m in range(1, 13)}
+    _fac_dia = [_fac_mes.get((hoy + _td(days=_dd)).month, 1.0) for _dd in range(int(dias) + 2)]
+
     # Slots ocupados por fecha (todo lo NO cancelado · respeta Fijo + ejecutado)
     slots = {}
     for r in c.execute(
@@ -12683,7 +12694,7 @@ def _proyectar_horizonte_2y(conn, dias=730, usuario='auto-proyeccion', dry_run=F
         while d <= dias and creados_prod < MAX_LOTES_PROD:
             stock += arrivals.pop(d, 0)
             if d > 0:
-                stock -= demand_g
+                stock -= demand_g * (_fac_dia[d] if d < len(_fac_dia) else 1.0)   # estacionalidad por mes
             if stock <= threshold_g:
                 # NO pedir otro lote si YA hay uno en camino (cualquier llegada futura).
                 # Antes la ventana era d+PIPELINE_LAG+3: si los slots estaban llenos y el lote

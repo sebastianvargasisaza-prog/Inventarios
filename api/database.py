@@ -9798,6 +9798,26 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "  WHERE UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(formula_items.producto_nombre)) "
         "  AND COALESCE(fh.lote_size_kg,0) > 0)",
     ]),
+    (341, "Estacionalidad de demanda · Fase 1 forecast (Sebastián 5-jul · Black Friday). Tabla con el "
+          "multiplicador por MES (1-12): mult_auto (calculado del histórico Shopify · nov=1.62) + mult_override "
+          "(lo que Alejandro fija a mano para corregir anomalías, ej. mayo 2025 fue un one-off). El plan escala "
+          "la venta proyectada por mes/mes_actual. Interruptor app_settings.estacionalidad_plan_activa (default "
+          "OFF) + tope. Seed 12 meses en 1.0 (un refresh los llena del histórico).", [
+        "CREATE TABLE IF NOT EXISTS estacionalidad_meses ("
+        " mes INTEGER PRIMARY KEY, mult_auto REAL DEFAULT 1.0, mult_override REAL, actualizado_at TEXT)",
+        "INSERT INTO estacionalidad_meses (mes, mult_auto) SELECT 1, 1.0 WHERE NOT EXISTS (SELECT 1 FROM estacionalidad_meses WHERE mes=1)",
+        "INSERT INTO estacionalidad_meses (mes, mult_auto) SELECT 2, 1.0 WHERE NOT EXISTS (SELECT 1 FROM estacionalidad_meses WHERE mes=2)",
+        "INSERT INTO estacionalidad_meses (mes, mult_auto) SELECT 3, 1.0 WHERE NOT EXISTS (SELECT 1 FROM estacionalidad_meses WHERE mes=3)",
+        "INSERT INTO estacionalidad_meses (mes, mult_auto) SELECT 4, 1.0 WHERE NOT EXISTS (SELECT 1 FROM estacionalidad_meses WHERE mes=4)",
+        "INSERT INTO estacionalidad_meses (mes, mult_auto) SELECT 5, 1.0 WHERE NOT EXISTS (SELECT 1 FROM estacionalidad_meses WHERE mes=5)",
+        "INSERT INTO estacionalidad_meses (mes, mult_auto) SELECT 6, 1.0 WHERE NOT EXISTS (SELECT 1 FROM estacionalidad_meses WHERE mes=6)",
+        "INSERT INTO estacionalidad_meses (mes, mult_auto) SELECT 7, 1.0 WHERE NOT EXISTS (SELECT 1 FROM estacionalidad_meses WHERE mes=7)",
+        "INSERT INTO estacionalidad_meses (mes, mult_auto) SELECT 8, 1.0 WHERE NOT EXISTS (SELECT 1 FROM estacionalidad_meses WHERE mes=8)",
+        "INSERT INTO estacionalidad_meses (mes, mult_auto) SELECT 9, 1.0 WHERE NOT EXISTS (SELECT 1 FROM estacionalidad_meses WHERE mes=9)",
+        "INSERT INTO estacionalidad_meses (mes, mult_auto) SELECT 10, 1.0 WHERE NOT EXISTS (SELECT 1 FROM estacionalidad_meses WHERE mes=10)",
+        "INSERT INTO estacionalidad_meses (mes, mult_auto) SELECT 11, 1.0 WHERE NOT EXISTS (SELECT 1 FROM estacionalidad_meses WHERE mes=11)",
+        "INSERT INTO estacionalidad_meses (mes, mult_auto) SELECT 12, 1.0 WHERE NOT EXISTS (SELECT 1 FROM estacionalidad_meses WHERE mes=12)",
+    ]),
 ]
 
 

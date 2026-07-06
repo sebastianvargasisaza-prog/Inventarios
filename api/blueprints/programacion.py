@@ -3072,6 +3072,135 @@ def prog_diag_estacionalidad():
                     'nota': 'Multiplicador global (promedio de todos los productos). Pasá ?producto=NOMBRE para el detalle.'})
 
 
+def _refrescar_estacionalidad_auto(conn):
+    """Escribe estacionalidad_meses.mult_auto desde el histórico Shopify (multiplicador GLOBAL por mes).
+    Devuelve {mes: mult}. Sebastián 5-jul (Fase 1 · Black Friday)."""
+    c = conn.cursor()
+    est = _estacionalidad_mensual(c)
+    glob = {m: [] for m in range(1, 13)}
+    for info in est.values():
+        for m in range(1, 13):
+            glob[m].append(info['multiplicadores'][m])
+    glob_avg = {m: (round(sum(v) / len(v), 2) if v else 1.0) for m, v in glob.items()}
+    from datetime import datetime as _dt, timedelta as _td
+    ahora = (_dt.utcnow() - _td(hours=5)).isoformat(timespec='seconds')
+    for m in range(1, 13):
+        conn.execute("UPDATE estacionalidad_meses SET mult_auto=?, actualizado_at=? WHERE mes=?",
+                     (glob_avg[m], ahora, m))
+    conn.commit()
+    return glob_avg
+
+
+def _factores_estacionales(conn):
+    """{mes(1-12): factor} para escalar la venta PROYECTADA de un mes futuro relativo al mes ACTUAL:
+    factor = mult_efectivo[mes] / mult_efectivo[mes_actual], capado a [1/tope, tope]. TODO 1.0 si el
+    interruptor app_settings.estacionalidad_plan_activa != '1' (default OFF · sin efecto). mult_efectivo =
+    override (Alejandro) si está, si no auto (histórico)."""
+    NEUTRO = {m: 1.0 for m in range(1, 13)}
+    try:
+        r = conn.execute("SELECT valor FROM app_settings WHERE clave='estacionalidad_plan_activa'").fetchone()
+        if not (r and str(r[0]).strip() == '1'):
+            return NEUTRO
+    except Exception:
+        return NEUTRO
+    try:
+        rt = conn.execute("SELECT valor FROM app_settings WHERE clave='estacionalidad_tope'").fetchone()
+        tope = float(rt[0]) if rt and rt[0] else 2.0
+    except Exception:
+        tope = 2.0
+    tope = max(1.05, min(tope, 4.0))
+    mult = {}
+    try:
+        for m, au, ov in conn.execute("SELECT mes, COALESCE(mult_auto,1.0), mult_override "
+                                      "FROM estacionalidad_meses").fetchall():
+            mult[int(m)] = float(ov) if ov is not None else float(au or 1.0)
+    except Exception:
+        return NEUTRO
+    if not mult:
+        return NEUTRO
+    from datetime import datetime as _dt, timedelta as _td
+    mes_act = (_dt.utcnow() - _td(hours=5)).month
+    ma = mult.get(mes_act, 1.0) or 1.0
+    out = {}
+    for m in range(1, 13):
+        mo = mult.get(m, 1.0) or 1.0
+        f = (mo / ma) if ma > 0 else 1.0
+        out[m] = round(max(1.0 / tope, min(tope, f)), 3)
+    return out
+
+
+@bp.route('/api/programacion/estacionalidad-config', methods=['GET', 'POST'])
+def prog_estacionalidad_config():
+    """Fase 1 · ver/editar la estacionalidad del plan: interruptor ON/OFF, tope, override por mes (Alejandro),
+    y refrescar el auto desde el histórico. Read+write (admin). Sebastián 5-jul."""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.get_json(silent=True) or {}
+        acc = d.get('accion')
+        if acc == 'refrescar':
+            g = _refrescar_estacionalidad_auto(conn)
+            return jsonify({'ok': True, 'accion': 'refrescar', 'mult_auto': g})
+        if acc == 'toggle':
+            v = '1' if d.get('activa') else '0'
+            conn.execute("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('estacionalidad_plan_activa', ?)", (v,))
+            conn.commit()
+            return jsonify({'ok': True, 'activa': v == '1'})
+        if acc == 'tope':
+            try:
+                t = max(1.05, min(float(d.get('tope') or 2.0), 4.0))
+            except Exception:
+                t = 2.0
+            conn.execute("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('estacionalidad_tope', ?)", (str(t),))
+            conn.commit()
+            return jsonify({'ok': True, 'tope': t})
+        if acc == 'override':
+            try:
+                m = int(d.get('mes') or 0)
+            except Exception:
+                m = 0
+            if not (1 <= m <= 12):
+                return jsonify({'ok': False, 'error': 'mes debe ser 1-12'})
+            ov = d.get('multiplicador')
+            if ov in (None, ''):
+                conn.execute("UPDATE estacionalidad_meses SET mult_override=NULL WHERE mes=?", (m,))
+            else:
+                try:
+                    conn.execute("UPDATE estacionalidad_meses SET mult_override=? WHERE mes=?", (float(ov), m))
+                except Exception:
+                    return jsonify({'ok': False, 'error': 'multiplicador inválido'})
+            conn.commit()
+            return jsonify({'ok': True, 'mes': m})
+        return jsonify({'ok': False, 'error': 'acción no reconocida (refrescar/toggle/tope/override)'})
+    # GET
+    def _g(k, dv):
+        try:
+            r = c.execute("SELECT valor FROM app_settings WHERE clave=?", (k,)).fetchone()
+            return r[0] if r else dv
+        except Exception:
+            return dv
+    activa = str(_g('estacionalidad_plan_activa', '0')).strip() == '1'
+    try:
+        tope = float(_g('estacionalidad_tope', '2.0'))
+    except Exception:
+        tope = 2.0
+    _MES = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+    meses = []
+    try:
+        for m, au, ov, act in c.execute("SELECT mes, mult_auto, mult_override, actualizado_at "
+                                        "FROM estacionalidad_meses ORDER BY mes").fetchall():
+            meses.append({'mes': _MES[int(m)], 'mes_num': int(m), 'mult_auto': au, 'mult_override': ov,
+                          'efectivo': (ov if ov is not None else au)})
+    except Exception:
+        pass
+    facs = _factores_estacionales(conn)
+    return jsonify({'ok': True, 'activa': activa, 'tope': tope, 'meses': meses,
+                    'factores_aplicados': {_MES[m]: facs[m] for m in range(1, 13)},
+                    'nota': 'efectivo = override (Alejandro) si está, si no auto (histórico). factores_aplicados = '
+                            'lo que el plan usa (mes ÷ mes_actual, capado al tope). activa=false → todos 1.0 (sin efecto).'})
+
+
 @bp.route('/api/programacion/diag-ventas-anio', methods=['GET'])
 def prog_diag_ventas_anio():
     """Fase 1 · ventas por MES (unidades Shopify) · con crecimiento vs el mismo mes del año pasado (YoY) · para
