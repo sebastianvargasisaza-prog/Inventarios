@@ -2972,6 +2972,104 @@ def prog_diag_mp_demanda():
     })
 
 
+def _estacionalidad_mensual(c, meses_hist=24):
+    """Fase 1 forecast (Sebastián 5-jul) · multiplicador de ESTACIONALIDAD por producto y mes (1-12) desde el
+    histórico Shopify. multiplicador[m] = ventas_promedio_del_mes_m / promedio_mensual_anual. >1 = mes alto
+    (ej. noviembre Black Friday), <1 = mes bajo. Así el plan puede producir MÁS antes de un mes fuerte.
+    Devuelve {producto_upper: {'multiplicadores': {1..12}, 'meses_con_dato', 'prom_mensual', 'por_mes'}}."""
+    import json as _json
+    from datetime import datetime as _dt, timedelta as _td
+    sku_prod = {}
+    try:
+        for sku, pn in c.execute("SELECT UPPER(TRIM(sku)), producto_nombre FROM sku_producto_map "
+                                 "WHERE COALESCE(activo,1)=1").fetchall():
+            if sku:
+                sku_prod[sku] = str(pn or '').strip().upper()
+    except Exception:
+        pass
+    cut = ((_dt.utcnow() - _td(hours=5)) - _td(days=meses_hist * 31)).date().isoformat()
+    ventas_pm = {}   # producto -> {'YYYY-MM': uds}
+    try:
+        for creado, si in c.execute("SELECT substr(creado_en,1,7), sku_items FROM animus_shopify_orders "
+                                    "WHERE creado_en >= ? AND sku_items IS NOT NULL", (cut,)).fetchall():
+            ym = str(creado or '')
+            if len(ym) < 7:
+                continue
+            try:
+                items = _json.loads(si)
+            except Exception:
+                continue
+            for it in (items or []):
+                k = str(it.get('sku', '') or '').strip().upper()
+                q = int(it.get('qty') or it.get('quantity') or 0)
+                prod = sku_prod.get(k)
+                if prod and q > 0:
+                    d = ventas_pm.setdefault(prod, {})
+                    d[ym] = d.get(ym, 0) + q
+    except Exception:
+        pass
+    out = {}
+    for prod, pm in ventas_pm.items():
+        por_mes = {m: [] for m in range(1, 13)}
+        for ym, uds in pm.items():
+            try:
+                mes = int(ym[5:7])
+            except Exception:
+                continue
+            if 1 <= mes <= 12:
+                por_mes[mes].append(uds)
+        prom_mes = {m: (sum(v) / len(v) if v else None) for m, v in por_mes.items()}
+        con_dato = [v for v in prom_mes.values() if v is not None]
+        if len(con_dato) < 3:
+            continue
+        anual = sum(con_dato) / len(con_dato)
+        if anual <= 0:
+            continue
+        mult = {}
+        for m in range(1, 13):
+            v = prom_mes[m]
+            mult[m] = 1.0 if v is None else round(max(0.3, min(4.0, v / anual)), 2)
+        out[prod] = {
+            'multiplicadores': mult, 'meses_con_dato': len(con_dato), 'prom_mensual': round(anual, 1),
+            'por_mes': {m: (round(prom_mes[m], 1) if prom_mes[m] is not None else None) for m in range(1, 13)},
+        }
+    return out
+
+
+@bp.route('/api/programacion/diag-estacionalidad', methods=['GET'])
+def prog_diag_estacionalidad():
+    """Fase 1 · muestra la estacionalidad mensual (multiplicador por mes) de un producto o el TOP de meses
+    más fuertes. Read-only. Uso: /api/programacion/diag-estacionalidad?producto=NOMBRE  ó  ?top=1"""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db(); c = conn.cursor()
+    est = _estacionalidad_mensual(c)
+    prod = (request.args.get('producto') or '').strip().upper()
+    _MES = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+    if prod:
+        info = est.get(prod)
+        if not info:
+            sim = [k for k in est.keys() if prod in k][:12]
+            return jsonify({'ok': False, 'error': 'sin estacionalidad para ese producto (poco histórico o nombre)',
+                            'similares': sim})
+        return jsonify({'ok': True, 'producto': prod, 'prom_mensual_uds': info['prom_mensual'],
+                        'meses_con_dato': info['meses_con_dato'],
+                        'estacionalidad': [{'mes': _MES[m], 'multiplicador': info['multiplicadores'][m],
+                                            'prom_uds': info['por_mes'][m]} for m in range(1, 13)],
+                        'nota': 'multiplicador = ventas del mes ÷ promedio mensual. >1 mes fuerte (produce/compra antes).'})
+    # resumen global: el multiplicador de cada mes promediado sobre todos los productos + top meses
+    glob = {m: [] for m in range(1, 13)}
+    for info in est.values():
+        for m in range(1, 13):
+            glob[m].append(info['multiplicadores'][m])
+    glob_avg = {m: (round(sum(v) / len(v), 2) if v else 1.0) for m, v in glob.items()}
+    orden = sorted(range(1, 13), key=lambda m: -glob_avg[m])
+    return jsonify({'ok': True, 'n_productos_con_estacionalidad': len(est),
+                    'estacionalidad_global': [{'mes': _MES[m], 'multiplicador': glob_avg[m]} for m in range(1, 13)],
+                    'meses_mas_fuertes': [{'mes': _MES[m], 'multiplicador': glob_avg[m]} for m in orden[:4]],
+                    'nota': 'Multiplicador global (promedio de todos los productos). Pasá ?producto=NOMBRE para el detalle.'})
+
+
 @bp.route('/api/programacion/sync-salud', methods=['GET'])
 def prog_sync_salud():
     """Salud del sync Shopify (local, sin llamada externa) + diagnóstico del filtro
