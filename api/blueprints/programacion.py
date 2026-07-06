@@ -3376,11 +3376,13 @@ def prog_sku_volumen_set():
 
 @bp.route('/api/programacion/pres-ventas', methods=['GET', 'POST'])
 def prog_pres_ventas_set():
-    """M58 · setear ventas_mes_referencia de una presentación (override manual del reparto · lo que Alejandro sabe)."""
+    """M58 · setear ventas_mes_referencia de UNA presentación (override manual del reparto · lo que Alejandro sabe).
+    Keyea por (producto, presentacion_codigo) porque el código de presentación (V10/V30) se repite entre productos."""
     if not _auth():
         return jsonify({'error': 'No autenticado'}), 401
     d = request.get_json(silent=True) or {}
     cod = (request.args.get('presentacion_codigo') or d.get('presentacion_codigo') or '').strip()
+    prod = (request.args.get('producto') or d.get('producto') or '').strip()
     if not cod:
         return jsonify({'ok': False, 'error': 'falta presentacion_codigo'})
     try:
@@ -3388,9 +3390,95 @@ def prog_pres_ventas_set():
     except Exception:
         v = 0
     conn = get_db()
-    conn.execute("UPDATE producto_presentaciones SET ventas_mes_referencia=? WHERE presentacion_codigo=?", (v, cod))
+    if prod:
+        conn.execute("UPDATE producto_presentaciones SET ventas_mes_referencia=? "
+                     "WHERE presentacion_codigo=? AND UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (v, cod, prod))
+    else:
+        conn.execute("UPDATE producto_presentaciones SET ventas_mes_referencia=? WHERE presentacion_codigo=?", (v, cod))
     conn.commit()
     return jsonify({'ok': True, 'presentacion_codigo': cod, 'ventas_mes': v})
+
+
+@bp.route('/api/programacion/pres-set-envase', methods=['GET', 'POST'])
+def prog_pres_set_envase():
+    """M58/5-jul · cambiar el ENVASE de una presentación (ej. todos los 10ml de serum → FR-VID-GOTERO-10).
+    Keyea por (producto, presentacion_codigo)."""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    d = request.get_json(silent=True) or {}
+    cod = (request.args.get('presentacion_codigo') or d.get('presentacion_codigo') or '').strip()
+    prod = (request.args.get('producto') or d.get('producto') or '').strip()
+    env = (request.args.get('envase') or d.get('envase') or '').strip()
+    if not (cod and prod):
+        return jsonify({'ok': False, 'error': 'falta producto o presentacion_codigo'})
+    conn = get_db()
+    conn.execute("UPDATE producto_presentaciones SET envase_codigo=? "
+                 "WHERE presentacion_codigo=? AND UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (env.upper(), cod, prod))
+    conn.commit()
+    return jsonify({'ok': True, 'producto': prod, 'presentacion_codigo': cod, 'envase': env.upper()})
+
+
+@bp.route('/api/programacion/pres-quitar', methods=['GET', 'POST'])
+def prog_pres_quitar():
+    """M58/5-jul · desactivar (activo=0) una presentación sobrante/duplicada (ej. el azul-10 de niacinamida que
+    debía ser el gotero). NO borra (reversible). Keyea por (producto, presentacion_codigo)."""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    d = request.get_json(silent=True) or {}
+    cod = (request.args.get('presentacion_codigo') or d.get('presentacion_codigo') or '').strip()
+    prod = (request.args.get('producto') or d.get('producto') or '').strip()
+    if not (cod and prod):
+        return jsonify({'ok': False, 'error': 'falta producto o presentacion_codigo'})
+    conn = get_db()
+    conn.execute("UPDATE producto_presentaciones SET activo=0 "
+                 "WHERE presentacion_codigo=? AND UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (cod, prod))
+    conn.commit()
+    return jsonify({'ok': True, 'producto': prod, 'presentacion_codigo': cod})
+
+
+@bp.route('/api/programacion/envases-por-tamano', methods=['GET'])
+def prog_envases_por_tamano():
+    """M58/5-jul · agrupa TODAS las presentaciones activas por VOLUMEN y muestra qué ENVASE usa cada producto en
+    ese tamaño → para ver de un vistazo si los 10ml están todos en el mismo frasco (o hay disparejos). + lista
+    los envases disponibles de cada tamaño (para consolidar). Read-only."""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db(); c = conn.cursor()
+    por_vol = {}
+    try:
+        for pn, pc, env, vol in c.execute(
+                "SELECT producto_nombre, COALESCE(presentacion_codigo,''), COALESCE(envase_codigo,''), "
+                "COALESCE(volumen_ml,0) FROM producto_presentaciones WHERE COALESCE(activo,1)=1 "
+                "AND COALESCE(volumen_ml,0)>0").fetchall():
+            vk = int(round(float(vol or 0)))
+            por_vol.setdefault(vk, []).append({'producto': pn, 'presentacion': pc, 'envase': (env or '').strip().upper()})
+    except Exception:
+        pass
+    # envases (MEE) disponibles por volumen aprox (del maestro · para el dropdown de consolidación)
+    env_por_vol = {}
+    try:
+        for cod, desc in c.execute("SELECT codigo, COALESCE(descripcion,'') FROM maestro_mee "
+                                   "WHERE COALESCE(estado,'Activo')<>'Inactivo'").fetchall():
+            import re as _re
+            mm = _re.search(r'(\d+(?:[.,]\d+)?)\s*ml', str(desc), _re.I) or _re.search(r'-(\d+)\b', str(cod))
+            if mm:
+                try:
+                    vk = int(round(float(str(mm.group(1)).replace(',', '.'))))
+                    env_por_vol.setdefault(vk, []).append({'codigo': cod, 'descripcion': desc})
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    out = []
+    for vk in sorted(por_vol.keys()):
+        items = por_vol[vk]
+        envs_usados = {}
+        for it in items:
+            envs_usados[it['envase']] = envs_usados.get(it['envase'], 0) + 1
+        out.append({'volumen_ml': vk, 'n_productos': len(items), 'items': items,
+                    'envases_usados': envs_usados, 'disparejo': len(envs_usados) > 1,
+                    'envases_disponibles': env_por_vol.get(vk, [])})
+    return jsonify({'ok': True, 'tamanos': out})
 
 
 @bp.route('/api/programacion/diag-ventas-anio', methods=['GET'])

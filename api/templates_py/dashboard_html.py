@@ -20095,11 +20095,34 @@ async function ckMarcar(itemId, estado){
   async function cargarReparto(){
     var el = document.getElementById('reparto-panel'); if(!el) return;
     el.innerHTML = '<div style="color:#94a3b8;padding:20px">Cargando…</div>';
+    var h = '';
+    // === Sección 1 · Envase por tamaño (todos los 10ml en el mismo frasco) ===
+    try{
+      var t = await (await fetch('/api/programacion/envases-por-tamano')).json();
+      h += '<div style="font-weight:800;color:#065f46;font-size:16px;margin-bottom:4px">🧴 Envase por tamaño</div>';
+      h += '<div style="font-size:12px;color:#475569;margin-bottom:10px;line-height:1.5">Los productos del MISMO tamaño suelen ir en el MISMO frasco (ej. niacinamida, TRX, hialurónico de 10ml → todos en el frasco de vidrio de 10ml). Si están disparejos, unificá acá.</div>';
+      (t.tamanos||[]).forEach(function(tv){
+        var dis = tv.disparejo;
+        h += '<div style="border:1.5px solid '+(dis?'#fcd34d':'#d1fae5')+';border-radius:11px;padding:10px 12px;margin-bottom:8px;background:'+(dis?'#fffbeb':'#f0fdf4')+'">';
+        h += '<div style="font-weight:800;color:#334155;font-size:13px;margin-bottom:4px">'+tv.volumen_ml+' ml · '+tv.n_productos+' producto(s) '+(dis?'<span style="color:#d97706;font-size:11px;font-weight:700">⚠️ usan frascos distintos</span>':'<span style="color:#16a34a;font-size:11px;font-weight:700">✅ todos en el mismo</span>')+'</div>';
+        var opts = (tv.envases_disponibles||[]).map(function(e){ return '<option value="'+escapeHtmlNec(e.codigo)+'">'+escapeHtmlNec(e.codigo)+' · '+escapeHtmlNec(e.descripcion)+'</option>'; }).join('');
+        if(opts){
+          h += '<div style="margin:6px 0;font-size:12px;color:#475569">Poner a TODOS los de '+tv.volumen_ml+'ml: <select id="uni-'+tv.volumen_ml+'" style="padding:5px;border:1px solid #e6e1f2;border-radius:7px;font-size:12px;max-width:340px">'+opts+'</select> <button data-vol="'+tv.volumen_ml+'" onclick="unificarEnvase(this)" style="background:#0891b2;color:#fff;border:none;padding:6px 12px;border-radius:8px;font-weight:700;cursor:pointer;font-size:12px">Aplicar a los '+tv.n_productos+'</button></div>';
+        }
+        (tv.items||[]).forEach(function(it){
+          h += '<div style="display:flex;gap:8px;align-items:center;margin:2px 0;font-size:11.5px"><span style="min-width:250px;color:#475569">'+escapeHtmlNec(it.producto)+'</span><span style="color:#334155;font-weight:600;min-width:180px">'+escapeHtmlNec(it.envase||'—')+'</span><button data-prod="'+escapeHtmlNec(it.producto)+'" data-cod="'+escapeHtmlNec(it.presentacion)+'" onclick="quitarPres(this)" title="Quitar esta presentación (duplicada/sobrante · reversible)" style="background:#fee2e2;color:#b91c1c;border:none;padding:2px 9px;border-radius:6px;cursor:pointer;font-size:11px">🗑 quitar</button></div>';
+        });
+        h += '</div>';
+      });
+      h += '<div style="border-top:2px solid #ece9f5;margin:16px 0 12px"></div>';
+    }catch(e){}
+    // === Sección 2 · Reparto por ventas ===
     try{
       var d = await (await fetch('/api/programacion/split-audit')).json();
-      if(!d.ok){ el.innerHTML = '<div style="color:#dc2626;padding:20px">Error</div>'; return; }
+      if(!d.ok){ el.innerHTML = h + '<div style="color:#dc2626;padding:20px">Error</div>'; return; }
       var badge = {falta_volumen:['⚠️ falta tamaño','#d97706'], sin_sku:['⚠️ sin SKU','#dc2626'], sin_ventas:['⚠️ sin ventas','#dc2626'], ok_shopify:['✅ ventas Shopify','#16a34a'], ok_manual:['✅ manual','#16a34a']};
-      var h = '<div style="font-size:12px;color:#475569;margin-bottom:12px;line-height:1.5">Cada producto con 2+ tamaños reparte sus envases por <b>VENTAS</b>. Para que NO salga 50/50: cargá el <b>tamaño (ml)</b> de cada SKU → el reparto sale solo de las ventas reales de Shopify. O escribí las <b>ventas/mes</b> a mano por tamaño (lo que sabés). Los ⚠️ son los que faltan.</div>';
+      h += '<div style="font-weight:800;color:#4c1d95;font-size:16px;margin-bottom:4px">📊 Reparto por ventas (entre tamaños)</div>';
+      h += '<div style="font-size:12px;color:#475569;margin-bottom:12px;line-height:1.5">Cada producto con 2+ tamaños reparte el lote por <b>VENTAS</b>. Cargá el <b>tamaño (ml)</b> de cada SKU → el reparto sale de las ventas reales de Shopify. O escribí las <b>ventas/mes</b> a mano por tamaño. Los ⚠️ son los que faltan.</div>';
       (d.productos||[]).forEach(function(p){
         var b = badge[p.estado]||['',''];
         h += '<div style="border:1px solid #ece9f5;border-radius:12px;padding:12px 14px;margin-bottom:10px;background:#fff">';
@@ -20111,7 +20134,7 @@ async function ckMarcar(itemId, estado){
         if(!(p.skus||[]).length) h += '<div style="font-size:11px;color:#dc2626;margin:4px 0">Sin SKUs mapeados a este producto (revisá el mapeo SKU→producto)</div>';
         h += '<div style="font-size:11px;color:#64748b;margin:8px 0 2px">…o ventas/mes a mano por tamaño (gana sobre lo de arriba):</div>';
         (p.presentaciones||[]).forEach(function(pr){
-          h += '<div style="display:flex;gap:10px;align-items:center;margin:4px 0;font-size:12px"><span style="min-width:200px;color:#334155">'+(pr.volumen_ml||'?')+'ml · '+escapeHtmlNec(pr.envase||'')+'</span><label style="color:#64748b">vende/mes <input type="number" value="'+(pr.ventas_mes_referencia||'')+'" data-cod="'+escapeHtmlNec(pr.codigo)+'" onchange="setPresVentas(this.dataset.cod,this.value)" style="width:74px;padding:5px;border:1.5px solid #e6e1f2;border-radius:7px"></label></div>';
+          h += '<div style="display:flex;gap:10px;align-items:center;margin:4px 0;font-size:12px"><span style="min-width:200px;color:#334155">'+(pr.volumen_ml||'?')+'ml · '+escapeHtmlNec(pr.envase||'')+'</span><label style="color:#64748b">vende/mes <input type="number" value="'+(pr.ventas_mes_referencia||'')+'" data-prod="'+escapeHtmlNec(p.producto)+'" data-cod="'+escapeHtmlNec(pr.codigo)+'" onchange="setPresVentas(this.dataset.prod,this.dataset.cod,this.value)" style="width:74px;padding:5px;border:1.5px solid #e6e1f2;border-radius:7px"></label></div>';
         });
         h += '</div>';
       });
@@ -20120,7 +20143,19 @@ async function ckMarcar(itemId, estado){
     }catch(e){ el.innerHTML = '<div style="color:#dc2626;padding:20px">Error: '+e+'</div>'; }
   }
   async function setSkuVol(sku,v){ try{ await fetch('/api/programacion/sku-volumen?sku='+encodeURIComponent(sku)+'&volumen_ml='+encodeURIComponent(v)); }catch(e){} cargarReparto(); }
-  async function setPresVentas(cod,v){ try{ await fetch('/api/programacion/pres-ventas?presentacion_codigo='+encodeURIComponent(cod)+'&ventas_mes='+encodeURIComponent(v)); }catch(e){} cargarReparto(); }
+  async function setPresVentas(prod,cod,v){ try{ await fetch('/api/programacion/pres-ventas?producto='+encodeURIComponent(prod)+'&presentacion_codigo='+encodeURIComponent(cod)+'&ventas_mes='+encodeURIComponent(v)); }catch(e){} cargarReparto(); }
+  async function quitarPres(btn){ if(!confirm('¿Quitar esta presentación del producto? (reversible)')) return; try{ await fetch('/api/programacion/pres-quitar?producto='+encodeURIComponent(btn.dataset.prod)+'&presentacion_codigo='+encodeURIComponent(btn.dataset.cod)); }catch(e){} cargarReparto(); }
+  async function unificarEnvase(btn){
+    var vol = btn.dataset.vol; var sel = document.getElementById('uni-'+vol); if(!sel||!sel.value) return;
+    if(!confirm('¿Poner el envase '+sel.value+' a TODOS los productos de '+vol+'ml?')) return;
+    btn.disabled=true; btn.textContent='Aplicando…';
+    try{
+      var t = await (await fetch('/api/programacion/envases-por-tamano')).json();
+      var tv = (t.tamanos||[]).find(function(x){ return String(x.volumen_ml)===String(vol); });
+      if(tv){ for(var i=0;i<tv.items.length;i++){ var it=tv.items[i]; await fetch('/api/programacion/pres-set-envase?producto='+encodeURIComponent(it.producto)+'&presentacion_codigo='+encodeURIComponent(it.presentacion)+'&envase='+encodeURIComponent(sel.value)); } }
+    }catch(e){}
+    cargarReparto();
+  }
 
   async function cargarEstacionalidad(){
     var el = document.getElementById('estac-panel'); if(!el) return;
