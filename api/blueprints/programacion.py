@@ -3206,6 +3206,82 @@ def prog_estacionalidad_config():
                             'lo que el plan usa (mes ÷ mes_actual, capado al tope). activa=false → todos 1.0 (sin efecto).'})
 
 
+@bp.route('/api/programacion/diag-split-presentacion', methods=['GET'])
+def prog_diag_split_presentacion():
+    """M58 · por qué un producto multi-presentación reparte 50/50 (o bien). Muestra sus presentaciones + los
+    SKUs mapeados (con volumen_ml + ventas 90d) + el motivo del split. Uso: ?producto=NOMBRE"""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db(); c = conn.cursor()
+    prod = (request.args.get('producto') or '').strip()
+    if not prod:
+        return jsonify({'ok': False, 'error': 'pasá ?producto=NOMBRE'})
+    prod_up = prod.upper()
+    import json as _json
+    from datetime import datetime as _dt, timedelta as _td
+
+    def _np(s):
+        return ' '.join((s or '').strip().upper().split())
+    prodn = _np(prod)
+    pres = []
+    try:
+        for pc, env, vol, vmr, sk in c.execute(
+                "SELECT COALESCE(presentacion_codigo,''), COALESCE(envase_codigo,''), COALESCE(volumen_ml,0), "
+                "COALESCE(ventas_mes_referencia,0), COALESCE(sku_shopify,'') FROM producto_presentaciones "
+                "WHERE COALESCE(activo,1)=1 AND UPPER(TRIM(producto_nombre))=?", (prod_up,)).fetchall():
+            pres.append({'presentacion': pc, 'envase': env, 'volumen_ml': vol,
+                         'ventas_mes_referencia': vmr, 'sku_shopify': sk})
+    except Exception:
+        pass
+    ventas_sku = {}
+    try:
+        cut90 = ((_dt.utcnow() - _td(hours=5)) - _td(days=90)).date().isoformat()
+        for (si,) in c.execute("SELECT sku_items FROM animus_shopify_orders WHERE creado_en>=? "
+                               "AND sku_items IS NOT NULL", (cut90,)).fetchall():
+            try:
+                items = _json.loads(si)
+            except Exception:
+                continue
+            for it in (items or []):
+                k = str(it.get('sku', '') or '').strip().upper()
+                q = int(it.get('qty') or it.get('quantity') or 0)
+                if k and q > 0:
+                    ventas_sku[k] = ventas_sku.get(k, 0) + q
+    except Exception:
+        pass
+    skus = []
+    try:
+        for sk, pn, vml in c.execute("SELECT UPPER(TRIM(sku)), producto_nombre, COALESCE(volumen_ml,0) "
+                                     "FROM sku_producto_map WHERE COALESCE(activo,1)=1").fetchall():
+            if _np(pn) == prodn:
+                skus.append({'sku': sk, 'volumen_ml': vml, 'ventas_90d': ventas_sku.get(str(sk).strip().upper(), 0)})
+    except Exception:
+        pass
+    ventas_por_vol = {}
+    for s in skus:
+        if s['ventas_90d'] > 0:
+            vk = int(round(float(s['volumen_ml'] or 0)))
+            ventas_por_vol[vk] = ventas_por_vol.get(vk, 0) + s['ventas_90d']
+    tiene_vmr = any(p['ventas_mes_referencia'] > 0 for p in pres)
+    if len(pres) <= 1:
+        motivo = 'una sola presentación → 100% (no hay reparto)'
+    elif tiene_vmr:
+        motivo = '✅ usa ventas_mes_referencia (override manual)'
+    elif ventas_por_vol:
+        motivo = '✅ usa ventas Shopify por volumen (discrimina bien)'
+    else:
+        faltan_vol = [s['sku'] for s in skus if not s['volumen_ml']]
+        if not skus:
+            motivo = '⚠️ NINGÚN SKU mapeado a este producto en sku_producto_map (revisá el nombre exacto)'
+        elif faltan_vol:
+            motivo = '⚠️ SKUs sin volumen_ml: ' + ', '.join(faltan_vol[:8]) + ' → cargá su tamaño (15/30…) en el mapeo'
+        else:
+            motivo = '⚠️ los SKUs tienen volumen_ml pero 0 ventas en 90d → sin ventas no se puede repartir (cae a uniforme)'
+    return jsonify({'ok': True, 'producto': prod_up, 'n_presentaciones': len(pres),
+                    'presentaciones': pres, 'skus_mapeados': skus, 'ventas_por_volumen_90d': ventas_por_vol,
+                    'motivo_split': motivo})
+
+
 @bp.route('/api/programacion/diag-ventas-anio', methods=['GET'])
 def prog_diag_ventas_anio():
     """Fase 1 · ventas por MES (unidades Shopify) · con crecimiento vs el mismo mes del año pasado (YoY) · para
