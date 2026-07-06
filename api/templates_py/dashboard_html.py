@@ -20131,7 +20131,9 @@ async function ckMarcar(itemId, estado){
           h += '<div style="margin:6px 0;font-size:12px;color:#475569">Poner a TODOS los de '+tv.volumen_ml+'ml: <select id="uni-'+tv.volumen_ml+'" style="padding:5px;border:1px solid #e6e1f2;border-radius:7px;font-size:12px;max-width:340px">'+opts+'</select> <button data-vol="'+tv.volumen_ml+'" onclick="unificarEnvase(this)" style="background:#0891b2;color:#fff;border:none;padding:6px 12px;border-radius:8px;font-weight:700;cursor:pointer;font-size:12px">Aplicar a los '+tv.n_productos+'</button></div>';
         }
         (tv.items||[]).forEach(function(it){
-          h += '<div style="display:flex;gap:8px;align-items:center;margin:2px 0;font-size:11.5px"><span style="min-width:250px;color:#475569">'+escapeHtmlNec(it.producto)+'</span><span style="color:#334155;font-weight:600;min-width:180px">'+escapeHtmlNec(it.envase||'—')+'</span><button data-prod="'+escapeHtmlNec(it.producto)+'" data-cod="'+escapeHtmlNec(it.presentacion)+'" onclick="quitarPres(this)" title="Quitar esta presentación (duplicada/sobrante · reversible)" style="background:#fee2e2;color:#b91c1c;border:none;padding:2px 9px;border-radius:6px;cursor:pointer;font-size:11px">🗑 quitar</button></div>';
+          var iopts = (tv.envases_disponibles||[]).map(function(e){ return '<option value="'+escapeHtmlNec(e.codigo)+'"'+(e.codigo===it.envase?' selected':'')+'>'+escapeHtmlNec(e.codigo)+'</option>'; }).join('');
+          var selHtml = iopts ? ('<select data-prod="'+escapeHtmlNec(it.producto)+'" data-cod="'+escapeHtmlNec(it.presentacion)+'" onchange="cambiarEnvasePres(this)" style="min-width:200px;padding:3px;border:1px solid #e6e1f2;border-radius:6px;font-size:11px">'+iopts+'</select>') : ('<span style="color:#334155;font-weight:600;min-width:180px">'+escapeHtmlNec(it.envase||'—')+'</span>');
+          h += '<div style="display:flex;gap:8px;align-items:center;margin:2px 0;font-size:11.5px"><span style="min-width:250px;color:#475569">'+escapeHtmlNec(it.producto)+'</span>'+selHtml+'<button data-prod="'+escapeHtmlNec(it.producto)+'" data-cod="'+escapeHtmlNec(it.presentacion)+'" onclick="quitarPres(this)" title="Quitar esta presentación (duplicada/sobrante · reversible)" style="background:#fee2e2;color:#b91c1c;border:none;padding:2px 9px;border-radius:6px;cursor:pointer;font-size:11px">🗑</button></div>';
         });
         h += '</div>';
       });
@@ -20163,6 +20165,7 @@ async function ckMarcar(itemId, estado){
       el.innerHTML = h;
     }catch(e){ el.innerHTML = '<div style="color:#dc2626;padding:20px">Error: '+e+'</div>'; }
   }
+  async function cambiarEnvasePres(sel){ try{ await fetch('/api/programacion/pres-set-envase?producto='+encodeURIComponent(sel.dataset.prod)+'&presentacion_codigo='+encodeURIComponent(sel.dataset.cod)+'&envase='+encodeURIComponent(sel.value)); }catch(e){} cargarReparto(); }
   async function noAplicaEnvase(btn){ try{ await fetch('/api/programacion/pres-no-aplica?producto='+encodeURIComponent(btn.dataset.prod)); }catch(e){} cargarReparto(); }
   async function reincluirNoAplica(){
     try{ var cov = await (await fetch('/api/abastecimiento/envases-cobertura')).json(); var na = cov.no_aplica||[];
