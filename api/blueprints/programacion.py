@@ -13324,6 +13324,76 @@ def abastecimiento_consumo_horizontes():
     })
 
 
+def _trail_envase(c, codigo_up, mee_row):
+    """Sebastián 5-jul · trail de un ENVASE (MEE): productos cuya presentación usa este envase
+    (producto_presentaciones) + lotes futuros × unidades (kg×1000/ml). Antes el trail-mp solo manejaba MP →
+    clic en un envase tiraba 'MP no existe'. Muestra CÓMO SUMA la demanda de envases."""
+    from datetime import date as _d, timedelta as _td
+    hoy = _d.today()
+    hoy_iso = hoy.isoformat()
+    cutoff = (hoy + _td(days=365)).isoformat()
+
+    def _np(s):
+        return ' '.join((s or '').strip().upper().split())
+    # códigos equivalentes: el canónico + sus alias (mee_aliases)
+    cods = {codigo_up}
+    try:
+        for (a,) in c.execute("SELECT alias FROM mee_aliases WHERE UPPER(TRIM(codigo_mee))=?", (codigo_up,)).fetchall():
+            if a:
+                cods.add(str(a).strip().upper())
+    except Exception:
+        pass
+    _cods = tuple(cods)
+    _ph = ','.join('?' for _ in _cods)
+    # productos cuya presentación ACTIVA usa este envase (+ su volumen)
+    prod_ml = {}
+    try:
+        for pn, vol in c.execute(
+                "SELECT producto_nombre, COALESCE(volumen_ml,0) FROM producto_presentaciones "
+                "WHERE COALESCE(activo,1)=1 AND UPPER(TRIM(COALESCE(envase_codigo,''))) IN (" + _ph + ")",
+                _cods).fetchall():
+            prod_ml[_np(pn)] = float(vol or 0)
+    except Exception:
+        pass
+    # lotes futuros de esos productos (o con override a este envase)
+    rows = c.execute(
+        "SELECT id, producto, substr(fecha_programada,1,10), COALESCE(cantidad_kg,0), COALESCE(origen,''), "
+        "COALESCE(envase_codigo_override,'') FROM produccion_programada "
+        "WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado','esperando_recurso') "
+        "AND COALESCE(inventario_descontado_at,'')='' AND fecha_programada>=? AND fecha_programada<=? "
+        "ORDER BY fecha_programada", (hoy_iso, cutoff)).fetchall()
+    HOR = [15, 30, 60, 90, 120, 180, 365]
+    tot = {h: 0.0 for h in HOR}
+    filas = []
+    for pid, prod, fecha, kg, origen, ovr in rows:
+        pu = _np(prod)
+        ovr_up = str(ovr or '').strip().upper()
+        if ovr_up and ovr_up in cods:
+            ml = prod_ml.get(pu, 0.0)
+        elif not ovr_up and pu in prod_ml:
+            ml = prod_ml.get(pu, 0.0)
+        else:
+            continue   # este lote no usa este envase
+        ml = float(ml or 0)
+        uds = int(round(float(kg or 0) * 1000.0 / ml)) if ml > 0 else 0
+        try:
+            dd = (_d.fromisoformat(fecha) - hoy).days
+        except Exception:
+            dd = 0
+        for h in HOR:
+            if dd <= h:
+                tot[h] += uds
+        filas.append({'produccion_id': pid, 'producto': prod, 'fecha': fecha, 'dias': dd,
+                      'cantidad_kg': round(float(kg or 0), 2), 'volumen_ml': ml, 'unidades': uds, 'origen': origen})
+    return jsonify({
+        'ok': True, 'es_mee': True, 'codigo_mp': mee_row[0],
+        'nombre_comercial': mee_row[1], 'volumen_ml': mee_row[2],
+        'productos_que_usan': [{'producto': k.title(), 'volumen_ml': v} for k, v in prod_ml.items()],
+        'n_producciones': len(filas), 'producciones': filas,
+        'total_unidades_por_horizonte': {str(h): int(tot[h]) for h in HOR},
+    })
+
+
 @bp.route('/api/abastecimiento/trail-mp/<codigo_mp>', methods=['GET'])
 def abastecimiento_trail_mp(codigo_mp):
     """FIX UX 24-may-2026 noche · Sebastián: 'no muestra la realidad ·
@@ -13354,7 +13424,16 @@ def abastecimiento_trail_mp(codigo_mp):
         (codigo_up,),
     ).fetchone()
     if not mp_info:
-        return jsonify({'error': f'MP {codigo_mp} no existe'}), 404
+        # ¿es un ENVASE (MEE)? → trail de envase (qué productos lo usan + unidades por lote · Sebastián 5-jul)
+        try:
+            mee_row = c.execute(
+                "SELECT codigo, COALESCE(descripcion,''), COALESCE(volumen_ml,0) FROM maestro_mee "
+                "WHERE UPPER(TRIM(codigo))=?", (codigo_up,)).fetchone()
+        except Exception:
+            mee_row = None
+        if mee_row:
+            return _trail_envase(c, codigo_up, mee_row)
+        return jsonify({'error': f'{codigo_mp} no existe (ni MP ni envase)'}), 404
 
     # 2. Productos que usan esta MP (de formula_items)
     productos_que_usan = c.execute(

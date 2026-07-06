@@ -23312,6 +23312,24 @@ async function ckMarcar(itemId, estado){
         m.querySelector('div').innerHTML = '<div style="color:#dc2626;padding:30px">Error: ' + (d.error || r.status) + '</div>';
         return;
       }
+      if (d.es_mee) {
+        // Trail de ENVASE (MEE) · productos que lo usan + lotes × unidades (kg×1000÷ml)
+        let h = '<div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #ece9f5;padding-bottom:14px;margin-bottom:14px">';
+        h += '<div><h2 style="margin:0;font-size:18px;color:#1e293b">📦 ' + escapeHtmlNec(d.codigo_mp) + ' · ' + escapeHtmlNec(d.nombre_comercial||'') + '</h2>';
+        h += '<div style="font-size:11px;color:#64748b;margin-top:3px">Envase · ' + (d.volumen_ml||0) + ' ml · lo usan ' + (d.productos_que_usan||[]).length + ' producto(s)</div></div>';
+        h += '<button onclick="document.getElementById(&quot;modal-trail-mp&quot;).remove()" style="background:#e2e8f0;color:#475569;border:none;width:36px;height:36px;border-radius:50%;font-size:20px;cursor:pointer">×</button></div>';
+        const th = d.total_unidades_por_horizonte||{};
+        h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">';
+        ['15','30','60','90','120','180','365'].forEach(k => { h += '<div style="background:#f4f2fb;border:1px solid #ece9f5;border-radius:10px;padding:8px 12px;text-align:center"><div style="font-size:16px;font-weight:800;color:#6d28d9">' + (Number(th[k])||0).toLocaleString("es-CO") + '</div><div style="font-size:9px;color:#94a3b8">' + k + 'd · uds</div></div>'; });
+        h += '</div>';
+        h += '<div style="font-size:12px;color:#475569;font-weight:700;margin-bottom:6px">Lotes que lo consumen · unidades = kg × 1000 ÷ ml</div>';
+        h += '<div style="overflow:auto;border:1px solid #ece9f5;border-radius:12px"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:linear-gradient(180deg,#faf9ff,#f3f1fb);color:#6d28d9"><th style="text-align:left;padding:8px">Producto</th><th style="padding:8px">Fecha</th><th style="text-align:right;padding:8px">kg</th><th style="text-align:right;padding:8px">ml</th><th style="text-align:right;padding:8px">Unidades</th><th style="text-align:left;padding:8px">Origen</th></tr></thead><tbody>';
+        (d.producciones||[]).forEach(p => { h += '<tr style="border-top:1px solid #f1f5f9"><td style="padding:7px 8px">' + escapeHtmlNec(p.producto) + '</td><td style="padding:7px 8px;text-align:center">' + p.fecha + '</td><td style="padding:7px 8px;text-align:right">' + p.cantidad_kg + '</td><td style="padding:7px 8px;text-align:right">' + p.volumen_ml + '</td><td style="padding:7px 8px;text-align:right;font-weight:700">' + (Number(p.unidades)||0).toLocaleString("es-CO") + '</td><td style="padding:7px 8px;color:#94a3b8;font-size:10px">' + escapeHtmlNec(p.origen||'') + '</td></tr>'; });
+        if (!(d.producciones||[]).length) h += '<tr><td colspan="6" style="padding:20px;text-align:center;color:#94a3b8">Ningún lote futuro usa este envase (revisá el mapeo producto→envase en Presentaciones)</td></tr>';
+        h += '</tbody></table></div>';
+        m.querySelector('div').innerHTML = h;
+        return;
+      }
       const stock = d.stock_actual_g || 0;
       const pend = d.pendiente_compras_g || 0;
       const consumo = d.total_consumo_365d_g || 0;
