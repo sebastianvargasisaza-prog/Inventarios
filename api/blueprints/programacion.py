@@ -13685,15 +13685,31 @@ def _trail_envase(c, codigo_up, mee_row):
     pres_by_prod = {}
     try:
         for pn, pcod, env, vol, vmr, sk in c.execute(
-                "SELECT producto_nombre, COALESCE(codigo,''), COALESCE(envase_codigo,''), COALESCE(volumen_ml,0), "
-                "COALESCE(ventas_mes_referencia,0), COALESCE(sku_shopify,'') FROM producto_presentaciones "
-                "WHERE COALESCE(activo,1)=1").fetchall():
+                "SELECT producto_nombre, COALESCE(presentacion_codigo,''), COALESCE(envase_codigo,''), "
+                "COALESCE(volumen_ml,0), COALESCE(ventas_mes_referencia,0), COALESCE(sku_shopify,'') "
+                "FROM producto_presentaciones WHERE COALESCE(activo,1)=1").fetchall():
             pres_by_prod.setdefault(_np(pn), []).append({
                 'codigo': pcod, 'envase': str(env).strip().upper(), 'vol': float(vol or 0),
                 'vmr': float(vmr or 0), 'sku': str(sk or '').strip().upper(),
                 'usa': str(env).strip().upper() in cods})
     except Exception:
         pass
+    # volumen por producto (FALLBACK de ml · igual que el motor real: volumen_unitario_producto → presentaciones MAX)
+    vol_prod = {}
+    try:
+        for pn, vv in c.execute("SELECT producto_nombre, COALESCE(volumen_ml,0) FROM volumen_unitario_producto "
+                                "WHERE COALESCE(activo,1)=1").fetchall():
+            if vv:
+                vol_prod[_np(pn)] = float(vv or 0)
+    except Exception:
+        pass
+    if not vol_prod:
+        try:
+            for pn, vv in c.execute("SELECT producto_nombre, MAX(COALESCE(volumen_ml,0)) FROM producto_presentaciones "
+                                    "WHERE COALESCE(activo,1)=1 GROUP BY producto_nombre").fetchall():
+                vol_prod[_np(pn)] = float(vv or 0)
+        except Exception:
+            pass
     # ventas 90d por SKU (Shopify) para el ratio (prioridad 2)
     ventas_sku = {}
     try:
@@ -13741,8 +13757,9 @@ def _trail_envase(c, codigo_up, mee_row):
         kgf = float(kg or 0)
         pres = pres_by_prod.get(pu, [])
         if ovr_up and ovr_up in cods:
-            # override: TODO el lote va a este envase (a su ml)
-            ml = next((p['vol'] for p in pres if p['usa'] and p['vol'] > 0), float(mee_row[2] or 0))
+            # override: TODO el lote va a este envase (a su ml · fallback al volumen del producto, luego maestro)
+            ml = (next((p['vol'] for p in pres if p['usa'] and p['vol'] > 0), 0)
+                  or vol_prod.get(pu, 0) or float(mee_row[2] or 0))
             uds = int(round(kgf * 1000.0 / ml)) if ml > 0 else 0
             share = 1.0
         elif (not ovr_up) and any(p['usa'] for p in pres):
@@ -13750,10 +13767,12 @@ def _trail_envase(c, codigo_up, mee_row):
             uds = 0
             share = 0.0
             for p in pres:
-                if p['usa'] and p['vol'] > 0:
-                    r = rats.get(p['codigo'], 0)
-                    share += r
-                    uds += int(round(kgf * r * 1000.0 / p['vol']))
+                if p['usa']:
+                    _vp = p['vol'] if p['vol'] > 0 else vol_prod.get(pu, 0)   # fallback al volumen del producto
+                    if _vp > 0:
+                        r = rats.get(p['codigo'], 0)
+                        share += r
+                        uds += int(round(kgf * r * 1000.0 / _vp))
         else:
             continue
         try:
