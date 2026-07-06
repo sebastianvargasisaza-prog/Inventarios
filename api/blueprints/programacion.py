@@ -11543,40 +11543,40 @@ def producciones_faltantes():
         pass
 
     def _ratio_presentaciones(producto_norm):
-        """Devuelve dict {codigo_presentacion: ratio_0_a_1} con esta prioridad:
-        1) Override manual: si AT LEAST 1 presentación tiene ventas_mes_referencia > 0, usa ESOS números.
-        2) Ventas Shopify por VOLUMEN (SKU→producto+tamaño · real · discrimina 15 vs 30 · M58).
-        3) Ventas Shopify por sku_shopify de la presentación (si está seteado).
-        4) Uniforme: 1/N si no hay ninguna venta.
-        Sebastián 27-may-2026 PM · "AZ lo vendemos de 30 y 15, de 15 200 uds/mes"."""
+        """Devuelve dict {codigo_presentacion: ratio_del_KG_0_a_1}. El ratio es la porción del BULK (kg) que va a
+        cada presentación = PESADO POR VOLUMEN: unidades_vendidas × ml, normalizado. Una unidad de 30ml se lleva
+        3× el bulk de una de 10ml, así que aunque se vendan iguales unidades el 30ml se lleva más kg (bug M58/5-jul
+        cazado por Sebastián: un lote de 90kg con 1000 uds de 10ml → 80kg quedan para 30ml = 2666, no 1400).
+        Unidades vendidas por prioridad: 1) ventas_mes_referencia manual, 2) Shopify por volumen (SKU), 3) Shopify
+        por sku_shopify de la presentación, 4) uniforme."""
         pres = presentaciones_por_producto.get(producto_norm, [])
         if not pres:
             return {}
         if len(pres) == 1:
             return {pres[0]['codigo']: 1.0}
-        # Prioridad 1 · override manual ventas_mes_referencia
+        # (a) UNIDADES vendidas por presentación (según prioridad)
+        unidades = None
         suma_override = sum(float(p.get('ventas_mes_referencia') or 0) for p in pres)
         if suma_override > 0:
-            return {p['codigo']: (float(p.get('ventas_mes_referencia') or 0) / suma_override)
-                    for p in pres}
-        # Prioridad 2 · ventas Shopify por VOLUMEN (real · discrimina 15 vs 30 aunque falte sku_shopify · M58)
-        vv = sku_vol_ventas.get(producto_norm, {})
-        if vv:
-            vpv = {p['codigo']: vv.get(int(round(float(p.get('volumen_ml') or 0))), 0) for p in pres}
-            total_pv = sum(vpv.values())
-            if total_pv > 0:
-                return {cod: (v / total_pv) for cod, v in vpv.items()}
-        # Prioridad 3 · Shopify por sku_shopify de la presentación
-        ventas = {}
-        total = 0
-        for p in pres:
-            sk = (p['sku_shopify'] or '').strip()
-            v = ventas_por_sku_90d.get(sk, 0) if sk else 0
-            ventas[p['codigo']] = v
-            total += v
-        if total > 0:
-            return {cod: (v / total) for cod, v in ventas.items()}
-        # Prioridad 4 · uniforme
+            unidades = {p['codigo']: float(p.get('ventas_mes_referencia') or 0) for p in pres}
+        if unidades is None:
+            vv = sku_vol_ventas.get(producto_norm, {})
+            if vv:
+                vpv = {p['codigo']: vv.get(int(round(float(p.get('volumen_ml') or 0))), 0) for p in pres}
+                if sum(vpv.values()) > 0:
+                    unidades = vpv
+        if unidades is None:
+            vs = {p['codigo']: (ventas_por_sku_90d.get((p['sku_shopify'] or '').strip(), 0)
+                                if (p['sku_shopify'] or '').strip() else 0) for p in pres}
+            if sum(vs.values()) > 0:
+                unidades = vs
+        if unidades is None:
+            unidades = {p['codigo']: 1.0 for p in pres}   # uniforme en unidades
+        # (b) PESAR POR VOLUMEN → porción del kg (bulk) de cada presentación
+        pesos = {p['codigo']: unidades.get(p['codigo'], 0) * float(p.get('volumen_ml') or 0) for p in pres}
+        total_peso = sum(pesos.values())
+        if total_peso > 0:
+            return {cod: (pw / total_peso) for cod, pw in pesos.items()}
         return {p['codigo']: 1.0 / len(pres) for p in pres}
 
     # 5. Cargar stock MP (canonical helper)
@@ -13962,24 +13962,33 @@ def _trail_envase(c, codigo_up, mee_row):
         pass
 
     def _ratio(pres, prodn=''):
+        # ratio = porción del KG (bulk) por presentación = unidades_vendidas × ml, normalizado (pesado por
+        # volumen · una unidad de 30ml se lleva 3× el bulk de una de 10ml · fix 5-jul Sebastián).
         if not pres:
             return {}
         if len(pres) == 1:
             return {pres[0]['codigo']: 1.0}
+        unidades = None
         s = sum(p['vmr'] for p in pres)
         if s > 0:
-            return {p['codigo']: p['vmr'] / s for p in pres}   # 1) override manual (ventas_mes_referencia)
-        vv = sku_vol.get(prodn, {})                            # 2) ventas Shopify 90d por VOLUMEN (real · 15 vs 30)
-        if vv:
-            vt2 = {p['codigo']: vv.get(int(round(p['vol'])), 0) for p in pres}
-            if sum(vt2.values()) > 0:
-                tt2 = sum(vt2.values())
-                return {k: v / tt2 for k, v in vt2.items()}
-        vt = {p['codigo']: ventas_sku.get(p['sku'], 0) for p in pres}
-        tt = sum(vt.values())
-        if tt > 0:
-            return {k: v / tt for k, v in vt.items()}           # 3) ventas Shopify 90d por SKU de la presentación
-        return {p['codigo']: 1.0 / len(pres) for p in pres}     # 4) uniforme (último recurso)
+            unidades = {p['codigo']: p['vmr'] for p in pres}          # 1) override manual
+        if unidades is None:
+            vv = sku_vol.get(prodn, {})                              # 2) Shopify por VOLUMEN (real · 15 vs 30)
+            if vv:
+                vt2 = {p['codigo']: vv.get(int(round(p['vol'])), 0) for p in pres}
+                if sum(vt2.values()) > 0:
+                    unidades = vt2
+        if unidades is None:
+            vt = {p['codigo']: ventas_sku.get(p['sku'], 0) for p in pres}   # 3) Shopify por sku de la presentación
+            if sum(vt.values()) > 0:
+                unidades = vt
+        if unidades is None:
+            unidades = {p['codigo']: 1.0 for p in pres}              # 4) uniforme en unidades
+        pesos = {p['codigo']: unidades.get(p['codigo'], 0) * float(p['vol'] or 0) for p in pres}   # ×ml
+        tp = sum(pesos.values())
+        if tp > 0:
+            return {k: v / tp for k, v in pesos.items()}
+        return {p['codigo']: 1.0 / len(pres) for p in pres}
 
     rows = c.execute(
         "SELECT id, producto, substr(fecha_programada,1,10), COALESCE(cantidad_kg,0), COALESCE(origen,''), "
@@ -14034,10 +14043,10 @@ def _trail_envase(c, codigo_up, mee_row):
                                if any(p['usa'] for p in pres)],
         'n_producciones': len(filas), 'producciones': filas,
         'total_unidades_por_horizonte': {str(h): int(tot[h]) for h in HOR},
-        'nota': 'unidades = kg × share × 1000 ÷ ml. El share es la porción del lote que va a ESTA presentación, '
-                'por VENTAS REALES: ventas_mes_referencia manual → ventas Shopify 90d por tamaño (SKU/volumen) → '
-                'uniforme solo si no hay ninguna venta. Si ves 50%/50% parejo, ese producto no tiene ventas por SKU '
-                'mapeadas (revisá que sus SKUs tengan volumen_ml en el mapeo).',
+        'nota': 'unidades = kg × share × 1000 ÷ ml. El share es la porción del KG (bulk) que va a ESTA presentación, '
+                'PESADA POR VOLUMEN: unidades vendidas × ml (una unidad de 30ml se lleva 3× el bulk de una de 10ml). '
+                'Ventas por: ventas_mes_referencia manual → Shopify 90d por tamaño → uniforme si no hay ninguna. '
+                'Si el reparto no refleja la realidad, cargá el tamaño/ventas en Configuración › Reparto envases.',
     })
 
 

@@ -23379,15 +23379,42 @@ async function ckMarcar(itemId, estado){
 
   // Sebastián 24-may-2026 noche · trail por MP · "tomar producto por
   // producto enlazar fórmula e ir sumando". Modal full-screen con desglose.
+  function _abastCodesList(){
+    var seen={}, out=[];
+    document.querySelectorAll('a[data-cod]').forEach(function(a){
+      var oc = a.getAttribute('onclick')||'';
+      if(oc.indexOf('abastTrailMp')<0) return;
+      var cod = a.dataset.cod;
+      if(cod && !seen[cod] && a.offsetParent!==null){ seen[cod]=1; out.push(cod); }
+    });
+    return out;
+  }
+  window._trailNav = {prev:null, next:null, idx:-1, n:0};
+  window._trailNavBtns = function(){
+    var nv = window._trailNav||{prev:null,next:null,idx:-1,n:0};
+    var b = function(cod,arrow,title){ var on=!!cod; return '<button '+(on?'':'disabled')+' onclick="abastTrailMp(&quot;'+(cod||'')+'&quot;)" title="'+title+'" style="background:'+(on?'#ede9fe':'#f8fafc')+';color:'+(on?'#6d28d9':'#cbd5e1')+';border:none;width:34px;height:34px;border-radius:50%;font-size:15px;font-weight:800;cursor:'+(on?'pointer':'default')+';transition:all .15s">'+arrow+'</button>'; };
+    return '<div style="display:flex;gap:6px;align-items:center">'
+      + b(nv.prev,'◀','Anterior (tecla ←)')
+      + (nv.idx>=0?'<span style="font-size:10px;color:#94a3b8;min-width:34px;text-align:center">'+(nv.idx+1)+' / '+nv.n+'</span>':'')
+      + b(nv.next,'▶','Siguiente (tecla →)')
+      + '<button onclick="document.getElementById(&quot;modal-trail-mp&quot;).remove()" title="Cerrar (Esc)" style="background:#e2e8f0;color:#475569;border:none;width:34px;height:34px;border-radius:50%;font-size:20px;cursor:pointer;margin-left:4px">×</button>'
+      + '</div>';
+  };
   window.abastTrailMp = async function(codigo) {
+    if(window._trailKeyh){ document.removeEventListener('keydown', window._trailKeyh); window._trailKeyh=null; }
     let m = document.getElementById('modal-trail-mp');
     if (m) m.remove();
+    var _codes = _abastCodesList();
+    var _idx = _codes.indexOf(codigo);
+    window._trailNav = {prev:(_idx>0?_codes[_idx-1]:null), next:(_idx>=0&&_idx<_codes.length-1?_codes[_idx+1]:null), idx:_idx, n:_codes.length};
     m = document.createElement('div');
     m.id = 'modal-trail-mp';
-    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
-    m.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:1100px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,0.3);padding:24px"><div style="text-align:center;padding:40px;color:#94a3b8">Cargando trail de ' + codigo + '…</div></div>';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.6);backdrop-filter:blur(2px);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    m.innerHTML = '<div style="background:#fff;border-radius:16px;max-width:1100px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 24px 60px rgba(15,23,42,0.4);padding:24px"><div style="text-align:center;padding:40px;color:#94a3b8">Cargando trail de ' + codigo + '…</div></div>';
     document.body.appendChild(m);
-    m.addEventListener('click', function(e){ if (e.target === m) m.remove(); });
+    m.addEventListener('click', function(e){ if (e.target === m){ m.remove(); if(window._trailKeyh){document.removeEventListener('keydown',window._trailKeyh);window._trailKeyh=null;} } });
+    window._trailKeyh = function(e){ var nv=window._trailNav||{}; if(e.key==='ArrowLeft'&&nv.prev){abastTrailMp(nv.prev);} else if(e.key==='ArrowRight'&&nv.next){abastTrailMp(nv.next);} else if(e.key==='Escape'){var mm=document.getElementById('modal-trail-mp'); if(mm)mm.remove(); document.removeEventListener('keydown',window._trailKeyh); window._trailKeyh=null;} };
+    document.addEventListener('keydown', window._trailKeyh);
     try {
       const r = await fetch('/api/abastecimiento/trail-mp/' + encodeURIComponent(codigo));
       const d = await r.json();
@@ -23400,7 +23427,7 @@ async function ckMarcar(itemId, estado){
         let h = '<div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #ece9f5;padding-bottom:14px;margin-bottom:14px">';
         h += '<div><h2 style="margin:0;font-size:18px;color:#1e293b">📦 ' + escapeHtmlNec(d.codigo_mp) + ' · ' + escapeHtmlNec(d.nombre_comercial||'') + '</h2>';
         h += '<div style="font-size:11px;color:#64748b;margin-top:3px">Envase · ' + (d.volumen_ml||0) + ' ml · lo usan ' + (d.productos_que_usan||[]).length + ' producto(s)</div></div>';
-        h += '<button onclick="document.getElementById(&quot;modal-trail-mp&quot;).remove()" style="background:#e2e8f0;color:#475569;border:none;width:36px;height:36px;border-radius:50%;font-size:20px;cursor:pointer">×</button></div>';
+        h += _trailNavBtns() + '</div>';
         const th = d.total_unidades_por_horizonte||{};
         h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">';
         ['15','30','60','90','120','180','365'].forEach(k => { h += '<div style="background:#f4f2fb;border:1px solid #ece9f5;border-radius:10px;padding:8px 12px;text-align:center"><div style="font-size:16px;font-weight:800;color:#6d28d9">' + (Number(th[k])||0).toLocaleString("es-CO") + '</div><div style="font-size:9px;color:#94a3b8">' + k + 'd · uds</div></div>'; });
@@ -23423,7 +23450,7 @@ async function ckMarcar(itemId, estado){
       if (d.nombre_comercial && d.nombre_comercial !== d.nombre_inci) html += '<div style="font-size:11px;color:#64748b;margin-top:3px">Comercial: ' + escapeHtmlNec(d.nombre_comercial) + '</div>';
       if (d.proveedor) html += '<div style="font-size:11px;color:#64748b">Proveedor: ' + escapeHtmlNec(d.proveedor) + '</div>';
       html += '</div>';
-      html += '<button onclick="document.getElementById(&quot;modal-trail-mp&quot;).remove()" style="background:#e2e8f0;color:#475569;border:none;width:36px;height:36px;border-radius:50%;font-size:20px;cursor:pointer">×</button>';
+      html += _trailNavBtns();
       html += '</div>';
       // KPIs
       html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:18px">';

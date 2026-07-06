@@ -235,3 +235,42 @@ def test_cola_excluye_pre_impreso(app, db_clean):
     d = c.get('/api/programacion/serigrafia-cola').get_json()
     it = next((x for x in (d.get('items') or []) if x.get('envase_codigo') == pre), None)
     assert it is None, ('el pre_impreso NO debe aparecer en la cola', [x.get('envase_codigo') for x in (d.get('items') or [])])
+
+
+def test_envase_reparto_pesado_por_volumen(app, db_clean):
+    # 5-jul (Sebastián · lote 90kg niacinamida): el KG se reparte PESADO POR VOLUMEN, no por unidades. Con VENTAS
+    # IGUALES de 10 y 30ml, las UNIDADES producidas deben ser IGUALES (el 30ml se lleva 3x el bulk por unidad).
+    # El bug viejo (aplicar share-de-unidades al kg) daba ~3x más unidades de 10ml que de 30ml.
+    prod = "ZZ VOLPESO"
+    envA, envB = "ENV-VP-10", "ENV-VP-30"
+    _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp,nombre_comercial,nombre_inci,activo) VALUES ('MP-VP','Mat','INCI',1)")
+    _exec("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES (?,1,1)", (prod,))
+    _exec("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje,cantidad_g_por_lote) "
+          "VALUES (?, 'MP-VP','Mat',10,0)", (prod,))
+    for cod, d in ((envA, 'Frasco 10ml'), (envB, 'Frasco 30ml')):
+        _exec("INSERT OR IGNORE INTO maestro_mee (codigo,descripcion,categoria,stock_actual,stock_minimo) "
+              "VALUES (?,?,'Envase',0,0)", (cod, d))
+    # ventas IGUALES por presentación (override manual · prioridad 1 · determinista sin Shopify)
+    _exec("INSERT INTO producto_presentaciones (producto_nombre,presentacion_codigo,etiqueta,volumen_ml,envase_codigo,ventas_mes_referencia,activo) "
+          "VALUES (?, 'A10','10 ml',10,?,100,1)", (prod, envA))
+    _exec("INSERT INTO producto_presentaciones (producto_nombre,presentacion_codigo,etiqueta,volumen_ml,envase_codigo,ventas_mes_referencia,activo) "
+          "VALUES (?, 'B30','30 ml',30,?,100,1)", (prod, envB))
+    _exec("INSERT INTO produccion_programada (producto,fecha_programada,lotes,estado,cantidad_kg,origen) "
+          "VALUES (?, date('now','-5 hours','+5 days'),1,'pendiente',10,'eos_plan')", (prod,))
+    c = _login(app)
+    j = c.get("/api/abastecimiento/consumo-horizontes?tipo=mp,mee").get_json()
+    mees = j.get("mees") or []
+    hmax = str(max(j["horizontes"]))
+    a_it = next((m for m in mees if (m.get("codigo") or "").upper() == envA.upper()), None)
+    b_it = next((m for m in mees if (m.get("codigo") or "").upper() == envB.upper()), None)
+    assert a_it and b_it, ('faltan los frascos', [m.get('codigo') for m in mees])
+    un10 = float(a_it["consumo"][hmax]); un30 = float(b_it["consumo"][hmax])
+    # ventas iguales → unidades IGUALES (pesado por volumen · ~250 c/u para 10kg)
+    assert abs(un10 - un30) <= max(un10, un30, 1) * 0.15, \
+        f"con ventas iguales las unidades deben ser ~iguales (pesado por volumen) · 10ml={un10} 30ml={un30}"
+    # DIENTES: el bug viejo (share-por-unidades sobre kg) daba 10ml ~3x el 30ml
+    assert un10 < un30 * 2, \
+        f"si 10ml >> 30ml es el bug de share-por-unidades (no pesado por volumen) · 10ml={un10} 30ml={un30}"
+    # el bulk repartido no se pasa de 10kg (10000 ml)
+    assert abs(un10 * 10 + un30 * 30 - 10000) <= 600, \
+        f"el bulk repartido debe sumar ~10kg (10000 ml) · dio {un10*10+un30*30}"
