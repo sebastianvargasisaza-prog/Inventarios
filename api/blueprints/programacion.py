@@ -2711,7 +2711,7 @@ def _shopify_location_inventory(token, shop, location_id, timeout=25, max_pag=30
     url = 'https://' + shop + '/admin/api/2024-01/graphql.json'
     q = ('query($cursor:String){location(id:"' + gid + '"){name inventoryLevels(first:100,after:$cursor){'
          'pageInfo{hasNextPage endCursor} nodes{quantities(names:["on_hand"]){name quantity} '
-         'item{variant{sku}}}}}}')
+         'item{sku variant{sku}}}}}}')
     cursor = None
     _pag = 0
     while _pag < max_pag:
@@ -2729,7 +2729,8 @@ def _shopify_location_inventory(token, shop, location_id, timeout=25, max_pag=30
         loc = ((data.get('data') or {}).get('location')) or {}
         levels = (loc.get('inventoryLevels') or {})
         for n in (levels.get('nodes') or []):
-            sku = str((((n.get('item') or {}).get('variant') or {}).get('sku')) or '').strip().upper()
+            _it = n.get('item') or {}
+            sku = str(_it.get('sku') or ((_it.get('variant') or {}).get('sku')) or '').strip().upper()
             if not sku:
                 continue
             for _q in (n.get('quantities') or []):
@@ -4454,20 +4455,21 @@ def prog_sync_stock_shopify():
         # con la bodega real / la API no devuelve ese nivel) → los 907/540/441 de SAH/ANIMUSLASH no se veían.
         # Excluir la principal captura todo el físico producido fuera de la góndola de venta.
         try:
-            _esp_onhand = _shopify_onhand_no_principal(token, shop, _loc_id) or {}
+            _esp_onhand = _shopify_onhand_no_principal(token, shop, _loc_id) or {}   # incoming en Ánimus (transferencias)
         except Exception:
             _esp_onhand = {}
-        # Fallback legacy: la location específica de Espagiria (por si no_principal falla y el ID sí sirve).
-        if not _esp_onhand and _loc_esp and str(_loc_esp).strip() and str(_loc_esp).strip() != str(_loc_id or '').strip():
+        # Sebastián 6-jul · leer ESPAGIRIA LAB DESDE EL LADO DE LA LOCATION (el token SÍ puede · la consulta por
+        # variante NO devolvía ese nivel) → sumar su on_hand al "por entrar". AUTO, sin carga manual. La suma de
+        # ambas fuentes = producido-en-Espagiria (on_hand) + en-tránsito (incoming) = todo lo que viene a góndola.
+        if _loc_esp and str(_loc_esp).strip() and str(_loc_esp).strip() != str(_loc_id or '').strip():
             try:
-                _esp_onhand = _shopify_onhand_location_graphql(token, shop, _loc_esp) or {}
+                _els = _shopify_location_inventory(token, shop, _loc_esp) or {}
+                if isinstance(_els, dict) and '__error__' not in _els:
+                    for _sk, _v in _els.items():
+                        if int(_v or 0) > 0:
+                            _esp_onhand[_sk] = _esp_onhand.get(_sk, 0) + int(_v)
             except Exception:
-                _esp_onhand = {}
-            if not _esp_onhand:
-                try:
-                    avail_esp = _fetch_shopify_available(token, shop, inv_item_ids, location_id=_loc_esp) or {}
-                except Exception:
-                    avail_esp = {}
+                pass
         _por_entrar = {}
 
         conn.execute("UPDATE stock_pt SET estado='Ajustado' WHERE lote_produccion LIKE 'SHOPIFY-%'")

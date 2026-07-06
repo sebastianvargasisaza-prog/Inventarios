@@ -1086,30 +1086,29 @@ def job_sync_stock_shopify_diario(app):
                 except Exception:
                     _oh_np = None
             try:
-                _esp_onhand = (_oh_np(token, shop, _loc_id) or {}) if _oh_np else {}
+                _esp_onhand = (_oh_np(token, shop, _loc_id) or {}) if _oh_np else {}   # incoming (transferencias)
             except Exception:
                 _esp_onhand = {}
-            # Fallback legacy · location específica de Espagiria (si no_principal falla y el ID sí sirve).
-            if not _esp_onhand:
+            # Sebastián 6-jul · leer ESPAGIRIA LAB desde el LADO DE LA LOCATION (el token sí puede) → sumar su
+            # on_hand ('En existencias') al "por entrar". AUTO, sin manual. Suma con lo anterior (incoming).
+            try:
+                _re = conn.execute("SELECT valor FROM animus_config WHERE clave='shopify_location_espagiria_id'").fetchone()
+                _loc_esp = (_re[0] if _re else None)
+            except Exception:
+                _loc_esp = None
+            if _loc_esp and str(_loc_esp).strip() and str(_loc_esp).strip() != str(_loc_id or '').strip():
                 try:
-                    _re = conn.execute("SELECT valor FROM animus_config WHERE clave='shopify_location_espagiria_id'").fetchone()
-                    _loc_esp = (_re[0] if _re else None)
+                    from blueprints.programacion import _shopify_location_inventory as _oh_locinv
                 except Exception:
-                    _loc_esp = None
-                if _loc_esp and str(_loc_esp).strip() and str(_loc_esp).strip() != str(_loc_id or '').strip():
-                    try:
-                        from blueprints.programacion import _shopify_onhand_location_graphql as _oh_gql
-                    except Exception:
-                        _oh_gql = None
-                    try:
-                        _esp_onhand = (_oh_gql(token, shop, _loc_esp) or {}) if _oh_gql else {}
-                    except Exception:
-                        _esp_onhand = {}
-                    if not _esp_onhand:
-                        try:
-                            avail_esp = _fetch_shopify_available(token, shop, inv_item_ids, location_id=_loc_esp) or {}
-                        except Exception:
-                            avail_esp = {}
+                    _oh_locinv = None
+                try:
+                    _els = (_oh_locinv(token, shop, _loc_esp) or {}) if _oh_locinv else {}
+                    if isinstance(_els, dict) and '__error__' not in _els:
+                        for _sk, _v in _els.items():
+                            if int(_v or 0) > 0:
+                                _esp_onhand[_sk] = _esp_onhand.get(_sk, 0) + int(_v)
+                except Exception:
+                    pass
         used_available = bool(avail_map)
         # FIX 30-may-2026 · audit Plan · si NO se obtuvo "Available" real, el sync
         # cae a "On hand" (incluye Committed = ya vendido) → infla el stock de
