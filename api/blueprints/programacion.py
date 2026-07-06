@@ -2699,6 +2699,55 @@ def _shopify_onhand_no_principal(token, shop, main_location_id, timeout=25, max_
     return out
 
 
+def _shopify_location_inventory(token, shop, location_id, timeout=25, max_pag=30):
+    """{sku_upper: on_hand} de UNA location leído DESDE EL LADO DE LA LOCATION (location→inventoryLevels), no
+    desde la variante. Sebastián 6-jul: la consulta variante→inventoryLevels NO devolvía el nivel de ESPAGIRIA
+    LAB para ningún SKU (solo Ánimus). Esta prueba si el token puede ver el inventario de esa bodega por el otro
+    lado. Devuelve {'__error__':...} si falla, {} si vacío, o {sku:on_hand} si funciona."""
+    out = {}
+    if not location_id:
+        return out
+    gid = 'gid://shopify/Location/' + str(location_id)
+    url = 'https://' + shop + '/admin/api/2024-01/graphql.json'
+    q = ('query($cursor:String){location(id:"' + gid + '"){name inventoryLevels(first:100,after:$cursor){'
+         'pageInfo{hasNextPage endCursor} nodes{quantities(names:["on_hand"]){name quantity} '
+         'item{variant{sku}}}}}}')
+    cursor = None
+    _pag = 0
+    while _pag < max_pag:
+        _pag += 1
+        body = json.dumps({'query': q, 'variables': {'cursor': cursor}}).encode('utf-8')
+        try:
+            req = urllib.request.Request(url, data=body, headers={
+                'X-Shopify-Access-Token': token, 'Content-Type': 'application/json'})
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                data = json.loads(r.read())
+        except Exception as e:
+            return {'__error__': str(e)[:200]}
+        if data.get('errors'):
+            return {'__error__': json.dumps(data['errors'])[:300]}
+        loc = ((data.get('data') or {}).get('location')) or {}
+        levels = (loc.get('inventoryLevels') or {})
+        for n in (levels.get('nodes') or []):
+            sku = str((((n.get('item') or {}).get('variant') or {}).get('sku')) or '').strip().upper()
+            if not sku:
+                continue
+            for _q in (n.get('quantities') or []):
+                if _q.get('name') == 'on_hand':
+                    try:
+                        v = int(_q.get('quantity') or 0)
+                        if v > 0:
+                            out[sku] = out.get(sku, 0) + v
+                    except Exception:
+                        pass
+        pi = levels.get('pageInfo') or {}
+        if pi.get('hasNextPage') and pi.get('endCursor'):
+            cursor = pi['endCursor']
+        else:
+            break
+    return out
+
+
 def _shopify_sku_inventory_full(token, shop, sku, timeout=20):
     """DEBUG (Sebastián 6-jul) · para UN sku, todas las locations con TODOS los tipos de cantidad (on_hand,
     available, committed, reserved, damaged, safety_stock, quality_control, incoming) → ubica dónde está el
@@ -3087,10 +3136,23 @@ def prog_diag_inventarios_shopify():
     _dsku = (request.args.get('debug_sku') or '').strip()
     if _dsku:
         debug_sku_result = _shopify_sku_inventory_full(token, shop, _dsku)
+    # Sebastián 6-jul · leer ESPAGIRIA LAB DESDE EL LADO DE LA LOCATION (no la variante) → prueba definitiva de
+    # si el token puede ver el on_hand de esa bodega. Si trae SKUs → lo cableamos al sync (auto, sin manual).
+    espagiria_location_side = None
+    if cfg_esp:
+        _els = _shopify_location_inventory(token, shop, cfg_esp)
+        if isinstance(_els, dict) and '__error__' in _els:
+            espagiria_location_side = {'error': _els['__error__']}
+        else:
+            _elist = sorted([{'sku': k, 'uds': int(v)} for k, v in (_els or {}).items() if int(v) > 0],
+                            key=lambda x: -x['uds'])
+            espagiria_location_side = {'total_uds': sum(x['uds'] for x in _elist),
+                                       'n_skus': len(_elist), 'skus': _elist[:60]}
     return jsonify({
         'ok': True, 'shop': shop,
         'graphql_onhand_debug': gql_onhand_debug,
         'debug_sku_result': debug_sku_result,
+        'espagiria_location_side': espagiria_location_side,
         'locations': [{'id': str(l.get('id')), 'name': l.get('name'),
                        'active': l.get('active'), 'legacy': l.get('legacy')} for l in locs],
         'config_location_id': cfg_loc or None,
