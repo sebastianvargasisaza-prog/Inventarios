@@ -11333,12 +11333,34 @@ def producciones_faltantes():
     except sqlite3.OperationalError:
         pass
 
+    # M58 (5-jul) · ventas 90d por (producto, VOLUMEN): matchea SKU→producto+tamaño (sku_producto_map) para
+    # repartir multi-presentación (15 vs 30ml) por VENTAS REALES aunque la presentación no traiga sku_shopify.
+    # Antes caía a uniforme (50/50) → sobre-compra del tamaño que casi no se vende. Corazón del "todo está mal".
+    _ventas_up = {}
+    for _k, _v in ventas_por_sku_90d.items():
+        _ku = str(_k).strip().upper()
+        _ventas_up[_ku] = _ventas_up.get(_ku, 0) + _v
+    sku_vol_ventas = {}   # producto_upper -> {volumen_int: uds}
+    try:
+        for _sk, _pn, _vm in c.execute("SELECT UPPER(TRIM(sku)), producto_nombre, COALESCE(volumen_ml,0) "
+                                       "FROM sku_producto_map WHERE COALESCE(activo,1)=1").fetchall():
+            if not _sk:
+                continue
+            _u = _ventas_up.get(str(_sk).strip().upper(), 0)
+            if _u <= 0:
+                continue
+            _dv = sku_vol_ventas.setdefault((_pn or '').strip().upper(), {})
+            _vk = int(round(float(_vm or 0)))
+            _dv[_vk] = _dv.get(_vk, 0) + _u
+    except Exception:
+        pass
+
     def _ratio_presentaciones(producto_norm):
         """Devuelve dict {codigo_presentacion: ratio_0_a_1} con esta prioridad:
-        1) Override manual: si AT LEAST 1 presentación tiene ventas_mes_referencia > 0,
-           usa ESOS números (0 = no se vende).
-        2) Shopify histórico: ratio = qty_sku / total_qty últimos 180d.
-        3) Uniforme: 1/N si no hay data.
+        1) Override manual: si AT LEAST 1 presentación tiene ventas_mes_referencia > 0, usa ESOS números.
+        2) Ventas Shopify por VOLUMEN (SKU→producto+tamaño · real · discrimina 15 vs 30 · M58).
+        3) Ventas Shopify por sku_shopify de la presentación (si está seteado).
+        4) Uniforme: 1/N si no hay ninguna venta.
         Sebastián 27-may-2026 PM · "AZ lo vendemos de 30 y 15, de 15 200 uds/mes"."""
         pres = presentaciones_por_producto.get(producto_norm, [])
         if not pres:
@@ -11350,7 +11372,14 @@ def producciones_faltantes():
         if suma_override > 0:
             return {p['codigo']: (float(p.get('ventas_mes_referencia') or 0) / suma_override)
                     for p in pres}
-        # Prioridad 2 · Shopify
+        # Prioridad 2 · ventas Shopify por VOLUMEN (real · discrimina 15 vs 30 aunque falte sku_shopify · M58)
+        vv = sku_vol_ventas.get(producto_norm, {})
+        if vv:
+            vpv = {p['codigo']: vv.get(int(round(float(p.get('volumen_ml') or 0))), 0) for p in pres}
+            total_pv = sum(vpv.values())
+            if total_pv > 0:
+                return {cod: (v / total_pv) for cod, v in vpv.items()}
+        # Prioridad 3 · Shopify por sku_shopify de la presentación
         ventas = {}
         total = 0
         for p in pres:
@@ -11360,7 +11389,7 @@ def producciones_faltantes():
             total += v
         if total > 0:
             return {cod: (v / total) for cod, v in ventas.items()}
-        # Prioridad 3 · uniforme
+        # Prioridad 4 · uniforme
         return {p['codigo']: 1.0 / len(pres) for p in pres}
 
     # 5. Cargar stock MP (canonical helper)
@@ -13728,19 +13757,42 @@ def _trail_envase(c, codigo_up, mee_row):
     except Exception:
         pass
 
-    def _ratio(pres):
+    # ventas 90d por (producto, VOLUMEN) · matchea presentación→SKUs de ese producto+tamaño (como Necesidades).
+    # Discrimina 15ml vs 30ml por lo que REALMENTE se vende de cada uno (no 50/50 parejo · M58).
+    sku_vol = {}   # producto_norm -> {volumen_int: uds}
+    try:
+        for sku, pn, vml in c.execute("SELECT UPPER(TRIM(sku)), producto_nombre, COALESCE(volumen_ml,0) "
+                                      "FROM sku_producto_map WHERE COALESCE(activo,1)=1").fetchall():
+            if not sku:
+                continue
+            u = ventas_sku.get(str(sku).strip().upper(), 0)
+            if u <= 0:
+                continue
+            dv = sku_vol.setdefault(_np(pn), {})
+            vk = int(round(float(vml or 0)))
+            dv[vk] = dv.get(vk, 0) + u
+    except Exception:
+        pass
+
+    def _ratio(pres, prodn=''):
         if not pres:
             return {}
         if len(pres) == 1:
             return {pres[0]['codigo']: 1.0}
         s = sum(p['vmr'] for p in pres)
         if s > 0:
-            return {p['codigo']: p['vmr'] / s for p in pres}   # 1) override manual
+            return {p['codigo']: p['vmr'] / s for p in pres}   # 1) override manual (ventas_mes_referencia)
+        vv = sku_vol.get(prodn, {})                            # 2) ventas Shopify 90d por VOLUMEN (real · 15 vs 30)
+        if vv:
+            vt2 = {p['codigo']: vv.get(int(round(p['vol'])), 0) for p in pres}
+            if sum(vt2.values()) > 0:
+                tt2 = sum(vt2.values())
+                return {k: v / tt2 for k, v in vt2.items()}
         vt = {p['codigo']: ventas_sku.get(p['sku'], 0) for p in pres}
         tt = sum(vt.values())
         if tt > 0:
-            return {k: v / tt for k, v in vt.items()}           # 2) ventas Shopify 90d por SKU
-        return {p['codigo']: 1.0 / len(pres) for p in pres}     # 3) uniforme
+            return {k: v / tt for k, v in vt.items()}           # 3) ventas Shopify 90d por SKU de la presentación
+        return {p['codigo']: 1.0 / len(pres) for p in pres}     # 4) uniforme (último recurso)
 
     rows = c.execute(
         "SELECT id, producto, substr(fecha_programada,1,10), COALESCE(cantidad_kg,0), COALESCE(origen,''), "
@@ -13763,7 +13815,7 @@ def _trail_envase(c, codigo_up, mee_row):
             uds = int(round(kgf * 1000.0 / ml)) if ml > 0 else 0
             share = 1.0
         elif (not ovr_up) and any(p['usa'] for p in pres):
-            rats = _ratio(pres)
+            rats = _ratio(pres, pu)
             uds = 0
             share = 0.0
             for p in pres:
@@ -13785,16 +13837,20 @@ def _trail_envase(c, codigo_up, mee_row):
         filas.append({'produccion_id': pid, 'producto': prod, 'fecha': fecha, 'dias': dd,
                       'cantidad_kg': round(kgf, 2), 'share_pct': round(share * 100, 1),
                       'unidades': uds, 'origen': origen})
+    # ml para el header: el maestro (si lo tiene) o el volumen de una presentación que usa este envase
+    _ml_disp = float(mee_row[2] or 0) or next((p['vol'] for pres in pres_by_prod.values()
+                                               for p in pres if p['usa'] and p['vol'] > 0), 0)
     return jsonify({
         'ok': True, 'es_mee': True, 'codigo_mp': mee_row[0],
-        'nombre_comercial': mee_row[1], 'volumen_ml': mee_row[2],
+        'nombre_comercial': mee_row[1], 'volumen_ml': _ml_disp,
         'productos_que_usan': [{'producto': pn.title()} for pn, pres in pres_by_prod.items()
                                if any(p['usa'] for p in pres)],
         'n_producciones': len(filas), 'producciones': filas,
         'total_unidades_por_horizonte': {str(h): int(tot[h]) for h in HOR},
-        'nota': 'unidades = kg × share × 1000 ÷ ml. El share es la porción del lote que va a ESTA presentación '
-                '(por ventas_mes_referencia manual, o ventas Shopify 90d por SKU, o uniforme si falta data). '
-                'Si ves share 50%/50% parejo en un multi-presentación, falta configurar sus ventas por presentación.',
+        'nota': 'unidades = kg × share × 1000 ÷ ml. El share es la porción del lote que va a ESTA presentación, '
+                'por VENTAS REALES: ventas_mes_referencia manual → ventas Shopify 90d por tamaño (SKU/volumen) → '
+                'uniforme solo si no hay ninguna venta. Si ves 50%/50% parejo, ese producto no tiene ventas por SKU '
+                'mapeadas (revisá que sus SKUs tengan volumen_ml en el mapeo).',
     })
 
 
