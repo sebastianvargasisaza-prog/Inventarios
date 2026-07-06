@@ -581,7 +581,9 @@ def calidad_bandeja():
         _hoy_oos = c.execute("SELECT date('now','-5 hours')").fetchone()[0]
         rows = c.execute("""
             SELECT id, fecha_deteccion, producto, lote, parametro, valor_obtenido,
-                   especificacion, severidad, estado,
+                   COALESCE(valor_esperado_texto,'') AS especificacion,
+                   CASE COALESCE(limite_violado,'') WHEN 'ambos' THEN 'critica'
+                        WHEN 'limite_industria' THEN 'alta' ELSE 'media' END AS severidad, estado,
                    CAST((julianday('now') - julianday(fecha_deteccion)) AS INTEGER) as dias_abierta,
                    COALESCE(fecha_objetivo_cierre,'')
             FROM calidad_oos
@@ -614,6 +616,10 @@ def calidad_bandeja():
         }
     except Exception as e:
         log.warning('bandeja oos_abiertas fallo: %s', e)
+        try:  # M33 · en PG un error aborta la tx · rollback para no cascadear a las secciones siguientes
+            conn.rollback()
+        except Exception:
+            pass
         out['secciones']['oos_abiertas'] = {'total': 0, 'items': []}
 
     # ── 4. Calibraciones vencidas + próximas 7d ─────────────────────────
@@ -763,12 +769,13 @@ def calidad_bandeja():
     # ── 9. Estabilidades pendientes próximas 30d ───────────────────────
     try:
         rows = c.execute("""
-            SELECT id, producto, lote, condicion, fecha_inicio, fecha_proxima_analisis, estado,
-                   CAST((julianday(fecha_proxima_analisis) - julianday('now')) AS INTEGER) as dias
+            SELECT id, producto, lote_piloto AS lote, condicion, fecha_inicio,
+                   fecha_evaluacion AS fecha_proxima_analisis, estado,
+                   CAST((julianday(fecha_evaluacion) - julianday('now')) AS INTEGER) as dias
             FROM estabilidades
-            WHERE date(fecha_proxima_analisis) BETWEEN date('now', '-5 hours') AND date('now', '-5 hours', '+30 days')
-              AND COALESCE(estado, 'en_curso') = 'en_curso'
-            ORDER BY fecha_proxima_analisis ASC
+            WHERE date(fecha_evaluacion) BETWEEN date('now', '-5 hours') AND date('now', '-5 hours', '+30 days')
+              AND UPPER(COALESCE(estado, '')) = 'EN CURSO'
+            ORDER BY fecha_evaluacion ASC
             LIMIT 20
         """).fetchall()
         items = [{
@@ -781,6 +788,10 @@ def calidad_bandeja():
         }
     except Exception as e:
         log.info('bandeja estabilidades: %s', e)
+        try:  # M33 · rollback para no cascadear a las secciones siguientes en PG
+            conn.rollback()
+        except Exception:
+            pass
         out['secciones']['estabilidades_pendientes'] = {'total': 0, 'items': []}
 
     # ── 10. EBR completados esperando liberación de PT (Fase 4 · 14-jun) ──
