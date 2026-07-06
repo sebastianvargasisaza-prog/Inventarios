@@ -3282,6 +3282,117 @@ def prog_diag_split_presentacion():
                     'motivo_split': motivo})
 
 
+@bp.route('/api/programacion/split-audit', methods=['GET'])
+def prog_split_audit():
+    """M58 · TODOS los productos multi-presentación con su reparto de envase + estado (✅ ventas reales /
+    ⚠️ falta dato) + qué falta. Para montar el reparto de todos de una."""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db(); c = conn.cursor()
+    import json as _json
+    from datetime import datetime as _dt, timedelta as _td
+
+    def _np(s):
+        return ' '.join((s or '').strip().upper().split())
+    pres_by = {}
+    try:
+        for pn, pc, env, vol, vmr in c.execute(
+                "SELECT producto_nombre, COALESCE(presentacion_codigo,''), COALESCE(envase_codigo,''), "
+                "COALESCE(volumen_ml,0), COALESCE(ventas_mes_referencia,0) FROM producto_presentaciones "
+                "WHERE COALESCE(activo,1)=1").fetchall():
+            d = pres_by.setdefault(_np(pn), {'nombre': pn, 'pres': []})
+            d['pres'].append({'codigo': pc, 'envase': env, 'volumen_ml': vol, 'ventas_mes_referencia': vmr})
+    except Exception:
+        pass
+    ventas_sku = {}
+    try:
+        cut90 = ((_dt.utcnow() - _td(hours=5)) - _td(days=90)).date().isoformat()
+        for (si,) in c.execute("SELECT sku_items FROM animus_shopify_orders WHERE creado_en>=? "
+                               "AND sku_items IS NOT NULL", (cut90,)).fetchall():
+            try:
+                items = _json.loads(si)
+            except Exception:
+                continue
+            for it in (items or []):
+                k = str(it.get('sku', '') or '').strip().upper()
+                q = int(it.get('qty') or it.get('quantity') or 0)
+                if k and q > 0:
+                    ventas_sku[k] = ventas_sku.get(k, 0) + q
+    except Exception:
+        pass
+    skus_by = {}
+    try:
+        for sk, pn, vml in c.execute("SELECT UPPER(TRIM(sku)), producto_nombre, COALESCE(volumen_ml,0) "
+                                     "FROM sku_producto_map WHERE COALESCE(activo,1)=1").fetchall():
+            skus_by.setdefault(_np(pn), []).append(
+                {'sku': sk, 'volumen_ml': vml, 'ventas_90d': ventas_sku.get(str(sk).strip().upper(), 0)})
+    except Exception:
+        pass
+    out = []
+    for pn, d in pres_by.items():
+        if len(d['pres']) <= 1:
+            continue
+        skus = skus_by.get(pn, [])
+        tiene_vmr = any(p['ventas_mes_referencia'] > 0 for p in d['pres'])
+        vpv = {}
+        for s in skus:
+            if s['ventas_90d'] > 0:
+                vk = int(round(float(s['volumen_ml'] or 0)))
+                vpv[vk] = vpv.get(vk, 0) + s['ventas_90d']
+        if tiene_vmr:
+            estado = 'ok_manual'
+        elif vpv:
+            estado = 'ok_shopify'
+        elif not skus:
+            estado = 'sin_sku'
+        elif any(not s['volumen_ml'] for s in skus):
+            estado = 'falta_volumen'
+        else:
+            estado = 'sin_ventas'
+        out.append({'producto': d['nombre'], 'presentaciones': d['pres'], 'skus': skus, 'estado': estado})
+    orden = {'falta_volumen': 0, 'sin_sku': 1, 'sin_ventas': 2, 'ok_shopify': 3, 'ok_manual': 4}
+    out.sort(key=lambda x: orden.get(x['estado'], 9))
+    return jsonify({'ok': True, 'n': len(out), 'productos': out})
+
+
+@bp.route('/api/programacion/sku-volumen', methods=['GET', 'POST'])
+def prog_sku_volumen_set():
+    """M58 · setear el tamaño (volumen_ml) de un SKU en sku_producto_map → habilita el reparto por ventas reales."""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    d = request.get_json(silent=True) or {}
+    sku = (request.args.get('sku') or d.get('sku') or '').strip()
+    if not sku:
+        return jsonify({'ok': False, 'error': 'falta sku'})
+    try:
+        vol = float(request.args.get('volumen_ml') if request.args.get('volumen_ml') is not None else (d.get('volumen_ml') or 0))
+    except Exception:
+        return jsonify({'ok': False, 'error': 'volumen inválido'})
+    conn = get_db()
+    conn.execute("UPDATE sku_producto_map SET volumen_ml=? WHERE UPPER(TRIM(sku))=?", (vol, sku.upper()))
+    conn.commit()
+    return jsonify({'ok': True, 'sku': sku.upper(), 'volumen_ml': vol})
+
+
+@bp.route('/api/programacion/pres-ventas', methods=['GET', 'POST'])
+def prog_pres_ventas_set():
+    """M58 · setear ventas_mes_referencia de una presentación (override manual del reparto · lo que Alejandro sabe)."""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    d = request.get_json(silent=True) or {}
+    cod = (request.args.get('presentacion_codigo') or d.get('presentacion_codigo') or '').strip()
+    if not cod:
+        return jsonify({'ok': False, 'error': 'falta presentacion_codigo'})
+    try:
+        v = float(request.args.get('ventas_mes') if request.args.get('ventas_mes') is not None else (d.get('ventas_mes') or 0))
+    except Exception:
+        v = 0
+    conn = get_db()
+    conn.execute("UPDATE producto_presentaciones SET ventas_mes_referencia=? WHERE presentacion_codigo=?", (v, cod))
+    conn.commit()
+    return jsonify({'ok': True, 'presentacion_codigo': cod, 'ventas_mes': v})
+
+
 @bp.route('/api/programacion/diag-ventas-anio', methods=['GET'])
 def prog_diag_ventas_anio():
     """Fase 1 · ventas por MES (unidades Shopify) · con crecimiento vs el mismo mes del año pasado (YoY) · para

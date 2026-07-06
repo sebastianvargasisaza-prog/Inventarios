@@ -12696,6 +12696,7 @@ function _renderProgramacion(d){
       <button id="cfg-stab-riesgo" onclick="cfgSubtab('riesgo')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#e5e7eb;color:#475569">🎨 Perfil Riesgo</button>
       <button id="cfg-stab-calendar" onclick="cfgSubtab('calendar')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:linear-gradient(135deg,#fbbf24,#dc2626);color:#fff">📆 Google Calendar</button>
       <button id="cfg-stab-estac" onclick="cfgSubtab('estac')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:linear-gradient(135deg,#6d28d9,#0891b2);color:#fff">📈 Estacionalidad</button>
+      <button id="cfg-stab-reparto" onclick="cfgSubtab('reparto')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:linear-gradient(135deg,#0891b2,#16a34a);color:#fff">📊 Reparto envases</button>
     </div>
     <div id="cfg-content"></div>
   </div><!-- /ptab-config -->
@@ -20031,7 +20032,7 @@ async function ckMarcar(itemId, estado){
   function cfgInit(){ cfgSubtab(_CFG_SUB); }
   function cfgSubtab(s){
     _CFG_SUB = s;
-    ['pres','equipos','cadencias','mp','emails','riesgo','calendar','estac'].forEach(function(x){
+    ['pres','equipos','cadencias','mp','emails','riesgo','calendar','estac','reparto'].forEach(function(x){
       var btn = document.getElementById('cfg-stab-'+x);
       if(btn){
         if(x==='calendar'){
@@ -20039,6 +20040,9 @@ async function ckMarcar(itemId, estado){
           btn.style.color = '#fff';
         } else if(x==='estac'){
           btn.style.background = (s===x)?'#4c1d95':'linear-gradient(135deg,#6d28d9,#0891b2)';
+          btn.style.color = '#fff';
+        } else if(x==='reparto'){
+          btn.style.background = (s===x)?'#065f46':'linear-gradient(135deg,#0891b2,#16a34a)';
           btn.style.color = '#fff';
         } else {
           btn.style.background = (s===x)?'#1f2937':'#e5e7eb';
@@ -20082,8 +20086,41 @@ async function ckMarcar(itemId, estado){
     } else if(s==='estac'){
       c.innerHTML = '<div id="estac-panel"><div style="text-align:center;color:#94a3b8;padding:20px">Cargando…</div></div>';
       if(typeof cargarEstacionalidad==='function') setTimeout(cargarEstacionalidad, 50);
+    } else if(s==='reparto'){
+      c.innerHTML = '<div id="reparto-panel"><div style="text-align:center;color:#94a3b8;padding:20px">Cargando…</div></div>';
+      if(typeof cargarReparto==='function') setTimeout(cargarReparto, 50);
     }
   }
+
+  async function cargarReparto(){
+    var el = document.getElementById('reparto-panel'); if(!el) return;
+    el.innerHTML = '<div style="color:#94a3b8;padding:20px">Cargando…</div>';
+    try{
+      var d = await (await fetch('/api/programacion/split-audit')).json();
+      if(!d.ok){ el.innerHTML = '<div style="color:#dc2626;padding:20px">Error</div>'; return; }
+      var badge = {falta_volumen:['⚠️ falta tamaño','#d97706'], sin_sku:['⚠️ sin SKU','#dc2626'], sin_ventas:['⚠️ sin ventas','#dc2626'], ok_shopify:['✅ ventas Shopify','#16a34a'], ok_manual:['✅ manual','#16a34a']};
+      var h = '<div style="font-size:12px;color:#475569;margin-bottom:12px;line-height:1.5">Cada producto con 2+ tamaños reparte sus envases por <b>VENTAS</b>. Para que NO salga 50/50: cargá el <b>tamaño (ml)</b> de cada SKU → el reparto sale solo de las ventas reales de Shopify. O escribí las <b>ventas/mes</b> a mano por tamaño (lo que sabés). Los ⚠️ son los que faltan.</div>';
+      (d.productos||[]).forEach(function(p){
+        var b = badge[p.estado]||['',''];
+        h += '<div style="border:1px solid #ece9f5;border-radius:12px;padding:12px 14px;margin-bottom:10px;background:#fff">';
+        h += '<div style="font-weight:800;color:#4c1d95;margin-bottom:8px;font-size:14px">'+escapeHtmlNec(p.producto)+' <span style="font-size:11px;font-weight:700;color:'+b[1]+';margin-left:6px">'+b[0]+'</span></div>';
+        h += '<div style="font-size:11px;color:#64748b;margin:2px 0">SKUs · cargá el tamaño en ml:</div>';
+        (p.skus||[]).forEach(function(sk){
+          h += '<div style="display:flex;gap:10px;align-items:center;margin:4px 0;font-size:12px"><span style="min-width:200px;color:#334155">'+escapeHtmlNec(sk.sku)+'</span><label style="color:#64748b">ml <input type="number" value="'+(sk.volumen_ml||'')+'" data-sku="'+escapeHtmlNec(sk.sku)+'" onchange="setSkuVol(this.dataset.sku,this.value)" style="width:64px;padding:5px;border:1.5px solid '+(sk.volumen_ml?'#e6e1f2':'#f59e0b')+';border-radius:7px"></label><span style="color:#94a3b8">vende '+(Number(sk.ventas_90d)||0)+' /90d</span></div>';
+        });
+        if(!(p.skus||[]).length) h += '<div style="font-size:11px;color:#dc2626;margin:4px 0">Sin SKUs mapeados a este producto (revisá el mapeo SKU→producto)</div>';
+        h += '<div style="font-size:11px;color:#64748b;margin:8px 0 2px">…o ventas/mes a mano por tamaño (gana sobre lo de arriba):</div>';
+        (p.presentaciones||[]).forEach(function(pr){
+          h += '<div style="display:flex;gap:10px;align-items:center;margin:4px 0;font-size:12px"><span style="min-width:200px;color:#334155">'+(pr.volumen_ml||'?')+'ml · '+escapeHtmlNec(pr.envase||'')+'</span><label style="color:#64748b">vende/mes <input type="number" value="'+(pr.ventas_mes_referencia||'')+'" data-cod="'+escapeHtmlNec(pr.codigo)+'" onchange="setPresVentas(this.dataset.cod,this.value)" style="width:74px;padding:5px;border:1.5px solid #e6e1f2;border-radius:7px"></label></div>';
+        });
+        h += '</div>';
+      });
+      if(!(d.productos||[]).length) h += '<div style="color:#94a3b8;padding:20px">No hay productos con 2+ presentaciones.</div>';
+      el.innerHTML = h;
+    }catch(e){ el.innerHTML = '<div style="color:#dc2626;padding:20px">Error: '+e+'</div>'; }
+  }
+  async function setSkuVol(sku,v){ try{ await fetch('/api/programacion/sku-volumen?sku='+encodeURIComponent(sku)+'&volumen_ml='+encodeURIComponent(v)); }catch(e){} cargarReparto(); }
+  async function setPresVentas(cod,v){ try{ await fetch('/api/programacion/pres-ventas?presentacion_codigo='+encodeURIComponent(cod)+'&ventas_mes='+encodeURIComponent(v)); }catch(e){} cargarReparto(); }
 
   async function cargarEstacionalidad(){
     var el = document.getElementById('estac-panel'); if(!el) return;
