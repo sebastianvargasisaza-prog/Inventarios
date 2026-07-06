@@ -3136,14 +3136,19 @@ def prog_estacionalidad_config():
     if not _auth():
         return jsonify({'error': 'No autenticado'}), 401
     conn = get_db(); c = conn.cursor()
-    if request.method == 'POST':
-        d = request.get_json(silent=True) or {}
-        acc = d.get('accion')
+    _body = request.get_json(silent=True) or {}
+    acc = request.args.get('accion') or _body.get('accion')   # acepta acción por GET (browser) o POST body
+
+    def _p(k):
+        v = request.args.get(k)
+        return v if v is not None else _body.get(k)
+    if acc:
+        d = {'activa': _p('activa'), 'tope': _p('tope'), 'mes': _p('mes'), 'multiplicador': _p('multiplicador')}
         if acc == 'refrescar':
             g = _refrescar_estacionalidad_auto(conn)
             return jsonify({'ok': True, 'accion': 'refrescar', 'mult_auto': g})
         if acc == 'toggle':
-            v = '1' if d.get('activa') else '0'
+            v = '1' if str(d.get('activa') or '').strip().lower() in ('1', 'true', 'on', 'si', 'sí') else '0'
             conn.execute("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('estacionalidad_plan_activa', ?)", (v,))
             conn.commit()
             return jsonify({'ok': True, 'activa': v == '1'})
