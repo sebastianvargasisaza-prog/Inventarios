@@ -689,6 +689,11 @@ JOBS_SCHEDULE = [
     ('cleanup_logs',          2,  0, None, None,                'job_cleanup_logs'),
     # ⭐ Cero-error · diario 2:20 · re-deriva formula_items.cantidad_g_por_lote (nunca corrupta · self-heal)
     ('reconciliar_formula_gpl', 2, 20, None, None,              'job_reconciliar_formula_gpl'),
+    # ⭐ PERF 6-jul · 3×/día · precalcula ventas_diarias desde Shopify → Necesidades/Abastecimiento/velocidad
+    # leen tabla indexada en vez de parsear ~16k órdenes JSON en cada carga (causa raíz de la lentitud).
+    ('ventas_diarias_am',      5, 40, None, None,               'job_refrescar_ventas_diarias'),
+    ('ventas_diarias_pm',     13, 40, None, None,               'job_refrescar_ventas_diarias'),
+    ('ventas_diarias_noche',  21, 40, None, None,               'job_refrescar_ventas_diarias'),
     # Mensuales (primeros 5 días del mes a las 12:00)
     ('auto_sc_mensual',      12,  0, None, [1, 2, 3, 4, 5],     'job_auto_sc_mensual'),
     ('auto_sc_mee_mensual',  12, 30, None, [1, 2, 3, 4, 5],     'job_auto_sc_mee_mensual'),
@@ -4202,6 +4207,66 @@ def job_reconciliar_formula_gpl(app):
                 "AND COALESCE(unidad_base_g,0) <> ROUND(lote_size_kg*1000.0, 2)")
             conn.commit()
             return True, {'items_rederivados': n}, n
+        except Exception as e:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            return False, {'error': str(e)[:200]}, 0
+
+
+def job_refrescar_ventas_diarias(app):
+    """PERF (Sebastián 6-jul) · 3×/día · precalcula ventas_diarias (sku, fecha, cantidad) desde
+    animus_shopify_orders (mismos filtros que _ventas_sku_map_orders: cancelados/refunds/B2B excluidos).
+    Así Necesidades/Abastecimiento/velocidad leen una tabla indexada (Estrategia 1 de _ventas_diarias_por_sku)
+    en vez de parsear el JSON de ~16k órdenes en cada carga. Reconstruye la ventana de 400 días (los pedidos
+    pueden editarse/reembolsarse) · idempotente."""
+    with app.app_context():
+        from database import get_db as _gdb
+        import json as _json, os as _os
+        from datetime import datetime as _dt, timedelta as _td
+        conn = _gdb(); c = conn.cursor()
+        try:
+            cutoff = (_dt.utcnow() - _td(hours=5) - _td(days=400)).strftime('%Y-%m-%d')
+            _b2b_raw = (_os.environ.get('SHOPIFY_B2B_TAGS') or '').strip()
+            _b2b_clauses = ''; _b2b_params = []
+            if _b2b_raw:
+                for _t in _b2b_raw.split(','):
+                    _t = _t.strip().lower()
+                    if _t:
+                        _b2b_clauses += (" AND LOWER(COALESCE(tags,'')) NOT LIKE ? "
+                                         "AND LOWER(COALESCE(customer_tags,'')) NOT LIKE ?")
+                        _b2b_params.extend(['%' + _t + '%', '%' + _t + '%'])
+            rows = c.execute(
+                "SELECT date(creado_en), sku_items FROM animus_shopify_orders "
+                "WHERE date(creado_en) >= ? AND sku_items IS NOT NULL AND sku_items != '' "
+                "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') "
+                "AND LOWER(COALESCE(estado_pago,'')) NOT IN ('refunded','voided','partially_refunded') "
+                + _b2b_clauses, tuple([cutoff] + _b2b_params)).fetchall()
+            agg = {}
+            for fecha, sij in rows:
+                if not fecha or not sij:
+                    continue
+                try:
+                    items = _json.loads(sij) if isinstance(sij, str) else sij
+                except Exception:
+                    continue
+                if not isinstance(items, list):
+                    continue
+                for it in items:
+                    sk = (it.get('sku') or it.get('SKU') or '').strip().upper()
+                    if not sk:
+                        continue
+                    cant = float(it.get('cantidad') or it.get('quantity') or it.get('qty') or 0)
+                    if cant <= 0:
+                        continue
+                    agg[(sk, fecha)] = agg.get((sk, fecha), 0) + cant
+            conn.execute("DELETE FROM ventas_diarias WHERE fecha >= ?", (cutoff,))
+            if agg:
+                conn.executemany("INSERT INTO ventas_diarias (sku, fecha, cantidad) VALUES (?,?,?)",
+                                 [(sk, fe, q) for (sk, fe), q in agg.items()])
+            conn.commit()
+            return True, {'filas': len(agg), 'skus': len(set(k[0] for k in agg)), 'ordenes': len(rows)}, len(agg)
         except Exception as e:
             try:
                 conn.rollback()

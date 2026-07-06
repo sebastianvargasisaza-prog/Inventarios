@@ -9818,6 +9818,15 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "INSERT INTO estacionalidad_meses (mes, mult_auto) SELECT 11, 1.0 WHERE NOT EXISTS (SELECT 1 FROM estacionalidad_meses WHERE mes=11)",
         "INSERT INTO estacionalidad_meses (mes, mult_auto) SELECT 12, 1.0 WHERE NOT EXISTS (SELECT 1 FROM estacionalidad_meses WHERE mes=12)",
     ]),
+    (342, "PERF (Sebastián 6-jul · velocidad de carga). Tabla ventas_diarias (sku, fecha, cantidad) precalculada "
+          "por cron 3×/día desde animus_shopify_orders → Necesidades/Abastecimiento/velocidad NO parsean el JSON "
+          "de ~16k órdenes en CADA carga (era la causa de la lentitud · M43 la dejó a medias · el código ya la "
+          "lee como 'Estrategia 1'). Índice por (fecha) y (sku).", [
+        "CREATE TABLE IF NOT EXISTS ventas_diarias ("
+        " sku TEXT NOT NULL, fecha TEXT NOT NULL, cantidad REAL DEFAULT 0, PRIMARY KEY (sku, fecha))",
+        "CREATE INDEX IF NOT EXISTS idx_ventas_diarias_fecha ON ventas_diarias(fecha)",
+        "CREATE INDEX IF NOT EXISTS idx_ventas_diarias_sku ON ventas_diarias(sku)",
+    ]),
 ]
 
 

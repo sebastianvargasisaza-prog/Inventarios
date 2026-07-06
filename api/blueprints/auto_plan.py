@@ -220,8 +220,24 @@ def _ventas_sku_map_orders(c, dias_max=200):
                 _b2b_clauses += " AND LOWER(COALESCE(tags,'')) NOT LIKE ? AND LOWER(COALESCE(customer_tags,'')) NOT LIKE ?"
                 _b2b_params.extend(['%' + _t + '%', '%' + _t + '%'])
     m = {}
+    # PERF 6-jul · FAST PATH: ventas_diarias precalculada por cron 3×/día (misma forma {sku:{fecha:qty}}).
+    # Evita parsear el JSON de ~16k órdenes en CADA carga (causa raíz de la lentitud). Si la tabla está vacía
+    # (el cron aún no corrió) cae al parse de órdenes de abajo. Mismos filtros ya aplicados por el cron.
+    _usada_cache = False
     try:
-        rows = c.execute(f"""
+        _vd = c.execute("SELECT sku, fecha, cantidad FROM ventas_diarias WHERE fecha >= ?", (cutoff,)).fetchall()
+        if _vd:
+            for _sk, _fe, _cant in _vd:
+                _sk = (_sk or '').strip().upper()
+                if not _sk or not _fe:
+                    continue
+                _dd = m.setdefault(_sk, {})
+                _dd[_fe] = _dd.get(_fe, 0) + float(_cant or 0)
+            _usada_cache = True
+    except Exception:
+        _usada_cache = False
+    try:
+        rows = [] if _usada_cache else c.execute(f"""
             SELECT date(creado_en), sku_items FROM animus_shopify_orders
             WHERE date(creado_en) >= ? AND sku_items IS NOT NULL AND sku_items != ''
               AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')

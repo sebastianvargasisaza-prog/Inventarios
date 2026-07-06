@@ -3553,6 +3553,37 @@ def prog_envases_por_tamano():
     return jsonify({'ok': True, 'tamanos': out})
 
 
+@bp.route('/api/programacion/refrescar-ventas-diarias', methods=['GET', 'POST'])
+def prog_refrescar_ventas_diarias():
+    """PERF 6-jul · dispara YA el precálculo de ventas_diarias (sin esperar el cron 3×/día). Corre en segundo
+    plano (parsea ~16k órdenes una vez). Devuelve el estado actual de la tabla."""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    from flask import current_app
+    _app = current_app._get_current_object()
+
+    def _run():
+        try:
+            from blueprints.auto_plan_jobs import job_refrescar_ventas_diarias
+            job_refrescar_ventas_diarias(_app)
+        except Exception:
+            pass
+    try:
+        import threading
+        threading.Thread(target=_run, daemon=True).start()
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+    conn = get_db()
+    try:
+        r = conn.execute("SELECT COUNT(*), MIN(fecha), MAX(fecha) FROM ventas_diarias").fetchone()
+    except Exception:
+        r = (0, None, None)
+    return jsonify({'ok': True, 'iniciado_en_segundo_plano': True,
+                    'filas_actuales': r[0], 'desde': r[1], 'hasta': r[2],
+                    'nota': 'Corre atrás (1-2 min). Volvé a abrir esta URL y mirá filas_actuales subir. Cuando '
+                            'tenga datos, Necesidades/Abastecimiento cargan mucho más rápido.'})
+
+
 @bp.route('/api/programacion/diag-ventas-anio', methods=['GET'])
 def prog_diag_ventas_anio():
     """Fase 1 · ventas por MES (unidades Shopify) · con crecimiento vs el mismo mes del año pasado (YoY) · para
