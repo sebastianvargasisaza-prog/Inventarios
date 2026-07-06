@@ -3072,6 +3072,62 @@ def prog_diag_estacionalidad():
                     'nota': 'Multiplicador global (promedio de todos los productos). Pasá ?producto=NOMBRE para el detalle.'})
 
 
+@bp.route('/api/programacion/diag-ventas-anio', methods=['GET'])
+def prog_diag_ventas_anio():
+    """Fase 1 · ventas por MES (unidades Shopify) · con crecimiento vs el mismo mes del año pasado (YoY) · para
+    ver cómo van las ventas. Read-only. Uso: /api/programacion/diag-ventas-anio  ó  ?producto=NOMBRE"""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db(); c = conn.cursor()
+    import json as _json
+    from datetime import datetime as _dt, timedelta as _td
+    prod_f = (request.args.get('producto') or '').strip().upper()
+    skus_prod = set()
+    if prod_f:
+        try:
+            for (sku,) in c.execute("SELECT UPPER(TRIM(sku)) FROM sku_producto_map "
+                                    "WHERE COALESCE(activo,1)=1 AND UPPER(TRIM(producto_nombre))=?", (prod_f,)).fetchall():
+                if sku:
+                    skus_prod.add(sku)
+        except Exception:
+            pass
+    cut = ((_dt.utcnow() - _td(hours=5)) - _td(days=24 * 31)).date().isoformat()
+    por_mes = {}
+    try:
+        for creado, si in c.execute("SELECT substr(creado_en,1,7), sku_items FROM animus_shopify_orders "
+                                    "WHERE creado_en >= ? AND sku_items IS NOT NULL", (cut,)).fetchall():
+            ym = str(creado or '')
+            if len(ym) < 7:
+                continue
+            try:
+                items = _json.loads(si)
+            except Exception:
+                continue
+            for it in (items or []):
+                k = str(it.get('sku', '') or '').strip().upper()
+                q = int(it.get('qty') or it.get('quantity') or 0)
+                if q <= 0:
+                    continue
+                if prod_f and k not in skus_prod:
+                    continue
+                por_mes[ym] = por_mes.get(ym, 0) + q
+    except Exception:
+        pass
+    filas = []
+    for ym in sorted(por_mes.keys()):
+        try:
+            y, m = int(ym[:4]), int(ym[5:7])
+            prev = "%04d-%02d" % (y - 1, m)
+        except Exception:
+            prev = None
+        prev_v = por_mes.get(prev)
+        yoy = round((por_mes[ym] / prev_v - 1) * 100, 1) if prev_v else None
+        filas.append({'mes': ym, 'unidades': por_mes[ym], 'vs_anio_pasado_pct': yoy})
+    return jsonify({'ok': True, 'producto': prod_f or 'TODOS', 'ventas_por_mes': filas,
+                    'nota': 'unidades vendidas por mes (Shopify). vs_anio_pasado_pct = crecimiento vs el mismo '
+                            'mes del año anterior (null si aún no hay ese mes en EOS · corré sync-historico).'})
+
+
 @bp.route('/api/programacion/sync-historico-shopify', methods=['GET', 'POST'])
 def prog_sync_historico_shopify():
     """Sebastián 5-jul (Fase 1 forecast) · trae el histórico PROFUNDO de órdenes de Shopify (default 15 meses)
