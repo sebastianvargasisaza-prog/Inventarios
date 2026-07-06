@@ -4564,9 +4564,12 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         # lo que viene de Espagiria la cubre más allá del umbral de alerta → estado POR_ENTRAR (color aparte,
         # sale de los críticos). Distinto del pipeline/lote-programado (M6): esto es producto TERMINADO, no una
         # producción agendada-y-no-hecha. Baja los críticos "para programar" sin esconder el faltante de góndola.
-        if (_por_entrar_kg > 0 and velocidad_kg_dia > 0
+        # Sebastián 6-jul · en UNIDADES (no kg): un producto sin volumen cargado (ej. ÁNIMUS LASH, máscara)
+        # daba _por_entrar_kg=0 y velocidad_kg_dia=0 → la condición NUNCA se cumplía y el "por entrar" manual
+        # no lo sacaba de rojo. En uds es idéntico cuando hay ml (uds/vel_uds == kg/vel_kg) y funciona sin ml.
+        if (_por_entrar_uds > 0 and velocidad_uds_dia > 0.001
                 and urgencia in ("CRITICO", "URGENTE", "VIGILAR")):
-            _dias_con_entrar = (stock_kg_gondola + _por_entrar_kg) / velocidad_kg_dia
+            _dias_con_entrar = (stock_uds_total + _por_entrar_uds) / velocidad_uds_dia
             # con lo que viene de Espagiria SALE de la zona crítica (≥ cob_critico) → POR_ENTRAR: ya no urge
             # PRODUCIR (urge trasladar). Umbral = cob_critico (no cob_alerta) para que un producto cubierto por
             # el lab aparezca en la categoría aunque quede en la banda de alerta (Sebastián 5-jul).
