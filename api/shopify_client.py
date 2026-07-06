@@ -169,6 +169,7 @@ def sync_shopify_orders(conn, *, days: int = 90,
                     if s > 0 and e > s:
                         next_url = part[s:e].strip()
             url = next_url
+            conn.commit()   # commit POR PÁGINA (robustez · un sync profundo que corte no pierde lo traído)
         conn.commit()
         out['ok'] = True
         out['synced'] = synced

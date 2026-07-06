@@ -3072,6 +3072,38 @@ def prog_diag_estacionalidad():
                     'nota': 'Multiplicador global (promedio de todos los productos). Pasá ?producto=NOMBRE para el detalle.'})
 
 
+@bp.route('/api/programacion/sync-historico-shopify', methods=['GET', 'POST'])
+def prog_sync_historico_shopify():
+    """Sebastián 5-jul (Fase 1 forecast) · trae el histórico PROFUNDO de órdenes de Shopify (default 15 meses)
+    para tener el NOVIEMBRE PASADO (Black Friday) y comparar año contra año. El sync normal solo trae 90 días
+    → EOS no veía la estacionalidad real. Idempotente (INSERT OR REPLACE por shopify_id · commit por página →
+    si corta por tiempo, no se pierde lo traído · re-correr continúa). Una sola vez · puede tardar."""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    try:
+        meses = int(request.args.get('meses') or 15)
+    except Exception:
+        meses = 15
+    meses = max(3, min(meses, 30))
+    conn = get_db()
+    try:
+        from shopify_client import sync_shopify_orders as _sso
+        d = _sso(conn, days=meses * 31, incluir_movimientos=False)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+    try:
+        rango = conn.execute("SELECT MIN(substr(creado_en,1,10)), MAX(substr(creado_en,1,10)), COUNT(*) "
+                             "FROM animus_shopify_orders").fetchone()
+    except Exception:
+        rango = (None, None, None)
+    return jsonify({
+        'ok': bool(d.get('ok')), 'meses_pedidos': meses, 'synced': d.get('synced'), 'error': d.get('error'),
+        'rango_en_eos': {'desde': rango[0], 'hasta': rango[1], 'total_ordenes': rango[2]},
+        'nota': 'Si "desde" ya llega al año pasado, corré diag-estacionalidad de nuevo → el noviembre real '
+                'debería aparecer con su multiplicador. Si NO llegó tan atrás, re-corré este endpoint (continúa).',
+    })
+
+
 @bp.route('/api/programacion/sync-salud', methods=['GET'])
 def prog_sync_salud():
     """Salud del sync Shopify (local, sin llamada externa) + diagnóstico del filtro
