@@ -12695,6 +12695,7 @@ function _renderProgramacion(d){
       <button id="cfg-stab-emails" onclick="cfgSubtab('emails')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#e5e7eb;color:#475569">📧 Emails</button>
       <button id="cfg-stab-riesgo" onclick="cfgSubtab('riesgo')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:#e5e7eb;color:#475569">🎨 Perfil Riesgo</button>
       <button id="cfg-stab-calendar" onclick="cfgSubtab('calendar')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:linear-gradient(135deg,#fbbf24,#dc2626);color:#fff">📆 Google Calendar</button>
+      <button id="cfg-stab-estac" onclick="cfgSubtab('estac')" style="padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;background:linear-gradient(135deg,#6d28d9,#0891b2);color:#fff">📈 Estacionalidad</button>
     </div>
     <div id="cfg-content"></div>
   </div><!-- /ptab-config -->
@@ -20030,11 +20031,14 @@ async function ckMarcar(itemId, estado){
   function cfgInit(){ cfgSubtab(_CFG_SUB); }
   function cfgSubtab(s){
     _CFG_SUB = s;
-    ['pres','equipos','cadencias','mp','emails','riesgo','calendar'].forEach(function(x){
+    ['pres','equipos','cadencias','mp','emails','riesgo','calendar','estac'].forEach(function(x){
       var btn = document.getElementById('cfg-stab-'+x);
       if(btn){
         if(x==='calendar'){
           btn.style.background = (s===x)?'#dc2626':'linear-gradient(135deg,#fbbf24,#dc2626)';
+          btn.style.color = '#fff';
+        } else if(x==='estac'){
+          btn.style.background = (s===x)?'#4c1d95':'linear-gradient(135deg,#6d28d9,#0891b2)';
           btn.style.color = '#fff';
         } else {
           btn.style.background = (s===x)?'#1f2937':'#e5e7eb';
@@ -20075,8 +20079,50 @@ async function ckMarcar(itemId, estado){
         +'<div id="cfg-cal-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px"></div>'
         +'<div id="cfg-cal-tabla"><div style="text-align:center;color:#94a3b8;padding:20px">Pulsa "Re-leer Calendar"</div></div>';
       cfgCargarCalendar();
+    } else if(s==='estac'){
+      c.innerHTML = '<div id="estac-panel"><div style="text-align:center;color:#94a3b8;padding:20px">Cargando…</div></div>';
+      if(typeof cargarEstacionalidad==='function') setTimeout(cargarEstacionalidad, 50);
     }
   }
+
+  async function cargarEstacionalidad(){
+    var el = document.getElementById('estac-panel'); if(!el) return;
+    el.innerHTML = '<div style="color:#94a3b8;padding:20px">Cargando…</div>';
+    try{
+      var r = await fetch('/api/programacion/estacionalidad-config');
+      var d = await r.json();
+      if(!d.ok){ el.innerHTML = '<div style="color:#dc2626;padding:20px">Error: '+(d.error||r.status)+'</div>'; return; }
+      var h = '';
+      h += '<div style="background:linear-gradient(135deg,#6d28d9,#0891b2);color:#fff;padding:16px 20px;border-radius:12px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">';
+      h += '<div><div style="font-size:18px;font-weight:800">📈 Estacionalidad de demanda</div><div style="font-size:12px;opacity:.9">El plan produce y compra MÁS antes de los meses fuertes (ej. noviembre · Black Friday)</div></div>';
+      h += '<button onclick="estacToggle('+(d.activa?'0':'1')+')" style="background:'+(d.activa?'#16a34a':'#fff')+';color:'+(d.activa?'#fff':'#6d28d9')+';border:none;padding:11px 20px;border-radius:11px;font-weight:800;cursor:pointer;font-size:13px">'+(d.activa?'✅ Activado · apagar':'⚪ Apagado · ACTIVAR')+'</button>';
+      h += '</div>';
+      h += '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:12px">';
+      h += '<button onclick="estacRefrescar()" style="background:#0891b2;color:#fff;border:none;padding:9px 15px;border-radius:10px;font-weight:700;cursor:pointer;font-size:12px">🔄 Recalcular del histórico</button>';
+      h += '<label style="font-size:12px;color:#475569;font-weight:600">Tope <input id="estac-tope" type="number" step="0.1" min="1.1" max="4" value="'+(d.tope||2)+'" onchange="estacTope(this.value)" style="width:64px;padding:7px;border:1px solid #e6e1f2;border-radius:9px"></label>';
+      h += '<span style="font-size:11px;color:#94a3b8">Ningún mes dispara más de este factor</span>';
+      h += '</div>';
+      h += '<table style="width:100%;border-collapse:collapse;font-size:13px;background:#fff;border:1px solid #ece9f5;border-radius:12px;overflow:hidden"><thead><tr style="background:linear-gradient(180deg,#faf9ff,#f3f1fb);color:#6d28d9"><th style="padding:9px;text-align:left">Mes</th><th style="padding:9px;text-align:right" title="Del histórico Shopify">Auto</th><th style="padding:9px;text-align:right" title="Lo que fija Alejandro a mano · vacío = usa el auto">Override</th><th style="padding:9px;text-align:right">Efectivo</th><th style="padding:9px;text-align:right" title="Lo que el plan aplica (mes ÷ mes actual, capado)">Factor plan</th></tr></thead><tbody>';
+      (d.meses||[]).forEach(function(m){
+        var fac = (d.factores_aplicados||{})[m.mes];
+        var alto = (m.efectivo!=null && Number(m.efectivo)>=1.3);
+        h += '<tr style="border-top:1px solid #f1f5f9'+(alto?';background:#fef9f3':'')+'">';
+        h += '<td style="padding:8px 9px;font-weight:600">'+m.mes+(alto?' 🔥':'')+'</td>';
+        h += '<td style="padding:8px 9px;text-align:right;color:#64748b">'+(m.mult_auto!=null?m.mult_auto:'—')+'</td>';
+        h += '<td style="padding:8px 9px;text-align:right"><input type="number" step="0.05" placeholder="auto" value="'+(m.mult_override!=null?m.mult_override:'')+'" data-mes="'+m.mes_num+'" onchange="estacOverride(this.dataset.mes,this.value)" style="width:66px;padding:5px;border:1px solid #e6e1f2;border-radius:7px;text-align:right"></td>';
+        h += '<td style="padding:8px 9px;text-align:right;font-weight:700">'+(m.efectivo!=null?m.efectivo:'—')+'</td>';
+        h += '<td style="padding:8px 9px;text-align:right;font-weight:700;color:'+(fac>1.05?'#d97706':(fac<0.95?'#0891b2':'#334155'))+'">'+(fac!=null?fac+'×':'—')+'</td>';
+        h += '</tr>';
+      });
+      h += '</tbody></table>';
+      h += '<div style="font-size:11px;color:#94a3b8;margin-top:10px">'+(d.activa?'✅ Activado: el plan ya usa estos factores. Regenerá el plan para ver los lotes adelantarse antes de los meses fuertes.':'⚪ Apagado: no afecta el plan. Prendelo cuando quieras · se apaga igual de fácil.')+' · Override vacío = usa el Auto · 🔥 = mes fuerte.</div>';
+      el.innerHTML = h;
+    }catch(e){ el.innerHTML = '<div style="color:#dc2626;padding:20px">Error: '+e+'</div>'; }
+  }
+  async function estacToggle(v){ try{ await fetch('/api/programacion/estacionalidad-config?accion=toggle&activa='+v); }catch(e){} cargarEstacionalidad(); }
+  async function estacRefrescar(){ var el=document.getElementById('estac-panel'); if(el) el.innerHTML='<div style="color:#94a3b8;padding:20px">Recalculando del histórico…</div>'; try{ await fetch('/api/programacion/estacionalidad-config?accion=refrescar'); }catch(e){} cargarEstacionalidad(); }
+  async function estacTope(v){ try{ await fetch('/api/programacion/estacionalidad-config?accion=tope&tope='+encodeURIComponent(v)); }catch(e){} cargarEstacionalidad(); }
+  async function estacOverride(mes,v){ try{ await fetch('/api/programacion/estacionalidad-config?accion=override&mes='+mes+'&multiplicador='+encodeURIComponent(v)); }catch(e){} cargarEstacionalidad(); }
 
   async function cfgCargarCalendar(){
     var box = document.getElementById('cfg-cal-tabla');
