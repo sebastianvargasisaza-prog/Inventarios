@@ -2815,6 +2815,40 @@ def prog_test_shopify():
         return jsonify({'ok': False, 'paso': 'exception', 'error': str(e)})
 
 
+@bp.route('/api/programacion/por-entrar-manual', methods=['GET', 'POST'])
+def prog_por_entrar_manual():
+    """Sebastián 6-jul · carga MANUAL del "por entrar" (Espagiria) cuando Shopify no expone ese inventario a la
+    API. Escribe app_settings.por_entrar_manual {sku:uds} · Necesidades lo suma al bucket 'por entrar' (azul) y
+    saca el producto de rojo. Uso: ?sku=SKU&uds=N (uds=0 quita). GET sin args = lista lo cargado."""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    import json as _j
+    conn = get_db()
+    d = request.get_json(silent=True) or {}
+    sku = (request.args.get('sku') or d.get('sku') or '').strip().upper()
+    _uds = request.args.get('uds') if request.args.get('uds') is not None else d.get('uds')
+    row = conn.execute("SELECT valor FROM app_settings WHERE clave='por_entrar_manual'").fetchone()
+    try:
+        data = _j.loads(row[0]) if row and row[0] else {}
+    except Exception:
+        data = {}
+    if sku and _uds is not None:
+        try:
+            n = int(float(_uds))
+        except Exception:
+            return jsonify({'ok': False, 'error': 'uds inválido'})
+        if n > 0:
+            data[sku] = n
+        else:
+            data.pop(sku, None)
+        conn.execute("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('por_entrar_manual', ?)", (_j.dumps(data),))
+        conn.commit()
+        return jsonify({'ok': True, 'sku': sku, 'uds': n, 'por_entrar_manual': data})
+    return jsonify({'ok': True, 'por_entrar_manual': data,
+                    'nota': 'Setear: ?sku=SKU&uds=N (uds=0 para quitar). Va al bucket "por entrar" (azul) y saca '
+                            'el producto de rojo. Es lo que hay producido en Espagiria por transferir.'})
+
+
 @bp.route('/api/programacion/diag-inventarios-shopify', methods=['GET'])
 def prog_diag_inventarios_shopify():
     """Sebastián 5-jul · diag de las LOCATIONS de Shopify (Ánimus Lab vs Espagiria). El motor de stock DEBE
