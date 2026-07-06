@@ -20109,9 +20109,12 @@ async function ckMarcar(itemId, estado){
           h += '<div style="display:flex;gap:8px;align-items:center;margin:3px 0;font-size:12px;flex-wrap:wrap"><span style="min-width:240px;color:#334155;font-weight:600">'+escapeHtmlNec(pn)+'</span>'
             +'<label style="color:#64748b">ml <input type="number" id="nv-'+i+'" style="width:56px;padding:4px;border:1px solid #f59e0b;border-radius:6px"></label>'
             +'<select id="ne-'+i+'" style="padding:4px;border:1px solid #e6e1f2;border-radius:6px;font-size:11px;max-width:280px">'+envOpts+'</select>'
-            +'<button data-prod="'+escapeHtmlNec(pn)+'" data-idx="'+i+'" onclick="asignarEnvase(this)" style="background:#16a34a;color:#fff;border:none;padding:4px 12px;border-radius:7px;font-weight:700;cursor:pointer;font-size:12px">Asignar</button></div>';
+            +'<button data-prod="'+escapeHtmlNec(pn)+'" data-idx="'+i+'" onclick="asignarEnvase(this)" style="background:#16a34a;color:#fff;border:none;padding:4px 12px;border-radius:7px;font-weight:700;cursor:pointer;font-size:12px">Asignar</button>'
+            +'<button data-prod="'+escapeHtmlNec(pn)+'" onclick="noAplicaEnvase(this)" title="No requiere envase (maquila / otro cliente) · lo saca de la lista" style="background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0;padding:4px 10px;border-radius:7px;cursor:pointer;font-size:11px">no aplica</button></div>';
         });
       }
+      var noap = cov.no_aplica||[];
+      if(noap.length){ h += '<div style="font-size:11px;color:#94a3b8;margin-top:6px">Marcados "no requiere envase" (otro cliente): '+noap.map(escapeHtmlNec).join(', ')+' · <a href="#" onclick="reincluirNoAplica();return false" style="color:#0891b2">reincluir todos</a></div>'; }
       h += '<div style="border-top:2px solid #ece9f5;margin:16px 0 12px"></div>';
     }catch(e){}
     // === Sección 1 · Envase por tamaño (todos los 10ml en el mismo frasco) ===
@@ -20159,6 +20162,12 @@ async function ckMarcar(itemId, estado){
       if(!(d.productos||[]).length) h += '<div style="color:#94a3b8;padding:20px">No hay productos con 2+ presentaciones.</div>';
       el.innerHTML = h;
     }catch(e){ el.innerHTML = '<div style="color:#dc2626;padding:20px">Error: '+e+'</div>'; }
+  }
+  async function noAplicaEnvase(btn){ try{ await fetch('/api/programacion/pres-no-aplica?producto='+encodeURIComponent(btn.dataset.prod)); }catch(e){} cargarReparto(); }
+  async function reincluirNoAplica(){
+    try{ var cov = await (await fetch('/api/abastecimiento/envases-cobertura')).json(); var na = cov.no_aplica||[];
+      for(var i=0;i<na.length;i++){ await fetch('/api/programacion/pres-no-aplica?producto='+encodeURIComponent(na[i])+'&quitar=1'); } }catch(e){}
+    cargarReparto();
   }
   async function asignarEnvase(btn){
     var pn=btn.dataset.prod, i=btn.dataset.idx;

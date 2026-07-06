@@ -3466,6 +3466,32 @@ def prog_pres_crear():
     return jsonify({'ok': True, 'producto': prod, 'volumen_ml': vol, 'envase': env.upper()})
 
 
+@bp.route('/api/programacion/pres-no-aplica', methods=['GET', 'POST'])
+def prog_pres_no_aplica():
+    """5-jul · marcar un producto como 'no requiere envase' (ej. maquila/otro cliente) → sale de la lista de
+    faltantes de cobertura. Guardado en app_settings.envases_no_requiere (JSON). ?quitar=1 lo re-incluye."""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    d = request.get_json(silent=True) or {}
+    prod = (request.args.get('producto') or d.get('producto') or '').strip()
+    quitar = str(request.args.get('quitar') or d.get('quitar') or '') == '1'
+    if not prod:
+        return jsonify({'ok': False, 'error': 'falta producto'})
+    conn = get_db()
+    import json as _j
+    r = conn.execute("SELECT valor FROM app_settings WHERE clave='envases_no_requiere'").fetchone()
+    try:
+        lst = _j.loads(r[0]) if r and r[0] else []
+    except Exception:
+        lst = []
+    lst = [x for x in lst if str(x).strip().upper() != prod.upper()]
+    if not quitar:
+        lst.append(prod)
+    conn.execute("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('envases_no_requiere', ?)", (_j.dumps(lst),))
+    conn.commit()
+    return jsonify({'ok': True, 'producto': prod, 'no_requiere': not quitar})
+
+
 @bp.route('/api/programacion/envases-lista', methods=['GET'])
 def prog_envases_lista():
     """Lista de códigos MEE (envases) activos para los dropdowns de asignación."""
@@ -12856,12 +12882,23 @@ def abastecimiento_envases_cobertura():
             con_env.setdefault(_nz(pn), []).append({'envase': env, 'volumen_ml': vol})
     except Exception:
         pass
-    sin_config = sorted(activos[k] for k in activos if k not in con_env)
+    # Productos marcados 'no requiere envase' (maquila/otro cliente · 5-jul) → fuera de faltantes
+    excl = set()
+    try:
+        import json as _j2
+        r_ex = c.execute("SELECT valor FROM app_settings WHERE clave='envases_no_requiere'").fetchone()
+        if r_ex and r_ex[0]:
+            excl = set(_nz(x) for x in (_j2.loads(r_ex[0]) or []))
+    except Exception:
+        pass
+    sin_config = sorted(activos[k] for k in activos if k not in con_env and k not in excl)
+    no_aplica = sorted(activos[k] for k in activos if k not in con_env and k in excl)
     ok = [{'producto': activos[k], 'presentaciones': con_env[k]} for k in activos if k in con_env]
     return jsonify({
         'n_activos': len(activos),
         'n_con_envase': len(ok),
         'n_sin_envase': len(sin_config),
+        'no_aplica': no_aplica,          # marcados 'otro cliente / no requiere'
         'sin_envase': sin_config,        # productos que NO se planearán sus envases (configurar)
         'con_envase': sorted(ok, key=lambda x: x['producto']),
         'donde_configurar': 'Planta › Configuración › 📦 Presentaciones',
