@@ -3072,6 +3072,38 @@ def clientes_b2b_desactivar(cliente_id):
     return jsonify({'ok': True})
 
 
+@bp.route("/api/plan/pauta-multitono", methods=["GET", "POST"])
+def plan_pauta_multitono():
+    """Sebastián 6-jul · override por producto de la regla multi-tono: 'dominante' (manda el tamaño grande) o
+    'cuello' (manda el que se agota primero · colores como BLUSH/labios). GET lista · setear con
+    ?producto=NOMBRE&regla=dominante|cuello|auto (auto = quita el override → default por volumen)."""
+    err = _require_login()
+    if err:
+        return err
+    import json as _j
+    conn = get_db()
+    prod = (request.args.get('producto') or (request.get_json(silent=True) or {}).get('producto') or '').strip()
+    regla = (request.args.get('regla') or (request.get_json(silent=True) or {}).get('regla') or '').strip().lower()
+    row = conn.execute("SELECT valor FROM app_settings WHERE clave='pauta_multitono'").fetchone()
+    try:
+        data = _j.loads(row[0]) if row and row[0] else {}
+    except Exception:
+        data = {}
+    if prod and regla:
+        key = prod.strip().lower()
+        if regla in ('dominante', 'cuello'):
+            data[key] = regla
+        else:
+            data.pop(key, None)
+        conn.execute("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('pauta_multitono', ?)",
+                     (_j.dumps(data),))
+        conn.commit()
+        return jsonify({'ok': True, 'producto': prod, 'regla': data.get(key, 'auto'), 'overrides': data})
+    return jsonify({'ok': True, 'overrides': data,
+                    'nota': 'Setear: ?producto=NOMBRE&regla=dominante|cuello|auto. dominante=manda el tamaño '
+                            'grande · cuello=manda el que se agota primero (colores) · auto=por volumen (default).'})
+
+
 @bp.route("/api/plan/necesidades", methods=["GET"])
 def plan_necesidades():
     """Agregador de necesidades por cliente · core del Plan v3.
@@ -4128,6 +4160,17 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
 
     # 6. Procesar cada producto
     out = []
+    # Sebastián 6-jul · override por producto de la pauta multi-tono ('dominante' = manda el grande · 'cuello'
+    # = manda el que se agota primero, para colores). Default vacío → AUTO por volumen. "No todos es así".
+    _pauta_override = {}
+    try:
+        import json as _jpo
+        _rpo = c.execute("SELECT valor FROM app_settings WHERE clave='pauta_multitono'").fetchone()
+        if _rpo and _rpo[0]:
+            for _k, _v in (_jpo.loads(_rpo[0]) or {}).items():
+                _pauta_override[str(_k).strip().lower()] = str(_v).strip().lower()
+    except Exception:
+        _pauta_override = {}
     # PERF (Sebastián 4-jul) · cache request-scope del volumen por (sku, producto): _ml_de_sku llamaba
     # _volumen_sku (2 queries) por CADA sku de CADA producto, sin memoria → ~N×M queries repetidas en el
     # load de Necesidades (lo hacía lento · M43/M59). El volumen es estable dentro del request.
@@ -4389,6 +4432,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         # por tono = stock_tono / velocidad_tono (vel_tono = mix% de la vel agregada). Se rastrea el mínimo.
         _dias_tono_bottleneck = None       # solo góndola (urgencia)
         _dias_tono_bottleneck_pipe = None  # góndola + pipeline repartido por mix (próxima)
+        _es_multitamano = False            # Sebastián 6-jul · >1 volumen ⇒ manda el dominante · =1 vol (colores) ⇒ cuello
         tonos_arr = []
         try:
             skus_del_prod = [s for s in prod_to_skus.get(prod_nombre, [])
@@ -4404,13 +4448,17 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                 if ml_promedio > 0 and lote_kg_efectivo > 0:
                     uds_lote_total = int(round(lote_kg_efectivo * 1000.0 / ml_promedio))
                 _pipe_uds_prod = (pipeline_kg * 1000.0 / ml_promedio) if ml_promedio > 0 else 0.0
-                _sku_cuello = None          # el tono que MARCA LA PAUTA del producto (el dominante)
-                _MIX_MIN_CUELLO = 5.0       # umbral: un tono que vende <5% del mix NO manda la alarma del producto
-                # Sebastián 6-jul: el tono DOMINANTE (mayor % del mix) marca la pauta del producto, NO el mínimo
-                # (bottleneck). Un tamaño/tono secundario en 0 (ej. VITAMINA C 15ml al 17%, o el 15ml de AZ) NO
-                # tira el producto a crítico: se envasa junto al dominante cuando ESTE lo pide. El secundario
-                # agotado igual se VE en el desglose (su cobertura 0d), pero no cambia la urgencia del producto.
+                _sku_cuello = None          # el tono/tamaño que MARCA LA PAUTA del producto
+                _MIX_MIN_CUELLO = 5.0       # umbral: <5% del mix NO manda la alarma del producto
+                # Sebastián 6-jul · REGLA POR TIPO (default auto por VOLUMEN · overridable por producto):
+                #  · Multi-TAMAÑO (volúmenes distintos · 30ml+15ml de VITAMINA C/NOVA PHA/AZ): manda el DOMINANTE
+                #    (mayor mix · el grande). Un tamaño secundario en 0 NO hace crítico (se envasa junto al dominante).
+                #  · Multi-COLOR (mismo volumen · BLUSH, SUERO DE LABIOS): manda el CUELLO (el que se agota primero)
+                #    para no llegar SIN un color. "No todos es así" → override _pauta_override por producto.
                 _mix_dominante = -1.0
+                _dom_g = _dom_p = _dom_s = None      # dominante (mayor mix)
+                _min_g = _min_p = _min_s = None      # cuello (menor cobertura)
+                _vols_signif = set()                 # volúmenes de los tonos ≥5% (para decidir tamaño vs color)
                 for sku_u in skus_del_prod:
                     v_t = int(ventas_por_sku.get(sku_u, 0))
                     pct = round(100.0 * v_t / _total_uds_skus, 1) if _total_uds_skus > 0 else 0
@@ -4422,12 +4470,13 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                     _td_gond = round(_tono_stock / _tono_vel, 1) if _tono_vel > 0.001 else None
                     _td_pipe = (round((_tono_stock + _pipe_uds_prod * v_t / _total_uds_skus) / _tono_vel, 1)
                                 if _tono_vel > 0.001 else None)
-                    # El tono DOMINANTE (mayor mix ≥5% con cobertura válida) marca la pauta del producto.
-                    if pct >= _MIX_MIN_CUELLO and pct > _mix_dominante and _td_gond is not None:
-                        _mix_dominante = pct
-                        _dias_tono_bottleneck = _td_gond
-                        _dias_tono_bottleneck_pipe = _td_pipe
-                        _sku_cuello = sku_u
+                    if pct >= _MIX_MIN_CUELLO and _td_gond is not None:
+                        _vols_signif.add(int(round(float(ml_por_sku.get(sku_u, ml_promedio) or 0))))
+                        if pct > _mix_dominante:                      # dominante (mayor mix)
+                            _mix_dominante = pct
+                            _dom_g, _dom_p, _dom_s = _td_gond, _td_pipe, sku_u
+                        if _min_g is None or _td_gond < _min_g:       # cuello (menor cobertura)
+                            _min_g, _min_p, _min_s = _td_gond, _td_pipe, sku_u
                     tonos_arr.append({
                         'sku': sku_u,
                         'tono_label': (tono_por_sku.get(sku_u, '') or sku_u),
@@ -4446,6 +4495,18 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                     _dias_tono_bottleneck_pipe = None
                 else:
                     tonos_arr.sort(key=lambda t: -t['porcentaje_mix'])
+                    # Regla de pauta: override por producto ('dominante'/'cuello') o AUTO por volumen.
+                    _pauta = _pauta_override.get(_prod_key_lc)
+                    if _pauta == 'dominante':
+                        _es_multitamano = True
+                    elif _pauta == 'cuello':
+                        _es_multitamano = False
+                    else:
+                        _es_multitamano = len(_vols_signif) > 1   # >1 volumen = tamaños → dominante
+                    if _es_multitamano:
+                        _dias_tono_bottleneck, _dias_tono_bottleneck_pipe, _sku_cuello = _dom_g, _dom_p, _dom_s
+                    else:
+                        _dias_tono_bottleneck, _dias_tono_bottleneck_pipe, _sku_cuello = _min_g, _min_p, _min_s
                     for _t in tonos_arr:
                         _t['cuello'] = (_t['sku'] == _sku_cuello)
         except Exception:
@@ -4462,13 +4523,19 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         _pipe_efectivo = max(pipeline_kg, _por_entrar_kg)
         _dcp = round((stock_kg_gondola + _pipe_efectivo) / velocidad_kg_dia, 1) if velocidad_kg_dia > 0 else None
         if _dias_tono_bottleneck is not None:
-            # El tono DOMINANTE marca la cobertura del producto DIRECTAMENTE (no min con el agregado · Sebastián
-            # 6-jul). El agregado (Σstock ÷ vel_total) SUBESTIMA cuando un tamaño grande tiene stock y uno chico
-            # está en 0 (divide el stock del grande por la velocidad total) → daría crítico falso. La cobertura
-            # del dominante (su stock ÷ su velocidad) es la real "cuántos días hasta que se agote el importante".
-            dias_gondola = _dias_tono_bottleneck
-            if _dias_tono_bottleneck_pipe is not None:
-                _dcp = _dias_tono_bottleneck_pipe
+            if _es_multitamano:
+                # Multi-TAMAÑO: el DOMINANTE marca la cobertura DIRECTAMENTE (Sebastián 6-jul). El agregado
+                # (Σstock ÷ vel_total) subestima cuando el tamaño grande tiene stock y el chico está en 0 →
+                # crítico falso. La cobertura del dominante (su stock ÷ su velocidad) es la real.
+                dias_gondola = _dias_tono_bottleneck
+                if _dias_tono_bottleneck_pipe is not None:
+                    _dcp = _dias_tono_bottleneck_pipe
+            else:
+                # Multi-COLOR (BLUSH, labios): el CUELLO baja la cobertura (nunca la sube) · el color que se
+                # agota primero manda, para no llegar SIN un color.
+                dias_gondola = _dias_tono_bottleneck if dias_gondola is None else min(dias_gondola, _dias_tono_bottleneck)
+                if _dias_tono_bottleneck_pipe is not None:
+                    _dcp = _dias_tono_bottleneck_pipe if _dcp is None else min(_dcp, _dias_tono_bottleneck_pipe)
             if velocidad_uds_dia > 0.01 and dias_gondola is not None:
                 if dias_gondola <= cob_critico:
                     urgencia = "CRITICO"
