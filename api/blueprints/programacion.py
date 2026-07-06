@@ -2987,13 +2987,15 @@ def _estacionalidad_mensual(c, meses_hist=24):
                 sku_prod[sku] = str(pn or '').strip().upper()
     except Exception:
         pass
-    cut = ((_dt.utcnow() - _td(hours=5)) - _td(days=meses_hist * 31)).date().isoformat()
+    _hoy_co = (_dt.utcnow() - _td(hours=5)).date()
+    cut = (_hoy_co - _td(days=meses_hist * 31)).isoformat()
+    _mes_actual = _hoy_co.isoformat()[:7]   # el mes en curso está INCOMPLETO → excluirlo (no arrastra el promedio)
     ventas_pm = {}   # producto -> {'YYYY-MM': uds}
     try:
         for creado, si in c.execute("SELECT substr(creado_en,1,7), sku_items FROM animus_shopify_orders "
                                     "WHERE creado_en >= ? AND sku_items IS NOT NULL", (cut,)).fetchall():
             ym = str(creado or '')
-            if len(ym) < 7:
+            if len(ym) < 7 or ym == _mes_actual:
                 continue
             try:
                 items = _json.loads(si)
