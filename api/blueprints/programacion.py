@@ -2849,6 +2849,103 @@ def prog_por_entrar_manual():
                             'el producto de rojo. Es lo que hay producido en Espagiria por transferir.'})
 
 
+@bp.route('/programacion/por-entrar', methods=['GET'])
+def prog_por_entrar_page():
+    """Sebastián 6-jul · pantalla dedicada para cargar el "por entrar" (Espagiria) de TODOS los productos de un
+    saque. Lista los productos DTC con un input al lado · guarda solo (GET a por-entrar-manual, keyed por nombre)
+    · el producto pasa a azul (POR_ENTRAR) en Necesidades. Aislada (no toca el dashboard · M65)."""
+    if not _auth():
+        return '<script>location.href="/login"</script>', 401
+    import json as _j
+    conn = get_db()
+    row = conn.execute("SELECT valor FROM app_settings WHERE clave='por_entrar_manual'").fetchone()
+    try:
+        cargado = _j.loads(row[0]) if row and row[0] else {}
+    except Exception:
+        cargado = {}
+    prods = []
+    seen = set()
+    for r in conn.execute(
+        "SELECT DISTINCT producto_nombre FROM sku_producto_map WHERE COALESCE(activo,1)=1 "
+        "AND producto_nombre IS NOT NULL AND TRIM(producto_nombre)<>'' ORDER BY producto_nombre"
+    ).fetchall():
+        nm = (r[0] or '').strip()
+        k = nm.upper()
+        if nm and k not in seen:
+            seen.add(k)
+            prods.append({'n': nm, 'u': int(cargado.get(k, 0) or 0)})
+    data_json = _j.dumps(prods, ensure_ascii=False).replace('<', '\\u003c')
+    html = r'''<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Por entrar · Espagiria</title>
+<style>
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f6f7fb;margin:0;color:#1e293b}
+.wrap{max-width:760px;margin:0 auto;padding:22px 16px 60px}
+h1{font-size:20px;margin:0 0 4px}
+.sub{color:#64748b;font-size:13px;margin:0 0 18px;line-height:1.5}
+.bar{display:flex;gap:10px;align-items:center;margin:0 0 14px;flex-wrap:wrap}
+.pill{background:#ecfeff;color:#155e75;border:1px solid #a5f3fc;border-radius:999px;padding:5px 12px;font-size:13px;font-weight:700}
+input.q{width:110px;padding:7px 9px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;text-align:right}
+input.q:focus{outline:none;border-color:#0891b2;box-shadow:0 0 0 3px rgba(8,145,178,.12)}
+.srch{width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:10px;font-size:14px;margin:0 0 12px;box-sizing:border-box}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+th{background:#f8fafc;color:#64748b;text-transform:uppercase;letter-spacing:.04em;font-size:11px;text-align:left;padding:10px 14px}
+td{padding:9px 14px;border-top:1px solid #f1f5f9;font-size:14px}
+tr.hasq{background:#ecfeff}
+.st{font-size:12px;color:#0891b2;min-width:70px;display:inline-block}
+.hint{color:#94a3b8;font-size:12px;margin-top:14px}
+a.back{color:#6366f1;text-decoration:none;font-size:13px;font-weight:600}
+</style></head><body><div class="wrap">
+<a class="back" href="/inventarios">&larr; Volver a Planta</a>
+<h1>🔵 Por entrar &middot; Espagiria</h1>
+<p class="sub">Cargá cuántas unidades de cada producto hay <b>producidas en Espagiria</b> (aún no transferidas a Ánimus).
+Se guardan solas y el producto pasa a <b>azul "Por entrar"</b> en Necesidades (sale de rojo). Cuando lo transferís a
+Ánimus y corrés Sync, poné <b>0</b> para quitarlo.</p>
+<div class="bar"><span class="pill" id="pill">0 productos &middot; 0 uds</span></div>
+<input class="srch" id="srch" placeholder="Buscar producto…" oninput="render()">
+<table><thead><tr><th>Producto</th><th style="text-align:right">Por entrar (uds)</th><th></th></tr></thead>
+<tbody id="tb"></tbody></table>
+<p class="hint">Tip: escribí el número y salí del campo (Tab/Enter) — se guarda al instante. Los que dejás en 0 no cuentan.</p>
+</div>
+<script>
+var PRODS = __DATA__;
+function fmt(x){ return (x||0).toLocaleString('es-CO'); }
+function updPill(){
+  var n=0,u=0; PRODS.forEach(function(p){ if(p.u>0){ n++; u+=p.u; } });
+  document.getElementById('pill').textContent = n+' producto'+(n===1?'':'s')+' · '+fmt(u)+' uds por entrar';
+}
+function save(p, val, stEl){
+  var v = parseInt(val,10); if(isNaN(v)||v<0) v=0;
+  p.u = v; stEl.textContent = 'guardando…'; stEl.style.color='#94a3b8';
+  fetch('/api/programacion/por-entrar-manual?sku='+encodeURIComponent(p.n)+'&uds='+v, {credentials:'same-origin'})
+    .then(function(r){ return r.json(); })
+    .then(function(j){ stEl.textContent = v>0 ? '✓ '+fmt(v) : '—'; stEl.style.color = v>0?'#0891b2':'#94a3b8'; updPill(); })
+    .catch(function(){ stEl.textContent = '✗ error'; stEl.style.color='#dc2626'; });
+}
+function render(){
+  var q = (document.getElementById('srch').value||'').trim().toLowerCase();
+  var tb = document.getElementById('tb'); tb.innerHTML='';
+  PRODS.forEach(function(p){
+    if(q && p.n.toLowerCase().indexOf(q)<0) return;
+    var tr = document.createElement('tr'); if(p.u>0) tr.className='hasq';
+    var td1 = document.createElement('td'); td1.textContent = p.n;
+    var td2 = document.createElement('td'); td2.style.textAlign='right';
+    var inp = document.createElement('input'); inp.className='q'; inp.type='number'; inp.min='0'; inp.value = p.u>0?p.u:'';
+    inp.placeholder='0';
+    var td3 = document.createElement('td');
+    var st = document.createElement('span'); st.className='st'; st.textContent = p.u>0?('✓ '+fmt(p.u)):'—';
+    st.style.color = p.u>0?'#0891b2':'#94a3b8';
+    inp.addEventListener('change', function(){ tr.className = (parseInt(inp.value,10)>0)?'hasq':''; save(p, inp.value, st); });
+    inp.addEventListener('keydown', function(e){ if(e.key==='Enter') inp.blur(); });
+    td2.appendChild(inp); td3.appendChild(st);
+    tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tb.appendChild(tr);
+  });
+}
+render(); updPill();
+</script></body></html>'''
+    html = html.replace('__DATA__', data_json)
+    return html
+
+
 @bp.route('/api/programacion/diag-inventarios-shopify', methods=['GET'])
 def prog_diag_inventarios_shopify():
     """Sebastián 5-jul · diag de las LOCATIONS de Shopify (Ánimus Lab vs Espagiria). El motor de stock DEBE
