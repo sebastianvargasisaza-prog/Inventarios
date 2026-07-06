@@ -4532,6 +4532,19 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         # Paso 2 · sumar el "por entrar" de Espagiria (producido en el lab · MAX con el pipeline de 7d · son
         # el mismo bulk que viene · nunca sumar los dos = no doble-contar). Va a la próxima, no a la góndola.
         _por_entrar_uds = sum(int(por_entrar_por_sku.get(str(s).strip().upper(), 0)) for s in skus_de_prod)
+        # Sebastián 6-jul (M2): la carga MANUAL del "por entrar" la escribe Sebastián por NOMBRE de producto o
+        # CÓDIGO PT (ej. 'ANIMUSLASH'), no por el SKU Shopify exacto → si no cruza por SKU, resolver por
+        # nombre/código normalizado (los del sync por Espagiria SÍ vienen por SKU y ya cruzaron arriba).
+        if _por_entrar_uds == 0 and por_entrar_por_sku:
+            _pe_norm = {}
+            for _k, _v in por_entrar_por_sku.items():
+                _pe_norm[str(_k).strip().upper()] = _v
+                _pe_norm[_npf_sku(_k)] = _v
+            for _cand in ((prod_nombre or '').strip().upper(), (codigo or '').strip().upper(),
+                          _npf_sku(prod_nombre), _npf_sku(codigo)):
+                if _cand and _cand in _pe_norm:
+                    _por_entrar_uds = int(_pe_norm.get(_cand, 0) or 0)
+                    break
         _por_entrar_kg = (_por_entrar_uds * ml_promedio) / 1000.0 if ml_promedio > 0 else 0.0
         _pipe_efectivo = max(pipeline_kg, _por_entrar_kg)
         _dcp = round((stock_kg_gondola + _pipe_efectivo) / velocidad_kg_dia, 1) if velocidad_kg_dia > 0 else None
