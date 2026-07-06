@@ -475,6 +475,40 @@ if not app.config.get("TESTING") and not os.environ.get("EOS_DISABLE_DAEMONS"):
     except Exception as _e:
         _log.getLogger(__name__).warning("multi-cron NO arrancó: %s", _e)
 
+    # PERF 6-jul (Sebastián · diag fable) · catch-up: si ventas_diarias está VACÍA al boot (el cron 3×/día aún
+    # no corrió · su reloj es UTC), poblarla en background con LOCK → así el DEPLOY mismo la llena y los fast-
+    # paths de Necesidades/Abastecimiento no caen al parseo de ~39k órdenes (la causa del blanco/lento). Solo
+    # un worker la corre (lock); los demás ven filas>0 y saltan. Sleep para no competir con el arranque.
+    try:
+        def _catchup_ventas_diarias():
+            import time as _tt
+            _tt.sleep(25)
+            try:
+                with app.app_context():
+                    from database import get_db as _gdb
+                    from blueprints.auto_plan_jobs import (_adquirir_lock_cron, _liberar_lock_cron,
+                                                           job_refrescar_ventas_diarias)
+                    _c = _gdb()
+                    try:
+                        _n = _c.execute("SELECT COUNT(*) FROM ventas_diarias").fetchone()[0]
+                    except Exception:
+                        _n = -1
+                    if _n == 0 and _adquirir_lock_cron(_c, 'ventas_diarias_manual', ttl_horas=1):
+                        _log.getLogger(__name__).warning("catch-up ventas_diarias · tabla vacía · poblando…")
+                        try:
+                            job_refrescar_ventas_diarias(app)
+                        finally:
+                            try:
+                                _liberar_lock_cron(_gdb(), 'ventas_diarias_manual')
+                            except Exception:
+                                pass
+            except Exception as _e2:
+                _log.getLogger(__name__).warning("catch-up ventas_diarias NO corrió: %s", _e2)
+        import threading as _thr_vd
+        _thr_vd.Thread(target=_catchup_ventas_diarias, daemon=True).start()
+    except Exception as _e:
+        _log.getLogger(__name__).warning("catch-up ventas_diarias thread NO arrancó: %s", _e)
+
     # Sebastián 25-may-2026 · audit zero-error · DAEMON SUPERVISOR.
     # Antes los 3 daemons (marketing-metrics, auto-plan-cron, multi-cron)
     # se arrancaban una sola vez al boot · si alguno crasheaba dentro del

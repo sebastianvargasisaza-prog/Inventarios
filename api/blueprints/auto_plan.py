@@ -302,11 +302,13 @@ def _ventas_diarias_por_sku(c, sku, dias=60):
     # órdenes ahora keyeado en upper y con Necesidades) · antes case-sensitive → velocidad 0 silenciosa.
     _sku_u = (sku or '').strip().upper()
 
-    # Estrategia 1: tabla agregada
+    # Estrategia 1: tabla agregada. PERF 6-jul · `sku=?` (NO UPPER(TRIM(...)) que no es sargable → seq-scan de
+    # toda la tabla por llamada, y hay callers en loop). El cron ya escribe sku normalizado UPPER/TRIM, y _sku_u
+    # ya viene UPPER/TRIM → match exacto que SÍ usa idx_ventas_diarias_sku.
     try:
         r = c.execute("""
             SELECT fecha, COALESCE(SUM(cantidad),0)
-            FROM ventas_diarias WHERE UPPER(TRIM(sku))=? AND fecha >= ?
+            FROM ventas_diarias WHERE sku=? AND fecha >= ?
             GROUP BY fecha ORDER BY fecha
         """, (_sku_u, cutoff_str)).fetchall()
         if r:
