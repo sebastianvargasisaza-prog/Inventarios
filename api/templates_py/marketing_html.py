@@ -2935,7 +2935,9 @@ async function bulkSolicitarPagosInf(){
       const r = await fetch(`/api/marketing/influencers/${id}/solicitar-pago`, {
         method:'POST', credentials:'same-origin',
         headers:{'Content-Type':'application/json','X-CSRF-Token': window._csrfTok || ''},
-        body: JSON.stringify({valor: tarifa, concepto: concepto})
+        // FIX 7-jul (idempotencia): token DETERMINISTA por influencer+período → re-correr el bulk del mismo mes
+        // no crea pagos duplicados (el backend lo reclama con UNIQUE → 409 SOLICITUD_DUPLICADA, no doble egreso).
+        body: JSON.stringify({valor: tarifa, concepto: concepto, solicitud_id: 'BULK-'+id+'-'+concepto})
       });
       const d = await r.json();
       if(r.ok && d.ok) ok++;
@@ -3776,9 +3778,12 @@ async function confirmarPagoInf() {
   try {
     // Asegurar token CSRF real antes de enviar (mismo patrón que cmoDecidir/bulk)
     if(!window._csrfTok){ try{ const tr=await fetch('/api/csrf-token',{credentials:'same-origin'}); if(tr.ok){ const td=await tr.json(); window._csrfTok=td.csrf_token||''; } }catch(_){} }
-    const resp = await fetch(`/api/marketing/influencers/${id}/solicitar-pago`,_fetchOpts('POST', {valor, concepto, fecha_publicacion:fechaPub, entregable, fecha_contenido:fechaCont}));
+    // FIX 7-jul (idempotencia): token estable por envío (mismo en doble-click/retry) · se limpia al éxito.
+    window._pagoInfTok = window._pagoInfTok || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())+'-'+Math.random());
+    const resp = await fetch(`/api/marketing/influencers/${id}/solicitar-pago`,_fetchOpts('POST', {valor, concepto, fecha_publicacion:fechaPub, entregable, fecha_contenido:fechaCont, solicitud_id: window._pagoInfTok}));
     const data = await resp.json();
     if(data.ok) {
+      window._pagoInfTok=null;
       closeModal('modal-inf-pago');
       // Mostrar modal de confirmación prominente
       _mostrarPagoSolicitadoOk({

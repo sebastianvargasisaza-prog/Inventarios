@@ -1951,7 +1951,7 @@ def mkt_ltv_clientes():
                MAX(creado_en) AS ultimo_pedido,
                COUNT(DISTINCT substr(creado_en,1,7)) AS meses_activos
         FROM animus_shopify_orders
-        WHERE COALESCE(email,'') != ''
+        WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND COALESCE(email,'') != ''
         GROUP BY LOWER(email)
         HAVING pedidos_count >= ?
     """, (min_orders,)).fetchall()
@@ -2467,13 +2467,14 @@ def mkt_meta_progreso():
         SELECT COALESCE(SUM(total),0) AS rev,
                COUNT(*) AS pedidos,
                COUNT(DISTINCT email) AS clientes
-        FROM animus_shopify_orders WHERE substr(creado_en,1,7)=?
+        FROM animus_shopify_orders
+        WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND substr(creado_en,1,7)=?
     """, (mes,)).fetchone()
     nuevos = c.execute("""
         SELECT COUNT(DISTINCT o.email) AS n FROM animus_shopify_orders o
-        WHERE substr(o.creado_en,1,7)=?
+        WHERE LOWER(COALESCE(o.estado,'')) NOT IN ('cancelled','cancelado','voided') AND substr(o.creado_en,1,7)=?
           AND (SELECT COUNT(*) FROM animus_shopify_orders o2
-                WHERE o2.email=o.email AND o2.creado_en < ?) = 0
+                WHERE o2.email=o.email AND LOWER(COALESCE(o2.estado,'')) NOT IN ('cancelled','cancelado','voided') AND o2.creado_en < ?) = 0
     """, (mes, mes + '-01')).fetchone()
     revenue_real = float(sh['rev'] or 0)
     pedidos_real = int(sh['pedidos'] or 0)
@@ -2584,7 +2585,8 @@ def mkt_kpis_hoy():
             if lr["sku"]:
                 _lib_map[lr["sku"]] = lr["t"]
         _shop_rows = c.execute(
-            "SELECT sku_items, COALESCE(unidades_total,0) AS t FROM animus_shopify_orders WHERE creado_en>=?",
+            "SELECT sku_items, COALESCE(unidades_total,0) AS t FROM animus_shopify_orders "
+            "WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND creado_en>=?",
             (hace30,)
         ).fetchall()
         for r in c.execute("""
@@ -4064,11 +4066,13 @@ def mkt_analytics_roi():
 
         # Revenue usando ventana real de datos (no asumir 30d si hay menos)
         sh_30 = c.execute(
-            "SELECT COALESCE(SUM(total),0) as rev, COUNT(*) as pedidos FROM animus_shopify_orders WHERE creado_en >= ?",
+            "SELECT COALESCE(SUM(total),0) as rev, COUNT(*) as pedidos FROM animus_shopify_orders "
+            "WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND creado_en >= ?",
             (hace30,)
         ).fetchone()
         sh_60 = c.execute(
-            "SELECT COALESCE(SUM(total),0) as rev FROM animus_shopify_orders WHERE creado_en BETWEEN ? AND ?",
+            "SELECT COALESCE(SUM(total),0) as rev FROM animus_shopify_orders "
+            "WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND creado_en BETWEEN ? AND ?",
             (hace60, hace30)
         ).fetchone()
         # Revenue mes calendario actual
@@ -6748,6 +6752,22 @@ def mkt_solicitar_pago_influencer(iid):
         inf = dict(inf)
 
         d = request.get_json() or {}
+        # FIX 7-jul (audit ultracode · M27/M45): IDEMPOTENCIA · el cliente manda solicitud_id único por envío;
+        # se reclama con UNIQUE (reusa oc_recepcion_dedup como store genérico de tokens) ANTES de crear SOL+OC+
+        # pago → un doble-submit / retry de red / re-corrida del bulk NO crea 2 cadenas pagables (= doble egreso).
+        # Sin token (cliente viejo) → no dedup (compat · el disable del botón sigue). El token se libera en rollback.
+        _sid = str(d.get('solicitud_id') or '').strip()[:80]
+        if _sid:
+            from datetime import datetime as _dtsid
+            try:
+                c.execute("INSERT INTO oc_recepcion_dedup (recepcion_id, numero_oc, creado_en) VALUES (?,?,?)",
+                          (_sid, f'MKT-PAGO-{iid}', _dtsid.now().isoformat()))
+            except Exception as _ed_sid:
+                if 'unique' in str(_ed_sid).lower() or 'duplicate' in str(_ed_sid).lower():
+                    conn.rollback()
+                    return jsonify({'error': 'Esta solicitud de pago ya fue registrada (doble envío)',
+                                    'codigo': 'SOLICITUD_DUPLICADA'}), 409
+                raise
         # Sebastián 25-may-2026 PM · audit P0 · validate_money en mutación
         # financiera. Antes float() permitía negativos, NaN, valores absurdos.
         raw_monto = d.get("valor") or d.get("monto") or inf.get("tarifa") or 0
