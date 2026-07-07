@@ -1647,17 +1647,19 @@ def _build_reporte_ejecutivo_data(conn):
     c = conn.cursor()
     # 1) Revenue Shopify semana actual vs anterior
     rev_7 = c.execute(
-        "SELECT COALESCE(SUM(total),0) AS r, COUNT(*) AS n FROM animus_shopify_orders WHERE creado_en >= ?",
+        "SELECT COALESCE(SUM(total),0) AS r, COUNT(*) AS n FROM animus_shopify_orders "
+        "WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND creado_en >= ?",
         (h7,)).fetchone()
     rev_7_ant = c.execute(
         "SELECT COALESCE(SUM(total),0) AS r, COUNT(*) AS n FROM animus_shopify_orders "
-        "WHERE creado_en >= ? AND creado_en < ?", (h14, h7)).fetchone()
+        "WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND creado_en >= ? AND creado_en < ?", (h14, h7)).fetchone()
     delta_rev = float(rev_7['r'] or 0) - float(rev_7_ant['r'] or 0)
     delta_pct = round((delta_rev / float(rev_7_ant['r'])) * 100, 1) if rev_7_ant['r'] else None
     # 2) Top 3 SKUs por revenue 7d
     top_skus = [dict(r) for r in c.execute("""
         SELECT sku_items AS sku, SUM(total) AS rev, SUM(unidades_total) AS uds
-        FROM animus_shopify_orders WHERE creado_en >= ?
+        FROM animus_shopify_orders
+        WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND creado_en >= ?
         GROUP BY sku_items ORDER BY rev DESC LIMIT 3
     """, (h7,)).fetchall()]
     # 3) Top 3 influencers con cupón · revenue atribuible 7d
@@ -1666,10 +1668,12 @@ def _build_reporte_ejecutivo_data(conn):
         inf_rows = c.execute("""
             SELECT i.id, i.nombre, i.discount_code,
                    (SELECT COUNT(*) FROM animus_shopify_orders o
-                    WHERE UPPER(COALESCE(o.discount_codes,'')) LIKE '%'||UPPER(i.discount_code)||'%'
+                    WHERE LOWER(COALESCE(o.estado,'')) NOT IN ('cancelled','cancelado','voided')
+                      AND UPPER(COALESCE(o.discount_codes,'')) LIKE '%'||UPPER(i.discount_code)||'%'
                       AND o.creado_en >= ?) AS pedidos,
                    (SELECT COALESCE(SUM(o.total),0) FROM animus_shopify_orders o
-                    WHERE UPPER(COALESCE(o.discount_codes,'')) LIKE '%'||UPPER(i.discount_code)||'%'
+                    WHERE LOWER(COALESCE(o.estado,'')) NOT IN ('cancelled','cancelado','voided')
+                      AND UPPER(COALESCE(o.discount_codes,'')) LIKE '%'||UPPER(i.discount_code)||'%'
                       AND o.creado_en >= ?) AS revenue
             FROM marketing_influencers i
             WHERE COALESCE(i.discount_code,'') != ''
@@ -1694,7 +1698,7 @@ def _build_reporte_ejecutivo_data(conn):
                 (sku, h30)).fetchone()['t']
             shop = c.execute(
                 "SELECT COALESCE(SUM(unidades_total),0) AS t FROM animus_shopify_orders "
-                "WHERE sku_items LIKE ? AND creado_en>=?",
+                "WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND sku_items LIKE ? AND creado_en>=?",
                 (f'%{sku}%', h30)).fetchone()['t']
             demanda = (dem + shop) / 30.0
             if demanda > 0:
@@ -1723,7 +1727,8 @@ def _build_reporte_ejecutivo_data(conn):
     if meta_row:
         sh_mes = c.execute(
             "SELECT COALESCE(SUM(total),0) AS rev, COUNT(*) AS ped "
-            "FROM animus_shopify_orders WHERE substr(creado_en,1,7)=?",
+            "FROM animus_shopify_orders "
+            "WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND substr(creado_en,1,7)=?",
             (mes,)).fetchone()
         rev_meta = float(meta_row['revenue_meta'] or 0)
         meta_block = {
@@ -2231,7 +2236,8 @@ def mkt_contacto_360():
                 atr = c.execute("""
                     SELECT COUNT(*) AS n, COALESCE(SUM(total),0) AS rev
                     FROM animus_shopify_orders
-                    WHERE UPPER(COALESCE(discount_codes,'')) LIKE ?
+                    WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')
+                      AND UPPER(COALESCE(discount_codes,'')) LIKE ?
                 """, (f"%{dcode.upper()}%",)).fetchone()
                 influencer["revenue_atribuible"] = float(atr["rev"] or 0)
                 influencer["pedidos_atribuibles"] = int(atr["n"] or 0)
@@ -4077,7 +4083,8 @@ def mkt_analytics_roi():
         ).fetchone()
         # Revenue mes calendario actual
         sh_mes = c.execute(
-            "SELECT COALESCE(SUM(total),0) as rev, COUNT(*) as pedidos FROM animus_shopify_orders WHERE creado_en >= ?",
+            "SELECT COALESCE(SUM(total),0) as rev, COUNT(*) as pedidos FROM animus_shopify_orders "
+            "WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND creado_en >= ?",
             (mes_ini_sh,)
         ).fetchone()
 
@@ -4142,11 +4149,13 @@ def mkt_analytics_tendencias():
             return result
 
         rows_rec = c.execute(
-            "SELECT sku_items, total, unidades_total FROM animus_shopify_orders WHERE creado_en BETWEEN ? AND ?",
+            "SELECT sku_items, total, unidades_total FROM animus_shopify_orders "
+            "WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND creado_en BETWEEN ? AND ?",
             (hace90, hoy)
         ).fetchall()
         rows_ant = c.execute(
-            "SELECT sku_items, total, unidades_total FROM animus_shopify_orders WHERE creado_en BETWEEN ? AND ?",
+            "SELECT sku_items, total, unidades_total FROM animus_shopify_orders "
+            "WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND creado_en BETWEEN ? AND ?",
             (hace180, hace90)
         ).fetchall()
 
@@ -4197,7 +4206,8 @@ def mkt_analytics_tendencias():
         # ── Ventas mensuales por SKU (period window for sparklines) ──────────
         rows_periodo = c.execute("""
             SELECT sku_items, total, strftime('%Y-%m', creado_en) as mes
-            FROM animus_shopify_orders WHERE creado_en >= ?
+            FROM animus_shopify_orders
+            WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND creado_en >= ?
         """, (desde,)).fetchall()
         por_sku_mes_map = {}
         for row in rows_periodo:
@@ -6105,7 +6115,8 @@ def mkt_influencers_panel():
                        COALESCE(total,0) AS total,
                        COALESCE(unidades_total,0) AS uds
                 FROM animus_shopify_orders
-                WHERE COALESCE(discount_codes,'') != ''
+                WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')
+                  AND COALESCE(discount_codes,'') != ''
             """).fetchall():
                 codes_up = (r['codes_up'] or '').strip()
                 if not codes_up: continue
@@ -6292,7 +6303,8 @@ def mkt_atribucion_influencers():
                        COUNT(DISTINCT email) as clientes_unicos,
                        MAX(creado_en) as ultimo_pedido
                 FROM animus_shopify_orders
-                WHERE creado_en >= ?
+                WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')
+                  AND creado_en >= ?
                   AND (
                        discount_codes = ?
                     OR discount_codes LIKE ?
