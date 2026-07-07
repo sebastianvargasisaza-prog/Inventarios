@@ -16,7 +16,7 @@ from config import (
 )
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
-from audit_helpers import audit_log, intentar_insert_con_retry, siguiente_numero_oc as _siguiente_numero_oc
+from audit_helpers import audit_log, intentar_insert_con_retry, siguiente_numero_oc as _siguiente_numero_oc, siguiente_correlativo
 from http_helpers import validate_money
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
@@ -3348,8 +3348,9 @@ def handle_solicitudes_compra():
             val_sol = float(d.get('valor') or 0)
             # numero único con reintento ante carrera MAX+1 entre workers
             for _intento in range(6):
-                c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) FROM solicitudes_compra WHERE numero LIKE ?", (f"SOL-{datetime.now().strftime('%Y')}-%",))
-                numero = f"SOL-{datetime.now().strftime('%Y')}-{(c.fetchone()[0] or 0)+1:04d}"
+                # FIX 7-jul (audit ultracode · M45): correlativo PG-safe (CAST(SUBSTR) revienta en PG con sufijo)
+                _n_sol = siguiente_correlativo(c, 'solicitudes_compra', 'numero', f"SOL-{datetime.now().strftime('%Y')}-")
+                numero = f"SOL-{datetime.now().strftime('%Y')}-{_n_sol:04d}"
                 try:
                     c.execute("""INSERT INTO solicitudes_compra
                                  (numero,fecha,estado,solicitante,urgencia,observaciones,area,empresa,categoria,tipo,email_solicitante,fecha_requerida,valor)
@@ -4521,10 +4522,7 @@ def consolidar_auto_pendientes():
             )
             # numero AUTO-XXXX único con reintento ante carrera MAX+1
             for _intento in range(6):
-                next_n = c.execute("""
-                    SELECT COALESCE(MAX(CAST(SUBSTR(numero, 6) AS INTEGER)), 0) + 1
-                    FROM solicitudes_compra WHERE numero LIKE 'AUTO-%'
-                """).fetchone()[0] or 1
+                next_n = siguiente_correlativo(c, 'solicitudes_compra', 'numero', 'AUTO-')  # PG-safe · M45
                 new_num = f'AUTO-{next_n:04d}'
                 try:
                     c.execute("""
@@ -5506,11 +5504,7 @@ def solicitud_split(numero):
         for prov, prov_items in por_prov.items():
             # Buscar siguiente numero AUTO-XXXX
             for _intento in range(6):
-                row = c.execute(
-                    "SELECT COALESCE(MAX(CAST(SUBSTR(numero, 6) AS INTEGER)),0) "
-                    "FROM solicitudes_compra WHERE numero LIKE 'AUTO-%'",
-                ).fetchone()
-                nuevo_n = f"AUTO-{(row[0] or 0)+1:04d}"
+                nuevo_n = f"AUTO-{siguiente_correlativo(c, 'solicitudes_compra', 'numero', 'AUTO-'):04d}"  # PG-safe · M45
                 try:
                     c.execute(
                         """INSERT INTO solicitudes_compra
@@ -10407,12 +10401,7 @@ def ordenes_servicio_list():
         numero_os = None
         for _ in range(6):
             try:
-                row = c.execute(
-                    "SELECT COALESCE(MAX(CAST(SUBSTR(numero_os,9) AS INTEGER)),0) "
-                    "FROM ordenes_servicio WHERE numero_os LIKE ?",
-                    (f'OS-{anio}-%',),
-                ).fetchone()
-                numero_os = f'OS-{anio}-{(row[0] or 0) + 1:04d}'
+                numero_os = f'OS-{anio}-{siguiente_correlativo(c, "ordenes_servicio", "numero_os", f"OS-{anio}-"):04d}'  # PG-safe · M45
                 fecha_sol = _dt.now().isoformat()
                 c.execute(
                     """INSERT INTO ordenes_servicio

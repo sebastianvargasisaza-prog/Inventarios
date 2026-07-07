@@ -22,7 +22,7 @@ from datetime import datetime, timedelta, date, timezone
 from database import get_db
 from config import ADMIN_USERS, APP_BASE_URL, CALIDAD_USERS, COMPRAS_USERS, PLANTA_USERS, EBR_MODE
 from inventario_helpers import stock_mp_total, stock_mp_disponible
-from audit_helpers import audit_log, siguiente_numero_oc
+from audit_helpers import audit_log, siguiente_numero_oc, siguiente_correlativo
 
 # Bug latente preexistente fixed 2-may-2026: el blueprint usaba `log.warning()`
 # y `logger.warning()` sin tener el logger definido. Cualquier call a un branch
@@ -11505,10 +11505,7 @@ def prog_regenerar_oc():
 
     from datetime import datetime as _dt
     year = _dt.now().strftime('%Y')
-    last_n = conn.execute(
-        "SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) FROM solicitudes_compra WHERE numero LIKE ?",
-        (f"SOL-{year}-%",)
-    ).fetchone()[0] or 0
+    last_n = siguiente_correlativo(conn, 'solicitudes_compra', 'numero', f"SOL-{year}-") - 1  # PG-safe · M45 (loop hace +1)
     n_sol = last_n
     user = session.get('compras_user', 'Sistema')
 
@@ -11658,10 +11655,7 @@ def prog_generar_oc():
     # Numero de SOL inicial
     from datetime import datetime as _dt
     year = _dt.now().strftime('%Y')
-    last_n = conn.execute(
-        "SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) FROM solicitudes_compra WHERE numero LIKE ?",
-        (f"SOL-{year}-%",)
-    ).fetchone()[0] or 0
+    last_n = siguiente_correlativo(conn, 'solicitudes_compra', 'numero', f"SOL-{year}-") - 1  # PG-safe · M45 (loop hace +1)
     n_sol = last_n
     user = session.get('compras_user', 'Sistema')
 
@@ -15924,12 +15918,7 @@ def abastecimiento_solicitar_items():
             numero = None
             ultimo_err = None
             for retry in range(6):
-                c.execute(
-                    "SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) "
-                    "FROM solicitudes_compra WHERE numero LIKE ?",
-                    (f"SOL-{year}-%",),
-                )
-                num = (c.fetchone()[0] or 0) + 1 + retry
+                num = siguiente_correlativo(c, 'solicitudes_compra', 'numero', f"SOL-{year}-") + retry  # PG-safe · M45
                 candidato = f"SOL-{year}-{num:04d}"
                 try:
                     c.execute("""
@@ -16124,12 +16113,7 @@ def solicitar_faltantes_bulk():
             numero = None
             ultimo_err = None
             for retry in range(6):
-                c.execute(
-                    "SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) "
-                    "FROM solicitudes_compra WHERE numero LIKE ?",
-                    (f"SOL-{year}-%",),
-                )
-                num = (c.fetchone()[0] or 0) + 1 + retry
+                num = siguiente_correlativo(c, 'solicitudes_compra', 'numero', f"SOL-{year}-") + retry  # PG-safe · M45
                 candidato = f"SOL-{year}-{num:04d}"
                 try:
                     c.execute("""
@@ -16711,12 +16695,7 @@ def planificacion_solicitar_bulk():
         try:
             # Generar numero
             year = _dt.now().strftime('%Y')
-            row = c.execute(
-                "SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) "
-                "FROM solicitudes_compra WHERE numero LIKE ?",
-                (f'SOL-{year}-%',)
-            ).fetchone()
-            num = (row[0] or 0) + 1
+            num = siguiente_correlativo(c, 'solicitudes_compra', 'numero', f'SOL-{year}-')  # PG-safe · M45
             numero = f'SOL-{year}-{num:04d}'
 
             obs = (f'Auto-generada Planificación Estratégica {dias} días — '

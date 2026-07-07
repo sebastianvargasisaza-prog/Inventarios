@@ -15,7 +15,7 @@ except Exception:
     MP_LIBERA_USERS = set()
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
-from audit_helpers import audit_log
+from audit_helpers import audit_log, siguiente_correlativo
 from http_helpers import validate_money
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
@@ -10008,12 +10008,7 @@ def cc_review():
             except Exception:
                 pass
             # numero único · DEV-YYYY-NNNN
-            row_n = c.execute(
-                "SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) "
-                "FROM solicitudes_compra WHERE numero LIKE ?",
-                (f'DEV-{anio_qc}-%',),
-            ).fetchone()
-            sol_num = f'DEV-{anio_qc}-{(row_n[0] or 0)+1:04d}'
+            sol_num = f'DEV-{anio_qc}-{siguiente_correlativo(c, "solicitudes_compra", "numero", f"DEV-{anio_qc}-"):04d}'  # PG-safe · M45
             obs = f'LOTE RECHAZADO QC · devolución proveedor · lote: {lote_rech}'
             c.execute(
                 """INSERT INTO solicitudes_compra
@@ -13102,9 +13097,7 @@ def envasado_list():
         # Si hay MEE bajo minimo, crear solicitud de compra automatica en Compras
         if alertas_mee:
             try:
-                c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) FROM solicitudes_compra WHERE numero LIKE ?",
-                          (f"SOL-{datetime.now().strftime('%Y')}-%",))
-                n_sol = (c.fetchone()[0] or 0) + 1
+                n_sol = siguiente_correlativo(c, 'solicitudes_compra', 'numero', f"SOL-{datetime.now().strftime('%Y')}-")  # PG-safe · M45
                 num_sol = f"SOL-{datetime.now().strftime('%Y')}-{n_sol:04d}"
                 obs_sol = 'Alerta automatica envasado ' + lote + ': MEE bajo minimo'
                 c.execute("""INSERT INTO solicitudes_compra

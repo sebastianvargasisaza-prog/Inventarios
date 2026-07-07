@@ -206,6 +206,37 @@ def siguiente_numero_oc(c, anio=None):
     return f'{pref}{mx + 1:04d}'
 
 
+def siguiente_correlativo(c, tabla, columna, prefijo):
+    """Próximo correlativo ENTERO (int) para un numerador '<prefijo>NNNN...' PG-SAFE.
+
+    FIX · 7-jul-2026 (audit ultracode · M45) · generaliza `siguiente_numero_oc` a SOL/OS/AUTO.
+    El patrón viejo `MAX(CAST(SUBSTR(numero,N) AS INTEGER))` revienta en PostgreSQL si algún
+    número trae sufijo no numérico (ej. 'SOL-2026-0215-1') → "invalid input syntax for type
+    integer" → 500 en TODA creación del año. Trae los números del año y extrae el correlativo
+    (dígitos iniciales tras el prefijo) en Python, ignorando sufijos. Devuelve el ENTERO (el
+    caller formatea como quiera). NO race-safe: usar con retry por UNIQUE en el caller.
+
+    Args:
+        tabla/columna: de dónde leer (ej. 'solicitudes_compra','numero').
+        prefijo: prefijo completo con año si aplica (ej. 'SOL-2026-', 'OS-2026-', 'AUTO-').
+    Returns: int — el próximo correlativo (max_existente + 1; 1 si no hay ninguno).
+    """
+    import re as _re
+    c.execute(f"SELECT {columna} FROM {tabla} WHERE {columna} LIKE ?", (str(prefijo) + '%',))
+    mx = 0
+    _pl = len(str(prefijo))
+    for row in c.fetchall():
+        n = (row[0] if not isinstance(row, (str, int)) else row)
+        n = '' if n is None else str(n)
+        m = _re.match(r'(\d+)', n[_pl:])
+        if m:
+            try:
+                mx = max(mx, int(m.group(1)))
+            except (ValueError, OverflowError):
+                pass
+    return mx + 1
+
+
 def intentar_insert_con_retry(insert_fn, *, max_intentos=5, columna='codigo'):
     """Ejecuta insert_fn() con retry si falla por UNIQUE (race condition).
 
