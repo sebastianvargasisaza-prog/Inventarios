@@ -393,12 +393,16 @@ def _call_claude(conn, agente, datos):
     except Exception:
         return None
 
-def _ig_check_refresh(conn):
+def _ig_check_refresh(conn, allow_network=True):
     """Auto-renueva el token de IG si vence en < 10 dias.
     Funciona con long-lived User Tokens (60 dias) y Page Access Tokens que
     heredan la duracion del User Token. Llama a fb_exchange_token para
     extender automaticamente antes de que expire.
     Retorna dict con estado del token para incluir en la respuesta del dashboard.
+
+    FIX 7-jul (audit ultracode · M43/M59): `allow_network=False` (lo usa el LOAD del dashboard) SALTA el urlopen
+    síncrono (hasta 10s → bloqueaba un worker en cada carga si el token estaba por vencer). El refresh real corre
+    con `allow_network=True` desde el daemon de métricas de marketing (job_refresh_all_metrics · periódico).
     """
     from datetime import date as _date, timedelta as _td
 
@@ -423,8 +427,9 @@ def _ig_check_refresh(conn):
     near_expiry = days_left < 10
     refreshed   = False
 
-    # Intentar refresh si esta cerca de expirar y tenemos las credenciales de la app
-    if near_expiry and raw_token and app_id and app_secret:
+    # Intentar refresh si esta cerca de expirar y tenemos las credenciales de la app.
+    # allow_network=False (dashboard load) NO hace el urlopen → devuelve el estado sin bloquear el worker.
+    if near_expiry and allow_network and raw_token and app_id and app_secret:
         try:
             exch_url = (
                 f"https://graph.facebook.com/v19.0/oauth/access_token"
@@ -2747,13 +2752,8 @@ def mkt_dashboard():
                  WHERE o2.email=o.email AND LOWER(COALESCE(o2.estado,'')) NOT IN ('cancelled','cancelado','voided') AND o2.creado_en < ?) = 0
         """, (hace30, hace30)).fetchone()["n"]
 
-        # Top SKUs por revenue Shopify (30d)
-        sh_top_skus_raw = _fmt_many(c.execute("""
-            SELECT sku_items, SUM(total) as rev, SUM(unidades_total) as uds
-            FROM animus_shopify_orders
-            WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND creado_en >= ?
-            GROUP BY sku_items ORDER BY rev DESC LIMIT 20
-        """, (hace30,)).fetchall())
+        # FIX 7-jul (audit ultracode): quitada la query MUERTA sh_top_skus_raw (se computaba pero top_skus_combined
+        # sale solo de erp_rev · era trabajo desperdiciado por cada carga del dashboard).
 
         # Agregar revenue ERP (liberaciones) · PERF 7-jul: pre-cargar el precio por SKU en 1 query (antes era
         # N+1 · un SELECT MAX(precio_base) por CADA sku vendido → ~50 queries en cada carga del dashboard).
@@ -2819,7 +2819,7 @@ def mkt_dashboard():
         """).fetchall())
         ig_configured   = bool(_cfg(conn, "instagram_token") and _cfg(conn, "instagram_user_id"))
         # Auto-refresh token si vence en < 10 dias (silencioso)
-        ig_token_status = _ig_check_refresh(conn) if ig_configured else {"expiry_date": None, "days_left": 0, "near_expiry": False, "refreshed": False, "expired": False}
+        ig_token_status = _ig_check_refresh(conn, allow_network=False) if ig_configured else {"expiry_date": None, "days_left": 0, "near_expiry": False, "refreshed": False, "expired": False}
 
         # AUDIT 26-may · KPIs pipeline GHL (mig 189 · si tabla vacía → 0)
         ghl_block = {
@@ -2961,7 +2961,7 @@ def mkt_analytics_influencers():
     if err: return err, code
     conn = _db(); c = conn.cursor()
     try:
-        now_year = datetime.now().year
+        now_year = (datetime.now() - timedelta(hours=5)).year  # Colombia · M24 (evita saltar de año en la noche UTC)
 
         # Totales globales
         row = c.execute("""
@@ -4193,8 +4193,11 @@ def mkt_analytics_tendencias():
         )
         crecimiento = []
         for sku in todos_sku:
-            rec_rev = reciente_sh.get(sku, {}).get("rev", 0) + reciente_erp.get(sku, 0)
-            ant_rev = anterior_sh.get(sku, {}).get("rev", 0) + anterior_erp.get(sku, 0)
+            # FIX 7-jul (audit ultracode · M7): NO sumar unidades ERP (reciente_erp) a la REVENUE en pesos
+            # (Shopify) — mezclaba magnitudes distintas → crecimiento basura. rev = solo pesos Shopify; las
+            # unidades ERP siguen sumando a qty (ambas son unidades · consistente).
+            rec_rev = reciente_sh.get(sku, {}).get("rev", 0)
+            ant_rev = anterior_sh.get(sku, {}).get("rev", 0)
             rec_qty = reciente_sh.get(sku, {}).get("qty", 0) + reciente_erp.get(sku, 0)
             ant_qty = anterior_sh.get(sku, {}).get("qty", 0) + anterior_erp.get(sku, 0)
             if ant_rev > 0:
@@ -5997,6 +6000,10 @@ def mkt_influencers_panel():
         #   3. Fila historica con fecha_publicacion en el pasado y SIN OC valida
         #      → marcar 'Pagada' (es historico, ya ocurrio).
         try:
+            # FIX 7-jul (audit ultracode · M4/Part 11): (a) acumular el rowcount de los 4 statements — antes se
+            # commiteaba solo `if c.rowcount` (el del ÚLTIMO) → si el 1º cambiaba filas pero el último 0, esos
+            # cambios se PERDÍAN al cerrar la conexión; (b) auditar (muta DINERO en un GET · antes sin rastro).
+            _tot_bf = 0
             c.execute("""
                 UPDATE pagos_influencers
                 SET estado='Pagada'
@@ -6006,6 +6013,10 @@ def mkt_influencers_panel():
                     WHERE estado IN ('Pagada','Recibida','Parcial')
                   )
             """)
+            _tot_bf += c.rowcount or 0
+            _del_ids_bf = [r[0] for r in c.execute(
+                "SELECT id FROM pagos_influencers WHERE estado='Pendiente' AND numero_oc IN "
+                "(SELECT numero_oc FROM ordenes_compra WHERE estado IN ('Rechazada','Cancelada'))").fetchall()]
             c.execute("""
                 DELETE FROM pagos_influencers
                 WHERE estado='Pendiente'
@@ -6014,6 +6025,7 @@ def mkt_influencers_panel():
                     WHERE estado IN ('Rechazada','Cancelada')
                   )
             """)
+            _tot_bf += c.rowcount or 0
             # Historicos sin OC valida y con fecha_publicacion pasada -> Pagada
             c.execute("""
                 UPDATE pagos_influencers
@@ -6025,7 +6037,16 @@ def mkt_influencers_panel():
                     SELECT numero_oc FROM ordenes_compra WHERE estado IN ('Aprobada','Autorizada','Revisada','Borrador')
                   ))
             """)
-            if c.rowcount:
+            _tot_bf += c.rowcount or 0
+            if _tot_bf:
+                try:
+                    from audit_helpers import audit_log as _alog_bf
+                    _alog_bf(c, usuario=u, accion='AUTO_BACKFILL_PAGOS_INFLUENCER',
+                             tabla='pagos_influencers',
+                             registro_id=(str(_del_ids_bf[0]) if _del_ids_bf else '0'),
+                             despues={'tocados': _tot_bf, 'borrados_ids': _del_ids_bf})
+                except Exception:
+                    pass
                 conn.commit()
         except Exception:
             pass
@@ -6142,7 +6163,7 @@ def mkt_influencers_panel():
             code_to_orders = {}
 
         # 3. Merge
-        now_month = datetime.now().strftime("%Y-%m")
+        now_month = (datetime.now() - timedelta(hours=5)).strftime("%Y-%m")  # Colombia · M24
         result = []
         for inf in influencers:
             iid = inf["id"]
@@ -6231,7 +6252,7 @@ def mkt_influencers_panel():
             result.append(inf)
 
         # 4. KPIs
-        now_year = datetime.now().year
+        now_year = (datetime.now() - timedelta(hours=5)).year  # Colombia · M24 (evita saltar de año en la noche UTC)
         total_pagado_anio = sum(
             p["valor"] or 0
             for p in pago_list
@@ -6533,6 +6554,17 @@ def mkt_pago_influencer_editar(pid):
             nuevo_vence = (_b + _tdFC(days=30)).strftime('%Y-%m-%d')
         except Exception:
             pass
+    # FIX 7-jul (audit ultracode · money · espejo del guard del DELETE): si el pago está ligado a una OC pagada
+    # REAL, no permitir cambiar el valor ni des-marcarlo de 'Pagada' desde acá (revertir va por el flujo de OC).
+    _noc = (antes.get('numero_oc') or '').strip()
+    if _noc:
+        _ocr = c.execute("SELECT estado FROM ordenes_compra WHERE numero_oc=?", (_noc,)).fetchone()
+        if _ocr and (_ocr[0] or '').strip() in ('Pagada', 'Recibida', 'Parcial'):
+            if abs(round(nuevo_valor) - float(antes.get('valor') or 0)) > 0.5 or nuevo_estado != 'Pagada':
+                return jsonify({
+                    'error': f"Pago vinculado a la OC {_noc} ({_ocr[0]}, pago real) · no se puede cambiar el valor ni des-marcarlo acá. Revertí desde la OC.",
+                    'codigo': 'PAGO_VINCULADO_A_OC_PAGADA',
+                }), 409
     try:
         try:
             c.execute("""
@@ -6764,10 +6796,12 @@ def mkt_pagos_influencers_list():
             "meses_disponibles": meses_set,
         })
     except Exception as e:
-        import traceback as _tb
+        # FIX 7-jul (audit ultracode): no filtrar el stack trace al cliente · loguear server-side.
+        import traceback as _tb, logging as _lg
+        _lg.getLogger('marketing').warning('mkt_pagos_influencers_list: %s', _tb.format_exc()[-500:])
         return jsonify({
             "pagos": [], "total": 0, "kpis": {},
-            "_error": str(e), "_trace": _tb.format_exc()[-500:],
+            "_error": str(e)[:200],
         }), 200
 
 
@@ -6837,7 +6871,7 @@ def mkt_solicitar_pago_influencer(iid):
             except ValueError:
                 return jsonify({"error": "fecha_contenido inválida"}), 400
         else:
-            base = _dt_fc.now()
+            base = _dt_fc.utcnow() - _td_fc(hours=5)  # Colombia · M24 (Render corre en UTC · la fecha de vencimiento del pago se ancla a hoy-Bogotá)
             fecha_contenido = base.strftime('%Y-%m-%d')
         vence_pago_at = (base + _td_fc(days=30)).strftime('%Y-%m-%d')
 
@@ -7563,6 +7597,12 @@ def _start_marketing_metrics_loop():
                     if not lock_ok:
                         log.info('[marketing-metrics] otro worker tiene el lock · skip ciclo')
                     else:
+                        # FIX 7-jul (audit ultracode · M43): el refresh REAL del token IG corre acá (1×/día · 1
+                        # worker, bajo lock), NO en el load del dashboard (que ahora usa allow_network=False).
+                        try:
+                            _ig_check_refresh(cn, allow_network=True)
+                        except Exception as _ex_ig:
+                            log.warning('[marketing-metrics] refresh token IG fallo: %s', _ex_ig)
                         try:
                             rows = cn.execute(
                                 "SELECT id, nombre, usuario_red FROM marketing_influencers "
