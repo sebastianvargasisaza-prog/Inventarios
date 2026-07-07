@@ -189,7 +189,10 @@ def _batch_role_info(usuario):
     else:
         tipo, rol = "consulta", "Consulta"
     realiza = tipo in ("operario", "jefe_produccion", "admin")
-    verifica = tipo in ("calidad", "jefe_produccion", "director_tecnico", "admin")
+    # Sebastián 7-jul: Aseguramiento (Miguel) también VERIFICA el despeje/pesaje, igual que Control de Calidad
+    # (Yuliel) y Director Técnico (Hernando) — mismos permisos de VERIFICACIÓN, sin tocar el acceso a los módulos
+    # de cada uno (calidad/aseguramiento/técnica siguen separados · esto solo cambia quién puede firmar la 2ª).
+    verifica = tipo in ("calidad", "aseguramiento", "jefe_produccion", "director_tecnico", "admin")
     return {
         "usuario": u, "tipo": tipo, "rol": rol,
         "realiza": realiza,
@@ -6192,6 +6195,21 @@ def registrar_despeje_item_ebr(ebr_id):
                      "Dirección Técnica. El operario solo registra el despeje inicial.",
             "codigo": "SOLO_CALIDAD_CORRIGE",
         }), 403
+    # SUPERVISIÓN SECUENCIAL (Sebastián 7-jul · firma dual real, sin "marcar todo"): el operario solo puede
+    # registrar el ítem N si el ANTERIOR (N-1) ya fue VERIFICADO por Calidad → obliga a que alguien vigile cada
+    # paso antes de habilitar el siguiente. El ítem 0 siempre está habilitado. Las CORRECCIONES de Calidad NO se
+    # bloquean (el ítem ya estaba habilitado). Server-side: no basta ocultar el botón (el endpoint es la verdad).
+    if not es_correccion and idx > 0:
+        _prev_ver = cur.execute(
+            "SELECT COALESCE(verificado_por,'') FROM ebr_despeje_items "
+            "WHERE ebr_id=? AND item_idx=? AND COALESCE(etapa,'dispensacion')=?",
+            (ebr_id, idx - 1, etapa)).fetchone()
+        if not (_prev_ver and (_prev_ver[0] or '').strip()):
+            return jsonify({
+                "error": "Registrá las verificaciones EN ORDEN: Calidad debe verificar la anterior antes de "
+                         "habilitar esta. Así se asegura que alguien supervisa cada paso del despeje.",
+                "codigo": "DESPEJE_SECUENCIAL",
+            }), 409
     # Upsert por (ebr_id, item_idx, etapa) · índice único de mig 222.
     cur.execute(
         """INSERT INTO ebr_despeje_items
@@ -6239,13 +6257,16 @@ def verificar_despeje_item_ebr(ebr_id):
     if ebr["estado"] not in ("iniciado", "en_proceso"):
         return jsonify({"error": f"EBR no editable (estado: {ebr['estado']})"}), 409
     # No autoverificación: quien verifica no puede ser quien registró (2 personas).
+    # Sebastián 7-jul: la verificación es UNA POR UNA (supervisión secuencial · sin "verificar todos") — así
+    # Calidad revisa cada ítem antes de que el operario habilite el siguiente. El path masivo queda deshabilitado.
     if body.get("todos"):
-        cur.execute(
-            "UPDATE ebr_despeje_items SET verificado_por=?, verificado_at_utc=datetime('now','utc') "
-            "WHERE ebr_id=? AND COALESCE(etapa,'dispensacion')=? AND cumple=1 "
-            "AND COALESCE(verificado_por,'')='' AND COALESCE(registrado_por,'')<>?",
-            (user, ebr_id, etapa, user))
-        n = cur.rowcount
+        return jsonify({
+            "error": "La verificación del despeje es UNA POR UNA (Calidad revisa cada ítem antes de habilitar "
+                     "el siguiente). Verificá el ítem que corresponde.",
+            "codigo": "VERIFICAR_UNO_A_UNO",
+        }), 409
+    if False:  # (rama masiva desactivada · se conserva la estructura por claridad)
+        n = 0
     else:
         try:
             idx = int(body.get("item_idx"))

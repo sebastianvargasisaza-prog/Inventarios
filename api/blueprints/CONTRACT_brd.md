@@ -275,3 +275,16 @@ concurrentes dejaban el EBR 'rechazado' con el PT ya promovido a VIGENTE
   el lote del EBR en lotes_afectados y estado NOT IN ('cerrada','anulada'). El
   lote no se libera hasta resolver la desviación (clasificar→investigar→CAPA→cerrar).
 - Golden GP-64. La desviación sigue su workflow normal en /aseguramiento.
+
+## Despeje de línea · supervisión SECUENCIAL (Sebastián 7-jul)
+- `registrar_despeje_item_ebr` (`/despeje-item` POST): el operario solo puede marcar
+  el ítem N si el ANTERIOR (N-1) ya tiene `verificado_por` (Calidad lo verificó).
+  El ítem 0 siempre habilitado. Las CORRECCIONES de Calidad (`es_correccion`) NO se
+  bloquean. 409 `DESPEJE_SECUENCIAL` si se salta el orden. Server-side (no basta la UI).
+- `verificar_despeje_item_ebr` (`/despeje-verificar` POST): el path masivo `{todos:true}`
+  quedó DESHABILITADO (409 `VERIFICAR_UNO_A_UNO`) — la verificación es una por una.
+- UI (`_despEtapa` en dashboard_html): quitados "Marcar TODO cumple" y "Verificar TODO";
+  el botón del operario sale 🔒 hasta que Calidad verifique el ítem anterior.
+- `_batch_role_info.verifica` ahora incluye `aseguramiento` → Miguel (Aseguramiento)
+  verifica igual que Calidad (Laura/Yuliel) y Director Técnico (Hernando), SIN cambiar
+  el acceso a los módulos de cada rol (separación de cargos intacta).

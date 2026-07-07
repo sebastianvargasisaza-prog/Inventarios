@@ -7880,11 +7880,15 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     oh+='<div style="flex:1"><div style="color:#64748b;font-weight:700;margin-bottom:2px">Verificó · Calidad &middot; '+verif+'/'+items.length+(allVer?' ✓':'')+'</div><div style="height:6px;background:#f1f5f9;border-radius:99px;overflow:hidden"><div style="height:100%;width:'+pctV+'%;background:'+(allVer?'#16a34a':'#0ea5e9')+'"></div></div></div>';
     oh+='</div>';
     oh+='<table class="table" style="font-size:11px"><thead><tr><th style="text-align:left">Verificación</th><th style="text-align:center">Realizó</th><th style="text-align:center">Verificó</th></tr></thead><tbody>';
-    items.forEach(function(it){
+    items.forEach(function(it, _ix){
       var rz;
+      // Gate SECUENCIAL (Sebastián 7-jul): el operario solo marca el ítem si Calidad YA verificó el ANTERIOR
+      // → supervisión real de cada paso. El primero siempre habilitado. (El backend lo enforcea también.)
+      var _unlocked = (_ix===0) || (items[_ix-1] && (items[_ix-1].verificado_por||'').trim());
       if(it.cumple===1){ rz='<span style="color:#16a34a;font-weight:700">✓ Sí</span>'+(it.registrado_por?('<div style="font-size:9px;color:#94a3b8">'+_escHTML(it.registrado_por)+'</div>'):''); }
       else if(it.cumple===0){ rz='<span style="color:#dc2626;font-weight:700">✗ No</span>'; }
-      else if(editable&&miRol.realiza){ rz='<button onclick="ebrMarcarDespeje('+d.id+','+it.idx+',&#39;'+etapa+'&#39;)" style="background:#16a34a;color:#fff;border:none;border-radius:4px;padding:2px 9px;font-size:10px;cursor:pointer">✓ Sí</button>'; }
+      else if(editable&&miRol.realiza&&_unlocked){ rz='<button onclick="ebrMarcarDespeje('+d.id+','+it.idx+',&#39;'+etapa+'&#39;)" style="background:#16a34a;color:#fff;border:none;border-radius:4px;padding:2px 9px;font-size:10px;cursor:pointer">✓ Sí</button>'; }
+      else if(editable&&miRol.realiza){ rz='<span style="color:#cbd5e1;font-size:9px" title="Calidad debe verificar la anterior primero">&#128274; espera verif. anterior</span>'; }
       else { rz='<span style="color:#94a3b8">pendiente</span>'; }
       var vf;
       if((it.verificado_por||'').trim()){ vf='<span style="color:#16a34a;font-weight:700">✓</span><div style="font-size:9px;color:#94a3b8">'+_escHTML(it.verificado_por)+'</div>'; }
@@ -7894,8 +7898,9 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
       oh+='<tr><td style="font-size:10px;line-height:1.3">'+_escHTML(it.texto)+'</td><td style="text-align:center;white-space:nowrap;vertical-align:top">'+rz+'</td><td style="text-align:center;white-space:nowrap;vertical-align:top">'+vf+'</td></tr>';
     });
     oh+='</tbody></table>';
-    if(editable&&miRol.realiza&&!allOk){ oh+='<button onclick="ebrDespejeTodoCumple('+d.id+',&#39;'+etapa+'&#39;)" style="margin-top:6px;margin-right:6px;background:#6d28d9;color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">✓ Marcar TODO cumple</button>'; }
-    if(editable&&miRol.verifica&&done>verif){ oh+='<button onclick="ebrVerificarDespejeTodo('+d.id+',&#39;'+etapa+'&#39;)" style="margin-top:6px;background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">✓ Verificar TODO (Calidad)</button>'; }
+    // Sebastián 7-jul: SIN "Marcar TODO / Verificar TODO" — el despeje es SECUENCIAL (operario marca un ítem →
+    // Calidad lo verifica → se habilita el siguiente) para asegurar que alguien supervisa CADA paso (GMP/INVIMA).
+    if(editable&&(miRol.realiza||miRol.verifica)){ oh+='<div style="margin-top:6px;font-size:10px;color:#94a3b8">&#8505; Secuencial: el operario marca un ítem, Calidad lo verifica y se habilita el siguiente.</div>'; }
     if(editable&&miRol.realiza){ oh+=' <button onclick="ebrAgregarRegistroFisico('+d.id+',&#39;Rotulo limpieza '+etapa+'&#39;)" title="Adjuntar foto del rótulo de limpieza diligenciado" style="margin-top:6px;margin-left:6px;background:#fff;border:1px solid #cbd5e1;border-radius:5px;padding:6px 11px;font-size:11px;cursor:pointer">&#128247; Foto rótulo limpieza</button>'; }
     if(editable&&!miRol.realiza&&!miRol.verifica){ oh+='<div style="margin-top:6px;font-size:11px;color:#94a3b8">Solo lectura</div>'; }
     return oh;
