@@ -12330,9 +12330,20 @@ def plan_reconstruir_plan():
         return jsonify({'ok': True, 'dry_run': True, **preview})
     # 1. HISTORIAL · re-activar lo ya producido + re-sincronizar Fabricación
     hist = 0
+    # FIX 7-jul (audit ultracode · Part 11): auditar la reactivación bulk (los pasos 2/3 ya auditan por fila).
+    _ids_h = [r[0] for r in cur.execute(
+        "SELECT id FROM produccion_programada WHERE COALESCE(origen,'')='eos_retroactivo' "
+        "AND COALESCE(estado,'')='cancelado'").fetchall()]
     cur.execute("UPDATE produccion_programada SET estado='completado' "
                 "WHERE COALESCE(origen,'')='eos_retroactivo' AND COALESCE(estado,'')='cancelado'")
     hist = cur.rowcount or 0
+    if _ids_h:
+        try:
+            audit_log(cur, usuario=user, accion='REACTIVAR_HISTORIAL_RETROACTIVO',
+                      tabla='produccion_programada', registro_id=str(_ids_h[0]),
+                      despues={'ids': _ids_h, 'n': hist, 'de': 'cancelado', 'a': 'completado'})
+        except Exception:
+            pass
     conn.commit()
     sync = _sync_fabricacion_calendario(conn, usuario=user)
     # 2. PLAN Fijo · des-cancelar uno por (producto, fecha)

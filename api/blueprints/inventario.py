@@ -7421,6 +7421,25 @@ def registrar_recepcion():
                 'posible_duplicado': True,
                 'movimiento_existente_id': dup[0],
             }), 409
+    # IDEMPOTENCIA multi-worker (M31/M45 · FIX 7-jul audit ultracode): el soft-guard de 10 min de arriba solo
+    # atrapa reintentos SECUENCIALES; dos submits CONCURRENTES (doble-click) no ven el INSERT del otro en PG
+    # READ COMMITTED → ambos pasan → doble Entrada. El cliente manda un `recepcion_id` único por envío → se
+    # reclama con UNIQUE (reusa oc_recepcion_dedup): si ya existe → 409. Cliente viejo sin token → no dedup
+    # (compat · queda el soft-guard). El token se libera si la tx hace rollback (reintento legítimo procede).
+    _rid = str(d.get('recepcion_id') or '').strip()[:80]
+    if _rid:
+        try:
+            c.execute("INSERT INTO oc_recepcion_dedup (recepcion_id, numero_oc, creado_en) VALUES (?,?,?)",
+                      (_rid, (numero_oc or 'MANUAL'), datetime.now().isoformat()))
+        except Exception as _edup:
+            if 'unique' in str(_edup).lower() or 'duplicate' in str(_edup).lower():
+                try:
+                    c.connection.rollback()
+                except Exception:
+                    pass
+                return jsonify({'error': 'Esta recepción ya fue registrada (doble envío)',
+                                'codigo': 'RECEPCION_DUPLICADA'}), 409
+            raise
     c.execute("""INSERT INTO movimientos
                  (material_id,material_nombre,cantidad,tipo,fecha,observaciones,
                   lote,fecha_vencimiento,estanteria,posicion,proveedor,estado_lote,operador,
