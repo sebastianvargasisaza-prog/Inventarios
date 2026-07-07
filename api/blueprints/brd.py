@@ -3821,6 +3821,26 @@ def rechazar_ebr(ebr_id):
             "error": "El EBR ya fue liberado/rechazado o cambió de estado · refrescá",
             "codigo": "ESTADO_CAMBIO",
         }), 409
+    # FIX 7-jul (audit ultracode · INVIMA · máquina de estados): DEGRADAR el PT a RECHAZADO (espejo exacto de
+    # liberar_ebr que lo promueve a VIGENTE). Sin esto, un lote RECHAZADO por Calidad dejaba su PT en
+    # CUARENTENA/VIGENTE → producto rechazado quedaba VENDIBLE/usable (Res. INVIMA 2214). Por el lote FÍSICO.
+    pt_lote_rechazados = 0
+    try:
+        _lr = cur.execute(
+            "SELECT COALESCE(lote_codigo,'') AS lote_codigo, COALESCE(lote,'') AS lote "
+            "FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
+        _lote_ref = ((_lr['lote_codigo'] or _lr['lote']) if _lr else '') or ''
+        if _lote_ref:
+            cur.execute(
+                """UPDATE movimientos SET estado_lote='RECHAZADO'
+                   WHERE lote=? AND tipo='Entrada'
+                     AND COALESCE(material_id,'') LIKE 'PT\\_%' ESCAPE '\\'
+                     AND UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VIGENTE')""",
+                (_lote_ref,))
+            pt_lote_rechazados = cur.rowcount or 0
+    except Exception as _epr:
+        import logging as _log
+        _log.getLogger('inventario.brd').warning('rechazar_ebr degradacion PT fallo: %s', _epr)
     conn.commit()
     audit_log(None, usuario=user, accion="RECHAZAR_EBR",
               tabla="ebr_ejecuciones", registro_id=ebr_id,

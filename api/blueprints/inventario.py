@@ -10080,6 +10080,19 @@ def anular_movimiento(mov_id):
     # (movimientos no tiene 'responsable').
     if user not in ADMIN_USERS and mov.get('operador','') != user:
         return jsonify({'error': 'Solo puedes anular tus propios movimientos o ser administrador'}), 403
+    # FIX 7-jul (audit ultracode · M31 CAS): RECLAMAR el original ANTES de generar el contra-movimiento. Dos
+    # anulaciones concurrentes (doble-click / 2 workers) pasaban el check-then-act de arriba y ambas insertaban
+    # el contra-movimiento → stock corrido ±cantidad. El UPDATE condicional (marca [ANULADO] solo si NO lo
+    # estaba) toma el row-lock; solo un worker logra rowcount==1, el 2º (tras el commit del 1º) ve 0 → 409.
+    # Igual que anular_recepcion (M31). El marcado del original queda hecho en este mismo claim.
+    c.execute("UPDATE movimientos SET observaciones = '[ANULADO] ' || COALESCE(observaciones,'') "
+              "WHERE id=? AND COALESCE(observaciones,'') NOT LIKE '[ANULADO]%'", (mov_id,))
+    if c.rowcount != 1:
+        try:
+            c.connection.rollback()
+        except Exception:
+            pass
+        return jsonify({'error': 'Movimiento ya anulado', 'codigo': 'ANULACION_YA_RECLAMADA'}), 409
     # Generar contra-movimiento (invierte el tipo). Mismo lote y estado_lote
     # que el original para que el kardex (_get_mp_stock) lo concilie bien.
     tipo_inv = 'Salida' if mov['tipo'] == 'Entrada' else 'Entrada'
@@ -10090,9 +10103,6 @@ def anular_movimiento(mov_id):
               (mov['material_id'], mov.get('material_nombre',''), tipo_inv,
                mov['cantidad'], mov.get('lote',''), mov.get('estado_lote',''),
                user, obs_contra))
-    # Marcar original como anulado
-    c.execute("UPDATE movimientos SET observaciones=? WHERE id=?",
-              ('[ANULADO] ' + (mov.get('observaciones') or ''), mov_id))
     # Registrar en audit_log
     c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
                  VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",

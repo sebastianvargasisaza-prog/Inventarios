@@ -1055,15 +1055,18 @@ def handle_ordenes_compra():
                       (numero_oc, codigo, nombre, cantidad_g, precio_u, subtotal))
             # Persistir en historico de precios + actualizar referencia en maestro
             if codigo and precio_u > 0:
+                # FIX 7-jul (audit ultracode · M12a/M4): antes el INSERT usaba columnas FANTASMA (nombre_mp,
+                # precio_unitario, cantidad_g) y omitía precio_kg (NOT NULL) → fallaba SIEMPRE (SQLite y PG) y el
+                # except lo tragaba → el histórico de precios de OC NUNCA se guardaba (autocomplete/variación de
+                # precio sin datos). Columnas REALES (= el writer que sí funciona, inventario.py).
                 try:
-                    c.execute("""INSERT OR IGNORE INTO precios_mp_historico
-                                 (codigo_mp, nombre_mp, precio_unitario, proveedor,
-                                  fecha, numero_oc, cantidad_g)
-                                 VALUES (?,?,?,?,?,?,?)""",
-                              (codigo, nombre, precio_u, d['proveedor'],
-                               datetime.now().isoformat()[:10], numero_oc, cantidad_g))
-                except Exception:
-                    pass
+                    c.execute("""INSERT INTO precios_mp_historico
+                                 (codigo_mp, proveedor, precio_kg, fecha, numero_oc, origen)
+                                 VALUES (?,?,?,?,?,'compra')""",
+                              (codigo, d['proveedor'], precio_u,
+                               datetime.now().isoformat()[:10], numero_oc))
+                except Exception as _e_ph:
+                    log.warning('precios_mp_historico no guardó (OC %s): %s', numero_oc, _e_ph)
                 try:
                     c.execute("""UPDATE maestro_mps
                                  SET precio_referencia=?, proveedor=COALESCE(NULLIF(proveedor,''),?)
@@ -12803,8 +12806,14 @@ def revertir_pago_oc(numero_oc):
     except (ValueError, TypeError):
         # Si no se puede parsear fecha, no bloqueamos (mejor permitir admin override)
         delta_h = None
-    # 1. DELETE pago de pagos_oc
+    # 1. DELETE pago de pagos_oc · FIX 7-jul (audit ultracode · M27 CAS): el DELETE por id toma el row-lock y
+    # serializa; si el 2º worker (revert concurrente / doble-click) borra 0 filas, DEBE abortar ANTES de tocar
+    # comprobantes/flujo_egresos (si no, borraba el comprobante/egreso de OTRO pago del mismo monto → contabilidad
+    # corrupta + audit fantasma). Antes no chequeaba rowcount.
     cur.execute("DELETE FROM pagos_oc WHERE id=?", (pago_id,))
+    if cur.rowcount != 1:
+        conn.rollback()
+        return jsonify({'error': 'Ese pago ya fue revertido', 'codigo': 'PAGO_YA_REVERTIDO'}), 409
     # 2. DELETE último comprobante asociado a esta OC (si existe)
     cur.execute(
         "SELECT id, COALESCE(numero_ce,'') FROM comprobantes_pago "
