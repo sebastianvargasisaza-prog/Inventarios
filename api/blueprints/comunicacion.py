@@ -19,7 +19,7 @@ from datetime import datetime
 from flask import Blueprint, request, jsonify, session, render_template_string
 
 from config import DB_PATH, ADMIN_USERS, USER_EMAILS, AREA_USERS, APP_BASE_URL
-from database import get_db
+from database import get_db, db_connect
 
 
 # ─── helper notificacion email ─────────────────────────────────────────────
@@ -672,39 +672,48 @@ def quejas_list():
         qid = c.lastrowid
         conn.commit()
 
-        # Intentar analisis IA en background (best-effort)
-        analisis = _analizar_queja_ia(contexto)
-        if analisis:
+        # Análisis IA en BACKGROUND real (Sebastián 7-jul · PERF): antes era SÍNCRONO (~30s a Claude) → el
+        # empleado que envía la queja esperaba 30s (pese al comentario "background"). La queja ya quedó guardada
+        # (Pendiente); un thread con conexión propia (db_connect) la clasifica y la pasa a 'Analizada' + escala
+        # si es Alta/Crítica. El POST responde AL INSTANTE. La UI la ve 'Pendiente' y luego 'Analizada' al refrescar.
+        def _bg_clasificar(_qid, _ctx, _autor):
+            _c2 = None
             try:
-                c.execute("""UPDATE quejas_internas
-                             SET severidad_ia=?, analisis_ia=?,
-                                 accion_sugerida_ia=?, escalada_a=?,
-                                 estado='Analizada'
-                             WHERE id=?""",
-                          (analisis.get("severidad", "Media"),
-                           analisis.get("analisis", "")[:500],
-                           analisis.get("accion_sugerida", "")[:500],
-                           analisis.get("escalar_a", ""),
-                           qid))
-                # Si severidad Alta/Critica, escalar a admin via mensaje
-                sev = analisis.get("severidad", "Media")
-                if sev in ("Alta", "Critica"):
-                    destinos = ADMIN_USERS
-                    for admin in destinos:
-                        c.execute("""INSERT INTO mensajes_internos
-                                     (de_usuario, a_usuario, asunto, mensaje)
-                                     VALUES (?,?,?,?)""",
-                                  ("sistema_ia", admin,
-                                   f"Queja {sev}: revision urgente",
-                                   f"Empleado {u} reporto problema severidad {sev}.\n\n"
-                                   f"Analisis: {analisis.get('analisis','')}\n\n"
-                                   f"Accion sugerida: {analisis.get('accion_sugerida','')}\n\n"
-                                   f"Queja original: {contexto[:500]}"))
-                conn.commit()
+                _analisis = _analizar_queja_ia(_ctx)
+                if not _analisis:
+                    return
+                _c2 = db_connect(); _cur = _c2.cursor()
+                _cur.execute("UPDATE quejas_internas SET severidad_ia=?, analisis_ia=?, accion_sugerida_ia=?, "
+                             "escalada_a=?, estado='Analizada' WHERE id=?",
+                             (_analisis.get("severidad", "Media"), _analisis.get("analisis", "")[:500],
+                              _analisis.get("accion_sugerida", "")[:500], _analisis.get("escalar_a", ""), _qid))
+                _sev = _analisis.get("severidad", "Media")
+                if _sev in ("Alta", "Critica"):
+                    for _admin in ADMIN_USERS:
+                        _cur.execute("INSERT INTO mensajes_internos (de_usuario, a_usuario, asunto, mensaje) "
+                                     "VALUES (?,?,?,?)",
+                                     ("sistema_ia", _admin, f"Queja {_sev}: revision urgente",
+                                      f"Empleado {_autor} reporto problema severidad {_sev}.\n\n"
+                                      f"Analisis: {_analisis.get('analisis','')}\n\n"
+                                      f"Accion sugerida: {_analisis.get('accion_sugerida','')}\n\n"
+                                      f"Queja original: {_ctx[:500]}"))
+                _c2.commit()
             except Exception:
                 pass
+            finally:
+                try:
+                    if _c2 is not None:
+                        _c2.close()
+                except Exception:
+                    pass
+        try:
+            import threading as _thr
+            _thr.Thread(target=_bg_clasificar, args=(qid, contexto, u), daemon=True).start()
+        except Exception:
+            pass
 
-        return jsonify({"ok": True, "id": qid, "analisis": analisis}), 201
+        return jsonify({"ok": True, "id": qid, "estado": "Pendiente",
+                        "mensaje": "Queja registrada · la IA la clasifica en segundo plano"}), 201
 
     # GET — admins ven todas, usuarios ven las suyas
     if _is_admin(u):
