@@ -4199,16 +4199,19 @@ def prog_refrescar_ventas_diarias():
         return jsonify({'error': 'No autenticado'}), 401
     conn = get_db()
     from flask import current_app
+    import blueprints.auto_plan_jobs as _apj
     from blueprints.auto_plan_jobs import (_adquirir_lock_cron, _liberar_lock_cron,
                                            job_refrescar_ventas_diarias)
     try:
         r0 = conn.execute("SELECT COUNT(*), MIN(fecha), MAX(fecha) FROM ventas_diarias").fetchone()
     except Exception:
         r0 = (0, None, None)
+    _ultima = dict(getattr(_apj, '_VD_LAST_RUN', {}) or {})  # resultado/error de la última corrida del job
     # LOCK anti-thundering-herd: sin esto cada hit lanzaba OTRO job que parsea 39k órdenes (100-200MB) → con
     # varias recargas tumbaba la app (fable 6-jul). Un solo refresco a la vez a través de los 3 workers.
     if not _adquirir_lock_cron(conn, 'ventas_diarias_manual', ttl_horas=1):
         return jsonify({'ok': True, 'ya_corriendo': True, 'filas_actuales': r0[0], 'desde': r0[1], 'hasta': r0[2],
+                        'ultima_corrida': _ultima,
                         'nota': 'Ya se está refrescando en segundo plano · esperá 1-2 min y recargá la app.'})
     _app = current_app._get_current_object()
 
@@ -4233,6 +4236,7 @@ def prog_refrescar_ventas_diarias():
         return jsonify({'ok': False, 'error': str(e)}), 500
     return jsonify({'ok': True, 'iniciado_en_segundo_plano': True,
                     'filas_actuales': r0[0], 'desde': r0[1], 'hasta': r0[2],
+                    'ultima_corrida': _ultima,
                     'nota': 'Corre atrás (1-2 min · UN solo job a la vez). Recargá la app cuando filas_actuales suba.'})
 
 

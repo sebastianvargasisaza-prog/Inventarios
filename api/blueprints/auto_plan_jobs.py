@@ -4225,6 +4225,9 @@ def job_reconciliar_formula_gpl(app):
             return False, {'error': str(e)[:200]}, 0
 
 
+_VD_LAST_RUN = {'ok': None, 'info': None, 'ts': 0.0}  # última corrida del job (para diag · Sebastián 7-jul)
+
+
 def job_refrescar_ventas_diarias(app):
     """PERF (Sebastián 6-jul) · 3×/día · precalcula ventas_diarias (sku, fecha, cantidad) desde
     animus_shopify_orders (mismos filtros que _ventas_sku_map_orders: cancelados/refunds/B2B excluidos).
@@ -4247,9 +4250,13 @@ def job_refrescar_ventas_diarias(app):
                         _b2b_clauses += (" AND LOWER(COALESCE(tags,'')) NOT LIKE ? "
                                          "AND LOWER(COALESCE(customer_tags,'')) NOT LIKE ?")
                         _b2b_params.extend(['%' + _t + '%', '%' + _t + '%'])
+            # Sebastián 7-jul · FIX: usar el MISMO patrón que todos los lectores (`creado_en >= ?` string +
+            # substr para la fecha), NO date(creado_en) — la función compat date() de PG fallaba con el ISO
+            # completo → el job reventaba → ventas_diarias quedaba en 0 → TODO caía al parseo de 39k órdenes
+            # (la lentitud de Dashboard/Necesidades/Abastecimiento). substr(creado_en,1,10) = 'YYYY-MM-DD'.
             rows = c.execute(
-                "SELECT date(creado_en), sku_items FROM animus_shopify_orders "
-                "WHERE date(creado_en) >= ? AND sku_items IS NOT NULL AND sku_items != '' "
+                "SELECT substr(creado_en,1,10), sku_items FROM animus_shopify_orders "
+                "WHERE creado_en >= ? AND sku_items IS NOT NULL AND sku_items != '' "
                 "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') "
                 "AND LOWER(COALESCE(estado_pago,'')) NOT IN ('refunded','voided','partially_refunded') "
                 + _b2b_clauses, tuple([cutoff] + _b2b_params)).fetchall()
@@ -4276,12 +4283,17 @@ def job_refrescar_ventas_diarias(app):
                 conn.executemany("INSERT INTO ventas_diarias (sku, fecha, cantidad) VALUES (?,?,?)",
                                  [(sk, fe, q) for (sk, fe), q in agg.items()])
             conn.commit()
-            return True, {'filas': len(agg), 'skus': len(set(k[0] for k in agg)), 'ordenes': len(rows)}, len(agg)
+            import time as _tvd
+            _info = {'filas': len(agg), 'skus': len(set(k[0] for k in agg)), 'ordenes': len(rows)}
+            _VD_LAST_RUN.update({'ok': True, 'info': _info, 'ts': _tvd.time()})
+            return True, _info, len(agg)
         except Exception as e:
             try:
                 conn.rollback()
             except Exception:
                 pass
+            import time as _tvd
+            _VD_LAST_RUN.update({'ok': False, 'info': {'error': str(e)[:300]}, 'ts': _tvd.time()})
             return False, {'error': str(e)[:200]}, 0
 
 
