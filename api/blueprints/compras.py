@@ -6057,9 +6057,17 @@ def recibir_oc(numero_oc):
                 # Sin codigo_mp no se puede imputar el MEE · un INSERT con
                 # mee_codigo='' + UPDATE que no matchea nada = drift permanente.
                 if codigo:
-                    cur.execute("UPDATE maestro_mee SET stock_actual = stock_actual + ? WHERE codigo=?", (cant_recibida, codigo))
-                    cur.execute("INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, lote_ref, observaciones, responsable, fecha) VALUES (?,?,?,?,?,?,?)",
-                               (codigo, 'Entrada', cant_recibida, numero_oc, f'Recepcion OC {numero_oc}', operador, fecha))
+                    # Sebastián 7-jul (audit ultracode · M45): el envase recibido por OC ENTRA EN CUARENTENA
+                    # (INVIMA · igual que la recepción manual inventario.py y que el toggle RECEPCION_AUTO_VIGENTE).
+                    # Antes el INSERT no pasaba `estado` → default VIGENTE → saltaba el gate de Calidad (mig 301).
+                    from database import recepcion_auto_vigente as _rav
+                    _estado_mee = 'VIGENTE' if _rav(cur) else 'CUARENTENA'
+                    # solo sumar al cache si entra VIGENTE · en CUARENTENA _get_mee_stock lo excluye (el cron
+                    # drift-sync alinea el cache stock_actual · M26).
+                    if _estado_mee == 'VIGENTE':
+                        cur.execute("UPDATE maestro_mee SET stock_actual = stock_actual + ? WHERE codigo=?", (cant_recibida, codigo))
+                    cur.execute("INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, lote_ref, observaciones, responsable, fecha, estado) VALUES (?,?,?,?,?,?,?,?)",
+                               (codigo, 'Entrada', cant_recibida, numero_oc, f'Recepcion OC {numero_oc}', operador, fecha, _estado_mee))
                 else:
                     log.warning('recibir_oc MEE sin codigo_mp · OC %s · item no imputado', numero_oc)
             else:

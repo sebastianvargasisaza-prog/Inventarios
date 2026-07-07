@@ -8634,30 +8634,45 @@ def _composicion_envases_lote(c, evento_id):
     # cosmético con cadencia mensual.
     ventas_sku = _ventas_sku_180d(c)  # memoizado por request (FIX N+1 · 1-jun-2026)
 
-    # Derivar ratio por presentación · prioridad: 1) override manual,
-    # 2) Shopify histórico 180d, 3) uniforme
+    # Derivar ratio por presentación · Sebastián 7-jul (audit ultracode · M58+M72): PESAR POR VOLUMEN (uds×ml)
+    # + ventas por (producto, VOLUMEN) desde sku_producto_map (sku_shopify suele estar VACÍO · M70). Antes
+    # repartía por share de UNIDADES con sku_shopify → caía a uniforme/errado y sub-asignaba el tamaño grande
+    # (el bug M72 que Sebastián cazó · este hermano quedó sin el fix que sí tienen _trail_envase y _ratio_pres).
+    _sku_vol = {}   # volumen_int -> uds vendidas de ESTE producto en ese tamaño
+    try:
+        _pnorm = _norm_prod_fuerte(producto)
+        for _sk, _pn, _vml in c.execute(
+                "SELECT UPPER(TRIM(sku)), producto_nombre, COALESCE(volumen_ml,0) FROM sku_producto_map "
+                "WHERE COALESCE(activo,1)=1").fetchall():
+            if not _sk or _norm_prod_fuerte(_pn) != _pnorm:
+                continue
+            _u = ventas_sku.get(str(_sk).strip().upper(), 0)
+            if _u > 0:
+                _vk = int(round(float(_vml or 0)))
+                _sku_vol[_vk] = _sku_vol.get(_vk, 0) + _u
+    except Exception:
+        _sku_vol = {}
     suma_override = sum(float(p.get('ventas_mes_referencia') or 0) for p in presentaciones)
-    if suma_override > 0:
-        for p in presentaciones:
-            p['_ventas_90d'] = float(p.get('ventas_mes_referencia') or 0)
-            p['_ratio'] = (p['_ventas_90d'] / suma_override)
-        fuente = 'manual_override'
-    else:
-        total = 0
-        for p in presentaciones:
-            sk = (p['sku_shopify'] or '').strip().upper()
-            v = ventas_sku.get(sk, 0) if sk else 0
-            p['_ventas_90d'] = v
-            total += v
-        if total > 0:
-            for p in presentaciones:
-                p['_ratio'] = (p['_ventas_90d'] / total)
-            fuente = 'shopify_180d'
+    for p in presentaciones:
+        if suma_override > 0:
+            p['_ventas_90d'] = float(p.get('ventas_mes_referencia') or 0)      # 1) override manual
         else:
-            ratio_uni = 1.0 / len(presentaciones)
-            for p in presentaciones:
-                p['_ratio'] = ratio_uni
-            fuente = 'uniforme'
+            _v = _sku_vol.get(int(round(p['volumen_ml'])), 0)                  # 2) Shopify por (producto, volumen)
+            if _v <= 0:
+                _sk = (p['sku_shopify'] or '').strip().upper()
+                _v = ventas_sku.get(_sk, 0) if _sk else 0                      # 3) Shopify por sku de la presentación
+            p['_ventas_90d'] = _v
+    _pesos = {p['codigo']: float(p.get('_ventas_90d') or 0) * float(p['volumen_ml'] or 0) for p in presentaciones}
+    _tp = sum(_pesos.values())
+    if _tp > 0:                                                               # peso = uds × ml (M72)
+        for p in presentaciones:
+            p['_ratio'] = _pesos[p['codigo']] / _tp
+        fuente = 'manual_override' if suma_override > 0 else 'shopify_180d_vol'
+    else:                                                                     # 4) uniforme PESADO por volumen
+        _sv = sum(float(p['volumen_ml'] or 0) for p in presentaciones)
+        for p in presentaciones:
+            p['_ratio'] = (float(p['volumen_ml'] or 0) / _sv) if _sv > 0 else (1.0 / len(presentaciones))
+        fuente = 'uniforme_vol'
 
     # Calcular unidades estimadas + descripción envase.
     # PERF 1-jul (M59/M63): este helper se llama 1× por LOTE en serigrafia-cola /
@@ -9926,6 +9941,7 @@ def _calcular_mp_consumo_produccion(c, evento_id):
         FROM produccion_programada pp
         LEFT JOIN formula_headers fh
                ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+              AND COALESCE(fh.activo,1) = 1
         WHERE pp.id=?
     """, (evento_id,)).fetchone()
     if not row:
@@ -9934,18 +9950,24 @@ def _calcular_mp_consumo_produccion(c, evento_id):
     lotes = int(lotes or 1)
     cant_kg_total = float(cant_kg_exp or 0) or (lotes * float(lote_kg or 0))
 
-    # FIX 17-jun (auditoría Planta · M29) · NO consumir fórmula DESCONTINUADA
-    # (activo=0): descontinuar hace activo=0 pero conserva los formula_items → este
-    # path (consumo de producción programada · calendario/Kanban) los descontaba.
-    # Exclusión NORMALIZADA (el match acá es case-insensitive, igual a ambos lados).
+    # FIX 17-jun (auditoría Planta · M29) · NO consumir fórmula DESCONTINUADA (activo=0): descontinuar hace
+    # activo=0 pero conserva los formula_items → este path (consumo de producción programada · calendario/Kanban)
+    # los descontaba.
+    # ⚠ FIX 7-jul (audit ultracode · P0): la exclusión antes era `UPPER(TRIM) NOT IN (SELECT UPPER(TRIM) ...
+    # WHERE activo=0)` → con un header CASE-DUPLICADO ('Blush Balm' activo=0 conviviendo con 'BLUSH BALM'
+    # activo=1) el normalizado 'BLUSH BALM' entraba al set de exclusión y BOTABA los ítems de la fórmula ACTIVA
+    # → rows=[] → la producción NO descontaba NINGUNA MP (stock sobre-estimado en silencio · el path directo
+    # inventario.py SÍ descontaba → drift). Ahora la exclusión es por nombre EXACTO (case-sensitive): 'Blush
+    # Balm' (header inactivo exacto) se excluye, 'BLUSH BALM' (header activo exacto) se conserva. El match
+    # externo sigue case-insensitive. (M29/M52: filtro activo solo acá, NO en brd/EBR ejecución de batch.)
     rows = c.execute("""
         SELECT material_id, material_nombre,
                COALESCE(porcentaje, 0)                as pct,
                COALESCE(cantidad_g_por_lote, 0)       as g_por_lote
         FROM formula_items
         WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))
-          AND UPPER(TRIM(producto_nombre)) NOT IN (
-              SELECT UPPER(TRIM(producto_nombre)) FROM formula_headers
+          AND TRIM(producto_nombre) NOT IN (
+              SELECT TRIM(producto_nombre) FROM formula_headers
               WHERE COALESCE(activo,1)=0)
     """, (producto,)).fetchall()
     # FIX 1-jun-2026 audit MP/fórmulas (P0-1) · DEDUP por código de bodega resuelto:
@@ -10532,6 +10554,18 @@ def _descontar_mee_envasado(c, produccion_id, lote, unidades_envasadas,
             # sobre-descuenta el envase DEFAULT y no descuenta los B2B custom (drift MEE · M4/M63).
             raise
 
+    # Sebastián 7-jul (audit ultracode · M55/M5): el envase_codigo_override del lote (admin eligió otro envase
+    # en el modal) → el DESCUENTO debe usar ESE código en el item de envase, no el default del checklist. La
+    # COMPRA/demanda YA honra el override → sin esto compra ≠ descuento (el override sub-estimado, el default
+    # sobre-estimado · drift en 2 códigos MEE). Aplica solo al item ENVASE (tapa/etiqueta van al default).
+    _env_override = ''
+    try:
+        _eo = c.execute("SELECT COALESCE(envase_codigo_override,'') FROM produccion_programada WHERE id=?",
+                        (produccion_id,)).fetchone()
+        _env_override = ((_eo[0] if _eo else '') or '').strip().upper()
+    except Exception:
+        _env_override = ''
+
     # Construir whitelist de tipos en SQL
     placeholders = ','.join(['?'] * len(TIPOS_MEE_AL_ENVASAR))
     sql = f"""
@@ -10572,9 +10606,11 @@ def _descontar_mee_envasado(c, produccion_id, lote, unidades_envasadas,
             cant_real = max(cant_real - uds_b2b_custom_total, 0)
         if cant_real <= 0:
             continue
+        # override del lote (admin) reemplaza el envase default SOLO en el item de envase (M55/M5)
+        _cod_efectivo = _env_override if (es_envase and _env_override) else mee_cod
         try:
             aplicar_movimiento_mee(
-                c.connection, mee_cod, 'Salida', cant_real,
+                c.connection, _cod_efectivo, 'Salida', cant_real,
                 observaciones=obs_base, responsable=user,
                 lote_ref=str(produccion_id), batch_ref=lote or '',
             )
@@ -11037,6 +11073,14 @@ def prog_revertir_completado(evento_id):
                        OR observaciones LIKE ? ESCAPE '\\')
             """, (f"{obs_filtro_esc}%", f"{obs_filtro_ini_esc}%")).fetchall()
         for mid, cod, nom, cant, lote, fv in rows:
+            # Sebastián 7-jul (audit ultracode · M45): NO re-revertir una Salida YA compensada. El ciclo
+            # completar→revertir→completar→revertir volvía a matchear las Salidas viejas (siguen con
+            # produccion_id) y les insertaba una 2ª Entrada compensatoria → stock de MP inflado en silencio.
+            # El loop MEE ya deduplica; el MP no. La Entrada compensatoria lleva 'original mov #<id>' → dedup trivial.
+            _ya = c.execute("SELECT 1 FROM movimientos WHERE tipo='Entrada' AND observaciones LIKE ? LIMIT 1",
+                            (f"%original mov #{mid}",)).fetchone()
+            if _ya:
+                continue
             c.execute("""
                 INSERT INTO movimientos
                   (material_id, material_nombre, cantidad, tipo, fecha,
