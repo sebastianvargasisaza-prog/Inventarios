@@ -539,7 +539,8 @@ def mkt_atribucion():
     # Antes: si user pasaba codigo='%', matcheaba TODOS los cupones · inflaba
     # atribución arbitrariamente. Escape % y _ con char ESCAPE explícito.
     _codigo_safe = codigo.upper().replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
-    where_parts = ["UPPER(COALESCE(discount_codes,'')) LIKE ? ESCAPE '\\'"]
+    where_parts = ["LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')",  # FIX 7-jul: excluir canceladas
+                   "UPPER(COALESCE(discount_codes,'')) LIKE ? ESCAPE '\\'"]
     params = [f"%{_codigo_safe}%"]
     if desde:
         where_parts.append("date(creado_en) >= ?"); params.append(desde)
@@ -2186,7 +2187,8 @@ def mkt_contacto_360():
         sh_orders = [dict(r) for r in c.execute("""
             SELECT shopify_id, creado_en, total, subtotal, total_descuentos,
                    discount_codes, sku_items, unidades_total
-            FROM animus_shopify_orders WHERE LOWER(email)=?
+            FROM animus_shopify_orders
+            WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND LOWER(email)=?
             ORDER BY creado_en DESC LIMIT 50
         """, (email,)).fetchall()]
         shopify["orders"] = sh_orders
@@ -4959,7 +4961,7 @@ def mkt_ejecutar_agente(agente):
                 meses_cob = round(stock / rotacion, 1) if rotacion > 0 else 99
                 # shopify_30 sigue por SKU porque LIKE '%sku%' impide pre-agregación
                 # (sku_items es CSV string · refactor mayor para normalizar después).
-                shopify_30 = c.execute("SELECT COALESCE(SUM(unidades_total),0) as t FROM animus_shopify_orders WHERE sku_items LIKE ? AND creado_en>=?", (f'%{sku}%', hace30)).fetchone()["t"]
+                shopify_30 = c.execute("SELECT COALESCE(SUM(unidades_total),0) as t FROM animus_shopify_orders WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND sku_items LIKE ? AND creado_en>=?", (f'%{sku}%', hace30)).fetchone()["t"]
                 score = 0; razones = []
                 if meses_cob > 3: score += 1; razones.append(f"{meses_cob} meses de inventario")
                 if rotacion < 10 and stock > 50: score += 1; razones.append("baja rotación")
@@ -4990,7 +4992,8 @@ def mkt_ejecutar_agente(agente):
                 # Si tiene cupón: ventas atribuibles desde Shopify (real)
                 ventas_atrib = 0; uds_atrib = 0
                 if dcode:
-                    where_parts = ["UPPER(COALESCE(discount_codes,'')) LIKE ?"]
+                    where_parts = ["LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')",
+                                   "UPPER(COALESCE(discount_codes,'')) LIKE ?"]  # FIX 7-jul: excluir canceladas
                     params = [f"%{dcode.upper()}%"]
                     if cp["fecha_inicio"]:
                         where_parts.append("date(creado_en) >= ?"); params.append(cp["fecha_inicio"])
@@ -5011,7 +5014,7 @@ def mkt_ejecutar_agente(agente):
                     "fuente_ventas": fuente_ventas,
                     "estado_roi": "excelente" if roi >= 200 else ("bueno" if roi >= 50 else ("neutro" if roi >= 0 else "negativo"))})
             analisis.sort(key=lambda x: -x["roi_pct"])
-            shopify_rev = c.execute("SELECT COALESCE(SUM(total),0) as t FROM animus_shopify_orders WHERE creado_en>=?", (hace30,)).fetchone()["t"]
+            shopify_rev = c.execute("SELECT COALESCE(SUM(total),0) as t FROM animus_shopify_orders WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND creado_en>=?", (hace30,)).fetchone()["t"]
             resultado = {"titulo": "Análisis de ROI por Campaña",
                           "campanas": analisis,
                           "shopify_revenue_30d": shopify_rev,
@@ -5042,7 +5045,9 @@ def mkt_ejecutar_agente(agente):
             tendencias.sort(key=lambda x: -abs(x["cambio_pct"]))
             shopify_trend = _fmt_many(c.execute("""
                 SELECT strftime('%Y-%m', creado_en) as mes, SUM(total) as ventas, COUNT(*) as pedidos
-                FROM animus_shopify_orders GROUP BY mes ORDER BY mes DESC LIMIT 6
+                FROM animus_shopify_orders
+                WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')
+                GROUP BY mes ORDER BY mes DESC LIMIT 6
             """).fetchall())
             resultado = {"titulo": "Tendencias de Producto y Ventas", "tendencias_erp": tendencias[:10], "shopify_mensual": shopify_trend}
 
@@ -5073,7 +5078,7 @@ def mkt_ejecutar_agente(agente):
                 try:
                     # animus_shopify_orders.sku_items es JSON o CSV · contamos ocurrencias
                     rows_sh = c.execute(
-                        "SELECT sku_items FROM animus_shopify_orders WHERE creado_en>=?",
+                        "SELECT sku_items FROM animus_shopify_orders WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND creado_en>=?",
                         (hace90,)
                     ).fetchall()
                     sku_counts = {}
@@ -5127,7 +5132,7 @@ def mkt_ejecutar_agente(agente):
                 shop_30 = 0
                 try:
                     shr = c.execute(
-                        "SELECT COUNT(*) as n FROM animus_shopify_orders WHERE sku_items LIKE ? AND creado_en>=?",
+                        "SELECT COUNT(*) as n FROM animus_shopify_orders WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND sku_items LIKE ? AND creado_en>=?",
                         (f'%{sku}%', hace30)).fetchone()
                     shop_30 = (shr["n"] if shr else 0) or 0
                 except Exception:
@@ -5493,7 +5498,7 @@ def mkt_ejecutar_agente(agente):
                 sku, stock, precio = row["sku"], row["stock"], row["precio"] or 0
                 lib_30 = c.execute("SELECT COALESCE(SUM(unidades),0) as t FROM liberaciones WHERE sku=? AND creado_en>=?", (sku, hace30)).fetchone()["t"]
                 rotacion = lib_30
-                shopify_30 = c.execute("SELECT COALESCE(SUM(unidades_total),0) as t FROM animus_shopify_orders WHERE sku_items LIKE ? AND creado_en>=?", (f'%{sku}%', hace30)).fetchone()["t"]
+                shopify_30 = c.execute("SELECT COALESCE(SUM(unidades_total),0) as t FROM animus_shopify_orders WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND sku_items LIKE ? AND creado_en>=?", (f'%{sku}%', hace30)).fetchone()["t"]
                 demanda_total = rotacion + shopify_30
                 dias_real = round(stock / (demanda_total / 30.0), 0) if demanda_total > 0 else 999
                 nivel = "critico" if dias_real <= 7 else ("advertencia" if dias_real <= 21 else "ok")
@@ -5521,7 +5526,7 @@ def mkt_ejecutar_agente(agente):
                     "SELECT COALESCE(SUM(unidades_total),0) as uds, "
                     "       COALESCE(SUM(total),0) as revenue "
                     "FROM animus_shopify_orders "
-                    "WHERE sku_items LIKE ? AND creado_en >= ?",
+                    "WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND sku_items LIKE ? AND creado_en >= ?",
                     (f"%{sku}%", desde)
                 ).fetchone()
                 return {"uds": row["uds"] or 0, "revenue": row["revenue"] or 0}
@@ -5553,7 +5558,7 @@ def mkt_ejecutar_agente(agente):
                     (sku, hace90)
                 ).fetchone()["t"]
                 shopify_30 = c.execute(
-                    "SELECT COALESCE(SUM(unidades_total),0) as t FROM animus_shopify_orders WHERE sku_items LIKE ? AND creado_en>=?",
+                    "SELECT COALESCE(SUM(unidades_total),0) as t FROM animus_shopify_orders WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND sku_items LIKE ? AND creado_en>=?",
                     (f"%{sku}%", hace30)
                 ).fetchone()["t"]
                 rotacion_mensual = lib_90 / 3.0 if lib_90 else 0
@@ -5580,7 +5585,7 @@ def mkt_ejecutar_agente(agente):
                     (sku, hace30)
                 ).fetchone()["t"]
                 shopify_30 = c.execute(
-                    "SELECT COALESCE(SUM(unidades_total),0) as t FROM animus_shopify_orders WHERE sku_items LIKE ? AND creado_en>=?",
+                    "SELECT COALESCE(SUM(unidades_total),0) as t FROM animus_shopify_orders WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND sku_items LIKE ? AND creado_en>=?",
                     (f"%{sku}%", hace30)
                 ).fetchone()["t"]
                 demanda = (lib_30 + shopify_30) / 30.0
@@ -7928,7 +7933,7 @@ def _cmo_construir_snapshot(c):
     try:
         rows = c.execute(
             "SELECT sku_items, total, unidades_total FROM animus_shopify_orders "
-            "WHERE creado_en >= ? AND sku_items != '' LIMIT 1000",
+            "WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND creado_en >= ? AND sku_items != '' LIMIT 1000",
             (hace30,)
         ).fetchall()
         sku_rev = {}
