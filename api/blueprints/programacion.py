@@ -3028,7 +3028,8 @@ th{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;te
 td{padding:6px 10px;border-top:1px solid #f4f6fa;font-size:13px;vertical-align:middle}
 input.i{padding:6px 8px;border:1px solid #cbd5e1;border-radius:7px;font-size:13px;box-sizing:border-box}
 input.vol{width:64px;text-align:right}
-input.env{width:150px;font-family:ui-monospace,monospace}
+.env{min-width:230px;max-width:320px}
+select.env{padding:6px 8px;border:1px solid #cbd5e1;border-radius:7px;font-size:13px;background:#fff}
 input.fija{width:80px;text-align:right}
 .envd{color:#94a3b8;font-size:11px;display:block;margin-top:2px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .del{background:#fee2e2;color:#b91c1c;border:none;border-radius:7px;padding:5px 9px;font-size:12px;cursor:pointer;font-weight:600}
@@ -3086,11 +3087,14 @@ function render(){
       var s1=document.createElement('span'); s1.className='st';
       iv.addEventListener('change', function(){ p.vol=parseFloat(iv.value)||0; save(p.id,'volumen_ml',iv.value,s1); render(); });
       td1.appendChild(iv); td1.appendChild(s1);
-      var td2=document.createElement('td'); var ie=inp('env', p.env, 'código'); ie.setAttribute('list','envlist');
+      var td2=document.createElement('td');
+      var sel=document.createElement('select'); sel.className='i env';
+      var o0=document.createElement('option'); o0.value=''; o0.textContent='— sin envase —'; sel.appendChild(o0);
+      ENV.forEach(function(e){ var o=document.createElement('option'); o.value=e.c; o.textContent=e.c+' · '+e.d; if(e.c===p.env) o.selected=true; sel.appendChild(o); });
+      if(p.env && !ENV.some(function(e){ return e.c===p.env; })){ var oc=document.createElement('option'); oc.value=p.env; oc.textContent=p.env+' (actual · no está en el maestro)'; oc.selected=true; sel.appendChild(oc); }
       var s2=document.createElement('span'); s2.className='st';
-      var dd=document.createElement('span'); dd.className='envd'; dd.textContent = envd[p.env]||'';
-      ie.addEventListener('change', function(){ p.env=ie.value.trim(); dd.textContent=envd[p.env]||''; save(p.id,'envase_codigo',ie.value.trim(),s2); });
-      td2.appendChild(ie); td2.appendChild(s2); td2.appendChild(dd);
+      sel.addEventListener('change', function(){ p.env=sel.value; save(p.id,'envase_codigo',sel.value,s2); });
+      td2.appendChild(sel); td2.appendChild(s2);
       var td3=document.createElement('td'); var iff=inp('fija', p.fija, '0'); iff.type='number';
       var s3=document.createElement('span'); s3.className='st';
       iff.addEventListener('change', function(){ p.fija=parseFloat(iff.value)||0; save(p.id,'cantidad_fija_uds',iff.value||0,s3); });
