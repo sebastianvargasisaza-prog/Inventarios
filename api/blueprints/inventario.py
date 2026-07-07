@@ -7454,7 +7454,11 @@ def registrar_recepcion():
                 # FIX 1-jun-2026 audit · 'Recibida' (no 'RECIBIDA') · el resto del
                 # sistema usa mixed-case · una OC en 'RECIBIDA' desaparecía de listas
                 # de recibidas / cola de pago / discrepancias / aprendizaje de lead-time.
-                c.execute("UPDATE ordenes_compra SET estado='Recibida',fecha_recepcion=datetime('now', '-5 hours'),recibido_por=? WHERE numero_oc=?",
+                # FIX 7-jul (audit ultracode · máquina de estados): guard de estado-origen (= el path formal
+                # recibir_oc). Antes el UPDATE era incondicional → una OC Cancelada/Borrador REVIVÍA a 'Recibida'
+                # por una recepción manual que la referenciara. Solo se cierra desde un estado recepcionable.
+                c.execute("UPDATE ordenes_compra SET estado='Recibida',fecha_recepcion=datetime('now', '-5 hours'),recibido_por=? "
+                          "WHERE numero_oc=? AND estado IN ('Autorizada','Parcial','Pagada','Recibida')",
                           (d.get('operador',''), numero_oc))
         except Exception as oc_err:
             # Log but don't fail the reception — OC can be reconciled manually

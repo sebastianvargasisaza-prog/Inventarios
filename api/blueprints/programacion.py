@@ -10881,12 +10881,11 @@ def prog_completar_evento(evento_id):
         from inventario_helpers import aplicar_movimiento_mee as _aplicar_mee_inner
         for me in mees_a_consumir:
             try:
-                _aplicar_mee_inner(
-                    c.connection, me['codigo'], 'Salida', me['cantidad_unidades'],
-                    observaciones=obs_base, responsable=user,
-                    lote_ref=str(pid), batch_ref=str(fecha or ''),
-                )
-                # Marcar consumido en checklist (contexto='completar')
+                # FIX 7-jul (audit ultracode · M31/M27 CAS): CLAIM el item del checklist ANTES de descontar el
+                # MEE. Antes se insertaba la Salida y LUEGO se marcaba consumido INCONDICIONAL (WHERE id=?) → dos
+                # /completar concurrentes leían los mismos items no-consumidos (el claim de MP se salta cuando la
+                # MP ya se descontó al iniciar) y AMBOS descontaban → doble descuento de envases. El UPDATE
+                # condicional toma el row-lock; solo el ganador (rowcount==1) descuenta; el 2º saltea el item.
                 if me.get('item_id'):
                     c.execute("""
                         UPDATE produccion_checklist
@@ -10895,8 +10894,15 @@ def prog_completar_evento(evento_id):
                                cantidad_consumida_real = ?,
                                consumido_contexto = 'completar',
                                actualizado_at = datetime('now', '-5 hours')
-                         WHERE id = ?
+                         WHERE id = ? AND COALESCE(consumido_at,'') = ''
                     """, (fecha_iso, user, me['cantidad_unidades'], me['item_id']))
+                    if c.rowcount != 1:
+                        continue  # otro worker ya reclamó/consumió este item → no doble-descontar
+                _aplicar_mee_inner(
+                    c.connection, me['codigo'], 'Salida', me['cantidad_unidades'],
+                    observaciones=obs_base, responsable=user,
+                    lote_ref=str(pid), batch_ref=str(fecha or ''),
+                )
                 descontados_mees.append(me)
             except sqlite3.OperationalError as _oe:
                 # BUG-9 fix · 19-may-2026 audit Planta PERFECTA: catch

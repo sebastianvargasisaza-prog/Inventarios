@@ -21651,6 +21651,16 @@ def anular_movimiento():
     obs_contra = (f'ANULACION mov #{orig["id"]} ({orig["tipo"]} {orig["cantidad"]}g) · '
                   f'Motivo: {motivo} · Por: {u}')
 
+    # FIX 7-jul (audit ultracode · M31 CAS + M3 ruta única): esta herramienta admin NO tenía idempotencia ni
+    # marcaba el original con [ANULADO] (a diferencia del hermano inventario.py) → doble-click/retry insertaba N
+    # contra-movimientos → stock corrupto, y las 2 rutas no se detectaban mutuamente. RECLAMAR el original con
+    # CAS (mismo marcador que inventario.py) antes del contra-movimiento: solo el ganador (rowcount==1) sigue.
+    c.execute("UPDATE movimientos SET observaciones = '[ANULADO] ' || COALESCE(observaciones,'') "
+              "WHERE id=? AND COALESCE(observaciones,'') NOT LIKE '[ANULADO]%'", (orig['id'],))
+    if c.rowcount != 1:
+        conn.rollback(); conn.close()
+        return jsonify({'error': 'Movimiento ya anulado', 'codigo': 'ANULACION_YA_RECLAMADA'}), 409
+
     try:
         c.execute("""
             INSERT INTO movimientos
