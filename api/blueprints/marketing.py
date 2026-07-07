@@ -2704,21 +2704,27 @@ def mkt_dashboard():
         hace30 = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
         hace7  = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d")
 
+        # FIX 7-jul (audit ultracode · M5/M45): EXCLUIR órdenes CANCELADAS de los KPIs (el filtro canónico que
+        # ya usan plan.py/auto_plan.py · la marca es estado='cancelled' vía cancelled_at). Sin esto los números
+        # de marketing salían inflados y no cuadraban con Ánimus.
         sh_30 = c.execute("""
             SELECT COALESCE(SUM(total),0) as rev, COUNT(*) as pedidos,
                    COUNT(DISTINCT email) as clientes
-            FROM animus_shopify_orders WHERE creado_en >= ?
+            FROM animus_shopify_orders
+            WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND creado_en >= ?
         """, (hace30,)).fetchone()
 
         sh_7 = c.execute("""
             SELECT COALESCE(SUM(total),0) as rev, COUNT(*) as pedidos
-            FROM animus_shopify_orders WHERE creado_en >= ?
+            FROM animus_shopify_orders
+            WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND creado_en >= ?
         """, (hace7,)).fetchone()
 
         sh_total = c.execute("""
             SELECT COALESCE(SUM(total),0) as rev, COUNT(*) as pedidos,
                    COUNT(DISTINCT email) as clientes
             FROM animus_shopify_orders
+            WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')
         """).fetchone()
 
         sh_ticket = round(sh_30["rev"] / sh_30["pedidos"], 0) if sh_30["pedidos"] > 0 else 0
@@ -2726,15 +2732,16 @@ def mkt_dashboard():
         # Clientes nuevos vs recurrentes (30d)
         sh_nuevos = c.execute("""
             SELECT COUNT(DISTINCT o.email) as n FROM animus_shopify_orders o
-            WHERE o.creado_en >= ?
+            WHERE LOWER(COALESCE(o.estado,'')) NOT IN ('cancelled','cancelado','voided') AND o.creado_en >= ?
             AND (SELECT COUNT(*) FROM animus_shopify_orders o2
-                 WHERE o2.email=o.email AND o2.creado_en < ?) = 0
+                 WHERE o2.email=o.email AND LOWER(COALESCE(o2.estado,'')) NOT IN ('cancelled','cancelado','voided') AND o2.creado_en < ?) = 0
         """, (hace30, hace30)).fetchone()["n"]
 
         # Top SKUs por revenue Shopify (30d)
         sh_top_skus_raw = _fmt_many(c.execute("""
             SELECT sku_items, SUM(total) as rev, SUM(unidades_total) as uds
-            FROM animus_shopify_orders WHERE creado_en >= ?
+            FROM animus_shopify_orders
+            WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND creado_en >= ?
             GROUP BY sku_items ORDER BY rev DESC LIMIT 20
         """, (hace30,)).fetchall())
 
@@ -2761,6 +2768,7 @@ def mkt_dashboard():
                    COALESCE(SUM(total),0) as total,
                    COUNT(*) as pedidos
             FROM animus_shopify_orders
+            WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')
             GROUP BY mes ORDER BY mes DESC LIMIT 6
         """).fetchall())
         sh_mensual.reverse()
@@ -2777,7 +2785,8 @@ def mkt_dashboard():
         # Top ciudades
         sh_ciudades = _fmt_many(c.execute("""
             SELECT ciudad, COUNT(*) as pedidos, COALESCE(SUM(total),0) as total
-            FROM animus_shopify_orders WHERE ciudad != ''
+            FROM animus_shopify_orders
+            WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') AND ciudad != ''
             GROUP BY ciudad ORDER BY total DESC LIMIT 5
         """).fetchall())
 
@@ -4387,7 +4396,11 @@ def mkt_sync(platform):
                         (str(o["id"]), o.get("name",""), o.get("email",""),
                          float(o.get("total_price") or 0),
                          o.get("currency","COP"),
-                         o.get("fulfillment_status") or "unfulfilled",
+                         # FIX 7-jul (audit ultracode · M45): la marca de cancelación es cancelled_at (Shopify NO
+                         # la pone en fulfillment_status). Sin esto, re-sincronizar revertía 'cancelled'→'unfulfilled'
+                         # (ON CONFLICT DO UPDATE) → las canceladas volvían a contar como venta en TODO el sistema
+                         # (deshacía el fix del 27-jun). = writer canónico shopify_client.py:151.
+                         ('cancelled' if (o.get('cancelled_at') or '').strip() else (o.get("fulfillment_status") or "unfulfilled")),
                          o.get("financial_status",""),
                          items_sku, total_uds, ciudad,
                          addr.get("country_code","CO"),
@@ -8125,6 +8138,15 @@ def mkt_cmo_accion_decidir(aid):
     motivo = (d.get('motivo') or '').strip()[:300]
     resultado_ejec = None
 
+    # FIX 7-jul (audit ultracode · M27 CAS): RECLAMAR la acción (pendiente→estado decidido) ANTES de ejecutar el
+    # workflow que crea campañas/contenido. 2 clicks/workers concurrentes pasaban el check-then-act de arriba y
+    # ejecutaban el workflow 2× → campañas/briefs DUPLICADOS. Solo el ganador (rowcount==1) sigue; el 2º → 409.
+    # ('en_proceso' NO se usa · viola el CHECK · M62 · se reclama con el nuevo_estado, que sí es válido.)
+    c.execute("UPDATE marketing_cmo_acciones SET estado=? WHERE id=? AND estado='pendiente'", (nuevo_estado, aid))
+    if c.rowcount != 1:
+        conn.rollback()
+        return jsonify({'error': 'La acción ya fue procesada o cambió de estado', 'codigo': 'ESTADO_CAMBIO'}), 409
+
     # Si aprobar y tiene workflow, ejecutarlo
     if decision == 'aprobar' and accion_d.get('agente_workflow'):
         agente_w = accion_d['agente_workflow']
@@ -8149,6 +8171,13 @@ def mkt_cmo_accion_decidir(aid):
             resultado_ejecucion=?
         WHERE id=?
     """, (nuevo_estado, u, json.dumps(resultado_ejec or {'motivo': motivo})[:2000], aid))
+    # FIX 7-jul (audit ultracode · Part 11): dejar rastro (el confirm del frontend promete "queda en audit").
+    try:
+        audit_log(c, usuario=u, accion='CMO_ACCION_DECIDIR', tabla='marketing_cmo_acciones',
+                  registro_id=str(aid), antes={'estado': 'pendiente'},
+                  despues={'decision': decision, 'estado': nuevo_estado, 'motivo': motivo})
+    except Exception:
+        pass
     conn.commit()
     return jsonify({'ok': True, 'id': aid, 'estado': nuevo_estado,
                     'resultado': resultado_ejec})

@@ -3741,11 +3741,13 @@ function solicitarPagoInf(id, nombre, tarifa, banco, cuenta, cedula, tipoCta) {
   recalcularVencePagoInf();
   const prev = document.getElementById('pago-banco-preview');
   if(banco) {
-    prev.innerHTML = '<b>Beneficiario:</b> '+nombre+'<br>'
-      +'<b>Banco:</b> '+banco+'<br>'
-      +'<b>Tipo:</b> '+(tipoCta||'Ahorros')+'<br>'
-      +'<b>Cuenta/Cel:</b> '+(cuenta||'\u2014')+'<br>'
-      +'<b>C\u00e9dula/NIT:</b> '+(cedula||'\u2014');
+    // FIX 7-jul (audit ultracode \u00b7 XSS almacenado): escapar los datos del influencer antes de innerHTML (un
+    // nombre/banco con <img onerror=...> ejecutar\u00eda al abrir el modal). _escHtml ya se usa en todo el archivo.
+    prev.innerHTML = '<b>Beneficiario:</b> '+_escHtml(nombre)+'<br>'
+      +'<b>Banco:</b> '+_escHtml(banco)+'<br>'
+      +'<b>Tipo:</b> '+_escHtml(tipoCta||'Ahorros')+'<br>'
+      +'<b>Cuenta/Cel:</b> '+_escHtml(cuenta||'\u2014')+'<br>'
+      +'<b>C\u00e9dula/NIT:</b> '+_escHtml(cedula||'\u2014');
   } else {
     prev.innerHTML = '<span style="color:#f59e0b;">\u26a0\ufe0f Sin datos bancarios. Edita el influencer primero.</span>';
   }

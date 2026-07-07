@@ -1470,7 +1470,10 @@ def job_lunes_7am_workflow(app):
                             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now', '-5 hours'),?,?)
                         """, (str(o["id"]), o.get("name",""), o.get("email",""),
                               float(o.get("total_price",0)), o.get("currency","COP"),
-                              o.get("fulfillment_status",""), o.get("financial_status",""),
+                              # FIX 7-jul (audit ultracode · M45): cancelled_at = marca de cancelación (= canónico
+                              # shopify_client.py:151) · sin esto el sync del lunes revertía 'cancelled'→'unfulfilled'.
+                              ('cancelled' if (o.get('cancelled_at') or '').strip() else (o.get("fulfillment_status") or "")),
+                              o.get("financial_status",""),
                               items_sku, total_uds,
                               addr.get("city",""), addr.get("country_code","CO"),
                               _shopify_created_at_bogota(o.get("created_at","")),
@@ -5686,6 +5689,9 @@ def job_pagos_influencer_urgencia(app):
                 """SELECT id, influencer_nombre, valor, vence_pago_at, fecha_contenido
                    FROM pagos_influencers
                    WHERE estado='Pendiente'
+                     AND COALESCE(numero_oc,'') NOT IN (
+                           SELECT numero_oc FROM ordenes_compra
+                           WHERE estado='Pagada' AND COALESCE(numero_oc,'')!='' )
                      AND COALESCE(vence_pago_at,'') <> ''
                      AND vence_pago_at < ?
                    ORDER BY vence_pago_at ASC""",
