@@ -12180,9 +12180,21 @@ def plan_restaurar_a_hora():
     # historial de lo fabricado queda completo.
     hist = 0
     try:
+        # FIX 7-jul (audit ultracode · Part 11): auditar la reactivación del historial (bulk cancelado→completado)
+        # ANTES del commit, con los ids afectados (el resto de los pasos del endpoint ya auditan).
+        _ids_hist = [r[0] for r in cur.execute(
+            "SELECT id FROM produccion_programada WHERE COALESCE(origen,'')='eos_retroactivo' "
+            "AND COALESCE(estado,'')='cancelado'").fetchall()]
         cur.execute("UPDATE produccion_programada SET estado='completado' "
                     "WHERE COALESCE(origen,'')='eos_retroactivo' AND COALESCE(estado,'')='cancelado'")
         hist = cur.rowcount or 0
+        if _ids_hist:
+            try:
+                audit_log(cur, usuario=user, accion='REACTIVAR_HISTORIAL_RETROACTIVO',
+                          tabla='produccion_programada', registro_id=str(_ids_hist[0]),
+                          despues={'ids': _ids_hist, 'n': hist, 'de': 'cancelado', 'a': 'completado'})
+            except Exception:
+                pass
         conn.commit()
         _syncf = _sync_fabricacion_calendario(conn, usuario=user)
     except Exception:
@@ -22884,6 +22896,7 @@ def cancelar_proxima(pid):
                 return jsonify({"error": f"falló la reversión del descuento: {_e}",
                                 "codigo": "REVERT_FALLO"}), 500
         cur.execute("UPDATE produccion_programada SET estado='programado', inicio_real_at=NULL, "
+                    "fin_real_at=NULL, "  # FIX 7-jul (audit · máquina de estados): limpiar fin_real_at también (si no, _prod_hecha la sigue contando como producida)
                     "inventario_descontado_at=NULL WHERE id=? AND COALESCE(estado,'')!='cancelado'", (pid,))
         # Sebastian 30-jun: liberar el area que ocupaba (produccion erronea que se borra) -> libre
         try:

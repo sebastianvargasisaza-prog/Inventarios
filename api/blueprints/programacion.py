@@ -6454,10 +6454,16 @@ def prog_iniciar_produccion(evento_id):
     if not ok_caller:
         return err_caller
     pp = c.execute("""SELECT id, producto, area_id, inicio_real_at, fin_real_at,
-                              COALESCE(inventario_descontado_at,'') as desc_at
+                              COALESCE(inventario_descontado_at,'') as desc_at,
+                              LOWER(COALESCE(estado,'')) as estado
                       FROM produccion_programada WHERE id=?""", (evento_id,)).fetchone()
     if not pp:
         return jsonify({'error': 'produccion no existe'}), 404
+    # FIX 7-jul (audit ultracode · máquina de estados): una producción CANCELADA no tiene inicio/fin_real_at →
+    # pasaba los guards de abajo y se podía INICIAR (descontar MP de un lote cancelado). Guard explícito.
+    if pp[6] == 'cancelado':
+        return jsonify({'error': 'La producción está cancelada · no se puede iniciar',
+                        'codigo': 'PRODUCCION_CANCELADA'}), 409
     if pp[3]:  # ya iniciada
         return jsonify({
             'ok': True, 'ya_iniciada': True, 'inicio_real_at': pp[3],
@@ -10721,6 +10727,11 @@ def prog_completar_evento(evento_id):
     pid, producto, fecha, lotes, estado, descontado_at, cant_kg_exp, lote_kg = prod
     lotes = int(lotes or 1)
     cant_kg_total = float(cant_kg_exp or 0) or (lotes * float(lote_kg or 0))
+    # FIX 7-jul (audit ultracode · máquina de estados): NO completar una producción CANCELADA (no revivirla ni
+    # descontar su MP/MEE). Una cancelada no tiene fin_real_at → sin este guard llegaba a descontar.
+    if (estado or '').strip().lower() == 'cancelado':
+        return jsonify({'error': 'La producción está cancelada · no se puede completar',
+                        'codigo': 'PRODUCCION_CANCELADA'}), 409
 
     # Sebastian 5-may-2026 (Luis Enrique): si ya descontó al INICIAR (flujo
     # nuevo · auto descuenta MP en /iniciar), permitimos que /completar siga
@@ -11174,6 +11185,8 @@ def prog_revertir_completado(evento_id):
             UPDATE produccion_programada
                SET estado='programado',
                    inventario_descontado_at=NULL,
+                   inicio_real_at=NULL,
+                   fin_real_at=NULL,
                    observaciones = COALESCE(observaciones,'') ||
                                    ' | REVERTIDO ' || ? || ' por ' || ?
              WHERE id=?
@@ -22503,7 +22516,7 @@ def planta_cronograma_areas():
               LEFT JOIN clientes cl ON cl.id = d.cliente_id
               LEFT JOIN despachos_items di ON di.numero_despacho = d.numero
             WHERE date(d.fecha) BETWEEN ? AND ?
-            GROUP BY d.numero
+            GROUP BY d.numero, date(d.fecha), COALESCE(cl.nombre,'')
         """, (desde_iso, hasta_iso)).fetchall()
         for fecha, cliente, n_items in rows:
             idx = _idx(fecha)

@@ -933,9 +933,15 @@ def aprobar_mbr(mbr_id):
                  aprobado_por = ?,
                  aprobado_at_utc = datetime('now', 'utc'),
                  aprobado_signature_id = ?
-           WHERE id = ?""",
+           WHERE id = ? AND estado = 'en_revision'""",
         (user, int(signature_id), mbr_id),
     )
+    # FIX 7-jul (audit ultracode · M27 CAS): condición de estado en el WHERE + rowcount (como los EBR del mismo
+    # archivo · 3255/3710/3818). Sin esto, 2 aprobaciones concurrentes (o aprobar+obsoletar) pasaban el check
+    # de Python y ambas hacían UPDATE.
+    if cur.rowcount == 0:
+        conn.rollback()
+        return jsonify({"error": "El MBR ya cambió de estado · refrescá", "codigo": "ESTADO_CAMBIO"}), 409
     conn.commit()
     audit_log(None, usuario=user, accion="APROBAR_MBR",
               tabla="mbr_templates", registro_id=mbr_id,
@@ -968,9 +974,13 @@ def obsoletar_mbr(mbr_id):
              SET estado = 'obsoleto',
                  obsoleto_at_utc = datetime('now', 'utc'),
                  obsoleto_motivo = ?
-           WHERE id = ?""",
+           WHERE id = ? AND estado = 'aprobado'""",
         (motivo, mbr_id),
     )
+    # FIX 7-jul (audit ultracode · M27 CAS): estado en el WHERE + rowcount (evita doble-obsoletar concurrente).
+    if cur.rowcount == 0:
+        conn.rollback()
+        return jsonify({"error": "El MBR ya cambió de estado · refrescá", "codigo": "ESTADO_CAMBIO"}), 409
     conn.commit()
     audit_log(None, usuario=user, accion="OBSOLETAR_MBR",
               tabla="mbr_templates", registro_id=mbr_id,

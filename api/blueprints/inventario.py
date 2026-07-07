@@ -10976,7 +10976,13 @@ def liberar_cuarentena_inventario():
         ).fetchall()
     liberados = []
     for fid, fmat, flote in filas:
-        c.execute("UPDATE movimientos SET estado_lote='VIGENTE' WHERE id=?", (fid,))
+        # FIX 7-jul (audit ultracode · M27 CAS): condición de estado en el WHERE (como liberar_cuarentena/
+        # aprobar-lote) → si otro worker ya cambió el estado del lote entre el SELECT y este UPDATE, no lo
+        # re-libera ni audita dos veces. Antes era incondicional (check-then-act).
+        c.execute("UPDATE movimientos SET estado_lote='VIGENTE' WHERE id=? "
+                  "AND UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')", (fid,))
+        if c.rowcount != 1:
+            continue
         try:
             c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
                          VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",

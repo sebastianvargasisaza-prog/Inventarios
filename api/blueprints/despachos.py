@@ -212,8 +212,13 @@ def recepcion_aprobar_lote():
     # hacía UPDATE incondicional → podía REVIVIR un lote RECHAZADO a VIGENTE (material
     # rechazado vuelto usable/vendible) o pisar un VIGENTE. CAS: condición en el WHERE +
     # rowcount → dos disposiciones concurrentes del mismo lote no se cruzan.
+    # FIX 7-jul (audit ultracode): alinear el CAS con lo que la BANDEJA lista (incluye lotes LEGACY con
+    # estado_lote IS NULL · pre-cuarentena) — antes el CAS exigía CUARENTENA estricto → COALESCE(NULL,'')=''
+    # no matcheaba → 409 al disponer un lote legacy que la bandeja sí mostraba. RECHAZADO/VIGENTE (no NULL)
+    # siguen bloqueados (no revive material rechazado).
     c.execute("UPDATE movimientos SET estado_lote=?, operador=? "
-              "WHERE id=? AND UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')",
+              "WHERE id=? AND (UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA') "
+              "               OR (estado_lote IS NULL AND COALESCE(lote,'')<>''))",
               (estado_canon, usuario, mov_id))
     if c.rowcount == 0:
         conn.rollback()

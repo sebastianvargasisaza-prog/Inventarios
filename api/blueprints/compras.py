@@ -561,11 +561,11 @@ def dashboard_stats():
               GROUP BY material_id, lote
               HAVING stock_restante_g > 0
             )
-            SELECT venc, COUNT(*) as n, SUM(stock_restante_g) as total_g
+            SELECT substr(venc, 1, 7) as mes, COUNT(*) as n, SUM(stock_restante_g) as total_g
             FROM lote_stock
             WHERE venc IS NOT NULL AND venc >= ? AND venc <= date(?, '+180 days')
             GROUP BY substr(venc, 1, 7)
-            ORDER BY venc
+            ORDER BY mes
         """, (hoy, hoy))
         for row in c.fetchall():
             if row[0]:
@@ -575,7 +575,7 @@ def dashboard_stats():
         # Fallback simple si la query agrupada falla
         try:
             c.execute(f"""
-                SELECT fecha_vencimiento, COUNT(*) as n, SUM(cantidad) as total_g
+                SELECT substr(fecha_vencimiento, 1, 7) as mes, COUNT(*) as n, SUM(cantidad) as total_g
                 FROM movimientos
                 WHERE {FILTRO_ENTRADA}
                   AND fecha_vencimiento IS NOT NULL
