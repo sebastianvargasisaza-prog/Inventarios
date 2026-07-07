@@ -1846,16 +1846,20 @@ async function hoyEjecutarTodos() {
     {key:'brief', label:'Brief', icon:'📋', color:'#0891b2'},
   ];
 
-  const resultados = await Promise.all(agentes.map(async ag => {
+  // FIX 7-jul (audit ultracode · M43/M59): SERIAL, no Promise.all. Cada agente llama a Claude SÍNCRONO (hasta
+  // 90s con Sonnet); 11 en paralelo ocupaban los 3 workers Gunicorn → 502 app-wide ("Unexpected token <" en
+  // cualquier pantalla). En serie solo hay 1 llamada IA en vuelo → el resto del app sigue respondiendo.
+  const resultados = [];
+  for (const ag of agentes) {
     try {
       const r = await fetch('/api/marketing/agentes/' + ag.key, _fetchOpts('POST'));
-      if(!r.ok) return {agente:ag, error:`HTTP ${r.status}`};
+      if(!r.ok) { resultados.push({agente:ag, error:`HTTP ${r.status}`}); continue; }
       const d = await r.json();
-      return {agente:ag, data:d};
+      resultados.push({agente:ag, data:d});
     } catch(e) {
-      return {agente:ag, error:e.message};
+      resultados.push({agente:ag, error:e.message});
     }
-  }));
+  }
 
   // Construir cards de "acciones recomendadas" combinando resultados
   let html = '';

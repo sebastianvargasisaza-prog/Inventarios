@@ -3069,8 +3069,10 @@ def mkt_analytics_influencers():
             "anio_actual":          now_year,
         })
     except Exception as e:
-        import traceback
-        return jsonify({"_error": str(e), "_trace": traceback.format_exc()[-600:]}), 200
+        # FIX 7-jul (audit ultracode): NO devolver el stack trace al cliente (info disclosure). Loguear server-side.
+        import traceback, logging as _lg
+        _lg.getLogger('marketing').warning('mkt_analytics_influencers: %s', traceback.format_exc()[-600:])
+        return jsonify({"_error": str(e)[:200]}), 200
 
 
 @bp.route("/api/marketing/campanas", methods=["GET", "POST"])
@@ -3846,6 +3848,10 @@ def mkt_contenido():
         estado_in = d.get("estado", "Brief")
         if estado_in in _LEGACY_ESTADO_MAP:
             estado_in = _LEGACY_ESTADO_MAP[estado_in]
+        # FIX 7-jul (audit ultracode · M62/whitelist): validar el estado contra KANBAN_ESTADOS (no aceptar
+        # cualquier string · evita datos basura y filas que no caen en ninguna columna del kanban).
+        if estado_in not in KANBAN_ESTADOS:
+            estado_in = "Brief"
         c.execute("""
             INSERT INTO marketing_contenido
             (campana_id, influencer_id, tipo, plataforma, fecha_publicacion,
@@ -6720,6 +6726,17 @@ def mkt_pagos_influencers_list():
         except Exception as _ef:
             import logging
             logging.getLogger("marketing").error("fallback pagos_oc falló: %s", _ef)
+
+        # FIX 7-jul (audit ultracode · Habeas Data Ley 1581): enmascarar el banco del influencer si el caller NO
+        # es ADMIN+CONTADORA (= /influencers-panel · este listado lo exponía con gate solo _auth).
+        try:
+            _pvb_pg = (u or '').lower() in {x.lower() for x in (set(ADMIN_USERS) | set(CONTADORA_USERS))}
+        except Exception:
+            _pvb_pg = False
+        if not _pvb_pg:
+            for _p in pagos:
+                if _p.get('inf_banco'):
+                    _p['inf_banco'] = '***'
 
         # KPIs sobre la lista filtrada
         from datetime import datetime as _dt
