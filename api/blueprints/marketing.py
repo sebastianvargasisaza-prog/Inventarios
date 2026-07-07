@@ -2738,14 +2738,18 @@ def mkt_dashboard():
             GROUP BY sku_items ORDER BY rev DESC LIMIT 20
         """, (hace30,)).fetchall())
 
-        # Agregar revenue ERP (liberaciones)
+        # Agregar revenue ERP (liberaciones) · PERF 7-jul: pre-cargar el precio por SKU en 1 query (antes era
+        # N+1 · un SELECT MAX(precio_base) por CADA sku vendido → ~50 queries en cada carga del dashboard).
+        _precio_por_sku = {}
+        for _pr in c.execute("SELECT sku, MAX(precio_base) AS p FROM stock_pt "
+                             "WHERE sku IS NOT NULL GROUP BY sku").fetchall():
+            _precio_por_sku[_pr["sku"]] = _pr["p"] or 0
         erp_rev = {}
         for row in c.execute("""
             SELECT sku, SUM(unidades) as uds FROM liberaciones
             WHERE creado_en >= ? AND sku IS NOT NULL GROUP BY sku
         """, (hace30,)).fetchall():
-            precio = c.execute("SELECT MAX(precio_base) as p FROM stock_pt WHERE sku=?", (row["sku"],)).fetchone()
-            p = precio["p"] if precio and precio["p"] else 0
+            p = _precio_por_sku.get(row["sku"], 0) or 0
             erp_rev[row["sku"]] = {"uds": row["uds"], "rev": round(row["uds"] * p, 0)}
 
         top_skus_combined = sorted(erp_rev.items(), key=lambda x: -x[1]["rev"])[:6]
