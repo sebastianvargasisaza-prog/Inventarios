@@ -2972,10 +2972,11 @@ def prog_pres_editar():
     return jsonify({'ok': True, 'id': pid, 'filas': cur.rowcount})
 
 
-@bp.route('/api/programacion/pres-crear', methods=['GET', 'POST'])
-def prog_pres_crear():
+@bp.route('/api/programacion/pres-agregar', methods=['GET', 'POST'])
+def prog_pres_agregar():
     """Sebastián 6-jul · agregar una presentación a un producto (ej. le falta el 10ml). El envase/fija se
-    completan después con el desplegable. ?producto=NOMBRE&volumen_ml=10[&envase_codigo=&cantidad_fija_uds=]."""
+    completan después con el desplegable. Devuelve id (para la pantalla). Distinto de pres-crear (M58, exige
+    envase). ?producto=NOMBRE&volumen_ml=10[&envase_codigo=&cantidad_fija_uds=]."""
     if not _auth():
         return jsonify({'error': 'No autenticado'}), 401
     import re as _re
@@ -3100,7 +3101,7 @@ function addPres(prod){
   var v = prompt('Volumen en ml de la nueva presentación (ej. 10):', '10');
   if(v===null) return;
   var vf = parseFloat(v); if(isNaN(vf)||vf<=0){ alert('Volumen inválido'); return; }
-  fetch('/api/programacion/pres-crear?producto='+encodeURIComponent(prod)+'&volumen_ml='+vf, {credentials:'same-origin'})
+  fetch('/api/programacion/pres-agregar?producto='+encodeURIComponent(prod)+'&volumen_ml='+vf, {credentials:'same-origin'})
     .then(function(r){ return r.json(); })
     .then(function(j){ if(j.ok){ PRES.push({id:j.id, prod:prod, vol:vf, env:'', fija:0, sku:''}); render(); } else { alert('Error: '+(j.error||'')); } });
 }
