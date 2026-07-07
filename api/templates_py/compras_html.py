@@ -1877,11 +1877,13 @@ async function loadPreparacionEnvases(){
     if(r.status===401){ location.href='/login'; return; }
     var d = await r.json();
     if(!d.ok){ wrap.innerHTML='<div style="color:#dc2626;padding:14px">Error: '+_esc((d&&d.error)||r.status)+'</div>'; return; }
-    window._PREP_ITEMS = d.items||[];
+    // Sebastián 7-jul (Catalina) · AGRUPADO por envase: la próxima producción + las siguientes (acumulado) para
+    // consolidar el envío a serigrafía. Fallback a items si el backend viejo no manda grupos.
+    window._PREP_ITEMS = d.grupos || d.items || [];
     if(!window._PREP_ITEMS.length){ wrap.innerHTML='<div style="padding:18px;color:#64748b">No hay envases en producciones próximas ('+dias+'d).</div>'; return; }
     var h='<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#0f766e;color:#fff">'+
-      '<th style="padding:7px;text-align:left">Producto</th><th style="padding:7px;text-align:left">Envase</th>'+
-      '<th style="padding:7px;text-align:right">Uds</th><th style="padding:7px">Producción</th>'+
+      '<th style="padding:7px;text-align:left">Producto</th><th style="padding:7px;text-align:left">Envase · próximas</th>'+
+      '<th style="padding:7px;text-align:right">Uds a preparar</th><th style="padding:7px">Próxima prod.</th>'+
       '<th style="padding:7px">Lista para</th><th style="padding:7px">Proveedor</th>'+
       '<th style="padding:7px">Tipo</th><th style="padding:7px;text-align:center">Acción</th></tr></thead><tbody>';
     window._PREP_ITEMS.forEach(function(it,i){
@@ -1901,9 +1903,24 @@ async function loadPreparacionEnvases(){
         pcHtml = '<details style="margin-top:4px"><summary style="cursor:pointer;color:#0f766e;font-size:10px;font-weight:700">&#9656; por cliente ('+pc.length+')</summary>'+
                  '<div style="font-size:10px;color:#475569;padding:4px 0 0 10px;border-left:2px solid #99f6e4;margin-top:2px">'+pcRows+'</div></details>';
       }
+      // Sebastián 7-jul (Catalina) · próximas producciones del MISMO envase · consolidar (preparar para N de una)
+      var prods = it.producciones||[];
+      var proxHtml = '';
+      if(prods.length > 1){
+        var prows = prods.map(function(p,j){
+          var atr = p.lista_atrasada ? 'color:#b91c1c;font-weight:700' : '';
+          return '<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0;align-items:center">'+
+                 '<span style="'+atr+'">'+_esc(p.fecha_produccion||'')+' &rarr; '+(p.uds||0).toLocaleString('es-CO')+'</span>'+
+                 '<span style="color:#64748b">&sum; '+(p.uds_acumulado||0).toLocaleString('es-CO')+'</span>'+
+                 '<button onclick="prepSetUds('+i+','+(p.uds_acumulado||0)+')" style="background:#e0f2fe;color:#0369a1;border:none;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap">preparar '+(j+1)+'</button></div>';
+        }).join('');
+        proxHtml = '<details style="margin-top:4px"><summary style="cursor:pointer;color:#7c3aed;font-size:10px;font-weight:700">&#9656; próximas '+prods.length+' producciones · consolidar</summary>'+
+                   '<div style="font-size:10px;color:#475569;padding:4px 0 0 8px;border-left:2px solid #ddd6fe;margin-top:2px">'+prows+
+                   '<div style="color:#94a3b8;font-size:9px;margin-top:3px">Apretá "preparar N" → deja el Uds para cubrir esas N producciones (1 solo envío = más barato).</div></div></details>';
+      }
       h+='<tr id="prep-row-'+i+'" style="border-top:1px solid #e2e8f0">'+
         '<td style="padding:6px">'+_esc(it.producto||'')+osTag+'</td>'+
-        '<td style="padding:6px;font-family:ui-monospace;font-size:11px">'+_esc(it.envase_codigo||'')+'<div style="color:#64748b;font-size:10px">'+_esc(it.presentacion||'')+'</div>'+pcHtml+'</td>'+
+        '<td style="padding:6px;font-family:ui-monospace;font-size:11px">'+_esc(it.envase_codigo||'')+'<div style="color:#64748b;font-size:10px">'+_esc(it.presentacion||'')+'</div>'+pcHtml+proxHtml+'</td>'+
         '<td style="padding:6px;text-align:right"><input id="prep-cant-'+i+'" type="number" min="1" value="'+(it.uds||0)+'" style="width:78px;padding:3px;border:1px solid #cbd5e1;border-radius:4px;text-align:right"></td>'+
         '<td style="padding:6px;white-space:nowrap;color:#475569">'+_esc(it.fecha_produccion||'')+'</td>'+
         '<td style="padding:6px"><input id="prep-fecha-'+i+'" type="date" value="'+_esc(fl)+'" style="padding:3px;border:1px solid #cbd5e1;border-radius:4px;'+flStyle+'"></td>'+
@@ -1915,6 +1932,10 @@ async function loadPreparacionEnvases(){
     h+='</tbody></table>';
     wrap.innerHTML=h;
   }catch(e){ wrap.innerHTML='<div style="color:#dc2626;padding:14px">Error red: '+_esc(e.message||e)+'</div>'; }
+}
+function prepSetUds(i, uds){
+  var el=document.getElementById('prep-cant-'+i);
+  if(el){ el.value=uds; el.style.background='#dcfce7'; setTimeout(function(){ el.style.background=''; }, 900); }
 }
 async function generarOSDesdePrep(i){
   var it=(window._PREP_ITEMS||[])[i]; if(!it) return;

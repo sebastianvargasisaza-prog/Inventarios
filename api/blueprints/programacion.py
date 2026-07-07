@@ -8878,8 +8878,35 @@ def compras_preparacion_envases():
                 'por_cliente': _por_cli_por_env.get(env, []),  # split Animus vs B2B (2-jul)
             })
     items.sort(key=lambda x: (x.get('fecha_lista_sugerida') or '9999'))
+    # Sebastián 7-jul (Catalina · Compras) · AGRUPAR por (producto, envase): ver la próxima producción + las
+    # SIGUIENTES con el acumulado, para decidir preparar de una para varias (serigrafía más barata por volumen).
+    _grp = {}
+    for it in items:
+        _grp.setdefault((it['producto'], it['envase_codigo']), []).append(it)
+    grupos = []
+    for (prod, env), its in _grp.items():
+        its.sort(key=lambda x: (x.get('fecha_produccion') or '9999'))
+        _prods = []
+        _acum = 0
+        for x in its:
+            _acum += int(x.get('uds') or 0)
+            _prods.append({'lote_id': x['lote_id'], 'fecha_produccion': x['fecha_produccion'],
+                           'fecha_lista_sugerida': x['fecha_lista_sugerida'],
+                           'lista_atrasada': x['lista_atrasada'],
+                           'uds': int(x.get('uds') or 0), 'uds_acumulado': _acum})
+        _f = its[0]
+        grupos.append({
+            'producto': prod, 'envase_codigo': env,
+            'envase_descripcion': _f.get('envase_descripcion'), 'presentacion': _f.get('presentacion'),
+            'volumen_ml': _f.get('volumen_ml'), 'lote_id': _f['lote_id'],
+            'fecha_produccion': _f['fecha_produccion'], 'fecha_lista_sugerida': _f['fecha_lista_sugerida'],
+            'lista_atrasada': _f['lista_atrasada'], 'uds': int(_f.get('uds') or 0),
+            'os_existentes': _f.get('os_existentes', 0), 'por_cliente': _f.get('por_cliente', []),
+            'n_producciones': len(_prods), 'producciones': _prods, 'uds_total_horizonte': _acum,
+        })
+    grupos.sort(key=lambda x: (x.get('fecha_lista_sugerida') or '9999'))
     return jsonify({'ok': True, 'dias': dias, 'anticipo_dias': anticipo,
-                    'items': items, 'n': len(items)})
+                    'items': items, 'n': len(items), 'grupos': grupos, 'n_grupos': len(grupos)})
 
 
 @bp.route('/api/compras/minimos-envases-sugeridos', methods=['GET'])
