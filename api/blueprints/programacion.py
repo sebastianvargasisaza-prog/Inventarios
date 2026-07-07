@@ -2972,6 +2972,37 @@ def prog_pres_editar():
     return jsonify({'ok': True, 'id': pid, 'filas': cur.rowcount})
 
 
+@bp.route('/api/programacion/pres-crear', methods=['GET', 'POST'])
+def prog_pres_crear():
+    """Sebastián 6-jul · agregar una presentación a un producto (ej. le falta el 10ml). El envase/fija se
+    completan después con el desplegable. ?producto=NOMBRE&volumen_ml=10[&envase_codigo=&cantidad_fija_uds=]."""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    import re as _re
+    conn = get_db()
+    d = request.get_json(silent=True) or {}
+    prod = (request.args.get('producto') or d.get('producto') or '').strip()
+    vol = request.args.get('volumen_ml') if request.args.get('volumen_ml') is not None else d.get('volumen_ml')
+    env = (request.args.get('envase_codigo') or d.get('envase_codigo') or '').strip()
+    fija = request.args.get('cantidad_fija_uds') if request.args.get('cantidad_fija_uds') is not None else d.get('cantidad_fija_uds')
+    if not prod or vol is None:
+        return jsonify({'ok': False, 'error': 'falta producto/volumen_ml'})
+    try:
+        vol_f = float(vol)
+        fija_f = float(fija or 0)
+    except Exception:
+        return jsonify({'ok': False, 'error': 'volumen/fija inválido'})
+    _vi = int(round(vol_f))
+    _slug = _re.sub(r'[^A-Z0-9]+', '', prod.upper())[:12]
+    _code = 'V' + str(_vi) + '-' + (_slug or 'P')
+    cur = conn.execute(
+        "INSERT INTO producto_presentaciones (producto_nombre, presentacion_codigo, etiqueta, volumen_ml, "
+        "envase_codigo, cantidad_fija_uds, activo) VALUES (?,?,?,?,?,?,1)",
+        (prod, _code, str(_vi) + 'ml', vol_f, (env or None), fija_f))
+    conn.commit()
+    return jsonify({'ok': True, 'id': cur.lastrowid, 'producto': prod, 'volumen_ml': vol_f})
+
+
 @bp.route('/api/programacion/pres-eliminar', methods=['GET', 'POST'])
 def prog_pres_eliminar():
     """Sebastián 6-jul · dar de baja (activo=0) una presentación duplicada/errada. Reversible."""
@@ -3021,7 +3052,8 @@ h1{font-size:20px;margin:6px 0 4px}
 .sub{color:#64748b;font-size:13px;margin:0 0 16px;line-height:1.5}
 .srch{width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:10px;font-size:14px;margin:0 0 14px;box-sizing:border-box}
 .card{background:#fff;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);margin:0 0 12px;overflow:hidden}
-.ch{padding:10px 14px;font-weight:700;font-size:14px;background:#f8fafc;border-bottom:1px solid #eef2f7}
+.ch{padding:10px 14px;font-weight:700;font-size:14px;background:#f8fafc;border-bottom:1px solid #eef2f7;display:flex;align-items:center;gap:8px}
+.addb{margin-left:auto;background:#dcfce7;color:#15803d;border:none;border-radius:7px;padding:5px 11px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap}
 .ch .n{color:#94a3b8;font-weight:600;font-size:12px;margin-left:6px}
 table{width:100%;border-collapse:collapse}
 th{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;text-align:left;padding:6px 10px;font-weight:700}
@@ -3064,6 +3096,14 @@ function delRow(id, tr){
     .then(function(r){ return r.json(); })
     .then(function(j){ if(j.ok){ PRES = PRES.filter(function(p){ return p.id!=id; }); render(); } });
 }
+function addPres(prod){
+  var v = prompt('Volumen en ml de la nueva presentación (ej. 10):', '10');
+  if(v===null) return;
+  var vf = parseFloat(v); if(isNaN(vf)||vf<=0){ alert('Volumen inválido'); return; }
+  fetch('/api/programacion/pres-crear?producto='+encodeURIComponent(prod)+'&volumen_ml='+vf, {credentials:'same-origin'})
+    .then(function(r){ return r.json(); })
+    .then(function(j){ if(j.ok){ PRES.push({id:j.id, prod:prod, vol:vf, env:'', fija:0, sku:''}); render(); } else { alert('Error: '+(j.error||'')); } });
+}
 function inp(cls, val, ph){ var e=document.createElement('input'); e.className='i '+cls; e.value=(val===0?'':val); e.placeholder=ph||''; return e; }
 function render(){
   var q = (document.getElementById('srch').value||'').trim().toLowerCase();
@@ -3077,6 +3117,9 @@ function render(){
     var card = document.createElement('div'); card.className='card';
     var ch = document.createElement('div'); ch.className='ch';
     ch.innerHTML = prod + '<span class="n">'+rows.length+' present.</span>' + (hayDup?'<span class="pill">⚠ duplicado</span>':'');
+    var addb=document.createElement('button'); addb.className='addb'; addb.textContent='➕ Agregar';
+    addb.addEventListener('click', function(){ addPres(prod); });
+    ch.appendChild(addb);
     card.appendChild(ch);
     var tb = document.createElement('table');
     tb.innerHTML = '<thead><tr><th>Volumen ml</th><th>Envase</th><th>Cant. fija</th><th></th></tr></thead>';
