@@ -2941,6 +2941,174 @@ def prog_pres_set_fija():
     return jsonify({'ok': True, 'producto': prod, 'volumen_ml': vol_f, 'uds': uds_f, 'filas_actualizadas': _n})
 
 
+@bp.route('/api/programacion/pres-editar', methods=['GET', 'POST'])
+def prog_pres_editar():
+    """Sebastián 6-jul · editar UNA presentación por id (volumen_ml, envase_codigo, cantidad_fija_uds, sku_shopify)."""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db()
+    d = request.get_json(silent=True) or {}
+    pid = request.args.get('id') or d.get('id')
+    if not pid:
+        return jsonify({'ok': False, 'error': 'falta id'})
+    sets, params = [], []
+    for campo in ('volumen_ml', 'envase_codigo', 'cantidad_fija_uds', 'sku_shopify'):
+        v = request.args.get(campo) if request.args.get(campo) is not None else d.get(campo)
+        if v is not None:
+            if campo in ('volumen_ml', 'cantidad_fija_uds'):
+                try:
+                    v = float(v)
+                except Exception:
+                    return jsonify({'ok': False, 'error': campo + ' inválido'})
+            else:
+                v = str(v).strip()
+            sets.append(campo + '=?')
+            params.append(v)
+    if not sets:
+        return jsonify({'ok': False, 'error': 'nada para cambiar'})
+    params.append(pid)
+    cur = conn.execute("UPDATE producto_presentaciones SET " + ", ".join(sets) + " WHERE id=?", params)
+    conn.commit()
+    return jsonify({'ok': True, 'id': pid, 'filas': cur.rowcount})
+
+
+@bp.route('/api/programacion/pres-eliminar', methods=['GET', 'POST'])
+def prog_pres_eliminar():
+    """Sebastián 6-jul · dar de baja (activo=0) una presentación duplicada/errada. Reversible."""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db()
+    pid = request.args.get('id') or (request.get_json(silent=True) or {}).get('id')
+    if not pid:
+        return jsonify({'ok': False, 'error': 'falta id'})
+    cur = conn.execute("UPDATE producto_presentaciones SET activo=0 WHERE id=?", (pid,))
+    conn.commit()
+    return jsonify({'ok': True, 'id': pid, 'filas': cur.rowcount})
+
+
+@bp.route('/programacion/presentaciones', methods=['GET'])
+def prog_presentaciones_page():
+    """Sebastián 6-jul · pantalla para VERIFICAR/corregir el envase, volumen y cantidad fija de cada producto.
+    Lista todo agrupado por producto · editable inline · elimina duplicados. Aislada del dashboard (M65)."""
+    if not _auth():
+        return '<script>location.href="/login"</script>', 401
+    import json as _j
+    conn = get_db()
+    _fila_env = "COALESCE(envase_codigo,'')"
+    pres = []
+    for r in conn.execute(
+        "SELECT id, producto_nombre, COALESCE(volumen_ml,0), COALESCE(envase_codigo,''), "
+        "COALESCE(cantidad_fija_uds,0), COALESCE(sku_shopify,'') FROM producto_presentaciones "
+        "WHERE COALESCE(activo,1)=1 ORDER BY producto_nombre, volumen_ml"
+    ).fetchall():
+        pres.append({'id': r[0], 'prod': (r[1] or '').strip(), 'vol': float(r[2] or 0),
+                     'env': r[3] or '', 'fija': float(r[4] or 0), 'sku': r[5] or ''})
+    env = []
+    try:
+        for r in conn.execute("SELECT codigo, COALESCE(descripcion,'') FROM maestro_mee "
+                              "WHERE COALESCE(estado,'Activo')='Activo' ORDER BY codigo").fetchall():
+            env.append({'c': r[0], 'd': r[1]})
+    except Exception:
+        pass
+    data = _j.dumps({'pres': pres, 'env': env}, ensure_ascii=False).replace('<', '\\u003c')
+    html = r'''<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Presentaciones · Envases</title>
+<style>
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f6f7fb;margin:0;color:#1e293b}
+.wrap{max-width:920px;margin:0 auto;padding:22px 16px 70px}
+a.back{color:#6366f1;text-decoration:none;font-size:13px;font-weight:600}
+h1{font-size:20px;margin:6px 0 4px}
+.sub{color:#64748b;font-size:13px;margin:0 0 16px;line-height:1.5}
+.srch{width:100%;padding:9px 12px;border:1px solid #cbd5e1;border-radius:10px;font-size:14px;margin:0 0 14px;box-sizing:border-box}
+.card{background:#fff;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);margin:0 0 12px;overflow:hidden}
+.ch{padding:10px 14px;font-weight:700;font-size:14px;background:#f8fafc;border-bottom:1px solid #eef2f7}
+.ch .n{color:#94a3b8;font-weight:600;font-size:12px;margin-left:6px}
+table{width:100%;border-collapse:collapse}
+th{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;text-align:left;padding:6px 10px;font-weight:700}
+td{padding:6px 10px;border-top:1px solid #f4f6fa;font-size:13px;vertical-align:middle}
+input.i{padding:6px 8px;border:1px solid #cbd5e1;border-radius:7px;font-size:13px;box-sizing:border-box}
+input.vol{width:64px;text-align:right}
+input.env{width:150px;font-family:ui-monospace,monospace}
+input.fija{width:80px;text-align:right}
+.envd{color:#94a3b8;font-size:11px;display:block;margin-top:2px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.del{background:#fee2e2;color:#b91c1c;border:none;border-radius:7px;padding:5px 9px;font-size:12px;cursor:pointer;font-weight:600}
+.st{font-size:11px;color:#0891b2;margin-left:6px}
+.dup{background:#fef9c3}
+.pill{background:#eef2ff;color:#4338ca;border-radius:999px;padding:2px 8px;font-size:11px;font-weight:700;margin-left:6px}
+</style></head><body><div class="wrap">
+<a class="back" href="/inventarios">&larr; Volver a Planta</a>
+<h1>📦 Presentaciones &middot; envase por producto</h1>
+<p class="sub">Verificá el <b>envase</b>, <b>volumen</b> y <b>cantidad fija</b> de cada producto. Se guarda al salir del campo.
+Los productos con <span class="pill">⚠ duplicado</span> tienen 2+ presentaciones del mismo volumen (pintadas en amarillo) —
+borrá la que sobra con 🗑. La <b>cantidad fija</b> = uds que SIEMPRE se envasan de ese tamaño (ej. 10ml = 1000), el resto va al otro.</p>
+<input class="srch" id="srch" placeholder="Buscar producto…" oninput="render()">
+<div id="list"></div>
+<datalist id="envlist"></datalist>
+</div>
+<script>
+var D = __DATA__;
+var PRES = D.pres, ENV = D.env;
+var envd = {}; ENV.forEach(function(e){ envd[e.c] = e.d; });
+(function(){ var dl = document.getElementById('envlist'); ENV.forEach(function(e){ var o=document.createElement('option'); o.value=e.c; o.label=e.d; dl.appendChild(o); }); })();
+function save(id, campo, val, st){
+  st.textContent = '…'; st.style.color='#94a3b8';
+  fetch('/api/programacion/pres-editar?id='+id+'&'+campo+'='+encodeURIComponent(val), {credentials:'same-origin'})
+    .then(function(r){ return r.json(); })
+    .then(function(j){ st.textContent = j.ok?'✓':'✗'; st.style.color = j.ok?'#16a34a':'#dc2626'; })
+    .catch(function(){ st.textContent='✗'; st.style.color='#dc2626'; });
+}
+function delRow(id, tr){
+  if(!confirm('¿Dar de baja esta presentación? (reversible)')) return;
+  fetch('/api/programacion/pres-eliminar?id='+id, {credentials:'same-origin'})
+    .then(function(r){ return r.json(); })
+    .then(function(j){ if(j.ok){ PRES = PRES.filter(function(p){ return p.id!=id; }); render(); } });
+}
+function inp(cls, val, ph){ var e=document.createElement('input'); e.className='i '+cls; e.value=(val===0?'':val); e.placeholder=ph||''; return e; }
+function render(){
+  var q = (document.getElementById('srch').value||'').trim().toLowerCase();
+  var groups = {}, order = [];
+  PRES.forEach(function(p){ if(q && p.prod.toLowerCase().indexOf(q)<0) return; if(!groups[p.prod]){ groups[p.prod]=[]; order.push(p.prod); } groups[p.prod].push(p); });
+  var list = document.getElementById('list'); list.innerHTML='';
+  order.forEach(function(prod){
+    var rows = groups[prod];
+    var vols = {}; rows.forEach(function(r){ var k=Math.round(r.vol); vols[k]=(vols[k]||0)+1; });
+    var hayDup = Object.keys(vols).some(function(k){ return vols[k]>1; });
+    var card = document.createElement('div'); card.className='card';
+    var ch = document.createElement('div'); ch.className='ch';
+    ch.innerHTML = prod + '<span class="n">'+rows.length+' present.</span>' + (hayDup?'<span class="pill">⚠ duplicado</span>':'');
+    card.appendChild(ch);
+    var tb = document.createElement('table');
+    tb.innerHTML = '<thead><tr><th>Volumen ml</th><th>Envase</th><th>Cant. fija</th><th></th></tr></thead>';
+    var body = document.createElement('tbody');
+    rows.forEach(function(p){
+      var tr = document.createElement('tr'); if(Math.round(p.vol) && vols[Math.round(p.vol)]>1) tr.className='dup';
+      var td1=document.createElement('td'); var iv=inp('vol', p.vol, ''); iv.type='number';
+      var s1=document.createElement('span'); s1.className='st';
+      iv.addEventListener('change', function(){ p.vol=parseFloat(iv.value)||0; save(p.id,'volumen_ml',iv.value,s1); render(); });
+      td1.appendChild(iv); td1.appendChild(s1);
+      var td2=document.createElement('td'); var ie=inp('env', p.env, 'código'); ie.setAttribute('list','envlist');
+      var s2=document.createElement('span'); s2.className='st';
+      var dd=document.createElement('span'); dd.className='envd'; dd.textContent = envd[p.env]||'';
+      ie.addEventListener('change', function(){ p.env=ie.value.trim(); dd.textContent=envd[p.env]||''; save(p.id,'envase_codigo',ie.value.trim(),s2); });
+      td2.appendChild(ie); td2.appendChild(s2); td2.appendChild(dd);
+      var td3=document.createElement('td'); var iff=inp('fija', p.fija, '0'); iff.type='number';
+      var s3=document.createElement('span'); s3.className='st';
+      iff.addEventListener('change', function(){ p.fija=parseFloat(iff.value)||0; save(p.id,'cantidad_fija_uds',iff.value||0,s3); });
+      td3.appendChild(iff); td3.appendChild(s3);
+      var td4=document.createElement('td'); var b=document.createElement('button'); b.className='del'; b.textContent='🗑';
+      b.addEventListener('click', function(){ delRow(p.id, tr); });
+      td4.appendChild(b);
+      tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3); tr.appendChild(td4); body.appendChild(tr);
+    });
+    tb.appendChild(body); card.appendChild(tb); list.appendChild(card);
+  });
+}
+render();
+</script></body></html>'''
+    html = html.replace('__DATA__', data)
+    return html
+
+
 @bp.route('/programacion/por-entrar', methods=['GET'])
 def prog_por_entrar_page():
     """Sebastián 6-jul · pantalla dedicada para cargar el "por entrar" (Espagiria) de TODOS los productos de un
