@@ -879,9 +879,13 @@ def submit_a_revision(mbr_id):
     if n_pasos < 1:
         return jsonify({"error": "MBR debe tener al menos 1 paso antes de submit"}), 400
     cur.execute(
-        "UPDATE mbr_templates SET estado = 'en_revision' WHERE id = ?",
+        "UPDATE mbr_templates SET estado = 'en_revision' WHERE id = ? AND estado = 'draft'",
         (mbr_id,),
     )
+    # FIX 7-jul (audit ultracode · M27 CAS): estado en el WHERE + rowcount (transición única draft→en_revision).
+    if cur.rowcount == 0:
+        conn.rollback()
+        return jsonify({"error": "El MBR ya cambió de estado · refrescá", "codigo": "ESTADO_CAMBIO"}), 409
     conn.commit()
     audit_log(None, usuario=user, accion="SUBMIT_MBR",
               tabla="mbr_templates", registro_id=mbr_id,
@@ -1406,7 +1410,7 @@ def mbr_preparar_aprobado():
         conn.commit()
         return jsonify({"ok": True, "id": mbr_id, "ya_aprobado": True})
     if estado == "draft":
-        cur.execute("UPDATE mbr_templates SET estado='en_revision' WHERE id=?", (mbr_id,))
+        cur.execute("UPDATE mbr_templates SET estado='en_revision' WHERE id=? AND estado='draft'", (mbr_id,))
     try:
         from blueprints.firmas import crear_firma_directa
     except Exception:
@@ -1416,7 +1420,12 @@ def mbr_preparar_aprobado():
                                  comment="Aprobación rápida para prueba de legajo de envasado")
     cur.execute("""UPDATE mbr_templates SET estado='aprobado', aprobado_por=?,
                      aprobado_at_utc=datetime('now','utc'), aprobado_signature_id=?
-                   WHERE id=?""", (user, sig_id, mbr_id))
+                   WHERE id=? AND estado='en_revision'""", (user, sig_id, mbr_id))
+    # FIX 7-jul (audit ultracode · M27 CAS): el UPDATE final aprueba solo desde en_revision (cierra la ventana
+    # aprobar-vs-obsoletar concurrente). Acá el row ES en_revision (lo era, o L1409 lo promovió en esta tx).
+    if cur.rowcount == 0:
+        conn.rollback()
+        return jsonify({"ok": False, "error": "El MBR cambió de estado · refrescá", "codigo": "ESTADO_CAMBIO"}), 409
     audit_log(cur, usuario=user, accion="APROBAR_MBR_RAPIDO",
               tabla="mbr_templates", registro_id=mbr_id,
               despues={"producto": producto, "estado": "aprobado", "signature_id": sig_id})
@@ -1522,8 +1531,13 @@ def mbr_aprobar_todas():
                                          record_id=mbr_id, meaning="aprueba", auth_factor=factor)
             cur.execute(
                 "UPDATE mbr_templates SET estado='aprobado', aprobado_por=?, "
-                "aprobado_at_utc=datetime('now','utc'), aprobado_signature_id=? WHERE id=?",
+                "aprobado_at_utc=datetime('now','utc'), aprobado_signature_id=? WHERE id=? AND estado='en_revision'",
                 (user, sig_id, mbr_id))
+            if cur.rowcount == 0:
+                # FIX 7-jul (audit ultracode · M27 CAS per-item): otro worker ya lo aprobó/cambió → contar como
+                # ya-aprobado y seguir · NUNCA abortar el bulk entero (rompería el RUNBOOK de encender EBR).
+                ya += 1
+                continue
             try:
                 audit_log(cur, usuario=user, accion="APROBAR_MBR_BULK", tabla="mbr_templates",
                           registro_id=mbr_id, despues={"producto": p, "signature_id": sig_id})
@@ -8885,7 +8899,12 @@ def aprobar_mbr_rapido(mbr_id):
                                  comment="Aprobación desde bandeja DT")
     cur.execute("""UPDATE mbr_templates SET estado='aprobado', aprobado_por=?,
                      aprobado_at_utc=datetime('now','utc'), aprobado_signature_id=?
-                   WHERE id=?""", (user, sig_id, mbr_id))
+                   WHERE id=? AND estado='en_revision'""", (user, sig_id, mbr_id))
+    # FIX 7-jul (audit ultracode · M27 CAS): estado en el WHERE + rowcount (aprobar vs obsoletar concurrente ·
+    # mismo riesgo que motivó el fix del canónico aprobar_mbr).
+    if cur.rowcount == 0:
+        conn.rollback()
+        return jsonify({"ok": False, "error": "El MBR cambió de estado · refrescá", "codigo": "ESTADO_CAMBIO"}), 409
     audit_log(cur, usuario=user, accion="APROBAR_MBR", tabla="mbr_templates",
               registro_id=mbr_id, antes={"estado": "en_revision"},
               despues={"estado": "aprobado", "signature_id": sig_id})

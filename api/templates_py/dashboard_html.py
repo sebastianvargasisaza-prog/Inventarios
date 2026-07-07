@@ -5094,6 +5094,10 @@ async function registrarIngreso(){
     data.tipo=document.getElementById('ing-tipo-new')?document.getElementById('ing-tipo-new').value:'';
     data.stock_minimo=parseFloat(document.getElementById('ing-smin-new')?document.getElementById('ing-smin-new').value:0)||0;
   }
+  // Idempotencia (M31/M45 · 7-jul): token unico por ENVIO · el backend lo reclama con UNIQUE. Mismo token si un
+  // doble-click se cuela antes del disable o en un reintento de red; se limpia SOLO al exito (proximo envio regenera).
+  window._recTok = window._recTok || (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())+'-'+Math.random());
+  data.recepcion_id = window._recTok;
   // B4: disable button to prevent double-submission
   var btn=document.querySelector('button[onclick="registrarIngreso()"]');
   if(btn){btn.disabled=true;btn.textContent='Registrando...';}
@@ -5112,6 +5116,7 @@ async function registrarIngreso(){
       var ocWarn = res.oc_warning?'<br><span style="color:#e65100;font-size:0.9em;">⚠ '+res.oc_warning+'</span>':'';
       var successMsg='<div class="alert-success">'+res.message+(enCuarentena?' — CUARENTENA (Calidad notificada)':'')+ocWarn+'</div>' + alertaP;
       limpiarIngreso();
+      window._recTok=null;  // envio exitoso -> el proximo ingreso genera token nuevo (7-jul)
       // Sprint Recepciones PRO fix #11: limpiar auto-save draft
       try{ localStorage.removeItem('eos_ing_draft'); }catch(_ls2){}
       document.getElementById('ing-msg').innerHTML=successMsg;
