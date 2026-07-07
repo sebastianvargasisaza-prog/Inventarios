@@ -14767,13 +14767,15 @@ def _trail_envase(c, codigo_up, mee_row):
     # TODAS las presentaciones por producto (para el ratio · marcá cuáles usan ESTE envase)
     pres_by_prod = {}
     try:
-        for pn, pcod, env, vol, vmr, sk in c.execute(
+        for pn, pcod, env, vol, vmr, sk, fija in c.execute(
                 "SELECT producto_nombre, COALESCE(presentacion_codigo,''), COALESCE(envase_codigo,''), "
-                "COALESCE(volumen_ml,0), COALESCE(ventas_mes_referencia,0), COALESCE(sku_shopify,'') "
+                "COALESCE(volumen_ml,0), COALESCE(ventas_mes_referencia,0), COALESCE(sku_shopify,''), "
+                "COALESCE(cantidad_fija_uds,0) "
                 "FROM producto_presentaciones WHERE COALESCE(activo,1)=1").fetchall():
             pres_by_prod.setdefault(_np(pn), []).append({
                 'codigo': pcod, 'envase': str(env).strip().upper(), 'vol': float(vol or 0),
                 'vmr': float(vmr or 0), 'sku': str(sk or '').strip().upper(),
+                'fija': float(fija or 0),
                 'usa': str(env).strip().upper() in cods})
     except Exception:
         pass
@@ -14857,6 +14859,38 @@ def _trail_envase(c, codigo_up, mee_row):
             return {k: v / tp for k, v in pesos.items()}
         return {p['codigo']: 1.0 / len(pres) for p in pres}
 
+    def _reparto_lote(pres, prodn, kgf):
+        """uds por presentación de un lote · Sebastián 7-jul: reserva las FIJAS (cantidad_fija_uds · mig 204 ·
+        ej. niacinamida/TRX 10ml = 1000) y reparte el RESTO del bulk pesado por volumen (= el desglose y el
+        abastecimiento · M72). Antes el trail ignoraba la fija → daba el % del volumen (2432) en vez de 1000."""
+        if not pres or kgf <= 0:
+            return {}
+        kg_fija = {}
+        kg_fija_tot = 0.0
+        for p in pres:
+            _v = p['vol'] if p['vol'] > 0 else vol_prod.get(prodn, 0)
+            _fj = float(p.get('fija') or 0)
+            if _fj > 0 and _v > 0:
+                _kgf = _fj * _v / 1000.0
+                kg_fija[p['codigo']] = _kgf
+                kg_fija_tot += _kgf
+        _scale = (kgf / kg_fija_tot) if (kg_fija_tot > kgf and kg_fija_tot > 0) else 1.0
+        kg_rest = max(0.0, kgf - min(kg_fija_tot, kgf))
+        _no_fija = [p for p in pres if p['codigo'] not in kg_fija]
+        rats = _ratio(_no_fija, prodn) if _no_fija else {}
+        out = {}
+        for p in pres:
+            _v = p['vol'] if p['vol'] > 0 else vol_prod.get(prodn, 0)
+            if _v <= 0:
+                out[p['codigo']] = 0
+                continue
+            if p['codigo'] in kg_fija:
+                _kgp = kg_fija[p['codigo']] * _scale
+            else:
+                _kgp = kg_rest * rats.get(p['codigo'], 0)
+            out[p['codigo']] = int(round(_kgp * 1000.0 / _v))
+        return out
+
     rows = c.execute(
         "SELECT id, producto, substr(fecha_programada,1,10), COALESCE(cantidad_kg,0), COALESCE(origen,''), "
         "COALESCE(envase_codigo_override,'') FROM produccion_programada "
@@ -14878,16 +14912,13 @@ def _trail_envase(c, codigo_up, mee_row):
             uds = int(round(kgf * 1000.0 / ml)) if ml > 0 else 0
             share = 1.0
         elif (not ovr_up) and any(p['usa'] for p in pres):
-            rats = _ratio(pres, pu)
-            uds = 0
-            share = 0.0
-            for p in pres:
-                if p['usa']:
-                    _vp = p['vol'] if p['vol'] > 0 else vol_prod.get(pu, 0)   # fallback al volumen del producto
-                    if _vp > 0:
-                        r = rats.get(p['codigo'], 0)
-                        share += r
-                        uds += int(round(kgf * r * 1000.0 / _vp))
+            # reparto REAL del lote: fija reservada + resto por volumen (M72) · igual que el abastecimiento
+            reparto = _reparto_lote(pres, pu, kgf)
+            uds = sum(reparto.get(p['codigo'], 0) for p in pres if p['usa'])
+            # share (display) = kg que se lleva ESTE envase ÷ kg del lote
+            _kg_usa = sum(reparto.get(p['codigo'], 0) * (p['vol'] if p['vol'] > 0 else vol_prod.get(pu, 0)) / 1000.0
+                          for p in pres if p['usa'])
+            share = (_kg_usa / kgf) if kgf > 0 else 0.0
         else:
             continue
         try:
