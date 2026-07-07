@@ -4278,9 +4278,9 @@ def job_refrescar_ventas_diarias(app):
                     if cant <= 0:
                         continue
                     agg[(sk, fecha)] = agg.get((sk, fecha), 0) + cant
-            conn.execute("DELETE FROM ventas_diarias WHERE fecha >= ?", (cutoff,))
+            c.execute("DELETE FROM ventas_diarias WHERE fecha >= ?", (cutoff,))
             if agg:
-                conn.executemany("INSERT INTO ventas_diarias (sku, fecha, cantidad) VALUES (?,?,?)",
+                c.executemany("INSERT INTO ventas_diarias (sku, fecha, cantidad) VALUES (?,?,?)",
                                  [(sk, fe, q) for (sk, fe), q in agg.items()])
             conn.commit()
             import time as _tvd
