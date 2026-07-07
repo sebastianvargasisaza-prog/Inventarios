@@ -2902,6 +2902,45 @@ def prog_por_entrar_manual():
                             'el producto de rojo. Es lo que hay producido en Espagiria por transferir.'})
 
 
+@bp.route('/api/programacion/pres-set-fija', methods=['GET', 'POST'])
+def prog_pres_set_fija():
+    """Sebastián 6-jul · setear la CANTIDAD FIJA de una presentación por (producto, volumen). Caso niacinamida/
+    TRX: 10ml = 1000 uds fijas → el resto del bulk va al 30ml. ?producto=NOMBRE&volumen_ml=10&uds=1000 (uds=0
+    quita). GET sin args = lista las fijas cargadas. El reparto de abastecimiento y el desglose ya lo respetan."""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db()
+    d = request.get_json(silent=True) or {}
+    prod = (request.args.get('producto') or d.get('producto') or '').strip()
+    vol = request.args.get('volumen_ml') if request.args.get('volumen_ml') is not None else d.get('volumen_ml')
+    uds = request.args.get('uds') if request.args.get('uds') is not None else d.get('uds')
+    if not prod or vol is None or uds is None:
+        rows = conn.execute("SELECT producto_nombre, volumen_ml, cantidad_fija_uds FROM producto_presentaciones "
+                            "WHERE COALESCE(cantidad_fija_uds,0)>0 ORDER BY producto_nombre").fetchall()
+        return jsonify({'ok': True, 'fijas': [{'producto': r[0], 'volumen_ml': r[1], 'uds': r[2]} for r in rows],
+                        'nota': 'Setear: ?producto=NOMBRE&volumen_ml=10&uds=1000 (uds=0 quita).'})
+    try:
+        vol_f = float(vol)
+        uds_f = float(uds)
+    except Exception:
+        return jsonify({'ok': False, 'error': 'volumen_ml/uds inválido'})
+    cur = conn.execute("UPDATE producto_presentaciones SET cantidad_fija_uds=? "
+                       "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND ABS(COALESCE(volumen_ml,0)-?)<0.01",
+                       (uds_f, prod, vol_f))
+    conn.commit()
+    _n = cur.rowcount
+    if _n == 0:
+        # ayuda: qué presentaciones tiene ese producto (para ver el volumen/nombre exacto)
+        _av = conn.execute("SELECT volumen_ml, presentacion_codigo FROM producto_presentaciones "
+                           "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) ORDER BY volumen_ml", (prod,)).fetchall()
+        return jsonify({'ok': False, 'filas_actualizadas': 0,
+                        'error': 'No hay presentación de ese producto con volumen_ml=' + str(vol_f),
+                        'presentaciones_del_producto': [{'volumen_ml': r[0], 'codigo': r[1]} for r in _av],
+                        'nota': 'Verificá el nombre exacto y el volumen. Si el producto no tiene esa presentación, '
+                                'cargala en Configuración › Reparto envases primero.'})
+    return jsonify({'ok': True, 'producto': prod, 'volumen_ml': vol_f, 'uds': uds_f, 'filas_actualizadas': _n})
+
+
 @bp.route('/programacion/por-entrar', methods=['GET'])
 def prog_por_entrar_page():
     """Sebastián 6-jul · pantalla dedicada para cargar el "por entrar" (Espagiria) de TODOS los productos de un

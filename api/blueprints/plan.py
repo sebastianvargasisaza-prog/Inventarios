@@ -3887,6 +3887,23 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     except Exception:
         pass  # columna volumen_ml puede no existir (mig vieja) → queda producto_presentaciones
 
+    # Sebastián 6-jul · CANTIDAD FIJA por presentación (mig 204 · ej. niacinamida/TRX 10ml = 1000 uds fijas,
+    # resto al 30ml). Se carga por (producto, volumen) porque producto_presentaciones.sku_shopify suele estar
+    # vacío (el volumen vive a nivel producto · M70). El desglose de Necesidades reserva la fija y reparte el
+    # resto PESADO POR VOLUMEN (igual que el reparto de abastecimiento · M72).
+    fija_por_prod_vol = {}
+    try:
+        from blueprints.programacion import _norm_prod_fuerte as _npf_fija
+        for r in c.execute(
+            "SELECT producto_nombre, COALESCE(volumen_ml,0), COALESCE(cantidad_fija_uds,0) "
+            "FROM producto_presentaciones WHERE COALESCE(activo,1)=1 AND COALESCE(cantidad_fija_uds,0) > 0 "
+            "AND COALESCE(volumen_ml,0) > 0").fetchall():
+            _k = _npf_fija(r[0])
+            if _k:
+                fija_por_prod_vol.setdefault(_k, {})[int(round(float(r[1])))] = float(r[2])
+    except Exception:
+        pass
+
     # 3. Stock por SKU (re-uso helper)
     from blueprints.programacion import _resolved_stock_por_sku
     resolved_stock = _resolved_stock_por_sku(c.connection, empresa='ANIMUS')
@@ -4461,6 +4478,42 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                 if ml_promedio > 0 and lote_kg_efectivo > 0:
                     uds_lote_total = int(round(lote_kg_efectivo * 1000.0 / ml_promedio))
                 _pipe_uds_prod = (pipeline_kg * 1000.0 / ml_promedio) if ml_promedio > 0 else 0.0
+                # Sebastián 6-jul · REPARTO REAL del bulk entre referencias (= abastecimiento · M72 + fija mig
+                # 204): reservar las FIJAS primero (uds×ml), repartir el RESTO pesado por volumen (uds vendidas
+                # × ml) → uds por ref = kg_p×1000÷ml. Antes el desglose usaba mix% × uds_lote_total(ml_promedio)
+                # → sub-asignaba el tamaño grande y NO reservaba la fija (ej. niacinamida 10ml debe dar 1000).
+                _fija_vol = fija_por_prod_vol.get(_prod_key_n, {})
+                _kg_fija_sku = {}
+                _kg_fija_tot = 0.0
+                for _s in skus_del_prod:
+                    _mls = ml_por_sku.get(_s, ml_promedio) or 0
+                    _fj = float(_fija_vol.get(int(round(_mls)), 0) or 0) if _mls > 0 else 0.0
+                    if _fj > 0 and _mls > 0:
+                        _kgf = _fj * _mls / 1000.0
+                        _kg_fija_sku[_s] = _kgf
+                        _kg_fija_tot += _kgf
+                _fija_scale = (lote_kg_efectivo / _kg_fija_tot) if (_kg_fija_tot > lote_kg_efectivo and _kg_fija_tot > 0) else 1.0
+                _kg_rest = max(0.0, lote_kg_efectivo - min(_kg_fija_tot, lote_kg_efectivo))
+                _peso_vol = {}
+                _peso_tot = 0.0
+                for _s in skus_del_prod:
+                    if _s in _kg_fija_sku:
+                        continue
+                    _mls = ml_por_sku.get(_s, ml_promedio) or 0
+                    _w = int(ventas_por_sku.get(_s, 0)) * _mls
+                    _peso_vol[_s] = _w
+                    _peso_tot += _w
+                _n_norest = sum(1 for _s in skus_del_prod if _s not in _kg_fija_sku)
+                uds_reparto = {}
+                for _s in skus_del_prod:
+                    _mls = ml_por_sku.get(_s, ml_promedio) or 0
+                    if _s in _kg_fija_sku:
+                        _kgp = _kg_fija_sku[_s] * _fija_scale
+                    elif _peso_tot > 0:
+                        _kgp = _kg_rest * (_peso_vol.get(_s, 0) / _peso_tot)
+                    else:
+                        _kgp = (_kg_rest / _n_norest) if _n_norest else 0.0
+                    uds_reparto[_s] = int(round(_kgp * 1000.0 / _mls)) if _mls > 0 else 0
                 _sku_cuello = None          # el tono/tamaño que MARCA LA PAUTA del producto
                 _MIX_MIN_CUELLO = 5.0       # umbral: <5% del mix NO manda la alarma del producto
                 # Sebastián 6-jul · REGLA POR TIPO (default auto por VOLUMEN · overridable por producto):
@@ -4475,7 +4528,8 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                 for sku_u in skus_del_prod:
                     v_t = int(ventas_por_sku.get(sku_u, 0))
                     pct = round(100.0 * v_t / _total_uds_skus, 1) if _total_uds_skus > 0 else 0
-                    uds_estim_lote = int(round(uds_lote_total * pct / 100.0))
+                    # uds del próximo lote por referencia: reparto REAL (fija + volumen · arriba), no mix%
+                    uds_estim_lote = uds_reparto.get(sku_u, int(round(uds_lote_total * pct / 100.0)))
                     # cobertura del tono: stock del tono / su velocidad (vel_tono = mix% de la vel agregada).
                     _rs = resolved_stock.get(sku_u) or resolved_stock.get(str(sku_u).strip().upper()) or {}
                     _tono_stock = int(_rs.get('uds', 0) or 0)
@@ -4500,6 +4554,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                         'stock_uds': _tono_stock,
                         'dias_cobertura_tono': _td_gond,
                         'mix_bajo': (pct < _MIX_MIN_CUELLO),
+                        'es_fija': (sku_u in _kg_fija_sku),
                     })
                 # Si ninguna referencia vendió en la ventana, no mostrar (evita ruido)
                 if sum(t['ventas_ventana_uds'] for t in tonos_arr) <= 0:
