@@ -2022,16 +2022,35 @@ def prog_resumen():
         china_mps=china_mps_set
     )
 
-    # 6. AI narrative · PERF 6-jul (fable): cache 15min · era HTTP síncrono ~15s a Anthropic en CADA carga.
-    narrativa = None
+    # 6. AI narrative · PERF 7-jul: NUNCA bloquear la carga del calendario esperando ~15s a Anthropic. Si el
+    # cache está fresco (<15min) se sirve; si está viejo/frío se devuelve lo que haya (o None) AL INSTANTE y se
+    # refresca en un thread de fondo (conexión propia · db_connect, la del request muere al terminar) → la
+    # próxima carga ya lo trae. Antes bloqueaba el endpoint completo cada 15min por worker (era la lentitud).
+    narrativa = _NARRATIVE_CACHE.get('text')
     try:
         import time as _tnar
-        if _NARRATIVE_CACHE.get('text') is not None and (_tnar.time() - _NARRATIVE_CACHE.get('ts', 0)) < 900:
-            narrativa = _NARRATIVE_CACHE['text']
-        else:
-            narrativa = _generate_narrative(projection, alerts, vel_data, conn=conn)
-            _NARRATIVE_CACHE['text'] = narrativa
-            _NARRATIVE_CACHE['ts'] = _tnar.time()
+        _fresco = narrativa is not None and (_tnar.time() - _NARRATIVE_CACHE.get('ts', 0)) < 900
+        if not _fresco and not _NARRATIVE_CACHE.get('generando'):
+            _NARRATIVE_CACHE['generando'] = True
+            _proj_bg, _al_bg, _vd_bg = projection, alerts, vel_data
+            def _bg_narr():
+                _c2 = None
+                try:
+                    _c2 = db_connect()
+                    _txt = _generate_narrative(_proj_bg, _al_bg, _vd_bg, conn=_c2)
+                    _NARRATIVE_CACHE['text'] = _txt
+                    _NARRATIVE_CACHE['ts'] = _tnar.time()
+                except Exception:
+                    pass
+                finally:
+                    _NARRATIVE_CACHE['generando'] = False
+                    try:
+                        if _c2 is not None:
+                            _c2.close()
+                    except Exception:
+                        pass
+            import threading as _thr
+            _thr.Thread(target=_bg_narr, daemon=True).start()
     except Exception:
         pass
 
