@@ -394,6 +394,14 @@ table.cx-table tr:hover td {
 }
 .cx-input::placeholder { color: var(--cx-text-faint); }
 .cx-input:disabled { background: var(--cx-bg-alt); color: var(--cx-text-faint); cursor: not-allowed; }
+select.cx-input { cursor: pointer; }
+textarea.cx-input { resize: vertical; min-height: 60px; }
+
+/* Formularios premium · label + grid responsive (Sebastián 7-jul) */
+.cx-flabel { display: block; margin: 0 0 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--cx-text-mute); }
+.cx-flabel .cx-hint { text-transform: none; font-weight: 500; color: var(--cx-text-faint); letter-spacing: 0; }
+.cx-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px 20px; }
+.cx-form-grid > .cx-full { grid-column: 1 / -1; }
 
 /* Animación fade-in útil */
 @keyframes cxFadeIn {

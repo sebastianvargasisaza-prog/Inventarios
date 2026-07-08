@@ -1232,62 +1232,65 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   </div>
 
   <div id="produccion" class="tab-content">
-    <h2>&#127981; Registrar Producción</h2>
-    <p style="color:#666;margin-bottom:16px;">Si el producto tiene fórmula maestra, las MPs se descuentan automáticamente del inventario al registrar.</p>
-    <!-- Sprint Fabricación PRO 20-may-2026: banner "Pendientes hoy" según programación -->
-    <div id="fab-pendientes-banner" style="display:none;background:#fef3c7;border:1px solid #ca8a04;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#78350f"></div>
-    <div class="form-group">
-      <label>Producto (con formula maestra)</label>
-      <select id="prod-sel" onchange="previewProd()">
-        <option value="">-- Selecciona un producto --</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label>O escribe nombre manualmente (sin formula)</label>
-      <input type="text" id="prod-manual" placeholder="Producto sin formula registrada" oninput="previewProd()">
-    </div>
-    <div class="form-group">
-      <label>Cantidad a producir (kg)</label>
-      <input type="number" id="prod-kg" placeholder="Ej: 20" step="0.001" oninput="previewProd()">
-    </div>
-    <div class="form-group">
-      <label>Área o Línea de fabricación</label>
-      <select id="prod-area"><option value="">-- Selecciona área --</option></select>
-    </div>
-    <div class="form-group">
-      <label>Operario que fabrica (para sistema en vivo)</label>
-      <select id="prod-operario"><option value="">-- opcional --</option></select>
-    </div>
-    <div class="form-group" style="display:none">
-      <label>N° de Lote (automático)</label>
-      <input type="text" id="prod-lote" placeholder="Ej: 261561">
-    </div>
-    <div id="prod-preview" style="background:#f0f8ff;border:1px solid #b8d4f0;border-radius:8px;padding:14px;margin-bottom:14px;display:none;">
-      <strong style="color:#2c5f8a;">MPs que se descontaran automaticamente:</strong>
-      <table class="table" style="margin-top:8px;">
-        <thead><tr><th>Material</th><th style="text-align:right;">Cantidad (g)</th></tr></thead>
-        <tbody id="prod-preview-body"></tbody>
-      </table>
-    </div>
-    <div class="form-group">
-      <label>Presentacion del producto</label>
-      <input type="text" id="prod-presentacion" placeholder="Ej: 15ml, 30ml, 50g..." list="pres-sugerencias">
-      <datalist id="pres-sugerencias">
-        <option value="10ml"><option value="15ml"><option value="20ml"><option value="30ml">
-        <option value="50ml"><option value="60ml"><option value="100ml"><option value="120ml">
-        <option value="150ml"><option value="50g"><option value="100g"><option value="250g">
-      </datalist>
-    </div>
-    <div class="form-group"><label>Observaciones</label><textarea id="prod-obs" rows="2" placeholder="Opcional"></textarea></div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <button onclick="iniciarFabVivo()" title="Arranca la fabricación del lote EN VIVO: reserva la sala y descuenta las MP por FEFO (acción real, no un borrador). Verificá el stock antes con el botón Verificar Stock." class="cx-btn cx-btn-success" style="font-size:15px;padding:11px 26px;font-weight:800;">&#9654; Iniciar fabricación</button>
-      <button onclick="simularProduccion()" title="Simula el lote: revisa si las MP alcanzan (FEFO) y estima el costo. No descuenta nada, solo verifica antes de fabricar." class="cx-btn cx-btn-ghost">&#128269; Verificar Stock</button>
-      <button onclick="iniciarRegistroProd()" style="display:none">&#9989; Registrar Producción</button>
-      <button onclick="abrirRotulos()" title="Genera los rótulos de las MP a dispensar para el producto y los kg cargados · se abren en pestaña nueva, listos para imprimir." class="cx-btn cx-btn-ghost">&#128209; Rótulos de MP</button>
-      <button onclick="window.open('/planta/rotulos-limpieza','_blank')" class="cx-btn cx-btn-ghost" title="Abre los rótulos de limpieza F02 listos para imprimir en etiqueta térmica (igual que los de MP · uno por equipo)">&#127991;&#65039; Rótulos de limpieza</button>
-      <!-- 4-jun-2026 · removidos "Diagnosticar fórmula" y "Reparar TODAS las
-           fórmulas huérfanas" (herramientas de estabilización · ya las cubre el
-           cron diario salud-cruce + el auto-reparar-huérfanas). -->
+    <!-- Rediseño premium 7-jul (Sebastián) · tarjeta cortex + grid 2-col + header con ícono -->
+    <div class="cx-card cx-fade-in" style="max-width:940px">
+      <div style="display:flex;align-items:center;gap:13px">
+        <div style="width:44px;height:44px;flex:none;border-radius:13px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:0 5px 14px rgba(124,58,237,.32)">&#127981;</div>
+        <div>
+          <h2 style="margin:0;font-size:20px;line-height:1.2">Registrar Producción</h2>
+          <div class="cx-text-mute" style="font-size:13px;margin-top:2px">Con fórmula maestra, las MP se descuentan por FEFO al iniciar. Verificá el stock antes.</div>
+        </div>
+      </div>
+      <div id="fab-pendientes-banner" style="display:none;background:#fef3c7;border:1px solid #ca8a04;border-radius:10px;padding:10px 14px;margin:16px 0 0;font-size:13px;color:#78350f"></div>
+      <div class="cx-form-grid" style="margin-top:20px">
+        <div class="cx-full">
+          <label class="cx-flabel">Producto <span class="cx-hint">· con fórmula maestra</span></label>
+          <select id="prod-sel" class="cx-input" onchange="previewProd()"><option value="">-- Selecciona un producto --</option></select>
+        </div>
+        <div class="cx-full">
+          <label class="cx-flabel">o escribí el nombre <span class="cx-hint">· producto sin fórmula registrada</span></label>
+          <input type="text" id="prod-manual" class="cx-input" placeholder="Ej: Piloto experimental, muestra..." oninput="previewProd()">
+        </div>
+        <div>
+          <label class="cx-flabel">Cantidad a producir (kg)</label>
+          <input type="number" id="prod-kg" class="cx-input" placeholder="Ej: 20" step="0.001" oninput="previewProd()">
+        </div>
+        <div>
+          <label class="cx-flabel">Presentación del producto</label>
+          <input type="text" id="prod-presentacion" class="cx-input" placeholder="Ej: 15ml, 30ml, 50g..." list="pres-sugerencias">
+          <datalist id="pres-sugerencias"><option value="10ml"><option value="15ml"><option value="20ml"><option value="30ml"><option value="50ml"><option value="60ml"><option value="100ml"><option value="120ml"><option value="150ml"><option value="50g"><option value="100g"><option value="250g"></datalist>
+        </div>
+        <div>
+          <label class="cx-flabel">Área o línea de fabricación</label>
+          <select id="prod-area" class="cx-input"><option value="">-- Selecciona área --</option></select>
+        </div>
+        <div>
+          <label class="cx-flabel">Operario que fabrica <span class="cx-hint">· sistema en vivo · opcional</span></label>
+          <select id="prod-operario" class="cx-input"><option value="">-- opcional --</option></select>
+        </div>
+        <div class="cx-full" style="display:none">
+          <label class="cx-flabel">N° de Lote (automático)</label>
+          <input type="text" id="prod-lote" class="cx-input" placeholder="Ej: 261561">
+        </div>
+        <div class="cx-full">
+          <label class="cx-flabel">Observaciones</label>
+          <textarea id="prod-obs" class="cx-input" rows="2" placeholder="Opcional..."></textarea>
+        </div>
+      </div>
+      <div id="prod-preview" style="background:linear-gradient(180deg,#faf5ff,#f3e8ff);border:1px solid #ddd6fe;border-radius:12px;padding:14px 16px;margin-top:18px;display:none;">
+        <strong style="color:#6d28d9;font-size:13px">&#9878;&#65039; MP que se descontarán automáticamente</strong>
+        <table class="table" style="margin-top:8px;">
+          <thead><tr><th>Material</th><th style="text-align:right;">Cantidad (g)</th></tr></thead>
+          <tbody id="prod-preview-body"></tbody>
+        </table>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:22px;padding-top:18px;border-top:1px solid var(--cx-hairline);">
+        <button onclick="iniciarFabVivo()" title="Arranca la fabricación del lote EN VIVO: reserva la sala y descuenta las MP por FEFO (acción real, no un borrador). Verificá el stock antes con el botón Verificar Stock." class="cx-btn cx-btn-success" style="font-size:15px;padding:11px 26px;font-weight:800;">&#9654; Iniciar fabricación</button>
+        <button onclick="simularProduccion()" title="Simula el lote: revisa si las MP alcanzan (FEFO) y estima el costo. No descuenta nada, solo verifica antes de fabricar." class="cx-btn cx-btn-ghost">&#128269; Verificar Stock</button>
+        <button onclick="iniciarRegistroProd()" style="display:none">&#9989; Registrar Producción</button>
+        <button onclick="abrirRotulos()" title="Genera los rótulos de las MP a dispensar para el producto y los kg cargados · se abren en pestaña nueva, listos para imprimir." class="cx-btn cx-btn-ghost">&#128209; Rótulos de MP</button>
+        <button onclick="window.open('/planta/rotulos-limpieza','_blank')" class="cx-btn cx-btn-ghost" title="Abre los rótulos de limpieza F02 listos para imprimir en etiqueta térmica (igual que los de MP · uno por equipo)">&#127991;&#65039; Rótulos de limpieza</button>
+      </div>
     </div>
     <div id="prod-simul-result" style="margin-top:12px;"></div>
     <div id="prod-msg"></div>
