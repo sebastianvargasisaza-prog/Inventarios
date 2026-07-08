@@ -461,7 +461,10 @@ def _fetch_calendar_events(days_ahead=90):
     # GCal solo metía ruido y desincronizaba. El sync ya no crea filas origen='calendar' y ningún motor
     # (abastecimiento / generar-OC / proyección / auto_plan) lee eventos de Google. Se deja la plomería
     # devolviendo vacío (cero-riesgo · cada consumidor recibe lista vacía). Para reactivar: quitar este return.
-    return {'events': [], 'error': None, 'source': 'disabled'}
+    # ⚠ error != None A PROPÓSITO (review 8-jul): los consumidores DESTRUCTIVOS (sync espejo force_mirror en
+    # _sync_calendar_a_produccion_programada:17819) hacen early-return si cal.get('error') → sin esto, un espejo
+    # con eventos vacíos HARD-DELETEaría toda la producción no-Fija/no-ejecutada (eos_proyeccion/canonico/manual).
+    return {'events': [], 'error': 'Google Calendar deshabilitado', 'source': 'disabled'}
     # ── Option 1: iCal feed (public or secret URL, no API key required) ──────
     if GCAL_ICAL_URL:
         try:
@@ -9864,7 +9867,10 @@ def _resolver_material_bodega_impl(c, formula_mid, formula_nombre):
         if r and r[0]:
             _dest = str(r[0]).strip()
             _fmid_en_maestro = c.execute("SELECT 1 FROM maestro_mps WHERE codigo_mp=? LIMIT 1", (fmid,)).fetchone()
-            if _stock_neto(_dest) > 0.01 or not _fmid_en_maestro:
+            # Review 8-jul: el bypass del stock-gate para un fmid FANTASMA solo vale si el DESTINO del bridge es
+            # REAL (existe en maestro) · si no, sería redirigir a otro código inexistente (compra igual de rota).
+            _dest_en_maestro = c.execute("SELECT 1 FROM maestro_mps WHERE codigo_mp=? LIMIT 1", (_dest,)).fetchone()
+            if _stock_neto(_dest) > 0.01 or (not _fmid_en_maestro and _dest_en_maestro):
                 return _dest
     except Exception:
         pass

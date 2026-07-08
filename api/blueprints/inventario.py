@@ -10303,7 +10303,9 @@ def generar_rotulos(producto_nombre, cantidad_str):
             c.execute("SELECT lote,estanteria,posicion,fecha_vencimiento FROM movimientos WHERE material_id=? AND tipo='Entrada' AND lote IS NOT NULL AND lote!='' AND lote!='S/L' ORDER BY COALESCE(NULLIF(CAST(fecha_vencimiento AS TEXT),''),'9999-12-31') ASC LIMIT 1", (cod,))
             row=c.fetchone()
         lotes[mid]={'lote':row[0] if row else 'S/L','est':row[1] if row else '','pos':row[2] if row else '','vence':str(row[3])[:10] if row and row[3] else ''}
-    if not items: return '<h2>Formula no encontrada: '+prod+'</h2>', 404
+    import html as _hh
+    def _e(x): return _hh.escape(str(x if x is not None else ''))  # XSS/HTML-safe (review 8-jul)
+    if not items: return '<h2>Formula no encontrada: '+_e(prod)+'</h2>', 404
     # Logo Espagiria · data-uri guardado en app_settings (persiste en Render · se sube desde /admin/logo-espagiria)
     # o fallback al archivo estático. Sebastián 7-jul.
     try:
@@ -10316,7 +10318,7 @@ def generar_rotulos(producto_nombre, cantidad_str):
         mid,mnm,pct=r; peso=round((pct/100)*cant_g,2); info=lotes.get(mid,{}); lote_mp=info.get('lote','S/L')
         cod_real=cods.get(mid,mid)
         ubicacion=('Est. '+str(info.get('est',''))+str(info.get('pos',''))).strip(); vence=info.get('vence',''); inci=incis.get(mid,'')
-        bv=cod_real+'|'+lote_mp; barcodes+=f'try{{JsBarcode("#bc{i}","{bv}",{{format:"CODE128",width:1.15,height:30,displayValue:false,margin:0}})}}catch(e){{}};'
+        bv=cod_real+'|'+lote_mp; barcodes+=f'try{{JsBarcode("#bc{i}",{json.dumps(bv)},{{format:"CODE128",width:1.15,height:30,displayValue:false,margin:0}})}}catch(e){{}};'
         # QR resoluble: al escanear con el celular abre /scan/<código>/<lote> con la info REAL del lote.
         _scan_url = _scan_base + '/scan/' + urllib.parse.quote(str(cod_real), safe='') + '/' + urllib.parse.quote(str(lote_mp), safe='')
         barcodes += f'try{{new QRCode(document.getElementById("qr{i}"),{{text:{json.dumps(_scan_url)},width:58,height:58,correctLevel:QRCode.CorrectLevel.M}})}}catch(e){{}};'
@@ -10325,15 +10327,15 @@ def generar_rotulos(producto_nombre, cantidad_str):
         rhtml+='<div class="ctrl"><b>Código:</b> PRD-PRO-001-F08<br><b>Versión:</b> 01 &middot; <b>Etiqueta</b> '+str(i+1)+' de '+str(len(items))+'<br><b>Vigencia:</b> 04-Mar-2025 / 03-Mar-2028</div></div>'
         rhtml+='<div class="title"><h1>Rótulo para dispensar materia prima</h1><div class="k">OP '+op_num+' &middot; '+hoy+'</div></div>'
         rhtml+='<table>'
-        rhtml+='<tr><td class="k">Producto</td><td colspan="3"><b>'+prod+'</b> &mdash; '+str(cantidad_kg)+' kg</td></tr>'
-        rhtml+='<tr><td class="k">Materia prima</td><td colspan="3"><b>'+mnm+'</b> <span class="cod">'+mid+'</span></td></tr>'
-        if inci: rhtml+='<tr><td class="k">Nombre INCI</td><td colspan="3" class="inci">'+inci+'</td></tr>'
-        rhtml+='<tr><td class="k">Lote MP</td><td class="num"><b>'+lote_mp+'</b></td><td class="k">Ubicación</td><td>'+ubicacion+'</td></tr>'
-        rhtml+='<tr><td class="k">Vencimiento</td><td class="venc">'+vence+'</td><td class="k">% fórmula</td><td class="num">'+str(pct)+'%</td></tr>'
+        rhtml+='<tr><td class="k">Producto</td><td colspan="3"><b>'+_e(prod)+'</b> &mdash; '+str(cantidad_kg)+' kg</td></tr>'
+        rhtml+='<tr><td class="k">Materia prima</td><td colspan="3"><b>'+_e(mnm)+'</b> <span class="cod">'+_e(mid)+'</span></td></tr>'
+        if inci: rhtml+='<tr><td class="k">Nombre INCI</td><td colspan="3" class="inci">'+_e(inci)+'</td></tr>'
+        rhtml+='<tr><td class="k">Lote MP</td><td class="num"><b>'+_e(lote_mp)+'</b></td><td class="k">Ubicación</td><td>'+_e(ubicacion)+'</td></tr>'
+        rhtml+='<tr><td class="k">Vencimiento</td><td class="venc">'+_e(vence)+'</td><td class="k">% fórmula</td><td class="num">'+str(pct)+'%</td></tr>'
         rhtml+='<tr><td class="k">Peso teórico</td><td class="peso">'+f"{peso:,.2f} g"+'</td><td class="k">Lote producción</td><td class="fill"></td></tr>'
         rhtml+='<tr><td class="k">Tara</td><td class="fill"></td><td class="k">Peso neto</td><td class="fill"></td></tr>'
         rhtml+='</table>'
-        rhtml+='<div class="bcq"><div class="bcwrap"><svg id="bc'+str(i)+'"></svg><div class="bcv">'+cod_real+' &middot; '+lote_mp+'</div></div><div class="qrwrap"><div id="qr'+str(i)+'"></div><div class="qrlbl">Escaneá<br>info real</div></div></div>'
+        rhtml+='<div class="bcq"><div class="bcwrap"><svg id="bc'+str(i)+'"></svg><div class="bcv">'+_e(cod_real)+' &middot; '+_e(lote_mp)+'</div></div><div class="qrwrap"><div id="qr'+str(i)+'"></div><div class="qrlbl">Escaneá<br>info real</div></div></div>'
         rhtml+='<div class="firmas"><div class="firma"><div class="l">Pesado por</div><div class="v">&nbsp;</div><div class="f">Fecha / hora</div></div><div class="firma"><div class="l">Verificado (Calidad)</div><div class="v">&nbsp;</div><div class="f">Fecha / hora</div></div></div>'
         rhtml+='</div>'
     css=('<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Rotulos</title>'
@@ -10587,7 +10589,7 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
        '<div class="firmas"><div class="firma"><div class="l">Recibido por</div><div class="sig"></div><div class="f">Firma / fecha</div></div>'
        '<div class="firma"><div class="l">Analizado / Aprobado por</div><div class="sig"></div><div class="f">Firma / fecha</div></div></div>'
        '</div></div>'
-       '<script>window.onload=function(){try{JsBarcode("#bc","'+bv+'",{format:"CODE128",width:1.6,height:40,displayValue:false,margin:0});}catch(e){}};</script>'
+       '<script>window.onload=function(){try{JsBarcode("#bc",'+json.dumps(bv)+',{format:"CODE128",width:1.6,height:40,displayValue:false,margin:0});}catch(e){}};</script>'
        '</body></html>')
     return h
 
@@ -10656,7 +10658,7 @@ def rotulo_recepcion_mee(codigo, cantidad_str):
        '<div class="firmas"><div class="firma"><div class="l">Realizado por</div><div class="sig"></div><div class="f">Firma / fecha</div></div>'
        '<div class="firma"><div class="l">Aprobado por</div><div class="sig"></div><div class="f">Firma / fecha</div></div></div>'
        '</div></div>'
-       '<script>window.onload=function(){try{JsBarcode("#bc","'+codigo+'",{format:"CODE128",width:1.6,height:40,displayValue:false,margin:0});}catch(e){}};</script>'
+       '<script>window.onload=function(){try{JsBarcode("#bc",'+json.dumps(codigo)+',{format:"CODE128",width:1.6,height:40,displayValue:false,margin:0});}catch(e){}};</script>'
        '</body></html>')
     return h
 

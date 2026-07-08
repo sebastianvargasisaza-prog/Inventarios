@@ -695,6 +695,17 @@ Spec del dueño: el abastecimiento toma el plan del calendario (2 años), cruza 
 - Latentes documentados (no rotos hoy · vigilar): diag-mp-demanda excluye la activa de BLUSH BALM; filas basura en produccion_programada (ids test); sin UNIQUE en formula_items; normalización de match distinta por camino; abastecimiento sin guarda M25 vencido-por-fecha. Golden 247.
 - ⚠ **Nota de tests:** un `-k` HETEROGÉNEO amplio (formula OR corazon OR ebr OR …) da ~147 fallos por CONTAMINACIÓN de estado compartido entre archivos — NO es regresión. Verificar SIEMPRE el archivo AISLADO + el golden (el gate real).
 
+## 🔎 M79 · Auto-revisión adversarial de la sesión (4 Fable) · 10 bugs · 8-jul
+
+Me revisé a mí mismo lo del día (rótulos, endpoints admin, fixes abastecimiento, remoción GCal) → 10 bugs REALES, todos arreglados. Los que YO introduje:
+- **☠️ CASI PÉRDIDA DE DATOS (P1):** al eliminar GCal puse `_fetch_calendar_events()` con `error:None`. Pero `_sync_calendar_a_produccion_programada` (force_mirror, botón "Re-sync espejo" vivo) hace `if cal.get('error'): return 0` ANTES del HARD-DELETE de toda producción no-Fija/no-ejecutada. Con error=None + eventos vacíos → habría BORRADO eos_proyeccion/canonico/manual. El golden NO lo caza (valida "vacío legítimo borra huérfanos"). Fix: `error:'Google Calendar deshabilitado'`. **Regla: al "apagar" una fuente devolviendo vacío, revisá si algún consumidor DESTRUCTIVO interpreta vacío-sin-error como 'borrá lo que no está'. Vacío ≠ sin-error.**
+- **XSS/JS en rótulos:** `JsBarcode("#bc","'+bv+'")` con bv/lote/codigo de la URL/kardex → una comilla rompe el `<script>` (ningún barcode/QR renderiza) o inyecta JS. Fix: `json.dumps(bv)` (patrón que el QR ya usaba). Y `generar_rotulos` inyectaba nombre MP/INCI/lote/producto en HTML sin `html.escape` (las hermanas recepción sí escapaban). **Regla: dato de URL/DB en `<script>` → json.dumps; en HTML → html.escape. Si una función hermana ya lo hace, copiá el patrón.**
+- **TZ M24 en 4 filtros admin nuevos:** `date('now')` en vez de `date('now','-5 hours')` → de noche (UTC) las producciones de HOY quedaban fuera (contador/cancelación falsos). solo_prod.
+- **NOT IN + NULL:** `x NOT IN (SELECT ... WHERE ...)` devuelve UNKNOWN para TODO si el subquery trae un NULL → "todo limpio" silencioso. Fix: `AND col IS NOT NULL` en el subquery.
+- **UNIQUE(codigo,ubicacion) + fetchone sin ORDER BY:** el sync de equipos tomaba UNA fila arbitraria (no-determinista PG) y dejaba la gemela activa en otra área. Fix: fetchall, actualizar 1ª (sin tocar ubicacion_raw → no choca UNIQUE) + desactivar gemelas.
+- **Bridge fantasma:** el bypass del stock-gate no verificaba que el DESTINO exista en maestro. Fix: condicionar a `_dest_en_maestro`.
+- Golden 247. **Lección meta: correr una auto-revisión adversarial Fable sobre los cambios propios de la sesión CAZA bugs que el golden no cubre (páginas admin, XSS, PG-only, destructivos).**
+
 ## 🏷️ M78 · Rótulos premium unificados + páginas admin + sync equipos 2026 · 7/8-jul
 
 - **Los 4 rótulos de Planta al mismo lenguaje premium** (Inter · tarjeta `.sheet` estilo hoja · logo Espagiria · 100×100mm · firmas): dispensación MP + limpieza F02 + recepción MP + recepción envase (MEE). Helper compartido `_rotulo_recep_css(lw,lh)` + `_rotulo_logo_src(c)` (inventario.py). **Logo:** se sube el PNG en `/admin/logo-espagiria` (data-uri en `app_settings` · persiste en Render · el disco se borra en cada deploy) con fallback a `static/logos/espagiria.svg`. Planta = SOLO Espagiria (quitado 'ÁNIMUS Lab' de los headers).

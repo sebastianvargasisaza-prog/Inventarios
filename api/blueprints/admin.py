@@ -6965,7 +6965,8 @@ async function guardar(){
   b.disabled=false; b.textContent='Guardar logo';
 }
 </script></body></html>'''
-    return _tpl.replace('__PREV__', _prev)
+    import html as _hh
+    return _tpl.replace('__PREV__', _hh.escape(_prev, quote=True))  # XSS-safe en el atributo src (review 8-jul)
 
 
 @bp.route("/api/admin/purgar-gcal", methods=["POST"])
@@ -6979,7 +6980,7 @@ def admin_purgar_gcal():
     conn = get_db(); c = conn.cursor()
     rows = c.execute(
         "SELECT id, producto, fecha_programada FROM produccion_programada "
-        "WHERE COALESCE(origen,'')='calendar' AND fecha_programada >= date('now') "
+        "WHERE COALESCE(origen,'')='calendar' AND fecha_programada >= date('now','-5 hours') "
         "  AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado') "
         "  AND COALESCE(inicio_real_at,'')='' AND COALESCE(inventario_descontado_at,'')=''").fetchall()
     ids = [r[0] for r in rows]
@@ -7005,7 +7006,7 @@ def admin_purgar_gcal_page():
     try:
         n = conn.execute(
             "SELECT COUNT(*) FROM produccion_programada WHERE COALESCE(origen,'')='calendar' "
-            "AND fecha_programada >= date('now') AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado') "
+            "AND fecha_programada >= date('now','-5 hours') AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado') "
             "AND COALESCE(inicio_real_at,'')='' AND COALESCE(inventario_descontado_at,'')=''").fetchone()[0]
     except Exception:
         n = 0
@@ -7044,7 +7045,7 @@ def admin_cancelar_produccion_huerfana():
         return jsonify({'error': 'id requerido'}), 400
     conn = get_db(); c = conn.cursor()
     row = c.execute(
-        "SELECT producto FROM produccion_programada WHERE id=? AND fecha_programada >= date('now') "
+        "SELECT producto FROM produccion_programada WHERE id=? AND fecha_programada >= date('now','-5 hours') "
         "  AND COALESCE(inicio_real_at,'')='' AND COALESCE(inventario_descontado_at,'')='' "
         "  AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')", (pid,)).fetchone()
     if not row:
@@ -7072,10 +7073,10 @@ def admin_producciones_sin_formula_page():
     try:
         rows = conn.execute(
             "SELECT id, producto, substr(fecha_programada,1,10), COALESCE(cantidad_kg,0), COALESCE(origen,'') "
-            "FROM produccion_programada WHERE fecha_programada >= date('now') "
+            "FROM produccion_programada WHERE fecha_programada >= date('now','-5 hours') "
             "  AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado') "
             "  AND COALESCE(inicio_real_at,'')='' AND COALESCE(inventario_descontado_at,'')='' "
-            "  AND UPPER(TRIM(producto)) NOT IN (SELECT UPPER(TRIM(producto_nombre)) FROM formula_headers WHERE COALESCE(activo,1)=1) "
+            "  AND UPPER(TRIM(producto)) NOT IN (SELECT UPPER(TRIM(producto_nombre)) FROM formula_headers WHERE COALESCE(activo,1)=1 AND TRIM(COALESCE(producto_nombre,''))<>'') "
             "ORDER BY fecha_programada").fetchall()
     except Exception:
         rows = []
@@ -7162,17 +7163,24 @@ def admin_equipos_sync_apply():
     if not maestro:
         return jsonify({'error': 'No se pudo cargar el maestro 2026'}), 500
     conn = get_db(); c = conn.cursor()
-    m_cods = set(); n_ins = 0; n_upd = 0
+    m_cods = set(); n_ins = 0; n_upd = 0; n_dup = 0
     for e in maestro:
         cod = (e.get('codigo') or '').strip()
         if not cod:
             continue
         m_cods.add(cod.upper())
-        row = c.execute("SELECT id FROM equipos_planta WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))", (cod,)).fetchone()
-        if row:
-            c.execute("UPDATE equipos_planta SET nombre=?, area_codigo=?, ubicacion_raw=?, capacidad_raw=?, activo=1, actualizado_en=? WHERE id=?",
-                      (e.get('nombre', ''), e.get('area_codigo', ''), e.get('ubicacion', ''), e.get('capacidad', ''), _ts, row[0]))
+        # Review 8-jul: un mismo código puede tener VARIAS filas (UNIQUE es codigo+ubicacion_raw · ej. una bascula
+        # listada en 2 áreas). Actualizar la 1ª (SIN tocar ubicacion_raw · evita chocar el UNIQUE) y DESACTIVAR las
+        # gemelas (activo=0 · si no, el equipo saldría en 2 áreas en el rótulo de limpieza). fetchall (no fetchone
+        # sin ORDER BY · no-determinista en PG).
+        rows = c.execute("SELECT id FROM equipos_planta WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?)) ORDER BY id", (cod,)).fetchall()
+        if rows:
+            c.execute("UPDATE equipos_planta SET nombre=?, area_codigo=?, capacidad_raw=?, activo=1, actualizado_en=? WHERE id=?",
+                      (e.get('nombre', ''), e.get('area_codigo', ''), e.get('capacidad', ''), _ts, rows[0][0]))
             n_upd += 1
+            for _extra in rows[1:]:
+                c.execute("UPDATE equipos_planta SET activo=0, actualizado_en=? WHERE id=?", (_ts, _extra[0]))
+                n_dup += 1
         else:
             c.execute("INSERT INTO equipos_planta (codigo, nombre, area_codigo, ubicacion_raw, capacidad_raw, activo, creado_en, actualizado_en) VALUES (?,?,?,?,?,1,?,?)",
                       (cod, e.get('nombre', ''), e.get('area_codigo', ''), e.get('ubicacion', ''), e.get('capacidad', ''), _ts, _ts))
@@ -7185,11 +7193,11 @@ def admin_equipos_sync_apply():
     try:
         from audit_helpers import audit_log
         audit_log(c, usuario=u, accion='SYNC_EQUIPOS_MAESTRO_2026', tabla='equipos_planta', registro_id='*',
-                  despues={'insertados': n_ins, 'actualizados': n_upd, 'desactivados': n_off})
+                  despues={'insertados': n_ins, 'actualizados': n_upd, 'desactivados': n_off, 'gemelas_off': n_dup})
     except Exception:
         pass
     conn.commit()
-    return jsonify({'ok': True, 'insertados': n_ins, 'actualizados': n_upd, 'desactivados': n_off})
+    return jsonify({'ok': True, 'insertados': n_ins, 'actualizados': n_upd, 'desactivados': n_off, 'gemelas_desactivadas': n_dup})
 
 
 @bp.route("/admin/equipos-sync", methods=["GET"])
