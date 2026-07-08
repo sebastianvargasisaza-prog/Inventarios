@@ -440,6 +440,7 @@ def calidad_bandeja():
             LEFT JOIN maestro_mps mp ON mp.codigo_mp = m.material_id
             WHERE m.tipo = 'Entrada'
               AND UPPER(COALESCE(m.estado_lote, '')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')
+              AND TRIM(COALESCE(m.material_id,'')) <> ''  -- Sebastián 9-jul: exigir código real · sin código no es MP (basura tipo 'factura junio')
               AND UPPER(COALESCE(mp.tipo_material,'MP'))='MP'  -- Sebastián 8-jul: MP-only (COC-PRO-001), igual que /api/lotes/cuarentena · los envases (ME/MEM) van por su flujo · antes la bandeja mostraba distinto que la vista CC-review
         """).fetchone()
         rows = c.execute("""
@@ -451,6 +452,7 @@ def calidad_bandeja():
             LEFT JOIN maestro_mps mp ON mp.codigo_mp = m.material_id
             WHERE m.tipo = 'Entrada'
               AND UPPER(COALESCE(m.estado_lote, '')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')
+              AND TRIM(COALESCE(m.material_id,'')) <> ''  -- Sebastián 9-jul: exigir código real · sin código no es MP (basura tipo 'factura junio')
               AND UPPER(COALESCE(mp.tipo_material,'MP'))='MP'  -- Sebastián 8-jul: MP-only (COC-PRO-001), igual que /api/lotes/cuarentena · los envases (ME/MEM) van por su flujo · antes la bandeja mostraba distinto que la vista CC-review
             ORDER BY m.fecha ASC
             LIMIT 20

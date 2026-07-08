@@ -7966,6 +7966,7 @@ def lotes_cuarentena():
                LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
                LEFT JOIN ordenes_compra oc ON oc.numero_oc = m.numero_oc
                WHERE UPPER(COALESCE(m.estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA') AND m.tipo='Entrada'
+                 AND TRIM(COALESCE(m.material_id,'')) <> ''
                  AND UPPER(COALESCE(mp.tipo_material,'MP'))='MP'
                  AND UPPER(COALESCE(oc.categoria,'MATERIA PRIMA')) IN
                      ('MATERIA PRIMA','MATERIA_PRIMA','MP','')
