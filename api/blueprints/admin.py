@@ -6995,6 +6995,41 @@ def admin_purgar_gcal():
                     'detalle': [{'id': r[0], 'producto': r[1], 'fecha': r[2]} for r in rows[:50]]})
 
 
+@bp.route("/admin/purgar-gcal", methods=["GET"])
+def admin_purgar_gcal_page():
+    """Página con botón para cancelar las producciones viejas de Google Calendar (Sebastián 7-jul)."""
+    if 'compras_user' not in session:
+        return redirect('/login?next=/admin/purgar-gcal')
+    conn = get_db()
+    try:
+        n = conn.execute(
+            "SELECT COUNT(*) FROM produccion_programada WHERE COALESCE(origen,'')='calendar' "
+            "AND fecha_programada >= date('now') AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado') "
+            "AND COALESCE(inicio_real_at,'')='' AND COALESCE(inventario_descontado_at,'')=''").fetchone()[0]
+    except Exception:
+        n = 0
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Purgar Google Calendar</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:24px;}.card{max-width:560px;margin:0 auto;}</style></head><body>
+<div class="cx-card card">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128197;</div><div><h2 style="margin:0;font-size:19px">Eliminar Google Calendar</h2><div class="cx-text-mute" style="font-size:13px">Cancela las producciones FUTURAS no-ejecutadas que entraron por Google Calendar. NO toca lo ejecutado ni lo que programaste en Plan/manual.</div></div></div>
+  <div style="background:#f5f3ff;border:1px solid #ede9fe;border-radius:10px;padding:14px;margin:14px 0;font-size:15px">Producciones de Google Calendar por cancelar: <b id="n" style="font-size:22px;color:#6d28d9">__N__</b></div>
+  <div style="display:flex;gap:10px"><button id="go" class="cx-btn cx-btn-danger" onclick="purgar()">Cancelar las __N__</button><button class="cx-btn cx-btn-ghost" onclick="location.href='/planta'">Volver</button></div>
+  <div id="msg" style="margin-top:12px;font-size:14px"></div>
+</div>
+<script>
+async function purgar(){
+  var b=document.getElementById('go'); b.disabled=true; b.textContent='Cancelando...';
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/admin/purgar-gcal',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||''},body:'{}'});
+    var d=await r.json();
+    if(r.ok&&d.ok){ document.getElementById('msg').innerHTML='<span style="color:#16a34a;font-weight:700">&#10003; '+d.canceladas+' producciones de Google Calendar canceladas.</span>'; document.getElementById('n').textContent='0'; b.textContent='Listo'; }
+    else { document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error: '+((d&&d.error)||r.status)+'</span>'; b.disabled=false; b.textContent='Reintentar'; }
+  }catch(e){ document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>'; b.disabled=false; b.textContent='Reintentar'; }
+}
+</script></body></html>'''
+    return _tpl.replace('__N__', str(n))
+
+
 @bp.route("/api/admin/mee-base", methods=["POST"])
 def admin_mee_base():
     """Setea el frasco BASE de un envase serigrafiado (maestro_mee.material_referencia) · Sebastián 28-jun."""
