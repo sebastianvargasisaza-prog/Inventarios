@@ -441,6 +441,7 @@ def calidad_bandeja():
             WHERE m.tipo = 'Entrada'
               AND UPPER(COALESCE(m.estado_lote, '')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')
               AND TRIM(COALESCE(m.material_id,'')) <> ''  -- Sebastián 9-jul: exigir código real · sin código no es MP (basura tipo 'factura junio')
+              AND COALESCE(m.observaciones,'') NOT LIKE '%::ANULADA-mov#%'  -- Sebastián 9-jul: no mostrar recepciones YA anuladas (el ✕ crea Salida net-zero pero deja la Entrada)
               AND UPPER(COALESCE(mp.tipo_material,'MP'))='MP'  -- Sebastián 8-jul: MP-only (COC-PRO-001), igual que /api/lotes/cuarentena · los envases (ME/MEM) van por su flujo · antes la bandeja mostraba distinto que la vista CC-review
         """).fetchone()
         rows = c.execute("""
@@ -453,6 +454,7 @@ def calidad_bandeja():
             WHERE m.tipo = 'Entrada'
               AND UPPER(COALESCE(m.estado_lote, '')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')
               AND TRIM(COALESCE(m.material_id,'')) <> ''  -- Sebastián 9-jul: exigir código real · sin código no es MP (basura tipo 'factura junio')
+              AND COALESCE(m.observaciones,'') NOT LIKE '%::ANULADA-mov#%'  -- Sebastián 9-jul: no mostrar recepciones YA anuladas (el ✕ crea Salida net-zero pero deja la Entrada)
               AND UPPER(COALESCE(mp.tipo_material,'MP'))='MP'  -- Sebastián 8-jul: MP-only (COC-PRO-001), igual que /api/lotes/cuarentena · los envases (ME/MEM) van por su flujo · antes la bandeja mostraba distinto que la vista CC-review
             ORDER BY m.fecha ASC
             LIMIT 20

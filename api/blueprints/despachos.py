@@ -171,6 +171,7 @@ def recepcion_lotes_cuarentena():
                  LEFT JOIN ordenes_compra oc ON oc.numero_oc = m.numero_oc
                  WHERE UPPER(COALESCE(m.estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA') AND m.tipo='Entrada'
                    AND TRIM(COALESCE(m.material_id,'')) <> ''
+                   AND COALESCE(m.observaciones,'') NOT LIKE '%::ANULADA-mov#%'
                    AND UPPER(COALESCE(mp.tipo_material,'MP'))='MP'
                    AND UPPER(COALESCE(oc.categoria,'MATERIA PRIMA')) IN ('MATERIA PRIMA','MATERIA_PRIMA','MP','')
                  ORDER BY m.fecha DESC LIMIT 100""")

@@ -7279,6 +7279,15 @@ def registrar_recepcion():
         return err, code
     d = request.json; codigo = (d.get('codigo_mp') or '').upper().strip()
     if not codigo: return jsonify({'error': 'Codigo MP requerido'}), 400
+    # Sebastián 9-jul: el código de una MP no lleva espacios (MP00123, MPCAKY01…). Un "código" con espacios es
+    # una descripción tecleada por error (ej. "Factura junio" de una cuenta de cobro de asesores) → NO es materia
+    # prima y no debe entrar a Bodega/cuarentena. Override para casos raros: forzar_codigo_raro=true.
+    if ' ' in codigo and not d.get('forzar_codigo_raro'):
+        return jsonify({
+            'error': f'El código "{codigo}" no parece un código de MP (lleva espacios). ¿Estás intentando '
+                     'ingresar una factura/servicio como materia prima? Eso no va a Bodega de MP.',
+            'codigo_invalido': True,
+        }), 400
     cantidad_recibida = float(d.get('cantidad') or 0)
     if cantidad_recibida <= 0:
         return jsonify({'error': 'La cantidad debe ser mayor a 0'}), 400
@@ -7294,6 +7303,23 @@ def registrar_recepcion():
                       'Audit contable lo requiere.'),
             'factura_obligatoria': True,
         }), 400
+
+    # Sebastián 9-jul: si la OC vinculada es de categoría SIN KARDEX (Cuenta de Cobro / Servicios / EPP / consumo),
+    # NO entra a Bodega de MP (igual que recibir_oc:5842) → evita que una factura de asesores/servicios caiga en
+    # cuarentena de materia prima. Esas OCs se marcan Pagadas / se registra el pago, no se "reciben" como material.
+    if numero_oc_pre:
+        try:
+            from blueprints.compras import CATEGORIAS_SIN_KARDEX as _CSK
+            _catr = c.execute("SELECT COALESCE(categoria,'') FROM ordenes_compra WHERE numero_oc=?",
+                              (numero_oc_pre,)).fetchone()
+            if _catr and (_catr[0] or '').strip() in _CSK:
+                return jsonify({
+                    'error': f'La OC {numero_oc_pre} es categoría "{_catr[0]}" (pago directo/consumo, no materia '
+                             'prima) · NO entra a la Bodega de MP. Marcala como Pagada o registrá el pago.',
+                    'oc_sin_kardex': True,
+                }), 409
+        except Exception:
+            pass
 
     # Sprint Recepciones PRO fix #2: cantidad ≤ pendiente de la OC
     if numero_oc_pre and not d.get('forzar_excedente'):
@@ -7967,6 +7993,7 @@ def lotes_cuarentena():
                LEFT JOIN ordenes_compra oc ON oc.numero_oc = m.numero_oc
                WHERE UPPER(COALESCE(m.estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA') AND m.tipo='Entrada'
                  AND TRIM(COALESCE(m.material_id,'')) <> ''
+                 AND COALESCE(m.observaciones,'') NOT LIKE '%::ANULADA-mov#%'
                  AND UPPER(COALESCE(mp.tipo_material,'MP'))='MP'
                  AND UPPER(COALESCE(oc.categoria,'MATERIA PRIMA')) IN
                      ('MATERIA PRIMA','MATERIA_PRIMA','MP','')
