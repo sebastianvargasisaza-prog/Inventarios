@@ -10249,9 +10249,9 @@ def generar_rotulos(producto_nombre, cantidad_str):
     # columnas (@page letter landscape) → salía mal en la impresora térmica de calor.
     try:
         _lw = int(round(float(request.args.get('w') or 100)))
-        _lh = int(round(float(request.args.get('h') or 150)))
+        _lh = int(round(float(request.args.get('h') or 100)))  # Sebastián 7-jul: default 100×100mm (etiqueta cuadrada)
     except Exception:
-        _lw, _lh = 100, 150
+        _lw, _lh = 100, 100
     _lw = max(50, min(_lw, 210)); _lh = max(30, min(_lh, 297))
     _scan_base = (request.host_url or '').rstrip('/')
     conn = get_db(); c = conn.cursor()
@@ -10305,11 +10305,11 @@ def generar_rotulos(producto_nombre, cantidad_str):
         mid,mnm,pct=r; peso=round((pct/100)*cant_g,2); info=lotes.get(mid,{}); lote_mp=info.get('lote','S/L')
         cod_real=cods.get(mid,mid)
         ubicacion=('Est. '+str(info.get('est',''))+str(info.get('pos',''))).strip(); vence=info.get('vence',''); inci=incis.get(mid,'')
-        bv=cod_real+'|'+lote_mp; barcodes+=f'try{{JsBarcode("#bc{i}","{bv}",{{format:"CODE128",width:1.2,height:35,displayValue:false,margin:0}})}}catch(e){{}};'
+        bv=cod_real+'|'+lote_mp; barcodes+=f'try{{JsBarcode("#bc{i}","{bv}",{{format:"CODE128",width:1.15,height:30,displayValue:false,margin:0}})}}catch(e){{}};'
         # QR resoluble: al escanear con el celular abre /scan/<código>/<lote> con la info REAL del lote.
         _scan_url = _scan_base + '/scan/' + urllib.parse.quote(str(cod_real), safe='') + '/' + urllib.parse.quote(str(lote_mp), safe='')
-        barcodes += f'try{{new QRCode(document.getElementById("qr{i}"),{{text:{json.dumps(_scan_url)},width:66,height:66,correctLevel:QRCode.CorrectLevel.M}})}}catch(e){{}};'
-        rhtml+='<div class="r"><div class="rh"><span class="rt">RÓTULO PARA DISPENSAR MATERIA PRIMA</span><span class="rc">PRD-PRO-001-F08 | v1<br>04-Mar-2025 / 03-Mar-2028</span></div>'
+        barcodes += f'try{{new QRCode(document.getElementById("qr{i}"),{{text:{json.dumps(_scan_url)},width:58,height:58,correctLevel:QRCode.CorrectLevel.M}})}}catch(e){{}};'
+        rhtml+='<div class="r"><div class="rh"><div class="rhl"><img class="rlogo" src="/static/logos/espagiria.png" alt="" onerror="this.remove()"><span class="rt">RÓTULO PARA DISPENSAR MATERIA PRIMA</span></div><span class="rc">PRD-PRO-001-F08 | v1<br>04-Mar-2025 / 03-Mar-2028</span></div>'
         rhtml+='<table><tr><td class="l">OP:</td><td class="v">'+op_num+'</td><td class="l">Fecha:</td><td class="v">'+hoy+'</td></tr>'
         rhtml+='<tr><td class="l">Producto:</td><td class="v big" colspan="3"><b>'+prod+'</b> &mdash; '+str(cantidad_kg)+' kg</td></tr>'
         rhtml+='<tr><td class="l">Nombre MP:</td><td class="v bold" colspan="3"><b>'+mnm+'</b> <span style="color:#888;font-size:0.8em;">('+mid+')</span></td></tr>'
@@ -10331,12 +10331,13 @@ def generar_rotulos(producto_nombre, cantidad_str):
          '.wrap{display:flex;flex-wrap:wrap;gap:5px;padding:8px;}'
          '.r{background:white;border:2px solid #4c1d95;border-radius:3px;width:370px;page-break-inside:avoid;}'
          '.rh{background:#4c1d95;color:white;padding:5px 8px;display:flex;justify-content:space-between;align-items:center;}'
-         '.rt{font-weight:bold;font-size:8pt;}.rc{font-size:6.5pt;text-align:right;line-height:1.4;}'
-         'table{width:100%;border-collapse:collapse;}td{border:1px solid #bbb;padding:3px 5px;vertical-align:middle;}'
+         '.rhl{display:flex;align-items:center;gap:5px;min-width:0;}.rlogo{height:19px;width:auto;max-width:74px;background:#fff;border-radius:2px;padding:1px 2px;flex:none;}'
+         '.rt{font-weight:bold;font-size:8pt;}.rc{font-size:6.2pt;text-align:right;line-height:1.35;flex:none;}'
+         'table{width:100%;border-collapse:collapse;}td{border:1px solid #bbb;padding:2px 5px;vertical-align:middle;}'
          '.l{background:#ecf0f1;font-weight:bold;font-size:7.5pt;color:#4c1d95;white-space:nowrap;width:27%;}'
          '.v{font-size:8.5pt;width:23%;}.bold{font-size:9pt;}.big{font-size:9pt;}'
          '.peso{background:#fff3cd;color:#c0392b;font-size:12pt;font-weight:bold;}'
-         '.blank{height:20px;width:23%;}.firma{height:26px;}.rf{background:#ecf0f1;padding:2px 6px;font-size:6.5pt;color:#888;text-align:right;}'
+         '.blank{height:15px;width:23%;}.firma{height:18px;}.rf{background:#ecf0f1;padding:2px 6px;font-size:6.5pt;color:#888;text-align:right;}'
          '.bcq{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:4px 6px;}'
          '.bcwrap{flex:1;text-align:center;overflow:hidden;}.bcwrap svg{max-width:100%;}'
          '.qrwrap{flex:0 0 auto;text-align:center;}.qrwrap img,.qrwrap canvas{display:block;}'
@@ -10351,7 +10352,7 @@ def generar_rotulos(producto_nombre, cantidad_str):
          f'@page{{size:{_lw}mm {_lh}mm;margin:1.5mm;}}}}'
          '</style></head><body>')
     _base_path = '/rotulos/' + urllib.parse.quote(prod) + '/' + str(cantidad_kg)
-    _sizes = [(100, 150, '4×6"'), (100, 75, '4×3"'), (100, 50, '4×2"'), (50, 30, 'chica')]
+    _sizes = [(100, 100, '4×4"'), (100, 150, '4×6"'), (100, 75, '4×3"'), (100, 50, '4×2"'), (50, 30, 'chica')]
     _size_links = ''.join(
         '<a href="' + _base_path + '?w=' + str(w) + '&h=' + str(h) + '" style="'
         'display:inline-block;padding:4px 9px;margin-left:5px;border-radius:6px;font-size:8pt;'
@@ -10359,9 +10360,9 @@ def generar_rotulos(producto_nombre, cantidad_str):
         ('background:#fff;color:#4c1d95;' if (w == _lw and h == _lh) else 'background:#6d28d9;color:#fff;') +
         '">' + lbl + ' · ' + str(w) + '×' + str(h) + 'mm</a>'
         for w, h, lbl in _sizes)
-    return (css + '<div class="ph"><div><h2>Rotulos &mdash; ' + prod + ' &mdash; ' + str(cantidad_kg) + ' kg</h2>'
+    return (css + '<div class="ph"><div style="display:flex;align-items:center;gap:12px;"><img src="/static/logos/espagiria.png" alt="" onerror="this.remove()" style="height:34px;width:auto;background:#fff;border-radius:6px;padding:2px 5px;"><div><h2 style="margin:0;">Rotulos &mdash; ' + prod + ' &mdash; ' + str(cantidad_kg) + ' kg</h2>'
             '<div style="font-size:8pt;opacity:0.8;">' + op_num + ' | ' + str(len(items)) + ' MPs | ' + hoy +
-            ' | etiqueta ' + str(_lw) + '×' + str(_lh) + 'mm</div></div>'
+            ' | etiqueta ' + str(_lw) + '×' + str(_lh) + 'mm</div></div></div>'
             '<div style="display:flex;align-items:center;gap:4px;"><span style="font-size:8pt;opacity:.8;">Tamaño:</span>' +
             _size_links +
             '<button class="pbtn" style="margin-left:12px;" onclick="window.print()">Imprimir todos</button></div></div>'
