@@ -13764,8 +13764,13 @@ def abastecimiento_consumo_horizontes():
         # FIX 17-jun · incluir 'eos_proyeccion' (plan rodante 2 años · M42): el
         # calendario lo MUESTRA pero Abastecimiento no lo contaba → compraba para un
         # plan distinto al visible. Dentro del horizonte ya acotado por cutoff_max.
+        # FIX 7-jul (audit abastecimiento): agregar 'calendar' y 'manual' (orígenes Sugerido reales · el
+        # calendario los MUESTRA pero abastecimiento no los contaba → sub-compra silenciosa · se tratan como
+        # sugeridas: se conservan salvo dedup por (producto,fecha)). CLAUDE.md: Sugerido = eos_canonico,
+        # calendar, manual, auto_plan, sugerido.
         origenes_in = ('eos_plan', 'eos_b2b', 'eos_retroactivo',
-                        'eos_canonico', 'auto_plan', 'sugerido', 'eos_proyeccion')
+                        'eos_canonico', 'auto_plan', 'sugerido', 'eos_proyeccion',
+                        'calendar', 'manual')
     placeholders = ','.join(['?'] * len(origenes_in))
     # Sebastián 25-may-2026 PM · incluir envase_codigo_override (mig 184).
     # Si el lote tiene override no vacío, el cálculo MEE prioriza ese envase
@@ -13876,6 +13881,13 @@ def abastecimiento_consumo_horizontes():
         JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(fi.producto_nombre))
         WHERE fi.material_id IS NOT NULL AND TRIM(fi.material_id) != ''
           AND COALESCE(fh.activo,1) = 1
+          -- FIX 7-jul (audit abastecimiento · espejo de M73-P0): con un header CASE-DUPLICADO ('Blush Balm'
+          -- activo=0 + 'BLUSH BALM' activo=1), el JOIN UPPER(TRIM) pega los items de la fórmula DESCONTINUADA
+          -- con el header ACTIVO y pasan el activo=1 → el abastecimiento cruzaba la fórmula vieja (demanda de
+          -- MP errada · el dedup se queda con la 1ª fila · no-determinista en PG). Excluir por nombre EXACTO
+          -- los items cuyo propio header está descontinuado (case-sensitive · igual que M73).
+          AND TRIM(fi.producto_nombre) NOT IN (
+              SELECT TRIM(producto_nombre) FROM formula_headers WHERE COALESCE(activo,1)=0)
     """).fetchall():
         cm_norm = str(r[1] or '').strip().upper()
         if not cm_norm:
