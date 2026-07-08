@@ -7030,6 +7030,84 @@ async function purgar(){
     return _tpl.replace('__N__', str(n))
 
 
+@bp.route("/api/admin/cancelar-produccion-huerfana", methods=["POST"])
+def admin_cancelar_produccion_huerfana():
+    """Cancela UNA producción programada futura no-ejecutada (revisión manual de basura sin fórmula ·
+    Sebastián 7-jul). Guardado: no toca ejecutadas ni pasadas. Auditado. Solo Admin."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.get_json(silent=True) or {}
+    pid = d.get('id')
+    if not pid:
+        return jsonify({'error': 'id requerido'}), 400
+    conn = get_db(); c = conn.cursor()
+    row = c.execute(
+        "SELECT producto FROM produccion_programada WHERE id=? AND fecha_programada >= date('now') "
+        "  AND COALESCE(inicio_real_at,'')='' AND COALESCE(inventario_descontado_at,'')='' "
+        "  AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')", (pid,)).fetchone()
+    if not row:
+        return jsonify({'error': 'No cancelable (ya ejecutada, pasada o cancelada)'}), 409
+    c.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id=?", (pid,))
+    try:
+        from audit_helpers import audit_log
+        audit_log(c, usuario=u, accion='CANCELAR_PRODUCCION_HUERFANA', tabla='produccion_programada',
+                  registro_id=str(pid), despues={'estado': 'cancelado', 'producto': row[0]})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'id': pid})
+
+
+@bp.route("/admin/producciones-sin-formula", methods=["GET"])
+def admin_producciones_sin_formula_page():
+    """Lista las producciones FUTURAS no-ejecutadas cuyo producto NO matchea ninguna fórmula activa (candidatas
+    a basura tipo test) para revisarlas y cancelarlas una por una. NO auto-borra (el sistema permite nombres
+    libres para manuales). Sebastián 7-jul."""
+    import html as _html
+    if 'compras_user' not in session:
+        return redirect('/login?next=/admin/producciones-sin-formula')
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT id, producto, substr(fecha_programada,1,10), COALESCE(cantidad_kg,0), COALESCE(origen,'') "
+            "FROM produccion_programada WHERE fecha_programada >= date('now') "
+            "  AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado') "
+            "  AND COALESCE(inicio_real_at,'')='' AND COALESCE(inventario_descontado_at,'')='' "
+            "  AND UPPER(TRIM(producto)) NOT IN (SELECT UPPER(TRIM(producto_nombre)) FROM formula_headers WHERE COALESCE(activo,1)=1) "
+            "ORDER BY fecha_programada").fetchall()
+    except Exception:
+        rows = []
+    filas = ''
+    for r in rows:
+        filas += ('<tr id="row-' + str(r[0]) + '"><td>' + str(r[0]) + '</td><td><b>' + _html.escape(str(r[1] or '')) +
+                  '</b></td><td>' + str(r[2] or '') + '</td><td>' + str(r[3] or 0) + ' kg</td><td>' +
+                  _html.escape(str(r[4] or '')) + '</td><td><button class="cx-btn cx-btn-danger cx-btn-sm" onclick="cancelar(' +
+                  str(r[0]) + ')">Cancelar</button></td></tr>')
+    if not rows:
+        filas = '<tr><td colspan="6" style="text-align:center;color:#16a34a;padding:22px;font-weight:600">&#10003; No hay producciones sin fórmula. Todo limpio.</td></tr>'
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Producciones sin fórmula</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:24px;}.card{max-width:820px;margin:0 auto;}</style></head><body>
+<div class="cx-card card">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#129529;</div><div><h2 style="margin:0;font-size:19px">Producciones sin fórmula</h2><div class="cx-text-mute" style="font-size:13px">Producciones futuras cuyo producto NO matchea ninguna fórmula activa → aportan 0 a abastecimiento y ensucian el calendario. Revisá y cancelá las que sean basura (ej. pruebas). Los manuales legítimos podés dejarlos.</div></div></div>
+  <div class="cx-table-wrap" style="margin-top:14px"><table class="cx-table"><thead><tr><th>ID</th><th>Producto</th><th>Fecha</th><th>Kg</th><th>Origen</th><th></th></tr></thead><tbody>__FILAS__</tbody></table></div>
+  <div id="msg" style="margin-top:12px;font-size:14px"></div>
+  <div style="margin-top:14px"><button class="cx-btn cx-btn-ghost" onclick="location.href='/planta'">Volver</button></div>
+</div>
+<script>
+async function cancelar(id){
+  if(!confirm('¿Cancelar la producción '+id+'? (no toca nada ejecutado)')) return;
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/admin/cancelar-produccion-huerfana',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||''},body:JSON.stringify({id:id})});
+    var d=await r.json();
+    if(r.ok&&d.ok){ var row=document.getElementById('row-'+id); if(row) row.style.opacity='.35'; if(row) row.querySelector('button').outerHTML='<span style="color:#16a34a;font-weight:700">cancelada &#10003;</span>'; }
+    else { document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error: '+((d&&d.error)||r.status)+'</span>'; }
+  }catch(e){ document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>'; }
+}
+</script></body></html>'''
+    return _tpl.replace('__FILAS__', filas)
+
+
 @bp.route("/api/admin/mee-base", methods=["POST"])
 def admin_mee_base():
     """Setea el frasco BASE de un envase serigrafiado (maestro_mee.material_referencia) · Sebastián 28-jun."""
