@@ -3904,7 +3904,10 @@ def get_analisis_abc():
             stock = stock_map.get(cod, 0.0)
             consumo = consumo_map.get(cod, 0.0)
             precio = float(precio_ref or 0)
-            valor_cop = stock * precio
+            # FIX 9-jul (Sebastián): el valor salía 1000× de más. stock está en GRAMOS y precio_referencia es
+            # por KG (el campo de recepción es "precio_kg") → hay que pasar el stock a kg (÷1000) antes de
+            # multiplicar. Antes: stock_g × precio_kg = 1000× el valor real ("ceros de más").
+            valor_cop = (stock / 1000.0) * precio
             # Filtros
             if subtipo_filtro and (subt or '').lower() != subtipo_filtro.lower():
                 continue
