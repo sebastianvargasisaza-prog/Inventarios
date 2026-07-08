@@ -18,6 +18,7 @@ from config import (
     ESPAGIRIA_ACCESS, CALIDAD_USERS, PLANTA_USERS,
 )
 from database import db_connect
+from database import get_db  # Sebastián 7-jul: usado por endpoints logo/purgar-gcal/producciones-sin-formula (antes NameError)
 from auth import _client_ip, _log_sec
 from audit_helpers import audit_log, siguiente_numero_oc
 from backup import (
