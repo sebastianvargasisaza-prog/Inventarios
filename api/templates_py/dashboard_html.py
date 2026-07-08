@@ -7613,7 +7613,7 @@ async function cargarCuarentena(){
       h+='<td><span style="background:'+estadoColor+'20;color:'+estadoColor+';padding:2px 8px;border-radius:10px;font-size:0.8em;font-weight:700;">'+l.estado_lote.replace('_',' ')+'</span></td>';
       h+='<td>';
       if(esAdmin){
-        h+='<button onclick="abrirCCModal(JSON.parse(this.dataset.lote))" data-lote="'+JSON.stringify(l).replace(/"/g,'&quot;')+'" style="padding:5px 12px;background:#6d28d9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.82em;font-weight:600;">Revisar CC</button>';
+        h+='<button onclick="abrirCCReview(JSON.parse(this.dataset.lote))" data-lote="'+JSON.stringify(l).replace(/"/g,'&quot;')+'" style="padding:5px 12px;background:#6d28d9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.82em;font-weight:600;">Revisar CC</button>';
       }else{
         h+='<span style="color:#999;font-size:0.82em;">Solo CC/Admin</span>';
       }
@@ -26907,3 +26907,15 @@ try:
 except Exception:
     DASHBOARD_CORE_JS = ""
     DASHBOARD_CORE_JS_HASH = ""
+
+# ── Modal Revisión CC (COC-PRO-001) PREMIUM en la pantalla de Planta · Sebastián 8-jul ─────────────────────
+# Mismo componente compartido que el módulo Calidad → el CEO, Hernando y Miguel liberan MP con el modal premium
+# (checklist + firma Part 11), igual que Laura. Se inyecta DESPUÉS de la extracción de JS cacheable (arriba) para
+# no interferirla, antes del ÚLTIMO </body>. El botón "Revisar CC" ya apunta a abrirCCReview. JS ya node-checked.
+try:
+    from templates_py.cc_review_html import CC_REVIEW_MODAL_HTML as _CCR_MODAL_D, CC_REVIEW_JS as _CCR_JS_D
+    _pre_d, _sep_d, _post_d = DASHBOARD_HTML.rpartition('</body>')
+    if _sep_d:
+        DASHBOARD_HTML = _pre_d + _CCR_MODAL_D + '\n<script>\n' + _CCR_JS_D + '\n</script>\n' + _sep_d + _post_d
+except Exception:
+    pass

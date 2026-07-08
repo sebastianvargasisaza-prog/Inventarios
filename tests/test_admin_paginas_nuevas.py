@@ -75,3 +75,12 @@ def test_calidad_modulo_tiene_modal_ccreview_premium(admin_client):
     assert "abrirCCReview" in body
     assert "Revisar CC" in body
     assert "Firmar y registrar" in body
+
+
+def test_planta_dashboard_tiene_modal_ccreview_premium(admin_client):
+    """La pantalla de Planta (CEO/Hernando/Miguel) también trae el modal premium de Revisión CC."""
+    r = admin_client.get("/inventarios")
+    assert r.status_code == 200, r.status_code
+    body = r.data.decode("utf-8", "replace")
+    assert "ccr-modal" in body
+    assert "function abrirCCReview" in body
