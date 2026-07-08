@@ -1,24 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 232" fill="none">
-  <!-- Recreación SVG del logo Espagiria (matraz de fondo redondo + loto + ESPAGIRIA) · Sebastián 7-jul.
-       Placeholder nítido para impresión · reemplazable subiendo el PNG exacto en /admin/logo-espagiria. -->
-  <g stroke="#2b3a55" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 244" fill="none">
+  <!-- Recreación limpia del logo Espagiria (matraz de fondo redondo + loto + ESPAGIRIA) · Sebastián 7-jul.
+       Placeholder · el logo EXACTO se sube como PNG en /admin/logo-espagiria (persiste en DB). -->
+  <g stroke="#2b3a55" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" fill="none">
     <!-- boca del matraz -->
-    <path d="M103 26 h34"/>
-    <path d="M105 37 h30"/>
+    <line x1="102" y1="24" x2="138" y2="24"/>
     <!-- cuello -->
-    <path d="M110 40 v36"/>
-    <path d="M130 40 v36"/>
-    <!-- bulbo (fondo redondo) -->
-    <path d="M110 76 C 80 84 60 108 60 134 a 60 60 0 1 0 120 0 c 0 -26 -20 -50 -50 -58"/>
+    <line x1="110" y1="26" x2="110" y2="86"/>
+    <line x1="130" y1="26" x2="130" y2="86"/>
+    <!-- bulbo (fondo redondo) que arranca del cuello -->
+    <path d="M110 86 C 84 92 62 116 62 146 a 58 58 0 1 0 116 0 c 0 -30 -22 -54 -48 -60"/>
   </g>
-  <!-- loto -->
-  <g stroke="#2b3a55" stroke-width="3.1" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M120 104 C 111 120 111 138 120 152 C 129 138 129 120 120 104 Z"/>
-    <path d="M120 152 C 103 143 94 130 94 117 C 108 120 118 134 120 152 Z"/>
-    <path d="M120 152 C 137 143 146 130 146 117 C 132 120 122 134 120 152 Z"/>
-    <path d="M120 152 C 99 151 82 143 75 130 C 91 132 111 141 120 152 Z"/>
-    <path d="M120 152 C 141 151 158 143 165 130 C 149 132 129 141 120 152 Z"/>
-    <path d="M90 154 C 108 163 132 163 150 154"/>
+  <!-- loto simétrico -->
+  <g stroke="#2b3a55" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M120 118 C 112 132 112 150 120 164 C 128 150 128 132 120 118 Z"/>
+    <path d="M120 164 C 106 156 98 142 99 130 C 111 134 118 148 120 164 Z"/>
+    <path d="M120 164 C 134 156 142 142 141 130 C 129 134 122 148 120 164 Z"/>
+    <path d="M120 164 C 102 164 86 156 80 144 C 96 145 113 154 120 164 Z"/>
+    <path d="M120 164 C 138 164 154 156 160 144 C 144 145 127 154 120 164 Z"/>
+    <path d="M96 166 C 112 174 128 174 144 166"/>
   </g>
-  <text x="120" y="216" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="31" letter-spacing="3" font-weight="600" fill="#2b3a55">ESPAGIRIA</text>
+  <text x="120" y="228" text-anchor="middle" font-family="Georgia,'Times New Roman',serif" font-size="30" letter-spacing="3.5" font-weight="600" fill="#2b3a55">ESPAGIRIA</text>
 </svg>
