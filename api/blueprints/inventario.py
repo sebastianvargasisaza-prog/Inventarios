@@ -7647,7 +7647,10 @@ def recepcion_recientes():
         offset = 0
     q = (request.args.get('q') or '').strip().lower()
     params = []
-    where = ["m.tipo IN ('Entrada','entrada','ENTRADA')"]
+    # Sebastián 9-jul: ocultar de "Últimas Entradas" las recepciones YA anuladas (el ✕ crea una Salida net-zero
+    # y marca la Entrada con ::ANULADA-mov#:: · sin esto la fila seguía visible aunque dijera "ya se eliminó").
+    where = ["m.tipo IN ('Entrada','entrada','ENTRADA')",
+             "COALESCE(m.observaciones,'') NOT LIKE '%::ANULADA-mov#%'"]
     if q:
         # Escape LIKE wildcards (% y _) para evitar match fantasma
         q_safe = q.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
