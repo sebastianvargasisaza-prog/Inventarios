@@ -1353,6 +1353,7 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
                FROM produccion_programada
                WHERE LOWER(COALESCE(estado,'')) NOT IN ('completado','cancelado','esperando_recurso')
                  AND COALESCE(inventario_descontado_at,'') = ''
+                 AND COALESCE(origen,'') <> 'calendar'
                  AND fecha_programada >= date('now', '-5 hours', '-7 days')
                  AND fecha_programada <= ?
                ORDER BY fecha_programada""",
@@ -1404,6 +1405,29 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
                 'fecha': fecha_s, 'mes': fecha.strftime('%Y-%m'),
                 'producto': prod, 'kg': kg_real,
             })
+        # M47 · paridad con la pantalla (abastecimiento_consumo_horizontes paso 8b): sumar los pedidos_b2b
+        # PENDIENTES (aún no integrados a un lote) para que /generar-oc NO sub-compre la MP de esos pedidos.
+        # kg = uds × ml_unidad / 1000. Sebastián 8-jul (resuelve la divergencia M47 [4] · antes solo la pantalla
+        # los contaba → la OC quedaba corta en la ventana entre que entra el pedido B2B y se convierte a lote).
+        for _b in conn.execute(
+            """SELECT pb.producto_nombre, COALESCE(pb.cantidad_uds,0), COALESCE(pb.ml_unidad,30),
+                      COALESCE(pb.fecha_estimada,'')
+               FROM pedidos_b2b pb
+               LEFT JOIN pedidos_b2b_lote pbl ON pbl.pedido_b2b_id = pb.id
+               WHERE LOWER(COALESCE(pb.estado,'pendiente'))='pendiente'
+                 AND COALESCE(pb.fecha_estimada,'') >= ? AND COALESCE(pb.fecha_estimada,'') <= ?
+                 AND pbl.id IS NULL""",
+            (today.isoformat(), cutoff.isoformat())).fetchall():
+            _prod_b = _rprod((_b[0] or '').strip())
+            _kg_b = (float(_b[1] or 0) * float(_b[2] or 30)) / 1000.0
+            if not _prod_b or _kg_b <= 0:
+                continue
+            _fs_b = (_b[3] or today.isoformat())[:10]
+            try:
+                _mes_b = _dt.date.fromisoformat(_fs_b).strftime('%Y-%m')
+            except Exception:
+                _mes_b = today.strftime('%Y-%m')
+            producciones.append({'fecha': _fs_b, 'mes': _mes_b, 'producto': _prod_b, 'kg': _kg_b})
     except Exception:
         pass
 
