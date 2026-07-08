@@ -9817,13 +9817,21 @@ def _resolver_material_bodega_impl(c, formula_mid, formula_nombre):
     # y NUNCA llegaba al match que halla el código duplicado CON stock.
     if fmid and _stock_neto(fmid) > 0.01:   # M21 · umbral polvo: residuo <0.01g NO bloquea el bridge
         return fmid
-    # 2) bridge explícito (si el destino tiene stock)
+    # 2) bridge explícito. Sebastián 7-jul (audit fórmulas · P1 · M1): si el código de fórmula es FANTASMA (NO
+    # existe en maestro_mps), el bridge es la ÚNICA forma de resolverlo → aplicar SIEMPRE, aunque el destino
+    # tenga stock 0 (que es justo cuando abastecimiento debe detectar déficit y COMPRAR). Antes solo aplicaba con
+    # destino>0.01 → un fantasma con destino en 0 quedaba SIN resolver → el déficit se registraba bajo el código
+    # fantasma (sin proveedor/precio → compra rota/invisible · caso ESENCIA ILUMINADORA con 12 códigos fantasma).
+    # Si el fmid SÍ existe en maestro (duplicado ambiguo), se mantiene el stock-gate (elegir el dup con stock).
     try:
         r = c.execute(
             "SELECT bodega_material_id FROM mp_formula_bridge "
             "WHERE TRIM(formula_material_id)=? AND COALESCE(activo,1)=1 LIMIT 1", (fmid,)).fetchone()
-        if r and r[0] and _stock_neto(str(r[0]).strip()) > 0.01:
-            return str(r[0]).strip()
+        if r and r[0]:
+            _dest = str(r[0]).strip()
+            _fmid_en_maestro = c.execute("SELECT 1 FROM maestro_mps WHERE codigo_mp=? LIMIT 1", (fmid,)).fetchone()
+            if _stock_neto(_dest) > 0.01 or not _fmid_en_maestro:
+                return _dest
     except Exception:
         pass
     # 2b) por INCI del código de fórmula · Audit 4-jun · robusto (no depende del
@@ -13785,6 +13793,7 @@ def abastecimiento_consumo_horizontes():
             FROM produccion_programada pp
             LEFT JOIN formula_headers fh
                    ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+                  AND COALESCE(fh.activo,1) = 1
             WHERE COALESCE(pp.origen,'') IN ({placeholders})
               AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado','esperando_recurso')
               AND COALESCE(pp.inventario_descontado_at,'') = ''
@@ -13802,6 +13811,7 @@ def abastecimiento_consumo_horizontes():
             FROM produccion_programada pp
             LEFT JOIN formula_headers fh
                    ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+                  AND COALESCE(fh.activo,1) = 1
             WHERE COALESCE(pp.origen,'') IN ({placeholders})
               AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado','esperando_recurso')
               AND COALESCE(pp.inventario_descontado_at,'') = ''

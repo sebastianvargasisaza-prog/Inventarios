@@ -2111,10 +2111,14 @@ def _handle_produccion_inner():
         # en lugar de crear una nueva. Cubre el caso clásico de doble-click,
         # cliente con red lenta que reintenta, o un POST replay.
         try:
+            # FIX 7-jul (audit fórmulas · M24): `fecha` se escribe con datetime.now() = UTC en Render, y
+            # datetime('now') en SQL también es UTC → el '-5 hours' (pensado para Colombia) corría el umbral 5h
+            # atrás → la ventana de 90s se volvía 5h+90s → un 2º LOTE LEGÍTIMO del mismo producto+kg+operario en
+            # el día se rechazaba como duplicado y NO descontaba MP (kardex sobre-estimado). Ambos en UTC → 90s.
             c.execute("""SELECT id, fecha, lote
                          FROM producciones
                          WHERE producto=? AND cantidad=? AND operador=?
-                           AND datetime(fecha) >= datetime('now', '-5 hours', '-90 seconds')
+                           AND datetime(fecha) >= datetime('now', '-90 seconds')
                          ORDER BY id DESC LIMIT 1""",
                       (producto, cantidad_kg, operador))
             dup = c.fetchone()

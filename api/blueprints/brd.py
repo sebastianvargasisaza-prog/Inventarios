@@ -1285,6 +1285,11 @@ def _generar_mbr_desde_formula(cur, producto_nombre, usuario=''):
         """SELECT material_nombre, material_id, COALESCE(porcentaje,0),
                   COALESCE(cantidad_g_por_lote,0)
              FROM formula_items WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))
+               -- FIX 7-jul (audit fórmulas · M73): NO mezclar los items de un header CASE-DUPLICADO INACTIVO
+               -- ('Blush Balm' activo=0) con el activo ('BLUSH BALM') → un MBR nuevo salía con 38 pasos al
+               -- 167%. Crear MBR es PLANEACIÓN (filtro activo=0 OK · distinto del pesaje que es ejecución · M52).
+               AND TRIM(producto_nombre) NOT IN (
+                   SELECT TRIM(producto_nombre) FROM formula_headers WHERE COALESCE(activo,1)=0)
             ORDER BY cantidad_g_por_lote DESC""",
         (producto_nombre,),
     ).fetchall()
