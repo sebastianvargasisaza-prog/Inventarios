@@ -10321,7 +10321,7 @@ def generar_rotulos(producto_nombre, cantidad_str):
         _scan_url = _scan_base + '/scan/' + urllib.parse.quote(str(cod_real), safe='') + '/' + urllib.parse.quote(str(lote_mp), safe='')
         barcodes += f'try{{new QRCode(document.getElementById("qr{i}"),{{text:{json.dumps(_scan_url)},width:58,height:58,correctLevel:QRCode.CorrectLevel.M}})}}catch(e){{}};'
         rhtml+='<div class="sheet"><div class="accent"></div>'
-        rhtml+='<div class="top"><div class="brand"><img class="mark" src="'+_logo_src+'" alt="" onerror="this.remove()"><div><div class="co">ESPAGIRIA Laboratorio SAS</div><div class="sub">ÁNIMUS Lab &middot; Dispensación de materia prima</div></div></div>'
+        rhtml+='<div class="top"><div class="brand"><img class="mark" src="'+_logo_src+'" alt="" onerror="this.remove()"><div class="co">ESPAGIRIA Laboratorio SAS</div></div>'
         rhtml+='<div class="ctrl"><b>Código:</b> PRD-PRO-001-F08<br><b>Versión:</b> 01 &middot; <b>Etiqueta</b> '+str(i+1)+' de '+str(len(items))+'<br><b>Vigencia:</b> 04-Mar-2025 / 03-Mar-2028</div></div>'
         rhtml+='<div class="title"><h1>Rótulo para dispensar materia prima</h1><div class="k">OP '+op_num+' &middot; '+hoy+'</div></div>'
         rhtml+='<table>'
@@ -10350,8 +10350,8 @@ def generar_rotulos(producto_nombre, cantidad_str):
          '.accent{height:5px;background:linear-gradient(90deg,#a78bfa,var(--violet));}'
          '.top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:14px 16px 8px;}'
          '.brand{display:flex;align-items:center;gap:10px;min-width:0;}'
-         '.mark{width:42px;height:42px;border-radius:11px;flex:none;object-fit:contain;background:#fff;border:1px solid var(--line);padding:3px;}'
-         '.co{font-size:13px;font-weight:800;letter-spacing:-.2px;line-height:1.15;}.sub{font-size:10px;color:var(--mute);margin-top:2px;font-weight:500;}'
+         '.mark{width:66px;height:66px;border-radius:13px;flex:none;object-fit:contain;background:#fff;border:1px solid var(--line);padding:4px;}'
+         '.co{font-size:14px;font-weight:800;letter-spacing:-.2px;line-height:1.2;}'
          '.ctrl{font-size:9px;color:var(--soft);text-align:right;line-height:1.6;background:var(--pale);border:1px solid #ede9fe;border-radius:9px;padding:7px 10px;flex:none;white-space:nowrap;}.ctrl b{color:var(--violet-d);font-weight:700;}'
          '.title{text-align:center;padding:2px 16px 12px;}'
          '.title h1{margin:0;font-size:14px;font-weight:800;letter-spacing:-.2px;text-transform:uppercase;}.title .k{font-size:10px;color:var(--mute);margin-top:3px;font-weight:600;letter-spacing:.3px;}'
@@ -10375,7 +10375,7 @@ def generar_rotulos(producto_nombre, cantidad_str):
          f'.sheet{{width:{_lw-3}mm;max-width:{_lw-3}mm;border-radius:0;box-shadow:none;border:1px solid #ccc;margin:0 auto;page-break-after:always;page-break-inside:avoid;}}'
          f'.sheet:last-child{{page-break-after:auto;}}'
          'td{padding:2.5px 8px;font-size:8pt;}td.k{font-size:6.5pt;}.title{padding:1px 12px 6px;}.title h1{font-size:10pt;}'
-         '.top{padding:8px 12px 4px;}.mark{width:32px;height:32px;}.co{font-size:9.5pt;}.sub{font-size:6.5pt;}.ctrl{font-size:6pt;padding:5px 7px;}'
+         '.top{padding:8px 12px 4px;}.mark{width:50px;height:50px;}.co{font-size:10pt;}.ctrl{font-size:6pt;padding:5px 7px;}'
          '.peso{font-size:11pt;}.fill{height:15px;}.firma{padding:6px 10px 8px;}.firma .v{margin-top:9px;}.bcq{padding:5px 10px;}'
          f'@page{{size:{_lw}mm {_lh}mm;margin:2mm;}}}}'
          '</style></head><body>')
