@@ -1344,7 +1344,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
               '<td style="font-weight:600">'+_escHTML(o.producto||'\\u2014')+'</td>'+
               '<td>'+_escHTML(o.operador||'\\u2014')+'</td>'+
               '<td style="text-align:right">'+(o.teorica_g!=null?(Number(o.teorica_g).toLocaleString('es-CO')+' g'):'\\u2014')+'</td>'+
-              '<td style="text-align:center"><span style="background:#fef3c7;color:#b45309;padding:1px 8px;border-radius:8px;font-size:0.75em;font-weight:700">En proceso</span></td>'+
+              '<td style="text-align:center"><span class="cx-chip cx-chip-warn">En proceso</span></td>'+
               '<td style="text-align:center">'+leg+'<button onclick="eliminarFabVivo('+o.produccion_id+')" title="Eliminar esta produccion y revertir la MP - para borrar las mal registradas" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:5px;padding:4px 8px;font-size:10px;font-weight:700;cursor:pointer;margin-right:5px">&#128465;</button><button onclick="finalizarFabVivo('+o.produccion_id+')" style="background:#d97706;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:10px;font-weight:700;cursor:pointer">\\u25a0 Finalizar</button></td>'+
             '</tr>';
           }).join('');
@@ -1422,14 +1422,27 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     })();
     </script>
     <!-- 🔵 En fabricación · en curso (Sebastián 25-jun: Fabricación = lo activo, paso a paso) -->
-    <div style="margin-top:28px;border-top:2px solid #eee;padding-top:20px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin:0 0 12px;flex-wrap:wrap;gap:8px"><h3 style="color:#d97706;margin:0;">&#128309; En fabricación &middot; en curso</h3><button onclick="crearDemoLegajo(this)" style="background:#ede9fe;color:#6d28d9;border:1px solid #c4b5fd;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer" title="Crea una orden DEMO + legajo para ver los Pasos inline SIN descontar MP (se borra con 🧹 Limpiar)">&#129514; Demo legajo</button> <button onclick="limpiarDemos(this)" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer" title="Borra TODOS los demos (producciones demo + legajos) · no salen más en el calendario">&#129529; Limpiar demos</button></div>
-      <!-- Sebastián 30-jun: cards "Mi trabajo" (cola EBR por rol) removidas de Fabricación · redundantes con la tabla de abajo. cargarMiTrabajo() no-opea sin este div; vuelve cuando se encienda EBR. -->
-      <div id="mi-trabajo-panel" style="display:none"></div>
-      <table class="table"><thead><tr><th>N&deg; orden</th><th>Producto</th><th>Operario</th><th style="text-align:right">Te&oacute;rica</th><th style="text-align:center">Estado</th><th style="text-align:center">Acci&oacute;n</th></tr></thead>
-      <tbody id="encurso-body"><tr><td colspan="6" style="text-align:center;color:#999;padding:16px;">Cargando&hellip;</td></tr></tbody></table>
+    <!-- Rediseño premium 7-jul (Sebastián) · tarjeta cortex + header ámbar + tabla premium -->
+    <div class="cx-card cx-fade-in" style="width:100%;margin-top:22px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div style="width:40px;height:40px;flex:none;border-radius:12px;background:linear-gradient(135deg,#f59e0b,#fbbf24);display:flex;align-items:center;justify-content:center;font-size:19px;box-shadow:0 4px 12px rgba(245,158,11,.3)">&#128309;</div>
+          <div>
+            <h3 style="margin:0;font-size:17px;color:var(--cx-text)">En fabricación &middot; en curso</h3>
+            <div class="cx-text-mute" style="font-size:12px;margin-top:1px">Tocá <b>&#128203; Pasos</b> en una orden para trabajar el batch record &middot; lo terminado vive en <b>Históricos</b> &rarr;</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button onclick="crearDemoLegajo(this)" class="cx-btn cx-btn-ghost cx-btn-sm" title="Crea una orden DEMO + legajo para ver los Pasos inline SIN descontar MP (se borra con 🧹 Limpiar)">&#129514; Demo legajo</button>
+          <button onclick="limpiarDemos(this)" class="cx-btn cx-btn-danger cx-btn-sm" title="Borra TODOS los demos (producciones demo + legajos) · no salen más en el calendario">&#129529; Limpiar demos</button>
+        </div>
+      </div>
+      <div id="mi-trabajo-panel" style="display:none;margin-top:12px"></div>
+      <div class="cx-table-wrap" style="margin-top:16px">
+        <table class="cx-table"><thead><tr><th>N&deg; orden</th><th>Producto</th><th>Operario</th><th style="text-align:right">Te&oacute;rica</th><th style="text-align:center">Estado</th><th style="text-align:center">Acci&oacute;n</th></tr></thead>
+        <tbody id="encurso-body"><tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:18px;">Cargando&hellip;</td></tr></tbody></table>
+      </div>
       <div id="encurso-runner" style="display:none;margin-top:14px;border:1px solid #ddd6fe;border-radius:10px;padding:16px;background:#faf8ff;"></div>
-      <p style="font-size:12px;color:#94a3b8;margin:8px 0 0">Toc&aacute; <b>&#128203; Pasos</b> en una orden para trabajar el batch record aqu&iacute; &middot; lo terminado vive en <b>Hist&oacute;ricos</b> &rarr;</p>
     </div>
   </div>
   <!-- ═══ PESTAÑA HISTÓRICOS · órdenes finalizadas + legajos + trazabilidad (Sebastián 25-jun) ═══ -->
