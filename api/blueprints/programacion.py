@@ -1690,13 +1690,26 @@ def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events, china_mp
         mp_check = []
         can_produce = True        # False only if MP found-in-system but insufficient
         has_data_gap = False      # True if any MP not found in movimientos at all
-        items_with_qty = [i for i in items if i.get('cantidad_g_por_lote', 0) > 0]
+        # Sebastián 7-jul (audit producto-por-producto · M71): %-first. Algunas fórmulas traen SOLO porcentaje
+        # y cantidad_g_por_lote=0 (ej. CREMA FACIAL UREA 10, 22 items al 100% con g=0). Antes este chequeo de
+        # factibilidad filtraba cantidad_g_por_lote>0 → items_with_qty=[] → can_produce=None (se saltaba). Ahora
+        # deriva los gramos del % (porcentaje/100 × ref_kg × 1000) cuando falta el gramaje, igual que el
+        # descuento/abastecimiento. Nunca usar el % crudo como gramos.
+        def _g_ref_lote(i):
+            g = float(i.get('cantidad_g_por_lote', 0) or 0)
+            if g > 0:
+                return g
+            pct = float(i.get('porcentaje', 0) or 0)
+            if pct > 0 and ref_kg and ref_kg > 0:
+                return (pct / 100.0) * ref_kg * 1000.0
+            return 0.0
+        items_with_qty = [i for i in items if _g_ref_lote(i) > 0]
         if not items_with_qty:
             can_produce = None  # formula sin cantidades definidas
         else:
             for item in items_with_qty:
                 mid = str(item['material_id']).strip()
-                needed_g = float(item['cantidad_g_por_lote']) * kg_scale
+                needed_g = _g_ref_lote(item) * kg_scale
                 nombre_raw = str(item.get('material_nombre', '')).strip()
                 # Lookup order: unlimited → id → exact name → norm name → alias → NOT_FOUND
                 mp_found = True

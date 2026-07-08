@@ -695,6 +695,14 @@ Spec del dueño: el abastecimiento toma el plan del calendario (2 años), cruza 
 - Latentes documentados (no rotos hoy · vigilar): diag-mp-demanda excluye la activa de BLUSH BALM; filas basura en produccion_programada (ids test); sin UNIQUE en formula_items; normalización de match distinta por camino; abastecimiento sin guarda M25 vencido-por-fecha. Golden 247.
 - ⚠ **Nota de tests:** un `-k` HETEROGÉNEO amplio (formula OR corazon OR ebr OR …) da ~147 fallos por CONTAMINACIÓN de estado compartido entre archivos — NO es regresión. Verificar SIEMPRE el archivo AISLADO + el golden (el gate real).
 
+## ✅ M77 · Audit PRODUCTO POR PRODUCTO (30 productos · ultracode 6 agentes Fable) · 7-jul
+
+Sebastián: "tomá cada fórmula, verificá que cada MP exista/descuente/cuente exacto en gramos, producto por producto, decime cada uno si está perfecto". Scout inline (30 activos) → 5 lotes de 6 + 1 calendario. **Veredicto: 29/30 perfectos.** 3 fixes reales:
+- **[%-first · M71] CREMA FACIAL UREA 10** (22 items al 100% con `cantidad_g_por_lote=0`, solo porcentaje). Descuento y abastecimiento OK (son %-first), pero el chequeo de factibilidad (prog.py:1693) filtraba `cantidad_g_por_lote>0` → items_with_qty=[] → can_produce=None (se saltaba "¿alcanza la MP?"). Fix: helper `_g_ref_lote` %-first (deriva `porcentaje/100×ref_kg×1000` cuando falta el gramaje). **Regla: TODO chequeo que use cantidad_g_por_lote debe derivar del % si es 0 — nunca tratar el % como gramos (subestima ~1000×).** Este es exactamente el patrón "quedó en % subestimando" que teme Sebastián.
+- **[GCal consistencia · secuela de eliminarlo] 3 sitios seguían con 'calendar':** auto_plan.py:11293 (`iniciar_calendar`) INSERT origen='calendar' → cambiado a 'manual' (abastecimiento ya no cuenta 'calendar' → habría sido demanda invisible); plan.py:12401 y 14813 aún lo incluían en sus listas de orígenes → quitado (alinear las 3 listas con abastecimiento). **Regla: al eliminar un origen del whitelist, GREP TODOS los INSERT y las listas de orígenes hermanas (M45) — dejar uno crea demanda fantasma.**
+- Latentes/data (no code-bug): filas basura en produccion_programada (ids 202/203 = nombres tipo fecha/'TEST', 0 demanda porque no matchean fórmula · el sistema permite nombres libres para manuales, no se auto-borran); en el snapshot local no hay plan futuro (10 meses cancelados MIG136) → VERIFICAR en prod que el cron del plan rodante siembra eos_proyeccion.
+- ⚠ pitfall: comentario SQL `--` va DENTRO de un string triple-quote; en concatenación `"..." "..."` usar `#` en su propia línea (un `--` fuera del string rompe Python). Golden 247.
+
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
 
 Al cerrar una sesión donde se encontró/arregló un bug con patrón no listado aquí:

@@ -12398,7 +12398,8 @@ def plan_revertir_hoy():
     for r in cur.execute(
         "SELECT id, producto, substr(fecha_programada,1,10), COALESCE(origen,'') "
         "FROM produccion_programada WHERE substr(creado_en,1,10) >= ? "
-        "AND COALESCE(origen,'') IN ('eos_canonico','eos_plan','auto_plan','sugerido','manual','calendar') "
+        # 'calendar' eliminado 7-jul (alinear con abastecimiento)
+        "AND COALESCE(origen,'') IN ('eos_canonico','eos_plan','auto_plan','sugerido','manual') "
         "AND fin_real_at IS NULL AND inicio_real_at IS NULL "
         "AND COALESCE(estado,'') NOT IN ('cancelado','completado')", (cutoff,)).fetchall():
         C[r[0]] = {'id': r[0], 'producto': r[1], 'fecha': r[2], 'origen': r[3]}
@@ -14810,7 +14811,7 @@ def plan_limpiar_sugeridas_futuras():
                   COALESCE(origen,''), COALESCE(estado,'')
            FROM produccion_programada
            WHERE substr(fecha_programada,1,10) > ?
-             AND COALESCE(origen,'') IN ('eos_canonico','auto_plan','sugerido','manual','calendar')
+             AND COALESCE(origen,'') IN ('eos_canonico','auto_plan','sugerido','manual')  -- 'calendar' eliminado 7-jul (alinear con abastecimiento)
              AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
              AND fin_real_at IS NULL
              AND inventario_descontado_at IS NULL

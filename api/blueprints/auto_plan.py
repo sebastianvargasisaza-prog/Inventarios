@@ -11286,11 +11286,13 @@ def planta_accion_rapida():
                 pid = pid_ex
             else:
                 # Insertar nueva fila desde Calendar
+                # Sebastián 7-jul: Google Calendar eliminado → origen 'manual' (antes 'calendar', que
+                # abastecimiento ya NO cuenta → habría sido demanda invisible / sub-compra).
                 cur_ins = c.execute("""
                     INSERT INTO produccion_programada
                       (producto, fecha_programada, lotes, cantidad_kg,
                        estado, observaciones, origen)
-                    VALUES (?, ?, 1, ?, 'programado', ?, 'calendar')
+                    VALUES (?, ?, 1, ?, 'programado', ?, 'manual')
                 """, (producto, fecha, kg,
                       f'[iniciar_calendar] {titulo}'))
                 pid = cur_ins.lastrowid
