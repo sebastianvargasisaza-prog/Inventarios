@@ -26,6 +26,27 @@ def test_purgar_gcal_post_ok(admin_client):
     assert r.get_json().get("ok") is True
 
 
+def test_rotulo_recepcion_mp_premium(admin_client):
+    """Rótulo de recepción de MP: renderiza premium (logo + tarjeta .sheet + 100×100), sin 500."""
+    r = admin_client.get("/rotulo-recepcion/MP00107/LOTE-TEST/3000")
+    assert r.status_code == 200, r.status_code
+    body = r.data.decode("utf-8", "replace")
+    assert "ESPAGIRIA Laboratorio SAS" in body
+    assert "espagiria" in body.lower()  # logo src
+    assert 'class="sheet"' in body
+    assert "100mm 100mm" in body
+
+
+def test_rotulo_recepcion_mee_premium(admin_client):
+    """Rótulo de recepción de material de envase (MEE): premium, sin 500."""
+    r = admin_client.get("/rotulo-recepcion-mee/MEE0001/100")
+    assert r.status_code == 200, r.status_code
+    body = r.data.decode("utf-8", "replace")
+    assert "ESPAGIRIA Laboratorio SAS" in body
+    assert 'class="sheet"' in body
+    assert "100mm 100mm" in body
+
+
 def test_rotulo_limpieza_render_logo_sin_animus(admin_client):
     """El rótulo de limpieza F02 renderiza, trae el logo Espagiria y NO dice ÁNIMUS Lab (Planta = Espagiria)."""
     r = admin_client.get("/planta/rotulos-limpieza")
