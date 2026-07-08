@@ -26,6 +26,15 @@ def test_purgar_gcal_post_ok(admin_client):
     assert r.get_json().get("ok") is True
 
 
+def test_equipos_sync_preview(admin_client):
+    """La vista previa de sync de equipos carga el maestro 2026 y renderiza el delta."""
+    r = admin_client.get("/admin/equipos-sync")
+    assert r.status_code == 200, r.status_code
+    body = r.data.decode("utf-8", "replace")
+    assert "Maestro 2026" in body
+    assert "Aplicar sync" in body
+
+
 def test_rotulo_recepcion_mp_premium(admin_client):
     """Rótulo de recepción de MP: renderiza premium (logo + tarjeta .sheet + 100×100), sin 500."""
     r = admin_client.get("/rotulo-recepcion/MP00107/LOTE-TEST/3000")

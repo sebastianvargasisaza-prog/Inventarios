@@ -1,0 +1,719 @@
+{
+ "fuente": "LISTADO MAESTRO DE EQUIPOS 2026 ESPAGIRIA · COC-PRO-003-F01 v02",
+ "equipos": [
+  {
+   "codigo": "BL-PRD-001",
+   "nombre": "Balanza EJ-6100",
+   "area_codigo": "DISP",
+   "ubicacion": "Dispensación",
+   "capacidad": "1,0-6100g d=0,1g"
+  },
+  {
+   "codigo": "BL-PRD-002",
+   "nombre": "Balanza Precisa 620M",
+   "area_codigo": "DISP",
+   "ubicacion": "Dispensación",
+   "capacidad": "620 g"
+  },
+  {
+   "codigo": "PC-COC-002",
+   "nombre": "Picnómetro de acero",
+   "area_codigo": "CC",
+   "ubicacion": "Control de Calidad",
+   "capacidad": "37ml"
+  },
+  {
+   "codigo": "BL-COC-001",
+   "nombre": "Balanza Mix - A3000g",
+   "area_codigo": "CC",
+   "ubicacion": "Control de Calidad",
+   "capacidad": "2,0-3000g d:0.1g"
+  },
+  {
+   "codigo": "BL-PRD-003",
+   "nombre": "Balanza Mix - H",
+   "area_codigo": "ENV2",
+   "ubicacion": "Envasado 2",
+   "capacidad": "0,01-600g"
+  },
+  {
+   "codigo": "BC-PRD-001",
+   "nombre": "Bascula Digital TCS-150Kg",
+   "area_codigo": "DISP",
+   "ubicacion": "Dispensación",
+   "capacidad": "150Kg"
+  },
+  {
+   "codigo": "BL-PRD-004",
+   "nombre": "Balanza Mix-A3000g",
+   "area_codigo": "FAB2",
+   "ubicacion": "Fabricación 2",
+   "capacidad": "2,0-3000g d:0.1g"
+  },
+  {
+   "codigo": "TM-PRD-001",
+   "nombre": "Termómetro Digital HI98509",
+   "area_codigo": "FAB2",
+   "ubicacion": "Fabricación 2",
+   "capacidad": "< 50 A 150°C"
+  },
+  {
+   "codigo": "HG-PRD-001",
+   "nombre": "Homogeneizador D-500 DLAB",
+   "area_codigo": "FAB1",
+   "ubicacion": "Fabricación 1",
+   "capacidad": "10000-29000RPM"
+  },
+  {
+   "codigo": "AG-PRD-001",
+   "nombre": "Agitador OS40 DLAB",
+   "area_codigo": "FAB3",
+   "ubicacion": "Fabricación 3",
+   "capacidad": "50-2200RPM"
+  },
+  {
+   "codigo": "AG-PRD-002",
+   "nombre": "Agitador OS40 DLAB",
+   "area_codigo": "FAB2",
+   "ubicacion": "Fabricación 2",
+   "capacidad": "50-2200RPM"
+  },
+  {
+   "codigo": "AG-PRD-003",
+   "nombre": "Agitador OS-70 PRO",
+   "area_codigo": "FAB1",
+   "ubicacion": "Fabricación 1",
+   "capacidad": "50-1100RPM"
+  },
+  {
+   "codigo": "BM-PRD-001",
+   "nombre": "Equipo de Mano (Batidor Manual) DD653",
+   "area_codigo": "FAB1",
+   "ubicacion": "Fabricación 1",
+   "capacidad": "N/A"
+  },
+  {
+   "codigo": "BM-PRD-002",
+   "nombre": "Equipo de Mano (Batidor Manual) DD653",
+   "area_codigo": "FAB2",
+   "ubicacion": "Fabricación 2",
+   "capacidad": "N/A"
+  },
+  {
+   "codigo": "BM-PRD-003",
+   "nombre": "Equipo de Mano (Batidor Manual) DD653",
+   "area_codigo": "FAB2",
+   "ubicacion": "Fabricación 2",
+   "capacidad": "N/A"
+  },
+  {
+   "codigo": "SA-PRD-001",
+   "nombre": "Sistema de Agua Blue Tide Ro",
+   "area_codigo": "LAV",
+   "ubicacion": "Área de lavado",
+   "capacidad": "N/A"
+  },
+  {
+   "codigo": "PL-PRD-001",
+   "nombre": "Plancha Calentamiento 3P",
+   "area_codigo": "FAB1",
+   "ubicacion": "Fabricación 1",
+   "capacidad": "60-300°C"
+  },
+  {
+   "codigo": "PL-PRD-002",
+   "nombre": "Plancha Calentamiento 3P",
+   "area_codigo": "FAB2",
+   "ubicacion": "Fabricación 2",
+   "capacidad": "60-300°C"
+  },
+  {
+   "codigo": "ES-PRD-001",
+   "nombre": "Envasadora Semiautomática FLUITEC",
+   "area_codigo": "ENV2",
+   "ubicacion": "Envasado 2",
+   "capacidad": "N/A"
+  },
+  {
+   "codigo": "RF-PRD-001",
+   "nombre": "Nevera",
+   "area_codigo": "ALM_MP",
+   "ubicacion": "Producción-Almacenamiento de materias primas",
+   "capacidad": "2-8°C"
+  },
+  {
+   "codigo": "HA-PRD-001",
+   "nombre": "Hervidor de agua",
+   "area_codigo": "FAB2",
+   "ubicacion": "Fabricación 2",
+   "capacidad": "N/A"
+  },
+  {
+   "codigo": "TF-PRD-001",
+   "nombre": "Tanque de fabricación 100L",
+   "area_codigo": "FAB1",
+   "ubicacion": "Fabricación 1",
+   "capacidad": "100L"
+  },
+  {
+   "codigo": "TF-PRD-002",
+   "nombre": "Tanque de fabricación 70L",
+   "area_codigo": "FAB1",
+   "ubicacion": "Fabricación 1",
+   "capacidad": "70L"
+  },
+  {
+   "codigo": "TF-PRD-003",
+   "nombre": "Tanque de fabricación 50L",
+   "area_codigo": "FAB2",
+   "ubicacion": "Fabricación 2",
+   "capacidad": "50L"
+  },
+  {
+   "codigo": "TF-PRD-004",
+   "nombre": "Tanque de fabricación 50L",
+   "area_codigo": "FAB2",
+   "ubicacion": "Fabricación 2",
+   "capacidad": "50L"
+  },
+  {
+   "codigo": "DA-PRD-001",
+   "nombre": "Destilador de agua",
+   "area_codigo": "LAV",
+   "ubicacion": "ÁREA DE LAVADO",
+   "capacidad": "N/A"
+  },
+  {
+   "codigo": "TH-PRD-001",
+   "nombre": "Termohigrómetro Digital",
+   "area_codigo": "PAS",
+   "ubicacion": "Pasillo general",
+   "capacidad": "-10°C ͂ 50°"
+  },
+  {
+   "codigo": "TH-PRD-002",
+   "nombre": "Termohigrómetro Digital",
+   "area_codigo": "ALM_ENV",
+   "ubicacion": "Almacenamiento envases",
+   "capacidad": "-10°C ͂ 50°"
+  },
+  {
+   "codigo": "TH-PRD-003",
+   "nombre": "Termohigrómetro Digital",
+   "area_codigo": "ALM_MP",
+   "ubicacion": "Almacenamiento materias primas",
+   "capacidad": "-10°C ͂ 50°"
+  },
+  {
+   "codigo": "TH-PRD-004",
+   "nombre": "Termohigrómetro Digital",
+   "area_codigo": "SAGUA",
+   "ubicacion": "Sistema de agua",
+   "capacidad": "-10°C ͂ 50°"
+  },
+  {
+   "codigo": "TH-PRD-005",
+   "nombre": "Termohigrómetro Digital",
+   "area_codigo": "DISP",
+   "ubicacion": "Dispensación",
+   "capacidad": "-10°C ͂ 50°"
+  },
+  {
+   "codigo": "DL-PRD-001",
+   "nombre": "Datalogger",
+   "area_codigo": "FAB1",
+   "ubicacion": "Fabricación 1",
+   "capacidad": "(-)30°C ͂ to 50°C"
+  },
+  {
+   "codigo": "DL-PRD-004",
+   "nombre": "Datalogger",
+   "area_codigo": "ENV1",
+   "ubicacion": "Envasado 1",
+   "capacidad": "(-)30°C ͂ to 50°C"
+  },
+  {
+   "codigo": "DL-PRD-005",
+   "nombre": "Datalogger",
+   "area_codigo": "ENV2",
+   "ubicacion": "Envasado 2",
+   "capacidad": "(-)30°C ͂ to 50°C"
+  },
+  {
+   "codigo": "TH-COC-001",
+   "nombre": "Termohigrómetro Digital",
+   "area_codigo": "CC",
+   "ubicacion": "Control de calidad",
+   "capacidad": "-10°C ͂ 50°"
+  },
+  {
+   "codigo": "TH-BDG-001",
+   "nombre": "Termohigrómetro Digital",
+   "area_codigo": "BDG",
+   "ubicacion": "Bodega producto terminado",
+   "capacidad": "-10°C ͂ 50°"
+  },
+  {
+   "codigo": "TH-BDG-002",
+   "nombre": "Termohigrómetro Digital",
+   "area_codigo": "BDG",
+   "ubicacion": "Producto en proceso",
+   "capacidad": "-10°C ͂ 50°"
+  },
+  {
+   "codigo": "DL-PRD-003",
+   "nombre": "Datalogger",
+   "area_codigo": "FAB3",
+   "ubicacion": "Fabricación 3",
+   "capacidad": "(-)30°C ͂ to 50°C"
+  },
+  {
+   "codigo": "TH-BDG-003",
+   "nombre": "Termohigrómetro Digital",
+   "area_codigo": "MUESTRAS",
+   "ubicacion": "Muestras de retención",
+   "capacidad": "-10°C ͂ 50°"
+  },
+  {
+   "codigo": "TH-PRD-010",
+   "nombre": "Termohigrómetro Digital",
+   "area_codigo": "ESC",
+   "ubicacion": "Esclusa posterior",
+   "capacidad": "-10°C ͂ 50°"
+  },
+  {
+   "codigo": "TH-PRD-011",
+   "nombre": "Termohigrómetro Digital",
+   "area_codigo": "RECEP",
+   "ubicacion": "Recepción de insumos",
+   "capacidad": "-10°C ͂ 50°"
+  },
+  {
+   "codigo": "CA-PRD-001",
+   "nombre": "Compresor de aire",
+   "area_codigo": "VENT",
+   "ubicacion": "Producción-Sistema de Ventilación",
+   "capacidad": "53 - 118 °F"
+  },
+  {
+   "codigo": "BL-PRD-005",
+   "nombre": "Balanza Mix - H",
+   "area_codigo": "ENV1",
+   "ubicacion": "Envasado 1",
+   "capacidad": "0,01-600g"
+  },
+  {
+   "codigo": "PP-COC-001",
+   "nombre": "Pesa patrón 1g",
+   "area_codigo": "CC",
+   "ubicacion": "Control de Calidad",
+   "capacidad": "1g"
+  },
+  {
+   "codigo": "PP-COC-002",
+   "nombre": "Pesa patrón 50 g",
+   "area_codigo": "CC",
+   "ubicacion": "Control de Calidad",
+   "capacidad": "50g"
+  },
+  {
+   "codigo": "PP-COC-003",
+   "nombre": "Pesa patrón 10kg",
+   "area_codigo": "CC",
+   "ubicacion": "Control de Calidad",
+   "capacidad": "10kg"
+  },
+  {
+   "codigo": "PP-COC-004",
+   "nombre": "Pesa patrón 20kg",
+   "area_codigo": "CC",
+   "ubicacion": "Control de Calidad",
+   "capacidad": "20kg"
+  },
+  {
+   "codigo": "ML-BDG-001",
+   "nombre": "Maquina loteadora inject",
+   "area_codigo": "ACOND",
+   "ubicacion": "Acondicionamiento",
+   "capacidad": "Hasta 5 líneas de impresión"
+  },
+  {
+   "codigo": "AG-PRD-004",
+   "nombre": "Agitador Digital OS40-PRO Wisdom",
+   "area_codigo": "FAB2",
+   "ubicacion": "Fabricación 2",
+   "capacidad": "50-2200RPM"
+  },
+  {
+   "codigo": "HG-PRD-002",
+   "nombre": "Homogenizador D-500 WISDOM",
+   "area_codigo": "FAB3",
+   "ubicacion": "Fabricación 3",
+   "capacidad": "10,000-30,000 RPM"
+  },
+  {
+   "codigo": "VS-COC-001",
+   "nombre": "Viscosímetro Brookfield",
+   "area_codigo": "CC",
+   "ubicacion": "Control de Calidad",
+   "capacidad": "1-1000,000mp.s"
+  },
+  {
+   "codigo": "MR-PRD-001",
+   "nombre": "Molino de 3 rodillos",
+   "area_codigo": "FAB2",
+   "ubicacion": "Fabricación 2",
+   "capacidad": "1 a 18 micras / 2 a 5 kg/h"
+  },
+  {
+   "codigo": "VS-COC-002",
+   "nombre": "Viscosímetro Wisdom",
+   "area_codigo": "CC",
+   "ubicacion": "Control de Calidad",
+   "capacidad": "1-1000,000mp.s"
+  },
+  {
+   "codigo": "PA-PRD-001",
+   "nombre": "Plancha de calentamiento con agitador",
+   "area_codigo": "FAB1",
+   "ubicacion": "Fabricación 1",
+   "capacidad": "0°C-550°C Y 1500rpm"
+  },
+  {
+   "codigo": "PA-PRD-002",
+   "nombre": "Plancha de calentamiento con agitador",
+   "area_codigo": "FAB2",
+   "ubicacion": "Fabricación 2",
+   "capacidad": "0°C-550°C Y 1500rpm"
+  },
+  {
+   "codigo": "PA-PRD-003",
+   "nombre": "Plancha de calentamiento con agitador",
+   "area_codigo": "FAB3",
+   "ubicacion": "Fabricación 3",
+   "capacidad": "0°C-550°C Y 1500rpm"
+  },
+  {
+   "codigo": "EF-COC-001",
+   "nombre": "Espectrofotómetro (Colorimetro)",
+   "area_codigo": "CC",
+   "ubicacion": "Control de Calidad",
+   "capacidad": "360 nm - 700 nm"
+  },
+  {
+   "codigo": "PC-COC-003",
+   "nombre": "Picnómetro de vidrio",
+   "area_codigo": "CC",
+   "ubicacion": "Control de Calidad",
+   "capacidad": "10,3108 ±0,01 cm₃"
+  },
+  {
+   "codigo": "PC-COC-004",
+   "nombre": "Picnómetro de vidrio",
+   "area_codigo": "CC",
+   "ubicacion": "Control de Calidad",
+   "capacidad": "10,3108 ±0,01 cm₃"
+  },
+  {
+   "codigo": "PC-COC-001",
+   "nombre": "Picnómetro de vidrio",
+   "area_codigo": "CC",
+   "ubicacion": "Control de Calidad",
+   "capacidad": "10,3108 ±0,01 cm₃"
+  },
+  {
+   "codigo": "PR-COC-001",
+   "nombre": "Pie de Rey",
+   "area_codigo": "CC",
+   "ubicacion": "Control de Calidad",
+   "capacidad": "0-150mm/0-6\""
+  },
+  {
+   "codigo": "CL-PRD-001",
+   "nombre": "Cabina de Flujo laminar",
+   "area_codigo": "DISP",
+   "ubicacion": "Dispensación",
+   "capacidad": "220V / 330W / 60Hz."
+  },
+  {
+   "codigo": "ES-PRD-002",
+   "nombre": "Envasadora Semiautomática XIAOYING",
+   "area_codigo": "ENV1",
+   "ubicacion": "Envasado 1",
+   "capacidad": "10-120ML"
+  },
+  {
+   "codigo": "HG-PRD-003",
+   "nombre": "Homogenizador Mixer de 100 L",
+   "area_codigo": "FAB1",
+   "ubicacion": "Fabricación 1",
+   "capacidad": "0-3000rpm. T° 0-100°C"
+  },
+  {
+   "codigo": "PH-COC-001",
+   "nombre": "pHmetro HANNA HI",
+   "area_codigo": "CC",
+   "ubicacion": "Control de Calidad",
+   "capacidad": "0-14,00 ph"
+  },
+  {
+   "codigo": "HG-PRD-004",
+   "nombre": "Homogenizador D-160 Wisdom",
+   "area_codigo": "FAB2",
+   "ubicacion": "Fabricación 2",
+   "capacidad": "8000-32000rpm"
+  },
+  {
+   "codigo": "MM-PRD-001",
+   "nombre": "Marmita",
+   "area_codigo": "PROD",
+   "ubicacion": "Producción",
+   "capacidad": "250L"
+  },
+  {
+   "codigo": "ST-PRD-001",
+   "nombre": "Soplador térmico (pistola de calor)",
+   "area_codigo": "DISP",
+   "ubicacion": "Dispensación",
+   "capacidad": "60°C-500°C"
+  },
+  {
+   "codigo": "BL-COC-002",
+   "nombre": "Balanza analitica AXIS",
+   "area_codigo": "CC",
+   "ubicacion": "Control de calidad",
+   "capacidad": "0-210g d:0,001g"
+  },
+  {
+   "codigo": "EM-PRD-003",
+   "nombre": "Envasadora Manual KITEM",
+   "area_codigo": "ENV1",
+   "ubicacion": "Envasado 1",
+   "capacidad": "10ml-50ml"
+  },
+  {
+   "codigo": "EM-PRD-004",
+   "nombre": "Envasadora Manual KITEM",
+   "area_codigo": "ENV2",
+   "ubicacion": "Envasado 2",
+   "capacidad": "10ml-50ml"
+  },
+  {
+   "codigo": "OF-PRD-001",
+   "nombre": "Olla de fabricación BESNEL",
+   "area_codigo": "FAB_FLOAT",
+   "ubicacion": "Fabricación",
+   "capacidad": "7.5 L"
+  },
+  {
+   "codigo": "OF-PRD-002",
+   "nombre": "Olla de fabricación BESNEL",
+   "area_codigo": "FAB_FLOAT",
+   "ubicacion": "Fabricación",
+   "capacidad": "7.5 L"
+  },
+  {
+   "codigo": "OF-PRD-003",
+   "nombre": "Olla de fabricación BESNEL",
+   "area_codigo": "FAB_FLOAT",
+   "ubicacion": "Fabricación",
+   "capacidad": "7.5 L"
+  },
+  {
+   "codigo": "OF-PRD-004",
+   "nombre": "Olla de fabricación BESNEL",
+   "area_codigo": "FAB_FLOAT",
+   "ubicacion": "Fabricación",
+   "capacidad": "7.5 L"
+  },
+  {
+   "codigo": "ES-PRD-003",
+   "nombre": "Envasadora semiautomática BOINES",
+   "area_codigo": "ENV1",
+   "ubicacion": "Envasado 1",
+   "capacidad": "30g-10000g"
+  },
+  {
+   "codigo": "CA-PRD-002",
+   "nombre": "Compresor de aire TRUPER",
+   "area_codigo": "CUB",
+   "ubicacion": "Cubierta",
+   "capacidad": "24 L / 800 kPa (116 PSI)"
+  },
+  {
+   "codigo": "GE–PRD-001",
+   "nombre": "Generador eléctrico portátil PRETUL",
+   "area_codigo": "PISO3",
+   "ubicacion": "Tercer piso",
+   "capacidad": "2,500 W (Potencia máxima) / 2,200 W"
+  },
+  {
+   "codigo": "ME-PRD-001",
+   "nombre": "Mezclador eléctrico (Electric Mixer).",
+   "area_codigo": "FAB1",
+   "ubicacion": "Fabricación 1",
+   "capacidad": "2400W. / Hasta 1200 r/min"
+  },
+  {
+   "codigo": "ME-PRD-002",
+   "nombre": "Mezclador eléctrico (Electric Mixer).",
+   "area_codigo": "FAB2",
+   "ubicacion": "Fabricación 2",
+   "capacidad": "2400W. / Hasta 1200 r/min"
+  },
+  {
+   "codigo": "ME-PRD-003",
+   "nombre": "Mezclador eléctrico (Electric Mixer).",
+   "area_codigo": "FAB3",
+   "ubicacion": "Fabricación 3",
+   "capacidad": "2400W. / Hasta 1200 r/min"
+  },
+  {
+   "codigo": "NV-PRD-001",
+   "nombre": "Nevera Midea (secado)",
+   "area_codigo": "FAB2",
+   "ubicacion": "Fabricación 2",
+   "capacidad": "-5°C a -18°C"
+  },
+  {
+   "codigo": "TF-PRD-005",
+   "nombre": "Tanque de fabricación 120L",
+   "area_codigo": "FAB3",
+   "ubicacion": "Fabricación 3",
+   "capacidad": "100L"
+  },
+  {
+   "codigo": "TF-PRD-006",
+   "nombre": "Tanque de fabricación 400L",
+   "area_codigo": "FAB3",
+   "ubicacion": "Fabricación 3",
+   "capacidad": "400L"
+  },
+  {
+   "codigo": "TF-PRD-007",
+   "nombre": "Tanque de fabricación 400L",
+   "area_codigo": "FAB3",
+   "ubicacion": "Fabricación 3",
+   "capacidad": "400L"
+  },
+  {
+   "codigo": "TF-PRD-008",
+   "nombre": "Tanque de fabricación 200L",
+   "area_codigo": "FAB1",
+   "ubicacion": "Fabricación 1",
+   "capacidad": "200L"
+  },
+  {
+   "codigo": "TF-PRD-009",
+   "nombre": "Tanque de fabricación Enjuague bucal 25L",
+   "area_codigo": "FAB2",
+   "ubicacion": "Fabricación 2",
+   "capacidad": "20L"
+  },
+  {
+   "codigo": "TF-PRD-010",
+   "nombre": "Tanque de fabricación Repelentes 30L",
+   "area_codigo": "FAB2",
+   "ubicacion": "Fabricación 2",
+   "capacidad": "30L"
+  },
+  {
+   "codigo": "TF-PRD-011",
+   "nombre": "Tanque de fabricación 50L",
+   "area_codigo": "FAB2",
+   "ubicacion": "Fabricación 2",
+   "capacidad": "50L"
+  },
+  {
+   "codigo": "TF-PRD-012",
+   "nombre": "Tanque de fabricación 30L",
+   "area_codigo": "FAB_FLOAT",
+   "ubicacion": "Fabricación según la necesidad",
+   "capacidad": "20L"
+  },
+  {
+   "codigo": "TF-PRD-013",
+   "nombre": "Tanque de fabricación 15L",
+   "area_codigo": "FAB_FLOAT",
+   "ubicacion": "Fabricación según la necesidad",
+   "capacidad": "10L"
+  },
+  {
+   "codigo": "TF-PRD-014",
+   "nombre": "Tanque de fabricación 20L",
+   "area_codigo": "FAB_FLOAT",
+   "ubicacion": "Fabricación según la necesidad",
+   "capacidad": "6L"
+  },
+  {
+   "codigo": "TF-PRD-015",
+   "nombre": "Tanque de fabricación 3L",
+   "area_codigo": "FAB_FLOAT",
+   "ubicacion": "Fabricación",
+   "capacidad": "3L"
+  },
+  {
+   "codigo": "TF-PRD-016",
+   "nombre": "Tanque de fabricación 10L",
+   "area_codigo": "FAB_FLOAT",
+   "ubicacion": "Fabricación según la necesidad",
+   "capacidad": "10L"
+  },
+  {
+   "codigo": "ML-BDG-002",
+   "nombre": "Inkjet printer",
+   "area_codigo": "ACOND",
+   "ubicacion": "Acondicionamiento",
+   "capacidad": "2 mm a 12.7 mm"
+  },
+  {
+   "codigo": "TN-PRD-001",
+   "nombre": "Tapadora neumático",
+   "area_codigo": "ENV1",
+   "ubicacion": "Envasado",
+   "capacidad": ""
+  },
+  {
+   "codigo": "TN-PRD-002",
+   "nombre": "Tapadora neumático",
+   "area_codigo": "ENV1",
+   "ubicacion": "Envasado",
+   "capacidad": ""
+  },
+  {
+   "codigo": "ST-PRD-002",
+   "nombre": "Soplador térmico (pistola de calor) BAUKER",
+   "area_codigo": "ACOND",
+   "ubicacion": "Acondicionamiento",
+   "capacidad": "50°C- 600°C"
+  },
+  {
+   "codigo": "ES-PRD-004",
+   "nombre": "Envasadora semiautomática KM-B1000V",
+   "area_codigo": "FAB_FLOAT",
+   "ubicacion": "Fabricación según necesidad",
+   "capacidad": ""
+  },
+  {
+   "codigo": "TP-PRD-001",
+   "nombre": "Tapadora Electroneumática",
+   "area_codigo": "ENV1",
+   "ubicacion": "Envasado según necesidad",
+   "capacidad": ""
+  },
+  {
+   "codigo": "BL-PRD-006",
+   "nombre": "Balanza Mix - H",
+   "area_codigo": "DISP",
+   "ubicacion": "Dispensación",
+   "capacidad": "0,01-600g"
+  },
+  {
+   "codigo": "BL-PRD-007",
+   "nombre": "Balanza Mix - H",
+   "area_codigo": "FAB3",
+   "ubicacion": "Fabricación y envasado 3",
+   "capacidad": "0,01-600g"
+  }
+ ]
+}

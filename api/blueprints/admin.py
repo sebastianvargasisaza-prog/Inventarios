@@ -7109,6 +7109,147 @@ async function cancelar(id){
     return _tpl.replace('__FILAS__', filas)
 
 
+def _equipos_maestro_2026():
+    """Lista autoritativa de equipos (LISTADO MAESTRO 2026 · COC-PRO-003-F01) desde api/data/equipos_maestro_2026.json."""
+    import os as _os, json as _json
+    p = _os.path.join(_os.path.dirname(__file__), '..', 'data', 'equipos_maestro_2026.json')
+    try:
+        return (_json.load(open(p, encoding='utf-8')) or {}).get('equipos', [])
+    except Exception:
+        return []
+
+
+def _equipos_sync_delta(conn):
+    """Delta entre el maestro 2026 y equipos_planta VIVO: nuevos, mueven de área, reactivar, desactivar."""
+    maestro = _equipos_maestro_2026()
+    m_by = {}
+    for e in maestro:
+        cod = (e.get('codigo') or '').strip()
+        if cod:
+            m_by[cod.upper()] = e
+    db = {}
+    try:
+        for r in conn.execute("SELECT codigo, nombre, area_codigo, COALESCE(activo,1) FROM equipos_planta").fetchall():
+            db[(r[0] or '').strip().upper()] = {'codigo': r[0], 'nombre': r[1], 'area': r[2] or '', 'activo': r[3]}
+    except Exception:
+        pass
+    nuevos, mueven, reactivar, desactivar = [], [], [], []
+    for cu, e in m_by.items():
+        d = db.get(cu)
+        if not d:
+            nuevos.append(e)
+            continue
+        if (d['area'] or '') != (e.get('area_codigo') or ''):
+            mueven.append({'codigo': e['codigo'], 'nombre': e.get('nombre', ''), 'de': d['area'], 'a': e.get('area_codigo', '')})
+        if not d['activo']:
+            reactivar.append(e)
+    for cu, d in db.items():
+        if cu not in m_by and d['activo']:
+            desactivar.append(d)
+    return {'nuevos': nuevos, 'mueven': mueven, 'reactivar': reactivar, 'desactivar': desactivar, 'total_maestro': len(m_by)}
+
+
+@bp.route("/api/admin/equipos-sync", methods=["POST"])
+def admin_equipos_sync_apply():
+    """Aplica el maestro 2026 a equipos_planta: upsert por código (nombre/área/capacidad, activo=1) y DESACTIVA
+    (no borra · GMP) los que no están en el maestro. Auditado. Solo Admin. Sebastián 8-jul."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+    _ts = (_dt.now(_tz.utc) - _td(hours=5)).strftime('%Y-%m-%d %H:%M:%S')
+    maestro = _equipos_maestro_2026()
+    if not maestro:
+        return jsonify({'error': 'No se pudo cargar el maestro 2026'}), 500
+    conn = get_db(); c = conn.cursor()
+    m_cods = set(); n_ins = 0; n_upd = 0
+    for e in maestro:
+        cod = (e.get('codigo') or '').strip()
+        if not cod:
+            continue
+        m_cods.add(cod.upper())
+        row = c.execute("SELECT id FROM equipos_planta WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))", (cod,)).fetchone()
+        if row:
+            c.execute("UPDATE equipos_planta SET nombre=?, area_codigo=?, ubicacion_raw=?, capacidad_raw=?, activo=1, actualizado_en=? WHERE id=?",
+                      (e.get('nombre', ''), e.get('area_codigo', ''), e.get('ubicacion', ''), e.get('capacidad', ''), _ts, row[0]))
+            n_upd += 1
+        else:
+            c.execute("INSERT INTO equipos_planta (codigo, nombre, area_codigo, ubicacion_raw, capacidad_raw, activo, creado_en, actualizado_en) VALUES (?,?,?,?,?,1,?,?)",
+                      (cod, e.get('nombre', ''), e.get('area_codigo', ''), e.get('ubicacion', ''), e.get('capacidad', ''), _ts, _ts))
+            n_ins += 1
+    n_off = 0
+    for r in c.execute("SELECT id, codigo FROM equipos_planta WHERE COALESCE(activo,1)=1").fetchall():
+        if (r[1] or '').strip().upper() not in m_cods:
+            c.execute("UPDATE equipos_planta SET activo=0, actualizado_en=? WHERE id=?", (_ts, r[0]))
+            n_off += 1
+    try:
+        from audit_helpers import audit_log
+        audit_log(c, usuario=u, accion='SYNC_EQUIPOS_MAESTRO_2026', tabla='equipos_planta', registro_id='*',
+                  despues={'insertados': n_ins, 'actualizados': n_upd, 'desactivados': n_off})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'insertados': n_ins, 'actualizados': n_upd, 'desactivados': n_off})
+
+
+@bp.route("/admin/equipos-sync", methods=["GET"])
+def admin_equipos_sync_page():
+    """Vista previa del sync de equipos con el maestro 2026 (cada cambio vs producción real) + botón aplicar."""
+    import html as _hh
+    if 'compras_user' not in session:
+        return redirect('/login?next=/admin/equipos-sync')
+    conn = get_db()
+    d = _equipos_sync_delta(conn)
+
+    def _tabla(titulo, color, filas_html, cols):
+        head = ''.join('<th>' + _hh.escape(x) + '</th>' for x in cols)
+        return ('<h3 style="margin:18px 0 6px;font-size:15px;color:' + color + '">' + _hh.escape(titulo) +
+                '</h3><div class="cx-table-wrap"><table class="cx-table"><thead><tr>' + head + '</tr></thead><tbody>' +
+                (filas_html or '<tr><td colspan="' + str(len(cols)) + '" style="text-align:center;color:#16a34a;padding:14px">— nada —</td></tr>') +
+                '</tbody></table></div>')
+
+    f_nuevos = ''.join('<tr><td><b>' + _hh.escape(e['codigo']) + '</b></td><td>' + _hh.escape(e.get('nombre', '')) +
+                       '</td><td>' + _hh.escape(e.get('area_codigo', '')) + '</td><td>' + _hh.escape(e.get('capacidad', '')) + '</td></tr>'
+                       for e in d['nuevos'])
+    f_mueven = ''.join('<tr><td><b>' + _hh.escape(m['codigo']) + '</b></td><td>' + _hh.escape(m['nombre']) +
+                       '</td><td style="color:#b91c1c">' + _hh.escape(m['de'] or '—') + '</td><td style="color:#15803d;font-weight:700">' + _hh.escape(m['a']) + '</td></tr>'
+                       for m in d['mueven'])
+    f_react = ''.join('<tr><td><b>' + _hh.escape(e['codigo']) + '</b></td><td>' + _hh.escape(e.get('nombre', '')) + '</td><td>' + _hh.escape(e.get('area_codigo', '')) + '</td></tr>'
+                      for e in d['reactivar'])
+    f_off = ''.join('<tr><td><b>' + _hh.escape(x['codigo'] or '') + '</b></td><td>' + _hh.escape(x['nombre'] or '') + '</td><td>' + _hh.escape(x['area'] or '') + '</td></tr>'
+                    for x in d['desactivar'])
+    tablas = (_tabla('➕ Nuevos (' + str(len(d['nuevos'])) + ')', '#15803d', f_nuevos, ['Código', 'Nombre', 'Área', 'Capacidad']) +
+              _tabla('🔀 Cambian de área (' + str(len(d['mueven'])) + ')', '#b45309', f_mueven, ['Código', 'Nombre', 'De', 'A']) +
+              _tabla('♻️ Reactivar (' + str(len(d['reactivar'])) + ')', '#6d28d9', f_react, ['Código', 'Nombre', 'Área']) +
+              _tabla('➖ Desactivar · no están en el maestro 2026 (' + str(len(d['desactivar'])) + ')', '#b91c1c', f_off, ['Código', 'Nombre', 'Área']))
+    _tot = len(d['nuevos']) + len(d['mueven']) + len(d['reactivar']) + len(d['desactivar'])
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sync equipos 2026</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:24px}.card{max-width:920px;margin:0 auto}</style></head><body>
+<div class="cx-card card">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128295;</div><div><h2 style="margin:0;font-size:19px">Sync de equipos &middot; Maestro 2026</h2><div class="cx-text-mute" style="font-size:13px">Compara el LISTADO MAESTRO 2026 (__TOT_M__ equipos) con lo que hay en producción. Los rótulos de limpieza autocargan los equipos por área desde acá. Revisá los cambios y aplicá.</div></div></div>
+  __TABLAS__
+  <div style="margin-top:18px;display:flex;gap:10px;align-items:center">
+    <button id="go" class="cx-btn cx-btn-success" onclick="aplicar()" __DISABLED__>Aplicar sync (__TOTAL__ cambios)</button>
+    <button class="cx-btn cx-btn-ghost" onclick="location.href='/planta'">Volver</button>
+    <span id="msg" style="font-size:14px"></span>
+  </div>
+</div>
+<script>
+async function aplicar(){
+  if(!confirm('¿Aplicar el sync de equipos? Desactiva (no borra) los que no están en el maestro 2026.')) return;
+  var b=document.getElementById('go'); b.disabled=true; b.textContent='Aplicando...';
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/admin/equipos-sync',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||''},body:'{}'});
+    var d=await r.json();
+    if(r.ok&&d.ok){ document.getElementById('msg').innerHTML='<span style="color:#16a34a;font-weight:700">&#10003; '+d.insertados+' nuevos, '+d.actualizados+' actualizados, '+d.desactivados+' desactivados. Recargá para ver.</span>'; b.textContent='Listo'; }
+    else { document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error: '+((d&&d.error)||r.status)+'</span>'; b.disabled=false; b.textContent='Reintentar'; }
+  }catch(e){ document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>'; b.disabled=false; b.textContent='Reintentar'; }
+}
+</script></body></html>'''
+    return (_tpl.replace('__TABLAS__', tablas).replace('__TOTAL__', str(_tot))
+            .replace('__TOT_M__', str(d['total_maestro'])).replace('__DISABLED__', '' if _tot else 'disabled'))
+
+
 @bp.route("/api/admin/mee-base", methods=["POST"])
 def admin_mee_base():
     """Setea el frasco BASE de un envase serigrafiado (maestro_mee.material_referencia) · Sebastián 28-jun."""
