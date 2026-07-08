@@ -6895,6 +6895,78 @@ def admin_mee_imagen():
     return jsonify({'ok': True, 'codigo': cod})
 
 
+@bp.route("/api/admin/logo-espagiria", methods=["POST"])
+def admin_set_logo_espagiria():
+    """Guarda el logo de Espagiria como data-uri base64 en app_settings (persiste en Render · lo usan los
+    rótulos y comprobantes). Sebastián 7-jul."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.get_json(silent=True) or {}
+    data_uri = (d.get('data_uri') or '').strip()
+    if data_uri and not data_uri.startswith('data:image/'):
+        return jsonify({'error': 'Debe ser una imagen (PNG/JPG/SVG)'}), 400
+    if len(data_uri) > 1200000:
+        return jsonify({'error': 'Imagen muy grande · usá un logo ~600×600px (< 800KB)'}), 400
+    conn = get_db(); c = conn.cursor()
+    c.execute(
+        "INSERT INTO app_settings (clave,valor,descripcion,actualizado_at_utc,actualizado_por) "
+        "VALUES ('logo_espagiria',?,?,datetime('now'),?) ON CONFLICT(clave) DO UPDATE SET "
+        "valor=excluded.valor, actualizado_at_utc=excluded.actualizado_at_utc, actualizado_por=excluded.actualizado_por",
+        (data_uri, 'Logo Espagiria (data-uri) · rótulos/comprobantes', u))
+    try:
+        from audit_helpers import audit_log
+        audit_log(c, usuario=u, accion='SET_LOGO_ESPAGIRIA', tabla='app_settings',
+                  registro_id='logo_espagiria', despues={'tiene_logo': bool(data_uri)})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'tiene_logo': bool(data_uri)})
+
+
+@bp.route("/admin/logo-espagiria", methods=["GET"])
+def admin_logo_espagiria_page():
+    """Página para subir el logo de Espagiria desde el navegador (se guarda en la DB · persiste)."""
+    if 'compras_user' not in session:
+        return redirect('/login?next=/admin/logo-espagiria')
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT valor FROM app_settings WHERE clave='logo_espagiria'").fetchone()
+        actual = (row[0] if row else '') or ''
+    except Exception:
+        actual = ''
+    _prev = actual if actual else '/static/logos/espagiria.svg'
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Logo Espagiria</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:24px;}.card{max-width:520px;margin:0 auto;}.prev{width:180px;height:180px;object-fit:contain;background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:10px;}</style></head><body>
+<div class="cx-card card">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#127917;</div><div><h2 style="margin:0;font-size:19px">Logo de Espagiria</h2><div class="cx-text-mute" style="font-size:13px">Se usa en los rótulos y comprobantes · persiste en la base (no se pierde en deploys).</div></div></div>
+  <div style="text-align:center;margin:18px 0"><img id="prev" class="prev" src="__PREV__" alt="logo"></div>
+  <input type="file" id="file" accept="image/png,image/jpeg,image/svg+xml" class="cx-input" style="margin-bottom:12px">
+  <div style="display:flex;gap:10px"><button id="save" class="cx-btn cx-btn-success" onclick="guardar()">Guardar logo</button><button class="cx-btn cx-btn-ghost" onclick="location.href='/planta'">Volver a Planta</button></div>
+  <div id="msg" style="margin-top:12px;font-size:13px"></div>
+</div>
+<script>
+var _du='';
+document.getElementById('file').addEventListener('change',function(e){
+  var f=e.target.files[0]; if(!f) return;
+  if(f.size>800*1024){ document.getElementById('msg').innerHTML='<span style="color:#dc2626">Imagen muy grande (&gt;800KB) &middot; usá un logo ~600&times;600px</span>'; return; }
+  var r=new FileReader(); r.onload=function(){ _du=r.result; document.getElementById('prev').src=_du; }; r.readAsDataURL(f);
+});
+async function guardar(){
+  if(!_du){ document.getElementById('msg').innerHTML='<span style="color:#d97706">Elegí una imagen primero</span>'; return; }
+  var b=document.getElementById('save'); b.disabled=true; b.textContent='Guardando...';
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/admin/logo-espagiria',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||''},body:JSON.stringify({data_uri:_du})});
+    var d=await r.json();
+    if(r.ok&&d.ok){ document.getElementById('msg').innerHTML='<span style="color:#16a34a;font-weight:700">&#10003; Logo guardado &middot; ya aparece en los rótulos</span>'; }
+    else { document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error: '+((d&&d.error)||r.status)+'</span>'; }
+  }catch(e){ document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>'; }
+  b.disabled=false; b.textContent='Guardar logo';
+}
+</script></body></html>'''
+    return _tpl.replace('__PREV__', _prev)
+
+
 @bp.route("/api/admin/mee-base", methods=["POST"])
 def admin_mee_base():
     """Setea el frasco BASE de un envase serigrafiado (maestro_mee.material_referencia) · Sebastián 28-jun."""

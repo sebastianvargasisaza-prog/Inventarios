@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 232" fill="none">
+  <!-- Recreación SVG del logo Espagiria (matraz de fondo redondo + loto + ESPAGIRIA) · Sebastián 7-jul.
+       Placeholder nítido para impresión · reemplazable subiendo el PNG exacto en /admin/logo-espagiria. -->
+  <g stroke="#2b3a55" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <!-- boca del matraz -->
+    <path d="M103 26 h34"/>
+    <path d="M105 37 h30"/>
+    <!-- cuello -->
+    <path d="M110 40 v36"/>
+    <path d="M130 40 v36"/>
+    <!-- bulbo (fondo redondo) -->
+    <path d="M110 76 C 80 84 60 108 60 134 a 60 60 0 1 0 120 0 c 0 -26 -20 -50 -50 -58"/>
+  </g>
+  <!-- loto -->
+  <g stroke="#2b3a55" stroke-width="3.1" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M120 104 C 111 120 111 138 120 152 C 129 138 129 120 120 104 Z"/>
+    <path d="M120 152 C 103 143 94 130 94 117 C 108 120 118 134 120 152 Z"/>
+    <path d="M120 152 C 137 143 146 130 146 117 C 132 120 122 134 120 152 Z"/>
+    <path d="M120 152 C 99 151 82 143 75 130 C 91 132 111 141 120 152 Z"/>
+    <path d="M120 152 C 141 151 158 143 165 130 C 149 132 129 141 120 152 Z"/>
+    <path d="M90 154 C 108 163 132 163 150 154"/>
+  </g>
+  <text x="120" y="216" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="31" letter-spacing="3" font-weight="600" fill="#2b3a55">ESPAGIRIA</text>
+</svg>

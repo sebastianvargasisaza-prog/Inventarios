@@ -10300,6 +10300,13 @@ def generar_rotulos(producto_nombre, cantidad_str):
             row=c.fetchone()
         lotes[mid]={'lote':row[0] if row else 'S/L','est':row[1] if row else '','pos':row[2] if row else '','vence':str(row[3])[:10] if row and row[3] else ''}
     if not items: return '<h2>Formula no encontrada: '+prod+'</h2>', 404
+    # Logo Espagiria · data-uri guardado en app_settings (persiste en Render · se sube desde /admin/logo-espagiria)
+    # o fallback al archivo estático. Sebastián 7-jul.
+    try:
+        _lrow = c.execute("SELECT valor FROM app_settings WHERE clave='logo_espagiria'").fetchone()
+        _logo_src = ((_lrow[0] if _lrow else '') or '').strip() or '/static/logos/espagiria.svg'
+    except Exception:
+        _logo_src = '/static/logos/espagiria.svg'
     rhtml=''; barcodes=''
     for i,r in enumerate(items):
         mid,mnm,pct=r; peso=round((pct/100)*cant_g,2); info=lotes.get(mid,{}); lote_mp=info.get('lote','S/L')
@@ -10309,7 +10316,7 @@ def generar_rotulos(producto_nombre, cantidad_str):
         # QR resoluble: al escanear con el celular abre /scan/<código>/<lote> con la info REAL del lote.
         _scan_url = _scan_base + '/scan/' + urllib.parse.quote(str(cod_real), safe='') + '/' + urllib.parse.quote(str(lote_mp), safe='')
         barcodes += f'try{{new QRCode(document.getElementById("qr{i}"),{{text:{json.dumps(_scan_url)},width:58,height:58,correctLevel:QRCode.CorrectLevel.M}})}}catch(e){{}};'
-        rhtml+='<div class="r"><div class="rh"><div class="rhl"><img class="rlogo" src="/static/logos/espagiria.png" alt="" onerror="this.remove()"><span class="rt">RÓTULO PARA DISPENSAR MATERIA PRIMA</span></div><span class="rc">PRD-PRO-001-F08 | v1<br>04-Mar-2025 / 03-Mar-2028</span></div>'
+        rhtml+='<div class="r"><div class="rh"><div class="rhl"><img class="rlogo" src="'+_logo_src+'" alt="" onerror="this.remove()"><span class="rt">RÓTULO PARA DISPENSAR MATERIA PRIMA</span></div><span class="rc">PRD-PRO-001-F08 | v1<br>04-Mar-2025 / 03-Mar-2028</span></div>'
         rhtml+='<table><tr><td class="l">OP:</td><td class="v">'+op_num+'</td><td class="l">Fecha:</td><td class="v">'+hoy+'</td></tr>'
         rhtml+='<tr><td class="l">Producto:</td><td class="v big" colspan="3"><b>'+prod+'</b> &mdash; '+str(cantidad_kg)+' kg</td></tr>'
         rhtml+='<tr><td class="l">Nombre MP:</td><td class="v bold" colspan="3"><b>'+mnm+'</b> <span style="color:#888;font-size:0.8em;">('+mid+')</span></td></tr>'
@@ -10360,7 +10367,7 @@ def generar_rotulos(producto_nombre, cantidad_str):
         ('background:#fff;color:#4c1d95;' if (w == _lw and h == _lh) else 'background:#6d28d9;color:#fff;') +
         '">' + lbl + ' · ' + str(w) + '×' + str(h) + 'mm</a>'
         for w, h, lbl in _sizes)
-    return (css + '<div class="ph"><div style="display:flex;align-items:center;gap:12px;"><img src="/static/logos/espagiria.png" alt="" onerror="this.remove()" style="height:34px;width:auto;background:#fff;border-radius:6px;padding:2px 5px;"><div><h2 style="margin:0;">Rotulos &mdash; ' + prod + ' &mdash; ' + str(cantidad_kg) + ' kg</h2>'
+    return (css + '<div class="ph"><div style="display:flex;align-items:center;gap:12px;"><img src="' + _logo_src + '" alt="" onerror="this.remove()" style="height:34px;width:auto;background:#fff;border-radius:6px;padding:2px 5px;"><div><h2 style="margin:0;">Rotulos &mdash; ' + prod + ' &mdash; ' + str(cantidad_kg) + ' kg</h2>'
             '<div style="font-size:8pt;opacity:0.8;">' + op_num + ' | ' + str(len(items)) + ' MPs | ' + hoy +
             ' | etiqueta ' + str(_lw) + '×' + str(_lh) + 'mm</div></div></div>'
             '<div style="display:flex;align-items:center;gap:4px;"><span style="font-size:8pt;opacity:.8;">Tamaño:</span>' +
