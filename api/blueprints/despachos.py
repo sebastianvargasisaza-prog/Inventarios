@@ -12,6 +12,10 @@ try:
     from config import MP_LIBERA_USERS
 except Exception:
     MP_LIBERA_USERS = set()
+try:
+    from config import ASEGURAMIENTO_USERS, TECNICA_USERS  # Sebastián 8-jul: aprobar/liberar MP = rol calidad ampliado
+except Exception:
+    ASEGURAMIENTO_USERS, TECNICA_USERS = set(), set()
 from database import get_db
 from audit_helpers import audit_log
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
@@ -156,13 +160,19 @@ def recepcion_lotes_cuarentena():
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
-    c.execute("""SELECT id, material_id, material_nombre, cantidad, lote,
-                        fecha_vencimiento, proveedor, fecha, numero_oc, estado_lote
-                 FROM movimientos
-                 WHERE tipo='Entrada'
-                   AND (UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')
-                        OR (estado_lote IS NULL AND lote IS NOT NULL AND lote != ''))
-                 ORDER BY fecha DESC LIMIT 100""")
+    # Sebastián 8-jul: alineado EXACTO a /api/lotes/cuarentena (la vista CC del CEO) para que Laura/Yuliel vean
+    # LO MISMO en su módulo Calidad que en la pantalla de Planta. Antes esta lista incluía TODOS los tipos
+    # (envases/EPP) y lotes con estado_lote NULL (viejos) → "se ve diferente". Ahora: SOLO Materia Prima
+    # (COC-PRO-001) + estado CUARENTENA explícito (UPPER · M23). Los envases van por su flujo de calidad aparte.
+    c.execute("""SELECT m.id, m.material_id, m.material_nombre, m.cantidad, m.lote,
+                        m.fecha_vencimiento, m.proveedor, m.fecha, m.numero_oc, m.estado_lote
+                 FROM movimientos m
+                 LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
+                 LEFT JOIN ordenes_compra oc ON oc.numero_oc = m.numero_oc
+                 WHERE UPPER(COALESCE(m.estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA') AND m.tipo='Entrada'
+                   AND UPPER(COALESCE(mp.tipo_material,'MP'))='MP'
+                   AND UPPER(COALESCE(oc.categoria,'MATERIA PRIMA')) IN ('MATERIA PRIMA','MATERIA_PRIMA','MP','')
+                 ORDER BY m.fecha DESC LIMIT 100""")
     rows = c.fetchall()
     cols = ['id','material_id','material_nombre','cantidad','lote',
             'fecha_vencimiento','proveedor','fecha','numero_oc','estado_lote']
@@ -178,7 +188,7 @@ def recepcion_aprobar_lote():
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     usuario = session.get('compras_user', '')
-    if usuario not in (set(CALIDAD_USERS) | set(ADMIN_USERS) | set(MP_LIBERA_USERS)):
+    if usuario not in (set(CALIDAD_USERS) | set(ASEGURAMIENTO_USERS) | set(TECNICA_USERS) | set(ADMIN_USERS) | set(MP_LIBERA_USERS)):
         return jsonify({'error': 'Solo Calidad/Admin puede aprobar lotes'}), 403
     d = request.get_json() or {}
     mov_id = d.get('mov_id')

@@ -13,6 +13,12 @@ try:
     from config import MP_LIBERA_USERS
 except Exception:
     MP_LIBERA_USERS = set()
+try:
+    # Sebastián 8-jul: liberar MP (cc-review COC-PRO-001) lo autoriza TODO el rol de calidad ampliado:
+    # Calidad (laura/yuliel) + Aseguramiento (miguel) + Técnica/Director técnico (hernando) + admin.
+    from config import ASEGURAMIENTO_USERS, TECNICA_USERS
+except Exception:
+    ASEGURAMIENTO_USERS, TECNICA_USERS = set(), set()
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
 from audit_helpers import audit_log, siguiente_correlativo
@@ -44,7 +50,9 @@ bp = Blueprint('inventario', __name__)
 #     u, err, code = _require_planta_write()
 #     if err: return err, code
 
-QC_USERS = CALIDAD_USERS | ADMIN_USERS | MP_LIBERA_USERS  # Catalina libera/aprueba MP (Sebastián 26-jun)
+QC_USERS = (CALIDAD_USERS | ASEGURAMIENTO_USERS | TECNICA_USERS | ADMIN_USERS | MP_LIBERA_USERS)
+# Libera/aprueba MP (cc-review COC-PRO-001): Calidad (laura/yuliel) + Aseguramiento (miguel) + Técnica/Director
+# técnico (hernando) + admin + Catalina (MP_LIBERA · Sebastián 26-jun). Ampliado 8-jul a técnica/aseguramiento.
 
 
 def _require_session():
@@ -7922,7 +7930,7 @@ def lotes_cuarentena():
                FROM movimientos m
                LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
                LEFT JOIN ordenes_compra oc ON oc.numero_oc = m.numero_oc
-               WHERE m.estado_lote IN ('CUARENTENA','CUARENTENA_EXTENDIDA') AND m.tipo='Entrada'
+               WHERE UPPER(COALESCE(m.estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA') AND m.tipo='Entrada'
                  AND UPPER(COALESCE(mp.tipo_material,'MP'))='MP'
                  AND UPPER(COALESCE(oc.categoria,'MATERIA PRIMA')) IN
                      ('MATERIA PRIMA','MATERIA_PRIMA','MP','')
