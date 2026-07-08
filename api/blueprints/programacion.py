@@ -5955,12 +5955,28 @@ def _rotulo_f02_sheet(c, area_id, equipo=None):
         vcls = ' class="num"' if num else ''
         return f'<tr><td class="k">{_e(lbl)}</td><td{vcls}>{_e(str(val) if val else "—")}</td></tr>'
 
+    # Logo Espagiria · data-uri en app_settings (se sube en /admin/logo-espagiria) o fallback al SVG. Sebastián 7-jul.
+    try:
+        _lr = c.execute("SELECT valor FROM app_settings WHERE clave='logo_espagiria'").fetchone()
+        _logo_src = ((_lr[0] if _lr else '') or '').strip() or '/static/logos/espagiria.svg'
+    except Exception:
+        _logo_src = '/static/logos/espagiria.svg'
+
+    def _firma(rol, nombre, fecha):
+        if nombre:
+            cuerpo = (f'<div class="who">{_e(nombre)}</div>'
+                      f'<div class="sig-ok">✔ Firma electrónica</div>'
+                      f'<div class="f">{_e(fecha or "—")}</div>')
+        else:
+            cuerpo = '<div class="sig-line"></div><div class="f">Firma y fecha</div>'
+        return f'<div class="firma"><div class="l">{_e(rol)}</div>{cuerpo}</div>'
+
     return f'''<div class="sheet">
   <div class="accent"></div>
   <div class="top">
     <div class="brand">
-      <span class="mark"><svg viewBox="0 0 32 32" width="28" height="28" fill="none" stroke="#fff" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#fff"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.6" stroke-linecap="round" opacity=".7"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.6" stroke-linecap="round" opacity=".4"/></svg></span>
-      <div><div class="co">ESPAGIRIA Laboratorio SAS</div><div class="sub">ÁNIMUS Lab · Producción</div></div>
+      <img class="mark" src="{_logo_src}" alt="" onerror="this.remove()">
+      <div class="co">ESPAGIRIA Laboratorio SAS</div>
     </div>
     <div class="ctrl"><b>Código:</b> PRD-PRO-002-F02<br><b>Versión:</b> 02 &nbsp;·&nbsp; <b>Página:</b> 1 de 1<br><b>Vigencia:</b> 9-Abr-2026 a 8-Abr-2029</div>
   </div>
@@ -5983,21 +5999,13 @@ def _rotulo_f02_sheet(c, area_id, equipo=None):
     {_row('Lote anterior', lote_prev, num=True)}
   </table>
   <div class="firmas">
-    <div class="firma">
-      <div class="l">Realizado por (Operario)</div>
-      <div class="v">{_e(realizado_full or '—')}</div>
-      <div class="f">Fecha: {_e(realizado_at or '—')}{' · firma electrónica ✔' if realizado_full else ''}</div>
-    </div>
-    <div class="firma">
-      <div class="l">Verificado por (Calidad)</div>
-      <div class="v">{_e(verificado_full or '—')}</div>
-      <div class="f">Fecha: {_e(verificado_at or '—')}{' · firma electrónica ✔' if verificado_full else ''}</div>
-    </div>
+    {_firma('Realizado por (Operario)', realizado_full, realizado_at)}
+    {_firma('Verificado por (Calidad)', verificado_full, verificado_at)}
   </div>
 </div>'''
 
 
-def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=150, base_path=None):
+def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=100, base_path=None):
     """Envuelve uno o varios <div class='sheet'> en la página imprimible (head + CSS + botón).
     Con .sheet + .sheet → cada rótulo en su propia página al imprimir.
     Impresión TÉRMICA (igual que /rotulos de MP · Sebastián 1-jul): @page en mm (default 100×150),
@@ -6009,7 +6017,7 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=15
         lw, lh = 100, 150
     _sel = ''
     if base_path:
-        _sizes = [(100, 150, '4×6"'), (100, 75, '4×3"'), (100, 100, '4×4"'), (50, 30, 'chica')]
+        _sizes = [(100, 100, '4×4"'), (100, 150, '4×6"'), (100, 75, '4×3"'), (50, 30, 'chica')]
         _sel = '<span style="font-size:12px;color:#71717a;margin-right:6px">Tamaño:</span>' + ''.join(
             ('<a href="' + base_path + '?w=' + str(w) + '&h=' + str(h) + '" style="display:inline-block;'
              'padding:6px 12px;margin:0 3px;border-radius:8px;font-size:12px;text-decoration:none;font-weight:600;' +
@@ -6030,7 +6038,7 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=15
   .accent{{height:5px;background:linear-gradient(90deg,#a78bfa,var(--violet))}}
   .top{{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;padding:20px 26px 14px}}
   .brand{{display:flex;align-items:center;gap:12px}}
-  .mark{{width:46px;height:46px;border-radius:13px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#a78bfa,var(--violet));box-shadow:0 4px 14px rgba(109,40,217,.22)}}
+  .mark{{width:68px;height:68px;border-radius:14px;flex-shrink:0;object-fit:contain;background:#fff;border:1px solid var(--line);padding:5px}}
   .brand .co{{font-size:16px;font-weight:800;letter-spacing:-.3px;line-height:1.1}}
   .brand .sub{{font-size:11.5px;color:var(--mute);margin-top:2px;font-weight:500}}
   .ctrl{{font-size:11px;color:var(--soft);text-align:right;line-height:1.7;background:var(--pale);border:1px solid #ede9fe;border-radius:10px;padding:9px 14px}}
@@ -6051,8 +6059,10 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=15
   .firma{{flex:1;padding:18px 22px 22px}}
   .firma+.firma{{border-left:1px solid var(--line)}}
   .firma .l{{font-size:11px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.4px}}
-  .firma .v{{font-size:15px;font-weight:600;margin-top:18px;border-top:1px solid var(--ink);padding-top:6px}}
-  .firma .f{{font-size:11.5px;color:var(--mute);margin-top:3px;font-variant-numeric:tabular-nums}}
+  .firma .who{{font-size:15px;font-weight:700;color:var(--ink);margin-top:12px}}
+  .firma .sig-ok{{display:inline-block;margin-top:6px;font-size:10.5px;font-weight:700;color:#15803d;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:2px 9px}}
+  .firma .sig-line{{height:1px;background:var(--ink);margin:30px 0 6px}}
+  .firma .f{{font-size:11.5px;color:var(--mute);margin-top:4px;font-variant-numeric:tabular-nums}}
   .printbar{{text-align:center;margin-top:18px}}
   .printbtn{{display:inline-flex;align-items:center;gap:8px;padding:11px 26px;background:var(--violet);color:#fff;text-decoration:none;border:none;border-radius:10px;font-weight:600;font-size:14px;font-family:'Inter';cursor:pointer;box-shadow:0 4px 14px rgba(109,40,217,.22)}}
   @media(max-width:560px){{ .top{{flex-direction:column;gap:10px}} .ctrl{{text-align:left}} .firmas{{flex-direction:column}} .firma+.firma{{border-left:0;border-top:1px solid var(--line)}} }}
@@ -6061,6 +6071,12 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=15
     .sheet{{box-shadow:none;border:1px solid #ddd;border-radius:0;margin:0 auto;max-width:{lw-3}mm;width:{lw-3}mm;page-break-inside:avoid}}
     .sheet + .sheet{{page-break-before:always}}
     .printbar{{display:none}}
+    /* Compactar para caber en 100×100mm (Sebastián 7-jul) sin recortar */
+    td{{padding:4px 12px;font-size:8pt}}
+    .top{{padding:9px 14px 5px}} .mark{{width:50px;height:50px}} .co{{font-size:10pt}}
+    .title{{padding:3px 14px 7px}} .title h1{{font-size:12pt}}
+    .estado{{padding:3px 12px 8px}} .chip{{padding:5px 13px;font-size:10.5pt;margin:0 3px}} .estado .elbl{{margin-bottom:6px}}
+    .firma{{padding:7px 14px 9px}} .firma .who{{margin-top:7px}} .firma .sig-line{{margin:16px 0 5px}}
     @page{{size:{lw}mm {lh}mm;margin:2mm}}
   }}
 </style></head><body>
@@ -6097,7 +6113,7 @@ def planta_rotulo_limpieza_pdf(area_id):
     sheets = _rotulos_de_area(c, area_id, base['area_codigo'])
     body = ('\n'.join(sheets) if sheets
             else '<div style="text-align:center;color:#888;padding:40px">Sin equipos en esta sala.</div>')
-    _lw = request.args.get('w') or 100; _lh = request.args.get('h') or 150
+    _lw = request.args.get('w') or 100; _lh = request.args.get('h') or 100  # default 100×100mm (Sebastián 7-jul)
     return Response(_rotulo_f02_doc(body, f"Rótulos de Limpieza F02 · {base['area_nombre']}",
                                     lw=_lw, lh=_lh, base_path='/planta/rotulo-limpieza/%d/pdf' % area_id),
                     mimetype='text/html')
@@ -6123,7 +6139,7 @@ def planta_rotulos_limpieza_todas():
         sheets.extend(_rotulos_de_area(c, a[0], a[2]))
     body = ('\n'.join(sheets) if sheets
             else '<div style="text-align:center;color:#888;padding:40px">No hay salas configuradas.</div>')
-    _lw = request.args.get('w') or 100; _lh = request.args.get('h') or 150
+    _lw = request.args.get('w') or 100; _lh = request.args.get('h') or 100  # default 100×100mm (Sebastián 7-jul)
     return Response(_rotulo_f02_doc(body, 'Rótulos de Limpieza F02 · todas las salas',
                                     lw=_lw, lh=_lh, base_path='/planta/rotulos-limpieza'),
                     mimetype='text/html')
