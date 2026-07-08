@@ -21,8 +21,8 @@ CC_REVIEW_MODAL_HTML = r'''
       <button onclick="cerrarCCReview()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#a1a1aa;line-height:1;flex:none;">&times;</button>
     </div>
     <div style="overflow-y:auto;padding:4px 22px 8px;">
-      <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12.5px;color:#92400e;">
-        <b>COC-PRO-001 v03</b> &mdash; Todos los campos son obligatorios. La firma queda registrada con timestamp (21 CFR Part 11) y no se puede modificar.
+      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12.5px;color:#1e40af;">
+        <b>COC-PRO-001 &middot; modo migración</b> &mdash; por ahora los análisis son <b>opcionales</b>. Completá la <b>documental</b> y la <b>ubicación final</b>, y firmá para liberar. (Cuando se active INVIMA estricto, los campos pasan a obligatorios.)
       </div>
       <div id="ccr-info" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px 14px;background:#f5f3ff;border:1px solid #ede9fe;border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:12.5px;"></div>
 
@@ -57,9 +57,12 @@ CC_REVIEW_MODAL_HTML = r'''
       <textarea id="ccr-obs" placeholder="Observaciones adicionales · condiciones especiales, hallazgos, acciones tomadas..." style="width:100%;padding:9px 12px;border:1px solid #e4e4e7;border-radius:9px;font-size:13px;margin-top:12px;min-height:56px;box-sizing:border-box;resize:vertical;"></textarea>
       <div id="ccr-msg" style="margin-top:12px;font-size:13px;min-height:18px;"></div>
     </div>
-    <div style="display:flex;gap:10px;justify-content:flex-end;padding:12px 22px 18px;border-top:1px solid #f1f1f4;flex:none;">
-      <button onclick="cerrarCCReview()" style="padding:10px 18px;border:1px solid #e4e4e7;background:#fff;color:#3f3f46;border-radius:10px;font-weight:600;cursor:pointer;font-size:14px;">Cancelar</button>
-      <button id="ccr-submit" onclick="enviarCCReview()" style="padding:10px 22px;border:none;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border-radius:10px;font-weight:700;cursor:pointer;font-size:14px;box-shadow:0 4px 14px rgba(109,40,217,.25);">&#9998; Firmar y registrar</button>
+    <div style="display:flex;gap:10px;justify-content:space-between;align-items:center;padding:12px 22px 18px;border-top:1px solid #f1f1f4;flex:none;flex-wrap:wrap;">
+      <button onclick="imprimirRotuloCC()" style="padding:10px 16px;border:1px solid #c4b5fd;background:#f5f3ff;color:#6d28d9;border-radius:10px;font-weight:700;cursor:pointer;font-size:14px;">&#128424; Imprimir rótulo</button>
+      <div style="display:flex;gap:10px;">
+        <button onclick="cerrarCCReview()" style="padding:10px 18px;border:1px solid #e4e4e7;background:#fff;color:#3f3f46;border-radius:10px;font-weight:600;cursor:pointer;font-size:14px;">Cancelar</button>
+        <button id="ccr-submit" onclick="enviarCCReview()" style="padding:10px 22px;border:none;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border-radius:10px;font-weight:700;cursor:pointer;font-size:14px;box-shadow:0 4px 14px rgba(109,40,217,.25);">&#9998; Firmar y registrar</button>
+      </div>
     </div>
   </div>
 </div>
@@ -97,6 +100,16 @@ function abrirCCReview(lote){
   document.getElementById('ccr-modal').style.display='flex';
 }
 function cerrarCCReview(){var m=document.getElementById('ccr-modal');if(m)m.style.display='none';_ccrLote=null;}
+function imprimirRotuloCC(){
+  // Sebastián 9-jul: si el lote entró en cuarentena en recepción, Calidad imprime el rótulo acá al liberar
+  // y lo pega en la ubicación. Reusa el rótulo de recepción de MP.
+  if(!_ccrLote){return;}
+  var cod=_ccrLote.material_id||_ccrLote.codigo_mp||'';
+  var lote=_ccrLote.lote||'SL';
+  var cant=parseFloat(_ccrLote.cantidad)||0;
+  if(!cod){alert('No hay código de MP para el rótulo');return;}
+  window.open('/rotulo-recepcion/'+encodeURIComponent(cod)+'/'+encodeURIComponent(lote)+'/'+cant.toFixed(1),'_blank');
+}
 async function _ccrFirmar(meaning, recordId){
   var pwd=prompt('FIRMA ELECTRÓNICA (21 CFR Part 11)\n\nIngresá tu contraseña para firmar la disposición del lote ('+meaning+'):');
   if(!pwd){return null;}
@@ -117,14 +130,14 @@ async function enviarCCReview(){
   var solub=document.querySelector('input[name="ccr-solub"]:checked');
   var aql=document.querySelector('input[name="ccr-aql"]:checked');
   var aqlObs=(document.getElementById('ccr-aql-obs').value||'').trim();
-  if(!solub){msg.innerHTML='<span style="color:#dc2626;font-weight:600">Seleccioná el resultado de solubilidad</span>';return;}
-  if(!aql){msg.innerHTML='<span style="color:#dc2626;font-weight:600">Seleccioná el resultado AQL</span>';return;}
-  if((aql.value==='NO_CONFORME'||aql.value==='CUARENTENA_EXTENDIDA')&&!aqlObs){msg.innerHTML='<span style="color:#dc2626;font-weight:600">Las observaciones son obligatorias para este resultado</span>';return;}
+  // Modo migración (warm · Sebastián 9-jul): los análisis son OPCIONALES. Si no se marca nada, el backend lo
+  // trata como APROBADO. Solo exigimos la observación cuando SÍ se marca un rechazo explícito.
+  if(aql && (aql.value==='NO_CONFORME'||aql.value==='CUARENTENA_EXTENDIDA') && !aqlObs){msg.innerHTML='<span style="color:#dc2626;font-weight:600">Si marcás No conforme / Cuarentena ext., poné la observación</span>';return;}
   var payload={
     mov_id:_ccrLote.id, lote:_ccrLote.lote||'', codigo_mp:_ccrLote.material_id||_ccrLote.codigo_mp||'',
     coa_ok:document.getElementById('ccr-coa-ok').checked, lote_coincide:document.getElementById('ccr-lote-coincide').checked,
     coa_vigente:document.getElementById('ccr-coa-vigente').checked, ficha_ok:document.getElementById('ccr-ficha-ok').checked,
-    solubilidad:solub.value, resultado_aql:aql.value, observaciones_aql:aqlObs,
+    solubilidad:(solub?solub.value:''), resultado_aql:(aql?aql.value:''), observaciones_aql:aqlObs,
     muestra_retencion:document.getElementById('ccr-muestra').checked,
     observaciones:(document.getElementById('ccr-obs').value||'').trim(),
     estanteria_final:(document.getElementById('ccr-est').value||'').trim(),
