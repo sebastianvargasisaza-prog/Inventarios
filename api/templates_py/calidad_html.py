@@ -2275,17 +2275,16 @@ async function loadCuarentena(){
   const tbody=document.getElementById('cc-tbody');
   try{
     const r=await fetch('/api/recepcion/lotes-cuarentena');
-    const rows=await r.json();
+    const rows=await r.json(); window._ccrRows=rows;
     if(!rows.length){tbody.innerHTML='<tr><td colspan="6" class="empty">No hay lotes en cuarentena</td></tr>';return;}
-    tbody.innerHTML=rows.map(l=>`<tr>
+    tbody.innerHTML=rows.map((l,i)=>`<tr>
       <td><strong>${esc(l.material_nombre)}</strong><br><small style="color:var(--cx-text-mute)">${esc(l.lote||'sin lote')}</small></td>
       <td>${esc(String(l.cantidad))} g</td>
       <td>${esc(l.proveedor||'â')}</td>
       <td>${fmt(l.fecha_vencimiento)}</td>
       <td>${esc(l.numero_oc||'â')}</td>
-      <td style="display:flex;gap:6px">
-        <button class="btn btn-primary btn-sm" data-aprobar="${l.id}" data-estado="Aprobado">Aprobar</button>
-        <button class="btn btn-danger btn-sm" data-aprobar="${l.id}" data-estado="Rechazado">Rechazar</button>
+      <td>
+        <button class="btn btn-primary btn-sm" onclick="abrirCCReview(window._ccrRows[${i}])">Revisar CC</button>
       </td>
     </tr>`).join('');
   }catch(e){tbody.innerHTML='<tr><td colspan="6" class="empty">Error: '+esc(e.message)+'</td></tr>';}
@@ -2405,3 +2404,13 @@ _crDate=new Date().toISOString().substring(0,10);
 <!-- Widget "Mi contraseña" removido 24-may-2026 · vive en /modulos y /hub -->
 </body>
 </html>"""
+
+# ── Modal Revisión CC (COC-PRO-001) PREMIUM · Sebastián 8-jul ──────────────────────────────────────────────
+# Laura/Yuliel/Hernando/Miguel liberan MP desde SU módulo igual que el CEO en Planta: checklist documental +
+# solubilidad + AQL + muestra de retención + firma electrónica 21 CFR Part 11. Se inyecta antes de </body>
+# (aditivo · no altera el resto del template). El JS ya pasó node-check (M65).
+try:
+    from templates_py.cc_review_html import CC_REVIEW_MODAL_HTML as _CCR_MODAL, CC_REVIEW_JS as _CCR_JS
+    CALIDAD_HTML = CALIDAD_HTML.replace('</body>', _CCR_MODAL + '\n<script>\n' + _CCR_JS + '\n</script>\n</body>')
+except Exception:
+    pass

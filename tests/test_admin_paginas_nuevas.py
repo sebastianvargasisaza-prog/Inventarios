@@ -64,3 +64,14 @@ def test_rotulo_limpieza_render_logo_sin_animus(admin_client):
     assert "espagiria" in body.lower()  # logo src o marca
     assert "ÁNIMUS Lab" not in body
     assert "100mm 100mm" in body or "size:100mm 100mm" in body  # @page 100×100 default
+
+
+def test_calidad_modulo_tiene_modal_ccreview_premium(admin_client):
+    """El módulo Calidad (Laura) ahora trae el modal premium de Revisión CC (COC-PRO-001) para liberar MP."""
+    r = admin_client.get("/calidad")
+    assert r.status_code == 200, r.status_code
+    body = r.data.decode("utf-8", "replace")
+    assert "ccr-modal" in body
+    assert "abrirCCReview" in body
+    assert "Revisar CC" in body
+    assert "Firmar y registrar" in body
