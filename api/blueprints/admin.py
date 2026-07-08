@@ -6967,6 +6967,34 @@ async function guardar(){
     return _tpl.replace('__PREV__', _prev)
 
 
+@bp.route("/api/admin/purgar-gcal", methods=["POST"])
+def admin_purgar_gcal():
+    """Cancela las producciones FUTURAS no-ejecutadas de origen 'calendar' (Google Calendar ELIMINADO ·
+    Sebastián 7-jul · todo se programa en EOS: Plan + manual). NO toca lo ya ejecutado ni lo Fijo. Auditado.
+    Solo Admin · idempotente (si no hay, canceladas=0)."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute(
+        "SELECT id, producto, fecha_programada FROM produccion_programada "
+        "WHERE COALESCE(origen,'')='calendar' AND fecha_programada >= date('now') "
+        "  AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado') "
+        "  AND COALESCE(inicio_real_at,'')='' AND COALESCE(inventario_descontado_at,'')=''").fetchall()
+    ids = [r[0] for r in rows]
+    for _id in ids:
+        c.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id=?", (_id,))
+        try:
+            from audit_helpers import audit_log
+            audit_log(c, usuario=u, accion='PURGAR_GCAL', tabla='produccion_programada', registro_id=str(_id),
+                      despues={'estado': 'cancelado', 'motivo': 'Google Calendar eliminado (Sebastián 7-jul)'})
+        except Exception:
+            pass
+    conn.commit()
+    return jsonify({'ok': True, 'canceladas': len(ids),
+                    'detalle': [{'id': r[0], 'producto': r[1], 'fecha': r[2]} for r in rows[:50]]})
+
+
 @bp.route("/api/admin/mee-base", methods=["POST"])
 def admin_mee_base():
     """Setea el frasco BASE de un envase serigrafiado (maestro_mee.material_referencia) · Sebastián 28-jun."""

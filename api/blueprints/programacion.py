@@ -457,6 +457,11 @@ def _fetch_calendar_events(days_ahead=90):
     """Fetch production calendar events.
     Priority: 1) iCal feed (GCAL_ICAL_URL), 2) Google Calendar API (GOOGLE_API_KEY).
     """
+    # Sebastián 7-jul-2026: Google Calendar ELIMINADO como fuente. Todo se programa en EOS (Plan + manual) ·
+    # GCal solo metía ruido y desincronizaba. El sync ya no crea filas origen='calendar' y ningún motor
+    # (abastecimiento / generar-OC / proyección / auto_plan) lee eventos de Google. Se deja la plomería
+    # devolviendo vacío (cero-riesgo · cada consumidor recibe lista vacía). Para reactivar: quitar este return.
+    return {'events': [], 'error': None, 'source': 'disabled'}
     # ── Option 1: iCal feed (public or secret URL, no API key required) ──────
     if GCAL_ICAL_URL:
         try:
@@ -13772,13 +13777,12 @@ def abastecimiento_consumo_horizontes():
         # FIX 17-jun · incluir 'eos_proyeccion' (plan rodante 2 años · M42): el
         # calendario lo MUESTRA pero Abastecimiento no lo contaba → compraba para un
         # plan distinto al visible. Dentro del horizonte ya acotado por cutoff_max.
-        # FIX 7-jul (audit abastecimiento): agregar 'calendar' y 'manual' (orígenes Sugerido reales · el
-        # calendario los MUESTRA pero abastecimiento no los contaba → sub-compra silenciosa · se tratan como
-        # sugeridas: se conservan salvo dedup por (producto,fecha)). CLAUDE.md: Sugerido = eos_canonico,
-        # calendar, manual, auto_plan, sugerido.
+        # FIX 7-jul (audit abastecimiento): incluir 'manual' (origen Sugerido real que el calendario MUESTRA
+        # pero abastecimiento no contaba → sub-compra). 'calendar' se ELIMINÓ (Sebastián 7-jul · Google Calendar
+        # fuera · todo se programa en EOS: Plan + manual). Se tratan como sugeridas (dedup por producto,fecha).
         origenes_in = ('eos_plan', 'eos_b2b', 'eos_retroactivo',
                         'eos_canonico', 'auto_plan', 'sugerido', 'eos_proyeccion',
-                        'calendar', 'manual')
+                        'manual')
     placeholders = ','.join(['?'] * len(origenes_in))
     # Sebastián 25-may-2026 PM · incluir envase_codigo_override (mig 184).
     # Si el lote tiene override no vacío, el cálculo MEE prioriza ese envase
