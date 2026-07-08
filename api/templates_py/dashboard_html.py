@@ -2987,6 +2987,16 @@ function abrirAjusteIdx(idx){
   if(!i)return;
   abrirAjuste(i.material_id,i.material_nombre,i.lote||"",i.cantidad_g,i.estanteria||"",i.posicion||"",i.fecha_vencimiento||"");
 }
+function reimprimirRotuloLote(idx){
+  // Sebastián 9-jul: re-imprimir el rótulo de un lote desde Stock por Lote (si se dañó/perdió la etiqueta).
+  var i=_lotes[idx];
+  if(!i)return;
+  var cod=i.material_id||'';
+  var lote=i.lote||'SL';
+  var cant=parseFloat(i.cantidad_g)||0;
+  if(!cod){alert('Este lote no tiene código de MP');return;}
+  window.open('/rotulo-recepcion/'+encodeURIComponent(cod)+'/'+encodeURIComponent(lote)+'/'+cant.toFixed(1),'_blank');
+}
 
 // ─── Solicitar MP (a nivel materia prima, no lote) ─────────────────────────
 var _solLote=null;
@@ -4844,6 +4854,7 @@ function renderStock(items){
     h+='<td style="text-align:center;white-space:nowrap"><div style="display:inline-flex;gap:3px;flex-wrap:wrap;justify-content:center">'+
       '<button onclick="abrirAjusteIdx('+gi+')" style="padding:3px 7px;font-size:0.72em;background:#f0ad4e;color:#fff;border-radius:4px;" title="Ajustar stock / ubicación / fecha / lote">Ajustar</button>'+
       '<button onclick="verHistorialLote('+gi+')" style="padding:3px 7px;font-size:0.72em;background:#667eea;color:#fff;border-radius:4px;" title="Ver movimientos del lote">Hist</button>'+
+      '<button onclick="reimprimirRotuloLote('+gi+')" style="padding:3px 7px;font-size:0.72em;background:#6d28d9;color:#fff;border-radius:4px;" title="Re-imprimir el rótulo de este lote">&#128424;</button>'+
       btnSolicitar+
       (window._ES_ADMIN_DASH ? '<button onclick="abrirEliminarLote('+gi+')" style="padding:3px 7px;font-size:0.72em;background:#c0392b;color:#fff;border-radius:4px;" title="Eliminar lote (admin)">Borrar</button>' : '')+
     '</div></td>';
