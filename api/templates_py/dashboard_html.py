@@ -7879,6 +7879,11 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     oh+='<div style="flex:1"><div style="color:#64748b;font-weight:700;margin-bottom:2px">Realizó · Operario &middot; '+done+'/'+items.length+(allOk?' ✓':'')+'</div><div style="height:6px;background:#f1f5f9;border-radius:99px;overflow:hidden"><div style="height:100%;width:'+pctR+'%;background:'+(allOk?'#16a34a':'#a78bfa')+'"></div></div></div>';
     oh+='<div style="flex:1"><div style="color:#64748b;font-weight:700;margin-bottom:2px">Verificó · Calidad &middot; '+verif+'/'+items.length+(allVer?' ✓':'')+'</div><div style="height:6px;background:#f1f5f9;border-radius:99px;overflow:hidden"><div style="height:100%;width:'+pctV+'%;background:'+(allVer?'#16a34a':'#0ea5e9')+'"></div></div></div>';
     oh+='</div>';
+    // Sebastián 7-jul (v3): tiempo de respuesta de Calidad (aviso → 1ª verificación) · una vez, en Dispensación.
+    if(etapa==='dispensacion'){
+      if(d.despeje_respuesta_min!=null){ oh+='<div style="margin:0 0 8px;font-size:11px;color:#166534;background:#dcfce7;border-radius:6px;padding:5px 10px;display:inline-block">&#9201; Calidad respondió en <b>'+d.despeje_respuesta_min+' min</b> (aviso &rarr; 1ª verificación)</div>'; }
+      else if(d.despeje_espera_min!=null){ oh+='<div style="margin:0 0 8px;font-size:11px;color:#92400e;background:#fef3c7;border-radius:6px;padding:5px 10px;display:inline-block">&#9201; <b>'+d.despeje_espera_min+' min</b> desde el aviso &middot; esperando 1ª verificaci\\u00f3n de Calidad</div>'; }
+    }
     oh+='<table class="table" style="font-size:11px"><thead><tr><th style="text-align:left">Verificación</th><th style="text-align:center">Realizó</th><th style="text-align:center">Verificó</th></tr></thead><tbody>';
     items.forEach(function(it){
       var rz;

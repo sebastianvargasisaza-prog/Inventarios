@@ -2792,6 +2792,27 @@ def ebr_vista_completa(ebr_id):
     except Exception:
         out['despeje_checklist'] = []
         out['despeje_checklist_fab'] = []
+    # Sebastián 7-jul (v3): TIEMPO DE RESPUESTA de Calidad = desde el AVISO (iniciado_at_utc · cuando se manda la
+    # alerta de inicio) hasta la 1ª VERIFICACIÓN de cualquier ítem del despeje. Mide qué tan al lado está Calidad.
+    out['despeje_respuesta_min'] = None
+    out['despeje_espera_min'] = None
+    try:
+        from datetime import datetime as _dtm
+        def _parse_utc(s):
+            s = (s or '').strip().replace('Z', '').replace('T', ' ').split('.')[0]
+            return _dtm.fromisoformat(s) if s else None
+        _ini = _parse_utc(out.get('iniciado_at_utc'))
+        _pvr = conn.execute(
+            "SELECT MIN(verificado_at_utc) FROM ebr_despeje_items "
+            "WHERE ebr_id=? AND COALESCE(verificado_por,'')<>'' AND COALESCE(verificado_at_utc,'')<>''",
+            (ebr_id,)).fetchone()
+        _primera = _parse_utc(_pvr[0] if _pvr else '')
+        if _ini and _primera:
+            out['despeje_respuesta_min'] = round((_primera - _ini).total_seconds() / 60.0, 1)
+        elif _ini and (out.get('estado') in ('iniciado', 'en_proceso')):
+            out['despeje_espera_min'] = round((_dtm.utcnow() - _ini).total_seconds() / 60.0, 1)
+    except Exception:
+        pass
     # 3. Pasos (Fabricación/Mezcla) · FIX 6-jun: la tabla real es
     # ebr_pasos_ejecutados (no 'ebr_pasos', que no existe → la sección 5 salía
     # siempre vacía). Realizado por = operario_username; Verificado por = qc_username.
@@ -6244,22 +6265,9 @@ def registrar_despeje_item_ebr(ebr_id):
               antes=({"cumple": prev[0], "observaciones": prev[1], "registrado_por": prev[2]} if es_correccion else None),
               despues={"ebr_id": ebr_id, "item_idx": idx, "cumple": cumple, "por": user})
     conn.commit()
-    # Sebastián 7-jul (v2): AVISAR a Calidad (campana) que hay un ítem del despeje por verificar → que esté al
-    # lado. Solo marcas NUEVAS cumple=1 (no correcciones · no auto-aviso). Best-effort (no rompe el registro).
-    if not es_correccion and cumple == 1:
-        try:
-            try:
-                from blueprints.notif import push_notif_multi as _pnm
-            except Exception:
-                from api.blueprints.notif import push_notif_multi as _pnm
-            _et_lbl = 'Fabricación' if etapa == 'fabricacion' else 'Dispensación'
-            _pnm([q for q in _qc_verificadores() if q != user],
-                 'despeje_verificar',
-                 f'Despeje {_et_lbl}: ítem por verificar',
-                 body=f'{user} marcó: "{texto[:70]}" · verificá al lado (lote #{ebr_id}).',
-                 link='/planta', remitente=user, importante=False)
-        except Exception:
-            pass
+    # Sebastián 7-jul (v3): SIN aviso por-ítem (evita fatiga de campana) — la ÚNICA alerta es la de inicio de
+    # fabricación (iniciar_ebr). Los pendientes los ve Calidad en su bandeja "Mi trabajo". El tiempo de respuesta
+    # (aviso → 1ª verificación) se mide server-side desde iniciado_at_utc vs MIN(verificado_at_utc).
     return jsonify({"ok": True, "item_idx": idx, "cumple": cumple,
                     "correccion": es_correccion}), 201
 

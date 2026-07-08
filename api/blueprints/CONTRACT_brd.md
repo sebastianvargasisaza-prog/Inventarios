@@ -282,9 +282,13 @@ concurrentes dejaban el EBR 'rechazado' con el PT ya promovido a VIGENTE
   verificando. La firma dual sigue garantizada por el gate de `liberar_ebr` (no se
   libera sin despeje conforme + verificado). Se quitó "Marcar TODO" (riesgo de
   diligenciar sin mirar) → el operario marca uno por uno, pero sin esperar.
-- `registrar_despeje_item_ebr` (`/despeje-item` POST): tras el commit, si es marca NUEVA
-  cumple=1 (no corrección · no self-notify), notifica a `_qc_verificadores()` (quiet).
-- `iniciar_ebr`: al arrancar el EBR, alerta IMPORTANTE (sonido) a `_qc_verificadores()`.
+- v3 (7-jul): UNA sola alerta (no por-ítem · evita fatiga de campana). `iniciar_ebr` manda
+  la alerta IMPORTANTE (sonido) a `_qc_verificadores()`; `registrar_despeje_item_ebr` YA NO
+  notifica (los pendientes se ven en la bandeja "Mi trabajo").
+- MÉTRICA de respuesta de Calidad (en `ebr_vista_completa`/`out`): `despeje_respuesta_min` =
+  MIN(verificado_at_utc de despeje) − iniciado_at_utc (aviso → 1ª verificación); mientras no
+  haya verificación, `despeje_espera_min` = ahora − iniciado_at_utc. Se muestra como badge en
+  la sección Dispensación del legajo. Sin columnas nuevas (todo derivado).
 - `_qc_verificadores()` = (CALIDAD_USERS ∪ ASEGURAMIENTO_USERS ∪ TECNICA_USERS) − ADMIN
   = {laura, yuliel, miguel, hernando}. Best-effort (nunca rompe el registro/inicio).
 - `verificar_despeje_item_ebr` (`/despeje-verificar` POST): path masivo `{todos:true}`
