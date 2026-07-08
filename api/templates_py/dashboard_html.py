@@ -1232,8 +1232,8 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   </div>
 
   <div id="produccion" class="tab-content">
-    <!-- Rediseño premium 7-jul (Sebastián) · tarjeta cortex + grid 2-col + header con ícono -->
-    <div class="cx-card cx-fade-in" style="max-width:940px">
+    <!-- Rediseño premium 7-jul (Sebastián) · tarjeta cortex a ancho completo + grid responsive + header con ícono -->
+    <div class="cx-card cx-fade-in" style="width:100%">
       <div style="display:flex;align-items:center;gap:13px">
         <div style="width:44px;height:44px;flex:none;border-radius:13px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:22px;box-shadow:0 5px 14px rgba(124,58,237,.32)">&#127981;</div>
         <div>
