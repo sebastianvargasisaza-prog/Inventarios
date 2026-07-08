@@ -276,15 +276,19 @@ concurrentes dejaban el EBR 'rechazado' con el PT ya promovido a VIGENTE
   lote no se libera hasta resolver la desviación (clasificar→investigar→CAPA→cerrar).
 - Golden GP-64. La desviación sigue su workflow normal en /aseguramiento.
 
-## Despeje de línea · supervisión SECUENCIAL (Sebastián 7-jul)
-- `registrar_despeje_item_ebr` (`/despeje-item` POST): el operario solo puede marcar
-  el ítem N si el ANTERIOR (N-1) ya tiene `verificado_por` (Calidad lo verificó).
-  El ítem 0 siempre habilitado. Las CORRECCIONES de Calidad (`es_correccion`) NO se
-  bloquean. 409 `DESPEJE_SECUENCIAL` si se salta el orden. Server-side (no basta la UI).
-- `verificar_despeje_item_ebr` (`/despeje-verificar` POST): el path masivo `{todos:true}`
-  quedó DESHABILITADO (409 `VERIFICAR_UNO_A_UNO`) — la verificación es una por una.
-- UI (`_despEtapa` en dashboard_html): quitados "Marcar TODO cumple" y "Verificar TODO";
-  el botón del operario sale 🔒 hasta que Calidad verifique el ítem anterior.
-- `_batch_role_info.verifica` ahora incluye `aseguramiento` → Miguel (Aseguramiento)
-  verifica igual que Calidad (Laura/Yuliel) y Director Técnico (Hernando), SIN cambiar
-  el acceso a los módulos de cada rol (separación de cargos intacta).
+## Despeje de línea · supervisión por ALERTA (Sebastián 7-jul · v2)
+- Modelo v2: el operario VA HACIENDO sin trabarse (NO hay gate bloqueante); cada ítem
+  que marca dispara un `push_notif_multi` a Calidad (campana) para que esté AL LADO
+  verificando. La firma dual sigue garantizada por el gate de `liberar_ebr` (no se
+  libera sin despeje conforme + verificado). Se quitó "Marcar TODO" (riesgo de
+  diligenciar sin mirar) → el operario marca uno por uno, pero sin esperar.
+- `registrar_despeje_item_ebr` (`/despeje-item` POST): tras el commit, si es marca NUEVA
+  cumple=1 (no corrección · no self-notify), notifica a `_qc_verificadores()` (quiet).
+- `iniciar_ebr`: al arrancar el EBR, alerta IMPORTANTE (sonido) a `_qc_verificadores()`.
+- `_qc_verificadores()` = (CALIDAD_USERS ∪ ASEGURAMIENTO_USERS ∪ TECNICA_USERS) − ADMIN
+  = {laura, yuliel, miguel, hernando}. Best-effort (nunca rompe el registro/inicio).
+- `verificar_despeje_item_ebr` (`/despeje-verificar` POST): path masivo `{todos:true}`
+  DESHABILITADO (409 `VERIFICAR_UNO_A_UNO`) — Calidad verifica una por una.
+- `_batch_role_info.verifica` ahora incluye `aseguramiento` → Miguel verifica igual que
+  Calidad (Laura/Yuliel) y Director Técnico (Hernando), SIN cambiar el acceso a los
+  módulos de cada rol (separación de cargos intacta).

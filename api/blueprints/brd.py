@@ -206,6 +206,18 @@ def _batch_role_info(usuario):
     }
 
 
+def _qc_verificadores():
+    """Usuarios que VERIFICAN el despeje/pesaje (Control de Calidad + Aseguramiento + Director Técnico), sin los
+    admins-dueños (sebastián/alejandro) para no llenarles la campana. Sebastián 7-jul: se les alerta cuando
+    empieza fabricación y en cada ítem marcado, para que estén AL LADO supervisando (no se bloquea al operario)."""
+    try:
+        from config import ASEGURAMIENTO_USERS, TECNICA_USERS
+    except Exception:
+        ASEGURAMIENTO_USERS, TECNICA_USERS = set(), set()
+    dest = (set(CALIDAD_USERS) | set(ASEGURAMIENTO_USERS) | set(TECNICA_USERS)) - set(ADMIN_USERS)
+    return sorted(d for d in dest if d)
+
+
 # ── UI dashboard (read-only listings) ──────────────────────────────────────
 
 @bp.route("/brd", methods=["GET"])
@@ -1781,6 +1793,22 @@ def iniciar_ebr():
               despues={"mbr_template_id": mbr["id"], "lote": lote,
                         "numero_op": numero_op, "fase": fase,
                         "pasos_clonados": n_clonados})
+    # Sebastián 7-jul (v2): ALERTA IMPORTANTE a Calidad — empezó la fabricación → que vaya al lado a supervisar
+    # el despeje (firma dual en tiempo real, sin trabar al operario). Best-effort (no rompe el inicio del EBR).
+    try:
+        try:
+            from blueprints.notif import push_notif_multi as _pnm
+        except Exception:
+            from api.blueprints.notif import push_notif_multi as _pnm
+        _fase_lbl = (fase or 'fabricacion').capitalize()
+        _pnm([q for q in _qc_verificadores() if q != user],
+             'fabricacion_iniciada',
+             f'Empezó {_fase_lbl} · andá a verificar el despeje',
+             body=f'Lote {lote} · OP {numero_op}. El operario va a registrar el despeje de línea — '
+                  f'estás para verificar cada paso al lado.',
+             link='/planta', remitente=user, importante=True)
+    except Exception:
+        pass
     return jsonify({"ok": True, "id": ebr_id, "numero_op": numero_op,
                      "pasos": n_clonados}), 201
 
@@ -6195,21 +6223,10 @@ def registrar_despeje_item_ebr(ebr_id):
                      "Dirección Técnica. El operario solo registra el despeje inicial.",
             "codigo": "SOLO_CALIDAD_CORRIGE",
         }), 403
-    # SUPERVISIÓN SECUENCIAL (Sebastián 7-jul · firma dual real, sin "marcar todo"): el operario solo puede
-    # registrar el ítem N si el ANTERIOR (N-1) ya fue VERIFICADO por Calidad → obliga a que alguien vigile cada
-    # paso antes de habilitar el siguiente. El ítem 0 siempre está habilitado. Las CORRECCIONES de Calidad NO se
-    # bloquean (el ítem ya estaba habilitado). Server-side: no basta ocultar el botón (el endpoint es la verdad).
-    if not es_correccion and idx > 0:
-        _prev_ver = cur.execute(
-            "SELECT COALESCE(verificado_por,'') FROM ebr_despeje_items "
-            "WHERE ebr_id=? AND item_idx=? AND COALESCE(etapa,'dispensacion')=?",
-            (ebr_id, idx - 1, etapa)).fetchone()
-        if not (_prev_ver and (_prev_ver[0] or '').strip()):
-            return jsonify({
-                "error": "Registrá las verificaciones EN ORDEN: Calidad debe verificar la anterior antes de "
-                         "habilitar esta. Así se asegura que alguien supervisa cada paso del despeje.",
-                "codigo": "DESPEJE_SECUENCIAL",
-            }), 409
+    # SUPERVISIÓN por ALERTA, no por bloqueo (Sebastián 7-jul · v2): el operario VA HACIENDO sin trabarse; cada
+    # ítem que marca le AVISA a Calidad (campana) para que esté al lado verificando. La firma dual sigue: nadie
+    # libera el lote sin que Calidad verifique todo (gate de liberar_ebr). Se quitó el "marcar todo" (riesgo de
+    # diligenciar sin mirar) → el operario marca uno por uno, pero sin esperar. Ver el push_notif tras el commit.
     # Upsert por (ebr_id, item_idx, etapa) · índice único de mig 222.
     cur.execute(
         """INSERT INTO ebr_despeje_items
@@ -6227,6 +6244,22 @@ def registrar_despeje_item_ebr(ebr_id):
               antes=({"cumple": prev[0], "observaciones": prev[1], "registrado_por": prev[2]} if es_correccion else None),
               despues={"ebr_id": ebr_id, "item_idx": idx, "cumple": cumple, "por": user})
     conn.commit()
+    # Sebastián 7-jul (v2): AVISAR a Calidad (campana) que hay un ítem del despeje por verificar → que esté al
+    # lado. Solo marcas NUEVAS cumple=1 (no correcciones · no auto-aviso). Best-effort (no rompe el registro).
+    if not es_correccion and cumple == 1:
+        try:
+            try:
+                from blueprints.notif import push_notif_multi as _pnm
+            except Exception:
+                from api.blueprints.notif import push_notif_multi as _pnm
+            _et_lbl = 'Fabricación' if etapa == 'fabricacion' else 'Dispensación'
+            _pnm([q for q in _qc_verificadores() if q != user],
+                 'despeje_verificar',
+                 f'Despeje {_et_lbl}: ítem por verificar',
+                 body=f'{user} marcó: "{texto[:70]}" · verificá al lado (lote #{ebr_id}).',
+                 link='/planta', remitente=user, importante=False)
+        except Exception:
+            pass
     return jsonify({"ok": True, "item_idx": idx, "cumple": cumple,
                     "correccion": es_correccion}), 201
 

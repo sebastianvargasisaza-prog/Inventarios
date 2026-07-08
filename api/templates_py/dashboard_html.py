@@ -7880,15 +7880,13 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     oh+='<div style="flex:1"><div style="color:#64748b;font-weight:700;margin-bottom:2px">Verificó · Calidad &middot; '+verif+'/'+items.length+(allVer?' ✓':'')+'</div><div style="height:6px;background:#f1f5f9;border-radius:99px;overflow:hidden"><div style="height:100%;width:'+pctV+'%;background:'+(allVer?'#16a34a':'#0ea5e9')+'"></div></div></div>';
     oh+='</div>';
     oh+='<table class="table" style="font-size:11px"><thead><tr><th style="text-align:left">Verificación</th><th style="text-align:center">Realizó</th><th style="text-align:center">Verificó</th></tr></thead><tbody>';
-    items.forEach(function(it, _ix){
+    items.forEach(function(it){
       var rz;
-      // Gate SECUENCIAL (Sebastián 7-jul): el operario solo marca el ítem si Calidad YA verificó el ANTERIOR
-      // → supervisión real de cada paso. El primero siempre habilitado. (El backend lo enforcea también.)
-      var _unlocked = (_ix===0) || (items[_ix-1] && (items[_ix-1].verificado_por||'').trim());
+      // Sebastián 7-jul (v2): el operario VA HACIENDO sin trabarse (sin lock); al marcar, se AVISA a Calidad
+      // para que esté al lado verificando (el backend manda la notificación a la campana). Sin "marcar todo".
       if(it.cumple===1){ rz='<span style="color:#16a34a;font-weight:700">✓ Sí</span>'+(it.registrado_por?('<div style="font-size:9px;color:#94a3b8">'+_escHTML(it.registrado_por)+'</div>'):''); }
       else if(it.cumple===0){ rz='<span style="color:#dc2626;font-weight:700">✗ No</span>'; }
-      else if(editable&&miRol.realiza&&_unlocked){ rz='<button onclick="ebrMarcarDespeje('+d.id+','+it.idx+',&#39;'+etapa+'&#39;)" style="background:#16a34a;color:#fff;border:none;border-radius:4px;padding:2px 9px;font-size:10px;cursor:pointer">✓ Sí</button>'; }
-      else if(editable&&miRol.realiza){ rz='<span style="color:#cbd5e1;font-size:9px" title="Calidad debe verificar la anterior primero">&#128274; espera verif. anterior</span>'; }
+      else if(editable&&miRol.realiza){ rz='<button onclick="ebrMarcarDespeje('+d.id+','+it.idx+',&#39;'+etapa+'&#39;)" style="background:#16a34a;color:#fff;border:none;border-radius:4px;padding:2px 9px;font-size:10px;cursor:pointer">✓ Sí</button>'; }
       else { rz='<span style="color:#94a3b8">pendiente</span>'; }
       var vf;
       if((it.verificado_por||'').trim()){ vf='<span style="color:#16a34a;font-weight:700">✓</span><div style="font-size:9px;color:#94a3b8">'+_escHTML(it.verificado_por)+'</div>'; }
@@ -8199,6 +8197,8 @@ async function ebrMarcarDespeje(ebrId, idx, etapa){
   try{
     var r=await fetch('/api/brd/ebr/'+ebrId+'/despeje-item',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item_idx:idx,cumple:1,etapa:etapa})});
     if(!r.ok){ var j=await r.json(); alert('Error: '+(j.error||r.status)); return; }
+    // Sebastián 7-jul (v2): pop-up no-bloqueante · el operario sigue, y Calidad ya recibió la alerta (campana).
+    if(typeof _toast==='function'){ _toast('Registrado ✓ · Calidad avisada para verificar al lado', 1); }
     abrirEBR(ebrId);
   }catch(e){ alert('Error: '+(e.message||e)); }
 }
