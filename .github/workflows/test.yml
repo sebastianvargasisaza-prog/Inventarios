@@ -29,7 +29,7 @@ jobs:
       # node --check sobre el JS inline renderizado → atrapa errores de sintaxis
       # (incl. \n/\' crudos que rompen una cadena) antes de que lleguen al navegador.
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
 
@@ -90,7 +90,7 @@ jobs:
             requirements-dev.txt
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
 
