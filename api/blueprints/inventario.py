@@ -7560,6 +7560,41 @@ def registrar_recepcion():
         'alerta_precio': alerta_precio,
     }), 201
 
+
+@bp.route('/api/recepcion/lote-info', methods=['GET'])
+def recepcion_lote_info():
+    """¿El (material, lote) YA existe en bodega? · Sebastián 9-jul. Para que Recepción avise "vas a SUMAR a un
+    lote existente" (no crea lote nuevo) + auto-rellene vencimiento/ubicación. Read-only. Stock canónico SUM."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    cod = (request.args.get('codigo') or '').upper().strip()
+    lot = (request.args.get('lote') or '').strip()
+    if not cod or not lot:
+        return jsonify({'existe': False})
+    conn = get_db(); c = conn.cursor()
+    try:
+        r = c.execute(
+            """SELECT SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                              WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) AS stock,
+                      MAX(fecha_vencimiento), MAX(estanteria), MAX(posicion), MAX(proveedor),
+                      UPPER(COALESCE(MAX(estado_lote),''))
+               FROM movimientos WHERE UPPER(TRIM(material_id))=? AND TRIM(lote)=?""",
+            (cod, lot)).fetchone()
+    except Exception:
+        return jsonify({'existe': False})
+    stock = float(r[0] or 0) if r else 0.0
+    if stock <= 0.01:
+        return jsonify({'existe': False})
+    _est = str(r[2] or '').strip(); _pos = str(r[3] or '').strip()
+    return jsonify({
+        'existe': True, 'stock_g': round(stock, 1),
+        'vencimiento': (str(r[1])[:10] if r[1] else ''),
+        'estanteria': _est, 'posicion': _pos,
+        'ubicacion': (_est + _pos),
+        'proveedor': (r[4] or ''), 'estado_lote': (r[5] or ''),
+    })
+
+
 @bp.route('/api/recepcion/recientes', methods=['GET'])
 def recepcion_recientes():
     """Sprint Recepciones PRO · 20-may-2026 · fix #7 + #13.

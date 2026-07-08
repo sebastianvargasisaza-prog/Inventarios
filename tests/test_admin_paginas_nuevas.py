@@ -84,3 +84,10 @@ def test_planta_dashboard_tiene_modal_ccreview_premium(admin_client):
     body = r.data.decode("utf-8", "replace")
     assert "ccr-modal" in body
     assert "function abrirCCReview" in body
+
+
+def test_recepcion_lote_info_endpoint(admin_client):
+    """Lookup de lote existente en recepción (para avisar 'sumás al lote existente')."""
+    r = admin_client.get("/api/recepcion/lote-info?codigo=MP00123&lote=NO-EXISTE-XYZ")
+    assert r.status_code == 200, r.status_code
+    assert r.get_json().get("existe") is False

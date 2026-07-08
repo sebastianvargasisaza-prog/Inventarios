@@ -815,7 +815,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         </div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
-        <div class="form-group"><label>N Lote (vacio = auto)</label><input type="text" id="ing-lote" placeholder="Ej: LYPH250727"></div>
+        <div class="form-group"><label>N Lote (vacio = auto)</label><input type="text" id="ing-lote" placeholder="Ej: LYPH250727" onblur="checkLoteExistente()"><div id="ing-lote-info" style="display:none;margin-top:6px;font-size:12px;padding:8px 10px;border-radius:8px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;line-height:1.45"></div></div>
         <div class="form-group"><label>Cantidad recibida (g) *</label><input type="number" id="ing-cant" placeholder="0" step="0.01" oninput="calcularValorTotal()"></div>
         <div class="form-group"><label>Fecha Vencimiento</label><input type="date" id="ing-vence"></div>
         <div class="form-group"><label>Estanteria</label><input type="text" id="ing-est" placeholder="Ej: 9"></div>
@@ -5083,6 +5083,28 @@ function calcularValorTotal(){
   if(!vt) return;
   var val=(cant/1000)*precio;
   vt.value=val>0?'$'+val.toLocaleString('es-CO',{maximumFractionDigits:0}):'';
+}
+async function checkLoteExistente(){
+  // Sebastián 9-jul: si el (material, lote) YA existe en bodega, avisar que esta recepción SUMA al lote
+  // existente (no crea uno nuevo) + auto-rellenar vencimiento/ubicación. Read-only.
+  var cod=(document.getElementById('ing-cod').value||'').toUpperCase().trim();
+  var lote=(document.getElementById('ing-lote').value||'').trim();
+  var box=document.getElementById('ing-lote-info');
+  if(!box) return;
+  if(!cod||!lote){ box.style.display='none'; return; }
+  try{
+    var r=await fetch('/api/recepcion/lote-info?codigo='+encodeURIComponent(cod)+'&lote='+encodeURIComponent(lote),{credentials:'same-origin'});
+    var d=await r.json();
+    if(d && d.existe){
+      var cant=parseFloat((document.getElementById('ing-cant')||{}).value)||0;
+      var total=d.stock_g+cant;
+      box.innerHTML='&#128230; <b>El lote '+lote+' ya existe</b> con <b>'+d.stock_g.toLocaleString('es-CO')+' g</b>'+(d.estado_lote?(' ('+d.estado_lote+')'):'')+'. Esta recepci&oacute;n <b>SUMA</b> al mismo lote'+(cant>0?(' &rarr; nuevo total <b>'+total.toLocaleString('es-CO')+' g</b>'):'')+'. No se crea un lote nuevo.';
+      box.style.display='block';
+      var ev=document.getElementById('ing-vence'); if(ev&&!ev.value&&d.vencimiento){ev.value=d.vencimiento;}
+      var ee=document.getElementById('ing-est'); if(ee&&!ee.value&&d.estanteria){ee.value=d.estanteria;}
+      var ep=document.getElementById('ing-pos'); if(ep&&!ep.value&&d.posicion){ep.value=d.posicion;}
+    } else { box.style.display='none'; }
+  }catch(e){ box.style.display='none'; }
 }
 async function registrarIngreso(){
   var cod=(document.getElementById('ing-cod').value||'').toUpperCase().trim();
