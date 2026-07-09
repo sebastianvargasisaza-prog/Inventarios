@@ -91,3 +91,12 @@ def test_recepcion_lote_info_endpoint(admin_client):
     r = admin_client.get("/api/recepcion/lote-info?codigo=MP00123&lote=NO-EXISTE-XYZ")
     assert r.status_code == 200, r.status_code
     assert r.get_json().get("existe") is False
+
+
+def test_precios_sospechosos_page(admin_client):
+    """La página de precios sospechosos renderiza (lista MP con precio fuera de rango)."""
+    r = admin_client.get("/admin/precios-sospechosos")
+    assert r.status_code == 200, r.status_code
+    body = r.data.decode("utf-8", "replace")
+    assert "Precios sospechosos" in body
+    assert "fixPrecio" in body

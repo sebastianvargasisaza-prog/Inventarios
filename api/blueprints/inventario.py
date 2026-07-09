@@ -11626,6 +11626,86 @@ def actualizar_precio_mp(codigo):
     conn.commit()
     return jsonify({'ok':True, 'precio_kg':precio})
 
+
+@bp.route('/admin/precios-sospechosos', methods=['GET'])
+def precios_sospechosos_page():
+    """Lista MPs con precio/kg FUERA DE RANGO (muy alto = probable ceros de más · o = 0 con stock) para
+    corregirlas de un vistazo. Sebastián 9-jul (tras el bug del valor ABC). Umbral ajustable con ?umbral=."""
+    if 'compras_user' not in session:
+        return redirect('/login?next=/admin/precios-sospechosos')
+    import html as _hh
+    try:
+        _umbral = float(request.args.get('umbral') or 50000000)
+    except Exception:
+        _umbral = 50000000.0
+    conn = get_db(); c = conn.cursor()
+    stock_map = {}
+    try:
+        for r in c.execute(
+            """SELECT material_id, COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                       WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0)
+               FROM movimientos WHERE material_id IS NOT NULL AND material_id!='' GROUP BY material_id""").fetchall():
+            stock_map[r[0]] = max(float(r[1] or 0), 0)
+    except Exception:
+        pass
+    try:
+        mps = c.execute(
+            """SELECT codigo_mp, COALESCE(NULLIF(TRIM(nombre_inci),''),NULLIF(TRIM(nombre_comercial),''),codigo_mp),
+                      COALESCE(proveedor,''), COALESCE(precio_referencia,0)
+               FROM maestro_mps WHERE COALESCE(activo,1)=1 AND UPPER(COALESCE(tipo_material,'MP'))='MP'""").fetchall()
+    except Exception:
+        mps = []
+    sosp = []
+    for cod, nom, prov, precio in mps:
+        precio = float(precio or 0); stock = stock_map.get(cod, 0.0)
+        if precio > _umbral:
+            sosp.append((cod, nom, prov, precio, stock, 'alto'))
+        elif precio <= 0 and stock > 0.01:
+            sosp.append((cod, nom, prov, precio, stock, 'cero'))
+    sosp.sort(key=lambda x: (0 if x[5] == 'alto' else 1, -(x[3] if x[5] == 'alto' else x[4])))
+
+    def _cop(n):
+        return '$' + f"{n:,.0f}".replace(',', '.')
+    filas = ''
+    for cod, nom, prov, precio, stock, flag in sosp:
+        _cj = _hh.escape(cod)
+        if flag == 'alto':
+            _sug = round(precio / 1000.0, 2)
+            accion = ('<button class="cx-btn cx-btn-sm" style="background:#7c3aed;color:#fff;margin-right:6px" '
+                      'onclick="fixPrecio(\'' + _cj + '\',' + str(_sug) + ')">÷1000 &rarr; ' + _cop(_sug) + '</button>')
+            badge = '<span style="color:#b91c1c;font-weight:700">' + _cop(precio) + '</span>'
+        else:
+            accion = ''
+            badge = '<span style="color:#b45309;font-weight:700">sin precio</span>'
+        filas += ('<tr><td><b>' + _cj + '</b></td><td>' + _hh.escape(str(nom)) + '</td><td>' + _hh.escape(str(prov)) +
+                  '</td><td style="text-align:right">' + badge + '</td><td style="text-align:right">' +
+                  f"{stock:,.0f}".replace(',', '.') + ' g</td><td style="white-space:nowrap">' + accion +
+                  '<input type="number" id="p-' + _cj + '" placeholder="$/kg" style="width:120px;padding:5px 7px;border:1px solid #e4e4e7;border-radius:6px;margin-right:5px">'
+                  '<button class="cx-btn cx-btn-sm cx-btn-success" onclick="fixPrecio(\'' + _cj +
+                  '\',parseFloat((document.getElementById(\'p-' + _cj + '\')||{}).value)||0)">Guardar</button></td></tr>')
+    if not sosp:
+        filas = '<tr><td colspan="6" style="text-align:center;color:#16a34a;padding:22px;font-weight:600">&#10003; Ningún precio sospechoso. Todo en rango.</td></tr>'
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Precios sospechosos</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:24px}.card{max-width:1000px;margin:0 auto}</style></head><body>
+<div class="cx-card card">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128176;</div><div><h2 style="margin:0;font-size:19px">Precios sospechosos</h2><div class="cx-text-mute" style="font-size:13px">MP con precio/kg &gt; ''' + _cop(_umbral) + ''' (probable ceros de m&aacute;s) o sin precio (con stock). Corregilos ac&aacute;: &divide;1000 para los inflados, o pon&eacute; el valor real. Impacta valor de inventario y sugerencias de compra.</div></div></div>
+  <div class="cx-table-wrap" style="margin-top:14px"><table class="cx-table"><thead><tr><th>C&oacute;digo</th><th>Nombre (INCI)</th><th>Proveedor</th><th style="text-align:right">Precio/kg actual</th><th style="text-align:right">Stock</th><th>Corregir</th></tr></thead><tbody>__FILAS__</tbody></table></div>
+  <div style="margin-top:14px"><button class="cx-btn cx-btn-ghost" onclick="location.href='/inventarios'">Volver a Inventario</button></div>
+</div>
+<script>
+async function fixPrecio(cod, precio){
+  if(!(precio>0)){ alert('Poné un precio válido (> 0)'); return; }
+  if(!confirm('Fijar el precio de '+cod+' en $'+precio.toLocaleString('es-CO')+'/kg?')) return;
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/maestro-mp/'+encodeURIComponent(cod)+'/precio',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||''},body:JSON.stringify({precio_kg:precio,origen:'correccion-sospechoso'})});
+    var d=await r.json();
+    if(r.ok&&d.ok){ location.reload(); } else { alert('Error: '+((d&&d.error)||r.status)); }
+  }catch(e){ alert('Error de red'); }
+}
+</script></body></html>'''
+    return _tpl.replace('__FILAS__', filas)
+
+
 @bp.route('/api/admin/backfill-precios-mp', methods=['POST'])
 def backfill_precios_mp():
     """Pobla precio_referencia en maestro_mps desde movimientos.precio_kg y precios_mp_historico.
