@@ -14642,8 +14642,10 @@ async function ckMarcar(itemId, estado){
       });
       // Eventos recientes (timeline lateral)
       cargarTimelineEventos(d.eventos_recientes || []);
-      cargarRotacionOperarios();
-      cargarTablaOperarios();
+      // PERF 9-jul (speed-audit #8): en el refresh silencioso de 30s NO re-fetcheamos datos
+      // casi-estáticos (rotación 14d, tabla de operarios) · se cargan al abrir/refrescar explícito.
+      // El plano, cards de HOY, equipo de HOY y andon (live) SÍ se refrescan siempre.
+      if(!silent){ cargarRotacionOperarios(); cargarTablaOperarios(); }
       // cargarKpisActividades() ELIMINADO 1-may-2026 · panel turnos era legacy
       // ── Producciones HOY · cards encima del mapa (Sebastián 1-may-2026)
       renderProduccionesDiaCards(d.producciones_dia || [], k);
@@ -14651,8 +14653,8 @@ async function ckMarcar(itemId, estado){
       if(typeof cmCargarEquipo === 'function') cmCargarEquipo();
       // OLA 2 · Andon panel
       if(typeof cmCargarAndon === 'function') cmCargarAndon();
-      // OLA 3 · OEE por sala
-      if(typeof cmCargarOee === 'function') cmCargarOee();
+      // OLA 3 · OEE por sala (7d · casi-estático → no en el refresh silencioso de 30s · speed-audit #8)
+      if(!silent && typeof cmCargarOee === 'function') cmCargarOee();
       var lu = document.getElementById('cm-last-update');
       if(lu) lu.textContent = 'actualizado ' + new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     }catch(e){

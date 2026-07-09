@@ -243,6 +243,17 @@ def get_inventario():
             )
             return default
 
+    def _safe_row(query, default=(0, 0)):
+        # Como _safe pero devuelve la fila completa (para colapsar 2 KPIs en 1 query).
+        try:
+            r = c.execute(query).fetchone()
+            return r if r else default
+        except Exception as _e:
+            __import__('logging').getLogger('inventario').warning(
+                "_safe_row query falló · err=%s · query=%s", _e, query[:120].replace('\n', ' '),
+            )
+            return default
+
     # ── CONTEXTO (totales / composición) ──────────────────────────────
     mov = _safe('SELECT COUNT(*) FROM movimientos')
     prod_historico = _safe('SELECT COUNT(*) FROM producciones')
@@ -260,19 +271,20 @@ def get_inventario():
     # (estado_lote NULL) siguen restando.
     _avail_filter = ("(estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) "
                      "NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO'))")
-    mps_sin_stock = _safe(f"""
-        SELECT COUNT(*) FROM maestro_mps m
+    # PERF 9-jul (speed-audit #13): sin_stock y bajo_min usaban la MISMA subquery SUM sobre
+    # movimientos (2 full-scans idénticos · misma base m.activo=1 AND stock_minimo>0, solo cambia el
+    # umbral final). Se colapsan en 1 con SUM(CASE) → mismos números, 1 scan. (bajo_min incluye sin_stock.)
+    _mps = _safe_row(f"""
+        SELECT
+          COALESCE(SUM(CASE WHEN COALESCE(s.stock,0) <= 0 THEN 1 ELSE 0 END),0) AS sin_stock,
+          COALESCE(SUM(CASE WHEN COALESCE(s.stock,0) < m.stock_minimo THEN 1 ELSE 0 END),0) AS bajo_min
+        FROM maestro_mps m
         LEFT JOIN (SELECT material_id, SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock
                    FROM movimientos WHERE {_avail_filter} GROUP BY material_id) s ON m.codigo_mp=s.material_id
-        WHERE m.activo=1 AND m.stock_minimo>0 AND COALESCE(s.stock,0) <= 0
+        WHERE m.activo=1 AND m.stock_minimo>0
     """)
-    # MPs bajo mínimo (incluye sin stock) · mismo criterio de disponible
-    mps_bajo_min = _safe(f"""
-        SELECT COUNT(*) FROM maestro_mps m
-        LEFT JOIN (SELECT material_id, SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock
-                   FROM movimientos WHERE {_avail_filter} GROUP BY material_id) s ON m.codigo_mp=s.material_id
-        WHERE m.activo=1 AND m.stock_minimo>0 AND COALESCE(s.stock,0)<m.stock_minimo
-    """)
+    mps_sin_stock = _mps[0] if _mps and _mps[0] is not None else 0
+    mps_bajo_min = _mps[1] if _mps and len(_mps) > 1 and _mps[1] is not None else 0
     # Lotes vencidos · Sebastian 5-may-2026 (audit zero-error dashboard):
     # ANTES usaba estado_lote='VENCIDO' estatico que NO se actualiza
     # automaticamente cuando un lote vence (queda como 'VIGENTE' aunque
