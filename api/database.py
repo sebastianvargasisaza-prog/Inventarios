@@ -397,6 +397,11 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (345, "Agua infinita · el faltante contaba AGUA DESIONIZADA (Sebastián 9-jul). Los códigos de agua FANTASMA usados en fórmulas (MPAGUAL01/MPAGUALI02, sin fila en maestro → controla_stock default 1) se crean como agua controla_stock=0; + set del flag por nombre/INCI. Así ninguna vista de demanda/faltante cuenta el agua (se fabrica en casa · M16).", [
+        "INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, controla_stock, activo) SELECT 'MPAGUAL01','Agua Desionizada','AQUA',0,1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MPAGUAL01')",
+        "INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, controla_stock, activo) SELECT 'MPAGUALI02','Agua Desionizada','AQUA',0,1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MPAGUALI02')",
+        "UPDATE maestro_mps SET controla_stock=0 WHERE codigo_mp IN ('MPAGUAL01','MPAGUALI01','MPAGUALI02') OR UPPER(TRIM(COALESCE(nombre_comercial,''))) LIKE 'AGUA %' OR UPPER(TRIM(COALESCE(nombre_comercial,'')))='AGUA' OR UPPER(TRIM(COALESCE(nombre_inci,''))) IN ('AQUA','WATER','AGUA','AQUA (WATER)','AQUA/WATER')",
+    ]),
     (344, "PERF (Sebastián 9-jul · speed-audit Planta): índices para queries de carga frecuentes. movimientos_mee(fecha) para ORDER BY DESC del histórico MEE; animus_shopify_orders(creado_en) para los escaneos por fecha; ventas_diarias(fecha) para el fast-path. IF NOT EXISTS, additivas, PG-safe.", [
         "CREATE INDEX IF NOT EXISTS idx_movimientos_mee_fecha ON movimientos_mee(fecha)",
         "CREATE INDEX IF NOT EXISTS idx_shopify_creado_en ON animus_shopify_orders(creado_en)",
