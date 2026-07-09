@@ -11845,14 +11845,15 @@ def productos_envases_page():
         return _re2.sub(r'\s+', ' ', (s or '').strip()).upper()
     envs = []
     try:
-        for r in c.execute("SELECT codigo, COALESCE(descripcion,''), COALESCE(volumen_ml,'') FROM maestro_mee WHERE COALESCE(estado,'Activo')<>'Inactivo' ORDER BY categoria, codigo").fetchall():
+        # volumen_ml es REAL · NO usar COALESCE(volumen_ml,'') (en PG mezcla REAL+text → error de tipos → query falla → menú vacío)
+        for r in c.execute("SELECT codigo, COALESCE(descripcion,''), volumen_ml FROM maestro_mee WHERE COALESCE(estado,'Activo')<>'Inactivo' ORDER BY categoria, codigo").fetchall():
             envs.append((r[0], r[1], r[2]))
     except Exception:
         pass
     # presentaciones activas agrupadas por producto normalizado
     pres_by = {}
     try:
-        for r in c.execute("SELECT producto_nombre, COALESCE(presentacion_codigo,''), COALESCE(etiqueta,''), COALESCE(volumen_ml,''), COALESCE(envase_codigo,'') FROM producto_presentaciones WHERE COALESCE(activo,1)=1 ORDER BY producto_nombre, volumen_ml").fetchall():
+        for r in c.execute("SELECT producto_nombre, COALESCE(presentacion_codigo,''), COALESCE(etiqueta,''), volumen_ml, COALESCE(envase_codigo,'') FROM producto_presentaciones WHERE COALESCE(activo,1)=1 ORDER BY producto_nombre, volumen_ml").fetchall():
             pres_by.setdefault(_npx(r[0]), []).append(r)
     except Exception:
         pass
