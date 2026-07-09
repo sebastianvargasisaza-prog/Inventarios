@@ -11708,78 +11708,184 @@ async function fixPrecio(cod, precio){
 
 @bp.route('/admin/envases-recatalogo', methods=['GET'])
 def envases_recatalogo_page():
-    """PREVIEW (read-only) del re-catálogo de envases: mapea cada código NUEVO (MEE-ENV-###, del conteo físico)
-    al código VIEJO del sistema por descripción + volumen, CONTRA PRODUCCIÓN. No escribe nada · Sebastián 9-jul.
-    El apply (rename + stock) se hace en un paso aparte, con el mapeo ya confirmado."""
+    """Re-catálogo de envases (Sebastián 9-jul): CREAR los 76 códigos nuevos (MEE-ENV-###, del conteo físico) con
+    su stock + DESACTIVAR los viejos (reversible · estado=Inactivo). En prod ninguno matchea → todos nuevos. El
+    mapeo producto→envase se re-hace en /admin/productos-envases. PREVIEW + botón Aplicar."""
     if 'compras_user' not in session:
         return redirect('/login?next=/admin/envases-recatalogo')
-    import html as _hh, os as _os, json as _json, unicodedata as _ud, re as _re
+    import html as _hh, os as _os, json as _json
     try:
         _p = _os.path.join(_os.path.dirname(__file__), '..', 'data', 'envases_inventario_2026.json')
         nuevos = (_json.load(open(_p, encoding='utf-8')) or {}).get('envases', [])
     except Exception:
         nuevos = []
-
-    def _norm(s):
-        s = _ud.normalize('NFKD', str(s or '')).encode('ascii', 'ignore').decode().upper()
-        return _re.sub(r'\s+', ' ', _re.sub(r'[^A-Z0-9]', ' ', s)).strip()
-
-    def _vol(s):
-        m = _re.search(r'(\d+[\.,]?\d*)\s*ML', _norm(s))
-        return m.group(1).replace(',', '.') if m else ''
-    _STOP = {'ENVASE', 'FRASCO', 'SIN', 'CON', 'LOS', 'DEL', 'PARA', 'GLOSS', 'LIPS'}
-
-    def _toks(s):
-        return set(t for t in _norm(s).split() if len(t) > 2 and t not in _STOP)
     conn = get_db(); c = conn.cursor()
-    old = []; stock_old = {}
     try:
-        for r in c.execute("SELECT codigo, COALESCE(descripcion,''), COALESCE(volumen_ml,'') FROM maestro_mee").fetchall():
-            old.append({'cod': r[0], 'desc': r[1], 'vol': _vol(r[1]) or (str(r[2]) if r[2] else '')})
-        for r in c.execute("SELECT mee_codigo, COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA') THEN -cantidad ELSE 0 END),0) FROM movimientos_mee WHERE COALESCE(anulado,0)=0 GROUP BY mee_codigo").fetchall():
-            stock_old[r[0]] = float(r[1] or 0)
+        n_viejos = c.execute("SELECT COUNT(*) FROM maestro_mee WHERE COALESCE(estado,'Activo')<>'Inactivo'").fetchone()[0]
+    except Exception:
+        n_viejos = 0
+    _CATP = {'ENV': 'Envase', 'IMP': 'Impreso', 'GOT': 'Gotero', 'TAP': 'Tapa', 'ETQ': 'Etiqueta', 'PLG': 'Plegadiza'}
+    filas = ''
+    for it in nuevos:
+        cod = it.get('codigo', '')
+        pref = cod.split('-')[1] if len(cod.split('-')) > 1 else ''
+        cat = _CATP.get(pref, it.get('categoria', ''))
+        filas += ('<tr><td><b>' + _hh.escape(cod) + '</b></td><td>' + _hh.escape(cat) + '</td><td>' +
+                  _hh.escape(it.get('descripcion', '')) + '</td><td>' + _hh.escape(it.get('presentacion', '')) +
+                  '</td><td style="text-align:right;font-weight:700">' + str(it.get('saldo', 0)) + '</td></tr>')
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Re-catalogo envases</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:24px}.card{max-width:1050px;margin:0 auto}</style></head><body>
+<div class="cx-card card">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128230;</div><div><h2 style="margin:0;font-size:19px">Re-catalogo de envases</h2><div class="cx-text-mute" style="font-size:13px">Crea los <b>__TOT__ codigos nuevos</b> (MEE-ENV-###) con su stock contado y <b>desactiva los __VIEJOS__ viejos</b>.</div></div></div>
+  <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:12px 14px;margin:14px 0;font-size:13px;color:#7f1d1d">
+    &#9888; <b>Ojo:</b> al desactivar los viejos, el mapeo <b>producto &rarr; envase</b> hay que <b>re-hacerlo</b> despues en <b>/admin/productos-envases</b> (te la armo). La desactivacion es <b>reversible</b> (no borra, queda estado=Inactivo). El stock de los nuevos se carga como conteo inicial (auditado).
+  </div>
+  <div class="cx-table-wrap"><table class="cx-table"><thead><tr><th>Codigo</th><th>Categoria</th><th>Descripcion</th><th>Pres.</th><th style="text-align:right">Stock contado</th></tr></thead><tbody>__FILAS__</tbody></table></div>
+  <div style="margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <button id="go" class="cx-btn cx-btn-success" onclick="aplicar()">Aplicar re-catalogo</button>
+    <button class="cx-btn" style="background:#7c3aed;color:#fff" onclick="location.href='/admin/productos-envases'">Ir a mapear producto&rarr;envase</button>
+    <button class="cx-btn cx-btn-ghost" onclick="location.href='/inventarios'">Volver</button>
+    <span id="msg" style="font-size:14px"></span>
+  </div>
+</div>
+<script>
+async function aplicar(){
+  if(!confirm('Aplicar el re-catalogo? Crea los nuevos codigos con su stock y DESACTIVA los viejos (reversible). Despues re-mapeas producto->envase.')) return;
+  var b=document.getElementById('go'); b.disabled=true; b.textContent='Aplicando...';
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/admin/envases-recatalogo-apply',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||''},body:'{}'});
+    var d=await r.json();
+    if(r.ok&&d.ok){ document.getElementById('msg').innerHTML='<span style="color:#16a34a;font-weight:700">&#10003; '+d.creados+' nuevos, '+d.actualizados+' actualizados, '+d.desactivados+' viejos desactivados. Ahora mapea producto->envase.</span>'; b.textContent='Listo'; }
+    else { document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error: '+((d&&d.error)||r.status)+'</span>'; b.disabled=false; b.textContent='Reintentar'; }
+  }catch(e){ document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>'; b.disabled=false; b.textContent='Reintentar'; }
+}
+</script></body></html>'''
+    return _tpl.replace('__FILAS__', filas).replace('__TOT__', str(len(nuevos))).replace('__VIEJOS__', str(n_viejos))
+
+
+@bp.route('/api/admin/envases-recatalogo-apply', methods=['POST'])
+def envases_recatalogo_apply():
+    """Crea/actualiza los envases nuevos (maestro_mee) con su stock (conteo inicial via movimientos_mee Ajuste) y
+    DESACTIVA los viejos (estado=Inactivo, reversible). Auditado. Solo Admin. Sebastián 9-jul."""
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    if u not in ADMIN_USERS:
+        return jsonify({'error': 'solo admin'}), 403
+    import os as _os, json as _json, re as _re
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+    _ts = (_dt.now(_tz.utc) - _td(hours=5)).strftime('%Y-%m-%d %H:%M:%S')
+    try:
+        _p = _os.path.join(_os.path.dirname(__file__), '..', 'data', 'envases_inventario_2026.json')
+        nuevos = (_json.load(open(_p, encoding='utf-8')) or {}).get('envases', [])
+    except Exception:
+        nuevos = []
+    if not nuevos:
+        return jsonify({'error': 'No se pudo cargar el inventario nuevo'}), 500
+    _CATP = {'ENV': 'Envase', 'IMP': 'Impreso', 'GOT': 'Gotero', 'TAP': 'Tapa', 'ETQ': 'Etiqueta', 'PLG': 'Plegadiza'}
+    conn = get_db(); c = conn.cursor()
+    m_cods = set(); n_ins = 0; n_upd = 0
+    for it in nuevos:
+        cod = (it.get('codigo') or '').strip().upper()
+        if not cod:
+            continue
+        m_cods.add(cod)
+        pref = cod.split('-')[1] if len(cod.split('-')) > 1 else ''
+        cat = _CATP.get(pref, (it.get('categoria') or ''))
+        desc = (it.get('descripcion') or '').strip()
+        pres = (it.get('presentacion') or '').strip()
+        try:
+            saldo = float(it.get('saldo') or 0)
+        except Exception:
+            saldo = 0.0
+        _mv = _re.search(r'(\d+[\.,]?\d*)', pres)
+        volml = (_mv.group(1).replace(',', '.') if _mv else '')
+        row = c.execute("SELECT codigo FROM maestro_mee WHERE UPPER(TRIM(codigo))=?", (cod,)).fetchone()
+        if row:
+            c.execute("UPDATE maestro_mee SET descripcion=?, categoria=?, volumen_ml=?, estado='Activo', stock_actual=? WHERE UPPER(TRIM(codigo))=?",
+                      (desc, cat, volml, saldo, cod))
+            n_upd += 1
+        else:
+            c.execute("INSERT INTO maestro_mee (codigo, descripcion, categoria, volumen_ml, unidad, estado, stock_actual, stock_minimo, fecha_creacion) VALUES (?,?,?,?,?, 'Activo', ?, 0, ?)",
+                      (cod, desc, cat, volml, 'und', saldo, _ts))
+            n_ins += 1
+        _cur = c.execute("SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA') THEN -cantidad ELSE 0 END),0) FROM movimientos_mee WHERE mee_codigo=? AND COALESCE(anulado,0)=0", (cod,)).fetchone()[0] or 0
+        _delta = saldo - float(_cur)
+        if abs(_delta) > 0.0001:
+            c.execute("INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, responsable, fecha, observaciones) VALUES (?, 'Ajuste', ?, ?, ?, ?)",
+                      (cod, _delta, u, _ts, 'Conteo inicial re-catalogo 9-jul'))
+    n_off = 0
+    for r in c.execute("SELECT codigo FROM maestro_mee WHERE COALESCE(estado,'Activo')<>'Inactivo'").fetchall():
+        if (r[0] or '').strip().upper() not in m_cods:
+            c.execute("UPDATE maestro_mee SET estado='Inactivo' WHERE codigo=?", (r[0],))
+            n_off += 1
+    try:
+        audit_log(c, usuario=u, accion='RECATALOGO_ENVASES', tabla='maestro_mee', registro_id='*',
+                  despues={'creados': n_ins, 'actualizados': n_upd, 'desactivados': n_off})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'creados': n_ins, 'actualizados': n_upd, 'desactivados': n_off})
+
+
+@bp.route('/admin/productos-envases', methods=['GET'])
+def productos_envases_page():
+    """Vista para mapear el ENVASE de cada producto/presentación tras el re-catálogo (Sebastián 9-jul). Dropdown
+    de los envases ACTIVOS (los nuevos) por presentación · auto-guarda vía /api/programacion/pres-set-envase."""
+    if 'compras_user' not in session:
+        return redirect('/login?next=/admin/productos-envases')
+    import html as _hh
+    conn = get_db(); c = conn.cursor()
+    envs = []
+    try:
+        for r in c.execute("SELECT codigo, COALESCE(descripcion,''), COALESCE(volumen_ml,'') FROM maestro_mee WHERE COALESCE(estado,'Activo')<>'Inactivo' ORDER BY categoria, codigo").fetchall():
+            envs.append((r[0], r[1], r[2]))
+    except Exception:
+        pass
+    pres = []
+    try:
+        for r in c.execute("SELECT producto_nombre, COALESCE(presentacion_codigo,''), COALESCE(etiqueta,''), COALESCE(volumen_ml,''), COALESCE(envase_codigo,'') FROM producto_presentaciones WHERE COALESCE(activo,1)=1 ORDER BY producto_nombre, volumen_ml").fetchall():
+            pres.append(r)
     except Exception:
         pass
 
-    def _best(it):
-        itt = _toks(it.get('descripcion', '') + ' ' + it.get('presentacion', ''))
-        iv = _vol(it.get('presentacion', '')) or _vol(it.get('descripcion', '')); bs = 0; bc = None
-        for o in old:
-            ot = _toks(o['desc'])
-            if not itt or not ot:
-                continue
-            j = len(itt & ot) / len(itt | ot)
-            s = j + (0.4 if (iv and o['vol'] and iv == o['vol']) else (-0.3 if (iv and o['vol'] and iv != o['vol']) else 0))
-            if s > bs:
-                bs = s; bc = o
-        return bc, bs
-    n_alto = n_med = n_new = 0; filas = ''
-    for it in nuevos:
-        o, s = _best(it)
-        tag = 'ALTO' if s >= 0.6 else ('MEDIO' if s >= 0.35 else 'NUEVO?')
-        if tag == 'ALTO':
-            n_alto += 1
-        elif tag == 'MEDIO':
-            n_med += 1
-        else:
-            n_new += 1
-        color = {'ALTO': '#16a34a', 'MEDIO': '#b45309', 'NUEVO?': '#b91c1c'}[tag]
-        oc = (o['cod'] if o else ''); od = (o['desc'] if o else '')
-        stk = stock_old.get(oc, 0) if oc else 0
-        filas += ('<tr><td><b>' + _hh.escape(it['codigo']) + '</b></td><td>' + _hh.escape(it.get('descripcion', '')) +
-                  '</td><td>' + _hh.escape(it.get('presentacion', '')) + '</td><td style="text-align:right;font-weight:700">' +
-                  str(it.get('saldo', 0)) + '</td><td style="color:' + color + ';font-weight:700">' + tag + '</td><td>' +
-                  ((_hh.escape(oc) + ' <span class="cx-text-mute" style="font-size:11px">' + _hh.escape(od[:34]) + '</span>') if oc else '<i style="color:#b91c1c">crear nuevo</i>') +
-                  '</td><td style="text-align:right">' + (f"{stk:,.0f}".replace(',', '.') if oc else '—') + '</td></tr>')
-    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Re-catálogo envases</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:24px}.card{max-width:1150px;margin:0 auto}</style></head><body>
+    def _opts(sel):
+        o = '<option value="">&mdash; sin envase &mdash;</option>'
+        su = (sel or '').upper()
+        for cod, desc, vol in envs:
+            s = ' selected' if str(cod).upper() == su else ''
+            lbl = _hh.escape(str(cod)) + ' &middot; ' + _hh.escape(str(desc)[:32]) + ((' &middot; ' + _hh.escape(str(vol)) + 'ml') if vol else '')
+            o += '<option value="' + _hh.escape(str(cod), quote=True) + '"' + s + '>' + lbl + '</option>'
+        return o
+    filas = ''
+    for prod, pcod, etq, vol, env in pres:
+        _pj = _hh.escape(str(prod), quote=True); _cj = _hh.escape(str(pcod), quote=True)
+        _preslbl = _hh.escape(str(etq) or (str(vol) + 'ml' if vol else str(pcod)))
+        filas += ('<tr><td><b>' + _hh.escape(str(prod)) + '</b></td><td>' + _preslbl + '</td><td>'
+                  '<select class="cx-input" style="min-width:300px" data-prod="' + _pj + '" data-pres="' + _cj +
+                  '" onchange="setEnv(this)">' + _opts(env) + '</select> <span class="okmark" style="color:#16a34a;font-weight:700;font-size:13px"></span></td></tr>')
+    if not pres:
+        filas = '<tr><td colspan="3" style="text-align:center;color:#71717a;padding:20px">No hay presentaciones activas.</td></tr>'
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Producto - Envase</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:24px}.card{max-width:1000px;margin:0 auto}</style></head><body>
 <div class="cx-card card">
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128230;</div><div><h2 style="margin:0;font-size:19px">Re-cat&aacute;logo de envases &middot; PREVIEW</h2><div class="cx-text-mute" style="font-size:13px">Mapeo propuesto del c&oacute;digo NUEVO (conteo f&iacute;sico) al VIEJO del sistema, por descripci&oacute;n + volumen, contra PRODUCCI&Oacute;N. <b>Read-only &middot; no escribe nada.</b> Revis&aacute; sobre todo los MEDIO y NUEVO?; deciles cu&aacute;les corregir y armo el apply (rename + stock).</div></div></div>
-  <div style="margin:12px 0;font-size:13px"><span style="color:#16a34a;font-weight:700">ALTO: __ALTO__</span> &middot; <span style="color:#b45309;font-weight:700">MEDIO: __MED__</span> &middot; <span style="color:#b91c1c;font-weight:700">NUEVO?/crear: __NEW__</span> &middot; total __TOT__</div>
-  <div class="cx-table-wrap"><table class="cx-table"><thead><tr><th>C&oacute;digo nuevo</th><th>Descripci&oacute;n</th><th>Pres.</th><th style="text-align:right">Saldo contado</th><th>Confianza</th><th>Viejo propuesto</th><th style="text-align:right">Stock viejo</th></tr></thead><tbody>__FILAS__</tbody></table></div>
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128295;</div><div><h2 style="margin:0;font-size:19px">Mapear producto &rarr; envase</h2><div class="cx-text-mute" style="font-size:13px">Eleg&iacute; qu&eacute; envase (de los nuevos) usa cada presentaci&oacute;n. Se <b>guarda solo</b> al cambiar el dropdown.</div></div></div>
+  <div class="cx-table-wrap" style="margin-top:14px"><table class="cx-table"><thead><tr><th>Producto</th><th>Presentaci&oacute;n</th><th>Envase</th></tr></thead><tbody>__FILAS__</tbody></table></div>
   <div style="margin-top:14px"><button class="cx-btn cx-btn-ghost" onclick="location.href='/inventarios'">Volver</button></div>
-</div></body></html>'''
-    return (_tpl.replace('__FILAS__', filas).replace('__ALTO__', str(n_alto))
-            .replace('__MED__', str(n_med)).replace('__NEW__', str(n_new)).replace('__TOT__', str(len(nuevos))))
+</div>
+<script>
+async function setEnv(sel){
+  var prod=sel.getAttribute('data-prod'); var pres=sel.getAttribute('data-pres'); var env=sel.value;
+  var ok=sel.parentNode.querySelector('.okmark'); if(ok)ok.textContent='...';
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/programacion/pres-set-envase',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||''},body:JSON.stringify({producto:prod,presentacion_codigo:pres,envase:env})});
+    var d=await r.json();
+    if(r.ok&&d.ok){ if(ok){ok.textContent='✓'; setTimeout(function(){ok.textContent='';},1500);} }
+    else { if(ok)ok.textContent='error'; }
+  }catch(e){ if(ok)ok.textContent='error'; }
+}
+</script></body></html>'''
+    return _tpl.replace('__FILAS__', filas)
 
 
 @bp.route('/api/admin/backfill-precios-mp', methods=['POST'])

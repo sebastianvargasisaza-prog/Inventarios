@@ -107,5 +107,14 @@ def test_envases_recatalogo_preview(admin_client):
     r = admin_client.get("/admin/envases-recatalogo")
     assert r.status_code == 200, r.status_code
     body = r.data.decode("utf-8", "replace")
-    assert "Re-cat" in body and "PREVIEW" in body
+    assert "Re-cat" in body
     assert "MEE-ENV-001" in body
+
+
+def test_envases_recatalogo_y_productos_envases(admin_client):
+    r1 = admin_client.get("/admin/envases-recatalogo")
+    assert r1.status_code == 200 and b"Re-cat" in r1.data
+    assert b"MEE-ENV-001" in r1.data and b"Aplicar" in r1.data
+    r2 = admin_client.get("/admin/productos-envases")
+    assert r2.status_code == 200, r2.status_code
+    assert b"producto" in r2.data.lower() and b"setEnv" in r2.data
