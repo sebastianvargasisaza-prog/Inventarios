@@ -9811,6 +9811,67 @@ def borrar_produccion_programada(evento_id):
     })
 
 
+def _stock_neto_map(c):
+    """PERF #6 (9-jul): {material_id: stock_neto producible} en UN GROUP BY por request (memo flask.g).
+    Semántica IDÉNTICA al _stock_neto per-código del resolver (misma exclusión _ESTADOS_LOTE_NO_PRODUCIBLES,
+    key = material_id CRUDO como en `WHERE material_id=?`). Devuelve None SOLO si la query falla → el caller
+    cae al cálculo per-código (nunca sirve un stock 0 falso). Reemplaza cientos de SUM per-código por 1."""
+    try:
+        from flask import g as _g
+    except Exception:
+        _g = None
+    if _g is not None:
+        _m = getattr(_g, '_stock_neto_map_cache', None)
+        if _m is not None:
+            return _m
+    try:
+        _ph = ','.join(['?'] * len(_ESTADOS_LOTE_NO_PRODUCIBLES))
+        _m = {}
+        for _mid, _st in c.execute(
+            f"""SELECT material_id, COALESCE(SUM(CASE
+                  WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                  WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0)
+                FROM movimientos WHERE UPPER(COALESCE(estado_lote,'')) NOT IN ({_ph})
+                GROUP BY material_id""", _ESTADOS_LOTE_NO_PRODUCIBLES).fetchall():
+            if _mid is not None:
+                _m[_mid] = float(_st or 0)
+    except Exception:
+        return None
+    if _g is not None:
+        try:
+            _g._stock_neto_map_cache = _m
+        except Exception:
+            pass
+    return _m
+
+
+def _maestro_mps_activos(c):
+    """PERF #6 (9-jul): lista (codigo_mp, nombre_inci, nombre_comercial) de MPs activas · UNA vez por
+    request (memo flask.g). Reemplaza los full-scan de maestro_mps repetidos en los tiers INCI/nombre del
+    resolver. [] en error = mismo comportamiento que el except:pass original (el tier no halla candidatos)."""
+    try:
+        from flask import g as _g
+    except Exception:
+        _g = None
+    if _g is not None:
+        _l = getattr(_g, '_maestro_mps_activos_cache', None)
+        if _l is not None:
+            return _l
+    try:
+        _l = [(str(r[0] or '').strip(), r[1] or '', r[2] or '')
+              for r in c.execute(
+                  "SELECT codigo_mp, COALESCE(nombre_inci,''), COALESCE(nombre_comercial,'') "
+                  "FROM maestro_mps WHERE COALESCE(activo,1)=1").fetchall()]
+    except Exception:
+        _l = []
+    if _g is not None:
+        try:
+            _g._maestro_mps_activos_cache = _l
+        except Exception:
+            pass
+    return _l
+
+
 def _resolver_material_bodega(c, formula_mid, formula_nombre):
     """Wrapper memoizado POR REQUEST de la resolución a código de bodega (FIX 11-jun perf).
     El impl hace varias queries a `movimientos` por llamada y se invoca 1 vez por cada
@@ -9858,9 +9919,13 @@ def _resolver_material_bodega_impl(c, formula_mid, formula_nombre):
             return False
 
     def _stock_neto(mid):
-        """Stock neto producible de un código (excluye estados no-producibles)."""
+        """Stock neto producible de un código (excluye estados no-producibles).
+        PERF #6: usa el mapa batcheado (1 GROUP BY/request); si no está disponible cae al SUM per-código."""
         if not mid:
             return 0.0
+        _mp = _stock_neto_map(c)
+        if _mp is not None:
+            return _mp.get(mid, 0.0)   # key CRUDO = mismo match que `WHERE material_id=?`
         try:
             _ph = ','.join(['?'] * len(_ESTADOS_LOTE_NO_PRODUCIBLES))
             r = c.execute(
@@ -9910,9 +9975,8 @@ def _resolver_material_bodega_impl(c, formula_mid, formula_nombre):
             _inci_f = _norm_mp_name(_ir[0]) if (_ir and _ir[0]) else ''
             if _inci_f:
                 _inci_cands = []
-                for r in c.execute("SELECT codigo_mp, COALESCE(nombre_inci,'') FROM maestro_mps WHERE COALESCE(activo,1)=1").fetchall():
-                    cod = str(r[0] or '').strip()
-                    if cod and _norm_mp_name(r[1]) == _inci_f and _stock_neto(cod) > 0.01:
+                for cod, _inci_c, _com_c in _maestro_mps_activos(c):   # PERF #6: lista cacheada por request
+                    if cod and _norm_mp_name(_inci_c) == _inci_f and _stock_neto(cod) > 0.01:
                         _inci_cands.append(cod)
                 if _inci_cands:
                     return sorted(_inci_cands, key=lambda x: (-_stock_neto(x), x))[0]
@@ -9931,13 +9995,10 @@ def _resolver_material_bodega_impl(c, formula_mid, formula_nombre):
         _alias_nn = _MP_NAME_ALIAS.get(nn)
         try:
             _cands = set()
-            for r in c.execute(
-                "SELECT codigo_mp, COALESCE(nombre_inci,''), COALESCE(nombre_comercial,'') "
-                "FROM maestro_mps WHERE COALESCE(activo,1)=1").fetchall():
-                cod = str(r[0] or '').strip()
+            for cod, _inci_c, _com_c in _maestro_mps_activos(c):   # PERF #6: lista cacheada por request
                 if not cod:
                     continue
-                for cand in (r[1], r[2]):
+                for cand in (_inci_c, _com_c):
                     if not cand:
                         continue
                     cn = _norm_mp_name(cand)
