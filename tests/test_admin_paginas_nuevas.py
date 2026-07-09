@@ -111,6 +111,17 @@ def test_envases_recatalogo_preview(admin_client):
     assert "MEE-ENV-001" in body
 
 
+def test_envases_10ml_sueros(admin_client):
+    """Herramienta crear envase 10ml (Niacinamida/Hialurónico/TRX) + mapeo, idempotente (Sebastián 9-jul)."""
+    r = admin_client.get("/admin/envases-10ml-sueros")
+    assert r.status_code == 200 and b"Envases 10ml" in r.data
+    r2 = admin_client.post("/api/admin/crear-envases-10ml-sueros", json={})
+    assert r2.status_code == 200 and r2.get_json()["ok"]
+    # 2a corrida: no re-crea (idempotente)
+    r3 = admin_client.post("/api/admin/crear-envases-10ml-sueros", json={})
+    assert r3.get_json()["creados"] == 0
+
+
 def test_mee_codigo_auto_consecutivo(admin_client):
     """Código MEE automático: el sistema asigna MEE-{PREF}-### consecutivo (Sebastián 9-jul)."""
     r = admin_client.get("/api/mee/siguiente-codigo?tipo=ENV")

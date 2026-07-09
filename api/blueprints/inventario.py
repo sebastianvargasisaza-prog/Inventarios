@@ -11832,6 +11832,136 @@ def envases_recatalogo_apply():
     return jsonify({'ok': True, 'creados': n_ins, 'actualizados': n_upd, 'desactivados': n_off})
 
 
+# ── Crear envases 10ml para sueros (Niacinamida / Hialurónico AH / TRX) · Sebastián 9-jul ──
+# Estaban en cero/no existían → sin envase 10ml el mapeo producto→envase (abastecimiento/descuento) no cruza.
+_SUEROS_10ML = [
+    ('Niacinamida', ['%NIACINAMIDA%']),
+    ('Ácido hialurónico (AH)', ['%HIDRATANTE AH%', '%HIALURON%', '%ACIDO HIDRATANTE%']),
+    ('Iluminador TRX', ['%ILUMINADOR TRX%', '%TRX%']),
+]
+
+
+def _sueros_10ml_targets(c):
+    """Devuelve [(etiqueta, [producto_nombre_real,...]), ...] contra formula_headers ACTIVOS de prod."""
+    out = []
+    seen = set()
+    for label, pats in _SUEROS_10ML:
+        prods = []
+        for pat in pats:
+            try:
+                rows = c.execute("SELECT producto_nombre FROM formula_headers WHERE COALESCE(activo,1)=1 AND UPPER(producto_nombre) LIKE ?", (pat.upper(),)).fetchall()
+            except Exception:
+                rows = []
+            for r in rows:
+                nm = (r[0] or '').strip()
+                if nm and nm.upper() not in seen:
+                    seen.add(nm.upper()); prods.append(nm)
+        out.append((label, prods))
+    return out
+
+
+@bp.route('/admin/envases-10ml-sueros', methods=['GET'])
+def envases_10ml_sueros_page():
+    """Preview + Aplicar: crear el envase 10ml (código auto) de Niacinamida/Hialurónico/TRX y mapearlo a su presentación."""
+    if 'compras_user' not in session:
+        return redirect('/login?next=/admin/envases-10ml-sueros')
+    import html as _hh
+    conn = get_db(); c = conn.cursor()
+    filas = ''
+    for label, prods in _sueros_10ml_targets(c):
+        if not prods:
+            filas += ('<tr><td><b>' + _hh.escape(label) + '</b></td><td colspan="2" style="color:#b45309">'
+                      '&#9888; no encontr&eacute; un producto activo que matchee (revis&aacute; el nombre)</td></tr>')
+            continue
+        for prod in prods:
+            try:
+                ex = c.execute("SELECT COALESCE(envase_codigo,'') FROM producto_presentaciones WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND presentacion_codigo='V10' AND COALESCE(activo,1)=1", (prod,)).fetchone()
+            except Exception:
+                ex = None
+            if ex and (ex[0] or '').strip():
+                estado = '<span style="color:#16a34a">ya tiene envase 10ml: <b>' + _hh.escape(ex[0]) + '</b> (se salta)</span>'
+            else:
+                estado = '<span style="color:#7c3aed">crear&aacute; envase 10ml (MEE-ENV-### auto) + mapear V10</span>'
+            filas += ('<tr><td>' + _hh.escape(label) + '</td><td><b>' + _hh.escape(prod) + '</b></td><td>' + estado + '</td></tr>')
+    if not filas:
+        filas = '<tr><td colspan="3" style="text-align:center;color:#71717a;padding:20px">Sin objetivos.</td></tr>'
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Envases 10ml sueros</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:24px}.card{max-width:900px;margin:0 auto}</style></head><body>
+<div class="cx-card card">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#129514;</div><div><h2 style="margin:0;font-size:19px">Envases 10ml &middot; sueros</h2><div class="cx-text-mute" style="font-size:13px">Crea el envase de <b>10ml</b> (c&oacute;digo autom&aacute;tico) de Niacinamida, Hialur&oacute;nico (AH) y TRX, y lo <b>mapea</b> a su presentaci&oacute;n de 10ml. Idempotente (si ya existe, lo salta). Reversible.</div></div></div>
+  <div class="cx-table-wrap" style="margin-top:12px"><table class="cx-table"><thead><tr><th>Suero</th><th>Producto (real)</th><th>Acci&oacute;n</th></tr></thead><tbody>__FILAS__</tbody></table></div>
+  <div style="margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <button id="go" class="cx-btn cx-btn-success" onclick="aplicar()">Crear y mapear envases 10ml</button>
+    <button class="cx-btn cx-btn-ghost" onclick="location.href='/admin/productos-envases'">Ir al mapeo</button>
+    <button class="cx-btn cx-btn-ghost" onclick="location.href='/inventarios'">Volver</button>
+    <span id="msg" style="font-size:14px"></span>
+  </div>
+</div>
+<script>
+async function aplicar(){
+  if(!confirm('Crear el envase 10ml (codigo auto) de cada suero y mapearlo a su presentacion 10ml?')) return;
+  var b=document.getElementById('go'); b.disabled=true; b.textContent='Aplicando...';
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/admin/crear-envases-10ml-sueros',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||''},body:'{}'});
+    var d=await r.json();
+    if(r.ok&&d.ok){ var det=(d.detalle||[]).map(function(x){return x.producto+': '+x.resultado;}).join(' | '); document.getElementById('msg').innerHTML='<span style="color:#16a34a;font-weight:700">&#10003; '+d.creados+' creados, '+d.saltados+' ya estaban. '+det+'</span>'; b.textContent='Listo'; }
+    else { document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error: '+((d&&d.error)||r.status)+'</span>'; b.disabled=false; b.textContent='Reintentar'; }
+  }catch(e){ document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>'; b.disabled=false; b.textContent='Reintentar'; }
+}
+</script></body></html>'''
+    return _tpl.replace('__FILAS__', filas)
+
+
+@bp.route('/api/admin/crear-envases-10ml-sueros', methods=['POST'])
+def crear_envases_10ml_sueros():
+    """Crea envase 10ml (código auto MEE-ENV-###) de Niacinamida/Hialurónico/TRX y mapea la presentación V10.
+    Idempotente (salta si el producto ya tiene envase 10ml). Atómico por código. Auditado. Admin. Sebastián 9-jul."""
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    if u not in ADMIN_USERS:
+        return jsonify({'error': 'solo admin'}), 403
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+    _ts = (_dt.now(_tz.utc) - _td(hours=5)).strftime('%Y-%m-%d %H:%M:%S')
+    conn = get_db(); c = conn.cursor()
+    creados = 0; saltados = 0; detalle = []
+    for label, prods in _sueros_10ml_targets(c):
+        for prod in prods:
+            ex = c.execute("SELECT id, COALESCE(envase_codigo,'') FROM producto_presentaciones WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND presentacion_codigo='V10' AND COALESCE(activo,1)=1", (prod,)).fetchone()
+            if ex and (ex[1] or '').strip():
+                saltados += 1; detalle.append({'producto': prod, 'resultado': 'ya tenía ' + ex[1]}); continue
+            # generar código auto MEE-ENV-### (atómico)
+            base = _siguiente_num_mee(c, 'ENV'); cod = None
+            desc = ('ENVASE ' + prod + ' 10ml')[:120]
+            for _i in range(30):
+                cand = 'MEE-ENV-%03d' % (base + _i)
+                if c.execute("SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=?", (cand,)).fetchone():
+                    continue
+                try:
+                    c.execute("INSERT INTO maestro_mee (codigo, descripcion, categoria, unidad, volumen_ml, "
+                              "stock_actual, stock_minimo, estado, calificado, cliente, fecha_creacion) "
+                              "VALUES (?,?,?,?,?,0,0,'Activo',0,?,?)",
+                              (cand, desc, 'Envase', 'und', 10.0, '', _ts))
+                    cod = cand; break
+                except Exception:
+                    conn.rollback(); continue
+            if not cod:
+                detalle.append({'producto': prod, 'resultado': 'ERROR generando código'}); continue
+            # mapear V10 → cod
+            if ex:  # existe V10 sin envase → actualizar
+                c.execute("UPDATE producto_presentaciones SET envase_codigo=?, volumen_ml=10, activo=1 WHERE id=?", (cod, ex[0]))
+            else:
+                c.execute("INSERT INTO producto_presentaciones (producto_nombre, presentacion_codigo, etiqueta, volumen_ml, envase_codigo, activo) VALUES (?, 'V10', '10ml', 10, ?, 1)", (prod, cod))
+            creados += 1; detalle.append({'producto': prod, 'resultado': 'creado ' + cod})
+    try:
+        audit_log(c, usuario=u, accion='CREAR_ENVASES_10ML_SUEROS', tabla='maestro_mee', registro_id='*',
+                  despues={'creados': creados, 'saltados': saltados, 'detalle': detalle})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'creados': creados, 'saltados': saltados, 'detalle': detalle})
+
+
 @bp.route('/admin/productos-envases', methods=['GET'])
 def productos_envases_page():
     """Vista para mapear el ENVASE de cada producto/presentación tras el re-catálogo (Sebastián 9-jul). Dropdown

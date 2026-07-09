@@ -9501,7 +9501,7 @@ async function cargarMeeStock(){
     var aC={critico:'#e74c3c',bajo:'#e67e22',advertencia:'#f39c12',ok:'#27ae60',sin_minimo:'#95a5a6'};
     var aL={critico:'&#9940; Critico',bajo:'&#9888; Bajo',advertencia:'&#128993; Alerta',ok:'&#10003; OK',sin_minimo:'—'};
     // Agrupar por categoría · envases (Frasco) primero (Sebastián 28-jun)
-    var _catOrd={'Frasco':1,'Etiqueta':2,'Impresion':3,'Impresión':3,'Serigrafia':3,'Serigrafía':3,'Plegadiza':4,'Caja':4,'Tapa':5,'Gotero':6};
+    var _catOrd={'Envase':1,'Frasco':1,'Impreso':2,'Impresion':2,'Impresión':2,'Serigrafia':2,'Serigrafía':2,'Gotero':3,'Tapa':4,'Etiqueta':5,'Plegadiza':6,'Caja':6};
     items=items.slice().sort(function(a,b){ var oa=_catOrd[a.categoria||'']||50, ob=_catOrd[b.categoria||'']||50; if(oa!==ob) return oa-ob; return (a.descripcion||'').localeCompare(b.descripcion||''); });
     var _catCnt={}; items.forEach(function(m){ var k=m.categoria||'Otros'; _catCnt[k]=(_catCnt[k]||0)+1; });
     var h=''; var _lastCat=null;
