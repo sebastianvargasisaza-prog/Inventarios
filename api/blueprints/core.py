@@ -172,6 +172,28 @@ def health():
             tables['mee_diag_sin_volumen'] = _sin_vol
         except Exception:
             pass
+        # PERF guard (Sebastián 9-jul · speed-audit #14): frescura de ventas_diarias. Si esta tabla
+        # se vacía, Necesidades/Abastecimiento vuelven a re-parsear ~16-39k órdenes Shopify por carga
+        # (regresión M43 · ya pasó 2×). Exponer rows + max_fecha + stale permite detectarlo al instante.
+        try:
+            _vd = conn.execute("SELECT COUNT(*), MAX(fecha) FROM ventas_diarias").fetchone()
+            _vd_count = int(_vd[0] or 0) if _vd else 0
+            _vd_max = (_vd[1] if _vd else None)
+            tables['ventas_diarias_rows'] = _vd_count
+            tables['ventas_diarias_max_fecha'] = _vd_max
+            _vd_stale = _vd_count == 0
+            try:
+                if _vd_max:
+                    from datetime import datetime as _dtvd, timedelta as _tdvd, timezone as _tzvd
+                    _hoy_co = (_dtvd.now(_tzvd.utc) - _tdvd(hours=5)).date()
+                    _vd_d = _dtvd.fromisoformat(str(_vd_max)[:10]).date()
+                    if (_hoy_co - _vd_d).days > 2:
+                        _vd_stale = True
+            except Exception:
+                pass
+            tables['ventas_diarias_stale'] = bool(_vd_stale)
+        except Exception:
+            pass
         # Migraciones · versiones aplicadas vs pendientes (Sebastián 27-may PM)
         # Útil para verificar deploys sin admin login · sin exponer DDL/SQL.
         try:
