@@ -3280,25 +3280,47 @@ def plan_necesidades():
     import json as _jh_orf
     cutoff = (_dt2.now() - _td2(days=30)).strftime('%Y-%m-%d')
     uds_por_sku_vend = {}
+    # PERF 9-jul (speed-audit #1): FAST PATH · derivar los SKUs vendiendo de ventas_diarias
+    # (precalculada por cron · mismos filtros cancelados/B2B) en vez de re-parsear el JSON de
+    # TODAS las órdenes Shopify de 30d en CADA carga de Necesidades. Cae al parseo solo si la
+    # tabla está vacía (cron aún no corrió). El detector de huérfanos no necesita exactitud al minuto.
+    _orf_vd_ok = False
     try:
-        for (items_json,) in c.execute(
-            "SELECT sku_items FROM animus_shopify_orders "
-            "WHERE COALESCE(creado_en,'') >= ? AND COALESCE(sku_items,'') != ''",
+        _rows = c.execute(
+            "SELECT sku, SUM(cantidad) FROM ventas_diarias WHERE fecha >= ? GROUP BY sku",
             (cutoff,),
-        ).fetchall():
-            try:
-                items = _jh_orf.loads(items_json) if items_json else []
-                if not isinstance(items, list):
-                    continue
-                for li in items:
-                    sk = (li.get('sku') or '').strip().upper()
-                    qty = int(li.get('qty') or li.get('quantity') or li.get('cantidad') or 0)
-                    if sk and qty > 0:
-                        uds_por_sku_vend[sk] = uds_por_sku_vend.get(sk, 0) + qty
-            except Exception:
-                continue
+        ).fetchall()
+        if _rows:
+            for _sk, _q in _rows:
+                sk = str(_sk or '').strip().upper()
+                qty = int(float(_q or 0))
+                if sk and qty > 0:
+                    uds_por_sku_vend[sk] = qty
+            _orf_vd_ok = True
     except Exception:
         uds_por_sku_vend = {}
+        _orf_vd_ok = False
+    if not _orf_vd_ok:
+        uds_por_sku_vend = {}
+        try:
+            for (items_json,) in c.execute(
+                "SELECT sku_items FROM animus_shopify_orders "
+                "WHERE COALESCE(creado_en,'') >= ? AND COALESCE(sku_items,'') != ''",
+                (cutoff,),
+            ).fetchall():
+                try:
+                    items = _jh_orf.loads(items_json) if items_json else []
+                    if not isinstance(items, list):
+                        continue
+                    for li in items:
+                        sk = (li.get('sku') or '').strip().upper()
+                        qty = int(li.get('qty') or li.get('quantity') or li.get('cantidad') or 0)
+                        if sk and qty > 0:
+                            uds_por_sku_vend[sk] = uds_por_sku_vend.get(sk, 0) + qty
+                except Exception:
+                    continue
+        except Exception:
+            uds_por_sku_vend = {}
     skus_set = set(uds_por_sku_vend.keys())
     try:
         skus_mapeados = set(
@@ -3420,6 +3442,10 @@ def plan_necesidades():
     return _resp_nec
 
 
+_ALERTAS_IA_CACHE = {}   # {key: (ts, payload)} · cache per-worker · PERF 9-jul (speed-audit #2)
+_ALERTAS_IA_TTL = 300    # 5 min · el banner de alertas no necesita exactitud al segundo
+
+
 @bp.route("/api/plan/alertas-ia", methods=["GET"])
 def plan_alertas_ia():
     """Alertas IA proactivas para el calendario · Sebastián 19-may-2026.
@@ -3449,6 +3475,15 @@ def plan_alertas_ia():
         ventana = max(30, min(180, int(request.args.get("ventana_ventas", 60))))
     except Exception:
         cob_critico, cob_alerta, cob_vigilar, ventana = 20, 25, 45, 60
+
+    # PERF 9-jul (speed-audit #2): cache TTL · este endpoint corre el motor completo de Necesidades
+    # (_calcular_animus_dtc + N+1 B2B) y se dispara en cada carga del dashboard. Cachear evita
+    # recomputar en cada request/worker. Read-only, sin efectos → cachear es seguro.
+    import time as _t
+    _ck = (cob_critico, cob_alerta, cob_vigilar, ventana)
+    _hit = _ALERTAS_IA_CACHE.get(_ck)
+    if _hit and (_t.time() - _hit[0]) < _ALERTAS_IA_TTL:
+        return jsonify(_hit[1])
 
     conn = get_db()
     c = conn.cursor()
@@ -3615,7 +3650,7 @@ def plan_alertas_ia():
     orden_sev = {"critica": 0, "advertencia": 1, "info": 2}
     alertas.sort(key=lambda a: (orden_sev.get(a["severidad"], 9), a["titulo"]))
 
-    return jsonify({
+    _payload = {
         "alertas": alertas,
         "total": len(alertas),
         "por_severidad": {
@@ -3623,7 +3658,9 @@ def plan_alertas_ia():
             "advertencia": sum(1 for a in alertas if a["severidad"] == "advertencia"),
             "info": sum(1 for a in alertas if a["severidad"] == "info"),
         },
-    })
+    }
+    _ALERTAS_IA_CACHE[_ck] = (_t.time(), _payload)
+    return jsonify(_payload)
 
 
 # ml por presentación · Sebastián 13-may-2026 ·

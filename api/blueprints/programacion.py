@@ -7551,8 +7551,10 @@ def planta_centro_mando():
                     f'[centro-mando auto-clean] audit fallo id={pid}: {_e}')
             if len(auto_cancel_detalle_inicial) < 5:
                 auto_cancel_detalle_inicial.append(f"{(prod or '?')[:30]} {fecha}")
-        # FORZAR commit siempre
-        conn.commit()
+        # PERF 9-jul (speed-audit #5): commit SOLO si se canceló algo · antes commiteaba en CADA
+        # refresh de 30s aunque no hubiera cambios (WRITE-on-GET inútil · el reset de salas commitea aparte)
+        if auto_canceladas_inicial > 0:
+            conn.commit()
         logging.getLogger('programacion').info(
             f'[centro-mando auto-clean] cal_set={auto_clean_diag["cal_set_size"]} '
             f'db_rows={auto_clean_diag["db_rows_check"]} '

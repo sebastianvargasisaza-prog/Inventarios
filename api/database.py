@@ -397,6 +397,11 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (344, "PERF (Sebastián 9-jul · speed-audit Planta): índices para queries de carga frecuentes. movimientos_mee(fecha) para ORDER BY DESC del histórico MEE; animus_shopify_orders(creado_en) para los escaneos por fecha; ventas_diarias(fecha) para el fast-path. IF NOT EXISTS, additivas, PG-safe.", [
+        "CREATE INDEX IF NOT EXISTS idx_movimientos_mee_fecha ON movimientos_mee(fecha)",
+        "CREATE INDEX IF NOT EXISTS idx_shopify_creado_en ON animus_shopify_orders(creado_en)",
+        "CREATE INDEX IF NOT EXISTS idx_ventas_diarias_fecha ON ventas_diarias(fecha)",
+    ]),
     (343, "Envases · ubicación en maestro_mee (Sebastián 9-jul): zona/estanteria/posicion texto libre (como MP) para el 'Ajustar' premium. Additivas, PG-safe.", [
         "ALTER TABLE maestro_mee ADD COLUMN zona TEXT DEFAULT ''",
         "ALTER TABLE maestro_mee ADD COLUMN estanteria TEXT DEFAULT ''",

@@ -1329,10 +1329,20 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       // 25-jun · "En fabricación ahora" y "Fabricaciones terminadas" se ABSORBIERON en la tabla única
       // "Órdenes de Producción" (las en-curso salen arriba con su botón Finalizar). Estos quedan como
       // wrappers que refrescan esa tabla, para que todos los llamadores existentes sigan funcionando.
+      // PERF 9-jul (speed-audit #4): cargarEnCurso y cargarHistProd fetchean el MISMO endpoint pesado
+      // y cargarEnProcesoFab llama a ambas → doble request. Promesa compartida (M59): dedup mientras
+      // está en vuelo, se limpia al resolver → un refresh posterior trae datos frescos.
+      window._ordUnifFabFetch=function(){
+        if(window._ordUnifFabPromise) return window._ordUnifFabPromise;
+        var p=fetch('/api/brd/ordenes-unificadas?fase=fabricacion',{credentials:'same-origin'})
+          .then(function(r){return r.json();})
+          .finally(function(){ setTimeout(function(){ window._ordUnifFabPromise=null; },50); });
+        window._ordUnifFabPromise=p; return p;
+      };
       window.cargarEnCurso=async function(){
         var tb=document.getElementById('encurso-body'); if(!tb) return;
         try{
-          var d=await (await fetch('/api/brd/ordenes-unificadas?fase=fabricacion',{credentials:'same-origin'})).json();
+          var d=await window._ordUnifFabFetch();
           var enc=((d&&d.ordenes)||[]).filter(function(o){return o.produccion_id;});
           if(!enc.length){ tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:18px">Nada en fabricaci\\u00f3n ahora \\u00b7 abr\\u00ed una orden arriba \\u25b2</td></tr>'; return; }
           tb.innerHTML=enc.map(function(o){
@@ -4169,8 +4179,7 @@ async function cargarHistProd(){
     return '<span style="background:'+bg+';color:'+col+';padding:2px 8px;border-radius:10px;font-size:0.78em;font-weight:700;white-space:nowrap">'+_escHTML(e||'')+'</span>';
   }
   try{
-    var r=await fetch('/api/brd/ordenes-unificadas?fase=fabricacion',{credentials:'same-origin'});
-    var d=await r.json();
+    var d=await (window._ordUnifFabFetch ? window._ordUnifFabFetch() : (await fetch('/api/brd/ordenes-unificadas?fase=fabricacion',{credentials:'same-origin'})).json());
     var ordenes=(d&&d.ordenes)||[];
     if(q){
       ordenes=ordenes.filter(function(o){
@@ -4699,7 +4708,10 @@ async function loadDashboardCompleto(silent){
       fetch('/api/dashboard-stats').then(function(r){return r.ok?r.json():null;}).catch(function(){errores.push('dashboard-stats');return null;}),
       loadDashboard(silent),  // KPIs principales · /api/inventario + alertas
       fetch('/api/dashboard/insights').then(function(r){return r.ok?r.json():null;}).catch(function(){errores.push('insights');return null;}),
-      fetch('/api/plan/alertas-ia').then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),
+      // PERF 9-jul (speed-audit #2): alertas-ia corre el motor COMPLETO de Necesidades · en el
+      // refresh silencioso (timer 60s / visibilitychange) NO lo recomputamos (mantiene el banner
+      // anterior). Solo en carga/refresh explícito. El backend además cachea la respuesta (TTL).
+      silent ? Promise.resolve(null) : fetch('/api/plan/alertas-ia').then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),
     ]);
     if(insightsR) _renderDashInsights(insightsR);
     if(alertasIaR) _renderDashAlertasIa(alertasIaR);
@@ -14421,10 +14433,8 @@ async function ckMarcar(itemId, estado){
       if (tab === 'necesidades') {
         if (typeof cargarNecesidades === 'function') cargarNecesidades();
       }
-      // Lazy-load Abastecimiento al activar tab
-      if (tab === 'abastecimiento') {
-        if (typeof cargarAbastecimiento === 'function') cargarAbastecimiento();
-      }
+      // (Abastecimiento ya se carga arriba vía setAbastFoco · PERF 9-jul: se quitó el
+      //  segundo cargarAbastecimiento() que disparaba el endpoint más pesado 2× · workflow speed-audit #3)
       // Lazy-load Plan en curso al activar tab
       if (tab === 'planv2') {
         if (typeof cargarPlanEnCurso === 'function') cargarPlanEnCurso();
