@@ -10648,6 +10648,16 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
     from datetime import date; import urllib.parse
     hoy = date.today().strftime('%d-%b-%Y').upper(); lote=urllib.parse.unquote(lote)
     conn = get_db(); c = conn.cursor()
+    # FIX 9-jul · si el rótulo se reimprime sin lote (llega vacío o 'SL'), buscar el lote REAL de la
+    # Entrada más reciente en el kardex → así el número de lote SIEMPRE sale (no queda vacío/SL).
+    if (not lote) or lote.strip().upper() in ('', 'SL', 'S/L', 'S-L'):
+        try:
+            _lr = c.execute("SELECT lote FROM movimientos WHERE material_id=? AND tipo='Entrada' "
+                            "AND COALESCE(lote,'') NOT IN ('','SL','S/L','S-L') ORDER BY fecha DESC LIMIT 1", (codigo,)).fetchone()
+            if _lr and _lr[0]:
+                lote = str(_lr[0]).strip()
+        except Exception:
+            pass
     c.execute("SELECT nombre_inci,nombre_comercial,tipo,proveedor FROM maestro_mps WHERE codigo_mp=?", (codigo,)); mp=c.fetchone()
     # FIX 9-jul · el vencimiento/ubicación viven en la ENTRADA del lote; tomar el ÚLTIMO movimiento
     # (LIMIT 1) fallaba si después hubo una Salida (sin venc/ubic) → salía "—". Agregar sobre TODOS
