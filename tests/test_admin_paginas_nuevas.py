@@ -118,3 +118,5 @@ def test_envases_recatalogo_y_productos_envases(admin_client):
     r2 = admin_client.get("/admin/productos-envases")
     assert r2.status_code == 200, r2.status_code
     assert b"producto" in r2.data.lower() and b"setEnv" in r2.data
+    # vista basada en productos activos (fórmulas) → crea el mapeo aunque no haya presentación
+    assert b"crearEnv" in r2.data and b"por asignar" in r2.data

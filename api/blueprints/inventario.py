@@ -11838,62 +11838,116 @@ def productos_envases_page():
     de los envases ACTIVOS (los nuevos) por presentación · auto-guarda vía /api/programacion/pres-set-envase."""
     if 'compras_user' not in session:
         return redirect('/login?next=/admin/productos-envases')
-    import html as _hh
+    import html as _hh, re as _re2
     conn = get_db(); c = conn.cursor()
+
+    def _npx(s):
+        return _re2.sub(r'\s+', ' ', (s or '').strip()).upper()
     envs = []
     try:
         for r in c.execute("SELECT codigo, COALESCE(descripcion,''), COALESCE(volumen_ml,'') FROM maestro_mee WHERE COALESCE(estado,'Activo')<>'Inactivo' ORDER BY categoria, codigo").fetchall():
             envs.append((r[0], r[1], r[2]))
     except Exception:
         pass
-    pres = []
+    # presentaciones activas agrupadas por producto normalizado
+    pres_by = {}
     try:
         for r in c.execute("SELECT producto_nombre, COALESCE(presentacion_codigo,''), COALESCE(etiqueta,''), COALESCE(volumen_ml,''), COALESCE(envase_codigo,'') FROM producto_presentaciones WHERE COALESCE(activo,1)=1 ORDER BY producto_nombre, volumen_ml").fetchall():
-            pres.append(r)
+            pres_by.setdefault(_npx(r[0]), []).append(r)
     except Exception:
         pass
+    # PRODUCTOS activos = fuente de verdad (fórmulas). La vista lista TODOS aunque no tengan presentación aún.
+    prods = []
+    try:
+        for r in c.execute("SELECT producto_nombre FROM formula_headers WHERE COALESCE(activo,1)=1 ORDER BY producto_nombre").fetchall():
+            if r[0]:
+                prods.append(r[0])
+    except Exception:
+        pass
+    # productos que tienen presentación pero no fórmula activa (por si acaso) → agregarlos igual
+    _seen = {_npx(p) for p in prods}
+    for k, rows in pres_by.items():
+        if k not in _seen and rows:
+            prods.append(rows[0][0]); _seen.add(k)
+    prods.sort(key=lambda x: _npx(x))
+
+    def _vtxt(vol):
+        try:
+            _vf = float(vol)
+            return (str(int(_vf)) if _vf == int(_vf) else str(_vf)) if _vf else ''
+        except Exception:
+            return str(vol or '')
 
     def _opts(sel):
         o = '<option value="">&mdash; sin envase &mdash;</option>'
         su = (sel or '').upper()
         for cod, desc, vol in envs:
             s = ' selected' if str(cod).upper() == su else ''
-            try:
-                _vf = float(vol); _vtxt = (str(int(_vf)) if _vf == int(_vf) else str(_vf)) if _vf else ''
-            except Exception:
-                _vtxt = str(vol or '')
-            lbl = _hh.escape(str(cod)) + ' &middot; ' + _hh.escape(str(desc)[:32]) + ((' &middot; ' + _hh.escape(_vtxt) + 'ml') if _vtxt else '')
+            vt = _vtxt(vol)
+            lbl = _hh.escape(str(cod)) + ' &middot; ' + _hh.escape(str(desc)[:32]) + ((' &middot; ' + _hh.escape(vt) + 'ml') if vt else '')
             o += '<option value="' + _hh.escape(str(cod), quote=True) + '"' + s + '>' + lbl + '</option>'
         return o
-    filas = ''
-    for prod, pcod, etq, vol, env in pres:
-        _pj = _hh.escape(str(prod), quote=True); _cj = _hh.escape(str(pcod), quote=True)
-        _preslbl = _hh.escape(str(etq) or (str(vol) + 'ml' if vol else str(pcod)))
-        filas += ('<tr><td><b>' + _hh.escape(str(prod)) + '</b></td><td>' + _preslbl + '</td><td>'
-                  '<select class="cx-input" style="min-width:300px" data-prod="' + _pj + '" data-pres="' + _cj +
-                  '" onchange="setEnv(this)">' + _opts(env) + '</select> <span class="okmark" style="color:#16a34a;font-weight:700;font-size:13px"></span></td></tr>')
-    if not pres:
-        filas = '<tr><td colspan="3" style="text-align:center;color:#71717a;padding:20px">No hay presentaciones activas.</td></tr>'
+    filas = ''; n_map = 0; n_falta = 0
+    for prod in prods:
+        _pj = _hh.escape(str(prod), quote=True)
+        rows_p = pres_by.get(_npx(prod), [])
+        if rows_p:
+            for _pn, pcod, etq, vol, env in rows_p:
+                _cj = _hh.escape(str(pcod), quote=True)
+                _preslbl = _hh.escape(str(etq) or ((_vtxt(vol) + 'ml') if _vtxt(vol) else str(pcod)))
+                if env:
+                    n_map += 1
+                else:
+                    n_falta += 1
+                filas += ('<tr><td><b>' + _hh.escape(str(prod)) + '</b></td><td>' + _preslbl + '</td><td>'
+                          '<select class="cx-input" style="min-width:300px" data-prod="' + _pj + '" data-pres="' + _cj +
+                          '" onchange="setEnv(this)">' + _opts(env) + '</select> <span class="okmark" style="color:#16a34a;font-weight:700;font-size:13px"></span></td></tr>')
+        else:
+            n_falta += 1
+            # producto sin presentación → fila para CREAR (ml + envase)
+            filas += ('<tr style="background:#fffbeb"><td><b>' + _hh.escape(str(prod)) + '</b></td>'
+                      '<td><input class="cx-input volin" type="number" min="1" step="1" placeholder="ml" style="width:80px"> ml <span style="color:#b45309;font-size:12px">(nueva)</span></td><td>'
+                      '<select class="cx-input" style="min-width:300px" data-prod="' + _pj + '" data-new="1" '
+                      'onchange="crearEnv(this)">' + _opts('') + '</select> <span class="okmark" style="color:#16a34a;font-weight:700;font-size:13px"></span></td></tr>')
+    if not prods:
+        filas = '<tr><td colspan="3" style="text-align:center;color:#71717a;padding:20px">No hay productos activos.</td></tr>'
     _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Producto - Envase</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:24px}.card{max-width:1000px;margin:0 auto}</style></head><body>
 <div class="cx-card card">
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128295;</div><div><h2 style="margin:0;font-size:19px">Mapear producto &rarr; envase</h2><div class="cx-text-mute" style="font-size:13px">Eleg&iacute; qu&eacute; envase (de los nuevos) usa cada presentaci&oacute;n. Se <b>guarda solo</b> al cambiar el dropdown.</div></div></div>
-  <div class="cx-table-wrap" style="margin-top:14px"><table class="cx-table"><thead><tr><th>Producto</th><th>Presentaci&oacute;n</th><th>Envase</th></tr></thead><tbody>__FILAS__</tbody></table></div>
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128295;</div><div><h2 style="margin:0;font-size:19px">Mapear producto &rarr; envase</h2><div class="cx-text-mute" style="font-size:13px">Cada <b>producto activo</b> con su envase (de los nuevos). Fila <b>amarilla</b> = a&uacute;n sin envase: pon&eacute; los <b>ml</b> y eleg&iacute; el envase &rarr; se crea la presentaci&oacute;n. Se <b>guarda solo</b>.</div></div></div>
+  <div style="margin:10px 0;font-size:13px"><span style="color:#16a34a;font-weight:700">__NMAP__ mapeadas</span> &middot; <span style="color:#b45309;font-weight:700">__NFALTA__ por asignar</span></div>
+  <div class="cx-table-wrap" style="margin-top:8px"><table class="cx-table"><thead><tr><th>Producto</th><th>Presentaci&oacute;n</th><th>Envase</th></tr></thead><tbody>__FILAS__</tbody></table></div>
   <div style="margin-top:14px"><button class="cx-btn cx-btn-ghost" onclick="location.href='/inventarios'">Volver</button></div>
 </div>
 <script>
+async function _csrf(){ try{ return (await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json()).csrf_token||''; }catch(e){ return ''; } }
 async function setEnv(sel){
   var prod=sel.getAttribute('data-prod'); var pres=sel.getAttribute('data-pres'); var env=sel.value;
   var ok=sel.parentNode.querySelector('.okmark'); if(ok)ok.textContent='...';
   try{
-    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
-    var r=await fetch('/api/programacion/pres-set-envase',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||''},body:JSON.stringify({producto:prod,presentacion_codigo:pres,envase:env})});
+    var t=await _csrf();
+    var r=await fetch('/api/programacion/pres-set-envase',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify({producto:prod,presentacion_codigo:pres,envase:env})});
     var d=await r.json();
     if(r.ok&&d.ok){ if(ok){ok.textContent='✓'; setTimeout(function(){ok.textContent='';},1500);} }
     else { if(ok)ok.textContent='error'; }
   }catch(e){ if(ok)ok.textContent='error'; }
 }
+async function crearEnv(sel){
+  var prod=sel.getAttribute('data-prod'); var env=sel.value;
+  var vi=sel.parentNode.parentNode.querySelector('.volin'); var vol=vi?parseFloat(vi.value):0;
+  var ok=sel.parentNode.querySelector('.okmark');
+  if(!env){ return; }
+  if(!vol||vol<=0){ if(ok)ok.textContent='pon los ml'; if(vi)vi.focus(); sel.value=''; return; }
+  if(ok)ok.textContent='...';
+  try{
+    var t=await _csrf();
+    var r=await fetch('/api/programacion/pres-crear',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify({producto:prod,envase:env,volumen_ml:vol})});
+    var d=await r.json();
+    if(r.ok&&d.ok){ if(ok){ok.textContent='✓ creada'; setTimeout(function(){location.reload();},650);} }
+    else { if(ok)ok.textContent=((d&&d.error)||'error'); }
+  }catch(e){ if(ok)ok.textContent='error'; }
+}
 </script></body></html>'''
-    return _tpl.replace('__FILAS__', filas)
+    return (_tpl.replace('__FILAS__', filas).replace('__NMAP__', str(n_map)).replace('__NFALTA__', str(n_falta)))
 
 
 @bp.route('/api/admin/backfill-precios-mp', methods=['POST'])
