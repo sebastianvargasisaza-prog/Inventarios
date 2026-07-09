@@ -10407,10 +10407,10 @@ def generar_rotulos(producto_nombre, cantidad_str):
         mid,mnm,pct=r; peso=round((pct/100)*cant_g,2); info=lotes.get(mid,{}); lote_mp=info.get('lote','S/L')
         cod_real=cods.get(mid,mid)
         ubicacion=('Est. '+str(info.get('est',''))+str(info.get('pos',''))).strip(); vence=info.get('vence',''); inci=incis.get(mid,'')
-        bv=cod_real+'|'+lote_mp; barcodes+=f'try{{JsBarcode("#bc{i}",{json.dumps(bv)},{{format:"CODE128",width:1.15,height:30,displayValue:false,margin:0}})}}catch(e){{}};'
+        bv=cod_real+'|'+lote_mp; barcodes+=f'try{{JsBarcode("#bc{i}",{json.dumps(bv)},{{format:"CODE128",width:1.1,height:24,displayValue:false,margin:0}})}}catch(e){{}};'
         # QR resoluble: al escanear con el celular abre /scan/<código>/<lote> con la info REAL del lote.
         _scan_url = _scan_base + '/scan/' + urllib.parse.quote(str(cod_real), safe='') + '/' + urllib.parse.quote(str(lote_mp), safe='')
-        barcodes += f'try{{new QRCode(document.getElementById("qr{i}"),{{text:{json.dumps(_scan_url)},width:58,height:58,correctLevel:QRCode.CorrectLevel.M}})}}catch(e){{}};'
+        barcodes += f'try{{new QRCode(document.getElementById("qr{i}"),{{text:{json.dumps(_scan_url)},width:50,height:50,correctLevel:QRCode.CorrectLevel.M}})}}catch(e){{}};'
         rhtml+='<div class="sheet"><div class="accent"></div>'
         rhtml+='<div class="top"><div class="brand"><img class="mark" src="'+_logo_src+'" alt="" onerror="this.remove()"><div class="co">ESPAGIRIA Laboratorio SAS</div></div>'
         rhtml+='<div class="ctrl"><b>Código:</b> PRD-PRO-001-F08<br><b>Versión:</b> 01 &middot; <b>Etiqueta</b> '+str(i+1)+' de '+str(len(items))+'<br><b>Vigencia:</b> 04-Mar-2025 / 03-Mar-2028</div></div>'
@@ -10462,14 +10462,17 @@ def generar_rotulos(producto_nombre, cantidad_str):
          '.firma{flex:1;padding:10px 14px 12px;}.firma+.firma{border-left:1px solid var(--line);}'
          '.firma .l{font-size:9px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.3px;}'
          '.firma .v{font-size:12px;font-weight:600;margin-top:14px;border-top:1px solid var(--ink);padding-top:4px;}.firma .f{font-size:8.5px;color:var(--mute);margin-top:2px;}'
-         # Impresión térmica · COMPACTA para caber en la etiqueta (default 100×100mm)
-         f'@media print{{body{{background:#fff;}}.ph{{display:none;}}.wrap{{display:block;padding:0;gap:0;}}'
-         f'.sheet{{width:{_lw-3}mm;max-width:{_lw-3}mm;border-radius:0;box-shadow:none;border:1px solid #ccc;margin:0 auto;page-break-after:always;page-break-inside:avoid;}}'
-         f'.sheet:last-child{{page-break-after:auto;}}'
-         'td{padding:2.5px 8px;font-size:8pt;}td.k{font-size:6.5pt;}.title{padding:1px 12px 6px;}.title h1{font-size:10pt;}'
-         '.top{padding:8px 12px 4px;}.mark{width:50px;height:50px;}.co{font-size:10pt;}.ctrl{font-size:6pt;padding:5px 7px;}'
-         '.peso{font-size:11pt;}.fill{height:15px;}.firma{padding:6px 10px 8px;}.firma .v{margin-top:9px;}.bcq{padding:5px 10px;}'
-         f'@page{{size:{_lw}mm {_lh}mm;margin:2mm;}}}}'
+         # Impresión térmica · COMPACTA para caber en UNA etiqueta (default 100×100mm) · afinado 9-jul
+         f'@media print{{html,body{{background:#fff;}}.ph{{display:none;}}.wrap{{display:block;padding:0;gap:0;}}'
+         f'.sheet{{width:{_lw-3}mm;max-width:{_lw-3}mm;border-radius:0;box-shadow:none;border:1px solid #ccc;margin:0 auto;page-break-after:always;page-break-inside:avoid;break-inside:avoid;}}'
+         f'.sheet:last-child{{page-break-after:auto;}}.accent{{height:3px;}}'
+         'td{padding:1.6px 8px;font-size:7.5pt;line-height:1.12;}td.k{font-size:6pt;}'
+         '.title{padding:0 12px 3px;}.title h1{font-size:9.5pt;}.title .k{font-size:7pt;margin-top:1px;}'
+         '.top{padding:6px 12px 2px;}.mark{width:40px;height:40px;}.co{font-size:9.5pt;}.ctrl{font-size:5.5pt;padding:4px 6px;line-height:1.35;}'
+         '.peso{font-size:10.5pt;}.fill{height:12px;}.inci{font-size:8pt;}'
+         '.bcq{padding:3px 10px;gap:8px;}.bcv{font-size:6.5pt;margin-top:1px;}.qrlbl{font-size:6pt;}'
+         '.firma{padding:4px 10px 5px;}.firma .l{font-size:7.5pt;}.firma .v{margin-top:6px;font-size:10pt;}.firma .f{font-size:7pt;}'
+         f'@page{{size:{_lw}mm {_lh}mm;margin:1.5mm;}}}}'
          '</style></head><body>')
     _base_path = '/rotulos/' + urllib.parse.quote(prod) + '/' + str(cantidad_kg)
     _sizes = [(100, 100, '4×4"'), (100, 150, '4×6"'), (100, 75, '4×3"'), (100, 50, '4×2"'), (50, 30, 'chica')]
@@ -10624,11 +10627,12 @@ def _rotulo_recep_css(lw, lh):
       ".qc{display:flex;gap:13px;align-items:center;padding:8px 16px;border-top:1px solid var(--line);font-size:11px;font-weight:700;flex-wrap:wrap}.qc b{color:var(--mute);text-transform:uppercase;font-size:9.5px;font-weight:700}"
       ".firmas{display:flex;border-top:1px solid var(--line)}.firma{flex:1;padding:9px 14px 11px}.firma+.firma{border-left:1px solid var(--line)}"
       ".firma .l{font-size:9px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.3px}.firma .sig{height:1px;background:var(--ink);margin:22px 0 5px}.firma .f{font-size:9px;color:var(--mute)}"
-      "@media print{body{background:#fff}.ph{display:none}.wrap{display:block;padding:0;gap:0}"
-      ".sheet{width:" + w3 + "mm;max-width:" + w3 + "mm;border-radius:0;box-shadow:none;border:1px solid #ccc;margin:0 auto;page-break-after:always;page-break-inside:avoid}.sheet:last-child{page-break-after:auto}"
-      "td{padding:2.5px 8px;font-size:8pt}td.k{font-size:6.5pt}.top{padding:8px 12px 4px}.mark{width:48px;height:48px}.co{font-size:10pt}.ctrl{font-size:6pt;padding:5px 7px}"
-      ".title{padding:1px 12px 6px}.title h1{font-size:10pt}.lote{margin:0 12px 6px;padding:5px}.lote .lv{font-size:14pt}.qc{padding:5px 12px;font-size:8pt}.firma{padding:6px 10px 8px}.firma .sig{margin:14px 0 4px}"
-      "@page{size:" + str(lw) + "mm " + str(lh) + "mm;margin:2mm}}"
+      "@media print{html,body{background:#fff}.ph{display:none}.wrap{display:block;padding:0;gap:0}.accent{height:3px}"
+      ".sheet{width:" + w3 + "mm;max-width:" + w3 + "mm;border-radius:0;box-shadow:none;border:1px solid #ccc;margin:0 auto;page-break-after:always;page-break-inside:avoid;break-inside:avoid}.sheet:last-child{page-break-after:auto}"
+      "td{padding:1.6px 8px;font-size:7.5pt;line-height:1.12}td.k{font-size:6pt}.top{padding:6px 12px 2px}.mark{width:40px;height:40px}.co{font-size:9.5pt}.ctrl{font-size:5.5pt;padding:4px 6px;line-height:1.35}"
+      ".title{padding:0 12px 3px}.title h1{font-size:9.5pt}.title .k{font-size:7pt}.lote{margin:0 12px 4px;padding:4px}.lote .ll{font-size:7pt}.lote .lv{font-size:12pt}"
+      ".qc{padding:3px 12px;font-size:7.5pt;gap:9px}.firma{padding:4px 10px 5px}.firma .l{font-size:7.5pt}.firma .sig{margin:9px 0 3px}.firma .f{font-size:7pt}"
+      "@page{size:" + str(lw) + "mm " + str(lh) + "mm;margin:1.5mm}}"
       "</style>")
 
 
@@ -10679,7 +10683,7 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
        '<div class="firmas"><div class="firma"><div class="l">Recibido por</div><div class="sig"></div><div class="f">Firma / fecha</div></div>'
        '<div class="firma"><div class="l">Analizado / Aprobado por</div><div class="sig"></div><div class="f">Firma / fecha</div></div></div>'
        '</div></div>'
-       '<script>window.onload=function(){try{JsBarcode("#bc",'+json.dumps(bv)+',{format:"CODE128",width:1.6,height:40,displayValue:false,margin:0});}catch(e){}};</script>'
+       '<script>window.onload=function(){try{JsBarcode("#bc",'+json.dumps(bv)+',{format:"CODE128",width:1.4,height:30,displayValue:false,margin:0});}catch(e){}};</script>'
        '</body></html>')
     return h
 
@@ -10748,7 +10752,7 @@ def rotulo_recepcion_mee(codigo, cantidad_str):
        '<div class="firmas"><div class="firma"><div class="l">Realizado por</div><div class="sig"></div><div class="f">Firma / fecha</div></div>'
        '<div class="firma"><div class="l">Aprobado por</div><div class="sig"></div><div class="f">Firma / fecha</div></div></div>'
        '</div></div>'
-       '<script>window.onload=function(){try{JsBarcode("#bc",'+json.dumps(codigo)+',{format:"CODE128",width:1.6,height:40,displayValue:false,margin:0});}catch(e){}};</script>'
+       '<script>window.onload=function(){try{JsBarcode("#bc",'+json.dumps(codigo)+',{format:"CODE128",width:1.4,height:30,displayValue:false,margin:0});}catch(e){}};</script>'
        '</body></html>')
     return h
 

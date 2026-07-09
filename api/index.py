@@ -670,11 +670,15 @@ def _inject_chat_widget(response):
         # 29-jun · estas páginas van EMBEBIDAS en iframe dentro del dashboard → NO inyectar el chat+campana
         # (si no, aparecen duplicados/solapados DENTRO del calendario · el dashboard padre ya los tiene).
         _embebidas = ('/admin/plan-calendario', '/planta/kanban', '/admin/factibilidad-plan', '/admin/marcacion-envases')
+        # 9-jul · páginas de RÓTULO / impresión: NO inyectar campana+chat (flotan encima del rótulo
+        # y tapan el QR/datos al imprimir · Sebastián). Cubre /rotulos, /rotulo-recepcion, /rotulo-recepcion-mee, etc.
+        _es_impresion = path.startswith('/rotulo') or '/rotulos' in path
         if (session.get('compras_user')
                 and not (path.startswith('/chat')
                          or path.startswith('/login')
                          or path.startswith('/logout')
-                         or path in _embebidas)):
+                         or path in _embebidas
+                         or _es_impresion)):
             snippet += ('<script src="/api/chat/widget.js" async></script>'
                         '<script src="/api/notif/widget.js" async></script>')
         # Usar rsplit (último </body>) para evitar inyectar dentro de strings JS
