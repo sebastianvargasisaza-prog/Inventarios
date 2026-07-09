@@ -1926,21 +1926,39 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
 
   <!-- ==================== TAB: EMPAQUE MEE ==================== -->
   <div id="empaque" class="tab-content">
-    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:10px;margin-bottom:6px">
-      <div>
-        <h2 style="margin:0">&#128230; Material de Empaque y Envase (MEE)</h2>
-        <div id="mee-last-update" style="font-size:11px;color:#94a3b8;margin-top:2px">—</div>
+    <style>
+      #empaque .mee-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;background:linear-gradient(135deg,#faf5ff,#f5f3ff);border:1px solid #ede9fe;border-radius:16px;padding:15px 20px;margin-bottom:14px}
+      #empaque .mee-head .mh-l{display:flex;align-items:center;gap:13px;min-width:0}
+      #empaque .mee-head .mh-badge{width:46px;height:46px;border-radius:13px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:22px;flex:none;box-shadow:0 6px 16px rgba(124,58,237,.28)}
+      #empaque .mee-head h2{margin:0;font-size:19px;font-weight:800;letter-spacing:-.3px;color:#1e1b4b}
+      #empaque .mee-head .mh-sub{font-size:12px;color:#8b7fb8;margin-top:2px}
+      #empaque .mee-btn{border:none;border-radius:9px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;color:#fff;display:inline-flex;align-items:center;gap:5px;transition:transform .06s,box-shadow .12s;box-shadow:0 2px 8px rgba(0,0,0,.10)}
+      #empaque .mee-btn:hover{transform:translateY(-1px);box-shadow:0 5px 14px rgba(0,0,0,.16)}
+      #empaque .mee-btn-violet{background:linear-gradient(135deg,#7c3aed,#8b5cf6)}
+      #empaque .mee-btn-green{background:linear-gradient(135deg,#15803d,#22c55e)}
+      #empaque .mee-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff;border:1px solid #eef0f4;border-radius:12px;padding:10px 12px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+      #empaque .mee-toolbar select,#empaque .mee-toolbar input[type=text]{border:1px solid #e5e7ef;border-radius:9px;padding:8px 11px;font-size:13px;background:#fbfbfd;color:#334155}
+      #empaque .mee-toolbar input[type=text]:focus,#empaque .mee-toolbar select:focus{outline:none;border-color:#a78bfa;box-shadow:0 0 0 3px rgba(167,139,250,.18)}
+      #empaque .mee-card{background:#fff;border:1px solid #eef0f4;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05),0 10px 26px rgba(0,0,0,.045)}
+      #empaque #mee-tabla-estandar{width:100%;border-collapse:collapse;margin:0}
+      #empaque #mee-tabla-estandar thead th{background:linear-gradient(180deg,#faf5ff,#f3f0ff);color:#6d28d9;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.55px;text-align:left;padding:12px 14px;border-bottom:2px solid #ede9fe;white-space:nowrap}
+      #empaque #mee-tabla-estandar tbody td{padding:9px 14px;border-bottom:1px solid #f4f4f7;vertical-align:middle}
+      #empaque #mee-tabla-estandar tbody tr:hover td{background:#faf7ff}
+    </style>
+    <div class="mee-head">
+      <div class="mh-l">
+        <div class="mh-badge">&#128230;</div>
+        <div style="min-width:0">
+          <h2>Material de Empaque y Envase</h2>
+          <div class="mh-sub">Stock, recepciones, consumos y trazabilidad por batch &middot; <span id="mee-last-update">&mdash;</span></div>
+        </div>
       </div>
-      <!-- Sprint MEE PRO · header con auto-refresh + Excel + Verificar stock -->
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-        <label style="font-size:11px;color:#64748b;display:flex;align-items:center;gap:4px;cursor:pointer">
-          <input type="checkbox" id="mee-autorefresh"> auto 60s
-        </label>
-        <button onclick="meeVerificarStock()" style="padding:6px 12px;font-size:12px;background:#7c3aed;color:#fff;border-radius:6px" title="Recalcula stock_actual desde SUM(movimientos_mee) · anti-drift cache">⚙️ Verificar stock</button>
-        <button onclick="meeExportarExcel()" style="padding:6px 12px;font-size:12px;background:#217346;color:#fff;border-radius:6px">📄 Excel</button>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <label style="font-size:11px;color:#8b7fb8;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="mee-autorefresh"> auto 60s</label>
+        <button class="mee-btn mee-btn-violet" onclick="meeVerificarStock()" title="Recalcula stock_actual desde SUM(movimientos_mee) · anti-drift cache">&#9881;&#65039; Verificar stock</button>
+        <button class="mee-btn mee-btn-green" onclick="meeExportarExcel()">&#128196; Excel</button>
       </div>
     </div>
-    <p style="color:#666;font-size:0.9em;margin-bottom:14px;">Control de stock, recepciones, consumos y trazabilidad de material de empaque por batch de producción.</p>
     <!-- tarjetas KPI quitadas · Sebastián 28-jun · irán a sus sub-pestañas (Valor en Inventario, Bajo Mínimo/Obsoletos en Alertas) -->
     <span id="mee-c-total" style="display:none">0</span><span id="mee-c-bajo" style="display:none">0</span><span id="mee-c-semana" style="display:none">0</span><span id="mee-c-mes" style="display:none">0</span><span id="mee-c-valor" style="display:none">0</span><span id="mee-c-obs" style="display:none">0</span>
     <!-- banner de alertas quitado · vivirá en la sub-pestaña Alertas (Sebastián 28-jun) -->
@@ -2007,15 +2025,15 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         </div>
       </div>
       <div id="meepane-inventario" style="display:none">
-        <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
-          <select id="mee-cat-filter-bodega" style="flex:1;min-width:180px;width:auto;" onchange="cargarMeeStock()"><option value="">Todas las categorias</option></select>
-          <select id="mee-cli-filter" style="flex:1;min-width:160px;width:auto;" onchange="cargarMeeStock()"><option value="">Todos los clientes</option><option>&Aacute;nimus Lab</option><option>Kelly Guerra</option><option value="__GEN__">General (sin cliente)</option></select>
-          <input id="mee-search-input" type="text" placeholder="Buscar..." oninput="cargarMeeStock()" style="padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px">
-          <button onclick="cargarMeeStock()" style="white-space:nowrap;background:#15803d;color:#fff;">&#8635; Actualizar</button>
-          <button onclick="meeImportarExcel()" style="white-space:nowrap;background:#7c3aed;color:#fff;" title="Importar inventario desde scripts/mee_excel_import.json (admin)">&#128194; Importar Excel</button>
-          <button onclick="meeAgrupadoToggle()" id="mee-agrupado-btn" style="white-space:nowrap;background:#7c3aed;color:#fff;">&#128221; Agrupado</button>
+        <div class="mee-toolbar">
+          <select id="mee-cat-filter-bodega" style="flex:1;min-width:180px" onchange="cargarMeeStock()"><option value="">Todas las categorias</option></select>
+          <select id="mee-cli-filter" style="flex:1;min-width:160px" onchange="cargarMeeStock()"><option value="">Todos los clientes</option><option>&Aacute;nimus Lab</option><option>Kelly Guerra</option><option value="__GEN__">General (sin cliente)</option></select>
+          <input id="mee-search-input" type="text" placeholder="&#128269; Buscar..." oninput="cargarMeeStock()" style="flex:1;min-width:160px">
+          <button class="mee-btn mee-btn-green" onclick="cargarMeeStock()" style="white-space:nowrap">&#8635; Actualizar</button>
+          <button class="mee-btn mee-btn-violet" onclick="meeImportarExcel()" style="white-space:nowrap" title="Importar inventario desde scripts/mee_excel_import.json (admin)">&#128194; Importar Excel</button>
+          <button class="mee-btn mee-btn-violet" onclick="meeAgrupadoToggle()" id="mee-agrupado-btn" style="white-space:nowrap">&#128221; Agrupado</button>
         </div>
-        <div style="overflow-x:auto;">
+        <div class="mee-card" style="overflow-x:auto;">
           <table class="table" id="mee-tabla-estandar"><thead><tr><th>Foto</th><th>Codigo</th><th>Descripcion</th><th>Categoria</th><th>Stock</th><th>Minimo</th><th>Estado</th><th>Proveedor</th><th>Acciones</th></tr></thead>
           <tbody id="mee-stock-tbody"><tr><td colspan="9" style="text-align:center;color:#999;">Cargando...</td></tr></tbody></table>
         </div>
