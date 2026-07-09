@@ -11913,7 +11913,8 @@ def productos_envases_page():
         filas = '<tr><td colspan="3" style="text-align:center;color:#71717a;padding:20px">No hay productos activos.</td></tr>'
     _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Producto - Envase</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:24px}.card{max-width:1000px;margin:0 auto}</style></head><body>
 <div class="cx-card card">
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128295;</div><div><h2 style="margin:0;font-size:19px">Mapear producto &rarr; envase</h2><div class="cx-text-mute" style="font-size:13px">Cada <b>producto activo</b> con su envase (de los nuevos). Fila <b>amarilla</b> = a&uacute;n sin envase: pon&eacute; los <b>ml</b> y eleg&iacute; el envase &rarr; se crea la presentaci&oacute;n. Se <b>guarda solo</b>.</div></div></div>
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128295;</div><div><h2 style="margin:0;font-size:19px">Mapear producto &rarr; envase</h2><div class="cx-text-mute" style="font-size:13px">Cada <b>producto activo</b> con su envase (de los nuevos). Fila <b>amarilla</b> = a&uacute;n sin envase: pon&eacute; los <b>ml</b> y eleg&iacute; el envase &rarr; se crea la presentaci&oacute;n. <b>No hay bot&oacute;n Guardar: cada cambio se guarda solo</b> (te aparece un &#10003; verde).</div></div></div>
+  __BANNER__
   <div style="margin:10px 0;font-size:13px"><span style="color:#16a34a;font-weight:700">__NMAP__ mapeadas</span> &middot; <span style="color:#b45309;font-weight:700">__NFALTA__ por asignar</span></div>
   <div class="cx-table-wrap" style="margin-top:8px"><table class="cx-table"><thead><tr><th>Producto</th><th>Presentaci&oacute;n</th><th>Envase</th></tr></thead><tbody>__FILAS__</tbody></table></div>
   <div style="margin-top:14px"><button class="cx-btn cx-btn-ghost" onclick="location.href='/inventarios'">Volver</button></div>
@@ -11947,7 +11948,14 @@ async function crearEnv(sel){
   }catch(e){ if(ok)ok.textContent='error'; }
 }
 </script></body></html>'''
-    return (_tpl.replace('__FILAS__', filas).replace('__NMAP__', str(n_map)).replace('__NFALTA__', str(n_falta)))
+    if not envs:
+        _banner = ('<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px 16px;margin:12px 0;font-size:14px;color:#7f1d1d">'
+                   '&#9888; <b>No hay envases activos todav&iacute;a.</b> Los men&uacute;s salen vac&iacute;os porque falta <b>aplicar el re-cat&aacute;logo</b> (crea los 76 c&oacute;digos nuevos). '
+                   'And&aacute; ah&iacute;, dale <b>Aplicar re-cat&aacute;logo</b>, y volv&eacute; a esta pantalla.<br>'
+                   '<button class="cx-btn cx-btn-success" style="margin-top:10px" onclick="location.href=\'/admin/envases-recatalogo\'">&#128230; Ir a aplicar el re-cat&aacute;logo</button></div>')
+    else:
+        _banner = ''
+    return (_tpl.replace('__FILAS__', filas).replace('__NMAP__', str(n_map)).replace('__NFALTA__', str(n_falta)).replace('__BANNER__', _banner))
 
 
 @bp.route('/api/admin/backfill-precios-mp', methods=['POST'])
