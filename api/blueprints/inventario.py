@@ -11706,6 +11706,82 @@ async function fixPrecio(cod, precio){
     return _tpl.replace('__FILAS__', filas)
 
 
+@bp.route('/admin/envases-recatalogo', methods=['GET'])
+def envases_recatalogo_page():
+    """PREVIEW (read-only) del re-catálogo de envases: mapea cada código NUEVO (MEE-ENV-###, del conteo físico)
+    al código VIEJO del sistema por descripción + volumen, CONTRA PRODUCCIÓN. No escribe nada · Sebastián 9-jul.
+    El apply (rename + stock) se hace en un paso aparte, con el mapeo ya confirmado."""
+    if 'compras_user' not in session:
+        return redirect('/login?next=/admin/envases-recatalogo')
+    import html as _hh, os as _os, json as _json, unicodedata as _ud, re as _re
+    try:
+        _p = _os.path.join(_os.path.dirname(__file__), '..', 'data', 'envases_inventario_2026.json')
+        nuevos = (_json.load(open(_p, encoding='utf-8')) or {}).get('envases', [])
+    except Exception:
+        nuevos = []
+
+    def _norm(s):
+        s = _ud.normalize('NFKD', str(s or '')).encode('ascii', 'ignore').decode().upper()
+        return _re.sub(r'\s+', ' ', _re.sub(r'[^A-Z0-9]', ' ', s)).strip()
+
+    def _vol(s):
+        m = _re.search(r'(\d+[\.,]?\d*)\s*ML', _norm(s))
+        return m.group(1).replace(',', '.') if m else ''
+    _STOP = {'ENVASE', 'FRASCO', 'SIN', 'CON', 'LOS', 'DEL', 'PARA', 'GLOSS', 'LIPS'}
+
+    def _toks(s):
+        return set(t for t in _norm(s).split() if len(t) > 2 and t not in _STOP)
+    conn = get_db(); c = conn.cursor()
+    old = []; stock_old = {}
+    try:
+        for r in c.execute("SELECT codigo, COALESCE(descripcion,''), COALESCE(volumen_ml,'') FROM maestro_mee").fetchall():
+            old.append({'cod': r[0], 'desc': r[1], 'vol': _vol(r[1]) or (str(r[2]) if r[2] else '')})
+        for r in c.execute("SELECT mee_codigo, COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA') THEN -cantidad ELSE 0 END),0) FROM movimientos_mee WHERE COALESCE(anulado,0)=0 GROUP BY mee_codigo").fetchall():
+            stock_old[r[0]] = float(r[1] or 0)
+    except Exception:
+        pass
+
+    def _best(it):
+        itt = _toks(it.get('descripcion', '') + ' ' + it.get('presentacion', ''))
+        iv = _vol(it.get('presentacion', '')) or _vol(it.get('descripcion', '')); bs = 0; bc = None
+        for o in old:
+            ot = _toks(o['desc'])
+            if not itt or not ot:
+                continue
+            j = len(itt & ot) / len(itt | ot)
+            s = j + (0.4 if (iv and o['vol'] and iv == o['vol']) else (-0.3 if (iv and o['vol'] and iv != o['vol']) else 0))
+            if s > bs:
+                bs = s; bc = o
+        return bc, bs
+    n_alto = n_med = n_new = 0; filas = ''
+    for it in nuevos:
+        o, s = _best(it)
+        tag = 'ALTO' if s >= 0.6 else ('MEDIO' if s >= 0.35 else 'NUEVO?')
+        if tag == 'ALTO':
+            n_alto += 1
+        elif tag == 'MEDIO':
+            n_med += 1
+        else:
+            n_new += 1
+        color = {'ALTO': '#16a34a', 'MEDIO': '#b45309', 'NUEVO?': '#b91c1c'}[tag]
+        oc = (o['cod'] if o else ''); od = (o['desc'] if o else '')
+        stk = stock_old.get(oc, 0) if oc else 0
+        filas += ('<tr><td><b>' + _hh.escape(it['codigo']) + '</b></td><td>' + _hh.escape(it.get('descripcion', '')) +
+                  '</td><td>' + _hh.escape(it.get('presentacion', '')) + '</td><td style="text-align:right;font-weight:700">' +
+                  str(it.get('saldo', 0)) + '</td><td style="color:' + color + ';font-weight:700">' + tag + '</td><td>' +
+                  ((_hh.escape(oc) + ' <span class="cx-text-mute" style="font-size:11px">' + _hh.escape(od[:34]) + '</span>') if oc else '<i style="color:#b91c1c">crear nuevo</i>') +
+                  '</td><td style="text-align:right">' + (f"{stk:,.0f}".replace(',', '.') if oc else '—') + '</td></tr>')
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Re-catálogo envases</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:24px}.card{max-width:1150px;margin:0 auto}</style></head><body>
+<div class="cx-card card">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128230;</div><div><h2 style="margin:0;font-size:19px">Re-cat&aacute;logo de envases &middot; PREVIEW</h2><div class="cx-text-mute" style="font-size:13px">Mapeo propuesto del c&oacute;digo NUEVO (conteo f&iacute;sico) al VIEJO del sistema, por descripci&oacute;n + volumen, contra PRODUCCI&Oacute;N. <b>Read-only &middot; no escribe nada.</b> Revis&aacute; sobre todo los MEDIO y NUEVO?; deciles cu&aacute;les corregir y armo el apply (rename + stock).</div></div></div>
+  <div style="margin:12px 0;font-size:13px"><span style="color:#16a34a;font-weight:700">ALTO: __ALTO__</span> &middot; <span style="color:#b45309;font-weight:700">MEDIO: __MED__</span> &middot; <span style="color:#b91c1c;font-weight:700">NUEVO?/crear: __NEW__</span> &middot; total __TOT__</div>
+  <div class="cx-table-wrap"><table class="cx-table"><thead><tr><th>C&oacute;digo nuevo</th><th>Descripci&oacute;n</th><th>Pres.</th><th style="text-align:right">Saldo contado</th><th>Confianza</th><th>Viejo propuesto</th><th style="text-align:right">Stock viejo</th></tr></thead><tbody>__FILAS__</tbody></table></div>
+  <div style="margin-top:14px"><button class="cx-btn cx-btn-ghost" onclick="location.href='/inventarios'">Volver</button></div>
+</div></body></html>'''
+    return (_tpl.replace('__FILAS__', filas).replace('__ALTO__', str(n_alto))
+            .replace('__MED__', str(n_med)).replace('__NEW__', str(n_new)).replace('__TOT__', str(len(nuevos))))
+
+
 @bp.route('/api/admin/backfill-precios-mp', methods=['POST'])
 def backfill_precios_mp():
     """Pobla precio_referencia en maestro_mps desde movimientos.precio_kg y precios_mp_historico.

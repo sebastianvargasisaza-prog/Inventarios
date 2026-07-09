@@ -100,3 +100,12 @@ def test_precios_sospechosos_page(admin_client):
     body = r.data.decode("utf-8", "replace")
     assert "Precios sospechosos" in body
     assert "fixPrecio" in body
+
+
+def test_envases_recatalogo_preview(admin_client):
+    """Preview read-only del re-catálogo de envases (mapeo nuevo→viejo)."""
+    r = admin_client.get("/admin/envases-recatalogo")
+    assert r.status_code == 200, r.status_code
+    body = r.data.decode("utf-8", "replace")
+    assert "Re-cat" in body and "PREVIEW" in body
+    assert "MEE-ENV-001" in body

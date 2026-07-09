@@ -1,0 +1,614 @@
+{
+ "fuente": "INVENTARIO ENVASE (2).xlsx · conteo físico 9-jul-2026",
+ "equipos": null,
+ "envases": [
+  {
+   "codigo": "MEE-ENV-001",
+   "categoria": "ENVASE",
+   "descripcion": "SUERO ILUMINADOR TRX",
+   "presentacion": "30ml",
+   "saldo": 284,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-002",
+   "categoria": "ENVASE",
+   "descripcion": "SUERO NIACINAMIDA",
+   "presentacion": "30ml",
+   "saldo": 750,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-003",
+   "categoria": "ENVASE",
+   "descripcion": "ENVASE VIDRIO DEGRADADO MATE NO PRINT",
+   "presentacion": "30ml",
+   "saldo": 1050,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-004",
+   "categoria": "ENVASE",
+   "descripcion": "PLASTIC BOTTLE NO PRINT",
+   "presentacion": "30ml",
+   "saldo": 5946,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-005",
+   "categoria": "ENVASE",
+   "descripcion": "SUERO MULTIPEPTIDOS",
+   "presentacion": "30ml",
+   "saldo": 968,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-006",
+   "categoria": "ENVASE",
+   "descripcion": "FRASCO AIRLESS CONTORNO",
+   "presentacion": "15ml",
+   "saldo": 263,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-007",
+   "categoria": "ENVASE",
+   "descripcion": "FRASCO AZUL",
+   "presentacion": "30ml",
+   "saldo": 3998,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-008",
+   "categoria": "ENVASE",
+   "descripcion": "FRASCO AMBAR",
+   "presentacion": "30ml",
+   "saldo": 2084,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-009",
+   "categoria": "ENVASE",
+   "descripcion": "FRASCO VIDRIO OPALIZADO ENANO",
+   "presentacion": "30ml",
+   "saldo": 7480,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-010",
+   "categoria": "ENVASE",
+   "descripcion": "FRASCO BOOSTER TENSOR",
+   "presentacion": "15ml",
+   "saldo": 535,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-011",
+   "categoria": "ENVASE",
+   "descripcion": "FRASCO BLANCO CUADRADO",
+   "presentacion": "30ml",
+   "saldo": 7194,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-012",
+   "categoria": "ENVASE",
+   "descripcion": "FRASCO BLANCO CUADRADO",
+   "presentacion": "15ml",
+   "saldo": 1,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-013",
+   "categoria": "ENVASE",
+   "descripcion": "FRASCO AMBAR",
+   "presentacion": "50ml",
+   "saldo": 661,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-014",
+   "categoria": "ENVASE",
+   "descripcion": "ENVASE METALICO MAXLASH",
+   "presentacion": "7,5ml",
+   "saldo": 0,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-015",
+   "categoria": "ENVASE",
+   "descripcion": "FRASCO PLASTIC INNER CUP  (interior del trx, pha)",
+   "presentacion": "30ml",
+   "saldo": 6230,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-016",
+   "categoria": "ENVASE",
+   "descripcion": "LIP GLOSS BLANCO SIN SERG",
+   "presentacion": "10ml",
+   "saldo": 891,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-017",
+   "categoria": "ENVASE",
+   "descripcion": "LIPS GLOSS  CAFÉ CLARO SIN SERIGRAFIA",
+   "presentacion": "10ml",
+   "saldo": 766,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-018",
+   "categoria": "ENVASE",
+   "descripcion": "LIPS GLOSS MERLOT SIN SERIGRAFIA",
+   "presentacion": "10ml",
+   "saldo": 780,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-019",
+   "categoria": "ENVASE",
+   "descripcion": "LIPS GLOSS MALVA SIN SERIGRAFIA",
+   "presentacion": "10ml",
+   "saldo": 762,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-020",
+   "categoria": "ENVASE",
+   "descripcion": "FRASCO BLANCO PUFF",
+   "presentacion": "50ml",
+   "saldo": 250,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-021",
+   "categoria": "ENVASE",
+   "descripcion": "FRASCO AIRLESS JAR BLANCO",
+   "presentacion": "50ml",
+   "saldo": 0,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-022",
+   "categoria": "ENVASE",
+   "descripcion": "ENVASE REDONDO BLANCO",
+   "presentacion": "150ml",
+   "saldo": 4926,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-023",
+   "categoria": "ENVASE",
+   "descripcion": "ENVASE CONTORNO RETINALDEHIDO",
+   "presentacion": "15ml",
+   "saldo": 234,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-024",
+   "categoria": "ENVASE",
+   "descripcion": "Paleta rubores x6 negra",
+   "presentacion": "-",
+   "saldo": 997,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-025",
+   "categoria": "ENVASE",
+   "descripcion": "Frasco cilíndrico blanco logo",
+   "presentacion": "-",
+   "saldo": 937,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-026",
+   "categoria": "ENVASE",
+   "descripcion": "Frasco rubor en povlo de vidrio con tapa negra",
+   "presentacion": "",
+   "saldo": 990,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-027",
+   "categoria": "ENVASE",
+   "descripcion": "Paleta rubores x4 negra",
+   "presentacion": "",
+   "saldo": 760,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-028",
+   "categoria": "ENVASE",
+   "descripcion": "Envase conceler tube",
+   "presentacion": "",
+   "saldo": 2919,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-ENV-029",
+   "categoria": "ENVASE",
+   "descripcion": "ENVASE CONTORNO MULTIPEPTIDOS",
+   "presentacion": "15ml",
+   "saldo": 0,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-IMP-001",
+   "categoria": "IMPRESO",
+   "descripcion": "LIP GLOSS BLANCO CON SERIGRAFIA",
+   "presentacion": "10ml",
+   "saldo": 301,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-IMP-002",
+   "categoria": "IMPRESO",
+   "descripcion": "LIPS GLOSS CAFÉ OSCURO MOCA  CON SERIGRAFIA",
+   "presentacion": "10ml",
+   "saldo": 442,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-IMP-003",
+   "categoria": "IMPRESO",
+   "descripcion": "LIPS GLOSS  CAFÉ CLARO CON SERIGRAFIA",
+   "presentacion": "10ml",
+   "saldo": 130,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-IMP-004",
+   "categoria": "IMPRESO",
+   "descripcion": "LIPS GLOSS PEACH CON SERIGRAFIA",
+   "presentacion": "10ml",
+   "saldo": 674,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-IMP-005",
+   "categoria": "IMPRESO",
+   "descripcion": "LIPS GLOSS MERLOT CON SERIGRAFIA",
+   "presentacion": "10ml",
+   "saldo": 200,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-IMP-006",
+   "categoria": "IMPRESO",
+   "descripcion": "LIPS GLOSS MALVA CON SERIGRAFIA",
+   "presentacion": "10ml",
+   "saldo": 200,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-IMP-007",
+   "categoria": "IMPRESO",
+   "descripcion": "LIPS GLOSS SALMON  CON SERIGRAFIA",
+   "presentacion": "10ml",
+   "saldo": 430,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-IMP-008",
+   "categoria": "IMPRESO",
+   "descripcion": "LIPS GLOSS GRIS CON SERIGRAFIA",
+   "presentacion": "10ml",
+   "saldo": 634,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-IMP-009",
+   "categoria": "IMPRESO",
+   "descripcion": "LIPS GLOSS ROSADO CLARO BARBIE CON SERIGRAFIA",
+   "presentacion": "10ml",
+   "saldo": 500,
+   "hoja": "ENVASES"
+  },
+  {
+   "codigo": "MEE-IMP-010",
+   "categoria": "IMPRESO",
+   "descripcion": "Vitamina C+ 15ml",
+   "presentacion": "",
+   "saldo": 166,
+   "hoja": "tampo"
+  },
+  {
+   "codigo": "MEE-IMP-011",
+   "categoria": "IMPRESO",
+   "descripcion": "Vitamina C+ 30ml  conlote 260141",
+   "presentacion": "",
+   "saldo": 36,
+   "hoja": "tampo"
+  },
+  {
+   "codigo": "MEE-IMP-012",
+   "categoria": "IMPRESO",
+   "descripcion": "AZHYBRID  30ml",
+   "presentacion": "",
+   "saldo": 566,
+   "hoja": "tampo"
+  },
+  {
+   "codigo": "MEE-IMP-013",
+   "categoria": "IMPRESO",
+   "descripcion": "AZHYBRID  15ml",
+   "presentacion": "",
+   "saldo": 341,
+   "hoja": "tampo"
+  },
+  {
+   "codigo": "MEE-IMP-014",
+   "categoria": "IMPRESO",
+   "descripcion": "Renova C10 30ml",
+   "presentacion": "",
+   "saldo": 92,
+   "hoja": "tampo"
+  },
+  {
+   "codigo": "MEE-IMP-015",
+   "categoria": "IMPRESO",
+   "descripcion": "Vitamina C+ 30ml",
+   "presentacion": "",
+   "saldo": 795,
+   "hoja": "tampo"
+  },
+  {
+   "codigo": "MEE-IMP-016",
+   "categoria": "IMPRESO",
+   "descripcion": "Triactive 15ml",
+   "presentacion": "",
+   "saldo": 457,
+   "hoja": "tampo"
+  },
+  {
+   "codigo": "MEE-IMP-017",
+   "categoria": "IMPRESO",
+   "descripcion": "Gel Hidratante",
+   "presentacion": "",
+   "saldo": 0,
+   "hoja": "tampo"
+  },
+  {
+   "codigo": "MEE-IMP-018",
+   "categoria": "IMPRESO",
+   "descripcion": "Limpiador kojico",
+   "presentacion": "",
+   "saldo": 0,
+   "hoja": "tampo"
+  },
+  {
+   "codigo": "MEE-IMP-019",
+   "categoria": "IMPRESO",
+   "descripcion": "Limpiador BHA 2%",
+   "presentacion": "",
+   "saldo": 177,
+   "hoja": "tampo"
+  },
+  {
+   "codigo": "MEE-IMP-020",
+   "categoria": "IMPRESO",
+   "descripcion": "Emulsion limpiadora",
+   "presentacion": "",
+   "saldo": 82,
+   "hoja": "tampo"
+  },
+  {
+   "codigo": "MEE-IMP-021",
+   "categoria": "IMPRESO",
+   "descripcion": "Nova pha",
+   "presentacion": "",
+   "saldo": 238,
+   "hoja": "tampo"
+  },
+  {
+   "codigo": "MEE-IMP-022",
+   "categoria": "IMPRESO",
+   "descripcion": "Crema urea facial KELLY",
+   "presentacion": "",
+   "saldo": 126,
+   "hoja": "tampo"
+  },
+  {
+   "codigo": "MEE-GOT-001",
+   "categoria": "GOTERO",
+   "descripcion": "GOTERO",
+   "presentacion": "89mm",
+   "saldo": 703,
+   "hoja": "GOTEROS"
+  },
+  {
+   "codigo": "MEE-GOT-002",
+   "categoria": "GOTERO",
+   "descripcion": "GOTERO",
+   "presentacion": "65mm",
+   "saldo": 1587,
+   "hoja": "GOTEROS"
+  },
+  {
+   "codigo": "MEE-GOT-003",
+   "categoria": "GOTERO",
+   "descripcion": "GOTERO",
+   "presentacion": "72mm",
+   "saldo": 418,
+   "hoja": "GOTEROS"
+  },
+  {
+   "codigo": "MEE-GOT-004",
+   "categoria": "GOTERO",
+   "descripcion": "GOTERO",
+   "presentacion": "55mm",
+   "saldo": 0,
+   "hoja": "GOTEROS"
+  },
+  {
+   "codigo": "MEE-GOT-005",
+   "categoria": "GOTERO",
+   "descripcion": "GREY SCREW PUMP DROPPER",
+   "presentacion": "30ml",
+   "saldo": 2668,
+   "hoja": "GOTEROS"
+  },
+  {
+   "codigo": "MEE-GOT-006",
+   "categoria": "GOTERO",
+   "descripcion": "GOTERO FRASCO OPAL ENANO",
+   "presentacion": "30ml",
+   "saldo": 7480,
+   "hoja": "GOTEROS"
+  },
+  {
+   "codigo": "MEE-TAP-001",
+   "categoria": "TAPA",
+   "descripcion": "TAPA PLASTIC AIRLESS PUMP",
+   "presentacion": "30ml",
+   "saldo": 6230,
+   "hoja": "TAPAS"
+  },
+  {
+   "codigo": "MEE-TAP-002",
+   "categoria": "TAPA",
+   "descripcion": "TAPA PATO BLANCA CON SEGURO",
+   "presentacion": "120ml",
+   "saldo": 2433,
+   "hoja": "TAPAS"
+  },
+  {
+   "codigo": "MEE-TAP-003",
+   "categoria": "TAPA",
+   "descripcion": "TAPA ENVASE CUADRADO",
+   "presentacion": "30ml/15ml",
+   "saldo": 7194,
+   "hoja": "TAPAS"
+  },
+  {
+   "codigo": "MEE-ETQ-001",
+   "categoria": "ETIQUETA",
+   "descripcion": "BLUSH BALM MALVA (BB201)",
+   "presentacion": "",
+   "saldo": 338,
+   "hoja": "ETIQUETAS"
+  },
+  {
+   "codigo": "MEE-ETQ-002",
+   "categoria": "ETIQUETA",
+   "descripcion": "BLUSH BALM HOT PINK (BB101)",
+   "presentacion": "",
+   "saldo": 378,
+   "hoja": "ETIQUETAS"
+  },
+  {
+   "codigo": "MEE-ETQ-003",
+   "categoria": "ETIQUETA",
+   "descripcion": "BLUSH BALM CAROLINA (BB401)",
+   "presentacion": "",
+   "saldo": 258,
+   "hoja": "ETIQUETAS"
+  },
+  {
+   "codigo": "MEE-ETQ-004",
+   "categoria": "ETIQUETA",
+   "descripcion": "BLUSH BALM PEACH (BB301)",
+   "presentacion": "",
+   "saldo": 416,
+   "hoja": "ETIQUETAS"
+  },
+  {
+   "codigo": "MEE-ETQ-005",
+   "categoria": "ETIQUETA",
+   "descripcion": "BLUSH BALM HIMALAYAN PINK (BB202)",
+   "presentacion": "",
+   "saldo": 359,
+   "hoja": "ETIQUETAS"
+  },
+  {
+   "codigo": "MEE-ETQ-006",
+   "categoria": "ETIQUETA",
+   "descripcion": "BLUSH BALM BORGOÑA (BB203)",
+   "presentacion": "",
+   "saldo": 420,
+   "hoja": "ETIQUETAS"
+  },
+  {
+   "codigo": "MEE-ETQ-007",
+   "categoria": "ETIQUETA",
+   "descripcion": "BLUSH BALM CINNAMON (BB402)",
+   "presentacion": "",
+   "saldo": 306,
+   "hoja": "ETIQUETAS"
+  },
+  {
+   "codigo": "MEE-ETQ-008",
+   "categoria": "ETIQUETA",
+   "descripcion": "BLUSH BALM LATINA(BB403)",
+   "presentacion": "",
+   "saldo": 404,
+   "hoja": "ETIQUETAS"
+  },
+  {
+   "codigo": "MEE-PLG-001",
+   "categoria": "PLEGADIZA",
+   "descripcion": "LIP SERUM",
+   "presentacion": "",
+   "saldo": 927,
+   "hoja": "PLEGADIZAS"
+  },
+  {
+   "codigo": "MEE-PLG-002",
+   "categoria": "PLEGADIZA",
+   "descripcion": "BLUSH BALM",
+   "presentacion": "",
+   "saldo": 732,
+   "hoja": "PLEGADIZAS"
+  },
+  {
+   "codigo": "MEE-PLG-003",
+   "categoria": "PLEGADIZA",
+   "descripcion": "SUERO MULTIPEPTIDOS",
+   "presentacion": "",
+   "saldo": 988,
+   "hoja": "PLEGADIZAS"
+  },
+  {
+   "codigo": "MEE-PLG-004",
+   "categoria": "PLEGADIZA",
+   "descripcion": "SUERO ACIDO HIDRATANTE AH",
+   "presentacion": "",
+   "saldo": 982,
+   "hoja": "PLEGADIZAS"
+  },
+  {
+   "codigo": "MEE-PLG-005",
+   "categoria": "PLEGADIZA",
+   "descripcion": "SUERO RENOVA C10",
+   "presentacion": "",
+   "saldo": 932,
+   "hoja": "PLEGADIZAS"
+  },
+  {
+   "codigo": "MEE-PLG-006",
+   "categoria": "PLEGADIZA",
+   "descripcion": "SUERO ILUMINADOR TRX",
+   "presentacion": "",
+   "saldo": 1128,
+   "hoja": "PLEGADIZAS"
+  },
+  {
+   "codigo": "MEE-PLG-007",
+   "categoria": "PLEGADIZA",
+   "descripcion": "BOOSTER",
+   "presentacion": "",
+   "saldo": 1375,
+   "hoja": "PLEGADIZAS"
+  },
+  {
+   "codigo": "MEE-PLG-008",
+   "categoria": "PLEGADIZA",
+   "descripcion": "MAXLASH",
+   "presentacion": "",
+   "saldo": 532,
+   "hoja": "PLEGADIZAS"
+  }
+ ]
+}
