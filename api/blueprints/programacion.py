@@ -8559,28 +8559,44 @@ def _ventas_sku_180d(c):
     import json as _jsonV
     cutoff = (_dtV.utcnow() - _tdV(hours=5) - _tdV(days=180)).date().isoformat()
     ventas = {}
+    # PERF 9-jul (speed-audit #7·#1): FAST PATH · derivar de ventas_diarias (precalculada por cron ·
+    # mismos filtros cancelados) en vez de re-parsear el JSON de las órdenes Shopify 180d en el cold-miss.
+    # Cae al parseo solo si la tabla está vacía. Clave SKU en UPPER(TRIM) (M2/M13/M58 · igual que abajo).
+    _vd_ok = False
     try:
-        for (it,) in c.execute(
-            """SELECT sku_items FROM animus_shopify_orders
-               WHERE COALESCE(creado_en,'') >= ? AND sku_items IS NOT NULL
-                 AND sku_items != ''""", (cutoff,)).fetchall():
-            try:
-                items = _jsonV.loads(it) if it else []
-                if not isinstance(items, list):
+        _rows = c.execute("SELECT sku, SUM(cantidad) FROM ventas_diarias WHERE fecha >= ? GROUP BY sku", (cutoff,)).fetchall()
+        if _rows:
+            for _sk, _q in _rows:
+                sk = (str(_sk or '').strip().upper()); qty = int(float(_q or 0))
+                if sk and qty > 0:
+                    ventas[sk] = qty
+            _vd_ok = True
+    except Exception:
+        ventas = {}; _vd_ok = False
+    if not _vd_ok:
+        ventas = {}
+        try:
+            for (it,) in c.execute(
+                """SELECT sku_items FROM animus_shopify_orders
+                   WHERE COALESCE(creado_en,'') >= ? AND sku_items IS NOT NULL
+                     AND sku_items != ''""", (cutoff,)).fetchall():
+                try:
+                    items = _jsonV.loads(it) if it else []
+                    if not isinstance(items, list):
+                        continue
+                    for li in items:
+                        # Clave SKU en UPPER(TRIM) · el SKU del JSON de Shopify y los de
+                        # producto_presentaciones/sku_producto_map no comparten case (M2/M13/M58);
+                        # sin normalizar, el reparto de envases y la cobertura por tono daban 0
+                        # en silencio. Los consumidores también miran con .strip().upper().
+                        sk = (li.get('sku') or '').strip().upper()
+                        qty = int(li.get('qty') or 0)
+                        if sk and qty > 0:
+                            ventas[sk] = ventas.get(sk, 0) + qty
+                except Exception:
                     continue
-                for li in items:
-                    # Clave SKU en UPPER(TRIM) · el SKU del JSON de Shopify y los de
-                    # producto_presentaciones/sku_producto_map no comparten case (M2/M13/M58);
-                    # sin normalizar, el reparto de envases y la cobertura por tono daban 0
-                    # en silencio. Los consumidores también miran con .strip().upper().
-                    sk = (li.get('sku') or '').strip().upper()
-                    qty = int(li.get('qty') or 0)
-                    if sk and qty > 0:
-                        ventas[sk] = ventas.get(sk, 0) + qty
-            except Exception:
-                continue
-    except sqlite3.OperationalError:
-        pass
+        except sqlite3.OperationalError:
+            pass
     try:
         _VENTAS_SKU_180D_CACHE['data'] = ventas
         _VENTAS_SKU_180D_CACHE['ts'] = _gnow
