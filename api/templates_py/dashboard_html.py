@@ -2019,6 +2019,34 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           </div>
         </div>
       </div>
+      <div id="mee-adj-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:10000;align-items:center;justify-content:center;padding:24px;">
+        <div style="background:#fff;border-radius:16px;max-width:520px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden;">
+          <div style="background:linear-gradient(135deg,#7c3aed,#a78bfa);padding:18px 22px;color:#fff;">
+            <div style="font-size:11px;opacity:.85;font-weight:600;letter-spacing:.6px">AJUSTAR ENVASE</div>
+            <div style="font-size:18px;font-weight:800" id="mee-adj-cod">&mdash;</div>
+            <div style="font-size:13px;opacity:.92" id="mee-adj-desc"></div>
+          </div>
+          <div style="padding:20px 22px;">
+            <div style="background:#f5f3ff;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#5b21b6">Stock actual: <b id="mee-adj-stockact">&mdash;</b></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div class="form-group" style="margin:0"><label>Nueva cantidad</label><input type="number" id="mee-adj-cant" min="0" step="1"></div>
+              <div class="form-group" style="margin:0"><label>Stock m&iacute;nimo</label><input type="number" id="mee-adj-min" min="0" step="1"></div>
+            </div>
+            <div class="form-group" style="margin:12px 0 0"><label>Motivo <span style="color:#94a3b8;font-weight:400">(solo si camb&iacute;as el stock)</span></label><input type="text" id="mee-adj-motivo" placeholder="Ej: conteo f&iacute;sico, rotura, correcci&oacute;n"></div>
+            <div style="font-size:12px;font-weight:700;color:#7c3aed;margin:16px 0 6px">&#128205; UBICACI&Oacute;N</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+              <div class="form-group" style="margin:0"><label>Zona</label><input type="text" id="mee-adj-zona" placeholder="Z1"></div>
+              <div class="form-group" style="margin:0"><label>Estante</label><input type="text" id="mee-adj-estante" placeholder="A3"></div>
+              <div class="form-group" style="margin:0"><label>Posici&oacute;n</label><input type="text" id="mee-adj-pos" placeholder="2"></div>
+            </div>
+            <div id="mee-adj-msg" style="font-size:13px;margin-top:12px;min-height:16px"></div>
+            <div style="display:flex;gap:10px;margin-top:8px">
+              <button type="button" onclick="meeAjustarClose()" style="flex:1;background:#e2e8f0;color:#334155;border:none;border-radius:10px;padding:11px;font-weight:700;cursor:pointer">Cancelar</button>
+              <button type="button" onclick="meeAjustarGuardar()" style="flex:2;background:#7c3aed;color:#fff;border:none;border-radius:10px;padding:11px;font-weight:700;cursor:pointer">&#10003; Guardar</button>
+            </div>
+          </div>
+        </div>
+      </div>
       <div id="mee-wiz-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;overflow:auto;padding:24px;">
         <div style="background:#fff;border-radius:12px;padding:24px;max-width:560px;margin:0 auto;box-shadow:0 10px 40px rgba(0,0,0,.3);">
           <h3 style="margin:0 0 4px;color:#16a34a;">&#10133; Crear material nuevo</h3>
@@ -9463,7 +9491,7 @@ async function cargarMeeStock(){
       window._MEE_DATA = window._MEE_DATA || {};
       d.items.forEach(function(m){
         window._MEE_IMG[m.codigo] = m.imagen_url || '';
-        window._MEE_DATA[m.codigo] = {desc:m.descripcion||'', cat:m.categoria||'', prov:m.proveedor||''};
+        window._MEE_DATA[m.codigo] = {desc:m.descripcion||'', cat:m.categoria||'', prov:m.proveedor||'', stock:(m.stock_actual!=null?m.stock_actual:0), min:(m.stock_minimo||0), unidad:(m.unidad||'und'), zona:(m.zona||''), estante:(m.estanteria||''), pos:(m.posicion||'')};
         optsCod += '<option value="'+_escHTML(m.codigo)+'" data-stock="'+_escHTML(m.stock_actual)+'" data-unidad="'+_escHTML(m.unidad)+'" data-min="'+_escHTML(m.stock_minimo)+'">'+_escHTML(m.codigo)+' — '+_escHTML(m.descripcion)+'</option>';
       });
       codSel.innerHTML = optsCod;
@@ -9512,7 +9540,7 @@ async function cargarMeeStock(){
       var lbl=aL[m.alerta]||'';
       var ob=m.obsoleto?' <span style="background:#ffc107;color:#856404;border-radius:3px;padding:1px 5px;font-size:0.75em;">+90d</span>':'';
       h+='<tr data-cod="'+_escHTML(m.codigo)+'">';
-      h+='<td>'+(m.imagen_url?'<img src="'+_escHTML(m.imagen_url)+'" loading="lazy" style="width:72px;height:72px;object-fit:contain;border-radius:6px;border:1px solid #eee;background:#fafafa">':'<span style="color:#cbd5e1;font-size:11px">&mdash;</span>')+'</td>';
+      h+='<td onclick="meeFotoUpload(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Subir/cambiar foto" style="cursor:pointer">'+(m.imagen_url?'<img src="'+_escHTML(m.imagen_url)+'" loading="lazy" style="width:72px;height:72px;object-fit:contain;border-radius:6px;border:1px solid #eee;background:#fafafa">':'<span style="display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:72px;height:72px;border:1.5px dashed #c4b5fd;border-radius:8px;color:#7c3aed;font-size:10px;font-weight:700;background:#faf5ff">&#128247;<span style="font-weight:600;margin-top:2px">subir foto</span></span>')+'</td>';
       h+='<td style="font-family:monospace;font-size:0.78em;color:#555;">'+_escHTML(m.codigo)+'</td>';
       h+='<td style="font-size:0.88em;">'+_escHTML(m.descripcion)+ob+_cliChip(m)+'</td>';
       h+='<td style="font-size:0.8em;color:#777;">'+_escHTML(m.categoria||'')+'</td>';
@@ -9521,11 +9549,9 @@ async function cargarMeeStock(){
       h+='<td><span style="color:'+c+';font-weight:600;font-size:0.82em;">'+lbl+'</span></td>';
       h+='<td style="font-size:0.78em;color:#666;max-width:120px;overflow:hidden;text-overflow:ellipsis">'+_escHTML(m.proveedor||'-')+'</td>';
       h+='<td style="white-space:nowrap">';
-      h+='<button onclick="meeFotoUpload(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Subir foto del envase" style="padding:4px 7px;border:none;background:#16a34a;color:#fff;border-radius:4px;cursor:pointer;font-size:11px;margin-right:2px">&#128247; Foto</button>';
-      h+='<button onclick="meeAjustar(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Ajustar stock" style="padding:4px 7px;border:none;background:#7c3aed;color:#fff;border-radius:4px;cursor:pointer;font-size:11px;margin-right:2px">&#9878; Ajustar</button>';
-      h+='<button onclick="meeProveedor(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Cambiar proveedor" style="padding:4px 7px;border:none;background:#6d28d9;color:#fff;border-radius:4px;cursor:pointer;font-size:11px;margin-right:2px">&#127981; Proveedor</button>';
-      h+='<button onclick="meeMin(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;,'+(m.stock_minimo||0)+')" title="Stock mínimo" style="padding:4px 7px;border:none;background:#d97706;color:#fff;border-radius:4px;cursor:pointer;font-size:11px;margin-right:2px">&#128208; M&iacute;n</button>';
-      h+='<button onclick="meeHistorico(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Histórico de movimientos" style="padding:4px 7px;border:none;background:#15803d;color:#fff;border-radius:4px;cursor:pointer;font-size:11px;margin-right:2px">&#128202; Hist</button>';
+      h+='<button onclick="meeAjustar(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Ajustar stock, ubicación y mínimo" style="padding:5px 10px;border:none;background:#7c3aed;color:#fff;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;margin-right:3px">&#9878; Ajustar</button>';
+      h+='<button onclick="meeProveedor(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Cambiar proveedor" style="padding:5px 9px;border:none;background:#6d28d9;color:#fff;border-radius:6px;cursor:pointer;font-size:11px;margin-right:3px">&#127981; Proveedor</button>';
+      h+='<button onclick="meeHistorico(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Histórico de movimientos" style="padding:5px 9px;border:none;background:#15803d;color:#fff;border-radius:6px;cursor:pointer;font-size:11px;margin-right:3px">&#128202; Hist</button>';
       h+='<button onclick="meeArchivar(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Archivar (eliminar)" style="padding:4px 7px;border:none;background:#dc2626;color:#fff;border-radius:4px;cursor:pointer;font-size:11px">&#128465; Borrar</button>';
       h+='</td>';
       h+='</tr>';
@@ -9536,23 +9562,46 @@ async function cargarMeeStock(){
 }
 
 // ─── Acciones MEE (paridad con MP) ──────────────────────────────
-async function meeAjustar(codigo){
-  var nuevo = prompt('Nueva cantidad de stock para '+codigo+':');
-  if(nuevo===null) return;
-  var n = parseFloat(nuevo);
-  if(isNaN(n) || n<0){ alert('Cantidad inválida'); return; }
-  var motivo = prompt('Motivo del ajuste (obligatorio):');
-  if(!motivo){ alert('Motivo requerido'); return; }
-  try {
-    var r = await fetch('/api/mee/'+encodeURIComponent(codigo)+'/ajustar', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({cantidad_nueva: n, motivo: motivo})
-    });
-    var d = await r.json();
-    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
-    _toast('Stock ajustado: '+d.stock_anterior+' → '+d.stock_nuevo, 1);
-    cargarMeeStock();
-  } catch(e){ alert('Error: '+e.message); }
+// Ajustar premium (modal): stock + ubicación (zona/estante/posición) + mínimo · Sebastián 9-jul
+function _adjMsg(t,c){ var e=document.getElementById('mee-adj-msg'); if(e){e.textContent=t; e.style.color=c||'#334155';} }
+function meeAjustar(codigo){
+  var dd=(window._MEE_DATA||{})[codigo]||{};
+  var m=document.getElementById('mee-adj-modal'); if(!m){ alert('No se pudo abrir'); return; }
+  var st=(dd.stock!=null?dd.stock:0);
+  document.getElementById('mee-adj-cod').textContent=codigo;
+  document.getElementById('mee-adj-desc').textContent=dd.desc||'';
+  document.getElementById('mee-adj-stockact').textContent=st+' '+(dd.unidad||'und');
+  document.getElementById('mee-adj-cant').value=st;
+  document.getElementById('mee-adj-min').value=(dd.min||0);
+  document.getElementById('mee-adj-zona').value=dd.zona||'';
+  document.getElementById('mee-adj-estante').value=dd.estante||'';
+  document.getElementById('mee-adj-pos').value=dd.pos||'';
+  document.getElementById('mee-adj-motivo').value='';
+  _adjMsg('');
+  m.dataset.cod=codigo; m.style.display='flex';
+}
+function meeAjustarClose(){ var m=document.getElementById('mee-adj-modal'); if(m) m.style.display='none'; }
+async function meeAjustarGuardar(){
+  var m=document.getElementById('mee-adj-modal'); var codigo=m.dataset.cod||'';
+  var dd=(window._MEE_DATA||{})[codigo]||{}; var st=(dd.stock!=null?parseFloat(dd.stock):0);
+  var cant=parseFloat(document.getElementById('mee-adj-cant').value);
+  var min=parseFloat(document.getElementById('mee-adj-min').value);
+  var motivo=(document.getElementById('mee-adj-motivo').value||'').trim();
+  var body={ zona:document.getElementById('mee-adj-zona').value||'', estanteria:document.getElementById('mee-adj-estante').value||'', posicion:document.getElementById('mee-adj-pos').value||'' };
+  if(!isNaN(min)) body.stock_minimo=min;
+  var cambiaStock=!isNaN(cant) && cant!==st;
+  if(cambiaStock){
+    if(cant<0){ _adjMsg('Cantidad inválida','#dc2626'); return; }
+    if(!motivo){ _adjMsg('Poné el motivo del cambio de stock','#dc2626'); return; }
+    body.cantidad_nueva=cant; body.motivo=motivo;
+  }
+  _adjMsg('Guardando…','#7c3aed');
+  try{
+    var r=await fetch('/api/mee/'+encodeURIComponent(codigo)+'/ajustar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var d=await r.json();
+    if(r.ok&&d.ok){ meeAjustarClose(); _toast('Guardado'+(cambiaStock?(' · stock '+d.stock_anterior+' → '+d.stock_nuevo):''),1); cargarMeeStock(); }
+    else { _adjMsg('Error: '+(d.error||r.status),'#dc2626'); }
+  }catch(e){ _adjMsg('Error de red','#dc2626'); }
 }
 
 async function meeProveedor(codigo){

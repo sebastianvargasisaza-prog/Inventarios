@@ -12407,6 +12407,7 @@ def mee_stock_list():
                COALESCE(mv.stock_real, m.stock_actual, 0) as stock_actual, m.stock_minimo, m.estado, m.proveedor,
                COALESCE(m.imagen_url,'') as imagen_url,
                COALESCE(m.cliente,'') as cliente,
+               COALESCE(m.zona,'') as zona, COALESCE(m.estanteria,'') as estanteria, COALESCE(m.posicion,'') as posicion,
                COALESCE(mv.ultima_entrada,'') as ultima_entrada,
                COALESCE(mv.ultima_salida,'')  as ultima_salida,
                COALESCE(mv.total_entradas,0)  as total_entradas,
@@ -13262,14 +13263,25 @@ def mee_ajustar_stock(codigo):
     # FIX P1 audit 24-may-2026 · validate_money para rechazar NaN/Inf/negativo.
     # allow_zero=True permite vaciar stock a 0.
     from http_helpers import validate_money
-    cantidad_nueva, err = validate_money(d.get('cantidad_nueva', 0),
-                                          allow_zero=True, max_value=10_000_000,
-                                          field_name='cantidad_nueva')
-    if err:
-        return jsonify(err), 400
     motivo = (d.get('motivo') or '').strip()
-    if not motivo:
-        return jsonify({'error': 'motivo requerido para ajuste'}), 400
+    # ¿el usuario cambia el stock? (si no manda cantidad_nueva, es un guardado SOLO de ubicación/mínimo)
+    _raw_cant = d.get('cantidad_nueva', None)
+    _cambiar_stock = _raw_cant is not None and str(_raw_cant).strip() != ''
+    cantidad_nueva = 0
+    if _cambiar_stock:
+        cantidad_nueva, err = validate_money(_raw_cant, allow_zero=True, max_value=10_000_000, field_name='cantidad_nueva')
+        if err:
+            return jsonify(err), 400
+    # ubicación texto libre (mig 343 · como MP) + mínimo · opcionales
+    _zona = (d.get('zona') or '').strip()
+    _estante = (d.get('estanteria') or '').strip()
+    _posicion = (d.get('posicion') or '').strip()
+    _set_ubic = any(k in d for k in ('zona', 'estanteria', 'posicion'))
+    _min_val = None
+    if 'stock_minimo' in d:
+        _min_val, _merr = validate_money(d.get('stock_minimo', 0), allow_zero=True, max_value=10_000_000, field_name='stock_minimo')
+        if _merr:
+            return jsonify(_merr), 400
     conn = get_db(); c = conn.cursor()
     row = c.execute("SELECT stock_actual FROM maestro_mee WHERE codigo=?", (codigo,)).fetchone()
     if not row:
@@ -13289,16 +13301,23 @@ def mee_ajustar_stock(codigo):
         stock_anterior = max(float(real_row[0] or 0), 0)
     except Exception:
         stock_anterior = float(row[0] or 0)
-    delta = cantidad_nueva - stock_anterior
-    c.execute("UPDATE maestro_mee SET stock_actual=? WHERE codigo=?", (cantidad_nueva, codigo))
-    # Audit zero-error 2-may-2026: usar Entrada/Salida según signo del delta
-    # (no 'Ajuste' que perdía la dirección · provocaba drift permanente entre
-    # stock_actual y SUM(movimientos_mee)). Observaciones marca AJUSTE MANUAL
-    # para que reportes financieros lo distingan de movimientos operativos.
-    if delta == 0:
-        # Sin cambio · no insertar movimiento (idempotente)
-        pass
-    else:
+    delta = (cantidad_nueva - stock_anterior) if _cambiar_stock else 0
+    if delta != 0 and not motivo:
+        return jsonify({'error': 'motivo requerido para cambiar el stock'}), 400
+    # UPDATE combinado: stock (si cambia) + ubicación + mínimo (mig 343)
+    _sets = []; _vals = []
+    if _cambiar_stock:
+        _sets.append('stock_actual=?'); _vals.append(cantidad_nueva)
+    if _set_ubic:
+        _sets += ['zona=?', 'estanteria=?', 'posicion=?']; _vals += [_zona, _estante, _posicion]
+    if _min_val is not None:
+        _sets.append('stock_minimo=?'); _vals.append(_min_val)
+    if _sets:
+        _vals.append(codigo)
+        c.execute("UPDATE maestro_mee SET " + ', '.join(_sets) + " WHERE codigo=?", tuple(_vals))
+    # Audit zero-error 2-may-2026: Entrada/Salida según signo del delta (no 'Ajuste' que perdía
+    # la dirección → drift). Observaciones marca AJUSTE MANUAL para distinguir de operativos.
+    if delta != 0:
         tipo_mov = 'Entrada' if delta > 0 else 'Salida'
         obs_msg = (f'AJUSTE MANUAL: {stock_anterior} → {cantidad_nueva} '
                     f'({"+" if delta>=0 else ""}{delta}). {motivo}')
@@ -13309,11 +13328,13 @@ def mee_ajustar_stock(codigo):
     audit_log(c, usuario=user, accion='AJUSTAR_STOCK_MEE', tabla='maestro_mee',
               registro_id=codigo,
               antes={'stock_actual': stock_anterior},
-              despues={'stock_actual': cantidad_nueva, 'delta': delta, 'motivo': motivo},
-              detalle=f"Ajustó stock MEE {codigo}: {stock_anterior} → {cantidad_nueva} (Δ {delta:+}) · {motivo}")
+              despues={'stock_actual': cantidad_nueva if _cambiar_stock else stock_anterior, 'delta': delta,
+                       'motivo': motivo, 'zona': _zona, 'estanteria': _estante, 'posicion': _posicion,
+                       'stock_minimo': _min_val},
+              detalle=f"Ajustó MEE {codigo}: stock {stock_anterior}→{cantidad_nueva if _cambiar_stock else stock_anterior} (Δ {delta:+}) · ubic {_zona}/{_estante}/{_posicion} · {motivo}")
     conn.commit()
     return jsonify({'ok': True, 'codigo': codigo, 'stock_anterior': stock_anterior,
-                    'stock_nuevo': cantidad_nueva, 'delta': delta})
+                    'stock_nuevo': cantidad_nueva if _cambiar_stock else stock_anterior, 'delta': delta})
 
 
 @bp.route('/api/mee/<codigo>/historico', methods=['GET'])

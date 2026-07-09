@@ -397,6 +397,11 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (343, "Envases · ubicación en maestro_mee (Sebastián 9-jul): zona/estanteria/posicion texto libre (como MP) para el 'Ajustar' premium. Additivas, PG-safe.", [
+        "ALTER TABLE maestro_mee ADD COLUMN zona TEXT DEFAULT ''",
+        "ALTER TABLE maestro_mee ADD COLUMN estanteria TEXT DEFAULT ''",
+        "ALTER TABLE maestro_mee ADD COLUMN posicion TEXT DEFAULT ''",
+    ]),
     (334, "produccion_programada.kg_otro_cliente REAL · kg del lote RESERVADOS manualmente para OTRO cliente (sin pedido B2B formal · caso Renova Body 80% para otro cliente). La cobertura/proxima produccion de Animus se calcula con la porcion Animus = cantidad_kg - kg_b2b - kg_otro_cliente (Sebastian 2-jul). Nullable default 0, additiva, PG-safe.", [
         "ALTER TABLE produccion_programada ADD COLUMN kg_otro_cliente REAL DEFAULT 0",
     ]),
