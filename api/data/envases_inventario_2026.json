@@ -117,7 +117,7 @@
   {
    "codigo": "MEE-ENV-015",
    "categoria": "ENVASE",
-   "descripcion": "FRASCO PLASTIC INNER CUP  (interior del trx, pha)",
+   "descripcion": "FRASCO PLASTIC INNER CUP (INTERIOR DEL TRX, PHA)",
    "presentacion": "30ml",
    "saldo": 6230,
    "hoja": "ENVASES"
@@ -133,7 +133,7 @@
   {
    "codigo": "MEE-ENV-017",
    "categoria": "ENVASE",
-   "descripcion": "LIPS GLOSS  CAFÉ CLARO SIN SERIGRAFIA",
+   "descripcion": "LIPS GLOSS CAFÉ CLARO SIN SERIGRAFIA",
    "presentacion": "10ml",
    "saldo": 766,
    "hoja": "ENVASES"
@@ -189,23 +189,23 @@
   {
    "codigo": "MEE-ENV-024",
    "categoria": "ENVASE",
-   "descripcion": "Paleta rubores x6 negra",
-   "presentacion": "-",
+   "descripcion": "PALETA RUBORES X6 NEGRA",
+   "presentacion": "",
    "saldo": 997,
    "hoja": "ENVASES"
   },
   {
    "codigo": "MEE-ENV-025",
    "categoria": "ENVASE",
-   "descripcion": "Frasco cilíndrico blanco logo",
-   "presentacion": "-",
+   "descripcion": "FRASCO CILÍNDRICO BLANCO LOGO",
+   "presentacion": "",
    "saldo": 937,
    "hoja": "ENVASES"
   },
   {
    "codigo": "MEE-ENV-026",
    "categoria": "ENVASE",
-   "descripcion": "Frasco rubor en povlo de vidrio con tapa negra",
+   "descripcion": "FRASCO RUBOR EN POVLO DE VIDRIO CON TAPA NEGRA",
    "presentacion": "",
    "saldo": 990,
    "hoja": "ENVASES"
@@ -213,7 +213,7 @@
   {
    "codigo": "MEE-ENV-027",
    "categoria": "ENVASE",
-   "descripcion": "Paleta rubores x4 negra",
+   "descripcion": "PALETA RUBORES X4 NEGRA",
    "presentacion": "",
    "saldo": 760,
    "hoja": "ENVASES"
@@ -221,7 +221,7 @@
   {
    "codigo": "MEE-ENV-028",
    "categoria": "ENVASE",
-   "descripcion": "Envase conceler tube",
+   "descripcion": "ENVASE CONCELER TUBE",
    "presentacion": "",
    "saldo": 2919,
    "hoja": "ENVASES"
@@ -245,7 +245,7 @@
   {
    "codigo": "MEE-IMP-002",
    "categoria": "IMPRESO",
-   "descripcion": "LIPS GLOSS CAFÉ OSCURO MOCA  CON SERIGRAFIA",
+   "descripcion": "LIPS GLOSS CAFÉ OSCURO MOCA CON SERIGRAFIA",
    "presentacion": "10ml",
    "saldo": 442,
    "hoja": "ENVASES"
@@ -253,7 +253,7 @@
   {
    "codigo": "MEE-IMP-003",
    "categoria": "IMPRESO",
-   "descripcion": "LIPS GLOSS  CAFÉ CLARO CON SERIGRAFIA",
+   "descripcion": "LIPS GLOSS CAFÉ CLARO CON SERIGRAFIA",
    "presentacion": "10ml",
    "saldo": 130,
    "hoja": "ENVASES"
@@ -285,7 +285,7 @@
   {
    "codigo": "MEE-IMP-007",
    "categoria": "IMPRESO",
-   "descripcion": "LIPS GLOSS SALMON  CON SERIGRAFIA",
+   "descripcion": "LIPS GLOSS SALMON CON SERIGRAFIA",
    "presentacion": "10ml",
    "saldo": 430,
    "hoja": "ENVASES"
@@ -309,63 +309,63 @@
   {
    "codigo": "MEE-IMP-010",
    "categoria": "IMPRESO",
-   "descripcion": "Vitamina C+ 15ml",
-   "presentacion": "",
+   "descripcion": "VITAMINA C+",
+   "presentacion": "15ml",
    "saldo": 166,
    "hoja": "tampo"
   },
   {
    "codigo": "MEE-IMP-011",
    "categoria": "IMPRESO",
-   "descripcion": "Vitamina C+ 30ml  conlote 260141",
-   "presentacion": "",
+   "descripcion": "VITAMINA C+ CONLOTE 260141",
+   "presentacion": "30ml",
    "saldo": 36,
    "hoja": "tampo"
   },
   {
    "codigo": "MEE-IMP-012",
    "categoria": "IMPRESO",
-   "descripcion": "AZHYBRID  30ml",
-   "presentacion": "",
+   "descripcion": "AZHYBRID",
+   "presentacion": "30ml",
    "saldo": 566,
    "hoja": "tampo"
   },
   {
    "codigo": "MEE-IMP-013",
    "categoria": "IMPRESO",
-   "descripcion": "AZHYBRID  15ml",
-   "presentacion": "",
+   "descripcion": "AZHYBRID",
+   "presentacion": "15ml",
    "saldo": 341,
    "hoja": "tampo"
   },
   {
    "codigo": "MEE-IMP-014",
    "categoria": "IMPRESO",
-   "descripcion": "Renova C10 30ml",
-   "presentacion": "",
+   "descripcion": "RENOVA C10",
+   "presentacion": "30ml",
    "saldo": 92,
    "hoja": "tampo"
   },
   {
    "codigo": "MEE-IMP-015",
    "categoria": "IMPRESO",
-   "descripcion": "Vitamina C+ 30ml",
-   "presentacion": "",
+   "descripcion": "VITAMINA C+",
+   "presentacion": "30ml",
    "saldo": 795,
    "hoja": "tampo"
   },
   {
    "codigo": "MEE-IMP-016",
    "categoria": "IMPRESO",
-   "descripcion": "Triactive 15ml",
-   "presentacion": "",
+   "descripcion": "TRIACTIVE",
+   "presentacion": "15ml",
    "saldo": 457,
    "hoja": "tampo"
   },
   {
    "codigo": "MEE-IMP-017",
    "categoria": "IMPRESO",
-   "descripcion": "Gel Hidratante",
+   "descripcion": "GEL HIDRATANTE",
    "presentacion": "",
    "saldo": 0,
    "hoja": "tampo"
@@ -373,7 +373,7 @@
   {
    "codigo": "MEE-IMP-018",
    "categoria": "IMPRESO",
-   "descripcion": "Limpiador kojico",
+   "descripcion": "LIMPIADOR KOJICO",
    "presentacion": "",
    "saldo": 0,
    "hoja": "tampo"
@@ -381,7 +381,7 @@
   {
    "codigo": "MEE-IMP-019",
    "categoria": "IMPRESO",
-   "descripcion": "Limpiador BHA 2%",
+   "descripcion": "LIMPIADOR BHA 2%",
    "presentacion": "",
    "saldo": 177,
    "hoja": "tampo"
@@ -389,7 +389,7 @@
   {
    "codigo": "MEE-IMP-020",
    "categoria": "IMPRESO",
-   "descripcion": "Emulsion limpiadora",
+   "descripcion": "EMULSION LIMPIADORA",
    "presentacion": "",
    "saldo": 82,
    "hoja": "tampo"
@@ -397,7 +397,7 @@
   {
    "codigo": "MEE-IMP-021",
    "categoria": "IMPRESO",
-   "descripcion": "Nova pha",
+   "descripcion": "NOVA PHA",
    "presentacion": "",
    "saldo": 238,
    "hoja": "tampo"
@@ -405,7 +405,7 @@
   {
    "codigo": "MEE-IMP-022",
    "categoria": "IMPRESO",
-   "descripcion": "Crema urea facial KELLY",
+   "descripcion": "CREMA UREA FACIAL KELLY",
    "presentacion": "",
    "saldo": 126,
    "hoja": "tampo"

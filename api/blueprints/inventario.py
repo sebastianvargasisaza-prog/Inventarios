@@ -11798,8 +11798,12 @@ def envases_recatalogo_apply():
             saldo = float(it.get('saldo') or 0)
         except Exception:
             saldo = 0.0
-        _mv = _re.search(r'(\d+[\.,]?\d*)', pres)
-        volml = (_mv.group(1).replace(',', '.') if _mv else '')
+        # volumen_ml es REAL en PG · debe ser numérico (nunca '' → "invalid input syntax") y solo desde presentaciones en ml
+        _mv = _re.search(r'(\d+[\.,]?\d*)\s*ml\b', pres, _re.I)
+        try:
+            volml = float(_mv.group(1).replace(',', '.')) if _mv else 0.0
+        except Exception:
+            volml = 0.0
         row = c.execute("SELECT codigo FROM maestro_mee WHERE UPPER(TRIM(codigo))=?", (cod,)).fetchone()
         if row:
             c.execute("UPDATE maestro_mee SET descripcion=?, categoria=?, volumen_ml=?, estado='Activo', stock_actual=? WHERE UPPER(TRIM(codigo))=?",
@@ -11854,7 +11858,11 @@ def productos_envases_page():
         su = (sel or '').upper()
         for cod, desc, vol in envs:
             s = ' selected' if str(cod).upper() == su else ''
-            lbl = _hh.escape(str(cod)) + ' &middot; ' + _hh.escape(str(desc)[:32]) + ((' &middot; ' + _hh.escape(str(vol)) + 'ml') if vol else '')
+            try:
+                _vf = float(vol); _vtxt = (str(int(_vf)) if _vf == int(_vf) else str(_vf)) if _vf else ''
+            except Exception:
+                _vtxt = str(vol or '')
+            lbl = _hh.escape(str(cod)) + ' &middot; ' + _hh.escape(str(desc)[:32]) + ((' &middot; ' + _hh.escape(_vtxt) + 'ml') if _vtxt else '')
             o += '<option value="' + _hh.escape(str(cod), quote=True) + '"' + s + '>' + lbl + '</option>'
         return o
     filas = ''
