@@ -6092,12 +6092,15 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=10
   .firma .f{{font-size:11.5px;color:var(--mute);margin-top:4px;font-variant-numeric:tabular-nums}}
   .printbar{{text-align:center;margin-top:18px}}
   .printbtn{{display:inline-flex;align-items:center;gap:8px;padding:11px 26px;background:var(--violet);color:#fff;text-decoration:none;border:none;border-radius:10px;font-weight:600;font-size:14px;font-family:'Inter';cursor:pointer;box-shadow:0 4px 14px rgba(109,40,217,.22)}}
+  .ph{{position:sticky;top:0;z-index:30;background:linear-gradient(90deg,#4c1d95,#6d28d9);color:#fff;padding:12px 22px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}}
+  .ph .pt{{font-weight:800;font-size:15px;line-height:1.2}} .ph .ps{{font-size:11px;opacity:.85}}
+  .ph .printbtn{{background:#fff;color:#4c1d95;box-shadow:none}}
   @media(max-width:560px){{ .top{{flex-direction:column;gap:10px}} .ctrl{{text-align:left}} .firmas{{flex-direction:column}} .firma+.firma{{border-left:0;border-top:1px solid var(--line)}} }}
   @media print{{
     body{{padding:0;background:#fff;font-size:8.5pt}}
     .sheet{{box-shadow:none;border:1px solid #ddd;border-radius:0;margin:0 auto;max-width:{lw-3}mm;width:{lw-3}mm;page-break-inside:avoid}}
     .sheet + .sheet{{page-break-before:always}}
-    .printbar{{display:none}}
+    .printbar{{display:none}} .ph{{display:none}}
     /* Compactar para caber en 100×100mm (Sebastián 7-jul) sin recortar */
     td{{padding:4px 12px;font-size:8pt}}
     .top{{padding:9px 14px 5px}} .mark{{width:50px;height:50px}} .co{{font-size:10pt}}
@@ -6107,6 +6110,10 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=10
     @page{{size:{lw}mm {lh}mm;margin:2mm}}
   }}
 </style></head><body>
+<div class="ph">
+  <div><div class="pt">{_e(titulo)}</div><div class="ps">etiqueta {lw}×{lh}mm</div></div>
+  <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">{_sel}<button class="printbtn" onclick="window.print()" style="margin-left:10px">🖨 Imprimir todos</button></div>
+</div>
 {sheets_html}
 <div class="printbar">
   <div style="margin-bottom:10px">{_sel}</div>

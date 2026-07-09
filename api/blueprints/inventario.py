@@ -10467,6 +10467,7 @@ def generar_rotulos(producto_nombre, cantidad_str):
          f'.sheet{{width:{_lw-3}mm;max-width:{_lw-3}mm;border-radius:0;box-shadow:none;border:1px solid #ccc;margin:0 auto;page-break-after:always;page-break-inside:avoid;break-inside:avoid;}}'
          f'.sheet:last-child{{page-break-after:auto;}}.accent{{height:3px;}}'
          'td{padding:1.6px 8px;font-size:7.5pt;line-height:1.12;}td.k{font-size:6pt;}'
+         'td:not(.k){white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'  # PRINT: valores en 1 linea (1 hoja); en pantalla envuelven
          '.title{padding:0 12px 3px;}.title h1{font-size:9.5pt;}.title .k{font-size:7pt;margin-top:1px;}'
          '.top{padding:6px 12px 2px;}.mark{width:40px;height:40px;}.co{font-size:9.5pt;}.ctrl{font-size:5.5pt;padding:4px 6px;line-height:1.35;}'
          '.peso{font-size:10.5pt;}.fill{height:12px;}.inci{font-size:8pt;}'
@@ -10629,7 +10630,9 @@ def _rotulo_recep_css(lw, lh):
       ".firma .l{font-size:9px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.3px}.firma .sig{height:1px;background:var(--ink);margin:22px 0 5px}.firma .f{font-size:9px;color:var(--mute)}"
       "@media print{html,body{background:#fff}.ph{display:none}.wrap{display:block;padding:0;gap:0}.accent{height:3px}"
       ".sheet{width:" + w3 + "mm;max-width:" + w3 + "mm;border-radius:0;box-shadow:none;border:1px solid #ccc;margin:0 auto;page-break-after:always;page-break-inside:avoid;break-inside:avoid}.sheet:last-child{page-break-after:auto}"
-      "td{padding:1.6px 8px;font-size:7.5pt;line-height:1.12}td.k{font-size:6pt}.top{padding:6px 12px 2px}.mark{width:40px;height:40px}.co{font-size:9.5pt}.ctrl{font-size:5.5pt;padding:4px 6px;line-height:1.35}"
+      "td{padding:1.6px 8px;font-size:7.5pt;line-height:1.12}td.k{font-size:6pt}"
+      "td:not(.k){white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"  # PRINT: valores en 1 linea (compacto, 1 hoja); en pantalla envuelven
+      ".top{padding:6px 12px 2px}.mark{width:40px;height:40px}.co{font-size:9.5pt}.ctrl{font-size:5.5pt;padding:4px 6px;line-height:1.35}"
       ".title{padding:0 12px 3px}.title h1{font-size:9.5pt}.title .k{font-size:7pt}.lote{margin:0 12px 4px;padding:4px}.lote .ll{font-size:7pt}.lote .lv{font-size:12pt}"
       ".qc{padding:3px 12px;font-size:7.5pt;gap:9px}.firma{padding:4px 10px 5px}.firma .l{font-size:7.5pt}.firma .sig{margin:9px 0 3px}.firma .f{font-size:7pt}"
       "@page{size:" + str(lw) + "mm " + str(lh) + "mm;margin:1.5mm}}"
