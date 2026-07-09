@@ -9567,6 +9567,7 @@ async function cargarMeeStock(){
       h+='<td style="font-size:0.78em;color:#666;max-width:120px;overflow:hidden;text-overflow:ellipsis">'+_escHTML(m.proveedor||'-')+'</td>';
       h+='<td style="white-space:nowrap">';
       h+='<button onclick="meeAjustar(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Ajustar stock, mínimo, proveedor, ubicación + rótulo" style="padding:5px 10px;border:none;background:#7c3aed;color:#fff;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;margin-right:3px">&#9878; Ajustar</button>';
+      h+='<button onclick="meeRotulo(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Imprimir rótulo del envase" style="padding:5px 9px;border:none;background:#0891b2;color:#fff;border-radius:6px;cursor:pointer;font-size:11px;margin-right:3px">&#128424;&#65039; R&oacute;tulo</button>';
       h+='<button onclick="meeHistorico(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Histórico de movimientos" style="padding:5px 9px;border:none;background:#15803d;color:#fff;border-radius:6px;cursor:pointer;font-size:11px;margin-right:3px">&#128202; Hist</button>';
       h+='<button onclick="meeArchivar(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Archivar (eliminar)" style="padding:4px 7px;border:none;background:#dc2626;color:#fff;border-radius:4px;cursor:pointer;font-size:11px">&#128465; Borrar</button>';
       h+='</td>';
@@ -9603,6 +9604,10 @@ function meeAjustarRotulo(){
   var m=document.getElementById('mee-adj-modal'); var cod=(m&&m.dataset.cod)||''; if(!cod) return;
   var cant=parseFloat(document.getElementById('mee-adj-cant').value)||0;
   window.open('/rotulo-recepcion-mee/'+encodeURIComponent(cod)+'/'+(cant>0?cant:1),'_blank');
+}
+function meeRotulo(codigo){
+  var dd=(window._MEE_DATA||{})[codigo]||{}; var cant=parseFloat(dd.stock)||0;
+  window.open('/rotulo-recepcion-mee/'+encodeURIComponent(codigo)+'/'+(cant>0?cant:1),'_blank');
 }
 // Catálogo de ubicaciones (dropdowns · Sebastián 9-jul) · zona/estante/posición desde el server + "Agregar"
 async function _meeCargarUbic(){

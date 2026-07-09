@@ -10438,7 +10438,7 @@ def generar_rotulos(producto_nombre, cantidad_str):
          '.ph{background:linear-gradient(90deg,#4c1d95,#6d28d9);color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}'
          '.pbtn{background:#fff;color:#4c1d95;border:none;padding:9px 20px;border-radius:9px;cursor:pointer;font-weight:700;font-family:inherit;}'
          '.wrap{display:flex;flex-wrap:wrap;gap:16px;padding:20px;justify-content:center;align-items:flex-start;}'
-         '.sheet{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(24,24,27,.05),0 10px 24px rgba(24,24,27,.08);width:380px;page-break-inside:avoid;}'
+         '.sheet{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(24,24,27,.05),0 10px 24px rgba(24,24,27,.08);width:440px;page-break-inside:avoid;}'
          '.accent{height:5px;background:linear-gradient(90deg,#a78bfa,var(--violet));}'
          '.top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:14px 16px 8px;}'
          '.brand{display:flex;align-items:center;gap:10px;min-width:0;}'
@@ -10608,7 +10608,7 @@ def _rotulo_recep_css(lw, lh):
       ".ph{background:linear-gradient(90deg,#4c1d95,#6d28d9);color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}"
       ".pbtn{background:#fff;color:#4c1d95;border:none;padding:9px 20px;border-radius:9px;cursor:pointer;font-weight:700;font-family:inherit}"
       ".wrap{display:flex;flex-wrap:wrap;gap:16px;padding:20px;justify-content:center;align-items:flex-start}"
-      ".sheet{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(24,24,27,.05),0 10px 24px rgba(24,24,27,.08);width:390px;page-break-inside:avoid}"
+      ".sheet{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(24,24,27,.05),0 10px 24px rgba(24,24,27,.08);width:440px;page-break-inside:avoid}"
       ".accent{height:5px;background:linear-gradient(90deg,#a78bfa,var(--violet))}"
       ".top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:14px 16px 8px}"
       ".brand{display:flex;align-items:center;gap:10px;min-width:0}"
