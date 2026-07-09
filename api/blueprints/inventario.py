@@ -10438,7 +10438,7 @@ def generar_rotulos(producto_nombre, cantidad_str):
          '.ph{background:linear-gradient(90deg,#4c1d95,#6d28d9);color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}'
          '.pbtn{background:#fff;color:#4c1d95;border:none;padding:9px 20px;border-radius:9px;cursor:pointer;font-weight:700;font-family:inherit;}'
          '.wrap{display:flex;flex-wrap:wrap;gap:16px;padding:20px;justify-content:center;align-items:flex-start;}'
-         '.sheet{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(24,24,27,.05),0 10px 24px rgba(24,24,27,.08);width:440px;page-break-inside:avoid;}'
+         '.sheet{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(24,24,27,.05),0 10px 24px rgba(24,24,27,.08);width:560px;page-break-inside:avoid;}'
          '.accent{height:5px;background:linear-gradient(90deg,#a78bfa,var(--violet));}'
          '.top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:14px 16px 8px;}'
          '.brand{display:flex;align-items:center;gap:10px;min-width:0;}'
@@ -10450,7 +10450,7 @@ def generar_rotulos(producto_nombre, cantidad_str):
          'table{width:100%;border-collapse:collapse;}'
          'td{padding:7px 12px;border-top:1px solid var(--line);vertical-align:middle;font-size:12px;}'
          'td.k{width:1%;color:var(--mute);font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.3px;background:#fafafa;white-space:nowrap;}'
-         'td:not(.k){white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'
+         'td:not(.k){white-space:normal;word-break:break-word;overflow-wrap:anywhere;}'
          '.num{font-variant-numeric:tabular-nums;font-weight:600;}.cod{color:#a1a1aa;font-size:.85em;}.inci{font-size:11px;color:var(--soft);white-space:normal;}'
          '.venc{color:#c0392b;font-weight:600;}'
          '.peso{background:#fff7ed;color:#c2410c;font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;}'
@@ -10608,7 +10608,7 @@ def _rotulo_recep_css(lw, lh):
       ".ph{background:linear-gradient(90deg,#4c1d95,#6d28d9);color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}"
       ".pbtn{background:#fff;color:#4c1d95;border:none;padding:9px 20px;border-radius:9px;cursor:pointer;font-weight:700;font-family:inherit}"
       ".wrap{display:flex;flex-wrap:wrap;gap:16px;padding:20px;justify-content:center;align-items:flex-start}"
-      ".sheet{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(24,24,27,.05),0 10px 24px rgba(24,24,27,.08);width:440px;page-break-inside:avoid}"
+      ".sheet{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(24,24,27,.05),0 10px 24px rgba(24,24,27,.08);width:560px;page-break-inside:avoid}"
       ".accent{height:5px;background:linear-gradient(90deg,#a78bfa,var(--violet))}"
       ".top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:14px 16px 8px}"
       ".brand{display:flex;align-items:center;gap:10px;min-width:0}"
@@ -10622,7 +10622,7 @@ def _rotulo_recep_css(lw, lh):
       "table{width:100%;border-collapse:collapse}"
       "td{padding:6px 12px;border-top:1px solid var(--line);vertical-align:middle;font-size:12px}"
       "td.k{width:1%;color:var(--mute);font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.3px;background:#fafafa;white-space:nowrap}"
-      "td:not(.k){white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"
+      "td:not(.k){white-space:normal;word-break:break-word;overflow-wrap:anywhere}"
       ".num{font-variant-numeric:tabular-nums;font-weight:600}.cant{color:#15803d;font-weight:800}.venc{color:#c0392b;font-weight:600}.fill{background:repeating-linear-gradient(-45deg,#fff,#fff 6px,#fafafa 6px,#fafafa 7px);height:20px}.ck{text-align:center;font-weight:700}"
       ".qc{display:flex;gap:13px;align-items:center;padding:8px 16px;border-top:1px solid var(--line);font-size:11px;font-weight:700;flex-wrap:wrap}.qc b{color:var(--mute);text-transform:uppercase;font-size:9.5px;font-weight:700}"
       ".firmas{display:flex;border-top:1px solid var(--line)}.firma{flex:1;padding:9px 14px 11px}.firma+.firma{border-left:1px solid var(--line)}"
@@ -10728,7 +10728,7 @@ def rotulo_recepcion_mee(codigo, cantidad_str):
     oper  = mov[1] if mov else ''
     obs   = mov[3] if mov and len(mov)>3 else ''
     zona  = mov[4] if mov and len(mov)>4 else ''
-    nr    = "REC-MEE-" + date.today().strftime('%Y%m%d') + "-" + codigo[-4:]
+    nr    = "REC-MEE-" + date.today().strftime('%Y%m%d') + "-" + (codigo.split('-')[-1] or codigo[-4:]).lstrip('-')
     # M.ENV: envases primarios / M.EMP: empaque secundario
     env_cats = {'Envase','Frasco','Tapa','Gotero','Contorno'}
     is_env = cat in env_cats
