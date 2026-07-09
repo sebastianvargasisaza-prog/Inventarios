@@ -1951,6 +1951,37 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <button id="meest-inventario" onclick="meeSubTab('inventario')" style="background:none;border:none;border-bottom:3px solid transparent;padding:8px 16px;font-size:13px;font-weight:700;color:#64748b;cursor:pointer">&#128230; Inventario</button>
     </div>
     <div style="margin-bottom:22px;">
+      <!-- Modal Ajustar envase · FUERA de los sub-paneles (si no, el pane display:none lo tapa) -->
+      <div id="mee-adj-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:10000;align-items:center;justify-content:center;padding:24px;">
+        <div style="background:#fff;border-radius:16px;max-width:540px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden;max-height:92vh;overflow-y:auto">
+          <div style="background:linear-gradient(135deg,#7c3aed,#a78bfa);padding:18px 22px;color:#fff;">
+            <div style="font-size:11px;opacity:.85;font-weight:600;letter-spacing:.6px">AJUSTAR ENVASE</div>
+            <div style="font-size:18px;font-weight:800" id="mee-adj-cod">&mdash;</div>
+            <div style="font-size:13px;opacity:.92" id="mee-adj-desc"></div>
+          </div>
+          <div style="padding:20px 22px;">
+            <div style="background:#f5f3ff;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#5b21b6">Stock actual: <b id="mee-adj-stockact">&mdash;</b></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div class="form-group" style="margin:0"><label>Nueva cantidad</label><input type="number" id="mee-adj-cant" min="0" step="1"></div>
+              <div class="form-group" style="margin:0"><label>Stock m&iacute;nimo</label><input type="number" id="mee-adj-min" min="0" step="1"></div>
+            </div>
+            <div class="form-group" style="margin:12px 0 0"><label>Motivo <span style="color:#94a3b8;font-weight:400">(solo si camb&iacute;as el stock)</span></label><input type="text" id="mee-adj-motivo" placeholder="Ej: conteo f&iacute;sico, rotura, correcci&oacute;n"></div>
+            <div class="form-group" style="margin:12px 0 0"><label>Proveedor</label><input type="text" id="mee-adj-prov" placeholder="Proveedor del envase"></div>
+            <div style="font-size:12px;font-weight:700;color:#7c3aed;margin:16px 0 6px">&#128205; UBICACI&Oacute;N</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+              <div class="form-group" style="margin:0"><label>Zona</label><input type="text" id="mee-adj-zona" placeholder="Z1"></div>
+              <div class="form-group" style="margin:0"><label>Estante</label><input type="text" id="mee-adj-estante" placeholder="A3"></div>
+              <div class="form-group" style="margin:0"><label>Posici&oacute;n</label><input type="text" id="mee-adj-pos" placeholder="2"></div>
+            </div>
+            <div id="mee-adj-msg" style="font-size:13px;margin-top:12px;min-height:16px"></div>
+            <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap">
+              <button type="button" onclick="meeAjustarClose()" style="flex:1;min-width:90px;background:#e2e8f0;color:#334155;border:none;border-radius:10px;padding:11px;font-weight:700;cursor:pointer">Cancelar</button>
+              <button type="button" onclick="meeAjustarRotulo()" style="flex:1;min-width:110px;background:#0891b2;color:#fff;border:none;border-radius:10px;padding:11px;font-weight:700;cursor:pointer" title="Imprimir r&oacute;tulo del envase">&#128424;&#65039; R&oacute;tulo</button>
+              <button type="button" onclick="meeAjustarGuardar()" style="flex:2;min-width:120px;background:#7c3aed;color:#fff;border:none;border-radius:10px;padding:11px;font-weight:700;cursor:pointer">&#10003; Guardar</button>
+            </div>
+          </div>
+        </div>
+      </div>
       <div id="meepane-inventario" style="display:none">
         <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
           <select id="mee-cat-filter-bodega" style="flex:1;min-width:180px;width:auto;" onchange="cargarMeeStock()"><option value="">Todas las categorias</option></select>
@@ -2026,34 +2057,6 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           <div style="display:flex;gap:10px;">
             <button type="button" onclick="meeCalifClose()" style="flex:1;background:#e2e8f0;color:#334155;border:none;border-radius:8px;padding:10px;font-weight:700;cursor:pointer;">Cancelar</button>
             <button type="button" onclick="meeCalificar()" style="flex:2;background:#1d4ed8;color:#fff;border:none;border-radius:8px;padding:10px;font-weight:700;cursor:pointer;">&#10003; Calificar</button>
-          </div>
-        </div>
-      </div>
-      <div id="mee-adj-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:10000;align-items:center;justify-content:center;padding:24px;">
-        <div style="background:#fff;border-radius:16px;max-width:520px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden;">
-          <div style="background:linear-gradient(135deg,#7c3aed,#a78bfa);padding:18px 22px;color:#fff;">
-            <div style="font-size:11px;opacity:.85;font-weight:600;letter-spacing:.6px">AJUSTAR ENVASE</div>
-            <div style="font-size:18px;font-weight:800" id="mee-adj-cod">&mdash;</div>
-            <div style="font-size:13px;opacity:.92" id="mee-adj-desc"></div>
-          </div>
-          <div style="padding:20px 22px;">
-            <div style="background:#f5f3ff;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#5b21b6">Stock actual: <b id="mee-adj-stockact">&mdash;</b></div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-              <div class="form-group" style="margin:0"><label>Nueva cantidad</label><input type="number" id="mee-adj-cant" min="0" step="1"></div>
-              <div class="form-group" style="margin:0"><label>Stock m&iacute;nimo</label><input type="number" id="mee-adj-min" min="0" step="1"></div>
-            </div>
-            <div class="form-group" style="margin:12px 0 0"><label>Motivo <span style="color:#94a3b8;font-weight:400">(solo si camb&iacute;as el stock)</span></label><input type="text" id="mee-adj-motivo" placeholder="Ej: conteo f&iacute;sico, rotura, correcci&oacute;n"></div>
-            <div style="font-size:12px;font-weight:700;color:#7c3aed;margin:16px 0 6px">&#128205; UBICACI&Oacute;N</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
-              <div class="form-group" style="margin:0"><label>Zona</label><input type="text" id="mee-adj-zona" placeholder="Z1"></div>
-              <div class="form-group" style="margin:0"><label>Estante</label><input type="text" id="mee-adj-estante" placeholder="A3"></div>
-              <div class="form-group" style="margin:0"><label>Posici&oacute;n</label><input type="text" id="mee-adj-pos" placeholder="2"></div>
-            </div>
-            <div id="mee-adj-msg" style="font-size:13px;margin-top:12px;min-height:16px"></div>
-            <div style="display:flex;gap:10px;margin-top:8px">
-              <button type="button" onclick="meeAjustarClose()" style="flex:1;background:#e2e8f0;color:#334155;border:none;border-radius:10px;padding:11px;font-weight:700;cursor:pointer">Cancelar</button>
-              <button type="button" onclick="meeAjustarGuardar()" style="flex:2;background:#7c3aed;color:#fff;border:none;border-radius:10px;padding:11px;font-weight:700;cursor:pointer">&#10003; Guardar</button>
-            </div>
           </div>
         </div>
       </div>
@@ -9554,15 +9557,16 @@ async function cargarMeeStock(){
       h+='<tr data-cod="'+_escHTML(m.codigo)+'">';
       h+='<td onclick="meeFotoUpload(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Subir/cambiar foto" style="cursor:pointer">'+(m.imagen_url?'<img src="'+_escHTML(m.imagen_url)+'" loading="lazy" style="width:72px;height:72px;object-fit:contain;border-radius:6px;border:1px solid #eee;background:#fafafa">':'<span style="display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:72px;height:72px;border:1.5px dashed #c4b5fd;border-radius:8px;color:#7c3aed;font-size:10px;font-weight:700;background:#faf5ff">&#128247;<span style="font-weight:600;margin-top:2px">subir foto</span></span>')+'</td>';
       h+='<td style="font-family:monospace;font-size:0.78em;color:#555;">'+_escHTML(m.codigo)+'</td>';
-      h+='<td style="font-size:0.88em;">'+_escHTML(m.descripcion)+ob+_cliChip(m)+'</td>';
+      var _loc=[m.zona,m.estanteria,m.posicion].filter(function(x){return x&&String(x).trim();}).join('/');
+      var _locChip=_loc?' <span style="background:#ecfeff;color:#0e7490;border:1px solid #a5f3fc;border-radius:4px;padding:1px 5px;font-size:0.72em;font-weight:600;white-space:nowrap" title="Ubicación">&#128205; '+_escHTML(_loc)+'</span>':'';
+      h+='<td style="font-size:0.88em;">'+_escHTML(m.descripcion)+ob+_cliChip(m)+_locChip+'</td>';
       h+='<td style="font-size:0.8em;color:#777;">'+_escHTML(m.categoria||'')+'</td>';
       h+='<td style="font-weight:700;">'+m.stock_actual+' <span style="color:#999;font-size:0.8em;">'+_escHTML(m.unidad||'und')+'</span></td>';
       h+='<td style="color:#aaa;font-size:0.88em;">'+(m.stock_minimo||'—')+'</td>';
       h+='<td><span style="color:'+c+';font-weight:600;font-size:0.82em;">'+lbl+'</span></td>';
       h+='<td style="font-size:0.78em;color:#666;max-width:120px;overflow:hidden;text-overflow:ellipsis">'+_escHTML(m.proveedor||'-')+'</td>';
       h+='<td style="white-space:nowrap">';
-      h+='<button onclick="meeAjustar(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Ajustar stock, ubicación y mínimo" style="padding:5px 10px;border:none;background:#7c3aed;color:#fff;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;margin-right:3px">&#9878; Ajustar</button>';
-      h+='<button onclick="meeProveedor(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Cambiar proveedor" style="padding:5px 9px;border:none;background:#6d28d9;color:#fff;border-radius:6px;cursor:pointer;font-size:11px;margin-right:3px">&#127981; Proveedor</button>';
+      h+='<button onclick="meeAjustar(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Ajustar stock, mínimo, proveedor, ubicación + rótulo" style="padding:5px 10px;border:none;background:#7c3aed;color:#fff;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;margin-right:3px">&#9878; Ajustar</button>';
       h+='<button onclick="meeHistorico(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Histórico de movimientos" style="padding:5px 9px;border:none;background:#15803d;color:#fff;border-radius:6px;cursor:pointer;font-size:11px;margin-right:3px">&#128202; Hist</button>';
       h+='<button onclick="meeArchivar(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Archivar (eliminar)" style="padding:4px 7px;border:none;background:#dc2626;color:#fff;border-radius:4px;cursor:pointer;font-size:11px">&#128465; Borrar</button>';
       h+='</td>';
@@ -9588,18 +9592,25 @@ function meeAjustar(codigo){
   document.getElementById('mee-adj-zona').value=dd.zona||'';
   document.getElementById('mee-adj-estante').value=dd.estante||'';
   document.getElementById('mee-adj-pos').value=dd.pos||'';
+  var _pv=document.getElementById('mee-adj-prov'); if(_pv) _pv.value=dd.prov||'';
   document.getElementById('mee-adj-motivo').value='';
   _adjMsg('');
   m.dataset.cod=codigo; m.style.display='flex';
 }
 function meeAjustarClose(){ var m=document.getElementById('mee-adj-modal'); if(m) m.style.display='none'; }
+function meeAjustarRotulo(){
+  var m=document.getElementById('mee-adj-modal'); var cod=(m&&m.dataset.cod)||''; if(!cod) return;
+  var cant=parseFloat(document.getElementById('mee-adj-cant').value)||0;
+  window.open('/rotulo-recepcion-mee/'+encodeURIComponent(cod)+'/'+(cant>0?cant:1),'_blank');
+}
 async function meeAjustarGuardar(){
   var m=document.getElementById('mee-adj-modal'); var codigo=m.dataset.cod||'';
   var dd=(window._MEE_DATA||{})[codigo]||{}; var st=(dd.stock!=null?parseFloat(dd.stock):0);
   var cant=parseFloat(document.getElementById('mee-adj-cant').value);
   var min=parseFloat(document.getElementById('mee-adj-min').value);
   var motivo=(document.getElementById('mee-adj-motivo').value||'').trim();
-  var body={ zona:document.getElementById('mee-adj-zona').value||'', estanteria:document.getElementById('mee-adj-estante').value||'', posicion:document.getElementById('mee-adj-pos').value||'' };
+  var _pv=document.getElementById('mee-adj-prov');
+  var body={ zona:document.getElementById('mee-adj-zona').value||'', estanteria:document.getElementById('mee-adj-estante').value||'', posicion:document.getElementById('mee-adj-pos').value||'', proveedor:(_pv?_pv.value:'')||'' };
   if(!isNaN(min)) body.stock_minimo=min;
   var cambiaStock=!isNaN(cant) && cant!==st;
   if(cambiaStock){

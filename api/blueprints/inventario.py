@@ -13284,11 +13284,13 @@ def mee_ajustar_stock(codigo):
         cantidad_nueva, err = validate_money(_raw_cant, allow_zero=True, max_value=10_000_000, field_name='cantidad_nueva')
         if err:
             return jsonify(err), 400
-    # ubicación texto libre (mig 343 · como MP) + mínimo · opcionales
+    # ubicación texto libre (mig 343 · como MP) + mínimo + proveedor · opcionales
     _zona = (d.get('zona') or '').strip()
     _estante = (d.get('estanteria') or '').strip()
     _posicion = (d.get('posicion') or '').strip()
     _set_ubic = any(k in d for k in ('zona', 'estanteria', 'posicion'))
+    _set_prov = ('proveedor' in d)
+    _prov = (d.get('proveedor') or '').strip()
     _min_val = None
     if 'stock_minimo' in d:
         _min_val, _merr = validate_money(d.get('stock_minimo', 0), allow_zero=True, max_value=10_000_000, field_name='stock_minimo')
@@ -13322,6 +13324,8 @@ def mee_ajustar_stock(codigo):
         _sets.append('stock_actual=?'); _vals.append(cantidad_nueva)
     if _set_ubic:
         _sets += ['zona=?', 'estanteria=?', 'posicion=?']; _vals += [_zona, _estante, _posicion]
+    if _set_prov:
+        _sets.append('proveedor=?'); _vals.append(_prov)
     if _min_val is not None:
         _sets.append('stock_minimo=?'); _vals.append(_min_val)
     if _sets:
