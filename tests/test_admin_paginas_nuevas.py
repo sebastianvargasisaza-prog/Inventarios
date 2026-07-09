@@ -111,6 +111,22 @@ def test_envases_recatalogo_preview(admin_client):
     assert "MEE-ENV-001" in body
 
 
+def test_mee_codigo_auto_consecutivo(admin_client):
+    """Código MEE automático: el sistema asigna MEE-{PREF}-### consecutivo (Sebastián 9-jul)."""
+    r = admin_client.get("/api/mee/siguiente-codigo?tipo=ENV")
+    assert r.status_code == 200, r.status_code
+    j = r.get_json()
+    assert j["ok"] and j["codigo"].startswith("MEE-ENV-") and j["categoria"] == "Envase"
+    r2 = admin_client.post("/api/mee/crear-auto", json={"tipo": "ENV", "descripcion": "FRASCO PRUEBA", "volumen_ml": 30})
+    assert r2.status_code == 200 and r2.get_json()["ok"]
+    c1 = r2.get_json()["codigo"]
+    r3 = admin_client.post("/api/mee/crear-auto", json={"tipo": "ENV", "descripcion": "FRASCO PRUEBA 2"})
+    assert r3.get_json()["codigo"] != c1  # consecutivo, no repite
+    # tipo inválido y sin descripción → 400
+    assert admin_client.post("/api/mee/crear-auto", json={"tipo": "ZZ", "descripcion": "x"}).status_code == 400
+    assert admin_client.post("/api/mee/crear-auto", json={"tipo": "ENV", "descripcion": ""}).status_code == 400
+
+
 def test_envases_recatalogo_y_productos_envases(admin_client):
     r1 = admin_client.get("/admin/envases-recatalogo")
     assert r1.status_code == 200 and b"Re-cat" in r1.data

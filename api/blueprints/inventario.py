@@ -12120,6 +12120,123 @@ def mee_crear():
         return jsonify({'error': str(e)}), 400
     return jsonify({'ok': True, 'codigo': codigo, 'message': f'Material {codigo} creado exitosamente'})
 
+
+# ── Código MEE automático/consecutivo (como MP) · Sebastián 9-jul ──────────────
+# El usuario elige el TIPO; el sistema da el siguiente MEE-{PREF}-### (nadie tipea el número).
+_MEE_PREFIJOS = {'ENV': 'Envase', 'IMP': 'Impreso', 'GOT': 'Gotero', 'TAP': 'Tapa', 'ETQ': 'Etiqueta', 'PLG': 'Plegadiza'}
+
+
+def _siguiente_num_mee(c, pref):
+    """Máximo consecutivo existente para MEE-{PREF}-### + 1. PG-safe (extrae el número en Python,
+    nunca CAST(SUBSTR) · M45). Considera TODOS los estados (Inactivo incluido) para no reciclar códigos."""
+    import re as _re
+    pref = (pref or '').upper()
+    pat = _re.compile(r'^MEE-' + _re.escape(pref) + r'-0*(\d+)$', _re.I)
+    mx = 0
+    try:
+        for r in c.execute("SELECT codigo FROM maestro_mee WHERE UPPER(codigo) LIKE ?", ('MEE-' + pref + '-%',)).fetchall():
+            m = pat.match((r[0] or '').strip())
+            if m:
+                n = int(m.group(1))
+                if n > mx:
+                    mx = n
+    except Exception:
+        pass
+    return mx + 1
+
+
+@bp.route('/api/mee/siguiente-codigo', methods=['GET'])
+def mee_siguiente_codigo():
+    """Preview del próximo código consecutivo para un tipo (no crea nada)."""
+    _u, _err, _code = _require_planta_write()
+    if _err:
+        return _err, _code
+    pref = (request.args.get('tipo') or '').strip().upper()
+    if pref not in _MEE_PREFIJOS:
+        return jsonify({'error': 'tipo inválido'}), 400
+    conn = get_db(); c = conn.cursor()
+    n = _siguiente_num_mee(c, pref)
+    return jsonify({'ok': True, 'codigo': 'MEE-%s-%03d' % (pref, n), 'categoria': _MEE_PREFIJOS[pref]})
+
+
+@bp.route('/api/mee/crear-auto', methods=['POST'])
+def mee_crear_auto():
+    """Crea un material MEE con código AUTO-consecutivo MEE-{PREF}-### (el sistema asigna el número).
+    Atómico: reintenta con el siguiente número si hay colisión (multi-worker / PK). Sebastián 9-jul."""
+    _u, _err, _code = _require_planta_write()
+    if _err:
+        return _err, _code
+    d = request.json or {}
+    pref = (d.get('tipo') or '').strip().upper()
+    if pref not in _MEE_PREFIJOS:
+        return jsonify({'error': 'Elegí el tipo (Envase, Impreso, Gotero, Tapa, Etiqueta o Plegadiza)'}), 400
+    desc = (d.get('descripcion') or '').strip()
+    if not desc:
+        return jsonify({'error': 'Poné una descripción'}), 400
+    cat = _MEE_PREFIJOS[pref]
+    try:
+        volml = float(d.get('volumen_ml') or 0)
+    except Exception:
+        volml = 0.0
+    cliente = (d.get('cliente') or '').strip()
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+    _ts = (_dt.now(_tz.utc) - _td(hours=5)).strftime('%Y-%m-%d %H:%M:%S')
+    conn = get_db(); c = conn.cursor()
+    codigo = None
+    base = _siguiente_num_mee(c, pref)
+    for _i in range(30):
+        cand = 'MEE-%s-%03d' % (pref, base + _i)
+        if c.execute("SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=?", (cand,)).fetchone():
+            continue
+        try:
+            c.execute("INSERT INTO maestro_mee (codigo, descripcion, categoria, unidad, volumen_ml, "
+                      "stock_actual, stock_minimo, estado, calificado, cliente, fecha_creacion) "
+                      "VALUES (?,?,?,?,?,0,0,'Activo',0,?,?)",
+                      (cand, desc, cat, 'und', volml, cliente, _ts))
+            codigo = cand
+            break
+        except Exception:
+            conn.rollback()  # PK/colisión → en PG la tx queda abortada → rollback y probar el siguiente número
+            continue
+    if not codigo:
+        return jsonify({'error': 'No se pudo generar un código libre, reintentá'}), 500
+    # partes (componentes) opcionales · igual que mee_crear
+    _partes = d.get('partes') or []
+    if isinstance(_partes, list):
+        for _p in _partes:
+            _pcod = str((_p or {}).get('codigo') or '').strip().upper()
+            if not _pcod:
+                continue
+            try:
+                _pcant = float((_p or {}).get('cantidad') or 1)
+            except (ValueError, TypeError):
+                _pcant = 1
+            try:
+                c.execute("INSERT INTO mee_partes (mee_codigo, parte_codigo, descripcion, cantidad, creado_at) "
+                          "VALUES (?,?,?,?,?)", (codigo, _pcod, '', _pcant, _ts))
+            except Exception:
+                pass
+    try:
+        from audit_helpers import audit_log as _al
+        _al(c, usuario=_u, accion='CREAR_MEE_AUTO', tabla='maestro_mee', registro_id=codigo,
+            despues={'codigo': codigo, 'descripcion': desc[:80], 'categoria': cat, 'volumen_ml': volml},
+            detalle=f'Material MEE {codigo} creado (código auto)')
+    except Exception:
+        pass
+    # alerta a Calidad · material nuevo por calificar
+    try:
+        from blueprints.notif import push_notif_multi
+        from config import CALIDAD_USERS, ASEGURAMIENTO_USERS
+        _qc = sorted((set(CALIDAD_USERS) | set(ASEGURAMIENTO_USERS)) - {'sebastian'})
+        push_notif_multi(_qc, 'mee_por_calificar', f'Material nuevo por calificar: {desc or codigo}',
+                         body=f'{codigo} · revisar capacidad, material, medidas y documentos',
+                         link='/inventarios', importante=True)
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'codigo': codigo, 'categoria': cat, 'message': f'Creado {codigo}'})
+
+
 @bp.route('/api/mee/partes', methods=['GET'])
 def mee_partes_de_empaque():
     """Partes (componentes) de un empaque · para la recepción múltiple (Sebastián 28-jun)."""
