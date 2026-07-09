@@ -12450,6 +12450,52 @@ def mee_partes_de_empaque():
         pass
     return jsonify({'partes': out})
 
+
+@bp.route('/api/mee/<codigo>/partes', methods=['POST'])
+def mee_set_partes(codigo):
+    """Reemplaza las PARTES (kit) de un envase: los componentes que van JUNTOS (gotero/tapa/etiqueta/
+    plegadiza). Sebastián 9-jul · 'kit por envase principal'. Producción los tracciona para prepararlos."""
+    _u, _err, _code = _require_planta_write()
+    if _err:
+        return _err, _code
+    codigo = (codigo or '').strip()
+    if not codigo:
+        return jsonify({'error': 'codigo requerido'}), 400
+    d = request.json or {}
+    partes = d.get('partes') or []
+    if not isinstance(partes, list):
+        return jsonify({'error': 'partes debe ser una lista'}), 400
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+    _ts = (_dt.now(_tz.utc) - _td(hours=5)).strftime('%Y-%m-%d %H:%M:%S')
+    conn = get_db(); c = conn.cursor()
+    if not c.execute("SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))", (codigo,)).fetchone():
+        return jsonify({'error': 'envase no encontrado'}), 404
+    # reemplazo total: borrar las partes actuales y reinsertar la lista nueva (dedup, sin auto-parte, cant>0)
+    c.execute("DELETE FROM mee_partes WHERE UPPER(TRIM(mee_codigo))=UPPER(TRIM(?))", (codigo,))
+    _n = 0; _vistos = set()
+    for p in partes:
+        _pc = str((p or {}).get('codigo') or '').strip().upper()
+        if not _pc or _pc == codigo.strip().upper() or _pc in _vistos:
+            continue
+        _vistos.add(_pc)
+        try:
+            _cant = float((p or {}).get('cantidad') or 1)
+        except (ValueError, TypeError):
+            _cant = 1
+        if _cant <= 0:
+            _cant = 1
+        c.execute("INSERT INTO mee_partes (mee_codigo, parte_codigo, descripcion, cantidad, creado_at) "
+                  "VALUES (?,?,?,?,?)", (codigo, _pc, '', _cant, _ts))
+        _n += 1
+    try:
+        audit_log(c, usuario=_u, accion='SET_MEE_PARTES', tabla='mee_partes', registro_id=codigo,
+                  despues={'codigo': codigo, 'n_partes': _n, 'partes': sorted(_vistos)})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'codigo': codigo, 'n_partes': _n})
+
+
 @bp.route('/api/mee/stock', methods=['GET'])
 def mee_stock_list():
     """Lista maestro_mee con stock, alertas y metricas de movimiento."""

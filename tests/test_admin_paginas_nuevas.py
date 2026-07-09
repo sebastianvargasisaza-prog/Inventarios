@@ -111,6 +111,19 @@ def test_envases_recatalogo_preview(admin_client):
     assert "MEE-ENV-001" in body
 
 
+def test_mee_kit_partes(admin_client):
+    """Kit de partes por envase: set/get + dedup + no auto-parte (Sebastián 9-jul)."""
+    env = admin_client.post("/api/mee/crear-auto", json={"tipo": "ENV", "descripcion": "FRASCO KIT X"}).get_json()["codigo"]
+    got = admin_client.post("/api/mee/crear-auto", json={"tipo": "GOT", "descripcion": "GOTERO KIT X"}).get_json()["codigo"]
+    r = admin_client.post(f"/api/mee/{env}/partes", json={"partes": [{"codigo": got, "cantidad": 1}, {"codigo": got, "cantidad": 9}, {"codigo": env, "cantidad": 1}]})
+    assert r.status_code == 200 and r.get_json()["n_partes"] == 1  # dedup + sin auto-parte
+    g = admin_client.get(f"/api/mee/partes?codigo={env}").get_json()["partes"]
+    assert len(g) == 1 and g[0]["codigo"] == got
+    # el modal del kit se sirve en la pantalla de Planta (la función meeKit va en el JS extraído /planta-app.js)
+    pg = admin_client.get("/inventarios").get_data(as_text=True)
+    assert 'id="mee-kit-modal"' in pg
+
+
 def test_envases_10ml_sueros(admin_client):
     """Herramienta crear envase 10ml (Niacinamida/Hialurónico/TRX) + mapeo, idempotente (Sebastián 9-jul)."""
     r = admin_client.get("/admin/envases-10ml-sueros")

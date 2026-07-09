@@ -19336,6 +19336,15 @@ async function _cargarComposicionMee(loteId, _try){
       }
       h += '</div>';
       h += '</div>';
+      // Kit de partes del envase (gotero/tapa/etiqueta/plegadiza) que van JUNTOS · Sebastián 9-jul
+      if(v.partes && v.partes.length){
+        h += '<div style="padding:2px 10px 7px 108px;font-size:11px;color:#9333ea;display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
+        h += '<span style="font-weight:700">🧩 Kit:</span>';
+        for(const pt of v.partes){
+          h += '<span title="' + escapeHtml(pt.descripcion || '') + '" style="background:#fdf4ff;border:1px solid #f0abfc;border-radius:6px;padding:1px 7px;font-family:monospace">' + escapeHtml(pt.codigo) + ' ×' + (pt.unidades_estimadas || 0).toLocaleString('es-CO') + '</span>';
+        }
+        h += '</div>';
+      }
     }
     h += '</div>';
     // Total

@@ -8791,6 +8791,29 @@ def _composicion_envases_lote(c, evento_id):
         except Exception:
             pass
 
+    # KIT de partes por envase (mee_partes · Sebastián 9-jul): cada frasco arrastra sus componentes
+    # (gotero/tapa/etiqueta/plegadiza) que van JUNTOS → producción los tracciona para prepararlos.
+    # Memoizado por request (evita N+1 cuando el helper corre por cada lote del horizonte).
+    _kit_map = {}
+    try:
+        from flask import g as _g_kit
+        _kit_cache = getattr(_g_kit, '_mee_kit_cache', None)
+        if _kit_cache is None:
+            _kit_cache = {}
+            try:
+                for r in c.execute("SELECT UPPER(TRIM(mee_codigo)), parte_codigo, COALESCE(cantidad,1) "
+                                   "FROM mee_partes WHERE COALESCE(parte_codigo,'')<>''").fetchall():
+                    _kit_cache.setdefault(r[0], []).append((r[1], float(r[2] or 1)))
+            except Exception:
+                _kit_cache = {}
+            try:
+                _g_kit._mee_kit_cache = _kit_cache
+            except Exception:
+                pass
+        _kit_map = _kit_cache
+    except Exception:
+        _kit_map = {}
+
     # Sebastián 30-may-2026 · presentaciones con CANTIDAD FIJA (mig 204):
     # se reservan PRIMERO sus uds (y su kg); el bulk RESTANTE se reparte por
     # ratio entre las NO-fijas. Caso TRX: 10ml fijo 1200 uds, resto al 30ml.
@@ -8826,6 +8849,16 @@ def _composicion_envases_lote(c, evento_id):
                 r_rel = (1.0 / n_no_fija) if n_no_fija else 0.0
             kg_p = kg_restante * r_rel
             un_p = int(round((kg_p * 1000.0) / p['volumen_ml'])) if p['volumen_ml'] > 0 else 0
+        # Kit: partes del frasco de esta presentación × unidades a envasar (Sebastián 9-jul).
+        _env_up = (p['envase_codigo'] or '').strip().upper()
+        _partes_kit = []
+        for _pcod, _pcant in _kit_map.get(_env_up, []):
+            _partes_kit.append({
+                'codigo': _pcod,
+                'descripcion': mee_descs.get(_pcod, _pcod),
+                'cantidad_por_unidad': _pcant,
+                'unidades_estimadas': int(round(_pcant * un_p)),
+            })
         variantes_out.append({
             'presentacion_codigo': p['codigo'],
             'etiqueta': p['etiqueta'],
@@ -8840,6 +8873,7 @@ def _composicion_envases_lote(c, evento_id):
             'fija_es_override': bool(p.get('_fija_es_override')),
             'es_fija': p['_es_fija'],
             'unidades_estimadas': un_p,
+            'partes': _partes_kit,
         })
 
     return {
@@ -14154,6 +14188,15 @@ def abastecimiento_consumo_horizontes():
                     'env': (r[1] or '').strip().upper(), 'vmr': float(r[2] or 0),
                     'tapa': (r[3] or '').strip().upper(), 'caja': (r[4] or '').strip().upper(),
                     'vol': float(r[5] or 0)})
+            # KIT de partes por envase (mee_partes · Sebastián 9-jul): el frasco arrastra sus componentes
+            # (gotero/etiqueta/plegadiza...) que van JUNTOS → abastecimiento los pide también (no solo el frasco).
+            _kit_map_ab = {}
+            try:
+                for r in c.execute("SELECT UPPER(TRIM(mee_codigo)), parte_codigo, COALESCE(cantidad,1) "
+                                   "FROM mee_partes WHERE COALESCE(parte_codigo,'')<>''").fetchall():
+                    _kit_map_ab.setdefault(r[0], []).append(((r[1] or '').strip().upper(), float(r[2] or 1)))
+            except Exception:
+                _kit_map_ab = {}
             for _k, _lst in _pres_envases.items():
                 # peso por presentación: ventas Shopify de ESE volumen (= desglose por referencia) ·
                 # fallback ventas_mes_referencia · fallback uniforme. share×total_units = uds de la presentación.
@@ -14167,13 +14210,17 @@ def abastecimiento_consumo_horizontes():
                 _items = []
                 for x in _lst:
                     _share = (x['_w'] / _tot_w) if _tot_w > 0 else (1.0 / len(_lst))
-                    # frasco + (tapa) + (caja) · cada uno consume `share` unidades por unidad de PT
-                    # → suma de shares=1 · NO doble-cuenta (cada componente es 1 por unidad envasada).
-                    _items.append({'codigo': x['env'], 'cant_x_uds': _share, 'tipo': 'envase'})
-                    if x['tapa']:
-                        _items.append({'codigo': x['tapa'], 'cant_x_uds': _share, 'tipo': 'tapa'})
-                    if x['caja']:
-                        _items.append({'codigo': x['caja'], 'cant_x_uds': _share, 'tipo': 'caja'})
+                    # frasco + (tapa) + (caja) + KIT · cada uno consume `share×cant` unidades por unidad de PT.
+                    # Dedup POR PRESENTACIÓN (_x_seen) → no doble-cuenta si la tapa está en presentaciones Y en el kit.
+                    _x_seen = set()
+                    _items.append({'codigo': x['env'], 'cant_x_uds': _share, 'tipo': 'envase'}); _x_seen.add(x['env'])
+                    if x['tapa'] and x['tapa'] not in _x_seen:
+                        _items.append({'codigo': x['tapa'], 'cant_x_uds': _share, 'tipo': 'tapa'}); _x_seen.add(x['tapa'])
+                    if x['caja'] and x['caja'] not in _x_seen:
+                        _items.append({'codigo': x['caja'], 'cant_x_uds': _share, 'tipo': 'caja'}); _x_seen.add(x['caja'])
+                    for _pc, _pq in _kit_map_ab.get(x['env'], []):
+                        if _pc and _pc not in _x_seen:
+                            _items.append({'codigo': _pc, 'cant_x_uds': _share * _pq, 'tipo': 'parte'}); _x_seen.add(_pc)
                 mee_por_producto[_k] = _items
         except sqlite3.OperationalError:
             pass

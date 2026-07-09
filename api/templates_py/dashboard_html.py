@@ -1982,6 +1982,30 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           </div>
         </div>
       </div>
+      <!-- Modal KIT de partes del envase · FUERA de los sub-paneles -->
+      <div id="mee-kit-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:10000;align-items:center;justify-content:center;padding:24px;">
+        <div style="background:#fff;border-radius:16px;max-width:560px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden;max-height:92vh;overflow-y:auto">
+          <div style="background:linear-gradient(135deg,#db2777,#f472b6);padding:18px 22px;color:#fff;">
+            <div style="font-size:11px;opacity:.85;font-weight:600;letter-spacing:.6px">&#129513; KIT DE PARTES</div>
+            <div style="font-size:18px;font-weight:800" id="mee-kit-cod">&mdash;</div>
+            <div style="font-size:13px;opacity:.92" id="mee-kit-desc"></div>
+          </div>
+          <div style="padding:20px 22px;">
+            <div style="font-size:12.5px;color:#64748b;margin-bottom:12px">Las partes que van <b>junto</b> a este envase (gotero, tapa, etiqueta, plegadiza&hellip;). Al programar producci&oacute;n, el sistema pide preparar el <b>kit completo</b> (envase + estas partes &times; unidades).</div>
+            <div id="mee-kit-list" style="margin-bottom:12px"></div>
+            <div style="display:flex;gap:6px;align-items:center;border-top:1px solid #e2e8f0;padding-top:12px">
+              <select id="mee-kit-sel" class="cx-input" style="flex:1;min-width:0;font-size:12px"></select>
+              <input id="mee-kit-cant" type="number" min="1" step="1" value="1" style="width:64px" title="cantidad por unidad de envase">
+              <button type="button" onclick="meeKitAddParte()" style="background:#db2777;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer">&#43;</button>
+            </div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:6px">La parte debe existir como material MEE. Si no existe, cre&aacute;la primero con &laquo;Material nuevo&raquo;.</div>
+            <div style="display:flex;gap:10px;margin-top:16px">
+              <button type="button" onclick="meeKitClose()" style="flex:1;background:#e2e8f0;color:#334155;border:none;border-radius:10px;padding:11px;font-weight:700;cursor:pointer">Cancelar</button>
+              <button type="button" onclick="meeKitGuardar()" style="flex:2;background:#db2777;color:#fff;border:none;border-radius:10px;padding:11px;font-weight:700;cursor:pointer">&#10003; Guardar kit</button>
+            </div>
+          </div>
+        </div>
+      </div>
       <div id="meepane-inventario" style="display:none">
         <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
           <select id="mee-cat-filter-bodega" style="flex:1;min-width:180px;width:auto;" onchange="cargarMeeStock()"><option value="">Todas las categorias</option></select>
@@ -9568,6 +9592,7 @@ async function cargarMeeStock(){
       h+='<td style="white-space:nowrap">';
       h+='<button onclick="meeAjustar(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Ajustar stock, mínimo, proveedor, ubicación + rótulo" style="padding:5px 10px;border:none;background:#7c3aed;color:#fff;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;margin-right:3px">&#9878; Ajustar</button>';
       h+='<button onclick="meeRotulo(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Imprimir rótulo del envase" style="padding:5px 9px;border:none;background:#0891b2;color:#fff;border-radius:6px;cursor:pointer;font-size:11px;margin-right:3px">&#128424;&#65039; R&oacute;tulo</button>';
+      h+='<button onclick="meeKit(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Kit: partes que van juntas (gotero/tapa/etiqueta/plegadiza)" style="padding:5px 9px;border:none;background:#db2777;color:#fff;border-radius:6px;cursor:pointer;font-size:11px;margin-right:3px">&#129513; Kit</button>';
       h+='<button onclick="meeHistorico(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Histórico de movimientos" style="padding:5px 9px;border:none;background:#15803d;color:#fff;border-radius:6px;cursor:pointer;font-size:11px;margin-right:3px">&#128202; Hist</button>';
       h+='<button onclick="meeArchivar(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Archivar (eliminar)" style="padding:4px 7px;border:none;background:#dc2626;color:#fff;border-radius:4px;cursor:pointer;font-size:11px">&#128465; Borrar</button>';
       h+='</td>';
@@ -9608,6 +9633,55 @@ function meeAjustarRotulo(){
 function meeRotulo(codigo){
   var dd=(window._MEE_DATA||{})[codigo]||{}; var cant=parseFloat(dd.stock)||0;
   window.open('/rotulo-recepcion-mee/'+encodeURIComponent(codigo)+'/'+(cant>0?cant:1),'_blank');
+}
+// ─── Kit de partes por envase (Sebastián 9-jul) ───────────────────────────────
+var _kitPartes=[];
+function meeKit(codigo){
+  var m=document.getElementById('mee-kit-modal'); if(!m){ alert('No se pudo abrir'); return; }
+  var dd=(window._MEE_DATA||{})[codigo]||{};
+  m.dataset.cod=codigo;
+  document.getElementById('mee-kit-cod').textContent=codigo;
+  document.getElementById('mee-kit-desc').textContent=dd.desc||'';
+  _kitPartes=[]; _kitRender();
+  _kitFillDropdown(codigo);
+  m.style.display='flex';
+  fetch('/api/mee/partes?codigo='+encodeURIComponent(codigo),{credentials:'same-origin'}).then(function(r){return r.json();}).then(function(d){
+    _kitPartes=((d&&d.partes)||[]).map(function(p){return {codigo:p.codigo, cantidad:(p.cantidad_por_unidad||1), desc:(p.descripcion||'')};});
+    _kitRender();
+  }).catch(function(){ _kitRender(); });
+}
+function meeKitClose(){ var m=document.getElementById('mee-kit-modal'); if(m) m.style.display='none'; }
+function _kitFillDropdown(self){
+  var sel=document.getElementById('mee-kit-sel'); if(!sel) return;
+  var data=window._MEE_DATA||{}; var su=(self||'').toUpperCase(); var byCat={};
+  Object.keys(data).forEach(function(cod){ if(cod.toUpperCase()===su) return; var dd=data[cod]||{}; var cat=((dd.cat||'').trim())||'Otro'; (byCat[cat]=byCat[cat]||[]).push(cod); });
+  var h='<option value="">-- elegí la parte por tipo --</option>';
+  Object.keys(byCat).sort().forEach(function(cat){ h+='<optgroup label="'+_meeEscOpt(cat)+'">'; byCat[cat].sort().forEach(function(cod){ var dd=data[cod]||{}; h+='<option value="'+_meeEscOpt(cod)+'">'+_meeEscOpt(cod)+' — '+_meeEscOpt(dd.desc||'')+'</option>'; }); h+='</optgroup>'; });
+  sel.innerHTML=h;
+}
+function _kitRender(){
+  var box=document.getElementById('mee-kit-list'); if(!box) return;
+  if(!_kitPartes.length){ box.innerHTML='<div style="color:#94a3b8;font-size:13px;padding:8px 0">&mdash; sin partes &middot; este envase va solo &mdash;</div>'; return; }
+  box.innerHTML=_kitPartes.map(function(p,i){ return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f1f5f9"><b style="font-family:monospace;font-size:12px;color:#1e293b">'+_meeEscOpt(p.codigo)+'</b> <span style="flex:1;font-size:12px;color:#475569">'+_meeEscOpt(p.desc||'')+'</span> <span style="font-size:12px;color:#64748b">&times;'+p.cantidad+'</span> <a onclick="meeKitDelParte('+i+')" style="color:#dc2626;cursor:pointer;font-weight:800;font-size:15px" title="Quitar">&times;</a></div>'; }).join('');
+}
+function meeKitAddParte(){
+  var sel=document.getElementById('mee-kit-sel'); var cant=document.getElementById('mee-kit-cant');
+  if(!sel||!sel.value) return;
+  if(_kitPartes.some(function(p){return p.codigo===sel.value;})){ sel.value=''; return; }
+  var c=parseFloat(cant?cant.value:1)||1; if(c<=0)c=1;
+  var dd=(window._MEE_DATA||{})[sel.value]||{};
+  _kitPartes.push({codigo:sel.value, cantidad:c, desc:(dd.desc||'')});
+  sel.value=''; if(cant)cant.value='1'; _kitRender();
+}
+function meeKitDelParte(i){ _kitPartes.splice(i,1); _kitRender(); }
+async function meeKitGuardar(){
+  var m=document.getElementById('mee-kit-modal'); var cod=(m&&m.dataset.cod)||''; if(!cod) return;
+  try{
+    var r=await fetch('/api/mee/'+encodeURIComponent(cod)+'/partes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({partes:_kitPartes.map(function(p){return {codigo:p.codigo, cantidad:p.cantidad};})})});
+    var d=await r.json();
+    if(r.ok&&d.ok){ meeKitClose(); _toast('Kit guardado · '+d.n_partes+' parte(s)',1); }
+    else { alert('Error: '+((d&&d.error)||r.status)); }
+  }catch(e){ alert('Error de red'); }
 }
 // Catálogo de ubicaciones (dropdowns · Sebastián 9-jul) · zona/estante/posición desde el server + "Agregar"
 async function _meeCargarUbic(){
