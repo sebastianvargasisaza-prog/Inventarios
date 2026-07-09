@@ -10646,10 +10646,25 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
     hoy = date.today().strftime('%d-%b-%Y').upper(); lote=urllib.parse.unquote(lote)
     conn = get_db(); c = conn.cursor()
     c.execute("SELECT nombre_inci,nombre_comercial,tipo,proveedor FROM maestro_mps WHERE codigo_mp=?", (codigo,)); mp=c.fetchone()
-    c.execute("SELECT fecha_vencimiento,estanteria,posicion,proveedor FROM movimientos WHERE material_id=? AND lote=? ORDER BY fecha DESC LIMIT 1", (codigo,lote)); mov=c.fetchone()
+    # FIX 9-jul · el vencimiento/ubicación viven en la ENTRADA del lote; tomar el ÚLTIMO movimiento
+    # (LIMIT 1) fallaba si después hubo una Salida (sin venc/ubic) → salía "—". Agregar sobre TODOS
+    # los movimientos del lote: venc/proveedor de la Entrada; estantería/posición cualquier no-vacía.
+    c.execute("""SELECT
+            MAX(CASE WHEN LOWER(COALESCE(tipo,''))='entrada' THEN NULLIF(TRIM(CAST(COALESCE(fecha_vencimiento,'') AS TEXT)),'') END),
+            MAX(NULLIF(TRIM(CAST(COALESCE(estanteria,'') AS TEXT)),'')),
+            MAX(NULLIF(TRIM(CAST(COALESCE(posicion,'') AS TEXT)),'')),
+            MAX(NULLIF(TRIM(CAST(COALESCE(proveedor,'') AS TEXT)),''))
+        FROM movimientos WHERE material_id=? AND UPPER(TRIM(lote))=UPPER(TRIM(?))""", (codigo, lote)); mov=c.fetchone()
+    # fallback: si no encontró venc por la Entrada, tomar cualquier venc no-vacío del lote
+    if not (mov and mov[0]):
+        c.execute("SELECT MAX(NULLIF(TRIM(CAST(COALESCE(fecha_vencimiento,'') AS TEXT)),'')) FROM movimientos WHERE material_id=? AND UPPER(TRIM(lote))=UPPER(TRIM(?))", (codigo, lote))
+        _fvx = c.fetchone()
+    else:
+        _fvx = None
     ni=mp[0] if mp else ''; nc=mp[1] if mp else codigo; tp=mp[2] if mp else ''
     pv=(mp[3] if mp and mp[3] else '') or (mov[3] if mov and len(mov)>3 and mov[3] else '')
-    fv=str(mov[0])[:10] if mov and mov[0] else ''; ub=((mov[1] or '')+(mov[2] or '')) if mov else ''
+    fv=str(mov[0])[:10] if (mov and mov[0]) else (str(_fvx[0])[:10] if (_fvx and _fvx[0]) else '')
+    ub=((mov[1] or '')+(mov[2] or '')) if mov else ''
     nr="REC-"+date.today().strftime('%Y%m%d')+"-"+codigo[-3:]; bv=codigo+'|'+lote
     import html as _hh
     def _e(x): return _hh.escape(str(x if x is not None else ''))
