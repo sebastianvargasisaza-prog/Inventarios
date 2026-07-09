@@ -1969,9 +1969,9 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
             <div class="form-group" style="margin:12px 0 0"><label>Proveedor</label><input type="text" id="mee-adj-prov" placeholder="Proveedor del envase"></div>
             <div style="font-size:12px;font-weight:700;color:#7c3aed;margin:16px 0 6px">&#128205; UBICACI&Oacute;N</div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
-              <div class="form-group" style="margin:0"><label>Zona</label><input type="text" id="mee-adj-zona" placeholder="Z1"></div>
-              <div class="form-group" style="margin:0"><label>Estante</label><input type="text" id="mee-adj-estante" placeholder="A3"></div>
-              <div class="form-group" style="margin:0"><label>Posici&oacute;n</label><input type="text" id="mee-adj-pos" placeholder="2"></div>
+              <div class="form-group" style="margin:0"><label>Zona</label><select id="mee-adj-zona" onchange="meeUbicChange(this,'zona')"></select></div>
+              <div class="form-group" style="margin:0"><label>Estante</label><select id="mee-adj-estante" onchange="meeUbicChange(this,'estante')"></select></div>
+              <div class="form-group" style="margin:0"><label>Posici&oacute;n</label><select id="mee-adj-pos" onchange="meeUbicChange(this,'posicion')"></select></div>
             </div>
             <div id="mee-adj-msg" style="font-size:13px;margin-top:12px;min-height:16px"></div>
             <div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap">
@@ -9580,7 +9580,7 @@ async function cargarMeeStock(){
 // ─── Acciones MEE (paridad con MP) ──────────────────────────────
 // Ajustar premium (modal): stock + ubicación (zona/estante/posición) + mínimo · Sebastián 9-jul
 function _adjMsg(t,c){ var e=document.getElementById('mee-adj-msg'); if(e){e.textContent=t; e.style.color=c||'#334155';} }
-function meeAjustar(codigo){
+async function meeAjustar(codigo){
   var dd=(window._MEE_DATA||{})[codigo]||{};
   var m=document.getElementById('mee-adj-modal'); if(!m){ alert('No se pudo abrir'); return; }
   var st=(dd.stock!=null?dd.stock:0);
@@ -9589,19 +9589,50 @@ function meeAjustar(codigo){
   document.getElementById('mee-adj-stockact').textContent=st+' '+(dd.unidad||'und');
   document.getElementById('mee-adj-cant').value=st;
   document.getElementById('mee-adj-min').value=(dd.min||0);
-  document.getElementById('mee-adj-zona').value=dd.zona||'';
-  document.getElementById('mee-adj-estante').value=dd.estante||'';
-  document.getElementById('mee-adj-pos').value=dd.pos||'';
   var _pv=document.getElementById('mee-adj-prov'); if(_pv) _pv.value=dd.prov||'';
   document.getElementById('mee-adj-motivo').value='';
   _adjMsg('');
   m.dataset.cod=codigo; m.style.display='flex';
+  await _meeCargarUbic();
+  _meeFillUbic('mee-adj-zona','zona',dd.zona||'');
+  _meeFillUbic('mee-adj-estante','estante',dd.estante||'');
+  _meeFillUbic('mee-adj-pos','posicion',dd.pos||'');
 }
 function meeAjustarClose(){ var m=document.getElementById('mee-adj-modal'); if(m) m.style.display='none'; }
 function meeAjustarRotulo(){
   var m=document.getElementById('mee-adj-modal'); var cod=(m&&m.dataset.cod)||''; if(!cod) return;
   var cant=parseFloat(document.getElementById('mee-adj-cant').value)||0;
   window.open('/rotulo-recepcion-mee/'+encodeURIComponent(cod)+'/'+(cant>0?cant:1),'_blank');
+}
+// Catálogo de ubicaciones (dropdowns · Sebastián 9-jul) · zona/estante/posición desde el server + "Agregar"
+async function _meeCargarUbic(){
+  if(window._MEE_UBIC) return window._MEE_UBIC;
+  try{
+    var r=await fetch('/api/mee/ubicaciones',{credentials:'same-origin'}); var d=await r.json();
+    if(r.ok&&d.ok){ window._MEE_UBIC={zona:d.zona||[],estante:d.estante||[],posicion:d.posicion||[]}; }
+    else { window._MEE_UBIC={zona:[],estante:[],posicion:[]}; }
+  }catch(e){ window._MEE_UBIC={zona:[],estante:[],posicion:[]}; }
+  return window._MEE_UBIC;
+}
+function _meeFillUbic(selId, tipo, current){
+  var sel=document.getElementById(selId); if(!sel) return;
+  var lst=(((window._MEE_UBIC||{})[tipo])||[]).slice();
+  if(current && lst.indexOf(current)<0) lst.unshift(current);
+  var h='<option value="">&mdash; sin asignar &mdash;</option>';
+  lst.forEach(function(v){ h+='<option value="'+_escHTML(v)+'"'+(v===current?' selected':'')+'>'+_escHTML(v)+'</option>'; });
+  h+='<option value="__add__">&#10133; Agregar&hellip;</option>';
+  sel.innerHTML=h;
+}
+async function meeUbicChange(sel, tipo){
+  if(sel.value!=='__add__') return;
+  var v=prompt('Nueva '+(tipo==='posicion'?'posición':tipo)+':'); v=(v||'').trim();
+  if(!v){ sel.value=''; return; }
+  try{
+    var r=await fetch('/api/mee/ubicaciones/agregar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tipo:tipo,valor:v})});
+    var d=await r.json();
+    if(r.ok&&d.ok){ window._MEE_UBIC=window._MEE_UBIC||{}; window._MEE_UBIC[tipo]=d[tipo]||((window._MEE_UBIC[tipo]||[]).concat([v])); _meeFillUbic(sel.id, tipo, v); }
+    else { alert('Error: '+(d.error||'')); sel.value=''; }
+  }catch(e){ alert('Error de red'); sel.value=''; }
 }
 async function meeAjustarGuardar(){
   var m=document.getElementById('mee-adj-modal'); var codigo=m.dataset.cod||'';

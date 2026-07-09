@@ -13265,6 +13265,69 @@ def mee_set_stock_minimo(codigo):
     return jsonify({'ok': True, 'codigo': codigo, 'stock_minimo': nuevo})
 
 
+# ── Catálogo de ubicaciones MEE (dropdowns · evita valores tipeados mal) · Sebastián 9-jul ──
+_UBIC_DEFAULTS = {
+    'zona':     ['Z' + str(i) for i in range(1, 21)],
+    'estante':  ['A' + str(i) for i in range(1, 21)],
+    'posicion': [str(i) for i in range(1, 21)],
+}
+
+
+def _get_mee_ubicaciones(c):
+    """Devuelve {zona:[...], estante:[...], posicion:[...]} desde app_settings, con defaults 1-20."""
+    import json as _json
+    try:
+        r = c.execute("SELECT valor FROM app_settings WHERE clave='mee_ubicaciones'").fetchone()
+        if r and r[0]:
+            d = _json.loads(r[0])
+            if isinstance(d, dict):
+                return {k: (list(d.get(k)) if isinstance(d.get(k), list) and d.get(k) else list(_UBIC_DEFAULTS[k])) for k in _UBIC_DEFAULTS}
+    except Exception:
+        pass
+    return {k: list(v) for k, v in _UBIC_DEFAULTS.items()}
+
+
+@bp.route('/api/mee/ubicaciones', methods=['GET'])
+def mee_ubicaciones_get():
+    """Catálogo de zonas/estantes/posiciones para los dropdowns del Ajustar."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db()
+    ub = _get_mee_ubicaciones(conn.cursor())
+    return jsonify({'ok': True, **ub})
+
+
+@bp.route('/api/mee/ubicaciones/agregar', methods=['POST'])
+def mee_ubicaciones_add():
+    """Agrega un valor nuevo al catálogo (persistente para todos)."""
+    _u, _err, _code = _require_planta_write()
+    if _err:
+        return _err, _code
+    import json as _json
+    d = request.json or {}
+    tipo = (d.get('tipo') or '').strip().lower()
+    valor = (d.get('valor') or '').strip()
+    if tipo not in _UBIC_DEFAULTS:
+        return jsonify({'error': 'tipo inválido (zona/estante/posicion)'}), 400
+    if not valor:
+        return jsonify({'error': 'valor requerido'}), 400
+    if len(valor) > 40:
+        return jsonify({'error': 'valor muy largo'}), 400
+    conn = get_db(); c = conn.cursor()
+    ub = _get_mee_ubicaciones(c)
+    lst = ub.get(tipo, [])
+    if valor not in lst:
+        lst.append(valor); ub[tipo] = lst
+        c.execute(
+            "INSERT INTO app_settings (clave,valor,descripcion,actualizado_at_utc,actualizado_por) "
+            "VALUES ('mee_ubicaciones',?,?,datetime('now'),?) "
+            "ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor, "
+            "actualizado_at_utc=excluded.actualizado_at_utc, actualizado_por=excluded.actualizado_por",
+            (_json.dumps(ub, ensure_ascii=False), 'Catálogo de ubicaciones de envases (MEE)', _u))
+        conn.commit()
+    return jsonify({'ok': True, 'tipo': tipo, 'valor': valor, tipo: ub.get(tipo)})
+
+
 @bp.route('/api/mee/<codigo>/ajustar', methods=['POST'])
 def mee_ajustar_stock(codigo):
     """Ajusta stock manual con motivo (auditado en movimientos_mee)."""
