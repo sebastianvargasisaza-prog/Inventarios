@@ -11117,6 +11117,104 @@ def liberar_cuarentena_inventario():
     return jsonify({'ok': True, 'liberados': len(liberados), 'detalle': liberados})
 
 
+@bp.route('/api/admin/cuarentena-lista', methods=['GET'])
+def cuarentena_lista_admin():
+    """Lista los lotes en CUARENTENA (para la liberación en bloque admin). Sebastián 9-jul."""
+    _u, _err, _code = _require_admin()
+    if _err:
+        return _err, _code
+    conn = get_db(); c = conn.cursor()
+    out = []
+    try:
+        for mat, nom, lote, neto in c.execute(
+            """SELECT m.material_id AS cod,
+                      COALESCE(NULLIF(TRIM(MAX(mp.nombre_inci)),''),NULLIF(TRIM(MAX(mp.nombre_comercial)),''),m.material_id) AS nom,
+                      COALESCE(m.lote,'') AS lote,
+                      SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad
+                          WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END) AS neto
+               FROM movimientos m LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
+               WHERE UPPER(COALESCE(m.estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')
+               GROUP BY m.material_id, m.lote HAVING neto > 0.01
+               ORDER BY nom ASC""").fetchall():
+            out.append({'cod': mat, 'nombre': nom, 'lote': lote, 'neto_g': round(float(neto or 0), 2)})
+    except Exception:
+        pass
+    return jsonify({'ok': True, 'lotes': out, 'total_g': round(sum(x['neto_g'] for x in out), 2)})
+
+
+@bp.route('/api/admin/liberar-cuarentena-bloque', methods=['POST'])
+def liberar_cuarentena_bloque():
+    """Libera TODOS los lotes en cuarentena a VIGENTE de una vez · ADMIN · auditado ·
+    sin firma por lote (override deliberado del admin · a diferencia de la liberación
+    formal de Calidad con e-sign). Sebastián 9-jul (depuración retroactiva)."""
+    _u, _err, _code = _require_admin()
+    if _err:
+        return _err, _code
+    conn = get_db(); c = conn.cursor()
+    filas = c.execute("SELECT id, material_id, COALESCE(lote,'') FROM movimientos "
+                      "WHERE UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')").fetchall()
+    n = 0
+    for fid, fmat, flote in filas:
+        c.execute("UPDATE movimientos SET estado_lote='VIGENTE' WHERE id=? "
+                  "AND UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')", (fid,))
+        if c.rowcount != 1:
+            continue
+        try:
+            audit_log(c, usuario=_u, accion='LIBERAR_CUARENTENA_BLOQUE', tabla='movimientos', registro_id=str(fid),
+                      despues={'material': fmat, 'lote': flote, 'estado': 'VIGENTE'})
+        except Exception:
+            pass
+        n += 1
+    conn.commit()
+    return jsonify({'ok': True, 'liberados': n})
+
+
+@bp.route('/admin/liberar-cuarentena', methods=['GET'])
+def liberar_cuarentena_page():
+    """Liberar toda la cuarentena en bloque (admin · 1 confirmación · sin firma por lote)."""
+    if session.get('compras_user', '') not in ADMIN_USERS:
+        return redirect('/login?next=/admin/liberar-cuarentena')
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Liberar cuarentena</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:22px}.card{max-width:900px;margin:0 auto}table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}th,td{text-align:left;padding:6px 9px;border-bottom:1px solid #eee}th{color:#6d28d9;font-size:11px;text-transform:uppercase}</style></head><body>
+<div class="cx-card card">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#2563eb,#60a5fa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128275;</div><div><h2 style="margin:0;font-size:19px">Liberar cuarentena en bloque</h2><div class="cx-text-mute" style="font-size:13px">Pasa TODOS los lotes en cuarentena a VIGENTE con <b>una sola confirmacion</b> (admin, auditado, sin firma por lote). Es un override del flujo formal de Calidad. La ubicacion la pone el jefe despues.</div></div></div>
+  <div id="sum" style="margin-top:12px;font-size:14px"></div>
+  <div id="out"></div>
+  <div style="margin-top:14px;display:flex;gap:10px"><button id="lib" class="cx-btn" style="background:#2563eb;color:#fff;display:none" onclick="liberar()">Liberar TODO a VIGENTE</button><button class="cx-btn cx-btn-ghost" onclick="location.href='/inventarios'">Volver</button></div>
+  <div id="msg" style="margin-top:10px;font-size:14px"></div>
+</div>
+<script>
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function num(n){return Number(n||0).toLocaleString('es-CO');}
+async function cargar(){
+  try{
+    var d=await (await fetch('/api/admin/cuarentena-lista',{credentials:'same-origin'})).json();
+    if(!d.ok){document.getElementById('sum').textContent='Error';return;}
+    var ls=d.lotes||[];
+    document.getElementById('sum').innerHTML='<b>'+ls.length+'</b> lote(s) en cuarentena · <b>'+num(d.total_g)+' g</b>';
+    var h='<table><thead><tr><th>Cod</th><th>Material</th><th>Lote</th><th style="text-align:right">Cantidad g</th></tr></thead><tbody>';
+    ls.forEach(function(l){h+='<tr><td style="font-family:monospace">'+esc(l.cod)+'</td><td>'+esc(l.nombre)+'</td><td style="font-family:monospace">'+esc(l.lote)+'</td><td style="text-align:right">'+num(l.neto_g)+'</td></tr>';});
+    h+='</tbody></table>';
+    document.getElementById('out').innerHTML= ls.length? h : '<div style="color:#16a34a;margin-top:10px">No hay nada en cuarentena.</div>';
+    document.getElementById('lib').style.display= ls.length? 'inline-block':'none';
+  }catch(e){document.getElementById('sum').textContent='Error de red';}
+}
+async function liberar(){
+  if(!confirm('Liberar TODA la cuarentena a VIGENTE? (admin · auditado · reversible por ajuste)'))return;
+  document.getElementById('msg').textContent='Liberando…';
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/admin/liberar-cuarentena-bloque',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||''},body:'{}'});
+    var d=await r.json();
+    if(!r.ok||!d.ok){document.getElementById('msg').innerHTML='<span style="color:#dc2626">'+esc(d.error||r.status)+'</span>';return;}
+    document.getElementById('msg').innerHTML='<span style="color:#16a34a;font-weight:700">&#10003; '+d.liberados+' lote(s) liberados a VIGENTE.</span>';
+    cargar();
+  }catch(e){document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>';}
+}
+cargar();
+</script></body></html>'''
+    return _tpl
+
+
 @bp.route('/api/inventario/modo-inventario', methods=['GET', 'POST'])
 def modo_inventario_config():
     """Sebastián 16-jun · toggle 'modo inventario' = recepciones entran directo a
