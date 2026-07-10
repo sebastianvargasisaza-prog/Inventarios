@@ -702,22 +702,43 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   </div>
 
   <div id="stock" class="tab-content">
-    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-      <div>
-        <h2 style="margin:0">&#128230; Stock por Lote</h2>
-        <!-- Sprint Bodega MP PRO · 20-may-2026 fix #10: timestamp -->
-        <div id="stock-last-update" style="font-size:11px;color:#94a3b8;margin-top:2px">—</div>
+    <style>
+      #stock .mp-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;background:linear-gradient(135deg,#faf5ff,#f5f3ff);border:1px solid #ede9fe;border-radius:16px;padding:15px 20px;margin-bottom:12px}
+      #stock .mp-head .mh-l{display:flex;align-items:center;gap:13px;min-width:0}
+      #stock .mp-head .mh-badge{width:46px;height:46px;border-radius:13px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:22px;flex:none;box-shadow:0 6px 16px rgba(124,58,237,.28)}
+      #stock .mp-head h2{margin:0;font-size:19px;font-weight:800;letter-spacing:-.3px;color:#1e1b4b}
+      #stock .mp-head .mh-sub{font-size:12px;color:#8b7fb8;margin-top:2px}
+      #stock .mp-btn{border:none;border-radius:9px;padding:9px 15px;font-size:12.5px;font-weight:700;cursor:pointer;color:#fff;display:inline-flex;align-items:center;gap:5px;transition:transform .06s,box-shadow .12s;box-shadow:0 2px 8px rgba(0,0,0,.10)}
+      #stock .mp-btn:hover{transform:translateY(-1px);box-shadow:0 5px 14px rgba(0,0,0,.16)}
+      #stock .mp-btn-violet{background:linear-gradient(135deg,#7c3aed,#8b5cf6)}
+      #stock .mp-btn-green{background:linear-gradient(135deg,#15803d,#22c55e)}
+      #stock .mp-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff;border:1px solid #eef0f4;border-radius:12px;padding:10px 12px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+      #stock .mp-toolbar input[type=text]{border:1px solid #e5e7ef;border-radius:9px;padding:8px 11px;font-size:13px;background:#fbfbfd;color:#334155;margin-top:0}
+      #stock .mp-toolbar input[type=text]:focus{outline:none;border-color:#a78bfa;box-shadow:0 0 0 3px rgba(167,139,250,.18)}
+      #stock .mp-card{background:#fff;border:1px solid #eef0f4;border-radius:14px;overflow:auto;box-shadow:0 1px 3px rgba(0,0,0,.05),0 10px 26px rgba(0,0,0,.045)}
+      #stock .mp-card table.table{margin:0}
+      #stock .mp-card table.table thead th{background:linear-gradient(180deg,#faf5ff,#f3f0ff);color:#6d28d9;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;padding:11px 12px;border-bottom:2px solid #ede9fe;white-space:nowrap}
+      #stock .mp-card table.table tbody tr:hover td{background:#faf7ff}
+    </style>
+    <div class="mp-head">
+      <div class="mh-l">
+        <div class="mh-badge">&#128230;</div>
+        <div style="min-width:0">
+          <h2>Stock por Lote</h2>
+          <div class="mh-sub">Bodega de Materia Prima &middot; lotes, FEFO y trazabilidad &middot; <span id="stock-last-update">&mdash;</span></div>
+        </div>
       </div>
     </div>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
-      <input type="text" id="stock-search" placeholder="MP, INCI, proveedor..." oninput="filterStock()" style="width:200px;margin-top:0;">
-      <input type="text" id="stock-search-lote" placeholder="&#127991; Solo por lote" oninput="filterStock()" style="width:170px;margin-top:0;border:2px solid #1e63a8;background:#f0f8ff;">
-      <div style="display:flex;gap:10px;flex-wrap:wrap;"><button onclick="loadStock()">&#8635; Actualizar</button><button onclick="exportarExcelStock()" style="background:#217346;">&#128196; Descargar Excel</button></div>
-      <label style="font-size:0.85em;color:#555;display:inline-flex;align-items:center;gap:4px;cursor:pointer;" title="Por defecto la bodega muestra solo lo que hay fisicamente. Marca para ver tambien las MPs en 0 (catalogo / a comprar)."><input type="checkbox" id="stock-ver-sin" onchange="loadStock()"> Ver MPs en 0 (a comprar)</label>
-      <span id="stock-count" style="color:#888;font-size:0.88em;"></span>
+    <div class="mp-toolbar">
+      <input type="text" id="stock-search" placeholder="&#128269; MP, INCI, proveedor..." oninput="filterStock()" style="width:210px">
+      <input type="text" id="stock-search-lote" placeholder="&#127991; Solo por lote" oninput="filterStock()" style="width:170px;border-color:#93c5fd;background:#f0f8ff">
+      <button class="mp-btn mp-btn-violet" onclick="loadStock()">&#8635; Actualizar</button>
+      <button class="mp-btn mp-btn-green" onclick="exportarExcelStock()">&#128196; Descargar Excel</button>
+      <label style="font-size:12px;color:#64748b;display:inline-flex;align-items:center;gap:4px;cursor:pointer;" title="Por defecto la bodega muestra solo lo que hay fisicamente. Marca para ver tambien las MPs en 0 (catalogo / a comprar)."><input type="checkbox" id="stock-ver-sin" onchange="loadStock()"> Ver MPs en 0 (a comprar)</label>
+      <span id="stock-count" style="color:#8b7fb8;font-size:12px;font-weight:600;margin-left:auto"></span>
     </div>
     <!-- Sprint Bodega MP PRO · 20-may-2026 fix #6: headers clickeables ordenan -->
-    <div style="overflow-x:auto;" id="stock-tabla-wrap">
+    <div class="mp-card" style="overflow-x:auto;" id="stock-tabla-wrap">
     <table class="table" style="font-size:0.83em;">
       <thead><tr id="stock-thead-row">
         <th data-sort="material_id" style="cursor:pointer" title="Click para ordenar">Cod. MP <span class="sort-ico"></span></th>
