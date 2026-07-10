@@ -12013,6 +12013,7 @@ def descuento_retroactivo_page():
     <input type="file" id="arch" accept=".xlsx" style="font-size:13px">
     <button class="cx-btn" style="background:#7c3aed;color:#fff" onclick="revisar()">Revisar</button>
     <select id="filtro" onchange="pinta()" style="padding:7px;border:1px solid #e4e4e7;border-radius:8px;font-size:13px"><option value="">Todos</option><option value="OK">Solo descontables (OK)</option><option value="REV">Solo a revisar</option></select>
+    <button class="cx-btn" style="background:#e8f5f5;color:#6d28d9;border:1px solid #b8dada" onclick="copiarRev()">&#128203; Copiar los que hay que revisar</button>
     <span id="msg" style="font-size:13px"></span>
   </div>
   <div id="sum" class="sum"></div>
@@ -12057,6 +12058,15 @@ function pinta(){
   h+='</tbody></table>';
   document.getElementById('out').innerHTML=h;
 }
+function copiarRev(){
+  var rev=_ROWS.filter(function(r){return r.status!=='OK';});
+  if(!rev.length){alert('No hay filas a revisar');return;}
+  var t='Produccion\tCod\tMaterial\tLote(Excel)\tLoteEOS\tConsumo_g\tUsable_g\tCuarentena_g\tEstado\tDetalle\n';
+  rev.forEach(function(r){t+=[(r.prod||''),(r.cod||''),(r.nombre||r.desc||''),(r.lote_excel||''),(r.lote_match||''),r.cant,r.usable,r.retenido,r.status,(r.detalle||'')].join('\t')+'\n';});
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(function(){document.getElementById('msg').innerHTML='<span style="color:#16a34a">Copiado '+rev.length+' filas a revisar · pegáselas a Claude</span>';},function(){_fallbackCopy(t,rev.length);});}
+  else _fallbackCopy(t,rev.length);
+}
+function _fallbackCopy(t,n){var ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');document.getElementById('msg').innerHTML='<span style="color:#16a34a">Copiado '+n+' filas</span>';}catch(e){alert('Copiá manual:\n\n'+t);}document.body.removeChild(ta);}
 async function aplicar(){
   var oks=_ROWS.filter(function(r){return r.status==='OK';});
   if(!oks.length){alert('No hay filas OK');return;}
