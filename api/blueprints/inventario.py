@@ -11781,6 +11781,55 @@ async function fixPrecio(cod, precio){
     return _tpl.replace('__FILAS__', filas)
 
 
+@bp.route('/api/admin/mp-diag', methods=['GET'])
+def mp_diag():
+    """Diagnóstico: ¿por qué una MP (no) sale en Bodega? Muestra existe/activo/tipo,
+    stock USABLE vs RETENIDO (cuarentena…) y lotes. Sebastián 9-jul (MP00293 no salía)."""
+    _u, _err, _code = _require_admin()
+    if _err:
+        return _err, _code
+    cod = (request.args.get('codigo') or '').strip().upper()
+    if not cod:
+        return jsonify({'error': 'codigo requerido'}), 400
+    conn = get_db(); c = conn.cursor()
+    m = c.execute(
+        """SELECT codigo_mp, COALESCE(NULLIF(TRIM(nombre_inci),''),''), COALESCE(NULLIF(TRIM(nombre_comercial),''),''),
+                  UPPER(COALESCE(tipo_material,'MP')), COALESCE(activo,1)
+           FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?""", (cod,)).fetchone()
+    _EXCL = ('CUARENTENA', 'CUARENTENA_EXTENDIDA', 'RECHAZADO', 'VENCIDO', 'AGOTADO', 'BLOQUEADO')
+    lotes = []
+    try:
+        for lote, est, neto in c.execute(
+            """SELECT COALESCE(lote,''), UPPER(COALESCE(estado_lote,'')) AS est,
+                      SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                          WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) AS neto
+               FROM movimientos WHERE UPPER(TRIM(material_id))=? GROUP BY lote, est HAVING neto > 0.01""",
+                (cod,)).fetchall():
+            lotes.append({'lote': lote, 'estado': est or '(sin estado)', 'neto_g': round(float(neto or 0), 2),
+                          'usable': (est or '') not in _EXCL})
+    except Exception:
+        pass
+    usable = round(sum(l['neto_g'] for l in lotes if l['usable']), 2)
+    retenido = round(sum(l['neto_g'] for l in lotes if not l['usable']), 2)
+    if not m:
+        razon = 'El código NO existe en el maestro de MP.'
+    elif m[3] != 'MP':
+        razon = 'tipo_material="%s" (no "MP") → la Bodega MP lo filtra. Debe ser MP.' % m[3]
+    elif int(m[4]) != 1:
+        razon = 'La MP está INACTIVA (activo=0) → no aparece en "ver en 0".'
+    elif usable > 0.01:
+        razon = 'Tiene %.0f g usables → SÍ debería salir en Stock por Lote.' % usable
+    elif retenido > 0.01:
+        razon = 'Su stock (%.0f g) está RETENIDO (cuarentena/no liberado) → sale en la vista de Cuarentena, no en Stock por Lote. Que Calidad lo libere.' % retenido
+    else:
+        razon = 'Sin stock disponible (0 g) → no sale en Stock por Lote. Activá "ver en 0" para verla, o recibí/ajustá stock.'
+    return jsonify({'ok': True, 'codigo': cod, 'existe': bool(m),
+                    'nombre_inci': (m[1] if m else ''), 'nombre_comercial': (m[2] if m else ''),
+                    'tipo_material': (m[3] if m else ''), 'activo': (int(m[4]) if m else None),
+                    'stock_usable_g': usable, 'stock_retenido_g': retenido,
+                    'lotes': lotes, 'aparece_en_bodega_default': usable > 0.01, 'razon': razon})
+
+
 # ── Renombrar código de MP (normalizar EOS ↔ MyBatch) · Sebastián 9-jul ─────────
 # Cambiar el código de una MP es re-llavar TODA referencia (M17: la identidad es el
 # CÓDIGO). Introspección en runtime (esquema real de prod, no parse estático).

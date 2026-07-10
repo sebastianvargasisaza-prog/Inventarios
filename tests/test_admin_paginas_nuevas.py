@@ -178,6 +178,15 @@ def test_renombrar_codigo_mp(admin_client):
     assert admin_client.get("/api/admin/renombrar-mp-preview?viejo=MP00199&nuevo=MP00293").status_code == 404
 
 
+def test_mp_diag(admin_client):
+    """Diagnóstico 'por qué no sale en Bodega': existe/tipo/activo/stock usable vs retenido."""
+    d = admin_client.get("/api/admin/mp-diag?codigo=MPNOEXISTE").get_json()
+    assert d["ok"] and d["existe"] is False and "NO existe" in d["razon"]
+    d2 = admin_client.get("/api/admin/mp-diag?codigo=MP00062").get_json()
+    assert d2["ok"] and d2["existe"] and d2["tipo_material"] == "MP"
+    assert "stock_usable_g" in d2 and "aparece_en_bodega_default" in d2 and d2["razon"]
+
+
 def test_fusionar_codigo_mp(admin_client):
     """Fusión: cuando el destino YA existe (ej. PARFUM MPFRCN01 → MP00062 pistacho),
     mueve stock/refs al destino y desactiva el origen (Sebastián 9-jul)."""
