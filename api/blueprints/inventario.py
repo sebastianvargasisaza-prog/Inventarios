@@ -11848,11 +11848,10 @@ def renombrar_mp_preview():
            FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?""", (viejo,)).fetchone()
     if not row:
         return jsonify({'error': 'El código %s no existe en el maestro de MP' % viejo}), 404
-    ocupado = c.execute("SELECT COALESCE(NULLIF(TRIM(nombre_inci),''),NULLIF(TRIM(nombre_comercial),''),codigo_mp) "
-                        "FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?", (nuevo,)).fetchone()
-    if ocupado:
-        return jsonify({'error': 'El código %s YA existe en el maestro (es "%s") — no se puede renombrar encima. '
-                        'Si querés fusionarlos, es otra operación.' % (nuevo, str(ocupado[0]))}), 409
+    ocupado = c.execute(
+        """SELECT COALESCE(NULLIF(TRIM(nombre_inci),''),''), COALESCE(NULLIF(TRIM(nombre_comercial),''),'')
+           FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?""", (nuevo,)).fetchone()
+    fusion = bool(ocupado)  # destino ya existe → NO es renombrado, es FUSIÓN (consolidar el source dentro)
     refs = []
     for t, col in _pares_columna_mp(c):
         try:
@@ -11864,6 +11863,10 @@ def renombrar_mp_preview():
     refs.sort(key=lambda x: -x['n'])
     return jsonify({'ok': True, 'viejo': viejo, 'nuevo': nuevo, 'nombre_inci': row[1], 'nombre_comercial': row[2],
                     'proveedor': row[3], 'activo': int(row[4]), 'stock_g': _mp_stock_g(c, viejo),
+                    'fusion': fusion,
+                    'destino_nombre_inci': (ocupado[0] if fusion else ''),
+                    'destino_nombre_comercial': (ocupado[1] if fusion else ''),
+                    'destino_stock_g': (_mp_stock_g(c, nuevo) if fusion else 0.0),
                     'refs': refs, 'total_refs': sum(r['n'] for r in refs)})
 
 
@@ -11882,12 +11885,73 @@ def renombrar_mp_apply():
         return jsonify({'error': 'viejo y nuevo requeridos'}), 400
     if viejo == nuevo:
         return jsonify({'error': 'El código viejo y el nuevo son iguales'}), 400
+    modo = (d.get('modo') or '').strip().lower()  # '' = renombrar (destino libre) · 'fusion' = consolidar en destino existente
     conn = get_db(); c = conn.cursor()
     if not c.execute("SELECT 1 FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?", (viejo,)).fetchone():
         return jsonify({'error': 'El código %s no existe' % viejo}), 404
-    if c.execute("SELECT 1 FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?", (nuevo,)).fetchone():
-        return jsonify({'error': 'El código %s ya existe en el maestro' % nuevo}), 409
+    destino_existe = bool(c.execute("SELECT 1 FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?", (nuevo,)).fetchone())
+    if destino_existe and modo != 'fusion':
+        return jsonify({'error': 'El código %s ya existe en el maestro. Si son la MISMA materia prima, '
+                        'usá la FUSIÓN (confirmá primero que son iguales en el preview).' % nuevo}), 409
+    if not destino_existe and modo == 'fusion':
+        return jsonify({'error': 'Pediste fusión pero el destino %s no existe (sería un renombrado).' % nuevo}), 400
     stock_antes = _mp_stock_g(c, viejo)
+    # ── FUSIÓN · consolidar el origen dentro de un destino que YA existe ──────────
+    if modo == 'fusion':
+        stock_dest_antes = _mp_stock_g(c, nuevo)
+        try:
+            audit_log(c, usuario=_u, accion='FUSIONAR_CODIGO_MP', tabla='maestro_mps', registro_id=nuevo,
+                      antes={'codigo_mp': viejo, 'stock_g': stock_antes},
+                      despues={'fusionado_en': nuevo, 'stock_destino_previo': stock_dest_antes})
+        except Exception:
+            pass
+        marca = ' [fusion %s->%s]' % (viejo, nuevo)
+        core = {}
+        try:
+            # 1) movimientos → destino, con marcador (traza/reversa por lote)
+            c.execute("UPDATE movimientos SET material_id=?, observaciones=COALESCE(observaciones,'')||? "
+                      "WHERE UPPER(TRIM(material_id))=?", (nuevo, marca, viejo))
+            core['movimientos'] = c.rowcount
+            # 2) formula_items → destino, deduplicando (borrar filas del origen en productos que YA usan el destino)
+            c.execute("DELETE FROM formula_items WHERE UPPER(TRIM(material_id))=? AND UPPER(TRIM(producto_nombre)) IN "
+                      "(SELECT UPPER(TRIM(producto_nombre)) FROM formula_items WHERE UPPER(TRIM(material_id))=?)",
+                      (viejo, nuevo))
+            core['formula_items_dedup_borradas'] = c.rowcount
+            c.execute("UPDATE formula_items SET material_id=? WHERE UPPER(TRIM(material_id))=?", (nuevo, viejo))
+            core['formula_items'] = c.rowcount
+        except Exception as e:
+            conn.rollback()
+            return jsonify({'error': 'No se pudo fusionar el núcleo (stock/fórmulas): %s' % str(e)}), 500
+        # 3) resto de referencias (bridge, histórico…) best-effort con SAVEPOINT · NUNCA el PK del maestro
+        aux_counts = {}; errores = []
+        skip = {('movimientos', 'material_id'), ('formula_items', 'material_id'), ('maestro_mps', 'codigo_mp')}
+        for t, col in _pares_columna_mp(c):
+            if (t, col) in skip:
+                continue
+            sp = 'sp_fu_%d' % (len(aux_counts) + len(errores))
+            try:
+                c.execute("SAVEPOINT " + sp)
+                c.execute("UPDATE " + t + " SET " + col + "=? WHERE UPPER(TRIM(" + col + "))=?", (nuevo, viejo))
+                if c.rowcount:
+                    aux_counts[t + '.' + col] = c.rowcount
+                c.execute("RELEASE SAVEPOINT " + sp)
+            except Exception as e:
+                try:
+                    c.execute("ROLLBACK TO SAVEPOINT " + sp)
+                except Exception:
+                    pass
+                errores.append({'tabla': t, 'col': col, 'error': str(e)[:180]})
+        # 4) desactivar el maestro del origen (NO borrar · GMP · reversible)
+        try:
+            c.execute("UPDATE maestro_mps SET activo=0 WHERE UPPER(TRIM(codigo_mp))=?", (viejo,))
+            core['maestro_origen_desactivado'] = c.rowcount
+        except Exception:
+            pass
+        conn.commit()
+        return jsonify({'ok': True, 'fusion': True, 'viejo': viejo, 'nuevo': nuevo,
+                        'stock_movido_g': stock_antes, 'stock_destino_previo_g': stock_dest_antes,
+                        'stock_destino_final_g': _mp_stock_g(c, nuevo),
+                        'nucleo': core, 'auxiliares': aux_counts, 'errores': errores})
     # audit ANTES del commit (M22)
     try:
         audit_log(c, usuario=_u, accion='RENOMBRAR_CODIGO_MP', tabla='maestro_mps', registro_id=nuevo,
@@ -11936,7 +12000,7 @@ def renombrar_codigo_mp_page():
         return redirect('/login?next=/admin/renombrar-codigo-mp')
     _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Renombrar codigo MP</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:24px}.card{max-width:920px;margin:0 auto}.inp{border:1px solid #e4e4e7;border-radius:8px;padding:9px 11px;font-size:14px;font-family:monospace;width:150px}.inp:focus{outline:none;border-color:#a78bfa;box-shadow:0 0 0 3px rgba(167,139,250,.18)}table{width:100%;border-collapse:collapse;margin-top:12px}th,td{text-align:left;padding:7px 9px;border-bottom:1px solid #eee;font-size:13px}th{color:#6d28d9;font-size:11px;text-transform:uppercase;letter-spacing:.4px}</style></head><body>
 <div class="cx-card card">
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128257;</div><div><h2 style="margin:0;font-size:19px">Renombrar codigo de MP</h2><div class="cx-text-mute" style="font-size:13px">Normaliza el codigo de una materia prima (EOS &harr; MyBatch). Re-llava <b>todas</b> las referencias: maestro, stock (kardex), formulas, bridge e historico. Reversible (re-corre intercambiando).</div></div></div>
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128257;</div><div><h2 style="margin:0;font-size:19px">Renombrar codigo de MP</h2><div class="cx-text-mute" style="font-size:13px">Normaliza el codigo de una materia prima (EOS &harr; MyBatch). Re-llava <b>todas</b> las referencias: maestro, stock (kardex), formulas, bridge e historico. Si el destino <b>ya existe</b>, ofrece <b>FUSIONAR</b> (mover stock + desactivar el origen). Reversible por audit.</div></div></div>
   <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-top:16px">
     <div><label style="font-size:12px;color:#555;display:block;margin-bottom:4px">Codigo ACTUAL (EOS)</label><input id="viejo" class="inp" placeholder="MP00199"></div>
     <div style="font-size:22px;color:#a78bfa;padding-bottom:6px">&rarr;</div>
@@ -11947,7 +12011,7 @@ def renombrar_codigo_mp_page():
   <div style="margin-top:16px"><button class="cx-btn cx-btn-ghost" onclick="location.href='/inventarios'">Volver a Inventario</button></div>
 </div>
 <script>
-var _V='',_N='';
+var _V='',_N='',_FUS=false;
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function num(n){return Number(n||0).toLocaleString('es-CO');}
 async function preview(){
@@ -11959,30 +12023,46 @@ async function preview(){
     var r=await fetch('/api/admin/renombrar-mp-preview?viejo='+encodeURIComponent(v)+'&nuevo='+encodeURIComponent(n),{credentials:'same-origin'});
     var d=await r.json();
     if(!r.ok||!d.ok){document.getElementById('out').innerHTML='<div style="color:#dc2626;font-weight:600">'+esc(d.error||r.status)+'</div>';return;}
-    _V=d.viejo;_N=d.nuevo;
+    _V=d.viejo;_N=d.nuevo;_FUS=!!d.fusion;
     var rows='';
     (d.refs||[]).forEach(function(x){rows+='<tr><td style="font-family:monospace">'+esc(x.tabla)+'</td><td style="font-family:monospace;color:#888">'+esc(x.col)+'</td><td style="text-align:right;font-weight:700">'+num(x.n)+'</td></tr>';});
     if(!rows)rows='<tr><td colspan="3" style="color:#888">Sin referencias en tablas de datos (solo el maestro).</td></tr>';
+    var srcNom=esc(d.nombre_inci||d.nombre_comercial||'(sin nombre)')+(d.nombre_comercial&&d.nombre_inci?(' &middot; '+esc(d.nombre_comercial)):'');
     var h='<div style="background:#fff;border:1px solid #ede9fe;border-radius:12px;padding:14px 16px">'
-      +'<div style="font-size:15px"><b>'+esc(d.viejo)+'</b> &rarr; <b style="color:#7c3aed">'+esc(d.nuevo)+'</b></div>'
-      +'<div style="color:#555;font-size:13px;margin-top:3px">'+esc(d.nombre_inci||d.nombre_comercial||'(sin nombre)')+(d.nombre_comercial&&d.nombre_inci?(' &middot; '+esc(d.nombre_comercial)):'')+' &middot; stock <b>'+num(d.stock_g)+' g</b>'+(d.activo?'':' &middot; <span style="color:#b45309">INACTIVA</span>')+'</div>'
-      +'<table><thead><tr><th>Tabla</th><th>Columna</th><th style="text-align:right">Filas</th></tr></thead><tbody>'+rows+'</tbody></table>'
-      +'<div style="margin-top:12px;padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:12.5px;color:#7f1d1d">&#9888; Se re-llava TODO a <b>'+esc(d.nuevo)+'</b> (el stock se conserva, es la misma MP). Reversible por audit_log.</div>'
-      +'<button class="cx-btn cx-btn-success" style="margin-top:12px" onclick="aplicar()">Aplicar renombrado ('+esc(d.viejo)+' &rarr; '+esc(d.nuevo)+')</button>'
+      +'<div style="font-size:15px"><b>'+esc(d.viejo)+'</b> &rarr; <b style="color:#7c3aed">'+esc(d.nuevo)+'</b>'+(_FUS?' <span style="background:#fef3c7;color:#92400e;border:1px solid #f59e0b;border-radius:8px;padding:1px 8px;font-size:12px;font-weight:700">FUSIÓN</span>':'')+'</div>'
+      +'<div style="color:#555;font-size:13px;margin-top:3px">'+srcNom+' &middot; stock <b>'+num(d.stock_g)+' g</b>'+(d.activo?'':' &middot; <span style="color:#b45309">INACTIVA</span>')+'</div>';
+    if(_FUS){
+      var dstNom=esc(d.destino_nombre_inci||d.destino_nombre_comercial||'(sin nombre)')+(d.destino_nombre_comercial&&d.destino_nombre_inci?(' &middot; '+esc(d.destino_nombre_comercial)):'');
+      h+='<div style="margin-top:12px;padding:12px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px">'
+        +'<div style="font-weight:700;color:#92400e;font-size:13px;margin-bottom:6px">&#9888; El destino '+esc(d.nuevo)+' YA existe — esto es una FUSIÓN, confirmá que son la MISMA materia prima:</div>'
+        +'<div style="font-size:13px"><b>'+esc(d.viejo)+'</b> (origen): '+srcNom+' &middot; '+num(d.stock_g)+' g</div>'
+        +'<div style="font-size:13px"><b>'+esc(d.nuevo)+'</b> (destino): '+dstNom+' &middot; '+num(d.destino_stock_g)+' g</div>'
+        +'<div style="font-size:12px;color:#92400e;margin-top:6px">El stock del origen se MUEVE al destino (queda '+num((d.stock_g||0)+(d.destino_stock_g||0))+' g) y '+esc(d.viejo)+' se desactiva. Reversible por audit.</div>'
+        +'</div>';
+    }
+    h+='<table><thead><tr><th>Tabla</th><th>Columna</th><th style="text-align:right">Filas del origen</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    if(!_FUS)h+='<div style="margin-top:12px;padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:12.5px;color:#7f1d1d">&#9888; Se re-llava TODO a <b>'+esc(d.nuevo)+'</b> (el stock se conserva, es la misma MP). Reversible por audit_log.</div>';
+    h+=(_FUS
+        ?'<button class="cx-btn" style="margin-top:12px;background:#d97706;color:#fff" onclick="aplicar()">Fusionar '+esc(d.viejo)+' dentro de '+esc(d.nuevo)+'</button>'
+        :'<button class="cx-btn cx-btn-success" style="margin-top:12px" onclick="aplicar()">Aplicar renombrado ('+esc(d.viejo)+' &rarr; '+esc(d.nuevo)+')</button>')
       +'</div>';
     document.getElementById('out').innerHTML=h;
   }catch(e){document.getElementById('out').innerHTML='<div style="color:#dc2626">Error de red</div>';}
 }
 async function aplicar(){
   if(!_V||!_N)return;
-  if(!confirm('Renombrar '+_V+' a '+_N+' en toda la base? (reversible)'))return;
+  var pregunta=_FUS?('FUSIONAR '+_V+' dentro de '+_N+'? El stock del origen se mueve al destino y '+_V+' se desactiva. (reversible)'):('Renombrar '+_V+' a '+_N+' en toda la base? (reversible)');
+  if(!confirm(pregunta))return;
   try{
     var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
-    var r=await fetch('/api/admin/renombrar-mp-apply',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||''},body:JSON.stringify({viejo:_V,nuevo:_N})});
+    var body={viejo:_V,nuevo:_N}; if(_FUS)body.modo='fusion';
+    var r=await fetch('/api/admin/renombrar-mp-apply',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||''},body:JSON.stringify(body)});
     var d=await r.json();
     if(!r.ok||!d.ok){alert('Error: '+(d.error||r.status));return;}
-    var tot=0;Object.keys(d.nucleo||{}).forEach(function(k){tot+=d.nucleo[k];});Object.keys(d.auxiliares||{}).forEach(function(k){tot+=d.auxiliares[k];});
-    var msg='&#10003; Listo: '+esc(_V)+' &rarr; '+esc(_N)+'. '+tot+' referencias re-llaveadas.';
+    var tot=0;Object.keys(d.nucleo||{}).forEach(function(k){tot+=Number(d.nucleo[k])||0;});Object.keys(d.auxiliares||{}).forEach(function(k){tot+=d.auxiliares[k];});
+    var msg=_FUS
+      ?('&#10003; Fusionado: '+esc(_V)+' &rarr; '+esc(_N)+'. Stock del destino: '+num(d.stock_destino_final_g)+' g. '+tot+' referencias movidas.')
+      :('&#10003; Listo: '+esc(_V)+' &rarr; '+esc(_N)+'. '+tot+' referencias re-llaveadas.');
     if((d.errores||[]).length)msg+='<div style="color:#b45309;margin-top:6px">'+d.errores.length+' tabla(s) no se pudieron actualizar (historico inmutable): '+esc(d.errores.map(function(e){return e.tabla;}).join(', '))+'</div>';
     document.getElementById('out').innerHTML='<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:16px;font-size:15px;color:#166534">'+msg+'</div>';
   }catch(e){alert('Error de red');}

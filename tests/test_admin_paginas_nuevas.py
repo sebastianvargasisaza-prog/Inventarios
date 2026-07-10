@@ -162,8 +162,9 @@ def test_renombrar_codigo_mp(admin_client):
     assert "DIMETHICONE" in (pv["nombre_inci"] or "").upper()
     tablas = {r["tabla"] for r in pv["refs"]}
     assert "formula_items" in tablas  # 6 fórmulas la usan
-    # target ocupado → 409; código inexistente → 404
-    assert admin_client.get("/api/admin/renombrar-mp-preview?viejo=MP00199&nuevo=MP00072").status_code == 409
+    # target ocupado → 200 con fusion:true (ofrece fusionar); código inexistente → 404
+    ocup = admin_client.get("/api/admin/renombrar-mp-preview?viejo=MP00199&nuevo=MP00072").get_json()
+    assert ocup["ok"] and ocup["fusion"] is True
     assert admin_client.get("/api/admin/renombrar-mp-preview?viejo=MP99999&nuevo=MP00293").status_code == 404
     # aplicar
     r = admin_client.post("/api/admin/renombrar-mp-apply", json={"viejo": "MP00199", "nuevo": "MP00293"})
@@ -175,6 +176,42 @@ def test_renombrar_codigo_mp(admin_client):
     pv2 = admin_client.get("/api/admin/renombrar-mp-preview?viejo=MP00293&nuevo=MP00199").get_json()
     assert pv2["ok"] and "DIMETHICONE" in (pv2["nombre_inci"] or "").upper()
     assert admin_client.get("/api/admin/renombrar-mp-preview?viejo=MP00199&nuevo=MP00293").status_code == 404
+
+
+def test_fusionar_codigo_mp(admin_client):
+    """Fusión: cuando el destino YA existe (ej. PARFUM MPFRCN01 → MP00062 pistacho),
+    mueve stock/refs al destino y desactiva el origen (Sebastián 9-jul)."""
+    from api.index import app
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        c.execute("INSERT INTO maestro_mps (codigo_mp, nombre_inci, activo) VALUES ('MPZZDST','PARFUM PISTACHO',1)")
+        c.execute("INSERT INTO maestro_mps (codigo_mp, nombre_inci, activo) VALUES ('MPZZSRC','PARFUM PISTACHO',1)")
+        c.execute("INSERT INTO movimientos (material_id, tipo, cantidad, lote) VALUES ('MPZZSRC','Entrada',500,'LOTE-FUS-99')")
+        conn.commit()
+    # preview detecta fusión (destino existe) y muestra AMBOS nombres
+    pv = admin_client.get("/api/admin/renombrar-mp-preview?viejo=MPZZSRC&nuevo=MPZZDST").get_json()
+    assert pv["ok"] and pv["fusion"] is True
+    assert "PARFUM" in (pv["destino_nombre_inci"] or "").upper()
+    assert pv["stock_g"] == 500
+    # aplicar SIN modo=fusion sobre destino existente → 409 (obliga a confirmar fusión)
+    assert admin_client.post("/api/admin/renombrar-mp-apply",
+                             json={"viejo": "MPZZSRC", "nuevo": "MPZZDST"}).status_code == 409
+    # fusión real
+    r = admin_client.post("/api/admin/renombrar-mp-apply",
+                          json={"viejo": "MPZZSRC", "nuevo": "MPZZDST", "modo": "fusion"})
+    d = r.get_json()
+    assert r.status_code == 200 and d["ok"] and d["fusion"]
+    assert d["nucleo"]["movimientos"] == 1
+    assert d["stock_destino_final_g"] == 500  # el stock se movió al destino
+    # el origen quedó desactivado (ya no es preview-able como activo · sigue existiendo por GMP)
+    with app.app_context():
+        from database import get_db
+        c = get_db().cursor()
+        act = c.execute("SELECT COALESCE(activo,1) FROM maestro_mps WHERE codigo_mp='MPZZSRC'").fetchone()[0]
+        assert int(act) == 0
+        mov = c.execute("SELECT material_id FROM movimientos WHERE lote='LOTE-FUS-99'").fetchone()[0]
+        assert mov == "MPZZDST"
 
 
 def test_envases_recatalogo_y_productos_envases(admin_client):
