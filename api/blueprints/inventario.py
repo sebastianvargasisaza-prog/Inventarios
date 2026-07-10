@@ -12694,9 +12694,10 @@ def normalizar_codigos_page():
     """Normalizar varios códigos EOS→MyBatch de una (renombra o fusiona según el destino)."""
     if session.get('compras_user', '') not in ADMIN_USERS:
         return redirect('/login?next=/admin/normalizar-codigos')
-    _preset = ("MP00183 -> MP00144\nMPCAKY01 -> MP00291\nMP00233 -> MP00157\nMP00084 -> MP00080\n"
-               "MPBNIT01 -> MP00288\nMP00190 -> MP00159\nMP00008 -> MP00200\nMP00192 -> MP00155\n"
-               "MP00064 -> MP00294")
+    # 2ª tanda (inactivas · Sebastián 9-jul): fusiona el código EOS-legacy con stock hacia el
+    # código MyBatch (existe inactivo · la fusión lo reactiva). Ethylhexylglycerin: MyBatch tenía
+    # 2 códigos (MP00301/MP00303 = mismo material · confirmado Alejandro) → todo a MP00301.
+    _preset = ("MPAEAT01 -> MP00085\nMP00186 -> MP00304\nMPEHGL01 -> MP00301\nMP00303 -> MP00301")
     _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Normalizar codigos</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:22px}.card{max-width:960px;margin:0 auto}textarea{width:100%;height:150px;font-family:monospace;font-size:13px;border:1px solid #e4e4e7;border-radius:8px;padding:10px}table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}th,td{text-align:left;padding:6px 9px;border-bottom:1px solid #eee}th{color:#6d28d9;font-size:11px;text-transform:uppercase}.chip{padding:1px 8px;border-radius:9px;font-weight:700;font-size:11px}.e-RENOMBRAR{background:#dcfce7;color:#166534}.e-FUSION{background:#fef3c7;color:#92400e}.e-ERROR{background:#fee2e2;color:#991b1b}</style></head><body>
 <div class="cx-card card">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128260;</div><div><h2 style="margin:0;font-size:19px">Normalizar codigos EOS &rarr; MyBatch (en lote)</h2><div class="cx-text-mute" style="font-size:13px">Una linea por par: <b>ORIGEN_EOS -&gt; DESTINO_MYBATCH</b>. Si el destino no existe, <b>renombra</b> (conserva nombre y stock); si existe, <b>fusiona</b>. Primero REVISA, despues aplica (TODO o NADA, reversible por audit).</div></div></div>
