@@ -718,7 +718,12 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       #stock .mp-card{background:#fff;border:1px solid #eef0f4;border-radius:14px;overflow:auto;box-shadow:0 1px 3px rgba(0,0,0,.05),0 10px 26px rgba(0,0,0,.045)}
       #stock .mp-card table.table{margin:0}
       #stock .mp-card table.table thead th{background:linear-gradient(180deg,#faf5ff,#f3f0ff);color:#6d28d9;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;padding:11px 12px;border-bottom:2px solid #ede9fe;white-space:nowrap}
-      #stock .mp-card table.table tbody tr:hover td{background:#faf7ff}
+      #stock .mp-card table.table tbody tr{transition:box-shadow .12s}
+      #stock .mp-card table.table tbody tr:hover td{background:#f7f3ff}
+      #stock .mp-card table.table tbody tr:hover td:first-child{box-shadow:inset 3px 0 0 #7c3aed}
+      #stock .mp-card table.table tbody td button{border-radius:7px!important;padding:4px 9px!important;font-weight:700!important;letter-spacing:.2px;box-shadow:0 1px 2px rgba(0,0,0,.13),inset 0 1px 0 rgba(255,255,255,.25);transition:transform .1s,filter .1s,box-shadow .1s}
+      #stock .mp-card table.table tbody td button:hover{transform:translateY(-1px);filter:brightness(1.07) saturate(1.05);box-shadow:0 3px 9px rgba(0,0,0,.2),inset 0 1px 0 rgba(255,255,255,.25)}
+      #stock .mp-card table.table tbody td button:active{transform:translateY(0);filter:brightness(.95)}
     </style>
     <div class="mp-head">
       <div class="mh-l">
