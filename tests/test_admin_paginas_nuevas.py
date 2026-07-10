@@ -303,3 +303,24 @@ def test_descuento_retroactivo(admin_client):
     assert abs(dg["stock_usable_g"] - 3000) < 1
     # idempotente: re-aplicar no vuelve a descontar
     assert admin_client.post("/api/admin/descuento-retro/apply", json={"filas": oks}).get_json()["n_aplicadas"] == 0
+
+
+def test_descuento_retro_page_js_node_check(admin_client):
+    """La página de descuento retroactivo: cada <script> del valor RENDERIZADO pasa node --check
+    (M65: validar el valor evaluado, no el fuente · el bug \t/\n rompía todo el script)."""
+    import re, subprocess, os, shutil
+    if not shutil.which("node"):
+        return
+    html = admin_client.get("/admin/descuento-retroactivo").get_data(as_text=True)
+    for fn in ("function revisar", "function copiarRev", "function aplicar", "function pinta"):
+        assert fn in html, fn
+    scripts = re.findall(r"<script>(.*?)</script>", html, re.S)
+    assert scripts
+    for i, s in enumerate(scripts):
+        p = "_nctest_%d.js" % i
+        open(p, "w", encoding="utf-8").write(s)
+        try:
+            r = subprocess.run(["node", "--check", p], capture_output=True, text=True)
+            assert r.returncode == 0, "script %d: %s" % (i, r.stderr[:300])
+        finally:
+            os.remove(p)

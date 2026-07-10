@@ -12061,12 +12061,12 @@ function pinta(){
 function copiarRev(){
   var rev=_ROWS.filter(function(r){return r.status!=='OK';});
   if(!rev.length){alert('No hay filas a revisar');return;}
-  var t='Produccion\tCod\tMaterial\tLote(Excel)\tLoteEOS\tConsumo_g\tUsable_g\tCuarentena_g\tEstado\tDetalle\n';
-  rev.forEach(function(r){t+=[(r.prod||''),(r.cod||''),(r.nombre||r.desc||''),(r.lote_excel||''),(r.lote_match||''),r.cant,r.usable,r.retenido,r.status,(r.detalle||'')].join('\t')+'\n';});
+  var t='Produccion\\tCod\\tMaterial\\tLote(Excel)\\tLoteEOS\\tConsumo_g\\tUsable_g\\tCuarentena_g\\tEstado\\tDetalle\\n';
+  rev.forEach(function(r){t+=[(r.prod||''),(r.cod||''),(r.nombre||r.desc||''),(r.lote_excel||''),(r.lote_match||''),r.cant,r.usable,r.retenido,r.status,(r.detalle||'')].join('\\t')+'\\n';});
   if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(function(){document.getElementById('msg').innerHTML='<span style="color:#16a34a">Copiado '+rev.length+' filas a revisar · pegáselas a Claude</span>';},function(){_fallbackCopy(t,rev.length);});}
   else _fallbackCopy(t,rev.length);
 }
-function _fallbackCopy(t,n){var ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');document.getElementById('msg').innerHTML='<span style="color:#16a34a">Copiado '+n+' filas</span>';}catch(e){alert('Copiá manual:\n\n'+t);}document.body.removeChild(ta);}
+function _fallbackCopy(t,n){var ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');document.getElementById('msg').innerHTML='<span style="color:#16a34a">Copiado '+n+' filas</span>';}catch(e){alert('Copia manual (abajo)');}document.body.removeChild(ta);}
 async function aplicar(){
   var oks=_ROWS.filter(function(r){return r.status==='OK';});
   if(!oks.length){alert('No hay filas OK');return;}
