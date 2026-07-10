@@ -11922,24 +11922,20 @@ def renombrar_mp_apply():
         except Exception as e:
             conn.rollback()
             return jsonify({'error': 'No se pudo fusionar el núcleo (stock/fórmulas): %s' % str(e)}), 500
-        # 3) resto de referencias (bridge, histórico…) best-effort con SAVEPOINT · NUNCA el PK del maestro
+        # 3) resto de referencias (bridge, histórico…) best-effort · NUNCA el PK del maestro.
+        # El adapter PG ya aísla cada statement en su propio savepoint interno (un UPDATE que
+        # falla NO aborta la tx · igual que SQLite) → try/except plano, sin SAVEPOINT manual
+        # (uno manual lo destruye el RELEASE interno del adapter → "savepoint no existe").
         aux_counts = {}; errores = []
         skip = {('movimientos', 'material_id'), ('formula_items', 'material_id'), ('maestro_mps', 'codigo_mp')}
         for t, col in _pares_columna_mp(c):
             if (t, col) in skip:
                 continue
-            sp = 'sp_fu_%d' % (len(aux_counts) + len(errores))
             try:
-                c.execute("SAVEPOINT " + sp)
                 c.execute("UPDATE " + t + " SET " + col + "=? WHERE UPPER(TRIM(" + col + "))=?", (nuevo, viejo))
                 if c.rowcount:
                     aux_counts[t + '.' + col] = c.rowcount
-                c.execute("RELEASE SAVEPOINT " + sp)
             except Exception as e:
-                try:
-                    c.execute("ROLLBACK TO SAVEPOINT " + sp)
-                except Exception:
-                    pass
                 errores.append({'tabla': t, 'col': col, 'error': str(e)[:180]})
         # 4) desactivar el maestro del origen (NO borrar · GMP · reversible)
         try:
@@ -11969,24 +11965,20 @@ def renombrar_mp_apply():
     except Exception as e:
         conn.rollback()
         return jsonify({'error': 'No se pudo renombrar el núcleo (maestro/stock/fórmulas): %s' % str(e)}), 500
-    # 2) AUXILIARES · best-effort con SAVEPOINT (histórico EBR inmutable, etc. no debe abortar todo)
+    # 2) AUXILIARES · best-effort (histórico EBR inmutable, etc. no debe abortar todo).
+    # El adapter PG ya aísla cada statement en su savepoint interno (un UPDATE que falla NO
+    # aborta la tx) → try/except plano, sin SAVEPOINT manual (uno manual lo destruye el
+    # RELEASE interno del adapter → "savepoint no existe" en TODA aux · bug 9-jul).
     aux_counts = {}; errores = []
     core_set = {('maestro_mps', 'codigo_mp')} | set(_MP_CODE_CORE)
     for t, col in _pares_columna_mp(c):
         if (t, col) in core_set:
             continue
-        sp = 'sp_mp_%d' % (len(aux_counts) + len(errores))
         try:
-            c.execute("SAVEPOINT " + sp)
             c.execute("UPDATE " + t + " SET " + col + "=? WHERE UPPER(TRIM(" + col + "))=?", (nuevo, viejo))
             if c.rowcount:
                 aux_counts[t + '.' + col] = c.rowcount
-            c.execute("RELEASE SAVEPOINT " + sp)
         except Exception as e:
-            try:
-                c.execute("ROLLBACK TO SAVEPOINT " + sp)
-            except Exception:
-                pass
             errores.append({'tabla': t, 'col': col, 'error': str(e)[:180]})
     conn.commit()
     return jsonify({'ok': True, 'viejo': viejo, 'nuevo': nuevo, 'stock_g': stock_antes,

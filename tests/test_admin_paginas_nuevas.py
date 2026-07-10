@@ -188,6 +188,8 @@ def test_fusionar_codigo_mp(admin_client):
         c.execute("INSERT INTO maestro_mps (codigo_mp, nombre_inci, activo) VALUES ('MPZZDST','PARFUM PISTACHO',1)")
         c.execute("INSERT INTO maestro_mps (codigo_mp, nombre_inci, activo) VALUES ('MPZZSRC','PARFUM PISTACHO',1)")
         c.execute("INSERT INTO movimientos (material_id, tipo, cantidad, lote) VALUES ('MPZZSRC','Entrada',500,'LOTE-FUS-99')")
+        # ref AUXILIAR real → debe moverse limpio (sin el bug de savepoint que rompía todas)
+        c.execute("INSERT INTO especificaciones_mp (codigo_mp, parametro) VALUES ('MPZZSRC','pH')")
         conn.commit()
     # preview detecta fusión (destino existe) y muestra AMBOS nombres
     pv = admin_client.get("/api/admin/renombrar-mp-preview?viejo=MPZZSRC&nuevo=MPZZDST").get_json()
@@ -204,6 +206,9 @@ def test_fusionar_codigo_mp(admin_client):
     assert r.status_code == 200 and d["ok"] and d["fusion"]
     assert d["nucleo"]["movimientos"] == 1
     assert d["stock_destino_final_g"] == 500  # el stock se movió al destino
+    # la ref auxiliar se movió LIMPIO (bug savepoint) · sin falsos errores
+    assert d["auxiliares"].get("especificaciones_mp.codigo_mp") == 1
+    assert not any(e["tabla"] == "especificaciones_mp" for e in (d.get("errores") or []))
     # el origen quedó desactivado (ya no es preview-able como activo · sigue existiendo por GMP)
     with app.app_context():
         from database import get_db
