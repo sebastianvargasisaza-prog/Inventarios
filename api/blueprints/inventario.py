@@ -11855,6 +11855,18 @@ def _reconciliar_consumo(c, filas):
         lote_x = (f.get('lote') or '').strip()
         r = {'cod': cod, 'desc': f.get('desc', ''), 'lote_excel': lote_x, 'cant': round(cant, 2),
              'prod': f.get('prod', ''), 'bulk': f.get('bulk', '')}
+        # ¿ya se descontó esta fila (marcador de apply)? → YA_APLICADA (no ensucia la revisión
+        # ni cuenta como problema · su propio descuento pudo bajar el stock a "insuficiente").
+        _marca = '[retro %s|%s|%s]' % ((f.get('bulk') or f.get('prod', '')[:12]), cod, int(round(cant)))
+        try:
+            _ya = c.execute("SELECT 1 FROM movimientos WHERE UPPER(TRIM(material_id))=? AND observaciones LIKE ? LIMIT 1",
+                            (cod, '%' + _marca + '%')).fetchone()
+        except Exception:
+            _ya = None
+        if _ya:
+            r.update(status='YA_APLICADA', nombre='', usable=0, retenido=0, lote_match='', lote_estado='',
+                     detalle='Ya descontada (marcador presente) · no se vuelve a descontar')
+            out.append(r); continue
         m = c.execute(
             """SELECT COALESCE(NULLIF(TRIM(nombre_inci),''),NULLIF(TRIM(nombre_comercial),''),codigo_mp),
                       UPPER(COALESCE(tipo_material,'MP')), COALESCE(activo,1)
@@ -11912,7 +11924,7 @@ def _resumen_reconciliacion(rows):
         s[r['status']] = s.get(r['status'], 0) + 1
     return {'por_status': s, 'total_filas': len(rows),
             'descontable_g': round(sum(r['cant'] for r in rows if r['status'] == 'OK'), 2),
-            'revisar_g': round(sum(r['cant'] for r in rows if r['status'] != 'OK'), 2)}
+            'revisar_g': round(sum(r['cant'] for r in rows if r['status'] not in ('OK', 'YA_APLICADA')), 2)}
 
 
 @bp.route('/api/admin/descuento-retro/preview', methods=['POST'])
@@ -12012,7 +12024,7 @@ def descuento_retroactivo_page():
     """Revisión + descuento retroactivo del consumo de producciones no registradas en EOS."""
     if session.get('compras_user', '') not in ADMIN_USERS:
         return redirect('/login?next=/admin/descuento-retroactivo')
-    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Descuento retroactivo</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:20px}.card{max-width:1180px;margin:0 auto}table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12.5px}th,td{text-align:left;padding:5px 8px;border-bottom:1px solid #eee}th{color:#6d28d9;font-size:10.5px;text-transform:uppercase;position:sticky;top:0;background:#faf5ff}.chip{padding:1px 8px;border-radius:9px;font-weight:700;font-size:11px}.st-OK{background:#dcfce7;color:#166534}.st-CUARENTENA{background:#dbeafe;color:#1e40af}.st-INSUF{background:#fef3c7;color:#92400e}.st-SIN_STOCK{background:#fee2e2;color:#991b1b}.st-MP_NO_EXISTE{background:#fee2e2;color:#991b1b}.st-INACTIVA{background:#fee2e2;color:#991b1b}.sum{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}.sc{background:#fff;border:1px solid #ede9fe;border-radius:10px;padding:9px 14px;font-size:13px}.sc b{font-size:18px;display:block}</style></head><body>
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Descuento retroactivo</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:20px}.card{max-width:1180px;margin:0 auto}table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12.5px}th,td{text-align:left;padding:5px 8px;border-bottom:1px solid #eee}th{color:#6d28d9;font-size:10.5px;text-transform:uppercase;position:sticky;top:0;background:#faf5ff}.chip{padding:1px 8px;border-radius:9px;font-weight:700;font-size:11px}.st-OK{background:#dcfce7;color:#166534}.st-CUARENTENA{background:#dbeafe;color:#1e40af}.st-INSUF{background:#fef3c7;color:#92400e}.st-SIN_STOCK{background:#fee2e2;color:#991b1b}.st-MP_NO_EXISTE{background:#fee2e2;color:#991b1b}.st-INACTIVA{background:#fee2e2;color:#991b1b}.st-YA_APLICADA{background:#e0e7ff;color:#3730a3}.sum{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}.sc{background:#fff;border:1px solid #ede9fe;border-radius:10px;padding:9px 14px;font-size:13px}.sc b{font-size:18px;display:block}</style></head><body>
 <div class="cx-card card">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128203;</div><div><h2 style="margin:0;font-size:19px">Descuento retroactivo de consumo</h2><div class="cx-text-mute" style="font-size:13px">Producciones que NO descontaron MP en EOS. Sub&iacute; el Excel (Producto / Cod.Material / N&deg; Lote / Cant. / N&deg; Lote Bulk). <b>Primero REVISA</b> (no toca nada): te dice qu&eacute; cuadra, qu&eacute; est&aacute; en cuarentena, qu&eacute; no existe. Descontar es un paso aparte.</div></div></div>
   <div style="display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap">
@@ -12043,7 +12055,7 @@ async function revisar(){
     if(!r.ok||!d.ok){document.getElementById('msg').innerHTML='<span style="color:#dc2626">'+esc(d.error||r.status)+'</span>';return;}
     _ROWS=d.rows||[]; document.getElementById('msg').textContent='';
     var s=d.resumen||{}; var ps=s.por_status||{};
-    var cardsdef=[['OK','Descontables','#166534'],['CUARENTENA','En cuarentena','#1e40af'],['INSUF','Stock insuficiente','#92400e'],['SIN_STOCK','Sin stock','#991b1b'],['MP_NO_EXISTE','MP no existe','#991b1b'],['INACTIVA','Inactivas','#991b1b']];
+    var cardsdef=[['OK','Descontables','#166534'],['YA_APLICADA','Ya aplicadas','#3730a3'],['CUARENTENA','En cuarentena','#1e40af'],['INSUF','Stock insuficiente','#92400e'],['SIN_STOCK','Sin stock','#991b1b'],['MP_NO_EXISTE','MP no existe','#991b1b'],['INACTIVA','Inactivas','#991b1b']];
     var sc='<div class="sc" style="border-color:#c4b5fd"><b>'+num(s.total_filas)+'</b> filas · '+num(s.descontable_g+s.revisar_g)+' g</div>';
     cardsdef.forEach(function(k){ if(ps[k[0]]) sc+='<div class="sc"><b style="color:'+k[2]+'">'+num(ps[k[0]])+'</b>'+k[1]+'</div>'; });
     sc+='<div class="sc" style="border-color:#bbf7d0"><b style="color:#166534">'+num(s.descontable_g)+' g</b>descontable</div><div class="sc" style="border-color:#fde68a"><b style="color:#92400e">'+num(s.revisar_g)+' g</b>a revisar</div>';
@@ -12055,7 +12067,7 @@ async function revisar(){
 }
 function pinta(){
   var fil=document.getElementById('filtro').value;
-  var rows=_ROWS.filter(function(r){ if(fil==='OK')return r.status==='OK'; if(fil==='REV')return r.status!=='OK'; return true; });
+  var rows=_ROWS.filter(function(r){ if(fil==='OK')return r.status==='OK'; if(fil==='REV')return r.status!=='OK'&&r.status!=='YA_APLICADA'; return true; });
   var h='<table><thead><tr><th>Producción</th><th>Cód</th><th>Material</th><th>Lote (Excel)</th><th>Lote EOS</th><th style="text-align:right">Consumo g</th><th style="text-align:right">Usable g</th><th style="text-align:right">Cuar. g</th><th>Estado</th><th>Detalle</th></tr></thead><tbody>';
   rows.forEach(function(r){
     var lm=r.lote_match?esc(r.lote_match)+(r.lote_estado&&r.lote_estado!=='VIGENTE'?(' <span style="color:#b45309">('+esc(r.lote_estado)+')</span>'):''):'<span style="color:#cbd5e1">—</span>';
@@ -12065,7 +12077,7 @@ function pinta(){
   document.getElementById('out').innerHTML=h;
 }
 function copiarRev(){
-  var rev=_ROWS.filter(function(r){return r.status!=='OK';});
+  var rev=_ROWS.filter(function(r){return r.status!=='OK'&&r.status!=='YA_APLICADA';});
   if(!rev.length){alert('No hay filas a revisar');return;}
   var t='Produccion\\tCod\\tMaterial\\tLote(Excel)\\tLoteEOS\\tConsumo_g\\tUsable_g\\tCuarentena_g\\tEstado\\tDetalle\\n';
   rev.forEach(function(r){t+=[(r.prod||''),(r.cod||''),(r.nombre||r.desc||''),(r.lote_excel||''),(r.lote_match||''),r.cant,r.usable,r.retenido,r.status,(r.detalle||'')].join('\\t')+'\\n';});
@@ -12583,6 +12595,9 @@ def _normalizar_codigo(c, viejo, nuevo, u):
                   antes={'codigo_mp': viejo, 'stock_g': stock}, despues={'fusionado_en': nuevo})
     except Exception:
         pass
+    # Si el destino está inactivo, reactivarlo ANTES de mover fórmulas (el trigger de
+    # formula_items exige que el material_id destino exista en maestro_mps ACTIVO · M38).
+    c.execute("UPDATE maestro_mps SET activo=1 WHERE UPPER(TRIM(codigo_mp))=? AND COALESCE(activo,1)=0", (nuevo,))
     marca = ' [fusion %s->%s]' % (viejo, nuevo)
     c.execute("UPDATE movimientos SET material_id=?, observaciones=COALESCE(observaciones,'')||? "
               "WHERE UPPER(TRIM(material_id))=?", (nuevo, marca, viejo))

@@ -324,3 +324,28 @@ def test_descuento_retro_page_js_node_check(admin_client):
             assert r.returncode == 0, "script %d: %s" % (i, r.stderr[:300])
         finally:
             os.remove(p)
+
+
+def test_retro_ya_aplicada_y_fusion_reactiva(admin_client):
+    """Revisión marca YA_APLICADA lo ya descontado (no cuenta como a-revisar) + la fusión
+    reactiva un destino inactivo (Sebastián 9-jul · consumo retroactivo)."""
+    from api.index import app
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        c.execute("INSERT OR IGNORE INTO maestro_mps (codigo_mp,nombre_inci,activo,tipo_material) VALUES ('MPYAR1','UREA YA',1,'MP')")
+        c.execute("INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,lote,estado_lote) VALUES ('MPYAR1','UREA YA',10000,'Entrada','2026-01-01','LYAR','VIGENTE')")
+        c.execute("INSERT OR IGNORE INTO maestro_mps (codigo_mp,nombre_inci,activo,tipo_material) VALUES ('MPLEGR1','MEL LEG',1,'MP')")
+        c.execute("INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,lote,estado_lote) VALUES ('MPLEGR1','MEL',400,'Entrada','2026-01-01','LLEGR','VIGENTE')")
+        c.execute("INSERT OR IGNORE INTO maestro_mps (codigo_mp,nombre_inci,activo,tipo_material) VALUES ('MPDSTR9','MEL MB',0,'MP')")
+        conn.commit()
+    filas = [{"cod": "MPYAR1", "desc": "UREA", "lote": "LYAR", "cant": 7000, "prod": "PT-Z", "bulk": "BZR"}]
+    d = admin_client.post("/api/admin/descuento-retro/preview", json={"filas": filas}).get_json()
+    assert d["rows"][0]["status"] == "OK"
+    admin_client.post("/api/admin/descuento-retro/apply", json={"filas": [r for r in d["rows"] if r["status"] == "OK"]})
+    d2 = admin_client.post("/api/admin/descuento-retro/preview", json={"filas": filas}).get_json()
+    assert d2["rows"][0]["status"] == "YA_APLICADA" and d2["resumen"]["revisar_g"] == 0
+    ap = admin_client.post("/api/admin/normalizar-lote/apply", json={"texto": "MPLEGR1 -> MPDSTR9"}).get_json()
+    assert ap["ok"] and ap["hechos"][0]["modo"] == "fusion"
+    dg = admin_client.get("/api/admin/mp-diag?codigo=MPDSTR9").get_json()
+    assert dg["activo"] == 1 and abs(dg["stock_usable_g"] - 400) < 1
