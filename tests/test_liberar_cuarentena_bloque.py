@@ -21,3 +21,23 @@ def test_liberar_cuarentena_bloque(admin_client):
             p = "_lc%d.js" % i; open(p, "w", encoding="utf-8").write(s)
             rr = subprocess.run(["node", "--check", p], capture_output=True, text=True); os.remove(p)
             assert rr.returncode == 0, rr.stderr[:200]
+
+
+def test_cuarentena_excluye_epp_y_seleccion(admin_client):
+    """La lista/liberación de cuarentena excluye NO-MP (EPP) y permite selección (Sebastián 9-jul)."""
+    from api.index import app
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        c.execute("INSERT OR IGNORE INTO maestro_mps (codigo_mp,nombre_inci,activo,tipo_material) VALUES ('MPQAA','AZ A',1,'MP')")
+        c.execute("INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,lote,estado_lote) VALUES ('MPQAA','AZ A',500,'Entrada','2026-01-01','LQAA','CUARENTENA')")
+        c.execute("INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,lote,estado_lote) VALUES ('EPP','EPP',7,'Entrada','2026-01-01','OC-OC-Z','CUARENTENA')")
+        conn.commit()
+    d = admin_client.get("/api/admin/cuarentena-lista").get_json()
+    cods = {x["cod"] for x in d["lotes"]}
+    assert "MPQAA" in cods and "EPP" not in cods and d["no_mp_excluidos"] >= 1
+    admin_client.post("/api/admin/liberar-cuarentena-bloque", json={"seleccion": [{"cod": "MPQAA", "lote": "LQAA"}]})
+    with app.app_context():
+        from database import get_db
+        c = get_db().cursor()
+        assert c.execute("SELECT estado_lote FROM movimientos WHERE material_id='EPP' AND lote='OC-OC-Z'").fetchone()[0] == "CUARENTENA"
