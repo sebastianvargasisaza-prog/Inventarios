@@ -7427,7 +7427,10 @@ def registrar_recepcion():
     # El comercial NO se borra: se sigue guardando en maestro_mps.nombre_comercial.
     _inci_rec = (mp[0] if mp else d.get('nombre_inci','')) or ''
     nombre = _inci_rec.strip() or codigo
-    proveedor = d.get('proveedor','') or (mp[3] if mp else '')
+    # FIX 10-jul (500 en recepción · PG): '' or None = None (mp[3] NULL cuando el maestro no tiene
+    # proveedor) → el INSERT a precios_mp_historico metía NULL en proveedor (NOT NULL en PG) → 500.
+    # El `or ''` final garantiza string, nunca None. SQLite lo toleraba (por eso pasaba el golden).
+    proveedor = d.get('proveedor','') or (mp[3] if mp else '') or ''
     precio_kg = float(d.get('precio_kg') or 0)
     numero_factura = (d.get('numero_factura') or '').strip()
     numero_oc = (d.get('numero_oc') or '').strip()
@@ -7538,12 +7541,13 @@ def registrar_recepcion():
     if precio_kg > 0:
         try:
             c.execute("INSERT OR IGNORE INTO precios_mp_historico (codigo_mp,precio_kg,numero_factura,proveedor,fecha) VALUES (?,?,?,?,datetime('now', '-5 hours'))",
-                      (codigo, precio_kg, numero_factura, proveedor))
-        except sqlite3.OperationalError as _e:
-            if 'no such table' not in str(_e).lower():
-                __import__('logging').getLogger('inventario').error(
-                    "INSERT precios_mp_historico falló: %s", _e
-                )
+                      (codigo, precio_kg, (numero_factura or ''), (proveedor or '')))
+        except Exception as _e:
+            # best-effort · el historial de precios NO debe tumbar la recepción. El adapter PG ya
+            # hizo ROLLBACK al savepoint interno → la tx de la recepción sigue viva (no aborta · M4).
+            __import__('logging').getLogger('inventario').warning(
+                "INSERT precios_mp_historico falló (no bloquea recepción): %s", _e
+            )
     # Cerrar OC si se referencia una
     oc_warning = None
     if numero_oc:
