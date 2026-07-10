@@ -151,6 +151,32 @@ def test_mee_codigo_auto_consecutivo(admin_client):
     assert admin_client.post("/api/mee/crear-auto", json={"tipo": "ENV", "descripcion": ""}).status_code == 400
 
 
+def test_renombrar_codigo_mp(admin_client):
+    """Renombrar el código de una MP (normalizar EOS↔MyBatch · Sebastián 9-jul):
+    preview + apply re-llavan maestro + fórmulas + stock, conservando todo."""
+    # página
+    assert admin_client.get("/admin/renombrar-codigo-mp").status_code == 200
+    # preview de MP00199 (DIMETHICONE) → MP00293 (libre)
+    pv = admin_client.get("/api/admin/renombrar-mp-preview?viejo=MP00199&nuevo=MP00293").get_json()
+    assert pv["ok"] and pv["viejo"] == "MP00199" and pv["nuevo"] == "MP00293"
+    assert "DIMETHICONE" in (pv["nombre_inci"] or "").upper()
+    tablas = {r["tabla"] for r in pv["refs"]}
+    assert "formula_items" in tablas  # 6 fórmulas la usan
+    # target ocupado → 409; código inexistente → 404
+    assert admin_client.get("/api/admin/renombrar-mp-preview?viejo=MP00199&nuevo=MP00072").status_code == 409
+    assert admin_client.get("/api/admin/renombrar-mp-preview?viejo=MP99999&nuevo=MP00293").status_code == 404
+    # aplicar
+    r = admin_client.post("/api/admin/renombrar-mp-apply", json={"viejo": "MP00199", "nuevo": "MP00293"})
+    assert r.status_code == 200, r.get_json()
+    d = r.get_json()
+    assert d["ok"] and d["nucleo"]["maestro_mps.codigo_mp"] == 1
+    assert d["nucleo"]["formula_items.material_id"] == 6
+    # verificar en la BD: MP00199 ya no existe, MP00293 sí, fórmulas migradas
+    pv2 = admin_client.get("/api/admin/renombrar-mp-preview?viejo=MP00293&nuevo=MP00199").get_json()
+    assert pv2["ok"] and "DIMETHICONE" in (pv2["nombre_inci"] or "").upper()
+    assert admin_client.get("/api/admin/renombrar-mp-preview?viejo=MP00199&nuevo=MP00293").status_code == 404
+
+
 def test_envases_recatalogo_y_productos_envases(admin_client):
     r1 = admin_client.get("/admin/envases-recatalogo")
     assert r1.status_code == 200 and b"Re-cat" in r1.data

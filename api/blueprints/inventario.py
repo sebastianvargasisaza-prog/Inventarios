@@ -11781,6 +11781,216 @@ async function fixPrecio(cod, precio){
     return _tpl.replace('__FILAS__', filas)
 
 
+# ── Renombrar código de MP (normalizar EOS ↔ MyBatch) · Sebastián 9-jul ─────────
+# Cambiar el código de una MP es re-llavar TODA referencia (M17: la identidad es el
+# CÓDIGO). Introspección en runtime (esquema real de prod, no parse estático).
+_MP_CODE_COLS = ('material_id', 'codigo_mp', 'formula_material_id', 'bodega_material_id',
+                 'mp_codigo', 'material_codigo', 'codigo_material')
+# El renombrado del maestro va PRIMERO (el trigger BEFORE UPDATE de formula_items.material_id
+# exige que el nuevo código exista en maestro_mps activo). Estas 5 son el NÚCLEO atómico:
+# si alguna falla, se aborta TODO (no dejar fórmulas/stock huérfanos). El resto (histórico
+# EBR, CoA, precios, solicitudes…) va best-effort con SAVEPOINT y se reporta.
+_MP_CODE_CORE = (('movimientos', 'material_id'), ('formula_items', 'material_id'),
+                 ('mp_formula_bridge', 'formula_material_id'), ('mp_formula_bridge', 'bodega_material_id'))
+
+
+def _pares_columna_mp(c):
+    """(tabla, columna) de toda columna que guarda un código de MP · PG + SQLite."""
+    pares = []
+    try:
+        ph = ",".join(["?"] * len(_MP_CODE_COLS))
+        for t, col in c.execute(
+                "SELECT table_name, column_name FROM information_schema.columns "
+                "WHERE table_schema='public' AND column_name IN (" + ph + ")",
+                _MP_CODE_COLS).fetchall():
+            pares.append((str(t), str(col)))
+    except Exception:
+        pares = []
+    if not pares:  # SQLite (PRAGMA es SQLite-only · en PG devuelve vacío · M57)
+        try:
+            for (t,) in c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall():
+                for r in c.execute("PRAGMA table_info(" + t + ")").fetchall():
+                    if str(r[1]).lower() in _MP_CODE_COLS:
+                        pares.append((t, str(r[1])))
+        except Exception:
+            pass
+    return pares
+
+
+def _mp_stock_g(c, cod):
+    try:
+        r = c.execute(
+            """SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                      WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0)
+               FROM movimientos WHERE material_id=?""", (cod,)).fetchone()
+        return max(float(r[0] or 0), 0.0)
+    except Exception:
+        return 0.0
+
+
+@bp.route('/api/admin/renombrar-mp-preview', methods=['GET'])
+def renombrar_mp_preview():
+    """Preview read-only del renombrado de un código de MP: qué MP es, su stock, y
+    cuántas referencias cambiarían por tabla. Confirma que el nuevo código esté libre."""
+    _u, _err, _code = _require_admin()
+    if _err:
+        return _err, _code
+    viejo = (request.args.get('viejo') or '').strip().upper()
+    nuevo = (request.args.get('nuevo') or '').strip().upper()
+    if not viejo or not nuevo:
+        return jsonify({'error': 'viejo y nuevo requeridos'}), 400
+    if viejo == nuevo:
+        return jsonify({'error': 'El código viejo y el nuevo son iguales'}), 400
+    conn = get_db(); c = conn.cursor()
+    row = c.execute(
+        """SELECT codigo_mp, COALESCE(NULLIF(TRIM(nombre_inci),''),''), COALESCE(NULLIF(TRIM(nombre_comercial),''),''),
+                  COALESCE(proveedor,''), COALESCE(activo,1)
+           FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?""", (viejo,)).fetchone()
+    if not row:
+        return jsonify({'error': 'El código %s no existe en el maestro de MP' % viejo}), 404
+    ocupado = c.execute("SELECT COALESCE(NULLIF(TRIM(nombre_inci),''),NULLIF(TRIM(nombre_comercial),''),codigo_mp) "
+                        "FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?", (nuevo,)).fetchone()
+    if ocupado:
+        return jsonify({'error': 'El código %s YA existe en el maestro (es "%s") — no se puede renombrar encima. '
+                        'Si querés fusionarlos, es otra operación.' % (nuevo, str(ocupado[0]))}), 409
+    refs = []
+    for t, col in _pares_columna_mp(c):
+        try:
+            n = c.execute("SELECT COUNT(*) FROM " + t + " WHERE UPPER(TRIM(" + col + "))=?", (viejo,)).fetchone()[0]
+        except Exception:
+            n = 0
+        if n:
+            refs.append({'tabla': t, 'col': col, 'n': int(n)})
+    refs.sort(key=lambda x: -x['n'])
+    return jsonify({'ok': True, 'viejo': viejo, 'nuevo': nuevo, 'nombre_inci': row[1], 'nombre_comercial': row[2],
+                    'proveedor': row[3], 'activo': int(row[4]), 'stock_g': _mp_stock_g(c, viejo),
+                    'refs': refs, 'total_refs': sum(r['n'] for r in refs)})
+
+
+@bp.route('/api/admin/renombrar-mp-apply', methods=['POST'])
+def renombrar_mp_apply():
+    """Re-llava un código de MP en TODA la base (maestro + movimientos + fórmulas + bridge +
+    histórico). Núcleo atómico (maestro/stock/fórmulas/bridge) o nada; auxiliares best-effort
+    con SAVEPOINT. Auditado y reversible (re-correr con viejo/nuevo intercambiados)."""
+    _u, _err, _code = _require_admin()
+    if _err:
+        return _err, _code
+    d = request.json or {}
+    viejo = (d.get('viejo') or '').strip().upper()
+    nuevo = (d.get('nuevo') or '').strip().upper()
+    if not viejo or not nuevo:
+        return jsonify({'error': 'viejo y nuevo requeridos'}), 400
+    if viejo == nuevo:
+        return jsonify({'error': 'El código viejo y el nuevo son iguales'}), 400
+    conn = get_db(); c = conn.cursor()
+    if not c.execute("SELECT 1 FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?", (viejo,)).fetchone():
+        return jsonify({'error': 'El código %s no existe' % viejo}), 404
+    if c.execute("SELECT 1 FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?", (nuevo,)).fetchone():
+        return jsonify({'error': 'El código %s ya existe en el maestro' % nuevo}), 409
+    stock_antes = _mp_stock_g(c, viejo)
+    # audit ANTES del commit (M22)
+    try:
+        audit_log(c, usuario=_u, accion='RENOMBRAR_CODIGO_MP', tabla='maestro_mps', registro_id=nuevo,
+                  antes={'codigo_mp': viejo}, despues={'codigo_mp': nuevo, 'stock_g': stock_antes})
+    except Exception:
+        pass
+    # 1) NÚCLEO ATÓMICO · maestro PRIMERO (el trigger de formula_items exige el nuevo activo)
+    core_counts = {}
+    try:
+        c.execute("UPDATE maestro_mps SET codigo_mp=? WHERE UPPER(TRIM(codigo_mp))=?", (nuevo, viejo))
+        core_counts['maestro_mps.codigo_mp'] = c.rowcount
+        for t, col in _MP_CODE_CORE:
+            c.execute("UPDATE " + t + " SET " + col + "=? WHERE UPPER(TRIM(" + col + "))=?", (nuevo, viejo))
+            core_counts[t + '.' + col] = c.rowcount
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': 'No se pudo renombrar el núcleo (maestro/stock/fórmulas): %s' % str(e)}), 500
+    # 2) AUXILIARES · best-effort con SAVEPOINT (histórico EBR inmutable, etc. no debe abortar todo)
+    aux_counts = {}; errores = []
+    core_set = {('maestro_mps', 'codigo_mp')} | set(_MP_CODE_CORE)
+    for t, col in _pares_columna_mp(c):
+        if (t, col) in core_set:
+            continue
+        sp = 'sp_mp_%d' % (len(aux_counts) + len(errores))
+        try:
+            c.execute("SAVEPOINT " + sp)
+            c.execute("UPDATE " + t + " SET " + col + "=? WHERE UPPER(TRIM(" + col + "))=?", (nuevo, viejo))
+            if c.rowcount:
+                aux_counts[t + '.' + col] = c.rowcount
+            c.execute("RELEASE SAVEPOINT " + sp)
+        except Exception as e:
+            try:
+                c.execute("ROLLBACK TO SAVEPOINT " + sp)
+            except Exception:
+                pass
+            errores.append({'tabla': t, 'col': col, 'error': str(e)[:180]})
+    conn.commit()
+    return jsonify({'ok': True, 'viejo': viejo, 'nuevo': nuevo, 'stock_g': stock_antes,
+                    'nucleo': core_counts, 'auxiliares': aux_counts, 'errores': errores})
+
+
+@bp.route('/admin/renombrar-codigo-mp', methods=['GET'])
+def renombrar_codigo_mp_page():
+    """Normalizar el código de una MP (EOS ↔ MyBatch): preview de referencias + aplicar."""
+    if session.get('compras_user', '') not in ADMIN_USERS:
+        return redirect('/login?next=/admin/renombrar-codigo-mp')
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Renombrar codigo MP</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:24px}.card{max-width:920px;margin:0 auto}.inp{border:1px solid #e4e4e7;border-radius:8px;padding:9px 11px;font-size:14px;font-family:monospace;width:150px}.inp:focus{outline:none;border-color:#a78bfa;box-shadow:0 0 0 3px rgba(167,139,250,.18)}table{width:100%;border-collapse:collapse;margin-top:12px}th,td{text-align:left;padding:7px 9px;border-bottom:1px solid #eee;font-size:13px}th{color:#6d28d9;font-size:11px;text-transform:uppercase;letter-spacing:.4px}</style></head><body>
+<div class="cx-card card">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128257;</div><div><h2 style="margin:0;font-size:19px">Renombrar codigo de MP</h2><div class="cx-text-mute" style="font-size:13px">Normaliza el codigo de una materia prima (EOS &harr; MyBatch). Re-llava <b>todas</b> las referencias: maestro, stock (kardex), formulas, bridge e historico. Reversible (re-corre intercambiando).</div></div></div>
+  <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-top:16px">
+    <div><label style="font-size:12px;color:#555;display:block;margin-bottom:4px">Codigo ACTUAL (EOS)</label><input id="viejo" class="inp" placeholder="MP00199"></div>
+    <div style="font-size:22px;color:#a78bfa;padding-bottom:6px">&rarr;</div>
+    <div><label style="font-size:12px;color:#555;display:block;margin-bottom:4px">Codigo NUEVO (MyBatch)</label><input id="nuevo" class="inp" placeholder="MP00293"></div>
+    <button class="cx-btn" style="background:#7c3aed;color:#fff" onclick="preview()">Ver que cambiaria</button>
+  </div>
+  <div id="out" style="margin-top:18px"></div>
+  <div style="margin-top:16px"><button class="cx-btn cx-btn-ghost" onclick="location.href='/inventarios'">Volver a Inventario</button></div>
+</div>
+<script>
+var _V='',_N='';
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function num(n){return Number(n||0).toLocaleString('es-CO');}
+async function preview(){
+  var v=(document.getElementById('viejo').value||'').trim().toUpperCase();
+  var n=(document.getElementById('nuevo').value||'').trim().toUpperCase();
+  if(!v||!n){alert('Poné los dos códigos');return;}
+  document.getElementById('out').innerHTML='<div style="color:#7c3aed">Cargando…</div>';
+  try{
+    var r=await fetch('/api/admin/renombrar-mp-preview?viejo='+encodeURIComponent(v)+'&nuevo='+encodeURIComponent(n),{credentials:'same-origin'});
+    var d=await r.json();
+    if(!r.ok||!d.ok){document.getElementById('out').innerHTML='<div style="color:#dc2626;font-weight:600">'+esc(d.error||r.status)+'</div>';return;}
+    _V=d.viejo;_N=d.nuevo;
+    var rows='';
+    (d.refs||[]).forEach(function(x){rows+='<tr><td style="font-family:monospace">'+esc(x.tabla)+'</td><td style="font-family:monospace;color:#888">'+esc(x.col)+'</td><td style="text-align:right;font-weight:700">'+num(x.n)+'</td></tr>';});
+    if(!rows)rows='<tr><td colspan="3" style="color:#888">Sin referencias en tablas de datos (solo el maestro).</td></tr>';
+    var h='<div style="background:#fff;border:1px solid #ede9fe;border-radius:12px;padding:14px 16px">'
+      +'<div style="font-size:15px"><b>'+esc(d.viejo)+'</b> &rarr; <b style="color:#7c3aed">'+esc(d.nuevo)+'</b></div>'
+      +'<div style="color:#555;font-size:13px;margin-top:3px">'+esc(d.nombre_inci||d.nombre_comercial||'(sin nombre)')+(d.nombre_comercial&&d.nombre_inci?(' &middot; '+esc(d.nombre_comercial)):'')+' &middot; stock <b>'+num(d.stock_g)+' g</b>'+(d.activo?'':' &middot; <span style="color:#b45309">INACTIVA</span>')+'</div>'
+      +'<table><thead><tr><th>Tabla</th><th>Columna</th><th style="text-align:right">Filas</th></tr></thead><tbody>'+rows+'</tbody></table>'
+      +'<div style="margin-top:12px;padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;font-size:12.5px;color:#7f1d1d">&#9888; Se re-llava TODO a <b>'+esc(d.nuevo)+'</b> (el stock se conserva, es la misma MP). Reversible por audit_log.</div>'
+      +'<button class="cx-btn cx-btn-success" style="margin-top:12px" onclick="aplicar()">Aplicar renombrado ('+esc(d.viejo)+' &rarr; '+esc(d.nuevo)+')</button>'
+      +'</div>';
+    document.getElementById('out').innerHTML=h;
+  }catch(e){document.getElementById('out').innerHTML='<div style="color:#dc2626">Error de red</div>';}
+}
+async function aplicar(){
+  if(!_V||!_N)return;
+  if(!confirm('Renombrar '+_V+' a '+_N+' en toda la base? (reversible)'))return;
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/admin/renombrar-mp-apply',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||''},body:JSON.stringify({viejo:_V,nuevo:_N})});
+    var d=await r.json();
+    if(!r.ok||!d.ok){alert('Error: '+(d.error||r.status));return;}
+    var tot=0;Object.keys(d.nucleo||{}).forEach(function(k){tot+=d.nucleo[k];});Object.keys(d.auxiliares||{}).forEach(function(k){tot+=d.auxiliares[k];});
+    var msg='&#10003; Listo: '+esc(_V)+' &rarr; '+esc(_N)+'. '+tot+' referencias re-llaveadas.';
+    if((d.errores||[]).length)msg+='<div style="color:#b45309;margin-top:6px">'+d.errores.length+' tabla(s) no se pudieron actualizar (historico inmutable): '+esc(d.errores.map(function(e){return e.tabla;}).join(', '))+'</div>';
+    document.getElementById('out').innerHTML='<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:16px;font-size:15px;color:#166534">'+msg+'</div>';
+  }catch(e){alert('Error de red');}
+}
+</script></body></html>'''
+    return _tpl
+
+
 @bp.route('/admin/envases-recatalogo', methods=['GET'])
 def envases_recatalogo_page():
     """Re-catálogo de envases (Sebastián 9-jul): CREAR los 76 códigos nuevos (MEE-ENV-###, del conteo físico) con
