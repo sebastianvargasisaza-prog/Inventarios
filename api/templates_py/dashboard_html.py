@@ -551,6 +551,13 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   </div>
 
   <div id="dashboard" class="tab-content active">
+    <style>
+      #dashboard .grid{gap:14px}
+      #dashboard .card{border-radius:14px;border:1px solid #eef0f4;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.05),0 8px 22px rgba(0,0,0,.045);transition:transform .08s ease,box-shadow .14s ease;padding:15px 18px}
+      #dashboard .card:hover{transform:translateY(-2px);box-shadow:0 9px 22px rgba(0,0,0,.11)}
+      #dashboard .card h3{font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin:0 0 4px}
+      #dashboard .card p{font-weight:800;line-height:1;margin:2px 0 5px;font-variant-numeric:tabular-nums}
+    </style>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
       <div>
         <h2 style="margin:0;">Dashboard Ejecutivo</h2>
