@@ -2675,6 +2675,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <button onclick="abrirClientesB2B()" title="Crear/gestionar clientes B2B (Luz, Valentina, Daniela) · cada cliente agrega sus pedidos con '+ Producto' · se cargan solos al plan" style="background:#0d9488;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">👥 Clientes B2B</button>
         <button onclick="cargarNecesidades()" style="background:#6d28d9;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">↻ Recargar</button>
         <button onclick="syncStockAhora(this)" title="Trae el stock ACTUAL de Shopify: Ánimus Lab = góndola vendible · Espagiria = por entrar (producido en el lab, sin entregar). Úsalo tras producir o entregar para ver los números al día." style="background:#0891b2;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">🔄 Sync stock</button>
+        <button id="btn-solo-manual" onclick="toggleSoloManual()" title="Modo canónico manual: la programación vive SOLO de las cadenas que creás a mano (punto de origen + cadencia) · sin sugerencias ni crons automáticos. Reversible." style="background:#475569;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">🎛️ Modo manual: —</button>
       </div>
     </div>
     <div id="nec-resumen" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"></div>
@@ -23445,6 +23446,28 @@ async function ckMarcar(itemId, estado){
     }
   }
 
+  function _updateSoloManualBtn() {
+    var b = document.getElementById('btn-solo-manual'); if (!b) return;
+    var on = !!window.__SOLO_MANUAL;
+    b.textContent = on ? '🎛️ Modo manual: ON' : '🎛️ Modo manual: OFF';
+    b.style.background = on ? '#16a34a' : '#475569';
+  }
+  async function toggleSoloManual() {
+    var next = !window.__SOLO_MANUAL;
+    if (!confirm(next
+      ? 'Activar MODO CANÓNICO MANUAL:\\n\\nLa programación vivirá SOLO de las cadenas que creás a mano (punto de origen + cadencia). Se ocultan las sugerencias y los crons NO crean producciones automáticas.\\n\\n¿Continuar?'
+      : 'Desactivar el modo manual y volver a las sugerencias/automáticos. ¿Continuar?')) return;
+    try {
+      var t = (await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json()).csrf_token;
+      var r = await fetch('/api/plan/solo-manual', {method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json','X-CSRF-Token':t}, body: JSON.stringify({activo: next})});
+      var d = await r.json();
+      if (!r.ok) { alert('No se pudo: ' + ((d && d.error) || r.status)); return; }
+      window.__SOLO_MANUAL = !!d.activo;
+      _updateSoloManualBtn();
+      if (window.cargarNecesidades) { try { await cargarNecesidades(); } catch(e){} }
+    } catch(e) { alert('Error: ' + e); }
+  }
   async function cargarNecesidades() {
     const cobC = document.getElementById('nec-cob-critico').value || 20;
     const cobA = document.getElementById('nec-cob-alerta').value || 25;
@@ -23459,6 +23482,13 @@ async function ckMarcar(itemId, estado){
         window._NEC_ENVASES = ((_ed && _ed.items) || []).filter(function(m){ return /^FR-/.test((m.codigo||'')); });
       } catch(e){ window._NEC_ENVASES = []; }
     }
+    // Sebastián 10-jul · modelo canónico manual: si está ON, ocultamos las SUGERENCIAS
+    // (acción sugerida/adelantar/próxima) · la programación vive solo de las cadenas manuales.
+    if (window.__SOLO_MANUAL === undefined) {
+      try { window.__SOLO_MANUAL = !!(await (await fetch('/api/plan/solo-manual', {credentials:'same-origin'})).json()).activo; }
+      catch(e){ window.__SOLO_MANUAL = false; }
+    }
+    _updateSoloManualBtn();
     try {
       const r = await fetch('/api/plan/necesidades' + qs);
       if (r.status === 401) { window.location.href = '/login'; return; }
@@ -25670,6 +25700,16 @@ async function ckMarcar(itemId, estado){
         else if(_tend >= 0.04){ _al = '📈 ventas +' + _tp + '% en ascenso'; _alc = '#7c3aed'; }
         else { _al = '✅ al día'; _alc = '#16a34a'; }
         var _proxTxt = p.proxima_sugerida_fecha ? ('próxima ' + ('' + p.proxima_sugerida_fecha).slice(5,10)) : '';
+        // Sebastián 10-jul · modelo canónico manual: badge/estado NEUTRO, sin sugerencias
+        // (adelantar/atrasar/tendencia/incompleta) · solo muestra si hay o no cadena manual.
+        if (window.__SOLO_MANUAL) {
+          _cadBadge = _nCad > 0
+            ? '<span title="Lotes programados (cadena manual)" style="background:#dcfce7;color:#15803d;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:800">📅 ' + _nCad + ' lote' + (_nCad === 1 ? '' : 's') + '</span>'
+            : '<span title="Sin cadena · programala con el botón Programar" style="background:#f1f5f9;color:#64748b;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:800">⚪ sin programar</span>';
+          _al = _nCad > 0 ? ('📅 ' + _nCad + ' lote' + (_nCad === 1 ? '' : 's') + ' programado' + (_nCad === 1 ? '' : 's')) : '⚪ sin programar';
+          _alc = _nCad > 0 ? '#16a34a' : '#94a3b8';
+          _proxTxt = '';
+        }
         html += '<tr class="necx-prow" style="border-top:1px solid #e2e8f0;background:' + _rowBg + ';border-left:' + _rowBorderL + ';opacity:' + _rowOpacity + '">';
         // Producto + urgencia
         html += '<td style="padding:10px 8px">';
@@ -26095,7 +26135,8 @@ async function ckMarcar(itemId, estado){
     html += '<button onclick="verDesgloseTonos(' + JSON.stringify((p.producto_nombre||p.producto||'')).replace(/"/g,'&quot;') + ')" style="background:#fff;border:1px solid #c4b5fd;color:#6d28d9;border-radius:6px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;margin-bottom:10px">🎨 Ver referencias / tonos</button>';
     // 🎯 ACCIÓN SUGERIDA unificada (adelantar / atrasar / programar / ok) · reemplaza
     // la alerta roja suelta + la caja "programar". Regla: producir 20d antes de agotarse.
-    html += _accionSugeridaHtml(p, idx);
+    // Sebastián 10-jul · en modelo canónico manual NO se muestra (Alejandro no quiere sugerencias).
+    if (!window.__SOLO_MANUAL) { html += _accionSugeridaHtml(p, idx); }
 
     // ── Última producción + horizonte ──
     if (p.ultima_produccion_fecha) {
@@ -26107,7 +26148,7 @@ async function ckMarcar(itemId, estado){
       if (p.duracion_lote_dias) {
         html += '<div style="font-size:12px;color:#475569">Alcanza para ~<strong>' + p.duracion_lote_dias + ' días</strong></div>';
       }
-      if (p.proxima_sugerida_fecha) {
+      if (p.proxima_sugerida_fecha && !window.__SOLO_MANUAL) {
         html += '<div style="font-size:12px;font-weight:700;color:' + colorSug + ';margin-top:4px">Próxima sugerida: ' + p.proxima_sugerida_fecha;
         if (en != null) html += ' (' + (en > 0 ? 'en ' + en + 'd' : 'YA · ' + (-en) + 'd atrasado') + ')';
         html += '</div>';
@@ -26178,28 +26219,40 @@ async function ckMarcar(itemId, estado){
       html += '</div>';
     }
 
-    // ═══════ SECCIÓN 1.6 · PROGRAMAR LA CADENA · 2 años (Sebastián 3-jul) ═══════
-    // "aquí debería ser todo": desde Necesidades, con la velocidad + stock que ya tiene el producto,
-    // programa la cadena completa por cobertura real (kg Animus ÷ venta) · 1ª cuando se agota el stock.
-    if ((p.velocidad_kg_dia || 0) > 0.0001) {
-      var _ce = _cadenaExistente(p);   // Sebastián 4-jul · si ya hay cadena, el recuadro la refleja
-      var _mesesVal = _ce ? _ce.meses : 2;
-      var _kgVal = _ce ? _ce.kg.toFixed(1) : '';
-      var _otroVal = _ce ? _ce.otro : (Math.round((p.ancla_kg_otro_cliente || 0) * 10) / 10);
+    // ═══════ PROGRAMAR PRODUCCIÓN · CANÓNICO MANUAL (Sebastián 10-jul) ═══════
+    // Modelo nuevo (Alejandro no quiere sugerencias): la programación vive SOLO desde el punto de
+    // ORIGEN (la última producción, editable a mano) + la CADENCIA que ponemos nosotros. Sin cobertura,
+    // sin "adelantar", sin próxima sugerida. Punto de partida → cada X meses → Y kg/lote → 1 o 2 años.
+    {
+      var _ceM = _cadenaExistente(p);   // si ya hay cadena, mostrarla (solo informativo)
+      // Punto de origen: la última producción real (editable) · si no hay, hoy.
+      var _hoyCo = new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10);
+      var _partFecha = (p.ultima_produccion_fecha || _hoyCo).slice(0, 10);
+      var _partKg = (p.ultima_produccion_kg != null && p.ultima_produccion_kg > 0) ? p.ultima_produccion_kg : (p.lote_bulk_kg || 30);
+      var _mesesM = _ceM ? _ceM.meses : 2;
+      var _velDiaM = p.velocidad_kg_dia || 0;
+      var _kgM = _ceM ? _ceM.kg.toFixed(1) : (_velDiaM > 0 ? (Math.round(_velDiaM * 30.44 * _mesesM * 10) / 10) : _partKg);
       html += '<div style="background:linear-gradient(135deg,#f5f3ff,#faf5ff);border:1px solid #ddd6fe;border-radius:10px;padding:14px;margin:14px 0">';
-      html += '<div style="font-size:13px;font-weight:800;color:#5b21b6;margin-bottom:8px">📅 Programar la cadena · 2 años</div>';
-      if(_ce){
-        html += '<div style="background:#dcfce7;border:1px solid #86efac;border-radius:6px;padding:7px 10px;margin-bottom:10px;font-size:11px;color:#166534;line-height:1.5">✅ <b>Ya tenés esta cadena programada:</b> ' + _ce.n + ' lotes de <b>' + _ce.kg.toFixed(1) + ' kg</b> cada <b>' + _ce.meses + ' mes' + (_ce.meses === 1 ? '' : 'es') + '</b>' + (_ce.otro > 0 ? (' (+' + _ce.otro.toFixed(1) + ' kg otro cliente)') : '') + '. Los valores de abajo YA la reflejan · solo reprogramá si querés cambiarla.</div>';
+      html += '<div style="font-size:13px;font-weight:800;color:#5b21b6;margin-bottom:8px">📅 Programar producción · canónico manual</div>';
+      if (_ceM) {
+        html += '<div style="background:#dcfce7;border:1px solid #86efac;border-radius:6px;padding:7px 10px;margin-bottom:10px;font-size:11px;color:#166534;line-height:1.5">✅ <b>Ya tenés cadena:</b> ' + _ceM.n + ' lotes de <b>' + _ceM.kg.toFixed(1) + ' kg</b> cada <b>' + _ceM.meses + ' mes' + (_ceM.meses === 1 ? '' : 'es') + '</b>. Reprogramá abajo para cambiarla.</div>';
       }
-      html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">';
-      html += '<span style="font-size:12px;color:#5b21b6;font-weight:700">Producir para <input id="cadp-meses" type="number" min="1" max="12" value="' + _mesesVal + '" oninput="_cadpMesesToKg(' + idx + ')" style="width:44px;padding:3px 4px;border:1px solid #c4b5fd;border-radius:4px;text-align:center;font-weight:700"> meses</span>';
-      html += '<span style="font-size:12px;color:#5b21b6;font-weight:700">= <input id="cadp-kg" type="number" min="0.1" step="0.1" value="' + _kgVal + '" oninput="_cadpKgManual(' + idx + ')" title="kg de cada lote de la cadena · editalo para programar la cantidad exacta · marcá 🔒 para fijarlo" style="width:56px;padding:3px 4px;border:1px solid #7c3aed;border-radius:4px;text-align:center;font-weight:800;color:#5b21b6"> kg/lote</span>';
-      html += '<label style="font-size:10px;color:#7c3aed;font-weight:700;cursor:pointer;user-select:none;display:inline-flex;align-items:center;gap:3px" title="Fijar los kg a mano: al cambiar los MESES ya NO se recalculan (hacés de más y producís cada X meses igual)"><input id="cadp-kg-fijo" type="checkbox"' + (_ce ? ' checked' : '') + ' onchange="_updateCadenaProdPreview(' + idx + ')" style="margin:0;cursor:pointer"> 🔒 fijar kg</label>';
-      html += '<span style="font-size:11px;color:#92400e">· Para otro cliente <input id="cadp-otro" type="number" min="0" value="' + _otroVal + '" oninput="_updateCadenaProdPreview(' + idx + ')" title="pre-llenado con la porción para otro cliente del lote base · editá si la cadena reserva distinto" style="width:52px;padding:3px 4px;border:1px solid #fcd34d;border-radius:4px;text-align:center"> kg</span>';
+      // Producción de partida (punto de origen · editable a mano)
+      html += '<div style="font-size:11px;color:#6d28d9;font-weight:800;margin-bottom:4px">📍 Producción de partida (punto de origen)</div>';
+      html += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">';
+      html += '<label style="font-size:11px;color:#475569">Fecha <input id="cm-part-fecha" type="date" value="' + _partFecha + '" style="padding:4px 6px;border:1px solid #c4b5fd;border-radius:5px;font-size:12px"></label>';
+      html += '<label style="font-size:11px;color:#475569">Kg producidos <input id="cm-part-kg" type="number" min="0.1" step="0.1" value="' + _partKg + '" style="width:66px;padding:4px 6px;border:1px solid #c4b5fd;border-radius:5px;font-size:12px;text-align:center"></label>';
       html += '</div>';
-      html += '<div id="cadp-preview" style="font-size:11px;color:#5b21b6;background:#fff;border:1px solid #ede9fe;border-radius:6px;padding:8px 10px;line-height:1.5;margin-bottom:8px"></div>';
-      html += '<button onclick="programarCadenaProducto(' + idx + ')" style="background:linear-gradient(90deg,#7c3aed,#5b21b6);color:#fff;border:none;border-radius:6px;padding:9px 16px;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 2px 8px -2px rgba(124,58,237,.5)">' + (_ce ? '🔄 Reprogramar la cadena' : '📅 Programar la cadena · 2 años') + '</button>';
-      html += '<div style="font-size:10px;color:#94a3b8;margin-top:6px">Borra las producciones futuras de este producto y deja la cadena limpia · conserva pedidos B2B y lo ya producido.</div>';
+      // Cadencia + kg por lote + horizonte
+      html += '<div style="font-size:11px;color:#6d28d9;font-weight:800;margin-bottom:4px">🔁 Cadencia</div>';
+      html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">';
+      html += '<span style="font-size:12px;color:#5b21b6;font-weight:700">Cada <input id="cm-meses" type="number" min="1" max="12" value="' + _mesesM + '" oninput="_cmPreview(' + idx + ')" style="width:44px;padding:3px 4px;border:1px solid #c4b5fd;border-radius:4px;text-align:center;font-weight:700"> meses</span>';
+      html += '<span style="font-size:12px;color:#5b21b6;font-weight:700">· <input id="cm-kg" type="number" min="0.1" step="0.1" value="' + _kgM + '" oninput="_cmPreview(' + idx + ')" title="kg de cada lote de la cadena (editable)" style="width:62px;padding:3px 4px;border:1px solid #7c3aed;border-radius:4px;text-align:center;font-weight:800;color:#5b21b6"> kg/lote</span>';
+      html += '<span style="font-size:12px;color:#5b21b6;font-weight:700">· Crear por <select id="cm-anios" onchange="_cmPreview(' + idx + ')" style="padding:3px 4px;border:1px solid #c4b5fd;border-radius:4px;font-weight:700"><option value="1">1 año</option><option value="2">2 años</option></select></span>';
+      html += '</div>';
+      html += '<div id="cm-preview-' + idx + '" style="font-size:11px;color:#5b21b6;background:#fff;border:1px solid #ede9fe;border-radius:6px;padding:8px 10px;line-height:1.5;margin-bottom:8px"></div>';
+      html += '<button onclick="programarCadenaManual(' + idx + ')" style="background:linear-gradient(90deg,#7c3aed,#5b21b6);color:#fff;border:none;border-radius:6px;padding:9px 16px;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 2px 8px -2px rgba(124,58,237,.5)">📅 Crear cadena en el calendario</button>';
+      html += '<div style="font-size:10px;color:#94a3b8;margin-top:6px">Crea un lote cada X meses desde la partida, por el horizonte elegido, en día hábil (sin festivos). Reemplaza las futuras de este producto · conserva pedidos B2B y lo ya producido.</div>';
       html += '</div>';
     }
 
@@ -26252,7 +26305,7 @@ async function ckMarcar(itemId, estado){
       t.setDate(t.getDate() + 7);
       document.getElementById('ppd-fecha').value = t.toISOString().slice(0, 10);
     }
-    setTimeout(function(){ try{ _cadpMesesToKg(idx); }catch(e){} }, 40);  // poblar kg del lote + preview (Sebastián 3-jul)
+    setTimeout(function(){ try{ _cmPreview(idx); }catch(e){} }, 40);  // preview de la cadena canónica manual (Sebastián 10-jul)
   }
 
   // Sebastián 3-jul · cadencia desde Necesidades (motor completo · "aquí debería ser todo").
@@ -26374,6 +26427,63 @@ async function ckMarcar(itemId, estado){
       + (cc.otro > 0 ? (' · ' + cc.otro.toFixed(1) + ' kg otro cliente en la base') : '') + '<br>'
       + '⏳ Un lote cada <b>' + cc.cadaTxt + '</b> (' + (_fijo ? 'kg fijos · igual producís cada ' + cc.meses + ' meses' : 'respeta el ritmo · no cambia si subís los kg') + ') · ~<b>' + cc.nLotes + '</b> lotes · total <b>' + (cc.kgAnimus * cc.nLotes).toFixed(0) + ' kg</b> en 2 años<br>'
       + '🗓️ La 1ª de la cadena el <b>' + (cc.prox || (cc.ancla ? '~' + cc.firstOffset + 'd desde la base' : 'según stock')) + '</b>' + (cc.prox ? ' (la próxima sugerida)' : '') + '.';
+  }
+  // ── Programación canónica MANUAL (Sebastián 10-jul) · desde el punto de origen + la cadencia ──
+  function _cmCalc(idx){
+    var p = window._NEC_PRODUCTOS_CACHE[idx]; if(!p) return null;
+    var partida = ((document.getElementById('cm-part-fecha')||{}).value || '').slice(0,10);
+    var kg = parseFloat((document.getElementById('cm-kg')||{}).value) || 0;
+    var meses = parseFloat((document.getElementById('cm-meses')||{}).value) || 0;
+    var anios = parseInt((document.getElementById('cm-anios')||{}).value) || 1;
+    if(anios !== 1 && anios !== 2) anios = 1;
+    if(!partida || !(kg > 0) || !(meses > 0)) return null;
+    var intervalDias = Math.max(Math.round(meses * 30.44), 15);
+    var horizonte = anios * 365;
+    // 1ª de la cadena = partida + una cadencia (el backend la clampa a hoy si la partida es vieja)
+    var nLotes = Math.max(1, Math.floor((horizonte - intervalDias) / intervalDias) + 1);
+    return {partida:partida, kg:kg, meses:meses, anios:anios, intervalDias:intervalDias, nLotes:nLotes, horizonte:horizonte};
+  }
+  function _cmPreview(idx){
+    var el = document.getElementById('cm-preview-' + idx); if(!el) return;
+    var cc = _cmCalc(idx);
+    if(!cc){ el.innerHTML = '<span style="color:#94a3b8">Completá la partida, cada cuántos meses y los kg/lote.</span>'; return; }
+    var _first = '';
+    try{ var _d = new Date(cc.partida + 'T12:00:00'); _d.setDate(_d.getDate() + cc.intervalDias); _first = _d.toISOString().slice(0,10); }catch(e){}
+    el.innerHTML = '📦 Un lote de <b>' + cc.kg.toFixed(1) + ' kg</b> cada <b>' + cc.meses + ' mes' + (cc.meses===1?'':'es') + '</b> (~' + cc.intervalDias + ' días)<br>'
+      + '🗓️ Desde <b>' + cc.partida + '</b> · 1ª aprox <b>' + (_first||'—') + '</b> (si cae en el pasado, arranca hoy) · ~<b>' + cc.nLotes + '</b> lotes en <b>' + cc.anios + ' año' + (cc.anios===1?'':'s') + '</b> · total <b>' + (cc.kg*cc.nLotes).toFixed(0) + ' kg</b>';
+  }
+  async function programarCadenaManual(idx){
+    var p = window._NEC_PRODUCTOS_CACHE[idx]; if(!p){ alert('Producto no encontrado'); return; }
+    var cc = _cmCalc(idx);
+    if(!cc){ alert('Completá la producción de partida (fecha), cada cuántos meses y los kg por lote.'); return; }
+    var msg = 'Crear la cadena de "' + (p.producto_nombre || '') + '":\\n\\n'
+      + '• Punto de origen: ' + cc.partida + '\\n'
+      + '• Un lote de ' + cc.kg.toFixed(1) + ' kg cada ' + cc.meses + ' mes(es)\\n'
+      + '• ~' + cc.nLotes + ' lotes en ' + cc.anios + ' año(s) · total ' + (cc.kg*cc.nLotes).toFixed(0) + ' kg\\n\\n'
+      + 'Reemplaza las producciones futuras de este producto (conserva pedidos B2B y lo ya producido).';
+    if(!confirm(msg)) return;
+    if(window._cadenaBusy){ return; }
+    window._cadenaBusy = true;
+    try{
+      var t = (await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json()).csrf_token;
+      var bodyObj = {producto: p.producto_nombre, ancla_fecha: cc.partida, kg_por_lote: cc.kg,
+                     interval_dias: cc.intervalDias, dias_hasta_primera: cc.intervalDias, anios: cc.anios};
+      var r = await fetch('/api/plan/programar-cadencia-producto', {method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json','X-CSRF-Token':t}, body: JSON.stringify(bodyObj)});
+      var d = await r.json();
+      if(r.status === 409 && d && (('' + (d.error || '')).indexOf('ya se está programando') >= 0)){
+        await new Promise(function(res){ setTimeout(res, 1500); });
+        r = await fetch('/api/plan/programar-cadencia-producto', {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json','X-CSRF-Token':t}, body: JSON.stringify(bodyObj)});
+        d = await r.json();
+      }
+      if(!r.ok){ window._cadenaBusy = false; alert('No se pudo: ' + ((d && d.error) || r.status)); return; }
+      window._cadenaBusy = false;
+      var _cr = d.creados || 0, _esp = d.esperados || _cr;
+      _toastCadena('✓ ' + (p.producto_nombre || '') + ' · ' + _cr + '/' + _esp + ' lotes');
+      if(d.aviso){ alert('⚠ ' + (p.producto_nombre || '') + '\\n\\n' + d.aviso); }
+      try{ if(window._NEC_PRODUCTOS_CACHE[idx]) window._NEC_PRODUCTOS_CACHE[idx]._cadena_programada = true; }catch(e){}
+      if(window.cargarNecesidades){ try{ await cargarNecesidades(); }catch(e){} }
+    }catch(e){ window._cadenaBusy = false; alert('Error: ' + e); }
   }
   async function programarCadenaProducto(idx){
     var p = window._NEC_PRODUCTOS_CACHE[idx]; if(!p){ alert('Producto no encontrado'); return; }

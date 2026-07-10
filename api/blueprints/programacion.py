@@ -10123,9 +10123,15 @@ def _resolver_material_bodega_impl(c, formula_mid, formula_nombre):
 def _calcular_mp_consumo_produccion(c, evento_id):
     """Calcula MPs a consumir por una producción programada.
 
-    Lee formula_items y aplica:
-      - Preferimos cantidad_g_por_lote * lotes (formula con cantidades fijas)
-      - Fallback: porcentaje * cantidad_kg * 1000 (formula con %)
+    Lee formula_items y aplica (regla canónica desde 5-jul-2026 · M16/M50/M71):
+      - PRIMARIO: porcentaje/100 * cantidad_kg_REAL * 1000 (la fórmula está en % →
+        se reescala al kg real del lote y se convierte a gramos). Esta es la vía
+        de la GRAN MAYORÍA de las MPs y respeta el kg editado por el usuario (M44).
+      - Fallback (solo si NO hay %): cantidad_g_por_lote REESCALADO por
+        (cantidad_kg_real / lote_base) — nunca g_por_lote crudo.
+      - Último recurso (sin % ni lote_base): cantidad_g_por_lote * lotes.
+    ⚠ NO revertir a "g_por_lote crudo primero": ese era el bug M71 que descontaba
+    hasta ~1000× menos en fórmulas con bases mezcladas (g en base 100g vs 100kg).
 
     Returns: (mps_a_consumir, meta) donde:
       mps_a_consumir = [{codigo_mp, nombre, cantidad_g}, ...]

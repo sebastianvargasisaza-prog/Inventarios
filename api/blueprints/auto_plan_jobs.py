@@ -427,10 +427,16 @@ def ejecutar_auto_plan_diario(app):
 
         try:
             from blueprints.auto_plan import generar_plan, aplicar_plan
-            from database import get_db
+            from database import get_db, programacion_solo_manual as _psm
 
-            plan = generar_plan(horizonte_dias=60, tipo='auto', usuario='cron')
-            resultado = aplicar_plan(plan, usuario='cron')
+            if _psm():
+                # Sebastián 10-jul · modelo canónico manual: el cron NO genera/aplica plan
+                # automático. La programación vive solo de las cadenas manuales.
+                log.info('[auto-plan-cron] programacion_solo_manual ON · omito generar/aplicar plan automático')
+                resultado = {'skipped': 'programacion_solo_manual'}
+            else:
+                plan = generar_plan(horizonte_dias=60, tipo='auto', usuario='cron')
+                resultado = aplicar_plan(plan, usuario='cron')
 
             # 2) Detectar cambios críticos con margen 20d
             try:
@@ -4428,10 +4434,13 @@ def job_auto_programar_sugeridas(app):
         para fijarla
     """
     with app.app_context():
-        from database import get_db as _gdb
+        from database import get_db as _gdb, programacion_solo_manual as _psm
         from blueprints.plan import _auto_programar_sugeridas as _aps
         try:
             conn = _gdb()
+            if _psm():
+                # Sebastián 10-jul · modelo canónico manual: sin auto-sugeridas en calendario.
+                return True, {'skipped': 'programacion_solo_manual · sin auto-sugerir'}, 0
             resultado = _aps(conn, dias_horizonte=90,
                              cob_critico=20, cob_alerta=25, cob_vigilar=45,
                              usuario='cron-auto-sugerir')
@@ -5278,9 +5287,15 @@ def job_proyeccion_2anios(app):
     toca lo ejecutado ni lo Fijo. Gobernado por app_settings.proyeccion_auto:
     default ON; se apaga poniéndolo en '0' (sin redeploy)."""
     with app.app_context():
-        from database import get_db as _gdb
+        from database import get_db as _gdb, programacion_solo_manual as _psm
         from blueprints.plan import _proyectar_horizonte_2y
         conn = _gdb(); c = conn.cursor()
+        # gate maestro (Sebastián 10-jul): modelo canónico manual apaga TODA generación automática.
+        try:
+            if _psm():
+                return True, {'skipped': 'programacion_solo_manual · sin proyección automática'}, 0
+        except Exception:
+            pass
         # gate: respetar pausa explícita (default ON)
         try:
             r = c.execute("SELECT valor FROM app_settings WHERE clave='proyeccion_auto' LIMIT 1").fetchone()

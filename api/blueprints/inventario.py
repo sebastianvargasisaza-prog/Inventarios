@@ -12290,7 +12290,7 @@ def mp_bridges_page():
     LÍQUIDO MP00110 → una producción de polvo descuenta líquido). Sebastián 10-jul."""
     if session.get('compras_user', '') not in ADMIN_USERS:
         return redirect('/login?next=/admin/mp-bridges')
-    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Puentes MP</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:22px}.card{max-width:1040px;margin:0 auto}table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}th,td{text-align:left;padding:6px 9px;border-bottom:1px solid #eee}th{color:#6d28d9;font-size:11px;text-transform:uppercase}.inp{border:1px solid #e4e4e7;border-radius:8px;padding:8px 11px;font-size:13px;width:240px}.inp:focus{outline:none;border-color:#a78bfa;box-shadow:0 0 0 3px rgba(167,139,250,.18)}.bd{background:#dc2626;color:#fff;border:none;border-radius:7px;padding:5px 11px;font-size:12px;font-weight:700;cursor:pointer}.bd:hover{filter:brightness(1.08)}</style></head><body>
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Puentes MP</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:22px}.card{max-width:1040px;margin:0 auto}table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}th,td{text-align:left;padding:6px 9px;border-bottom:1px solid #eee}th{color:#6d28d9;font-size:11px;text-transform:uppercase}.inp{border:1px solid #e4e4e7;border-radius:8px;padding:8px 11px;font-size:13px;width:240px}.inp:focus{outline:none;border-color:#a78bfa;box-shadow:0 0 0 3px rgba(167,139,250,.18)}.bd{background:#dc2626;color:#fff;border:none;border-radius:7px;padding:5px 11px;font-size:12px;font-weight:700;cursor:pointer}.bd:hover{filter:brightness(1.08)}.rp{background:#7c3aed;color:#fff;border:none;border-radius:7px;padding:5px 11px;font-size:12px;font-weight:700;cursor:pointer}.rp:hover{filter:brightness(1.08)}</style></head><body>
 <div class="cx-card card">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128279;</div><div><h2 style="margin:0;font-size:19px">Puentes MP (bridge)</h2><div class="cx-text-mute" style="font-size:13px">Un puente hace que un c&oacute;digo de f&oacute;rmula descuente del stock de OTRO c&oacute;digo. Si dos c&oacute;digos son materiales DISTINTOS (ej. Panthenol polvo vs l&iacute;quido), su puente est&aacute; MAL &rarr; <b>desactivalo</b> para que cada uno use su propio inventario. Reversible.</div></div></div>
   <div style="margin-top:14px;display:flex;gap:10px;align-items:center"><input id="q" class="inp" placeholder="Buscar (ej. PANTHENOL, MP00236)" oninput="pinta()"><span id="msg" style="font-size:13px"></span></div>
@@ -12312,7 +12312,7 @@ function pinta(){
   if(q)act=act.filter(function(b){return (JSON.stringify(b)||'').toUpperCase().indexOf(q)>=0;});
   var h='<table><thead><tr><th>Código fórmula</th><th>Nombre</th><th>&rarr; usa stock de</th><th>Nombre bodega</th><th>Acción</th></tr></thead><tbody>';
   act.forEach(function(b){
-    h+='<tr><td style="font-family:monospace;font-weight:700">'+esc(b.formula_material_id)+'</td><td>'+esc((b.formula_material_nombre||'').slice(0,28))+'</td><td style="font-family:monospace;font-weight:700;color:#7c3aed">'+esc(b.bodega_material_id)+'</td><td>'+esc((b.bodega_material_nombre||b.bodega_inci||'').slice(0,28))+'</td><td><button class="bd" onclick="desactivar('+b.id+',&quot;'+esc(b.formula_material_id)+'&rarr;'+esc(b.bodega_material_id)+'&quot;)">Desactivar</button></td></tr>';
+    h+='<tr><td style="font-family:monospace;font-weight:700">'+esc(b.formula_material_id)+'</td><td>'+esc((b.formula_material_nombre||'').slice(0,28))+'</td><td style="font-family:monospace;font-weight:700;color:#7c3aed">'+esc(b.bodega_material_id)+'</td><td>'+esc((b.bodega_material_nombre||b.bodega_inci||'').slice(0,28))+'</td><td style="white-space:nowrap"><button class="bd" onclick="desactivar('+b.id+',&quot;'+esc(b.formula_material_id)+'&rarr;'+esc(b.bodega_material_id)+'&quot;)">Desactivar</button> <input id="rp'+b.id+'" placeholder="nuevo cód" style="width:88px;border:1px solid #e4e4e7;border-radius:6px;padding:4px 6px;font-family:monospace;font-size:12px"> <button class="rp" onclick="reapuntar(&quot;'+esc(b.formula_material_id)+'&quot;,&quot;'+esc((b.formula_material_nombre||'').replace(/"/g,''))+'&quot;,'+b.id+')">Re-apuntar</button></td></tr>';
   });
   h+='</tbody></table>';
   document.getElementById('out').innerHTML= act.length? h : '<div style="color:#888;margin-top:10px">Sin puentes activos'+(q?' para "'+esc(q)+'"':'')+'.</div>';
@@ -12328,9 +12328,59 @@ async function desactivar(id,txt){
     cargar();
   }catch(e){document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>';}
 }
+async function reapuntar(fid,fnom,id){
+  var nb=((document.getElementById('rp'+id)||{}).value||'').trim().toUpperCase();
+  if(!nb){alert('Escribí el código de bodega al que debe apuntar (ej. MP00110)');return;}
+  if(!confirm('Re-apuntar '+fid+' → '+nb+'? (desactiva el puente actual y crea uno nuevo a '+nb+' · reversible)'))return;
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/admin/mp-bridge-reapuntar',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||''},body:JSON.stringify({formula_material_id:fid,formula_nombre:fnom,nuevo_bodega:nb})});
+    var d=await r.json();
+    if(!r.ok||!d.ok){document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error: '+esc(d.error||r.status)+'</span>';return;}
+    document.getElementById('msg').innerHTML='<span style="color:#16a34a;font-weight:700">&#10003; '+esc(fid)+' ahora apunta a '+esc(nb)+'</span>';
+    cargar();
+  }catch(e){document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>';}
+}
 cargar();
 </script></body></html>'''
     return _tpl
+
+
+@bp.route('/api/admin/mp-bridge-reapuntar', methods=['POST'])
+def mp_bridge_reapuntar():
+    """Re-apunta un código de fórmula a OTRO código de bodega: desactiva sus puentes activos y crea
+    (o reactiva) el puente al nuevo destino. Para corregir cruces (ej. MPPANTLI01 líquido apuntaba al
+    polvo MP00236 → re-apuntar a MP00110). Admin · auditado · reversible. Sebastián 10-jul."""
+    _u, _err, _code = _require_admin()
+    if _err:
+        return _err, _code
+    d = request.json or {}
+    fid = (d.get('formula_material_id') or '').strip().upper()
+    nb = (d.get('nuevo_bodega') or '').strip().upper()
+    if not fid or not nb:
+        return jsonify({'error': 'formula_material_id y nuevo_bodega requeridos'}), 400
+    if fid == nb:
+        return jsonify({'error': 'el código de fórmula y el destino no pueden ser iguales'}), 400
+    conn = get_db(); c = conn.cursor()
+    dst = c.execute("SELECT COALESCE(NULLIF(TRIM(nombre_inci),''),NULLIF(TRIM(nombre_comercial),''),codigo_mp) "
+                    "FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?", (nb,)).fetchone()
+    if not dst:
+        return jsonify({'error': 'El destino %s no existe en el maestro de MP' % nb}), 404
+    try:
+        audit_log(c, usuario=_u, accion='REAPUNTAR_BRIDGE', tabla='mp_formula_bridge', registro_id=fid,
+                  despues={'formula': fid, 'nuevo_destino': nb})
+    except Exception:
+        pass
+    # desactivar los puentes activos actuales de ese código de fórmula
+    c.execute("UPDATE mp_formula_bridge SET activo=0 WHERE UPPER(TRIM(formula_material_id))=? AND COALESCE(activo,1)=1", (fid,))
+    # crear/reactivar el puente al nuevo destino
+    c.execute("""INSERT INTO mp_formula_bridge (formula_material_id, formula_material_nombre, bodega_material_id, bodega_material_nombre, activo)
+                 VALUES (?,?,?,?,1)
+                 ON CONFLICT(formula_material_id, bodega_material_id)
+                 DO UPDATE SET activo=1, bodega_material_nombre=excluded.bodega_material_nombre""",
+              (fid, (d.get('formula_nombre') or '').strip() or None, nb, str(dst[0])[:120]))
+    conn.commit()
+    return jsonify({'ok': True, 'formula': fid, 'nuevo_destino': nb, 'destino_nombre': str(dst[0])})
 
 
 @bp.route('/api/admin/mp-diag', methods=['GET'])

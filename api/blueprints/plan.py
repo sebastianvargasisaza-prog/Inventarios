@@ -13442,7 +13442,12 @@ def plan_programar_cadencia_producto():
         kg_otro = 0.0
     if kg_otro < 0:
         kg_otro = 0.0
-    anios = 2
+    # Sebastián 10-jul · modelo canónico manual: horizonte seleccionable 1 o 2 años (default 1).
+    try:
+        anios = int(body.get("anios") or 1)
+    except Exception:
+        anios = 1
+    anios = anios if anios in (1, 2) else 1
     conn = get_db()
     c = conn.cursor()
     hoy = _hoy_colombia()
@@ -13502,7 +13507,12 @@ def plan_programar_cadencia_producto():
         _off = dias_hasta_primera + k * interval_dias
         if _off > horizonte:
             break
-        f_k = _dia_habil(base + _tdP(days=_off))
+        # Sebastián 10-jul (audit ultracode · P1 #1/#10/#24) · CLAMP A HOY, espejo del gemelo
+        # desde-lote (13372). El front puede mandar ancla_fecha = producción REAL pasada; con
+        # dias_hasta_primera chico, el 1er lote caería en el PASADO → se volvería "producción
+        # hecha-sin-registrar" ancla-fantasma que infla la cobertura → próxima tarde → sub-compra.
+        # Nunca sembrar lotes en el pasado. La dedup ±_dw vs _usadas absorbe los que colapsen a hoy.
+        f_k = _dia_habil(max(base + _tdP(days=_off), hoy))
         # dedup · MISMO día contra preservados (B2B/ejecutado no cubre Animus) · _dw contra la propia cadena
         if any(abs((f_k - _fp).days) < 2 for _fp in _preservados) or any(abs((f_k - _fu).days) < _dw for _fu in _usadas):
             _saltados += 1
@@ -13534,6 +13544,35 @@ def plan_programar_cadencia_producto():
                     "dias_hasta_primera": dias_hasta_primera, "kg_por_lote": round(kg_por_lote, 2),
                     "creados": len(creados), "cancelados": len(ids), "fechas": creados,
                     "esperados": _esperados, "aviso": _aviso})
+
+
+@bp.route("/api/plan/solo-manual", methods=["GET", "POST"])
+def plan_solo_manual_toggle():
+    """Sebastián 10-jul · MODELO CANÓNICO MANUAL. GET devuelve el estado; POST {activo:true|false}
+    lo prende/apaga. ON = la programación vive SOLO de las cadenas manuales; los crons/sugerencias
+    (generar_plan, auto-sugerir, proyección 2 años) NO crean producciones. Reversible · admin · auditado."""
+    from database import programacion_solo_manual as _psm
+    conn = get_db(); c = conn.cursor()
+    if request.method == "GET":
+        return jsonify({"activo": bool(_psm(conn))})
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    body = request.get_json(silent=True) or {}
+    on = str(body.get("activo", body.get("valor", ""))).strip().lower() in ("1", "true", "yes", "on", "si", "sí")
+    val = "1" if on else "0"
+    n = c.execute("UPDATE app_settings SET valor=? WHERE clave='programacion_solo_manual'", (val,)).rowcount
+    if not n:
+        c.execute("INSERT INTO app_settings (clave, valor, descripcion) VALUES ('programacion_solo_manual', ?, ?)",
+                  (val, 'Modelo canónico manual: la programación vive solo de las cadenas manuales (sin generación automática)'))
+    try:
+        audit_log(c, usuario=user, accion='PROGRAMACION_SOLO_MANUAL', tabla='app_settings',
+                  registro_id='programacion_solo_manual', despues={'valor': val})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({"ok": True, "activo": on})
 
 
 @bp.route("/api/plan/diag-lotes-producto", methods=["GET"])

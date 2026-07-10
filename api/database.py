@@ -136,6 +136,32 @@ def ebr_mode(conn=None):
     return val if val in ('off', 'warn', 'strict') else 'off'
 
 
+def programacion_solo_manual(conn=None):
+    """Sebastián 10-jul · MODELO CANÓNICO MANUAL. Cuando está ON, la programación de
+    producción vive ÚNICAMENTE de las cadenas que el usuario crea a mano (botón Programar ·
+    cadencia manual desde el punto de origen). NINGÚN proceso automático crea producciones:
+    ni generar_plan (cron diario), ni auto-sugerir, ni la proyección 2 años. Alejandro no
+    quiere sugerencias automáticas; la lógica vieja queda en el código pero apagada (reusable).
+    Resolución (mismo patrón que recepcion_auto_vigente / ebr_mode):
+      1) app_settings.clave='programacion_solo_manual' (toggle UI admin · reversible · sin redeploy).
+      2) si no hay fila → variable de entorno PROGRAMACION_SOLO_MANUAL.
+    Default OFF (automáticos como hoy) para no romper tests/otros entornos · se prende con el botón."""
+    try:
+        c = conn or get_db()
+        row = c.execute(
+            "SELECT valor FROM app_settings WHERE clave='programacion_solo_manual' LIMIT 1"
+        ).fetchone()
+        if row is not None and row[0] is not None:
+            return str(row[0]).strip().lower() in ("1", "true", "yes", "si", "sí", "on")
+    except Exception:
+        pass  # tabla ausente / sin conexión → cae al env
+    try:
+        import os
+        return str(os.environ.get('PROGRAMACION_SOLO_MANUAL', '')).strip().lower() in ("1", "true", "yes", "on")
+    except Exception:
+        return False
+
+
 def exigir_area_limpia(conn=None):
     """¿Producir EXIGE que el área esté limpia (libre)? True = estricto (posición INVIMA).
     Toggle app_settings.clave='exigir_area_limpia' (UI · admin). Default True. Sebastián 25-jun:

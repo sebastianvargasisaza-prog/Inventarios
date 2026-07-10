@@ -180,9 +180,21 @@ def _shopify_created_at_bogota_local(created_at_str):
 
 
 def _next_dia_produccion(desde_fecha):
-    """Devuelve la próxima fecha L/M/V desde una fecha base."""
+    """Próxima fecha L/M/V (día de producción) que NO sea festivo colombiano.
+    Sebastián 10-jul (audit ultracode · P1 #7): antes solo filtraba L/M/V → los
+    generadores automáticos de 2 años (_proyectar_horizonte_2y, _generar_plan_desde_hoy
+    y generar_plan del cron) agendaban lotes en festivos Emiliani (los lunes son día
+    de producción). La planta NO produce en festivos → saltarlos también aquí, en el
+    helper canónico (M1 · arregla los 8 call-sites de una). Import lazy de
+    es_festivo_colombia para evitar el ciclo auto_plan↔plan; si falla, degrada a solo L/M/V."""
+    try:
+        from blueprints.plan import es_festivo_colombia as _esfest
+    except Exception:
+        _esfest = None
     f = desde_fecha
-    while f.weekday() not in DIAS_PRODUCCION:
+    for _ in range(400):
+        if f.weekday() in DIAS_PRODUCCION and not (_esfest and _esfest(f)):
+            return f
         f += timedelta(days=1)
     return f
 
