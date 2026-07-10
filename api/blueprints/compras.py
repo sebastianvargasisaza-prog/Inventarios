@@ -520,6 +520,10 @@ def _notificar_solicitante_email(dest_email, asunto, body_html):
     except Exception as _e:
         print(f'[notificar_solicitante] email error (non-critical): {_e}')
 
+_DASH_STATS_CACHE = {}   # {payload, ts} · cache per-worker · PERF 9-jul (dashboard lento)
+_DASH_STATS_TTL = 45     # 45s · charts/estados del dashboard = overview, staleness aceptable
+
+
 @bp.route('/api/dashboard-stats')
 def dashboard_stats():
     """[LEGACY 22-may-2026] Reemplazado por /api/compras/dashboard-home (consolidado).
@@ -531,6 +535,11 @@ def dashboard_stats():
     automáticamente. Fix: calcular los estados dinámicamente desde
     fecha_vencimiento, y soportar variantes de tipo de movimiento.
     """
+    # PERF 9-jul: escanea movimientos varias veces (CTE lote_stock + top5 + estados) → cache TTL 45s.
+    import time as _tds
+    _h = _DASH_STATS_CACHE.get('payload')
+    if _h is not None and (_tds.time() - _DASH_STATS_CACHE.get('ts', 0)) < _DASH_STATS_TTL:
+        return jsonify(_h)
     from datetime import date
     hoy = date.today().isoformat()
     conn = get_db(); c = conn.cursor()
@@ -655,13 +664,16 @@ def dashboard_stats():
     except Exception:
         stock_total_g = 0
 
-    return jsonify({
+    _payload = {
         'vencimientos_por_mes': venc_por_mes,
         'mps_bajo_minimo': mps_bajo_minimo,
         'estados_lotes': estados,
         'top_stock': top_stock,
         'stock_total_kg': round(stock_total_g/1000, 1)
-    })
+    }
+    _DASH_STATS_CACHE['payload'] = _payload
+    _DASH_STATS_CACHE['ts'] = _tds.time()
+    return jsonify(_payload)
 
 @bp.route('/api/generar-oc-automatica', methods=['POST'])
 def generar_oc_automatica():

@@ -215,6 +215,10 @@ def planta_auditar_minimos():
         }), 500
 
 
+_INV_DASH_CACHE = {}   # {payload, ts} · cache per-worker · PERF 9-jul (dashboard lento)
+_INV_DASH_TTL = 45     # 45s · el dashboard es un OVERVIEW (no vista de decisión) · staleness aceptable
+
+
 @bp.route('/api/inventario')
 def get_inventario():
     """Endpoint principal del Dashboard de Planta. Devuelve KPIs agrupados
@@ -224,6 +228,18 @@ def get_inventario():
     4 KPIs sueltos. Ahora estructurado para poder ver de un vistazo qué
     requiere acción YA, qué viene pronto, y dónde estamos parados.
     """
+    # PERF 9-jul: el dashboard hace varios full-scans de movimientos (tabla grande) → lento en cada
+    # carga. Cache TTL 45s (per-worker): es un OVERVIEW, no una vista transaccional. El toggle de
+    # recepción se refresca fresco en cada hit (es barato) para que la casilla no quede vieja.
+    import time as _tt
+    _hit = _INV_DASH_CACHE.get('payload')
+    if _hit is not None and (_tt.time() - _INV_DASH_CACHE.get('ts', 0)) < _INV_DASH_TTL:
+        try:
+            _hit = dict(_hit)
+            _hit['recepcion_auto_vigente'] = bool(__import__('database').recepcion_auto_vigente())
+        except Exception:
+            pass
+        return jsonify(_hit)
     conn = get_db()
     c = conn.cursor()
 
@@ -381,7 +397,7 @@ def get_inventario():
               ),0) < COALESCE(m.stock_minimo,0)
     """)
 
-    return jsonify({
+    _payload = {
         # Compatibilidad con frontend viejo
         'total_items': mov, 'movimientos': mov,
         'producciones': prod_historico,
@@ -412,7 +428,10 @@ def get_inventario():
                 'prod_historico':  prod_historico,
             },
         },
-    })
+    }
+    _INV_DASH_CACHE['payload'] = _payload
+    _INV_DASH_CACHE['ts'] = _tt.time()
+    return jsonify(_payload)
 
 @bp.route('/api/dashboard/insights', methods=['GET'])
 def dashboard_insights():
