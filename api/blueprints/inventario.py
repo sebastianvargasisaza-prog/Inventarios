@@ -12248,13 +12248,18 @@ def mp_diag():
     _EXCL = ('CUARENTENA', 'CUARENTENA_EXTENDIDA', 'RECHAZADO', 'VENCIDO', 'AGOTADO', 'BLOQUEADO')
     lotes = []
     try:
-        for lote, est, neto in c.execute(
+        for lote, est, ent, sal in c.execute(
             """SELECT COALESCE(lote,''), MAX(UPPER(COALESCE(estado_lote,''))) AS est,
-                      SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
-                          WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) AS neto
-               FROM movimientos WHERE UPPER(TRIM(material_id))=? GROUP BY lote HAVING neto > 0.01""",
+                      SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad ELSE 0 END) AS ent,
+                      SUM(CASE WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN cantidad ELSE 0 END) AS sal
+               FROM movimientos WHERE UPPER(TRIM(material_id))=? GROUP BY lote
+               HAVING SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad ELSE 0 END) > 0.01""",
                 (cod,)).fetchall():
-            lotes.append({'lote': lote, 'estado': est or '(sin estado)', 'neto_g': round(float(neto or 0), 2),
+            _ent = float(ent or 0); _sal = float(sal or 0); _neto = _ent - _sal
+            if _neto <= 0.01:
+                continue
+            lotes.append({'lote': lote, 'estado': est or '(sin estado)', 'neto_g': round(_neto, 2),
+                          'entrada_g': round(_ent, 2), 'salida_g': round(_sal, 2),
                           'usable': (est or '') not in _EXCL})
     except Exception:
         pass
@@ -12361,7 +12366,7 @@ async function diag(){
     if(!r.ok||!d.ok){document.getElementById('out').innerHTML='<div style="color:#dc2626">'+esc(d.error||r.status)+'</div>';return;}
     _C=d.codigo;
     if(!d.existe){document.getElementById('out').innerHTML='<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px;color:#7f1d1d"><b>'+esc(d.codigo)+'</b> no existe en el maestro de MP.</div>';return;}
-    var rows='';(d.lotes||[]).forEach(function(l){rows+='<tr><td style="font-family:monospace">'+esc(l.lote||'(sin lote)')+'</td><td>'+esc(l.estado)+'</td><td style="text-align:right">'+num(l.neto_g)+' g</td><td>'+(l.usable?'<span style="color:#16a34a">usable</span>':'<span style="color:#b45309">retenido</span>')+'</td></tr>';});
+    var rows='';(d.lotes||[]).forEach(function(l){rows+='<tr><td style="font-family:monospace">'+esc(l.lote||'(sin lote)')+'</td><td>'+esc(l.estado)+'</td><td style="text-align:right;color:#166534">'+num(l.entrada_g)+'</td><td style="text-align:right;color:#b91c1c">'+num(l.salida_g)+'</td><td style="text-align:right;font-weight:700">'+num(l.neto_g)+' g</td><td>'+(l.usable?'<span style="color:#16a34a">usable</span>':'<span style="color:#b45309">retenido</span>')+'</td></tr>';});
     if(!rows)rows='<tr><td colspan="4" style="color:#888">Sin lotes con stock.</td></tr>';
     var badgeAct=d.activo?'<span style="background:#dcfce7;color:#166534;border-radius:8px;padding:2px 9px;font-weight:700;font-size:12px">ACTIVA</span>':'<span style="background:#fee2e2;color:#991b1b;border-radius:8px;padding:2px 9px;font-weight:700;font-size:12px">INACTIVA</span>';
     var h='<div style="background:#fff;border:1px solid #ede9fe;border-radius:12px;padding:16px">'
@@ -12377,7 +12382,7 @@ async function diag(){
         h+='<div style="font-size:12.5px;color:#444;margin-top:3px">&bull; '+esc(x.fecha).slice(0,16)+' &middot; <b>'+esc(x.accion)+'</b> '+de+st+'</div>';
       });
     }
-    h+='<table><thead><tr><th>Lote</th><th>Estado</th><th style="text-align:right">Stock</th><th>Uso</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    h+='<table><thead><tr><th>Lote</th><th>Estado</th><th style="text-align:right">Entró</th><th style="text-align:right">Salió</th><th style="text-align:right">Queda</th><th>Uso</th></tr></thead><tbody>'+rows+'</tbody></table>';
     if(!d.activo)h+='<button class="cx-btn cx-btn-success" style="margin-top:12px" onclick="reactivar()">&#9851;&#65039; Reactivar '+esc(d.codigo)+' (activo=1)</button>';
     h+='</div>';
     document.getElementById('out').innerHTML=h;
