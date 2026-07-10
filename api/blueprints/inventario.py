@@ -11967,35 +11967,41 @@ def descuento_retro_apply():
         lote_x = (f.get('lote') or '').strip()
         if not cod or cant <= 0:
             continue
-        mp = c.execute("SELECT COALESCE(NULLIF(TRIM(nombre_inci),''),NULLIF(TRIM(nombre_comercial),''),codigo_mp) "
-                       "FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=? AND COALESCE(activo,1)=1", (cod,)).fetchone()
-        if not mp:
-            errores.append({'cod': cod, 'error': 'MP no existe o inactiva'}); continue
-        nombre = mp[0]
-        marca = '[retro %s|%s|%s]' % (bulk or prod[:12], cod, int(round(cant)))
-        ya = c.execute("SELECT 1 FROM movimientos WHERE UPPER(TRIM(material_id))=? AND observaciones LIKE ? LIMIT 1",
-                       (cod, '%' + marca + '%')).fetchone()
-        if ya:
-            saltadas.append({'cod': cod, 'motivo': 'ya aplicada (marcador)', 'g': cant}); continue
-        distrib = _distribuir_fefo(c, cod, cant)
-        movido = 0.0
-        obs = ('Consumo retroactivo · %s · lote real %s %s' % (prod[:60], lote_x, marca)).strip()
-        for di in distrib:
-            q = float(di.get('cantidad') or 0)
-            if q <= 0.01:
-                continue
-            c.execute("""INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,observaciones,lote,operador)
-                         VALUES (?,?,?,'Salida',datetime('now','-5 hours'),?,?,?)""",
-                      (cod, nombre, round(q, 2), obs, (di.get('lote') or lote_x), _u))
-            movido += q
+        # per-fila: NUNCA tumbar todo el lote · un error (ej. FEFO sin stock real por lote
+        # vencido-por-fecha que _distribuir_fefo excluye) se reporta y sigue con las demás.
+        # _distribuir_fefo levanta ANTES de insertar nada de esa fila → sin descuento parcial.
         try:
-            audit_log(c, usuario=_u, accion='CONSUMO_RETROACTIVO', tabla='movimientos', registro_id=cod,
-                      despues={'cod': cod, 'cantidad_g': round(movido, 2), 'produccion': prod[:120],
-                               'bulk': bulk, 'lote_excel': lote_x})
-        except Exception:
-            pass
-        aplicadas.append({'cod': cod, 'nombre': nombre[:60], 'g': round(movido, 2), 'produccion': prod[:60]})
-        total_g += movido
+            mp = c.execute("SELECT COALESCE(NULLIF(TRIM(nombre_inci),''),NULLIF(TRIM(nombre_comercial),''),codigo_mp) "
+                           "FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=? AND COALESCE(activo,1)=1", (cod,)).fetchone()
+            if not mp:
+                errores.append({'cod': cod, 'produccion': prod[:40], 'error': 'MP no existe o inactiva'}); continue
+            nombre = mp[0]
+            marca = '[retro %s|%s|%s]' % (bulk or prod[:12], cod, int(round(cant)))
+            ya = c.execute("SELECT 1 FROM movimientos WHERE UPPER(TRIM(material_id))=? AND observaciones LIKE ? LIMIT 1",
+                           (cod, '%' + marca + '%')).fetchone()
+            if ya:
+                saltadas.append({'cod': cod, 'motivo': 'ya aplicada (marcador)', 'g': cant}); continue
+            distrib = _distribuir_fefo(c, cod, cant)
+            movido = 0.0
+            obs = ('Consumo retroactivo · %s · lote real %s %s' % (prod[:60], lote_x, marca)).strip()
+            for di in distrib:
+                q = float(di.get('cantidad') or 0)
+                if q <= 0.01:
+                    continue
+                c.execute("""INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,observaciones,lote,operador)
+                             VALUES (?,?,?,'Salida',datetime('now','-5 hours'),?,?,?)""",
+                          (cod, nombre, round(q, 2), obs, (di.get('lote') or lote_x), _u))
+                movido += q
+            try:
+                audit_log(c, usuario=_u, accion='CONSUMO_RETROACTIVO', tabla='movimientos', registro_id=cod,
+                          despues={'cod': cod, 'cantidad_g': round(movido, 2), 'produccion': prod[:120],
+                                   'bulk': bulk, 'lote_excel': lote_x})
+            except Exception:
+                pass
+            aplicadas.append({'cod': cod, 'nombre': nombre[:60], 'g': round(movido, 2), 'produccion': prod[:60]})
+            total_g += movido
+        except Exception as e:
+            errores.append({'cod': cod, 'produccion': prod[:40], 'error': str(e)[:200]})
     conn.commit()
     return jsonify({'ok': True, 'aplicadas': aplicadas, 'saltadas': saltadas, 'errores': errores,
                     'total_descontado_g': round(total_g, 2), 'n_aplicadas': len(aplicadas)})
@@ -12533,6 +12539,194 @@ async function aplicar(){
 }
 </script></body></html>'''
     return _tpl
+
+
+# ── Normalizar códigos en LOTE (varios EOS→MyBatch de una) · Sebastián 9-jul ──
+def _normalizar_codigo(c, viejo, nuevo, u):
+    """Renombra (destino libre) o fusiona (destino existe) UN código. NO commitea · el caller
+    decide commit/rollback. Devuelve dict {ok, modo, viejo, nuevo, stock_g} o {ok:False, error}.
+    Mismo motor que el endpoint single (maestro primero por el trigger de formula_items)."""
+    viejo = (viejo or '').strip().upper(); nuevo = (nuevo or '').strip().upper()
+    if not viejo or not nuevo:
+        return {'ok': False, 'viejo': viejo, 'nuevo': nuevo, 'error': 'códigos requeridos'}
+    if viejo == nuevo:
+        return {'ok': False, 'viejo': viejo, 'nuevo': nuevo, 'error': 'origen y destino iguales'}
+    if not c.execute("SELECT 1 FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?", (viejo,)).fetchone():
+        return {'ok': False, 'viejo': viejo, 'nuevo': nuevo, 'error': 'el origen %s no existe' % viejo}
+    destino_existe = bool(c.execute("SELECT 1 FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?", (nuevo,)).fetchone())
+    stock = _mp_stock_g(c, viejo)
+    if not destino_existe:
+        try:
+            audit_log(c, usuario=u, accion='RENOMBRAR_CODIGO_MP', tabla='maestro_mps', registro_id=nuevo,
+                      antes={'codigo_mp': viejo}, despues={'codigo_mp': nuevo, 'stock_g': stock})
+        except Exception:
+            pass
+        c.execute("UPDATE maestro_mps SET codigo_mp=? WHERE UPPER(TRIM(codigo_mp))=?", (nuevo, viejo))
+        for t, col in _MP_CODE_CORE:
+            c.execute("UPDATE " + t + " SET " + col + "=? WHERE UPPER(TRIM(" + col + "))=?", (nuevo, viejo))
+        core_set = {('maestro_mps', 'codigo_mp')} | set(_MP_CODE_CORE)
+        for t, col in _pares_columna_mp(c):
+            if (t, col) in core_set:
+                continue
+            try:
+                c.execute("UPDATE " + t + " SET " + col + "=? WHERE UPPER(TRIM(" + col + "))=?", (nuevo, viejo))
+            except Exception:
+                pass
+        return {'ok': True, 'modo': 'renombrado', 'viejo': viejo, 'nuevo': nuevo, 'stock_g': stock}
+    # FUSIÓN
+    try:
+        audit_log(c, usuario=u, accion='FUSIONAR_CODIGO_MP', tabla='maestro_mps', registro_id=nuevo,
+                  antes={'codigo_mp': viejo, 'stock_g': stock}, despues={'fusionado_en': nuevo})
+    except Exception:
+        pass
+    marca = ' [fusion %s->%s]' % (viejo, nuevo)
+    c.execute("UPDATE movimientos SET material_id=?, observaciones=COALESCE(observaciones,'')||? "
+              "WHERE UPPER(TRIM(material_id))=?", (nuevo, marca, viejo))
+    c.execute("DELETE FROM formula_items WHERE UPPER(TRIM(material_id))=? AND UPPER(TRIM(producto_nombre)) IN "
+              "(SELECT UPPER(TRIM(producto_nombre)) FROM formula_items WHERE UPPER(TRIM(material_id))=?)", (viejo, nuevo))
+    c.execute("UPDATE formula_items SET material_id=? WHERE UPPER(TRIM(material_id))=?", (nuevo, viejo))
+    skip = {('movimientos', 'material_id'), ('formula_items', 'material_id'), ('maestro_mps', 'codigo_mp')}
+    for t, col in _pares_columna_mp(c):
+        if (t, col) in skip:
+            continue
+        try:
+            c.execute("UPDATE " + t + " SET " + col + "=? WHERE UPPER(TRIM(" + col + "))=?", (nuevo, viejo))
+        except Exception:
+            pass
+    c.execute("UPDATE maestro_mps SET activo=0 WHERE UPPER(TRIM(codigo_mp))=?", (viejo,))
+    return {'ok': True, 'modo': 'fusion', 'viejo': viejo, 'nuevo': nuevo, 'stock_g': stock}
+
+
+def _parse_pares_norm(txt):
+    """Parsea líneas 'ORIGEN -> DESTINO' o 'ORIGEN,DESTINO' o 'ORIGEN<tab>DESTINO'."""
+    import re
+    pares = []
+    for ln in (txt or '').splitlines():
+        ln = ln.strip()
+        if not ln or ln.startswith('#'):
+            continue
+        parts = re.split(r'\s*(?:->|,|\t|;|=>)\s*', ln)
+        if len(parts) >= 2 and parts[0].strip() and parts[1].strip():
+            pares.append({'origen': parts[0].strip().upper(), 'destino': parts[1].strip().upper()})
+    return pares
+
+
+@bp.route('/api/admin/normalizar-lote/preview', methods=['POST'])
+def normalizar_lote_preview():
+    """Preview de un lote de normalizaciones (origen EOS → destino MyBatch)."""
+    _u, _err, _code = _require_admin()
+    if _err:
+        return _err, _code
+    d = request.json or {}
+    pares = d.get('pares') or _parse_pares_norm(d.get('texto', ''))
+    if not pares:
+        return jsonify({'error': 'Sin pares (origen → destino)'}), 400
+    conn = get_db(); c = conn.cursor()
+    out = []
+    for p in pares:
+        o = (p.get('origen') or '').strip().upper(); n = (p.get('destino') or '').strip().upper()
+        row = {'origen': o, 'destino': n}
+        m = c.execute("""SELECT COALESCE(NULLIF(TRIM(nombre_inci),''),NULLIF(TRIM(nombre_comercial),''),codigo_mp),
+                                COALESCE(proveedor,''), COALESCE(activo,1)
+                         FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?""", (o,)).fetchone()
+        if not o or not n:
+            row.update(estado='ERROR', detalle='faltan códigos')
+        elif o == n:
+            row.update(estado='ERROR', detalle='origen = destino')
+        elif not m:
+            row.update(estado='ERROR', detalle='el origen %s no existe en EOS' % o)
+        else:
+            row['nombre'] = m[0]; row['proveedor'] = m[1]; row['stock_g'] = _mp_stock_g(c, o)
+            dst = c.execute("SELECT COALESCE(NULLIF(TRIM(nombre_inci),''),NULLIF(TRIM(nombre_comercial),''),codigo_mp) "
+                            "FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?", (n,)).fetchone()
+            if dst:
+                row.update(estado='FUSION', detalle='destino %s existe (%s) → se fusiona el stock' % (n, str(dst[0])[:30]))
+            else:
+                row.update(estado='RENOMBRAR', detalle='destino libre → renombra %s a %s (conserva nombre/stock)' % (o, n))
+        out.append(row)
+    return jsonify({'ok': True, 'pares': out})
+
+
+@bp.route('/api/admin/normalizar-lote/apply', methods=['POST'])
+def normalizar_lote_apply():
+    """Aplica el lote de normalizaciones · TODO o NADA (si una falla, rollback completo)."""
+    _u, _err, _code = _require_admin()
+    if _err:
+        return _err, _code
+    d = request.json or {}
+    pares = d.get('pares') or _parse_pares_norm(d.get('texto', ''))
+    if not pares:
+        return jsonify({'error': 'Sin pares'}), 400
+    conn = get_db(); c = conn.cursor()
+    hechos = []
+    for p in pares:
+        r = _normalizar_codigo(c, p.get('origen'), p.get('destino'), _u)
+        if not r.get('ok'):
+            conn.rollback()
+            return jsonify({'error': 'Falló %s → %s: %s. NO se aplicó nada (rollback).' %
+                            (p.get('origen'), p.get('destino'), r.get('error')), 'hasta': hechos}), 400
+        hechos.append(r)
+    conn.commit()
+    return jsonify({'ok': True, 'hechos': hechos, 'n': len(hechos)})
+
+
+@bp.route('/admin/normalizar-codigos', methods=['GET'])
+def normalizar_codigos_page():
+    """Normalizar varios códigos EOS→MyBatch de una (renombra o fusiona según el destino)."""
+    if session.get('compras_user', '') not in ADMIN_USERS:
+        return redirect('/login?next=/admin/normalizar-codigos')
+    _preset = ("MP00183 -> MP00144\nMPCAKY01 -> MP00291\nMP00233 -> MP00157\nMP00084 -> MP00080\n"
+               "MPBNIT01 -> MP00288\nMP00190 -> MP00159\nMP00008 -> MP00200\nMP00192 -> MP00155\n"
+               "MP00064 -> MP00294")
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Normalizar codigos</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:22px}.card{max-width:960px;margin:0 auto}textarea{width:100%;height:150px;font-family:monospace;font-size:13px;border:1px solid #e4e4e7;border-radius:8px;padding:10px}table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}th,td{text-align:left;padding:6px 9px;border-bottom:1px solid #eee}th{color:#6d28d9;font-size:11px;text-transform:uppercase}.chip{padding:1px 8px;border-radius:9px;font-weight:700;font-size:11px}.e-RENOMBRAR{background:#dcfce7;color:#166534}.e-FUSION{background:#fef3c7;color:#92400e}.e-ERROR{background:#fee2e2;color:#991b1b}</style></head><body>
+<div class="cx-card card">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128260;</div><div><h2 style="margin:0;font-size:19px">Normalizar codigos EOS &rarr; MyBatch (en lote)</h2><div class="cx-text-mute" style="font-size:13px">Una linea por par: <b>ORIGEN_EOS -&gt; DESTINO_MYBATCH</b>. Si el destino no existe, <b>renombra</b> (conserva nombre y stock); si existe, <b>fusiona</b>. Primero REVISA, despues aplica (TODO o NADA, reversible por audit).</div></div></div>
+  <textarea id="txt">__PRESET__</textarea>
+  <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+    <button class="cx-btn" style="background:#7c3aed;color:#fff" onclick="revisar()">Revisar</button>
+    <button id="apbtn" class="cx-btn cx-btn-success" style="display:none" onclick="aplicar()">Aplicar normalizacion</button>
+    <span id="msg" style="font-size:13px"></span>
+  </div>
+  <div id="out"></div>
+  <div style="margin-top:14px"><button class="cx-btn cx-btn-ghost" onclick="location.href='/inventarios'">Volver</button></div>
+</div>
+<script>
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function num(n){return Number(n||0).toLocaleString('es-CO');}
+async function revisar(){
+  document.getElementById('msg').textContent='Revisando…';
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/admin/normalizar-lote/preview',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||''},body:JSON.stringify({texto:document.getElementById('txt').value})});
+    var d=await r.json();
+    if(!r.ok||!d.ok){document.getElementById('msg').innerHTML='<span style="color:#dc2626">'+esc(d.error||r.status)+'</span>';return;}
+    document.getElementById('msg').textContent='';
+    var h='<table><thead><tr><th>Origen EOS</th><th>Material</th><th>Proveedor</th><th style="text-align:right">Stock g</th><th>Destino MyBatch</th><th>Accion</th><th>Detalle</th></tr></thead><tbody>';
+    var okc=0;
+    (d.pares||[]).forEach(function(p){
+      if(p.estado!=='ERROR')okc++;
+      h+='<tr><td style="font-family:monospace">'+esc(p.origen)+'</td><td>'+esc((p.nombre||'').slice(0,26))+'</td><td>'+esc((p.proveedor||'').slice(0,16))+'</td><td style="text-align:right">'+num(p.stock_g)+'</td><td style="font-family:monospace;font-weight:700">'+esc(p.destino)+'</td><td><span class="chip e-'+esc(p.estado)+'">'+esc(p.estado)+'</span></td><td style="font-size:12px;color:#555">'+esc(p.detalle||'')+'</td></tr>';
+    });
+    h+='</tbody></table>';
+    document.getElementById('out').innerHTML=h;
+    document.getElementById('apbtn').style.display=okc?'inline-block':'none';
+  }catch(e){document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>';}
+}
+async function aplicar(){
+  if(!confirm('Aplicar la normalizacion? Renombra/fusiona los codigos (TODO o NADA, reversible).'))return;
+  document.getElementById('msg').textContent='Aplicando…';
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/admin/normalizar-lote/apply',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||''},body:JSON.stringify({texto:document.getElementById('txt').value})});
+    var d=await r.json();
+    if(!r.ok||!d.ok){document.getElementById('msg').innerHTML='<span style="color:#dc2626">'+esc(d.error||r.status)+'</span>';return;}
+    var li=(d.hechos||[]).map(function(x){return x.viejo+' &rarr; '+x.nuevo+' ('+x.modo+', '+num(x.stock_g)+' g)';}).join('<br>');
+    document.getElementById('out').innerHTML='<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px;color:#166534;margin-top:12px">&#10003; Normalizados <b>'+d.n+'</b> codigos:<br>'+li+'</div>';
+    document.getElementById('apbtn').style.display='none'; document.getElementById('msg').textContent='';
+  }catch(e){document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>';}
+}
+</script></body></html>'''
+    return _tpl.replace('__PRESET__', _preset)
 
 
 @bp.route('/admin/envases-recatalogo', methods=['GET'])
