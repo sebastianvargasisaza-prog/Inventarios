@@ -237,3 +237,21 @@ def test_envases_recatalogo_y_productos_envases(admin_client):
     assert b"producto" in r2.data.lower() and b"setEnv" in r2.data
     # vista basada en productos activos (fórmulas) → crea el mapeo aunque no haya presentación
     assert b"crearEnv" in r2.data and b"por asignar" in r2.data
+
+
+def test_mp_reactivar(admin_client):
+    """Reactivar MP inactiva (MP00293 quedó activo=0): página + endpoint, auditado."""
+    assert admin_client.get("/admin/mp-diag").status_code == 200
+    from api.index import app
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        c.execute("INSERT INTO maestro_mps (codigo_mp, nombre_inci, activo) VALUES ('MPZZINACT','DIMETHICONE X',0)")
+        conn.commit()
+    dg = admin_client.get("/api/admin/mp-diag?codigo=MPZZINACT").get_json()
+    assert dg["existe"] and dg["activo"] == 0 and "INACTIVA" in dg["razon"]
+    r = admin_client.post("/api/admin/mp-reactivar", json={"codigo": "MPZZINACT"})
+    assert r.status_code == 200 and r.get_json()["activo"] == 1
+    dg2 = admin_client.get("/api/admin/mp-diag?codigo=MPZZINACT").get_json()
+    assert dg2["activo"] == 1
+    assert admin_client.post("/api/admin/mp-reactivar", json={"codigo": "MPNOEXISTE"}).status_code == 404

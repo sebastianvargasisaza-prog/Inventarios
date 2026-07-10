@@ -11830,6 +11830,89 @@ def mp_diag():
                     'lotes': lotes, 'aparece_en_bodega_default': usable > 0.01, 'razon': razon})
 
 
+@bp.route('/api/admin/mp-reactivar', methods=['POST'])
+def mp_reactivar():
+    """Reactivar (activo=1) una MP que quedó inactiva. Solo cambia el estado · NO toca
+    fórmulas ni stock · reversible · auditado. Sebastián 9-jul (MP00293 quedó activo=0)."""
+    _u, _err, _code = _require_admin()
+    if _err:
+        return _err, _code
+    d = request.json or {}
+    cod = (d.get('codigo') or '').strip().upper()
+    if not cod:
+        return jsonify({'error': 'codigo requerido'}), 400
+    conn = get_db(); c = conn.cursor()
+    r = c.execute("SELECT COALESCE(activo,1) FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?", (cod,)).fetchone()
+    if not r:
+        return jsonify({'error': 'El código %s no existe en el maestro' % cod}), 404
+    antes = int(r[0])
+    try:
+        audit_log(c, usuario=_u, accion='REACTIVAR_MP', tabla='maestro_mps', registro_id=cod,
+                  antes={'activo': antes}, despues={'activo': 1})
+    except Exception:
+        pass
+    c.execute("UPDATE maestro_mps SET activo=1 WHERE UPPER(TRIM(codigo_mp))=?", (cod,))
+    conn.commit()
+    return jsonify({'ok': True, 'codigo': cod, 'activo_antes': antes, 'activo': 1})
+
+
+@bp.route('/admin/mp-diag', methods=['GET'])
+def mp_diag_page():
+    """Página: diagnóstico '¿por qué (no) sale en Bodega?' + botón Reactivar si está inactiva."""
+    if session.get('compras_user', '') not in ADMIN_USERS:
+        return redirect('/login?next=/admin/mp-diag')
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Diagnostico MP</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:24px}.card{max-width:820px;margin:0 auto}.inp{border:1px solid #e4e4e7;border-radius:8px;padding:9px 11px;font-size:14px;font-family:monospace;width:170px}.inp:focus{outline:none;border-color:#a78bfa;box-shadow:0 0 0 3px rgba(167,139,250,.18)}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{text-align:left;padding:6px 9px;border-bottom:1px solid #eee;font-size:13px}th{color:#6d28d9;font-size:11px;text-transform:uppercase}</style></head><body>
+<div class="cx-card card">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128269;</div><div><h2 style="margin:0;font-size:19px">Diagnostico de MP en Bodega</h2><div class="cx-text-mute" style="font-size:13px">Por que una materia prima (no) aparece en Stock por Lote: existe / tipo / activo / stock usable vs retenido (cuarentena) / lotes.</div></div></div>
+  <div style="display:flex;gap:10px;align-items:flex-end;margin-top:16px">
+    <div><label style="font-size:12px;color:#555;display:block;margin-bottom:4px">Codigo MP</label><input id="cod" class="inp" placeholder="MP00293"></div>
+    <button class="cx-btn" style="background:#7c3aed;color:#fff" onclick="diag()">Diagnosticar</button>
+  </div>
+  <div id="out" style="margin-top:18px"></div>
+  <div style="margin-top:16px"><button class="cx-btn cx-btn-ghost" onclick="location.href='/inventarios'">Volver a Inventario</button></div>
+</div>
+<script>
+var _C='';
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function num(n){return Number(n||0).toLocaleString('es-CO');}
+async function diag(){
+  var cod=(document.getElementById('cod').value||'').trim().toUpperCase();
+  if(!cod){alert('Poné un código');return;}
+  document.getElementById('out').innerHTML='<div style="color:#7c3aed">Cargando…</div>';
+  try{
+    var r=await fetch('/api/admin/mp-diag?codigo='+encodeURIComponent(cod),{credentials:'same-origin'});
+    var d=await r.json();
+    if(!r.ok||!d.ok){document.getElementById('out').innerHTML='<div style="color:#dc2626">'+esc(d.error||r.status)+'</div>';return;}
+    _C=d.codigo;
+    if(!d.existe){document.getElementById('out').innerHTML='<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px;color:#7f1d1d"><b>'+esc(d.codigo)+'</b> no existe en el maestro de MP.</div>';return;}
+    var rows='';(d.lotes||[]).forEach(function(l){rows+='<tr><td style="font-family:monospace">'+esc(l.lote||'(sin lote)')+'</td><td>'+esc(l.estado)+'</td><td style="text-align:right">'+num(l.neto_g)+' g</td><td>'+(l.usable?'<span style="color:#16a34a">usable</span>':'<span style="color:#b45309">retenido</span>')+'</td></tr>';});
+    if(!rows)rows='<tr><td colspan="4" style="color:#888">Sin lotes con stock.</td></tr>';
+    var badgeAct=d.activo?'<span style="background:#dcfce7;color:#166534;border-radius:8px;padding:2px 9px;font-weight:700;font-size:12px">ACTIVA</span>':'<span style="background:#fee2e2;color:#991b1b;border-radius:8px;padding:2px 9px;font-weight:700;font-size:12px">INACTIVA</span>';
+    var h='<div style="background:#fff;border:1px solid #ede9fe;border-radius:12px;padding:16px">'
+      +'<div style="font-size:16px"><b>'+esc(d.codigo)+'</b> &middot; '+esc(d.nombre_inci||d.nombre_comercial||'(sin nombre)')+' '+badgeAct+'</div>'
+      +'<div style="color:#555;font-size:13px;margin-top:4px">tipo_material: <b>'+esc(d.tipo_material)+'</b> &middot; stock usable: <b>'+num(d.stock_usable_g)+' g</b> &middot; retenido: <b>'+num(d.stock_retenido_g)+' g</b></div>'
+      +'<div style="margin-top:10px;padding:11px 13px;background:'+(d.aparece_en_bodega_default?'#f0fdf4;border:1px solid #bbf7d0;color:#166534':'#fffbeb;border:1px solid #fde68a;color:#92400e')+';border-radius:9px;font-size:13.5px"><b>'+esc(d.razon)+'</b></div>'
+      +'<table><thead><tr><th>Lote</th><th>Estado</th><th style="text-align:right">Stock</th><th>Uso</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    if(!d.activo)h+='<button class="cx-btn cx-btn-success" style="margin-top:12px" onclick="reactivar()">&#9851;&#65039; Reactivar '+esc(d.codigo)+' (activo=1)</button>';
+    h+='</div>';
+    document.getElementById('out').innerHTML=h;
+  }catch(e){document.getElementById('out').innerHTML='<div style="color:#dc2626">Error de red</div>';}
+}
+async function reactivar(){
+  if(!_C)return;
+  if(!confirm('Reactivar '+_C+' (activo=1)? Solo cambia el estado · NO toca fórmulas ni stock · reversible.'))return;
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/admin/mp-reactivar',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||''},body:JSON.stringify({codigo:_C})});
+    var d=await r.json();
+    if(!r.ok||!d.ok){alert('Error: '+(d.error||r.status));return;}
+    diag();
+  }catch(e){alert('Error de red');}
+}
+</script></body></html>'''
+    return _tpl
+
+
 # ── Renombrar código de MP (normalizar EOS ↔ MyBatch) · Sebastián 9-jul ─────────
 # Cambiar el código de una MP es re-llavar TODA referencia (M17: la identidad es el
 # CÓDIGO). Introspección en runtime (esquema real de prod, no parse estático).
