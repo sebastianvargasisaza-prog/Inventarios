@@ -11781,6 +11781,300 @@ async function fixPrecio(cod, precio){
     return _tpl.replace('__FILAS__', filas)
 
 
+# ── Descuento retroactivo de consumo (producción no registrada en EOS) · Sebastián 9-jul ──
+# El jefe de producción no usaba EOS → varias producciones NO descontaron MP. Se recibe el
+# Excel de consumo real (Producto/Cod.Material/N° Lote/Cant./N° Lote Bulk) → REVISIÓN fila a
+# fila (existe/cuarentena/stock) → descuento por FEFO canónico. No destructivo hasta aplicar.
+_RETRO_EXCL = ('CUARENTENA', 'CUARENTENA_EXTENDIDA', 'RECHAZADO', 'VENCIDO', 'AGOTADO', 'BLOQUEADO')
+
+
+def _norm_lote_cmp(s):
+    """Normaliza un nº de lote para comparar Excel↔EOS (formatos distintos:
+    '_0010005316' vs '10005316')."""
+    s = (s or '').strip().upper().replace(' ', '')
+    s = s.lstrip('_')
+    s2 = s.lstrip('0')
+    return s2 if s2 else s
+
+
+def _parse_consumo_xlsx(fs):
+    """Parsea el Excel de consumo. Devuelve lista de filas o None si no reconoce el formato."""
+    import openpyxl
+    wb = openpyxl.load_workbook(fs, data_only=True)
+    ws = wb.worksheets[0]
+    rows = list(ws.iter_rows(values_only=True))
+    hdr = None; col = {}
+    for i, r in enumerate(rows):
+        vals = [(str(x).strip().lower() if x is not None else '') for x in r]
+        if any(('cod' in v and 'material' in v) for v in vals):
+            hdr = i
+            for j, v in enumerate(vals):
+                if 'producto' in v:
+                    col['prod'] = j
+                elif 'cod' in v and 'material' in v:
+                    col['cod'] = j
+                elif 'descrip' in v:
+                    col['desc'] = j
+                elif 'bulk' in v:
+                    col['bulk'] = j
+                elif 'lote' in v:
+                    col.setdefault('lote', j)
+                elif v.startswith('cant'):
+                    col['cant'] = j
+            break
+    if hdr is None or 'cod' not in col or 'cant' not in col:
+        return None
+    out = []
+    for r in rows[hdr + 1:]:
+        def g(k):
+            j = col.get(k)
+            return r[j] if (j is not None and j < len(r)) else None
+        cod = g('cod')
+        if cod is None or str(cod).strip() == '':
+            continue
+        try:
+            cant = float(g('cant') or 0)
+        except Exception:
+            cant = 0.0
+        out.append({'cod': str(cod).strip(), 'desc': str(g('desc') or '').strip(),
+                    'lote': str(g('lote') or '').strip(), 'cant': cant,
+                    'prod': str(g('prod') or '').strip(), 'bulk': str(g('bulk') or '').strip()})
+    return out
+
+
+def _reconciliar_consumo(c, filas):
+    """Cruza cada fila de consumo contra el inventario EOS. Clasifica: OK / CUARENTENA /
+    INSUF / SIN_STOCK / MP_NO_EXISTE. NO modifica nada."""
+    out = []
+    for f in filas:
+        cod = (f.get('cod') or '').strip().upper()
+        try:
+            cant = float(f.get('cant') or 0)
+        except Exception:
+            cant = 0.0
+        lote_x = (f.get('lote') or '').strip()
+        r = {'cod': cod, 'desc': f.get('desc', ''), 'lote_excel': lote_x, 'cant': round(cant, 2),
+             'prod': f.get('prod', ''), 'bulk': f.get('bulk', '')}
+        m = c.execute(
+            """SELECT COALESCE(NULLIF(TRIM(nombre_inci),''),NULLIF(TRIM(nombre_comercial),''),codigo_mp),
+                      UPPER(COALESCE(tipo_material,'MP')), COALESCE(activo,1)
+               FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?""", (cod,)).fetchone()
+        if not m:
+            r.update(status='MP_NO_EXISTE', nombre='', usable=0, retenido=0, lote_match='',
+                     lote_estado='', detalle='El código no existe en el maestro de EOS')
+            out.append(r); continue
+        r['nombre'] = m[0]; r['activo'] = int(m[2])
+        lotes = []
+        try:
+            for lote, est, neto in c.execute(
+                """SELECT COALESCE(lote,''), MAX(UPPER(COALESCE(estado_lote,''))) AS est,
+                          SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                              WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) AS neto
+                   FROM movimientos WHERE UPPER(TRIM(material_id))=? GROUP BY lote
+                   HAVING neto > 0.01""", (cod,)).fetchall():
+                lotes.append((lote, est or '', float(neto or 0)))
+        except Exception:
+            pass
+        usable = sum(n for l, e, n in lotes if e not in _RETRO_EXCL)
+        retenido = sum(n for l, e, n in lotes if e in _RETRO_EXCL)
+        nx = _norm_lote_cmp(lote_x)
+        match = None
+        for l, e, n in lotes:
+            if nx and _norm_lote_cmp(l) == nx:
+                match = (l, e, n); break
+        r['usable'] = round(usable, 2); r['retenido'] = round(retenido, 2)
+        r['lote_match'] = (match[0] if match else '')
+        r['lote_estado'] = (match[1] if match else '')
+        if int(m[2]) != 1:
+            r.update(status='INACTIVA', detalle='La MP está inactiva (activo=0) · reactivar primero')
+        elif usable >= cant - 0.01:
+            r['status'] = 'OK'
+            if match and match[1] not in _RETRO_EXCL:
+                r['detalle'] = 'Descontable del lote %s' % match[0]
+            elif match and match[1] in _RETRO_EXCL:
+                r['detalle'] = 'El lote %s está en %s, pero hay otro stock usable → se descuenta por FEFO' % (match[0], match[1])
+            else:
+                r['detalle'] = 'Lote de la lista no coincide con EOS → se descuenta por FEFO (stock usable alcanza)'
+        elif retenido > 0 and usable < cant:
+            r.update(status='CUARENTENA',
+                     detalle='Stock retenido en cuarentena (usable %.0f < consumo %.0f) · liberar primero' % (usable, cant))
+        elif usable > 0:
+            r.update(status='INSUF', detalle='Stock insuficiente (usable %.0f < consumo %.0f)' % (usable, cant))
+        else:
+            r.update(status='SIN_STOCK', detalle='Sin stock en EOS (¿no se recibió o ya se consumió?)')
+        out.append(r)
+    return out
+
+
+def _resumen_reconciliacion(rows):
+    s = {}
+    for r in rows:
+        s[r['status']] = s.get(r['status'], 0) + 1
+    return {'por_status': s, 'total_filas': len(rows),
+            'descontable_g': round(sum(r['cant'] for r in rows if r['status'] == 'OK'), 2),
+            'revisar_g': round(sum(r['cant'] for r in rows if r['status'] != 'OK'), 2)}
+
+
+@bp.route('/api/admin/descuento-retro/preview', methods=['POST'])
+def descuento_retro_preview():
+    """Revisión (no destructiva) del Excel de consumo contra el inventario EOS."""
+    _u, _err, _code = _require_admin()
+    if _err:
+        return _err, _code
+    fs = request.files.get('archivo')
+    filas = None
+    if fs:
+        try:
+            filas = _parse_consumo_xlsx(fs)
+        except Exception as e:
+            return jsonify({'error': 'No pude leer el Excel: %s' % str(e)[:120]}), 400
+        if filas is None:
+            return jsonify({'error': 'No reconocí las columnas (necesito Cod.Material y Cant.)'}), 400
+    else:
+        filas = (request.json or {}).get('filas') if request.is_json else None
+    if not filas:
+        return jsonify({'error': 'Subí el Excel de consumo (archivo) o mandá filas'}), 400
+    conn = get_db(); c = conn.cursor()
+    rows = _reconciliar_consumo(c, filas)
+    return jsonify({'ok': True, 'rows': rows, 'resumen': _resumen_reconciliacion(rows)})
+
+
+@bp.route('/api/admin/descuento-retro/apply', methods=['POST'])
+def descuento_retro_apply():
+    """Aplica el descuento retroactivo por FEFO SOLO de las filas confirmadas (status OK).
+    Idempotente (marcador por producción+MP), auditado, reversible (anular movimiento)."""
+    _u, _err, _code = _require_admin()
+    if _err:
+        return _err, _code
+    d = request.json or {}
+    filas = d.get('filas') or []
+    if not filas:
+        return jsonify({'error': 'Sin filas para aplicar'}), 400
+    try:
+        from .programacion import _distribuir_fefo
+    except Exception:
+        from blueprints.programacion import _distribuir_fefo
+    conn = get_db(); c = conn.cursor()
+    aplicadas = []; saltadas = []; errores = []
+    total_g = 0.0
+    for f in filas:
+        cod = (f.get('cod') or '').strip().upper()
+        try:
+            cant = float(f.get('cant') or 0)
+        except Exception:
+            cant = 0.0
+        bulk = (f.get('bulk') or '').strip(); prod = (f.get('prod') or '').strip()
+        lote_x = (f.get('lote') or '').strip()
+        if not cod or cant <= 0:
+            continue
+        mp = c.execute("SELECT COALESCE(NULLIF(TRIM(nombre_inci),''),NULLIF(TRIM(nombre_comercial),''),codigo_mp) "
+                       "FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=? AND COALESCE(activo,1)=1", (cod,)).fetchone()
+        if not mp:
+            errores.append({'cod': cod, 'error': 'MP no existe o inactiva'}); continue
+        nombre = mp[0]
+        marca = '[retro %s|%s|%s]' % (bulk or prod[:12], cod, int(round(cant)))
+        ya = c.execute("SELECT 1 FROM movimientos WHERE UPPER(TRIM(material_id))=? AND observaciones LIKE ? LIMIT 1",
+                       (cod, '%' + marca + '%')).fetchone()
+        if ya:
+            saltadas.append({'cod': cod, 'motivo': 'ya aplicada (marcador)', 'g': cant}); continue
+        distrib = _distribuir_fefo(c, cod, cant)
+        movido = 0.0
+        obs = ('Consumo retroactivo · %s · lote real %s %s' % (prod[:60], lote_x, marca)).strip()
+        for di in distrib:
+            q = float(di.get('cantidad') or 0)
+            if q <= 0.01:
+                continue
+            c.execute("""INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,observaciones,lote,operador)
+                         VALUES (?,?,?,'Salida',datetime('now','-5 hours'),?,?,?)""",
+                      (cod, nombre, round(q, 2), obs, (di.get('lote') or lote_x), _u))
+            movido += q
+        try:
+            audit_log(c, usuario=_u, accion='CONSUMO_RETROACTIVO', tabla='movimientos', registro_id=cod,
+                      despues={'cod': cod, 'cantidad_g': round(movido, 2), 'produccion': prod[:120],
+                               'bulk': bulk, 'lote_excel': lote_x})
+        except Exception:
+            pass
+        aplicadas.append({'cod': cod, 'nombre': nombre[:60], 'g': round(movido, 2), 'produccion': prod[:60]})
+        total_g += movido
+    conn.commit()
+    return jsonify({'ok': True, 'aplicadas': aplicadas, 'saltadas': saltadas, 'errores': errores,
+                    'total_descontado_g': round(total_g, 2), 'n_aplicadas': len(aplicadas)})
+
+
+@bp.route('/admin/descuento-retroactivo', methods=['GET'])
+def descuento_retroactivo_page():
+    """Revisión + descuento retroactivo del consumo de producciones no registradas en EOS."""
+    if session.get('compras_user', '') not in ADMIN_USERS:
+        return redirect('/login?next=/admin/descuento-retroactivo')
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Descuento retroactivo</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:20px}.card{max-width:1180px;margin:0 auto}table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12.5px}th,td{text-align:left;padding:5px 8px;border-bottom:1px solid #eee}th{color:#6d28d9;font-size:10.5px;text-transform:uppercase;position:sticky;top:0;background:#faf5ff}.chip{padding:1px 8px;border-radius:9px;font-weight:700;font-size:11px}.st-OK{background:#dcfce7;color:#166534}.st-CUARENTENA{background:#dbeafe;color:#1e40af}.st-INSUF{background:#fef3c7;color:#92400e}.st-SIN_STOCK{background:#fee2e2;color:#991b1b}.st-MP_NO_EXISTE{background:#fee2e2;color:#991b1b}.st-INACTIVA{background:#fee2e2;color:#991b1b}.sum{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}.sc{background:#fff;border:1px solid #ede9fe;border-radius:10px;padding:9px 14px;font-size:13px}.sc b{font-size:18px;display:block}</style></head><body>
+<div class="cx-card card">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128203;</div><div><h2 style="margin:0;font-size:19px">Descuento retroactivo de consumo</h2><div class="cx-text-mute" style="font-size:13px">Producciones que NO descontaron MP en EOS. Sub&iacute; el Excel (Producto / Cod.Material / N&deg; Lote / Cant. / N&deg; Lote Bulk). <b>Primero REVISA</b> (no toca nada): te dice qu&eacute; cuadra, qu&eacute; est&aacute; en cuarentena, qu&eacute; no existe. Descontar es un paso aparte.</div></div></div>
+  <div style="display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap">
+    <input type="file" id="arch" accept=".xlsx" style="font-size:13px">
+    <button class="cx-btn" style="background:#7c3aed;color:#fff" onclick="revisar()">Revisar</button>
+    <select id="filtro" onchange="pinta()" style="padding:7px;border:1px solid #e4e4e7;border-radius:8px;font-size:13px"><option value="">Todos</option><option value="OK">Solo descontables (OK)</option><option value="REV">Solo a revisar</option></select>
+    <span id="msg" style="font-size:13px"></span>
+  </div>
+  <div id="sum" class="sum"></div>
+  <div id="out" style="max-height:60vh;overflow:auto"></div>
+  <div id="acc" style="margin-top:14px"></div>
+  <div style="margin-top:14px"><button class="cx-btn cx-btn-ghost" onclick="location.href='/inventarios'">Volver</button></div>
+</div>
+<script>
+var _ROWS=[];
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function num(n){return Number(n||0).toLocaleString('es-CO');}
+async function revisar(){
+  var f=document.getElementById('arch').files[0];
+  if(!f){alert('Elegí el Excel');return;}
+  document.getElementById('msg').textContent='Revisando…';
+  var fd=new FormData(); fd.append('archivo',f);
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/admin/descuento-retro/preview',{method:'POST',credentials:'same-origin',headers:{'X-CSRF-Token':t.csrf_token||''},body:fd});
+    var d=await r.json();
+    if(!r.ok||!d.ok){document.getElementById('msg').innerHTML='<span style="color:#dc2626">'+esc(d.error||r.status)+'</span>';return;}
+    _ROWS=d.rows||[]; document.getElementById('msg').textContent='';
+    var s=d.resumen||{}; var ps=s.por_status||{};
+    var cardsdef=[['OK','Descontables','#166534'],['CUARENTENA','En cuarentena','#1e40af'],['INSUF','Stock insuficiente','#92400e'],['SIN_STOCK','Sin stock','#991b1b'],['MP_NO_EXISTE','MP no existe','#991b1b'],['INACTIVA','Inactivas','#991b1b']];
+    var sc='<div class="sc" style="border-color:#c4b5fd"><b>'+num(s.total_filas)+'</b> filas · '+num(s.descontable_g+s.revisar_g)+' g</div>';
+    cardsdef.forEach(function(k){ if(ps[k[0]]) sc+='<div class="sc"><b style="color:'+k[2]+'">'+num(ps[k[0]])+'</b>'+k[1]+'</div>'; });
+    sc+='<div class="sc" style="border-color:#bbf7d0"><b style="color:#166534">'+num(s.descontable_g)+' g</b>descontable</div><div class="sc" style="border-color:#fde68a"><b style="color:#92400e">'+num(s.revisar_g)+' g</b>a revisar</div>';
+    document.getElementById('sum').innerHTML=sc;
+    pinta();
+    var nOK=(ps.OK||0);
+    document.getElementById('acc').innerHTML = nOK? ('<div style="padding:12px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;font-size:13px"><b>Descontar</b> · esto registra las Salidas por FEFO SOLO de las '+nOK+' filas OK ('+num(s.descontable_g)+' g). Las demás quedan para revisión (mandalas al jefe de producción). Auditado y reversible.<br><button class="cx-btn cx-btn-success" style="margin-top:9px" onclick="aplicar()">Descontar las '+nOK+' filas OK</button></div>') : '';
+  }catch(e){document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>';}
+}
+function pinta(){
+  var fil=document.getElementById('filtro').value;
+  var rows=_ROWS.filter(function(r){ if(fil==='OK')return r.status==='OK'; if(fil==='REV')return r.status!=='OK'; return true; });
+  var h='<table><thead><tr><th>Producción</th><th>Cód</th><th>Material</th><th>Lote (Excel)</th><th>Lote EOS</th><th style="text-align:right">Consumo g</th><th style="text-align:right">Usable g</th><th style="text-align:right">Cuar. g</th><th>Estado</th><th>Detalle</th></tr></thead><tbody>';
+  rows.forEach(function(r){
+    var lm=r.lote_match?esc(r.lote_match)+(r.lote_estado&&r.lote_estado!=='VIGENTE'?(' <span style="color:#b45309">('+esc(r.lote_estado)+')</span>'):''):'<span style="color:#cbd5e1">—</span>';
+    h+='<tr><td style="font-size:11px;color:#666">'+esc((r.prod||'').slice(0,26))+'</td><td style="font-family:monospace">'+esc(r.cod)+'</td><td>'+esc((r.nombre||r.desc||'').slice(0,24))+'</td><td style="font-family:monospace;font-size:11px">'+esc(r.lote_excel||'—')+'</td><td style="font-family:monospace;font-size:11px">'+lm+'</td><td style="text-align:right;font-weight:700">'+num(r.cant)+'</td><td style="text-align:right">'+num(r.usable)+'</td><td style="text-align:right;color:'+(r.retenido?'#1e40af':'#ccc')+'">'+num(r.retenido)+'</td><td><span class="chip st-'+esc(r.status)+'">'+esc(r.status)+'</span></td><td style="font-size:11.5px;color:#555">'+esc(r.detalle||'')+'</td></tr>';
+  });
+  h+='</tbody></table>';
+  document.getElementById('out').innerHTML=h;
+}
+async function aplicar(){
+  var oks=_ROWS.filter(function(r){return r.status==='OK';});
+  if(!oks.length){alert('No hay filas OK');return;}
+  if(!confirm('Descontar '+oks.length+' filas OK por FEFO? Registra Salidas en el kardex (auditado, reversible). Las demás NO se tocan.'))return;
+  document.getElementById('msg').textContent='Aplicando…';
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/admin/descuento-retro/apply',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||''},body:JSON.stringify({filas:oks})});
+    var d=await r.json();
+    if(!r.ok||!d.ok){document.getElementById('msg').innerHTML='<span style="color:#dc2626">'+esc(d.error||r.status)+'</span>';return;}
+    document.getElementById('msg').innerHTML='';
+    document.getElementById('acc').innerHTML='<div style="padding:14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;color:#166534;font-size:14px">&#10003; Descontadas <b>'+d.n_aplicadas+'</b> filas · <b>'+num(d.total_descontado_g)+' g</b>.'+((d.saltadas||[]).length?(' · '+d.saltadas.length+' ya estaban aplicadas (saltadas)'):'')+((d.errores||[]).length?(' · '+d.errores.length+' con error'):'')+'</div>';
+  }catch(e){document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>';}
+}
+</script></body></html>'''
+    return _tpl
+
+
 @bp.route('/api/admin/mp-diag', methods=['GET'])
 def mp_diag():
     """Diagnóstico: ¿por qué una MP (no) sale en Bodega? Muestra existe/activo/tipo,
@@ -11800,10 +12094,10 @@ def mp_diag():
     lotes = []
     try:
         for lote, est, neto in c.execute(
-            """SELECT COALESCE(lote,''), UPPER(COALESCE(estado_lote,'')) AS est,
+            """SELECT COALESCE(lote,''), MAX(UPPER(COALESCE(estado_lote,''))) AS est,
                       SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
                           WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) AS neto
-               FROM movimientos WHERE UPPER(TRIM(material_id))=? GROUP BY lote, est HAVING neto > 0.01""",
+               FROM movimientos WHERE UPPER(TRIM(material_id))=? GROUP BY lote HAVING neto > 0.01""",
                 (cod,)).fetchall():
             lotes.append({'lote': lote, 'estado': est or '(sin estado)', 'neto_g': round(float(neto or 0), 2),
                           'usable': (est or '') not in _EXCL})

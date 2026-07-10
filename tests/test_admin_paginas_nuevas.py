@@ -268,3 +268,38 @@ def test_mp_reactivar(admin_client):
     dg2 = admin_client.get("/api/admin/mp-diag?codigo=MPZZINACT").get_json()
     assert dg2["activo"] == 1
     assert admin_client.post("/api/admin/mp-reactivar", json={"codigo": "MPNOEXISTE"}).status_code == 404
+
+
+def test_descuento_retroactivo(admin_client):
+    """Descuento retroactivo (producción no registrada): revisión clasifica bien +
+    aplica por FEFO solo los OK, reduce stock, idempotente (Sebastián 9-jul)."""
+    assert admin_client.get("/admin/descuento-retroactivo").status_code == 200
+    from api.index import app
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        c.execute("INSERT OR IGNORE INTO maestro_mps (codigo_mp,nombre_inci,activo,tipo_material) VALUES ('MPDRETO1','UREA DR',1,'MP')")
+        c.execute("INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,lote,estado_lote) VALUES ('MPDRETO1','UREA DR',10000,'Entrada','2026-01-01','LDR1','VIGENTE')")
+        c.execute("INSERT OR IGNORE INTO maestro_mps (codigo_mp,nombre_inci,activo,tipo_material) VALUES ('MPDRETO2','CUAR DR',1,'MP')")
+        c.execute("INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,lote,estado_lote) VALUES ('MPDRETO2','CUAR DR',5000,'Entrada','2026-01-01','LDRC','CUARENTENA')")
+        conn.commit()
+    filas = [
+        {"cod": "MPDRETO1", "desc": "UREA", "lote": "_00LDR1", "cant": 7000, "prod": "PT-A", "bulk": "B1"},
+        {"cod": "MPDRETO2", "desc": "CUAR", "lote": "LDRC", "cant": 3000, "prod": "PT-A", "bulk": "B1"},
+        {"cod": "MPNOEXISTEZ", "desc": "?", "lote": "z", "cant": 5, "prod": "PT-A", "bulk": "B1"},
+        {"cod": "MPDRETO1", "desc": "UREA", "lote": "x", "cant": 999999, "prod": "PT-A", "bulk": "B2"},
+    ]
+    d = admin_client.post("/api/admin/descuento-retro/preview", json={"filas": filas}).get_json()
+    assert d["ok"]
+    st = {r["cod"] + "/" + str(int(r["cant"])): r["status"] for r in d["rows"]}
+    assert st["MPDRETO1/7000"] == "OK"
+    assert st["MPDRETO2/3000"] == "CUARENTENA"
+    assert st["MPNOEXISTEZ/5"] == "MP_NO_EXISTE"
+    assert st["MPDRETO1/999999"] == "INSUF"
+    oks = [r for r in d["rows"] if r["status"] == "OK"]
+    da = admin_client.post("/api/admin/descuento-retro/apply", json={"filas": oks}).get_json()
+    assert da["ok"] and da["n_aplicadas"] == 1 and abs(da["total_descontado_g"] - 7000) < 1
+    dg = admin_client.get("/api/admin/mp-diag?codigo=MPDRETO1").get_json()
+    assert abs(dg["stock_usable_g"] - 3000) < 1
+    # idempotente: re-aplicar no vuelve a descontar
+    assert admin_client.post("/api/admin/descuento-retro/apply", json={"filas": oks}).get_json()["n_aplicadas"] == 0
