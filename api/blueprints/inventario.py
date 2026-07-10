@@ -11965,19 +11965,45 @@ def _parse_consumo_xlsx(fs):
     return out
 
 
+def _resolver_fusion(c, cod):
+    """Si el código está inactivo/ausente y fue FUSIONADO en otro código activo (audit
+    FUSIONAR_CODIGO_MP · ej. MP00303 unificado en MP00301), devuelve el destino activo.
+    Así el consumo anotado bajo el código viejo se descuenta del código canónico. M1."""
+    cod = (cod or '').strip().upper()
+    if not cod:
+        return cod
+    try:
+        m = c.execute("SELECT COALESCE(activo,1) FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?", (cod,)).fetchone()
+        if m and int(m[0]) == 1:
+            return cod  # existe activo → no hay que resolver
+        r = c.execute("SELECT registro_id FROM audit_log WHERE accion='FUSIONAR_CODIGO_MP' "
+                      "AND antes LIKE ? ORDER BY id DESC LIMIT 1", ('%' + cod + '%',)).fetchone()
+        if r and r[0]:
+            dest = str(r[0]).strip().upper()
+            if dest != cod and c.execute(
+                    "SELECT 1 FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=? AND COALESCE(activo,1)=1",
+                    (dest,)).fetchone():
+                return dest
+    except Exception:
+        pass
+    return cod
+
+
 def _reconciliar_consumo(c, filas):
     """Cruza cada fila de consumo contra el inventario EOS. Clasifica: OK / CUARENTENA /
     INSUF / SIN_STOCK / MP_NO_EXISTE. NO modifica nada."""
     out = []
     for f in filas:
-        cod = (f.get('cod') or '').strip().upper()
+        cod_excel = (f.get('cod') or '').strip().upper()
+        cod = _resolver_fusion(c, cod_excel)  # sigue la fusión (código consolidado → canónico)
         try:
             cant = float(f.get('cant') or 0)
         except Exception:
             cant = 0.0
         lote_x = (f.get('lote') or '').strip()
-        r = {'cod': cod, 'desc': f.get('desc', ''), 'lote_excel': lote_x, 'cant': round(cant, 2),
-             'prod': f.get('prod', ''), 'bulk': f.get('bulk', '')}
+        r = {'cod': cod_excel, 'cod_resuelto': cod, 'desc': f.get('desc', ''), 'lote_excel': lote_x,
+             'cant': round(cant, 2), 'prod': f.get('prod', ''), 'bulk': f.get('bulk', '')}
+        _fus_nota = ('cód %s → %s (fusionado) · ' % (cod_excel, cod)) if cod != cod_excel else ''
         # ¿ya se descontó esta fila (marcador de apply)? → YA_APLICADA (no ensucia la revisión
         # ni cuenta como problema · su propio descuento pudo bajar el stock a "insuficiente").
         _marca = '[retro %s|%s|%s]' % ((f.get('bulk') or f.get('prod', '')[:12]), cod, int(round(cant)))
@@ -12037,6 +12063,8 @@ def _reconciliar_consumo(c, filas):
             r.update(status='INSUF', detalle='Stock insuficiente (usable %.0f < consumo %.0f)' % (usable, cant))
         else:
             r.update(status='SIN_STOCK', detalle='Sin stock en EOS (¿no se recibió o ya se consumió?)')
+        if _fus_nota:
+            r['detalle'] = _fus_nota + r.get('detalle', '')
         out.append(r)
     return out
 
@@ -12093,7 +12121,7 @@ def descuento_retro_apply():
     aplicadas = []; saltadas = []; errores = []
     total_g = 0.0
     for f in filas:
-        cod = (f.get('cod') or '').strip().upper()
+        cod = _resolver_fusion(c, (f.get('cod') or '').strip().upper())  # sigue la fusión (código consolidado)
         try:
             cant = float(f.get('cant') or 0)
         except Exception:
