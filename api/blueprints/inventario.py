@@ -12084,7 +12084,11 @@ async function aplicar(){
     var d=await r.json();
     if(!r.ok||!d.ok){document.getElementById('msg').innerHTML='<span style="color:#dc2626">'+esc(d.error||r.status)+'</span>';return;}
     document.getElementById('msg').innerHTML='';
-    document.getElementById('acc').innerHTML='<div style="padding:14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;color:#166534;font-size:14px">&#10003; Descontadas <b>'+d.n_aplicadas+'</b> filas · <b>'+num(d.total_descontado_g)+' g</b>.'+((d.saltadas||[]).length?(' · '+d.saltadas.length+' ya estaban aplicadas (saltadas)'):'')+((d.errores||[]).length?(' · '+d.errores.length+' con error'):'')+'</div>';
+    var errhtml='';
+    if((d.errores||[]).length){
+      errhtml='<div style="margin-top:10px;padding:12px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:10px;color:#7f1d1d;font-size:13px"><b>'+d.errores.length+' fila(s) con error</b> (no se descontaron · revisar):<table style="margin-top:6px"><thead><tr><th>Cód</th><th>Producción</th><th>Motivo</th></tr></thead><tbody>'+d.errores.map(function(e){return '<tr><td style="font-family:monospace">'+esc(e.cod)+'</td><td style="font-size:11px">'+esc(e.produccion||'')+'</td><td style="font-size:11.5px">'+esc(e.error||'')+'</td></tr>';}).join('')+'</tbody></table></div>';
+    }
+    document.getElementById('acc').innerHTML='<div style="padding:14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;color:#166534;font-size:14px">&#10003; Descontadas <b>'+d.n_aplicadas+'</b> filas · <b>'+num(d.total_descontado_g)+' g</b>.'+((d.saltadas||[]).length?(' · '+d.saltadas.length+' ya estaban aplicadas (saltadas)'):'')+((d.errores||[]).length?(' · '+d.errores.length+' con error (abajo)'):'')+'</div>'+errhtml;
   }catch(e){document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>';}
 }
 </script></body></html>'''
