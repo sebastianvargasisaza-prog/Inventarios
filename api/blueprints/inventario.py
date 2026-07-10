@@ -7446,8 +7446,14 @@ def registrar_recepcion():
     estado_lote = 'CUARENTENA' if cuarentena else 'VIGENTE'
     # Si la MP es nueva y viene con datos, crearla en el catalogo
     if not mp and (d.get('nombre_inci') or d.get('nombre_comercial')):
+        try:
+            _sm_new = float(d.get('stock_minimo') or 0)
+        except (ValueError, TypeError):
+            _sm_new = 0.0
+        # FIX 10-jul (workflow M80): stock_minimo='' del form revienta DOUBLE PRECISION en PG al crear
+        # una MP nueva en la recepción (SQLite lo tolera). Coerce a float.
         c.execute("INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_inci, nombre_comercial, tipo, proveedor, stock_minimo) VALUES (?,?,?,?,?,?)",
-                  (codigo, d.get('nombre_inci',''), nombre_comercial, d.get('tipo',''), proveedor, d.get('stock_minimo',0)))
+                  (codigo, d.get('nombre_inci',''), nombre_comercial, d.get('tipo',''), (proveedor or ''), _sm_new))
         conn.commit()
     # Actualizar precio_referencia en maestro_mps si viene precio.
     # Solo ignoramos si la columna 'ultima_act_precio' no existe (versión vieja).
@@ -11815,10 +11821,12 @@ def actualizar_precio_mp(codigo):
     antes = dict(antes_row)
     c.execute("UPDATE maestro_mps SET precio_referencia=?,ultima_act_precio=? WHERE codigo_mp=?",
               (precio, datetime.now().isoformat()[:10], codigo))
+    # FIX 10-jul (workflow M80): proveedor/observaciones = None (JSON null) → NOT NULL en PG → 500.
+    # `or ''` garantiza string (mismo patrón del fix de recepción).
     c.execute("""INSERT INTO precios_mp_historico (codigo_mp,proveedor,precio_kg,fecha,origen,observaciones)
                  VALUES (?,?,?,?,?,?)""",
-              (codigo, d.get('proveedor',''), precio, datetime.now().isoformat()[:10],
-               d.get('origen','manual'), d.get('observaciones','')))
+              (codigo, (d.get('proveedor') or ''), precio, datetime.now().isoformat()[:10],
+               (d.get('origen') or 'manual'), (d.get('observaciones') or '')))
     audit_log(c, usuario=u, accion='ACTUALIZAR_PRECIO_MP', tabla='maestro_mps',
               registro_id=codigo, antes=antes,
               despues={'precio_referencia': precio, 'proveedor': d.get('proveedor',''),
@@ -12271,6 +12279,56 @@ async function aplicar(){
     document.getElementById('acc').innerHTML='<div style="padding:14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;color:#166534;font-size:14px">&#10003; Descontadas <b>'+d.n_aplicadas+'</b> filas · <b>'+num(d.total_descontado_g)+' g</b>.'+((d.saltadas||[]).length?(' · '+d.saltadas.length+' ya estaban aplicadas (saltadas)'):'')+((d.errores||[]).length?(' · '+d.errores.length+' con error (abajo)'):'')+'</div>'+errhtml;
   }catch(e){document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>';}
 }
+</script></body></html>'''
+    return _tpl
+
+
+@bp.route('/admin/mp-bridges', methods=['GET'])
+def mp_bridges_page():
+    """Puentes MP (mp_formula_bridge): lista + buscar + desactivar. Para SEPARAR códigos mal
+    puenteados que en realidad son materiales distintos (ej. Panthenol POLVO MP00236 puenteado al
+    LÍQUIDO MP00110 → una producción de polvo descuenta líquido). Sebastián 10-jul."""
+    if session.get('compras_user', '') not in ADMIN_USERS:
+        return redirect('/login?next=/admin/mp-bridges')
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Puentes MP</title><link rel="stylesheet" href="/static/cortex.css"><style>body{font-family:Arial,sans-serif;background:#f5f3ff;padding:22px}.card{max-width:1040px;margin:0 auto}table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}th,td{text-align:left;padding:6px 9px;border-bottom:1px solid #eee}th{color:#6d28d9;font-size:11px;text-transform:uppercase}.inp{border:1px solid #e4e4e7;border-radius:8px;padding:8px 11px;font-size:13px;width:240px}.inp:focus{outline:none;border-color:#a78bfa;box-shadow:0 0 0 3px rgba(167,139,250,.18)}.bd{background:#dc2626;color:#fff;border:none;border-radius:7px;padding:5px 11px;font-size:12px;font-weight:700;cursor:pointer}.bd:hover{filter:brightness(1.08)}</style></head><body>
+<div class="cx-card card">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px"><div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:20px">&#128279;</div><div><h2 style="margin:0;font-size:19px">Puentes MP (bridge)</h2><div class="cx-text-mute" style="font-size:13px">Un puente hace que un c&oacute;digo de f&oacute;rmula descuente del stock de OTRO c&oacute;digo. Si dos c&oacute;digos son materiales DISTINTOS (ej. Panthenol polvo vs l&iacute;quido), su puente est&aacute; MAL &rarr; <b>desactivalo</b> para que cada uno use su propio inventario. Reversible.</div></div></div>
+  <div style="margin-top:14px;display:flex;gap:10px;align-items:center"><input id="q" class="inp" placeholder="Buscar (ej. PANTHENOL, MP00236)" oninput="pinta()"><span id="msg" style="font-size:13px"></span></div>
+  <div id="out"></div>
+  <div style="margin-top:14px"><button class="cx-btn cx-btn-ghost" onclick="location.href='/inventarios'">Volver</button></div>
+</div>
+<script>
+var _B=[];
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+async function cargar(){
+  try{
+    var r=await fetch('/api/programacion/mp-bridge',{credentials:'same-origin'});
+    _B=(await r.json())||[]; pinta();
+  }catch(e){document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>';}
+}
+function pinta(){
+  var q=(document.getElementById('q').value||'').trim().toUpperCase();
+  var act=_B.filter(function(b){return b.activo==1||b.activo===true;});
+  if(q)act=act.filter(function(b){return (JSON.stringify(b)||'').toUpperCase().indexOf(q)>=0;});
+  var h='<table><thead><tr><th>Código fórmula</th><th>Nombre</th><th>&rarr; usa stock de</th><th>Nombre bodega</th><th>Acción</th></tr></thead><tbody>';
+  act.forEach(function(b){
+    h+='<tr><td style="font-family:monospace;font-weight:700">'+esc(b.formula_material_id)+'</td><td>'+esc((b.formula_material_nombre||'').slice(0,28))+'</td><td style="font-family:monospace;font-weight:700;color:#7c3aed">'+esc(b.bodega_material_id)+'</td><td>'+esc((b.bodega_material_nombre||b.bodega_inci||'').slice(0,28))+'</td><td><button class="bd" onclick="desactivar('+b.id+',&quot;'+esc(b.formula_material_id)+'&rarr;'+esc(b.bodega_material_id)+'&quot;)">Desactivar</button></td></tr>';
+  });
+  h+='</tbody></table>';
+  document.getElementById('out').innerHTML= act.length? h : '<div style="color:#888;margin-top:10px">Sin puentes activos'+(q?' para "'+esc(q)+'"':'')+'.</div>';
+}
+async function desactivar(id,txt){
+  if(!confirm('Desactivar el puente '+txt+'? A partir de ahora ese código de fórmula descuenta su PROPIO stock (no el del otro). Reversible.'))return;
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/programacion/mp-bridge/'+id,{method:'DELETE',credentials:'same-origin',headers:{'X-CSRF-Token':t.csrf_token||''}});
+    var d=await r.json();
+    if(!r.ok||!d.ok){document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error: '+esc(d.error||r.status)+'</span>';return;}
+    document.getElementById('msg').innerHTML='<span style="color:#16a34a;font-weight:700">&#10003; Puente desactivado</span>';
+    cargar();
+  }catch(e){document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error de red</span>';}
+}
+cargar();
 </script></body></html>'''
     return _tpl
 

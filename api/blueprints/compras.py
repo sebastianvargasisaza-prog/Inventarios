@@ -6119,34 +6119,46 @@ def recibir_oc(numero_oc):
                 # automática como VIGENTE, sin pasar por Calidad).
                 from database import recepcion_auto_vigente as _rav
                 _estado_recep = 'VIGENTE' if _rav(cur) else 'CUARENTENA'
-                _coa_ok = False
-                try:
-                    cur.execute(
-                        "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, "
-                        "observaciones, proveedor, operador, lote, fecha_vencimiento, estado_lote, numero_oc, "
-                        "coa_url, coa_filename, lote_proveedor, ficha_seguridad_url) "
-                        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                        (codigo, nombre, cant_recibida, 'Entrada', fecha,
-                         f'Recepcion OC {numero_oc}' + (f' | {notas_item}' if notas_item else ''),
-                         prov_nombre, operador, lote_final,
-                         fv or None, _estado_recep, numero_oc,
-                         coa_url or None, coa_filename or None,
-                         lote_proveedor or None, ficha_seguridad_url or None))
-                    _coa_ok = True
-                except Exception as _e:
-                    log.info('movimientos sin columnas COA · cae a legacy: %s', _e)
-                if _coa_ok:
-                    pass  # INSERT ya hecho · pasar a actualizar cantidad
+                # FIX 10-jul (500 en recepción · PG · workflow M80): un ítem de OC SIN código de MP
+                # disparaba el trigger trg_mov_material_id_requerido (material_id vacío) → el INSERT COA
+                # fallaba, el except lo malinterpretaba como 'faltan columnas' y reintentaba el INSERT
+                # legacy SIN try → mismo trigger → 500 no cazado. La rama MEE ya salteaba sin código; la
+                # de MP no. Ahora: guard (no imputar sin código · nada que recibir al kardex).
+                if not codigo:
+                    log.warning('recibir_oc MP sin codigo_mp · OC %s item %s · no imputado al kardex', numero_oc, _idx + 1)
                 else:
-                    cur.execute(
-                        "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, "
-                        "observaciones, proveedor, operador, lote, fecha_vencimiento, estado_lote, numero_oc) "
-                        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                        (codigo, nombre, cant_recibida, 'Entrada', fecha,
-                         f'Recepcion OC {numero_oc}' + (f' | {notas_item}' if notas_item else ''),
-                         prov_nombre, operador, lote_final,
-                         fv or None, _estado_recep, numero_oc))
-            ingresos += 1
+                    _coa_ok = False
+                    try:
+                        cur.execute(
+                            "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, "
+                            "observaciones, proveedor, operador, lote, fecha_vencimiento, estado_lote, numero_oc, "
+                            "coa_url, coa_filename, lote_proveedor, ficha_seguridad_url) "
+                            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                            (codigo, nombre, cant_recibida, 'Entrada', fecha,
+                             f'Recepcion OC {numero_oc}' + (f' | {notas_item}' if notas_item else ''),
+                             prov_nombre, operador, lote_final,
+                             fv or None, _estado_recep, numero_oc,
+                             coa_url or None, coa_filename or None,
+                             lote_proveedor or None, ficha_seguridad_url or None))
+                        _coa_ok = True
+                    except Exception as _e:
+                        # SOLO caer a legacy si es DRIFT DE ESQUEMA (columna COA ausente · mig 151 no
+                        # aplicó). Cualquier OTRO fallo (trigger/constraint de datos) NO se enmascara con
+                        # un 2º INSERT que revienta igual → se re-lanza para no dar 500 confuso (M4/M69).
+                        _msg = str(_e).lower()
+                        if ('column' not in _msg and 'columna' not in _msg and 'no such' not in _msg):
+                            raise
+                        log.info('movimientos sin columnas COA · cae a legacy: %s', _e)
+                    if not _coa_ok:
+                        cur.execute(
+                            "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, "
+                            "observaciones, proveedor, operador, lote, fecha_vencimiento, estado_lote, numero_oc) "
+                            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                            (codigo, nombre, cant_recibida, 'Entrada', fecha,
+                             f'Recepcion OC {numero_oc}' + (f' | {notas_item}' if notas_item else ''),
+                             prov_nombre, operador, lote_final,
+                             fv or None, _estado_recep, numero_oc))
+                    ingresos += 1
         # Actualizar item OC · audit zero-error 2-may-2026: usar += en
         # cantidad_recibida_g para soportar recepciones múltiples parciales
         # sobre el mismo item. Antes era SET = ? que pisaba el acumulado.

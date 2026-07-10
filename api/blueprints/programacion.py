@@ -12234,6 +12234,17 @@ def prog_debug_mp_check(producto):
 
 # ─── MP Bridge — admin endpoints ─────────────────────────────────────────────
 
+from contextlib import contextmanager as _contextmanager  # noqa: E402
+
+
+@_contextmanager
+def _db():
+    """FIX 10-jul · las 4 rutas de mp-bridge usaban `with _db() as conn` pero `_db` NUNCA se definió
+    → NameError → 500 (gestión de puentes muerta · no se podían separar códigos mal puenteados como
+    Panthenol polvo↔líquido). Cede la conexión per-request (get_db); el commit lo hacen los writers."""
+    yield get_db()
+
+
 @bp.route('/api/programacion/mp-bridge', methods=['GET'])
 def mp_bridge_list():
     """List all bridge mappings (active and inactive)."""
