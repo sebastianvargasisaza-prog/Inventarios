@@ -11811,6 +11811,32 @@ def mp_diag():
         pass
     usable = round(sum(l['neto_g'] for l in lotes if l['usable']), 2)
     retenido = round(sum(l['neto_g'] for l in lotes if not l['usable']), 2)
+    # Movimientos CRUDOS (todos los estados, sin HAVING) · para descartar stock oculto/consumido
+    mov_total = 0; mov_neto_raw = 0.0
+    try:
+        r0 = c.execute(
+            """SELECT COUNT(*), COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                       WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0)
+               FROM movimientos WHERE UPPER(TRIM(material_id))=?""", (cod,)).fetchone()
+        mov_total = int(r0[0] or 0); mov_neto_raw = round(float(r0[1] or 0), 2)
+    except Exception:
+        pass
+    # Historial de normalización (renombrado/fusión/reactivar) desde audit_log · trae el stock registrado
+    historial = []
+    try:
+        import json as _json
+        for acc, fecha, antes_j, desp_j in c.execute(
+                """SELECT accion, fecha, antes, despues FROM audit_log
+                   WHERE registro_id=? AND accion IN ('RENOMBRAR_CODIGO_MP','FUSIONAR_CODIGO_MP','REACTIVAR_MP')
+                   ORDER BY fecha DESC""", (cod,)).fetchall():
+            def _p(s):
+                try:
+                    return _json.loads(s) if s else {}
+                except Exception:
+                    return {}
+            historial.append({'accion': acc, 'fecha': str(fecha or ''), 'antes': _p(antes_j), 'despues': _p(desp_j)})
+    except Exception:
+        pass
     if not m:
         razon = 'El código NO existe en el maestro de MP.'
     elif m[3] != 'MP':
@@ -11827,6 +11853,7 @@ def mp_diag():
                     'nombre_inci': (m[1] if m else ''), 'nombre_comercial': (m[2] if m else ''),
                     'tipo_material': (m[3] if m else ''), 'activo': (int(m[4]) if m else None),
                     'stock_usable_g': usable, 'stock_retenido_g': retenido,
+                    'mov_total': mov_total, 'mov_neto_raw_g': mov_neto_raw, 'historial': historial,
                     'lotes': lotes, 'aparece_en_bodega_default': usable > 0.01, 'razon': razon})
 
 
@@ -11891,8 +11918,17 @@ async function diag(){
     var h='<div style="background:#fff;border:1px solid #ede9fe;border-radius:12px;padding:16px">'
       +'<div style="font-size:16px"><b>'+esc(d.codigo)+'</b> &middot; '+esc(d.nombre_inci||d.nombre_comercial||'(sin nombre)')+' '+badgeAct+'</div>'
       +'<div style="color:#555;font-size:13px;margin-top:4px">tipo_material: <b>'+esc(d.tipo_material)+'</b> &middot; stock usable: <b>'+num(d.stock_usable_g)+' g</b> &middot; retenido: <b>'+num(d.stock_retenido_g)+' g</b></div>'
-      +'<div style="margin-top:10px;padding:11px 13px;background:'+(d.aparece_en_bodega_default?'#f0fdf4;border:1px solid #bbf7d0;color:#166534':'#fffbeb;border:1px solid #fde68a;color:#92400e')+';border-radius:9px;font-size:13.5px"><b>'+esc(d.razon)+'</b></div>'
-      +'<table><thead><tr><th>Lote</th><th>Estado</th><th style="text-align:right">Stock</th><th>Uso</th></tr></thead><tbody>'+rows+'</tbody></table>';
+      +'<div style="color:#555;font-size:13px;margin-top:2px">movimientos en kardex: <b>'+num(d.mov_total)+'</b> &middot; neto crudo (todos los estados): <b>'+num(d.mov_neto_raw_g)+' g</b></div>'
+      +'<div style="margin-top:10px;padding:11px 13px;background:'+(d.aparece_en_bodega_default?'#f0fdf4;border:1px solid #bbf7d0;color:#166534':'#fffbeb;border:1px solid #fde68a;color:#92400e')+';border-radius:9px;font-size:13.5px"><b>'+esc(d.razon)+'</b></div>';
+    if((d.historial||[]).length){
+      h+='<div style="margin-top:12px;font-size:12px;color:#6d28d9;font-weight:700;text-transform:uppercase;letter-spacing:.4px">Historial de normalización</div>';
+      (d.historial||[]).forEach(function(x){
+        var st=(x.despues&&(x.despues.stock_g!=null))?(' &middot; stock registrado: <b>'+num(x.despues.stock_g)+' g</b>'):'';
+        var de=(x.antes&&x.antes.codigo_mp)?(esc(x.antes.codigo_mp)+' &rarr; '+esc(d.codigo)):'';
+        h+='<div style="font-size:12.5px;color:#444;margin-top:3px">&bull; '+esc(x.fecha).slice(0,16)+' &middot; <b>'+esc(x.accion)+'</b> '+de+st+'</div>';
+      });
+    }
+    h+='<table><thead><tr><th>Lote</th><th>Estado</th><th style="text-align:right">Stock</th><th>Uso</th></tr></thead><tbody>'+rows+'</tbody></table>';
     if(!d.activo)h+='<button class="cx-btn cx-btn-success" style="margin-top:12px" onclick="reactivar()">&#9851;&#65039; Reactivar '+esc(d.codigo)+' (activo=1)</button>';
     h+='</div>';
     document.getElementById('out').innerHTML=h;

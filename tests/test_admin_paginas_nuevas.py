@@ -185,6 +185,19 @@ def test_mp_diag(admin_client):
     d2 = admin_client.get("/api/admin/mp-diag?codigo=MP00062").get_json()
     assert d2["ok"] and d2["existe"] and d2["tipo_material"] == "MP"
     assert "stock_usable_g" in d2 and "aparece_en_bodega_default" in d2 and d2["razon"]
+    assert "mov_total" in d2 and "historial" in d2
+    # el historial registra el stock exacto al renombrar (dato duro para 'la anterior tenía stock?')
+    from api.index import app
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        c.execute("INSERT INTO maestro_mps (codigo_mp, nombre_inci, activo) VALUES ('MPHDIAG1','TEST H',1)")
+        c.execute("INSERT INTO movimientos (material_id, tipo, cantidad, lote) VALUES ('MPHDIAG1','Entrada',777,'LHD1')")
+        conn.commit()
+    admin_client.post("/api/admin/renombrar-mp-apply", json={"viejo": "MPHDIAG1", "nuevo": "MPHDIAG2"})
+    d3 = admin_client.get("/api/admin/mp-diag?codigo=MPHDIAG2").get_json()
+    assert d3["mov_total"] == 1 and d3["stock_usable_g"] == 777
+    assert any(h["accion"] == "RENOMBRAR_CODIGO_MP" and h["despues"].get("stock_g") == 777 for h in d3["historial"])
 
 
 def test_fusionar_codigo_mp(admin_client):
