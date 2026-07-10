@@ -349,3 +349,42 @@ def test_retro_ya_aplicada_y_fusion_reactiva(admin_client):
     assert ap["ok"] and ap["hechos"][0]["modo"] == "fusion"
     dg = admin_client.get("/api/admin/mp-diag?codigo=MPDSTR9").get_json()
     assert dg["activo"] == 1 and abs(dg["stock_usable_g"] - 400) < 1
+
+
+def test_retro_marcador_incluye_lote(admin_client):
+    """[audit 9-jul] 2 consumos del MISMO bulk/cod/cant pero DISTINTO lote NO se saltan entre sí
+    (el marcador incluye el lote) → se descuentan AMBOS (antes: sub-descuento silencioso)."""
+    from api.index import app
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        c.execute("INSERT OR IGNORE INTO maestro_mps (codigo_mp,nombre_inci,activo,tipo_material) VALUES ('MPMK1','MK',1,'MP')")
+        c.execute("INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,lote,estado_lote) VALUES ('MPMK1','MK',5000,'Entrada','2026-01-01','LMKA','VIGENTE')")
+        c.execute("INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,lote,estado_lote) VALUES ('MPMK1','MK',5000,'Entrada','2026-01-01','LMKB','VIGENTE')")
+        conn.commit()
+    filas = [
+        {"cod": "MPMK1", "lote": "LMKA", "cant": 500, "prod": "PT-X", "bulk": "BMK"},
+        {"cod": "MPMK1", "lote": "LMKB", "cant": 500, "prod": "PT-X", "bulk": "BMK"},
+    ]
+    d = admin_client.post("/api/admin/descuento-retro/preview", json={"filas": filas}).get_json()
+    oks = [r for r in d["rows"] if r["status"] == "OK"]
+    assert len(oks) == 2
+    da = admin_client.post("/api/admin/descuento-retro/apply", json={"filas": oks}).get_json()
+    assert da["n_aplicadas"] == 2 and abs(da["total_descontado_g"] - 1000) < 1  # AMBOS, no 1
+
+
+def test_liberar_cuarentena_seleccion_vacia_no_libera(admin_client):
+    """[audit 9-jul] seleccion=[] (lista vacía) libera NADA, no TODA la cuarentena."""
+    from api.index import app
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        c.execute("INSERT OR IGNORE INTO maestro_mps (codigo_mp,nombre_inci,activo,tipo_material) VALUES ('MPSV1','SV',1,'MP')")
+        c.execute("INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,lote,estado_lote) VALUES ('MPSV1','SV',900,'Entrada','2026-01-01','LSV','CUARENTENA')")
+        conn.commit()
+    r = admin_client.post("/api/admin/liberar-cuarentena-bloque", json={"seleccion": []})
+    assert r.status_code == 200 and r.get_json()["liberados"] == 0
+    with app.app_context():
+        from database import get_db
+        c = get_db().cursor()
+        assert c.execute("SELECT estado_lote FROM movimientos WHERE lote='LSV'").fetchone()[0] == "CUARENTENA"

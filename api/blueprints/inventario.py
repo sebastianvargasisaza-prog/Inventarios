@@ -11170,8 +11170,9 @@ def liberar_cuarentena_bloque():
             "WHERE UPPER(COALESCE(m.estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA') "
             "AND UPPER(COALESCE(mp.tipo_material,'MP'))='MP'")
     filas = c.execute(base).fetchall()
-    if sel:
-        claves = {((s.get('cod') or '').strip().upper() + '|' + (s.get('lote') or '').strip()) for s in sel}
+    if sel is not None:
+        # lista explícita (incl. vacía = liberar NADA · NO caer a 'todos' con []) · M2
+        claves = {((s.get('cod') or '').strip().upper() + '|' + (s.get('lote') or '').strip()) for s in (sel or [])}
         filas = [f for f in filas if (str(f[1]).strip().upper() + '|' + str(f[2]).strip()) in claves]
     n = 0
     for fid, fmat, flote in filas:
@@ -11203,7 +11204,7 @@ def liberar_cuarentena_page():
   <div id="msg" style="margin-top:10px;font-size:14px"></div>
 </div>
 <script>
-function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function num(n){return Number(n||0).toLocaleString('es-CO');}
 function toggleAll(cb){var xs=document.querySelectorAll('.cbq');for(var i=0;i<xs.length;i++)xs[i].checked=cb.checked;}
 async function cargar(){
@@ -11976,8 +11977,10 @@ def _resolver_fusion(c, cod):
         m = c.execute("SELECT COALESCE(activo,1) FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?", (cod,)).fetchone()
         if m and int(m[0]) == 1:
             return cod  # existe activo → no hay que resolver
+        # anclar el código entre comillas del JSON (antes={"codigo_mp": "COD", ...}) para NO matchear
+        # por substring (ej. 'MP0001' dentro de '"MP00019"') → material equivocado. Códigos MP no traen % ni _.
         r = c.execute("SELECT registro_id FROM audit_log WHERE accion='FUSIONAR_CODIGO_MP' "
-                      "AND antes LIKE ? ORDER BY id DESC LIMIT 1", ('%' + cod + '%',)).fetchone()
+                      "AND antes LIKE ? ORDER BY id DESC LIMIT 1", ('%"' + cod + '"%',)).fetchone()
         if r and r[0]:
             dest = str(r[0]).strip().upper()
             if dest != cod and c.execute(
@@ -12006,7 +12009,9 @@ def _reconciliar_consumo(c, filas):
         _fus_nota = ('cód %s → %s (fusionado) · ' % (cod_excel, cod)) if cod != cod_excel else ''
         # ¿ya se descontó esta fila (marcador de apply)? → YA_APLICADA (no ensucia la revisión
         # ni cuenta como problema · su propio descuento pudo bajar el stock a "insuficiente").
-        _marca = '[retro %s|%s|%s]' % ((f.get('bulk') or f.get('prod', '')[:12]), cod, int(round(cant)))
+        # El marcador incluye el LOTE (2 filas del mismo bulk/cod/cant pero distinto lote son
+        # consumos DISTINTOS · sin el lote la 2ª se saltaba como 'ya aplicada' → sub-descuento).
+        _marca = '[retro %s|%s|%s|%s]' % ((f.get('bulk') or f.get('prod', '')[:12]), cod, _norm_lote_cmp(lote_x), int(round(cant)))
         try:
             _ya = c.execute("SELECT 1 FROM movimientos WHERE UPPER(TRIM(material_id))=? AND observaciones LIKE ? LIMIT 1",
                             (cod, '%' + _marca + '%')).fetchone()
@@ -12127,7 +12132,9 @@ def descuento_retro_apply():
         except Exception:
             cant = 0.0
         bulk = (f.get('bulk') or '').strip(); prod = (f.get('prod') or '').strip()
-        lote_x = (f.get('lote') or '').strip()
+        # el frontend manda las filas RECONCILIADAS (traen 'lote_excel', no 'lote') · aceptar ambos
+        # para que el marcador coincida EXACTO con el de la reconciliación (YA_APLICADA).
+        lote_x = (f.get('lote') or f.get('lote_excel') or '').strip()
         if not cod or cant <= 0:
             continue
         # per-fila: NUNCA tumbar todo el lote · un error (ej. FEFO sin stock real por lote
@@ -12139,7 +12146,7 @@ def descuento_retro_apply():
             if not mp:
                 errores.append({'cod': cod, 'produccion': prod[:40], 'error': 'MP no existe o inactiva'}); continue
             nombre = mp[0]
-            marca = '[retro %s|%s|%s]' % (bulk or prod[:12], cod, int(round(cant)))
+            marca = '[retro %s|%s|%s|%s]' % (bulk or prod[:12], cod, _norm_lote_cmp(lote_x), int(round(cant)))
             ya = c.execute("SELECT 1 FROM movimientos WHERE UPPER(TRIM(material_id))=? AND observaciones LIKE ? LIMIT 1",
                            (cod, '%' + marca + '%')).fetchone()
             if ya:
@@ -12151,9 +12158,12 @@ def descuento_retro_apply():
                 q = float(di.get('cantidad') or 0)
                 if q <= 0.01:
                     continue
+                # el lote del FEFO (real) o '' si es remainder legacy · NO fabricar el lote del Excel
+                # (crearía un negativo en un lote que no es el consumido · drift por-lote). El lote real
+                # del Excel queda en observaciones (obs) para trazabilidad.
                 c.execute("""INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,observaciones,lote,operador)
                              VALUES (?,?,?,'Salida',datetime('now','-5 hours'),?,?,?)""",
-                          (cod, nombre, round(q, 2), obs, (di.get('lote') or lote_x), _u))
+                          (cod, nombre, round(q, 2), obs, (di.get('lote') or ''), _u))
                 movido += q
             try:
                 audit_log(c, usuario=_u, accion='CONSUMO_RETROACTIVO', tabla='movimientos', registro_id=cod,
@@ -12192,7 +12202,7 @@ def descuento_retroactivo_page():
 </div>
 <script>
 var _ROWS=[];
-function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function num(n){return Number(n||0).toLocaleString('es-CO');}
 async function revisar(){
   var f=document.getElementById('arch').files[0];
@@ -12237,14 +12247,17 @@ function copiarRev(){
 }
 function _fallbackCopy(t,n){var ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');document.getElementById('msg').innerHTML='<span style="color:#16a34a">Copiado '+n+' filas</span>';}catch(e){alert('Copia manual (abajo)');}document.body.removeChild(ta);}
 async function aplicar(){
+  if(window._retroBusy)return;
   var oks=_ROWS.filter(function(r){return r.status==='OK';});
   if(!oks.length){alert('No hay filas OK');return;}
   if(!confirm('Descontar '+oks.length+' filas OK por FEFO? Registra Salidas en el kardex (auditado, reversible). Las demás NO se tocan.'))return;
+  window._retroBusy=true; setTimeout(function(){window._retroBusy=false;},4000);
   document.getElementById('msg').textContent='Aplicando…';
   try{
     var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
     var r=await fetch('/api/admin/descuento-retro/apply',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token||''},body:JSON.stringify({filas:oks})});
     var d=await r.json();
+    window._retroBusy=false;
     if(!r.ok||!d.ok){document.getElementById('msg').innerHTML='<span style="color:#dc2626">'+esc(d.error||r.status)+'</span>';return;}
     document.getElementById('msg').innerHTML='';
     var errhtml='';
@@ -12382,7 +12395,7 @@ def mp_diag_page():
 </div>
 <script>
 var _C='';
-function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function num(n){return Number(n||0).toLocaleString('es-CO');}
 async function diag(){
   var cod=(document.getElementById('cod').value||'').trim().toUpperCase();
@@ -12395,7 +12408,7 @@ async function diag(){
     _C=d.codigo;
     if(!d.existe){document.getElementById('out').innerHTML='<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px;color:#7f1d1d"><b>'+esc(d.codigo)+'</b> no existe en el maestro de MP.</div>';return;}
     var rows='';(d.lotes||[]).forEach(function(l){rows+='<tr><td style="font-family:monospace">'+esc(l.lote||'(sin lote)')+'</td><td>'+esc(l.estado)+'</td><td style="text-align:right;color:#166534">'+num(l.entrada_g)+'</td><td style="text-align:right;color:#b91c1c">'+num(l.salida_g)+'</td><td style="text-align:right;font-weight:700">'+num(l.neto_g)+' g</td><td>'+(l.usable?'<span style="color:#16a34a">usable</span>':'<span style="color:#b45309">retenido</span>')+'</td></tr>';});
-    if(!rows)rows='<tr><td colspan="4" style="color:#888">Sin lotes con stock.</td></tr>';
+    if(!rows)rows='<tr><td colspan="6" style="color:#888">Sin lotes con stock.</td></tr>';
     var badgeAct=d.activo?'<span style="background:#dcfce7;color:#166534;border-radius:8px;padding:2px 9px;font-weight:700;font-size:12px">ACTIVA</span>':'<span style="background:#fee2e2;color:#991b1b;border-radius:8px;padding:2px 9px;font-weight:700;font-size:12px">INACTIVA</span>';
     var h='<div style="background:#fff;border:1px solid #ede9fe;border-radius:12px;padding:16px">'
       +'<div style="font-size:16px"><b>'+esc(d.codigo)+'</b> &middot; '+esc(d.nombre_inci||d.nombre_comercial||'(sin nombre)')+' '+badgeAct+'</div>'
@@ -12558,6 +12571,9 @@ def renombrar_mp_apply():
         marca = ' [fusion %s->%s]' % (viejo, nuevo)
         core = {}
         try:
+            # 0) si el destino está inactivo, reactivarlo ANTES de mover fórmulas (el trigger de
+            # formula_items exige destino ACTIVO · M38 · paridad con _normalizar_codigo).
+            c.execute("UPDATE maestro_mps SET activo=1 WHERE UPPER(TRIM(codigo_mp))=? AND COALESCE(activo,1)=0", (nuevo,))
             # 1) movimientos → destino, con marcador (traza/reversa por lote)
             c.execute("UPDATE movimientos SET material_id=?, observaciones=COALESCE(observaciones,'')||? "
                       "WHERE UPPER(TRIM(material_id))=?", (nuevo, marca, viejo))
@@ -12654,7 +12670,7 @@ def renombrar_codigo_mp_page():
 </div>
 <script>
 var _V='',_N='',_FUS=false;
-function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function num(n){return Number(n||0).toLocaleString('es-CO');}
 async function preview(){
   var v=(document.getElementById('viejo').value||'').trim().toUpperCase();
@@ -12835,7 +12851,13 @@ def normalizar_lote_apply():
     conn = get_db(); c = conn.cursor()
     hechos = []
     for p in pares:
-        r = _normalizar_codigo(c, p.get('origen'), p.get('destino'), _u)
+        try:
+            r = _normalizar_codigo(c, p.get('origen'), p.get('destino'), _u)
+        except Exception as e:
+            # una falla DB (ej. trigger FK que aborta) NO debe dar 500 crudo · TODO-o-NADA con mensaje
+            conn.rollback()
+            return jsonify({'error': 'Error en %s → %s: %s. NO se aplicó nada (rollback).' %
+                            (p.get('origen'), p.get('destino'), str(e)[:160]), 'hasta': hechos}), 400
         if not r.get('ok'):
             conn.rollback()
             return jsonify({'error': 'Falló %s → %s: %s. NO se aplicó nada (rollback).' %
@@ -12867,7 +12889,7 @@ def normalizar_codigos_page():
   <div style="margin-top:14px"><button class="cx-btn cx-btn-ghost" onclick="location.href='/inventarios'">Volver</button></div>
 </div>
 <script>
-function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function num(n){return Number(n||0).toLocaleString('es-CO');}
 async function revisar(){
   document.getElementById('msg').textContent='Revisando…';
