@@ -20322,8 +20322,12 @@ function _npCadCalc(){
   let anios = parseInt((document.getElementById('np-cad-anios')||{}).value) || 1; if(anios<1||anios>3) anios=1;
   const interval = dias>0 ? Math.max(15, Math.min(Math.round(dias),400)) : Math.max(Math.round(mm*30.44),15);
   const partida = (document.getElementById('np-fecha').value || '').slice(0,10);
-  const nLotes = Math.max(1, Math.floor((anios*365 - interval)/interval) + 1);
-  return {interval:interval, kg:kg, anios:anios, partida:partida, nLotes:nLotes};
+  // Sebastián 11-jul · la 1ª nueva cuando se AGOTA lo fabricado (Cantidad kg del origen ÷ venta − 20 buffer).
+  const _partKg = parseFloat((document.getElementById('np-kg')||{}).value) || kg;
+  const p = window._NP_P; const _velKgDia = (p && p.velocidad_kg_dia) || 0;
+  const dhp = (_velKgDia > 0.0001 && _partKg > 0) ? Math.max(Math.round(_partKg / _velKgDia) - 20, 1) : interval;
+  const nLotes = Math.max(1, Math.floor((anios*365 - dhp)/interval) + 1);
+  return {interval:interval, kg:kg, anios:anios, partida:partida, dhp:dhp, nLotes:nLotes};
 }
 function _npCadPreview(){
   const el = document.getElementById('np-cad-preview'); if(!el) return;
@@ -20338,7 +20342,9 @@ function _npCadPreview(){
     const tag = (kgRef>0 && Math.abs(dif) >= kgRef*0.1) ? (dif>0 ? ' · deja <b style="color:#0891b2">+'+dif.toFixed(0)+' kg</b> de colchón' : ' · queda <b style="color:#dc2626">'+dif.toFixed(0)+' kg</b> CORTO') : ' · calza justo';
     ref = '📊 Vende ~<b>'+Math.round(p.velocidad_uds_dia*30.44)+' uds/mes</b> · producís 20d antes → cubrir <b>'+cc.interval+'+20='+cubre+' días</b> → ~<b>'+kgRef.toFixed(0)+' kg</b>'+tag+'<br>';
   }
-  el.innerHTML = ref + '📦 Un lote de <b>'+cc.kg.toFixed(1)+' kg</b> cada <b>'+cc.interval+' días</b> · ~<b>'+cc.nLotes+'</b> lotes en <b>'+cc.anios+' año'+(cc.anios===1?'':'s')+'</b> desde <b>'+cc.partida+'</b>';
+  let _first = '';
+  try{ const _d = new Date(cc.partida + 'T12:00:00'); _d.setDate(_d.getDate() + cc.dhp); _first = _d.toISOString().slice(0,10); }catch(e){}
+  el.innerHTML = ref + '📦 Un lote de <b>'+cc.kg.toFixed(1)+' kg</b> cada <b>'+cc.interval+' días</b> · la 1ª nueva cuando se agota lo fabricado (~<b>'+cc.dhp+'d</b> = '+(_first||'—')+') · ~<b>'+cc.nLotes+'</b> lotes en <b>'+cc.anios+' año'+(cc.anios===1?'':'s')+'</b> desde <b>'+cc.partida+'</b>';
 }
 async function _npCrearCadena(){
   const producto = (document.getElementById('np-producto').value || '').trim();
@@ -20351,7 +20357,7 @@ async function _npCrearCadena(){
     const kgOrigen = parseFloat((document.getElementById('np-kg')||{}).value) || cc.kg;
     const r = await fetch('/api/plan/programar-cadencia-producto', {method:'POST', credentials:'same-origin',
       headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF(),'X-CSRFToken':getCSRF()},
-      body: JSON.stringify({producto:producto, ancla_fecha:cc.partida, kg_origen:kgOrigen, kg_por_lote:cc.kg, interval_dias:cc.interval, dias_hasta_primera:cc.interval, anios:cc.anios, crear_origen:true})});
+      body: JSON.stringify({producto:producto, ancla_fecha:cc.partida, kg_origen:kgOrigen, kg_por_lote:cc.kg, interval_dias:cc.interval, dias_hasta_primera:cc.dhp, anios:cc.anios, crear_origen:true})});
     const d = await r.json().catch(function(){return {};});
     if(!r.ok || !d.ok){ msg.innerHTML='<span style="color:#dc2626;font-weight:700">⚠ '+escapeHtml(d.error||('Error '+r.status))+'</span>'; btn.disabled=false; btn.textContent='📅 Crear cadena desde esta fecha'; return; }
     msg.innerHTML='<span style="color:#16a34a;font-weight:700">✅ Cadena creada · '+(d.creados||0)+' lotes'+(d.origen_creado?' + fuente':'')+'.</span>';

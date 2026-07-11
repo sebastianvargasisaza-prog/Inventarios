@@ -26419,9 +26419,14 @@ async function ckMarcar(itemId, estado){
     if(!partida || !(kg > 0) || !(intervalDias >= 15)) return null;
     var meses = Math.round(intervalDias / 30.44 * 10) / 10;   // meses efectivo (display) derivado del interval real
     var horizonte = anios * 365;
-    // 1ª de la cadena = partida + una cadencia (el backend la clampa a hoy si la partida es vieja)
-    var nLotes = Math.max(1, Math.floor((horizonte - intervalDias) / intervalDias) + 1);
-    return {partida:partida, kg:kg, meses:meses, dias:intervalDias, anios:anios, intervalDias:intervalDias, nLotes:nLotes, horizonte:horizonte};
+    // Sebastián 11-jul · la 1ª producción nueva cae cuando SE AGOTA lo ya fabricado (la partida), no ciegamente
+    // a una cadencia: dias_hasta_primera = kg_producidos_partida ÷ venta − 20d de reorden. Si los 14kg de partida
+    // duran ~2 meses, la 1ª va a ~2 meses (no a 3). Luego normaliza cada X. Fallback = interval si no hay venta.
+    var _partKg = parseFloat((document.getElementById('cm-part-kg')||{}).value) || kg;
+    var _velKgDia = p.velocidad_kg_dia || 0;
+    var dhp = (_velKgDia > 0.0001 && _partKg > 0) ? Math.max(Math.round(_partKg / _velKgDia) - 20, 1) : intervalDias;
+    var nLotes = Math.max(1, Math.floor((horizonte - dhp) / intervalDias) + 1);
+    return {partida:partida, kg:kg, meses:meses, dias:intervalDias, anios:anios, intervalDias:intervalDias, dhp:dhp, nLotes:nLotes, horizonte:horizonte};
   }
   // Sebastián 11-jul · sincronizar meses↔días (el usuario piensa en días para la cadencia)
   // Sebastián 11-jul · auto-calcular el kg NECESARIO para durar la cadencia (+20d de reorden). Sirve para
@@ -26477,10 +26482,10 @@ async function ckMarcar(itemId, estado){
       }
     }
     var _first = '';
-    try{ var _d = new Date(cc.partida + 'T12:00:00'); _d.setDate(_d.getDate() + cc.intervalDias); _first = _d.toISOString().slice(0,10); }catch(e){}
+    try{ var _d = new Date(cc.partida + 'T12:00:00'); _d.setDate(_d.getDate() + cc.dhp); _first = _d.toISOString().slice(0,10); }catch(e){}
     el.innerHTML = _ref
       + '📦 Un lote de <b>' + cc.kg.toFixed(1) + ' kg</b> cada <b>' + cc.meses + ' mes' + (cc.meses===1?'':'es') + '</b> (~' + cc.intervalDias + ' días)<br>'
-      + '🗓️ Desde <b>' + cc.partida + '</b> · 1ª aprox <b>' + (_first||'—') + '</b> (si cae en el pasado, arranca hoy) · ~<b>' + cc.nLotes + '</b> lotes en <b>' + cc.anios + ' año' + (cc.anios===1?'':'s') + '</b> · total <b>' + (cc.kg*cc.nLotes).toFixed(0) + ' kg</b>';
+      + '🗓️ Partida <b>' + cc.partida + '</b> · la 1ª nueva cuando se agota lo fabricado (~<b>' + cc.dhp + 'd</b>) = <b>' + (_first||'—') + '</b>, luego cada ' + cc.intervalDias + 'd · ~<b>' + cc.nLotes + '</b> lotes en <b>' + cc.anios + ' año' + (cc.anios===1?'':'s') + '</b> · total <b>' + (cc.kg*cc.nLotes).toFixed(0) + ' kg</b>';
   }
   async function programarCadenaManual(idx){
     var p = window._NEC_PRODUCTOS_CACHE[idx]; if(!p){ alert('Producto no encontrado'); return; }
@@ -26498,7 +26503,7 @@ async function ckMarcar(itemId, estado){
     try{
       var t = (await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json()).csrf_token;
       var bodyObj = {producto: p.producto_nombre, ancla_fecha: cc.partida, kg_por_lote: cc.kg,
-                     interval_dias: cc.intervalDias, dias_hasta_primera: cc.intervalDias, anios: cc.anios,
+                     interval_dias: cc.intervalDias, dias_hasta_primera: cc.dhp, anios: cc.anios,
                      crear_origen: true, kg_origen: kgOrigen};
       var r = await fetch('/api/plan/programar-cadencia-producto', {method:'POST', credentials:'same-origin',
         headers:{'Content-Type':'application/json','X-CSRF-Token':t}, body: JSON.stringify(bodyObj)});
