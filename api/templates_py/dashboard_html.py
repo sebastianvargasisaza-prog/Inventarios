@@ -26249,7 +26249,7 @@ async function ckMarcar(itemId, estado){
       // Cadencia + kg por lote + horizonte
       html += '<div style="font-size:11px;color:#6d28d9;font-weight:800;margin-bottom:4px">🔁 Cadencia</div>';
       html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">';
-      html += '<span style="font-size:12px;color:#5b21b6;font-weight:700">Cada <input id="cm-meses" type="number" min="1" max="12" value="' + _mesesM + '" oninput="_cmPreview(' + idx + ')" style="width:44px;padding:3px 4px;border:1px solid #c4b5fd;border-radius:4px;text-align:center;font-weight:700"> meses</span>';
+      html += '<span style="font-size:12px;color:#5b21b6;font-weight:700">Cada <input id="cm-meses" type="number" min="0.5" max="12" step="0.5" value="' + _mesesM + '" oninput="_cmSyncFromMeses(' + idx + ')" style="width:44px;padding:3px 4px;border:1px solid #c4b5fd;border-radius:4px;text-align:center;font-weight:700"> meses <span style="color:#94a3b8;font-weight:600">o</span> <input id="cm-dias" type="number" min="15" max="400" value="' + Math.round(_mesesM * 30.44) + '" oninput="_cmSyncFromDias(' + idx + ')" title="cadencia exacta en días (ej. 45)" style="width:48px;padding:3px 4px;border:1px solid #c4b5fd;border-radius:4px;text-align:center;font-weight:700"> días</span>';
       html += '<span style="font-size:12px;color:#5b21b6;font-weight:700">· <input id="cm-kg" type="number" min="0.1" step="0.1" value="' + _kgM + '" oninput="_cmPreview(' + idx + ')" title="kg de cada lote de la cadena (editable)" style="width:62px;padding:3px 4px;border:1px solid #7c3aed;border-radius:4px;text-align:center;font-weight:800;color:#5b21b6"> kg/lote</span>';
       html += '<span style="font-size:12px;color:#5b21b6;font-weight:700">· Horizonte <select id="cm-anios" onchange="_cmPreview(' + idx + ')" style="padding:3px 4px;border:1px solid #c4b5fd;border-radius:4px;font-weight:700"><option value="1">1 año</option><option value="2">2 años</option><option value="3">3 años</option></select></span>';
       html += '</div>';
@@ -26407,15 +26407,29 @@ async function ckMarcar(itemId, estado){
     var p = window._NEC_PRODUCTOS_CACHE[idx]; if(!p) return null;
     var partida = ((document.getElementById('cm-part-fecha')||{}).value || '').slice(0,10);
     var kg = parseFloat((document.getElementById('cm-kg')||{}).value) || 0;
-    var meses = Math.min(parseFloat((document.getElementById('cm-meses')||{}).value) || 0, 12);   // clamp 12 (espeja el max del input)
+    // Sebastián 11-jul · la cadencia se puede poner en DÍAS (exacto · ej. 45) o meses · días manda si está.
+    var dias = parseFloat((document.getElementById('cm-dias')||{}).value) || 0;
+    var mesesInput = Math.min(parseFloat((document.getElementById('cm-meses')||{}).value) || 0, 12);
     var anios = parseInt((document.getElementById('cm-anios')||{}).value) || 1;
     if(anios < 1 || anios > 3) anios = 1;
-    if(!partida || !(kg > 0) || !(meses > 0)) return null;
-    var intervalDias = Math.max(Math.round(meses * 30.44), 15);
+    var intervalDias = dias > 0 ? Math.max(15, Math.min(Math.round(dias), 400)) : Math.max(Math.round(mesesInput * 30.44), 15);
+    if(!partida || !(kg > 0) || !(intervalDias >= 15)) return null;
+    var meses = Math.round(intervalDias / 30.44 * 10) / 10;   // meses efectivo (display) derivado del interval real
     var horizonte = anios * 365;
     // 1ª de la cadena = partida + una cadencia (el backend la clampa a hoy si la partida es vieja)
     var nLotes = Math.max(1, Math.floor((horizonte - intervalDias) / intervalDias) + 1);
-    return {partida:partida, kg:kg, meses:meses, anios:anios, intervalDias:intervalDias, nLotes:nLotes, horizonte:horizonte};
+    return {partida:partida, kg:kg, meses:meses, dias:intervalDias, anios:anios, intervalDias:intervalDias, nLotes:nLotes, horizonte:horizonte};
+  }
+  // Sebastián 11-jul · sincronizar meses↔días (el usuario piensa en días para la cadencia)
+  function _cmSyncFromMeses(idx){
+    var m = parseFloat((document.getElementById('cm-meses')||{}).value) || 0;
+    var d = document.getElementById('cm-dias'); if(d && m > 0) d.value = Math.round(m * 30.44);
+    _cmPreview(idx);
+  }
+  function _cmSyncFromDias(idx){
+    var d = parseFloat((document.getElementById('cm-dias')||{}).value) || 0;
+    var m = document.getElementById('cm-meses'); if(m && d > 0) m.value = Math.round(d / 30.44 * 10) / 10;
+    _cmPreview(idx);
   }
   function _cmPreview(idx){
     var el = document.getElementById('cm-preview-' + idx); if(!el) return;
@@ -26426,16 +26440,21 @@ async function ckMarcar(itemId, estado){
     // sirve para saber cuánto poner en el kg manual. kg = uds/mes × meses × ml ÷ 1000.
     var _ref = '';
     if(p){
-      var _udsMes = (p.velocidad_uds_dia || 0) * 30.44;
+      var _udsDia = p.velocidad_uds_dia || 0;
       var _ml = p.ml_unidad || 0;
-      if(_udsMes > 0.01 && _ml > 0){
-        var _kgRef = _udsMes * cc.meses * _ml / 1000;
+      if(_udsDia > 0.001 && _ml > 0){
+        // Sebastián 11-jul · REGLA DE REORDEN: producís 20 días ANTES de agotarte → cada lote debe cubrir
+        // la cadencia + 20 días (ej. cada 45d → el lote debe durar 65d), no solo la cadencia.
+        var BUFFER_REORDEN = 20;
+        var _cubreDias = cc.intervalDias + BUFFER_REORDEN;
+        var _kgRef = _udsDia * _cubreDias * _ml / 1000;
         var _dif = cc.kg - _kgRef;
         var _tag = (_kgRef > 0 && Math.abs(_dif) >= _kgRef * 0.1)
           ? (_dif > 0 ? ' · tu lote deja <b style="color:#0891b2">+' + _dif.toFixed(0) + ' kg</b> de colchón'
-                      : ' · tu lote queda <b style="color:#dc2626">' + _dif.toFixed(0) + ' kg</b> corto')
-          : ' · tu lote calza justo';
-        _ref = '📊 Vende ~<b>' + Math.round(_udsMes) + ' uds/mes</b> de <b>' + (Math.round(_ml * 10) / 10) + ' ml</b> → para <b>' + cc.meses + ' mes' + (cc.meses===1?'':'es') + '</b> necesitás ~<b>' + _kgRef.toFixed(0) + ' kg</b>' + _tag + '<br>';
+                      : ' · tu lote queda <b style="color:#dc2626">' + _dif.toFixed(0) + ' kg</b> CORTO')
+          : ' · tu lote calza justo ✓';
+        _ref = '📊 Vende ~<b>' + Math.round(_udsDia * 30.44) + ' uds/mes</b> de <b>' + (Math.round(_ml * 10) / 10) + ' ml</b><br>'
+          + '🎯 Producís <b>20d antes</b> de agotarte → cada lote debe cubrir <b>' + cc.intervalDias + ' + 20 = ' + _cubreDias + ' días</b> → ~<b>' + _kgRef.toFixed(0) + ' kg</b>' + _tag + '<br>';
       } else {
         _ref = '<span style="color:#94a3b8">📊 Sin ventas/ml mapeados para la referencia · poné el kg a criterio.</span><br>';
       }
@@ -26484,13 +26503,14 @@ async function ckMarcar(itemId, estado){
   // Sebastián 10-jul · usar un lote AGENDADO como origen y recalcular TODO el horizonte con la
   // cadencia del bloque de arriba (cada X meses · kg · años). "Unido a este lote modifica el horizonte."
   async function recalcularHorizonteDesdeLote(loteId, producto){
-    var meses = Math.min(parseFloat((document.getElementById('cm-meses')||{}).value) || 0, 12);   // clamp 12 (espeja el input)
+    var _dias = parseFloat((document.getElementById('cm-dias')||{}).value) || 0;
+    var _mesesInput = Math.min(parseFloat((document.getElementById('cm-meses')||{}).value) || 0, 12);
     var kg = parseFloat((document.getElementById('cm-kg')||{}).value) || 0;
     var anios = parseInt((document.getElementById('cm-anios')||{}).value) || 1;
     if(anios < 1 || anios > 3) anios = 1;
-    if(!(meses > 0) || !(kg > 0)){ alert('Definí arriba la cadencia (cada cuántos meses) y los kg/lote antes de recalcular.'); return; }
-    var interval = Math.max(Math.round(meses * 30.44), 15);
-    if(!confirm('Usar este lote como ORIGEN y recalcular todo el horizonte:\\n\\n• Un lote de ' + kg.toFixed(1) + ' kg cada ' + meses + ' mes(es) por ' + anios + ' año(s).\\n\\nReemplaza las futuras de este producto (conserva pedidos B2B y lo ya producido). ¿Continuar?')) return;
+    var interval = _dias > 0 ? Math.max(15, Math.min(Math.round(_dias), 400)) : Math.max(Math.round(_mesesInput * 30.44), 15);
+    if(!(interval >= 15) || !(kg > 0)){ alert('Definí arriba la cadencia (días o meses) y los kg/lote antes de recalcular.'); return; }
+    if(!confirm('Usar este lote como ORIGEN y recalcular todo el horizonte:\\n\\n• Un lote de ' + kg.toFixed(1) + ' kg cada ' + interval + ' días por ' + anios + ' año(s).\\n\\nReemplaza las futuras de este producto (conserva pedidos B2B y lo ya producido). ¿Continuar?')) return;
     if(window._cadenaBusy){ return; }
     window._cadenaBusy = true;
     try{
