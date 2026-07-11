@@ -4154,6 +4154,31 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     except Exception:
         pass
 
+    # Sebastián 10-jul · EN TRÁNSITO (azul "por entrar"): producción que YA está pasando pero aún NO llega
+    # a la góndola de Shopify → saca al producto de ROJO hasta que Shopify lo refleje (→ verde). Cuenta:
+    #   (a) lotes en_curso (le diste "fabricar"),
+    #   (b) lotes registrados como producidos hace ≤14d (fin_real_at / inventario_descontado_at),
+    #   (c) la producción FUENTE que el usuario coloca (origen='eos_retroactivo' · fecha ≤hoy y ≤14d atrás · "ya la produje").
+    # NO cuenta lo solo PROGRAMADO a futuro (eso sigue rojo si la góndola urge · no escondemos reds reales).
+    en_transito_kg_por_prod = {}
+    try:
+        for r in c.execute(
+            """SELECT producto, COALESCE(SUM(COALESCE(cantidad_kg, 0)), 0)
+               FROM produccion_programada
+               WHERE COALESCE(estado,'') NOT IN ('cancelado','completado')
+                 AND ( LOWER(COALESCE(estado,'')) IN ('en_curso','en curso')
+                       OR date(COALESCE(fin_real_at, inventario_descontado_at)) >= date('now','-5 hours','-14 days')
+                       OR ( COALESCE(origen,'')='eos_retroactivo'
+                            AND date(fecha_programada) >= date('now','-5 hours','-14 days')
+                            AND date(fecha_programada) <= date('now','-5 hours') ) )
+                 AND date(COALESCE(fin_real_at, inventario_descontado_at, fecha_programada)) <= date('now','-5 hours')
+               GROUP BY producto"""
+        ).fetchall():
+            if r[0]:
+                en_transito_kg_por_prod[r[0]] = float(r[1] or 0)
+    except Exception:
+        pass
+
     # ⚠ Sebastián 4-jul (P1-D · audit): índice NORMALIZADO de los 4 dicts del pipeline (igual que
     # ultima_prod_norm/M13) · produccion_programada.producto puede diferir de la fórmula por acento/'+'/
     # espacios (operario de Fabricación · TRIACTIVE 'NAD' vs 'NAD+'). Sin fallback, pipeline_kg caía a 0 en
@@ -4172,6 +4197,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     b2b_reciente_kg_por_prod_norm = _idx_norm_pipe(b2b_reciente_kg_por_prod)
     pipeline_fijo_kg_por_prod_norm = _idx_norm_pipe(pipeline_fijo_kg_por_prod)
     b2b_fijo_kg_por_prod_norm = _idx_norm_pipe(b2b_fijo_kg_por_prod)
+    en_transito_kg_por_prod_norm = _idx_norm_pipe(en_transito_kg_por_prod)
 
     def _pipe_get(_raw, _norm, _ek, _nk):
         _v = _raw.get(_ek)
@@ -4638,6 +4664,11 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                     _por_entrar_uds = int(_pe_norm.get(_cand, 0) or 0)
                     break
         _por_entrar_kg = (_por_entrar_uds * ml_promedio) / 1000.0 if ml_promedio > 0 else 0.0
+        # Sebastián 10-jul · EN TRÁNSITO: producción que ya pasa (en_curso / fabricado ≤14d / fuente colocada)
+        # pero aún no en góndola · en uds para el trigger del azul (igual que _por_entrar). Solo afecta el COLOR
+        # (urgencia), NO la cobertura/compra (esas siguen con góndola física + pipeline como antes).
+        _en_transito_kg = _pipe_get(en_transito_kg_por_prod, en_transito_kg_por_prod_norm, prod_nombre, _prod_key_n)
+        _en_transito_uds = int(round((_en_transito_kg * 1000.0) / ml_promedio)) if ml_promedio > 0 else 0
         _pipe_efectivo = max(pipeline_kg, _por_entrar_kg)
         _dcp = round((stock_kg_gondola + _pipe_efectivo) / velocidad_kg_dia, 1) if velocidad_kg_dia > 0 else None
         if _dias_tono_bottleneck is not None:
@@ -4672,12 +4703,14 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         # Sebastián 6-jul · en UNIDADES (no kg): un producto sin volumen cargado (ej. ÁNIMUS LASH, máscara)
         # daba _por_entrar_kg=0 y velocidad_kg_dia=0 → la condición NUNCA se cumplía y el "por entrar" manual
         # no lo sacaba de rojo. En uds es idéntico cuando hay ml (uds/vel_uds == kg/vel_kg) y funciona sin ml.
-        if (_por_entrar_uds > 0 and velocidad_uds_dia > 0.001
+        # Sebastián 10-jul · el azul lo dispara AHORA tanto el "por entrar" de Espagiria como lo EN TRÁNSITO
+        # (en_curso / fabricado ≤14d / fuente colocada) → un producto que estás produciendo sale de rojo.
+        _transito_total_uds = int(_por_entrar_uds) + int(_en_transito_uds)
+        if (_transito_total_uds > 0 and velocidad_uds_dia > 0.001
                 and urgencia in ("CRITICO", "URGENTE", "VIGILAR")):
-            _dias_con_entrar = (stock_uds_total + _por_entrar_uds) / velocidad_uds_dia
-            # con lo que viene de Espagiria SALE de la zona crítica (≥ cob_critico) → POR_ENTRAR: ya no urge
-            # PRODUCIR (urge trasladar). Umbral = cob_critico (no cob_alerta) para que un producto cubierto por
-            # el lab aparezca en la categoría aunque quede en la banda de alerta (Sebastián 5-jul).
+            _dias_con_entrar = (stock_uds_total + _transito_total_uds) / velocidad_uds_dia
+            # con lo que viene (Espagiria + en tránsito) SALE de la zona crítica (≥ cob_critico) → POR_ENTRAR:
+            # ya no urge PRODUCIR (se está produciendo / va en camino). Umbral = cob_critico (Sebastián 5-jul).
             if _dias_con_entrar > cob_critico:
                 urgencia = "POR_ENTRAR"
 
@@ -4703,6 +4736,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             # ya se hizo y está por llegar a la góndola). dias_gondola=solo física; dias_cobertura=+Fijo.
             "dias_con_pipeline": _dcp,  # Alejandro 5-jul · multi-tono: acotado al cuello de botella (arriba)
             "por_entrar_uds": _por_entrar_uds,  # Paso 2 · producido en Espagiria, aún no en góndola Ánimus
+            "en_transito_uds": _en_transito_uds,  # Sebastián 10-jul · en_curso/fabricado ≤14d/fuente · en camino a góndola
             "ventas_periodo_uds": ventas_periodo_total,
             "ventas_30d_uds": ventas_30d_total,
             "ventas_90d_uds": ventas_90d_total,
