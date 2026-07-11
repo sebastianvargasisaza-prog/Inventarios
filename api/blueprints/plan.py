@@ -13401,12 +13401,15 @@ def plan_programar_cadencia_desde_lote(lote_id):
     # MISMO DÍA (un B2B/otro cliente NO cubre demanda Animus · no debe borrar un lote de la cadena a 10d).
     _preservados = []
     for r in c.execute(
+        # Sebastián 11-jul (audit #5) · COMPLEMENTO EXACTO del cancel: incluir 'completado' (el cancel NO lo
+        # toca → si no está acá, un lote completado futuro escapa la dedup y la cadena podría duplicar encima).
         "SELECT substr(fecha_programada,1,10) FROM produccion_programada "
         "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) AND substr(fecha_programada,1,10) > ? "
-        "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+        "AND COALESCE(estado,'') <> 'cancelado' "
         "AND (COALESCE(origen,'') IN ('eos_b2b','eos_retroactivo') "
         "     OR inicio_real_at IS NOT NULL OR fin_real_at IS NOT NULL "
-        "     OR COALESCE(inventario_descontado_at,'') <> '')", (producto, fecha_ancla)).fetchall():
+        "     OR COALESCE(inventario_descontado_at,'') <> '' "
+        "     OR LOWER(COALESCE(estado,'')) = 'completado')", (producto, fecha_ancla)).fetchall():
         try:
             _preservados.append(_dC.fromisoformat((r[0] or '')[:10]))
         except Exception:
@@ -13429,8 +13432,8 @@ def plan_programar_cadencia_desde_lote(lote_id):
         # Sebastián 11-jul · CAPACIDAD DIARIA (espejo del gemelo producto): máx 2 lotes/día · lote ≥100kg va
         # SOLO · nunca finde/festivo · corre al próximo día hábil con cupo.
         f_k = _proxima_fecha_habil(c, _target, lote_kg=(kg_por_lote + kg_otro_lote), producto_nombre=producto) or _dia_habil(_target)
-        # dedup contra la propia cadena (si el capacity juntara dos slots)
-        if any(abs((f_k - _fu).days) < 2 for _fu in _usadas):
+        # dedup: NO caer sobre un lote PRESERVADO del mismo producto (B2B/ejecutado/completado · #5) ni sobre la propia cadena.
+        if any(abs((f_k - _fp).days) < 2 for _fp in _preservados) or any(abs((f_k - _fu).days) < 2 for _fu in _usadas):
             _saltados += 1
             continue
         c.execute(
@@ -13584,12 +13587,14 @@ def plan_programar_cadencia_producto():
     # (solo B2B/histórico/ejecutado · lo que NO se canceló) · dedup contra ellos de MISMO día.
     _preservados = []
     for r in c.execute(
+        # Sebastián 11-jul (audit #5) · COMPLEMENTO EXACTO del cancel: incluir 'completado' (espejo del gemelo).
         "SELECT substr(fecha_programada,1,10) FROM produccion_programada "
         "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) AND substr(fecha_programada,1,10) > ? "
-        "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+        "AND COALESCE(estado,'') <> 'cancelado' "
         "AND (COALESCE(origen,'') IN ('eos_b2b','eos_retroactivo') "
         "     OR inicio_real_at IS NOT NULL OR fin_real_at IS NOT NULL "
-        "     OR COALESCE(inventario_descontado_at,'') <> '')", (producto, base.isoformat())).fetchall():
+        "     OR COALESCE(inventario_descontado_at,'') <> '' "
+        "     OR LOWER(COALESCE(estado,'')) = 'completado')", (producto, base.isoformat())).fetchall():
         try:
             _preservados.append(_dCP.fromisoformat((r[0] or '')[:10]))
         except Exception:
@@ -13612,8 +13617,9 @@ def plan_programar_cadencia_producto():
         # _proxima_fecha_habil cuenta lo ya agendado (otros productos + los de esta cadena ya insertados en
         # la misma tx) y corre al próximo día hábil con CUPO. Fallback día hábil simple si no encuentra.
         f_k = _proxima_fecha_habil(c, _target, lote_kg=(kg_por_lote + kg_otro), producto_nombre=producto) or _dia_habil(_target)
-        # dedup contra la propia cadena (si el capacity juntara dos slots · no repetir el mismo día)
-        if any(abs((f_k - _fu).days) < 2 for _fu in _usadas):
+        # dedup: NO caer sobre un lote PRESERVADO del mismo producto (B2B/ejecutado/completado · ±1 día · #5) ni
+        # sobre otro lote de la propia cadena. La capacidad cruzada (otros productos) ya la maneja _proxima_fecha_habil.
+        if any(abs((f_k - _fp).days) < 2 for _fp in _preservados) or any(abs((f_k - _fu).days) < 2 for _fu in _usadas):
             _saltados += 1
             continue
         # cada lote reserva la porción "para otro cliente" (recurrente · ej. Renova 80% otro cliente) ·
@@ -13738,9 +13744,10 @@ def plan_verificar_cadenas():
     except Exception:
         pass
     fut_plan = {}   # producto -> [fechas eos_plan futuras]
+    fut_mcob = {}   # producto -> [meses_cobertura de esos lotes] · Sebastián 11-jul · calibrar por cadencia real
     fut_azul = {}   # producto -> nº de futuros AUTO (no eos_plan/b2b/retroactivo)
     for r in c.execute(
-        "SELECT producto, substr(fecha_programada,1,10), COALESCE(origen,'') "
+        "SELECT producto, substr(fecha_programada,1,10), COALESCE(origen,''), COALESCE(meses_cobertura,0) "
         "FROM produccion_programada WHERE substr(fecha_programada,1,10) > ? "
         "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
         "AND inicio_real_at IS NULL AND fin_real_at IS NULL AND COALESCE(inventario_descontado_at,'')='' "
@@ -13751,6 +13758,7 @@ def plan_verificar_cadenas():
         prods.add(p)
         if r[2] == 'eos_plan':
             fut_plan.setdefault(p, []).append(r[1])
+            fut_mcob.setdefault(p, []).append(float(r[3] or 0))
         elif r[2] not in ('eos_b2b', 'eos_retroactivo'):
             fut_azul[p] = fut_azul.get(p, 0) + 1
     reporte = []
@@ -13770,14 +13778,23 @@ def plan_verificar_cadenas():
             span = (ds[-1] - ds[0]).days if len(ds) >= 2 else 0
         except Exception:
             span = 0
+        # Sebastián 11-jul (audit) · CALIBRAR por la CADENCIA REAL (no por span absoluto). Antes n<4/span<480
+        # marcaban "incompleta" FALSA a toda cadena de 1 año (el default) o de cadencia lenta. Ahora el único
+        # defecto real es un HUECO ~2× la cadencia (se comió un slot); el horizonte corto (1 año) es legítimo.
+        _mc = [m for m in fut_mcob.get(p, []) if m and m > 0]
+        interval_esp = (sum(_mc) / len(_mc) * 30.44) if _mc else 0.0
+        if interval_esp < 15 and n >= 2:      # sin meses_cobertura → estimar por la mediana de gaps
+            try:
+                _gaps = sorted((ds[i] - ds[i - 1]).days for i in range(1, len(ds)))
+                interval_esp = _gaps[len(_gaps) // 2]
+            except Exception:
+                interval_esp = 0.0
         if n == 0:
             estado = 'sin_cadena'
-        elif n < 4:
-            estado = 'incompleta'
-        elif span < 480:            # una cadena de 2 años debería abarcar ~700d
-            estado = 'incompleta'
-        elif hueco > 150:           # hueco > ~5 meses entre lotes = algo se comió slots
-            estado = 'hueco_grande'
+        elif n == 1:
+            estado = 'incompleta'   # un solo lote no es una cadena
+        elif interval_esp >= 15 and hueco > interval_esp * 1.8:
+            estado = 'hueco_grande'  # gap ~2× la cadencia = se comió un slot (defecto real)
         elif azules > 0:
             estado = 'azules_encima'
         else:

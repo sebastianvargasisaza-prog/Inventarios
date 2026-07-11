@@ -124,6 +124,22 @@ def test_origen_fuente_colocado_y_reemplazo(app, admin_client):
         assert n == 1, "debe haber exactamente 1 producción fuente, hay %d" % n
 
 
+def test_verificar_cadenas_1anio_no_incompleta(admin_client):
+    """[audit] Una cadena de 1 año (el DEFAULT) con cadencia normal NO debe marcarse 'incompleta'
+    (antes los umbrales fijos span<480/n<4 la marcaban falsa · ahora se calibra por la cadencia real)."""
+    PROD = "ZZ VERIF 1ANIO"
+    r = admin_client.post("/api/plan/programar-cadencia-producto",
+                          json={"producto": PROD, "kg_por_lote": 10, "interval_dias": 61,
+                                "dias_hasta_primera": 61, "anios": 1})
+    assert r.status_code == 200, r.get_data(as_text=True)[:200]
+    assert (r.get_json().get("creados") or 0) >= 4   # ~6 lotes en 1 año cada 2 meses
+    v = admin_client.get("/api/plan/verificar-cadenas").get_json()
+    fila = next((x for x in (v.get("productos") or []) if (x.get("producto") or "").upper() == PROD.upper()), None)
+    assert fila is not None, "el producto no aparece en verificar-cadenas"
+    assert fila["estado"] not in ("incompleta", "sin_cadena", "hueco_grande"), \
+        ("cadena de 1 año NO debe ser incompleta/hueco", fila["estado"], fila.get("lotes_cadena"), fila.get("span_dias"))
+
+
 def test_cron_auto_plan_gateado_por_flag(app):
     """Con el flag ON, el helper que gobierna los crons devuelve True → los generadores
     automáticos hacen early-return (verificado por el propio helper; los crons lo consultan)."""
