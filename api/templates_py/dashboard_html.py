@@ -26094,7 +26094,16 @@ async function ckMarcar(itemId, estado){
     const _pos = _nav.indexOf(idx);
     if (_nav.length > 1) {
       const _prev = (_pos > 0) ? _nav[_pos - 1] : null;
-      const _next = (_pos >= 0 && _pos < _nav.length - 1) ? _nav[_pos + 1] : (_pos === -1 ? _nav[0] : null);
+      // Sebastián 11-jul (fix) · si el producto actual YA NO es crítico (lo acabás de programar → dejó de estar
+      // en la lista, _pos=-1), NO volver al PRIMERO (ANIMUSLASH): ir al siguiente crítico que quede DESPUÉS de él
+      // por posición · si no hay más adelante, no mostrar botón (parar limpio, no dar la vuelta).
+      let _next;
+      if (_pos >= 0 && _pos < _nav.length - 1) { _next = _nav[_pos + 1]; }
+      else if (_pos >= 0) { _next = null; }              // era el último crítico → parar
+      else {
+        _next = _nav.find(function(j){ return j > idx; });   // ya no es crítico → el próximo por posición
+        if (_next === undefined) _next = null;
+      }
       html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px">';
       html += (_prev != null)
         ? '<button onclick="abrirSolicitar(' + _prev + ')" style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">◀ Anterior</button>'
