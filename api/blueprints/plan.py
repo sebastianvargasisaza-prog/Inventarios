@@ -18054,9 +18054,25 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
     <div class="modal-body">
       <p style="margin:0 0 12px;font-size:12.5px;color:#64748b">Programa cualquier producto en el calendario — incluso pilotos o productos de otros clientes que no están en Necesidades. Queda <strong>Fijo</strong> (los automáticos no lo tocan).</p>
       <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:3px">Producto *</label>
-      <input id="np-producto" list="np-productos-list" placeholder="Ej: CREMA FACIAL UREA 10" autocomplete="off"
+      <input id="np-producto" list="np-productos-list" placeholder="Ej: CREMA FACIAL UREA 10" autocomplete="off" onchange="_npResumen()" oninput="_npResumenDebounced()"
         style="width:100%;padding:9px 11px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:14px;margin-bottom:11px">
       <datalist id="np-productos-list"></datalist>
+      <!-- Resumen del producto (Sebastián 11-jul · como en Necesidades) -->
+      <div id="np-resumen" style="display:none;margin:-4px 0 12px;padding:9px 11px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;font-size:12px;line-height:1.65;color:#334155"></div>
+      <!-- Programar la CADENA (canónico manual · recalcula desde la fecha de arriba) -->
+      <details id="np-cad-det" style="margin-bottom:12px;border:1px solid #ddd6fe;border-radius:8px;overflow:hidden">
+        <summary style="cursor:pointer;font-size:12px;font-weight:800;color:#5b21b6;padding:9px 11px;background:linear-gradient(135deg,#f5f3ff,#faf5ff)">🔁 Programar la CADENA · cada X · por 1-3 años (recalcula desde esta fecha)</summary>
+        <div style="padding:11px">
+          <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:9px">
+            <span style="font-size:12px;color:#5b21b6;font-weight:700">Cada <input id="np-cad-meses" type="number" min="0.5" max="12" step="0.5" value="2" oninput="_npCadFromMeses()" style="width:44px;padding:4px;border:1px solid #c4b5fd;border-radius:5px;text-align:center;font-weight:700"> meses <span style="color:#94a3b8">o</span> <input id="np-cad-dias" type="number" min="15" max="400" value="61" oninput="_npCadFromDias()" style="width:48px;padding:4px;border:1px solid #c4b5fd;border-radius:5px;text-align:center;font-weight:700"> días</span>
+            <span style="font-size:12px;color:#5b21b6;font-weight:700">· <input id="np-cad-kg" type="number" min="0.1" step="0.1" placeholder="kg" oninput="_npCadPreview()" style="width:62px;padding:4px;border:1px solid #7c3aed;border-radius:5px;text-align:center;font-weight:800;color:#5b21b6"> kg/lote</span>
+            <span style="font-size:12px;color:#5b21b6;font-weight:700">· <select id="np-cad-anios" onchange="_npCadPreview()" style="padding:4px;border:1px solid #c4b5fd;border-radius:5px;font-weight:700"><option value="1">1 año</option><option value="2">2 años</option><option value="3">3 años</option></select></span>
+          </div>
+          <div id="np-cad-preview" style="font-size:11px;color:#5b21b6;background:#fff;border:1px solid #ede9fe;border-radius:6px;padding:8px 10px;line-height:1.5;margin-bottom:9px"></div>
+          <button onclick="_npCrearCadena()" id="np-cad-btn" style="background:linear-gradient(90deg,#7c3aed,#5b21b6);color:#fff;border:none;border-radius:7px;padding:9px 15px;font-size:13px;font-weight:800;cursor:pointer">📅 Crear cadena desde esta fecha</button>
+          <div style="font-size:10px;color:#94a3b8;margin-top:5px">Usa la FECHA de arriba como origen · un lote cada X en día hábil (máx 2/día · ≥100kg solo) · reemplaza las futuras de este producto (conserva B2B y lo ya producido).</div>
+        </div>
+      </details>
       <div style="display:flex;gap:10px;margin-bottom:11px">
         <div style="flex:1">
           <label style="display:block;font-size:12px;font-weight:700;color:#334155;margin-bottom:3px">Fecha *</label>
@@ -20138,6 +20154,15 @@ function abrirNuevaProduccion(fecha){
   document.getElementById('np-cliente').value = '';
   document.getElementById('np-obs').value = '';
   document.getElementById('np-msg').innerHTML = '';
+  // Sebastián 11-jul · reset del resumen + cadencia
+  try {
+    document.getElementById('np-resumen').style.display = 'none';
+    document.getElementById('np-resumen').innerHTML = '';
+    document.getElementById('np-cad-kg').value = '';
+    document.getElementById('np-cad-det').open = false;
+    document.getElementById('np-cad-preview').innerHTML = '';
+    window._NP_P = null;
+  } catch(e){}
   // Sugerencias: nombres de productos ya conocidos (no obliga · se puede escribir libre).
   try {
     const ag = (PLAN_DATA && PLAN_DATA.agendadas) || [];
@@ -20185,6 +20210,119 @@ async function guardarNuevaProduccion(){
     msg.innerHTML = '<span style="color:#dc2626;font-weight:700">⚠ ' + escapeHtml(String(e)) + '</span>';
     btn.disabled = false; btn.textContent = 'Programar';
   }
+}
+// ─── Resumen + cadencia del producto en el modal del calendario (Sebastián 11-jul · como Necesidades) ───
+async function _npLoadNec(){
+  if (window._NP_NEC) return window._NP_NEC;
+  try {
+    const r = await fetch('/api/plan/necesidades', {credentials:'same-origin'});
+    const d = await r.json();
+    const idx = {};
+    ((d && d.clientes) || []).forEach(function(cl){
+      ((cl && cl.productos) || []).forEach(function(p){
+        if (p && p.producto_nombre) idx[p.producto_nombre.trim().toUpperCase()] = p;
+      });
+    });
+    window._NP_NEC = idx;
+    return idx;
+  } catch(e){ window._NP_NEC = {}; return {}; }
+}
+let _npResTO = null;
+function _npResumenDebounced(){ clearTimeout(_npResTO); _npResTO = setTimeout(_npResumen, 350); }
+async function _npResumen(){
+  const el = document.getElementById('np-resumen'); if(!el) return;
+  const name = (document.getElementById('np-producto').value || '').trim();
+  if(!name){ el.style.display='none'; window._NP_P = null; _npCadPreview(); return; }
+  const idx = await _npLoadNec();
+  const p = idx[name.toUpperCase()];
+  window._NP_P = p || null;
+  if(!p){
+    el.style.display='block';
+    el.innerHTML = '<span style="color:#94a3b8">Sin datos de Necesidades (piloto / otro cliente) · lo podés programar igual como lote único.</span>';
+    _npCadPreview();
+    return;
+  }
+  const cadKg = document.getElementById('np-cad-kg');
+  if (cadKg && !cadKg.value){
+    const vk = p.velocidad_kg_dia || 0;
+    const meses = parseFloat((document.getElementById('np-cad-meses')||{}).value) || 2;
+    if (vk > 0) cadKg.value = (Math.round(vk * 30.44 * meses * 10) / 10);
+    else if (p.ultima_produccion_kg > 0) cadKg.value = p.ultima_produccion_kg;
+  }
+  let h = '';
+  if (p.ultima_produccion_fecha) h += '📜 Última producción: <b>' + p.ultima_produccion_fecha + '</b> · ' + p.ultima_produccion_kg + ' kg<br>';
+  else h += '📜 Sin producción previa registrada<br>';
+  const hoyc = new Date(Date.now() - 5*3600*1000).toISOString().slice(0,10);
+  const fut = (p.planificacion || []).filter(function(l){
+    const f = ('' + (l.fecha||'')).slice(0,10);
+    return l.origen === 'eos_plan' && f >= hoyc && (l.estado||'') !== 'cancelado' && (l.estado||'') !== 'completado';
+  }).map(function(l){ return ('' + l.fecha).slice(0,10); }).sort();
+  if (fut.length){
+    const dd = Math.round((new Date(fut[0] + 'T12:00:00') - new Date()) / 86400000);
+    h += '⏳ Ya hay <b>' + fut.length + '</b> producción(es) programada(s) · próxima <b>' + fut[0] + '</b> (en ' + dd + ' días)<br>';
+  } else {
+    h += '⚪ Sin cadena programada aún<br>';
+  }
+  if (p.mps_status === 'OK') h += '🧪 Materias primas: <b style="color:#16a34a">✓ hay</b> para 1 lote';
+  else if (p.mps_status === 'FALTAN_MPS') h += '🧪 Materias primas: <b style="color:#dc2626">⚠ faltan ' + (p.mps_n_faltantes||0) + '</b> · comprá antes de producir';
+  else h += '🧪 Sin fórmula registrada';
+  el.style.display = 'block';
+  el.innerHTML = h;
+  _npCadPreview();
+}
+function _npCadFromMeses(){
+  const m = parseFloat((document.getElementById('np-cad-meses')||{}).value) || 0;
+  const d = document.getElementById('np-cad-dias'); if(d && m>0) d.value = Math.round(m*30.44);
+  _npCadPreview();
+}
+function _npCadFromDias(){
+  const d = parseFloat((document.getElementById('np-cad-dias')||{}).value) || 0;
+  const m = document.getElementById('np-cad-meses'); if(m && d>0) m.value = Math.round(d/30.44*10)/10;
+  _npCadPreview();
+}
+function _npCadCalc(){
+  const dias = parseFloat((document.getElementById('np-cad-dias')||{}).value) || 0;
+  const mm = Math.min(parseFloat((document.getElementById('np-cad-meses')||{}).value) || 0, 12);
+  const kg = parseFloat((document.getElementById('np-cad-kg')||{}).value) || 0;
+  let anios = parseInt((document.getElementById('np-cad-anios')||{}).value) || 1; if(anios<1||anios>3) anios=1;
+  const interval = dias>0 ? Math.max(15, Math.min(Math.round(dias),400)) : Math.max(Math.round(mm*30.44),15);
+  const partida = (document.getElementById('np-fecha').value || '').slice(0,10);
+  const nLotes = Math.max(1, Math.floor((anios*365 - interval)/interval) + 1);
+  return {interval:interval, kg:kg, anios:anios, partida:partida, nLotes:nLotes};
+}
+function _npCadPreview(){
+  const el = document.getElementById('np-cad-preview'); if(!el) return;
+  const cc = _npCadCalc();
+  if(!(cc.kg>0) || !(cc.interval>=15) || !cc.partida){ el.innerHTML='<span style="color:#94a3b8">Completá kg/lote y la cadencia.</span>'; return; }
+  const p = window._NP_P;
+  let ref = '';
+  if (p && (p.velocidad_uds_dia||0) > 0.001 && (p.ml_unidad||0) > 0){
+    const cubre = cc.interval + 20;
+    const kgRef = (p.velocidad_uds_dia) * cubre * p.ml_unidad / 1000;
+    const dif = cc.kg - kgRef;
+    const tag = (kgRef>0 && Math.abs(dif) >= kgRef*0.1) ? (dif>0 ? ' · deja <b style="color:#0891b2">+'+dif.toFixed(0)+' kg</b> de colchón' : ' · queda <b style="color:#dc2626">'+dif.toFixed(0)+' kg</b> CORTO') : ' · calza justo';
+    ref = '📊 Vende ~<b>'+Math.round(p.velocidad_uds_dia*30.44)+' uds/mes</b> · producís 20d antes → cubrir <b>'+cc.interval+'+20='+cubre+' días</b> → ~<b>'+kgRef.toFixed(0)+' kg</b>'+tag+'<br>';
+  }
+  el.innerHTML = ref + '📦 Un lote de <b>'+cc.kg.toFixed(1)+' kg</b> cada <b>'+cc.interval+' días</b> · ~<b>'+cc.nLotes+'</b> lotes en <b>'+cc.anios+' año'+(cc.anios===1?'':'s')+'</b> desde <b>'+cc.partida+'</b>';
+}
+async function _npCrearCadena(){
+  const producto = (document.getElementById('np-producto').value || '').trim();
+  const cc = _npCadCalc();
+  const msg = document.getElementById('np-msg');
+  if(!producto || !cc.partida || !(cc.kg>0) || !(cc.interval>=15)){ msg.innerHTML='<span style="color:#dc2626;font-weight:700">⚠ Elegí producto, fecha (origen) y completá cadencia + kg.</span>'; return; }
+  if(!confirm('Crear la cadena de "'+producto+'" desde '+cc.partida+':\n\n• Un lote de '+cc.kg.toFixed(1)+' kg cada '+cc.interval+' días · ~'+cc.nLotes+' lotes en '+cc.anios+' año(s).\n\nReemplaza las futuras de este producto (conserva B2B y lo ya producido). ¿Continuar?')) return;
+  const btn = document.getElementById('np-cad-btn'); btn.disabled=true; btn.textContent='Creando…';
+  try{
+    const kgOrigen = parseFloat((document.getElementById('np-kg')||{}).value) || cc.kg;
+    const r = await fetch('/api/plan/programar-cadencia-producto', {method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF(),'X-CSRFToken':getCSRF()},
+      body: JSON.stringify({producto:producto, ancla_fecha:cc.partida, kg_origen:kgOrigen, kg_por_lote:cc.kg, interval_dias:cc.interval, dias_hasta_primera:cc.interval, anios:cc.anios, crear_origen:true})});
+    const d = await r.json().catch(function(){return {};});
+    if(!r.ok || !d.ok){ msg.innerHTML='<span style="color:#dc2626;font-weight:700">⚠ '+escapeHtml(d.error||('Error '+r.status))+'</span>'; btn.disabled=false; btn.textContent='📅 Crear cadena desde esta fecha'; return; }
+    msg.innerHTML='<span style="color:#16a34a;font-weight:700">✅ Cadena creada · '+(d.creados||0)+' lotes'+(d.origen_creado?' + fuente':'')+'.</span>';
+    cerrarNuevaProduccion();
+    if (typeof cargar === 'function') cargar();
+  }catch(e){ msg.innerHTML='<span style="color:#dc2626;font-weight:700">⚠ '+escapeHtml(String(e))+'</span>'; btn.disabled=false; btn.textContent='📅 Crear cadena desde esta fecha'; }
 }
 async function abrirLoteModal(id, producto, fecha, kg){
   window._LOTE_MODAL_ACTUAL = {id: id, producto: producto, fecha: fecha, kg: kg};
