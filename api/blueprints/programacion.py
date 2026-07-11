@@ -9298,7 +9298,9 @@ def listado_produccion_programada():
     # Sebastián 3-jul (workflow ultracode) · 550→760d: las cadenas de 2 años crean lotes hasta hoy+730d;
     # con el cap en 550 los ~3 lotes del 2º año quedaban INVISIBLES (existían en BD pero fuera de la
     # ventana) → "faltan lotes" + el modal cerca del borde no veía la próxima y ofrecía re-programar (dup).
-    _fut_cap = (_hoy_l + _dt_l.timedelta(days=760)).isoformat()
+    # Sebastián 11-jul (audit · P1): 760→1140d · ahora la cadencia manual acepta horizonte de 3 años
+    # (hoy+1095d) → con 760 los lotes del 3er año quedaban invisibles en el calendario.
+    _fut_cap = (_hoy_l + _dt_l.timedelta(days=1140)).isoformat()
     if _historico:
         _where_clause = ("WHERE LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado') "
                          "AND pp.fecha_programada <= ? "

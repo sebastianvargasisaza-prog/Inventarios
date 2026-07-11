@@ -6580,8 +6580,8 @@ def programar_produccion():
             (fecha,),
         ).fetchall()
         kgs_dia = [float(r[1] or 0) for r in rows_dia]
-        ya_grande = any(k > LOTE_GRANDE_KG for k in kgs_dia)
-        es_grande_nuevo = kg > LOTE_GRANDE_KG
+        ya_grande = any(k >= LOTE_GRANDE_KG for k in kgs_dia)
+        es_grande_nuevo = kg >= LOTE_GRANDE_KG
         if es_grande_nuevo and len(rows_dia) > 0:
             return jsonify({"error": f"{fecha} ocupado · este lote grande necesita el día solo"}), 422
         if not es_grande_nuevo and ya_grande:
@@ -8733,7 +8733,7 @@ def generar_plan_perfecto():
     def _tier(cfg):
         if _es_producto_complejo(cfg["producto"]):
             return 0  # complejo · más restrictivo
-        if cfg["kg"] > LOTE_GRANDE_KG:
+        if cfg["kg"] >= LOTE_GRANDE_KG:
             return 1  # grande
         return 2  # mediano/pequeño
     configs_ordenados = sorted(configs, key=lambda c: (_tier(c), c["freq_final"]))
@@ -13368,6 +13368,11 @@ def plan_programar_cadencia_desde_lote(lote_id):
             d = d + _tdC(days=1)
         return d
 
+    # Sebastián 11-jul (audit · P1 anti-vanish M35): si el 1er lote cae FUERA del horizonte (first_offset >
+    # anios×365), el loop crearía 0 lotes DESPUÉS de cancelar toda la cadena futura → vanish destructivo.
+    # Rechazar ANTES de tocar nada (nunca dejar al usuario con menos de lo que tenía).
+    if first_offset_dias > anios * 365:
+        return jsonify({"error": "la primera producción cae fuera del horizonte · elegí más años o una cadencia menor"}), 400
     # LOCK anti doble-cadena concurrente (Sebastián 3-jul · M27/M45 · el guard de cliente no basta multi-worker)
     _lk = _lock_cadena(conn, c, producto)
     if _lk is None:
@@ -13420,9 +13425,12 @@ def plan_programar_cadencia_desde_lote(lote_id):
         _off = first_offset_dias + k * interval_dias
         if _off > horizonte:
             break
-        f_k = _dia_habil(max(f_ancla + _tdC(days=_off), _hoy_co))
-        # dedup · MISMO día contra preservados (B2B/ejecutado · no borrar la cadena) · _dw contra la propia cadena
-        if any(abs((f_k - _fp).days) < 2 for _fp in _preservados) or any(abs((f_k - _fu).days) < _dw for _fu in _usadas):
+        _target = max(f_ancla + _tdC(days=_off), _hoy_co)
+        # Sebastián 11-jul · CAPACIDAD DIARIA (espejo del gemelo producto): máx 2 lotes/día · lote ≥100kg va
+        # SOLO · nunca finde/festivo · corre al próximo día hábil con cupo.
+        f_k = _proxima_fecha_habil(c, _target, lote_kg=(kg_por_lote + kg_otro_lote), producto_nombre=producto) or _dia_habil(_target)
+        # dedup contra la propia cadena (si el capacity juntara dos slots)
+        if any(abs((f_k - _fu).days) < 2 for _fu in _usadas):
             _saltados += 1
             continue
         c.execute(
@@ -13525,6 +13533,10 @@ def plan_programar_cadencia_producto():
         except Exception:
             base = hoy
     meses_col = round(interval_dias / 30.44, 2)
+    # Sebastián 11-jul (audit · P1 anti-vanish M35): si el 1er lote cae FUERA del horizonte, NO cancelar la
+    # cadena para crear 0 · rechazar antes de tocar nada (espejo del gemelo desde-lote).
+    if dias_hasta_primera > anios * 365:
+        return jsonify({"error": "la primera producción cae fuera del horizonte · elegí más años o una cadencia menor"}), 400
     # LOCK anti doble-cadena concurrente (Sebastián 3-jul · M27/M45)
     _lk = _lock_cadena(conn, c, producto)
     if _lk is None:
@@ -13595,9 +13607,13 @@ def plan_programar_cadencia_producto():
         # dias_hasta_primera chico, el 1er lote caería en el PASADO → se volvería "producción
         # hecha-sin-registrar" ancla-fantasma que infla la cobertura → próxima tarde → sub-compra.
         # Nunca sembrar lotes en el pasado. La dedup ±_dw vs _usadas absorbe los que colapsen a hoy.
-        f_k = _dia_habil(max(base + _tdP(days=_off), hoy))
-        # dedup · MISMO día contra preservados (B2B/ejecutado no cubre Animus) · _dw contra la propia cadena
-        if any(abs((f_k - _fp).days) < 2 for _fp in _preservados) or any(abs((f_k - _fu).days) < _dw for _fu in _usadas):
+        _target = max(base + _tdP(days=_off), hoy)
+        # Sebastián 11-jul · CAPACIDAD DIARIA: máx 2 lotes/día · lote ≥100kg va SOLO · nunca finde/festivo.
+        # _proxima_fecha_habil cuenta lo ya agendado (otros productos + los de esta cadena ya insertados en
+        # la misma tx) y corre al próximo día hábil con CUPO. Fallback día hábil simple si no encuentra.
+        f_k = _proxima_fecha_habil(c, _target, lote_kg=(kg_por_lote + kg_otro), producto_nombre=producto) or _dia_habil(_target)
+        # dedup contra la propia cadena (si el capacity juntara dos slots · no repetir el mismo día)
+        if any(abs((f_k - _fu).days) < 2 for _fu in _usadas):
             _saltados += 1
             continue
         # cada lote reserva la porción "para otro cliente" (recurrente · ej. Renova 80% otro cliente) ·
@@ -17566,7 +17582,7 @@ def plan_sugerido():
           (no fuerza espacios largos)
         """
         cur = fecha_inicio
-        es_grande = lote_kg > LOTE_GRANDE_KG
+        es_grande = lote_kg >= LOTE_GRANDE_KG
         es_complejo = _es_producto_complejo(producto_nombre)
 
         for _ in range(400):
@@ -17595,7 +17611,7 @@ def plan_sugerido():
                 items_dia = items_db + items_mem
 
                 count = len(items_dia)
-                ya_grande = any(it["kg"] > LOTE_GRANDE_KG for it in items_dia)
+                ya_grande = any(it["kg"] >= LOTE_GRANDE_KG for it in items_dia)
                 ya_complejo = any(it["complejo"] for it in items_dia)
 
                 # Lote grande: solo si día vacío
@@ -17650,7 +17666,7 @@ def plan_sugerido():
         nombre_upper = prod.upper().strip()
         lote_kg = productos_con_formula.get(nombre_upper, 0)
         es_compl = _es_producto_complejo(prod)
-        es_grande = lote_kg > LOTE_GRANDE_KG
+        es_grande = lote_kg >= LOTE_GRANDE_KG
         # Tier: 0=complejos (más restrictivos), 1=grandes, 2=otros
         tier = 0 if es_compl else (1 if es_grande else 2)
         cob = n["dias_cobertura"] if n["dias_cobertura"] is not None else 99999
@@ -17727,7 +17743,7 @@ def plan_sugerido():
             "producto": prod,
             "kg": lote_kg,
             "complejo": _es_producto_complejo(prod),
-            "grande": lote_kg > LOTE_GRANDE_KG,
+            "grande": lote_kg >= LOTE_GRANDE_KG,
         })
         plan_items.append({
             "fecha": fecha_asig.isoformat(),
@@ -22835,7 +22851,7 @@ def es_festivo_colombia(fecha):
 # Umbral · lotes >50kg se consideran "grandes" y van solos en su día.
 # Sebastián 13-may-2026: "si hay un lote grande de 90 kilos debe quedar
 # ese dia solo, podemos hacer dos el mismo dia si son cosas pequeñas".
-LOTE_GRANDE_KG = 50.0
+LOTE_GRANDE_KG = 100.0   # Sebastián 11-jul · lotes de 100 kg PARA ARRIBA van solos en su día (antes 50)
 
 # Productos "complejos" que requieren envasado el mismo día → preferir
 # Lun/Mié para tener Mar/Jue/Vie para envasado + descarga. El operario
@@ -22880,7 +22896,7 @@ def _proxima_fecha_habil(c, fecha_obj, prefer_mwf=False, max_lookahead=400,
     - Cuenta de producciones activas ese día < MAX_PRODUCCIONES_POR_DIA
     - Si prefer_mwf=True · prefiere lun/mié/vie pero acepta mar/jue si los
       preferidos están saturados
-    - Si lote_kg > LOTE_GRANDE_KG · ese día NO puede tener otra producción
+    - Si lote_kg >= LOTE_GRANDE_KG · ese día NO puede tener otra producción
       (max 1 producción ese día, no importa el tamaño)
     - Si ya hay UN lote grande ese día · no permite agregar más
     - Si producto_nombre es Vit C o Triactive · fuerza lun/mié (no vie)
@@ -22889,7 +22905,7 @@ def _proxima_fecha_habil(c, fecha_obj, prefer_mwf=False, max_lookahead=400,
     """
     from datetime import timedelta as _td
 
-    es_grande = lote_kg is not None and lote_kg > LOTE_GRANDE_KG
+    es_grande = lote_kg is not None and lote_kg >= LOTE_GRANDE_KG   # ≥100kg = va solo (Sebastián 11-jul)
     es_complejo = _es_producto_complejo(producto_nombre, c if hasattr(c, 'execute') else None)
     # Complejos solo Lun/Mié (weekday 0,2) · más restrictivo que prefer_mwf
     DIAS_COMPLEJOS = {0, 2}
@@ -22917,7 +22933,7 @@ def _proxima_fecha_habil(c, fecha_obj, prefer_mwf=False, max_lookahead=400,
                 (cur.isoformat(),),
             ).fetchall()
             count = len(rows)
-            ya_hay_grande = any((r[1] or 0) > LOTE_GRANDE_KG for r in rows)
+            ya_hay_grande = any((r[1] or 0) >= LOTE_GRANDE_KG for r in rows)
 
             if es_grande:
                 # Lote grande · solo permitido si día está vacío
@@ -23255,8 +23271,8 @@ def reprogramar_proxima(pid):
         ).fetchall()
         count_dia = len(rows_dia)
         kgs_dia = [float(r[1] or 0) for r in rows_dia]
-        ya_grande = any(k > LOTE_GRANDE_KG for k in kgs_dia)
-        es_grande = lote_kg > LOTE_GRANDE_KG
+        ya_grande = any(k >= LOTE_GRANDE_KG for k in kgs_dia)
+        es_grande = lote_kg >= LOTE_GRANDE_KG
 
         if es_grande and count_dia > 0:
             return jsonify({
@@ -23398,7 +23414,7 @@ def actualizar_cantidad_proxima(pid):
     # lote, avisar · salvo que se pase forzar=true.
     # Sebastián 3-jul · forzar_normalizar TAMBIÉN salta esto: al cuadrar con MyBatch (ej. Renova del
     # 30-jun = 70kg pero el día tiene muchos lotes) el objetivo es corregir el registro, no re-planear.
-    if _cambia_kg and nueva_kg > LOTE_GRANDE_KG and not body.get("forzar") and not _forzar_norm:
+    if _cambia_kg and nueva_kg >= LOTE_GRANDE_KG and not body.get("forzar") and not _forzar_norm:
         fila_fecha = cur.execute(
             "SELECT fecha_programada FROM produccion_programada WHERE id = ?",
             (pid,),
@@ -23906,8 +23922,8 @@ def reactivar_proxima(pid):
             (fecha_destino, pid),
         ).fetchall()
         kgs_dia = [float(r[1] or 0) for r in rows_dia]
-        ya_grande = any(k > LOTE_GRANDE_KG for k in kgs_dia)
-        es_grande = lote_kg > LOTE_GRANDE_KG
+        ya_grande = any(k >= LOTE_GRANDE_KG for k in kgs_dia)
+        es_grande = lote_kg >= LOTE_GRANDE_KG
         if es_grande and len(rows_dia) > 0:
             return jsonify({"error": f"{fecha_destino} ocupado · grande necesita día solo"}), 422
         if not es_grande and (ya_grande or len(rows_dia) >= MAX_PRODUCCIONES_POR_DIA):

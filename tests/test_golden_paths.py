@@ -11978,7 +11978,8 @@ def test_golden_plan_festivos_colombia(app, db_clean):
     d2 = r2.get_json()
     assert d2['pascua_por_year']['2027'] == '2027-03-28'
 
-    # Caso 7: lote grande (>50kg) ocupa el día solo · Sebastián 13-may-2026
+    # Caso 7: lote grande (≥100kg) ocupa el día solo · Sebastián 13-may-2026 → umbral subido a 100 el 11-jul
+    # ("lotes de 100 kilos para arriba van solitos"). 90kg YA NO es grande (comparte, máx 2/día); 120kg sí.
     conn2 = sqlite3.connect(':memory:')
     conn2.execute("""CREATE TABLE produccion_programada (
         id INTEGER PRIMARY KEY, producto TEXT, fecha_programada TEXT,
@@ -11986,16 +11987,21 @@ def test_golden_plan_festivos_colombia(app, db_clean):
     conn2.execute("""CREATE TABLE formula_headers (
         producto_nombre TEXT, lote_size_kg REAL)""")
     c2 = conn2.cursor()
-    # Si pido lote grande 90kg con fecha vacía → toma el día
-    r = _proxima_fecha_habil(c2, date(2026, 5, 19), lote_kg=90)
+    # Si pido lote grande 120kg con fecha vacía → toma el día
+    r = _proxima_fecha_habil(c2, date(2026, 5, 19), lote_kg=120)
     assert r == date(2026, 5, 19), f'BUG grande día vacío: {r}'
 
-    # Ya con un lote grande agendado → no permite otro grande ni pequeño
-    c2.execute("INSERT INTO produccion_programada VALUES (1,'SAH','2026-05-19','programado',90)")
-    r = _proxima_fecha_habil(c2, date(2026, 5, 19), lote_kg=90)
+    # Ya con un lote grande (120kg) agendado → no permite otro grande ni pequeño
+    c2.execute("INSERT INTO produccion_programada VALUES (1,'SAH','2026-05-19','programado',120)")
+    r = _proxima_fecha_habil(c2, date(2026, 5, 19), lote_kg=120)
     assert r > date(2026, 5, 19), 'BUG: no rechazó día con grande'
     r = _proxima_fecha_habil(c2, date(2026, 5, 19), lote_kg=10)
     assert r > date(2026, 5, 19), 'BUG: pequeño no debe ir con grande'
+    # 90kg (bajo el nuevo umbral 100) NO es grande: comparte día (máx 2) · en un día con un GRANDE igual no cabe
+    c2.execute("DELETE FROM produccion_programada")
+    c2.execute("INSERT INTO produccion_programada VALUES (2,'SAH','2026-05-19','programado',30)")
+    r = _proxima_fecha_habil(c2, date(2026, 5, 19), lote_kg=90)
+    assert r == date(2026, 5, 19), f'BUG: 90kg (no grande) debe compartir día: {r}'
 
     # Caso 8: producto complejo (Vit C) solo Lun/Mié
     conn3 = sqlite3.connect(':memory:')
