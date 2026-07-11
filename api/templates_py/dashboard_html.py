@@ -26234,7 +26234,10 @@ async function ckMarcar(itemId, estado){
       var _partKg = (p.ultima_produccion_kg != null && p.ultima_produccion_kg > 0) ? p.ultima_produccion_kg : (p.lote_bulk_kg || 30);
       var _mesesM = _ceM ? _ceM.meses : 2;
       var _velDiaM = p.velocidad_kg_dia || 0;
-      var _kgM = _ceM ? _ceM.kg.toFixed(1) : (_velDiaM > 0 ? (Math.round(_velDiaM * 30.44 * _mesesM * 10) / 10) : _partKg);
+      // Sebastián 11-jul · el kg por default = lo NECESARIO para durar la cadencia + 20d de reorden (no venta×meses
+      // pelado ni el kg de la cadena vieja): velocidad_kg_dia × (interval + 20). El usuario lo puede editar.
+      var _intM = Math.max(Math.round(_mesesM * 30.44), 15);
+      var _kgM = (_velDiaM > 0) ? (Math.round(_velDiaM * (_intM + 20) * 10) / 10) : (_ceM ? _ceM.kg.toFixed(1) : _partKg);
       html += '<div style="background:linear-gradient(135deg,#f5f3ff,#faf5ff);border:1px solid #ddd6fe;border-radius:10px;padding:14px;margin:14px 0">';
       html += '<div style="font-size:13px;font-weight:800;color:#5b21b6;margin-bottom:8px">📅 Programar producción · canónico manual</div>';
       if (_ceM) {
@@ -26421,14 +26424,28 @@ async function ckMarcar(itemId, estado){
     return {partida:partida, kg:kg, meses:meses, dias:intervalDias, anios:anios, intervalDias:intervalDias, nLotes:nLotes, horizonte:horizonte};
   }
   // Sebastián 11-jul · sincronizar meses↔días (el usuario piensa en días para la cadencia)
+  // Sebastián 11-jul · auto-calcular el kg NECESARIO para durar la cadencia (+20d de reorden). Sirve para
+  // que el usuario no adivine: al cambiar cada-cuánto, el kg se pone en "lo que se necesita para durar eso".
+  function _cmAutoKg(idx){
+    var p = window._NEC_PRODUCTOS_CACHE[idx]; if(!p) return;
+    var kgEl = document.getElementById('cm-kg'); if(!kgEl) return;
+    var udsDia = p.velocidad_uds_dia || 0, ml = p.ml_unidad || 0;
+    if(!(udsDia > 0.001) || !(ml > 0)) return;   // sin ventas/ml → no tocar (kg a criterio)
+    var dias = parseFloat((document.getElementById('cm-dias')||{}).value) || 0;
+    var mm = Math.min(parseFloat((document.getElementById('cm-meses')||{}).value) || 0, 12);
+    var interval = dias > 0 ? Math.max(15, Math.min(Math.round(dias),400)) : Math.max(Math.round(mm*30.44),15);
+    kgEl.value = (Math.round(udsDia * (interval + 20) * ml / 1000 * 10) / 10);   // cubrir cadencia + 20d buffer
+  }
   function _cmSyncFromMeses(idx){
     var m = parseFloat((document.getElementById('cm-meses')||{}).value) || 0;
     var d = document.getElementById('cm-dias'); if(d && m > 0) d.value = Math.round(m * 30.44);
+    _cmAutoKg(idx);
     _cmPreview(idx);
   }
   function _cmSyncFromDias(idx){
     var d = parseFloat((document.getElementById('cm-dias')||{}).value) || 0;
     var m = document.getElementById('cm-meses'); if(m && d > 0) m.value = Math.round(d / 30.44 * 10) / 10;
+    _cmAutoKg(idx);
     _cmPreview(idx);
   }
   function _cmPreview(idx){

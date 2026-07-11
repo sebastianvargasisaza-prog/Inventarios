@@ -20263,7 +20263,8 @@ async function _npResumen(){
   if (cadKg && !cadKg.value){
     const vk = p.velocidad_kg_dia || 0;
     const meses = parseFloat((document.getElementById('np-cad-meses')||{}).value) || 2;
-    if (vk > 0) cadKg.value = (Math.round(vk * 30.44 * meses * 10) / 10);
+    const _int = Math.max(Math.round(meses * 30.44), 15);
+    if (vk > 0) cadKg.value = (Math.round(vk * (_int + 20) * 10) / 10);   // necesario para durar cadencia + 20d
     else if (p.ultima_produccion_kg > 0) cadKg.value = p.ultima_produccion_kg;
   }
   let h = '';
@@ -20291,14 +20292,27 @@ async function _npResumen(){
   el.innerHTML = h;
   _npCadPreview();
 }
+// Sebastián 11-jul · auto-kg necesario para durar la cadencia + 20d de reorden (calendario).
+function _npCadAutoKg(){
+  const p = window._NP_P; if(!p) return;
+  const kgEl = document.getElementById('np-cad-kg'); if(!kgEl) return;
+  const udsDia = p.velocidad_uds_dia || 0, ml = p.ml_unidad || 0;
+  if(!(udsDia > 0.001) || !(ml > 0)) return;
+  const dias = parseFloat((document.getElementById('np-cad-dias')||{}).value) || 0;
+  const mm = Math.min(parseFloat((document.getElementById('np-cad-meses')||{}).value) || 0, 12);
+  const interval = dias>0 ? Math.max(15, Math.min(Math.round(dias),400)) : Math.max(Math.round(mm*30.44),15);
+  kgEl.value = (Math.round(udsDia * (interval + 20) * ml / 1000 * 10) / 10);
+}
 function _npCadFromMeses(){
   const m = parseFloat((document.getElementById('np-cad-meses')||{}).value) || 0;
   const d = document.getElementById('np-cad-dias'); if(d && m>0) d.value = Math.round(m*30.44);
+  _npCadAutoKg();
   _npCadPreview();
 }
 function _npCadFromDias(){
   const d = parseFloat((document.getElementById('np-cad-dias')||{}).value) || 0;
   const m = document.getElementById('np-cad-meses'); if(m && d>0) m.value = Math.round(d/30.44*10)/10;
+  _npCadAutoKg();
   _npCadPreview();
 }
 function _npCadCalc(){
