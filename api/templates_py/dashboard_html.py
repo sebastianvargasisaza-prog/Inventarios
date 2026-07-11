@@ -26419,11 +26419,31 @@ async function ckMarcar(itemId, estado){
   }
   function _cmPreview(idx){
     var el = document.getElementById('cm-preview-' + idx); if(!el) return;
+    var p = window._NEC_PRODUCTOS_CACHE[idx];
     var cc = _cmCalc(idx);
     if(!cc){ el.innerHTML = '<span style="color:#94a3b8">Completá la partida, cada cuántos meses y los kg/lote.</span>'; return; }
+    // 📊 REFERENCIA de demanda (Sebastián 11-jul): cuánto vende + cuántos kg necesita para cubrir la cadencia →
+    // sirve para saber cuánto poner en el kg manual. kg = uds/mes × meses × ml ÷ 1000.
+    var _ref = '';
+    if(p){
+      var _udsMes = (p.velocidad_uds_dia || 0) * 30.44;
+      var _ml = p.ml_unidad || 0;
+      if(_udsMes > 0.01 && _ml > 0){
+        var _kgRef = _udsMes * cc.meses * _ml / 1000;
+        var _dif = cc.kg - _kgRef;
+        var _tag = (_kgRef > 0 && Math.abs(_dif) >= _kgRef * 0.1)
+          ? (_dif > 0 ? ' · tu lote deja <b style="color:#0891b2">+' + _dif.toFixed(0) + ' kg</b> de colchón'
+                      : ' · tu lote queda <b style="color:#dc2626">' + _dif.toFixed(0) + ' kg</b> corto')
+          : ' · tu lote calza justo';
+        _ref = '📊 Vende ~<b>' + Math.round(_udsMes) + ' uds/mes</b> de <b>' + (Math.round(_ml * 10) / 10) + ' ml</b> → para <b>' + cc.meses + ' mes' + (cc.meses===1?'':'es') + '</b> necesitás ~<b>' + _kgRef.toFixed(0) + ' kg</b>' + _tag + '<br>';
+      } else {
+        _ref = '<span style="color:#94a3b8">📊 Sin ventas/ml mapeados para la referencia · poné el kg a criterio.</span><br>';
+      }
+    }
     var _first = '';
     try{ var _d = new Date(cc.partida + 'T12:00:00'); _d.setDate(_d.getDate() + cc.intervalDias); _first = _d.toISOString().slice(0,10); }catch(e){}
-    el.innerHTML = '📦 Un lote de <b>' + cc.kg.toFixed(1) + ' kg</b> cada <b>' + cc.meses + ' mes' + (cc.meses===1?'':'es') + '</b> (~' + cc.intervalDias + ' días)<br>'
+    el.innerHTML = _ref
+      + '📦 Un lote de <b>' + cc.kg.toFixed(1) + ' kg</b> cada <b>' + cc.meses + ' mes' + (cc.meses===1?'':'es') + '</b> (~' + cc.intervalDias + ' días)<br>'
       + '🗓️ Desde <b>' + cc.partida + '</b> · 1ª aprox <b>' + (_first||'—') + '</b> (si cae en el pasado, arranca hoy) · ~<b>' + cc.nLotes + '</b> lotes en <b>' + cc.anios + ' año' + (cc.anios===1?'':'s') + '</b> · total <b>' + (cc.kg*cc.nLotes).toFixed(0) + ' kg</b>';
   }
   async function programarCadenaManual(idx){
