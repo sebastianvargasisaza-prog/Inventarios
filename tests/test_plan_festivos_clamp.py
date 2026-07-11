@@ -43,3 +43,12 @@ def test_cadencia_producto_no_siembra_en_pasado(admin_client):
     hoy_iso = hoy.isoformat()
     for f in fechas:
         assert f[:10] >= hoy_iso, "ningún lote de la cadena puede quedar en el pasado (%s)" % f
+
+
+def test_cadencia_producto_rechaza_interval_cero(admin_client):
+    """[audit multinivel #4] Sin cadencia válida (interval_dias=0) el endpoint DEBE rechazar (400),
+    no crear una cadena semanal de ~82 lotes tras cancelar todas las futuras del producto."""
+    r = admin_client.post("/api/plan/programar-cadencia-producto",
+                          json={"producto": "ZZ INTERVAL CERO", "kg_por_lote": 10.0,
+                                "interval_dias": 0, "dias_hasta_primera": 30})
+    assert r.status_code == 400, r.get_data(as_text=True)[:200]

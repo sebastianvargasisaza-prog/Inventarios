@@ -13337,7 +13337,9 @@ def plan_programar_cadencia_desde_lote(lote_id):
     if ids:
         _ph = ','.join(['?'] * len(ids))
         c.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id IN (" + _ph + ")", tuple(ids))
-    _dw = min(14, max(2, interval_dias - 2))  # ventana dedup del propio ritmo (evita 2 lotes de la cadena juntos)
+    # Sebastián 10-jul (audit multinivel · #5) · interval_dias-6 absorbe el corrimiento máx +4 de _dia_habil
+    # (Semana Santa/festivo+finde): antes -2 comprimía el gap bajo _dw en cadencias cortas → saltaba un slot (hueco).
+    _dw = min(14, max(2, interval_dias - 6))  # ventana dedup del propio ritmo (evita 2 lotes de la cadena juntos)
     # Sebastián 4-jul (workflow ultracode · BUG cadena de 1 solo lote): _preservados debe ser SIMÉTRICO
     # con el CANCEL — SOLO lo que el cancel NO tocó (B2B/histórico/ejecutado). Antes traía TODO futuro no
     # cancelado; si el producto tenía muchos lotes preservados densos (cada <14d), la dedup ±14 mataba
@@ -13430,6 +13432,10 @@ def plan_programar_cadencia_producto():
         interval_dias = int(round(float(body.get("interval_dias") or 0)))
     except Exception:
         interval_dias = 0
+    # Sebastián 10-jul (audit multinivel · #4) · guard espejo del gemelo desde-lote: sin cadencia
+    # válida NO crear una cadena semanal de ~82 lotes tras cancelar todas las futuras. Rechazar ruidoso.
+    if interval_dias <= 0:
+        return jsonify({"error": "definí la cadencia (cada cuántos meses) · interval_dias requerido > 0"}), 400
     interval_dias = max(7, min(interval_dias, 400))
     try:
         dias_hasta_primera = int(round(float(body.get("dias_hasta_primera") or 0)))
@@ -13466,7 +13472,7 @@ def plan_programar_cadencia_producto():
     _lk = _lock_cadena(conn, c, producto)
     if _lk is None:
         return jsonify({"error": "ya se está programando la cadena de este producto · esperá unos segundos"}), 409
-    _dw = min(14, max(2, interval_dias - 2))  # ventana dedup adaptable (nunca > intervalo)
+    _dw = min(14, max(2, interval_dias - 6))  # ventana dedup adaptable (interval-6 absorbe el shift +4 de _dia_habil · #5)
     # 1) cancelar TODA producción futura del producto (> base) salvo B2B/ejecutado/histórico (Sebastián 3-jul)
     _sel = ("SELECT id FROM produccion_programada WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) "
             "AND substr(fecha_programada,1,10) > ? "
