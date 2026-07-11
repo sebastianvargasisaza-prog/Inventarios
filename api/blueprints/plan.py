@@ -13462,6 +13462,14 @@ def plan_programar_cadencia_producto():
         kg_otro = 0.0
     if kg_otro < 0:
         kg_otro = 0.0
+    # Sebastián 10-jul · COLOCAR LA PRODUCCIÓN FUENTE/ORIGEN: cuando el usuario marca una fecha de partida
+    # (aunque sea PASADA · "ya la produje"), la creamos en el calendario como el punto de origen desde el
+    # que cuenta la cadencia. kg_origen = lo realmente producido en esa fecha (puede diferir del kg de la cadena).
+    _crear_origen = bool(body.get("crear_origen"))
+    try:
+        kg_origen = float(body.get("kg_origen") or 0)
+    except Exception:
+        kg_origen = 0.0
     # Sebastián 10-jul · modelo canónico manual: horizonte seleccionable 1, 2 o 3 años (default 1).
     try:
         anios = int(body.get("anios") or 1)
@@ -13498,6 +13506,26 @@ def plan_programar_cadencia_producto():
     if ids:
         _ph = ','.join(['?'] * len(ids))
         c.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id IN (" + _ph + ")", tuple(ids))
+    # 1b) COLOCAR LA PRODUCCIÓN FUENTE / PUNTO DE ORIGEN (Sebastián 10-jul · el calendario es la 2ª fuente
+    #     de la verdad). Si el usuario marcó fecha de origen (aunque sea PASADA) y NO hay ya una producción
+    #     ahí, la creamos: es el punto desde el que cuenta la cadencia. base<hoy → 'eos_retroactivo' (histórica ·
+    #     cuenta como "última producción" · NO se descuenta MP porque ya se produjo); hoy/futuro → 'eos_plan'.
+    #     Idempotente: no duplica si ya existe una producción no-cancelada en esa fecha (re-programar es seguro).
+    origen_creado = False
+    if _crear_origen and _ancla_raw:
+        _ya_origen = c.execute(
+            "SELECT COUNT(*) FROM produccion_programada WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) "
+            "AND substr(fecha_programada,1,10)=? AND COALESCE(estado,'') NOT IN ('cancelado')",
+            (producto, base.isoformat())).fetchone()[0]
+        if not _ya_origen:
+            _org_marker = 'eos_retroactivo' if base < hoy else 'eos_plan'
+            _kg_org = kg_origen if kg_origen > 0 else kg_por_lote
+            c.execute(
+                "INSERT INTO produccion_programada (producto, fecha_programada, lotes, estado, origen, "
+                "cantidad_kg, meses_cobertura, observaciones) VALUES (?, ?, 1, 'pendiente', ?, ?, ?, ?)",
+                (producto, base.isoformat(), _org_marker, round(_kg_org, 2), meses_col,
+                 'Producción fuente / punto de origen (canónico manual)'))
+            origen_creado = True
     # 2) crear la cadena: 1ª a base + dias_hasta_primera, luego cada interval_dias por 2 años.
     def _dia_habil(d):  # Sebastián 3-jul · la cadena NO cae en fin de semana/festivo
         for _ in range(30):
@@ -13563,6 +13591,7 @@ def plan_programar_cadencia_producto():
     return jsonify({"ok": True, "producto": producto, "interval_dias": interval_dias,
                     "dias_hasta_primera": dias_hasta_primera, "kg_por_lote": round(kg_por_lote, 2),
                     "creados": len(creados), "cancelados": len(ids), "fechas": creados,
+                    "origen_creado": origen_creado, "origen_fecha": (base.isoformat() if origen_creado else None),
                     "esperados": _esperados, "aviso": _aviso})
 
 

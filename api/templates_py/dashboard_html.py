@@ -26430,18 +26430,20 @@ async function ckMarcar(itemId, estado){
     var p = window._NEC_PRODUCTOS_CACHE[idx]; if(!p){ alert('Producto no encontrado'); return; }
     var cc = _cmCalc(idx);
     if(!cc){ alert('Completá la producción de partida (fecha), cada cuántos meses y los kg por lote.'); return; }
+    var kgOrigen = parseFloat((document.getElementById('cm-part-kg')||{}).value) || cc.kg;
     var msg = 'Crear la cadena de "' + (p.producto_nombre || '') + '":\\n\\n'
-      + '• Punto de origen: ' + cc.partida + '\\n'
-      + '• Un lote de ' + cc.kg.toFixed(1) + ' kg cada ' + cc.meses + ' mes(es)\\n'
+      + '• Producción FUENTE (punto de origen): ' + cc.partida + ' · ' + kgOrigen.toFixed(1) + ' kg → se coloca en el calendario\\n'
+      + '• Desde ahí, un lote de ' + cc.kg.toFixed(1) + ' kg cada ' + cc.meses + ' mes(es)\\n'
       + '• ~' + cc.nLotes + ' lotes en ' + cc.anios + ' año(s) · total ' + (cc.kg*cc.nLotes).toFixed(0) + ' kg\\n\\n'
-      + 'Reemplaza las producciones futuras de este producto (conserva pedidos B2B y lo ya producido).';
+      + 'REEMPLAZA todas las producciones de este producto desde el origen (conserva pedidos B2B y lo ya ejecutado).';
     if(!confirm(msg)) return;
     if(window._cadenaBusy){ return; }
     window._cadenaBusy = true;
     try{
       var t = (await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json()).csrf_token;
       var bodyObj = {producto: p.producto_nombre, ancla_fecha: cc.partida, kg_por_lote: cc.kg,
-                     interval_dias: cc.intervalDias, dias_hasta_primera: cc.intervalDias, anios: cc.anios};
+                     interval_dias: cc.intervalDias, dias_hasta_primera: cc.intervalDias, anios: cc.anios,
+                     crear_origen: true, kg_origen: kgOrigen};
       var r = await fetch('/api/plan/programar-cadencia-producto', {method:'POST', credentials:'same-origin',
         headers:{'Content-Type':'application/json','X-CSRF-Token':t}, body: JSON.stringify(bodyObj)});
       var d = await r.json();
@@ -26453,7 +26455,7 @@ async function ckMarcar(itemId, estado){
       if(!r.ok){ window._cadenaBusy = false; alert('No se pudo: ' + ((d && d.error) || r.status)); return; }
       window._cadenaBusy = false;
       var _cr = d.creados || 0, _esp = d.esperados || _cr;
-      _toastCadena('✓ ' + (p.producto_nombre || '') + ' · ' + _cr + '/' + _esp + ' lotes');
+      _toastCadena('✓ ' + (p.producto_nombre || '') + ' · ' + (d.origen_creado ? 'fuente ' + (d.origen_fecha||'') + ' + ' : '') + _cr + '/' + _esp + ' lotes');
       if(d.aviso){ alert('⚠ ' + (p.producto_nombre || '') + '\\n\\n' + d.aviso); }
       try{ if(window._NEC_PRODUCTOS_CACHE[idx]) window._NEC_PRODUCTOS_CACHE[idx]._cadena_programada = true; }catch(e){}
       if(window.cargarNecesidades){ try{ await cargarNecesidades(); }catch(e){} }
