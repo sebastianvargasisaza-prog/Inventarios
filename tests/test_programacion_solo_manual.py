@@ -5,23 +5,21 @@ from datetime import date, timedelta
 
 
 def test_toggle_solo_manual(app, admin_client):
-    # default OFF
+    # DEFAULT ON (Sebastián 10-jul · el modelo manual es EL modelo · automáticos viejos apagados)
     r = admin_client.get("/api/plan/solo-manual")
-    assert r.status_code == 200 and r.get_json()["activo"] is False
-    # prender
-    p = admin_client.post("/api/plan/solo-manual", json={"activo": True})
-    assert p.status_code == 200 and p.get_json()["activo"] is True
-    assert admin_client.get("/api/plan/solo-manual").get_json()["activo"] is True
-    # el helper de database lo ve ON
+    assert r.status_code == 200 and r.get_json()["activo"] is True
     with app.app_context():
         from database import programacion_solo_manual
         assert programacion_solo_manual() is True
-    # apagar (reversible)
+    # apagar explícitamente (para reactivar los automáticos viejos / lógica futura) · reversible
     a = admin_client.post("/api/plan/solo-manual", json={"activo": False})
     assert a.status_code == 200 and a.get_json()["activo"] is False
     with app.app_context():
         from database import programacion_solo_manual
         assert programacion_solo_manual() is False
+    # volver a prender
+    p = admin_client.post("/api/plan/solo-manual", json={"activo": True})
+    assert p.status_code == 200 and p.get_json()["activo"] is True
 
 
 def test_cadencia_producto_horizonte_anios(admin_client):
@@ -41,6 +39,31 @@ def test_cadencia_producto_horizonte_anios(admin_client):
     tope_1y = (hoy + timedelta(days=372)).isoformat()
     for f in (d1.get("fechas") or []):
         assert f[:10] <= tope_1y, "lote fuera del horizonte de 1 año: %s" % f
+
+
+def test_cadencia_desde_lote_acepta_3_anios(app, admin_client):
+    """[review P1] El botón '📌 recalcular' manda años hasta 3 a programar-cadencia-desde-lote;
+    el endpoint debe RESPETAR 3 (antes clampaba a 2 en silencio → display≠motor)."""
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        c.execute("DELETE FROM produccion_programada WHERE producto='ZZ DESDE LOTE 3Y'")
+        c.execute("INSERT INTO produccion_programada (producto, fecha_programada, lotes, estado, origen, cantidad_kg) "
+                  "VALUES ('ZZ DESDE LOTE 3Y', ?, 1, 'pendiente', 'eos_plan', 10)", (date.today().isoformat(),))
+        lote_id = c.lastrowid
+        try:
+            conn.commit()
+        except Exception:
+            pass
+    r = admin_client.post("/api/plan/programar-cadencia-desde-lote/%d" % lote_id,
+                          json={"interval_dias": 61, "first_offset_dias": 61, "kg_por_lote": 10.0, "anios": 3})
+    assert r.status_code == 200, r.get_data(as_text=True)[:200]
+    d = r.get_json()
+    assert d.get("anios") == 3, "el endpoint debe respetar 3 años, devolvió %s" % d.get("anios")
+    fechas = sorted(d.get("fechas") or [])
+    if len(fechas) >= 2:
+        span = (date.fromisoformat(fechas[-1][:10]) - date.fromisoformat(fechas[0][:10])).days
+        assert span >= 900, "la cadena de 3 años debe abarcar >900 días, dio %d" % span
 
 
 def test_cron_auto_plan_gateado_por_flag(app):

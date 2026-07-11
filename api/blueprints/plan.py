@@ -5224,6 +5224,18 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             p["mps_faltantes"] = faltantes
             p["mps_status"] = "OK" if not faltantes else "FALTAN_MPS"
             p["puede_fabricar"] = len(faltantes) == 0
+            # Sebastián 10-jul · lista COMPLETA de MP (desplegable para confirmar que cada una está
+            # mapeada/en bodega · no solo las faltantes). Sin queries extra (usa los dicts ya pre-cargados).
+            p["mps_todas"] = [{
+                "material_id": it["material_id"],
+                "material_nombre": it["material_nombre"],
+                "necesario_g": it["necesario_g"],
+                "disponible_g": round(mp_stock_g.get(str(it["material_id"]).strip(), 0.0), 2),
+                # pendiente en compras (SOL/OC ya emitida) · para no marcar "falta" lo ya pedido (review P2)
+                "pendiente_g": round(pendiente_compras_g.get(str(it["material_id"]).strip(), 0.0), 2),
+                "es_agua": str(it["material_id"]).strip() == 'MPAGUALI01',
+                "tiene_mov": str(it["material_id"]).strip() in mp_tiene_movimientos,
+            } for it in items_form]
 
         # Escenarios inteligentes 30/60/90 días · Sebastián 13-may-2026:
         # "sugiero para 30 días tantos kilos, para 60 tantos, etc · elijo
@@ -13297,7 +13309,9 @@ def plan_programar_cadencia_desde_lote(lote_id):
         anios = int(body.get("anios") or 2)
     except Exception:
         anios = 2
-    anios = anios if anios in (1, 2) else 2
+    # Sebastián 10-jul (review · P1) · aceptar 3 años (el botón 📌 recalcular manda hasta 3);
+    # antes clampaba a (1,2) → elegir "3 años" programaba 2 en silencio (display≠motor).
+    anios = anios if anios in (1, 2, 3) else 2
     meses_col = round(interval_dias / 30.44, 2)  # informativo (meses_cobertura)
     # Sebastián 3-jul · porción "para otro cliente" de cada lote de la cadena (pre-llenada desde el ancla).
     # Se guarda en kg_otro_cliente y se SUMA al total (cantidad_kg = Animus + otro) · la cobertura usa Animus.
@@ -13448,12 +13462,12 @@ def plan_programar_cadencia_producto():
         kg_otro = 0.0
     if kg_otro < 0:
         kg_otro = 0.0
-    # Sebastián 10-jul · modelo canónico manual: horizonte seleccionable 1 o 2 años (default 1).
+    # Sebastián 10-jul · modelo canónico manual: horizonte seleccionable 1, 2 o 3 años (default 1).
     try:
         anios = int(body.get("anios") or 1)
     except Exception:
         anios = 1
-    anios = anios if anios in (1, 2) else 1
+    anios = anios if anios in (1, 2, 3) else 1
     conn = get_db()
     c = conn.cursor()
     hoy = _hoy_colombia()

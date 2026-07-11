@@ -143,9 +143,11 @@ def programacion_solo_manual(conn=None):
     ni generar_plan (cron diario), ni auto-sugerir, ni la proyección 2 años. Alejandro no
     quiere sugerencias automáticas; la lógica vieja queda en el código pero apagada (reusable).
     Resolución (mismo patrón que recepcion_auto_vigente / ebr_mode):
-      1) app_settings.clave='programacion_solo_manual' (toggle UI admin · reversible · sin redeploy).
+      1) app_settings.clave='programacion_solo_manual' (interno · reversible · sin redeploy).
       2) si no hay fila → variable de entorno PROGRAMACION_SOLO_MANUAL.
-    Default OFF (automáticos como hoy) para no romper tests/otros entornos · se prende con el botón."""
+    DEFAULT ON (Sebastián 10-jul): el modelo canónico manual es EL modelo · los automáticos viejos
+    NO calculan. El flag queda por dentro (sin botón · era confuso) para enchufar la lógica nueva
+    a futuro. Para reactivar los automáticos viejos: app_settings/env explícitamente en 0/false."""
     try:
         c = conn or get_db()
         row = c.execute(
@@ -157,9 +159,12 @@ def programacion_solo_manual(conn=None):
         pass  # tabla ausente / sin conexión → cae al env
     try:
         import os
-        return str(os.environ.get('PROGRAMACION_SOLO_MANUAL', '')).strip().lower() in ("1", "true", "yes", "on")
+        v = os.environ.get('PROGRAMACION_SOLO_MANUAL')
+        if v is not None and str(v).strip() != '':
+            return str(v).strip().lower() in ("1", "true", "yes", "on")
     except Exception:
-        return False
+        pass
+    return True  # DEFAULT manual: los automáticos viejos NO generan producciones
 
 
 def exigir_area_limpia(conn=None):
