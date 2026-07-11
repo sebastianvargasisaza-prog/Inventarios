@@ -4154,12 +4154,14 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     except Exception:
         pass
 
-    # Sebastián 10-jul · EN TRÁNSITO (azul "por entrar"): producción que YA está pasando pero aún NO llega
+    # Sebastián 10/11-jul · EN TRÁNSITO (azul "por entrar"): producción que YA está pasando pero aún NO llega
     # a la góndola de Shopify → saca al producto de ROJO hasta que Shopify lo refleje (→ verde). Cuenta:
     #   (a) lotes en_curso (le diste "fabricar"),
     #   (b) lotes registrados como producidos hace ≤14d (fin_real_at / inventario_descontado_at),
-    #   (c) la producción FUENTE que el usuario coloca (origen='eos_retroactivo' · fecha ≤hoy y ≤14d atrás · "ya la produje").
-    # NO cuenta lo solo PROGRAMADO a futuro (eso sigue rojo si la góndola urge · no escondemos reds reales).
+    #   (c) CUALQUIER lote con FECHA pasada ≤14d y no-cancelado (Sebastián 11-jul · "el calendario es el ojo
+    #       de la verdad": un lote programado en el pasado = producido aunque el jefe no lo marcó · incluye la
+    #       FUENTE colocada y el caso LIMPIADOR BHA producido el 9-jul que quedó como eos_plan pendiente).
+    # NO cuenta lo solo PROGRAMADO a FUTURO (fecha > hoy · eso sigue rojo si la góndola urge · no escondemos reds).
     en_transito_kg_por_prod = {}
     try:
         for r in c.execute(
@@ -4168,8 +4170,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                WHERE COALESCE(estado,'') NOT IN ('cancelado','completado')
                  AND ( LOWER(COALESCE(estado,'')) IN ('en_curso','en curso')
                        OR date(COALESCE(fin_real_at, inventario_descontado_at)) >= date('now','-5 hours','-14 days')
-                       OR ( COALESCE(origen,'')='eos_retroactivo'
-                            AND date(fecha_programada) >= date('now','-5 hours','-14 days')
+                       OR ( date(fecha_programada) >= date('now','-5 hours','-14 days')
                             AND date(fecha_programada) <= date('now','-5 hours') ) )
                  AND date(COALESCE(fin_real_at, inventario_descontado_at, fecha_programada)) <= date('now','-5 hours')
                GROUP BY producto"""

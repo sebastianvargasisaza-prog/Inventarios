@@ -72,6 +72,20 @@ def test_fuente_colocada_reciente_saca_de_rojo(app, db_clean):
     assert f["urgencia"] == "POR_ENTRAR", ("la fuente reciente debe pasar a azul", f.get("urgencia"), f.get("en_transito_uds"))
 
 
+def test_lote_pasado_eos_plan_saca_de_rojo(app, db_clean):
+    """[Sebastián 11-jul · caso LIMPIADOR BHA] Un lote con FECHA PASADA (≤14d) no-cancelado, aunque sea
+    eos_plan 'pendiente' (el jefe lo produjo pero no lo marcó), cuenta como en tránsito → azul.
+    'El calendario es el ojo de la verdad': lote pasado no-cancelado = producido."""
+    PROD, SKU = "BHAPASADOLASH", "BHA9"
+    c = _login_as(app, "sebastian")
+    db = sqlite3.connect(os.environ["DB_PATH"]); _seed_critico(db, PROD, SKU)
+    db.execute("INSERT INTO produccion_programada (producto, fecha_programada, lotes, estado, origen, cantidad_kg) "
+               "VALUES (?,?,1,'pendiente','eos_plan',10)", (PROD, (date.today() - timedelta(days=2)).isoformat()))
+    db.commit(); db.close()
+    f = _fila(c, PROD)
+    assert f["urgencia"] == "POR_ENTRAR", ("lote pasado eos_plan (producido) debe pasar a azul", f.get("urgencia"), f.get("en_transito_uds"))
+
+
 def test_programado_futuro_sigue_rojo(app, db_clean):
     """Un lote solo PROGRAMADO a futuro (no en_curso, no producido) NO pinta azul: sigue CRÍTICO."""
     PROD, SKU = "FUTUROLASH", "FUT9"
