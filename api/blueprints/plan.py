@@ -18085,6 +18085,11 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
             <span style="font-size:12px;color:#5b21b6;font-weight:700">· <input id="np-cad-kg" type="number" min="0.1" step="0.1" placeholder="kg" oninput="_npCadPreview()" style="width:62px;padding:4px;border:1px solid #7c3aed;border-radius:5px;text-align:center;font-weight:800;color:#5b21b6"> kg/lote</span>
             <span style="font-size:12px;color:#5b21b6;font-weight:700">· <select id="np-cad-anios" onchange="_npCadPreview()" style="padding:4px;border:1px solid #c4b5fd;border-radius:5px;font-weight:700"><option value="1">1 año</option><option value="2">2 años</option><option value="3">3 años</option></select></span>
           </div>
+          <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:9px">
+            <span style="font-size:12px;color:#5b21b6;font-weight:700">🎯 1ª nueva <input id="np-primera-fecha" type="date" oninput="_npCadPreview()" title="opcional · si querés fijar el mes de la 1ª producción nueva · vacío = cuando se agote lo fabricado" style="padding:4px;border:1px solid #c4b5fd;border-radius:5px;font-weight:700"></span>
+            <button type="button" onclick="var e=document.getElementById('np-primera-fecha');if(e){e.value='';_npCadPreview()}" style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:5px;padding:4px 8px;font-size:11px;color:#475569;cursor:pointer">auto</button>
+            <span style="font-size:10px;color:#94a3b8">opcional · vacío = arranca cuando se agote lo fabricado</span>
+          </div>
           <div id="np-cad-preview" style="font-size:11px;color:#5b21b6;background:#fff;border:1px solid #ede9fe;border-radius:6px;padding:8px 10px;line-height:1.5;margin-bottom:9px"></div>
           <button onclick="_npCrearCadena()" id="np-cad-btn" style="background:linear-gradient(90deg,#7c3aed,#5b21b6);color:#fff;border:none;border-radius:7px;padding:9px 15px;font-size:13px;font-weight:800;cursor:pointer">📅 Crear cadena desde esta fecha</button>
           <div style="font-size:10px;color:#94a3b8;margin-top:5px">Usa la FECHA de arriba como origen · un lote cada X en día hábil (máx 2/día · ≥100kg solo) · reemplaza las futuras de este producto (conserva B2B y lo ya producido).</div>
@@ -20176,6 +20181,7 @@ function abrirNuevaProduccion(fecha){
     document.getElementById('np-resumen').style.display = 'none';
     document.getElementById('np-resumen').innerHTML = '';
     document.getElementById('np-cad-kg').value = '';
+    var _npf = document.getElementById('np-primera-fecha'); if(_npf) _npf.value = '';
     document.getElementById('np-cad-det').open = false;
     document.getElementById('np-cad-preview').innerHTML = '';
     window._NP_P = null;
@@ -20325,9 +20331,15 @@ function _npCadCalc(){
   // Sebastián 11-jul · la 1ª nueva cuando se AGOTA lo fabricado (Cantidad kg del origen ÷ venta − 20 buffer).
   const _partKg = parseFloat((document.getElementById('np-kg')||{}).value) || kg;
   const p = window._NP_P; const _velKgDia = (p && p.velocidad_kg_dia) || 0;
-  const dhp = (_velKgDia > 0.0001 && _partKg > 0) ? Math.max(Math.round(_partKg / _velKgDia) - 20, 1) : interval;
+  let dhp = (_velKgDia > 0.0001 && _partKg > 0) ? Math.max(Math.round(_partKg / _velKgDia) - 20, 1) : interval;
+  // Sebastián 11-jul · si el usuario FIJA la fecha de la 1ª nueva, la cadena arranca ahí (manda sobre el auto).
+  const _pf = ((document.getElementById('np-primera-fecha')||{}).value || '').slice(0,10);
+  let dhpManual = false;
+  if(_pf && partida){
+    try{ const _dp = new Date(partida+'T12:00:00'), _dpf = new Date(_pf+'T12:00:00'); const _delta = Math.round((_dpf-_dp)/86400000); if(_delta>=1){ dhp=_delta; dhpManual=true; } }catch(e){}
+  }
   const nLotes = Math.max(1, Math.floor((anios*365 - dhp)/interval) + 1);
-  return {interval:interval, kg:kg, anios:anios, partida:partida, dhp:dhp, nLotes:nLotes};
+  return {interval:interval, kg:kg, anios:anios, partida:partida, dhp:dhp, dhpManual:dhpManual, nLotes:nLotes};
 }
 function _npCadPreview(){
   const el = document.getElementById('np-cad-preview'); if(!el) return;
@@ -20344,7 +20356,8 @@ function _npCadPreview(){
   }
   let _first = '';
   try{ const _d = new Date(cc.partida + 'T12:00:00'); _d.setDate(_d.getDate() + cc.dhp); _first = _d.toISOString().slice(0,10); }catch(e){}
-  el.innerHTML = ref + '📦 Un lote de <b>'+cc.kg.toFixed(1)+' kg</b> cada <b>'+cc.interval+' días</b> · la 1ª nueva cuando se agota lo fabricado (~<b>'+cc.dhp+'d</b> = '+(_first||'—')+') · ~<b>'+cc.nLotes+'</b> lotes en <b>'+cc.anios+' año'+(cc.anios===1?'':'s')+'</b> desde <b>'+cc.partida+'</b>';
+  const _firstTxt = cc.dhpManual ? 'la 1ª nueva <b style="color:#7c3aed">fijada por vos</b> = '+(_first||'—') : 'la 1ª nueva cuando se agota lo fabricado (~<b>'+cc.dhp+'d</b> = '+(_first||'—')+')';
+  el.innerHTML = ref + '📦 Un lote de <b>'+cc.kg.toFixed(1)+' kg</b> cada <b>'+cc.interval+' días</b> · '+_firstTxt+' · ~<b>'+cc.nLotes+'</b> lotes en <b>'+cc.anios+' año'+(cc.anios===1?'':'s')+'</b> desde <b>'+cc.partida+'</b>';
 }
 async function _npCrearCadena(){
   const producto = (document.getElementById('np-producto').value || '').trim();

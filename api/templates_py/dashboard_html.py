@@ -26249,6 +26249,13 @@ async function ckMarcar(itemId, estado){
       html += '<label style="font-size:11px;color:#475569">Fecha <input id="cm-part-fecha" type="date" value="' + _partFecha + '" style="padding:4px 6px;border:1px solid #c4b5fd;border-radius:5px;font-size:12px"></label>';
       html += '<label style="font-size:11px;color:#475569">Kg producidos <input id="cm-part-kg" type="number" min="0.1" step="0.1" value="' + _partKg + '" style="width:66px;padding:4px 6px;border:1px solid #c4b5fd;border-radius:5px;font-size:12px;text-align:center"></label>';
       html += '</div>';
+      // Sebastián 11-jul · 1ª producción nueva OPCIONAL · si el usuario sabe que quiere fabricarlo en tal mes
+      // (aunque el stock alcance más), fija la fecha y la cadena arranca AHÍ. Vacío = auto (cuando se agota).
+      html += '<div style="font-size:11px;color:#6d28d9;font-weight:800;margin-bottom:4px">🎯 1ª producción nueva <span style="font-weight:600;color:#94a3b8">(opcional · si querés fijar el mes · vacío = cuando se agote lo fabricado)</span></div>';
+      html += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">';
+      html += '<label style="font-size:11px;color:#475569">Empezar el <input id="cm-primera-fecha" type="date" oninput="_cmPreview(' + idx + ')" style="padding:4px 6px;border:1px solid #c4b5fd;border-radius:5px;font-size:12px"></label>';
+      html += '<button type="button" onclick="var e=document.getElementById(\\'cm-primera-fecha\\');if(e){e.value=\\'\\';_cmPreview(' + idx + ')}" style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:5px;padding:4px 8px;font-size:11px;color:#475569;cursor:pointer">auto</button>';
+      html += '</div>';
       // Cadencia + kg por lote + horizonte
       html += '<div style="font-size:11px;color:#6d28d9;font-weight:800;margin-bottom:4px">🔁 Cadencia</div>';
       html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">';
@@ -26425,8 +26432,19 @@ async function ckMarcar(itemId, estado){
     var _partKg = parseFloat((document.getElementById('cm-part-kg')||{}).value) || kg;
     var _velKgDia = p.velocidad_kg_dia || 0;
     var dhp = (_velKgDia > 0.0001 && _partKg > 0) ? Math.max(Math.round(_partKg / _velKgDia) - 20, 1) : intervalDias;
+    // Sebastián 11-jul · si el usuario FIJA la fecha de la 1ª nueva (sabe que la relanza en tal mes), la cadena
+    // arranca AHÍ: dhp = días entre la partida y esa fecha. Manda sobre el auto (cuando-se-agota). Manual=true.
+    var _pf = ((document.getElementById('cm-primera-fecha')||{}).value || '').slice(0,10);
+    var _manual = false;
+    if(_pf){
+      try{
+        var _dp = new Date(partida + 'T12:00:00'), _dpf = new Date(_pf + 'T12:00:00');
+        var _delta = Math.round((_dpf - _dp) / 86400000);
+        if(_delta >= 1){ dhp = _delta; _manual = true; }
+      }catch(e){}
+    }
     var nLotes = Math.max(1, Math.floor((horizonte - dhp) / intervalDias) + 1);
-    return {partida:partida, kg:kg, meses:meses, dias:intervalDias, anios:anios, intervalDias:intervalDias, dhp:dhp, nLotes:nLotes, horizonte:horizonte};
+    return {partida:partida, kg:kg, meses:meses, dias:intervalDias, anios:anios, intervalDias:intervalDias, dhp:dhp, dhpManual:_manual, nLotes:nLotes, horizonte:horizonte};
   }
   // Sebastián 11-jul · sincronizar meses↔días (el usuario piensa en días para la cadencia)
   // Sebastián 11-jul · auto-calcular el kg NECESARIO para durar la cadencia (+20d de reorden). Sirve para
@@ -26483,9 +26501,12 @@ async function ckMarcar(itemId, estado){
     }
     var _first = '';
     try{ var _d = new Date(cc.partida + 'T12:00:00'); _d.setDate(_d.getDate() + cc.dhp); _first = _d.toISOString().slice(0,10); }catch(e){}
+    var _firstTxt = cc.dhpManual
+      ? 'la 1ª nueva <b style="color:#7c3aed">fijada por vos</b> = <b>' + (_first||'—') + '</b>'
+      : 'la 1ª nueva cuando se agota lo fabricado (~<b>' + cc.dhp + 'd</b>) = <b>' + (_first||'—') + '</b>';
     el.innerHTML = _ref
       + '📦 Un lote de <b>' + cc.kg.toFixed(1) + ' kg</b> cada <b>' + cc.meses + ' mes' + (cc.meses===1?'':'es') + '</b> (~' + cc.intervalDias + ' días)<br>'
-      + '🗓️ Partida <b>' + cc.partida + '</b> · la 1ª nueva cuando se agota lo fabricado (~<b>' + cc.dhp + 'd</b>) = <b>' + (_first||'—') + '</b>, luego cada ' + cc.intervalDias + 'd · ~<b>' + cc.nLotes + '</b> lotes en <b>' + cc.anios + ' año' + (cc.anios===1?'':'s') + '</b> · total <b>' + (cc.kg*cc.nLotes).toFixed(0) + ' kg</b>';
+      + '🗓️ Partida <b>' + cc.partida + '</b> · ' + _firstTxt + ', luego cada ' + cc.intervalDias + 'd · ~<b>' + cc.nLotes + '</b> lotes en <b>' + cc.anios + ' año' + (cc.anios===1?'':'s') + '</b> · total <b>' + (cc.kg*cc.nLotes).toFixed(0) + ' kg</b>';
   }
   async function programarCadenaManual(idx){
     var p = window._NEC_PRODUCTOS_CACHE[idx]; if(!p){ alert('Producto no encontrado'); return; }
