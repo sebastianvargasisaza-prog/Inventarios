@@ -20267,6 +20267,10 @@ async function _npResumen(){
     else if (p.ultima_produccion_kg > 0) cadKg.value = p.ultima_produccion_kg;
   }
   let h = '';
+  // Sebastián 11-jul · lo que TIENE hoy + para cuánto alcanza (como en Necesidades)
+  const _urgTxt = {CRITICO:'🔴 crítico', URGENTE:'🟠 urgente', VIGILAR:'🟡 vigilar', POR_ENTRAR:'🔵 por entrar', OK:'🟢 ok', SIN_VENTAS:'⚪ sin ventas'};
+  const _dg = (p.dias_gondola != null) ? p.dias_gondola : null;
+  h += '📊 Stock góndola: <b>' + (p.stock_uds_total != null ? p.stock_uds_total : '—') + ' uds</b> · alcanza <b>' + (_dg != null ? _dg + ' días' : '—') + '</b> ' + (_urgTxt[p.urgencia] || '') + ' · vende ~' + Math.round((p.velocidad_uds_dia||0)*30.44) + ' uds/mes<br>';
   if (p.ultima_produccion_fecha) h += '📜 Última producción: <b>' + p.ultima_produccion_fecha + '</b> · ' + p.ultima_produccion_kg + ' kg<br>';
   else h += '📜 Sin producción previa registrada<br>';
   const hoyc = new Date(Date.now() - 5*3600*1000).toISOString().slice(0,10);

@@ -25974,12 +25974,11 @@ async function ckMarcar(itemId, estado){
   // Índices de productos que requieren acción (crítico/urgente) en orden de la lista ·
   // para navegar con "Siguiente crítico" sin salir del modal.
   function _navCriticos() {
+    // Sebastián 11-jul · navegar TODOS los productos (en el orden de urgencia del listado) para poder
+    // programarlos uno por uno sin quedarse "sin flechas" al terminar los críticos.
     const arr = window._NEC_PRODUCTOS_CACHE || [];
     const out = [];
-    for (let i = 0; i < arr.length; i++) {
-      const u = (arr[i] || {}).urgencia;
-      if (u === 'CRITICO' || u === 'URGENTE') out.push(i);
-    }
+    for (let i = 0; i < arr.length; i++) out.push(i);
     return out;
   }
 
@@ -26088,29 +26087,21 @@ async function ckMarcar(itemId, estado){
       avisos += '</details>';
     }
 
-    // Navegación entre productos CRÍTICOS sin salir del modal (Sebastián 15-jun).
+    // Navegación entre TODOS los productos sin salir del modal (Sebastián 11-jul · recorrer todo para programar).
     let html = '';
     const _nav = _navCriticos();
-    const _pos = _nav.indexOf(idx);
+    let _pos = _nav.indexOf(idx);
+    if (_pos === -1) _pos = idx;   // _nav es la lista completa → el idx ES la posición
     if (_nav.length > 1) {
       const _prev = (_pos > 0) ? _nav[_pos - 1] : null;
-      // Sebastián 11-jul (fix) · si el producto actual YA NO es crítico (lo acabás de programar → dejó de estar
-      // en la lista, _pos=-1), NO volver al PRIMERO (ANIMUSLASH): ir al siguiente crítico que quede DESPUÉS de él
-      // por posición · si no hay más adelante, no mostrar botón (parar limpio, no dar la vuelta).
-      let _next;
-      if (_pos >= 0 && _pos < _nav.length - 1) { _next = _nav[_pos + 1]; }
-      else if (_pos >= 0) { _next = null; }              // era el último crítico → parar
-      else {
-        _next = _nav.find(function(j){ return j > idx; });   // ya no es crítico → el próximo por posición
-        if (_next === undefined) _next = null;
-      }
+      const _next = (_pos >= 0 && _pos < _nav.length - 1) ? _nav[_pos + 1] : null;
       html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px">';
       html += (_prev != null)
         ? '<button onclick="abrirSolicitar(' + _prev + ')" style="background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">◀ Anterior</button>'
         : '<span></span>';
-      html += '<span style="font-size:12px;color:#64748b;font-weight:700">' + (_pos >= 0 ? '🔴 Crítico ' + (_pos + 1) + ' de ' + _nav.length : 'Revisión de críticos') + '</span>';
+      html += '<span style="font-size:12px;color:#64748b;font-weight:700">📋 Producto ' + (_pos + 1) + ' de ' + _nav.length + '</span>';
       html += (_next != null)
-        ? '<button onclick="abrirSolicitar(' + _next + ')" style="background:#6d28d9;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">Siguiente crítico ▶</button>'
+        ? '<button onclick="abrirSolicitar(' + _next + ')" style="background:#6d28d9;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">Siguiente ▶</button>'
         : '<span></span>';
       html += '</div>';
     }
@@ -26576,19 +26567,17 @@ async function ckMarcar(itemId, estado){
       if(d.aviso || (_esp >= 3 && _cr < 3)){
         alert('⚠ ' + (p.producto_nombre || '') + '\\n\\nSe crearon ' + _cr + ' de ~' + _esp + ' lotes.' + (d.aviso ? ('\\n' + d.aviso) : '') + '\\n\\nEste producto tiene producciones agendadas que chocan con la cadena. Revisalo con "Verificar plan".');
       }
-      // NO cerrar ni recargar todo · avanzar al SIGUIENTE producto (fila). Toast + abrirSolicitar(next).
-      try{ if(window._NEC_PRODUCTOS_CACHE[idx]) window._NEC_PRODUCTOS_CACHE[idx]._cadena_programada = true; }catch(e){}
-      _toastCadena('✓ ' + (p.producto_nombre || '') + ' · ' + _cr + '/' + _esp + ' lotes');
-      var _nav = (typeof _navCriticos === 'function') ? _navCriticos() : [];
-      var _pos = _nav.indexOf(idx);
-      var _next = null;
-      for(var _k = 0; _k < _nav.length; _k++){ if(_nav[_k] === idx){ if(_k + 1 < _nav.length) _next = _nav[_k + 1]; break; } }
-      if(_next != null){
-        abrirSolicitar(_next);   // avanza al siguiente · mantiene el modal, sin recargar Necesidades
-      } else {
-        _toastCadena('✓ Era el último · recargá Necesidades para ver el calendario');
-        if(window.cargarNecesidades){ try{ await cargarNecesidades(); }catch(e){} }
-      }
+      // Sebastián 11-jul ("no queda grabado") · RECARGAR y RE-ABRIR el MISMO producto para que VEAS la cadena
+      // guardada ("Ya tenés cadena: X lotes...") · antes avanzaba con caché vieja y parecía que no se guardaba.
+      _toastCadena('✓ ' + (p.producto_nombre || '') + ' · cadena guardada · ' + _cr + ' lotes');
+      var _pn = (p.producto_nombre || '');
+      if(window.cargarNecesidades){ try{ await cargarNecesidades(); }catch(e){} }
+      try{
+        var _cache = window._NEC_PRODUCTOS_CACHE || [];
+        var _ni = -1;
+        for(var _j = 0; _j < _cache.length; _j++){ if(((_cache[_j] || {}).producto_nombre || '') === _pn){ _ni = _j; break; } }
+        if(_ni >= 0) abrirSolicitar(_ni);   // re-abre el mismo producto con la cadena YA reflejada
+      }catch(e){}
     }catch(e){ window._cadenaBusy = false; alert('Error: ' + e); }
   }
   // Toast no-bloqueante para la cadena (Sebastián 3-jul) · no interrumpe el flujo producto-a-producto.
