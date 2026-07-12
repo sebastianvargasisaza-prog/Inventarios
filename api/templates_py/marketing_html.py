@@ -23,8 +23,8 @@ body{font-family:'Segoe UI',sans-serif;background:var(--cx-bg);color:var(--cx-te
 /* ─── Tabs ─── */
 .tabs-bar{background:var(--cx-card);border-bottom:1px solid #e7e5e4;display:flex;overflow-x:auto;padding:0 20px;}
 .tab-btn{padding:12px 20px;font-size:13px;font-weight:600;color:var(--cx-text-mute);border:none;background:none;cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent;transition:.15s;}
-.tab-btn:hover{color:var(--cx-text);}
-.tab-btn.active{color:#667eea;border-bottom-color:#667eea;}
+.tab-btn:hover{color:#6d28d9;background:#faf7ff;}
+.tab-btn.active{color:#6d28d9;border-bottom-color:#6d28d9;}
 .tab-panel{display:none;padding:24px 20px;}
 .tab-panel.active{display:block;}
 
@@ -216,10 +216,7 @@ window.addEventListener('unhandledrejection', function(ev) {
 <header class="cx-mod-header cx-fade-in">
   <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:#6d28d9;"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
   <div>
-    <div class="cx-mod-header__title">
-      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#6d28d9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M3 11v3a1 1 0 001 1h2.5l8 5V5l-8 5H4a1 1 0 00-1 1z"/><path d="M19 12a4 4 0 000-5.7"/></svg>
-      Marketing
-    </div>
+    <div class="cx-mod-header__title">Marketing</div>
     <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; campañas, influencers &amp; ROI &middot; <span style="color:#a8a29e">{usuario}</span></div>
   </div>
   <div class="cx-mod-header__nav">

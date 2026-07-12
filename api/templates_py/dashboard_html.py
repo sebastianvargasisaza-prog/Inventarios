@@ -641,19 +641,39 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       📈 Este mes &middot; progreso
       <span style="flex:1;height:1px;background:#bbf7d0;"></span>
     </div>
-    <div id="dash-mes-actual" style="background:linear-gradient(135deg,#f0fdf4 0%,#fff 55%);border:1px solid #dcfce7;border-radius:16px;padding:20px 24px;margin-bottom:22px;display:none;box-shadow:0 1px 3px rgba(0,0,0,.04),0 10px 26px rgba(22,163,74,.05)">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;margin-bottom:14px">
-        <div>
-          <div id="mes-mes-label" style="font-size:17px;font-weight:800;color:#0f172a;letter-spacing:-.4px;line-height:1.1">-</div>
-          <div id="mes-resumen" style="font-size:12px;color:#64748b;margin-top:3px">- de - producciones · - kg</div>
+    <div id="dash-mes-actual" style="background:linear-gradient(135deg,#f0fdf4 0%,#ffffff 60%);border:1px solid #dcfce7;border-radius:18px;padding:22px 26px;margin-bottom:22px;display:none;box-shadow:0 1px 3px rgba(0,0,0,.04),0 12px 30px rgba(22,163,74,.06)">
+      <div style="display:flex;align-items:center;gap:26px;flex-wrap:wrap">
+        <!-- Anillo circular de progreso -->
+        <div style="position:relative;width:120px;height:120px;flex-shrink:0">
+          <svg viewBox="0 0 120 120" width="120" height="120" style="transform:rotate(-90deg)">
+            <circle cx="60" cy="60" r="52" fill="none" stroke="#e5e7eb" stroke-width="12"/>
+            <circle id="mes-ring" cx="60" cy="60" r="52" fill="none" stroke="url(#mesGrad)" stroke-width="12" stroke-linecap="round" stroke-dasharray="326.7" stroke-dashoffset="326.7" style="transition:stroke-dashoffset .9s cubic-bezier(.4,0,.2,1)"/>
+            <defs><linearGradient id="mesGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#16a34a"/><stop offset="1" stop-color="#4ade80"/></linearGradient></defs>
+          </svg>
+          <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center">
+            <div id="mes-pct" style="font-size:27px;font-weight:800;color:#16a34a;line-height:1;font-variant-numeric:tabular-nums">-%</div>
+            <div id="mes-frac" style="font-size:11px;color:#64748b;font-weight:700;margin-top:2px">-/-</div>
+          </div>
         </div>
-        <div style="text-align:right;line-height:1">
-          <div id="mes-pct" style="font-size:32px;font-weight:800;color:#16a34a;font-variant-numeric:tabular-nums">-%</div>
-          <div style="font-size:9.5px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-top:3px">completado</div>
+        <!-- Detalle -->
+        <div style="flex:1;min-width:190px">
+          <div id="mes-mes-label" style="font-size:20px;font-weight:800;color:#0f172a;letter-spacing:-.5px;line-height:1.1">-</div>
+          <div style="font-size:10.5px;color:#16a34a;text-transform:uppercase;letter-spacing:.7px;font-weight:700;margin-top:3px">Progreso de producción del mes</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:11px;padding:9px 15px;min-width:98px;box-shadow:0 1px 2px rgba(0,0,0,.03)">
+              <div id="mes-completadas" style="font-size:19px;font-weight:800;color:#16a34a;line-height:1;font-variant-numeric:tabular-nums">-</div>
+              <div style="font-size:10px;color:#64748b;margin-top:3px">completadas</div>
+            </div>
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:11px;padding:9px 15px;min-width:98px;box-shadow:0 1px 2px rgba(0,0,0,.03)">
+              <div id="mes-programadas" style="font-size:19px;font-weight:800;color:#334155;line-height:1;font-variant-numeric:tabular-nums">-</div>
+              <div style="font-size:10px;color:#64748b;margin-top:3px">programadas</div>
+            </div>
+            <div style="background:#fff;border:1px solid #e2e8f0;border-radius:11px;padding:9px 15px;min-width:98px;box-shadow:0 1px 2px rgba(0,0,0,.03)">
+              <div id="mes-kg" style="font-size:19px;font-weight:800;color:#7c3aed;line-height:1;font-variant-numeric:tabular-nums">-</div>
+              <div style="font-size:10px;color:#64748b;margin-top:3px">kg producidos</div>
+            </div>
+          </div>
         </div>
-      </div>
-      <div style="background:#e5e7eb;border-radius:999px;height:12px;overflow:hidden">
-        <div id="mes-bar" style="background:linear-gradient(90deg,#16a34a,#4ade80);height:100%;width:0%;border-radius:999px;box-shadow:0 1px 4px rgba(22,163,74,.35);transition:width .5s cubic-bezier(.4,0,.2,1)"></div>
       </div>
     </div>
 
@@ -4684,25 +4704,25 @@ function _renderDashInsights(d){
       if(elPF) elPF.textContent = '—';
     }
   }
-  // Mes actual
+  // Mes actual · anillo circular de progreso (Sebastián 12-jul · "gran indicador")
   var m = d.mes_actual || {};
   var mesBox = document.getElementById('dash-mes-actual');
   if(mesBox){
     mesBox.style.display = 'block';
+    var comp = m.producciones_completadas||0, prog = m.producciones_programadas||0, kg = m.kg_producidos||0;
     var elML = document.getElementById('mes-mes-label');
     if(elML) elML.textContent = (m.mes||'');
-    var elMR = document.getElementById('mes-resumen');
-    if(elMR) elMR.textContent =
-      (m.producciones_completadas||0) + ' de ' + (m.producciones_programadas||0) +
-      ' producciones · ' + (m.kg_producidos||0).toLocaleString('es-CO') + ' kg';
+    var elC = document.getElementById('mes-completadas'); if(elC) elC.textContent = comp.toLocaleString('es-CO');
+    var elP = document.getElementById('mes-programadas'); if(elP) elP.textContent = prog.toLocaleString('es-CO');
+    var elK = document.getElementById('mes-kg'); if(elK) elK.textContent = kg.toLocaleString('es-CO');
+    var elF = document.getElementById('mes-frac'); if(elF) elF.textContent = comp + '/' + prog;
     var pct = Math.max(0, Math.min(100, m.progreso_pct||0));
+    var col = pct >= 80 ? '#16a34a' : pct >= 50 ? '#ca8a04' : '#dc2626';
     var elPct = document.getElementById('mes-pct');
-    if(elPct){
-      elPct.textContent = pct.toFixed(0) + '%';
-      elPct.style.color = pct >= 80 ? '#16a34a' : pct >= 50 ? '#ca8a04' : '#dc2626';
-    }
-    var elBar = document.getElementById('mes-bar');
-    if(elBar) elBar.style.width = pct + '%';
+    if(elPct){ elPct.textContent = pct.toFixed(0) + '%'; elPct.style.color = col; }
+    // anillo: circunferencia 2·π·52 = 326.726 · offset = C·(1 - pct/100)
+    var ring = document.getElementById('mes-ring');
+    if(ring){ ring.style.strokeDashoffset = (326.726 * (1 - pct/100)).toFixed(1); }
   }
 }
 function _renderDashAlertasIa(d){
