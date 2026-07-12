@@ -10667,6 +10667,10 @@ def _rotulo_recep_css(lw, lh):
       "td:not(.k){white-space:normal;word-break:break-word;overflow-wrap:anywhere}"
       ".num{font-variant-numeric:tabular-nums;font-weight:600}.cant{color:#15803d;font-weight:800}.venc{color:#c0392b;font-weight:600}.fill{background:repeating-linear-gradient(-45deg,#fff,#fff 6px,#fafafa 6px,#fafafa 7px);height:20px}.ck{text-align:center;font-weight:700}"
       ".qc{display:flex;gap:13px;align-items:center;padding:8px 16px;border-top:1px solid var(--line);font-size:11px;font-weight:700;flex-wrap:wrap}.qc b{color:var(--mute);text-transform:uppercase;font-size:9.5px;font-weight:700}"
+      ".qcbox{padding:8px 16px;border-top:1px solid var(--line)}"
+      ".qcl{font-size:9.5px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.3px;margin-bottom:5px}.qcl span{color:#a1a1aa;font-weight:600;text-transform:none;letter-spacing:0}"
+      ".qcarea{border:1.5px dashed #c4b5fd;border-radius:8px;height:62px;background:repeating-linear-gradient(-45deg,#fff,#fff 8px,#faf5ff 8px,#faf5ff 9px)}"
+      ".obs{height:26px}"
       ".firmas{display:flex;border-top:1px solid var(--line)}.firma{flex:1;padding:9px 14px 11px}.firma+.firma{border-left:1px solid var(--line)}"
       ".firma .l{font-size:9px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.3px}.firma .sig{height:1px;background:var(--ink);margin:22px 0 5px}.firma .f{font-size:9px;color:var(--mute)}"
       "@media print{html,body{background:#fff}.ph{display:none}.wrap{display:block;padding:0;gap:0}.accent{height:3px}"
@@ -10676,6 +10680,7 @@ def _rotulo_recep_css(lw, lh):
       ".top{padding:6px 12px 2px}.mark{width:40px;height:40px}.co{font-size:9.5pt}.ctrl{font-size:5.5pt;padding:4px 6px;line-height:1.35}"
       ".title{padding:0 12px 3px}.title h1{font-size:9.5pt}.title .k{font-size:7pt}.lote{margin:0 12px 4px;padding:4px}.lote .ll{font-size:7pt}.lote .lv{font-size:12pt}"
       ".qc{padding:3px 12px;font-size:7.5pt;gap:9px}.firma{padding:4px 10px 5px}.firma .l{font-size:7.5pt}.firma .sig{margin:9px 0 3px}.firma .f{font-size:7pt}"
+      ".qcbox{padding:3px 12px}.qcl{font-size:6.5pt;margin-bottom:2px}.qcarea{height:18mm;border-color:#999}.obs{height:9mm}"
       "@page{size:" + str(lw) + "mm " + str(lh) + "mm;margin:1.5mm}}"
       "</style>")
 
@@ -10718,7 +10723,8 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
     ni=mp[0] if mp else ''; nc=mp[1] if mp else codigo; tp=mp[2] if mp else ''
     pv=(mp[3] if mp and mp[3] else '') or (mov[3] if mov and len(mov)>3 and mov[3] else '')
     fv=str(mov[0])[:10] if (mov and mov[0]) else (str(_fvx[0])[:10] if (_fvx and _fvx[0]) else '')
-    ub=((mov[1] or '')+(mov[2] or '')) if mov else ''
+    _est=(mov[1] if (mov and len(mov)>1 and mov[1]) else '') or ''
+    _pos=(mov[2] if (mov and len(mov)>2 and mov[2]) else '') or ''
     nr="REC-"+date.today().strftime('%Y%m%d')+"-"+codigo[-3:]; bv=codigo+'|'+lote
     import html as _hh
     def _e(x): return _hh.escape(str(x if x is not None else ''))
@@ -10728,6 +10734,8 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
         _lw, _lh = 100, 100
     _lw = max(50, min(_lw, 210)); _lh = max(30, min(_lh, 297))
     _logo = _rotulo_logo_src(c)
+    _uparts = [p for p in [('Est. ' + _e(_est)) if _est else '', ('Pos. ' + _e(_pos)) if _pos else ''] if p]
+    ubic_disp = ' &middot; '.join(_uparts) if _uparts else '&mdash;'
     h=('<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Rotulo Recepcion MP</title>'
        '<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>'
        + _rotulo_recep_css(_lw, _lh) + '</head><body>'
@@ -10742,15 +10750,16 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
        '<tr><td class="k">Codigo MP</td><td class="num"><b>'+_e(codigo)+'</b></td></tr>'
        '<tr><td class="k">Nombre comercial</td><td><b>'+_e(nc)+'</b></td></tr>'
        '<tr><td class="k">Nombre INCI</td><td>'+(_e(ni) or '&mdash;')+'</td></tr>'
-       '<tr><td class="k">Tipo / funcion</td><td>'+(_e(tp) or '&mdash;')+'</td></tr>'
+       '<tr><td class="k">Tipo de insumo</td><td><b>Materia prima</b>'+(' &middot; '+_e(tp) if tp else '')+'</td></tr>'
        '<tr><td class="k">Proveedor</td><td>'+(_e(pv) or '&mdash;')+'</td></tr>'
        '<tr><td class="k">Cantidad recibida</td><td class="cant">'+f"{cantidad:,.0f} g"+'</td></tr>'
        '<tr><td class="k">Fecha recepcion</td><td>'+_e(hoy)+'</td><td class="k">Vencimiento</td><td class="venc">'+(_e(fv) or '&mdash;')+'</td></tr>'
-       '<tr><td class="k">Ubicacion</td><td>'+('Est. '+_e(ub) if ub else '&mdash;')+'</td><td class="k">Fecha analisis</td><td class="fill"></td></tr>'
+       '<tr><td class="k">Ubicacion</td><td>'+ubic_disp+'</td><td class="k">Fecha analisis</td><td class="fill"></td></tr>'
+       '<tr><td class="k">Observaciones</td><td colspan="3" class="fill obs"></td></tr>'
        '</table>'
-       '<div class="qc"><b>Estado de calidad:</b> <span>&#9744; Aprobado</span><span>&#9744; Cuarentena</span><span>&#9744; Rechazado</span></div>'
-       '<div class="firmas"><div class="firma"><div class="l">Recibido por</div><div class="sig"></div><div class="f">Firma / fecha</div></div>'
-       '<div class="firma"><div class="l">Analizado / Aprobado por</div><div class="sig"></div><div class="f">Firma / fecha</div></div></div>'
+       '<div class="qcbox"><div class="qcl">Estado de calidad <span>&middot; colocar sticker (cuarentena / aprobado / rechazado)</span></div><div class="qcarea"></div></div>'
+       '<div class="firmas"><div class="firma"><div class="l">Realizado por</div><div class="sig"></div><div class="f">Firma / fecha</div></div>'
+       '<div class="firma"><div class="l">Revisado por</div><div class="sig"></div><div class="f">Firma / fecha</div></div></div>'
        '</div></div>'
        '<script>window.onload=function(){try{JsBarcode("#bc",'+json.dumps(bv)+',{format:"CODE128",width:1.4,height:30,displayValue:false,margin:0});}catch(e){}};</script>'
        '</body></html>')
