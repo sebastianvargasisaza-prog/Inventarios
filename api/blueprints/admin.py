@@ -7755,6 +7755,186 @@ def admin_gloss_tonos_aplicar():
     return jsonify({"ok": True, "creados": n})
 
 
+@bp.route("/api/admin/impresos-preview", methods=["GET"])
+def admin_impresos_preview():
+    """Sebastián 12-jul · envases IMPRESOS (ya marcados · sobrantes de marcación) → anclar cada uno a su producto
+    + volumen parseando la descripción ('Con Tampografia · Vitamina C+ 30ml'). Vista previa · no escribe."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    import unicodedata as _ud
+    import re as _re
+
+    def _nz(s):
+        n = _ud.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode().upper()
+        return _re.sub(r"[^A-Z0-9]+", " ", n).strip()
+    NOISE = {"CON", "TAMPOGRAFIA", "SERIGRAFIA", "IMPRESO", "IMPRESA", "ML", "DE", "EL", "LA", "FRASCO",
+             "ENVASE", "CONLOTE", "LOTE", "KELLY", "GUERRA", "FACIAL", "CORPORAL", "CREMA", "SUERO", "NUEVA"}
+
+    def toks(s):
+        return [t for t in _nz(s).split() if t not in NOISE and not t.isdigit() and len(t) > 2]
+    conn = db_connect()
+    c = conn.cursor()
+    prods = []
+    for (pn,) in c.execute("SELECT producto_nombre FROM formula_headers WHERE COALESCE(activo,1)=1 "
+                           "AND COALESCE(lote_size_kg,0)>0").fetchall():
+        prods.append({"nombre": pn, "toks": set(toks(pn))})
+    try:
+        from blueprints.programacion import _get_mee_stock as _gms
+        stockmap = _gms(conn) or {}
+    except Exception:
+        stockmap = {}
+    pares, sin_match = [], []
+    for (cod, desc, mlcol) in c.execute(
+            "SELECT codigo, COALESCE(descripcion,''), COALESCE(volumen_ml,0) FROM maestro_mee "
+            "WHERE (UPPER(COALESCE(categoria,''))='IMPRESO' OR codigo LIKE 'MEE-IMP-%') "
+            "AND COALESCE(estado,'Activo')='Activo' ORDER BY codigo").fetchall():
+        prod_str = desc.split("·")[-1] if "·" in desc else desc  # después del '·'
+        m = _re.search(r'(\d+(?:[.,]\d+)?)\s*ml', prod_str, _re.I)
+        vol = float(m.group(1).replace(",", ".")) if m else (float(mlcol) if mlcol else 0)
+        bw = set(toks(prod_str))
+        best = None
+        for p in prods:
+            common = bw & p["toks"]
+            if common and (not best or len(common) > best[0]):
+                best = (len(common), p["nombre"], common)
+        stock = float(stockmap.get(str(cod).strip().upper(), 0) or 0)
+        row = {"impreso": cod, "impreso_desc": desc, "volumen_ml": vol, "stock": round(stock, 1)}
+        if best and vol > 0:
+            row["producto"] = best[1]
+            row["match"] = " ".join(sorted(best[2]))
+            pares.append(row)
+        else:
+            row["motivo"] = "sin producto" if not best else "sin ml"
+            sin_match.append(row)
+    return jsonify({"pares": pares, "sin_match": sin_match, "n": len(pares) + len(sin_match),
+                    "n_pares": len(pares), "n_sin": len(sin_match)})
+
+
+@bp.route("/api/admin/impresos-aplicar", methods=["POST"])
+def admin_impresos_aplicar():
+    """Ancla los impresos confirmados: cada uno queda como el ENVASE del producto en su volumen (producto_
+    presentaciones) → el abastecimiento cuenta su stock (el sobrante) y avisa cuando hay que reponer."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.json or {}
+    pares = d.get("pares") or []
+    conn = db_connect()
+    c = conn.cursor()
+    n = 0
+    for p in pares:
+        prod = (p.get("producto") or "").strip()
+        env = (p.get("impreso") or "").strip()
+        try:
+            vol = float(p.get("volumen_ml") or 0)
+        except (TypeError, ValueError):
+            vol = 0
+        if not prod or not env or vol <= 0:
+            continue
+        if not c.execute("SELECT codigo FROM maestro_mee WHERE codigo=?", (env,)).fetchone():
+            continue
+        _vstr = str(int(vol)) if float(vol).is_integer() else str(vol)
+        vcode = "V" + _vstr
+        # reemplaza el envase de esa presentación (evita doble conteo · igual que mapear-envase)
+        c.execute("DELETE FROM producto_presentaciones WHERE producto_nombre=? AND presentacion_codigo=?", (prod, vcode))
+        c.execute("DELETE FROM producto_presentaciones WHERE producto_nombre=? AND "
+                  "(presentacion_codigo='PPAL' OR presentacion_codigo LIKE 'AUTO-%') AND COALESCE(volumen_ml,0)=?",
+                  (prod, vol))
+        c.execute("INSERT INTO producto_presentaciones "
+                  "(producto_nombre, presentacion_codigo, etiqueta, volumen_ml, envase_codigo, es_default, activo) "
+                  "VALUES (?, ?, ?, ?, ?, 1, 1)", (prod, vcode, _vstr + "ml (impreso)", vol, env))
+        n += 1
+    try:
+        audit_log(None, u, "ANCLAR_IMPRESOS", "producto_presentaciones", "impresos", f"{n} anclados")
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({"ok": True, "anclados": n})
+
+
+@bp.route("/admin/impresos-anclar", methods=["GET"])
+def admin_impresos_anclar_pagina():
+    """Tool: anclar los envases IMPRESOS (sobrantes de marcación) a su producto (Sebastián 12-jul)."""
+    u, err, code = _require_admin()
+    if err:
+        return ("<html><body style='font-family:system-ui;padding:48px'><h2>Solo admin</h2>"
+                "<a href='/login'>Ir a login</a></body></html>"), code
+    return _IMPRESOS_ANCLAR_HTML
+
+
+_IMPRESOS_ANCLAR_HTML = r"""<!DOCTYPE html><html lang="es"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Anclar envases impresos</title>
+<style>
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#f8fafc;color:#1e293b}
+.wrap{max-width:1000px;margin:0 auto;padding:24px}
+h1{font-size:22px;margin:0 0 4px}.sub{color:#64748b;font-size:14px;margin:0 0 16px}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;margin-bottom:18px}
+th,td{padding:8px 10px;text-align:left;font-size:13px;border-bottom:1px solid #f1f5f9}
+th{background:#f1f5f9;font-weight:700;font-size:12px}
+.prod{font-weight:700;color:#7c3aed}
+button{padding:9px 18px;border:none;border-radius:8px;background:#16a34a;color:#fff;cursor:pointer;font-size:14px;font-weight:700}
+.warn{background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px;font-size:13px;color:#9a3412;margin-bottom:16px}
+.muted{color:#94a3b8;font-size:12px}
+input.pe{padding:5px 7px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;width:170px}
+</style></head><body><div class="wrap">
+<h1>&#128424; Anclar envases impresos a su producto</h1>
+<p class="sub">Los envases ya marcados (impresos) son los <b>sobrantes</b> anclados a cada producto. Al anclarlos, el plan <b>cuenta su saldo</b> como disponible y avisa cuando hay que reponer. Revis&aacute; los pares (correg&iacute; el producto si hace falta) y aplic&aacute;.</p>
+<div id="info" class="muted">Cargando...</div>
+<div id="cont"></div>
+<button id="btn" onclick="aplicar()" style="display:none;margin-top:8px">&#10003; Anclar seleccionados</button>
+<div id="msg" style="margin-top:12px;font-weight:600"></div>
+</div>
+<script>
+var PARES=[];
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+async function csrf(){var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();return t.csrf_token;}
+async function cargar(){
+  try{
+    var d=await (await fetch('/api/admin/impresos-preview',{cache:'no-store'})).json();
+    PARES=d.pares||[];
+    document.getElementById('info').innerHTML='Impresos: <b>'+d.n+'</b> &middot; emparejados: <b>'+d.n_pares+'</b> &middot; sin match: <b>'+d.n_sin+'</b>';
+    var h='';
+    if(!PARES.length){ h+='<div class="warn">No se emparejaron impresos autom&aacute;ticamente. Revis&aacute; que la descripci&oacute;n traiga el producto (ej. "Con Tampografia &middot; Vitamina C+ 30ml").</div>'; }
+    else{
+      h+='<table><thead><tr><th><input type="checkbox" id="all" checked onchange="toggleAll()"></th><th>Impreso</th><th>Producto (editable)</th><th>ml</th><th>Saldo</th></tr></thead><tbody>';
+      PARES.forEach(function(p,i){
+        h+='<tr><td><input type="checkbox" class="c" id="c'+i+'" checked></td>'+
+           '<td><b>'+esc(p.impreso)+'</b><br><span class="muted">'+esc(p.impreso_desc)+'</span></td>'+
+           '<td><input class="pe" id="p'+i+'" value="'+esc(p.producto)+'"></td>'+
+           '<td>'+esc(String(p.volumen_ml))+'ml</td>'+
+           '<td><b>'+esc(String(p.stock))+'</b></td></tr>';
+      });
+      h+='</tbody></table>';
+      document.getElementById('btn').style.display='inline-block';
+    }
+    if((d.sin_match||[]).length){
+      h+='<div class="warn"><b>Sin match ('+d.sin_match.length+'):</b><br>'+
+         d.sin_match.map(function(f){return esc(f.impreso)+' &middot; '+esc(f.impreso_desc)+' ('+esc(f.motivo||'')+')';}).join('<br>')+
+         '<br><span class="muted">Estos hay que anclarlos a mano o ajustar la descripci&oacute;n.</span></div>';
+    }
+    document.getElementById('cont').innerHTML=h;
+  }catch(e){ document.getElementById('info').innerHTML='<span style="color:#dc2626">Error: '+e+'</span>'; }
+}
+function toggleAll(){var on=document.getElementById('all').checked;document.querySelectorAll('.c').forEach(function(x){x.checked=on;});}
+async function aplicar(){
+  var sel=[];
+  PARES.forEach(function(p,i){ if(document.getElementById('c'+i).checked){ sel.push({impreso:p.impreso, producto:(document.getElementById('p'+i).value||'').trim(), volumen_ml:p.volumen_ml}); } });
+  if(!sel.length){ alert('Selecciona al menos uno'); return; }
+  var b=document.getElementById('btn'); b.disabled=true; b.textContent='Anclando...';
+  try{
+    var r=await fetch('/api/admin/impresos-aplicar',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({pares:sel})});
+    var d=await r.json();
+    b.disabled=false; b.textContent='✓ Anclar seleccionados';
+    if(!r.ok){ document.getElementById('msg').innerHTML='<span style="color:#dc2626">'+esc((d&&d.error)||('Error '+r.status))+'</span>'; return; }
+    document.getElementById('msg').innerHTML='<span style="color:#16a34a">✓ '+d.anclados+' impresos anclados. El abastecimiento ya cuenta su saldo.</span>';
+  }catch(e){ b.disabled=false; document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error: '+esc(String(e))+'</span>'; }
+}
+cargar();
+</script></body></html>"""
+
+
 @bp.route("/admin/mapeo-tonos", methods=["GET"])
 def admin_mapeo_tonos_pagina():
     """Vista previa + aplicar del auto-mapeo de tonos gloss (Sebastián 28-jun)."""
@@ -7965,7 +8145,7 @@ button.ok{background:#16a34a}
 .search{margin-bottom:12px;padding:8px 12px;width:280px;border:1px solid #cbd5e1;border-radius:8px}
 </style></head><body><div class="wrap">
 <h1>&#128230; Mapear producto &rarr; envase</h1>
-<p class="sub">El plan JALA envases desde aqui. Asigna el frasco y los ml de cada producto. Los <b>faltantes</b> (sin envase) salen arriba en naranja. &middot; <a href="/admin/envases-ml" style="color:#7c3aed;font-weight:700">&#128231; Ponerle ml a los envases</a> (para distinguir los frascos del mismo nombre).</p>
+<p class="sub">El plan JALA envases desde aqui. Asigna el frasco y los ml de cada producto. Los <b>faltantes</b> (sin envase) salen arriba en naranja. &middot; <a href="/admin/envases-ml" style="color:#7c3aed;font-weight:700">&#128231; Ponerle ml a los envases</a> (para distinguir los frascos del mismo nombre) &middot; <a href="/admin/impresos-anclar" style="color:#7c3aed;font-weight:700">&#128424; Anclar envases impresos</a> (los ya marcados · sobrantes).</p>
 <div class="kpis">
   <div class="kpi" style="border-color:#fdba74"><b id="k-falta">&mdash;</b>sin envase</div>
   <div class="kpi" style="border-color:#86efac"><b id="k-ok">&mdash;</b>con envase</div>

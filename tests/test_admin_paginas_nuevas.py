@@ -502,3 +502,43 @@ def test_envase_crear_con_codigo_dado(admin_client):
     r2 = admin_client.post("/api/admin/envase-crear",
                            json={"codigo": "MEE-ENV-777", "descripcion": "OTRO", "categoria": "Frasco"})
     assert r2.status_code == 409, r2.data
+
+
+def test_impresos_anclar_flujo(admin_client):
+    """Sebastián 12-jul · envases IMPRESOS (sobrantes) → auto-anclar a su producto parseando la descripción
+    ('Con Tampografia · Vitamina C+ 30ml') → queda como envase del producto en producto_presentaciones (el
+    abastecimiento cuenta su saldo)."""
+    import os
+    import sqlite3
+    db = sqlite3.connect(os.environ["DB_PATH"], timeout=10)
+    prod, imp = "ZZXIMPRESO UNICO QA", "MEE-IMP-QA1"
+    db.execute("DELETE FROM formula_headers WHERE producto_nombre=?", (prod,))
+    db.execute("DELETE FROM producto_presentaciones WHERE producto_nombre=?", (prod,))
+    db.execute("DELETE FROM maestro_mee WHERE codigo=?", (imp,))
+    db.execute("DELETE FROM movimientos_mee WHERE mee_codigo=?", (imp,))
+    db.execute("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo) VALUES (?, 10, 1)", (prod,))
+    db.execute("INSERT INTO maestro_mee (codigo, descripcion, categoria, volumen_ml, estado, fecha_creacion) "
+               "VALUES (?, 'Con Tampografia · ZZXIMPRESO UNICO QA 30ml', 'IMPRESO', 0, 'Activo', '2026-07-12')", (imp,))
+    db.execute("INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, unidad, lote_ref, responsable, observaciones, estado) "
+               "VALUES (?, 'Entrada', 250, 'und', 'SALDO', 'qa', 'saldo', 'VIGENTE')", (imp,))
+    db.commit(); db.close()
+
+    r = admin_client.get("/admin/impresos-anclar")
+    assert r.status_code == 200 and b"impresos" in r.data, r.status_code
+
+    pv = admin_client.get("/api/admin/impresos-preview").get_json()
+    par = next((p for p in pv["pares"] if p["impreso"] == imp), None)
+    assert par is not None, ("debería emparejar el impreso", pv)
+    assert par["producto"] == prod and par["volumen_ml"] == 30, par
+    assert abs(par["stock"] - 250) < 1, ("cuenta el saldo del impreso", par)
+
+    ap = admin_client.post("/api/admin/impresos-aplicar",
+                           json={"pares": [{"impreso": imp, "producto": prod, "volumen_ml": 30}]})
+    assert ap.status_code == 200 and ap.get_json()["anclados"] == 1, ap.data
+
+    # quedó como envase del producto (producto_presentaciones)
+    db = sqlite3.connect(os.environ["DB_PATH"], timeout=10)
+    row = db.execute("SELECT envase_codigo, volumen_ml FROM producto_presentaciones "
+                     "WHERE producto_nombre=? AND COALESCE(volumen_ml,0)=30", (prod,)).fetchone()
+    db.close()
+    assert row is not None and row[0] == imp, ("el impreso quedó anclado como envase del producto", row)
