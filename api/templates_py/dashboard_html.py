@@ -111,10 +111,13 @@ body { font-family:var(--cx-font); background:var(--cx-bg); color:var(--cx-text)
 }
 .header { background:#6d28d9; color:white; padding:25px; text-align:center; }
 .header h1 { font-size:1.8em; margin-bottom:6px; }
-.tabs { display:flex; background:#f5f5f5; border-bottom:2px solid #ddd; overflow-x:auto; }
-.tab-button { flex:1; padding:13px 12px; background:none; border:none; cursor:pointer; font-size:0.9em; font-weight:600; color:var(--cx-text-mute); white-space:nowrap; min-width:90px; transition:color var(--cx-tr-base), background var(--cx-tr-base); }
-.tab-button:hover { background:white; color:#6d28d9; }
-.tab-button.active { background:white; color:#6d28d9; border-bottom:3px solid #6d28d9; }
+.tabs { display:flex; background:#fff; border-bottom:1px solid #ececf1; overflow-x:auto; }
+.tab-button { flex:1; display:inline-flex; align-items:center; justify-content:center; gap:7px; padding:14px 12px; background:none; border:none; border-bottom:3px solid transparent; cursor:pointer; font-size:0.9em; font-weight:600; color:var(--cx-text-mute); white-space:nowrap; min-width:90px; letter-spacing:-.1px; transition:color var(--cx-tr-base), background var(--cx-tr-base), border-color var(--cx-tr-base); }
+.tab-button svg { width:17px; height:17px; opacity:.75; transition:opacity var(--cx-tr-base); }
+.tab-button:hover { background:#faf9fc; color:#6d28d9; }
+.tab-button:hover svg { opacity:1; }
+.tab-button.active { color:#6d28d9; font-weight:700; border-bottom-color:#6d28d9; background:linear-gradient(180deg,#faf7ff,#fff 65%); }
+.tab-button.active svg { opacity:1; }
 .tab-content { display:none; padding:25px; }
 .tab-content.active { display:block; }
 .sub-tab-bar { display:none; background:#f5f3ff; border-bottom:2px solid #6d28d9; padding:5px 10px; gap:5px; flex-wrap:wrap; }
@@ -505,10 +508,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   <header class="cx-mod-header cx-fade-in">
     <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:#6d28d9;"><svg viewBox="0 0 32 32" width="38" height="38" fill="none" stroke="#6d28d9" xmlns="http://www.w3.org/2000/svg"><circle cx="16" cy="12" r="3" fill="#6d28d9"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/></svg></span>
     <div>
-      <div class="cx-mod-header__title">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#6d28d9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M21 7.5l-9-5-9 5 9 5z"/><path d="M3 7.5v9l9 5 9-5v-9M12 12.5v9"/></svg>
-        Planta
-      </div>
+      <div class="cx-mod-header__title">Planta</div>
       <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; Espagiria Laboratorios &middot; stock, lotes &amp; trazabilidad</div>
     </div>
     <div class="cx-mod-header__nav">
@@ -523,12 +523,12 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   <!-- Sebastián 30-abr-2026: orden lógico → primero Programación, después Producción.
        "Después de programar sigue producción". -->
   <div class="tabs">
-    <button class="tab-button active" onclick="switchTab('dashboard',this)">&#128202; Dashboard</button>
-    <button class="tab-button" onclick="switchGroup('bar-bodegaMP','stock',this)">&#128230; Bodega MP</button>
-    <button class="tab-button" onclick="switchTab('empaque',this)">&#129492; Bodega MEE</button>
-    <button class="tab-button" onclick="switchTab('programacion',this)">&#128225; Programación</button>
-    <button class="tab-button" onclick="switchGroup('bar-prodHub','formulas',this)">&#127981; Producción</button>
-    <button class="tab-button" onclick="switchGroup('bar-calidadHub','cuarentena',this)">&#128274; Calidad</button>
+    <button class="tab-button active" onclick="switchTab('dashboard',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Dashboard</button>
+    <button class="tab-button" onclick="switchGroup('bar-bodegaMP','stock',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/></svg>Bodega MP</button>
+    <button class="tab-button" onclick="switchTab('empaque',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3h4v3l1.4 2.2A3 3 0 0 1 16 10v9a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-9a3 3 0 0 1 .6-1.8L10 6z"/><path d="M8.6 13h6.8"/></svg>Bodega MEE</button>
+    <button class="tab-button" onclick="switchTab('programacion',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16.5" rx="2"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/></svg>Programación</button>
+    <button class="tab-button" onclick="switchGroup('bar-prodHub','formulas',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V9l6 4V9l6 4V6l6 3v12z"/><path d="M2.5 21h19"/></svg>Producción</button>
+    <button class="tab-button" onclick="switchGroup('bar-calidadHub','cuarentena',this)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6z"/><path d="M9 12l2 2 4-4.5"/></svg>Calidad</button>
   </div>
   <div id="bar-bodegaMP" class="sub-tab-bar">
     <button class="sub-btn active" onclick="subSwitchTab('stock',this,'bar-bodegaMP')">&#128230; Inventario MP</button>
@@ -558,21 +558,10 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       #dashboard .card h3{font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin:0 0 4px}
       #dashboard .card p{font-weight:800;line-height:1;margin:2px 0 5px;font-variant-numeric:tabular-nums}
     </style>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
-      <div>
-        <h2 style="margin:0;">Dashboard Ejecutivo</h2>
-        <!-- Dashboard PRO · timestamp última actualización + auto-refresh status -->
-        <div id="dash-last-update" style="font-size:11px;color:#94a3b8;margin-top:2px;">Cargando…</div>
-      </div>
-      <div style="display:flex;gap:6px;align-items:center;">
-        <!-- Dashboard PRO · acciones rápidas (Nivel 2) -->
-        <button onclick="switchGroup('bar-bodegaMP','ingreso',null);" style="padding:6px 12px;font-size:0.85em;background:#1e40af;color:#fff;" title="Crear nueva recepción de MP">📥 Recepción</button>
-        <button onclick="switchGroup('bar-bodegaMP','alertas',null);" style="padding:6px 12px;font-size:0.85em;background:#dc2626;color:#fff;" title="Ver alertas críticas">🚨 Alertas</button>
-        <label style="font-size:11px;color:#64748b;display:flex;align-items:center;gap:4px;cursor:pointer;margin:0 6px;">
-          <input type="checkbox" id="dash-autorefresh" checked> auto 60s
-        </label>
-        <button onclick="loadDashboardCompleto();" style="padding:7px 16px;font-size:0.88em;">&#8635; Actualizar</button>
-      </div>
+    <div style="margin-bottom:20px;">
+      <h2 style="margin:0;">Dashboard Ejecutivo</h2>
+      <!-- Dashboard PRO · timestamp última actualización (auto-refresh silencioso cada 60s) -->
+      <div id="dash-last-update" style="font-size:11px;color:#94a3b8;margin-top:3px;">Cargando…</div>
     </div>
 
     <!-- ═══ ZONA AHORA — qué requiere acción hoy ═══ -->
@@ -615,12 +604,6 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <div class="card"><h3>Producciones (histórico)</h3><p id="producciones-count" style="font-size:1.4em;">-</p><div style="font-size:10px;color:#78716c;">producciones realizadas total</div></div>
     </div>
 
-    <!-- Alertas criticas rápidas -->
-    <div id="dash-alertas-rapidas" style="display:none;background:#ffebeb;border:1px solid #cc0000;border-radius:8px;padding:12px;margin-bottom:20px;">
-      <h4 style="color:#cc0000;margin-bottom:8px;">&#128308; MPs criticas — bajo stock minimo ahora</h4>
-      <div id="dash-alertas-lista" style="font-size:0.88em;"></div>
-    </div>
-
     <!-- Dashboard PRO #2 · Bloque "Planta AHORA" · 20-may-2026 -->
     <div style="display:flex;align-items:center;gap:8px;margin:18px 0 10px 0;font-size:11px;font-weight:700;color:#7c3aed;text-transform:uppercase;letter-spacing:1px;">
       <span style="width:8px;height:8px;background:#7c3aed;border-radius:50%;display:inline-block;"></span>
@@ -652,42 +635,28 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       </div>
     </div>
 
-    <!-- Dashboard PRO #2 · Banner Alertas IA del Plan · 20-may-2026 -->
-    <div id="dash-alertas-ia" style="display:none;margin-bottom:18px"></div>
-
     <!-- Dashboard PRO #2 · Bloque "Este mes" · 20-may-2026 -->
     <div style="display:flex;align-items:center;gap:8px;margin:18px 0 10px 0;font-size:11px;font-weight:700;color:#16a34a;text-transform:uppercase;letter-spacing:1px;">
       <span style="width:8px;height:8px;background:#16a34a;border-radius:50%;display:inline-block;"></span>
       📈 Este mes &middot; progreso
       <span style="flex:1;height:1px;background:#bbf7d0;"></span>
     </div>
-    <div id="dash-mes-actual" style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 18px;margin-bottom:20px;display:none">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+    <div id="dash-mes-actual" style="background:linear-gradient(135deg,#f0fdf4 0%,#fff 55%);border:1px solid #dcfce7;border-radius:16px;padding:20px 24px;margin-bottom:22px;display:none;box-shadow:0 1px 3px rgba(0,0,0,.04),0 10px 26px rgba(22,163,74,.05)">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px;margin-bottom:14px">
         <div>
-          <span id="mes-mes-label" style="font-size:13px;font-weight:700;color:#0f172a">-</span>
-          <span style="font-size:11px;color:#64748b">·</span>
-          <span id="mes-resumen" style="font-size:11px;color:#475569">- de - producciones · - kg</span>
+          <div id="mes-mes-label" style="font-size:17px;font-weight:800;color:#0f172a;letter-spacing:-.4px;line-height:1.1">-</div>
+          <div id="mes-resumen" style="font-size:12px;color:#64748b;margin-top:3px">- de - producciones · - kg</div>
         </div>
-        <span id="mes-pct" style="font-size:14px;font-weight:800;color:#16a34a">-%</span>
+        <div style="text-align:right;line-height:1">
+          <div id="mes-pct" style="font-size:32px;font-weight:800;color:#16a34a;font-variant-numeric:tabular-nums">-%</div>
+          <div style="font-size:9.5px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-top:3px">completado</div>
+        </div>
       </div>
-      <div style="background:#f1f5f9;border-radius:10px;height:14px;overflow:hidden">
-        <div id="mes-bar" style="background:linear-gradient(90deg,#16a34a,#22c55e);height:100%;width:0%;transition:width .4s ease"></div>
+      <div style="background:#e5e7eb;border-radius:999px;height:12px;overflow:hidden">
+        <div id="mes-bar" style="background:linear-gradient(90deg,#16a34a,#4ade80);height:100%;width:0%;border-radius:999px;box-shadow:0 1px 4px rgba(22,163,74,.35);transition:width .5s cubic-bezier(.4,0,.2,1)"></div>
       </div>
     </div>
 
-    <!-- Gráficas -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
-      <div style="background:white;border:1px solid #dde;border-radius:8px;padding:16px;">
-        <h4 style="margin-bottom:12px;color:#333;">&#128308; Vencimientos próximos 6 meses</h4>
-        <canvas id="chart-vencimientos" height="180"></canvas>
-        <p id="chart-venc-empty" style="text-align:center;color:#999;font-size:0.88em;display:none;">Sin vencimientos próximos</p>
-      </div>
-      <div style="background:white;border:1px solid #dde;border-radius:8px;padding:16px;">
-        <h4 style="margin-bottom:12px;color:#333;">&#128230; Top 5 MPs por Stock</h4>
-        <canvas id="chart-top-stock" height="180"></canvas>
-        <p id="chart-stock-empty" style="text-align:center;color:#999;font-size:0.88em;display:none;">Sin datos de stock</p>
-      </div>
-    </div>
 
     <!-- Dashboard PRO · sección "Estado de lotes" eliminada · redundante
          con cards "Lotes vencidos" (AHORA) + "Vencimientos <30d" (CERCA).
@@ -4704,7 +4673,7 @@ function _renderDashInsights(d){
   if(mesBox){
     mesBox.style.display = 'block';
     var elML = document.getElementById('mes-mes-label');
-    if(elML) elML.textContent = '📊 ' + (m.mes||'');
+    if(elML) elML.textContent = (m.mes||'');
     var elMR = document.getElementById('mes-resumen');
     if(elMR) elMR.textContent =
       (m.producciones_completadas||0) + ' de ' + (m.producciones_programadas||0) +
@@ -4763,7 +4732,7 @@ function _dashStartAutoRefresh(){
   if(_DASH_TIMER) clearInterval(_DASH_TIMER);
   _DASH_TIMER=setInterval(function(){
     var chk=document.getElementById('dash-autorefresh');
-    if(!chk||!chk.checked) return;
+    if(chk && !chk.checked) return;  // sin checkbox → auto-refresh siempre ON
     if(typeof document!=='undefined' && document.visibilityState==='hidden') return;
     var dashTab=document.getElementById('dashboard');
     if(!dashTab||dashTab.style.display==='none') return;
@@ -4791,10 +4760,9 @@ async function loadDashboardCompleto(silent){
       fetch('/api/dashboard-stats').then(function(r){return r.ok?r.json():null;}).catch(function(){errores.push('dashboard-stats');return null;}),
       loadDashboard(silent),  // KPIs principales · /api/inventario + alertas
       fetch('/api/dashboard/insights').then(function(r){return r.ok?r.json():null;}).catch(function(){errores.push('insights');return null;}),
-      // PERF 9-jul (speed-audit #2): alertas-ia corre el motor COMPLETO de Necesidades · en el
-      // refresh silencioso (timer 60s / visibilitychange) NO lo recomputamos (mantiene el banner
-      // anterior). Solo en carga/refresh explícito. El backend además cachea la respuesta (TTL).
-      silent ? Promise.resolve(null) : fetch('/api/plan/alertas-ia').then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),
+      // Banner "Alertas IA del Plan" retirado del Dashboard (Sebastián 12-jul · declutter).
+      // Ya NO llamamos /api/plan/alertas-ia (corría el motor COMPLETO de Necesidades) → dashboard más liviano.
+      Promise.resolve(null),
     ]);
     if(insightsR) _renderDashInsights(insightsR);
     if(alertasIaR) _renderDashAlertasIa(alertasIaR);
