@@ -2092,8 +2092,8 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           <button class="mee-btn mee-btn-violet" onclick="meeAgrupadoToggle()" id="mee-agrupado-btn" style="white-space:nowrap">&#128221; Agrupado</button>
         </div>
         <div class="mee-card" style="overflow-x:auto;">
-          <table class="table" id="mee-tabla-estandar"><thead><tr><th>Foto</th><th>Codigo</th><th>Descripcion</th><th>Categoria</th><th>Stock</th><th>Minimo</th><th>Estado</th><th>Proveedor</th><th>Acciones</th></tr></thead>
-          <tbody id="mee-stock-tbody"><tr><td colspan="9" style="text-align:center;color:#999;">Cargando...</td></tr></tbody></table>
+          <table class="table" id="mee-tabla-estandar"><thead><tr><th>Foto</th><th>Codigo</th><th>Descripcion</th><th>Categoria</th><th style="text-align:right">Stock</th><th style="text-align:center" title="Zona / estantería / posición en bodega">Ubicación</th><th style="text-align:right">Minimo</th><th style="text-align:center">Estado</th><th>Proveedor</th><th style="text-align:center">Acciones</th></tr></thead>
+          <tbody id="mee-stock-tbody"><tr><td colspan="10" style="text-align:center;color:#999;">Cargando...</td></tr></tbody></table>
         </div>
         <div id="mee-agrupado-wrap" style="display:none"></div>
       </div>
@@ -9685,7 +9685,7 @@ async function cargarMeeStock(){
     var cVal = document.getElementById('mee-c-valor');
     if(cVal) cVal.textContent = '$'+Math.round(valorTotal).toLocaleString('es-CO');
     if(!items.length){
-      tb.innerHTML='<tr><td colspan="9" style="text-align:center;color:#999;">Sin items activos</td></tr>'; return;
+      tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#999;">Sin items activos</td></tr>'; return;
     }
     var aC={critico:'#e74c3c',bajo:'#e67e22',advertencia:'#f39c12',ok:'#27ae60',sin_minimo:'#95a5a6'};
     var aL={critico:'&#9940; Critico',bajo:'&#9888; Bajo',advertencia:'&#128993; Alerta',ok:'&#10003; OK',sin_minimo:'—'};
@@ -9696,29 +9696,31 @@ async function cargarMeeStock(){
     var h=''; var _lastCat=null;
     items.forEach(function(m){
       var _cat=m.categoria||'Otros';
-      if(_cat!==_lastCat){ _lastCat=_cat; h+='<tr style="background:#ede9fe"><td colspan="9" style="font-weight:800;color:#5b21b6;padding:8px 12px;font-size:13px">&#128230; '+_escHTML(_cat)+' <span style="color:#a78bfa;font-weight:600">('+(_catCnt[_cat]||0)+')</span></td></tr>'; }
+      if(_cat!==_lastCat){ _lastCat=_cat; h+='<tr style="background:#ede9fe"><td colspan="10" style="font-weight:800;color:#5b21b6;padding:8px 12px;font-size:13px">&#128230; '+_escHTML(_cat)+' <span style="color:#a78bfa;font-weight:600">('+(_catCnt[_cat]||0)+')</span></td></tr>'; }
       var c=aC[m.alerta]||'#95a5a6';
       var lbl=aL[m.alerta]||'';
       var ob=m.obsoleto?' <span title="Sin movimiento hace más de 90 días · inventario que no rota" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:999px;padding:1px 8px;font-size:0.7em;font-weight:700;white-space:nowrap">&#128337; sin uso 90d</span>':'';
       h+='<tr data-cod="'+_escHTML(m.codigo)+'">';
       h+='<td onclick="meeFotoUpload(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Subir/cambiar foto" style="cursor:pointer">'+(m.imagen_url?'<img src="'+_escHTML(m.imagen_url)+'" loading="lazy" style="width:72px;height:72px;object-fit:contain;border-radius:6px;border:1px solid #eee;background:#fafafa">':'<span style="display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:72px;height:72px;border:1.5px dashed #c4b5fd;border-radius:8px;color:#7c3aed;font-size:10px;font-weight:700;background:#faf5ff">&#128247;<span style="font-weight:600;margin-top:2px">subir foto</span></span>')+'</td>';
       h+='<td style="font-family:monospace;font-size:0.78em;color:#555;">'+_escHTML(m.codigo)+'</td>';
-      var _loc=[m.zona,m.estanteria,m.posicion].filter(function(x){return x&&String(x).trim();}).join('/');
-      var _locChip=_loc?' <span style="background:#ecfeff;color:#0e7490;border:1px solid #a5f3fc;border-radius:999px;padding:1px 8px;font-size:0.7em;font-weight:600;white-space:nowrap" title="Ubicación en bodega (zona/estante/posición)">&#128205; '+_escHTML(_loc)+'</span>':'';
-      var _chips=(_cliChip(m)+_locChip+ob).trim();
-      h+='<td style="font-size:0.9em;line-height:1.35;">'+'<div style="font-weight:600;color:#1e293b">'+_escHTML(m.descripcion)+'</div>'+(_chips?'<div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+_cliChip(m)+_locChip+ob+'</div>':'')+'</td>';
+      var _loc=[m.zona,m.estanteria,m.posicion].filter(function(x){return x&&String(x).trim();}).join(' · ');
+      var _chips=(_cliChip(m)+ob).trim();
+      h+='<td style="font-size:0.9em;line-height:1.35;">'+'<div style="font-weight:600;color:#1e293b">'+_escHTML(m.descripcion)+'</div>'+(_chips?'<div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+_cliChip(m)+ob+'</div>':'')+'</td>';
       h+='<td style="font-size:0.8em;color:#777;">'+_escHTML(m.categoria||'')+'</td>';
-      h+='<td style="font-weight:700;">'+m.stock_actual+' <span style="color:#999;font-size:0.8em;">'+_escHTML(m.unidad||'und')+'</span></td>';
-      h+='<td style="color:#aaa;font-size:0.88em;">'+(m.stock_minimo||'—')+'</td>';
+      h+='<td style="font-weight:700;text-align:right;">'+m.stock_actual+' <span style="color:#999;font-size:0.8em;font-weight:400">'+_escHTML(m.unidad||'und')+'</span></td>';
+      h+='<td style="text-align:center;">'+(_loc?'<span style="background:#ecfeff;color:#0e7490;border:1px solid #a5f3fc;border-radius:999px;padding:2px 9px;font-size:0.72em;font-weight:700;white-space:nowrap" title="Ubicación en bodega (zona/estante/posición)">&#128205; '+_escHTML(_loc)+'</span>':'<span style="color:#cbd5e1">&mdash;</span>')+'</td>';
+      h+='<td style="color:#94a3b8;font-size:0.88em;text-align:right;">'+(m.stock_minimo||'—')+'</td>';
       h+='<td><span style="color:'+c+';font-weight:600;font-size:0.82em;">'+lbl+'</span></td>';
       h+='<td style="font-size:0.78em;color:#666;max-width:120px;overflow:hidden;text-overflow:ellipsis">'+_escHTML(m.proveedor||'-')+'</td>';
-      h+='<td style="white-space:nowrap">';
-      h+='<button onclick="meeAjustar(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Ajustar stock, mínimo, proveedor, ubicación + rótulo" style="padding:5px 10px;border:none;background:#7c3aed;color:#fff;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;margin-right:3px">&#9878; Ajustar</button>';
-      h+='<button onclick="meeRotulo(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Imprimir rótulo del envase" style="padding:5px 9px;border:none;background:#0891b2;color:#fff;border-radius:6px;cursor:pointer;font-size:11px;margin-right:3px">&#128424;&#65039; R&oacute;tulo</button>';
-      h+='<button onclick="meeKit(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Kit: partes que van juntas (gotero/tapa/etiqueta/plegadiza)" style="padding:5px 9px;border:none;background:#db2777;color:#fff;border-radius:6px;cursor:pointer;font-size:11px;margin-right:3px">&#129513; Kit</button>';
-      h+='<button onclick="meeHistorico(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Histórico de movimientos" style="padding:5px 9px;border:none;background:#15803d;color:#fff;border-radius:6px;cursor:pointer;font-size:11px;margin-right:3px">&#128202; Hist</button>';
-      h+='<button onclick="meeArchivar(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Archivar (eliminar)" style="padding:4px 7px;border:none;background:#dc2626;color:#fff;border-radius:4px;cursor:pointer;font-size:11px">&#128465; Borrar</button>';
-      h+='</td>';
+      var _mc=_escHTML(m.codigo).replace(/"/g,'&quot;');
+      var _bs='padding:5px 10px;border-radius:7px;cursor:pointer;font-size:11px;font-weight:700;line-height:1;';
+      h+='<td><div style="display:inline-flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">';
+      h+='<button onclick="meeAjustar(&quot;'+_mc+'&quot;)" title="Ajustar stock, mínimo, proveedor, ubicación + rótulo" style="'+_bs+'background:#f5f3ff;color:#6d28d9;border:1px solid #ddd6fe">&#9878; Ajustar</button>';
+      h+='<button onclick="meeRotulo(&quot;'+_mc+'&quot;)" title="Imprimir rótulo del envase" style="'+_bs+'background:#ecfeff;color:#0e7490;border:1px solid #a5f3fc">&#128424;&#65039; R&oacute;tulo</button>';
+      h+='<button onclick="meeKit(&quot;'+_mc+'&quot;)" title="Kit: partes que van juntas (gotero/tapa/etiqueta/plegadiza)" style="'+_bs+'background:#fdf2f8;color:#be185d;border:1px solid #fbcfe8">&#129513; Kit</button>';
+      h+='<button onclick="meeHistorico(&quot;'+_mc+'&quot;)" title="Histórico de movimientos" style="'+_bs+'background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0">&#128202; Hist</button>';
+      h+='<button onclick="meeArchivar(&quot;'+_mc+'&quot;)" title="Archivar (eliminar)" style="'+_bs+'background:#fef2f2;color:#b91c1c;border:1px solid #fecaca">&#128465; Borrar</button>';
+      h+='</div></td>';
       h+='</tr>';
     });
     tb.innerHTML=h;
