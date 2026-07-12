@@ -542,3 +542,49 @@ def test_impresos_anclar_flujo(admin_client):
                      "WHERE producto_nombre=? AND COALESCE(volumen_ml,0)=30", (prod,)).fetchone()
     db.close()
     assert row is not None and row[0] == imp, ("el impreso quedó anclado como envase del producto", row)
+
+
+def test_componentes_etiqueta_plegadiza_flujo(admin_client):
+    """Sebastián 12-jul · anclar ETIQUETA (por tono · match SKU '(BB201)') + PLEGADIZA (por producto) →
+    producto_presentaciones.etiqueta_codigo / caja_codigo (el abastecimiento las emite)."""
+    import os
+    import sqlite3
+    db = sqlite3.connect(os.environ["DB_PATH"], timeout=10)
+    prod, etq, plg, sku = "BLUSHBALMQA UNICO", "MEE-ETQ-QA1", "MEE-PLG-QA1", "BBQA201"
+    for t in ("formula_headers", "producto_presentaciones"):
+        db.execute(f"DELETE FROM {t} WHERE producto_nombre=?", (prod,))
+    db.execute("DELETE FROM maestro_mee WHERE codigo IN (?,?)", (etq, plg))
+    db.execute("DELETE FROM movimientos_mee WHERE mee_codigo IN (?,?)", (etq, plg))
+    db.execute("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo) VALUES (?, 5, 1)", (prod,))
+    db.execute("INSERT INTO producto_presentaciones (producto_nombre, presentacion_codigo, etiqueta, volumen_ml, "
+               "envase_codigo, sku_shopify, es_default, activo) VALUES (?, 'TONO-BBQA201', 'malva', 6, 'FR-X', ?, 0, 1)",
+               (prod, sku))
+    for cod, cat, desc, sal in ((etq, "ETIQUETA", "BLUSHBALMQA UNICO MALVA (BBQA201)", 338),
+                                (plg, "PLEGADIZA", "BLUSHBALMQA UNICO", 732)):
+        db.execute("INSERT INTO maestro_mee (codigo, descripcion, categoria, estado, fecha_creacion) "
+                   "VALUES (?, ?, ?, 'Activo', '2026-07-12')", (cod, desc, cat))
+        db.execute("INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, unidad, lote_ref, responsable, observaciones, estado) "
+                   "VALUES (?, 'Entrada', ?, 'und', 'SALDO', 'qa', 'saldo', 'VIGENTE')", (cod, sal))
+    db.commit(); db.close()
+
+    r = admin_client.get("/admin/componentes-anclar")
+    assert r.status_code == 200 and b"etiquetas y plegadizas" in r.data, r.status_code
+
+    pv = admin_client.get("/api/admin/componentes-preview").get_json()
+    pe = next((x for x in pv["etiquetas"] if x["mee"] == etq), None)
+    pp = next((x for x in pv["plegadizas"] if x["mee"] == plg), None)
+    assert pe is not None and pe["producto"] == prod and pe["sku"] == sku, ("etiqueta match por SKU", pe, pv.get("etiquetas_sin"))
+    assert pp is not None and pp["producto"] == prod, ("plegadiza match por producto", pp)
+
+    ap = admin_client.post("/api/admin/componentes-aplicar",
+                           json={"etiquetas": [{"mee": etq, "producto": prod, "sku": sku}],
+                                 "plegadizas": [{"mee": plg, "producto": prod}]})
+    assert ap.status_code == 200, ap.data
+    d = ap.get_json()
+    assert d["etiquetas_anclas"] >= 1 and d["plegadizas_anclas"] >= 1, d
+
+    db = sqlite3.connect(os.environ["DB_PATH"], timeout=10)
+    row = db.execute("SELECT etiqueta_codigo, caja_codigo FROM producto_presentaciones "
+                     "WHERE producto_nombre=? AND UPPER(TRIM(sku_shopify))=?", (prod, sku)).fetchone()
+    db.close()
+    assert row is not None and row[0] == etq and row[1] == plg, ("etiqueta + plegadiza ancladas en la presentación", row)

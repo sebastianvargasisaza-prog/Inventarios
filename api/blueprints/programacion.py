@@ -14191,12 +14191,13 @@ def abastecimiento_consumo_horizontes():
             try:
                 _pres_rows = c.execute("""
                     SELECT producto_nombre, COALESCE(envase_codigo,''), COALESCE(ventas_mes_referencia,0),
-                           COALESCE(tapa_codigo,''), COALESCE(caja_codigo,''), COALESCE(volumen_ml,0)
+                           COALESCE(tapa_codigo,''), COALESCE(caja_codigo,''), COALESCE(volumen_ml,0),
+                           COALESCE(etiqueta_codigo,'')
                     FROM producto_presentaciones
                     WHERE COALESCE(activo,1)=1 AND COALESCE(envase_codigo,'')<>'' AND COALESCE(volumen_ml,0)>0
                 """).fetchall()
             except sqlite3.OperationalError:
-                _pres_rows = [(r[0], r[1], r[2], '', '', r[3]) for r in c.execute("""
+                _pres_rows = [(r[0], r[1], r[2], '', '', r[3], '') for r in c.execute("""
                     SELECT producto_nombre, COALESCE(envase_codigo,''), COALESCE(ventas_mes_referencia,0), COALESCE(volumen_ml,0)
                     FROM producto_presentaciones
                     WHERE COALESCE(activo,1)=1 AND COALESCE(envase_codigo,'')<>'' AND COALESCE(volumen_ml,0)>0
@@ -14206,7 +14207,8 @@ def abastecimiento_consumo_horizontes():
                 _pres_envases.setdefault(_norm_prod(r[0]), []).append({
                     'env': (r[1] or '').strip().upper(), 'vmr': float(r[2] or 0),
                     'tapa': (r[3] or '').strip().upper(), 'caja': (r[4] or '').strip().upper(),
-                    'vol': float(r[5] or 0)})
+                    'vol': float(r[5] or 0),
+                    'etq': (r[6] or '').strip().upper() if len(r) > 6 else ''})
             # KIT de partes por envase (mee_partes · Sebastián 9-jul): el frasco arrastra sus componentes
             # (gotero/etiqueta/plegadiza...) que van JUNTOS → abastecimiento los pide también (no solo el frasco).
             _kit_map_ab = {}
@@ -14237,6 +14239,8 @@ def abastecimiento_consumo_horizontes():
                         _items.append({'codigo': x['tapa'], 'cant_x_uds': _share, 'tipo': 'tapa'}); _x_seen.add(x['tapa'])
                     if x['caja'] and x['caja'] not in _x_seen:
                         _items.append({'codigo': x['caja'], 'cant_x_uds': _share, 'tipo': 'caja'}); _x_seen.add(x['caja'])
+                    if x.get('etq') and x['etq'] not in _x_seen:  # Sebastián 12-jul · etiqueta por presentación/tono
+                        _items.append({'codigo': x['etq'], 'cant_x_uds': _share, 'tipo': 'etiqueta'}); _x_seen.add(x['etq'])
                     for _pc, _pq in _kit_map_ab.get(x['env'], []):
                         if _pc and _pc not in _x_seen:
                             _items.append({'codigo': _pc, 'cant_x_uds': _share * _pq, 'tipo': 'parte'}); _x_seen.add(_pc)

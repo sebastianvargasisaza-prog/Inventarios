@@ -25746,6 +25746,9 @@ async function ckMarcar(itemId, estado){
         if (_tonos.length >= 2) {
           chipTonos = ' <span title="' + _tonos.length + ' tonos · click fila para desglose" style="background:#fdf2f8;color:#be185d;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer">🎨 ' + _tonos.length + ' tonos</span>';
         }
+        // Sebastián 12-jul · sub-líneas (pico + desglose) OCULTAS por defecto · se abren al hacer click en el
+        // producto (grilla limpia · solo el nombre). _hasDetail = hay algo que mostrar al expandir.
+        const _hasDetail = !!p.preparacion_pico || (_tonos.length >= 2);
         // ===== Sebastián 4-jul · ESTADO DE CADENA (plan 2 años) + ALERTA inteligente por producto =====
         var _hoyN = new Date().toISOString().slice(0,10);
         var _cad = (p.planificacion || []).filter(function(l){ var f = ('' + (l.fecha || '')).slice(0,10); return l.origen === 'eos_plan' && f > _hoyN && (l.estado||'') !== 'cancelado' && (l.estado||'') !== 'completado'; });
@@ -25778,9 +25781,11 @@ async function ckMarcar(itemId, estado){
           _proxTxt = '';
         }
         html += '<tr class="necx-prow" style="border-top:1px solid #e2e8f0;background:' + _rowBg + ';border-left:' + _rowBorderL + ';opacity:' + _rowOpacity + '">';
-        // Producto + urgencia
-        html += '<td style="padding:10px 8px">';
-        html += '<div style="display:flex;align-items:center;gap:6px"><span style="background:' + cfg.bg + ';color:' + cfg.text + ';padding:2px 8px;border-radius:6px;font-size:11px;font-weight:800">' + cfg.emoji + '</span>';
+        // Producto + urgencia · click en el nombre despliega las sugerencias (si hay)
+        html += '<td style="padding:10px 8px' + (_hasDetail ? ';cursor:pointer' : '') + '"' + (_hasDetail ? ' onclick="_toggleNecProd(' + idx + ')" title="Click para ver la sugerencia"' : '') + '>';
+        html += '<div style="display:flex;align-items:center;gap:6px">'
+          + (_hasDetail ? '<span class="necx-pcaret" id="necx-caret-' + idx + '" style="color:#c4b5fd;font-size:11px;transition:transform .2s ease">▸</span>' : '')
+          + '<span style="background:' + cfg.bg + ';color:' + cfg.text + ';padding:2px 8px;border-radius:6px;font-size:11px;font-weight:800">' + cfg.emoji + '</span>';
         html += '<span style="font-weight:700;color:#1e293b">' + escapeHtmlNec(p.producto_nombre) + '</span>';
         // chipPlan (📅 fecha) removido del nombre · la fecha/estado del lote ya va
         // en la columna Alcanza (uds + atrasado/tarde), evita duplicar la fecha.
@@ -25819,17 +25824,16 @@ async function ckMarcar(itemId, estado){
           } else {
             _acts = '<button onclick="abrirPlanProduccion(' + idx + ')" style="background:#f59e0b;color:#fff;border:0;border-radius:6px;padding:5px 11px;font-size:11px;font-weight:800;cursor:pointer">+ lote extra antes de ' + escapeHtmlNec(_pp.pico_mes_abr) + '</button>';
           }
-          // Sebastián 12-jul · COLAPSABLE (píldora premium · no cargar la grilla) · se abre al hacer click.
-          html += '<tr><td colspan="7" style="padding:0 14px 9px">'
-            + '<details class="necx-exp"><summary class="necx-sum" style="background:#fff7ed;border-color:#fde68a;color:#b45309">'
-            + '<span class="necx-chev">▸</span>🔥 Preparar pico ' + escapeHtmlNec(_pp.pico_mes_abr) + ' (' + _pp.pico_indice + '×)' + escapeHtmlNec(_crecTxt) + '</summary>'
-            + '<div class="necx-expbody" style="font-size:12px;color:#92400e;display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:linear-gradient(90deg,#fff7ed,#fffbeb);border:1px solid #fde68a;border-left:3px solid #f59e0b;border-radius:8px;padding:8px 11px">'
+          // Sebastián 12-jul · sub-fila OCULTA (necx-sub-idx) · se muestra al hacer click en el producto.
+          html += '<tr class="necx-sub-' + idx + '" style="display:none"><td colspan="7" style="padding:0 14px 9px">'
+            + '<div style="background:linear-gradient(90deg,#fff7ed,#fffbeb);border:1px solid #fde68a;border-left:3px solid #f59e0b;border-radius:8px;padding:8px 11px;font-size:12px;color:#92400e;display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
+            + '<span style="font-weight:800;white-space:nowrap">🔥 Preparar pico ' + escapeHtmlNec(_pp.pico_mes_abr) + ' (' + _pp.pico_indice + '×)' + escapeHtmlNec(_crecTxt) + '</span>'
             + '<span style="flex:1;min-width:180px">' + escapeHtmlNec(_pp.mensaje || '') + '</span>'
-            + _acts + '</div></details></td></tr>';
+            + _acts + '</div></td></tr>';
         }
-        // Sub-fila colapsable con desglose por tono (solo si hay ≥2 tonos)
+        // Sub-fila con desglose por tono (oculta · se muestra al click del producto · solo si hay ≥2 tonos)
         if (_tonos.length >= 2) {
-          html += '<tr><td colspan="7" style="padding:0 14px 9px">';
+          html += '<tr class="necx-sub-' + idx + '" style="display:none"><td colspan="7" style="padding:0 14px 9px">';
           html += '<details class="necx-exp"><summary class="necx-sum"><span class="necx-chev">▸</span>Desglose por referencia · ' + _tonos.length + ' tonos/tamaños</summary>';
           html += '<div class="necx-expbody">';
           html += '<table class="necx-ttbl"><thead><tr><th>Tono</th><th>SKU</th><th>ml</th><th>Vende</th><th>Stock</th><th>% mix</th><th>Uds/lote</th><th>Cobertura</th></tr></thead><tbody>';
@@ -26632,6 +26636,15 @@ async function ckMarcar(itemId, estado){
       if(!r.ok){ alert('No se pudo: ' + ((d && d.error) || r.status)); return; }
       if(window.cargarNecesidades){ try{ await cargarNecesidades(); }catch(e){} }
     }catch(e){ alert('Error: ' + e); }
+  }
+  // Sebastián 12-jul · click en el producto → muestra/oculta sus sub-líneas (pico + desglose).
+  function _toggleNecProd(idx){
+    var rows = document.querySelectorAll('.necx-sub-' + idx);
+    if(!rows.length) return;
+    var show = (rows[0].style.display === 'none');
+    for(var i=0;i<rows.length;i++){ rows[i].style.display = show ? '' : 'none'; }
+    var car = document.getElementById('necx-caret-' + idx);
+    if(car) car.style.transform = show ? 'rotate(90deg)' : '';
   }
   async function programarCadenaManual(idx){
     var p = window._NEC_PRODUCTOS_CACHE[idx]; if(!p){ alert('Producto no encontrado'); return; }

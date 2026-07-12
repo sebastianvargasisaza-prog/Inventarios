@@ -428,6 +428,9 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (346, "Envases · componente ETIQUETA por presentación (Sebastián 12-jul): producto_presentaciones gana etiqueta_codigo para que el abastecimiento pida la etiqueta (por producto/tono) junto al frasco+tapa+caja. La plegadiza reusa caja_codigo. Additiva, PG-safe.", [
+        "ALTER TABLE producto_presentaciones ADD COLUMN etiqueta_codigo TEXT",
+    ]),
     (345, "Agua infinita · el faltante contaba AGUA DESIONIZADA (Sebastián 9-jul). Los códigos de agua FANTASMA usados en fórmulas (MPAGUAL01/MPAGUALI02, sin fila en maestro → controla_stock default 1) se crean como agua controla_stock=0; + set del flag por nombre/INCI. Así ninguna vista de demanda/faltante cuenta el agua (se fabrica en casa · M16).", [
         "INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, controla_stock, activo) SELECT 'MPAGUAL01','Agua Desionizada','AQUA',0,1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MPAGUAL01')",
         "INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, controla_stock, activo) SELECT 'MPAGUALI02','Agua Desionizada','AQUA',0,1 WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MPAGUALI02')",

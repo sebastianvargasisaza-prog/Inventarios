@@ -7935,6 +7935,195 @@ cargar();
 </script></body></html>"""
 
 
+@bp.route("/api/admin/componentes-preview", methods=["GET"])
+def admin_componentes_preview():
+    """Sebastián 12-jul · ETIQUETAS (MEE-ETQ · por producto/tono) + PLEGADIZAS (MEE-PLG · por producto) →
+    anclar a su producto para que el abastecimiento las pida. Etiqueta: match por SKU '(BB201)' a la presentación
+    del tono. Plegadiza: match del producto por tokens. Vista previa · no escribe."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    import unicodedata as _ud
+    import re as _re
+
+    def _nz(s):
+        n = _ud.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode().upper()
+        return _re.sub(r"[^A-Z0-9]+", " ", n).strip()
+    NOISE = {"CON", "TAMPOGRAFIA", "SERIGRAFIA", "IMPRESO", "ETIQUETA", "PLEGADIZA", "ML", "DE", "LA", "EL"}
+
+    def toks(s):
+        return [t for t in _nz(s).split() if t not in NOISE and not t.isdigit() and len(t) > 2]
+    conn = db_connect()
+    c = conn.cursor()
+    try:
+        from blueprints.programacion import _get_mee_stock as _gms
+        stockmap = _gms(conn) or {}
+    except Exception:
+        stockmap = {}
+
+    def _stk(cod):
+        return round(float(stockmap.get(str(cod).strip().upper(), 0) or 0), 1)
+    # SKU → (producto, volumen) de las presentaciones (para las etiquetas por tono)
+    sku_pres = {}
+    for (pn, sk, vol) in c.execute("SELECT producto_nombre, COALESCE(sku_shopify,''), COALESCE(volumen_ml,0) "
+                                   "FROM producto_presentaciones WHERE COALESCE(activo,1)=1 "
+                                   "AND COALESCE(sku_shopify,'')<>''").fetchall():
+        sku_pres[str(sk).strip().upper()] = {"producto": pn, "volumen_ml": float(vol or 0)}
+    # productos activos (para las plegadizas por producto)
+    prods = []
+    for (pn,) in c.execute("SELECT producto_nombre FROM formula_headers WHERE COALESCE(activo,1)=1 "
+                           "AND COALESCE(lote_size_kg,0)>0").fetchall():
+        prods.append({"nombre": pn, "toks": set(toks(pn))})
+
+    etq, etq_sin = [], []
+    plg, plg_sin = [], []
+    for (cod, desc, cat) in c.execute(
+            "SELECT codigo, COALESCE(descripcion,''), UPPER(COALESCE(categoria,'')) FROM maestro_mee "
+            "WHERE (UPPER(COALESCE(categoria,'')) IN ('ETIQUETA','PLEGADIZA') OR codigo LIKE 'MEE-ETQ-%' "
+            "OR codigo LIKE 'MEE-PLG-%') AND COALESCE(estado,'Activo')='Activo' ORDER BY codigo").fetchall():
+        is_etq = ('ETQ' in cod.upper()) or (cat == 'ETIQUETA')
+        stock = _stk(cod)
+        if is_etq:
+            m = _re.search(r'\(([A-Za-z0-9\-]+)\)', desc)  # SKU entre paréntesis (BB201)
+            sku = (m.group(1).strip().upper() if m else '')
+            hit = sku_pres.get(sku)
+            if sku and hit:
+                etq.append({"mee": cod, "desc": desc, "sku": sku, "producto": hit["producto"],
+                            "volumen_ml": hit["volumen_ml"], "stock": stock})
+            else:
+                etq_sin.append({"mee": cod, "desc": desc, "sku": sku, "stock": stock,
+                                "motivo": "SKU no mapeado" if sku else "sin SKU"})
+        else:  # plegadiza
+            bw = set(toks(desc))
+            best = None
+            for p in prods:
+                common = bw & p["toks"]
+                if common and (not best or len(common) > best[0]):
+                    best = (len(common), p["nombre"])
+            if best:
+                plg.append({"mee": cod, "desc": desc, "producto": best[1], "stock": stock})
+            else:
+                plg_sin.append({"mee": cod, "desc": desc, "stock": stock, "motivo": "sin producto"})
+    return jsonify({"etiquetas": etq, "etiquetas_sin": etq_sin, "plegadizas": plg, "plegadizas_sin": plg_sin,
+                    "n_etq": len(etq), "n_plg": len(plg)})
+
+
+@bp.route("/api/admin/componentes-aplicar", methods=["POST"])
+def admin_componentes_aplicar():
+    """Aplica: etiqueta → producto_presentaciones.etiqueta_codigo de la presentación del SKU · plegadiza →
+    caja_codigo en TODAS las presentaciones del producto. El abastecimiento ya emite etiqueta + caja."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.json or {}
+    n_etq = n_plg = 0
+    conn = db_connect()
+    c = conn.cursor()
+    for e in (d.get("etiquetas") or []):
+        prod = (e.get("producto") or "").strip()
+        sku = (e.get("sku") or "").strip().upper()
+        mee = (e.get("mee") or "").strip()
+        if not prod or not sku or not mee:
+            continue
+        r = c.execute("UPDATE producto_presentaciones SET etiqueta_codigo=? "
+                      "WHERE producto_nombre=? AND UPPER(TRIM(COALESCE(sku_shopify,'')))=?", (mee, prod, sku))
+        n_etq += (r.rowcount or 0)
+    for p in (d.get("plegadizas") or []):
+        prod = (p.get("producto") or "").strip()
+        mee = (p.get("mee") or "").strip()
+        if not prod or not mee:
+            continue
+        r = c.execute("UPDATE producto_presentaciones SET caja_codigo=? WHERE producto_nombre=? "
+                      "AND COALESCE(activo,1)=1", (mee, prod))
+        n_plg += (r.rowcount or 0)
+    try:
+        audit_log(None, u, "ANCLAR_COMPONENTES", "producto_presentaciones", "etq+plg", f"etq={n_etq} plg={n_plg}")
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({"ok": True, "etiquetas_anclas": n_etq, "plegadizas_anclas": n_plg})
+
+
+@bp.route("/admin/componentes-anclar", methods=["GET"])
+def admin_componentes_anclar_pagina():
+    """Tool: anclar Etiquetas (por tono) + Plegadizas (por producto) · Sebastián 12-jul."""
+    u, err, code = _require_admin()
+    if err:
+        return ("<html><body style='font-family:system-ui;padding:48px'><h2>Solo admin</h2>"
+                "<a href='/login'>Ir a login</a></body></html>"), code
+    return _COMPONENTES_ANCLAR_HTML
+
+
+_COMPONENTES_ANCLAR_HTML = r"""<!DOCTYPE html><html lang="es"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Anclar etiquetas y plegadizas</title>
+<style>
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#f8fafc;color:#1e293b}
+.wrap{max-width:1000px;margin:0 auto;padding:24px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:18px 0 8px;color:#5b21b6}.sub{color:#64748b;font-size:14px;margin:0 0 12px}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;margin-bottom:10px}
+th,td{padding:8px 10px;text-align:left;font-size:13px;border-bottom:1px solid #f1f5f9}
+th{background:#f1f5f9;font-weight:700;font-size:12px}
+button{padding:9px 18px;border:none;border-radius:8px;background:#16a34a;color:#fff;cursor:pointer;font-size:14px;font-weight:700}
+.warn{background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px;font-size:13px;color:#9a3412;margin-bottom:12px}
+.muted{color:#94a3b8;font-size:12px}
+input.pe{padding:5px 7px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;width:180px}
+</style></head><body><div class="wrap">
+<h1>&#127991; Anclar etiquetas y plegadizas</h1>
+<p class="sub">Cada producto lleva su <b>etiqueta</b> (por tono) y su <b>plegadiza</b> (caja). Al anclarlas, el abastecimiento las pide junto al frasco. Revis&aacute; los pares (correg&iacute; el producto si hace falta) y aplic&aacute;.</p>
+<div id="info" class="muted">Cargando...</div>
+<div id="cont"></div>
+<button id="btn" onclick="aplicar()" style="display:none;margin-top:8px">&#10003; Anclar seleccionados</button>
+<div id="msg" style="margin-top:12px;font-weight:600"></div>
+</div>
+<script>
+var ETQ=[], PLG=[];
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+async function csrf(){var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();return t.csrf_token;}
+function tbl(rows,pref,cols){
+  var h='<table><thead><tr><th><input type="checkbox" checked onchange="var on=this.checked;document.querySelectorAll(\''+pref+'c\').forEach(function(x){x.checked=on})"></th>'+cols.map(function(c){return '<th>'+c+'</th>';}).join('')+'</tr></thead><tbody>';
+  rows.forEach(function(r,i){
+    h+='<tr><td><input type="checkbox" class="'+pref.slice(1)+'" id="'+pref.slice(1)+i+'" checked></td>'+
+       '<td><b>'+esc(r.mee)+'</b><br><span class="muted">'+esc(r.desc)+'</span></td>'+
+       '<td><input class="pe" id="'+pref.slice(1)+'p'+i+'" value="'+esc(r.producto)+'"></td>'+
+       (r.sku!==undefined?('<td>'+esc(r.sku||'—')+'</td>'):'')+
+       '<td><b>'+esc(String(r.stock))+'</b></td></tr>';
+  });
+  return h+'</tbody></table>';
+}
+async function cargar(){
+  try{
+    var d=await (await fetch('/api/admin/componentes-preview',{cache:'no-store'})).json();
+    ETQ=d.etiquetas||[]; PLG=d.plegadizas||[];
+    document.getElementById('info').innerHTML='Etiquetas: <b>'+d.n_etq+'</b> &middot; Plegadizas: <b>'+d.n_plg+'</b>';
+    var h='';
+    h+='<h2>&#127991; Etiquetas (por tono · match por SKU)</h2>';
+    h+= ETQ.length ? tbl(ETQ,'.ec',['Etiqueta','Producto (editable)','SKU','Saldo']) : '<div class="warn">No se emparejaron etiquetas (el SKU del par&eacute;ntesis no est&aacute; mapeado a un tono). Anclá primero los tonos.</div>';
+    if((d.etiquetas_sin||[]).length){ h+='<div class="warn"><b>Etiquetas sin match ('+d.etiquetas_sin.length+'):</b><br>'+d.etiquetas_sin.map(function(f){return esc(f.mee)+' &middot; '+esc(f.desc)+' ('+esc(f.motivo||'')+')';}).join('<br>')+'</div>'; }
+    h+='<h2>&#128230; Plegadizas (caja · por producto)</h2>';
+    h+= PLG.length ? tbl(PLG,'.pc',['Plegadiza','Producto (editable)','Saldo']) : '<div class="warn">No se emparejaron plegadizas.</div>';
+    if((d.plegadizas_sin||[]).length){ h+='<div class="warn"><b>Plegadizas sin match ('+d.plegadizas_sin.length+'):</b><br>'+d.plegadizas_sin.map(function(f){return esc(f.mee)+' &middot; '+esc(f.desc)+' ('+esc(f.motivo||'')+')';}).join('<br>')+'</div>'; }
+    document.getElementById('cont').innerHTML=h;
+    if(ETQ.length||PLG.length) document.getElementById('btn').style.display='inline-block';
+  }catch(e){ document.getElementById('info').innerHTML='<span style="color:#dc2626">Error: '+e+'</span>'; }
+}
+async function aplicar(){
+  var e_sel=[]; ETQ.forEach(function(r,i){ if(document.getElementById('ec'+i).checked){ e_sel.push({mee:r.mee, producto:(document.getElementById('ecp'+i).value||'').trim(), sku:r.sku}); } });
+  var p_sel=[]; PLG.forEach(function(r,i){ if(document.getElementById('pc'+i).checked){ p_sel.push({mee:r.mee, producto:(document.getElementById('pcp'+i).value||'').trim()}); } });
+  if(!e_sel.length && !p_sel.length){ alert('Selecciona al menos uno'); return; }
+  var b=document.getElementById('btn'); b.disabled=true; b.textContent='Anclando...';
+  try{
+    var r=await fetch('/api/admin/componentes-aplicar',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({etiquetas:e_sel, plegadizas:p_sel})});
+    var d=await r.json();
+    b.disabled=false; b.textContent='✓ Anclar seleccionados';
+    if(!r.ok){ document.getElementById('msg').innerHTML='<span style="color:#dc2626">'+esc((d&&d.error)||('Error '+r.status))+'</span>'; return; }
+    document.getElementById('msg').innerHTML='<span style="color:#16a34a">✓ '+d.etiquetas_anclas+' etiquetas y '+d.plegadizas_anclas+' plegadizas ancladas. El abastecimiento ya las pide.</span>';
+  }catch(e){ b.disabled=false; document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error: '+esc(String(e))+'</span>'; }
+}
+cargar();
+</script></body></html>"""
+
+
 @bp.route("/admin/mapeo-tonos", methods=["GET"])
 def admin_mapeo_tonos_pagina():
     """Vista previa + aplicar del auto-mapeo de tonos gloss (Sebastián 28-jun)."""
@@ -8145,7 +8334,7 @@ button.ok{background:#16a34a}
 .search{margin-bottom:12px;padding:8px 12px;width:280px;border:1px solid #cbd5e1;border-radius:8px}
 </style></head><body><div class="wrap">
 <h1>&#128230; Mapear producto &rarr; envase</h1>
-<p class="sub">El plan JALA envases desde aqui. Asigna el frasco y los ml de cada producto. Los <b>faltantes</b> (sin envase) salen arriba en naranja. &middot; <a href="/admin/envases-ml" style="color:#7c3aed;font-weight:700">&#128231; Ponerle ml a los envases</a> (para distinguir los frascos del mismo nombre) &middot; <a href="/admin/impresos-anclar" style="color:#7c3aed;font-weight:700">&#128424; Anclar envases impresos</a> (los ya marcados · sobrantes).</p>
+<p class="sub">El plan JALA envases desde aqui. Asigna el frasco y los ml de cada producto. Los <b>faltantes</b> (sin envase) salen arriba en naranja. &middot; <a href="/admin/envases-ml" style="color:#7c3aed;font-weight:700">&#128231; Ponerle ml a los envases</a> (para distinguir los frascos del mismo nombre) &middot; <a href="/admin/impresos-anclar" style="color:#7c3aed;font-weight:700">&#128424; Anclar envases impresos</a> (los ya marcados · sobrantes) &middot; <a href="/admin/componentes-anclar" style="color:#7c3aed;font-weight:700">&#127991; Anclar etiquetas y plegadizas</a>.</p>
 <div class="kpis">
   <div class="kpi" style="border-color:#fdba74"><b id="k-falta">&mdash;</b>sin envase</div>
   <div class="kpi" style="border-color:#86efac"><b id="k-ok">&mdash;</b>con envase</div>
