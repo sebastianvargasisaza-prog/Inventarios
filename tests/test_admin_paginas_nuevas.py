@@ -472,3 +472,22 @@ def test_envases_ml_flujo(admin_client):
     # envase inexistente → 404
     r3 = admin_client.post("/api/admin/envase-ml", json={"codigo": "NO-EXISTE-XYZ", "volumen_ml": 10})
     assert r3.status_code == 404, r3.data
+
+
+def test_envase_crear_flujo(admin_client):
+    """Sebastián 12-jul · crear un envase que no estaba (blush): código auto MEE-ENV-###, stock 0, aparece en la
+    lista. El correo a Catalina se intenta (skip si SMTP no configurado, sin romper)."""
+    r = admin_client.post("/api/admin/envase-crear",
+                          json={"descripcion": "ENVASE BLUSH QA", "categoria": "Frasco", "volumen_ml": 6})
+    assert r.status_code == 200, r.data
+    d = r.get_json()
+    assert d["ok"] is True and d["codigo"].startswith("MEE-ENV-"), d
+    assert d["descripcion"] == "ENVASE BLUSH QA" and d["volumen_ml"] == 6, d
+    assert "email_catalina" in d, d  # estado del correo (enviado / no_config / etc.)
+    # aparece en la lista de MEEs con stock 0
+    mm = admin_client.get("/api/admin/maestro-mees-list").get_json()
+    e = next((x for x in mm["mees"] if x["codigo"] == d["codigo"]), None)
+    assert e is not None and e.get("volumen_ml") == 6, e
+    # nombre requerido
+    r2 = admin_client.post("/api/admin/envase-crear", json={"descripcion": "", "categoria": "Frasco"})
+    assert r2.status_code == 400, r2.data

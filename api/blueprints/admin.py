@@ -6863,6 +6863,71 @@ def admin_envase_set_ml():
     return jsonify({"ok": True, "codigo": cod, "volumen_ml": ml})
 
 
+@bp.route("/api/admin/envase-crear", methods=["POST"])
+def admin_envase_crear():
+    """Sebastián 12-jul · crear un envase que NO estaba (ej. 'ENVASE BLUSH 6ml') · código auto MEE-ENV-###,
+    stock 0. Envía correo a Catalina: nuevo envase, queda PENDIENTE ajustar su inventario físico. Admin · auditado."""
+    import re as _re
+    from datetime import datetime as _dt, timedelta as _td
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.json or {}
+    desc = (d.get("descripcion") or "").strip()
+    cat = (d.get("categoria") or "Frasco").strip() or "Frasco"
+    try:
+        ml = float(d.get("volumen_ml") or 0)
+    except (TypeError, ValueError):
+        ml = 0.0
+    if not desc:
+        return jsonify({"error": "nombre requerido"}), 400
+    conn = db_connect()
+    c = conn.cursor()
+    mx = 0
+    for (cc,) in c.execute("SELECT codigo FROM maestro_mee WHERE codigo LIKE 'MEE-ENV-%'").fetchall():
+        m = _re.match(r'MEE-ENV-(\d+)$', str(cc or '').strip().upper())
+        if m:
+            mx = max(mx, int(m.group(1)))
+    newcod = "MEE-ENV-%03d" % (mx + 1)
+    fecha = (_dt.utcnow() - _td(hours=5)).strftime('%Y-%m-%d %H:%M:%S')
+    c.execute("INSERT INTO maestro_mee (codigo, descripcion, categoria, volumen_ml, stock_actual, stock_minimo, "
+              "estado, fecha_creacion) VALUES (?, ?, ?, ?, 0, 0, 'Activo', ?)", (newcod, desc, cat, ml, fecha))
+    try:
+        audit_log(None, u, "ENVASE_CREAR", "maestro_mee", newcod, f"descripcion={desc} cat={cat} ml={ml}")
+    except Exception:
+        pass
+    conn.commit()
+    # Correo a Catalina · nuevo envase, pendiente ajustar inventario (Sebastián 12-jul)
+    email_estado = "no_enviado"
+    try:
+        from config import USER_EMAILS as _UE
+        cata = (_UE.get("catalina") or "").strip()
+        if cata:
+            _mltxt = (str(ml) + "ml") if ml > 0 else "(sin ml)"
+            _html = (
+                "<div style='font-family:-apple-system,Segoe UI,sans-serif;max-width:560px;margin:0 auto;"
+                "background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb'>"
+                "<div style='background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;padding:20px'>"
+                "<h1 style='margin:0;font-size:20px'>&#128230; Envase nuevo &middot; ajustar inventario</h1></div>"
+                "<div style='padding:20px;color:#1f2937;font-size:14px;line-height:1.6'>"
+                "<p>Catalina, se cre&oacute; un envase que <b>no estaba</b> en el sistema:</p>"
+                "<div style='background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:12px 14px;margin:10px 0'>"
+                "<b>" + newcod + "</b> &middot; " + desc + " &middot; " + _mltxt + "<br>"
+                "<span style='color:#6b7280;font-size:12px'>categor&iacute;a: " + cat + " &middot; creado por " + str(u) + "</span></div>"
+                "<p style='color:#b45309;font-weight:700'>&#9888; Queda PENDIENTE ajustar/contar su inventario f&iacute;sico "
+                "(entra con stock 0).</p>"
+                "<p style='font-size:12px;color:#9ca3af'>EOS &middot; /admin/envases-ml</p></div></div>")
+            from blueprints.auto_plan_jobs import _enviar_email_async as _sendmail
+            _ok = _sendmail("📦 Envase nuevo · ajustar inventario · " + desc, _html, [cata])
+            email_estado = "enviado" if _ok else "smtp_no_config"
+        else:
+            email_estado = "catalina_sin_email"
+    except Exception:
+        email_estado = "error"
+    return jsonify({"ok": True, "codigo": newcod, "descripcion": desc, "categoria": cat,
+                    "volumen_ml": ml, "email_catalina": email_estado})
+
+
 @bp.route("/admin/envases-ml", methods=["GET"])
 def admin_envases_ml_pagina():
     """Tool: ponerle el ml (volumen) a cada envase para distinguir los homónimos (Sebastián 12-jul)."""
@@ -6901,6 +6966,20 @@ a.back{font-size:13px;color:#7c3aed;text-decoration:none}
   <div class="kpi" style="border-color:#fca5a5"><b id="k-sinml">&mdash;</b>sin ml</div>
   <div class="kpi" style="border-color:#fdba74"><b id="k-dup">&mdash;</b>nombre duplicado</div>
   <div class="kpi" style="border-color:#86efac"><b id="k-ok">&mdash;</b>con ml</div>
+</div>
+<div style="background:#fff;border:1px solid #ddd6fe;border-radius:10px;padding:12px 14px;margin-bottom:14px">
+  <div style="font-size:13px;font-weight:800;color:#5b21b6;margin-bottom:8px">&#10133; Crear envase que no est&aacute;</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <input id="nv-nombre" placeholder="Nombre (ej. ENVASE BLUSH)" style="flex:1;min-width:200px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+    <select id="nv-cat" style="padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+      <option value="Frasco">Frasco</option><option value="Envase">Envase</option><option value="Tapa">Tapa</option>
+      <option value="Caja">Caja</option><option value="Otro">Otro</option>
+    </select>
+    <input id="nv-ml" type="number" min="0" step="0.5" placeholder="ml" style="width:80px;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;text-align:right">
+    <button onclick="crearEnvase()" id="nv-btn" style="padding:8px 16px;border:none;border-radius:6px;background:#7c3aed;color:#fff;cursor:pointer;font-size:13px;font-weight:700">Crear</button>
+    <span id="nv-msg" style="font-size:12px;font-weight:700"></span>
+  </div>
+  <div style="font-size:11px;color:#94a3b8;margin-top:6px">Se crea con stock 0 y se le avisa a Catalina por correo para ajustar el inventario.</div>
 </div>
 <input class="search" id="q" placeholder="Buscar envase..." oninput="render()">
 <table><thead><tr><th>Código</th><th>Nombre</th><th>Categoría</th><th>ml</th></tr></thead>
@@ -6959,6 +7038,26 @@ async function guardar(inp){
     if(sav){sav.textContent='&#10003;'; sav.style.color='#16a34a';}
     ENV.forEach(function(e){if(e.codigo===cod)e.volumen_ml=ml;}); recount();
   }catch(e){ if(sav){sav.textContent='error'; sav.style.color='#dc2626';} }
+}
+async function crearEnvase(){
+  var nombre=(document.getElementById('nv-nombre').value||'').trim();
+  var cat=document.getElementById('nv-cat').value||'Frasco';
+  var ml=parseFloat(document.getElementById('nv-ml').value)||0;
+  var msg=document.getElementById('nv-msg'), btn=document.getElementById('nv-btn');
+  if(!nombre){ msg.textContent='Poné el nombre'; msg.style.color='#dc2626'; return; }
+  btn.disabled=true; msg.textContent='Creando…'; msg.style.color='#64748b';
+  try{
+    var t=await csrf();
+    var r=await fetch('/api/admin/envase-crear',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify({descripcion:nombre,categoria:cat,volumen_ml:ml})});
+    var d=await r.json();
+    if(!r.ok){ msg.textContent=(d&&d.error)||('Error '+r.status); msg.style.color='#dc2626'; btn.disabled=false; return; }
+    var em=d.email_catalina;
+    var emtxt = em==='enviado' ? ' · correo a Catalina ✓' : (em==='smtp_no_config'||em==='catalina_sin_email' ? ' · (correo a Catalina no configurado)' : '');
+    msg.innerHTML='✓ Creado '+d.codigo+emtxt; msg.style.color='#16a34a';
+    document.getElementById('nv-nombre').value=''; document.getElementById('nv-ml').value='';
+    btn.disabled=false;
+    await cargar();  // recargar para verlo en la lista y ponerle ml si falta
+  }catch(e){ msg.textContent='Error: '+e; msg.style.color='#dc2626'; btn.disabled=false; }
 }
 cargar();
 </script></body></html>"""
