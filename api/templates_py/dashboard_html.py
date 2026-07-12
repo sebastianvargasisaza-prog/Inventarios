@@ -852,7 +852,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       </div>
       <div id="nmp-msg" style="margin-top:10px;"></div>
     </div>
-    <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:20px;margin-bottom:20px;">
+    <div style="background:#fff;border:1px solid #eef0f4;border-radius:16px;padding:24px;margin-bottom:22px;box-shadow:0 1px 3px rgba(0,0,0,.04),0 10px 26px rgba(0,0,0,.04);">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
         <div class="form-group"><label>Codigo MP *</label><div style="position:relative;"><input type="text" id="ing-cod" placeholder="Código (MP00001) o nombre..." autocomplete="off" style="text-transform:uppercase;" oninput="buscarMPIngreso(this.value)" onblur="setTimeout(ocultarDropMP,250)"><div id="mp-dropdown" style="position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #6d28d9;border-radius:0 0 8px 8px;max-height:220px;overflow-y:auto;z-index:1000;display:none;box-shadow:0 4px 12px rgba(0,0,0,0.15);"></div></div><datalist id="mp-sugerencias"></datalist><small id="ing-status" style="color:#667eea;font-size:0.85em;margin-top:4px;display:block;"></small></div>
         <div class="form-group"><label>Nombre INCI</label><input type="text" id="ing-inci" placeholder="Auto" readonly style="background:#f5f5f5;"></div>
@@ -878,46 +878,57 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <div class="form-group" style="grid-column:span 2;"><label>Valor total estimado (COP)</label><input type="text" id="ing-valor-total" placeholder="Se calcula al ingresar cantidad y precio" readonly style="background:#f0fff4;color:#27ae60;font-weight:600;border:1px solid #a8e6cf;"></div>
       </div>
       <!-- OC Receipt + Costos + Cuarentena -->
-      <div style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:14px;margin:12px 0;">
-        <div style="font-size:0.82em;font-weight:700;color:#e65100;margin-bottom:10px;">&#128230; VINCULAR A ORDEN DE COMPRA (opcional)</div>
+      <div style="background:linear-gradient(135deg,#fffbeb,#fff);border:1px solid #fde68a;border-left:4px solid #f59e0b;border-radius:12px;padding:16px;margin:14px 0;">
+        <div style="font-size:0.74em;font-weight:800;color:#b45309;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px;">&#128230; Vincular a orden de compra <span style="font-weight:600;text-transform:none;letter-spacing:0;color:#a16207">· opcional</span></div>
+        <div style="font-size:0.8em;color:#78716c;margin-bottom:12px;line-height:1.5;">Lista las OCs de materia prima <b>pendientes de recibir</b>. Al elegir una, autocompleta código, proveedor y precio, y <b>liga esta entrada a la OC</b> &rarr; trazabilidad compra&rarr;recepción y descuenta lo pendiente de la orden.</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
           <div class="form-group" style="margin:0;">
-            <label>OC Pendiente</label>
+            <label>OC pendiente</label>
             <select id="ing-oc-sel" onchange="autocompletarDesdeOC()" style="width:100%;">
               <option value="">-- Ingreso libre (sin OC) --</option>
             </select>
           </div>
           <div class="form-group" style="margin:0;">
-            <label>N° Factura / Remision</label>
+            <label>N° Factura / Remisión</label>
             <input type="text" id="ing-factura" placeholder="Ej: FAC-2026-1234">
           </div>
         </div>
       </div>
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:10px;background:#fff3e0;border-radius:6px;border:1px solid #ffe0b2;">
-        <input type="checkbox" id="ing-cuarentena" checked style="width:18px;height:18px;">
-        <label for="ing-cuarentena" style="margin:0;cursor:pointer;font-weight:600;color:#e65100;">
-          &#128274; Ingresar en CUARENTENA (pendiente aprobacion de calidad)
-        </label>
-      </div>
+      <label for="ing-cuarentena" style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:12px 15px;background:linear-gradient(135deg,#fff7ed,#fff);border-radius:12px;border:1px solid #fed7aa;cursor:pointer;">
+        <input type="checkbox" id="ing-cuarentena" checked style="width:18px;height:18px;flex:none;">
+        <span style="font-weight:700;color:#c2410c;">&#128274; Ingresar en CUARENTENA <span style="font-weight:500;color:#9a3412;">· pendiente aprobación de Calidad</span></span>
+      </label>
       <div class="form-group" style="margin-top:10px;"><label>Observaciones</label><input type="text" id="ing-obs" placeholder="Opcional"></div>
-      <div style="display:flex;gap:10px;margin-top:15px;flex-wrap:wrap;">
-        <button onclick="registrarIngreso()" style="background:#27ae60;">&#10003; Registrar Entrada</button>
-        <button onclick="generarRotuloIngreso()" style="background:#2980b9;" id="btn-rotulo-ing">&#128209; Generar Rotulo + Codigo de Barras</button>
-        <button onclick="limpiarIngreso()" style="background:#95a5a6;">Limpiar</button>
+      <div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap;">
+        <button onclick="registrarIngreso()" style="background:#16a34a;padding:11px 20px;border-radius:10px;font-weight:700;box-shadow:0 2px 8px rgba(22,163,74,.28);">&#10003; Registrar entrada</button>
+        <button onclick="generarRotuloIngreso()" id="btn-rotulo-ing" style="background:#2563eb;padding:11px 20px;border-radius:10px;font-weight:700;box-shadow:0 2px 8px rgba(37,99,235,.24);">&#128209; Generar rótulo + código de barras</button>
+        <button onclick="limpiarIngreso()" style="background:#fff;color:#64748b;border:1px solid #e2e8f0;padding:11px 20px;border-radius:10px;font-weight:700;">Limpiar</button>
       </div>
       <div id="ing-msg" style="margin-top:12px;"></div>
     </div>
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-      <h3 style="margin:0">Últimas Entradas</h3>
-      <!-- Sprint Recepciones PRO fix #7: buscador en histórico -->
-      <input type="text" placeholder="Buscar MP, lote, proveedor…" oninput="histBuscar(this.value)" style="padding:6px 10px;width:240px;font-size:13px;border:1px solid #cbd5e1;border-radius:6px">
-    </div>
-    <div style="overflow-x:auto;"><table class="table" id="ing-hist">
-      <thead><tr><th>Codigo</th><th>INCI</th><th>Nombre Comercial</th><th>Lote</th><th style="text-align:right;">g</th><th>Proveedor</th><th>OC</th><th>Vence</th><th>Fecha</th><th></th></tr></thead>
-      <tbody><tr><td colspan="10" style="text-align:center;color:#999;">Sin entradas</td></tr></tbody>
-    </table></div>
-    <!-- Sprint Recepciones PRO fix #7: paginación -->
-    <div id="ing-hist-pager"></div>
+    <style>
+      #ing-hist-details > summary{list-style:none;}
+      #ing-hist-details > summary::-webkit-details-marker{display:none;}
+      #ing-hist-details[open] .ing-hist-caret{transform:rotate(180deg);}
+    </style>
+    <details id="ing-hist-details" open style="margin-top:4px;border:1px solid #eef0f4;border-radius:14px;overflow:hidden;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.03);">
+      <summary style="cursor:pointer;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;font-weight:800;color:#1e293b;background:#fafafe;user-select:none;">
+        <span style="display:flex;align-items:center;gap:8px;">&#128230; Últimas Entradas <span id="ing-hist-count-badge" style="font-size:.68em;font-weight:700;color:#7c3aed;background:#f3f0ff;border:1px solid #e9d5ff;border-radius:999px;padding:1px 8px;"></span></span>
+        <span class="ing-hist-caret" style="color:#a78bfa;font-size:.8em;transition:transform .15s;">&#9660;</span>
+      </summary>
+      <div style="padding:14px 18px;">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
+          <!-- Sprint Recepciones PRO fix #7: buscador en histórico -->
+          <input type="text" placeholder="&#128269; Buscar MP, lote, proveedor…" oninput="histBuscar(this.value)" style="padding:7px 12px;width:260px;font-size:13px;border:1px solid #e2e8f0;border-radius:9px">
+        </div>
+        <div style="overflow-x:auto;"><table class="table" id="ing-hist">
+          <thead><tr><th>Codigo</th><th>INCI</th><th>Nombre Comercial</th><th>Lote</th><th style="text-align:right;">g</th><th>Proveedor</th><th>OC</th><th>Vence</th><th>Fecha</th><th></th></tr></thead>
+          <tbody><tr><td colspan="10" style="text-align:center;color:#999;">Sin entradas</td></tr></tbody>
+        </table></div>
+        <!-- Sprint Recepciones PRO fix #7: paginación -->
+        <div id="ing-hist-pager"></div>
+      </div>
+    </details>
     </div><!-- end ing-panel-mp -->
   </div>
 
@@ -5455,11 +5466,12 @@ function _refreshHistPager(){
   var s = _ING_HIST_STATE;
   var hasta = Math.min(s.offset + s.limit, s.total);
   var hayMas = s.offset + s.limit < s.total;
+  var _cb=document.getElementById('ing-hist-count-badge'); if(_cb) _cb.textContent=(s.total||0).toLocaleString('es-CO');
+  var _pb=function(txt,fn,off){ return '<button onclick="'+fn+'" '+(off?'disabled':'')+' style="padding:7px 15px;font-size:12px;font-weight:700;border:1px solid #e2e8f0;border-radius:9px;background:'+(off?'#f8fafc':'#fff')+';color:'+(off?'#cbd5e1':'#6d28d9')+';cursor:'+(off?'default':'pointer')+';transition:background .1s">'+txt+'</button>'; };
   box.innerHTML =
-    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:#475569;margin-top:8px">' +
-    '<span>Mostrando '+(s.offset+1)+'-'+hasta+' de '+s.total+'</span>' +
-    '<button onclick="histAvanzar(-1)" '+(s.offset===0?'disabled':'')+' style="padding:3px 10px;font-size:11px">‹ Atrás</button>' +
-    '<button onclick="histAvanzar(1)" '+(!hayMas?'disabled':'')+' style="padding:3px 10px;font-size:11px">Siguiente ›</button>' +
+    '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12px;color:#64748b;margin-top:14px">' +
+    '<span>Mostrando <b style="color:#334155">'+(s.offset+1)+'-'+hasta+'</b> de <b style="color:#334155">'+(s.total||0).toLocaleString('es-CO')+'</b></span>' +
+    '<div style="display:flex;gap:6px;margin-left:auto">' + _pb('&lsaquo; Atrás','histAvanzar(-1)',s.offset===0) + _pb('Siguiente &rsaquo;','histAvanzar(1)',!hayMas) + '</div>' +
     '</div>';
 }
 function histAvanzar(dir){

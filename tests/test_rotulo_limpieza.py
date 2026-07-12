@@ -180,7 +180,7 @@ def test_rotulos_limpieza_impresion_termica(admin_client, app):
     r = admin_client.get("/planta/rotulos-limpieza")
     assert r.status_code == 200, r.data
     body = r.get_data(as_text=True)
-    assert "@page{size:100mm 150mm" in body        # térmico default
+    assert "@page{size:100mm 100mm" in body        # térmico default 100×100mm (Sebastián 7-jul)
     assert "Tamaño:" in body                        # selector de tamaño
     assert "landscape" not in body                  # ya no es hoja carta landscape
 

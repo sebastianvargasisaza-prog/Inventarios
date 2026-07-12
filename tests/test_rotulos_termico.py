@@ -43,7 +43,7 @@ def test_rotulos_impresion_termica(app, db_clean):
     body = r.get_data(as_text=True)
     # librería QR cargada + @page térmico (mm), NO hoja carta landscape
     assert 'qrcode.min.js' in body
-    assert '@page{size:100mm 150mm' in body
+    assert '@page{size:100mm 100mm' in body   # default 100×100mm (Sebastián 7-jul · etiqueta cuadrada)
     assert 'letter landscape' not in body
     # el QR apunta al scan real de ESTE lote
     assert '/scan/MP-ROT/LROT-1' in body
