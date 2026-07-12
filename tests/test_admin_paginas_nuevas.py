@@ -588,3 +588,51 @@ def test_componentes_etiqueta_plegadiza_flujo(admin_client):
                      "WHERE producto_nombre=? AND UPPER(TRIM(sku_shopify))=?", (prod, sku)).fetchone()
     db.close()
     assert row is not None and row[0] == etq and row[1] == plg, ("etiqueta + plegadiza ancladas en la presentación", row)
+
+
+def test_tapas_goteros_al_frasco_flujo(admin_client):
+    """Sebastián 12-jul · pegar TAPA + GOTERO al frasco (mee_partes) → el abastecimiento los pide con el frasco."""
+    import os
+    import sqlite3
+    db = sqlite3.connect(os.environ["DB_PATH"], timeout=10)
+    prod, frasco, tapa, got = "QA TG PROD", "FR-QA-TG-30", "MEE-TAP-QA1", "MEE-GOT-QA1"
+    db.execute("DELETE FROM producto_presentaciones WHERE producto_nombre=?", (prod,))
+    db.execute("DELETE FROM maestro_mee WHERE codigo IN (?,?,?)", (frasco, tapa, got))
+    db.execute("DELETE FROM mee_partes WHERE UPPER(mee_codigo)=?", (frasco,))
+    db.execute("INSERT INTO maestro_mee (codigo, descripcion, categoria, estado, fecha_creacion) VALUES "
+               "(?, 'FRASCO QA 30ml', 'Frasco', 'Activo', '2026-07-12'),"
+               "(?, 'TAPA QA', 'TAPA', 'Activo', '2026-07-12'),"
+               "(?, 'GOTERO QA', 'GOTERO', 'Activo', '2026-07-12')", (frasco, tapa, got))
+    db.execute("INSERT INTO producto_presentaciones (producto_nombre, presentacion_codigo, etiqueta, volumen_ml, "
+               "envase_codigo, es_default, activo) VALUES (?, 'V30', '30ml', 30, ?, 1, 1)", (prod, frasco))
+    db.commit(); db.close()
+
+    r = admin_client.get("/admin/tapas-goteros-anclar")
+    assert r.status_code == 200 and b"Tapas y goteros" in r.data, r.status_code
+
+    pv = admin_client.get("/api/admin/tapas-goteros-preview").get_json()
+    fr = next((f for f in pv["frascos"] if f["frasco"] == frasco), None)
+    assert fr is not None and prod in fr["productos"], ("el frasco usado aparece", fr)
+    assert any(t["codigo"] == tapa for t in pv["tapas"]), "tapa en la lista"
+    assert any(g["codigo"] == got for g in pv["goteros"]), "gotero en la lista"
+
+    ap = admin_client.post("/api/admin/tapas-goteros-aplicar",
+                           json={"frascos": [{"frasco": frasco, "tapa": tapa, "gotero": got}]})
+    assert ap.status_code == 200 and ap.get_json()["partes"] == 2, ap.data
+
+    # quedaron en mee_partes (el abastecimiento las lee vía _kit_map_ab)
+    db = sqlite3.connect(os.environ["DB_PATH"], timeout=10)
+    partes = {r[0].upper() for r in db.execute("SELECT parte_codigo FROM mee_partes WHERE UPPER(mee_codigo)=?", (frasco,)).fetchall()}
+    db.close()
+    assert tapa in partes and got in partes, ("tapa + gotero pegados al frasco", partes)
+
+    # re-aplicar con otra tapa reemplaza (no duplica)
+    tapa2 = "MEE-TAP-QA2"
+    db = sqlite3.connect(os.environ["DB_PATH"], timeout=10)
+    db.execute("INSERT INTO maestro_mee (codigo, descripcion, categoria, estado, fecha_creacion) VALUES (?, 'TAPA QA2', 'TAPA', 'Activo', '2026-07-12')", (tapa2,))
+    db.commit(); db.close()
+    admin_client.post("/api/admin/tapas-goteros-aplicar", json={"frascos": [{"frasco": frasco, "tapa": tapa2, "gotero": got}]})
+    db = sqlite3.connect(os.environ["DB_PATH"], timeout=10)
+    tapas_now = {r[0].upper() for r in db.execute("SELECT parte_codigo FROM mee_partes WHERE UPPER(mee_codigo)=? AND (UPPER(parte_codigo) LIKE 'MEE-TAP-%')", (frasco,)).fetchall()}
+    db.close()
+    assert tapas_now == {tapa2}, ("la tapa vieja se reemplazó, no se duplicó", tapas_now)

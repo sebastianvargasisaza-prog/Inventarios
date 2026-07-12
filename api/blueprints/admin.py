@@ -8124,6 +8124,172 @@ cargar();
 </script></body></html>"""
 
 
+@bp.route("/api/admin/tapas-goteros-preview", methods=["GET"])
+def admin_tapas_goteros_preview():
+    """Sebastián 12-jul · TAPAS + GOTEROS pegados al FRASCO (mee_partes · el abastecimiento ya los lee). Lista los
+    frascos USADOS (en producto_presentaciones) con su tapa/gotero actual, + las tapas/goteros disponibles."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    conn = db_connect()
+    c = conn.cursor()
+    frascos = {}
+    for (env, prod, vol) in c.execute("SELECT COALESCE(envase_codigo,''), producto_nombre, COALESCE(volumen_ml,0) "
+                                      "FROM producto_presentaciones WHERE COALESCE(activo,1)=1 "
+                                      "AND COALESCE(envase_codigo,'')<>''").fetchall():
+        env = str(env).strip().upper()
+        f = frascos.setdefault(env, {'vols': set(), 'productos': set()})
+        if vol:
+            f['vols'].add(round(float(vol), 2))
+        f['productos'].add(prod)
+    meed = {}
+    for (cod, desc, cat, vol) in c.execute("SELECT codigo, COALESCE(descripcion,''), UPPER(COALESCE(categoria,'')), "
+                                           "COALESCE(volumen_ml,0) FROM maestro_mee WHERE COALESCE(estado,'Activo')='Activo'").fetchall():
+        meed[str(cod).strip().upper()] = {'desc': desc, 'cat': cat, 'vol': float(vol or 0), 'codigo': cod}
+    tapas = [meed[k] for k in meed if meed[k]['cat'] == 'TAPA' or k.startswith('MEE-TAP-')]
+    goteros = [meed[k] for k in meed if meed[k]['cat'] == 'GOTERO' or k.startswith('MEE-GOT-')]
+    partes = {}
+    for (mc, pc) in c.execute("SELECT UPPER(TRIM(mee_codigo)), UPPER(TRIM(COALESCE(parte_codigo,''))) "
+                              "FROM mee_partes WHERE COALESCE(parte_codigo,'')<>''").fetchall():
+        info = meed.get(pc)
+        if not info:
+            continue
+        if info['cat'] == 'TAPA' or pc.startswith('MEE-TAP-'):
+            partes.setdefault(mc, {})['tapa'] = pc
+        elif info['cat'] == 'GOTERO' or pc.startswith('MEE-GOT-'):
+            partes.setdefault(mc, {})['gotero'] = pc
+    out = []
+    for env, f in sorted(frascos.items()):
+        fi = meed.get(env, {'desc': env})
+        cur = partes.get(env, {})
+        out.append({'frasco': env, 'desc': fi.get('desc', ''), 'vols': sorted(f['vols']),
+                    'productos': sorted(f['productos'])[:3], 'n_prod': len(f['productos']),
+                    'tapa_actual': cur.get('tapa', ''), 'gotero_actual': cur.get('gotero', '')})
+    return jsonify({'frascos': out,
+                    'tapas': [{'codigo': t['codigo'], 'desc': t['desc'], 'vol': t['vol']} for t in tapas],
+                    'goteros': [{'codigo': g['codigo'], 'desc': g['desc'], 'vol': g['vol']} for g in goteros]})
+
+
+@bp.route("/api/admin/tapas-goteros-aplicar", methods=["POST"])
+def admin_tapas_goteros_aplicar():
+    """Guarda la tapa + gotero de cada frasco en mee_partes (reemplaza las viejas · el abastecimiento las pide)."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.json or {}
+    filas = d.get("frascos") or []
+    conn = db_connect()
+    c = conn.cursor()
+    # códigos de tapas/goteros para saber qué partes viejas reemplazar
+    tap_codes, got_codes = set(), set()
+    for (cod, cat) in c.execute("SELECT UPPER(TRIM(codigo)), UPPER(COALESCE(categoria,'')) FROM maestro_mee").fetchall():
+        if cat == 'TAPA' or cod.startswith('MEE-TAP-'):
+            tap_codes.add(cod)
+        elif cat == 'GOTERO' or cod.startswith('MEE-GOT-'):
+            got_codes.add(cod)
+    n = 0
+    for row in filas:
+        env = (row.get("frasco") or "").strip().upper()
+        if not env:
+            continue
+        for parte_val, codes, tipo in ((row.get("tapa"), tap_codes, 'tapa'), (row.get("gotero"), got_codes, 'gotero')):
+            pv = (parte_val or "").strip().upper()
+            # borrar la parte vieja de ese tipo (tapa/gotero) del frasco
+            _old = [pc for pc in codes]
+            if _old:
+                _ph = ','.join(['?'] * len(_old))
+                c.execute(f"DELETE FROM mee_partes WHERE UPPER(TRIM(mee_codigo))=? AND UPPER(TRIM(COALESCE(parte_codigo,''))) IN ({_ph})",
+                          tuple([env] + _old))
+            if pv:
+                c.execute("INSERT INTO mee_partes (mee_codigo, parte_codigo, descripcion, cantidad, creado_at) "
+                          "VALUES (?, ?, ?, 1, ?)", (env, pv, tipo, ''))
+                n += 1
+    try:
+        audit_log(None, u, "ANCLAR_TAPA_GOTERO", "mee_partes", "frasco", f"{n} partes")
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({"ok": True, "partes": n})
+
+
+@bp.route("/admin/tapas-goteros-anclar", methods=["GET"])
+def admin_tapas_goteros_anclar_pagina():
+    """Tool: pegar tapa + gotero a cada frasco (mee_partes) · Sebastián 12-jul."""
+    u, err, code = _require_admin()
+    if err:
+        return ("<html><body style='font-family:system-ui;padding:48px'><h2>Solo admin</h2>"
+                "<a href='/login'>Ir a login</a></body></html>"), code
+    return _TAPAS_GOTEROS_HTML
+
+
+_TAPAS_GOTEROS_HTML = r"""<!DOCTYPE html><html lang="es"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Tapas y goteros por frasco</title>
+<style>
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#f8fafc;color:#1e293b}
+.wrap{max-width:1050px;margin:0 auto;padding:24px}
+h1{font-size:22px;margin:0 0 4px}.sub{color:#64748b;font-size:14px;margin:0 0 14px}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden}
+th,td{padding:8px 10px;text-align:left;font-size:13px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+th{background:#f1f5f9;font-weight:700;font-size:12px}
+select{padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;max-width:230px}
+button{padding:9px 18px;border:none;border-radius:8px;background:#16a34a;color:#fff;cursor:pointer;font-size:14px;font-weight:700}
+.muted{color:#94a3b8;font-size:11px}
+.search{margin-bottom:12px;padding:8px 12px;width:280px;border:1px solid #cbd5e1;border-radius:8px}
+</style></head><body><div class="wrap">
+<h1>&#129380; Tapas y goteros por frasco</h1>
+<p class="sub">Cada frasco lleva su <b>tapa</b> y (si aplica) su <b>gotero</b>. Se pegan al frasco, as&iacute; cualquier producto que use ese frasco los pide autom&aacute;ticamente. Eleg&iacute; y guard&aacute;.</p>
+<input class="search" id="q" placeholder="Buscar frasco..." oninput="render()">
+<div id="cont"><div class="muted" style="padding:20px">Cargando...</div></div>
+<button id="btn" onclick="guardar()" style="display:none;margin-top:12px">&#10003; Guardar tapas/goteros</button>
+<div id="msg" style="margin-top:12px;font-weight:600"></div>
+</div>
+<script>
+var F=[], TAP=[], GOT=[];
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+async function csrf(){var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();return t.csrf_token;}
+function opts(list,sel){
+  var h='<option value="">- ninguno -</option>';
+  list.forEach(function(o){h+='<option value="'+esc(o.codigo)+'"'+(o.codigo.toUpperCase()===(sel||'').toUpperCase()?' selected':'')+'>'+esc(o.codigo)+' - '+esc(o.desc)+(o.vol>0?(' ('+o.vol+'ml)'):'')+'</option>';});
+  return h;
+}
+async function cargar(){
+  try{
+    var d=await (await fetch('/api/admin/tapas-goteros-preview',{cache:'no-store'})).json();
+    F=d.frascos||[]; TAP=d.tapas||[]; GOT=d.goteros||[];
+    render();
+    if(F.length) document.getElementById('btn').style.display='inline-block';
+  }catch(e){ document.getElementById('cont').innerHTML='<div style="color:#dc2626;padding:20px">Error: '+e+'</div>'; }
+}
+function render(){
+  var q=(document.getElementById('q').value||'').toLowerCase();
+  var vis=F.filter(function(f){return !q||((f.frasco||'')+' '+(f.desc||'')+' '+(f.productos||[]).join(' ')).toLowerCase().indexOf(q)>=0;});
+  var h='<table><thead><tr><th>Frasco</th><th>Usado por</th><th>Tapa</th><th>Gotero</th></tr></thead><tbody>';
+  if(!vis.length){ h+='<tr><td colspan="4" style="padding:20px;text-align:center;color:#94a3b8">Sin frascos (asigná primero los frascos a productos).</td></tr>'; }
+  vis.forEach(function(f){
+    var i=F.indexOf(f);
+    h+='<tr><td><b>'+esc(f.frasco)+'</b><br><span class="muted">'+esc(f.desc||'')+(f.vols&&f.vols.length?(' · '+f.vols.join('/')+'ml'):'')+'</span></td>'+
+       '<td class="muted">'+esc((f.productos||[]).join(', '))+(f.n_prod>3?(' +'+(f.n_prod-3)):'')+'</td>'+
+       '<td><select id="t'+i+'">'+opts(TAP,f.tapa_actual)+'</select></td>'+
+       '<td><select id="g'+i+'">'+opts(GOT,f.gotero_actual)+'</select></td></tr>';
+  });
+  document.getElementById('cont').innerHTML=h+'</tbody></table>';
+}
+async function guardar(){
+  var filas=F.map(function(f,i){ return {frasco:f.frasco, tapa:(document.getElementById('t'+i)||{}).value||'', gotero:(document.getElementById('g'+i)||{}).value||''}; });
+  var b=document.getElementById('btn'); b.disabled=true; b.textContent='Guardando...';
+  try{
+    var r=await fetch('/api/admin/tapas-goteros-aplicar',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({frascos:filas})});
+    var d=await r.json();
+    b.disabled=false; b.textContent='✓ Guardar tapas/goteros';
+    if(!r.ok){ document.getElementById('msg').innerHTML='<span style="color:#dc2626">'+esc((d&&d.error)||('Error '+r.status))+'</span>'; return; }
+    document.getElementById('msg').innerHTML='<span style="color:#16a34a">✓ Guardado ('+d.partes+' tapas/goteros). El abastecimiento ya los pide con el frasco.</span>';
+  }catch(e){ b.disabled=false; document.getElementById('msg').innerHTML='<span style="color:#dc2626">Error: '+esc(String(e))+'</span>'; }
+}
+cargar();
+</script></body></html>"""
+
+
 @bp.route("/admin/mapeo-tonos", methods=["GET"])
 def admin_mapeo_tonos_pagina():
     """Vista previa + aplicar del auto-mapeo de tonos gloss (Sebastián 28-jun)."""
@@ -8334,7 +8500,7 @@ button.ok{background:#16a34a}
 .search{margin-bottom:12px;padding:8px 12px;width:280px;border:1px solid #cbd5e1;border-radius:8px}
 </style></head><body><div class="wrap">
 <h1>&#128230; Mapear producto &rarr; envase</h1>
-<p class="sub">El plan JALA envases desde aqui. Asigna el frasco y los ml de cada producto. Los <b>faltantes</b> (sin envase) salen arriba en naranja. &middot; <a href="/admin/envases-ml" style="color:#7c3aed;font-weight:700">&#128231; Ponerle ml a los envases</a> (para distinguir los frascos del mismo nombre) &middot; <a href="/admin/impresos-anclar" style="color:#7c3aed;font-weight:700">&#128424; Anclar envases impresos</a> (los ya marcados · sobrantes) &middot; <a href="/admin/componentes-anclar" style="color:#7c3aed;font-weight:700">&#127991; Anclar etiquetas y plegadizas</a>.</p>
+<p class="sub">El plan JALA envases desde aqui. Asigna el frasco y los ml de cada producto. Los <b>faltantes</b> (sin envase) salen arriba en naranja. &middot; <a href="/admin/envases-ml" style="color:#7c3aed;font-weight:700">&#128231; Ponerle ml a los envases</a> (para distinguir los frascos del mismo nombre) &middot; <a href="/admin/impresos-anclar" style="color:#7c3aed;font-weight:700">&#128424; Anclar envases impresos</a> (los ya marcados · sobrantes) &middot; <a href="/admin/componentes-anclar" style="color:#7c3aed;font-weight:700">&#127991; Anclar etiquetas y plegadizas</a> &middot; <a href="/admin/tapas-goteros-anclar" style="color:#7c3aed;font-weight:700">&#129380; Tapas y goteros por frasco</a>.</p>
 <div class="kpis">
   <div class="kpi" style="border-color:#fdba74"><b id="k-falta">&mdash;</b>sin envase</div>
   <div class="kpi" style="border-color:#86efac"><b id="k-ok">&mdash;</b>con envase</div>
