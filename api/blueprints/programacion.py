@@ -13896,6 +13896,258 @@ def abastecimiento_envases_cobertura():
     })
 
 
+def _consumo_mp_plan(conn, dias=90):
+    """Consumo de MP del PLAN (produccion_programada) en los próximos `dias`, por CÓDIGO DE BODEGA.
+
+    Replica el camino MP del motor verificado abastecimiento_consumo_horizontes (misma fuente,
+    filtros, dedup prefer-Fijo M49, %-first ×kg×1000 M71, resolver a bodega, excluye agua
+    controla_stock=0). Devuelve {codigo_bodega_UPPER: gramos_totales}. Paridad garantizada por
+    tests/test_minimos_calculo.py (== consumo del motor para h=dias). Sebastián 12-jul.
+    """
+    from datetime import timedelta as _td
+    import unicodedata as _u, re as _r
+    c = conn.cursor()
+    hoy = (datetime.now(timezone.utc) - _td(hours=5)).date()
+    hoy_iso = hoy.isoformat()
+    cutoff = (hoy + _td(days=int(dias))).isoformat()
+    origenes_in = ('eos_plan', 'eos_b2b', 'eos_retroactivo', 'eos_canonico',
+                   'auto_plan', 'sugerido', 'eos_proyeccion', 'manual')
+    ph = ','.join(['?'] * len(origenes_in))
+
+    def _np(s):
+        n = _u.normalize('NFKD', str(s or '')).encode('ascii', 'ignore').decode().upper()
+        return _r.sub(r'[^A-Z0-9]+', ' ', n).strip()
+
+    try:
+        prod_rows = c.execute(
+            "SELECT pp.id, pp.producto, pp.fecha_programada, COALESCE(pp.lotes,1), "
+            "COALESCE(pp.cantidad_kg,0), COALESCE(fh.lote_size_kg,0), COALESCE(pp.origen,'') "
+            "FROM produccion_programada pp "
+            "LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(pp.producto)) "
+            "AND COALESCE(fh.activo,1)=1 "
+            "WHERE COALESCE(pp.origen,'') IN (" + ph + ") "
+            "AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado','esperando_recurso') "
+            "AND COALESCE(pp.inventario_descontado_at,'')='' "
+            "AND pp.fecha_programada >= ? AND pp.fecha_programada <= ?",
+            origenes_in + (hoy_iso, cutoff)).fetchall()
+    except Exception:
+        return {}
+
+    # Fórmulas activas por producto (mismos filtros que el motor: activo=1, excluye case-dup inactivo, dedup)
+    formulas = {}
+    lote_size_por_prod = {}
+    _seen = set()
+    for r in c.execute(
+        "SELECT fi.producto_nombre, fi.material_id, COALESCE(fi.material_nombre,''), "
+        "COALESCE(fi.porcentaje,0), COALESCE(fi.cantidad_g_por_lote,0), COALESCE(fh.lote_size_kg,0) "
+        "FROM formula_items fi "
+        "JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(fi.producto_nombre)) "
+        "AND COALESCE(fh.activo,1)=1 "
+        "WHERE fi.material_id IS NOT NULL AND TRIM(fi.material_id)!='' "
+        "AND TRIM(fi.producto_nombre) NOT IN (SELECT TRIM(producto_nombre) FROM formula_headers WHERE COALESCE(activo,1)=0)"
+    ).fetchall():
+        cm = str(r[1] or '').strip().upper()
+        if not cm:
+            continue
+        pk = _np(r[0])
+        dk = (pk, cm)
+        if dk in _seen:
+            continue
+        _seen.add(dk)
+        formulas.setdefault(pk, []).append({'codigo_mp': cm, 'nombre': r[2],
+                                            'pct': float(r[3] or 0), 'g_por_lote': float(r[4] or 0)})
+        if pk not in lote_size_por_prod:
+            lote_size_por_prod[pk] = float(r[5] or 0)
+
+    # Dedup prefer-Fijo por (producto,fecha) con más kg (M49 · no apilar planes solapados)
+    _FIJO = ('eos_plan', 'eos_b2b', 'eos_retroactivo')
+    _AUTO = ('auto_plan', 'eos_proyeccion')
+    _con_fijo = set()
+    for pr in prod_rows:
+        if (pr[6] or '') in _FIJO:
+            _con_fijo.add(_np(pr[1]))
+    _ded = {}
+    for pr in prod_rows:
+        pn = _np(pr[1])
+        org = pr[6] or ''
+        if pn in _con_fijo and org in _AUTO:
+            continue
+        fc = str(pr[2] or '')[:10]
+        ck = float(pr[4] or 0)
+        eff = ck if ck > 0 else (int(pr[3] or 1) * float(pr[5] or 0))
+        kk = (pn, fc)
+        if kk not in _ded or eff > _ded[kk][1]:
+            _ded[kk] = (pr, eff)
+    rows = [v[0] for v in _ded.values()]
+
+    # Acumular gramos por código de FÓRMULA (%-first × kg × 1000 · M71)
+    consumo_fmid = {}
+    fmid_nombre = {}
+    for pr in rows:
+        producto = pr[1]
+        pn = _np(producto)
+        lote_size = pr[5]
+        if not lote_size or float(lote_size) <= 0:
+            lote_size = lote_size_por_prod.get(pn, 0)
+        cant_kg = float(pr[4] or 0) or (int(pr[3] or 1) * float(lote_size or 0))
+        if cant_kg <= 0:
+            continue
+        for it in formulas.get(pn, []):
+            if it['pct'] > 0:
+                g = (it['pct'] / 100.0) * cant_kg * 1000.0
+            elif it['g_por_lote'] > 0 and lote_size and float(lote_size) > 0:
+                g = it['g_por_lote'] * (cant_kg / float(lote_size))
+            else:
+                continue
+            if g > 0:
+                consumo_fmid[it['codigo_mp']] = consumo_fmid.get(it['codigo_mp'], 0.0) + g
+                fmid_nombre.setdefault(it['codigo_mp'], it['nombre'])
+
+    # Resolver código de fórmula → BODEGA (bridge/INCI) + excluir agua (controla_stock=0)
+    no_controla = set()
+    try:
+        for (cod,) in c.execute("SELECT UPPER(TRIM(codigo_mp)) FROM maestro_mps WHERE COALESCE(controla_stock,1)=0").fetchall():
+            no_controla.add(cod)
+    except Exception:
+        pass
+    out = {}
+    for fmid, g in consumo_fmid.items():
+        try:
+            bod = _resolver_material_bodega(c, fmid, fmid_nombre.get(fmid, '')) or fmid
+        except Exception:
+            bod = fmid
+        bu = str(bod).strip().upper()
+        if bu in no_controla:
+            continue
+        out[bu] = out.get(bu, 0.0) + g
+    return out
+
+
+@bp.route('/api/inventario/recalcular-minimos', methods=['GET', 'POST'])
+def recalcular_minimos():
+    """MÍNIMO (punto de reorden) por MP desde el plan + lead time. Sebastián 12-jul.
+
+    MÍN = (consumo_plan_Nd / N) × lead_time × (1 + colchón%).  MÍN=0 si el plan no consume la MP
+    (deja de alertar comprar lo que no se va a usar). GET=preview (no escribe) · POST=aplicar
+    (UPDATE stock_minimo + min_auto=1 + audit). Respeta mínimos fijados a mano (min_auto=0) salvo
+    ?pisar_manual=1. Gate: Compras/Admin (define parámetros de compra · no operarios)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    u = session.get('compras_user', '')
+    try:
+        from config import COMPRAS_ACCESS as _CA
+    except Exception:
+        _CA = set()
+    if (u or '').strip().lower() not in {x.lower() for x in (set(_CA) | set(ADMIN_USERS))}:
+        return jsonify({'error': 'Sin permiso · definir mínimos es de Compras/Admin'}), 403
+
+    if request.method == 'POST':
+        body = request.get_json(silent=True) or {}
+        _get = lambda k, d: body.get(k, d)
+        pisar_manual = bool(body.get('pisar_manual'))
+    else:
+        _get = lambda k, d: request.args.get(k, d)
+        pisar_manual = str(request.args.get('pisar_manual', '')).lower() in ('1', 'true', 'yes', 'si')
+    try:
+        dias = int(_get('dias', 90) or 90)
+    except (TypeError, ValueError):
+        dias = 90
+    try:
+        colchon_pct = float(_get('colchon_pct', 30) if _get('colchon_pct', 30) is not None else 30)
+    except (TypeError, ValueError):
+        colchon_pct = 30.0
+    try:
+        lead_default = int(_get('lead_default', 30) or 30)
+    except (TypeError, ValueError):
+        lead_default = 30
+    dias = max(30, min(dias, 365))
+    colchon_pct = max(0.0, min(colchon_pct, 200.0))
+    lead_default = max(1, min(lead_default, 180))
+    factor = 1.0 + colchon_pct / 100.0
+
+    conn = get_db()
+    c = conn.cursor()
+    consumo = _consumo_mp_plan(conn, dias)  # {codigo_bodega_UPPER: gramos}
+
+    # Lead time por MP (config · fallback por origen · default el resto)
+    _DEF_LEAD = {'china': 45, 'usa': 45, 'europa': 45, 'nacional': 20, 'local': 15, 'otro': 30}
+    lead_map = {}
+    try:
+        for r in c.execute("SELECT UPPER(TRIM(material_id)), COALESCE(lead_time_dias,0), COALESCE(origen,'') "
+                           "FROM mp_lead_time_config WHERE COALESCE(activo,1)=1").fetchall():
+            lt = int(r[1] or 0)
+            if lt <= 0:
+                lt = _DEF_LEAD.get((r[2] or '').lower(), lead_default)
+            lead_map[r[0]] = lt
+    except Exception:
+        pass
+
+    try:
+        c.execute("SELECT min_auto FROM maestro_mps LIMIT 0")
+        _has_min_auto = True
+    except Exception:
+        conn.rollback()
+        _has_min_auto = False
+
+    import math as _math
+    _sel = "codigo_mp, COALESCE(nombre_comercial,''), COALESCE(nombre_inci,''), COALESCE(proveedor,''), COALESCE(stock_minimo,0)"
+    if _has_min_auto:
+        _sel += ", COALESCE(min_auto,1)"
+    filas = []
+    for r in c.execute("SELECT " + _sel + " FROM maestro_mps WHERE COALESCE(activo,1)=1 AND COALESCE(controla_stock,1)=1").fetchall():
+        cod = r[0]
+        codu = str(cod).strip().upper()
+        min_actual = float(r[4] or 0)
+        min_auto = int(r[5]) if (_has_min_auto and len(r) > 5 and r[5] is not None) else 1
+        cons_g = float(consumo.get(codu, 0.0))
+        cons_dia = cons_g / float(dias) if dias > 0 else 0.0
+        lead = lead_map.get(codu, lead_default)
+        # MÍN = consumo_diario × lead × factor · calculado desde el gramaje TOTAL (cons_g×lead×factor/dias)
+        # para evitar el error de flotante de dividir primero (3000/90×30×1.3 daba 1300.0000002→ceil 1301);
+        # round(,6) limpia el ruido residual antes del ceil.
+        min_sug = 0.0 if cons_g <= 0 else float(_math.ceil(round((cons_g * lead * factor) / float(dias), 6)))
+        es_manual = (min_auto == 0 and min_actual > 0)
+        filas.append({
+            'codigo': cod, 'nombre': (r[1] or r[2] or cod), 'inci': r[2] or '', 'proveedor': r[3] or '',
+            'consumo_plan_g': round(cons_g, 1), 'consumo_dia_g': round(cons_dia, 2), 'lead_dias': lead,
+            'min_actual': round(min_actual, 1), 'min_sugerido': min_sug,
+            'cambia': abs(min_sug - min_actual) >= 1.0, 'es_manual': es_manual,
+        })
+    filas.sort(key=lambda x: (-(x['min_sugerido']), str(x['nombre'])))
+
+    if request.method == 'GET':
+        n_cambian = sum(1 for f in filas if f['cambia'] and (not f['es_manual'] or pisar_manual))
+        n_a_cero = sum(1 for f in filas if f['min_sugerido'] == 0 and f['min_actual'] > 0 and (not f['es_manual'] or pisar_manual))
+        return jsonify({'ok': True, 'preview': True, 'dias': dias, 'colchon_pct': colchon_pct,
+                        'lead_default': lead_default, 'con_min_auto': _has_min_auto,
+                        'total': len(filas), 'n_cambian': n_cambian, 'n_a_cero': n_a_cero, 'filas': filas})
+
+    # APLICAR
+    aplicados = 0
+    saltados_manual = 0
+    for f in filas:
+        if not f['cambia']:
+            continue
+        if f['es_manual'] and not pisar_manual:
+            saltados_manual += 1
+            continue
+        nuevo = float(f['min_sugerido'])
+        try:
+            if _has_min_auto:
+                c.execute("UPDATE maestro_mps SET stock_minimo=?, min_auto=1 WHERE codigo_mp=?", (nuevo, f['codigo']))
+            else:
+                c.execute("UPDATE maestro_mps SET stock_minimo=? WHERE codigo_mp=?", (nuevo, f['codigo']))
+            audit_log(c, usuario=u, accion='RECALCULAR_MINIMO', tabla='maestro_mps', registro_id=f['codigo'],
+                      antes=str(f['min_actual']), despues=str(nuevo),
+                      detalle="consumo " + str(dias) + "d=" + str(f['consumo_plan_g']) + "g lead=" + str(f['lead_dias']) + "d colchon=" + str(colchon_pct) + "%")
+            aplicados += 1
+        except Exception:
+            pass
+    conn.commit()
+    return jsonify({'ok': True, 'aplicados': aplicados, 'saltados_manual': saltados_manual,
+                    'dias': dias, 'colchon_pct': colchon_pct})
+
+
 @bp.route('/api/abastecimiento/consumo-horizontes', methods=['GET'])
 def abastecimiento_consumo_horizontes():
     """MRP por múltiples horizontes · consumo de MP/MEE según producciones Fijas

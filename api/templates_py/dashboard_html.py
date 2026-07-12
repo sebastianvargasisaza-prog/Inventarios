@@ -326,6 +326,34 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   </div>
 </div>
 
+<!-- Modal RECALCULAR MÍNIMOS (punto de reorden desde el plan + lead time · Sebastián 12-jul) -->
+<div id="modal-recalc-min" style="position:fixed;inset:0;background:rgba(15,15,25,.55);backdrop-filter:blur(2px);z-index:9998;display:none;align-items:center;justify-content:center;padding:16px">
+  <div style="background:#fff;border-radius:18px;max-width:840px;width:97%;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 70px rgba(0,0,0,.45)">
+    <div style="background:linear-gradient(135deg,#0f766e,#0d9488);color:#fff;padding:17px 24px;display:flex;justify-content:space-between;align-items:center;gap:12px">
+      <div style="min-width:0">
+        <h2 style="color:#fff;margin:0;font-size:1.12em;display:flex;align-items:center;gap:8px">&#127919; Recalcular mínimos</h2>
+        <p style="color:rgba(255,255,255,.9);font-size:.8em;margin:4px 0 0">Punto de reorden = (consumo del plan &divide; días) &times; lead time &times; (1 + colchón). MÍN 0 si el plan no consume la MP.</p>
+      </div>
+      <button onclick="document.getElementById('modal-recalc-min').style.display='none'" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:8px;width:34px;height:34px;cursor:pointer;font-size:1.05em;flex:none">&#10005;</button>
+    </div>
+    <div style="padding:18px 22px;overflow-y:auto">
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px">
+        <div><label style="font-size:11px;color:#64748b;font-weight:700;display:block;margin-bottom:3px">Horizonte del plan (días)</label><input type="number" id="rcm-dias" value="90" min="30" max="365" style="width:120px;padding:8px;border:1px solid #e2e8f0;border-radius:8px"></div>
+        <div><label style="font-size:11px;color:#64748b;font-weight:700;display:block;margin-bottom:3px">Colchón seguridad (%)</label><input type="number" id="rcm-colchon" value="30" min="0" max="200" style="width:120px;padding:8px;border:1px solid #e2e8f0;border-radius:8px"></div>
+        <div><label style="font-size:11px;color:#64748b;font-weight:700;display:block;margin-bottom:3px">Lead time por defecto (días)</label><input type="number" id="rcm-lead" value="30" min="1" max="180" style="width:140px;padding:8px;border:1px solid #e2e8f0;border-radius:8px"></div>
+        <button onclick="rcmPreview()" style="background:#6d28d9;color:#fff;border:none;padding:9px 18px;border-radius:9px;font-weight:700;cursor:pointer">Calcular preview</button>
+      </div>
+      <div id="rcm-resumen" style="margin-bottom:12px"></div>
+      <div id="rcm-tabla" style="overflow-x:auto"></div>
+      <div id="rcm-msg" style="margin-top:12px;font-size:13px"></div>
+    </div>
+    <div style="padding:14px 22px;border-top:1px solid #eef0f4;display:flex;justify-content:flex-end;gap:10px;background:#fafafe">
+      <button onclick="document.getElementById('modal-recalc-min').style.display='none'" style="background:#fff;color:#64748b;border:1px solid #e2e8f0;padding:10px 18px;border-radius:10px;font-weight:700;cursor:pointer">Cerrar</button>
+      <button id="rcm-aplicar-btn" onclick="rcmAplicar()" disabled style="background:#16a34a;color:#fff;border:none;padding:10px 20px;border-radius:10px;font-weight:700;cursor:pointer;opacity:.5">Aplicar mínimos</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal EDITAR PROVEEDOR (a nivel lote + catalogo) -->
 <div id="modal-editar-prov" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;">
   <div style="background:white;border-radius:16px;padding:0;max-width:520px;width:96%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
@@ -1589,6 +1617,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <label style="font-size:11px;color:#64748b;display:flex;align-items:center;gap:4px;cursor:pointer">
           <input type="checkbox" id="alertas-autorefresh" checked> auto 60s
         </label>
+        <button onclick="abrirRecalcMinimos()" title="Recalcula el mínimo de cada MP como punto de reorden desde el plan + lead time (Compras/Admin)" style="padding:6px 14px;font-size:13px;background:#0d9488;color:#fff;border-radius:6px">🎯 Recalcular mínimos</button>
         <button onclick="exportarExcelAlertas()" style="padding:6px 14px;font-size:13px;background:#217346;color:#fff;border-radius:6px">📄 Excel</button>
         <button onclick="loadAlertasAll()" style="padding:6px 14px;font-size:13px;background:#7c3aed;color:#fff;border-radius:6px">🔄 Actualizar</button>
       </div>
@@ -6751,6 +6780,47 @@ async function crearSolCombinada(gIdx){
       alert('Error: '+(d.error||r.status));
     }
   }catch(e){ alert('Error red: '+e.message); }
+}
+// ─── Recalcular mínimos (punto de reorden desde el plan + lead time · Sebastián 12-jul) ───
+function abrirRecalcMinimos(){ var m=document.getElementById('modal-recalc-min'); if(m){ m.style.display='flex'; rcmPreview(); } }
+function _rcmCard(lbl,val,color){ return '<div style="background:#fff;border:1px solid #eef0f4;border-radius:10px;padding:10px 16px;min-width:130px"><div style="font-size:20px;font-weight:800;color:'+color+'">'+(Number(val)||0).toLocaleString('es-CO')+'</div><div style="font-size:10px;color:#64748b;margin-top:2px">'+lbl+'</div></div>'; }
+async function rcmPreview(){
+  var dias=+(document.getElementById('rcm-dias').value||90), col=+(document.getElementById('rcm-colchon').value||30), lead=+(document.getElementById('rcm-lead').value||30);
+  var t=document.getElementById('rcm-tabla'), rs=document.getElementById('rcm-resumen'), msg=document.getElementById('rcm-msg'), ab=document.getElementById('rcm-aplicar-btn');
+  t.innerHTML=''; rs.innerHTML='<span style="color:#94a3b8">Calculando…</span>'; msg.textContent=''; ab.disabled=true; ab.style.opacity='.5';
+  try{
+    var r=await fetch('/api/inventario/recalcular-minimos?dias='+dias+'&colchon_pct='+col+'&lead_default='+lead,{credentials:'same-origin'});
+    if(r.status===403){ rs.innerHTML=''; msg.innerHTML='<span style="color:#dc2626;font-weight:700">Solo Compras/Admin pueden recalcular mínimos.</span>'; return; }
+    var d=await r.json();
+    if(!d.ok){ rs.innerHTML=''; msg.textContent=d.error||'Error'; return; }
+    window._rcmParams={dias:dias,col:col,lead:lead};
+    rs.innerHTML='<div style="display:flex;gap:10px;flex-wrap:wrap">'+_rcmCard('MPs analizadas',d.total,'#334155')+_rcmCard('Mínimos que cambian',d.n_cambian,'#7c3aed')+_rcmCard('Pasan a 0 · sin plan',d.n_a_cero,'#16a34a')+'</div>';
+    var cambian=(d.filas||[]).filter(function(f){return f.cambia && !f.es_manual;});
+    var top=cambian.slice(0,40);
+    var h='<table class="table" style="font-size:.85em"><thead><tr><th>Código</th><th>Nombre</th><th style="text-align:right">Consumo '+dias+'d (g)</th><th style="text-align:center">Lead</th><th style="text-align:right">Mín actual</th><th style="text-align:right">Mín nuevo</th></tr></thead><tbody>';
+    top.forEach(function(f){
+      var c2=f.min_sugerido>f.min_actual?'#c2410c':(f.min_sugerido===0?'#16a34a':'#7c3aed');
+      h+='<tr><td style="font-family:monospace;color:#555">'+_escHTML(f.codigo)+'</td><td>'+_escHTML(f.nombre)+'</td><td style="text-align:right">'+(f.consumo_plan_g||0).toLocaleString('es-CO')+'</td><td style="text-align:center;color:#94a3b8">'+f.lead_dias+'d</td><td style="text-align:right;color:#94a3b8">'+(f.min_actual||0).toLocaleString('es-CO')+'</td><td style="text-align:right;font-weight:800;color:'+c2+'">'+(f.min_sugerido||0).toLocaleString('es-CO')+'</td></tr>';
+    });
+    h+='</tbody></table>';
+    if(cambian.length>40) h+='<div style="font-size:11px;color:#94a3b8;margin-top:6px">+'+(cambian.length-40)+' más · se aplican todos al confirmar</div>';
+    t.innerHTML=h;
+    if(d.n_cambian>0){ ab.disabled=false; ab.style.opacity='1'; ab.textContent='Aplicar '+d.n_cambian+' mínimos'; }
+    else { msg.innerHTML='<span style="color:#16a34a">Todos los mínimos ya están al día.</span>'; }
+  }catch(e){ rs.innerHTML=''; msg.textContent='Error de red'; }
+}
+async function rcmAplicar(){
+  var p=window._rcmParams||{dias:90,col:30,lead:30};
+  if(!confirm('¿Aplicar los mínimos calculados? Actualiza el mínimo de las MPs que cambian y respeta los fijados a mano.')) return;
+  var msg=document.getElementById('rcm-msg'); msg.innerHTML='<span style="color:#94a3b8">Aplicando…</span>';
+  try{
+    var tk=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/inventario/recalcular-minimos',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':tk.csrf_token},credentials:'same-origin',body:JSON.stringify({dias:p.dias,colchon_pct:p.col,lead_default:p.lead})});
+    var d=await r.json();
+    if(!d.ok){ msg.innerHTML='<span style="color:#dc2626">'+_escHTML(d.error||'Error')+'</span>'; return; }
+    msg.innerHTML='<span style="color:#16a34a;font-weight:700">✓ '+d.aplicados+' mínimos actualizados'+(d.saltados_manual?' · '+d.saltados_manual+' manuales respetados':'')+'</span>';
+    if(typeof loadAlertasAll==='function') loadAlertasAll();
+  }catch(e){ msg.innerHTML='<span style="color:#dc2626">Error de red</span>'; }
 }
 function exportarExcelAlertas(){
   if(!_ALERTAS_DATA){ alert('Cargá primero las alertas'); return; }

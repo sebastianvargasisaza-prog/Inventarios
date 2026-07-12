@@ -428,6 +428,9 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (347, "Mínimos calculados · maestro_mps.min_auto (Sebastián 12-jul): 1 = el mínimo lo puso el recalculador (punto de reorden desde el plan 90d + lead time), 0 = fijado a mano. El recalculador respeta los min_auto=0 (no los pisa salvo forzar). Default 1 (los mínimos actuales son el default plano 500, tratables como auto-reemplazables). Additiva, PG-safe.", [
+        "ALTER TABLE maestro_mps ADD COLUMN min_auto INTEGER DEFAULT 1",
+    ]),
     (346, "Envases · componente ETIQUETA por presentación (Sebastián 12-jul): producto_presentaciones gana etiqueta_codigo para que el abastecimiento pida la etiqueta (por producto/tono) junto al frasco+tapa+caja. La plegadiza reusa caja_codigo. Additiva, PG-safe.", [
         "ALTER TABLE producto_presentaciones ADD COLUMN etiqueta_codigo TEXT",
     ]),
