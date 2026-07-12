@@ -548,7 +548,6 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   <div id="bar-bodegaMP" class="sub-tab-bar">
     <button class="sub-btn active" onclick="subSwitchTab('stock',this,'bar-bodegaMP')">&#128230; Inventario MP</button>
     <button class="sub-btn" onclick="subSwitchTab('ingreso',this,'bar-bodegaMP')">&#128666; Recepciones</button>
-    <button class="sub-btn" onclick="subSwitchTab('abc',this,'bar-bodegaMP')">&#128200; Análisis ABC</button>
     <button class="sub-btn" onclick="subSwitchTab('alertas',this,'bar-bodegaMP')">&#9888; Alertas</button>
     <button class="sub-btn" onclick="subSwitchTab('movimientos',this,'bar-bodegaMP')">&#128203; Movimientos</button>
   </div>
@@ -796,12 +795,12 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <div id="ing-ultimo-persistido" style="display:none;background:#ecfeff;border:1px solid #7c3aed;color:#7c3aed;padding:8px 12px;border-radius:8px;font-size:13px;margin-bottom:10px"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
       <p style="color:#666;">Escribe el codigo MP y el sistema completa automaticamente desde el catalogo.</p>
-      <button onclick="mostrarFormNuevaMP()" style="background:#27ae60;white-space:nowrap;margin-left:15px;">&#43; Nueva MP en Catalogo</button>
+      <button onclick="mostrarFormNuevaMP()" style="background:#16a34a;white-space:nowrap;margin-left:15px;padding:10px 18px;border-radius:10px;font-weight:700;box-shadow:0 2px 8px rgba(22,163,74,.24);">&#43; Nueva MP en catálogo</button>
     </div>
-    <div id="ing-nueva-mp" style="display:none;background:#e8f5e9;border:2px solid #27ae60;border-radius:8px;padding:18px;margin-bottom:15px;">
+    <div id="ing-nueva-mp" style="display:none;background:linear-gradient(135deg,#f0fdf4,#fff 60%);border:1px solid #bbf7d0;border-left:4px solid #16a34a;border-radius:16px;padding:22px;margin-bottom:18px;box-shadow:0 1px 3px rgba(0,0,0,.04),0 10px 26px rgba(22,163,74,.05);">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <h4 style="color:#1b5e20;">&#43; Crear Nueva Materia Prima en el Catalogo</h4>
-        <button onclick="ocultarFormNuevaMP()" style="background:#95a5a6;padding:4px 12px;font-size:0.85em;">&#10005; Cerrar</button>
+        <h4 style="color:#166534;margin:0;font-size:1.05em;">&#43; Crear nueva materia prima en el catálogo</h4>
+        <button onclick="ocultarFormNuevaMP()" style="background:#fff;color:#64748b;border:1px solid #e2e8f0;border-radius:8px;padding:6px 14px;font-size:0.85em;font-weight:600;cursor:pointer;">&#10005; Cerrar</button>
       </div>
       <p style="font-size:0.88em;color:#2e7d32;margin-bottom:12px;">Esta MP quedara registrada en el catalogo y disponible para futuros ingresos.</p>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
@@ -839,16 +838,14 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           <div class="form-group"><label>Posici&#243;n</label><input type="text" id="nmp-ing-pos" placeholder="Ej: B-2"></div>
           <div class="form-group"><label>Precio por kg (COP)</label><input type="number" id="nmp-ing-precio-kg" placeholder="Ej: 45000" step="0.01" min="0"></div>
         </div>
-        <div style="display:flex;align-items:center;gap:10px;margin-top:10px;padding:9px 12px;background:#fff3e0;border-radius:6px;border:1px solid #ffe0b2;">
-          <input type="checkbox" id="nmp-ing-cuarentena" checked style="width:18px;height:18px;">
-          <label for="nmp-ing-cuarentena" style="margin:0;cursor:pointer;font-weight:600;color:#e65100;font-size:0.9em;">
-            &#128274; Ingresar en CUARENTENA (pendiente aprobaci&#243;n de Calidad)
-          </label>
-        </div>
+        <label for="nmp-ing-cuarentena" style="display:flex;align-items:center;gap:10px;margin-top:10px;padding:12px 14px;background:linear-gradient(135deg,#fff7ed,#fff);border-radius:12px;border:1px solid #fed7aa;cursor:pointer;">
+          <input type="checkbox" id="nmp-ing-cuarentena" checked style="width:18px;height:18px;flex:none;">
+          <span style="font-weight:700;color:#c2410c;font-size:0.9em;">&#128274; Ingresar en CUARENTENA <span style="font-weight:500;color:#9a3412;">· pendiente aprobación de Calidad</span></span>
+        </label>
         <small style="color:#666;font-size:0.78em;display:block;margin-top:6px;font-style:italic;">Si llenas cantidad &gt; 0, se crea la MP <b>y</b> se registra el ingreso en una sola acción. Marca cuarentena si va al estante de cuarentena esperando que Calidad lo libere.</small>
       </div>
-      <div style="display:flex;gap:10px;margin-top:12px;">
-        <button onclick="crearNuevaMP()" style="background:#1b5e20;">&#10003; Crear en Catalogo (+ ingreso si hay cantidad)</button>
+      <div style="display:flex;gap:10px;margin-top:16px;">
+        <button onclick="crearNuevaMP()" style="background:#16a34a;padding:11px 22px;border-radius:10px;font-weight:700;box-shadow:0 2px 8px rgba(22,163,74,.28);">&#10003; Crear en catálogo (+ ingreso si hay cantidad)</button>
       </div>
       <div id="nmp-msg" style="margin-top:10px;"></div>
     </div>
@@ -1577,52 +1574,9 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   </div>
 
   <div id="abc" class="tab-content">
-    <h2>&#128200; Análisis ABC de Inventario</h2>
-    <div style="background:#e8f4fd;border:1px solid #bee5f8;border-radius:10px;padding:16px 20px;margin-bottom:18px;font-size:0.9em;color:#1a4a6b;">
-      <strong>&#8505; Para qué sirve:</strong> Clasifica MPs según regla de Pareto 80/20 para priorizar control, conteo físico y compras.
-      <ul style="margin:8px 0 0 16px;padding:0;">
-        <li><span style="background:#28a745;color:white;padding:1px 8px;border-radius:8px;font-weight:700;font-size:0.85em;">A</span> — Top 80% acumulado · pocas MPs pero el grueso del valor · <b>máxima atención</b></li>
-        <li><span style="background:#fd7e14;color:white;padding:1px 8px;border-radius:8px;font-weight:700;font-size:0.85em;">B</span> — 80-95% · control intermedio</li>
-        <li><span style="background:#6c757d;color:white;padding:1px 8px;border-radius:8px;font-weight:700;font-size:0.85em;">C</span> — 95-100% · muchas pero poco peso · control básico</li>
-      </ul>
-      <p style="margin:8px 0 0;font-size:11px;color:#475569;">Sebastián 20-may-2026: ahora con 3 modos · <b>Valor</b> (stock × precio) es lo correcto financiero · <b>Consumo</b> (lo que se mueve) es lo correcto para compras · <b>Stock g</b> es modo legacy.</p>
-    </div>
-    <!-- Sprint ABC PRO · 20-may-2026: selectores -->
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;background:#f8fafc;padding:12px 14px;border-radius:8px">
-      <label style="font-size:12px;color:#475569;font-weight:600">Tipo:</label>
-      <select id="abc-tipo" onchange="loadABC()" style="padding:6px 10px;font-size:13px">
-        <option value="MP" selected>📦 Materias Primas</option>
-        <option value="MEE">🧤 Envase/Empaque (MEE)</option>
-      </select>
-      <label style="font-size:12px;color:#475569;font-weight:600;margin-left:8px">Modo:</label>
-      <select id="abc-modo" onchange="loadABC()" style="padding:6px 10px;font-size:13px;background:#fdf2f8;border:1px solid #be185d;font-weight:600">
-        <option value="valor" selected>💰 Por VALOR (stock × precio)</option>
-        <option value="consumo_90d">🔁 Por CONSUMO 90d</option>
-        <option value="consumo_180d">🔁 Por CONSUMO 180d</option>
-        <option value="consumo_365d">🔁 Por CONSUMO 365d</option>
-        <option value="stock_actual">📦 Por STOCK (g) · legacy</option>
-      </select>
-      <label style="font-size:12px;color:#475569;font-weight:600;margin-left:8px">Subtipo:</label>
-      <select id="abc-subtipo" onchange="loadABC()" style="padding:6px 10px;font-size:13px">
-        <option value="">Todos</option>
-        <option>Activo</option><option>Emoliente</option><option>Conservante</option>
-        <option>Humectante</option><option>Tensoactivo</option><option>Fragancia</option>
-        <option>Colorante</option><option>Vitamina</option><option>Péptido</option>
-      </select>
-      <label style="font-size:12px;color:#475569;font-weight:600;display:flex;align-items:center;gap:4px;margin-left:8px;cursor:pointer">
-        <input type="checkbox" id="abc-excluir-cuar" onchange="loadABC()"> Excluir cuarentena
-      </label>
-      <button onclick="loadABC()" style="padding:7px 16px;background:#667eea;color:#fff;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:13px">🔄 Calcular</button>
-      <button onclick="exportarExcelABC()" style="padding:7px 16px;background:#217346;color:#fff;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:13px">📄 Excel</button>
-    </div>
-    <!-- Stats cards arriba -->
-    <div id="abc-stats" style="display:none;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px"></div>
-    <!-- Gráfico Pareto -->
-    <div id="abc-chart-wrap" style="display:none;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:14px">
-      <h4 style="margin:0 0 8px;font-size:13px;color:#475569">📊 Curva Pareto · top 30 items</h4>
-      <canvas id="abc-chart" height="160"></canvas>
-    </div>
-    <div id="abc-results" style="margin-top:8px;"></div>
+    <!-- Análisis ABC movido a Compras (Sebastián 12-jul): mostraba VALORES en $ (stock × precio,
+         curva de Pareto, totales) que NO deben quedar visibles a operarios desde Planta. Se sacó
+         de Bodega MP y se reconstruye en el módulo Compras con gating de rol. -->
   </div>
 
   <div id="alertas" class="tab-content">

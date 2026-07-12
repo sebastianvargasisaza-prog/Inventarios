@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from database import db_connect
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
-from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, CALIDAD_USERS
+from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, CALIDAD_USERS, COMPRAS_ACCESS
 try:
     from config import MP_LIBERA_USERS
 except Exception:
@@ -3823,6 +3823,12 @@ def get_analisis_abc():
     u, err, code = _require_session()
     if err:
         return err, code
+    # El ABC expone VALORES en $ (stock × precio, precio_kg, totales) → NO deben verlo los
+    # operarios de planta. Sebastián 12-jul: se sacó de Bodega MP y es de Compras · gate a
+    # Compras/Admin/Contadora (se reconstruirá la UI dentro de Compras).
+    _ABC_ROLES = {x.lower() for x in (COMPRAS_ACCESS | ADMIN_USERS | CONTADORA_USERS)}
+    if (u or '').strip().lower() not in _ABC_ROLES:
+        return jsonify({'error': 'Sin permiso · el Análisis ABC (valores) es del módulo Compras'}), 403
     modo = (request.args.get('modo') or 'valor').strip().lower()
     excluir_cuarentena = (request.args.get('excluir_cuarentena') or '').strip() in ('1', 'true', 'yes')
     subtipo_filtro = (request.args.get('subtipo') or '').strip()
