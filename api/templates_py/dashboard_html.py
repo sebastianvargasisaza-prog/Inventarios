@@ -9505,7 +9505,7 @@ function meeScrollToObsoletos(anchor){
   var el = document.getElementById(anchor) || document.getElementsByName(anchor)[0];
   if(el) el.scrollIntoView({behavior:'smooth'});
 }
-function _cliChip(m){ var cli=(m.cliente||'').trim(); var txt=cli||'General'; var col=cli?'#1d4ed8':'#94a3b8'; var bg=cli?'#dbeafe':'#f1f5f9'; return ' <span onclick="meeSetCliente(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;,&quot;'+_escHTML(txt)+'&quot;)" title="cambiar cliente" style="cursor:pointer;background:'+bg+';color:'+col+';border-radius:8px;padding:1px 7px;font-size:10px;font-weight:700">&#128100; '+_escHTML(txt)+'</span>'; }
+function _cliChip(m){ var cli=(m.cliente||'').trim(); var txt=cli||'General'; var col=cli?'#1d4ed8':'#94a3b8'; var bg=cli?'#dbeafe':'#f1f5f9'; var bd=cli?'#bfdbfe':'#e2e8f0'; return ' <span onclick="meeSetCliente(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;,&quot;'+_escHTML(txt)+'&quot;)" title="Cliente asignado · clic para cambiar" style="cursor:pointer;background:'+bg+';color:'+col+';border:1px solid '+bd+';border-radius:999px;padding:1px 8px;font-size:0.7em;font-weight:700">&#128100; '+_escHTML(txt)+'</span>'; }
 async function meeSetCliente(cod, actual){ var c=prompt('Cliente para '+cod+' (vacío = General):', actual==='General'?'':actual); if(c===null) return; try{ var r=await fetch('/api/mee/set-cliente',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({codigo:cod,cliente:c.trim()})}); var d=await r.json(); if(d.ok){ cargarMeeStock(); } else { alert('Error: '+(d.error||'')); } }catch(e){ alert('Error de conexión'); } }
 function meeFotoUpload(codigo){
   var i=document.createElement('input'); i.type='file'; i.accept='image/*';
@@ -9633,13 +9633,14 @@ async function cargarMeeStock(){
       if(_cat!==_lastCat){ _lastCat=_cat; h+='<tr style="background:#ede9fe"><td colspan="9" style="font-weight:800;color:#5b21b6;padding:8px 12px;font-size:13px">&#128230; '+_escHTML(_cat)+' <span style="color:#a78bfa;font-weight:600">('+(_catCnt[_cat]||0)+')</span></td></tr>'; }
       var c=aC[m.alerta]||'#95a5a6';
       var lbl=aL[m.alerta]||'';
-      var ob=m.obsoleto?' <span style="background:#ffc107;color:#856404;border-radius:3px;padding:1px 5px;font-size:0.75em;">+90d</span>':'';
+      var ob=m.obsoleto?' <span title="Sin movimiento hace más de 90 días · inventario que no rota" style="background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:999px;padding:1px 8px;font-size:0.7em;font-weight:700;white-space:nowrap">&#128337; sin uso 90d</span>':'';
       h+='<tr data-cod="'+_escHTML(m.codigo)+'">';
       h+='<td onclick="meeFotoUpload(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Subir/cambiar foto" style="cursor:pointer">'+(m.imagen_url?'<img src="'+_escHTML(m.imagen_url)+'" loading="lazy" style="width:72px;height:72px;object-fit:contain;border-radius:6px;border:1px solid #eee;background:#fafafa">':'<span style="display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:72px;height:72px;border:1.5px dashed #c4b5fd;border-radius:8px;color:#7c3aed;font-size:10px;font-weight:700;background:#faf5ff">&#128247;<span style="font-weight:600;margin-top:2px">subir foto</span></span>')+'</td>';
       h+='<td style="font-family:monospace;font-size:0.78em;color:#555;">'+_escHTML(m.codigo)+'</td>';
       var _loc=[m.zona,m.estanteria,m.posicion].filter(function(x){return x&&String(x).trim();}).join('/');
-      var _locChip=_loc?' <span style="background:#ecfeff;color:#0e7490;border:1px solid #a5f3fc;border-radius:4px;padding:1px 5px;font-size:0.72em;font-weight:600;white-space:nowrap" title="Ubicación">&#128205; '+_escHTML(_loc)+'</span>':'';
-      h+='<td style="font-size:0.88em;">'+_escHTML(m.descripcion)+ob+_cliChip(m)+_locChip+'</td>';
+      var _locChip=_loc?' <span style="background:#ecfeff;color:#0e7490;border:1px solid #a5f3fc;border-radius:999px;padding:1px 8px;font-size:0.7em;font-weight:600;white-space:nowrap" title="Ubicación en bodega (zona/estante/posición)">&#128205; '+_escHTML(_loc)+'</span>':'';
+      var _chips=(_cliChip(m)+_locChip+ob).trim();
+      h+='<td style="font-size:0.9em;line-height:1.35;">'+'<div style="font-weight:600;color:#1e293b">'+_escHTML(m.descripcion)+'</div>'+(_chips?'<div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+_cliChip(m)+_locChip+ob+'</div>':'')+'</td>';
       h+='<td style="font-size:0.8em;color:#777;">'+_escHTML(m.categoria||'')+'</td>';
       h+='<td style="font-weight:700;">'+m.stock_actual+' <span style="color:#999;font-size:0.8em;">'+_escHTML(m.unidad||'und')+'</span></td>';
       h+='<td style="color:#aaa;font-size:0.88em;">'+(m.stock_minimo||'—')+'</td>';
