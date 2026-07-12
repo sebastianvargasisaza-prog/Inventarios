@@ -136,3 +136,29 @@ def test_preparacion_pico_sugiere_agrandar_lote(app, db_clean):
     assert pp["lote_id"] == 4242, pp
     assert pp["kg_sugerido"] > pp["kg_actual"] >= 20.0, ("debe sugerir MÁS kg que el actual", pp)
     assert pp["pico_mes"] == pk, pp
+
+
+def test_acelerador_config_y_en_abastecimiento(app, db_clean):
+    """El acelerador se guarda (activo + colchones) y viaja en la respuesta de Abastecimiento para que el
+    frontend calcule el buffer visible sobre 'Pedir'."""
+    c = _login(app)
+    # guardar config
+    r = c.post("/api/plan/acelerador-config",
+               json={"activo": True, "crecimiento_tope": 40, "colchon_local": 8, "colchon_import": 22, "lead_umbral": 25},
+               headers=csrf_headers())
+    assert r.status_code == 200, r.data
+    cfg = r.get_json()["config"]
+    assert cfg["activo"] is True and cfg["colchon_import"] == 22 and cfg["lead_umbral"] == 25, cfg
+    # GET refleja lo guardado
+    g = c.get("/api/plan/acelerador-config").get_json()["config"]
+    assert g["activo"] is True and g["colchon_local"] == 8, g
+    # viaja en Abastecimiento
+    r2 = c.get("/api/abastecimiento/consumo-horizontes?tipo=mp")
+    assert r2.status_code == 200, r2.data
+    ac = r2.get_json().get("acelerador")
+    assert ac is not None and ac["activo"] is True and ac["colchon_import"] == 22, ac
+    # clamp de seguridad: valores absurdos se acotan
+    r3 = c.post("/api/plan/acelerador-config", json={"crecimiento_tope": 999, "colchon_import": -5},
+                headers=csrf_headers())
+    cfg3 = r3.get_json()["config"]
+    assert cfg3["crecimiento_tope"] <= 200 and cfg3["colchon_import"] >= 0, cfg3

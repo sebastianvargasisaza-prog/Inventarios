@@ -23688,7 +23688,30 @@ async function ckMarcar(itemId, estado){
     // POSTERIOR (se pasaba). Ahora si está cubierto → 0 (no sobre-pedir).
     if (!it.deficit) return 0;
     const dh = it.deficit[String(cubrirDias)];
-    return (dh && dh > 0.01) ? Math.round(dh) : 0;
+    if (!(dh && dh > 0.01)) return 0;
+    // Sebastián 11-jul · acelerador de compras (buffer visible: crecimiento capado + colchón por lead time)
+    return Math.round(dh * (1 + _acelFactor(it)));
+  }
+  function _acelFactor(it) {
+    var a = (window._ABA_STATE && window._ABA_STATE.acelerador) || null;
+    if (!a || !a.activo) return 0;
+    var g = a.crecimiento_marca_pct;
+    var gf = (g && g > 0) ? Math.min(g, (a.crecimiento_tope != null ? a.crecimiento_tope : 50)) / 100 : 0;
+    var lead = it.lead_time_dias || 14;
+    var cf = ((lead > (a.lead_umbral != null ? a.lead_umbral : 30)) ? (a.colchon_import != null ? a.colchon_import : 25) : (a.colchon_local != null ? a.colchon_local : 10)) / 100;
+    return gf + cf;
+  }
+  function _acelBreakdown(it) {
+    var a = (window._ABA_STATE && window._ABA_STATE.acelerador) || null;
+    if (!a || !a.activo || !it.deficit) return '';
+    var dh = it.deficit[String((window._ABA_STATE||{}).cubrir_dias)] || 0;
+    if (!(dh > 0.01)) return '';
+    var g = a.crecimiento_marca_pct;
+    var gf = (g && g > 0) ? Math.min(g, (a.crecimiento_tope != null ? a.crecimiento_tope : 50)) : 0;
+    var lead = it.lead_time_dias || 14;
+    var imp = lead > (a.lead_umbral != null ? a.lead_umbral : 30);
+    var cf = imp ? (a.colchon_import != null ? a.colchon_import : 25) : (a.colchon_local != null ? a.colchon_local : 10);
+    return 'base ' + Math.round(dh) + 'g + crecimiento ' + gf.toFixed(0) + '% + colchón ' + cf.toFixed(0) + '% (' + (imp ? 'importada' : 'local') + ' · lead ' + lead + 'd)';
   }
 
   function _aplicarFiltros(items) {
@@ -23732,6 +23755,7 @@ async function ckMarcar(itemId, estado){
       // Guardar estado para acciones (filtros, selección)
       window._ABA_STATE.items = [].concat(d.mps || [], d.mees || []);
       window._ABA_STATE.horizontes = d.horizontes || [];
+      window._ABA_STATE.acelerador = d.acelerador || null;
       window._ABA_STATE.seleccionados = {};
 
       // FIX UX 24-may-2026 noche · 2 filas separadas:
@@ -23969,6 +23993,14 @@ async function ckMarcar(itemId, estado){
       html += '<option value="' + h + '"' + sel + '>' + (h===365?'1 año':(h===730?'2 años':h+'d')) + '</option>';
     });
     html += '</select></label>';
+    // Sebastián 11-jul · Acelerador de compras (crecimiento capado + colchón por lead time · buffer sobre "Pedir")
+    var _ac = st.acelerador || null;
+    if (_ac) {
+      var _gm = (_ac.crecimiento_marca_pct != null) ? (_ac.crecimiento_marca_pct>0?'+':'') + Math.round(_ac.crecimiento_marca_pct) + '%' : '—';
+      var _acTit = 'Sube el "Pedir" para ir teniendo inventario: crecimiento de la marca ' + _gm + ' (tope ' + (_ac.crecimiento_tope||50) + '%) + colchón ' + (_ac.colchon_local||10) + '% local / ' + (_ac.colchon_import||25) + '% importada (lead > ' + (_ac.lead_umbral||30) + 'd).';
+      html += '<label style="display:flex;align-items:center;gap:6px;color:' + (_ac.activo?'#b45309':'#94a3b8') + ';font-weight:700;cursor:pointer" title="' + escapeHtmlNec(_acTit) + '"><input type="checkbox"' + (_ac.activo?' checked':'') + ' onchange="_abastAcelToggle(this.checked)"> 🚀 Acelerador' + (_ac.activo?(' <span style="font-size:10px;color:#64748b;font-weight:600">crec ' + _gm + '</span>'):'') + '</label>';
+      html += '<button onclick="_abastAcelConfig()" title="Ajustar tope de crecimiento y colchón por lead time" style="padding:6px 9px;background:#fff;color:#b45309;border:1px solid #fbbf24;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">⚙</button>';
+    }
     const _abaBtn = 'padding:9px 14px;border:0;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:0 3px 10px -3px rgba(16,15,45,.3);color:#fff';
     html += '<button onclick="_abastSelectVisibles(true)" style="padding:8px 12px;background:#fff;color:#64748b;border:1px solid #e6e1f2;border-radius:10px;font-size:11.5px;font-weight:600;cursor:pointer">☑ Todos</button>';
     html += '<button onclick="_abastSelectVisibles(false)" style="padding:8px 12px;background:#fff;color:#64748b;border:1px solid #e6e1f2;border-radius:10px;font-size:11.5px;font-weight:600;cursor:pointer">☐ Ninguno</button>';
@@ -24053,8 +24085,10 @@ async function ckMarcar(itemId, estado){
         html += '<td style="padding:6px 8px;text-align:right;font-family:ui-monospace;background:' + cellBg + ';color:' + cellTc + ';font-weight:' + (def>0.01?'700':'400') + '" title="Consumo ' + h + 'd: ' + _fmtAba(cons) + ' ' + unit + '">' + _fmtAba(def) + '</td>';
       });
       html += '<td style="padding:6px 8px;text-align:center;font-size:16px" title="' + urg.text + '">' + urg.emoji + '</td>';
-      // Pedir: input editable · sugerencia automática
-      html += '<td style="padding:4px;background:#ecfdf5"><input type="number" min="0" data-cod="' + escapeHtmlNec(it.codigo) + '" value="' + (cantidad || 0) + '" onchange="_abastCantidad(this)" style="width:80px;padding:4px 6px;border:1px solid #86efac;border-radius:4px;font-family:ui-monospace;font-size:12px;text-align:right"></td>';
+      // Pedir: input editable · sugerencia automática (+ badge 🚀 si el acelerador subió la cantidad)
+      var _acelBd = (selData.cantidad_override == null) ? _acelBreakdown(it) : '';
+      var _acelTag = _acelBd ? '<div style="font-size:9px;color:#b45309;font-weight:700;margin-top:2px" title="' + escapeHtmlNec(_acelBd) + '">🚀 acelerado</div>' : '';
+      html += '<td style="padding:4px;background:#ecfdf5"><input type="number" min="0" data-cod="' + escapeHtmlNec(it.codigo) + '" value="' + (cantidad || 0) + '" onchange="_abastCantidad(this)" style="width:80px;padding:4px 6px;border:1px solid #86efac;border-radius:4px;font-family:ui-monospace;font-size:12px;text-align:right">' + _acelTag + '</td>';
       html += '</tr>';
     });
     html += '</tbody></table></div>';
@@ -24074,6 +24108,32 @@ async function ckMarcar(itemId, estado){
   function _abastCubrir(v) {
     window._ABA_STATE.cubrir_dias = parseInt(v, 10);
     renderTablaAbast();
+  }
+  // Sebastián 11-jul · acelerador de compras (on/off + config de tope/colchón)
+  async function _abastAcelGuardar(patch) {
+    try {
+      var t = (await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json()).csrf_token;
+      var r = await fetch('/api/plan/acelerador-config', {method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json','X-CSRF-Token':t}, body: JSON.stringify(patch)});
+      var d = await r.json();
+      if (!r.ok) { alert('No se pudo: ' + ((d && d.error) || r.status)); return false; }
+      if (window._ABA_STATE) window._ABA_STATE.acelerador = Object.assign(window._ABA_STATE.acelerador||{}, d.config||{});
+      if (window.cargarAbastecimiento) { try { await cargarAbastecimiento(); } catch(e){} }
+      return true;
+    } catch(e) { alert('Error: ' + e); return false; }
+  }
+  function _abastAcelToggle(checked) { _abastAcelGuardar({activo: !!checked}); }
+  function _abastAcelConfig() {
+    var a = (window._ABA_STATE && window._ABA_STATE.acelerador) || {};
+    var tope = prompt('Tope de crecimiento (% máx que suma el crecimiento de la marca · evita que un dato atípico dispare la compra):', (a.crecimiento_tope!=null?a.crecimiento_tope:50));
+    if (tope === null) return;
+    var loc = prompt('Colchón para MP LOCAL / rápida (% extra · lead time corto):', (a.colchon_local!=null?a.colchon_local:10));
+    if (loc === null) return;
+    var imp = prompt('Colchón para MP IMPORTADA por barco (% extra · lead time largo):', (a.colchon_import!=null?a.colchon_import:25));
+    if (imp === null) return;
+    var um = prompt('Lead time (días) a partir del cual una MP se considera IMPORTADA:', (a.lead_umbral!=null?a.lead_umbral:30));
+    if (um === null) return;
+    _abastAcelGuardar({crecimiento_tope: parseFloat(tope)||0, colchon_local: parseFloat(loc)||0, colchon_import: parseFloat(imp)||0, lead_umbral: parseInt(um,10)||30});
   }
   function _abastTogglePick(checkbox) {
     const cod = checkbox.dataset.cod;

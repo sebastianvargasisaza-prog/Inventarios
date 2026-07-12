@@ -14156,6 +14156,70 @@ def plan_estacionalidad_ventas():
     return jsonify(data)
 
 
+# ── ACELERADOR DE COMPRAS (Fase 1b · Sebastián 11-jul) ──────────────────────────────────────────────────────
+# Buffer VISIBLE sobre el "Pedir" de Abastecimiento para ir construyendo inventario, con 3 palancas transparentes:
+#  (1) crecimiento de la tienda (YoY real · con TOPE para que un dato atípico no dispare una compra gigante),
+#  (2) colchón de seguridad por LEAD TIME (MP local +X% · MP importada por barco +Y% · si te quedás corto de la
+#      importada no la reponés a tiempo). Nunca baja el pedido (solo suma). El pico estacional ya lo sube la
+#      sub-línea "Preparar pico" (agranda la producción → la MP sube sola) · esto es el colchón sobre la compra.
+_ACEL_DEFAULTS = {'activo': False, 'crecimiento_tope': 50.0, 'colchon_local': 10.0,
+                  'colchon_import': 25.0, 'lead_umbral': 30}
+
+
+def _acelerador_config(conn):
+    import json as _j
+    cfg = dict(_ACEL_DEFAULTS)
+    try:
+        row = conn.execute("SELECT valor FROM app_settings WHERE clave='acelerador_compras'").fetchone()
+        if row and row[0]:
+            cfg.update(_j.loads(row[0]) or {})
+    except Exception:
+        pass
+    return cfg
+
+
+@bp.route("/api/plan/acelerador-config", methods=["GET", "POST"])
+def plan_acelerador_config():
+    """Config del acelerador de compras (crecimiento + colchón por lead time). GET devuelve config + el
+    crecimiento REAL de la marca (para mostrarlo). POST lo guarda (admin/compras)."""
+    err = _require_login()
+    if err:
+        return err
+    import json as _j
+    conn = get_db()
+    if request.method == "GET":
+        cfg = _acelerador_config(conn)
+        try:
+            cfg['crecimiento_marca_pct'] = (_estacionalidad_cached(conn, 24, 1.3)
+                                            .get('global', {}).get('crecimiento', {}).get('yoy_pct'))
+        except Exception:
+            cfg['crecimiento_marca_pct'] = None
+        return jsonify({'ok': True, 'config': cfg})
+    user, e2 = _require_admin_or_compras()
+    if e2:
+        b, code = e2
+        return jsonify(b), code
+    body = request.get_json(silent=True) or {}
+    cfg = _acelerador_config(conn)
+    if 'activo' in body:
+        cfg['activo'] = bool(body['activo'])
+    for k in ('crecimiento_tope', 'colchon_local', 'colchon_import'):
+        if k in body:
+            try:
+                cfg[k] = max(0.0, min(float(body[k]), 200.0 if k == 'crecimiento_tope' else 100.0))
+            except Exception:
+                pass
+    if 'lead_umbral' in body:
+        try:
+            cfg['lead_umbral'] = max(1, min(int(body['lead_umbral']), 365))
+        except Exception:
+            pass
+    conn.execute("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('acelerador_compras', ?)",
+                 (_j.dumps(cfg),))
+    conn.commit()
+    return jsonify({'ok': True, 'config': cfg})
+
+
 _ESTACIONALIDAD_HTML = r"""<!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Estacionalidad de ventas · ÁNIMUS</title>

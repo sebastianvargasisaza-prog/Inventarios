@@ -15036,10 +15036,24 @@ def abastecimiento_consumo_horizontes():
         except Exception:
             pass
 
+    # Acelerador de compras (Fase 1b · Sebastián 11-jul) · config + crecimiento REAL de la marca para que el
+    # frontend calcule el buffer VISIBLE sobre "Pedir" (import lazy · evita circular plan↔programacion).
+    _acel = None
+    try:
+        from blueprints.plan import _acelerador_config as _acel_cfg, _estacionalidad_cached as _est_c
+        _acel = _acel_cfg(conn)
+        try:
+            _acel['crecimiento_marca_pct'] = (_est_c(conn, 24, 1.3)
+                                              .get('global', {}).get('crecimiento', {}).get('yoy_pct'))
+        except Exception:
+            _acel['crecimiento_marca_pct'] = None
+    except Exception:
+        _acel = None
     return jsonify({
         'hoy': hoy_iso,
         'horizontes': horizontes,
         'modo': modo,
+        'acelerador': _acel,
         'n_producciones_fijas': n_fijas,
         'n_producciones_sugeridas': n_sugeridas,
         'n_producciones_otras': n_otras,
