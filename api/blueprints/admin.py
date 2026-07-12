@@ -7733,7 +7733,12 @@ async function cargar(){
   try{
     var st=await (await fetch('/api/admin/productos-envase-estado',{cache:'no-store'})).json();
     var m=await (await fetch('/api/admin/maestro-mees-list',{cache:'no-store'})).json();
-    ENV=(m.mees||[]).filter(function(e){return /^FR-/.test(e.codigo||'');});
+    // Sebastián 12-jul · robusto: los frascos se identifican por CATEGORÍA (Frasco/Envase), no por el prefijo
+    // FR- (frágil · el re-catálogo dejó códigos MEE-### que el filtro viejo escondía → productos "sin envase"
+    // que no se podían mapear). Fallback a TODOS los envases si no hay ninguno con esa categoría.
+    var _allEnv=(m.mees||[]);
+    var _fr=_allEnv.filter(function(e){var c=(e.categoria||'').toLowerCase(); return c==='frasco'||c==='envase'||/^FR-/.test(e.codigo||'');});
+    ENV = _fr.length ? _fr : _allEnv;
     ROWS=[];
     (st.productos||[]).forEach(function(p){(p.slots||[]).forEach(function(s){ROWS.push({prod:p.producto,vol:(s.volumen_ml||''),env:s.envase||'',falta:!s.envase,multi:p.multi});});});
     recount(); render();

@@ -388,3 +388,48 @@ def test_liberar_cuarentena_seleccion_vacia_no_libera(admin_client):
         from database import get_db
         c = get_db().cursor()
         assert c.execute("SELECT estado_lote FROM movimientos WHERE lote='LSV'").fetchone()[0] == "CUARENTENA"
+
+
+def test_mapeo_producto_envase_flujo(admin_client):
+    """Sebastián 12-jul · verificar/normalizar envases: la página lista todos los productos, el desplegable trae
+    los frascos (por CATEGORÍA, no solo prefijo FR-), y asignar un envase a un producto sin envase lo saca de
+    'falta'. Cubre la lista + el guardado + el estado."""
+    import os
+    import sqlite3
+    db = sqlite3.connect(os.environ["DB_PATH"], timeout=10)
+    prod, frasco = "QA ENVASE PROD", "FR-QA-ENV-30"
+    db.execute("DELETE FROM formula_headers WHERE producto_nombre=?", (prod,))
+    db.execute("DELETE FROM sku_producto_map WHERE producto_nombre=?", (prod,))
+    db.execute("DELETE FROM producto_presentaciones WHERE producto_nombre=?", (prod,))
+    db.execute("DELETE FROM maestro_mee WHERE codigo=?", (frasco,))
+    db.execute("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo) VALUES (?, 10, 1)", (prod,))
+    db.execute("INSERT INTO sku_producto_map (sku, producto_nombre, volumen_ml, activo) VALUES (?,?,30,1)",
+               ("QAENVSKU30", prod))
+    # un frasco con código NO-FR... en realidad FR- pero lo clave es que lo traiga por categoría 'Frasco'
+    db.execute("INSERT INTO maestro_mee (codigo, descripcion, categoria, stock_actual, estado, fecha_creacion) "
+               "VALUES (?, 'FRASCO QA 30ml', 'Frasco', 0, 'Activo', '2026-07-12 00:00:00')", (frasco,))
+    db.commit(); db.close()
+
+    # página renderiza
+    r = admin_client.get("/admin/mapeo-producto-envase")
+    assert r.status_code == 200 and b"Mapear producto" in r.data, r.status_code
+
+    # el frasco aparece en la lista de MEEs (categoría Frasco)
+    mm = admin_client.get("/api/admin/maestro-mees-list").get_json()
+    assert any(e["codigo"] == frasco and (e.get("categoria") or "").lower() == "frasco" for e in mm["mees"]), "frasco no está en la lista"
+
+    # el producto aparece como 'falta' (sin envase)
+    st = admin_client.get("/api/admin/productos-envase-estado").get_json()
+    fila = next((p for p in st["productos"] if p["producto"] == prod), None)
+    assert fila is not None and fila["falta"] is True, ("debería aparecer sin envase", fila)
+
+    # asignar el frasco
+    r2 = admin_client.post("/api/admin/mapear-envase",
+                           json={"producto": prod, "envase_codigo": frasco, "volumen_ml": 30})
+    assert r2.status_code == 200 and r2.get_json().get("ok") is True, r2.data
+
+    # ahora YA no falta
+    st2 = admin_client.get("/api/admin/productos-envase-estado").get_json()
+    fila2 = next((p for p in st2["productos"] if p["producto"] == prod), None)
+    assert fila2 is not None and fila2["falta"] is False, ("tras asignar no debe faltar", fila2)
+    assert any(s["envase"] == frasco for s in fila2["slots"]), fila2
