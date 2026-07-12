@@ -25766,6 +25766,10 @@ async function ckMarcar(itemId, estado){
           });
           html += '</tbody></table>';
           html += '<div class="necx-note">Mix con ventas de la ventana actual · uds asumen lote bulk completo (' + (p.lote_bulk_kg||0) + 'kg) · Cobertura = stock del tono ÷ su velocidad · <span style="color:#dc2626;font-weight:700">⚠️ = el tono DOMINANTE</span> (el de mayor mix · marca la pauta del producto) · un tono/tamaño secundario en 0 NO tira el producto a crítico (se envasa junto al dominante · igual verás su cobertura acá)</div>';
+          // Sebastián 11-jul · producto RENOMBRADO (ej. MAXLASH→ANIMUSLASH): el SKU viejo (vende, 0 stock)
+          // crea un "tono" fantasma que lo deja en rojo. Este botón lo marca como producto ÚNICO (mono) →
+          // una sola cobertura (stock total ÷ venta total), sin cuello de botella del SKU viejo.
+          html += '<button data-prod="' + escapeHtmlNec(p.producto_nombre||'') + '" onclick="_marcaMonoTono(this)" style="margin-top:8px;background:#ede9fe;border:1px solid #c4b5fd;border-radius:6px;padding:6px 10px;font-size:11px;color:#5b21b6;font-weight:700;cursor:pointer">🔗 Es el mismo producto renombrado · no son tonos distintos (una sola cobertura)</button>';
           html += '</div></details></td></tr>';
         }
       });
@@ -26261,7 +26265,7 @@ async function ckMarcar(itemId, estado){
       html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">';
       html += '<span style="font-size:12px;color:#5b21b6;font-weight:700">Cada <input id="cm-meses" type="number" min="0.5" max="12" step="0.5" value="' + _mesesM + '" oninput="_cmSyncFromMeses(' + idx + ')" style="width:44px;padding:3px 4px;border:1px solid #c4b5fd;border-radius:4px;text-align:center;font-weight:700"> meses <span style="color:#94a3b8;font-weight:600">o</span> <input id="cm-dias" type="number" min="15" max="400" value="' + Math.round(_mesesM * 30.44) + '" oninput="_cmSyncFromDias(' + idx + ')" title="cadencia exacta en días (ej. 45)" style="width:48px;padding:3px 4px;border:1px solid #c4b5fd;border-radius:4px;text-align:center;font-weight:700"> días</span>';
       html += '<span style="font-size:12px;color:#5b21b6;font-weight:700">· <input id="cm-kg" type="number" min="0.1" step="0.1" value="' + _kgM + '" oninput="_cmPreview(' + idx + ')" title="kg de cada lote de la cadena (editable)" style="width:62px;padding:3px 4px;border:1px solid #7c3aed;border-radius:4px;text-align:center;font-weight:800;color:#5b21b6"> kg/lote</span>';
-      html += '<span style="font-size:12px;color:#5b21b6;font-weight:700">· Horizonte <select id="cm-anios" onchange="_cmPreview(' + idx + ')" style="padding:3px 4px;border:1px solid #c4b5fd;border-radius:4px;font-weight:700"><option value="1">1 año</option><option value="2">2 años</option><option value="3">3 años</option></select></span>';
+      html += '<span style="font-size:12px;color:#5b21b6;font-weight:700">· Horizonte <select id="cm-anios" onchange="_cmPreview(' + idx + ')" style="padding:3px 4px;border:1px solid #c4b5fd;border-radius:4px;font-weight:700"><option value="1">1 año</option><option value="2" selected>2 años</option><option value="3">3 años</option></select></span>';
       html += '</div>';
       html += '<div id="cm-preview-' + idx + '" style="font-size:11px;color:#5b21b6;background:#fff;border:1px solid #ede9fe;border-radius:6px;padding:8px 10px;line-height:1.5;margin-bottom:8px"></div>';
       html += '<button onclick="programarCadenaManual(' + idx + ')" style="background:linear-gradient(90deg,#7c3aed,#5b21b6);color:#fff;border:none;border-radius:6px;padding:9px 16px;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 2px 8px -2px rgba(124,58,237,.5)">📅 Crear cadena en el calendario</button>';
@@ -26507,6 +26511,21 @@ async function ckMarcar(itemId, estado){
     el.innerHTML = _ref
       + '📦 Un lote de <b>' + cc.kg.toFixed(1) + ' kg</b> cada <b>' + cc.meses + ' mes' + (cc.meses===1?'':'es') + '</b> (~' + cc.intervalDias + ' días)<br>'
       + '🗓️ Partida <b>' + cc.partida + '</b> · ' + _firstTxt + ', luego cada ' + cc.intervalDias + 'd · ~<b>' + cc.nLotes + '</b> lotes en <b>' + cc.anios + ' año' + (cc.anios===1?'':'s') + '</b> · total <b>' + (cc.kg*cc.nLotes).toFixed(0) + ' kg</b>';
+  }
+  // Sebastián 11-jul · marcar un producto como MONO (no multi-tono · renombrado) desde el desglose de tonos.
+  async function _marcaMonoTono(btn){
+    var prod = (btn && btn.getAttribute('data-prod')) || '';
+    if(!prod) return;
+    if(!confirm('Marcar "' + prod + '" como PRODUCTO ÚNICO (no multi-tono):\\n\\nSus SKUs se tratan como el mismo producto (renombrado), no como colores distintos. La cobertura usa el stock TOTAL ÷ la venta TOTAL, sin el cuello de botella del SKU viejo (0 stock).\\n\\n¿Continuar?')) return;
+    btn.disabled = true; btn.textContent = 'Aplicando…';
+    try{
+      var t = (await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json()).csrf_token;
+      var r = await fetch('/api/plan/pauta-multitono', {method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json','X-CSRF-Token':t}, body: JSON.stringify({producto: prod, regla: 'mono'})});
+      var d = await r.json();
+      if(!r.ok){ btn.disabled=false; btn.textContent='🔗 Es el mismo producto renombrado'; alert('No se pudo: ' + ((d && d.error) || r.status)); return; }
+      if(window.cargarNecesidades){ try{ await cargarNecesidades(); }catch(e){} }
+    }catch(e){ btn.disabled=false; alert('Error: ' + e); }
   }
   async function programarCadenaManual(idx){
     var p = window._NEC_PRODUCTOS_CACHE[idx]; if(!p){ alert('Producto no encontrado'); return; }

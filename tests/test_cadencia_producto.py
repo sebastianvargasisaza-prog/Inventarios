@@ -62,6 +62,34 @@ def test_cadena_producto_crea_y_reemplaza(app, db_clean):
     assert abs(row[1] - 5.0) < 0.01, row
 
 
+def test_cadena_2anios_da_horizonte_completo_no_medio(app, db_clean):
+    """Sebastián 11-jul (ANIMUSLASH): el usuario puso 'cada 3 meses durante 2 años' arrancando en septiembre
+    y salieron solo 5 lotes (llegaba a 1 año) porque el desplegable Horizonte quedó en '1 año'. El backend
+    SIEMPRE fue correcto: con anios=2, dhp≈90, cada ~91d → 8 lotes que cubren los 2 años completos. Con
+    anios=1 daría 4 (la mitad = el bug percibido). Este test fija el horizonte completo contra regresión."""
+    import datetime as _dt3
+    hoy = (_dt3.datetime.utcnow() - _dt3.timedelta(hours=5)).date()
+    base = hoy.isoformat()
+    c = _login(app)
+    # anios=2 → horizonte 730 · dhp=90 (septiembre) · cada 91d → offsets 90,181,...,727 = 8 lotes
+    r2 = c.post('/api/plan/programar-cadencia-producto',
+                json={'producto': 'PROD 2Y', 'kg_por_lote': 3, 'interval_dias': 91,
+                      'dias_hasta_primera': 90, 'ancla_fecha': base, 'anios': 2, 'crear_origen': False},
+                headers=csrf_headers())
+    assert r2.status_code == 200, r2.data[:300]
+    d2 = r2.get_json()
+    assert d2.get('anios') == 2, d2
+    assert d2['creados'] == 8, ('2 años debe dar el horizonte completo (8 lotes), no la mitad', d2)
+    assert d2['esperados'] == 8, d2
+    # anios=1 daría exactamente la MITAD (4) = lo que veía el usuario
+    r1 = c.post('/api/plan/programar-cadencia-producto',
+                json={'producto': 'PROD 1Y', 'kg_por_lote': 3, 'interval_dias': 91,
+                      'dias_hasta_primera': 90, 'ancla_fecha': base, 'anios': 1, 'crear_origen': False},
+                headers=csrf_headers())
+    assert r1.status_code == 200, r1.data[:300]
+    assert r1.get_json()['creados'] == 4, r1.get_json()
+
+
 def test_cadena_producto_sin_kg_error(app, db_clean):
     c = _login(app)
     r = c.post('/api/plan/programar-cadencia-producto', json={'producto': 'X', 'kg_por_lote': 0},

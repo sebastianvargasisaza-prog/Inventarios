@@ -3091,7 +3091,10 @@ def plan_pauta_multitono():
         data = {}
     if prod and regla:
         key = prod.strip().lower()
-        if regla in ('dominante', 'cuello'):
+        # Sebastián 11-jul · 'mono' = el producto NO es multi-tono (un solo producto renombrado, ej.
+        # MAXLASH→ANIMUSLASH): sus SKUs no son colores distintos → una sola cobertura (Σstock ÷ vel total),
+        # sin cuello de botella fantasma del SKU viejo con 0 stock.
+        if regla in ('dominante', 'cuello', 'mono'):
             data[key] = regla
         else:
             data.pop(key, None)
@@ -3100,8 +3103,9 @@ def plan_pauta_multitono():
         conn.commit()
         return jsonify({'ok': True, 'producto': prod, 'regla': data.get(key, 'auto'), 'overrides': data})
     return jsonify({'ok': True, 'overrides': data,
-                    'nota': 'Setear: ?producto=NOMBRE&regla=dominante|cuello|auto. dominante=manda el tamaño '
-                            'grande · cuello=manda el que se agota primero (colores) · auto=por volumen (default).'})
+                    'nota': 'Setear: ?producto=NOMBRE&regla=dominante|cuello|mono|auto. dominante=manda el tamaño '
+                            'grande · cuello=manda el que se agota primero (colores) · mono=no multi-tono (una '
+                            'sola cobertura · productos renombrados) · auto=por volumen (default).'})
 
 
 @bp.route("/api/plan/necesidades", methods=["GET"])
@@ -4627,18 +4631,27 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                     _dias_tono_bottleneck_pipe = None
                 else:
                     tonos_arr.sort(key=lambda t: -t['porcentaje_mix'])
-                    # Regla de pauta: override por producto ('dominante'/'cuello') o AUTO por volumen.
+                    # Regla de pauta: override por producto ('dominante'/'cuello'/'mono') o AUTO por volumen.
                     _pauta = _pauta_override.get(_prod_key_lc)
-                    if _pauta == 'dominante':
-                        _es_multitamano = True
-                    elif _pauta == 'cuello':
-                        _es_multitamano = False
+                    if _pauta == 'mono':
+                        # Sebastián 11-jul · producto NO multi-tono (renombrado · ej. MAXLASH→ANIMUSLASH: las
+                        # ventas del SKU viejo crean un "tono" fantasma con 0 stock que lo dejaba en ROJO
+                        # permanente). 'mono' = una sola cobertura (Σstock ÷ vel total, ya calculada arriba) ·
+                        # el desglose de referencias queda informativo pero NO manda la urgencia (sin cuello).
+                        _dias_tono_bottleneck = None
+                        _dias_tono_bottleneck_pipe = None
+                        _sku_cuello = None
                     else:
-                        _es_multitamano = len(_vols_signif) > 1   # >1 volumen = tamaños → dominante
-                    if _es_multitamano:
-                        _dias_tono_bottleneck, _dias_tono_bottleneck_pipe, _sku_cuello = _dom_g, _dom_p, _dom_s
-                    else:
-                        _dias_tono_bottleneck, _dias_tono_bottleneck_pipe, _sku_cuello = _min_g, _min_p, _min_s
+                        if _pauta == 'dominante':
+                            _es_multitamano = True
+                        elif _pauta == 'cuello':
+                            _es_multitamano = False
+                        else:
+                            _es_multitamano = len(_vols_signif) > 1   # >1 volumen = tamaños → dominante
+                        if _es_multitamano:
+                            _dias_tono_bottleneck, _dias_tono_bottleneck_pipe, _sku_cuello = _dom_g, _dom_p, _dom_s
+                        else:
+                            _dias_tono_bottleneck, _dias_tono_bottleneck_pipe, _sku_cuello = _min_g, _min_p, _min_s
                     for _t in tonos_arr:
                         _t['cuello'] = (_t['sku'] == _sku_cuello)
         except Exception:
@@ -13641,12 +13654,16 @@ def plan_programar_cadencia_producto():
     conn.commit()
     _unlock_cadena(conn, c, _lk)
     _esperados = sum(1 for _k in range(82) if dias_hasta_primera + _k * interval_dias <= horizonte)
+    # Sebastián 11-jul · avisar ante CUALQUIER faltante (antes solo si faltaba >½ → el caso "justo la mitad"
+    # quedaba silencioso y el usuario creía tener 2 años cuando tenía 1). El faltante casi siempre = slots que
+    # chocan con B2B/ejecutado ya agendados; si es grande, revisar el horizonte/cadencia.
     _aviso = None
-    if _esperados >= 3 and len(creados) < max(2, _esperados // 2):
-        _aviso = ("Se crearon %d de ~%d lotes · %d slots chocaban con producciones ya agendadas (B2B/ejecutado)."
-                  % (len(creados), _esperados, _saltados))
+    if _esperados >= 2 and len(creados) < _esperados:
+        _aviso = ("Se crearon %d de %d lotes del horizonte (%d año/s) · %d slots chocaban con producciones ya "
+                  "agendadas (B2B/ejecutado) o cayeron fuera de fecha." % (len(creados), _esperados, anios, _saltados))
     return jsonify({"ok": True, "producto": producto, "interval_dias": interval_dias,
                     "dias_hasta_primera": dias_hasta_primera, "kg_por_lote": round(kg_por_lote, 2),
+                    "anios": anios, "horizonte_dias": horizonte,
                     "creados": len(creados), "cancelados": len(ids), "fechas": creados,
                     "origen_creado": origen_creado, "origen_fecha": (base.isoformat() if origen_creado else None),
                     "esperados": _esperados, "aviso": _aviso})
@@ -18083,7 +18100,7 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
           <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:9px">
             <span style="font-size:12px;color:#5b21b6;font-weight:700">Cada <input id="np-cad-meses" type="number" min="0.5" max="12" step="0.5" value="2" oninput="_npCadFromMeses()" style="width:44px;padding:4px;border:1px solid #c4b5fd;border-radius:5px;text-align:center;font-weight:700"> meses <span style="color:#94a3b8">o</span> <input id="np-cad-dias" type="number" min="15" max="400" value="61" oninput="_npCadFromDias()" style="width:48px;padding:4px;border:1px solid #c4b5fd;border-radius:5px;text-align:center;font-weight:700"> días</span>
             <span style="font-size:12px;color:#5b21b6;font-weight:700">· <input id="np-cad-kg" type="number" min="0.1" step="0.1" placeholder="kg" oninput="_npCadPreview()" style="width:62px;padding:4px;border:1px solid #7c3aed;border-radius:5px;text-align:center;font-weight:800;color:#5b21b6"> kg/lote</span>
-            <span style="font-size:12px;color:#5b21b6;font-weight:700">· <select id="np-cad-anios" onchange="_npCadPreview()" style="padding:4px;border:1px solid #c4b5fd;border-radius:5px;font-weight:700"><option value="1">1 año</option><option value="2">2 años</option><option value="3">3 años</option></select></span>
+            <span style="font-size:12px;color:#5b21b6;font-weight:700">· <select id="np-cad-anios" onchange="_npCadPreview()" style="padding:4px;border:1px solid #c4b5fd;border-radius:5px;font-weight:700"><option value="1">1 año</option><option value="2" selected>2 años</option><option value="3">3 años</option></select></span>
           </div>
           <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:9px">
             <span style="font-size:12px;color:#5b21b6;font-weight:700">🎯 1ª nueva <input id="np-primera-fecha" type="date" oninput="_npCadPreview()" title="opcional · si querés fijar el mes de la 1ª producción nueva · vacío = cuando se agote lo fabricado" style="padding:4px;border:1px solid #c4b5fd;border-radius:5px;font-weight:700"></span>

@@ -210,3 +210,67 @@ def test_vitaminac_dominante_marca_secundario_significativo_en_cero(app, db_clea
     # la cobertura debe reflejar el 30ml (alta), no el 15ml (0d)
     assert (fila.get("dias_gondola") or 0) > 30, (
         "la cobertura debe reflejar el dominante 30ml (~80d), no el 15ml (0d)", fila.get("dias_gondola"), _tonos)
+
+
+def test_pauta_mono_producto_renombrado_no_cuello_fantasma(app, db_clean):
+    """Sebastián 11-jul (ANIMUSLASH): producto RENOMBRADO (MAXLASH→ANIMUSLASH). El SKU viejo sigue con ventas
+    en la ventana pero 0 stock (ya no se fabrica bajo ese código); el SKU nuevo tiene TODO el stock. La lógica
+    multi-tono los trata como colores distintos → el 'tono' viejo (vende, 0 stock) crea un CUELLO fantasma →
+    rojo permanente. Con la pauta 'mono' (no es multi-tono) el producto usa su cobertura agregada real."""
+    import json as _j
+    from datetime import date as _d, timedelta as _td
+    PROD = "PROD-RENOMBRADO-T1"
+    SKU_VIEJO = "MAXLASHVIEJO"   # nombre viejo · vende en la ventana · 0 stock
+    SKU_NUEVO = "ANIMUSLASHNEW"  # nombre nuevo · TODO el stock · pocas ventas aún
+    c = _login_as(app, "sebastian")
+    db = sqlite3.connect(os.environ["DB_PATH"])
+    for t in ("formula_headers", "sku_producto_map"):
+        db.execute(f"DELETE FROM {t} WHERE producto_nombre=?", (PROD,))
+    db.execute("DELETE FROM stock_pt WHERE sku IN (?,?)", (SKU_VIEJO, SKU_NUEVO))
+    db.execute("DELETE FROM animus_shopify_orders WHERE shopify_id LIKE 'RENOM-%'")
+    db.execute("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo, fecha_creacion) "
+               "VALUES (?, 5, 1, '2025-01-01')", (PROD,))
+    # mismo volumen (4.5ml, máscara) → ruta multi-COLOR (cuello) sin la pauta mono
+    db.execute("INSERT INTO sku_producto_map (sku, producto_nombre, volumen_ml, activo) VALUES (?,?,4.5,1)", (SKU_VIEJO, PROD))
+    db.execute("INSERT INTO sku_producto_map (sku, producto_nombre, volumen_ml, activo) VALUES (?,?,4.5,1)", (SKU_NUEVO, PROD))
+    # stock: viejo 0 · nuevo MUCHO (410 uds ≈ el caso real)
+    db.execute("INSERT INTO stock_pt (sku, descripcion, lote_produccion, unidades_disponible, estado, empresa) "
+               "VALUES (?,?,?,0,'Disponible','ANIMUS')", (SKU_VIEJO, PROD, "L-V"))
+    db.execute("INSERT INTO stock_pt (sku, descripcion, lote_produccion, unidades_disponible, estado, empresa) "
+               "VALUES (?,?,?,410,'Disponible','ANIMUS')", (SKU_NUEVO, PROD, "L-N"))
+    # ventas: el SKU viejo aún tiene la mayoría de la ventana (10/día) · el nuevo poco (2/día)
+    today = _d.today()
+    for i in range(30):
+        f = (today - _td(days=i + 1)).isoformat()
+        db.execute("INSERT INTO animus_shopify_orders (shopify_id, nombre, total, moneda, estado, estado_pago, sku_items, unidades_total, creado_en) "
+                   "VALUES (?,?,?,?,?,?,?,?,?)",
+                   (f"RENOM-V{i}", "c", 1000.0, "COP", "", "paid", _j.dumps([{"sku": SKU_VIEJO, "qty": 10}]), 10, f))
+        db.execute("INSERT INTO animus_shopify_orders (shopify_id, nombre, total, moneda, estado, estado_pago, sku_items, unidades_total, creado_en) "
+                   "VALUES (?,?,?,?,?,?,?,?,?)",
+                   (f"RENOM-N{i}", "c", 100.0, "COP", "", "paid", _j.dumps([{"sku": SKU_NUEVO, "qty": 2}]), 2, f))
+    db.commit(); db.close()
+
+    from .conftest import csrf_headers
+    # SIN la pauta mono: el cuello fantasma (SKU viejo, 0 stock) lo pone crítico
+    r0 = c.get("/api/plan/necesidades")
+    assert r0.status_code == 200, r0.data
+    fila0 = next((p for p in next(x for x in r0.get_json()["clientes"] if x["cliente_id"] == "ANIMUS_DTC")["productos"]
+                  if p["producto_nombre"] == PROD), None)
+    assert fila0 is not None, "producto no apareció (sin mono)"
+    assert fila0["urgencia"] in ("CRITICO", "URGENTE"), (
+        "sin la pauta mono el SKU viejo (0 stock) debería crear el cuello fantasma", fila0["urgencia"])
+
+    # CON la pauta mono: usa la cobertura agregada real (410 uds / vel total) → NO crítico
+    rp = c.post("/api/plan/pauta-multitono", json={"producto": PROD, "regla": "mono"}, headers=csrf_headers())
+    assert rp.status_code == 200 and rp.get_json().get("regla") == "mono", rp.data
+    r1 = c.get("/api/plan/necesidades")
+    assert r1.status_code == 200, r1.data
+    fila1 = next((p for p in next(x for x in r1.get_json()["clientes"] if x["cliente_id"] == "ANIMUS_DTC")["productos"]
+                  if p["producto_nombre"] == PROD), None)
+    assert fila1 is not None, "producto no apareció (con mono)"
+    assert fila1["urgencia"] not in ("CRITICO", "URGENTE"), (
+        "con la pauta mono el producto usa su cobertura agregada (410 uds) y NO es crítico",
+        fila1["urgencia"], fila1.get("dias_gondola"))
+    # el desglose de referencias se sigue viendo (informativo), pero sin marcar cuello
+    assert (fila1.get("dias_gondola") or 0) > 25, (
+        "la cobertura debe reflejar el stock agregado real, no 0", fila1.get("dias_gondola"))
