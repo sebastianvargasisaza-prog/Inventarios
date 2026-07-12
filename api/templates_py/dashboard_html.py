@@ -711,27 +711,44 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <label style="font-size:12px;color:#64748b;display:inline-flex;align-items:center;gap:4px;cursor:pointer;" title="Por defecto la bodega muestra solo lo que hay fisicamente. Marca para ver tambien las MPs en 0 (catalogo / a comprar)."><input type="checkbox" id="stock-ver-sin" onchange="loadStock()"> Ver MPs en 0 (a comprar)</label>
       <span id="stock-count" style="color:#8b7fb8;font-size:12px;font-weight:600;margin-left:auto"></span>
     </div>
+    <style>
+      /* Stock por Lote · agrupado por MP (Sebastián 12-jul) */
+      #stock-tabla-wrap .mpx-parent{cursor:pointer}
+      #stock-tabla-wrap .mpx-parent:hover{background:#faf7ff}
+      #stock-tabla-wrap .mpx-parent>td{border-top:1px solid #eef0f4;padding:11px 10px;font-size:1.02em}
+      #stock-tabla-wrap .mpx-caret{display:inline-block;width:14px;color:#a78bfa;transition:transform .15s;font-size:10px}
+      #stock-tabla-wrap .mpx-parent.open .mpx-caret{transform:rotate(90deg)}
+      #stock-tabla-wrap .mpx-child>td{background:#fbfaff;border-top:1px solid #f1f0f7;padding:8px 10px}
+      #stock-tabla-wrap .mpx-child>td:first-child{border-left:3px solid #ddd6fe}
+      /* Botones de acción premium (tinte suave + borde a juego · hover leve) */
+      .mpact{display:inline-flex;align-items:center;gap:4px;padding:5px 10px;font-size:11px;font-weight:700;border:1px solid transparent;border-radius:7px;cursor:pointer;line-height:1;transition:transform .1s,box-shadow .1s,filter .1s}
+      .mpact:hover{transform:translateY(-1px);box-shadow:0 2px 7px rgba(0,0,0,.13);filter:brightness(.985)}
+      .mpact-adj{background:#fff7ed;color:#c2410c;border-color:#fed7aa}
+      .mpact-hist{background:#eef2ff;color:#4338ca;border-color:#c7d2fe}
+      .mpact-print{background:#f5f3ff;color:#6d28d9;border-color:#ddd6fe}
+      .mpact-sol{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
+      .mpact-del{background:#fef2f2;color:#b91c1c;border-color:#fecaca}
+    </style>
     <!-- Sprint Bodega MP PRO · 20-may-2026 fix #6: headers clickeables ordenan -->
     <div class="mp-card" style="overflow-x:auto;" id="stock-tabla-wrap">
     <table class="table" style="font-size:0.83em;">
       <thead><tr id="stock-thead-row">
-        <th data-sort="material_id" style="cursor:pointer" title="Click para ordenar">Cod. MP <span class="sort-ico"></span></th>
+        <th data-sort="material_id" style="cursor:pointer" title="Click para ordenar · una fila por materia prima, clic en la fila despliega sus lotes">Cod. MP <span class="sort-ico"></span></th>
         <th data-sort="nombre_inci" style="cursor:pointer">Nombre INCI <span class="sort-ico"></span></th>
         <th data-sort="material_nombre" style="cursor:pointer">Nombre Comercial <span class="sort-ico"></span></th>
         <th data-sort="tipo" style="cursor:pointer">Tipo <span class="sort-ico"></span></th>
         <th data-sort="proveedor" style="cursor:pointer">Proveedor <span class="sort-ico"></span></th>
         <!-- Fix #15: tooltip claro · es el mínimo del MP completo (suma) -->
-        <th data-sort="stock_min_g" style="text-align:right;cursor:pointer" title="Stock mínimo del MP completo (suma de todos sus lotes). Es el mismo número en todas las filas del mismo MP."><span style="border-bottom:1px dotted #94a3b8">Min MP (g)</span> <span class="sort-ico"></span></th>
-        <th data-sort="lote" style="cursor:pointer">Lote <span class="sort-ico"></span></th>
-        <th data-sort="cantidad_g" style="text-align:right;cursor:pointer">Cantidad (g) <span class="sort-ico"></span></th>
-        <th style="text-align:center;">Est.</th>
-        <th style="text-align:center;">Pos.</th>
+        <th data-sort="stock_min_g" style="text-align:right;cursor:pointer" title="Stock mínimo del MP completo (suma de todos sus lotes)."><span style="border-bottom:1px dotted #94a3b8">Min MP (g)</span> <span class="sort-ico"></span></th>
+        <th style="text-align:center;" title="Cantidad de lotes de esta materia prima">Lotes</th>
+        <th data-sort="stock_total_mp_g" style="text-align:right;cursor:pointer" title="Cantidad TOTAL del MP (suma de todos sus lotes)">Cantidad total (g) <span class="sort-ico"></span></th>
+        <th style="text-align:center;" title="Estantería · posición en bodega">Ubicación</th>
         <th data-sort="fecha_vencimiento" style="text-align:center;cursor:pointer">Vencimiento <span class="sort-ico"></span></th>
-        <!-- Fix #8: redundancia Dias+Estado · ahora UNA columna con día + chip -->
-        <th data-sort="dias_para_vencer" style="text-align:center;cursor:pointer" title="Días para vencer + estado FEFO">Estado <span class="sort-ico"></span></th>
+        <!-- Fix #8: redundancia Dias+Estado · ahora UNA columna con chip + días (sin repetir la fecha) -->
+        <th data-sort="dias_para_vencer" style="text-align:center;cursor:pointer" title="Estado FEFO + días para vencer">Estado <span class="sort-ico"></span></th>
         <th style="text-align:center;" title="Acciones">Acciones</th>
       </tr></thead>
-      <tbody id="stock-body"><tr><td colspan="13" style="text-align:center;color:#999;padding:20px;">Cargando...</td></tr></tbody>
+      <tbody id="stock-body"><tr><td colspan="12" style="text-align:center;color:#999;padding:20px;">Cargando...</td></tr></tbody>
     </table>
     </div>
   
@@ -4861,87 +4878,87 @@ async function loadStock(){
 }
 // Sprint Bodega MP PRO · 20-may-2026 · render con fix #4 (badge sutil),
 // #8 (Estado consolidado · sin redundancia con Días), #15 (tooltip Min MP).
+function _mpSafe(id){ return String(id||'').replace(/[^A-Za-z0-9]/g,'_'); }
+function toggleMpGroup(tr){
+  if(!tr) return;
+  var safe=tr.getAttribute('data-mpsafe'); if(!safe) return;
+  var show = tr.classList.toggle('open');
+  document.querySelectorAll('.mpx-child-'+safe).forEach(function(k){ k.style.display = show ? '' : 'none'; });
+}
+// Stock por Lote AGRUPADO por MP (Sebastián 12-jul): una fila por materia prima con
+// la CANTIDAD TOTAL; clic despliega sus lotes. Est.+Pos.→Ubicación; Estado sin fecha
+// duplicada (ya está en Vencimiento); botones premium. gi = índice global en _lotes
+// (los handlers de acción no cambian).
 function renderStock(items){
   var tb=document.getElementById('stock-body');
-  if(!items.length){tb.innerHTML='<tr><td colspan="13" style="text-align:center;color:#999;padding:20px;">Sin datos</td></tr>';return;}
-  var bg={vencido:'#ffebeb',critico:'#fff3e0',proximo:'#fffde7',ok:'transparent',sin_stock:'#fafafa'};
+  if(!items.length){tb.innerHTML='<tr><td colspan="12" style="text-align:center;color:#999;padding:20px;">Sin datos</td></tr>';return;}
+  var bg={vencido:'#ffebeb',critico:'#fff3e0',proximo:'#fffde7',ok:'#f0fdf4',sin_stock:'#fafafa'};
   var fc={vencido:'#cc0000',critico:'#e65100',proximo:'#f57f17',ok:'#1a8a1a',sin_stock:'#64748b'};
   var lb={vencido:'VENCIDO',critico:'CRITICO',proximo:'PROXIMO',ok:'VIGENTE',sin_stock:'SIN STOCK'};
+  var sev={sin_stock:0,ok:1,proximo:2,critico:3,vencido:4};
+  // Si hay búsqueda activa, desplegar todos los grupos (para ver el lote buscado)
+  var _q1=((document.getElementById('stock-search')||{}).value||'').trim();
+  var _q2=((document.getElementById('stock-search-lote')||{}).value||'').trim();
+  var expandAll = !!(_q1||_q2);
+  // Agrupar por material_id preservando el orden de aparición (respeta el sort)
+  var order=[], grp={};
+  items.forEach(function(i){ var k=i.material_id||''; if(!grp[k]){grp[k]=[]; order.push(k);} grp[k].push(i); });
+  function badge(a,dias){
+    if(a==='sin_stock') return '<span style="background:#f1f5f9;color:#64748b;padding:2px 8px;border-radius:999px;font-weight:700;font-size:0.72em;border:1px solid #cbd5e1;">SIN STOCK</span>';
+    return '<span style="background:'+bg[a]+';color:'+fc[a]+';padding:2px 8px;border-radius:999px;font-weight:700;font-size:0.72em;border:1px solid '+fc[a]+';">'+lb[a]+'</span>'+(dias!=null&&dias!==''?' <span style="font-size:10px;color:#94a3b8;font-weight:600">'+dias+'d</span>':'');
+  }
   var h='';
-  // Fix #4: badge "Solicitada" solo en la PRIMERA fila visible de cada MP.
-  // Antes aparecía en TODAS las filas del mismo MP · Luis veía "Solicitada"
-  // en 3 lotes cuando en realidad hay 1 sola SOL al material.
-  var primerLoteDelMP = {};
-  items.forEach(function(i){
-    var k = i.material_id || '';
-    if(primerLoteDelMP[k] === undefined) primerLoteDelMP[k] = i.lote;
-  });
-  // Sebastián 21-may-2026 · marcar la primera fila de cada MP para que el
-  // Min MP (g) solo se muestre una vez (las demás filas del mismo MP
-  // muestran "↑" para indicar "ver fila de arriba"). Antes parecía que
-  // cada lote tenía mínimo propio · confundía a Sebastián.
-  var __primerLoteVisto = {};
-  items.forEach(function(i){
-    var mid = i.material_id || '';
-    if(!__primerLoteVisto[mid]){ __primerLoteVisto[mid] = i.lote; }
-  });
-  items.forEach(function(i,idx){ var gi=_lotes.indexOf(i); if(gi<0)gi=idx;
-    var a=i.alerta||'ok';
-    var esPrimerLoteDeMP = __primerLoteVisto[i.material_id||''] === i.lote;
-    var qc=i.cantidad_g<=0?'color:#cc0000;font-weight:700;':i.cantidad_g<500?'color:#e68a00;font-weight:700;':'color:#1a8a1a;font-weight:700;';
-    var stockTotalMP=(typeof i.stock_total_mp_g==='number')?i.stock_total_mp_g:i.cantidad_g;
-    var bajo_min=i.stock_min_g>0 && stockTotalMP < i.stock_min_g;
-    var min_style=bajo_min?'background:#ffebeb;color:#cc0000;font-weight:700;':'';
-    var min_title='Mínimo del MP completo: '+(i.stock_min_g||0).toLocaleString('es-CO')+' g · '+
-                  'Total MP (suma de todos sus lotes): '+stockTotalMP.toLocaleString('es-CO')+' g'+
-                  (bajo_min?' · ⚠ por debajo del mínimo':' · OK');
-    var dias=i.dias_para_vencer!=null?i.dias_para_vencer:'';
-    // Columna Estado consolidada: chip color + días dentro
-    var estadoCell='—';
-    if(a==='sin_stock'){
-      estadoCell='<span style="background:#f1f5f9;color:#64748b;padding:2px 7px;border-radius:10px;font-weight:700;font-size:0.78em;border:1px solid #cbd5e1;">SIN STOCK</span>';
-    } else if(i.fecha_vencimiento){
-      var diasTxt = (dias===''?'':' · '+dias+'d');
-      estadoCell='<div style="display:flex;flex-direction:column;align-items:center;gap:1px">'+
-        '<span style="background:'+bg[a]+';color:'+fc[a]+';padding:2px 7px;border-radius:10px;font-weight:700;font-size:0.78em;border:1px solid '+fc[a]+';">'+lb[a]+'</span>'+
-        '<span style="font-size:10px;color:#64748b">'+_escHTML(i.fecha_vencimiento)+diasTxt+'</span>'+
-      '</div>';
-    }
-    h+='<tr style="background:'+bg[a]+';font-size:0.83em;">';
-    h+='<td style="font-family:monospace;color:#555;">'+_escHTML(i.material_id||'')+'</td>';
-    h+='<td style="font-weight:600;">'+_escHTML(i.nombre_inci||i.material_nombre||'')+'</td>';
-    h+='<td style="color:#888;font-size:0.78em;">'+_escHTML(i.material_nombre||'')+'</td>';
-    h+='<td style="color:#888;">'+_escHTML(i.tipo||'')+'</td>';
-    h+='<td style="color:#555;">'+(i.proveedor?_escHTML(i.proveedor):'<span style="color:#bbb;">— sin proveedor —</span>')+' <button onclick="abrirEditarProveedor('+gi+')" title="Editar proveedor" style="margin-left:4px;padding:1px 6px;font-size:0.75em;background:#e8f5f5;color:#6d28d9;border:1px solid #b8dada;border-radius:4px;cursor:pointer;">&#9999;&#65039;</button></td>';
-    // Mostrar Min solo en primera fila de cada MP · "↑" en las demás (gris)
-    var celdaMin = esPrimerLoteDeMP
-      ? (i.stock_min_g||0).toLocaleString()
-      : '<span style="color:#cbd5e1" title="Mínimo aplica al material completo · ver primera fila del mismo MP">↑</span>';
-    h+='<td style="text-align:right;'+(esPrimerLoteDeMP?min_style:'')+'" title="'+_escHTML(min_title)+'">'+celdaMin+'</td>';
-    h+='<td style="font-family:monospace;">'+_escHTML(i.lote||'')+'</td>';
-    h+='<td style="text-align:right;'+qc+'">'+(i.cantidad_g||0).toLocaleString()+'</td>';
-    h+='<td style="text-align:center;font-weight:700;color:#667eea;">'+_escHTML(i.estanteria||'')+'</td>';
-    h+='<td style="text-align:center;">'+_escHTML(i.posicion||'')+'</td>';
-    h+='<td style="text-align:center;color:'+fc[a]+';white-space:nowrap">'+_escHTML(i.fecha_vencimiento||'—')+'</td>';
-    h+='<td style="text-align:center;">'+estadoCell+'</td>';
-    // Fix #4 + #13: acciones agrupadas + badge sutil solicitada
-    var esPrimerLote = primerLoteDelMP[i.material_id||''] === i.lote;
-    var btnSolicitar;
-    if(i.tiene_solicitud_pendiente && esPrimerLote){
-      btnSolicitar = '<button onclick="abrirSolicitarLote('+gi+')" style="padding:3px 7px;font-size:0.72em;background:#fef3c7;color:#92400e;border:1px solid #f59e0b;border-radius:4px;font-weight:700;" title="Ya hay SOL pendiente para este MP">&#x1F4BC;</button>';
-    } else if(i.tiene_solicitud_pendiente){
-      btnSolicitar = '<button onclick="abrirSolicitarLote('+gi+')" style="padding:3px 7px;font-size:0.72em;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:4px;" title="SOL pendiente al MP · podés crear otra">Sol+</button>';
-    } else {
-      btnSolicitar = '<button onclick="abrirSolicitarLote('+gi+')" style="padding:3px 7px;font-size:0.72em;background:#27ae60;color:#fff;border-radius:4px;" title="Crear SOL de compra">Sol</button>';
-    }
-    h+='<td style="text-align:center;white-space:nowrap"><div style="display:inline-flex;gap:3px;flex-wrap:wrap;justify-content:center">'+
-      '<button onclick="abrirAjusteIdx('+gi+')" style="padding:3px 7px;font-size:0.72em;background:#f0ad4e;color:#fff;border-radius:4px;" title="Ajustar stock / ubicación / fecha / lote">Ajustar</button>'+
-      '<button onclick="verHistorialLote('+gi+')" style="padding:3px 7px;font-size:0.72em;background:#667eea;color:#fff;border-radius:4px;" title="Ver movimientos del lote">Hist</button>'+
-      '<button onclick="reimprimirRotuloLote('+gi+')" style="padding:3px 7px;font-size:0.72em;background:#6d28d9;color:#fff;border-radius:4px;" title="Re-imprimir el rótulo de este lote">&#128424;</button>'+
-      btnSolicitar+
-      (window._ES_ADMIN_DASH ? '<button onclick="abrirEliminarLote('+gi+')" style="padding:3px 7px;font-size:0.72em;background:#c0392b;color:#fff;border-radius:4px;" title="Eliminar lote (admin)">Borrar</button>' : '')+
-    '</div></td>';
+  order.forEach(function(k){
+    var lotes=grp[k], first=lotes[0], safe=_mpSafe(k);
+    var totalMP=(typeof first.stock_total_mp_g==='number')?first.stock_total_mp_g:lotes.reduce(function(a,x){return a+(x.cantidad_g||0);},0);
+    var minMP=first.stock_min_g||0;
+    var bajo=minMP>0 && totalMP<minMP;
+    var worst='ok', nearVenc=null, nearDias=null;
+    lotes.forEach(function(x){ var a=x.alerta||'ok'; if((sev[a]||0)>(sev[worst]||0)) worst=a;
+      if(x.fecha_vencimiento && (nearVenc===null || x.fecha_vencimiento<nearVenc)){ nearVenc=x.fecha_vencimiento; nearDias=x.dias_para_vencer; } });
+    var qtot=totalMP<=0?'color:#cc0000':totalMP<500?'color:#e68a00':'color:#166534';
+    var giFirst=_lotes.indexOf(first); if(giFirst<0)giFirst=0;
+    var solBtn = first.tiene_solicitud_pendiente
+      ? '<button class="mpact mpact-sol" style="background:#fffbeb;color:#92400e;border-color:#fde68a" onclick="event.stopPropagation();abrirSolicitarLote('+giFirst+')" title="Ya hay una solicitud de compra pendiente para este MP">Sol pend.</button>'
+      : '<button class="mpact mpact-sol" onclick="event.stopPropagation();abrirSolicitarLote('+giFirst+')" title="Crear solicitud de compra">Solicitar</button>';
+    h+='<tr class="mpx-parent'+(expandAll?' open':'')+'" data-mpsafe="'+safe+'" onclick="toggleMpGroup(this)">';
+    h+='<td style="font-family:monospace;color:#475569;white-space:nowrap"><span class="mpx-caret">&#9656;</span> '+_escHTML(k)+'</td>';
+    h+='<td style="font-weight:700;color:#1e293b">'+_escHTML(first.nombre_inci||first.material_nombre||'')+'</td>';
+    h+='<td style="color:#94a3b8;font-size:0.82em">'+_escHTML(first.material_nombre||'')+'</td>';
+    h+='<td style="color:#94a3b8">'+_escHTML(first.tipo||'')+'</td>';
+    h+='<td style="color:#64748b">'+(first.proveedor?_escHTML(first.proveedor):'<span style="color:#cbd5e1">&mdash;</span>')+'</td>';
+    h+='<td style="text-align:right;'+(bajo?'background:#fef2f2;color:#dc2626;font-weight:800;':'color:#94a3b8;')+'" title="Mínimo del MP completo">'+minMP.toLocaleString('es-CO')+'</td>';
+    h+='<td style="text-align:center;color:#7c3aed;font-weight:700;font-size:0.85em">'+lotes.length+'</td>';
+    h+='<td style="text-align:right;font-weight:800;'+qtot+'" title="Cantidad total del MP (suma de sus lotes)">'+totalMP.toLocaleString('es-CO')+'</td>';
+    h+='<td style="text-align:center;color:#cbd5e1">&mdash;</td>';
+    h+='<td style="text-align:center;color:#64748b;font-size:0.82em;white-space:nowrap">'+_escHTML(nearVenc||'—')+'</td>';
+    h+='<td style="text-align:center">'+badge(worst,nearDias)+'</td>';
+    h+='<td style="text-align:center;white-space:nowrap">'+solBtn+'</td>';
     h+='</tr>';
+    lotes.forEach(function(i){
+      var gi=_lotes.indexOf(i); if(gi<0)gi=0;
+      var a=i.alerta||'ok';
+      var qc=i.cantidad_g<=0?'color:#cc0000;font-weight:700':i.cantidad_g<500?'color:#e68a00;font-weight:700':'color:#166534;font-weight:700';
+      var ubic=[i.estanteria,i.posicion].filter(function(x){return x&&String(x).trim();}).join(' &middot; ');
+      var borrarBtn = window._ES_ADMIN_DASH ? '<button class="mpact mpact-del" onclick="event.stopPropagation();abrirEliminarLote('+gi+')" title="Eliminar lote (admin)">Borrar</button>' : '';
+      h+='<tr class="mpx-child mpx-child-'+safe+'"'+(expandAll?'':' style="display:none"')+'>';
+      h+='<td></td>';
+      h+='<td colspan="3" style="color:#64748b;font-size:0.85em;padding-left:16px">'+_escHTML(i.material_nombre||first.nombre_inci||'')+'</td>';
+      h+='<td style="color:#64748b;font-size:0.85em">'+(i.proveedor?_escHTML(i.proveedor):'<span style="color:#cbd5e1">&mdash;</span>')+' <button class="mpact mpact-adj" style="padding:2px 6px" onclick="event.stopPropagation();abrirEditarProveedor('+gi+')" title="Editar proveedor">&#9999;&#65039;</button></td>';
+      h+='<td></td>';
+      h+='<td style="font-family:monospace;color:#334155;font-size:0.9em">'+_escHTML(i.lote||'')+'</td>';
+      h+='<td style="text-align:right;'+qc+'">'+(i.cantidad_g||0).toLocaleString('es-CO')+'</td>';
+      h+='<td style="text-align:center;color:#475569;font-size:0.82em;white-space:nowrap">'+(ubic?'&#128205; '+ubic:'<span style="color:#cbd5e1">&mdash;</span>')+'</td>';
+      h+='<td style="text-align:center;color:'+fc[a]+';font-size:0.85em;white-space:nowrap">'+_escHTML(i.fecha_vencimiento||'—')+'</td>';
+      h+='<td style="text-align:center">'+badge(a,i.dias_para_vencer)+'</td>';
+      h+='<td style="text-align:center;white-space:nowrap"><div style="display:inline-flex;gap:4px;flex-wrap:wrap;justify-content:center">'+
+        '<button class="mpact mpact-adj" onclick="event.stopPropagation();abrirAjusteIdx('+gi+')" title="Ajustar stock / ubicación / fecha / lote">Ajustar</button>'+
+        '<button class="mpact mpact-hist" onclick="event.stopPropagation();verHistorialLote('+gi+')" title="Ver movimientos del lote">Hist</button>'+
+        '<button class="mpact mpact-print" onclick="event.stopPropagation();reimprimirRotuloLote('+gi+')" title="Re-imprimir el rótulo de este lote">R&oacute;tulo</button>'+
+        borrarBtn+
+      '</div></td>';
+      h+='</tr>';
+    });
   });
   tb.innerHTML=h;
 }
