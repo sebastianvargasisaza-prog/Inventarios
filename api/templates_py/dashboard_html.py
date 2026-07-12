@@ -26430,12 +26430,16 @@ async function ckMarcar(itemId, estado){
     if(!partida || !(kg > 0) || !(intervalDias >= 15)) return null;
     var meses = Math.round(intervalDias / 30.44 * 10) / 10;   // meses efectivo (display) derivado del interval real
     var horizonte = anios * 365;
-    // Sebastián 11-jul · la 1ª producción nueva cae cuando SE AGOTA lo ya fabricado (la partida), no ciegamente
-    // a una cadencia: dias_hasta_primera = kg_producidos_partida ÷ venta − 20d de reorden. Si los 14kg de partida
-    // duran ~2 meses, la 1ª va a ~2 meses (no a 3). Luego normaliza cada X. Fallback = interval si no hay venta.
+    // Sebastián 11-jul · la 1ª producción nueva cae cuando SE AGOTA lo ya fabricado (la partida): dias_hasta_primera
+    // = kg_partida ÷ venta − 20d de reorden. PERO NUNCA se atrasa más de UNA cadencia desde el origen (cap =
+    // intervalDias): si el lote es GRANDE porque otro cliente se lleva parte (ej. 70kg con venta Ánimus de 54/mes →
+    // "se agota" a 240d), respetar el "cada 3 meses" que pidió el usuario, no estirarlo a 240d. Partida chica
+    // (Multipéptidos 14kg dura ~2 meses < cadencia) → va antes. Fallback = interval si no hay venta.
     var _partKg = parseFloat((document.getElementById('cm-part-kg')||{}).value) || kg;
     var _velKgDia = p.velocidad_kg_dia || 0;
-    var dhp = (_velKgDia > 0.0001 && _partKg > 0) ? Math.max(Math.round(_partKg / _velKgDia) - 20, 1) : intervalDias;
+    var _runsOut = (_velKgDia > 0.0001 && _partKg > 0) ? Math.max(Math.round(_partKg / _velKgDia) - 20, 1) : intervalDias;
+    var dhp = Math.min(_runsOut, intervalDias);   // nunca más de una cadencia después del origen
+    var _dhpCap = (_runsOut >= intervalDias);      // la partida "dura" ≥ cadencia → 1ª nueva a 1 cadencia
     // Sebastián 11-jul · si el usuario FIJA la fecha de la 1ª nueva (sabe que la relanza en tal mes), la cadena
     // arranca AHÍ: dhp = días entre la partida y esa fecha. Manda sobre el auto (cuando-se-agota). Manual=true.
     var _pf = ((document.getElementById('cm-primera-fecha')||{}).value || '').slice(0,10);
@@ -26448,7 +26452,7 @@ async function ckMarcar(itemId, estado){
       }catch(e){}
     }
     var nLotes = Math.max(1, Math.floor((horizonte - dhp) / intervalDias) + 1);
-    return {partida:partida, kg:kg, meses:meses, dias:intervalDias, anios:anios, intervalDias:intervalDias, dhp:dhp, dhpManual:_manual, nLotes:nLotes, horizonte:horizonte};
+    return {partida:partida, kg:kg, meses:meses, dias:intervalDias, anios:anios, intervalDias:intervalDias, dhp:dhp, dhpManual:_manual, dhpCap:_dhpCap, nLotes:nLotes, horizonte:horizonte};
   }
   // Sebastián 11-jul · sincronizar meses↔días (el usuario piensa en días para la cadencia)
   // Sebastián 11-jul · auto-calcular el kg NECESARIO para durar la cadencia (+20d de reorden). Sirve para
@@ -26507,7 +26511,9 @@ async function ckMarcar(itemId, estado){
     try{ var _d = new Date(cc.partida + 'T12:00:00'); _d.setDate(_d.getDate() + cc.dhp); _first = _d.toISOString().slice(0,10); }catch(e){}
     var _firstTxt = cc.dhpManual
       ? 'la 1ª nueva <b style="color:#7c3aed">fijada por vos</b> = <b>' + (_first||'—') + '</b>'
-      : 'la 1ª nueva cuando se agota lo fabricado (~<b>' + cc.dhp + 'd</b>) = <b>' + (_first||'—') + '</b>';
+      : (cc.dhpCap
+         ? 'la 1ª nueva <b>una cadencia después</b> del origen (~<b>' + cc.dhp + 'd</b>) = <b>' + (_first||'—') + '</b>'
+         : 'la 1ª nueva cuando se agota lo fabricado (~<b>' + cc.dhp + 'd</b>) = <b>' + (_first||'—') + '</b>');
     el.innerHTML = _ref
       + '📦 Un lote de <b>' + cc.kg.toFixed(1) + ' kg</b> cada <b>' + cc.meses + ' mes' + (cc.meses===1?'':'es') + '</b> (~' + cc.intervalDias + ' días)<br>'
       + '🗓️ Partida <b>' + cc.partida + '</b> · ' + _firstTxt + ', luego cada ' + cc.intervalDias + 'd · ~<b>' + cc.nLotes + '</b> lotes en <b>' + cc.anios + ' año' + (cc.anios===1?'':'s') + '</b> · total <b>' + (cc.kg*cc.nLotes).toFixed(0) + ' kg</b>';

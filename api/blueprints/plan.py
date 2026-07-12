@@ -20348,15 +20348,19 @@ function _npCadCalc(){
   // Sebastián 11-jul · la 1ª nueva cuando se AGOTA lo fabricado (Cantidad kg del origen ÷ venta − 20 buffer).
   const _partKg = parseFloat((document.getElementById('np-kg')||{}).value) || kg;
   const p = window._NP_P; const _velKgDia = (p && p.velocidad_kg_dia) || 0;
-  let dhp = (_velKgDia > 0.0001 && _partKg > 0) ? Math.max(Math.round(_partKg / _velKgDia) - 20, 1) : interval;
-  // Sebastián 11-jul · si el usuario FIJA la fecha de la 1ª nueva, la cadena arranca ahí (manda sobre el auto).
+  // Sebastián 11-jul · la 1ª nueva "cuando se agota" PERO nunca más de UNA cadencia desde el origen (cap): un
+  // lote grande por otro cliente (70kg, venta Ánimus baja) "duraría" 240d y rompería el "cada 3 meses" pedido.
+  const _runsOut = (_velKgDia > 0.0001 && _partKg > 0) ? Math.max(Math.round(_partKg / _velKgDia) - 20, 1) : interval;
+  let dhp = Math.min(_runsOut, interval);
+  const dhpCap = (_runsOut >= interval);
+  // si el usuario FIJA la fecha de la 1ª nueva, la cadena arranca ahí (manda sobre el auto).
   const _pf = ((document.getElementById('np-primera-fecha')||{}).value || '').slice(0,10);
   let dhpManual = false;
   if(_pf && partida){
     try{ const _dp = new Date(partida+'T12:00:00'), _dpf = new Date(_pf+'T12:00:00'); const _delta = Math.round((_dpf-_dp)/86400000); if(_delta>=1){ dhp=_delta; dhpManual=true; } }catch(e){}
   }
   const nLotes = Math.max(1, Math.floor((anios*365 - dhp)/interval) + 1);
-  return {interval:interval, kg:kg, anios:anios, partida:partida, dhp:dhp, dhpManual:dhpManual, nLotes:nLotes};
+  return {interval:interval, kg:kg, anios:anios, partida:partida, dhp:dhp, dhpManual:dhpManual, dhpCap:dhpCap, nLotes:nLotes};
 }
 function _npCadPreview(){
   const el = document.getElementById('np-cad-preview'); if(!el) return;
@@ -20373,7 +20377,9 @@ function _npCadPreview(){
   }
   let _first = '';
   try{ const _d = new Date(cc.partida + 'T12:00:00'); _d.setDate(_d.getDate() + cc.dhp); _first = _d.toISOString().slice(0,10); }catch(e){}
-  const _firstTxt = cc.dhpManual ? 'la 1ª nueva <b style="color:#7c3aed">fijada por vos</b> = '+(_first||'—') : 'la 1ª nueva cuando se agota lo fabricado (~<b>'+cc.dhp+'d</b> = '+(_first||'—')+')';
+  const _firstTxt = cc.dhpManual ? 'la 1ª nueva <b style="color:#7c3aed">fijada por vos</b> = '+(_first||'—')
+    : (cc.dhpCap ? 'la 1ª nueva <b>una cadencia después</b> del origen (~<b>'+cc.dhp+'d</b> = '+(_first||'—')+')'
+                 : 'la 1ª nueva cuando se agota lo fabricado (~<b>'+cc.dhp+'d</b> = '+(_first||'—')+')');
   el.innerHTML = ref + '📦 Un lote de <b>'+cc.kg.toFixed(1)+' kg</b> cada <b>'+cc.interval+' días</b> · '+_firstTxt+' · ~<b>'+cc.nLotes+'</b> lotes en <b>'+cc.anios+' año'+(cc.anios===1?'':'s')+'</b> desde <b>'+cc.partida+'</b>';
 }
 async function _npCrearCadena(){
