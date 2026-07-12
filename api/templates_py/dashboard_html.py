@@ -25819,11 +25819,13 @@ async function ckMarcar(itemId, estado){
           } else {
             _acts = '<button onclick="abrirPlanProduccion(' + idx + ')" style="background:#f59e0b;color:#fff;border:0;border-radius:6px;padding:5px 11px;font-size:11px;font-weight:800;cursor:pointer">+ lote extra antes de ' + escapeHtmlNec(_pp.pico_mes_abr) + '</button>';
           }
+          // Sebastián 12-jul · COLAPSABLE (píldora premium · no cargar la grilla) · se abre al hacer click.
           html += '<tr><td colspan="7" style="padding:0 14px 9px">'
-            + '<div style="background:linear-gradient(90deg,#fff7ed,#fffbeb);border:1px solid #fde68a;border-left:3px solid #f59e0b;border-radius:8px;padding:8px 11px;font-size:12px;color:#92400e;display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
-            + '<span style="font-weight:800;white-space:nowrap">🔥 Preparar pico ' + escapeHtmlNec(_pp.pico_mes_abr) + ' (' + _pp.pico_indice + '×)' + _crecTxt + '</span>'
+            + '<details class="necx-exp"><summary class="necx-sum" style="background:#fff7ed;border-color:#fde68a;color:#b45309">'
+            + '<span class="necx-chev">▸</span>🔥 Preparar pico ' + escapeHtmlNec(_pp.pico_mes_abr) + ' (' + _pp.pico_indice + '×)' + escapeHtmlNec(_crecTxt) + '</summary>'
+            + '<div class="necx-expbody" style="font-size:12px;color:#92400e;display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:linear-gradient(90deg,#fff7ed,#fffbeb);border:1px solid #fde68a;border-left:3px solid #f59e0b;border-radius:8px;padding:8px 11px">'
             + '<span style="flex:1;min-width:180px">' + escapeHtmlNec(_pp.mensaje || '') + '</span>'
-            + _acts + '</div></td></tr>';
+            + _acts + '</div></details></td></tr>';
         }
         // Sub-fila colapsable con desglose por tono (solo si hay ≥2 tonos)
         if (_tonos.length >= 2) {
