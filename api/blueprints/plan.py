@@ -4267,14 +4267,25 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     # Sebastián 6-jul · override por producto de la pauta multi-tono ('dominante' = manda el grande · 'cuello'
     # = manda el que se agota primero, para colores). Default vacío → AUTO por volumen. "No todos es así".
     _pauta_override = {}
+    def _pk_fuerte(s):
+        import unicodedata as _upo, re as _repo
+        _n = _upo.normalize('NFKD', str(s or '')).encode('ascii', 'ignore').decode().lower()
+        return _repo.sub(r'[^a-z0-9]+', '', _n)
     try:
         import json as _jpo
         _rpo = c.execute("SELECT valor FROM app_settings WHERE clave='pauta_multitono'").fetchone()
         if _rpo and _rpo[0]:
             for _k, _v in (_jpo.loads(_rpo[0]) or {}).items():
-                _pauta_override[str(_k).strip().lower()] = str(_v).strip().lower()
+                _vv = str(_v).strip().lower()
+                _pauta_override[str(_k).strip().lower()] = _vv
+                _pauta_override[_pk_fuerte(_k)] = _vv   # match robusto sin acentos/espacios (M2/M13)
     except Exception:
         _pauta_override = {}
+    # Sebastián 12-jul · productos RENOMBRADOS conocidos → default 'mono' (una sola cobertura, sin el
+    # cuello fantasma del SKU viejo con 0 stock que dejaba ANIMUSLASH en 0d/rojo permanente). Overridable:
+    # si hay una pauta explícita en la BD para ese producto, esa manda (setdefault no la pisa).
+    for _km in ('animuslash',):
+        _pauta_override.setdefault(_km, 'mono')
     # PERF (Sebastián 4-jul) · cache request-scope del volumen por (sku, producto): _ml_de_sku llamaba
     # _volumen_sku (2 queries) por CADA sku de CADA producto, sin memoria → ~N×M queries repetidas en el
     # load de Necesidades (lo hacía lento · M43/M59). El volumen es estable dentro del request.
@@ -4638,7 +4649,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                 else:
                     tonos_arr.sort(key=lambda t: -t['porcentaje_mix'])
                     # Regla de pauta: override por producto ('dominante'/'cuello'/'mono') o AUTO por volumen.
-                    _pauta = _pauta_override.get(_prod_key_lc)
+                    _pauta = _pauta_override.get(_prod_key_lc) or _pauta_override.get(_pk_fuerte(prod_nombre))
                     if _pauta == 'mono':
                         # Sebastián 11-jul · producto NO multi-tono (renombrado · ej. MAXLASH→ANIMUSLASH: las
                         # ventas del SKU viejo crean un "tono" fantasma con 0 stock que lo dejaba en ROJO

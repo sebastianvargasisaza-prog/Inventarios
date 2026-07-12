@@ -274,3 +274,53 @@ def test_pauta_mono_producto_renombrado_no_cuello_fantasma(app, db_clean):
     # el desglose de referencias se sigue viendo (informativo), pero sin marcar cuello
     assert (fila1.get("dias_gondola") or 0) > 25, (
         "la cobertura debe reflejar el stock agregado real, no 0", fila1.get("dias_gondola"))
+
+
+def test_pauta_mono_default_animuslash_sin_setear(app, db_clean):
+    """Sebastián 12-jul: ANIMUSLASH (renombrado de MAXLASH) debe usar cobertura agregada por DEFAULT,
+    SIN que nadie setee la pauta 'mono' a mano (el SKU viejo con 0 stock creaba un cuello fantasma → 0d rojo
+    permanente). El default automático de productos renombrados conocidos lo resuelve solo."""
+    import json as _j
+    from datetime import date as _d, timedelta as _td
+    PROD = "ANIMUSLASH"
+    SKU_VIEJO = "MAXLASHV2"
+    SKU_NUEVO = "ANIMUSLASHN2"
+    c = _login_as(app, "sebastian")
+    db = sqlite3.connect(os.environ["DB_PATH"])
+    for t in ("formula_headers", "sku_producto_map"):
+        db.execute(f"DELETE FROM {t} WHERE producto_nombre=?", (PROD,))
+    db.execute("DELETE FROM stock_pt WHERE sku IN (?,?)", (SKU_VIEJO, SKU_NUEVO))
+    db.execute("DELETE FROM animus_shopify_orders WHERE shopify_id LIKE 'ANIMDEF-%'")
+    # aseguremos que NO hay pauta explícita para ANIMUSLASH (probamos el DEFAULT)
+    row = db.execute("SELECT valor FROM app_settings WHERE clave='pauta_multitono'").fetchone()
+    if row and row[0]:
+        try:
+            _data = _j.loads(row[0]) or {}
+        except Exception:
+            _data = {}
+        _data.pop("animuslash", None)
+        db.execute("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('pauta_multitono', ?)", (_j.dumps(_data),))
+    db.execute("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo, fecha_creacion) VALUES (?, 5, 1, '2025-01-01')", (PROD,))
+    db.execute("INSERT INTO sku_producto_map (sku, producto_nombre, volumen_ml, activo) VALUES (?,?,4.5,1)", (SKU_VIEJO, PROD))
+    db.execute("INSERT INTO sku_producto_map (sku, producto_nombre, volumen_ml, activo) VALUES (?,?,4.5,1)", (SKU_NUEVO, PROD))
+    db.execute("INSERT INTO stock_pt (sku, descripcion, lote_produccion, unidades_disponible, estado, empresa) VALUES (?,?,?,0,'Disponible','ANIMUS')", (SKU_VIEJO, PROD, "L-V2"))
+    db.execute("INSERT INTO stock_pt (sku, descripcion, lote_produccion, unidades_disponible, estado, empresa) VALUES (?,?,?,410,'Disponible','ANIMUS')", (SKU_NUEVO, PROD, "L-N2"))
+    today = _d.today()
+    for i in range(30):
+        f = (today - _td(days=i + 1)).isoformat()
+        db.execute("INSERT INTO animus_shopify_orders (shopify_id, nombre, total, moneda, estado, estado_pago, sku_items, unidades_total, creado_en) VALUES (?,?,?,?,?,?,?,?,?)",
+                   (f"ANIMDEF-V{i}", "c", 1000.0, "COP", "", "paid", _j.dumps([{"sku": SKU_VIEJO, "qty": 10}]), 10, f))
+        db.execute("INSERT INTO animus_shopify_orders (shopify_id, nombre, total, moneda, estado, estado_pago, sku_items, unidades_total, creado_en) VALUES (?,?,?,?,?,?,?,?,?)",
+                   (f"ANIMDEF-N{i}", "c", 100.0, "COP", "", "paid", _j.dumps([{"sku": SKU_NUEVO, "qty": 2}]), 2, f))
+    db.commit(); db.close()
+
+    r = c.get("/api/plan/necesidades")
+    assert r.status_code == 200, r.data
+    fila = next((p for p in next(x for x in r.get_json()["clientes"] if x["cliente_id"] == "ANIMUS_DTC")["productos"]
+                 if p["producto_nombre"] == PROD), None)
+    assert fila is not None, "ANIMUSLASH no apareció"
+    # POR DEFAULT (sin setear mono): usa la cobertura agregada (410 uds) → NO crítico, dias_gondola alto
+    assert fila["urgencia"] not in ("CRITICO", "URGENTE"), (
+        "ANIMUSLASH debe usar cobertura agregada por default (renombrado), no el cuello fantasma",
+        fila["urgencia"], fila.get("dias_gondola"))
+    assert (fila.get("dias_gondola") or 0) > 25, ("cobertura agregada real, no 0", fila.get("dias_gondola"))

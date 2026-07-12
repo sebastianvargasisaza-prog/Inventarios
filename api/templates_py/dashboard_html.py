@@ -23563,7 +23563,7 @@ async function ckMarcar(itemId, estado){
     }
     _updateSoloManualBtn();
     try {
-      const r = await fetch('/api/plan/necesidades' + qs);
+      const r = await fetch('/api/plan/necesidades' + qs, {cache:'no-store'});
       if (r.status === 401) { window.location.href = '/login'; return; }
       const d = await r.json();
       // FIX 23-may-2026 · cachear SKUs huérfanos para mapeo inline desde drill
