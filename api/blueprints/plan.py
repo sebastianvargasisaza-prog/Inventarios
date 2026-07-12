@@ -13976,7 +13976,32 @@ def _estacionalidad_ventas(conn, meses_atras=24, umbral_pico=1.3):
         indice = [round(curva[i] / prom, 2) if prom > 0 else 0.0 for i in range(12)]
         return curva, indice, meses_con_dato, total
 
+    # CRECIMIENTO YoY: uds de los últimos 12 meses vs los 12 meses anteriores (acelerador de solicitudes)
+    def _ventana_ym(end_y, end_m, n):
+        out, y, m = [], end_y, end_m
+        for _ in range(n):
+            out.append((y, m))
+            m -= 1
+            if m == 0:
+                m, y = 12, y - 1
+        return out
+    _last12 = set(_ventana_ym(hoy.year, hoy.month, 12))
+    _py, _pm = hoy.year, hoy.month
+    for _ in range(12):
+        _pm -= 1
+        if _pm == 0:
+            _pm, _py = 12, _py - 1
+    _prev12 = set(_ventana_ym(_py, _pm, 12))
+
+    def _crecimiento(ym):
+        u_last = sum(u for (y, m), u in ym.items() if (y, m) in _last12)
+        u_prev = sum(u for (y, m), u in ym.items() if (y, m) in _prev12)
+        disp = u_prev > 0
+        yoy = round((u_last / u_prev - 1.0) * 100.0, 1) if disp else None
+        return {'yoy_pct': yoy, 'uds_12m': u_last, 'uds_prev_12m': u_prev, 'disponible': disp}
+
     g_curva, g_indice, g_meses, g_total = _curva(glob_ym)
+    g_crec = _crecimiento(glob_ym)
     productos = []
     for prod, ym in prod_ym.items():
         curva, indice, meses_con_dato, total = _curva(ym)
@@ -13984,18 +14009,24 @@ def _estacionalidad_ventas(conn, meses_atras=24, umbral_pico=1.3):
         ind_ef = g_indice if usa_global else indice
         picos = [i + 1 for i in range(12) if ind_ef[i] >= umbral_pico]
         _mx = max(range(12), key=lambda i: ind_ef[i]) if any(ind_ef) else None
+        crec = _crecimiento(ym)
+        # el crecimiento efectivo cae al global si el producto no tiene 2 años para comparar (M70 respaldo)
+        crec_ef = crec if crec['disponible'] else g_crec
         productos.append({
             'producto': prod, 'uds_total': total, 'meses_con_dato': meses_con_dato,
             'curva_uds': curva, 'indice': indice, 'indice_efectivo': ind_ef,
             'usa_global': usa_global, 'picos': picos,
             'pico_max_mes': (_mx + 1) if _mx is not None else None,
             'pico_max_indice': round(ind_ef[_mx], 2) if _mx is not None else 0.0,
+            'crecimiento': crec, 'crecimiento_efectivo': crec_ef,
+            'crec_usa_global': (not crec['disponible']),
         })
     productos.sort(key=lambda p: -p['uds_total'])
     return {
         'generado': hoy.isoformat(), 'meses_atras': meses_atras, 'umbral_pico': umbral_pico,
         'meses_abr': _MESES_ABR_EST,
-        'global': {'curva_uds': g_curva, 'indice': g_indice, 'meses_con_dato': g_meses, 'uds_total': g_total},
+        'global': {'curva_uds': g_curva, 'indice': g_indice, 'meses_con_dato': g_meses,
+                   'uds_total': g_total, 'crecimiento': g_crec},
         'productos': productos, 'total_productos': len(productos),
     }
 
@@ -14042,6 +14073,10 @@ _ESTACIONALIDAD_HTML = r"""<!DOCTYPE html>
   .pico{background:#fef3c7;color:#92400e;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:800;white-space:nowrap}
   .pico.hot{background:#fee2e2;color:#991b1b}
   .tagg{background:#eef2ff;color:#4338ca;border-radius:6px;padding:2px 7px;font-size:10px;font-weight:700}
+  .grow{border-radius:6px;padding:2px 8px;font-size:11px;font-weight:800;white-space:nowrap}
+  .grow.up{background:#dcfce7;color:#15803d} .grow.down{background:#fee2e2;color:#b91c1c}
+  .grow.flat{background:#f1f5f9;color:#475569} .grow.gray{background:#f1f5f9;color:#94a3b8;font-weight:600}
+  .grow small{font-weight:600;opacity:.7}
   .bars{display:flex;gap:5px;align-items:flex-end;height:104px;margin-top:12px}
   .bcol{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
   .bar{width:100%;max-width:34px;border-radius:5px 5px 0 0;background:#c4b5fd;position:relative;transition:height .2s}
@@ -14086,6 +14121,14 @@ function picoBadge(p){
   var hot = p.pico_max_indice>=2;
   return '<span class="pico'+(hot?' hot':'')+'">&#128293; '+MES[p.pico_max_mes-1]+' '+p.pico_max_indice.toFixed(1)+'&times;</span>';
 }
+function crecBadge(crec, usaGlobal){
+  if(!crec || crec.yoy_pct==null) return '<span class="grow gray">sin comparación YoY</span>';
+  var v = crec.yoy_pct;
+  var cls = v>2 ? 'up' : (v<-2 ? 'down' : 'flat');
+  var ar = v>2 ? '&#9650;' : (v<-2 ? '&#9660;' : '&#9644;');
+  return '<span class="grow '+cls+'" title="Últimos 12m ('+(crec.uds_12m||0)+' uds) vs 12m previos ('+(crec.uds_prev_12m||0)+' uds)">'
+    + ar+' '+(v>0?'+':'')+v.toFixed(0)+'% / año'+(usaGlobal?' <small>(marca)</small>':'')+'</span>';
+}
 async function cargar(){
   var cont = document.getElementById('cont');
   cont.innerHTML = '<div class="empty">Cargando ventas&hellip;</div>';
@@ -14099,14 +14142,18 @@ async function cargar(){
     var g = d.global||{};
     var html = '<div class="card glob"><div class="prow"><div><div class="pname">&#127970; Toda la marca (curva global)</div>'
       + '<div class="puds">'+(g.uds_total||0).toLocaleString('es-CO')+' uds · '+(g.meses_con_dato||0)+' meses con dato</div></div>'
-      + picoBadge({pico_max_mes: gArgMax(g.indice), pico_max_indice: Math.max.apply(null, g.indice||[0])})+'</div>'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
+      + crecBadge(g.crecimiento, false)
+      + picoBadge({pico_max_mes: gArgMax(g.indice), pico_max_indice: Math.max.apply(null, g.indice||[0])})+'</div></div>'
       + barsHtml(g.curva_uds||[], g.indice||[], umbral) + '</div>';
     if(!(d.productos||[]).length){ html += '<div class="empty">Sin ventas mapeadas en el histórico. Verificá que los SKU de Shopify estén mapeados a productos.</div>'; }
     (d.productos||[]).forEach(function(p){
       html += '<div class="card"><div class="prow"><div><div class="pname">'+esc(p.producto)+'</div>'
         + '<div class="puds">'+(p.uds_total||0).toLocaleString('es-CO')+' uds en el histórico'
         + (p.usa_global ? ' · <span class="tagg">respaldo global (poco histórico)</span>' : '')+'</div></div>'
-        + picoBadge(p) + '</div>'
+        + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
+        + crecBadge(p.crecimiento_efectivo, p.crec_usa_global)
+        + picoBadge(p) + '</div></div>'
         + barsHtml(p.curva_uds||[], p.indice_efectivo||[], umbral) + '</div>';
     });
     cont.innerHTML = html;

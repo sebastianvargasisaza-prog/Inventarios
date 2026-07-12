@@ -67,3 +67,26 @@ def test_producto_poco_historico_usa_global(app, db_clean):
     p = next((x for x in r.get_json()["productos"] if x["producto"] == prod), None)
     assert p is not None
     assert p["usa_global"] is True and p["meses_con_dato"] < 6, p
+
+
+def test_crecimiento_yoy_tienda(app, db_clean):
+    """Crecimiento YoY: últimos 12m vs 12m previos. Producto que dobló sus ventas → ~+100%."""
+    prod, sku = "QA CREC PROD", "QACRECSKU"
+    _exec("INSERT INTO sku_producto_map (sku,producto_nombre,volumen_ml,activo) VALUES (?,?,30,1)", (sku, prod))
+    # últimos 12 meses: 20 uds/mes · 12 meses previos: 10 uds/mes → +100%
+    for i in range(12):
+        _exec("INSERT INTO animus_shopify_orders (shopify_id,nombre,total,moneda,estado,estado_pago,sku_items,"
+              "unidades_total,creado_en) VALUES (?,?,?,?,?,?,?,?, date('now','-5 hours','-' || ? || ' months'))",
+              (f"CR-L{i}", "c", 100.0, "COP", "", "paid", json.dumps([{"sku": sku, "qty": 20}]), 20, i))
+    for i in range(12, 24):
+        _exec("INSERT INTO animus_shopify_orders (shopify_id,nombre,total,moneda,estado,estado_pago,sku_items,"
+              "unidades_total,creado_en) VALUES (?,?,?,?,?,?,?,?, date('now','-5 hours','-' || ? || ' months'))",
+              (f"CR-P{i}", "c", 100.0, "COP", "", "paid", json.dumps([{"sku": sku, "qty": 10}]), 10, i))
+    c = _login(app)
+    d = c.get("/api/plan/estacionalidad-ventas?meses=36").get_json()
+    p = next((x for x in d["productos"] if x["producto"] == prod), None)
+    assert p is not None, "producto no apareció"
+    cr = p["crecimiento"]
+    assert cr["disponible"] is True, cr
+    assert 70 <= cr["yoy_pct"] <= 130, ("dobló ventas → ~+100% YoY", cr)  # tolerancia por bordes de mes
+    assert d["global"]["crecimiento"]["yoy_pct"] is not None
