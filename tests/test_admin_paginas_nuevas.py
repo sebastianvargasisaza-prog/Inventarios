@@ -491,3 +491,14 @@ def test_envase_crear_flujo(admin_client):
     # nombre requerido
     r2 = admin_client.post("/api/admin/envase-crear", json={"descripcion": "", "categoria": "Frasco"})
     assert r2.status_code == 400, r2.data
+
+
+def test_envase_crear_con_codigo_dado(admin_client):
+    """El usuario puede DAR el código (consecutivo) · se respeta + rechaza duplicado."""
+    r = admin_client.post("/api/admin/envase-crear",
+                          json={"codigo": "MEE-ENV-777", "descripcion": "ENVASE BLUSH QA2", "categoria": "Frasco", "volumen_ml": 6})
+    assert r.status_code == 200 and r.get_json()["codigo"] == "MEE-ENV-777", r.data
+    # mismo código otra vez → 409
+    r2 = admin_client.post("/api/admin/envase-crear",
+                           json={"codigo": "MEE-ENV-777", "descripcion": "OTRO", "categoria": "Frasco"})
+    assert r2.status_code == 409, r2.data

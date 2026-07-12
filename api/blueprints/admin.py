@@ -6883,12 +6883,20 @@ def admin_envase_crear():
         return jsonify({"error": "nombre requerido"}), 400
     conn = db_connect()
     c = conn.cursor()
-    mx = 0
-    for (cc,) in c.execute("SELECT codigo FROM maestro_mee WHERE codigo LIKE 'MEE-ENV-%'").fetchall():
-        m = _re.match(r'MEE-ENV-(\d+)$', str(cc or '').strip().upper())
-        if m:
-            mx = max(mx, int(m.group(1)))
-    newcod = "MEE-ENV-%03d" % (mx + 1)
+    # Sebastián 12-jul · el usuario puede DAR el código (todos siguen MEE-ENV-### consecutivo · lo copia y crea).
+    # Si no lo da, se auto-genera el siguiente.
+    _cod_in = (d.get("codigo") or "").strip().upper()
+    if _cod_in:
+        if c.execute("SELECT codigo FROM maestro_mee WHERE codigo=?", (_cod_in,)).fetchone():
+            return jsonify({"error": f"el código {_cod_in} ya existe"}), 409
+        newcod = _cod_in
+    else:
+        mx = 0
+        for (cc,) in c.execute("SELECT codigo FROM maestro_mee WHERE codigo LIKE 'MEE-ENV-%'").fetchall():
+            m = _re.match(r'MEE-ENV-(\d+)$', str(cc or '').strip().upper())
+            if m:
+                mx = max(mx, int(m.group(1)))
+        newcod = "MEE-ENV-%03d" % (mx + 1)
     fecha = (_dt.utcnow() - _td(hours=5)).strftime('%Y-%m-%d %H:%M:%S')
     c.execute("INSERT INTO maestro_mee (codigo, descripcion, categoria, volumen_ml, stock_actual, stock_minimo, "
               "estado, fecha_creacion) VALUES (?, ?, ?, ?, 0, 0, 'Activo', ?)", (newcod, desc, cat, ml, fecha))
@@ -6970,6 +6978,7 @@ a.back{font-size:13px;color:#7c3aed;text-decoration:none}
 <div style="background:#fff;border:1px solid #ddd6fe;border-radius:10px;padding:12px 14px;margin-bottom:14px">
   <div style="font-size:13px;font-weight:800;color:#5b21b6;margin-bottom:8px">&#10133; Crear envase que no est&aacute;</div>
   <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+    <input id="nv-cod" placeholder="MEE-ENV-###" title="código · se pre-carga el siguiente consecutivo · podés editarlo" style="width:130px;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;font-family:ui-monospace;font-weight:700">
     <input id="nv-nombre" placeholder="Nombre (ej. ENVASE BLUSH)" style="flex:1;min-width:200px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
     <select id="nv-cat" style="padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
       <option value="Frasco">Frasco</option><option value="Envase">Envase</option><option value="Tapa">Tapa</option>
@@ -6990,13 +6999,20 @@ var ENV=[];
 function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 async function csrf(){var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();return t.csrf_token;}
 function norm(s){return (s||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();}
+var ALLMEE=[];
 async function cargar(){
   try{
     var m=await (await fetch('/api/admin/maestro-mees-list',{cache:'no-store'})).json();
-    // frascos/envases (por categoría o prefijo FR-)
-    ENV=(m.mees||[]).filter(function(e){var c=(e.categoria||'').toLowerCase();return c==='frasco'||c==='envase'||/^FR-/.test(e.codigo||'');});
-    recount(); render();
+    ALLMEE=(m.mees||[]);
+    // Sebastián 12-jul · mostrar TODOS los envases (el blush pudo quedar con otra categoría · no esconderlo).
+    ENV=ALLMEE;
+    prefillCodigo(); recount(); render();
   }catch(e){document.getElementById('tb').innerHTML='<tr><td colspan=4 style="color:#dc2626;padding:24px">Error: '+e+'</td></tr>';}
+}
+function prefillCodigo(){
+  var mx=0;
+  ALLMEE.forEach(function(e){var m=/^MEE-ENV-(\d+)$/.exec((e.codigo||'').toUpperCase()); if(m){var n=parseInt(m[1],10); if(n>mx)mx=n;}});
+  var el=document.getElementById('nv-cod'); if(el && !el.value) el.value='MEE-ENV-'+('00'+(mx+1)).slice(-3);
 }
 function dupset(){
   var cnt={}; ENV.forEach(function(e){var k=norm(e.descripcion); cnt[k]=(cnt[k]||0)+1;});
@@ -7040,6 +7056,7 @@ async function guardar(inp){
   }catch(e){ if(sav){sav.textContent='error'; sav.style.color='#dc2626';} }
 }
 async function crearEnvase(){
+  var cod=(document.getElementById('nv-cod').value||'').trim();
   var nombre=(document.getElementById('nv-nombre').value||'').trim();
   var cat=document.getElementById('nv-cat').value||'Frasco';
   var ml=parseFloat(document.getElementById('nv-ml').value)||0;
@@ -7048,15 +7065,15 @@ async function crearEnvase(){
   btn.disabled=true; msg.textContent='Creando…'; msg.style.color='#64748b';
   try{
     var t=await csrf();
-    var r=await fetch('/api/admin/envase-crear',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify({descripcion:nombre,categoria:cat,volumen_ml:ml})});
+    var r=await fetch('/api/admin/envase-crear',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify({codigo:cod,descripcion:nombre,categoria:cat,volumen_ml:ml})});
     var d=await r.json();
     if(!r.ok){ msg.textContent=(d&&d.error)||('Error '+r.status); msg.style.color='#dc2626'; btn.disabled=false; return; }
     var em=d.email_catalina;
     var emtxt = em==='enviado' ? ' · correo a Catalina ✓' : (em==='smtp_no_config'||em==='catalina_sin_email' ? ' · (correo a Catalina no configurado)' : '');
     msg.innerHTML='✓ Creado '+d.codigo+emtxt; msg.style.color='#16a34a';
-    document.getElementById('nv-nombre').value=''; document.getElementById('nv-ml').value='';
+    document.getElementById('nv-cod').value=''; document.getElementById('nv-nombre').value=''; document.getElementById('nv-ml').value='';
     btn.disabled=false;
-    await cargar();  // recargar para verlo en la lista y ponerle ml si falta
+    await cargar();  // recargar para verlo en la lista, re-pre-cargar el siguiente código y ponerle ml
   }catch(e){ msg.textContent='Error: '+e; msg.style.color='#dc2626'; btn.disabled=false; }
 }
 cargar();
