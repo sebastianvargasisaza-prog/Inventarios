@@ -433,3 +433,42 @@ def test_mapeo_producto_envase_flujo(admin_client):
     fila2 = next((p for p in st2["productos"] if p["producto"] == prod), None)
     assert fila2 is not None and fila2["falta"] is False, ("tras asignar no debe faltar", fila2)
     assert any(s["envase"] == frasco for s in fila2["slots"]), fila2
+
+
+def test_envases_ml_flujo(admin_client):
+    """Sebastián 12-jul · ponerle el ml a los envases homónimos: la página renderiza, guardar el ml en un envase
+    lo persiste en maestro_mee.volumen_ml y la lista de MEEs lo devuelve (para mostrarlo en los desplegables)."""
+    import os
+    import sqlite3
+    db = sqlite3.connect(os.environ["DB_PATH"], timeout=10)
+    c1, c2 = "FR-QA-CUADR-A", "FR-QA-CUADR-B"
+    for cod in (c1, c2):
+        db.execute("DELETE FROM maestro_mee WHERE codigo=?", (cod,))
+        # dos frascos con el MISMO nombre (homónimos) sin ml
+        db.execute("INSERT INTO maestro_mee (codigo, descripcion, categoria, volumen_ml, estado, fecha_creacion) "
+                   "VALUES (?, 'FRASCO BLANCO CUADRADO', 'Frasco', 0, 'Activo', '2026-07-12 00:00:00')", (cod,))
+    db.commit(); db.close()
+
+    # página renderiza
+    r = admin_client.get("/admin/envases-ml")
+    assert r.status_code == 200 and b"ml a los envases" in r.data, r.status_code
+
+    # la lista trae volumen_ml (0 al inicio)
+    mm = admin_client.get("/api/admin/maestro-mees-list").get_json()
+    ea = next((e for e in mm["mees"] if e["codigo"] == c1), None)
+    assert ea is not None and ea.get("volumen_ml") == 0, ea
+
+    # ponerle 15ml a uno y 30ml al otro
+    r1 = admin_client.post("/api/admin/envase-ml", json={"codigo": c1, "volumen_ml": 15})
+    r2 = admin_client.post("/api/admin/envase-ml", json={"codigo": c2, "volumen_ml": 30})
+    assert r1.status_code == 200 and r1.get_json()["volumen_ml"] == 15, r1.data
+    assert r2.status_code == 200 and r2.get_json()["volumen_ml"] == 30, r2.data
+
+    # ahora la lista los distingue por ml
+    mm2 = admin_client.get("/api/admin/maestro-mees-list").get_json()
+    by = {e["codigo"]: e.get("volumen_ml") for e in mm2["mees"] if e["codigo"] in (c1, c2)}
+    assert by == {c1: 15, c2: 30}, by
+
+    # envase inexistente → 404
+    r3 = admin_client.post("/api/admin/envase-ml", json={"codigo": "NO-EXISTE-XYZ", "volumen_ml": 10})
+    assert r3.status_code == 404, r3.data

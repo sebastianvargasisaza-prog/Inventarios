@@ -6799,7 +6799,8 @@ def admin_maestro_mees_list():
     try:
         rows = c.execute(
             f"""SELECT {_cols}, COALESCE(imagen_url,'') AS imagen_url,
-                       COALESCE(material_referencia,'') AS material_referencia
+                       COALESCE(material_referencia,'') AS material_referencia,
+                       COALESCE(volumen_ml,0) AS volumen_ml
                 FROM maestro_mee WHERE COALESCE(estado,'Activo')='Activo'
                 ORDER BY categoria, codigo""").fetchall()
     except Exception:
@@ -6829,6 +6830,138 @@ def admin_maestro_mees_list():
             m['partes'] = []
     conn.close()
     return jsonify({'total': len(mees), 'mees': mees})
+
+
+@bp.route("/api/admin/envase-ml", methods=["POST"])
+def admin_envase_set_ml():
+    """Sebastián 12-jul · poner el ml (volumen) a un envase para distinguir los homónimos (dos 'FRASCO BLANCO
+    CUADRADO' de 15 y 30ml). Guarda maestro_mee.volumen_ml · el ml se muestra al lado del nombre en los
+    desplegables. Reversible (volumen_ml=0 lo quita). Admin · auditado."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.json or {}
+    cod = (d.get("codigo") or "").strip()
+    if not cod:
+        return jsonify({"error": "codigo requerido"}), 400
+    try:
+        ml = float(d.get("volumen_ml") or 0)
+    except (TypeError, ValueError):
+        ml = 0.0
+    if ml < 0 or ml > 100000:
+        return jsonify({"error": "ml inválido"}), 400
+    conn = db_connect()
+    c = conn.cursor()
+    if not c.execute("SELECT codigo FROM maestro_mee WHERE codigo=?", (cod,)).fetchone():
+        return jsonify({"error": f"envase {cod} no existe"}), 404
+    c.execute("UPDATE maestro_mee SET volumen_ml=? WHERE codigo=?", (ml, cod))
+    try:
+        audit_log(None, u, "ENVASE_SET_ML", "maestro_mee", cod, f"volumen_ml={ml}")
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({"ok": True, "codigo": cod, "volumen_ml": ml})
+
+
+@bp.route("/admin/envases-ml", methods=["GET"])
+def admin_envases_ml_pagina():
+    """Tool: ponerle el ml (volumen) a cada envase para distinguir los homónimos (Sebastián 12-jul)."""
+    u, err, code = _require_admin()
+    if err:
+        return ("<html><body style='font-family:system-ui;padding:48px'><h2>Solo admin</h2>"
+                "<a href='/login'>Ir a login</a></body></html>"), code
+    return _ENVASES_ML_HTML
+
+
+_ENVASES_ML_HTML = r"""<!DOCTYPE html><html lang="es"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Ponerle ml a los envases</title>
+<style>
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#f8fafc;color:#1e293b}
+.wrap{max-width:920px;margin:0 auto;padding:24px}
+h1{font-size:22px;margin:0 0 4px}.sub{color:#64748b;font-size:14px;margin:0 0 16px}
+.kpis{display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.kpi{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:10px 16px;font-size:13px}
+.kpi b{font-size:20px;display:block}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden}
+th,td{padding:8px 10px;text-align:left;font-size:13px;border-bottom:1px solid #f1f5f9}
+th{background:#f1f5f9;font-weight:700;font-size:12px}
+tr.sinml{background:#fff7ed} tr.dup{box-shadow:inset 3px 0 0 #f59e0b}
+input.ml{width:80px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;text-align:right}
+.chip{font-size:10px;font-weight:700;border-radius:8px;padding:1px 7px;margin-left:6px}
+.chip.dup{background:#fed7aa;color:#9a3412}.chip.sinml{background:#fee2e2;color:#991b1b}.chip.ok{background:#dcfce7;color:#166534}
+.search{margin-bottom:12px;padding:8px 12px;width:280px;border:1px solid #cbd5e1;border-radius:8px}
+.sav{font-size:11px;color:#16a34a;font-weight:700;margin-left:8px}
+a.back{font-size:13px;color:#7c3aed;text-decoration:none}
+</style></head><body><div class="wrap">
+<a class="back" href="/admin/mapeo-producto-envase">&larr; Volver a mapear producto &rarr; envase</a>
+<h1>&#128231; Ponerle ml a los envases</h1>
+<p class="sub">Escribe el <b>ml</b> de cada frasco. Los que tienen el <b>mismo nombre</b> (ej. dos &laquo;FRASCO BLANCO CUADRADO&raquo;) van marcados en <b style="color:#b45309">naranja</b> &mdash; ponles el ml para distinguirlos. El ml aparece luego al lado del nombre en los desplegables. Se guarda solo al escribir.</p>
+<div class="kpis">
+  <div class="kpi" style="border-color:#fca5a5"><b id="k-sinml">&mdash;</b>sin ml</div>
+  <div class="kpi" style="border-color:#fdba74"><b id="k-dup">&mdash;</b>nombre duplicado</div>
+  <div class="kpi" style="border-color:#86efac"><b id="k-ok">&mdash;</b>con ml</div>
+</div>
+<input class="search" id="q" placeholder="Buscar envase..." oninput="render()">
+<table><thead><tr><th>Código</th><th>Nombre</th><th>Categoría</th><th>ml</th></tr></thead>
+<tbody id="tb"><tr><td colspan="4" style="padding:24px;text-align:center;color:#94a3b8">Cargando...</td></tr></tbody></table>
+</div>
+<script>
+var ENV=[];
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+async function csrf(){var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();return t.csrf_token;}
+function norm(s){return (s||'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();}
+async function cargar(){
+  try{
+    var m=await (await fetch('/api/admin/maestro-mees-list',{cache:'no-store'})).json();
+    // frascos/envases (por categoría o prefijo FR-)
+    ENV=(m.mees||[]).filter(function(e){var c=(e.categoria||'').toLowerCase();return c==='frasco'||c==='envase'||/^FR-/.test(e.codigo||'');});
+    recount(); render();
+  }catch(e){document.getElementById('tb').innerHTML='<tr><td colspan=4 style="color:#dc2626;padding:24px">Error: '+e+'</td></tr>';}
+}
+function dupset(){
+  var cnt={}; ENV.forEach(function(e){var k=norm(e.descripcion); cnt[k]=(cnt[k]||0)+1;});
+  var s={}; Object.keys(cnt).forEach(function(k){if(cnt[k]>1)s[k]=1;}); return s;
+}
+function recount(){
+  var sinml=0,ok=0,dup=0,ds=dupset();
+  ENV.forEach(function(e){ if(e.volumen_ml&&e.volumen_ml>0)ok++; else sinml++; if(ds[norm(e.descripcion)])dup++; });
+  document.getElementById('k-sinml').textContent=sinml;
+  document.getElementById('k-dup').textContent=dup;
+  document.getElementById('k-ok').textContent=ok;
+}
+function render(){
+  var q=(document.getElementById('q').value||'').toLowerCase();
+  var ds=dupset(); var tb=document.getElementById('tb'); tb.innerHTML='';
+  var vis=ENV.filter(function(e){return !q||((e.codigo||'')+' '+(e.descripcion||'')).toLowerCase().indexOf(q)>=0;});
+  // sin ml primero, luego duplicados, luego resto
+  vis.sort(function(a,b){var am=(a.volumen_ml>0)?1:0,bm=(b.volumen_ml>0)?1:0; if(am!==bm)return am-bm; return (a.codigo||'').localeCompare(b.codigo||'');});
+  if(!vis.length){tb.innerHTML='<tr><td colspan=4 style="padding:24px;text-align:center;color:#94a3b8">Sin resultados</td></tr>';return;}
+  vis.forEach(function(e){
+    var isDup=!!ds[norm(e.descripcion)]; var sinml=!(e.volumen_ml&&e.volumen_ml>0);
+    var tr=document.createElement('tr'); if(sinml)tr.className='sinml'; if(isDup)tr.className+=' dup';
+    var chips=''; if(isDup)chips+='<span class="chip dup">homónimo</span>';
+    chips+= sinml?'<span class="chip sinml">sin ml</span>':'<span class="chip ok">'+e.volumen_ml+'ml</span>';
+    tr.innerHTML='<td style="font-family:ui-monospace;font-weight:700">'+esc(e.codigo)+'</td>'
+      +'<td><b>'+esc(e.descripcion)+'</b>'+chips+'</td>'
+      +'<td style="color:#64748b">'+esc(e.categoria||'')+'</td>'
+      +'<td><input class="ml" type="number" min="0" step="0.5" value="'+(e.volumen_ml>0?e.volumen_ml:'')+'" placeholder="ml" data-cod="'+esc(e.codigo)+'" onchange="guardar(this)"><span class="sav" id="sav-'+esc(e.codigo)+'"></span></td>';
+    tb.appendChild(tr);
+  });
+}
+async function guardar(inp){
+  var cod=inp.dataset.cod; var ml=parseFloat(inp.value)||0; var sav=document.getElementById('sav-'+cod);
+  try{
+    var t=await csrf();
+    var r=await fetch('/api/admin/envase-ml',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify({codigo:cod,volumen_ml:ml})});
+    var d=await r.json();
+    if(!r.ok){ if(sav){sav.textContent='error'; sav.style.color='#dc2626';} return; }
+    if(sav){sav.textContent='&#10003;'; sav.style.color='#16a34a';}
+    ENV.forEach(function(e){if(e.codigo===cod)e.volumen_ml=ml;}); recount();
+  }catch(e){ if(sav){sav.textContent='error'; sav.style.color='#dc2626';} }
+}
+cargar();
+</script></body></html>"""
 
 
 @bp.route("/api/admin/mee-parte", methods=["POST"])
@@ -7716,7 +7849,7 @@ button.ok{background:#16a34a}
 .search{margin-bottom:12px;padding:8px 12px;width:280px;border:1px solid #cbd5e1;border-radius:8px}
 </style></head><body><div class="wrap">
 <h1>&#128230; Mapear producto &rarr; envase</h1>
-<p class="sub">El plan JALA envases desde aqui. Asigna el frasco y los ml de cada producto. Los <b>faltantes</b> (sin envase) salen arriba en naranja.</p>
+<p class="sub">El plan JALA envases desde aqui. Asigna el frasco y los ml de cada producto. Los <b>faltantes</b> (sin envase) salen arriba en naranja. &middot; <a href="/admin/envases-ml" style="color:#7c3aed;font-weight:700">&#128231; Ponerle ml a los envases</a> (para distinguir los frascos del mismo nombre).</p>
 <div class="kpis">
   <div class="kpi" style="border-color:#fdba74"><b id="k-falta">&mdash;</b>sin envase</div>
   <div class="kpi" style="border-color:#86efac"><b id="k-ok">&mdash;</b>con envase</div>
@@ -7746,7 +7879,10 @@ async function cargar(){
 }
 function opciones(sel){
   var h='<option value="">- elegir frasco -</option>';
-  ENV.forEach(function(e){h+='<option value="'+esc(e.codigo)+'"'+(e.codigo===sel?' selected':'')+'>'+esc(e.codigo)+' - '+esc(e.descripcion)+'</option>';});
+  ENV.forEach(function(e){
+    var mlTxt = (e.volumen_ml && e.volumen_ml>0) ? (' · '+e.volumen_ml+'ml') : ' · SIN ML';
+    h+='<option value="'+esc(e.codigo)+'"'+(e.codigo===sel?' selected':'')+'>'+esc(e.codigo)+' - '+esc(e.descripcion)+mlTxt+'</option>';
+  });
   return h;
 }
 function render(){
