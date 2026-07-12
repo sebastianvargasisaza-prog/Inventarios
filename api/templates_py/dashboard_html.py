@@ -2600,6 +2600,11 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       title="Envases por producción · enviar a serigrafía con tiempo">
       &#128230; Alistar envases
     </button>
+    <button onclick="window.open('/planta/estacionalidad','_blank')"
+      style="padding:6px 14px;border:1px solid #d97706;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#fff;color:#b45309"
+      title="Ver cómo se elevan las ventas por mes (Black Friday, Día Madres) · histórico Shopify">
+      &#128200; Estacionalidad
+    </button>
   </div>
   <div id="prog-sub-opera_grp" class="prog-subbar" style="display:none;gap:8px;margin-bottom:14px;padding:8px 4px;border-bottom:1px dashed #cbd5e1;flex-wrap:wrap">
     <!-- Sebastián 20-may-2026: Centro de Mando OCULTO · "no lo logramos"

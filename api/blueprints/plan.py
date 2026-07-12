@@ -13885,6 +13885,248 @@ def plan_diag_sku_ventas():
     return jsonify({'ok': True, 'q': q, 'total_skus': len(out), 'skus': out})
 
 
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
+# FORECAST · ESTACIONALIDAD DE VENTAS POR MES (Sebastián 11-jul · Fase 1a · "ver las ventas por mes primero")
+# Motor POR PRODUCTO con respaldo global. Del histórico Shopify calcula, por producto, las uds vendidas promedio
+# de cada MES calendario (ene..dic) + un ÍNDICE estacional (mes/promedio · 1.0=normal) + marca los meses PICO
+# (Black Friday nov, Día Madres may...). NO toca compras · esta fase es solo la VISIÓN de cómo se elevan las ventas.
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
+_MESES_ABR_EST = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+
+
+def _estacionalidad_ventas(conn, meses_atras=24, umbral_pico=1.3):
+    """Estacionalidad de ventas por producto (con respaldo global de la marca). Solo LECTURA."""
+    import json as _j
+    from datetime import datetime as _dt, timedelta as _td
+    c = conn.cursor()
+    hoy = (_dt.utcnow() - _td(hours=5)).date()
+    meses_atras = max(6, min(int(meses_atras or 24), 48))
+    umbral_pico = max(1.05, min(float(umbral_pico or 1.3), 5.0))
+    cutoff = (hoy - _td(days=int(meses_atras * 30.44))).isoformat() + 'T00:00:00'
+    # sku -> producto (excluye es_regalo · igual que el motor de demanda · M70 coherencia display=motor)
+    sku_prod, sku_regalo = {}, set()
+    for _sel in (
+        "SELECT UPPER(TRIM(sku)), producto_nombre, COALESCE(es_regalo,0) FROM sku_producto_map WHERE COALESCE(activo,1)=1",
+        "SELECT UPPER(TRIM(sku)), producto_nombre, 0 FROM sku_producto_map WHERE COALESCE(activo,1)=1",
+    ):
+        try:
+            for r in c.execute(_sel).fetchall():
+                if r[1] and str(r[1]).strip():
+                    sku_prod[r[0]] = str(r[1]).strip()
+                    if len(r) > 2 and r[2]:
+                        sku_regalo.add(r[0])
+            break
+        except Exception:
+            continue
+    prod_ym = {}   # producto -> {(año,mes): uds}
+    glob_ym = {}   # (año,mes): uds (toda la marca)
+    rows = c.execute(
+        "SELECT sku_items, creado_en FROM animus_shopify_orders "
+        "WHERE creado_en >= ? AND sku_items IS NOT NULL AND sku_items != '' "
+        "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') "
+        "AND LOWER(COALESCE(estado_pago,'')) NOT IN ('refunded','voided','partially_refunded')",
+        (cutoff,)).fetchall()
+    for r in rows:
+        cre = (r[1] or '')[:7]
+        if len(cre) < 7 or cre[4] != '-':
+            continue
+        try:
+            y, mo = int(cre[:4]), int(cre[5:7])
+        except Exception:
+            continue
+        if mo < 1 or mo > 12:
+            continue
+        try:
+            items = _j.loads(r[0]) if r[0] else []
+        except Exception:
+            continue
+        if not isinstance(items, list):
+            continue
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            sku = str(it.get('sku', '') or '').strip().upper()
+            if not sku or sku in sku_regalo:
+                continue
+            prod = sku_prod.get(sku)
+            if not prod:
+                continue
+            try:
+                qty = int(it.get('qty') or it.get('cantidad') or it.get('quantity') or 0)
+            except Exception:
+                qty = 0
+            if qty <= 0:
+                continue
+            prod_ym.setdefault(prod, {})
+            prod_ym[prod][(y, mo)] = prod_ym[prod].get((y, mo), 0) + qty
+            glob_ym[(y, mo)] = glob_ym.get((y, mo), 0) + qty
+
+    def _curva(ym):
+        # promedio de uds por OCURRENCIA de cada mes calendario (normaliza multi-año) + índice mes/promedio
+        tot = [0.0] * 12
+        años_por_mes = [set() for _ in range(12)]
+        total = 0
+        for (y, m), u in ym.items():
+            tot[m - 1] += u
+            años_por_mes[m - 1].add(y)
+            total += u
+        curva = [round(tot[i] / max(1, len(años_por_mes[i])), 1) for i in range(12)]
+        meses_con_dato = sum(1 for i in range(12) if len(años_por_mes[i]) > 0)
+        prom = (sum(curva) / meses_con_dato) if meses_con_dato > 0 else 0.0
+        indice = [round(curva[i] / prom, 2) if prom > 0 else 0.0 for i in range(12)]
+        return curva, indice, meses_con_dato, total
+
+    g_curva, g_indice, g_meses, g_total = _curva(glob_ym)
+    productos = []
+    for prod, ym in prod_ym.items():
+        curva, indice, meses_con_dato, total = _curva(ym)
+        usa_global = meses_con_dato < 6   # poco histórico → respaldo global
+        ind_ef = g_indice if usa_global else indice
+        picos = [i + 1 for i in range(12) if ind_ef[i] >= umbral_pico]
+        _mx = max(range(12), key=lambda i: ind_ef[i]) if any(ind_ef) else None
+        productos.append({
+            'producto': prod, 'uds_total': total, 'meses_con_dato': meses_con_dato,
+            'curva_uds': curva, 'indice': indice, 'indice_efectivo': ind_ef,
+            'usa_global': usa_global, 'picos': picos,
+            'pico_max_mes': (_mx + 1) if _mx is not None else None,
+            'pico_max_indice': round(ind_ef[_mx], 2) if _mx is not None else 0.0,
+        })
+    productos.sort(key=lambda p: -p['uds_total'])
+    return {
+        'generado': hoy.isoformat(), 'meses_atras': meses_atras, 'umbral_pico': umbral_pico,
+        'meses_abr': _MESES_ABR_EST,
+        'global': {'curva_uds': g_curva, 'indice': g_indice, 'meses_con_dato': g_meses, 'uds_total': g_total},
+        'productos': productos, 'total_productos': len(productos),
+    }
+
+
+@bp.route("/api/plan/estacionalidad-ventas", methods=["GET"])
+def plan_estacionalidad_ventas():
+    """Ver ventas por MES · estacionalidad por producto (Black Friday, Día Madres...). Solo LECTURA · no toca
+    compras (Fase 1a). ?meses=24 (histórico) ?umbral=1.3 (índice para marcar pico)."""
+    err = _require_login()
+    if err:
+        return err
+    try:
+        meses = int(request.args.get('meses', '24'))
+    except Exception:
+        meses = 24
+    try:
+        umbral = float(request.args.get('umbral', '1.3'))
+    except Exception:
+        umbral = 1.3
+    conn = get_db()
+    data = _estacionalidad_ventas(conn, meses_atras=meses, umbral_pico=umbral)
+    data['ok'] = True
+    return jsonify(data)
+
+
+_ESTACIONALIDAD_HTML = r"""<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estacionalidad de ventas · ÁNIMUS</title>
+<style>
+  *{box-sizing:border-box} body{margin:0;font-family:Inter,-apple-system,Segoe UI,Roboto,sans-serif;background:#f6f5fb;color:#1e1b2e}
+  .wrap{max-width:1120px;margin:0 auto;padding:22px 18px 60px}
+  .h1{font-size:22px;font-weight:800;color:#5b21b6;margin:0 0 4px}
+  .sub{font-size:13px;color:#64748b;margin:0 0 16px}
+  .banner{background:linear-gradient(135deg,#f5f3ff,#faf5ff);border:1px solid #ddd6fe;border-radius:12px;padding:12px 14px;font-size:12.5px;color:#5b21b6;margin-bottom:16px;line-height:1.55}
+  .ctrl{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:18px}
+  .ctrl label{font-size:12px;color:#475569;font-weight:600}
+  .ctrl select,.ctrl input{padding:6px 8px;border:1px solid #c4b5fd;border-radius:7px;font-size:13px;font-weight:600}
+  .btn{background:linear-gradient(90deg,#7c3aed,#5b21b6);color:#fff;border:0;border-radius:8px;padding:8px 16px;font-size:13px;font-weight:800;cursor:pointer}
+  .card{background:#fff;border:1px solid #ece9f5;border-radius:14px;padding:14px 16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(16,15,45,.05)}
+  .card.glob{border:2px solid #ddd6fe;background:linear-gradient(180deg,#fdfcff,#faf9ff)}
+  .prow{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+  .pname{font-size:14px;font-weight:800;color:#312e46}
+  .puds{font-size:11px;color:#94a3b8;font-weight:600}
+  .pico{background:#fef3c7;color:#92400e;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:800;white-space:nowrap}
+  .pico.hot{background:#fee2e2;color:#991b1b}
+  .tagg{background:#eef2ff;color:#4338ca;border-radius:6px;padding:2px 7px;font-size:10px;font-weight:700}
+  .bars{display:flex;gap:5px;align-items:flex-end;height:104px;margin-top:12px}
+  .bcol{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
+  .bar{width:100%;max-width:34px;border-radius:5px 5px 0 0;background:#c4b5fd;position:relative;transition:height .2s}
+  .bar.pk{background:linear-gradient(180deg,#f59e0b,#d97706)}
+  .bar.pkhot{background:linear-gradient(180deg,#ef4444,#b91c1c)}
+  .bidx{font-size:9px;font-weight:800;color:#5b21b6;margin-bottom:2px;height:12px}
+  .bmes{font-size:9.5px;color:#94a3b8;margin-top:4px;font-weight:600}
+  .buds{font-size:9px;color:#cbd5e1}
+  .empty{text-align:center;color:#94a3b8;padding:40px}
+</style></head>
+<body><div class="wrap">
+  <div class="h1">&#128200; Estacionalidad de ventas &middot; por mes</div>
+  <div class="sub">C&oacute;mo se elevan tus ventas mes a mes (hist&oacute;rico Shopify) &middot; por producto, con respaldo global.</div>
+  <div class="banner"><b>Fase 1 &middot; solo VISI&Oacute;N.</b> Esto todav&iacute;a NO cambia las compras. Sirve para VER los picos (Black Friday nov, D&iacute;a Madres may&hellip;) y prepararte a comprar m&aacute;s materia prima antes. El siguiente paso ser&aacute; aplicar estos picos al plan para subir las compras en los meses pico.</div>
+  <div class="ctrl">
+    <label>Hist&oacute;rico <select id="meses"><option value="12">1 a&ntilde;o</option><option value="24" selected>2 a&ntilde;os</option><option value="36">3 a&ntilde;os</option></select></label>
+    <label>Marcar pico &ge; <input id="umbral" type="number" min="1.05" max="5" step="0.1" value="1.3" style="width:60px"> &times; el promedio</label>
+    <button class="btn" onclick="cargar()">Recargar</button>
+    <span id="meta" style="font-size:11px;color:#94a3b8"></span>
+  </div>
+  <div id="cont"><div class="empty">Cargando ventas&hellip;</div></div>
+</div>
+<script>
+var MES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+function barsHtml(curva, indEf, umbral){
+  var mx = 0; for(var i=0;i<12;i++){ if(curva[i]>mx) mx=curva[i]; }
+  var h = '<div class="bars">';
+  for(var i=0;i<12;i++){
+    var pct = mx>0 ? Math.round(curva[i]/mx*90)+8 : 4;
+    var ind = indEf[i]||0;
+    var cls = 'bar' + (ind>=umbral ? (ind>=2 ? ' pkhot' : ' pk') : '');
+    var idxLbl = ind>=umbral ? (ind.toFixed(1)+'&times;') : '';
+    h += '<div class="bcol"><div class="bidx">'+idxLbl+'</div>'
+       + '<div class="'+cls+'" style="height:'+pct+'px" title="'+MES[i]+': '+curva[i]+' uds/mes · índice '+ind.toFixed(2)+'"></div>'
+       + '<div class="bmes">'+MES[i]+'</div><div class="buds">'+(curva[i]||0)+'</div></div>';
+  }
+  return h + '</div>';
+}
+function picoBadge(p){
+  if(!p.pico_max_mes) return '';
+  var hot = p.pico_max_indice>=2;
+  return '<span class="pico'+(hot?' hot':'')+'">&#128293; '+MES[p.pico_max_mes-1]+' '+p.pico_max_indice.toFixed(1)+'&times;</span>';
+}
+async function cargar(){
+  var cont = document.getElementById('cont');
+  cont.innerHTML = '<div class="empty">Cargando ventas&hellip;</div>';
+  var meses = document.getElementById('meses').value;
+  var umbral = parseFloat(document.getElementById('umbral').value)||1.3;
+  try{
+    var r = await fetch('/api/plan/estacionalidad-ventas?meses='+meses+'&umbral='+umbral, {credentials:'same-origin'});
+    if(!r.ok){ cont.innerHTML = '<div class="empty">Error '+r.status+'</div>'; return; }
+    var d = await r.json();
+    document.getElementById('meta').textContent = d.total_productos+' productos · histórico '+d.meses_atras+' meses · generado '+d.generado;
+    var g = d.global||{};
+    var html = '<div class="card glob"><div class="prow"><div><div class="pname">&#127970; Toda la marca (curva global)</div>'
+      + '<div class="puds">'+(g.uds_total||0).toLocaleString('es-CO')+' uds · '+(g.meses_con_dato||0)+' meses con dato</div></div>'
+      + picoBadge({pico_max_mes: gArgMax(g.indice), pico_max_indice: Math.max.apply(null, g.indice||[0])})+'</div>'
+      + barsHtml(g.curva_uds||[], g.indice||[], umbral) + '</div>';
+    if(!(d.productos||[]).length){ html += '<div class="empty">Sin ventas mapeadas en el histórico. Verificá que los SKU de Shopify estén mapeados a productos.</div>'; }
+    (d.productos||[]).forEach(function(p){
+      html += '<div class="card"><div class="prow"><div><div class="pname">'+esc(p.producto)+'</div>'
+        + '<div class="puds">'+(p.uds_total||0).toLocaleString('es-CO')+' uds en el histórico'
+        + (p.usa_global ? ' · <span class="tagg">respaldo global (poco histórico)</span>' : '')+'</div></div>'
+        + picoBadge(p) + '</div>'
+        + barsHtml(p.curva_uds||[], p.indice_efectivo||[], umbral) + '</div>';
+    });
+    cont.innerHTML = html;
+  }catch(e){ cont.innerHTML = '<div class="empty">Error: '+esc(e)+'</div>'; }
+}
+function gArgMax(a){ if(!a||!a.length) return null; var mi=0; for(var i=1;i<a.length;i++){ if(a[i]>a[mi]) mi=i; } return mi+1; }
+cargar();
+</script></body></html>"""
+
+
+@bp.route("/planta/estacionalidad", methods=["GET"])
+def plan_estacionalidad_page():
+    """Página Fase 1a · VER las ventas por mes (estacionalidad · Black Friday). Solo lectura · no toca compras."""
+    if not session.get("compras_user"):
+        from flask import redirect
+        return redirect("/login?next=/planta/estacionalidad")
+    from flask import Response
+    return Response(_ESTACIONALIDAD_HTML, mimetype="text/html")
+
+
 @bp.route("/api/plan/producciones-sin-descontar", methods=["GET"])
 def plan_producciones_sin_descontar():
     """Sebastián 4-jul · visibilidad de producciones que YA pasaron pero no tienen el descuento de MP

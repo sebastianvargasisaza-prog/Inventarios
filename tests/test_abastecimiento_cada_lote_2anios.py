@@ -82,3 +82,37 @@ def test_kg_editado_por_usuario_manda_no_lote_size(app, db_clean):
           "VALUES (?, date('now','-5 hours','+5 days'), 1, 'pendiente', 'eos_plan', 25)", (prod,))
     m = _consumo_map(app, mp, "15,30")
     assert abs(m.get(15, 0) - 2500.0) < 1.0, ("usa el kg editado (25) no el lote_size (10 → daría 1000)", m)
+
+
+def test_cadencia_45dias_acumula_por_horizonte_como_espera_sebastian(app, db_clean):
+    """Sebastián 11-jul: "el LIMPIADOR BHA se hace cada 45 días → en 30d suma sus MP 1 vez, en 90d 2 veces, en
+    120d 3 veces". Se PRUEBA con el motor real: 3 lotes fásicos (día 10, 55, 100 · cada 45d) → el consumo
+    acumulativo de cada MP es #lotes_en_la_ventana × (%×kg×1000). 2 MPs para ver que cada una acumula sola."""
+    prod = "QA BHA 45D"
+    mp5, mp10 = "MP-QABHA5", "MP-QABHA10"   # 5% y 10%
+    for mp in (mp5, mp10):
+        _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp,nombre_comercial,nombre_inci,activo) VALUES (?,?,?,1)",
+              (mp, mp, mp + " INCI"))
+    _exec("INSERT INTO formula_headers (producto_nombre,lote_size_kg,activo) VALUES (?,20,1)", (prod,))
+    _exec("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje,cantidad_g_por_lote) "
+          "VALUES (?,?,?,?,0)", (prod, mp5, mp5, 5))
+    _exec("INSERT INTO formula_items (producto_nombre,material_id,material_nombre,porcentaje,cantidad_g_por_lote) "
+          "VALUES (?,?,?,?,0)", (prod, mp10, mp10, 10))
+    # cada lote 20 kg · MP5 = 5%×20×1000 = 1000 g/lote · MP10 = 10%×20×1000 = 2000 g/lote
+    for dias in (10, 55, 100):   # cada 45 días, fásico como el ejemplo del usuario
+        _exec("INSERT INTO produccion_programada (producto,fecha_programada,lotes,estado,origen,cantidad_kg) "
+              "VALUES (?, date('now','-5 hours','+' || ? || ' days'), 1, 'pendiente', 'eos_plan', 20)", (prod, dias))
+
+    m5 = _consumo_map(app, mp5, "30,45,90,120,180")
+    m10 = _consumo_map(app, mp10, "30,45,90,120,180")
+    # 30d → solo el lote de día 10 = 1 vez · 90d → día 10+55 = 2 veces · 120d → 10+55+100 = 3 veces
+    assert abs(m5.get(30, 0) - 1000.0) < 1.0, ("30d = 1 lote (día 10)", m5)
+    assert abs(m5.get(90, 0) - 2000.0) < 1.0, ("90d = 2 lotes (día 10,55)", m5)
+    assert abs(m5.get(120, 0) - 3000.0) < 1.0, ("120d = 3 lotes (día 10,55,100)", m5)
+    # cada MP acumula por su propio %: MP10 el doble de MP5 en cada horizonte
+    assert abs(m10.get(30, 0) - 2000.0) < 1.0, ("MP10 30d = 1 lote × 2000", m10)
+    assert abs(m10.get(90, 0) - 4000.0) < 1.0, ("MP10 90d = 2 × 2000", m10)
+    assert abs(m10.get(120, 0) - 6000.0) < 1.0, ("MP10 120d = 3 × 2000", m10)
+    # 45d → todavía solo el de día 10 (el de día 55 aún no entra) · 180d → los 3 (no hay 4º)
+    assert abs(m5.get(45, 0) - 1000.0) < 1.0, ("45d = 1 lote · el de día 55 aún NO entra", m5)
+    assert abs(m5.get(180, 0) - 3000.0) < 1.0, ("180d = 3 lotes (no hay más sembrados)", m5)
