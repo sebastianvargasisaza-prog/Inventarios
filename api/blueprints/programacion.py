@@ -14929,6 +14929,15 @@ def abastecimiento_consumo_horizontes():
                 _cuar_mee[str(mc).upper().strip()] = max(float(qu or 0), 0)
     except Exception:
         _cuar_mee = {}
+    # Sebastián 12-jul · INTERRUPTOR reversible (M39): ¿el déficit CUENTA lo "En cola" (SOL/OC) y Cuarentena?
+    # DEFAULT NO (solo stock físico · no sabemos si Alejandro compró de verdad · queda ROJO hasta que llegue/se
+    # libere · pend/cuar quedan como INFO). Poner app_settings.abast_contar_pendiente='1' para volver a contarlos.
+    _contar_pend = False
+    try:
+        _rcp = c.execute("SELECT valor FROM app_settings WHERE clave='abast_contar_pendiente'").fetchone()
+        _contar_pend = bool(_rcp and str(_rcp[0]).strip().lower() in ('1', 'true', 'yes', 'si'))
+    except Exception:
+        _contar_pend = False
     items_out_mp = []
     if incluir_mp:
         for cod, consumo in consumo_mp.items():
@@ -14941,7 +14950,8 @@ def abastecimiento_consumo_horizontes():
             stock_g = _lookup_stock_5tier(stock_mp, cod, info.get('nombre') or '')
             pend_g = float(pendientes_mp.get(cod.upper(), 0) or 0)
             cuar_g = float(_lookup_stock_5tier(_cuar_mp, cod, info.get('nombre') or '') or 0)
-            disponible = stock_g + pend_g + cuar_g
+            # Sebastián 12-jul · déficit contra STOCK FÍSICO (pend/cuar solo INFO · ver interruptor arriba).
+            disponible = stock_g + ((pend_g + cuar_g) if _contar_pend else 0.0)
             deficits = {h: round(max(consumo[h] - disponible, 0), 1) for h in horizontes}
             urg, h_urg = _urgencia_de(deficits)
             if urg == 'OK' and max(consumo.values()) <= 0.01:
@@ -14971,7 +14981,7 @@ def abastecimiento_consumo_horizontes():
             stock_u = float(stock_mee.get(cod, 0) or 0)
             pend_u = float(pendientes_mee.get(cod, 0) or 0)
             cuar_u = float(_cuar_mee.get(str(cod).upper().strip(), 0) or 0)
-            disponible = stock_u + pend_u + cuar_u
+            disponible = stock_u + ((pend_u + cuar_u) if _contar_pend else 0.0)  # Sebastián 12-jul · ver interruptor MP
             deficits = {h: round(max(consumo[h] - disponible, 0), 1) for h in horizontes}
             urg, h_urg = _urgencia_de(deficits)
             if urg == 'OK' and max(consumo.values()) <= 0.01:

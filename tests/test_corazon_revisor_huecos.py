@@ -64,7 +64,10 @@ def test_H1_multilote_mismo_producto_suma(app, db_clean):
 
 def test_H2_pendiente_cruza_por_bridge_a_bodega(app, db_clean):
     """Formula usa FANTASMA→bridge→BODEGA. Stock y PENDIENTE bajo BODEGA.
-    Tras colapsar demanda a bodega, deficit resta el pendiente."""
+    Tras colapsar demanda a bodega, deficit resta el pendiente (MODO 'contar pendiente')."""
+    # Sebastián 12-jul · el default cambió a NO contar pendiente (M39/M66) · este test valida el bridge del
+    # PENDIENTE + su resta → fijar el modo viejo.
+    _exec("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('abast_contar_pendiente','1')")
     _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, activo) "
           "VALUES ('QAHUECO-BOD','HuecoBod','HUECO BOD INCI',1)")
     _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, activo) "

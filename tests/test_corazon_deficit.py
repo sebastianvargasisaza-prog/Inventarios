@@ -91,7 +91,10 @@ def test_deficit_resta_stock(app, db_clean):
 
 def test_deficit_resta_stock_mas_pendiente(app, db_clean):
     """B: consumo 5000g · stock 1000g · pendiente 2000g → deficit = 2000g.
-    Confirma que SE RESTAN AMBOS (stock + pendiente_compras)."""
+    Confirma que SE RESTAN AMBOS (stock + pendiente_compras) EN EL MODO 'contar pendiente'."""
+    # Sebastián 12-jul · el default cambió a NO contar pendiente/cuarentena (M39/M66) · este test valida el modo
+    # viejo (contar) → fijarlo explícito (el flag persiste en app_settings · db_clean no lo resetea).
+    _exec("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('abast_contar_pendiente','1')")
     _seed_mp("DEFICIT-B", "Deficit B")
     _seed_formula("QADEF-PRODB", "DEFICIT-B", "Deficit B", 50)  # 50% de 10kg = 5000g
     _programar("QADEF-PRODB", 10, 3)
@@ -104,6 +107,26 @@ def test_deficit_resta_stock_mas_pendiente(app, db_clean):
     assert abs(mp["pendiente_compras_g"] - 2000) < 1, mp["pendiente_compras_g"]
     # deficit = max(0, 5000 - 1000 - 2000) = 2000
     assert abs(mp["deficit"]["15"] - 2000) < 1, f"deficit debe restar stock+pendiente · {mp['deficit']}"
+
+
+def test_deficit_default_no_resta_pendiente(app, db_clean):
+    """Sebastián 12-jul (NUEVO DEFAULT · M39): el déficit se calcula contra el STOCK FÍSICO SOLO · el pendiente
+    (En cola · SOL/OC) se MUESTRA pero NO se resta (no sabemos si Alejandro lo compró) → queda en rojo. Mismo
+    escenario que el test 'contar pendiente' pero SIN fijar el flag → deficit = 5000 − 1000 = 4000 (no 2000)."""
+    # el flag persiste entre tests (db_clean no resetea app_settings) → fijar el DEFAULT (no contar) explícito.
+    _exec("DELETE FROM app_settings WHERE clave='abast_contar_pendiente'")
+    _seed_mp("DEFICIT-D", "Deficit D")
+    _seed_formula("QADEF-PRODD", "DEFICIT-D", "Deficit D", 50)  # 50% de 10kg = 5000g
+    _programar("QADEF-PRODD", 10, 3)
+    _entrada_stock("DEFICIT-D", "Deficit D", 1000)             # stock físico 1000g
+    _sol_pendiente("QADEF-SOL-D", "DEFICIT-D", "Deficit D", 2000)  # pendiente 2000g (se muestra, no resta)
+    mp = _consumo_mp(app, "DEFICIT-D")
+    assert mp is not None
+    assert abs(mp["stock_actual_g"] - 1000) < 1, mp["stock_actual_g"]
+    assert abs(mp["pendiente_compras_g"] - 2000) < 1, ("el pendiente SE MUESTRA como info", mp["pendiente_compras_g"])
+    # deficit = max(0, 5000 - 1000) = 4000 · NO resta los 2000 pendientes
+    assert abs(mp["deficit"]["15"] - 4000) < 1, f"default NO resta pendiente · {mp['deficit']}"
+    assert mp["urgencia"] != "OK", "con déficit debe quedar en rojo/urgente, no OK"
 
 
 def test_deficit_nunca_negativo_si_stock_cubre(app, db_clean):

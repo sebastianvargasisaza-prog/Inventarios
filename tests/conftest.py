@@ -277,6 +277,22 @@ def _disable_async_backup_trigger():
         pass
 
 
+@pytest.fixture(autouse=True)
+def _reset_abast_flag():
+    """Sebastián 12-jul · el flag app_settings.abast_contar_pendiente (M39 · déficit cuenta pend/cuar o no) NO lo
+    resetea db_clean y PERSISTE entre tests → resetear a DEFAULT (no contar) antes de cada test; los tests que
+    validan el modo 'contar' lo setean explícito en su cuerpo (M66)."""
+    try:
+        import sqlite3 as _sqf
+        _cf = _sqf.connect(os.environ["DB_PATH"], timeout=10)
+        _cf.execute("DELETE FROM app_settings WHERE clave='abast_contar_pendiente'")
+        _cf.commit()
+        _cf.close()
+    except Exception:
+        pass
+    yield
+
+
 @pytest.fixture
 def db_clean(app):
     """Limpia tablas que algunos tests modifican (rate_limit, users_passwords).

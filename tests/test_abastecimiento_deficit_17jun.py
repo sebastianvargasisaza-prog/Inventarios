@@ -100,7 +100,10 @@ def test_deficit_respeta_cantidad_kg(app, db_clean):
 
 def test_consumo_horizontes_acredita_oc_pagada_no_recibida(app, db_clean):
     """[3] La pantalla Abastecimiento cuenta una OC 'Pagada' sin recibir como
-    pendiente → no re-sugiere comprar MP ya pagada en tránsito."""
+    pendiente → no re-sugiere comprar MP ya pagada en tránsito (MODO 'contar pendiente')."""
+    # Sebastián 12-jul · el default cambió a NO contar pendiente (M39/M66) · este test valida que la OC Pagada
+    # se acredita como pendiente en el modo viejo → fijarlo.
+    _exec("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('abast_contar_pendiente','1')")
     cod, prod = "MP-PAG17", "ZZ-PAG17"
     _seed_formula(cod, prod)
     # producción FIJA en horizonte (origen requerido por consumo-horizontes).

@@ -62,6 +62,8 @@ def _cantidad_sugerida(it, cubrir_dias):
 
 
 def test_pedir_es_deficit_foco_exacto(app, db_clean):
+    # Sebastián 12-jul · modo 'contar pendiente' (default histórico · ahora default NO cuenta · M39/M66).
+    _exec("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('abast_contar_pendiente','1')")
     cod = "MP-PEDIRZZ"
     _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, activo) "
           "VALUES (?, 'Material Pedir ZZ', 'PEDIR INCI ZZ', 1)", (cod,))
