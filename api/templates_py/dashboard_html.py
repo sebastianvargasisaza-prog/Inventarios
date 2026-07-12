@@ -23715,7 +23715,9 @@ async function ckMarcar(itemId, estado){
     div.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:40px">Calculando consumo por horizonte (' + modo + ')…</div>';
     resumenDiv.innerHTML = '';
     try {
-      const r = await fetch('/api/abastecimiento/consumo-horizontes?tipo=' + tipos.join(',') + '&modo=' + encodeURIComponent(modo));
+      // Sebastián 11-jul · pedir hasta 730d (2 años) para que Abastecimiento CUENTE los lotes del 2º año que
+      // el usuario programó (el default 365 dejaba el 2º año fuera de la ventana · el motor sí lo cuenta con 730).
+      const r = await fetch('/api/abastecimiento/consumo-horizontes?tipo=' + tipos.join(',') + '&modo=' + encodeURIComponent(modo) + '&horizontes=15,30,60,90,120,180,365,730');
       if (r.status === 401) { window.location.href = '/login'; return; }
       if (!r.ok) {
         div.innerHTML = '<div style="text-align:center;color:#dc2626;padding:20px">Error: HTTP ' + r.status + '</div>';
@@ -23959,7 +23961,7 @@ async function ckMarcar(itemId, estado){
     html += '<label style="display:flex;align-items:center;gap:6px;color:#64748b;font-weight:600">Cubrir <select id="abast-cubrir" onchange="_abastCubrir(this.value)" style="' + _abaSel + '">';
     (st.horizontes || []).forEach(h => {
       const sel = st.cubrir_dias === h ? ' selected' : '';
-      html += '<option value="' + h + '"' + sel + '>' + h + 'd</option>';
+      html += '<option value="' + h + '"' + sel + '>' + (h===365?'1 año':(h===730?'2 años':h+'d')) + '</option>';
     });
     html += '</select></label>';
     const _abaBtn = 'padding:9px 14px;border:0;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:0 3px 10px -3px rgba(16,15,45,.3);color:#fff';
@@ -23993,7 +23995,8 @@ async function ckMarcar(itemId, estado){
     html += '<th style="text-align:right;padding:8px;font-weight:700">En cola</th>';
     html += '<th style="text-align:right;padding:8px;font-weight:700" title="Ya lleg&oacute; - esperando liberaci&oacute;n de Calidad">&#128300; Cuarentena</th>';
     (st.horizontes || []).forEach(h => {
-      html += '<th style="text-align:right;padding:8px;font-weight:700;background:#f1f5f9">' + h + 'd</th>';
+      const _hlbl = (h===365?'1 año':(h===730?'2 años':h+'d'));
+      html += '<th style="text-align:right;padding:8px;font-weight:700;background:' + (h===730?'#eef2ff':'#f1f5f9') + '" title="Consumo acumulado de MP hasta ' + h + ' días">' + _hlbl + '</th>';
     });
     html += '<th style="text-align:center;padding:8px;font-weight:700">Urg</th>';
     html += '<th style="text-align:right;padding:8px;font-weight:700;background:#ecfdf5">Pedir</th>';
