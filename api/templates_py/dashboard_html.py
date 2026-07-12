@@ -1642,42 +1642,52 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <button onclick="loadMovimientosNuevo(true)" style="padding:6px 14px;font-size:13px;background:#7c3aed;color:#fff;border-radius:6px">🔄 Actualizar</button>
       </div>
     </div>
-    <!-- Sprint Movimientos PRO · 20-may-2026 · form mejorado -->
-    <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:14px 18px;margin-bottom:14px">
-      <h3 style="margin:0 0 10px;font-size:14px">✏️ Registrar Movimiento Manual</h3>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
-        <div class="form-group" style="margin:0"><label style="font-size:11px">Código MP *</label><input type="text" id="mov-id" placeholder="MP00001" style="text-transform:uppercase"></div>
-        <div class="form-group" style="margin:0"><label style="font-size:11px">Nombre Material *</label><input type="text" id="mov-nombre" placeholder="Nombre"></div>
-        <div class="form-group" style="margin:0"><label style="font-size:11px">Tipo *</label>
-          <select id="mov-tipo"><option value="Entrada">📥 Entrada</option><option value="Salida">📤 Salida</option><option value="Ajuste">⚖ Ajuste</option></select>
+    <!-- Sprint Movimientos PRO · 20-may-2026 · form mejorado · plegable 12-jul -->
+    <style>
+      #mov-manual-details > summary{list-style:none}
+      #mov-manual-details > summary::-webkit-details-marker{display:none}
+      #mov-manual-details[open] .mov-caret{transform:rotate(180deg)}
+    </style>
+    <details id="mov-manual-details" style="margin-bottom:14px;border:1px solid #eef0f4;border-radius:14px;overflow:hidden;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.03)">
+      <summary style="cursor:pointer;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;font-weight:800;color:#1e293b;background:#fafafe;user-select:none">
+        <span style="display:flex;align-items:center;gap:8px">✏️ Registrar movimiento manual <span style="font-size:.7em;font-weight:600;color:#94a3b8;text-transform:none">· entrada / salida / ajuste puntual</span></span>
+        <span class="mov-caret" style="color:#a78bfa;font-size:.8em;transition:transform .15s">&#9660;</span>
+      </summary>
+      <div style="padding:16px 18px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
+          <div class="form-group" style="margin:0"><label style="font-size:11px">Código MP *</label><input type="text" id="mov-id" placeholder="MP00001" style="text-transform:uppercase"></div>
+          <div class="form-group" style="margin:0"><label style="font-size:11px">Nombre Material *</label><input type="text" id="mov-nombre" placeholder="Nombre"></div>
+          <div class="form-group" style="margin:0"><label style="font-size:11px">Tipo *</label>
+            <select id="mov-tipo"><option value="Entrada">📥 Entrada</option><option value="Salida">📤 Salida</option><option value="Ajuste">⚖ Ajuste</option></select>
+          </div>
+          <div class="form-group" style="margin:0"><label style="font-size:11px">Lote * (req. para Entrada)</label><input type="text" id="mov-lote" placeholder="Ej: LYP240520"></div>
+          <div class="form-group" style="margin:0"><label style="font-size:11px">Cantidad (g) *</label><input type="number" id="mov-cant" placeholder="0" step="0.01" min="0"></div>
+          <div class="form-group" style="margin:0"><label style="font-size:11px">Proveedor</label><input type="text" id="mov-prov" list="prov-list-global" placeholder="Opcional"></div>
         </div>
-        <div class="form-group" style="margin:0"><label style="font-size:11px">Lote * (req. para Entrada)</label><input type="text" id="mov-lote" placeholder="Ej: LYP240520"></div>
-        <div class="form-group" style="margin:0"><label style="font-size:11px">Cantidad (g) *</label><input type="number" id="mov-cant" placeholder="0" step="0.01" min="0"></div>
-        <div class="form-group" style="margin:0"><label style="font-size:11px">Proveedor</label><input type="text" id="mov-prov" list="prov-list-global" placeholder="Opcional"></div>
+        <div class="form-group" style="margin:12px 0 0"><label style="font-size:11px">Observaciones</label><input type="text" id="mov-obs" placeholder="Motivo / contexto"></div>
+        <div style="display:flex;gap:10px;margin-top:12px">
+          <button onclick="registrarMovNuevo()" id="btn-mov-reg" style="background:#16a34a;padding:10px 20px;border-radius:10px;font-weight:700;box-shadow:0 2px 8px rgba(22,163,74,.28)">✓ Registrar</button>
+          <button onclick="limpiarFormMov()" style="background:#fff;color:#64748b;border:1px solid #e2e8f0;padding:10px 20px;border-radius:10px;font-weight:700">Limpiar</button>
+        </div>
+        <div id="mov-msg" style="margin-top:8px"></div>
       </div>
-      <div class="form-group" style="margin:10px 0 0"><label style="font-size:11px">Observaciones</label><input type="text" id="mov-obs" placeholder="Motivo / contexto"></div>
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <button onclick="registrarMovNuevo()" id="btn-mov-reg" style="background:#27ae60">✓ Registrar</button>
-        <button onclick="limpiarFormMov()" style="background:#95a5a6">Limpiar</button>
-      </div>
-      <div id="mov-msg" style="margin-top:8px"></div>
-    </div>
+    </details>
     <!-- Filtros -->
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;background:#f1f5f9;padding:10px;border-radius:6px">
-      <input type="text" id="mov-q" placeholder="🔍 Buscar (MP, lote, obs…)" oninput="movBuscar(this.value)" style="flex:1;min-width:200px;padding:6px 10px;font-size:13px">
-      <select id="mov-tipo-filtro" onchange="movFiltrar()" style="padding:6px 10px;font-size:13px">
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;background:#fff;border:1px solid #eef0f4;padding:12px 14px;border-radius:12px">
+      <input type="text" id="mov-q" placeholder="🔍 Buscar (MP, lote, obs…)" oninput="movBuscar(this.value)" style="flex:1;min-width:200px;padding:8px 12px;font-size:13px;border:1px solid #e2e8f0;border-radius:9px">
+      <select id="mov-tipo-filtro" onchange="movFiltrar()" style="padding:8px 12px;font-size:13px;border:1px solid #e2e8f0;border-radius:9px">
         <option value="">Todos los tipos</option>
         <option value="Entrada">📥 Solo Entradas</option>
         <option value="Salida">📤 Solo Salidas</option>
         <option value="Ajuste">⚖ Solo Ajustes</option>
       </select>
-      <input type="date" id="mov-desde" onchange="movFiltrar()" title="Desde" style="padding:6px 10px;font-size:13px">
-      <input type="date" id="mov-hasta" onchange="movFiltrar()" title="Hasta" style="padding:6px 10px;font-size:13px">
-      <label style="font-size:11px;color:#64748b;display:flex;align-items:center;gap:4px;cursor:pointer">
+      <input type="date" id="mov-desde" onchange="movFiltrar()" title="Desde" style="padding:8px 12px;font-size:13px;border:1px solid #e2e8f0;border-radius:9px">
+      <input type="date" id="mov-hasta" onchange="movFiltrar()" title="Hasta" style="padding:8px 12px;font-size:13px;border:1px solid #e2e8f0;border-radius:9px">
+      <label style="font-size:12px;color:#64748b;display:flex;align-items:center;gap:5px;cursor:pointer">
         <input type="checkbox" id="mov-anul" onchange="movFiltrar()"> Solo anulados
       </label>
     </div>
-    <div style="overflow-x:auto">
+    <div class="mp-card" style="overflow-x:auto;padding:4px">
       <table class="table" id="mov-table" style="font-size:12px">
         <thead><tr>
           <th>ID</th><th>Cod MP</th><th>Material</th><th>Lote</th>
@@ -6314,11 +6324,11 @@ function _refreshMovPager(d){
   var s = _MOV_STATE;
   var hasta = Math.min(s.offset + s.limit, d.total||0);
   var hayMas = d.has_more;
+  var _pb=function(txt,fn,off){ return '<button onclick="'+fn+'" '+(off?'disabled':'')+' style="padding:7px 15px;font-size:12px;font-weight:700;border:1px solid #e2e8f0;border-radius:9px;background:'+(off?'#f8fafc':'#fff')+';color:'+(off?'#cbd5e1':'#6d28d9')+';cursor:'+(off?'default':'pointer')+'">'+txt+'</button>'; };
   box.innerHTML =
-    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:#475569;margin-top:8px">' +
-    '<span>Mostrando '+(s.offset+1)+'-'+hasta+' de '+(d.total||0)+'</span>' +
-    '<button onclick="movPag(-1)" '+(s.offset===0?'disabled':'')+' style="padding:3px 10px;font-size:11px">‹ Atrás</button>' +
-    '<button onclick="movPag(1)" '+(!hayMas?'disabled':'')+' style="padding:3px 10px;font-size:11px">Siguiente ›</button>' +
+    '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12px;color:#64748b;margin-top:14px">' +
+    '<span>Mostrando <b style="color:#334155">'+(s.offset+1)+'-'+hasta+'</b> de <b style="color:#334155">'+(d.total||0).toLocaleString('es-CO')+'</b></span>' +
+    '<div style="display:flex;gap:6px;margin-left:auto">' + _pb('&lsaquo; Atrás','movPag(-1)',s.offset===0) + _pb('Siguiente &rsaquo;','movPag(1)',!hayMas) + '</div>' +
     '</div>';
 }
 function movPag(dir){
