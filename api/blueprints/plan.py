@@ -14046,7 +14046,7 @@ def _estacionalidad_cached(conn, meses_atras=24, umbral_pico=1.3):
     key = (int(meses_atras or 24), round(float(umbral_pico or 1.3), 2))
     now = _t.time()
     hit = _ESTAC_CACHE.get(key)
-    if hit and (now - hit[0]) < 600:
+    if hit and (now - hit[0]) < 1800:   # 30min · estacionalidad estable · no golpear Necesidades con el scan (M43/M59)
         return hit[1]
     data = _estacionalidad_ventas(conn, meses_atras, umbral_pico)
     _ESTAC_CACHE[key] = (now, data)
