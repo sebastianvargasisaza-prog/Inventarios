@@ -5,7 +5,18 @@ motor lo detecta (índice nov el mayor + nov en picos), y que un producto con po
 import os
 import sqlite3
 import json
+import pytest
 from .conftest import TEST_PASSWORD, csrf_headers
+
+
+@pytest.fixture(autouse=True)
+def _clear_estac_cache():
+    # el cache de estacionalidad es module-level (TTL 10min per-worker en prod) · en tests hay que limpiarlo
+    # entre casos para no servir datos de otro test (aislamiento).
+    from blueprints import plan as _p
+    _p._ESTAC_CACHE.clear()
+    yield
+    _p._ESTAC_CACHE.clear()
 
 
 def _login(app, user="sebastian"):
@@ -90,3 +101,38 @@ def test_crecimiento_yoy_tienda(app, db_clean):
     assert cr["disponible"] is True, cr
     assert 70 <= cr["yoy_pct"] <= 130, ("dobló ventas → ~+100% YoY", cr)  # tolerancia por bordes de mes
     assert d["global"]["crecimiento"]["yoy_pct"] is not None
+
+
+def test_preparacion_pico_sugiere_agrandar_lote(app, db_clean):
+    """Fase 1b: un producto con pico estacional ~2 meses adelante y un lote CHICO antes del pico → la sugerencia
+    'Preparar pico' propone agrandar ese lote. Prueba la función de enriquecimiento directo (sin el endpoint pesado)."""
+    import datetime as _dt
+    from blueprints import plan as _plan
+    _plan._ESTAC_CACHE.clear()   # el cache es module-level · limpiarlo para ver los datos recién sembrados
+    prod, sku = "QA PICO PREP", "QAPICOPREP"
+    hoy = (_dt.datetime.utcnow() - _dt.timedelta(hours=5)).date()
+    # mes pico = 2 meses adelante (robusto a la fecha de corrida)
+    pk = ((hoy.month - 1 + 2) % 12) + 1
+    _exec("INSERT INTO sku_producto_map (sku,producto_nombre,volumen_ml,activo) VALUES (?,?,30,1)", (sku, prod))
+    # 2 años de historia con el mes pico a 3× (60 uds) vs 20 el resto
+    for anio in (hoy.year - 2, hoy.year - 1):
+        for mes in range(1, 13):
+            q = 60 if mes == pk else 20
+            _exec("INSERT INTO animus_shopify_orders (shopify_id,nombre,total,moneda,estado,estado_pago,sku_items,"
+                  "unidades_total,creado_en) VALUES (?,?,?,?,?,?,?,?,?)",
+                  (f"PP-{anio}-{mes}", "c", 100.0, "COP", "", "paid",
+                   json.dumps([{"sku": sku, "qty": q}]), q, "%04d-%02d-15T10:00:00" % (anio, mes)))
+    # un lote CHICO (20 kg) ~25 días adelante (antes del pico a ~2 meses)
+    lote_fecha = (hoy + _dt.timedelta(days=25)).isoformat()
+    import sqlite3
+    conn = sqlite3.connect(os.environ["DB_PATH"], timeout=10)
+    productos = [{"producto_nombre": prod, "planificacion": [
+        {"id": 4242, "fecha": lote_fecha, "kg": 20.0, "estado": "pendiente"}]}]
+    _plan._enriquecer_preparacion_picos(conn, productos)
+    conn.close()
+    pp = productos[0].get("preparacion_pico")
+    assert pp is not None, ("debería sugerir preparación pre-pico", productos[0])
+    assert pp["tipo"] == "agrandar", pp
+    assert pp["lote_id"] == 4242, pp
+    assert pp["kg_sugerido"] > pp["kg_actual"] >= 20.0, ("debe sugerir MÁS kg que el actual", pp)
+    assert pp["pico_mes"] == pk, pp

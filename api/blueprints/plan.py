@@ -3160,6 +3160,12 @@ def plan_necesidades():
     # Re-usamos la lógica existente del endpoint animus-prioridad-agotamiento
     # pero ajustando umbrales a la lógica de Sebastián (20-25-45d).
     productos_animus = _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar)
+    # Fase 1b (Sebastián 11-jul) · sub-línea "Preparar pico" por producto (SUGERENCIA · no cambia el plan).
+    # Best-effort · si falla NO rompe Necesidades (M4 · path crítico).
+    try:
+        _enriquecer_preparacion_picos(conn, productos_animus)
+    except Exception:
+        pass
 
     # ─── Cliente 2+: B2B (Fernando + futuros) ─────────────────────────────
     # Sebastián 25-may-2026 PM · incluir `urgencia` (mig 182) y ordenar
@@ -14031,6 +14037,104 @@ def _estacionalidad_ventas(conn, meses_atras=24, umbral_pico=1.3):
     }
 
 
+# Cache TTL de la estacionalidad (el scan de órdenes es pesado · patrón M59 · per-worker, 10 min).
+_ESTAC_CACHE = {}
+
+
+def _estacionalidad_cached(conn, meses_atras=24, umbral_pico=1.3):
+    import time as _t
+    key = (int(meses_atras or 24), round(float(umbral_pico or 1.3), 2))
+    now = _t.time()
+    hit = _ESTAC_CACHE.get(key)
+    if hit and (now - hit[0]) < 600:
+        return hit[1]
+    data = _estacionalidad_ventas(conn, meses_atras, umbral_pico)
+    _ESTAC_CACHE[key] = (now, data)
+    return data
+
+
+def _enriquecer_preparacion_picos(conn, productos, ventana_dias=150, umbral=1.3):
+    """Fase 1b · añade p['preparacion_pico'] a cada producto cuyo pico estacional cercano NO esté cubierto por el
+    plan actual (SUGERENCIA · no cambia nada). Usa la seasonality cacheada + la planificacion ya calculada (sin
+    queries extra). La producción que ALIMENTA el pico (la última antes de él) debería venir dimensionada para la
+    demanda elevada del pico; si no hay lote antes del pico → sugiere uno extra. Escala por estacionalidad ×
+    crecimiento (M70 mismos datos que el motor)."""
+    from datetime import datetime as _dt, timedelta as _td, date as _dP
+    try:
+        est = _estacionalidad_cached(conn, 24, umbral)
+    except Exception:
+        return
+    try:
+        from blueprints.programacion import _norm_prod_fuerte as _npf
+    except Exception:
+        _npf = lambda s: (str(s or '').strip().upper())
+    est_by = {_npf(p['producto']): p for p in est.get('productos', [])}
+    hoy = (_dt.utcnow() - _td(hours=5)).date()
+    MES = _MESES_ABR_EST
+    for p in productos:
+        p['preparacion_pico'] = None
+        try:
+            ep = est_by.get(_npf(p.get('producto_nombre') or ''))
+            if not ep:
+                continue
+            ind = ep.get('indice_efectivo') or []
+            pico_mes = ep.get('pico_max_mes')
+            pico_idx = float(ep.get('pico_max_indice') or 0)
+            if len(ind) < 12 or not pico_mes or pico_idx < umbral:
+                continue
+            # próxima ocurrencia del mes pico (mitad de mes) dentro de la ventana
+            peak_date = None
+            for k in range(0, 13):
+                m = ((hoy.month - 1 + k) % 12) + 1
+                y = hoy.year + ((hoy.month - 1 + k) // 12)
+                if m == pico_mes:
+                    peak_date = _dP(y, pico_mes, 15)
+                    break
+            if not peak_date:
+                continue
+            if (peak_date - hoy).days < 0 or (peak_date - hoy).days > ventana_dias:
+                continue
+            crec = ep.get('crecimiento_efectivo') or {}
+            growth = max(0.0, float(crec['yoy_pct']) / 100.0) if crec.get('yoy_pct') is not None else 0.0
+            futuros = sorted([l for l in (p.get('planificacion') or [])
+                              if l.get('fecha') and float(l.get('kg') or 0) > 0
+                              and l.get('estado') not in ('esperando_recurso',)
+                              and l['fecha'][:10] >= hoy.isoformat()],
+                             key=lambda l: l['fecha'][:10])
+            feeders = [l for l in futuros if l['fecha'][:10] <= peak_date.isoformat()]
+            if not feeders:
+                p['preparacion_pico'] = {
+                    'tipo': 'sin_lote', 'pico_mes': pico_mes, 'pico_mes_abr': MES[pico_mes - 1],
+                    'pico_indice': round(pico_idx, 1), 'crecimiento_pct': round(growth * 100),
+                    'mensaje': 'No hay producción antes del pico de ' + MES[pico_mes - 1] + ' · meté un lote extra antes.',
+                }
+                continue
+            feeder = feeders[-1]
+            fd = _dP.fromisoformat(feeder['fecha'][:10])
+            sig = [l for l in futuros if l['fecha'][:10] > feeder['fecha'][:10]]
+            fin = _dP.fromisoformat(sig[0]['fecha'][:10]) if sig else (fd + _td(days=91))
+            idxs, cur = [], fd
+            while cur < fin and len(idxs) < 18:
+                idxs.append(ind[cur.month - 1] or 1.0)
+                cur = _dP(cur.year + (1 if cur.month == 12 else 0), cur.month % 12 + 1, 1)
+            avg_idx = (sum(idxs) / len(idxs)) if idxs else 1.0
+            kg_actual = round(float(feeder['kg'] or 0), 1)
+            kg_sug = round(kg_actual * avg_idx * (1.0 + growth), 1)
+            if kg_actual <= 0 or kg_sug < kg_actual * 1.15:
+                continue  # el plan ya cubre razonablemente el pico
+            p['preparacion_pico'] = {
+                'tipo': 'agrandar', 'pico_mes': pico_mes, 'pico_mes_abr': MES[pico_mes - 1],
+                'pico_indice': round(pico_idx, 1), 'crecimiento_pct': round(growth * 100),
+                'lote_id': feeder.get('id'), 'lote_fecha': feeder['fecha'][:10],
+                'kg_actual': kg_actual, 'kg_sugerido': kg_sug,
+                'extra': kg_sug >= kg_actual * 1.8,
+                'mensaje': ('Para el pico de ' + MES[pico_mes - 1] + ' el lote de ' + feeder['fecha'][:10]
+                            + ' debería ser ~' + str(kg_sug) + ' kg (hoy ' + str(kg_actual) + ').'),
+            }
+        except Exception:
+            p['preparacion_pico'] = None
+
+
 @bp.route("/api/plan/estacionalidad-ventas", methods=["GET"])
 def plan_estacionalidad_ventas():
     """Ver ventas por MES · estacionalidad por producto (Black Friday, Día Madres...). Solo LECTURA · no toca
@@ -14047,7 +14151,7 @@ def plan_estacionalidad_ventas():
     except Exception:
         umbral = 1.3
     conn = get_db()
-    data = _estacionalidad_ventas(conn, meses_atras=meses, umbral_pico=umbral)
+    data = _estacionalidad_cached(conn, meses_atras=meses, umbral_pico=umbral)
     data['ok'] = True
     return jsonify(data)
 

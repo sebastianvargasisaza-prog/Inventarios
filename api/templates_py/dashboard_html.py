@@ -25748,6 +25748,23 @@ async function ckMarcar(itemId, estado){
         // Programar
         html += '<td style="padding:10px 8px;text-align:right"><button onclick="abrirPlanProduccion(' + idx + ')" style="background:#6d28d9;color:#fff;border:none;padding:7px 16px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">📅 Programar</button></td>';
         html += '</tr>';
+        // Sub-línea "Preparar pico" (Fase 1b · SUGERENCIA · solo si hay un pico cercano no cubierto por el plan)
+        if (p.preparacion_pico) {
+          var _pp = p.preparacion_pico;
+          var _crecTxt = (_pp.crecimiento_pct > 0) ? ' · +' + _pp.crecimiento_pct + '%/año' : '';
+          var _acts = '';
+          if (_pp.tipo === 'agrandar' && _pp.lote_id) {
+            _acts = '<button onclick="_ajustarLotePico(' + _pp.lote_id + ',' + _pp.kg_sugerido + ',' + idx + ')" style="background:#f59e0b;color:#fff;border:0;border-radius:6px;padding:5px 11px;font-size:11px;font-weight:800;cursor:pointer">📈 subir a ' + _pp.kg_sugerido + ' kg</button>';
+            if (_pp.extra) _acts += ' <button onclick="abrirPlanProduccion(' + idx + ')" style="background:#fff;color:#b45309;border:1px solid #fbbf24;border-radius:6px;padding:5px 11px;font-size:11px;font-weight:700;cursor:pointer">+ lote extra</button>';
+          } else {
+            _acts = '<button onclick="abrirPlanProduccion(' + idx + ')" style="background:#f59e0b;color:#fff;border:0;border-radius:6px;padding:5px 11px;font-size:11px;font-weight:800;cursor:pointer">+ lote extra antes de ' + escapeHtmlNec(_pp.pico_mes_abr) + '</button>';
+          }
+          html += '<tr><td colspan="7" style="padding:0 14px 9px">'
+            + '<div style="background:linear-gradient(90deg,#fff7ed,#fffbeb);border:1px solid #fde68a;border-left:3px solid #f59e0b;border-radius:8px;padding:8px 11px;font-size:12px;color:#92400e;display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
+            + '<span style="font-weight:800;white-space:nowrap">🔥 Preparar pico ' + escapeHtmlNec(_pp.pico_mes_abr) + ' (' + _pp.pico_indice + '×)' + _crecTxt + '</span>'
+            + '<span style="flex:1;min-width:180px">' + escapeHtmlNec(_pp.mensaje || '') + '</span>'
+            + _acts + '</div></td></tr>';
+        }
         // Sub-fila colapsable con desglose por tono (solo si hay ≥2 tonos)
         if (_tonos.length >= 2) {
           html += '<tr><td colspan="7" style="padding:0 14px 9px">';
@@ -26540,6 +26557,19 @@ async function ckMarcar(itemId, estado){
       if(!r.ok){ btn.disabled=false; btn.textContent='🔗 Es el mismo producto renombrado'; alert('No se pudo: ' + ((d && d.error) || r.status)); return; }
       if(window.cargarNecesidades){ try{ await cargarNecesidades(); }catch(e){} }
     }catch(e){ btn.disabled=false; alert('Error: ' + e); }
+  }
+  // Sebastián 11-jul · Fase 1b · subir el kg del lote que alimenta el pico (sugerencia pre-pico).
+  async function _ajustarLotePico(loteId, kgSug, idx){
+    if(!loteId || !(kgSug>0)) return;
+    if(!confirm('Subir la producción a ' + kgSug + ' kg para cubrir el pico de temporada.\\n\\nEsto ajusta ESE lote (queda Fijo · la compra de materia prima sube sola). ¿Continuar?')) return;
+    try{
+      var t = (await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json()).csrf_token;
+      var r = await fetch('/api/programacion/programar/' + loteId + '/corregir-cantidad', {method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json','X-CSRF-Token':t}, body: JSON.stringify({cantidad_kg: kgSug})});
+      var d = await r.json();
+      if(!r.ok){ alert('No se pudo: ' + ((d && d.error) || r.status)); return; }
+      if(window.cargarNecesidades){ try{ await cargarNecesidades(); }catch(e){} }
+    }catch(e){ alert('Error: ' + e); }
   }
   async function programarCadenaManual(idx){
     var p = window._NEC_PRODUCTOS_CACHE[idx]; if(!p){ alert('Producto no encontrado'); return; }
