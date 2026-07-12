@@ -181,96 +181,111 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     </div>
   </div>
 </div>
-<div id="modal-historial" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9997;display:none;align-items:center;justify-content:center;">
-  <div style="background:white;border-radius:16px;padding:32px;max-width:680px;width:95%;max-height:80vh;overflow-y:auto;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-      <h2 style="color:#6d28d9;margin:0;">&#128203; Historial del Lote</h2>
-      <button onclick="cerrarHistorial()" style="background:#6c757d;padding:6px 14px;">&#10005; Cerrar</button>
+<div id="modal-historial" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(15,15,25,0.55);backdrop-filter:blur(2px);z-index:9997;display:none;align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#fff;border-radius:18px;padding:0;max-width:700px;width:95%;max-height:82vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 70px rgba(0,0,0,.45);">
+    <div style="background:linear-gradient(135deg,#4c1d95,#7c3aed);color:#fff;padding:17px 24px;display:flex;justify-content:space-between;align-items:center;gap:12px;">
+      <div style="min-width:0">
+        <h2 style="color:#fff;margin:0;font-size:1.12em;display:flex;align-items:center;gap:8px;">&#128203; Historial del Lote</h2>
+        <p id="hist-lote-info" style="color:rgba(255,255,255,.85);font-size:0.8em;margin:4px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></p>
+      </div>
+      <button onclick="cerrarHistorial()" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:8px;padding:6px 14px;cursor:pointer;font-weight:600;white-space:nowrap;">&#10005; Cerrar</button>
     </div>
-    <p id="hist-lote-info" style="color:#666;font-size:0.9em;margin-bottom:16px;"></p>
-    <table class="table"><thead><tr><th>Tipo</th><th>Cantidad (g)</th><th>Fecha</th><th>Observaciones</th><th>Operador</th></tr></thead>
-    <tbody id="hist-lote-body"><tr><td colspan="5" style="text-align:center;color:#999;">Cargando...</td></tr></tbody></table>
+    <div style="padding:18px 24px;overflow-y:auto;">
+      <table class="table"><thead><tr><th>Tipo</th><th>Cantidad (g)</th><th>Fecha</th><th>Observaciones</th><th>Operador</th></tr></thead>
+      <tbody id="hist-lote-body"><tr><td colspan="5" style="text-align:center;color:#999;">Cargando...</td></tr></tbody></table>
+    </div>
   </div>
 </div>
-<div id="modal-ajuste" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;"><div id="modal-ajuste-body" style="background:white;border-radius:16px;padding:0;max-width:700px;width:96%;max-height:90vh;overflow-y:auto;">
-  <div style="background:white;border-radius:16px;padding:28px;max-width:500px;width:96%;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-      <h2 style="color:#6d28d9;margin:0;">&#9878; Gestionar Material</h2>
-      <button onclick="cerrarAjuste()" style="background:none;border:none;font-size:1.6em;cursor:pointer;color:#aaa;padding:0 4px;line-height:1;" title="Cerrar">&#10005;</button>
+<div id="modal-ajuste" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(15,15,25,0.55);backdrop-filter:blur(2px);z-index:9998;display:none;align-items:center;justify-content:center;padding:16px;">
+  <div id="modal-ajuste-body" style="background:#fff;border-radius:18px;padding:0;max-width:560px;width:96%;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 70px rgba(0,0,0,.45);">
+    <style>
+      #modal-ajuste .gm-sec{background:#fff;border:1px solid #eef0f4;border-left:4px solid var(--gm-ac,#6d28d9);border-radius:12px;padding:15px 16px;margin-bottom:12px;}
+      #modal-ajuste .gm-t{font-size:0.72em;font-weight:800;color:var(--gm-ac,#6d28d9);text-transform:uppercase;letter-spacing:.8px;margin-bottom:11px;}
+      #modal-ajuste .gm-cur{font-size:0.78em;color:#64748b;margin-bottom:9px;}
+      #modal-ajuste .gm-cur b{color:#334155;}
+      #modal-ajuste .gm-btn{border:none;color:#fff;padding:9px 16px;border-radius:8px;cursor:pointer;font-weight:700;font-size:0.85em;white-space:nowrap;transition:filter .1s,transform .1s;}
+      #modal-ajuste .gm-btn:hover{filter:brightness(.94);transform:translateY(-1px);}
+    </style>
+    <div style="background:linear-gradient(135deg,#4c1d95,#7c3aed);color:#fff;padding:17px 24px;display:flex;justify-content:space-between;align-items:center;gap:12px;">
+      <div style="min-width:0">
+        <h2 style="color:#fff;margin:0;font-size:1.12em;display:flex;align-items:center;gap:8px;">&#9878; Gestionar Material</h2>
+        <p id="ajuste-info" style="color:rgba(255,255,255,.85);font-size:0.8em;margin:4px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></p>
+      </div>
+      <button onclick="cerrarAjuste()" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:8px;width:34px;height:34px;cursor:pointer;font-size:1.05em;line-height:1;flex:none;" title="Cerrar">&#10005;</button>
     </div>
-    <p id="ajuste-info" style="color:#666;font-size:0.88em;margin-bottom:14px;"></p>
-    <div style="border:1px solid #d0ece7;border-radius:8px;padding:14px;margin-bottom:10px;background:#f9fffe;">
-      <div style="font-size:0.78em;font-weight:700;color:#6d28d9;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">&#128203; Conteo F&#237;sico</div>
+    <div style="padding:18px 22px;overflow-y:auto;">
+    <div class="gm-sec" style="--gm-ac:#6d28d9;">
+      <div class="gm-t">&#128203; Conteo f&#237;sico</div>
       <div class="form-group"><label>Stock en sistema (g)</label><input type="number" id="ajuste-sistema" readonly style="background:#f5f5f5;color:#888;"></div>
       <div class="form-group"><label style="color:#6d28d9;font-weight:700;">Cantidad f&#237;sica real (g) *</label><input type="number" id="ajuste-fisico" placeholder="Lo que tienes f&#237;sicamente" step="0.01" min="0" style="border:2px solid #6d28d9;"></div>
       <div class="form-group"><label>Observaci&#243;n</label><input type="text" id="ajuste-obs" placeholder="Ej: Conteo del 15/04"></div>
       <div style="display:flex;gap:8px;margin-top:10px;">
-        <button onclick="confirmarAjuste()" style="flex:1;background:#6d28d9;padding:8px;">&#10003; Confirmar Ajuste</button>
-        <button onclick="cerrarAjuste()" style="flex:1;background:#6c757d;padding:8px;">Cancelar</button>
+        <button onclick="confirmarAjuste()" class="gm-btn" style="flex:1;background:#6d28d9;">&#10003; Confirmar ajuste</button>
+        <button onclick="cerrarAjuste()" class="gm-btn" style="flex:1;background:#94a3b8;">Cancelar</button>
       </div>
       <div id="ajuste-msg" style="margin-top:8px;font-size:0.85em;"></div>
     </div>
-    <div style="border:1px solid #ffeeba;border-radius:8px;padding:14px;margin-bottom:10px;background:#fffdf0;">
-      <div style="font-size:0.78em;font-weight:700;color:#856404;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">&#128202; Stock M&#237;nimo</div>
+    <div class="gm-sec" style="--gm-ac:#d97706;">
+      <div class="gm-t">&#128202; Stock m&#237;nimo</div>
       <div style="display:flex;gap:8px;align-items:flex-end;">
         <div class="form-group" style="flex:1;margin-bottom:0;"><label>Nuevo m&#237;nimo (g)</label><input type="number" id="ajuste-smin" placeholder="0" step="0.1" min="0"></div>
-        <button onclick="actualizarStockMinimo()" style="background:#856404;color:white;padding:8px 14px;white-space:nowrap;border-radius:6px;">Actualizar</button>
+        <button onclick="actualizarStockMinimo()" class="gm-btn" style="background:#d97706;">Actualizar</button>
       </div>
       <div id="ajuste-smin-msg" style="margin-top:6px;font-size:0.82em;"></div>
     </div>
     <!-- Sebastian 8-may-2026: corregir ubicacion del lote (encontradas discrepancias en inventario real). -->
-    <div style="border:1px solid #b6dcfe;border-radius:8px;padding:14px;margin-bottom:10px;background:#f0f8ff;">
-      <div style="font-size:0.78em;font-weight:700;color:#1e63a8;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">&#128205; Ubicaci&#243;n F&#237;sica del Lote</div>
-      <div style="font-size:0.78em;color:#555;margin-bottom:8px;">Actual: <span id="ajuste-ubic-actual" style="font-weight:700;color:#1e63a8;">&mdash;</span></div>
+    <div class="gm-sec" style="--gm-ac:#1e63a8;">
+      <div class="gm-t">&#128205; Ubicaci&#243;n f&#237;sica del lote</div>
+      <div class="gm-cur">Actual: <b id="ajuste-ubic-actual">&mdash;</b></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
         <div class="form-group" style="margin-bottom:0;"><label>Estanter&#237;a nueva</label><input type="text" id="ajuste-estanteria" placeholder="Ej: A3" maxlength="50"></div>
         <div class="form-group" style="margin-bottom:0;"><label>Posici&#243;n nueva</label><input type="text" id="ajuste-posicion" placeholder="Ej: B-2" maxlength="50"></div>
       </div>
       <div class="form-group" style="margin-top:8px;margin-bottom:0;"><label>Motivo (queda en audit log)</label><input type="text" id="ajuste-ubic-motivo" placeholder="Ej: discrepancia encontrada en conteo" maxlength="200"></div>
-      <button onclick="actualizarUbicacionLote()" style="margin-top:10px;background:#1e63a8;color:white;padding:8px 14px;border-radius:6px;width:100%;">Actualizar ubicaci&#243;n</button>
+      <button onclick="actualizarUbicacionLote()" class="gm-btn" style="margin-top:10px;background:#1e63a8;width:100%;">Actualizar ubicaci&#243;n</button>
       <div id="ajuste-ubic-msg" style="margin-top:6px;font-size:0.82em;"></div>
     </div>
     <!-- Sebastián 9-may-2026: editar fecha de vencimiento del lote
          (algunos lotes ingresaron sin fecha y necesita corregirla). -->
-    <div style="border:1px solid #fbcfe8;border-radius:8px;padding:14px;margin-bottom:10px;background:#fdf4ff;">
-      <div style="font-size:0.78em;font-weight:700;color:#a21caf;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">&#128197; Fecha de Vencimiento</div>
-      <div style="font-size:0.78em;color:#555;margin-bottom:8px;">Actual: <span id="ajuste-fv-actual" style="font-weight:700;color:#a21caf;">&mdash;</span></div>
+    <div class="gm-sec" style="--gm-ac:#a21caf;">
+      <div class="gm-t">&#128197; Fecha de vencimiento</div>
+      <div class="gm-cur">Actual: <b id="ajuste-fv-actual">&mdash;</b></div>
       <div style="display:flex;gap:8px;align-items:flex-end;">
         <div class="form-group" style="flex:1;margin-bottom:0;"><label>Nueva fecha de vencimiento</label><input type="date" id="ajuste-fv"></div>
-        <button onclick="actualizarFechaVencimiento()" style="background:#a21caf;color:white;padding:8px 14px;white-space:nowrap;border-radius:6px;">Actualizar</button>
+        <button onclick="actualizarFechaVencimiento()" class="gm-btn" style="background:#a21caf;">Actualizar</button>
       </div>
       <div class="form-group" style="margin-top:8px;margin-bottom:0;"><label>Motivo (queda en audit log)</label><input type="text" id="ajuste-fv-motivo" placeholder="Ej: COA del proveedor recibido tarde" maxlength="200"></div>
       <div id="ajuste-fv-msg" style="margin-top:6px;font-size:0.82em;"></div>
     </div>
     <!-- Sebastián 9-may-2026: corregir número de lote (algunos están
          mal escritos · ej. '20250703' debe ser 'YT20250703'). -->
-    <div style="border:1px solid #99f6e4;border-radius:8px;padding:14px;margin-bottom:10px;background:#f0fdfa;">
-      <div style="font-size:0.78em;font-weight:700;color:#6d28d9;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">&#127991; N&#250;mero de Lote</div>
-      <div style="font-size:0.78em;color:#555;margin-bottom:8px;">Actual: <span id="ajuste-lt-actual" style="font-weight:700;color:#6d28d9;font-family:monospace;">&mdash;</span></div>
+    <div class="gm-sec" style="--gm-ac:#0d9488;">
+      <div class="gm-t">&#127991;&#65039; N&#250;mero de lote</div>
+      <div class="gm-cur">Actual: <b id="ajuste-lt-actual" style="font-family:monospace;">&mdash;</b></div>
       <div style="display:flex;gap:8px;align-items:flex-end;">
         <div class="form-group" style="flex:1;margin-bottom:0;"><label>Nuevo n&#250;mero de lote</label><input type="text" id="ajuste-lt-nuevo" placeholder="Ej: YT20250703" maxlength="120" style="font-family:monospace;"></div>
-        <button onclick="actualizarCodigoLote()" style="background:#6d28d9;color:white;padding:8px 14px;white-space:nowrap;border-radius:6px;">Renombrar</button>
+        <button onclick="actualizarCodigoLote()" class="gm-btn" style="background:#0d9488;">Renombrar</button>
       </div>
       <div class="form-group" style="margin-top:8px;margin-bottom:0;"><label>Motivo (queda en audit log)</label><input type="text" id="ajuste-lt-motivo" placeholder="Ej: formato proveedor incorrecto al ingresar" maxlength="200"></div>
-      <small style="color:#666;font-size:0.75em;display:block;margin-top:6px;font-style:italic;">Aplica el cambio a TODOS los movimientos de este lote. Si el lote nuevo ya existe se confirma fusi&oacute;n.</small>
+      <small style="color:#94a3b8;font-size:0.75em;display:block;margin-top:6px;">Aplica el cambio a TODOS los movimientos de este lote. Si el lote nuevo ya existe se confirma fusi&oacute;n.</small>
       <div id="ajuste-lt-msg" style="margin-top:6px;font-size:0.82em;"></div>
     </div>
-    <div style="border:1px solid #d8b4fe;border-radius:8px;padding:14px;margin-bottom:10px;background:#faf5ff;">
-      <div style="font-size:0.78em;font-weight:700;color:#6f42c1;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">&#9749; Consumo Manual</div>
+    <div class="gm-sec" style="--gm-ac:#7c3aed;">
+      <div class="gm-t">&#9749; Consumo manual</div>
       <div style="display:flex;gap:8px;align-items:flex-end;">
         <div class="form-group" style="flex:1;margin-bottom:0;"><label>Cantidad a consumir (g)</label><input type="number" id="ajuste-consumo" placeholder="Ej: 250" step="0.1" min="0.01"></div>
-        <button onclick="registrarConsumo()" style="background:#6f42c1;color:white;padding:8px 14px;white-space:nowrap;border-radius:6px;">Registrar</button>
+        <button onclick="registrarConsumo()" class="gm-btn" style="background:#7c3aed;">Registrar</button>
       </div>
       <div id="ajuste-consumo-msg" style="margin-top:6px;font-size:0.82em;"></div>
     </div>
-    <div style="border:1px solid #f5c6cb;border-radius:8px;padding:12px;background:#fff8f8;">
-      <div style="font-size:0.78em;font-weight:700;color:#c0392b;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">&#128190; Archivar Material</div>
-      <p style="font-size:0.82em;color:#888;margin-bottom:8px;">Oculta el material del cat&#225;logo activo sin eliminar su historial.</p>
-      <button onclick="archivarMP()" style="background:#c0392b;color:white;padding:6px 14px;font-size:0.83em;border-radius:6px;">Archivar este material</button>
+    <div class="gm-sec" style="--gm-ac:#c0392b;">
+      <div class="gm-t">&#128190; Archivar material</div>
+      <p style="font-size:0.82em;color:#94a3b8;margin:0 0 8px;">Oculta el material del cat&#225;logo activo sin eliminar su historial.</p>
+      <button onclick="archivarMP()" class="gm-btn" style="background:#c0392b;">Archivar este material</button>
       <div id="ajuste-arch-msg" style="margin-top:6px;font-size:0.82em;"></div>
     </div>
+    </div>
   </div>
-</div>
 </div>
 <!-- Modal SOLICITAR (a nivel MP) -->
 <div id="modal-solicitar-lote" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;">
