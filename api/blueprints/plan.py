@@ -18473,14 +18473,14 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
 .cal-day.drop-invalid{background:#fee2e2 !important;border:2px dashed #dc2626 !important}
 .modal-back{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);z-index:2147483000;justify-content:center;align-items:center;padding:20px;overflow-y:auto}
 .modal-back.show{display:flex}
-.modal-box{background:white;border-radius:14px;max-width:min(860px,96vw);width:100%;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.4)}
-.modal-head{background:linear-gradient(90deg,#0f766e,#0891b2);padding:14px 22px;border-radius:14px 14px 0 0;color:white;display:flex;justify-content:space-between;align-items:center}
+.modal-box{background:#fff;border-radius:18px;max-width:min(860px,96vw);width:100%;max-height:92vh;overflow-y:auto;box-shadow:0 24px 70px rgba(0,0,0,.45)}
+.modal-head{background:linear-gradient(135deg,#4c1d95,#7c3aed);padding:17px 24px;border-radius:18px 18px 0 0;color:#fff;display:flex;justify-content:space-between;align-items:center;gap:12px;position:sticky;top:0;z-index:5}
 .modal-body{padding:18px 22px}
-.metric-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
-.metric-card{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px}
-.metric-lbl{font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:3px}
-.metric-val{font-size:16px;font-weight:800;color:#1e293b}
-.metric-sub{font-size:11px;color:#64748b;margin-top:2px}
+.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.metric-card{background:#fff;border:1px solid #eef0f4;border-radius:12px;padding:12px 14px;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+.metric-lbl{font-size:9.5px;color:#64748b;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px}
+.metric-val{font-size:17px;font-weight:800;color:#1e293b;font-variant-numeric:tabular-nums;line-height:1.15}
+.metric-sub{font-size:11px;color:#94a3b8;margin-top:3px}
 .banner-inline{padding:10px 14px;border-radius:8px;margin:10px 0;font-size:12px;border-left:4px solid}
 .banner-inline.ok{background:#dcfce7;border-color:#16a34a;color:#166534}
 .banner-inline.warn{background:#fef3c7;border-color:#ca8a04;color:#854d0e}
