@@ -39,8 +39,8 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .pill{padding:3px 11px;border-radius:12px;font-size:11px;font-weight:600;background:#f3f4f6;color:#374151;}
 .pill.y{background:#fef3c7;color:#92400e;} .pill.b{background:#dbeafe;color:#1e40af;} .pill.g{background:#dcfce7;color:#166534;}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;}
-.card{background:#fff;border:1px solid #e7e5e4;border-radius:8px;padding:14px;display:flex;flex-direction:column;gap:7px;}
-.card:hover{border-color:#a8a29e;}
+.card{background:#fff;border:1px solid #eef0f2;border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:7px;box-shadow:0 1px 3px rgba(15,23,42,.04);transition:box-shadow .15s,transform .1s,border-color .15s;}
+.card:hover{border-color:#ddd6fe;box-shadow:0 6px 18px rgba(15,23,42,.09);transform:translateY(-1px);}
 .ch{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
 .cnum{font-weight:700;font-size:13px;} .cprov{font-size:13px;color:#1c1917;font-weight:600;margin-top:2px;}
 .cprov-label{font-size:9px;color:#a8a29e;text-transform:uppercase;letter-spacing:0.05em;display:block;}
@@ -6201,14 +6201,16 @@ async function renderSolicitudesAgrupadas(){
   // Si filtran "Todos los estados" usamos Pendiente (no tiene sentido agrupar Aprobada/Pagada)
   var estadoQ = st || 'Pendiente';
   var catUI = _SOLIC_CAT_FILTER || 'ALL';
-  // Mapear nombre de UI → categoria DB
-  var catMap = {'mp':'Materia Prima','mee':'Empaque','svc':'Servicios',
-                 'adm':'Administrativo','inf':'Infraestructura'};
+  // Mapear nombre de UI → categoria DB. Esta pestaña es la fuente USUARIOS
+  // (Servicios/Adm/Infra/CC · las de planta MP/Empaque tienen su propia pestaña).
+  var catMap = {'svc':'Servicios','adm':'Administrativo','inf':'Infraestructura'};
   var catDB = catMap[catUI] || '';
 
   grid.innerHTML = '<div class="empty" style="padding:20px;text-align:center;color:#94a3b8;">Cargando agrupamiento...</div>';
   try{
-    var qs = '?estado='+encodeURIComponent(estadoQ);
+    // FIX 13-jul · sin &fuente=usuarios la vista agrupada listaba TAMBIÉN las SOLs
+    // de planta (Materia Prima/Empaque) → violaba las 3 fuentes mutuamente excluyentes.
+    var qs = '?estado='+encodeURIComponent(estadoQ)+'&fuente=usuarios';
     if(catDB) qs += '&categoria='+encodeURIComponent(catDB);
     var r = await fetch('/api/compras/solicitudes-agrupadas-por-proveedor'+qs);
     if(!r.ok){

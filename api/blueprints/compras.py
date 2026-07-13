@@ -3410,6 +3410,23 @@ def handle_solicitudes_compra():
             except Exception as e:
                 log.warning('audit_log CREAR_SOLICITUD fallo: %s', e)
             conn.commit()
+            # Sebastián 13-jul · CAMPANA in-app a Compras cuando entra una solicitud
+            # NUEVA (antes Catalina solo se enteraba por el badge de conteo). Solo para
+            # solicitudes MANUALES (excluye las auto-generadas del plan, que la spamearían).
+            try:
+                _solic_name = (d.get('solicitante', '') or '').strip()
+                if _solic_name and _solic_name.lower() not in ('auto-plan', 'auto-plan-ia', 'sistema'):
+                    from blueprints.notif import push_notif as _pn_sol
+                    _urg = d.get('urgencia', 'Normal')
+                    _titulo = f'Nueva solicitud {numero} · {_solic_name[:40]}'
+                    _body = (f'{cat} · {_urg} · {len(d.get("items") or [])} ítem(s)'
+                             + (f' · ${val_sol:,.0f}' if val_sol > 0 else ''))
+                    for _dest in ('catalina', 'alejandro', 'sebastian'):
+                        _pn_sol(_dest, 'solicitud_nueva', _titulo, body=_body,
+                                link='/compras', remitente=_solic_name[:40],
+                                importante=(_urg in ('Urgente', 'Critico')))
+            except Exception as _e_notif:
+                log.warning('push_notif solicitud_nueva fallo: %s', _e_notif)
             return jsonify({'message': f'Solicitud {numero} creada', 'numero': numero}), 201
         except Exception as e:
             if conn:

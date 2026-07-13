@@ -426,3 +426,49 @@ def test_compras_html_tab_planta_visible(app, db_clean):
     assert 'pane-planta' in body
     assert 'loadPlanta' in body
     assert 'limpiarSolsPlantaLegacy' in body
+
+
+def test_crear_solicitud_notifica_campana_a_compras(app, db_clean):
+    """FIX 13-jul: al crear una SOL manual, Compras (catalina) recibe una campana
+    in-app 'solicitud_nueva' — antes solo se enteraba por el badge de conteo."""
+    c = _login(app, 'catalina')
+    conn = sqlite3.connect(os.environ['DB_PATH'])
+    conn.execute("DELETE FROM notificaciones_app WHERE tipo='solicitud_nueva'")
+    conn.commit(); conn.close()
+    r = c.post('/api/solicitudes-compra',
+               json={'solicitante': 'Maria Garcia', 'area': 'Produccion',
+                     'empresa': 'Espagiria', 'tipo': 'Compra',
+                     'categoria': 'Papeleria/Oficina', 'urgencia': 'Urgente',
+                     'observaciones': 'test', 'items': [
+                         {'nombre_mp': 'Resma', 'cantidad_g': 5, 'unidad': 'und',
+                          'valor_estimado': 50000}]},
+               headers=csrf_headers())
+    assert r.status_code == 201, r.data
+    num = r.get_json()['numero']
+    conn = sqlite3.connect(os.environ['DB_PATH'])
+    row = conn.execute(
+        "SELECT titulo, importante FROM notificaciones_app "
+        "WHERE destinatario='catalina' AND tipo='solicitud_nueva' "
+        "ORDER BY id DESC LIMIT 1").fetchone()
+    conn.close()
+    assert row is not None, 'Catalina no recibió campana de solicitud nueva'
+    assert num in row[0], (num, row[0])
+    assert row[1] == 1, 'Urgente debe marcarse importante'
+
+
+def test_solicitud_auto_plan_no_spamea_campana(app, db_clean):
+    """Las SOLs auto-generadas del plan (solicitante='auto-plan') NO generan campana."""
+    c = _login(app, 'catalina')
+    conn = sqlite3.connect(os.environ['DB_PATH'])
+    conn.execute("DELETE FROM notificaciones_app WHERE tipo='solicitud_nueva'")
+    conn.commit(); conn.close()
+    r = c.post('/api/solicitudes-compra',
+               json={'solicitante': 'auto-plan', 'categoria': 'Materia Prima',
+                     'tipo': 'Compra', 'items': [
+                         {'nombre_mp': 'MP X', 'cantidad_g': 1000, 'unidad': 'g'}]},
+               headers=csrf_headers())
+    assert r.status_code == 201, r.data
+    conn = sqlite3.connect(os.environ['DB_PATH'])
+    n = conn.execute("SELECT COUNT(*) FROM notificaciones_app WHERE tipo='solicitud_nueva'").fetchone()[0]
+    conn.close()
+    assert n == 0, 'auto-plan no debe generar campana'

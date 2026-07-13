@@ -16,11 +16,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .topbar-logo{font-size:17px;font-weight:700;letter-spacing:-.5px}
 .topbar-sub{font-size:12px;opacity:.55;margin-left:auto}
 .container{max-width:760px;margin:28px auto;padding:0 16px}
-.card{background:#fff;border-radius:12px;padding:22px 24px;margin-bottom:20px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
-.card-title{font-size:15px;font-weight:700;margin-bottom:16px;padding-bottom:10px;border-bottom:1px solid #f0f0f0}
-label{display:block;font-size:12px;font-weight:600;color:#666;margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px}
-input,select,textarea{width:100%;border:1px solid #ddd;border-radius:8px;padding:9px 12px;font-size:14px;background:#fafafa;transition:border .15s;color:#1d1d1f}
-input:focus,select:focus,textarea:focus{outline:none;border-color:#7A4A8B;background:#fff}
+.card{background:#fff;border-radius:16px;padding:24px 26px;margin-bottom:20px;box-shadow:0 2px 16px rgba(15,23,42,.06);border:1px solid #eef0f2}
+.card-title{font-size:15px;font-weight:800;margin-bottom:18px;padding-bottom:12px;border-bottom:1px solid #f0f0f0;letter-spacing:-.01em}
+label{display:block;font-size:11px;font-weight:700;color:#64748b;margin-bottom:5px;text-transform:uppercase;letter-spacing:.4px}
+input,select,textarea{width:100%;border:1px solid #e2e8f0;border-radius:9px;padding:10px 13px;font-size:14px;background:#fafafa;transition:border .15s,box-shadow .15s;color:#1d1d1f}
+input:focus,select:focus,textarea:focus{outline:none;border-color:#7A4A8B;background:#fff;box-shadow:0 0 0 3px rgba(122,74,139,.12)}
 textarea{resize:vertical;min-height:80px}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .field{margin-bottom:16px}
@@ -45,12 +45,14 @@ textarea{resize:vertical;min-height:80px}
 .btn-add-item:hover{text-decoration:underline}
 .btn-del{background:none;border:none;color:#ddd;cursor:pointer;font-size:16px;padding:4px 8px;transition:color .1s}
 .btn-del:hover{color:#dc2626}
-.btn-primary{width:100%;background:#4A6741;color:#fff;border:none;border-radius:10px;padding:14px;font-size:15px;font-weight:700;cursor:pointer;margin-top:4px;transition:background .15s}
-.btn-primary:hover{background:#3a5331}
-.btn-primary:disabled{background:#ccc;cursor:not-allowed}
-.confirm-box{text-align:center;padding:36px 16px}
-.confirm-ico{font-size:52px;margin-bottom:12px}
-.confirm-sol{font-size:30px;font-weight:800;color:#4A6741;letter-spacing:1px;margin:8px 0}
+.btn-primary{width:100%;background:linear-gradient(135deg,#4A6741,#3a5331);color:#fff;border:none;border-radius:11px;padding:15px;font-size:15px;font-weight:800;cursor:pointer;margin-top:4px;transition:transform .1s,box-shadow .15s;box-shadow:0 4px 16px rgba(74,103,65,.28);letter-spacing:.01em}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(74,103,65,.36)}
+.btn-primary:active{transform:translateY(0)}
+.btn-primary:disabled{background:#cbd5e1;cursor:not-allowed;box-shadow:none;transform:none}
+.confirm-box{text-align:center;padding:40px 16px}
+.confirm-ico{font-size:60px;margin-bottom:12px;display:inline-block;animation:pop .4s cubic-bezier(.2,1.4,.5,1)}
+@keyframes pop{0%{transform:scale(0);opacity:0}60%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}
+.confirm-sol{font-size:34px;font-weight:800;color:#4A6741;letter-spacing:1px;margin:10px 0}
 .confirm-msg{font-size:14px;color:#666;line-height:1.6;margin-bottom:20px}
 .btn-new{display:inline-block;padding:10px 28px;background:#4A6741;color:#fff;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;border:none}
 .lookup-row{display:flex;gap:8px}
@@ -248,7 +250,7 @@ textarea{resize:vertical;min-height:80px}
     <div class="confirm-ico">&#9989;</div>
     <div style="font-size:14px;color:#888;margin-bottom:4px">Solicitud registrada</div>
     <div class="confirm-sol" id="confirm-num">SOL-2026-0001</div>
-    <div class="confirm-msg">Guarda este numero para seguimiento.<br>El equipo de compras revisara tu solicitud pronto.</div>
+    <div class="confirm-msg">Guarda este n&uacute;mero para seguimiento.<br>El equipo de compras ya fue notificado &middot; <strong>te avisaremos por correo</strong> cuando sea revisada.<br><span style="font-size:12px;color:#94a3b8">Tambi&eacute;n pod&eacute;s consultar el estado aqu&iacute; abajo con tu n&uacute;mero.</span></div>
     <button class="btn-new" onclick="nuevaSolicitud()">+ Nueva Solicitud</button>
   </div>
 </div>
