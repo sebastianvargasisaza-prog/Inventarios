@@ -6285,6 +6285,9 @@ def mkt_influencers_panel():
         pass
 
 
+_ATRIB_CACHE = {}   # {desde: {ts, payload}} · cache per-worker · atribución = overview 90d
+
+
 @bp.route("/api/marketing/atribucion-influencers", methods=["GET"])
 def mkt_atribucion_influencers():
     """Atribución de ventas Shopify por influencer via discount_code.
@@ -6309,69 +6312,94 @@ def mkt_atribucion_influencers():
     if not desde:
         desde = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
 
+    # Cache TTL (PERF · Sebastián 13-jul: la carga tardaba ~1 min). Atribución = overview
+    # 90d → staleness de minutos aceptable. `?force=1` (botón refrescar) salta el cache.
+    import time as _time
+    _force = (request.args.get("force") or "") not in ("", "0", "false")
+    _hit = _ATRIB_CACHE.get(desde)
+    if _hit and not _force and (_time.time() - _hit["ts"] < 600):
+        return jsonify(_hit["payload"])
+
     conn = _db()
     c = conn.cursor()
     try:
-        rows = c.execute("""
+        infs = c.execute("""
             SELECT id, nombre, usuario_red, red_social, discount_code, estado
             FROM marketing_influencers
             WHERE COALESCE(discount_code,'') != ''
             ORDER BY nombre
         """).fetchall()
-
-        resultado = []
-        for r in rows:
-            code_val = (r["discount_code"] or "").upper().strip()
-            if not code_val:
+        # PERF FIX (antes: N+1 · 1 escaneo de animus_shopify_orders POR influencer con
+        # LIKE '%,code,%' sin índice = ~72 full-scans = 1 min). Ahora: UNA sola pasada por
+        # las órdenes del período, agregando por discount_code en Python.
+        code2id = {}
+        infmap = {}
+        agg = {}
+        for r in infs:
+            cv = (r["discount_code"] or "").upper().strip()
+            if not cv:
                 continue
-            # Match exacto en lista CSV de codes (rodeada de , para evitar
-            # matches parciales tipo CODE10 matcheando CODE)
-            stats = c.execute("""
-                SELECT COUNT(*) as n_pedidos,
-                       COALESCE(SUM(total),0) as revenue_total,
-                       COALESCE(SUM(subtotal),0) as subtotal_total,
-                       COALESCE(SUM(total_descuentos),0) as descuento_total,
-                       COALESCE(SUM(unidades_total),0) as unidades,
-                       COUNT(DISTINCT email) as clientes_unicos,
-                       MAX(creado_en) as ultimo_pedido
+            code2id[cv] = r["id"]
+            infmap[r["id"]] = r
+            agg[r["id"]] = {"n": 0, "rev": 0.0, "sub": 0.0, "desc": 0.0,
+                            "uds": 0, "emails": set(), "ult": ""}
+        if code2id:
+            for o in c.execute("""
+                SELECT COALESCE(discount_codes,'') dc, COALESCE(total,0) total,
+                       COALESCE(subtotal,0) subtotal, COALESCE(total_descuentos,0) tdesc,
+                       COALESCE(unidades_total,0) uds, COALESCE(email,'') email,
+                       COALESCE(creado_en,'') creado_en
                 FROM animus_shopify_orders
                 WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')
                   AND creado_en >= ?
-                  AND (
-                       discount_codes = ?
-                    OR discount_codes LIKE ?
-                    OR discount_codes LIKE ?
-                    OR discount_codes LIKE ?
-                  )
-            """, (
-                desde, code_val,
-                f"{code_val},%", f"%,{code_val}", f"%,{code_val},%"
-            )).fetchone()
+            """, (desde,)).fetchall():
+                dc = (o["dc"] or "").upper()
+                if not dc:
+                    continue
+                for cod in set(x.strip() for x in dc.split(',') if x.strip()):
+                    iid = code2id.get(cod)
+                    if iid is None:
+                        continue
+                    a = agg[iid]
+                    a["n"] += 1
+                    a["rev"] += float(o["total"] or 0)
+                    a["sub"] += float(o["subtotal"] or 0)
+                    a["desc"] += float(o["tdesc"] or 0)
+                    a["uds"] += int(o["uds"] or 0)
+                    if o["email"]:
+                        a["emails"].add(o["email"])
+                    if o["creado_en"] and o["creado_en"] > a["ult"]:
+                        a["ult"] = o["creado_en"]
+        # Inversión pagada por influencer · UNA query agrupada (antes: 1 por influencer)
+        inv_map = {}
+        for pr in c.execute("""
+            SELECT influencer_id, COALESCE(SUM(valor),0) t
+            FROM pagos_influencers
+            WHERE estado = 'Pagada' AND fecha >= ?
+            GROUP BY influencer_id
+        """, (desde,)).fetchall():
+            inv_map[pr["influencer_id"]] = pr["t"] or 0
 
-            # Inversión pagada al influencer en el mismo periodo
-            invertido = c.execute("""
-                SELECT COALESCE(SUM(valor),0) as t
-                FROM pagos_influencers
-                WHERE influencer_id = ? AND estado = 'Pagada' AND fecha >= ?
-            """, (r["id"], desde)).fetchone()["t"] or 0
-
-            revenue = stats["revenue_total"] or 0
+        resultado = []
+        for iid, r in infmap.items():
+            a = agg[iid]
+            revenue = a["rev"]
+            invertido = inv_map.get(iid, 0) or 0
             roi_pct = round((revenue - invertido) / invertido * 100, 1) if invertido > 0 else None
-
             resultado.append({
-                "influencer_id":   r["id"],
+                "influencer_id":   iid,
                 "nombre":          r["nombre"],
                 "usuario_red":     r["usuario_red"] or "",
                 "red_social":      r["red_social"] or "",
-                "discount_code":   code_val,
+                "discount_code":   (r["discount_code"] or "").upper().strip(),
                 "estado":          r["estado"] or "",
-                "n_pedidos":       stats["n_pedidos"] or 0,
+                "n_pedidos":       a["n"],
                 "revenue_total":   round(revenue, 0),
-                "subtotal_total":  round(stats["subtotal_total"] or 0, 0),
-                "descuento_total": round(stats["descuento_total"] or 0, 0),
-                "unidades":        stats["unidades"] or 0,
-                "clientes_unicos": stats["clientes_unicos"] or 0,
-                "ultimo_pedido":   stats["ultimo_pedido"] or "",
+                "subtotal_total":  round(a["sub"], 0),
+                "descuento_total": round(a["desc"], 0),
+                "unidades":        a["uds"],
+                "clientes_unicos": len(a["emails"]),
+                "ultimo_pedido":   a["ult"],
                 "invertido":       round(invertido, 0),
                 "roi_pct":         roi_pct,
             })
@@ -6393,12 +6421,14 @@ def mkt_atribucion_influencers():
             if kpis["inversion_total"] > 0 else None
         )
 
-        return jsonify({
+        payload = {
             "ok": True,
             "desde": desde,
             "kpis": kpis,
             "influencers": resultado,
-        })
+        }
+        _ATRIB_CACHE[desde] = {"ts": _time.time(), "payload": payload}
+        return jsonify(payload)
     except Exception as e:
         # Fix 28-may · no filtrar traceback del servidor al cliente.
         log.error("mkt_atribucion_influencers fallo: %s", traceback.format_exc())

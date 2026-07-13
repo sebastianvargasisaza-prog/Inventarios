@@ -580,7 +580,7 @@ window.addEventListener('unhandledrejection', function(ev) {
         <div style="font-size:14px;font-weight:700;color:#16a34a;">&#x1F3AF; Atribución de ventas — últimos 90 días</div>
         <div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px;">Revenue Shopify atribuido vía discount code de cada influencer.</div>
       </div>
-      <button class="btn btn-outline btn-sm" onclick="loadAtribucion()" title="Refrescar atribución">&#x21BB;</button>
+      <button class="btn btn-outline btn-sm" onclick="loadAtribucion(true)" title="Refrescar atribución (datos frescos)">&#x21BB;</button>
     </div>
     <div id="atrib-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px;"></div>
     <div class="tbl-wrap">
@@ -2576,12 +2576,12 @@ async function regenerarCE(compId, numCE) {
 }
 
 // ─── Atribución de ventas via discount codes ───────────────────────────
-async function loadAtribucion() {
+async function loadAtribucion(force) {
   const body = document.getElementById('atrib-body');
   const kpiEl = document.getElementById('atrib-kpis');
   if (body) body.innerHTML = '<tr class="empty-row"><td colspan="8"><span class="spin"></span></td></tr>';
   try {
-    const r = await fetch('/api/marketing/atribucion-influencers');
+    const r = await fetch('/api/marketing/atribucion-influencers' + (force ? '?force=1' : ''));
     const d = await r.json();
     if (!d.ok) {
       body.innerHTML = '<tr class="empty-row"><td colspan="8" style="color:#dc2626;">Error: ' + _escHtml(d.error||'desconocido') + '</td></tr>';
