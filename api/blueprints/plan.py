@@ -4571,11 +4571,11 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             urgencia = "OK"
         # Sebastián 12-jul · producto de CLIENTE EXTERNO: Ánimus no lo fabrica para DTC → no es una necesidad,
         # se mutea (no cuenta como crítico/sin-ventas) pero sigue programable. Override final de la urgencia.
-        # (a) lista explícita en app_settings (botón "cliente externo") · (b) built-in conocido (CREMA UREA de
-        # Kelly Guerra, HYDRAPEPTIDE) SOLO si no tiene ventas DTC → si algún día vende en Shopify vuelve a DTC solo.
+        # (a) lista explícita en app_settings (botón "cliente externo") · (b) built-in conocido: CREMA UREA
+        # (la manda hacer Kelly Guerra) SOLO si no tiene ventas DTC → si algún día vende en Shopify vuelve a DTC
+        # solo. (HYDRAPEPTIDE NO va acá · es un producto NUEVO de Ánimus que apenas van a fabricar · Sebastián 12-jul.)
         _pnf_ext = _pk_fuerte(prod_nombre)
-        _ext_builtin = (velocidad_uds_dia <= 0.01) and (
-            ('crema' in _pnf_ext and 'urea' in _pnf_ext) or ('hydrapeptide' in _pnf_ext))
+        _ext_builtin = (velocidad_uds_dia <= 0.01) and ('crema' in _pnf_ext and 'urea' in _pnf_ext)
         if (_prod_key_lc in _productos_externos) or (_pnf_ext in _productos_externos) or _ext_builtin:
             urgencia = "EXTERNO"
 

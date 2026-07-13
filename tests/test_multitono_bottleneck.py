@@ -366,19 +366,22 @@ def test_producto_externo_mutea_y_reversible(app, db_clean):
     assert f2 is not None and f2["urgencia"] != "EXTERNO", "reversible: vuelve a su urgencia normal"
 
 
-def test_producto_externo_builtin_crema_urea_y_hydrapeptide(app, db_clean):
-    """Sebastián 12-jul: CREMA UREA (Kelly Guerra) y HYDRAPEPTIDE salen EXTERNO por DEFAULT cuando no tienen
-    ventas DTC, sin setear nada (built-in). Se auto-corrige: si vendieran en Shopify volverían a DTC."""
-    from .conftest import csrf_headers  # noqa
+def test_producto_externo_builtin_solo_crema_urea(app, db_clean):
+    """Sebastián 12-jul: CREMA UREA (Kelly Guerra) sale EXTERNO por DEFAULT cuando no tiene ventas DTC (built-in,
+    sin setear nada). HYDRAPEPTIDE NO — es un producto NUEVO de Ánimus que apenas van a fabricar (queda como
+    producto normal sin ventas, no externo). Se auto-corrige: si CREMA vendiera en Shopify volvería a DTC."""
+    CREMA = "CREMA FACIAL DE UREA QA"
+    HYDRA = "HYDRAPEPTIDE QA"
     c = _login_as(app, "sebastian")
     db = sqlite3.connect(os.environ["DB_PATH"])
-    for PROD in ("CREMA FACIAL DE UREA QA", "HYDRAPEPTIDE QA"):
+    for PROD in (CREMA, HYDRA):
         db.execute("DELETE FROM formula_headers WHERE producto_nombre=?", (PROD,))
         db.execute("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo, fecha_creacion) VALUES (?, 5, 1, '2025-01-01')", (PROD,))
     db.commit(); db.close()
     r = c.get("/api/plan/necesidades")
     assert r.status_code == 200, r.data
     prods = next(x for x in r.get_json()["clientes"] if x["cliente_id"] == "ANIMUS_DTC")["productos"]
-    for PROD in ("CREMA FACIAL DE UREA QA", "HYDRAPEPTIDE QA"):
-        f = next((p for p in prods if p["producto_nombre"] == PROD), None)
-        assert f is not None and f["urgencia"] == "EXTERNO", (PROD + " debe salir EXTERNO por default (sin ventas)", f and f["urgencia"])
+    fc = next((p for p in prods if p["producto_nombre"] == CREMA), None)
+    assert fc is not None and fc["urgencia"] == "EXTERNO", ("CREMA UREA debe salir EXTERNO por default", fc and fc["urgencia"])
+    fh = next((p for p in prods if p["producto_nombre"] == HYDRA), None)
+    assert fh is not None and fh["urgencia"] != "EXTERNO", ("HYDRAPEPTIDE es producto NUEVO de Ánimus, NO externo", fh and fh["urgencia"])
