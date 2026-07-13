@@ -21265,9 +21265,10 @@ async function abrirLoteModal(id, producto, fecha, kg){
     '<div style="display:flex;gap:4px;align-items:center;margin-top:2px">' +
     '<input id="kg-otro-cli" type="number" min="0" max="1000" step="1" value="' + _kgOtroActual + '" oninput="try{_updateCadenciaPreview()}catch(e){}" style="width:60px;font-size:16px;font-weight:800;padding:3px 5px;border:1px solid #fcd34d;border-radius:5px">' +
     '<span style="font-size:12px;color:#92400e">kg</span>' +
-    '<button onclick="guardarKgOtroCliente(' + id + ')" style="padding:5px 9px;font-size:11px;margin:0;background:#d97706">💾 Guardar</button>' +
+    '<button onclick="guardarKgOtroCliente(' + id + ')" style="padding:5px 9px;font-size:11px;margin:0;background:#d97706">💾 Este lote</button>' +
     '</div>' +
-    '<div class="metric-sub" style="color:#92400e">no es de Animus · resta cobertura</div></div>';
+    '<div class="metric-sub" style="color:#92400e">no es de Animus · resta cobertura</div>' +
+    '<button onclick="aplicarKgOtroClienteCadena(this)" data-prod="' + escapeHtml(producto) + '" title="Aplica este kg (fijo por lote) a TODOS los lotes futuros del producto · la porción Ánimus baja y la cadencia recalcula más seguido" style="margin-top:8px;width:100%;padding:6px 8px;font-size:11px;background:#fff;color:#b45309;border:1px solid #fcd34d;border-radius:6px;cursor:pointer;font-weight:800">&#128203; Aplicar a toda la cadena</button></div>';
   html += '<div class="metric-card"><div class="metric-lbl">Vende/día</div><div class="metric-val">' + velUds.toFixed(1) + '</div><div class="metric-sub">' + velKgDia.toFixed(2) + ' kg/día</div></div>';
   html += '<div class="metric-card"><div class="metric-lbl">Vende/mes</div><div class="metric-val">' + velMes + '</div><div class="metric-sub">' + (velKgDia * 30).toFixed(1) + ' kg/mes</div></div>';
   // FIX 30-may-2026 · "237 uds / 72.1 kg" era incoherente · 237 uds × 30ml = 7.1kg,
@@ -21611,6 +21612,26 @@ async function guardarKgOtroCliente(id){
     _toastCal('✅ Para otro cliente: ' + val + ' kg');
     abrirLoteModal(id, m.producto, m.fecha, m.kg);  // reabrir → recalcula la próxima con la porción Animus
   }catch(e){ alert('Error: ' + e); el.disabled = false; }
+}
+// Sebastián 13-jul · aplicar la porción "para otro cliente" (kg fijo) a TODOS los lotes futuros del
+// producto (la cadena) · la cadencia recalcula con la porción Ánimus (kg − otro cliente ÷ venta).
+async function aplicarKgOtroClienteCadena(btn){
+  var prod = (btn && btn.getAttribute('data-prod')) || '';
+  if(!prod) return;
+  var el = document.getElementById('kg-otro-cli');
+  var val = el ? (parseFloat(el.value) || 0) : 0;
+  if(!confirm('Aplicar ' + val + ' kg "para otro cliente" a TODOS los lotes futuros de "' + prod + '".\n\nCada lote reserva ese kg fijo para el otro cliente → la porción de Ánimus baja y la cadencia recalcula más seguido. Reversible (poné 0 y volvé a aplicar).\n\n¿Continuar?')) return;
+  btn.disabled = true; var _t0 = btn.innerHTML; btn.textContent = 'Aplicando…';
+  try{
+    var t = (await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json()).csrf_token;
+    var r = await fetch('/api/plan/kg-otro-cliente-cadena', {method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':t}, body: JSON.stringify({producto: prod, kg_otro_cliente: val})});
+    var d = await r.json();
+    if(!r.ok){ btn.disabled=false; btn.innerHTML=_t0; alert('No se pudo: ' + (d.error || r.status)); return; }
+    if(typeof _toastCal === 'function') _toastCal('✅ ' + val + ' kg para otro cliente en ' + d.aplicados + ' lote(s) de la cadena');
+    var m = window._LOTE_MODAL_ACTUAL || {};
+    if(m.id) abrirLoteModal(m.id, m.producto, m.fecha, m.kg);  // reabrir → cadencia recalculada
+  }catch(e){ btn.disabled=false; alert('Error: ' + e); }
 }
 async function guardarKgLote(id){
   const inp = document.getElementById('edit-kg-lote');
@@ -24259,6 +24280,56 @@ def actualizar_cantidad_proxima(pid):
     return jsonify({"ok": True, "id": pid, "producto": producto,
                     "kg_antes": kg_antes, "kg_nuevo": nueva_kg,
                     "override_presentaciones": override_guardado})
+
+
+@bp.route("/api/plan/kg-otro-cliente-cadena", methods=["POST"])
+def kg_otro_cliente_cadena():
+    """Sebastián 13-jul · aplica la porción 'para otro cliente' (kg FIJO por lote) a TODOS los lotes
+    FUTUROS del producto (la cadena), no solo a uno. Cada lote reserva ese kg fijo para el otro cliente
+    → la porción Ánimus (cantidad_kg − kg_otro_cliente) baja → la cadencia/cobertura recalcula más
+    seguido. Reversible (kg_otro_cliente=0 lo quita de todos). Solo lotes NO ejecutados y fecha >= hoy.
+    Body: {producto, kg_otro_cliente}."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    body = request.get_json(silent=True) or {}
+    producto = (body.get("producto") or "").strip()
+    if not producto:
+        return jsonify({"error": "producto requerido"}), 400
+    try:
+        kg_otro = float(body.get("kg_otro_cliente") or 0)
+    except (ValueError, TypeError):
+        return jsonify({"error": "kg_otro_cliente inválido"}), 400
+    if kg_otro < 0:
+        kg_otro = 0.0
+    from datetime import datetime as _dtx, timezone as _tzx, timedelta as _tdx
+    hoy = (_dtx.now(_tzx.utc) - _tdx(hours=5)).date().isoformat()
+    conn = get_db()
+    cur = conn.cursor()
+    rows = cur.execute(
+        """SELECT id, COALESCE(cantidad_kg,0)
+           FROM produccion_programada
+           WHERE UPPER(TRIM(producto))=UPPER(TRIM(?))
+             AND fecha_programada >= ?
+             AND LOWER(COALESCE(estado,'')) IN ('pendiente','programado','esperando_recurso')
+             AND COALESCE(inicio_real_at,'')='' AND COALESCE(fin_real_at,'')=''
+             AND COALESCE(inventario_descontado_at,'')=''""",
+        (producto, hoy),
+    ).fetchall()
+    aplicados = 0
+    for _id, _cant in rows:
+        _k = kg_otro
+        if _cant and _k > float(_cant):   # el reservado no puede exceder el lote
+            _k = float(_cant)
+        cur.execute("UPDATE produccion_programada SET kg_otro_cliente=? WHERE id=?", (round(_k, 2), _id))
+        aplicados += 1
+    if aplicados:
+        audit_log(cur, usuario=user, accion="KG_OTRO_CLIENTE_CADENA", tabla="produccion_programada",
+                  registro_id=producto, despues=str(kg_otro),
+                  detalle="kg_otro_cliente=" + str(kg_otro) + " en " + str(aplicados) + " lotes futuros de la cadena")
+    conn.commit()
+    return jsonify({"ok": True, "producto": producto, "kg_otro_cliente": kg_otro, "aplicados": aplicados})
 
 
 @bp.route("/api/admin/diagnostico-migracion", methods=["GET"])
