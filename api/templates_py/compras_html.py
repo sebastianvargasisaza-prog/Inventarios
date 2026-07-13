@@ -5953,15 +5953,23 @@ function renderSolicitudes(){
     } else if(s.numero_oc){
       ocBadge='<span style="font-family:monospace;font-size:10px;background:#f3f4f6;color:#9ca3af;border-radius:4px;padding:1px 6px;margin-left:6px;">'+esc(s.numero_oc)+'</span>';
     }
-    return '<div class="card" data-num="'+esc(s.numero)+'">'
-      +'<div class="ch"><div><div class="cnum" style="font-family:monospace;">'+esc(s.numero)+ocBadge+'</div>'
-      +'<div class="cprov">'+esc(s.solicitante||'-')+' &mdash; '+esc(s.area||'-')+'</div></div>'
-      +'<span class="badge" style="background:'+stB+';color:'+stF+';">'+s.estado+'</span></div>'
-      +'<div class="cmeta"><span>'+fdate(s.fecha)+'</span><span>'+esc(s.empresa||'Espagiria')+'</span>'
-      +'<span>'+esc(s.categoria||'-')+'</span>'
-      +'<span style="color:'+urgC+';font-weight:700;">'+esc(urg)+'</span></div>'
+    return '<div class="card" data-num="'+esc(s.numero)+'" style="border-left:3px solid '+urgC+'">'
+      +'<div class="ch"><div style="min-width:0">'
+        +'<div class="cnum" style="font-family:monospace;font-size:13px">'+esc(s.numero)+ocBadge+'</div>'
+        +'<div class="cprov" style="margin-top:3px">'+esc(s.solicitante||'-')+' <span style="color:#a8a29e;font-weight:500">&middot; '+esc(s.area||'-')+'</span></div>'
+      +'</div>'
+      +'<span style="background:'+stB+';color:'+stF+';padding:3px 11px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap">'+s.estado+'</span></div>'
+      +'<div class="cmeta" style="align-items:center">'
+        +'<span>'+fdate(s.fecha)+'</span>'
+        +'<span style="color:#cbd5e1">&bull;</span><span>'+esc(s.empresa||'Espagiria')+'</span>'
+        +'<span style="color:#cbd5e1">&bull;</span><span>'+esc(s.categoria||'-')+'</span>'
+        +'<span style="margin-left:auto;background:'+urgC+'1a;color:'+urgC+';padding:2px 10px;border-radius:999px;font-weight:700;font-size:10px">'+esc(urg)+'</span>'
+      +'</div>'
       +(s.observaciones?'<div class="cobs">'+esc((s.observaciones||'').substring(0,100))+'</div>':'')
-      +'<div class="acts" style="gap:6px;"><button class="btn bo bs" data-act="sdet" data-sol="'+esc(s.numero)+'">&#128203; Ver &amp; Gestionar</button>'+'<button class="btn" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;padding:4px 10px;font-size:11px;" data-act="del-sol" data-sol="'+esc(s.numero)+'">&#x1F5D1;</button>'+'</div>'
+      +'<div class="acts" style="gap:6px;margin-top:4px">'
+        +'<button data-act="sdet" data-sol="'+esc(s.numero)+'" style="flex:1;background:linear-gradient(135deg,#0e7490,#0891b2);color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer">&#128203; Ver &amp; Gestionar</button>'
+        +'<button data-act="del-sol" data-sol="'+esc(s.numero)+'" title="Eliminar" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;border-radius:8px;padding:7px 11px;font-size:12px;cursor:pointer">&#x1F5D1;</button>'
+      +'</div>'
       +'</div>';
   }).join('');
 }
