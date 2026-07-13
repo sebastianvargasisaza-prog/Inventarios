@@ -20,8 +20,9 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .sp-tab{padding:9px 18px;font-size:13px;font-weight:600;color:#78716c;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;}
 .sp-tab:hover{color:#292524;}
 .sp-tab.sp-on{color:#7c3aed;border-bottom-color:#7c3aed;font-weight:800;}
-.pane{display:none;padding:18px 20px;max-width:1400px;margin:0 auto;}
+.pane{display:none;padding:18px 24px;max-width:1680px;margin:0 auto;}
 #pane-planta{max-width:96vw;}
+#pane-dash{max-width:1900px;}  /* Sebastián 13-jul · el dashboard usa casi todo el ancho */
 .pane.on{display:block;}
 /* KPI */
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:18px;}
@@ -256,7 +257,7 @@ async function cxIAPreguntar(pregunta){
 </div>
 
 <!-- Sub-barras por grupo (1 visible a la vez) -->
-<div class="tab-nav" id="cx-sub-bar" style="padding:6px 4px;border-bottom:1px dashed #cbd5e1;margin-bottom:14px;flex-wrap:wrap">
+<div class="tab-nav" id="cx-sub-bar" style="display:none;padding:6px 4px;border-bottom:1px dashed #cbd5e1;margin-bottom:14px;flex-wrap:wrap">
   <!-- Sub-tabs del grupo ENTRADAS (default visible) -->
   <!-- Sebastián 21-may-2026 · INFLUENCERS quitado de Compras · solo
        lo paga Sebastián · Catalina no tiene visibilidad. Botón sigue
@@ -297,7 +298,7 @@ async function cxIAPreguntar(pregunta){
        Sebastián 21-may-2026 · Mis Solicitudes pasa a widget · Alertas pasa
        a banner arriba · todo unificado en una sola vista ejecutiva. -->
   <span data-cx-sub="analitica" style="display:flex;gap:6px;flex-wrap:wrap">
-    <button class="tn on"   data-tab="dash" id="tn-dash" title="KPIs grandes · alertas · tus solicitudes · todo en uno">📊 Vista consolidada</button>
+    <button class="tn on"   data-tab="dash" id="tn-dash" style="display:none" title="KPIs grandes · alertas · tus solicitudes · todo en uno">📊 Vista consolidada</button>
     <!-- Mantener data-tab="mis-sol" + "alertas" en DOM oculto para no romper deep links -->
     <button class="tn" data-tab="alertas" id="tn-alertas" style="display:none">🚨 Alertas</button>
     <button class="tn" data-tab="mis-sol" id="tn-mis-sol" style="display:none">👤 Mis Solicitudes</button>
@@ -1582,6 +1583,15 @@ function _cxSwitchGroup(grp){
   if(defaultTab){
     var subBtn = document.querySelector('.tn[data-tab="'+defaultTab+'"]');
     if(subBtn && !subBtn.classList.contains('on')) subBtn.click();
+  }
+  // Sebastián 13-jul · si el grupo no tiene sub-tabs reales (≤1 visible), ocultar
+  // la barra entera · una sola pestaña huérfana ("Vista consolidada"/"Proveedores")
+  // no se ve premium. Con 2+ (Bandeja, OCs) la barra vuelve a mostrarse.
+  var _bar = document.getElementById('cx-sub-bar');
+  if(_bar){
+    var _span = document.querySelector('[data-cx-sub="'+grp+'"]');
+    var _vis = _span ? Array.prototype.filter.call(_span.querySelectorAll('.tn'), function(b){ return b.style.display !== 'none'; }).length : 0;
+    _bar.style.display = (_vis >= 2) ? 'flex' : 'none';
   }
 }
 document.querySelectorAll('.cx-grp-btn').forEach(function(b){
