@@ -5551,6 +5551,17 @@ function renderInfluencers(){
   var totalPend=pendAll.reduce(function(a,s){ return a+(s.valor||0); },0);
   var totalPaga=pagaAll.reduce(function(a,s){ return a+(s.valor||0); },0);
 
+  // Anti-doble-pago (Sebastián 13-jul): clave = beneficiario + fecha de publicación.
+  // Marca las combinaciones que YA tienen un pago Pagada → aviso en las tarjetas no-pagadas
+  // para que no le pagues 2 veces al mismo creador por el mismo contenido.
+  var _pagadasClave={};
+  INFLUENCERS.forEach(function(x){
+    if(x.estado!=='Pagada') return;
+    var _bn=((parseBenef(x.observaciones).nombre)||x.inf_nombre||'').trim().toLowerCase();
+    var _fp=(x.fecha_publicacion||'').slice(0,10);
+    if(_bn && _fp){ (_pagadasClave[_bn+'|'+_fp]=_pagadasClave[_bn+'|'+_fp]||[]).push(x.numero); }
+  });
+
   // ── KPI cards ────────────────────────────────────────────────────────────
   var kpiEl=document.getElementById('kpi-influencer');
   if(kpiEl){
@@ -5641,7 +5652,7 @@ function renderInfluencers(){
     // Action buttons
     var btns='';
     if(s.estado==='Aprobada'){
-      btns='<button class="btn inf-pagar" data-oc="'+esc(s.numero_oc||'')+'" data-sol="'+esc(s.numero)+'" data-val="'+Number(s.valor||0)+'" style="background:#7c3aed;color:#fff;padding:7px 18px;font-size:13px;font-weight:600;">💸 Pagar ahora</button>'
+      btns='<button class="btn inf-pagar" data-oc="'+esc(s.numero_oc||'')+'" data-sol="'+esc(s.numero)+'" data-val="'+Number(s.valor||0)+'" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;padding:8px 20px;font-size:13px;font-weight:700;border:none;border-radius:8px;box-shadow:0 2px 8px rgba(124,58,237,.3);">💸 Pagar ahora</button>'
           +'<button class="btn inf-rechazar" data-oc="'+esc(s.numero_oc||'')+'" data-sol="'+esc(s.numero)+'" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;padding:7px 14px;font-size:13px;">✕ Rechazar</button>'
           +'<button class="btn inf-eliminar" data-sol="'+esc(s.numero)+'" data-nombre="'+esc((b.nombre||s.solicitante||s.numero))+'" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;padding:7px 12px;font-size:12px;" title="Eliminar definitivamente esta solicitud (no genera comprobante)">🗑 Eliminar</button>';
     } else if(s.estado==='Pendiente'){
@@ -5659,6 +5670,33 @@ function renderInfluencers(){
       btns='<button class="btn" data-act="del-sol" data-sol="'+esc(s.numero)+'" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;font-size:11px;padding:3px 8px;">🗑</button>';
     }
 
+    // 📢 Publicación del creador (Sebastián 13-jul) · fecha real + de qué trató + link al post
+    var _fp=(s.fecha_publicacion||'').slice(0,10);
+    var _ent=(s.entregable||'').trim();
+    var _hi=_ent.indexOf('http');
+    var _linkUrl=''; if(_hi>=0){ _linkUrl=_ent.slice(_hi).split(' ')[0].split('·')[0].trim(); }
+    var _okLink=(_linkUrl.indexOf('http://')===0 || _linkUrl.indexOf('https://')===0);
+    var _entTxt=(_hi>=0 ? _ent.slice(0,_hi) : _ent).trim();
+    if(_entTxt.charAt(_entTxt.length-1)==='·') _entTxt=_entTxt.slice(0,-1).trim();
+    var pubRow='';
+    if(_fp || _ent){
+      pubRow='<div style="background:#faf5ff;border:1px solid #e9d5ff;border-radius:8px;padding:9px 12px;margin:8px 0;font-size:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">'
+        +(_fp?'<span style="background:#ede9fe;color:#5b21b6;padding:3px 10px;border-radius:6px;font-weight:700;white-space:nowrap">📢 Publicó: '+fdate(_fp)+'</span>':'<span style="background:#fef3c7;color:#92400e;padding:3px 10px;border-radius:6px;font-weight:700">⚠ Sin fecha de publicación</span>')
+        +(_entTxt?'<span style="color:#475569">📝 '+esc(_entTxt)+'</span>':'')
+        +(_okLink?'<a href="'+esc(_linkUrl)+'" target="_blank" rel="noopener" style="margin-left:auto;color:#7c3aed;font-weight:700;text-decoration:none;white-space:nowrap">🔗 Ver post</a>':'')
+      +'</div>';
+    } else {
+      pubRow='<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;margin:8px 0;font-size:11px;color:#92400e">⚠ Sin publicación registrada · este pago se pidió antes de exigir la fecha. Pedile a Marketing que registre cuándo y de qué publicó.</div>';
+    }
+    // Aviso anti-doble-pago · mismo beneficiario + misma fecha de publicación ya Pagada
+    var dobleWarn='';
+    var _bnK=((b.nombre||s.inf_nombre||'').trim().toLowerCase());
+    if(_bnK && _fp && s.estado!=='Pagada'){
+      var _yaPag=_pagadasClave[_bnK+'|'+_fp];
+      if(_yaPag && _yaPag.length){
+        dobleWarn='<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:9px 12px;margin:8px 0;font-size:12px;color:#991b1b;font-weight:600">⚠ Ya le pagaste a este creador por contenido del '+fdate(_fp)+' ('+esc(_yaPag.join(', '))+') · verificá que no sea doble pago.</div>';
+      }
+    }
     return '<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+borderColor+';border-radius:10px;padding:0;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);overflow:hidden;">'
       // Header
       +'<div style="background:'+headerBg+';padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">'
@@ -5674,13 +5712,16 @@ function renderInfluencers(){
       +'</div>'
       // Body
       +'<div style="padding:12px 16px;">'
-        +'<div style="display:flex;gap:16px;font-size:12px;color:#64748b;margin-bottom:8px;flex-wrap:wrap;align-items:center;">'
+        +'<div style="display:flex;gap:14px;font-size:12px;color:#64748b;margin-bottom:8px;flex-wrap:wrap;align-items:center;">'
           +'<span>👤 '+esc(s.solicitante||'-')+'</span>'
+          +'<span>📅 Solicitud de pago: '+fdate(s.fecha)+'</span>'
           +(s.fecha_requerida && String(s.fecha_requerida).trim()
-              ? '<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:6px;font-weight:600;">📅 Pago debido: '+fdate(s.fecha_requerida)+'</span>'
-              : '<span>📅 Solicitud: '+fdate(s.fecha)+'</span>')
+              ? '<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:6px;font-weight:600;">⏰ Pago debido: '+fdate(s.fecha_requerida)+'</span>'
+              : '')
           +'<span>🏢 '+esc(s.area||'Marketing/ANIMUS')+'</span>'
         +'</div>'
+        +pubRow
+        +dobleWarn
         +bankRow
         +(btns?'<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">'+btns+'</div>':'')
       +'</div>'

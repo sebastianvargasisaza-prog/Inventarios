@@ -3453,6 +3453,12 @@ def handle_solicitudes_compra():
                       "WHERE pi.numero_oc = sc.numero_oc LIMIT 1)")
     _pi_fcont_subq = ("(SELECT pi.fecha_contenido FROM pagos_influencers pi "
                       "WHERE pi.numero_oc = sc.numero_oc LIMIT 1)")
+    # Seguimiento fuerte (Sebastián 13-jul): fecha de publicación real + entregable
+    # (de qué trató) → la tarjeta de pago los muestra para verificar que se publicó.
+    _pi_fpub_subq = ("(SELECT pi.fecha_publicacion FROM pagos_influencers pi "
+                     "WHERE pi.numero_oc = sc.numero_oc LIMIT 1)")
+    _pi_entreg_subq = ("(SELECT pi.entregable FROM pagos_influencers pi "
+                       "WHERE pi.numero_oc = sc.numero_oc LIMIT 1)")
     sql_with_extras = f"""
         SELECT sc.numero, sc.fecha, sc.estado, sc.solicitante, sc.urgencia,
                sc.observaciones, sc.empresa, sc.categoria, sc.tipo, sc.area,
@@ -3467,7 +3473,9 @@ def handle_solicitudes_compra():
                COALESCE(mi.ciudad, '')           as inf_ciudad,
                COALESCE(mi.instagram, '')        as inf_instagram,
                COALESCE({_pi_vence_subq},'') as vence_pago_at,
-               COALESCE({_pi_fcont_subq},'') as fecha_contenido
+               COALESCE({_pi_fcont_subq},'') as fecha_contenido,
+               COALESCE({_pi_fpub_subq},'') as fecha_publicacion,
+               COALESCE({_pi_entreg_subq},'') as entregable
         FROM solicitudes_compra sc
         LEFT JOIN ordenes_compra oc ON oc.numero_oc = sc.numero_oc
         LEFT JOIN marketing_influencers mi ON mi.id = sc.influencer_id
@@ -3486,7 +3494,9 @@ def handle_solicitudes_compra():
                '' as inf_ciudad,
                '' as inf_instagram,
                '' as vence_pago_at,
-               '' as fecha_contenido
+               '' as fecha_contenido,
+               '' as fecha_publicacion,
+               '' as entregable
         FROM solicitudes_compra sc
         LEFT JOIN ordenes_compra oc ON oc.numero_oc = sc.numero_oc
         LEFT JOIN marketing_influencers mi ON mi.id = sc.influencer_id
@@ -3612,7 +3622,7 @@ def handle_solicitudes_compra():
             raise
     cols_sol = ['numero','fecha','estado','solicitante','urgencia','observaciones','empresa','categoria','tipo','area','email_solicitante','fecha_requerida','numero_oc','valor',
                 'inf_nombre','inf_banco','inf_cuenta','inf_tipo_cuenta','inf_cedula','inf_email','inf_ciudad','inf_instagram',
-                'vence_pago_at','fecha_contenido']
+                'vence_pago_at','fecha_contenido','fecha_publicacion','entregable']
     rows_sol = []
     _all_r = c.fetchall()
     # PERF 1-jul: precargar la suma de items por SOL en UNA query (evita N+1). Antes hacía

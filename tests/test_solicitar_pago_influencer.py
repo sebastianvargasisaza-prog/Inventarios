@@ -48,3 +48,30 @@ def test_solicitar_pago_no_colisiona_con_numero_existente(app, db_clean):
     d = r.get_json()
     assert d.get("ok") is True, d
     assert d["numero"] != "SOL-2026-0001", d        # encontró uno libre
+
+
+def test_solicitar_pago_guarda_publicacion_y_entregable(app, db_clean):
+    """Rediseño 13-jul (Sebastián): el pago guarda fecha_publicacion + entregable
+    → fluyen a la tarjeta de Compras para verificar que el creador SÍ publicó."""
+    c = _login(app)
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); cu = conn.cursor()
+        cu.execute("INSERT INTO marketing_influencers (nombre, estado) VALUES ('InfPub', 'Activo')")
+        iid = cu.execute("SELECT id FROM marketing_influencers WHERE nombre='InfPub'").fetchone()[0]
+        conn.commit()
+    r = c.post(f"/api/marketing/influencers/{iid}/solicitar-pago",
+               data=json.dumps({"valor": 300000, "concepto": "Reel",
+                                 "fecha_publicacion": "2026-06-20",
+                                 "entregable": "1 Reel del serum · https://instagram.com/p/abc",
+                                 "fecha_contenido": "2026-06-20"}), headers=_h())
+    assert r.status_code == 200, r.data
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); cu = conn.cursor()
+        row = cu.execute("SELECT fecha_publicacion, entregable FROM pagos_influencers "
+                         "WHERE influencer_id=? ORDER BY id DESC LIMIT 1", (iid,)).fetchone()
+    assert row is not None, "no se creó el pago"
+    assert row[0] == "2026-06-20", ("fecha_publicacion", row[0])
+    assert "Reel del serum" in (row[1] or ""), ("entregable", row[1])
+    assert "instagram.com" in (row[1] or ""), ("link en entregable", row[1])

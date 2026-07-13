@@ -6864,6 +6864,20 @@ def mkt_solicitar_pago_influencer(iid):
         fecha_contenido = (d.get("fecha_contenido") or "").strip()
         if fecha_contenido and not _re_atrib.match(r'^\d{4}-\d{2}-\d{2}$', fecha_contenido):
             return jsonify({"error": "fecha_contenido debe ser YYYY-MM-DD"}), 400
+        # Rediseño 13-jul (Sebastián) · seguimiento fuerte: EXIGIR fecha de publicación real
+        # + de qué trató el contenido (entregable) → se guardan y fluyen a la tarjeta de pago
+        # en Compras para verificar que el creador SÍ publicó antes de pagar (anti doble-pago /
+        # anti pagar-lo-no-hecho). fecha_publicacion suele = fecha_contenido (el front manda una sola).
+        fecha_publicacion = (d.get("fecha_publicacion") or "").strip()
+        entregable = (d.get("entregable") or "").strip()
+        if fecha_publicacion and not _re_atrib.match(r'^\d{4}-\d{2}-\d{2}$', fecha_publicacion):
+            return jsonify({"error": "fecha_publicacion debe ser YYYY-MM-DD"}), 400
+        # La obligatoriedad se exige en el MODAL de Marketing (validación de cliente).
+        # El backend GUARDA lo que llegue sin bloquear: no queremos trabar un pago legítimo
+        # (adelanto, corrección) por un campo faltante. Si no vino fecha_publicacion, cae a
+        # fecha_contenido (que ya se resolvió a hoy si venía vacía) para no perder la referencia.
+        if not fecha_publicacion:
+            fecha_publicacion = fecha_contenido
         from datetime import datetime as _dt_fc, timedelta as _td_fc
         if fecha_contenido:
             try:
@@ -6995,6 +7009,7 @@ def mkt_solicitar_pago_influencer(iid):
                 ('valor', int(monto)), ('fecha', _fecha_hoy), ('estado', 'Pendiente'),
                 ('concepto', concepto), ('numero_oc', oc_num),
                 ('fecha_contenido', fecha_contenido), ('vence_pago_at', vence_pago_at),
+                ('fecha_publicacion', fecha_publicacion), ('entregable', entregable),
             ], core=('influencer_nombre', 'valor', 'estado'))
             c.execute("RELEASE SAVEPOINT sp_pi")
         except Exception:

@@ -1202,18 +1202,20 @@ window.addEventListener('unhandledrejection', function(ev) {
       <div class="form-group"><label>Concepto</label><input id="pago-concepto" placeholder="Post + Story / Reel..."></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Fecha de publicación</label><input type="date" id="pago-fecha-pub"></div>
       <div class="form-group">
-        <label>Fecha del contenido <span style="color:#6d28d9;">★</span></label>
-        <input type="date" id="pago-fecha-contenido" onchange="recalcularVencePagoInf()" title="Día en que el influencer publicó el contenido. La promesa de pago es a 30 días desde esta fecha.">
+        <label>&#128226; Fecha de publicaci&oacute;n <span style="color:#dc2626;">*</span></label>
+        <input type="date" id="pago-fecha-contenido" onchange="recalcularVencePagoInf()" title="Día real en que el creador publicó el contenido. La promesa de pago (30 días) se cuenta desde esta fecha.">
       </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group" style="flex:2;"><label>Entregable</label><input id="pago-entregable" placeholder="1 Reel + 2 Stories..."></div>
-      <div class="form-group" style="flex:1;">
+      <div class="form-group">
         <label>Vence pago (auto)</label>
         <input id="pago-vence" disabled style="background:var(--cx-primary-soft);color:#c7d2fe;font-weight:700;" placeholder="—">
       </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="flex:1;"><label>&#128221; De qu&eacute; trat&oacute; el contenido <span style="color:#dc2626;">*</span></label><input id="pago-entregable" placeholder="Ej: 1 Reel + 2 Stories del s&eacute;rum vitamina C"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="flex:1;"><label>&#128279; Link al post (opcional)</label><input id="pago-link-post" placeholder="https://instagram.com/p/..."></div>
     </div>
     <div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:8px;padding:12px;margin:8px 0;font-size:12px;color:var(--cx-text-mute);">
       <div style="font-weight:700;color:#6d28d9;margin-bottom:6px;">&#x1F3E6; Datos bancarios</div>
@@ -3736,7 +3738,9 @@ function solicitarPagoInf(id, nombre, tarifa, banco, cuenta, cedula, tipoCta) {
   document.getElementById('pago-inf-nombre').textContent = nombre;
   document.getElementById('pago-valor').value = tarifa||'';
   document.getElementById('pago-concepto').value = '';
-  // Default fecha_contenido = hoy \u00b7 usuario puede ajustar al d\u00eda real de publicaci\u00f3n
+  document.getElementById('pago-entregable').value = '';
+  var _lpReset=document.getElementById('pago-link-post'); if(_lpReset) _lpReset.value='';
+  // Default fecha de publicaci\u00f3n = hoy \u00b7 usuario ajusta al d\u00eda real que public\u00f3
   const hoy = new Date();
   const todayStr = hoy.getFullYear()+'-'+String(hoy.getMonth()+1).padStart(2,'0')+'-'+String(hoy.getDate()).padStart(2,'0');
   const fc = document.getElementById('pago-fecha-contenido');
@@ -3764,9 +3768,15 @@ async function confirmarPagoInf() {
   const concepto = document.getElementById('pago-concepto').value.trim()||'Cuenta de cobro influencer';
   const nombreInf = document.getElementById('pago-inf-nombre').textContent || '';
   if(!valor) { showAlert('pago-inf-alert','Ingresa el valor a pagar','error'); return; }
-  const fechaPub   = document.getElementById('pago-fecha-pub').value;
-  const entregable = document.getElementById('pago-entregable').value;
-  const fechaCont  = document.getElementById('pago-fecha-contenido').value;
+  // Rediseño 13-jul (Sebastián) · EXIGIR fecha de publicación real + de qué trató el
+  // contenido → fluye a la tarjeta de pago en Compras para verificar que se hizo antes de pagar.
+  const fechaPub   = document.getElementById('pago-fecha-contenido').value;  // fecha de publicación (única)
+  const entregTxt  = document.getElementById('pago-entregable').value.trim();
+  const linkPost   = (document.getElementById('pago-link-post')||{value:''}).value.trim();
+  if(!fechaPub){ showAlert('pago-inf-alert','Indicá la fecha en que el creador publicó','error'); return; }
+  if(!entregTxt){ showAlert('pago-inf-alert','Indicá de qué trató el contenido (entregable)','error'); return; }
+  const entregable = entregTxt + (linkPost ? ' · ' + linkPost : '');
+  const fechaCont  = fechaPub;  // la promesa de 30d se cuenta desde la publicación
   // FIX 27-may-2026 PM · Sebastián/Jefferson · "cuando solicita un pago desde
   // marketing no sabe si estan quedando guardados". Antes el showAlert
   // transitorio + cerrar modal hacía que pareciera que no quedó · ahora:
