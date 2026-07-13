@@ -181,3 +181,44 @@ def test_fija_override_por_lote(app, db_clean):
     by2 = {v["volumen_ml"]: v for v in d2["variantes"]}
     assert by2[10]["unidades_estimadas"] == 1200, by2[10]
     assert by2[10]["fija_es_override"] is False
+
+
+def test_envase_codigo_override_en_composicion(app, db_clean):
+    """FIX 13-jul (M73): el envase_codigo_override del lote (Compras eligió otro frasco
+    en el modal) debe reflejarse en la composición → la cola de serigrafía y la compra
+    usan ESE envase, no el default de la presentación. Antes la cola mostraba el default."""
+    PROD = "PROD-ENVOVR-T1"
+    c = _login_as(app, "sebastian")
+    db = sqlite3.connect(os.environ["DB_PATH"])
+    db.execute("DELETE FROM producto_presentaciones WHERE producto_nombre=?", (PROD,))
+    db.execute("DELETE FROM produccion_programada WHERE producto=?", (PROD,))
+    db.execute(
+        """INSERT INTO producto_presentaciones
+           (producto_nombre, presentacion_codigo, etiqueta, volumen_ml,
+            envase_codigo, activo, cantidad_fija_uds)
+           VALUES (?,?,?,?,?,1,0)""",
+        (PROD, "P30", "30ml", 30, "ENV-DEFAULT-30"))
+    cur = db.execute(
+        """INSERT INTO produccion_programada
+           (producto, fecha_programada, cantidad_kg, estado, origen, lotes)
+           VALUES (?, date('now','+10 days'), 30, 'programado', 'eos_plan', 1)""",
+        (PROD,))
+    lote_id = cur.lastrowid
+    db.commit()
+    db.close()
+
+    # Sin override → envase default de la presentación
+    d0 = c.get("/api/programacion/programar/%d/composicion-mee" % lote_id).get_json()
+    assert d0["variantes"][0]["envase_codigo"] == "ENV-DEFAULT-30", d0["variantes"]
+
+    # Compras fijó otro envase para ESTE lote
+    db = sqlite3.connect(os.environ["DB_PATH"])
+    db.execute("UPDATE produccion_programada SET envase_codigo_override=? WHERE id=?",
+               ("ENV-OVERRIDE-99", lote_id))
+    db.commit(); db.close()
+
+    d1 = c.get("/api/programacion/programar/%d/composicion-mee" % lote_id).get_json()
+    v = d1["variantes"][0]
+    assert v["envase_codigo"] == "ENV-OVERRIDE-99", ("el override debe reemplazar el default", v)
+    assert v.get("envase_override") is True, v
+    assert d1.get("envase_override_lote") == "ENV-OVERRIDE-99", d1

@@ -8624,16 +8624,25 @@ def _composicion_envases_lote(c, evento_id):
     # fija_override_json (mig 205) · override de cantidad fija POR LOTE · fallback
     # si la columna no existe (instancia sin migrar).
     row = None
-    for _ovr in ("COALESCE(fija_override_json,'')", "''"):
+    for _ovr, _eov in (("COALESCE(fija_override_json,'')", "COALESCE(envase_codigo_override,'')"),
+                       ("''", "''")):
         try:
             row = c.execute(
-                "SELECT id, producto, cantidad_kg, lotes, " + _ovr +
+                "SELECT id, producto, cantidad_kg, lotes, " + _ovr + ", " + _eov +
                 " FROM produccion_programada WHERE id=?", (evento_id,)).fetchone()
             break
         except Exception:
             row = None
     if not row:
         return None
+    # Override de envase POR LOTE (mig 184): admin fijó otro frasco en el modal del
+    # calendario → la composición (cola serigrafía + modal + compra que use este helper)
+    # debe usar ESE código en la presentación dominante, igual que el descuento (M73).
+    _env_override_lote = ''
+    try:
+        _env_override_lote = ((row[5] if len(row) > 5 else '') or '').strip().upper()
+    except Exception:
+        _env_override_lote = ''
     pid, producto, cant_kg, lotes = row[0], row[1], row[2], row[3]
     # Override por lote · {presentacion_codigo: uds}
     fija_override = {}
@@ -8876,12 +8885,24 @@ def _composicion_envases_lote(c, evento_id):
             'partes': _partes_kit,
         })
 
+    # Aplicar el override de envase POR LOTE a la variante DOMINANTE (la de más unidades) ·
+    # M73: la cola de serigrafía y la compra deben honrar el frasco que Compras fijó por lote,
+    # no el default de la presentación. Para 1 presentación es exacto; para multi va al tamaño
+    # dominante (el modal deja elegir UN envase). La descripción se resuelve del maestro.
+    if _env_override_lote and variantes_out:
+        _dom = max(variantes_out, key=lambda x: float(x.get('unidades_estimadas') or 0))
+        if (_dom.get('envase_codigo') or '').strip().upper() != _env_override_lote:
+            _dom['envase_codigo'] = _env_override_lote
+            _dom['envase_descripcion'] = mee_descs.get(_env_override_lote, _env_override_lote)
+            _dom['envase_override'] = True
+
     return {
         'ok': True, 'producto': producto, 'cantidad_kg': cant_kg_f,
         'variantes': variantes_out,
         'fuente_ratio': ('fija+' + fuente) if hay_fija else fuente,
         'tiene_fija': hay_fija,
         'tiene_override': bool(fija_override),
+        'envase_override_lote': _env_override_lote,
         'sin_variantes': False,
     }
 

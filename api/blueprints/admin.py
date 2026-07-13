@@ -8586,25 +8586,33 @@ _MARCACION_ENVASES_HTML = r"""<!DOCTYPE html><html lang="es"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Marcacion de envases</title>
 <style>
-body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#f8fafc;color:#1e293b}
-.wrap{max-width:100%;margin:0 auto;padding:14px 28px}
-h1{font-size:22px;margin:0 0 4px}.sub{color:#64748b;font-size:14px;margin:0 0 16px}
-table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden}
-th,td{padding:7px 9px;text-align:left;font-size:12px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
-th{background:#f1f5f9;font-weight:700;font-size:11px;text-transform:uppercase}
-select,input{padding:5px 7px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px}
+body{font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;background:#f6f7fb;color:#1e293b}
+.wrap{max-width:100%;margin:0 auto;padding:20px 30px}
+h1{font-size:22px;margin:0 0 4px;font-weight:800;letter-spacing:-.01em;color:#0f172a}
+.sub{color:#64748b;font-size:13px;margin:0 0 18px;max-width:960px;line-height:1.55}
+table{width:100%;border-collapse:separate;border-spacing:0;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 2px 14px rgba(15,23,42,.06);border:1px solid #eef2f7}
+th,td{padding:9px 12px;text-align:left;font-size:12px;border-bottom:1px solid #f4f4f8;vertical-align:middle}
+th{background:#f8fafc;font-weight:700;font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:#64748b}
+tbody tr:hover{background:#fbfaff}
+select,input{padding:6px 9px;border:1px solid #e2e8f0;border-radius:8px;font-size:12px;background:#fff;transition:border-color .15s,box-shadow .15s}
+select:focus,input:focus{outline:none;border-color:#7c3aed;box-shadow:0 0 0 3px rgba(124,58,237,.1)}
 input.prov{width:130px}
-button{padding:5px 11px;border:none;border-radius:6px;background:#0891b2;color:#fff;cursor:pointer;font-size:11px;font-weight:700}
-button.ok{background:#16a34a}
+button{padding:6px 13px;border:none;border-radius:8px;background:linear-gradient(135deg,#0891b2,#0e7490);color:#fff;cursor:pointer;font-size:11px;font-weight:700;box-shadow:0 1px 3px rgba(8,145,178,.25);transition:transform .1s,box-shadow .15s}
+button:hover{transform:translateY(-1px);box-shadow:0 3px 8px rgba(15,23,42,.12)}
+button:active{transform:translateY(0)}
+button.ok{background:linear-gradient(135deg,#16a34a,#15803d)}
 .urg{color:#dc2626;font-weight:800}
 .muted{color:#94a3b8}
-.search{margin-bottom:12px;padding:8px 12px;width:280px;border:1px solid #cbd5e1;border-radius:8px}
+.search{margin-bottom:14px;padding:10px 14px 10px 36px;width:340px;max-width:100%;border:1px solid #e2e8f0;border-radius:10px;font-size:13px;box-shadow:0 1px 3px rgba(15,23,42,.04);background:#fff url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round'><circle cx='11' cy='11' r='7'/><path d='m21 21-4.3-4.3'/></svg>") 12px center no-repeat}
 #crear-modal label,#alistar-modal label{display:block;font-size:11px;font-weight:600;color:#475569;margin:8px 0 3px}
 #crear-modal input,#crear-modal select,#alistar-modal input,#alistar-modal select{width:100%}
 #crear-modal .mrow{display:flex;gap:10px}
 #crear-modal .mrow>div{flex:1}
 </style></head><body><div class="wrap">
-<h1>&#127991; Marcaci&oacute;n de envases &middot; serigraf&iacute;a / tampograf&iacute;a</h1>
+<div style="display:flex;align-items:center;gap:12px;margin-bottom:2px">
+<div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#5b21b6);display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 4px 12px rgba(124,58,237,.3)">&#127991;</div>
+<h1 style="margin:0">Marcaci&oacute;n de envases <span style="color:#94a3b8;font-weight:600;font-size:15px">&middot; serigraf&iacute;a / tampograf&iacute;a</span></h1>
+</div>
 <p class="sub">Compras define el <b>m&eacute;todo</b> y el <b>proveedor</b> de cada envase, y ve qu&eacute; enviar a marcar y <b>para cu&aacute;ndo</b> (15 d&iacute;as antes de la producci&oacute;n). Los pre-impresos de China no aparecen.</p>
 <input class="search" id="q" placeholder="Buscar producto/envase..." oninput="_dr()">
 <datalist id="provlist"></datalist>
@@ -8671,14 +8679,14 @@ function render(){
     if(ym && ym!==curMes){ curMes=ym; var pp=ym.split('-'); var lbl=(pp.length===2 && MES[parseInt(pp[1],10)-1])?(MES[parseInt(pp[1],10)-1]+' '+pp[0]):ym; h+='<tr><td colspan="8" style="background:#ede9fe;color:#5b21b6;font-weight:800;padding:9px;font-size:13px;border-top:2px solid #c4b5fd">&#128197; '+lbl+'</td></tr>'; }
     var urge=(r.fecha_envio && r.fecha_envio<=hoy());
     h+='<tr>'+
-      '<td class="'+(urge?'urg':'')+'">'+(urge?'&#128308; ':'')+esc(r.fecha_envio||'')+'</td>'+
-      '<td><b>'+esc(r.producto)+'</b></td>'+
+      '<td>'+(r.fecha_envio?('<span style="display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap;'+(urge?'background:#fee2e2;color:#b91c1c':'background:#f1f5f9;color:#475569')+'">'+(urge?'&#128308; ':'&#128197; ')+esc(r.fecha_envio)+'</span>'):'<span class="muted">&mdash;</span>')+'</td>'+
+      '<td><b style="color:#0f172a">'+esc(r.producto)+'</b></td>'+
       '<td class="muted">'+esc(String(r.fecha||''))+'</td>'+
-      '<td><select id="e-'+i+'" onchange="cambiarEnvase('+i+')" style="max-width:235px;font-size:11px">'+envOpts(r.envase_codigo)+'</select> <button onclick="crearEnvase('+i+')" title="Crear nuevo envase" style="background:#0d9488;padding:4px 9px">&#10133;</button><br><span class="muted" style="font-size:10px">'+esc(r.envase_desc||'')+' &middot; '+(r.volumen_ml||'')+'ml</span></td>'+
+      '<td><select id="e-'+i+'" onchange="cambiarEnvase('+i+')" style="max-width:235px;font-size:11px">'+envOpts(r.envase_codigo)+'</select> <button onclick="crearEnvase('+i+')" title="Crear nuevo envase" style="background:linear-gradient(135deg,#0d9488,#0f766e);padding:5px 10px">&#10133;</button><br><span class="muted" style="font-size:10px">'+esc(r.envase_desc||'')+' &middot; '+(r.volumen_ml||'')+'ml</span></td>'+
       '<td><input id="u-'+i+'" type="number" min="1" value="'+Math.round(r.unidades||0)+'" style="width:80px;font-weight:700;color:#5b21b6;text-align:right"></td>'+
       '<td><select id="m-'+i+'">'+opt('',r.marcacion_tipo,'- definir -')+opt('serigrafia',r.marcacion_tipo,'Serigraf&iacute;a')+opt('tampografia',r.marcacion_tipo,'Tampograf&iacute;a')+opt('etiqueta',r.marcacion_tipo,'Etiqueta (solicitada)')+opt('pre_impreso',r.marcacion_tipo,'Pre-impreso (China)')+opt('ninguno',r.marcacion_tipo,'Ninguno')+'</select></td>'+
       '<td><input class="prov" id="p-'+i+'" list="provlist" value="'+esc(r.marcacion_proveedor||'')+'" placeholder="proveedor"></td>'+
-      '<td style="white-space:nowrap"><button id="b-'+i+'" onclick="guardar('+i+')">Guardar</button> <button onclick="generarOC('+i+')" style="background:#7c3aed" title="Crea la OC de la marcaci\u00f3n (servicio o etiquetas), agrupa por proveedor">&#128722; Generar OC</button> '+(r.marcacion_tipo==='etiqueta'?'<span style="display:inline-block;background:#dcfce7;color:#15803d;font-weight:700;padding:5px 10px;border-radius:6px;font-size:11px">&#127991; Lleva etiqueta</span>':'<button onclick="enviar('+i+')" style="background:#5b21b6">&#128203; Solicitar alistamiento</button>')+'</td>'+
+      '<td style="white-space:nowrap"><button id="b-'+i+'" onclick="guardar('+i+')">Guardar</button> <button onclick="generarOC('+i+')" style="background:linear-gradient(135deg,#7c3aed,#6d28d9)" title="Crea la OC de la marcaci\u00f3n (servicio o etiquetas), agrupa por proveedor">&#128722; Generar OC</button> '+(r.marcacion_tipo==='etiqueta'?'<span style="display:inline-block;background:#dcfce7;color:#15803d;font-weight:700;padding:5px 10px;border-radius:6px;font-size:11px">&#127991; Lleva etiqueta</span>':'<button onclick="enviar('+i+')" style="background:linear-gradient(135deg,#5b21b6,#4c1d95)">&#128203; Solicitar alistamiento</button>')+'</td>'+
       '</tr>';
   });
   h+='</tbody></table>';
