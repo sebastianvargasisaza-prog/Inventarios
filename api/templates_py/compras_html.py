@@ -5565,20 +5565,21 @@ function renderInfluencers(){
   // ── KPI cards ────────────────────────────────────────────────────────────
   var kpiEl=document.getElementById('kpi-influencer');
   if(kpiEl){
+    var _kpiBase='color:#fff;padding:16px 24px;border-radius:14px;min-width:180px;';
     kpiEl.innerHTML=
-      '<div style="background:#7c3aed;color:#fff;padding:14px 22px;border-radius:10px;min-width:170px;box-shadow:0 2px 8px rgba(124,58,237,.2)">'
-      +'<div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:.6px;font-weight:600;">Por pagar</div>'
-      +'<div style="font-size:26px;font-weight:700;margin-top:4px;">'+pendAll.length+' OCs</div>'
-      +'<div style="font-size:13px;opacity:.9;margin-top:2px;">'+fmoney(totalPend)+'</div>'
+      '<div style="'+_kpiBase+'background:linear-gradient(135deg,#7c3aed,#6d28d9);box-shadow:0 6px 18px rgba(124,58,237,.32)">'
+      +'<div style="font-size:11px;opacity:.85;text-transform:uppercase;letter-spacing:.6px;font-weight:700;">💸 Por pagar</div>'
+      +'<div style="font-size:28px;font-weight:800;margin-top:4px;line-height:1;">'+pendAll.length+' OCs</div>'
+      +'<div style="font-size:13px;opacity:.92;margin-top:4px;">'+fmoney(totalPend)+'</div>'
       +'</div>'
-      +'<div style="background:#059669;color:#fff;padding:14px 22px;border-radius:10px;min-width:170px;box-shadow:0 2px 8px rgba(5,150,105,.2)">'
-      +'<div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:.6px;font-weight:600;">Pagadas este ciclo</div>'
-      +'<div style="font-size:26px;font-weight:700;margin-top:4px;">'+pagaAll.length+'</div>'
-      +'<div style="font-size:13px;opacity:.9;margin-top:2px;">'+fmoney(totalPaga)+'</div>'
+      +'<div style="'+_kpiBase+'background:linear-gradient(135deg,#059669,#047857);box-shadow:0 6px 18px rgba(5,150,105,.3)">'
+      +'<div style="font-size:11px;opacity:.85;text-transform:uppercase;letter-spacing:.6px;font-weight:700;">✅ Pagadas este ciclo</div>'
+      +'<div style="font-size:28px;font-weight:800;margin-top:4px;line-height:1;">'+pagaAll.length+'</div>'
+      +'<div style="font-size:13px;opacity:.92;margin-top:4px;">'+fmoney(totalPaga)+'</div>'
       +'</div>'
-      +'<div style="background:#374151;color:#fff;padding:14px 22px;border-radius:10px;min-width:170px;box-shadow:0 2px 8px rgba(55,65,81,.15)">'
-      +'<div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:.6px;font-weight:600;">Total influencers</div>'
-      +'<div style="font-size:26px;font-weight:700;margin-top:4px;">'+INFLUENCERS.length+'</div>'
+      +'<div style="'+_kpiBase+'background:linear-gradient(135deg,#374151,#1f2937);box-shadow:0 6px 18px rgba(55,65,81,.25)">'
+      +'<div style="font-size:11px;opacity:.85;text-transform:uppercase;letter-spacing:.6px;font-weight:700;">👥 Total influencers</div>'
+      +'<div style="font-size:28px;font-weight:800;margin-top:4px;line-height:1;">'+INFLUENCERS.length+'</div>'
       +'</div>';
   }
 
@@ -5661,8 +5662,8 @@ function renderInfluencers(){
       // generico de /solicitudes), pedir el valor antes de pagar.
       var valSol = Number(s.valor||0);
       var btnPagar = valSol > 0
-        ? '<button class="btn inf-pagar-pendiente" data-sol="'+esc(s.numero)+'" data-val="'+valSol+'" data-nombre="'+esc((b.nombre||s.solicitante||''))+'" style="background:#7c3aed;color:#fff;padding:7px 18px;font-size:13px;font-weight:600;">💸 Pagar</button>'
-        : '<button class="btn inf-pagar-pendiente" data-sol="'+esc(s.numero)+'" data-val="0" data-nombre="'+esc((b.nombre||s.solicitante||''))+'" style="background:#0891b2;color:#fff;padding:7px 14px;font-size:12px;font-weight:600;">✏️ Definir valor &amp; pagar</button>';
+        ? '<button class="btn inf-pagar-pendiente" data-sol="'+esc(s.numero)+'" data-val="'+valSol+'" data-nombre="'+esc((b.nombre||s.solicitante||''))+'" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;padding:8px 20px;font-size:13px;font-weight:700;border:none;border-radius:8px;box-shadow:0 2px 8px rgba(124,58,237,.3);">💸 Pagar</button>'
+        : '<button class="btn inf-pagar-pendiente" data-sol="'+esc(s.numero)+'" data-val="0" data-nombre="'+esc((b.nombre||s.solicitante||''))+'" style="background:linear-gradient(135deg,#0891b2,#0e7490);color:#fff;padding:8px 14px;font-size:12px;font-weight:700;border:none;border-radius:8px;box-shadow:0 2px 8px rgba(8,145,178,.28);">✏️ Definir valor &amp; pagar</button>';
       btns = btnPagar
           +'<button class="btn inf-rechazar-pendiente" data-sol="'+esc(s.numero)+'" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;font-size:12px;">✕ Rechazar</button>'
           +'<button class="btn" data-act="del-sol" data-sol="'+esc(s.numero)+'" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;font-size:11px;">🗑 Eliminar</button>';
