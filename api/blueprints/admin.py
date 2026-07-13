@@ -8614,6 +8614,13 @@ button.ok{background:linear-gradient(135deg,#16a34a,#15803d)}
 <h1 style="margin:0">Marcaci&oacute;n de envases <span style="color:#94a3b8;font-weight:600;font-size:15px">&middot; serigraf&iacute;a / tampograf&iacute;a</span></h1>
 </div>
 <p class="sub">Compras define el <b>m&eacute;todo</b> y el <b>proveedor</b> de cada envase, y ve qu&eacute; enviar a marcar y <b>para cu&aacute;ndo</b> (15 d&iacute;as antes de la producci&oacute;n). Los pre-impresos de China no aparecen.</p>
+<div style="display:flex;gap:10px;margin:0 0 12px;align-items:center;flex-wrap:wrap">
+  <div style="display:inline-flex;background:#eef2f7;border-radius:10px;padding:3px">
+    <button id="vw-mes" onclick="setView('mes')" style="border:none;border-radius:8px;padding:7px 16px;font-size:12px;font-weight:700;cursor:pointer;background:#fff;color:#0f172a;box-shadow:0 1px 3px rgba(0,0,0,.1)">&#128197; Por mes</button>
+    <button id="vw-env" onclick="setView('env')" style="border:none;border-radius:8px;padding:7px 16px;font-size:12px;font-weight:700;cursor:pointer;background:transparent;color:#64748b;box-shadow:none">&#128230; Por envase &middot; horizonte</button>
+  </div>
+  <span class="muted" id="vw-hint" style="font-size:11px;flex:1">Orden cronol&oacute;gico &middot; qu&eacute; enviar primero (15 d&iacute;as antes de cada producci&oacute;n).</span>
+</div>
 <input class="search" id="q" placeholder="Buscar producto/envase..." oninput="_dr()">
 <datalist id="provlist"></datalist>
 <div id="alistar-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;padding:16px">
@@ -8654,6 +8661,7 @@ button.ok{background:linear-gradient(135deg,#16a34a,#15803d)}
 </div>
 <script>
 var ROWS=[];
+window._VIEW='mes'; window._MSEL={}; window._CONSMETA={};
 function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 async function csrf(){var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();return t.csrf_token;}
 function hoy(){return new Date().toISOString().slice(0,10);}
@@ -8667,6 +8675,7 @@ async function cargar(){
 function opt(v,sel,txt){return '<option value="'+v+'"'+(sel===v?' selected':'')+'>'+txt+'</option>';}
 var _drt; function _dr(){ clearTimeout(_drt); _drt=setTimeout(render,170); }
 function render(){
+  if(window._VIEW==='env') return renderConsolidado();
   var q=(document.getElementById('q').value||'').toLowerCase();
   var vis=ROWS.filter(function(r){return !q || (r.producto+' '+r.envase_codigo+' '+(r.envase_desc||'')).toLowerCase().indexOf(q)>=0;});
   if(!vis.length){ document.getElementById('cont').innerHTML='<div class="muted" style="padding:20px;text-align:center">Sin envases a marcar (o no hay producciones futuras mapeadas).</div>'; return; }
@@ -8692,6 +8701,142 @@ function render(){
   h+='</tbody></table>';
   document.getElementById('cont').innerHTML=h;
 }
+// ─── Vista consolidada POR ENVASE · horizonte (Sebastián 13-jul) ──────────────
+// Junta las producciones del horizonte por FRASCO → Catalina ve Jul 1000 + Ago 1000
+// + Sep 1000 = 3000 y adelanta la marcación en un solo pedido (más barato en lote).
+function setView(v){
+  window._VIEW=v;
+  var on='border:none;border-radius:8px;padding:7px 16px;font-size:12px;font-weight:700;cursor:pointer;background:#fff;color:#0f172a;box-shadow:0 1px 3px rgba(0,0,0,.1)';
+  var off='border:none;border-radius:8px;padding:7px 16px;font-size:12px;font-weight:700;cursor:pointer;background:transparent;color:#64748b;box-shadow:none';
+  var bm=document.getElementById('vw-mes'), be=document.getElementById('vw-env');
+  if(bm) bm.style.cssText=(v==='mes'?on:off);
+  if(be) be.style.cssText=(v==='env'?on:off);
+  var hint=document.getElementById('vw-hint');
+  if(hint) hint.textContent=(v==='env')
+    ? 'Cada frasco junta sus producciones del horizonte · prendé/apagá meses y mandá a marcar el total en un solo pedido.'
+    : 'Orden cronológico · qué enviar primero (15 días antes de cada producción).';
+  render();
+}
+function _consGroups(){
+  var q=(document.getElementById('q').value||'').toLowerCase();
+  var vis=ROWS.filter(function(r){return !q || (r.producto+' '+r.envase_codigo+' '+(r.envase_desc||'')).toLowerCase().indexOf(q)>=0;});
+  var G={};
+  vis.forEach(function(r){
+    var env=r.envase_codigo; if(!env) return;
+    if((r.marcacion_tipo||'')==='pre_impreso') return;  // China · no se marca acá
+    if(!G[env]) G[env]={envase:env,desc:r.envase_desc||'',vol:r.volumen_ml||'',metodo:r.marcacion_tipo||'',prov:r.marcacion_proveedor||'',stock:Math.round(r.stock_envase||0),productos:{},meses:{},primerEnvio:null};
+    var g=G[env];
+    if(r.producto) g.productos[r.producto]=1;
+    var mk=String(r.fecha||'').slice(0,7);
+    if(mk) g.meses[mk]=(g.meses[mk]||0)+Math.round(r.unidades||0);
+    if(r.fecha_envio && (!g.primerEnvio || r.fecha_envio<g.primerEnvio)) g.primerEnvio=r.fecha_envio;
+    if(!g.metodo && r.marcacion_tipo) g.metodo=r.marcacion_tipo;
+    if(!g.prov && r.marcacion_proveedor) g.prov=r.marcacion_proveedor;
+  });
+  return G;
+}
+function consSelTotal(env,G){
+  G=G||_consGroups(); var g=G[env]; if(!g) return 0;
+  var ex=(window._MSEL&&window._MSEL[env])||{};
+  var t=0; Object.keys(g.meses).forEach(function(mk){ if(!ex[mk]) t+=g.meses[mk]; }); return t;
+}
+function _snapMeta(){
+  window._CONSMETA=window._CONSMETA||{};
+  document.querySelectorAll('[id^="mc-"]').forEach(function(el){ var e=el.id.slice(3); window._CONSMETA[e]=window._CONSMETA[e]||{}; window._CONSMETA[e].metodo=el.value; });
+  document.querySelectorAll('[id^="pc-"]').forEach(function(el){ var e=el.id.slice(3); window._CONSMETA[e]=window._CONSMETA[e]||{}; window._CONSMETA[e].prov=el.value; });
+}
+function renderConsolidado(){
+  var G=_consGroups(); var envs=Object.keys(G);
+  if(!envs.length){ document.getElementById('cont').innerHTML='<div class="muted" style="padding:24px;text-align:center">Sin envases a marcar en el horizonte (o todos son pre-impresos de China).</div>'; return; }
+  envs.sort(function(a,b){ return String(G[a].primerEnvio||'9999').localeCompare(String(G[b].primerEnvio||'9999')); });
+  var MES=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  var h='';
+  envs.forEach(function(env){
+    var g=G[env]; var prods=Object.keys(g.productos); var mks=Object.keys(g.meses).sort();
+    if(!window._MSEL[env]) window._MSEL[env]={};
+    var ex=window._MSEL[env];
+    var meta=(window._CONSMETA&&window._CONSMETA[env])||{};
+    var mval=(meta.metodo!==undefined?meta.metodo:g.metodo);
+    var pval=(meta.prov!==undefined?meta.prov:g.prov);
+    var urge=(g.primerEnvio && g.primerEnvio<=hoy());
+    var chips='';
+    mks.forEach(function(mk){
+      var onx=!ex[mk]; var pp=mk.split('-'); var lbl=(MES[parseInt(pp[1],10)-1]||mk)+" '"+pp[0].slice(2);
+      chips+='<button onclick="toggleMes(\''+env+'\',\''+mk+'\')" style="border:1px solid '+(onx?'#7c3aed':'#e2e8f0')+';background:'+(onx?'#f5f3ff':'#fff')+';color:'+(onx?'#5b21b6':'#94a3b8')+';border-radius:999px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;margin:0 6px 6px 0">'+(onx?'✓ ':'')+lbl+' · '+g.meses[mk].toLocaleString('es-CO')+'</button>';
+    });
+    var tot=consSelTotal(env,G);
+    h+='<div style="background:#fff;border:1px solid #eef2f7;border-radius:14px;padding:16px 18px;margin-bottom:14px;box-shadow:0 2px 12px rgba(15,23,42,.05)">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">';
+    h+='<div><div style="font-weight:800;color:#0f172a;font-size:14px">&#128230; '+esc(g.desc||env)+'</div><div class="muted" style="font-size:11px;margin-top:2px">'+esc(env)+(g.vol?(' · '+g.vol+'ml'):'')+' · '+esc(prods.join(', '))+' · stock '+g.stock.toLocaleString('es-CO')+' u</div></div>';
+    h+='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
+    h+='<select id="mc-'+env+'">'+opt('',mval,'- método -')+opt('serigrafia',mval,'Serigrafía')+opt('tampografia',mval,'Tampografía')+opt('etiqueta',mval,'Etiqueta')+opt('pre_impreso',mval,'Pre-impreso')+opt('ninguno',mval,'Ninguno')+'</select>';
+    h+='<input id="pc-'+env+'" list="provlist" value="'+esc(pval)+'" placeholder="proveedor" style="width:150px">';
+    h+='<button onclick="guardarCons(\''+env+'\')" title="Guardar método y proveedor de este envase">&#128190;</button>';
+    h+='</div></div>';
+    h+='<div style="margin-top:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">';
+    h+='<div style="flex:1;min-width:220px">'+chips+'</div>';
+    h+='<div style="text-align:right"><div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.04em">Total seleccionado</div><div id="cons-tot-'+env+'" style="font-size:1.8em;font-weight:800;color:#5b21b6;line-height:1">'+tot.toLocaleString('es-CO')+'</div><div class="muted" style="font-size:10px">unidades a marcar</div></div>';
+    h+='</div>';
+    h+='<div style="margin-top:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;border-top:1px solid #f4f4f8;padding-top:12px">';
+    h+='<div>'+(g.primerEnvio?('<span style="display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;'+(urge?'background:#fee2e2;color:#b91c1c':'background:#f1f5f9;color:#475569')+'">'+(urge?'&#128308; ':'&#9200; ')+'1er envío '+esc(g.primerEnvio)+'</span>'):'')+'</div>';
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap"><button onclick="generarOCcons(\''+env+'\')" style="background:linear-gradient(135deg,#7c3aed,#6d28d9)" title="Crea UNA OC por el total seleccionado (adelanto del horizonte)">&#128722; Generar OC del total</button><button onclick="alistarCons(\''+env+'\')" style="background:linear-gradient(135deg,#5b21b6,#4c1d95)" title="Pide a Planta alistar el total + registra la salida del base">&#128203; Solicitar alistamiento</button></div>';
+    h+='</div>';
+    h+='</div>';
+  });
+  document.getElementById('cont').innerHTML=h;
+}
+function toggleMes(env,mk){
+  _snapMeta();
+  if(!window._MSEL[env]) window._MSEL[env]={};
+  window._MSEL[env][mk]=!window._MSEL[env][mk];
+  renderConsolidado();
+}
+async function guardarCons(env){
+  var tipo=(document.getElementById('mc-'+env)||{}).value||'';
+  var prov=(document.getElementById('pc-'+env)||{}).value||'';
+  try{
+    var r=await fetch('/api/admin/marcacion-envase',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({codigo:env,marcacion_tipo:tipo,marcacion_proveedor:prov})});
+    var d=await r.json();
+    if(d.ok){ if(window._CONSMETA) delete window._CONSMETA[env]; cargar(); }
+    else alert('Error: '+(d.error||''));
+  }catch(e){ alert('Error de conexión'); }
+}
+async function generarOCcons(env){
+  var G=_consGroups(); var g=G[env]; if(!g) return;
+  var tipo=(document.getElementById('mc-'+env)||{}).value||'';
+  var prov=(document.getElementById('pc-'+env)||{}).value||'';
+  if(!tipo||tipo==='pre_impreso'||tipo==='ninguno'){ alert('Definí el método (serigrafía/tampografía/etiqueta) antes de generar la OC'); return; }
+  if(!prov){ alert('Definí el proveedor antes de generar la OC'); return; }
+  var tot=consSelTotal(env,G);
+  if(!(tot>0)){ alert('Seleccioná al menos un mes con unidades'); return; }
+  var prods=Object.keys(g.productos);
+  var mksSel=Object.keys(g.meses).filter(function(mk){ return !((window._MSEL[env]||{})[mk]); }).sort();
+  var concepto=(tipo==='etiqueta'?'Etiquetas':(tipo==='serigrafia'?'Serigrafía':'Tampografía'))+' '+env+' (adelanto '+prods.join('/')+')';
+  if(!confirm('Generar OC de "'+concepto+'"\nTOTAL '+tot.toLocaleString('es-CO')+' u · meses '+mksSel.join(', ')+' · proveedor '+prov+'?\n\nAdelantás la marcación de todo el horizonte en un solo pedido.')) return;
+  if(window._ocBusy) return; window._ocBusy=true; setTimeout(function(){window._ocBusy=false;},2000);
+  try{
+    var r=await fetch('/api/solicitudes-compra',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({categoria:'Material de Empaque',tipo:'Compra',solicitante:'Marcación (Compras)',observaciones:'Marcación en lote (adelanto horizonte) · '+prods.join('/')+' · meses '+mksSel.join(','),items:[{codigo_mp:env,nombre_mp:concepto,cantidad_g:tot,unidad:'und',justificacion:'Marcación '+tipo+' en lote · '+mksSel.join(','),proveedor_sugerido:prov}]})});
+    var d=await r.json();
+    if(d.numero){ alert('✓ OC generada como '+d.numero+' por '+tot.toLocaleString('es-CO')+' u.\nVe a Bandeja → se agrupa por proveedor → autorizás/pagás.'); }
+    else alert('Error: '+(d.error||'no se pudo crear la OC'));
+  }catch(e){ alert('Error de conexión'); }
+}
+function alistarCons(env){
+  var G=_consGroups(); var g=G[env]; if(!g) return;
+  var tipo=(document.getElementById('mc-'+env)||{}).value||'';
+  var prov=(document.getElementById('pc-'+env)||{}).value||'';
+  if(!tipo||tipo==='pre_impreso'||tipo==='ninguno'||tipo==='etiqueta'){ alert('Este envase lleva etiqueta o no se marca — no se envía a serigrafía.'); return; }
+  if(!prov){ alert('Definí el proveedor antes de solicitar'); return; }
+  var tot=consSelTotal(env,G);
+  if(!(tot>0)){ alert('Seleccioná al menos un mes'); return; }
+  if(g.stock>0 && !confirm('⚠️ Ya tenés '+g.stock.toLocaleString('es-CO')+' de '+env+' en bodega. Vas a mandar a alistar '+tot.toLocaleString('es-CO')+' (adelanto del horizonte). ¿Seguro?')) return;
+  var prods=Object.keys(g.productos);
+  window._alistarCtx={serigrafiado_codigo:env,cantidad:tot,metodo:tipo,proveedor:prov,producto:prods.join('/'),produccion_id:null,fecha_envio:(g.primerEnvio||'')};
+  document.getElementById('al-fecha').value=(g.primerEnvio||'');
+  document.getElementById('al-hora').value='10:00';
+  document.getElementById('al-urg').value='media';
+  document.getElementById('alistar-modal').style.display='flex';
+}
 async function guardar(i){
   var cod=ROWS[i].envase_codigo;
   var tipo=document.getElementById('m-'+i).value;
@@ -8714,7 +8859,7 @@ async function enviar(i){
   if(!(cant>0)){ alert('Cantidad inv\u00e1lida'); return; }
   var sob=Math.round(r0.stock_envase||0);
   if(sob>0 && !confirm('\u26a0\ufe0f Ya ten\u00e9s '+sob.toLocaleString('es-CO')+' de '+r0.envase_codigo+' en bodega (de antes). Vas a pedir '+cant.toLocaleString('es-CO')+'. \u00bfSeguro?')){ return; }
-  window._alistarTarget=i; window._alistarCant=cant;
+  window._alistarCtx={serigrafiado_codigo:r0.envase_codigo,cantidad:cant,metodo:tipo,proveedor:prov,producto:r0.producto,produccion_id:r0.produccion_id,fecha_envio:(r0.fecha_envio||'')};
   document.getElementById('al-fecha').value=(r0.fecha_envio||'');
   document.getElementById('al-hora').value='10:00';
   document.getElementById('al-urg').value='media';
@@ -8722,13 +8867,12 @@ async function enviar(i){
 }
 function closeAlistarModal(){ document.getElementById('alistar-modal').style.display='none'; }
 async function submitAlistar(){
-  var i=window._alistarTarget; var r0=ROWS[i]; if(!r0){ closeAlistarModal(); return; }
-  var tipo=document.getElementById('m-'+i).value, prov=document.getElementById('p-'+i).value;
+  var ctx=window._alistarCtx; if(!ctx){ closeAlistarModal(); return; }
   var fecha=document.getElementById('al-fecha').value, hora=document.getElementById('al-hora').value, urg=document.getElementById('al-urg').value;
   if(!fecha){ alert('Pon\u00e9 la fecha l\u00edmite'); return; }
   if(window._alBusy) return; window._alBusy=true; setTimeout(function(){window._alBusy=false;},2000);
   try{
-    var r=await fetch('/api/programacion/marcacion-orden/enviar',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({serigrafiado_codigo:r0.envase_codigo,cantidad:window._alistarCant,metodo:tipo,proveedor:prov,producto:r0.producto,produccion_id:r0.produccion_id,fecha_alistar:fecha,hora_alistar:hora,urgencia:urg})});
+    var r=await fetch('/api/programacion/marcacion-orden/enviar',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({serigrafiado_codigo:ctx.serigrafiado_codigo,cantidad:ctx.cantidad,metodo:ctx.metodo,proveedor:ctx.proveedor,producto:ctx.producto,produccion_id:ctx.produccion_id,fecha_alistar:fecha,hora_alistar:hora,urgencia:urg})});
     var d=await r.json();
     if(d.ok){ closeAlistarModal(); alert('\u2713 Solicitado a Planta para alistar \u00b7 Salida del base '+d.base+' registrada'); cargarOrdenes(); }
     else alert('Error: '+(d.error||''));
