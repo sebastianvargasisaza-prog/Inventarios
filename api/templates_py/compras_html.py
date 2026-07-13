@@ -430,15 +430,11 @@ function renderHistorico(){
     </select>
     <button class="btn bp" onclick="openNuevaOC('')">&#x1F4DD; Nueva OC</button>
     <button class="btn" onclick="descargarSolicitudesPDF()" style="background:#1F5F5B;color:#fff;" title="PDF ejecutivo">&#x1F4C4; PDF</button>
-    <button class="btn" onclick="regenerarSolicitudesAuto()" style="background:#7c3aed;color:#fff;" title="Regenerar solicitudes auto">&#x1F504; Regenerar</button>
-    <!-- Sebastian 4-may-2026 (Catalina): toggle vista agrupada por proveedor -->
+    <!-- Sebastián 13-jul · quitados 4 botones de auto-plan de MP (Regenerar / Consolidar AUTO /
+         Solo limpiar / Limpiar y regenerar): operaban sobre la fuente PLANTA (Materia Prima),
+         no sobre estas solicitudes de usuarios → confundían y no aplicaban acá. Su lugar es la
+         pestaña Planta. Se conserva "Agrupar por proveedor" (sí agrupa las de usuarios en una OC). -->
     <button id="btn-toggle-vista" class="btn" onclick="toggleVistaSolicitudes()" style="background:#0e7490;color:#fff;" title="Agrupar todas las solicitudes pendientes por proveedor — crea una sola OC para todas las del mismo proveedor">&#x1F4E6; Agrupar por proveedor</button>
-    <!-- Sebastian 4-may-2026 (Catalina): consolidar AUTO-XXXX legacy 1-MP-cada-una en agrupadas por proveedor -->
-    <button id="btn-consolidar-auto" class="btn" onclick="consolidarAutoPendientes()" style="background:#16a34a;color:#fff;" title="Consolida las AUTO-XXXX existentes (1 MP cada una) en una solicitud por proveedor (no toca data fuente)">&#x1F517; Consolidar AUTO</button>
-    <!-- Sebastian 4-may-2026 (Catalina): solo limpiar AUTO-XXXX + SOL-YYYY-XXXX auto-gen + OCs Borrador, dejar que cron regenere -->
-    <button id="btn-solo-limpiar-auto" class="btn" onclick="soloLimpiarAuto()" style="background:#475569;color:#fff;" title="Borra TODAS las solicitudes auto-generadas Pendientes (AUTO-XXXX + SOL-YYYY-XXXX) y sus OCs en Borrador. NO toca las que tienen OC Autorizada/Pagada. Cuando planta vuelva a pedir, ya vienen agrupadas por proveedor.">&#x1F5D1;&#xFE0F; Solo limpiar</button>
-    <!-- Sebastian 4-may-2026 (Catalina): limpiar + regenerar inmediato con logica nueva COALESCE -->
-    <button id="btn-limpiar-regenerar-auto" class="btn" onclick="limpiarYRegenerarAutoPlan()" style="background:#dc2626;color:#fff;" title="Borra solicitudes auto-generadas Pendientes y regenera ahora mismo (lee proveedor de maestro_mps si mp_lead_time_config esta vacio)">&#x1F525; Limpiar y regenerar</button>
   </div>
   <div id="pills-solic" class="pills"></div>
   <div id="grid-solic" class="grid"></div>
@@ -5015,202 +5011,12 @@ function descargarSolicitudesPDF(){
   window.open('/api/compras/solicitudes/pdf'+qs, '_blank');
 }
 
-// ────────────────────────────────────────────────────────────────
-// Sebastian 4-may-2026 (Catalina): consolidar AUTO-XXXX legacy
-// ────────────────────────────────────────────────────────────────
-// Ejecuta /api/compras/consolidar-auto-pendientes en 2 pasos:
-//   1. dry_run=true para mostrar el plan a Catalina
-//   2. confirm + dry_run=false para ejecutar
-async function consolidarAutoPendientes(){
-  // Step 1: dry-run
-  try{
-    var rDry = await fetch('/api/compras/consolidar-auto-pendientes',
-      _fetchOpts('POST', {dry_run: true}));
-    var dDry = await rDry.json();
-    if(!rDry.ok){
-      alert('Error preview: '+(dDry.error || rDry.status));
-      return;
-    }
-    if(dDry.antes === 0){
-      alert('✓ No hay AUTO-XXXX pendientes para consolidar.');
-      return;
-    }
-    if(!dDry.grupos || !dDry.grupos.length){
-      alert('Nada que consolidar — '+dDry.intactas+' AUTO-XXXX ya estan agrupadas.');
-      return;
-    }
-    var detalle = dDry.grupos.slice(0,8).map(function(g){
-      return '  · '+g.proveedor_label+' ('+g.categoria+'): '+
-             g.sols_origen.length+' SOLs → '+g.items_count+' MPs · '+
-             fmt(g.total_g)+' g';
-    }).join('\\n');
-    if(dDry.grupos.length > 8) detalle += '\\n  ... y '+(dDry.grupos.length-8)+' grupos mas';
-    var msg = 'CONSOLIDAR AUTO-XXXX pendientes\\n\\n'+
-      'Antes: '+dDry.antes+' solicitudes (1 MP cada una)\\n'+
-      'Despues: '+dDry.despues+' solicitudes (agrupadas por proveedor)\\n'+
-      'Intactas (ya consolidadas): '+dDry.intactas+'\\n\\n'+
-      'Plan:\\n'+detalle+'\\n\\n'+
-      'Las solicitudes legacy se reemplazan por las consolidadas. '+
-      'No se borran datos: los items se trasladan tal cual.\\n\\n'+
-      'Confirmar?';
-    if(!confirm(msg)) return;
-
-    // Step 2: ejecutar
-    var btn = document.getElementById('btn-consolidar-auto');
-    if(btn){ btn.disabled = true; btn.textContent = 'Consolidando...'; }
-    var r = await fetch('/api/compras/consolidar-auto-pendientes',
-      _fetchOpts('POST', {dry_run: false}));
-    var d = await r.json();
-    if(btn){ btn.disabled = false; btn.innerHTML = '&#x1F517; Consolidar AUTO'; }
-    if(!r.ok){
-      alert('Error: '+(d.error || r.status));
-      return;
-    }
-    alert('✓ '+d.mensaje+'\\n\\n'+
-          'Eliminadas: '+d.eliminadas+'\\n'+
-          'Creadas: '+d.creadas+'\\n'+
-          'Total ahora: '+d.despues+' solicitudes');
-    // Refrescar
-    await loadSolicitudes();
-    if(_VISTA_AGRUPADA) await renderSolicitudesAgrupadas();
-  }catch(e){
-    alert('Error red: '+e.message);
-    var btn = document.getElementById('btn-consolidar-auto');
-    if(btn){ btn.disabled = false; btn.innerHTML = '&#x1F517; Consolidar AUTO'; }
-  }
-}
-
-// ────────────────────────────────────────────────────────────────
-// Sebastian 4-may-2026 (Catalina): SOLO limpiar AUTO-XXXX
-// Deja que el cron de planta regenere agrupado en la proxima corrida.
-// Util cuando Catalina quiere "borron y cuenta nueva" sin disparar
-// regeneracion inmediata.
-// ────────────────────────────────────────────────────────────────
-async function soloLimpiarAuto(){
-  try{
-    var rDry = await fetch('/api/compras/limpiar-y-regenerar-auto-plan',
-      _fetchOpts('POST', {dry_run: true, regenerar: false}));
-    var dDry = await rDry.json();
-    if(!rDry.ok){
-      alert('Error preview: '+(dDry.error || rDry.status));
-      return;
-    }
-    if(dDry.eliminaria === 0){
-      alert('✓ No hay solicitudes auto-generadas Pendientes que limpiar.');
-      return;
-    }
-    var msg = 'LIMPIAR SOLICITUDES AUTO-GENERADAS (sin regenerar)\\n\\n'+
-      'Va a BORRAR:\\n'+
-      '  • '+dDry.eliminaria+' solicitudes auto-generadas Pendientes\\n'+
-      '    (AUTO-XXXX del cron + SOL-YYYY-XXXX de Regenerar)\\n'+
-      '  • '+(dDry.eliminaria_ocs_borrador||0)+' OCs en Borrador asociadas\\n\\n'+
-      'NO toca las que tienen OC Autorizada/Pagada (eso es historico).\\n\\n'+
-      'Cuando el cron de planta corra (o uses Regenerar manual), las\\n'+
-      'nuevas solicitudes vendran agrupadas por proveedor con la\\n'+
-      'logica corregida (COALESCE a maestro_mps + nombres normalizados).\\n\\n'+
-      'Confirmar?';
-    if(!confirm(msg)) return;
-
-    var btn = document.getElementById('btn-solo-limpiar-auto');
-    if(btn){ btn.disabled = true; btn.textContent = 'Limpiando...'; }
-    var r = await fetch('/api/compras/limpiar-y-regenerar-auto-plan',
-      _fetchOpts('POST', {dry_run: false, regenerar: false}));
-    var d = await r.json();
-    if(btn){ btn.disabled = false; btn.innerHTML = '&#x1F5D1;&#xFE0F; Solo limpiar'; }
-    if(!r.ok){
-      alert('Error: '+(d.error || r.status));
-      return;
-    }
-    alert('✓ '+d.mensaje);
-    await loadSolicitudes();
-    if(_VISTA_AGRUPADA) await renderSolicitudesAgrupadas();
-  }catch(e){
-    alert('Error red: '+e.message);
-    var btn = document.getElementById('btn-solo-limpiar-auto');
-    if(btn){ btn.disabled = false; btn.innerHTML = '&#x1F5D1;&#xFE0F; Solo limpiar'; }
-  }
-}
-
-// ────────────────────────────────────────────────────────────────
-// Sebastian 4-may-2026 (Catalina): limpiar TODOS los AUTO-XXXX y
-// regenerar desde planta con la logica nueva (proveedor real desde
-// maestro_mps si mp_lead_time_config esta vacio)
-// ────────────────────────────────────────────────────────────────
-async function limpiarYRegenerarAutoPlan(){
-  // Step 1: dry-run para mostrar cuantos van a borrar
-  try{
-    var rDry = await fetch('/api/compras/limpiar-y-regenerar-auto-plan',
-      _fetchOpts('POST', {dry_run: true, horizonte_dias: 60}));
-    var dDry = await rDry.json();
-    if(!rDry.ok){
-      alert('Error preview: '+(dDry.error || rDry.status));
-      return;
-    }
-    var msg = 'LIMPIAR Y REGENERAR AUTO-PLAN\\n\\n'+
-      'Esto va a:\\n'+
-      ' • BORRAR '+dDry.eliminaria+' solicitudes AUTO-XXXX Pendientes\\n'+
-      ' • REGENERAR desde planta con horizonte '+dDry.horizonte_dias+' dias\\n'+
-      ' • Las nuevas leen proveedor de maestro_mps si mp_lead_time_config\\n'+
-      '   esta vacio → ya NO aparecen "sin proveedor"\\n'+
-      ' • Quedan agrupadas por proveedor (1 SOL × proveedor con N items)\\n\\n'+
-      'NO toca AUTO-XXXX que ya tienen OC vinculada (esas son historico).\\n\\n'+
-      'Confirmar?';
-    if(!confirm(msg)) return;
-
-    // Step 2: ejecutar
-    var btn = document.getElementById('btn-limpiar-regenerar-auto');
-    if(btn){ btn.disabled = true; btn.textContent = 'Procesando...'; }
-    var r = await fetch('/api/compras/limpiar-y-regenerar-auto-plan',
-      _fetchOpts('POST', {dry_run: false, horizonte_dias: 60}));
-    var d = await r.json();
-    if(btn){ btn.disabled = false; btn.innerHTML = '&#x1F525; Limpiar y regenerar'; }
-    if(!r.ok){
-      alert('Error: '+(d.error || r.status)+
-            (d.eliminadas !== undefined ? '\\n(Eliminadas '+d.eliminadas+' antes del fallo)' : ''));
-      return;
-    }
-    var detalle = (d.grupos||[]).slice(0,8).map(function(g){
-      return '  · '+(g.proveedor||'(Sin proveedor)')+': '+g.items_count+' MPs · '+fmt(g.total_g)+' g';
-    }).join('\\n');
-    if((d.grupos||[]).length > 8) detalle += '\\n  ... y '+(d.grupos.length-8)+' grupos mas';
-    alert('✓ '+d.mensaje+'\\n\\n'+
-          (detalle ? 'Top grupos:\\n'+detalle : ''));
-    await loadSolicitudes();
-    if(_VISTA_AGRUPADA) await renderSolicitudesAgrupadas();
-  }catch(e){
-    alert('Error red: '+e.message);
-    var btn = document.getElementById('btn-limpiar-regenerar-auto');
-    if(btn){ btn.disabled = false; btn.innerHTML = '&#x1F525; Limpiar y regenerar'; }
-  }
-}
-
-// ────────────────────────────────────────────────────────────────
-// Sebastian 4-may-2026 (Catalina): consolidar AUTO-XXXX legacy
-// ────────────────────────────────────────────────────────────────
-// Ejecuta /api/compras/consolidar-auto-pendientes en 2 pasos:
-//   1. dry_run=true para mostrar el plan a Catalina
-//   2. confirm + dry_run=false para ejecutar
-async function regenerarSolicitudesAuto(){
-  if(!confirm('REGENERAR solicitudes auto-generadas?\\n\\n' +
-              'Esto va a:\\n' +
-              ' • Borrar todas las solicitudes Pendiente que digan "Auto-generada Centro Programación"\\n' +
-              ' • Borrar sus OCs Borrador asociadas\\n' +
-              ' • Crear nuevas con los déficits ACTUALES de Programación\\n\\n' +
-              'NO toca solicitudes Aprobadas ni Pagadas.\\n\\n' +
-              '¿Confirmás?')) return;
-  try{
-    var r = await fetch('/api/programacion/regenerar-oc', _fetchOpts('POST'));
-    var d = await r.json();
-    if(!r.ok){
-      alert('Error: ' + (d.error || 'desconocido') + (d.detalle ? '\\n' + d.detalle : ''));
-      return;
-    }
-    alert(d.mensaje || 'Regeneración completa');
-    await loadSolicitudes();
-  }catch(e){
-    alert('Error de red: ' + e.message);
-  }
-}
+// Sebastián 13-jul · ELIMINADAS las 4 funciones de auto-plan de MP
+// (consolidarAutoPendientes / soloLimpiarAuto / limpiarYRegenerarAutoPlan /
+// regenerarSolicitudesAuto): hacían BORRADO MASIVO de solicitudes y no debían
+// existir — todo lo que entra debe TRATARSE, no borrarse en lote. Sus botones
+// ya se quitaron; ningún cron/otra pantalla las usa. El plan de MP se recalcula
+// solo con el cron de auto-plan (no destructivo sobre lo que ya está en curso).
 
 async function loadSolicitudes(){
   // Sebastian 5-may-2026: Tab "Solicitudes" SOLO carga las solicitudes de
