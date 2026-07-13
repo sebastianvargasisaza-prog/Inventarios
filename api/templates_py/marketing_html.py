@@ -229,13 +229,12 @@ window.addEventListener('unhandledrejection', function(ev) {
 <script>function cxToggleTheme(){var h=document.documentElement;var c=h.getAttribute('data-theme');var n=c==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
 
 <div class="tabs-bar">
-  <button class="tab-btn active" data-tab="hoy" onclick="switchTab('hoy')">&#x1F3AF; Hoy</button>
-  <button class="tab-btn" data-tab="cmo" onclick="switchTab('cmo')" style="background:linear-gradient(135deg,#0e7490,#a78bfa);color:#fff;border-radius:8px 8px 0 0;font-weight:800;">🤖 CMO IA</button>
-  <button class="tab-btn" data-tab="dashboard" onclick="switchTab('dashboard')">&#x1F4CA; Dashboard</button>
+  <!-- Sebastián 13-jul · quitados Hoy + CMO IA (no se usaban) · Inteligencia fusionada
+       dentro de Dashboard (sub-nav). Dashboard = inicio. -->
+  <button class="tab-btn active" data-tab="dashboard" onclick="switchTab('dashboard')">&#x1F4CA; Dashboard</button>
   <button class="tab-btn" data-tab="campanas" onclick="switchTab('campanas')">&#x1F4E2; Campañas</button>
   <button class="tab-btn" data-tab="influencers" onclick="switchTab('influencers')">&#x1F465; Influencers &amp; Pagos</button>
   <button class="tab-btn" data-tab="contenido" onclick="switchTab('contenido')">&#x1F4C5; Contenido</button>
-  <button class="tab-btn" data-tab="inteligencia" onclick="switchTab('inteligencia')">&#x1F9E0; Inteligencia</button>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
@@ -244,7 +243,7 @@ window.addEventListener('unhandledrejection', function(ev) {
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <!-- TAB: HOY — Centro de ejecución (Fase 2/4 marketing)             -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
-<div id="tab-hoy" class="tab-panel active">
+<div id="tab-hoy" class="tab-panel">
   <div class="actions-bar">
     <div>
       <div class="page-title">&#x1F3AF; Hoy — Centro de ejecución</div>
@@ -349,7 +348,16 @@ window.addEventListener('unhandledrejection', function(ev) {
   </div>
 </div>
 
-<div id="tab-dashboard" class="tab-panel">
+<div id="tab-dashboard" class="tab-panel active">
+  <!-- Inteligencia fusionada (Sebastián 13-jul): sub-nav a las 4 secciones · el top-tab
+       Dashboard vuelve al panorama. -->
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px;">
+    <span style="font-size:11px;font-weight:800;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.05em;margin-right:2px;">🧠 Inteligencia</span>
+    <button onclick="showSub('estrategia')" style="background:var(--cx-primary-soft,#f5f3ff);color:#6d28d9;border:1px solid #ddd6fe;border-radius:999px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;">Estrategia del mes</button>
+    <button onclick="showSub('agentes')" style="background:var(--cx-primary-soft,#f5f3ff);color:#6d28d9;border:1px solid #ddd6fe;border-radius:999px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;">🤖 Agentes IA</button>
+    <button onclick="showSub('analytics')" style="background:var(--cx-primary-soft,#f5f3ff);color:#6d28d9;border:1px solid #ddd6fe;border-radius:999px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;">📈 Histórico inversión</button>
+    <button onclick="showSub('agencia')" style="background:var(--cx-primary-soft,#f5f3ff);color:#6d28d9;border:1px solid #ddd6fe;border-radius:999px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;">🏆 Scores creadores</button>
+  </div>
   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:6px;">
     <div>
       <div class="page-title" style="margin-bottom:2px;">&#x1F4CA; Marketing — Dashboard</div>
@@ -657,7 +665,7 @@ window.addEventListener('unhandledrejection', function(ev) {
 <div id="tab-pagos" class="tab-panel" style="display:none">
   <!-- LEGACY: por compatibilidad si algún link viejo apunta a este tab,
        redirige al de Influencers. -->
-  <script>setTimeout(function(){ if(typeof switchTab==='function') switchTab('influencers'); }, 100);</script>
+  <script>setTimeout(function(){ if(typeof switchTab==='function') switchTab(location.hash==='#pagos'?'influencers':'dashboard'); }, 100);</script>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
@@ -1472,7 +1480,7 @@ function switchTab(name) {
   document.querySelectorAll('.tab-btn').forEach(b => {
     const t = b.dataset.tab;
     const isActive = (t === name) ||
-                     (t === 'inteligencia' && ['estrategia','agentes','analytics','agencia'].includes(realPanel));
+                     (t === 'dashboard' && ['estrategia','agentes','analytics','agencia'].includes(realPanel));
     b.classList.toggle('active', isActive);
   });
 
