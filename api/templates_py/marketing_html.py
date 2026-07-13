@@ -32,23 +32,24 @@ body{font-family:'Segoe UI',sans-serif;background:var(--cx-bg);color:var(--cx-te
 .page-title{font-size:18px;font-weight:700;color:var(--cx-text);margin-bottom:4px;}
 .page-sub{font-size:12px;color:var(--cx-text-mute);margin-bottom:24px;}
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px;margin-bottom:24px;}
-.kpi-card{background:var(--cx-card);border:1px solid #e7e5e4;border-radius:12px;padding:16px;}
-.kpi-label{font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;}
-.kpi-val{font-size:24px;font-weight:800;color:var(--cx-text);line-height:1;}
-.kpi-sub{font-size:11px;color:var(--cx-text-mute);margin-top:4px;}
-.kpi-card.green .kpi-val{color:#16a34a;}
-.kpi-card.red .kpi-val{color:#dc2626;}
-.kpi-card.blue .kpi-val{color:#2563eb;}
-.kpi-card.yellow .kpi-val{color:#b45309;}
-.kpi-card.purple .kpi-val{color:#6d28d9;}
+.kpi-card{background:var(--cx-card);border:1px solid #eef0f2;border-top:3px solid #cbd5e1;border-radius:14px;padding:16px;box-shadow:0 1px 3px rgba(15,23,42,.05);transition:box-shadow .15s,transform .1s;}
+.kpi-card:hover{box-shadow:0 8px 20px rgba(15,23,42,.08);transform:translateY(-2px);}
+.kpi-label{font-size:11px;color:var(--cx-text-mute);font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;}
+.kpi-val{font-size:26px;font-weight:800;color:var(--cx-text);line-height:1;letter-spacing:-.01em;}
+.kpi-sub{font-size:11px;color:var(--cx-text-mute);margin-top:5px;}
+.kpi-card.green{border-top-color:#16a34a;} .kpi-card.green .kpi-val{color:#16a34a;}
+.kpi-card.red{border-top-color:#dc2626;} .kpi-card.red .kpi-val{color:#dc2626;}
+.kpi-card.blue{border-top-color:#2563eb;} .kpi-card.blue .kpi-val{color:#2563eb;}
+.kpi-card.yellow{border-top-color:#f59e0b;} .kpi-card.yellow .kpi-val{color:#b45309;}
+.kpi-card.purple{border-top-color:#6d28d9;} .kpi-card.purple .kpi-val{color:#6d28d9;}
 
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
 .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
 @media(max-width:800px){.grid2,.grid3{grid-template-columns:1fr;}}
 
-.card{background:var(--cx-card);border:1px solid #e7e5e4;border-radius:12px;overflow:hidden;}
-.card-hdr{padding:14px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e7e5e4;}
-.card-title{font-size:13px;font-weight:700;color:var(--cx-text);}
+.card{background:var(--cx-card);border:1px solid #eef0f2;border-radius:14px;overflow:hidden;box-shadow:0 2px 12px rgba(15,23,42,.05);}
+.card-hdr{padding:14px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #f1f2f5;background:#fbfbfd;}
+.card-title{font-size:13px;font-weight:800;color:var(--cx-text);letter-spacing:-.01em;}
 .card-body{padding:16px;}
 
 /* ─── Table ─── */
@@ -351,16 +352,16 @@ window.addEventListener('unhandledrejection', function(ev) {
 <div id="tab-dashboard" class="tab-panel active">
   <!-- Inteligencia fusionada (Sebastián 13-jul): sub-nav a las 4 secciones · el top-tab
        Dashboard vuelve al panorama. -->
+  <!-- Sebastián 13-jul · quitados Agentes IA + Scores creadores (rasgo de IA) · quedan
+       Estrategia del mes + Histórico de inversión. -->
   <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px;">
-    <span style="font-size:11px;font-weight:800;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.05em;margin-right:2px;">🧠 Inteligencia</span>
-    <button onclick="showSub('estrategia')" style="background:var(--cx-primary-soft,#f5f3ff);color:#6d28d9;border:1px solid #ddd6fe;border-radius:999px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;">Estrategia del mes</button>
-    <button onclick="showSub('agentes')" style="background:var(--cx-primary-soft,#f5f3ff);color:#6d28d9;border:1px solid #ddd6fe;border-radius:999px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;">🤖 Agentes IA</button>
+    <span style="font-size:11px;font-weight:800;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.05em;margin-right:2px;">📊 Análisis</span>
+    <button onclick="showSub('estrategia')" style="background:var(--cx-primary-soft,#f5f3ff);color:#6d28d9;border:1px solid #ddd6fe;border-radius:999px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;">📋 Estrategia del mes</button>
     <button onclick="showSub('analytics')" style="background:var(--cx-primary-soft,#f5f3ff);color:#6d28d9;border:1px solid #ddd6fe;border-radius:999px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;">📈 Histórico inversión</button>
-    <button onclick="showSub('agencia')" style="background:var(--cx-primary-soft,#f5f3ff);color:#6d28d9;border:1px solid #ddd6fe;border-radius:999px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;">🏆 Scores creadores</button>
   </div>
   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:6px;">
     <div>
-      <div class="page-title" style="margin-bottom:2px;">&#x1F4CA; Marketing — Dashboard</div>
+      <div class="page-title" style="margin-bottom:2px;">&#x1F4CA; Marketing · Dashboard</div>
       <div class="page-sub" id="dash-fecha">Cargando...</div>
     </div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -378,7 +379,7 @@ window.addEventListener('unhandledrejection', function(ev) {
   </div>
 
   <!-- KPIs Shopify -->
-  <div style="font-size:11px;font-weight:700;color:#d4af37;text-transform:uppercase;letter-spacing:.8px;margin:16px 0 8px;">🛍️ Shopify — Ventas reales</div>
+  <div style="font-size:11px;font-weight:700;color:#d4af37;text-transform:uppercase;letter-spacing:.8px;margin:16px 0 8px;">🛍️ Shopify · Ventas reales</div>
   <div id="sh-cobertura-banner" style="display:none;background:#78350f;color:#fde68a;border-radius:8px;padding:8px 14px;font-size:11px;margin-bottom:10px;"></div>
 <div class="kpi-grid" id="dash-shopify-kpis">
     <div class="kpi-card yellow"><div class="kpi-label" id="sh-rev30-label">Revenue</div><div class="kpi-val" id="sh-rev30">—</div><div class="kpi-sub" id="sh-rev7">vs período ant.: —</div></div>
@@ -397,16 +398,11 @@ window.addEventListener('unhandledrejection', function(ev) {
   </div>
   <div id="dash-meta-progreso" style="background:var(--cx-bg-alt);border:1px solid var(--cx-hairline);border-radius:10px;padding:14px 16px;margin-bottom:16px;color:var(--cx-text-mute);font-size:12px">Cargando meta del mes…</div>
 
-  <!-- AUDIT 27-may · Widget Sentiment IG (detección crisis) -->
-  <div style="font-size:11px;font-weight:700;color:#f59e0b;text-transform:uppercase;letter-spacing:.8px;margin:16px 0 8px;display:flex;align-items:center;gap:8px">
-    <span>💬 Sentiment de la comunidad (IG)</span>
-    <button class="btn btn-outline btn-sm" onclick="sentimentSyncManual()" style="font-size:10px;padding:2px 8px" title="Sincronizar comentarios IG ahora">↻ Sync</button>
-    <button class="btn btn-outline btn-sm" onclick="sentimentAnalyzeManual()" style="font-size:10px;padding:2px 8px" title="Analizar pendientes con Claude">🤖 Analizar</button>
-  </div>
-  <div id="dash-sentiment" style="background:var(--cx-bg-alt);border:1px solid var(--cx-hairline);border-radius:10px;padding:14px 16px;margin-bottom:16px;color:var(--cx-text-mute);font-size:12px">Cargando sentiment…</div>
+  <!-- Sebastián 13-jul · quitado el widget "Sentiment de la comunidad (IA)" · rasgo de IA -->
+  <div id="dash-sentiment" style="display:none"></div>
 
   <!-- Instagram KPIs -->
-  <div style="font-size:11px;font-weight:700;color:#e1306c;text-transform:uppercase;letter-spacing:.8px;margin:16px 0 8px;">📸 Instagram — Engagement real</div>
+  <div style="font-size:11px;font-weight:700;color:#e1306c;text-transform:uppercase;letter-spacing:.8px;margin:16px 0 8px;">📸 Instagram · Engagement real</div>
   <div class="kpi-grid" id="dash-ig-kpis">
     <div class="kpi-card" style="border-color:#e1306c33;"><div class="kpi-label">Posts 30d</div><div class="kpi-val" id="ig-posts30">—</div><div class="kpi-sub" id="ig-posts-total">Total: —</div></div>
     <div class="kpi-card" style="border-color:#e1306c33;"><div class="kpi-label">Likes 30d</div><div class="kpi-val" id="ig-likes30">—</div><div class="kpi-sub" id="ig-avg-likes">Promedio: —</div></div>
