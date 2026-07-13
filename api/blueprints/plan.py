@@ -21147,6 +21147,7 @@ async function abrirLoteModal(id, producto, fecha, kg){
   // observaciones". Cada cliente del lote (DTC + B2B) tiene su fila
   // con kg asignados, envase, unidades calculadas, plan editable y
   // observaciones libres.
+  let _planEnvHtml = '';  // Sebastian 13-jul · se captura aca pero se PINTA abajo (bloque "Lo que se va a producir") · el modal lidera con el estado del producto (como Necesidades)
   try {
     const _loteFull = (PLAN_DATA.agendadas || []).find(a => a.id === id);
     const _desg = (_loteFull && _loteFull.desglose_b2b) || [];
@@ -21237,14 +21238,16 @@ async function abrirLoteModal(id, producto, fecha, kg){
           + '</td></tr>';
       });
       dHtml += '</tbody></table></div>';
-      html += dHtml;
+      _planEnvHtml = dHtml;
     } else {
       // Lote sin atribución B2B explícita · asumido todo DTC
-      html += '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:11px;color:#64748b">📦 Lote sin desglose B2B · asumido <strong>' + kg + 'kg DTC</strong></div>';
+      _planEnvHtml = '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:11px;color:#64748b">📦 Lote sin desglose B2B · asumido <strong>' + kg + 'kg DTC</strong></div>';
     }
   } catch(_e_desg){ /* sin lote en PLAN_DATA · no mostrar */ }
 
-  // Sección 1: Datos de venta y stock
+  // Sección 1: Datos de venta y stock · LIDERA el modal (Sebastián 13-jul · como en
+  // Necesidades: primero los números claros del producto; el detalle de envasado va abajo).
+  html += '<div style="font-size:13px;font-weight:800;color:#5b21b6;margin:4px 0 8px">📊 Estado del producto</div>';
   html += '<div class="metric-grid">';
   html += '<div class="metric-card"><div class="metric-lbl">Volumen envase</div><div class="metric-val">' + ml + ' ml</div></div>';
   // Sebastián 15-may-2026: "kilogramos a producir" editable desde el popup
@@ -21279,8 +21282,8 @@ async function abrirLoteModal(id, producto, fecha, kg){
   html += '<div class="metric-card"><div class="metric-lbl">Cobertura</div><div class="metric-val">' + (diasCob != null ? diasCob + 'd' : '—') + '</div><div class="metric-sub">' + (info.urgencia || '') + '</div></div>';
   html += '</div>';
 
-  // 📊 Desglose EDITABLE por referencia (Sebastián 27-jun) · se llena async tras pintar el modal.
-  html += '<div id="lote-desglose-edit"></div>';
+  // 📊 Desglose EDITABLE por referencia · movido ABAJO (al bloque "Lo que se va a producir")
+  // para que el modal lidere con el estado del producto (Sebastián 13-jul · como Necesidades).
 
   // Sección 1.5 QUITADA (Sebastián 2-jul · "estos dos hacen lo mismo"): la "Composición del lote"
   // (read-only · cliente/uds/kg/%) era REDUNDANTE con el "Plan de envasado" de arriba, que ahora
@@ -21352,6 +21355,13 @@ async function abrirLoteModal(id, producto, fecha, kg){
             + '</div>';
     }
   }
+
+  // 📦 Lo que se va a producir (detalle) · Plan de envasado por cliente (Ánimus vs otros) +
+  // desglose por referencia · va DESPUÉS del estado y el timing (Sebastián 13-jul · como
+  // Necesidades: primero el estado del producto, luego el detalle de lo programado).
+  html += '<div style="font-size:13px;font-weight:800;color:#5b21b6;margin:16px 0 8px;padding-top:10px;border-top:1px solid #ede9fe">📦 Lo que se va a producir</div>';
+  html += _planEnvHtml;
+  html += '<div id="lote-desglose-edit"></div>';
 
   // Sección 4: Acciones
   html += _renderAccionesLote(id, producto, fecha);
