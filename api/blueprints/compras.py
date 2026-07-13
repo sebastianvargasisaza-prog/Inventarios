@@ -11810,8 +11810,11 @@ def compras_dashboard_home():
         ).fetchone()
         kpis['ocs_sin_autorizar_5d'] = int(r[0] or 0)
     except Exception: kpis['ocs_sin_autorizar_5d'] = 0
+    # Salud = 100 − penalización por atrasos, con piso (nunca 0 "roto" · Sebastián 13-jul: −5 por ítem
+    # tocaba fondo con ~20 pendientes y parecía bug). Cada SOL sin tocar/OC sin autorizar resta 3, piso 10 →
+    # gradiente útil (verde ≥80, amarillo ≥60, rojo <60) que refleja el atraso sin verse roto.
     pendientes = (kpis['sols_sin_tocar_3d'] + kpis['ocs_sin_autorizar_5d'])
-    kpis['salud_score'] = max(0, 100 - pendientes * 5)
+    kpis['salud_score'] = max(10, 100 - pendientes * 3)
     kpis['salud_color'] = 'verde' if kpis['salud_score'] >= 80 else ('amarillo' if kpis['salud_score'] >= 60 else 'rojo')
     out['kpis'] = kpis
 

@@ -1624,6 +1624,9 @@ document.querySelectorAll('.tn').forEach(function(btn){
     if(pane) pane.classList.add('on');
     if(tab==='dash'){
       // Compras PRO · 4 KPIs grandes + widgets consolidados
+      // Velocidad: dashboard-home y cash-flow se piden UNA sola vez y se
+      // comparten entre KPIs + panel + widgets (antes se pedían 2× c/u).
+      window._dashHomeP = null; window._cashFlowP = null;
       if(typeof renderKpisGrandes==='function') renderKpisGrandes();
       renderDashHome2();
       if(typeof renderAlertasBanner==='function') renderAlertasBanner();
@@ -2206,14 +2209,32 @@ async function verDetalleOS(num){
 
 // Compras PRO · Sebastián 21-may-2026 · 4 KPIs grandes franja superior
 // Consultor procurement: "Sebas debería ver 4 KPIs que importan al entrar, no 20"
+// Fetchers memoizados por carga del dashboard · el dashboard-home preserva el
+// status (para el manejo de 401 en renderDashHome2). Se resetean a null al
+// entrar a la pestaña dash → 1 sola llamada de red compartida por 3 renders.
+function _fetchDashHome(){
+  if(!window._dashHomeP){
+    window._dashHomeP = fetch('/api/compras/dashboard-home').then(function(r){
+      return r.json().then(function(j){ return {status:r.status, ok:r.ok, data:j}; })
+        .catch(function(){ return {status:r.status, ok:r.ok, data:{}}; });
+    }).catch(function(){ return {status:0, ok:false, data:{}}; });
+  }
+  return window._dashHomeP;
+}
+function _fetchCashFlow(){
+  if(!window._cashFlowP){
+    window._cashFlowP = fetch('/api/compras/cash-flow').then(function(r){
+      return r.ok ? r.json() : {};
+    }).catch(function(){ return {}; });
+  }
+  return window._cashFlowP;
+}
 async function renderKpisGrandes(){
   var cont = document.getElementById('dash-kpis-grandes');
   if(!cont) return;
   try{
-    var [rHome, rCash] = await Promise.all([
-      fetch('/api/compras/dashboard-home').then(function(r){return r.ok?r.json():{};}).catch(function(){return{};}),
-      fetch('/api/compras/cash-flow').then(function(r){return r.ok?r.json():{};}).catch(function(){return{};}),
-    ]);
+    var [hHome, rCash] = await Promise.all([ _fetchDashHome(), _fetchCashFlow() ]);
+    var rHome = hHome.data || {};
     var p30 = ((rCash.proyecciones||[]).find(function(x){return x.dias===30;})) || {};
     var kpis = rHome.kpis || {};
     var counts = rHome.counts || {};
@@ -2310,16 +2331,16 @@ async function renderDashHome2(){
   var cont = document.getElementById('dash-home-2');
   if(!cont) return;
   try{
-    var r = await fetch('/api/compras/dashboard-home');
-    if(r.status === 401){
+    var hHome = await _fetchDashHome();
+    if(hHome.status === 401){
       cont.innerHTML = '<div style="background:#fef2f2;color:#991b1b;padding:14px;border-radius:8px;font-weight:700">⚠ Sesión expirada · <a href="/login?next=/compras" style="color:#dc2626;text-decoration:underline">re-loguear</a></div>';
       return;
     }
-    if(!r.ok){
-      cont.innerHTML = '<div style="color:#dc2626;padding:14px">Error '+r.status+' al cargar dashboard</div>';
+    if(!hHome.ok){
+      cont.innerHTML = '<div style="color:#dc2626;padding:14px">Error '+hHome.status+' al cargar dashboard</div>';
       return;
     }
-    var d = await r.json();
+    var d = hHome.data || {};
     // Actualizar badges en sub-tabs
     var counts = d.counts || {};
     function _setBadge(tabId, n){
@@ -2344,42 +2365,36 @@ async function renderDashHome2(){
     var html = '';
     if(d.role === 'admin'){
       // VISTA ADMIN · Panel ejecutivo + Influencers prominente
-      var k = d.kpis || {};
-      var col = k.salud_color === 'verde' ? '#16a34a' : (k.salud_color === 'amarillo' ? '#ca8a04' : '#dc2626');
-      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">';
-      // Card izq · Salud Compras
-      html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">'+
-        '<div style="font-weight:800;font-size:14px;color:#0f172a;margin-bottom:10px">📊 Salud Compras <span style="background:'+col+';color:#fff;padding:2px 10px;border-radius:10px;font-size:12px;margin-left:6px">'+k.salud_score+'/100</span></div>'+
-        '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;font-size:12px">'+
-          '<div style="background:#f8fafc;padding:8px 10px;border-radius:6px"><div style="color:#64748b;font-size:10px">SOLs sin tocar</div><div style="font-size:1.4em;font-weight:800;color:'+((k.sols_sin_tocar_3d||0)>0?'#dc2626':'#16a34a')+'">'+(k.sols_sin_tocar_3d||0)+'</div><div style="font-size:9px;color:#94a3b8">>3 días</div></div>'+
-          '<div style="background:#f8fafc;padding:8px 10px;border-radius:6px"><div style="color:#64748b;font-size:10px">OCs sin autorizar</div><div style="font-size:1.4em;font-weight:800;color:'+((k.ocs_sin_autorizar_5d||0)>0?'#ca8a04':'#16a34a')+'">'+(k.ocs_sin_autorizar_5d||0)+'</div><div style="font-size:9px;color:#94a3b8">>5 días</div></div>'+
-          '<div style="background:#f8fafc;padding:8px 10px;border-radius:6px"><div style="color:#64748b;font-size:10px">Catalina hoy</div><div style="font-size:1.4em;font-weight:800;color:#0e7490">'+(d.buzon_total_48h||0)+'</div><div style="font-size:9px;color:#94a3b8">SOLs nuevas 48h</div></div>'+
-          '<div style="background:#f8fafc;padding:8px 10px;border-radius:6px"><div style="color:#64748b;font-size:10px">OCs viejas (>10d)</div><div style="font-size:1.4em;font-weight:800;color:#dc2626">'+(d.alertas_ocs_viejas||[]).length+'</div><div style="font-size:9px;color:#94a3b8">revisar</div></div>'+
-        '</div>'+
-        // Top proveedores 30d
-        '<div style="margin-top:12px;font-size:11px;color:#475569">'+
-          '<b>Top proveedores 30d:</b><br>'+
-          ((d.top_proveedores_30d||[]).map(function(p){
-            return '<span style="background:#f1f5f9;padding:3px 8px;border-radius:8px;margin:2px 3px 0 0;display:inline-block">'+_esc(p.proveedor)+' · '+fmt(p.monto.toFixed(0))+'</span>';
-          }).join('') || '<span style="color:#cbd5e1">sin datos</span>')+
-        '</div>'+
-      '</div>';
-      // Card der · Influencers prominente
+      // Panel Influencers (privado · Sebastián entra a pagar aquí) · a ancho
+      // completo. La Salud Compras + OCs en riesgo ya viven en las 4 KPIs de
+      // arriba (no se duplican). Top proveedores 30d va como pie del panel.
       var inflTot = (d.influencers_monto_total || 0);
       var inflList = d.influencers_pendientes || [];
-      html += '<div style="background:linear-gradient(135deg,#fdf2f8,#f5f3ff);border:2px solid #6d28d9;border-radius:10px;padding:16px">'+
-        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="font-weight:800;font-size:14px;color:#9f1239">💸 Influencers (privado · solo tú)</div>'+
-        '<a href="/admin/influencers" style="font-size:11px;color:#9f1239;font-weight:700">Ver todos →</a></div>'+
-        '<div style="background:#fff;padding:10px 12px;border-radius:8px;margin-bottom:10px"><div style="font-size:10px;color:#9f1239">Por pagar</div><div style="font-size:1.8em;font-weight:800;color:#be185d">'+fmt(inflTot.toFixed(0))+'</div><div style="font-size:11px;color:#9f1239">'+inflList.length+' pendiente(s)</div></div>';
+      html += '<div style="background:linear-gradient(135deg,#fdf2f8,#f5f3ff);border:1px solid #ddd6fe;border-radius:12px;padding:18px;box-shadow:var(--cx-sh-card)">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><div style="font-weight:800;font-size:15px;color:#9f1239">💸 Influencers <span style="font-weight:600;font-size:11px;color:#a78bfa">privado · solo tú</span></div>'+
+        '<a href="/admin/influencers" style="font-size:11px;color:#9f1239;font-weight:700;text-decoration:none">Ver todos →</a></div>'+
+        '<div style="display:grid;grid-template-columns:minmax(160px,220px) 1fr;gap:14px;align-items:start">'+
+          '<div style="background:#fff;padding:12px 14px;border-radius:10px;border:1px solid #f5d0e8"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.03em;color:#9f1239;font-weight:700">Por pagar</div><div style="font-size:2em;font-weight:800;color:#be185d;line-height:1.1">'+fmt(inflTot.toFixed(0))+'</div><div style="font-size:11px;color:#9f1239">'+inflList.length+' pendiente(s)</div></div>';
+      html += '<div style="font-size:11px;color:#9f1239">';
       if(inflList.length){
-        html += '<div style="font-size:11px;color:#9f1239;max-height:160px;overflow-y:auto">';
-        inflList.slice(0,5).forEach(function(it){
-          html += '<div style="background:#fff;padding:6px 8px;border-radius:5px;margin-bottom:4px;display:flex;justify-content:space-between"><div><b>'+_esc(it.solicitante||'?')+'</b><br><span style="color:#94a3b8;font-size:10px">'+_esc(it.concepto||'')+'</span></div><div style="text-align:right"><b style="color:#be185d">'+fmt(it.monto.toFixed(0))+'</b><br><a href="/admin/influencers" style="font-size:9px;color:#0e7490">marcar pagado</a></div></div>';
+        html += '<div style="max-height:170px;overflow-y:auto;display:flex;flex-direction:column;gap:5px">';
+        inflList.slice(0,6).forEach(function(it){
+          html += '<div style="background:#fff;padding:7px 10px;border-radius:7px;display:flex;justify-content:space-between;align-items:center"><div><b>'+_esc(it.solicitante||'?')+'</b> <span style="color:#94a3b8;font-size:10px">'+_esc(it.concepto||'')+'</span></div><div style="text-align:right;white-space:nowrap;margin-left:8px"><b style="color:#be185d">'+fmt(it.monto.toFixed(0))+'</b> <a href="/admin/influencers" style="font-size:9px;color:#0e7490">pagar</a></div></div>';
         });
         html += '</div>';
+      } else {
+        html += '<div style="color:#a78bfa;text-align:center;padding:18px 0">✓ Sin pagos pendientes</div>';
       }
-      html += '</div>';
-      html += '</div>';
+      html += '</div>';   // fin col derecha
+      html += '</div>';   // fin grid interno
+      // Top proveedores 30d (pie · dato útil que estaba en el panel Salud)
+      html += '<div style="margin-top:12px;padding-top:10px;border-top:1px solid #f5d0e8;font-size:11px;color:#475569">'+
+        '<b>Top proveedores 30d:</b> '+
+        ((d.top_proveedores_30d||[]).map(function(p){
+          return '<span style="background:#fff;padding:3px 8px;border-radius:8px;margin:2px 3px 0 0;display:inline-block;border:1px solid #eee">'+_esc(p.proveedor)+' · '+fmt(p.monto.toFixed(0))+'</span>';
+        }).join('') || '<span style="color:#cbd5e1">sin datos</span>')+
+      '</div>';
+      html += '</div>';   // fin panel influencers
     } else {
       // VISTA CATALINA · Buzón de pedidos priorizado
       html += '<div style="background:linear-gradient(135deg,#ecfdf5,#dcfce7);border:1px solid #16a34a;border-radius:10px;padding:16px;margin-bottom:14px">'+
@@ -2416,19 +2431,10 @@ async function renderDashHome2(){
       }
     }
 
-    // Gap #4 · widgets Cash Flow + Predicción demanda (solo admin)
+    // Widget Predicción demanda (solo admin) · el Cash Flow proyectado ya vive
+    // en el KPI "Cash 30 días"; las OCs >10d en el KPI "OCs en riesgo".
     if(d.role === 'admin'){
-      html += '<div id="dash-extra-widgets" style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:14px"></div>';
-    }
-
-    // Alertas críticas (ambos roles)
-    if((d.alertas_ocs_viejas||[]).length){
-      html += '<div style="margin-top:14px;background:#fef2f2;border:1px solid #dc2626;border-radius:10px;padding:12px"><b style="color:#991b1b;font-size:13px">🚨 OCs autorizadas hace >10 días sin recibirse</b>';
-      html += '<div style="margin-top:6px;font-size:12px">';
-      d.alertas_ocs_viejas.forEach(function(o){
-        html += '<div style="display:flex;justify-content:space-between;padding:4px 0;border-top:1px solid #fecaca"><span><b>'+_esc(o.numero_oc)+'</b> · '+_esc(o.proveedor)+' <span style="color:#94a3b8">'+_esc((o.fecha||'').substring(0,10))+'</span></span><b>'+fmt(o.monto.toFixed(0))+'</b></div>';
-      });
-      html += '</div></div>';
+      html += '<div id="dash-extra-widgets" style="margin-top:14px"></div>';
     }
 
     cont.innerHTML = html;
@@ -2462,23 +2468,7 @@ async function cargarConsumosElevados(){
 async function cargarWidgetsExtra(){
   var cont = document.getElementById('dash-extra-widgets');
   if(!cont) return;
-  // Cash Flow
-  try{
-    var rc = await fetch('/api/compras/cash-flow');
-    var dc = await rc.json();
-    var p30 = (dc.proyecciones||[]).find(function(x){return x.dias===30;}) || {};
-    var p90 = (dc.proyecciones||[]).find(function(x){return x.dias===90;}) || {};
-    var cashHtml = '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px">'+
-      '<div style="font-weight:800;color:#0f172a;font-size:13px;margin-bottom:8px">💰 Cash Flow proyectado</div>'+
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px">'+
-      '<div style="background:#fef3c7;padding:8px;border-radius:5px"><div style="color:#78350f;font-weight:700">30 días</div><div style="font-size:1.4em;font-weight:800;color:#92400e">'+fmt(((p30.total_salida||0)).toFixed(0))+'</div><div style="color:#92400e;font-size:9px">'+(p30.ocs_por_pagar?p30.ocs_por_pagar.count:0)+' OCs + '+(p30.influencers?p30.influencers.count:0)+' infl.</div></div>'+
-      '<div style="background:#fee2e2;padding:8px;border-radius:5px"><div style="color:#991b1b;font-weight:700">90 días</div><div style="font-size:1.4em;font-weight:800;color:#7f1d1d">'+fmt(((p90.total_salida||0)).toFixed(0))+'</div><div style="color:#7f1d1d;font-size:9px">'+(p90.ocs_por_pagar?p90.ocs_por_pagar.count:0)+' OCs proyectadas</div></div>'+
-      '</div>'+
-      '<div style="margin-top:8px;font-size:11px;color:#475569"><b>Real pagado 30d:</b> '+fmt(((dc.pagado_30d||{}).monto||0).toFixed(0))+' ('+((dc.pagado_30d||{}).count||0)+' pagos)</div>'+
-    '</div>';
-    cont.innerHTML += cashHtml;
-  }catch(_){}
-  // Predicción demanda · top 5 urgentes
+  // Predicción demanda · top 5 urgentes (el Cash Flow proyectado ya está en el KPI)
   try{
     var rp = await fetch('/api/compras/prediccion-demanda');
     var dp = await rp.json();
