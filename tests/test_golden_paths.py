@@ -10748,7 +10748,7 @@ def test_golden_plan_necesidades_agrega_animus_y_b2b(app, db_clean):
         # SHOPIFY-FIX · 22-may-2026 · Bug #6 audit · sub-estados nuevos
         # FIX 23-may-2026 · auditoría · SIN_VENTAS_REAL ahora SÍ se emite
         # (antes solo se prometía en comentario · ver plan.py:1044)
-        assert p['urgencia'] in ('CRITICO','URGENTE','VIGILAR','OK','SIN_VENTAS','SIN_MAPEO','SIN_HISTORIAL','SIN_VENTAS_REAL'), \
+        assert p['urgencia'] in ('CRITICO','URGENTE','VIGILAR','OK','SIN_VENTAS','SIN_MAPEO','SIN_HISTORIAL','SIN_VENTAS_REAL','EXTERNO'), \
             f'BUG: urgencia inválida {p["urgencia"]}'
 
     # Caso 4: nuestro B2B aparece con su pedido

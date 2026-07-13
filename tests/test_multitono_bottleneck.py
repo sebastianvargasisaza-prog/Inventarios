@@ -332,7 +332,7 @@ def test_producto_externo_mutea_y_reversible(app, db_clean):
     sigue programable · reversible."""
     import json as _j
     from .conftest import csrf_headers
-    PROD = "CREMA FACIAL UREA QA"
+    PROD = "PROD MARCADO EXTERNO QA"   # sin 'urea'/'crema'/'hydrapeptide' (no cae al built-in) · prueba la lista explícita
     c = _login_as(app, "sebastian")
     db = sqlite3.connect(os.environ["DB_PATH"])
     db.execute("DELETE FROM formula_headers WHERE producto_nombre=?", (PROD,))
@@ -364,3 +364,21 @@ def test_producto_externo_mutea_y_reversible(app, db_clean):
     assert rq.status_code == 200 and rq.get_json().get("externo") is False, rq.data
     f2 = _fila()
     assert f2 is not None and f2["urgencia"] != "EXTERNO", "reversible: vuelve a su urgencia normal"
+
+
+def test_producto_externo_builtin_crema_urea_y_hydrapeptide(app, db_clean):
+    """Sebastián 12-jul: CREMA UREA (Kelly Guerra) y HYDRAPEPTIDE salen EXTERNO por DEFAULT cuando no tienen
+    ventas DTC, sin setear nada (built-in). Se auto-corrige: si vendieran en Shopify volverían a DTC."""
+    from .conftest import csrf_headers  # noqa
+    c = _login_as(app, "sebastian")
+    db = sqlite3.connect(os.environ["DB_PATH"])
+    for PROD in ("CREMA FACIAL DE UREA QA", "HYDRAPEPTIDE QA"):
+        db.execute("DELETE FROM formula_headers WHERE producto_nombre=?", (PROD,))
+        db.execute("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo, fecha_creacion) VALUES (?, 5, 1, '2025-01-01')", (PROD,))
+    db.commit(); db.close()
+    r = c.get("/api/plan/necesidades")
+    assert r.status_code == 200, r.data
+    prods = next(x for x in r.get_json()["clientes"] if x["cliente_id"] == "ANIMUS_DTC")["productos"]
+    for PROD in ("CREMA FACIAL DE UREA QA", "HYDRAPEPTIDE QA"):
+        f = next((p for p in prods if p["producto_nombre"] == PROD), None)
+        assert f is not None and f["urgencia"] == "EXTERNO", (PROD + " debe salir EXTERNO por default (sin ventas)", f and f["urgencia"])
