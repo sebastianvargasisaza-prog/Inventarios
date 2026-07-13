@@ -300,6 +300,49 @@ def test_patch_sol_item_sincroniza_precio_referencia(app, db_clean):
         _cleanup_mps(['MP-PATCH-PR'])
 
 
+def test_patch_sol_item_escribe_en_precios_mp_historico(app, db_clean):
+    """FIX 13-jul (queja Catalina 'los precios desaparecen'): el prefill/badge de la
+    Bandeja Planta LEE de `precios_mp_historico` (plural, $/kg), pero el guardado solo
+    escribía en `precio_historico_mp` (singular). Ahora el guardado ESCRIBE también en
+    `precios_mp_historico` con precio_kg = precio_unit_g × 1000 → el precio reaparece."""
+    cs = _login(app, 'catalina')
+    conn = sqlite3.connect(os.environ['DB_PATH'])
+    conn.execute("""
+        INSERT OR REPLACE INTO maestro_mps
+          (codigo_mp, nombre_comercial, proveedor, activo, tipo_material, precio_referencia)
+        VALUES (?, ?, ?, 1, 'MP', 0)
+    """, ('MP-PATCH-HIST', 'X-Hist', 'ProvHist'))
+    conn.commit(); conn.close()
+    _seed_sol('TEST-PATCH-HIST', 'Materia Prima',
+              items=[{'codigo_mp': 'MP-PATCH-HIST', 'nombre_mp': 'X-Hist',
+                      'cantidad_g': 500, 'proveedor_sugerido': 'ProvHist',
+                      'precio_unit_g': 0, 'valor_estimado': 0}])
+    conn = sqlite3.connect(os.environ['DB_PATH'])
+    item_id = conn.execute(
+        "SELECT id FROM solicitudes_compra_items WHERE numero=?",
+        ('TEST-PATCH-HIST',)).fetchone()[0]
+    conn.close()
+    try:
+        # 0.03 $/g → debe quedar 30 $/kg en precios_mp_historico
+        r = cs.patch('/api/solicitudes-compra/TEST-PATCH-HIST/items',
+                     json={'items': [{'id': item_id, 'precio_unit_g': 0.03}]},
+                     headers=csrf_headers())
+        assert r.status_code == 200, r.data
+        conn = sqlite3.connect(os.environ['DB_PATH'])
+        row = conn.execute(
+            "SELECT precio_kg FROM precios_mp_historico WHERE codigo_mp=? "
+            "ORDER BY id DESC LIMIT 1", ('MP-PATCH-HIST',)).fetchone()
+        conn.close()
+        assert row is not None, 'no se insertó en precios_mp_historico (la tabla que lee el prefill)'
+        assert abs((row[0] or 0) - 30.0) < 0.01, f'precio_kg esperado 30, got {row[0]}'
+    finally:
+        _cleanup_sols(['TEST-PATCH-HIST'])
+        _cleanup_mps(['MP-PATCH-HIST'])
+        conn = sqlite3.connect(os.environ['DB_PATH'])
+        conn.execute("DELETE FROM precios_mp_historico WHERE codigo_mp=?", ('MP-PATCH-HIST',))
+        conn.commit(); conn.close()
+
+
 # ── /api/compras/limpiar-solicitudes-planta ────────────────────────
 
 

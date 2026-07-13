@@ -9900,6 +9900,24 @@ def update_sol_items(numero):
                 cambios['precios_historicos_insertados'] += 1
             except Exception:
                 pass
+            # FIX 13-jul · Catalina: "pongo precios y desaparecen en otros lados".
+            # El badge/prefill de la Bandeja Planta (sugerir_mp_bulk / sugerir_mp)
+            # LEE de `precios_mp_historico` (plural · precio_kg), pero este endpoint
+            # solo escribía en `precio_historico_mp` (singular · precio_unit_g) → el
+            # precio que Catalina editaba NUNCA reaparecía en el prefill de la próxima
+            # SOL. Escribimos TAMBIÉN en `precios_mp_historico` ($/kg = precio_unit_g×1000)
+            # para que la fuente que se LEE quede sincronizada con lo que se GUARDA.
+            if codigo_mp:
+                try:
+                    _fecha_co = (datetime.now() - timedelta(hours=5)).strftime('%Y-%m-%d %H:%M:%S')
+                    c.execute(
+                        "INSERT INTO precios_mp_historico "
+                        "(codigo_mp, proveedor, precio_kg, fecha, origen, observaciones) "
+                        "VALUES (?, ?, ?, ?, 'sol_editada', ?)",
+                        (codigo_mp, prov_nuevo or '', precio_nuevo * 1000.0, _fecha_co,
+                         'Editado en Bandeja Planta · SOL ' + numero.upper()))
+                except Exception:
+                    pass
             # Sync precio_referencia en maestro_mps (precio en pesos por kg ·
             # precio_unit_g está en pesos/g · multiplicar por 1000)
             if codigo_mp:

@@ -3850,7 +3850,10 @@ function mpLookup(n){
   }
   if(!(namEl.value||'').trim()) namEl.value=mp.nombre_comercial||mp.nombre_inci||cod;
   if((!prcEl.value||parseFloat(prcEl.value)===0)&&mp.precio_referencia&&mp.precio_referencia>0){
-    prcEl.value=parseFloat(mp.precio_referencia).toFixed(4);
+    // FIX 13-jul · maestro_mps.precio_referencia está en $/kg (recepción/edición lo
+    // guardan ×1000) pero este input es $/g (calcTotMP hace g×precio) → ÷1000. Antes
+    // pre-llenaba 1000× el precio real.
+    prcEl.value=(parseFloat(mp.precio_referencia)/1000).toFixed(4);
     calcTotMP();
   }
   var alerta=_ALERTAS_MP.find(function(a){ return a.codigo_mp===mp.codigo_mp; });
@@ -3859,7 +3862,7 @@ function mpLookup(n){
     infEl.textContent='⚠ Stock: '+Math.round(alerta.stock_actual)+'g / Min: '+Math.round(mp.stock_minimo)+'g | Deficit: '+Math.round(alerta.deficit)+'g';
   } else {
     infEl.style.color='#16a34a';
-    infEl.textContent='✓ Stock OK | Min: '+Math.round(mp.stock_minimo||0)+'g'+(mp.precio_referencia?' | Ref: $'+parseFloat(mp.precio_referencia).toFixed(2)+'/g':'');
+    infEl.textContent='✓ Stock OK | Min: '+Math.round(mp.stock_minimo||0)+'g'+(mp.precio_referencia?' | Ref: $'+parseFloat(mp.precio_referencia).toLocaleString('es-CO',{maximumFractionDigits:0})+'/kg':'');
   }
 }
 function calcTotMP(){
@@ -4075,7 +4078,8 @@ function openOCSugerida(){
   var tbody=document.getElementById('sug-tbody');
   tbody.innerHTML=_ALERTAS_MP.map(function(a,i){
     var mp=_MPCAT.find(function(m){ return m.codigo_mp===a.codigo_mp; });
-    var pref=(mp&&mp.precio_referencia>0)?parseFloat(mp.precio_referencia).toFixed(4):'';
+    // FIX 13-jul · precio_referencia en $/kg → input es $/g (subtotal = q×p con q en g) → ÷1000
+    var pref=(mp&&mp.precio_referencia>0)?(parseFloat(mp.precio_referencia)/1000).toFixed(4):'';
     var qty=Math.ceil(a.deficit*1.2/100)*100;
     var provOpts='<option value="">-- Proveedor --</option>';
     if(a.proveedor){ provOpts+='<option value="'+esc(a.proveedor)+'" selected>'+esc(a.proveedor)+'</option>'; }
