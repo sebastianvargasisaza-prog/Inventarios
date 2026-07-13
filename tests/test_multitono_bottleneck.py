@@ -324,3 +324,43 @@ def test_pauta_mono_default_animuslash_sin_setear(app, db_clean):
         "ANIMUSLASH debe usar cobertura agregada por default (renombrado), no el cuello fantasma",
         fila["urgencia"], fila.get("dias_gondola"))
     assert (fila.get("dias_gondola") or 0) > 25, ("cobertura agregada real, no 0", fila.get("dias_gondola"))
+
+
+def test_producto_externo_mutea_y_reversible(app, db_clean):
+    """Sebastián 12-jul: marcar un producto como CLIENTE EXTERNO (Ánimus no lo fabrica para DTC · lo manda
+    Kelly Guerra, ej. CREMA FACIAL UREA) → urgencia EXTERNO (muteado · no cuenta como sin-ventas/crítico) ·
+    sigue programable · reversible."""
+    import json as _j
+    from .conftest import csrf_headers
+    PROD = "CREMA FACIAL UREA QA"
+    c = _login_as(app, "sebastian")
+    db = sqlite3.connect(os.environ["DB_PATH"])
+    db.execute("DELETE FROM formula_headers WHERE producto_nombre=?", (PROD,))
+    row = db.execute("SELECT valor FROM app_settings WHERE clave='productos_externos'").fetchone()
+    if row and row[0]:
+        try:
+            _d = _j.loads(row[0]) or []
+        except Exception:
+            _d = []
+        _d = [x for x in _d if str(x).strip().lower() != PROD.lower()]
+        db.execute("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('productos_externos', ?)", (_j.dumps(_d),))
+    db.execute("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo, fecha_creacion) VALUES (?, 5, 1, '2025-01-01')", (PROD,))
+    db.commit(); db.close()
+
+    def _fila():
+        r = c.get("/api/plan/necesidades")
+        assert r.status_code == 200, r.data
+        return next((p for p in next(x for x in r.get_json()["clientes"] if x["cliente_id"] == "ANIMUS_DTC")["productos"]
+                     if p["producto_nombre"] == PROD), None)
+
+    f0 = _fila()
+    assert f0 is not None, "el producto debe aparecer"
+    assert f0["urgencia"] != "EXTERNO", "aún no marcado"
+    rp = c.post("/api/plan/producto-externo", json={"producto": PROD, "externo": True}, headers=csrf_headers())
+    assert rp.status_code == 200 and rp.get_json().get("externo") is True, rp.data
+    f1 = _fila()
+    assert f1 is not None and f1["urgencia"] == "EXTERNO", ("debe quedar EXTERNO (muteado)", f1 and f1["urgencia"])
+    rq = c.post("/api/plan/producto-externo", json={"producto": PROD, "externo": False}, headers=csrf_headers())
+    assert rq.status_code == 200 and rq.get_json().get("externo") is False, rq.data
+    f2 = _fila()
+    assert f2 is not None and f2["urgencia"] != "EXTERNO", "reversible: vuelve a su urgencia normal"

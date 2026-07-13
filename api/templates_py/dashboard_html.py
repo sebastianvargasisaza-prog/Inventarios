@@ -23073,6 +23073,8 @@ async function ckMarcar(itemId, estado){
     'SIN_MAPEO':       {bg:'#fef3c7', border:'#d97706', text:'#92400e', emoji:'❓'},
     'SIN_HISTORIAL':   {bg:'#e0f2fe', border:'#0284c7', text:'#075985', emoji:'🆕'},
     'SIN_VENTAS_REAL': {bg:'#f3f4f6', border:'#6b7280', text:'#374151', emoji:'⏸️'},
+    // Sebastián 12-jul · CLIENTE EXTERNO (Ánimus no lo fabrica para DTC · ej. CREMA FACIAL UREA de Kelly Guerra) · muteado, programable
+    'EXTERNO':         {bg:'#f5f3ff', border:'#a78bfa', text:'#6b21a8', emoji:'🏷️'},
   };
 
   function escapeHtmlNec(s) {
@@ -25806,9 +25808,10 @@ async function ckMarcar(itemId, estado){
         // plena, se ve "sano". Solo se atenúan los SIN_VENTAS (realmente ignorables). Los rojos cantan por su fondo.
         const _esIgnorable = (p.urgencia === 'SIN_VENTAS' || p.urgencia === 'SIN_VENTAS_REAL');
         const _esVigilar = (p.urgencia === 'VIGILAR');   // Sebastián 12-jul · el ámbar no pintaba borde (caía al else transparente)
-        const _rowBg = _esGrave ? cfg.bg : (_esPorEntrar ? '#ecfeff' : (_esVigilar ? '#fffbeb' : (_esOk ? '#f3fdf7' : '#fff')));
-        const _rowBorderL = _esGrave ? ('4px solid ' + cfg.border) : (_esPorEntrar ? '4px solid #0891b2' : (_esVigilar ? '4px solid #f59e0b' : (_esOk ? '4px solid #4ade80' : '4px solid transparent')));
-        const _rowOpacity = _esIgnorable ? '0.6' : '1';
+        const _esExterno = (p.urgencia === 'EXTERNO');   // cliente externo · muteado pero programable
+        const _rowBg = _esGrave ? cfg.bg : (_esPorEntrar ? '#ecfeff' : (_esVigilar ? '#fffbeb' : (_esExterno ? '#faf9ff' : (_esOk ? '#f3fdf7' : '#fff'))));
+        const _rowBorderL = _esGrave ? ('4px solid ' + cfg.border) : (_esPorEntrar ? '4px solid #0891b2' : (_esVigilar ? '4px solid #f59e0b' : (_esExterno ? '4px solid #c4b5fd' : (_esOk ? '4px solid #4ade80' : '4px solid transparent'))));
+        const _rowOpacity = _esIgnorable ? '0.6' : (_esExterno ? '0.82' : '1');
         // Sebastián 25-may-2026 PM · chip 🎨 si producto tiene ≥2 tonos
         // (caso LIP SERUM 5 tonos · cada tono envase distinto).
         let chipTonos = '';
@@ -25831,7 +25834,8 @@ async function ckMarcar(itemId, estado){
                       : '<span title="Sin cadena de 2 años · programala" style="background:#fee2e2;color:#b91c1c;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:800">🔴 sin plan</span>';
         var _tend = p.tendencia || 0, _tp = Math.round(_tend * 100);   // tendencia 0..0.5 · positiva = ascenso
         var _al, _alc;
-        if(!(p.velocidad_uds_dia > 0.001)){ _al = '🛒 sin ventas mapeadas · revisá el SKU'; _alc = '#94a3b8'; }
+        if(_esExterno){ _al = '🏷️ cliente externo · Ánimus no lo fabrica (opcional · programá si lo piden)'; _alc = '#7c3aed'; }
+        else if(!(p.velocidad_uds_dia > 0.001)){ _al = '🛒 sin ventas mapeadas · revisá el SKU'; _alc = '#94a3b8'; }
         else if(_cadEst === 'sin'){ _al = '🔴 programá la cadena de 2 años'; _alc = '#dc2626'; }
         else if(_cadEst === 'inc'){ _al = '🟠 cadena incompleta · reprogramá'; _alc = '#d97706'; }
         else if(_tend >= 0.08){ _al = '📈 ventas +' + _tp + '% · considerá adelantar'; _alc = '#7c3aed'; }
@@ -26299,6 +26303,8 @@ async function ckMarcar(itemId, estado){
     html += '</div>';
     // 🎨 Desglose por referencia/tono (multi-SKU · 27-jun) · siempre disponible (abre el mix de ventas por SKU).
     html += '<button onclick="verDesgloseTonos(' + JSON.stringify((p.producto_nombre||p.producto||'')).replace(/"/g,'&quot;') + ')" style="background:#fff;border:1px solid #c4b5fd;color:#6d28d9;border-radius:6px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;margin-bottom:10px">🎨 Ver referencias / tonos</button>';
+    // Sebastián 12-jul · marcar como CLIENTE EXTERNO (Ánimus no lo fabrica para DTC · ej. CREMA FACIAL UREA de Kelly Guerra)
+    html += '<button onclick="_toggleExterno(this)" data-prod="' + escapeHtmlNec(p.producto_nombre||p.producto||'') + '" data-ext="' + (p.urgencia === 'EXTERNO' ? '1' : '0') + '" style="background:' + (p.urgencia === 'EXTERNO' ? '#ede9fe' : '#fff') + ';border:1px solid #c4b5fd;color:#6b21b6;border-radius:6px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;margin-bottom:10px;margin-left:6px">' + (p.urgencia === 'EXTERNO' ? '🏷️ Cliente externo ✓ · quitar' : '🏷️ No lo fabrica Ánimus (cliente externo)') + '</button>';
     // Sebastián 10-jul · ELIMINADA la "Acción sugerida · Adelantar producción" (Alejandro no quiere
     // sugerencias · la programación vive solo de la cadencia manual de abajo). La función _accionSugeridaHtml
     // queda en el código por si se reusa, pero NO se renderiza en la ficha.
@@ -26691,6 +26697,22 @@ async function ckMarcar(itemId, estado){
         headers:{'Content-Type':'application/json','X-CSRF-Token':t}, body: JSON.stringify({producto: prod, regla: 'mono'})});
       var d = await r.json();
       if(!r.ok){ btn.disabled=false; btn.textContent='🔗 Es el mismo producto renombrado'; alert('No se pudo: ' + ((d && d.error) || r.status)); return; }
+      if(window.cargarNecesidades){ try{ await cargarNecesidades(); }catch(e){} }
+    }catch(e){ btn.disabled=false; alert('Error: ' + e); }
+  }
+  // Sebastián 12-jul · marcar/desmarcar un producto como CLIENTE EXTERNO (Ánimus no lo fabrica para DTC).
+  async function _toggleExterno(btn){
+    var prod = (btn && btn.getAttribute('data-prod')) || '';
+    if(!prod) return;
+    var nuevo = btn.getAttribute('data-ext') !== '1';
+    if(nuevo && !confirm('Marcar "' + prod + '" como CLIENTE EXTERNO:\\n\\nÁnimus no lo fabrica para DTC (lo manda hacer un cliente, ej. Kelly Guerra). Sale de las necesidades DTC (deja de contar como sin-ventas/crítico) pero SIGUE programable a criterio.\\n\\n¿Continuar?')) return;
+    btn.disabled = true; btn.textContent = 'Aplicando…';
+    try{
+      var t = (await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json()).csrf_token;
+      var r = await fetch('/api/plan/producto-externo', {method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json','X-CSRF-Token':t}, body: JSON.stringify({producto: prod, externo: nuevo})});
+      var d = await r.json();
+      if(!r.ok){ btn.disabled=false; alert('No se pudo: ' + ((d && d.error) || r.status)); return; }
       if(window.cargarNecesidades){ try{ await cargarNecesidades(); }catch(e){} }
     }catch(e){ btn.disabled=false; alert('Error: ' + e); }
   }

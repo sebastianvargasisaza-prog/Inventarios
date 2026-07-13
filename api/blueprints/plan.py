@@ -3108,6 +3108,42 @@ def plan_pauta_multitono():
                             'sola cobertura · productos renombrados) · auto=por volumen (default).'})
 
 
+@bp.route("/api/plan/producto-externo", methods=["GET", "POST"])
+def plan_producto_externo():
+    """Sebastián 12-jul · marca un producto como de CLIENTE EXTERNO (Ánimus NO lo fabrica para DTC · ej.
+    CREMA FACIAL UREA la manda hacer Kelly Guerra). Sale de las necesidades DTC (urgencia EXTERNO, muteado)
+    pero sigue PROGRAMABLE a criterio. POST {producto, externo:true/false}. GET lista los externos."""
+    err = _require_login()
+    if err:
+        return err
+    import json as _j
+    conn = get_db()
+    row = conn.execute("SELECT valor FROM app_settings WHERE clave='productos_externos'").fetchone()
+    try:
+        data = _j.loads(row[0]) if row and row[0] else []
+        if not isinstance(data, list):
+            data = []
+    except Exception:
+        data = []
+    body = request.get_json(silent=True) or {}
+    prod = (request.args.get('producto') or body.get('producto') or '').strip()
+    if request.method == 'POST' and prod:
+        externo = body.get('externo')
+        if externo is None:
+            externo = str(request.args.get('externo', '1')).lower() in ('1', 'true', 'yes', 'si')
+        _cur = {str(x).strip().lower() for x in data}
+        if externo:
+            if prod.strip().lower() not in _cur:
+                data.append(prod)
+        else:
+            data = [x for x in data if str(x).strip().lower() != prod.strip().lower()]
+        conn.execute("INSERT OR REPLACE INTO app_settings (clave, valor) VALUES ('productos_externos', ?)",
+                     (_j.dumps(data),))
+        conn.commit()
+        return jsonify({'ok': True, 'producto': prod, 'externo': bool(externo), 'externos': data})
+    return jsonify({'ok': True, 'externos': data})
+
+
 @bp.route("/api/plan/necesidades", methods=["GET"])
 def plan_necesidades():
     """Agregador de necesidades por cliente · core del Plan v3.
@@ -4286,6 +4322,19 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     # si hay una pauta explícita en la BD para ese producto, esa manda (setdefault no la pisa).
     for _km in ('animuslash',):
         _pauta_override.setdefault(_km, 'mono')
+    # Sebastián 12-jul · productos de CLIENTE EXTERNO (Ánimus NO los fabrica para DTC · ej. CREMA FACIAL
+    # UREA la manda hacer Kelly Guerra). Se muestran MUTEADOS (no cuentan como necesidad/sin-ventas) pero
+    # siguen PROGRAMABLES a criterio. Lista en app_settings.productos_externos (JSON de nombres).
+    _productos_externos = set()
+    try:
+        import json as _jpe
+        _rpe = c.execute("SELECT valor FROM app_settings WHERE clave='productos_externos'").fetchone()
+        if _rpe and _rpe[0]:
+            for _pe in (_jpe.loads(_rpe[0]) or []):
+                _productos_externos.add(str(_pe).strip().lower())
+                _productos_externos.add(_pk_fuerte(_pe))
+    except Exception:
+        _productos_externos = set()
     # PERF (Sebastián 4-jul) · cache request-scope del volumen por (sku, producto): _ml_de_sku llamaba
     # _volumen_sku (2 queries) por CADA sku de CADA producto, sin memoria → ~N×M queries repetidas en el
     # load de Necesidades (lo hacía lento · M43/M59). El volumen es estable dentro del request.
@@ -4520,6 +4569,10 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             urgencia = "VIGILAR"
         else:
             urgencia = "OK"
+        # Sebastián 12-jul · producto de CLIENTE EXTERNO: Ánimus no lo fabrica para DTC → no es una necesidad,
+        # se mutea (no cuenta como crítico/sin-ventas) pero sigue programable. Override final de la urgencia.
+        if (_prod_key_lc in _productos_externos) or (_pk_fuerte(prod_nombre) in _productos_externos):
+            urgencia = "EXTERNO"
 
         # Recomendación: 1 lote completo si urgencia en {CRITICO, URGENTE}
         # Para VIGILAR mostramos "próximo lote en X días" sin urgir
