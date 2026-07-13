@@ -162,71 +162,13 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 <!-- Sebastián 21-may-2026 · 11 tabs → 4 grupos top (como hicimos con
      Programación 8→4). Catalina ya tenía muscular memory · IDs originales
      (data-tab) se mantienen para que las funciones loadX no se rompan. -->
-<!-- Compras MAX · 21-may-2026 · Botón flotante IA Agente + acciones rápidas -->
-<!-- Sebastián 24-may-2026 · botón IA chat movido a bottom-LEFT · antes
-     tapaba el FAB "+ Nueva OC" (ambos en bottom-right). Modal sigue
-     anclado a la izquierda matching el botón. -->
-<button id="cx-ia-btn" onclick="cxAbrirIA()" style="position:fixed;bottom:24px;left:24px;width:54px;height:54px;border-radius:50%;background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;border:none;cursor:pointer;font-size:22px;box-shadow:0 6px 20px rgba(15,118,110,.4);z-index:9999" title="Pregúntale a Compras (IA)">💬</button>
-<div id="cx-ia-modal" style="display:none;position:fixed;bottom:90px;left:24px;width:400px;max-height:600px;background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.25);z-index:9999;flex-direction:column;border:1px solid #cbd5e1">
-  <div style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;padding:12px 16px;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:center">
-    <b style="font-size:14px">💬 Pregúntale a Compras</b>
-    <button onclick="cxCerrarIA()" style="background:none;border:none;color:#fff;font-size:1.3em;cursor:pointer;padding:0 4px">×</button>
-  </div>
-  <div id="cx-ia-hist" style="flex:1;overflow-y:auto;padding:12px;font-size:12px;min-height:200px;max-height:380px"></div>
-  <div style="padding:8px;border-top:1px solid #e2e8f0">
-    <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
-      <button onclick="cxIAPreguntar('¿Qué proveedor me conviene más este mes?')" style="background:#f1f5f9;border:1px solid #cbd5e1;padding:4px 8px;border-radius:5px;font-size:10px;cursor:pointer">Top proveedor</button>
-      <button onclick="cxIAPreguntar('¿Cuánto tengo por pagar?')" style="background:#f1f5f9;border:1px solid #cbd5e1;padding:4px 8px;border-radius:5px;font-size:10px;cursor:pointer">Por pagar</button>
-      <button onclick="cxIAPreguntar('¿Hay alertas urgentes?')" style="background:#f1f5f9;border:1px solid #cbd5e1;padding:4px 8px;border-radius:5px;font-size:10px;cursor:pointer">Alertas</button>
-    </div>
-    <div style="display:flex;gap:6px">
-      <input id="cx-ia-input" type="text" placeholder="¿qué proveedor me conviene?" onkeydown="if(event.key==='Enter')cxIAPreguntar()" style="flex:1;padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px">
-      <button onclick="cxIAPreguntar()" id="cx-ia-send" style="padding:7px 12px;background:#0891b2;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700">Enviar</button>
-    </div>
-  </div>
-</div>
+<!-- Sebastián 13-jul · burbuja flotante "Pregúntale a Compras (IA)" QUITADA a pedido
+     (ocupaba espacio y distraía). El endpoint /api/compras/asistente-ia queda vivo
+     por si se reintroduce. Se conserva SOLO el helper _esc (lo usan las funciones de
+     render de más abajo · quitarlo rompería el escapado). -->
 <script>
-// P0 audit 26-may · helper esc local (este script tag es independiente
-// del que define _esc en línea ~1927 · ámbito JS distinto).
+// helper esc global · usado por renderKpisGrandes/renderDashHome2/etc.
 function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
-function cxAbrirIA(){var m=document.getElementById('cx-ia-modal');if(m){m.style.display='flex';document.getElementById('cx-ia-input').focus();}}
-function cxCerrarIA(){var m=document.getElementById('cx-ia-modal');if(m)m.style.display='none';}
-async function cxIAPreguntar(pregunta){
-  var inp=document.getElementById('cx-ia-input');
-  var hist=document.getElementById('cx-ia-hist');
-  var btn=document.getElementById('cx-ia-send');
-  if(typeof pregunta!=='string') pregunta=(inp.value||'').trim();
-  if(pregunta.length<3) return;
-  if(!document.getElementById('cx-ia-modal').style.display||document.getElementById('cx-ia-modal').style.display==='none') cxAbrirIA();
-  // P0 audit 26-may · escape user input (auto-XSS si pregunta tiene HTML)
-  hist.innerHTML+='<div style="text-align:right;margin-bottom:6px"><span style="background:#0891b2;color:#fff;padding:6px 10px;border-radius:10px;display:inline-block;max-width:85%">'+_esc(pregunta)+'</span></div>';
-  hist.innerHTML+='<div id="cx-ia-pend" style="margin-bottom:6px"><span style="background:#f1f5f9;color:#475569;padding:6px 10px;border-radius:10px;font-style:italic">pensando…</span></div>';
-  hist.scrollTop=hist.scrollHeight;
-  if(inp) inp.value='';
-  btn.disabled=true;
-  // Cap log a 200 turns para evitar memory leak en sesiones largas (anti-patrón documentado feedback_audit_marketing_25may)
-  while(hist.children.length > 200) hist.removeChild(hist.firstChild);
-  try{
-    var r=await fetch('/api/compras/asistente-ia',_fetchOpts('POST',{pregunta:pregunta}));
-    var d=await r.json();
-    var pend=document.getElementById('cx-ia-pend');if(pend) pend.remove();
-    if(!r.ok){
-      // ALTA-6 fix · NO_API_KEY mensaje user-friendly (no exponer detalle interno)
-      var msgErr = (d.codigo === 'NO_API_KEY')
-        ? '⚠ Asistente IA temporalmente no disponible · configurar en Render'
-        : ('⚠ '+(d.error||r.status));
-      hist.innerHTML+='<div style="margin-bottom:6px"><span style="background:#fee2e2;color:#991b1b;padding:6px 10px;border-radius:10px">'+_esc(msgErr)+'</span></div>';
-    } else {
-      // P0 26-may · output del LLM (Claude) ya puede contener HTML/scripts
-      hist.innerHTML+='<div style="margin-bottom:6px"><span style="background:#f0fdfa;color:#134e4a;padding:6px 10px;border-radius:10px;display:inline-block;max-width:90%;white-space:pre-wrap">'+_esc(d.respuesta||'(sin respuesta)')+'</span></div>';
-    }
-    hist.scrollTop=hist.scrollHeight;
-  }catch(e){
-    var p=document.getElementById('cx-ia-pend');if(p) p.remove();
-    hist.innerHTML+='<div style="margin-bottom:6px"><span style="background:#fee2e2;color:#991b1b;padding:6px 10px;border-radius:10px">⚠ red: '+_esc(e.message)+'</span></div>';
-  }
-  btn.disabled=false;
-}
 </script>
 
 <!-- Compras PRO · Sebastián 21-may-2026 · reagrupación 11 sub-tabs → 5 grupos.
@@ -662,32 +604,29 @@ function renderHistorico(){
   </div>
   <div id="subplanta-mp">
   <!-- Alertas MP/envases en déficit (Centro de Programación) · 23-jun: movidas desde Solicitudes — son de PLANTA -->
-  <div id="mp-alert-banner" style="display:none;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-bottom:10px;">
+  <div id="mp-alert-banner" style="display:none;background:linear-gradient(135deg,#fffbeb,#fef3c7);border:1px solid #fcd34d;border-radius:12px;padding:12px 16px;margin-bottom:12px;box-shadow:0 2px 10px rgba(245,158,11,.08);">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
       <span style="font-size:18px;">&#x26A0;&#xFE0F;</span>
-      <div id="mp-alert-text" style="flex:1;font-size:13px;font-weight:600;color:#92400e;"></div>
-      <button class="btn" style="background:#f59e0b;color:#fff;font-size:12px;padding:4px 12px;white-space:nowrap;" onclick="openOCSugerida()">&#x1F4CB; Crear OC Sugerida</button>
+      <div id="mp-alert-text" style="flex:1;font-size:13px;font-weight:700;color:#92400e;"></div>
+      <button style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;font-size:12px;font-weight:700;padding:7px 14px;border:none;border-radius:8px;cursor:pointer;white-space:nowrap;box-shadow:0 2px 8px rgba(217,119,6,.3);" onclick="openOCSugerida()">&#x1F4CB; Crear OC Sugerida</button>
     </div>
-    <div id="mp-alert-list" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;"></div>
+    <div id="mp-alert-list" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;"></div>
   </div>
-  <div id="prog-alert-banner" style="display:none;background:#fde8e8;border:1px solid #dc3545;border-radius:8px;padding:10px 14px;margin-bottom:10px;">
+  <div id="prog-alert-banner" style="display:none;background:linear-gradient(135deg,#fef2f2,#fde8e8);border:1px solid #fca5a5;border-radius:12px;padding:12px 16px;margin-bottom:12px;box-shadow:0 2px 10px rgba(220,53,69,.08);">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
       <span style="font-size:18px;">&#x1F4E1;</span>
       <div style="flex:1;">
-        <div id="prog-alert-text" style="font-size:13px;font-weight:600;color:#7f1d1d;"></div>
+        <div id="prog-alert-text" style="font-size:13px;font-weight:700;color:#7f1d1d;"></div>
         <div style="font-size:11px;color:#991b1b;margin-top:2px;">Centro de Programaci&#xF3;n &mdash; velocidad Shopify + f&#xF3;rmulas + stock MP</div>
       </div>
-      <a href="/planta" style="background:#dc3545;color:#fff;font-size:12px;padding:5px 12px;border-radius:5px;text-decoration:none;white-space:nowrap;font-weight:600;">&#x1F4CA; Ver Programaci&#xF3;n</a>
-      <button onclick="generarOCDesdeCompras(this)" style="background:#7f1d1d;color:#fff;border:none;border-radius:5px;font-size:12px;padding:5px 12px;cursor:pointer;font-weight:600;white-space:nowrap;">&#x1F6D2; Generar OC</button>
+      <a href="/planta" style="background:#fff;color:#dc2626;border:1px solid #fca5a5;font-size:12px;padding:6px 12px;border-radius:8px;text-decoration:none;white-space:nowrap;font-weight:700;">&#x1F4CA; Ver Programaci&#xF3;n</a>
+      <button onclick="generarOCDesdeCompras(this)" style="background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;border:none;border-radius:8px;font-size:12px;padding:7px 14px;cursor:pointer;font-weight:700;white-space:nowrap;box-shadow:0 2px 8px rgba(185,28,28,.3);">&#x1F6D2; Generar OC</button>
     </div>
   </div>
-  <div style="background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:10px 14px;margin-bottom:10px;display:flex;gap:10px;align-items:flex-start;">
-    <span style="font-size:18px;line-height:1;">&#x1F4E1;</span>
-    <div style="flex:1;font-size:12px;color:#713f12;line-height:1.5;">
-      <b>Pedidos de planta agrupados por proveedor.</b> Vienen del Centro de Programación · Materia Prima + Empaque.
-      Editá <b>proveedor / cantidad / valor</b> de cada item · al guardar se sincroniza globalmente con la app
-      (maestro_mps, lead time, precio de referencia).
-    </div>
+  <div style="font-size:11px;color:#94a3b8;margin:2px 2px 12px;line-height:1.5;">
+    Pedidos de planta agrupados por proveedor · vienen del Centro de Programación (Materia Prima + Empaque).
+    Editá <b style="color:#64748b">proveedor / cantidad / valor</b> de cada ítem · al guardar se sincroniza con toda la app
+    (maestro, lead time, precio de referencia).
   </div>
   <div class="bar" style="flex-wrap:wrap;gap:8px;">
     <input type="text" id="q-planta" placeholder="Buscar SOL, proveedor, MP..." oninput="renderPlanta()" style="flex:1;min-width:220px;">
@@ -3801,14 +3740,14 @@ function renderMPAlerts(){
     var prov_str = a.proveedor ? ' · '+a.proveedor : '';
     var china_mark = a.es_china ? '🇨🇳 ' : '';
     return '<span style="background:#fff;border:1px solid '+col+';color:'+col
-      +';border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;" title="Stock: '+stock_str+prov_str+'">'
+      +';border-radius:999px;padding:3px 11px;font-size:11px;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.05);" title="Stock: '+stock_str+prov_str+'">'
       +china_mark+esc(a.nombre.substring(0,28))+' (faltan '+deficit_str+')</span>';
   });
   // Envases (MEE) en déficit · color teal para distinguir de MPs · 18-jun
   var meeChips=(_ALERTAS_MEE||[]).slice(0,8).map(function(m){
     var def_str=Math.round(m.deficit||0).toLocaleString('es-CO')+' u';
     var prov=m.proveedor?' · '+m.proveedor:'';
-    return '<span style="background:#fff;border:1px solid #0f766e;color:#0f766e;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;" title="Envase'+prov+'">📦 '+esc((m.nombre||m.codigo||'').substring(0,28))+' (faltan '+def_str+')</span>';
+    return '<span style="background:#fff;border:1px solid #0f766e;color:#0f766e;border-radius:999px;padding:3px 11px;font-size:11px;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,.05);" title="Envase'+prov+'">📦 '+esc((m.nombre||m.codigo||'').substring(0,28))+' (faltan '+def_str+')</span>';
   });
   list.innerHTML=mpChips.concat(meeChips).join('');
 }
@@ -5473,15 +5412,16 @@ function _plantaCardHTML(g, idx){
   var itemCount = (g.items_consolidados||[]).length;
   var totalGr = 0;
   (g.items_consolidados||[]).forEach(function(it){ totalGr += parseFloat(it.cantidad_g||0); });
-  var hdrColor = (prov === '(sin proveedor)' || prov === '__SIN_PROVEEDOR__') ? '#dc2626' : '#0e7490';
+  var _sinProv = (prov === '(sin proveedor)' || prov === '__SIN_PROVEEDOR__');
+  var hdrColor = _sinProv ? 'linear-gradient(135deg,#dc2626,#ef4444)' : 'linear-gradient(135deg,#0e7490,#0891b2)';
 
   var itemsHTML = (g.items_consolidados||[]).map(function(it){
     return _plantaItemRowHTML(g, it);
   }).join('');
 
-  return '<div class="planta-card" data-prov="'+esc(label)+'" style="background:#fff;border:1px solid #e7e5e4;border-radius:8px;overflow:hidden;">' +
-    '<div style="background:'+hdrColor+';color:#fff;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
-      '<div style="font-weight:700;font-size:14px;flex:1;">&#x1F3ED; '+esc(label)+'</div>' +
+  return '<div class="planta-card" data-prov="'+esc(label)+'" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;box-shadow:0 2px 10px rgba(15,23,42,.06);">' +
+    '<div style="background:'+hdrColor+';color:#fff;padding:11px 16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+      '<div style="font-weight:800;font-size:14px;flex:1;letter-spacing:.01em;">&#x1F3ED; '+esc(label)+'</div>' +
       '<span style="background:rgba(255,255,255,.2);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;">'+solCount+' SOLs</span>' +
       '<span style="background:rgba(255,255,255,.2);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;">'+itemCount+' items</span>' +
       '<span style="background:rgba(255,255,255,.2);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;">'+totalGr.toLocaleString('es-CO',{maximumFractionDigits:0})+' g</span>' +
