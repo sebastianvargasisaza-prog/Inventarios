@@ -526,39 +526,13 @@ window.addEventListener('unhandledrejection', function(ev) {
   <!-- KPIs unificados (catálogo + pagos) -->
   <div id="inf-kpi-bar" style="display:none;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;"></div>
 
-  <!-- 🎯 Mi Semana · KPIs community manager (Jefferson) -->
-  <!-- Sebastián 27-may-2026 PM · "que tenga KPIs" + audit reportó Top engagement + sin actividad + ROI -->
-  <div id="inf-mi-semana" style="display:none;margin-bottom:16px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
-      <div style="font-size:13px;font-weight:800;color:#6d28d9;">🎯 Mi semana · vista community manager</div>
-      <div style="font-size:11px;color:var(--cx-text-mute);">Top performance · alertas · ROI</div>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;">
-      <!-- Top engagement 7d -->
-      <div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-left:3px solid #34d399;border-radius:10px;padding:12px 14px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <div style="font-size:11px;color:#16a34a;text-transform:uppercase;letter-spacing:.4px;font-weight:800;">🚀 Top engagement 7d</div>
-          <div id="mis-top-count" style="font-size:10px;color:var(--cx-text-mute);">—</div>
-        </div>
-        <div id="mis-top-list" style="font-size:12px;color:var(--cx-text-soft);line-height:1.6;">Cargando...</div>
-      </div>
-      <!-- Sin actividad IG > 45d -->
-      <div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-left:3px solid #f59e0b;border-radius:10px;padding:12px 14px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <div style="font-size:11px;color:#f59e0b;text-transform:uppercase;letter-spacing:.4px;font-weight:800;">⚠ Dormidos &gt;45d</div>
-          <div id="mis-dormi-count" style="font-size:10px;color:var(--cx-text-mute);">—</div>
-        </div>
-        <div id="mis-dormi-list" style="font-size:12px;color:var(--cx-text-soft);line-height:1.6;">Cargando...</div>
-      </div>
-      <!-- ROI implícito -->
-      <div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-left:3px solid #a78bfa;border-radius:10px;padding:12px 14px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <div style="font-size:11px;color:#6d28d9;text-transform:uppercase;letter-spacing:.4px;font-weight:800;">💰 Top ROI</div>
-          <div id="mis-roi-count" style="font-size:10px;color:var(--cx-text-mute);">—</div>
-        </div>
-        <div id="mis-roi-list" style="font-size:12px;color:var(--cx-text-soft);line-height:1.6;">Cargando...</div>
-      </div>
-    </div>
+  <!-- Sebastián 13-jul · quitado el bloque "Mi semana · vista community manager"
+       (Top engagement / Dormidos / Top ROI) · sobrecargaba el centro de pagos.
+       Los ids quedan ocultos para que cargarMiSemanaKPIs no truene. -->
+  <div id="inf-mi-semana" style="display:none;">
+    <span id="mis-top-count"></span><span id="mis-top-list"></span>
+    <span id="mis-dormi-count"></span><span id="mis-dormi-list"></span>
+    <span id="mis-roi-count"></span><span id="mis-roi-list"></span>
   </div>
 
   <!-- Bulk pagos · barra de acciones flotante (aparece si hay selección) -->
@@ -1097,7 +1071,7 @@ window.addEventListener('unhandledrejection', function(ev) {
       </div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Email</label><input type="email" id="inf-email" placeholder="correo@ejemplo.com"></div>
+      <div class="form-group"><label>Email <span style="color:#dc2626;">*</span> <span style="font-weight:400;color:var(--cx-text-mute);font-size:11px;">· para enviarle la factura cuando se le pague</span></label><input type="email" id="inf-email" placeholder="correo@ejemplo.com"></div>
       <div class="form-group"><label>Teléfono</label><input id="inf-tel" placeholder="+57..."></div>
     </div>
     <div class="form-row full">
@@ -2785,9 +2759,9 @@ async function loadInfluencers() {
       {label:'Pagado 2025', val: fmtM(kpis.pagado_anio||0), color:'#818cf8'},
       {label:'Pagado este mes', val: fmtM(kpis.pagado_mes||0), color:'#60a5fa'},
       {label:'Pendiente pago', val: fmtM(kpis.total_pendiente||0), color:'#f59e0b'},
-    ].map(k=>`<div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:10px;padding:12px 16px;">`
-      +`<div style="font-size:20px;font-weight:800;color:${k.color};">${k.val}</div>`
-      +`<div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px;">${k.label}</div>`
+    ].map(k=>`<div style="background:var(--cx-card,#fff);border:1px solid #eef0f2;border-top:3px solid ${k.color};border-radius:14px;padding:16px 18px;box-shadow:0 2px 12px rgba(15,23,42,.05);transition:transform .1s,box-shadow .15s;" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 20px rgba(15,23,42,.09)'" onmouseout="this.style.transform='';this.style.boxShadow='0 2px 12px rgba(15,23,42,.05)'">`
+      +`<div style="font-size:24px;font-weight:800;color:${k.color};line-height:1;letter-spacing:-.01em;">${k.val}</div>`
+      +`<div style="font-size:11px;color:var(--cx-text-mute);margin-top:5px;font-weight:600;">${k.label}</div>`
       +'</div>').join('');
   }
   const banner = document.getElementById('inf-pendientes-banner');
@@ -2813,7 +2787,7 @@ async function loadInfluencers() {
   ]);
   renderInfluencersTable();
   bulkLimpiarSeleccionInf();  // limpiar selección al recargar
-  cargarMiSemanaKPIs();        // 🎯 Mi semana KPIs community manager
+  // cargarMiSemanaKPIs();  // Sebastián 13-jul · bloque "Mi semana" quitado (clutter)
 }
 
 // Mapa influencer_id → urgencia más severa de sus pagos pendientes
@@ -3243,6 +3217,8 @@ async function saveInfluencer() {
     ciclo_pago: (document.getElementById('inf-ciclo-pago')||{value:'Mensual'}).value
   };
   if(!body.nombre) { showAlert('inf-alert','El nombre es obligatorio','error'); return; }
+  // Sebastián 13-jul · correo OBLIGATORIO: sin él no le llega la factura al pagarle.
+  if(!body.email || body.email.indexOf('@')<0) { showAlert('inf-alert','El correo es obligatorio (para enviarle la factura cuando se le pague)','error'); return; }
   const url = id ? `/api/marketing/influencers/${id}` : '/api/marketing/influencers';
   const method = id?'PUT':'POST';
   const resp = await fetch(url,{method, headers:_csrfHdr(), credentials:'same-origin', body:JSON.stringify(body)});
