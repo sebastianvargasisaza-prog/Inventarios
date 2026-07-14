@@ -661,14 +661,14 @@ function showSubPlanta(w){
   <div class="bar" style="flex-wrap:wrap;gap:8px;">
     <div>
       <span style="font-weight:700;color:#1e293b;font-size:15px;">&#x1F4E6; Órdenes de compra activas · agrupadas por proveedor</span>
-      <div style="font-size:11px;color:#64748b;margin-top:2px">OCs ya creadas (Borrador / Revisada / Autorizada) · NO la cola de SOLs pendientes (esa va en tab "🏭 Planta")</div>
+      <div style="font-size:11px;color:#64748b;margin-top:2px">OCs <b>por autorizar</b> (Borrador / Revisada) · las autorizadas listas para pagar están en <b>💰 Por Pagar</b> · las SOLs pendientes en <b>🏭 Planta</b></div>
     </div>
     <button class="btn bp" onclick="openNuevaOC('')" style="background:#16a34a;color:#fff;font-weight:800;padding:8px 18px;font-size:14px;border:none;border-radius:7px;cursor:pointer" title="Crear una orden de compra de CUALQUIER cosa · elegí la categoría (MP, empaque, servicios, EPP, papelería…) + ítems · autorizar al crear va directo a Por Pagar">&#10133; Crear OC</button>
     <div style="display:flex;gap:8px;margin-left:auto;align-items:center;flex-wrap:wrap;">
       <label style="font-size:12px;color:#64748b;">Estados:</label>
       <label style="font-size:12px;"><input type="checkbox" class="consol-est" value="Borrador" checked> Borrador</label>
       <label style="font-size:12px;"><input type="checkbox" class="consol-est" value="Revisada" checked> Revisada</label>
-      <label style="font-size:12px;"><input type="checkbox" class="consol-est" value="Autorizada" checked> Autorizada</label>
+      <label style="font-size:12px;" title="Las autorizadas listas para pagar están en la pestaña 💰 Por Pagar; las de mercancía esperan Recepción. Marcá esto solo si querés verlas acá también."><input type="checkbox" class="consol-est" value="Autorizada"> Autorizada</label>
       <button class="btn bp" onclick="loadConsolidado()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
       <button class="btn" onclick="imprimirTodas()" style="padding:6px 14px;font-size:12px;background:#0f766e;color:#fff;border:none;border-radius:5px;font-weight:700;cursor:pointer;" title="Imprime TODAS las órdenes juntas (cada proveedor en su propia hoja) en un solo documento">&#x1F5A8; Imprimir todas</button>
       <!-- Sebastián 24-may-2026 · link directo al módulo /recepcion · bodega
