@@ -5464,12 +5464,36 @@ function _plantaItemRowHTML(g, it){
       })() +
     '</td>' +
     '<td style="padding:6px;text-align:right;font-size:11px;color:#64748b;font-weight:600;" title="'+esc(refs.map(function(r){return r.numero;}).join(', '))+'">'+esc(sigla)+'</td>' +
-    '<td style="padding:6px;text-align:right;">' +
-      (refsCount > 0 ? '<button class="btn" onclick="plantaGuardarItem(this)" style="padding:4px 10px;font-size:11px;background:#16a34a;color:#fff;" title="'+(refsCount > 1 ? 'Guarda los '+refsCount+' items relacionados' : 'Guardar')+'">&#x1F4BE; Guardar'+(refsCount > 1 ? ' ('+refsCount+')' : '')+'</button>' :
+    '<td style="padding:6px;text-align:right;white-space:nowrap;">' +
+      (refsCount > 0 ? '<button class="btn" onclick="plantaGuardarItem(this)" style="padding:4px 10px;font-size:11px;background:#16a34a;color:#fff;" title="'+(refsCount > 1 ? 'Guarda los '+refsCount+' items relacionados' : 'Guardar')+'">&#x1F4BE; Guardar'+(refsCount > 1 ? ' ('+refsCount+')' : '')+'</button>'
+        + ' <button class="btn" onclick="plantaEliminarItem(this)" style="padding:4px 8px;font-size:11px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;" title="Quitar SOLO esta MP del pedido (no borra el resto de la orden)">&#x1F5D1;</button>' :
              '<span style="font-size:10px;color:#94a3b8;">—</span>') +
     '</td>' +
   '</tr>';
 }
+window.plantaEliminarItem = async function(btn){
+  if(btn._busy) return;
+  var tr = btn.closest('tr'); if(!tr) return;
+  var refs = [];
+  try{ refs = JSON.parse(decodeURIComponent(tr.getAttribute('data-refs')||'[]')); }catch(e){}
+  refs = refs.filter(function(r){ return r && r.item_id!=null; });
+  var nombre = (tr.getAttribute('data-codigo-mp')||'');
+  var nomEl = tr.querySelector('td div'); if(nomEl && nomEl.textContent) nombre = nomEl.textContent.trim();
+  if(!refs.length){ alert('No se pudo identificar el ítem a quitar.'); return; }
+  if(!confirm('¿Quitar "'+nombre+'" del pedido? Solo se quita esta MP · el resto de la orden queda intacto.')) return;
+  btn._busy = true; btn.disabled = true;
+  var okc = 0, errMsg = '';
+  for(var i=0;i<refs.length;i++){
+    try{
+      var r = await fetch('/api/solicitudes-compra/'+encodeURIComponent(refs[i].numero)+'/items/'+refs[i].item_id, _fetchOpts('DELETE'));
+      var d = await r.json();
+      if(r.ok) okc++; else errMsg = (d && d.error) || ('HTTP '+r.status);
+    }catch(e){ errMsg = e.message; }
+  }
+  btn._busy = false;
+  if(okc>0){ tr.remove(); if(typeof loadPlanta==='function') loadPlanta(true); }
+  else { btn.disabled = false; alert('No se pudo quitar: '+errMsg); }
+};
 
 window.plantaGuardarItem = async function(btn){
   var tr = btn.closest('tr');

@@ -551,3 +551,58 @@ def test_oc_desde_solicitudes_usa_precio_referencia_fallback(app, db_clean):
     finally:
         _cleanup_sols(['TEST-FB-OC'])
         _cleanup_mps(['MP-FB-OC'])
+
+
+# ── Quitar UN ítem de una SOL sin borrar el resto (Sebastián 14-jul) ──
+def test_eliminar_sol_item_deja_el_resto(app, db_clean):
+    cs = _login(app, 'catalina')
+    _seed_sol('TEST-DEL-ITEM', 'Materia Prima', items=[
+        {'codigo_mp': 'MPA', 'nombre_mp': 'Ácido X', 'cantidad_g': 100},
+        {'codigo_mp': 'MPB', 'nombre_mp': 'Base Y', 'cantidad_g': 200},
+    ])
+    conn = sqlite3.connect(os.environ['DB_PATH'])
+    ids = {r[1]: r[0] for r in conn.execute(
+        "SELECT id, codigo_mp FROM solicitudes_compra_items WHERE numero=?", ('TEST-DEL-ITEM',)).fetchall()}
+    conn.close()
+    try:
+        # quitar solo MPA
+        r = cs.delete('/api/solicitudes-compra/TEST-DEL-ITEM/items/%d' % ids['MPA'],
+                      headers=csrf_headers())
+        assert r.status_code == 200, r.data
+        d = r.get_json()
+        assert d['sol_borrada'] is False
+        assert d['items_restantes'] == 1
+        conn = sqlite3.connect(os.environ['DB_PATH'])
+        quedan = [x[0] for x in conn.execute(
+            "SELECT codigo_mp FROM solicitudes_compra_items WHERE numero=?", ('TEST-DEL-ITEM',)).fetchall()]
+        sol = conn.execute("SELECT 1 FROM solicitudes_compra WHERE numero=?", ('TEST-DEL-ITEM',)).fetchone()
+        conn.close()
+        assert quedan == ['MPB'], quedan
+        assert sol is not None, 'la SOL no debe borrarse si quedan ítems'
+        # quitar el último → borra la SOL
+        r2 = cs.delete('/api/solicitudes-compra/TEST-DEL-ITEM/items/%d' % ids['MPB'],
+                       headers=csrf_headers())
+        assert r2.status_code == 200, r2.data
+        assert r2.get_json()['sol_borrada'] is True
+        conn = sqlite3.connect(os.environ['DB_PATH'])
+        sol2 = conn.execute("SELECT 1 FROM solicitudes_compra WHERE numero=?", ('TEST-DEL-ITEM',)).fetchone()
+        conn.close()
+        assert sol2 is None, 'la SOL vacía debe borrarse'
+    finally:
+        _cleanup_sols(['TEST-DEL-ITEM'])
+
+
+def test_eliminar_sol_item_bloquea_si_ya_tiene_oc(app, db_clean):
+    cs = _login(app, 'catalina')
+    _seed_sol('TEST-DEL-OC', 'Materia Prima', numero_oc='OC-2026-9999', items=[
+        {'codigo_mp': 'MPZ', 'nombre_mp': 'Z', 'cantidad_g': 50},
+    ])
+    conn = sqlite3.connect(os.environ['DB_PATH'])
+    iid = conn.execute("SELECT id FROM solicitudes_compra_items WHERE numero=?",
+                       ('TEST-DEL-OC',)).fetchone()[0]
+    conn.close()
+    try:
+        r = cs.delete('/api/solicitudes-compra/TEST-DEL-OC/items/%d' % iid, headers=csrf_headers())
+        assert r.status_code == 409, r.data
+    finally:
+        _cleanup_sols(['TEST-DEL-OC'])

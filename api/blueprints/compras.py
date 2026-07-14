@@ -10090,6 +10090,44 @@ def update_sol_observaciones(numero):
     return jsonify({'ok': True, 'numero': numero.upper()})
 
 
+# ─── Quitar UN ítem (MP) de una SOL · sin borrar el resto (Sebastián 14-jul) ──
+@bp.route('/api/solicitudes-compra/<numero>/items/<int:item_id>', methods=['DELETE'])
+def eliminar_sol_item(numero, item_id):
+    """Quita SOLO ese ítem de la SOL (algo no va pero el resto sí). Si la SOL
+    queda sin ítems, se borra también (no dejar SOL fantasma). Bloquea si la SOL
+    ya tiene OC creada."""
+    usuario, err, code = _require_compras_write()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    num = (numero or '').strip().upper()
+    row = c.execute(
+        "SELECT codigo_mp, nombre_mp, numero FROM solicitudes_compra_items WHERE id=?",
+        (item_id,)).fetchone()
+    if not row:
+        return jsonify({'error': 'Ítem no encontrado'}), 404
+    sol_num = (row[2] or num)
+    oc = c.execute("SELECT COALESCE(numero_oc,'') FROM solicitudes_compra WHERE UPPER(numero)=?",
+                   (sol_num.upper(),)).fetchone()
+    if oc and (oc[0] or '').strip():
+        return jsonify({'error': f'La solicitud {sol_num} ya tiene OC ({oc[0]}) · no se pueden quitar ítems'}), 409
+    c.execute("DELETE FROM solicitudes_compra_items WHERE id=?", (item_id,))
+    audit_log(c, usuario=usuario, accion='ELIMINAR_SOL_ITEM', tabla='solicitudes_compra_items',
+              registro_id=str(item_id), antes=str(row[1] or row[0] or ''), detalle=f'SOL {sol_num}')
+    resto = c.execute("SELECT COUNT(*) FROM solicitudes_compra_items WHERE UPPER(numero)=?",
+                      (sol_num.upper(),)).fetchone()[0]
+    sol_borrada = False
+    if resto == 0:
+        c.execute("DELETE FROM solicitudes_compra WHERE UPPER(numero)=?", (sol_num.upper(),))
+        audit_log(c, usuario=usuario, accion='ELIMINAR_SOLICITUD_VACIA', tabla='solicitudes_compra',
+                  registro_id=sol_num, detalle='sin ítems tras quitar el último')
+        sol_borrada = True
+    conn.commit()
+    _bump_agrupadas()  # invalida cache de la bandeja
+    return jsonify({'ok': True, 'sol_borrada': sol_borrada, 'items_restantes': resto,
+                    'quitado': row[1] or row[0]})
+
+
 # ─── Edicion de items de SOL: cantidad/proveedor/precio (req. Catalina 2026) ──
 
 @bp.route('/api/solicitudes-compra/<numero>/items', methods=['PATCH'])
