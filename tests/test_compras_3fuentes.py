@@ -606,3 +606,72 @@ def test_eliminar_sol_item_bloquea_si_ya_tiene_oc(app, db_clean):
         assert r.status_code == 409, r.data
     finally:
         _cleanup_sols(['TEST-DEL-OC'])
+
+
+# ── Cambiar proveedor de OC + fusión automática (Sebastián 14-jul) ──
+def _seed_oc(numero_oc, proveedor, estado='Borrador', categoria='MP', items=None):
+    conn = sqlite3.connect(os.environ['DB_PATH'])
+    conn.execute(
+        "INSERT OR REPLACE INTO ordenes_compra (numero_oc, fecha, estado, proveedor, categoria, valor_total, con_iva, valor_sin_iva) "
+        "VALUES (?, date('now'), ?, ?, ?, 0, 0, 0)", (numero_oc, estado, proveedor, categoria))
+    for it in (items or []):
+        sub = it.get('cantidad_g', 1) * it.get('precio_unitario', 0)
+        conn.execute(
+            "INSERT INTO ordenes_compra_items (numero_oc, codigo_mp, nombre_mp, cantidad_g, precio_unitario, subtotal) VALUES (?,?,?,?,?,?)",
+            (numero_oc, it.get('codigo_mp', ''), it.get('nombre_mp', ''), it.get('cantidad_g', 1), it.get('precio_unitario', 0), sub))
+    conn.commit(); conn.close()
+
+
+def _cleanup_oc(nums):
+    conn = sqlite3.connect(os.environ['DB_PATH'])
+    ph = ','.join(['?'] * len(nums))
+    conn.execute(f"DELETE FROM ordenes_compra_items WHERE numero_oc IN ({ph})", nums)
+    conn.execute(f"DELETE FROM ordenes_compra WHERE numero_oc IN ({ph})", nums)
+    conn.commit(); conn.close()
+
+
+def test_cambiar_proveedor_fusiona_en_oc_existente(app, db_clean):
+    cs = _login(app, 'catalina')
+    _seed_oc('OC-T-AAA', 'PROV-ALFA', items=[{'codigo_mp': 'M1', 'nombre_mp': 'Uno', 'cantidad_g': 10, 'precio_unitario': 5}])
+    _seed_oc('OC-T-BBB', 'PROV-BETA', items=[{'codigo_mp': 'M2', 'nombre_mp': 'Dos', 'cantidad_g': 20, 'precio_unitario': 3}])
+    try:
+        r = cs.post('/api/ordenes-compra/OC-T-AAA/cambiar-proveedor',
+                    json={'proveedor': 'PROV-BETA'}, headers=csrf_headers())
+        assert r.status_code == 200, r.data
+        d = r.get_json()
+        assert d.get('merged_into') == 'OC-T-BBB', d
+        conn = sqlite3.connect(os.environ['DB_PATH'])
+        aaa = conn.execute("SELECT 1 FROM ordenes_compra WHERE numero_oc='OC-T-AAA'").fetchone()
+        n_items = conn.execute("SELECT COUNT(*) FROM ordenes_compra_items WHERE numero_oc='OC-T-BBB'").fetchone()[0]
+        conn.close()
+        assert aaa is None, 'la OC origen debe borrarse tras fusionar'
+        assert n_items == 2, f'los ítems deben moverse al destino, got {n_items}'
+    finally:
+        _cleanup_oc(['OC-T-AAA', 'OC-T-BBB'])
+
+
+def test_cambiar_proveedor_sin_destino_solo_renombra(app, db_clean):
+    cs = _login(app, 'catalina')
+    _seed_oc('OC-T-CCC', 'PROV-GAMA', items=[{'codigo_mp': 'M3', 'nombre_mp': 'Tres', 'cantidad_g': 5, 'precio_unitario': 2}])
+    try:
+        r = cs.post('/api/ordenes-compra/OC-T-CCC/cambiar-proveedor',
+                    json={'proveedor': 'PROV-NUEVO-UNICO'}, headers=csrf_headers())
+        assert r.status_code == 200, r.data
+        assert not r.get_json().get('merged_into')
+        conn = sqlite3.connect(os.environ['DB_PATH'])
+        prov = conn.execute("SELECT proveedor FROM ordenes_compra WHERE numero_oc='OC-T-CCC'").fetchone()[0]
+        conn.close()
+        assert prov == 'PROV-NUEVO-UNICO'
+    finally:
+        _cleanup_oc(['OC-T-CCC'])
+
+
+def test_cambiar_proveedor_bloquea_si_autorizada(app, db_clean):
+    cs = _login(app, 'catalina')
+    _seed_oc('OC-T-DDD', 'PROV-DELTA', estado='Autorizada', items=[{'codigo_mp': 'M4', 'nombre_mp': 'X', 'cantidad_g': 1, 'precio_unitario': 1}])
+    try:
+        r = cs.post('/api/ordenes-compra/OC-T-DDD/cambiar-proveedor',
+                    json={'proveedor': 'OTRO'}, headers=csrf_headers())
+        assert r.status_code == 409, r.data
+    finally:
+        _cleanup_oc(['OC-T-DDD'])

@@ -7617,6 +7617,10 @@ async function loadConsolidado(){
     var r = await fetch('/api/compras/consolidado-proveedor?'+qs);
     var d = await r.json();
     _consolCache = d.proveedores || [];
+    // datalist de proveedores existentes (para cambiar/fusionar en modo edición)
+    var _dl=document.getElementById('consol-prov-dl');
+    if(!_dl){ _dl=document.createElement('datalist'); _dl.id='consol-prov-dl'; document.body.appendChild(_dl); }
+    _dl.innerHTML=_consolCache.map(function(pp){ return '<option value="'+esc(pp.proveedor||'')+'">'; }).join('');
     if(!_consolCache.length){
       body.innerHTML = '<div style="color:#4ade80;text-align:center;padding:40px;">&#x2705; No hay OCs pendientes.</div>';
       return;
@@ -7861,8 +7865,10 @@ function renderConsolCardEdit(p, idx){
     +'<div style="background:#faf5ff;padding:14px 18px;display:flex;align-items:flex-start;gap:12px;border-bottom:1px solid #e9d5ff;">'
       +'<span style="font-size:22px;margin-top:2px;">&#x270F;&#xFE0F;</span>'
       +'<div style="flex:1;min-width:0;">'
-        +'<div style="font-weight:700;font-size:16px;color:#5b21b6;">'+escConH(p.proveedor)+' <span style="font-size:12px;color:#7c3aed;font-weight:500;">— Modo edición</span></div>'
-        +'<div style="font-size:11px;color:#7c3aed;margin-top:2px;">Edita cantidades, precios, IVA y observaciones. Click "Guardar" para persistir.</div>'
+        +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+          +'<input id="consol-edit-prov-'+idx+'" value="'+escConH(p.proveedor||'')+'" list="consol-prov-dl" placeholder="Proveedor" style="font-weight:800;font-size:15px;color:#5b21b6;border:1px solid #ddd6fe;border-radius:8px;padding:5px 10px;min-width:250px;background:#fff;" title="Cambiá el proveedor · si el nuevo ya tiene una orden activa, esta se fusiona automáticamente con ella">'
+          +'<span style="font-size:12px;color:#7c3aed;font-weight:500;">— Modo edición</span></div>'
+        +'<div style="font-size:11px;color:#7c3aed;margin-top:3px;">Edita proveedor, cantidades, precios, IVA y observaciones. Si cambiás a un proveedor que ya tiene orden, se juntan.</div>'
       +'</div>'
       +'<div style="display:flex;gap:8px;flex-shrink:0;">'
         +'<button class="btn" data-prov-idx="'+idx+'" onclick="saveConsolEdits(parseInt(this.dataset.provIdx))" '
@@ -7877,14 +7883,12 @@ function renderConsolCardEdit(p, idx){
 
 function toggleConsolEdit(idx){
   _consolEditMode[idx] = !_consolEditMode[idx];
-  var body = document.getElementById('consol-body');
-  body.innerHTML = _consolCache.map(function(p, i){ return renderConsolCard(p, i); }).join('');
+  renderConsolBody();
 }
 
 function cancelConsolEdit(idx){
   _consolEditMode[idx] = false;
-  var body = document.getElementById('consol-body');
-  body.innerHTML = _consolCache.map(function(p, i){ return renderConsolCard(p, i); }).join('');
+  renderConsolBody();
 }
 
 // Recalcula el total de UNA OC en modo edit cuando cambian inputs.
@@ -7965,10 +7969,26 @@ async function saveConsolEdits(idx){
     }
   }
 
+  // 3) Cambio de proveedor (+ fusión si el nuevo ya tiene orden) · Sebastián 14-jul
+  var provInput = document.getElementById('consol-edit-prov-'+idx);
+  var newProv = provInput ? (provInput.value||'').trim() : '';
+  var mergedInfo = '';
+  if(newProv && newProv.toUpperCase() !== ((p.proveedor||'').trim().toUpperCase())){
+    for(var pi=0; pi<ocBoxes.length; pi++){
+      var pOcNum = ocBoxes[pi].dataset.ocNum;
+      try{
+        var rp = await fetch('/api/ordenes-compra/'+encodeURIComponent(pOcNum)+'/cambiar-proveedor', _fetchOpts('POST', {proveedor:newProv}));
+        var dp = await rp.json().catch(function(){return{};});
+        if(!rp.ok){ errors.push(pOcNum+' proveedor: '+(dp.error||rp.status)); }
+        else if(dp.merged_into){ mergedInfo = '🔗 Se juntó con la orden '+dp.merged_into+' (mismo proveedor).'; }
+      }catch(e){ errors.push(pOcNum+' proveedor: '+e.message); }
+    }
+  }
+
   if(errors.length){
     alert('Errores al guardar: '+errors.join(' | '));
   } else {
-    alert('Cambios guardados correctamente.');
+    alert('Cambios guardados correctamente.'+(mergedInfo?('\\n\\n'+mergedInfo):''));
   }
   _consolEditMode[idx] = false;
   loadConsolidado();

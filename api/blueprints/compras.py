@@ -1472,6 +1472,72 @@ def editar_oc(numero_oc):
     return jsonify({'error': f'Estado {estado} no soportado para edicion'}), 400
 
 
+@bp.route('/api/ordenes-compra/<numero_oc>/cambiar-proveedor', methods=['POST'])
+def cambiar_proveedor_oc(numero_oc):
+    """Cambia el proveedor de una OC editable (Borrador/Revisada). Si el nuevo
+    proveedor YA tiene una OC activa editable (misma categoría), FUSIONA: mueve
+    los ítems + re-vincula las SOLs a esa OC, recomputa su total (respeta su IVA)
+    y borra esta OC → siempre queda UNA orden por proveedor (Sebastián 14-jul)."""
+    usuario, err, code = _require_compras_write()
+    if err:
+        return err, code
+    d = request.get_json(silent=True) or {}
+    nuevo = (d.get('proveedor') or '').strip()
+    if not nuevo:
+        return jsonify({'error': 'Proveedor requerido'}), 400
+    conn = get_db(); c = conn.cursor()
+    row = c.execute(
+        "SELECT estado, COALESCE(proveedor,''), COALESCE(categoria,'') "
+        "FROM ordenes_compra WHERE numero_oc=?", (numero_oc,)).fetchone()
+    if not row:
+        return jsonify({'error': 'OC no encontrada'}), 404
+    estado, actual, categoria = row[0], row[1], row[2]
+    if estado not in ('Borrador', 'Revisada'):
+        return jsonify({'error': f'Solo se cambia el proveedor en Borrador/Revisada (esta está {estado})'}), 409
+    if actual.strip().upper() == nuevo.upper():
+        return jsonify({'ok': True, 'sin_cambio': True})
+    # ¿el nuevo proveedor ya tiene una OC activa editable (misma categoría)?
+    dest = c.execute(
+        "SELECT numero_oc, COALESCE(con_iva,0) FROM ordenes_compra "
+        "WHERE UPPER(TRIM(proveedor))=UPPER(TRIM(?)) AND estado IN ('Borrador','Revisada') "
+        "AND numero_oc<>? AND COALESCE(categoria,'')=COALESCE(?,'') "
+        "ORDER BY fecha DESC, numero_oc DESC LIMIT 1",
+        (nuevo, numero_oc, categoria)).fetchone()
+    if dest:
+        dest_oc = dest[0]; dest_civ = int(dest[1] or 0)
+        c.execute("UPDATE ordenes_compra_items SET numero_oc=? WHERE numero_oc=?", (dest_oc, numero_oc))
+        c.execute("UPDATE solicitudes_compra SET numero_oc=? WHERE numero_oc=?", (dest_oc, numero_oc))
+        sub = c.execute("SELECT COALESCE(SUM(subtotal),0) FROM ordenes_compra_items WHERE numero_oc=?",
+                        (dest_oc,)).fetchone()[0] or 0.0
+        total = round(sub * 1.19, 2) if dest_civ else round(sub, 2)
+        c.execute("UPDATE ordenes_compra SET valor_total=?, valor_sin_iva=? WHERE numero_oc=?",
+                  (total, round(sub, 2), dest_oc))
+        audit_log(c, usuario=usuario, accion='FUSIONAR_OC_POR_PROVEEDOR', tabla='ordenes_compra',
+                  registro_id=numero_oc, antes=actual, despues=nuevo, detalle=f'ítems movidos a {dest_oc}')
+        c.execute("DELETE FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
+        conn.commit()
+        _bump_agrupadas()
+        return jsonify({'ok': True, 'merged_into': dest_oc, 'proveedor': nuevo})
+    # No hay destino → solo cambiar el nombre del proveedor (+ auto-crear proveedor best-effort)
+    try:
+        ex = c.execute(
+            "SELECT id, COALESCE(activo,0) FROM proveedores WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?)) "
+            "ORDER BY activo DESC LIMIT 1", (nuevo,)).fetchone()
+        if not ex:
+            c.execute("INSERT INTO proveedores (nombre, categoria, condiciones_pago, activo, fecha_creacion) "
+                      "VALUES (?,?,?,1,?)", (nuevo, categoria or 'MP', '30 dias', datetime.now().isoformat()))
+        elif not ex[1]:
+            c.execute("UPDATE proveedores SET activo=1 WHERE id=?", (ex[0],))
+    except Exception as _e:
+        log.warning('auto-crear proveedor (cambiar-proveedor) falló: %s', _e)
+    c.execute("UPDATE ordenes_compra SET proveedor=? WHERE numero_oc=?", (nuevo, numero_oc))
+    audit_log(c, usuario=usuario, accion='CAMBIAR_PROVEEDOR_OC', tabla='ordenes_compra',
+              registro_id=numero_oc, antes=actual, despues=nuevo)
+    conn.commit()
+    _bump_agrupadas()
+    return jsonify({'ok': True, 'proveedor': nuevo})
+
+
 @bp.route('/api/ordenes-compra/<numero_oc>/items', methods=['POST'])
 def agregar_item_oc(numero_oc):
     """Agrega un item a una OC existente sin tener que recrearla.
