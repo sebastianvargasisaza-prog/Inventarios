@@ -6550,24 +6550,28 @@ async function abrirCrearOCDesdeGrupo(gi){
   var rowsHtml = (g.items_consolidados||[]).map(function(it){
     var cant = parseFloat(it.cantidad_g||0);
     var val = parseFloat(it.valor_estimado||0);
-    var pu = cant > 0 ? (val / cant) : 0;
+    var puG = cant > 0 ? (val / cant) : 0;   // $/g
+    var puKg = puG * 1000;                     // $/kg (unidad natural de MP · como la bandeja)
     totalOC += val;
     var h = hist[it.codigo_mp];
+    var promKg = (h && h.precio_promedio_90d > 0) ? h.precio_promedio_90d : 0;  // $/kg
     var deltaCell = '<span style="color:#cbd5e1">—</span>';
-    if(h && h.precio_promedio_90d > 0 && pu > 0){
-      var delta = ((pu - h.precio_promedio_90d) / h.precio_promedio_90d) * 100;
+    if(promKg > 0 && puKg > 0){
+      var delta = ((puKg - promKg) / promKg) * 100;   // FIX 13-jul · ambos en $/kg (antes $/g vs $/kg → delta ×1000)
       var color = delta > 15 ? '#dc2626' : (delta > 5 ? '#ca8a04' : (delta < -5 ? '#16a34a' : '#475569'));
       var sign = delta > 0 ? '+' : '';
       deltaCell = '<span style="color:'+color+';font-weight:700">'+sign+delta.toFixed(1)+'%</span>';
     }
-    var histPrice = (h && h.precio_promedio_90d > 0) ? ('$'+h.precio_promedio_90d.toFixed(3)+'/g') : '<span style="color:#cbd5e1">sin hist.</span>';
+    // FIX 13-jul · "$ nuevo"/"$ prom 90d" en $/kg (antes mostraba el número $/kg etiquetado "/g")
+    var nuevoCell = puKg > 0 ? (fmt(puKg)+'/kg') : '<span style="color:#dc2626;font-weight:700" title="Cargá el precio de referencia de esta MP">sin precio</span>';
+    var histPrice = promKg > 0 ? (fmt(promKg)+'/kg') : '<span style="color:#cbd5e1">sin hist.</span>';
     return '<tr style="border-bottom:1px solid #f1f5f9">'+
       '<td style="padding:5px 8px;font-size:11px"><b>'+esc(it.nombre_mp||'')+'</b><br><span style="color:#94a3b8;font-family:monospace;font-size:10px">'+esc(it.codigo_mp||'')+'</span></td>'+
       '<td style="padding:5px 8px;text-align:right;font-size:11px">'+fmt(cant)+' g</td>'+
-      '<td style="padding:5px 8px;text-align:right;font-size:11px">$'+pu.toFixed(3)+'/g</td>'+
+      '<td style="padding:5px 8px;text-align:right;font-size:11px">'+nuevoCell+'</td>'+
       '<td style="padding:5px 8px;text-align:right;font-size:11px">'+histPrice+'</td>'+
       '<td style="padding:5px 8px;text-align:right">'+deltaCell+'</td>'+
-      '<td style="padding:5px 8px;text-align:right;font-size:11px;font-weight:700">'+fmt(val.toFixed(0))+'</td>'+
+      '<td style="padding:5px 8px;text-align:right;font-size:11px;font-weight:700">'+fmt(val)+'</td>'+
     '</tr>';
   }).join('');
   // Modal

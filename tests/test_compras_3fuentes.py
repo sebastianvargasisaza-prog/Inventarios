@@ -472,3 +472,82 @@ def test_solicitud_auto_plan_no_spamea_campana(app, db_clean):
     n = conn.execute("SELECT COUNT(*) FROM notificaciones_app WHERE tipo='solicitud_nueva'").fetchone()[0]
     conn.close()
     assert n == 0, 'auto-plan no debe generar campana'
+
+
+# ── FIX 13-jul · fallback de precio a maestro_mps.precio_referencia ─────
+# (trazabilidad · Sebastián: OC/bandeja mostraban $0 porque las SOLs del
+#  Centro de Programación traen cantidad pero sin precio)
+
+def test_agrupadas_estima_valor_desde_precio_referencia(app, db_clean):
+    """Bandeja: si el item no tiene valor guardado, el total del grupo se
+    estima con precio_referencia del maestro ($/kg /1000 x cantidad_g)."""
+    cs = _login(app, 'catalina')
+    conn = sqlite3.connect(os.environ['DB_PATH'])
+    conn.execute("""
+        INSERT OR REPLACE INTO maestro_mps
+          (codigo_mp, nombre_comercial, proveedor, activo, tipo_material, precio_referencia)
+        VALUES (?, ?, ?, 1, 'MP', ?)
+    """, ('MP-FB-AGR', 'MP Fallback', 'ProvFB', 2000.0))  # $2000/kg
+    conn.commit(); conn.close()
+    _seed_sol('TEST-FB-AGR', 'Materia Prima',
+              items=[{'codigo_mp': 'MP-FB-AGR', 'nombre_mp': 'MP Fallback',
+                      'cantidad_g': 500, 'proveedor_sugerido': 'ProvFB',
+                      'precio_unit_g': 0, 'valor_estimado': 0}])
+    try:
+        r = cs.get('/api/compras/solicitudes-agrupadas-por-proveedor?fuente=planta')
+        assert r.status_code == 200, r.data
+        grupos = r.get_json()['grupos']
+        g = next((x for x in grupos
+                  if any(s == 'TEST-FB-AGR'
+                         for sol in x.get('solicitudes', [])
+                         for s in [sol.get('numero')])), None)
+        assert g is not None, 'grupo con la SOL no encontrado'
+        # 500 g * $2000/kg / 1000 = $1000  (antes salía $0)
+        assert abs(g['valor_total'] - 1000.0) < 0.5, f"valor_total esperado 1000, got {g['valor_total']}"
+    finally:
+        _cleanup_sols(['TEST-FB-AGR'])
+        _cleanup_mps(['MP-FB-AGR'])
+
+
+def test_oc_desde_solicitudes_usa_precio_referencia_fallback(app, db_clean):
+    """Crear OC desde SOL sin precio → la OC nace con precio_referencia/1000
+    (no con $0). Evita OCs con precio en cero."""
+    cs = _login(app, 'catalina')
+    conn = sqlite3.connect(os.environ['DB_PATH'])
+    conn.execute("""
+        INSERT OR REPLACE INTO maestro_mps
+          (codigo_mp, nombre_comercial, proveedor, activo, tipo_material, precio_referencia)
+        VALUES (?, ?, ?, 1, 'MP', ?)
+    """, ('MP-FB-OC', 'MP Fallback OC', 'ProvFBOC', 2000.0))  # $2000/kg
+    conn.commit(); conn.close()
+    _seed_sol('TEST-FB-OC', 'Materia Prima',
+              items=[{'codigo_mp': 'MP-FB-OC', 'nombre_mp': 'MP Fallback OC',
+                      'cantidad_g': 500, 'proveedor_sugerido': 'ProvFBOC',
+                      'precio_unit_g': 0, 'valor_estimado': 0}])
+    try:
+        r = cs.post('/api/compras/oc-desde-solicitudes',
+                    json={'proveedor': 'ProvFBOC', 'solicitudes': ['TEST-FB-OC'],
+                          'consolidar_iguales': True, 'categoria': 'MP'},
+                    headers=csrf_headers())
+        assert r.status_code in (200, 201), r.data
+        d = r.get_json()
+        num_oc = d.get('numero_oc')
+        assert num_oc, f'sin numero_oc: {d}'
+        # valor_total = 500 g * $2000/kg / 1000 = $1000 (antes $0)
+        assert abs((d.get('valor_total') or 0) - 1000.0) < 0.5, f"valor_total esperado 1000, got {d.get('valor_total')}"
+        conn = sqlite3.connect(os.environ['DB_PATH'])
+        pu = conn.execute(
+            "SELECT precio_unitario, subtotal FROM ordenes_compra_items WHERE numero_oc=? AND codigo_mp=?",
+            (num_oc, 'MP-FB-OC')).fetchone()
+        conn.close()
+        assert pu is not None, 'item de OC no creado'
+        assert abs((pu[0] or 0) - 2.0) < 0.001, f'precio_unitario esperado 2.0 $/g, got {pu[0]}'
+        assert abs((pu[1] or 0) - 1000.0) < 0.5, f'subtotal esperado 1000, got {pu[1]}'
+        # limpiar la OC creada
+        conn = sqlite3.connect(os.environ['DB_PATH'])
+        conn.execute("DELETE FROM ordenes_compra_items WHERE numero_oc=?", (num_oc,))
+        conn.execute("DELETE FROM ordenes_compra WHERE numero_oc=?", (num_oc,))
+        conn.commit(); conn.close()
+    finally:
+        _cleanup_sols(['TEST-FB-OC'])
+        _cleanup_mps(['MP-FB-OC'])

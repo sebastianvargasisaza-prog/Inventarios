@@ -3775,13 +3775,15 @@ def solicitudes_agrupadas_por_proveedor():
                    COALESCE(sci.justificacion, ''),
                    COALESCE(sci.precio_unit_g, 0),
                    COALESCE(sci.proveedor_sugerido, ''),
-                   COALESCE(mm.nombre_inci, '')
+                   COALESCE(mm.nombre_inci, ''),
+                   COALESCE(mm.precio_referencia, 0)
             FROM solicitudes_compra_items sci
             LEFT JOIN maestro_mps mm ON mm.codigo_mp = sci.codigo_mp
             WHERE sci.numero IN ({placeholders})
         """, nums)
         item_cols = ['id','numero','codigo_mp','nombre_mp','cantidad_g','unidad',
-                     'valor_estimado','justificacion','precio_unit_g','proveedor_sugerido','nombre_inci']
+                     'valor_estimado','justificacion','precio_unit_g','proveedor_sugerido','nombre_inci',
+                     'precio_referencia']
         items_all = [dict(zip(item_cols, r)) for r in c.fetchall()]
     except sqlite3.OperationalError:
         # Fallback sin proveedor_sugerido (esquema viejo)
@@ -3798,7 +3800,25 @@ def solicitudes_agrupadas_por_proveedor():
             d['justificacion'] = ''
             d['precio_unit_g'] = 0
             d['proveedor_sugerido'] = ''
+            d['precio_referencia'] = 0
             items_all.append(d)
+
+    # FIX 13-jul (trazabilidad · Sebastián): las SOLs auto-generadas dejan
+    # valor_estimado=0 → el total por proveedor y el global salían "$0" aunque
+    # las filas mostraran valor (el front lo calcula en vivo · M5 display≠agregado).
+    # Estimamos el valor con el precio de referencia del maestro (precio_referencia
+    # en $/kg → /1000 × cantidad_g) cuando no hay valor guardado, para que el
+    # agregado coincida con lo mostrado. NO se persiste (solo respuesta); el
+    # write-back real ocurre al crear la OC.
+    for _it in items_all:
+        try:
+            if float(_it.get('valor_estimado') or 0) <= 0:
+                _cg = float(_it.get('cantidad_g') or 0)
+                _prk = float(_it.get('precio_referencia') or 0)
+                if _cg > 0 and _prk > 0:
+                    _it['valor_estimado'] = round(_cg * _prk / 1000.0, 2)
+        except (ValueError, TypeError):
+            pass
 
     # Indexar items por solicitud
     items_por_sol = {}
@@ -4055,6 +4075,31 @@ def crear_oc_desde_solicitudes():
                  'unidad': it['unidad']}
                 for it in items_raw
             ]
+
+        # FIX 13-jul (trazabilidad · Sebastián: "resolvé lo que encuentres"): las SOLs
+        # del Centro de Programación traen cantidad pero SIN precio (precio_unit_g=0)
+        # → la OC se creaba con precio 0 y TOTAL $0. Fallback al precio de referencia
+        # del maestro (precio_referencia está en $/kg → /1000 = $/g · M83) para los
+        # ítems sin precio, así la OC nace con precio real. El write-back de abajo
+        # (pu>0) puebla valor_estimado en la SOL → arregla también el total "$0".
+        _sin_precio = [(it.get('codigo_mp') or '').strip().upper()
+                       for it in items_oc
+                       if float(it.get('precio_unitario') or 0) <= 0
+                       and (it.get('codigo_mp') or '').strip()]
+        if _sin_precio:
+            _ref_kg = {}
+            _ph_ref = ','.join(['?'] * len(_sin_precio))
+            for _rr in c.execute(
+                f"SELECT UPPER(TRIM(codigo_mp)), COALESCE(precio_referencia,0) "
+                f"FROM maestro_mps WHERE UPPER(TRIM(codigo_mp)) IN ({_ph_ref})",
+                _sin_precio,
+            ).fetchall():
+                _ref_kg[_rr[0]] = float(_rr[1] or 0)
+            for it in items_oc:
+                if float(it.get('precio_unitario') or 0) <= 0:
+                    _pk = _ref_kg.get((it.get('codigo_mp') or '').strip().upper(), 0)
+                    if _pk > 0:
+                        it['precio_unitario'] = _pk / 1000.0  # $/kg → $/g (M83)
 
         # BUG #1 CRITICA · Sprint Compras N1 · 21-may-2026 ·
         # Sebastián: agente detectó que oc-desde-solicitudes NO chequea
