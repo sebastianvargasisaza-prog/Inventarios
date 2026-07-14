@@ -352,13 +352,9 @@ window.addEventListener('unhandledrejection', function(ev) {
 <div id="tab-dashboard" class="tab-panel active">
   <!-- Inteligencia fusionada (Sebastián 13-jul): sub-nav a las 4 secciones · el top-tab
        Dashboard vuelve al panorama. -->
-  <!-- Sebastián 13-jul · quitados Agentes IA + Scores creadores (rasgo de IA) · quedan
-       Estrategia del mes + Histórico de inversión. -->
-  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px;">
-    <span style="font-size:11px;font-weight:800;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.05em;margin-right:2px;">📊 Análisis</span>
-    <button onclick="showSub('estrategia')" style="background:var(--cx-primary-soft,#f5f3ff);color:#6d28d9;border:1px solid #ddd6fe;border-radius:999px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;">📋 Estrategia del mes</button>
-    <button onclick="showSub('analytics')" style="background:var(--cx-primary-soft,#f5f3ff);color:#6d28d9;border:1px solid #ddd6fe;border-radius:999px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;">📈 Histórico inversión</button>
-  </div>
+  <!-- Sebastián 13-jul · quitado el sub-nav de Análisis (Estrategia/Agentes IA/Score de
+       creadores/Histórico inversión): innecesario + rasgo de IA. Dashboard = solo lo esencial. -->
+
   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:6px;">
     <div>
       <div class="page-title" style="margin-bottom:2px;">&#x1F4CA; Marketing · Dashboard</div>
@@ -421,22 +417,12 @@ window.addEventListener('unhandledrejection', function(ev) {
     </div>
   </div>
 
-  <!-- Campañas + Ciudades -->
-  <div class="grid2" style="margin-bottom:20px;">
-    <div class="card">
-      <div class="card-hdr">
-        <span class="card-title">📢 Campañas activas</span>
-        <div class="kpi-grid" id="dash-kpis" style="display:none;"></div>
-      </div>
-      <div class="card-body">
-        <table><thead><tr><th>Nombre</th><th>Canal</th><th>Estado</th><th>Budget</th><th>Ventas</th></tr></thead>
-        <tbody id="dash-campanas"><tr class="empty-row"><td colspan="5">Cargando...</td></tr></tbody></table>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-hdr"><span class="card-title">🌎 Top ciudades Shopify</span></div>
-      <div class="card-body" id="dash-ciudades">Cargando...</div>
-    </div>
+  <!-- Sebastián 13-jul · quitado "Campañas activas" del dashboard (ya está su tab) ·
+       ids ocultos para no romper loadDashboard. -->
+  <div style="display:none;"><div id="dash-kpis"></div><table><tbody id="dash-campanas"></tbody></table></div>
+  <div class="card" style="margin-bottom:20px;">
+    <div class="card-hdr"><span class="card-title">🌎 Top ciudades Shopify</span></div>
+    <div class="card-body" id="dash-ciudades">Cargando...</div>
   </div>
 
   <!-- Instagram token update form -->
@@ -453,27 +439,12 @@ window.addEventListener('unhandledrejection', function(ev) {
     </div>
   </div>
 
-  <!-- Instagram Top Posts -->
-  <div class="card" style="margin-bottom:20px;" id="dash-ig-posts-section">
-    <div class="card-hdr"><span class="card-title">📸 Top posts Instagram (por engagement)</span></div>
-    <div class="card-body" id="dash-ig-posts">
-      <div style="color:var(--cx-text-mute);text-align:center;padding:20px;">Conecta Instagram y sincroniza para ver tus mejores posts</div>
-    </div>
-  </div>
-
-  <!-- Contenido + Canal -->
-  <div class="grid2">
-    <div class="card">
-      <div class="card-hdr"><span class="card-title">📱 Contenido reciente</span></div>
-      <div class="card-body">
-        <table><thead><tr><th>Tipo</th><th>Plataforma</th><th>Estado</th><th>Alcance</th></tr></thead>
-        <tbody id="dash-contenido"><tr class="empty-row"><td colspan="4">Cargando...</td></tr></tbody></table>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-hdr"><span class="card-title">💰 Presupuesto por canal</span></div>
-      <div class="card-body" id="dash-canales">Cargando...</div>
-    </div>
+  <!-- Sebastián 13-jul · quitados del dashboard: Top posts IG, Contenido reciente (ya está
+       su tab) y Presupuesto por canal · innecesarios. ids ocultos para no romper el JS. -->
+  <div style="display:none;" id="dash-ig-posts-section">
+    <div id="dash-ig-posts"></div>
+    <table><tbody id="dash-contenido"></tbody></table>
+    <div id="dash-canales"></div>
   </div>
 </div>
 
