@@ -677,7 +677,14 @@ function showSubPlanta(w){
       <a href="/recepcion" target="_blank" rel="noopener" class="btn" style="background:#7c3aed;color:#fff;padding:6px 14px;font-size:12px;font-weight:700;text-decoration:none;border-radius:5px;display:inline-flex;align-items:center;gap:4px" title="Abrir página dedicada de recepción · escaneo lotes · cuarentena · trazabilidad">📦 Ir a Recepción</a>
     </div>
   </div>
-  <div id="consol-body" style="padding:16px 0;">
+  <div style="position:relative;margin:2px 0 6px;">
+    <span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#a8a29e;font-size:15px;pointer-events:none;">&#x1F50D;</span>
+    <input id="consol-search" type="text" oninput="renderConsolBody()" placeholder="Buscar por proveedor, N° OC o producto…"
+      style="width:100%;padding:11px 14px 11px 40px;border:1px solid #eef0f2;border-radius:12px;font-size:13px;color:#292524;box-shadow:0 1px 3px rgba(15,23,42,.04);outline:none;"
+      onfocus="this.style.borderColor='#c4b5fd';this.style.boxShadow='0 0 0 3px rgba(124,58,237,.12)'"
+      onblur="this.style.borderColor='#eef0f2';this.style.boxShadow='0 1px 3px rgba(15,23,42,.04)'">
+  </div>
+  <div id="consol-body" style="padding:10px 0;">
     <div style="color:#94a3b8;text-align:center;padding:40px;">Cargando consolidado...</div>
   </div>
 </div>
@@ -7309,10 +7316,57 @@ async function loadConsolidado(){
       body.innerHTML = '<div style="color:#4ade80;text-align:center;padding:40px;">&#x2705; No hay OCs pendientes.</div>';
       return;
     }
-    body.innerHTML = _consolCache.map(function(p, i){ return renderConsolCard(p, i); }).join('');
+    renderConsolBody();
   }catch(e){
     body.innerHTML = '<div style="color:#f87171;padding:16px;">Error: '+e+'</div>';
   }
+}
+
+// ── Búsqueda (lupa) + agrupación por estado · Sebastián 13-jul ──────────
+// Filtra por proveedor / N° OC / producto y separa "Por autorizar" de
+// "Autorizadas" (antes salían mezcladas). Todo client-side sobre _consolCache
+// (ya cargado · sin re-fetch) → instantáneo aunque haya muchas OCs.
+function _consolMatch(p, q){
+  if(!q) return true;
+  q = q.toLowerCase();
+  if((p.proveedor||'').toLowerCase().indexOf(q) >= 0) return true;
+  if((p.ocs||[]).some(function(o){ return (o.numero_oc||'').toLowerCase().indexOf(q) >= 0; })) return true;
+  if((p.items||[]).some(function(it){ return ((it.nombre_mp||'')+' '+(it.nombre_inci||'')).toLowerCase().indexOf(q) >= 0; })) return true;
+  return false;
+}
+function _consolStage(p){
+  var estados = (p.ocs||[]).map(function(o){ return (o.estado||''); });
+  if(estados.some(function(e){ return e === 'Borrador' || e === 'Revisada'; })) return 'por_autorizar';
+  return 'autorizadas';
+}
+function _consolSectionHeader(txt, n, color, bg){
+  return '<div style="display:flex;align-items:center;gap:8px;margin:4px 0 12px;padding:9px 15px;background:'+bg+';border-radius:12px;border:1px solid '+color+'33;">'
+    + '<span style="font-weight:800;color:'+color+';font-size:13px;letter-spacing:-.01em;">'+txt+'</span>'
+    + '<span style="background:'+color+';color:#fff;border-radius:20px;padding:1px 9px;font-size:11px;font-weight:800;">'+n+'</span>'
+    + '</div>';
+}
+function renderConsolBody(){
+  var body = document.getElementById('consol-body');
+  if(!body) return;
+  var q = (document.getElementById('consol-search')||{value:''}).value.trim();
+  var vis = _consolCache.map(function(p, i){ return {p:p, i:i}; })
+                        .filter(function(x){ return _consolMatch(x.p, q); });
+  if(!vis.length){
+    body.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:40px;">Sin resultados para "'+esc(q)+'"</div>';
+    return;
+  }
+  var porAut = vis.filter(function(x){ return _consolStage(x.p) === 'por_autorizar'; });
+  var aut    = vis.filter(function(x){ return _consolStage(x.p) === 'autorizadas'; });
+  var html = '';
+  if(porAut.length){
+    html += _consolSectionHeader('🟡 Por autorizar', porAut.length, '#b45309', 'linear-gradient(135deg,#fffbeb,#fff7ed)');
+    html += porAut.map(function(x){ return renderConsolCard(x.p, x.i); }).join('');
+  }
+  if(aut.length){
+    html += _consolSectionHeader('🟢 Autorizadas · listas para pago / recepción', aut.length, '#15803d', 'linear-gradient(135deg,#f0fdf4,#ecfdf5)');
+    html += aut.map(function(x){ return renderConsolCard(x.p, x.i); }).join('');
+  }
+  body.innerHTML = html;
 }
 
 // Cache global del modo edit por idx de proveedor en el consolidado.
