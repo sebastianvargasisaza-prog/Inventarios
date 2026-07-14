@@ -109,9 +109,9 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .ocs-cpill:hover{background:#f5f5f4;border-color:#a8a29e;}
 .ocs-cpill.on{background:#ea580c;border-color:#ea580c;color:#fff;}
 .ptbl{width:100%;border-collapse:collapse;font-size:13px;}
-.ptbl th{background:#f5f5f4;color:#78716c;font-weight:600;padding:8px 10px;text-align:left;border-bottom:2px solid #e7e5e4;}
-.ptbl td{padding:8px 10px;border-bottom:1px solid #f0edec;vertical-align:middle;}
-.ptbl tr:hover td{background:#fafafa;}
+.ptbl th{background:#fbfbfd;color:#64748b;font-weight:800;font-size:10px;text-transform:uppercase;letter-spacing:.4px;padding:9px 11px;text-align:left;border-bottom:1px solid #eef0f2;}
+.ptbl td{padding:10px 11px;border-bottom:1px solid #f4f4f8;vertical-align:middle;}
+.ptbl tr:hover td{background:#faf9ff;}
 .pgrp-card{background:#fff;border:1px solid #e7e5e4;border-radius:8px;margin-bottom:14px;overflow:hidden;}
 /* Mobile responsive · Catalina/Mayra tablet · 27-may-2026 */
 @media (max-width: 768px) {

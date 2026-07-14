@@ -55,9 +55,9 @@ body{font-family:'Segoe UI',sans-serif;background:var(--cx-bg);color:var(--cx-te
 /* ─── Table ─── */
 .tbl-wrap{overflow-x:auto;}
 table{width:100%;border-collapse:collapse;}
-th{font-size:11px;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px;padding:10px 12px;text-align:left;background:var(--cx-bg-alt);border-bottom:1px solid #e7e5e4;}
-td{padding:10px 12px;border-bottom:1px solid var(--cx-hairline);font-size:13px;}
-tr:hover td{background:var(--cx-bg-alt);}
+th{font-size:10px;font-weight:800;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px;padding:11px 14px;text-align:left;background:#fbfbfd;border-bottom:1px solid #eef0f2;}
+td{padding:11px 14px;border-bottom:1px solid #f4f4f8;font-size:13px;}
+tr:hover td{background:#faf9ff;}
 .empty-row td{text-align:center;color:var(--cx-text-mute);padding:32px;}
 
 /* ─── Badges ─── */
@@ -2741,8 +2741,15 @@ function renderCentroPagos(){
   list.sort(function(a,b){ var ea=ord[_pagoEstadoCat(a)],eb=ord[_pagoEstadoCat(b)]; if(ea!==eb) return ea-eb; return (b.fecha||'').localeCompare(a.fecha||''); });
   var lst=document.getElementById('inf-pagos-lista');
   if(!lst) return;
-  if(!list.length){ lst.innerHTML='<div style="text-align:center;color:var(--cx-text-mute);padding:30px;">Sin pagos en este estado.</div>'; return; }
-  lst.innerHTML=list.slice(0,300).map(function(p){
+  // Alerta: creadores con pagos pero SIN correo → no recibirán la factura de pagado.
+  var _sinMail={};
+  pagos.forEach(function(p){ if(!(p.inf_email||'').trim() && p.influencer_nombre) _sinMail[p.influencer_nombre.toLowerCase()]=1; });
+  var _nSinMail=Object.keys(_sinMail).length;
+  var _alertMail=_nSinMail>0
+    ? '<div style="background:#fffbeb;border:1px solid #fde68a;border-left:4px solid #f59e0b;border-radius:10px;padding:11px 16px;margin-bottom:14px;font-size:13px;color:#92400e;font-weight:600">⚠ '+_nSinMail+' creador'+(_nSinMail>1?'es':'')+' con pagos y <b>sin correo</b> · no recibirán la factura de pagado. Agregales el correo en <b>Creadores</b>.</div>'
+    : '';
+  if(!list.length){ lst.innerHTML=_alertMail+'<div style="text-align:center;color:var(--cx-text-mute);padding:30px;">Sin pagos en este estado.</div>'; return; }
+  lst.innerHTML=_alertMail+list.slice(0,300).map(function(p){
     var e=_pagoEstadoCat(p); var s=ST[e];
     var ent=(p.entregable||'').trim();
     var hi=ent.indexOf('http'); var link=''; if(hi>=0){ link=ent.slice(hi).split(' ')[0].split('·')[0].trim(); }
