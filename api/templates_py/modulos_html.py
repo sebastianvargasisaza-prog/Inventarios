@@ -26,7 +26,7 @@ MODULOS_HTML = (
     ".header-sub{font-size:11px;color:#78716c;margin-top:2px;}\n"
     ".header-user{font-size:12px;color:#78716c;}\n"
     ".header-user strong{color:#1c1917;}\n"
-    ".main{padding:32px 24px;max-width:1100px;margin:0 auto;}\n"
+    ".main{padding:32px 32px;max-width:1600px;margin:0 auto;}\n"
     ".page-title{font-size:22px;font-weight:800;color:#4c1d95;margin-bottom:4px;}\n"
     ".page-sub{font-size:13px;color:#78716c;margin-bottom:32px;}\n"
     ".section{margin-bottom:36px;}\n"

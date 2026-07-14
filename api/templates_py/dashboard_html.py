@@ -1721,6 +1721,8 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <button onclick="liberarCuarentenaInventario()" id="btn-liberar-inv" style="margin-left:10px;background:#0d9488;color:#fff;border:none;padding:8px 16px;border-radius:8px;font-weight:700;cursor:pointer;">&#9989; Liberar TODO a inventario</button>
     </div>
 
+    <!-- Lupa de búsqueda (Sebastián 14-jul) · filtro client-side de las filas -->
+    <input type="text" oninput="var q=this.value.toLowerCase();document.querySelectorAll('#cuar-tbody tr').forEach(function(r){r.style.display=((r.textContent||'').toLowerCase().indexOf(q)>=0)?'':'none';});" placeholder="&#128269; Buscar material, lote, proveedor u OC…" style="width:100%;max-width:380px;padding:9px 13px;border:1px solid #eef0f2;border-radius:10px;font-size:13px;margin-bottom:12px;box-shadow:0 1px 2px rgba(15,23,42,.04);">
     <!-- Tabla de lotes pendientes -->
     <table class="table" id="cuar-table">
       <thead><tr><th>Codigo</th><th>INCI</th><th>Nombre</th><th>Lote</th><th>Cant. (g)</th><th>Proveedor</th><th>OC</th><th>Fecha ingreso</th><th>Estado</th><th>Accion</th></tr></thead>
