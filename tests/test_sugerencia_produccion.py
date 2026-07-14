@@ -49,12 +49,13 @@ def _seed():
     for d in range(1, 90):
         _exec("INSERT INTO ventas_diarias (sku, fecha, cantidad) VALUES (?, ?, 10)",
               (SKU, (hoy - timedelta(days=d)).isoformat()))
-    # historial: 30 kg completados el mes pasado
+    # historial: lote de 30 kg en el calendario el mes pasado · NO marcado 'completado'
+    # (como el caso real del 25-jun: está en el calendario y ES la verdad de lo producido)
     fin_mes_pasado = (hoy.replace(day=1) - timedelta(days=1)).isoformat()
-    _exec("INSERT INTO produccion_programada (producto, fecha_programada, fin_real_at, "
-          "lotes, estado, cantidad_kg, kg_real, origen) "
-          "VALUES (?, ?, ?, 1, 'completado', 30, 30, 'eos_plan')",
-          (PROD, fin_mes_pasado, fin_mes_pasado))
+    _exec("INSERT INTO produccion_programada (producto, fecha_programada, "
+          "lotes, estado, cantidad_kg, origen) "
+          "VALUES (?, ?, 1, 'programado', 30, 'eos_plan')",
+          (PROD, fin_mes_pasado))
 
 
 def test_sugerencia_estructura_y_horizontes(app):
@@ -103,6 +104,39 @@ def test_solo_lectura_no_muta(app):
     for _ in range(3):
         assert c.get(f"/api/programacion/sugerencia-produccion?producto={PROD}").status_code == 200
     assert _snap() == antes  # nada creado/cancelado
+
+
+def test_recorda_cuenta_fabricacion_directa(app):
+    # producto SOLO con lote en la tabla producciones (Fabricación), sin fila en el
+    # calendario → recordá igual lo recuerda (empezaron a usar Fabricación hace poco)
+    prod = "QA FAB DIRECTA"
+    _exec("DELETE FROM producciones WHERE producto=?", (prod,))
+    _exec("INSERT OR IGNORE INTO formula_headers (producto_nombre, lote_size_kg, activo) "
+          "VALUES (?, 20, 1)", (prod,))
+    fin_mes_pasado = (date.today().replace(day=1) - timedelta(days=1)).isoformat()
+    _exec("INSERT INTO producciones (producto, cantidad, fecha, operador) "
+          "VALUES (?, 20, ?, 'op')", (prod, fin_mes_pasado + " 10:00:00"))
+    c = _login(app)
+    j = c.get(f"/api/programacion/sugerencia-produccion?producto={prod}").get_json()
+    assert j["recorda"]["kg_mes_pasado"] == 20, j["recorda"]
+
+
+def test_no_doble_cuenta_calendario_y_fabricacion(app):
+    # mismo lote reflejado en AMBAS tablas el mismo día → cuenta UNA vez (dedup por día)
+    prod = "QA DEDUP DIA"
+    dia = (date.today().replace(day=1) - timedelta(days=1)).isoformat()
+    _exec("DELETE FROM producciones WHERE producto=?", (prod,))
+    _exec("DELETE FROM produccion_programada WHERE producto=?", (prod,))
+    _exec("INSERT OR IGNORE INTO formula_headers (producto_nombre, lote_size_kg, activo) "
+          "VALUES (?, 25, 1)", (prod,))
+    _exec("INSERT INTO produccion_programada (producto, fecha_programada, fin_real_at, "
+          "lotes, estado, cantidad_kg, kg_real, origen) "
+          "VALUES (?, ?, ?, 1, 'completado', 25, 25, 'eos_retroactivo')", (prod, dia, dia))
+    _exec("INSERT INTO producciones (producto, cantidad, fecha, operador) "
+          "VALUES (?, 25, ?, 'op')", (prod, dia + " 10:00:00"))
+    c = _login(app)
+    j = c.get(f"/api/programacion/sugerencia-produccion?producto={prod}").get_json()
+    assert j["recorda"]["kg_mes_pasado"] == 25, j["recorda"]  # NO 50
 
 
 def test_falta_producto_400(app):

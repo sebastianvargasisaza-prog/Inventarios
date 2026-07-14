@@ -2301,19 +2301,41 @@ def prog_sugerencia_produccion():
     mes_pasado_ini = (primer_dia_mes - _td(days=1)).replace(day=1)
 
     def _kg_lotes_entre(desde, hasta):
-        kg = 0.0
-        n = 0
-        rows = c.execute(
-            "SELECT producto, COALESCE(kg_real, cantidad_kg, 0) FROM produccion_programada "
-            "WHERE LOWER(COALESCE(estado,''))='completado' "
+        """kg fabricados de ESTE producto en [desde, hasta) uniendo las DOS tablas de
+        producción real — produccion_programada (flujo calendario) y producciones
+        (Fabricación directa) — deduplicando por (producto, día) igual que el espejo
+        Fabricación→calendario (M37).
+
+        Sebastián 14-jul: 'empezamos a usar Fabricación hace poco, pero el calendario
+        está armado tal cual lo que fabricamos en junio/julio → aunque un lote solo esté
+        en el calendario, ES la verdad de lo producido'. Por eso el calendario cuenta los
+        lotes con FECHA PASADA y NO cancelados (no solo estado='completado'); las ventanas
+        de recordá son pasadas, así que no cuenta lo planeado a futuro."""
+        desde_s, hasta_s = desde.isoformat(), hasta.isoformat()
+        por_dia = {}
+        # a) calendario: lote pasado NO cancelado = producido (kg_real si se completó,
+        #    si no la cantidad_kg planeada · el calendario refleja lo que se fabrica)
+        for prod, kgr, dia in c.execute(
+            "SELECT producto, COALESCE(kg_real, cantidad_kg, 0), "
+            "substr(COALESCE(fin_real_at, fecha_programada),1,10) FROM produccion_programada "
+            "WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelado') "
             "AND substr(COALESCE(fin_real_at, fecha_programada),1,10) >= ? "
             "AND substr(COALESCE(fin_real_at, fecha_programada),1,10) < ?",
-            (desde.isoformat(), hasta.isoformat())).fetchall()
-        for prod, kgr in rows:
-            if _norm_prod_fuerte(prod or '') == pn:
-                kg += float(kgr or 0)
-                n += 1
-        return round(kg, 1), n
+            (desde_s, hasta_s)).fetchall():
+            if _norm_prod_fuerte(prod or '') == pn and dia:
+                por_dia[dia] = por_dia.get(dia, 0.0) + float(kgr or 0)
+        # b) Fabricación DIRECTA (producciones · cantidad = kg) · máx por día = mismo lote
+        #    (si el espejo ya lo reflejó en (a), max evita el doble-conteo)
+        try:
+            for prod, cant, dia in c.execute(
+                "SELECT producto, COALESCE(cantidad,0), substr(fecha,1,10) FROM producciones "
+                "WHERE COALESCE(cantidad,0) > 0 AND substr(fecha,1,10) >= ? AND substr(fecha,1,10) < ?",
+                (desde_s, hasta_s)).fetchall():
+                if _norm_prod_fuerte(prod or '') == pn and dia:
+                    por_dia[dia] = max(por_dia.get(dia, 0.0), float(cant or 0))
+        except Exception:
+            pass  # tabla producciones ausente en alguna instancia
+        return round(sum(por_dia.values()), 1), len(por_dia)
 
     kg_mes_pasado, n_mes_pasado = _kg_lotes_entre(mes_pasado_ini, primer_dia_mes)
     kg_anio, n_anio = _kg_lotes_entre(hoy.replace(month=1, day=1), hoy + _td(days=1))
