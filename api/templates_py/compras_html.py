@@ -3318,6 +3318,7 @@ function setCat(k){
     p.classList.toggle('pill-on',p.getAttribute('data-cat')===k);
   });
   if(k==='MP') loadMPLookup();
+  if(k==='MEE') loadMEELookup();
   // ── Column header ──
   var colH={'MP':'Codigo MP','MEE':'Ref. MEE','SVC':'Servicio',
     'ADM':'Concepto','INF':'Ref.','CC':'Concepto'};
@@ -3375,14 +3376,18 @@ function openNuevaOC(catCode){
 function addRow(){
   ITMS++;
   var n=ITMS;
-  var isMP=(document.getElementById('noc-cat').value==='MP');
+  var _cat=document.getElementById('noc-cat').value;
+  var isMP=(_cat==='MP');
+  var isMEE=(_cat==='MEE');
   // Gastos generales (papelería/EPP/servicios/aseo…) usan el catálogo de consumibles · NO MP/MEE/INF/CC.
-  var isGasto=(['MP','MEE','INF','CC'].indexOf(document.getElementById('noc-cat').value)<0);
-  var _ph={'MP':'Buscar MP...','MEE':'Ref. MEE','SVC':'Servicio','ADM':'Concepto','INF':'Ref.','CC':'Concepto'};
-  var _ph_val=_ph[document.getElementById('noc-cat').value]||'COD';
-  var _w=isMP?'width:115px':'width:80px';
+  var isGasto=(['MP','MEE','INF','CC'].indexOf(_cat)<0);
+  var _ph={'MP':'Buscar MP...','MEE':'Buscar envase…','SVC':'Servicio','ADM':'Concepto','INF':'Ref.','CC':'Concepto'};
+  var _ph_val=_ph[_cat]||'COD';
+  var _w=(isMP||isMEE)?'width:115px':'width:80px';
   var codCell=isMP
     ?'<td><input id="ic'+n+'" list="mp-dl" placeholder="Buscar MP..." style="'+_w+'" oninput="autoFillMP('+n+')" autocomplete="off"></td>'
+    :isMEE
+    ?'<td><input id="ic'+n+'" list="mee-dl" placeholder="Buscar envase…" style="'+_w+'" oninput="autoFillMEE('+n+')" autocomplete="off"></td>'
     :'<td><input id="ic'+n+'" placeholder="'+_ph_val+'" style="'+_w+'"></td>';
   var tr=document.createElement('tr');
   tr.id='ir'+n;
@@ -3598,6 +3603,32 @@ function autoFillMP(n){
       pEl.value=(pr/1000).toFixed(4);
       if(typeof calcTot==='function') calcTot();
     }
+  }
+}
+// ─── Desplegable de ENVASES (MEE) en Crear OC · Empaque (Sebastián 14-jul) ───
+// Espejo de loadMPLookup/autoFillMP pero contra el catálogo maestro_mee (/api/mee).
+var _MEE_LIST=[];
+async function loadMEELookup(){
+  if(_MEE_LIST.length) return;
+  try{
+    var r=await fetch('/api/mee?limit=1000');
+    var d=await r.json();
+    _MEE_LIST=(d.items||[]);
+    var dl=document.getElementById('mee-dl');
+    if(!dl){ dl=document.createElement('datalist'); dl.id='mee-dl'; document.body.appendChild(dl); }
+    dl.innerHTML=_MEE_LIST.map(function(m){
+      return '<option value="'+esc(m.codigo||'')+'">'+esc(m.descripcion||'')+'</option>';
+    }).join('');
+  }catch(e){ console.warn('MEE lookup unavailable',e); }
+}
+function autoFillMEE(n){
+  var codEl=document.getElementById('ic'+n);
+  if(!codEl) return;
+  var val=(codEl.value||'').trim().toUpperCase();
+  var mee=_MEE_LIST.find(function(m){ return (m.codigo||'').toUpperCase()===val; });
+  if(mee){
+    var nameEl=document.getElementById('in'+n);
+    if(nameEl&&!nameEl.value) nameEl.value=mee.descripcion||'';
   }
 }
 // ─── Catálogo de consumibles en Crear OC (Sebastián 1-jul) · papelería/EPP/servicios ───
