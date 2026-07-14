@@ -17,12 +17,12 @@ body{font-family:'Segoe UI',sans-serif;background:#f8f7f5;color:#1C1917;font-siz
 .topbar a:hover{color:#fff;}
 .topbar .hub-link{background:#4A6741;color:#fff;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;}
 .topbar .hub-link:hover{background:#3a5331;}
-.container{max-width:1320px;margin:0 auto;padding:20px;}
-.card{background:#fff;border:1px solid #e7e5e4;border-radius:10px;padding:20px;margin-bottom:20px;}
-.card h2{font-size:16px;font-weight:600;margin-bottom:14px;color:#292524;display:flex;align-items:center;gap:8px;}
+.container{max-width:1800px;width:96vw;margin:0 auto;padding:20px;}
+.card{background:#fff;border:1px solid #eef0f2;border-radius:14px;padding:20px;margin-bottom:20px;box-shadow:0 2px 12px rgba(15,23,42,.05);}
+.card h2{font-size:16px;font-weight:800;letter-spacing:-.01em;margin-bottom:14px;color:#292524;display:flex;align-items:center;gap:8px;}
 .oc-queue{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-bottom:16px;}
-.oc-card{background:#fafaf9;border:1px solid #e7e5e4;border-radius:8px;padding:12px;cursor:pointer;transition:all .15s;}
-.oc-card:hover{border-color:#57534e;background:#f5f5f4;}
+.oc-card{background:#fff;border:1px solid #eef0f2;border-radius:12px;padding:12px;cursor:pointer;transition:transform .12s,box-shadow .15s,border-color .15s;box-shadow:0 1px 4px rgba(15,23,42,.04);}
+.oc-card:hover{border-color:#ddd6fe;box-shadow:0 8px 18px rgba(124,58,237,.10);transform:translateY(-2px);}
 .oc-card .oc-num{font-weight:700;font-size:13px;color:#292524;}
 .oc-card .oc-prov{font-size:12px;color:#78716c;margin-top:2px;}
 .oc-card .oc-val{font-size:12px;color:#4A6741;font-weight:600;margin-top:4px;}
@@ -30,13 +30,14 @@ body{font-family:'Segoe UI',sans-serif;background:#f8f7f5;color:#1C1917;font-siz
 .search-row{display:flex;gap:10px;align-items:center;margin-bottom:16px;}
 .search-row input{flex:1;max-width:320px;padding:9px 12px;border:1px solid #d6d3d1;border-radius:6px;font-size:14px;}
 .search-row input:focus{outline:none;border-color:#57534e;}
-.btn{padding:9px 18px;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:500;}
+.btn{padding:9px 18px;border:none;border-radius:10px;font-size:14px;cursor:pointer;font-weight:700;box-shadow:0 1px 3px rgba(15,23,42,.08);transition:transform .1s,box-shadow .15s,filter .15s;}
+.btn:hover{transform:translateY(-1px);box-shadow:0 5px 14px rgba(15,23,42,.14);}
 .btn-primary{background:#292524;color:#fff;}
 .btn-primary:hover{background:#1c1917;}
-.btn-success{background:#16a34a;color:#fff;}
-.btn-success:hover{background:#15803d;}
-.btn-print{background:#1e40af;color:#fff;}
-.btn-print:hover{background:#1d4ed8;}
+.btn-success{background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;}
+.btn-success:hover{filter:brightness(1.06);}
+.btn-print{background:linear-gradient(135deg,#3b82f6,#1e40af);color:#fff;}
+.btn-print:hover{filter:brightness(1.06);}
 .oc-info{background:#fafaf9;border:1px solid #e7e5e4;border-radius:8px;padding:14px;margin-bottom:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;}
 .oc-info .lbl{font-size:11px;color:#78716c;text-transform:uppercase;letter-spacing:.5px;}
 .oc-info .val{font-size:14px;font-weight:600;color:#292524;margin-top:2px;}
@@ -46,7 +47,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f8f7f5;color:#1C1917;font-siz
 .badge-recibida{background:#dbeafe;color:#1e40af;}
 .badge-borrador{background:#f3f4f6;color:#374151;}
 table{width:100%;border-collapse:collapse;font-size:13px;}
-th{background:#f5f5f4;padding:9px 7px;text-align:left;font-weight:600;color:#57534e;border-bottom:1px solid #e7e5e4;white-space:nowrap;}
+th{background:#faf5ff;padding:9px 7px;text-align:left;font-weight:700;color:#6d28d9;text-transform:uppercase;font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid #eef0f2;white-space:nowrap;}
 td{padding:8px 7px;border-bottom:1px solid #f5f5f4;vertical-align:middle;}
 tr:hover td{background:#fafaf9;}
 td input[type=number]{width:74px;padding:5px 6px;border:1px solid #d6d3d1;border-radius:5px;font-size:13px;}
@@ -106,6 +107,7 @@ td input[type=text]{width:100%;padding:5px 8px;border:1px solid #d6d3d1;border-r
 
   <div class="card">
     <h2>&#9203; OCs Pendientes de Recepcion</h2>
+    <input type="text" oninput="filterByText('#queue-list .oc-card', this.value)" placeholder="&#128269; Buscar OC o proveedor…" style="width:100%;max-width:360px;padding:9px 13px;border:1px solid #e7e5e4;border-radius:10px;font-size:13px;margin-bottom:12px;box-shadow:0 1px 2px rgba(15,23,42,.04);">
     <div id="queue-list"><p style="color:#a8a29e;font-size:13px;">Cargando...</p></div>
   </div>
 
@@ -125,6 +127,7 @@ td input[type=text]{width:100%;padding:5px 8px;border:1px solid #d6d3d1;border-r
           <thead>
             <tr>
               <th style="width:36px;"></th>
+              <th style="width:64px;text-align:center;" title="Destildá una MP para NO recibirla ahora (queda pendiente para después)">Recibir</th>
               <th>Material</th>
               <th>Solicitado</th>
               <th>Cantidad Recibida</th>
@@ -182,6 +185,7 @@ td input[type=text]{width:100%;padding:5px 8px;border:1px solid #d6d3d1;border-r
   <div class="card">
     <h2>&#9203; Lotes en Cuarentena</h2>
     <p style="font-size:12px;color:#78716c;margin-bottom:12px;">Lotes recibidos pendientes de aprobacion de Control de Calidad.</p>
+    <input type="text" oninput="filterByText('#cuarentena-list tbody tr', this.value)" placeholder="&#128269; Buscar material, lote o proveedor…" style="width:100%;max-width:360px;padding:9px 13px;border:1px solid #e7e5e4;border-radius:10px;font-size:13px;margin-bottom:12px;box-shadow:0 1px 2px rgba(15,23,42,.04);">
     <div id="cuarentena-list"><p style="color:#a8a29e;font-size:13px;">Cargando...</p></div>
   </div>
 
@@ -316,15 +320,23 @@ function renderOC(d) {
   for (var idx = 0; idx < items.length; idx++) {
     (function(i, it) {
       var unidad = it.unidad || ((d.categoria === 'MEE') ? 'uds' : 'g');
-      var prevRec = (it.cantidad_recibida_g > 0) ? it.cantidad_recibida_g : it.cantidad_g;
-      var pct = it.cantidad_g > 0 ? Math.round(prevRec / it.cantidad_g * 100) : 100;
+      // Recepción parcial (Sebastián/Catalina 14-jul): pre-cargar lo PENDIENTE (no lo ya
+      // recibido) y marcar como hechas las líneas completas → no doble-contar al re-abrir.
+      var recibidoYa = Number(it.cantidad_recibida_g || 0);
+      var pendiente = Math.max(0, Number(it.cantidad_g || 0) - recibidoYa);
+      var yaCompleta = (recibidoYa > 0 && pendiente <= 0.01);
+      var prevRec = yaCompleta ? recibidoYa : (pendiente > 0 ? pendiente : Number(it.cantidad_g || 0));
+      var pct = it.cantidad_g > 0 ? Math.round(recibidoYa / it.cantidad_g * 100) : 100;
       var tr = document.createElement('tr');
       tr.id = 'item-row-' + i;
       tr.innerHTML =
         '<td style="text-align:center;">' + getItemIcon('OK', pct) + '</td>' +
-        '<td><strong>' + ((it.inci && it.inci.trim()) ? it.inci : it.codigo_mp) + '</strong><br><small style="color:#78716c">' + it.codigo_mp + '</small></td>' +
+        '<td style="text-align:center;">' + (yaCompleta
+            ? '<span title="Ya recibida completa" style="color:#16a34a;font-weight:800;font-size:15px;">&#10003;</span>'
+            : '<input type="checkbox" id="rx-' + i + '" checked onchange="toggleRecibir(' + i + ')" style="width:18px;height:18px;cursor:pointer;" title="Destildá para dejar esta MP pendiente">') + '</td>' +
+        '<td><strong>' + ((it.inci && it.inci.trim()) ? it.inci : it.codigo_mp) + '</strong><br><small style="color:#78716c">' + it.codigo_mp + (recibidoYa > 0 && !yaCompleta ? ' · <span style="color:#b45309;">ya recibido ' + recibidoYa.toLocaleString() + '</span>' : '') + '</small></td>' +
         '<td class="valor">' + Number(it.cantidad_g||0).toLocaleString() + ' ' + unidad + '</td>' +
-        '<td><input type="number" id="cant-' + i + '" data-codigo="' + it.codigo_mp + '" data-sol="' + it.cantidad_g + '" value="' + prevRec + '" min="0" step="0.01" oninput="updateRow(' + i + ')"></td>' +
+        '<td><input type="number" id="cant-' + i + '" data-codigo="' + it.codigo_mp + '" data-sol="' + it.cantidad_g + '" value="' + prevRec + '"' + (yaCompleta ? ' disabled' : '') + ' min="0" step="0.01" oninput="updateRow(' + i + ')"></td>' +
         '<td id="dif-' + i + '" class="valor" style="font-weight:600;"></td>' +
         '<td><div class="progress-bar"><div class="progress-fill" id="prog-' + i + '" style="width:' + Math.min(pct,100) + '%"></div></div><div class="item-pct" id="pct-' + i + '">' + pct + '%</div></td>' +
         '<td><select id="est-' + i + '" onchange="updateRow(' + i + ')">' +
@@ -342,6 +354,25 @@ function renderOC(d) {
   }
 }
 
+function filterByText(sel, q) {
+  q = (q || '').trim().toLowerCase();
+  var els = document.querySelectorAll(sel);
+  for (var k = 0; k < els.length; k++) {
+    var hit = !q || (els[k].textContent || '').toLowerCase().indexOf(q) >= 0;
+    els[k].style.display = hit ? '' : 'none';
+  }
+}
+function toggleRecibir(i) {
+  var rx = document.getElementById('rx-' + i);
+  var cant = document.getElementById('cant-' + i);
+  var row = document.getElementById('item-row-' + i);
+  if (cant) {
+    var off = (rx && !rx.checked);
+    cant.disabled = off;
+    if (row) row.style.opacity = off ? '.5' : '1';
+  }
+  updateRow(i);
+}
 function updateRow(i) {
   var cantEl = document.getElementById('cant-' + i);
   var estEl = document.getElementById('est-' + i);
@@ -378,7 +409,11 @@ async function registrarRecepcion() {
     var cantEl = document.getElementById('cant-' + idx);
     var estEl = document.getElementById('est-' + idx);
     var notaEl = document.getElementById('nota-' + idx);
-    var cant = cantEl ? (parseFloat(cantEl.value) || 0) : 0;
+    // Recepción parcial: si la línea está destildada (o no tiene checkbox = ya recibida
+    // completa), se manda 0 → el backend la salta y queda pendiente (no doble-cuenta).
+    var rxEl = document.getElementById('rx-' + idx);
+    var recibirEsta = rxEl ? rxEl.checked : false;
+    var cant = (recibirEsta && cantEl) ? (parseFloat(cantEl.value) || 0) : 0;
     var est = estEl ? estEl.value : 'OK';
     var nota = notaEl ? notaEl.value.trim() : '';
     var loteEl = document.getElementById('lote-' + idx);
