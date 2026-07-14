@@ -505,6 +505,10 @@ window.addEventListener('unhandledrejection', function(ev) {
 
   <!-- VISTA · Centro de pagos (default) -->
   <div id="inf-view-pagos">
+    <!-- Banner flujo urgencia pagos (promesa 30d desde fecha_contenido) · vive con los pagos -->
+    <div id="inf-urgencias-banner" style="display:none;border-radius:12px;margin-bottom:12px;padding:12px 16px;font-size:13px;line-height:1.5;"></div>
+    <!-- Banner de solicitudes pendientes (visible si hay alguna) -->
+    <div id="inf-pendientes-banner" style="display:none;margin-bottom:14px;padding:14px 18px;border-radius:12px;font-size:13px;line-height:1.5;"></div>
     <div id="inf-pagos-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin-bottom:16px;"></div>
     <div id="inf-pagos-filtros" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;"></div>
     <div id="inf-pagos-lista"><div style="text-align:center;color:var(--cx-text-mute);padding:30px;"><span class="spin"></span></div></div>
@@ -531,22 +535,18 @@ window.addEventListener('unhandledrejection', function(ev) {
     </div>
   </div>
 
-  <!-- Banner flujo urgencia pagos (promesa 30d desde fecha_contenido) -->
-  <div id="inf-urgencias-banner" style="display:none;border-radius:10px;margin-bottom:10px;padding:12px 16px;font-size:13px;line-height:1.5;"></div>
-
-  <!-- Banner de solicitudes pendientes (visible si hay alguna) -->
-  <div id="inf-pendientes-banner" style="display:none;background:linear-gradient(90deg,#78350f,#7c2d12);color:#fed7aa;padding:14px 18px;border-radius:10px;margin-bottom:14px;font-size:13px;line-height:1.5;border:1px solid #b45309;"></div>
   <div id="inf-alert" style="display:none;"></div>
 
-  <!-- Atribución ventas (preservada) -->
-  <div class="card" style="margin-bottom:16px;background:linear-gradient(135deg,rgba(52,211,153,.06),rgba(52,211,153,.02));border:1px solid rgba(52,211,153,.25);">
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
+  <!-- Atribución ventas (colapsable · analítica secundaria · Sebastián 13-jul declutter) -->
+  <details class="card" style="margin-bottom:16px;background:linear-gradient(135deg,rgba(52,211,153,.06),rgba(52,211,153,.02));border:1px solid rgba(52,211,153,.25);" ontoggle="if(this.open&&typeof loadAtribucion==='function'){loadAtribucion();}">
+    <summary style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
       <div>
         <div style="font-size:14px;font-weight:700;color:#16a34a;">&#x1F3AF; Atribución de ventas — últimos 90 días</div>
-        <div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px;">Revenue Shopify atribuido vía discount code de cada influencer.</div>
+        <div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px;">Revenue Shopify por discount code · click para ver</div>
       </div>
-      <button class="btn btn-outline btn-sm" onclick="loadAtribucion(true)" title="Refrescar atribución (datos frescos)">&#x21BB;</button>
-    </div>
+      <span onclick="event.preventDefault();loadAtribucion(true);" title="Refrescar atribución" style="font-size:16px;color:#16a34a;padding:4px 8px;">&#x21BB;</span>
+    </summary>
+    <div style="margin-top:14px;">
     <div id="atrib-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:12px;"></div>
     <div class="tbl-wrap">
       <table style="font-size:12px;">
@@ -563,7 +563,8 @@ window.addEventListener('unhandledrejection', function(ev) {
         <tbody id="atrib-body"><tr class="empty-row"><td colspan="8" style="color:var(--cx-text-mute);text-align:center;padding:14px;">Cargando atribución...</td></tr></tbody>
       </table>
     </div>
-  </div>
+    </div>
+  </details>
 
   <!-- Filtros para historial de pagos (que sale al expandir cada fila) -->
   <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;font-size:12px;color:var(--cx-text-mute)">
@@ -577,8 +578,13 @@ window.addEventListener('unhandledrejection', function(ev) {
       <option value="Pagada">✅ Solo pagados</option>
     </select>
     <button class="btn btn-outline btn-sm" onclick="loadPagosInfluencers()" title="Refrescar pagos">&#x21BB; Pagos</button>
-    <button id="btn-bulk-fix-empresa" class="btn btn-sm" onclick="bulkRegenerarLegacy()" title="Fix comprobantes que dicen Espagiria → ANIMUS Lab" style="background:#7c3aed;color:white;border:1px solid #6d28d9;font-size:11px;padding:5px 9px;">&#x1F527; Fix legacy</button>
-    <button onclick="cleanupHistoricoImportado()" title="Marcar como Pagada los 'Pago histórico importado' atrapados en Pendiente" style="background:#dc2626;color:white;border:1px solid #b91c1c;font-size:11px;padding:5px 9px;border-radius:6px;cursor:pointer;font-weight:700;">&#x1F9F9; Limpiar histórico</button>
+    <details style="margin-left:auto;position:relative;">
+      <summary style="cursor:pointer;list-style:none;color:var(--cx-text-mute);font-size:12px;padding:4px 8px;border:1px solid #ececf1;border-radius:8px;">&#x2699; Utilidades</summary>
+      <div style="position:absolute;right:0;top:calc(100% + 4px);z-index:10;background:var(--cx-card,#fff);border:1px solid #ececf1;border-radius:10px;box-shadow:0 8px 24px rgba(15,23,42,.12);padding:8px;display:flex;flex-direction:column;gap:6px;min-width:190px;">
+        <button id="btn-bulk-fix-empresa" onclick="bulkRegenerarLegacy()" title="Fix comprobantes que dicen Espagiria → ANIMUS Lab" style="background:none;border:none;text-align:left;cursor:pointer;font-size:12px;padding:6px 8px;border-radius:6px;color:var(--cx-text);">&#x1F527; Fix comprobantes legacy</button>
+        <button onclick="cleanupHistoricoImportado()" title="Marcar como Pagada los 'Pago histórico importado' atrapados en Pendiente" style="background:none;border:none;text-align:left;cursor:pointer;font-size:12px;padding:6px 8px;border-radius:6px;color:var(--cx-text);">&#x1F9F9; Limpiar histórico importado</button>
+      </div>
+    </details>
   </div>
 
   <!-- Tabla principal: catálogo influencers (rows expandibles) -->
@@ -2594,8 +2600,7 @@ async function loadAtribucion(force) {
 }
 
 async function loadPagosInfluencers() {
-  // Trigger atribución en paralelo (independiente de pagos)
-  loadAtribucion();
+  // Atribución ahora es colapsable (carga al abrir · ontoggle) · no la disparamos en el load
   try {
     const r = await fetch('/api/marketing/pagos-influencers');
     const d = await r.json();
@@ -2844,10 +2849,13 @@ async function loadInfluencers() {
     if(conPendiente.length > 0) {
       const totalPend = kpis.total_pendiente || 0;
       banner.style.display = 'block';
-      banner.innerHTML = '<b>⏳ Tienes ' + conPendiente.length + ' solicitud'
+      banner.style.background = 'linear-gradient(135deg,rgba(245,158,11,.10),rgba(245,158,11,.03))';
+      banner.style.border = '1px solid rgba(245,158,11,.28)';
+      banner.style.color = 'var(--cx-text)';
+      banner.innerHTML = '<b style="color:#b45309;">⏳ ' + conPendiente.length + ' solicitud'
         + (conPendiente.length>1?'es':'') + ' esperando pago</b> · '
         + 'Total: <b>' + fmtM(totalPend) + '</b>'
-        + '<br><span style="font-size:11px;color:#b45309;opacity:.85;">'
+        + '<br><span style="font-size:11px;color:var(--cx-text-mute);">'
         + 'Sebastián las autoriza y paga desde /compras → tab Influencers. '
         + 'Cuando se paguen recibirás email automático.</span>';
     } else {
@@ -2889,9 +2897,9 @@ async function loadUrgenciasInfluencers() {
     if (vencidos === 0 && urgentes === 0) { banner.style.display='none'; return; }
     let bg, border, color, icon;
     if (vencidos > 0) {
-      bg = 'linear-gradient(90deg,#7f1d1d,#991b1b)'; border = '#dc2626'; color = '#fecaca'; icon = '🚨';
+      bg = 'linear-gradient(135deg,rgba(220,38,38,.10),rgba(220,38,38,.03))'; border = 'rgba(220,38,38,.30)'; color = '#b91c1c'; icon = '🚨';
     } else {
-      bg = 'linear-gradient(90deg,#78350f,#92400e)'; border = '#f59e0b'; color = '#fde68a'; icon = '⚠️';
+      bg = 'linear-gradient(135deg,rgba(245,158,11,.10),rgba(245,158,11,.03))'; border = 'rgba(245,158,11,.30)'; color = '#b45309'; icon = '⚠️';
     }
     banner.style.background = bg;
     banner.style.border = '1px solid '+border;
@@ -2903,9 +2911,9 @@ async function loadUrgenciasInfluencers() {
       + '<div><b style="font-size:14px;">'+icon+' Flujo urgencia pagos</b><br>'
       + '<span style="font-size:12px;opacity:.9;">'+esc(d.mensaje_estado||'')+'</span></div>'
       + '<div style="display:flex;gap:8px;font-size:11px;">'
-      + (vencidos > 0 ? '<span style="background:#dc2626;padding:4px 10px;border-radius:20px;font-weight:700;">🔴 '+vencidos+' atrasado'+(vencidos>1?'s':'')+'</span>' : '')
-      + (urgentes > 0 ? '<span style="background:#d97706;padding:4px 10px;border-radius:20px;font-weight:700;">🟡 '+urgentes+' esta semana</span>' : '')
-      + (proximos > 0 ? '<span style="background:#475569;padding:4px 10px;border-radius:20px;">🟢 '+proximos+' próx 15d</span>' : '')
+      + (vencidos > 0 ? '<span style="background:#dc2626;color:#fff;padding:4px 10px;border-radius:20px;font-weight:700;">🔴 '+vencidos+' atrasado'+(vencidos>1?'s':'')+'</span>' : '')
+      + (urgentes > 0 ? '<span style="background:#d97706;color:#fff;padding:4px 10px;border-radius:20px;font-weight:700;">🟡 '+urgentes+' esta semana</span>' : '')
+      + (proximos > 0 ? '<span style="background:#475569;color:#fff;padding:4px 10px;border-radius:20px;">🟢 '+proximos+' próx 15d</span>' : '')
       + '</div></div>'
       + (vencidos > 0 ? '<div style="font-size:11px;margin-top:8px;opacity:.85;">Promesa de pago: 30 días desde fecha del contenido. Total atrasado: <b>$'+total+'</b></div>' : '');
   } catch (_) {
@@ -3183,12 +3191,15 @@ function renderInfluencersTable() {
       +`<td>${estadoBadge}</td>`
       +`<td>${pagosBadge}${cuponBadge}</td>`
       +`<td style="white-space:nowrap;" onclick="event.stopPropagation()">`
-        +`<button class="btn btn-outline btn-sm" onclick="editInfluencer(${r.id})" title="Editar datos bancarios y de contacto">&#x270F;&#xFE0F;</button> `
-        +`<button class="btn btn-outline btn-sm" onclick="generarCuponInf(${r.id})" title="${r.discount_code?'Regenerar':'Generar'} cup\u00f3n Shopify para atribuci\u00f3n de ventas" style="border-color:#6d28d9;color:#6d28d9">&#x1F39F;&#xFE0F;</button> `
-        +`<button class="btn btn-outline btn-sm" onclick="abrirOutreachModal(${r.id})" title="Generar mensajes WhatsApp/Email/IG para contactar al influencer" style="border-color:#16a34a;color:#16a34a">&#x1F4E8;</button> `
         +`<button class="btn btn-primary btn-sm" onclick="solicitarPagoInfById(${r.id})" title="Crear cuenta de cobro y enviar a Sebasti\u00e1n para que la pague" style="font-weight:700;padding:5px 11px;">&#x1F4B8; Solicitar pago</button> `
-        +`<button class="btn btn-danger btn-sm" onclick="abrirDarDeBajaById(${r.id})" title="Dar de baja">&#x26D4;</button> `
-        +`<button class="btn btn-danger btn-sm" onclick="eliminarInfluencerById(${r.id})" title="Eliminar duplicado (solo sin pagos efectuados)">&#x1F5D1;&#xFE0F;</button>`
+        +`<button class="btn btn-outline btn-sm" onclick="editInfluencer(${r.id})" title="Editar datos bancarios y de contacto">&#x270F;&#xFE0F;</button> `
+        +`<button class="btn btn-outline btn-sm" onclick="var m=document.getElementById('acc-more-${r.id}');m.style.display=m.style.display==='none'?'inline':'none';" title="M\u00e1s acciones" style="color:var(--cx-text-mute);">&#x22EF;</button>`
+        +`<span id="acc-more-${r.id}" style="display:none;">`
+          +` <button class="btn btn-outline btn-sm" onclick="generarCuponInf(${r.id})" title="${r.discount_code?'Regenerar':'Generar'} cup\u00f3n Shopify para atribuci\u00f3n de ventas" style="border-color:#6d28d9;color:#6d28d9">&#x1F39F;&#xFE0F;</button> `
+          +`<button class="btn btn-outline btn-sm" onclick="abrirOutreachModal(${r.id})" title="Generar mensajes WhatsApp/Email/IG para contactar al influencer" style="border-color:#16a34a;color:#16a34a">&#x1F4E8;</button> `
+          +`<button class="btn btn-danger btn-sm" onclick="abrirDarDeBajaById(${r.id})" title="Dar de baja">&#x26D4;</button> `
+          +`<button class="btn btn-danger btn-sm" onclick="eliminarInfluencerById(${r.id})" title="Eliminar duplicado (solo sin pagos efectuados)">&#x1F5D1;&#xFE0F;</button>`
+        +`</span>`
       +'</td>'
       +'</tr>';
     let expandedRows = '';
