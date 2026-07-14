@@ -636,3 +636,62 @@ def test_tapas_goteros_al_frasco_flujo(admin_client):
     tapas_now = {r[0].upper() for r in db.execute("SELECT parte_codigo FROM mee_partes WHERE UPPER(mee_codigo)=? AND (UPPER(parte_codigo) LIKE 'MEE-TAP-%')", (frasco,)).fetchall()}
     db.close()
     assert tapas_now == {tapa2}, ("la tapa vieja se reemplazó, no se duplicó", tapas_now)
+
+
+# ── Reconciliar precios ÷1000 (trazabilidad 13-jul) ─────────────────────
+def _seed_precio_div(codigo, pr, pk):
+    """maestro con precio_referencia real + precios_mp_historico ÷1000."""
+    import os, sqlite3
+    conn = sqlite3.connect(os.environ['DB_PATH'])
+    conn.execute("""INSERT OR REPLACE INTO maestro_mps
+        (codigo_mp, nombre_comercial, activo, tipo_material, precio_referencia)
+        VALUES (?, ?, 1, 'MP', ?)""", (codigo, 'Div Test ' + codigo, pr))
+    conn.execute("""INSERT INTO precios_mp_historico (codigo_mp, proveedor, precio_kg, fecha, origen)
+        VALUES (?, 'P', ?, '2026-07-01', 'oc')""", (codigo, pk))
+    conn.commit(); conn.close()
+
+
+def _cleanup_precio_div(codigo):
+    import os, sqlite3
+    conn = sqlite3.connect(os.environ['DB_PATH'])
+    conn.execute("DELETE FROM precios_mp_historico WHERE codigo_mp=?", (codigo,))
+    conn.execute("DELETE FROM maestro_mps WHERE codigo_mp=?", (codigo,))
+    conn.commit(); conn.close()
+
+
+def test_reconciliar_precios_page_200(admin_client):
+    r = admin_client.get("/admin/reconciliar-precios")
+    assert r.status_code == 200, r.status_code
+    assert "Reconciliar precios" in r.data.decode("utf-8", "replace")
+
+
+def test_reconciliar_precios_preview_detecta_div1000(admin_client):
+    _seed_precio_div('MP-DIV-PREV', 30000.0, 30.0)  # ref real 30000, hist ÷1000
+    try:
+        r = admin_client.get("/api/admin/reconciliar-precios-historico")
+        assert r.status_code == 200, r.data
+        cands = r.get_json()['candidatos']
+        c = next((x for x in cands if x['codigo'] == 'MP-DIV-PREV'), None)
+        assert c is not None, 'no detectó el ÷1000'
+        assert abs(c['real'] - 30000.0) < 0.5
+        assert c['fix_precios_mp_historico'] is True
+    finally:
+        _cleanup_precio_div('MP-DIV-PREV')
+
+
+def test_reconciliar_precios_aplica_corrige_historico(admin_client):
+    import os, sqlite3
+    _seed_precio_div('MP-DIV-APP', 43000.0, 43.0)
+    try:
+        r = admin_client.post("/api/admin/reconciliar-precios-historico/aplicar",
+                              json={'codigos': ['MP-DIV-APP']})
+        assert r.status_code == 200, r.data
+        assert r.get_json()['corregidos'] == 1
+        conn = sqlite3.connect(os.environ['DB_PATH'])
+        pk = conn.execute(
+            "SELECT precio_kg FROM precios_mp_historico WHERE codigo_mp=? ORDER BY fecha DESC LIMIT 1",
+            ('MP-DIV-APP',)).fetchone()[0]
+        conn.close()
+        assert abs((pk or 0) - 43000.0) < 0.5, f'precio_kg no corregido: {pk}'
+    finally:
+        _cleanup_precio_div('MP-DIV-APP')

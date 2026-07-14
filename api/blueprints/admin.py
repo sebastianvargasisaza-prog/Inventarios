@@ -16513,6 +16513,267 @@ def admin_formulas_mismapeo_page():
     return _FORMULAS_MISMAPEO_HTML
 
 
+# ─── Reconciliar precios ÷1000 (trazabilidad 13-jul · Sebastián) ────────────────
+# El tool de "precios sospechosos ÷1000" (9-jul) dividió por 1000 precios de MPs
+# caros que en realidad eran reales → `precios_mp_historico` y `precio_historico_mp`
+# quedaron ÷1000 vs `maestro_mps.precio_referencia` (la verdad · confirmado por
+# Sebastián: los precios altos en COP/kg son los reales). El badge de la bandeja
+# (sugerir-mp-bulk lee precios_mp_historico) mostraba "$30/kg" en vez de "$30.000/kg".
+# Este tool reconcilia los 3 sitios usando precio_referencia como fuente de verdad.
+_PRECIO_DIV_FACTOR = 100  # ≥100× de diferencia = error de unidad (÷1000), no cambio normal de precio
+
+
+def _reconciliar_precios_scan(c):
+    """Devuelve la lista de MPs con precios ÷1000 (divergencia ≥ _PRECIO_DIV_FACTOR)
+    entre maestro_mps.precio_referencia ($/kg), precios_mp_historico.precio_kg ($/kg)
+    y precio_historico_mp.precio_unit_g ($/g). `real` = el precio mayor (el no dividido)."""
+    ref = {}
+    for r in c.execute(
+        "SELECT UPPER(TRIM(codigo_mp)), COALESCE(NULLIF(nombre_comercial,''),codigo_mp), "
+        "COALESCE(precio_referencia,0) FROM maestro_mps WHERE COALESCE(activo,1)=1"
+    ).fetchall():
+        ref[r[0]] = {'nombre': r[1] or r[0], 'pr': float(r[2] or 0)}
+    # latest precio_kg de precios_mp_historico (plural · $/kg · fuente del badge)
+    plural = {}
+    for r in c.execute(
+        "SELECT UPPER(TRIM(codigo_mp)), COALESCE(precio_kg,0), COALESCE(fecha,'') "
+        "FROM precios_mp_historico WHERE COALESCE(precio_kg,0)>0"
+    ).fetchall():
+        k = r[0]; f = str(r[2] or '')
+        if k not in plural or f > plural[k]['fecha']:
+            plural[k] = {'precio_kg': float(r[1] or 0), 'fecha': f}
+    # latest precio_unit_g de precio_historico_mp (singular · $/g)
+    sing = {}
+    try:
+        for r in c.execute(
+            "SELECT UPPER(TRIM(codigo_mp)), COALESCE(precio_unit_g,0), COALESCE(fecha,'') "
+            "FROM precio_historico_mp WHERE COALESCE(precio_unit_g,0)>0"
+        ).fetchall():
+            k = r[0]; f = str(r[2] or '')
+            if k not in sing or f > sing[k]['fecha']:
+                sing[k] = {'precio_g': float(r[1] or 0), 'fecha': f}
+    except Exception:
+        sing = {}
+    cands = []
+    F = _PRECIO_DIV_FACTOR
+    codes = set(ref) | set(plural) | set(sing)
+    for k in codes:
+        pr = ref.get(k, {}).get('pr', 0)
+        ph = plural.get(k, {}).get('precio_kg', 0)            # $/kg
+        ps = sing.get(k, {}).get('precio_g', 0) * 1000        # $/g → $/kg
+        vals = [v for v in (pr, ph, ps) if v > 0]
+        if len(vals) < 2:
+            continue
+        real = max(vals)
+        fix_ref = pr > 0 and real / pr >= F
+        fix_plu = ph > 0 and real / ph >= F
+        fix_sing = ps > 0 and real / ps >= F
+        if fix_ref or fix_plu or fix_sing:
+            cands.append({
+                'codigo': k, 'nombre': ref.get(k, {}).get('nombre', k),
+                'precio_referencia': round(pr, 2),
+                'precio_kg_hist': round(ph, 2),
+                'precio_g_hist_kg': round(ps, 2),
+                'real': round(real, 2),
+                'fix_maestro': fix_ref,
+                'fix_precios_mp_historico': fix_plu,
+                'fix_precio_historico_mp': fix_sing,
+            })
+    cands.sort(key=lambda x: -x['real'])
+    return cands
+
+
+@bp.route("/api/admin/reconciliar-precios-historico", methods=["GET"])
+def admin_reconciliar_precios_preview():
+    """Preview: MPs con precios ÷1000 (histórico vs precio_referencia)."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    cands = _reconciliar_precios_scan(c)
+    return jsonify({'ok': True, 'total': len(cands), 'candidatos': cands})
+
+
+@bp.route("/api/admin/reconciliar-precios-historico/aplicar", methods=["POST"])
+def admin_reconciliar_precios_aplicar():
+    """Corrige los MPs seleccionados: sube los precios ÷1000 al valor real
+    (recomputado server-side · no confía en el cliente). Audita cada cambio."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    data = request.get_json(silent=True) or {}
+    pedidos = data.get('codigos') or []
+    todos = bool(data.get('todos'))
+    conn = get_db(); c = conn.cursor()
+    cands = {x['codigo']: x for x in _reconciliar_precios_scan(c)}
+    if todos:
+        objetivo = list(cands.keys())
+    else:
+        objetivo = [str(x).strip().upper() for x in pedidos if str(x).strip() and str(x).strip().upper() in cands]
+    if not objetivo:
+        return jsonify({'error': 'Sin códigos válidos para corregir (¿ya está todo reconciliado?)'}), 400
+    F = _PRECIO_DIV_FACTOR
+    detalle = []
+    for k in objetivo:
+        cand = cands[k]
+        real = float(cand['real'] or 0)
+        if real <= 0:
+            continue
+        cambios = {}
+        if cand['fix_maestro']:
+            audit_log(c, usuario=u, accion='RECONCILIAR_PRECIO', tabla='maestro_mps',
+                      registro_id=k, antes=str(cand['precio_referencia']), despues=str(real),
+                      detalle='precio_referencia ÷1000 → real')
+            c.execute("UPDATE maestro_mps SET precio_referencia=? WHERE UPPER(TRIM(codigo_mp))=?", (real, k))
+            cambios['maestro_mps'] = c.rowcount
+        if cand['fix_precios_mp_historico']:
+            n = c.execute(
+                "UPDATE precios_mp_historico SET precio_kg=? "
+                "WHERE UPPER(TRIM(codigo_mp))=? AND COALESCE(precio_kg,0)>0 AND precio_kg<=?",
+                (real, k, real / F)).rowcount
+            audit_log(c, usuario=u, accion='RECONCILIAR_PRECIO', tabla='precios_mp_historico',
+                      registro_id=k, antes=str(cand['precio_kg_hist']), despues=str(real),
+                      detalle=f'{n} filas ÷1000 → real')
+            cambios['precios_mp_historico'] = n
+        if cand['fix_precio_historico_mp']:
+            _pg = real / 1000.0  # $/kg → $/g
+            n = c.execute(
+                "UPDATE precio_historico_mp SET precio_unit_g=? "
+                "WHERE UPPER(TRIM(codigo_mp))=? AND COALESCE(precio_unit_g,0)>0 AND precio_unit_g<=?",
+                (_pg, k, _pg / F)).rowcount
+            audit_log(c, usuario=u, accion='RECONCILIAR_PRECIO', tabla='precio_historico_mp',
+                      registro_id=k, antes=str(cand['precio_g_hist_kg']), despues=str(real),
+                      detalle=f'{n} filas ÷1000 → real ($/g)')
+            cambios['precio_historico_mp'] = n
+        detalle.append({'codigo': k, 'real': real, 'cambios': cambios})
+    conn.commit()
+    return jsonify({'ok': True, 'corregidos': len(detalle), 'detalle': detalle})
+
+
+@bp.route("/admin/reconciliar-precios", methods=["GET"])
+def admin_reconciliar_precios_page():
+    if 'compras_user' not in session:
+        return redirect("/login?next=/admin/reconciliar-precios")
+    if session.get('compras_user') not in ADMIN_USERS:
+        return "<h2 style='font-family:sans-serif;padding:40px'>Solo admins</h2>", 403
+    return _RECONCILIAR_PRECIOS_HTML
+
+
+_RECONCILIAR_PRECIOS_HTML = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reconciliar precios ÷1000 · EOS</title>
+<style>
+:root{--v:#6d28d9;--vl:#7c3aed;--txt:#1c1917;--mut:#78716c;--line:#eef0f2;--bg:#faf9fb;}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--txt);padding:28px;}
+.wrap{max-width:1200px;margin:0 auto;}
+h1{font-size:22px;margin:0 0 4px;letter-spacing:-.02em;}
+.sub{color:var(--mut);font-size:13px;margin-bottom:20px;line-height:1.5;}
+.card{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 2px 14px rgba(15,23,42,.05);padding:18px;margin-bottom:16px;}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;}
+button{font-family:inherit;cursor:pointer;border-radius:10px;font-weight:700;font-size:13px;padding:9px 16px;border:1px solid transparent;}
+.btn-p{background:linear-gradient(135deg,var(--vl),var(--v));color:#fff;box-shadow:0 4px 12px rgba(109,40,217,.25);}
+.btn-o{background:#fff;border-color:var(--line);color:var(--txt);}
+.btn-g{background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;box-shadow:0 4px 12px rgba(22,163,74,.25);}
+table{width:100%;border-collapse:collapse;font-size:12.5px;}
+th{background:#faf5ff;color:var(--v);text-transform:uppercase;font-size:10.5px;letter-spacing:.04em;padding:9px 8px;text-align:left;border-bottom:1px solid var(--line);}
+td{padding:8px;border-bottom:1px solid var(--line);}
+tr:hover td{background:#faf9fb;}
+.num{text-align:right;font-variant-numeric:tabular-nums;}
+.bad{color:#dc2626;font-weight:700;}
+.good{color:#16a34a;font-weight:700;}
+.pill{display:inline-block;background:#faf5ff;color:var(--v);border-radius:20px;padding:2px 9px;font-size:10.5px;font-weight:700;margin:1px;}
+.muted{color:var(--mut);}
+#status{font-size:13px;color:var(--mut);}
+</style></head><body><div class="wrap">
+<h1>&#x1F527; Reconciliar precios &divide;1000</h1>
+<div class="sub">MPs cuyo precio en el historial quedó &divide;1000 vs el precio de referencia real del maestro
+(el tool de "precios sospechosos" del 9-jul dividió de más). Se corrige a la <b>fuente de verdad</b>
+(el precio alto en COP/kg). Vista previa &rarr; corregir. Cada cambio queda auditado.</div>
+<div class="card">
+  <div class="bar">
+    <button class="btn-o" onclick="cargar()">&#x21BB; Actualizar preview</button>
+    <button class="btn-g" id="btn-todos" onclick="aplicar(true)" style="display:none">&#x2713; Corregir TODOS</button>
+    <button class="btn-p" id="btn-sel" onclick="aplicar(false)" style="display:none">&#x2713; Corregir seleccionados</button>
+    <span id="status">Cargando&hellip;</span>
+  </div>
+  <div style="overflow-x:auto"><table id="tbl"><thead><tr>
+    <th style="width:30px"><input type="checkbox" id="chk-all" onchange="toggleAll(this.checked)"></th>
+    <th>Código</th><th>Nombre</th>
+    <th class="num">Ref (maestro)</th><th class="num">Hist $/kg</th><th class="num">Hist $/g&times;1000</th>
+    <th class="num">Real &rarr;</th><th>Corrige</th>
+  </tr></thead><tbody id="body"><tr><td colspan="8" class="muted" style="padding:20px;text-align:center">Cargando&hellip;</td></tr></tbody></table></div>
+</div>
+<script>
+var DATA=[];
+function money(n){return '$'+Number(n||0).toLocaleString('es-CO',{maximumFractionDigits:0});}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+async function cargar(){
+  document.getElementById('status').textContent='Cargando preview…';
+  try{
+    var r=await fetch('/api/admin/reconciliar-precios-historico',{credentials:'same-origin'});
+    var d=await r.json();
+    if(!r.ok){document.getElementById('status').textContent='Error: '+(d.error||r.status);return;}
+    DATA=d.candidatos||[];
+    render();
+  }catch(e){document.getElementById('status').textContent='Error de red: '+e.message;}
+}
+function render(){
+  var b=document.getElementById('body');
+  if(!DATA.length){
+    b.innerHTML='<tr><td colspan="8" class="good" style="padding:24px;text-align:center">&#x2705; No hay precios &divide;1000 · todo reconciliado</td></tr>';
+    document.getElementById('status').textContent='0 MPs con divergencia';
+    document.getElementById('btn-todos').style.display='none';
+    document.getElementById('btn-sel').style.display='none';
+    return;
+  }
+  document.getElementById('status').textContent=DATA.length+' MP(s) con precio &divide;1000 detectados';
+  document.getElementById('btn-todos').style.display='';
+  document.getElementById('btn-sel').style.display='';
+  b.innerHTML=DATA.map(function(x){
+    var tags='';
+    if(x.fix_maestro)tags+='<span class="pill">maestro</span>';
+    if(x.fix_precios_mp_historico)tags+='<span class="pill">badge</span>';
+    if(x.fix_precio_historico_mp)tags+='<span class="pill">hist $/g</span>';
+    return '<tr>'+
+      '<td><input type="checkbox" class="rowchk" data-cod="'+esc(x.codigo)+'" checked></td>'+
+      '<td style="font-family:monospace;font-size:11px">'+esc(x.codigo)+'</td>'+
+      '<td>'+esc(x.nombre)+'</td>'+
+      '<td class="num'+(x.fix_maestro?' bad':'')+'">'+money(x.precio_referencia)+'</td>'+
+      '<td class="num'+(x.fix_precios_mp_historico?' bad':'')+'">'+money(x.precio_kg_hist)+'</td>'+
+      '<td class="num'+(x.fix_precio_historico_mp?' bad':'')+'">'+money(x.precio_g_hist_kg)+'</td>'+
+      '<td class="num good">'+money(x.real)+'/kg</td>'+
+      '<td>'+tags+'</td>'+
+    '</tr>';
+  }).join('');
+}
+function toggleAll(v){var cs=document.querySelectorAll('.rowchk');for(var i=0;i<cs.length;i++)cs[i].checked=v;}
+async function aplicar(todos){
+  var body={};
+  if(todos){body.todos=true;}
+  else{
+    var cods=[];var cs=document.querySelectorAll('.rowchk');
+    for(var i=0;i<cs.length;i++){if(cs[i].checked)cods.push(cs[i].getAttribute('data-cod'));}
+    if(!cods.length){alert('Seleccioná al menos un MP');return;}
+    body.codigos=cods;
+  }
+  if(!confirm('Corregir el precio de '+(todos?'TODOS los':(body.codigos.length))+' MP(s) al valor real? Queda auditado y es reversible.'))return;
+  document.getElementById('status').textContent='Aplicando…';
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/admin/reconciliar-precios-historico/aplicar',{
+      method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token},
+      body:JSON.stringify(body)});
+    var d=await r.json();
+    if(!r.ok){alert('Error: '+(d.error||r.status));document.getElementById('status').textContent='Error';return;}
+    alert('✓ '+d.corregidos+' MP(s) corregidos');
+    cargar();
+  }catch(e){alert('Error de red: '+e.message);}
+}
+cargar();
+</script></div></body></html>"""
+
+
 @bp.route("/api/admin/mps-inci-sospechoso", methods=["GET"])
 def admin_mps_inci_sospechoso():
     """Maestro_mps con nombre_inci SOSPECHOSO de estar mal escrito.
