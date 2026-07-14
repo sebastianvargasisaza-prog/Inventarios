@@ -658,23 +658,26 @@ function showSubPlanta(w){
 </script>
 
 <div id="pane-consol" class="pane">
-  <div class="bar" style="flex-wrap:wrap;gap:8px;">
-    <div>
-      <span style="font-weight:700;color:#1e293b;font-size:15px;">&#x1F4E6; Órdenes de compra activas · agrupadas por proveedor</span>
-      <div style="font-size:11px;color:#64748b;margin-top:2px">OCs <b>por autorizar</b> (Borrador / Revisada) · las autorizadas listas para pagar están en <b>💰 Por Pagar</b> · las SOLs pendientes en <b>🏭 Planta</b></div>
+  <div class="bar" style="flex-direction:column;align-items:stretch;gap:12px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+      <div>
+        <span style="font-weight:800;color:#1e293b;font-size:16px;letter-spacing:-.01em;">&#x1F4E6; Órdenes de compra activas</span>
+        <div style="font-size:11px;color:#64748b;margin-top:3px">OCs <b>por autorizar</b> (Borrador / Revisada) · las autorizadas listas para pagar están en <b>💰 Por Pagar</b> · las SOLs pendientes en <b>🏭 Planta</b></div>
+      </div>
+      <button class="btn bg" onclick="openNuevaOC('')" style="padding:9px 20px;font-size:14px;" title="Crear una orden de compra de CUALQUIER cosa · elegí la categoría (MP, empaque, servicios, EPP, papelería…) + ítems · autorizar al crear va directo a Por Pagar">&#10133; Crear OC</button>
     </div>
-    <button class="btn bp" onclick="openNuevaOC('')" style="background:#16a34a;color:#fff;font-weight:800;padding:8px 18px;font-size:14px;border:none;border-radius:7px;cursor:pointer" title="Crear una orden de compra de CUALQUIER cosa · elegí la categoría (MP, empaque, servicios, EPP, papelería…) + ítems · autorizar al crear va directo a Por Pagar">&#10133; Crear OC</button>
-    <div style="display:flex;gap:8px;margin-left:auto;align-items:center;flex-wrap:wrap;">
-      <label style="font-size:12px;color:#64748b;">Estados:</label>
-      <label style="font-size:12px;"><input type="checkbox" class="consol-est" value="Borrador" checked> Borrador</label>
-      <label style="font-size:12px;"><input type="checkbox" class="consol-est" value="Revisada" checked> Revisada</label>
-      <label style="font-size:12px;" title="Las autorizadas listas para pagar están en la pestaña 💰 Por Pagar; las de mercancía esperan Recepción. Marcá esto solo si querés verlas acá también."><input type="checkbox" class="consol-est" value="Autorizada"> Autorizada</label>
-      <button class="btn bp" onclick="loadConsolidado()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
-      <button class="btn" onclick="imprimirTodas()" style="padding:6px 14px;font-size:12px;background:#0f766e;color:#fff;border:none;border-radius:5px;font-weight:700;cursor:pointer;" title="Imprime TODAS las órdenes juntas (cada proveedor en su propia hoja) en un solo documento">&#x1F5A8; Imprimir todas</button>
-      <!-- Sebastián 24-may-2026 · link directo al módulo /recepcion · bodega
-           necesita acceso rápido para registrar mercancía que llega · evita
-           que tengan que volver a /modulos para encontrarlo. -->
-      <a href="/recepcion" target="_blank" rel="noopener" class="btn" style="background:#7c3aed;color:#fff;padding:6px 14px;font-size:12px;font-weight:700;text-decoration:none;border-radius:5px;display:inline-flex;align-items:center;gap:4px" title="Abrir página dedicada de recepción · escaneo lotes · cuarentena · trazabilidad">📦 Ir a Recepción</a>
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-top:1px solid #f1f0ee;padding-top:12px;">
+      <div style="display:flex;align-items:center;gap:12px;background:#faf9fb;border:1px solid #eef0f2;border-radius:10px;padding:7px 13px;">
+        <span style="font-size:10.5px;font-weight:800;color:#78716c;text-transform:uppercase;letter-spacing:.05em;">Estados</span>
+        <label style="font-size:12px;display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" class="consol-est" value="Borrador" checked> Borrador</label>
+        <label style="font-size:12px;display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" class="consol-est" value="Revisada" checked> Revisada</label>
+        <label style="font-size:12px;display:flex;align-items:center;gap:5px;cursor:pointer;" title="Las autorizadas listas para pagar están en la pestaña 💰 Por Pagar; las de mercancía esperan Recepción. Marcá esto solo si querés verlas acá también."><input type="checkbox" class="consol-est" value="Autorizada"> Autorizada</label>
+      </div>
+      <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;">
+        <button class="btn bo" onclick="loadConsolidado()" style="font-size:12px;">&#x21BA; Actualizar</button>
+        <button class="btn" onclick="imprimirTodas()" style="font-size:12px;background:linear-gradient(135deg,#0d9488,#0f766e);color:#fff;" title="Imprime TODAS las órdenes juntas (cada proveedor en su propia hoja) en un solo documento">&#x1F5A8; Imprimir todas</button>
+        <a href="/recepcion" target="_blank" rel="noopener" class="btn" style="background:linear-gradient(135deg,#8b5cf6,#7c3aed);color:#fff;font-size:12px;text-decoration:none;display:inline-flex;align-items:center;gap:4px" title="Abrir página dedicada de recepción · escaneo lotes · cuarentena · trazabilidad">📦 Ir a Recepción</a>
+      </div>
     </div>
   </div>
   <div style="position:relative;margin:2px 0 6px;">
@@ -899,7 +902,7 @@ function showSubPlanta(w){
 
 <!-- MODAL: Nueva OC -->
 <div id="m-noc" class="ov">
-<div class="mdl mdl-lg">
+<div class="mdl mdl-lg" style="max-width:940px;">
   <div class="mh mh-ent">
     <div>
       <h3 id="noc-title">&#x1F4DD; Nueva Orden de Compra</h3>
@@ -1127,18 +1130,18 @@ function showSubPlanta(w){
 <!-- MODAL: Aprobar / Rechazar OC -->
 <div id="m-aut" class="ov">
 <div class="mdl">
-  <div class="mh"><h3>&#9997; Decision sobre OC</h3><button class="mx" onclick="closeModal('m-aut')">&times;</button></div>
+  <div class="mh mh-ent"><h3>&#9997; Decisión sobre OC</h3><button class="mx" onclick="closeModal('m-aut')">&times;</button></div>
   <div class="mb">
-    <div id="m-aut-info" style="background:#f9f8f7;border:1px solid #e7e5e4;border-radius:6px;padding:10px;font-size:13px;margin-bottom:4px;"></div>
+    <div id="m-aut-info" style="background:linear-gradient(135deg,rgba(124,58,237,.06),rgba(124,58,237,.02));border:1px solid rgba(124,58,237,.20);border-radius:12px;padding:12px 14px;font-size:13px;margin-bottom:2px;"></div>
     <div class="fg"><label>Motivo / Comentario (recomendado)</label>
-      <textarea id="aut-motivo" placeholder="Razon de la aprobacion o rechazo..." rows="3"></textarea>
+      <textarea id="aut-motivo" placeholder="Razón de la aprobación o rechazo…" rows="3"></textarea>
     </div>
     <input type="hidden" id="aut-num">
   </div>
   <div class="mf">
     <button class="btn bo" onclick="closeModal('m-aut')">Cancelar</button>
-    <button class="btn" style="background:#dc2626;color:#fff;font-weight:700;" onclick="decidirOC('Rechazada')">&#10005; Rechazar</button>
-    <button class="btn bi" onclick="decidirOC('Autorizada')">&#10003; Autorizar</button>
+    <button class="btn" style="background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;font-weight:700;" onclick="decidirOC('Rechazada')">&#10005; Rechazar</button>
+    <button class="btn bg" onclick="decidirOC('Autorizada')">&#10003; Autorizar</button>
   </div>
 </div>
 </div>
