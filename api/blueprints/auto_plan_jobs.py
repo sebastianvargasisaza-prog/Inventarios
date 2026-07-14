@@ -682,6 +682,8 @@ JOBS_SCHEDULE = [
     # ⭐ Marketing · diario 9:05 · alerta campana si hay pagos influencer atrasados
     # (vence_pago_at < hoy · promesa 30d desde fecha_contenido · Sebastián 27-may-2026)
     ('pagos_influencer_urgencia', 9, 5, None, None,               'job_pagos_influencer_urgencia'),
+    # ⭐ Gerencia · diario 9:10 · recordatorio cargos fijos (por pagar → Sebastián · sin monto → Catalina)
+    ('cargos_fijos_recordatorio', 9, 10, None, None,             'job_cargos_fijos_recordatorio'),
     # Diarios
     ('sync_stock_shopify',    5, 30, None, None,                'job_sync_stock_shopify_diario'),
     ('sync_stock_shopify_md', 13, 30, None, None,               'job_sync_stock_shopify_diario'),
@@ -5740,6 +5742,66 @@ def job_pagos_influencer_urgencia(app):
             log.warning(f'push_notif fallo: {e}')
         return True, {'vencidos': len(rows), 'valor_total': total_valor}, \
                f'{len(rows)} vencidos · ${total_valor:,}'
+
+
+def job_cargos_fijos_recordatorio(app):
+    """Gerencia · diario 9:10 · recordatorio de cargos fijos (Sebastián 14-jul).
+
+    Asegura la instancia del mes y notifica: 'por pagar' → Sebastián (admin, con
+    flag importante si hay vencidos) · 'sin monto' → Catalina (compras · debe
+    cargar el valor del mes). Sin email (solo campana · preferencia usuario).
+    """
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        from datetime import datetime as _dt, timedelta as _td
+        periodo = (_dt.utcnow() - _td(hours=5)).strftime('%Y-%m')
+        hoy = (_dt.utcnow() - _td(hours=5)).strftime('%Y-%m-%d')
+        try:
+            from blueprints.compras import _asegurar_cargos_mes
+            _asegurar_cargos_mes(c, periodo)
+            conn.commit()
+        except Exception:
+            try: conn.rollback()
+            except Exception: pass
+        try:
+            rows = c.execute(
+                "SELECT p.estado, p.monto, p.fecha_limite "
+                "FROM cargos_fijos_pagos p WHERE p.periodo=? "
+                "AND p.estado IN ('por_pagar','pendiente_monto')",
+                (periodo,)).fetchall()
+        except Exception as e:
+            return True, {'skip': True, 'razon': f'mig 348 pendiente: {e}'}, 'no-op'
+        porpagar = [r for r in rows if r[0] == 'por_pagar']
+        pendmonto = [r for r in rows if r[0] == 'pendiente_monto']
+        vencidos = [r for r in porpagar if (r[2] or '') and r[2] < hoy]
+        try:
+            from blueprints.notif import push_notif, push_notif_multi
+            if porpagar:
+                total = sum(int(r[1] or 0) for r in porpagar)
+                venctxt = (f' · {len(vencidos)} VENCIDO(s)') if vencidos else ''
+                for u in ('sebastian', 'alejandro'):
+                    try:
+                        push_notif(destinatario=u, tipo='cargo_fijo',
+                                   titulo='🏛️ Cargos fijos por pagar',
+                                   body=f'{len(porpagar)} cargo(s) por pagar · ${total:,}{venctxt} · /compras → Gerencia',
+                                   link='/compras', remitente='sistema', importante=bool(vencidos))
+                    except Exception:
+                        pass
+            if pendmonto:
+                try:
+                    from config import COMPRAS_ACCESS as _CA
+                    push_notif_multi(list(_CA), tipo='cargo_fijo',
+                                     titulo='🏛️ Cargos fijos sin monto',
+                                     body=f'{len(pendmonto)} cargo(s) del mes sin monto · cargalos en /compras → Gerencia → Cargos fijos.',
+                                     link='/compras', remitente='sistema')
+                except Exception:
+                    pass
+        except Exception as e:
+            log.warning(f'push_notif cargos fijos fallo: {e}')
+        return True, {'por_pagar': len(porpagar), 'pendiente_monto': len(pendmonto),
+                      'vencidos': len(vencidos)}, \
+               f'{len(porpagar)} por pagar · {len(pendmonto)} sin monto'
 
 
 def iniciar_multi_cron(app):

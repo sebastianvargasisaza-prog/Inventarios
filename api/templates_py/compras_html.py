@@ -3398,7 +3398,7 @@ function setCat(k){
   var colH={'MP':'Codigo MP','MEE':'Ref. MEE','SVC':'Servicio',
     'ADM':'Concepto','INF':'Ref.','CC':'Concepto'};
   var th=document.querySelector('#m-noc .itbl thead tr th');
-  if(th) th.textContent=colH[k]||'Codigo';
+  if(th){ th.textContent=colH[k]||'Codigo'; th.style.display=(['SVC','ADM','INF','CC'].indexOf(k)>=0)?'none':''; }
   // ── Provider field: select for MP/MEE, free-text for the rest ──
   var isCatalog=(k==='MP'||k==='MEE');
   var sel=document.getElementById('noc-prov');
@@ -3459,11 +3459,14 @@ function addRow(){
   var _ph={'MP':'Buscar MP...','MEE':'Buscar envase…','SVC':'Servicio','ADM':'Concepto','INF':'Ref.','CC':'Concepto'};
   var _ph_val=_ph[_cat]||'COD';
   var _w=(isMP||isMEE)?'width:115px':'width:80px';
+  // Servicios/Admin/Infra/CC no tienen "código" útil (la descripción es el catálogo) →
+  // se oculta la columna, pero el input queda en el DOM (submitOC lee ic+n · vacío OK).
+  var hideCod=(['SVC','ADM','INF','CC'].indexOf(_cat)>=0);
   var codCell=isMP
-    ?'<td><input id="ic'+n+'" list="mp-dl" placeholder="Buscar MP..." style="'+_w+'" oninput="autoFillMP('+n+')" autocomplete="off"></td>'
+    ?'<td class="noc-cod-cell"><input id="ic'+n+'" list="mp-dl" placeholder="Buscar MP..." style="'+_w+'" oninput="autoFillMP('+n+')" autocomplete="off"></td>'
     :isMEE
-    ?'<td><input id="ic'+n+'" list="mee-dl" placeholder="Buscar envase…" style="'+_w+'" oninput="autoFillMEE('+n+')" autocomplete="off"></td>'
-    :'<td><input id="ic'+n+'" placeholder="'+_ph_val+'" style="'+_w+'"></td>';
+    ?'<td class="noc-cod-cell"><input id="ic'+n+'" list="mee-dl" placeholder="Buscar envase…" style="'+_w+'" oninput="autoFillMEE('+n+')" autocomplete="off"></td>'
+    :'<td class="noc-cod-cell"'+(hideCod?' style="display:none"':'')+'><input id="ic'+n+'" placeholder="'+_ph_val+'" style="'+_w+'"></td>';
   var tr=document.createElement('tr');
   tr.id='ir'+n;
   tr.innerHTML=codCell+
