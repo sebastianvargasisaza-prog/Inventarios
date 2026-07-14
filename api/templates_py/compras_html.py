@@ -7829,6 +7829,7 @@ function renderConsolCardEdit(p, idx){
           +'style="width:100px;padding:4px 6px;border:1px solid #d1d5db;border-radius:5px;font-size:12px;text-align:right;"></td>'
         +'<td style="padding:6px 8px;font-size:12px;color:#475569;text-align:right;" class="row-subtotal">'
           +'$'+Number(it.subtotal||0).toLocaleString('es-CO',{maximumFractionDigits:0})+'</td>'
+        +'<td style="padding:4px 8px;text-align:right;"><button data-oc="'+escConH(o.numero_oc||'')+'" data-item="'+it.id+'" onclick="deleteConsolItem(this)" style="background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:5px;padding:3px 8px;font-size:11px;cursor:pointer;" title="Quitar este producto de la orden">&#x1F5D1;</button></td>'
         +'</tr>';
     }).join('');
 
@@ -7840,15 +7841,15 @@ function renderConsolCardEdit(p, idx){
           +'<input type="checkbox" data-field="con_iva" '+(o.con_iva?'checked':'')+' '
           +'onchange="recalcConsolOCFromEl(this)"> Con IVA 19%</label>'
       +'</div>'
-      +(itemsRows
-        ? '<table style="width:100%;border-collapse:collapse;margin-top:8px;">'
-            +'<thead><tr>'
-              +'<th style="text-align:left;font-size:10px;color:#94a3b8;padding:4px 8px;text-transform:uppercase;letter-spacing:.5px;">Producto</th>'
-              +'<th style="text-align:right;font-size:10px;color:#94a3b8;padding:4px 8px;text-transform:uppercase;letter-spacing:.5px;">Cantidad (g)</th>'
-              +'<th style="text-align:right;font-size:10px;color:#94a3b8;padding:4px 8px;text-transform:uppercase;letter-spacing:.5px;">Precio unit.</th>'
-              +'<th style="text-align:right;font-size:10px;color:#94a3b8;padding:4px 8px;text-transform:uppercase;letter-spacing:.5px;">Subtotal</th>'
-            +'</tr></thead><tbody>'+itemsRows+'</tbody></table>'
-        : '<div style="font-size:11px;color:#94a3b8;padding:8px 0;">Sin items detallados en esta OC.</div>')
+      +'<table style="width:100%;border-collapse:collapse;margin-top:8px;">'
+          +'<thead><tr>'
+            +'<th style="text-align:left;font-size:10px;color:#94a3b8;padding:4px 8px;text-transform:uppercase;letter-spacing:.5px;">Producto</th>'
+            +'<th style="text-align:right;font-size:10px;color:#94a3b8;padding:4px 8px;text-transform:uppercase;letter-spacing:.5px;">Cantidad (g)</th>'
+            +'<th style="text-align:right;font-size:10px;color:#94a3b8;padding:4px 8px;text-transform:uppercase;letter-spacing:.5px;">Precio unit.</th>'
+            +'<th style="text-align:right;font-size:10px;color:#94a3b8;padding:4px 8px;text-transform:uppercase;letter-spacing:.5px;">Subtotal</th>'
+            +'<th style="width:40px;"></th>'
+          +'</tr></thead><tbody>'+(itemsRows||'')+'</tbody></table>'
+      +'<button onclick="addConsolItemRow(this)" style="margin-top:8px;background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;">&#10133; Agregar producto</button>'
       +'<div style="margin-top:10px;font-size:12px;font-weight:700;color:#0f172a;text-align:right;" class="oc-total">'
         +'Total OC: $'+Number(o.valor_total||0).toLocaleString('es-CO',{maximumFractionDigits:0})+'</div>'
       +'<div style="margin-top:10px;">'
@@ -7902,7 +7903,7 @@ function recalcConsolOC(ocId){
   if(!ocBox) return;
   var conIva = ocBox.querySelector('[data-field="con_iva"]').checked;
   var subtotal = 0;
-  ocBox.querySelectorAll('tr[data-item-id]').forEach(function(tr){
+  ocBox.querySelectorAll('tr[data-item-id], tr[data-new]').forEach(function(tr){
     var cant = parseFloat(tr.querySelector('[data-field="cantidad_g"]').value)||0;
     var prec = parseFloat(tr.querySelector('[data-field="precio_unitario"]').value)||0;
     var st = cant * prec;
@@ -7919,6 +7920,45 @@ function recalcConsolOC(ocId){
   }
 }
 
+// Quitar un producto de la OC (edición completa · Catalina 14-jul) · inmediato
+async function deleteConsolItem(btn){
+  if(btn._busy) return;
+  var ocNum = btn.getAttribute('data-oc');
+  var itemId = btn.getAttribute('data-item');
+  if(!confirm('¿Quitar este producto de la orden '+ocNum+'? (no borra el resto)')) return;
+  btn._busy = true; btn.disabled = true;
+  try{
+    var r = await fetch('/api/ordenes-compra/'+encodeURIComponent(ocNum)+'/items/'+itemId, _fetchOpts('DELETE'));
+    var d = await r.json().catch(function(){return{};});
+    if(!r.ok){ btn.disabled=false; btn._busy=false; alert('No se pudo quitar: '+(d.error||r.status)); return; }
+    var tr = btn.closest('tr');
+    var ocBox = tr ? tr.closest('[data-oc-id]') : null;
+    if(tr) tr.remove();
+    if(ocBox) recalcConsolOC(ocBox.dataset.ocId);
+  }catch(e){ btn.disabled=false; btn._busy=false; alert('Error de red: '+e.message); }
+}
+function _consolNewItemRowHTML(){
+  return '<tr data-new="1" style="background:#f0fdf4;">'
+    +'<td style="padding:4px 8px;"><input type="text" data-field="nombre_mp" placeholder="Producto / materia prima…" list="mp-dl" style="width:100%;padding:4px 6px;border:1px solid #86efac;border-radius:5px;font-size:12px;"></td>'
+    +'<td style="padding:4px 8px;"><input type="number" step="any" min="0" value="1" data-field="cantidad_g" oninput="recalcConsolOCFromEl(this)" style="width:90px;padding:4px 6px;border:1px solid #86efac;border-radius:5px;font-size:12px;text-align:right;"></td>'
+    +'<td style="padding:4px 8px;"><input type="number" step="any" min="0" value="0" data-field="precio_unitario" oninput="recalcConsolOCFromEl(this)" style="width:100px;padding:4px 6px;border:1px solid #86efac;border-radius:5px;font-size:12px;text-align:right;"></td>'
+    +'<td style="padding:6px 8px;font-size:12px;color:#475569;text-align:right;" class="row-subtotal">$0</td>'
+    +'<td style="padding:4px 8px;text-align:right;"><button onclick="removeNewRow(this)" style="background:#f1f5f9;color:#64748b;border:1px solid #cbd5e1;border-radius:5px;padding:3px 7px;font-size:11px;cursor:pointer;" title="Quitar fila">&#10005;</button></td>'
+  +'</tr>';
+}
+function removeNewRow(btn){
+  var tr = btn.closest('tr'); if(!tr) return;
+  var ocBox = tr.closest('[data-oc-id]');
+  tr.remove();
+  if(ocBox) recalcConsolOC(ocBox.dataset.ocId);
+}
+function addConsolItemRow(btn){
+  var ocBox = btn.closest('[data-oc-id]'); if(!ocBox) return;
+  var tbody = ocBox.querySelector('table tbody'); if(!tbody) return;
+  tbody.insertAdjacentHTML('beforeend', _consolNewItemRowHTML());
+  var news = tbody.querySelectorAll('tr[data-new]');
+  if(news.length){ var last = news[news.length-1].querySelector('input'); if(last) last.focus(); }
+}
 // Persiste TODOS los cambios de una card de proveedor:
 //   - Por cada item modificado: PATCH /api/ordenes-compra/<oc>/items/<id>
 //   - Por cada OC: PATCH /api/ordenes-compra/<oc>/editar (con_iva + observaciones)
@@ -7951,6 +7991,21 @@ async function saveConsolEdits(idx){
           if(!rr.ok){ var dd = await rr.json().catch(function(){return{};}); errors.push(ocNum+' item '+itemId+': '+(dd.error||rr.status)); }
         } catch(e){ errors.push(ocNum+' item '+itemId+': '+e.message); }
       }
+    }
+
+    // 1.5) Ítems NUEVOS agregados en edición (Catalina 14-jul): POST cada uno.
+    var nuevos = ocBox.querySelectorAll('tr[data-new]');
+    for(var ni=0; ni<nuevos.length; ni++){
+      var trn = nuevos[ni];
+      var nom = ((trn.querySelector('[data-field="nombre_mp"]')||{value:''}).value||'').trim();
+      if(!nom) continue;  // fila vacía → ignorar
+      var qn = parseFloat((trn.querySelector('[data-field="cantidad_g"]')||{value:'0'}).value)||0;
+      var pn = parseFloat((trn.querySelector('[data-field="precio_unitario"]')||{value:'0'}).value)||0;
+      if(qn<=0){ errors.push(ocNum+' "'+nom+'": cantidad debe ser > 0'); continue; }
+      try{
+        var rn = await fetch('/api/ordenes-compra/'+encodeURIComponent(ocNum)+'/items', _fetchOpts('POST', {nombre_mp:nom, codigo_mp:'', cantidad_g:qn, precio_unitario:pn}));
+        if(!rn.ok){ var dn = await rn.json().catch(function(){return{};}); errors.push(ocNum+' "'+nom+'": '+(dn.error||rn.status)); }
+      }catch(e){ errors.push(ocNum+' "'+nom+'": '+e.message); }
     }
 
     // 2) OC: con_iva + observaciones (PATCH parcial — el backend mantiene proveedor/categoria/etc. si no van).
