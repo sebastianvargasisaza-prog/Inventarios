@@ -5662,8 +5662,10 @@ function _cfToggleVar(){
   var mi=document.getElementById('cf-monto'); if(mi) mi.disabled=v;
 }
 async function guardarCargoFijo(){
+  if(window._cfBusy) return;  // anti-doble-submit (evita plantillas duplicadas · M45)
   var concepto=(document.getElementById('cf-concepto').value||'').trim();
   if(!concepto){ alert('El concepto es obligatorio'); return; }
+  window._cfBusy=true;
   var body={
     id: document.getElementById('cf-id').value||null,
     concepto: concepto,
@@ -5683,6 +5685,7 @@ async function guardarCargoFijo(){
     if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
     closeModal('m-cargofijo'); loadCargosFijos();
   }catch(e){ alert('Error de red: '+e.message); }
+  finally{ window._cfBusy=false; }
 }
 function abrirMontoCargo(pid){
   var p=(_CARGOS_CACHE.pagos||[]).find(function(x){return x.id===pid;});
@@ -5694,9 +5697,11 @@ function abrirMontoCargo(pid){
   openModal('m-cargomonto');
 }
 async function guardarMontoCargo(){
+  if(window._cfmBusy) return;
   var pid=document.getElementById('cfm-pid').value;
   var monto=parseFloat(document.getElementById('cfm-monto').value||0)||0;
   if(monto<=0){ alert('Ingresá el monto del mes'); return; }
+  window._cfmBusy=true;
   var body={monto:monto, medio_pago:document.getElementById('cfm-medio').value||'', dato_pago:document.getElementById('cfm-dato').value||''};
   try{
     var r=await fetch('/api/compras/cargos-fijos/pago/'+pid+'/monto', _fetchOpts('POST', body));
@@ -5704,6 +5709,7 @@ async function guardarMontoCargo(){
     if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
     closeModal('m-cargomonto'); loadCargosFijos();
   }catch(e){ alert('Error de red: '+e.message); }
+  finally{ window._cfmBusy=false; }
 }
 async function pagarCargoFijo(pid){
   var p=(_CARGOS_CACHE.pagos||[]).find(function(x){return x.id===pid;});

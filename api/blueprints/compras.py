@@ -963,6 +963,7 @@ def eliminar_solicitud(numero):
     except Exception:
         pass
     conn.commit()
+    _bump_agrupadas()  # invalida cache de la bandeja (SOL eliminada)
     return jsonify({
         'ok': True,
         'eliminada': numero.upper(),
@@ -3410,6 +3411,7 @@ def handle_solicitudes_compra():
             except Exception as e:
                 log.warning('audit_log CREAR_SOLICITUD fallo: %s', e)
             conn.commit()
+            _bump_agrupadas()  # invalida cache de la bandeja (SOL nueva)
             # Sebastián 13-jul · CAMPANA in-app a Compras cuando entra una solicitud
             # NUEVA (antes Catalina solo se enteraba por el badge de conteo). Solo para
             # solicitudes MANUALES (excluye las auto-generadas del plan, que la spamearían).
@@ -5738,6 +5740,7 @@ def actualizar_estado_solicitud(numero):
     except Exception as e:
         log.warning('audit_log ACTUALIZAR_ESTADO_SOL fallo: %s', e)
     conn.commit()
+    _bump_agrupadas()  # invalida cache de la bandeja (estado de SOL cambió)
     oc_creada = ''
     if d.get('crear_oc'):
         cur.execute("SELECT codigo_mp, nombre_mp, cantidad_g, unidad FROM solicitudes_compra_items WHERE numero=?", (numero.upper(),))
