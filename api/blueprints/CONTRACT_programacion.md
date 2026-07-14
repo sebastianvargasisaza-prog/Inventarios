@@ -187,6 +187,10 @@ Tests goldens que protegen:
 
 ## Endpoints que expone
 
+- `GET  /api/programacion/sugerencia-produccion?producto=X` · SOLO LECTURA · panel
+  Programación v4: recordá (kg producidos mes pasado/año) + venta blended + horizontes
+  kg 1/2/3 meses + guardrails ½×–2× (90d). No escribe · reusa `velocidad_blended_uds_dia`
+  + `_factor_g_por_unidad_detalle` (paridad con Necesidades/cadencia · M70).
 - `GET  /api/programacion/producciones-faltantes` · vista plana
 - `GET  /api/programacion/producciones-agrupadas` · una fila por producto
 - `POST /api/programacion/solicitar-faltantes-bulk` · crea SOLs por proveedor
