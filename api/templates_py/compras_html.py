@@ -32,7 +32,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .kpi-v.w{color:#d97706;} .kpi-v.r{color:#dc2626;} .kpi-v.g{color:#16a34a;}
 .kpi-s{font-size:11px;color:#78716c;margin-top:2px;}
 /* Cards */
-.bar{background:#fff;border:1px solid #e7e5e4;border-radius:8px;padding:10px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;}
+.bar{background:#fff;border:1px solid #eef0f2;border-radius:12px;padding:11px 15px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;box-shadow:0 1px 3px rgba(15,23,42,.04);}
 .bar input,.bar select{padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;color:#292524;}
 .bar input{min-width:190px;}
 .pills{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
@@ -44,7 +44,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .ch{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
 .cnum{font-weight:700;font-size:13px;} .cprov{font-size:13px;color:#1c1917;font-weight:600;margin-top:2px;}
 .cprov-label{font-size:9px;color:#a8a29e;text-transform:uppercase;letter-spacing:0.05em;display:block;}
-.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;}
+.badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700;box-shadow:0 1px 2px rgba(15,23,42,.06);}
 .b-bor{background:#f3f4f6;color:#6b7280;} .b-rev{background:#fef3c7;color:#92400e;}
 .b-aut{background:#dbeafe;color:#1e40af;} .b-pag{background:#dcfce7;color:#166534;}
 .b-rec{background:#f0fdf4;color:#14532d;border:1px solid #bbf7d0;}
@@ -52,12 +52,14 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .cval{font-size:15px;font-weight:800;color:#292524;}
 .cobs{font-size:11px;color:#78716c;font-style:italic;}
 .acts{display:flex;gap:7px;flex-wrap:wrap;margin-top:3px;}
-.btn{padding:6px 13px;border-radius:6px;font-size:12px;font-weight:600;border:none;cursor:pointer;}
+.btn{padding:6px 13px;border-radius:8px;font-size:12px;font-weight:700;border:none;cursor:pointer;box-shadow:0 1px 3px rgba(15,23,42,.08);transition:box-shadow .15s,transform .1s,filter .15s,background-color .15s;}
+.btn:hover{transform:translateY(-1px);box-shadow:0 5px 14px rgba(15,23,42,.14);}
+.btn:active{transform:translateY(0);box-shadow:0 1px 3px rgba(15,23,42,.10);}
 .bp{background:#292524;color:#fff;} .bp:hover{background:#44403c;}
-.bg{background:#16a34a;color:#fff;} .bg:hover{background:#15803d;}
-.bw{background:#d97706;color:#fff;} .bw:hover{background:#b45309;}
-.bi{background:#2563eb;color:#fff;} .bi:hover{background:#1d4ed8;}
-.bo{background:#fff;color:#292524;border:1px solid #d6d3d1;} .bo:hover{background:#f5f4f2;}
+.bg{background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;} .bg:hover{filter:brightness(1.06);}
+.bw{background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;} .bw:hover{filter:brightness(1.06);}
+.bi{background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;} .bi:hover{filter:brightness(1.06);}
+.bo{background:#fff;color:#292524;border:1px solid #e7e5e4;box-shadow:0 1px 2px rgba(15,23,42,.05);} .bo:hover{background:#faf9fb;border-color:#ddd6fe;}
 .bs{padding:4px 10px;font-size:11px;}
 .empty{text-align:center;padding:36px;color:#78716c;font-size:13px;}
 .err{text-align:center;padding:20px;color:#dc2626;font-size:13px;}
@@ -633,7 +635,7 @@ function renderHistorico(){
       <option value="Aprobada">Aprobada</option>
       <option value="all">Todos</option>
     </select>
-    <button class="btn bp" onclick="loadPlanta()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
+    <button class="btn bp" onclick="loadPlanta(true)" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
     <button class="btn" onclick="limpiarSolsPlantaLegacy()" style="background:#dc2626;color:#fff;font-size:12px;padding:7px 14px;" title="Borra TODAS las SOLs Pendientes de planta sin OC vinculada · útil para borrón y cuenta nueva">&#x1F5D1;&#xFE0F; Limpiar SOLs planta</button>
   </div>
   <div id="planta-kpis" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;font-size:11px;color:#64748b;"></div>
@@ -5097,13 +5099,21 @@ window.limpiarSolsNoPagadas = async function(){
 var PLANTA_GRUPOS=[];   // grupos[i] = {proveedor, items_consolidados, solicitudes, ...}
 var PLANTA_PROVEEDORES_LIST=[];
 
-async function loadPlanta(){
+async function loadPlanta(force){
+  // PERF 13-jul · dedup anti-doble-click (evita 2 cargas pesadas simultáneas)
+  if(window._plantaLoading) return;
+  window._plantaLoading = true;
+  try { await _doLoadPlanta(force); } finally { window._plantaLoading = false; }
+}
+async function _doLoadPlanta(force){
   var estado = (document.getElementById('s-planta-estado')||{value:'Pendiente'}).value;
   document.getElementById('planta-body').innerHTML =
     '<div style="color:#94a3b8;text-align:center;padding:40px;">Cargando...</div>';
+  // PERF 13-jul · proveedores (independiente) en PARALELO con las solicitudes agrupadas
+  var _provP = fetch('/api/proveedores-unicos').then(function(rp){return rp.json();}).catch(function(){return {proveedores:[]};});
   try{
     var r = await fetch('/api/compras/solicitudes-agrupadas-por-proveedor?fuente=planta&estado='
-      + encodeURIComponent(estado) + '&_t='+Date.now(), {cache:'no-store'});
+      + encodeURIComponent(estado) + (force?'&force=1':''), {cache:'no-store'});
     var d = await r.json();
     if(!r.ok){
       document.getElementById('planta-body').innerHTML =
@@ -5133,10 +5143,9 @@ async function loadPlanta(){
       '<div style="color:#dc2626;padding:20px;">Error de red: '+esc(e.message)+'</div>';
     return;
   }
-  // Cargar lista de proveedores desde maestro_mps + movimientos (datalist)
+  // Proveedores ya se pidieron en PARALELO arriba · solo esperamos su resultado
   try{
-    var rp = await fetch('/api/proveedores-unicos');
-    var dp = await rp.json();
+    var dp = await _provP;
     PLANTA_PROVEEDORES_LIST = (dp.proveedores||[]).map(function(p){ return p.nombre || p; });
   }catch(_){ PLANTA_PROVEEDORES_LIST = []; }
   // Sprint Compras N2 · 21-may-2026 · auto-fill precio histórico
@@ -7386,8 +7395,8 @@ function renderConsolCard(p, idx){
     ? p.n_ocs+' OC'+(p.n_ocs>1?'s':'')+' &bull; '+p.n_items+' producto'+(p.n_items>1?'s':'')+' &bull; Total: <strong>'+totalFmt+'</strong>'
     : p.n_ocs+' OC'+(p.n_ocs>1?'s':'')+' &bull; Total: <strong>'+totalFmt+'</strong>';
 
-  return '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;margin-bottom:16px;overflow:hidden;">'
-    +'<div style="background:#f8fafc;padding:14px 18px;display:flex;align-items:flex-start;gap:12px;border-bottom:1px solid #e2e8f0;">'
+  return '<div style="background:#fff;border:1px solid #eef0f2;border-radius:14px;margin-bottom:16px;overflow:hidden;box-shadow:0 2px 12px rgba(15,23,42,.05);">'
+    +'<div style="background:linear-gradient(135deg,#faf7ff,#f8fafc);padding:14px 18px;display:flex;align-items:flex-start;gap:12px;border-bottom:1px solid #eef0f2;">'
       +'<span style="font-size:22px;margin-top:2px;">&#x1F3ED;</span>'
       +'<div style="flex:1;min-width:0;">'
         +'<div style="font-weight:700;font-size:16px;color:#0f172a;">'+escConH(p.proveedor)+'</div>'

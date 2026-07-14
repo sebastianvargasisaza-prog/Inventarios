@@ -3664,6 +3664,19 @@ def handle_solicitudes_compra():
 # en déficit). En vez de gestionarlas una por una, las quiere agrupadas
 # por proveedor sugerido para procesar todas las del mismo proveedor en
 # UNA sola OC. Endpoint que devuelve el agrupamiento + items consolidados.
+# PERF 13-jul (Bandeja lenta · Sebastián): cache de la bandeja agrupada (consulta
+# pesada: SUM/JOIN + consolidación). Invalidación por VERSIÓN — cualquier escritura
+# de SOL/OC hace bump → fresco al instante (sin staleness, a diferencia de un TTL
+# puro). TTL 60s = respaldo para cambios de fondo (cron auto-plan). ?force=1 salta.
+_AGRUP_CACHE = {}
+_AGRUP_VER = [0]
+
+
+def _bump_agrupadas():
+    """Invalida el cache de la bandeja agrupada (llamar tras escribir SOL/OC)."""
+    _AGRUP_VER[0] += 1
+
+
 @bp.route('/api/compras/solicitudes-agrupadas-por-proveedor', methods=['GET'])
 def solicitudes_agrupadas_por_proveedor():
     """Agrupa solicitudes_compra Pendientes por proveedor sugerido.
@@ -3696,6 +3709,24 @@ def solicitudes_agrupadas_por_proveedor():
     """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+
+    # PERF · cache por versión (fresco tras cualquier escritura de SOL/OC · bump)
+    import time as _t_ag, os as _os_ag
+    # En tests el cache es module-level y persiste entre casos (que siembran SOLs por
+    # sqlite directo, sin bump) → contaminación cruzada. Bypass bajo pytest.
+    _cache_off_ag = bool(_os_ag.environ.get('PYTEST_CURRENT_TEST'))
+    _force_ag = _cache_off_ag or (request.args.get('force') or '') not in ('', '0', 'false')
+    _key_ag = '|'.join([
+        (request.args.get('fuente') or '').lower(),
+        (request.args.get('estado') or 'Pendiente'),
+        (request.args.get('categoria') or ''),
+        str(request.args.get('limit') or 500),
+        str(request.args.get('offset') or 0),
+    ])
+    _hit_ag = _AGRUP_CACHE.get(_key_ag)
+    if _hit_ag and not _force_ag and _hit_ag['ver'] == _AGRUP_VER[0] and (_t_ag.time() - _hit_ag['ts'] < 60):
+        from flask import Response as _Resp_ag
+        return _Resp_ag(_hit_ag['payload'], mimetype='application/json')
 
     estado_filtro = (request.args.get('estado') or 'Pendiente').strip()
     categoria_filtro = (request.args.get('categoria') or '').strip()
@@ -3921,7 +3952,7 @@ def solicitudes_agrupadas_por_proveedor():
     grupos.sort(key=lambda g: (-URG_RANK.get(g['urgencia_max'], 0),
                                 -g['solicitudes_count']))
 
-    return jsonify({
+    _payload_ag = {
         'grupos': grupos,
         'sin_proveedor': sin_proveedor,
         'total_solicitudes': len(solicitudes),
@@ -3933,7 +3964,14 @@ def solicitudes_agrupadas_por_proveedor():
         'total_grupos': len(grupos),
         'estado_filtro': estado_filtro,
         'categoria_filtro': categoria_filtro,
-    })
+    }
+    try:
+        import json as _json_ag
+        _AGRUP_CACHE[_key_ag] = {'ts': _t_ag.time(), 'ver': _AGRUP_VER[0],
+                                 'payload': _json_ag.dumps(_payload_ag)}
+    except Exception:
+        pass
+    return jsonify(_payload_ag)
 
 
 # ── Sebastián 4-may-2026 (Catalina): convertir N solicitudes en 1 OC ──
@@ -4346,6 +4384,7 @@ def crear_oc_desde_solicitudes():
             log.warning('audit_log CREAR_OC_BULK fallo: %s', e)
 
         conn.commit()
+        _bump_agrupadas()  # invalida cache de la bandeja (SOLs pasaron a tener OC)
         return jsonify({
             'ok': True,
             'numero_oc': numero_oc,
@@ -4756,6 +4795,7 @@ def limpiar_solicitudes_planta():
         except Exception:
             pass
         conn.commit()
+        _bump_agrupadas()  # invalida cache de la bandeja (SOLs de planta limpiadas)
     except Exception as e:
         try: conn.rollback()
         except Exception: pass
@@ -10021,6 +10061,7 @@ def update_sol_items(numero):
     )
 
     conn.commit()
+    _bump_agrupadas()  # invalida cache de la bandeja (item de SOL editado)
     return jsonify({
         'ok': True,
         'numero': numero.upper(),
