@@ -75,15 +75,16 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 /* Modal */
 .ov{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:900;display:none;align-items:center;justify-content:center;padding:16px;}
 .ov.on{display:flex;}
-.mdl{background:#fff;border-radius:10px;width:100%;max-width:560px;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);}
+.mdl{background:#fff;border-radius:16px;width:100%;max-width:560px;max-height:92vh;overflow-y:auto;box-shadow:0 24px 70px rgba(0,0,0,.35);}
 .mdl-lg{max-width:700px;}
-.mh{padding:16px 20px;border-bottom:1px solid #e7e5e4;display:flex;align-items:center;justify-content:space-between;}
-.mh h3{font-size:15px;font-weight:700;}
+.mh{padding:16px 22px;border-bottom:1px solid #eef0f2;display:flex;align-items:center;justify-content:space-between;border-radius:16px 16px 0 0;}
+.mh h3{font-size:15px;font-weight:800;letter-spacing:-.01em;}
 .mx{background:none;border:none;font-size:20px;cursor:pointer;color:#78716c;line-height:1;}
 .mb{padding:18px 20px;display:flex;flex-direction:column;gap:12px;}
 .mf{padding:12px 20px;border-top:1px solid #e7e5e4;display:flex;gap:8px;justify-content:flex-end;}
-.fg label{display:block;font-size:11px;font-weight:600;color:#44403c;margin-bottom:4px;}
-.fg input,.fg select,.fg textarea{width:100%;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;}
+.fg label{display:block;font-size:11px;font-weight:700;color:#44403c;margin-bottom:4px;}
+.fg input,.fg select,.fg textarea{width:100%;padding:8px 11px;border:1px solid #e2e8f0;border-radius:9px;font-size:13px;transition:border-color .15s,box-shadow .15s;}
+.fg input:focus,.fg select:focus,.fg textarea:focus{outline:none;border-color:#7c3aed;box-shadow:0 0 0 3px rgba(124,58,237,.12);}
 .fg textarea{min-height:65px;resize:vertical;}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
 .ibox{background:#f9f8f7;border:1px solid #e7e5e4;border-radius:6px;padding:10px;font-size:12px;color:#57534e;display:grid;grid-template-columns:auto 1fr;gap:4px 10px;margin-top:4px;}
@@ -91,16 +92,17 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .itbl{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px;}
 .itbl th{background:#f5f4f2;padding:5px 7px;text-align:left;font-size:11px;font-weight:700;color:#44403c;}
 .itbl td{padding:5px 7px;border-bottom:1px solid #f3f4f6;}
-.itbl input{width:100%;border:1px solid #e7e5e4;border-radius:4px;padding:3px 6px;font-size:12px;}
+.itbl input{width:100%;border:1px solid #e2e8f0;border-radius:7px;padding:5px 8px;font-size:12px;transition:border-color .15s,box-shadow .15s;}
+.itbl input:focus{outline:none;border-color:#7c3aed;box-shadow:0 0 0 3px rgba(124,58,237,.1);}
 .total-row{text-align:right;margin-top:10px;font-size:15px;font-weight:700;}
 .fab{position:fixed;bottom:22px;right:22px;background:#292524;color:#fff;border:none;width:50px;height:50px;border-radius:50%;font-size:22px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;}
-.mh-ent{background:linear-gradient(135deg,#1c1917 0%,#292524 100%)!important;border-bottom:2px solid #57534e;}
-.mh-ent h3{color:#f5f5f4!important;}
-.mh-ent .mx{color:#d6d3d1!important;}
+.mh-ent{background:linear-gradient(135deg,#4c1d95 0%,#6d28d9 100%)!important;border-bottom:none;}
+.mh-ent h3{color:#fff!important;}
+.mh-ent .mx{color:#e9d5ff!important;}
 .cat-pills{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;}
-.pill{background:#44403c;border:1px solid #57534e;color:#d6d3d1;padding:4px 10px;border-radius:20px;cursor:pointer;font-size:11px;transition:all .15s;}
-.pill:hover{background:#57534e;}
-.pill-on{background:#ea580c!important;border-color:#ea580c!important;color:#fff!important;font-weight:700;}
+.pill{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);color:#f5f3ff;padding:5px 12px;border-radius:999px;cursor:pointer;font-size:11px;font-weight:600;transition:all .15s;}
+.pill:hover{background:rgba(255,255,255,.26);}
+.pill-on{background:#f59e0b!important;border-color:#f59e0b!important;color:#fff!important;font-weight:800;box-shadow:0 2px 8px rgba(245,158,11,.4);}
 .btn.br{background:#dc2626;color:#fff;border:1px solid #b91c1c;}
 .btn.br:hover{background:#b91c1c;}
 .ocs-cpill{padding:5px 13px;border-radius:20px;font-size:12px;font-weight:600;border:1.5px solid #d6d3d1;background:#fff;color:#57534e;cursor:pointer;transition:all .15s;white-space:nowrap;}
@@ -3575,7 +3577,15 @@ function autoFillMP(n){
   var mp=_MP_LIST.find(function(m){ return (m.codigo_mp||m.codigo_interno)===val; });
   if(mp){
     var nameEl=document.getElementById('in'+n);
-    if(nameEl&&!nameEl.value) nameEl.value=mp.nombre_comercial||mp.nombre_material||'';
+    if(nameEl&&!nameEl.value) nameEl.value=mp.nombre_inci||mp.nombre_comercial||mp.nombre_material||'';
+    // Sebastián 13-jul · ARRASTRAR el precio de la MP al elegirla · precio_referencia está
+    // en $/kg y el campo Precio U. es $/g (subtotal = cantidad_g × precio_unitario) → ÷1000.
+    var pr=parseFloat(mp.precio_referencia||0);
+    var pEl=document.getElementById('ip'+n);
+    if(pEl && (!pEl.value||parseFloat(pEl.value)===0) && pr>0){
+      pEl.value=(pr/1000).toFixed(4);
+      if(typeof calcTot==='function') calcTot();
+    }
   }
 }
 // ─── Catálogo de consumibles en Crear OC (Sebastián 1-jul) · papelería/EPP/servicios ───
