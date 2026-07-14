@@ -428,6 +428,10 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (349, "Programación v4 · Fase A base (Sebastián 14-jul · replanteo calendario): (1) `sku_planeacion_config.mix_mode` = régimen de mix del producto entre referencias — 'auto' (deriva de la tendencia · comportamiento actual), 'crece' (color/lanzamientos · mix dinámico ponderado a venta reciente), 'fijo' (sueros estables · mix/uds fijas). Default 'auto' = no cambia nada hoy. (2) `produccion_programada.sku_breakdown_json` = desglose por SKU GUARDADO en el lote ({sku:{uds,ml,es_fija}} · determinístico sort_keys) para que calendario + abastecimiento + descuento lean la MISMA fuente en vez de recalcular al vuelo (hoy discrepan por ventana 60d vs 90d). NULL = recalcular (comportamiento actual). Additivas, PG-safe, invisibles hasta que la lógica las use.", [
+        "ALTER TABLE sku_planeacion_config ADD COLUMN mix_mode TEXT DEFAULT 'auto'",
+        "ALTER TABLE produccion_programada ADD COLUMN sku_breakdown_json TEXT",
+    ]),
     (348, "Cargos fijos · gastos recurrentes de Gerencia (Sebastián 14-jul): arriendo, servicios públicos, etc. Catalina los MONTA y vigila; SOLO Sebastián los paga. `cargos_fijos` = plantillas (concepto, beneficiario, día de corte/límite, medio de pago flexible referencia/cuenta/link, monto fijo o variable). `cargos_fijos_pagos` = instancia por período mensual (se auto-asegura al abrir Gerencia) con estado pendiente_monto→por_pagar→pagado. Alerta viva mientras no esté pagado. Al pagar espeja a flujo_egresos (tesorería). PG-safe.", [
         "CREATE TABLE IF NOT EXISTS cargos_fijos ("
         " id INTEGER PRIMARY KEY AUTOINCREMENT,"
