@@ -6699,6 +6699,8 @@ def mkt_pagos_influencers_list():
                    END as estado,
                    pi.concepto, pi.numero_oc,
                    COALESCE(pi.fecha_publicacion,'') as fecha_publicacion,
+                   COALESCE(pi.entregable,'') as entregable,
+                   COALESCE(oc.estado,'') as oc_estado,
                    cp.id          as comprobante_id,
                    cp.numero_ce   as numero_ce,
                    cp.empresa     as empresa_pagadora,

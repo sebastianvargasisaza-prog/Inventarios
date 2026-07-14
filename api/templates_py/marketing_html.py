@@ -497,6 +497,22 @@ window.addEventListener('unhandledrejection', function(ev) {
   <!-- KPIs unificados (catálogo + pagos) -->
   <div id="inf-kpi-bar" style="display:none;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;"></div>
 
+  <!-- Sub-nav · Centro de pagos vs Catálogo (Sebastián 13-jul) -->
+  <div style="display:flex;gap:6px;margin:4px 0 18px;border-bottom:1px solid #ececf1;">
+    <button id="infsub-pagos" onclick="infSubView('pagos')" style="border:none;background:none;cursor:pointer;padding:10px 18px;font-size:13px;font-weight:800;color:#6d28d9;border-bottom:3px solid #6d28d9;">💸 Centro de pagos</button>
+    <button id="infsub-creadores" onclick="infSubView('creadores')" style="border:none;background:none;cursor:pointer;padding:10px 18px;font-size:13px;font-weight:700;color:var(--cx-text-mute);border-bottom:3px solid transparent;">👥 Creadores</button>
+  </div>
+
+  <!-- VISTA · Centro de pagos (default) -->
+  <div id="inf-view-pagos">
+    <div id="inf-pagos-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin-bottom:16px;"></div>
+    <div id="inf-pagos-filtros" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;"></div>
+    <div id="inf-pagos-lista"><div style="text-align:center;color:var(--cx-text-mute);padding:30px;"><span class="spin"></span></div></div>
+  </div>
+
+  <!-- VISTA · Catálogo de creadores (oculta por defecto) -->
+  <div id="inf-view-creadores" style="display:none;">
+
   <!-- Sebastián 13-jul · quitado el bloque "Mi semana · vista community manager"
        (Top engagement / Dormidos / Top ROI) · sobrecargaba el centro de pagos.
        Los ids quedan ocultos para que cargarMiSemanaKPIs no truene. -->
@@ -600,6 +616,7 @@ window.addEventListener('unhandledrejection', function(ev) {
       </table>
     </div>
   </div>
+  </div><!-- /inf-view-creadores -->
 </div>
 
 <!-- Tab "tab-pagos" eliminado — fusionado al de Influencers (Sebastian 30-abr-2026) -->
@@ -2606,6 +2623,7 @@ async function loadPagosInfluencers() {
     }
     // Re-render tabla principal con cache pagos actualizado
     if (typeof renderInfluencersTable === 'function') renderInfluencersTable();
+    if (typeof renderCentroPagos === 'function') renderCentroPagos();  // centro de pagos por estados
   } catch(e) {
     console.warn('loadPagosInfluencers fallo:', e);
   }
@@ -2664,6 +2682,84 @@ function renderPagos() {
       + '<td>'+comprobante+'</td>'
       + '<td>'+estadoBadge+'</td>'
       + '</tr>';
+  }).join('');
+}
+
+// ─── Centro de pagos por estados (Sebastián 13-jul) ───────────────────────────
+function infSubView(v){
+  window._INF_SUBVIEW=v;
+  var vp=document.getElementById('inf-view-pagos'), vc=document.getElementById('inf-view-creadores');
+  var bp=document.getElementById('infsub-pagos'), bc=document.getElementById('infsub-creadores');
+  if(vp) vp.style.display=(v==='pagos')?'':'none';
+  if(vc) vc.style.display=(v==='creadores')?'':'none';
+  if(bp){ bp.style.color=(v==='pagos')?'#6d28d9':'var(--cx-text-mute)'; bp.style.borderBottomColor=(v==='pagos')?'#6d28d9':'transparent'; }
+  if(bc){ bc.style.color=(v==='creadores')?'#6d28d9':'var(--cx-text-mute)'; bc.style.borderBottomColor=(v==='creadores')?'#6d28d9':'transparent'; }
+  if(v==='pagos') renderCentroPagos();
+}
+function _pagoEstadoCat(p){
+  var oc=(p.oc_estado||'').toLowerCase(), est=(p.estado||'').toLowerCase();
+  if(est==='pagada'||oc==='pagada'||p.comprobante_id) return 'pagado';
+  if(oc==='rechazada'||oc==='cancelada'||est==='rechazada') return 'rechazado';
+  if(oc==='aprobada'||oc==='autorizada') return 'por_pagar';
+  return 'solicitado';
+}
+window._INF_PAGO_FILTRO='todos';
+function _setPagoFiltro(f){ window._INF_PAGO_FILTRO=f; renderCentroPagos(); }
+function renderCentroPagos(){
+  if((window._INF_SUBVIEW||'pagos')!=='pagos' && window._INF_SUBVIEW) { /* igual computa */ }
+  var pagos=(_PAGOS_INF_CACHE||[]);
+  var ST={
+    solicitado:{lbl:'Solicitados',one:'Solicitado',emoji:'⏳',color:'#b45309',bg:'#fef3c7',fg:'#92400e'},
+    por_pagar:{lbl:'Por pagar',one:'Por pagar',emoji:'💸',color:'#6d28d9',bg:'#ede9fe',fg:'#5b21b6'},
+    pagado:{lbl:'Pagados',one:'Pagado',emoji:'✅',color:'#059669',bg:'#d1fae5',fg:'#065f46'},
+    rechazado:{lbl:'Rechazados',one:'Rechazado',emoji:'❌',color:'#dc2626',bg:'#fee2e2',fg:'#991b1b'}
+  };
+  var counts={solicitado:0,por_pagar:0,pagado:0,rechazado:0}, sums={solicitado:0,por_pagar:0,pagado:0,rechazado:0};
+  pagos.forEach(function(p){ var e=_pagoEstadoCat(p); counts[e]++; sums[e]+=(p.valor||0); });
+  var cardsEl=document.getElementById('inf-pagos-cards');
+  if(cardsEl){
+    cardsEl.innerHTML=['solicitado','por_pagar','pagado','rechazado'].map(function(k){
+      var s=ST[k];
+      return '<div onclick="_setPagoFiltro(\''+k+'\')" style="cursor:pointer;background:var(--cx-card,#fff);border:1px solid #eef0f2;border-top:3px solid '+s.color+';border-radius:14px;padding:15px 16px;box-shadow:0 2px 12px rgba(15,23,42,.05);transition:transform .1s" onmouseover="this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.transform=\'\'">'
+        +'<div style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:800;color:'+s.color+'">'+s.emoji+' '+s.lbl+'</div>'
+        +'<div style="font-size:24px;font-weight:800;color:'+s.color+';line-height:1;margin-top:5px">'+counts[k]+'</div>'
+        +'<div style="font-size:11px;color:var(--cx-text-mute);margin-top:3px">'+fmtM(sums[k])+'</div>'
+      +'</div>';
+    }).join('');
+  }
+  var fl=document.getElementById('inf-pagos-filtros');
+  if(fl){
+    var opts=[['todos','Todos'],['solicitado','⏳ Solicitados'],['por_pagar','💸 Por pagar'],['pagado','✅ Pagados'],['rechazado','❌ Rechazados']];
+    fl.innerHTML=opts.map(function(o){
+      var on=(window._INF_PAGO_FILTRO||'todos')===o[0];
+      return '<button onclick="_setPagoFiltro(\''+o[0]+'\')" style="border:1px solid '+(on?'#6d28d9':'#e2e8f0')+';background:'+(on?'#6d28d9':'#fff')+';color:'+(on?'#fff':'#64748b')+';border-radius:999px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer">'+o[1]+'</button>';
+    }).join('');
+  }
+  var filtro=window._INF_PAGO_FILTRO||'todos';
+  var list=pagos.filter(function(p){ return filtro==='todos' || _pagoEstadoCat(p)===filtro; });
+  var ord={solicitado:0,por_pagar:1,pagado:2,rechazado:3};
+  list.sort(function(a,b){ var ea=ord[_pagoEstadoCat(a)],eb=ord[_pagoEstadoCat(b)]; if(ea!==eb) return ea-eb; return (b.fecha||'').localeCompare(a.fecha||''); });
+  var lst=document.getElementById('inf-pagos-lista');
+  if(!lst) return;
+  if(!list.length){ lst.innerHTML='<div style="text-align:center;color:var(--cx-text-mute);padding:30px;">Sin pagos en este estado.</div>'; return; }
+  lst.innerHTML=list.slice(0,300).map(function(p){
+    var e=_pagoEstadoCat(p); var s=ST[e];
+    var ent=(p.entregable||'').trim();
+    var hi=ent.indexOf('http'); var link=''; if(hi>=0){ link=ent.slice(hi).split(' ')[0].split('·')[0].trim(); }
+    var okLink=(link.indexOf('http://')===0||link.indexOf('https://')===0);
+    var entTxt=(hi>=0?ent.slice(0,hi):ent).trim(); if(entTxt.charAt(entTxt.length-1)==='·') entTxt=entTxt.slice(0,-1).trim();
+    var noEmail=!(p.inf_email||'').trim();
+    return '<div style="background:var(--cx-card,#fff);border:1px solid #eef0f2;border-left:4px solid '+s.color+';border-radius:12px;padding:12px 16px;margin-bottom:10px;box-shadow:0 1px 4px rgba(15,23,42,.05);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">'
+      +'<div style="min-width:200px;flex:1">'
+        +'<div style="font-weight:800;color:var(--cx-text)">'+_escHtml(p.influencer_nombre||'—')+(noEmail?' <span title="sin correo · no recibirá la factura de pagado" style="color:#dc2626;font-size:11px;font-weight:700">⚠ sin correo</span>':'')+'</div>'
+        +'<div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px">📅 Solicitud: '+((p.fecha||'').slice(0,10))+(p.fecha_publicacion?' · 📢 Publicó: '+p.fecha_publicacion.slice(0,10):'')+(entTxt?' · 📝 '+_escHtml(entTxt):'')+(okLink?' · <a href="'+_escHtml(link)+'" target="_blank" rel="noopener" style="color:#7c3aed;font-weight:700;text-decoration:none">🔗 post</a>':'')+'</div>'
+      +'</div>'
+      +'<div style="text-align:right;white-space:nowrap">'
+        +'<div style="font-size:16px;font-weight:800;color:'+s.color+'">'+fmtM(p.valor||0)+'</div>'
+        +'<span style="display:inline-block;margin-top:3px;background:'+s.bg+';color:'+s.fg+';padding:3px 11px;border-radius:999px;font-size:11px;font-weight:700">'+s.emoji+' '+s.one+'</span>'
+        +(p.numero_ce?' <div style="font-size:10px;color:#059669;font-family:monospace;margin-top:2px">'+_escHtml(p.numero_ce)+'</div>':'')
+      +'</div>'
+    +'</div>';
   }).join('');
 }
 
