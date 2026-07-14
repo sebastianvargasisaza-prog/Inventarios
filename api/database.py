@@ -428,6 +428,37 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (348, "Cargos fijos · gastos recurrentes de Gerencia (Sebastián 14-jul): arriendo, servicios públicos, etc. Catalina los MONTA y vigila; SOLO Sebastián los paga. `cargos_fijos` = plantillas (concepto, beneficiario, día de corte/límite, medio de pago flexible referencia/cuenta/link, monto fijo o variable). `cargos_fijos_pagos` = instancia por período mensual (se auto-asegura al abrir Gerencia) con estado pendiente_monto→por_pagar→pagado. Alerta viva mientras no esté pagado. Al pagar espeja a flujo_egresos (tesorería). PG-safe.", [
+        "CREATE TABLE IF NOT EXISTS cargos_fijos ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " concepto TEXT NOT NULL,"
+        " beneficiario TEXT DEFAULT '',"
+        " categoria TEXT DEFAULT 'Servicio',"
+        " monto REAL DEFAULT 0,"
+        " es_variable INTEGER DEFAULT 0,"
+        " dia_corte INTEGER DEFAULT 1,"
+        " medio_pago TEXT DEFAULT 'referencia',"
+        " dato_pago TEXT DEFAULT '',"
+        " banco TEXT DEFAULT '',"
+        " notas TEXT DEFAULT '',"
+        " activo INTEGER DEFAULT 1,"
+        " creado_por TEXT DEFAULT '',"
+        " created_at TEXT DEFAULT '')",
+        "CREATE TABLE IF NOT EXISTS cargos_fijos_pagos ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " cargo_fijo_id INTEGER NOT NULL,"
+        " periodo TEXT NOT NULL,"
+        " monto REAL DEFAULT 0,"
+        " fecha_limite TEXT DEFAULT '',"
+        " estado TEXT DEFAULT 'pendiente_monto',"
+        " medio_pago TEXT DEFAULT '',"
+        " dato_pago TEXT DEFAULT '',"
+        " referencia_pago TEXT DEFAULT '',"
+        " pagado_at TEXT DEFAULT '',"
+        " pagado_por TEXT DEFAULT '',"
+        " created_at TEXT DEFAULT '')",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_cargos_fijos_pagos_unq ON cargos_fijos_pagos(cargo_fijo_id, periodo)",
+    ]),
     (347, "Mínimos calculados · maestro_mps.min_auto (Sebastián 12-jul): 1 = el mínimo lo puso el recalculador (punto de reorden desde el plan 90d + lead time), 0 = fijado a mano. El recalculador respeta los min_auto=0 (no los pisa salvo forzar). Default 1 (los mínimos actuales son el default plano 500, tratables como auto-reemplazables). Additiva, PG-safe.", [
         "ALTER TABLE maestro_mps ADD COLUMN min_auto INTEGER DEFAULT 1",
     ]),

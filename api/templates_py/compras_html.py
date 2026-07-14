@@ -214,10 +214,11 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
     <button class="tn"      data-tab="solic" id="tn-solic" title="Solicitudes generales (papelería, servicios, EPP, mantenimiento)">📋 Solicitudes</button>
     <!-- Producción · OCULTO 21-may-2026 · fusionado en Planta con badge Pre-Prod -->
     <button class="tn" data-tab="solprod" id="tn-solprod" style="display:none">🛠️ Producción <span id="solprod-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
-    <!-- Influencers · visible SOLO para Sebastián / Alejandro (data-admin-only)
-         · Catalina nunca lo ve · JS lo desoculta al boot si el user es admin. -->
-    <button class="tn" data-tab="influencer" id="tn-influencer" data-admin-only="1"
-      style="display:none" title="Privado · pagos influencers (solo admin)">💸 Influencers <span style="font-size:9px;background:#dc2626;color:#fff;padding:1px 5px;border-radius:6px;margin-left:2px;font-weight:700">admin</span></button>
+    <!-- Gerencia (Sebastián 14-jul) · Cargos Fijos (Catalina monta/vigila) +
+         Influencers (sub-vista solo admin). El tab lo ve compras+admin; la
+         sub-vista Influencers se gatea a admin dentro del pane. -->
+    <button class="tn" data-tab="influencer" id="tn-influencer"
+      title="Gerencia · cargos fijos + pagos influencers">🏛️ Gerencia</button>
   </span>
   <!-- Sub-tabs del grupo OCs Y PAGOS -->
   <span data-cx-sub="ocs" style="display:none;gap:6px;flex-wrap:wrap">
@@ -342,6 +343,29 @@ function renderHistorico(){
 </div>
 
 <div id="pane-influencer" class="pane">
+  <!-- Sub-nav Gerencia: Cargos Fijos (Catalina+admin) · Influencers (solo admin) -->
+  <div style="display:flex;gap:6px;margin:2px 0 16px;border-bottom:1px solid #ececf1;">
+    <button type="button" class="sp-tab sp-on" id="gtn-cargos" onclick="showGerencia('cargos')">🏛️ Cargos fijos</button>
+    <button type="button" class="sp-tab" id="gtn-influencer" data-admin-only="1" style="display:none" onclick="showGerencia('influencer')">💸 Influencers <span style="font-size:9px;background:#dc2626;color:#fff;padding:1px 5px;border-radius:6px;font-weight:700">admin</span></button>
+  </div>
+  <!-- VISTA · Cargos fijos -->
+  <div id="gv-cargos">
+    <div id="cargos-alert" style="display:none;"></div>
+    <div class="bar" style="justify-content:space-between;flex-wrap:wrap;gap:10px;">
+      <div>
+        <span style="font-weight:800;color:#1e293b;font-size:16px;letter-spacing:-.01em;">🏛️ Cargos fijos · Gerencia</span>
+        <div style="font-size:11px;color:#64748b;margin-top:3px;">Arriendo, servicios públicos y gastos recurrentes · <b>Catalina</b> los monta y vigila · <b>solo Sebastián</b> los paga · <span id="cargos-periodo"></span></div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn bo" onclick="loadCargosFijos()" style="font-size:12px;">↻ Actualizar</button>
+        <button class="btn bg" onclick="abrirCargoFijo()" style="font-size:13px;">➕ Nuevo cargo fijo</button>
+      </div>
+    </div>
+    <input type="text" id="q-cargos" oninput="renderCargos()" placeholder="🔍 Buscar concepto, beneficiario…" style="width:100%;max-width:360px;padding:10px 13px;border:1px solid #eef0f2;border-radius:12px;font-size:13px;margin-bottom:12px;box-shadow:0 1px 3px rgba(15,23,42,.04);">
+    <div id="cargos-body"><div style="color:#94a3b8;text-align:center;padding:36px;">Cargando…</div></div>
+  </div>
+  <!-- VISTA · Influencers (solo admin) -->
+  <div id="gv-influencer" style="display:none;">
   <div id="kpi-influencer" style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;"></div>
   <div class="bar" style="flex-wrap:wrap;gap:8px;">
     <input type="text" id="q-influencer" placeholder="Buscar influencer, solicitante..." oninput="renderInfluencers()">
@@ -367,6 +391,7 @@ function renderHistorico(){
   <div id="pills-influencer" class="pills"></div>
   <div id="grid-influencer"></div>
   <div id="grid-influencer-pagadas"></div>
+  </div><!-- /gv-influencer -->
 </div>
 <!-- Modal rechazo influencer -->
 <div id="m-rechazar-inf" class="ov">
@@ -393,6 +418,56 @@ function renderHistorico(){
     <div class="mf">
       <button class="btn" onclick="closeModal('m-rechazar-inf')" style="background:#f5f5f4;color:#44403c;border:1px solid #d6d3d1;">Cancelar</button>
       <button class="btn" id="btn-confirmar-rechazo" style="background:#dc2626;color:#fff;">&#x274C; Confirmar Rechazo</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Cargo fijo (crear/editar plantilla) -->
+<div id="m-cargofijo" class="ov">
+  <div class="mdl mdl-lg" style="max-width:640px;">
+    <div class="mh mh-ent"><h3 id="cf-title">🏛️ Nuevo cargo fijo</h3><button class="mx" onclick="closeModal('m-cargofijo')">&times;</button></div>
+    <div class="mb">
+      <input type="hidden" id="cf-id">
+      <div class="fg"><label>Concepto *</label><input type="text" id="cf-concepto" placeholder="Ej: Arriendo bodega · Energía · Internet"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="fg"><label>Beneficiario</label><input type="text" id="cf-benef" placeholder="A quién se le paga"></div>
+        <div class="fg"><label>Categoría</label><select id="cf-cat"><option>Servicio</option><option>Arriendo</option><option>Servicios públicos</option><option>Administrativo</option><option>Otro</option></select></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:end;">
+        <div class="fg" id="cf-monto-row"><label>Monto fijo mensual</label><input type="number" id="cf-monto" min="0" step="0.01" placeholder="0"></div>
+        <div class="fg"><label>Día límite de pago (corte)</label><input type="number" id="cf-dia" min="1" max="28" value="5"></div>
+      </div>
+      <label style="font-size:12px;display:flex;align-items:center;gap:7px;cursor:pointer;margin:-4px 0 4px;"><input type="checkbox" id="cf-variable" onchange="_cfToggleVar()"> Monto <b>variable</b> (luz/agua) — Catalina lo carga cada mes</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="fg"><label>Medio de pago</label><select id="cf-medio"><option value="referencia">Referencia (servicio público)</option><option value="cuenta">Cuenta bancaria</option><option value="link">Link de pago</option><option value="otro">Otro</option></select></div>
+        <div class="fg"><label>Referencia / cuenta / link</label><input type="text" id="cf-dato" placeholder="N° de referencia, cuenta o link"></div>
+      </div>
+      <div class="fg"><label>Banco (si aplica)</label><input type="text" id="cf-banco" placeholder="Banco"></div>
+      <div class="fg"><label>Notas</label><textarea id="cf-notas" rows="2" placeholder="Observación opcional"></textarea></div>
+    </div>
+    <div class="mf">
+      <button class="btn bo" onclick="closeModal('m-cargofijo')">Cancelar</button>
+      <button class="btn bg" onclick="guardarCargoFijo()">✓ Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Cargar monto del mes (Catalina) -->
+<div id="m-cargomonto" class="ov">
+  <div class="mdl" style="max-width:460px;">
+    <div class="mh mh-ent"><h3>✎ Cargar monto del mes</h3><button class="mx" onclick="closeModal('m-cargomonto')">&times;</button></div>
+    <div class="mb">
+      <input type="hidden" id="cfm-pid">
+      <div style="background:linear-gradient(135deg,rgba(124,58,237,.06),rgba(124,58,237,.02));border:1px solid rgba(124,58,237,.2);border-radius:12px;padding:10px 14px;font-size:13px;font-weight:700;color:#5b21b6;" id="cfm-concepto"></div>
+      <div class="fg"><label>Monto a pagar este mes *</label><input type="number" id="cfm-monto" min="0" step="0.01" placeholder="0"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="fg"><label>Medio de pago</label><select id="cfm-medio"><option value="referencia">Referencia</option><option value="cuenta">Cuenta</option><option value="link">Link</option><option value="otro">Otro</option></select></div>
+        <div class="fg"><label>Referencia / cuenta / link</label><input type="text" id="cfm-dato" placeholder="Dato de pago"></div>
+      </div>
+    </div>
+    <div class="mf">
+      <button class="btn bo" onclick="closeModal('m-cargomonto')">Cancelar</button>
+      <button class="btn bg" onclick="guardarMontoCargo()">✓ Marcar por pagar</button>
     </div>
   </div>
 </div>
@@ -1594,7 +1669,7 @@ document.querySelectorAll('.tn').forEach(function(btn){
     else if(tab==='prov') renderProv();
     else if(tab==='solic') loadSolicitudes();
     else if(tab==='planta') loadPlanta();
-    else if(tab==='influencer') loadInfluencers();
+    else if(tab==='influencer') loadGerencia();
     else if(tab==='consol') loadConsolidado();
     else if(tab==='pagos'){ loadPagos(); }
     else if(tab==='historico'){ renderHistorico(); }
@@ -5478,6 +5553,169 @@ window.limpiarSolsPlantaLegacy = async function(){
   }
 };
 
+// ═══════════ GERENCIA · Cargos fijos (Sebastián 14-jul) ═══════════
+function showGerencia(v){
+  var vc=document.getElementById('gv-cargos'), vi=document.getElementById('gv-influencer');
+  var bc=document.getElementById('gtn-cargos'), bi=document.getElementById('gtn-influencer');
+  var isInf=(v==='influencer' && (typeof ES_ADMIN!=='undefined' && ES_ADMIN));
+  if(vc) vc.style.display=isInf?'none':'';
+  if(vi) vi.style.display=isInf?'':'none';
+  if(bc) bc.className='sp-tab'+(isInf?'':' sp-on');
+  if(bi) bi.className='sp-tab'+(isInf?' sp-on':'');
+  window._gerView=isInf?'influencer':'cargos';
+  if(isInf) loadInfluencers(); else loadCargosFijos();
+}
+function loadGerencia(){
+  // Catalina → Cargos fijos (Influencers es admin). Admin → recuerda la última o Influencers.
+  showGerencia((typeof ES_ADMIN!=='undefined' && ES_ADMIN) ? (window._gerView||'influencer') : 'cargos');
+}
+var _CARGOS_CACHE={pagos:[],plantillas:[],alertas:{},periodo:''};
+async function loadCargosFijos(){
+  var body=document.getElementById('cargos-body');
+  if(body) body.innerHTML='<div style="color:#94a3b8;text-align:center;padding:36px;">Cargando…</div>';
+  try{
+    var r=await fetch('/api/compras/cargos-fijos',{credentials:'same-origin'});
+    var d=await r.json();
+    if(!r.ok){ if(body) body.innerHTML='<div style="color:#dc2626;padding:16px;">Error: '+esc(d.error||r.status)+'</div>'; return; }
+    _CARGOS_CACHE=d;
+    var pe=document.getElementById('cargos-periodo'); if(pe) pe.textContent='período '+(d.periodo||'');
+    renderCargosAlert(d.alertas||{});
+    renderCargos();
+  }catch(e){ if(body) body.innerHTML='<div style="color:#dc2626;padding:16px;">Error de red: '+esc(e.message)+'</div>'; }
+}
+function renderCargosAlert(a){
+  var el=document.getElementById('cargos-alert'); if(!el) return;
+  var parts=[];
+  if(a.falta_monto>0) parts.push('<span style="color:#b45309;font-weight:700;">⚠ '+a.falta_monto+' sin monto cargado</span> (Catalina debe subirlos)');
+  if(a.por_pagar>0) parts.push('<span style="color:#15803d;font-weight:700;">💰 '+a.por_pagar+' por pagar</span> · '+fmt(a.total_por_pagar||0)+(a.vencidos>0?(' · <span style="color:#dc2626;font-weight:700;">'+a.vencidos+' vencido(s)</span>'):''));
+  if(!parts.length){ el.style.display='none'; return; }
+  el.style.display='block';
+  el.style.cssText='display:block;background:linear-gradient(135deg,rgba(245,158,11,.10),rgba(245,158,11,.03));border:1px solid rgba(245,158,11,.28);border-radius:12px;padding:11px 15px;margin-bottom:12px;font-size:13px;';
+  el.innerHTML=parts.join(' &nbsp;·&nbsp; ');
+}
+function _cargoEstadoPill(est){
+  if(est==='pagado') return '<span class="badge" style="background:#dcfce7;color:#166534;">✓ Pagado</span>';
+  if(est==='por_pagar') return '<span class="badge" style="background:#fef9c3;color:#854d0e;">💰 Por pagar</span>';
+  return '<span class="badge" style="background:#fee2e2;color:#991b1b;">⚠ Falta monto</span>';
+}
+function renderCargos(){
+  var body=document.getElementById('cargos-body'); if(!body) return;
+  var q=((document.getElementById('q-cargos')||{value:''}).value||'').trim().toLowerCase();
+  var pagos=(_CARGOS_CACHE.pagos||[]).filter(function(p){
+    if(!q) return true;
+    return ((p.concepto||'')+' '+(p.beneficiario||'')+' '+(p.categoria||'')).toLowerCase().indexOf(q)>=0;
+  });
+  if(!pagos.length){ body.innerHTML='<div style="color:#94a3b8;text-align:center;padding:36px;">'+(q?'Sin resultados':'No hay cargos fijos este mes · creá el primero con "➕ Nuevo cargo fijo"')+'</div>'; return; }
+  var isAdmin=(typeof ES_ADMIN!=='undefined' && ES_ADMIN);
+  var rows=pagos.map(function(p){
+    var medio=(p.medio_pago||'')+(p.dato_pago?(': '+p.dato_pago):'');
+    var acc='';
+    if(p.estado==='pendiente_monto'){
+      acc='<button class="btn bw" style="font-size:11px;" onclick="abrirMontoCargo('+p.id+')">✎ Cargar monto</button>';
+    } else if(p.estado==='por_pagar'){
+      acc=(isAdmin?'<button class="btn bg" style="font-size:11px;" onclick="pagarCargoFijo('+p.id+')">💵 Pagar</button> ':'<span style="font-size:11px;color:#78716c;">esperando pago de gerencia</span> ')
+         +'<button class="btn bo" style="font-size:11px;" onclick="abrirMontoCargo('+p.id+')">✎</button>';
+    } else {
+      acc='<span style="font-size:11px;color:#16a34a;">'+(p.pagado_at?('pagado '+(p.pagado_at||'').substring(0,10)):'pagado')+'</span>';
+    }
+    var editPlantilla='<button class="btn bo" style="font-size:11px;padding:2px 8px;" title="Editar plantilla" onclick="abrirCargoFijo('+p.cargo_fijo_id+')">⚙</button>';
+    return '<tr>'
+      +'<td><strong>'+esc(p.concepto||'')+'</strong>'+(p.beneficiario?'<br><small style="color:#78716c">'+esc(p.beneficiario)+'</small>':'')+'</td>'
+      +'<td style="font-size:12px;color:#57534e;">'+esc(p.categoria||'')+'</td>'
+      +'<td class="valor" style="font-weight:700;">'+(p.monto>0?fmt(p.monto):'—')+'</td>'
+      +'<td style="font-size:12px;">'+esc(p.fecha_limite||'')+'</td>'
+      +'<td style="font-size:12px;color:#57534e;">'+esc(medio||'—')+'</td>'
+      +'<td>'+_cargoEstadoPill(p.estado)+'</td>'
+      +'<td style="white-space:nowrap;text-align:right;">'+acc+' '+editPlantilla+'</td>'
+      +'</tr>';
+  }).join('');
+  body.innerHTML='<div class="card" style="padding:0;overflow:hidden;"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;">'
+    +'<thead><tr>'
+    +'<th style="text-align:left;padding:10px 12px;">Concepto</th><th style="text-align:left;padding:10px 12px;">Categoría</th>'
+    +'<th style="text-align:right;padding:10px 12px;">Monto</th><th style="text-align:left;padding:10px 12px;">Límite</th>'
+    +'<th style="text-align:left;padding:10px 12px;">Medio / referencia</th><th style="text-align:left;padding:10px 12px;">Estado</th>'
+    +'<th style="text-align:right;padding:10px 12px;">Acción</th>'
+    +'</tr></thead><tbody>'+rows+'</tbody></table></div></div>';
+}
+function abrirCargoFijo(cid){
+  var p=null;
+  if(cid) p=(_CARGOS_CACHE.plantillas||[]).find(function(x){return x.id===cid;});
+  document.getElementById('cf-id').value=p?p.id:'';
+  document.getElementById('cf-concepto').value=p?(p.concepto||''):'';
+  document.getElementById('cf-benef').value=p?(p.beneficiario||''):'';
+  document.getElementById('cf-cat').value=p?(p.categoria||'Servicio'):'Servicio';
+  document.getElementById('cf-variable').checked=p?!!p.es_variable:false;
+  document.getElementById('cf-monto').value=(p&&p.monto>0)?p.monto:'';
+  document.getElementById('cf-dia').value=p?(p.dia_corte||1):5;
+  document.getElementById('cf-medio').value=p?(p.medio_pago||'referencia'):'referencia';
+  document.getElementById('cf-dato').value=p?(p.dato_pago||''):'';
+  document.getElementById('cf-banco').value=p?(p.banco||''):'';
+  document.getElementById('cf-notas').value=p?(p.notas||''):'';
+  document.getElementById('cf-title').textContent=p?'Editar cargo fijo':'Nuevo cargo fijo';
+  _cfToggleVar();
+  openModal('m-cargofijo');
+}
+function _cfToggleVar(){
+  var v=document.getElementById('cf-variable').checked;
+  var row=document.getElementById('cf-monto-row');
+  if(row) row.style.opacity=v?'.45':'1';
+  var mi=document.getElementById('cf-monto'); if(mi) mi.disabled=v;
+}
+async function guardarCargoFijo(){
+  var concepto=(document.getElementById('cf-concepto').value||'').trim();
+  if(!concepto){ alert('El concepto es obligatorio'); return; }
+  var body={
+    id: document.getElementById('cf-id').value||null,
+    concepto: concepto,
+    beneficiario: document.getElementById('cf-benef').value||'',
+    categoria: document.getElementById('cf-cat').value||'Servicio',
+    es_variable: document.getElementById('cf-variable').checked,
+    monto: parseFloat(document.getElementById('cf-monto').value||0)||0,
+    dia_corte: parseInt(document.getElementById('cf-dia').value||1,10)||1,
+    medio_pago: document.getElementById('cf-medio').value||'referencia',
+    dato_pago: document.getElementById('cf-dato').value||'',
+    banco: document.getElementById('cf-banco').value||'',
+    notas: document.getElementById('cf-notas').value||''
+  };
+  try{
+    var r=await fetch('/api/compras/cargos-fijos', _fetchOpts('POST', body));
+    var d=await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    closeModal('m-cargofijo'); loadCargosFijos();
+  }catch(e){ alert('Error de red: '+e.message); }
+}
+function abrirMontoCargo(pid){
+  var p=(_CARGOS_CACHE.pagos||[]).find(function(x){return x.id===pid;});
+  document.getElementById('cfm-pid').value=pid;
+  document.getElementById('cfm-concepto').textContent=p?(p.concepto||''):'';
+  document.getElementById('cfm-monto').value=(p&&p.monto>0)?p.monto:'';
+  document.getElementById('cfm-medio').value=p?(p.medio_pago||'referencia'):'referencia';
+  document.getElementById('cfm-dato').value=p?(p.dato_pago||''):'';
+  openModal('m-cargomonto');
+}
+async function guardarMontoCargo(){
+  var pid=document.getElementById('cfm-pid').value;
+  var monto=parseFloat(document.getElementById('cfm-monto').value||0)||0;
+  if(monto<=0){ alert('Ingresá el monto del mes'); return; }
+  var body={monto:monto, medio_pago:document.getElementById('cfm-medio').value||'', dato_pago:document.getElementById('cfm-dato').value||''};
+  try{
+    var r=await fetch('/api/compras/cargos-fijos/pago/'+pid+'/monto', _fetchOpts('POST', body));
+    var d=await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    closeModal('m-cargomonto'); loadCargosFijos();
+  }catch(e){ alert('Error de red: '+e.message); }
+}
+async function pagarCargoFijo(pid){
+  var p=(_CARGOS_CACHE.pagos||[]).find(function(x){return x.id===pid;});
+  var ref=prompt('Referencia/comprobante del pago de "'+(p?p.concepto:'')+'" ('+(p?fmt(p.monto):'')+') — opcional:','');
+  if(ref===null) return;
+  try{
+    var r=await fetch('/api/compras/cargos-fijos/pago/'+pid+'/pagar', _fetchOpts('POST', {referencia_pago:ref}));
+    var d=await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    loadCargosFijos();
+  }catch(e){ alert('Error de red: '+e.message); }
+}
 async function loadInfluencers(){
   try{
     // Sebastian (30-abr-2026): cache-bust con timestamp para evitar que el

@@ -8887,6 +8887,239 @@ def buscar_remision(remision_code):
     return jsonify({'oc': oc, 'items': items})
 
 # ════════════════════════════════════════════
+# CARGOS FIJOS · Gerencia (Sebastián 14-jul)
+# Gastos recurrentes (arriendo, servicios públicos…). Catalina los MONTA y
+# vigila; SOLO admin (Sebastián) los paga. Alerta viva hasta que estén pagados.
+# ════════════════════════════════════════════
+CARGOS_FIJOS_MEDIOS = ('referencia', 'cuenta', 'link', 'otro')
+
+
+def _periodo_actual_co():
+    from datetime import timedelta as _td
+    return (datetime.now() - _td(hours=5)).strftime('%Y-%m')
+
+
+def _asegurar_cargos_mes(c, periodo):
+    """Idempotente: crea la instancia mensual de cada cargo fijo activo para
+    `periodo`. Fija → 'por_pagar' (monto de la plantilla); variable/monto 0 →
+    'pendiente_monto' (Catalina completa el valor del mes)."""
+    from datetime import timedelta as _td
+    try:
+        y, m = periodo.split('-')
+    except ValueError:
+        return
+    now_iso = (datetime.now() - _td(hours=5)).isoformat()
+    filas = c.execute(
+        "SELECT id, monto, es_variable, dia_corte, medio_pago, dato_pago "
+        "FROM cargos_fijos WHERE COALESCE(activo,1)=1"
+    ).fetchall()
+    for r in filas:
+        cf_id = r[0]
+        monto = float(r[1] or 0)
+        es_var = int(r[2] or 0)
+        dia = max(1, min(28, int(r[3] or 1)))
+        fecha_limite = '%s-%s-%02d' % (y, m, dia)
+        existe = c.execute(
+            "SELECT 1 FROM cargos_fijos_pagos WHERE cargo_fijo_id=? AND periodo=?",
+            (cf_id, periodo)).fetchone()
+        if existe:
+            continue
+        estado = 'pendiente_monto' if (es_var or monto <= 0) else 'por_pagar'
+        try:
+            c.execute(
+                "INSERT INTO cargos_fijos_pagos (cargo_fijo_id, periodo, monto, "
+                "fecha_limite, estado, medio_pago, dato_pago, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (cf_id, periodo, (0.0 if es_var else monto), fecha_limite, estado,
+                 r[4] or '', r[5] or '', now_iso))
+        except Exception:
+            pass  # UNIQUE (race multi-worker) → la instancia ya existe
+
+
+@bp.route('/api/compras/cargos-fijos', methods=['GET'])
+def cargos_fijos_list():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    periodo = (request.args.get('periodo') or _periodo_actual_co()).strip()
+    try:
+        _asegurar_cargos_mes(c, periodo)
+        conn.commit()
+    except Exception:
+        try: conn.rollback()
+        except Exception: pass
+    _pcols = ['id', 'concepto', 'beneficiario', 'categoria', 'monto', 'es_variable',
+              'dia_corte', 'medio_pago', 'dato_pago', 'banco', 'notas', 'activo']
+    plantillas = [dict(zip(_pcols, r)) for r in c.execute(
+        "SELECT id, concepto, beneficiario, categoria, monto, es_variable, dia_corte, "
+        "medio_pago, dato_pago, banco, notas, activo FROM cargos_fijos ORDER BY COALESCE(activo,1) DESC, concepto"
+    ).fetchall()]
+    _gcols = ['id', 'cargo_fijo_id', 'periodo', 'monto', 'fecha_limite', 'estado',
+              'medio_pago', 'dato_pago', 'referencia_pago', 'pagado_at', 'pagado_por',
+              'concepto', 'beneficiario', 'categoria']
+    pagos = [dict(zip(_gcols, r)) for r in c.execute(
+        "SELECT p.id, p.cargo_fijo_id, p.periodo, p.monto, p.fecha_limite, p.estado, "
+        "p.medio_pago, p.dato_pago, p.referencia_pago, p.pagado_at, p.pagado_por, "
+        "cf.concepto, cf.beneficiario, cf.categoria "
+        "FROM cargos_fijos_pagos p JOIN cargos_fijos cf ON cf.id=p.cargo_fijo_id "
+        "WHERE p.periodo=? ORDER BY CASE p.estado WHEN 'pendiente_monto' THEN 0 WHEN 'por_pagar' THEN 1 ELSE 2 END, p.fecha_limite",
+        (periodo,)).fetchall()]
+    hoy = (datetime.now() - __import__('datetime').timedelta(hours=5)).strftime('%Y-%m-%d')
+    falta = [x for x in pagos if x['estado'] == 'pendiente_monto']
+    porpagar = [x for x in pagos if x['estado'] == 'por_pagar']
+    vencidos = [x for x in porpagar if (x['fecha_limite'] or '') and x['fecha_limite'] < hoy]
+    return jsonify({
+        'periodo': periodo, 'plantillas': plantillas, 'pagos': pagos,
+        'alertas': {
+            'falta_monto': len(falta), 'por_pagar': len(porpagar),
+            'vencidos': len(vencidos),
+            'total_por_pagar': round(sum(float(x['monto'] or 0) for x in porpagar), 2),
+        },
+        'medios': list(CARGOS_FIJOS_MEDIOS),
+    })
+
+
+@bp.route('/api/compras/cargos-fijos', methods=['POST'])
+def cargos_fijos_guardar():
+    usuario, err, code = _require_compras_write()
+    if err:
+        return err, code
+    d = request.get_json(silent=True) or {}
+    concepto = (d.get('concepto') or '').strip()
+    if not concepto:
+        return jsonify({'error': 'El concepto es obligatorio'}), 400
+    from datetime import timedelta as _td
+    vals = (
+        concepto, (d.get('beneficiario') or '').strip(),
+        (d.get('categoria') or 'Servicio').strip(), float(d.get('monto') or 0),
+        1 if d.get('es_variable') else 0, max(1, min(28, int(d.get('dia_corte') or 1))),
+        (d.get('medio_pago') or 'referencia').strip(), (d.get('dato_pago') or '').strip(),
+        (d.get('banco') or '').strip(), (d.get('notas') or '').strip(),
+    )
+    conn = get_db(); c = conn.cursor()
+    cid = d.get('id')
+    if cid:
+        c.execute(
+            "UPDATE cargos_fijos SET concepto=?, beneficiario=?, categoria=?, monto=?, "
+            "es_variable=?, dia_corte=?, medio_pago=?, dato_pago=?, banco=?, notas=? WHERE id=?",
+            vals + (int(cid),))
+        audit_log(c, usuario=usuario, accion='EDITAR_CARGO_FIJO', tabla='cargos_fijos',
+                  registro_id=str(cid), despues=concepto)
+    else:
+        c.execute(
+            "INSERT INTO cargos_fijos (concepto, beneficiario, categoria, monto, es_variable, "
+            "dia_corte, medio_pago, dato_pago, banco, notas, activo, creado_por, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?)",
+            vals + (usuario, (datetime.now() - _td(hours=5)).isoformat()))
+        cid = c.lastrowid
+        audit_log(c, usuario=usuario, accion='CREAR_CARGO_FIJO', tabla='cargos_fijos',
+                  registro_id=str(cid), despues=concepto)
+    conn.commit()
+    return jsonify({'ok': True, 'id': cid})
+
+
+@bp.route('/api/compras/cargos-fijos/<int:cid>/toggle', methods=['POST'])
+def cargos_fijos_toggle(cid):
+    usuario, err, code = _require_compras_write()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    c.execute("UPDATE cargos_fijos SET activo=CASE WHEN COALESCE(activo,1)=1 THEN 0 ELSE 1 END WHERE id=?", (cid,))
+    audit_log(c, usuario=usuario, accion='TOGGLE_CARGO_FIJO', tabla='cargos_fijos', registro_id=str(cid))
+    conn.commit()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/compras/cargos-fijos/pago/<int:pid>/monto', methods=['POST'])
+def cargos_fijos_completar_monto(pid):
+    """Catalina completa el monto (y ref/cuenta) del mes → pasa a 'por_pagar'."""
+    usuario, err, code = _require_compras_write()
+    if err:
+        return err, code
+    d = request.get_json(silent=True) or {}
+    try:
+        monto = float(d.get('monto') or 0)
+    except (TypeError, ValueError):
+        monto = 0
+    if monto <= 0:
+        return jsonify({'error': 'El monto debe ser mayor a 0'}), 400
+    medio = (d.get('medio_pago') or '').strip()
+    dato = (d.get('dato_pago') or '').strip()
+    conn = get_db(); c = conn.cursor()
+    n = c.execute(
+        "UPDATE cargos_fijos_pagos SET monto=?, "
+        "medio_pago=CASE WHEN ?<>'' THEN ? ELSE medio_pago END, "
+        "dato_pago=CASE WHEN ?<>'' THEN ? ELSE dato_pago END, estado='por_pagar' "
+        "WHERE id=? AND estado IN ('pendiente_monto','por_pagar')",
+        (monto, medio, medio, dato, dato, pid)).rowcount
+    if not n:
+        conn.rollback()
+        return jsonify({'error': 'No se pudo actualizar (¿ya está pagado?)'}), 409
+    audit_log(c, usuario=usuario, accion='CARGO_FIJO_MONTO', tabla='cargos_fijos_pagos',
+              registro_id=str(pid), despues=str(monto))
+    conn.commit()
+    try:
+        from blueprints.notif import push_notif_multi
+        push_notif_multi(list(ADMIN_USERS), 'cargo_fijo', 'Cargo fijo por pagar',
+                         body='Catalina cargó un cargo fijo pendiente de tu pago.',
+                         link='/compras', remitente=usuario)
+    except Exception:
+        pass
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/compras/cargos-fijos/pago/<int:pid>/pagar', methods=['POST'])
+def cargos_fijos_pagar(pid):
+    """SOLO admin (Sebastián) paga. CAS anti-doble-pago + espejo a flujo_egresos."""
+    u = session.get('compras_user', '')
+    if not u:
+        return jsonify({'error': 'No autenticado'}), 401
+    if u not in ADMIN_USERS:
+        return jsonify({'error': 'El pago de cargos fijos lo hace gerencia (admin)'}), 403
+    d = request.get_json(silent=True) or {}
+    from datetime import timedelta as _td
+    conn = get_db(); c = conn.cursor()
+    row = c.execute(
+        "SELECT p.monto, p.estado, p.periodo, cf.concepto, cf.beneficiario, cf.categoria "
+        "FROM cargos_fijos_pagos p JOIN cargos_fijos cf ON cf.id=p.cargo_fijo_id WHERE p.id=?",
+        (pid,)).fetchone()
+    if not row:
+        return jsonify({'error': 'No existe'}), 404
+    monto = float(row[0] or 0)
+    estado = row[1]; periodo = row[2]
+    concepto = row[3] or ''; benef = row[4] or ''; cat = row[5] or 'Servicio'
+    if estado == 'pendiente_monto':
+        return jsonify({'error': 'Falta que Catalina cargue el monto primero'}), 400
+    n = c.execute(
+        "UPDATE cargos_fijos_pagos SET estado='pagado', pagado_at=?, pagado_por=?, referencia_pago=? "
+        "WHERE id=? AND estado='por_pagar'",
+        ((datetime.now() - _td(hours=5)).isoformat(), u, (d.get('referencia_pago') or '').strip(), pid)).rowcount
+    if not n:
+        conn.rollback()
+        return jsonify({'error': 'Ya está pagado o no está por-pagar'}), 409
+    audit_log(c, usuario=u, accion='PAGAR_CARGO_FIJO', tabla='cargos_fijos_pagos',
+              registro_id=str(pid), antes=estado, despues='pagado')
+    try:
+        c.execute(
+            "INSERT INTO flujo_egresos (fecha, empresa, concepto, categoria, monto, periodo, "
+            "fuente, referencia, creado_por, observaciones) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            ((datetime.now() - _td(hours=5)).strftime('%Y-%m-%d'), 'Espagiria',
+             'Cargo fijo: ' + concepto + ((' - ' + benef) if benef else ''),
+             cat, monto, periodo, 'cargos_fijos', 'CF-' + str(pid), u, 'Pago cargo fijo gerencia'))
+    except sqlite3.OperationalError as _e:
+        if 'no such table' not in str(_e).lower():
+            log.warning('flujo_egresos cargo fijo falló: %s', _e)
+    conn.commit()
+    try:
+        from blueprints.notif import push_notif_multi
+        push_notif_multi(list(COMPRAS_ACCESS), 'cargo_fijo',
+                         'Cargo fijo pagado: ' + concepto, link='/compras', remitente=u)
+    except Exception:
+        pass
+    return jsonify({'ok': True})
+
+
+# ════════════════════════════════════════════
 # MEE — Materiales de Envase & Empaque
 # ════════════════════════════════════════════
 
