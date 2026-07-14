@@ -2641,11 +2641,21 @@ def mkt_kpis_hoy():
 # ──────────────────────────────────────────────────────────────────────────────
 # DASHBOARD
 # ──────────────────────────────────────────────────────────────────────────────
+_MKT_DASH_CACHE = {}   # {'d': {ts, payload}} · cache per-worker · dashboard = overview
+
+
 @bp.route("/api/marketing/dashboard")
 def mkt_dashboard():
     u, err, code = _auth()
     if err:
         return err, code
+    # PERF (Sebastián 13-jul · "marketing muy lento"): el dashboard agrega ~20 queries
+    # sobre animus_shopify_orders (overview). Cache TTL 180s por-worker · ?force=1 salta.
+    import time as _time_md
+    _force_md = (request.args.get("force") or "") not in ("", "0", "false")
+    _hit_md = _MKT_DASH_CACHE.get("d")
+    if _hit_md and not _force_md and (_time_md.time() - _hit_md["ts"] < 180):
+        return jsonify(_hit_md["payload"])
     conn = _db()
     c = conn.cursor()
     try:
@@ -2859,7 +2869,7 @@ def mkt_dashboard():
             # Si la mig 189 aún no aplicó (tabla no existe), KPIs quedan en 0
             log.warning("ghl KPIs dashboard fallback (mig 189 pending?): %s", _ghl_e)
 
-        return jsonify({
+        _dash_payload = {
             "kpis": {
                 "total_campanas": total_campanas,
                 "activas": activas,
@@ -2909,7 +2919,9 @@ def mkt_dashboard():
             "contenido_reciente": contenido_reciente,
             "tendencias": tendencias,
             "por_canal": por_canal,
-        })
+        }
+        _MKT_DASH_CACHE["d"] = {"ts": _time_md.time(), "payload": _dash_payload}
+        return jsonify(_dash_payload)
     finally:
         pass  # conexión cerrada automáticamente por teardown_appcontext
 
