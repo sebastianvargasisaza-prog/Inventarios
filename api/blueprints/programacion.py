@@ -2300,21 +2300,20 @@ def prog_sugerencia_produccion():
     primer_dia_mes = hoy.replace(day=1)
     mes_pasado_ini = (primer_dia_mes - _td(days=1)).replace(day=1)
 
-    def _kg_lotes_entre(desde, hasta):
-        """kg fabricados de ESTE producto en [desde, hasta) uniendo las DOS tablas de
-        producción real — produccion_programada (flujo calendario) y producciones
-        (Fabricación directa) — deduplicando por (producto, día) igual que el espejo
-        Fabricación→calendario (M37).
+    def _prod_por_dia(desde, hasta):
+        """{día: {'kg':x, 'fuente':'calendario|fabricacion|ambos'}} de ESTE producto en
+        [desde, hasta), uniendo las DOS tablas de producción real — produccion_programada
+        (flujo calendario) y producciones (Fabricación directa) — deduplicando por
+        (producto, día) igual que el espejo Fabricación→calendario (M37).
 
-        Sebastián 14-jul: 'empezamos a usar Fabricación hace poco, pero el calendario
-        está armado tal cual lo que fabricamos en junio/julio → aunque un lote solo esté
-        en el calendario, ES la verdad de lo producido'. Por eso el calendario cuenta los
-        lotes con FECHA PASADA y NO cancelados (no solo estado='completado'); las ventanas
-        de recordá son pasadas, así que no cuenta lo planeado a futuro."""
+        Sebastián 14-jul: 'empezamos a usar Fabricación hace poco, pero el calendario está
+        armado tal cual lo que fabricamos en junio/julio → aunque un lote solo esté en el
+        calendario, ES la verdad de lo producido'. Por eso el calendario cuenta los lotes
+        con FECHA PASADA y NO cancelados (no solo estado='completado'); las ventanas de
+        recordá son pasadas → no cuenta lo planeado a futuro. Dedup por día = misma
+        identidad de lote del sistema (max entre las dos tablas = no doble-conteo)."""
         desde_s, hasta_s = desde.isoformat(), hasta.isoformat()
-        por_dia = {}
-        # a) calendario: lote pasado NO cancelado = producido (kg_real si se completó,
-        #    si no la cantidad_kg planeada · el calendario refleja lo que se fabrica)
+        cal = {}  # día → kg (suma de lotes del calendario no-cancelados)
         for prod, kgr, dia in c.execute(
             "SELECT producto, COALESCE(kg_real, cantidad_kg, 0), "
             "substr(COALESCE(fin_real_at, fecha_programada),1,10) FROM produccion_programada "
@@ -2323,22 +2322,40 @@ def prog_sugerencia_produccion():
             "AND substr(COALESCE(fin_real_at, fecha_programada),1,10) < ?",
             (desde_s, hasta_s)).fetchall():
             if _norm_prod_fuerte(prod or '') == pn and dia:
-                por_dia[dia] = por_dia.get(dia, 0.0) + float(kgr or 0)
-        # b) Fabricación DIRECTA (producciones · cantidad = kg) · máx por día = mismo lote
-        #    (si el espejo ya lo reflejó en (a), max evita el doble-conteo)
+                cal[dia] = cal.get(dia, 0.0) + float(kgr or 0)
+        fab = {}  # día → kg (Fabricación directa · cantidad = kg)
         try:
             for prod, cant, dia in c.execute(
                 "SELECT producto, COALESCE(cantidad,0), substr(fecha,1,10) FROM producciones "
                 "WHERE COALESCE(cantidad,0) > 0 AND substr(fecha,1,10) >= ? AND substr(fecha,1,10) < ?",
                 (desde_s, hasta_s)).fetchall():
                 if _norm_prod_fuerte(prod or '') == pn and dia:
-                    por_dia[dia] = max(por_dia.get(dia, 0.0), float(cant or 0))
+                    fab[dia] = fab.get(dia, 0.0) + float(cant or 0)
         except Exception:
             pass  # tabla producciones ausente en alguna instancia
-        return round(sum(por_dia.values()), 1), len(por_dia)
+        por_dia = {}
+        for dia in set(cal) | set(fab):
+            kc, kf = cal.get(dia, 0.0), fab.get(dia, 0.0)
+            if kc > 0 and kf > 0:
+                fuente = 'ambos'
+            elif kf > 0:
+                fuente = 'fabricacion'
+            else:
+                fuente = 'calendario'
+            por_dia[dia] = {'kg': round(max(kc, kf), 1), 'fuente': fuente}
+        return por_dia
 
-    kg_mes_pasado, n_mes_pasado = _kg_lotes_entre(mes_pasado_ini, primer_dia_mes)
-    kg_anio, n_anio = _kg_lotes_entre(hoy.replace(month=1, day=1), hoy + _td(days=1))
+    def _totales(por_dia):
+        return round(sum(v['kg'] for v in por_dia.values()), 1), len(por_dia)
+
+    pd_mes = _prod_por_dia(mes_pasado_ini, primer_dia_mes)
+    pd_anio = _prod_por_dia(hoy.replace(month=1, day=1), hoy + _td(days=1))
+    kg_mes_pasado, n_mes_pasado = _totales(pd_mes)
+    kg_anio, n_anio = _totales(pd_anio)
+    # lista para VER/revisar cada lote (fecha + kg + fuente) · lo que está en el calendario
+    historial = sorted(
+        [{'fecha': d, 'kg': v['kg'], 'fuente': v['fuente']} for d, v in pd_anio.items()],
+        key=lambda x: x['fecha'], reverse=True)
 
     # 7) cadencia + mix guardados (si existen)
     cadencia_dias = None
@@ -2368,6 +2385,7 @@ def prog_sugerencia_produccion():
         'recorda': {
             'kg_mes_pasado': kg_mes_pasado, 'lotes_mes_pasado': n_mes_pasado,
             'kg_anio': kg_anio, 'lotes_anio': n_anio,
+            'historial': historial,   # [{fecha, kg, fuente}] · para ver/revisar cada lote
         },
         'config': {'cadencia_dias': cadencia_dias, 'mix_mode': mix_mode},
     })

@@ -85,6 +85,10 @@ def test_sugerencia_estructura_y_horizontes(app):
     # recordá: 30 kg el mes pasado
     assert j["recorda"]["kg_mes_pasado"] == 30, j["recorda"]
     assert j["recorda"]["lotes_mes_pasado"] == 1, j["recorda"]
+    # historial revisable: el lote aparece con fecha + kg + fuente
+    hist = j["recorda"]["historial"]
+    assert len(hist) >= 1 and hist[0]["kg"] == 30, hist
+    assert hist[0]["fuente"] in ("calendario", "fabricacion", "ambos"), hist[0]
 
 
 def test_solo_lectura_no_muta(app):
