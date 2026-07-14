@@ -123,8 +123,10 @@ def health():
                     malformed = True
             except sqlite3.DatabaseError:
                 malformed = True
-        for tbl in ['maestro_mps', 'solicitudes_compra', 'ordenes_compra',
-                    'movimientos']:
+        # PERF (Sebastián 13-jul · health tardaba 13-20s): COUNT(*) exacto solo en
+        # tablas chicas. 'movimientos' (kardex · crece sin tope) en Postgres es un
+        # seq-scan de segundos → usar el estimado instantáneo de pg_class.reltuples.
+        for tbl in ['maestro_mps', 'solicitudes_compra', 'ordenes_compra']:
             try:
                 tables[tbl] = conn.execute(
                     'SELECT COUNT(*) FROM %s' % tbl).fetchone()[0]
@@ -132,6 +134,20 @@ def health():
                 tables[tbl] = 'err'
                 if 'malformed' in str(e).lower() or 'corrupt' in str(e).lower():
                     malformed = True
+        try:
+            if es_pg:
+                _est = conn.execute(
+                    "SELECT reltuples::bigint FROM pg_class WHERE relname='movimientos'"
+                ).fetchone()
+                tables['movimientos'] = int(_est[0]) if _est and _est[0] is not None else 0
+                tables['movimientos_estimado'] = True
+            else:
+                tables['movimientos'] = conn.execute(
+                    'SELECT COUNT(*) FROM movimientos').fetchone()[0]
+        except Exception as e:
+            tables['movimientos'] = 'err'
+            if 'malformed' in str(e).lower() or 'corrupt' in str(e).lower():
+                malformed = True
         try:
             tables['planta_pendientes'] = conn.execute(
                 "SELECT COUNT(*) FROM solicitudes_compra WHERE estado='Aprobada' "

@@ -2654,7 +2654,7 @@ def mkt_dashboard():
     import time as _time_md
     _force_md = (request.args.get("force") or "") not in ("", "0", "false")
     _hit_md = _MKT_DASH_CACHE.get("d")
-    if _hit_md and not _force_md and (_time_md.time() - _hit_md["ts"] < 180):
+    if _hit_md and not _force_md and (_time_md.time() - _hit_md["ts"] < 600):
         return jsonify(_hit_md["payload"])
     conn = _db()
     c = conn.cursor()

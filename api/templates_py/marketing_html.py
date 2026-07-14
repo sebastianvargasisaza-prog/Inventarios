@@ -637,17 +637,17 @@ window.addEventListener('unhandledrejection', function(ev) {
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <style>
 .kanban-wrap{display:grid;grid-template-columns:repeat(5,minmax(220px,1fr));gap:12px;overflow-x:auto;padding-bottom:10px;}
-.kanban-col{background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:10px;padding:10px;min-height:300px;display:flex;flex-direction:column;}
+.kanban-col{background:var(--cx-card,#fff);border:1px solid #eef0f2;border-radius:14px;padding:10px 10px 12px;min-height:300px;display:flex;flex-direction:column;box-shadow:0 2px 12px rgba(15,23,42,.05);border-top:3px solid #e5e7eb;}
 .kanban-col-hdr{display:flex;justify-content:space-between;align-items:center;padding:4px 6px 10px;border-bottom:1px solid var(--cx-hairline);margin-bottom:8px;}
-.kanban-col-hdr .name{font-weight:700;font-size:13px;color:var(--cx-text);}
-.kanban-col-hdr .count{background:var(--cx-card);color:var(--cx-text-mute);padding:1px 9px;border-radius:10px;font-size:11px;font-weight:700;}
-.kanban-col[data-estado="Brief"]       .name{color:#2563eb;}
-.kanban-col[data-estado="Produccion"]  .name{color:#b45309;}
-.kanban-col[data-estado="Pendiente"]   .name{color:#6d28d9;}
-.kanban-col[data-estado="Publicado"]   .name{color:#16a34a;}
-.kanban-col[data-estado="Performance"] .name{color:#f472b6;}
-.kanban-card{background:var(--cx-card);border:1px solid #e7e5e4;border-radius:8px;padding:10px;margin-bottom:8px;cursor:pointer;transition:.15s;font-size:12px;}
-.kanban-card:hover{border-color:#7c3aed;transform:translateY(-1px);}
+.kanban-col-hdr .name{font-weight:800;font-size:13px;color:var(--cx-text);letter-spacing:-.01em;}
+.kanban-col-hdr .count{background:var(--cx-bg-alt);color:var(--cx-text-mute);padding:2px 10px;border-radius:20px;font-size:11px;font-weight:800;}
+.kanban-col[data-estado="Brief"]       .name{color:#2563eb;} .kanban-col[data-estado="Brief"]{border-top-color:#2563eb;}
+.kanban-col[data-estado="Produccion"]  .name{color:#b45309;} .kanban-col[data-estado="Produccion"]{border-top-color:#f59e0b;}
+.kanban-col[data-estado="Pendiente"]   .name{color:#6d28d9;} .kanban-col[data-estado="Pendiente"]{border-top-color:#7c3aed;}
+.kanban-col[data-estado="Publicado"]   .name{color:#16a34a;} .kanban-col[data-estado="Publicado"]{border-top-color:#16a34a;}
+.kanban-col[data-estado="Performance"] .name{color:#f472b6;} .kanban-col[data-estado="Performance"]{border-top-color:#f472b6;}
+.kanban-card{background:var(--cx-card);border:1px solid #eef0f2;border-radius:10px;padding:10px;margin-bottom:8px;cursor:pointer;transition:transform .12s,box-shadow .15s,border-color .15s;font-size:12px;box-shadow:0 1px 4px rgba(15,23,42,.04);}
+.kanban-card:hover{border-color:#7c3aed;transform:translateY(-2px);box-shadow:0 8px 18px rgba(124,58,237,.10);}
 .kanban-card .sku{font-family:monospace;color:#16a34a;font-size:11px;font-weight:700;}
 .kanban-card .titulo{font-weight:700;color:var(--cx-text);margin:4px 0;line-height:1.3;}
 .kanban-card .meta{display:flex;flex-wrap:wrap;gap:6px;font-size:10px;color:var(--cx-text-mute);margin-top:6px;}
