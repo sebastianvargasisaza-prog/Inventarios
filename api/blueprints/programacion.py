@@ -2207,6 +2207,148 @@ def prog_diagnostico_alias():
     })
 
 
+@bp.route('/api/programacion/sugerencia-produccion', methods=['GET'])
+def prog_sugerencia_produccion():
+    """SOLO LECTURA · Programación v4 · Fase B paso 1 (panel de sugerencia).
+
+    Para UN producto devuelve, SIN escribir nada ni tocar el calendario:
+      - recorda:  kg producidos el mes pasado + en el año (memoria · ya existe el historial)
+      - venta:    velocidad blended uds/día + tendencia (sube/baja/estable) · fuente única M70
+      - horizontes: kg sugeridos para cubrir 1 / 2 / 3 meses (editable en la UI)
+      - guardrails: los topes ½×–2× del promedio 90d ("ni menos ni exagerar", ya los aplica el blend)
+      - config:   cadencia_dias + mix_mode guardados (si existen)
+
+    El total kg usa la MISMA velocidad blended y el MISMO volumen (g/unidad) que el
+    motor de cadencia y Necesidades → lo que se ve = lo que se programará (M70).
+    """
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    producto = (request.args.get('producto') or '').strip()
+    if not producto:
+        return jsonify({'error': 'Falta producto'}), 400
+
+    from datetime import datetime as _dt, timedelta as _td, date as _date
+    from blueprints.auto_plan import (velocidad_blended_uds_dia, _ventas_diarias_por_sku,
+                                      _factor_g_por_unidad_detalle)
+
+    conn = get_db()
+    c = conn.cursor()
+    hoy = (_dt.utcnow() - _td(hours=5)).date()   # Colombia (M24)
+
+    # 1) SKUs NO-regalo del producto (misma exclusión que Necesidades)
+    skus = [r[0] for r in c.execute(
+        "SELECT sku FROM sku_producto_map WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) "
+        "AND COALESCE(activo,1)=1 AND COALESCE(es_regalo,0)=0", (producto,)).fetchall()]
+
+    # 2) Velocidad blended uds/día + tendencia · edad-ajustada (paridad con el motor · M70)
+    v30 = v60 = v90 = 0.0
+    primera_venta = None
+    for sku in skus:
+        d30 = _ventas_diarias_por_sku(c, sku, dias=30)
+        d60 = _ventas_diarias_por_sku(c, sku, dias=60)
+        d90 = _ventas_diarias_por_sku(c, sku, dias=90)
+        v30 += sum(q for _, q in d30)
+        v60 += sum(q for _, q in d60)
+        v90 += sum(q for _, q in d90)
+        for fecha_s, _q in d90:
+            if fecha_s and (primera_venta is None or fecha_s < primera_venta):
+                primera_venta = fecha_s
+
+    fc = c.execute(
+        "SELECT COALESCE(fecha_creacion,''), COALESCE(lote_size_kg,0) FROM formula_headers "
+        "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1 "
+        "ORDER BY id LIMIT 1", (producto,)).fetchone()
+    fecha_creacion = (fc[0] if fc else '') or ''
+    lote_size_kg = float(fc[1]) if fc and fc[1] else 0.0
+
+    base_fecha = fecha_creacion or (primera_venta or '')
+    dias_creacion = None
+    if base_fecha:
+        try:
+            dias_creacion = max(1, (hoy - _date.fromisoformat(base_fecha[:10])).days)
+        except Exception:
+            dias_creacion = None
+    vel, tendencia = velocidad_blended_uds_dia(v30, v60, v90, dias_creacion, 60)
+
+    # 3) Volumen g/unidad (≈ml) para convertir uds→kg (mismo resolver que el motor)
+    factor_g, fuente_vol, detalle_vol, _pres = _factor_g_por_unidad_detalle(c, producto)
+
+    # 4) Sugerencia por horizonte: kg = vel × días × g/unidad ÷ 1000
+    def _kg_para(dias):
+        uds = vel * dias
+        kg = uds * factor_g / 1000.0
+        return {
+            'dias': dias,
+            'uds': int(round(uds)),
+            'kg': round(kg, 1),
+            'lotes': (round(kg / lote_size_kg, 1) if lote_size_kg > 0 else None),
+        }
+    horizontes = {'mes_1': _kg_para(30), 'mes_2': _kg_para(60), 'mes_3': _kg_para(90)}
+
+    # 5) Guardrails "ni menos ni exagerar" (los topes que YA aplica velocidad_blended_uds_dia)
+    vel90 = (v90 / 90.0) if v90 else 0.0
+    guardrails = {
+        'vel_uds_dia': round(vel, 3),
+        'vel_90d_uds_dia': round(vel90, 3),
+        'piso_uds_dia': round(vel90 * 0.5, 3),   # nunca MENOS de ½ del promedio 90d
+        'techo_uds_dia': round(vel90 * 2.0, 3),  # nunca MÁS de 2× del promedio 90d
+    }
+
+    # 6) Recordá: kg producidos (mes pasado + en el año) · historial que YA existe
+    #    match por nombre normalizado (M13/M37) sobre produccion_programada completada
+    pn = _norm_prod_fuerte(producto)
+    primer_dia_mes = hoy.replace(day=1)
+    mes_pasado_ini = (primer_dia_mes - _td(days=1)).replace(day=1)
+
+    def _kg_lotes_entre(desde, hasta):
+        kg = 0.0
+        n = 0
+        rows = c.execute(
+            "SELECT producto, COALESCE(kg_real, cantidad_kg, 0) FROM produccion_programada "
+            "WHERE LOWER(COALESCE(estado,''))='completado' "
+            "AND substr(COALESCE(fin_real_at, fecha_programada),1,10) >= ? "
+            "AND substr(COALESCE(fin_real_at, fecha_programada),1,10) < ?",
+            (desde.isoformat(), hasta.isoformat())).fetchall()
+        for prod, kgr in rows:
+            if _norm_prod_fuerte(prod or '') == pn:
+                kg += float(kgr or 0)
+                n += 1
+        return round(kg, 1), n
+
+    kg_mes_pasado, n_mes_pasado = _kg_lotes_entre(mes_pasado_ini, primer_dia_mes)
+    kg_anio, n_anio = _kg_lotes_entre(hoy.replace(month=1, day=1), hoy + _td(days=1))
+
+    # 7) cadencia + mix guardados (si existen)
+    cadencia_dias = None
+    mix_mode = 'auto'
+    try:
+        spc = c.execute(
+            "SELECT COALESCE(cadencia_dias,0), COALESCE(mix_mode,'auto') "
+            "FROM sku_planeacion_config WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
+            (producto,)).fetchone()
+        if spc:
+            cadencia_dias = int(spc[0]) if spc[0] else None
+            mix_mode = spc[1] or 'auto'
+    except Exception:
+        pass  # mig 349 (mix_mode) puede no estar aplicada
+
+    return jsonify({
+        'producto': producto,
+        'venta': {
+            'vel_uds_dia': round(vel, 2), 'tendencia': tendencia,
+            'uds_mes': int(round(vel * 30)),
+            'v30': int(round(v30)), 'v60': int(round(v60)), 'v90': int(round(v90)),
+        },
+        'volumen': {'ml_unidad': factor_g, 'fuente': fuente_vol, 'detalle': detalle_vol},
+        'lote_size_kg': lote_size_kg,
+        'horizontes': horizontes,
+        'guardrails': guardrails,
+        'recorda': {
+            'kg_mes_pasado': kg_mes_pasado, 'lotes_mes_pasado': n_mes_pasado,
+            'kg_anio': kg_anio, 'lotes_anio': n_anio,
+        },
+        'config': {'cadencia_dias': cadencia_dias, 'mix_mode': mix_mode},
+    })
 
 
 @bp.route('/api/programacion/que-puedo-producir', methods=['GET'])
