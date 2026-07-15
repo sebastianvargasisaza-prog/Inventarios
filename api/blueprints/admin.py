@@ -16798,35 +16798,50 @@ _HUERFANOS_PROD_CANCELAR = [
 ]
 
 
+def _mapear_huerfanos_rows(c, cond, val):
+    """Lotes afectados en AMBAS tablas de producción — produccion_programada
+    (calendario) y producciones (Fabricación) — porque un huérfano puede vivir en
+    cualquiera. `cond` es un fragmento SQL CONSTANTE sobre la columna `producto`
+    (existe en las dos tablas); `val` va parametrizado."""
+    rows_pp = c.execute(
+        "SELECT id, COALESCE(kg_real, cantidad_kg, 0), "
+        "substr(COALESCE(fin_real_at, fecha_programada),1,10) FROM produccion_programada "
+        "WHERE " + cond + " AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado')",
+        (val,)).fetchall()
+    try:
+        rows_fab = c.execute(
+            "SELECT id, COALESCE(cantidad, 0), substr(fecha,1,10) FROM producciones "
+            "WHERE " + cond + " AND COALESCE(cantidad,0) > 0 "
+            "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','anulado')",
+            (val,)).fetchall()
+    except Exception:
+        rows_fab = []  # tabla producciones ausente
+    return rows_pp, rows_fab
+
+
 def _mapear_huerfanos_scan(c):
-    """SOLO LEE. Devuelve, por cada acción revisada, los lotes de produccion_programada
-    afectados (ids + kg + fechas) para vista previa y para el apply."""
+    """SOLO LEE. Por cada acción revisada, los lotes afectados en las dos tablas."""
+    def _entry(rows_pp, rows_fab):
+        fechas = [r[2] for r in rows_pp if r[2]] + [r[2] for r in rows_fab if r[2]]
+        kg = (sum(float(r[1] or 0) for r in rows_pp)
+              + sum(float(r[1] or 0) for r in rows_fab))
+        return {
+            'lotes': len(rows_pp) + len(rows_fab),
+            'lotes_calendario': len(rows_pp), 'lotes_fabricacion': len(rows_fab),
+            'kg': round(kg, 1), 'fechas': sorted(set(fechas), reverse=True),
+            'ids_pp': [r[0] for r in rows_pp], 'ids_fab': [r[0] for r in rows_fab],
+        }
+    _CON = "UPPER(TRIM(producto))=UPPER(TRIM(?))"
     renombrar = []
     for viejo, canonico in _HUERFANOS_PROD_RENOMBRAR:
-        rows = c.execute(
-            "SELECT id, COALESCE(kg_real, cantidad_kg, 0), "
-            "substr(COALESCE(fin_real_at, fecha_programada),1,10) FROM produccion_programada "
-            "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) "
-            "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado')", (viejo,)).fetchall()
-        renombrar.append({
-            'viejo': viejo, 'canonico': canonico, 'lotes': len(rows),
-            'kg': round(sum(float(r[1] or 0) for r in rows), 1),
-            'fechas': sorted([r[2] for r in rows if r[2]], reverse=True),
-            'ids': [r[0] for r in rows],
-        })
+        e = _entry(*_mapear_huerfanos_rows(c, _CON, viejo))
+        e['viejo'] = viejo; e['canonico'] = canonico
+        renombrar.append(e)
     cancelar = []
     for label, cond, val in _HUERFANOS_PROD_CANCELAR:
-        rows = c.execute(
-            "SELECT id, COALESCE(kg_real, cantidad_kg, 0), "
-            "substr(COALESCE(fin_real_at, fecha_programada),1,10) FROM produccion_programada "
-            "WHERE " + cond + " AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado')",
-            (val,)).fetchall()
-        cancelar.append({
-            'label': label, 'lotes': len(rows),
-            'kg': round(sum(float(r[1] or 0) for r in rows), 1),
-            'fechas': sorted([r[2] for r in rows if r[2]], reverse=True),
-            'ids': [r[0] for r in rows],
-        })
+        e = _entry(*_mapear_huerfanos_rows(c, cond, val))
+        e['label'] = label
+        cancelar.append(e)
     return {'renombrar': renombrar, 'cancelar': cancelar}
 
 
@@ -16855,29 +16870,49 @@ def admin_mapear_huerfanos_aplicar():
     cancelados = 0
     detalle = []
     for m in scan['renombrar']:
-        if not m['ids']:
+        if not (m['ids_pp'] or m['ids_fab']):
             continue
-        for _id in m['ids']:
+        for _id in m['ids_pp']:
             audit_log(c, usuario=u, accion='MAPEAR_HUERFANO_RENOMBRAR', tabla='produccion_programada',
                       registro_id=_id, antes=m['viejo'], despues=m['canonico'],
                       detalle='corrección de etiqueta de lote histórico huérfano (revisado 14-jul)')
-        n = c.execute(
+        for _id in m['ids_fab']:
+            audit_log(c, usuario=u, accion='MAPEAR_HUERFANO_RENOMBRAR', tabla='producciones',
+                      registro_id=_id, antes=m['viejo'], despues=m['canonico'],
+                      detalle='corrección de etiqueta de lote histórico huérfano (Fabricación · revisado 14-jul)')
+        n1 = c.execute(
             "UPDATE produccion_programada SET producto=? "
             "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) "
             "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado')",
             (m['canonico'], m['viejo'])).rowcount
-        renombrados += n
-        detalle.append({'accion': 'renombrar', 'viejo': m['viejo'],
-                        'canonico': m['canonico'], 'lotes': n})
+        n2 = 0
+        try:
+            n2 = c.execute(
+                "UPDATE producciones SET producto=? "
+                "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) "
+                "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','anulado')",
+                (m['canonico'], m['viejo'])).rowcount
+        except Exception:
+            pass
+        renombrados += n1 + n2
+        detalle.append({'accion': 'renombrar', 'viejo': m['viejo'], 'canonico': m['canonico'],
+                        'calendario': n1, 'fabricacion': n2})
     for cc in scan['cancelar']:
-        for _id in cc['ids']:
+        for _id in cc['ids_pp']:
             audit_log(c, usuario=u, accion='MAPEAR_HUERFANO_CANCELAR', tabla='produccion_programada',
                       registro_id=_id, antes=cc['label'], despues='cancelado',
                       detalle='lote de PRUEBA sacado del calendario (revisado 14-jul)')
             c.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id=?", (_id,))
             cancelados += 1
-        if cc['ids']:
-            detalle.append({'accion': 'cancelar', 'label': cc['label'], 'lotes': len(cc['ids'])})
+        for _id in cc['ids_fab']:
+            audit_log(c, usuario=u, accion='MAPEAR_HUERFANO_CANCELAR', tabla='producciones',
+                      registro_id=_id, antes=cc['label'], despues='cancelado',
+                      detalle='lote de PRUEBA sacado de Fabricación (revisado 14-jul)')
+            c.execute("UPDATE producciones SET estado='cancelado' WHERE id=?", (_id,))
+            cancelados += 1
+        if cc['ids_pp'] or cc['ids_fab']:
+            detalle.append({'accion': 'cancelar', 'label': cc['label'],
+                            'lotes': len(cc['ids_pp']) + len(cc['ids_fab'])})
     conn.commit()
     return jsonify({'ok': True, 'renombrados': renombrados, 'cancelados': cancelados, 'detalle': detalle})
 

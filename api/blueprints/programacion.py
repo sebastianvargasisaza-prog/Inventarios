@@ -2327,7 +2327,9 @@ def prog_sugerencia_produccion():
         try:
             for prod, cant, dia in c.execute(
                 "SELECT producto, COALESCE(cantidad,0), substr(fecha,1,10) FROM producciones "
-                "WHERE COALESCE(cantidad,0) > 0 AND substr(fecha,1,10) >= ? AND substr(fecha,1,10) < ?",
+                "WHERE COALESCE(cantidad,0) > 0 "
+                "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','anulado') "
+                "AND substr(fecha,1,10) >= ? AND substr(fecha,1,10) < ?",
                 (desde_s, hasta_s)).fetchall():
                 if _norm_prod_fuerte(prod or '') == pn and dia:
                     fab[dia] = fab.get(dia, 0.0) + float(cant or 0)
@@ -2452,7 +2454,9 @@ def prog_confrontar_calendario_productos():
     # b) Fabricación directa
     try:
         q2 = ("SELECT producto, COALESCE(cantidad,0), substr(fecha,1,10) FROM producciones "
-              "WHERE COALESCE(cantidad,0) > 0 AND substr(fecha,1,10) >= ?")
+              "WHERE COALESCE(cantidad,0) > 0 "
+              "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','anulado') "
+              "AND substr(fecha,1,10) >= ?")
         p2 = [desde]
         if hasta:
             q2 += " AND substr(fecha,1,10) <= ?"

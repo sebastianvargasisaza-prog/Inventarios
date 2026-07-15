@@ -715,35 +715,46 @@ def test_mapear_huerfanos_page_200(admin_client):
 
 def test_mapear_huerfanos_preview_y_aplica(admin_client):
     import os, sqlite3
+    # huérfano + prueba en el CALENDARIO (produccion_programada)
     _pp_exec("INSERT INTO produccion_programada (producto, fecha_programada, lotes, estado, "
              "cantidad_kg, origen) VALUES ('GEL HIDRATANTE NF', '2026-05-05', 1, 'programado', 40, 'eos_plan')")
     _pp_exec("INSERT INTO produccion_programada (producto, fecha_programada, lotes, estado, "
              "cantidad_kg, origen) VALUES ('PRUEBA Suero', '2026-06-24', 1, 'programado', 10, 'eos_plan')")
+    # huérfano + prueba en FABRICACIÓN (producciones) · el caso real
+    _pp_exec("INSERT INTO producciones (producto, cantidad, fecha, estado) "
+             "VALUES ('EMULSION LIMPIADORA NF', 20, '2026-04-22', 'completado')")
+    _pp_exec("INSERT INTO producciones (producto, cantidad, fecha, estado) "
+             "VALUES ('PRUEBA Suero', 10, '2026-06-24', 'completado')")
 
-    # preview
+    # preview: cuenta ambas tablas
     d = admin_client.get("/api/admin/mapear-huerfanos-produccion").get_json()
     gel = next((m for m in d['renombrar'] if m['viejo'] == 'GEL HIDRATANTE NF'), None)
-    assert gel and gel['lotes'] >= 1, d['renombrar']
-    prueba = next((m for m in d['cancelar'] if 'PRUEBA' in m['label']), None)
-    assert prueba and prueba['lotes'] >= 1, d['cancelar']
+    assert gel and gel['lotes_calendario'] >= 1, d['renombrar']
+    eml = next((m for m in d['renombrar'] if m['viejo'] == 'EMULSION LIMPIADORA NF'), None)
+    assert eml and eml['lotes_fabricacion'] >= 1, d['renombrar']
 
     # aplicar
     r = admin_client.post("/api/admin/mapear-huerfanos-produccion/aplicar", json={})
     assert r.status_code == 200, r.data
     j = r.get_json()
-    assert j['renombrados'] >= 1 and j['cancelados'] >= 1, j
+    assert j['renombrados'] >= 2 and j['cancelados'] >= 2, j
 
     conn = sqlite3.connect(os.environ['DB_PATH'])
     try:
+        # calendario: renombrado + prueba cancelada
         nf = conn.execute("SELECT COUNT(*) FROM produccion_programada "
                           "WHERE UPPER(TRIM(producto))='GEL HIDRATANTE NF' "
                           "AND LOWER(COALESCE(estado,'')) != 'cancelado'").fetchone()[0]
-        assert nf == 0, "no renombró el huérfano"
-        gh = conn.execute("SELECT COUNT(*) FROM produccion_programada "
-                          "WHERE producto='GEL HIDRATANTE' AND fecha_programada='2026-05-05'").fetchone()[0]
-        assert gh >= 1, "el lote no quedó como GEL HIDRATANTE"
+        assert nf == 0, "no renombró el huérfano del calendario"
         pr = conn.execute("SELECT estado FROM produccion_programada "
                           "WHERE producto='PRUEBA Suero'").fetchone()[0]
         assert pr == 'cancelado', pr
+        # Fabricación: renombrado + prueba cancelada
+        eml_fab = conn.execute("SELECT COUNT(*) FROM producciones "
+                               "WHERE producto='EMULSION LIMPIADORA' AND fecha='2026-04-22'").fetchone()[0]
+        assert eml_fab >= 1, "no renombró el huérfano de Fabricación"
+        pr_fab = conn.execute("SELECT estado FROM producciones "
+                              "WHERE producto='PRUEBA Suero'").fetchone()[0]
+        assert pr_fab == 'cancelado', pr_fab
     finally:
         conn.close()
