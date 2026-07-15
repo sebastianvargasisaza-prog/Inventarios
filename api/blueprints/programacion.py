@@ -2359,19 +2359,24 @@ def prog_sugerencia_produccion():
         [{'fecha': d, 'kg': v['kg'], 'fuente': v['fuente']} for d, v in pd_anio.items()],
         key=lambda x: x['fecha'], reverse=True)
 
-    # 7) cadencia + mix guardados (si existen)
+    # 7) DECISIÓN guardada (ritmo + horizonte + kg objetivo + mix) · si existe
     cadencia_dias = None
     mix_mode = 'auto'
+    kg_objetivo_lote = None
+    horizonte_dias = None
     try:
         spc = c.execute(
-            "SELECT COALESCE(cadencia_dias,0), COALESCE(mix_mode,'auto') "
+            "SELECT COALESCE(cadencia_dias,0), COALESCE(mix_mode,'auto'), "
+            "kg_objetivo_lote, horizonte_dias "
             "FROM sku_planeacion_config WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
             (producto,)).fetchone()
         if spc:
             cadencia_dias = int(spc[0]) if spc[0] else None
             mix_mode = spc[1] or 'auto'
+            kg_objetivo_lote = float(spc[2]) if spc[2] not in (None, '') else None
+            horizonte_dias = int(spc[3]) if spc[3] not in (None, '') else None
     except Exception:
-        pass  # mig 349 (mix_mode) puede no estar aplicada
+        pass  # migs 349/350 pueden no estar aplicadas
 
     return jsonify({
         'producto': producto,
@@ -2389,8 +2394,102 @@ def prog_sugerencia_produccion():
             'kg_anio': kg_anio, 'lotes_anio': n_anio,
             'historial': historial,   # [{fecha, kg, fuente}] · para ver/revisar cada lote
         },
-        'config': {'cadencia_dias': cadencia_dias, 'mix_mode': mix_mode},
+        'config': {'cadencia_dias': cadencia_dias, 'mix_mode': mix_mode,
+                   'kg_objetivo_lote': kg_objetivo_lote, 'horizonte_dias': horizonte_dias},
     })
+
+
+@bp.route('/api/programacion/decision-produccion', methods=['POST'])
+def prog_decision_produccion():
+    """Programación v4 · Fase B paso 2 · GUARDA la decisión de producción de un producto
+    (lo que el sistema "recuerda"): ritmo (cadencia meses→días), horizonte (2/3 años→días),
+    kg objetivo por lote, y mix (auto/crece/fijo). Upsert en sku_planeacion_config. Auditado.
+    NO toca el calendario ni reprograma — solo persiste la decisión que el panel lee.
+
+    Body: {producto, cadencia_dias?, horizonte_dias?, kg_objetivo_lote?, mix_mode?}.
+    Los campos ausentes/None NO se tocan (patch parcial)."""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    d = request.get_json(silent=True) or {}
+    producto = (d.get('producto') or '').strip()
+    if not producto:
+        return jsonify({'error': 'Falta producto'}), 400
+
+    sets = []
+    vals = []
+    cambios = {}
+
+    def _num(key, cast, lo=None, hi=None):
+        if key not in d or d[key] in (None, ''):
+            return None
+        try:
+            v = cast(d[key])
+        except (TypeError, ValueError):
+            return 'ERR'
+        if lo is not None and v < lo:
+            return 'ERR'
+        if hi is not None and v > hi:
+            return 'ERR'
+        return v
+
+    cad = _num('cadencia_dias', int, 1, 3660)
+    if cad == 'ERR':
+        return jsonify({'error': 'cadencia_dias inválida'}), 400
+    if cad is not None:
+        sets.append('cadencia_dias=?'); vals.append(cad); cambios['cadencia_dias'] = cad
+
+    hor = _num('horizonte_dias', int, 30, 3660)
+    if hor == 'ERR':
+        return jsonify({'error': 'horizonte_dias inválido'}), 400
+    if hor is not None:
+        sets.append('horizonte_dias=?'); vals.append(hor); cambios['horizonte_dias'] = hor
+
+    kg = _num('kg_objetivo_lote', float, 0, 100000)
+    if kg == 'ERR':
+        return jsonify({'error': 'kg_objetivo_lote inválido'}), 400
+    if kg is not None:
+        sets.append('kg_objetivo_lote=?'); vals.append(kg); cambios['kg_objetivo_lote'] = kg
+
+    if 'mix_mode' in d and d['mix_mode']:
+        mm = str(d['mix_mode']).strip().lower()
+        if mm not in ('auto', 'crece', 'fijo'):
+            return jsonify({'error': "mix_mode debe ser auto/crece/fijo"}), 400
+        sets.append('mix_mode=?'); vals.append(mm); cambios['mix_mode'] = mm
+
+    if not sets:
+        return jsonify({'error': 'nada para guardar'}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    user = session.get('compras_user', '') if session else ''
+    try:
+        # upsert: si el producto no está en sku_planeacion_config, crearlo primero
+        existe = c.execute(
+            "SELECT 1 FROM sku_planeacion_config WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
+            (producto,)).fetchone()
+        if not existe:
+            c.execute("INSERT INTO sku_planeacion_config (producto_nombre) VALUES (?)", (producto,))
+        c.execute("UPDATE sku_planeacion_config SET " + ','.join(sets) +
+                  " WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", vals + [producto])
+        audit_log(c, usuario=user, accion='DECISION_PRODUCCION', tabla='sku_planeacion_config',
+                  registro_id=producto, despues=cambios,
+                  detalle='decisión de producción guardada (ritmo/horizonte/kg/mix)')
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': f'no se pudo guardar: {str(e)[:200]}'}), 500
+
+    # devolver la decisión guardada
+    row = c.execute(
+        "SELECT COALESCE(cadencia_dias,0), COALESCE(mix_mode,'auto'), kg_objetivo_lote, horizonte_dias "
+        "FROM sku_planeacion_config WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
+        (producto,)).fetchone()
+    return jsonify({'ok': True, 'producto': producto, 'guardado': cambios, 'config': {
+        'cadencia_dias': (int(row[0]) if row and row[0] else None),
+        'mix_mode': (row[1] if row else 'auto'),
+        'kg_objetivo_lote': (float(row[2]) if row and row[2] not in (None, '') else None),
+        'horizonte_dias': (int(row[3]) if row and row[3] not in (None, '') else None),
+    }})
 
 
 @bp.route('/api/programacion/confrontar-calendario-productos', methods=['GET'])

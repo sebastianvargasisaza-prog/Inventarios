@@ -428,6 +428,10 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (350, "Programación v4 · Fase B · persistir la DECISIÓN de producción por producto (Sebastián 15-jul · 'que siempre recuerde cuánto fabricar'): `sku_planeacion_config.kg_objetivo_lote` = kg que el usuario decide por lote (ej. 30). `sku_planeacion_config.horizonte_dias` = hasta cuándo se agenda la cadena (730=2 años · 1095=3 años · NULL=global). Junto con `cadencia_dias` (ritmo · ya existe) y `mix_mode` (crece/fijo · mig 349) completan la decisión que el sistema RECUERDA y muestra. Additivas · NULL = comportamiento actual · PG-safe.", [
+        "ALTER TABLE sku_planeacion_config ADD COLUMN kg_objetivo_lote REAL",
+        "ALTER TABLE sku_planeacion_config ADD COLUMN horizonte_dias INTEGER",
+    ]),
     (349, "Programación v4 · Fase A base (Sebastián 14-jul · replanteo calendario): (1) `sku_planeacion_config.mix_mode` = régimen de mix del producto entre referencias — 'auto' (deriva de la tendencia · comportamiento actual), 'crece' (color/lanzamientos · mix dinámico ponderado a venta reciente), 'fijo' (sueros estables · mix/uds fijas). Default 'auto' = no cambia nada hoy. (2) `produccion_programada.sku_breakdown_json` = desglose por SKU GUARDADO en el lote ({sku:{uds,ml,es_fija}} · determinístico sort_keys) para que calendario + abastecimiento + descuento lean la MISMA fuente en vez de recalcular al vuelo (hoy discrepan por ventana 60d vs 90d). NULL = recalcular (comportamiento actual). Additivas, PG-safe, invisibles hasta que la lógica las use.", [
         "ALTER TABLE sku_planeacion_config ADD COLUMN mix_mode TEXT DEFAULT 'auto'",
         "ALTER TABLE produccion_programada ADD COLUMN sku_breakdown_json TEXT",

@@ -172,6 +172,43 @@ def test_confrontar_calendario_vs_productos(app):
     assert j["resumen"]["sin_produccion"] >= 1
 
 
+def test_decision_produccion_guarda_y_lee(app):
+    _seed()
+    c = _login(app)
+    # guardar decisión: cada 2 meses (60d), 30 kg, horizonte 3 años, mix crece
+    r = c.post("/api/programacion/decision-produccion",
+               json={"producto": PROD, "cadencia_dias": 60, "kg_objetivo_lote": 30,
+                     "horizonte_dias": 1095, "mix_mode": "crece"})
+    assert r.status_code == 200, r.data
+    cfg = r.get_json()["config"]
+    assert cfg["cadencia_dias"] == 60 and cfg["kg_objetivo_lote"] == 30
+    assert cfg["horizonte_dias"] == 1095 and cfg["mix_mode"] == "crece"
+    # la sugerencia ahora la refleja
+    j = c.get(f"/api/programacion/sugerencia-produccion?producto={PROD}").get_json()
+    assert j["config"]["cadencia_dias"] == 60, j["config"]
+    assert j["config"]["kg_objetivo_lote"] == 30
+    assert j["config"]["mix_mode"] == "crece"
+
+
+def test_decision_patch_parcial_no_pisa(app):
+    _seed()
+    c = _login(app)
+    c.post("/api/programacion/decision-produccion",
+           json={"producto": PROD, "cadencia_dias": 60, "kg_objetivo_lote": 30})
+    # patch solo mix_mode → no borra cadencia ni kg
+    c.post("/api/programacion/decision-produccion", json={"producto": PROD, "mix_mode": "fijo"})
+    j = c.get(f"/api/programacion/sugerencia-produccion?producto={PROD}").get_json()["config"]
+    assert j["mix_mode"] == "fijo" and j["cadencia_dias"] == 60 and j["kg_objetivo_lote"] == 30, j
+
+
+def test_decision_valida_mix_mode(app):
+    _seed()
+    c = _login(app)
+    r = c.post("/api/programacion/decision-produccion",
+               json={"producto": PROD, "mix_mode": "invalido"})
+    assert r.status_code == 400
+
+
 def test_falta_producto_400(app):
     c = _login(app)
     assert c.get("/api/programacion/sugerencia-produccion").status_code == 400
