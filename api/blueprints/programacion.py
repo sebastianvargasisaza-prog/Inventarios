@@ -2391,6 +2391,116 @@ def prog_sugerencia_produccion():
     })
 
 
+@bp.route('/api/programacion/confrontar-calendario-productos', methods=['GET'])
+def prog_confrontar_calendario_productos():
+    """SOLO LECTURA · confronta la PRODUCCIÓN real (calendario + Fabricación) contra el
+    catálogo de fórmulas ACTIVAS, para ver de un vistazo:
+      - productos:  cada fórmula activa + su producción (kg/lotes/fechas) · tiene_produccion
+      - huerfanos:  lotes de producción cuyo nombre NO cruza con ninguna fórmula (M13/M37)
+                    → esos son los NO mapeados que harían perder historial
+      - resumen:    conteos (fórmulas, con/sin producción, huérfanos)
+
+    Usa la MISMA fuente que 'recordá' (calendario no-cancelado + producciones, dedup por
+    (producto,día)) y el MISMO normalizador de nombre (_norm_prod_fuerte) → lo que acá
+    aparece mapeado es lo que el recordá cuenta. NO escribe nada.
+
+    ?desde=YYYY-MM-DD (default 1-ene del año) · ?incluir_futuro=1 (default · incluye lo planeado)
+    """
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    from datetime import datetime as _dt, timedelta as _td
+    conn = get_db()
+    c = conn.cursor()
+    hoy = (_dt.utcnow() - _td(hours=5)).date()
+    desde = (request.args.get('desde') or '').strip() or hoy.replace(month=1, day=1).isoformat()
+    incluir_futuro = (request.args.get('incluir_futuro') or '1') not in ('0', 'false', 'False')
+    hasta = None if incluir_futuro else hoy.isoformat()
+
+    # catálogo: fórmulas activas · norm → nombre canónico
+    formulas = {}
+    for (nombre,) in c.execute(
+            "SELECT producto_nombre FROM formula_headers WHERE COALESCE(activo,1)=1").fetchall():
+        if nombre:
+            formulas[_norm_prod_fuerte(nombre)] = nombre
+
+    # producción por producto · {norm: {'nombre', 'dias': {dia: {'kg','fuente'}}}}
+    prod = {}
+
+    def _add(nrm, nombre_visto, dia, kg, fuente):
+        e = prod.setdefault(nrm, {'nombre': nombre_visto, 'dias': {}})
+        d = e['dias'].get(dia)
+        if d is None:
+            e['dias'][dia] = {'kg': kg, 'fuente': fuente}
+        else:
+            if fuente != d['fuente']:
+                d['fuente'] = 'ambos'
+            d['kg'] = max(d['kg'], kg)   # dedup por (producto,día) = misma identidad de lote
+
+    # a) calendario (no cancelado)
+    q = ("SELECT producto, COALESCE(kg_real, cantidad_kg, 0), "
+         "substr(COALESCE(fin_real_at, fecha_programada),1,10) FROM produccion_programada "
+         "WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelado') "
+         "AND substr(COALESCE(fin_real_at, fecha_programada),1,10) >= ?")
+    params = [desde]
+    if hasta:
+        q += " AND substr(COALESCE(fin_real_at, fecha_programada),1,10) <= ?"
+        params.append(hasta)
+    for pr, kg, dia in c.execute(q, params).fetchall():
+        if pr and dia:
+            _add(_norm_prod_fuerte(pr), pr, dia, float(kg or 0), 'calendario')
+
+    # b) Fabricación directa
+    try:
+        q2 = ("SELECT producto, COALESCE(cantidad,0), substr(fecha,1,10) FROM producciones "
+              "WHERE COALESCE(cantidad,0) > 0 AND substr(fecha,1,10) >= ?")
+        p2 = [desde]
+        if hasta:
+            q2 += " AND substr(fecha,1,10) <= ?"
+            p2.append(hasta)
+        for pr, kg, dia in c.execute(q2, p2).fetchall():
+            if pr and dia:
+                _add(_norm_prod_fuerte(pr), pr, dia, float(kg or 0), 'fabricacion')
+    except Exception:
+        pass  # tabla producciones ausente
+
+    def _tot(e):
+        dias = e['dias']
+        kg = round(sum(v['kg'] for v in dias.values()), 1)
+        return kg, len(dias), (min(dias) if dias else None), (max(dias) if dias else None)
+
+    productos = []
+    for nrm, nombre in sorted(formulas.items(), key=lambda x: x[1]):
+        e = prod.get(nrm)
+        if e:
+            kg, n, pri, ul = _tot(e)
+            productos.append({'producto': nombre, 'kg': kg, 'lotes': n,
+                              'primera': pri, 'ultima': ul, 'tiene_produccion': True})
+        else:
+            productos.append({'producto': nombre, 'kg': 0.0, 'lotes': 0,
+                              'primera': None, 'ultima': None, 'tiene_produccion': False})
+
+    huerfanos = []
+    for nrm, e in prod.items():
+        if nrm not in formulas:
+            kg, n, pri, ul = _tot(e)
+            huerfanos.append({'producto': e['nombre'], 'kg': kg, 'lotes': n,
+                              'primera': pri, 'ultima': ul,
+                              'fechas': sorted(e['dias'].keys(), reverse=True)})
+    huerfanos.sort(key=lambda x: -x['kg'])
+
+    return jsonify({
+        'ventana': {'desde': desde, 'hasta': hasta or 'sin límite (incluye lo planeado a futuro)'},
+        'resumen': {
+            'formulas_activas': len(formulas),
+            'con_produccion': sum(1 for p in productos if p['tiene_produccion']),
+            'sin_produccion': sum(1 for p in productos if not p['tiene_produccion']),
+            'huerfanos': len(huerfanos),
+        },
+        'productos': productos,
+        'huerfanos': huerfanos,
+    })
+
+
 @bp.route('/api/programacion/que-puedo-producir', methods=['GET'])
 def prog_que_puedo_producir():
     """Para cada producto con formula, evalua si las MPs alcanzan para

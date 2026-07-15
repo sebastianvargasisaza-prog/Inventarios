@@ -143,6 +143,35 @@ def test_no_doble_cuenta_calendario_y_fabricacion(app):
     assert j["recorda"]["kg_mes_pasado"] == 25, j["recorda"]  # NO 50
 
 
+def test_confrontar_calendario_vs_productos(app):
+    _seed()  # PROD tiene fórmula + lote en el calendario (mes pasado)
+    # producto con fórmula pero SIN producción
+    sin_prod = "QA SIN PRODUCCION"
+    _exec("INSERT OR IGNORE INTO formula_headers (producto_nombre, lote_size_kg, activo) "
+          "VALUES (?, 10, 1)", (sin_prod,))
+    # HUÉRFANO: lote en el calendario cuyo nombre NO cruza con ninguna fórmula
+    huerfano = "QA HUERFANO SIN FORMULA XYZ"
+    dia = (date.today().replace(day=1) - timedelta(days=1)).isoformat()
+    _exec("DELETE FROM produccion_programada WHERE producto=?", (huerfano,))
+    _exec("INSERT INTO produccion_programada (producto, fecha_programada, lotes, estado, "
+          "cantidad_kg, origen) VALUES (?, ?, 1, 'programado', 12, 'eos_plan')", (huerfano, dia))
+
+    c = _login(app)
+    j = c.get("/api/programacion/confrontar-calendario-productos").get_json()
+
+    prods = {p["producto"]: p for p in j["productos"]}
+    assert prods[PROD]["tiene_produccion"] is True, prods[PROD]
+    assert prods[sin_prod]["tiene_produccion"] is False, prods.get(sin_prod)
+
+    huerf = {h["producto"]: h for h in j["huerfanos"]}
+    assert huerfano in huerf, j["huerfanos"]
+    assert huerf[huerfano]["kg"] == 12, huerf[huerfano]
+
+    assert j["resumen"]["huerfanos"] >= 1
+    assert j["resumen"]["con_produccion"] >= 1
+    assert j["resumen"]["sin_produccion"] >= 1
+
+
 def test_falta_producto_400(app):
     c = _login(app)
     assert c.get("/api/programacion/sugerencia-produccion").status_code == 400
