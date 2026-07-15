@@ -166,14 +166,14 @@ Cuando Catalina edita un item:
 **Helpers compartidos nuevos:**
 - `_pendiente_en_compras_g(c, codigo_mp)` · anti-duplicación SOLs cross-canales
 - `_evaluar_auto_aprobacion(c, prov, monto, items)` · reglas auto-aprob
-- `_enviar_oc_a_proveedor(...)` · email HTML al autorizar
+- `_enviar_oc_a_proveedor(...)` · email HTML al proveedor · **NO se dispara al autorizar** (15-jul: autorizar = aprobación INTERNA · el envío queda gated por `app_settings.compras_auto_email_oc` default OFF · el aviso al proveedor se replanteará junto con facturación, idealmente al PAGAR)
 - `_scorecard_proveedor_dict(c, nombre_prov)` · 5 métricas live
 
 **Variables env nuevas:**
 - `COMPRAS_AUTO_APROB_OFF=1` · desactiva auto-aprobación reglas
 - `COMPRAS_AUTO_APROB_LIMITE_COP=500000` · monto límite
 - `COMPRAS_AUTO_APROB_REQ_SCORE=70` · score mínimo (opcional)
-- `COMPRAS_AUTO_EMAIL_PROV_OFF=1` · desactiva email auto al proveedor
+- `COMPRAS_AUTO_EMAIL_PROV_OFF=1` · (legacy) freno de emergencia al email · el default YA es NO enviar al autorizar (ver `app_settings.compras_auto_email_oc`)
 - `BRD_CUARENTENA_MIN_DIAS=N` · tiempo mínimo antes liberar EBR
 - `RRHH_BANCOS_JSON='[[...]]'` · cédulas+cuentas (PII fuera de código)
 

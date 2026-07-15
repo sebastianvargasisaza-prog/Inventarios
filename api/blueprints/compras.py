@@ -6750,12 +6750,23 @@ def autorizar_oc(numero_oc):
                   despues={'estado': 'Autorizada', 'remision_code': remision_code})
     except Exception as e:
         log.warning('audit_log AUTORIZAR_OC fallo: %s', e)
-    # Fase 2 · 21-may-2026 · email auto al proveedor con detalle OC
-    # Toggle: env COMPRAS_AUTO_EMAIL_PROV_OFF=1 desactiva (default ON)
+    # Sebastián 15-jul-2026 · NO enviar la OC al proveedor al AUTORIZAR. Autorizar
+    # es aprobación INTERNA (autorizar ≠ comprarle a ese proveedor · "a veces no
+    # compramos"). El aviso al proveedor se replanteará junto con facturación
+    # (idealmente al PAGAR · pendiente cuando volvamos a Compras). Toggle en BD
+    # default OFF (M39): SOLO envía si app_settings.compras_auto_email_oc='1'
+    # (reversible sin redeploy · el código de envío queda intacto).
     email_enviado = False
-    email_status = 'sin email proveedor'
-    import os as _os_mail
-    if (_os_mail.environ.get('COMPRAS_AUTO_EMAIL_PROV_OFF') or '0') != '1':
+    email_status = 'auto-envío al proveedor desactivado (autorización interna)'
+    _auto_email_oc = False
+    try:
+        _ae = cur.execute(
+            "SELECT valor FROM app_settings WHERE clave='compras_auto_email_oc'"
+        ).fetchone()
+        _auto_email_oc = bool(_ae and str(_ae[0]).strip() == '1')
+    except Exception:
+        _auto_email_oc = False
+    if _auto_email_oc:
         try:
             prov_row = cur.execute(
                 "SELECT proveedor FROM ordenes_compra WHERE numero_oc=?",
