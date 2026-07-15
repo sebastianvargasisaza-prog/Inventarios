@@ -147,3 +147,32 @@ def test_stock_insuficiente_limpia_huerfana(app, db_clean):
     conn.close()
     assert n == 0                  # producción huérfana borrada
     assert estado == "libre"       # área quedó libre (nunca se ocupó)
+
+
+def test_crear_iniciar_reusa_planeado_no_duplica(app, db_clean):
+    """FIX 14-jul (José · HYDRA BALANCE): si ya hay un lote PLANEADO del mismo producto
+    para HOY, 'Iniciar fabricación' lo REUSA en vez de crear un duplicado → un solo lote
+    y un solo descuento de MP (antes salían 2 y el planeado quedaba pendiente sin descontar,
+    con riesgo de doble descuento al completarlo)."""
+    from datetime import datetime, timezone, timedelta
+    aid = _seed()
+    hoy = (datetime.now(timezone.utc) - timedelta(hours=5)).date().isoformat()
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("INSERT INTO produccion_programada (producto, fecha_programada, lotes, estado, "
+                 "cantidad_kg, origen) VALUES (?, ?, 1, 'programado', 1, 'eos_plan')", (PROD, hoy))
+    conn.commit(); conn.close()
+    antes = _stock(MP)
+    c = _login(app)
+    r = c.post("/api/planta/fabricacion/crear-iniciar",
+               json={"producto": PROD, "area_id": aid, "cantidad_kg": 1}, headers=_csrf(c))
+    assert r.status_code == 200, r.data
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    n = conn.execute("SELECT COUNT(*) FROM produccion_programada WHERE UPPER(TRIM(producto))=UPPER(?) "
+                     "AND substr(fecha_programada,1,10)=? AND COALESCE(estado,'') != 'cancelado'",
+                     (PROD, hoy)).fetchone()[0]
+    iniciado = conn.execute("SELECT inicio_real_at FROM produccion_programada WHERE producto=? "
+                            "AND substr(fecha_programada,1,10)=?", (PROD, hoy)).fetchone()[0]
+    conn.close()
+    assert n == 1, f"se DUPLICO el lote planeado ({n} lotes hoy)"
+    assert iniciado, "el lote reusado no quedo iniciado"
+    assert _stock(MP) == antes - 1000, "descuento incorrecto (posible doble)"

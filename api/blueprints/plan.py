@@ -12179,8 +12179,29 @@ def plan_dedup_mismo_dia():
                         'mantiene_kg': mantener['kg'], 'cancela': len(cancelar),
                         'cancela_kg': [x['kg'] for x in cancelar]})
         a_cancelar.extend([x['id'] for x in cancelar])
+    n_grupos_dup = len(detalle)
+    # FIX 14-jul (José · HYDRA BALANCE) · cancelar además un lote PLANEADO (pendiente) cuando ese
+    # producto YA se INICIÓ o COMPLETÓ ese MISMO día → el pendiente es redundante e invisible al
+    # dedup de arriba (el iniciado no entra en `rows` por inicio_real_at IS NULL). Es peligroso:
+    # si se completa, descuenta MP otra vez. `rows` = solo pendientes no-iniciados (ver query).
+    ya_producido = set()
+    for _p, _f in cur.execute(
+        "SELECT DISTINCT UPPER(TRIM(producto)), substr(fecha_programada,1,10) FROM produccion_programada "
+        "WHERE substr(fecha_programada,1,10) >= ? "
+        "AND (inicio_real_at IS NOT NULL OR LOWER(COALESCE(estado,''))='completado') "
+        "AND COALESCE(estado,'') NOT IN ('cancelado')", (hoy,)).fetchall():
+        ya_producido.add((_p, _f))
+    ya_ids = set(a_cancelar)
+    redundantes = 0
+    for _id, prod, fecha, kg, origen in rows:
+        if ((prod or '').strip().upper(), fecha) in ya_producido and _id not in ya_ids:
+            a_cancelar.append(_id); ya_ids.add(_id); redundantes += 1
+            detalle.append({'producto': prod, 'fecha': fecha, 'total': 1, 'mantiene_id': None,
+                            'mantiene_kg': 0, 'cancela': 1, 'cancela_kg': [kg],
+                            'tipo': 'planeado_ya_producido'})
     detalle.sort(key=lambda x: (-x['cancela'], x['fecha'], x['producto']))
-    preview = {'grupos_con_duplicado': len(detalle), 'lotes_a_cancelar': len(a_cancelar), 'detalle': detalle}
+    preview = {'grupos_con_duplicado': n_grupos_dup, 'planeados_ya_producidos': redundantes,
+               'lotes_a_cancelar': len(a_cancelar), 'detalle': detalle}
     if dry:
         return jsonify({'ok': True, 'dry_run': True, **preview})
     cancelados = 0

@@ -7218,32 +7218,69 @@ def fabricacion_crear_iniciar():
             pass
 
     hoy = (datetime.now(timezone.utc) - timedelta(hours=5)).date().isoformat()
-    cols = ['producto', 'fecha_programada', 'lotes', 'area_id', 'origen', 'estado']
-    vals = [producto, hoy, lotes, area_id, 'eos_plan', 'programado']
-    if cantidad_kg is not None:
-        cols.append('cantidad_kg'); vals.append(cantidad_kg)
-    if operario_id is not None:
-        cols.append('operario_elaboracion_id'); vals.append(operario_id)
-    if presentacion:
-        cols.append('presentacion'); vals.append(presentacion)
-    try:
-        c.execute(f"INSERT INTO produccion_programada ({','.join(cols)}) "
-                  f"VALUES ({','.join(['?'] * len(cols))})", vals)
-        eid = c.lastrowid
-        audit_log(c, usuario=user, accion='FABRICACION_CREAR_INICIAR',
-                  tabla='produccion_programada', registro_id=str(eid),
-                  despues={'producto': producto, 'area': area[1], 'cantidad_kg': cantidad_kg,
-                           'lotes': lotes, 'operario_id': operario_id})
-        conn.commit()
-    except Exception as e:
-        conn.rollback()
-        return jsonify({'error': f'no se pudo crear la producción: {str(e)[:200]}'}), 500
+
+    # FIX 14-jul · ANTI-DUPLICADO (José · HYDRA BALANCE): si YA hay un lote PLANEADO del mismo
+    # producto para HOY en el calendario (no iniciado, no descontado, no cancelado/completado),
+    # se REUSA ese en vez de crear uno nuevo → evita el doble lote en el calendario Y el riesgo
+    # de doble descuento (el planeado quedaba pendiente sin descontar; si luego se completaba,
+    # descontaba MP otra vez). Si no hay planeado hoy, se crea uno nuevo (comportamiento previo).
+    existente = c.execute(
+        "SELECT id FROM produccion_programada "
+        "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) AND substr(fecha_programada,1,10)=? "
+        "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
+        "AND inicio_real_at IS NULL AND COALESCE(inventario_descontado_at,'')='' "
+        "ORDER BY id LIMIT 1", (producto, hoy)).fetchone()
+    creado = False
+    if existente:
+        eid = existente[0]
+        # actualiza el lote planeado con lo que el operario cargó en el form (área/kg/operario/pres)
+        sets = ['area_id=?']; up = [area_id]
+        if cantidad_kg is not None:
+            sets.append('cantidad_kg=?'); up.append(cantidad_kg)
+        if operario_id is not None:
+            sets.append('operario_elaboracion_id=?'); up.append(operario_id)
+        if presentacion:
+            sets.append('presentacion=?'); up.append(presentacion)
+        up.append(eid)
+        try:
+            c.execute("UPDATE produccion_programada SET " + ','.join(sets) + " WHERE id=?", up)
+            audit_log(c, usuario=user, accion='FABRICACION_REUSA_PLANEADO',
+                      tabla='produccion_programada', registro_id=str(eid),
+                      despues={'producto': producto, 'area': area[1], 'cantidad_kg': cantidad_kg,
+                               'nota': 'reusa lote planeado de hoy · anti-duplicado'})
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            return jsonify({'error': f'no se pudo reusar el lote planeado: {str(e)[:200]}'}), 500
+    else:
+        cols = ['producto', 'fecha_programada', 'lotes', 'area_id', 'origen', 'estado']
+        vals = [producto, hoy, lotes, area_id, 'eos_plan', 'programado']
+        if cantidad_kg is not None:
+            cols.append('cantidad_kg'); vals.append(cantidad_kg)
+        if operario_id is not None:
+            cols.append('operario_elaboracion_id'); vals.append(operario_id)
+        if presentacion:
+            cols.append('presentacion'); vals.append(presentacion)
+        try:
+            c.execute(f"INSERT INTO produccion_programada ({','.join(cols)}) "
+                      f"VALUES ({','.join(['?'] * len(cols))})", vals)
+            eid = c.lastrowid
+            creado = True
+            audit_log(c, usuario=user, accion='FABRICACION_CREAR_INICIAR',
+                      tabla='produccion_programada', registro_id=str(eid),
+                      despues={'producto': producto, 'area': area[1], 'cantidad_kg': cantidad_kg,
+                               'lotes': lotes, 'operario_id': operario_id})
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            return jsonify({'error': f'no se pudo crear la producción: {str(e)[:200]}'}), 500
 
     # M3 · DELEGA en el motor canónico: inicio_real_at + sala ocupada + descuento FEFO de MP.
     resp = prog_iniciar_produccion(eid)
     status = resp[1] if isinstance(resp, tuple) else getattr(resp, 'status_code', 200)
-    if status >= 400:
-        # el motor hizo rollback (no inició, no descontó) → borrar la producción huérfana
+    if status >= 400 and creado:
+        # el motor hizo rollback (no inició, no descontó) → borrar SOLO la producción que creamos
+        # (nunca borrar un lote planeado pre-existente que reusamos)
         try:
             c.execute("DELETE FROM produccion_programada WHERE id=? AND inicio_real_at IS NULL "
                       "AND COALESCE(inventario_descontado_at,'')=''", (eid,))

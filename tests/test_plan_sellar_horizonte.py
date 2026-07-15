@@ -403,3 +403,21 @@ def test_programar_manual_requiere_rol(app, db_clean):
                json={'producto': 'X', 'fecha': _hoy_co().isoformat()},
                headers=csrf_headers())
     assert r.status_code == 403, r.data[:200]
+
+
+def test_dedup_cancela_planeado_ya_iniciado(app, db_clean):
+    """14-jul (José · HYDRA BALANCE): si un producto ya se INICIÓ ese día, un lote
+    PLANEADO redundante del mismo producto+día se cancela (evita doble descuento al
+    completarlo). El lote iniciado NO se toca."""
+    hoy = _hoy_co()
+    f = hoy.isoformat()
+    iniciado = _seed('HB DEDUP', f, inicio=hoy.isoformat())   # ya iniciado
+    pendiente = _seed('HB DEDUP', f)                           # planeado redundante
+    c = _login(app)
+    dg = c.post('/api/plan/dedup-mismo-dia', json={'dry_run': True},
+                headers=csrf_headers()).get_json()
+    assert dg.get('planeados_ya_producidos', 0) >= 1, dg
+    r = c.post('/api/plan/dedup-mismo-dia', json={'dry_run': False}, headers=csrf_headers())
+    assert r.status_code == 200, r.data
+    assert _estado(pendiente) == 'cancelado'    # el pendiente redundante se canceló
+    assert _estado(iniciado) != 'cancelado'     # el iniciado NO se tocó
