@@ -48,9 +48,25 @@ def test_porcentajes_v4(app):
 def test_21_items_y_fases(app):
     f = _formula()
     assert len(f) == 21, f"la v4 tiene 21 ítems, hay {len(f)}"
-    # los 3 péptidos de la Fase C, a 0.001 c/u
-    for cod in ('MP00190', 'MP00172', 'MP00174'):
+    # los 3 péptidos de la Fase C, a 0.001 c/u (Palmitoyl Tripeptide-1 = MP00159, mig 352)
+    for cod in ('MP00159', 'MP00172', 'MP00174'):
         assert abs(f[cod] - 0.001) < 1e-6
+
+
+def test_codigos_eos_correctos_mig352(app):
+    # mig 352 corrigió 3 códigos a los canónicos EOS (con stock); los 2 creados por error quedan fuera
+    f = _formula()
+    assert 'MP00288' in f and abs(f['MP00288'] - 2.0) < 0.001, "Boron Nitride = MP00288 al 2%"
+    assert 'MP00159' in f, "Palmitoyl Tripeptide-1 = MP00159"
+    assert 'MP00079' in f and abs(f['MP00079'] - 0.1) < 0.001, "Tocopherol POLVO = MP00079 al 0.1%"
+    # los códigos erróneos NO deben estar en la fórmula
+    assert 'MPBNIT01' not in f, "MPBNIT01 (creado por error) fuera de la fórmula"
+    assert 'MP00190' not in f, "MP00190 (creado por error) fuera de la fórmula"
+    assert 'MP00078' not in f, "Vit E líquida (MP00078) reemplazada por polvo MP00079"
+    # y desactivados en el maestro
+    for cod in ('MPBNIT01', 'MP00190'):
+        r = _rows("SELECT COALESCE(activo,1) FROM maestro_mps WHERE codigo_mp=?", (cod,))
+        assert (not r) or r[0][0] == 0, f"{cod} debe quedar inactivo (creado por error)"
 
 
 def test_pigmento_existe_activo_y_compra_diferida(app):

@@ -428,6 +428,28 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (352, "Blush Balm · FIX de códigos (Sebastián 15-jul · verificado contra el inventario REAL de EOS). La mig 351 tomó 3 códigos del inventario LOCAL (snapshot 2 normalizaciones atrás) que en prod NO eran los correctos: (1) Boron Nitride → estaba MPBNIT01 (que YO creé por error), el correcto EOS es MP00288 (con stock); (2) Palmitoyl Tripeptide-1 → estaba MP00190 (creado por error), correcto MP00159; (3) Tocopherol → estaba MP00078 (Vit E LÍQUIDA), la fórmula usa MP00079 (Vit E POLVO, lo que consume producción). Los otros 18 códigos SÍ eran correctos (MP00041/MPCOCP01/MP00103/MP00025 etc. son los canónicos de EOS con stock · los de MyBatch MP00060/MP00303/MP00300=Eversoft NO aplican · MyBatch≠EOS). UPDATE puntual (sin DELETE, no puede vaciar la fórmula) + desactiva los 2 códigos creados por error. Los 3 destinos ya existen con stock en prod (insert-if-missing solo para que aplique en local/test que no los tiene · M38).", [
+        # asegurar que los 3 códigos destino existan+activos ANTES del UPDATE (en prod ya existen con stock · esto solo dispara en local/test)
+        "INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, activo, controla_stock) "
+        "SELECT 'MP00288','Boron Nitride','BORON NITRIDE',1,1 "
+        "WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00288')",
+        "INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, activo, controla_stock) "
+        "SELECT 'MP00159','Palmitoyl Tripeptide-1','PALMITOYL TRIPEPTIDE-1',1,1 "
+        "WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00159')",
+        "INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, activo, controla_stock) "
+        "SELECT 'MP00079','Vitamina E polvo','TOCOPHEROL',1,1 "
+        "WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00079')",
+        "UPDATE maestro_mps SET activo=1 WHERE codigo_mp IN ('MP00288','MP00159','MP00079')",
+        # reapuntar los 3 ítems de la fórmula a los códigos EOS correctos
+        "UPDATE formula_items SET material_id='MP00288', material_nombre='Boron Nitride' "
+        "WHERE producto_nombre='BLUSH BALM' AND material_id='MPBNIT01'",
+        "UPDATE formula_items SET material_id='MP00159', material_nombre='Palmitoyl Tripeptide-1' "
+        "WHERE producto_nombre='BLUSH BALM' AND material_id='MP00190'",
+        "UPDATE formula_items SET material_id='MP00079', material_nombre='Tocopherol (Vitamina E polvo)' "
+        "WHERE producto_nombre='BLUSH BALM' AND material_id='MP00078'",
+        # desactivar los 2 códigos que se crearon por error en mig 351 (nunca tuvieron stock/movimientos)
+        "UPDATE maestro_mps SET activo=0 WHERE codigo_mp IN ('MPBNIT01','MP00190')",
+    ]),
     (351, "Blush Balm · fórmula v4 (Alejandro · Instructivo v4 15-jul). Etapa 1: corrige la fórmula ACTIVA 'BLUSH BALM' en sitio a la v4 (3 fases · % p/p). CAMBIOS vs la anterior: (a) el slot del 7.5% estaba mal codificado como AGUA DESIONIZADA (imposible en un stick anhidro) → se reemplaza por el PIGMENTO 'Pigmentos CI (mezcla)' MPPIGCI01 al 7.179% (Fase B · CI según tono); (b) Phenyl Trimethicone (MP00127) y Dicaprylyl Carbonate (MP00040) suben 20.271→21.146; (c) PMSS (MP00055) baja 3.0→2.0; (d) Polyglyceryl-2 Triisostearate (MP00051) baja 10.0→9.571. Suma=100%. El PIGMENTO se pone controla_stock=0 (DIFERIDO: los pigmentos aún no están en el sistema · se abrirá por tono en Etapa 2 cuando se carguen · NO se compra por ahora, igual que el agua). Base+blend real (semi-terminados por tono) queda para la Etapa 3 (motor de ensamble). Idempotente (DELETE+INSERT). PG-safe.", [
         # M38 · garantizar que TODOS los material_id de la v4 existan y estén ACTIVOS en
         # maestro_mps ANTES del INSERT de formula_items. Si un código está inactivo/ausente el
