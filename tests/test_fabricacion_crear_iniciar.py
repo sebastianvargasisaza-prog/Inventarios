@@ -176,3 +176,29 @@ def test_crear_iniciar_reusa_planeado_no_duplica(app, db_clean):
     assert n == 1, f"se DUPLICO el lote planeado ({n} lotes hoy)"
     assert iniciado, "el lote reusado no quedo iniciado"
     assert _stock(MP) == antes - 1000, "descuento incorrecto (posible doble)"
+
+
+def test_crear_iniciar_no_reusa_lote_b2b(app, db_clean):
+    """Auditoría 15-jul (P0): el reuse anti-duplicado NUNCA debe agarrar un lote COMPROMETIDO
+    de cliente (origen eos_b2b). Ese lote queda INTACTO (regla dura: ninguna producción de
+    cliente se toca); se crea/usa uno aparte para la fabricación de stock."""
+    from datetime import datetime, timezone, timedelta
+    aid = _seed()
+    hoy = (datetime.now(timezone.utc) - timedelta(hours=5)).date().isoformat()
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("INSERT INTO produccion_programada (producto, fecha_programada, lotes, estado, "
+                 "cantidad_kg, origen) VALUES (?, ?, 1, 'programado', 5, 'eos_b2b')", (PROD, hoy))
+    conn.commit()
+    b2b_id = conn.execute("SELECT id FROM produccion_programada WHERE producto=? AND origen='eos_b2b'",
+                          (PROD,)).fetchone()[0]
+    conn.close()
+    c = _login(app)
+    c.post("/api/planta/fabricacion/crear-iniciar",
+           json={"producto": PROD, "area_id": aid, "cantidad_kg": 1}, headers=_csrf(c))
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    row = conn.execute("SELECT inicio_real_at, cantidad_kg, COALESCE(inventario_descontado_at,'') "
+                       "FROM produccion_programada WHERE id=?", (b2b_id,)).fetchone()
+    conn.close()
+    assert row[0] is None, "el lote B2B fue iniciado (no debía tocarse)"
+    assert row[1] == 5, "el kg del lote B2B cambió (no debía tocarse)"
+    assert row[2] == "", "el lote B2B fue descontado (no debía tocarse)"

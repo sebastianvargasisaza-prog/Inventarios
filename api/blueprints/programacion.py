@@ -2468,7 +2468,10 @@ def prog_decision_produccion():
             "SELECT 1 FROM sku_planeacion_config WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
             (producto,)).fetchone()
         if not existe:
-            c.execute("INSERT INTO sku_planeacion_config (producto_nombre) VALUES (?)", (producto,))
+            # ON CONFLICT nativo (SQLite+PG) = race-safe: 2 requests concurrentes del mismo
+            # producto nuevo no chocan el UNIQUE (evita 500 espurio · M12d).
+            c.execute("INSERT INTO sku_planeacion_config (producto_nombre) VALUES (?) "
+                      "ON CONFLICT (producto_nombre) DO NOTHING", (producto,))
         c.execute("UPDATE sku_planeacion_config SET " + ','.join(sets) +
                   " WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", vals + [producto])
         audit_log(c, usuario=user, accion='DECISION_PRODUCCION', tabla='sku_planeacion_config',
@@ -7558,11 +7561,15 @@ def fabricacion_crear_iniciar():
     # se REUSA ese en vez de crear uno nuevo → evita el doble lote en el calendario Y el riesgo
     # de doble descuento (el planeado quedaba pendiente sin descontar; si luego se completaba,
     # descontaba MP otra vez). Si no hay planeado hoy, se crea uno nuevo (comportamiento previo).
+    # NUNCA reusar un lote COMPROMETIDO de cliente (B2B) ni un espejo retroactivo — solo un
+    # lote planeado "libre" (regla dura Sebastián: ninguna producción de cliente se toca).
     existente = c.execute(
         "SELECT id FROM produccion_programada "
         "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) AND substr(fecha_programada,1,10)=? "
         "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
         "AND inicio_real_at IS NULL AND COALESCE(inventario_descontado_at,'')='' "
+        "AND COALESCE(origen,'') NOT IN ('eos_b2b','eos_retroactivo') "
+        "AND id NOT IN (SELECT COALESCE(lote_produccion_id,0) FROM pedidos_b2b_lote) "
         "ORDER BY id LIMIT 1", (producto, hoy)).fetchone()
     creado = False
     if existente:

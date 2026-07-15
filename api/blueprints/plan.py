@@ -12191,9 +12191,16 @@ def plan_dedup_mismo_dia():
         "AND (inicio_real_at IS NOT NULL OR LOWER(COALESCE(estado,''))='completado') "
         "AND COALESCE(estado,'') NOT IN ('cancelado')", (hoy,)).fetchall():
         ya_producido.add((_p, _f))
+    # Solo lo AUTO-generado se auto-cancela como redundante; un Fijo (eos_plan) puede ser una
+    # 2ª tanda deliberada del mismo producto el mismo día → NUNCA se toca (regla dura: ninguna
+    # producción programada a mano se mueve · esos se cancelan a mano si sobran). rows ya excluyó
+    # eos_b2b/eos_retroactivo/B2B-linked, acá excluimos además eos_plan del barrido redundante.
+    _AUTO_ORIG = ('auto_plan', 'sugerido', 'eos_canonico', 'eos_proyeccion', 'calendar', 'manual')
     ya_ids = set(a_cancelar)
     redundantes = 0
     for _id, prod, fecha, kg, origen in rows:
+        if (origen or '') not in _AUTO_ORIG:
+            continue  # Fijo (eos_plan) u otro comprometido → no auto-cancelar
         if ((prod or '').strip().upper(), fecha) in ya_producido and _id not in ya_ids:
             a_cancelar.append(_id); ya_ids.add(_id); redundantes += 1
             detalle.append({'producto': prod, 'fecha': fecha, 'total': 1, 'mantiene_id': None,

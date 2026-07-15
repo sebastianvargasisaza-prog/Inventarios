@@ -405,19 +405,25 @@ def test_programar_manual_requiere_rol(app, db_clean):
     assert r.status_code == 403, r.data[:200]
 
 
-def test_dedup_cancela_planeado_ya_iniciado(app, db_clean):
-    """14-jul (José · HYDRA BALANCE): si un producto ya se INICIÓ ese día, un lote
-    PLANEADO redundante del mismo producto+día se cancela (evita doble descuento al
-    completarlo). El lote iniciado NO se toca."""
+def test_dedup_redundante_limpia_auto_respeta_fijo(app, db_clean):
+    """14-jul (José · HYDRA BALANCE): si un producto ya se INICIÓ ese día, un lote PLANEADO
+    redundante AUTO-generado (eos_proyeccion/etc) del mismo producto+día se cancela. PERO un
+    lote FIJO (eos_plan · 2ª tanda deliberada) NUNCA se toca — regla dura 'ninguna producción
+    programada a mano se mueve'. El iniciado tampoco se toca."""
     hoy = _hoy_co()
     f = hoy.isoformat()
-    iniciado = _seed('HB DEDUP', f, inicio=hoy.isoformat())   # ya iniciado
-    pendiente = _seed('HB DEDUP', f)                           # planeado redundante
+    # Producto A: iniciado + pendiente AUTO → el auto redundante se cancela
+    a_ini = _seed('HB AUTO', f, inicio=hoy.isoformat())
+    a_pend = _seed('HB AUTO', f, origen='eos_proyeccion')
+    # Producto B: iniciado + pendiente FIJO (2ª tanda a mano) → NO se toca
+    b_ini = _seed('HB FIJO', f, inicio=hoy.isoformat())
+    b_pend = _seed('HB FIJO', f, origen='eos_plan')
     c = _login(app)
     dg = c.post('/api/plan/dedup-mismo-dia', json={'dry_run': True},
                 headers=csrf_headers()).get_json()
     assert dg.get('planeados_ya_producidos', 0) >= 1, dg
     r = c.post('/api/plan/dedup-mismo-dia', json={'dry_run': False}, headers=csrf_headers())
     assert r.status_code == 200, r.data
-    assert _estado(pendiente) == 'cancelado'    # el pendiente redundante se canceló
-    assert _estado(iniciado) != 'cancelado'     # el iniciado NO se tocó
+    assert _estado(a_pend) == 'cancelado'       # AUTO redundante → cancelado
+    assert _estado(b_pend) != 'cancelado'       # FIJO (2ª tanda) → INTACTO
+    assert _estado(a_ini) != 'cancelado' and _estado(b_ini) != 'cancelado'
