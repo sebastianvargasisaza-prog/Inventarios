@@ -2585,6 +2585,11 @@ td{padding:6px 8px;border-bottom:1px solid var(--line);}
     <div class="help" id="mix-help"></div>
     <div style="margin-top:14px"><button class="btn btn-g" onclick="guardar()">&#x1F4BE; Guardar decisi&oacute;n</button></div>
   </div>
+  <div class="card full" style="margin-top:16px" id="card-desg"><h2>&#x1F3A8; Desglose por referencia &middot; c&oacute;mo se reparte el lote (solo lectura)</h2>
+    <div class="help" id="desg-msg">&mdash;</div>
+    <table><thead><tr><th>Referencia (SKU)</th><th>ml</th><th>Ventas recientes</th><th>%</th><th>Uds sugeridas</th><th>kg</th></tr></thead>
+    <tbody id="desg-body"></tbody></table>
+  </div>
 </div>
 <script>
 var PRODS = /*__PRODS__*/;
@@ -2652,6 +2657,7 @@ function render(d){
   // si hay kg guardado, respetarlo
   if(cfg.kg_objetivo_lote){document.getElementById('kg').value=cfg.kg_objetivo_lote; SEL.kg=cfg.kg_objetivo_lote; updateCubre();}
   updateMixHelp();
+  fetchDesglose();
 }
 function pickHoriz(dias){
   SEL.cadencia_dias=dias;
@@ -2660,6 +2666,7 @@ function pickHoriz(dias){
   // prefijar kg con la sugerencia del horizonte (si el usuario no puso uno propio guardado)
   if(kgpick!=null){document.getElementById('kg').value=kgpick; SEL.kg=kgpick;}
   updateCubre();
+  fetchDesglose();
 }
 function pickMix(m){
   SEL.mix=m;
@@ -2681,6 +2688,26 @@ function updateCubre(){
   else { el.textContent=''; }
 }
 document.addEventListener('input',function(e){ if(e.target && e.target.id==='kg'){ SEL.kg=parseFloat(e.target.value||'0'); updateCubre(); }});
+async function fetchDesglose(){
+  if(!CUR) return;
+  var kg=parseFloat(document.getElementById('kg').value||'0');
+  var body=document.getElementById('desg-body'), msg=document.getElementById('desg-msg');
+  try{
+    var r=await fetch('/api/plan/desglose-tonos?producto='+encodeURIComponent(CUR.producto)+'&cantidad_kg='+(kg||0),{credentials:'same-origin'});
+    var d=await r.json();
+    if(!r.ok){msg.textContent='—';body.innerHTML='';return;}
+    var its=d.items||[];
+    if(!its.length){msg.textContent=(d.mensaje||'Este producto no tiene varias referencias/SKU mapeados.');body.innerHTML='';return;}
+    var modo=(CUR.config&&CUR.config.mix_mode)||'auto';
+    msg.textContent=its.length+' referencia(s) · reparto por venta reciente (mix: '+modo+')';
+    body.innerHTML=its.map(function(it){
+      var uds=(it.ml_unidad>0)?Math.round((it.kg_sugerido||0)*1000/it.ml_unidad):0;
+      return '<tr><td>'+esc(it.sku)+'</td><td>'+(it.ml_unidad||0)+'</td><td>'+(it.uds_ventana||0)+'</td>'+
+        '<td>'+(Math.round((it.porcentaje||0)*10)/10)+'%</td><td><b>'+(kg>0?uds:'–')+'</b></td>'+
+        '<td>'+fmtkg(it.kg_sugerido)+'</td></tr>';
+    }).join('');
+  }catch(e){ msg.textContent='—'; }
+}
 async function guardar(){
   if(!CUR){alert('Elegí un producto primero');return;}
   var body={producto:CUR.producto, cadencia_dias:SEL.cadencia_dias,
