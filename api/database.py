@@ -428,6 +428,37 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (351, "Blush Balm · fórmula v4 (Alejandro · Instructivo v4 15-jul). Etapa 1: corrige la fórmula ACTIVA 'BLUSH BALM' en sitio a la v4 (3 fases · % p/p). CAMBIOS vs la anterior: (a) el slot del 7.5% estaba mal codificado como AGUA DESIONIZADA (imposible en un stick anhidro) → se reemplaza por el PIGMENTO 'Pigmentos CI (mezcla)' MPPIGCI01 al 7.179% (Fase B · CI según tono); (b) Phenyl Trimethicone (MP00127) y Dicaprylyl Carbonate (MP00040) suben 20.271→21.146; (c) PMSS (MP00055) baja 3.0→2.0; (d) Polyglyceryl-2 Triisostearate (MP00051) baja 10.0→9.571. Suma=100%. El PIGMENTO se pone controla_stock=0 (DIFERIDO: los pigmentos aún no están en el sistema · se abrirá por tono en Etapa 2 cuando se carguen · NO se compra por ahora, igual que el agua). Base+blend real (semi-terminados por tono) queda para la Etapa 3 (motor de ensamble). Idempotente (DELETE+INSERT). PG-safe.", [
+        # DIFERIR compra del pigmento hasta cargar pigmentos por tono (como el agua · M16)
+        "UPDATE maestro_mps SET controla_stock=0 WHERE codigo_mp='MPPIGCI01'",
+        # header ACTIVO y consistente (lote base 1 kg); la variante minúscula 'Blush Balm' queda descontinuada
+        "UPDATE formula_headers SET activo=1, lote_size_kg=1.0, unidad_base_g=1000 WHERE producto_nombre='BLUSH BALM'",
+        "UPDATE formula_headers SET activo=0 WHERE producto_nombre='Blush Balm'",
+        # reemplazo en sitio de los ítems de la fórmula ACTIVA por la v4
+        "DELETE FROM formula_items WHERE producto_nombre='BLUSH BALM'",
+        "INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje, cantidad_g_por_lote, incluye_merma) VALUES "
+        "('BLUSH BALM','MP00127','Phenyl Trimethicone (BM-956)',21.146,211.46,0),"
+        "('BLUSH BALM','MP00040','Dicaprylyl Carbonate (Cetiol CC)',21.146,211.46,0),"
+        "('BLUSH BALM','MP00257','Synthetic Wax',11.5,115.0,0),"
+        "('BLUSH BALM','MP00024','Microcrystalline Wax',10.0,100.0,0),"
+        "('BLUSH BALM','MP00041','Ceresin',10.0,100.0,0),"
+        "('BLUSH BALM','MPCOCP01','Coco-Caprylate/Caprate',3.0,30.0,0),"
+        "('BLUSH BALM','MP00055','Polymethylsilsesquioxane (PMSS)',2.0,20.0,0),"
+        "('BLUSH BALM','MPBNIT01','Boron Nitride',2.0,20.0,0),"
+        "('BLUSH BALM','MP00054','Lauroyl Lysine',1.0,10.0,0),"
+        "('BLUSH BALM','MP00077','Murumuru Seed Butter',0.15,1.5,0),"
+        "('BLUSH BALM','MP00063','Tinogard TT',0.1,1.0,0),"
+        "('BLUSH BALM','MP00051','Polyglyceryl-2 Triisostearate',9.571,95.71,0),"
+        "('BLUSH BALM','MPPIGCI01','Pigmentos CI (mezcla) por tono',7.179,71.79,0),"
+        "('BLUSH BALM','MP00207','STABIL (Phenethyl Alcohol/Caprylyl Glycol)',0.75,7.5,0),"
+        "('BLUSH BALM','MP00103','Ceramide NP',0.3,3.0,0),"
+        "('BLUSH BALM','MP00078','Tocopherol (Vit E)',0.1,1.0,0),"
+        "('BLUSH BALM','MP00101','Vanilla CO2 Extract',0.035,0.35,0),"
+        "('BLUSH BALM','MP00025','Neroli Essential Oil',0.02,0.2,0),"
+        "('BLUSH BALM','MP00190','Palmitoyl Tripeptide-1',0.001,0.01,0),"
+        "('BLUSH BALM','MP00172','Palmitoyl Tetrapeptide-7',0.001,0.01,0),"
+        "('BLUSH BALM','MP00174','Palmitoyl Tripeptide-38',0.001,0.01,0)",
+    ]),
     (350, "Programación v4 · Fase B · persistir la DECISIÓN de producción por producto (Sebastián 15-jul · 'que siempre recuerde cuánto fabricar'): `sku_planeacion_config.kg_objetivo_lote` = kg que el usuario decide por lote (ej. 30). `sku_planeacion_config.horizonte_dias` = hasta cuándo se agenda la cadena (730=2 años · 1095=3 años · NULL=global). Junto con `cadencia_dias` (ritmo · ya existe) y `mix_mode` (crece/fijo · mig 349) completan la decisión que el sistema RECUERDA y muestra. Additivas · NULL = comportamiento actual · PG-safe.", [
         "ALTER TABLE sku_planeacion_config ADD COLUMN kg_objetivo_lote REAL",
         "ALTER TABLE sku_planeacion_config ADD COLUMN horizonte_dias INTEGER",
