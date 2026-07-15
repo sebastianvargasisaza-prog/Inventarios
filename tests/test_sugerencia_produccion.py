@@ -209,6 +209,17 @@ def test_decision_valida_mix_mode(app):
     assert r.status_code == 400
 
 
+def test_panel_programar_page_200(app):
+    _seed()
+    c = _login(app)
+    r = c.get("/planta/programar")
+    assert r.status_code == 200, r.status_code
+    html = r.data.decode("utf-8", "replace")
+    assert "Panel de programaci" in html
+    assert "sugerencia-produccion" in html  # el panel llama al endpoint
+    assert PROD in html                       # el producto está en el dropdown embebido
+
+
 def test_falta_producto_400(app):
     c = _login(app)
     assert c.get("/api/programacion/sugerencia-produccion").status_code == 400

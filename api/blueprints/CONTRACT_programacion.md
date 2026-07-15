@@ -188,9 +188,19 @@ Tests goldens que protegen:
 ## Endpoints que expone
 
 - `GET  /api/programacion/sugerencia-produccion?producto=X` · SOLO LECTURA · panel
-  Programación v4: recordá (kg producidos mes pasado/año) + venta blended + horizontes
-  kg 1/2/3 meses + guardrails ½×–2× (90d). No escribe · reusa `velocidad_blended_uds_dia`
+  Programación v4: recordá (kg producidos mes pasado/año + `historial[]` fecha/kg/fuente,
+  calendario+Fabricación dedup-por-día) + venta blended + horizontes kg 1/2/3 meses +
+  guardrails ½×–2× (90d) + config (decisión guardada). Reusa `velocidad_blended_uds_dia`
   + `_factor_g_por_unidad_detalle` (paridad con Necesidades/cadencia · M70).
+- `POST /api/programacion/decision-produccion` · Fase B paso 2 · GUARDA la decisión por
+  producto (cadencia_dias/horizonte_dias/kg_objetivo_lote/mix_mode) en `sku_planeacion_config`
+  (mig 350 · patch parcial · valida mix auto/crece/fijo · auditado · NO toca el calendario).
+- `GET  /api/programacion/confrontar-calendario-productos` · SOLO LECTURA · cruza producción
+  real (calendario+Fabricación) vs fórmulas activas → productos[] + huerfanos[] (nombres que
+  no cruzan · M13/M37) + resumen. Diagnóstico de mapeo.
+- `GET  /planta/programar` · PÁGINA (premium) · panel de programación por producto (recordá +
+  historial + venta + kg 1/2/3 meses + guardar decisión). Lee sugerencia-produccion, escribe
+  decision-produccion. NO toca el calendario.
 - `GET  /api/programacion/producciones-faltantes` · vista plana
 - `GET  /api/programacion/producciones-agrupadas` · una fila por producto
 - `POST /api/programacion/solicitar-faltantes-bulk` · crea SOLs por proveedor

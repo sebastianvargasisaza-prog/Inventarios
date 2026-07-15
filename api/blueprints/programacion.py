@@ -2492,6 +2492,214 @@ def prog_decision_produccion():
     }})
 
 
+@bp.route('/planta/programar', methods=['GET'])
+def planta_programar_panel():
+    """Programación v4 · Fase B · PANEL de programación (página propia · premium · NO toca
+    el calendario). Muestra por producto: recordá (kg fabricados + historial), venta blended,
+    sugerencia kg 1/2/3 meses, y guarda la decisión (ritmo/horizonte/kg/mix). Lee
+    /api/programacion/sugerencia-produccion y escribe /api/programacion/decision-produccion."""
+    if 'compras_user' not in session:
+        return redirect('/login?next=/planta/programar')
+    conn = get_db(); c = conn.cursor()
+    prods = [r[0] for r in c.execute(
+        "SELECT producto_nombre FROM formula_headers WHERE COALESCE(activo,1)=1 "
+        "ORDER BY producto_nombre").fetchall() if r[0]]
+    import json as _json
+    # M59: escapar < para que ningún nombre con '</script>' rompa el bloque
+    data = _json.dumps(prods, ensure_ascii=False).replace('<', '\\u003c')
+    return Response(_PANEL_PROGRAMAR_HTML.replace('/*__PRODS__*/', data),
+                    mimetype='text/html', headers={'Cache-Control': 'no-store'})
+
+
+_PANEL_PROGRAMAR_HTML = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Panel de programación · EOS</title>
+<style>
+:root{--v:#6d28d9;--vl:#7c3aed;--txt:#1c1917;--mut:#78716c;--line:#eef0f2;--bg:#faf9fb;--ok:#16a34a;--amb:#d97706;}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--txt);padding:24px;}
+.wrap{max-width:1600px;margin:0 auto;}
+h1{font-size:22px;margin:0 0 12px;letter-spacing:-.02em;}
+select,input{font-family:inherit;font-size:14px;border:1px solid #d6d3d1;border-radius:10px;padding:9px 12px;background:#fff;}
+.sel-prod{min-width:340px;font-weight:600;}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;}
+.card{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 2px 14px rgba(15,23,42,.05);padding:18px;}
+.card.full{grid-column:1 / -1;}
+.card h2{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--v);margin:0 0 12px;}
+.big{font-size:26px;font-weight:800;letter-spacing:-.02em;}
+.mut{color:var(--mut);font-size:13px;}
+.badge{display:inline-block;border-radius:20px;padding:3px 12px;font-size:12px;font-weight:700;}
+.b-ok{background:#dcfce7;color:#15803d;}.b-amb{background:#fef3c7;color:#b45309;}.b-mut{background:#f1f5f9;color:#475569;}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px;}
+th{text-align:left;color:var(--mut);text-transform:uppercase;font-size:10px;letter-spacing:.04em;padding:6px 8px;border-bottom:1px solid var(--line);}
+td{padding:6px 8px;border-bottom:1px solid var(--line);}
+.opts{display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 14px;}
+.opt{border:1.5px solid var(--line);border-radius:12px;padding:12px 16px;cursor:pointer;min-width:150px;transition:.12s;}
+.opt:hover{border-color:#c4b5fd;}
+.opt.sel{border-color:var(--v);background:#faf5ff;box-shadow:0 2px 8px rgba(109,40,217,.12);}
+.opt .t{font-weight:700;font-size:13px;}.opt .k{font-size:20px;font-weight:800;color:var(--v);margin-top:2px;}.opt .s{font-size:11px;color:var(--mut);}
+.field{margin:12px 0;}
+.field label{display:block;font-size:12px;font-weight:600;color:var(--mut);margin-bottom:5px;}
+.row{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;}
+.btn{font-family:inherit;cursor:pointer;border-radius:10px;font-weight:700;font-size:14px;padding:11px 22px;border:1px solid transparent;}
+.btn-g{background:linear-gradient(135deg,var(--ok),#15803d);color:#fff;box-shadow:0 4px 12px rgba(22,163,74,.25);}
+.help{font-size:12px;color:var(--mut);margin-top:6px;}
+#status{font-size:13px;color:var(--mut);margin-left:8px;}
+.mm{display:flex;gap:8px;}
+.mm .opt{min-width:120px;text-align:center;}
+</style></head><body><div class="wrap">
+<h1>&#x1F5D3;&#xFE0F; Panel de programación</h1>
+<div class="row">
+  <select id="prod" class="sel-prod"><option value="">— Elegí un producto —</option></select>
+  <span id="status"></span>
+</div>
+<div id="panel" style="display:none">
+  <div class="grid">
+    <div class="card"><h2>&#x1F4E6; Recordá &middot; lo que ya fabricamos</h2>
+      <div class="row" style="gap:28px">
+        <div><div class="mut">Mes pasado</div><div class="big" id="r-mes">–</div></div>
+        <div><div class="mut">Este año</div><div class="big" id="r-anio">–</div></div>
+      </div>
+      <table><thead><tr><th>Fecha</th><th>kg</th><th>Fuente</th></tr></thead><tbody id="r-hist"></tbody></table>
+    </div>
+    <div class="card"><h2>&#x1F4C8; Venta</h2>
+      <div class="big" id="v-vel">–</div>
+      <div style="margin-top:8px"><span id="v-tend" class="badge b-mut">–</span></div>
+      <div class="help" id="v-det"></div>
+    </div>
+  </div>
+  <div class="card full" style="margin-top:16px"><h2>&#x1F3AF; Decisión &middot; cuánto y cada cuánto fabricar</h2>
+    <div class="field"><label>&#xBF;Cada cu&aacute;nto produc&iacute;s? (tama&ntilde;o del lote)</label>
+      <div class="opts" id="horiz"></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>Horizonte de la cadena</label>
+        <select id="hor-anios"><option value="730">2 a&ntilde;os</option><option value="1095" selected>3 a&ntilde;os</option></select>
+      </div>
+      <div class="field"><label>Kg a producir por lote</label>
+        <input id="kg" type="number" step="0.1" min="0" style="width:130px"> <span class="mut" id="kg-cubre"></span>
+      </div>
+      <div class="field"><label>Mix por referencia</label>
+        <div class="mm" id="mix"></div>
+      </div>
+    </div>
+    <div class="help" id="mix-help"></div>
+    <div style="margin-top:14px"><button class="btn btn-g" onclick="guardar()">&#x1F4BE; Guardar decisi&oacute;n</button></div>
+  </div>
+</div>
+<script>
+var PRODS = /*__PRODS__*/;
+var CUR = null;         // respuesta de sugerencia
+var SEL = {cadencia_dias:null, kg:null, mix:'auto'};
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function fmtkg(n){return (Math.round((n||0)*10)/10).toLocaleString('es-CO')+' kg';}
+(function initSel(){
+  var s=document.getElementById('prod');
+  PRODS.forEach(function(p){var o=document.createElement('option');o.value=p;o.textContent=p;s.appendChild(o);});
+  s.addEventListener('change', function(){ if(s.value) cargar(s.value); });
+  var q=new URLSearchParams(location.search).get('producto');
+  if(q){ s.value=q; if(s.value) cargar(q); }
+})();
+async function cargar(prod){
+  document.getElementById('status').textContent='Cargando…';
+  document.getElementById('panel').style.display='none';
+  try{
+    var r=await fetch('/api/programacion/sugerencia-produccion?producto='+encodeURIComponent(prod),{credentials:'same-origin'});
+    var d=await r.json();
+    if(!r.ok){document.getElementById('status').textContent='Error: '+(d.error||r.status);return;}
+    CUR=d; render(d);
+    document.getElementById('status').textContent='';
+    document.getElementById('panel').style.display='';
+  }catch(e){document.getElementById('status').textContent='Error de red: '+e.message;}
+}
+function render(d){
+  var rc=d.recorda||{};
+  document.getElementById('r-mes').textContent=fmtkg(rc.kg_mes_pasado)+' · '+(rc.lotes_mes_pasado||0)+' lote(s)';
+  document.getElementById('r-anio').textContent=fmtkg(rc.kg_anio)+' · '+(rc.lotes_anio||0)+' lote(s)';
+  document.getElementById('r-hist').innerHTML=((rc.historial||[]).slice(0,12).map(function(h){
+    return '<tr><td>'+esc(h.fecha)+'</td><td>'+fmtkg(h.kg)+'</td><td>'+esc(h.fuente)+'</td></tr>';
+  }).join('')) || '<tr><td colspan="3" class="mut">Sin producción registrada aún</td></tr>';
+  var v=d.venta||{};
+  document.getElementById('v-vel').textContent=(v.vel_uds_dia||0)+' uds/día';
+  var t=v.tendencia||'', cls='b-mut', txt=t;
+  if(t.indexOf('acele')>=0){cls='b-ok';txt='viene subiendo';}
+  else if(t.indexOf('caida')>=0){cls='b-amb';txt='viene bajando';}
+  else if(t==='estable'){cls='b-mut';txt='estable';}
+  else if(t==='sin_historico'){cls='b-mut';txt='sin histórico';}
+  var tb=document.getElementById('v-tend');tb.className='badge '+cls;tb.textContent=txt;
+  document.getElementById('v-det').textContent='≈ '+(v.uds_mes||0)+' uds/mes · v30 '+(v.v30||0)+' · v60 '+(v.v60||0)+' · v90 '+(v.v90||0);
+  // horizontes 1/2/3 meses
+  var H=d.horizontes||{}, cfg=d.config||{};
+  var mapd={30:'mensual',60:'cada 2 meses',90:'cada 3 meses'};
+  var recomendado = cfg.cadencia_dias || 60;
+  var opts=[['mes_1',30],['mes_2',60],['mes_3',90]].map(function(p){
+    var h=H[p[0]]||{}, dias=p[1];
+    return '<div class="opt" data-dias="'+dias+'" data-kg="'+(h.kg||0)+'" onclick="pickHoriz('+dias+')">'+
+      '<div class="t">'+mapd[dias]+'</div><div class="k">'+fmtkg(h.kg)+'</div>'+
+      '<div class="s">'+(h.uds||0)+' uds · '+(h.lotes==null?'–':h.lotes+' lotes')+'</div></div>';
+  }).join('');
+  document.getElementById('horiz').innerHTML=opts;
+  // mix
+  var mm=cfg.mix_mode||'auto';
+  var mlab={auto:'Auto',crece:'Crece',fijo:'Fijo'};
+  document.getElementById('mix').innerHTML=['auto','crece','fijo'].map(function(m){
+    return '<div class="opt" data-mix="'+m+'" onclick="pickMix(\''+m+'\')">'+mlab[m]+'</div>';
+  }).join('');
+  // horizonte años guardado
+  if(cfg.horizonte_dias){document.getElementById('hor-anios').value=String(cfg.horizonte_dias);}
+  // estado inicial
+  SEL.mix=mm; pickMix(mm);
+  pickHoriz(recomendado);
+  // si hay kg guardado, respetarlo
+  if(cfg.kg_objetivo_lote){document.getElementById('kg').value=cfg.kg_objetivo_lote; SEL.kg=cfg.kg_objetivo_lote; updateCubre();}
+  updateMixHelp();
+}
+function pickHoriz(dias){
+  SEL.cadencia_dias=dias;
+  var els=document.querySelectorAll('#horiz .opt'), kgpick=null;
+  els.forEach(function(e){ var isit=(+e.getAttribute('data-dias')===dias); e.classList.toggle('sel',isit); if(isit)kgpick=+e.getAttribute('data-kg'); });
+  // prefijar kg con la sugerencia del horizonte (si el usuario no puso uno propio guardado)
+  if(kgpick!=null){document.getElementById('kg').value=kgpick; SEL.kg=kgpick;}
+  updateCubre();
+}
+function pickMix(m){
+  SEL.mix=m;
+  document.querySelectorAll('#mix .opt').forEach(function(e){ e.classList.toggle('sel', e.getAttribute('data-mix')===m); });
+  updateMixHelp();
+}
+function updateMixHelp(){
+  var h={auto:'Auto: el mix entre referencias sigue la tendencia (comportamiento actual).',
+         crece:'Crece: el mix sigue la venta reciente — captura la referencia que está despegando (colores/lanzamientos).',
+         fijo:'Fijo: el mix queda estable como lo dejás — no persigue el ruido del mes (sueros).'};
+  document.getElementById('mix-help').textContent=h[SEL.mix]||'';
+}
+function updateCubre(){
+  var v=(CUR&&CUR.venta)?CUR.venta.vel_uds_dia:0;
+  var vol=(CUR&&CUR.volumen)?CUR.volumen.ml_unidad:0;
+  var kg=parseFloat(document.getElementById('kg').value||'0');
+  var el=document.getElementById('kg-cubre');
+  if(v>0 && vol>0 && kg>0){ var uds=kg*1000/vol; var dias=Math.round(uds/v); el.textContent='cubre ~'+dias+' días'; }
+  else { el.textContent=''; }
+}
+document.addEventListener('input',function(e){ if(e.target && e.target.id==='kg'){ SEL.kg=parseFloat(e.target.value||'0'); updateCubre(); }});
+async function guardar(){
+  if(!CUR){alert('Elegí un producto primero');return;}
+  var body={producto:CUR.producto, cadencia_dias:SEL.cadencia_dias,
+            horizonte_dias:parseInt(document.getElementById('hor-anios').value,10),
+            kg_objetivo_lote:parseFloat(document.getElementById('kg').value||'0'), mix_mode:SEL.mix};
+  document.getElementById('status').textContent='Guardando…';
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/programacion/decision-produccion',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token},body:JSON.stringify(body)});
+    var d=await r.json();
+    if(!r.ok){alert('Error: '+(d.error||r.status));document.getElementById('status').textContent='Error';return;}
+    document.getElementById('status').textContent='✓ Guardado';
+    alert('Decisión guardada: '+fmtkg(body.kg_objetivo_lote)+' cada '+(body.cadencia_dias/30)+' mes(es) · mix '+body.mix_mode);
+  }catch(e){alert('Error de red: '+e.message);}
+}
+</script></div></body></html>"""
+
+
 @bp.route('/api/programacion/confrontar-calendario-productos', methods=['GET'])
 def prog_confrontar_calendario_productos():
     """SOLO LECTURA · confronta la PRODUCCIÓN real (calendario + Fabricación) contra el
