@@ -53,10 +53,14 @@ def test_21_items_y_fases(app):
         assert abs(f[cod] - 0.001) < 1e-6
 
 
-def test_pigmento_compra_diferida(app):
-    # el pigmento no se compra aún (controla_stock=0) hasta cargar pigmentos por tono
-    r = _rows("SELECT COALESCE(controla_stock,1) FROM maestro_mps WHERE codigo_mp='MPPIGCI01'")
-    assert r and r[0][0] == 0, "MPPIGCI01 debe quedar controla_stock=0 (compra diferida)"
+def test_pigmento_existe_activo_y_compra_diferida(app):
+    # M38: el pigmento debe existir y estar ACTIVO (si no, el trigger de formula_items
+    # rechaza el INSERT y en PG el DELETE previo deja la fórmula vacía). Y controla_stock=0
+    # (compra DIFERIDA hasta cargar pigmentos por tono).
+    r = _rows("SELECT COALESCE(activo,1), COALESCE(controla_stock,1) FROM maestro_mps WHERE codigo_mp='MPPIGCI01'")
+    assert r, "MPPIGCI01 debe existir en maestro_mps"
+    assert r[0][0] == 1, "MPPIGCI01 debe quedar ACTIVO (trigger formula_items)"
+    assert r[0][1] == 0, "MPPIGCI01 debe quedar controla_stock=0 (compra diferida)"
 
 
 def test_header_activo_y_variante_minuscula_off(app):

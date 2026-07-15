@@ -429,8 +429,16 @@ except ImportError:
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
     (351, "Blush Balm · fórmula v4 (Alejandro · Instructivo v4 15-jul). Etapa 1: corrige la fórmula ACTIVA 'BLUSH BALM' en sitio a la v4 (3 fases · % p/p). CAMBIOS vs la anterior: (a) el slot del 7.5% estaba mal codificado como AGUA DESIONIZADA (imposible en un stick anhidro) → se reemplaza por el PIGMENTO 'Pigmentos CI (mezcla)' MPPIGCI01 al 7.179% (Fase B · CI según tono); (b) Phenyl Trimethicone (MP00127) y Dicaprylyl Carbonate (MP00040) suben 20.271→21.146; (c) PMSS (MP00055) baja 3.0→2.0; (d) Polyglyceryl-2 Triisostearate (MP00051) baja 10.0→9.571. Suma=100%. El PIGMENTO se pone controla_stock=0 (DIFERIDO: los pigmentos aún no están en el sistema · se abrirá por tono en Etapa 2 cuando se carguen · NO se compra por ahora, igual que el agua). Base+blend real (semi-terminados por tono) queda para la Etapa 3 (motor de ensamble). Idempotente (DELETE+INSERT). PG-safe.", [
-        # DIFERIR compra del pigmento hasta cargar pigmentos por tono (como el agua · M16)
-        "UPDATE maestro_mps SET controla_stock=0 WHERE codigo_mp='MPPIGCI01'",
+        # M38 · garantizar que MPPIGCI01 (ÚNICO código NUEVO de la v4 · reemplaza al agua)
+        # exista y esté ACTIVO en maestro_mps ANTES del INSERT de formula_items. Si no, el
+        # trigger fn_trg_fi_material_id_fk rechaza el INSERT y, como el aplicador PG commitea
+        # por statement, el DELETE previo deja la fórmula VACÍA (pasó en el 1er deploy · el
+        # reintento con esta guarda la restaura). controla_stock=0 = compra DIFERIDA (pigmentos
+        # aún no cargados por tono · como el agua · M16). Reactiva si existe + crea si falta.
+        "UPDATE maestro_mps SET activo=1, controla_stock=0 WHERE codigo_mp='MPPIGCI01'",
+        "INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, activo, controla_stock) "
+        "SELECT 'MPPIGCI01','Pigmentos CI (mezcla)','CI (varios segun tono)',1,0 "
+        "WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MPPIGCI01')",
         # header ACTIVO y consistente (lote base 1 kg); la variante minúscula 'Blush Balm' queda descontinuada
         "UPDATE formula_headers SET activo=1, lote_size_kg=1.0, unidad_base_g=1000 WHERE producto_nombre='BLUSH BALM'",
         "UPDATE formula_headers SET activo=0 WHERE producto_nombre='Blush Balm'",
