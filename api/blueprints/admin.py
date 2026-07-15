@@ -16774,6 +16774,216 @@ cargar();
 </script></div></body></html>"""
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Mapear lotes de producción HUÉRFANOS al producto canónico · revisado con
+# Sebastián 14-jul (confrontar-calendario-productos). Corrige la ETIQUETA de
+# lotes históricos que se cargaron con un nombre viejo/variante y por eso no
+# cruzaban con su fórmula (M13/M37) → su historia se perdía. NO mueve fechas ni
+# reprograma nada: solo el campo `producto`. Reversible por audit_log.
+# ─────────────────────────────────────────────────────────────────────────────
+_HUERFANOS_PROD_RENOMBRAR = [
+    ('GEL HIDRATANTE NF', 'GEL HIDRATANTE'),
+    ('Limpiador Iluminador Ácido Kóji', 'LIMPIADOR ILUMINADOR'),
+    ('EMULSION HIDRATANTE ILUMINADORA NF', 'EMULSION HIDRATANTE ILUMINADORA'),
+    ('EMULSION LIMPIADORA NF', 'EMULSION LIMPIADORA'),
+    ('Crema Facial de Urea', 'CREMA FACIAL UREA 10'),
+    ('Contorno de Ojos Retinaldehído', 'CONTORNO DE OJOS RETINALDEHIDO 0.05%'),
+    ('Lip Sérum Voluminizador', 'LIP SERUM VOLUMINIZADOR PEPTIDOS'),
+]
+# Lotes de PRUEBA → cancelar. (label, condición SQL constante, valor param). El
+# SIMULACRO lleva emoji → match por texto en MAYÚSCULAS con LIKE (evita el literal · M64).
+_HUERFANOS_PROD_CANCELAR = [
+    ('PRUEBA Suero', "UPPER(TRIM(producto)) = ?", 'PRUEBA SUERO'),
+    ('🧪 SIMULACRO Demo', "UPPER(TRIM(producto)) LIKE ?", '%SIMULACRO DEMO'),
+]
+
+
+def _mapear_huerfanos_scan(c):
+    """SOLO LEE. Devuelve, por cada acción revisada, los lotes de produccion_programada
+    afectados (ids + kg + fechas) para vista previa y para el apply."""
+    renombrar = []
+    for viejo, canonico in _HUERFANOS_PROD_RENOMBRAR:
+        rows = c.execute(
+            "SELECT id, COALESCE(kg_real, cantidad_kg, 0), "
+            "substr(COALESCE(fin_real_at, fecha_programada),1,10) FROM produccion_programada "
+            "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) "
+            "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado')", (viejo,)).fetchall()
+        renombrar.append({
+            'viejo': viejo, 'canonico': canonico, 'lotes': len(rows),
+            'kg': round(sum(float(r[1] or 0) for r in rows), 1),
+            'fechas': sorted([r[2] for r in rows if r[2]], reverse=True),
+            'ids': [r[0] for r in rows],
+        })
+    cancelar = []
+    for label, cond, val in _HUERFANOS_PROD_CANCELAR:
+        rows = c.execute(
+            "SELECT id, COALESCE(kg_real, cantidad_kg, 0), "
+            "substr(COALESCE(fin_real_at, fecha_programada),1,10) FROM produccion_programada "
+            "WHERE " + cond + " AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado')",
+            (val,)).fetchall()
+        cancelar.append({
+            'label': label, 'lotes': len(rows),
+            'kg': round(sum(float(r[1] or 0) for r in rows), 1),
+            'fechas': sorted([r[2] for r in rows if r[2]], reverse=True),
+            'ids': [r[0] for r in rows],
+        })
+    return {'renombrar': renombrar, 'cancelar': cancelar}
+
+
+@bp.route("/api/admin/mapear-huerfanos-produccion", methods=["GET"])
+def admin_mapear_huerfanos_preview():
+    """Vista previa (SOLO LEE) de la corrección de etiquetas de lotes huérfanos."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    scan = _mapear_huerfanos_scan(c)
+    return jsonify({'ok': True, **scan})
+
+
+@bp.route("/api/admin/mapear-huerfanos-produccion/aplicar", methods=["POST"])
+def admin_mapear_huerfanos_aplicar():
+    """Aplica la corrección revisada: renombra la etiqueta `producto` de los lotes
+    históricos al nombre canónico + cancela los 2 lotes de prueba. Audita cada lote
+    (reversible: guarda el nombre/estado viejo). NO toca fechas, kg, ni reprograma."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    scan = _mapear_huerfanos_scan(c)
+    renombrados = 0
+    cancelados = 0
+    detalle = []
+    for m in scan['renombrar']:
+        if not m['ids']:
+            continue
+        for _id in m['ids']:
+            audit_log(c, usuario=u, accion='MAPEAR_HUERFANO_RENOMBRAR', tabla='produccion_programada',
+                      registro_id=_id, antes=m['viejo'], despues=m['canonico'],
+                      detalle='corrección de etiqueta de lote histórico huérfano (revisado 14-jul)')
+        n = c.execute(
+            "UPDATE produccion_programada SET producto=? "
+            "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) "
+            "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado')",
+            (m['canonico'], m['viejo'])).rowcount
+        renombrados += n
+        detalle.append({'accion': 'renombrar', 'viejo': m['viejo'],
+                        'canonico': m['canonico'], 'lotes': n})
+    for cc in scan['cancelar']:
+        for _id in cc['ids']:
+            audit_log(c, usuario=u, accion='MAPEAR_HUERFANO_CANCELAR', tabla='produccion_programada',
+                      registro_id=_id, antes=cc['label'], despues='cancelado',
+                      detalle='lote de PRUEBA sacado del calendario (revisado 14-jul)')
+            c.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id=?", (_id,))
+            cancelados += 1
+        if cc['ids']:
+            detalle.append({'accion': 'cancelar', 'label': cc['label'], 'lotes': len(cc['ids'])})
+    conn.commit()
+    return jsonify({'ok': True, 'renombrados': renombrados, 'cancelados': cancelados, 'detalle': detalle})
+
+
+@bp.route("/admin/mapear-huerfanos", methods=["GET"])
+def admin_mapear_huerfanos_page():
+    if 'compras_user' not in session:
+        return redirect("/login?next=/admin/mapear-huerfanos")
+    if session.get('compras_user') not in ADMIN_USERS:
+        return "<h2 style='font-family:sans-serif;padding:40px'>Solo admins</h2>", 403
+    return _MAPEAR_HUERFANOS_HTML
+
+
+_MAPEAR_HUERFANOS_HTML = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mapear lotes huérfanos · EOS</title>
+<style>
+:root{--v:#6d28d9;--vl:#7c3aed;--txt:#1c1917;--mut:#78716c;--line:#eef0f2;--bg:#faf9fb;}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,sans-serif;background:var(--bg);color:var(--txt);padding:28px;}
+.wrap{max-width:1100px;margin:0 auto;}
+h1{font-size:22px;margin:0 0 4px;letter-spacing:-.02em;}
+.sub{color:var(--mut);font-size:13px;margin-bottom:20px;line-height:1.5;}
+.card{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 2px 14px rgba(15,23,42,.05);padding:18px;margin-bottom:16px;}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;}
+button{font-family:inherit;cursor:pointer;border-radius:10px;font-weight:700;font-size:13px;padding:9px 16px;border:1px solid transparent;}
+.btn-o{background:#fff;border-color:var(--line);color:var(--txt);}
+.btn-g{background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;box-shadow:0 4px 12px rgba(22,163,74,.25);}
+table{width:100%;border-collapse:collapse;font-size:12.5px;}
+th{background:#faf5ff;color:var(--v);text-transform:uppercase;font-size:10.5px;letter-spacing:.04em;padding:9px 8px;text-align:left;border-bottom:1px solid var(--line);}
+td{padding:8px;border-bottom:1px solid var(--line);vertical-align:top;}
+.num{text-align:right;font-variant-numeric:tabular-nums;}
+.arrow{color:var(--v);font-weight:800;}
+.can{color:#dc2626;font-weight:700;}
+.muted{color:var(--mut);}
+.fechas{font-size:11px;color:var(--mut);}
+h3{font-size:14px;margin:18px 0 8px;}
+#status{font-size:13px;color:var(--mut);}
+</style></head><body><div class="wrap">
+<h1>&#x1F517; Mapear lotes de producción huérfanos</h1>
+<div class="sub">Lotes históricos cargados con un nombre viejo/variante que no cruzaba con su fórmula
+&rarr; se corrige la <b>etiqueta</b> al nombre canónico (no mueve fechas ni reprograma). Los 2 de prueba se cancelan.
+Todo revisado uno por uno &middot; queda auditado y es reversible.</div>
+<div class="card">
+  <div class="bar">
+    <button class="btn-o" onclick="cargar()">&#x21BB; Actualizar preview</button>
+    <button class="btn-g" id="btn-ap" onclick="aplicar()" style="display:none">&#x2713; Aplicar corrección</button>
+    <span id="status">Cargando&hellip;</span>
+  </div>
+  <h3>Renombrar (mapear al producto canónico)</h3>
+  <div style="overflow-x:auto"><table><thead><tr>
+    <th>Lote en el calendario (viejo)</th><th></th><th>Producto canónico</th>
+    <th class="num">Lotes</th><th class="num">kg</th><th>Fechas</th>
+  </tr></thead><tbody id="body-ren"><tr><td colspan="6" class="muted" style="padding:16px">Cargando&hellip;</td></tr></tbody></table></div>
+  <h3>Cancelar (lotes de prueba)</h3>
+  <div style="overflow-x:auto"><table><thead><tr>
+    <th>Lote de prueba</th><th class="num">Lotes</th><th class="num">kg</th><th>Fechas</th>
+  </tr></thead><tbody id="body-can"><tr><td colspan="4" class="muted" style="padding:16px">Cargando&hellip;</td></tr></tbody></table></div>
+</div>
+<script>
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+async function cargar(){
+  document.getElementById('status').textContent='Cargando preview…';
+  try{
+    var r=await fetch('/api/admin/mapear-huerfanos-produccion',{credentials:'same-origin'});
+    var d=await r.json();
+    if(!r.ok){document.getElementById('status').textContent='Error: '+(d.error||r.status);return;}
+    render(d);
+  }catch(e){document.getElementById('status').textContent='Error de red: '+e.message;}
+}
+function render(d){
+  var ren=d.renombrar||[], can=d.cancelar||[];
+  var totRen=0, totCan=0;
+  document.getElementById('body-ren').innerHTML=ren.map(function(m){
+    totRen+=m.lotes;
+    var cls=m.lotes?'':' class="muted"';
+    return '<tr'+cls+'><td>'+esc(m.viejo)+'</td><td class="arrow">&rarr;</td><td>'+esc(m.canonico)+'</td>'+
+      '<td class="num">'+m.lotes+'</td><td class="num">'+m.kg+'</td>'+
+      '<td class="fechas">'+esc((m.fechas||[]).join(', '))+'</td></tr>';
+  }).join('');
+  document.getElementById('body-can').innerHTML=can.map(function(m){
+    totCan+=m.lotes;
+    return '<tr class="can"><td>'+esc(m.label)+'</td><td class="num">'+m.lotes+'</td>'+
+      '<td class="num">'+m.kg+'</td><td class="fechas">'+esc((m.fechas||[]).join(', '))+'</td></tr>';
+  }).join('');
+  document.getElementById('status').textContent=totRen+' lote(s) a renombrar · '+totCan+' de prueba a cancelar';
+  document.getElementById('btn-ap').style.display=(totRen+totCan)>0?'':'none';
+}
+async function aplicar(){
+  if(!confirm('Aplicar la corrección de etiquetas + cancelar los de prueba? Queda auditado y es reversible. No mueve fechas.'))return;
+  document.getElementById('status').textContent='Aplicando…';
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/admin/mapear-huerfanos-produccion/aplicar',{
+      method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':t.csrf_token},
+      body:'{}'});
+    var d=await r.json();
+    if(!r.ok){alert('Error: '+(d.error||r.status));document.getElementById('status').textContent='Error';return;}
+    alert('Listo: '+d.renombrados+' lote(s) renombrados, '+d.cancelados+' de prueba cancelados');
+    cargar();
+  }catch(e){alert('Error de red: '+e.message);}
+}
+cargar();
+</script></div></body></html>"""
+
+
 @bp.route("/api/admin/mps-inci-sospechoso", methods=["GET"])
 def admin_mps_inci_sospechoso():
     """Maestro_mps con nombre_inci SOSPECHOSO de estar mal escrito.

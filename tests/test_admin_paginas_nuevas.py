@@ -695,3 +695,55 @@ def test_reconciliar_precios_aplica_corrige_historico(admin_client):
         assert abs((pk or 0) - 43000.0) < 0.5, f'precio_kg no corregido: {pk}'
     finally:
         _cleanup_precio_div('MP-DIV-APP')
+
+
+# ── Mapear lotes de producción huérfanos (14-jul) ────────────────────────────
+def _pp_exec(sql, params=()):
+    import os, sqlite3
+    conn = sqlite3.connect(os.environ["DB_PATH"], timeout=10.0)
+    try:
+        cur = conn.execute(sql, params); conn.commit(); return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def test_mapear_huerfanos_page_200(admin_client):
+    r = admin_client.get("/admin/mapear-huerfanos")
+    assert r.status_code == 200, r.status_code
+    assert "hu" in r.data.decode("utf-8", "replace").lower()
+
+
+def test_mapear_huerfanos_preview_y_aplica(admin_client):
+    import os, sqlite3
+    _pp_exec("INSERT INTO produccion_programada (producto, fecha_programada, lotes, estado, "
+             "cantidad_kg, origen) VALUES ('GEL HIDRATANTE NF', '2026-05-05', 1, 'programado', 40, 'eos_plan')")
+    _pp_exec("INSERT INTO produccion_programada (producto, fecha_programada, lotes, estado, "
+             "cantidad_kg, origen) VALUES ('PRUEBA Suero', '2026-06-24', 1, 'programado', 10, 'eos_plan')")
+
+    # preview
+    d = admin_client.get("/api/admin/mapear-huerfanos-produccion").get_json()
+    gel = next((m for m in d['renombrar'] if m['viejo'] == 'GEL HIDRATANTE NF'), None)
+    assert gel and gel['lotes'] >= 1, d['renombrar']
+    prueba = next((m for m in d['cancelar'] if 'PRUEBA' in m['label']), None)
+    assert prueba and prueba['lotes'] >= 1, d['cancelar']
+
+    # aplicar
+    r = admin_client.post("/api/admin/mapear-huerfanos-produccion/aplicar", json={})
+    assert r.status_code == 200, r.data
+    j = r.get_json()
+    assert j['renombrados'] >= 1 and j['cancelados'] >= 1, j
+
+    conn = sqlite3.connect(os.environ['DB_PATH'])
+    try:
+        nf = conn.execute("SELECT COUNT(*) FROM produccion_programada "
+                          "WHERE UPPER(TRIM(producto))='GEL HIDRATANTE NF' "
+                          "AND LOWER(COALESCE(estado,'')) != 'cancelado'").fetchone()[0]
+        assert nf == 0, "no renombró el huérfano"
+        gh = conn.execute("SELECT COUNT(*) FROM produccion_programada "
+                          "WHERE producto='GEL HIDRATANTE' AND fecha_programada='2026-05-05'").fetchone()[0]
+        assert gh >= 1, "el lote no quedó como GEL HIDRATANTE"
+        pr = conn.execute("SELECT estado FROM produccion_programada "
+                          "WHERE producto='PRUEBA Suero'").fetchone()[0]
+        assert pr == 'cancelado', pr
+    finally:
+        conn.close()
