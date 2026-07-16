@@ -20,8 +20,9 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .sp-tab{padding:9px 18px;font-size:13px;font-weight:600;color:#78716c;border:none;background:none;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;}
 .sp-tab:hover{color:#292524;}
 .sp-tab.sp-on{color:#7c3aed;border-bottom-color:#7c3aed;font-weight:800;}
-.pane{display:none;padding:18px 24px;max-width:1680px;margin:0 auto;}
+.pane{display:none;padding:18px 28px;max-width:1900px;margin:0 auto;}
 #pane-planta{max-width:96vw;}
+#pane-consol{max-width:96vw;}  /* Sebastian 15-jul · OCs Activas ocupa casi todo el ancho */
 #pane-dash{max-width:1900px;}  /* Sebastián 13-jul · el dashboard usa casi todo el ancho */
 .pane.on{display:block;}
 /* KPI */
@@ -105,6 +106,25 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .pill{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);color:#f5f3ff;padding:5px 12px;border-radius:999px;cursor:pointer;font-size:11px;font-weight:600;transition:all .15s;}
 .pill:hover{background:rgba(255,255,255,.26);}
 .pill-on{background:#f59e0b!important;border-color:#f59e0b!important;color:#fff!important;font-weight:800;box-shadow:0 2px 8px rgba(245,158,11,.4);}
+/* Premium · modal Nueva OC GRANDE (Sebastián 15-jul · "que ocupe más pantalla, sobre todo con los ítems") */
+.mdl-oc{max-width:min(1320px,95vw)!important;max-height:95vh;}
+.mdl-oc .mh{padding:22px 32px;}
+.mdl-oc .mh h3{font-size:20px;}
+.mdl-oc .mb{padding:26px 32px;gap:20px;}
+.mdl-oc .mf{padding:18px 32px;}
+.mdl-oc .g2{gap:20px;grid-template-columns:1.6fr 1fr;}
+.mdl-oc .fg label{font-size:12.5px;margin-bottom:6px;}
+.mdl-oc .fg input,.mdl-oc .fg select,.mdl-oc .fg textarea{padding:11px 14px;font-size:14px;border-radius:11px;}
+.mdl-oc .fg textarea{min-height:78px;}
+.oc-items-card{background:linear-gradient(180deg,#faf9fe 0%,#fbfaff 100%);border:1px solid #ede9fe;border-radius:16px;padding:18px 20px;box-shadow:inset 0 1px 0 rgba(255,255,255,.7);}
+.oc-items-card>label{font-size:13px!important;color:#5b21b6!important;text-transform:uppercase;letter-spacing:.05em;}
+#m-noc .itbl{font-size:13.5px;margin-top:12px;}
+#m-noc .itbl th{background:#f5f3ff;color:#5b21b6;padding:11px 13px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:800;border-bottom:2px solid #e9d5ff;}
+#m-noc .itbl td{padding:9px 13px;border-bottom:1px solid #f1eefb;}
+#m-noc .itbl input{padding:10px 12px;font-size:13.5px;border-radius:10px;background:#fff;}
+#m-noc .itbl tbody tr:hover td{background:#faf7ff;}
+#m-noc .itbl tbody tr:last-child td{border-bottom:none;}
+#m-noc .total-row{font-size:19px;color:#4c1d95;}
 .btn.br{background:#dc2626;color:#fff;border:1px solid #b91c1c;}
 .btn.br:hover{background:#b91c1c;}
 .ocs-cpill{padding:5px 13px;border-radius:20px;font-size:12px;font-weight:600;border:1.5px solid #d6d3d1;background:#fff;color:#57534e;cursor:pointer;transition:all .15s;white-space:nowrap;}
@@ -977,7 +997,7 @@ function showSubPlanta(w){
 
 <!-- MODAL: Nueva OC -->
 <div id="m-noc" class="ov">
-<div class="mdl mdl-lg" style="max-width:940px;">
+<div class="mdl mdl-lg mdl-oc">
   <div class="mh mh-ent">
     <div>
       <h3 id="noc-title">&#x1F4DD; Nueva Orden de Compra</h3>
@@ -1034,8 +1054,8 @@ function showSubPlanta(w){
       <div class="fg"><label>Fecha entrega est.</label><input type="date" id="noc-fent"></div>
     </div>
     <div class="fg"><label>Concepto / Observaciones</label><textarea id="noc-obs" placeholder="Descripcion del pedido..."></textarea></div>
-    <div>
-      <label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:6px;">Items del pedido</label>
+    <div class="oc-items-card">
+      <label style="font-weight:800;color:#44403c;display:block;margin-bottom:6px;">Items del pedido</label>
       <datalist id="mp-noc-dl"></datalist>
       <table class="itbl"><thead><tr><th>Codigo</th><th>Descripcion</th><th>Cantidad</th><th>Precio U.</th><th>Subtotal</th><th></th></tr></thead>
       <tbody id="noc-tbody"></tbody></table>
