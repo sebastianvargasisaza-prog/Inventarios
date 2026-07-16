@@ -1,4 +1,4 @@
-# blueprints/calidad.py — extraído de index.py (Fase C)
+# blueprints/calidad.py · extraído de index.py (Fase C)
 import os
 import json
 import logging
@@ -129,7 +129,7 @@ def calidad_dashboard():
                  FROM no_conformidades ORDER BY id DESC LIMIT 5""")
     for r in c.fetchall():
         color = 'rojo' if r[2] in ('Alto','Critico') else 'amari'
-        actividad.append({'titulo': f'NC — {r[1][:55]}',
+        actividad.append({'titulo': f'NC · {r[1][:55]}',
                           'subtitulo': f'{r[2]} · {r[4]}', 'fecha': r[3], 'color': color})
     c.execute("""SELECT material_nombre, lote, estado_lote, fecha
                  FROM movimientos WHERE tipo='Entrada'
@@ -137,7 +137,7 @@ def calidad_dashboard():
                  ORDER BY id DESC LIMIT 5""")
     for r in c.fetchall():
         color = 'verde' if r[2] == 'Aprobado' else 'rojo'
-        actividad.append({'titulo': f'Lote {r[1] or "s/n"} — {r[2]}',
+        actividad.append({'titulo': f'Lote {r[1] or "s/n"} · {r[2]}',
                           'subtitulo': r[0][:50], 'fecha': r[3], 'color': color})
     c.execute("""SELECT l.producto, l.lote, l.estado, l.fecha_liberacion, l.aprobado_por, l.cliente
                  FROM liberaciones l
@@ -1172,7 +1172,7 @@ def especificaciones_list():
             return jsonify({'ok':True, 'id':spec_id}), 201
         except sqlite3.IntegrityError:
             return jsonify({'error':'Ya existe especificacion para ese MP+parametro'}), 409
-    # GET — filtro por codigo_mp opcional
+    # GET · filtro por codigo_mp opcional
     codigo = request.args.get('codigo_mp','').strip()
     if codigo:
         c.execute("""SELECT * FROM especificaciones_mp WHERE codigo_mp=?
@@ -1281,7 +1281,7 @@ def coa_list():
             if valor_max_spec is not None and val_num > float(valor_max_spec):
                 conforme = 0
         except (ValueError, TypeError):
-            # Valor no-numerico (ej: "Conforme", "Cumple") — no auto-validar
+            # Valor no-numerico (ej: "Conforme", "Cumple") · no auto-validar
             if d.get('conforme') is not None:
                 conforme = 1 if d.get('conforme') else 0
 
@@ -1356,7 +1356,7 @@ def coa_list():
         return jsonify({'ok':True, 'id':coa_id, 'conforme':conforme,
                         'decision':decision}), 201
 
-    # GET — filtros
+    # GET · filtros
     lote = request.args.get('lote','').strip()
     codigo_mp = request.args.get('codigo_mp','').strip()
     where, params = [], []
@@ -1602,7 +1602,7 @@ def auditorias_list():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# CALIDAD AMPLIADA — Micro Specs + Resultados (heatmap) + Agua + OOS
+# CALIDAD AMPLIADA · Micro Specs + Resultados (heatmap) + Agua + OOS
 # Sebastian (30-abr-2026)
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -1832,7 +1832,7 @@ def calidad_micro_resultados():
                 except Exception:
                     pass
         elif estado == 'fuera_meta':
-            # Notif menos urgente — solo a calidad
+            # Notif menos urgente · solo a calidad
             try:
                 from blueprints.notif import push_notif
                 push_notif('controlcalidad.espagiria', 'capa',
@@ -2085,7 +2085,7 @@ def calidad_micro_alertas():
                     "GROUP BY producto_nombre, microorganismo HAVING COUNT(*)>=2 ORDER BY COUNT(*) DESC", (cutoff_30,)).fetchall()
     for r in rep:
         alertas.append({'tipo': 'repetido', 'severidad': 'naranja',
-                        'mensaje': f'{r[2]} OOS de {r[1]} en "{r[0]}" en 30 días — patrón. Muestreo inmediato post-corrección.',
+                        'mensaje': f'{r[2]} OOS de {r[1]} en "{r[0]}" en 30 días · patrón. Muestreo inmediato post-corrección.',
                         'cantidad': r[2]})
 
     # A3 · patógeno crítico detectado (últimos 30d)
@@ -2348,7 +2348,7 @@ def calidad_agua_registros():
         if micro is not None and micro < 0:
             return jsonify({'error': 'microorganismos no puede ser negativo'}), 400
 
-        # Calcular estado (USP — agua purificada)
+        # Calcular estado (USP · agua purificada)
         estado = 'ok'
         warnings = []
         if ph is not None:
@@ -2600,7 +2600,7 @@ def calidad_oos_list():
 
 @bp.route('/api/calidad/oos/<int:oos_id>', methods=['PATCH'])
 def calidad_oos_update(oos_id):
-    """Actualiza OOS — flujo investigación → aprobación → cierre."""
+    """Actualiza OOS · flujo investigación → aprobación → cierre."""
     err, code = _require_calidad()
     if err:
         return err, code
