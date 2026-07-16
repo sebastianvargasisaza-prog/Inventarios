@@ -161,7 +161,7 @@ IPC_ESTANDAR = [
 
 def _batch_role_info(usuario):
     """Rol del usuario en el batch record (segregación de funciones GMP · 25-jun).
-    UI-hint: el backend YA bloquea con 403; esto adapta la vista — quién REALIZA
+    UI-hint: el backend YA bloquea con 403; esto adapta la vista · quién REALIZA
     (operario/jefe prod) vs quién VERIFICA (calidad/jefe prod/dir. téc.). Reusa los
     sets de config.py. Roles finos: operario · jefe_produccion · calidad ·
     aseguramiento · director_tecnico · admin · consulta."""
@@ -190,7 +190,7 @@ def _batch_role_info(usuario):
         tipo, rol = "consulta", "Consulta"
     realiza = tipo in ("operario", "jefe_produccion", "admin")
     # Sebastián 7-jul: Aseguramiento (Miguel) también VERIFICA el despeje/pesaje, igual que Control de Calidad
-    # (Yuliel) y Director Técnico (Hernando) — mismos permisos de VERIFICACIÓN, sin tocar el acceso a los módulos
+    # (Yuliel) y Director Técnico (Hernando) · mismos permisos de VERIFICACIÓN, sin tocar el acceso a los módulos
     # de cada uno (calidad/aseguramiento/técnica siguen separados · esto solo cambia quién puede firmar la 2ª).
     verifica = tipo in ("calidad", "aseguramiento", "jefe_produccion", "director_tecnico", "admin")
     return {
@@ -1309,7 +1309,7 @@ def _generar_mbr_desde_formula(cur, producto_nombre, usuario=''):
     for it in items:
         orden += 1
         mat_nom, mat_id, pct, cant_g = it[0], it[1], it[2], it[3]
-        desc = f"Dispensar {mat_nom or mat_id} ({mat_id}) — {round(float(cant_g or 0),2)} g ({round(float(pct or 0),2)}%)"
+        desc = f"Dispensar {mat_nom or mat_id} ({mat_id}) · {round(float(cant_g or 0),2)} g ({round(float(pct or 0),2)}%)"
         cur.execute(
             """INSERT INTO mbr_pasos
                  (mbr_template_id, orden, fase, descripcion, tipo_paso,
@@ -1798,7 +1798,7 @@ def iniciar_ebr():
               despues={"mbr_template_id": mbr["id"], "lote": lote,
                         "numero_op": numero_op, "fase": fase,
                         "pasos_clonados": n_clonados})
-    # Sebastián 7-jul (v2): ALERTA IMPORTANTE a Calidad — empezó la fabricación → que vaya al lado a supervisar
+    # Sebastián 7-jul (v2): ALERTA IMPORTANTE a Calidad · empezó la fabricación → que vaya al lado a supervisar
     # el despeje (firma dual en tiempo real, sin trabar al operario). Best-effort (no rompe el inicio del EBR).
     try:
         try:
@@ -1809,7 +1809,7 @@ def iniciar_ebr():
         _pnm([q for q in _qc_verificadores() if q != user],
              'fabricacion_iniciada',
              f'Empezó {_fase_lbl} · andá a verificar el despeje',
-             body=f'Lote {lote} · OP {numero_op}. El operario va a registrar el despeje de línea — '
+             body=f'Lote {lote} · OP {numero_op}. El operario va a registrar el despeje de línea · '
                   f'estás para verificar cada paso al lado.',
              link='/planta', remitente=user, importante=True)
     except Exception:
@@ -2038,7 +2038,7 @@ h1{text-align:center;color:#1e293b;margin:18px 0 2px;font-size:24px}
 <script>
 var EBR_ID = ''' + str(ebr_id) + ''';
 function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
-function dt(s){return s?esc(String(s).substring(0,16).replace('T',' ')):'—';}
+function dt(s){return s?esc(String(s).substring(0,16).replace('T',' ')):'·';}
 function stBadge(done,partial){
   if(done) return '<span class="st-badge fin">Finalizado</span>';
   if(partial) return '<span class="st-badge proc">En proceso</span>';
@@ -2055,8 +2055,8 @@ async function load(){
     var d=await r.json();
     if(!r.ok){ document.getElementById('t2').textContent='Error: '+esc(d.error||r.status); return; }
     var h=d.header||{};
-    document.getElementById('t1').textContent='Batch Record Bulk Lote N°: '+(h.lote_codigo||'—');
-    document.getElementById('t2').textContent=h.producto||h.titulo||'—';
+    document.getElementById('t1').textContent='Batch Record Bulk Lote N°: '+(h.lote_codigo||'·');
+    document.getElementById('t2').textContent=h.producto||h.titulo||'·';
     // Estado de cada etapa (honesto · desde la data real)
     var prec=d.precauciones||[], chk=d.despeje_checklist||[], sheet=d.pesaje_sheet||[], pasos=d.pasos||[];
     var estado=(h.estado||'').toLowerCase();
@@ -2084,12 +2084,12 @@ async function load(){
       '<div class="node"><div class="ico">📋</div><div class="card">'+
         '<span class="tag">Orden de Producción</span>'+
         '<div class="grid">'+
-          '<div><div class="lbl">N° de Lote Bulk</div><div class="val mono">'+esc(h.lote_codigo||'—')+'</div></div>'+
-          '<div><div class="lbl">Tamaño de Lote</div><div class="val">'+(h.lote_size_g!=null?Number(h.lote_size_g).toLocaleString('es-CO')+' g':'—')+'</div></div>'+
+          '<div><div class="lbl">N° de Lote Bulk</div><div class="val mono">'+esc(h.lote_codigo||'·')+'</div></div>'+
+          '<div><div class="lbl">Tamaño de Lote</div><div class="val">'+(h.lote_size_g!=null?Number(h.lote_size_g).toLocaleString('es-CO')+' g':'·')+'</div></div>'+
           '<div><div class="lbl">Fecha / Hora</div><div class="val">'+dt(h.iniciado_at_utc)+'</div></div>'+
-          '<div><div class="lbl">Estado Actual</div><div class="val">'+esc(h.estado||'—')+'</div></div>'+
-          '<div><div class="lbl">Elaborado por</div><div class="val">'+esc(h.operario||'—')+'</div></div>'+
-          '<div><div class="lbl">Supervisado por</div><div class="val">'+esc(h.supervisado_por||'—')+'</div></div>'+
+          '<div><div class="lbl">Estado Actual</div><div class="val">'+esc(h.estado||'·')+'</div></div>'+
+          '<div><div class="lbl">Elaborado por</div><div class="val">'+esc(h.operario||'·')+'</div></div>'+
+          '<div><div class="lbl">Supervisado por</div><div class="val">'+esc(h.supervisado_por||'·')+'</div></div>'+
         '</div>'+
         '<div class="btns">'+
           '<a class="b-ver" href="/planta/orden/'+EBR_ID+'">Ver</a>'+
@@ -2109,7 +2109,7 @@ async function load(){
       libCard='<div class="node"><div class="ico" style="background:'+(liberado?'#16a34a':'#0891b2')+'">'+(liberado?'🔓':'🏁')+'</div><div class="card">'+
         '<span class="tag" style="background:'+(liberado?'#16a34a':'#0891b2')+'">'+(liberado?'Liberación de Calidad':'Fabricación Completada')+'</span>'+
         '<div class="grid">'+
-          '<div><div class="lbl">'+(liberado?'Liberado por':'Completado')+'</div><div class="val">'+esc(liberado?(h.liberado_por_full||h.liberado_por||'—'):dt(h.completado_at_utc))+'</div></div>'+
+          '<div><div class="lbl">'+(liberado?'Liberado por':'Completado')+'</div><div class="val">'+esc(liberado?(h.liberado_por_full||h.liberado_por||'·'):dt(h.completado_at_utc))+'</div></div>'+
           (h.rechazado_at_utc?'<div><div class="lbl">⛔ Rechazado</div><div class="val">'+esc(h.rechazado_motivo||'')+'</div></div>':'')+
         '</div>'+
       '</div></div>';
@@ -2260,7 +2260,7 @@ def _presentaciones_planeadas(conn, producto, ebr_produccion_id=None):
             uds = int(env.get('uds') or 0)
             ml = float(env.get('ml') or 0)
             out.append({
-                'presentacion': env.get('etiqueta') or (f'{int(ml)}ml' if ml else '—'),
+                'presentacion': env.get('etiqueta') or (f'{int(ml)}ml' if ml else '·'),
                 'lote': '', 'unidades': uds, 'area': '',
                 'cantidad_ml': (uds * ml) if (uds and ml) else None,
                 'unidades_final': None, 'rend_pct': None,
@@ -2335,7 +2335,7 @@ def ebr_vista_completa(ebr_id):
             'ml_envasable': (float(row[21]) if row[21] else None),
         }
         # Objetivo EN VIVO (M67 punto 4): mientras el EBR NO esté liberado/completado/rechazado,
-        # la magnitud del lote la manda la fuente de verdad produccion_programada.cantidad_kg — no
+        # la magnitud del lote la manda la fuente de verdad produccion_programada.cantidad_kg · no
         # el cantidad_objetivo_g congelado (que pudo nacer con el default del MBR o quedar stale si
         # se corrigió la cantidad). Así la hoja de pesaje teórica y el rendimiento salen correctos.
         # Una vez liberado/completado, se respeta el valor congelado (batch comprometido, inmutable).
@@ -2420,7 +2420,7 @@ def ebr_vista_completa(ebr_id):
                 for r in _rows:
                     rd = dict(r)
                     out['envasado_presentaciones'].append({
-                        'presentacion': rd.get('presentacion') or rd.get('envase') or '—',
+                        'presentacion': rd.get('presentacion') or rd.get('envase') or '·',
                         'lote': rd.get('lote') or _lote,
                         'unidades': int(rd.get('unidades') or 0),
                         'area': rd.get('area') or '',
@@ -2516,7 +2516,7 @@ def ebr_vista_completa(ebr_id):
                 for r in _arows:
                     rd = dict(r)
                     out['acond_presentaciones'].append({
-                        'presentacion': rd.get('presentacion') or rd.get('sku') or '—',
+                        'presentacion': rd.get('presentacion') or rd.get('sku') or '·',
                         'lote': rd.get('lote') or _loa,
                         'unidades': int(rd.get('unidades') or 0),
                         'estado': rd.get('estado') or 'En proceso',
@@ -2703,7 +2703,7 @@ def ebr_vista_completa(ebr_id):
             _fefo = None
         # Presupuesto de tiempo · el resolver FEFO escanea maestro_mps por cada MP
         # (en prod son miles de filas) → sin tope, una fórmula grande cuelga la
-        # página. Tras ~2.5s dejamos de resolver lotes (se muestra '—'); el resto
+        # página. Tras ~2.5s dejamos de resolver lotes (se muestra '·'); el resto
         # de la hoja (%, cant a pesar, pesados) sale igual y el descuento real en
         # producción sigue usando el resolver completo. Sebastián 5-jun-2026.
         import time as _time
@@ -2740,7 +2740,7 @@ def ebr_vista_completa(ebr_id):
                     'nombre_inci': fr[3] or '',
                     'porcentaje': pct,
                     'cant_a_pesar_g': cant_a_pesar,
-                    'lote': lote or '—',
+                    'lote': lote or '·',
                     'cant_pesada_g': (rec['real_g'] if rec else None),
                     'pesado_por': (rec['operario'] if rec else ''),
                     'pesado_at': (rec['fecha'] if rec else ''),
@@ -3530,7 +3530,7 @@ def liberar_ebr(ebr_id):
         _lote = (_lr[0] if _lr else '') or ''
         if _lote:
             # FIX 1-jun-2026 (audit): bloquear también desviaciones CERRADAS con CAPA
-            # NO EFECTIVO (efectividad_ok=0) — antes una cerrada-no-efectiva desbloqueaba
+            # NO EFECTIVO (efectividad_ok=0) · antes una cerrada-no-efectiva desbloqueaba
             # la liberación. (El LIKE '%lote%' se mantiene a propósito: afinarlo a token
             # exacto podría NO ver una desviación real si lotes_afectados es texto libre →
             # liberaría producto no conforme. El falso positivo bloquea de más = lado seguro.)
@@ -3614,7 +3614,7 @@ def liberar_ebr(ebr_id):
 
     # GATE MICRO · Fase 2 (14-jun · decisión Sebastián = bloqueo duro). El lote NO se
     # libera si tiene un resultado micro FUERA DE SPEC DE INDUSTRIA sin resolver (OOS
-    # abierto) — esto es incondicional y seguro (solo dispara con dato real de OOS, no
+    # abierto) · esto es incondicional y seguro (solo dispara con dato real de OOS, no
     # rompe lotes sin micro). El requisito de que el análisis micro ESTÉ PRESENTE
     # ("faltante") es más estricto y se enciende por fases con BRD_MICRO_GATE='strict'
     # (igual que EBR_MODE off→warn→strict), para no frenar la operación antes de que
@@ -3692,7 +3692,7 @@ def liberar_ebr(ebr_id):
                 return jsonify({"error": "No se puede liberar: no hay registro de pesaje/dispensado de "
                                 "materias primas del lote.", "codigo": "SIN_PESAJES"}), 409
             # #6 · rendimiento (yield) fuera de rango razonable (80-115%) exige justificación (GMP · un yield
-            # anómalo —pérdida de batch o error de tara— no puede liberarse en silencio · queda en el audit).
+            # anómalo ·pérdida de batch o error de tara· no puede liberarse en silencio · queda en el audit).
             try:
                 _yp = (cur.execute("SELECT yield_pct FROM ebr_ejecuciones WHERE id=?",
                                    (ebr_id,)).fetchone() or [None])[0]
@@ -4217,7 +4217,7 @@ def _presentaciones_manuales(conn, ebr_id):
         uds = r["unidades"]; ml = r["volumen_ml"]
         out.append({
             "id": r["id"], "fuente": "manual",
-            "presentacion": r["presentacion"] or "—", "cliente": r["cliente"] or "Animus DTC",
+            "presentacion": r["presentacion"] or "·", "cliente": r["cliente"] or "Animus DTC",
             "lote": r["lote"] or "", "unidades": uds, "area": r["area"] or "",
             "envase_codigo": r["envase_codigo"] or "", "volumen_ml": ml,
             "cantidad_ml": (uds * ml) if (uds and ml) else None,
@@ -4796,7 +4796,7 @@ def _safe_pdf(text):
         return ""
     if not isinstance(text, str):
         text = str(text)
-    repl = {"—": "-", "–": "-", "…": "...", "“": '"', "”": '"',
+    repl = {"·": "-", "–": "-", "…": "...", "“": '"', "”": '"',
             "‘": "'", "’": "'", "•": "·", "→": "->", "≥": ">=", "≤": "<="}
     for k, v in repl.items():
         text = text.replace(k, v)
@@ -5702,7 +5702,7 @@ def cerrar_envasado_ebr(ebr_id):
             uds[r[0]] = r[1]
     if not uds:
         return jsonify({"error": "registrá las unidades envasadas (al menos una presentación) antes de cerrar"}), 400
-    # CAS idempotente: reclamar el descuento — solo 1 vez y solo si está en proceso (race multi-worker · M27)
+    # CAS idempotente: reclamar el descuento · solo 1 vez y solo si está en proceso (race multi-worker · M27)
     cur.execute(
         "UPDATE ebr_ejecuciones SET envases_descontados_at=datetime('now','utc'), estado='completado', "
         "completado_at_utc=datetime('now','utc') "
@@ -5795,7 +5795,7 @@ def cerrar_acondicionamiento_ebr(ebr_id):
             items.append((cod, cant))
     if not items:
         return jsonify({"error": "listá al menos un material consumido (código + cantidad) antes de cerrar"}), 400
-    # CAS idempotente (M27): reclamar el cierre — solo 1 vez y solo si está en proceso (race multi-worker).
+    # CAS idempotente (M27): reclamar el cierre · solo 1 vez y solo si está en proceso (race multi-worker).
     cur.execute(
         "UPDATE ebr_ejecuciones SET envases_descontados_at=datetime('now','utc'), estado='completado', "
         "completado_at_utc=datetime('now','utc') "
@@ -6270,7 +6270,7 @@ def registrar_despeje_item_ebr(ebr_id):
               antes=({"cumple": prev[0], "observaciones": prev[1], "registrado_por": prev[2]} if es_correccion else None),
               despues={"ebr_id": ebr_id, "item_idx": idx, "cumple": cumple, "por": user})
     conn.commit()
-    # Sebastián 7-jul (v3): SIN aviso por-ítem (evita fatiga de campana) — la ÚNICA alerta es la de inicio de
+    # Sebastián 7-jul (v3): SIN aviso por-ítem (evita fatiga de campana) · la ÚNICA alerta es la de inicio de
     # fabricación (iniciar_ebr). Los pendientes los ve Calidad en su bandeja "Mi trabajo". El tiempo de respuesta
     # (aviso → 1ª verificación) se mide server-side desde iniciado_at_utc vs MIN(verificado_at_utc).
     return jsonify({"ok": True, "item_idx": idx, "cumple": cumple,
@@ -6303,7 +6303,7 @@ def verificar_despeje_item_ebr(ebr_id):
     if ebr["estado"] not in ("iniciado", "en_proceso"):
         return jsonify({"error": f"EBR no editable (estado: {ebr['estado']})"}), 409
     # No autoverificación: quien verifica no puede ser quien registró (2 personas).
-    # Sebastián 7-jul: la verificación es UNA POR UNA (supervisión secuencial · sin "verificar todos") — así
+    # Sebastián 7-jul: la verificación es UNA POR UNA (supervisión secuencial · sin "verificar todos") · así
     # Calidad revisa cada ítem antes de que el operario habilite el siguiente. El path masivo queda deshabilitado.
     if body.get("todos"):
         return jsonify({
@@ -6770,7 +6770,7 @@ def _estado_orden_norm(origen, estado):
             "completado": "En Proceso · Cuarentena",
             "liberado": "Aprobado",
             "rechazado": "Rechazado",
-        }.get(e, estado or "—")
+        }.get(e, estado or "·")
     # registro simple (producciones)
     if e in ("completado", "completada"):
         return "Completado (registro simple)"
@@ -7037,7 +7037,7 @@ td{padding:9px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
 </div>
 <script>
 function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
-function gfmt(n){return n==null?'—':Number(n).toLocaleString('es-CO')+' g';}
+function gfmt(n){return n==null?'·':Number(n).toLocaleString('es-CO')+' g';}
 function pill(estado){
   var e=(estado||'').toLowerCase(); var c='simp';
   if(e.indexOf('cuarentena')>=0)c='cuar'; else if(e.indexOf('proceso')>=0)c='proc';
@@ -7087,19 +7087,19 @@ async function ver(fase,btn){
       '<th class="num">Cant. aprobada</th><th>Estado</th><th>Origen</th><th>Fecha</th><th></th>'+
       '</tr></thead><tbody>';
     d.ordenes.forEach(function(o){
-      var aprob = o.aprobada!=null ? gfmt(o.aprobada) : (o.ml_envasable!=null? (Number(o.ml_envasable).toLocaleString('es-CO')+' mL') : '—');
-      var acc = o.link ? '<a class="legajo" href="'+o.link+'">Abrir legajo →</a>' : '<span class="muted">—</span>';
+      var aprob = o.aprobada!=null ? gfmt(o.aprobada) : (o.ml_envasable!=null? (Number(o.ml_envasable).toLocaleString('es-CO')+' mL') : '·');
+      var acc = o.link ? '<a class="legajo" href="'+o.link+'">Abrir legajo →</a>' : '<span class="muted">·</span>';
       var org = o.origen==='legajo' ? '<span class="org org-l">LEGAJO</span>' : '<span class="org org-s">SIMPLE</span>';
       h+='<tr>'+
         '<td class="mono">'+esc(o.numero_op)+'</td>'+
-        '<td class="mono">'+esc(o.lote_bulk||'—')+'</td>'+
-        '<td>'+esc(o.producto||'—')+'</td>'+
+        '<td class="mono">'+esc(o.lote_bulk||'·')+'</td>'+
+        '<td>'+esc(o.producto||'·')+'</td>'+
         '<td class="num">'+gfmt(o.teorica_g)+'</td>'+
         '<td class="num">'+gfmt(o.producida_g)+'</td>'+
         '<td class="num">'+aprob+'</td>'+
         '<td>'+pill(o.estado)+'</td>'+
         '<td>'+org+'</td>'+
-        '<td class="muted">'+esc(o.fecha||'—')+'</td>'+
+        '<td class="muted">'+esc(o.fecha||'·')+'</td>'+
         '<td>'+acc+'</td>'+
       '</tr>';
     });
@@ -7278,7 +7278,7 @@ var EBR_ID = __EBR_ID__;
   }catch(e){}
 })();
 function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
-function gfmt(n){return (n==null||n==='')?'—':Number(n).toLocaleString('es-CO',{maximumFractionDigits:1})+' g';}
+function gfmt(n){return (n==null||n==='')?'·':Number(n).toLocaleString('es-CO',{maximumFractionDigits:1})+' g';}
 function estadoColor(e){var s=(e||'').toLowerCase();
   if(s.indexOf('liber')>=0||s.indexOf('aprob')>=0)return '#166534';
   if(s.indexOf('rechaz')>=0)return '#991b1b';
@@ -7299,9 +7299,9 @@ function registrarPesaje(idx){
   var it=(window._pesajeSheet||[])[idx]; if(!it) return;
   _pesoIdx=idx;
   document.getElementById('peso-mp').innerHTML='<span class="mono">'+esc(it.material_id)+'</span> '+esc(it.material_nombre||'');
-  document.getElementById('peso-apesar').textContent='Cantidad a pesar: '+(it.cant_a_pesar_g!=null?Number(it.cant_a_pesar_g).toLocaleString('es-CO',{maximumFractionDigits:1})+' g':'—');
+  document.getElementById('peso-apesar').textContent='Cantidad a pesar: '+(it.cant_a_pesar_g!=null?Number(it.cant_a_pesar_g).toLocaleString('es-CO',{maximumFractionDigits:1})+' g':'·');
   document.getElementById('peso-cant').value=(it.cant_pesada_g!=null?it.cant_pesada_g:(it.cant_a_pesar_g!=null?it.cant_a_pesar_g:''));
-  document.getElementById('peso-lote').value=(it.lote&&it.lote!=='—'?it.lote:'');
+  document.getElementById('peso-lote').value=(it.lote&&it.lote!=='·'?it.lote:'');
   document.getElementById('peso-obs').value=it.obs_pesaje||'';
   document.getElementById('peso-msg').innerHTML='';
   document.getElementById('pesomodal').style.display='flex';
@@ -7329,13 +7329,13 @@ async function guardarPeso(){
 // 3. Dispensado · botón "i" → "Detalle del Pesaje" (Realizado por / Verificado por)
 function infoPesaje(idx){
   var it=(window._pesajeSheet||[])[idx]; if(!it) return;
-  function dpct(){ if(it.cant_a_pesar_g&&it.cant_pesada_g!=null){var dl=(it.cant_pesada_g-it.cant_a_pesar_g)/it.cant_a_pesar_g*100; return dl.toLocaleString('es-CO',{maximumFractionDigits:2})+'%';} return '—';}
+  function dpct(){ if(it.cant_a_pesar_g&&it.cant_pesada_g!=null){var dl=(it.cant_pesada_g-it.cant_a_pesar_g)/it.cant_a_pesar_g*100; return dl.toLocaleString('es-CO',{maximumFractionDigits:2})+'%';} return '·';}
   function fdt(s){return s?esc(s.substring(0,16).replace('T',' ')):'';}
-  var realizado = it.pesado ? (esc(it.realizado_por_full||it.pesado_por||'—')+(it.pesado_at?' · '+fdt(it.pesado_at):'')) : '<span class="st-pend">— sin registrar</span>';
+  var realizado = it.pesado ? (esc(it.realizado_por_full||it.pesado_por||'·')+(it.pesado_at?' · '+fdt(it.pesado_at):'')) : '<span class="st-pend">· sin registrar</span>';
   var verificado = (it.verificado_por&&it.verificado_por.trim()) ? (esc(it.verificado_por_full||it.verificado_por)+(it.verificado_at?' · '+fdt(it.verificado_at):'')) : '<span class="st-pend">pendiente de verificación (Calidad)</span>';
   var rows=''
     +'<div class="mrow"><div class="mk">Materia Prima</div><div class="mv"><span class="mono">'+esc(it.material_id)+'</span> '+esc(it.material_nombre||'')+'</div></div>'
-    +'<div class="mrow"><div class="mk">N° Lote</div><div class="mv mono">'+esc(it.lote||'—')+'</div></div>'
+    +'<div class="mrow"><div class="mk">N° Lote</div><div class="mv mono">'+esc(it.lote||'·')+'</div></div>'
     +'<div class="mrow"><div class="mk">Cant. a pesar</div><div class="mv">'+gfmt(it.cant_a_pesar_g)+'</div></div>'
     +'<div class="mrow"><div class="mk">Cantidad Pesada</div><div class="mv"><b>'+(it.cant_pesada_g!=null?gfmt(it.cant_pesada_g):'<span class="st-pend">pendiente</span>')+'</b> <span class="muted">(desv '+dpct()+')</span></div></div>'
     +'<div class="mrow"><div class="mk">Realizado por</div><div class="mv">'+realizado+'</div></div>'
@@ -7365,7 +7365,7 @@ function verificarDispensado(){
 function infoPaso(i){
   var p=(window._pasos||[])[i]; if(!p) return;
   function fdt(s){return s?esc(s.substring(0,16).replace('T',' ')):'';}
-  var realizado = p.completado_flag ? (esc(p.realizado_por_full||p.operario||'—')+(p.completado?' · '+fdt(p.completado):'')) : '<span class="st-pend">— pendiente</span>';
+  var realizado = p.completado_flag ? (esc(p.realizado_por_full||p.operario||'·')+(p.completado?' · '+fdt(p.completado):'')) : '<span class="st-pend">· pendiente</span>';
   var verificado = (p.verificado_por&&p.verificado_por.trim()) ? esc(p.verificado_por_full||p.verificado_por) : '<span class="st-pend">pendiente de verificación (Calidad)</span>';
   var rows=''
     +'<div class="mrow"><div class="mk">Paso</div><div class="mv"><b>'+esc(p.orden)+'</b></div></div>'
@@ -7396,7 +7396,7 @@ function infoIpc(i){
   var c=(window._ipc||[])[i]; if(!c) return;
   function fdt(s){return s?esc(s.substring(0,16).replace('T',' ')):'';}
   var conf = c.conforme===1?'<span class="st-fin">Cumple ✓</span>':c.conforme===0?'<span class="st-no">No cumple ✗</span>':c.conforme===2?'<span class="st-pend">No aplica</span>':'<span class="st-pend">pendiente</span>';
-  var realizado = c.realizado_por ? (esc(c.realizado_por_full||c.realizado_por)+(c.fecha?' · '+fdt(c.fecha):'')) : '<span class="st-pend">— sin registrar</span>';
+  var realizado = c.realizado_por ? (esc(c.realizado_por_full||c.realizado_por)+(c.fecha?' · '+fdt(c.fecha):'')) : '<span class="st-pend">· sin registrar</span>';
   var rows=''
     +'<div class="mrow"><div class="mk">Control</div><div class="mv">'+esc(c.control||'')+'</div></div>'
     +(c.rango?'<div class="mrow"><div class="mk">Rango / Spec</div><div class="mv">'+esc(c.rango)+'</div></div>':'')
@@ -7448,7 +7448,7 @@ function subirRegistroPick(){
   // El Estado de Limpieza de Áreas ya NO se sube como foto: es DIGITAL (rótulo
   // F02 auto-rellenado, ver arriba "rótulo de limpieza"). Aquí solo se suben los
   // registros que SÍ son evidencia física: rótulos de pesaje / MP dispensada.
-  var c=prompt('¿Qué registro vas a subir?\\n\\n1 = Materia Prima Dispensada / Rótulo de pesaje\\n2 = Otro (escribir)\\n\\nNota: el Estado de Limpieza de Áreas es DIGITAL — usá el rótulo F02 (no subir foto).','1');
+  var c=prompt('¿Qué registro vas a subir?\\n\\n1 = Materia Prima Dispensada / Rótulo de pesaje\\n2 = Otro (escribir)\\n\\nNota: el Estado de Limpieza de Áreas es DIGITAL · usá el rótulo F02 (no subir foto).','1');
   if(c===null) return;
   var map={'1':'Materia Prima Dispensada / Rótulo de pesaje'};
   _regDesc = map[(c||'').trim()];
@@ -7498,8 +7498,8 @@ function infoDespeje(idx, fab){
   var rows=''
     + '<div class="mrow"><div class="mk">Verificación</div><div class="mv">'+esc(it.texto)+'</div></div>'
     + '<div class="mrow"><div class="mk">Cumple</div><div class="mv">'+estadoTxt+'</div></div>'
-    + '<div class="mrow"><div class="mk">Responsable</div><div class="mv">'+esc(it.registrado_por||'— sin registrar')+'</div></div>'
-    + '<div class="mrow"><div class="mk">Fecha / Hora</div><div class="mv">'+(it.fecha?esc(it.fecha.substring(0,16).replace('T',' ')):'—')+'</div></div>'
+    + '<div class="mrow"><div class="mk">Responsable</div><div class="mv">'+esc(it.registrado_por||'· sin registrar')+'</div></div>'
+    + '<div class="mrow"><div class="mk">Fecha / Hora</div><div class="mv">'+(it.fecha?esc(it.fecha.substring(0,16).replace('T',' ')):'·')+'</div></div>'
     + '<div class="mrow"><div class="mk">Observación</div><div class="mv">'+esc(it.observaciones||'Ninguna')+'</div></div>';
   var body=document.getElementById('cxmbody');
   if(body) body.innerHTML=rows;
@@ -7571,7 +7571,7 @@ async function load(){
     if(!r.ok){headEl.innerHTML='<div style="padding:24px;color:#b91c1c"><b>Error '+r.status+': '+esc(d.error||'fallo')+'</b></div>';return;}
     var h=d.header||{};
     var numop = h.numero_op || ('EBR-'+EBR_ID);
-    var estado = h.estado||'—';
+    var estado = h.estado||'·';
     var fase = h.fase||'fabricacion';
     var faseLbl = ({fabricacion:'Fabricación · OP',envasado:'Envasado · OF',acondicionamiento:'Acondicionamiento · OA'})[fase]||fase;
     // Rótulos de pesaje: reusa el generador existente /rotulos/<producto>/<kg>
@@ -7583,18 +7583,18 @@ async function load(){
         '<div class="htitle">'+
           '<div class="hkicker">📋 Orden de Producción · '+esc(faseLbl)+'</div>'+
           '<h1>'+esc(numop)+'</h1>'+
-          '<div class="prod">'+esc(h.producto||h.titulo||'—')+'</div>'+
+          '<div class="prod">'+esc(h.producto||h.titulo||'·')+'</div>'+
           ((d.mi_rol&&d.mi_rol.rol)?'<div style="margin-top:6px"><span style="display:inline-flex;align-items:center;gap:5px;background:#f5f3ff;color:#6d28d9;font-size:12px;font-weight:700;padding:4px 11px;border-radius:20px;border:1px solid #a78bfa">&#128100; '+esc(d.mi_rol.rol)+'</span></div>':'')+
         '</div>'+
         '<span class="estado-badge" style="background:'+estadoBg(estado)+';color:'+estadoColor(estado)+'">'+esc(estado)+'</span>'+
       '</div>'+
       '<div class="grid">'+
-        '<div><div class="lbl">N° de Lote Bulk</div><div class="val mono">'+esc(h.lote_codigo||'—')+'</div></div>'+
+        '<div><div class="lbl">N° de Lote Bulk</div><div class="val mono">'+esc(h.lote_codigo||'·')+'</div></div>'+
         '<div><div class="lbl">Tamaño de Lote</div><div class="val">'+gfmt(h.lote_size_g)+'</div></div>'+
-        '<div><div class="lbl">Fecha / Hora</div><div class="val">'+esc((h.iniciado_at_utc||'—').substring(0,16).replace("T"," "))+'</div></div>'+
-        '<div><div class="lbl">Área o Línea</div><div class="val">'+esc(h.area_linea||'—')+'</div></div>'+
-        '<div><div class="lbl">Elaborado por</div><div class="val">'+esc(h.operario||'—')+'</div></div>'+
-        '<div><div class="lbl">Supervisado por</div><div class="val">'+esc(h.supervisado_por||'—')+'</div></div>'+
+        '<div><div class="lbl">Fecha / Hora</div><div class="val">'+esc((h.iniciado_at_utc||'·').substring(0,16).replace("T"," "))+'</div></div>'+
+        '<div><div class="lbl">Área o Línea</div><div class="val">'+esc(h.area_linea||'·')+'</div></div>'+
+        '<div><div class="lbl">Elaborado por</div><div class="val">'+esc(h.operario||'·')+'</div></div>'+
+        '<div><div class="lbl">Supervisado por</div><div class="val">'+esc(h.supervisado_por||'·')+'</div></div>'+
         '<div style="grid-column:1/-1"><div class="lbl">Observaciones</div><div class="val" style="font-weight:400">'+esc(h.observaciones||'Ninguna')+'</div></div>'+
       '</div>'+
       (h.liberado_por ? '<div class="liber-line">✅ Liberado por <b>'+esc(h.liberado_por)+'</b>'+(h.liberado_at_utc?(' · '+esc(h.liberado_at_utc.substring(0,16).replace("T"," "))):'')+'</div>' : '')+
@@ -7608,26 +7608,26 @@ async function load(){
     // Instrucción de Manufactura (MyBatch parity): cabecera de manufactura
     // (cantidades · densidad · rendimiento · aprobado calidad) + precauciones + pasos.
     function fld(l,v){return '<div><div class="lbl">'+l+'</div><div class="val">'+v+'</div></div>';}
-    function dt(s){return s? esc(String(s).substring(0,16).replace("T"," ")) : '—';}
-    function mlf(v){return v!=null? (Number(v).toLocaleString('es-CO',{minimumFractionDigits:2,maximumFractionDigits:2})+' mL') : '—';}
+    function dt(s){return s? esc(String(s).substring(0,16).replace("T"," ")) : '·';}
+    function mlf(v){return v!=null? (Number(v).toLocaleString('es-CO',{minimumFractionDigits:2,maximumFractionDigits:2})+' mL') : '·';}
     // Cantidad Producida/Aprobada = "X Gr - Y mL" (granel en gramos y su equivalente mL).
-    var prodAprob = (h.cantidad_real_g!=null? gfmt(h.cantidad_real_g):'—') +
+    var prodAprob = (h.cantidad_real_g!=null? gfmt(h.cantidad_real_g):'·') +
                     (h.ml_envasable!=null? (' - '+mlf(h.ml_envasable)) : '');
-    var estManuf = h.estado||'—';
+    var estManuf = h.estado||'·';
     // Cabecera fiel a "INSTRUCCIONES DE MANUFACTURA" (MyBatch · Sebastián 5-jun).
     var manuf='<div class="grid" style="padding:0;margin-bottom:16px">'+
-      fld('N° de Lote Bulk', '<span class="mono">'+esc(h.lote_codigo||'—')+'</span>')+
+      fld('N° de Lote Bulk', '<span class="mono">'+esc(h.lote_codigo||'·')+'</span>')+
       fld('Cantidad Ordenada', gfmt(h.cantidad_objetivo_g))+
-      fld('Área o Línea', esc(h.area_linea||'—'))+
+      fld('Área o Línea', esc(h.area_linea||'·'))+
       fld('Fecha Inicio', dt(h.iniciado_at_utc))+
       fld('Fecha Final', dt(h.completado_at_utc))+
       fld('Estado Actual', '<b style="color:'+estadoColor(estManuf)+'">'+esc(estManuf)+'</b>')+
       fld('Cantidad Producida/Aprobada', prodAprob)+
-      fld('Densidad', h.densidad_g_ml? (Number(h.densidad_g_ml).toLocaleString('es-CO',{maximumFractionDigits:3})+' g/mL'):'—')+
-      fld('Rendimiento', h.yield_pct!=null? (Number(h.yield_pct).toLocaleString('es-CO',{maximumFractionDigits:2})+'%'):'—')+
+      fld('Densidad', h.densidad_g_ml? (Number(h.densidad_g_ml).toLocaleString('es-CO',{maximumFractionDigits:3})+' g/mL'):'·')+
+      fld('Rendimiento', h.yield_pct!=null? (Number(h.yield_pct).toLocaleString('es-CO',{maximumFractionDigits:2})+'%'):'·')+
       fld('Cantidad Disponible', mlf(h.cantidad_disponible_ml))+
-      fld('Supervisado por', esc(h.supervisado_por||'—'))+
-      fld('Aprobado por (Calidad)', esc(h.liberado_por_full||h.liberado_por||'—'))+
+      fld('Supervisado por', esc(h.supervisado_por||'·'))+
+      fld('Aprobado por (Calidad)', esc(h.liberado_por_full||h.liberado_por||'·'))+
       '</div>';
     var editable = (estado==='iniciado'||estado==='en_proceso') && !!(d.mi_rol && d.mi_rol.puede_ejecutar);
     // 1. Precauciones (MyBatch ① · texto + "+ Agregar Equipo" + lista de equipos/precauciones)
@@ -7695,8 +7695,8 @@ async function load(){
           } else { pesadaCol='<span style="color:#cbd5e1">pendiente</span>'; }
           return '<tr>'+
             '<td><span class="mono">'+esc(p.material_id)+'</span> '+esc(p.material_nombre||'')+'</td>'+
-            '<td class="num">'+(p.porcentaje!=null?Number(p.porcentaje).toLocaleString('es-CO',{maximumFractionDigits:3})+'%':'—')+'</td>'+
-            '<td class="mono">'+esc(p.lote||'—')+'</td>'+
+            '<td class="num">'+(p.porcentaje!=null?Number(p.porcentaje).toLocaleString('es-CO',{maximumFractionDigits:3})+'%':'·')+'</td>'+
+            '<td class="mono">'+esc(p.lote||'·')+'</td>'+
             '<td class="num">'+gfmt(p.cant_a_pesar_g)+'</td>'+
             '<td class="num">'+pesadaCol+'</td>'+
             '<td style="text-align:center;white-space:nowrap">'+
@@ -7722,8 +7722,8 @@ async function load(){
       (pasos.length
       ? '<table><thead><tr><th>Actividad</th><th>Realizado por</th><th>Verificado por</th><th style="text-align:center">Acciones</th></tr></thead><tbody>'+
         pasos.map(function(p,i){
-          var realizado = p.completado_flag ? (esc(p.realizado_por_full||p.operario||'—')+(p.completado?' <span class="muted">'+esc(p.completado.substring(0,16).replace("T"," "))+'</span>':'')) : '<span class="muted">pendiente</span>';
-          var verificado = (p.verificado_por&&p.verificado_por.trim()) ? esc(p.verificado_por_full||p.verificado_por) : '<span class="muted">—</span>';
+          var realizado = p.completado_flag ? (esc(p.realizado_por_full||p.operario||'·')+(p.completado?' <span class="muted">'+esc(p.completado.substring(0,16).replace("T"," "))+'</span>':'')) : '<span class="muted">pendiente</span>';
+          var verificado = (p.verificado_por&&p.verificado_por.trim()) ? esc(p.verificado_por_full||p.verificado_por) : '<span class="muted">·</span>';
           return '<tr><td style="font-size:12.5px"><b>Paso '+esc(p.orden)+'.</b> '+esc(p.descripcion)+'</td>'+
             '<td style="font-size:11.5px">'+realizado+'</td>'+
             '<td style="font-size:11.5px">'+verificado+'</td>'+
@@ -7753,7 +7753,7 @@ async function load(){
           return '<tr><td style="font-size:12.5px">'+esc(cc.control)+(cc.rango?' <span class="muted" style="font-size:10px">('+esc(cc.rango)+')</span>':'')+'</td>'+
             '<td style="font-size:12.5px">'+resCol+'</td>'+
             '<td style="font-size:11.5px">'+esc(cc.observaciones||'No aplica')+'</td>'+
-            '<td style="font-size:11.5px">'+(cc.realizado_por?esc(cc.realizado_por_full||cc.realizado_por):'<span class="muted">—</span>')+'</td>'+
+            '<td style="font-size:11.5px">'+(cc.realizado_por?esc(cc.realizado_por_full||cc.realizado_por):'<span class="muted">·</span>')+'</td>'+
             '<td style="text-align:center;white-space:nowrap"><button class="b-i tip-r" data-tip="Detalle del control: rango, resultado, conforme, quién y cuándo." onclick="infoIpc('+i+')">i</button> '+regBtn+'</td>'+
           '</tr>';
         }).join('')+'</tbody></table>'
@@ -7767,7 +7767,7 @@ async function load(){
       (obsP.length
       ? '<table><thead><tr><th>Descripción de la observación</th><th>Realizada por</th><th>Fecha y hora</th></tr></thead><tbody>'+
         obsP.map(function(o){return '<tr><td style="font-size:12.5px">'+esc(o.descripcion||'')+'</td>'+
-          '<td style="font-size:11.5px">'+esc(o.registrado_por_full||o.registrado_por||'—')+'</td>'+
+          '<td style="font-size:11.5px">'+esc(o.registrado_por_full||o.registrado_por||'·')+'</td>'+
           '<td class="muted" style="font-size:11px">'+esc((o.fecha||'').substring(0,16).replace("T"," "))+'</td></tr>';}).join('')+'</tbody></table>'
       : '<div class="muted">Sin observaciones registradas.</div>');
     // 8. Registros Físicos del Proceso Manufactura (fotos/PDF adjuntos)
@@ -7779,7 +7779,7 @@ async function load(){
       (regs.length
       ? '<table><thead><tr><th>Código</th><th>Descripción</th><th style="text-align:center">Acciones</th></tr></thead><tbody>'+
         regs.map(function(g){return '<tr><td class="mono">'+esc(g.id)+'</td><td style="font-size:12.5px">'+esc(g.descripcion||'')+'</td>'+
-          '<td style="text-align:center">'+(g.tiene_pdf?'<a class="b-pdf-sm" href="/api/brd/ebr/'+EBR_ID+'/registros-fisicos/'+g.id+'/pdf" target="_blank" data-tip="Ver el registro físico (foto o PDF).">📄 Ver</a>':'<span class="muted">—</span>')+'</td></tr>';}).join('')+'</tbody></table>'
+          '<td style="text-align:center">'+(g.tiene_pdf?'<a class="b-pdf-sm" href="/api/brd/ebr/'+EBR_ID+'/registros-fisicos/'+g.id+'/pdf" target="_blank" data-tip="Ver el registro físico (foto o PDF).">📄 Ver</a>':'<span class="muted">·</span>')+'</td></tr>';}).join('')+'</tbody></table>'
       : '<div class="muted">Sin registros físicos adjuntos.</div>');
     // Rótulo de limpieza del área (PRD-PRO-002-F02) · enlace al rótulo virtual.
     var _aid=(d.header&&d.header.area_id)?d.header.area_id:null;
@@ -7796,7 +7796,7 @@ async function load(){
            var hd='<div style="font-weight:700;font-size:12.5px;margin-top:10px">'+esc(cr.usuario_full||cr.usuario)+' · '+esc(cr.accion)+' <span class="muted" style="font-weight:400">'+dt(cr.fecha)+'</span></div>';
            if(cr.campos && cr.campos.length){
              hd+='<table style="margin-top:4px"><thead><tr><th>Campo</th><th>Valor anterior</th><th>Valor nuevo</th></tr></thead><tbody>'+
-               cr.campos.map(function(cp){return '<tr><td style="font-size:11.5px">'+esc(cp.campo)+'</td><td style="font-size:11.5px;color:#94a3b8">'+esc(cp.anterior||'—')+'</td><td style="font-size:11.5px;color:#166534">'+esc(cp.nuevo||'—')+'</td></tr>';}).join('')+'</tbody></table>';
+               cr.campos.map(function(cp){return '<tr><td style="font-size:11.5px">'+esc(cp.campo)+'</td><td style="font-size:11.5px;color:#94a3b8">'+esc(cp.anterior||'·')+'</td><td style="font-size:11.5px;color:#166534">'+esc(cp.nuevo||'·')+'</td></tr>';}).join('')+'</tbody></table>';
            } else if(cr.detalle){
              hd+='<div class="muted" style="font-size:11.5px">'+esc(cr.detalle)+'</div>';
            }
@@ -7886,8 +7886,8 @@ table.t tfoot td{font-weight:800;color:var(--cx-text,#18181b);border-top:2px sol
 <script>
 var EBR_ID=__EBR_ID__;
 function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
-function gfmt(n){return n==null?'—':Number(n).toLocaleString('es-CO',{maximumFractionDigits:1})+' g';}
-function mlf(n){return n==null?'—':Number(n).toLocaleString('es-CO',{maximumFractionDigits:2})+' mL';}
+function gfmt(n){return n==null?'·':Number(n).toLocaleString('es-CO',{maximumFractionDigits:1})+' g';}
+function mlf(n){return n==null?'·':Number(n).toLocaleString('es-CO',{maximumFractionDigits:2})+' mL';}
 function fld(l,v){return '<div><div class="lbl">'+l+'</div><div class="val">'+v+'</div></div>';}
 function estCol(e){e=(e||'').toLowerCase();if(e.indexOf('aprob')>=0||e.indexOf('liber')>=0)return '#166534';if(e.indexOf('proceso')>=0)return '#b45309';if(e.indexOf('rechaz')>=0||e.indexOf('cancel')>=0)return '#b91c1c';return '#475569';}
 async function load(){
@@ -7897,24 +7897,24 @@ async function load(){
     var d=await r.json();
     if(!r.ok){document.getElementById('cab').innerHTML='<span style="color:#b91c1c">Error: '+esc(d.error||r.status)+'</span>';return;}
     var h=d.header||{};
-    var estado=h.estado||'—';
+    var estado=h.estado||'·';
     var densi=h.densidad_g_ml?Number(h.densidad_g_ml):null;
     var gB=(Number(h.lote_size_g||0)>0)?Number(h.lote_size_g):(h.cantidad_objetivo_g!=null?Number(h.cantidad_objetivo_g):null);
     var mlB=(gB!=null&&densi)?(gB/densi):null;
-    var tamBulk=(gB!=null?gfmt(gB):'—')+(mlB!=null?(' - '+mlf(mlB)):'');
+    var tamBulk=(gB!=null?gfmt(gB):'·')+(mlB!=null?(' - '+mlf(mlB)):'');
     document.getElementById('cab').innerHTML=
       '<div class="ortit">ORDEN DE ENVASADO N°: '+esc(h.numero_op||('OF-'+EBR_ID))+'</div>'+
-      '<div class="prod">'+esc(h.producto||h.titulo||'—')+'</div>'+
+      '<div class="prod">'+esc(h.producto||h.titulo||'·')+'</div>'+
       '<div style="margin:-10px 0 18px"><span style="display:inline-flex;align-items:center;gap:5px;background:var(--cx-primary-pale,#f5f3ff);color:var(--cx-primary,#6d28d9);font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;border:1px solid var(--cx-primary-light,#a78bfa)">&#128100; '+esc((d.mi_rol&&d.mi_rol.rol)||'Usuario')+'</span></div>'+
       '<div class="grid">'+
-        fld('N° Lote Bulk','<span class="mono">'+esc(h.lote_codigo||'—')+'</span>')+
+        fld('N° Lote Bulk','<span class="mono">'+esc(h.lote_codigo||'·')+'</span>')+
         fld('Tamaño Bulk',esc(tamBulk))+
         fld('Estado Actual','<b style="color:'+estCol(estado)+'">'+esc(estado)+'</b>')+
-        fld('Elaborado por',esc(h.operario||'—'))+
+        fld('Elaborado por',esc(h.operario||'·'))+
         fld('Observaciones',esc(h.observaciones||'Ninguna'))+
-        fld('Cantidad por Envasar',mlB!=null?mlf(mlB):'—')+
-        fld('Densidad Bulk',densi?(densi.toLocaleString('es-CO',{maximumFractionDigits:3})+' g/mL'):'—')+
-        fld('Supervisado por',esc(h.supervisado_por||'—'))+
+        fld('Cantidad por Envasar',mlB!=null?mlf(mlB):'·')+
+        fld('Densidad Bulk',densi?(densi.toLocaleString('es-CO',{maximumFractionDigits:3})+' g/mL'):'·')+
+        fld('Supervisado por',esc(h.supervisado_por||'·'))+
       '</div>'+
       '<div class="btnrow">'+
         '<a class="bt bt-add" href="/planta/instrucciones-envasado/'+EBR_ID+'">&#9654; Instrucciones de Envasado</a>'+
@@ -7941,14 +7941,14 @@ async function load(){
             if(p.id){acc='<button class="ab ab-x" onclick="borrarPres('+p.id+')" title="Eliminar">&#215;</button>'+acc;}
           }
           return '<tr>'+
-            '<td>'+esc(p.presentacion||'—')+(p.cliente?' <span style="color:#94a3b8;font-size:11px">· '+esc(p.cliente)+'</span>':'')+(p.fuente==='manual'?' <span style="color:#7c3aed;font-size:10px;font-weight:700">·manual</span>':'')+'</td>'+
-            '<td class="mono">'+esc(p.lote||'—')+'</td>'+
+            '<td>'+esc(p.presentacion||'·')+(p.cliente?' <span style="color:#94a3b8;font-size:11px">· '+esc(p.cliente)+'</span>':'')+(p.fuente==='manual'?' <span style="color:#7c3aed;font-size:10px;font-weight:700">·manual</span>':'')+'</td>'+
+            '<td class="mono">'+esc(p.lote||'·')+'</td>'+
             '<td>'+(p.unidades!=null?Number(p.unidades).toLocaleString('es-CO'):'')+'</td>'+
-            '<td>'+esc(p.area||'—')+'</td>'+
+            '<td>'+esc(p.area||'·')+'</td>'+
             '<td>'+(p.cantidad_ml!=null?mlf(p.cantidad_ml):'')+'</td>'+
             '<td>'+(p.unidades_final!=null?Number(p.unidades_final).toLocaleString('es-CO'):'')+'</td>'+
             '<td>'+(p.rend_pct!=null?(Number(p.rend_pct).toLocaleString('es-CO',{maximumFractionDigits:2})+'%'):'')+'</td>'+
-            '<td>'+esc(p.estado||'—')+'</td>'+
+            '<td>'+esc(p.estado||'·')+'</td>'+
             '<td><div class="act">'+acc+'</div></td>'+
           '</tr>';
         }).join('')
@@ -7973,9 +7973,9 @@ async function load(){
             if(m.id){acc='<button class="ab ab-x" onclick="borrarMat('+m.id+')" title="Eliminar">&#215;</button>'+acc;}
           }
           return '<tr>'+
-            '<td class="mono">'+esc(m.lote_envasado||'—')+'</td>'+
-            '<td>'+esc(m.material||'—')+(m.fuente==='manual'?' <span style="color:#7c3aed;font-size:10px;font-weight:700">·manual</span>':'')+'</td>'+
-            '<td class="mono">'+esc(m.lote_material||'—')+'</td>'+
+            '<td class="mono">'+esc(m.lote_envasado||'·')+'</td>'+
+            '<td>'+esc(m.material||'·')+(m.fuente==='manual'?' <span style="color:#7c3aed;font-size:10px;font-weight:700">·manual</span>':'')+'</td>'+
+            '<td class="mono">'+esc(m.lote_material||'·')+'</td>'+
             '<td>'+mc(m.requerida)+'</td>'+
             '<td>'+mc(m.devuelta)+'</td>'+
             '<td>'+mc(m.utilizada)+'</td>'+
@@ -8049,7 +8049,7 @@ async function matModal(i){
   var ov=document.getElementById('matov');
   if(!ov){ov=document.createElement('div');ov.id='matov';ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:9999';document.body.appendChild(ov);}
   var selCod=(m&&m.material_codigo)||'';
-  var opciones='<option value="">— elegí un material de envase —</option>'+opc.map(function(o){return '<option value="'+esc(o.codigo)+'"'+(o.codigo===selCod?' selected':'')+'>'+esc(o.label)+'</option>';}).join('');
+  var opciones='<option value="">· elegí un material de envase ·</option>'+opc.map(function(o){return '<option value="'+esc(o.codigo)+'"'+(o.codigo===selCod?' selected':'')+'>'+esc(o.label)+'</option>';}).join('');
   function v(x){return (x==null?'':x);}
   ov.innerHTML='<div style="background:#fff;border-radius:14px;padding:22px;max-width:520px;width:92%;box-shadow:0 10px 40px rgba(0,0,0,.3)">'+
     '<div style="font-weight:800;font-size:17px;margin-bottom:14px">'+(m?'Editar material de envase':'Agregar material de envase')+'</div>'+
@@ -8200,7 +8200,7 @@ table.t tfoot td{font-weight:800;color:var(--cx-text,#18181b);border-top:2px sol
 <script>
 var EBR_ID=__EBR_ID__;
 function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
-function ufmt(n){return n==null?'—':Number(n).toLocaleString('es-CO');}
+function ufmt(n){return n==null?'·':Number(n).toLocaleString('es-CO');}
 function fld(l,v){return '<div><div class="lbl">'+l+'</div><div class="val">'+v+'</div></div>';}
 function estCol(e){e=(e||'').toLowerCase();if(e.indexOf('aprob')>=0||e.indexOf('liber')>=0)return '#166534';if(e.indexOf('proceso')>=0)return '#b45309';if(e.indexOf('rechaz')>=0||e.indexOf('cancel')>=0)return '#b91c1c';return '#475569';}
 async function load(){
@@ -8210,22 +8210,22 @@ async function load(){
     var d=await r.json();
     if(!r.ok){document.getElementById('cab').innerHTML='<span style="color:#b91c1c">Error: '+esc(d.error||r.status)+'</span>';return;}
     var h=d.header||{};
-    var estado=h.estado||'—';
+    var estado=h.estado||'·';
     var pres=d.acond_presentaciones||[];
     var totUds=pres.reduce(function(a,p){return a+(Number(p.unidades)||0);},0);
     document.getElementById('cab').innerHTML=
       '<div class="ortit">ORDEN DE ACONDICIONAMIENTO N°: '+esc(h.numero_op||('OA-'+EBR_ID))+'</div>'+
-      '<div class="prod">'+esc(h.producto||h.titulo||'—')+(pres.length&&pres[0].presentacion?(', '+esc(pres[0].presentacion)):'')+'</div>'+
+      '<div class="prod">'+esc(h.producto||h.titulo||'·')+(pres.length&&pres[0].presentacion?(', '+esc(pres[0].presentacion)):'')+'</div>'+
       '<div style="margin:-10px 0 18px"><span style="display:inline-flex;align-items:center;gap:5px;background:var(--cx-primary-pale,#f5f3ff);color:var(--cx-primary,#6d28d9);font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;border:1px solid var(--cx-primary-light,#a78bfa)">&#128100; '+esc((d.mi_rol&&d.mi_rol.rol)||'Usuario')+'</span></div>'+
       '<div class="grid">'+
-        fld('N° Lote','<span class="mono">'+esc(h.lote_codigo||'—')+'</span>')+
+        fld('N° Lote','<span class="mono">'+esc(h.lote_codigo||'·')+'</span>')+
         fld('Unidades acondicionadas',ufmt(totUds))+
         fld('Estado Actual','<b style="color:'+estCol(estado)+'">'+esc(estado)+'</b>')+
-        fld('Elaborado por',esc(h.operario||'—'))+
+        fld('Elaborado por',esc(h.operario||'·'))+
         fld('Observaciones',esc(h.observaciones||'Ninguna'))+
-        fld('Área / Línea',esc(h.area_linea||'—'))+
-        fld('Supervisado por',esc(h.supervisado_por||'—'))+
-        fld('Liberado por',esc(h.liberado_por_full||'—'))+
+        fld('Área / Línea',esc(h.area_linea||'·'))+
+        fld('Supervisado por',esc(h.supervisado_por||'·'))+
+        fld('Liberado por',esc(h.liberado_por_full||'·'))+
       '</div>'+
       '<div class="btnrow">'+
         '<a class="bt bt-add" href="/planta/instrucciones-acondicionamiento/'+EBR_ID+'">&#9654; Instrucciones de Acondicionamiento</a>'+
@@ -8240,10 +8240,10 @@ async function load(){
     var presRows=pres.length
       ? pres.map(function(p){
           return '<tr>'+
-            '<td>'+esc(p.presentacion||'—')+(p.cliente?' <span style="color:#94a3b8;font-size:11px">· '+esc(p.cliente)+'</span>':'')+'</td>'+
-            '<td class="mono">'+esc(p.lote||'—')+'</td>'+
+            '<td>'+esc(p.presentacion||'·')+(p.cliente?' <span style="color:#94a3b8;font-size:11px">· '+esc(p.cliente)+'</span>':'')+'</td>'+
+            '<td class="mono">'+esc(p.lote||'·')+'</td>'+
             '<td>'+(p.unidades!=null?Number(p.unidades).toLocaleString('es-CO'):'')+'</td>'+
-            '<td>'+esc(p.estado||'—')+'</td>'+
+            '<td>'+esc(p.estado||'·')+'</td>'+
             '<td><div class="act"><a class="ab ab-play" href="/planta/instrucciones-acondicionamiento/'+EBR_ID+'" title="Ejecutar / Instrucciones de Acondicionamiento">&#9654;</a></div></td>'+
           '</tr>';
         }).join('')
@@ -8260,9 +8260,9 @@ async function load(){
     var matRows=mats.length
       ? mats.map(function(m){
           return '<tr>'+
-            '<td class="mono">'+esc(m.lote_acond||'—')+'</td>'+
-            '<td>'+esc(m.material||'—')+'</td>'+
-            '<td class="mono">'+esc(m.lote_material||'—')+'</td>'+
+            '<td class="mono">'+esc(m.lote_acond||'·')+'</td>'+
+            '<td>'+esc(m.material||'·')+'</td>'+
+            '<td class="mono">'+esc(m.lote_material||'·')+'</td>'+
             '<td>'+mc(m.requerida)+'</td>'+
             '<td>'+mc(m.devuelta)+'</td>'+
             '<td>'+mc(m.utilizada)+'</td>'+
@@ -8389,7 +8389,7 @@ table.t tbody tr:hover td{background:var(--cx-primary-pale,#f5f3ff)}
 <script>
 var EBR_ID=__EBR_ID__;
 function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
-function dt(s){return s?esc(String(s).substring(0,16).replace('T',' ')):'—';}
+function dt(s){return s?esc(String(s).substring(0,16).replace('T',' ')):'·';}
 function estCol(e){e=(e||'').toLowerCase();if(e.indexOf('aprob')>=0||e.indexOf('liber')>=0||e.indexOf('complet')>=0)return '#166534';if(e.indexOf('proceso')>=0)return '#0d9488';if(e.indexOf('rechaz')>=0||e.indexOf('cancel')>=0)return '#b91c1c';return '#475569';}
 function fld(l,v){return '<div><div class="lbl">'+l+'</div><div class="val">'+v+'</div></div>';}
 async function load(){
@@ -8399,7 +8399,7 @@ async function load(){
     var d=await r.json();
     if(!r.ok){document.getElementById('cab').innerHTML='<span style="color:#b91c1c">Error: '+esc(d.error||r.status)+'</span>';return;}
     var h=d.header||{};
-    var estado=h.estado||'—';
+    var estado=h.estado||'·';
     var pres=d.envasado_presentaciones||[];
     var uds=pres.reduce(function(a,p){return a+(Number(p.unidades)||0);},0);
     document.getElementById('cab').innerHTML=
@@ -8413,12 +8413,12 @@ async function load(){
           '<button class="bt bt-up" onclick="location.reload()">&#8635; Actualizar</button>'+
         '</div>'+
       '</div>'+
-      '<div class="subl">'+esc(h.numero_op||('OF-'+EBR_ID))+'. Lote N°: '+esc(h.lote_codigo||'—')+'</div>'+
-      '<div class="prod">'+esc(h.producto||h.titulo||'—')+(pres.length&&pres[0].presentacion?(', '+esc(pres[0].presentacion)):'')+'</div>'+
+      '<div class="subl">'+esc(h.numero_op||('OF-'+EBR_ID))+'. Lote N°: '+esc(h.lote_codigo||'·')+'</div>'+
+      '<div class="prod">'+esc(h.producto||h.titulo||'·')+(pres.length&&pres[0].presentacion?(', '+esc(pres[0].presentacion)):'')+'</div>'+
       '<div class="grid">'+
-        fld('Programado por',esc(h.operario||'—'))+
-        fld('Unidades',uds?uds.toLocaleString('es-CO'):'—')+
-        fld('N° de Lote Bulk','<span style="font-family:ui-monospace,monospace">'+esc(h.lote_codigo||'—')+'</span>')+
+        fld('Programado por',esc(h.operario||'·'))+
+        fld('Unidades',uds?uds.toLocaleString('es-CO'):'·')+
+        fld('N° de Lote Bulk','<span style="font-family:ui-monospace,monospace">'+esc(h.lote_codigo||'·')+'</span>')+
         fld('Fecha Inicio',dt(h.iniciado_at_utc))+
         fld('Fecha Final',dt(h.completado_at_utc))+
         fld('Estado Actual','<b style="color:'+estCol(estado)+'">'+esc(estado)+'</b>')+
@@ -8453,7 +8453,7 @@ async function load(){
     html+='<div class="card"><div class="sectit">3. Recepción de Material de Envase</div>'+
       '<div class="sechint">Verificar contra la orden de envasado y la etiqueta o rótulo de identificación de los siguientes materiales de envase:</div>'+
       '<div class="tw"><table class="t"><thead><tr><th>Material</th><th>N° lote</th><th>Cant. requerida</th><th>Cant. recibida</th><th>Acciones</th></tr></thead><tbody>'+
-      (mats.length?mats.map(function(m){return '<tr><td>'+esc(m.material||'—')+'</td><td class="mono">'+esc(m.lote_material||m.lote_envasado||'—')+'</td><td>'+(m.requerida!=null?Number(m.requerida).toLocaleString('es-CO'):'')+'</td><td>'+(m.recibida!=null?Number(m.recibida).toLocaleString('es-CO'):'<span class="pend">pendiente</span>')+'</td><td><div class="act">'+abI()+abEd()+'</div></td></tr>';}).join('')
+      (mats.length?mats.map(function(m){return '<tr><td>'+esc(m.material||'·')+'</td><td class="mono">'+esc(m.lote_material||m.lote_envasado||'·')+'</td><td>'+(m.requerida!=null?Number(m.requerida).toLocaleString('es-CO'):'')+'</td><td>'+(m.recibida!=null?Number(m.recibida).toLocaleString('es-CO'):'<span class="pend">pendiente</span>')+'</td><td><div class="act">'+abI()+abEd()+'</div></td></tr>';}).join('')
         :'<tr><td colspan="5" class="muted" style="text-align:center">Sin materiales registrados.</td></tr>')+
       '</tbody></table></div>'+
       '<div class="regfoot">Mostrando '+mats.length+' de '+mats.length+' registro'+(mats.length===1?'':'s')+'</div></div>';
@@ -8461,26 +8461,26 @@ async function load(){
     html+='<div class="card"><div class="sechead"><div class="sectit">4. Envasado</div>'+(editable?'<button class="btreg" onclick="registrarActividades()">&#10003; Registrar Actividades</button>':'')+'</div>'+
       '<div class="sechint">Realizar las siguientes actividades de acuerdo al orden establecido:</div>'+
       (pasos.length?('<div class="tw"><table class="t"><thead><tr><th>Actividad</th><th>Realizado por</th><th>Verificado por</th><th>Acciones</th></tr></thead><tbody>'+
-        pasos.map(function(p,i){var ts=p.completado?('<br><span class="muted" style="font-size:11.5px">'+dt(p.completado)+'</span>'):'';return '<tr><td><span class="pasonum">Paso '+(i+1)+'.</span>'+esc(p.descripcion||'')+'</td><td>'+(p.realizado_por_full?(esc(p.realizado_por_full)+ts):'<span class="pend">—</span>')+'</td><td>'+(p.verificado_por_full?(esc(p.verificado_por_full)+ts):'<span class="pend">—</span>')+'</td><td><div class="act"><button class="ab ab-i" onclick="infoPaso('+p.orden+')" title="Detalles de la Verificación">i</button></div></td></tr>';}).join('')+
+        pasos.map(function(p,i){var ts=p.completado?('<br><span class="muted" style="font-size:11.5px">'+dt(p.completado)+'</span>'):'';return '<tr><td><span class="pasonum">Paso '+(i+1)+'.</span>'+esc(p.descripcion||'')+'</td><td>'+(p.realizado_por_full?(esc(p.realizado_por_full)+ts):'<span class="pend">·</span>')+'</td><td>'+(p.verificado_por_full?(esc(p.verificado_por_full)+ts):'<span class="pend">·</span>')+'</td><td><div class="act"><button class="ab ab-i" onclick="infoPaso('+p.orden+')" title="Detalles de la Verificación">i</button></div></td></tr>';}).join('')+
         '</tbody></table></div>'):'<div class="muted">Sin pasos de envasado (se definen en el MBR).</div>')+
       '</div>';
     var ipc=d.ipc||[];
     html+='<div class="card"><div class="sechead"><div class="sectit">5. Controles en Proceso</div>'+(editable?'<button class="btreg" onclick="prox()">+ Control de Volumen</button>':'')+'</div>'+
       '<div class="sechint">Realizar muestreo y registrar control en proceso:</div>'+
       (ipc.length?('<div class="tw"><table class="t"><thead><tr><th>Control</th><th>Resultado</th><th>Observaciones</th><th>Realizado por</th><th>Acciones</th></tr></thead><tbody>'+
-        ipc.map(function(c){var res=c.conforme===2?'<span class="bdg" style="background:var(--cx-bg-alt);color:var(--cx-text-mute)">No aplica</span>':(c.resultado?(esc(c.resultado)+bdgC(c.conforme)):'<span class="pend">pendiente</span>');return '<tr><td>'+esc(c.control||'')+(c.rango?' <span class="muted" style="font-size:11px">('+esc(c.rango)+')</span>':'')+'</td><td>'+res+'</td><td>'+esc(c.observaciones||'No aplica')+'</td><td>'+(c.realizado_por?esc(c.realizado_por_full||c.realizado_por):'<span class="pend">—</span>')+'</td><td><div class="act">'+abI()+abEd()+'</div></td></tr>';}).join('')+
+        ipc.map(function(c){var res=c.conforme===2?'<span class="bdg" style="background:var(--cx-bg-alt);color:var(--cx-text-mute)">No aplica</span>':(c.resultado?(esc(c.resultado)+bdgC(c.conforme)):'<span class="pend">pendiente</span>');return '<tr><td>'+esc(c.control||'')+(c.rango?' <span class="muted" style="font-size:11px">('+esc(c.rango)+')</span>':'')+'</td><td>'+res+'</td><td>'+esc(c.observaciones||'No aplica')+'</td><td>'+(c.realizado_por?esc(c.realizado_por_full||c.realizado_por):'<span class="pend">·</span>')+'</td><td><div class="act">'+abI()+abEd()+'</div></td></tr>';}).join('')+
         '</tbody></table></div>'):'<div class="muted">Sin controles en proceso (se definen en el MBR).</div>')+
       '</div>';
     var obs=d.observaciones_proceso||[];
     html+='<div class="card"><div class="sechead"><div class="sectit">6. Observaciones Generales del Proceso</div>'+regBtn('Registrar')+'</div>'+
       (obs.length?('<div class="tw"><table class="t"><thead><tr><th>Descripción de la observación</th><th>Realizada por</th><th>Fecha y hora</th></tr></thead><tbody>'+
-        obs.map(function(o){return '<tr><td>'+esc(o.descripcion||'')+'</td><td>'+esc(o.registrado_por_full||o.registrado_por||'—')+'</td><td class="muted">'+dt(o.fecha)+'</td></tr>';}).join('')+
+        obs.map(function(o){return '<tr><td>'+esc(o.descripcion||'')+'</td><td>'+esc(o.registrado_por_full||o.registrado_por||'·')+'</td><td class="muted">'+dt(o.fecha)+'</td></tr>';}).join('')+
         '</tbody></table></div>'):'<div class="muted">Sin observaciones registradas.</div>')+
       '</div>';
     var regs=d.registros_fisicos||[];
     html+='<div class="card"><div class="sectit">7. Registros Físicos del Proceso de Envasado</div>'+
       (regs.length?('<div class="tw"><table class="t"><thead><tr><th>Código</th><th>Descripción</th><th>Documento</th></tr></thead><tbody>'+
-        regs.map(function(g){return '<tr><td class="mono">'+esc(g.id)+'</td><td>'+esc(g.descripcion||'')+'</td><td>'+(g.tiene_pdf?('<a class="ab ab-pdf" href="/api/brd/ebr/'+EBR_ID+'/registros-fisicos/'+g.id+'/pdf" target="_blank" title="Ver">&#128196;</a>'):'<span class="pend">—</span>')+'</td></tr>';}).join('')+
+        regs.map(function(g){return '<tr><td class="mono">'+esc(g.id)+'</td><td>'+esc(g.descripcion||'')+'</td><td>'+(g.tiene_pdf?('<a class="ab ab-pdf" href="/api/brd/ebr/'+EBR_ID+'/registros-fisicos/'+g.id+'/pdf" target="_blank" title="Ver">&#128196;</a>'):'<span class="pend">·</span>')+'</td></tr>';}).join('')+
         '</tbody></table></div>'):'<div class="muted">Sin registros físicos adjuntos.</div>')+
       '</div>';
     document.getElementById('cuerpo').innerHTML=html;
@@ -8513,7 +8513,7 @@ function infoPaso(orden){
   var i=pasos.findIndex(function(x){return x.orden===orden;}); if(i<0)return;
   var p=pasos[i];
   var est=p.completado_flag?'Completado':(p.iniciado?'En proceso':'Pendiente');
-  alert('DETALLES DE LA VERIFICACIÓN\\n\\nPaso '+(i+1)+': '+p.descripcion+'\\n\\nEstado: '+est+'\\nRealizado por: '+(p.realizado_por_full||'—')+'\\nVerificado por: '+(p.verificado_por_full||'—')+(p.observaciones?('\\nObservaciones: '+p.observaciones):''));
+  alert('DETALLES DE LA VERIFICACIÓN\\n\\nPaso '+(i+1)+': '+p.descripcion+'\\n\\nEstado: '+est+'\\nRealizado por: '+(p.realizado_por_full||'·')+'\\nVerificado por: '+(p.verificado_por_full||'·')+(p.observaciones?('\\nObservaciones: '+p.observaciones):''));
 }
 async function registrarActividades(){
   // Registra (completa) la siguiente actividad pendiente · endpoint GMP con audit/e-firma.
@@ -8600,7 +8600,7 @@ table.t tbody tr:hover td{background:var(--cx-primary-pale,#f5f3ff)}
 <script>
 var EBR_ID=__EBR_ID__;
 function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
-function dt(s){return s?esc(String(s).substring(0,16).replace('T',' ')):'—';}
+function dt(s){return s?esc(String(s).substring(0,16).replace('T',' ')):'·';}
 function estCol(e){e=(e||'').toLowerCase();if(e.indexOf('aprob')>=0||e.indexOf('liber')>=0||e.indexOf('complet')>=0)return '#166534';if(e.indexOf('proceso')>=0)return '#0d9488';if(e.indexOf('rechaz')>=0||e.indexOf('cancel')>=0)return '#b91c1c';return '#475569';}
 function fld(l,v){return '<div><div class="lbl">'+l+'</div><div class="val">'+v+'</div></div>';}
 async function load(){
@@ -8610,7 +8610,7 @@ async function load(){
     var d=await r.json();
     if(!r.ok){document.getElementById('cab').innerHTML='<span style="color:#b91c1c">Error: '+esc(d.error||r.status)+'</span>';return;}
     var h=d.header||{};
-    var estado=h.estado||'—';
+    var estado=h.estado||'·';
     var pres=d.acond_presentaciones||[];
     var uds=pres.reduce(function(a,p){return a+(Number(p.unidades)||0);},0);
     document.getElementById('cab').innerHTML=
@@ -8624,12 +8624,12 @@ async function load(){
           '<button class="bt bt-up" onclick="location.reload()">&#8635; Actualizar</button>'+
         '</div>'+
       '</div>'+
-      '<div class="subl">'+esc(h.numero_op||('OA-'+EBR_ID))+'. Lote N°: '+esc(h.lote_codigo||'—')+'</div>'+
-      '<div class="prod">'+esc(h.producto||h.titulo||'—')+(pres.length&&pres[0].presentacion?(', '+esc(pres[0].presentacion)):'')+'</div>'+
+      '<div class="subl">'+esc(h.numero_op||('OA-'+EBR_ID))+'. Lote N°: '+esc(h.lote_codigo||'·')+'</div>'+
+      '<div class="prod">'+esc(h.producto||h.titulo||'·')+(pres.length&&pres[0].presentacion?(', '+esc(pres[0].presentacion)):'')+'</div>'+
       '<div class="grid">'+
-        fld('Programado por',esc(h.operario||'—'))+
-        fld('Unidades',uds?uds.toLocaleString('es-CO'):'—')+
-        fld('N° de Lote','<span style="font-family:ui-monospace,monospace">'+esc(h.lote_codigo||'—')+'</span>')+
+        fld('Programado por',esc(h.operario||'·'))+
+        fld('Unidades',uds?uds.toLocaleString('es-CO'):'·')+
+        fld('N° de Lote','<span style="font-family:ui-monospace,monospace">'+esc(h.lote_codigo||'·')+'</span>')+
         fld('Fecha Inicio',dt(h.iniciado_at_utc))+
         fld('Fecha Final',dt(h.completado_at_utc))+
         fld('Estado Actual','<b style="color:'+estCol(estado)+'">'+esc(estado)+'</b>')+
@@ -8663,7 +8663,7 @@ async function load(){
     html+='<div class="card"><div class="sectit">3. Recepción de Material de Empaque</div>'+
       '<div class="sechint">Verificar contra la orden de acondicionamiento y la etiqueta o rótulo de identificación de los siguientes materiales de empaque (etiquetas, plegadizas, insertos):</div>'+
       '<div class="tw"><table class="t"><thead><tr><th>Material</th><th>N° lote</th><th>Cant. requerida</th><th>Cant. recibida</th><th>Acciones</th></tr></thead><tbody>'+
-      (mats.length?mats.map(function(m){return '<tr><td>'+esc(m.material||'—')+'</td><td class="mono">'+esc(m.lote_material||m.lote_acond||'—')+'</td><td>'+(m.requerida!=null?Number(m.requerida).toLocaleString('es-CO'):'')+'</td><td><span class="pend">pendiente</span></td><td><div class="act">'+abI()+abEd()+'</div></td></tr>';}).join('')
+      (mats.length?mats.map(function(m){return '<tr><td>'+esc(m.material||'·')+'</td><td class="mono">'+esc(m.lote_material||m.lote_acond||'·')+'</td><td>'+(m.requerida!=null?Number(m.requerida).toLocaleString('es-CO'):'')+'</td><td><span class="pend">pendiente</span></td><td><div class="act">'+abI()+abEd()+'</div></td></tr>';}).join('')
         :'<tr><td colspan="5" class="muted" style="text-align:center">Sin materiales registrados.</td></tr>')+
       '</tbody></table></div>'+
       '<div class="regfoot">Mostrando '+mats.length+' de '+mats.length+' registro'+(mats.length===1?'':'s')+'</div></div>';
@@ -8671,26 +8671,26 @@ async function load(){
     html+='<div class="card"><div class="sechead"><div class="sectit">4. Acondicionamiento</div>'+(editable?'<button class="btreg" onclick="registrarActividades()">&#10003; Registrar Actividades</button>':'')+'</div>'+
       '<div class="sechint">Realizar las siguientes actividades de acuerdo al orden establecido:</div>'+
       (pasos.length?('<div class="tw"><table class="t"><thead><tr><th>Actividad</th><th>Realizado por</th><th>Verificado por</th><th>Acciones</th></tr></thead><tbody>'+
-        pasos.map(function(p,i){var ts=p.completado?('<br><span class="muted" style="font-size:11.5px">'+dt(p.completado)+'</span>'):'';return '<tr><td><span class="pasonum">Paso '+(i+1)+'.</span>'+esc(p.descripcion||'')+'</td><td>'+(p.realizado_por_full?(esc(p.realizado_por_full)+ts):'<span class="pend">—</span>')+'</td><td>'+(p.verificado_por_full?(esc(p.verificado_por_full)+ts):'<span class="pend">—</span>')+'</td><td><div class="act"><button class="ab ab-i" onclick="infoPaso('+p.orden+')" title="Detalles de la Verificación">i</button></div></td></tr>';}).join('')+
+        pasos.map(function(p,i){var ts=p.completado?('<br><span class="muted" style="font-size:11.5px">'+dt(p.completado)+'</span>'):'';return '<tr><td><span class="pasonum">Paso '+(i+1)+'.</span>'+esc(p.descripcion||'')+'</td><td>'+(p.realizado_por_full?(esc(p.realizado_por_full)+ts):'<span class="pend">·</span>')+'</td><td>'+(p.verificado_por_full?(esc(p.verificado_por_full)+ts):'<span class="pend">·</span>')+'</td><td><div class="act"><button class="ab ab-i" onclick="infoPaso('+p.orden+')" title="Detalles de la Verificación">i</button></div></td></tr>';}).join('')+
         '</tbody></table></div>'):'<div class="muted">Sin pasos de acondicionamiento (se definen en el MBR).</div>')+
       '</div>';
     var ipc=d.ipc||[];
     html+='<div class="card"><div class="sechead"><div class="sectit">5. Controles en Proceso</div>'+(editable?'<button class="btreg" onclick="prox()">+ Control</button>':'')+'</div>'+
       '<div class="sechint">Realizar muestreo y registrar control en proceso:</div>'+
       (ipc.length?('<div class="tw"><table class="t"><thead><tr><th>Control</th><th>Resultado</th><th>Observaciones</th><th>Realizado por</th><th>Acciones</th></tr></thead><tbody>'+
-        ipc.map(function(c){var res=c.conforme===2?'<span class="bdg" style="background:var(--cx-bg-alt);color:var(--cx-text-mute)">No aplica</span>':(c.resultado?(esc(c.resultado)+bdgC(c.conforme)):'<span class="pend">pendiente</span>');return '<tr><td>'+esc(c.control||'')+(c.rango?' <span class="muted" style="font-size:11px">('+esc(c.rango)+')</span>':'')+'</td><td>'+res+'</td><td>'+esc(c.observaciones||'No aplica')+'</td><td>'+(c.realizado_por?esc(c.realizado_por_full||c.realizado_por):'<span class="pend">—</span>')+'</td><td><div class="act">'+abI()+abEd()+'</div></td></tr>';}).join('')+
+        ipc.map(function(c){var res=c.conforme===2?'<span class="bdg" style="background:var(--cx-bg-alt);color:var(--cx-text-mute)">No aplica</span>':(c.resultado?(esc(c.resultado)+bdgC(c.conforme)):'<span class="pend">pendiente</span>');return '<tr><td>'+esc(c.control||'')+(c.rango?' <span class="muted" style="font-size:11px">('+esc(c.rango)+')</span>':'')+'</td><td>'+res+'</td><td>'+esc(c.observaciones||'No aplica')+'</td><td>'+(c.realizado_por?esc(c.realizado_por_full||c.realizado_por):'<span class="pend">·</span>')+'</td><td><div class="act">'+abI()+abEd()+'</div></td></tr>';}).join('')+
         '</tbody></table></div>'):'<div class="muted">Sin controles en proceso (se definen en el MBR).</div>')+
       '</div>';
     var obs=d.observaciones_proceso||[];
     html+='<div class="card"><div class="sechead"><div class="sectit">6. Observaciones Generales del Proceso</div>'+regBtn('Registrar')+'</div>'+
       (obs.length?('<div class="tw"><table class="t"><thead><tr><th>Descripción de la observación</th><th>Realizada por</th><th>Fecha y hora</th></tr></thead><tbody>'+
-        obs.map(function(o){return '<tr><td>'+esc(o.descripcion||'')+'</td><td>'+esc(o.registrado_por_full||o.registrado_por||'—')+'</td><td class="muted">'+dt(o.fecha)+'</td></tr>';}).join('')+
+        obs.map(function(o){return '<tr><td>'+esc(o.descripcion||'')+'</td><td>'+esc(o.registrado_por_full||o.registrado_por||'·')+'</td><td class="muted">'+dt(o.fecha)+'</td></tr>';}).join('')+
         '</tbody></table></div>'):'<div class="muted">Sin observaciones registradas.</div>')+
       '</div>';
     var regs=d.registros_fisicos||[];
     html+='<div class="card"><div class="sectit">7. Registros Físicos del Proceso de Acondicionamiento</div>'+
       (regs.length?('<div class="tw"><table class="t"><thead><tr><th>Código</th><th>Descripción</th><th>Documento</th></tr></thead><tbody>'+
-        regs.map(function(g){return '<tr><td class="mono">'+esc(g.id)+'</td><td>'+esc(g.descripcion||'')+'</td><td>'+(g.tiene_pdf?('<a class="ab ab-pdf" href="/api/brd/ebr/'+EBR_ID+'/registros-fisicos/'+g.id+'/pdf" target="_blank" title="Ver">&#128196;</a>'):'<span class="pend">—</span>')+'</td></tr>';}).join('')+
+        regs.map(function(g){return '<tr><td class="mono">'+esc(g.id)+'</td><td>'+esc(g.descripcion||'')+'</td><td>'+(g.tiene_pdf?('<a class="ab ab-pdf" href="/api/brd/ebr/'+EBR_ID+'/registros-fisicos/'+g.id+'/pdf" target="_blank" title="Ver">&#128196;</a>'):'<span class="pend">·</span>')+'</td></tr>';}).join('')+
         '</tbody></table></div>'):'<div class="muted">Sin registros físicos adjuntos.</div>')+
       '</div>';
     document.getElementById('cuerpo').innerHTML=html;
@@ -8720,7 +8720,7 @@ function infoPaso(orden){
   var i=pasos.findIndex(function(x){return x.orden===orden;}); if(i<0)return;
   var p=pasos[i];
   var est=p.completado_flag?'Completado':(p.iniciado?'En proceso':'Pendiente');
-  alert('DETALLES DE LA VERIFICACIÓN\\n\\nPaso '+(i+1)+': '+p.descripcion+'\\n\\nEstado: '+est+'\\nRealizado por: '+(p.realizado_por_full||'—')+'\\nVerificado por: '+(p.verificado_por_full||'—')+(p.observaciones?('\\nObservaciones: '+p.observaciones):''));
+  alert('DETALLES DE LA VERIFICACIÓN\\n\\nPaso '+(i+1)+': '+p.descripcion+'\\n\\nEstado: '+est+'\\nRealizado por: '+(p.realizado_por_full||'·')+'\\nVerificado por: '+(p.verificado_por_full||'·')+(p.observaciones?('\\nObservaciones: '+p.observaciones):''));
 }
 async function registrarActividades(){
   var pend=(window._pasos||[]).filter(function(p){return !p.completado_flag;});
@@ -8810,7 +8810,7 @@ def analitica_lotes():
             except Exception:
                 y = None
         if y is not None:
-            rend_prod.setdefault(d.get('producto') or '—', []).append(float(y))
+            rend_prod.setdefault(d.get('producto') or '·', []).append(float(y))
         lh = _horas(d.get('completado_at_utc'), d.get('liberado_at_utc'))
         if lh is not None:
             libera.append(lh)
@@ -8827,7 +8827,7 @@ def analitica_lotes():
         d = dict(r)
         m = _horas(d.get('iniciado_at_utc'), d.get('completado_at_utc'))
         if m is not None:
-            cuellos.setdefault((d.get('descripcion') or '—')[:70], []).append(m * 60.0)
+            cuellos.setdefault((d.get('descripcion') or '·')[:70], []).append(m * 60.0)
         op = d.get('operario') or ''
         if op:
             prod_op[op] = prod_op.get(op, 0) + 1
@@ -8893,11 +8893,11 @@ td{color:var(--cx-text-soft,#3f3f46)}
 </div>
 <script>
 function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
-function nf(n,dec){return n==null?'—':Number(n).toLocaleString('es-CO',{maximumFractionDigits:dec==null?1:dec});}
+function nf(n,dec){return n==null?'·':Number(n).toLocaleString('es-CO',{maximumFractionDigits:dec==null?1:dec});}
 function kpi(v,l){return '<div class="kpi"><div class="v">'+(typeof v==='number'?nf(v,0):esc(v))+'</div><div class="l">'+l+'</div></div>';}
 function tbl(heads,rows){var h='<table><thead><tr>';heads.forEach(function(x,i){h+='<th'+(i>0?' class="num"':'')+'>'+esc(x)+'</th>';});h+='</tr></thead><tbody>';
   if(!rows.length){h+='<tr><td colspan="'+heads.length+'" class="muted">Sin datos aún.</td></tr>';}
-  else{rows.forEach(function(r){h+='<tr>';r.forEach(function(c,i){h+='<td'+(i>0?' class="num"':'')+'>'+(c==null?'—':esc(c))+'</td>';});h+='</tr>';});}
+  else{rows.forEach(function(r){h+='<tr>';r.forEach(function(c,i){h+='<td'+(i>0?' class="num"':'')+'>'+(c==null?'·':esc(c))+'</td>';});h+='</tr>';});}
   return h+'</tbody></table>';}
 async function load(){
   try{
@@ -8910,7 +8910,7 @@ async function load(){
     var h='<div class="kpis">'+
       kpi(R.total,'Lotes totales')+kpi(R.en_proceso,'En proceso')+kpi(R.completados,'Completados')+
       kpi(R.liberados,'Liberados')+kpi(R.rechazados,'Rechazados')+
-      kpi(d.completar_a_liberar_horas_prom!=null?(nf(d.completar_a_liberar_horas_prom)+' h'):'—','Completar→Liberar')+
+      kpi(d.completar_a_liberar_horas_prom!=null?(nf(d.completar_a_liberar_horas_prom)+' h'):'·','Completar→Liberar')+
     '</div>';
     h+='<div class="cols">';
     h+='<div class="card"><div class="sectit">&#9201;&#65039; Tiempo de ciclo por fase</div><div class="sechint">Horas promedio de inicio a completado.</div>'+
@@ -9045,7 +9045,7 @@ td{color:var(--cx-text-soft,#3f3f46)}
 </div>
 <script>
 function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
-function dt(s){return s?esc(String(s).substring(0,16).replace('T',' ')):'—';}
+function dt(s){return s?esc(String(s).substring(0,16).replace('T',' ')):'·';}
 async function load(){
   try{
     var r=await fetch('/api/brd/bandeja-dt',{credentials:'same-origin',cache:'no-store'});
@@ -9056,7 +9056,7 @@ async function load(){
     var h='<div class="card"><div class="sectit">&#128221; MBR por aprobar'+(mbr.length?'<span class="badge">'+mbr.length+'</span>':'')+'</div>'+
       '<div class="sechint">Procedimientos maestros en revisión esperando tu aprobación (e-firma).</div>'+
       '<table><thead><tr><th>Producto</th><th>Versión</th><th>Creado por</th><th>Acción</th></tr></thead><tbody>'+
-      (mbr.length?mbr.map(function(m){return '<tr><td>'+esc(m.producto)+'</td><td>v'+esc(m.version)+'</td><td>'+esc(m.creado_por||'—')+'</td><td><button class="bt bt-ap" onclick="aprobar('+m.id+',this)">&#10003; Aprobar</button></td></tr>';}).join(''):'<tr><td colspan="4" class="muted">Nada pendiente de aprobar.</td></tr>')+
+      (mbr.length?mbr.map(function(m){return '<tr><td>'+esc(m.producto)+'</td><td>v'+esc(m.version)+'</td><td>'+esc(m.creado_por||'·')+'</td><td><button class="bt bt-ap" onclick="aprobar('+m.id+',this)">&#10003; Aprobar</button></td></tr>';}).join(''):'<tr><td colspan="4" class="muted">Nada pendiente de aprobar.</td></tr>')+
       '</tbody></table></div>';
     h+='<div class="card"><div class="sectit">&#128275; Lotes por liberar'+(lot.length?'<span class="badge">'+lot.length+'</span>':'')+'</div>'+
       '<div class="sechint">Lotes completados esperando liberación de Calidad/Dirección Técnica.</div>'+
@@ -9149,7 +9149,7 @@ def despeje_imprimible(ebr_id):
             return '<span style="color:#166534;font-weight:800">Sí</span>'
         if c == 0:
             return '<span style="color:#b91c1c;font-weight:800">No</span>'
-        return '<span style="color:#94a3b8">—</span>'
+        return '<span style="color:#94a3b8">·</span>'
 
     filas = []
     for i, texto in enumerate(DESPEJE_LINEA_ITEMS):
@@ -9201,11 +9201,11 @@ def despeje_imprimible(ebr_id):
         '<div class="co" style="display:flex;align-items:center;gap:10px"><span style="width:38px;height:38px;border-radius:11px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#a78bfa,#6d28d9);box-shadow:0 4px 12px rgba(109,40,217,.2)"><svg viewBox="0 0 32 32" width="22" height="22" fill="none" stroke="#fff"><circle cx="16" cy="12" r="3" fill="#fff"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.6" stroke-linecap="round" opacity=".7"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.6" stroke-linecap="round" opacity=".4"/></svg></span><div style="text-align:left;line-height:1.2">ESPAGIRIA Laboratorio SAS<br><span style="font-weight:400;color:#71717a;font-size:11px">ÁNIMUS Lab</span></div></div></div>'
         '<div class="meta">'
         '<div><b>Orden de Producción</b>' + e(hdr.get('numero_op') or ('EBR-' + str(ebr_id))) + '</div>'
-        '<div><b>N° de Lote Bulk</b>' + e(hdr.get('lote') or '—') + '</div>'
-        '<div><b>Producto</b>' + e(producto or '—') + '</div>'
-        '<div><b>Área o Línea</b>' + e(area or '—') + '</div>'
-        '<div><b>Estado</b>' + e(hdr.get('estado') or '—') + '</div>'
-        '<div><b>Fecha</b>' + e((hdr.get('iniciado') or '')[:16].replace('T', ' ') or '—') + '</div>'
+        '<div><b>N° de Lote Bulk</b>' + e(hdr.get('lote') or '·') + '</div>'
+        '<div><b>Producto</b>' + e(producto or '·') + '</div>'
+        '<div><b>Área o Línea</b>' + e(area or '·') + '</div>'
+        '<div><b>Estado</b>' + e(hdr.get('estado') or '·') + '</div>'
+        '<div><b>Fecha</b>' + e((hdr.get('iniciado') or '')[:16].replace('T', ' ') or '·') + '</div>'
         '</div>'
         '<div class="intro">Realizar despeje en el área de ' + etapa_area + ' de acuerdo a los procedimientos internos, y realice las siguientes verificaciones:</div>'
         '<table><thead><tr><th>#</th><th>Verificación</th><th style="text-align:center">Cumple</th>'
@@ -9331,11 +9331,11 @@ def dispensado_imprimible(ebr_id):
         '<div class="co" style="display:flex;align-items:center;gap:10px"><span style="width:38px;height:38px;border-radius:11px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#a78bfa,#6d28d9);box-shadow:0 4px 12px rgba(109,40,217,.2)"><svg viewBox="0 0 32 32" width="22" height="22" fill="none" stroke="#fff"><circle cx="16" cy="12" r="3" fill="#fff"/><path d="M 5 19 Q 16 17, 27 19" stroke-width="1.6" stroke-linecap="round" opacity=".7"/><path d="M 5 23 Q 16 21, 27 23" stroke-width="1.6" stroke-linecap="round" opacity=".4"/></svg></span><div style="text-align:left;line-height:1.2">ESPAGIRIA Laboratorio SAS<br><span style="font-weight:400;color:#71717a;font-size:11px">ÁNIMUS Lab</span></div></div></div>'
         '<div class="meta">'
         '<div><b>Orden</b>' + e(hdr.get('numero_op') or ('EBR-' + str(ebr_id))) + '</div>'
-        '<div><b>N° de Lote</b>' + e(hdr.get('lote') or '—') + '</div>'
-        '<div><b>Producto</b>' + e(producto or '—') + '</div>'
-        '<div><b>Tamaño de lote</b>' + ('{:,.0f} g'.format(obj_g) if obj_g else '—') + '</div>'
-        '<div><b>Estado</b>' + e(hdr.get('estado') or '—') + '</div>'
-        '<div><b>Fecha</b>' + e((hdr.get('iniciado') or '')[:16].replace('T', ' ') or '—') + '</div>'
+        '<div><b>N° de Lote</b>' + e(hdr.get('lote') or '·') + '</div>'
+        '<div><b>Producto</b>' + e(producto or '·') + '</div>'
+        '<div><b>Tamaño de lote</b>' + ('{:,.0f} g'.format(obj_g) if obj_g else '·') + '</div>'
+        '<div><b>Estado</b>' + e(hdr.get('estado') or '·') + '</div>'
+        '<div><b>Fecha</b>' + e((hdr.get('iniciado') or '')[:16].replace('T', ' ') or '·') + '</div>'
         '</div>'
         '<table><thead><tr><th>#</th><th>Materia Prima</th><th style="text-align:center">%</th><th>N° Lote</th>'
         '<th style="text-align:right">Cant. a pesar</th><th style="text-align:right">Cant. pesada</th>'

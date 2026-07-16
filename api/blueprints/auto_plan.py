@@ -1,5 +1,5 @@
 """
-Auto-Plan Maestro — Sebastian + Alejandro (30-abr-2026)
+Auto-Plan Maestro · Sebastian + Alejandro (30-abr-2026)
 
 "Tenemos algo maravilloso allí en planta... debe ser la herramienta más
 avanzada del mundo, anclada y generada por Claude... usa toda tu capacidad
@@ -60,7 +60,7 @@ if MARGEN_DIAS_ACTIVO < MARGEN_MIN_DIAS:
 
 # AFINIDAD por defecto (fallback si rol_afinidad_config está vacía).
 # Pesos: 4=preferido fuerte · 2=todero · 1=fallback. SIN peso 3 para fijos
-# en otros roles — fija_en_dispensacion se enforza por filtrado, no peso.
+# en otros roles · fija_en_dispensacion se enforza por filtrado, no peso.
 _AFINIDAD_DEFAULT = {
     'dispensacion': {
         'dispensacion': 4, 'elaboracion': 1, 'envasado': 1,
@@ -133,7 +133,7 @@ def _cargar_afinidad(c):
     desde la tabla rol_afinidad_config (migración 81). Si la tabla no existe
     o está vacía, devuelve _AFINIDAD_DEFAULT como fallback.
 
-    Se llama por cada cálculo de plan/asignación (no se cachea) — la tabla
+    Se llama por cada cálculo de plan/asignación (no se cachea) · la tabla
     es chica (≤20 rows) y permite cambios en caliente sin redeploy.
     """
     try:
@@ -301,8 +301,8 @@ def _ventas_diarias_por_sku(c, sku, dias=60):
     """Devuelve [(fecha, unidades)] de ventas del SKU en los últimos N días.
 
     Detecta automáticamente la tabla disponible:
-      1) ventas_diarias (sku, fecha, cantidad) — si existe
-      2) animus_shopify_orders.sku_items (JSON parse) — caso real Espagiria
+      1) ventas_diarias (sku, fecha, cantidad) · si existe
+      2) animus_shopify_orders.sku_items (JSON parse) · caso real Espagiria
       3) ordenes_shopify_items legacy
     """
     # FIX 23-may-2026 · auditoría P2 · multi-arg date() rompe en PG silente ·
@@ -358,7 +358,7 @@ def _ventas_diarias_por_sku(c, sku, dias=60):
 def velocidad_blended_uds_dia(v30, v60, v90, dias_creacion=None, ventana=60):
     """FUENTE ÚNICA de velocidad predictiva (uds/día) · 17-jun unificación M1/M5.
 
-    Blend 30/60/90 con detección de aceleración — EXACTAMENTE la fórmula que la
+    Blend 30/60/90 con detección de aceleración · EXACTAMENTE la fórmula que la
     pantalla de Necesidades (_calcular_animus_dtc) muestra, extraída para que el
     motor del calendario use la MISMA. Antes pantalla y motor usaban algoritmos
     distintos (blend vs regresión 30d) → cobertura mostrada ≠ cadencia programada.
@@ -369,7 +369,7 @@ def velocidad_blended_uds_dia(v30, v60, v90, dias_creacion=None, ventana=60):
         nuevos · piso 7d) · None = producto establecido.
       ventana: días de la ventana media (default 60).
     Devuelve (velocidad_uds_dia, tendencia_str). La tendencia ya está HORNEADA en
-    la velocidad — NO volver a multiplicar por un factor.
+    la velocidad · NO volver a multiplicar por un factor.
     """
     if dias_creacion and dias_creacion > 0:
         _div_30 = float(min(30, max(dias_creacion, 7)))
@@ -849,7 +849,7 @@ def generar_plan(horizonte_dias=60, tipo='auto', usuario='cron'):
     alertas = []
     fechas_ocupadas = {}  # area_codigo -> set de fechas ocupadas
     # Sebastian (30-abr-2026): contador de lotes proyectados POR FECHA en
-    # memoria — antes el counter solo miraba BD y todas las proyecciones
+    # memoria · antes el counter solo miraba BD y todas las proyecciones
     # caían el mismo día. Ahora distribuimos máx 2 lotes por día L/M/V.
     LOTES_MAX_POR_DIA = 2
     lotes_por_fecha = {}  # ISO date → count
@@ -857,14 +857,14 @@ def generar_plan(horizonte_dias=60, tipo='auto', usuario='cron'):
     for sku_row in skus:
         producto, categoria, cadencia, cob_target, cob_min, cob_max, merma_pct, prioridad, lote_size_kg = sku_row
         # Sebastian (30-abr-2026): "todo debe producirse con un margen de 20
-        # dias antes de que se agote" — usar 20d como umbral mínimo de
+        # dias antes de que se agote" · usar 20d como umbral mínimo de
         # disparo, anulando el cob_min de la config si era mayor.
         cob_min = min(cob_min or 30, 20)
         if not lote_size_kg:
             # SHOPIFY-FIX · 22-may-2026 · Bug #3 · alerta visible (no skip silente)
             # · Producto nuevo sin formula_headers o lote_size_kg=0 era invisible
             # · Ahora también emite alerta en respuesta para que UI lo muestre
-            log_lineas.append(f"   ⊘ {producto}: sin lote_size_kg en formula — saltado")
+            log_lineas.append(f"   ⊘ {producto}: sin lote_size_kg en formula · saltado")
             try:
                 alertas_planeacion.append({
                     'tipo': 'sin_lote_size',
@@ -919,7 +919,7 @@ def generar_plan(horizonte_dias=60, tipo='auto', usuario='cron'):
             if _futuro_cubre_a_tiempo(_prox, fecha_hoy, dias_inv_actual):
                 toca = False
                 log_lineas.append(
-                    f"   ⏸ {producto}: ya hay prod futura {_prox} que cubre — no se duplica")
+                    f"   ⏸ {producto}: ya hay prod futura {_prox} que cubre · no se duplica")
 
         if not toca:
             continue
@@ -1067,7 +1067,7 @@ def generar_plan(horizonte_dias=60, tipo='auto', usuario='cron'):
             lead, buffer, cob_min, cob_ideal, origen, es_envase, prov, nombre = lt
             prov = prov or ''
         else:
-            # No hay config en mp_lead_time_config — leer al menos proveedor de
+            # No hay config en mp_lead_time_config · leer al menos proveedor de
             # maestro_mps si existe ahí (caso comun: MP creada por Catalina sin
             # haber pasado por config de planta).
             mm_row = c.execute(
@@ -2056,10 +2056,10 @@ def detectar_cambios_demanda():
 
 
 # ════════════════════════════════════════════════════════════════════════
-# DEBUG CALENDAR — visibilidad total de qué se lee y cómo se matchea
+# DEBUG CALENDAR · visibilidad total de qué se lee y cómo se matchea
 # ════════════════════════════════════════════════════════════════════════
 # ════════════════════════════════════════════════════════════════════════
-# RECOMENDACIONES INTELIGENTES — la lógica clara
+# RECOMENDACIONES INTELIGENTES · la lógica clara
 # ════════════════════════════════════════════════════════════════════════
 # Sebastian (30-abr-2026): "tenemos 30 SKUs, una venta diaria y un stock que
 # puedes ver en shopify, en calendar aparece cada cuanto los hago normalmente,
@@ -2327,7 +2327,7 @@ def planta_recomendaciones():
             log.warning(f'Recomendación fallida {producto}: {e}')
 
     # Sebastian (30-abr-2026): "ideal una producción por día, si hay semanas
-    # donde puede ser L-M-V mejor, depende de cómo de" — distribución
+    # donde puede ser L-M-V mejor, depende de cómo de" · distribución
     # inteligente: si hay >3 lotes urgentes/semana → distribuir L-V (5 días);
     # si <=3 → L/M/V (3 días).
     accionables_count = sum(1 for r in recomendaciones if r['urgencia'] in ('critica', 'alta', 'media'))
@@ -2396,7 +2396,7 @@ def planta_recomendaciones():
 
 
 # ════════════════════════════════════════════════════════════════════════
-# DIAGNÓSTICO SKU — qué LEE el sistema crudo de Shopify para un producto
+# DIAGNÓSTICO SKU · qué LEE el sistema crudo de Shopify para un producto
 # ════════════════════════════════════════════════════════════════════════
 # Sebastian (30-abr-2026): "no lo veo en la app no veo que lo esté
 # calculando". Visibilidad total: cada número que el motor usa, expuesto.
@@ -2648,7 +2648,7 @@ def diagnostico_sku():
 
 
 # ════════════════════════════════════════════════════════════════════════
-# MP PARA LOTE — para cada producción del Calendar, ¿alcanza la materia prima?
+# MP PARA LOTE · para cada producción del Calendar, ¿alcanza la materia prima?
 # ════════════════════════════════════════════════════════════════════════
 # Sebastian (30-abr-2026): "ya sabemos hoy se hace este producto, qué
 # necesita ese producto? Segundo, debe tener allí materias primas alcanza
@@ -2825,7 +2825,7 @@ def mp_para_lote():
 
 
 # ════════════════════════════════════════════════════════════════════════
-# ALERTAS CALENDAR — cruce de cadencia planeada vs velocidad real
+# ALERTAS CALENDAR · cruce de cadencia planeada vs velocidad real
 # ════════════════════════════════════════════════════════════════════════
 # Sebastian (30-abr-2026): "ese calendario debería ir unido a una alerta
 # que diga: se está vendiendo más, si está bien, o mejor adelanten".
@@ -3009,7 +3009,7 @@ def alertas_calendar():
 
 
 # ════════════════════════════════════════════════════════════════════════
-# PLAN PURO SHOPIFY — vista por día (próximo lunes → viernes siguiente)
+# PLAN PURO SHOPIFY · vista por día (próximo lunes → viernes siguiente)
 # ════════════════════════════════════════════════════════════════════════
 # Sebastian (30-abr-2026): "no tengas en cuenta el calendario, si tuvieras
 # que producir ya, según Shopify inventario y ventas dime cómo lo harías
@@ -3195,7 +3195,7 @@ def plan_semana_shopify():
 
 
 # ════════════════════════════════════════════════════════════════════════
-# PLAN LARGO SHOPIFY — rolling forecast día-a-día (6 meses, 1 año)
+# PLAN LARGO SHOPIFY · rolling forecast día-a-día (6 meses, 1 año)
 # ════════════════════════════════════════════════════════════════════════
 # Sebastian (30-abr-2026): "quiero que automáticamente la app hoy reconozca
 # inventario en shopy cruce con ventas y sepa como produciremos 6 meses y
@@ -3464,7 +3464,7 @@ def plan_largo_shopify():
 
 
 # ════════════════════════════════════════════════════════════════════════
-# AUDITORÍA del Calendar — ¿se cumplió margen 20d?
+# AUDITORÍA del Calendar · ¿se cumplió margen 20d?
 # ════════════════════════════════════════════════════════════════════════
 # Sebastian (30-abr-2026): "la pregunta real es lo que está en el calendario
 # si cumple la lógica de producto planeado 20 días antes de que se agote".
@@ -3545,7 +3545,7 @@ def auditoria_calendar():
                 msg = f'Margen {margen_real:.0f}d (debajo de 20d ideal pero positivo)'
             elif margen_real >= 0:
                 clase = 'tarde'
-                msg = f'Margen {margen_real:.0f}d — producción al límite'
+                msg = f'Margen {margen_real:.0f}d · producción al límite'
             else:
                 clase = 'stockout'
                 msg = f'Stock se agotó {abs(margen_real):.0f}d antes de la nueva producción'
@@ -3591,7 +3591,7 @@ def calendar_eventos_plan():
     """Devuelve eventos del Google Calendar que el motor MRP matchea con
     productos configurados, para mostrarlos EN el calendario del Plan v2.
 
-    Sebastian (30-abr-2026): "tal cual como es" — el calendario real debe
+    Sebastian (30-abr-2026): "tal cual como es" · el calendario real debe
     aparecer en el Plan, no solo las proyecciones del motor.
 
     Querystring: ?dias=30|60|90|180|365 (default 30)
@@ -3711,7 +3711,7 @@ def calendar_debug():
 
 
 # ════════════════════════════════════════════════════════════════════════
-# APRENDIZAJE DEL HISTÓRICO — el sistema infiere cadencias reales
+# APRENDIZAJE DEL HISTÓRICO · el sistema infiere cadencias reales
 # ════════════════════════════════════════════════════════════════════════
 # Sebastian (30-abr-2026): "en el calendario aparece lo que ya fabricamos
 # es decir esos podrías usarlo como universo para el futuro y arrancar
@@ -3748,7 +3748,7 @@ def kpi_cobertura_skus():
     """Sebastian (30-abr-2026): "dime cuántos productos están en el plan
     para saber que sí están todos los SKU".
 
-    Querystring: ?dias=14|30|60|90|180|365 — calcula cobertura sobre el
+    Querystring: ?dias=14|30|60|90|180|365 · calcula cobertura sobre el
     horizonte solicitado. La cobertura considera producción en BD +
     Google Calendar.
     """
@@ -3950,7 +3950,7 @@ def aprender_historico():
     """Analiza producciones histórias (BD + Google Calendar) y deriva
     cadencias reales. Devuelve comparación con la config actual.
 
-    Querystring: ?meses_atras=12 (default — cuánto histórico considerar)
+    Querystring: ?meses_atras=12 (default · cuánto histórico considerar)
     """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
@@ -4057,7 +4057,7 @@ def aprender_historico():
                 'lote_kg': info['lote_kg'],
                 'tiene_config': key in config_por_producto,
                 'cadencia_configurada': cfg.get('cadencia'),
-                'sugerencia': 'Producir primer lote pronto — sin histórico',
+                'sugerencia': 'Producir primer lote pronto · sin histórico',
             })
 
     return jsonify({
@@ -4143,7 +4143,7 @@ def aplicar_aprendizaje():
 
 
 # ════════════════════════════════════════════════════════════════════════
-# MAQUILA INTELIGENTE — clientes + pedidos integrados al motor del Plan
+# MAQUILA INTELIGENTE · clientes + pedidos integrados al motor del Plan
 # ════════════════════════════════════════════════════════════════════════
 # Sebastian (30-abr-2026): "Kelly Guerra compra productos para marca de ella
 # pero misma fórmula Animus... espacio de maquila inteligente, si Fernando
@@ -4237,7 +4237,7 @@ def maquila_pedidos():
                             'kg_estimados': kg_est})
         except Exception as e:
             return jsonify({'error': str(e)}), 500
-    # GET — filtros opcionales
+    # GET · filtros opcionales
     estado = (request.args.get('estado') or '').strip()
     cliente = request.args.get('cliente_id')
     where = []
@@ -4361,7 +4361,7 @@ def asignar_operarios_bulk():
     sin operarios. Útil después de Auto-Plan.
 
     Sebastián 1-may-2026 audit zero-error: wrap en transacción explícita con
-    rollback granular — antes era best-effort sin atomicidad.
+    rollback granular · antes era best-effort sin atomicidad.
     SEC-FIX · 22-may-2026 · Bug #8 audit Operario · solo jefe/admin (era cualquier user)
     """
     if 'compras_user' not in session:
@@ -4646,7 +4646,7 @@ def configs_mp():
 # Asistente conversacional · Claude API con contexto de planta
 # ════════════════════════════════════════════════════════════════════════
 # Sebastian (30-abr-2026): "asistente conversacional ya tenemos la cosa
-# flotante" — conectar el chat flotante con Claude API + contexto de
+# flotante" · conectar el chat flotante con Claude API + contexto de
 # planta para que pueda responder preguntas como:
 #   "¿Cuánto Suero AH puedo producir esta semana?"
 #   "¿Por qué hay alerta crítica?"
@@ -4762,7 +4762,7 @@ def asistente_planta():
         log.warning(f'asistente: no se pudo armar contexto: {e}')
 
     es_admin = user in ADMIN_USERS
-    system_prompt = f"""Eres EOS Planta, el asistente experto de planta para Espagiria Laboratorios (HHA Group), laboratorio cosmético colombiano certificado INVIMA. Te creó Claude. Eres preciso, breve y útil — operativo, no chatbot genérico.
+    system_prompt = f"""Eres EOS Planta, el asistente experto de planta para Espagiria Laboratorios (HHA Group), laboratorio cosmético colombiano certificado INVIMA. Te creó Claude. Eres preciso, breve y útil · operativo, no chatbot genérico.
 
 CONTEXTO ACTUAL (snapshot {datetime.now().isoformat()}):
 {json.dumps(ctx, ensure_ascii=False, indent=2)}
@@ -4789,8 +4789,8 @@ Usuario actual: {user} ({'ADMIN' if es_admin else 'usuario'})
 INSTRUCCIONES:
 - Responde en español, conciso (máximo 200 palabras salvo que pidan detalle).
 - Si la pregunta es operativa (cuánto, cuándo, dónde), USA el contexto del snapshot para contestar con datos reales.
-- Si te piden hacer algo destructivo (ejecutar, crear), describe los pasos y dile dónde hacer click — NO inventes acciones.
-- Si no hay datos suficientes, dilo: "no tengo info sobre X — revisa Y".
+- Si te piden hacer algo destructivo (ejecutar, crear), describe los pasos y dile dónde hacer click · NO inventes acciones.
+- Si no hay datos suficientes, dilo: "no tengo info sobre X · revisa Y".
 - Si detectas riesgo (alertas críticas, MP en déficit, sala sin limpieza), señálalo proactivamente.
 """
 
@@ -4899,7 +4899,7 @@ def cron_toggle():
 
 
 # ════════════════════════════════════════════════════════════════════════
-# FORECAST BLACK FRIDAY — pre-stock necesario por SKU para nov-dic
+# FORECAST BLACK FRIDAY · pre-stock necesario por SKU para nov-dic
 # ════════════════════════════════════════════════════════════════════════
 # Sebastian (30-abr-2026): "Black Friday 2025 fue catástrofe por escasez.
 # Para BF 2026 hay que pre-stockear MUCHO más". Multiplicadores REALES
@@ -5069,7 +5069,7 @@ def forecast_black_friday():
 
 
 # ════════════════════════════════════════════════════════════════════════
-# AUTO-SC IA — generación automática de Solicitudes de Compra MP
+# AUTO-SC IA · generación automática de Solicitudes de Compra MP
 # ════════════════════════════════════════════════════════════════════════
 # Sebastián 30-abr-2026: "lo más automático posible. Primeros 5 días del
 # mes genera órdenes para los 2 meses siguientes. Horizonte 60 y 90 días.
@@ -5725,9 +5725,9 @@ def auto_sc_status():
 # componentes MEE, agrupando por (proveedor, origen).
 #
 # Horizontes:
-#   · China:  270d (9m) — lead time 180d + buffer producción 90d
-#   · Local:  90d  — espejo del MP local
-#   · Urgente: 30d — solo lo que stockout en próximas 4 semanas
+#   · China:  270d (9m) · lead time 180d + buffer producción 90d
+#   · Local:  90d  · espejo del MP local
+#   · Urgente: 30d · solo lo que stockout en próximas 4 semanas
 #
 # Filtros:
 #   · sku_mee_config.aplica = 0 → ignorado (plegadiza)
@@ -7076,9 +7076,9 @@ def sc_mee_asignar():
     SCs (no vuelve a generar genérico para ese SKU+componente).
 
     Body:
-      sc_item_id: int — id del solicitudes_compra_items
-      mee_codigo: str — código MEE asignado (de maestro_mee)
-      proveedor: str (opcional) — actualizar también mee_lead_time_config
+      sc_item_id: int · id del solicitudes_compra_items
+      mee_codigo: str · código MEE asignado (de maestro_mee)
+      proveedor: str (opcional) · actualizar también mee_lead_time_config
       cantidad_por_unidad: float (default 1)
 
     Acciones:
@@ -7410,7 +7410,7 @@ def pre_produccion_equipo():
             'op_elaboracion','op_envasado','op_acondicionamiento']
 
     # Pre-cargar TODOS los checklists de las producciones del rango en UNA sola
-    # query — evita N+1 (antes: 1 query por producción · 100 prods = 101 queries).
+    # query · evita N+1 (antes: 1 query por producción · 100 prods = 101 queries).
     # Sebastián 1-may-2026 audit zero-error: aplanar en single fetch.
     prod_ids = [r[0] for r in rows]
     checklist_por_prod = {pid: [] for pid in prod_ids}
@@ -9395,7 +9395,7 @@ button.primary:disabled{opacity:.5;cursor:not-allowed}
 <p class="subtitle">BPM cosmético · INVIMA · firma los 5 ítems para reactivar la sala.</p>
 <div class="warning">⚠ Antes de iniciar producción nueva en una sala sucia, debés completar el despeje · queda audit firmado.</div>
 <div class="field"><label>Sala</label>
-  <select id="sala-sel"><option value="">— Cargando... —</option></select>
+  <select id="sala-sel"><option value="">· Cargando... ·</option></select>
 </div>
 <div class="checks">
   <label class="chk" data-i="1"><input type="checkbox" data-i="1"><span>Sin etiquetas del lote anterior</span></label>
@@ -9422,7 +9422,7 @@ async function loadSalas(){
     var d=await r.json();
     var sel=document.getElementById('sala-sel');
     var areas=(d.areas||[]).filter(function(a){ return a.tipo==='produccion'; });
-    sel.innerHTML='<option value="">— Elegí sala —</option>';
+    sel.innerHTML='<option value="">· Elegí sala ·</option>';
     areas.forEach(function(a){
       var lbl=a.codigo+' · '+a.nombre+' ['+(a.estado||'libre')+']';
       sel.innerHTML+='<option value="'+a.id+'">'+lbl+'</option>';
@@ -10473,7 +10473,7 @@ def tablero_equipo():
 
     Una tarjeta por operario activo: quién es, qué le toca hoy (etapa +
     producto + área) y si esa área está limpia o sucia. El sueño de
-    Alejandro — ver a todo el equipo de un vistazo. SOLO LECTURA.
+    Alejandro · ver a todo el equipo de un vistazo. SOLO LECTURA.
     """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
@@ -11355,7 +11355,7 @@ def planta_accion_rapida():
 def forzar_sync_semana():
     """DEPRECATED 1-may-2026: arquitectura Calendar-first.
     Calendar es la única fuente de verdad. La DB solo guarda lo que YA
-    se inició/terminó. No hay 'sync' al cron — solo el ▶ Iniciar (Calendar)
+    se inició/terminó. No hay 'sync' al cron · solo el ▶ Iniciar (Calendar)
     en la UI crea filas DB en el momento del click."""
     return jsonify({
         'ok': False,
@@ -11946,7 +11946,7 @@ def diagnostico_calendar():
             with _ur.urlopen(req, timeout=10) as r:
                 content = r.read()
                 # Bug fix: Content-Type puede venir vacío o None en algunos
-                # endpoints de Google Calendar — validar por BODY no header.
+                # endpoints de Google Calendar · validar por BODY no header.
                 ct = r.headers.get('Content-Type', '') or ''
                 # Strip BOM si lo hay (algunos feeds Google lo incluyen)
                 content_clean = content.lstrip(b'\xef\xbb\xbf').lstrip()
@@ -12166,7 +12166,7 @@ def normalizar_mee():
                            cantidad_por_unidad, aplica, notas)
                         VALUES (?, ?, ?, 1, 1, ?)
                     """, (sku, cod, tipo,
-                          f'Auto-mapeo (score {score}) por similitud nombre — Sebastián 1-may-2026'))
+                          f'Auto-mapeo (score {score}) por similitud nombre · Sebastián 1-may-2026'))
                     resultado['auto_mapping']['aplicados'] += 1
                     existentes.add((sku, cod))
                 except sqlite3.IntegrityError:
@@ -12433,7 +12433,7 @@ def auto_sc_mee_status():
 
 
 # ════════════════════════════════════════════════════════════════════════
-# MP ROLLING FORECAST — consumo MP acumulado a lo largo del horizonte
+# MP ROLLING FORECAST · consumo MP acumulado a lo largo del horizonte
 # ════════════════════════════════════════════════════════════════════════
 # Sebastián (30-abr-2026): "el lunes hay unos productos, ellos pueden usar
 # materias primas que usa el del martes ya se lo van a gastar entonces
@@ -12677,7 +12677,7 @@ def mp_rolling_forecast():
 
 
 # ════════════════════════════════════════════════════════════════════════
-# AUDITOR SEMANAL — email cada lunes 7AM con plan + alertas críticas
+# AUDITOR SEMANAL · email cada lunes 7AM con plan + alertas críticas
 # ════════════════════════════════════════════════════════════════════════
 # Sebastian (30-abr-2026): "auditor diario automático (email 9 AM lunes
 # con plan semanal + alertas)". Se dispara desde cron Render externo
@@ -12768,7 +12768,7 @@ def _generar_html_auditor_semanal(c):
             col = colores.get(a['urg'], '#dc2626')
             html_alertas += f'<div style="background:{col}15;border-left:4px solid {col};padding:8px 12px;margin-bottom:6px;border-radius:0 6px 6px 0"><b>{a["producto"]}</b> · {a["estado"]} · próx {a["proxima"]}</div>'
     else:
-        html_alertas = '<div style="background:#ecfdf5;border:1px solid #6ee7b7;padding:10px;border-radius:8px;color:#065f46">✅ Sin alertas críticas — todos los SKUs alineados con su plan</div>'
+        html_alertas = '<div style="background:#ecfdf5;border:1px solid #6ee7b7;padding:10px;border-radius:8px;color:#065f46">✅ Sin alertas críticas · todos los SKUs alineados con su plan</div>'
 
     html = f'''<!DOCTYPE html>
 <html><body style="font-family:-apple-system,Segoe UI,sans-serif;background:#f3f4f6;padding:20px;margin:0">
@@ -12896,7 +12896,7 @@ def email_test():
 
 
 # ════════════════════════════════════════════════════════════════════════
-# Conteo cíclico — endpoints
+# Conteo cíclico · endpoints
 # ════════════════════════════════════════════════════════════════════════
 @bp.route('/api/conteo-ciclico/calendario', methods=['GET'])
 def conteo_calendario():
@@ -13022,10 +13022,10 @@ def perfil_riesgo():
 
 
 # ════════════════════════════════════════════════════════════════════════
-# Asistente accionable — tools
+# Asistente accionable · tools
 # ════════════════════════════════════════════════════════════════════════
 # ════════════════════════════════════════════════════════════════════════
-# FORECAST MULTI-HORIZONTE — 1sem / 1m / 2m / 3m / 6m / 12m
+# FORECAST MULTI-HORIZONTE · 1sem / 1m / 2m / 3m / 6m / 12m
 # ════════════════════════════════════════════════════════════════════════
 # Sebastian (30-abr-2026): "ideal que sea semanal, 1 mes, 2 meses 3 meses
 # 6 meses 1 año... la app saca todo, necesidades completas, y quedan
@@ -13196,7 +13196,7 @@ def _demanda_stock_gramos(c, producto):
       stock_g       = Σ (unidades_disponible_sku × volumen_sku) + pipeline (bulk ≤7d)
     Así el bulk se planea junto sin importar cuántos tamaños tenga. Devuelve dict."""
     from datetime import datetime as _dt2, timedelta as _td2
-    # FIX 17-jun [6]: excluir SKUs es_regalo (igual que Necesidades · skus_regalo) —
+    # FIX 17-jun [6]: excluir SKUs es_regalo (igual que Necesidades · skus_regalo) ·
     # el motor los contaba en velocidad/stock e inflaba demanda → sobre-producía regalos.
     skus = c.execute(
         "SELECT sku, COALESCE(tono_label,'') FROM sku_producto_map "
@@ -13742,7 +13742,7 @@ def _calcular_kpis_horizonte(c, proyeccion, meses, alertas_capacidad, compras_ur
 
 
 # ════════════════════════════════════════════════════════════════════════
-# ASIGNACIÓN SEMANAL — Qué se hace en cada área cada día
+# ASIGNACIÓN SEMANAL · Qué se hace en cada área cada día
 # ════════════════════════════════════════════════════════════════════════
 @bp.route('/api/planta/asignacion-semanal', methods=['GET'])
 def planta_asignacion_semanal():
@@ -13770,7 +13770,7 @@ def validar_hermanos_skus():
     Heurística: SKUs con prefijo común de >=3 chars donde uno termina con
     sufijo numérico (ej. SAH, SAH10) pero `producto_nombre` distintos.
 
-    Retorna grupos sospechosos para revisión humana — NO modifica la BD.
+    Retorna grupos sospechosos para revisión humana · NO modifica la BD.
     """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
@@ -13807,7 +13807,7 @@ def validar_hermanos_skus():
     return jsonify({
         'total_grupos_sospechosos': len(grupos_sospechosos),
         'grupos': grupos_sospechosos[:50],
-        'nota': 'Solo sugerencia — revisar manualmente. NO modifica datos.',
+        'nota': 'Solo sugerencia · revisar manualmente. NO modifica datos.',
     })
 
 
@@ -13825,7 +13825,7 @@ def unificar_hermanos_skus():
     - Audit log con cambios anteriores
 
     Sebastián 1-may-2026 round 2: complementa el endpoint de validación
-    (GET validar-hermanos-skus) — antes solo detectaba, ahora aplica.
+    (GET validar-hermanos-skus) · antes solo detectaba, ahora aplica.
     """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
@@ -13903,7 +13903,7 @@ def unificar_hermanos_skus():
 
 
 # ════════════════════════════════════════════════════════════════════════
-# Dossier de Lote PDF — INVIMA / trazabilidad completa
+# Dossier de Lote PDF · INVIMA / trazabilidad completa
 # ════════════════════════════════════════════════════════════════════════
 @bp.route('/api/planta/dossier-lote/<lote>', methods=['GET'])
 def dossier_lote_pdf(lote):
@@ -13915,7 +13915,7 @@ def dossier_lote_pdf(lote):
        - Disposición de cola_liberacion
        - Movimientos de MP consumidas
 
-    Sebastian: "auto-evidencia regulatoria (INVIMA)" — sirve como
+    Sebastian: "auto-evidencia regulatoria (INVIMA)" · sirve como
     documentación lista para auditoría."""
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
@@ -14011,9 +14011,9 @@ def dossier_lote_pdf(lote):
     pdf.cell(50, 6, '  Nombre:', border='LB')
     pdf.cell(W - 50, 6, str(env[2] or ''), border='RB', ln=True)
     pdf.cell(50, 6, '  Presentación:', border='LB')
-    pdf.cell(W - 50, 6, str(env[4] or '—'), border='RB', ln=True)
+    pdf.cell(W - 50, 6, str(env[4] or '·'), border='RB', ln=True)
     pdf.cell(50, 6, '  Envase:', border='LB')
-    pdf.cell(W - 50, 6, str(env[7] or '—'), border='RB', ln=True)
+    pdf.cell(W - 50, 6, str(env[7] or '·'), border='RB', ln=True)
     pdf.cell(50, 6, '  Cantidad lote:', border='LB')
     pdf.cell(W - 50, 6, f'{env[14] or 0} kg', border='RB', ln=True)
     pdf.cell(50, 6, '  Unidades envasadas:', border='LB')
@@ -14026,9 +14026,9 @@ def dossier_lote_pdf(lote):
     pdf.cell(W, 7, ' PRODUCCIÓN', border=1, fill=True, ln=True)
     pdf.set_font('Helvetica', '', 9)
     pdf.cell(50, 6, '  Fecha programada:', border='LB')
-    pdf.cell(W - 50, 6, str(env[13] or '—'), border='RB', ln=True)
+    pdf.cell(W - 50, 6, str(env[13] or '·'), border='RB', ln=True)
     pdf.cell(50, 6, '  Área:', border='LB')
-    pdf.cell(W - 50, 6, f'{env[16] or "—"} ({env[15] or "—"})', border='RB', ln=True)
+    pdf.cell(W - 50, 6, f'{env[16] or "·"} ({env[15] or "·"})', border='RB', ln=True)
     if ops:
         pdf.cell(50, 6, '  Operarios:', border='LB')
         ops_txt = ', '.join(f'{o[0]} {o[1] or ""}'.strip() for o in ops)
@@ -14041,11 +14041,11 @@ def dossier_lote_pdf(lote):
     pdf.cell(W, 7, ' ENVASADO', border=1, fill=True, ln=True)
     pdf.set_font('Helvetica', '', 9)
     pdf.cell(50, 6, '  Iniciado:', border='LB')
-    pdf.cell(W - 50, 6, f'{env[8] or "—"} por {env[9] or "—"}', border='RB', ln=True)
+    pdf.cell(W - 50, 6, f'{env[8] or "·"} por {env[9] or "·"}', border='RB', ln=True)
     pdf.cell(50, 6, '  Terminado:', border='LB')
-    pdf.cell(W - 50, 6, f'{env[10] or "pendiente"} por {env[11] or "—"}', border='RB', ln=True)
+    pdf.cell(W - 50, 6, f'{env[10] or "pendiente"} por {env[11] or "·"}', border='RB', ln=True)
     pdf.cell(50, 6, '  Estado:', border='LB')
-    pdf.cell(W - 50, 6, str(env[12] or '—'), border='RB', ln=True)
+    pdf.cell(W - 50, 6, str(env[12] or '·'), border='RB', ln=True)
     pdf.ln(4)
 
     # Microbiológicos
@@ -14065,9 +14065,9 @@ def dossier_lote_pdf(lote):
         pdf.set_font('Helvetica', '', 8)
         for m in micro_rows:
             pdf.cell(50, 5, '  ' + str(m[0] or '')[:30], border='LR')
-            pdf.cell(30, 5, str(m[1] or '—'), border='R')
-            pdf.cell(40, 5, str(m[2] or '—'), border='R')
-            pdf.cell(W - 120, 5, str(m[3] or '—'), border='R', ln=True)
+            pdf.cell(30, 5, str(m[1] or '·'), border='R')
+            pdf.cell(40, 5, str(m[2] or '·'), border='R')
+            pdf.cell(W - 120, 5, str(m[3] or '·'), border='R', ln=True)
         pdf.cell(W, 0, '', border='T', ln=True)
     pdf.ln(4)
 
@@ -14078,11 +14078,11 @@ def dossier_lote_pdf(lote):
     pdf.set_font('Helvetica', '', 9)
     if cola:
         pdf.cell(50, 6, '  Estado:', border='LB')
-        pdf.cell(W - 50, 6, str(cola[0] or '—'), border='RB', ln=True)
+        pdf.cell(W - 50, 6, str(cola[0] or '·'), border='RB', ln=True)
         pdf.cell(50, 6, '  Disposición:', border='LB')
         pdf.cell(W - 50, 6, str(cola[1] or 'pendiente'), border='RB', ln=True)
         pdf.cell(50, 6, '  Aprobado por:', border='LB')
-        pdf.cell(W - 50, 6, f'{cola[4] or "—"} el {cola[5] or "—"}', border='RB', ln=True)
+        pdf.cell(W - 50, 6, f'{cola[4] or "·"} el {cola[5] or "·"}', border='RB', ln=True)
         if cola[6]:
             pdf.cell(50, 6, '  Notas:', border='LB')
             pdf.cell(W - 50, 6, str(cola[6])[:80], border='RB', ln=True)
