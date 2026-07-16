@@ -135,6 +135,7 @@ td input[type=text]{width:100%;padding:6px 9px;border:1px solid var(--line);bord
               <th>Lote</th>
               <th>Vence</th>
               <th>Notas</th>
+              <th style="text-align:center;">Rótulo</th>
             </tr>
           </thead>
           <tbody id="items-body"></tbody>
@@ -325,6 +326,7 @@ function renderOC(d) {
       var yaCompleta = (recibidoYa > 0 && pendiente <= 0.01);
       var prevRec = yaCompleta ? recibidoYa : (pendiente > 0 ? pendiente : Number(it.cantidad_g || 0));
       var pct = it.cantidad_g > 0 ? Math.round(recibidoYa / it.cantidad_g * 100) : 100;
+      var esMee = ((it.codigo_mp||'').toUpperCase().indexOf('MEE-') === 0) || (d.categoria === 'MEE');
       var tr = document.createElement('tr');
       tr.id = 'item-row-' + i;
       tr.innerHTML =
@@ -345,7 +347,8 @@ function renderOC(d) {
         '</select></td>' +
         '<td><input type="text" id="lote-' + i + '" placeholder="Ej: L-2026-001" style="width:110px;"></td>' +
         '<td><input type="date" id="fv-' + i + '" style="width:130px;"></td>' +
-        '<td><input type="text" id="nota-' + i + '" placeholder="Observacion opcional"></td>';
+        '<td><input type="text" id="nota-' + i + '" placeholder="Observacion opcional"></td>' +
+        '<td style="text-align:center;"><button class="btn btn-print" style="padding:5px 11px;font-size:11px;white-space:nowrap;" data-rotidx="' + i + '" data-rotcod="' + (it.codigo_mp||'') + '" data-rotmee="' + (esMee ? 1 : 0) + '" title="Imprimir rótulo de este material (usa la cantidad recibida y el lote de esta fila)">&#128424;&#65039; Rótulo</button></td>';
       tbody.appendChild(tr);
       updateRow(i);
     })(idx, items[idx]);
@@ -587,7 +590,8 @@ async function loadCuarentena() {
         + '<td>' + (l.numero_oc||'—') + '</td>'
         + '<td style="white-space:nowrap;">'
         + '<button class="btn" style="background:#16a34a;color:#fff;padding:4px 10px;font-size:11px;margin-right:4px;" data-aprobarlote="' + l.id + '" data-est="Aprobado">Aprobar</button>'
-        + '<button class="btn" style="background:#dc2626;color:#fff;padding:4px 10px;font-size:11px;" data-aprobarlote="' + l.id + '" data-est="Rechazado">Rechazar</button>'
+        + '<button class="btn" style="background:#dc2626;color:#fff;padding:4px 10px;font-size:11px;margin-right:4px;" data-aprobarlote="' + l.id + '" data-est="Rechazado">Rechazar</button>'
+        + '<button class="btn" style="background:#7c3aed;color:#fff;padding:4px 10px;font-size:11px;" data-rotmp="' + (l.material_id||'') + '" data-rotlote="' + (l.lote||'') + '" data-rotcant="' + (l.cantidad||1) + '" title="Imprimir rótulo del lote">&#128424;&#65039; Rótulo</button>'
         + '</td></tr>';
     });
     h += '</tbody></table></div>';
@@ -608,6 +612,37 @@ document.addEventListener('click', function(e) {
     if (d.ok) loadCuarentena();
     else alert('Error: ' + (d.error||'desconocido'));
   });
+});
+
+// Imprimir rótulo · ítems de Registrar Recepción (lee cantidad + lote EN VIVO de la fila)
+document.addEventListener('click', function(e) {
+  var b = e.target.closest('[data-rotidx]');
+  if (!b) return;
+  var i = b.getAttribute('data-rotidx');
+  var cod = b.getAttribute('data-rotcod') || '';
+  var esMee = b.getAttribute('data-rotmee') === '1';
+  var cantEl = document.getElementById('cant-' + i);
+  var cant = parseFloat(cantEl ? cantEl.value : 0) || 0;
+  if (cant <= 0) { alert('Poné primero la cantidad recibida de esta fila.'); return; }
+  if (esMee) {
+    window.open('/rotulo-recepcion-mee/' + encodeURIComponent(cod) + '/' + cant, '_blank');
+  } else {
+    var loteEl = document.getElementById('lote-' + i);
+    var lote = (loteEl ? loteEl.value : '').trim();
+    if (!lote) { alert('Poné primero el lote de esta fila para el rótulo.'); return; }
+    window.open('/rotulo-recepcion/' + encodeURIComponent(cod) + '/' + encodeURIComponent(lote) + '/' + cant, '_blank');
+  }
+});
+
+// Imprimir rótulo · lotes en Cuarentena (MP · usa material_id + lote + cantidad de la fila)
+document.addEventListener('click', function(e) {
+  var b = e.target.closest('[data-rotmp]');
+  if (!b) return;
+  var cod = b.getAttribute('data-rotmp') || '';
+  var lote = (b.getAttribute('data-rotlote') || '').trim() || 'SIN-LOTE';
+  var cant = b.getAttribute('data-rotcant') || '1';
+  if (!cod) { alert('Este lote no tiene código de material.'); return; }
+  window.open('/rotulo-recepcion/' + encodeURIComponent(cod) + '/' + encodeURIComponent(lote) + '/' + encodeURIComponent(cant), '_blank');
 });
 
 async function buscarLote() {
