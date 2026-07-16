@@ -1,4 +1,4 @@
-# blueprints/compras.py — extraído de index.py (Fase C)
+# blueprints/compras.py · extraído de index.py (Fase C)
 import os
 import json
 import sqlite3
@@ -58,7 +58,7 @@ ESTADOS_OC_LEGACY = ('Revisada', 'Parcial')                  # solo lectura · m
 #                       autorización/pago para mantener segregación de duties).
 #   CONTADORA_USERS   = {mayra, catalina}
 #                       Pueden ver/gestionar pero NO autorizar/pagar OCs
-#                       directamente — la autorización es responsabilidad de
+#                       directamente · la autorización es responsabilidad de
 #                       admin. (Mayra ve todo lo financiero; pagar implica
 #                       movimiento de dinero que necesita firma de admin.)
 
@@ -103,7 +103,7 @@ def _require_authorize_oc():
         _OCA = set()
     u_lower = (usuario or '').lower()
     es_admin = u_lower in {x.lower() for x in ADMIN_USERS}
-    # Autorizador de OC explícito (ej. Catalina, asistente de compras) — puede
+    # Autorizador de OC explícito (ej. Catalina, asistente de compras) · puede
     # autorizar/pagar aunque comparta el perfil contable. Sebastián 13-jun-2026.
     es_autorizador_oc = u_lower in {x.lower() for x in _OCA}
     if u_lower in {x.lower() for x in _CU} and not es_admin and not es_autorizador_oc:
@@ -436,7 +436,7 @@ def _is_animus_payment(c, numero_oc=None, beneficiario_nombre=None,
       - Influencers, marketing digital, cuenta de cobro → ANIMUS LAB
       - Mercancía, MPs, planta, servicios técnicos     → ESPAGIRIA
 
-    Detección multi-señal — cualquiera prende Animus, así soporta CEs
+    Detección multi-señal · cualquiera prende Animus, así soporta CEs
     legacy (creados antes del dispatch) y casos donde la categoría está
     vacía o mal poblada:
 
@@ -447,7 +447,7 @@ def _is_animus_payment(c, numero_oc=None, beneficiario_nombre=None,
       5. observaciones contienen la palabra 'influencer'
 
     Cualquier excepción de SQL (tabla legacy faltante en deploy viejo) se
-    silencia y se evalúa la siguiente señal — la falta de tabla nunca
+    silencia y se evalúa la siguiente señal · la falta de tabla nunca
     debe romper la generación del PDF.
     """
     # Señal 1: keyword en categoría
@@ -503,7 +503,7 @@ def _is_animus_payment(c, numero_oc=None, beneficiario_nombre=None,
 
 def _notificar_solicitante_email(dest_email, asunto, body_html):
     """Envia email al solicitante de forma no-bloqueante.
-    Nunca lanza excepcion — falla silenciosamente con log.
+    Nunca lanza excepcion · falla silenciosamente con log.
     """
     if not dest_email:
         return
@@ -530,7 +530,7 @@ def dashboard_stats():
     Mantenido por compat con código viejo · NO usar en código nuevo.
 
     Dashboard stats. Sebastian (30-abr-2026): los paneles 'Vencimientos
-    próximos', 'Top 5 MPs' y 'Estado general de lotes' aparecían vacíos —
+    próximos', 'Top 5 MPs' y 'Estado general de lotes' aparecían vacíos ·
     el cálculo dependía del campo estado_lote que NO se mantiene
     automáticamente. Fix: calcular los estados dinámicamente desde
     fecha_vencimiento, y soportar variantes de tipo de movimiento.
@@ -555,7 +555,7 @@ def dashboard_stats():
     FILTRO_ENTRADA = "tipo IN ('Entrada','Ingreso','Ajuste','Devolucion','Devolución')"
 
     # ── Vencimientos próximos 6 meses ─────────────────────────────────────
-    # Calculo a nivel LOTE — agrupar entradas por (material_id, lote) y
+    # Calculo a nivel LOTE · agrupar entradas por (material_id, lote) y
     # restar consumos, mostrar solo lotes con stock_restante > 0 con
     # fecha_vencimiento en próximos 180 dias.
     venc_por_mes = {}
@@ -610,7 +610,7 @@ def dashboard_stats():
     except Exception:
         mps_bajo_minimo = 0
 
-    # ── Estado general de lotes — CALCULADO desde fecha_vencimiento ──────
+    # ── Estado general de lotes · CALCULADO desde fecha_vencimiento ──────
     # No depender de estado_lote (campo desactualizado). Calcular por:
     #   VENCIDO: fecha_vencimiento < hoy AND stock > 0
     #   CRITICO: 0-30 dias
@@ -800,7 +800,7 @@ def limpiar_influencer_no_pagadas():
             'mensaje': f'Dry-run. {len(elegibles)} se borrarian, {len(omitidos)} omitidos por tener pagos. POST con {{"confirm":true}} para ejecutar.',
         })
 
-    # Modo confirm — borrar
+    # Modo confirm · borrar
     eliminados = []
     for cand in elegibles:
         numero = cand['numero']
@@ -1312,7 +1312,7 @@ def editar_oc(numero_oc):
           edicion COMPLETA (proveedor, categoria, observaciones, fechas, items)
       - Recibida / Parcial:
           solo observaciones + observaciones_recepcion + fecha_entrega_est
-          (NO items, NO proveedor — la mercancia ya llego, no se cambia)
+          (NO items, NO proveedor · la mercancia ya llego, no se cambia)
       - Pagada:
           solo observaciones (auditable)
       - Cancelada / Rechazada:
@@ -1447,11 +1447,11 @@ def editar_oc(numero_oc):
                       tabla='ordenes_compra', registro_id=numero_oc,
                       despues={k: d.get(k) for k in d
                                 if k in ('observaciones','observaciones_recepcion','fecha_entrega_est')},
-                      detalle=f"Editó OC {numero_oc} ({estado}) — campos limitados")
+                      detalle=f"Editó OC {numero_oc} ({estado}) · campos limitados")
         except Exception as e:
             log.warning('audit_log EDITAR_OC fallo: %s', e)
         conn.commit()
-        return jsonify({'ok': True, 'message': f'OC {numero_oc} ({estado}) — campos limitados actualizados',
+        return jsonify({'ok': True, 'message': f'OC {numero_oc} ({estado}) · campos limitados actualizados',
                         'campos_actualizados': [s.split('=')[0] for s in sets]})
 
     # ─── Edicion mínima (Pagada): solo observaciones para audit trail ─────
@@ -1693,7 +1693,7 @@ def confirmar_proveedor_oc(numero_oc):
         sigue igual, solo actualiza fecha y marca confirmacion).
       - Si quiere cambiarlo → escribe el nuevo nombre y se actualiza.
 
-    NO requiere estado Borrador — confirmacion también es válida en
+    NO requiere estado Borrador · confirmacion también es válida en
     Aprobada (siempre que no haya pagos hechos).
 
     Cuando se confirma o cambia, alimentamos el catálogo: si el proveedor
@@ -1803,7 +1803,7 @@ def actualizar_precios_items_oc(numero_oc):
     Body: { items: [{ codigo_mp, precio_unitario, cantidad_g? }, ...] }
 
     Para que Catalina (en el flujo de confirmar solicitud) cargue precios
-    por item — esto:
+    por item · esto:
       1. Actualiza precio_unitario y subtotal en ordenes_compra_items
       2. Alimenta precios_mp_historico para que aparezca en próximos
          pedidos como precio sugerido
@@ -2048,7 +2048,7 @@ def sugerir_mp_bulk():
 def sugerir_mp(codigo_mp):
     """Devuelve datos sugeridos para autocompletar un MP en una OC.
     Resuelve la queja de Catalina: 'pongo precios y proveedor y no quedan
-    guardados — siempre me los vuelve a pedir'.
+    guardados · siempre me los vuelve a pedir'.
 
     Devuelve:
       - nombre_mp (de maestro_mps)
@@ -2239,7 +2239,7 @@ def fp_crear():
     if numero_oc:
         _ocx = c.execute("SELECT 1 FROM ordenes_compra WHERE numero_oc=?", (numero_oc,)).fetchone()
         if not _ocx:
-            warning = f'La OC "{numero_oc}" no existe — la factura se creó igual, verificá el número.'
+            warning = f'La OC "{numero_oc}" no existe · la factura se creó igual, verificá el número.'
 
     def _f(k):
         try:
@@ -2977,7 +2977,7 @@ def listar_recepciones_discrepancias():
         # "DISTRIQUIM" vs "distriquim ") aparecían como 3 entradas distintas
         # en el ranking · tasa diluida por proveedor real. Mismo fix que
         # aplicamos en Bandeja Planta (commit bbcff41).
-        # prov_norm_orig usa MIN(TRIM(...)) — debe ser agregado: en PostgreSQL una
+        # prov_norm_orig usa MIN(TRIM(...)) · debe ser agregado: en PostgreSQL una
         # columna del SELECT que no esté en GROUP BY ni agregada es error duro
         # ("must appear in the GROUP BY clause"). SQLite lo toleraba (valor
         # arbitrario) → el ranking salía bien local pero VACÍO en prod (PG), y el
@@ -3243,7 +3243,7 @@ def handle_proveedor(nombre):
             'ocs_activas_al_baja': len(ocs_activas),
             'force_override': force,
         })
-    # PATCH — edit
+    # PATCH · edit
     d = request.json or {}
     fields = ['contacto','email','telefono','nit','direccion',
               'banco','tipo_cuenta','num_cuenta','concepto_compra',
@@ -3342,7 +3342,7 @@ def handle_proveedor(nombre):
     conn.commit()
     msg = f"Proveedor actualizado"
     if rename_propagado:
-        msg += f" — nombre cambiado a '{nuevo_nombre}', propagado en: {rename_propagado}"
+        msg += f" · nombre cambiado a '{nuevo_nombre}', propagado en: {rename_propagado}"
     return jsonify({'ok': True, 'message': msg, 'rename_propagado': rename_propagado,
                     'nombre_actual': nombre})
 
@@ -3455,7 +3455,7 @@ def handle_solicitudes_compra():
                                it.get('justificacion',''), it.get('valor_estimado',0),
                                it.get('proveedor_sugerido','')))
                 except sqlite3.OperationalError:
-                    # Esquema antiguo sin proveedor_sugerido — fallback
+                    # Esquema antiguo sin proveedor_sugerido · fallback
                     c.execute("""INSERT INTO solicitudes_compra_items
                                  (numero,codigo_mp,nombre_mp,cantidad_g,unidad,justificacion,valor_estimado)
                                  VALUES (?,?,?,?,?,?,?)""",
@@ -3501,7 +3501,7 @@ def handle_solicitudes_compra():
                 try:
                     conn.rollback()
                 except sqlite3.Error:
-                    # Rollback puede fallar si no había transacción abierta —
+                    # Rollback puede fallar si no había transacción abierta ·
                     # no es crítico, ya estamos en error path.
                     pass
             log.exception('crear solicitud-compra fallo: %s', e)
@@ -3683,7 +3683,7 @@ def handle_solicitudes_compra():
             else:
                 sql_fb_full += " ORDER BY sc.fecha DESC LIMIT 200"
             __import__('logging').getLogger('compras').warning(
-                "SELECT con extras falló (%s) — fallback a sql_minimal", _e
+                "SELECT con extras falló (%s) · fallback a sql_minimal", _e
             )
             c.execute(sql_fb_full, params_fb)
         else:
@@ -3720,7 +3720,7 @@ def handle_solicitudes_compra():
                     v_str = obs_str.split('VALOR:')[1].split('|')[0].strip().replace('$','').replace(',','').replace('.','')
                     row['valor'] = float(v_str)
                 except (ValueError, IndexError):
-                    # Observaciones malformadas — fallback silencioso aceptable
+                    # Observaciones malformadas · fallback silencioso aceptable
                     # (es solo enriquecimiento de display, no flujo crítico).
                     pass
         rows_sol.append(row)
@@ -3733,7 +3733,7 @@ def handle_solicitudes_compra():
 # por proveedor sugerido para procesar todas las del mismo proveedor en
 # UNA sola OC. Endpoint que devuelve el agrupamiento + items consolidados.
 # PERF 13-jul (Bandeja lenta · Sebastián): cache de la bandeja agrupada (consulta
-# pesada: SUM/JOIN + consolidación). Invalidación por VERSIÓN — cualquier escritura
+# pesada: SUM/JOIN + consolidación). Invalidación por VERSIÓN · cualquier escritura
 # de SOL/OC hace bump → fresco al instante (sin staleness, a diferencia de un TTL
 # puro). TTL 60s = respaldo para cambios de fondo (cron auto-plan). ?force=1 salta.
 _AGRUP_CACHE = {}
@@ -3816,7 +3816,7 @@ def solicitudes_agrupadas_por_proveedor():
     if estado_filtro and estado_filtro.lower() != 'all':
         sql += " AND s.estado=?"
         params.append(estado_filtro)
-    # Excluir Influencer/CC siempre — esos tienen flujo aparte
+    # Excluir Influencer/CC siempre · esos tienen flujo aparte
     sql += " AND s.categoria NOT IN ('Influencer/Marketing Digital','Cuenta de Cobro')"
     if fuente == 'planta':
         sql += " AND s.categoria IN ('Materia Prima','Empaque','Material de Empaque')"
@@ -4626,7 +4626,7 @@ def consolidar_auto_pendientes():
             intactas.append(num)
             continue
         if not items:
-            # SOL sin items — caso raro. La preservamos.
+            # SOL sin items · caso raro. La preservamos.
             intactas.append(num)
             continue
         prov = (items[0].get('proveedor_sugerido') or '').strip()
@@ -5139,7 +5139,7 @@ def mis_solicitudes_con_ciclo():
     conn = get_db(); c = conn.cursor()
     # Sebastián 1-may-2026: las solicitudes de Influencer/Marketing
     # (Cuenta de Cobro · empresa ANIMUS · area Marketing) NO deben aparecer
-    # acá — entran a Compras directo en pestaña "Influencer" para que
+    # acá · entran a Compras directo en pestaña "Influencer" para que
     # Catalina no se enrede mezclándolas con producción.
     incluir_influencer = request.args.get('incluir_influencer', '0').strip() in ('1','true','yes')
     sql_solic = """
@@ -5176,11 +5176,11 @@ def mis_solicitudes_con_ciclo():
             paso, paso_label, paso_color = 6, '✅ Recibida en bodega', '#15803d'
             cerrado = True
         elif oc_estado == 'Parcial':
-            paso, paso_label, paso_color = 5, '📦 Recepción parcial — esperando resto', '#f59e0b'
+            paso, paso_label, paso_color = 5, '📦 Recepción parcial · esperando resto', '#f59e0b'
         elif oc_estado == 'Pagada':
-            paso, paso_label, paso_color = 4, '💸 Pagada — en tránsito hacia bodega', '#1e40af'
+            paso, paso_label, paso_color = 4, '💸 Pagada · en tránsito hacia bodega', '#1e40af'
         elif oc_estado == 'Autorizada':
-            paso, paso_label, paso_color = 3, '🟢 OC autorizada — pendiente pago', '#0891b2'
+            paso, paso_label, paso_color = 3, '🟢 OC autorizada · pendiente pago', '#0891b2'
         elif oc_estado in ('Aprobada', 'Revisada'):
             paso, paso_label, paso_color = 3, f'📋 OC {oc_estado.lower()}', '#0891b2'
         elif oc_estado == 'Borrador':
@@ -5191,7 +5191,7 @@ def mis_solicitudes_con_ciclo():
             paso, paso_label, paso_color = 0, f'❌ OC {oc_estado.lower()}', '#dc2626'
             cerrado = True
         elif sol_estado == 'Aprobada':
-            paso, paso_label, paso_color = 2, '🟢 Solicitud aprobada — generando OC', '#0891b2'
+            paso, paso_label, paso_color = 2, '🟢 Solicitud aprobada · generando OC', '#0891b2'
         elif sol_estado == 'Rechazada':
             paso, paso_label, paso_color = 0, '❌ Solicitud rechazada', '#dc2626'
             cerrado = True
@@ -5258,7 +5258,7 @@ def marcar_recibido_solicitante(numero):
         oc_estado = oc_row[0] or ''
         if oc_estado not in ('Autorizada', 'Pagada', 'Parcial'):
             return jsonify({
-                'error': f'OC en estado {oc_estado} — no se puede marcar recibida desde solicitante'
+                'error': f'OC en estado {oc_estado} · no se puede marcar recibida desde solicitante'
             }), 409
         c.execute("""
             UPDATE ordenes_compra SET
@@ -5304,7 +5304,7 @@ def aprobar_solicitud_influencer(numero):
 
     Sebastian (29-abr-2026): Jefferson crea SOLs desde /solicitudes con
     valor=0 y Pendiente. Este endpoint cierra el ciclo: define el valor,
-    auto-aprueba, crea OC y entrada en pagos_influencers — listo para
+    auto-aprueba, crea OC y entrada en pagos_influencers · listo para
     pagar desde /compras tab Influencers.
 
     Body: {valor: 1500000}
@@ -5434,7 +5434,7 @@ def aprobar_solicitud_influencer(numero):
         'numero': numero,
         'numero_oc': oc_num,
         'valor': monto,
-        'mensaje': f'Aprobada — OC {oc_num} creada por ${monto:,.0f}'
+        'mensaje': f'Aprobada · OC {oc_num} creada por ${monto:,.0f}'
     })
 
 
@@ -5477,7 +5477,7 @@ def rechazar_solicitud(numero):
     # Notificar al solicitante. Sebastian (29-abr-2026): "cuando doy rechazar
     # en compras a una cuenta de influencer me esta llegando a mi deberia
     # llegarle a jeferson". Para SOLs de Influencer/CC el destinatario SIEMPRE
-    # debe ser Jefferson (responsable de marketing) — no el solicitante real
+    # debe ser Jefferson (responsable de marketing) · no el solicitante real
     # que puede haber sido Sebastián cargando bulk.
     try:
         _sol_user = (sol[0] or '').strip().lower()
@@ -5515,7 +5515,7 @@ def get_solicitud_estado(numero):
     cols = ['numero','fecha','estado','solicitante','urgencia','observaciones','numero_oc']
     sol = dict(zip(cols, row))
     # Cargar columnas opcionales (pueden no existir en versiones antiguas
-    # de la DB). Whitelist hardcoded — nunca de input — así el f-string es
+    # de la DB). Whitelist hardcoded · nunca de input · así el f-string es
     # seguro contra SQL injection.
     for col in ['area', 'empresa', 'categoria', 'tipo', 'aprobado_por', 'fecha_aprobacion']:
         try:
@@ -6622,7 +6622,7 @@ def recibir_oc(numero_oc):
     })
 
 # ============================================================
-# Compras — Flujo de autorizacion y pago
+# Compras · Flujo de autorizacion y pago
 # ============================================================
 
 @bp.route('/api/ordenes-compra/<numero_oc>/revisar', methods=['PATCH'])
@@ -6923,7 +6923,7 @@ def pagar_oc(numero_oc):
         if prev and prev[0] != numero_oc:
             return jsonify({
                 'error': f"Factura '{numero_factura}' ya fue registrada en pago de OC {prev[0]}",
-                'detail': 'Anti doble pago — verifica antes de continuar.',
+                'detail': 'Anti doble pago · verifica antes de continuar.',
                 'codigo': 'FACTURA_DUPLICADA'
             }), 409
         # Anti-doble-pago cruzado con el libro de facturas (INV-6 · 1-jun-2026):
@@ -6953,7 +6953,7 @@ def pagar_oc(numero_oc):
         """, (numero_oc, monto, medio, fecha_pago, usuario_actual,
               numero_factura, comprobante_imagen, obs))
     except sqlite3.IntegrityError as _e:
-        # UNIQUE de factura disparó (race con check anterior — defense in depth)
+        # UNIQUE de factura disparó (race con check anterior · defense in depth)
         return jsonify({
             'error': 'Factura duplicada en otro pago concurrente',
             'detail': str(_e)[:200],
@@ -7008,7 +7008,7 @@ def pagar_oc(numero_oc):
     except Exception as e:
         log.warning('audit_log PAGAR_OC fallo: %s · operación NO se aborta (audit es defense-in-depth)', e)
     # Sync solicitudes_compra estado → Pagada so it leaves the pending list.
-    # Sebastian (30-abr-2026): bulletproof fix — antes el WHERE filtraba por
+    # Sebastian (30-abr-2026): bulletproof fix · antes el WHERE filtraba por
     # estado='Aprobada' y si la SOL estaba en otro estado (ej. Pendiente
     # despues de un flujo abortado, o ya Pagada por sync previo) NO se
     # actualizaba y quedaba pegada en la lista. Ahora actualizamos cualquier
@@ -7052,7 +7052,7 @@ def pagar_oc(numero_oc):
                     importante=True
                 )
                 # Tambien notif a otros usuarios de marketing para visibilidad
-                # (Daniela suele ver, etc) — non-blocking, best effort.
+                # (Daniela suele ver, etc) · non-blocking, best effort.
                 try:
                     from blueprints.marketing import MARKETING_USERS as _MK
                 except Exception:
@@ -7069,7 +7069,7 @@ def pagar_oc(numero_oc):
         )
     # Sync marketing payment status:
     # 1. Si ya existe un row en pagos_influencers para esta OC → marcar Pagada
-    #    SIEMPRE (sin importar categoria — la existencia del row es señal
+    #    SIEMPRE (sin importar categoria · la existencia del row es señal
     #    suficiente; el bug previo era que si categoria estaba mal/vacía, no
     #    se actualizaba y quedaba como Pendiente).
     # 2. Si no existe row pero categoria sugiere influencer → crearlo Pagada.
@@ -7193,7 +7193,7 @@ def pagar_oc(numero_oc):
                 "Alimentar precios_mp_historico falló: %s", _e
             )
 
-    # ── Generar Comprobante de Egreso (CE) — formato fiscal-compatible ─────
+    # ── Generar Comprobante de Egreso (CE) · formato fiscal-compatible ─────
     # Para todo pago: genera PDF + guarda en comprobantes_pago. La contadora
     # accede a estos PDFs desde /contabilidad para sus cuentas.
     comprobante_info = None
@@ -7260,7 +7260,7 @@ def pagar_oc(numero_oc):
 
         # Detectar si la OC es de servicio (no mercancia con peso real). Para
         # servicios/donaciones/cuentas de cobro/influencers, los items pueden
-        # tener cantidad_g=1 como placeholder y subtotal=monto total — si los
+        # tener cantidad_g=1 como placeholder y subtotal=monto total · si los
         # tratamos como gramos el PDF muestra cant=0 (1g/1000=0.001 redondeado)
         # y valor_total = unit*0.001 = 1/1000 del valor real (bug Sebastian
         # 29-abr-2026: $1,200,000 aparecía como $1,200 en CE-2026-0008).
@@ -7291,7 +7291,7 @@ def pagar_oc(numero_oc):
                     })
         elif items_db:
             # Servicio CON items registrados (ej. una donacion con descripcion
-            # "Donacion") — usar el subtotal directo como valor_unit con cant=1
+            # "Donacion") · usar el subtotal directo como valor_unit con cant=1
             items_pdf = [{
                 'descripcion': r[0] or f"Pago OC {numero_oc} - {categoria}",
                 'fecha': fecha_pago[:10],
@@ -7314,7 +7314,7 @@ def pagar_oc(numero_oc):
         subtotal_ce = monto
         if aplicar_iva:
             # Si IVA está prendido, asumimos que el "monto" del pago es el
-            # subtotal y el IVA se suma — el contador recibe el comprobante
+            # subtotal y el IVA se suma · el contador recibe el comprobante
             # con el desglose correcto.
             pass
 
@@ -7346,7 +7346,7 @@ def pagar_oc(numero_oc):
                     "OBS fallback para beneficiario falló: %s", _e_obs
                 )
 
-        # Empresa pagadora — detección multi-señal (ver _is_animus_payment).
+        # Empresa pagadora · detección multi-señal (ver _is_animus_payment).
         #   Influencer/Marketing/Cuenta de Cobro → ANIMUS LAB S.A.S.
         #   Resto (mercancía, MPs, planta, etc.) → ESPAGIRIA LABORATORIO S.A.S.
         obs_for_dispatch = None
@@ -7391,7 +7391,7 @@ def pagar_oc(numero_oc):
 
         # Envío automático del comprobante por email al beneficiario.
         # Solo si: (a) hay email del beneficiario, (b) hay SMTP configurado.
-        # Se ejecuta en background — no bloquea la respuesta de pago.
+        # Se ejecuta en background · no bloquea la respuesta de pago.
         email_dest = (beneficiario.get('email') or '').strip()
         if email_dest and '@' in email_dest:
             try:
@@ -7420,7 +7420,7 @@ def pagar_oc(numero_oc):
                 )
         else:
             comprobante_info['email_pendiente'] = (
-                'Beneficiario sin email — agrégalo en Marketing › Influencers'
+                'Beneficiario sin email · agrégalo en Marketing › Influencers'
             )
     except Exception as _e:
         __import__('logging').getLogger('compras').error(
@@ -7430,7 +7430,7 @@ def pagar_oc(numero_oc):
     conn.commit()
 
     # ── Notificar al solicitante (Jefferson) cuando es OC influencer/CC ────
-    # Sebastian (29-abr-2026): "le notificaba a jefer" — restaurar el ping
+    # Sebastian (29-abr-2026): "le notificaba a jefer" · restaurar el ping
     # por email al solicitante cuando se le paga a uno de sus influencers.
     # Solo notifica cuando la OC pasa a Pagada (no Parcial).
     try:
@@ -7456,7 +7456,7 @@ def pagar_oc(numero_oc):
                     _sol_user = (sol_info[0] or '').strip().lower()
                     _dest = (sol_info[1] or '').strip() or USER_EMAILS.get(_sol_user, '')
             if _dest:
-                _asunto = f"💸 Pago confirmado a {proveedor} — {numero_oc}"
+                _asunto = f"💸 Pago confirmado a {proveedor} · {numero_oc}"
                 _body = (
                     f"<h2>Pago confirmado</h2>"
                     f"<p>Sebastian autorizó y registró el pago a <b>{proveedor}</b>:</p>"
@@ -7745,9 +7745,9 @@ def regenerar_comprobante_pdf(comp_id):
       - Parseo OBS para datos bancarios
       - Formateo correcto de montos COP
 
-    Body JSON (todos opcionales — si no se pasan, se re-derivan de la DB):
+    Body JSON (todos opcionales · si no se pasan, se re-derivan de la DB):
       empresa: "Animus" | "Espagiria"
-      forzar_obs: true  — fuerza re-parseo OBS aunque ya haya banco en DB
+      forzar_obs: true  · fuerza re-parseo OBS aunque ya haya banco en DB
     """
     # P0 audit 26-may-2026 · zero-error · regenerar comprobante = mutación
     # de documento financiero (INVIMA / contable). Endpoint hermano
@@ -7798,7 +7798,7 @@ def regenerar_comprobantes_legacy():
     endpoint admin lo hace de un golpe.
 
     Body JSON (opcional):
-      dry_run: bool (default false) — solo lista candidatos, no toca
+      dry_run: bool (default false) · solo lista candidatos, no toca
 
     Solo admins. Audita en security_events cada CE corregido.
     """
@@ -8183,7 +8183,7 @@ def pagos_kpis():
 
 # ── Categorías que NO requieren recepción física: van directo a "por pagar" ──
 # El contador ve estos como pagos directos (servicios, no mercancía).
-# NOTA: 'Influencer/Marketing Digital' NO va aquí — Marketing tiene su propio
+# NOTA: 'Influencer/Marketing Digital' NO va aquí · Marketing tiene su propio
 # panel para pagar influencers y no debe aparecer en /compras.
 CATEGORIAS_PAGO_DIRECTO = (
     'Cuenta de Cobro',
@@ -8403,7 +8403,7 @@ _CONSUMOS_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
 </style></head><body><div class="wrap">
 <a href="/compras">&larr; Compras</a>
 <h1>&#128230; Consumos / Gastos Generales</h1>
-<div class="muted">Todo lo que la empresa consume (EPP, papelería, aseo, dotación, mantenimiento…) — NO es materia prima. Creá el consumible una vez y reusalo en cada solicitud. El sistema traza el gasto y te avisa cuando algo <b>sube</b>.</div>
+<div class="muted">Todo lo que la empresa consume (EPP, papelería, aseo, dotación, mantenimiento…) · NO es materia prima. Creá el consumible una vez y reusalo en cada solicitud. El sistema traza el gasto y te avisa cuando algo <b>sube</b>.</div>
 
 <div class="tabs">
   <div class="tab active" id="tab-cat" onclick="verTab('cat')">&#128203; Catálogo + Solicitar</div>
@@ -8482,7 +8482,7 @@ _CONSUMOS_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
    if(!_cat.length){cont.innerHTML='<div class="muted">Aún no hay consumibles. Creá el primero arriba.</div>';return;}
    var h='<table><tr><th>Nombre</th><th>Categoría</th><th>Proveedor</th><th>Precio</th><th>Unidad</th><th></th></tr>';
    _cat.forEach(function(c,i){
-     h+='<tr><td><b>'+ESC(c.nombre)+'</b></td><td>'+ESC(c.categoria)+'</td><td>'+ESC(c.proveedor||'—')+'</td><td>'+FM(c.precio_referencia)+'</td><td>'+ESC(c.unidad)+'</td>'+
+     h+='<tr><td><b>'+ESC(c.nombre)+'</b></td><td>'+ESC(c.categoria)+'</td><td>'+ESC(c.proveedor||'·')+'</td><td>'+FM(c.precio_referencia)+'</td><td>'+ESC(c.unidad)+'</td>'+
         '<td style="white-space:nowrap"><button class="b-sol" onclick="abrirSol('+i+')">Solicitar</button> <button class="b-del" onclick="borrar('+c.id+')">&#128465;&#65039;</button></td></tr>';
    });
    cont.innerHTML=h+'</table>';
@@ -8539,7 +8539,7 @@ _CONSUMOS_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
      h+='<tr><td><b>'+ESC(cat.categoria)+'</b></td>';
      cat.serie.forEach(function(v){h+='<td>'+(v?FM(v):'·')+'</td>';});
      h+='<td><b>'+FM(cat.total)+'</b></td>';
-     if(cat.variacion_pct==null){h+='<td class="flat">—</td>';}
+     if(cat.variacion_pct==null){h+='<td class="flat">·</td>';}
      else if(cat.variacion_pct>=30){h+='<td class="up">&#9650; +'+cat.variacion_pct+'%</td>';}
      else if(cat.variacion_pct<0){h+='<td class="down">&#9660; '+cat.variacion_pct+'%</td>';}
      else{h+='<td class="flat">'+(cat.variacion_pct>0?'+':'')+cat.variacion_pct+'%</td>';}
@@ -8558,7 +8558,7 @@ def _autorreparar_ocs_vacias(cur):
     Solo toca OCs NO pagadas con proveedor 'Por definir'/vacio o valor<=0
     Y que tengan solicitud asociada con datos. Devuelve lista de OCs
     reparadas. Pensado para correr al cargar /por-pagar y al iniciar
-    Dashboard — idempotente.
+    Dashboard · idempotente.
     """
     reparadas = []
     rows = cur.execute("""
@@ -8653,7 +8653,7 @@ def reparar_oc_desde_solicitud(numero_oc):
         WHERE oc.numero_oc=?
     """, (numero_oc,)).fetchone()
     if not rows or not rows[4]:
-        return jsonify({'error': 'OC sin solicitud asociada — no hay de donde jalar'}), 409
+        return jsonify({'error': 'OC sin solicitud asociada · no hay de donde jalar'}), 409
     # Llamar al helper solo para esta OC
     class _CurFilter:
         def __init__(self, real_cur):
@@ -8677,7 +8677,7 @@ def reparar_oc_desde_solicitud(numero_oc):
     return jsonify({
         'ok': True, 'reparada': False, 'numero_oc': numero_oc,
         'proveedor': actual[0], 'valor_total': actual[1],
-        'mensaje': 'Sin cambios — la OC ya tiene datos o la solicitud tampoco los tiene.'
+        'mensaje': 'Sin cambios · la OC ya tiene datos o la solicitud tampoco los tiene.'
     })
 
 
@@ -8688,7 +8688,7 @@ def get_por_pagar():
     Incluye:
       - OCs con estado 'Recibida' o 'Parcial' (mercancía física recibida)
       - OCs con estado 'Aprobada'/'Autorizada' Y categoría de servicio
-        (Influencer, Cuenta de Cobro, etc.) — NO requieren recepción
+        (Influencer, Cuenta de Cobro, etc.) · NO requieren recepción
 
     Cada item lleva flag `pago_directo: true` si es servicio sin mercancía.
     El frontend puede mostrarlos en una sección destacada.
@@ -8787,7 +8787,7 @@ def get_por_pagar():
 
     # NOTA 28-abr-2026 (sesion #2 Sebastian): retiramos la seccion
     # "en_proceso" de Por Pagar. Las OCs en Borrador/Revisada/Pendiente/
-    # Aprobada NO son "pendiente de pago" todavia — estan en proceso de
+    # Aprobada NO son "pendiente de pago" todavia · estan en proceso de
     # creacion/autorizacion y se ven en Dashboard y otras pestañas.
     # Por Pagar ahora muestra SOLO lo que esta listo para pagar:
     #   - Mercancia recibida (Recibida/Parcial)
@@ -9207,7 +9207,7 @@ def cargos_fijos_pagar(pid):
 
 
 # ════════════════════════════════════════════
-# MEE — Materiales de Envase & Empaque
+# MEE · Materiales de Envase & Empaque
 # ════════════════════════════════════════════
 
 @bp.route('/api/mee', methods=['GET','POST'])
@@ -9666,7 +9666,7 @@ def consolidado_por_proveedor():
 
 @bp.route('/api/compras/solicitudes/pdf', methods=['GET'])
 def solicitudes_pdf_resumen():
-    """Genera PDF ejecutivo con todas las solicitudes filtradas — para que
+    """Genera PDF ejecutivo con todas las solicitudes filtradas · para que
     Gerencia (Alejandro) revise lo que falta y dé visto bueno antes de
     convertir en OCs.
 
@@ -9722,12 +9722,12 @@ def solicitudes_pdf_resumen():
             'estados_solicitados': estados,
         }), 404
 
-    # ── Generar PDF con fpdf2 — diseño ejecutivo nivel OC ──────────────────
+    # ── Generar PDF con fpdf2 · diseño ejecutivo nivel OC ──────────────────
     from fpdf import FPDF
     from datetime import datetime as _dt
     from pathlib import Path
 
-    # Paleta HHA — coordinada con OC (compras_html.py) y branding
+    # Paleta HHA · coordinada con OC (compras_html.py) y branding
     HHA_TEAL = (31, 95, 91)
     HHA_TEAL_DARK = (16, 70, 67)
     COLOR_TEXT = (40, 40, 40)
@@ -9764,7 +9764,7 @@ def solicitudes_pdf_resumen():
             return ''
         if not isinstance(t, str):
             t = str(t)
-        repl = {'—': '-', '–': '-', '…': '...', '"': '"', '"': '"',
+        repl = {'·': '-', '–': '-', '…': '...', '"': '"', '"': '"',
                 ''': "'", ''': "'", '•': '·', '→': '->', 'á':'a', 'é':'e',
                 'í':'i', 'ó':'o', 'ú':'u', 'Á':'A', 'É':'E', 'Í':'I',
                 'Ó':'O', 'Ú':'U', 'ñ':'n', 'Ñ':'N'}
@@ -10107,7 +10107,7 @@ def solicitudes_pdf_resumen():
     )
 
 
-# ─── MÓDULO CLIENTES — Rutas ──────────────────────────────────
+# ─── MÓDULO CLIENTES · Rutas ──────────────────────────────────
 
 
 
@@ -10510,14 +10510,14 @@ def get_precio_historico(codigo_mp):
             elif v >= 20:
                 stats['alerta'] = 'subiendo_fuerte'
                 stats['alerta_msg'] = (
-                    f'Subió {v:.1f}% — considerar explorar otros proveedores'
+                    f'Subió {v:.1f}% · considerar explorar otros proveedores'
                 )
             elif v >= 5:
                 stats['alerta'] = 'subiendo'
-                stats['alerta_msg'] = f'Subió {v:.1f}% — vigilar tendencia'
+                stats['alerta_msg'] = f'Subió {v:.1f}% · vigilar tendencia'
             elif v <= -5:
                 stats['alerta'] = 'bajando'
-                stats['alerta_msg'] = f'Bajó {v:.1f}% — buena negociación'
+                stats['alerta_msg'] = f'Bajó {v:.1f}% · buena negociación'
 
     # Nombre del MP (si existe)
     nombre_mp = ''
@@ -10540,7 +10540,7 @@ def get_precio_historico(codigo_mp):
 
 
 # ─── ALERTAS VIVAS DE COMPRAS (Sprint 3) ─────────────────────────────────────
-# Espejo del endpoint de Planta — consume del Centro de Mando para mostrar todo
+# Espejo del endpoint de Planta · consume del Centro de Mando para mostrar todo
 # lo que requiere atención en compras HOY.
 
 @bp.route('/api/compras/alertas-vivas', methods=['GET'])
@@ -11311,7 +11311,7 @@ async function load(){
         '</div>'+
         '<div class="os-grid">'+
           '<div><b>Producto</b>'+_esc(o.producto_final)+'</div>'+
-          '<div><b>Envase</b>'+_esc(o.envase_descripcion||'—')+'</div>'+
+          '<div><b>Envase</b>'+_esc(o.envase_descripcion||'·')+'</div>'+
           '<div><b>Cantidad</b><span style="font-size:18px;font-weight:800;color:#0f766e">'+(o.cantidad_unidades||0)+' uds</span></div>'+
           '<div><b>Entregada</b>'+_esc(fec)+'</div>'+
         '</div>'+
