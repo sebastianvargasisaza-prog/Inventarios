@@ -59,15 +59,15 @@ def _cleanup(codigo, producto, _con=None):
         con.close()
 
 
-def _deficit_pantalla(payload, cod_up):
-    """Extrae deficit@90 del MP cod_up del payload de consumo-horizontes (robusto a la forma)."""
+def _campo_pantalla(payload, cod_up, campo="deficit"):
+    """Extrae <campo>@90 del MP cod_up del payload de consumo-horizontes (robusto a la forma)."""
     found = {}
 
     def _walk(o):
         if isinstance(o, dict):
             # la pantalla usa 'codigo'; el motor OC 'codigo_mp' · aceptar ambos
             c = o.get("codigo") or o.get("codigo_mp")
-            d = o.get("deficit")
+            d = o.get(campo)
             if c and isinstance(d, dict) and "90" in d:
                 found[str(c).upper()] = float(d["90"])
             for v in o.values():
@@ -78,6 +78,10 @@ def _deficit_pantalla(payload, cod_up):
 
     _walk(payload)
     return found.get(cod_up, 0.0)
+
+
+def _deficit_pantalla(payload, cod_up):
+    return _campo_pantalla(payload, cod_up, "deficit")
 
 
 def test_paridad_motores_demanda_mp(admin_client):
@@ -172,10 +176,20 @@ def test_paridad_motores_pendiente_segun_toggle(admin_client):
 
         # ── Toggle OFF (default): la pantalla NO resta (bruto=1500) · divergencia intencional ──
         _set_toggle(None)
-        sc_off = _deficit_pantalla(admin_client.get("/api/abastecimiento/consumo-horizontes?horizontes=90").get_json(), cu)
+        payload_off = admin_client.get("/api/abastecimiento/consumo-horizontes?horizontes=90").get_json()
+        sc_off = _deficit_pantalla(payload_off, cu)
         assert sc_off > sc_on, (
             f"Con toggle OFF la pantalla debe mostrar déficit BRUTO (mayor). "
             f"OFF={sc_off} vs ON={sc_on}. Si esto cambia, revisar el interruptor abast_contar_pendiente.")
+
+        # ── #9 FIX: el 'neto_a_pedir' (lo que usa la sugerencia "Pedir") SIEMPRE es neto,
+        #    independiente del toggle → coincide con lo que Generar OC pediría (evita
+        #    re-comprar lo en camino desde la pantalla).
+        oc_d = oc.get(cu, 0.0)  # OC engine (neto) del bloque toggle-ON de arriba
+        neto = _campo_pantalla(payload_off, cu, "neto_a_pedir")
+        assert abs(neto - oc_d) <= max(1.0, oc_d * 0.005), (
+            f"'neto_a_pedir' de la pantalla ({neto}) debe igualar a Generar OC ({oc_d}) "
+            f"aun con toggle OFF (#9 · la sugerencia Pedir no debe re-comprar lo en camino).")
     finally:
         _set_toggle(None)
         _cleanup_sol(sol)

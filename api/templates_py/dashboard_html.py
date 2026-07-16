@@ -23642,12 +23642,14 @@ async function ckMarcar(itemId, estado){
   }
 
   function _cantidadSugerida(it, cubrirDias) {
-    // Cantidad a pedir = déficit EXACTO del horizonte elegido (consumo_H − stock −
-    // en cola). FIX 10-jun (Sebastián): "jalar exacto para N días · ni de más ni de
-    // menos". Antes, si el horizonte elegido estaba cubierto, jalaba de un horizonte
-    // POSTERIOR (se pasaba). Ahora si está cubierto → 0 (no sobre-pedir).
-    if (!it.deficit) return 0;
-    const dh = it.deficit[String(cubrirDias)];
+    // Cantidad a pedir = NETO del horizonte elegido (consumo_H − stock − en cola).
+    // FIX 10-jun (Sebastián): "jalar exacto para N días · ni de más ni de menos".
+    // #9 (16-jul): usa 'neto_a_pedir' (SIEMPRE resta lo pendiente) en vez de 'deficit'
+    // (que quedó BRUTO con el toggle del 12-jul) → NO re-compra lo ya pedido y coincide
+    // con lo que Generar OC pediría. Fallback a deficit si el backend no manda el campo.
+    const _src = it.neto_a_pedir || it.deficit;
+    if (!_src) return 0;
+    const dh = _src[String(cubrirDias)];
     if (!(dh && dh > 0.01)) return 0;
     // Sebastián 11-jul · acelerador de compras (buffer visible: crecimiento capado + colchón por lead time)
     return Math.round(dh * (1 + _acelFactor(it)));

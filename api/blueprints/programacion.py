@@ -15915,6 +15915,11 @@ def abastecimiento_consumo_horizontes():
             # Sebastián 12-jul · déficit contra STOCK FÍSICO (pend/cuar solo INFO · ver interruptor arriba).
             disponible = stock_g + ((pend_g + cuar_g) if _contar_pend else 0.0)
             deficits = {h: round(max(consumo[h] - disponible, 0), 1) for h in horizontes}
+            # 'neto a pedir' SIEMPRE neto (consumo - stock - lo en camino), independiente
+            # del toggle abast_contar_pendiente. El `deficit` queda BRUTO para monitoreo
+            # (12-jul), pero la SUGERENCIA "Pedir" del front usa esto para NO re-comprar lo
+            # ya pedido · misma fórmula que /generar-oc (#9 · restaura intención del 10-jun).
+            neto_a_pedir = {h: round(max(consumo[h] - stock_g - pend_g, 0), 1) for h in horizontes}
             urg, h_urg = _urgencia_de(deficits)
             if urg == 'OK' and max(consumo.values()) <= 0.01:
                 continue  # sin consumo · no mostrar
@@ -15929,6 +15934,7 @@ def abastecimiento_consumo_horizontes():
                 'cuarentena_g': round(cuar_g, 1),
                 'consumo': {str(h): round(consumo[h], 1) for h in horizontes},
                 'deficit': {str(h): deficits[h] for h in horizontes},
+                'neto_a_pedir': {str(h): neto_a_pedir[h] for h in horizontes},
                 'urgencia': urg,
                 'horizonte_quiebre_dias': h_urg,
                 'lead_time_dias': info.get('lead_time_dias', 14),
@@ -15945,6 +15951,7 @@ def abastecimiento_consumo_horizontes():
             cuar_u = float(_cuar_mee.get(str(cod).upper().strip(), 0) or 0)
             disponible = stock_u + ((pend_u + cuar_u) if _contar_pend else 0.0)  # Sebastián 12-jul · ver interruptor MP
             deficits = {h: round(max(consumo[h] - disponible, 0), 1) for h in horizontes}
+            neto_a_pedir = {h: round(max(consumo[h] - stock_u - pend_u, 0), 1) for h in horizontes}  # neto · sugerencia Pedir (#9)
             urg, h_urg = _urgencia_de(deficits)
             if urg == 'OK' and max(consumo.values()) <= 0.01:
                 continue
@@ -15958,6 +15965,7 @@ def abastecimiento_consumo_horizontes():
                 'cuarentena_u': round(cuar_u, 1),
                 'consumo': {str(h): round(consumo[h], 1) for h in horizontes},
                 'deficit': {str(h): deficits[h] for h in horizontes},
+                'neto_a_pedir': {str(h): neto_a_pedir[h] for h in horizontes},
                 'urgencia': urg,
                 'horizonte_quiebre_dias': h_urg,
                 'lead_time_dias': 14,  # MEE default · TODO leer de mee_lead_time_config
