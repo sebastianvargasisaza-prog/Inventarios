@@ -9229,14 +9229,16 @@ def handle_mee():
     cat = request.args.get('cat','')
     q   = request.args.get('q','')
     lim = int(request.args.get('limit',500))
-    sql = "SELECT codigo,descripcion,categoria,proveedor,stock_actual,stock_minimo,estado FROM maestro_mee WHERE estado='Activo'"
+    # `medida` (Catalina 15-jul) = presentación física que identifica el envase (30ml, 89mm goteros…) → así sabe
+    # cuál pedir en la OC. COALESCE por si la columna aún no está en un entorno sin la mig 354.
+    sql = "SELECT codigo,descripcion,categoria,proveedor,stock_actual,stock_minimo,estado,COALESCE(medida,'') FROM maestro_mee WHERE estado='Activo'"
     params = []
     if cat: sql += " AND categoria=?"; params.append(cat)
     if q:   sql += " AND (codigo LIKE ? OR descripcion LIKE ?)"; params += [f'%{q}%',f'%{q}%']
     sql += " ORDER BY categoria,codigo LIMIT ?"
     params.append(lim)
     cur.execute(sql, params)
-    cols=['codigo','descripcion','categoria','proveedor','stock_actual','stock_minimo','estado']
+    cols=['codigo','descripcion','categoria','proveedor','stock_actual','stock_minimo','estado','medida']
     items=[dict(zip(cols,r)) for r in cur.fetchall()]
     # AUDITORÍA-FIX 23-may-2026 · C18 · sobrescribir stock_actual cache
     # con valor CANONICAL de movimientos_mee · evita drift en UI mientras
@@ -9261,7 +9263,7 @@ def handle_mee_item(codigo):
             return err, code
         d = request.get_json(silent=True) or {}
         fields=[]; vals=[]
-        for f in ['descripcion','categoria','proveedor','stock_minimo','estado']:
+        for f in ['descripcion','categoria','proveedor','stock_minimo','estado','medida']:
             if f in d: fields.append(f'{f}=?'); vals.append(d[f])
         if not fields: return jsonify({'error':'nada que actualizar'}), 400
         vals.append(codigo)

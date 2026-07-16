@@ -2044,7 +2044,10 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
               <div class="form-group" style="margin:0"><label>Stock m&iacute;nimo</label><input type="number" id="mee-adj-min" min="0" step="1"></div>
             </div>
             <div class="form-group" style="margin:12px 0 0"><label>Motivo <span style="color:#94a3b8;font-weight:400">(solo si camb&iacute;as el stock)</span></label><input type="text" id="mee-adj-motivo" placeholder="Ej: conteo f&iacute;sico, rotura, correcci&oacute;n"></div>
-            <div class="form-group" style="margin:12px 0 0"><label>Proveedor</label><input type="text" id="mee-adj-prov" placeholder="Proveedor del envase"></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0 0">
+              <div class="form-group" style="margin:0"><label>Proveedor</label><input type="text" id="mee-adj-prov" placeholder="Proveedor del envase"></div>
+              <div class="form-group" style="margin:0"><label>&#128207; Medida <span style="color:#94a3b8;font-weight:400">(30ml &middot; 89mm gotero)</span></label><input type="text" id="mee-adj-medida" placeholder="Ej: 30ml, 89mm" maxlength="40"></div>
+            </div>
             <div style="font-size:12px;font-weight:700;color:#7c3aed;margin:16px 0 6px">&#128205; UBICACI&Oacute;N</div>
             <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
               <div class="form-group" style="margin:0"><label>Zona</label><select id="mee-adj-zona" onchange="meeUbicChange(this,'zona')"></select></div>
@@ -9654,7 +9657,7 @@ async function cargarMeeStock(){
       window._MEE_DATA = window._MEE_DATA || {};
       d.items.forEach(function(m){
         window._MEE_IMG[m.codigo] = m.imagen_url || '';
-        window._MEE_DATA[m.codigo] = {desc:m.descripcion||'', cat:m.categoria||'', prov:m.proveedor||'', stock:(m.stock_actual!=null?m.stock_actual:0), min:(m.stock_minimo||0), unidad:(m.unidad||'und'), zona:(m.zona||''), estante:(m.estanteria||''), pos:(m.posicion||'')};
+        window._MEE_DATA[m.codigo] = {desc:m.descripcion||'', cat:m.categoria||'', prov:m.proveedor||'', stock:(m.stock_actual!=null?m.stock_actual:0), min:(m.stock_minimo||0), unidad:(m.unidad||'und'), zona:(m.zona||''), estante:(m.estanteria||''), pos:(m.posicion||''), medida:(m.medida||'')};
         optsCod += '<option value="'+_escHTML(m.codigo)+'" data-stock="'+_escHTML(m.stock_actual)+'" data-unidad="'+_escHTML(m.unidad)+'" data-min="'+_escHTML(m.stock_minimo)+'">'+_escHTML(m.codigo)+' — '+_escHTML(m.descripcion)+'</option>';
       });
       codSel.innerHTML = optsCod;
@@ -9707,7 +9710,9 @@ async function cargarMeeStock(){
       h+='<td style="font-family:monospace;font-size:0.78em;color:#555;">'+_escHTML(m.codigo)+'</td>';
       var _loc=[m.zona,m.estanteria,m.posicion].filter(function(x){return x&&String(x).trim();}).join(' · ');
       var _chips=(_cliChip(m)+ob).trim();
-      h+='<td style="font-size:0.9em;line-height:1.35;">'+'<div style="font-weight:600;color:#1e293b">'+_escHTML(m.descripcion)+'</div>'+(_chips?'<div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+_cliChip(m)+ob+'</div>':'')+'</td>';
+      var _med=(m.medida||'').trim();
+      var _medChip=_med?'<span title="Medida/presentación del envase" style="background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;border-radius:999px;padding:1px 9px;font-size:0.74em;font-weight:800;white-space:nowrap;margin-left:7px">&#128207; '+_escHTML(_med)+'</span>':'';
+      h+='<td style="font-size:0.9em;line-height:1.35;">'+'<div style="font-weight:600;color:#1e293b;display:flex;align-items:center;flex-wrap:wrap">'+_escHTML(m.descripcion)+_medChip+'</div>'+(_chips?'<div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+_cliChip(m)+ob+'</div>':'')+'</td>';
       h+='<td style="font-size:0.8em;color:#777;">'+_escHTML(m.categoria||'')+'</td>';
       h+='<td style="font-weight:700;text-align:right;">'+m.stock_actual+' <span style="color:#999;font-size:0.8em;font-weight:400">'+_escHTML(m.unidad||'und')+'</span></td>';
       h+='<td style="text-align:center;">'+(_loc?'<span style="background:#ecfeff;color:#0e7490;border:1px solid #a5f3fc;border-radius:999px;padding:2px 9px;font-size:0.72em;font-weight:700;white-space:nowrap" title="Ubicación en bodega (zona/estante/posición)">&#128205; '+_escHTML(_loc)+'</span>':'<span style="color:#cbd5e1">&mdash;</span>')+'</td>';
@@ -9743,6 +9748,7 @@ async function meeAjustar(codigo){
   document.getElementById('mee-adj-cant').value=st;
   document.getElementById('mee-adj-min').value=(dd.min||0);
   var _pv=document.getElementById('mee-adj-prov'); if(_pv) _pv.value=dd.prov||'';
+  var _mdEl=document.getElementById('mee-adj-medida'); if(_mdEl) _mdEl.value=dd.medida||'';
   document.getElementById('mee-adj-motivo').value='';
   _adjMsg('');
   m.dataset.cod=codigo; m.style.display='flex';
@@ -9847,7 +9853,8 @@ async function meeAjustarGuardar(){
   var min=parseFloat(document.getElementById('mee-adj-min').value);
   var motivo=(document.getElementById('mee-adj-motivo').value||'').trim();
   var _pv=document.getElementById('mee-adj-prov');
-  var body={ zona:document.getElementById('mee-adj-zona').value||'', estanteria:document.getElementById('mee-adj-estante').value||'', posicion:document.getElementById('mee-adj-pos').value||'', proveedor:(_pv?_pv.value:'')||'' };
+  var _mdEl=document.getElementById('mee-adj-medida');
+  var body={ zona:document.getElementById('mee-adj-zona').value||'', estanteria:document.getElementById('mee-adj-estante').value||'', posicion:document.getElementById('mee-adj-pos').value||'', proveedor:(_pv?_pv.value:'')||'', medida:(_mdEl?_mdEl.value:'')||'' };
   if(!isNaN(min)) body.stock_minimo=min;
   var cambiaStock=!isNaN(cant) && cant!==st;
   if(cambiaStock){

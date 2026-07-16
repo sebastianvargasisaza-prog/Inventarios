@@ -428,6 +428,56 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (354, "Envases · MEDIDA por código (Catalina 15-jul · Excel INVENTARIO ENVASE): `maestro_mee.medida` TEXT = la "
+          "presentación/medida física que identifica el envase (30ml, 15ml, 89mm/65mm/72mm para GOTEROS que se "
+          "distinguen por LARGO, 30ml/15ml para tapa cuadrada). Sin esto Catalina no sabía qué gotero pedir en la OC "
+          "(6 goteros que decían todos 'GOTERO'). Se muestra en el inventario y en el dropdown Ref. MEE de la OC. "
+          "Poblado del Excel maestro por código (UPDATE no-op si el código no está · solo escribe donde está vacío · "
+          "no pisa ediciones futuras). Additiva, PG-safe.", [
+        "ALTER TABLE maestro_mee ADD COLUMN medida TEXT DEFAULT ''",
+        "UPDATE maestro_mee SET medida='30ml' WHERE codigo='MEE-ENV-001' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='30ml' WHERE codigo='MEE-ENV-002' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='30ml' WHERE codigo='MEE-ENV-003' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='30ml' WHERE codigo='MEE-ENV-004' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='30ml' WHERE codigo='MEE-ENV-005' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='15ml' WHERE codigo='MEE-ENV-006' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='30ml' WHERE codigo='MEE-ENV-007' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='30ml' WHERE codigo='MEE-ENV-008' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='30ml' WHERE codigo='MEE-ENV-009' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='15ml' WHERE codigo='MEE-ENV-010' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='30ml' WHERE codigo='MEE-ENV-011' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='15ml' WHERE codigo='MEE-ENV-012' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='50ml' WHERE codigo='MEE-ENV-013' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='7,5ml' WHERE codigo='MEE-ENV-014' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='30ml' WHERE codigo='MEE-ENV-015' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='10ml' WHERE codigo='MEE-ENV-016' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='10ml' WHERE codigo='MEE-ENV-017' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='10ml' WHERE codigo='MEE-ENV-018' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='10ml' WHERE codigo='MEE-ENV-019' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='50ml' WHERE codigo='MEE-ENV-020' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='50ml' WHERE codigo='MEE-ENV-021' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='150ml' WHERE codigo='MEE-ENV-022' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='15ml' WHERE codigo='MEE-ENV-023' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='15ml' WHERE codigo='MEE-ENV-029' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='89mm' WHERE codigo='MEE-GOT-001' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='65mm' WHERE codigo='MEE-GOT-002' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='72mm' WHERE codigo='MEE-GOT-003' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='55mm' WHERE codigo='MEE-GOT-004' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='30ml' WHERE codigo='MEE-GOT-005' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='30ml' WHERE codigo='MEE-GOT-006' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='10ml' WHERE codigo='MEE-IMP-001' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='10ml' WHERE codigo='MEE-IMP-002' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='10ml' WHERE codigo='MEE-IMP-003' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='10ml' WHERE codigo='MEE-IMP-004' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='10ml' WHERE codigo='MEE-IMP-005' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='10ml' WHERE codigo='MEE-IMP-006' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='10ml' WHERE codigo='MEE-IMP-007' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='10ml' WHERE codigo='MEE-IMP-008' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='10ml' WHERE codigo='MEE-IMP-009' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='30ml' WHERE codigo='MEE-TAP-001' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='120ml' WHERE codigo='MEE-TAP-002' AND COALESCE(medida,'')=''",
+        "UPDATE maestro_mee SET medida='30ml/15ml' WHERE codigo='MEE-TAP-003' AND COALESCE(medida,'')=''",
+    ]),
     (353, "Programación v4 · Fase 1 mix · `sku_planeacion_config.mix_congelado_json` (Sebastián 15-jul): guarda el mix por referencia CONGELADO cuando mix_mode='fijo' (sueros estables). El desglose lo congela la 1ª vez que se pide en modo fijo (o al re-elegir fijo) y lo repite hasta re-congelar. NULL = no congelado (auto/crece recalculan por venta). Additiva, PG-safe.", [
         "ALTER TABLE sku_planeacion_config ADD COLUMN mix_congelado_json TEXT",
     ]),

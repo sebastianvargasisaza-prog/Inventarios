@@ -13993,6 +13993,7 @@ def mee_stock_list():
         SELECT m.codigo, m.descripcion, m.categoria, m.unidad,
                COALESCE(mv.stock_real, m.stock_actual, 0) as stock_actual, m.stock_minimo, m.estado, m.proveedor,
                COALESCE(m.imagen_url,'') as imagen_url,
+               COALESCE(m.medida,'') as medida,
                COALESCE(m.cliente,'') as cliente,
                COALESCE(m.zona,'') as zona, COALESCE(m.estanteria,'') as estanteria, COALESCE(m.posicion,'') as posicion,
                COALESCE(mv.ultima_entrada,'') as ultima_entrada,
@@ -14757,7 +14758,7 @@ def mee_item_detalle(codigo):
     if request.method == 'PUT':
         d = request.json or {}
         sets, params = [], []
-        for f in ('descripcion','categoria','unidad','proveedor','fabricante','stock_minimo'):
+        for f in ('descripcion','categoria','unidad','proveedor','fabricante','stock_minimo','medida'):
             if f in d:
                 sets.append(f'{f}=?'); params.append(d[f])
         if not sets:
@@ -14929,6 +14930,9 @@ def mee_ajustar_stock(codigo):
     _set_ubic = any(k in d for k in ('zona', 'estanteria', 'posicion'))
     _set_prov = ('proveedor' in d)
     _prov = (d.get('proveedor') or '').strip()
+    # medida/presentación (Catalina 15-jul · 30ml, 89mm goteros…) · editable desde el modal Ajustar
+    _set_medida = ('medida' in d)
+    _medida = (d.get('medida') or '').strip()[:40]
     _min_val = None
     if 'stock_minimo' in d:
         _min_val, _merr = validate_money(d.get('stock_minimo', 0), allow_zero=True, max_value=10_000_000, field_name='stock_minimo')
@@ -14964,6 +14968,8 @@ def mee_ajustar_stock(codigo):
         _sets += ['zona=?', 'estanteria=?', 'posicion=?']; _vals += [_zona, _estante, _posicion]
     if _set_prov:
         _sets.append('proveedor=?'); _vals.append(_prov)
+    if _set_medida:
+        _sets.append('medida=?'); _vals.append(_medida)
     if _min_val is not None:
         _sets.append('stock_minimo=?'); _vals.append(_min_val)
     if _sets:

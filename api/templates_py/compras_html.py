@@ -3695,7 +3695,10 @@ async function loadMEELookup(){
     var dl=document.getElementById('mee-dl');
     if(!dl){ dl=document.createElement('datalist'); dl.id='mee-dl'; document.body.appendChild(dl); }
     dl.innerHTML=_MEE_LIST.map(function(m){
-      return '<option value="'+esc(m.codigo||'')+'">'+esc(m.descripcion||'')+'</option>';
+      // Catalina 15-jul · mostrar la MEDIDA (30ml, 89mm goteros…) para saber cuál pedir
+      var _md=(m.medida||'').trim();
+      var _lbl=(m.descripcion||'')+(_md?(' · '+_md):'');
+      return '<option value="'+esc(m.codigo||'')+'">'+esc(_lbl)+'</option>';
     }).join('');
   }catch(e){ console.warn('MEE lookup unavailable',e); }
 }
@@ -3706,7 +3709,9 @@ function autoFillMEE(n){
   var mee=_MEE_LIST.find(function(m){ return (m.codigo||'').toUpperCase()===val; });
   if(mee){
     var nameEl=document.getElementById('in'+n);
-    if(nameEl&&!nameEl.value) nameEl.value=mee.descripcion||'';
+    // Catalina 15-jul · el nombre autocompletado lleva la MEDIDA → la OC impresa dice "GOTERO · 89mm"
+    var _md=(mee.medida||'').trim();
+    if(nameEl&&!nameEl.value) nameEl.value=(mee.descripcion||'')+(_md?(' · '+_md):'');
   }
 }
 // ─── Catálogo de consumibles en Crear OC (Sebastián 1-jul) · papelería/EPP/servicios ───
