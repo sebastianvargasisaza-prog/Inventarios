@@ -2455,6 +2455,9 @@ def prog_decision_produccion():
         if mm not in ('auto', 'crece', 'fijo'):
             return jsonify({'error': "mix_mode debe ser auto/crece/fijo"}), 400
         sets.append('mix_mode=?'); vals.append(mm); cambios['mix_mode'] = mm
+        # Programación v4 · al cambiar/re-elegir el modo, limpiar el mix CONGELADO: si el
+        # nuevo modo es 'fijo', el desglose lo re-congela con la venta ACTUAL la próxima vez.
+        sets.append('mix_congelado_json=NULL'); cambios['mix_congelado'] = 'reset'
 
     if not sets:
         return jsonify({'error': 'nada para guardar'}), 400

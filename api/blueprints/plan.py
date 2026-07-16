@@ -2054,35 +2054,70 @@ def plan_desglose_tonos():
     tendencia = 0.0
     if _rate_win > 0:
         tendencia = max(0.0, min(0.5, (_rate_rec / _rate_win) - 1.0))
+    # Programación v4 · mix_mode: CÓMO repartir entre referencias.
+    #   auto  = venta de toda la ventana (comportamiento actual · default)
+    #   crece = venta RECIENTE (mitad de la ventana) → el mix sigue la tendencia por color/lanzamiento
+    #   fijo  = mix CONGELADO (se guarda la 1ª vez en modo fijo y se repite hasta re-congelar)
+    _mix_mode = 'auto'
+    _mix_congelado = None
+    try:
+        _cfgrow = cur.execute(
+            "SELECT COALESCE(mix_mode,'auto'), mix_congelado_json FROM sku_planeacion_config "
+            "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (producto,)).fetchone()
+        if _cfgrow:
+            _mix_mode = (_cfgrow[0] or 'auto').lower()
+            if _cfgrow[1]:
+                try:
+                    _mc = _json.loads(_cfgrow[1])
+                    if isinstance(_mc, dict) and _mc:
+                        _mix_congelado = {str(k).upper().strip(): float(v or 0) for k, v in _mc.items()}
+                except Exception:
+                    _mix_congelado = None
+    except Exception:
+        pass
+
+    # pct por sku según el modo (con fallback seguro a full-window / equitativo)
+    pct_por_sku = {}
+    if _mix_mode == 'fijo' and _mix_congelado:
+        _fro = {sk: _mix_congelado.get(sk, 0.0) for sk in skus}
+        _s = sum(_fro.values())
+        if _s > 0:
+            pct_por_sku = {sk: (_fro[sk] / _s) * 100 for sk in skus}
+    elif _mix_mode == 'crece' and sum(ventas_rec.values()) > 0:
+        _tr = sum(ventas_rec.values())
+        pct_por_sku = {sk: (ventas_rec[sk] / _tr) * 100 for sk in skus}
+    elif total_uds > 0:
+        pct_por_sku = {sk: (ventas[sk] / total_uds) * 100 for sk in skus}
+        if _mix_mode == 'fijo':
+            # CONGELAR ahora el mix calculado (se persiste · se repite hasta re-congelar).
+            try:
+                _frozen = {sk: round(pct_por_sku[sk], 4) for sk in skus}
+                cur.execute("UPDATE sku_planeacion_config SET mix_congelado_json=? "
+                            "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
+                            (_json.dumps(_frozen, sort_keys=True), producto))
+                conn.commit()
+            except Exception:
+                pass
+    if not pct_por_sku:  # sin ventas (y sin congelado) → equitativo
+        pct_por_sku = {sk: 100.0 / len(skus) for sk in skus}
+
     items = []
-    if total_uds <= 0:
-        # Sin ventas en ventana · distribuir equitativamente
-        for sk in skus:
-            items.append({
-                'sku': sk,
-                'ml_unidad': ml_por_sku.get(sk),
-                'uds_ventana': 0,
-                'porcentaje': round(100.0 / len(skus), 2),
-                'kg_sugerido': round(cantidad_kg / len(skus), 2) if cantidad_kg > 0 else 0,
-            })
-    else:
-        for sk in skus:
-            uds = ventas[sk]
-            pct = (uds / total_uds) * 100
-            items.append({
-                'sku': sk,
-                'ml_unidad': ml_por_sku.get(sk),
-                'uds_ventana': int(uds),
-                'porcentaje': round(pct, 2),
-                'kg_sugerido': round((pct / 100.0) * cantidad_kg, 2) if cantidad_kg > 0 else 0,
-            })
+    for sk in skus:
+        pct = pct_por_sku.get(sk, 100.0 / len(skus))
+        items.append({
+            'sku': sk,
+            'ml_unidad': ml_por_sku.get(sk),
+            'uds_ventana': int(ventas.get(sk, 0)),
+            'porcentaje': round(pct, 2),
+            'kg_sugerido': round((pct / 100.0) * cantidad_kg, 2) if cantidad_kg > 0 else 0,
+        })
     # Ordenar por porcentaje desc (mejor venta primero)
     items.sort(key=lambda x: -x['porcentaje'])
     return jsonify({
         'ok': True, 'producto': producto, 'n_tonos': len(skus),
         'ventana_dias': ventana, 'cantidad_kg': cantidad_kg,
         'total_uds_ventana': int(total_uds), 'items': items,
-        'tendencia': round(tendencia, 3),
+        'tendencia': round(tendencia, 3), 'mix_mode': _mix_mode,
     })
 
 

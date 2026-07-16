@@ -428,6 +428,9 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (353, "Programación v4 · Fase 1 mix · `sku_planeacion_config.mix_congelado_json` (Sebastián 15-jul): guarda el mix por referencia CONGELADO cuando mix_mode='fijo' (sueros estables). El desglose lo congela la 1ª vez que se pide en modo fijo (o al re-elegir fijo) y lo repite hasta re-congelar. NULL = no congelado (auto/crece recalculan por venta). Additiva, PG-safe.", [
+        "ALTER TABLE sku_planeacion_config ADD COLUMN mix_congelado_json TEXT",
+    ]),
     (352, "Blush Balm · FIX de códigos (Sebastián 15-jul · verificado contra el inventario REAL de EOS). La mig 351 tomó 3 códigos del inventario LOCAL (snapshot 2 normalizaciones atrás) que en prod NO eran los correctos: (1) Boron Nitride → estaba MPBNIT01 (que YO creé por error), el correcto EOS es MP00288 (con stock); (2) Palmitoyl Tripeptide-1 → estaba MP00190 (creado por error), correcto MP00159; (3) Tocopherol → estaba MP00078 (Vit E LÍQUIDA), la fórmula usa MP00079 (Vit E POLVO, lo que consume producción). Los otros 18 códigos SÍ eran correctos (MP00041/MPCOCP01/MP00103/MP00025 etc. son los canónicos de EOS con stock · los de MyBatch MP00060/MP00303/MP00300=Eversoft NO aplican · MyBatch≠EOS). UPDATE puntual (sin DELETE, no puede vaciar la fórmula) + desactiva los 2 códigos creados por error. Los 3 destinos ya existen con stock en prod (insert-if-missing solo para que aplique en local/test que no los tiene · M38).", [
         # asegurar que los 3 códigos destino existan+activos ANTES del UPDATE (en prod ya existen con stock · esto solo dispara en local/test)
         "INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, activo, controla_stock) "
