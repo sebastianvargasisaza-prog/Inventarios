@@ -110,12 +110,29 @@ def test_marketing_team_in_marketing(app):
 
 
 def test_calidad_team(app):
-    from config import CALIDAD_USERS, TECNICA_USERS
+    from config import CALIDAD_USERS, ASEGURAMIENTO_USERS, TECNICA_USERS
+    # Control de Calidad (módulo /calidad · QC): Laura + Yulieth
     for u in ("laura", "yuliel"):
         assert u in CALIDAD_USERS
-    # Miguel está en ambos
-    assert "miguel" in CALIDAD_USERS
+    # Miguel es Aseguramiento (QA), NO Control de Calidad (QC) · división de
+    # cargos 14-jun · segregación QA/QC. NO debe estar en CALIDAD_USERS.
+    assert "miguel" not in CALIDAD_USERS
+    assert "miguel" in ASEGURAMIENTO_USERS
     assert "miguel" in TECNICA_USERS
+
+
+def test_liberacion_mp_backup_qc(app):
+    """Miguel (Aseguramiento) y Hernando (Dirección Técnica) son BACKUP de
+    Control de Calidad para liberar materias primas: pasan _require_qc vía
+    QC_USERS SIN estar en CALIDAD_USERS (mantiene la separación QA/QC).
+    Sebastián 16-jul: 'son backup de control de calidad, mismos permisos'."""
+    import sys, os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "api"))
+    from blueprints.inventario import QC_USERS
+    from config import CALIDAD_USERS
+    for u in ("miguel", "hernando"):
+        assert u in QC_USERS, f"{u} debe poder liberar MP (backup CC · QC_USERS)"
+        assert u not in CALIDAD_USERS, f"{u} NO va en CALIDAD_USERS (separación QA/QC)"
 
 
 def test_hernando_director_tecnico(app):

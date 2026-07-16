@@ -45,6 +45,9 @@ RRHH_USERS      = {"gloria", "daniela", "luz", "mayra", "catalina", "alejandro",
 # Control de Calidad (CC · Jefe de Control de Calidad = Laura, analista = Yulieth) ·
 # análisis, liberación, micro, fisicoquímico, agua, calibraciones, estabilidades, OOS.
 # Módulo /calidad. (Miguel NO va acá: es Aseguramiento · división de cargos 14-jun.)
+# Backup de liberación de MP: Miguel (Aseguramiento) y Hernando (Dir. Técnica)
+# pueden liberar materias primas vía QC_USERS (inventario.py) SIN estar en
+# CALIDAD_USERS · mantiene la separación QA/QC (Sebastián 16-jul).
 CALIDAD_USERS   = {"laura", "yuliel", "alejandro", "sebastian"}
 # Aseguramiento de la Calidad (AC · responsable = Miguel) · CARGO DISTINTO al de Control de
 # Calidad: gobierna el SISTEMA de calidad — SGD (control de documentos), desviaciones, control
