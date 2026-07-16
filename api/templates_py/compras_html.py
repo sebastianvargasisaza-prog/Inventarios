@@ -125,6 +125,18 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 #m-noc .itbl tbody tr:hover td{background:#faf7ff;}
 #m-noc .itbl tbody tr:last-child td{border-bottom:none;}
 #m-noc .total-row{font-size:19px;color:#4c1d95;}
+/* Premium · tarjetas de OC de la lista OCs Activas (Sebastián 15-jul · "premium todo") */
+.consol-card{background:#fff;border:1px solid #edeaf6;border-left:5px solid #cbd5e1;border-radius:16px;margin-bottom:18px;overflow:hidden;box-shadow:0 4px 20px rgba(76,29,149,.06);transition:transform .16s ease,box-shadow .16s ease;}
+.consol-card:hover{transform:translateY(-2px);box-shadow:0 12px 34px rgba(76,29,149,.13);}
+.consol-hd{background:linear-gradient(135deg,#f7f3ff 0%,#fdfcff 55%,#f5f9ff 100%);padding:16px 20px;display:flex;align-items:flex-start;gap:13px;border-bottom:1px solid #f0eef8;}
+.consol-hd .consol-ico{width:40px;height:40px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:20px;background:linear-gradient(135deg,#7c3aed,#5b21b6);box-shadow:0 3px 10px rgba(124,58,237,.28);flex-shrink:0;}
+.consol-ocpill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;border-radius:999px;padding:3px 10px;margin:0 5px 5px 0;border:1px solid transparent;}
+.consol-body{padding:14px 20px;}
+.consol-body table{width:100%;border-collapse:collapse;}
+.consol-body thead th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:#a78bda;font-weight:800;padding:6px 10px;border-bottom:1px solid #f0eef8;}
+.consol-body tbody td{padding:8px 10px;border-bottom:1px solid #f6f5fb;}
+.consol-body tbody tr:last-child td{border-bottom:none;}
+.consol-body tbody tr:hover td{background:#faf8ff;}
 .btn.br{background:#dc2626;color:#fff;border:1px solid #b91c1c;}
 .btn.br:hover{background:#b91c1c;}
 .ocs-cpill{padding:5px 13px;border-radius:20px;font-size:12px;font-weight:600;border:1.5px solid #d6d3d1;background:#fff;color:#57534e;cursor:pointer;transition:all .15s;white-space:nowrap;}
@@ -7773,22 +7785,26 @@ function renderConsolCard(p, idx){
 
   var ocsHtml = p.ocs.map(function(o){
     var col = estadoColors[o.estado] || '#94a3b8';
-    var ivaTag = o.con_iva ? ' <span style="color:#0891b2;font-weight:700;font-size:10px;">+IVA</span>' : '';
-    return '<span style="font-size:11px;background:#f1f5f9;border-radius:4px;padding:2px 8px;margin-right:4px;">'
-      +escConH(o.numero_oc||'')+' <span style="color:'+col+';">'+escConH(o.estado||'')+'</span>'+ivaTag+'</span>';
+    var ivaTag = o.con_iva ? ' <span style="color:#0891b2;font-weight:800;font-size:10px;">+IVA</span>' : '';
+    return '<span class="consol-ocpill" style="background:'+col+'14;color:'+col+';border-color:'+col+'33;">'
+      +escConH(o.numero_oc||'')+' &middot; '+escConH(o.estado||'')+ivaTag+'</span>';
   }).join('');
+  // franja de estado (scan a la vista): ámbar = por autorizar · verde = autorizada · gris = otro
+  var _estd = (p.ocs||[]).map(function(o){ return o.estado; });
+  var stripe = _estd.indexOf('Autorizada')>=0 ? '#22c55e'
+             : ((_estd.indexOf('Borrador')>=0||_estd.indexOf('Revisada')>=0) ? '#f59e0b' : '#94a3b8');
 
   var totalFmt = p.valor_total > 0 ? '$'+Number(p.valor_total).toLocaleString('es-CO',{maximumFractionDigits:0}) : '--';
   var metaLine = p.n_items > 0
     ? p.n_ocs+' OC'+(p.n_ocs>1?'s':'')+' &bull; '+p.n_items+' producto'+(p.n_items>1?'s':'')+' &bull; Total: <strong>'+totalFmt+'</strong>'
     : p.n_ocs+' OC'+(p.n_ocs>1?'s':'')+' &bull; Total: <strong>'+totalFmt+'</strong>';
 
-  return '<div style="background:#fff;border:1px solid #eef0f2;border-radius:14px;margin-bottom:16px;overflow:hidden;box-shadow:0 2px 12px rgba(15,23,42,.05);">'
-    +'<div style="background:linear-gradient(135deg,#faf7ff,#f8fafc);padding:14px 18px;display:flex;align-items:flex-start;gap:12px;border-bottom:1px solid #eef0f2;">'
-      +'<span style="font-size:22px;margin-top:2px;">&#x1F3ED;</span>'
+  return '<div class="consol-card" style="border-left-color:'+stripe+';">'
+    +'<div class="consol-hd">'
+      +'<span class="consol-ico">&#x1F3ED;</span>'
       +'<div style="flex:1;min-width:0;">'
-        +'<div style="font-weight:700;font-size:16px;color:#0f172a;">'+escConH(p.proveedor)+'</div>'
-        +'<div style="font-size:12px;color:#64748b;margin-top:2px;">'+metaLine+'</div>'
+        +'<div style="font-weight:800;font-size:16.5px;color:#1e1b2e;letter-spacing:-.01em;">'+escConH(p.proveedor)+'</div>'
+        +'<div style="font-size:12px;color:#6b7280;margin-top:2px;">'+metaLine+'</div>'
         +(p.nit||p.contacto||p.telefono
           ? '<div style="font-size:11px;color:#94a3b8;margin-top:3px;">'
             +(p.nit?'NIT: '+esc(p.nit)+' &nbsp;':'')
@@ -7831,7 +7847,7 @@ function renderConsolCard(p, idx){
           : '')
       +'</div>'
     +'</div>'
-    +'<div style="padding:12px 18px;">'+contenidoHtml+'</div>'
+    +'<div class="consol-body">'+contenidoHtml+'</div>'
   +'</div>';
 }
 
