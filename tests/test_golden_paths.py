@@ -13386,51 +13386,6 @@ def test_golden_mees_huerfanos_audit_y_fix(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
-# GOLDEN PATH · CMO IA historial planes · 27-may-2026 PM
-# ═══════════════════════════════════════════════════════════════════
-# Bug que cazaría: el endpoint historial debe agregar stats de acciones
-# (aprobadas/pospuestas/descartadas/pendientes) por plan. Si el GROUP
-# BY o COALESCE están mal, las stats vienen en 0 · el desempeño del
-# agente director queda invisible.
-
-def test_golden_cmo_historial_planes(app, db_clean):
-    """Historial CMO IA · stats correctos por plan."""
-    _exec("DELETE FROM marketing_cmo_acciones WHERE plan_id IN "
-          "(SELECT id FROM marketing_cmo_plan WHERE fecha='2026-05-26')")
-    _exec("DELETE FROM marketing_cmo_plan WHERE fecha='2026-05-26'")
-
-    # Setup · 1 plan con 4 acciones, una de cada estado
-    # DDL marketing_cmo_plan.estado CHECK: pendiente|parcial|completado|descartado
-    # DDL marketing_cmo_acciones.estado CHECK: pendiente|aprobada|descartada|ejecutada|fallida|pospuesta
-    pid = _exec("INSERT INTO marketing_cmo_plan (fecha, acciones_json, "
-                "estado, generado_por) VALUES "
-                "('2026-05-26', '[]', 'completado', 'test_golden')")
-    for est in ('aprobada', 'pospuesta', 'descartada', 'pendiente'):
-        _exec("INSERT INTO marketing_cmo_acciones (plan_id, tipo, prioridad, "
-              "titulo, descripcion, estado) VALUES (?,?,?,?,?,?)",
-              (pid, 'test', 'media', f'Acción {est}', 'd', est))
-
-    cs = _login(app, 'sebastian')
-    r = cs.get('/api/marketing/cmo/historial-planes?limit=10')
-    assert r.status_code == 200, r.data
-    d = r.get_json()
-    assert d.get('ok') is True
-    planes = d.get('planes') or []
-    p26 = [p for p in planes if p.get('fecha') == '2026-05-26']
-    assert p26, f'BUG: plan 2026-05-26 no aparece · {planes[:3]}'
-    s = p26[0].get('stats') or {}
-    assert s.get('total') == 4, f'BUG stats.total · {s}'
-    assert s.get('aprobadas') == 1, f'BUG stats.aprobadas · {s}'
-    assert s.get('pospuestas') == 1, f'BUG stats.pospuestas · {s}'
-    assert s.get('descartadas') == 1, f'BUG stats.descartadas · {s}'
-    assert s.get('pendientes') == 1, f'BUG stats.pendientes · {s}'
-
-    # Cleanup
-    _exec("DELETE FROM marketing_cmo_acciones WHERE plan_id=?", (pid,))
-    _exec("DELETE FROM marketing_cmo_plan WHERE id=?", (pid,))
-
-
-# ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH · Health endpoint reporta migraciones + MEE diag · 27-may-2026 PM
 # ═══════════════════════════════════════════════════════════════════
 # Bug que cazaría: el /api/health debe ser público (sin login) y reportar

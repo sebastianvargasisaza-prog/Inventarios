@@ -41,34 +41,9 @@ def _login_marketing(app):
     return c
 
 
-# ─── Tests de cada agente (smoke) ──────────────────────────────────
-
-@pytest.mark.parametrize("agente", [
-    "estacionalidad", "oportunidad", "roi", "tendencias",
-    "brief", "pricing", "reorden", "canibal", "contenido_auto",
-    "alerta_stock", "estrategia",
-])
-def test_agente_responde_200(app, db_clean, agente):
-    """Cada agente del módulo marketing responde 200 sin crashear."""
-    client = _login_admin(app)
-    r = client.post(f"/api/marketing/agentes/{agente}",
-                    json={},  # body vacío JSON (algunos agentes leen request.get_json)
-                    headers={"Origin": "http://localhost"})
-    assert r.status_code == 200, f"Agente {agente} falló: {r.get_data(as_text=True)[:200]}"
-    d = r.get_json()
-    # Debe tener al menos titulo o algún identificador
-    assert isinstance(d, dict)
-
-
-def test_agente_desconocido_devuelve_400(app, db_clean):
-    """Llamar un agente que no existe → 400."""
-    client = _login_admin(app)
-    r = client.post("/api/marketing/agentes/agente_inventado",
-                    headers={"Origin": "http://localhost"})
-    assert r.status_code == 400
-
-
 # ─── Tests de workflow aplicar-agente ──────────────────────────────
+# (IA de Marketing retirada 16-jul-2026 · endpoint /agentes/<agente> eliminado.
+#  El workflow aplicar-agente NO usa Claude · aplica payloads y crea entidades.)
 
 def test_workflow_oportunidad_crea_campanas(app, db_clean):
     """Workflow oportunidad: payload con SKUs → marketing_campanas Planificadas."""
