@@ -27,6 +27,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);color:v
 .kpi-val.crit{color:#dc2626;}
 .kpi-val.good{color:#16a34a;}
 .kpi-sub{font-size:0.7em;color:var(--cx-text-faint);margin-top:3px;}
+.kpi-card{background:var(--cx-card);border:1px solid var(--cx-hairline);box-shadow:var(--cx-sh-card);border-radius:12px;padding:14px 18px;flex:1;min-width:130px;}
+.kpi-l{font-size:0.68em;text-transform:uppercase;letter-spacing:1.2px;color:var(--cx-text-mute);font-weight:700;margin-bottom:5px;}
+.kpi-v{font-size:1.8em;font-weight:800;color:var(--cx-text);}
 .card{background:var(--cx-card);border:1px solid var(--cx-hairline);box-shadow:var(--cx-sh-card);border-radius:14px;padding:18px;margin-bottom:16px;}
 .card-title{font-size:0.7em;text-transform:uppercase;letter-spacing:1.5px;color:var(--cx-text-mute);margin-bottom:14px;font-weight:700;}
 table{width:100%;border-collapse:collapse;}

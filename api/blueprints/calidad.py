@@ -1910,38 +1910,46 @@ def calidad_micro_heatmap():
         "ORDER BY producto_nombre", (meses,)
     ).fetchall()]
 
-    # Construir matriz
+    # Construir matriz · PERF 16-jul: antes eran N×M queries (2 por cada celda producto×micro →
+    # cientos de full-scans → el endpoint colgaba → "Cargando matriz..." infinito). Ahora 2 queries
+    # agregadas + build en Python.
+    _win = "COALESCE(categoria,'producto')<>'ambiente' AND fecha_analisis >= date('now','-5 hours','-' || ? || ' months')"
+    _agg = c.execute(
+        "SELECT producto_nombre, microorganismo, COUNT(*), "
+        "SUM(CASE WHEN estado='fuera_industria' THEN 1 ELSE 0 END), "
+        "SUM(CASE WHEN estado='fuera_meta' THEN 1 ELSE 0 END), MAX(fecha_analisis) "
+        "FROM calidad_micro_resultados WHERE " + _win + " GROUP BY producto_nombre, microorganismo",
+        (meses,)).fetchall()
+    _aggmap = {(r[0], r[1]): r for r in _agg}
+    # último resultado por (producto, micro): traer ordenado desc y quedarse con el 1º de cada par
+    _ultmap = {}
+    for r in c.execute(
+        "SELECT producto_nombre, microorganismo, valor, valor_texto, unidad "
+        "FROM calidad_micro_resultados WHERE " + _win + " ORDER BY fecha_analisis DESC, id DESC",
+        (meses,)).fetchall():
+        _k = (r[0], r[1])
+        if _k not in _ultmap:
+            _ultmap[_k] = r
     matriz = []
     for prod in prods:
         row = {'producto': prod, 'cells': []}
         for m in micros:
-            cell = c.execute("""SELECT
-                  COUNT(*) as n,
-                  SUM(CASE WHEN estado='fuera_industria' THEN 1 ELSE 0 END) as n_fi,
-                  SUM(CASE WHEN estado='fuera_meta' THEN 1 ELSE 0 END) as n_fm,
-                  MAX(fecha_analisis) as ultima_fecha
-                FROM calidad_micro_resultados
-                WHERE producto_nombre=? AND microorganismo=?
-                  AND fecha_analisis >= date('now', '-5 hours', '-' || ? || ' months')
-            """, (prod, m, meses)).fetchone()
-            n, n_fi, n_fm, ultima = cell
-            if not n:
+            a = _aggmap.get((prod, m))
+            if not a or not a[2]:
                 row['cells'].append({'micro': m, 'n': 0, 'estado': 'sin_dato'})
                 continue
-            ult_val = c.execute("""SELECT valor, valor_texto, estado, unidad
-                FROM calidad_micro_resultados
-                WHERE producto_nombre=? AND microorganismo=? AND fecha_analisis=?
-                ORDER BY id DESC LIMIT 1""", (prod, m, ultima)).fetchone()
+            n, n_fi, n_fm, ultima = a[2], (a[3] or 0), (a[4] or 0), a[5]
+            u = _ultmap.get((prod, m))
             estado_peor = 'fuera_industria' if n_fi > 0 else ('fuera_meta' if n_fm > 0 else 'ok')
             row['cells'].append({
                 'micro': m, 'n': n,
-                'n_fuera_industria': n_fi or 0,
-                'n_fuera_meta': n_fm or 0,
+                'n_fuera_industria': n_fi,
+                'n_fuera_meta': n_fm,
                 'estado': estado_peor,
                 'ultima_fecha': ultima,
-                'ultimo_valor': ult_val[0] if ult_val else None,
-                'ultimo_texto': ult_val[1] if ult_val else None,
-                'unidad': ult_val[3] if ult_val else 'UFC/g',
+                'ultimo_valor': u[2] if u else None,
+                'ultimo_texto': u[3] if u else None,
+                'unidad': u[4] if u else 'UFC/g',
             })
         matriz.append(row)
 
