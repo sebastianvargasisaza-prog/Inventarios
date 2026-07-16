@@ -12207,6 +12207,197 @@ def descuento_retro_apply():
                     'total_descontado_g': round(total_g, 2), 'n_aplicadas': len(aplicadas)})
 
 
+# ── Corrección de colisiones de código MyBatch↔EOS del Consumo retroactivo (Sebastián 15-jul) ──
+# El Excel de Consumo salió de MyBatch, cuyos códigos del rango 300+ colisionan con OTROS
+# materiales en EOS (mismo código = otra molécula). Estas 5 equivalencias están CONFIRMADAS
+# contra el maestro EOS completo + los lotes físicos:
+#   MP00300 (Ceramide en MyBatch)  → MP00103   · en EOS MP00300 = Sodium Cocoyl Glycinate (Eversoft)
+#   MP00301 (Propylheptyl)         → MP00030   · en EOS MP00301 = Ethylhexylglycerin
+#   MP00302 (Ethylhexylglycerin)   → MP00301   · en EOS MP00302 = Isododecane
+#   MP00303 (Coco-Caprylate)       → MPCOCP01  · MP00303 no existe en EOS
+#   MP00298 (Aerosil 200/Silica)   → MP00112   · en EOS MP00298 = Butylene Glycol
+# La corrección: revierte el descuento hecho al material EQUIVOCADO (Entrada net-zero · M31) y
+# lo re-aplica al CORRECTO (FEFO). Idempotente (marcadores), auditado, reversible.
+_RETRO_CORR_MAP = {
+    'MP00300': 'MP00103', 'MP00301': 'MP00030', 'MP00302': 'MP00301',
+    'MP00303': 'MPCOCP01', 'MP00298': 'MP00112',
+}
+
+
+@bp.route('/api/admin/descuento-retro/corregir', methods=['POST'])
+def descuento_retro_corregir():
+    """Corrige las colisiones de código del Consumo: revierte el descuento al material
+    EQUIVOCADO y lo re-aplica al CORRECTO. dry_run por defecto (aplicar:true ejecuta).
+    Solo toca filas cuyo código está en _RETRO_CORR_MAP. Idempotente + auditado + reversible."""
+    _u, _err, _code = _require_admin()
+    if _err:
+        return _err, _code
+    d = request.get_json(silent=True) if not request.files else None
+    d = d or {}
+    fs = request.files.get('archivo')
+    aplicar = bool(d.get('aplicar', False)) or (str(request.form.get('aplicar', '')).lower() == 'true')
+    filas = None
+    if fs:
+        try:
+            filas = _parse_consumo_xlsx(fs)
+        except Exception as e:
+            return jsonify({'error': 'No pude leer el Excel: %s' % str(e)[:120]}), 400
+    else:
+        filas = d.get('filas')
+    if not filas:
+        return jsonify({'error': 'Subí el Excel de consumo (archivo) o mandá filas'}), 400
+    try:
+        from .programacion import _distribuir_fefo
+    except Exception:
+        from blueprints.programacion import _distribuir_fefo
+
+    def _nombre(cd):
+        r = c.execute("SELECT COALESCE(NULLIF(TRIM(nombre_inci),''),NULLIF(TRIM(nombre_comercial),''),codigo_mp) "
+                      "FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?", (cd,)).fetchone()
+        return r[0] if r else cd
+
+    conn = get_db(); c = conn.cursor()
+    plan = []; revertidos = []; reaplicados = []; errores = []
+    for f in filas:
+        cod = (f.get('cod') or '').strip().upper()
+        if cod not in _RETRO_CORR_MAP:
+            continue
+        correcto = _RETRO_CORR_MAP[cod]
+        try:
+            cant = float(f.get('cant') or 0)
+        except Exception:
+            cant = 0.0
+        if cant <= 0:
+            continue
+        bulk = (f.get('bulk') or '').strip(); prod = (f.get('prod') or '').strip()
+        lote_x = (f.get('lote') or f.get('lote_excel') or '').strip()
+        nl = _norm_lote_cmp(lote_x); ic = int(round(cant))
+        # descuento EQUIVOCADO original (marcador [retro <bulk>|cod|lote|cant] · '[retro ' con espacio
+        # NO matchea '[retro-corr'): sus Salidas hay que revertir.
+        marca_fin = '|%s|%s|%s]' % (cod, nl, ic)
+        wrong = c.execute(
+            "SELECT id, cantidad, COALESCE(lote,''), COALESCE(observaciones,'') FROM movimientos "
+            "WHERE UPPER(TRIM(material_id))=? AND UPPER(TRIM(tipo)) LIKE 'SALIDA%' "
+            "AND observaciones LIKE '%[retro %' AND observaciones LIKE ?",
+            (cod, '%' + marca_fin)).fetchall()
+        marca_corr = '[retro-corr %s|%s|%s|%s]' % (bulk or prod[:12], correcto, nl, ic)
+        ya = c.execute("SELECT 1 FROM movimientos WHERE UPPER(TRIM(material_id))=? AND observaciones LIKE ? LIMIT 1",
+                       (correcto, '%' + marca_corr + '%')).fetchone()
+        item = {'de': cod, 'a': correcto, 'material': f.get('desc', ''), 'g': cant, 'lote': lote_x,
+                'prod': prod[:40], 'wrong_movs': len(wrong), 'wrong_g': round(sum(w[1] for w in wrong), 2),
+                'ya_corregido': bool(ya)}
+        plan.append(item)
+        if not aplicar or ya:
+            continue
+        try:
+            # 1) revertir cada Salida equivocada (Entrada net-zero en el MISMO lote · M31)
+            for wid, wc, wl, wobs in wrong:
+                rev = '[retro-corr-rev #%s]' % wid
+                if rev in wobs:
+                    continue
+                if c.execute("SELECT 1 FROM movimientos WHERE observaciones LIKE ? LIMIT 1", ('%' + rev + '%',)).fetchone():
+                    continue
+                c.execute(
+                    "INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,observaciones,lote,estado_lote,operador) "
+                    "VALUES (?,?,?,'Entrada',datetime('now','-5 hours'),?,?,'VIGENTE',?)",
+                    (cod, _nombre(cod), round(wc, 2),
+                     'Reversión colisión código (devuelve al material equivocado ' + cod + ') ' + rev, wl, _u))
+                revertidos.append({'cod': cod, 'g': round(wc, 2), 'mov': wid})
+            # 2) re-aplicar al código CORRECTO (FEFO · levanta si no alcanza · sin parcial)
+            mpc = c.execute("SELECT 1 FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=? AND COALESCE(activo,1)=1", (correcto,)).fetchone()
+            if not mpc:
+                errores.append({'cod': correcto, 'error': 'código correcto no existe/inactivo'}); continue
+            distrib = _distribuir_fefo(c, correcto, cant)
+            movido = 0.0
+            obs = ('Corrección colisión %s->%s · %s · lote %s %s' % (cod, correcto, prod[:50], lote_x, marca_corr)).strip()
+            for di in distrib:
+                q = float(di.get('cantidad') or 0)
+                if q <= 0.01:
+                    continue
+                c.execute("INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,observaciones,lote,operador) "
+                          "VALUES (?,?,?,'Salida',datetime('now','-5 hours'),?,?,?)",
+                          (correcto, _nombre(correcto), round(q, 2), obs, (di.get('lote') or ''), _u))
+                movido += q
+            reaplicados.append({'cod': correcto, 'de': cod, 'g': round(movido, 2)})
+            audit_log(c, usuario=_u, accion='CORRIGE_COLISION_RETRO', tabla='movimientos', registro_id=correcto,
+                      antes={'cod_equivocado': cod, 'revertido_g': round(sum(w[1] for w in wrong), 2)},
+                      despues={'cod_correcto': correcto, 'reaplicado_g': round(movido, 2), 'lote': lote_x, 'prod': prod[:80]})
+        except Exception as e:
+            conn.rollback()
+            errores.append({'de': cod, 'a': correcto, 'lote': lote_x, 'error': str(e)[:200]})
+    if aplicar:
+        conn.commit()
+    return jsonify({'ok': True, 'dry_run': not aplicar, 'plan': plan, 'revertidos': revertidos,
+                    'reaplicados': reaplicados, 'errores': errores,
+                    'resumen': {'a_corregir': len(plan), 'ya_corregidos': sum(1 for p in plan if p['ya_corregido'])}})
+
+
+@bp.route('/admin/corregir-colisiones', methods=['GET'])
+def corregir_colisiones_page():
+    """UI para corregir las colisiones de código MyBatch↔EOS del Consumo retroactivo."""
+    _u, _err, _code = _require_admin()
+    if _err:
+        return redirect('/login?next=/admin/corregir-colisiones')
+    _pares = ''.join(
+        '<tr><td class="mono">%s</td><td class="mono">%s</td></tr>' % (k, v) for k, v in _RETRO_CORR_MAP.items())
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Corregir colisiones · Consumo</title>
+<style>body{font-family:Arial,sans-serif;background:#fef2f2;padding:20px;color:#1e293b}.card{max-width:960px;margin:0 auto;background:#fff;border:1px solid #fecaca;border-radius:12px;padding:18px 22px}
+h1{color:#b91c1c;font-size:21px;margin:0 0 6px}.muted{color:#64748b;font-size:13px}
+table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12.5px}th,td{text-align:left;padding:6px 9px;border-bottom:1px solid #eee}th{color:#b91c1c;font-size:10.5px;text-transform:uppercase}
+.mono{font-family:ui-monospace,Consolas,monospace}
+button{background:#b91c1c;color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin-right:8px}
+button.prev{background:#475569}button:disabled{opacity:.5;cursor:default}
+input[type=file]{margin:12px 0}
+.chip{padding:1px 8px;border-radius:9px;font-weight:700;font-size:11px}.ok{background:#dcfce7;color:#166534}.bad{background:#fee2e2;color:#991b1b}.done{background:#e0e7ff;color:#3730a3}
+#out{margin-top:14px}.warn{background:#fef9c3;border:1px solid #fde68a;border-radius:8px;padding:10px 12px;font-size:12.5px;margin:10px 0}</style></head><body>
+<div class="card">
+<a href="/admin/descuento-retroactivo">&larr; Descuento retroactivo</a>
+<h1>&#128295; Corregir colisiones de código (Consumo MyBatch)</h1>
+<p class="muted">Los códigos del rango 300+ de las OP de MyBatch son <b>otro material</b> en EOS. Esta herramienta <b>revierte</b> el descuento hecho al material equivocado y lo <b>re-aplica</b> al correcto (por lote, reversible, auditado). Subí el mismo <b>Consumo.xlsx</b>.</p>
+<table><thead><tr><th>Código MyBatch (equivocado)</th><th>&rarr; Correcto EOS</th></tr></thead><tbody>__PARES__</tbody></table>
+<div class="warn">&#9888; Primero <b>Revisar</b> (no cambia nada). Solo <b>Aplicar</b> tras confirmar el plan.</div>
+<input type="file" id="f" accept=".xlsx">
+<div><button class="prev" onclick="ir(false)">Revisar (preview)</button><button id="apl" onclick="ir(true)" disabled>Aplicar corrección</button></div>
+<div id="out"></div>
+</div>
+<script>
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+async function csrf(){try{var r=await fetch('/api/csrf-token',{credentials:'same-origin'});return (await r.json()).csrf_token||'';}catch(e){return '';}}
+async function ir(aplicar){
+  var f=document.getElementById('f').files[0];
+  var out=document.getElementById('out');
+  if(!f){out.innerHTML='<span class="chip bad">Subí el Excel primero</span>';return;}
+  out.innerHTML='Procesando...';
+  var fd=new FormData();fd.append('archivo',f);if(aplicar)fd.append('aplicar','true');
+  try{
+    var t=await csrf();
+    var r=await fetch('/api/admin/descuento-retro/corregir',{method:'POST',credentials:'same-origin',headers:{'X-CSRF-Token':t},body:fd});
+    var d=await r.json();
+    if(!r.ok||!d.ok){out.innerHTML='<span class="chip bad">Error: '+esc(d.error||r.status)+'</span>';return;}
+    render(d,aplicar);
+  }catch(e){out.innerHTML='<span class="chip bad">Error red: '+esc(e.message)+'</span>';}
+}
+function render(d,aplicar){
+  var p=d.plan||[];
+  var rows=p.map(function(x){
+    var st=x.ya_corregido?'<span class="chip done">ya corregido</span>':(x.wrong_movs>0?'<span class="chip bad">'+x.wrong_movs+' mov a revertir ('+x.wrong_g+'g)</span>':'<span class="chip ok">sin descuento previo · solo re-aplicar</span>');
+    return '<tr><td class="mono">'+esc(x.de)+' &rarr; '+esc(x.a)+'</td><td>'+esc(x.material)+'</td><td>'+x.g+'g</td><td class="mono">'+esc(x.lote)+'</td><td>'+esc(x.prod)+'</td><td>'+st+'</td></tr>';
+  }).join('');
+  var h='<h3>'+(aplicar?'Resultado':'Plan (preview)')+' &middot; '+p.length+' líneas a corregir</h3>';
+  h+='<table><thead><tr><th>De &rarr; A</th><th>Material</th><th>Cant</th><th>Lote</th><th>Producto</th><th>Estado</th></tr></thead><tbody>'+rows+'</tbody></table>';
+  if(aplicar){
+    h+='<div class="warn">&#9989; Revertidos: '+(d.revertidos||[]).length+' &middot; Re-aplicados: '+(d.reaplicados||[]).length+' &middot; Errores: '+(d.errores||[]).length+'</div>';
+    if((d.errores||[]).length)h+='<div class="chip bad">'+esc(JSON.stringify(d.errores))+'</div>';
+    document.getElementById('apl').disabled=true;
+  }else{
+    document.getElementById('apl').disabled=(p.length===0);
+  }
+  document.getElementById('out').innerHTML=h;
+}
+</script></body></html>'''
+    return _tpl.replace('__PARES__', _pares)
+
+
 @bp.route('/admin/descuento-retroactivo', methods=['GET'])
 def descuento_retroactivo_page():
     """Revisión + descuento retroactivo del consumo de producciones no registradas en EOS."""
