@@ -1,4 +1,4 @@
-# Auto-extraído de index.py — Fase A refactor
+# Auto-extraído de index.py - Fase A refactor
 DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="es" translate="no">
 <head>
@@ -236,7 +236,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <!-- Sebastian 8-may-2026: corregir ubicacion del lote (encontradas discrepancias en inventario real). -->
     <div class="gm-sec" style="--gm-ac:#1e63a8;">
       <div class="gm-t">&#128205; Ubicaci&#243;n f&#237;sica del lote</div>
-      <div class="gm-cur">Actual: <b id="ajuste-ubic-actual">&mdash;</b></div>
+      <div class="gm-cur">Actual: <b id="ajuste-ubic-actual">-</b></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
         <div class="form-group" style="margin-bottom:0;"><label>Estanter&#237;a nueva</label><input type="text" id="ajuste-estanteria" placeholder="Ej: A3" maxlength="50"></div>
         <div class="form-group" style="margin-bottom:0;"><label>Posici&#243;n nueva</label><input type="text" id="ajuste-posicion" placeholder="Ej: B-2" maxlength="50"></div>
@@ -249,7 +249,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
          (algunos lotes ingresaron sin fecha y necesita corregirla). -->
     <div class="gm-sec" style="--gm-ac:#a21caf;">
       <div class="gm-t">&#128197; Fecha de vencimiento</div>
-      <div class="gm-cur">Actual: <b id="ajuste-fv-actual">&mdash;</b></div>
+      <div class="gm-cur">Actual: <b id="ajuste-fv-actual">-</b></div>
       <div style="display:flex;gap:8px;align-items:flex-end;">
         <div class="form-group" style="flex:1;margin-bottom:0;"><label>Nueva fecha de vencimiento</label><input type="date" id="ajuste-fv"></div>
         <button onclick="actualizarFechaVencimiento()" class="gm-btn" style="background:#a21caf;">Actualizar</button>
@@ -261,7 +261,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
          mal escritos · ej. '20250703' debe ser 'YT20250703'). -->
     <div class="gm-sec" style="--gm-ac:#0d9488;">
       <div class="gm-t">&#127991;&#65039; N&#250;mero de lote</div>
-      <div class="gm-cur">Actual: <b id="ajuste-lt-actual" style="font-family:monospace;">&mdash;</b></div>
+      <div class="gm-cur">Actual: <b id="ajuste-lt-actual" style="font-family:monospace;">-</b></div>
       <div style="display:flex;gap:8px;align-items:flex-end;">
         <div class="form-group" style="flex:1;margin-bottom:0;"><label>Nuevo n&#250;mero de lote</label><input type="text" id="ajuste-lt-nuevo" placeholder="Ej: YT20250703" maxlength="120" style="font-family:monospace;"></div>
         <button onclick="actualizarCodigoLote()" class="gm-btn" style="background:#0d9488;">Renombrar</button>
@@ -295,12 +295,12 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <button onclick="cerrarSolicitarLote()" style="background:none;border:none;font-size:1.5em;cursor:pointer;color:white;padding:0 4px;line-height:1;" title="Cerrar">&#10005;</button>
     </div>
     <div style="padding:22px;">
-      <p style="color:#888;font-size:0.85em;margin-bottom:14px;">Genera una solicitud de compra que llega al m&#243;dulo Compras. Se solicita la materia prima como tal — el lote es solo de referencia.</p>
+      <p style="color:#888;font-size:0.85em;margin-bottom:14px;">Genera una solicitud de compra que llega al m&#243;dulo Compras. Se solicita la materia prima como tal - el lote es solo de referencia.</p>
       <div style="background:#f0f9f4;border:1px solid #c6e6d4;border-radius:8px;padding:12px;margin-bottom:14px;">
         <div style="font-size:0.78em;color:#1b5e20;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px;">Materia Prima</div>
-        <div style="font-weight:700;color:#222;font-size:1.05em;" id="sol-mp-nombre">—</div>
-        <div style="color:#666;font-size:0.85em;" id="sol-mp-cod">—</div>
-        <div style="color:#888;font-size:0.78em;margin-top:4px;" id="sol-mp-stock">—</div>
+        <div style="font-weight:700;color:#222;font-size:1.05em;" id="sol-mp-nombre">-</div>
+        <div style="color:#666;font-size:0.85em;" id="sol-mp-cod">-</div>
+        <div style="color:#888;font-size:0.78em;margin-top:4px;" id="sol-mp-stock">-</div>
       </div>
       <div class="form-group">
         <label>Proveedor</label>
@@ -364,8 +364,8 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <div style="padding:22px;">
       <div style="background:#f0f9f4;border:1px solid #c6e6d4;border-radius:8px;padding:12px;margin-bottom:14px;">
         <div style="font-size:0.78em;color:#1b5e20;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px;">Materia Prima / Lote</div>
-        <div style="font-weight:700;color:#222;" id="ep-mp-info">—</div>
-        <div style="color:#666;font-size:0.85em;margin-top:4px;" id="ep-prov-actual">—</div>
+        <div style="font-weight:700;color:#222;" id="ep-mp-info">-</div>
+        <div style="color:#666;font-size:0.85em;margin-top:4px;" id="ep-prov-actual">-</div>
       </div>
       <p style="color:#666;font-size:0.85em;margin-bottom:8px;">Selecciona un proveedor existente del listado, o escribe uno nuevo si falta. El cambio aplica a <b>este lote</b> y al <b>cat&#225;logo de la MP</b> (futuras recepciones lo heredan correcto). Queda registrado en audit_log.</p>
       <div class="form-group">
@@ -394,8 +394,8 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <div style="padding:22px;">
       <div style="background:#f0f8ff;border:1px solid #b6dcfe;border-radius:8px;padding:12px;margin-bottom:14px;">
         <div style="font-size:0.78em;color:#1e40af;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px;">Lote</div>
-        <div style="font-weight:700;color:#222;" id="ubic-cnt-info">&mdash;</div>
-        <div style="color:#666;font-size:0.85em;margin-top:4px;" id="ubic-cnt-actual">&mdash;</div>
+        <div style="font-weight:700;color:#222;" id="ubic-cnt-info">-</div>
+        <div style="color:#666;font-size:0.85em;margin-top:4px;" id="ubic-cnt-actual">-</div>
       </div>
       <p style="color:#666;font-size:0.85em;margin-bottom:8px;">El cambio actualiza <b>todos los movimientos</b> de este lote y se refleja inmediato en Bodega MP. Queda en audit_log.</p>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
@@ -412,7 +412,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   </div>
 </div>
 
-<!-- Modal REVISAR MINIMOS (Sebastian 5-may-2026) — audit + apply de stock_minimo -->
+<!-- Modal REVISAR MINIMOS (Sebastian 5-may-2026) - audit + apply de stock_minimo -->
 <div id="modal-revisar-minimos" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;">
   <div style="background:white;border-radius:16px;padding:0;max-width:1100px;width:96%;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
     <div style="background:#7c3aed;color:white;padding:18px 22px;border-radius:16px 16px 0 0;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
@@ -481,7 +481,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   </div>
 </div>
 
-<!-- Modal LIMPIEZA PROVEEDORES — detecta duplicados y los unifica -->
+<!-- Modal LIMPIEZA PROVEEDORES - detecta duplicados y los unifica -->
 <div id="modal-limpieza-prov" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;">
   <div style="background:white;border-radius:16px;padding:0;max-width:760px;width:96%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
     <div style="background:#7c3aed;color:white;padding:18px 22px;border-radius:16px 16px 0 0;display:flex;justify-content:space-between;align-items:center;">
@@ -489,7 +489,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <button onclick="cerrarLimpiezaProveedores()" style="background:none;border:none;font-size:1.5em;cursor:pointer;color:white;padding:0 4px;line-height:1;" title="Cerrar">&#10005;</button>
     </div>
     <div style="padding:22px;">
-      <p style="color:#666;font-size:0.88em;margin-bottom:14px;">Grupos de proveedores que probablemente son el mismo escrito de distinta forma (mayuscula/minuscula, sufijos juridicos, espacios). Escoge el canonico de cada grupo y unifica — actualiza movimientos y catalogo de MPs.</p>
+      <p style="color:#666;font-size:0.88em;margin-bottom:14px;">Grupos de proveedores que probablemente son el mismo escrito de distinta forma (mayuscula/minuscula, sufijos juridicos, espacios). Escoge el canonico de cada grupo y unifica - actualiza movimientos y catalogo de MPs.</p>
       <div id="lp-content" style="font-size:0.88em;">
         <div style="text-align:center;color:#888;padding:24px;">Detectando duplicados...</div>
       </div>
@@ -531,12 +531,12 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <div style="padding:22px;">
       <div style="background:#fff5f5;border:1px solid #f5c6cb;border-radius:8px;padding:12px;margin-bottom:14px;">
         <div style="font-size:0.78em;color:#922;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px;">Lote a eliminar</div>
-        <div style="font-weight:700;color:#222;" id="del-mp-nombre">—</div>
-        <div style="color:#666;font-size:0.85em;" id="del-mp-info">—</div>
+        <div style="font-weight:700;color:#222;" id="del-mp-nombre">-</div>
+        <div style="color:#666;font-size:0.85em;" id="del-mp-info">-</div>
       </div>
       <p style="color:#666;font-size:0.85em;margin-bottom:8px;"><b>Acci&#243;n permanente.</b> Borra todos los movimientos de este lote (entradas + salidas). El motivo queda registrado en audit_log para trazabilidad. Para correcciones de cantidad, mejor usa &laquo;Ajustar&raquo;.</p>
       <div class="form-group"><label style="color:#c0392b;font-weight:700;">Motivo de eliminaci&#243;n * (m&#237;n. 10 caracteres)</label>
-        <textarea id="del-motivo" rows="3" placeholder="Ej: Recepci&#243;n duplicada — el mismo lote se carg&#243; el 18 y el 20 de abril por error"></textarea>
+        <textarea id="del-motivo" rows="3" placeholder="Ej: Recepci&#243;n duplicada - el mismo lote se carg&#243; el 18 y el 20 de abril por error"></textarea>
       </div>
       <div style="display:flex;gap:8px;margin-top:6px;">
         <button onclick="confirmarEliminarLote()" style="flex:1;background:#c0392b;padding:9px;font-weight:700;color:white;">&#128465; Confirmar eliminaci&#243;n</button>
@@ -606,20 +606,20 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <div id="dash-last-update" style="font-size:11px;color:#94a3b8;margin-top:3px;">Cargando…</div>
     </div>
 
-    <!-- ═══ ZONA AHORA — qué requiere acción hoy ═══ -->
+    <!-- ═══ ZONA AHORA - qué requiere acción hoy ═══ -->
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:11px;font-weight:700;color:#dc2626;text-transform:uppercase;letter-spacing:1px;">
       <span style="width:8px;height:8px;background:#dc2626;border-radius:50%;display:inline-block;"></span>
       AHORA &middot; acción hoy
       <span style="flex:1;height:1px;background:#fecaca;"></span>
     </div>
     <div class="grid" style="margin-bottom:24px;grid-template-columns:repeat(3,1fr);">
-      <div class="card" style="border-left:4px solid #dc2626;cursor:pointer;" onclick="switchGroup('bar-bodegaMP','alertas',null)"><h3>MPs sin stock</h3><p id="kpi-mps-sin-stock" style="color:#dc2626;font-size:1.8em;">-</p><div style="font-size:10px;color:#78716c;">críticas — bloquean producción</div></div>
+      <div class="card" style="border-left:4px solid #dc2626;cursor:pointer;" onclick="switchGroup('bar-bodegaMP','alertas',null)"><h3>MPs sin stock</h3><p id="kpi-mps-sin-stock" style="color:#dc2626;font-size:1.8em;">-</p><div style="font-size:10px;color:#78716c;">críticas - bloquean producción</div></div>
       <div class="card" id="card-alertas" style="border-left:4px solid #f59e0b;cursor:pointer;" onclick="switchGroup('bar-bodegaMP','alertas',null)"><h3>MPs bajo mínimo</h3><p id="alertas-count" style="color:#e65100;font-size:1.8em;">-</p><div style="font-size:10px;color:#78716c;">incluye las en cero</div></div>
       <!-- Dashboard PRO · click → Bodega MP → Stock filtrado por VENCIDO -->
-      <div class="card" style="border-left:4px solid #dc2626;cursor:pointer;" onclick="switchGroup('bar-bodegaMP','stock',null);setTimeout(function(){var s=document.getElementById('stock-search');if(s){s.value='';s.dispatchEvent(new Event('input'));}},150);" title="Ver lotes vencidos en Bodega"><h3>Lotes vencidos</h3><p id="kpi-lotes-vencidos" style="color:#dc2626;font-size:1.8em;">-</p><div style="font-size:10px;color:#78716c;">en bodega — dar de baja</div></div>
+      <div class="card" style="border-left:4px solid #dc2626;cursor:pointer;" onclick="switchGroup('bar-bodegaMP','stock',null);setTimeout(function(){var s=document.getElementById('stock-search');if(s){s.value='';s.dispatchEvent(new Event('input'));}},150);" title="Ver lotes vencidos en Bodega"><h3>Lotes vencidos</h3><p id="kpi-lotes-vencidos" style="color:#dc2626;font-size:1.8em;">-</p><div style="font-size:10px;color:#78716c;">en bodega - dar de baja</div></div>
     </div>
 
-    <!-- ═══ ZONA CERCA — próximos 7-30 días ═══ -->
+    <!-- ═══ ZONA CERCA - próximos 7-30 días ═══ -->
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:11px;font-weight:700;color:#d97706;text-transform:uppercase;letter-spacing:1px;">
       <span style="width:8px;height:8px;background:#f59e0b;border-radius:50%;display:inline-block;"></span>
       CERCA &middot; próximos 7-30 días
@@ -634,7 +634,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <div class="card" style="border-left:4px solid #f59e0b;cursor:pointer;" onclick="switchTab('empaque');" title="Ir a Bodega MEE"><h3>MEE bajo mínimo</h3><p id="kpi-mees-bajo" style="color:#d97706;font-size:1.8em;">-</p><div style="font-size:10px;color:#78716c;">envases / etiquetas</div></div>
     </div>
 
-    <!-- ═══ ZONA CONTEXTO — composición y tendencia ═══ -->
+    <!-- ═══ ZONA CONTEXTO - composición y tendencia ═══ -->
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:11px;font-weight:700;color:#6d28d9;text-transform:uppercase;letter-spacing:1px;">
       <span style="width:8px;height:8px;background:#6d28d9;border-radius:50%;display:inline-block;"></span>
       CONTEXTO &middot; composición y tendencia
@@ -761,7 +761,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <div class="mh-badge">&#128230;</div>
         <div style="min-width:0">
           <h2>Stock por Lote</h2>
-          <div class="mh-sub">Bodega de Materia Prima &middot; lotes, FEFO y trazabilidad &middot; <span id="stock-last-update">&mdash;</span></div>
+          <div class="mh-sub">Bodega de Materia Prima &middot; lotes, FEFO y trazabilidad &middot; <span id="stock-last-update">-</span></div>
         </div>
       </div>
     </div>
@@ -883,10 +883,10 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <div class="form-group"><label>Nombre INCI</label><input type="text" id="ing-inci" placeholder="Auto" readonly style="background:#f5f5f5;"></div>
         <div class="form-group"><label>Nombre Comercial</label><input type="text" id="ing-nombre" placeholder="Auto" readonly style="background:#f5f5f5;"></div>
         <div class="form-group"><label>Tipo</label><input type="text" id="ing-tipo" placeholder="Auto" readonly style="background:#f5f5f5;"></div>
-        <div class="form-group"><label>Proveedor</label><input type="text" id="ing-prov" list="prov-list-global" placeholder="Auto — selecciona o escribe nuevo" autocomplete="off"></div>
+        <div class="form-group"><label>Proveedor</label><input type="text" id="ing-prov" list="prov-list-global" placeholder="Auto - selecciona o escribe nuevo" autocomplete="off"></div>
       </div>
       <div id="ing-nueva-mp-inline" style="display:none;background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:15px;margin-top:10px;">
-        <h4 style="color:#856404;margin-bottom:10px;">&#43; Nueva Materia Prima — Datos para el Catalogo</h4><p style="font-size:0.88em;color:#666;margin-bottom:10px;">Al registrar el ingreso, esta MP quedara creada automaticamente en el catalogo.</p>
+        <h4 style="color:#856404;margin-bottom:10px;">&#43; Nueva Materia Prima - Datos para el Catalogo</h4><p style="font-size:0.88em;color:#666;margin-bottom:10px;">Al registrar el ingreso, esta MP quedara creada automaticamente en el catalogo.</p>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
           <div class="form-group"><label>Nombre INCI *</label><input type="text" id="ing-inci-new" placeholder="Ej: NIACINAMIDE"></div>
           <div class="form-group"><label>Tipo</label><input type="text" id="ing-tipo-new" placeholder="Ej: Activo, Emoliente..."></div>
@@ -993,7 +993,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <div id="formula-msg"></div>
 
       <!-- Integración MyBatch · paso 1 · Procedimiento + IPC = el MBR maestro -->
-      <!-- Sebastián 30-jun: el MBR (batch record) NO va en la vista de fórmulas — vive en el módulo BRD/Calidad.
+      <!-- Sebastián 30-jun: el MBR (batch record) NO va en la vista de fórmulas - vive en el módulo BRD/Calidad.
            Se oculta con display:none (queda en el DOM para no romper el JS que referencia mbr-pasos/mbr-ipc/etc.). -->
       <div id="mbr-secciones" style="display:none">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
@@ -1050,7 +1050,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   </div>
 
   <div id="plano" class="tab-content">
-    <h2>&#128506;&#65039; Plano de Planta — en vivo</h2>
+    <h2>&#128506;&#65039; Plano de Planta - en vivo</h2>
     <style>@keyframes planoPulse{0%{box-shadow:0 0 0 0 rgba(22,163,74,.55)}70%{box-shadow:0 0 0 7px rgba(22,163,74,0)}100%{box-shadow:0 0 0 0 rgba(22,163,74,0)}}#plano-mapa:fullscreen{background:#fbfbf9;display:flex;align-items:center;justify-content:center;padding:18px}</style>
     <div id="plano-toolbar" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;max-width:1040px;margin:0 auto 8px">
       <span style="display:flex;align-items:center;gap:7px;font-weight:800;color:#0f172a;font-size:13px"><span style="width:9px;height:9px;border-radius:50%;background:#16a34a;animation:planoPulse 1.6s infinite"></span>EN VIVO</span>
@@ -1206,7 +1206,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       function _planoPost(url,body,t){return fetch(url,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(body)});}
       window.planoFinalizarVivo=async function(aid){planoCerrarSala();var t=await _planoCsrf();try{await _planoPost('/api/planta/area/liberar-vivo',{area_id:aid},t);}catch(e){}setTimeout(window.cargarPlanoGrid,400);};
       window.simularFlujoPlanta=async function(){
-        if(!confirm('SIMULACRO: voy a INICIAR una fabricación de demostración en un área libre — la vas a ver 🟠 ocupada en el plano — y en ~7s la FINALIZO (queda 🔴 sucia y el bulk va solo a Envasado). ¿Arranco?')) return;
+        if(!confirm('SIMULACRO: voy a INICIAR una fabricación de demostración en un área libre - la vas a ver 🟠 ocupada en el plano - y en ~7s la FINALIZO (queda 🔴 sucia y el bulk va solo a Envasado). ¿Arranco?')) return;
         var t=await _planoCsrf();
         var areas=((await (await fetch('/api/planta/areas',{credentials:'same-origin'})).json()).areas)||[];
         var seen={}, libre=null;
@@ -1298,7 +1298,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
             var cc=e?COL[e]:'#94a3b8';
             cards+='<div style="background:#fff;border:1px solid #e5e7eb;border-top:5px solid '+cc+';border-radius:12px;padding:12px">';
             cards+='<div style="font-weight:800;font-size:14px;color:#111">'+_esc2(r.lab)+'</div>';
-            cards+='<div style="display:inline-block;margin:5px 0;padding:2px 9px;border-radius:6px;font-size:11px;font-weight:700;background:'+cc+'22;color:'+cc+'">'+(LBL[e]||e||'—')+'</div>';
+            cards+='<div style="display:inline-block;margin:5px 0;padding:2px 9px;border-radius:6px;font-size:11px;font-weight:700;background:'+cc+'22;color:'+cc+'">'+(LBL[e]||e||'-')+'</div>';
             if(hasP){var q=live.produccion;cards+='<div style="font-size:13px;line-height:1.5;color:#333">&#129514; <b>'+_esc2(q.producto||'')+'</b>'+(q.kg?('<br>'+q.kg+' kg'):'')+(q.operario?('<br>&#128100; '+_esc2(q.operario)):'')+(q.mins!=null?('<br>&#9201; '+_elapsed(q.mins)+' corriendo'):'')+'</div>';}
             else{cards+='<div style="color:#9ca3af;font-size:13px">disponible</div>';}
             cards+='</div>';
@@ -1612,7 +1612,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:10px;margin-bottom:8px">
       <div>
         <h2 style="margin:0">&#9888; Alertas de Inventario</h2>
-        <div id="alertas-last-update" style="font-size:11px;color:#94a3b8;margin-top:2px">—</div>
+        <div id="alertas-last-update" style="font-size:11px;color:#94a3b8;margin-top:2px">-</div>
       </div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
         <label style="font-size:11px;color:#64748b;display:flex;align-items:center;gap:4px;cursor:pointer">
@@ -1633,7 +1633,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:10px">
       <div>
         <h2 style="margin:0">&#128203; Movimientos de Inventario</h2>
-        <div id="mov-last-update" style="font-size:11px;color:#94a3b8;margin-top:2px">—</div>
+        <div id="mov-last-update" style="font-size:11px;color:#94a3b8;margin-top:2px">-</div>
       </div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
         <label style="font-size:11px;color:#64748b;display:flex;align-items:center;gap:4px;cursor:pointer">
@@ -1703,17 +1703,17 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   </div>
 
   <div id="cuarentena" class="tab-content">
-    <h2>&#128274; Control de Calidad — Recepcion de Materiales</h2>
+    <h2>&#128274; Control de Calidad - Recepcion de Materiales</h2>
     <div style="background:#e8f4fd;border:1px solid #bee5f8;border-radius:10px;padding:14px 20px;margin-bottom:16px;font-size:0.9em;color:#1a4a6b;">
       <strong>&#8505; Como funciona:</strong> Cuando recibes una MP en la pestana <strong>Ingreso MP</strong> y marcas el checkbox <strong>"Poner en cuarentena"</strong>, ese lote aparece aqui hasta que el equipo de Control de Calidad (Laura, Yuliel) o un admin lo revise y apruebe o rechace conforme a COC-PRO-001. Mientras esta en cuarentena, el sistema NO permite usarlo en produccion.<br>
-      <span style="color:#27ae60;font-weight:600;">&#10003; Si esta vacia: ningun lote esta pendiente de revision CC — es la situacion ideal.</span> Si recibes un lote con dudas de calidad, usa "Poner en cuarentena" al hacer el ingreso.
+      <span style="color:#27ae60;font-weight:600;">&#10003; Si esta vacia: ningun lote esta pendiente de revision CC - es la situacion ideal.</span> Si recibes un lote con dudas de calidad, usa "Poner en cuarentena" al hacer el ingreso.
     </div>
     <div id="cuar-msg"></div>
 
     <div id="modo-inv-ctrl" style="display:none;align-items:center;gap:10px;flex-wrap:wrap;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px 18px;margin-bottom:14px;font-size:0.9em;color:#7c2d12;">
       <strong>&#128230; Modo inventario:</strong>
-      <span id="modo-inv-estado" style="font-weight:700">&mdash;</span>
-      <button id="btn-modo-inv" onclick="toggleModoInventario()" title="Prende/apaga el modo inventario · con él ACTIVO las recepciones nuevas entran directo a stock sin cuarentena de Calidad. Acordate de apagarlo al terminar el conteo físico." style="background:#0d9488;color:#fff;border:none;padding:7px 14px;border-radius:8px;font-weight:700;cursor:pointer;">&mdash;</button>
+      <span id="modo-inv-estado" style="font-weight:700">-</span>
+      <button id="btn-modo-inv" onclick="toggleModoInventario()" title="Prende/apaga el modo inventario · con él ACTIVO las recepciones nuevas entran directo a stock sin cuarentena de Calidad. Acordate de apagarlo al terminar el conteo físico." style="background:#0d9488;color:#fff;border:none;padding:7px 14px;border-radius:8px;font-weight:700;cursor:pointer;">-</button>
       <span style="font-size:0.85em;color:#9a3412">Activo &rarr; las recepciones nuevas entran directo a inventario (sin pasar por cuarentena de Calidad). Apagalo al terminar el inventario.</span>
     </div>
 
@@ -1734,7 +1734,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <h3 style="margin-top:28px;color:#b91c1c;">&#128683; No disponible &middot; retenido</h3>
     <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:12px 18px;margin-bottom:12px;font-size:0.86em;color:#7f1d1d;">
       Lotes <b>rechazados, vencidos o bloqueados</b> que <b>siguen fisicamente en bodega</b>. No cuentan como stock disponible (se excluyen de produccion, FEFO y del total de Bodega), pero permanecen aqui para su <b>trazabilidad</b> (INVIMA Res. 2214/2021) y para que tu <b>conteo fisico cuadre</b> hasta documentar su disposicion (devolucion al proveedor o destruccion).
-      <span style="color:#16a34a;font-weight:600;">&#10003; Si esta vacia: no hay material retenido con saldo &mdash; ideal.</span>
+      <span style="color:#16a34a;font-weight:600;">&#10003; Si esta vacia: no hay material retenido con saldo - ideal.</span>
     </div>
     <table class="table" id="ret-table">
       <thead><tr><th>Codigo</th><th>INCI</th><th>Nombre</th><th>Lote</th><th>Cant. (g)</th><th>Proveedor</th><th>OC</th><th>Vencimiento</th><th>Estado</th></tr></thead>
@@ -1745,11 +1745,11 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <div id="cc-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:9999;align-items:center;justify-content:center;">
       <div style="background:#fff;border-radius:14px;padding:32px;max-width:680px;width:95%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-          <h3 style="color:#1C2B30;margin:0;">&#128203; Revision CC — <span id="cc-modal-lote"></span></h3>
+          <h3 style="color:#1C2B30;margin:0;">&#128203; Revision CC - <span id="cc-modal-lote"></span></h3>
           <button onclick="cerrarCCModal()" style="background:none;border:none;font-size:1.4em;cursor:pointer;color:#999;">&#x2715;</button>
         </div>
         <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:12px 16px;margin-bottom:20px;font-size:0.88em;">
-          <strong>COC-PRO-001 v03</strong> — Todos los campos son obligatorios. La firma queda registrada con timestamp en el sistema y no puede modificarse.
+          <strong>COC-PRO-001 v03</strong> - Todos los campos son obligatorios. La firma queda registrada con timestamp en el sistema y no puede modificarse.
         </div>
 
         <!-- Info del lote -->
@@ -1769,7 +1769,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
             </label>
             <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:0.9em;">
               <input type="checkbox" id="cc-coa-vigente" style="width:18px;height:18px;">
-              <span>COA vigente — no vencido segun politica de re-analisis</span>
+              <span>COA vigente - no vencido segun politica de re-analisis</span>
             </label>
             <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:0.9em;">
               <input type="checkbox" id="cc-ficha-ok" style="width:18px;height:18px;">
@@ -1845,7 +1845,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   <div id="trazabilidad" class="tab-content">
     <h2>&#128269; Trazabilidad de Lotes</h2>
     <div style="background:#e8f4fd;border:1px solid #bee5f8;border-radius:10px;padding:14px 20px;margin-bottom:16px;font-size:0.9em;color:#1a4a6b;">
-      <strong>&#8505; Herramienta de busqueda — no es un dashboard.</strong> Escribe el numero de lote de una MP (el codigo que aparece en la etiqueta de recepcion, ej: <code style="background:#d0eaf9;padding:1px 5px;border-radius:4px;">ESP260417ACE</code>) y el sistema muestra: quien recibio ese lote, de que proveedor, en que fecha, y en que producciones fue utilizado. Util para auditorias, reclamos de proveedor y trazabilidad BPM.
+      <strong>&#8505; Herramienta de busqueda - no es un dashboard.</strong> Escribe el numero de lote de una MP (el codigo que aparece en la etiqueta de recepcion, ej: <code style="background:#d0eaf9;padding:1px 5px;border-radius:4px;">ESP260417ACE</code>) y el sistema muestra: quien recibio ese lote, de que proveedor, en que fecha, y en que producciones fue utilizado. Util para auditorias, reclamos de proveedor y trazabilidad BPM.
     </div>
     <div id="trz-msg"></div>
     <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:18px;margin-bottom:18px;display:flex;gap:12px;align-items:flex-end;">
@@ -1870,17 +1870,17 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
 
 
   <div id="conteo" class="tab-content">
-    <h2>&#9989; Conteo Fisico Ciclico — BDG-FOR-003</h2>
+    <h2>&#9989; Conteo Fisico Ciclico - BDG-FOR-003</h2>
     <div style="background:#e8f4fd;border:1px solid #bee5f8;border-radius:10px;padding:14px 20px;margin-bottom:16px;font-size:0.9em;color:#1a4a6b;">
       <strong>&#8505; Para que sirve:</strong> Permite verificar fisicamente el stock de una estanteria contra lo que dice el sistema. El operario cuenta los gramos reales, los ingresa, y el sistema calcula diferencias. Si la diferencia es mayor al 5% del valor, requiere aprobacion de gerencia antes de ajustar. Queda registro firmado conforme a BDG-PRO-002.<br>
-      <strong>Como usar:</strong> (1) El dropdown se llena automaticamente con las estanterias que tienen stock. Si aparece <em>"Sin estanteria"</em>, son MPs ingresadas sin asignar ubicacion fisica — igual puedes contarlas. (2) Selecciona estanteria + escribe tu nombre + clic <strong>Iniciar Conteo</strong>. (3) Ingresa el peso fisico de cada MP. (4) Guarda y cierra.
+      <strong>Como usar:</strong> (1) El dropdown se llena automaticamente con las estanterias que tienen stock. Si aparece <em>"Sin estanteria"</em>, son MPs ingresadas sin asignar ubicacion fisica - igual puedes contarlas. (2) Selecciona estanteria + escribe tu nombre + clic <strong>Iniciar Conteo</strong>. (3) Ingresa el peso fisico de cada MP. (4) Guarda y cierra.
     </div>
 
     <!-- Programacion automatica semanal -->
     <div id="cnt-prog-card" style="background:linear-gradient(135deg,#f0faf9 0%,#e8f8f5 100%);border:2px solid #6d28d9;border-radius:12px;padding:18px 20px;margin-bottom:20px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
         <h3 style="margin:0;color:#6d28d9;font-size:1em;">&#128197; Programacion Ciclica Automatica</h3>
-        <span style="font-size:0.8em;color:#666;">Rota por todas las estanterias — cada lunes una nueva</span>
+        <span style="font-size:0.8em;color:#666;">Rota por todas las estanterias - cada lunes una nueva</span>
       </div>
       <div id="cnt-prog-tabla" style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:0.88em;">
@@ -1890,7 +1890,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       </div>
     </div>
 
-    <!-- Filtro por tipo de material — inventario cíclico de E&E -->
+    <!-- Filtro por tipo de material - inventario cíclico de E&E -->
     <div style="background:#fff7e6;border:1px solid #ffd58a;border-radius:10px;padding:14px 18px;margin-bottom:14px;">
       <div style="font-weight:700;color:#7a4a00;font-size:0.92em;margin-bottom:10px;">
         &#128230; Filtrar conteo por tipo de material
@@ -1918,7 +1918,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         </button>
       </div>
       <div style="font-size:0.78em;color:#7a4a00;margin-top:8px;">
-        Selecciona el tipo y luego elige una estanter&#237;a — el conteo se enfoca solo en ese tipo.
+        Selecciona el tipo y luego elige una estanter&#237;a - el conteo se enfoca solo en ese tipo.
       </div>
     </div>
 
@@ -2011,7 +2011,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <div class="mh-badge">&#128230;</div>
         <div style="min-width:0">
           <h2>Material de Empaque y Envase</h2>
-          <div class="mh-sub">Stock, recepciones, consumos y trazabilidad por batch &middot; <span id="mee-last-update">&mdash;</span></div>
+          <div class="mh-sub">Stock, recepciones, consumos y trazabilidad por batch &middot; <span id="mee-last-update">-</span></div>
         </div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -2035,11 +2035,11 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <div style="background:#fff;border-radius:16px;max-width:540px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden;max-height:92vh;overflow-y:auto">
           <div style="background:linear-gradient(135deg,#7c3aed,#a78bfa);padding:18px 22px;color:#fff;">
             <div style="font-size:11px;opacity:.85;font-weight:600;letter-spacing:.6px">AJUSTAR ENVASE</div>
-            <div style="font-size:18px;font-weight:800" id="mee-adj-cod">&mdash;</div>
+            <div style="font-size:18px;font-weight:800" id="mee-adj-cod">-</div>
             <div style="font-size:13px;opacity:.92" id="mee-adj-desc"></div>
           </div>
           <div style="padding:20px 22px;">
-            <div style="background:#f5f3ff;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#5b21b6">Stock actual: <b id="mee-adj-stockact">&mdash;</b></div>
+            <div style="background:#f5f3ff;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#5b21b6">Stock actual: <b id="mee-adj-stockact">-</b></div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
               <div class="form-group" style="margin:0"><label>Nueva cantidad</label><input type="number" id="mee-adj-cant" min="0" step="1"></div>
               <div class="form-group" style="margin:0"><label>Stock m&iacute;nimo</label><input type="number" id="mee-adj-min" min="0" step="1"></div>
@@ -2069,7 +2069,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <div style="background:#fff;border-radius:16px;max-width:560px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden;max-height:92vh;overflow-y:auto">
           <div style="background:linear-gradient(135deg,#db2777,#f472b6);padding:18px 22px;color:#fff;">
             <div style="font-size:11px;opacity:.85;font-weight:600;letter-spacing:.6px">&#129513; KIT DE PARTES</div>
-            <div style="font-size:18px;font-weight:800" id="mee-kit-cod">&mdash;</div>
+            <div style="font-size:18px;font-weight:800" id="mee-kit-cod">-</div>
             <div style="font-size:13px;opacity:.92" id="mee-kit-desc"></div>
           </div>
           <div style="padding:20px 22px;">
@@ -2117,7 +2117,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
             <button type="button" onclick="meeWizOpen()" style="margin-top:6px;width:100%;background:#16a34a;color:#fff;border:none;border-radius:6px;padding:7px;font-size:12px;font-weight:700;cursor:pointer">&#10133; Material nuevo (genera el c&oacute;digo)</button></div>
           <div class="form-group" style="margin:0"><label>Descripci&oacute;n</label><input type="text" id="mee-descripcion" readonly placeholder="Auto" style="background:#f1f5f9"></div>
           <div class="form-group" style="margin:0"><label>Categor&iacute;a</label><input type="text" id="mee-categoria" readonly placeholder="Auto" style="background:#f1f5f9"></div>
-          <div class="form-group" style="margin:0"><label>Proveedor</label><input type="text" id="mee-proveedor" placeholder="Auto &mdash; o escribe"></div>
+          <div class="form-group" style="margin:0"><label>Proveedor</label><input type="text" id="mee-proveedor" placeholder="Auto - o escribe"></div>
           <div class="form-group" style="margin:0"><label>Cliente (opcional &middot; vac&iacute;o = General)</label><input type="text" id="mee-cliente" list="mee-cli-dl" placeholder="&Aacute;nimus Lab / Kelly Guerra"><datalist id="mee-cli-dl"><option>&Aacute;nimus Lab</option><option>Kelly Guerra</option></datalist></div>
           <div class="form-group" style="margin:0"><label>N Lote / Ref. proveedor (vac&iacute;o = auto)</label><input type="text" id="mee-lote" placeholder="Ej: LOT-2026-001"></div>
           <div class="form-group" style="margin:0"><label>Cantidad recibida (und) *</label><input type="number" id="mee-cantidad" min="1" step="1" placeholder="0" oninput="meeCalcValor()"></div>
@@ -2136,24 +2136,24 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           </div>
         </div>
         <div id="mee-partes-recep" style="display:none;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:12px;margin:12px 0;">
-          <div style="font-weight:700;color:#6d28d9;margin-bottom:8px;font-size:0.9em;">&#129513; Partes del empaque &mdash; cu&aacute;nto lleg&oacute; de cada una</div>
+          <div style="font-weight:700;color:#6d28d9;margin-bottom:8px;font-size:0.9em;">&#129513; Partes del empaque - cu&aacute;nto lleg&oacute; de cada una</div>
           <div id="mee-partes-recep-list"></div>
         </div>
         <button style="width:100%;background:#6d28d9;color:#fff;padding:12px;font-weight:700;border:none;border-radius:8px;cursor:pointer;" onclick="registrarMeeMovimiento()">&#10003; Registrar ingreso</button>
         <div id="mee-form-msg" style="margin-top:8px;"></div>
       </div>
       <div id="mee-cuarentena-box" style="display:none;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:16px;margin-top:16px;">
-        <h3 style="margin:0 0 10px;color:#c2410c;font-size:1em;">&#128737; En cuarentena &mdash; Calidad debe liberar (<span id="mee-cuar-count">0</span>)</h3>
+        <h3 style="margin:0 0 10px;color:#c2410c;font-size:1em;">&#128737; En cuarentena - Calidad debe liberar (<span id="mee-cuar-count">0</span>)</h3>
         <div id="mee-cuarentena-list"></div>
       </div>
       <div id="mee-calificar-box" style="display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:16px;margin-top:16px;">
-        <h3 style="margin:0 0 10px;color:#1d4ed8;font-size:1em;">&#127381; Material nuevo por calificar &mdash; Calidad (<span id="mee-calif-count">0</span>)</h3>
+        <h3 style="margin:0 0 10px;color:#1d4ed8;font-size:1em;">&#127381; Material nuevo por calificar - Calidad (<span id="mee-calif-count">0</span>)</h3>
         <div id="mee-calificar-list"></div>
       </div>
       <div id="mee-calif-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;overflow:auto;padding:24px;">
         <div style="background:#fff;border-radius:12px;padding:24px;max-width:440px;margin:0 auto;box-shadow:0 10px 40px rgba(0,0,0,.3);">
           <h3 style="margin:0 0 4px;color:#1d4ed8;">&#127381; Calificar material</h3>
-          <p style="color:#64748b;font-size:13px;margin:0 0 14px;" id="mee-calif-nombre">&mdash;</p>
+          <p style="color:#64748b;font-size:13px;margin:0 0 14px;" id="mee-calif-nombre">-</p>
           <label style="display:block;margin-bottom:8px;font-size:14px"><input type="checkbox" id="mc-capacidad"> Capacidad de llenado</label>
           <label style="display:block;margin-bottom:8px;font-size:14px"><input type="checkbox" id="mc-material"> Material correcto</label>
           <label style="display:block;margin-bottom:8px;font-size:14px"><input type="checkbox" id="mc-medidas"> Medidas / dimensiones</label>
@@ -2170,7 +2170,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <div style="background:#fff;border-radius:12px;padding:24px;max-width:560px;margin:0 auto;box-shadow:0 10px 40px rgba(0,0,0,.3);">
           <h3 style="margin:0 0 4px;color:#16a34a;">&#10133; Crear material nuevo</h3>
           <p style="color:#64748b;font-size:13px;margin:0 0 14px;">Respond&eacute; y el sistema arma el c&oacute;digo normalizado.</p>
-          <div class="form-group" style="margin:0 0 10px"><label>1. Tipo * <span style="color:#94a3b8;font-weight:400">&mdash; define el c&oacute;digo</span></label>
+          <div class="form-group" style="margin:0 0 10px"><label>1. Tipo * <span style="color:#94a3b8;font-weight:400">- define el c&oacute;digo</span></label>
             <select id="mee-wiz-tipo" onchange="meeWizGen()"><option value="">-- Elegir --</option><option value="ENV">Envase / Frasco (ENV)</option><option value="IMP">Impreso / Tampograf&iacute;a / Serigraf&iacute;a (IMP)</option><option value="GOT">Gotero (GOT)</option><option value="TAP">Tapa (TAP)</option><option value="ETQ">Etiqueta (ETQ)</option><option value="PLG">Plegadiza / Caja (PLG)</option></select></div>
           <div class="form-group" style="margin:0 0 10px"><label>Cliente (opcional &middot; vac&iacute;o = General)</label><input type="text" id="mee-wiz-cliente" list="mee-wiz-cli-dl" placeholder="&Aacute;nimus Lab / Kelly Guerra"><datalist id="mee-wiz-cli-dl"><option>&Aacute;nimus Lab</option><option>Kelly Guerra</option></datalist></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
@@ -2179,7 +2179,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           </div>
           <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px;margin:12px 0;">
             <div style="font-size:11px;color:#15803d;font-weight:700;">C&Oacute;DIGO AUTOM&Aacute;TICO <span style="color:#94a3b8;font-weight:400">&middot; lo asigna el sistema</span></div>
-            <div id="mee-wiz-code" style="font-family:ui-monospace,monospace;font-size:18px;font-weight:800;color:#166534;">&mdash;</div>
+            <div id="mee-wiz-code" style="font-family:ui-monospace,monospace;font-size:18px;font-weight:800;color:#166534;">-</div>
             <div class="form-group" style="margin:8px 0 0"><label style="font-size:11px">Nombre / descripci&oacute;n (editable)</label><input type="text" id="mee-wiz-desc" oninput="this.dataset.touched='1'" placeholder="Auto"></div>
           </div>
           <div class="form-group" style="margin:0 0 10px"><label>Partes del empaque (opcional)</label>
@@ -2189,7 +2189,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
               <input id="mee-wiz-parte-cant" type="number" min="1" step="1" value="1" style="width:60px" title="cantidad por unidad">
               <button type="button" onclick="meeWizAddParte()" style="background:#7c3aed;color:#fff;border:none;border-radius:6px;padding:7px 10px;font-weight:700;cursor:pointer">&#43;</button>
             </div>
-            <div style="font-size:11px;color:#94a3b8;margin-top:4px">El gotero/plegadiza son materiales propios — si no existen, creálos primero y luego los agregás como parte.</div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:4px">El gotero/plegadiza son materiales propios - si no existen, creálos primero y luego los agregás como parte.</div>
           </div>
           <div id="mee-wiz-msg" style="font-size:12px;margin-bottom:8px;"></div>
           <div style="display:flex;gap:10px;">
@@ -2295,7 +2295,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     </table></div>
   </div>
 
-  <!-- Panel activo de envasado — aparece al hacer clic en Envasar desde la cola -->
+  <!-- Panel activo de envasado - aparece al hacer clic en Envasar desde la cola -->
   <div id="env-panel-activo" style="display:none;background:#fff;border:2px solid #1a4a7a;border-radius:10px;padding:18px;margin-bottom:18px">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;gap:8px">
       <div>
@@ -2440,7 +2440,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     </table></div>
   </div>
 
-  <!-- Panel activo de acondicionamiento — aparece al clic en Acondicionar desde la cola -->
+  <!-- Panel activo de acondicionamiento - aparece al clic en Acondicionar desde la cola -->
   <div id="ac-panel-activo" style="display:none;background:#fff;border:2px solid #0d47a1;border-radius:10px;padding:18px;margin-bottom:18px">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;gap:8px">
       <div>
@@ -2683,11 +2683,11 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
       <div>
         <h3 style="margin:0;color:#5b21b6;font-size:15px;font-weight:800">&#128230; Alistar envases para marcación</h3>
-        <p style="margin:4px 0 0;color:#64748b;font-size:12px">Solo aparece lo que <b>Compras solicitó</b> (envió a marcar) — preparalos para llevar al proveedor. El método/proveedor los define Compras en <a href="/admin/marcacion-envases" target="_blank" style="color:#5b21b6;font-weight:700">&#127991; Marcación de envases</a>.</p>
+        <p style="margin:4px 0 0;color:#64748b;font-size:12px">Solo aparece lo que <b>Compras solicitó</b> (envió a marcar) - preparalos para llevar al proveedor. El método/proveedor los define Compras en <a href="/admin/marcacion-envases" target="_blank" style="color:#5b21b6;font-weight:700">&#127991; Marcación de envases</a>.</p>
       </div>
       <button onclick="cargarSerigrafiaCola()" style="background:#7c3aed;color:#fff;border:none;padding:6px 11px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">&#8635; Recargar</button>
     </div>
-    <div id="serig-cola-body" style="font-size:12px;color:#64748b">&mdash;</div>
+    <div id="serig-cola-body" style="font-size:12px;color:#64748b">-</div>
   </div>
   <div id="ptab-factibilidad" style="display:none">
     <iframe id="factibilidad-iframe" src="about:blank"
@@ -2853,7 +2853,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
         <input id="b2b-cliente-id" placeholder="Cliente ID (ej CLI-002)" style="padding:9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
         <input id="b2b-cliente-nombre" placeholder="Cliente nombre (ej Fernando Mesa)" style="padding:9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
         <select id="b2b-producto" style="padding:9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
-          <option value="">— Seleccionar producto —</option>
+          <option value="">- Seleccionar producto -</option>
         </select>
         <div style="display:flex;gap:8px">
           <input id="b2b-cantidad" type="number" placeholder="Cantidad uds" min="1" style="flex:1;padding:9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
@@ -2895,7 +2895,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
     <div>
       <h2 style="margin:0 0 4px;color:#1a4a7a">&#128225; Centro de Programación</h2>
-      <p style="color:#666;font-size:13px;margin:0">Shopify + Calendário + Fórmulas + Stock — en tiempo real</p>
+      <p style="color:#666;font-size:13px;margin:0">Shopify + Calendário + Fórmulas + Stock - en tiempo real</p>
     </div>
 
   </div>
@@ -2934,7 +2934,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   <div id="prog-ia-box" style="background:linear-gradient(135deg,#0f2d1f,#1a4a7a);border-radius:10px;padding:18px;margin-bottom:20px;display:none">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
       <span style="font-size:20px">&#129302;</span>
-      <span style="color:#4ade80;font-weight:700;font-size:14px">Análisis IA — Centro de Programación</span>
+      <span style="color:#4ade80;font-weight:700;font-size:14px">Análisis IA - Centro de Programación</span>
     </div>
     <div id="prog-ia-text" style="color:#e2e8f0;font-size:13px;line-height:1.6"></div>
   </div>
@@ -2942,7 +2942,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   <!-- Tabla de proyección por producto -->
   <div style="background:#fff;border:1px solid #e0e0e0;border-radius:10px;overflow:hidden;margin-bottom:20px">
     <div style="background:#1a4a7a;color:#fff;padding:12px 16px;font-weight:600;font-size:13px">
-      📦 Proyección de Stock — Faltante a 15 / 30 / 60 días por producto
+      📦 Proyección de Stock - Faltante a 15 / 30 / 60 días por producto
     </div>
     <div id="prog-tabla-wrap" style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -2977,11 +2977,11 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       🚨 Alertas de Abastecimiento
     </div>
     <div id="prog-alertas" style="padding:16px">
-      <div style="text-align:center;color:#aaa;font-style:italic;padding:20px">Sin alertas — actualiza para verificar</div>
+      <div style="text-align:center;color:#aaa;font-style:italic;padding:20px">Sin alertas - actualiza para verificar</div>
     </div>
   </div>
 
-  <!-- MP Bridge — enlaces formula ↔ bodega -->
+  <!-- MP Bridge - enlaces formula ↔ bodega -->
   <div id="bridge-panel" style="background:#fff;border:1px solid #e0e0e0;border-radius:10px;overflow:hidden;margin-top:16px">
     <div style="background:#5c3317;color:#fff;padding:12px 16px;font-weight:600;font-size:13px;display:flex;align-items:center;justify-content:space-between">
       <span>&#128279; Enlace Fórmula ↔ Bodega MP</span>
@@ -3006,7 +3006,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
           <b style="font-size:13px">Mapeos activos</b>
           <button onclick="cargarBridgeMappings()" style="background:#6d28d9;color:#fff;border:none;border-radius:5px;padding:5px 12px;cursor:pointer;font-size:12px">&#128260; Actualizar</button>
         </div>
-        <div id="bridge-mappings-list"><div style="color:#aaa;font-style:italic;font-size:12px">— carga para ver —</div></div>
+        <div id="bridge-mappings-list"><div style="color:#aaa;font-style:italic;font-size:12px">- carga para ver -</div></div>
       </div>
     </div>
   </div>
@@ -3159,7 +3159,7 @@ function abrirSolicitarLote(idx){
   document.getElementById('sol-obs').value='';
   document.getElementById('sol-msg').innerHTML='';
   // Cargar proveedores existentes en el desplegable (mismo datalist global
-  // que usa Editar Proveedor) — evita typos y registra implicitamente
+  // que usa Editar Proveedor) - evita typos y registra implicitamente
   // proveedores nuevos cuando el usuario escribe uno que no esta en la lista.
   _cargarProveedoresUnicos();
   document.getElementById('modal-solicitar-lote').style.display='flex';
@@ -3309,7 +3309,7 @@ async function guardarProveedor(){
   var msg=document.getElementById('ep-msg');
   var nuevo=document.getElementById('ep-input').value.trim();
   if(nuevo.length<2){msg.innerHTML='<span style="color:#c00;">Proveedor debe tener al menos 2 caracteres.</span>';return;}
-  if(nuevo===(_epLote.proveedor||'')){msg.innerHTML='<span style="color:#888;">Sin cambios — el proveedor es el mismo.</span>';return;}
+  if(nuevo===(_epLote.proveedor||'')){msg.innerHTML='<span style="color:#888;">Sin cambios - el proveedor es el mismo.</span>';return;}
   msg.innerHTML='<span style="color:#666;">Guardando...</span>';
   var loteSeg=_epLote.lote||'_SIN_LOTE_';
   var url='/api/lotes/'+encodeURIComponent(_epLote.material_id)+'/'+encodeURIComponent(loteSeg)+'/proveedor';
@@ -3321,7 +3321,7 @@ async function guardarProveedor(){
       _epProveedoresCargados=false; // re-cargar lista la proxima vez (incluye nuevo si lo creo)
       setTimeout(function(){cerrarEditarProveedor();loadStock();},1500);
     }else{
-      msg.innerHTML='<span style="color:#c00;">Error: '+(d.error||r.status)+(d.detail?' — '+d.detail:'')+'</span>';
+      msg.innerHTML='<span style="color:#c00;">Error: '+(d.error||r.status)+(d.detail?' - '+d.detail:'')+'</span>';
     }
   }catch(e){
     msg.innerHTML='<span style="color:#c00;">Error de red: '+e.message+'</span>';
@@ -3657,7 +3657,7 @@ async function _renderLimpiezaProveedores(){
     var d=await r.json();
     var grupos=d.grupos||[];
     if(!grupos.length){
-      cont.innerHTML='<div style="text-align:center;color:#1a8a1a;padding:24px;font-weight:700;">&#10003; Sin duplicados detectados — todos los proveedores tienen formato unico.</div>';
+      cont.innerHTML='<div style="text-align:center;color:#1a8a1a;padding:24px;font-weight:700;">&#10003; Sin duplicados detectados - todos los proveedores tienen formato unico.</div>';
       return;
     }
     var html='<div style="margin-bottom:8px;color:#7c3aed;font-weight:700;">'+grupos.length+' grupo(s) con variantes</div>';
@@ -3744,7 +3744,7 @@ async function confirmarEliminarLote(){
       msg.innerHTML='<span style="color:#1a8a1a;font-weight:700;">✓ '+(d.message||'Lote eliminado')+'</span>';
       setTimeout(function(){cerrarEliminarLote();loadStock();},1500);
     }else{
-      msg.innerHTML='<span style="color:#c00;">Error: '+(d.error||r.status)+(d.detail?' — '+d.detail:'')+'</span>';
+      msg.innerHTML='<span style="color:#c00;">Error: '+(d.error||r.status)+(d.detail?' - '+d.detail:'')+'</span>';
     }
   }catch(e){
     msg.innerHTML='<span style="color:#c00;">Error de red: '+e.message+'</span>';
@@ -3753,7 +3753,7 @@ async function confirmarEliminarLote(){
 async function abrirAjuste(mid,mn,lt,sa,est,pos,fv){
   if(!OPER_ACTUAL){alert('Primero selecciona tu nombre al inicio');return;}
   _ajDat={mid:mid,mn:mn,lt:lt,sa:sa,est:est||'',pos:pos||'',fv:fv||''};
-  document.getElementById('ajuste-info').textContent=mid+' — '+mn+(lt&&lt!='S/L'?' (Lote: '+lt+')':'');
+  document.getElementById('ajuste-info').textContent=mid+' - '+mn+(lt&&lt!='S/L'?' (Lote: '+lt+')':'');
   document.getElementById('ajuste-sistema').value=sa;
   document.getElementById('ajuste-fisico').value='';
   document.getElementById('ajuste-obs').value='';
@@ -3827,7 +3827,7 @@ async function registrarConsumo(){
 }
 async function archivarMP(){
   var mid=_ajDat&&_ajDat.mid;if(!mid)return;
-  if(!confirm('Archivar '+mid+' — '+(_ajDat.mn||'')+'. Quedará oculto del catálogo activo. ¿Confirmar?'))return;
+  if(!confirm('Archivar '+mid+' - '+(_ajDat.mn||'')+'. Quedará oculto del catálogo activo. ¿Confirmar?'))return;
   try{
     var r=await fetch('/api/maestro-mps/'+encodeURIComponent(mid)+'/archivar',{method:'PUT',headers:{'Content-Type':'application/json','X-CSRF-Token':window._csrfTok||''}});
     var d={}; try{d=await r.json();}catch(je){}
@@ -3881,7 +3881,7 @@ async function actualizarUbicacionLote(){
       setTimeout(loadStock,500);
     }else{
       msgEl.innerHTML='<span style="color:red;">'+(d.error||'Error '+r.status)+
-        (d.detail?' &mdash; '+d.detail:'')+'</span>';
+        (d.detail?' - '+d.detail:'')+'</span>';
     }
   }catch(e){msgEl.innerHTML='<span style="color:red;">Error: '+e.message+'</span>';}
 }
@@ -3916,7 +3916,7 @@ async function actualizarFechaVencimiento(){
       setTimeout(loadStock,500);
     }else{
       msgEl.innerHTML='<span style="color:#c00;">Error: '+(d.error||r.status)+
-        (d.detail?' &mdash; '+d.detail:'')+'</span>';
+        (d.detail?' - '+d.detail:'')+'</span>';
     }
   }catch(e){msgEl.innerHTML='<span style="color:#c00;">Error de red: '+e.message+'</span>';}
 }
@@ -3976,7 +3976,7 @@ async function actualizarCodigoLote(){
       try{ if(typeof loadStock==='function') setTimeout(loadStock, 500); }catch(e){}
     }else{
       msgEl.innerHTML='<span style="color:#c00;">Error: '+(d.error||r.status)+
-        (d.detail?' &mdash; '+d.detail:'')+'</span>';
+        (d.detail?' - '+d.detail:'')+'</span>';
     }
   }catch(e){msgEl.innerHTML='<span style="color:#c00;">Error de red: '+e.message+'</span>';}
 }
@@ -4036,7 +4036,7 @@ async function solicitarTodasMPs(){
   });
   var data={solicitante:sol,empresa:'Espagiria',area:'Produccion',
             categoria:'Materia Prima',tipo:'Compra',urgencia:'Alta',
-            observaciones:'Solicitud automatica desde alertas de stock — '+items.length+' MPs',
+            observaciones:'Solicitud automatica desde alertas de stock - '+items.length+' MPs',
             items:items};
   try{
     var r=await fetch('/api/solicitudes-compra',{method:'POST',
@@ -4089,7 +4089,7 @@ async function enviarSolicitudCompra(){
       if(btn){btn.disabled=true;btn.textContent="\u2713 Enviado";btn.style.background="#28a745";}
       setTimeout(function(){cerrarSolicitudCompra();},3500);
     } else {
-      var errMsg=(res&&res.error)?res.error:(res&&res.detail)?res.detail.slice(-200):"Error "+r.status+" — recarga la pagina e intenta de nuevo";
+      var errMsg=(res&&res.error)?res.error:(res&&res.detail)?res.detail.slice(-200):"Error "+r.status+" - recarga la pagina e intenta de nuevo";
       document.getElementById("sol-msg").innerHTML='<div style="padding:10px;background:#f8d7da;border:1px solid #dc3545;border-radius:6px;color:#721c24;font-size:0.88em;">&#10060; '+errMsg+'</div>';
       if(btn){btn.disabled=false;btn.textContent="\u2713 Enviar Solicitud";}
     }
@@ -4283,7 +4283,7 @@ async function cargarHistProd(){
   var ft=document.getElementById('hist-prod-footer');
   if(!tb)return;
   var q = (((document.getElementById('hist-prod-q')||{}).value)||'').trim().toLowerCase();
-  function gfmt(n){return n==null?'<span style="color:#94a3b8">—</span>':Number(n).toLocaleString('es-CO')+' g';}
+  function gfmt(n){return n==null?'<span style="color:#94a3b8">-</span>':Number(n).toLocaleString('es-CO')+' g';}
   function estadoPill(e){
     var s=(e||'').toLowerCase(), bg='#f1f5f9', col='#475569';
     if(s.indexOf('cuarentena')>=0){bg='#dbeafe';col='#1e40af';}
@@ -4306,7 +4306,7 @@ async function cargarHistProd(){
       return;
     }
     tb.innerHTML=ordenes.map(function(o){
-      var aprob = o.aprobada!=null ? gfmt(o.aprobada) : (o.ml_envasable!=null ? (Number(o.ml_envasable).toLocaleString('es-CO')+' mL') : '<span style="color:#94a3b8">—</span>');
+      var aprob = o.aprobada!=null ? gfmt(o.aprobada) : (o.ml_envasable!=null ? (Number(o.ml_envasable).toLocaleString('es-CO')+' mL') : '<span style="color:#94a3b8">-</span>');
       var org = o.origen==='legajo'
         ? '<span style="background:#ede9fe;color:#6d28d9;padding:1px 7px;border-radius:8px;font-size:0.72em;font-weight:700">LEGAJO</span>'
         : '<span style="background:#f1f5f9;color:#64748b;padding:1px 7px;border-radius:8px;font-size:0.72em;font-weight:700">SIMPLE</span>';
@@ -4325,14 +4325,14 @@ async function cargarHistProd(){
       else { acc = '<button data-crear-legajo data-prod="'+_escHTML(o.producto||'')+'" data-g="'+(o.producida_g||o.teorica_g||'')+'" data-lote="'+_escHTML(o.lote_bulk||'')+'" style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:10px;font-weight:700;cursor:pointer" title="Crear el legajo electrónico (batch record) de esta orden">➕ Crear legajo</button>'; }
       return '<tr>'+
         '<td style="font-family:monospace;font-weight:700;color:#1e40af">'+_escHTML(o.numero_op||'')+'</td>'+
-        '<td style="font-family:monospace;color:#6d28d9">'+_escHTML(o.lote_bulk||'—')+'</td>'+
-        '<td style="font-weight:600">'+_escHTML(o.producto||'—')+'</td>'+
+        '<td style="font-family:monospace;color:#6d28d9">'+_escHTML(o.lote_bulk||'-')+'</td>'+
+        '<td style="font-weight:600">'+_escHTML(o.producto||'-')+'</td>'+
         '<td style="text-align:right">'+gfmt(o.teorica_g)+'</td>'+
         '<td style="text-align:right">'+gfmt(o.producida_g)+'</td>'+
         '<td style="text-align:right">'+aprob+'</td>'+
         '<td style="text-align:center">'+estadoPill(o.estado)+'</td>'+
         '<td style="text-align:center">'+org+'</td>'+
-        '<td style="font-size:0.85em;color:#666">'+_escHTML(o.fecha||'—')+'</td>'+
+        '<td style="font-size:0.85em;color:#666">'+_escHTML(o.fecha||'-')+'</td>'+
         '<td style="text-align:center">'+acc+'</td>'+
       '</tr>';
     }).join('');
@@ -4467,10 +4467,10 @@ async function verDetalleProduccion(pid){
     var div = document.createElement('div');
     div.id = 'modal-prod-detalle';
     div.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
-    var costoStr = d.costo_estimado_cop ? '$'+Number(d.costo_estimado_cop).toLocaleString('es-CO') : '—';
+    var costoStr = d.costo_estimado_cop ? '$'+Number(d.costo_estimado_cop).toLocaleString('es-CO') : '-';
     var descRows = (d.descuentos||[]).map(function(dt){
       return '<tr><td style="font-family:monospace">'+_escHTML(dt.material_id)+'</td><td>'+_escHTML(dt.material_nombre)+'</td>'+
-        '<td style="font-family:monospace">'+_escHTML(dt.lote||'—')+'</td>'+
+        '<td style="font-family:monospace">'+_escHTML(dt.lote||'-')+'</td>'+
         '<td style="text-align:right;font-weight:700">'+Number(dt.cantidad_g).toLocaleString()+' g</td></tr>';
     }).join('');
     var snapRows = (d.formula_snapshot||[]).map(function(s){
@@ -4486,7 +4486,7 @@ async function verDetalleProduccion(pid){
         '<div><b>Lote PT</b><br><span style="font-family:monospace;color:#dc2626;font-weight:700">'+_escHTML(d.lote)+'</span></div>'+
         '<div><b>Fecha</b><br>'+_escHTML((d.fecha||'').substring(0,16).replace('T',' '))+'</div>'+
         '<div><b>Operador</b><br>'+_escHTML(d.operador)+'</div>'+
-        '<div><b>Presentación</b><br>'+_escHTML(d.presentacion||'—')+'</div>'+
+        '<div><b>Presentación</b><br>'+_escHTML(d.presentacion||'-')+'</div>'+
         '<div><b>Costo estimado</b><br><span style="color:#6d28d9;font-weight:700">'+costoStr+'</span></div>'+
         '<div><b>Estado</b><br>'+_escHTML(d.estado)+'</div>'+
       '</div>'+
@@ -4726,7 +4726,7 @@ function _renderDashInsights(d){
       if(elPF) elPF.textContent = '📅 ' + (pp.fecha||'') + ' · ' + (pp.kg||0).toFixed(1) + ' kg';
     } else {
       if(elPP) elPP.textContent = 'Sin próximas';
-      if(elPF) elPF.textContent = '—';
+      if(elPF) elPF.textContent = '-';
     }
   }
   // Mes actual · anillo circular de progreso (Sebastián 12-jul · "gran indicador")
@@ -4971,12 +4971,12 @@ function renderStock(items){
     h+='<td style="font-weight:700;color:#1e293b">'+_escHTML(first.nombre_inci||first.material_nombre||'')+'</td>';
     h+='<td style="color:#94a3b8;font-size:0.82em">'+_escHTML(first.material_nombre||'')+'</td>';
     h+='<td style="color:#94a3b8">'+_escHTML(first.tipo||'')+'</td>';
-    h+='<td style="color:#64748b">'+(first.proveedor?_escHTML(first.proveedor):'<span style="color:#cbd5e1">&mdash;</span>')+'</td>';
+    h+='<td style="color:#64748b">'+(first.proveedor?_escHTML(first.proveedor):'<span style="color:#cbd5e1">-</span>')+'</td>';
     h+='<td style="text-align:right;'+(bajo?'background:#fef2f2;color:#dc2626;font-weight:800;':'color:#94a3b8;')+'" title="Mínimo del MP completo">'+minMP.toLocaleString('es-CO')+'</td>';
     h+='<td style="text-align:center;color:#7c3aed;font-weight:700;font-size:0.85em">'+lotes.length+'</td>';
     h+='<td style="text-align:right;font-weight:800;'+qtot+'" title="Cantidad total del MP (suma de sus lotes)">'+totalMP.toLocaleString('es-CO')+'</td>';
-    h+='<td style="text-align:center;color:#cbd5e1">&mdash;</td>';
-    h+='<td style="text-align:center;color:#64748b;font-size:0.82em;white-space:nowrap">'+_escHTML(nearVenc||'—')+'</td>';
+    h+='<td style="text-align:center;color:#cbd5e1">-</td>';
+    h+='<td style="text-align:center;color:#64748b;font-size:0.82em;white-space:nowrap">'+_escHTML(nearVenc||'-')+'</td>';
     h+='<td style="text-align:center">'+badge(worst,nearDias)+'</td>';
     h+='<td style="text-align:center;white-space:nowrap">'+solBtn+'</td>';
     h+='</tr>';
@@ -4989,12 +4989,12 @@ function renderStock(items){
       h+='<tr class="mpx-child mpx-child-'+safe+'"'+(expandAll?'':' style="display:none"')+'>';
       h+='<td></td>';
       h+='<td colspan="3" style="color:#64748b;font-size:0.85em;padding-left:16px">'+_escHTML(i.material_nombre||first.nombre_inci||'')+'</td>';
-      h+='<td style="color:#64748b;font-size:0.85em">'+(i.proveedor?_escHTML(i.proveedor):'<span style="color:#cbd5e1">&mdash;</span>')+' <button class="mpact mpact-adj" style="padding:2px 6px" onclick="event.stopPropagation();abrirEditarProveedor('+gi+')" title="Editar proveedor">&#9999;&#65039;</button></td>';
+      h+='<td style="color:#64748b;font-size:0.85em">'+(i.proveedor?_escHTML(i.proveedor):'<span style="color:#cbd5e1">-</span>')+' <button class="mpact mpact-adj" style="padding:2px 6px" onclick="event.stopPropagation();abrirEditarProveedor('+gi+')" title="Editar proveedor">&#9999;&#65039;</button></td>';
       h+='<td></td>';
       h+='<td style="font-family:monospace;color:#334155;font-size:0.9em">'+_escHTML(i.lote||'')+'</td>';
       h+='<td style="text-align:right;'+qc+'">'+(i.cantidad_g||0).toLocaleString('es-CO')+'</td>';
-      h+='<td style="text-align:center;color:#475569;font-size:0.82em;white-space:nowrap">'+(ubic?'&#128205; '+ubic:'<span style="color:#cbd5e1">&mdash;</span>')+'</td>';
-      h+='<td style="text-align:center;color:'+fc[a]+';font-size:0.85em;white-space:nowrap">'+_escHTML(i.fecha_vencimiento||'—')+'</td>';
+      h+='<td style="text-align:center;color:#475569;font-size:0.82em;white-space:nowrap">'+(ubic?'&#128205; '+ubic:'<span style="color:#cbd5e1">-</span>')+'</td>';
+      h+='<td style="text-align:center;color:'+fc[a]+';font-size:0.85em;white-space:nowrap">'+_escHTML(i.fecha_vencimiento||'-')+'</td>';
       h+='<td style="text-align:center">'+badge(a,i.dias_para_vencer)+'</td>';
       h+='<td style="text-align:center;white-space:nowrap"><div style="display:inline-flex;gap:4px;flex-wrap:wrap;justify-content:center">'+
         '<button class="mpact mpact-adj" onclick="event.stopPropagation();abrirAjusteIdx('+gi+')" title="Ajustar stock / ubicación / fecha / lote">Ajustar</button>'+
@@ -5164,14 +5164,14 @@ async function buscarMPIngreso(val){
       dd.innerHTML=header+matches.map(function(m,i){
         var via=m.match_via?' <span style="color:#10b981;font-size:0.75em">['+m.match_via+']</span>':'';
         var _sec=(m.nombre_comercial&&m.nombre_inci&&m.nombre_comercial!==m.nombre_inci)?' <span style="color:#888;font-size:0.82em;">'+escapeHtml(m.nombre_comercial)+'</span>':'';
-        return '<div class="mp-item" style="padding:9px 14px;cursor:pointer;border-bottom:1px solid #eee;font-size:0.9em;" onmousedown="seleccionarMP(_mpMatches['+i+'])">'+'<span style="font-family:monospace;color:#667eea;font-size:0.85em;">'+escapeHtml(m.codigo_mp)+'</span> &mdash; <strong>'+escapeHtml(m.nombre_inci||m.nombre_comercial||'')+'</strong>'+_sec+via+(m.proveedor?' <span style="color:#888;font-size:0.82em;">('+escapeHtml(m.proveedor)+')</span>':'')+'</div>';
+        return '<div class="mp-item" style="padding:9px 14px;cursor:pointer;border-bottom:1px solid #eee;font-size:0.9em;" onmousedown="seleccionarMP(_mpMatches['+i+'])">'+'<span style="font-family:monospace;color:#667eea;font-size:0.85em;">'+escapeHtml(m.codigo_mp)+'</span> - <strong>'+escapeHtml(m.nombre_inci||m.nombre_comercial||'')+'</strong>'+_sec+via+(m.proveedor?' <span style="color:#888;font-size:0.82em;">('+escapeHtml(m.proveedor)+')</span>':'')+'</div>';
       }).join('');
     }
   }
   var found=mps.find(function(m){return (m.codigo_mp||'').toLowerCase()===busq;});
   if(found){seleccionarMP(found);}
   else if(!matches.length){
-    if(st){st.textContent='MP nueva — llena los datos';st.style.color='#e67e22';}
+    if(st){st.textContent='MP nueva - llena los datos';st.style.color='#e67e22';}
     if(panel)panel.style.display='block';
   } else {
     if(st){st.textContent='Selecciona una opcion de la lista';st.style.color='#667eea';}
@@ -5193,7 +5193,7 @@ async function cargarOCsPendientes(){
         var opt=document.createElement('option');
         opt.value=oc.numero_oc+'|'+item.codigo_mp;
         var kg=((item.cantidad_g||0)/1000).toFixed(2);
-        opt.textContent=oc.numero_oc+' — '+item.nombre_mp+' ('+kg+' kg pendientes)';
+        opt.textContent=oc.numero_oc+' - '+item.nombre_mp+' ('+kg+' kg pendientes)';
         opt.dataset.codigo=item.codigo_mp;
         opt.dataset.nombre=item.nombre_mp;
         opt.dataset.inci=item.nombre_inci||'';
@@ -5309,7 +5309,7 @@ async function registrarIngreso(){
       // Sprint Recepciones PRO fix #12: alerta precio si llegó
       var alertaP = res.alerta_precio ? '<div style="background:#fef3c7;color:#92400e;border:1px solid #f59e0b;padding:8px 12px;margin-top:4px;border-radius:6px;font-size:13px">'+res.alerta_precio+'</div>' : '';
       var ocWarn = res.oc_warning?'<br><span style="color:#e65100;font-size:0.9em;">⚠ '+res.oc_warning+'</span>':'';
-      var successMsg='<div class="alert-success">'+res.message+(enCuarentena?' — CUARENTENA (Calidad notificada)':'')+ocWarn+'</div>' + alertaP;
+      var successMsg='<div class="alert-success">'+res.message+(enCuarentena?' - CUARENTENA (Calidad notificada)':'')+ocWarn+'</div>' + alertaP;
       limpiarIngreso();
       window._recTok=null;  // envio exitoso -> el proximo ingreso genera token nuevo (7-jul)
       // Sprint Recepciones PRO fix #11: limpiar auto-save draft
@@ -5440,7 +5440,7 @@ async function cargarHistIngreso(reset){
     tb.innerHTML = items.map(function(m){
       var fec = (m.fecha||'').substring(0,16).replace('T',' ');
       var venc = m.fecha_vencimiento ? m.fecha_vencimiento.substring(0,10) : '';
-      var ocLink = m.numero_oc ? '<a href="/oc/'+encodeURIComponent(m.numero_oc)+'" target="_blank" style="color:#7c3aed;font-family:monospace">'+_escHTML(m.numero_oc)+'</a>' : '<span style="color:#cbd5e1">—</span>';
+      var ocLink = m.numero_oc ? '<a href="/oc/'+encodeURIComponent(m.numero_oc)+'" target="_blank" style="color:#7c3aed;font-family:monospace">'+_escHTML(m.numero_oc)+'</a>' : '<span style="color:#cbd5e1">-</span>';
       var cuarTag = (m.estado_lote==='CUARENTENA') ? '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;margin-left:4px">🔒 CUAR</span>' : '';
       var anulado = (m.estado_lote==='ANULADO') ? 'opacity:.5;text-decoration:line-through;' : '';
       var anularBtn = (esAdmin && m.estado_lote!=='ANULADO') ?
@@ -5737,7 +5737,7 @@ async function impFormulasPreview(){
         html += '<td><b>'+_escHTML(p.producto)+'</b></td><td>'+p.unidad_base_g+'</td>';
         html += '<td>'+p.items_count+'</td><td style="color:'+(p.pct_ok?'#16a34a':'#dc2626')+'">'+p.total_pct+'%</td>';
         html += '<td>'+(p.ya_existe?'✓ Actualiza':'+ Nueva')+'</td>';
-        html += '<td style="color:#dc2626">'+(p.mps_faltantes.length?p.mps_faltantes.join(', '):'—')+'</td>';
+        html += '<td style="color:#dc2626">'+(p.mps_faltantes.length?p.mps_faltantes.join(', '):'-')+'</td>';
         html += '</tr>';
       });
       html += '</tbody></table>';
@@ -5801,7 +5801,7 @@ function renderFormulas(fl){
   var html='';
   if(!formulasPin){
     html+='<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:10px 15px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;">'
-         +'<span>&#128274; Cantidades ocultas &mdash; activa el PIN para ver la f&oacute;rmula completa</span>'
+         +'<span>&#128274; Cantidades ocultas - activa el PIN para ver la f&oacute;rmula completa</span>'
          +'<button onclick="pedirPinFormula()" style="background:#667eea;color:white;border:none;padding:5px 14px;border-radius:4px;cursor:pointer;font-weight:600;font-size:0.85em;">&#128275; Desbloquear</button>'
          +'</div>';
   } else {
@@ -6213,13 +6213,13 @@ async function loadABC(){
         '<td style="text-align:right;color:#94a3b8;font-family:monospace">'+i.ranking+'</td>'+
         '<td><span style="background:'+bg+';color:white;padding:2px 8px;border-radius:8px;font-weight:700;font-size:10px">'+i.clasificacion+'</span></td>'+
         '<td style="font-family:monospace;color:#555">'+_escHTML(i.material_id)+'</td>'+
-        '<td style="font-weight:600">'+_escHTML(i.nombre_inci||i.material_id||'—')+'</td>'+
-        '<td style="font-size:11px;color:#475569">'+_escHTML(i.proveedor||'—')+'</td>'+
+        '<td style="font-weight:600">'+_escHTML(i.nombre_inci||i.material_id||'-')+'</td>'+
+        '<td style="font-size:11px;color:#475569">'+_escHTML(i.proveedor||'-')+'</td>'+
         '<td style="font-size:11px">'+origenIcon+' '+_escHTML(i.origen)+'</td>'+
         '<td style="text-align:right">'+Math.round(i.stock_g).toLocaleString()+'</td>'+
-        '<td style="text-align:right;color:#475569">'+(i.precio_kg?'$'+Math.round(i.precio_kg).toLocaleString('es-CO'):'—')+'</td>'+
-        '<td style="text-align:right;font-weight:600">'+(i.valor_cop?'$'+Math.round(i.valor_cop).toLocaleString('es-CO'):'—')+'</td>'+
-        '<td style="text-align:right;color:#475569">'+(i.consumo_90d_g?Math.round(i.consumo_90d_g).toLocaleString():'—')+'</td>'+
+        '<td style="text-align:right;color:#475569">'+(i.precio_kg?'$'+Math.round(i.precio_kg).toLocaleString('es-CO'):'-')+'</td>'+
+        '<td style="text-align:right;font-weight:600">'+(i.valor_cop?'$'+Math.round(i.valor_cop).toLocaleString('es-CO'):'-')+'</td>'+
+        '<td style="text-align:right;color:#475569">'+(i.consumo_90d_g?Math.round(i.consumo_90d_g).toLocaleString():'-')+'</td>'+
         '<td style="text-align:right;color:#7c3aed;font-weight:600">'+i.pct_acumulado.toFixed(1)+'%</td>'+
       '</tr>';
     });
@@ -6292,22 +6292,22 @@ async function loadMovimientosNuevo(reset){
       if(m.tipo==='Entrada') tipoBadge = '<span style="background:#dcfce7;color:#166534;padding:1px 7px;border-radius:8px;font-size:10px;font-weight:700">📥 IN</span>';
       else if(m.tipo==='Salida') tipoBadge = '<span style="background:#fee2e2;color:#991b1b;padding:1px 7px;border-radius:8px;font-size:10px;font-weight:700">📤 OUT</span>';
       else tipoBadge = '<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:8px;font-size:10px;font-weight:700">⚖ AJU</span>';
-      var ocLink = m.numero_oc ? '<a href="/oc/'+encodeURIComponent(m.numero_oc)+'" target="_blank" style="color:#7c3aed;font-family:monospace">'+_escHTML(m.numero_oc)+'</a>' : '<span style="color:#cbd5e1">—</span>';
+      var ocLink = m.numero_oc ? '<a href="/oc/'+encodeURIComponent(m.numero_oc)+'" target="_blank" style="color:#7c3aed;font-family:monospace">'+_escHTML(m.numero_oc)+'</a>' : '<span style="color:#cbd5e1">-</span>';
       var anulBtn = m.anulado
         ? '<span style="color:#aaa;font-size:10px">Anulado</span>'
-        : (esAdmin ? '<button data-act="mov-anul" data-id="'+m.id+'" data-mat="'+_escHTML(m.material_nombre)+'" data-cant="'+m.cantidad+'" data-tipo="'+_escHTML(m.tipo)+'" style="padding:2px 7px;font-size:11px;background:#c0392b;color:#fff;border-radius:3px" title="Anular movimiento">✕</button>' : '<span style="color:#cbd5e1;font-size:10px">—</span>');
+        : (esAdmin ? '<button data-act="mov-anul" data-id="'+m.id+'" data-mat="'+_escHTML(m.material_nombre)+'" data-cant="'+m.cantidad+'" data-tipo="'+_escHTML(m.tipo)+'" style="padding:2px 7px;font-size:11px;background:#c0392b;color:#fff;border-radius:3px" title="Anular movimiento">✕</button>' : '<span style="color:#cbd5e1;font-size:10px">-</span>');
       var rowStyle = m.anulado ? 'opacity:.5;text-decoration:line-through' : '';
       return '<tr style="'+rowStyle+'">' +
         '<td style="font-family:monospace;color:#94a3b8">'+m.id+'</td>'+
         '<td style="font-family:monospace;font-size:11px">'+_escHTML(m.material_id)+'</td>'+
         '<td style="font-weight:600">'+_escHTML(m.material_nombre)+'</td>'+
-        '<td style="font-family:monospace;font-size:11px">'+_escHTML(m.lote||'—')+'</td>'+
+        '<td style="font-family:monospace;font-size:11px">'+_escHTML(m.lote||'-')+'</td>'+
         '<td style="text-align:right;font-weight:600">'+m.cantidad.toLocaleString()+'</td>'+
         '<td>'+tipoBadge+'</td>'+
-        '<td style="font-size:11px">'+_escHTML(m.proveedor||'—')+'</td>'+
+        '<td style="font-size:11px">'+_escHTML(m.proveedor||'-')+'</td>'+
         '<td>'+ocLink+'</td>'+
         '<td style="font-size:11px;color:#475569">'+_escHTML(fec)+'</td>'+
-        '<td style="font-size:11px;color:#475569">'+_escHTML(m.operador||'—')+'</td>'+
+        '<td style="font-size:11px;color:#475569">'+_escHTML(m.operador||'-')+'</td>'+
         '<td style="font-size:11px;color:#475569;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+_escHTML(m.observaciones)+'">'+_escHTML(m.observaciones||'')+'</td>'+
         '<td style="text-align:center">'+anulBtn+'</td>'+
       '</tr>';
@@ -6626,7 +6626,7 @@ function _renderSeccionMP(titulo, items, color, tipoSilen){
       '<td style="font-family:monospace;font-size:11px">'+_escHTML(it.codigo_mp)+'</td>'+
       '<td style="font-size:11px;color:#888">'+_escHTML(it.nombre)+'</td>'+
       '<td style="font-weight:600">'+_escHTML(it.nombre_inci||it.nombre)+'</td>'+
-      '<td style="font-size:11px;color:#475569">'+_escHTML(it.proveedor||'—')+'</td>'+
+      '<td style="font-size:11px;color:#475569">'+_escHTML(it.proveedor||'-')+'</td>'+
       '<td style="text-align:right">'+Math.round(it.stock_minimo_g).toLocaleString()+'</td>'+
       '<td style="text-align:right;color:'+pctColor+';font-weight:600">'+Math.round(it.stock_actual_g).toLocaleString()+'</td>'+
       '<td style="text-align:right;color:#dc2626;font-weight:700">'+Math.round(it.deficit_g).toLocaleString()+'</td>'+
@@ -6656,7 +6656,7 @@ function _renderSeccionLotes(titulo, items, color, esVencido){
       '<td style="font-family:monospace;font-size:11px">'+_escHTML(it.material_id)+'</td>'+
       '<td style="font-weight:600">'+_escHTML(it.nombre)+'</td>'+
       '<td style="font-family:monospace;font-size:11px">'+_escHTML(it.lote)+'</td>'+
-      '<td style="font-size:11px;color:#475569">'+_escHTML(it.proveedor||'—')+'</td>'+
+      '<td style="font-size:11px;color:#475569">'+_escHTML(it.proveedor||'-')+'</td>'+
       '<td style="text-align:right;font-weight:600">'+Math.round(it.cantidad_g).toLocaleString()+'</td>'+
       '<td style="text-align:center">'+_escHTML(it.fecha_vencimiento)+'</td>'+
       '<td style="text-align:center;color:'+dCol+';font-weight:700">'+(it.dias_para_vencer<0?(it.dias_para_vencer+'d (VENCIDO)'):(it.dias_para_vencer+'d'))+'</td>'+
@@ -6683,7 +6683,7 @@ function _renderSeccionMEE(items){
       '<td style="font-family:monospace;font-size:11px">'+_escHTML(m.codigo)+'</td>'+
       '<td style="font-weight:600">'+_escHTML(m.descripcion)+'</td>'+
       '<td>'+_escHTML(m.categoria)+'</td>'+
-      '<td style="font-size:11px">'+_escHTML(m.proveedor||'—')+'</td>'+
+      '<td style="font-size:11px">'+_escHTML(m.proveedor||'-')+'</td>'+
       '<td style="text-align:right">'+m.stock_minimo+'</td>'+
       '<td style="text-align:right;color:#dc2626;font-weight:700">'+m.stock_actual+'</td>'+
       '<td style="text-align:right;color:#dc2626;font-weight:700">'+m.deficit+'</td>'+
@@ -6707,8 +6707,8 @@ function _renderSeccionCuarentena(items){
       '<td style="font-family:monospace;font-size:11px">'+_escHTML(it.material_id)+'</td>'+
       '<td style="font-weight:600">'+_escHTML(it.nombre)+'</td>'+
       '<td style="font-family:monospace;font-size:11px">'+_escHTML(it.lote)+'</td>'+
-      '<td style="font-size:11px">'+_escHTML(it.proveedor||'—')+'</td>'+
-      '<td style="font-family:monospace;font-size:11px">'+_escHTML(it.numero_oc||'—')+'</td>'+
+      '<td style="font-size:11px">'+_escHTML(it.proveedor||'-')+'</td>'+
+      '<td style="font-family:monospace;font-size:11px">'+_escHTML(it.numero_oc||'-')+'</td>'+
       '<td style="text-align:right">'+Math.round(it.cantidad_g).toLocaleString()+'</td>'+
       '<td style="font-size:11px;color:#475569">'+_escHTML(it.fecha_ingreso)+'</td>'+
       '<td><button data-act="ir-qc" style="padding:2px 7px;font-size:11px;background:#7c3aed;color:#fff;border-radius:3px">Ir a QC</button></td>'+
@@ -6848,7 +6848,7 @@ function exportarExcelAlertas(){
   (d.lotes_vencidos||[]).forEach(function(it){ rows.push(['Vencido', it.material_id, it.nombre+' ('+it.lote+')', it.proveedor, '', it.cantidad_g, '', it.dias_para_vencer+'d (VENCIDO)']); });
   (d.lotes_proximos||[]).forEach(function(it){ rows.push(['Próximo', it.material_id, it.nombre+' ('+it.lote+')', it.proveedor, '', it.cantidad_g, '', it.dias_para_vencer+'d']); });
   (d.mees_bajo_minimo||[]).forEach(function(m){ rows.push(['MEE bajo', m.codigo, m.descripcion, m.proveedor, m.stock_minimo, m.stock_actual, m.deficit, '']); });
-  (d.lotes_cuarentena||[]).forEach(function(it){ rows.push(['Cuarentena', it.material_id, it.nombre+' ('+it.lote+')', it.proveedor, '', it.cantidad_g, '', 'OC '+(it.numero_oc||'—')]); });
+  (d.lotes_cuarentena||[]).forEach(function(it){ rows.push(['Cuarentena', it.material_id, it.nombre+' ('+it.lote+')', it.proveedor, '', it.cantidad_g, '', 'OC '+(it.numero_oc||'-')]); });
   if(!rows.length){ alert('Sin alertas para exportar'); return; }
   var cols = ['Tipo','Código','Material','Proveedor','Mín','Stock/Cant','Déficit','Detalle'];
   dlExcelHTML('Alertas_'+fhoy(), cols, rows);
@@ -6933,7 +6933,7 @@ function filtrarMEEIngreso(){
   var sel=document.getElementById('mee-ing-cod');
   sel.innerHTML='<option value="">-- Selecciona --</option>';
   _meeData.filter(function(x){return !cat||x.categoria===cat;}).forEach(function(x){
-    var o=document.createElement('option');o.value=x.codigo;o.textContent=x.codigo+' — '+x.descripcion;sel.appendChild(o);
+    var o=document.createElement('option');o.value=x.codigo;o.textContent=x.codigo+' - '+x.descripcion;sel.appendChild(o);
   });
 }
 async function registrarIngresoMEE(){
@@ -7002,7 +7002,7 @@ async function crearMEE(){
 }
 async function abrirAjusteMEE(cod,desc,stock){
   if(!OPER_ACTUAL){alert('Selecciona tu nombre primero');return;}
-  var nuevo=prompt('Ajuste de stock: '+cod+' — '+desc+'\\nStock actual: '+stock+' und\\nNuevo valor:');
+  var nuevo=prompt('Ajuste de stock: '+cod+' - '+desc+'\\nStock actual: '+stock+' und\\nNuevo valor:');
   if(nuevo===null||nuevo==='')return;
   var n=parseFloat(nuevo);if(isNaN(n)||n<0){alert('Valor invalido');return;}
   var obs=prompt('Motivo del ajuste:','Inventario fisico');
@@ -7017,9 +7017,9 @@ async function verHistorialMEE(cod){
   var rows=d.movimientos||[];
   var html=rows.map(function(m){
     var col=m.tipo==='Entrada'?'#27ae60':m.tipo==='Ajuste'?'#f39c12':'#e74c3c';
-    return '<tr style="border-bottom:1px solid #eee;"><td style="padding:6px;color:'+col+';font-weight:600;">'+m.tipo+'</td><td style="padding:6px;text-align:right;">'+m.cantidad+'</td><td style="padding:6px;color:#888;">'+(m.lote_ref||m.batch_ref||'—')+'</td><td style="padding:6px;">'+(m.responsable||'—')+'</td><td style="padding:6px;font-size:0.82em;color:#666;">'+m.fecha+'</td></tr>';
+    return '<tr style="border-bottom:1px solid #eee;"><td style="padding:6px;color:'+col+';font-weight:600;">'+m.tipo+'</td><td style="padding:6px;text-align:right;">'+m.cantidad+'</td><td style="padding:6px;color:#888;">'+(m.lote_ref||m.batch_ref||'-')+'</td><td style="padding:6px;">'+(m.responsable||'-')+'</td><td style="padding:6px;font-size:0.82em;color:#666;">'+m.fecha+'</td></tr>';
   }).join('') || '<tr><td colspan="5" style="text-align:center;color:#999;padding:12px;">Sin movimientos</td></tr>';
-  document.getElementById('hist-lote-info').textContent='MEE — '+cod+' ('+rows.length+' movimientos)';
+  document.getElementById('hist-lote-info').textContent='MEE - '+cod+' ('+rows.length+' movimientos)';
   document.getElementById('hist-lote-body').innerHTML=html;
   document.getElementById('modal-historial').style.display='flex';
 }
@@ -7102,7 +7102,7 @@ async function simularProduccion(){
       costoHtml='<div style="margin-top:10px;padding:10px 14px;background:#eef2ff;border-radius:8px;display:flex;gap:20px;flex-wrap:wrap;align-items:center;">'
         +'<span>&#128176; <strong>Costo estimado batch:</strong> $'+Number(d.costo_total).toLocaleString('es-CO')+'</span>'
         +'<span>&#128197; <strong>Costo/kg:</strong> $'+Number(d.costo_por_kg).toLocaleString('es-CO')+'</span>'
-        +(d.ingredientes_sin_precio>0?'<span style="color:#e67e22;font-size:0.85em;">&#9888; '+d.ingredientes_sin_precio+' ingrediente(s) sin precio — costo subestimado ('+d.cobertura_precio_pct+'% cobertura)</span>':'')
+        +(d.ingredientes_sin_precio>0?'<span style="color:#e67e22;font-size:0.85em;">&#9888; '+d.ingredientes_sin_precio+' ingrediente(s) sin precio - costo subestimado ('+d.cobertura_precio_pct+'% cobertura)</span>':'')
         +'</div>';
     } else if(d.ingredientes_sin_precio>0){
       costoHtml='<div style="margin-top:8px;padding:8px 12px;background:#fffbeb;border-radius:6px;font-size:0.84em;color:#b7791f;">&#9888; No hay precios de referencia. <a href="#" onclick="abrirPreciosMP();return false;">Configura precios por material</a> para ver costo estimado.</div>';
@@ -7137,7 +7137,7 @@ async function abrirPreciosMP(){
   modal.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);z-index:9999;display:flex;align-items:center;justify-content:center;';
   modal.innerHTML='<div style="background:#fff;border-radius:12px;padding:24px;max-width:700px;width:95%;max-height:80vh;overflow-y:auto;">'
     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">'
-    +'<h3 style="margin:0;">&#128176; Precios de Referencia — Materias Primas</h3>'
+    +'<h3 style="margin:0;">&#128176; Precios de Referencia - Materias Primas</h3>'
     +'<button onclick="document.getElementById(\\'modal-precios-mp\\').remove()" style="background:none;border:none;font-size:1.4em;cursor:pointer;">&#10006;</button></div>'
     +'<p style="font-size:0.85em;color:#718096;margin:0 0 12px;">Precio por kg (usado para estimar costo de fórmulas). Fuente: última OC o manual.</p>'
     +'<div style="overflow-x:auto;"><table class="table" style="font-size:0.85em;">'
@@ -7414,7 +7414,7 @@ async function diagnosticarFormula(producto){
         html += '<div style="margin-top:8px;padding:8px;background:#fef2f2;border-left:3px solid #dc2626;font-size:11px">';
         html += '<b style="color:#991b1b">🔥 MPs similares en catálogo (probable duplicado huérfano):</b><br>';
         it.mps_similares_por_nombre.forEach(function(s){
-          html += '• <span style="font-family:monospace">'+_escHTML(s.codigo_mp)+'</span> · '+_escHTML(s.nombre_comercial)+' · INCI: '+_escHTML(s.nombre_inci||'—')+'<br>';
+          html += '• <span style="font-family:monospace">'+_escHTML(s.codigo_mp)+'</span> · '+_escHTML(s.nombre_comercial)+' · INCI: '+_escHTML(s.nombre_inci||'-')+'<br>';
         });
         html += '<div style="margin-top:6px;color:#7f1d1d">→ Ir a Bodega MP → "Maestro" → "Detector de duplicados" → unificar (incluye actualización de fórmulas).</div>';
         html += '</div>';
@@ -7603,7 +7603,7 @@ async function iniciarRegistroProd(){
       document.getElementById('prod-msg').innerHTML=html;
       return;
     }
-    var html='<div class="alert-success">'+(d.message||'Produccion registrada')+' &mdash; Lote: <strong>'+d.lote+'</strong></div>';
+    var html='<div class="alert-success">'+(d.message||'Produccion registrada')+' - Lote: <strong>'+d.lote+'</strong></div>';
     if(d.descuentos&&d.descuentos.length){
       html+='<div style="margin-top:8px;font-size:0.88em;color:#555;"><strong>MPs descontadas:</strong><ul style="margin-top:4px;padding-left:18px;">';
       d.descuentos.forEach(function(mp){html+='<li>'+mp.material+': '+mp.cantidad_g.toLocaleString()+'g</li>';});
@@ -8041,7 +8041,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   var em={fabricacion:'🏭',envasado:'📦',acondicionamiento:'🔧'};
   var fa=d.fase||'fabricacion';
   var _dt=function(s){return s?String(s).replace('T',' ').slice(0,16):'';};
-  var _kv=function(lbl,val){return '<div><div style="font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.3px">'+lbl+'</div><div style="font-size:12px;color:#1e293b;font-weight:600;margin-top:2px;line-height:1.35">'+((val||val===0)&&val!==''?val:'<span style="color:#cbd5e1">—</span>')+'</div></div>';};
+  var _kv=function(lbl,val){return '<div><div style="font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.3px">'+lbl+'</div><div style="font-size:12px;color:#1e293b;font-weight:600;margin-top:2px;line-height:1.35">'+((val||val===0)&&val!==''?val:'<span style="color:#cbd5e1">-</span>')+'</div></div>';};
   var loteBtn=editable?(' <button onclick="ebrAsignarLoteFisico('+d.id+",'"+(d.lote||'')+"'"+')" title="Asignar el lote físico/comercial real" style="background:#ddd6fe;color:#4c1d95;border:none;border-radius:4px;padding:1px 6px;font-size:9px;cursor:pointer;">✏️</button>'):'';
   var prodMl=(d.cantidad_real_g?((d.cantidad_real_g)+' Gr'+(d.ml_envasable?(' - '+d.ml_envasable+' mL'):'')):'');
   // Encabezado estilo MyBatch · INSTRUCCIONES DE MANUFACTURA
@@ -8150,11 +8150,11 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
       if((it.verificado_por||'').trim()){ vf='<span style="color:#16a34a;font-weight:700">✓</span><div style="font-size:9px;color:#94a3b8">'+_escHTML(it.verificado_por)+'</div>'; }
       else if(it.cumple===1&&editable&&miRol.verifica){ vf='<button onclick="ebrVerificarDespeje('+d.id+','+it.idx+',&#39;'+etapa+'&#39;)" style="background:#0ea5e9;color:#fff;border:none;border-radius:4px;padding:2px 9px;font-size:10px;cursor:pointer">Verificar</button>'; }
       else if(it.cumple===1){ vf='<span style="color:#f59e0b;font-size:10px">&#9203; espera Calidad</span>'; }
-      else { vf='<span style="color:#cbd5e1">—</span>'; }
+      else { vf='<span style="color:#cbd5e1">-</span>'; }
       oh+='<tr><td style="font-size:10px;line-height:1.3">'+_escHTML(it.texto)+'</td><td style="text-align:center;white-space:nowrap;vertical-align:top">'+rz+'</td><td style="text-align:center;white-space:nowrap;vertical-align:top">'+vf+'</td></tr>';
     });
     oh+='</tbody></table>';
-    // Sebastián 7-jul: SIN "Marcar TODO / Verificar TODO" — el despeje es SECUENCIAL (operario marca un ítem →
+    // Sebastián 7-jul: SIN "Marcar TODO / Verificar TODO" - el despeje es SECUENCIAL (operario marca un ítem →
     // Calidad lo verifica → se habilita el siguiente) para asegurar que alguien supervisa CADA paso (GMP/INVIMA).
     if(editable&&(miRol.realiza||miRol.verifica)){ oh+='<div style="margin-top:6px;font-size:10px;color:#94a3b8">&#8505; Secuencial: el operario marca un ítem, Calidad lo verifica y se habilita el siguiente.</div>'; }
     if(editable&&miRol.realiza){ oh+=' <button onclick="ebrAgregarRegistroFisico('+d.id+',&#39;Rotulo limpieza '+etapa+'&#39;)" title="Adjuntar foto del rótulo de limpieza diligenciado" style="margin-top:6px;margin-left:6px;background:#fff;border:1px solid #cbd5e1;border-radius:5px;padding:6px 11px;font-size:11px;cursor:pointer">&#128247; Foto rótulo limpieza</button>'; }
@@ -8178,8 +8178,8 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
       var p=pesajes[i];
       var pesado=(p.pesado_por||'').trim();
       var verif=(p.verificado_por||'').trim();
-      var verifCell=verif?('<span style="color:#16a34a;font-weight:700;">✓ '+verif+'</span>'):(pesado?'<span style="color:#f59e0b;">pendiente</span>':'<span style="color:#cbd5e1;">—</span>');
-      var acc='<span style="color:#999;">—</span>';
+      var verifCell=verif?('<span style="color:#16a34a;font-weight:700;">✓ '+verif+'</span>'):(pesado?'<span style="color:#f59e0b;">pendiente</span>':'<span style="color:#cbd5e1;">-</span>');
+      var acc='<span style="color:#999;">-</span>';
       if(!pesado){
         if(editable&&miRol.realiza){ acc='<button onclick="ebrPesarMp('+d.id+',&#39;'+(p.material_id||'')+'&#39;,'+(p.cantidad_teorica_g||0)+')" style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;">Pesar</button>'; }
         else { acc='<span style="color:#f59e0b;font-size:11px;">&#9203; falta pesar</span>'; }
@@ -8189,7 +8189,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
       }
       var _pctv=(p.porcentaje!=null?p.porcentaje:(d.cantidad_objetivo_g>0?((p.cantidad_teorica_g||0)/d.cantidad_objetivo_g*100):null));
       var _foto=(pesado&&editable&&miRol.realiza)?(' <button onclick="ebrAgregarRegistroFisico('+d.id+',&#39;Rotulo pesaje '+(p.material_id||'')+'&#39;)" title="Adjuntar foto del rótulo de pesaje (MyBatch)" style="background:#fff;border:1px solid #cbd5e1;border-radius:4px;padding:2px 6px;font-size:12px;cursor:pointer">&#128247;</button>'):'';
-      h+='<tr style="'+(pesado?'':'background:#fffbeb')+'"><td>'+_escHTML(p.material_nombre||p.material_id||'')+'</td><td style="text-align:right;">'+(_pctv!=null?parseFloat(Number(_pctv).toFixed(3)):'—')+'</td><td style="font-family:monospace;font-size:11px">'+_escHTML(p.lote_mp||'—')+'</td><td style="text-align:right;">100</td><td style="text-align:right;">'+(p.cantidad_teorica_g!=null?Number(p.cantidad_teorica_g).toLocaleString("es-CO"):'—')+'</td><td style="text-align:right;font-weight:'+(pesado?'700':'400')+'">'+(p.cantidad_real_g!=null?Number(p.cantidad_real_g).toLocaleString("es-CO"):'<span style="color:#cbd5e1">&mdash;</span>')+'</td><td style="font-size:10px">'+_escHTML(pesado||'—')+'</td><td>'+verifCell+'</td><td style="text-align:right;white-space:nowrap;">'+acc+_foto+'</td></tr>';
+      h+='<tr style="'+(pesado?'':'background:#fffbeb')+'"><td>'+_escHTML(p.material_nombre||p.material_id||'')+'</td><td style="text-align:right;">'+(_pctv!=null?parseFloat(Number(_pctv).toFixed(3)):'-')+'</td><td style="font-family:monospace;font-size:11px">'+_escHTML(p.lote_mp||'-')+'</td><td style="text-align:right;">100</td><td style="text-align:right;">'+(p.cantidad_teorica_g!=null?Number(p.cantidad_teorica_g).toLocaleString("es-CO"):'-')+'</td><td style="text-align:right;font-weight:'+(pesado?'700':'400')+'">'+(p.cantidad_real_g!=null?Number(p.cantidad_real_g).toLocaleString("es-CO"):'<span style="color:#cbd5e1">-</span>')+'</td><td style="font-size:10px">'+_escHTML(pesado||'-')+'</td><td>'+verifCell+'</td><td style="text-align:right;white-space:nowrap;">'+acc+_foto+'</td></tr>';
     }
     h+='</tbody></table>';
   }
@@ -8211,7 +8211,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   else{
     h+='<table class="table" style="font-size:12px;"><thead><tr><th>#</th><th>Actividad</th><th>Estado</th><th>Realizó por</th><th>Verificó por</th><th></th></tr></thead><tbody>';
     for(var j=0;j<pasos.length;j++){
-      var s=pasos[j];var acc2='<span style="color:#999;">'+(s.estado==='completado'?'✓':'—')+'</span>';
+      var s=pasos[j];var acc2='<span style="color:#999;">'+(s.estado==='completado'?'✓':'-')+'</span>';
       if(editable&&miRol.realiza){
         if(s.estado==='pendiente'){acc2='<button onclick="ebrIniciarPaso('+d.id+','+s.orden+')" style="background:#f59e0b;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Iniciar</button>';}
         else if(s.estado==='en_proceso'){acc2='<button onclick="ebrCompletarPaso('+d.id+','+s.orden+','+s.id+','+(s.requiere_e_sign?1:0)+','+(s.requiere_qc?1:0)+')" style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Completar</button>';}
@@ -8251,11 +8251,11 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     h+='<table class="table" style="font-size:12px;"><thead><tr><th>Parámetro</th><th>Rango/Spec</th><th>Resultado</th><th>Conf.</th><th>Midió</th><th></th></tr></thead><tbody>';
     for(var k=0;k<ipcSpecs.length;k++){
       var sp=ipcSpecs[k]; var rr=resBySpec[sp.id];
-      var rango = (sp.valor_min!=null||sp.valor_max!=null) ? ((sp.valor_min!=null?sp.valor_min:'')+' – '+(sp.valor_max!=null?sp.valor_max:'')+' '+(sp.unidad||'')) : (sp.criterio||'cualitativo');
+      var rango = (sp.valor_min!=null||sp.valor_max!=null) ? ((sp.valor_min!=null?sp.valor_min:'')+' - '+(sp.valor_max!=null?sp.valor_max:'')+' '+(sp.unidad||'')) : (sp.criterio||'cualitativo');
       var resTxt = rr ? ((rr.valor_medido!=null?rr.valor_medido:'')+' '+(rr.valor_texto||'')) : '<span style="color:#f59e0b;">pendiente</span>';
-      var confTxt = rr ? (rr.conforme===1?'<span style="color:#16a34a;font-weight:700;">✓</span>':(rr.conforme===0?'<span style="color:#dc2626;font-weight:700;">✗ OOS</span>':(rr.conforme===2?'<span style="color:#64748b;font-weight:700;">N/A</span>':'<span style="color:#999;">—</span>'))) : '';
+      var confTxt = rr ? (rr.conforme===1?'<span style="color:#16a34a;font-weight:700;">✓</span>':(rr.conforme===0?'<span style="color:#dc2626;font-weight:700;">✗ OOS</span>':(rr.conforme===2?'<span style="color:#64748b;font-weight:700;">N/A</span>':'<span style="color:#999;">-</span>'))) : '';
       var oblig = sp.obligatorio?' <span title="obligatorio" style="color:#dc2626;">*</span>':'';
-      var ipcAcc = (!rr && editable && miRol.verifica) ? '<button onclick="ebrReportarIpc('+d.id+','+sp.id+','+((sp.valor_min!=null||sp.valor_max!=null)?1:0)+')" style="background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Reportar</button>' : '<span style="color:#999;">'+(rr?(rr.conforme===2?'N/A':'✓'):'—')+'</span>';
+      var ipcAcc = (!rr && editable && miRol.verifica) ? '<button onclick="ebrReportarIpc('+d.id+','+sp.id+','+((sp.valor_min!=null||sp.valor_max!=null)?1:0)+')" style="background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Reportar</button>' : '<span style="color:#999;">'+(rr?(rr.conforme===2?'N/A':'✓'):'-')+'</span>';
       h+='<tr><td>'+(sp.parametro||'')+oblig+'</td><td style="font-size:11px;color:#777;">'+rango+'</td><td>'+resTxt+'</td><td style="text-align:center;">'+confTxt+'</td><td style="font-size:11px;">'+((rr&&rr.medido_por)||'')+'</td><td style="text-align:right;">'+ipcAcc+'</td></tr>';
     }
     h+='</tbody></table>';
@@ -8265,9 +8265,9 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   h+='<table class="table" style="font-size:12px;"><thead><tr><th>Control</th><th>Resultado</th><th>Conf.</th><th>Midió</th><th></th></tr></thead><tbody>';
   for(var e=0;e<ipcEstandar.length;e++){
     var ec=ipcEstandar[e];
-    var ecConf=ec.conforme===1?'<span style="color:#16a34a;font-weight:700;">✓</span>':(ec.conforme===0?'<span style="color:#dc2626;font-weight:700;">✗</span>':(ec.conforme===2?'<span style="color:#64748b;font-weight:700;">N/A</span>':'<span style="color:#999;">—</span>'));
+    var ecConf=ec.conforme===1?'<span style="color:#16a34a;font-weight:700;">✓</span>':(ec.conforme===0?'<span style="color:#dc2626;font-weight:700;">✗</span>':(ec.conforme===2?'<span style="color:#64748b;font-weight:700;">N/A</span>':'<span style="color:#999;">-</span>'));
     var ecRes=ec.conforme===2?'No aplica':(ec.valor_texto||'<span style="color:#f59e0b;">pendiente</span>');
-    var ecAcc=(editable&&miRol.verifica)?'<button onclick="ebrReportarIpcEstandar('+d.id+',\\''+ec.control_codigo+'\\')" style="background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Registrar</button>':'<span style="color:#999;">—</span>';
+    var ecAcc=(editable&&miRol.verifica)?'<button onclick="ebrReportarIpcEstandar('+d.id+',\\''+ec.control_codigo+'\\')" style="background:#0ea5e9;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Registrar</button>':'<span style="color:#999;">-</span>';
     h+='<tr><td>'+ec.control_nombre+'</td><td>'+ecRes+'</td><td style="text-align:center;">'+ecConf+'</td><td style="font-size:11px;">'+(ec.medido_por||'')+'</td><td style="text-align:right;">'+ecAcc+'</td></tr>';
   }
   h+='</tbody></table>';
@@ -8302,7 +8302,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
       for(var a=0;a<artes.length;a++){var ar=artes[a];
         var ap=(ar.aprobado_por||'').trim();
         var apCell=ap?('<span style="color:#16a34a;font-weight:700;">✓ '+ap+'</span>'):'<span style="color:#f59e0b;">pendiente</span>';
-        var apAcc='<span style="color:#999;">—</span>';
+        var apAcc='<span style="color:#999;">-</span>';
         if(!ap&&editable){apAcc='<button onclick="ebrAprobarArte('+d.id+','+ar.id+')" style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:4px 9px;font-size:11px;cursor:pointer;">Aprobar etiqueta</button>';}
         h+='<tr><td>'+(ar.descripcion||'')+'</td><td>'+(ar.codigo_lote||'')+'</td><td>'+(ar.codigo_vencimiento||'')+'</td><td>'+apCell+'</td><td style="text-align:right;">'+apAcc+'</td></tr>';
       }
@@ -8341,7 +8341,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
       h+='<li>'+(rr2.descripcion||'')+pdfL+' <span style="color:#999;font-size:11px;">· '+(rr2.registrado_por||'')+'</span></li>';
     }
     h+='</ul>';
-  } else {h+='<div style="color:#999;font-size:12px;">Sin registros físicos adjuntos. Acá van las FOTOS de los rótulos diligenciados a mano (pesaje, limpieza) — la evidencia física del lote.</div>';}
+  } else {h+='<div style="color:#999;font-size:12px;">Sin registros físicos adjuntos. Acá van las FOTOS de los rótulos diligenciados a mano (pesaje, limpieza) - la evidencia física del lote.</div>';}
   if(editable){h+='<button onclick="ebrAgregarRegistroFisico('+d.id+')" style="margin-top:4px;background:#0891b2;color:#fff;border:none;border-radius:5px;padding:6px 12px;font-size:11px;cursor:pointer;">&#128247; Adjuntar foto / PDF</button>';}
   // Cierre y Aprobaciones finales (Producción + Calidad · MyBatch pie del instructivo)
   h+='</div>'+_secOpen('&#9989; Cierre y Aprobaciones');
@@ -8368,7 +8368,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   } else if(_est==='completado'||_est==='en_revision_qc'){
     h+='<div style="font-size:11px;color:#f59e0b;margin-top:4px">&#9203; Espera liberación de Calidad / Aseguramiento</div>';
   } else {
-    h+='<div style="font-size:11px;color:#cbd5e1;margin-top:4px">&mdash; (primero Producción termina)</div>';
+    h+='<div style="font-size:11px;color:#cbd5e1;margin-top:4px">- (primero Producción termina)</div>';
   }
   h+='</div>';
   h+='<div style="border:1px solid #e2e8f0;border-radius:10px;padding:12px">';
@@ -8378,7 +8378,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   } else if((_est==='liberado'||_est==='completado'||_est==='en_revision_qc')&&miRol.aprueba_dt){
     h+='<div style="font-size:11px;color:#64748b;margin:5px 0 7px">Visto bueno final del responsable técnico (INVIMA) con tu e-firma.</div><button onclick="ebrAprobarDt('+d.id+')" style="background:#7c3aed;color:#fff;border:none;border-radius:7px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer">&#9989; Dar visto bueno</button>';
   } else {
-    h+='<div style="font-size:11px;color:#cbd5e1;margin-top:4px">&mdash; (lo firma el Director Técnico)</div>';
+    h+='<div style="font-size:11px;color:#cbd5e1;margin-top:4px">- (lo firma el Director Técnico)</div>';
   }
   h+='</div></div>';
   // Correcciones del registro (Part 11 · enmiendas trazadas)
@@ -8402,7 +8402,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     _aud.forEach(function(a){
       var _f=a.fecha?String(a.fecha).replace('T',' ').slice(0,16):'';
       var _ac=String(a.accion||'').replace(/_/g,' ').toLowerCase();
-      h+='<tr style="vertical-align:top"><td style="font-size:10px;color:#94a3b8;white-space:nowrap">'+_escHTML(_f)+'</td><td style="font-weight:700;color:#6d28d9">'+_escHTML(a.usuario||'—')+'</td><td style="font-size:11px">'+_escHTML(_ac)+'</td><td style="font-size:10px;color:#64748b">'+_escHTML(a.detalle||'')+'</td></tr>';
+      h+='<tr style="vertical-align:top"><td style="font-size:10px;color:#94a3b8;white-space:nowrap">'+_escHTML(_f)+'</td><td style="font-weight:700;color:#6d28d9">'+_escHTML(a.usuario||'-')+'</td><td style="font-size:11px">'+_escHTML(_ac)+'</td><td style="font-size:10px;color:#64748b">'+_escHTML(a.detalle||'')+'</td></tr>';
     });
     h+='</tbody></table><div style="font-size:10px;color:#94a3b8;margin-top:6px">Registro inmutable de acciones del lote · responsable + fecha/hora de cada operación (INVIMA / 21 CFR Part 11).</div>';
   }
@@ -8821,13 +8821,13 @@ async function buscarTrazabilidad(){
       '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">'+
       '<div><b>Codigo:</b> '+ing.codigo_mp+'</div>'+
       '<div><b>Nombre:</b> '+ing.nombre+'</div>'+
-      '<div><b>INCI:</b> '+(ing.nombre_inci||'—')+'</div>'+
+      '<div><b>INCI:</b> '+(ing.nombre_inci||'-')+'</div>'+
       '<div><b>Cantidad:</b> '+Number(ing.cantidad_g).toLocaleString()+' g</div>'+
-      '<div><b>Proveedor:</b> '+(ing.proveedor||'—')+'</div>'+
-      '<div><b>Factura:</b> '+(ing.factura||'—')+'</div>'+
-      '<div><b>OC:</b> '+(ing.orden_compra||'—')+'</div>'+
-      '<div><b>Precio/kg:</b> '+(ing.precio_kg?'$'+Number(ing.precio_kg).toLocaleString('es-CO'):'—')+'</div>'+
-      '<div><b>Fecha:</b> '+(ing.fecha?ing.fecha.substring(0,10):'—')+'</div>'+
+      '<div><b>Proveedor:</b> '+(ing.proveedor||'-')+'</div>'+
+      '<div><b>Factura:</b> '+(ing.factura||'-')+'</div>'+
+      '<div><b>OC:</b> '+(ing.orden_compra||'-')+'</div>'+
+      '<div><b>Precio/kg:</b> '+(ing.precio_kg?'$'+Number(ing.precio_kg).toLocaleString('es-CO'):'-')+'</div>'+
+      '<div><b>Fecha:</b> '+(ing.fecha?ing.fecha.substring(0,10):'-')+'</div>'+
       '</div>';
     document.getElementById('trz-nprod').textContent=data.total_producciones;
     var tb=document.getElementById('trz-prod-tbody');
@@ -8990,7 +8990,7 @@ async function cargarEstanterias(){
   // el usuario use el botón "Iniciar" de la fila "Esta semana" arriba.
   if(_esTipoEE(_conteoTipoFiltro)){
     while(sel.options.length > 1) sel.remove(1);
-    sel.options[0].textContent = '— No aplica para E&E (cuenta los 3 items asignados arriba)';
+    sel.options[0].textContent = '- No aplica para E&E (cuenta los 3 items asignados arriba)';
     sel.disabled = true;
     return;
   }
@@ -9051,7 +9051,7 @@ async function cargarProgramacionCiclica(){
           html += '<div style="margin-top:6px;"><strong>Tipos actualmente en catálogo:</strong></div>';
           html += '<ul style="margin:4px 0 8px 22px;color:#444;">';
           dx.tipos_existentes.forEach(function(t){
-            html += '<li><code style="background:#f3f0ea;padding:1px 6px;border-radius:3px;">'+t.tipo+'</code> &mdash; '+t.total+' items</li>';
+            html += '<li><code style="background:#f3f0ea;padding:1px 6px;border-radius:3px;">'+t.tipo+'</code> - '+t.total+' items</li>';
           });
           html += '</ul>';
         }
@@ -9086,7 +9086,7 @@ async function cargarProgramacionCiclica(){
       if(modoItems && s.items_programados){
         asignacionTxt = '<div style="font-size:0.78em;color:#555;font-weight:600;margin-bottom:3px;">3 items a contar:</div>';
         s.items_programados.forEach(function(it){
-          asignacionTxt += '<div style="font-size:0.8em;font-family:monospace;color:#1e293b;">• '+_escHTML(it.codigo_mp||'')+' — '+_escHTML(it.nombre||'')+'</div>';
+          asignacionTxt += '<div style="font-size:0.8em;font-family:monospace;color:#1e293b;">• '+_escHTML(it.codigo_mp||'')+' - '+_escHTML(it.nombre||'')+'</div>';
         });
       } else {
         asignacionTxt = _escHTML(s.estanteria||'');
@@ -9110,7 +9110,7 @@ async function cargarProgramacionCiclica(){
         ? ' · <span style="color:#1f5f5b;">Solo Materias Primas. Para Envase Primario/Secundario o Empaque cambia el filtro arriba.</span>'
         : '';
       resumen = 'Total estanter&iacute;as en rotaci&oacute;n: '+d.total_estanterias+
-                ' &mdash; ciclo completo cada '+d.total_estanterias+' semanas' + hint;
+                ' - ciclo completo cada '+d.total_estanterias+' semanas' + hint;
     }
     html += '<tr style="background:#f5f5f5;font-size:0.8em;color:#888;"><td colspan="5" style="padding:6px 12px;">'+resumen+'</td></tr>';
     tbody.innerHTML = html;
@@ -9151,7 +9151,7 @@ async function iniciarConteo(){
 }
 
 // Event delegation: botones editar proveedor / eliminar lote dentro del
-// conteo ciclico. Reusan los modales de Stock por Lote (mismo patron) —
+// conteo ciclico. Reusan los modales de Stock por Lote (mismo patron) -
 // se construye un objeto compatible y se pushea a _lotes para que los
 // handlers existentes lo encuentren por indice.
 document.addEventListener('click', function(e){
@@ -9253,12 +9253,12 @@ async function guardarUbicacionConteo(){
       // Actualizar visualmente la fila (sin re-fetch)
       var estEl = document.getElementById('cnt-est-'+_ubicConteoIdx);
       var posEl = document.getElementById('cnt-pos-'+_ubicConteoIdx);
-      if(estEl){estEl.textContent='Est: '+(ci.estanteria||'—');estEl.style.color=ci.estanteria?'#888':'#bbb';}
-      if(posEl){posEl.textContent='Pos: '+(ci.posicion||'—');posEl.style.color=ci.posicion?'#888':'#bbb';}
+      if(estEl){estEl.textContent='Est: '+(ci.estanteria||'-');estEl.style.color=ci.estanteria?'#888':'#bbb';}
+      if(posEl){posEl.textContent='Pos: '+(ci.posicion||'-');posEl.style.color=ci.posicion?'#888':'#bbb';}
       setTimeout(cerrarEditarUbicacionConteo, 1400);
     }else{
       msgEl.innerHTML='<span style="color:#c00;">Error: '+(d.error||r.status)+
-        (d.detail?' &mdash; '+d.detail:'')+'</span>';
+        (d.detail?' - '+d.detail:'')+'</span>';
     }
   }catch(e){msgEl.innerHTML='<span style="color:#c00;">Error de red: '+e.message+'</span>';}
 }
@@ -9286,15 +9286,15 @@ async function cargarItemsConteo(est){
       h += '<tr id="cnt-row-'+i+'" data-cod="'+mp.codigo_mp+'" data-lote="'+lote+'">';
       h += '<td style="font-family:monospace;font-size:0.82em;">'+mp.codigo_mp+'<br><span style="font-size:0.7em;color:'+col+';font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">'+tipo+'</span></td>';
       h += '<td style="font-size:0.85em;">'+mp.nombre+(mp.inci?'<br><span style="font-size:0.72em;color:#888;">'+mp.inci+'</span>':'')+'</td>';
-      var loteTxt = lote ? '<span style="font-family:monospace;font-size:0.82em;">'+lote+'</span>' : '<span style="color:#bbb;font-style:italic;font-size:0.78em;">— sin lote —</span>';
-      var estTxt = mp.estanteria ? '<br><span style="font-size:0.72em;color:#888;" id="cnt-est-'+i+'">Est: '+mp.estanteria+'</span>' : '<br><span style="font-size:0.72em;color:#bbb;" id="cnt-est-'+i+'">Est: —</span>';
-      var posTxt = mp.posicion ? '<br><span style="font-size:0.72em;color:#888;" id="cnt-pos-'+i+'">Pos: '+mp.posicion+'</span>' : '<br><span style="font-size:0.72em;color:#bbb;" id="cnt-pos-'+i+'">Pos: —</span>';
+      var loteTxt = lote ? '<span style="font-family:monospace;font-size:0.82em;">'+lote+'</span>' : '<span style="color:#bbb;font-style:italic;font-size:0.78em;">- sin lote -</span>';
+      var estTxt = mp.estanteria ? '<br><span style="font-size:0.72em;color:#888;" id="cnt-est-'+i+'">Est: '+mp.estanteria+'</span>' : '<br><span style="font-size:0.72em;color:#bbb;" id="cnt-est-'+i+'">Est: -</span>';
+      var posTxt = mp.posicion ? '<br><span style="font-size:0.72em;color:#888;" id="cnt-pos-'+i+'">Pos: '+mp.posicion+'</span>' : '<br><span style="font-size:0.72em;color:#bbb;" id="cnt-pos-'+i+'">Pos: -</span>';
       var venTxt = mp.fecha_vencimiento ? '<br><span style="font-size:0.72em;color:#888;">Vence: '+mp.fecha_vencimiento.substr(0,10)+'</span>' : '';
       // Sebastian 8-may-2026: boton para editar ubicacion (estanteria/posicion) desde el conteo
       var btnUbic = '<button class="cnt-ubic-edit" data-idx="'+i+'" title="Cambiar estanteria/posicion del lote" style="margin-left:4px;padding:1px 5px;font-size:0.72em;background:#dbeafe;color:#1e40af;border:1px solid #93c5fd;border-radius:4px;cursor:pointer;">&#128205;&#9999;&#65039;</button>';
       h += '<td>'+loteTxt+btnUbic+estTxt+posTxt+venTxt+'</td>';
       // Proveedor con boton editar (reusa modal y datalist global del flujo Stock por Lote)
-      var provHtml = prov ? prov : '<span style="color:#bbb;font-style:italic;font-size:0.78em;">— sin proveedor —</span>';
+      var provHtml = prov ? prov : '<span style="color:#bbb;font-style:italic;font-size:0.78em;">- sin proveedor -</span>';
       h += '<td class="cnt-prov-cell" data-idx="'+i+'" style="font-size:0.82em;color:#475569;">'+provHtml+' <button class="cnt-prov-edit" data-idx="'+i+'" title="Editar proveedor del lote" style="margin-left:3px;padding:1px 5px;font-size:0.72em;background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;border-radius:4px;cursor:pointer;">&#9999;&#65039;</button></td>';
       h += '<td style="text-align:right;font-weight:600;font-family:monospace;">'+Number(mp.stock_sistema).toLocaleString()+'</td>';
       h += '<td><input type="number" id="cnt-fis-'+i+'" min="0" step="0.1" oninput="calcDiff('+i+','+mp.stock_sistema+','+mp.precio_ref+')" style="width:120px;padding:6px;border:1px solid #dde;border-radius:6px;text-align:right;font-family:monospace;"></td>';
@@ -9676,7 +9676,7 @@ async function cargarMeeStock(){
       d.items.forEach(function(m){
         window._MEE_IMG[m.codigo] = m.imagen_url || '';
         window._MEE_DATA[m.codigo] = {desc:m.descripcion||'', cat:m.categoria||'', prov:m.proveedor||'', stock:(m.stock_actual!=null?m.stock_actual:0), min:(m.stock_minimo||0), unidad:(m.unidad||'und'), zona:(m.zona||''), estante:(m.estanteria||''), pos:(m.posicion||''), medida:(m.medida||'')};
-        optsCod += '<option value="'+_escHTML(m.codigo)+'" data-stock="'+_escHTML(m.stock_actual)+'" data-unidad="'+_escHTML(m.unidad)+'" data-min="'+_escHTML(m.stock_minimo)+'">'+_escHTML(m.codigo)+' — '+_escHTML(m.descripcion)+'</option>';
+        optsCod += '<option value="'+_escHTML(m.codigo)+'" data-stock="'+_escHTML(m.stock_actual)+'" data-unidad="'+_escHTML(m.unidad)+'" data-min="'+_escHTML(m.stock_minimo)+'">'+_escHTML(m.codigo)+' - '+_escHTML(m.descripcion)+'</option>';
       });
       codSel.innerHTML = optsCod;
       if(cur2) codSel.value = cur2;
@@ -9711,7 +9711,7 @@ async function cargarMeeStock(){
       tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#999;">Sin items activos</td></tr>'; return;
     }
     var aC={critico:'#e74c3c',bajo:'#e67e22',advertencia:'#f39c12',ok:'#27ae60',sin_minimo:'#95a5a6'};
-    var aL={critico:'&#9940; Critico',bajo:'&#9888; Bajo',advertencia:'&#128993; Alerta',ok:'&#10003; OK',sin_minimo:'—'};
+    var aL={critico:'&#9940; Critico',bajo:'&#9888; Bajo',advertencia:'&#128993; Alerta',ok:'&#10003; OK',sin_minimo:'-'};
     // Agrupar por categoría · envases (Frasco) primero (Sebastián 28-jun)
     var _catOrd={'Envase':1,'Frasco':1,'Impreso':2,'Impresion':2,'Impresión':2,'Serigrafia':2,'Serigrafía':2,'Gotero':3,'Tapa':4,'Etiqueta':5,'Plegadiza':6,'Caja':6};
     items=items.slice().sort(function(a,b){ var oa=_catOrd[a.categoria||'']||50, ob=_catOrd[b.categoria||'']||50; if(oa!==ob) return oa-ob; return (a.descripcion||'').localeCompare(b.descripcion||''); });
@@ -9733,8 +9733,8 @@ async function cargarMeeStock(){
       h+='<td style="font-size:0.9em;line-height:1.35;">'+'<div style="font-weight:600;color:#1e293b;display:flex;align-items:center;flex-wrap:wrap">'+_escHTML(m.descripcion)+_medChip+'</div>'+(_chips?'<div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+_cliChip(m)+ob+'</div>':'')+'</td>';
       h+='<td style="font-size:0.8em;color:#777;">'+_escHTML(m.categoria||'')+'</td>';
       h+='<td style="font-weight:700;text-align:right;">'+m.stock_actual+' <span style="color:#999;font-size:0.8em;font-weight:400">'+_escHTML(m.unidad||'und')+'</span></td>';
-      h+='<td style="text-align:center;">'+(_loc?'<span style="background:#ecfeff;color:#0e7490;border:1px solid #a5f3fc;border-radius:999px;padding:2px 9px;font-size:0.72em;font-weight:700;white-space:nowrap" title="Ubicación en bodega (zona/estante/posición)">&#128205; '+_escHTML(_loc)+'</span>':'<span style="color:#cbd5e1">&mdash;</span>')+'</td>';
-      h+='<td style="color:#94a3b8;font-size:0.88em;text-align:right;">'+(m.stock_minimo||'—')+'</td>';
+      h+='<td style="text-align:center;">'+(_loc?'<span style="background:#ecfeff;color:#0e7490;border:1px solid #a5f3fc;border-radius:999px;padding:2px 9px;font-size:0.72em;font-weight:700;white-space:nowrap" title="Ubicación en bodega (zona/estante/posición)">&#128205; '+_escHTML(_loc)+'</span>':'<span style="color:#cbd5e1">-</span>')+'</td>';
+      h+='<td style="color:#94a3b8;font-size:0.88em;text-align:right;">'+(m.stock_minimo||'-')+'</td>';
       h+='<td><span style="color:'+c+';font-weight:600;font-size:0.82em;">'+lbl+'</span></td>';
       h+='<td style="font-size:0.78em;color:#666;max-width:120px;overflow:hidden;text-overflow:ellipsis">'+_escHTML(m.proveedor||'-')+'</td>';
       var _mc=_escHTML(m.codigo).replace(/"/g,'&quot;');
@@ -9807,12 +9807,12 @@ function _kitFillDropdown(self){
   var data=window._MEE_DATA||{}; var su=(self||'').toUpperCase(); var byCat={};
   Object.keys(data).forEach(function(cod){ if(cod.toUpperCase()===su) return; var dd=data[cod]||{}; var cat=((dd.cat||'').trim())||'Otro'; (byCat[cat]=byCat[cat]||[]).push(cod); });
   var h='<option value="">-- elegí la parte por tipo --</option>';
-  Object.keys(byCat).sort().forEach(function(cat){ h+='<optgroup label="'+_meeEscOpt(cat)+'">'; byCat[cat].sort().forEach(function(cod){ var dd=data[cod]||{}; h+='<option value="'+_meeEscOpt(cod)+'">'+_meeEscOpt(cod)+' — '+_meeEscOpt(dd.desc||'')+'</option>'; }); h+='</optgroup>'; });
+  Object.keys(byCat).sort().forEach(function(cat){ h+='<optgroup label="'+_meeEscOpt(cat)+'">'; byCat[cat].sort().forEach(function(cod){ var dd=data[cod]||{}; h+='<option value="'+_meeEscOpt(cod)+'">'+_meeEscOpt(cod)+' - '+_meeEscOpt(dd.desc||'')+'</option>'; }); h+='</optgroup>'; });
   sel.innerHTML=h;
 }
 function _kitRender(){
   var box=document.getElementById('mee-kit-list'); if(!box) return;
-  if(!_kitPartes.length){ box.innerHTML='<div style="color:#94a3b8;font-size:13px;padding:8px 0">&mdash; sin partes &middot; este envase va solo &mdash;</div>'; return; }
+  if(!_kitPartes.length){ box.innerHTML='<div style="color:#94a3b8;font-size:13px;padding:8px 0">- sin partes &middot; este envase va solo -</div>'; return; }
   box.innerHTML=_kitPartes.map(function(p,i){ return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f1f5f9"><b style="font-family:monospace;font-size:12px;color:#1e293b">'+_meeEscOpt(p.codigo)+'</b> <span style="flex:1;font-size:12px;color:#475569">'+_meeEscOpt(p.desc||'')+'</span> <span style="font-size:12px;color:#64748b">&times;'+p.cantidad+'</span> <a onclick="meeKitDelParte('+i+')" style="color:#dc2626;cursor:pointer;font-weight:800;font-size:15px" title="Quitar">&times;</a></div>'; }).join('');
 }
 function meeKitAddParte(){
@@ -9848,7 +9848,7 @@ function _meeFillUbic(selId, tipo, current){
   var sel=document.getElementById(selId); if(!sel) return;
   var lst=(((window._MEE_UBIC||{})[tipo])||[]).slice();
   if(current && lst.indexOf(current)<0) lst.unshift(current);
-  var h='<option value="">&mdash; sin asignar &mdash;</option>';
+  var h='<option value="">- sin asignar -</option>';
   lst.forEach(function(v){ h+='<option value="'+_escHTML(v)+'"'+(v===current?' selected':'')+'>'+_escHTML(v)+'</option>'; });
   h+='<option value="__add__">&#10133; Agregar&hellip;</option>';
   sel.innerHTML=h;
@@ -10059,11 +10059,11 @@ async function meeCargarPorCalificar(){
     var r=await fetch('/api/mee/por-calificar'); var d=await r.json(); var ps=d.pendientes||[];
     if(cnt) cnt.textContent=ps.length;
     if(!ps.length){ box.style.display='none'; list.innerHTML=''; return; }
-    list.innerHTML=ps.map(function(p){ return '<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;background:#fff;border:1px solid #bfdbfe;border-radius:6px;padding:8px 10px;margin-bottom:6px;flex-wrap:wrap"><span style="font-size:12px"><b>'+_escHTML(p.codigo)+'</b> — '+_escHTML(p.descripcion)+'</span><button data-cod="'+_escHTML(p.codigo)+'" data-desc="'+_escHTML(p.descripcion)+'" onclick="meeAbrirCalificar(this)" style="background:#1d4ed8;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer">Calificar</button></div>'; }).join('');
+    list.innerHTML=ps.map(function(p){ return '<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;background:#fff;border:1px solid #bfdbfe;border-radius:6px;padding:8px 10px;margin-bottom:6px;flex-wrap:wrap"><span style="font-size:12px"><b>'+_escHTML(p.codigo)+'</b> - '+_escHTML(p.descripcion)+'</span><button data-cod="'+_escHTML(p.codigo)+'" data-desc="'+_escHTML(p.descripcion)+'" onclick="meeAbrirCalificar(this)" style="background:#1d4ed8;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer">Calificar</button></div>'; }).join('');
     box.style.display='block';
   }catch(e){}
 }
-function meeAbrirCalificar(btn){ var cod=btn.getAttribute('data-cod'); var desc=btn.getAttribute('data-desc'); var m=document.getElementById('mee-calif-modal'); if(!m) return; var cc=document.getElementById('mc-codigo'); if(cc)cc.value=cod; var nn=document.getElementById('mee-calif-nombre'); if(nn)nn.textContent=cod+' — '+(desc||''); ['mc-capacidad','mc-material','mc-medidas','mc-documentos'].forEach(function(idd){var e=document.getElementById(idd); if(e)e.checked=false;}); var nt=document.getElementById('mc-notas'); if(nt)nt.value=''; m.style.display='block'; }
+function meeAbrirCalificar(btn){ var cod=btn.getAttribute('data-cod'); var desc=btn.getAttribute('data-desc'); var m=document.getElementById('mee-calif-modal'); if(!m) return; var cc=document.getElementById('mc-codigo'); if(cc)cc.value=cod; var nn=document.getElementById('mee-calif-nombre'); if(nn)nn.textContent=cod+' - '+(desc||''); ['mc-capacidad','mc-material','mc-medidas','mc-documentos'].forEach(function(idd){var e=document.getElementById(idd); if(e)e.checked=false;}); var nt=document.getElementById('mc-notas'); if(nt)nt.value=''; m.style.display='block'; }
 function meeCalifClose(){ var m=document.getElementById('mee-calif-modal'); if(m) m.style.display='none'; }
 async function meeCalificar(){
   var cod=(document.getElementById('mc-codigo')||{}).value||'';
@@ -10077,7 +10077,7 @@ async function meeCargarCuarentena(){
     var r=await fetch('/api/mee/cuarentena-pendientes'); var d=await r.json(); var ps=d.pendientes||[];
     if(cnt) cnt.textContent=ps.length;
     if(!ps.length){ box.style.display='none'; list.innerHTML=''; return; }
-    list.innerHTML=ps.map(function(p){ return '<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;background:#fff;border:1px solid #fed7aa;border-radius:6px;padding:8px 10px;margin-bottom:6px;flex-wrap:wrap"><span style="font-size:12px"><b>'+_escHTML(p.codigo)+'</b> — '+_escHTML(p.descripcion)+' · '+p.cantidad+' '+_escHTML(p.unidad)+(p.zona?(' · zona '+_escHTML(p.zona)):'')+(p.lote?(' · lote '+_escHTML(p.lote)):'')+'</span><span style="display:flex;gap:6px"><button onclick="meeCuarLiberar('+p.id+')" style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer">&#10003; Liberar</button><button onclick="meeCuarRechazar('+p.id+')" style="background:#dc2626;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer">Rechazar</button></span></div>'; }).join('');
+    list.innerHTML=ps.map(function(p){ return '<div style="display:flex;gap:8px;align-items:center;justify-content:space-between;background:#fff;border:1px solid #fed7aa;border-radius:6px;padding:8px 10px;margin-bottom:6px;flex-wrap:wrap"><span style="font-size:12px"><b>'+_escHTML(p.codigo)+'</b> - '+_escHTML(p.descripcion)+' · '+p.cantidad+' '+_escHTML(p.unidad)+(p.zona?(' · zona '+_escHTML(p.zona)):'')+(p.lote?(' · lote '+_escHTML(p.lote)):'')+'</span><span style="display:flex;gap:6px"><button onclick="meeCuarLiberar('+p.id+')" style="background:#16a34a;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer">&#10003; Liberar</button><button onclick="meeCuarRechazar('+p.id+')" style="background:#dc2626;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer">Rechazar</button></span></div>'; }).join('');
     box.style.display='block';
   }catch(e){}
 }
@@ -10091,7 +10091,7 @@ async function meeCargarPartesRecep(cod){
   try{
     var r=await fetch('/api/mee/partes?codigo='+encodeURIComponent(cod)); var d=await r.json(); var ps=d.partes||[];
     if(!ps.length){ box.style.display='none'; list.innerHTML=''; return; }
-    list.innerHTML=ps.map(function(p){ return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><span style="flex:2;font-size:12px"><b>'+_escHTML(p.codigo)+'</b> — '+_escHTML(p.descripcion||'')+'</span><input type="number" min="0" step="1" id="mprc-'+_escHTML(p.codigo)+'" placeholder="0" style="flex:1;max-width:100px" title="cantidad recibida de esta parte"></div>'; }).join('');
+    list.innerHTML=ps.map(function(p){ return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><span style="flex:2;font-size:12px"><b>'+_escHTML(p.codigo)+'</b> - '+_escHTML(p.descripcion||'')+'</span><input type="number" min="0" step="1" id="mprc-'+_escHTML(p.codigo)+'" placeholder="0" style="flex:1;max-width:100px" title="cantidad recibida de esta parte"></div>'; }).join('');
     box.style.display='block';
   }catch(e){ box.style.display='none'; }
 }
@@ -10106,8 +10106,8 @@ function meeCalcValor(){ var q=parseFloat((document.getElementById('mee-cantidad
 function _meeWizNorm(s){ return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
 var _meeWizPartes=[];
 function _meeEscOpt(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-function meeWizFillPartes(){ var sel=document.getElementById('mee-wiz-parte-sel'); if(!sel) return; var data=window._MEE_DATA||{}; var byCat={}; Object.keys(data).forEach(function(cod){ var dd=data[cod]||{}; var cat=((dd.cat||'').trim())||'Otro'; (byCat[cat]=byCat[cat]||[]).push(cod); }); var h='<option value="">-- elegí el componente por tipo --</option>'; Object.keys(byCat).sort().forEach(function(cat){ h+='<optgroup label="'+_meeEscOpt(cat)+'">'; byCat[cat].sort().forEach(function(cod){ var dd=data[cod]||{}; h+='<option value="'+_meeEscOpt(cod)+'">'+_meeEscOpt(cod)+' — '+_meeEscOpt(dd.desc||'')+'</option>'; }); h+='</optgroup>'; }); sel.innerHTML=h; }
-function meeWizRenderPartes(){ var box=document.getElementById('mee-wiz-partes-list'); if(!box) return; box.innerHTML=_meeWizPartes.map(function(p,i){ return '<span style="display:inline-block;background:#ede9fe;color:#5b21b6;border-radius:8px;padding:2px 8px;margin:2px 4px 2px 0;font-size:12px;font-weight:600">'+p.codigo+' &times;'+p.cantidad+' <a onclick="meeWizDelParte('+i+')" style="color:#dc2626;cursor:pointer;font-weight:800;margin-left:3px">&times;</a></span>'; }).join('') || '<span style="font-size:11px;color:#cbd5e1">— sin partes —</span>'; }
+function meeWizFillPartes(){ var sel=document.getElementById('mee-wiz-parte-sel'); if(!sel) return; var data=window._MEE_DATA||{}; var byCat={}; Object.keys(data).forEach(function(cod){ var dd=data[cod]||{}; var cat=((dd.cat||'').trim())||'Otro'; (byCat[cat]=byCat[cat]||[]).push(cod); }); var h='<option value="">-- elegí el componente por tipo --</option>'; Object.keys(byCat).sort().forEach(function(cat){ h+='<optgroup label="'+_meeEscOpt(cat)+'">'; byCat[cat].sort().forEach(function(cod){ var dd=data[cod]||{}; h+='<option value="'+_meeEscOpt(cod)+'">'+_meeEscOpt(cod)+' - '+_meeEscOpt(dd.desc||'')+'</option>'; }); h+='</optgroup>'; }); sel.innerHTML=h; }
+function meeWizRenderPartes(){ var box=document.getElementById('mee-wiz-partes-list'); if(!box) return; box.innerHTML=_meeWizPartes.map(function(p,i){ return '<span style="display:inline-block;background:#ede9fe;color:#5b21b6;border-radius:8px;padding:2px 8px;margin:2px 4px 2px 0;font-size:12px;font-weight:600">'+p.codigo+' &times;'+p.cantidad+' <a onclick="meeWizDelParte('+i+')" style="color:#dc2626;cursor:pointer;font-weight:800;margin-left:3px">&times;</a></span>'; }).join('') || '<span style="font-size:11px;color:#cbd5e1">- sin partes -</span>'; }
 function meeWizAddParte(){ var sel=document.getElementById('mee-wiz-parte-sel'); var cant=document.getElementById('mee-wiz-parte-cant'); if(!sel||!sel.value) return; var c=parseFloat(cant.value)||1; if(_meeWizPartes.some(function(p){return p.codigo===sel.value;})) return; _meeWizPartes.push({codigo:sel.value, cantidad:c}); sel.value=''; if(cant) cant.value='1'; meeWizRenderPartes(); }
 function meeWizDelParte(i){ _meeWizPartes.splice(i,1); meeWizRenderPartes(); }
 function meeWizOpen(){ var m=document.getElementById('mee-wiz-modal'); if(m) m.style.display='block'; ['mee-wiz-tipo','mee-wiz-material','mee-wiz-metodo','mee-wiz-car','mee-wiz-prod','mee-wiz-ml','mee-wiz-tono','mee-wiz-desc','mee-wiz-cliente'].forEach(function(idd){var el=document.getElementById(idd); if(el){el.value=''; if(el.dataset) delete el.dataset.touched;}}); _meeWizPartes=[]; meeWizFillPartes(); meeWizRenderPartes(); meeWizGen(); }
@@ -10119,14 +10119,14 @@ async function meeWizGen(){
   var nm=[catLbl, ml?(ml+'ml'):'', tonoRaw].filter(function(x){return x;}).join(' ');
   var de=document.getElementById('mee-wiz-desc'); if(de && !de.dataset.touched) de.value=nm;
   var cd=document.getElementById('mee-wiz-code'); var msg=document.getElementById('mee-wiz-msg'); if(msg) msg.innerHTML='';
-  if(!tipo){ if(cd) cd.textContent='—'; return; }
+  if(!tipo){ if(cd) cd.textContent='-'; return; }
   if(cd) cd.textContent='…';
   try{
     var r=await fetch('/api/mee/siguiente-codigo?tipo='+encodeURIComponent(tipo),{credentials:'same-origin'});
     var d=await r.json();
     if(r.ok && d.ok){ if(cd) cd.textContent=d.codigo; }
-    else { if(cd) cd.textContent='—'; if(msg) msg.innerHTML='<span style="color:#dc2626;">'+((d&&d.error)||'error')+'</span>'; }
-  }catch(e){ if(cd) cd.textContent='—'; }
+    else { if(cd) cd.textContent='-'; if(msg) msg.innerHTML='<span style="color:#dc2626;">'+((d&&d.error)||'error')+'</span>'; }
+  }catch(e){ if(cd) cd.textContent='-'; }
 }
 async function meeWizCrear(){
   var tipo=(document.getElementById('mee-wiz-tipo')||{}).value||'';
@@ -10343,8 +10343,8 @@ async function cargarEnvHistorial(){
         '<td style="padding:6px;">'+_escHTML(e.producto||'')+'</td>'+
         '<td style="padding:6px;">'+_escHTML(e.presentacion||'')+'</td>'+
         '<td style="padding:6px;text-align:center;font-weight:700">'+(e.unidades||0)+'</td>'+
-        '<td style="padding:6px;font-size:11px;color:#666;">'+_escHTML(e.envase_codigo||'—')+'</td>'+
-        '<td style="padding:6px;font-size:11px;color:#666;">'+_escHTML(e.tapa_codigo||'—')+'</td>'+
+        '<td style="padding:6px;font-size:11px;color:#666;">'+_escHTML(e.envase_codigo||'-')+'</td>'+
+        '<td style="padding:6px;font-size:11px;color:#666;">'+_escHTML(e.tapa_codigo||'-')+'</td>'+
         '<td style="padding:6px;font-size:12px;">'+_escHTML(fec)+'</td>'+
         '<td style="padding:6px;font-size:12px;">'+_escHTML(e.operador||'')+'</td>'+
         '<td style="padding:6px;text-align:center"><button data-env-act="detalle" data-eid="'+e.id+'" style="background:#7c3aed;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer" title="Ver MEE descontado + costo">📋</button></td>'+
@@ -10357,7 +10357,7 @@ async function cargarEnvHistorial(){
       var pag = '';
       if(offset > 0) pag += '<button onclick="window._envHistOffset=Math.max(0,window._envHistOffset-'+limit+');cargarEnvHistorial()" style="padding:4px 10px;background:#475569;color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer;margin-right:4px">← Anterior</button>';
       if(offset + limit < total) pag += '<button onclick="window._envHistOffset+='+limit+';cargarEnvHistorial()" style="padding:4px 10px;background:#1a4a7a;color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer">Siguiente →</button>';
-      ft.innerHTML = '<span>Mostrando '+d_n+'–'+h_n+' de '+total.toLocaleString()+'</span><span>'+pag+'</span>';
+      ft.innerHTML = '<span>Mostrando '+d_n+'-'+h_n+' de '+total.toLocaleString()+'</span><span>'+pag+'</span>';
     }
   }catch(err){
     if(tb) tb.innerHTML='<tr><td colspan="9" style="color:#c00;text-align:center;padding:10px">Error: '+_escHTML(err.message)+'</td></tr>';
@@ -10381,7 +10381,7 @@ async function verDetalleEnvasado(eid){
     var div = document.createElement('div');
     div.id = 'modal-env-det';
     div.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
-    var costoStr = d.costo_estimado_mee_cop ? '$'+Number(d.costo_estimado_mee_cop).toLocaleString('es-CO') : '—';
+    var costoStr = d.costo_estimado_mee_cop ? '$'+Number(d.costo_estimado_mee_cop).toLocaleString('es-CO') : '-';
     var meeRows = (d.mee_descontados||[]).map(function(m){
       return '<tr><td style="font-family:monospace">'+_escHTML(m.codigo||'')+'</td><td>'+_escHTML(m.descripcion||'')+'</td><td style="text-align:right;font-weight:700">'+(m.unidades||0)+'</td></tr>';
     }).join('');
@@ -10394,8 +10394,8 @@ async function verDetalleEnvasado(eid){
         '<div><b>Presentación</b><br>'+_escHTML(d.presentacion||'')+'</div>'+
         '<div><b>Unidades</b><br><span style="font-size:18px;font-weight:800;color:#1a4a7a">'+(d.unidades||0)+'</span></div>'+
         '<div><b>Lote</b><br><span style="font-family:monospace;color:#dc2626;font-weight:700">'+_escHTML(d.lote||'')+'</span></div>'+
-        '<div><b>Envase</b><br>'+_escHTML(d.envase_codigo||'—')+'</div>'+
-        '<div><b>Tapa</b><br>'+_escHTML(d.tapa_codigo||'—')+'</div>'+
+        '<div><b>Envase</b><br>'+_escHTML(d.envase_codigo||'-')+'</div>'+
+        '<div><b>Tapa</b><br>'+_escHTML(d.tapa_codigo||'-')+'</div>'+
         '<div><b>Costo MEE</b><br><span style="color:#6d28d9;font-weight:700">'+costoStr+'</span></div>'+
         '<div><b>Operador</b><br>'+_escHTML(d.operador||'')+'</div>'+
       '</div>'+
@@ -10517,9 +10517,9 @@ function cargarOrdenesEnvasado(){
       return '<tr style="border-bottom:1px solid #f1f5f9">'+
         '<td style="padding:8px;font-weight:600">'+E(o.numero_op)+'</td>'+
         '<td style="padding:8px">'+E(o.producto)+'</td>'+
-        '<td style="padding:8px">'+E(o.lote_bulk||'—')+'</td>'+
-        '<td style="padding:8px">'+E(o.estado||'—')+'</td>'+
-        '<td style="padding:8px;color:#64748b">'+E(o.fecha||'—')+'</td>'+
+        '<td style="padding:8px">'+E(o.lote_bulk||'-')+'</td>'+
+        '<td style="padding:8px">'+E(o.estado||'-')+'</td>'+
+        '<td style="padding:8px;color:#64748b">'+E(o.fecha||'-')+'</td>'+
         '<td style="padding:8px;text-align:center">'+leg+'</td></tr>';
     }).join('');
   }).catch(function(){tb.innerHTML='<tr><td colspan="6" style="color:#c00;text-align:center;padding:10px">Error cargando órdenes</td></tr>';});
@@ -10563,9 +10563,9 @@ function cargarOrdenesAcondicionamiento(){
       return '<tr style="border-bottom:1px solid #f1f5f9">'+
         '<td style="padding:8px;font-weight:600">'+E(o.numero_op)+'</td>'+
         '<td style="padding:8px">'+E(o.producto)+'</td>'+
-        '<td style="padding:8px">'+E(o.lote_bulk||'—')+'</td>'+
-        '<td style="padding:8px">'+E(o.estado||'—')+'</td>'+
-        '<td style="padding:8px;color:#64748b">'+E(o.fecha||'—')+'</td>'+
+        '<td style="padding:8px">'+E(o.lote_bulk||'-')+'</td>'+
+        '<td style="padding:8px">'+E(o.estado||'-')+'</td>'+
+        '<td style="padding:8px;color:#64748b">'+E(o.fecha||'-')+'</td>'+
         '<td style="padding:8px;text-align:center">'+leg+'</td></tr>';
     }).join('');
   }).catch(function(){tb.innerHTML='<tr><td colspan="6" style="color:#c00;text-align:center;padding:10px">Error cargando órdenes</td></tr>';});
@@ -10605,7 +10605,7 @@ async function cargarEnvasesPlan(ebrId){
       var pc=it.presentacion_codigo;
       var inp=desc?('<b>'+(it.unidades||0)+'</b>'):('<input id="eu-'+ebrId+'-'+pc+'" type="number" min="0" value="'+(it.unidades||0)+'" style="width:80px;padding:4px;border:1px solid #cbd5e1;border-radius:4px">');
       var btn=desc?'':('<button onclick="ebrRegistrarUnidades('+ebrId+',&#39;'+pc+'&#39;,'+(it.volumen_ml||0)+')" style="background:#16a34a;color:#fff;border:none;border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer">Guardar</button>');
-      h+='<tr><td>'+(it.etiqueta||pc)+'</td><td>'+(it.volumen_ml||0)+' ml</td><td style="font-family:monospace;font-size:10px">'+(it.envase_codigo||'&mdash;')+'</td><td style="font-family:monospace;font-size:10px">'+(it.tapa_codigo||'&mdash;')+'</td><td style="font-family:monospace;font-size:10px">'+(it.caja_codigo||'&mdash;')+'</td><td>'+inp+'</td><td>'+btn+'</td></tr>';
+      h+='<tr><td>'+(it.etiqueta||pc)+'</td><td>'+(it.volumen_ml||0)+' ml</td><td style="font-family:monospace;font-size:10px">'+(it.envase_codigo||'-')+'</td><td style="font-family:monospace;font-size:10px">'+(it.tapa_codigo||'-')+'</td><td style="font-family:monospace;font-size:10px">'+(it.caja_codigo||'-')+'</td><td>'+inp+'</td><td>'+btn+'</td></tr>';
     });
     h+='</tbody></table>';
     if(desc){ h+='<div style="margin-top:8px;color:#16a34a;font-weight:700">&#10003; Envases descontados (legajo cerrado).</div>'; }
@@ -10658,8 +10658,8 @@ async function verLoteFases(loteEnc){
     var LB={fabricacion:'📋 Fabricación (OP)',envasado:'📦 Envasado (OF)',acondicionamiento:'🎁 Acondicionamiento (OA)'};
     var rows=fa.map(function(f){
       var est=(typeof _ebrBadge==='function')?_ebrBadge(f.estado):_escHTML(f.estado||'');
-      var fin=f.completado_at?String(f.completado_at).replace('T',' ').slice(0,16):'—';
-      return '<tr><td style="font-weight:700">'+(LB[f.fase]||_escHTML(f.fase))+'</td><td>'+_escHTML(f.numero_op||'')+'</td><td>'+est+'</td><td style="font-size:11px">'+_escHTML(f.iniciado_por||'—')+'</td><td style="font-size:11px;color:#94a3b8">'+fin+'</td><td><button class="lf-open" data-ebr="'+f.ebr_id+'" style="background:#ede9fe;color:#6d28d9;border:none;border-radius:5px;padding:3px 9px;font-size:11px;cursor:pointer;font-weight:700">Abrir</button></td></tr>';
+      var fin=f.completado_at?String(f.completado_at).replace('T',' ').slice(0,16):'-';
+      return '<tr><td style="font-weight:700">'+(LB[f.fase]||_escHTML(f.fase))+'</td><td>'+_escHTML(f.numero_op||'')+'</td><td>'+est+'</td><td style="font-size:11px">'+_escHTML(f.iniciado_por||'-')+'</td><td style="font-size:11px;color:#94a3b8">'+fin+'</td><td><button class="lf-open" data-ebr="'+f.ebr_id+'" style="background:#ede9fe;color:#6d28d9;border:none;border-radius:5px;padding:3px 9px;font-size:11px;cursor:pointer;font-weight:700">Abrir</button></td></tr>';
     }).join('');
     var ov=document.createElement('div'); ov.id='lote-fases-ov';
     ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
@@ -10778,7 +10778,7 @@ function _cargarSugerenciasEnvasado(){
     if(arSel)arSel.innerHTML = (ars.length ? ars.map(function(a){
       var et=a.limpia?'✓ limpia':('⚠ '+(a.estado||''));
       return '<option value="'+E(a.codigo)+'"'+(a.codigo===d.area_sugerida?' selected':'')+'>'+E(a.nombre||a.codigo)+' · '+et+'</option>';
-    }).join('') : '') + '<option value="">— sin asignar área —</option>';
+    }).join('') : '') + '<option value="">- sin asignar área -</option>';
     if(hint)hint.textContent = d.area_sugerida ? '(sugerida limpia)' : '(ninguna limpia)';
   }).catch(function(){
     if(opSel)opSel.innerHTML='<option value="">(error)</option>';
@@ -11322,10 +11322,10 @@ async function cargarAcondHistorial(){
         '<td style="padding:7px;font-family:monospace;font-size:12px;color:#0d47a1;font-weight:700">'+_escHTML(r.lote||'')+'</td>'+
         '<td style="padding:7px">'+_escHTML(r.producto||'')+'</td>'+
         '<td style="padding:7px;text-align:center;font-weight:700">'+(r.unidades_producidas||0)+'</td>'+
-        '<td style="padding:7px;text-align:center">'+_escHTML(r.presentacion||'—')+'</td>'+
-        '<td style="padding:7px;text-align:center;font-family:monospace;font-size:11px">'+_escHTML(r.sku||'—')+'</td>'+
+        '<td style="padding:7px;text-align:center">'+_escHTML(r.presentacion||'-')+'</td>'+
+        '<td style="padding:7px;text-align:center;font-family:monospace;font-size:11px">'+_escHTML(r.sku||'-')+'</td>'+
         '<td style="padding:7px;font-size:12px">'+_escHTML(fec)+'</td>'+
-        '<td style="padding:7px;font-size:12px">'+_escHTML(r.operador||'—')+'</td>'+
+        '<td style="padding:7px;font-size:12px">'+_escHTML(r.operador||'-')+'</td>'+
         '<td style="padding:7px;text-align:center"><button data-acond-act="detalle" data-aid="'+r.id+'" style="background:#7c3aed;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer">📋</button></td>'+
       '</tr>';
     }).join('');
@@ -11335,7 +11335,7 @@ async function cargarAcondHistorial(){
       var pag = '';
       if(offset > 0) pag += '<button onclick="window._acHistOffset=Math.max(0,window._acHistOffset-'+limit+');cargarAcondHistorial()" style="padding:4px 10px;background:#475569;color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer;margin-right:4px">← Anterior</button>';
       if(offset + limit < total) pag += '<button onclick="window._acHistOffset+='+limit+';cargarAcondHistorial()" style="padding:4px 10px;background:#0d47a1;color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer">Siguiente →</button>';
-      ft.innerHTML = '<span>Mostrando '+d_n+'–'+h_n+' de '+total.toLocaleString()+'</span><span>'+pag+'</span>';
+      ft.innerHTML = '<span>Mostrando '+d_n+'-'+h_n+' de '+total.toLocaleString()+'</span><span>'+pag+'</span>';
     }
   }catch(e){
     tb.innerHTML = '<tr><td colspan="8" style="color:#c00;text-align:center;padding:10px">Error: '+_escHTML(e.message)+'</td></tr>';
@@ -11366,12 +11366,12 @@ async function verDetalleAcond(aid){
       '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;background:#f8fafc;padding:12px;border-radius:8px;margin-bottom:14px;font-size:13px">'+
         '<div><b>Producto</b><br>'+_escHTML(d.producto||'')+'</div>'+
         '<div><b>Lote PT</b><br><span style="font-family:monospace;color:#dc2626;font-weight:700">'+_escHTML(d.lote||'')+'</span></div>'+
-        '<div><b>SKU</b><br>'+_escHTML(d.sku||'—')+'</div>'+
+        '<div><b>SKU</b><br>'+_escHTML(d.sku||'-')+'</div>'+
         '<div><b>Unidades</b><br><span style="font-size:18px;font-weight:800;color:#0d47a1">'+(d.unidades_producidas||0)+'</span></div>'+
         '<div><b>Batch</b><br>'+(d.cantidad_batch_g||0)+' g</div>'+
-        '<div><b>Presentación</b><br>'+_escHTML(d.presentacion||'—')+'</div>'+
+        '<div><b>Presentación</b><br>'+_escHTML(d.presentacion||'-')+'</div>'+
         '<div><b>Fecha</b><br>'+_escHTML((d.fecha||'').substring(0,16))+'</div>'+
-        '<div><b>Operador</b><br>'+_escHTML(d.operador||'—')+'</div>'+
+        '<div><b>Operador</b><br>'+_escHTML(d.operador||'-')+'</div>'+
       '</div>'+
       '<h4 style="margin:14px 0 6px;color:#475569;font-size:13px">📦 MEE consumido</h4>'+
       '<table class="table" style="font-size:11px"><thead><tr><th>Código</th><th>Descripción</th><th style="text-align:right">Unidades</th></tr></thead><tbody>'+
@@ -11386,7 +11386,7 @@ async function verDetalleAcond(aid){
 }
 
 /* ============================================================
-   PROGRAMACION — placeholder (Phase 2)
+   PROGRAMACION - placeholder (Phase 2)
    ============================================================ */
 async function sincronizarShopify(btnEl){
   if(btnEl){ btnEl.disabled=true; btnEl.textContent='Sincronizando...'; }
@@ -11577,7 +11577,7 @@ function _renderProgramacion(d){
       if (p.prox_produccion === 'No programado') {
         progLabel = '📅 Programar'; progBtnColor = '#6c757d';
       } else if (isPast) {
-        progLabel = '⚠️ ' + p.prox_produccion + ' — ¿completada?'; progBtnColor = '#e67e00';
+        progLabel = '⚠️ ' + p.prox_produccion + ' - ¿completada?'; progBtnColor = '#e67e00';
       } else {
         progLabel = '📅 ' + p.prox_produccion; progBtnColor = '#198754';
       }
@@ -11636,7 +11636,7 @@ function _renderProgramacion(d){
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
       <div>
         <h2 style="margin:0 0 4px;color:#1a4a7a">&#128301; Planificación Estratégica de Compras</h2>
-        <p style="color:#666;font-size:13px;margin:0">Calendario + Fórmulas + Stock — qué comprar, cuándo y en qué volumen</p>
+        <p style="color:#666;font-size:13px;margin:0">Calendario + Fórmulas + Stock - qué comprar, cuándo y en qué volumen</p>
       </div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
         <span style="font-size:12px;color:#666;font-weight:600">Horizonte:</span>
@@ -11711,7 +11711,7 @@ function _renderProgramacion(d){
         </div>
         <div style="display:flex;gap:6px;align-items:center">
           <select id="midia-operario" onchange="miDiaRecargar()" style="padding:5px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:11px;min-width:200px">
-            <option value="">— elegir operario —</option>
+            <option value="">- elegir operario -</option>
           </select>
           <select id="midia-dias" onchange="miDiaRecargar()" style="padding:5px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:11px">
             <option value="7" selected>7 días</option>
@@ -11844,17 +11844,17 @@ function _renderProgramacion(d){
         </div>
       </div>
       <div id="autosc-mee-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:12px">
-        <div class="autosc-tile"><div class="autosc-lbl">Mes actual</div><div id="autosc-mee-mes-actual" class="autosc-val">—</div><div class="autosc-sub">SCs MEE creadas</div></div>
-        <div class="autosc-tile"><div class="autosc-lbl">MEE configurados</div><div id="autosc-mee-configs" class="autosc-val">—</div><div id="autosc-mee-configs-sub" class="autosc-sub">con proveedor</div></div>
-        <div class="autosc-tile"><div class="autosc-lbl">SKUs con MEE</div><div id="autosc-mee-skus" class="autosc-val">—</div><div class="autosc-sub">mapeados a componentes</div></div>
-        <div class="autosc-tile"><div class="autosc-lbl">Última run</div><div id="autosc-mee-last" class="autosc-val">—</div><div id="autosc-mee-last-sub" class="autosc-sub">Sin ejecuciones aún</div></div>
+        <div class="autosc-tile"><div class="autosc-lbl">Mes actual</div><div id="autosc-mee-mes-actual" class="autosc-val">-</div><div class="autosc-sub">SCs MEE creadas</div></div>
+        <div class="autosc-tile"><div class="autosc-lbl">MEE configurados</div><div id="autosc-mee-configs" class="autosc-val">-</div><div id="autosc-mee-configs-sub" class="autosc-sub">con proveedor</div></div>
+        <div class="autosc-tile"><div class="autosc-lbl">SKUs con MEE</div><div id="autosc-mee-skus" class="autosc-val">-</div><div class="autosc-sub">mapeados a componentes</div></div>
+        <div class="autosc-tile"><div class="autosc-lbl">Última run</div><div id="autosc-mee-last" class="autosc-val">-</div><div id="autosc-mee-last-sub" class="autosc-sub">Sin ejecuciones aún</div></div>
       </div>
       <div id="autosc-mee-config-warn" style="display:none;margin-top:10px;padding:8px 10px;background:#fbbf24;color:#78350f;border-radius:6px;font-size:11px">
         ⚠️ Configura proveedor + MOQ (botón ⚙️ abajo) y mappings SKU→componentes para activar el Auto-SC MEE.
       </div>
       <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
         <button onclick="meeConfigToggle()" style="padding:5px 12px;background:rgba(255,255,255,.15);color:#fff;border:1px solid #fff;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#9881; Configurar MEE (proveedor / MOQ / origen / flags)</button>
-        <button onclick="meeAsignarToggle()" id="btn-mee-asignar" style="padding:5px 12px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#127919; Items por asignar <span id="btn-asignar-count" style="background:#fff;color:#5b21b6;padding:1px 6px;border-radius:8px;margin-left:4px;font-size:10px">—</span></button>
+        <button onclick="meeAsignarToggle()" id="btn-mee-asignar" style="padding:5px 12px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#127919; Items por asignar <span id="btn-asignar-count" style="background:#fff;color:#5b21b6;padding:1px 6px;border-radius:8px;margin-left:4px;font-size:10px">-</span></button>
         <button onclick="meeNormalizar()" title="Backfill proveedor desde maestro_mee + auto-mapping fuzzy SKU→etiqueta/serigrafía por similitud" style="padding:5px 12px;background:#fbbf24;color:#78350f;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#129668; Normalizar (proveedor + mappings)</button>
       </div>
       <div id="autosc-mee-msg" style="display:none;margin-top:10px;padding:8px 10px;background:rgba(0,0,0,.18);border-radius:6px;font-size:11px"></div>
@@ -11950,10 +11950,10 @@ function _renderProgramacion(d){
         </div>
       </div>
       <div id="autosc-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-top:12px">
-        <div class="autosc-tile"><div class="autosc-lbl">Mes actual</div><div id="autosc-mes-actual" class="autosc-val">—</div><div class="autosc-sub">SCs creadas IA</div></div>
-        <div class="autosc-tile"><div class="autosc-lbl">Última mensual</div><div id="autosc-last-mensual" class="autosc-val">—</div><div id="autosc-last-mensual-sub" class="autosc-sub">Sin ejecuciones aún</div></div>
-        <div class="autosc-tile"><div class="autosc-lbl">Última urgente</div><div id="autosc-last-urgente" class="autosc-val">—</div><div id="autosc-last-urgente-sub" class="autosc-sub">Sin ejecuciones aún</div></div>
-        <div class="autosc-tile"><div class="autosc-lbl">Próxima ventana</div><div id="autosc-prox" class="autosc-val">—</div><div class="autosc-sub" id="autosc-prox-sub">Mensual día 1-5 / Lunes</div></div>
+        <div class="autosc-tile"><div class="autosc-lbl">Mes actual</div><div id="autosc-mes-actual" class="autosc-val">-</div><div class="autosc-sub">SCs creadas IA</div></div>
+        <div class="autosc-tile"><div class="autosc-lbl">Última mensual</div><div id="autosc-last-mensual" class="autosc-val">-</div><div id="autosc-last-mensual-sub" class="autosc-sub">Sin ejecuciones aún</div></div>
+        <div class="autosc-tile"><div class="autosc-lbl">Última urgente</div><div id="autosc-last-urgente" class="autosc-val">-</div><div id="autosc-last-urgente-sub" class="autosc-sub">Sin ejecuciones aún</div></div>
+        <div class="autosc-tile"><div class="autosc-lbl">Próxima ventana</div><div id="autosc-prox" class="autosc-val">-</div><div class="autosc-sub" id="autosc-prox-sub">Mensual día 1-5 / Lunes</div></div>
       </div>
       <div id="autosc-recientes-wrap" style="margin-top:12px;display:none">
         <div style="font-size:11px;opacity:.88;margin-bottom:4px">SCs IA recientes</div>
@@ -11979,7 +11979,7 @@ function _renderProgramacion(d){
 
     <div id="plan-prods-detail-box" style="display:none;margin-bottom:20px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
-        <h4 style="margin:0;color:#1a4a7a;font-size:14px">&#128269; Vista por producción — ¿qué MP alcanza y cuál no?</h4>
+        <h4 style="margin:0;color:#1a4a7a;font-size:14px">&#128269; Vista por producción - ¿qué MP alcanza y cuál no?</h4>
         <span style="font-size:11px;color:#888">Stock actual evaluado contra cada producción individualmente</span>
       </div>
       <div id="plan-prods-detail-list"></div>
@@ -11991,7 +11991,7 @@ function _renderProgramacion(d){
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <button onclick="solicitarBloque()" id="btn-solicitar-bloque" style="background:#0d47a1;color:#fff;border:none;border-radius:5px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px" title="Crea solicitudes en el servidor agrupadas por proveedor (1 solicitud por proveedor)">&#128229; Solicitar en bloque</button>
           <button onclick="solicitarNecesidades()" id="btn-solicitar" style="background:#c0392b;color:#fff;border:none;border-radius:5px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px">&#128722; Solicitar (clásico)</button>
-          <button onclick="descargarChecklistVerificacion()" id="btn-checklist-verif" style="background:#fd7e14;color:#fff;border:none;border-radius:5px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer" title="Descarga Excel con dos hojas (15 dias y 1 mes) — solo MPs en cero, con casillas para que la asistente marque si estan en bodega">&#128203; Excel para verificar (15d + 1m)</button>
+          <button onclick="descargarChecklistVerificacion()" id="btn-checklist-verif" style="background:#fd7e14;color:#fff;border:none;border-radius:5px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer" title="Descarga Excel con dos hojas (15 dias y 1 mes) - solo MPs en cero, con casillas para que la asistente marque si estan en bodega">&#128203; Excel para verificar (15d + 1m)</button>
           <button onclick="exportarPlanificacion()" style="background:#217346;color:#fff;border:none;border-radius:5px;padding:5px 14px;font-size:12px;font-weight:600;cursor:pointer">&#128196; CSV</button>
         </div>
       </div>
@@ -12016,7 +12016,7 @@ function _renderProgramacion(d){
 
     <div id="plan-staff-box" style="display:none;margin-bottom:20px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
-        <h4 style="margin:0;color:#1a4a7a;font-size:14px">&#128202; Staff general de Materias Primas — todas en un vistazo</h4>
+        <h4 style="margin:0;color:#1a4a7a;font-size:14px">&#128202; Staff general de Materias Primas - todas en un vistazo</h4>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
           <input id="plan-staff-filter" oninput="_renderStaffGeneral()" placeholder="Filtrar nombre/código..." style="padding:5px 10px;border:1px solid #ddd;border-radius:5px;font-size:12px;width:180px">
           <select id="plan-staff-state" onchange="_renderStaffGeneral()" style="padding:5px 8px;border:1px solid #ddd;border-radius:5px;font-size:12px">
@@ -12093,7 +12093,7 @@ function _renderProgramacion(d){
       </div>
     </div>
     <div id="ck-sync-info" style="font-size:11px;color:#78716c;margin-bottom:10px;display:flex;gap:14px;flex-wrap:wrap;align-items:center">
-      <span id="ck-last-sync" style="font-style:italic">última sync: —</span>
+      <span id="ck-last-sync" style="font-style:italic">última sync: -</span>
       <span id="ck-bg-info" style="color:#94a3b8">background sync activo (cada 10 min)</span>
     </div>
 
@@ -12157,7 +12157,7 @@ function _renderProgramacion(d){
     <div id="tareas-op-lista"></div>
   </div><!-- /ptab-tareas -->
 
-  <!-- ── ptab-plano: Centro de Mando — vista live del layout post-INVIMA ── -->
+  <!-- ── ptab-plano: Centro de Mando - vista live del layout post-INVIMA ── -->
   <div id="ptab-plano" style="display:none">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:10px">
       <div>
@@ -12318,7 +12318,7 @@ function _renderProgramacion(d){
           <rect x="20" y="175" width="160" height="50" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1" rx="3"/>
           <text x="100" y="205" text-anchor="middle" font-size="11" fill="#475569">DUCHA</text>
         </g>
-        <!-- Almacenamiento materia prima (vertical, izquierda, grande) — ASIGNABLE conteos cíclicos -->
+        <!-- Almacenamiento materia prima (vertical, izquierda, grande) - ASIGNABLE conteos cíclicos -->
         <g class="rect-area" data-codigo="ALMP" style="cursor:pointer">
           <rect class="r" x="20" y="240" width="160" height="240" fill="#cbd5e1" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="6 3" rx="4"/>
           <text x="100" y="335" text-anchor="middle" font-size="12" fill="#1f2937" font-weight="700">ALMACENAMIENTO</text>
@@ -12335,7 +12335,7 @@ function _renderProgramacion(d){
           <text x="320" y="173" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">DISPENSACIÓN</text>
           <text x="320" y="195" text-anchor="middle" font-size="10" fill="#64748b">(Mayerlin · fija)</text>
         </g>
-        <!-- Producción 2 — con marmita 100ml — debajo de dispensación -->
+        <!-- Producción 2 - con marmita 100ml - debajo de dispensación -->
         <g class="rect-area" data-codigo="PROD2" style="cursor:pointer">
           <rect class="r" x="200" y="240" width="240" height="120" fill="#86efac" stroke="#16a34a" stroke-width="2" rx="4"/>
           <text x="320" y="270" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">PRODUCCIÓN 2</text>
@@ -12345,7 +12345,7 @@ function _renderProgramacion(d){
           <text x="320" y="318" text-anchor="middle" font-size="10" fill="#475569">prod + env</text>
           <text class="status" x="320" y="345" text-anchor="middle" font-size="10" fill="#16a34a" font-weight="700">LIBRE</text>
         </g>
-        <!-- Producción 1 — con manejo de alcoholes — debajo de prod 2 -->
+        <!-- Producción 1 - con manejo de alcoholes - debajo de prod 2 -->
         <g class="rect-area" data-codigo="PROD1" style="cursor:pointer">
           <rect class="r" x="200" y="370" width="240" height="120" fill="#86efac" stroke="#16a34a" stroke-width="2" rx="4"/>
           <text x="320" y="400" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">PRODUCCIÓN 1</text>
@@ -12392,7 +12392,7 @@ function _renderProgramacion(d){
           <text x="720" y="278" text-anchor="middle" font-size="8" fill="#92400e">filtro PT</text>
         </g>
 
-        <!-- ── EXTREMO DERECHO: acondicionamiento PT — ASIGNABLE ────── -->
+        <!-- ── EXTREMO DERECHO: acondicionamiento PT - ASIGNABLE ────── -->
         <g class="rect-area" data-codigo="ACOND" style="cursor:pointer">
           <rect class="r" x="910" y="95" width="180" height="395" fill="#cbd5e1" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="6 3" rx="4"/>
           <text x="1000" y="230" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">ACONDICIONA-</text>
@@ -12413,7 +12413,7 @@ function _renderProgramacion(d){
           <text x="478" y="590" text-anchor="middle" font-size="11" fill="#0c4a6e" font-weight="600">marmita 250 ml &middot; prod + env</text>
           <text class="status" x="435" y="625" text-anchor="middle" font-size="11" fill="#16a34a" font-weight="700">LIBRE</text>
         </g>
-        <!-- Almacenamiento PT a la derecha de prod 3 — ASIGNABLE conteos cíclicos -->
+        <!-- Almacenamiento PT a la derecha de prod 3 - ASIGNABLE conteos cíclicos -->
         <g class="rect-area" data-codigo="ALMPT" style="cursor:pointer">
           <rect class="r" x="680" y="510" width="220" height="130" fill="#cbd5e1" stroke="#6b7280" stroke-width="1.5" stroke-dasharray="6 3" rx="4"/>
           <text x="790" y="555" text-anchor="middle" font-size="13" fill="#1f2937" font-weight="700">ALMACENAMIENTO</text>
@@ -12545,7 +12545,7 @@ function _renderProgramacion(d){
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
       <div>
         <h2 style="margin:0 0 4px;color:#1a4a7a">&#128230; Presentaciones por Producto</h2>
-        <p style="color:#666;font-size:13px;margin:0">Sueros 30/15/10 mL · contornos 15/10 mL · maxlash 4.5 mL · blush 6 g · etc. — necesario para planear "produzcamos para 2 meses"</p>
+        <p style="color:#666;font-size:13px;margin:0">Sueros 30/15/10 mL · contornos 15/10 mL · maxlash 4.5 mL · blush 6 g · etc. - necesario para planear "produzcamos para 2 meses"</p>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button onclick="abrirNuevaPresentacion()" style="background:#6d28d9;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">+ Nueva presentación</button>
@@ -12572,7 +12572,7 @@ function _renderProgramacion(d){
           <div>
             <label style="font-size:11px;color:#64748b;font-weight:600">Categoría</label>
             <select id="pres-categoria" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
-              <option value="">— elegir —</option>
+              <option value="">- elegir -</option>
               <option value="limpiador">Limpiador</option>
               <option value="hidratante">Hidratante</option>
               <option value="suero">Suero</option>
@@ -12595,7 +12595,7 @@ function _renderProgramacion(d){
             <input id="pres-volumen" type="number" step="0.1" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
           </div>
           <div>
-            <label style="font-size:11px;color:#64748b;font-weight:600">Peso (g) — para sólidos</label>
+            <label style="font-size:11px;color:#64748b;font-weight:600">Peso (g) - para sólidos</label>
             <input id="pres-peso" type="number" step="0.1" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
           </div>
           <div>
@@ -12639,7 +12639,7 @@ function _renderProgramacion(d){
           <div>
             <label style="font-size:11px;color:#64748b;font-weight:600">Categoría *</label>
             <select id="plt-categoria" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
-              <option value="">— elegir —</option>
+              <option value="">- elegir -</option>
               <option value="limpiador">Limpiador (1 presentación: 150 mL)</option>
               <option value="hidratante">Hidratante (1: 50 mL airless)</option>
               <option value="suero">Suero (3: 30/15/10 mL)</option>
@@ -12662,7 +12662,7 @@ function _renderProgramacion(d){
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px">
       <div>
         <h2 style="margin:0 0 4px;color:#1a4a7a">&#127981; Catálogo de Equipos</h2>
-        <p style="color:#666;font-size:13px;margin:0">104 equipos del "LISTADO MAESTRO DE EQUIPOS 2026" — distribuidos por área. Usado por el algoritmo de sugerir-área (capacidad × lote).</p>
+        <p style="color:#666;font-size:13px;margin:0">104 equipos del "LISTADO MAESTRO DE EQUIPOS 2026" - distribuidos por área. Usado por el algoritmo de sugerir-área (capacidad × lote).</p>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button onclick="abrirSugerirArea()" style="background:#7c3aed;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">&#x1F9E0; Probar sugerir-área</button>
@@ -12783,7 +12783,7 @@ function _renderProgramacion(d){
             <div>
               <label style="font-size:11px;color:#64748b;font-weight:600">Categoría</label>
               <select id="np-categoria" style="width:100%;padding:9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
-                <option value="">— elegir —</option>
+                <option value="">- elegir -</option>
                 <option value="suero">Suero</option>
                 <option value="suero_vit_c">Suero Vit C</option>
                 <option value="suero_ah">Suero Ác. Hialurónico</option>
@@ -12910,7 +12910,7 @@ function _renderProgramacion(d){
     <!-- Modal MP -->
     <div id="modal-mp-cfg" class="modal-bk" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center">
       <div style="background:#fff;border-radius:10px;padding:22px;width:480px;max-width:92vw">
-        <h3 style="margin:0 0 12px;color:#6d28d9">📦 Material — lead time + buffer</h3>
+        <h3 style="margin:0 0 12px;color:#6d28d9">📦 Material - lead time + buffer</h3>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
           <div style="grid-column:1/-1">
             <label style="font-size:11px;color:#64748b;font-weight:600">ID material *</label>
@@ -13071,7 +13071,7 @@ function _renderProgramacion(d){
   <div id="ptab-config" style="display:none">
     <div style="background:#1f2937;color:#fff;padding:16px 20px;border-radius:10px;margin-bottom:16px">
       <h2 style="margin:0;color:#fff;font-size:20px">⚙️ Configuración</h2>
-      <p style="margin:4px 0 0;color:#9ca3af;font-size:12px">Setup del módulo Planta — se configura una vez, raramente se cambia</p>
+      <p style="margin:4px 0 0;color:#9ca3af;font-size:12px">Setup del módulo Planta - se configura una vez, raramente se cambia</p>
     </div>
     <!-- Sub-tabs internos de Configuración -->
     <div style="display:flex;gap:6px;margin-bottom:14px;border-bottom:2px solid #e5e7eb;padding-bottom:8px;flex-wrap:wrap">
@@ -13277,7 +13277,7 @@ function ckSetAutoRefresh(seg){
 }
 
 function ckFmtRelativo(isoUtc){
-  if(!isoUtc) return '—';
+  if(!isoUtc) return '-';
   try {
     var t = new Date(isoUtc).getTime();
     if(isNaN(t)) return isoUtc;
@@ -13288,7 +13288,7 @@ function ckFmtRelativo(isoUtc){
     var h = Math.round(min/60);
     if(h < 24) return 'hace '+h+'h';
     return 'hace '+Math.round(h/24)+'d';
-  } catch(e){ return '—'; }
+  } catch(e){ return '-'; }
 }
 
 async function cargarChecklistResumen(dias){
@@ -13435,11 +13435,11 @@ function rowProduccion(p){
     if(!cnt) return '';
     return '<span title="'+tip+'" style="display:inline-flex;align-items:center;gap:3px;background:'+bg+';color:'+fg+';font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;margin:1px 0 1px 4px">'+ico+' '+cnt+'</span>';
   }
-  pills += pill(p.pendientes,   '🔴', 'pend', '#fee2e2', '#991b1b', 'Pendiente — falta elegir o solicitar');
-  pills += pill(p.solicitados,  '⏳', 'sol',  '#fef3c7', '#92400e', 'Solicitado — en cola de Catalina (Compras)');
-  pills += pill(p.en_transito,  '🚚', 'tra',  '#dbeafe', '#1e40af', 'En tránsito — OC creada, esperando llegada');
-  pills += pill(p.recibidos,    '📦', 'rec',  '#dcfce7', '#166534', 'Recibido — ya está en bodega');
-  pills += pill(p.no_aplica,    '—',  'na',   '#f5f5f4', '#78716c', 'No aplica para este producto');
+  pills += pill(p.pendientes,   '🔴', 'pend', '#fee2e2', '#991b1b', 'Pendiente - falta elegir o solicitar');
+  pills += pill(p.solicitados,  '⏳', 'sol',  '#fef3c7', '#92400e', 'Solicitado - en cola de Catalina (Compras)');
+  pills += pill(p.en_transito,  '🚚', 'tra',  '#dbeafe', '#1e40af', 'En tránsito - OC creada, esperando llegada');
+  pills += pill(p.recibidos,    '📦', 'rec',  '#dcfce7', '#166534', 'Recibido - ya está en bodega');
+  pills += pill(p.no_aplica,    '-',  'na',   '#f5f5f4', '#78716c', 'No aplica para este producto');
   // Barra de progreso visual
   var barraHtml = noChecklist ? '' :
     '<div style="background:#e7e5e4;border-radius:6px;height:8px;overflow:hidden;margin-top:6px">' +
@@ -13448,9 +13448,9 @@ function rowProduccion(p){
   // Badge de origen: distingue producciones del calendario auto-sync vs manuales
   var origenBadge = (p.origen === 'calendar')
     ? '<span title="Sincronizada desde Google Calendar" style="background:#dbeafe;color:#1e40af;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:6px">📅 cal</span>'
-    : '<span title="Entrada manual (no viene del calendario) — si esta duplicada, click ✖ para borrar" style="background:#fef3c7;color:#92400e;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:6px">✋ man</span>';
-  // Boton borrar (X) inline al lado del nombre — solo admin, valida en backend.
-  var btnBorrar = '<button onclick="event.stopPropagation();ckBorrarProduccion('+p.id+', '+JSON.stringify(p.producto_nombre).replace(/"/g,'&quot;')+', '+JSON.stringify(p.fecha_planeada).replace(/"/g,'&quot;')+')" title="Borrar esta producción (admin) — útil para limpiar duplicados/fantasmas" style="background:transparent;color:#dc2626;border:1px solid #fca5a5;border-radius:4px;width:20px;height:20px;font-size:10px;font-weight:700;cursor:pointer;padding:0;line-height:1;margin-left:6px;vertical-align:middle">✖</button>';
+    : '<span title="Entrada manual (no viene del calendario) - si esta duplicada, click ✖ para borrar" style="background:#fef3c7;color:#92400e;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:6px">✋ man</span>';
+  // Boton borrar (X) inline al lado del nombre - solo admin, valida en backend.
+  var btnBorrar = '<button onclick="event.stopPropagation();ckBorrarProduccion('+p.id+', '+JSON.stringify(p.producto_nombre).replace(/"/g,'&quot;')+', '+JSON.stringify(p.fecha_planeada).replace(/"/g,'&quot;')+')" title="Borrar esta producción (admin) - útil para limpiar duplicados/fantasmas" style="background:transparent;color:#dc2626;border:1px solid #fca5a5;border-radius:4px;width:20px;height:20px;font-size:10px;font-weight:700;cursor:pointer;padding:0;line-height:1;margin-left:6px;vertical-align:middle">✖</button>';
   // Sebastian (29-abr-2026): badge "✅ Completada" si ya descontó inventario.
   // Si NO ha descontado y el checklist está al 80%+, botón "✅ Completar y descontar".
   var yaCompletada = !!p.descontado_at;
@@ -13500,13 +13500,13 @@ async function ckBackfill(){
     var r = await fetch('/api/programacion/checklist/backfill', {method:'POST'});
     var d = await r.json();
     if(!r.ok){
-      // Error en la fase de SELECT (ej. tabla rota) — mostrar detalle
+      // Error en la fase de SELECT (ej. tabla rota) - mostrar detalle
       console.error('backfill error:', d);
       alert('Error: '+(d.error||r.status)+'\\n\\nDetalle en consola (F12).');
       return;
     }
     if(d.fallas && d.fallas.length){
-      // Procesado parcial — listar las fallas
+      // Procesado parcial - listar las fallas
       console.warn('backfill con fallas:', d.fallas);
       var lista = d.fallas.slice(0, 5).map(function(f){
         return '• '+(f.producto||'?')+' ('+(f.fecha||'')+')\\n  → '+(f.error||'').substring(0,150);
@@ -13520,10 +13520,10 @@ async function ckBackfill(){
   } catch(e){ alert('Error: '+e.message); }
 }
 
-// Borra y regenera el checklist de una produccion — util cuando se actualizo
+// Borra y regenera el checklist de una produccion - util cuando se actualizo
 // la formula (lote_size_kg / volumen_unitario_ml) y queremos recalcular las
 // cantidades de envases automaticamente con la nueva info.
-// Borra HARD una produccion programada (admin only — backend valida).
+// Borra HARD una produccion programada (admin only - backend valida).
 // Util para limpiar duplicados o fantasmas que aparecen en el horizonte.
 // Sebastian (29-abr-2026): "que todo descuente que el inventario este perfecto".
 // Flujo: 1) dry_run para preview. 2) confirm con detalle. 3) descuento real.
@@ -13609,7 +13609,7 @@ async function ckBorrarProduccion(produccionId, producto, fecha){
     var r = await fetch('/api/programacion/produccion-programada/'+produccionId+'/borrar', {method:'DELETE'});
     // Robusto: parse texto crudo y solo despues intentar JSON. Si la respuesta
     // es HTML (ej. login redirect, 404 de Flask, error 502 de Render), no
-    // crasheamos con "Unexpected token '<'" — mostramos el error real.
+    // crasheamos con "Unexpected token '<'" - mostramos el error real.
     var raw = await r.text();
     var d = null;
     try { d = JSON.parse(raw); } catch(_){}
@@ -13617,7 +13617,7 @@ async function ckBorrarProduccion(produccionId, producto, fecha){
       if(d && d.error){ alert('Error '+r.status+': '+d.error); }
       else if(r.status === 401){ alert('Sesión expirada. Vuelve a entrar a /login y reintenta.'); }
       else if(r.status === 403){ alert('Sin permisos. Solo Sebastian/Alejandro pueden borrar producciones.'); }
-      else if(r.status === 404){ alert('Producción no encontrada. Recarga (Ctrl+F5) — quizá ya fue borrada por otro usuario.'); }
+      else if(r.status === 404){ alert('Producción no encontrada. Recarga (Ctrl+F5) - quizá ya fue borrada por otro usuario.'); }
       else { alert('Error '+r.status+'. Respuesta del servidor:\\n\\n'+raw.substring(0,300)); }
       return;
     }
@@ -13759,7 +13759,7 @@ async function abrirChecklistDetalle(produccionId, producto){
       subEl.innerHTML = ckKg.toLocaleString('es-CO')+' kg programada para '+(prim.fecha_planeada||'-')+
         ' &middot; <a href="javascript:void(0)" onclick="ckRegenerar('+produccionId+')" style="color:#a16207;font-size:11px;font-weight:700;text-decoration:none">🔁 Regenerar checklist</a>';
     } else {
-      subEl.innerHTML = '<span style="color:#a16207">⚠️ Sin tamaño de lote — completa <code>lote_size_kg</code> en la fórmula o pon kg en el título del calendario</span>'+
+      subEl.innerHTML = '<span style="color:#a16207">⚠️ Sin tamaño de lote - completa <code>lote_size_kg</code> en la fórmula o pon kg en el título del calendario</span>'+
         ' &middot; <a href="javascript:void(0)" onclick="ckRegenerar('+produccionId+')" style="color:#a16207;font-size:11px;font-weight:700;text-decoration:none">🔁 Regenerar</a>';
     }
 
@@ -13785,7 +13785,7 @@ async function abrirChecklistDetalle(produccionId, producto){
     } else {
       imgHtml = '<div style="width:200px;height:200px;background:#f5f5f4;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#a8a29e;font-size:12px;text-align:center;padding:12px;flex-shrink:0">Sin foto</div>';
     }
-    // Galería de imagenes extra (frontal/posterior/lateral) — usa proxy
+    // Galería de imagenes extra (frontal/posterior/lateral) - usa proxy
     var galeriaHtml = '';
     var imgsExtra = (meta.imagenes_extra || []).filter(function(x,i){ return i>0 && x && x.src; });
     if(imgsExtra.length){
@@ -13840,7 +13840,7 @@ async function abrirChecklistDetalle(produccionId, producto){
       '<div><div style="font-weight:800;font-size:1.2em">'+(d.totales_por_estado.en_transito||0)+'</div><div style="color:#1e40af">🚚 Tránsito</div></div>' +
       '<div><div style="font-weight:800;font-size:1.2em">'+(d.totales_por_estado.solicitado||0)+'</div><div style="color:#a16207">⏳ Solicitado</div></div>' +
       '<div><div style="font-weight:800;font-size:1.2em;color:#dc2626">'+(d.totales_por_estado.pendiente||0)+'</div><div style="color:#dc2626">🔴 Pendiente</div></div>' +
-      '<div><div style="font-weight:800;font-size:1.2em">'+(d.totales_por_estado.no_aplica||0)+'</div><div style="color:#78716c">— N/A</div></div>' +
+      '<div><div style="font-weight:800;font-size:1.2em">'+(d.totales_por_estado.no_aplica||0)+'</div><div style="color:#78716c">- N/A</div></div>' +
       '</div>';
     var items = d.items || [];
     if(!items.length){ document.getElementById('ck-modal-items').innerHTML='<div style="text-align:center;padding:40px;color:#78716c">Sin items en este checklist</div>'; return; }
@@ -13853,9 +13853,9 @@ async function abrirChecklistDetalle(produccionId, producto){
       '</tr></thead><tbody>';
     items.forEach(function(it){
       var icon = {mp:'⚗️',envase_primario:'🧴',tapa:'🔘',etiqueta_frontal:'🏷️',etiqueta_posterior:'🏷️',etiqueta_lateral:'🏷️',caja_exterior:'📦',serigrafia:'🎨',tampografia:'🎨',instructivo:'📄'}[it.item_tipo]||'•';
-      var stCfg = {pendiente:['🔴 Pendiente','#dc2626'],verificado_ok:['✅ Verificado','#15803d'],solicitado:['⏳ Solicitado','#a16207'],en_transito:['🚚 En tránsito','#1e40af'],recibido:['📦 Recibido','#15803d'],listo:['✓ Listo','#15803d'],no_aplica:['— N/A','#78716c']}[it.estado]||['?','#78716c'];
+      var stCfg = {pendiente:['🔴 Pendiente','#dc2626'],verificado_ok:['✅ Verificado','#15803d'],solicitado:['⏳ Solicitado','#a16207'],en_transito:['🚚 En tránsito','#1e40af'],recibido:['📦 Recibido','#15803d'],listo:['✓ Listo','#15803d'],no_aplica:['- N/A','#78716c']}[it.estado]||['?','#78716c'];
       var cantTxt = it.cantidad_unidades>0 ? (Math.round(it.cantidad_unidades).toLocaleString('es-CO')+' und') :
-                    (it.cantidad_requerida ? (Math.round(it.cantidad_requerida).toLocaleString('es-CO')+' '+(it.unidad||'g')) : '—');
+                    (it.cantidad_requerida ? (Math.round(it.cantidad_requerida).toLocaleString('es-CO')+' '+(it.unidad||'g')) : '-');
       var refLink = it.solicitud_produccion_id ? '<div style="font-size:10px;color:#a16207;margin-top:2px">📋 SP-'+it.solicitud_produccion_id+'</div>' :
                     (it.solicitud_numero ? '<div style="font-size:10px;color:#a16207;margin-top:2px">'+_escHTML(it.solicitud_numero)+'</div>' :
                     (it.oc_numero ? '<div style="font-size:10px;color:#1e40af;margin-top:2px">'+_escHTML(it.oc_numero)+'</div>' : ''));
@@ -13877,7 +13877,7 @@ async function abrirChecklistDetalle(produccionId, producto){
       var decoLine = it.decoracion_tipo ? '<div style="font-size:10px;color:#7c3aed;margin-top:2px"><b>Decoración:</b> '+_escHTML(it.decoracion_tipo)+'</div>' : '';
       // Hint cuando ya hay MEE elegido pero todavía no se envió a Catalina (caso "solo guardar")
       var hintNoEnviado = (yaTieneMee && it.estado==='pendiente' && !it.solicitud_produccion_id) ?
-        '<div style="font-size:10px;color:#a16207;margin-top:2px;font-style:italic">⚠️ Elegido pero no enviado a Catalina — click 📋 Solicitar</div>' : '';
+        '<div style="font-size:10px;color:#a16207;margin-top:2px;font-style:italic">⚠️ Elegido pero no enviado a Catalina - click 📋 Solicitar</div>' : '';
       html += '<tr id="ck-row-'+it.id+'" style="border-bottom:1px solid #f5f5f4">' +
         '<td style="padding:10px"><div style="font-weight:600">'+icon+' '+_escHTML(it.descripcion)+'</div>'+(it.codigo_mp?'<div style="font-size:10px;color:#78716c">cod: '+_escHTML(it.codigo_mp)+'</div>':'')+meeLine+decoLine+obs+hintNoEnviado+'</td>' +
         '<td style="padding:10px;text-align:right;font-family:monospace">'+cantTxt+'</td>' +
@@ -13995,7 +13995,7 @@ async function ckSolicitar(itemId){
   } catch(e){ alert('Error: '+e.message); }
 }
 
-// Editor inline (panel expandible bajo la fila — NO modal sobre modal):
+// Editor inline (panel expandible bajo la fila - NO modal sobre modal):
 // dropdown MEE + cantidad + decoracion + fecha objetivo + observaciones.
 // Al guardar, dispara también solicitud a Catalina (un solo paso).
 async function ckAbrirEditor(itemId, itemTipo, cantUnd){
@@ -14027,7 +14027,7 @@ async function ckAbrirEditor(itemId, itemTipo, cantUnd){
   var deco = soporteDeco ?
     '<label style="font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.5px">Decoración</label>' +
     '<select id="ck-ed-deco" style="width:100%;padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;margin:4px 0;font-size:12px">' +
-      '<option value="">— Sin decoración —</option>' +
+      '<option value="">- Sin decoración -</option>' +
       '<option value="etiqueta_adhesiva">Etiqueta adhesiva</option>' +
       '<option value="serigrafia">Serigrafía</option>' +
       '<option value="tampografia">Tampografía</option>' +
@@ -14100,7 +14100,7 @@ function ckEditorFiltrar(){
       '<div style="font-size:10px;color:#78716c;margin-top:2px"><span style="font-family:monospace">'+_escHTML(o.codigo)+'</span> · stock: <span style="color:'+stockColor+';font-weight:600">'+Math.round(o.stock)+' '+_escHTML(o.unidad||'und')+'</span>'+(o.proveedor?' · '+_escHTML(o.proveedor):'')+'</div>' +
       '</div>';
   }).join('');
-  // Adjuntar handlers via JS (no inline) — más robusto contra escapes
+  // Adjuntar handlers via JS (no inline) - más robusto contra escapes
   list.querySelectorAll('.ck-mee-row').forEach(function(row){
     row.addEventListener('click', function(){
       ckEdSeleccionar(row.dataset.codigo);
@@ -14224,7 +14224,7 @@ async function ckMarcar(itemId, estado){
         <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:4px">Número de lotes</label>
         <input id="mp-lotes" type="number" min="1" value="1" oninput="cargarSemaforoInsumos()" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:6px;font-size:14px;box-sizing:border-box">
       </div>
-      <!-- Semáforo de insumos — alimentado por /api/planta/listo-producir -->
+      <!-- Semáforo de insumos - alimentado por /api/planta/listo-producir -->
       <div id="mp-semaforo" style="margin-bottom:14px;display:none">
         <label style="font-size:13px;font-weight:600;color:#444;display:block;margin-bottom:4px">🚦 Insumos requeridos</label>
         <div id="mp-semaforo-content" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;background:#fafafa;font-size:12px"></div>
@@ -14242,32 +14242,32 @@ async function ckMarcar(itemId, estado){
         <div style="margin-top:12px">
           <label style="font-size:12px;font-weight:600;color:#444;display:block;margin-bottom:3px">Sala / Área</label>
           <select id="mp-sala" onchange="mpChequearConflictoSala()" style="width:100%;padding:7px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;background:#fff">
-            <option value="">— sin asignar —</option>
+            <option value="">- sin asignar -</option>
           </select>
           <div id="mp-sala-warn" style="font-size:11px;margin-top:4px;color:#dc2626;display:none"></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">
             <div>
               <label style="font-size:12px;font-weight:600;color:#444;display:block;margin-bottom:3px">Dispensación</label>
               <select id="mp-op-disp" style="width:100%;padding:7px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;background:#fff">
-                <option value="">—</option>
+                <option value="">-</option>
               </select>
             </div>
             <div>
               <label style="font-size:12px;font-weight:600;color:#444;display:block;margin-bottom:3px">Elaboración</label>
               <select id="mp-op-elab" style="width:100%;padding:7px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;background:#fff">
-                <option value="">—</option>
+                <option value="">-</option>
               </select>
             </div>
             <div>
               <label style="font-size:12px;font-weight:600;color:#444;display:block;margin-bottom:3px">Envasado</label>
               <select id="mp-op-env" style="width:100%;padding:7px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;background:#fff">
-                <option value="">—</option>
+                <option value="">-</option>
               </select>
             </div>
             <div>
               <label style="font-size:12px;font-weight:600;color:#444;display:block;margin-bottom:3px">Acondicionamiento</label>
               <select id="mp-op-acon" style="width:100%;padding:7px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;background:#fff">
-                <option value="">—</option>
+                <option value="">-</option>
               </select>
             </div>
           </div>
@@ -14309,9 +14309,9 @@ async function ckMarcar(itemId, estado){
   }
 
   function _mpPoblarSelectores(){
-    // Sala — etiqueta enriquecida con capacidades para que se vea cual sirve
+    // Sala - etiqueta enriquecida con capacidades para que se vea cual sirve
     var sel = document.getElementById('mp-sala');
-    sel.innerHTML = '<option value="">— sin asignar —</option>' +
+    sel.innerHTML = '<option value="">- sin asignar -</option>' +
       (_PLANTA_AREAS||[]).map(function(a){
         var caps = [];
         if(a.puede_producir) caps.push('prod');
@@ -14321,7 +14321,7 @@ async function ckMarcar(itemId, estado){
         return '<option value="'+a.id+'">'+a.nombre+'  ('+caps.join(' · ')+')</option>';
       }).join('');
 
-    // Operarios — armar 4 selects con defaults segun rol_predeterminado.
+    // Operarios - armar 4 selects con defaults segun rol_predeterminado.
     // Mayerlin (fija_dispensacion=true) se preselecciona y bloquea el slot.
     var ops = _PLANTA_OPERARIOS || [];
     var faseToOpDefault = {disp:null, elab:null, env:null, acon:null};
@@ -14333,7 +14333,7 @@ async function ckMarcar(itemId, estado){
       else if (o.rol === 'todero' && faseToOpDefault.elab===null) faseToOpDefault.elab = o.id;
     });
     function _opt(o){ return '<option value="'+o.id+'">'+o.nombre_completo+(o.fija_dispensacion?' 🔒':'')+'</option>'; }
-    var optsHTML = '<option value="">—</option>' +
+    var optsHTML = '<option value="">-</option>' +
       ops.filter(function(o){ return !o.es_jefe; }).map(_opt).join('');
     ['mp-op-disp','mp-op-elab','mp-op-env','mp-op-acon'].forEach(function(id){
       document.getElementById(id).innerHTML = optsHTML;
@@ -14728,7 +14728,7 @@ async function ckMarcar(itemId, estado){
           console.warn('switchProgTab: div '+targetId+' no encontrado');
         }
       }
-      // Hooks específicos por tab — cada uno se invoca solo si la función existe
+      // Hooks específicos por tab - cada uno se invoca solo si la función existe
       if(tab==='maquila' && typeof maquilaInit==='function') maquilaInit();
       if(tab==='checklist' && typeof cargarChecklistResumen==='function'){
         cargarChecklistResumen();
@@ -14753,7 +14753,7 @@ async function ckMarcar(itemId, estado){
       if(tab==='plan' && typeof autoscMeeRecargar==='function') autoscMeeRecargar();
       if(tab==='plan' && typeof alertEtiquetasRecargar==='function') alertEtiquetasRecargar();
       if(tab==='plan' && typeof alertD20Recargar==='function') alertD20Recargar();
-      // Estilos botones — los 6 oficiales
+      // Estilos botones - los 6 oficiales
       function _bg(id, activeStyle, activeClass){
         var b = document.getElementById(id);
         if(!b) return;
@@ -14846,7 +14846,7 @@ async function ckMarcar(itemId, estado){
       kpiBox.innerHTML = [
         _kpiCard('🟡 Producciones AHORA', k.producciones_activas_ahora||0, k.producciones_activas_ahora>0?'#ca8a04':'#94a3b8'),
         _kpiCard('✅ Terminadas hoy',     k.terminadas_hoy||0,             '#16a34a'),
-        _kpiCard('⏱ Cycle time prom',     k.cycle_time_promedio_min!=null?_fmtMin(k.cycle_time_promedio_min):'—', '#6d28d9'),
+        _kpiCard('⏱ Cycle time prom',     k.cycle_time_promedio_min!=null?_fmtMin(k.cycle_time_promedio_min):'-', '#6d28d9'),
         _kpiCard('🟢 Salas libres',       k.salas_libres||0,               '#16a34a'),
         _kpiCard('🔴 Salas sucias',       k.salas_sucias||0,               k.salas_sucias>0?'#b91c1c':'#94a3b8'),
         _kpiCard('🟡 Salas ocupadas',     k.salas_ocupadas||0,             '#ca8a04'),
@@ -14935,7 +14935,7 @@ async function ckMarcar(itemId, estado){
     }
   }
 
-  // ── Re-asignar HOY (Operación Live · pieza 5) — botón admin ──────────────
+  // ── Re-asignar HOY (Operación Live · pieza 5) - botón admin ──────────────
   async function cmReasignarHoy(){
     if(!confirm('🤖 ¿Re-correr auto-asignación para HOY?\\n\\nSolo afecta producciones SUGERIDAS (canónicas / calendar / manual). Lo FIJO (lo que arrastraste/editaste) no se toca.')) return;
     try{
@@ -15021,7 +15021,7 @@ async function ckMarcar(itemId, estado){
       cont.innerHTML = (d.items||[]).map(function(s){
         var pct = s.oee_pct;
         var col = s.color==='verde'?'#16a34a':s.color==='amarillo'?'#ca8a04':s.color==='rojo'?'#dc2626':'#94a3b8';
-        var pctTxt = pct==null ? '—' : pct.toFixed(0)+'%';
+        var pctTxt = pct==null ? '-' : pct.toFixed(0)+'%';
         var det = pct==null ? 'sin lotes' : ('D '+s.disp_pct+'% · R '+s.rend_pct+'% · C '+s.calidad_pct+'%');
         return '<div style="background:#fff;border:2px solid '+col+';border-radius:8px;padding:6px 10px;min-width:120px" title="OEE 7d · '+s.n_lotes+' lotes">'+
           '<div style="font-size:10px;color:#475569;text-transform:uppercase;font-weight:700">'+_escHTML(s.sala_codigo)+' · OEE</div>'+
@@ -15617,7 +15617,7 @@ async function ckMarcar(itemId, estado){
           '</div>';
         }).join('');
       } else {
-        html += '<div style="color:#94a3b8;text-align:center;padding:6px;font-style:italic">Nadie trabajando ahora — click "+ Iniciar turno"</div>';
+        html += '<div style="color:#94a3b8;text-align:center;padding:6px;font-style:italic">Nadie trabajando ahora - click "+ Iniciar turno"</div>';
       }
       if(cerradas.length){
         html += '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed #fde68a"><b style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">Últimos turnos cerrados</b></div>';
@@ -15817,7 +15817,7 @@ async function ckMarcar(itemId, estado){
         html += '<tr style="border-bottom:1px solid #f1f5f9">' +
           '<td style="padding:8px;font-weight:600">'+_escHTML(o.nombre_completo)+'</td>' +
           '<td style="padding:8px;color:#475569">'+_escHTML(o.rol||'todero')+'</td>' +
-          '<td style="padding:8px;text-align:center;font-size:11px;color:#64748b">'+(flags.join(' · ')||'—')+'</td>' +
+          '<td style="padding:8px;text-align:center;font-size:11px;color:#64748b">'+(flags.join(' · ')||'-')+'</td>' +
           '<td style="padding:8px;text-align:center">'+estado+'</td>' +
           '<td style="padding:8px;text-align:right">' +
             '<button onclick="abrirModalEditarOperario('+o.id+')" style="background:#dbeafe;color:#1e40af;border:none;padding:5px 9px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;margin-right:4px">Editar</button>' +
@@ -15964,7 +15964,7 @@ async function ckMarcar(itemId, estado){
         html += '</table></div></div>';
       } else {
         html += '<div style="text-align:center;color:#94a3b8;padding:20px;font-size:13px;font-style:italic">' +
-          'Aún sin turnos cerrados en los últimos 30 días — inicia un turno desde cualquier sala para empezar a medir.' +
+          'Aún sin turnos cerrados en los últimos 30 días - inicia un turno desde cualquier sala para empezar a medir.' +
           '</div>';
       }
       html += '</div>';
@@ -15972,7 +15972,7 @@ async function ckMarcar(itemId, estado){
     }catch(e){ box.innerHTML = ''; }
   }
 
-  // Capa 4: rotación operarios — pinta panel debajo del plano
+  // Capa 4: rotación operarios - pinta panel debajo del plano
   async function cargarRotacionOperarios(){
     var box = document.getElementById('plano-rotacion');
     if(!box) return;
@@ -15998,7 +15998,7 @@ async function ckMarcar(itemId, estado){
       ops.forEach(function(op){
         var f = op.fases || {};
         var rotar = op.sugerir_rotar
-          ? '<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:8px;font-weight:700">⚠ rotar — '+op.dias_en_fase+' días en '+op.fase_acumulada+'</span>'
+          ? '<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:8px;font-weight:700">⚠ rotar - '+op.dias_en_fase+' días en '+op.fase_acumulada+'</span>'
           : '<span style="color:#16a34a">✓ ok</span>';
         function _cell(n){ return '<td style="padding:6px 4px;text-align:center;color:'+(n?'#0f172a':'#cbd5e1')+';font-weight:'+(n?'700':'400')+'">'+(n||0)+'</td>'; }
         html += '<tr style="border-bottom:1px solid #f1f5f9"><td style="padding:6px 4px;font-weight:600">'+op.nombre+' '+(op.apellido||'')+'</td>' +
@@ -16159,7 +16159,7 @@ async function ckMarcar(itemId, estado){
   function _llenarSelectProductos(selId, valorPreset){
     var sel = document.getElementById(selId);
     if(!sel) return;
-    sel.innerHTML = '<option value="">— elegir producto —</option>'
+    sel.innerHTML = '<option value="">- elegir producto -</option>'
       + _presProductos.map(function(p){
         var sel = (p.producto_nombre===valorPreset) ? ' selected' : '';
         return '<option value="'+_escAttr(p.producto_nombre)+'"'+sel+'>'+_escHTML(p.producto_nombre)+'</option>';
@@ -16308,7 +16308,7 @@ async function ckMarcar(itemId, estado){
     // Agrupar por area
     var grupos = {};
     filtered.forEach(function(e){
-      var a = e.area_codigo || '—';
+      var a = e.area_codigo || '-';
       grupos[a] = grupos[a] || [];
       grupos[a].push(e);
     });
@@ -16318,7 +16318,7 @@ async function ckMarcar(itemId, estado){
       html += '<div style="margin-bottom:14px"><h3 style="margin:0 0 8px;color:#1a4a7a;font-size:14px">'+a+' <span style="color:#64748b;font-size:11px;font-weight:500">('+eqs.length+' equipos)</span></h3>'
         +'<table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden"><thead><tr style="background:#f1f5f9"><th style="padding:8px 12px;text-align:left;font-size:11px;color:#475569;text-transform:uppercase">Código</th><th style="padding:8px 12px;text-align:left;font-size:11px;color:#475569;text-transform:uppercase">Nombre</th><th style="padding:8px 12px;text-align:left;font-size:11px;color:#475569;text-transform:uppercase">Tipo</th><th style="padding:8px 12px;text-align:right;font-size:11px;color:#475569;text-transform:uppercase">Capacidad</th></tr></thead><tbody>';
       eqs.forEach(function(e){
-        var capStr = e.capacidad_raw || '—';
+        var capStr = e.capacidad_raw || '-';
         if(e.capacidad_litros){ capStr = e.capacidad_litros+' L'; }
         else if(e.capacidad_kg){ capStr = e.capacidad_kg+' kg'; }
         html += '<tr style="border-top:1px solid #e2e8f0"><td style="padding:7px 12px;font-family:monospace;font-size:12px;color:#1e293b">'+_escHTML(e.codigo)+'</td><td style="padding:7px 12px;font-size:13px">'+_escHTML(e.nombre||'')+'</td><td style="padding:7px 12px;font-size:11px"><span style="background:#ede9fe;color:#5b21b6;padding:2px 7px;border-radius:8px;font-weight:600">'+_escHTML(e.tipo||'otro')+'</span></td><td style="padding:7px 12px;font-size:12px;text-align:right;color:#0f172a;font-weight:600">'+_escHTML(capStr)+'</td></tr>';
@@ -16561,7 +16561,7 @@ async function ckMarcar(itemId, estado){
       }
       grid.innerHTML = items.map(function(it){
         var diasCol = it.alerta_dias==='rojo' ? '#dc2626' : (it.alerta_dias==='amarillo'?'#d97706':(it.alerta_dias==='verde'?'#15803d':'#94a3b8'));
-        var diasTxt = it.dias_inventario===null ? '—' : it.dias_inventario+'d';
+        var diasTxt = it.dias_inventario===null ? '-' : it.dias_inventario+'d';
         var mpCol = it.alcanza_mp ? '#15803d' : '#dc2626';
         var mpTxt = it.alcanza_mp ? '✓ MP listas' : '✗ Faltan '+(it.mp_deficit||[]).length+' MP';
         var img = it.imagen_url
@@ -16613,7 +16613,7 @@ async function ckMarcar(itemId, estado){
       mpHtml += '</tbody></table>';
     }
 
-    var presOptions = '<option value="">— elegir presentación —</option>'
+    var presOptions = '<option value="">- elegir presentación -</option>'
       + (item.presentaciones||[]).map(function(p){
         var vol = p.volumen_ml?p.volumen_ml+' mL':(p.peso_g?p.peso_g+' g':'');
         return '<option value="'+p.id+'">'+_escHTML(p.etiqueta)+(vol?' · '+vol:'')+'</option>';
@@ -16627,7 +16627,7 @@ async function ckMarcar(itemId, estado){
       +'</div>'
       // Estado actual
       +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px">'
-      +'<div style="background:'+diasCol+'15;border:1px solid '+diasCol+'40;border-radius:8px;padding:10px"><div style="font-size:10px;color:'+diasCol+';text-transform:uppercase;font-weight:700">Días inventario</div><div style="font-size:20px;font-weight:800;color:'+diasCol+';margin-top:2px">'+(item.dias_inventario===null?'—':item.dias_inventario+'d')+'</div></div>'
+      +'<div style="background:'+diasCol+'15;border:1px solid '+diasCol+'40;border-radius:8px;padding:10px"><div style="font-size:10px;color:'+diasCol+';text-transform:uppercase;font-weight:700">Días inventario</div><div style="font-size:20px;font-weight:800;color:'+diasCol+';margin-top:2px">'+(item.dias_inventario===null?'-':item.dias_inventario+'d')+'</div></div>'
       +'<div style="background:'+(item.alcanza_mp?'#f0fdf4':'#fef2f2')+';border:1px solid '+(item.alcanza_mp?'#86efac':'#fecaca')+';border-radius:8px;padding:10px"><div style="font-size:10px;color:'+(item.alcanza_mp?'#15803d':'#dc2626')+';text-transform:uppercase;font-weight:700">MP</div><div style="font-size:14px;font-weight:800;color:'+(item.alcanza_mp?'#15803d':'#dc2626')+';margin-top:2px">'+(item.alcanza_mp?'✓ Alcanzan':'✗ Faltan '+(item.mp_deficit||[]).length)+'</div></div>'
       +'<div style="background:'+(item.area_nombre?'#f1f5f9':'#fef3c7')+';border:1px solid '+(item.area_nombre?'#cbd5e1':'#fbbf24')+';border-radius:8px;padding:10px"><div style="font-size:10px;color:'+(item.area_nombre?'#475569':'#92400e')+';text-transform:uppercase;font-weight:700">Área</div><div style="font-size:14px;font-weight:800;color:'+(item.area_nombre?'#0f172a':'#92400e')+';margin-top:2px">'+(item.area_nombre||'⚠ Sin asignar')+'</div></div>'
       +'</div>'
@@ -16719,15 +16719,15 @@ async function ckMarcar(itemId, estado){
         porFecha[fecha].forEach(function(it){
           var abcCol = it.categoria_abc==='A' ? '#dc2626' : (it.categoria_abc==='B' ? '#d97706' : '#15803d');
           var estCol = it.estado==='cerrado' ? '#15803d' : (it.estado==='con_diferencia' ? '#dc2626' : '#94a3b8');
-          var dif = it.diferencia_g!==null ? (it.diferencia_g>=0?'+':'')+it.diferencia_g.toFixed(0)+'g' : '—';
+          var dif = it.diferencia_g!==null ? (it.diferencia_g>=0?'+':'')+it.diferencia_g.toFixed(0)+'g' : '-';
           html += '<tr style="border-top:1px solid #f1f5f9">'
             +'<td style="padding:7px 10px"><b>'+_escHTML(it.material_nombre||it.material_id)+'</b></td>'
             +'<td style="padding:7px 10px;text-align:center"><span style="background:'+abcCol+'22;color:'+abcCol+';padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700">'+_escHTML(it.categoria_abc||'C')+'</span></td>'
-            +'<td style="padding:7px 10px;font-size:11px;color:#64748b">'+_escHTML(it.asignado_a||'—')+'</td>'
+            +'<td style="padding:7px 10px;font-size:11px;color:#64748b">'+_escHTML(it.asignado_a||'-')+'</td>'
             +'<td style="padding:7px 10px;text-align:center"><span style="background:'+estCol+'22;color:'+estCol+';padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;text-transform:uppercase">'+_escHTML(it.estado||'')+'</span></td>'
             +'<td style="padding:7px 10px;text-align:right;font-family:monospace;color:'+(it.estado==='con_diferencia'?'#dc2626':'#0f172a')+';font-weight:700">'+_escHTML(dif)+'</td>'
             +'<td style="padding:7px 10px;text-align:center">'
-            +(it.estado==='programado' ? '<button onclick="ccAbrirRegistro('+it.id+',\\''+_escHTML(String(it.material_nombre||it.material_id||'').replace(/\\x27/g,"\\\\\\x27"))+'\\')" style="background:#6d28d9;color:#fff;border:none;padding:4px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">📝 Registrar</button>' : '<span style="color:#94a3b8;font-size:11px">'+_escHTML(it.terminado_por||'—')+'</span>')
+            +(it.estado==='programado' ? '<button onclick="ccAbrirRegistro('+it.id+',\\''+_escHTML(String(it.material_nombre||it.material_id||'').replace(/\\x27/g,"\\\\\\x27"))+'\\')" style="background:#6d28d9;color:#fff;border:none;padding:4px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">📝 Registrar</button>' : '<span style="color:#94a3b8;font-size:11px">'+_escHTML(it.terminado_por||'-')+'</span>')
             +'</td></tr>';
         });
         html += '</tbody></table></div></div>';
@@ -16874,10 +16874,10 @@ async function ckMarcar(itemId, estado){
           html += '<tr style="border-top:1px solid #f1f5f9;background:'+rowBg+'">'
             +'<td style="padding:7px 10px"><b>'+_escHTML(a.producto)+'</b></td>'
             +'<td style="padding:7px 10px;text-align:right;font-family:monospace">'+a.lotes_historicos+'</td>'
-            +'<td style="padding:7px 10px;font-size:11px;color:#64748b">'+_escHTML(a.ultima_produccion||'—')+(a.dias_desde_ultima!=null?' (hace '+a.dias_desde_ultima+'d)':'')+'</td>'
-            +'<td style="padding:7px 10px;text-align:right;font-family:monospace;font-weight:700">'+(a.cadencia_real_dias?a.cadencia_real_dias+'d':'—')+'</td>'
+            +'<td style="padding:7px 10px;font-size:11px;color:#64748b">'+_escHTML(a.ultima_produccion||'-')+(a.dias_desde_ultima!=null?' (hace '+a.dias_desde_ultima+'d)':'')+'</td>'
+            +'<td style="padding:7px 10px;text-align:right;font-family:monospace;font-weight:700">'+(a.cadencia_real_dias?a.cadencia_real_dias+'d':'-')+'</td>'
             +'<td style="padding:7px 10px;text-align:right;font-family:monospace;color:#64748b">'+(a.cadencia_configurada?a.cadencia_configurada+'d':'auto')+'</td>'
-            +'<td style="padding:7px 10px;text-align:right;font-family:monospace;color:'+difCol+';font-weight:700">'+(a.diferencia_dias!=null?(a.diferencia_dias>0?'+':'')+a.diferencia_dias+'d':'—')+'</td>'
+            +'<td style="padding:7px 10px;text-align:right;font-family:monospace;color:'+difCol+';font-weight:700">'+(a.diferencia_dias!=null?(a.diferencia_dias>0?'+':'')+a.diferencia_dias+'d':'-')+'</td>'
             +'<td style="padding:7px 10px;text-align:center">'+(a.recomendar_actualizar
               ? '<button onclick="apAplicarUna(\\''+_escAttr(a.producto)+'\\','+a.cadencia_real_dias+')" style="background:#15803d;color:#fff;border:none;padding:4px 10px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer">✓ Adoptar</button>'
               : '<span style="color:#94a3b8;font-size:11px">OK</span>')+'</td>'
@@ -17012,7 +17012,7 @@ async function ckMarcar(itemId, estado){
     // Producciones
     html += '<h3 style="color:#0f172a;margin:18px 0 8px;font-size:14px">📅 Producciones propuestas ('+prods.length+')</h3>';
     if(!prods.length){
-      html += '<div style="background:#f8fafc;padding:20px;border-radius:8px;text-align:center;color:#94a3b8">Sin producciones nuevas — todo dentro de cobertura ✓</div>';
+      html += '<div style="background:#f8fafc;padding:20px;border-radius:8px;text-align:center;color:#94a3b8">Sin producciones nuevas - todo dentro de cobertura ✓</div>';
     } else {
       html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:14px"><table style="width:100%;border-collapse:collapse;font-size:12px">'
         +'<thead style="background:#f9fafb"><tr><th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Fecha</th><th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Producto</th><th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Lote</th><th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Razón</th></tr></thead><tbody>';
@@ -17025,7 +17025,7 @@ async function ckMarcar(itemId, estado){
     // Compras
     html += '<h3 style="color:#0f172a;margin:18px 0 8px;font-size:14px">🛒 Compras automáticas ('+compras.length+')</h3>';
     if(!compras.length){
-      html += '<div style="background:#f8fafc;padding:20px;border-radius:8px;text-align:center;color:#94a3b8">Sin compras nuevas — MP suficientes</div>';
+      html += '<div style="background:#f8fafc;padding:20px;border-radius:8px;text-align:center;color:#94a3b8">Sin compras nuevas - MP suficientes</div>';
     } else {
       html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:14px"><table style="width:100%;border-collapse:collapse;font-size:12px">'
         +'<thead style="background:#f9fafb"><tr><th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Material</th><th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Cantidad</th><th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Origen</th><th style="padding:8px 10px;text-align:center;font-size:10px;color:#475569;text-transform:uppercase">Urgencia</th></tr></thead><tbody>';
@@ -17081,7 +17081,7 @@ async function ckMarcar(itemId, estado){
             +'<td style="padding:6px 10px;text-align:right" contenteditable="true" data-id="'+c.id+'" data-col="cobertura_target_dias" onblur="apSkuUpdate(this)">'+c.cobertura_target_dias+'</td>'
             +'<td style="padding:6px 10px;text-align:right" contenteditable="true" data-id="'+c.id+'" data-col="cobertura_min_dias" onblur="apSkuUpdate(this)">'+c.cobertura_min_dias+'</td>'
             +'<td style="padding:6px 10px;text-align:right" contenteditable="true" data-id="'+c.id+'" data-col="merma_pct" onblur="apSkuUpdate(this)">'+c.merma_pct+'</td>'
-            +'<td style="padding:6px 10px;text-align:right;color:#64748b">'+(c.lote_size_kg||'—')+'</td>'
+            +'<td style="padding:6px 10px;text-align:right;color:#64748b">'+(c.lote_size_kg||'-')+'</td>'
             +'<td style="padding:6px 10px;text-align:right" contenteditable="true" data-id="'+c.id+'" data-col="prioridad" onblur="apSkuUpdate(this)">'+c.prioridad+'</td>'
             +'</tr>';
         }).join('')
@@ -17142,7 +17142,7 @@ async function ckMarcar(itemId, estado){
             +'<td style="padding:6px 10px;text-align:right;font-family:monospace">'+c.buffer_dias+'d</td>'
             +'<td style="padding:6px 10px;text-align:right;font-family:monospace">'+c.cobertura_min_dias+'d</td>'
             +'<td style="padding:6px 10px;text-align:right;font-family:monospace">'+c.cobertura_ideal_dias+'d</td>'
-            +'<td style="padding:6px 10px;font-size:11px;color:#64748b">'+_escHTML(c.proveedor_principal||'—')+'</td>'
+            +'<td style="padding:6px 10px;font-size:11px;color:#64748b">'+_escHTML(c.proveedor_principal||'-')+'</td>'
             +'</tr>';
         }).join('')
         +'</tbody></table></div>';
@@ -17295,7 +17295,7 @@ async function ckMarcar(itemId, estado){
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // PLAN V2 — Multi-horizonte (1sem / 1m / 2m / 3m / 6m / 1año)
+  // PLAN V2 - Multi-horizonte (1sem / 1m / 2m / 3m / 6m / 1año)
   // ════════════════════════════════════════════════════════════════════════
   // Sebastian (30-abr-2026): "monte dos meses según lo que dice shopify"
   // → default 2 meses (con switcher para ver más / menos)
@@ -17431,9 +17431,9 @@ async function ckMarcar(itemId, estado){
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // 📦 MP ROLLING FORECAST — consumo MP acumulado en el horizonte
+  // 📦 MP ROLLING FORECAST - consumo MP acumulado en el horizonte
   // ════════════════════════════════════════════════════════════════════
-  // Horizonte seleccionable 15/30/60/90/180 días — Sebastián 30-abr-2026:
+  // Horizonte seleccionable 15/30/60/90/180 días - Sebastián 30-abr-2026:
   // "Alejandro puede decidir qué trae de más. Pedidos en bloque o individual".
   var _MP_ROLLING_DIAS = 60;  // default
 
@@ -17454,7 +17454,7 @@ async function ckMarcar(itemId, estado){
       var mats = d.materias || [];
       var k = d.kpis || {};
       if(!mats.length){
-        box.innerHTML = '<div style="background:#ecfdf5;border:1px solid #6ee7b7;padding:12px;border-radius:8px;font-size:13px;color:#065f46">✅ Sin producciones planeadas en el horizonte — no hay consumo MP que proyectar</div>';
+        box.innerHTML = '<div style="background:#ecfdf5;border:1px solid #6ee7b7;padding:12px;border-radius:8px;font-size:13px;color:#065f46">✅ Sin producciones planeadas en el horizonte - no hay consumo MP que proyectar</div>';
         return;
       }
       var stockouts = mats.filter(function(m){return m.fecha_stockout;});
@@ -17529,13 +17529,13 @@ async function ckMarcar(itemId, estado){
         html += '<td style="padding:5px 6px;text-align:right">'+m.num_lotes_que_la_usan+'</td>';
         if(m.fecha_stockout){
           html += '<td style="padding:5px 6px"><span style="background:'+col+'22;color:'+col+';padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700">'+_escHTML(m.fecha_stockout)+' (en '+m.dias_hasta_stockout+'d)</span></td>';
-          html += '<td style="padding:5px 6px;font-size:10px;color:'+col+';font-weight:700">'+_escHTML(m.comprar_antes_de||'—')+'</td>';
+          html += '<td style="padding:5px 6px;font-size:10px;color:'+col+';font-weight:700">'+_escHTML(m.comprar_antes_de||'-')+'</td>';
           html += '<td style="padding:5px 6px;text-align:right;font-family:monospace;font-weight:700;color:'+col+'">'+_fmtMiles(Math.round(m.comprar_g_recomendado||0))+' g</td>';
           html += '<td style="padding:5px 6px;text-align:center"><button onclick="planV2SolicitarMP(\\''+safeId+'\\')" style="background:#7c3aed;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer">📋</button></td>';
         } else {
           html += '<td style="padding:5px 6px;color:#10b981">✓ alcanza</td>';
-          html += '<td style="padding:5px 6px;color:#94a3b8">—</td>';
-          html += '<td style="padding:5px 6px;text-align:right;color:#94a3b8">—</td>';
+          html += '<td style="padding:5px 6px;color:#94a3b8">-</td>';
+          html += '<td style="padding:5px 6px;text-align:right;color:#94a3b8">-</td>';
           html += '<td style="padding:5px 6px"></td>';
         }
         html += '</tr>';
@@ -17558,7 +17558,7 @@ async function ckMarcar(itemId, estado){
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // 📋 SOLICITAR A COMPRAS — individual o en bloque
+  // 📋 SOLICITAR A COMPRAS - individual o en bloque
   // ════════════════════════════════════════════════════════════════════
   async function planV2SolicitarMP(materialId){
     var mats = window._mpRollingData || [];
@@ -17654,7 +17654,7 @@ async function ckMarcar(itemId, estado){
     if(m.fecha_stockout){
       html += '<div style="background:#fef2f2;border:2px solid #dc2626;border-radius:8px;padding:12px;margin-bottom:14px">';
       html += '<b style="color:#991b1b">🔴 Stock-out el '+_escHTML(m.fecha_stockout)+' (en '+m.dias_hasta_stockout+' días)</b>';
-      html += '<div style="font-size:11px;color:#7f1d1d;margin-top:4px">📅 Comprar antes de: <b>'+_escHTML(m.comprar_antes_de||'—')+'</b></div>';
+      html += '<div style="font-size:11px;color:#7f1d1d;margin-top:4px">📅 Comprar antes de: <b>'+_escHTML(m.comprar_antes_de||'-')+'</b></div>';
       html += '<div style="font-size:11px;color:#7f1d1d">📦 Cantidad recomendada: <b>'+_fmtMiles(Math.round(m.comprar_g_recomendado||0))+' g</b></div>';
       html += '<div style="font-size:11px;color:#7f1d1d">⏱️ Lead time: '+(m.lead_time_dias||14)+'d · Origen: '+(m.origen||'local')+'</div>';
       html += '</div>';
@@ -17682,7 +17682,7 @@ async function ckMarcar(itemId, estado){
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // 🛍️ FORECAST BLACK FRIDAY — pre-stock necesario por SKU
+  // 🛍️ FORECAST BLACK FRIDAY - pre-stock necesario por SKU
   // ════════════════════════════════════════════════════════════════════
   async function planV2VerForecastBF(){
     var modal = document.createElement('div');
@@ -17751,7 +17751,7 @@ async function ckMarcar(itemId, estado){
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // 🔍 VERIFICAR LISTO PARA PRODUCIR — chequea MP/envases ANTES de producir
+  // 🔍 VERIFICAR LISTO PARA PRODUCIR - chequea MP/envases ANTES de producir
   // ════════════════════════════════════════════════════════════════════
   // Programación = aquí se verifica que TODO está listo antes de mandar a
   // Producción. El registro real (kg producidos + descuento FEFO MP) se
@@ -17797,7 +17797,7 @@ async function ckMarcar(itemId, estado){
         html += '</div>';
       } else {
         html += '<div style="background:#fef2f2;border:2px solid #dc2626;padding:14px;border-radius:8px;margin-bottom:14px">';
-        html += '<div style="font-size:14px;color:#991b1b;font-weight:700">🔴 NO PRODUCIR — falta MP</div>';
+        html += '<div style="font-size:14px;color:#991b1b;font-weight:700">🔴 NO PRODUCIR - falta MP</div>';
         html += '<div style="font-size:11px;color:#7f1d1d;margin-top:6px">Compra/recibe las siguientes MPs antes de iniciar:</div>';
         html += '<ul style="margin:6px 0 0 18px;padding:0;font-size:11px;color:#7f1d1d">';
         faltantes.slice(0,8).forEach(function(m){
@@ -17806,12 +17806,12 @@ async function ckMarcar(itemId, estado){
         html += '</ul></div>';
       }
 
-      // Alerta si hay MPs sin cruce (no_encontrado) — bug de ID
+      // Alerta si hay MPs sin cruce (no_encontrado) - bug de ID
       var noCruzados = mps.filter(function(m){return m.fuente_stock === 'no_encontrado';});
       if(noCruzados.length){
         html += '<div style="background:#fef3c7;border:2px solid #d97706;border-radius:8px;padding:12px;margin-bottom:14px">';
         html += '<b style="color:#92400e">⚠️ '+noCruzados.length+' MPs sin cruce de ID</b>';
-        html += '<div style="font-size:11px;color:#78350f;margin-top:4px">El sistema NO encontró estas MPs en bodega — probable diferencia entre el ID de la fórmula y el ID de movimientos. <b>Stock mostrado puede ser incorrecto.</b></div>';
+        html += '<div style="font-size:11px;color:#78350f;margin-top:4px">El sistema NO encontró estas MPs en bodega - probable diferencia entre el ID de la fórmula y el ID de movimientos. <b>Stock mostrado puede ser incorrecto.</b></div>';
         html += '<div style="font-size:11px;color:#78350f;margin-top:6px">Solución: ir a Admin → Bridge MP → mapear estos IDs:</div>';
         html += '<ul style="margin:4px 0 0 18px;padding:0;font-size:11px;color:#78350f">';
         noCruzados.slice(0,8).forEach(function(m){
@@ -17848,9 +17848,9 @@ async function ckMarcar(itemId, estado){
         html += '<td style="padding:5px 6px;text-align:right;font-family:monospace">'+m.porcentaje+'%</td>';
         html += '<td style="padding:5px 6px;text-align:right;font-family:monospace">'+m.requerido_g+' g</td>';
         html += '<td style="padding:5px 6px;text-align:right;font-family:monospace">'+m.stock_g+' g</td>';
-        html += '<td style="padding:5px 6px;text-align:right;font-family:monospace;color:'+c+';font-weight:700">'+(m.falta_g>0?m.falta_g+' g':'—')+'</td>';
+        html += '<td style="padding:5px 6px;text-align:right;font-family:monospace;color:'+c+';font-weight:700">'+(m.falta_g>0?m.falta_g+' g':'-')+'</td>';
         html += '<td style="padding:5px 6px"><span style="background:'+c+'22;color:'+c+';padding:2px 6px;border-radius:4px;font-size:9px;font-weight:700;text-transform:uppercase">'+m.estado+'</span></td>';
-        html += '<td style="padding:5px 6px;font-size:9px;color:'+fuenteCol+'">'+(fuenteIcono[m.fuente_stock]||m.fuente_stock||'—')+'</td>';
+        html += '<td style="padding:5px 6px;font-size:9px;color:'+fuenteCol+'">'+(fuenteIcono[m.fuente_stock]||m.fuente_stock||'-')+'</td>';
         html += '</tr>';
       });
       html += '</tbody></table></div>';
@@ -17862,7 +17862,7 @@ async function ckMarcar(itemId, estado){
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // STATUS LINE CONSOLIDADA — 1 línea con cobertura + calendar + margen
+  // STATUS LINE CONSOLIDADA - 1 línea con cobertura + calendar + margen
   // ════════════════════════════════════════════════════════════════════
   async function planV2CargarStatusLine(){
     var box = document.getElementById('pv2-status-line');
@@ -17888,15 +17888,15 @@ async function ckMarcar(itemId, estado){
       if(partes.length){
         box.innerHTML = partes.join(' · ');
       } else {
-        box.innerHTML = 'Producciones · MP · Envases — proyectado por horizonte';
+        box.innerHTML = 'Producciones · MP · Envases - proyectado por horizonte';
       }
     } catch(e){
-      box.innerHTML = 'Producciones · MP · Envases — proyectado por horizonte';
+      box.innerHTML = 'Producciones · MP · Envases - proyectado por horizonte';
     }
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // CENTRO DE ACCIÓN UNIFICADO — Alertas + Recomendaciones en 1 panel
+  // CENTRO DE ACCIÓN UNIFICADO - Alertas + Recomendaciones en 1 panel
   // ════════════════════════════════════════════════════════════════════
   async function planV2CargarCentroAccion(){
     var box = document.getElementById('pv2-centro-accion');
@@ -17952,7 +17952,7 @@ async function ckMarcar(itemId, estado){
       acciones.sort(function(a,b){return a.urgencia_orden - b.urgencia_orden;});
 
       if(!acciones.length){
-        box.innerHTML = '<div style="background:#ecfdf5;border:1px solid #6ee7b7;padding:14px;border-radius:8px;font-size:13px;color:#065f46">✅ Sin acciones pendientes — todos los SKUs alineados con su plan</div>';
+        box.innerHTML = '<div style="background:#ecfdf5;border:1px solid #6ee7b7;padding:14px;border-radius:8px;font-size:13px;color:#065f46">✅ Sin acciones pendientes - todos los SKUs alineados con su plan</div>';
         return;
       }
 
@@ -18027,7 +18027,7 @@ async function ckMarcar(itemId, estado){
       var alertas = d.alertas||[];
       var k = d.kpis||{};
       if(!alertas.length){
-        box.innerHTML = '<div style="background:#ecfdf5;border:1px solid #6ee7b7;padding:12px;border-radius:8px;font-size:13px;color:#065f46">✅ Sin alertas — todos los SKUs están alineados con su cadencia o sin lotes próximos en 60 días</div>';
+        box.innerHTML = '<div style="background:#ecfdf5;border:1px solid #6ee7b7;padding:12px;border-radius:8px;font-size:13px;color:#065f46">✅ Sin alertas - todos los SKUs están alineados con su cadencia o sin lotes próximos en 60 días</div>';
         return;
       }
       var critical = alertas.filter(function(a){return a.estado==="adelantar"||a.estado==="reducir_lote";});
@@ -18153,7 +18153,7 @@ async function ckMarcar(itemId, estado){
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // 🔍 DIAGNÓSTICO SKU — lo que el sistema LEE crudo de Shopify
+  // 🔍 DIAGNÓSTICO SKU - lo que el sistema LEE crudo de Shopify
   // ════════════════════════════════════════════════════════════════════
   async function planV2DiagnosticoSKU(){
     // Paso 1: cargar lista de productos
@@ -18284,7 +18284,7 @@ async function ckMarcar(itemId, estado){
       var col = alc==null ? '#94a3b8' : (alc<20 ? '#dc2626' : (alc<40 ? '#f97316' : '#10b981'));
       html += '<div style="background:'+col+'15;border:2px solid '+col+';border-radius:8px;padding:14px;margin-bottom:14px">';
       html += '<h4 style="margin:0 0 10px;color:'+col+'">5️⃣ Días de alcance HOY</h4>';
-      html += '<div style="font-size:42px;font-weight:800;color:'+col+'">'+(alc==null?'—':alc+' días')+'</div>';
+      html += '<div style="font-size:42px;font-weight:800;color:'+col+'">'+(alc==null?'-':alc+' días')+'</div>';
       if(d.fecha_stockout_proyectada){
         html += '<div style="font-size:13px;color:#0f172a">Stockout proyectado: <b>'+_escHTML(d.fecha_stockout_proyectada)+'</b></div>';
       }
@@ -18303,7 +18303,7 @@ async function ckMarcar(itemId, estado){
       html += '<div><div style="font-size:11px;color:#64748b">Lote default fórmula</div><div style="font-size:20px;font-weight:800">'+(l.lote_default_formula||0)+' kg</div></div>';
       html += '<div><div style="font-size:11px;color:#64748b">Lote típico (mediana)</div><div style="font-size:20px;font-weight:800">'+(l.lote_tipico_historico||0)+' kg</div></div>';
       html += '<div><div style="font-size:11px;color:#64748b">Unidades por lote</div><div style="font-size:20px;font-weight:800;color:#7c3aed">'+_fmtMiles(d.unidades_por_lote||0)+' u</div></div>';
-      html += '<div><div style="font-size:11px;color:#64748b">Lote durará</div><div style="font-size:20px;font-weight:800">'+(d.dias_que_durara_lote==null?'—':d.dias_que_durara_lote+' d')+'</div></div>';
+      html += '<div><div style="font-size:11px;color:#64748b">Lote durará</div><div style="font-size:20px;font-weight:800">'+(d.dias_que_durara_lote==null?'-':d.dias_que_durara_lote+' d')+'</div></div>';
       html += '</div>';
       if((l.historico_kg_lista||[]).length){
         html += '<div style="margin-top:8px;font-size:11px;color:#64748b">Histórico Calendar (kg): '+l.historico_kg_lista.join(', ')+'</div>';
@@ -18345,7 +18345,7 @@ async function ckMarcar(itemId, estado){
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // 🛒 Plan SOLO Shopify — vista por día (próximo lunes → viernes)
+  // 🛒 Plan SOLO Shopify - vista por día (próximo lunes → viernes)
   // ════════════════════════════════════════════════════════════════════
   async function planV2VerSemanaShopify(){
     // Pregunta cuántas semanas
@@ -18368,7 +18368,7 @@ async function ckMarcar(itemId, estado){
       var urgEmoji = {critica:'🔴',alta:'🟠',media:'🟡',baja:'🔵'};
       var html = '<div style="background:#fff;border-radius:12px;width:1100px;max-width:96vw;max-height:90vh;overflow:auto;padding:24px">';
       html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px">';
-      html += '<div><h2 style="margin:0;color:#0f172a;font-size:22px">🛒 Plan de la semana — SOLO Shopify</h2>';
+      html += '<div><h2 style="margin:0;color:#0f172a;font-size:22px">🛒 Plan de la semana - SOLO Shopify</h2>';
       html += '<p style="color:#64748b;font-size:12px;margin:6px 0 0">Sin tener en cuenta el Calendar. Stock = Shopify · Velocidad = ventas 30d · Margen = 20d</p>';
       html += '<p style="color:#0f172a;font-size:13px;margin:8px 0 0"><b>Semana del '+_escHTML(d.semana_inicio)+' al '+_escHTML(d.semana_fin)+'</b> · '+_escHTML(d.patron_distribucion)+' · '+(d.semanas||1)+' semana(s)</p></div>';
       html += '<button onclick="this.closest(\\'div[style*=fixed]\\').remove()" style="background:#fff;border:1px solid #cbd5e1;padding:6px 12px;border-radius:6px;cursor:pointer">Cerrar ✕</button></div>';
@@ -18398,7 +18398,7 @@ async function ckMarcar(itemId, estado){
           html += '<div style="background:#fff;border:2px solid '+(dia.producciones_count>0?'#6d28d9':'#e2e8f0')+';border-radius:10px;overflow:hidden">';
           html += '<div style="background:'+bgHeader+';color:#fff;padding:10px 14px"><div style="font-size:11px;opacity:.85;text-transform:uppercase">'+_escHTML(dia.nombre_dia)+'</div><div style="font-size:16px;font-weight:800">'+_escHTML(dia.fecha)+'</div><div style="font-size:11px;margin-top:2px">'+dia.producciones_count+' producci'+(dia.producciones_count===1?'ón':'ones')+'</div></div>';
           if(dia.producciones_count === 0){
-            html += '<div style="padding:18px;text-align:center;color:#94a3b8;font-size:12px;font-style:italic">— día libre —</div>';
+            html += '<div style="padding:18px;text-align:center;color:#94a3b8;font-size:12px;font-style:italic">- día libre -</div>';
           } else {
             html += '<div style="padding:8px">';
             dia.producciones.forEach(function(p){
@@ -18422,7 +18422,7 @@ async function ckMarcar(itemId, estado){
       }
       // Sin cupo (overflow)
       if(sin.length){
-        html += '<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:14px;margin-top:14px"><b style="color:#991b1b">⚠ Sin cupo en la(s) semana(s) — '+sin.length+' SKUs</b>';
+        html += '<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:14px;margin-top:14px"><b style="color:#991b1b">⚠ Sin cupo en la(s) semana(s) - '+sin.length+' SKUs</b>';
         html += '<p style="font-size:12px;color:#7f1d1d;margin:6px 0">Estos productos tienen necesidad pero no caben con 1/día. Considera planear más semanas o desbloquear más slots.</p>';
         html += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px"><thead style="background:#fee2e2"><tr><th style="padding:6px;text-align:left">Producto</th><th style="padding:6px;text-align:right">Lote</th><th style="padding:6px;text-align:right">Días alcance</th><th style="padding:6px;text-align:left">Urgencia</th></tr></thead><tbody>';
         sin.forEach(function(s){
@@ -18439,7 +18439,7 @@ async function ckMarcar(itemId, estado){
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // 📆 Plan LARGO — 6 meses / 1 año Shopify rolling forecast
+  // 📆 Plan LARGO - 6 meses / 1 año Shopify rolling forecast
   // ════════════════════════════════════════════════════════════════════
   // Cache para CSV download
   window._planLargoData = null;
@@ -18466,7 +18466,7 @@ async function ckMarcar(itemId, estado){
       // Header
       html += '<div style="background:'+bgGrad+';color:#fff;border-radius:10px;padding:16px 20px;margin-bottom:18px">';
       html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">';
-      html += '<div><h2 style="margin:0;color:#fff;font-size:24px">'+titulo+' — SOLO Shopify</h2>';
+      html += '<div><h2 style="margin:0;color:#fff;font-size:24px">'+titulo+' - SOLO Shopify</h2>';
       html += '<p style="color:#cffafe;font-size:12px;margin:4px 0 0">Rolling forecast día-a-día · '+_escHTML(d.fecha_inicio)+' → '+_escHTML(d.fecha_fin)+'</p></div>';
       html += '<div style="display:flex;gap:6px"><button onclick="planLargoCSV()" style="background:rgba(255,255,255,.25);border:1px solid rgba(255,255,255,.4);color:#fff;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px">📥 CSV</button>';
       html += '<button onclick="this.closest(\\'div[style*=fixed]\\').remove()" style="background:rgba(255,255,255,.25);border:1px solid rgba(255,255,255,.4);color:#fff;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px">Cerrar ✕</button></div>';
@@ -18711,7 +18711,7 @@ async function ckMarcar(itemId, estado){
           +'</tr></thead><tbody>';
         accionables.forEach(function(r){
           var urgCol = {critica:'#dc2626',alta:'#d97706',media:'#7c3aed',baja:'#7c3aed'}[r.urgencia] || '#64748b';
-          var fechaTxt = '—';
+          var fechaTxt = '-';
           if(r.fecha_proxima){
             try {
               var dia = new Date(r.fecha_proxima+'T00:00:00').toLocaleDateString('es-CO',{weekday:'short',day:'numeric',month:'short'});
@@ -18721,10 +18721,10 @@ async function ckMarcar(itemId, estado){
           html += '<tr style="border-top:1px solid #f1f5f9;background:'+(r.urgencia==='critica'?'#fef2f2':r.urgencia==='alta'?'#fffbeb':'#fff')+'">'
             +'<td style="padding:8px 12px"><b style="color:#0f172a">'+_escHTML(r.producto)+'</b><br><span style="font-size:10px;color:#64748b">'+r.velocidad_dia+' u/día</span></td>'
             +'<td style="padding:8px;text-align:right;font-family:monospace">'+r.stock_shopify+'</td>'
-            +'<td style="padding:8px;text-align:right;font-family:monospace;color:#7c3aed;font-weight:600">'+(r.pipeline_unidades>0?'+'+r.pipeline_unidades:'—')+'<br><span style="font-size:9px;color:#64748b">'+r.pipeline_kg+'kg</span></td>'
+            +'<td style="padding:8px;text-align:right;font-family:monospace;color:#7c3aed;font-weight:600">'+(r.pipeline_unidades>0?'+'+r.pipeline_unidades:'-')+'<br><span style="font-size:9px;color:#64748b">'+r.pipeline_kg+'kg</span></td>'
             +'<td style="padding:8px;text-align:right;font-family:monospace;font-weight:700">'+r.stock_total_unidades+'</td>'
             +'<td style="padding:8px;text-align:right;font-family:monospace;font-weight:800;color:'+urgCol+'">'+r.dias_alcance+'d</td>'
-            +'<td style="padding:8px;text-align:right;font-size:11px;color:#64748b">'+(r.cadencia_historica_dias?r.cadencia_historica_dias+'d hist':r.cadencia_configurada?r.cadencia_configurada+'d cfg':'—')+'</td>'
+            +'<td style="padding:8px;text-align:right;font-size:11px;color:#64748b">'+(r.cadencia_historica_dias?r.cadencia_historica_dias+'d hist':r.cadencia_configurada?r.cadencia_configurada+'d cfg':'-')+'</td>'
             +'<td style="padding:8px;text-align:right;font-family:monospace;font-size:11px">'+r.lote_tipico_kg+'kg</td>'
             +'<td style="padding:8px 12px"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="background:'+urgCol+';color:#fff;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:800;text-transform:uppercase">'+r.urgencia+'</span><b style="color:#0f172a;font-size:12px;text-transform:capitalize">'+_escHTML(fechaTxt)+'</b></div><div style="font-size:11px;color:#475569;margin-top:4px">'+_escHTML(r.razon)+'</div><div style="margin-top:6px"><button onclick="recDescontinuar(\\''+_escAttr(r.producto)+'\\')" style="background:#fff;color:#dc2626;border:1px solid #dc2626;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;cursor:pointer">⊗ Descontinuar</button></div></td>'
             +'</tr>';
@@ -18770,12 +18770,12 @@ async function ckMarcar(itemId, estado){
       var d = await r.json();
       if(d.total_eventos === 0){
         box.style.display = 'block';
-        box.innerHTML = '⚠ <b>Calendar vacío</b> — verifica GCAL_ICAL_URL en Render. <a href="#" onclick="switchProgTab(\\'config\\');setTimeout(function(){cfgSubtab(\\'calendar\\')},150);return false" style="color:#fff;text-decoration:underline">Ir a Configuración</a>';
+        box.innerHTML = '⚠ <b>Calendar vacío</b> - verifica GCAL_ICAL_URL en Render. <a href="#" onclick="switchProgTab(\\'config\\');setTimeout(function(){cfgSubtab(\\'calendar\\')},150);return false" style="color:#fff;text-decoration:underline">Ir a Configuración</a>';
         return;
       }
       box.style.display = 'block';
       box.innerHTML = '📆 Calendar: <b>'+d.total_eventos+'</b> eventos · ✓ <b style="color:#86efac">'+d.matcheados+'</b> matcheados con productos · '
-        +(d.sin_match_aceptable ? '? <b style="color:#fbbf24">'+d.sin_match_aceptable+'</b> sin match — '+'<a href="#" onclick="switchProgTab(\\'config\\');setTimeout(function(){cfgSubtab(\\'calendar\\')},150);return false" style="color:#fff;text-decoration:underline">configurar aliases</a>' : '<span style="color:#86efac">100% identificados</span>')
+        +(d.sin_match_aceptable ? '? <b style="color:#fbbf24">'+d.sin_match_aceptable+'</b> sin match - '+'<a href="#" onclick="switchProgTab(\\'config\\');setTimeout(function(){cfgSubtab(\\'calendar\\')},150);return false" style="color:#fff;text-decoration:underline">configurar aliases</a>' : '<span style="color:#86efac">100% identificados</span>')
         +' · ⚖ <b>'+d.con_kg_detectados+'</b> con kg parseados';
     } catch(e){ /* silent */ }
   }
@@ -18914,9 +18914,9 @@ async function ckMarcar(itemId, estado){
   // agotamiento (stock_pt / velocidad ventas Shopify).
   // ────────────────────────────────────────────────────────────────────────
   function _apaEscHTML(s){return String(s===null||s===undefined?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
-  function _apaFmtN(n,d){if(n===null||n===undefined)return '—';return Number(n).toLocaleString('es-CO',{maximumFractionDigits:d||0});}
+  function _apaFmtN(n,d){if(n===null||n===undefined)return '-';return Number(n).toLocaleString('es-CO',{maximumFractionDigits:d||0});}
   // Sebastian 12-may-2026: regla Alejandro · MPs SIEMPRE en gramos con separador miles · NUNCA convertir a kg
-  function _apaFmtG(g){if(g===null||g===undefined)return '—';return Math.round(g).toLocaleString('es-CO')+' g';}
+  function _apaFmtG(g){if(g===null||g===undefined)return '-';return Math.round(g).toLocaleString('es-CO')+' g';}
   function _apaUrgenciaColor(u){
     return {CRITICO:'#dc2626',ALTA:'#ea580c',MEDIA:'#d97706',BAJA:'#7c3aed',OK:'#15803d',SIN_USO:'#64748b'}[u]||'#64748b';
   }
@@ -19011,13 +19011,13 @@ async function ckMarcar(itemId, estado){
         var col = _apaUrgenciaColor(s.urgencia);
         html += '<tr style="border-bottom:1px solid #f1f5f9;background:'+(s.urgencia==='CRITICO'?'#fef2f2':'transparent')+'">'+
           '<td style="padding:8px;font-weight:700;color:#1e293b">'+_apaEscHTML(s.sku)+'</td>'+
-          '<td style="padding:8px;color:#475569">'+_apaEscHTML(s.producto_base||'—')+'</td>'+
+          '<td style="padding:8px;color:#475569">'+_apaEscHTML(s.producto_base||'-')+'</td>'+
           '<td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums">'+_apaFmtN(s.stock_actual_u)+(s.fuente_stock?' <span title="Fuente del stock (CC=conteo local, SHOPIFY=snapshot Shopify)" style="font-size:9px;color:#94a3b8;font-weight:600">'+_apaEscHTML(s.fuente_stock)+'</span>':'')+'</td>'+
           '<td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums">'+_apaFmtN(s.ventas_periodo_u)+'</td>'+
           '<td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums">'+_apaFmtN(s.velocidad_uds_dia,2)+'</td>'+
           '<td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums;font-weight:'+(s.urgencia==='CRITICO'||s.urgencia==='ALTA'?'700':'400')+'">'+(s.dias_cobertura===null?'∞':_apaFmtN(s.dias_cobertura,1))+'</td>'+
           '<td style="padding:8px"><span style="background:'+bg+';color:'+col+';padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">'+_apaEscHTML(s.urgencia)+'</span></td>'+
-          '<td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums;font-weight:'+(s.kg_a_producir_para_cobertura>0?'700':'400')+';color:'+(s.kg_a_producir_para_cobertura>0?'#dc2626':'#94a3b8')+'">'+(s.kg_a_producir_para_cobertura>0?_apaFmtN(s.kg_a_producir_para_cobertura,1)+' kg':'—')+'</td>'+
+          '<td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums;font-weight:'+(s.kg_a_producir_para_cobertura>0?'700':'400')+';color:'+(s.kg_a_producir_para_cobertura>0?'#dc2626':'#94a3b8')+'">'+(s.kg_a_producir_para_cobertura>0?_apaFmtN(s.kg_a_producir_para_cobertura,1)+' kg':'-')+'</td>'+
           '</tr>';
       });
       html += '</tbody></table>';
@@ -19067,7 +19067,7 @@ async function ckMarcar(itemId, estado){
         html += '<tr style="border-bottom:1px solid #f1f5f9;background:'+(m.faltante_g>0?'#fef2f2':'transparent')+'">'+
           '<td style="padding:8px;font-weight:700">'+_apaEscHTML(m.codigo_mp)+'</td>'+
           '<td style="padding:8px;color:#475569">'+_apaEscHTML(m.nombre)+'</td>'+
-          '<td style="padding:8px;color:#475569">'+_apaEscHTML(m.proveedor||'—')+'</td>'+
+          '<td style="padding:8px;color:#475569">'+_apaEscHTML(m.proveedor||'-')+'</td>'+
           '<td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums">'+_apaFmtG(m.stock_actual_g)+'</td>'+
           '<td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums">'+_apaFmtG(m.necesario_g)+'</td>'+
           '<td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:'+(m.faltante_g>0?'#dc2626':'#15803d')+'">'+_apaFmtG(m.faltante_g)+'</td>'+
@@ -19289,7 +19289,7 @@ async function ckMarcar(itemId, estado){
         if(semanaKey !== 'sin-fecha'){
           var lun = new Date(semanaKey + 'T00:00:00');
           var dom = new Date(lun); dom.setDate(dom.getDate()+6);
-          var rangoSem = 'Semana ' + _pv2FmtFechaCorta(lun) + ' – ' + _pv2FmtFechaCorta(dom);
+          var rangoSem = 'Semana ' + _pv2FmtFechaCorta(lun) + ' - ' + _pv2FmtFechaCorta(dom);
           var esEstaSem = semanaKey === lunesHoyKey;
           var esPasada = semanaKey < lunesHoyKey;
           if(esEstaSem) rangoSem += ' · ESTA SEMANA';
@@ -19758,10 +19758,10 @@ async function ckMarcar(itemId, estado){
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // VISTA CALENDARIO GRID — pinta los eventos del Calendar como grid mensual
+  // VISTA CALENDARIO GRID - pinta los eventos del Calendar como grid mensual
   // ════════════════════════════════════════════════════════════════════
   function planV2RenderCalendarGrid(events, diasHorizonte){
-    // Sebastián 1-may-2026: si no hay eventos, NO devolver caja — el empty
+    // Sebastián 1-may-2026: si no hay eventos, NO devolver caja - el empty
     // state del Timeline ya lo cubre con mensaje + botón Diagnosticar.
     if(!events || !events.length){
       return '';
@@ -19990,10 +19990,10 @@ async function ckMarcar(itemId, estado){
           +'<td style="padding:7px 10px"><b>'+_escHTML(p.cliente_nombre||'')+'</b></td>'
           +'<td style="padding:7px 10px">'+_escHTML(p.producto_nombre||'')+'</td>'
           +'<td style="padding:7px 10px;text-align:right;font-family:monospace;font-weight:700">'+(p.unidades||0).toLocaleString('es-CO')+'</td>'
-          +'<td style="padding:7px 10px;text-align:right;font-family:monospace;color:#64748b">'+(p.kg_estimados ? p.kg_estimados.toFixed(1) : '—')+'</td>'
-          +'<td style="padding:7px 10px;font-size:11px;color:#64748b">'+_escHTML(p.fecha_entrega_objetivo||'—')+'</td>'
+          +'<td style="padding:7px 10px;text-align:right;font-family:monospace;color:#64748b">'+(p.kg_estimados ? p.kg_estimados.toFixed(1) : '-')+'</td>'
+          +'<td style="padding:7px 10px;font-size:11px;color:#64748b">'+_escHTML(p.fecha_entrega_objetivo||'-')+'</td>'
           +'<td style="padding:7px 10px;text-align:center"><span style="background:'+estCol+'22;color:'+estCol+';padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;text-transform:uppercase">'+_escHTML(p.estado)+'</span></td>'
-          +'<td style="padding:7px 10px;font-size:11px;color:#64748b">'+(p.produccion_id ? '#'+p.produccion_id+(p.produccion_fecha?' · '+_escHTML(p.produccion_fecha):'') : '—')+'</td>'
+          +'<td style="padding:7px 10px;font-size:11px;color:#64748b">'+(p.produccion_id ? '#'+p.produccion_id+(p.produccion_fecha?' · '+_escHTML(p.produccion_fecha):'') : '-')+'</td>'
           +'<td style="padding:7px 10px;text-align:right">'+(p.estado==='recibido' || p.estado==='planificado' ? '<button onclick="cancelarPedidoMaquila('+p.id+')" style="background:#fff;color:#dc2626;border:1px solid #dc2626;padding:3px 8px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer">✕</button>' : '')+'</td>'
           +'</tr>';
       });
@@ -20009,16 +20009,16 @@ async function ckMarcar(itemId, estado){
   function abrirNuevoPedido(){
     if(!_MQ_CLIENTES.length){ alert('Primero crea un cliente con "+ Cliente"'); return; }
     var sel = document.getElementById('mq-cliente');
-    sel.innerHTML = '<option value="">— elegir cliente —</option>'
+    sel.innerHTML = '<option value="">- elegir cliente -</option>'
       + _MQ_CLIENTES.map(function(c){return '<option value="'+c.id+'">'+_escHTML(c.nombre)+(c.comparte_formula_con?' (fórmula '+_escHTML(c.comparte_formula_con)+')':'')+'</option>';}).join('');
     var sp = document.getElementById('mq-producto');
-    sp.innerHTML = '<option value="">— elegir producto —</option>'
+    sp.innerHTML = '<option value="">- elegir producto -</option>'
       + (_presProductos||[]).map(function(p){return '<option value="'+_escAttr(p.producto_nombre)+'">'+_escHTML(p.producto_nombre)+'</option>';}).join('');
     if(!(_presProductos||[]).length){
       // Cargar productos si no están cargados
       fetch('/api/planta/presentaciones/productos-disponibles').then(function(r){return r.json();}).then(function(d){
         _presProductos = d.productos || [];
-        sp.innerHTML = '<option value="">— elegir producto —</option>'
+        sp.innerHTML = '<option value="">- elegir producto -</option>'
           + _presProductos.map(function(p){return '<option value="'+_escAttr(p.producto_nombre)+'">'+_escHTML(p.producto_nombre)+'</option>';}).join('');
       });
     }
@@ -20115,13 +20115,13 @@ async function ckMarcar(itemId, estado){
     var vista = document.getElementById('pv2-vista');
     var items = d.items || [];
     if(!items.length){
-      vista.innerHTML = '<div style="background:#f0fdf4;padding:30px;border-radius:10px;text-align:center;color:#166534;font-size:14px">✓ Sin producciones próximas — todo dentro de cobertura</div>';
+      vista.innerHTML = '<div style="background:#f0fdf4;padding:30px;border-radius:10px;text-align:center;color:#166534;font-size:14px">✓ Sin producciones próximas - todo dentro de cobertura</div>';
       return;
     }
     vista.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">'
       + items.map(function(it){
         var diasCol = it.alerta_dias==='rojo'?'#dc2626':(it.alerta_dias==='amarillo'?'#d97706':(it.alerta_dias==='verde'?'#15803d':'#94a3b8'));
-        var diasTxt = it.dias_inventario===null?'—':it.dias_inventario+'d';
+        var diasTxt = it.dias_inventario===null?'-':it.dias_inventario+'d';
         var mpCol = it.alcanza_mp?'#15803d':'#dc2626';
         var img = it.imagen_url
           ? '<img loading="lazy" decoding="async" src="'+_escAttr(it.imagen_url)+'" style="width:100%;height:110px;object-fit:cover" alt="">'
@@ -20437,7 +20437,7 @@ async function ckMarcar(itemId, estado){
       }
     });
     var c = document.getElementById('cfg-content');
-    // Cargamos los divs antiguos como contenido — reusamos sus cargadores
+    // Cargamos los divs antiguos como contenido - reusamos sus cargadores
     if(s==='pres'){
       c.innerHTML = '<div id="ptab-presentaciones-host"></div>';
       // Mover el contenido de ptab-presentaciones aquí (clonando)
@@ -20463,7 +20463,7 @@ async function ckMarcar(itemId, estado){
     } else if(s==='calendar'){
       c.innerHTML = '<div style="background:linear-gradient(135deg,#fef3c7,#fbbf24);color:#78350f;padding:14px 18px;border-radius:10px;margin-bottom:14px">'
         +'<h3 style="margin:0 0 4px;color:#78350f;font-size:15px">📆 Lectura del Google Calendar</h3>'
-        +'<p style="margin:0;font-size:12px;color:#7c2d12">El motor MRP lee tu calendario y matchea cada evento con un producto. Revisa que estén bien matcheados — si hay errores, configura aliases en la sección de cadencias.</p>'
+        +'<p style="margin:0;font-size:12px;color:#7c2d12">El motor MRP lee tu calendario y matchea cada evento con un producto. Revisa que estén bien matcheados - si hay errores, configura aliases en la sección de cadencias.</p>'
         +'</div>'
         +'<div style="display:flex;gap:8px;margin-bottom:12px"><button onclick="cfgCargarCalendar()" style="background:#dc2626;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-weight:700;cursor:pointer">🔄 Re-leer Calendar</button><button onclick="cfgCargarAliases()" style="background:#fff;border:1px solid #cbd5e1;padding:8px 14px;border-radius:6px;font-weight:600;cursor:pointer">⚙ Editar aliases</button></div>'
         +'<div id="cfg-cal-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px"></div>'
@@ -20518,7 +20518,7 @@ async function ckMarcar(itemId, estado){
         }
         (tv.items||[]).forEach(function(it){
           var iopts = (tv.envases_disponibles||[]).map(function(e){ return '<option value="'+escapeHtmlNec(e.codigo)+'"'+(e.codigo===it.envase?' selected':'')+'>'+escapeHtmlNec(e.codigo)+'</option>'; }).join('');
-          var selHtml = iopts ? ('<select data-prod="'+escapeHtmlNec(it.producto)+'" data-cod="'+escapeHtmlNec(it.presentacion)+'" onchange="cambiarEnvasePres(this)" style="min-width:200px;padding:3px;border:1px solid #e6e1f2;border-radius:6px;font-size:11px">'+iopts+'</select>') : ('<span style="color:#334155;font-weight:600;min-width:180px">'+escapeHtmlNec(it.envase||'—')+'</span>');
+          var selHtml = iopts ? ('<select data-prod="'+escapeHtmlNec(it.producto)+'" data-cod="'+escapeHtmlNec(it.presentacion)+'" onchange="cambiarEnvasePres(this)" style="min-width:200px;padding:3px;border:1px solid #e6e1f2;border-radius:6px;font-size:11px">'+iopts+'</select>') : ('<span style="color:#334155;font-weight:600;min-width:180px">'+escapeHtmlNec(it.envase||'-')+'</span>');
           h += '<div style="display:flex;gap:8px;align-items:center;margin:2px 0;font-size:11.5px"><span style="min-width:250px;color:#475569">'+escapeHtmlNec(it.producto)+'</span>'+selHtml+'<button data-prod="'+escapeHtmlNec(it.producto)+'" data-cod="'+escapeHtmlNec(it.presentacion)+'" onclick="quitarPres(this)" title="Quitar esta presentación (duplicada/sobrante · reversible)" style="background:#fee2e2;color:#b91c1c;border:none;padding:2px 9px;border-radius:6px;cursor:pointer;font-size:11px">🗑</button></div>';
         });
         h += '</div>';
@@ -20604,10 +20604,10 @@ async function ckMarcar(itemId, estado){
         var alto = (m.efectivo!=null && Number(m.efectivo)>=1.3);
         h += '<tr style="border-top:1px solid #f1f5f9'+(alto?';background:#fef9f3':'')+'">';
         h += '<td style="padding:8px 9px;font-weight:600">'+m.mes+(alto?' 🔥':'')+'</td>';
-        h += '<td style="padding:8px 9px;text-align:right;color:#64748b">'+(m.mult_auto!=null?m.mult_auto:'—')+'</td>';
+        h += '<td style="padding:8px 9px;text-align:right;color:#64748b">'+(m.mult_auto!=null?m.mult_auto:'-')+'</td>';
         h += '<td style="padding:8px 9px;text-align:right"><input type="number" step="0.05" placeholder="auto" value="'+(m.mult_override!=null?m.mult_override:'')+'" data-mes="'+m.mes_num+'" onchange="estacOverride(this.dataset.mes,this.value)" style="width:66px;padding:5px;border:1px solid #e6e1f2;border-radius:7px;text-align:right"></td>';
-        h += '<td style="padding:8px 9px;text-align:right;font-weight:700">'+(m.efectivo!=null?m.efectivo:'—')+'</td>';
-        h += '<td style="padding:8px 9px;text-align:right;font-weight:700;color:'+(fac>1.05?'#d97706':(fac<0.95?'#0891b2':'#334155'))+'">'+(fac!=null?fac+'×':'—')+'</td>';
+        h += '<td style="padding:8px 9px;text-align:right;font-weight:700">'+(m.efectivo!=null?m.efectivo:'-')+'</td>';
+        h += '<td style="padding:8px 9px;text-align:right;font-weight:700;color:'+(fac>1.05?'#d97706':(fac<0.95?'#0891b2':'#334155'))+'">'+(fac!=null?fac+'×':'-')+'</td>';
         h += '</tr>';
       });
       h += '</tbody></table>';
@@ -20655,8 +20655,8 @@ async function ckMarcar(itemId, estado){
         html += '<tr style="border-top:1px solid #f1f5f9">'
           +'<td style="padding:7px 10px"><b>'+_escHTML(e.titulo)+'</b></td>'
           +'<td style="padding:7px 10px;font-family:monospace;font-size:11px">'+_escHTML(e.fecha)+'</td>'
-          +'<td style="padding:7px 10px;text-align:right;font-family:monospace;font-weight:700">'+(e.kg_detectados!=null?e.kg_detectados+'kg':'<span style="color:#94a3b8">—</span>')+'</td>'
-          +'<td style="padding:7px 10px;font-size:11px">'+(e.producto_match?'<b>'+_escHTML(e.producto_match)+'</b>':'<span style="color:#94a3b8">—</span>')+'</td>'
+          +'<td style="padding:7px 10px;text-align:right;font-family:monospace;font-weight:700">'+(e.kg_detectados!=null?e.kg_detectados+'kg':'<span style="color:#94a3b8">-</span>')+'</td>'
+          +'<td style="padding:7px 10px;font-size:11px">'+(e.producto_match?'<b>'+_escHTML(e.producto_match)+'</b>':'<span style="color:#94a3b8">-</span>')+'</td>'
           +'<td style="padding:7px 10px;text-align:right;font-family:monospace;color:'+col+';font-weight:700">'+e.score_match+'</td>'
           +'<td style="padding:7px 10px;text-align:center"><span style="background:'+col+'22;color:'+col+';padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">'+ico+' '+e.estado+'</span></td>'
           +'</tr>';
@@ -20725,8 +20725,8 @@ async function ckMarcar(itemId, estado){
           return '<tr style="border-top:1px solid #f1f5f9">'
             +'<td style="padding:7px 10px"><b>'+_escHTML(p.producto_nombre)+'</b></td>'
             +'<td style="padding:7px 10px;text-align:center"><span style="background:'+pigCol+'22;color:'+pigCol+';padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">'+(p.tiene_pigmento?'SÍ':'no')+'</span></td>'
-            +'<td style="padding:7px 10px;font-size:11px;color:#64748b">'+_escHTML(p.color_descripcion||'—')+'</td>'
-            +'<td style="padding:7px 10px;text-align:center">'+(p.es_acido?'🧪':'—')+'</td>'
+            +'<td style="padding:7px 10px;font-size:11px;color:#64748b">'+_escHTML(p.color_descripcion||'-')+'</td>'
+            +'<td style="padding:7px 10px;text-align:center">'+(p.es_acido?'🧪':'-')+'</td>'
             +'<td style="padding:7px 10px;text-align:right;color:'+rieCol+';font-weight:700">'+p.riesgo_arrastre_pct+'%</td>'
             +'<td style="padding:7px 10px;font-size:11px;color:#64748b">'+_escHTML((p.notas||'').substring(0,60))+'</td>'
             +'</tr>';
@@ -20737,7 +20737,7 @@ async function ckMarcar(itemId, estado){
     }
   }
 
-  // Safe modal backdrop close — placed after all functions are defined
+  // Safe modal backdrop close - placed after all functions are defined
   (function(){
     var _m = document.getElementById('modal-programar');
     if(_m) _m.addEventListener('click', function(e){ if(e.target===this) cerrarModalProgramar(); });
@@ -20756,7 +20756,7 @@ async function ckMarcar(itemId, estado){
 
   // ── Auto-SC IA (Sebastián 30-abr-2026): panel automático en tab Plan
   function _autoscFmtFecha(iso){
-    if(!iso) return '—';
+    if(!iso) return '-';
     try{
       var d = new Date(iso);
       if(isNaN(d.getTime())) return iso;
@@ -20791,14 +20791,14 @@ async function ckMarcar(itemId, estado){
         var d = _autoscDiasSince(s.last_mensual.ejecutado_at);
         elM.textContent = (s.last_mensual.scs_creadas||0)+' SCs';
         elMs.textContent = _autoscFmtFecha(s.last_mensual.ejecutado_at) + (d!=null ? ' · hace '+d+'d' : '');
-      } else { elM.textContent='—'; elMs.textContent='Sin ejecuciones aún'; }
+      } else { elM.textContent='-'; elMs.textContent='Sin ejecuciones aún'; }
       var elU = document.getElementById('autosc-last-urgente');
       var elUs = document.getElementById('autosc-last-urgente-sub');
       if(s.last_urgente){
         var d2 = _autoscDiasSince(s.last_urgente.ejecutado_at);
         elU.textContent = (s.last_urgente.scs_creadas||0)+' SCs';
         elUs.textContent = _autoscFmtFecha(s.last_urgente.ejecutado_at) + (d2!=null ? ' · hace '+d2+'d' : '');
-      } else { elU.textContent='—'; elUs.textContent='Sin ejecuciones aún'; }
+      } else { elU.textContent='-'; elUs.textContent='Sin ejecuciones aún'; }
 
       var elP = document.getElementById('autosc-prox');
       var elPs = document.getElementById('autosc-prox-sub');
@@ -20911,7 +20911,7 @@ async function ckMarcar(itemId, estado){
         lastEl.textContent = (s.last_mensual.scs_creadas||0)+' SCs';
         if(lastSub) lastSub.textContent = _autoscFmtFecha(s.last_mensual.ejecutado_at);
       } else if(lastEl){
-        lastEl.textContent = '—';
+        lastEl.textContent = '-';
         if(lastSub) lastSub.textContent = 'Sin ejecuciones aún';
       }
       var warn = document.getElementById('autosc-mee-config-warn');
@@ -20993,7 +20993,7 @@ async function ckMarcar(itemId, estado){
         if(ejecutado && ult){
           sub.textContent = '✅ Workflow lunes 7am ejecutado · ' + ult.bloqueadas + ' producciones bloqueadas · semana ' + ult.fecha_lunes;
         } else if(ult){
-          sub.textContent = '⚠️ Última ejecución: ' + (ult.fecha_lunes||'—') + ' · esta semana NO se ha ejecutado';
+          sub.textContent = '⚠️ Última ejecución: ' + (ult.fecha_lunes||'-') + ' · esta semana NO se ha ejecutado';
         } else {
           sub.textContent = '⏳ Workflow lunes 7am NO se ha ejecutado nunca · click "Ejecutar lunes 7am ahora"';
         }
@@ -21431,8 +21431,8 @@ async function ckMarcar(itemId, estado){
     h+='<div style="text-align:center;margin-bottom:14px"><span style="display:inline-block;padding:6px 18px;border-radius:20px;background:'+col+';color:#fff;font-weight:800;font-size:15px">'+escapeHtml(rot.estado)+'</span></div>';
     h+='<div style="font-size:13px;line-height:1.7">';
     h+='<div><b>Área:</b> '+escapeHtml(rot.area_nombre)+' · '+escapeHtml(rot.area_codigo)+'</div>';
-    h+='<div><b>Producto a elaborar:</b> '+escapeHtml(rot.producto_elaborar||'—')+(rot.lote_elaborar?' · Lote '+escapeHtml(rot.lote_elaborar):'')+'</div>';
-    h+='<div><b>Producto anterior:</b> '+escapeHtml(rot.producto_anterior||'—')+(rot.lote_anterior?' · Lote '+escapeHtml(rot.lote_anterior):'')+'</div>';
+    h+='<div><b>Producto a elaborar:</b> '+escapeHtml(rot.producto_elaborar||'-')+(rot.lote_elaborar?' · Lote '+escapeHtml(rot.lote_elaborar):'')+'</div>';
+    h+='<div><b>Producto anterior:</b> '+escapeHtml(rot.producto_anterior||'-')+(rot.lote_anterior?' · Lote '+escapeHtml(rot.lote_anterior):'')+'</div>';
     if(ciclo){
       if(ciclo.realizado_por) h+='<div><b>Limpieza realizada por:</b> '+escapeHtml(ciclo.realizado_por)+' · '+escapeHtml(ciclo.realizado_at||'')+'</div>';
       if(ciclo.verificado_por) h+='<div><b>Verificado por (Calidad):</b> '+escapeHtml(ciclo.verificado_por)+' · '+escapeHtml(ciclo.verificado_at||'')+'</div>';
@@ -21558,7 +21558,7 @@ async function ckMarcar(itemId, estado){
         return;
       }
       _MI_DIA_OPERARIOS = ops;
-      sel.innerHTML = '<option value="">— elegir operario ('+ops.length+') —</option>' +
+      sel.innerHTML = '<option value="">- elegir operario ('+ops.length+') -</option>' +
         ops.map(function(o){
           var label = _escHTML(o.nombre || o.codigo || ('op#'+o.id));
           if(o.es_jefe) label += ' [👨‍🏭 jefe]';
@@ -21601,7 +21601,7 @@ async function ckMarcar(itemId, estado){
           +'<span style="background:#dbeafe;color:#1e40af;padding:3px 10px;border-radius:12px"><b>'+(rs.total_tareas||0)+'</b> tareas</span>'
           +'<span style="background:#dcfce7;color:#15803d;padding:3px 10px;border-radius:12px"><b>'+(rs.kg_total_semana||0)+'kg</b> a producir</span>'
           +'<span style="background:#fef3c7;color:#92400e;padding:3px 10px;border-radius:12px"><b>'+(rs.dias_con_actividad||0)+'</b> días activos</span>'
-          +'<span style="background:#f3f4f6;color:#475569;padding:3px 10px;border-radius:12px">Rol: '+(op.rol_predeterminado||'—')+'</span>'
+          +'<span style="background:#f3f4f6;color:#475569;padding:3px 10px;border-radius:12px">Rol: '+(op.rol_predeterminado||'-')+'</span>'
           +'</div>';
       }
       // Cards por día
@@ -21830,7 +21830,7 @@ async function ckMarcar(itemId, estado){
             +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:6px;margin-top:6px;font-size:10px">'
             +'<div>👤 <b>Elaboración:</b> '+(p.op_elaboracion || '<span style="color:#dc2626">SIN ASIGNAR</span>')+'</div>'
             +'<div>📦 <b>Envasado:</b> '+(p.op_envasado || '<span style="color:#dc2626">SIN ASIGNAR</span>')+'</div>'
-            +'<div>🏷️ <b>Acondicionar:</b> '+(p.op_acondicionamiento || '<span style="color:#94a3b8">—</span>')+'</div>'
+            +'<div>🏷️ <b>Acondicionar:</b> '+(p.op_acondicionamiento || '<span style="color:#94a3b8">-</span>')+'</div>'
             +'<div>🧪 <b>MPs:</b> '+(p.mp_ok||0)+' OK · '+(p.mp_pendientes||0)+' pend</div>'
             +'<div>📦 <b>MEEs:</b> '+(p.mee_ok||0)+' OK · '+(p.mee_pendientes||0)+' pend</div>'
             +'</div>'
@@ -21900,7 +21900,7 @@ async function ckMarcar(itemId, estado){
       if(env.GCAL_ICAL_URL_preview && env.GCAL_ICAL_URL_configurado){
         html += '<tr><td colspan="2"><code style="font-size:10px;color:#64748b;word-break:break-all">'+esc(env.GCAL_ICAL_URL_preview)+'</code></td></tr>';
       }
-      html += '<tr><td><b>GOOGLE_API_KEY</b></td><td style="text-align:right">'+(env.GOOGLE_API_KEY_configurado ? '<span style="color:#15803d">✓ configurada</span>' : '<span style="color:#94a3b8">— no configurada (opcional)</span>')+'</td></tr>';
+      html += '<tr><td><b>GOOGLE_API_KEY</b></td><td style="text-align:right">'+(env.GOOGLE_API_KEY_configurado ? '<span style="color:#15803d">✓ configurada</span>' : '<span style="color:#94a3b8">- no configurada (opcional)</span>')+'</td></tr>';
       html += '<tr><td><b>CALENDAR_ID</b></td><td style="text-align:right"><code style="font-size:10px">'+esc(env.CALENDAR_ID || '(no definido)')+'</code></td></tr></table>';
       html += '</div>';
 
@@ -21959,7 +21959,7 @@ async function ckMarcar(itemId, estado){
               html += '&nbsp;&nbsp;→ <span style="color:'+col+'">score '+m.score+'</span> · '+esc(m.evento)+' ('+esc(m.fecha)+')<br>';
             });
           } else {
-            html += '&nbsp;&nbsp;<span style="color:#dc2626">— sin match en eventos disponibles</span><br>';
+            html += '&nbsp;&nbsp;<span style="color:#dc2626">- sin match en eventos disponibles</span><br>';
           }
           html += '</div>';
         });
@@ -22042,7 +22042,7 @@ async function ckMarcar(itemId, estado){
     }
   }
 
-  // ── Items POR-ASIGNAR (Catalina) — Sebastián 1-may-2026
+  // ── Items POR-ASIGNAR (Catalina) - Sebastián 1-may-2026
   var _MEE_ASIGNAR_DATA = {items: [], maestro_mee: [], proveedores: []};
   function meeAsignarToggle(){
     var p = document.getElementById('mee-asignar-panel');
@@ -22109,11 +22109,11 @@ async function ckMarcar(itemId, estado){
       var tipo = tipoComponente(it.nombre_mp);
       var cats = categoriaCompatible(tipo);
       var meesFiltrados = cats.length ? mees.filter(function(m){return cats.indexOf(m.categoria) >= 0;}) : mees;
-      var optsMee = '<option value="">— seleccionar código MEE —</option>' +
+      var optsMee = '<option value="">- seleccionar código MEE -</option>' +
         meesFiltrados.map(function(m){
           return '<option value="'+m.codigo+'">'+m.codigo+' · '+(m.descripcion||'').substring(0,40)+' (stock '+m.stock+')</option>';
         }).join('');
-      var optsProv = '<option value="">— proveedor —</option>' +
+      var optsProv = '<option value="">- proveedor -</option>' +
         provs.map(function(p){return '<option value="'+esc(p)+'">'+esc(p)+'</option>';}).join('');
       return '<tr data-id="'+it.id+'" style="border-bottom:1px solid #e2e8f0">' +
         '<td style="padding:5px;font-family:monospace;font-size:10px">'+it.numero+'</td>' +
@@ -22215,7 +22215,7 @@ async function ckMarcar(itemId, estado){
         '<td style="padding:2px"><input type="number" step="0.01" value="'+(m.precio_unit||0)+'" onchange="meeConfigSave(this,\\''+m.codigo+'\\',\\'precio_unit\\')" style="width:60px;padding:3px;border:1px solid #cbd5e1;border-radius:3px;font-size:10px;text-align:right"></td>' +
         '<td style="padding:2px;text-align:center"><input type="checkbox"'+(m.aplica?' checked':'')+' onchange="meeConfigSave(this,\\''+m.codigo+'\\',\\'aplica\\')"></td>' +
         '<td style="padding:2px;text-align:center"><input type="checkbox"'+(m.disparo_d20?' checked':'')+' onchange="meeConfigSave(this,\\''+m.codigo+'\\',\\'disparo_d20\\')" title="Cron D-20 (serigrafía/tampografía)"></td>' +
-        '<td style="padding:2px;text-align:center"><input type="checkbox"'+(m.disparo_post_envasado?' checked':'')+' onchange="meeConfigSave(this,\\''+m.codigo+'\\',\\'disparo_post_envasado\\')" title="Etiqueta — se pide post-envasado"></td>' +
+        '<td style="padding:2px;text-align:center"><input type="checkbox"'+(m.disparo_post_envasado?' checked':'')+' onchange="meeConfigSave(this,\\''+m.codigo+'\\',\\'disparo_post_envasado\\')" title="Etiqueta - se pide post-envasado"></td>' +
       '</tr>';
     }).join('');
   }
@@ -22434,7 +22434,7 @@ async function ckMarcar(itemId, estado){
 
   function _fmtG(g){
     // Normalizado: SIEMPRE en gramos con separador de miles (acordado con Alejandro).
-    if(g === null || g === undefined) return '—';
+    if(g === null || g === undefined) return '-';
     var n = Math.round(Number(g) || 0);
     return n.toLocaleString('es-CO') + ' g';
   }
@@ -22506,7 +22506,7 @@ async function ckMarcar(itemId, estado){
             +'<td style="padding:5px 8px;font-size:11px"><span style="color:#28a745">&#10003;</span> '+m.nombre+'<span style="color:#aaa;font-size:10px;margin-left:4px;font-family:monospace">'+m.material_id+'</span></td>'
             +'<td style="padding:5px 8px;font-size:11px;text-align:right">'+_fmtG(m.necesario_g)+'</td>'
             +'<td style="padding:5px 8px;font-size:11px;text-align:right;color:#28a745">'+stockTxt+'</td>'
-            +'<td style="padding:5px 8px;font-size:11px;text-align:right;color:#aaa">—</td>'
+            +'<td style="padding:5px 8px;font-size:11px;text-align:right;color:#aaa">-</td>'
             +'</tr>';
         }).join('');
         var detailBody=''
@@ -22515,7 +22515,7 @@ async function ckMarcar(itemId, estado){
               +'<table style="width:100%;border-collapse:collapse;margin-bottom:10px"><thead><tr style="background:#fceaea;color:#721c24"><th style="padding:5px 8px;text-align:left;font-size:11px">MP</th><th style="padding:5px 8px;text-align:right;font-size:11px">Necesario</th><th style="padding:5px 8px;text-align:right;font-size:11px">Stock</th><th style="padding:5px 8px;text-align:right;font-size:11px">Falta</th></tr></thead><tbody>'+faltanHtml+'</tbody></table>'
               : '')
           + (alcanzanHtml ? '<div style="font-size:11px;font-weight:700;color:#155724;margin-bottom:4px">&#10003; MPs suficientes ('+alcanzanList.length+')</div>'
-              +'<table style="width:100%;border-collapse:collapse"><thead><tr style="background:#e8f5e9;color:#155724"><th style="padding:5px 8px;text-align:left;font-size:11px">MP</th><th style="padding:5px 8px;text-align:right;font-size:11px">Necesario</th><th style="padding:5px 8px;text-align:right;font-size:11px">Stock</th><th style="padding:5px 8px;text-align:right;font-size:11px">—</th></tr></thead><tbody>'+alcanzanHtml+'</tbody></table>'
+              +'<table style="width:100%;border-collapse:collapse"><thead><tr style="background:#e8f5e9;color:#155724"><th style="padding:5px 8px;text-align:left;font-size:11px">MP</th><th style="padding:5px 8px;text-align:right;font-size:11px">Necesario</th><th style="padding:5px 8px;text-align:right;font-size:11px">Stock</th><th style="padding:5px 8px;text-align:right;font-size:11px">-</th></tr></thead><tbody>'+alcanzanHtml+'</tbody></table>'
               : '')
           +'</div>';
         var bgColor = p.puede_producir ? '#fff' : '#fff8f8';
@@ -22586,7 +22586,7 @@ async function ckMarcar(itemId, estado){
       document.getElementById('plan-empty').style.display='block';
       document.getElementById('plan-empty').innerHTML='<div style="font-size:40px;margin-bottom:12px">&#128197;</div>'
         +'<div style="font-size:14px;font-weight:600;margin-bottom:6px">Sin producciones en el calendario para este período</div>'
-        +'<div style="font-size:13px;color:#aaa">Verifica que los eventos de Google Calendar tengan el código SKU en el título (ej: NPHA – Fabricacion 14 kg)</div>';
+        +'<div style="font-size:13px;color:#aaa">Verifica que los eventos de Google Calendar tengan el código SKU en el título (ej: NPHA - Fabricacion 14 kg)</div>';
     }
   }
 
@@ -22623,7 +22623,7 @@ async function ckMarcar(itemId, estado){
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      _toast('Excel descargado — listo para mandar a la asistente',1);
+      _toast('Excel descargado - listo para mandar a la asistente',1);
     }catch(e){
       _toast('Error: '+e.message,0);
     }finally{
@@ -22687,7 +22687,7 @@ async function ckMarcar(itemId, estado){
         +'<td style="padding:7px 8px;font-size:11px;color:#555">'+(mp.proveedor||'<em style="color:#bbb">Sin asignar</em>')+'</td>'
         +'<td style="padding:7px 8px;text-align:right;font-size:12px">'+_fmtG(mp.total_g)+'</td>'
         +'<td style="padding:7px 8px;text-align:right;font-size:12px;color:'+(mp.stock_g<mp.total_g?'#dc3545':'#28a745')+'">'+_fmtG(mp.stock_g)+'</td>'
-        +'<td style="padding:7px 8px;text-align:right;font-size:12px;font-weight:'+(mp.deficit_g>0?'700':'400')+';color:'+(mp.deficit_g>0?'#dc3545':'#aaa')+'">'+(mp.deficit_g>0?_fmtG(mp.deficit_g):'—')+'</td>'
+        +'<td style="padding:7px 8px;text-align:right;font-size:12px;font-weight:'+(mp.deficit_g>0?'700':'400')+';color:'+(mp.deficit_g>0?'#dc3545':'#aaa')+'">'+(mp.deficit_g>0?_fmtG(mp.deficit_g):'-')+'</td>'
         +'<td style="padding:7px 8px;text-align:center"><div style="display:inline-block;background:#f0f0f0;border-radius:10px;overflow:hidden;width:60px;height:8px"><div style="background:'+pctColor+';width:'+pct+'%;height:100%"></div></div><div style="font-size:10px;color:'+pctColor+';font-weight:700">'+pct+'%</div></td>'
         +'<td style="padding:7px 8px;font-size:10px;color:#666;max-width:140px">'+(mp.productos||[]).slice(0,3).join(', ')+((mp.productos||[]).length>3?' +'+((mp.productos||[]).length-3):'')+'</td>'
         +'</tr>';
@@ -22760,7 +22760,7 @@ async function ckMarcar(itemId, estado){
           nombre_mp: mp.nombre||'',
           cantidad_g: deficit_g,
           unidad: 'g',
-          justificacion: 'Planificación '+_planDias+'d — Para producir: '+mp.productos.slice(0,3).join(', ')+(mp.productos.length>3?' +'+(mp.productos.length-3)+' más':''),
+          justificacion: 'Planificación '+_planDias+'d - Para producir: '+mp.productos.slice(0,3).join(', ')+(mp.productos.length>3?' +'+(mp.productos.length-3)+' más':''),
           valor_estimado: 0
         };
       });
@@ -22888,7 +22888,7 @@ async function ckMarcar(itemId, estado){
         });
         var dA = await rA.json();
         if(dA.warnings && dA.warnings.length){
-          // No bloqueante — solo informativo
+          // No bloqueante - solo informativo
           console.warn('Conflicto asignacion:', dA.warnings);
         }
       }
@@ -22971,13 +22971,13 @@ async function ckMarcar(itemId, estado){
                   bodega_material_nombre: c.material_nombre
                 }));
                 return '<button onclick="linkBridge(this,' + "'" + safeF + "')" + '" style="background:#f0f4ff;border:1px solid #c5cef9;border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;margin:2px">' +
-                  c.material_id + ' — ' + (c.material_nombre||'').substring(0,30) +
+                  c.material_id + ' - ' + (c.material_nombre||'').substring(0,30) +
                   ' (' + c.shared_keywords.join(',') + ')' +
                   '</button>';
               }).join('');
           return '<div style="border:1px solid #e8d5c0;border-radius:6px;padding:10px;margin-bottom:8px;background:#fffaf5">' +
             '<div style="font-size:12px;font-weight:600;color:#5c3317;margin-bottom:6px">' +
-              u.formula_material_id + ' — ' + u.formula_material_nombre +
+              u.formula_material_id + ' - ' + u.formula_material_nombre +
             '</div>' +
             '<div style="font-size:11px;color:#666;margin-bottom:6px">Candidatos: ' + candHtml + '</div>' +
             '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
@@ -23052,7 +23052,7 @@ async function ckMarcar(itemId, estado){
     var rows = await r.json();
     var active = rows.filter(function(x){ return x.activo; });
     if(active.length === 0){
-      el.innerHTML = '<div style="color:#aaa;font-style:italic;font-size:12px">— sin mapeos activos —</div>';
+      el.innerHTML = '<div style="color:#aaa;font-style:italic;font-size:12px">- sin mapeos activos -</div>';
       return;
     }
     el.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
@@ -23067,9 +23067,9 @@ async function ckMarcar(itemId, estado){
       active.map(function(m){
         return '<tr style="border-bottom:1px solid #f0f0f0">' +
           '<td style="padding:5px 8px;font-family:monospace;color:#5c3317">' + m.formula_material_id + '</td>' +
-          '<td style="padding:5px 8px">' + (m.formula_material_nombre||'—') + '</td>' +
+          '<td style="padding:5px 8px">' + (m.formula_material_nombre||'-') + '</td>' +
           '<td style="padding:5px 8px;font-family:monospace;color:#6d28d9">' + m.bodega_material_id + '</td>' +
-          '<td style="padding:5px 8px">' + (m.bodega_material_nombre||'—') + '</td>' +
+          '<td style="padding:5px 8px">' + (m.bodega_material_nombre||'-') + '</td>' +
           '<td style="padding:5px 8px">' +
             '<button onclick="eliminarBridge(' + m.id + ')" ' +
               'style="background:#dc3545;color:#fff;border:none;border-radius:3px;padding:2px 7px;font-size:10px;cursor:pointer">✕</button>' +
@@ -23135,9 +23135,9 @@ async function ckMarcar(itemId, estado){
       html+='<div style="font-weight:700;color:#0f172a;margin-bottom:4px">Conexión &amp; sync</div>';
       html+=row('Dominio configurado', cfg.dominio_set?'✓ sí':'✗ NO', cfg.dominio_set?'#15803d':'#b91c1c');
       html+=row('Token configurado', cfg.token_set?'✓ sí':'✗ NO', cfg.token_set?'#15803d':'#b91c1c');
-      html+=row('Órdenes totales', (d.ordenes_total!=null?d.ordenes_total:'—'));
-      html+=row('Órdenes últimos 30d', (d.ordenes_30d!=null?d.ordenes_30d:'—'));
-      html+=row('Última sincronización', d.ultima_sync?esc(d.ultima_sync):'—');
+      html+=row('Órdenes totales', (d.ordenes_total!=null?d.ordenes_total:'-'));
+      html+=row('Órdenes últimos 30d', (d.ordenes_30d!=null?d.ordenes_30d:'-'));
+      html+=row('Última sincronización', d.ultima_sync?esc(d.ultima_sync):'-');
       html+='<div style="font-weight:700;color:#0f172a;margin:16px 0 4px">Filtro B2B (SHOPIFY_B2B_TAGS)</div>';
       if(b.error){ html+='<div style="color:#b91c1c">Error: '+esc(b.error)+'</div>'; }
       else{
@@ -23145,12 +23145,12 @@ async function ckMarcar(itemId, estado){
           html+='<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:10px;font-size:12px;color:#9a3412;margin-bottom:8px">⚠ <b>SHOPIFY_B2B_TAGS está vacío</b> en Render. Si vendés B2B/mayorista por la tienda Shopify, esas ventas se cuentan como DTC e inflan la velocidad. Si el B2B entra solo por pedidos manuales (no por Shopify), está bien dejarlo vacío.</div>';
         } else {
           html+=row('Tags configurados', esc(b.tags_configurados.join(', ')), '#15803d');
-          html+=row('Órdenes 30d clasificadas B2B', (b.ordenes_30d_clasificadas_b2b!=null?b.ordenes_30d_clasificadas_b2b:'—'));
+          html+=row('Órdenes 30d clasificadas B2B', (b.ordenes_30d_clasificadas_b2b!=null?b.ordenes_30d_clasificadas_b2b:'-'));
         }
         if(b.columnas_tags_existen===false){ html+='<div style="color:#b45309;font-size:12px;margin:6px 0">⚠ Las columnas de tags no existen (mig 166 sin aplicar) · no se puede clasificar B2B.</div>'; }
-        html+=row('Órdenes 30d con algún tag', (b.ordenes_30d_con_tag!=null?b.ordenes_30d_con_tag:'—'));
+        html+=row('Órdenes 30d con algún tag', (b.ordenes_30d_con_tag!=null?b.ordenes_30d_con_tag:'-'));
         if(b.tags_vistos_top && b.tags_vistos_top.length){
-          html+='<div style="font-size:12px;color:#64748b;margin:10px 0 4px">Tags que traen las órdenes (últimos 30d) — usá estos para configurar la var:</div><div style="display:flex;flex-wrap:wrap;gap:6px">';
+          html+='<div style="font-size:12px;color:#64748b;margin:10px 0 4px">Tags que traen las órdenes (últimos 30d) - usá estos para configurar la var:</div><div style="display:flex;flex-wrap:wrap;gap:6px">';
           b.tags_vistos_top.forEach(function(t){ html+='<span style="background:#eef2ff;color:#3730a3;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:600">'+esc(t[0])+' <span style="color:#6366f1">×'+t[1]+'</span></span>'; });
           html+='</div>';
         } else { html+='<div style="font-size:12px;color:#94a3b8;margin-top:8px">No se vieron tags en las órdenes de los últimos 30 días.</div>'; }
@@ -23160,10 +23160,10 @@ async function ckMarcar(itemId, estado){
       html+='<div style="font-weight:700;color:#0f172a;margin:16px 0 4px">📦 Stock desde Shopify</div>';
       if(st.error){ html+='<div style="color:#b91c1c">Error: '+esc(st.error)+'</div>'; }
       else{
-        html+=row('Último sync de stock', st.ultimo_sync_stock?esc(st.ultimo_sync_stock):'—', st.ultimo_sync_stock?'#1e293b':'#b91c1c');
-        html+=row('SKUs con stock disponible', (st.skus_disponibles!=null?st.skus_disponibles:'—'), (st.skus_disponibles>0?'#15803d':'#b91c1c'));
-        html+=row('SKUs agotados', (st.skus_agotados!=null?st.skus_agotados:'—'));
-        html+=row('Unidades disponibles (total)', (st.uds_disponibles_total!=null?st.uds_disponibles_total:'—'));
+        html+=row('Último sync de stock', st.ultimo_sync_stock?esc(st.ultimo_sync_stock):'-', st.ultimo_sync_stock?'#1e293b':'#b91c1c');
+        html+=row('SKUs con stock disponible', (st.skus_disponibles!=null?st.skus_disponibles:'-'), (st.skus_disponibles>0?'#15803d':'#b91c1c'));
+        html+=row('SKUs agotados', (st.skus_agotados!=null?st.skus_agotados:'-'));
+        html+=row('Unidades disponibles (total)', (st.uds_disponibles_total!=null?st.uds_disponibles_total:'-'));
         html+=row('Fuente del último sync', st.uso_available?'✓ Available (correcto)':'⚠ On hand (fallback)', st.uso_available?'#15803d':'#b45309');
         if(st.alerta){ html+='<div style="background:#fff1f2;border:1px solid #fecaca;border-radius:8px;padding:10px;font-size:12px;color:#991b1b;margin-top:8px">'+esc(st.alerta)+'</div>'; }
       }
@@ -23213,12 +23213,12 @@ async function ckMarcar(itemId, estado){
     filas.forEach(function(f){
       var bg = f.problema ? '#fff1f2' : '#fff';
       var mapCell = f.mapeado ? '✓' : (f.en_presentaciones ? '~' : '<span style="color:#b91c1c;font-weight:700">✗</span>');
-      var avCell = (f.available==null) ? '<span style="color:#94a3b8">—</span>' : f.available;
+      var avCell = (f.available==null) ? '<span style="color:#94a3b8">-</span>' : f.available;
       var motorCol = f.resuelto_motor>0 ? '#15803d' : '#b91c1c';
       var diagCol = f.problema ? '#b91c1c' : '#64748b';
       h += '<tr style="border-top:1px solid #f1f5f9;background:'+bg+'">'
         + '<td style="padding:5px 8px;font-family:ui-monospace;font-weight:700">'+esc(f.sku||'(vacío)')+'</td>'
-        + '<td style="padding:5px 8px">'+esc(f.producto||'—')+'</td>'
+        + '<td style="padding:5px 8px">'+esc(f.producto||'-')+'</td>'
         + '<td style="padding:5px 8px;text-align:center">'+mapCell+'</td>'
         + '<td style="padding:5px 8px;text-align:center">'+f.on_hand+'</td>'
         + '<td style="padding:5px 8px;text-align:center">'+avCell+'</td>'
@@ -23284,7 +23284,7 @@ async function ckMarcar(itemId, estado){
         html += '<td style="padding:6px 8px;text-align:right">' + (o.cantidad_unidades||0) + '</td>';
         html += '<td style="padding:6px 8px">' + esc(o.tipo_servicio||'') + '</td>';
         html += '<td style="padding:6px 8px">' + esc(o.proveedor||'') + '</td>';
-        html += '<td style="padding:6px 8px;white-space:nowrap' + (atras?';color:#b91c1c;font-weight:700':'') + '">' + (fr||'—') + (atras?' ⚠':'') + '</td>';
+        html += '<td style="padding:6px 8px;white-space:nowrap' + (atras?';color:#b91c1c;font-weight:700':'') + '">' + (fr||'-') + (atras?' ⚠':'') + '</td>';
         html += '<td style="padding:6px 8px"><span style="color:' + estCol + ';font-weight:700">' + esc(o.estado||'') + '</span></td>';
         html += '</tr>';
       });
@@ -23357,7 +23357,7 @@ async function ckMarcar(itemId, estado){
       }
       window._SHOPIFY_DIAG = d;
       // Lista de productos para el dropdown de mapeo (huérfanos)
-      var prodOptions = '<option value="">— elegí producto —</option>';
+      var prodOptions = '<option value="">- elegí producto -</option>';
       try {
         var rp = await fetch('/api/programacion/productos', {cache:'no-store'});
         var dp = await rp.json();
@@ -23371,7 +23371,7 @@ async function ckMarcar(itemId, estado){
       var cobColor = cob >= 95 ? '#15803d' : (cob >= 80 ? '#b45309' : '#b91c1c');
       var cfg = s.shopify_configurado;
       var cfgTxt = cfg === true ? '✅ conectado' + (s.shopify_shop ? ' (' + esc(s.shopify_shop) + ')' : '')
-                  : (cfg === false ? '❌ NO configurado' : '— desconocido');
+                  : (cfg === false ? '❌ NO configurado' : '- desconocido');
       var html = '';
       // Header
       html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px">';
@@ -23387,8 +23387,8 @@ async function ckMarcar(itemId, estado){
       html += kpi('Últimos 30d', s.ordenes_30d||0);
       html += kpi('Últimos 60d', s.ordenes_60d||0);
       html += kpi('Últimos 90d', s.ordenes_90d||0);
-      html += kpi('Última orden', s.fecha_max ? esc(String(s.fecha_max).slice(0,10)) : '—');
-      html += kpi('Último sync', s.ultimo_synced_at ? esc(String(s.ultimo_synced_at).slice(0,16).replace('T',' ')) : '—');
+      html += kpi('Última orden', s.fecha_max ? esc(String(s.fecha_max).slice(0,10)) : '-');
+      html += kpi('Último sync', s.ultimo_synced_at ? esc(String(s.ultimo_synced_at).slice(0,16).replace('T',' ')) : '-');
       html += '</div>';
       // Reconciliación
       html += '<div style="background:linear-gradient(90deg,#f0fdfa,#ecfeff);border:1px solid #99f6e4;border-radius:10px;padding:14px;margin-bottom:14px">';
@@ -23437,7 +23437,7 @@ async function ckMarcar(itemId, estado){
         var _mlEd = (it.estado === 'MAPEADO' || it.estado === 'MAPEADO_SIN_FORMULA');
         var mlTxt = _mlEd
           ? '<input id="mlx-' + idx + '" type="number" min="0" step="1" value="' + (it.ml || '') + '" placeholder="ml" style="width:50px;padding:2px 4px;border:1px solid ' + (it.ml_faltante ? '#f59e0b' : '#cbd5e1') + ';border-radius:4px;font-size:11px;text-align:right"><button onclick="setMlSku(' + idx + ')" title="Guardar el ml (volumen) de este SKU" style="margin-left:3px;background:#0f766e;color:#fff;border:none;border-radius:4px;padding:2px 6px;font-size:11px;cursor:pointer">&#10003;</button>'
-          : (it.ml_faltante ? '<span style="color:#b45309;font-weight:700">&#9888; falta</span>' : (it.ml ? it.ml : '&mdash;'));
+          : (it.ml_faltante ? '<span style="color:#b45309;font-weight:700">&#9888; falta</span>' : (it.ml ? it.ml : '-'));
         var sattr = ((it.sku||'') + ' ' + (it.producto||'') + ' ' + (it.tono||'')).toLowerCase();
         html += '<tr data-s="' + esc(sattr) + '" style="border-top:1px solid #f1f5f9;background:' + bg + '">';
         html += '<td style="padding:6px 8px;font-family:ui-monospace;font-weight:700">' + esc(it.sku||'') + '</td>';
@@ -23448,7 +23448,7 @@ async function ckMarcar(itemId, estado){
             '<button onclick="mapearHuerfano(' + idx + ')" style="margin-left:5px;background:#0f766e;color:#fff;border:none;padding:3px 9px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer">Mapear</button>' +
             '</td>';
         } else {
-          html += '<td style="padding:6px 8px">' + (it.producto ? esc(it.producto) : '<span style="color:#94a3b8">—</span>') + '</td>';
+          html += '<td style="padding:6px 8px">' + (it.producto ? esc(it.producto) : '<span style="color:#94a3b8">-</span>') + '</td>';
         }
         html += '<td style="padding:6px 8px;text-align:center">' + badge + '</td>';
         html += '<td style="padding:6px 8px">' + (it.tono ? esc(it.tono) : '') + '</td>';
@@ -23619,7 +23619,7 @@ async function ckMarcar(itemId, estado){
       var h = sv.horas_desde;
       if(h == null || h > 36){
         var cuanto = fmtCuanto(h);
-        var ultimo = sv.ultimo ? String(sv.ultimo).slice(0,16).replace('T',' ') : '—';
+        var ultimo = sv.ultimo ? String(sv.ultimo).slice(0,16).replace('T',' ') : '-';
         var msg = '⚠ Ventas Shopify sin sincronizar hace <b>' + cuanto + '</b> (último: ' +
                   escapeHtmlNec(ultimo) + '). El plan puede estar usando ventas viejas · ' +
                   'la velocidad y la cobertura saldrán bajas.';
@@ -23638,7 +23638,7 @@ async function ckMarcar(itemId, estado){
     if(ss){
       var hs = ss.horas_desde;
       if(hs == null || hs > 12){
-        var ults = ss.ultimo ? String(ss.ultimo).slice(0,16).replace('T',' ') : '—';
+        var ults = ss.ultimo ? String(ss.ultimo).slice(0,16).replace('T',' ') : '-';
         var msgs = '⚠ Stock Shopify sin sincronizar hace <b>' + fmtCuanto(hs) + '</b> (último: ' +
                    escapeHtmlNec(ults) + '). Los días de góndola y la urgencia pueden estar ' +
                    'desactualizados.';
@@ -23774,7 +23774,7 @@ async function ckMarcar(itemId, estado){
   };
 
   function _fmtAba(n) {
-    if (!n || n < 0.01) return '—';
+    if (!n || n < 0.01) return '-';
     if (n >= 1000) return Math.round(n).toLocaleString('es-CO');
     return Math.round(n*10)/10;
   }
@@ -23867,7 +23867,7 @@ async function ckMarcar(itemId, estado){
       const nB2B = d.n_pedidos_b2b_pendientes || 0;
       const lotesSem = d.lotes_por_semana_90d || 0;
       const cobDias = d.cobertura_dias || 0;
-      const ultimoLote = d.ultimo_lote_fecha || '—';
+      const ultimoLote = d.ultimo_lote_fecha || '-';
 
       // Compactado 2-jun-2026 · UNA línea fina de contexto (no 2 cajas) · el
       // "déficit por horizonte" se fusiona DENTRO de los botones de horizonte.
@@ -24094,7 +24094,7 @@ async function ckMarcar(itemId, estado){
     // Sebastián 11-jul · Acelerador de compras (crecimiento capado + colchón por lead time · buffer sobre "Pedir")
     var _ac = st.acelerador || null;
     if (_ac) {
-      var _gm = (_ac.crecimiento_marca_pct != null) ? (_ac.crecimiento_marca_pct>0?'+':'') + Math.round(_ac.crecimiento_marca_pct) + '%' : '—';
+      var _gm = (_ac.crecimiento_marca_pct != null) ? (_ac.crecimiento_marca_pct>0?'+':'') + Math.round(_ac.crecimiento_marca_pct) + '%' : '-';
       var _acTit = 'Sube el "Pedir" para ir teniendo inventario: crecimiento de la marca ' + _gm + ' (tope ' + (_ac.crecimiento_tope||50) + '%) + colchón ' + (_ac.colchon_local||10) + '% local / ' + (_ac.colchon_import||25) + '% importada (lead > ' + (_ac.lead_umbral||30) + 'd).';
       html += '<label style="display:flex;align-items:center;gap:6px;color:' + (_ac.activo?'#b45309':'#94a3b8') + ';font-weight:700;cursor:pointer" title="' + escapeHtmlNec(_acTit) + '"><input type="checkbox"' + (_ac.activo?' checked':'') + ' onchange="_abastAcelToggle(this.checked)"> 🚀 Acelerador' + (_ac.activo?(' <span style="font-size:10px;color:#64748b;font-weight:600">crec ' + _gm + '</span>'):'') + '</label>';
       html += '<button onclick="_abastAcelConfig()" title="Ajustar tope de crecimiento y colchón por lead time" style="padding:6px 9px;background:#fff;color:#b45309;border:1px solid #fbbf24;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer">⚙</button>';
@@ -24162,7 +24162,7 @@ async function ckMarcar(itemId, estado){
         codTrail + '</a>' + badgesHtml + '</td>';
       html += '<td style="padding:6px 8px"><a href="#" onclick="abastTrailMp(this.dataset.cod);return false" data-cod="' + codTrail + '" style="color:#1e293b;text-decoration:none;cursor:pointer;font-weight:600" title="Ver desglose">' + escapeHtmlNec(it.nombre_inci || it.nombre) + '</a>' + ((it.nombre_inci && it.nombre && it.nombre_inci !== it.nombre) ? '<div style="font-size:10px;color:#94a3b8">' + escapeHtmlNec(it.nombre) + '</div>' : '') + '</td>';
       html += '<td style="padding:6px 8px;text-align:center;font-size:10px;font-weight:700;color:' + (it.tipo==='MP'?'#7c3aed':'#7c3aed') + '">' + it.tipo + '</td>';
-      html += '<td style="padding:6px 8px;color:#64748b">' + escapeHtmlNec(it.proveedor_sugerido || '—') + '</td>';
+      html += '<td style="padding:6px 8px;color:#64748b">' + escapeHtmlNec(it.proveedor_sugerido || '-') + '</td>';
       // Lead time · si quiebre <= lead_time → advertencia roja (no llegará a tiempo)
       const lt = it.lead_time_dias || 14;
       const ltCol = (it.horizonte_quiebre_dias && it.horizonte_quiebre_dias <= lt) ? '#dc2626' : '#64748b';
@@ -24174,7 +24174,7 @@ async function ckMarcar(itemId, estado){
       const unit = it.tipo === 'MP' ? 'g' : 'u';
       html += '<td style="padding:6px 8px;text-align:right;font-family:ui-monospace">' + _fmtAba(it[stockKey]) + (it[stockKey]?' '+unit:'') + '</td>';
       html += '<td style="padding:6px 8px;text-align:right;font-family:ui-monospace;color:' + (it[colaKey]>0?'#15803d':'#94a3b8') + '">' + _fmtAba(it[colaKey]) + (it[colaKey]?' '+unit:'') + '</td>';
-      html += '<td style="padding:6px 8px;text-align:right;font-family:ui-monospace;color:' + (it[cuarKey]>0?'#b45309':'#cbd5e1') + (it[cuarKey]>0?';font-weight:700':'') + '" title="' + (it[cuarKey]>0?'Ya lleg&oacute; - esperando liberaci&oacute;n de Calidad (cuarentena)':'') + '">' + (it[cuarKey]>0?('&#128300; '+_fmtAba(it[cuarKey])+' '+unit):'&mdash;') + '</td>';
+      html += '<td style="padding:6px 8px;text-align:right;font-family:ui-monospace;color:' + (it[cuarKey]>0?'#b45309':'#cbd5e1') + (it[cuarKey]>0?';font-weight:700':'') + '" title="' + (it[cuarKey]>0?'Ya lleg&oacute; - esperando liberaci&oacute;n de Calidad (cuarentena)':'') + '">' + (it[cuarKey]>0?('&#128300; '+_fmtAba(it[cuarKey])+' '+unit):'-') + '</td>';
       (st.horizontes || []).forEach(h => {
         const def = it.deficit[String(h)] || 0;
         const cons = it.consumo[String(h)] || 0;
@@ -24641,7 +24641,7 @@ async function ckMarcar(itemId, estado){
       const bg = d.cobertura_dias_real >= 360 ? '#f0fdf4' : '#fef3c7';
       const bordr = d.cobertura_dias_real >= 360 ? '#16a34a' : '#f59e0b';
       let html = '<div style="background:' + bg + ';border-left:4px solid ' + bordr + ';padding:10px 14px;border-radius:6px;margin-bottom:12px">' +
-        '<div style="font-size:13px;color:#1e293b"><strong>' + d.total_lotes_futuros + ' lotes</strong> programados desde hoy hasta <strong>' + (d.fecha_ultimo_lote || '—') + '</strong> · ' + d.kg_total_proyectado + ' kg totales</div>' +
+        '<div style="font-size:13px;color:#1e293b"><strong>' + d.total_lotes_futuros + ' lotes</strong> programados desde hoy hasta <strong>' + (d.fecha_ultimo_lote || '-') + '</strong> · ' + d.kg_total_proyectado + ' kg totales</div>' +
         '<div style="font-size:11px;color:#475569;margin-top:4px">Cobertura real: <strong>' + d.cobertura_dias_real + 'd</strong> de 365d · boquete: <strong>' + d.boquete_dias + 'd</strong></div>' +
         '<div style="font-size:11px;color:#475569;margin-top:6px;font-style:italic">' + (d.recomendacion || '') + '</div>' +
         '</div>';
@@ -24930,7 +24930,7 @@ async function ckMarcar(itemId, estado){
         const skuEsc = (h.sku || '').replace(/"/g, '&quot;').replace(/\'/g, '&#39;');
         html += '<tr style="border-bottom:1px solid #f1f5f9"><td style="padding:5px;font-family:ui-monospace;font-weight:700">' + h.sku + '</td>' +
           '<td style="padding:5px;text-align:right;color:#7c3aed;font-weight:700">' + h.uds_60d + '</td>' +
-          '<td style="padding:5px"><select id="herr-h-prod-' + idx + '" style="width:100%;padding:3px 4px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px"><option value="">— elegir —</option>';
+          '<td style="padding:5px"><select id="herr-h-prod-' + idx + '" style="width:100%;padding:3px 4px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px"><option value="">- elegir -</option>';
         // Sugerencia: producto cuyo nombre contenga el SKU como substring
         const skuU = (h.sku || '').toUpperCase();
         const sugerencia = productos.find(p => skuU.length >= 3 && p.toUpperCase().split(' ').some(w => w.length >= 3 && skuU.indexOf(w.substring(0,3)) >= 0));
@@ -25377,7 +25377,7 @@ async function ckMarcar(itemId, estado){
       html += '<td style="padding:6px 6px;text-align:center;font-weight:700">' + escapeHtmlNec(it.fecha_programada) + '</td>';
       html += '<td style="padding:6px 6px">' + escapeHtmlNec(it.producto) + '</td>';
       html += '<td style="padding:6px 6px;text-align:center">' + it.cantidad_kg + '</td>';
-      html += '<td style="padding:6px 6px;text-align:center">' + (it.area_codigo || '—') + '</td>';
+      html += '<td style="padding:6px 6px;text-align:center">' + (it.area_codigo || '-') + '</td>';
       html += '<td style="padding:6px 6px;text-align:center;font-size:11px">' + escapeHtmlNec(orig) + '</td>';
       html += '<td style="padding:6px 6px;text-align:center"><span style="background:#e0e7ff;color:#3730a3;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">' + escapeHtmlNec(it.estado) + '</span></td>';
       html += '<td style="padding:6px 6px;text-align:right">';
@@ -25475,12 +25475,12 @@ async function ckMarcar(itemId, estado){
                    it.origen === 'eos_canonico' ? '🔁 Canónico' :
                    it.origen === 'eos_retroactivo' ? '📜 Histórico' :
                    it.origen === 'calendar' ? '📆 Calendar' :
-                   it.origen === 'manual' ? '✋ Manual' : escapeHtmlNec(it.origen || '—');
+                   it.origen === 'manual' ? '✋ Manual' : escapeHtmlNec(it.origen || '-');
       html += '<tr style="border-bottom:1px solid #f1f5f9">';
       html += '<td style="padding:9px 6px;text-align:center;font-weight:700">' + escapeHtmlNec(it.fecha_programada) + '</td>';
       html += '<td style="padding:9px 6px">' + escapeHtmlNec(it.producto) + '</td>';
       html += '<td style="padding:9px 6px;text-align:center">' + (it.kg_real != null ? it.kg_real + ' <span style="color:#94a3b8">/' + it.cantidad_kg + '</span>' : it.cantidad_kg) + '</td>';
-      html += '<td style="padding:9px 6px;text-align:center">' + (it.area_codigo || '—') + '</td>';
+      html += '<td style="padding:9px 6px;text-align:center">' + (it.area_codigo || '-') + '</td>';
       html += '<td style="padding:9px 6px;text-align:center;font-size:11px">' + orig + '</td>';
       html += '<td style="padding:9px 6px;text-align:center"><span style="background:' + cfg.bg + ';color:' + cfg.text + ';padding:3px 9px;border-radius:6px;font-size:11px;font-weight:700">' + cfg.emoji + ' ' + escapeHtmlNec(it.estado) + '</span></td>';
       html += '<td style="padding:9px 6px;color:#64748b;font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtmlNec(it.observaciones || '') + '">' + escapeHtmlNec((it.observaciones || '').slice(0, 40)) + '</td>';
@@ -25760,7 +25760,7 @@ async function ckMarcar(itemId, estado){
         // estático). El color sale de los días reales. dias_cobertura (incluye lotes
         // programados/en producción) se muestra como anotación "+prod → Xd".
         const _dg = (p.dias_gondola != null) ? p.dias_gondola : null;
-        const dias = _dg != null ? _dg + 'd' : (p.dias_cobertura != null ? p.dias_cobertura + 'd' : '—');
+        const dias = _dg != null ? _dg + 'd' : (p.dias_cobertura != null ? p.dias_cobertura + 'd' : '-');
         // El color del número = el MISMO del semáforo (urgencia del backend), para que
         // número y emoji nunca se contradigan (M5). Fallback por días si no hay urgencia.
         const _urgCol = {CRITICO:'#dc2626', URGENTE:'#ea580c', VIGILAR:'#d97706', POR_ENTRAR:'#0891b2', OK:'#16a34a'};
@@ -25943,14 +25943,14 @@ async function ckMarcar(itemId, estado){
             var _esCuello = !!t.cuello;   // el tono que fija el cuello de botella (solo entre los de mix ≥5%)
             var _bajo = !!t.mix_bajo;     // tono marginal (<5% del mix) · no manda la alarma del producto
             var _cobColor = _esCuello ? '#dc2626' : (_bajo ? '#94a3b8' : (_cob != null && _cob < 25 ? '#d97706' : '#16a34a'));
-            var _cobCell = (_cob == null) ? '<span style="color:#cbd5e1">—</span>'
+            var _cobCell = (_cob == null) ? '<span style="color:#cbd5e1">-</span>'
               : ('<span style="font-weight:800;color:' + _cobColor + '">' + _cob + 'd' + (_esCuello ? ' ⚠️' : '') + '</span>');
             html += '<tr class="necx-trow"' + (_bajo ? ' style="opacity:.55"' : '') + '>'
               + '<td><span class="necx-swatch" style="background:' + _tonoColor(t.tono_label) + '"></span>' + escapeHtmlNec(t.tono_label) + '</td>'
               + '<td class="necx-mono">' + escapeHtmlNec(t.sku) + '</td>'
               + '<td>' + t.ml_unidad + '</td>'
               + '<td>' + t.ventas_ventana_uds + '</td>'
-              + '<td>' + (t.stock_uds != null ? t.stock_uds : '—') + '</td>'
+              + '<td>' + (t.stock_uds != null ? t.stock_uds : '-') + '</td>'
               + '<td class="necx-mix">' + t.porcentaje_mix + '%</td>'
               + '<td class="necx-uds">' + t.uds_estim_lote + '</td>'
               + '<td>' + _cobCell + '</td>'
@@ -26040,7 +26040,7 @@ async function ckMarcar(itemId, estado){
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:10px">';
     html += '<div style="background:white;border:1px solid #e2e8f0;border-radius:6px;padding:8px"><div style="font-size:10px;color:#64748b">Stock</div><div style="font-weight:700;color:#1e293b">' + p.stock_uds_total + ' uds · ' + p.stock_kg_total + 'kg</div></div>';
     html += '<div style="background:white;border:1px solid #e2e8f0;border-radius:6px;padding:8px"><div style="font-size:10px;color:#64748b">Velocidad</div><div style="font-weight:700;color:#1e293b">' + p.velocidad_uds_dia.toFixed(1) + ' uds/día (' + p.ventas_periodo_uds + ' en ventana)</div></div>';
-    html += '<div style="background:white;border:1px solid #e2e8f0;border-radius:6px;padding:8px"><div style="font-size:10px;color:#64748b">Cobertura</div><div style="font-weight:700;color:' + cfg.text + '">' + (p.dias_cobertura != null ? p.dias_cobertura + ' días' : '—') + '</div></div>';
+    html += '<div style="background:white;border:1px solid #e2e8f0;border-radius:6px;padding:8px"><div style="font-size:10px;color:#64748b">Cobertura</div><div style="font-weight:700;color:' + cfg.text + '">' + (p.dias_cobertura != null ? p.dias_cobertura + ' días' : '-') + '</div></div>';
     html += '<div style="background:white;border:1px solid #e2e8f0;border-radius:6px;padding:8px"><div style="font-size:10px;color:#64748b">Lote bulk</div><div style="font-weight:700;color:#1e293b">' + p.lote_bulk_kg + ' kg</div></div>';
     html += '</div>';
     if (p.n_lotes_recomendados > 0) {
@@ -26123,17 +26123,17 @@ async function ckMarcar(itemId, estado){
     if (a === 'adelantar') {
       bg = '#fef2f2'; bd = '#dc2626'; fg = '#991b1b';
       titulo = 'Adelantar producción';
-      detalle = 'El lote del <strong>' + fprox + '</strong> llega tarde: debes producir 20 días antes de agotarte (límite ' + (flim || '—') + ')' + ((p.dias_descubierto || 0) > 0 ? ' · te agotás ' + p.dias_descubierto + 'd antes de que llegue' : '') + '. Lo muevo a lo antes posible: <strong>' + (fobj || '—') + '</strong> y recalculo el resto del horizonte.';
+      detalle = 'El lote del <strong>' + fprox + '</strong> llega tarde: debes producir 20 días antes de agotarte (límite ' + (flim || '-') + ')' + ((p.dias_descubierto || 0) > 0 ? ' · te agotás ' + p.dias_descubierto + 'd antes de que llegue' : '') + '. Lo muevo a lo antes posible: <strong>' + (fobj || '-') + '</strong> y recalculo el resto del horizonte.';
       btn = '⏩ Adelantar y recalcular';
     } else if (a === 'atrasar') {
       bg = '#eff6ff'; bd = '#2563eb'; fg = '#1e40af';
       titulo = 'Atrasar producción';
-      detalle = 'El lote del <strong>' + fprox + '</strong> está muy adelantado. Lo muevo al <strong>' + (fobj || '—') + '</strong> (20 días antes de agotarte) y recalculo el horizonte.';
+      detalle = 'El lote del <strong>' + fprox + '</strong> está muy adelantado. Lo muevo al <strong>' + (fobj || '-') + '</strong> (20 días antes de agotarte) y recalculo el horizonte.';
       btn = '⏪ Atrasar y recalcular';
     } else { // programar
       bg = '#f5f3ff'; bd = '#7c3aed'; fg = '#5b21b6';
       titulo = 'Programar producción';
-      detalle = 'No hay lote programado y lo necesitas (' + (p.urgencia || '') + '). Lo programo para <strong>' + (fobj || '—') + '</strong> (20 días antes de agotarte) y recalculo el horizonte con la venta actual.';
+      detalle = 'No hay lote programado y lo necesitas (' + (p.urgencia || '') + '). Lo programo para <strong>' + (fobj || '-') + '</strong> (20 días antes de agotarte) y recalculo el horizonte con la venta actual.';
       btn = '🤖 Programar y recalcular';
     }
     // Sebastián 4-jul · si el producto YA tiene cadena, aclarar que esta sugerencia es solo por el stock
@@ -26157,7 +26157,7 @@ async function ckMarcar(itemId, estado){
       var d = await (await fetch('/api/plan/desglose-tonos?producto=' + encodeURIComponent(producto), {cache:'no-store'})).json();
       var items = d.items || [];
       var rows = items.map(function(it){
-        return '<tr style="border-top:1px solid #f1f5f9"><td style="padding:5px 8px;font-family:ui-monospace;font-weight:700">'+_e(it.sku||'')+'</td><td style="padding:5px 8px">'+_e(it.tono_label||it.tono||'')+'</td><td style="padding:5px 8px;text-align:right">'+(it.ml_unidad||'—')+'</td><td style="padding:5px 8px;text-align:right;font-weight:700">'+(it.uds_ventana||0)+'</td><td style="padding:5px 8px;text-align:right;color:#6d28d9;font-weight:700">'+(it.porcentaje!=null?it.porcentaje+'%':'—')+'</td></tr>';
+        return '<tr style="border-top:1px solid #f1f5f9"><td style="padding:5px 8px;font-family:ui-monospace;font-weight:700">'+_e(it.sku||'')+'</td><td style="padding:5px 8px">'+_e(it.tono_label||it.tono||'')+'</td><td style="padding:5px 8px;text-align:right">'+(it.ml_unidad||'-')+'</td><td style="padding:5px 8px;text-align:right;font-weight:700">'+(it.uds_ventana||0)+'</td><td style="padding:5px 8px;text-align:right;color:#6d28d9;font-weight:700">'+(it.porcentaje!=null?it.porcentaje+'%':'-')+'</td></tr>';
       }).join('');
       var ov = document.createElement('div'); ov.id='desglose-tonos-ov';
       ov.style.cssText='position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px';
@@ -26322,7 +26322,7 @@ async function ckMarcar(itemId, estado){
     html += ((p.por_entrar_uds || 0) > 0 ? '<div>🔵 Por entrar (Espagiria): <strong style="color:#0891b2">' + p.por_entrar_uds + ' uds</strong> <span style="font-size:10px;color:#94a3b8">producido en el lab · aún no en góndola · ya cuenta para la próxima, no para la urgencia</span></div>' : '');
     // M5/M6 · "Alcanza" = días de GÓNDOLA físicos (lo que decide la urgencia), NO la
     // cobertura-con-pipeline. Así el número y el color (CRÍTICO/etc.) coinciden.
-    html += '<div>Alcanza góndola: <strong style="color:' + cfg.text + '">' + (p.dias_gondola != null ? p.dias_gondola + ' días' : '—') + '</strong> ' + cfg.emoji + ' ' + p.urgencia + '</div>';
+    html += '<div>Alcanza góndola: <strong style="color:' + cfg.text + '">' + (p.dias_gondola != null ? p.dias_gondola + ' días' : '-') + '</strong> ' + cfg.emoji + ' ' + p.urgencia + '</div>';
     html += '</div>';
     // Sebastián 3-jul · QUITADA la línea "Con producción en camino: alcanza ~Xd" · era la MISMA
     // referencia (~120d) que la caja "Última producción · horizonte" de abajo (Alcanza para ~120 días).
@@ -26467,7 +26467,7 @@ async function ckMarcar(itemId, estado){
       html += '</div>';
     }
 
-    // Sebastián 10-jul · ELIMINADO el planificador (🤖 Abrir planificador · sugerencias) — Alejandro no
+    // Sebastián 10-jul · ELIMINADO el planificador (🤖 Abrir planificador · sugerencias) - Alejandro no
     // lo quiere. El lote puntual se rediseñó: agregar un lote ahora recalcula TODO el horizonte desde él
     // (ver la sección "Lotes ya agendados" · cada lote tiene "recalcular horizonte desde acá").
     const prodNombreEsc = (p.producto_nombre || '').replace(/'/g, "&#39;").replace(/"/g, '&quot;');
@@ -26704,10 +26704,10 @@ async function ckMarcar(itemId, estado){
     var _first = '';
     try{ var _d = new Date(cc.partida + 'T12:00:00'); _d.setDate(_d.getDate() + cc.dhp); _first = _d.toISOString().slice(0,10); }catch(e){}
     var _firstTxt = cc.dhpManual
-      ? 'la 1ª nueva <b style="color:#7c3aed">fijada por vos</b> = <b>' + (_first||'—') + '</b>'
+      ? 'la 1ª nueva <b style="color:#7c3aed">fijada por vos</b> = <b>' + (_first||'-') + '</b>'
       : (cc.dhpCap
-         ? 'la 1ª nueva <b>una cadencia después</b> del origen (~<b>' + cc.dhp + 'd</b>) = <b>' + (_first||'—') + '</b>'
-         : 'la 1ª nueva cuando se agota lo fabricado (~<b>' + cc.dhp + 'd</b>) = <b>' + (_first||'—') + '</b>');
+         ? 'la 1ª nueva <b>una cadencia después</b> del origen (~<b>' + cc.dhp + 'd</b>) = <b>' + (_first||'-') + '</b>'
+         : 'la 1ª nueva cuando se agota lo fabricado (~<b>' + cc.dhp + 'd</b>) = <b>' + (_first||'-') + '</b>');
     el.innerHTML = _ref
       + '📦 Un lote de <b>' + cc.kg.toFixed(1) + ' kg</b> cada <b>' + cc.meses + ' mes' + (cc.meses===1?'':'es') + '</b> (~' + cc.intervalDias + ' días)<br>'
       + '🗓️ Partida <b>' + cc.partida + '</b> · ' + _firstTxt + ', luego cada ' + cc.intervalDias + 'd · ~<b>' + cc.nLotes + '</b> lotes en <b>' + cc.anios + ' año' + (cc.anios===1?'':'s') + '</b> · total <b>' + (cc.kg*cc.nLotes).toFixed(0) + ' kg</b>';
@@ -27201,7 +27201,7 @@ async function ckMarcar(itemId, estado){
         + '<td style="padding:6px 10px"><strong>' + escapeHtmlNec(p.producto_nombre) + '</strong></td>'
         + '<td style="padding:6px 10px;text-align:center">' + p.cantidad_uds + ' × ' + p.ml_unidad + 'ml</td>'
         + '<td style="padding:6px 10px;text-align:center;font-weight:700">' + p.kg_equivalente + '</td>'
-        + '<td style="padding:6px 10px;text-align:center">' + (p.fecha_estimada || '—') + '</td>'
+        + '<td style="padding:6px 10px;text-align:center">' + (p.fecha_estimada || '-') + '</td>'
         + '<td style="padding:6px 10px;text-align:center"><span style="background:'+estadoBg+';color:'+estadoColor+';padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">' + p.estado + '</span></td>'
         + '<td style="padding:6px 10px;text-align:center">' + loteHtml + '</td>'
         + '<td style="padding:6px 10px;text-align:center">' + envSel + '</td>'
@@ -27254,17 +27254,17 @@ async function ckMarcar(itemId, estado){
         else if(p.vinculado){ cobBadge = '✓ vinculado'; cobCol = '#15803d'; }
         else if(p.hay_lote_calendario > 0){ cobBadge = 'lote sin vincular'; cobCol = '#b45309'; }
         else { cobBadge = '✗ sin lote'; cobCol = '#b91c1c'; }
-        var lotesTxt = (p.lotes_vinculados || []).map(function(l){ return '#' + l.lote_id + ' (' + l.fecha + ', ' + l.kg_aporte + 'kg)'; }).join(', ') || '—';
+        var lotesTxt = (p.lotes_vinculados || []).map(function(l){ return '#' + l.lote_id + ' (' + l.fecha + ', ' + l.kg_aporte + 'kg)'; }).join(', ') || '-';
         html += '<tr style="border-top:1px solid #f1f5f9;background:' + bg + '">';
         html += '<td style="padding:6px 8px">' + esc(p.producto||'') + '</td>';
         html += '<td style="padding:6px 8px;text-align:right">' + p.uds + '</td>';
         html += '<td style="padding:6px 8px;text-align:right">' + p.kg + '</td>';
-        html += '<td style="padding:6px 8px;white-space:nowrap">' + (p.fecha_estimada||'—') + '</td>';
+        html += '<td style="padding:6px 8px;white-space:nowrap">' + (p.fecha_estimada||'-') + '</td>';
         html += '<td style="padding:6px 8px">' + esc(p.estado||'') + '</td>';
         html += '<td style="padding:6px 8px;font-size:11px;color:#64748b">' + esc(lotesTxt) + (p.apariciones_texto>1 ? ' <span style="color:#b91c1c;font-weight:700">·texto x' + p.apariciones_texto + '</span>' : '') + '</td>';
         html += '<td style="padding:6px 8px"><span style="color:' + cobCol + ';font-weight:700">' + cobBadge + '</span><div style="font-size:10px;color:#94a3b8">' + esc(p.recomendacion||'') + '</div></td>';
         if((p.estado||'').toLowerCase() === 'cancelado'){
-          html += '<td style="padding:6px 8px;text-align:center;color:#94a3b8;font-size:11px">—</td>';
+          html += '<td style="padding:6px 8px;text-align:center;color:#94a3b8;font-size:11px">-</td>';
         } else {
           html += '<td style="padding:6px 8px;text-align:center"><button onclick="cancelarPedidoB2B(' + p.id + ')" style="background:#dc2626;color:#fff;border:none;padding:4px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Cancelar este pedido · le resta el kg al lote del calendario">🗑 Cancelar</button></td>';
         }

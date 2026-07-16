@@ -94,12 +94,12 @@ function abrirCCReview(lote){
   var nombre = l.material_nombre || l.nombre || l.codigo_mp || l.material_id || '';
   document.getElementById('ccr-sub').textContent = (l.lote||'sin lote') + '  ·  ' + nombre;
   document.getElementById('ccr-info').innerHTML =
-    '<div><b>Código:</b> '+(l.material_id||l.codigo_mp||'—')+'</div>'+
-    '<div><b>Lote:</b> '+(l.lote||'—')+'</div>'+
-    '<div><b>Cantidad:</b> '+(l.cantidad!=null?l.cantidad+' g':'—')+'</div>'+
+    '<div><b>Código:</b> '+(l.material_id||l.codigo_mp||'-')+'</div>'+
+    '<div><b>Lote:</b> '+(l.lote||'-')+'</div>'+
+    '<div><b>Cantidad:</b> '+(l.cantidad!=null?l.cantidad+' g':'-')+'</div>'+
     '<div style="grid-column:1/-1"><b>Material:</b> '+nombre+'</div>'+
-    '<div><b>Proveedor:</b> '+(l.proveedor||'—')+'</div>'+
-    '<div><b>OC:</b> '+(l.numero_oc||'—')+'</div>';
+    '<div><b>Proveedor:</b> '+(l.proveedor||'-')+'</div>'+
+    '<div><b>OC:</b> '+(l.numero_oc||'-')+'</div>';
   ['ccr-coa-ok','ccr-lote-coincide','ccr-coa-vigente','ccr-ficha-ok','ccr-muestra'].forEach(function(id){var e=document.getElementById(id);if(e)e.checked=false;});
   ['ccr-aql-obs','ccr-est','ccr-pos','ccr-obs'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});
   // Verificación final editable: pre-lleno con lo que llegó (Calidad corrige si hace falta)

@@ -1,4 +1,4 @@
-# Auto-extraído de index.py — Fase A refactor
+# Auto-extraído de index.py - Fase A refactor
 COMPRAS_HTML = """<!DOCTYPE html>
 <html lang="es" translate="no">
 <head>
@@ -348,7 +348,7 @@ function renderHistorico(){
   if(!list.length){ wrap.innerHTML=h+'<div class="empty">No hay órdenes que coincidan.</div>'; return; }
   h+='<table style="width:100%;border-collapse:collapse;font-size:13px"><tr style="text-align:left;color:#6d28d9"><th style="padding:6px 8px">N° OC</th><th style="padding:6px 8px">Fecha</th><th style="padding:6px 8px">Proveedor</th><th style="padding:6px 8px">Categoría</th><th style="padding:6px 8px">Estado</th><th style="padding:6px 8px;text-align:right">Valor</th></tr>';
   list.forEach(function(o){
-    h+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 8px;font-weight:700">'+_e(o.numero_oc)+'</td><td style="padding:6px 8px">'+_e(String(o.fecha||'').slice(0,10))+'</td><td style="padding:6px 8px">'+_e(o.proveedor)+'</td><td style="padding:6px 8px">'+_e(o.categoria||'—')+'</td><td style="padding:6px 8px">'+_e(o.estado)+'</td><td style="padding:6px 8px;text-align:right">'+_f(parseFloat(o.valor_total)||0)+'</td></tr>';
+    h+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 8px;font-weight:700">'+_e(o.numero_oc)+'</td><td style="padding:6px 8px">'+_e(String(o.fecha||'').slice(0,10))+'</td><td style="padding:6px 8px">'+_e(o.proveedor)+'</td><td style="padding:6px 8px">'+_e(o.categoria||'-')+'</td><td style="padding:6px 8px">'+_e(o.estado)+'</td><td style="padding:6px 8px;text-align:right">'+_f(parseFloat(o.valor_total)||0)+'</td></tr>';
   });
   wrap.innerHTML=h+'</table>';
 }
@@ -403,7 +403,7 @@ function renderHistorico(){
     <input type="text" id="q-influencer" placeholder="Buscar influencer, solicitante..." oninput="renderInfluencers()">
     <select id="s-influencer" onchange="renderInfluencers()" title="Filtrar por estado">
       <option value="ACCION">⚡ Requieren acción (Pendientes + Por pagar)</option>
-      <option value="Pendiente">⏳ Pendientes — definir valor / aprobar</option>
+      <option value="Pendiente">⏳ Pendientes - definir valor / aprobar</option>
       <option value="Aprobada">💸 Por pagar</option>
       <option value="">Todos los estados</option>
       <option value="Pagada">✅ Pagadas</option>
@@ -469,7 +469,7 @@ function renderHistorico(){
         <div class="fg" id="cf-monto-row"><label>Monto fijo mensual</label><input type="number" id="cf-monto" min="0" step="0.01" placeholder="0"></div>
         <div class="fg"><label>Día límite de pago (corte)</label><input type="number" id="cf-dia" min="1" max="28" value="5"></div>
       </div>
-      <label style="font-size:12px;display:flex;align-items:center;gap:7px;cursor:pointer;margin:-4px 0 4px;"><input type="checkbox" id="cf-variable" onchange="_cfToggleVar()"> Monto <b>variable</b> (luz/agua) — Catalina lo carga cada mes</label>
+      <label style="font-size:12px;display:flex;align-items:center;gap:7px;cursor:pointer;margin:-4px 0 4px;"><input type="checkbox" id="cf-variable" onchange="_cfToggleVar()"> Monto <b>variable</b> (luz/agua) - Catalina lo carga cada mes</label>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
         <div class="fg"><label>Medio de pago</label><select id="cf-medio"><option value="referencia">Referencia (servicio público)</option><option value="cuenta">Cuenta bancaria</option><option value="link">Link de pago</option><option value="otro">Otro</option></select></div>
         <div class="fg"><label>Referencia / cuenta / link</label><input type="text" id="cf-dato" placeholder="N° de referencia, cuenta o link"></div>
@@ -545,7 +545,7 @@ function renderHistorico(){
          Solo limpiar / Limpiar y regenerar): operaban sobre la fuente PLANTA (Materia Prima),
          no sobre estas solicitudes de usuarios → confundían y no aplicaban acá. Su lugar es la
          pestaña Planta. Se conserva "Agrupar por proveedor" (sí agrupa las de usuarios en una OC). -->
-    <button id="btn-toggle-vista" class="btn" onclick="toggleVistaSolicitudes()" style="background:#0e7490;color:#fff;" title="Agrupar todas las solicitudes pendientes por proveedor — crea una sola OC para todas las del mismo proveedor">&#x1F4E6; Agrupar por proveedor</button>
+    <button id="btn-toggle-vista" class="btn" onclick="toggleVistaSolicitudes()" style="background:#0e7490;color:#fff;" title="Agrupar todas las solicitudes pendientes por proveedor - crea una sola OC para todas las del mismo proveedor">&#x1F4E6; Agrupar por proveedor</button>
   </div>
   <div id="pills-solic" class="pills"></div>
   <div id="grid-solic" class="grid"></div>
@@ -678,7 +678,7 @@ function renderHistorico(){
 <!-- ════════════ TAB: MIS SOLICITUDES ════════════ -->
 <div id="pane-mis-sol" class="pane">
   <div class="bar" style="flex-wrap:wrap;gap:8px;">
-    <span style="font-weight:700;color:#1e293b;font-size:15px;">&#128100; Mis solicitudes — ciclo completo</span>
+    <span style="font-weight:700;color:#1e293b;font-size:15px;">&#128100; Mis solicitudes - ciclo completo</span>
     <div style="display:flex;gap:8px;margin-left:auto;align-items:center;">
       <label style="font-size:12px;color:#64748b;">Mostrar:</label>
       <select id="mis-sol-filtro" onchange="loadMisSolicitudes()" style="padding:5px 10px;font-size:12px;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer">
@@ -699,7 +699,7 @@ function renderHistorico(){
 </div>
 
 <!-- ════════════ TAB: PLANTA (MP + Empaque agrupado por proveedor) ════════════
-     Sebastian 5-may-2026: separación de fuentes — esto es lo que SALE del
+     Sebastian 5-may-2026: separación de fuentes - esto es lo que SALE del
      Centro de Programación (calendar.py). Catalina ve aquí TODO lo de planta
      ya agrupado por proveedor, puede editar inline (proveedor / cantidad /
      valor), y los cambios se sincronizan globalmente a maestro_mps +
@@ -710,7 +710,7 @@ function renderHistorico(){
     <button type="button" class="sp-tab" id="sptn-env" onclick="showSubPlanta('env')">&#128230; Envases</button>
   </div>
   <div id="subplanta-mp">
-  <!-- Alertas MP/envases en déficit (Centro de Programación) · 23-jun: movidas desde Solicitudes — son de PLANTA -->
+  <!-- Alertas MP/envases en déficit (Centro de Programación) · 23-jun: movidas desde Solicitudes - son de PLANTA -->
   <div id="mp-alert-banner" style="display:none;background:linear-gradient(135deg,#fffbeb,#fef3c7);border:1px solid #fcd34d;border-radius:12px;padding:12px 16px;margin-bottom:12px;box-shadow:0 2px 10px rgba(245,158,11,.08);">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
       <span style="font-size:18px;">&#x26A0;&#xFE0F;</span>
@@ -724,7 +724,7 @@ function renderHistorico(){
       <span style="font-size:18px;">&#x1F4E1;</span>
       <div style="flex:1;">
         <div id="prog-alert-text" style="font-size:13px;font-weight:700;color:#7f1d1d;"></div>
-        <div style="font-size:11px;color:#991b1b;margin-top:2px;">Centro de Programaci&#xF3;n &mdash; velocidad Shopify + f&#xF3;rmulas + stock MP</div>
+        <div style="font-size:11px;color:#991b1b;margin-top:2px;">Centro de Programaci&#xF3;n - velocidad Shopify + f&#xF3;rmulas + stock MP</div>
       </div>
       <a href="/planta" style="background:#fff;color:#dc2626;border:1px solid #fca5a5;font-size:12px;padding:6px 12px;border-radius:8px;text-decoration:none;white-space:nowrap;font-weight:700;">&#x1F4CA; Ver Programaci&#xF3;n</a>
       <button onclick="generarOCDesdeCompras(this)" style="background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;border:none;border-radius:8px;font-size:12px;padding:7px 14px;cursor:pointer;font-weight:700;white-space:nowrap;box-shadow:0 2px 8px rgba(185,28,28,.3);">&#x1F6D2; Generar OC</button>
@@ -833,7 +833,7 @@ function showSubPlanta(w){
   <div id="por-pagar-directos-wrap" style="display:none;margin-bottom:20px;">
     <div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:10px;padding:14px 16px;margin-bottom:10px;">
       <div style="font-weight:700;color:#92400e;font-size:14px;">&#x1F4B8; Pagos directos (Influencers, Cuentas de Cobro)</div>
-      <div style="font-size:11px;color:#78350f;margin-top:4px;">Estas OCs no requieren recepci&oacute;n f&iacute;sica — son servicios listos para pagar.</div>
+      <div style="font-size:11px;color:#78350f;margin-top:4px;">Estas OCs no requieren recepci&oacute;n f&iacute;sica - son servicios listos para pagar.</div>
     </div>
     <div id="por-pagar-directos" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;"></div>
   </div>
@@ -1148,7 +1148,7 @@ function showSubPlanta(w){
       <input type="text" id="pago-factura" placeholder="Ej: FAC-12345" style="text-transform:uppercase;">
       <div style="font-size:11px;color:#64748b;margin-top:3px;">Si esta factura ya fue usada en otro pago, el sistema te avisa antes de continuar.</div>
     </div>
-    <!-- Toggles fiscales (retefuente/retica/IVA) — para legalidad -->
+    <!-- Toggles fiscales (retefuente/retica/IVA) - para legalidad -->
     <div class="fg" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
       <label style="display:block;font-weight:700;color:#1e293b;margin-bottom:6px;">&#x1F4CA; Retenciones e IVA (opcional)</label>
       <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;">
@@ -1263,8 +1263,8 @@ function showSubPlanta(w){
   <div class="mb" style="padding:18px;">
     <div style="background:#f0fdfa;border:1px solid #99f6e4;border-radius:8px;padding:10px 14px;margin-bottom:12px;">
       <div style="font-size:11px;color:#0f766e;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">MP</div>
-      <div id="epm-info" style="font-weight:700;color:#0f172a;font-size:14px;">&mdash;</div>
-      <div id="epm-prov-actual" style="color:#64748b;font-size:12px;margin-top:2px;">&mdash;</div>
+      <div id="epm-info" style="font-weight:700;color:#0f172a;font-size:14px;">-</div>
+      <div id="epm-prov-actual" style="color:#64748b;font-size:12px;margin-top:2px;">-</div>
     </div>
     <p style="font-size:12px;color:#64748b;margin-bottom:6px;">Solo afecta la MP seleccionada en el cat&aacute;logo (maestro_mps). Las dem&aacute;s MPs de la solicitud no se tocan. Audit log captura el cambio.</p>
     <div style="margin-bottom:10px;">
@@ -1763,13 +1763,13 @@ async function loadFacturasProv(){
     window._FP.forEach(function(it){
       var estMap={'pendiente':['#64748b','Pendiente'],'parcial':['#b45309','Parcial'],'pagada':['#15803d','Pagada'],'anulada':['#94a3b8','Anulada'],'vencida':['#b91c1c','Vencida']};
       var ef=it.estado_efectivo||it.estado; var em=estMap[ef]||['#475569',ef];
-      var venc=it.fecha_vencimiento||'—';
+      var venc=it.fecha_vencimiento||'-';
       var diasTxt=(it.dias_vencimiento!=null&&ef!=='pagada'&&ef!=='anulada')?(' <span style="font-size:10px;color:'+(it.dias_vencimiento<0?'#b91c1c':'#64748b')+'">('+(it.dias_vencimiento<0?Math.abs(it.dias_vencimiento)+'d venc':it.dias_vencimiento+'d')+')</span>'):'';
       var sobre=it.sobre_facturada?' <span title="total factura &gt; valor OC" style="background:#fee2e2;color:#991b1b;font-size:9px;padding:1px 4px;border-radius:3px">⚠ &gt;OC</span>':'';
       html+='<tr style="border-top:1px solid #f1f5f9'+(it.vencida?';background:#fff1f2':'')+(it.estado==='anulada'?';opacity:.55':'')+'">';
       html+='<td style="padding:6px;font-weight:700">'+_esc(it.numero_factura)+sobre+(it.tiene_pdf?' <a href="/api/compras/facturas-proveedor/'+it.id+'/pdf" target="_blank" title="ver PDF" style="text-decoration:none">📎</a>':'')+'</td>';
       html+='<td style="padding:6px">'+_esc(it.proveedor||'')+'</td>';
-      html+='<td style="padding:6px;font-size:11px;color:#64748b">'+_esc(it.numero_oc||'—')+'</td>';
+      html+='<td style="padding:6px;font-size:11px;color:#64748b">'+_esc(it.numero_oc||'-')+'</td>';
       html+='<td style="padding:6px;white-space:nowrap">'+_esc(venc)+diasTxt+'</td>';
       html+='<td style="padding:6px;text-align:right">'+_fpMoney(it.total)+'</td>';
       html+='<td style="padding:6px;text-align:right;color:#15803d">'+_fpMoney(it.pagado)+'</td>';
@@ -1780,7 +1780,7 @@ async function loadFacturasProv(){
         if(it.saldo>0.5) html+='<button onclick="fpPagarModal('+it.id+')" style="background:#0f766e;color:#fff;border:none;padding:4px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;margin-right:4px">Pagar</button>';
         html+='<button onclick="fpDetalle('+it.id+')" style="background:#e2e8f0;color:#334155;border:none;padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer;margin-right:4px">Ver</button>';
         html+='<button onclick="fpAnular('+it.id+')" style="background:#fff;color:#dc2626;border:1px solid #dc2626;padding:4px 8px;border-radius:5px;font-size:11px;cursor:pointer">Anular</button>';
-      } else { html+='<span style="color:#94a3b8;font-size:11px">—</span>'; }
+      } else { html+='<span style="color:#94a3b8;font-size:11px">-</span>'; }
       html+='</td></tr>';
     });
     html+='</tbody></table>';
@@ -1869,8 +1869,8 @@ async function fpDetalle(fid){
     function rw(k,v){ return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9"><span style="color:#64748b">'+k+'</span><span style="font-weight:600">'+v+'</span></div>'; }
     var h='<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #e2e8f0;padding-bottom:10px;margin-bottom:14px"><h2 style="margin:0;font-size:16px;color:#0f766e">Factura '+_esc(f.numero_factura)+'</h2><button onclick="_fpClose()" style="background:#e2e8f0;border:none;width:32px;height:32px;border-radius:50%;font-size:18px;cursor:pointer">×</button></div>';
     h+=rw('Proveedor', _esc(f.proveedor||'')+(f.nit?' · '+_esc(f.nit):''));
-    h+=rw('OC', _esc(f.numero_oc||'—'));
-    h+=rw('Emisión / Vence', _esc(f.fecha_emision||'—')+' → '+_esc(f.fecha_vencimiento||'—'));
+    h+=rw('OC', _esc(f.numero_oc||'-'));
+    h+=rw('Emisión / Vence', _esc(f.fecha_emision||'-')+' → '+_esc(f.fecha_vencimiento||'-'));
     h+=rw('Subtotal', _fpMoney(f.subtotal))+rw('IVA', _fpMoney(f.iva))+rw('Retefuente', '-'+_fpMoney(f.retefuente))+rw('ReteICA', '-'+_fpMoney(f.retica));
     h+=rw('Total', '<b>'+_fpMoney(f.total)+'</b>')+rw('Pagado', _fpMoney(f.pagado))+rw('Saldo', '<b>'+_fpMoney(f.saldo)+'</b>');
     if(f.observaciones) h+=rw('Obs', _esc(f.observaciones));
@@ -1923,7 +1923,7 @@ async function loadFeedNecesidades(){
       html+='<td style="padding:6px;text-align:right">'+it.minimo+'</td>';
       html+='<td style="padding:6px;text-align:right;color:#b91c1c;font-weight:700">'+it.faltante+'</td>';
       html+='<td style="padding:6px;text-align:right;color:'+col+';font-weight:700">'+pct+'%</td>';
-      html+='<td style="padding:6px">'+_esc(it.proveedor||'—')+'</td>';
+      html+='<td style="padding:6px">'+_esc(it.proveedor||'-')+'</td>';
       html+='</tr>';
     });
     html+='</tbody></table>';
@@ -2132,7 +2132,7 @@ async function loadOrdenesServicio(){
         '<td style="padding:6px">'+_esc(o.proveedor)+'</td>'+
         '<td style="padding:6px;font-size:11px">'+_esc(o.tipo_servicio)+'</td>'+
         '<td style="padding:6px;font-size:12px">'+_esc(o.producto_final)+'</td>'+
-        '<td style="padding:6px;font-size:11px">'+_esc(o.envase_descripcion||o.envase_codigo_mee||'—')+'</td>'+
+        '<td style="padding:6px;font-size:11px">'+_esc(o.envase_descripcion||o.envase_codigo_mee||'-')+'</td>'+
         '<td style="padding:6px;text-align:center;font-weight:700">'+o.cantidad_unidades+'</td>'+
         '<td style="padding:6px;font-size:11px">'+_esc((o.fecha_solicitud||'').substring(0,10))+'</td>'+
         '<td style="padding:6px;font-size:11px">'+_esc((o.fecha_requerida_entrega||'').substring(0,10))+'</td>'+
@@ -2254,15 +2254,15 @@ async function verDetalleOS(num){
         '<div><b>Proveedor</b><br>'+_esc(d.proveedor||'')+'</div>'+
         '<div><b>Tipo</b><br>'+_esc(d.tipo_servicio||'')+'</div>'+
         '<div><b>Producto</b><br>'+_esc(d.producto_final||'')+'</div>'+
-        '<div><b>Envase</b><br>'+_esc(d.envase_descripcion||d.envase_codigo_mee||'—')+'</div>'+
+        '<div><b>Envase</b><br>'+_esc(d.envase_descripcion||d.envase_codigo_mee||'-')+'</div>'+
         '<div><b>Unidades</b><br><span style="font-size:18px;font-weight:800;color:#0f766e">'+(d.cantidad_unidades||0)+'</span></div>'+
         '<div><b>Estado</b><br>'+_esc(d.estado||'')+'</div>'+
         '<div><b>F. solicitud</b><br>'+_esc((d.fecha_solicitud||'').substring(0,10))+'</div>'+
-        '<div><b>F. requerida</b><br>'+_esc((d.fecha_requerida_entrega||'').substring(0,10) || '—')+'</div>'+
+        '<div><b>F. requerida</b><br>'+_esc((d.fecha_requerida_entrega||'').substring(0,10) || '-')+'</div>'+
         '<div><b>Costo est.</b><br>'+fmt((d.costo_estimado_cop||0).toFixed(0))+'</div>'+
         '<div><b>Costo real</b><br>'+fmt((d.costo_real_cop||0).toFixed(0))+'</div>'+
       '</div>'+
-      '<div style="margin-bottom:10px;background:#fef3c7;border-left:3px solid #ca8a04;padding:10px;font-size:12px"><b>Arte solicitado:</b><br>'+_esc(d.arte_descripcion||'—')+'</div>'+
+      '<div style="margin-bottom:10px;background:#fef3c7;border-left:3px solid #ca8a04;padding:10px;font-size:12px"><b>Arte solicitado:</b><br>'+_esc(d.arte_descripcion||'-')+'</div>'+
       (d.observaciones ? '<div style="margin-bottom:10px;padding:8px;background:#f1f5f9;font-size:12px"><b>Observaciones:</b><br>'+_esc(d.observaciones)+'</div>' : '')+
       '<h4 style="margin:14px 0 6px;color:#475569">📜 Timeline</h4>'+
       (tl || '<div style="color:#94a3b8;font-size:12px">Sin eventos</div>')+
@@ -2672,9 +2672,9 @@ async function cargarAlertasProgramacion(){
     if(d.n > 0){
       banner.style.display = 'block';
       var label = d.criticos > 0
-        ? d.criticos + ' alerta(s) CR\u00EDTICA(S) — ' + d.n + ' total'
+        ? d.criticos + ' alerta(s) CR\u00EDTICA(S) - ' + d.n + ' total'
         : d.n + ' alerta(s) de programaci\u00F3n activas';
-      text.textContent = '\u26A0\uFE0F ' + label + ' — MPs faltantes o stock insuficiente a 60 d\u00EDas';
+      text.textContent = '\u26A0\uFE0F ' + label + ' - MPs faltantes o stock insuficiente a 60 d\u00EDas';
     } else {
       banner.style.display = 'none';
     }
@@ -2724,7 +2724,7 @@ async function renderDash(){
   // KPI data
   var mes=new Date().toISOString().substring(0,7);
   // Sebastian (30-abr-2026): SOLs y OCs de influencers NO deben salir en
-  // el dashboard de Compras — Catalina no las gestiona. El flujo correcto es
+  // el dashboard de Compras - Catalina no las gestiona. El flujo correcto es
   // Jefferson (Marketing) solicita pago → aparece en tab Influencers (admin
   // only) → Sebastian paga. Las cantidades SI se cuentan en el KPI total
   // para que el panorama financiero quede completo.
@@ -2737,7 +2737,7 @@ async function renderDash(){
   var solicPendVisible=solicPend.filter(function(s){ return !_esInflLike(s); });
   var solicPendInfl=solicPend.length - solicPendVisible.length;
 
-  // Estados que cuentan como "OC abierta / por procesar" — KPI cuenta TODAS
+  // Estados que cuentan como "OC abierta / por procesar" - KPI cuenta TODAS
   // (incluyendo influencer), pero la lista visual oculta las de influencer.
   var _OC_ABIERTA = ['Borrador','Revisada','Aprobada','Autorizada','Parcial'];
   var ocsPorPagar=OCS.filter(function(o){ return _OC_ABIERTA.indexOf(o.estado)>=0; });
@@ -2759,18 +2759,18 @@ async function renderDash(){
   var urgColor={'Alta':'#dc2626','Media':'#f59e0b','Normal':'#64748b'};
   var stBg={'Pendiente':'#fef3c7','Aprobada':'#d1fae5','Rechazada':'#fee2e2','Pagada':'#e0f2fe'};
   var stFg={'Pendiente':'#92400e','Aprobada':'#065f46','Rechazada':'#991b1b','Pagada':'#075985'};
-  // Cards de SOL ENRIQUECIDAS — Catalina pidio ver TODOS los datos sin abrir
+  // Cards de SOL ENRIQUECIDAS - Catalina pidio ver TODOS los datos sin abrir
   // cada modal: items, observaciones completas, justificacion, total estimado.
   // Footer cuando hay influencer items ocultos: link al tab Influencers (admin only).
   var _hintInflSol = (solicPendInfl>0)
     ? '<div style="margin-top:8px;padding:8px 10px;background:#f3e8ff;border-left:3px solid #8b5cf6;border-radius:0 6px 6px 0;font-size:11px;color:#5b21b6;">'
-      +'+ '+solicPendInfl+' SOL de influencers ocultas — ver tab '
+      +'+ '+solicPendInfl+' SOL de influencers ocultas - ver tab '
       +'<button onclick="document.querySelector(&quot;[data-tab=influencer]&quot;).click()" '
       +'style="background:none;border:none;color:#7c3aed;text-decoration:underline;cursor:pointer;font-weight:700;padding:0;font-size:11px;">Influencers</button>'
       +'</div>' : '';
   var _hintInflOC = (ocsPorPagarInfl>0)
     ? '<div style="margin-top:8px;padding:8px 10px;background:#f3e8ff;border-left:3px solid #8b5cf6;border-radius:0 6px 6px 0;font-size:11px;color:#5b21b6;">'
-      +'+ '+ocsPorPagarInfl+' OC de influencers ocultas — ver tab '
+      +'+ '+ocsPorPagarInfl+' OC de influencers ocultas - ver tab '
       +'<button onclick="document.querySelector(&quot;[data-tab=influencer]&quot;).click()" '
       +'style="background:none;border:none;color:#7c3aed;text-decoration:underline;cursor:pointer;font-weight:700;padding:0;font-size:11px;">Influencers</button>'
       +'</div>' : '';
@@ -2830,7 +2830,7 @@ async function renderDash(){
       }).join('')
     : '<div class="empty" style="padding:20px;text-align:center;color:#a8a29e;">Sin solicitudes pendientes ✓</div>') + _hintInflSol;
 
-  // Right queue: OCs autorizadas (ready to pay) — sin influencers
+  // Right queue: OCs autorizadas (ready to pay) - sin influencers
   document.getElementById('q-pag').innerHTML=(ocsPorPagarVisible.length
     ? ocsPorPagarVisible.slice(0,8).map(function(o){ return miniCard(o); }).join('')
     : '<div class="empty" style="padding:20px;text-align:center;color:#a8a29e;">Sin OCs autorizadas ✓</div>') + _hintInflOC;
@@ -2859,11 +2859,11 @@ async function renderDash(){
 function mkKpi(l,v,s,c){
   return '<div class="kpi"><div class="kpi-l">'+l+'</div><div class="kpi-v'+(c?' '+c:'')+'" >'+v+'</div><div class="kpi-s">'+s+'</div></div>';
 }
-// Click "Revisar" en la mini-card del Centro de Mando — abre el tab Solicitudes
+// Click "Revisar" en la mini-card del Centro de Mando - abre el tab Solicitudes
 // y hace scroll suave a la solicitud específica. Antes esto vivía como onclick
 // inline con triple-escape de comillas que rompía el parser de JS al render
 // (SyntaxError "Invalid left-hand side in assignment") y dejaba TODO el
-// <script> de compras inerte — todos los botones quedaban sin handlers.
+// <script> de compras inerte - todos los botones quedaban sin handlers.
 function revisarSolicitudPendiente(numero){
   var tabBtn = document.querySelector('[data-tab=solic]');
   if (tabBtn) tabBtn.click();
@@ -3683,7 +3683,7 @@ async function loadMPLookup(){
   try{
     // /api/maestro-mps devuelve {mps:[{codigo_mp,nombre_comercial,...}]}.
     // Antes apuntaba a /api/materiales (404) con keys incorrectos
-    // (codigo_interno/nombre_material) — el datalist quedaba vacío y
+    // (codigo_interno/nombre_material) - el datalist quedaba vacío y
     // autoFillMP nunca acertaba ningún MP.
     var r=await fetch('/api/maestro-mps?tipo_material=MP');
     var d=await r.json();
@@ -3891,7 +3891,7 @@ function renderMPAlerts(){
   var total_def=_ALERTAS_MP.reduce(function(s,a){ return s+parseFloat(a.deficit||0); },0);
   var n_china = _ALERTAS_MP.filter(function(a){ return a.es_china; }).length;
   banner.style.display='block';
-  var resumen = _ALERTAS_MP.length+' MPs en déficit real (Centro de Programación) — Faltante total: '+Math.round(total_def).toLocaleString('es-CO')+' g';
+  var resumen = _ALERTAS_MP.length+' MPs en déficit real (Centro de Programación) - Faltante total: '+Math.round(total_def).toLocaleString('es-CO')+' g';
   if(n_china > 0) resumen += ' · ⚠ '+n_china+' de China (lead 60d)';
   if(_nMee > 0) resumen += ' · 📦 '+_nMee+' envase'+(_nMee>1?'s':'')+' en déficit';
   text.textContent=resumen;
@@ -4090,7 +4090,7 @@ function checkInciNuevaMP(){
   var w=document.getElementById('nmp-inci-warn'); if(!w) return;
   if(inci.length<3){ w.textContent=''; return; }
   var hit=(typeof _MPCAT!=='undefined'?_MPCAT:[]).filter(function(m){return ((m.nombre_inci||'').trim().toLowerCase())===inci;})[0];
-  if(hit){ w.style.color='#b45309'; w.innerHTML='&#9888;&#65039; Ya existe <b>'+_esc(hit.codigo_mp||'')+'</b> con ese INCI'+(hit.nombre_comercial?' ('+_esc(hit.nombre_comercial)+')':'')+' — mejor usá esa, no crees un duplicado.'; }
+  if(hit){ w.style.color='#b45309'; w.innerHTML='&#9888;&#65039; Ya existe <b>'+_esc(hit.codigo_mp||'')+'</b> con ese INCI'+(hit.nombre_comercial?' ('+_esc(hit.nombre_comercial)+')':'')+' - mejor usá esa, no crees un duplicado.'; }
   else{ w.style.color='#16a34a'; w.textContent='✓ INCI nuevo · no existe en el catálogo.'; }
 }
 
@@ -4302,13 +4302,13 @@ async function crearOCSugerida(){
     grupos[prov].push({codigo_mp:a.codigo_mp,nombre_mp:a.nombre,cantidad_g:q,precio_unitario:p});
   }
   var provList=Object.keys(grupos);
-  if(!provList.length){ alert('Todas las cantidades son 0 — ajusta antes de crear'); return; }
+  if(!provList.length){ alert('Todas las cantidades son 0 - ajusta antes de crear'); return; }
   var creadas=[]; var errores=[];
   for(var pi=0;pi<provList.length;pi++){
     var prov=provList[pi]; var items=grupos[prov];
     try{
       var r=await fetch('/api/ordenes-compra',_fetchOpts('POST', {proveedor:prov,categoria:'MP',creado_por:'{usuario}',
-          observaciones:'OC sugerida — MPs bajo stock ('+new Date().toLocaleDateString('es-CO')+')',
+          observaciones:'OC sugerida - MPs bajo stock ('+new Date().toLocaleDateString('es-CO')+')',
           items:items}));
       var res=null; try{res=await r.json();}catch(_){res=null;}
       if(r.ok&&res&&!res.error){ creadas.push(res.numero_oc||prov); }
@@ -4334,7 +4334,7 @@ async function crearOCFila(i){
   if(actEl) actEl.innerHTML='<span style="font-size:11px;color:#78716c;">Enviando...</span>';
   try{
     var r=await fetch('/api/ordenes-compra',_fetchOpts('POST', {proveedor:prov,categoria:'MP',creado_por:'{usuario}',
-        observaciones:'OC sugerida — '+a.nombre+' ('+new Date().toLocaleDateString('es-CO')+')',
+        observaciones:'OC sugerida - '+a.nombre+' ('+new Date().toLocaleDateString('es-CO')+')',
         items:[{codigo_mp:a.codigo_mp,nombre_mp:a.nombre,cantidad_g:q,precio_unitario:p}]}));
     var res=null; try{res=await r.json();}catch(_){res=null;}
     if(r.ok&&res&&!res.error){
@@ -4420,7 +4420,7 @@ function autorizarOC(num){
   document.getElementById('aut-num').value=num;
   document.getElementById('aut-motivo').value='';
   document.getElementById('m-aut-info').innerHTML=
-    '<strong>'+esc(num)+'</strong> &mdash; '+esc(oc.proveedor||'-')+
+    '<strong>'+esc(num)+'</strong> - '+esc(oc.proveedor||'-')+
     '<br><span style="color:#78716c;font-size:12px;">Valor: <strong>'+fmt(oc.valor_total)+'</strong>'+
     (oc.observaciones?' &nbsp;|&nbsp; '+esc((oc.observaciones||'').substring(0,80)):'')+
     '</span>';
@@ -4460,7 +4460,7 @@ function openPago(num,val,prov){
   document.getElementById('pago-num').value=num;
   document.getElementById('pago-monto').value=val||'';
   document.getElementById('pago-obs').value='';
-  document.getElementById('pago-info').innerHTML='<strong>'+num+'</strong> &mdash; '+esc(prov)+'<br>Valor autorizado: <strong>'+fmt(val)+'</strong>';
+  document.getElementById('pago-info').innerHTML='<strong>'+num+'</strong> - '+esc(prov)+'<br>Valor autorizado: <strong>'+fmt(val)+'</strong>';
   openModal('m-pago');
 }
 function previewPagoImg(){
@@ -4503,7 +4503,7 @@ async function confirmarPago(){
     var payload={monto:parseFloat(monto),medio:medio,observaciones:obs};
     if(factura) payload.numero_factura_proveedor=factura;
     if(imgData) payload.comprobante_imagen=imgData;
-    // Toggles fiscales — si están activos, el comprobante PDF se genera con retenciones/IVA
+    // Toggles fiscales - si están activos, el comprobante PDF se genera con retenciones/IVA
     var rf=document.getElementById('pago-aplicar-retefuente');
     var ri=document.getElementById('pago-aplicar-retica');
     var iv=document.getElementById('pago-aplicar-iva');
@@ -4749,7 +4749,7 @@ function _solDetClose(){ closeModal('m-sol-det'); }
 
 // ─── Editar proveedor de UNA MP del catálogo (per-item en solicitud) ─────────
 // Event delegation para evitar problemas de escape de quotes en el HTML render.
-// Se hookea una sola vez en DOMContentLoaded — captura clicks en cualquier
+// Se hookea una sola vez en DOMContentLoaded - captura clicks en cualquier
 // boton .btn-edit-prov-mp de la tabla items.
 var _epmActual = null;
 document.addEventListener('click', function(e){
@@ -4819,7 +4819,7 @@ async function guardarProvItemMP(){
       } catch(e){}
       setTimeout(function(){closeModal('m-edit-prov-mp');}, 900);
     } else {
-      msg.innerHTML = '<span style="color:#dc2626;">Error: ' + (d.error || r.status) + (d.detail ? ' &mdash; ' + d.detail : '') + '</span>';
+      msg.innerHTML = '<span style="color:#dc2626;">Error: ' + (d.error || r.status) + (d.detail ? ' - ' + d.detail : '') + '</span>';
     }
   } catch(e) {
     msg.innerHTML = '<span style="color:#dc2626;">Error de red: ' + e.message + '</span>';
@@ -4917,11 +4917,11 @@ async function guardarCambioProveedor(numOC){
     var box = document.getElementById('prov-cambiar-box');
     if (box) box.style.display = 'none';
     if (d.creado_en_catalogo) {
-      alert('Proveedor cambiado a "'+nuevo+'" — agregado al catálogo para próximos pedidos.');
+      alert('Proveedor cambiado a "'+nuevo+'" - agregado al catálogo para próximos pedidos.');
       // Recargar proveedores en cache global
       try { await loadData(); } catch(e){}
     } else {
-      // No alert if just confirmed existing — silent success
+      // No alert if just confirmed existing - silent success
     }
   } catch (e) {
     alert('Error de red: '+e.message);
@@ -4955,7 +4955,7 @@ async function guardarPreciosItems(numOC, solNumero){
     items.push(item);
   });
   if (!items.length || !solNumero) {
-    alert('Nada que guardar — ¿faltan datos?');
+    alert('Nada que guardar - ¿faltan datos?');
     if (btn) { btn.disabled = false; btn.textContent = '💾 Guardar cambios'; }
     return;
   }
@@ -4996,7 +4996,7 @@ function recalcularValorEst(input){
       var v = Math.round(cant * precio);
       celdaValor.innerHTML = '<strong style="color:#1F5F5B;">$'+v.toLocaleString('es-CO')+'</strong>';
     } else {
-      celdaValor.innerHTML = '<span style="color:#a8a29e;font-size:11px;">—</span>';
+      celdaValor.innerHTML = '<span style="color:#a8a29e;font-size:11px;">-</span>';
     }
   } catch(e) {}
 }
@@ -5182,7 +5182,7 @@ function descargarSolicitudesPDF(){
 // Sebastián 13-jul · ELIMINADAS las 4 funciones de auto-plan de MP
 // (consolidarAutoPendientes / soloLimpiarAuto / limpiarYRegenerarAutoPlan /
 // regenerarSolicitudesAuto): hacían BORRADO MASIVO de solicitudes y no debían
-// existir — todo lo que entra debe TRATARSE, no borrarse en lote. Sus botones
+// existir - todo lo que entra debe TRATARSE, no borrarse en lote. Sus botones
 // ya se quitaron; ningún cron/otra pantalla las usa. El plan de MP se recalcula
 // solo con el cron de auto-plan (no destructivo sobre lo que ya está en curso).
 
@@ -5205,14 +5205,14 @@ async function loadSolicitudes(){
   }catch(e){ SOLIC=[]; }
   renderSolicitudes();
 }
-// Limpiar SOLs influencer/CC NO pagadas — dry-run primero
+// Limpiar SOLs influencer/CC NO pagadas - dry-run primero
 window.limpiarSolsNoPagadas = async function(){
   try{
     var r = await fetch('/api/compras/influencer/limpiar-no-pagadas', _fetchOpts('POST', {}));  // sin confirm = dry-run
     var d = await r.json();
     if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
     if(d.a_borrar === 0){
-      alert('✓ Nada que limpiar — no hay SOLs Influencer/Marketing/CC sin pagar.');
+      alert('✓ Nada que limpiar - no hay SOLs Influencer/Marketing/CC sin pagar.');
       return;
     }
     var lista = d.candidatos.slice(0, 30).map(function(x){
@@ -5223,7 +5223,7 @@ window.limpiarSolsNoPagadas = async function(){
     if(d.a_borrar > 30) lista += '\\n  ... y '+(d.a_borrar-30)+' más';
     var msg = 'Vas a ELIMINAR '+d.a_borrar+' SOLs Influencer/Marketing/CC sin pagar.\\n\\n'+lista;
     if(d.omitidos_por_pagos>0){
-      msg += '\\n\\n('+d.omitidos_por_pagos+' omitidas porque tienen pagos efectivos — quedan intactas)';
+      msg += '\\n\\n('+d.omitidos_por_pagos+' omitidas porque tienen pagos efectivos - quedan intactas)';
     }
     msg += '\\n\\n¿Confirmar eliminación PERMANENTE?';
     if(!confirm(msg)) return;
@@ -5504,7 +5504,7 @@ function _plantaItemRowHTML(g, it){
     '<td style="padding:6px;text-align:right;white-space:nowrap;">' +
       (refsCount > 0 ? '<button class="btn" onclick="plantaGuardarItem(this)" style="padding:4px 10px;font-size:11px;background:#16a34a;color:#fff;" title="'+(refsCount > 1 ? 'Guarda los '+refsCount+' items relacionados' : 'Guardar')+'">&#x1F4BE; Guardar'+(refsCount > 1 ? ' ('+refsCount+')' : '')+'</button>'
         + ' <button class="btn" onclick="plantaEliminarItem(this)" style="padding:4px 8px;font-size:11px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;" title="Quitar SOLO esta MP del pedido (no borra el resto de la orden)">&#x1F5D1;</button>' :
-             '<span style="font-size:10px;color:#94a3b8;">—</span>') +
+             '<span style="font-size:10px;color:#94a3b8;">-</span>') +
     '</td>' +
   '</tr>';
 }
@@ -5686,9 +5686,9 @@ function renderCargos(){
     return '<tr>'
       +'<td><strong>'+esc(p.concepto||'')+'</strong>'+(p.beneficiario?'<br><small style="color:#78716c">'+esc(p.beneficiario)+'</small>':'')+'</td>'
       +'<td style="font-size:12px;color:#57534e;">'+esc(p.categoria||'')+'</td>'
-      +'<td class="valor" style="font-weight:700;">'+(p.monto>0?fmt(p.monto):'—')+'</td>'
+      +'<td class="valor" style="font-weight:700;">'+(p.monto>0?fmt(p.monto):'-')+'</td>'
       +'<td style="font-size:12px;">'+esc(p.fecha_limite||'')+'</td>'
-      +'<td style="font-size:12px;color:#57534e;">'+esc(medio||'—')+'</td>'
+      +'<td style="font-size:12px;color:#57534e;">'+esc(medio||'-')+'</td>'
       +'<td>'+_cargoEstadoPill(p.estado)+'</td>'
       +'<td style="white-space:nowrap;text-align:right;">'+acc+' '+editPlantilla+'</td>'
       +'</tr>';
@@ -5777,7 +5777,7 @@ async function guardarMontoCargo(){
 }
 async function pagarCargoFijo(pid){
   var p=(_CARGOS_CACHE.pagos||[]).find(function(x){return x.id===pid;});
-  var ref=prompt('Referencia/comprobante del pago de "'+(p?p.concepto:'')+'" ('+(p?fmt(p.monto):'')+') — opcional:','');
+  var ref=prompt('Referencia/comprobante del pago de "'+(p?p.concepto:'')+'" ('+(p?fmt(p.monto):'')+') - opcional:','');
   if(ref===null) return;
   try{
     var r=await fetch('/api/compras/cargos-fijos/pago/'+pid+'/pagar', _fetchOpts('POST', {referencia_pago:ref}));
@@ -5798,7 +5798,7 @@ async function loadInfluencers(){
   renderInfluencers();
 }
 
-// Helpers para ordenar — usados por renderInfluencers()
+// Helpers para ordenar - usados por renderInfluencers()
 // Sebastián 27-may-2026 PM · prioriza vence_pago_at (promesa 30d desde
 // fecha_contenido · mig 195). Lo más cerca a vencer arriba.
 function _infFechaOrden(s){
@@ -5869,7 +5869,7 @@ function _infSortFn(criterio){
 function fmoney(v){ return '$'+Number(v||0).toLocaleString('es-CO'); }
 function renderInfluencers(){
   var q=(document.getElementById('q-influencer')||{value:''}).value.toLowerCase();
-  // Sebastian (29-abr-2026): default 'ACCION' = Pendiente + Aprobada — todo
+  // Sebastian (29-abr-2026): default 'ACCION' = Pendiente + Aprobada - todo
   // lo que requiere su atencion. Antes era solo 'Aprobada' y se perdian las
   // SOL Pendientes que Jefferson creo desde /solicitudes con valor=0.
   var st=(document.getElementById('s-influencer')||{value:'ACCION'}).value;
@@ -5883,11 +5883,11 @@ function renderInfluencers(){
   if(helpEl){
     var labels={
       estado_fecha:'Por pagar primero (Aprobadas → Pendientes → Pagadas, luego fecha más vieja)',
-      urgente:'Fecha de pago debido — más antiguas arriba',
+      urgente:'Fecha de pago debido - más antiguas arriba',
       valor_desc:'Mayor valor de pago primero',
       valor_asc:'Menor valor de pago primero',
-      reciente:'Fecha de creación — más reciente arriba',
-      antiguo:'Fecha de creación — más antiguo arriba',
+      reciente:'Fecha de creación - más reciente arriba',
+      antiguo:'Fecha de creación - más antiguo arriba',
     };
     // Cuántas tienen fecha_requerida (para que vea por qué a veces parece desordenado)
     var con_fecha_req = INFLUENCERS.filter(function(s){return s.fecha_requerida && String(s.fecha_requerida).trim();}).length;
@@ -6007,7 +6007,7 @@ function renderInfluencers(){
       urgBadge='<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;" title="Al día · vence '+esc(urg.vence)+'">🟢 '+urg.dias+'d</span>';
     }
 
-    // Bank info row — only show if parsed
+    // Bank info row - only show if parsed
     var bankRow='';
     if(b.nombre||b.banco||b.cuenta){
       bankRow='<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;margin:10px 0;display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:12px;">'
@@ -6128,7 +6128,7 @@ function renderInfluencers(){
       if(pagaAll.length>0){
         gpag.innerHTML='<details style="margin-top:20px;">'
           +'<summary style="cursor:pointer;font-size:13px;font-weight:600;color:#059669;padding:10px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;list-style:none;display:flex;align-items:center;gap:8px;">'
-          +'✅ '+pagaAll.length+' pago'+(pagaAll.length>1?'s':'')+' realizados — '+fmoney(totalPaga)
+          +'✅ '+pagaAll.length+' pago'+(pagaAll.length>1?'s':'')+' realizados - '+fmoney(totalPaga)
           +' <span style="font-size:11px;color:#64748b;font-weight:400;margin-left:4px;">(click para ver)</span>'
           +'</summary>'
           +'<div style="margin-top:10px;">'+pagaAll.map(buildCard).join('')+'</div>'
@@ -6163,7 +6163,7 @@ function renderInfluencers(){
   // Pagar SOL Pendiente en UN SOLO CLICK:
   //   1. Si valor=0, pedirlo al usuario.
   //   2. Aprobar SOL + crear OC vinculada (endpoint aprobar-influencer).
-  //   3. Pagar la OC recien creada (endpoint /pagar) — esto:
+  //   3. Pagar la OC recien creada (endpoint /pagar) - esto:
   //      - registra pago en pagos_oc
   //      - cambia OC a 'Pagada'
   //      - sincroniza solicitudes_compra → 'Pagada'
@@ -6202,8 +6202,8 @@ function renderInfluencers(){
         loadInfluencers();
         return;
       }
-      alert('✅ Pagado: '+ocNum+' — Jefferson recibirá email + notif in-app');
-      // Sebastian (30-abr-2026): "le doy pagar no desaparece" — bulletproof
+      alert('✅ Pagado: '+ocNum+' - Jefferson recibirá email + notif in-app');
+      // Sebastian (30-abr-2026): "le doy pagar no desaparece" - bulletproof
       // refresh: esperar la recarga y forzar fresh fetch (no cache).
       try { await loadInfluencers(); } catch(_){}
     } catch(e){ alert('Error de red: '+e.message); }
@@ -6502,7 +6502,7 @@ function _renderGrupoCard(g, gi){
       '<button onclick="abrirPedirCotizacion('+gi+')" style="background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.4);border-radius:6px;padding:8px 14px;font-size:11px;font-weight:700;cursor:pointer" title="Pedir 3 cotizaciones a los top proveedores históricos · IA elige los mejores">&#x1F4AC; Pedir cotización</button>'+
       '<button onclick="toggleGrupo('+gi+')" id="btnTg'+gi+'" style="background:rgba(255,255,255,0.2);color:#fff;border:none;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:13px;font-weight:700;" title="Mostrar/ocultar items">&#x25BC;</button>'+
     '</div>'+
-    // Body — items consolidados (oculto por defecto)
+    // Body - items consolidados (oculto por defecto)
     '<div id="grpBody'+gi+'" style="display:none;padding:10px 16px;">'+
       '<div style="font-size:11px;color:#78716c;font-weight:600;margin-bottom:6px;">MATERIAS PRIMAS A COMPRAR (consolidadas):</div>'+
       '<table style="width:100%;font-size:12px;border-collapse:collapse;">'+
@@ -6775,10 +6775,10 @@ function abrirOCRFactura(){
         var html = '<div style="background:'+confBg+';color:'+confColor+';padding:10px;border-radius:6px;margin-bottom:12px;font-weight:700">'+confLabel+' · confianza '+conf+'%</div>';
         html += '<div style="background:#f8fafc;padding:12px;border-radius:6px;margin-bottom:12px"><b>Datos extraídos:</b>';
         html += '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:6px;font-size:12px">';
-        html += '<div><b>Proveedor:</b><br>'+esc(f.proveedor||'—')+'</div>';
-        html += '<div><b>NIT:</b><br>'+esc(f.nit||'—')+'</div>';
-        html += '<div><b>N° Factura:</b><br><span style="font-family:monospace;color:#7c3aed;font-weight:700">'+esc(f.numero_factura||'—')+'</span></div>';
-        html += '<div><b>Fecha:</b><br>'+esc(f.fecha_emision||'—')+'</div>';
+        html += '<div><b>Proveedor:</b><br>'+esc(f.proveedor||'-')+'</div>';
+        html += '<div><b>NIT:</b><br>'+esc(f.nit||'-')+'</div>';
+        html += '<div><b>N° Factura:</b><br><span style="font-family:monospace;color:#7c3aed;font-weight:700">'+esc(f.numero_factura||'-')+'</span></div>';
+        html += '<div><b>Fecha:</b><br>'+esc(f.fecha_emision||'-')+'</div>';
         html += '<div><b>Subtotal:</b><br>'+fmt((f.subtotal||0).toFixed(0))+'</div>';
         html += '<div><b>IVA:</b><br>'+fmt((f.iva||0).toFixed(0))+'</div>';
         html += '<div style="grid-column:span 2"><b>Total:</b><br><span style="font-size:20px;font-weight:800;color:#7c3aed">'+fmt((f.total||0).toFixed(0))+'</span></div>';
@@ -6913,7 +6913,7 @@ async function abrirCrearOCDesdeGrupo(gi){
     totalOC += val;
     var h = hist[it.codigo_mp];
     var promKg = (h && h.precio_promedio_90d > 0) ? h.precio_promedio_90d : 0;  // $/kg
-    var deltaCell = '<span style="color:#cbd5e1">—</span>';
+    var deltaCell = '<span style="color:#cbd5e1">-</span>';
     if(promKg > 0 && puKg > 0){
       var delta = ((puKg - promKg) / promKg) * 100;   // FIX 13-jul · ambos en $/kg (antes $/g vs $/kg → delta ×1000)
       var color = delta > 15 ? '#dc2626' : (delta > 5 ? '#ca8a04' : (delta < -5 ? '#16a34a' : '#475569'));
@@ -7012,10 +7012,10 @@ function renderCCSolicitudes(){
     var urg=s.urgencia||'Normal';
     var urgC=urgColor[urg]||'#78716c';
     var obs=(s.observaciones||'').substring(0,100);
-    var val=s.valor>0?(' &mdash; '+fmoney(s.valor)):'';  
+    var val=s.valor>0?(' - '+fmoney(s.valor)):'';  
     return '<div class="card" style="border-left:3px solid #f59e0b;">'
       +'<div class="ch"><div><div class="cnum" style="font-family:monospace;">'+esc(s.numero)+'</div>'
-      +'<div class="cprov">'+esc(s.solicitante||'-')+' &mdash; '+esc(s.area||'-')+'</div></div>'
+      +'<div class="cprov">'+esc(s.solicitante||'-')+' - '+esc(s.area||'-')+'</div></div>'
       +'<span class="badge" style="background:#fef3c7;color:#92400e;">Pendiente</span></div>'
       +'<div class="cmeta"><span>'+fdate(s.fecha)+'</span><span>'+esc(s.empresa||'Espagiria')+'</span>'
       +'<span style="color:'+urgC+';font-weight:700;">'+esc(urg)+'</span>'
@@ -7108,7 +7108,7 @@ async function openSolicitudDetail(num){
       h+='</div>';
       h+='</div>';
     } else if(oc){
-      // OC existe pero sin proveedor asignado — selector grande para asignar
+      // OC existe pero sin proveedor asignado - selector grande para asignar
       h+='<div id="prov-card" style="background:#fef2f2;border:1px solid #fca5a5;border-radius:12px;padding:14px 22px;margin-bottom:18px;">';
       h+='<div style="font-size:11px;color:#991b1b;text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:8px;">⚠ Sin proveedor asignado</div>';
       if(s.estado==='Pendiente'){
@@ -7173,7 +7173,7 @@ async function openSolicitudDetail(num){
       // tangible (MPs/MEE/Servicios). Influencers/CC tienen su propio flujo.
       var puedeEditarPrecios = (s.estado === 'Pendiente') &&
         ['Materia Prima','MP','MEE','Insumos','Servicio','SVC','Acondicionamiento'].indexOf(s.categoria||'') >= 0;
-      h+='<div style="font-weight:800;font-size:11px;color:#1F5F5B;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">📦 Items solicitados ('+items.length+')'+(puedeEditarPrecios?' <span style="color:#0f766e;font-weight:600;text-transform:none;letter-spacing:0;">— editá los precios y guardá para alimentar el histórico</span>':'')+'</div>';
+      h+='<div style="font-weight:800;font-size:11px;color:#1F5F5B;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;">📦 Items solicitados ('+items.length+')'+(puedeEditarPrecios?' <span style="color:#0f766e;font-weight:600;text-transform:none;letter-spacing:0;">- editá los precios y guardá para alimentar el histórico</span>':'')+'</div>';
       h+='<div style="border:1px solid #e7e5e4;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.04);">';
       h+='<table id="sol-items-table" style="width:100%;border-collapse:collapse;font-size:13px;">';
       h+='<thead style="background:#1F5F5B;color:#fff;">';
@@ -7225,7 +7225,7 @@ async function openSolicitudDetail(num){
         var valor = parseFloat(it.valor_estimado||0) || parseFloat(it.valor_estimado_calculado||0) || 0;
         if(valor > 0) totalValorEst += valor;
         var valorHtml = valor > 0 ? '<strong style="color:#1F5F5B;">'+fmt(valor)+'</strong>'
-                                  : '<span style="color:#a8a29e;font-size:11px;">—</span>';
+                                  : '<span style="color:#a8a29e;font-size:11px;">-</span>';
         // Acumular justificaciones únicas (productos que necesitan estos MPs)
         if(it.justificacion){
           justificacionesUnicas[it.justificacion] = (justificacionesUnicas[it.justificacion]||0) + 1;
@@ -7235,15 +7235,15 @@ async function openSolicitudDetail(num){
         var provActual = it.proveedor_sugerido || it.proveedor || '';
         var itemId = it.id || '';
         h+='<tr data-cod="'+esc(it.codigo_mp||'')+'" data-itemid="'+esc(itemId)+'" data-nombre="'+esc(it.nombre_mp||'')+'" style="background:'+bg+';border-bottom:1px solid #f0edec;">';
-        h+='<td style="padding:11px 14px;font-family:monospace;font-size:11px;color:#78716c;">'+esc(it.codigo_mp||'—')+'</td>';
-        h+='<td style="padding:11px 14px;font-weight:600;color:#1c1917;">'+esc(it.nombre_inci||it.nombre_mp||'—')+((it.nombre_inci&&it.nombre_mp&&it.nombre_inci!==it.nombre_mp)?'<span style="font-weight:400;color:#a8a29e;font-size:11px"> ('+esc(it.nombre_mp)+')</span>':'')+'</td>';
-        // PROVEEDOR — input directo (con datalist de proveedores conocidos)
+        h+='<td style="padding:11px 14px;font-family:monospace;font-size:11px;color:#78716c;">'+esc(it.codigo_mp||'-')+'</td>';
+        h+='<td style="padding:11px 14px;font-weight:600;color:#1c1917;">'+esc(it.nombre_inci||it.nombre_mp||'-')+((it.nombre_inci&&it.nombre_mp&&it.nombre_inci!==it.nombre_mp)?'<span style="font-weight:400;color:#a8a29e;font-size:11px"> ('+esc(it.nombre_mp)+')</span>':'')+'</td>';
+        // PROVEEDOR - input directo (con datalist de proveedores conocidos)
         if(puedeEditarPrecios){
           h+='<td style="padding:8px 10px;">';
           h+='<input class="prov-edit" type="text" list="prov-dl-detail" value="'+esc(provActual)+'" placeholder="Proveedor..." style="width:100%;padding:6px 8px;border:1px solid #d6d3d1;border-radius:6px;font-size:12px;">';
           h+='</td>';
         } else {
-          var provHtml = provActual ? esc(provActual) : '<span style="color:#cbd5e1;font-style:italic;">— sin asignar —</span>';
+          var provHtml = provActual ? esc(provActual) : '<span style="color:#cbd5e1;font-style:italic;">- sin asignar -</span>';
           h+='<td style="padding:11px 14px;font-size:12px;color:#475569;">'+provHtml+'</td>';
         }
         h+='<td style="padding:11px 14px;text-align:right;color:'+stockColor+';font-weight:700;">'+stockLbl+'</td>';
@@ -7265,7 +7265,7 @@ async function openSolicitudDetail(num){
         // (maestro_mps.precio_referencia · "Ref: $/g") · una sola fuente (M9).
         h+='</tr>';
       });
-      // Fila de total — colspan 3 para cubrir CÓDIGO + MATERIAL + PROVEEDOR
+      // Fila de total - colspan 3 para cubrir CÓDIGO + MATERIAL + PROVEEDOR
       var colspanTotal = 3;
       h+='<tr style="background:#f0fdfa;border-top:2px solid #1F5F5B;">';
       h+='<td colspan="'+colspanTotal+'" style="padding:12px 14px;font-weight:700;color:#0f766e;text-transform:uppercase;font-size:11px;letter-spacing:.5px;">📊 Total: '+items.length+' items</td>';
@@ -7276,7 +7276,7 @@ async function openSolicitudDetail(num){
         h+='<button id="btn-guardar-precios" onclick="guardarPreciosItems(&quot;'+esc((oc&&oc.numero_oc)||'')+'&quot;,&quot;'+esc(s.numero||num)+'&quot;)" style="background:#0f766e;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:11px;font-weight:700;cursor:pointer;width:100%;">💾 Guardar cambios</button>';
         h+='</td>';
       }
-      h+='<td style="padding:12px 14px;text-align:right;font-weight:800;color:#1F5F5B;font-size:14px;" id="sol-valor-total">'+(totalValorEst > 0 ? fmt(totalValorEst) : '—')+'</td>';
+      h+='<td style="padding:12px 14px;text-align:right;font-weight:800;color:#1F5F5B;font-size:14px;" id="sol-valor-total">'+(totalValorEst > 0 ? fmt(totalValorEst) : '-')+'</td>';
       h+='</tr>';
       h+='</tbody></table></div>';
 
@@ -7298,7 +7298,7 @@ async function openSolicitudDetail(num){
       // Filtrar la línea auto-generada que ya está implícita arriba (proveedor + MPs listados)
       var obsLimpia = obs;
       if(obs.indexOf('Centro Programación') >= 0 || obs.indexOf('Centro Programacion') >= 0 || obs.indexOf('Planificación Estratégica') >= 0){
-        // Es auto-generada — extraer solo la parte 'ACCIÓN:' si existe
+        // Es auto-generada - extraer solo la parte 'ACCIÓN:' si existe
         var ix = obs.indexOf('ACCIÓN:');
         if(ix >= 0){
           obsLimpia = obs.slice(ix);
@@ -7550,7 +7550,7 @@ setTimeout(function(){
     var badge = document.getElementById('solprod-badge');
     if(badge && d.pendientes>0){ badge.textContent = d.pendientes; badge.style.display='inline-block'; }
   }).catch(function(){});
-  // Badge de Mis Solicitudes — cuenta abiertas del usuario logueado
+  // Badge de Mis Solicitudes - cuenta abiertas del usuario logueado
   fetch('/api/solicitudes-compra/mis?estado=abiertas').then(function(r){return r.json();}).then(function(d){
     var badge = document.getElementById('mis-sol-badge');
     if(badge && d.abiertas>0){ badge.textContent = d.abiertas; badge.style.display='inline-block'; }
@@ -7740,7 +7740,7 @@ function renderConsolCard(p, idx){
       var cant = Math.round(it.cantidad_total_g||0).toLocaleString('es-CO')+' g';
       var sub = it.subtotal_total > 0
         ? '$'+Number(it.subtotal_total).toLocaleString('es-CO',{maximumFractionDigits:0})
-        : '—';
+        : '-';
       var ocs = it.ocs_origen.length > 1 ? it.ocs_origen.join(', ') : (it.ocs_origen[0]||'');
       return '<tr>'
         +'<td style="padding:5px 8px;color:#1e293b;">'+escConH(it.nombre_inci||it.nombre_mp)+((it.nombre_inci&&it.nombre_mp&&it.nombre_inci!==it.nombre_mp)?'<span style="color:#a8a29e;font-size:11px"> ('+escConH(it.nombre_mp)+')</span>':'')+'</td>'
@@ -7762,7 +7762,7 @@ function renderConsolCard(p, idx){
     // Fallback: mostrar OCs con su descripción/observaciones
     var rows = p.ocs.map(function(o){
       var col = estadoColors[o.estado] || '#94a3b8';
-      var desc = o.observaciones || o.categoria || '—';
+      var desc = o.observaciones || o.categoria || '-';
       return '<tr>'
         // Bug #11 fix · 21-may-2026 · escape numero_oc + estado (consistencia XSS)
         +'<td style="padding:5px 8px;font-weight:600;color:#0f172a;">'+escConH(o.numero_oc||'')+'</td>'
@@ -7909,7 +7909,7 @@ function renderConsolCardEdit(p, idx){
       +'<div style="flex:1;min-width:0;">'
         +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
           +'<input id="consol-edit-prov-'+idx+'" value="'+escConH(p.proveedor||'')+'" list="consol-prov-dl" placeholder="Proveedor" style="font-weight:800;font-size:15px;color:#5b21b6;border:1px solid #ddd6fe;border-radius:8px;padding:5px 10px;min-width:250px;background:#fff;" title="Cambiá el proveedor · si el nuevo ya tiene una orden activa, esta se fusiona automáticamente con ella">'
-          +'<span style="font-size:12px;color:#7c3aed;font-weight:500;">— Modo edición</span></div>'
+          +'<span style="font-size:12px;color:#7c3aed;font-weight:500;">- Modo edición</span></div>'
         +'<div style="font-size:11px;color:#7c3aed;margin-top:3px;">Edita proveedor, cantidades, precios, IVA y observaciones. Si cambiás a un proveedor que ya tiene orden, se juntan.</div>'
       +'</div>'
       +'<div style="display:flex;gap:8px;flex-shrink:0;">'
@@ -8049,7 +8049,7 @@ async function saveConsolEdits(idx){
       }catch(e){ errors.push(ocNum+' "'+nom+'": '+e.message); }
     }
 
-    // 2) OC: con_iva + observaciones (PATCH parcial — el backend mantiene proveedor/categoria/etc. si no van).
+    // 2) OC: con_iva + observaciones (PATCH parcial - el backend mantiene proveedor/categoria/etc. si no van).
     //    Aun asi enviamos proveedor explicitamente como defensa en profundidad.
     var conIva = ocBox.querySelector('[data-field="con_iva"]').checked;
     var obs = ocBox.querySelector('[data-field="observaciones"]').value || '';
@@ -8095,7 +8095,7 @@ async function copiarPedido(idx){
   if(!p){ alert('Error: proveedor no encontrado'); return; }
   var fecha = new Date().toLocaleDateString('es-CO',{day:'2-digit',month:'long',year:'numeric'});
   var lines = [];
-  lines.push('SOLICITUD DE COMPRA — '+p.proveedor);
+  lines.push('SOLICITUD DE COMPRA - '+p.proveedor);
   if(p.nit) lines.push('NIT: '+p.nit);
   if(p.contacto) lines.push('Contacto: '+p.contacto);
   if(p.telefono) lines.push('Tel: '+p.telefono);
@@ -8115,7 +8115,7 @@ async function copiarPedido(idx){
   } else {
     p.ocs.forEach(function(o){
       var desc = o.observaciones || o.categoria || '';
-      lines.push('- '+o.numero_oc+' ('+o.estado+'): '+(desc?desc+' — ':'')+
+      lines.push('- '+o.numero_oc+' ('+o.estado+'): '+(desc?desc+' - ':'')+
         '$'+Number(o.valor_total).toLocaleString('es-CO',{maximumFractionDigits:0}));
     });
   }
@@ -8337,7 +8337,7 @@ table.items td.r{text-align:right;}
     <td class="label-cell">TELÉFONO:</td>
     <td colspan="3">3235180113</td>
     <td class="blue" style="text-align:center;background:#e8f0fb;"># PROVEEDOR</td>
-    <td style="text-align:center;">${escConH(p.nit||'—')}</td>
+    <td style="text-align:center;">${escConH(p.nit||'-')}</td>
   </tr>
   <tr>
     <td class="label-cell">EMAIL:</td>
@@ -8355,7 +8355,7 @@ table.items td.r{text-align:right;}
   <tr>
     <td class="label-cell">DIRECCIÓN</td>
     <td colspan="3">${escConH(p.direccion||'')||'&nbsp;'}</td>
-    <td colspan="2" style="text-align:center;font-weight:700;">${escConH(p.solicitado_por||'—')}</td>
+    <td colspan="2" style="text-align:center;font-weight:700;">${escConH(p.solicitado_por||'-')}</td>
   </tr>
   <tr>
     <td class="label-cell">CORREO</td>
@@ -8561,7 +8561,7 @@ async function eliminarSolicitud(num){
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// Tab "Por Pagar" — vista unificada de pendientes de pago
+// Tab "Por Pagar" - vista unificada de pendientes de pago
 // ════════════════════════════════════════════════════════════════════════
 
 // ALTA-5 fix · _esc duplicado borrado (ya está declarado en línea 1730)
@@ -8666,7 +8666,7 @@ async function cargarOcsAtrasadas(){
       });
     }
     function _fmtCop(n){
-      if(!n) return '—';
+      if(!n) return '-';
       return '$' + Math.round(n).toLocaleString('es-CO');
     }
     (d.ocs || []).forEach(function(oc){
@@ -8675,7 +8675,7 @@ async function cargarOcsAtrasadas(){
       html += '<tr style="border-bottom:1px solid #f1f5f9;background:' + sev + '">';
       html += '<td style="padding:8px 12px;font-family:ui-monospace;font-weight:700">' + _esc(oc.numero_oc) + '</td>';
       html += '<td style="padding:8px 12px">' + _esc(oc.proveedor) + '</td>';
-      html += '<td style="padding:8px 12px;color:#64748b">' + _esc(oc.creador || '—') + '</td>';
+      html += '<td style="padding:8px 12px;color:#64748b">' + _esc(oc.creador || '-') + '</td>';
       html += '<td style="padding:8px 12px;text-align:center;font-size:11px;font-weight:700;color:' + (oc.estado==='Parcial'?'#9a3412':'#1e40af') + '">' + _esc(oc.estado) + '</td>';
       html += '<td style="padding:8px 12px;text-align:right;font-family:ui-monospace">' + oc.dias_desde_oc + 'd</td>';
       html += '<td style="padding:8px 12px;text-align:right;font-family:ui-monospace;color:#64748b">' + oc.lead_time_dias + 'd</td>';
@@ -8721,7 +8721,7 @@ async function cargarDiscrepancias(){
       });
     }
     function _fmtCop(n){
-      if(!n) return '—';
+      if(!n) return '-';
       return '$' + Math.round(n).toLocaleString('es-CO');
     }
     // Resumen
@@ -8777,7 +8777,7 @@ async function cargarDiscrepancias(){
       html += '<td style="padding:8px 12px;font-family:ui-monospace;font-weight:700">' + _esc(oc.numero_oc) + '</td>';
       html += '<td style="padding:8px 12px">' + _esc(oc.proveedor) + '</td>';
       html += '<td style="padding:8px 12px">' + _esc(oc.fecha_recepcion) + '</td>';
-      html += '<td style="padding:8px 12px;color:#64748b">' + _esc(oc.recibido_por || '—') + '</td>';
+      html += '<td style="padding:8px 12px;color:#64748b">' + _esc(oc.recibido_por || '-') + '</td>';
       // Items faltantes · expandible
       var itemsHtml = '<span style="font-weight:700;color:#dc2626">' + oc.n_items_faltantes + '</span>';
       if(oc.items_faltantes && oc.items_faltantes.length){
@@ -8792,7 +8792,7 @@ async function cargarDiscrepancias(){
       }
       html += '<td style="padding:8px 12px;text-align:center">' + itemsHtml + '</td>';
       html += '<td style="padding:8px 12px;text-align:right;font-family:ui-monospace">' + _fmtCop(oc.valor_total) + '</td>';
-      html += '<td style="padding:8px 12px;font-size:11px;color:#64748b;max-width:280px">' + _esc(oc.observaciones_recepcion || '—') + '</td>';
+      html += '<td style="padding:8px 12px;font-size:11px;color:#64748b;max-width:280px">' + _esc(oc.observaciones_recepcion || '-') + '</td>';
       html += '</tr>';
     });
     html += '</tbody></table>';
@@ -8830,7 +8830,7 @@ async function cargarMailbox(){
       });
     }
     function _money(n){
-      if(!n) return '—';
+      if(!n) return '-';
       return '$' + Math.round(n).toLocaleString('es-CO');
     }
     var n = d.total || 0;
@@ -8862,8 +8862,8 @@ async function cargarMailbox(){
       html += '<tr style="border-bottom:1px solid #f1f5f9;background:' + bg + '">';
       html += '<td style="padding:8px 12px">' + _esc(it.fecha) + '</td>';
       html += '<td style="padding:8px 12px;font-family:ui-monospace;font-weight:700">' + _esc(it.numero_oc) + '</td>';
-      html += '<td style="padding:8px 12px">' + _esc(it.proveedor || '—') + '</td>';
-      html += '<td style="padding:8px 12px;font-family:ui-monospace">' + _esc(it.numero_factura || '—') + '</td>';
+      html += '<td style="padding:8px 12px">' + _esc(it.proveedor || '-') + '</td>';
+      html += '<td style="padding:8px 12px;font-family:ui-monospace">' + _esc(it.numero_factura || '-') + '</td>';
       html += '<td style="padding:8px 12px;text-align:right;font-family:ui-monospace">' + _money(it.valor_oc) + '</td>';
       var estCol = it.pendiente ? '#5b21b6' : '#15803d';
       var estTxt = it.pendiente ? 'PENDIENTE' : it.medio;
@@ -8970,10 +8970,10 @@ async function cargarCotizaciones(){
       var fgEst = est==='cerrada' ? '#166534' : (est==='cancelada'?'#991b1b':'#92400e');
       html += '<tr style="border-bottom:1px solid #f1f5f9">';
       html += '<td style="padding:8px 12px;font-family:ui-monospace;font-weight:700">#'+(r2.ronda_id||r2.id)+'</td>';
-      html += '<td style="padding:8px 12px">'+_esc(r2.material_nombre||r2.descripcion||r2.material_id||'—')+'</td>';
+      html += '<td style="padding:8px 12px">'+_esc(r2.material_nombre||r2.descripcion||r2.material_id||'-')+'</td>';
       html += '<td style="padding:8px 12px;color:#64748b">'+_esc((r2.creada_en||'').slice(0,10))+'</td>';
       html += '<td style="padding:8px 12px;text-align:center"><span style="background:#f1f5f9;padding:2px 8px;border-radius:6px;font-weight:700">'+(r2.recibidas||r2.respuestas||0)+' / '+(r2.solicitadas||r2.total||0)+'</span></td>';
-      html += '<td style="padding:8px 12px;text-align:right;font-weight:700;color:#15803d">'+(r2.mejor_precio ? _money(r2.mejor_precio) : '—')+'</td>';
+      html += '<td style="padding:8px 12px;text-align:right;font-weight:700;color:#15803d">'+(r2.mejor_precio ? _money(r2.mejor_precio) : '-')+'</td>';
       html += '<td style="padding:8px 12px;text-align:center"><span style="background:'+bgEst+';color:'+fgEst+';padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700;text-transform:uppercase">'+_esc(r2.estado||'?')+'</span></td>';
       html += '<td style="padding:8px 12px;text-align:center"><button onclick="abrirCotizDrawer('+(r2.ronda_id||r2.id)+')" style="background:#0891b2;color:#fff;border:none;padding:5px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">📊 Comparar</button></td>';
       html += '</tr>';
@@ -9030,10 +9030,10 @@ async function abrirCotizDrawer(rondaId){
       }
       html += '<div style="font-weight:800;font-size:14px;color:#1e293b;margin-bottom:8px">'+_esc(c.proveedor||'?')+'</div>';
       html += '<table style="width:100%;font-size:12px;border-collapse:collapse">';
-      html += '<tr><td style="color:#64748b;padding:3px 0">Precio total:</td><td style="text-align:right;font-weight:800;color:#1e293b">'+(c.valor_total?_money(c.valor_total):'—')+'</td></tr>';
-      html += '<tr><td style="color:#64748b;padding:3px 0">Tiempo entrega:</td><td style="text-align:right;font-weight:700">'+(c.tiempo_entrega_dias!=null?c.tiempo_entrega_dias+' días':'—')+'</td></tr>';
+      html += '<tr><td style="color:#64748b;padding:3px 0">Precio total:</td><td style="text-align:right;font-weight:800;color:#1e293b">'+(c.valor_total?_money(c.valor_total):'-')+'</td></tr>';
+      html += '<tr><td style="color:#64748b;padding:3px 0">Tiempo entrega:</td><td style="text-align:right;font-weight:700">'+(c.tiempo_entrega_dias!=null?c.tiempo_entrega_dias+' días':'-')+'</td></tr>';
       html += '<tr><td style="color:#64748b;padding:3px 0">Estado:</td><td style="text-align:right;font-weight:700;color:'+(c.valor_total?'#15803d':'#94a3b8')+'">'+(c.valor_total?'✓ Respondió':'⏳ Pendiente')+'</td></tr>';
-      html += '<tr><td style="color:#64748b;padding:3px 0">Condiciones:</td><td style="text-align:right;font-size:11px">'+_esc(c.condiciones||'—')+'</td></tr>';
+      html += '<tr><td style="color:#64748b;padding:3px 0">Condiciones:</td><td style="text-align:right;font-size:11px">'+_esc(c.condiciones||'-')+'</td></tr>';
       if(c.numero_oc){
         html += '<tr><td style="color:#64748b;padding:3px 0">OC generada:</td><td style="text-align:right;font-weight:700;color:#0891b2">'+_esc(c.numero_oc)+'</td></tr>';
       }
@@ -9190,7 +9190,7 @@ async function loadPorPagar(){
   }
 }
 
-// Rechazar OC desde Por Pagar — devuelve la SOL al estado Pendiente para que
+// Rechazar OC desde Por Pagar - devuelve la SOL al estado Pendiente para que
 // el solicitante pueda corregir o reenviar. Marca la OC como Rechazada con
 // el motivo en observaciones. Reusa endpoint /api/compras/oc/<num>/rechazar.
 async function rechazarPorPagar(numOC){
@@ -9225,7 +9225,7 @@ async function repararOC(numOC){
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// Tab "Alertas" — 4 categorías de alertas vivas
+// Tab "Alertas" - 4 categorías de alertas vivas
 // ════════════════════════════════════════════════════════════════════════
 
 async function loadAlertasCompras(){
@@ -9303,7 +9303,7 @@ async function loadAlertasCompras(){
 // Stub no-op: el tab Cuentas de Cobro fue absorbido por Solicitudes en el
 // refactor del Centro de Mando, pero quedaron 2 callsites sin protección
 // (líneas init + post-decisión). El ReferenceError tiraba TODO el init
-// async — todos los handlers quedaban sin engancharse. Stub idempotente
+// async - todos los handlers quedaban sin engancharse. Stub idempotente
 // = compras vuelve a la vida.
 async function loadCCSolicitudes(){ /* no-op: tab absorbido en Solicitudes */ }
 
