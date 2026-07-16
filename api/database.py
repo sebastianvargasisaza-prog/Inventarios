@@ -428,6 +428,22 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (356, "Calidad · Indicadores: dejar solo Liberación + Micro y agregar 3 nuevos (Sebastián 16-jul · 'el resto "
+          "aún no lo usamos, para presionar'). Desactiva (activo=0, reversible) NC/CAPA/OOS/agua/calibraciones. "
+          "Agrega: MP en cuarentena (lotes esperando revisión · ahora), Tiempo de liberación (días prom. cuarentena→"
+          "liberar 90d), Liberaciones por día (lotes liberados hoy). ON CONFLICT nativo (PG+SQLite). Reversible.", [
+        "UPDATE calidad_kpi_metas SET activo=0 WHERE codigo IN "
+        "('nc_abiertas','nc_cierre_dias','capa_vencidas','capa_a_tiempo','oos_abiertos','agua_conforme','calibraciones_vigentes')",
+        "INSERT INTO calidad_kpi_metas (codigo,nombre,descripcion,unidad,direccion,meta,umbral_amarillo,categoria,orden) "
+        "VALUES ('mp_cuarentena','Materias primas en cuarentena','Lotes de MP esperando revisión de Calidad (ahora)','lotes','menor_mejor',10,25,'Liberación',5) "
+        "ON CONFLICT (codigo) DO NOTHING",
+        "INSERT INTO calidad_kpi_metas (codigo,nombre,descripcion,unidad,direccion,meta,umbral_amarillo,categoria,orden) "
+        "VALUES ('tiempo_liberacion','Tiempo de liberación','Días promedio de MP en cuarentena hasta liberar (90d)','días','menor_mejor',3,7,'Liberación',6) "
+        "ON CONFLICT (codigo) DO NOTHING",
+        "INSERT INTO calidad_kpi_metas (codigo,nombre,descripcion,unidad,direccion,meta,umbral_amarillo,categoria,orden) "
+        "VALUES ('liberacion_dia','Liberaciones por día','Lotes de MP liberados hoy','lotes','mayor_mejor',3,1,'Liberación',7) "
+        "ON CONFLICT (codigo) DO NOTHING",
+    ]),
     (355, "Recepción · N° de recipientes por lote (Laura 16-jul): cuando una MP llega en varios envases individuales "
           "(ej. 4 kg en 4 tarros de 1 kg), se registra cuántos recipientes → figura en Cuarentena/Calidad y el rótulo "
           "puede generar uno por recipiente. `movimientos.n_recipientes` INTEGER DEFAULT 1 (1 = un solo envase, lo normal). "

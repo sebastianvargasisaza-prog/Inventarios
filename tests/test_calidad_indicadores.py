@@ -5,10 +5,15 @@ GET /api/calidad/indicadores devuelve el set estándar con meta + valor + semáf
 """
 from .conftest import csrf_headers
 
+# Mig 356 (16-jul): el tablero quedó en Liberación + Micro + 3 nuevos. Los de
+# NC/CAPA/OOS/agua/calibraciones se desactivaron (activo=0) → ya no salen.
 _ESPERADOS = {
-    'rft_mp', 'tasa_rechazo_mp', 'liberacion_pt', 'nc_abiertas', 'nc_cierre_dias',
-    'capa_vencidas', 'capa_a_tiempo', 'oos_abiertos', 'micro_ok', 'agua_conforme',
-    'calibraciones_vigentes',
+    'rft_mp', 'tasa_rechazo_mp', 'liberacion_pt', 'micro_ok',
+    'mp_cuarentena', 'tiempo_liberacion', 'liberacion_dia',
+}
+_DESACTIVADOS = {
+    'nc_abiertas', 'nc_cierre_dias', 'capa_vencidas', 'capa_a_tiempo',
+    'oos_abiertos', 'agua_conforme', 'calibraciones_vigentes',
 }
 
 
@@ -18,6 +23,7 @@ def test_indicadores_set_completo(admin_client):
     d = r.get_json()
     cods = {i['codigo'] for i in d['indicadores']}
     assert _ESPERADOS <= cods, f'faltan indicadores: {_ESPERADOS - cods}'
+    assert not (_DESACTIVADOS & cods), f'no deben salir los desactivados: {_DESACTIVADOS & cods}'
     # cada indicador trae semáforo válido
     for i in d['indicadores']:
         assert i['semaforo'] in ('verde', 'amarillo', 'rojo', 'gris'), i

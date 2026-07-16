@@ -292,6 +292,28 @@ def calidad_indicadores():
     cal_tot = cont("SELECT COUNT(*) FROM calibraciones_instrumentos")
     cal_venc = cont("SELECT COUNT(*) FROM calibraciones_instrumentos WHERE fecha_proxima < ? OR estado='Vencida'", (hoy,))
     valores['calibraciones_vigentes'] = _ratio_pct(cal_tot - cal_venc, cal_tot)
+    # ── KPIs nuevos (Sebastián 16-jul · "para presionar") ─────────────────
+    # MP en cuarentena AHORA (lotes de MP esperando revisión de Calidad)
+    valores['mp_cuarentena'] = cont(
+        "SELECT COUNT(*) FROM movimientos m LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp "
+        "WHERE UPPER(COALESCE(m.estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA') AND m.tipo='Entrada' "
+        "AND TRIM(COALESCE(m.material_id,'')) <> '' AND UPPER(COALESCE(mp.tipo_material,'MP'))='MP'")
+    # Liberaciones HOY (lotes de MP que Calidad aprobó en el día)
+    valores['liberacion_dia'] = cont(
+        "SELECT COUNT(*) FROM audit_log WHERE accion IN ('CC_REVIEW_APROBADO','APROBAR_LOTE') AND fecha >= ?", (hoy,))
+    # Tiempo de liberación: días promedio entre la Entrada del lote y su aprobación CC (90d · en Python cross-DB)
+    _libs = c.execute(
+        "SELECT cr.fecha, m.fecha FROM cc_reviews cr JOIN movimientos m ON m.id=cr.mov_id "
+        "WHERE cr.estado_final='APROBADO' AND COALESCE(cr.fecha,'') <> '' "
+        "AND cr.fecha >= date('now','-5 hours','-90 days')").fetchall()
+    _dl = []
+    for _r in _libs:
+        try:
+            _d1 = datetime.fromisoformat(str(_r[0])[:10]); _d0 = datetime.fromisoformat(str(_r[1])[:10])
+            _dl.append(max(0, (_d1 - _d0).days))
+        except Exception:
+            pass
+    valores['tiempo_liberacion'] = round(sum(_dl) / len(_dl), 1) if _dl else None
 
     # ── Ensamblar con las metas ───────────────────────────────────────────
     metas = c.execute(
