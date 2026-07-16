@@ -22,14 +22,24 @@ CC_REVIEW_MODAL_HTML = r'''
     </div>
     <div style="overflow-y:auto;padding:4px 22px 8px;">
       <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12.5px;color:#1e40af;">
-        <b>COC-PRO-001 &middot; modo migración</b> &mdash; por ahora los análisis son <b>opcionales</b>. Completá la <b>documental</b> y la <b>ubicación final</b>, y firmá para liberar. (Cuando se active INVIMA estricto, los campos pasan a obligatorios.)
+        <b>COC-PRO-001 &middot; modo migración:</b> por ahora los análisis son <b>opcionales</b>. Completá la <b>documental</b> y la <b>ubicación final</b>, y firmá para liberar. (Cuando se active INVIMA estricto, los campos pasan a obligatorios.)
       </div>
       <div id="ccr-info" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px 14px;background:#f5f3ff;border:1px solid #ede9fe;border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:12.5px;"></div>
+
+      <div class="ccr-sec">Verificación final (editable) &middot; es el rótulo definitivo</div>
+      <div style="background:#fefce8;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;margin-bottom:6px;font-size:11.5px;color:#92400e;">Calidad verifica y corrige lo que llegó mal antes de liberar. Lo que dejes acá sale en el rótulo final y queda en el sistema.</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div style="grid-column:1/-1;"><label class="ccr-lbl">Nombre INCI (verificar / corregir)</label><input id="ccr-inci" class="ccr-inp" placeholder="INCI real del material"></div>
+        <div><label class="ccr-lbl">Cantidad real al pesar (g)</label><input id="ccr-cant" class="ccr-inp" type="number" min="0" step="0.01" placeholder="peso del chequeo final"></div>
+        <div><label class="ccr-lbl">Lote</label><input id="ccr-lote-edit" class="ccr-inp" placeholder="N° de lote"></div>
+        <div><label class="ccr-lbl">Tipo de material</label><select id="ccr-tipo" class="ccr-inp"><option value="MP">Materia Prima (MP)</option><option value="ME">Material de Envase (ME)</option><option value="MEMP">Material de Empaque (MEMP)</option></select></div>
+        <div><label class="ccr-lbl">Fecha de recepción</label><input id="ccr-frec" class="ccr-inp" type="date"></div>
+      </div>
 
       <div class="ccr-sec">Revisión documental</div>
       <label class="ccr-chk"><input type="checkbox" id="ccr-coa-ok"><span>COA del proveedor presente y correspondiente al lote recibido</span></label>
       <label class="ccr-chk"><input type="checkbox" id="ccr-lote-coincide"><span>N° de lote del COA coincide exactamente con el lote del empaque</span></label>
-      <label class="ccr-chk"><input type="checkbox" id="ccr-coa-vigente"><span>COA vigente &mdash; no vencido según política de re-análisis</span></label>
+      <label class="ccr-chk"><input type="checkbox" id="ccr-coa-vigente"><span>COA vigente (no vencido según política de re-análisis)</span></label>
       <label class="ccr-chk"><input type="checkbox" id="ccr-ficha-ok"><span>Ficha técnica del proveedor disponible en archivo CC</span></label>
 
       <div class="ccr-sec">Resultado AQL / inspección organoléptica</div>
@@ -63,6 +73,9 @@ CC_REVIEW_MODAL_HTML = r'''
 <style>
   #ccr-info b{color:#4c1d95;font-weight:700;}
   .ccr-sec{font-size:11px;font-weight:800;color:#71717a;text-transform:uppercase;letter-spacing:.5px;margin:16px 0 8px;}
+  .ccr-lbl{display:block;font-size:10.5px;font-weight:700;color:#71717a;margin:0 0 4px;text-transform:uppercase;letter-spacing:.3px;}
+  .ccr-inp{width:100%;padding:8px 11px;border:1px solid #e4e4e7;border-radius:9px;font-size:13px;box-sizing:border-box;background:#fff;color:#18181b;}
+  .ccr-inp:focus{outline:none;border-color:#7c3aed;box-shadow:0 0 0 3px rgba(124,58,237,.12);}
   .ccr-chk{display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:13px;color:#27272a;padding:6px 0;line-height:1.35;}
   .ccr-chk input{width:17px;height:17px;margin-top:1px;flex:none;accent-color:#6d28d9;cursor:pointer;}
   .ccr-seg{display:flex;gap:8px;flex-wrap:wrap;}
@@ -89,20 +102,36 @@ function abrirCCReview(lote){
     '<div><b>OC:</b> '+(l.numero_oc||'—')+'</div>';
   ['ccr-coa-ok','ccr-lote-coincide','ccr-coa-vigente','ccr-ficha-ok','ccr-muestra'].forEach(function(id){var e=document.getElementById(id);if(e)e.checked=false;});
   ['ccr-aql-obs','ccr-est','ccr-pos','ccr-obs'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});
+  // Verificación final editable: pre-lleno con lo que llegó (Calidad corrige si hace falta)
+  var _si=function(id,v){var e=document.getElementById(id);if(e)e.value=(v!=null?v:'');};
+  _si('ccr-inci', l.nombre_inci||'');
+  _si('ccr-cant', (l.cantidad!=null?l.cantidad:''));
+  _si('ccr-lote-edit', l.lote||'');
+  _si('ccr-tipo', (l.tipo_material||'MP'));
+  _si('ccr-frec', (l.fecha||'').substring(0,10));
   var rs=document.querySelectorAll('input[name="ccr-aql"]');rs.forEach(function(r){r.checked=false;});
   document.getElementById('ccr-msg').innerHTML='';
   document.getElementById('ccr-modal').style.display='flex';
 }
 function cerrarCCReview(){var m=document.getElementById('ccr-modal');if(m)m.style.display='none';_ccrLote=null;}
 function imprimirRotuloCC(){
-  // Sebastián 9-jul: si el lote entró en cuarentena en recepción, Calidad imprime el rótulo acá al liberar
-  // y lo pega en la ubicación. Reusa el rótulo de recepción de MP.
+  // Rótulo FINAL de verificación (Laura 16-jul): sale con lo que Calidad dejó en los campos editables
+  // (INCI, cantidad real, lote, tipo, fecha de recepción), aunque todavía no haya firmado.
   if(!_ccrLote){return;}
   var cod=_ccrLote.material_id||_ccrLote.codigo_mp||'';
-  var lote=_ccrLote.lote||'SL';
-  var cant=parseFloat(_ccrLote.cantidad)||0;
   if(!cod){alert('No hay código de MP para el rótulo');return;}
-  window.open('/rotulo-recepcion/'+encodeURIComponent(cod)+'/'+encodeURIComponent(lote)+'/'+cant.toFixed(1),'_blank');
+  var lote=(document.getElementById('ccr-lote-edit').value||_ccrLote.lote||'SL').trim()||'SL';
+  var cant=parseFloat(document.getElementById('ccr-cant').value)||parseFloat(_ccrLote.cantidad)||0;
+  var inci=(document.getElementById('ccr-inci').value||'').trim();
+  var tipo=(document.getElementById('ccr-tipo').value||'MP').trim();
+  var frec=(document.getElementById('ccr-frec').value||'').trim();
+  var qs=[];
+  if(inci) qs.push('inci='+encodeURIComponent(inci));
+  if(tipo) qs.push('tipo='+encodeURIComponent(tipo));
+  if(frec) qs.push('frec='+encodeURIComponent(frec));
+  var url='/rotulo-recepcion/'+encodeURIComponent(cod)+'/'+encodeURIComponent(lote)+'/'+cant.toFixed(1);
+  if(qs.length) url+='?'+qs.join('&');
+  window.open(url,'_blank');
 }
 async function _ccrFirmar(meaning, recordId){
   var pwd=prompt('FIRMA ELECTRÓNICA (21 CFR Part 11)\n\nIngresá tu contraseña para firmar la disposición del lote ('+meaning+'):');
@@ -134,7 +163,12 @@ async function enviarCCReview(){
     muestra_retencion:document.getElementById('ccr-muestra').checked,
     observaciones:(document.getElementById('ccr-obs').value||'').trim(),
     estanteria_final:(document.getElementById('ccr-est').value||'').trim(),
-    posicion_final:(document.getElementById('ccr-pos').value||'').trim()
+    posicion_final:(document.getElementById('ccr-pos').value||'').trim(),
+    inci_corregido:(document.getElementById('ccr-inci').value||'').trim(),
+    cantidad_final:(document.getElementById('ccr-cant').value||'').trim(),
+    lote_final:(document.getElementById('ccr-lote-edit').value||'').trim(),
+    tipo_material:(document.getElementById('ccr-tipo').value||'').trim(),
+    fecha_recepcion_final:(document.getElementById('ccr-frec').value||'').trim()
   };
   var btn=document.getElementById('ccr-submit');
   try{

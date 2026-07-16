@@ -10125,10 +10125,44 @@ def cc_review():
         conn.rollback()
         return jsonify({'error': 'El lote ya fue dispuesto por otra acción · recargá',
                         'codigo': 'ESTADO_CAMBIO'}), 409
-    # Ubicación final al LIBERAR (Sebastián 6-jun-2026): el flujo real es
-    # "cuando Calidad libera, el lote pasa de la estantería CUARENTENA a su
-    # ubicación final". Si al aprobar se indica estante/posición final, se mueve
-    # el lote (TODAS sus filas de movimientos) → deja de estar en CUARENTENA física.
+    # CORRECCIONES DE CALIDAD (Laura 16-jul · el modal de liberación es el rótulo FINAL de
+    # verificación · Calidad puede corregir lo que llegó mal antes de liberar). Todo auditado.
+    # El lote está en cuarentena (no consumido), así que corregir cantidad/lote/fecha es seguro.
+    _lote_key = mov[2]   # llave de lote para la ubicación de abajo (se actualiza si se corrige el lote)
+    _corr = []
+    _inci_new = (d.get('inci_corregido') or '').strip()
+    if _inci_new:
+        _ci = c.execute("SELECT COALESCE(nombre_inci,'') FROM maestro_mps WHERE codigo_mp=?", (mov[1],)).fetchone()
+        if _ci is not None and (_ci[0] or '') != _inci_new:
+            c.execute("UPDATE maestro_mps SET nombre_inci=? WHERE codigo_mp=?", (_inci_new[:200], mov[1]))
+            _corr.append('INCI:' + (_ci[0] or '(vacio)') + ' a ' + _inci_new)
+    _tipo_new = (d.get('tipo_material') or '').strip().upper()
+    if _tipo_new in ('MP', 'ME', 'MEMP'):
+        _ct = c.execute("SELECT COALESCE(tipo_material,'MP') FROM maestro_mps WHERE codigo_mp=?", (mov[1],)).fetchone()
+        if _ct is not None and (_ct[0] or 'MP') != _tipo_new:
+            c.execute("UPDATE maestro_mps SET tipo_material=? WHERE codigo_mp=?", (_tipo_new, mov[1]))
+            _corr.append('Tipo:' + (_ct[0] or 'MP') + ' a ' + _tipo_new)
+    try:
+        _cant_new = float(d.get('cantidad_final')) if str(d.get('cantidad_final') or '').strip() != '' else None
+    except Exception:
+        _cant_new = None
+    if _cant_new is not None and _cant_new > 0:
+        _cc = c.execute("SELECT cantidad FROM movimientos WHERE id=?", (mov_id,)).fetchone()
+        if _cc is not None and abs(float(_cc[0] or 0) - _cant_new) > 0.001:
+            c.execute("UPDATE movimientos SET cantidad=? WHERE id=?", (_cant_new, mov_id))
+            _corr.append('Cant:' + str(_cc[0]) + ' a ' + ('%g' % _cant_new))
+    _frec_new = (d.get('fecha_recepcion_final') or '').strip()
+    if _frec_new:
+        c.execute("UPDATE movimientos SET fecha=? WHERE id=?", (_frec_new, mov_id))
+        _corr.append('FRecep:' + _frec_new)
+    _lote_new = (d.get('lote_final') or '').strip()
+    if _lote_new and _lote_new != mov[2]:
+        c.execute("UPDATE movimientos SET lote=? WHERE material_id=? AND lote=?", (_lote_new, mov[1], mov[2]))
+        _corr.append('Lote:' + mov[2] + ' a ' + _lote_new)
+        _lote_key = _lote_new
+    # Ubicación final al LIBERAR (Sebastián 6-jun-2026): cuando Calidad libera, el lote pasa de la
+    # estantería de cuarentena a su ubicación final. Si al aprobar se indica estante/posición, se
+    # mueve el lote (TODAS sus filas) y deja de estar en cuarentena física.
     ubic_final_msg = ''
     est_final = (d.get('estanteria_final') or '').strip()
     pos_final = (d.get('posicion_final') or '').strip()
@@ -10140,12 +10174,13 @@ def cc_review():
             _sets.append('posicion=?'); _ps.append(pos_final[:50])
         c.execute(
             "UPDATE movimientos SET " + ', '.join(_sets) + " WHERE material_id=? AND lote=?",
-            _ps + [mov[1], mov[2]])
-        ubic_final_msg = ' · ubicación final: ' + (est_final or '—') + (('/' + pos_final) if pos_final else '')
+            _ps + [mov[1], _lote_key])
+        ubic_final_msg = ' · ubicacion final: ' + (est_final or '-') + (('/' + pos_final) if pos_final else '')
     c.execute(
         "INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha) VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))",
         (user, 'CC_REVIEW_'+estado_final, 'movimientos', str(mov_id),
-         'Lote '+d.get('lote','')+' AQL:'+resultado_aql+' Firma:'+user+' e-sign #'+str(sig_id)+ubic_final_msg,
+         'Lote '+d.get('lote','')+' AQL:'+resultado_aql+' Firma:'+user+' e-sign #'+str(sig_id)+ubic_final_msg
+         + ((' · correcciones CC: ' + '; '.join(_corr)) if _corr else ''),
          request.remote_addr))
     if estado_final == 'RECHAZADO':
         # Fix #2 · 21-may-2026 · schema actualizado de solicitudes_compra.
@@ -10751,6 +10786,26 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
         pass
     if not _frec:
         _frec = hoy
+    # Overrides del rótulo FINAL de verificación (Calidad corrige en el modal de liberación · 16-jul):
+    # ?inci= ?frec= ?tipo=MP|ME|MEMP ?nombre= → el rótulo sale con lo que Calidad verificó.
+    _ov_inci = (request.args.get('inci') or '').strip()
+    if _ov_inci:
+        ni = _ov_inci
+    _ov_frec = (request.args.get('frec') or '').strip()
+    if _ov_frec:
+        _frec = _ov_frec
+    _ov_nom = (request.args.get('nombre') or '').strip()
+    if _ov_nom:
+        nc = _ov_nom
+    _tipo_sel = (request.args.get('tipo') or 'MP').strip().upper()
+    if _tipo_sel not in ('MP', 'ME', 'MEMP'):
+        _tipo_sel = 'MP'
+
+    def _tp_row():
+        _b = lambda on: ('&#9746;' if on else '&#9744;')
+        return ('<span class="tipo' + (' on' if _tipo_sel == 'MP' else '') + '">' + _b(_tipo_sel == 'MP') + ' Materia Prima (MP)</span>'
+                '<span class="tipo' + (' on' if _tipo_sel == 'ME' else '') + '">' + _b(_tipo_sel == 'ME') + ' Material de Envase (ME)</span>'
+                '<span class="tipo' + (' on' if _tipo_sel == 'MEMP' else '') + '">' + _b(_tipo_sel == 'MEMP') + ' Material de Empaque (MEMP)</span>')
     bv=codigo+'|'+lote
     import html as _hh
     def _e(x): return _hh.escape(str(x if x is not None else ''))
@@ -10794,7 +10849,7 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
            '<tr><td class="k">Codigo MP</td><td class="num"><b>' + _e(codigo) + '</b></td></tr>'
            '<tr><td class="k">Nombre comercial</td><td><b>' + _e(nc) + '</b></td></tr>'
            '<tr><td class="k">Nombre INCI</td><td>' + (_e(ni) or '&mdash;') + '</td></tr>'
-           '<tr><td class="k">Tipo de insumo</td><td colspan="3"><span class="tipo on">&#9746; Materia Prima (MP)</span><span class="tipo">&#9744; Material de Envase (ME)</span><span class="tipo">&#9744; Material de Empaque (MEMP)</span></td></tr>'
+           '<tr><td class="k">Tipo de insumo</td><td colspan="3">' + _tp_row() + '</td></tr>'
            '<tr><td class="k">Proveedor</td><td>' + (_e(pv) or '&mdash;') + '</td></tr>'
            '<tr><td class="k">' + _cant_lbl + '</td><td class="cant">' + _cant_val + '</td></tr>'
            '<tr><td class="k">Fecha recepcion</td><td>' + _e(_frec) + '</td><td class="k">Vencimiento</td><td class="venc">' + (_e(fv) or '&mdash;') + '</td></tr>'
