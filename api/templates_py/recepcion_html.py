@@ -1,4 +1,4 @@
-# recepcion_html.py — extraído de index.py (Fase C prep)
+# recepcion_html.py - extraído de index.py (Fase C prep)
 RECEPCION_HTML = r"""
 <!DOCTYPE html>
 <html lang="es" translate="no">
@@ -179,13 +179,6 @@ td input[type=text]{width:100%;padding:6px 9px;border:1px solid var(--line);bord
     <div id="tab-parcial" class="tab-content"></div>
     <div id="tab-recibidas" class="tab-content"></div>
     <div id="tab-disc" class="tab-content"></div>
-  </div>
-
-  <div class="card">
-    <h2>&#9203; Lotes en Cuarentena</h2>
-    <p style="font-size:12px;color:#78716c;margin-bottom:12px;">Lotes recibidos pendientes de aprobacion de Control de Calidad.</p>
-    <input type="text" oninput="filterByText('#cuarentena-list tbody tr', this.value)" placeholder="&#128269; Buscar material, lote o proveedor…" style="width:100%;max-width:360px;padding:9px 13px;border:1px solid #e7e5e4;border-radius:10px;font-size:13px;margin-bottom:12px;box-shadow:0 1px 2px rgba(15,23,42,.04);">
-    <div id="cuarentena-list"><p style="color:#a8a29e;font-size:13px;">Cargando...</p></div>
   </div>
 
   <div class="card">
@@ -503,7 +496,7 @@ async function registrarRecepcion() {
     var d = await r.json();
     if (d.ok) {
       var discMsg = discrepancias ? ' \u26a0 Con discrepancias.' : '';
-      var parcialMsg = d.parcial ? ' \u26a1 Recepcion PARCIAL — OC sigue abierta para completar.' : '';
+      var parcialMsg = d.parcial ? ' \u26a1 Recepcion PARCIAL - OC sigue abierta para completar.' : '';
       showMsg('submit-msg', 'Recepcion registrada. ' + (d.ingresos||0) + ' item(s) ingresado(s).' + discMsg + parcialMsg, 'ok');
       var submitRow = document.querySelector('.submit-row');
       if (submitRow) {
@@ -520,7 +513,6 @@ async function registrarRecepcion() {
       document.getElementById('obs-input').value = '';
       if (_submitBtn) { _submitBtn.disabled = false; _submitBtn.textContent = '\u2713 Registrar Recepcion'; }
       loadSeguimiento();
-      loadCuarentena();
     } else {
       showMsg('submit-msg', d.error || 'Error al registrar', 'err');
       if (_submitBtn) { _submitBtn.disabled = false; _submitBtn.textContent = '\u2713 Registrar Recepcion'; }
@@ -533,7 +525,7 @@ function imprimirActaRecepcion(oc, payload, result) {
   var hoy = new Date().toLocaleString('es-CO');
   var itemsHtml = (payload.items_recepcion || []).map(function(it) {
     var cls = it.estado === 'OK' ? 'color:#16a34a' : 'color:#dc2626';
-    return '<tr><td>' + it.codigo_mp + '</td><td>' + it.cantidad_recibida.toLocaleString() + '</td><td style="' + cls + ';font-weight:600;">' + it.estado + '</td><td>' + (it.notas||'—') + '</td></tr>';
+    return '<tr><td>' + it.codigo_mp + '</td><td>' + it.cantidad_recibida.toLocaleString() + '</td><td style="' + cls + ';font-weight:600;">' + it.estado + '</td><td>' + (it.notas||'-') + '</td></tr>';
   }).join('');
   var discBanner = payload.tiene_discrepancias
     ? '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:6px;padding:12px;margin-bottom:16px;color:#92400e;font-weight:600;">⚠ Esta recepcion contiene discrepancias. Requiere revision.</div>'
@@ -552,13 +544,13 @@ function imprimirActaRecepcion(oc, payload, result) {
     + '.noPrint{text-align:center;margin-bottom:20px;} @media print{.noPrint{display:none!important;}}'
     + '</style></head><body>'
     + '<div class="noPrint"><button onclick="window.print()" style="padding:9px 24px;background:#292524;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;">Imprimir</button></div>'
-    + '<div class="header"><div><h2>ACTA DE RECEPCION DE MERCANCIA</h2><p style="color:#78716c;font-size:12px;">Espagiria Laboratorio — COC-PRO-002-F07</p></div>'
+    + '<div class="header"><div><h2>ACTA DE RECEPCION DE MERCANCIA</h2><p style="color:#78716c;font-size:12px;">Espagiria Laboratorio - COC-PRO-002-F07</p></div>'
     + '<div style="text-align:right;font-size:11px;color:#78716c;"><div>Fecha: ' + hoy + '</div></div></div>'
     + discBanner
     + '<div class="meta">'
-    + '<div><div class="lbl">No. OC</div><div class="val">' + (oc ? oc.numero_oc : '—') + '</div></div>'
-    + '<div><div class="lbl">Proveedor</div><div class="val">' + (oc ? oc.proveedor : '—') + '</div></div>'
-    + '<div><div class="lbl">Categoria</div><div class="val">' + (oc ? (oc.categoria||'MP') : '—') + '</div></div>'
+    + '<div><div class="lbl">No. OC</div><div class="val">' + (oc ? oc.numero_oc : '-') + '</div></div>'
+    + '<div><div class="lbl">Proveedor</div><div class="val">' + (oc ? oc.proveedor : '-') + '</div></div>'
+    + '<div><div class="lbl">Categoria</div><div class="val">' + (oc ? (oc.categoria||'MP') : '-') + '</div></div>'
     + '<div><div class="lbl">Valor Total OC</div><div class="val">$' + Number((oc ? oc.valor_total : 0)||0).toLocaleString() + '</div></div>'
     + '</div>'
     + '<h3>Detalle de items recibidos</h3>'
@@ -588,7 +580,7 @@ function showTab(name) {
   });
 }
 
-function fmtDate(s) { return s ? String(s).slice(0,10) : '—'; }
+function fmtDate(s) { return s ? String(s).slice(0,10) : '-'; }
 function fmtVal(v) { return '$' + Number(v||0).toLocaleString(); }
 
 function buildTable(rows) {
@@ -606,8 +598,8 @@ function buildTable(rows) {
       + '<td>' + fmtDate(row.fecha_autorizacion) + '</td>'
       + '<td>' + fmtDate(row.fecha_pago) + '</td>'
       + '<td>' + (row.fecha_recepcion ? fmtDate(row.fecha_recepcion) : '<span style="color:#d97706">Pendiente</span>') + '</td>'
-      + '<td style="color:#57534e">' + (row.recibido_por||'—') + '</td>'
-      + '<td style="max-width:200px;color:#57534e">' + (row.observaciones||'—') + '</td>'
+      + '<td style="color:#57534e">' + (row.recibido_por||'-') + '</td>'
+      + '<td style="max-width:200px;color:#57534e">' + (row.observaciones||'-') + '</td>'
       + '</tr>';
   });
   h += '</tbody></table></div>';
@@ -632,48 +624,6 @@ function renderMonitoreo(all) {
   } catch(e) { console.error(e); }
 }
 
-async function loadCuarentena() {
-  try {
-    var r = await fetch('/api/recepcion/lotes-cuarentena');
-    var lotes = await r.json();
-    var el = document.getElementById('cuarentena-list');
-    if (!lotes.length) { el.innerHTML = '<p style="color:#16a34a;font-size:13px;">\u2713 Sin lotes en cuarentena.</p>'; return; }
-    var h = '<div style="overflow-x:auto"><table><thead><tr><th>Material</th><th>Lote</th><th>Cantidad</th><th>Proveedor</th><th>F. Recepcion</th><th>Vence</th><th>OC</th><th>Accion</th></tr></thead><tbody>';
-    lotes.forEach(function(l) {
-      var fv = l.fecha_vencimiento ? l.fecha_vencimiento.slice(0,10) : '—';
-      h += '<tr><td><strong>' + (l.material_nombre||'') + '</strong></td>'
-        + '<td style="font-family:monospace;">' + (l.lote||'—') + '</td>'
-        + '<td>' + Number(l.cantidad||0).toLocaleString() + '</td>'
-        + '<td>' + (l.proveedor||'—') + '</td>'
-        + '<td>' + (l.fecha||'—').slice(0,10) + '</td>'
-        + '<td>' + fv + '</td>'
-        + '<td>' + (l.numero_oc||'—') + '</td>'
-        + '<td style="white-space:nowrap;">'
-        + '<button class="btn" style="background:#16a34a;color:#fff;padding:4px 10px;font-size:11px;margin-right:4px;" data-aprobarlote="' + l.id + '" data-est="Aprobado">Aprobar</button>'
-        + '<button class="btn" style="background:#dc2626;color:#fff;padding:4px 10px;font-size:11px;margin-right:4px;" data-aprobarlote="' + l.id + '" data-est="Rechazado">Rechazar</button>'
-        + '<button class="btn" style="background:#7c3aed;color:#fff;padding:4px 10px;font-size:11px;" data-rotmp="' + (l.material_id||'') + '" data-rotlote="' + (l.lote||'') + '" data-rotcant="' + (l.cantidad||1) + '" title="Imprimir rótulo del lote">&#128424;&#65039; Rótulo</button>'
-        + '</td></tr>';
-    });
-    h += '</tbody></table></div>';
-    el.innerHTML = h;
-  } catch(e) { document.getElementById('cuarentena-list').innerHTML = '<p style="color:#a8a29e;">Error al cargar.</p>'; }
-}
-
-document.addEventListener('click', function(e) {
-  var btn = e.target.closest('[data-aprobarlote]');
-  if (!btn) return;
-  var movId = btn.getAttribute('data-aprobarlote');
-  var est = btn.getAttribute('data-est');
-  if (!confirm('Marcar lote como ' + est + '?')) return;
-  fetch('/api/recepcion/aprobar-lote', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({mov_id: movId, estado: est})
-  }).then(function(r){ return r.json(); }).then(function(d){
-    if (d.ok) loadCuarentena();
-    else alert('Error: ' + (d.error||'desconocido'));
-  });
-});
-
 // Imprimir rótulo · ítems de Registrar Recepción (lee cantidad + lote EN VIVO de la fila)
 document.addEventListener('click', function(e) {
   var b = e.target.closest('[data-rotidx]');
@@ -695,17 +645,7 @@ document.addEventListener('click', function(e) {
   }
 });
 
-// Imprimir rótulo · lotes en Cuarentena (MP · usa material_id + lote + cantidad de la fila)
-document.addEventListener('click', function(e) {
-  var b = e.target.closest('[data-rotmp]');
-  if (!b) return;
-  var cod = b.getAttribute('data-rotmp') || '';
-  var lote = (b.getAttribute('data-rotlote') || '').trim() || 'SIN-LOTE';
-  var cant = b.getAttribute('data-rotcant') || '1';
-  if (!cod) { alert('Este lote no tiene código de material.'); return; }
-  // abre el modal de recipientes (1 rótulo por recipiente)
-  abrirRecModal(cod, lote, cant);
-});
+
 
 async function buscarLote() {
   var lote = document.getElementById('lote-input').value.trim();
@@ -722,7 +662,7 @@ async function buscarLote() {
     if (oc) {
       h += '<div style="background:#fafaf9;border:1px solid #e7e5e4;border-radius:8px;padding:12px;margin-bottom:12px;">'
         + '<div style="font-weight:700;margin-bottom:6px;">OC de Origen: ' + oc.numero_oc + '</div>'
-        + '<div style="font-size:12px;color:#57534e;">Proveedor: ' + (oc.proveedor||'—') + ' | Fecha: ' + (oc.fecha||'—').slice(0,10) + ' | Estado OC: ' + (oc.estado||'—') + ' | Recibido por: ' + (oc.recibido_por||'—') + '</div>'
+        + '<div style="font-size:12px;color:#57534e;">Proveedor: ' + (oc.proveedor||'-') + ' | Fecha: ' + (oc.fecha||'-').slice(0,10) + ' | Estado OC: ' + (oc.estado||'-') + ' | Recibido por: ' + (oc.recibido_por||'-') + '</div>'
         + '</div>';
     }
     h += '<table><thead><tr><th>Material</th><th>Cant.</th><th>Tipo</th><th>Fecha</th><th>Estado Lote</th><th>Proveedor</th><th>Vence</th></tr></thead><tbody>';
@@ -735,10 +675,10 @@ async function buscarLote() {
       h += '<tr><td><strong>' + (m.material_nombre||m.material_id||'') + '</strong></td>'
         + '<td>' + Number(m.cantidad||0).toLocaleString() + '</td>'
         + '<td>' + (m.cantidad > 0 ? 'Entrada' : 'Salida') + '</td>'
-        + '<td>' + (m.fecha||'—').slice(0,10) + '</td>'
+        + '<td>' + (m.fecha||'-').slice(0,10) + '</td>'
         + '<td style="color:' + estadoColor + ';font-weight:600;">' + (m.estado_lote||'Sin estado') + '</td>'
-        + '<td>' + (m.proveedor||'—') + '</td>'
-        + '<td>' + (m.fecha_vencimiento||'—').slice(0,10) + '</td>'
+        + '<td>' + (m.proveedor||'-') + '</td>'
+        + '<td>' + (m.fecha_vencimiento||'-').slice(0,10) + '</td>'
         + '</tr>';
     });
     h += '</tbody></table>';
@@ -762,7 +702,6 @@ async function loadSeguimiento() {
   }
 }
 loadSeguimiento();
-loadCuarentena();
 </script>
 </body>
 </html>
