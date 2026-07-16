@@ -520,15 +520,36 @@ def generar_comprobante_egreso_pdf(
 
         # Alternar fill suave
         if i % 2 == 0:
-            pdf.set_fill_color(*pal["beige"])
+            fill_rgb = pal["beige"]
             fill = True
         else:
-            pdf.set_fill_color(*COLOR_BLANCO)
+            fill_rgb = COLOR_BLANCO
             fill = False
+
+        # Descripción con WRAP (multi-línea) · antes se truncaba a 48 chars y se
+        # cortaba (ej. "...4 stories AN"). Ahora envuelve por palabras según el
+        # ancho real de la columna · la fila crece para mostrar el texto completo.
+        pdf.set_font("Helvetica", "", 7.5)
+        desc_w = cols[1][0]
+        _desc_lines = []
+        _cur = ""
+        for _wd in _safe(desc).split():
+            _test = (_cur + " " + _wd).strip()
+            if not _cur or pdf.get_string_width(_test) <= desc_w - 2:
+                _cur = _test
+            else:
+                _desc_lines.append(_cur)
+                _cur = _wd
+        if _cur:
+            _desc_lines.append(_cur)
+        if not _desc_lines:
+            _desc_lines = ["-"]
+        _lh = 4.2
+        row_h = max(5.5, len(_desc_lines) * _lh)
 
         vals = [
             (cols[0][0], _safe(ref[:18] or "-"), "L"),
-            (cols[1][0], _safe(desc[:48]), "L"),
+            (cols[1][0], None, "L"),  # descripción · render especial (wrap)
             (cols[2][0], f"{cant:,.0f}" if isinstance(cant, (int, float)) else str(cant), "C"),
             (cols[3][0], _safe(um), "C"),
             (cols[4][0], _safe(f"${p_unit:,.0f}"), "R"),
@@ -537,9 +558,24 @@ def generar_comprobante_egreso_pdf(
             (cols[7][0], f"{iva_pct_global}%" if aplicar_iva else "-", "C"),
             (cols[8][0], _safe(f"${iva_item:,.0f}") if aplicar_iva else "-", "R"),
         ]
-        for w, v, align in vals:
-            pdf.cell(w, 5.5, v, border=0, fill=fill, align=align)
-        pdf.ln()
+        _x0 = pdf.get_x()
+        _y0 = pdf.get_y()
+        _x = _x0
+        for _idx, (w, v, align) in enumerate(vals):
+            pdf.set_fill_color(*fill_rgb)
+            pdf.set_xy(_x, _y0)
+            pdf.cell(w, row_h, "", border=0, fill=fill)  # fondo de la celda
+            if _idx == 1:
+                _ty = _y0 + (row_h - len(_desc_lines) * _lh) / 2.0
+                for _ln in _desc_lines:
+                    pdf.set_xy(_x, _ty)
+                    pdf.cell(w, _lh, _ln, border=0, align="L")
+                    _ty += _lh
+            else:
+                pdf.set_xy(_x, _y0 + (row_h - _lh) / 2.0)  # centrar vertical 1 línea
+                pdf.cell(w, _lh, v, border=0, align=align)
+            _x += w
+        pdf.set_xy(_x0, _y0 + row_h)
 
     # Línea separadora
     pdf.set_draw_color(*COLOR_LINE_DARK)
