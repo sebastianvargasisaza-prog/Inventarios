@@ -1,4 +1,4 @@
-# calidad_html.py Ã¢ÂÂ extraÃÂ­do de index.py (Fase C prep)
+# calidad_html.py · extraído de index.py (Fase C prep)
 CALIDAD_HTML = r"""<!DOCTYPE html>
 <html lang="es" translate="no">
 <head>
@@ -18,7 +18,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);color:v
 .tab{padding:11px 20px;font-size:0.78em;font-weight:700;letter-spacing:.5px;color:var(--cx-text-mute);cursor:pointer;border-bottom:2px solid transparent;text-transform:uppercase;}
 .tab.active{color:#6d28d9;border-bottom-color:#6d28d9;}
 .tab:hover{color:var(--cx-text-soft);}
-.main{padding:24px;max-width:1300px;margin:0 auto;}
+.main{padding:24px 28px 60px;max-width:1900px;margin:0 auto;}
 .kpi-row{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:24px;}
 .kpi{background:var(--cx-card);border:1px solid var(--cx-hairline);box-shadow:var(--cx-sh-card);border-radius:12px;padding:16px 20px;flex:1;min-width:140px;}
 .kpi-label{font-size:0.68em;text-transform:uppercase;letter-spacing:1.5px;color:var(--cx-text-mute);margin-bottom:6px;}
@@ -130,13 +130,13 @@ textarea{resize:vertical;min-height:70px;}
   <div class="tab" data-tip="Cuadro de mando: indicadores con META, semáforo y tendencia (RFT, rechazos, CAPA, OOS, agua...). Doble-clic una tarjeta para editar su meta." data-tip-pos="bottom" onclick="goTab('tab-indic')">&#128201; Indicadores</div>
   <div class="tab" data-tip="Tareas de calidad del día (muestreos, inspecciones) según COC-PRO-011." data-tip-pos="bottom" onclick="goTab('tab-cron')">&#128203; Cronograma del Dia</div>
   <div class="tab" data-tip="Lotes de materia prima en cuarentena esperando aprobación/rechazo." data-tip-pos="bottom" onclick="goTab('tab-cc')">&#x1F9EA; Control Calidad MP</div>
-  <div class="tab" data-tip="Registro y cierre de No Conformidades (producto/proceso)." data-tip-pos="bottom" onclick="goTab('tab-nc')">&#x26A0; No Conformidades</div>
-  <div class="tab" data-tip="Estado y vencimiento de calibraciones de instrumentos (COC-PRO-006/012)." data-tip-pos="bottom" onclick="goTab('tab-cal')">&#x1F527; Calibraciones</div>
+  <div class="tab" style="display:none" data-tip="Registro y cierre de No Conformidades (producto/proceso)." data-tip-pos="bottom" onclick="goTab('tab-nc')">&#x26A0; No Conformidades</div>
+  <div class="tab" style="display:none" data-tip="Estado y vencimiento de calibraciones de instrumentos (COC-PRO-006/012)." data-tip-pos="bottom" onclick="goTab('tab-cal')">&#x1F527; Calibraciones</div>
   <div class="tab" data-tip="Microbiología: resultados por lote, mapa de calor, gráficas (tendencia OOS, conformidad, hallazgos, ambiental) y fisicoquímico. Registrá con su COA y N° de informe." data-tip-pos="bottom" onclick="goTab('tab-micro')">&#x1F9EB; Microbiolog&iacute;a</div>
-  <div class="tab" data-tip="Sistema de agua purificada: pH, conductividad, TOC, micro (COC-PRO-008) + tendencia y alertas." data-tip-pos="bottom" onclick="goTab('tab-agua')">&#x1F4A7; Sistema de Agua</div>
-  <div class="tab" data-tip="Hoja de vida y cronograma de calibración de equipos de planta." data-tip-pos="bottom" onclick="goTab('tab-equipos')">&#x1F527; Equipos</div>
-  <div class="tab" data-tip="Out Of Specification: investigación, causa raíz, disposición y cierre." data-tip-pos="bottom" onclick="goTab('tab-oos')">&#x26A0;&#xFE0F; OOS</div>
-  <div class="tab" data-tip="Biblioteca de documentos vigentes (COC-PRO, ASG-PRO) con próximos a vencer." data-tip-pos="bottom" onclick="goTab('tab-doc')">&#128218; Documentos</div>
+  <div class="tab" style="display:none" data-tip="Sistema de agua purificada: pH, conductividad, TOC, micro (COC-PRO-008) + tendencia y alertas." data-tip-pos="bottom" onclick="goTab('tab-agua')">&#x1F4A7; Sistema de Agua</div>
+  <div class="tab" style="display:none" data-tip="Hoja de vida y cronograma de calibración de equipos de planta." data-tip-pos="bottom" onclick="goTab('tab-equipos')">&#x1F527; Equipos</div>
+  <div class="tab" style="display:none" data-tip="Out Of Specification: investigación, causa raíz, disposición y cierre." data-tip-pos="bottom" onclick="goTab('tab-oos')">&#x26A0;&#xFE0F; OOS</div>
+  <div class="tab" style="display:none" data-tip="Biblioteca de documentos vigentes (COC-PRO, ASG-PRO) con próximos a vencer." data-tip-pos="bottom" onclick="goTab('tab-doc')">&#128218; Documentos</div>
 </div>
 <div class="main">
 
@@ -150,8 +150,8 @@ textarea{resize:vertical;min-height:70px;}
         <div id="bandeja-fecha" style="font-size:1.4em;font-weight:700;color:#6d28d9">Cargando...</div>
       </div>
       <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
-        <div style="text-align:center"><div style="font-size:0.7em;color:var(--cx-text-mute)">PENDIENTES</div><div id="bandeja-total" style="font-size:1.6em;font-weight:800;color:#fbbf24">—</div></div>
-        <div style="text-align:center"><div style="font-size:0.7em;color:var(--cx-text-mute)">CRITICOS</div><div id="bandeja-criticos" style="font-size:1.6em;font-weight:800;color:#ef4444">—</div></div>
+        <div style="text-align:center"><div style="font-size:0.7em;color:var(--cx-text-mute)">PENDIENTES</div><div id="bandeja-total" style="font-size:1.6em;font-weight:800;color:#fbbf24">-</div></div>
+        <div style="text-align:center"><div style="font-size:0.7em;color:var(--cx-text-mute)">CRITICOS</div><div id="bandeja-criticos" style="font-size:1.6em;font-weight:800;color:#ef4444">-</div></div>
         <button class="btn btn-ghost btn-sm" onclick="loadBandeja()">&#x21BB; Refrescar</button>
       </div>
     </div>
@@ -168,13 +168,13 @@ textarea{resize:vertical;min-height:70px;}
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
       <div>
         <div style="font-size:0.78em;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.6px">Cuadro de mando de Calidad</div>
-        <div style="font-size:1.3em;font-weight:700;color:#6d28d9">Indicadores &middot; <span id="indic-mes">&mdash;</span></div>
+        <div style="font-size:1.3em;font-weight:700;color:#6d28d9">Indicadores &middot; <span id="indic-mes">-</span></div>
         <div style="font-size:0.78em;color:var(--cx-text-mute);margin-top:2px">Meta vs real &middot; sem&aacute;foro verde/amarillo/rojo &middot; tendencia 6 meses. Doble-clic una tarjeta para editar la meta.</div>
       </div>
       <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
-        <div style="text-align:center"><div style="font-size:0.7em;color:var(--cx-text-mute)">EN META</div><div id="indic-verde" style="font-size:1.5em;font-weight:800;color:#16a34a">&mdash;</div></div>
-        <div style="text-align:center"><div style="font-size:0.7em;color:var(--cx-text-mute)">EN AVISO</div><div id="indic-amari" style="font-size:1.5em;font-weight:800;color:#d97706">&mdash;</div></div>
-        <div style="text-align:center"><div style="font-size:0.7em;color:var(--cx-text-mute)">FUERA</div><div id="indic-rojo" style="font-size:1.5em;font-weight:800;color:#dc2626">&mdash;</div></div>
+        <div style="text-align:center"><div style="font-size:0.7em;color:var(--cx-text-mute)">EN META</div><div id="indic-verde" style="font-size:1.5em;font-weight:800;color:#16a34a">-</div></div>
+        <div style="text-align:center"><div style="font-size:0.7em;color:var(--cx-text-mute)">EN AVISO</div><div id="indic-amari" style="font-size:1.5em;font-weight:800;color:#d97706">-</div></div>
+        <div style="text-align:center"><div style="font-size:0.7em;color:var(--cx-text-mute)">FUERA</div><div id="indic-rojo" style="font-size:1.5em;font-weight:800;color:#dc2626">-</div></div>
         <button class="btn btn-ghost btn-sm" onclick="loadIndicadores()">&#x21BB; Refrescar</button>
       </div>
     </div>
@@ -192,10 +192,10 @@ textarea{resize:vertical;min-height:70px;}
     <input type="date" id="cron-fecha" onchange="loadCronograma()">
     <button class="btn btn-ghost btn-sm" onclick="cronHoy()">Hoy</button>
     <div class="cron-summary" id="cron-summary">
-      <div class="cron-stat"><strong id="cs-comp">â</strong>&nbsp;completadas</div>
-      <div class="cron-stat"><strong id="cs-total">â</strong>&nbsp;tareas</div>
-      <div class="cron-stat"><strong id="cs-oos">â</strong>&nbsp;OOS</div>
-      <div class="cron-stat"><strong id="cs-pct">â</strong>% cumplimiento</div>
+      <div class="cron-stat"><strong id="cs-comp">-</strong>&nbsp;completadas</div>
+      <div class="cron-stat"><strong id="cs-total">-</strong>&nbsp;tareas</div>
+      <div class="cron-stat"><strong id="cs-oos">-</strong>&nbsp;OOS</div>
+      <div class="cron-stat"><strong id="cs-pct">-</strong>% cumplimiento</div>
     </div>
     <div id="cron-progbar" style="width:100%">
       <div class="prog-bar"><div class="prog-fill" id="cron-pfill" style="width:0%"></div></div>
@@ -206,11 +206,14 @@ textarea{resize:vertical;min-height:70px;}
 
 <div id="tab-cc" class="pane">
   <div class="card">
-    <div class="card-title">Lotes en Cuarentena Ã¢ÂÂ Pendientes de Revision</div>
+    <div class="card-title">Lotes en Cuarentena · Pendientes de Revisión</div>
+    <input type="text" oninput="var q=this.value.toLowerCase();document.querySelectorAll('#cc-tbody tr').forEach(function(r){r.style.display=((r.textContent||'').toLowerCase().indexOf(q)>=0)?'':'none';});" placeholder="&#128269; Buscar material, lote, proveedor u OC…" style="width:100%;max-width:380px;padding:9px 13px;border:1px solid #eef0f2;border-radius:10px;font-size:13px;margin-bottom:14px;box-shadow:0 1px 2px rgba(15,23,42,.04);">
+    <div style="overflow-x:auto;">
     <table>
-      <thead><tr><th>MP / Lote</th><th>Cantidad</th><th>Proveedor</th><th>Fec. Vencimiento</th><th>OC</th><th>Accion</th></tr></thead>
+      <thead><tr><th>MP / Lote</th><th>Cantidad</th><th>Proveedor</th><th>Fec. Vencimiento</th><th>OC</th><th>Acción</th></tr></thead>
       <tbody id="cc-tbody"><tr><td colspan="6" class="empty">Cargando...</td></tr></tbody>
     </table>
+    </div>
   </div>
 </div>
 
@@ -409,11 +412,11 @@ textarea{resize:vertical;min-height:70px;}
 
   <!-- KPIs estado equipos -->
   <div id="eq-kpis" class="kpi-row" style="margin-bottom:14px">
-    <div class="kpi"><div class="kpi-label">Activos</div><div class="kpi-val" id="eq-kpi-total">—</div></div>
-    <div class="kpi"><div class="kpi-label">Vigentes</div><div class="kpi-val good" id="eq-kpi-vig">—</div></div>
-    <div class="kpi"><div class="kpi-label">Próximos 30d</div><div class="kpi-val warn" id="eq-kpi-prox">—</div></div>
-    <div class="kpi"><div class="kpi-label">Vencidos</div><div class="kpi-val crit" id="eq-kpi-venc">—</div></div>
-    <div class="kpi"><div class="kpi-label">Sin tracking</div><div class="kpi-val" id="eq-kpi-sin">—</div></div>
+    <div class="kpi"><div class="kpi-label">Activos</div><div class="kpi-val" id="eq-kpi-total">-</div></div>
+    <div class="kpi"><div class="kpi-label">Vigentes</div><div class="kpi-val good" id="eq-kpi-vig">-</div></div>
+    <div class="kpi"><div class="kpi-label">Próximos 30d</div><div class="kpi-val warn" id="eq-kpi-prox">-</div></div>
+    <div class="kpi"><div class="kpi-label">Vencidos</div><div class="kpi-val crit" id="eq-kpi-venc">-</div></div>
+    <div class="kpi"><div class="kpi-label">Sin tracking</div><div class="kpi-val" id="eq-kpi-sin">-</div></div>
   </div>
 
   <!-- Card 1: Vencidos (rojos arriba) -->
@@ -566,9 +569,9 @@ textarea{resize:vertical;min-height:70px;}
         <div style="font-size:0.78em;color:var(--cx-text-mute);margin-top:2px">Procedimientos, formatos y manuales vigentes (COC-PRO, ASG-PRO&hellip;). Los vencidos / por vencer salen arriba. Crear/versionar se hace en Aseguramiento.</div>
       </div>
       <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
-        <div style="text-align:center"><div style="font-size:0.7em;color:var(--cx-text-mute)">VIGENTES</div><div id="doc-k-vig" style="font-size:1.4em;font-weight:800;color:#16a34a">&mdash;</div></div>
-        <div style="text-align:center"><div style="font-size:0.7em;color:var(--cx-text-mute)">POR VENCER</div><div id="doc-k-pronto" style="font-size:1.4em;font-weight:800;color:#d97706">&mdash;</div></div>
-        <div style="text-align:center"><div style="font-size:0.7em;color:var(--cx-text-mute)">VENCIDOS</div><div id="doc-k-venc" style="font-size:1.4em;font-weight:800;color:#dc2626">&mdash;</div></div>
+        <div style="text-align:center"><div style="font-size:0.7em;color:var(--cx-text-mute)">VIGENTES</div><div id="doc-k-vig" style="font-size:1.4em;font-weight:800;color:#16a34a">-</div></div>
+        <div style="text-align:center"><div style="font-size:0.7em;color:var(--cx-text-mute)">POR VENCER</div><div id="doc-k-pronto" style="font-size:1.4em;font-weight:800;color:#d97706">-</div></div>
+        <div style="text-align:center"><div style="font-size:0.7em;color:var(--cx-text-mute)">VENCIDOS</div><div id="doc-k-venc" style="font-size:1.4em;font-weight:800;color:#dc2626">-</div></div>
         <button class="btn btn-ghost btn-sm" onclick="loadDocumentos()">&#x21BB; Refrescar</button>
       </div>
     </div>
@@ -598,7 +601,7 @@ textarea{resize:vertical;min-height:70px;}
     <button class="modal-close" onclick="closeModal('m-micro')">&times;</button>
     <div class="modal-title">Registrar resultado microbiol\u00f3gico</div>
     <div class="form-group"><label>Lote de Planta (opcional &middot; autocompleta producto)</label>
-      <select id="m-micro-lote-planta" onchange="prefillDesdeLotePlanta()"><option value="">&mdash; elegir lote de producci&oacute;n &mdash;</option></select></div>
+      <select id="m-micro-lote-planta" onchange="prefillDesdeLotePlanta()"><option value="">- elegir lote de producci&oacute;n -</option></select></div>
     <div class="form-group"><label>Producto</label><input id="m-micro-prod" placeholder="Ej: LBHA"></div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
       <div class="form-group"><label>Lote</label><input id="m-micro-lote" placeholder="Ej: 261001"></div>
@@ -699,8 +702,8 @@ textarea{resize:vertical;min-height:70px;}
 
 <script>
 function esc(s){const d=document.createElement('div');d.appendChild(document.createTextNode(s||'')); return d.innerHTML;}
-function fmt(d){return d?d.substring(0,10):'â';}
-function fmtH(s){return s?s.substring(0,5):'â';}
+function fmt(d){return d?d.substring(0,10):'-';}
+function fmtH(s){return s?s.substring(0,5):'-';}
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 
@@ -818,7 +821,7 @@ var _SEM_COLOR = {verde:'#16a34a', amarillo:'#d97706', rojo:'#dc2626', gris:'#94
 var _SEM_BG = {verde:'#f0fdf4', amarillo:'#fffbeb', rojo:'#fef2f2', gris:'#f8fafc'};
 var _SEM_LABEL = {verde:'EN META', amarillo:'EN AVISO', rojo:'FUERA DE META', gris:'SIN DATO'};
 function _fmtVal(v, unidad){
-  if(v===null||v===undefined) return '&mdash;';
+  if(v===null||v===undefined) return '-';
   var n = (unidad==='%') ? (Math.round(v*10)/10)+'%' : (Math.round(v*10)/10);
   if(unidad && unidad!=='%') n = n + ' ' + unidad;
   return n;
@@ -946,7 +949,7 @@ function renderDocumentos(){
   tb.innerHTML = lst.map(function(it){
     var ee = it.estado_efectivo||it.estado||'';
     var col = badge[ee] || '#94a3b8';
-    var pdf = it.archivo_pdf_url ? '<a href="'+esc(it.archivo_pdf_url)+'" target="_blank" rel="noopener" style="color:#6d28d9">&#128196; ver</a>' : '<span style="color:#cbd5e1">&mdash;</span>';
+    var pdf = it.archivo_pdf_url ? '<a href="'+esc(it.archivo_pdf_url)+'" target="_blank" rel="noopener" style="color:#6d28d9">&#128196; ver</a>' : '<span style="color:#cbd5e1">-</span>';
     var lbl = ee==='vence_pronto'?'por vencer':ee;
     return '<tr>'
       +'<td style="font-family:monospace;font-weight:700">'+esc(it.codigo)+'</td>'
@@ -991,7 +994,7 @@ async function loadEquiposDashboard(){
           +'<td>'+_escBan(it.area||'')+'</td>'
           +'<td>'+_escBan(it.tipo||'')+'</td>'
           +'<td style="color:#ef4444;font-weight:700">+'+(it.dias_vencido||0)+'d</td>'
-          +'<td>'+_escBan(it.ultima_calibracion||'—')+'</td>'
+          +'<td>'+_escBan(it.ultima_calibracion||'-')+'</td>'
           +'<td><button class="btn btn-primary btn-sm" onclick="abrirEventoEquipo(\''+_escBan(it.codigo)+'\',\''+_escBan(it.nombre||'')+'\')">+ Calibrar</button> '
           +'<button class="btn btn-ghost btn-sm" onclick="abrirHojaVidaEquipo(\''+_escBan(it.codigo)+'\')">Hoja vida</button></td>'
           +'</tr>';
@@ -1009,7 +1012,7 @@ async function loadEquiposDashboard(){
           +'<td>'+_escBan(it.nombre||'')+'</td>'
           +'<td>'+_escBan(it.area||'')+'</td>'
           +'<td style="color:#fbbf24;font-weight:600">'+(it.dias_para_vencer||0)+'d</td>'
-          +'<td>'+_escBan(it.fecha_proxima||'—')+'</td>'
+          +'<td>'+_escBan(it.fecha_proxima||'-')+'</td>'
           +'<td><button class="btn btn-primary btn-sm" onclick="abrirEventoEquipo(\''+_escBan(it.codigo)+'\',\''+_escBan(it.nombre||'')+'\')">+ Calibrar</button></td>'
           +'</tr>';
       }).join('');
@@ -1042,7 +1045,7 @@ async function loadEquiposCronograma(){
     var r = await fetch('/api/calidad/equipos/cronograma?mes='+mes);
     var d = await r.json();
     var k = d.kpis || {};
-    if(resumen) resumen.textContent = (k.completados||0)+'/'+(k.total||0)+' completados ('+(k.cumplimiento_pct!=null?k.cumplimiento_pct+'%':'—')+')';
+    if(resumen) resumen.textContent = (k.completados||0)+'/'+(k.total||0)+' completados ('+(k.cumplimiento_pct!=null?k.cumplimiento_pct+'%':'-')+')';
     if(!d.items || d.items.length === 0){
       tb.innerHTML = '<tr><td colspan="6" class="empty">Sin items programados este mes</td></tr>';
       return;
@@ -1057,7 +1060,7 @@ async function loadEquiposCronograma(){
         +'<td>'+_escBan(it.equipo_nombre||'')+'</td>'
         +'<td><span style="text-transform:uppercase;font-weight:600;font-size:0.78em">'+_escBan(it.tipo_actividad)+'</span></td>'
         +'<td><span style="color:'+col+';font-weight:600">'+_escBan(it.estado)+'</span></td>'
-        +'<td>'+_escBan(it.completado_por||'—')+'</td>'
+        +'<td>'+_escBan(it.completado_por||'-')+'</td>'
         +'<td>'+btn+'</td>'
         +'</tr>';
     }).join('');
@@ -1142,9 +1145,9 @@ async function abrirHojaVidaEquipo(codigo){
           +'<td>'+_escBan(ev.fecha||'')+'</td>'
           +'<td><b>'+_escBan(ev.tipo_evento||'')+'</b></td>'
           +'<td>'+_escBan(ev.estado||'')+'</td>'
-          +'<td>'+_escBan(ev.fecha_proxima||'—')+'</td>'
+          +'<td>'+_escBan(ev.fecha_proxima||'-')+'</td>'
           +'<td>'+_escBan(ev.responsable||'')+(ev.empresa_externa ? ' ('+_escBan(ev.empresa_externa)+')' : '')+'</td>'
-          +'<td><span style="color:'+col+'">'+_escBan(ev.resultado||'—')+'</span></td>'
+          +'<td><span style="color:'+col+'">'+_escBan(ev.resultado||'-')+'</span></td>'
           +'</tr>';
       });
       html += '</tbody></table>';
@@ -1463,7 +1466,7 @@ async function loadMicroHeatmap(){
     // KPIs
     var kpis = d.kpis || {};
     var kbox = document.getElementById('micro-kpis');
-    var tasaOk = kpis.tasa_ok != null ? kpis.tasa_ok+'%' : '—';
+    var tasaOk = kpis.tasa_ok != null ? kpis.tasa_ok+'%' : '-';
     kbox.innerHTML = ''+
       '<div class="kpi-card"><div class="kpi-l">Resultados (ventana)</div><div class="kpi-v">'+(kpis.total_resultados||0)+'</div></div>'+
       '<div class="kpi-card"><div class="kpi-l" style="color:#dc2626">Fuera industria</div><div class="kpi-v" style="color:#dc2626">'+(kpis.total_fuera_industria||0)+'</div></div>'+
@@ -1487,7 +1490,7 @@ async function loadMicroHeatmap(){
       var html = '<tr><td style="font-weight:700;background:var(--cx-bg-alt);position:sticky;left:0;padding:6px 10px">'+esc(row.producto)+'</td>';
       row.cells.forEach(function(c){
         var bg, color, txt='', title='';
-        if(c.estado==='sin_dato'){ bg='#f1f5f9'; color='#475569'; txt='—'; title='Sin datos en la ventana'; }
+        if(c.estado==='sin_dato'){ bg='#f1f5f9'; color='#475569'; txt='-'; title='Sin datos en la ventana'; }
         else if(c.estado==='ok'){ bg='#064e3b'; color='#34d399'; txt='✓'; title=c.n+' resultado(s) OK · ult: '+(c.ultima_fecha||'')+' valor '+(c.ultimo_valor!=null?c.ultimo_valor:c.ultimo_texto||''); }
         else if(c.estado==='fuera_meta'){ bg='#854d0e'; color='#fcd34d'; txt='⚠'; title=c.n_fuera_meta+'/'+c.n+' fuera meta · ult valor '+(c.ultimo_valor!=null?c.ultimo_valor:c.ultimo_texto||''); }
         else if(c.estado==='fuera_industria'){ bg='#7f1d1d'; color='#fca5a5'; txt='✘'; title=c.n_fuera_industria+'/'+c.n+' FUERA INDUSTRIA · ult valor '+(c.ultimo_valor!=null?c.ultimo_valor:c.ultimo_texto||''); }
@@ -1507,7 +1510,7 @@ async function loadMicroHeatmap(){
       var oosLink = p.oos_id ? '<a href="#" onclick="event.preventDefault();goTab(\'tab-oos\')" style="color:#dc2626">OOS</a>' : '';
       var coaLink = p.archivo_coa_url
         ? '<a href="'+esc(p.archivo_coa_url)+'" target="_blank" rel="noopener" style="color:#6d28d9">&#128196; COA</a>'
-        : (p.n_referencia ? '<span style="font-size:10px;color:#94a3b8" title="N° informe Microlab">Ref '+esc(p.n_referencia)+'</span>' : '<span style="color:#cbd5e1">&mdash;</span>');
+        : (p.n_referencia ? '<span style="font-size:10px;color:#94a3b8" title="N° informe Microlab">Ref '+esc(p.n_referencia)+'</span>' : '<span style="color:#cbd5e1">-</span>');
       var loteTxt = esc(p.lote||'') + (p.ebr_id ? ' <span style="font-size:9px;color:#94a3b8">EBR#'+p.ebr_id+'</span>' : '');
       var catCol = {producto:'#0891b2', materia_prima:'#7c3aed', ambiente:'#a16207'}[p.categoria] || '#94a3b8';
       var catBadge = p.categoria ? ' <span style="font-size:9px;color:#fff;background:'+catCol+';padding:1px 5px;border-radius:6px">'+esc(p.categoria.replace('materia_prima','MP').replace('producto','PT').replace('ambiente','AMB'))+'</span>' : '';
@@ -1535,7 +1538,7 @@ async function cargarLotesPlantaPicker(){
   try{
     var r=await fetch('/api/calidad/lotes-planta?dias=120',{credentials:'same-origin',cache:'no-store'});
     var d=await r.json(); _LOTES_PLANTA=d.lotes||[];
-    sel.innerHTML='<option value="">— elegir lote de producción —</option>'+_LOTES_PLANTA.map(function(l,i){
+    sel.innerHTML='<option value="">- elegir lote de producción -</option>'+_LOTES_PLANTA.map(function(l,i){
       return '<option value="'+i+'">'+esc(l.lote)+' · '+esc(l.producto||'')+' ('+esc(l.estado||'')+')</option>';
     }).join('');
   }catch(e){ /* sin planta, el picker queda vacío y se registra a mano */ }
@@ -1575,7 +1578,7 @@ async function guardarResultadoMicro(){
     var d = await r.json();
     if(d.ok){
       var msg = '✅ Guardado. Estado: '+d.estado;
-      if(d.oos_codigo) msg += '\\n\\n⚠ SE CREO '+d.oos_codigo+' AUTOMATICAMENTE — lote a cuarentena.';
+      if(d.oos_codigo) msg += '\\n\\n⚠ SE CREO '+d.oos_codigo+' AUTOMATICAMENTE - lote a cuarentena.';
       alert(msg);
       closeModal('m-micro');
       loadMicroHeatmap();
@@ -1590,7 +1593,7 @@ async function loadMicroGateCtrl(){
     var d=await r.json();
     var on = d.modo==='strict';
     el.innerHTML = '&#128274; Liberaci&oacute;n de PT por micro: '
-      + '<b style="color:'+(on?'#16a34a':'#64748b')+'">'+(on?'ESTRICTO &mdash; exige an&aacute;lisis micro presente':'solo bloquea micro fuera de spec')+'</b>'
+      + '<b style="color:'+(on?'#16a34a':'#64748b')+'">'+(on?'ESTRICTO - exige an&aacute;lisis micro presente':'solo bloquea micro fuera de spec')+'</b>'
       + ' <button class="btn btn-ghost btn-sm" style="margin-left:8px;padding:2px 8px" onclick="toggleMicroGate('+(on?0:1)+')">'+(on?'Desactivar exigir-micro':'Activar exigir-micro')+'</button>';
   }catch(e){ el.textContent=''; }
 }
@@ -1717,7 +1720,7 @@ function abrirModalFQ(){
   var prod=prompt('Producto:'); if(!prod) return;
   var param=prompt('Parámetro (ej. pH, Densidad, Fósforo, Viscosidad):'); if(!param) return;
   var res=prompt('Resultado (ej. 5.8, <0.05):')||'';
-  var uni=prompt('Unidad (ej. g/100g, cP, —):')||'';
+  var uni=prompt('Unidad (ej. g/100g, cP, -):')||'';
   var lote=prompt('Lote (opcional):')||'';
   fetch('/api/calidad/fisicoquimica/resultados', _fetchOpts('POST',{producto_nombre:prod,parametro:param,resultado:res,unidad:uni,lote:lote}))
     .then(function(r){return r.json();}).then(function(d){ if(d.ok){ loadMicroAnalisis(); } else alert('Error: '+(d.error||'?')); })
@@ -1797,7 +1800,7 @@ async function loadAguaTendencia(){
         +'<div style="color:#15803d"><b>'+((k.lecturas_totales||0)-(k.lecturas_fuera_spec||0)-(k.lecturas_alerta||0))+'</b> OK</div>'
         +'<div style="color:#fbbf24"><b>'+(k.lecturas_alerta||0)+'</b> alerta</div>'
         +'<div style="color:#ef4444"><b>'+(k.lecturas_fuera_spec||0)+'</b> fuera spec</div>'
-        +'<div><b>'+(k.tasa_ok_pct!=null?k.tasa_ok_pct+'%':'—')+'</b> tasa OK</div>';
+        +'<div><b>'+(k.tasa_ok_pct!=null?k.tasa_ok_pct+'%':'-')+'</b> tasa OK</div>';
     }
     if(driftEl){
       if(d.drift_alerta){
@@ -1887,13 +1890,13 @@ async function loadAguaTabla(){
       var col = {ok:'#34d399',alerta:'#fbbf24',fuera_spec:'#ef4444'}[rec.estado]||'#94a3b8';
       return '<tr>'
         +'<td>'+_escBan(rec.fecha||'')+'</td>'
-        +'<td>'+_escBan(rec.hora||'—')+'</td>'
+        +'<td>'+_escBan(rec.hora||'-')+'</td>'
         +'<td><b>'+_escBan(rec.punto_muestreo||'')+'</b></td>'
         +'<td>'+_escBan(rec.tipo_agua||'')+'</td>'
-        +'<td>'+(rec.ph!=null?rec.ph:'—')+'</td>'
-        +'<td>'+(rec.conductividad_us_cm!=null?rec.conductividad_us_cm:'—')+'</td>'
-        +'<td>'+(rec.toc_ppb!=null?rec.toc_ppb:'—')+'</td>'
-        +'<td>'+(rec.microorganismos_ufc_ml!=null?rec.microorganismos_ufc_ml:'—')+'</td>'
+        +'<td>'+(rec.ph!=null?rec.ph:'-')+'</td>'
+        +'<td>'+(rec.conductividad_us_cm!=null?rec.conductividad_us_cm:'-')+'</td>'
+        +'<td>'+(rec.toc_ppb!=null?rec.toc_ppb:'-')+'</td>'
+        +'<td>'+(rec.microorganismos_ufc_ml!=null?rec.microorganismos_ufc_ml:'-')+'</td>'
         +'<td><span style="color:'+col+';font-weight:700;text-transform:uppercase;font-size:10px">'+_escBan(rec.estado||'')+'</span></td>'
         +'<td>'+_escBan(rec.operador||'')+'</td>'
       +'</tr>';
@@ -2193,8 +2196,8 @@ function renderCronograma(){
       if(vencida) dotCls='cst-late';
       var btns='';
       if(est==='Pendiente'||est==='En curso'){
-        if(est==='Pendiente'){btns='<button class="btn btn-ghost btn-sm" data-cron-ini="'+t.id+'">â¶ Iniciar</button>';}
-        btns+='<button class="btn btn-primary btn-sm" data-cron-comp="'+t.id+'" data-cron-req="'+t.requiere_valor+'" data-cron-unit="'+esc(t.unidad_valor)+'" data-cron-nom="'+esc(t.nombre)+'">â Completar</button>';
+        if(est==='Pendiente'){btns='<button class="btn btn-ghost btn-sm" data-cron-ini="'+t.id+'">▶ Iniciar</button>';}
+        btns+='<button class="btn btn-primary btn-sm" data-cron-comp="'+t.id+'" data-cron-req="'+t.requiere_valor+'" data-cron-unit="'+esc(t.unidad_valor)+'" data-cron-nom="'+esc(t.nombre)+'">✓ Completar</button>';
       }else{
         btns='<button class="btn btn-ghost btn-sm" style="font-size:0.68em" data-cron-comp="'+t.id+'" data-cron-req="'+t.requiere_valor+'" data-cron-unit="'+esc(t.unidad_valor)+'" data-cron-nom="'+esc(t.nombre)+'">Editar</button>';
       }
@@ -2205,7 +2208,7 @@ function renderCronograma(){
       html+='<div class="cron-row '+rowCls+'">';
       html+='<div class="cron-status-dot '+dotCls+'"></div>';
       html+='<div class="cron-nombre">'+esc(t.nombre)+'</div>';
-      html+='<div class="cron-hora">'+(t.hora_objetivo?t.hora_objetivo:'â')+'</div>';
+      html+='<div class="cron-hora">'+(t.hora_objetivo?t.hora_objetivo:'-')+'</div>';
       html+='<div class="cron-resp">'+esc(t.responsable)+'</div>';
       if(t.procedimiento) html+='<div class="cron-proc">'+esc(t.procedimiento)+'</div>';
       html+='<div class="cron-tiempos">'+tiempoStr+'</div>';
@@ -2280,9 +2283,9 @@ async function loadCuarentena(){
     tbody.innerHTML=rows.map((l,i)=>`<tr>
       <td><strong>${esc(l.material_nombre)}</strong><br><small style="color:var(--cx-text-mute)">${esc(l.lote||'sin lote')}</small></td>
       <td>${esc(String(l.cantidad))} g</td>
-      <td>${esc(l.proveedor||'â')}</td>
+      <td>${esc(l.proveedor||'-')}</td>
       <td>${fmt(l.fecha_vencimiento)}</td>
-      <td>${esc(l.numero_oc||'â')}</td>
+      <td>${esc(l.numero_oc||'-')}</td>
       <td>
         <button class="btn btn-primary btn-sm" onclick="abrirCCReview(window._ccrRows[${i}])">Revisar CC</button>
       </td>
@@ -2342,7 +2345,7 @@ async function loadNC(){
         <td>${esc(nc.descripcion)}</td>
         <td><span class="${bimpacto}">${esc(nc.impacto)}</span></td>
         <td><span class="${bestado}">${esc(nc.estado)}</span></td>
-        <td>${nc.estado==='Abierta'?'<button class="btn btn-sm btn-primary" data-cerrar-nc="'+nc.id+'">Cerrar</button>':'â'}</td>
+        <td>${nc.estado==='Abierta'?'<button class="btn btn-sm btn-primary" data-cerrar-nc="'+nc.id+'">Cerrar</button>':'-'}</td>
       </tr>`;
     }).join('');
   }catch(e){tbody.innerHTML='<tr><td colspan="8" class="empty">Error: '+esc(e.message)+'</td></tr>';}
@@ -2388,7 +2391,7 @@ async function loadCal(){
         <td>${fmt(c.fecha_ultima)}</td>
         <td style="${vence?'color:#dc2626;font-weight:700':''}">${fmt(c.fecha_proxima)}</td>
         <td>${esc(c.responsable)}</td>
-        <td><small style="color:var(--cx-text-mute)">${esc(c.certificado||'â')}</small></td>
+        <td><small style="color:var(--cx-text-mute)">${esc(c.certificado||'-')}</small></td>
         <td><span class="${bs}">${esc(c.estado)}</span></td>
       </tr>`;
     }).join('');
