@@ -1,4 +1,4 @@
-# blueprints/despachos.py — extraído de index.py (Fase C)
+# blueprints/despachos.py · extraído de index.py (Fase C)
 import os
 import json
 import sqlite3
@@ -58,7 +58,7 @@ def recepcion_detalle_oc(numero_oc):
     if oc[3] in _INTANGIBLE:
         return jsonify({
             'error': f'La OC {oc[0]} es de tipo {oc[3]} (intangible). '
-                     'No requiere recepcion fisica — se gestiona directamente en Compras.'
+                     'No requiere recepcion fisica · se gestiona directamente en Compras.'
         }), 422
     # Recepcion se identifica por INCI + codigo (Sebastian 12-jun · el comercial
     # confunde por proveedor). JOIN a maestro para traer el INCI; nombre_mp
@@ -88,8 +88,8 @@ def recepcion_seguimiento():
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
-    # Recepcion debe ver TODAS las OCs activas — incluyendo Borrador/Revisada/
-    # Aprobada/Pendiente — para que Catalina les pueda hacer seguimiento desde
+    # Recepcion debe ver TODAS las OCs activas · incluyendo Borrador/Revisada/
+    # Aprobada/Pendiente · para que Catalina les pueda hacer seguimiento desde
     # que se crean hasta que llegan. Antes solo veia desde 'Autorizada' lo que
     # generaba que las OCs nuevas creadas desde solicitud (estado='Revisada')
     # quedaran invisibles en recepcion. Categoria-filter sigue excluyendo
@@ -228,7 +228,7 @@ def recepcion_aprobar_lote():
     # rechazado vuelto usable/vendible) o pisar un VIGENTE. CAS: condición en el WHERE +
     # rowcount → dos disposiciones concurrentes del mismo lote no se cruzan.
     # FIX 7-jul (audit ultracode): alinear el CAS con lo que la BANDEJA lista (incluye lotes LEGACY con
-    # estado_lote IS NULL · pre-cuarentena) — antes el CAS exigía CUARENTENA estricto → COALESCE(NULL,'')=''
+    # estado_lote IS NULL · pre-cuarentena) · antes el CAS exigía CUARENTENA estricto → COALESCE(NULL,'')=''
     # no matcheaba → 409 al disponer un lote legacy que la bandeja sí mostraba. RECHAZADO/VIGENTE (no NULL)
     # siguen bloqueados (no revive material rechazado).
     c.execute("UPDATE movimientos SET estado_lote=?, operador=? "
@@ -248,7 +248,7 @@ def recepcion_aprobar_lote():
               despues={'estado_lote': nuevo_estado, 'operador': usuario,
                        'motivo': motivo} if motivo else
                       {'estado_lote': nuevo_estado, 'operador': usuario},
-              detalle=f"{accion} lote {antes.get('lote','—')} ({antes.get('material_nombre','')})"
+              detalle=f"{accion} lote {antes.get('lote','·')} ({antes.get('material_nombre','')})"
                       + (f" · motivo: {motivo}" if motivo else ""))
     conn.commit()
     return jsonify({'ok': True, 'estado': nuevo_estado})

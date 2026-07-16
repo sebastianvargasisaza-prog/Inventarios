@@ -1,4 +1,4 @@
-# blueprints/inventario.py — extraído de index.py (Fase C)
+# blueprints/inventario.py · extraído de index.py (Fase C)
 import os
 import json
 import sqlite3
@@ -245,7 +245,7 @@ def get_inventario():
 
     def _safe(query, default=0):
         # Sebastian 5-may-2026 (audit zero-error dashboard): ANTES capturaba
-        # silenciosamente cualquier excepción y devolvía default=0 — ocultaba
+        # silenciosamente cualquier excepción y devolvía default=0 · ocultaba
         # bugs de DB locked, syntax errors, columns missing, etc. Ahora se
         # loguea con contexto · sigue retornando default para no romper UI
         # pero deja rastro auditable.
@@ -276,7 +276,7 @@ def get_inventario():
     stock_total = _safe("SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0) FROM movimientos")
     alrt = _safe('SELECT COUNT(*) FROM alertas')
 
-    # ── AHORA (crítico — acción hoy) ──────────────────────────────────
+    # ── AHORA (crítico · acción hoy) ──────────────────────────────────
     # MPs sin stock (en cero)
     # FIX 30-may-2026 · audit Planta/Dashboard · estos KPIs ("bloquean
     # producción") deben usar stock DISPONIBLE, no físico total. Antes sumaban
@@ -1651,7 +1651,7 @@ def _shopify_sync_producto(conn, producto_nombre, token=None, shop=None, timeout
 def _sync_shopify_pendientes_background(max_edad_horas=24, max_productos=50):
     """Sincroniza en BACKGROUND todos los productos cuyo shopify_synced_at sea
     NULL o mas viejo que max_edad_horas. No bloquea el request HTTP que lo
-    invoco — corre en thread separado.
+    invoco · corre en thread separado.
 
     Idempotente: si ya esta corriendo en otro thread, retorna sin hacer nada.
     """
@@ -2010,7 +2010,7 @@ def eliminar_movimiento(mov_id):
     from config import ADMIN_USERS
     usuario = flask_session.get('compras_user', '')
     if usuario not in ADMIN_USERS:
-        return jsonify({'error': 'No autorizado — solo administradores pueden eliminar movimientos'}), 403
+        return jsonify({'error': 'No autorizado · solo administradores pueden eliminar movimientos'}), 403
     conn = get_db(); c = conn.cursor()
     c.execute('SELECT id, material_id, material_nombre, lote, cantidad, tipo FROM movimientos WHERE id=?', (mov_id,))
     row = c.fetchone()
@@ -2082,8 +2082,8 @@ def _handle_produccion_inner():
          Si algo falla → ROLLBACK explícito + log + 500 con detalle.
 
     Esto reemplaza el flujo anterior que (a) creaba "salida sin lote" cuando no
-    había stock — generando stock negativo silencioso, y (b) no validaba que la
-    fórmula existiera — registraba producciones sin descuentos.
+    había stock · generando stock negativo silencioso, y (b) no validaba que la
+    fórmula existiera · registraba producciones sin descuentos.
 
     Excepción: si una MP está marcada como ilimitada (agua, etc.) en
     programacion._MP_UNLIMITED, el pre-check la salta. Se sigue registrando el
@@ -2163,13 +2163,13 @@ def _handle_produccion_inner():
             dup = c.fetchone()
             if dup:
                 return jsonify({
-                    'message': 'Producción ya registrada hace <90s — duplicado evitado',
+                    'message': 'Producción ya registrada hace <90s · duplicado evitado',
                     'lote': dup[2] or f'PROD-{dup[0]:05d}',
                     'duplicado': True,
                     'id_existente': dup[0],
                 }), 200
         except sqlite3.OperationalError:
-            pass  # esquema antiguo sin alguna columna — continuar normal
+            pass  # esquema antiguo sin alguna columna · continuar normal
 
         # ─── MPs ilimitadas (no requieren validación de stock) ──────────────
         # Carga la lista desde programacion (única fuente de verdad)
@@ -2227,7 +2227,7 @@ def _handle_produccion_inner():
                 'g_sin_lote': 0.0, 'unlimited': False,
             }
             if _is_unlimited(mat_nombre) or _no_controla(mat_id) or _no_controla(mat_id_formula):
-                # Aguas y similares (lista _MP_UNLIMITED o controla_stock=0) —
+                # Aguas y similares (lista _MP_UNLIMITED o controla_stock=0) ·
                 # pesaje real pero sin requerir stock.
                 entry['unlimited'] = True
                 if _no_controla(mat_id) or _no_controla(mat_id_formula):
@@ -2495,7 +2495,7 @@ def _handle_produccion_inner():
             return jsonify({
                 'error': 'Falla transaccional al registrar producción',
                 'detalle': str(_e),
-                'rollback': 'aplicado — no se descontó nada y no quedó producción registrada',
+                'rollback': 'aplicado · no se descontó nada y no quedó producción registrada',
             }), 500
 
         # Sprint Fabricación PRO 20-may-2026: persistir costo estimado
@@ -3324,7 +3324,7 @@ def produccion_rotulo_reimprimir(pid):
     if not h:
         return jsonify({'error': 'producción no existe'}), 404
     lote_ref = h[5] or f'PROD-{h[0]:05d}'
-    presentacion = h[4] or '—'
+    presentacion = h[4] or '·'
     fecha_corta = (h[3] or '')[:10]
     def _esc(s):
         return str(s or '').replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
@@ -3346,7 +3346,7 @@ h1 {{ margin: 0 0 14px; color: #0f766e; font-size: 18px; }}
         html += f"""
 <div class="rot">
   <b>Espagiria Laboratorio · ÁNIMUS Lab</b><br>
-  <span style="font-size:13px;font-weight:700">{_esc(h[1] or '—')}</span>
+  <span style="font-size:13px;font-weight:700">{_esc(h[1] or '·')}</span>
   <div class="lote">LOTE {_esc(lote_ref)}</div>
   <div class="meta">
     Presentación: {_esc(presentacion)}<br>
@@ -3431,7 +3431,7 @@ def simular_produccion():
             _ph = ','.join(['?'] * len(_NP6))
             # M-1 + vencimiento (12-jun): excluir tambien lotes vencidos POR FECHA
             # (fv Entrada < hoy Colombia) aunque el cron diario aun no los marque
-            # VENCIDO — mismo limite que job_marcar_vencidos. Asi "Verificar Stock"
+            # VENCIDO · mismo limite que job_marcar_vencidos. Asi "Verificar Stock"
             # no dice "alcanza" con un lote que el FEFO real va a rechazar (M5).
             c.execute(f"""SELECT COALESCE(SUM(stk),0) FROM (
                             SELECT SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) AS stk,
@@ -3692,7 +3692,7 @@ def trazabilidad_lote_pt(lote_ref):
         return jsonify({'error': f'Lote no encontrado: {lote_ref}', 'lote_ref': lote_ref}), 404
     prod_data = {'id': prod[0], 'producto': prod[1], 'cantidad_kg': prod[2],
                  'fecha': prod[3], 'operador': prod[4] or '', 'observaciones': prod[5] or ''}
-    # MPs consumidas — buscar Salidas etiquetadas con este lote_ref O por fecha+producto (legacy)
+    # MPs consumidas · buscar Salidas etiquetadas con este lote_ref O por fecha+producto (legacy)
     c.execute("""SELECT material_id, material_nombre, SUM(cantidad) as g_total,
                         GROUP_CONCAT(DISTINCT lote) as lotes_mp,
                         GROUP_CONCAT(DISTINCT proveedor) as proveedores
@@ -3756,7 +3756,7 @@ def trazabilidad_lote_mp(lote_mp):
         'numero_oc': ingreso[5] or '', 'numero_factura': ingreso[6] or '',
         'fecha_vencimiento': ingreso[7] or '', 'estado_lote': ingreso[8] or 'VIGENTE'
     }
-    # Salidas — producciones que consumieron este lote
+    # Salidas · producciones que consumieron este lote
     c.execute("""SELECT observaciones, cantidad, fecha FROM movimientos
                  WHERE lote=? AND tipo='Salida' ORDER BY fecha""", (lote_mp,))
     salidas = c.fetchall()
@@ -4169,7 +4169,7 @@ def alertas_all():
            HAVING stock > 0""",
     ).fetchall()
     # FIX 17-jun (auditoría Planta · M24) · "hoy" anclado a Colombia (UTC-5), no
-    # _date.today() (UTC del server Render) — de noche UTC ya es mañana → el reporte
+    # _date.today() (UTC del server Render) · de noche UTC ya es mañana → el reporte
     # de vencidos/próximos se desfasaba 1 día respecto al resto del sistema.
     from datetime import datetime as _dtnow, timezone as _tznow, timedelta as _tdnow
     hoy = (_dtnow.now(_tznow.utc) - _tdnow(hours=5)).date()
@@ -4517,20 +4517,20 @@ def get_lotes():
 
     Sebastian 5-may-2026 (audit zero-error Bodega MP): 3 fixes criticos.
 
-    Bug 1 — MEEs aparecian en lista MP:
+    Bug 1 · MEEs aparecian en lista MP:
       ANTES no filtraba por tipo_material='MP'. Si por error operativo un
       envase/tapa/etiqueta se registró en maestro_mps + movimientos (en
       lugar de maestro_mee + movimientos_mee), aparecia en Bodega MP.
       Fix: WHERE COALESCE(mp.tipo_material,'MP')='MP'. El COALESCE permite
       que MPs legacy sin tipo_material set sigan apareciendo (default MP).
 
-    Bug 2 — lotes consumidos visibles:
+    Bug 2 · lotes consumidos visibles:
       ANTES HAVING stock_neto > -999999 mostraba lotes con stock 0 o
       negativo (drift). Catalina veia lotes ya consumidos como
       'disponibles' y planificaba sobre stock fantasma.
-      Fix: HAVING stock_neto > 0 — solo lotes con stock real disponible.
+      Fix: HAVING stock_neto > 0 · solo lotes con stock real disponible.
 
-    Bug 3 — sin paginacion (cargaba 5k+ lotes en mobile):
+    Bug 3 · sin paginacion (cargaba 5k+ lotes en mobile):
       ANTES sin LIMIT · query devolvia toda la tabla agrupada · 500ms+
       en mobile.
       Fix: paginacion OPCIONAL via query params · backwards-compatible.
@@ -4641,7 +4641,7 @@ def get_lotes():
                 dias=(dt2.strptime(str(fvenc)[:10],'%Y-%m-%d').date()-dt2.strptime(hoy,'%Y-%m-%d').date()).days
                 alerta='vencido' if dias<0 else ('critico' if dias<=30 else ('proximo' if dias<=90 else 'ok'))
             except (ValueError, TypeError):
-                # Fecha mal formateada — dejar como 'ok' silencio aceptable
+                # Fecha mal formateada · dejar como 'ok' silencio aceptable
                 # (no es crítico para el flujo de stock).
                 pass
         result.append({'material_id':mid or '','nombre_inci':inci,'material_nombre':mnm or '',
@@ -5167,7 +5167,7 @@ def proveedores_unicos():
     except sqlite3.OperationalError:
         pass
     # Sebastian 12-jun: incluir TAMBIEN el maestro de proveedores (tabla
-    # proveedores) — antes solo salian los YA asignados a alguna MP/movimiento,
+    # proveedores) · antes solo salian los YA asignados a alguna MP/movimiento,
     # asi que para corregir/normalizar a un proveedor registrado pero aun no
     # usado (ej. Quincream es de GYM, no Agenquimicos) no aparecia en el
     # desplegable. Ahora salen TODOS los proveedores activos.
@@ -5377,8 +5377,8 @@ def proveedores_unificar():
     """Unifica varios alias de proveedor a un canonico.
 
     Body:
-      canonico: str — nombre que queda como version oficial
-      variantes: list[str] — todas las que se reemplazaran (incluye el
+      canonico: str · nombre que queda como version oficial
+      variantes: list[str] · todas las que se reemplazaran (incluye el
                               canonico tambien por idempotencia)
 
     Doble efecto (igual que editar proveedor de lote):
@@ -5495,7 +5495,7 @@ def editar_proveedor_lote(material_id, lote):
     """Corrige el proveedor de un lote y del catálogo de la MP.
 
     Caso de uso (jefe de produccion): "este lote en realidad lo trajo
-    Lyphar, no Inchemical — corrijamos para no repetir el bug en futuras
+    Lyphar, no Inchemical · corrijamos para no repetir el bug en futuras
     recepciones".
 
     Doble efecto:
@@ -5597,7 +5597,7 @@ def editar_proveedor_lote(material_id, lote):
                    request.remote_addr))
     except sqlite3.OperationalError:
         __import__('logging').getLogger('inventario').warning(
-            "audit_log no disponible — editar_proveedor por %s sobre %s/%s "
+            "audit_log no disponible · editar_proveedor por %s sobre %s/%s "
             "no quedo registrado.", u, material_id, lote,
         )
 
@@ -5724,7 +5724,7 @@ def editar_ubicacion_lote(material_id, lote):
                    request.remote_addr))
     except sqlite3.OperationalError:
         __import__('logging').getLogger('inventario').warning(
-            "audit_log no disponible — editar_ubicacion por %s sobre %s/%s "
+            "audit_log no disponible · editar_ubicacion por %s sobre %s/%s "
             "no quedo registrado.", u, material_id, lote,
         )
 
@@ -5853,7 +5853,7 @@ def editar_fecha_vencimiento_lote(material_id, lote):
                    request.remote_addr))
     except sqlite3.OperationalError:
         __import__('logging').getLogger('inventario').warning(
-            "audit_log no disponible — editar_fecha_venc por %s sobre %s/%s "
+            "audit_log no disponible · editar_fecha_venc por %s sobre %s/%s "
             "no quedo registrado.", u, material_id, lote,
         )
 
@@ -6003,7 +6003,7 @@ def editar_codigo_lote(material_id, lote):
                    request.remote_addr))
     except sqlite3.OperationalError:
         __import__('logging').getLogger('inventario').warning(
-            "audit_log no disponible — editar_codigo_lote por %s sobre "
+            "audit_log no disponible · editar_codigo_lote por %s sobre "
             "%s/%s -> %s no quedó registrado.",
             u, material_id, lote_actual, lote_nuevo,
         )
@@ -6064,7 +6064,7 @@ def eliminar_lote(material_id, lote):
     conn = get_db()
     c = conn.cursor()
 
-    # Snapshot del lote antes de borrar — solo columnas garantizadas en
+    # Snapshot del lote antes de borrar · solo columnas garantizadas en
     # el schema actual de movimientos (ver database.py CREATE TABLE).
     cols_select = ("m.id, m.tipo, m.cantidad, m.fecha, m.proveedor, "
                    "m.fecha_vencimiento, m.operador, m.observaciones")
@@ -6126,10 +6126,10 @@ def eliminar_lote(material_id, lote):
                    _json.dumps(snapshot, ensure_ascii=False),
                    request.remote_addr))
     except sqlite3.OperationalError:
-        # audit_log no existe en deploy super-viejo — log en Sentry
+        # audit_log no existe en deploy super-viejo · log en Sentry
         # via excepcion explicita y seguir.
         __import__('logging').getLogger('inventario').warning(
-            "audit_log no disponible — eliminar_lote por %s sobre %s/%s "
+            "audit_log no disponible · eliminar_lote por %s sobre %s/%s "
             "no quedo registrado en BD. motivo=%s",
             u, material_id, lote, motivo,
         )
@@ -7105,7 +7105,7 @@ def update_mp_proveedor(codigo):
     updated = c.rowcount
 
     if updated == 0:
-        # MP no existe en maestro_mps — crearla con info de movimientos
+        # MP no existe en maestro_mps · crearla con info de movimientos
         mov = c.execute(
             "SELECT material_nombre FROM movimientos WHERE material_id=? LIMIT 1", (codigo,)
         ).fetchone()
@@ -7555,7 +7555,7 @@ def registrar_recepcion():
                d.get('estanteria',''),d.get('posicion',''),proveedor,estado_lote,
                d.get('operador',''),precio_kg,numero_factura,numero_oc,_nrec_ing))
     mov_id = c.lastrowid
-    # Log precio historico — solo ignorar si tabla no existe (legacy).
+    # Log precio historico · solo ignorar si tabla no existe (legacy).
     if precio_kg > 0:
         try:
             c.execute("INSERT OR IGNORE INTO precios_mp_historico (codigo_mp,precio_kg,numero_factura,proveedor,fecha) VALUES (?,?,?,?,datetime('now', '-5 hours'))",
@@ -7586,9 +7586,9 @@ def registrar_recepcion():
                           "WHERE numero_oc=? AND estado IN ('Autorizada','Parcial','Pagada','Recibida')",
                           (d.get('operador',''), numero_oc))
         except Exception as oc_err:
-            # Log but don't fail the reception — OC can be reconciled manually
+            # Log but don't fail the reception · OC can be reconciled manually
             print(f'[WARN] OC update failed for {numero_oc}: {oc_err}', flush=True)
-            oc_warning = f'OC {numero_oc} no pudo actualizarse automaticamente — verificar manualmente'
+            oc_warning = f'OC {numero_oc} no pudo actualizarse automaticamente · verificar manualmente'
     # Sebastian 5-may-2026 (audit zero-error Bodega MP): ANTES /api/recepcion
     # NO generaba audit_log a pesar de ser un evento INVIMA-critico (entrada
     # fisica de MP, trazabilidad GMP/BPM Resolucion 2214/2021 art. 10).
@@ -7643,7 +7643,7 @@ def registrar_recepcion():
                 'push_notif cuarentena fallo: %s', _ne)
 
     msg = f'{nombre} ingresada. Lote: {lote}'
-    if cuarentena: msg += ' — En CUARENTENA (pendiente aprobacion QC)'
+    if cuarentena: msg += ' · En CUARENTENA (pendiente aprobacion QC)'
     if numero_oc and not oc_warning: msg += f' | OC {numero_oc} actualizada'
     if oc_warning: msg += f' | ⚠ {oc_warning}'
     return jsonify({
@@ -8054,7 +8054,7 @@ def lotes_cuarentena():
     # La cuarentena de CALIDAD (COC-PRO-001) es SOLO para MATERIA PRIMA. Antes no filtraba por tipo
     # → EPP, dotación y OCs de categorías no-MP (una OC 'EPP' cae al kardex de MP porque no es MEE
     # ni sin-kardex) aparecían aquí. Doble filtro robusto: (a) el material catalogado como MP
-    # (tipo_material) y (b) la OC de origen NO es de una categoría no-MP (EPP/Dotación/etc.) — esta
+    # (tipo_material) y (b) la OC de origen NO es de una categoría no-MP (EPP/Dotación/etc.) · esta
     # última es la señal confiable, ya que EPP puede tener el tipo_material mal. Sebastián 1-jul.
     c.execute("""SELECT m.id, m.material_id, m.material_nombre, m.lote, m.cantidad,
                       m.fecha, m.proveedor, m.numero_factura, m.numero_oc, m.observaciones,
@@ -8109,7 +8109,7 @@ def lotes_retenido():
 
 @bp.route('/api/lotes/liberar', methods=['POST'])
 def liberar_lote():
-    # Equipo de Calidad (CALIDAD_USERS) y admins pueden liberar lotes —
+    # Equipo de Calidad (CALIDAD_USERS) y admins pueden liberar lotes ·
     # antes solo era admins, lo que bloqueaba el flujo legítimo de QC.
     u, err, code = _require_qc()
     if err:
@@ -8154,13 +8154,13 @@ def liberar_lote():
     return jsonify({'message': f'Lote {accion.lower()}ado correctamente', 'estado': nuevo_estado,
                      'signature_id': sig_id})
 
-# /api/trazabilidad/<lote> eliminado — duplicado de /api/trazabilidad/lote/<path:lote>
+# /api/trazabilidad/<lote> eliminado · duplicado de /api/trazabilidad/lote/<path:lote>
 # que es más completo (también busca despachos). Mantener el de path por
 # consistencia con lotes que contienen '/' o caracteres especiales.
 
 # ── CONTEO CICLICO BDG-PRO-002 ──────────────────────────────────
 # Soporta filtro por tipo_material (MP / Envase Primario / Envase Secundario /
-# Empaque) — clave para inventario cíclico de E&E (envase y empaque).
+# Empaque) · clave para inventario cíclico de E&E (envase y empaque).
 # Sin filtro = todo. Filtro = solo materiales del tipo indicado.
 @bp.route('/api/conteo/estanterias', methods=['GET'])
 def conteo_estanterias():
@@ -8190,9 +8190,9 @@ def conteo_materiales_estanteria():
     """Items a contar en una estanteria. Devuelve UN row por (MP, lote).
 
     Cambio 2026-04-27 (CEO): el conteo ciclico antes agrupaba por MP
-    perdiendo precision. Ahora cada lote es su propia fila — el operario
+    perdiendo precision. Ahora cada lote es su propia fila · el operario
     puede contar lote por lote (que es como estan fisicamente acomodados
-    en bodega). Lotes con stock_sistema <= 0 se filtran (HAVING) — no
+    en bodega). Lotes con stock_sistema <= 0 se filtran (HAVING) · no
     aparecen en el conteo, lo cual responde a "que pasa con lotes a 0":
     naturalmente desaparecen del conteo y de Bodega MP filtrada por
     stock > 0. Si el usuario quiere borrarlos formalmente del kardex,
@@ -8299,7 +8299,7 @@ def conteo_programacion():
     Modo E&E (?tipo_material=Empaque|Envase Primario|Envase Secundario):
         rotación de 3 ITEMS específicos por semana ISO. Como E&E no tiene
         ubicación física, en lugar de elegir estantería se eligen 3 ítems
-        determinísticos para la semana — el equipo busca los 3 y los cuenta.
+        determinísticos para la semana · el equipo busca los 3 y los cuenta.
 
     Determinístico: la misma semana siempre devuelve los mismos 3 ítems.
     Rota por TODOS los ítems del tipo a lo largo del año.
@@ -8761,20 +8761,20 @@ def conteo_cerrar(conteo_id):
     except Exception as _e:
         conn.rollback()
         __import__('logging').getLogger('inventario').error(
-            "conteo_cerrar(%s) FALLÓ — rollback aplicado: %s",
+            "conteo_cerrar(%s) FALLÓ · rollback aplicado: %s",
             conteo_id, _e, exc_info=True
         )
         return jsonify({
             'error': 'Falla transaccional al cerrar conteo',
             'detalle': str(_e),
-            'rollback': 'aplicado — ningún ajuste se persistió',
+            'rollback': 'aplicado · ningún ajuste se persistió',
         }), 500
 
     # Email de alerta a gerencia si hay pendientes (best-effort, no bloquea).
     # Se envía a EMAIL_GERENCIA (env var, separado del buzón de facturación).
     # Soporta múltiples destinatarios separados por coma.
     # Si EMAIL_GERENCIA no está configurado, fallback a EMAIL_REMITENTE para
-    # no perder el alerta — pero el operador debe configurarlo en Render.
+    # no perder el alerta · pero el operador debe configurarlo en Render.
     if pendientes_gerencia_lista:
         try:
             from notificaciones import SistemaNotificaciones
@@ -8789,13 +8789,13 @@ def conteo_cerrar(conteo_id):
                     destinatarios = [sn.email_remitente]
                 total_valor = sum(p.get('valor_diferencia') or 0 for p in pendientes_gerencia_lista)
                 lista_html = ''.join([
-                    f"<li><strong>{p['codigo_mp']}</strong> — {p['nombre']}: "
+                    f"<li><strong>{p['codigo_mp']}</strong> · {p['nombre']}: "
                     f"diff <strong>{p['diferencia_g']:+.0f}g</strong> "
-                    f"(${(p.get('valor_diferencia') or 0):,.0f}) — {p.get('causa') or 'sin causa'}</li>"
+                    f"(${(p.get('valor_diferencia') or 0):,.0f}) · {p.get('causa') or 'sin causa'}</li>"
                     for p in pendientes_gerencia_lista[:20]
                 ])
                 body = f"""<html><body style="font-family:Arial,sans-serif">
-                <h2 style="color:#c62828">Alerta — Conteo cíclico requiere aprobación Gerencia</h2>
+                <h2 style="color:#c62828">Alerta · Conteo cíclico requiere aprobación Gerencia</h2>
                 <p>Conteo <strong>#{conteo_id}</strong> cerrado por <strong>{user}</strong>.</p>
                 <p>{len(pendientes_gerencia_lista)} item(s) con diferencia &gt;5% no fueron ajustados
                 automáticamente. Valor total estimado: <strong>${total_valor:,.0f}</strong>.</p>
@@ -9069,22 +9069,22 @@ def admin_conteo_rescate():
             '<td class="num"><b>' + ('{:,.0f}'.format(it[3])) + '</b></td>'
             '<td class="num" style="color:' + ('#b91c1c' if it[4] else '#64748b') + '">' + ('{:,.0f}'.format(it[4])) + '</td>'
             '<td>' + _hh.escape(str(it[6])) + '</td>'
-            '<td class="c">' + ('✓ aplicado' if it[7] else '—') + '</td></tr>'
+            '<td class="c">' + ('✓ aplicado' if it[7] else '·') + '</td></tr>'
             for it in items)
         if not filas:
-            filas = '<tr><td colspan="8" class="muted">— sin items en este conteo —</td></tr>'
+            filas = '<tr><td colspan="8" class="muted">· sin items en este conteo ·</td></tr>'
         estado_color = '#166534' if 'cerr' in (ct[5] or '').lower() else ('#854d0e' if 'abier' in (ct[5] or '').lower() else '#64748b')
         bloques.append(
             '<div class="conteo">'
-            '<div class="ch"><div><b>Conteo ' + _hh.escape(str(ct[1] or ('#' + str(cid)))) + '</b> · Estantería ' + _hh.escape(str(ct[2] or '—')) +
-            '</div><div>' + str(len(items)) + ' items · <span style="color:' + estado_color + ';font-weight:700">' + _hh.escape(str(ct[5] or '—')) + '</span></div></div>'
-            '<div class="cm">Iniciado: ' + _hh.escape(str(ct[3])[:16]) + ' · Responsable: ' + _hh.escape(str(ct[6] or '—')) +
+            '<div class="ch"><div><b>Conteo ' + _hh.escape(str(ct[1] or ('#' + str(cid)))) + '</b> · Estantería ' + _hh.escape(str(ct[2] or '·')) +
+            '</div><div>' + str(len(items)) + ' items · <span style="color:' + estado_color + ';font-weight:700">' + _hh.escape(str(ct[5] or '·')) + '</span></div></div>'
+            '<div class="cm">Iniciado: ' + _hh.escape(str(ct[3])[:16]) + ' · Responsable: ' + _hh.escape(str(ct[6] or '·')) +
             (' · Cerrado: ' + _hh.escape(str(ct[4])[:16]) if ct[4] else '') + '</div>'
             '<table><thead><tr><th>Código</th><th>Material</th><th>Lote</th><th class="num">Sistema</th>'
             '<th class="num">Físico</th><th class="num">Dif.</th><th>Observación</th><th>Ajuste</th></tr></thead>'
             '<tbody>' + filas + '</tbody></table></div>')
     cuerpo = ''.join(bloques) if bloques else '<div class="muted" style="padding:30px;text-align:center">No hay conteos en los últimos ' + str(dias) + ' días.</div>'
-    # Correcciones de Bodega MP (audit_log) — evidencia de que lo editado ayer
+    # Correcciones de Bodega MP (audit_log) · evidencia de que lo editado ayer
     # quedó REGISTRADO y APLICADO (los endpoints PUT actualizan todas las filas
     # del lote + commit). Acciones: ubicación, fecha venc, código lote, proveedor,
     # eliminar, y ajustes de inventario.
@@ -9114,7 +9114,7 @@ def admin_conteo_rescate():
         '<td style="font-size:11px;color:#475569">' + _hh.escape(str(cr[3])[:220]) + '</td></tr>'
         for cr in corr_rows)
     if not corr_filas:
-        corr_filas = '<tr><td colspan="4" class="muted">— sin correcciones de Bodega MP en este período —</td></tr>'
+        corr_filas = '<tr><td colspan="4" class="muted">· sin correcciones de Bodega MP en este período ·</td></tr>'
     corr_html = (
         '<h2 style="color:#7c3aed;margin:22px 0 8px;font-size:18px">🛠 Correcciones en Bodega MP (últimos ' + str(dias) + ' días)</h2>'
         '<div class="sub" style="margin-bottom:10px">Cada corrección de lote (ubicación, fecha, código, proveedor) y cada ajuste de inventario queda auditado aquí. '
@@ -9139,7 +9139,7 @@ def admin_conteo_rescate():
         '<td>' + _hh.escape(str(q[1])) + '</td>'
         '<td class="mono">' + _hh.escape(str(q[2])) + '</td>'
         '<td class="num">' + ('{:,.0f}'.format(q[3])) + '</td>'
-        '<td>' + _hh.escape(str(q[4]) or '—') + '</td>'
+        '<td>' + _hh.escape(str(q[4]) or '·') + '</td>'
         '<td><span style="color:#b45309;font-weight:700">' + _hh.escape(str(q[5])) + '</span></td>'
         '<td class="mono" style="font-size:11px">' + _hh.escape(str(q[6])[:16]) + '</td></tr>'
         for q in cuar_rows)
@@ -9172,7 +9172,7 @@ def admin_conteo_rescate():
         '</style></head><body><div class="wrap">'
         '<a class="bk" href="/inventarios">&larr; Volver</a>'
         '<h1>🛟 Rescate de Conteo Cíclico</h1>'
-        '<div class="sub">Todos los conteos de los últimos ' + str(dias) + ' días, con sus items — sin filtros de fecha/semana/estado. '
+        '<div class="sub">Todos los conteos de los últimos ' + str(dias) + ' días, con sus items · sin filtros de fecha/semana/estado. '
         'Esto demuestra que lo ingresado NO se perdió. (cambia ?dias=N en la URL)</div>'
         '<div class="kpi">📦 <b>' + str(len(conteos)) + '</b> conteos · <b>' + str(tot_items) + '</b> items · <b>' + str(len(corr_rows)) + '</b> correcciones Bodega · <b style="color:#b45309">' + str(len(cuar_rows)) + '</b> lotes en cuarentena · últimos ' + str(dias) + ' días.</div>'
         + cuar_html
@@ -9858,7 +9858,7 @@ h1{margin:0 0 12px;font-size:20px;color:#fff}
 <div class="container" id="vista-inicio">
   <div class="card">
     <label>Estantería a contar</label>
-    <select id="sel-est"><option value="">— elegir —</option></select>
+    <select id="sel-est"><option value="">· elegir ·</option></select>
   </div>
   <div class="card">
     <label>Tu nombre (responsable)</label>
@@ -9971,12 +9971,12 @@ function renderItems(){
     const cls = (fis==null||fis==='')?'':((pctDiff>5)?'mp-row diff-big':'mp-row saved');
     if(fis!=null && fis!=='') contados++;
     if(diff!=null && Math.abs(diff)>0.1) diffs++;
-    const diffHtml = diff===null?'<span style="color:#94a3b8">—</span>':
+    const diffHtml = diff===null?'<span style="color:#94a3b8">·</span>':
       ('<span class="diff '+(diff>=0?'pos':'neg')+'">'+(diff>=0?'+':'')+diff.toFixed(1)+(pctDiff>5?' ⚠ '+pctDiff.toFixed(1)+'%':'')+'</span>');
     cont.insertAdjacentHTML('beforeend',
       '<div class="'+(cls||'mp-row')+'" data-idx="'+idx+'">'
       +'<div class="mp-info"><div><div class="mp-cod">'+esc(it.codigo_mp)+'</div><div class="mp-nom">'+esc(it.nombre||'')+'</div>'
-      +'<div class="mp-meta">Lote: '+esc(it.lote||'—')+(it.fecha_vencimiento?' · vence '+it.fecha_vencimiento.slice(0,10):'')+'</div></div></div>'
+      +'<div class="mp-meta">Lote: '+esc(it.lote||'·')+(it.fecha_vencimiento?' · vence '+it.fecha_vencimiento.slice(0,10):'')+'</div></div></div>'
       +'<div class="mp-grid">'
       +'<div class="stock-box"><div class="val">'+formatNum(it.stock_sistema)+'</div><div class="lbl">Sistema (g)</div></div>'
       +'<div><label>Stock físico (g)</label><input type="number" inputmode="decimal" min="0" step="0.01" value="'+(fis!=null?fis:'')+'" placeholder="contá y escribí" onchange="setFisico('+idx+',this.value)" onfocus="this.select()"></div>'
@@ -10061,7 +10061,7 @@ def conteo_get_items(conteo_id):
 @bp.route('/api/lotes/cc-review', methods=['POST'])
 def cc_review():
     # Antes era hardcoded {hernando} + ADMIN_USERS. Ahora usa CALIDAD_USERS
-    # (laura, miguel, yuliel) + ADMIN — consistente con la matriz de permisos.
+    # (laura, miguel, yuliel) + ADMIN · consistente con la matriz de permisos.
     user, err, code = _require_qc()
     if err:
         return err, code
@@ -10296,7 +10296,7 @@ def anular_movimiento(mov_id):
     # Generar contra-movimiento (invierte el tipo). Mismo lote y estado_lote
     # que el original para que el kardex (_get_mp_stock) lo concilie bien.
     tipo_inv = 'Salida' if mov['tipo'] == 'Entrada' else 'Entrada'
-    obs_contra = f'[ANULACION] del movimiento #{mov_id} — {motivo} — por {user}'
+    obs_contra = f'[ANULACION] del movimiento #{mov_id} · {motivo} · por {user}'
     c.execute("""INSERT INTO movimientos
                  (material_id, material_nombre, tipo, cantidad, lote, estado_lote, operador, observaciones, fecha)
                  VALUES (?,?,?,?,?,?,?,?,datetime('now', '-5 hours'))""",
@@ -10307,7 +10307,7 @@ def anular_movimiento(mov_id):
     c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
                  VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
               (user, 'ANULAR_MOVIMIENTO', 'movimientos', str(mov_id),
-               f'Anulado mov #{mov_id} ({mov["tipo"]} {mov["cantidad"]}g de {mov["material_id"]}) — {motivo}',
+               f'Anulado mov #{mov_id} ({mov["tipo"]} {mov["cantidad"]}g de {mov["material_id"]}) · {motivo}',
                request.remote_addr))
     conn.commit()
     return jsonify({'ok': True, 'message': f'Movimiento #{mov_id} anulado. Contra-movimiento generado.',
@@ -10320,7 +10320,7 @@ def reset_mov():
     Solo admins. Triple confirmación:
       1. Sesión debe ser ADMIN_USERS
       2. JSON.confirmacion == 'BORRAR_TODO_INVENTARIO_AHORA' (no solo 'BORRAR')
-      3. JSON.fecha_actual == fecha de hoy (YYYY-MM-DD) — anti copy-paste accidental
+      3. JSON.fecha_actual == fecha de hoy (YYYY-MM-DD) · anti copy-paste accidental
     Antes de ejecutar: snapshot a backup_log + log de seguridad.
     """
     user = session.get('compras_user', '')
@@ -10342,7 +10342,7 @@ def reset_mov():
             'hint': 'Doble confirmación: la fecha de HOY debe coincidir.'
         }), 400
 
-    # Forzar backup antes de borrar — recuperabilidad obligatoria
+    # Forzar backup antes de borrar · recuperabilidad obligatoria
     try:
         from backup import do_backup
         bk_result = do_backup(triggered_by=f"pre-reset:{user}")
@@ -10351,7 +10351,7 @@ def reset_mov():
                 'error': 'No se pudo crear backup pre-reset. Operación abortada.',
                 'detail': bk_result.get('error', '')[:200]
             }), 500
-        backup_filename = bk_result.get('filename', '(skipped — otro en curso)')
+        backup_filename = bk_result.get('filename', '(skipped · otro en curso)')
     except Exception as e:
         return jsonify({
             'error': 'Backup pre-reset falló. Operación abortada.',
@@ -10624,7 +10624,7 @@ def scan_rotulo(codigo, lote):
     _col = {'VIGENTE': '#16a34a', 'APROBADO': '#16a34a', 'CUARENTENA': '#d97706',
             'CUARENTENA_EXTENDIDA': '#d97706', 'RECHAZADO': '#dc2626', 'VENCIDO': '#dc2626',
             'BLOQUEADO': '#dc2626', 'AGOTADO': '#6b7280'}.get(estado, '#4c1d95')
-    ubic = ('Est. ' + est + pos).strip() if (est or pos) else '—'
+    ubic = ('Est. ' + est + pos).strip() if (est or pos) else '·'
     def _row(k, v, big=False):
         return ('<div style="display:flex;justify-content:space-between;gap:10px;padding:9px 2px;'
                 'border-bottom:1px solid #eee;"><span style="color:#6b7280;font-size:13px;">' + _hh.escape(k) +
@@ -10660,12 +10660,12 @@ def scan_rotulo(codigo, lote):
         '<div class="sub">' + _hh.escape(cod) + (' · ' + _hh.escape(cat) if cat else '') + '</div>'
         '<span class="chip" style="background:' + _col + ';">' + _hh.escape(estado) + '</span></div>'
         '<div class="bd">' + aviso +
-        _row('Lote', _hh.escape(lot) or '—', big=True) +
+        _row('Lote', _hh.escape(lot) or '·', big=True) +
         _row('Stock disponible', '{:,.1f} g'.format(stock)) +
-        _row('Vencimiento', _hh.escape(vence) or '—') +
+        _row('Vencimiento', _hh.escape(vence) or '·') +
         _row('Ubicación', _hh.escape(ubic)) +
         (_row('Nombre INCI', _hh.escape(inci)) if inci else '') +
-        _row('Último movimiento', _hh.escape(ult) or '—') +
+        _row('Último movimiento', _hh.escape(ult) or '·') +
         '</div></div>'
         '<div class="card"><div class="hd" style="background:#6d28d9;padding:12px 18px;">'
         '<h1 style="font-size:16px;">Últimos movimientos</h1></div>'
@@ -10757,7 +10757,7 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
             pass
     c.execute("SELECT nombre_inci,nombre_comercial,tipo,proveedor FROM maestro_mps WHERE codigo_mp=?", (codigo,)); mp=c.fetchone()
     # FIX 9-jul · el vencimiento/ubicación viven en la ENTRADA del lote; tomar el ÚLTIMO movimiento
-    # (LIMIT 1) fallaba si después hubo una Salida (sin venc/ubic) → salía "—". Agregar sobre TODOS
+    # (LIMIT 1) fallaba si después hubo una Salida (sin venc/ubic) → salía "·". Agregar sobre TODOS
     # los movimientos del lote: venc/proveedor de la Entrada; estantería/posición cualquier no-vacía.
     c.execute("""SELECT
             MAX(CASE WHEN LOWER(COALESCE(tipo,''))='entrada' THEN NULLIF(TRIM(CAST(COALESCE(fecha_vencimiento,'') AS TEXT)),'') END),
@@ -11533,7 +11533,7 @@ def reset_inventario_page():
         '<a class="back" href="/inventarios">← Volver a Inventarios</a>'
         '<h1>🧹 Reset de inventario a CERO</h1>'
         '<div class="warn"><b>Solo para la app en prueba.</b> Pone TODO el stock en cero para cargar el conteo nuevo. '
-        '<b>Conserva</b> el catálogo (códigos, INCI, nombres), fórmulas y mapeos. <b>Borra</b> el kardex de MP (y envases) — se hace un respaldo antes.</div>'
+        '<b>Conserva</b> el catálogo (códigos, INCI, nombres), fórmulas y mapeos. <b>Borra</b> el kardex de MP (y envases) · se hace un respaldo antes.</div>'
         '<div class="card" id="preview">Cargando preview…</div>'
         '<div class="card">'
         '<label><input type="checkbox" id="mee" checked> También poner envases/MEE en cero</label>'
@@ -11911,7 +11911,7 @@ def importar_conteo_page():
         'var ck=(x.cargable && x.inci_coincide!==false)?" checked":"";'
         'var chk=x.cargable?("<input type=checkbox class=sel data-i="+i+" data-est=\\""+(x.estanteria||"")+"\\""+ck+" onchange=actBtn()>"):"";'
         'var im=x.inci_coincide===false?" <span style=\\"color:#9a3412;font-weight:700\\">⚠ distinto</span>":(x.inci_coincide===true?" <span style=color:#166534>✓</span>":"");'
-        'h+="<tr class="+cls+" data-cat="+cat+"><td>"+chk+"</td><td>"+(x.codigo||"—")+"</td><td>"+(x.inci||"")+"</td><td><b>"+(x.codigo_real||"—")+"</b></td><td>"+(x.inci_app||"")+im+"</td><td>"+badge(x.match)+"</td><td>"+(x.estanteria||"")+"</td><td>"+(x.lote||"")+"</td><td style=text-align:right>"+x.cantidad+"</td><td>"+(x.vencimiento||"")+"</td></tr>";});'
+        'h+="<tr class="+cls+" data-cat="+cat+"><td>"+chk+"</td><td>"+(x.codigo||"·")+"</td><td>"+(x.inci||"")+"</td><td><b>"+(x.codigo_real||"·")+"</b></td><td>"+(x.inci_app||"")+im+"</td><td>"+badge(x.match)+"</td><td>"+(x.estanteria||"")+"</td><td>"+(x.lote||"")+"</td><td style=text-align:right>"+x.cantidad+"</td><td>"+(x.vencimiento||"")+"</td></tr>";});'
         'h+="</tbody></table>"; document.getElementById("tabla").innerHTML=h; actBtn(); verCat("nomapean");'
         'b.disabled=false; b.textContent="Analizar mapeo";'
         '}catch(e){alert("Error: "+e);b.disabled=false;b.textContent="Analizar mapeo";}}'
@@ -12571,8 +12571,8 @@ function pinta(){
   var rows=_ROWS.filter(function(r){ if(fil==='OK')return r.status==='OK'; if(fil==='REV')return r.status!=='OK'&&r.status!=='YA_APLICADA'; return true; });
   var h='<table><thead><tr><th>Producción</th><th>Cód</th><th>Material</th><th>Lote (Excel)</th><th>Lote EOS</th><th style="text-align:right">Consumo g</th><th style="text-align:right">Usable g</th><th style="text-align:right">Cuar. g</th><th>Estado</th><th>Detalle</th></tr></thead><tbody>';
   rows.forEach(function(r){
-    var lm=r.lote_match?esc(r.lote_match)+(r.lote_estado&&r.lote_estado!=='VIGENTE'?(' <span style="color:#b45309">('+esc(r.lote_estado)+')</span>'):''):'<span style="color:#cbd5e1">—</span>';
-    h+='<tr><td style="font-size:11px;color:#666">'+esc((r.prod||'').slice(0,26))+'</td><td style="font-family:monospace">'+esc(r.cod)+'</td><td>'+esc((r.nombre||r.desc||'').slice(0,24))+'</td><td style="font-family:monospace;font-size:11px">'+esc(r.lote_excel||'—')+'</td><td style="font-family:monospace;font-size:11px">'+lm+'</td><td style="text-align:right;font-weight:700">'+num(r.cant)+'</td><td style="text-align:right">'+num(r.usable)+'</td><td style="text-align:right;color:'+(r.retenido?'#1e40af':'#ccc')+'">'+num(r.retenido)+'</td><td><span class="chip st-'+esc(r.status)+'">'+esc(r.status)+'</span></td><td style="font-size:11.5px;color:#555">'+esc(r.detalle||'')+'</td></tr>';
+    var lm=r.lote_match?esc(r.lote_match)+(r.lote_estado&&r.lote_estado!=='VIGENTE'?(' <span style="color:#b45309">('+esc(r.lote_estado)+')</span>'):''):'<span style="color:#cbd5e1">·</span>';
+    h+='<tr><td style="font-size:11px;color:#666">'+esc((r.prod||'').slice(0,26))+'</td><td style="font-family:monospace">'+esc(r.cod)+'</td><td>'+esc((r.nombre||r.desc||'').slice(0,24))+'</td><td style="font-family:monospace;font-size:11px">'+esc(r.lote_excel||'·')+'</td><td style="font-family:monospace;font-size:11px">'+lm+'</td><td style="text-align:right;font-weight:700">'+num(r.cant)+'</td><td style="text-align:right">'+num(r.usable)+'</td><td style="text-align:right;color:'+(r.retenido?'#1e40af':'#ccc')+'">'+num(r.retenido)+'</td><td><span class="chip st-'+esc(r.status)+'">'+esc(r.status)+'</span></td><td style="font-size:11.5px;color:#555">'+esc(r.detalle||'')+'</td></tr>';
   });
   h+='</tbody></table>';
   document.getElementById('out').innerHTML=h;
@@ -13132,7 +13132,7 @@ async function preview(){
     if(_FUS){
       var dstNom=esc(d.destino_nombre_inci||d.destino_nombre_comercial||'(sin nombre)')+(d.destino_nombre_comercial&&d.destino_nombre_inci?(' &middot; '+esc(d.destino_nombre_comercial)):'');
       h+='<div style="margin-top:12px;padding:12px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px">'
-        +'<div style="font-weight:700;color:#92400e;font-size:13px;margin-bottom:6px">&#9888; El destino '+esc(d.nuevo)+' YA existe — esto es una FUSIÓN, confirmá que son la MISMA materia prima:</div>'
+        +'<div style="font-weight:700;color:#92400e;font-size:13px;margin-bottom:6px">&#9888; El destino '+esc(d.nuevo)+' YA existe · esto es una FUSIÓN, confirmá que son la MISMA materia prima:</div>'
         +'<div style="font-size:13px"><b>'+esc(d.viejo)+'</b> (origen): '+srcNom+' &middot; '+num(d.stock_g)+' g</div>'
         +'<div style="font-size:13px"><b>'+esc(d.nuevo)+'</b> (destino): '+dstNom+' &middot; '+num(d.destino_stock_g)+' g</div>'
         +'<div style="font-size:12px;color:#92400e;margin-top:6px">El stock del origen se MUEVE al destino (queda '+num((d.stock_g||0)+(d.destino_stock_g||0))+' g) y '+esc(d.viejo)+' se desactiva. Reversible por audit.</div>'
@@ -13813,7 +13813,7 @@ def backfill_precios_mp():
     })
 
 # ═══════════════════════════════════════════════════════════════════════
-# MÓDULO MEE — Material de Empaque y Envase  (Tasks #70 #71 #72)
+# MÓDULO MEE · Material de Empaque y Envase  (Tasks #70 #71 #72)
 # ═══════════════════════════════════════════════════════════════════════
 
 def _init_mee_movimientos():
@@ -14840,7 +14840,7 @@ def mee_anular_movimiento(mov_id):
 
 # ════════════════════════════════════════════════════════════════════════
 # MEE ampliado (29-abr-2026): proveedor, ajustar, historico, eliminar,
-# bulk import desde Excel — paridad de funcionalidades con MP.
+# bulk import desde Excel · paridad de funcionalidades con MP.
 # ════════════════════════════════════════════════════════════════════════
 
 @bp.route('/api/mee/<codigo>', methods=['GET', 'PUT', 'DELETE'])
@@ -15260,7 +15260,7 @@ def mee_categorias():
 
 
 # ═══════════════════════════════════════════════════════════════
-#  ACONDICIONAMIENTO + LIBERACIÓN — Fase 4
+#  ACONDICIONAMIENTO + LIBERACIÓN · Fase 4
 # ═══════════════════════════════════════════════════════════════
 
 def _init_acondicionamiento():
@@ -15297,7 +15297,7 @@ def _init_acondicionamiento():
         estado                  TEXT DEFAULT 'Pendiente CC',
         creado_en               DATETIME DEFAULT (datetime('now', '-5 hours'))
     )""")
-    # Nuevas columnas — múltiples presentaciones y flujo liberación→stock_pt.
+    # Nuevas columnas · múltiples presentaciones y flujo liberación→stock_pt.
     # Usamos safe_alter (database.py) que distingue "columna ya existe"
     # (benigno) de errores reales (loguea + relanza).
     from database import safe_alter
@@ -15313,7 +15313,7 @@ def _init_acondicionamiento():
 _init_acondicionamiento()
 
 # ══════════════════════════════════════════════════════════════════
-# ENVASADO — Paso entre Produccion y Acondicionamiento
+# ENVASADO · Paso entre Produccion y Acondicionamiento
 # ══════════════════════════════════════════════════════════════════
 
 @bp.route('/api/producciones/sin-envasar', methods=['GET'])
@@ -15524,7 +15524,7 @@ def envasado_list():
             return jsonify({
                 'error': 'Falla transaccional al registrar envasado',
                 'detalle': str(_e),
-                'rollback': 'aplicado — no se descontó ningún MEE',
+                'rollback': 'aplicado · no se descontó ningún MEE',
             }), 500
 
         # Si hay MEE bajo minimo, crear solicitud de compra automatica en Compras
@@ -15952,7 +15952,7 @@ def liberacion_update(lid):
                       (sku_lib, prod_lib, lote_lib, fecha_lib,
                        uds_lib, uds_lib, precio_lib,
                        'ANIMUS', 'Disponible',
-                       f'Liberacion aprobada por {u} — {pres_lib}'))
+                       f'Liberacion aprobada por {u} · {pres_lib}'))
         # Registrar en calidad como BPM completado
         try:
             _lib_val = lib[1] if lib else 'PT'
@@ -15976,7 +15976,7 @@ def liberacion_update(lid):
               registro_id=lid, antes=antes,
               despues={'estado': estado, 'aprobado_por': u, 'observaciones': obs,
                        'cliente': d.get('cliente', '')},
-              detalle=f"{accion} lote {antes.get('lote','—')} ({antes.get('producto','')})"
+              detalle=f"{accion} lote {antes.get('lote','·')} ({antes.get('producto','')})"
                       + (f" · {obs}" if obs else ""))
     conn.commit()
     return jsonify({'ok': True})
@@ -16298,7 +16298,7 @@ def planta_stock_por_lote(codigo_mp):
     """Stock detallado por lote de un MP (FEFO view).
 
     Sebastian (29-abr-2026): "FEFO perfecto". Endpoint que muestra el
-    stock vivo por lote — cuántos gramos quedan de cada lote, ordenado
+    stock vivo por lote · cuántos gramos quedan de cada lote, ordenado
     por fecha de vencimiento (más cercano primero). Útil para que
     operarios sepan exactamente de qué lote sacar al consumir.
 
@@ -16476,5 +16476,5 @@ def planta_valoracion_inventario():
 
 
 # ═══════════════════════════════════════════════
-#  MAQUILA 360 — API
+#  MAQUILA 360 · API
 # ═══════════════════════════════════════════════
