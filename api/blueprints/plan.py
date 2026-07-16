@@ -18717,6 +18717,7 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
             <span style="font-size:12px;color:#5b21b6;font-weight:700">Cada <input id="np-cad-meses" type="number" min="0.5" max="12" step="0.5" value="2" oninput="_npCadFromMeses()" style="width:44px;padding:4px;border:1px solid #c4b5fd;border-radius:5px;text-align:center;font-weight:700"> meses <span style="color:#94a3b8">o</span> <input id="np-cad-dias" type="number" min="15" max="400" value="61" oninput="_npCadFromDias()" style="width:48px;padding:4px;border:1px solid #c4b5fd;border-radius:5px;text-align:center;font-weight:700"> días</span>
             <span style="font-size:12px;color:#5b21b6;font-weight:700">· <input id="np-cad-kg" type="number" min="0.1" step="0.1" placeholder="kg" oninput="_npCadPreview()" style="width:62px;padding:4px;border:1px solid #7c3aed;border-radius:5px;text-align:center;font-weight:800;color:#5b21b6"> kg/lote</span>
             <span style="font-size:12px;color:#5b21b6;font-weight:700">· <select id="np-cad-anios" onchange="_npCadPreview()" style="padding:4px;border:1px solid #c4b5fd;border-radius:5px;font-weight:700"><option value="1">1 año</option><option value="2" selected>2 años</option><option value="3">3 años</option></select></span>
+            <span style="font-size:12px;color:#5b21b6;font-weight:700">· mix <select id="np-cad-mix" title="auto = venta de toda la ventana · crece = venta reciente (colores/lanzamientos) · fijo = congela el mix" style="padding:4px;border:1px solid #c4b5fd;border-radius:5px;font-weight:700"><option value="auto">auto</option><option value="crece">crece</option><option value="fijo">fijo</option></select></span>
           </div>
           <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-bottom:9px">
             <span style="font-size:12px;color:#5b21b6;font-weight:700">🎯 1ª nueva <input id="np-primera-fecha" type="date" oninput="_npCadPreview()" title="opcional · si querés fijar el mes de la 1ª producción nueva · vacío = cuando se agote lo fabricado" style="padding:4px;border:1px solid #c4b5fd;border-radius:5px;font-weight:700"></span>
@@ -20885,10 +20886,28 @@ async function _npLoadNec(){
 }
 let _npResTO = null;
 function _npResumenDebounced(){ clearTimeout(_npResTO); _npResTO = setTimeout(_npResumen, 350); }
+// Programación v4 · pre-llena la cadena con la DECISIÓN que el usuario guardó en el panel
+// (/planta/programar) para este producto → "un solo módulo": lo que decidís allá o acá es lo mismo.
+async function _npCargarDecision(name){
+  try{
+    const r = await fetch('/api/programacion/sugerencia-produccion?producto='+encodeURIComponent(name), {credentials:'same-origin'});
+    if(!r.ok) return;
+    const d = await r.json();
+    const cfg = (d && d.config) || {};
+    if(cfg.kg_objetivo_lote){ var k=document.getElementById('np-cad-kg'); if(k) k.value = cfg.kg_objetivo_lote; }
+    if(cfg.cadencia_dias){
+      var dd=document.getElementById('np-cad-dias'); if(dd) dd.value = cfg.cadencia_dias;
+      var mm=document.getElementById('np-cad-meses'); if(mm) mm.value = Math.round(cfg.cadencia_dias/30.44*10)/10;
+    }
+    if(cfg.horizonte_dias){ var an=document.getElementById('np-cad-anios'); if(an) an.value = (cfg.horizonte_dias>=1000?'3':(cfg.horizonte_dias>=700?'2':'1')); }
+    if(cfg.mix_mode){ var mx=document.getElementById('np-cad-mix'); if(mx) mx.value = cfg.mix_mode; }
+  }catch(e){}
+}
 async function _npResumen(){
   const el = document.getElementById('np-resumen'); if(!el) return;
   const name = (document.getElementById('np-producto').value || '').trim();
   if(!name){ el.style.display='none'; window._NP_P = null; _npCadPreview(); return; }
+  await _npCargarDecision(name);
   const idx = await _npLoadNec();
   const p = idx[name.toUpperCase()];
   window._NP_P = p || null;
@@ -21013,6 +21032,14 @@ async function _npCrearCadena(){
     const d = await r.json().catch(function(){return {};});
     if(!r.ok || !d.ok){ msg.innerHTML='<span style="color:#dc2626;font-weight:700">⚠ '+escapeHtml(d.error||('Error '+r.status))+'</span>'; btn.disabled=false; btn.textContent='📅 Crear cadena desde esta fecha'; return; }
     msg.innerHTML='<span style="color:#16a34a;font-weight:700">✅ Cadena creada · '+(d.creados||0)+' lotes'+(d.origen_creado?' + fuente':'')+'.</span>';
+    // Programación v4 · guardar la DECISIÓN (kg/ritmo/horizonte/mix) → el panel /planta/programar
+    // la recuerda = "un solo módulo": decidís acá o allá, es lo mismo. Fire-and-forget.
+    try{
+      var _mix = (document.getElementById('np-cad-mix')||{}).value || 'auto';
+      fetch('/api/programacion/decision-produccion', {method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF(),'X-CSRFToken':getCSRF()},
+        body: JSON.stringify({producto:producto, kg_objetivo_lote:cc.kg, cadencia_dias:cc.interval, horizonte_dias:cc.anios*365, mix_mode:_mix})});
+    }catch(e){}
     cerrarNuevaProduccion();
     if (typeof cargar === 'function') cargar();
   }catch(e){ msg.innerHTML='<span style="color:#dc2626;font-weight:700">⚠ '+escapeHtml(String(e))+'</span>'; btn.disabled=false; btn.textContent='📅 Crear cadena desde esta fecha'; }
