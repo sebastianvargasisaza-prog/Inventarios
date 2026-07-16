@@ -199,9 +199,9 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
      Programación 8→4). Catalina ya tenía muscular memory · IDs originales
      (data-tab) se mantienen para que las funciones loadX no se rompan. -->
 <!-- Sebastián 13-jul · burbuja flotante "Pregúntale a Compras (IA)" QUITADA a pedido
-     (ocupaba espacio y distraía). El endpoint /api/compras/asistente-ia queda vivo
-     por si se reintroduce. Se conserva SOLO el helper _esc (lo usan las funciones de
-     render de más abajo · quitarlo rompería el escapado). -->
+     (ocupaba espacio y distraía). Endpoint /api/compras/asistente-ia ELIMINADO
+     16-jul (estaba muerto · sin caller). Se conserva SOLO el helper _esc (lo usan
+     las funciones de render de más abajo · quitarlo rompería el escapado). -->
 <script>
 // helper esc global · usado por renderKpisGrandes/renderDashHome2/etc.
 function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}

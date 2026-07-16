@@ -8529,10 +8529,6 @@ def test_golden_compras_scorecard_proveedor(app, db_clean):
 def test_golden_compras_max_ia_ocr_traz(app, db_clean):
     """Compras MAX · 21-may-2026 · 6 endpoints nuevos."""
     cs = _login(app, 'sebastian')
-    # IA Asistente · sin API key → 503
-    r1 = cs.post('/api/compras/asistente-ia', json={'pregunta': 'TEST hola'},
-                  headers=csrf_headers())
-    assert r1.status_code in (200, 503)
     # Predicción demanda
     r2 = cs.get('/api/compras/prediccion-demanda')
     assert r2.status_code == 200

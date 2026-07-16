@@ -146,7 +146,7 @@ Cuando Catalina edita un item:
 ### 2026-05-21 · Sesión enterprise zero-error · 70+ bugs cerrados
 
 **Nuevos endpoints:**
-- `POST /api/compras/asistente-ia` · chat Claude Sonnet 4.6 con contexto live
+- ~~`POST /api/compras/asistente-ia`~~ · ELIMINADO 16-jul (muerto · burbuja quitada 13-jul)
 - `POST /api/compras/ocr-factura` · Claude Vision extrae factura proveedor
 - `GET /api/compras/dashboard-home` · dashboard CONSOLIDADO (reemplaza 4 dashes legacy)
 - `GET /api/compras/cash-flow` · proyección 30/60/90 días
