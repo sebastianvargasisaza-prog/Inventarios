@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""HTML del módulo Chat — WhatsApp-style.
+"""HTML del módulo Chat - WhatsApp-style.
 
 Sebastian (29-abr-2026): comunicación interna del holding con
 sidebar de conversaciones, presencia online, mensajes 1-a-1, grupos
@@ -10,7 +10,7 @@ CHAT_HTML = r"""<!DOCTYPE html>
 <html lang="es" translate="no">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Chat — EOS</title>
+<title>Chat - EOS</title>
 <link rel="stylesheet" href="/static/cortex.css?v=eos15">
 <script>(function(){
   try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}
@@ -174,15 +174,15 @@ body{font-family:-apple-system,'Inter','Segoe UI',sans-serif;background:#0a0a0b;
     <div class="empty-main" id="empty-main">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
       <div style="font-size:18px;font-weight:600;color:#475569">EOS · Chat interno del holding</div>
-      <div style="font-size:13px;max-width:420px;line-height:1.5">Selecciona una conversación o inicia una nueva con el botón <b>+</b> arriba a la izquierda. Polling cada 5s — los mensajes nuevos llegan solos.</div>
+      <div style="font-size:13px;max-width:420px;line-height:1.5">Selecciona una conversación o inicia una nueva con el botón <b>+</b> arriba a la izquierda. Polling cada 5s - los mensajes nuevos llegan solos.</div>
     </div>
 
     <div id="chat-active" style="display:none;flex:1;flex-direction:column;min-height:0">
       <div class="chat-header">
         <div class="t-avatar" id="ch-avatar">?</div>
         <div class="ch-info">
-          <div class="ch-name" id="ch-name">—</div>
-          <div class="ch-status" id="ch-status">—</div>
+          <div class="ch-name" id="ch-name">-</div>
+          <div class="ch-status" id="ch-status">-</div>
         </div>
       </div>
       <div class="msgs-wrap" id="msgs-wrap"></div>
@@ -618,7 +618,7 @@ function abrirModalTarea(){
   if(!ACTIVE_THREAD){ alert('Abre un chat primero.'); return; }
   // Llenar dropdown de asignados con la lista de USERS
   var sel = document.getElementById('tarea-asignado');
-  sel.innerHTML = '<option value="">— Selecciona —</option>'
+  sel.innerHTML = '<option value="">- Selecciona -</option>'
     + USERS.filter(function(u){ return u.username !== ME; })
            .map(function(u){ return '<option value="'+_esc(u.username)+'">'+_esc(u.username)+'</option>'; }).join('');
   document.getElementById('tarea-titulo').value = '';
@@ -651,7 +651,7 @@ async function crearTareaChat(){
   } catch(e){ alert('Error de red: '+e.message); }
 }
 
-// ─── Fase 4: @menciones — render + autocomplete ─────────────────────
+// ─── Fase 4: @menciones - render + autocomplete ─────────────────────
 // Resalta @username en el contenido del mensaje. Si soy yo el mencionado,
 // usa la clase 'mention me' (ámbar) para destacar.
 function renderMenciones(htmlEsc){
@@ -762,7 +762,7 @@ function _menInsert(uname, ta){
 }
 
 // Listener separado en el composer para teclas del autocomplete (NO wrap
-// del composerKeydown global — eso rompia el chat en algunos navegadores).
+// del composerKeydown global - eso rompia el chat en algunos navegadores).
 // Se agrega cuando el composer existe y solo intercepta cuando hay suggest abierto.
 document.addEventListener('keydown', function(e){
   var ta = document.getElementById('composer');

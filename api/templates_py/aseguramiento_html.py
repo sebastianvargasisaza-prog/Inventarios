@@ -101,7 +101,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 <div class="tabs">
   <div class="tab active" data-tip="Estado general del sistema de calidad de un vistazo: documentos del SGD (vigentes/por vencer/vencidos), conflictos, capacitaciones pendientes y los contadores de desviaciones, cambios, quejas y recalls." data-tip-pos="bottom" onclick="goTab('tab-dash')">&#x1F4CA; Dashboard</div>
   <div class="tab" data-tip="Cuadro de mando GMP: los indicadores que el sistema de calidad debe cumplir (desviaciones a tiempo, CAPA, cambios INVIMA, quejas, cronogramas, SGD) + KPIs de Planta (RFT) y Calidad (liberación, OOS), cada uno con meta editable y semáforo. Alimenta la Revisión por la Dirección." data-tip-pos="bottom" onclick="goTab('tab-indic')">&#x1F4C8; Indicadores</div>
-  <div class="tab" data-tip="Tu vista personal: lo que TÚ tienes pendiente — capacitaciones por firmar, ítems que reportaste y siguen abiertos, y (si eres Calidad) la cola que espera tu acción." data-tip-pos="bottom" onclick="goTab('tab-mis-tareas')">&#x1F464; Mis tareas</div>
+  <div class="tab" data-tip="Tu vista personal: lo que TÚ tienes pendiente - capacitaciones por firmar, ítems que reportaste y siguen abiertos, y (si eres Calidad) la cola que espera tu acción." data-tip-pos="bottom" onclick="goTab('tab-mis-tareas')">&#x1F464; Mis tareas</div>
   <div class="tab" data-tip="Biblioteca maestra de TODOS los procedimientos (SOPs, COC-PRO, ASG-PRO): código, versión, estado vigente/obsoleto, próxima revisión y enlace al PDF (Drive). El control documental GMP." data-tip-pos="bottom" onclick="goTab('tab-sgd')">&#x1F4DA; SGD electrónico</div>
   <div class="tab" data-tip="Asignar y controlar el entrenamiento del personal en cada SOP: quién leyó qué, con firma electrónica. Evidencia GMP de que el personal está capacitado." data-tip-pos="bottom" onclick="goTab('tab-cap')">&#x1F393; Capacitaciones</div>
   <div class="tab" data-tip="Tus capacitaciones asignadas para leer y firmar (la cara personal de la pestaña Capacitaciones)." data-tip-pos="bottom" onclick="goTab('tab-mis-cap')">&#x270D;&#xFE0F; Mis firmas</div>
@@ -129,39 +129,39 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   <!-- SGD -->
   <div class="card-title" style="margin-top:6px">📚 SGD electrónico</div>
   <div class="kpi-row">
-    <div class="kpi"><div class="kpi-label">Docs Vigentes</div><div class="kpi-val good" id="kp-vig">—</div></div>
-    <div class="kpi"><div class="kpi-label">Vencen 30d</div><div class="kpi-val warn" id="kp-prox">—</div></div>
-    <div class="kpi"><div class="kpi-label">Vencidos</div><div class="kpi-val crit" id="kp-venc">—</div></div>
-    <div class="kpi"><div class="kpi-label">Conflictos</div><div class="kpi-val warn" id="kp-confl">—</div></div>
-    <div class="kpi"><div class="kpi-label">Capacit. pendientes</div><div class="kpi-val warn" id="kp-cap">—</div></div>
+    <div class="kpi"><div class="kpi-label">Docs Vigentes</div><div class="kpi-val good" id="kp-vig">-</div></div>
+    <div class="kpi"><div class="kpi-label">Vencen 30d</div><div class="kpi-val warn" id="kp-prox">-</div></div>
+    <div class="kpi"><div class="kpi-label">Vencidos</div><div class="kpi-val crit" id="kp-venc">-</div></div>
+    <div class="kpi"><div class="kpi-label">Conflictos</div><div class="kpi-val warn" id="kp-confl">-</div></div>
+    <div class="kpi"><div class="kpi-label">Capacit. pendientes</div><div class="kpi-val warn" id="kp-cap">-</div></div>
   </div>
 
   <!-- Workflows ASG -->
   <div class="card-title" style="margin-top:14px">⚙️ Workflows ASG</div>
   <div class="kpi-row">
     <div class="kpi" onclick="goTab('tab-desv')" style="cursor:pointer"><div class="kpi-label">📢 Desviaciones</div>
-      <div class="kpi-val" id="kp-desv-tot">—</div>
-      <div class="kpi-sub"><span style="color:#ef4444" id="kp-desv-crit">—</span> críticas · <span id="kp-desv-sin">—</span> s/clasificar</div>
+      <div class="kpi-val" id="kp-desv-tot">-</div>
+      <div class="kpi-sub"><span style="color:#ef4444" id="kp-desv-crit">-</span> críticas · <span id="kp-desv-sin">-</span> s/clasificar</div>
     </div>
     <div class="kpi" onclick="goTab('tab-cambios')" style="cursor:pointer"><div class="kpi-label">🔄 Cambios</div>
-      <div class="kpi-val" id="kp-cam-tot">—</div>
-      <div class="kpi-sub"><span style="color:#ef4444" id="kp-cam-inv">—</span> INVIMA · <span id="kp-cam-sin">—</span> s/evaluar</div>
+      <div class="kpi-val" id="kp-cam-tot">-</div>
+      <div class="kpi-sub"><span style="color:#ef4444" id="kp-cam-inv">-</span> INVIMA · <span id="kp-cam-sin">-</span> s/evaluar</div>
     </div>
     <div class="kpi" onclick="goTab('tab-quejas')" style="cursor:pointer"><div class="kpi-label">💬 Quejas</div>
-      <div class="kpi-val" id="kp-qc-tot">—</div>
-      <div class="kpi-sub"><span style="color:#ef4444" id="kp-qc-crit">—</span> críticas · <span id="kp-qc-nue">—</span> nuevas</div>
+      <div class="kpi-val" id="kp-qc-tot">-</div>
+      <div class="kpi-sub"><span style="color:#ef4444" id="kp-qc-crit">-</span> críticas · <span id="kp-qc-nue">-</span> nuevas</div>
     </div>
     <div class="kpi" onclick="goTab('tab-recalls')" style="cursor:pointer"><div class="kpi-label">🚨 Recalls</div>
-      <div class="kpi-val" id="kp-rcl-tot">—</div>
-      <div class="kpi-sub"><span style="color:#ef4444" id="kp-rcl-c1">—</span> Clase I · <span id="kp-rcl-inv">—</span> s/INVIMA</div>
+      <div class="kpi-val" id="kp-rcl-tot">-</div>
+      <div class="kpi-sub"><span style="color:#ef4444" id="kp-rcl-c1">-</span> Clase I · <span id="kp-rcl-inv">-</span> s/INVIMA</div>
     </div>
   </div>
 
   <!-- Otros -->
   <div class="card-title" style="margin-top:14px">📋 Otros</div>
   <div class="kpi-row">
-    <div class="kpi"><div class="kpi-label">NCs abiertas</div><div class="kpi-val" id="kp-nc">—</div></div>
-    <div class="kpi"><div class="kpi-label">Auditorías 60d</div><div class="kpi-val" id="kp-aud">—</div></div>
+    <div class="kpi"><div class="kpi-label">NCs abiertas</div><div class="kpi-val" id="kp-nc">-</div></div>
+    <div class="kpi"><div class="kpi-label">Auditorías 60d</div><div class="kpi-val" id="kp-aud">-</div></div>
   </div>
 
   <div class="card" style="margin-top:14px">
@@ -176,13 +176,13 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
       <div>
         <div style="font-size:0.78em;color:#6b7280;text-transform:uppercase;letter-spacing:.6px">Cuadro de mando del Sistema de Calidad</div>
-        <div style="font-size:1.3em;font-weight:700;color:#6d28d9">Indicadores GMP &middot; <span id="ind-asg-hoy">&mdash;</span></div>
+        <div style="font-size:1.3em;font-weight:700;color:#6d28d9">Indicadores GMP &middot; <span id="ind-asg-hoy">-</span></div>
         <div style="font-size:0.78em;color:#6b7280;margin-top:2px">Meta vs real &middot; sem&aacute;foro verde/amarillo/rojo. Doble-clic una tarjeta para editar su meta. Alimenta la Revisi&oacute;n por la Direcci&oacute;n.</div>
       </div>
       <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
-        <div style="text-align:center"><div style="font-size:0.7em;color:#6b7280">EN META</div><div id="ind-asg-verde" style="font-size:1.5em;font-weight:800;color:#16a34a">&mdash;</div></div>
-        <div style="text-align:center"><div style="font-size:0.7em;color:#6b7280">EN AVISO</div><div id="ind-asg-amari" style="font-size:1.5em;font-weight:800;color:#d97706">&mdash;</div></div>
-        <div style="text-align:center"><div style="font-size:0.7em;color:#6b7280">FUERA</div><div id="ind-asg-rojo" style="font-size:1.5em;font-weight:800;color:#dc2626">&mdash;</div></div>
+        <div style="text-align:center"><div style="font-size:0.7em;color:#6b7280">EN META</div><div id="ind-asg-verde" style="font-size:1.5em;font-weight:800;color:#16a34a">-</div></div>
+        <div style="text-align:center"><div style="font-size:0.7em;color:#6b7280">EN AVISO</div><div id="ind-asg-amari" style="font-size:1.5em;font-weight:800;color:#d97706">-</div></div>
+        <div style="text-align:center"><div style="font-size:0.7em;color:#6b7280">FUERA</div><div id="ind-asg-rojo" style="font-size:1.5em;font-weight:800;color:#dc2626">-</div></div>
         <button class="btn btn-ghost btn-sm" onclick="loadIndicadoresASG()">&#x21BB; Refrescar</button>
       </div>
     </div>
@@ -328,11 +328,11 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 <!-- DESVIACIONES · ASG-PRO-001 -->
 <div id="tab-desv" class="pane">
   <div class="kpi-row" id="desv-kpis">
-    <div class="kpi"><div class="kpi-label">Total</div><div class="kpi-val" id="desv-kp-tot">—</div></div>
-    <div class="kpi"><div class="kpi-label">Críticas abiertas</div><div class="kpi-val crit" id="desv-kp-crit">—</div></div>
-    <div class="kpi"><div class="kpi-label">Sin clasificar</div><div class="kpi-val warn" id="desv-kp-sin">—</div></div>
-    <div class="kpi"><div class="kpi-label">Investigando</div><div class="kpi-val" id="desv-kp-inv">—</div></div>
-    <div class="kpi"><div class="kpi-label">Cerradas 30d</div><div class="kpi-val good" id="desv-kp-cer">—</div></div>
+    <div class="kpi"><div class="kpi-label">Total</div><div class="kpi-val" id="desv-kp-tot">-</div></div>
+    <div class="kpi"><div class="kpi-label">Críticas abiertas</div><div class="kpi-val crit" id="desv-kp-crit">-</div></div>
+    <div class="kpi"><div class="kpi-label">Sin clasificar</div><div class="kpi-val warn" id="desv-kp-sin">-</div></div>
+    <div class="kpi"><div class="kpi-label">Investigando</div><div class="kpi-val" id="desv-kp-inv">-</div></div>
+    <div class="kpi"><div class="kpi-label">Cerradas 30d</div><div class="kpi-val good" id="desv-kp-cer">-</div></div>
   </div>
 
   <div class="card" style="margin-bottom:14px">
@@ -428,12 +428,12 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 <!-- CONTROL DE CAMBIOS · ASG-PRO-007 -->
 <div id="tab-cambios" class="pane">
   <div class="kpi-row" id="cam-kpis">
-    <div class="kpi"><div class="kpi-label">Total</div><div class="kpi-val" id="cam-kp-tot">—</div></div>
-    <div class="kpi"><div class="kpi-label">Sin evaluar</div><div class="kpi-val warn" id="cam-kp-sin">—</div></div>
-    <div class="kpi"><div class="kpi-label">En evaluación</div><div class="kpi-val" id="cam-kp-eva">—</div></div>
-    <div class="kpi"><div class="kpi-label">Aprobados pendientes</div><div class="kpi-val warn" id="cam-kp-apr">—</div></div>
-    <div class="kpi"><div class="kpi-label">Requieren INVIMA</div><div class="kpi-val crit" id="cam-kp-inv">—</div></div>
-    <div class="kpi"><div class="kpi-label">Cerrados 30d</div><div class="kpi-val good" id="cam-kp-cer">—</div></div>
+    <div class="kpi"><div class="kpi-label">Total</div><div class="kpi-val" id="cam-kp-tot">-</div></div>
+    <div class="kpi"><div class="kpi-label">Sin evaluar</div><div class="kpi-val warn" id="cam-kp-sin">-</div></div>
+    <div class="kpi"><div class="kpi-label">En evaluación</div><div class="kpi-val" id="cam-kp-eva">-</div></div>
+    <div class="kpi"><div class="kpi-label">Aprobados pendientes</div><div class="kpi-val warn" id="cam-kp-apr">-</div></div>
+    <div class="kpi"><div class="kpi-label">Requieren INVIMA</div><div class="kpi-val crit" id="cam-kp-inv">-</div></div>
+    <div class="kpi"><div class="kpi-label">Cerrados 30d</div><div class="kpi-val good" id="cam-kp-cer">-</div></div>
   </div>
 
   <div class="card">
@@ -536,12 +536,12 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
     <div id="pqr-tri-list" style="margin-top:10px"></div>
   </div>
   <div class="kpi-row" id="qc-kpis">
-    <div class="kpi"><div class="kpi-label">Total</div><div class="kpi-val" id="qc-kp-tot">—</div></div>
-    <div class="kpi"><div class="kpi-label">Nuevas</div><div class="kpi-val warn" id="qc-kp-nue">—</div></div>
-    <div class="kpi"><div class="kpi-label">Investigando</div><div class="kpi-val" id="qc-kp-inv">—</div></div>
-    <div class="kpi"><div class="kpi-label">Pendiente cierre</div><div class="kpi-val warn" id="qc-kp-pen">—</div></div>
-    <div class="kpi"><div class="kpi-label">Críticas abiertas</div><div class="kpi-val crit" id="qc-kp-crit">—</div></div>
-    <div class="kpi"><div class="kpi-label">Cerradas 30d</div><div class="kpi-val good" id="qc-kp-cer">—</div></div>
+    <div class="kpi"><div class="kpi-label">Total</div><div class="kpi-val" id="qc-kp-tot">-</div></div>
+    <div class="kpi"><div class="kpi-label">Nuevas</div><div class="kpi-val warn" id="qc-kp-nue">-</div></div>
+    <div class="kpi"><div class="kpi-label">Investigando</div><div class="kpi-val" id="qc-kp-inv">-</div></div>
+    <div class="kpi"><div class="kpi-label">Pendiente cierre</div><div class="kpi-val warn" id="qc-kp-pen">-</div></div>
+    <div class="kpi"><div class="kpi-label">Críticas abiertas</div><div class="kpi-val crit" id="qc-kp-crit">-</div></div>
+    <div class="kpi"><div class="kpi-label">Cerradas 30d</div><div class="kpi-val good" id="qc-kp-cer">-</div></div>
   </div>
 
   <div class="card">
@@ -619,7 +619,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
       <div class="form-group"><label>Contacto (email/tel)</label><input id="m-qc-cli-cont"></div>
       <div class="form-group"><label>Tipo cliente</label>
         <select id="m-qc-cli-tipo">
-          <option value="">—</option>
+          <option value="">-</option>
           <option value="consumidor_final">Consumidor final</option>
           <option value="distribuidor">Distribuidor</option>
           <option value="retail">Retail</option>
@@ -663,12 +663,12 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 <!-- RECALL · ASG-PRO-004 -->
 <div id="tab-recalls" class="pane">
   <div class="kpi-row" id="rcl-kpis">
-    <div class="kpi"><div class="kpi-label">Total</div><div class="kpi-val" id="rcl-kp-tot">—</div></div>
-    <div class="kpi"><div class="kpi-label">Sin clasificar</div><div class="kpi-val warn" id="rcl-kp-sin">—</div></div>
-    <div class="kpi"><div class="kpi-label">Clase I abiertos</div><div class="kpi-val crit" id="rcl-kp-c1">—</div></div>
-    <div class="kpi"><div class="kpi-label">INVIMA pendiente</div><div class="kpi-val crit" id="rcl-kp-inv">—</div></div>
-    <div class="kpi"><div class="kpi-label">En recolección</div><div class="kpi-val" id="rcl-kp-rec">—</div></div>
-    <div class="kpi"><div class="kpi-label">Cerrados 30d</div><div class="kpi-val good" id="rcl-kp-cer">—</div></div>
+    <div class="kpi"><div class="kpi-label">Total</div><div class="kpi-val" id="rcl-kp-tot">-</div></div>
+    <div class="kpi"><div class="kpi-label">Sin clasificar</div><div class="kpi-val warn" id="rcl-kp-sin">-</div></div>
+    <div class="kpi"><div class="kpi-label">Clase I abiertos</div><div class="kpi-val crit" id="rcl-kp-c1">-</div></div>
+    <div class="kpi"><div class="kpi-label">INVIMA pendiente</div><div class="kpi-val crit" id="rcl-kp-inv">-</div></div>
+    <div class="kpi"><div class="kpi-label">En recolección</div><div class="kpi-val" id="rcl-kp-rec">-</div></div>
+    <div class="kpi"><div class="kpi-label">Cerrados 30d</div><div class="kpi-val good" id="rcl-kp-cer">-</div></div>
   </div>
 
   <div class="card" style="background:#fef2f2;border-left:4px solid #ef4444;padding:10px 14px">
@@ -826,7 +826,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
         <div class="card-title" style="margin:0">⚠️ Matriz FMEA · riesgo de producto/proceso (ICH Q9)</div>
         <button class="btn btn-primary btn-sm gob-wbtn" onclick="gobNuevaFmea()">+ Nuevo modo de falla</button>
       </div>
-      <div style="font-size:0.8em;color:#64748b;margin-bottom:8px">RPN = Severidad × Ocurrencia × Detección (cada uno 1-10). Ordenado por RPN descendente — lo más rojo arriba.</div>
+      <div style="font-size:0.8em;color:#64748b;margin-bottom:8px">RPN = Severidad × Ocurrencia × Detección (cada uno 1-10). Ordenado por RPN descendente - lo más rojo arriba.</div>
       <div id="gob-fmea-list"><p class="empty">Cargando...</p></div>
     </div>
   </div>
@@ -1262,7 +1262,7 @@ async function loadMisTareas(){
             +'<td><code>'+_esc(it.sgd_codigo)+'</code> v'+_esc(it.sgd_version)+'</td>'
             +'<td>'+_esc(it.titulo||'')+'</td>'
             +'<td>'+_esc(it.asignado_at||'')+' ('+(it.dias||0)+'d)</td>'
-            +'<td>'+_esc(it.fecha_limite||'—')+'</td>'
+            +'<td>'+_esc(it.fecha_limite||'-')+'</td>'
             +'<td style="white-space:nowrap">'+pdfBtn+'<button class="btn btn-ghost btn-sm" onclick="goTab(\'tab-mis-cap\')">Ir a firmas</button></td>'
             +'</tr>';
         }).join('') + '</tbody></table>';
@@ -1372,7 +1372,7 @@ async function loadDesviaciones(){
         : it.clasificacion === 'mayor' ? '<span class="badge badge-prox">mayor</span>'
         : it.clasificacion === 'menor' ? '<span class="badge badge-bor">menor</span>'
         : it.clasificacion === 'informativa' ? '<span class="badge badge-obs">info</span>'
-        : '<span style="color:#94a3b8;font-size:0.78em">—</span>';
+        : '<span style="color:#94a3b8;font-size:0.78em">-</span>';
       var estadoLabel = (it.estado||'').replace('_',' ');
       var estadoCol = it.estado === 'cerrada' ? '#15803d'
         : it.estado === 'rechazada' ? '#94a3b8'
@@ -1441,7 +1441,7 @@ async function verDesviacion(id){
 
     var html = '<div class="card" style="background:#f8fafc">'
       +'<div style="font-size:0.85em;color:#475569"><b>Detectada:</b> '+_esc(d.fecha_deteccion||'')+' '+_esc(d.hora_deteccion||'')+' · por '+_esc(d.detectado_por||'')+'</div>'
-      +'<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Tipo:</b> '+_esc(d.tipo||'')+' · <b>Área:</b> '+_esc(d.area_origen||'—')+'</div>'
+      +'<div style="font-size:0.85em;color:#475569;margin-top:4px"><b>Tipo:</b> '+_esc(d.tipo||'')+' · <b>Área:</b> '+_esc(d.area_origen||'-')+'</div>'
       +'<div style="margin-top:8px"><b>Descripción:</b><br>'+_esc(d.descripcion||'')+'</div>'
       +(d.contencion_inmediata ? '<div style="margin-top:6px"><b>Contención:</b><br>'+_esc(d.contencion_inmediata)+'</div>' : '')
       +(d.impacto_producto ? '<div style="margin-top:6px;color:#ef4444">⚠ <b>Impacta producto</b> · Lotes: '+_esc(d.lotes_afectados||'?')+'</div>' : '')
@@ -1679,7 +1679,7 @@ async function loadCambios(){
     tb.innerHTML = info.items.map(function(it){
       var sevBadge = it.severidad === 'mayor' ? '<span class="badge badge-prox">mayor</span>'
         : it.severidad === 'menor' ? '<span class="badge badge-bor">menor</span>'
-        : '<span style="color:#94a3b8;font-size:0.78em">—</span>';
+        : '<span style="color:#94a3b8;font-size:0.78em">-</span>';
       var estadoLabel = (it.estado||'').replace('_',' ');
       var estadoCol = it.estado === 'cerrado' ? '#15803d'
         : it.estado === 'rechazado' ? '#94a3b8'
@@ -1962,7 +1962,7 @@ async function loadQuejas(){
         : it.severidad === 'mayor' ? '<span class="badge badge-prox">mayor</span>'
         : it.severidad === 'menor' ? '<span class="badge badge-bor">menor</span>'
         : it.severidad === 'informativa' ? '<span class="badge badge-obs">info</span>'
-        : '<span style="color:#94a3b8;font-size:0.78em">—</span>';
+        : '<span style="color:#94a3b8;font-size:0.78em">-</span>';
       var estadoLabel = (it.estado||'').replace('_',' ');
       var estadoCol = it.estado === 'cerrada' ? '#15803d'
         : it.estado === 'rechazada' ? '#94a3b8'
@@ -2234,7 +2234,7 @@ async function loadRecalls(){
       var claseBadge = it.clase_recall === 'clase_I' ? '<span class="badge badge-venc">CLASE I</span>'
         : it.clase_recall === 'clase_II' ? '<span class="badge badge-prox">Clase II</span>'
         : it.clase_recall === 'clase_III' ? '<span class="badge badge-bor">Clase III</span>'
-        : '<span style="color:#94a3b8;font-size:0.78em">—</span>';
+        : '<span style="color:#94a3b8;font-size:0.78em">-</span>';
       var estadoLabel = (it.estado||'').replace(/_/g,' ');
       var estadoCol = it.estado === 'cerrado' ? '#15803d'
         : it.estado === 'cancelado' ? '#94a3b8'
@@ -2251,7 +2251,7 @@ async function loadRecalls(){
         +'<td>'+_esc(prodLote.slice(0,60))+'</td>'
         +'<td>'+_esc((it.origen||'').replace(/_/g,' '))+'</td>'
         +'<td>'+claseBadge+'</td>'
-        +'<td>'+_esc(it.alcance_geografico||'—')+'</td>'
+        +'<td>'+_esc(it.alcance_geografico||'-')+'</td>'
         +'<td><span style="color:'+estadoCol+';font-weight:600;font-size:0.85em">'+_esc(estadoLabel)+'</span></td>'
         +'<td>'+invimaIcon+'</td>'
         +'<td>'+(it.dias_abierto||0)+'d</td>'
@@ -2601,7 +2601,7 @@ async function loadSGD(){
         +'<td>'+_esc(it.titulo||'')+(it.padre_codigo?' <span style="color:#94a3b8;font-size:0.85em">(hijo de '+_esc(it.padre_codigo)+')</span>':'')+'</td>'
         +'<td>'+_esc(it.version_actual||'')+'</td>'
         +'<td><span class="badge '+bcls+'">'+_esc(it.estado_efectivo||it.estado||'')+'</span></td>'
-        +'<td>'+_esc(it.proxima_revision||'—')+'</td>'
+        +'<td>'+_esc(it.proxima_revision||'-')+'</td>'
         +'<td>'+_esc(it.aprobado_por||'')+'</td>'
         +'<td style="white-space:nowrap">'+pdfBtn+editPdfBtn+' <button class="btn btn-ghost btn-sm" onclick="verSGD(\''+_esc(it.codigo)+'\')">Ver</button></td>'
         +'</tr>';
@@ -2625,11 +2625,11 @@ async function verSGD(codigo){
       +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:10px;font-size:0.85em">'
       +'<div><b>Versión:</b> '+_esc(d.version_actual||'')+'</div>'
       +'<div><b>Estado:</b> '+_esc(d.estado||'')+'</div>'
-      +'<div><b>Vigente desde:</b> '+_esc(d.vigente_desde||'—')+'</div>'
-      +'<div><b>Próxima revisión:</b> '+_esc(d.proxima_revision||'—')+'</div>'
-      +'<div><b>Elaborado:</b> '+_esc(d.elaborado_por||'—')+'</div>'
-      +'<div><b>Revisado:</b> '+_esc(d.revisado_por||'—')+'</div>'
-      +'<div><b>Aprobado:</b> '+_esc(d.aprobado_por||'—')+'</div>'
+      +'<div><b>Vigente desde:</b> '+_esc(d.vigente_desde||'-')+'</div>'
+      +'<div><b>Próxima revisión:</b> '+_esc(d.proxima_revision||'-')+'</div>'
+      +'<div><b>Elaborado:</b> '+_esc(d.elaborado_por||'-')+'</div>'
+      +'<div><b>Revisado:</b> '+_esc(d.revisado_por||'-')+'</div>'
+      +'<div><b>Aprobado:</b> '+_esc(d.aprobado_por||'-')+'</div>'
       +(d.archivo_pdf_url ? '<div><b>PDF:</b> <a href="'+_esc(d.archivo_pdf_url)+'" target="_blank">abrir &rarr;</a></div>' : '')
       +'</div>'
       +'</div>';
@@ -2645,7 +2645,7 @@ async function verSGD(codigo){
       html += '<div class="card-title" style="margin-top:10px">Histórico de versiones</div>';
       html += '<table><thead><tr><th>Versión</th><th>Aprobada</th><th>Por</th><th>Motivo</th></tr></thead><tbody>';
       d.versiones.forEach(function(v){
-        html += '<tr><td><b>'+_esc(v.version)+'</b></td><td>'+_esc(v.fecha_aprobacion||'—')+'</td><td>'+_esc(v.aprobado_por||'—')+'</td><td>'+_esc(v.motivo_cambio||'')+'</td></tr>';
+        html += '<tr><td><b>'+_esc(v.version)+'</b></td><td>'+_esc(v.fecha_aprobacion||'-')+'</td><td>'+_esc(v.aprobado_por||'-')+'</td><td>'+_esc(v.motivo_cambio||'')+'</td></tr>';
       });
       html += '</tbody></table>';
     }
@@ -2747,7 +2747,7 @@ async function loadMisCapacitaciones(){
       return '<tr>'
         +'<td><code>'+_esc(it.sgd_codigo)+'</code></td>'
         +'<td>'+_esc(it.sgd_version)+'</td>'
-        +'<td>'+_esc(it.titulo||'—')+'</td>'
+        +'<td>'+_esc(it.titulo||'-')+'</td>'
         +'<td>'+_esc(it.asignado_at||'')+'</td>'
         +'<td><span class="badge badge-bor">'+_esc(it.estado)+'</span></td>'
         +'<td style="white-space:nowrap">'+btn+'</td>'
@@ -2848,10 +2848,10 @@ async function repAuditCargar(){
         +'<td style="white-space:nowrap;font-size:0.82em">'+_esc((it.fecha||'').slice(0,19))+'</td>'
         +'<td>'+_esc(it.usuario||'')+'</td>'
         +'<td><code style="font-size:0.78em">'+_esc(it.accion||'')+'</code></td>'
-        +'<td style="font-size:0.82em">'+_esc(it.tabla||'—')+'</td>'
-        +'<td style="font-size:0.82em">'+_esc(it.registro_id||'—')+'</td>'
+        +'<td style="font-size:0.82em">'+_esc(it.tabla||'-')+'</td>'
+        +'<td style="font-size:0.82em">'+_esc(it.registro_id||'-')+'</td>'
         +'<td style="font-size:0.78em;color:#475569">'+_esc(det)+'</td>'
-        +'<td style="font-size:0.78em;color:#94a3b8">'+_esc(it.ip||'—')+'</td>'
+        +'<td style="font-size:0.78em;color:#94a3b8">'+_esc(it.ip||'-')+'</td>'
         +'</tr>';
     }).join('');
   }catch(e){ tb.innerHTML = '<tr><td colspan="7" class="empty">Error: '+_esc(e.message)+'</td></tr>'; }
@@ -2911,29 +2911,29 @@ async function repLoteCargar(){
       +'</div></div>';
 
     html += _repSeccion('📦 Recepciones MP', c.recepciones, ['Fecha','OC','Material','Cantidad','Proveedor','Vence'], function(it){
-      return '<tr><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td><code style="font-size:0.82em">'+_esc(it.numero_oc||'—')+'</code></td><td>'+_esc(it.material||'')+'</td><td>'+_esc(it.cantidad||'')+'</td><td>'+_esc(it.proveedor||'')+'</td><td>'+_esc((it.fecha_vencimiento||'').slice(0,10))+'</td></tr>';
+      return '<tr><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td><code style="font-size:0.82em">'+_esc(it.numero_oc||'-')+'</code></td><td>'+_esc(it.material||'')+'</td><td>'+_esc(it.cantidad||'')+'</td><td>'+_esc(it.proveedor||'')+'</td><td>'+_esc((it.fecha_vencimiento||'').slice(0,10))+'</td></tr>';
     });
     html += _repSeccion('🏭 Producciones (uso de este lote)', c.producciones_uso, ['Fecha','Material','Cantidad','Operador','Observaciones'], function(it){
-      return '<tr><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td>'+_esc(it.material||'')+'</td><td>'+_esc(it.cantidad||'')+'</td><td>'+_esc(it.operador||'—')+'</td><td style="font-size:0.78em">'+_esc((it.observaciones||'').slice(0,80))+'</td></tr>';
+      return '<tr><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td>'+_esc(it.material||'')+'</td><td>'+_esc(it.cantidad||'')+'</td><td>'+_esc(it.operador||'-')+'</td><td style="font-size:0.78em">'+_esc((it.observaciones||'').slice(0,80))+'</td></tr>';
     });
     html += _repSeccion('🧪 COAs', c.coas, ['Fecha','Parámetro','Valor','Conforme','Analista','Decisión'], function(it){
       var conforme = it.conforme ? '<span style="color:#15803d">✓</span>' : '<span style="color:#ef4444">✗</span>';
-      return '<tr><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td>'+_esc(it.parametro||'')+'</td><td>'+_esc(it.valor||'')+'</td><td>'+conforme+'</td><td>'+_esc(it.analista||'—')+'</td><td>'+_esc(it.decision||'—')+'</td></tr>';
+      return '<tr><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td>'+_esc(it.parametro||'')+'</td><td>'+_esc(it.valor||'')+'</td><td>'+conforme+'</td><td>'+_esc(it.analista||'-')+'</td><td>'+_esc(it.decision||'-')+'</td></tr>';
     });
     html += _repSeccion('❌ No-conformidades', c.ncs, ['Fecha','Tipo','Descripción','Impacto','Estado'], function(it){
-      return '<tr><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td>'+_esc(it.tipo||'')+'</td><td>'+_esc((it.descripcion||'').slice(0,80))+'</td><td>'+_esc(it.impacto||'—')+'</td><td>'+_esc(it.estado||'')+'</td></tr>';
+      return '<tr><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td>'+_esc(it.tipo||'')+'</td><td>'+_esc((it.descripcion||'').slice(0,80))+'</td><td>'+_esc(it.impacto||'-')+'</td><td>'+_esc(it.estado||'')+'</td></tr>';
     });
     html += _repSeccion('⚠️ OOS', c.oos, ['Código','Fecha','Parámetro','Valor obtenido','Estado'], function(it){
       return '<tr><td><code style="font-size:0.82em">'+_esc(it.codigo||'')+'</code></td><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td>'+_esc(it.parametro||'')+'</td><td>'+_esc(it.valor_obtenido||'')+'</td><td>'+_esc(it.estado||'')+'</td></tr>';
     });
     html += _repSeccion('🚚 Despachos a clientes', c.despachos_clientes, ['Fecha','Despacho','Cliente','SKU','Cantidad'], function(it){
-      return '<tr><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td><code style="font-size:0.82em">'+_esc(it.numero_despacho||'')+'</code></td><td>'+_esc(it.cliente||'—')+'</td><td><code style="font-size:0.82em">'+_esc(it.sku||'')+'</code></td><td>'+_esc(it.cantidad||'')+'</td></tr>';
+      return '<tr><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td><code style="font-size:0.82em">'+_esc(it.numero_despacho||'')+'</code></td><td>'+_esc(it.cliente||'-')+'</td><td><code style="font-size:0.82em">'+_esc(it.sku||'')+'</code></td><td>'+_esc(it.cantidad||'')+'</td></tr>';
     });
     html += _repSeccion('📋 Desviaciones', c.desviaciones, ['Código','Fecha','Tipo','Clasificación','Estado'], function(it){
-      return '<tr><td><code style="font-size:0.82em">'+_esc(it.codigo||'')+'</code></td><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td>'+_esc(it.tipo||'')+'</td><td>'+_esc(it.clasificacion||'—')+'</td><td>'+_esc(it.estado||'')+'</td></tr>';
+      return '<tr><td><code style="font-size:0.82em">'+_esc(it.codigo||'')+'</code></td><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td>'+_esc(it.tipo||'')+'</td><td>'+_esc(it.clasificacion||'-')+'</td><td>'+_esc(it.estado||'')+'</td></tr>';
     });
     html += _repSeccion('🚨 Recalls', c.recalls, ['Código','Fecha inicio','Producto','Clase','Estado'], function(it){
-      return '<tr><td><code style="font-size:0.82em">'+_esc(it.codigo||'')+'</code></td><td>'+_esc((it.fecha_inicio||'').slice(0,10))+'</td><td>'+_esc(it.producto||'—')+'</td><td>'+_esc(it.clase_recall||'—')+'</td><td>'+_esc(it.estado||'')+'</td></tr>';
+      return '<tr><td><code style="font-size:0.82em">'+_esc(it.codigo||'')+'</code></td><td>'+_esc((it.fecha_inicio||'').slice(0,10))+'</td><td>'+_esc(it.producto||'-')+'</td><td>'+_esc(it.clase_recall||'-')+'</td><td>'+_esc(it.estado||'')+'</td></tr>';
     });
     body.innerHTML = html;
   }catch(e){ body.innerHTML = '<p class="empty">Error: '+_esc(e.message)+'</p>'; }
@@ -2953,7 +2953,7 @@ async function repClienteCargar(){
     var rsm = d.resumen || {};
     var html = '<div class="card" style="background:#f8fafc;border-left:4px solid #8b5cf6">'
       +'<div style="font-weight:700;font-size:1.05em;margin-bottom:6px">Cliente: '+_esc(cli.nombre||'')+'</div>'
-      +'<div style="font-size:0.82em;color:#64748b;margin-bottom:8px">Código: <code>'+_esc(cli.codigo||'')+'</code> · Empresa: '+_esc(cli.empresa||'—')
+      +'<div style="font-size:0.82em;color:#64748b;margin-bottom:8px">Código: <code>'+_esc(cli.codigo||'')+'</code> · Empresa: '+_esc(cli.empresa||'-')
       +(cli.email ? ' · '+_esc(cli.email) : '')
       +(cli.telefono ? ' · ☎ '+_esc(cli.telefono) : '')
       +' · Consultado por <b>'+_esc(d.consultado_por||'')+'</b></div>'
@@ -2964,7 +2964,7 @@ async function repClienteCargar(){
       +'</div></div>';
 
     html += _repSeccion('🚚 Despachos al cliente', d.despachos, ['Fecha','Despacho','SKU','Descripción','Lote PT','Cantidad'], function(it){
-      return '<tr><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td><code style="font-size:0.82em">'+_esc(it.numero||'')+'</code></td><td><code style="font-size:0.82em">'+_esc(it.sku||'')+'</code></td><td>'+_esc((it.descripcion||'').slice(0,40))+'</td><td><code>'+_esc(it.lote_pt||'—')+'</code></td><td>'+_esc(it.cantidad||'')+'</td></tr>';
+      return '<tr><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td><code style="font-size:0.82em">'+_esc(it.numero||'')+'</code></td><td><code style="font-size:0.82em">'+_esc(it.sku||'')+'</code></td><td>'+_esc((it.descripcion||'').slice(0,40))+'</td><td><code>'+_esc(it.lote_pt||'-')+'</code></td><td>'+_esc(it.cantidad||'')+'</td></tr>';
     });
     html += _repSeccion('📋 Pedidos', d.pedidos, ['Fecha','Pedido','Estado','Valor total'], function(it){
       return '<tr><td>'+_esc((it.fecha||'').slice(0,10))+'</td><td><code style="font-size:0.82em">'+_esc(it.numero||'')+'</code></td><td>'+_esc(it.estado||'')+'</td><td>'+_esc(it.valor_total||'')+'</td></tr>';
@@ -3005,7 +3005,7 @@ async function loadConflictos(){
         +'<td><b><code>'+_esc(it.codigo)+'</code></b></td>'
         +'<td>'+_esc(it.temas||'')+'</td>'
         +'<td>'+_esc(it.estado)+'</td>'
-        +'<td>'+_esc(it.resolucion||'—')+'</td>'
+        +'<td>'+_esc(it.resolucion||'-')+'</td>'
         +'<td>'+btn+'</td>'
         +'</tr>';
     }).join('');
@@ -3081,7 +3081,7 @@ async function gobLoadRevision(){
     rows.forEach(function(x){
       var badge = x.estado==='ejecutada'?'<span style="color:#16a34a;font-weight:700">✔ ejecutada</span>':(x.estado==='cerrada'?'<span style="color:#64748b">cerrada</span>':'<span style="color:#d97706;font-weight:700">planeada</span>');
       var btn = (x.estado==='planeada')?'<button class="btn btn-primary btn-sm gob-wbtn" onclick="gobEjecutarRevision('+x.id+')">Ejecutar acta</button>':'';
-      html+='<tr><td><b>'+_esc(x.periodo)+'</b></td><td>'+_esc(x.fecha_planeada||'—')+'</td><td>'+_esc(x.fecha_ejecutada||'—')+'</td><td>'+_esc(x.conducido_por||'—')+'</td><td>'+badge+'</td><td>'+btn+'</td></tr>';
+      html+='<tr><td><b>'+_esc(x.periodo)+'</b></td><td>'+_esc(x.fecha_planeada||'-')+'</td><td>'+_esc(x.fecha_ejecutada||'-')+'</td><td>'+_esc(x.conducido_por||'-')+'</td><td>'+badge+'</td><td>'+btn+'</td></tr>';
     });
     html+='</tbody></table>';
     document.getElementById('gob-rev-list').innerHTML = html;
@@ -3134,7 +3134,7 @@ function _provEstadoBadge(est){
   var m={aprobado:['#16a34a','✔ aprobado'],aprobado_condicional:['#d97706','aprob. condicional'],
     en_evaluacion:['#0ea5e9','en evaluación'],pendiente:['#94a3b8','pendiente'],
     rechazado:['#ef4444','rechazado'],suspendido:['#ef4444','suspendido']};
-  var x=m[est]||['#94a3b8',est||'—'];
+  var x=m[est]||['#94a3b8',est||'-'];
   return '<span style="color:'+x[0]+';font-weight:700">'+_esc(x[1])+'</span>';
 }
 function gobRenderProv(){
@@ -3144,11 +3144,11 @@ function gobRenderProv(){
   var html='<table class="tbl"><thead><tr><th>Proveedor</th><th>Criticidad</th><th>Visita</th><th>Estado AC</th><th>Reevaluación</th><th>Desempeño (Compras)</th><th></th></tr></thead><tbody>';
   rows.forEach(function(x){
     var crit = x.criticidad==='critico'?'<span style="color:#ef4444;font-weight:700">crítico</span>':'no crítico';
-    var visita = x.requiere_visita?'🚩 sí':'—';
+    var visita = x.requiere_visita?'🚩 sí':'-';
     var sid='sc-'+btoa(unescape(encodeURIComponent(x.proveedor))).replace(/[^a-zA-Z0-9]/g,'');
     html+='<tr><td><b>'+_esc(x.proveedor)+'</b>'+(x.categoria?'<div style="font-size:0.78em;color:#94a3b8">'+_esc(x.categoria)+'</div>':'')+'</td>'
       +'<td>'+crit+'</td><td>'+visita+'</td><td>'+_provEstadoBadge(x.estado)+'</td>'
-      +'<td>'+_esc(x.fecha_reevaluacion||'—')+'</td>'
+      +'<td>'+_esc(x.fecha_reevaluacion||'-')+'</td>'
       +'<td><span id="'+sid+'" style="font-size:0.82em;color:#94a3b8;cursor:pointer" onclick="gobScorecard('+JSON.stringify(x.proveedor).replace(/"/g,'&quot;')+',\''+sid+'\')">ver scorecard ▸</span></td>'
       +'<td><button class="btn btn-ghost btn-sm gob-wbtn" onclick="gobCalificarProv('+JSON.stringify(x.proveedor).replace(/"/g,'&quot;')+')">Calificar</button></td></tr>';
   });
@@ -3161,7 +3161,7 @@ async function gobScorecard(prov, sid){
     var r=await fetch('/api/compras/proveedor-scorecard/'+encodeURIComponent(prov), {credentials:'same-origin'});
     var d=await r.json();
     if(!r.ok) throw new Error(d.error||'error');
-    var score=(d.score_global!=null?d.score_global:'—');
+    var score=(d.score_global!=null?d.score_global:'-');
     var col = (score>=80?'#16a34a':(score>=60?'#d97706':'#ef4444'));
     if(el) el.innerHTML='<b style="color:'+col+'">Score '+score+'</b> · OCs '+(d.ocs_total_12m||0)
       +' · cumpl '+(d.cumplimiento_pct||0)+'% · on-time '+(d.on_time_pct||0)+'% · rechazo QC '+(d.rechazo_qc_pct||0)+'%';
@@ -3203,7 +3203,7 @@ async function gobLoadEquipos(){
       var col = (est==='aprobado'?'#16a34a':(est==='rechazado'?'#ef4444':'#d97706'));
       html+='<tr><td><b>'+_esc(x.equipo_codigo)+'</b>'+(x.equipo_nombre?'<div style="font-size:0.78em;color:#94a3b8">'+_esc(x.equipo_nombre)+'</div>':'')+'</td>'
         +'<td><b>'+_esc(x.tipo)+'</b></td><td><span style="color:'+col+';font-weight:700">'+_esc(est)+'</span></td>'
-        +'<td>'+_esc(x.fecha_ejecucion||'—')+'</td><td>'+_esc(x.fecha_revalidacion||'—')+'</td><td>'+_esc(x.aprobado_por||'—')+'</td></tr>';
+        +'<td>'+_esc(x.fecha_ejecucion||'-')+'</td><td>'+_esc(x.fecha_revalidacion||'-')+'</td><td>'+_esc(x.aprobado_por||'-')+'</td></tr>';
     });
     html+='</tbody></table>';
     document.getElementById('gob-eq-list').innerHTML=html;
@@ -3237,9 +3237,9 @@ async function gobLoadFmea(){
     rows.forEach(function(x){
       var rpn=x.rpn||0;
       var col=(rpn>=200?'#ef4444':(rpn>=100?'#d97706':'#16a34a'));
-      html+='<tr><td><b>'+_esc(x.producto_nombre)+'</b></td><td>'+_esc(x.modo_falla)+'</td><td>'+_esc(x.efecto||'—')+'</td>'
-        +'<td style="text-align:center">'+(x.severidad||'—')+'</td><td style="text-align:center">'+(x.ocurrencia||'—')+'</td><td style="text-align:center">'+(x.deteccion||'—')+'</td>'
-        +'<td style="text-align:center"><b style="color:'+col+'">'+(rpn||'—')+'</b></td><td>'+_esc(x.control_actual||'—')+'</td></tr>';
+      html+='<tr><td><b>'+_esc(x.producto_nombre)+'</b></td><td>'+_esc(x.modo_falla)+'</td><td>'+_esc(x.efecto||'-')+'</td>'
+        +'<td style="text-align:center">'+(x.severidad||'-')+'</td><td style="text-align:center">'+(x.ocurrencia||'-')+'</td><td style="text-align:center">'+(x.deteccion||'-')+'</td>'
+        +'<td style="text-align:center"><b style="color:'+col+'">'+(rpn||'-')+'</b></td><td>'+_esc(x.control_actual||'-')+'</td></tr>';
     });
     html+='</tbody></table>';
     document.getElementById('gob-fmea-list').innerHTML=html;
@@ -3256,7 +3256,7 @@ async function gobNuevaFmea(){
     var r=await fetch('/api/aseguramiento/fmea', _fetchOpts('POST',
       {producto_nombre:prod, modo_falla:modo, efecto:efecto, causa:causa, severidad:s, ocurrencia:o, deteccion:det, control_actual:ctrl}));
     var d=await r.json();
-    if(r.ok && d.ok){ toast('FMEA registrado · RPN '+(d.rpn||'—'),'success'); gobLoadFmea(); }
+    if(r.ok && d.ok){ toast('FMEA registrado · RPN '+(d.rpn||'-'),'success'); gobLoadFmea(); }
     else toast('Error: '+(d.error||'?'),'error');
   }catch(e){ toast('Error red: '+e.message,'error'); }
 }
@@ -3274,8 +3274,8 @@ async function gobLoadAcuerdos(){
       var est=x.estado||'vigente';
       var col=(est==='vigente'?'#16a34a':(est==='vencido'?'#ef4444':'#94a3b8'));
       html+='<tr><td><b>'+_esc(x.tercero)+'</b></td><td>'+_esc(x.tipo)+'</td><td>v'+_esc(x.version||'1')+'</td>'
-        +'<td>'+_esc(x.fecha_efectiva||'—')+'</td><td>'+_esc(x.fecha_renovacion||'—')+'</td>'
-        +'<td><span style="color:'+col+';font-weight:700">'+_esc(est)+'</span></td><td>'+_esc(x.ultima_auditoria||'—')+'</td></tr>';
+        +'<td>'+_esc(x.fecha_efectiva||'-')+'</td><td>'+_esc(x.fecha_renovacion||'-')+'</td>'
+        +'<td><span style="color:'+col+';font-weight:700">'+_esc(est)+'</span></td><td>'+_esc(x.ultima_auditoria||'-')+'</td></tr>';
     });
     html+='</tbody></table>';
     document.getElementById('gob-acu-list').innerHTML=html;
@@ -3325,7 +3325,7 @@ async function loadIndicadoresASG(){
       cats[cat].forEach(function(i){
         var col=_SEM_COLOR[i.semaforo]||'#94a3b8';
         var bg=_SEM_BG[i.semaforo]||'#f8fafc';
-        var valTxt = (i.valor===null||i.valor===undefined) ? '—' : (i.valor + (i.unidad==='%'?'%':(i.unidad==='#'?'':' '+(i.unidad||''))));
+        var valTxt = (i.valor===null||i.valor===undefined) ? '-' : (i.valor + (i.unidad==='%'?'%':(i.unidad==='#'?'':' '+(i.unidad||''))));
         var metaTxt = (i.meta===null||i.meta===undefined) ? '' : ((i.direccion==='mayor_mejor'?'≥':'≤')+' '+i.meta+(i.unidad==='%'?'%':''));
         html += '<div class="card" style="background:'+bg+';border-left:4px solid '+col+';cursor:pointer;margin:0" title="Doble-clic para editar la meta" ondblclick="editarMetaASG('+JSON.stringify(i.codigo).replace(/"/g,'&quot;')+','+(i.meta||0)+','+(i.umbral_amarillo||0)+')">'
           +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">'
@@ -3333,7 +3333,7 @@ async function loadIndicadoresASG(){
           +'<span style="width:10px;height:10px;border-radius:50%;background:'+col+';flex-shrink:0;margin-top:4px"></span>'
           +'</div>'
           +'<div style="font-size:1.7em;font-weight:800;color:'+col+';margin:4px 0">'+valTxt+'</div>'
-          +'<div style="font-size:0.72em;color:#64748b">Meta: '+(metaTxt||'—')+'</div>'
+          +'<div style="font-size:0.72em;color:#64748b">Meta: '+(metaTxt||'-')+'</div>'
           +'<div style="font-size:0.72em;color:#94a3b8;margin-top:4px">'+_esc(i.descripcion||'')+'</div>'
           +'</div>';
       });
@@ -3403,7 +3403,7 @@ async function verEjecucionesBPM(cronId, nombre){
       ejs.forEach(function(e){
         var estCol = e.estado==='ejecutado'?'#16a34a':(e.estado==='vencido'?'#dc2626':'#d97706');
         var btn = (e.estado!=='ejecutado') ? '<button class="btn btn-ghost btn-sm" onclick="cumplirBPM('+e.id+')">✔ Cumplir</button>' : (e.evidencia_url?'<a href="'+_esc(e.evidencia_url)+'" target="_blank" class="btn btn-ghost btn-sm">📎</a>':'');
-        html += '<tr><td>'+_esc(e.fecha_planeada||'—')+'</td><td><span style="color:'+estCol+';font-weight:700">'+_esc(e.estado)+'</span></td><td>'+_esc(e.fecha_real||'—')+'</td><td>'+_esc(e.ejecutado_por||'—')+'</td><td>'+btn+'</td></tr>';
+        html += '<tr><td>'+_esc(e.fecha_planeada||'-')+'</td><td><span style="color:'+estCol+';font-weight:700">'+_esc(e.estado)+'</span></td><td>'+_esc(e.fecha_real||'-')+'</td><td>'+_esc(e.ejecutado_por||'-')+'</td><td>'+btn+'</td></tr>';
       });
       html += '</tbody></table>';
     }
@@ -3446,7 +3446,7 @@ async function loadPqrTriaje(){
     var items = d.inbox||[];
     if(!items.length){ box.innerHTML = '<p style="color:#0c4a6e;font-size:0.85em;margin:6px 0">Sin PQR pendientes de triaje 👏</p>'; return; }
     box.innerHTML = items.map(function(x){
-      var conf = x.ia_confianza!=null ? Math.round(x.ia_confianza*100)+'%' : '—';
+      var conf = x.ia_confianza!=null ? Math.round(x.ia_confianza*100)+'%' : '-';
       var emp = x.ia_empresa;
       var critTxt = x.ia_criticidad ? (' · <b style="color:'+(x.ia_criticidad==='alto'?'#dc2626':(x.ia_criticidad==='medio'?'#d97706':'#16a34a'))+'">'+_esc(x.ia_criticidad.toUpperCase())+'</b>') : '';
       var claseTxt = x.ia_clase ? (' · '+_esc(x.ia_clase)) : '';

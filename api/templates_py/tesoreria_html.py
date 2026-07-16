@@ -1,4 +1,4 @@
-"""Tesoreria — fusion UI de Finanzas + Contabilidad.
+"""Tesoreria - fusion UI de Finanzas + Contabilidad.
 
 Una sola URL /tesoreria con tabs que consumen los endpoints existentes
 de /api/financiero/* y /api/contabilidad/*. Los blueprints viejos siguen
@@ -11,7 +11,7 @@ HTML = r"""
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Tesorería — HHA Group</title>
+<title>Tesorería - HHA Group</title>
 <link rel="stylesheet" href="/static/cortex.css?v=eos15">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
@@ -97,8 +97,8 @@ HTML = r"""
     <!-- TAB: CAJA & KPIs -->
     <div id="tab-caja" class="tabpanel">
       <div class="grid grid-4" style="margin-bottom:18px">
-        <div class="card"><h3>Ingresos mes</h3><div class="val" id="kpi-ing-mes">—</div><div class="sub" id="kpi-ing-shopify"></div></div>
-        <div class="card"><h3>Egresos mes</h3><div class="val" id="kpi-egr-mes" style="color:#dc2626">—</div><div class="sub">OCs+nómina+otros</div></div>
+        <div class="card"><h3>Ingresos mes</h3><div class="val" id="kpi-ing-mes">-</div><div class="sub" id="kpi-ing-shopify"></div></div>
+        <div class="card"><h3>Egresos mes</h3><div class="val" id="kpi-egr-mes" style="color:#dc2626">-</div><div class="sub">OCs+nómina+otros</div></div>
         <div class="card"><h3>Neto mes</h3><div class="val" id="kpi-neto"></div><div class="sub" id="kpi-neto-sub"></div></div>
         <div class="card"><h3>Saldo caja</h3><div class="val" id="kpi-saldo"></div><div class="sub">acumulado</div></div>
       </div>
@@ -165,7 +165,7 @@ HTML = r"""
       </div>
     </div>
 
-    <!-- TAB: NÓMINA (movido desde /rrhh el 29-abr-2026 — Sebastian) -->
+    <!-- TAB: NÓMINA (movido desde /rrhh el 29-abr-2026 - Sebastian) -->
     <div id="tab-nomina" class="tabpanel hidden">
       <div class="panel">
         <h3>👥 Nómina · Cálculo y aprobación quincenal</h3>
@@ -435,7 +435,7 @@ async function exportarSiigo() {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// NÓMINA — Cálculo y aprobación quincenal (movido desde /rrhh 29-abr-2026)
+// NÓMINA - Cálculo y aprobación quincenal (movido desde /rrhh 29-abr-2026)
 // Reusa endpoints de /api/rrhh/nomina/* (no se duplica backend).
 // ════════════════════════════════════════════════════════════════════
 var nominaData = [];
@@ -563,12 +563,12 @@ async function checkEstadoNomina(){
     var badge=document.getElementById('nom-estado-badge');
     var btnAp=document.getElementById('nom-btn-aprobar');
     var btnPag=document.getElementById('nom-btn-pagar');
-    var esAdmin = true;  // Tesoreria — siempre admins (Mayra/Sebastian/Alejandro)
+    var esAdmin = true;  // Tesoreria - siempre admins (Mayra/Sebastian/Alejandro)
     if(pagadas>0 && pagadas===estados.length){
       badge.innerHTML='<span style="background:#166534;color:#fff;padding:3px 12px;border-radius:12px;font-size:11px;font-weight:700">💸 Pagada</span>';
       if(btnAp) btnAp.style.display='none'; if(btnPag) btnPag.style.display='none';
     } else if(aprobadas>0 && aprobadas===estados.length){
-      badge.innerHTML='<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700">✓ Aprobada — pendiente pago</span>';
+      badge.innerHTML='<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700">✓ Aprobada - pendiente pago</span>';
       if(btnAp) btnAp.style.display='none';
       if(btnPag && esAdmin) btnPag.style.display='inline-block';
     } else if(estados.length>0){

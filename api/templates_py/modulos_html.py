@@ -248,7 +248,7 @@ MODULOS_HTML = (
     "    var ps = d.por_severidad;\n"
     "    stats.innerHTML = '&#128308; '+ps.alta+' alta &middot; &#128993; '+ps.media+' media &middot; &#128309; '+ps.info+' info';\n"
     "    if(!d.alertas.length){\n"
-    "      body.innerHTML = '<div style=\"text-align:center;color:#5b21b6;padding:40px;font-size:14px;\">&#9989; Todo en orden &mdash; sin alertas hoy</div>';\n"
+    "      body.innerHTML = '<div style=\"text-align:center;color:#5b21b6;padding:40px;font-size:14px;\">&#9989; Todo en orden - sin alertas hoy</div>';\n"
     "      return;\n"
     "    }\n"
     "    var grupos = {alta:[], media:[], info:[]};\n"

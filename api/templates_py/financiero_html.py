@@ -1,9 +1,9 @@
-# Auto-extraído de index.py — Fase A refactor
+# Auto-extraído de index.py - Fase A refactor
 FINANCIERO_HTML = """<!DOCTYPE html>
 <html lang="es" translate="no">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Financiero — HHA Group</title>
+<title>Financiero - HHA Group</title>
 <link rel="stylesheet" href="/static/cortex.css?v=eos15">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
@@ -93,15 +93,15 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 <!-- ─── DASHBOARD ─── -->
 <div id="page-dashboard" class="page active">
   <div class="kpi-grid" id="kpi-financiero">
-    <div class="kpi" style="--c:#6d28d9"><div class="kpi-val" id="kpi-ing-mes">—</div><div class="kpi-lbl">Ingresos del mes</div><div class="kpi-sub" id="kpi-ing-sub"></div></div>
-    <div class="kpi" style="--c:#c0392b"><div class="kpi-val" id="kpi-egr-mes">—</div><div class="kpi-lbl">Egresos del mes</div><div class="kpi-sub" id="kpi-egr-sub"></div></div>
-    <div class="kpi" style="--c:#B5924A"><div class="kpi-val" id="kpi-flujo-mes">—</div><div class="kpi-lbl">Flujo neto mes</div><div class="kpi-sub" id="kpi-flujo-sub"></div></div>
-    <div class="kpi" style="--c:#7A4A8B"><div class="kpi-val" id="kpi-caja">—</div><div class="kpi-lbl">Saldo de caja</div><div class="kpi-sub" id="kpi-caja-sub"></div></div>
-    <div class="kpi" style="--c:#10b981;border-left:3px solid #10b981;"><div class="kpi-val" id="kpi-shopify" style="color:#10b981;">—</div><div class="kpi-lbl">Shopify DTC · mes</div><div class="kpi-sub" id="kpi-shopify-sub"></div></div>
+    <div class="kpi" style="--c:#6d28d9"><div class="kpi-val" id="kpi-ing-mes">-</div><div class="kpi-lbl">Ingresos del mes</div><div class="kpi-sub" id="kpi-ing-sub"></div></div>
+    <div class="kpi" style="--c:#c0392b"><div class="kpi-val" id="kpi-egr-mes">-</div><div class="kpi-lbl">Egresos del mes</div><div class="kpi-sub" id="kpi-egr-sub"></div></div>
+    <div class="kpi" style="--c:#B5924A"><div class="kpi-val" id="kpi-flujo-mes">-</div><div class="kpi-lbl">Flujo neto mes</div><div class="kpi-sub" id="kpi-flujo-sub"></div></div>
+    <div class="kpi" style="--c:#7A4A8B"><div class="kpi-val" id="kpi-caja">-</div><div class="kpi-lbl">Saldo de caja</div><div class="kpi-sub" id="kpi-caja-sub"></div></div>
+    <div class="kpi" style="--c:#10b981;border-left:3px solid #10b981;"><div class="kpi-val" id="kpi-shopify" style="color:#10b981;">-</div><div class="kpi-lbl">Shopify DTC · mes</div><div class="kpi-sub" id="kpi-shopify-sub"></div></div>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
     <div class="chart-wrap">
-      <div class="section-title">Ingresos vs Egresos — Últimos 6 meses</div>
+      <div class="section-title">Ingresos vs Egresos - Últimos 6 meses</div>
       <canvas id="chart-ing-egr" height="200"></canvas>
     </div>
     <div class="card">
@@ -288,7 +288,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <button class="btn btn-ghost" onclick="importarOCs()">📦 Importar OCs recibidas como egresos</button>
     <div id="import-msg" style="margin-top:10px;"></div>
     <div style="margin-top:20px;padding-top:16px;border-top:1px solid #2d2420;">
-      <div style="font-size:0.82em;color:#dc2626;font-weight:600;margin-bottom:8px;">⚠️ Zona de peligro — solo admin</div>
+      <div style="font-size:0.82em;color:#dc2626;font-weight:600;margin-bottom:8px;">⚠️ Zona de peligro - solo admin</div>
       <p style="font-size:0.82em;color:#9C8B7A;margin-bottom:10px;">Elimina <strong>todos</strong> los registros de flujo de egresos e ingresos (útil si hay datos incorrectos importados).</p>
       <button class="btn btn-ghost" style="border-color:#dc2626;color:#dc2626;" onclick="limpiarFlujo()">🗑️ Limpiar todo el flujo (egresos e ingresos)</button>
       <div id="limpiar-msg" style="margin-top:8px;font-size:0.82em;"></div>
@@ -296,7 +296,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
   </div>
   <div class="card">
     <div class="section-title">💲 Precios Mayorista por SKU</div>
-    <p style="font-size:0.88em;color:#9C8B7A;margin-bottom:16px;">Precio de venta mayorista en COP por unidad. Solo visible para administración — no aparece en el módulo de operarios.</p>
+    <p style="font-size:0.88em;color:#9C8B7A;margin-bottom:16px;">Precio de venta mayorista en COP por unidad. Solo visible para administración - no aparece en el módulo de operarios.</p>
     <div id="precios-list"><p style="color:#9C8B7A;font-size:0.88em;">Cargando...</p></div>
     <div id="precios-msg" style="margin-top:10px;"></div>
   </div>
@@ -305,7 +305,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 <!-- AR AGING -->
 <div id="page-ar" class="page">
   <div class="card">
-    <div class="section-title">📬 Cuentas por Cobrar — AR Aging</div>
+    <div class="section-title">📬 Cuentas por Cobrar - AR Aging</div>
     <p style="font-size:0.88em;color:#9C8B7A;margin-bottom:16px;">Pedidos activos con saldo pendiente, agrupados por antigüedad.</p>
     <div id="ar-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px;"></div>
     <div id="ar-table"></div>
@@ -315,7 +315,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 <!-- AP AGING -->
 <div id="page-ap" class="page">
   <div class="card">
-    <div class="section-title">📤 Cuentas por Pagar — AP Aging</div>
+    <div class="section-title">📤 Cuentas por Pagar - AP Aging</div>
     <p style="font-size:0.88em;color:#9C8B7A;margin-bottom:16px;">Órdenes de compra autorizadas/recibidas sin registrar pago, agrupadas por antigüedad.</p>
     <div id="ap-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px;"></div>
     <div id="ap-table"></div>
@@ -325,7 +325,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 <!-- P&L -->
 <div id="page-pnl" class="page">
   <div class="card">
-    <div class="section-title">📊 P&amp;L — Estado de Resultados</div>
+    <div class="section-title">📊 P&amp;L - Estado de Resultados</div>
     <p style="font-size:0.88em;color:#9C8B7A;margin-bottom:16px;">Ingresos, egresos y margen operacional por empresa y consolidado. Actualización mensual.</p>
     <div id="pnl-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px;"></div>
     <div id="pnl-brands" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;"></div>
@@ -436,14 +436,14 @@ var _chartIngEgr=null, _chartFlujo=null;
 var _config={};
 
 function fmt(n){
-  if(!n&&n!==0) return '—';
+  if(!n&&n!==0) return '-';
   var abs=Math.abs(n);
   if(abs>=1000000) return (n<0?'-':'')+'$'+(abs/1000000).toFixed(1)+'M';
   if(abs>=1000) return (n<0?'-':'')+'$'+(abs/1000).toFixed(0)+'K';
   return (n<0?'-':'')+'$'+abs.toLocaleString('es-CO');
 }
 function fmtFull(n){
-  if(!n&&n!==0) return '—';
+  if(!n&&n!==0) return '-';
   return (n<0?'-':'')+'$'+Math.abs(n).toLocaleString('es-CO');
 }
 
@@ -577,7 +577,7 @@ async function loadMoM12(){
     if(tbody){
       tbody.innerHTML = meses.map(function(m){
         var marColor = m.margen >= 0 ? '#6d28d9' : '#c0392b';
-        var momHtml = '—';
+        var momHtml = '-';
         if(m.mom_pct !== null && m.mom_pct !== undefined){
           var momColor = m.mom_pct >= 0 ? '#6d28d9' : '#c0392b';
           var arrow = m.mom_pct >= 0 ? '▲' : '▼';
@@ -799,7 +799,7 @@ async function loadShopifyStatus(){
           '<div style="font-size:11px;color:#94a3b8;">$' + fmt(d.pendientes_total) + ' COP</div></div>' +
         '<div><div style="font-size:11px;color:#64748b;text-transform:uppercase;">Ya sincronizados</div>' +
           '<div style="font-size:1.4em;font-weight:700;color:#34d399;">' + d.sincronizados_count + '</div>' +
-          '<div style="font-size:11px;color:#94a3b8;">$' + fmt(d.sincronizados_total) + ' COP — ult: ' + (d.ultimo_sync_fecha||'nunca') + '</div></div>' +
+          '<div style="font-size:11px;color:#94a3b8;">$' + fmt(d.sincronizados_total) + ' COP - ult: ' + (d.ultimo_sync_fecha||'nunca') + '</div></div>' +
       '</div>';
   } catch(e) {
     document.getElementById('shopify-sync-status').textContent = 'Error: ' + e.message;
@@ -1032,13 +1032,13 @@ async function buscarTrazabilidad(){
       '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">'+
       '<div><b>Codigo:</b> '+ing.codigo_mp+'</div>'+
       '<div><b>Nombre:</b> '+ing.nombre+'</div>'+
-      '<div><b>INCI:</b> '+(ing.nombre_inci||'—')+'</div>'+
+      '<div><b>INCI:</b> '+(ing.nombre_inci||'-')+'</div>'+
       '<div><b>Cantidad:</b> '+Number(ing.cantidad_g).toLocaleString()+' g</div>'+
-      '<div><b>Proveedor:</b> '+(ing.proveedor||'—')+'</div>'+
-      '<div><b>Factura:</b> '+(ing.factura||'—')+'</div>'+
-      '<div><b>OC:</b> '+(ing.orden_compra||'—')+'</div>'+
-      '<div><b>Precio/kg:</b> '+(ing.precio_kg?'$'+Number(ing.precio_kg).toLocaleString('es-CO'):'—')+'</div>'+
-      '<div><b>Fecha:</b> '+(ing.fecha?ing.fecha.substring(0,10):'—')+'</div>'+
+      '<div><b>Proveedor:</b> '+(ing.proveedor||'-')+'</div>'+
+      '<div><b>Factura:</b> '+(ing.factura||'-')+'</div>'+
+      '<div><b>OC:</b> '+(ing.orden_compra||'-')+'</div>'+
+      '<div><b>Precio/kg:</b> '+(ing.precio_kg?'$'+Number(ing.precio_kg).toLocaleString('es-CO'):'-')+'</div>'+
+      '<div><b>Fecha:</b> '+(ing.fecha?ing.fecha.substring(0,10):'-')+'</div>'+
       '</div>';
     document.getElementById('trz-nprod').textContent=data.total_producciones;
     var tb=document.getElementById('trz-prod-tbody');
@@ -1320,7 +1320,7 @@ var _chartPNL = null;
 async function loadPNL(){
   try{
     var d=await fetch('/api/financiero/pnl').then(function(r){return r.json();});
-    var fmt2=function(n){if(!n&&n!==0)return '—';return '$'+Math.abs(parseFloat(n)||0).toLocaleString('es-CO',{maximumFractionDigits:0});};
+    var fmt2=function(n){if(!n&&n!==0)return '-';return '$'+Math.abs(parseFloat(n)||0).toLocaleString('es-CO',{maximumFractionDigits:0});};
     var tot=d.empresas&&d.empresas['TOTAL']||{};
     var ytd=d.ytd||{}; var mvp=d.mes_vs_prior||{};
     var crec=ytd.crecimiento_pct;
@@ -1444,7 +1444,7 @@ async function loadWorkingCapital(){
       ['Inventario MP',fmt2(d.inventory_value),'#3498db'],
       ['Caja',fmt2(d.cash),'#9b59b6'],
       ['Burn Rate/mes',fmt2(d.burn_rate),'#e74c3c'],
-      ['Runway',d.runway_meses?(d.runway_meses.toFixed(1)+' meses'):'—','#27ae60'],
+      ['Runway',d.runway_meses?(d.runway_meses.toFixed(1)+' meses'):'-','#27ae60'],
     ];
     cards.forEach(function(c){
       h+='<div style="background:#f8f9fa;border:1px solid #e9ecef;border-radius:8px;padding:12px;text-align:center;">';
@@ -1454,7 +1454,7 @@ async function loadWorkingCapital(){
     h+='</div>';
     h+='<table style="width:100%;border-collapse:collapse;font-size:0.88em;">';
     h+='<tr style="background:#f8f9fa;"><th style="text-align:left;padding:8px;">Métrica</th><th style="text-align:right;padding:8px;">Valor</th></tr>';
-    [['DSO (días cobro)',d.dso?d.dso.toFixed(0)+'d':'—'],['DPO (días pago)',d.dpo?d.dpo.toFixed(0)+'d':'—'],['DIO (días inventario)',d.dio?d.dio.toFixed(0)+'d':'—'],['CCC (ciclo caja)',d.ccc?d.ccc.toFixed(0)+'d':'—']].forEach(function(r){
+    [['DSO (días cobro)',d.dso?d.dso.toFixed(0)+'d':'-'],['DPO (días pago)',d.dpo?d.dpo.toFixed(0)+'d':'-'],['DIO (días inventario)',d.dio?d.dio.toFixed(0)+'d':'-'],['CCC (ciclo caja)',d.ccc?d.ccc.toFixed(0)+'d':'-']].forEach(function(r){
       h+='<tr style="border-bottom:1px solid #e9ecef;"><td style="padding:8px;">'+r[0]+'</td><td style="text-align:right;padding:8px;font-weight:700;">'+r[1]+'</td></tr>';
     });
     h+='</table>';
@@ -1511,7 +1511,7 @@ async function abrirMesDetalle(periodo, tipo){
             }else if(refLink){
               refLink = '<span style="color:#7A6A55;font-size:0.82em">'+_esc(refLink)+'</span>';
             }else{
-              refLink = '<span style="color:#bbb">—</span>';
+              refLink = '<span style="color:#bbb">-</span>';
             }
             html += '<tr style="border-top:1px solid #F5F0E8">';
             html += '<td style="padding:6px 12px;color:#7A6A55">'+_esc((it.fecha||'').substring(0,10))+'</td>';
@@ -1615,7 +1615,7 @@ function _esc(s){
     <div style="padding:18px 24px;background:linear-gradient(135deg,#6d28d9,#205C5A);color:#fff;display:flex;justify-content:space-between;align-items:center">
       <div>
         <div style="font-size:11px;color:#a7f3d0;text-transform:uppercase;letter-spacing:.5px">Detalle del mes</div>
-        <h2 id="md-titulo" style="margin:4px 0 0 0;font-size:18px">—</h2>
+        <h2 id="md-titulo" style="margin:4px 0 0 0;font-size:18px">-</h2>
       </div>
       <button onclick="cerrarMesDetalle()" style="background:rgba(255,255,255,0.15);color:#fff;border:none;border-radius:6px;padding:6px 14px;cursor:pointer;font-size:14px;font-weight:700">✕ Cerrar</button>
     </div>

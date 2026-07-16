@@ -128,14 +128,14 @@ BANDEJA_CEO_HTML = r'''<!DOCTYPE html>
     </div>
     <div style="text-align:right">
       <div class="meta">
-        Actualizado: <span id="ts">—</span>
+        Actualizado: <span id="ts">-</span>
         &nbsp; <button class="refresh" onclick="loadBandeja()">↻ Refresh</button>
       </div>
     </div>
   </div>
 
   <div class="summary" id="summary">
-    <div class="pill"><div class="num">—</div><div class="lbl">cargando…</div></div>
+    <div class="pill"><div class="num">-</div><div class="lbl">cargando…</div></div>
   </div>
 
   <div class="filters" id="filters">

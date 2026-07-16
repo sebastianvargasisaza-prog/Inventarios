@@ -1,4 +1,4 @@
-# salida_html.py — extraído de index.py (Fase C prep)
+# salida_html.py - extraído de index.py (Fase C prep)
 SALIDA_HTML = r"""
 <!DOCTYPE html>
 <html lang="es" translate="no">
@@ -184,9 +184,9 @@ async function cargarPedido(num) {
 async function renderDespachoForm(d) {
   document.getElementById('ped-header').innerHTML =
     '<div><div class="lbl">Pedido</div><div class="val">' + d.numero + '</div></div>' +
-    '<div><div class="lbl">Cliente</div><div class="val">' + (d.cliente||'—') + '</div></div>' +
+    '<div><div class="lbl">Cliente</div><div class="val">' + (d.cliente||'-') + '</div></div>' +
     '<div><div class="lbl">Fecha</div><div class="val">' + (d.fecha||'').slice(0,10) + '</div></div>' +
-    '<div><div class="lbl">Estado</div><div class="val">' + (d.estado||'—') + '</div></div>' +
+    '<div><div class="lbl">Estado</div><div class="val">' + (d.estado||'-') + '</div></div>' +
     '<div><div class="lbl">Valor Total</div><div class="val">$' + Number(d.valor_total||0).toLocaleString() + '</div></div>';
 
   var tbody = document.getElementById('despacho-body');
@@ -204,7 +204,7 @@ async function renderDespachoForm(d) {
     var tr = document.createElement('tr');
     tr.innerHTML =
       '<td><strong>' + it.sku + '</strong></td>' +
-      '<td>' + (it.descripcion||'—') + '</td>' +
+      '<td>' + (it.descripcion||'-') + '</td>' +
       '<td>' + it.cantidad + ' uds</td>' +
       '<td class="' + stockCls + '">' + stockUds + ' uds</td>' +
       '<td><input type="number" id="dsp-cant-' + i + '" value="' + Math.min(it.cantidad, stockUds) + '" min="0" max="' + stockUds + '" step="1" data-sku="' + it.sku + '" data-desc="' + (it.descripcion||'') + '" data-precio="' + (it.precio_unitario||0) + '"></td>' +
@@ -285,14 +285,14 @@ function imprimirActaEntrega(ped, items, numDespacho, preview) {
   var totalVal = items.reduce(function(a, it) { return a + it.cantidad * it.precio_unitario; }, 0);
   var itemsHtml = items.filter(function(it) { return it.cantidad > 0; }).map(function(it) {
     var sub = it.cantidad * it.precio_unitario;
-    return '<tr><td>' + it.sku + '</td><td>' + (it.descripcion||'—') + '</td>'
+    return '<tr><td>' + it.sku + '</td><td>' + (it.descripcion||'-') + '</td>'
       + '<td style="text-align:center;">' + it.cantidad + '</td>'
-      + '<td>' + (it.lote_pt||'—') + '</td>'
+      + '<td>' + (it.lote_pt||'-') + '</td>'
       + '<td style="text-align:right;">$' + Number(it.precio_unitario||0).toLocaleString() + '</td>'
       + '<td style="text-align:right;font-weight:600;">$' + Number(sub||0).toLocaleString() + '</td></tr>';
   }).join('');
   var previewBanner = preview
-    ? '<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:10px;margin-bottom:16px;color:#92400e;font-size:12px;font-weight:600;">BORRADOR — Vista previa. El despacho aun no ha sido confirmado en el sistema.</div>'
+    ? '<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:10px;margin-bottom:16px;color:#92400e;font-size:12px;font-weight:600;">BORRADOR - Vista previa. El despacho aun no ha sido confirmado en el sistema.</div>'
     : '';
   w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Acta de Entrega</title>'
     + '<style>body{font-family:Arial,sans-serif;padding:30px;font-size:13px;color:#1C1917;}'
@@ -311,13 +311,13 @@ function imprimirActaEntrega(ped, items, numDespacho, preview) {
     + '<div class="noPrint"><button onclick="window.print()" style="padding:9px 24px;background:#1C1917;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px;">Imprimir</button></div>'
     + previewBanner
     + '<div class="header">'
-    + '<div><h2>ACTA DE ENTREGA / REMISION</h2><p style="color:#78716c;font-size:12px;">ANIMUS Lab — HHA Group</p></div>'
+    + '<div><h2>ACTA DE ENTREGA / REMISION</h2><p style="color:#78716c;font-size:12px;">ANIMUS Lab - HHA Group</p></div>'
     + '<div style="text-align:right;font-size:11px;color:#78716c;">'
     + '<div>No. Despacho: <strong>' + (numDespacho||'BORRADOR') + '</strong></div>'
     + '<div>Fecha: ' + hoy + '</div></div></div>'
     + '<div class="meta">'
-    + '<div><div class="lbl">No. Pedido</div><div class="val">' + (ped ? ped.numero : '—') + '</div></div>'
-    + '<div><div class="lbl">Cliente</div><div class="val">' + (ped ? (ped.cliente||'—') : '—') + '</div></div>'
+    + '<div><div class="lbl">No. Pedido</div><div class="val">' + (ped ? ped.numero : '-') + '</div></div>'
+    + '<div><div class="lbl">Cliente</div><div class="val">' + (ped ? (ped.cliente||'-') : '-') + '</div></div>'
     + '<div><div class="lbl">Total Unidades</div><div class="val">' + totalUds + ' uds</div></div>'
     + '<div><div class="lbl">Valor Total</div><div class="val">$' + Number(totalVal).toLocaleString() + '</div></div>'
     + '</div>'
@@ -366,7 +366,7 @@ async function loadHistorial() {
     if (!desps.length) { el.innerHTML = '<div class="empty">Sin despachos registrados</div>'; return; }
     var h = '<div style="overflow-x:auto"><table><thead><tr><th>No. Despacho</th><th>Cliente</th><th>Pedido</th><th>Operador</th><th>Fecha</th><th>Estado</th></tr></thead><tbody>';
     desps.forEach(function(d) {
-      h += '<tr><td><strong>' + d.numero + '</strong></td><td>' + (d.cliente||'—') + '</td><td>' + (d.numero_pedido||'—') + '</td><td>' + (d.operador||'—') + '</td><td>' + (d.fecha||'').slice(0,10) + '</td><td>' + (d.estado||'—') + '</td></tr>';
+      h += '<tr><td><strong>' + d.numero + '</strong></td><td>' + (d.cliente||'-') + '</td><td>' + (d.numero_pedido||'-') + '</td><td>' + (d.operador||'-') + '</td><td>' + (d.fecha||'').slice(0,10) + '</td><td>' + (d.estado||'-') + '</td></tr>';
     });
     h += '</tbody></table></div>';
     el.innerHTML = h;
@@ -379,7 +379,7 @@ async function loadHistorial() {
     if (!pend.length) { el2.innerHTML = '<div class="empty">Sin pedidos pendientes</div>'; return; }
     var h2 = '<div style="overflow-x:auto"><table><thead><tr><th>Pedido</th><th>Cliente</th><th>Valor</th><th>Estado</th><th>Fecha</th><th>Accion</th></tr></thead><tbody>';
     pend.forEach(function(p) {
-      h2 += '<tr><td><strong>' + p.numero + '</strong></td><td>' + (p.cliente||'—') + '</td><td>$' + Number(p.valor_total||0).toLocaleString() + '</td><td>' + p.estado + '</td><td>' + (p.fecha||'').slice(0,10) + '</td><td><button class="btn btn-primary btn-sm" onclick="cargarPedido(\''  + p.numero + '\')" >Despachar</button></td></tr>';
+      h2 += '<tr><td><strong>' + p.numero + '</strong></td><td>' + (p.cliente||'-') + '</td><td>$' + Number(p.valor_total||0).toLocaleString() + '</td><td>' + p.estado + '</td><td>' + (p.fecha||'').slice(0,10) + '</td><td><button class="btn btn-primary btn-sm" onclick="cargarPedido(\''  + p.numero + '\')" >Despachar</button></td></tr>';
     });
     h2 += '</tbody></table></div>';
     el2.innerHTML = h2;

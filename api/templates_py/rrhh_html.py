@@ -1,4 +1,4 @@
-# Auto-extraído de index.py — Fase A refactor
+# Auto-extraído de index.py - Fase A refactor
 RRHH_HTML = r"""
 <!DOCTYPE html>
 <html lang="es" translate="no">
@@ -6,7 +6,7 @@ RRHH_HTML = r"""
 <meta charset="UTF-8">
 <meta name="google" content="notranslate">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>RRHH — HHA Group</title>
+<title>RRHH - HHA Group</title>
 <link rel="stylesheet" href="/static/cortex.css?v=eos15">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
@@ -173,10 +173,10 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
 <!-- ═══ DASHBOARD ═══ -->
 <div id="dash" class="page active">
   <div class="kpi-grid" id="kpi-row">
-    <div class="kpi"><div class="kpi-val" id="k-hc">—</div><div class="kpi-lbl">Empleados activos</div></div>
-    <div class="kpi green"><div class="kpi-val" id="k-nom">—</div><div class="kpi-lbl">N&oacute;mina bruta / mes</div><div class="kpi-sub">Solo salarios base</div></div>
-    <div class="kpi amber"><div class="kpi-val" id="k-aus">—</div><div class="kpi-lbl">Ausentismo este mes</div><div class="kpi-sub">% sobre d&iacute;as h&aacute;biles</div></div>
-    <div class="kpi red"><div class="kpi-val" id="k-cap">—</div><div class="kpi-lbl">Capacitaciones pendientes</div></div>
+    <div class="kpi"><div class="kpi-val" id="k-hc">-</div><div class="kpi-lbl">Empleados activos</div></div>
+    <div class="kpi green"><div class="kpi-val" id="k-nom">-</div><div class="kpi-lbl">N&oacute;mina bruta / mes</div><div class="kpi-sub">Solo salarios base</div></div>
+    <div class="kpi amber"><div class="kpi-val" id="k-aus">-</div><div class="kpi-lbl">Ausentismo este mes</div><div class="kpi-sub">% sobre d&iacute;as h&aacute;biles</div></div>
+    <div class="kpi red"><div class="kpi-val" id="k-cap">-</div><div class="kpi-lbl">Capacitaciones pendientes</div></div>
   </div>
   <div class="two-col">
     <div class="card">
@@ -282,7 +282,7 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
   <div id="compromisos-lista"></div>
 </div>
 
-<!-- (Nómina movida a /tesoreria — 29-abr-2026) -->
+<!-- (Nómina movida a /tesoreria - 29-abr-2026) -->
 <!-- ═══ AUSENCIAS ═══ -->
 <div id="aus" class="page">
   <div class="ctrl-bar">
@@ -321,9 +321,9 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
     <label style="font-size:13px;font-weight:600;">Per&iacute;odo:</label>
     <select id="eva-periodo" onchange="loadEvaluaciones()">
       <option value="">Todos</option>
-      <option value="2026-Q1">2026 — Q1</option><option value="2026-Q2">2026 — Q2</option>
-      <option value="2026-Q3">2026 — Q3</option><option value="2026-Q4">2026 — Q4</option>
-      <option value="2025-Q4">2025 — Q4</option>
+      <option value="2026-Q1">2026 - Q1</option><option value="2026-Q2">2026 - Q2</option>
+      <option value="2026-Q3">2026 - Q3</option><option value="2026-Q4">2026 - Q4</option>
+      <option value="2025-Q4">2025 - Q4</option>
     </select>
     <button class="btn btn-primary" style="margin-left:auto;" onclick="openEvaModal()">+ Nueva Evaluaci&oacute;n</button>
   </div>
@@ -333,7 +333,7 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
 <!-- ═══ SGSST ═══ -->
 <div id="sgsst" class="page">
   <div class="ctrl-bar">
-    <div style="font-size:13px;color:#78716c;">Sistema de Gesti&oacute;n de Seguridad y Salud en el Trabajo &mdash; BPM Cosm&eacute;ticos</div>
+    <div style="font-size:13px;color:#78716c;">Sistema de Gesti&oacute;n de Seguridad y Salud en el Trabajo - BPM Cosm&eacute;ticos</div>
     <button class="btn btn-primary" style="margin-left:auto;" onclick="openSgsstModal()">+ Agregar Requisito</button>
   </div>
   <div id="sgsst-body"></div>
@@ -375,7 +375,7 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
         <div class="form-group"><label>Fecha ingreso</label><input id="f-ingreso" type="date"></div>
         <div class="form-group"><label>Salario base (COP)</label><input id="f-salario" type="number" min="0" step="50000"></div>
         <div class="form-group"><label>Nivel de riesgo ARL (1-5)</label>
-          <select id="f-riesgo"><option value="1">1 — M&iacute;nimo</option><option value="2">2 — Bajo</option><option value="3">3 — Medio</option><option value="4">4 — Alto</option><option value="5">5 — M&aacute;ximo</option></select>
+          <select id="f-riesgo"><option value="1">1 - M&iacute;nimo</option><option value="2">2 - Bajo</option><option value="3">3 - Medio</option><option value="4">4 - Alto</option><option value="5">5 - M&aacute;ximo</option></select>
         </div>
         <div class="form-group"><label>EPS</label><input id="f-eps" type="text" placeholder="Ej: Sura"></div>
         <div class="form-group"><label>AFP (Pens&iacute;on)</label><input id="f-afp" type="text" placeholder="Ej: Proteccion"></div>
@@ -392,7 +392,7 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
         <div class="form-grid">
           <div class="form-group"><label>Banco</label>
             <select id="f-banco">
-              <option value="">— Sin registrar —</option>
+              <option value="">- Sin registrar -</option>
               <option>BANCOLOMBIA</option><option>DAVIVIENDA</option><option>BANCO DE BOGOTA</option>
               <option>BBVA</option><option>AV VILLAS</option><option>BANCO CAJA SOCIAL</option>
               <option>NEQUI</option><option>DAVIPLATA</option><option>BANCO POPULAR</option>
@@ -401,7 +401,7 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
           </div>
           <div class="form-group"><label>Tipo de cuenta</label>
             <select id="f-tipo-cta">
-              <option value="">— Sin registrar —</option>
+              <option value="">- Sin registrar -</option>
               <option>AHORROS</option><option>CORRIENTE</option><option>AHORROS DAMAS</option><option>NEQUI</option><option>DAVIPLATA</option>
             </select>
           </div>
@@ -480,8 +480,8 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
         <div class="form-group"><label>Empleado *</label><select id="e-emp"></select></div>
         <div class="form-group"><label>Per&iacute;odo *</label>
           <select id="e-per">
-            <option value="2026-Q2">2026 — Q2</option><option value="2026-Q1">2026 — Q1</option>
-            <option value="2025-Q4">2025 — Q4</option>
+            <option value="2026-Q2">2026 - Q2</option><option value="2026-Q1">2026 - Q1</option>
+            <option value="2025-Q4">2025 - Q4</option>
           </select>
         </div>
       </div>
@@ -782,9 +782,9 @@ async function cargarEventosRH(){
           '<td><span style="background:'+col+'22;color:'+col+';padding:2px 8px;border-radius:8px;font-size:11px;font-weight:700">'+esc(e.tipo||'')+'</span></td>'+
           '<td style="font-size:12px">'+fechas+'</td>'+
           '<td style="text-align:center;font-weight:700">'+(parseInt(e.dias)||0)+'</td>'+
-          '<td style="text-align:right;font-family:monospace">'+(e.pago_empleador?'$'+Math.round(e.pago_empleador).toLocaleString('es-CO'):'—')+'</td>'+
-          '<td style="text-align:right;font-family:monospace;color:#16a34a">'+(e.pago_eps?'$'+Math.round(e.pago_eps).toLocaleString('es-CO'):'—')+'</td>'+
-          '<td style="text-align:right;font-family:monospace;color:#7c3aed">'+(e.pago_arl?'$'+Math.round(e.pago_arl).toLocaleString('es-CO'):'—')+'</td>'+
+          '<td style="text-align:right;font-family:monospace">'+(e.pago_empleador?'$'+Math.round(e.pago_empleador).toLocaleString('es-CO'):'-')+'</td>'+
+          '<td style="text-align:right;font-family:monospace;color:#16a34a">'+(e.pago_eps?'$'+Math.round(e.pago_eps).toLocaleString('es-CO'):'-')+'</td>'+
+          '<td style="text-align:right;font-family:monospace;color:#7c3aed">'+(e.pago_arl?'$'+Math.round(e.pago_arl).toLocaleString('es-CO'):'-')+'</td>'+
           '<td><span class="badge badge-'+(e.estado==='aprobada'?'activo':e.estado==='cerrada'?'indef':'inactivo')+'">'+esc(e.estado||'')+'</span></td>'+
           '<td>'+(e.estado==='registrada'?'<button class="btn btn-success btn-sm" onclick="aprobarEvento('+(parseInt(e.id)||0)+')">Aprobar</button>':'')+'</td>'+
           '</tr>';
@@ -843,7 +843,7 @@ async function evtRecalcular(){
   var d = await r.json();
   var html = '<b>📊 Cálculo legal automático ('+dias+' días)</b><br>';
   (d.detalle||[]).forEach(function(x){
-    html += '<div style="margin-top:4px">• '+x.rango+': <b style="color:'+(x.pagador==='EMPLEADOR'?'#dc2626':x.pagador==='EPS'?'#16a34a':'#7c3aed')+'">'+x.pagador+'</b> ('+x.pct+'%) — '+x.dias+' días = $'+Math.round(x.monto).toLocaleString('es-CO')+'</div>';
+    html += '<div style="margin-top:4px">• '+x.rango+': <b style="color:'+(x.pagador==='EMPLEADOR'?'#dc2626':x.pagador==='EPS'?'#16a34a':'#7c3aed')+'">'+x.pagador+'</b> ('+x.pct+'%) - '+x.dias+' días = $'+Math.round(x.monto).toLocaleString('es-CO')+'</div>';
   });
   html += '<div style="margin-top:8px;padding-top:8px;border-top:1px solid #e7e5e4">Total: <b>$'+Math.round(d.total||0).toLocaleString('es-CO')+'</b> · Descuento nómina: $'+Math.round(d.descuento_nomina||0).toLocaleString('es-CO')+'</div>';
   var pr = document.getElementById('evt-preview');
@@ -982,7 +982,7 @@ async function completarCompromiso(cid){
 
 // ─── utils ───────────────────────────────────────────
 function fmt(n){return '$'+Number(n||0).toLocaleString('es-CO');}
-function fmtDate(s){return s?(String(s).slice(0,10)):'—';}
+function fmtDate(s){return s?(String(s).slice(0,10)):'-';}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 function openModal(id){document.getElementById(id).classList.add('open');}
 
@@ -1160,7 +1160,7 @@ async function saveEmp() {
 }
 
 // ─── NÓMINA ──────────────────────────────────────────
-// (Funciones de nomina movidas a /tesoreria — 29-abr-2026)
+// (Funciones de nomina movidas a /tesoreria - 29-abr-2026)
 
 async function loadAusencias(){
   var tipo = document.getElementById('aus-tipo').value;
@@ -1179,7 +1179,7 @@ async function loadAusencias(){
         '<td>'+esc(a.tipo||'')+'</td><td>'+esc(fmtDate(a.fecha_inicio))+'</td><td>'+esc(fmtDate(a.fecha_fin))+'</td>' +
         '<td style="text-align:center;font-weight:700;">'+(parseInt(a.dias)||0)+'</td>' +
         '<td><span class="badge '+(estadoColors[a.estado]||'badge-indef')+'">'+esc(a.estado||'')+'</span></td>' +
-        '<td style="color:#78716c;max-width:150px;">'+esc(a.observaciones||'—')+'</td>' +
+        '<td style="color:#78716c;max-width:150px;">'+esc(a.observaciones||'-')+'</td>' +
         '<td>' +
           (a.estado==='Pendiente'?
             '<button class="btn btn-success btn-sm" onclick="aprobarAus('+(parseInt(a.id)||0)+',\'Aprobada\')">Aprobar</button> '+

@@ -1,4 +1,4 @@
-# Auto-extraído de index.py — Fase A refactor (rebranded EOS)
+# Auto-extraído de index.py - Fase A refactor (rebranded EOS)
 LOGIN_HTML = """<!DOCTYPE html>
 <html lang="es" translate="no">
 <head>

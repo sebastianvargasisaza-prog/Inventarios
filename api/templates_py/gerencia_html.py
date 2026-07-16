@@ -1,9 +1,9 @@
-# Auto-extraído de index.py — Fase A refactor
+# Auto-extraído de index.py - Fase A refactor
 GERENCIA_HTML = """<!DOCTYPE html>
 <html lang="es" translate="no">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Gerencia — HHA Group</title>
+<title>Gerencia - HHA Group</title>
 <link rel="stylesheet" href="/static/cortex.css?v=eos15">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
@@ -113,42 +113,42 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
   <!-- FINANCIERO (inputs manuales) -->
   <div class="section-title">💰 Financiero del mes</div>
   <div class="finanzas-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));">
-    <div class="fin-card"><div class="fin-val" id="fin-caja">—</div><div class="fin-lbl">Saldo de caja</div></div>
-    <div class="fin-card"><div class="fin-val" id="fin-animus">—</div><div class="fin-lbl">Ingresos ÁNIMUS</div></div>
-    <div class="fin-card"><div class="fin-val" id="fin-maquila">—</div><div class="fin-lbl">Ingresos Maquila</div></div>
-    <div class="fin-card"><div class="fin-val" id="fin-nomina" style="color:#b45309;">—</div><div class="fin-lbl">Nomina mes</div><div style="font-size:0.65em;color:var(--cx-text-faint);margin-top:3px;" id="fin-nomina-emp"></div></div>
+    <div class="fin-card"><div class="fin-val" id="fin-caja">-</div><div class="fin-lbl">Saldo de caja</div></div>
+    <div class="fin-card"><div class="fin-val" id="fin-animus">-</div><div class="fin-lbl">Ingresos ÁNIMUS</div></div>
+    <div class="fin-card"><div class="fin-val" id="fin-maquila">-</div><div class="fin-lbl">Ingresos Maquila</div></div>
+    <div class="fin-card"><div class="fin-val" id="fin-nomina" style="color:#b45309;">-</div><div class="fin-lbl">Nomina mes</div><div style="font-size:0.65em;color:var(--cx-text-faint);margin-top:3px;" id="fin-nomina-emp"></div></div>
   </div>
 
   <!-- ESPAGIRIA -->
   <div class="section-title">🏭 Espagiria Laboratorios</div>
   <div class="kpi-grid">
     <div class="kpi" id="kpi-mps-bajos">
-      <div class="kpi-val" id="val-mps-bajos">—</div>
+      <div class="kpi-val" id="val-mps-bajos">-</div>
       <div class="kpi-lbl">MPs bajo mínimo</div>
-      <div class="kpi-sub" id="sub-deficit">—</div>
+      <div class="kpi-sub" id="sub-deficit">-</div>
     </div>
     <div class="kpi" id="kpi-vencen30">
-      <div class="kpi-val" id="val-vencen30">—</div>
+      <div class="kpi-val" id="val-vencen30">-</div>
       <div class="kpi-lbl">Lotes vencen en 30 días</div>
-      <div class="kpi-sub" id="sub-vencen60">—</div>
+      <div class="kpi-sub" id="sub-vencen60">-</div>
     </div>
     <div class="kpi" id="kpi-produccion">
-      <div class="kpi-val" id="val-lotes-mes">—</div>
+      <div class="kpi-val" id="val-lotes-mes">-</div>
       <div class="kpi-lbl">Lotes producción mes</div>
-      <div class="kpi-sub" id="sub-kg-mes">—</div>
+      <div class="kpi-sub" id="sub-kg-mes">-</div>
     </div>
     <div class="kpi" id="kpi-ocs">
-      <div class="kpi-val" id="val-ocs">—</div>
+      <div class="kpi-val" id="val-ocs">-</div>
       <div class="kpi-lbl">OCs pendientes aprobación</div>
-      <div class="kpi-sub" id="sub-ocs-val">—</div>
+      <div class="kpi-sub" id="sub-ocs-val">-</div>
     </div>
     <div class="kpi" id="kpi-sol-pend" style="cursor:pointer;" onclick="location.href='/compras'">
-      <div class="kpi-val" id="val-sol-pend">—</div>
+      <div class="kpi-val" id="val-sol-pend">-</div>
       <div class="kpi-lbl">Solicitudes a Compras</div>
       <div class="kpi-sub" style="font-size:0.78em;opacity:0.6;">Pendientes de aprobar → /compras</div>
     </div>
     <div class="kpi" id="kpi-mee-bajos">
-      <div class="kpi-val" id="val-mee-bajos">—</div>
+      <div class="kpi-val" id="val-mee-bajos">-</div>
       <div class="kpi-lbl">MEE bajo mínimo</div>
       <div class="kpi-sub" id="sub-mee">Envases y empaques</div>
     </div>
@@ -158,17 +158,17 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
   <div class="section-title">✨ ÁNIMUS Lab</div>
   <div class="kpi-grid">
     <div class="kpi verde">
-      <div class="kpi-val verde" id="val-uds-pt">—</div>
+      <div class="kpi-val verde" id="val-uds-pt">-</div>
       <div class="kpi-lbl">Unidades PT disponibles</div>
-      <div class="kpi-sub" id="sub-skus-pt">—</div>
+      <div class="kpi-sub" id="sub-skus-pt">-</div>
     </div>
     <div class="kpi" id="kpi-pedidos-act">
-      <div class="kpi-val" id="val-pedidos-act">—</div>
+      <div class="kpi-val" id="val-pedidos-act">-</div>
       <div class="kpi-lbl">Pedidos activos</div>
-      <div class="kpi-sub" id="sub-pedidos-val">—</div>
+      <div class="kpi-sub" id="sub-pedidos-val">-</div>
     </div>
     <div class="kpi" id="kpi-fm">
-      <div class="kpi-val" id="val-fm-dias">—</div>
+      <div class="kpi-val" id="val-fm-dias">-</div>
       <div class="kpi-lbl">Días desde último pedido FM</div>
       <div class="kpi-sub">Ciclo promedio: ~62 días</div>
     </div>
@@ -188,7 +188,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
 
   <!-- INPUT MANUAL MENSUAL -->
   <div class="input-panel">
-    <div class="input-panel-title">📝 Input manual mensual <span style="font-weight:400;color:var(--cx-text-faint);font-size:0.85em;">— actualizar en 5 minutos al inicio de cada mes</span></div>
+    <div class="input-panel-title">📝 Input manual mensual <span style="font-weight:400;color:var(--cx-text-faint);font-size:0.85em;">- actualizar en 5 minutos al inicio de cada mes</span></div>
     <div class="inp-grid">
       <div class="inp-group"><label>Saldo de caja ($COP)</label><input type="number" id="inp-caja" placeholder="354800000"></div>
       <div class="inp-group"><label>Ingresos ÁNIMUS mes ($COP)</label><input type="number" id="inp-animus" placeholder="189000000"></div>
@@ -201,7 +201,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
   </div>
 
   <!-- FLUJO OPERACIONAL -->
-  <div class="section-title" style="margin-top:32px;">🔄 Flujo Operacional — Vista Ejecutiva</div>
+  <div class="section-title" style="margin-top:32px;">🔄 Flujo Operacional - Vista Ejecutiva</div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:20px;">
     <div class="panel">
       <div class="panel-title">📦 Compras pendientes de recibir
@@ -240,7 +240,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
 
 
 
-  <!-- INDICADORES EJECUTIVOS — solo metas/estrategicos. Caja, AR/AP, P&L viven en /financiero -->
+  <!-- INDICADORES EJECUTIVOS - solo metas/estrategicos. Caja, AR/AP, P&L viven en /financiero -->
   <div class="section-title" style="margin-top:32px;">📊 Metas estratégicas <a href="/financiero" style="font-size:0.65em;font-weight:600;color:#6d28d9;text-decoration:none;margin-left:12px;">→ Para caja, AR/AP, P&L: ir a Financiero</a> · <a href="/hoy" style="font-size:0.65em;font-weight:600;color:#fbbf24;text-decoration:none;">→ Para hoy: ir a HOY</a></div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:20px;">
     <div class="panel">
@@ -268,11 +268,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
   </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-bottom:28px;">
     <div class="panel">
-      <div class="panel-title">⚠ Stock Critico — MPs bajo minimo</div>
+      <div class="panel-title">⚠ Stock Critico - MPs bajo minimo</div>
       <div id="gx-stock"><div style="color:var(--cx-text-faint);font-size:0.85em;">Cargando...</div></div>
     </div>
     <div class="panel">
-      <div class="panel-title">✅ SGSST — Proximos vencimientos</div>
+      <div class="panel-title">✅ SGSST - Proximos vencimientos</div>
       <div id="gx-sgsst"><div style="color:var(--cx-text-faint);font-size:0.85em;">Cargando...</div></div>
     </div>
     <div class="panel">
@@ -283,7 +283,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
 
 
   <!-- Capa 4: Feed Aliados → Gerencia -->
-  <div class="section-title" style="margin-top:32px;">🤝 Canal Aliados — Vista Gerencia</div>
+  <div class="section-title" style="margin-top:32px;">🤝 Canal Aliados - Vista Gerencia</div>
   <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px;">
 
     <!-- Mix de canales -->
@@ -313,7 +313,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-hei
 
   <!-- Tendencia ticket por mes -->
   <div class="panel" style="margin-bottom:28px;">
-    <div class="panel-title">📈 Tendencia ticket promedio — canal aliados (6 meses)</div>
+    <div class="panel-title">📈 Tendencia ticket promedio - canal aliados (6 meses)</div>
     <div id="g4-trend" style="display:flex;gap:8px;align-items:flex-end;padding:8px 0;min-height:80px;">
       <div style="color:var(--cx-text-faint);font-size:0.85em;">Cargando...</div>
     </div>
@@ -340,8 +340,8 @@ function _fetchOpts(method, body) {
   return opts;
 }
 fetch('/api/csrf-token', {credentials: 'same-origin'}).catch(function(){});
-function fmt(n,prefix){if(n==null||n===undefined)return '—';var v=Math.abs(parseFloat(n));var s=v>=1000000?(v/1000000).toFixed(1)+'M':(v>=1000?(v/1000).toFixed(0)+'K':v.toLocaleString('es-CO'));return (prefix||'$')+s;}
-function fmtN(n){return n!=null?parseFloat(n).toLocaleString('es-CO'):'—';}
+function fmt(n,prefix){if(n==null||n===undefined)return '-';var v=Math.abs(parseFloat(n));var s=v>=1000000?(v/1000000).toFixed(1)+'M':(v>=1000?(v/1000).toFixed(0)+'K':v.toLocaleString('es-CO'));return (prefix||'$')+s;}
+function fmtN(n){return n!=null?parseFloat(n).toLocaleString('es-CO'):'-';}
 function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function setSemaforo(id,color){var el=document.getElementById(id);if(el){el.className='sem '+color;}}
 function setKPIColor(kpiId,valId,color){
@@ -366,7 +366,7 @@ async function loadKPIs(){
     document.getElementById('fin-animus').textContent=fmt(f.ingresos_animus);
     document.getElementById('fin-maquila').textContent=fmt(f.ingresos_maquila);
     var nom=d.nomina||{};
-    document.getElementById('fin-nomina').textContent=nom.total&&nom.total>0?fmt(nom.total):'—';
+    document.getElementById('fin-nomina').textContent=nom.total&&nom.total>0?fmt(nom.total):'-';
     document.getElementById('fin-nomina-emp').textContent=nom.empleados?nom.empleados+' activos':'';
 
     // Espagiria KPIs
@@ -430,17 +430,17 @@ async function loadKPIs(){
     da+='<div class="data-row"><span class="data-lbl">SKUs con stock</span><span class="data-val">'+(a.skus_stock||0)+'</span></div>';
     da+='<div class="data-row"><span class="data-lbl">Pedidos activos</span><span class="data-val">'+(a.pedidos_activos||0)+' ('+fmt(a.valor_pedidos_activos||0)+')</span></div>';
     da+='<div class="data-row"><span class="data-lbl">Último pedido FM</span><span class="data-val">'+(a.ultimo_pedido_fm||'Sin datos')+'</span></div>';
-    da+='<div class="data-row"><span class="data-lbl">Días desde pedido FM</span><span class="data-val '+(diasFM>55?'amarillo':'verde')+'">'+(diasFM!=null?diasFM+' días':'—')+'</span></div>';
+    da+='<div class="data-row"><span class="data-lbl">Días desde pedido FM</span><span class="data-val '+(diasFM>55?'amarillo':'verde')+'">'+(diasFM!=null?diasFM+' días':'-')+'</span></div>';
     document.getElementById('detalle-animus').innerHTML=da;
 
     // Alertas
     var alertas=[];
-    if(mpsBajos>0) alertas.push({icon:'🔴',txt:'<strong>'+mpsBajos+' MPs bajo mínimo</strong> — Déficit total: '+((e.deficit_total_kg||0).toFixed(1))+' kg. Generar OC desde Compras.'});
-    if(meeBajos>0) alertas.push({icon:'🟡',txt:'<strong>'+meeBajos+' materiales de envase/empaque bajo mínimo</strong> — Revisar stock MEE en módulo Compras.'});
-    if(v30>0) alertas.push({icon:'🔴',txt:'<strong>'+v30+' lotes vencen en los próximos 30 días</strong> — Revisar y usar en próximas producciones (FEFO).'});
-    if(ocs>3) alertas.push({icon:'🟡',txt:'<strong>'+ocs+' órdenes de compra</strong> esperando aprobación — Valor total: '+fmt(e.valor_ocs_pendientes||0)+'.'});
-    if(solPend>0) alertas.push({icon:'🟡',txt:'<strong>'+solPend+' solicitud'+(solPend>1?'es':'')+' de compra pendiente'+(solPend>1?'s':'')+' de aprobar</strong> — Catalina debe revisar en <a href="/compras" style="color:rgba(255,255,255,0.75);">Módulo Compras</a> para convertirlas en órdenes de compra.'});
-    if(diasFM!=null&&diasFM>55) alertas.push({icon:'🟡',txt:'<strong>Fernando Mesa: '+diasFM+' días sin pedir</strong> — Ciclo normal ~62 días. Próximo pedido inminente.'});
+    if(mpsBajos>0) alertas.push({icon:'🔴',txt:'<strong>'+mpsBajos+' MPs bajo mínimo</strong> - Déficit total: '+((e.deficit_total_kg||0).toFixed(1))+' kg. Generar OC desde Compras.'});
+    if(meeBajos>0) alertas.push({icon:'🟡',txt:'<strong>'+meeBajos+' materiales de envase/empaque bajo mínimo</strong> - Revisar stock MEE en módulo Compras.'});
+    if(v30>0) alertas.push({icon:'🔴',txt:'<strong>'+v30+' lotes vencen en los próximos 30 días</strong> - Revisar y usar en próximas producciones (FEFO).'});
+    if(ocs>3) alertas.push({icon:'🟡',txt:'<strong>'+ocs+' órdenes de compra</strong> esperando aprobación - Valor total: '+fmt(e.valor_ocs_pendientes||0)+'.'});
+    if(solPend>0) alertas.push({icon:'🟡',txt:'<strong>'+solPend+' solicitud'+(solPend>1?'es':'')+' de compra pendiente'+(solPend>1?'s':'')+' de aprobar</strong> - Catalina debe revisar en <a href="/compras" style="color:rgba(255,255,255,0.75);">Módulo Compras</a> para convertirlas en órdenes de compra.'});
+    if(diasFM!=null&&diasFM>55) alertas.push({icon:'🟡',txt:'<strong>Fernando Mesa: '+diasFM+' días sin pedir</strong> - Ciclo normal ~62 días. Próximo pedido inminente.'});
     var nomVal=(nom&&nom.total)||0; if(f.saldo_caja>0&&nomVal>0&&f.saldo_caja<nomVal*2) alertas.push({icon:'&#128308;',txt:'<strong>Caja baja:</strong> Saldo '+fmt(f.saldo_caja)+' cubre menos de 2 nominas (nomina: '+fmt(nomVal)+')'});
 
     var panel=document.getElementById('alertas-panel');
@@ -491,7 +491,7 @@ async function loadFlujoOperacional() {
       if (!ocs.length) { elt.innerHTML = '<div style="color:var(--cx-text-faint);font-size:0.85em;">Sin OCs pendientes ✓</div>'; }
       else {
         elt.innerHTML = ocs.slice(0,4).map(function(o) {
-          return '<div class="data-row"><span class="data-lbl">' + esc(o.numero_oc) + ' — ' + esc(o.proveedor||'') + '</span>'
+          return '<div class="data-row"><span class="data-lbl">' + esc(o.numero_oc) + ' - ' + esc(o.proveedor||'') + '</span>'
             + '<span class="data-val amarillo">' + (o.dias_transito||0) + 'd</span></div>';
         }).join('') + (ocs.length > 4 ? '<div style="color:var(--cx-text-faint);font-size:0.8em;padding:6px 0;">+' + (ocs.length-4) + ' más</div>' : '');
       }
@@ -517,7 +517,7 @@ async function loadFlujoOperacional() {
       if (!peds.length) { elp.innerHTML = '<div style="color:var(--cx-text-faint);font-size:0.85em;">Sin pedidos pendientes</div>'; }
       else {
         elp.innerHTML = peds.slice(0,4).map(function(p) {
-          return '<div class="data-row"><span class="data-lbl">' + esc(p.numero) + ' — ' + esc(p.cliente||'') + '</span>'
+          return '<div class="data-row"><span class="data-lbl">' + esc(p.numero) + ' - ' + esc(p.cliente||'') + '</span>'
             + '<span class="data-val amarillo">$' + Number(p.valor_total||0).toLocaleString() + '</span></div>';
         }).join('') + (peds.length > 4 ? '<div style="color:var(--cx-text-faint);font-size:0.8em;padding:6px 0;">+' + (peds.length-4) + ' más</div>' : '');
       }
@@ -530,7 +530,7 @@ async function loadFlujoOperacional() {
       if (!desps.length) { elsp.innerHTML = '<div style="color:var(--cx-text-faint);font-size:0.85em;">Sin despachos recientes</div>'; }
       else {
         elsp.innerHTML = desps.slice(0,4).map(function(ds) {
-          return '<div class="data-row"><span class="data-lbl">' + esc(ds.numero) + ' — ' + esc(ds.cliente||'') + '</span>'
+          return '<div class="data-row"><span class="data-lbl">' + esc(ds.numero) + ' - ' + esc(ds.cliente||'') + '</span>'
             + '<span class="data-val verde">' + (ds.fecha||'').slice(0,10) + '</span></div>';
         }).join('');
       }
@@ -549,7 +549,7 @@ async function loadGerenciaExtra() {
   try {
     var d = await fetch('/api/gerencia/dashboard-extra').then(function(r){ return r.json(); });
     var nil = '<div style="color:var(--cx-text-faint);font-size:0.85em;">Sin datos</div>';
-    var fmtV = function(n){ return n==null?'—':'$'+Number(n).toLocaleString('es-CO',{maximumFractionDigits:0}); };
+    var fmtV = function(n){ return n==null?'-':'$'+Number(n).toLocaleString('es-CO',{maximumFractionDigits:0}); };
     var clr = function(v,warn,danger){ return v>=danger?'rojo':(v>=warn?'amarillo':'verde'); };
 
     // Ingresos del mes
@@ -592,7 +592,7 @@ async function loadGerenciaExtra() {
       if(!mqs.length){ elM.innerHTML='<div style="color:var(--cx-text-faint);font-size:0.85em;">Sin ordenes activas</div>'; }
       else{
         elM.innerHTML = mqs.slice(0,4).map(function(m){
-          return '<div class="data-row"><span class="data-lbl">'+esc(m.numero)+' — '+esc(m.cliente_nombre||'')+'</span><span class="data-val amarillo">'+fmtV(m.precio_lote)+'</span></div>';
+          return '<div class="data-row"><span class="data-lbl">'+esc(m.numero)+' - '+esc(m.cliente_nombre||'')+'</span><span class="data-val amarillo">'+fmtV(m.precio_lote)+'</span></div>';
         }).join('');
         if(mqs.length>4) elM.innerHTML += '<div style="color:var(--cx-text-faint);font-size:0.8em;padding:4px 0;">+'+(mqs.length-4)+' mas</div>';
       }
@@ -668,7 +668,7 @@ async function loadGerenciaExtra() {
       else{
         elCh.innerHTML=churns.slice(0,5).map(function(ch){
           return '<div class="churn-item"><div><div style="font-size:0.85em;color:var(--cx-text-soft);">'+esc(ch.nombre||'')+'</div>'
-            +'<div style="font-size:0.72em;color:var(--cx-text-faint);">Ultimo: '+esc(ch.ultimo_pedido||'—')+'</div></div>'
+            +'<div style="font-size:0.72em;color:var(--cx-text-faint);">Ultimo: '+esc(ch.ultimo_pedido||'-')+'</div></div>'
             +'<span class="'+(ch.nivel==='critico'?'badge-crit':'badge-atenc')+'">'+(ch.dias||0)+'d</span></div>';
         }).join('');
         if(churns.length>5) elCh.innerHTML+='<div style="font-size:0.75em;color:var(--cx-text-faint);padding:4px 0;">+'+(churns.length-5)+' mas</div>';
@@ -686,7 +686,7 @@ async function loadAliados4() {
   try {
     var d = await fetch('/api/gerencia/aliados-feed').then(function(r){ return r.json(); });
     if(d.error){ console.error('aliados-feed:', d.error); return; }
-    var fv = function(n){ if(n==null) return '—'; var v=Math.abs(n); return '$'+(v>=1000000?(v/1000000).toFixed(1)+'M':v>=1000?(v/1000).toFixed(0)+'K':v.toLocaleString('es-CO')); };
+    var fv = function(n){ if(n==null) return '-'; var v=Math.abs(n); return '$'+(v>=1000000?(v/1000000).toFixed(1)+'M':v>=1000?(v/1000).toFixed(0)+'K':v.toLocaleString('es-CO')); };
 
     // Mix canales
     var canal = d.canal || {};

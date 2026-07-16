@@ -16,7 +16,7 @@ PROGRAMACION_AREAS_HTML = r'''<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>📅 Programación Mayo — Por Área</title>
+<title>📅 Programación Mayo - Por Área</title>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -194,7 +194,7 @@ PROGRAMACION_AREAS_HTML = r'''<!DOCTYPE html>
 <body>
 <div class="container">
   <div class="topbar">
-    <h1>📅 Programación — Por Área</h1>
+    <h1>📅 Programación - Por Área</h1>
     <div class="subtitle">
       Actividades asignadas a cada área por día de trabajo · auto-alimentado en tiempo real
     </div>
@@ -284,7 +284,7 @@ function buildCell(activities) {
 }
 
 function buildDayHeader(label) {
-  // label es ej "Lun 04" — separar nombre de fecha
+  // label es ej "Lun 04" - separar nombre de fecha
   var parts = String(label).split(' ');
   var dayName = parts[0] || '';
   var dayDate = parts.slice(1).join(' ');
@@ -358,7 +358,7 @@ function pintarTabsSemana(lunesActualISO) {
     var dv = new Date(dl.getTime());
     dv.setDate(dv.getDate() + 4);  // viernes
     var iso = dl.toISOString().slice(0, 10);
-    var label = `${dl.getDate()}–${dv.getDate()} ${meses[dl.getMonth()]}`;
+    var label = `${dl.getDate()}-${dv.getDate()} ${meses[dl.getMonth()]}`;
     var num = (offset === -1) ? '0' : (offset === 0 ? '1' : (offset === 1 ? '2' : '3'));
     var active = (offset === 0) ? ' active' : '';
     html += `<button class="semana${active}" onclick="cargarSemana('${iso}')">Sem · ${label}</button>`;

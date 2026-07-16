@@ -147,7 +147,7 @@ ASIGNAR_AREAS_HTML = r'''<!DOCTYPE html>
   <div class="ayuda">
     <b>Cómo usar:</b> Cada producción aparece con su área actual + una sugerencia
     (verde) calculada por fórmula y tamaño de lote. Cambiá lo que necesites con
-    el dropdown — las filas modificadas se marcan en amarillo. Al final, click
+    el dropdown - las filas modificadas se marcan en amarillo. Al final, click
     <b>Confirmar cambios</b>.<br>
     <b>Tip:</b> Si en Google Calendar empezás el evento con
     <code>[FAB1]</code>, <code>[FYE2]</code>, <code>[FYE3]</code>,
@@ -197,7 +197,7 @@ function fmtFecha(iso) {
 }
 
 function fmtKg(kg) {
-  if (!kg || kg <= 0) return '—';
+  if (!kg || kg <= 0) return '-';
   if (kg >= 1) return kg.toFixed(1).replace(/\.0$/, '') + ' kg';
   return Math.round(kg * 1000) + ' g';
 }
@@ -280,7 +280,7 @@ function resetCambios() {
 }
 
 function buildOptions(item) {
-  var opts = '<option value="">— sin área —</option>';
+  var opts = '<option value="">- sin área -</option>';
   DATOS.areas_disponibles.forEach(function(a) {
     var sel = (item.area_id_actual === a.id) ? ' selected' : '';
     var hint = '';
@@ -323,7 +323,7 @@ function render() {
     var sinArea = (item.area_id_actual === null);
     var sugBadge = item.area_sugerida_codigo
       ? '<span class="badge sug">' + item.area_sugerida_codigo + '</span>'
-      : '—';
+      : '-';
     var origen = item.origen === 'calendar'
       ? '<span class="badge cal">Calendar</span>'
       : '<span class="badge ale">Manual</span>';
@@ -333,7 +333,7 @@ function render() {
     html += '<tr id="tr-' + item.id + '"' +
             (sinArea ? ' class="no-area"' : '') + '>' +
       '<td>' + fmtFecha(item.fecha) + '</td>' +
-      '<td><div class="producto">' + (item.producto || '—') + '</div>' +
+      '<td><div class="producto">' + (item.producto || '-') + '</div>' +
         '<div class="meta">id #' + item.id + ' · ' + item.estado + '</div></td>' +
       '<td>' + item.lotes + ' lote' + (item.lotes === 1 ? '' : 's') +
         '<div class="meta">' + fmtKg(item.cantidad_kg) + '</div></td>' +

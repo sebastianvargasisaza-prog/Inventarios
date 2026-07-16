@@ -120,10 +120,10 @@ var AREA_NAMES = {
   'PROD3': 'Producción 3', 'PROD4': 'Producción 4',
   'ENV1':  'Envasado 1',
 };
-function fmtArea(cod) { return AREA_NAMES[cod] || cod || '—'; }
+function fmtArea(cod) { return AREA_NAMES[cod] || cod || '-'; }
 
 function fmtFecha(iso) {
-  if (!iso) return '—';
+  if (!iso) return '-';
   var d = new Date(iso + 'T00:00:00');
   var dias = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
   return dias[d.getDay()] + ' ' + d.getDate() + '/' + (d.getMonth()+1);
@@ -179,7 +179,7 @@ function buildFaltaEnCalendar(items) {
   items.forEach(function(it) {
     var detalle = '';
     if (it.match_otra_fecha) {
-      detalle = '<span class="hint-otra-fecha">⚠ Calendar sí lo tiene pero el ' + _esc(fmtFecha(it.match_otra_fecha)) + ' (cambio de fecha?) — "' + _esc(it.producto_calendar_otra_fecha || '') + '"</span>';
+      detalle = '<span class="hint-otra-fecha">⚠ Calendar sí lo tiene pero el ' + _esc(fmtFecha(it.match_otra_fecha)) + ' (cambio de fecha?) - "' + _esc(it.producto_calendar_otra_fecha || '') + '"</span>';
     } else {
       detalle = '<span style="color:#64748b">No existe en Calendar · cargar</span>';
     }
@@ -206,7 +206,7 @@ function buildExtraEnCalendar(items) {
   items.forEach(function(it) {
     html += '<tr>';
     html += '<td><b>' + _esc(fmtFecha(it.fecha)) + '</b><br><small style="color:#94a3b8">' + _esc(it.fecha) + '</small></td>';
-    html += '<td>' + _esc(it.producto || '—') + '</td>';
+    html += '<td>' + _esc(it.producto || '-') + '</td>';
     html += '<td>' + _esc(fmtArea(it.area)) + '</td>';
     html += '<td><span class="badge area">' + _esc(it.estado) + '</span></td>';
     html += '<td style="color:#64748b;font-size:11px">' + _esc((it.observaciones || '').slice(0, 80)) + '</td>';

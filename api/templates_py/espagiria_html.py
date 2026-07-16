@@ -6,7 +6,7 @@ HTML = r"""
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Espagiria — Panel Asistente Gerencia</title>
+<title>Espagiria - Panel Asistente Gerencia</title>
 <link rel="stylesheet" href="/static/cortex.css?v=eos15">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
@@ -74,7 +74,7 @@ HTML = r"""
     <div>
       <div class="cx-mod-header__title">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#6d28d9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M12 21V8M12 8c-3 0-6-2-6-5 3 0 6 2 6 5z"/><path d="M12 8c3 0 6-2 6-5-3 0-6 2-6 5zM8 14c-2 0-4-1-4-3 2 0 4 1 4 3zM16 14c2 0 4-1 4-3-2 0-4 1-4 3z"/></svg>
-        Espagiria — Panel Asistente
+        Espagiria - Panel Asistente
       </div>
       <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; vista consolidada para coordinación operativa de planta</div>
     </div>
@@ -116,17 +116,17 @@ HTML = r"""
     <div id="esp-tab-dash" class="esp-pane" style="display:none;">
     <!-- KPIs principales -->
     <div class="grid grid-4">
-      <div class="card"><h3>📦 Producciones del mes</h3><div class="val" id="kpi-prod">—</div><div class="sub" id="kpi-prod-sub"></div></div>
-      <div class="card"><h3>⚠️ MPs bajo mínimo</h3><div class="val" id="kpi-mps" style="color:#dc2626;">—</div><div class="sub">Necesitan reposición</div></div>
-      <div class="card"><h3>📅 Lotes vencen 30 días</h3><div class="val" id="kpi-venc" style="color:#b45309;">—</div><div class="sub" id="kpi-venc-sub"></div></div>
-      <div class="card"><h3>🛒 OCs activas</h3><div class="val" id="kpi-ocs">—</div><div class="sub" id="kpi-ocs-sub"></div></div>
+      <div class="card"><h3>📦 Producciones del mes</h3><div class="val" id="kpi-prod">-</div><div class="sub" id="kpi-prod-sub"></div></div>
+      <div class="card"><h3>⚠️ MPs bajo mínimo</h3><div class="val" id="kpi-mps" style="color:#dc2626;">-</div><div class="sub">Necesitan reposición</div></div>
+      <div class="card"><h3>📅 Lotes vencen 30 días</h3><div class="val" id="kpi-venc" style="color:#b45309;">-</div><div class="sub" id="kpi-venc-sub"></div></div>
+      <div class="card"><h3>🛒 OCs activas</h3><div class="val" id="kpi-ocs">-</div><div class="sub" id="kpi-ocs-sub"></div></div>
     </div>
 
     <div class="grid grid-4" style="margin-top:14px;">
-      <div class="card"><h3>📋 Solicitudes pendientes</h3><div class="val" id="kpi-sol">—</div><div class="sub">Esperan aprobación</div></div>
-      <div class="card"><h3>🔬 NCs abiertas</h3><div class="val" id="kpi-ncs" style="color:#b45309;">—</div><div class="sub">Calidad sin cerrar</div></div>
-      <div class="card"><h3>🟡 Lotes en cuarentena</h3><div class="val" id="kpi-cuar">—</div><div class="sub">Por liberar</div></div>
-      <div class="card"><h3>🚚 Pedidos activos</h3><div class="val" id="kpi-ped">—</div><div class="sub">En proceso o despacho</div></div>
+      <div class="card"><h3>📋 Solicitudes pendientes</h3><div class="val" id="kpi-sol">-</div><div class="sub">Esperan aprobación</div></div>
+      <div class="card"><h3>🔬 NCs abiertas</h3><div class="val" id="kpi-ncs" style="color:#b45309;">-</div><div class="sub">Calidad sin cerrar</div></div>
+      <div class="card"><h3>🟡 Lotes en cuarentena</h3><div class="val" id="kpi-cuar">-</div><div class="sub">Por liberar</div></div>
+      <div class="card"><h3>🚚 Pedidos activos</h3><div class="val" id="kpi-ped">-</div><div class="sub">En proceso o despacho</div></div>
     </div>
 
     <!-- Alertas -->
@@ -175,10 +175,10 @@ HTML = r"""
 
       <!-- KPIs lab -->
       <div class="grid grid-4">
-        <div class="card"><h3>⚙️ En curso</h3><div class="val" id="lab-kpi-curso">—</div><div class="sub">Producciones activas</div></div>
-        <div class="card"><h3>📅 Hoy</h3><div class="val" id="lab-kpi-hoy">—</div><div class="sub">Programadas hoy</div></div>
-        <div class="card"><h3>🟡 Cuarentena</h3><div class="val" id="lab-kpi-cuar" style="color:#b45309;">—</div><div class="sub">Lotes</div></div>
-        <div class="card"><h3>⚠️ OOS abiertos</h3><div class="val" id="lab-kpi-oos" style="color:#dc2626;">—</div><div class="sub">En investigación</div></div>
+        <div class="card"><h3>⚙️ En curso</h3><div class="val" id="lab-kpi-curso">-</div><div class="sub">Producciones activas</div></div>
+        <div class="card"><h3>📅 Hoy</h3><div class="val" id="lab-kpi-hoy">-</div><div class="sub">Programadas hoy</div></div>
+        <div class="card"><h3>🟡 Cuarentena</h3><div class="val" id="lab-kpi-cuar" style="color:#b45309;">-</div><div class="sub">Lotes</div></div>
+        <div class="card"><h3>⚠️ OOS abiertos</h3><div class="val" id="lab-kpi-oos" style="color:#dc2626;">-</div><div class="sub">En investigación</div></div>
       </div>
 
       <div class="grid grid-2" style="margin-top:18px;">
@@ -217,12 +217,12 @@ HTML = r"""
       <div class="grid grid-2" style="margin-top:18px;">
         <div class="card">
           <h3>💧 Sistema de agua hoy</h3>
-          <div class="val" id="lab-agua-val">—</div>
+          <div class="val" id="lab-agua-val">-</div>
           <div class="sub" id="lab-agua-sub"></div>
         </div>
         <div class="card">
           <h3>🎓 Capacitaciones pendientes</h3>
-          <div class="val" id="lab-cap" style="color:#b45309;">—</div>
+          <div class="val" id="lab-cap" style="color:#b45309;">-</div>
           <div class="sub">Empleados sin firmar SOPs</div>
         </div>
       </div>
@@ -278,7 +278,7 @@ HTML = r"""
         <div style="margin-bottom:14px;">
           <label style="display:block;font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;margin-bottom:6px;">Cliente *</label>
           <select id="pr-cliente" style="width:100%;background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);padding:10px;border-radius:6px;font-size:14px;">
-            <option value="">— Seleccionar cliente —</option>
+            <option value="">- Seleccionar cliente -</option>
           </select>
         </div>
         <div style="margin-bottom:14px;">
@@ -472,8 +472,8 @@ async function cargarLab() {
       curso.innerHTML = '<table><thead><tr><th>Producto</th><th>Sala</th><th>Operario</th><th>Inicio</th></tr></thead><tbody>' +
         d.producciones_en_curso.map(function(p){
           return '<tr><td>' + _esc(p.producto||'') + '<div style="font-size:10px;color:var(--cx-text-mute);">' + (p.lotes||1) + ' lote' + ((p.lotes||1)===1?'':'s') + ' · ' + (p.cantidad_kg||0) + 'kg</div></td>' +
-            '<td><span class="badge estado-prog">' + (p.area_codigo||'—') + '</span></td>' +
-            '<td style="font-size:11px;color:#a5f3fc;">' + _esc(p.operario_elaboracion || p.operario_dispensacion || '—') + '</td>' +
+            '<td><span class="badge estado-prog">' + (p.area_codigo||'-') + '</span></td>' +
+            '<td style="font-size:11px;color:#a5f3fc;">' + _esc(p.operario_elaboracion || p.operario_dispensacion || '-') + '</td>' +
             '<td style="font-size:10px;color:var(--cx-text-mute);">' + _esc((p.inicio_real_at||'').substring(11,16)) + '</td></tr>';
         }).join('') + '</tbody></table>';
     }
@@ -485,7 +485,7 @@ async function cargarLab() {
       hoy.innerHTML = '<table><thead><tr><th>Producto</th><th>Sala</th><th>Lotes</th><th>Estado</th></tr></thead><tbody>' +
         d.producciones_hoy.map(function(p){
           return '<tr><td>' + _esc(p.producto||'') + '</td>' +
-            '<td><span class="badge estado-prog">' + (p.area_codigo||'—') + '</span></td>' +
+            '<td><span class="badge estado-prog">' + (p.area_codigo||'-') + '</span></td>' +
             '<td>' + (p.lotes||1) + '</td>' +
             '<td style="font-size:11px;">' + _esc(p.estado||'') + '</td></tr>';
         }).join('') + '</tbody></table>';
@@ -592,7 +592,7 @@ function renderClientes() {
     var ult = c.ultimo_ped ? ('Último: ' + (c.ultimo_ped||'').substring(0,10)) : 'Sin pedidos';
     return '<div class="card" style="cursor:pointer;border-left:4px solid #06b6d4;" onclick="verCli360(' + c.id + ')">' +
       '<h3 style="text-transform:none;letter-spacing:0;color:#fff;font-size:0.95em;margin-bottom:6px;">' + _esc(c.nombre||'') + marca + act + '</h3>' +
-      '<div style="font-size:11px;color:var(--cx-text-mute);">' + _esc(c.empresa_grupo||'—') + '</div>' +
+      '<div style="font-size:11px;color:var(--cx-text-mute);">' + _esc(c.empresa_grupo||'-') + '</div>' +
       '<div style="margin-top:10px;display:flex;gap:14px;flex-wrap:wrap;">' +
         '<div><div style="font-size:10px;color:var(--cx-text-mute);">PEDIDOS</div><div style="font-size:1.1em;font-weight:700;color:#fff;">' + (c.total_pedidos||0) + '</div></div>' +
         '<div><div style="font-size:10px;color:var(--cx-text-mute);">VALOR TOTAL</div><div style="font-size:1.1em;font-weight:700;color:#16a34a;">$' + fmtNum(Math.round(c.valor_total||0)) + '</div></div>' +
@@ -612,10 +612,10 @@ async function verCli360(id) {
     var html = '';
     // Datos
     html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px;">';
-    html += '<div><div style="font-size:10px;color:var(--cx-text-mute);">NIT</div><div>' + _esc(d.cliente.nit_cedula||'—') + '</div></div>';
-    html += '<div><div style="font-size:10px;color:var(--cx-text-mute);">EMAIL</div><div>' + _esc(d.cliente.email||'—') + '</div></div>';
-    html += '<div><div style="font-size:10px;color:var(--cx-text-mute);">TELÉFONO</div><div>' + _esc(d.cliente.telefono||'—') + '</div></div>';
-    html += '<div><div style="font-size:10px;color:var(--cx-text-mute);">EMPRESA GRUPO</div><div>' + _esc(d.cliente.empresa_grupo||'—') + '</div></div>';
+    html += '<div><div style="font-size:10px;color:var(--cx-text-mute);">NIT</div><div>' + _esc(d.cliente.nit_cedula||'-') + '</div></div>';
+    html += '<div><div style="font-size:10px;color:var(--cx-text-mute);">EMAIL</div><div>' + _esc(d.cliente.email||'-') + '</div></div>';
+    html += '<div><div style="font-size:10px;color:var(--cx-text-mute);">TELÉFONO</div><div>' + _esc(d.cliente.telefono||'-') + '</div></div>';
+    html += '<div><div style="font-size:10px;color:var(--cx-text-mute);">EMPRESA GRUPO</div><div>' + _esc(d.cliente.empresa_grupo||'-') + '</div></div>';
     if (d.cliente.es_marca_propia) html += '<div style="grid-column:1/-1;"><span class="badge baja">MARCA PROPIA HHA</span></div>';
     if (d.cliente.comparte_formula_con) html += '<div style="grid-column:1/-1;font-size:11px;color:#a5f3fc;">📋 Comparte fórmula con: ' + _esc(d.cliente.comparte_formula_con) + '</div>';
     if (d.cliente.notas) html += '<div style="grid-column:1/-1;font-size:11px;color:var(--cx-text-mute);font-style:italic;">' + _esc(d.cliente.notas) + '</div>';
@@ -626,7 +626,7 @@ async function verCli360(id) {
     html += '<div class="card"><h3>💵 Valor total</h3><div class="val" style="color:#16a34a;">$' + fmtNum(Math.round(s.valor_total||0)) + '</div></div>';
     html += '<div class="card"><h3>🎯 Ticket prom</h3><div class="val">$' + fmtNum(Math.round(s.ticket_promedio||0)) + '</div></div>';
     html += '<div class="card"><h3>🔥 Pipeline</h3><div class="val" style="color:#b45309;">' + (s.pipeline_activos||0) + '</div></div>';
-    html += '<div class="card"><h3>⏱️ Días sin pedido</h3><div class="val" style="color:' + (s.dias_sin_pedido > 60 ? '#f87171' : '#fff') + ';">' + (s.dias_sin_pedido!=null ? s.dias_sin_pedido : '—') + '</div></div>';
+    html += '<div class="card"><h3>⏱️ Días sin pedido</h3><div class="val" style="color:' + (s.dias_sin_pedido > 60 ? '#f87171' : '#fff') + ';">' + (s.dias_sin_pedido!=null ? s.dias_sin_pedido : '-') + '</div></div>';
     html += '</div>';
     // Pipeline activo
     html += '<div class="section-title">🔥 Pipeline activo</div>';
@@ -739,7 +739,7 @@ async function abrirPedidoRapido() {
   try {
     var d = await fetch('/api/espagiria/clientes-maquila').then(function(r){return r.json();});
     var sel = document.getElementById('pr-cliente');
-    var opts = '<option value="">— Seleccionar cliente —</option>';
+    var opts = '<option value="">- Seleccionar cliente -</option>';
     (d.clientes||[]).forEach(function(c){
       opts += '<option value="' + c.id + '">' + _esc(c.nombre) + '</option>';
     });

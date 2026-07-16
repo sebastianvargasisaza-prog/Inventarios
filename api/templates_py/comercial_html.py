@@ -1,4 +1,4 @@
-"""Template Comercial — Pipeline Maquila + EOS Leads."""
+"""Template Comercial - Pipeline Maquila + EOS Leads."""
 
 HTML = r"""<!DOCTYPE html>
 <html lang="es" translate="no">
@@ -88,7 +88,7 @@ label{font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:4
   </div>
   <div style="background:#fef3c7;border-left:4px solid #d97706;padding:12px 16px;margin-bottom:16px;border-radius:0 6px 6px 0;font-size:13px">
     <b>📥 Webhook activo:</b> <code style="background:#fff;padding:2px 6px;border-radius:4px;font-size:11px">POST /api/eos/leads/webhook</code>
-    — configura web3forms o cualquier form para enviar aquí. Llega notif in-app automática.
+    - configura web3forms o cualquier form para enviar aquí. Llega notif in-app automática.
   </div>
   <div id="eos-list"></div>
 </div>
@@ -155,7 +155,7 @@ function _fetchOpts(method, body) {
 }
 fetch('/api/csrf-token', {credentials: 'same-origin'}).catch(function(){});
 function _esc(s){return (s==null?'':String(s)).replace(/[<>&"']/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c];});}
-function _fmtCOP(n){if(n==null||n===0) return '—'; return '$'+Math.round(n).toLocaleString('es-CO');}
+function _fmtCOP(n){if(n==null||n===0) return '-'; return '$'+Math.round(n).toLocaleString('es-CO');}
 function _toast(m,ok){alert((ok?'✓ ':'⚠ ')+m);}
 
 function switchPane(p){
@@ -180,7 +180,7 @@ async function cargarMaquila(){
       var html = '<div class="kcol">' +
         '<div class="kcol-h"><span>'+labels[st]+' ('+deals.length+')</span><span>'+_fmtCOP(totalV)+'</span></div>';
       if(!deals.length){
-        html += '<div style="padding:12px;text-align:center;color:#94a3b8;font-size:11px">—</div>';
+        html += '<div style="padding:12px;text-align:center;color:#94a3b8;font-size:11px">-</div>';
       } else {
         html += deals.map(function(deal){
           return '<div class="kcard" onclick="editarMaquila('+deal.id+')">' +
@@ -188,7 +188,7 @@ async function cargarMaquila(){
             (deal.contacto_nombre?'<div style="color:#64748b">'+_esc(deal.contacto_nombre)+'</div>':'') +
             (deal.valor_estimado_cop>0?'<div class="v">'+_fmtCOP(deal.valor_estimado_cop)+'</div>':'') +
             (deal.notas?'<div style="font-size:11px;color:#64748b;margin-top:4px;line-height:1.3">'+_esc((deal.notas||'').substring(0,100))+'</div>':'') +
-            '<div class="meta">Owner: '+_esc(deal.owner||'—')+'</div>' +
+            '<div class="meta">Owner: '+_esc(deal.owner||'-')+'</div>' +
           '</div>';
         }).join('');
       }

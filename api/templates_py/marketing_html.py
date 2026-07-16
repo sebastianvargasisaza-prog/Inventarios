@@ -2,7 +2,7 @@ MARKETING_HTML = r"""<!DOCTYPE html>
 <html lang="es" translate="no">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Marketing — HHA Group</title>
+<title>Marketing - HHA Group</title>
 <link rel="stylesheet" href="/static/cortex.css?v=eos15">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
@@ -157,7 +157,7 @@ textarea{resize:vertical;min-height:80px;}
 </head>
 
 <div id="toast-container" style="position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;"></div>
-<!-- Banner de errores JS — visible para diagnosticar en prod cuando un botón
+<!-- Banner de errores JS - visible para diagnosticar en prod cuando un botón
      no responde. Si ves este banner, hay un bug específico para reportar. -->
 <div id="js-error-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:10000;background:#7f1d1d;color:#fef2f2;padding:10px 16px;font-size:12px;font-family:monospace;border-bottom:2px solid #ef4444;"></div>
 <script>
@@ -242,12 +242,12 @@ window.addEventListener('unhandledrejection', function(ev) {
 <!-- TAB: DASHBOARD -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
-<!-- TAB: HOY — Centro de ejecución (Fase 2/4 marketing)             -->
+<!-- TAB: HOY - Centro de ejecución (Fase 2/4 marketing)             -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <div id="tab-hoy" class="tab-panel">
   <div class="actions-bar">
     <div>
-      <div class="page-title">&#x1F3AF; Hoy — Centro de ejecución</div>
+      <div class="page-title">&#x1F3AF; Hoy - Centro de ejecución</div>
       <div style="color:var(--cx-text-mute);font-size:13px;margin-top:2px;">Lo que la IA detecta + lo que requiere tu acción HOY · ejecuta agentes y aprueba con un click</div>
     </div>
     <div style="display:flex;gap:8px;">
@@ -260,19 +260,19 @@ window.addEventListener('unhandledrejection', function(ev) {
   <div id="hoy-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px;">
     <div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:10px;padding:12px 16px">
       <div style="font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px">Influencers pendientes pago</div>
-      <div id="hoy-kpi-pend" style="font-size:24px;font-weight:800;color:#f59e0b;margin-top:4px">—</div>
+      <div id="hoy-kpi-pend" style="font-size:24px;font-weight:800;color:#f59e0b;margin-top:4px">-</div>
     </div>
     <div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:10px;padding:12px 16px">
       <div style="font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px">Eventos cosméticos próximos</div>
-      <div id="hoy-kpi-eventos" style="font-size:24px;font-weight:800;color:#6d28d9;margin-top:4px">—</div>
+      <div id="hoy-kpi-eventos" style="font-size:24px;font-weight:800;color:#6d28d9;margin-top:4px">-</div>
     </div>
     <div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:10px;padding:12px 16px">
       <div style="font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px">SKUs en riesgo (stock)</div>
-      <div id="hoy-kpi-riesgo" style="font-size:24px;font-weight:800;color:#dc2626;margin-top:4px">—</div>
+      <div id="hoy-kpi-riesgo" style="font-size:24px;font-weight:800;color:#dc2626;margin-top:4px">-</div>
     </div>
     <div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:10px;padding:12px 16px">
       <div style="font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px">Campañas activas</div>
-      <div id="hoy-kpi-campanas" style="font-size:24px;font-weight:800;color:#16a34a;margin-top:4px">—</div>
+      <div id="hoy-kpi-campanas" style="font-size:24px;font-weight:800;color:#16a34a;margin-top:4px">-</div>
     </div>
   </div>
 
@@ -378,12 +378,12 @@ window.addEventListener('unhandledrejection', function(ev) {
   <div style="font-size:11px;font-weight:700;color:#d4af37;text-transform:uppercase;letter-spacing:.8px;margin:16px 0 8px;">🛍️ Shopify · Ventas reales</div>
   <div id="sh-cobertura-banner" style="display:none;background:#78350f;color:#fde68a;border-radius:8px;padding:8px 14px;font-size:11px;margin-bottom:10px;"></div>
 <div class="kpi-grid" id="dash-shopify-kpis">
-    <div class="kpi-card yellow"><div class="kpi-label" id="sh-rev30-label">Revenue</div><div class="kpi-val" id="sh-rev30">—</div><div class="kpi-sub" id="sh-rev7">vs período ant.: —</div></div>
-    <div class="kpi-card blue"><div class="kpi-label" id="sh-ped30-label">Pedidos</div><div class="kpi-val" id="sh-ped30">—</div><div class="kpi-sub" id="sh-ped-total">Total: —</div></div>
-    <div class="kpi-card green"><div class="kpi-label">Ticket promedio</div><div class="kpi-val" id="sh-ticket">—</div><div class="kpi-sub" id="sh-clientes">Clientes: —</div></div>
-    <div class="kpi-card purple"><div class="kpi-label">Clientes nuevos 30d</div><div class="kpi-val" id="sh-nuevos">—</div><div class="kpi-sub" id="sh-recurrentes">Recurrentes: —</div></div>
-    <div class="kpi-card"><div class="kpi-label">Revenue total</div><div class="kpi-val" id="sh-rev-total" style="font-size:16px;">—</div><div class="kpi-sub">Histórico</div></div>
-    <div class="kpi-card blue"><div class="kpi-label">Contactos GHL</div><div class="kpi-val" id="ghl-total">—</div><div class="kpi-sub" id="ghl-nuevos">Nuevos 30d: —</div></div>
+    <div class="kpi-card yellow"><div class="kpi-label" id="sh-rev30-label">Revenue</div><div class="kpi-val" id="sh-rev30">-</div><div class="kpi-sub" id="sh-rev7">vs período ant.: -</div></div>
+    <div class="kpi-card blue"><div class="kpi-label" id="sh-ped30-label">Pedidos</div><div class="kpi-val" id="sh-ped30">-</div><div class="kpi-sub" id="sh-ped-total">Total: -</div></div>
+    <div class="kpi-card green"><div class="kpi-label">Ticket promedio</div><div class="kpi-val" id="sh-ticket">-</div><div class="kpi-sub" id="sh-clientes">Clientes: -</div></div>
+    <div class="kpi-card purple"><div class="kpi-label">Clientes nuevos 30d</div><div class="kpi-val" id="sh-nuevos">-</div><div class="kpi-sub" id="sh-recurrentes">Recurrentes: -</div></div>
+    <div class="kpi-card"><div class="kpi-label">Revenue total</div><div class="kpi-val" id="sh-rev-total" style="font-size:16px;">-</div><div class="kpi-sub">Histórico</div></div>
+    <div class="kpi-card blue"><div class="kpi-label">Contactos GHL</div><div class="kpi-val" id="ghl-total">-</div><div class="kpi-sub" id="ghl-nuevos">Nuevos 30d: -</div></div>
   </div>
 
   <!-- AUDIT 26-may · Widget Meta del mes (#4 sprint marketing-superior) -->
@@ -400,9 +400,9 @@ window.addEventListener('unhandledrejection', function(ev) {
   <!-- Instagram KPIs -->
   <div style="font-size:11px;font-weight:700;color:#e1306c;text-transform:uppercase;letter-spacing:.8px;margin:16px 0 8px;">📸 Instagram · Engagement real</div>
   <div class="kpi-grid" id="dash-ig-kpis">
-    <div class="kpi-card" style="border-color:#e1306c33;"><div class="kpi-label">Posts 30d</div><div class="kpi-val" id="ig-posts30">—</div><div class="kpi-sub" id="ig-posts-total">Total: —</div></div>
-    <div class="kpi-card" style="border-color:#e1306c33;"><div class="kpi-label">Likes 30d</div><div class="kpi-val" id="ig-likes30">—</div><div class="kpi-sub" id="ig-avg-likes">Promedio: —</div></div>
-    <div class="kpi-card" style="border-color:#e1306c33;"><div class="kpi-label">Comentarios 30d</div><div class="kpi-val" id="ig-comments30">—</div><div class="kpi-sub">@animuslb</div></div>
+    <div class="kpi-card" style="border-color:#e1306c33;"><div class="kpi-label">Posts 30d</div><div class="kpi-val" id="ig-posts30">-</div><div class="kpi-sub" id="ig-posts-total">Total: -</div></div>
+    <div class="kpi-card" style="border-color:#e1306c33;"><div class="kpi-label">Likes 30d</div><div class="kpi-val" id="ig-likes30">-</div><div class="kpi-sub" id="ig-avg-likes">Promedio: -</div></div>
+    <div class="kpi-card" style="border-color:#e1306c33;"><div class="kpi-label">Comentarios 30d</div><div class="kpi-val" id="ig-comments30">-</div><div class="kpi-sub">@animuslb</div></div>
   </div>
 
   <!-- Gráfica de ventas + Top SKUs -->
@@ -427,7 +427,7 @@ window.addEventListener('unhandledrejection', function(ev) {
 
   <!-- Instagram token update form -->
   <div id="ig-token-form" style="background:var(--cx-bg-alt);border:1px solid #e1306c44;border-radius:8px;padding:12px 16px;margin-bottom:12px;display:none;">
-    <div style="font-size:11px;color:#e1306c;font-weight:700;margin-bottom:8px;">🔑 Token expirado — pega un nuevo token de Graph API Explorer</div>
+    <div style="font-size:11px;color:#e1306c;font-weight:700;margin-bottom:8px;">🔑 Token expirado - pega un nuevo token de Graph API Explorer</div>
     <div style="display:flex;gap:8px;align-items:center;">
       <input id="ig-token-input" type="text" placeholder="EAANXh..." 
         style="flex:1;background:var(--cx-card);border:1px solid #e7e5e4;color:var(--cx-text);padding:7px 10px;border-radius:6px;font-size:11px;font-family:monospace;">
@@ -541,7 +541,7 @@ window.addEventListener('unhandledrejection', function(ev) {
   <details class="card" style="margin-bottom:16px;background:linear-gradient(135deg,rgba(52,211,153,.06),rgba(52,211,153,.02));border:1px solid rgba(52,211,153,.25);" ontoggle="if(this.open&&typeof loadAtribucion==='function'){loadAtribucion();}">
     <summary style="cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
       <div>
-        <div style="font-size:14px;font-weight:700;color:#16a34a;">&#x1F3AF; Atribución de ventas — últimos 90 días</div>
+        <div style="font-size:14px;font-weight:700;color:#16a34a;">&#x1F3AF; Atribución de ventas - últimos 90 días</div>
         <div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px;">Revenue Shopify por discount code · click para ver</div>
       </div>
       <span onclick="event.preventDefault();loadAtribucion(true);" title="Refrescar atribución" style="font-size:16px;color:#16a34a;padding:4px 8px;">&#x21BB;</span>
@@ -625,7 +625,7 @@ window.addEventListener('unhandledrejection', function(ev) {
   </div><!-- /inf-view-creadores -->
 </div>
 
-<!-- Tab "tab-pagos" eliminado — fusionado al de Influencers (Sebastian 30-abr-2026) -->
+<!-- Tab "tab-pagos" eliminado - fusionado al de Influencers (Sebastian 30-abr-2026) -->
 <div id="tab-pagos" class="tab-panel" style="display:none">
   <!-- LEGACY: por compatibilidad si algún link viejo apunta a este tab,
        redirige al de Influencers. -->
@@ -663,7 +663,7 @@ window.addEventListener('unhandledrejection', function(ev) {
   <div class="actions-bar">
     <div>
       <div class="page-title">&#x1F4C5; Calendario de Contenido</div>
-      <div style="color:var(--cx-text-mute);font-size:12px;margin-top:2px;">Pipeline visual del contenido — desde el brief hasta el performance medido.</div>
+      <div style="color:var(--cx-text-mute);font-size:12px;margin-top:2px;">Pipeline visual del contenido - desde el brief hasta el performance medido.</div>
     </div>
     <div style="display:flex;gap:10px;align-items:center;">
       <button class="btn btn-outline btn-sm" onclick="loadContenido()" title="Refrescar">&#x21BB;</button>
@@ -704,7 +704,7 @@ window.addEventListener('unhandledrejection', function(ev) {
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <!-- TAB: INTELIGENCIA (envuelve Agentes IA + Histórico + Creadores) -->
-<!-- Es un contenedor lógico — los 3 sub-paneles (tab-agentes, tab-analytics,
+<!-- Es un contenedor lógico - los 3 sub-paneles (tab-agentes, tab-analytics,
      tab-agencia) viven debajo y se alternan con showSub() / sub-nav.        -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <style>
@@ -746,8 +746,8 @@ window.addEventListener('unhandledrejection', function(ev) {
     <button onclick="showSub('agencia')">&#x1F3C6; Score de creadores</button>
     <button onclick="showSub('analytics')">&#x1F4CA; Histórico de inversión</button>
   </div>
-  <div class="page-title">&#x1F916; Agentes IA — Marketing</div>
-  <div class="page-sub">11 agentes inteligentes con Claude AI — análisis real de datos ERP + Shopify + GHL + Instagram.</div>
+  <div class="page-title">&#x1F916; Agentes IA - Marketing</div>
+  <div class="page-sub">11 agentes inteligentes con Claude AI - análisis real de datos ERP + Shopify + GHL + Instagram.</div>
 
   <!-- ═══ Agente destacado: Estrategia (master) ════════════════════════════ -->
   <div style="background:var(--cx-hero-grad);border:1px solid #7c3aed;border-radius:14px;padding:22px;margin-bottom:22px;position:relative;overflow:hidden;">
@@ -827,7 +827,7 @@ window.addEventListener('unhandledrejection', function(ev) {
     <div class="agent-card">
       <div class="agent-icon">&#x1F3F7;&#xFE0F;</div>
       <div class="agent-name">Pricing</div>
-      <div class="agent-desc">Calcula el descuento máximo seguro por SKU manteniendo margen ≥40%. Para SKUs con >4 meses de cobertura — activa promociones sin destruir rentabilidad.</div>
+      <div class="agent-desc">Calcula el descuento máximo seguro por SKU manteniendo margen ≥40%. Para SKUs con >4 meses de cobertura - activa promociones sin destruir rentabilidad.</div>
       <button class="btn-agent" id="btn-pricing" onclick="runAgent('pricing')">
         <span>&#x25B6; Calcular precios promo</span>
       </button>
@@ -901,27 +901,27 @@ window.addEventListener('unhandledrejection', function(ev) {
     <button onclick="showSub('agencia')">&#x1F3C6; Score de creadores</button>
     <button class="intel-active" onclick="showSub('analytics')">&#x1F4CA; Histórico de inversión</button>
   </div>
-  <div class="page-title">&#x1F4CA; Analytics — Programa de Influencers</div>
+  <div class="page-title">&#x1F4CA; Analytics - Programa de Influencers</div>
   <div class="page-sub">Inversión histórica, rendimiento por creador y Shopify revenue.</div>
 
   <!-- KPI fila 1: histórico -->
   <div style="font-size:11px;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Histórico total</div>
   <div class="kpi-grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:20px;">
-    <div class="kpi-card blue"><div class="kpi-label">Invertido total</div><div class="kpi-val" id="an-total-hist">—</div></div>
-    <div class="kpi-card green"><div class="kpi-label">Colaboraciones</div><div class="kpi-val" id="an-colabs-hist">—</div></div>
-    <div class="kpi-card purple"><div class="kpi-label">Creadores únicos</div><div class="kpi-val" id="an-creadores-hist">—</div></div>
-    <div class="kpi-card yellow"><div class="kpi-label">Promedio / colab</div><div class="kpi-val" id="an-avg-colab">—</div></div>
-    <div class="kpi-card red"><div class="kpi-label">Pendiente pago</div><div class="kpi-val" id="an-pendiente-total">—</div></div>
-    <div class="kpi-card" style="border-color:#6366f1;"><div class="kpi-label">Top creador</div><div class="kpi-val" id="an-top-creador" style="font-size:13px;color:#818cf8;">—</div></div>
+    <div class="kpi-card blue"><div class="kpi-label">Invertido total</div><div class="kpi-val" id="an-total-hist">-</div></div>
+    <div class="kpi-card green"><div class="kpi-label">Colaboraciones</div><div class="kpi-val" id="an-colabs-hist">-</div></div>
+    <div class="kpi-card purple"><div class="kpi-label">Creadores únicos</div><div class="kpi-val" id="an-creadores-hist">-</div></div>
+    <div class="kpi-card yellow"><div class="kpi-label">Promedio / colab</div><div class="kpi-val" id="an-avg-colab">-</div></div>
+    <div class="kpi-card red"><div class="kpi-label">Pendiente pago</div><div class="kpi-val" id="an-pendiente-total">-</div></div>
+    <div class="kpi-card" style="border-color:#6366f1;"><div class="kpi-label">Top creador</div><div class="kpi-val" id="an-top-creador" style="font-size:13px;color:#818cf8;">-</div></div>
   </div>
 
   <!-- KPI fila 2: Shopify -->
-  <div style="font-size:11px;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Shopify — Revenue actual</div>
+  <div style="font-size:11px;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Shopify - Revenue actual</div>
   <div class="kpi-grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:24px;">
-    <div class="kpi-card blue"><div class="kpi-label">Revenue últimos 30d</div><div class="kpi-val" id="an-sh-30d">—</div></div>
-    <div class="kpi-card green"><div class="kpi-label">Revenue este mes</div><div class="kpi-val" id="an-sh-mes">—</div></div>
-    <div class="kpi-card" id="an-sh-crec-card" style="border-color:#16a34a;"><div class="kpi-label">Crecimiento vs mes ant.</div><div class="kpi-val" id="an-sh-crec">—</div></div>
-    <div class="kpi-card yellow"><div class="kpi-label">Pedidos últimos 30d</div><div class="kpi-val" id="an-sh-orders">—</div></div>
+    <div class="kpi-card blue"><div class="kpi-label">Revenue últimos 30d</div><div class="kpi-val" id="an-sh-30d">-</div></div>
+    <div class="kpi-card green"><div class="kpi-label">Revenue este mes</div><div class="kpi-val" id="an-sh-mes">-</div></div>
+    <div class="kpi-card" id="an-sh-crec-card" style="border-color:#16a34a;"><div class="kpi-label">Crecimiento vs mes ant.</div><div class="kpi-val" id="an-sh-crec">-</div></div>
+    <div class="kpi-card yellow"><div class="kpi-label">Pedidos últimos 30d</div><div class="kpi-val" id="an-sh-orders">-</div></div>
   </div>
 
   <div class="grid2" style="margin-bottom:20px;">
@@ -942,7 +942,7 @@ window.addEventListener('unhandledrejection', function(ev) {
 
   <!-- Ranking ALL TIME -->
   <div class="card" style="margin-bottom:20px;">
-    <div class="card-hdr"><span class="card-title">&#x1F3C6; Ranking — Inversión por creador (histórico)</span></div>
+    <div class="card-hdr"><span class="card-title">&#x1F3C6; Ranking - Inversión por creador (histórico)</span></div>
     <div class="card-body">
       <table>
         <thead><tr><th class="mob-hide">#</th><th>Creador</th><th class="mob-hide">Colabs</th><th>Total pagado</th><th>Pendiente</th><th class="mob-hide">Promedio/colab</th><th class="mob-hide">Primer pago</th><th class="mob-hide">Último pago</th><th>Estado</th></tr></thead>
@@ -969,7 +969,7 @@ window.addEventListener('unhandledrejection', function(ev) {
 </div><!-- /tab-analytics -->
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
-<!-- MODALS — DEBEN VIVIR FUERA de cualquier tab-panel.               -->
+<!-- MODALS - DEBEN VIVIR FUERA de cualquier tab-panel.               -->
 <!-- Bug previo: tab-analytics no cerraba antes de los modales, así    -->
 <!-- que cuando esa tab era display:none, todos los modales también.   -->
 <!-- El user veía: 'el botón editar solo abre el modal cuando estoy    -->
@@ -1180,7 +1180,7 @@ window.addEventListener('unhandledrejection', function(ev) {
       </div>
       <div class="form-group">
         <label>Vence pago (auto)</label>
-        <input id="pago-vence" disabled style="background:var(--cx-primary-soft);color:#c7d2fe;font-weight:700;" placeholder="—">
+        <input id="pago-vence" disabled style="background:var(--cx-primary-soft);color:#c7d2fe;font-weight:700;" placeholder="-">
       </div>
     </div>
     <div class="form-row">
@@ -1413,7 +1413,7 @@ const badgeEstadoInf = e => {
   return `<span class="badge badge-${m[e]||'gray'}">${e}</span>`;
 };
 const roiBadge = r => {
-  if(r===null||r===undefined||r==='') return '<span class="badge badge-gray">—</span>';
+  if(r===null||r===undefined||r==='') return '<span class="badge badge-gray">-</span>';
   const v = parseFloat(r);
   const cl = v>100?'green':v>0?'blue':v>-50?'yellow':'red';
   return `<span class="badge badge-${cl}">${v>0?'+':''}${v}%</span>`;
@@ -1432,14 +1432,14 @@ function showAlert(containerId, msg, type='success') {
 const _loaded = {};
 // Sub-tab activa dentro de "Inteligencia". Persiste para que cuando el user
 // vuelve a la tab Inteligencia se quede en la última vista que estaba viendo.
-// Default = 'estrategia' — el master agent es lo que el jefe ve primero.
+// Default = 'estrategia' - el master agent es lo que el jefe ve primero.
 let _intelSub = 'estrategia';
 
 function switchTab(name) {
-  // Resolver: 'inteligencia' es virtual — abre el sub-panel actual (default agentes)
+  // Resolver: 'inteligencia' es virtual - abre el sub-panel actual (default agentes)
   const realPanel = (name === 'inteligencia') ? _intelSub : name;
 
-  // Highlight botón superior — match por data-tab. Inteligencia se activa
+  // Highlight botón superior - match por data-tab. Inteligencia se activa
   // cuando estamos viendo cualquiera de sus sub-paneles.
   document.querySelectorAll('.tab-btn').forEach(b => {
     const t = b.dataset.tab;
@@ -1738,7 +1738,7 @@ async function cmoDecidir(aid, decision){
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// TAB "HOY" — Centro de ejecución (Fase 2/4 marketing)
+// TAB "HOY" - Centro de ejecución (Fase 2/4 marketing)
 // Sebastian (29-abr-2026): "centro de ejecución, agencia de marketing
 // con todos los agentes funcionando, tirando todo".
 // ═══════════════════════════════════════════════════════════════════
@@ -1927,7 +1927,7 @@ async function hoyAplicarAgente(key) {
   // Workflow Fase 3: convertir propuesta del agente en entidad real
   if(!confirm(`Convertir las propuestas del agente "${key}" en entidades reales?\\n\\n` +
               `Esto puede crear: campañas (Planificadas), briefs en Kanban, flags de reposición.\\n` +
-              `Es idempotente — no duplica si ya existen.`)) return;
+              `Es idempotente - no duplica si ya existen.`)) return;
 
   // Si no tenemos cache, re-ejecutar el agente
   let payload = window._hoyUltimoOutput[key];
@@ -1984,7 +1984,7 @@ async function loadUltimaEstrategia() {
   try {
     const rows = await fetch('/api/marketing/agentes/log').then(r=>r.json());
     const latest = (rows||[]).find(r => (r.agente||'').toLowerCase() === 'estrategia');
-    if (!latest) return; // no hay corrida previa — vista invitando se mantiene
+    if (!latest) return; // no hay corrida previa - vista invitando se mantiene
     const det = await fetch('/api/marketing/agentes/log/' + latest.id).then(r=>r.json());
     const view = document.getElementById('estrategia-vista');
     if (!view) return;
@@ -2023,7 +2023,7 @@ async function saveIgToken() {
     const r = await fetch('/api/marketing/ig-update-token', _fetchOpts('POST', {token}));
     const d = await r.json();
     if (d.ok) {
-      showToast('✅ Token guardado — sincronizando...', 'success');
+      showToast('✅ Token guardado - sincronizando...', 'success');
       document.getElementById('ig-token-form').style.display = 'none';
       document.getElementById('ig-token-input').value = '';
       setTimeout(() => syncPlatform('instagram'), 800);
@@ -2077,8 +2077,8 @@ async function loadDashboard() {
   document.getElementById('dash-fecha').textContent = 'Actualizado: '+new Date().toLocaleString('es-CO');
 
   // ── Shopify KPIs ──────────────────────────────────────────────────────────
-  const fmt2 = v => v==null?'—':String(v);
-  const fmtCOP = v => v==null?'—':'$'+Number(v).toLocaleString('es-CO');
+  const fmt2 = v => v==null?'-':String(v);
+  const fmtCOP = v => v==null?'-':'$'+Number(v).toLocaleString('es-CO');
   // Cobertura real de datos Shopify
   var shBanner = document.getElementById('sh-cobertura-banner');
   if(sh.datos_desde){
@@ -2148,7 +2148,7 @@ ${bars}
     skuEl.innerHTML = topSkus.map((s,i)=>`
       <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--cx-hairline);">
         <span style="color:#d4af37;font-weight:700;min-width:18px;">#${i+1}</span>
-        <span style="flex:1;font-weight:600;font-size:12px;">${esc(s.sku||'—')}</span>
+        <span style="flex:1;font-weight:600;font-size:12px;">${esc(s.sku||'-')}</span>
         <div style="flex:2;">
           <div style="background:var(--cx-card);border-radius:3px;height:6px;">
             <div style="background:#d4af37;height:6px;border-radius:3px;width:${Math.round((s.total/maxSku)*100)}%;"></div>
@@ -2169,7 +2169,7 @@ ${bars}
     ciudEl.innerHTML = ciudades.map((c,i)=>`
       <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--cx-hairline);">
         <span style="color:var(--cx-text-mute);min-width:18px;font-size:11px;">${i+1}</span>
-        <span style="flex:1;font-size:12px;">${esc(c.ciudad||'—')}</span>
+        <span style="flex:1;font-size:12px;">${esc(c.ciudad||'-')}</span>
         <div style="flex:2;">
           <div style="background:var(--cx-card);border-radius:3px;height:6px;">
             <div style="background:#6366f1;height:6px;border-radius:3px;width:${Math.round((c.pedidos/maxCiud)*100)}%;"></div>
@@ -2187,7 +2187,7 @@ ${bars}
     cBody.innerHTML = data.campanas_activas.map(c=>`
       <tr>
         <td style="font-weight:700;">${esc(c.nombre)}</td>
-        <td><span class="badge badge-gray">${esc(c.canal||'—')}</span></td>
+        <td><span class="badge badge-gray">${esc(c.canal||'-')}</span></td>
         <td>${badgeEstadoCamp(c.estado)}</td>
         <td>${fmtM(c.presupuesto)}</td>
         <td style="color:#16a34a;">${fmtM(c.resultado_ventas)}</td>
@@ -2225,7 +2225,7 @@ ${bars}
       igStatusEl.style.display = '';
       igStatusEl.style.background = '#7f1d1d';
       igStatusEl.style.color = '#fca5a5';
-      igStatusEl.textContent = '⚠️ Token expirado — renovar manualmente';
+      igStatusEl.textContent = '⚠️ Token expirado - renovar manualmente';
     } else if (refreshed) {
       igStatusEl.style.display = '';
       igStatusEl.style.background = '#14532d';
@@ -2240,7 +2240,7 @@ ${bars}
       igStatusEl.style.display = '';
       igStatusEl.style.background = '#0f2d1a';
       igStatusEl.style.color = '#4ade80';
-      igStatusEl.textContent = '🔑 Token válido — ' + daysLeft + 'd restantes';
+      igStatusEl.textContent = '🔑 Token válido - ' + daysLeft + 'd restantes';
     } else {
       igStatusEl.style.display = 'none';
     }
@@ -2252,9 +2252,9 @@ ${bars}
   }
 
   if (!ig.configurado) {
-    igEl.innerHTML = '<div style="color:var(--cx-text-mute);text-align:center;padding:20px;">⚠️ Instagram no configurado — agrega INSTAGRAM_TOKEN en Render</div>';
+    igEl.innerHTML = '<div style="color:var(--cx-text-mute);text-align:center;padding:20px;">⚠️ Instagram no configurado - agrega INSTAGRAM_TOKEN en Render</div>';
   } else if (!topPosts.length) {
-    igEl.innerHTML = '<div style="color:var(--cx-text-mute);text-align:center;padding:20px;">Sin posts — haz clic en ↻ IG para sincronizar</div>';
+    igEl.innerHTML = '<div style="color:var(--cx-text-mute);text-align:center;padding:20px;">Sin posts - haz clic en ↻ IG para sincronizar</div>';
   } else {
     igEl.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:12px;">' +
       topPosts.map(p => {
@@ -2334,7 +2334,7 @@ async function loadCampanas() {
       <td class="mob-hide" style="color:var(--cx-text-mute);">${esc(r.id)}</td>
       <td style="font-weight:700;">${esc(r.nombre)}${cuponChip}</td>
       <td class="mob-hide"><span class="badge badge-gray">${esc(r.tipo)}</span></td>
-      <td class="mob-hide">${esc(r.canal||'—')}</td>
+      <td class="mob-hide">${esc(r.canal||'-')}</td>
       <td>${badgeEstadoCamp(r.estado)}</td>
       <td class="mob-hide">${fmtM(r.presupuesto)}</td>
       <td class="mob-hide">${fmtM(r.presupuesto_gastado)}</td>
@@ -2453,7 +2453,7 @@ async function deleteCampana(id, nombre) {
 // ──────────────────────────────────────────────────────────────────────────────
 // INFLUENCERS
 // ──────────────────────────────────────────────────────────────────────────────
-// ─── PAGOS REALIZADOS — vista cronológica para Marketing ───────────────────
+// ─── PAGOS REALIZADOS - vista cronológica para Marketing ───────────────────
 let _PAGOS_INF_CACHE = [];
 
 async function cleanupHistoricoImportado() {
@@ -2568,7 +2568,7 @@ async function loadAtribucion(force) {
       {label:'Pedidos atribuidos',     val: k.pedidos_atribuidos||0,   color:'#60a5fa'},
       {label:'Revenue atribuido',      val: fmtM(k.revenue_atribuido||0), color:'#f59e0b'},
       {label:'Inversión total',        val: fmtM(k.inversion_total||0),  color:'#a78bfa'},
-      {label:'ROI global',             val: (k.roi_global_pct==null?'—':k.roi_global_pct+'%'),
+      {label:'ROI global',             val: (k.roi_global_pct==null?'-':k.roi_global_pct+'%'),
         color: k.roi_global_pct==null ? '#64748b' : (k.roi_global_pct >= 100 ? '#34d399' : (k.roi_global_pct >= 0 ? '#fbbf24' : '#ef4444'))},
     ].map(c=>`<div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:8px;padding:10px 12px;">
       <div style="font-size:18px;font-weight:800;color:${c.color};line-height:1;">${c.val}</div>
@@ -2582,16 +2582,16 @@ async function loadAtribucion(force) {
     body.innerHTML = list.map(x => {
       const roi = x.roi_pct;
       const roiCol = (roi==null) ? '#64748b' : (roi >= 100 ? '#34d399' : (roi >= 0 ? '#fbbf24' : '#ef4444'));
-      const roiTxt = (roi==null) ? '—' : roi + '%';
+      const roiTxt = (roi==null) ? '-' : roi + '%';
       return `<tr>
-        <td style="font-weight:600;">${x.nombre||'—'}${x.usuario_red?'<div style="font-size:10px;color:var(--cx-text-mute);font-weight:400;">@'+x.usuario_red+'</div>':''}</td>
+        <td style="font-weight:600;">${x.nombre||'-'}${x.usuario_red?'<div style="font-size:10px;color:var(--cx-text-mute);font-weight:400;">@'+x.usuario_red+'</div>':''}</td>
         <td><code style="background:var(--cx-bg-alt);color:#16a34a;padding:2px 8px;border-radius:4px;font-size:11px;">${x.discount_code}</code></td>
         <td style="text-align:right;">${x.n_pedidos||0}</td>
         <td style="text-align:right;color:var(--cx-text-mute);">${x.unidades||0}</td>
         <td style="text-align:right;font-weight:700;color:#16a34a;">${fmtM(x.revenue_total||0)}</td>
         <td style="text-align:right;color:var(--cx-text-mute);">${fmtM(x.invertido||0)}</td>
         <td style="text-align:right;font-weight:700;color:${roiCol};">${roiTxt}</td>
-        <td style="font-size:11px;color:var(--cx-text-mute);">${(x.ultimo_pedido||'').slice(0,10)||'—'}</td>
+        <td style="font-size:11px;color:var(--cx-text-mute);">${(x.ultimo_pedido||'').slice(0,10)||'-'}</td>
       </tr>`;
     }).join('');
   } catch (e) {
@@ -2658,7 +2658,7 @@ function renderPagos() {
     const estadoBadge = p.estado === 'Pagada'
       ? '<span style="background:var(--cx-success-pale);color:#16a34a;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">&#x2713; Pagada</span>'
       : '<span style="background:#78350f;color:#b45309;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">&#x23F3; Pendiente</span>';
-    let comprobante = '<span style="color:var(--cx-text-faint);font-size:11px;">—</span>';
+    let comprobante = '<span style="color:var(--cx-text-faint);font-size:11px;">-</span>';
     if (p.comprobante_id && p.numero_ce) {
       comprobante = '<a href="/api/comprobantes-pago/'+p.comprobante_id+'/pdf" target="_blank" '
         + 'style="color:#1F5F5B;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:4px;background:#f0fdfa;padding:3px 10px;border-radius:6px;font-size:12px;">'
@@ -2675,13 +2675,13 @@ function renderPagos() {
     }
     const ocStr = p.numero_oc
       ? '<span style="font-family:monospace;font-size:11px;color:var(--cx-text-mute);">'+p.numero_oc+'</span>'
-      : '—';
+      : '-';
     return '<tr>'
       + '<td style="font-size:12px;color:var(--cx-text-soft);">'+fecha+'</td>'
-      + '<td style="font-weight:700;">'+(p.influencer_nombre||'—')
+      + '<td style="font-weight:700;">'+(p.influencer_nombre||'-')
         + (p.inf_email ? '<div style="font-size:11px;color:var(--cx-text-mute);font-weight:400;">'+p.inf_email+'</div>' : '')
       + '</td>'
-      + '<td style="font-size:12px;color:var(--cx-text-mute);">'+(p.concepto||'—')+'</td>'
+      + '<td style="font-size:12px;color:var(--cx-text-mute);">'+(p.concepto||'-')+'</td>'
       + '<td style="text-align:right;font-weight:700;color:#1F5F5B;">'+fmtM(p.valor||0)+'</td>'
       + '<td>'+ocStr+'</td>'
       + '<td>'+comprobante+'</td>'
@@ -2763,7 +2763,7 @@ function renderCentroPagos(){
     var noEmail=!(p.inf_email||'').trim();
     return '<div style="background:var(--cx-card,#fff);border:1px solid #eef0f2;border-left:4px solid '+s.color+';border-radius:12px;padding:12px 16px;margin-bottom:10px;box-shadow:0 1px 4px rgba(15,23,42,.05);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">'
       +'<div style="min-width:200px;flex:1">'
-        +'<div style="font-weight:800;color:var(--cx-text)">'+_escHtml(p.influencer_nombre||'—')+(noEmail?' <span title="sin correo · no recibirá la factura de pagado" style="color:#dc2626;font-size:11px;font-weight:700">⚠ sin correo</span>':'')+'</div>'
+        +'<div style="font-weight:800;color:var(--cx-text)">'+_escHtml(p.influencer_nombre||'-')+(noEmail?' <span title="sin correo · no recibirá la factura de pagado" style="color:#dc2626;font-size:11px;font-weight:700">⚠ sin correo</span>':'')+'</div>'
         +'<div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px">📅 Solicitud: '+((p.fecha||'').slice(0,10))+(p.fecha_publicacion?' · 📢 Publicó: '+p.fecha_publicacion.slice(0,10):'')+(entTxt?' · 📝 '+_escHtml(entTxt):'')+(okLink?' · <a href="'+_escHtml(link)+'" target="_blank" rel="noopener" style="color:#7c3aed;font-weight:700;text-decoration:none">🔗 post</a>':'')+'</div>'
       +'</div>'
       +'<div style="text-align:right;white-space:nowrap">'
@@ -2775,7 +2775,7 @@ function renderCentroPagos(){
   }).join('');
 }
 
-// Cache global de influencers — verHistorial lookup. Antes se serializaba la
+// Cache global de influencers - verHistorial lookup. Antes se serializaba la
 // fila completa en el atributo onclick, lo cual corrompía el HTML porque las
 // comillas dobles del JSON cerraban el atributo prematuramente. Eso hacía
 // que TODOS los botones de la fila (Editar, Pagar, Dar de baja) dejaran de
@@ -2788,7 +2788,7 @@ var PAGOS_BY_INF_ID = {};      // influencer_id → array de pagos
 var PAGOS_BY_INF_NAME = {};    // nombre lowercase → array de pagos (fallback)
 var EXPANDED_INF = new Set();  // ids de influencers con historial expandido
 // Audit 25-may PM · cache de payload por id para evitar XSS en onclick handlers
-// (string interpolation con nombre/banco escapaba solo comillas — backslash o
+// (string interpolation con nombre/banco escapaba solo comillas - backslash o
 // unicode podía romper el JS y permitir injection)
 var _INF_ROW_PAYLOAD = {};
 
@@ -2921,7 +2921,7 @@ async function loadUrgenciasInfluencers() {
   }
 }
 
-// Render de la tabla principal — separado para poder llamar al cambiar filtros
+// Render de la tabla principal - separado para poder llamar al cambiar filtros
 // ═══════════════════════════════════════════════════════════════════
 // 🎯 BULK PAGOS + KPIs Community Manager · Sebastián 27-may-2026 PM
 // ═══════════════════════════════════════════════════════════════════
@@ -3598,7 +3598,7 @@ async function abrirDuplicados() {
         const pagos = it.n_pagos || 0;
         return '<tr style="'+(conservar?'background:var(--cx-success-pale)':'')+'">'
           +'<td style="padding:6px 8px;">'+(conservar?'⭐ ':'')+_escDup(it.nombre||'')+(it.usuario_red?' <span style="color:var(--cx-text-mute)">@'+_escDup(it.usuario_red)+'</span>':'')+'</td>'
-          +'<td style="padding:6px 8px;font-size:11px;color:var(--cx-text-mute);">'+_escDup(it.cedula_nit||'—')+' / '+_escDup(it.cuenta_bancaria||'—')+'</td>'
+          +'<td style="padding:6px 8px;font-size:11px;color:var(--cx-text-mute);">'+_escDup(it.cedula_nit||'-')+' / '+_escDup(it.cuenta_bancaria||'-')+'</td>'
           +'<td style="padding:6px 8px;text-align:center;">'+pagos+'</td>'
           +'<td style="padding:6px 8px;text-align:right;white-space:nowrap;">'
             +(conservar
@@ -3699,7 +3699,7 @@ async function _cargarGestionarPagos(infId, infNombre){
     html += '<td style="padding:8px;"><span style="background:'+estadoBg+';color:'+estadoCol+';padding:3px 9px;border-radius:10px;font-weight:700;font-size:11px;">'+esc(estado)+'</span></td>';
     html += '<td style="padding:8px;text-align:right;font-weight:700;color:#6d28d9;">$'+valor+'</td>';
     html += '<td style="padding:8px;font-size:11px;color:var(--cx-text-mute);">'+esc((p.concepto||'').substring(0,60))+'</td>';
-    html += '<td style="padding:8px;font-family:monospace;font-size:11px;color:#67e8f9;">'+esc(p.numero_oc||'—')+'</td>';
+    html += '<td style="padding:8px;font-family:monospace;font-size:11px;color:#67e8f9;">'+esc(p.numero_oc||'-')+'</td>';
     html += '<td style="padding:8px;text-align:center;white-space:nowrap;">';
     // Botón Pagada (si está Pendiente)
     if (estado === 'Pendiente'){
@@ -3909,9 +3909,9 @@ function _mostrarPagoSolicitadoOk(d){
     document.body.appendChild(m);
   }
   document.getElementById('mpo-numero').textContent = d.numero || '(sin número)';
-  document.getElementById('mpo-nombre').textContent = d.nombre || '—';
+  document.getElementById('mpo-nombre').textContent = d.nombre || '-';
   document.getElementById('mpo-monto').textContent = '$' + (d.monto||0).toLocaleString('es-CO') + ' COP';
-  document.getElementById('mpo-concepto').textContent = d.concepto || '—';
+  document.getElementById('mpo-concepto').textContent = d.concepto || '-';
   m.classList.add('open');
 }
 
@@ -4118,7 +4118,7 @@ async function deleteContenido(id) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// HELPERS — SELECT POPULATES
+// HELPERS - SELECT POPULATES
 // ──────────────────────────────────────────────────────────────────────────────
 async function loadCampanasForSelect(selId='brief-campana-sel') {
   let camps = [];
@@ -4180,10 +4180,10 @@ async function syncPlatform(platform, full) {
       let det = data.detalle || '';
       // Detectar token Meta expirado (code 190) y mostrar mensaje claro
       if(det.includes('190') || det.includes('Session has expired') || det.includes('OAuthException')){
-        errMsg = '🔑 Token de Instagram expirado — genera uno nuevo en developers.facebook.com/tools/explorer y pégalo abajo';
+        errMsg = '🔑 Token de Instagram expirado - genera uno nuevo en developers.facebook.com/tools/explorer y pégalo abajo';
         det = '';
       } else if(det.includes('400') || det.includes('401')){
-        errMsg = '🔑 Error de autenticación Meta — token inválido';
+        errMsg = '🔑 Error de autenticación Meta - token inválido';
         det = '';
       } else if(det.length > 120){
         det = ' → ' + det.slice(0,120) + '...';
@@ -4200,7 +4200,7 @@ async function syncPlatform(platform, full) {
     status.style.color = '#f87171';
     let msg = e.message || 'Error desconocido';
     if(msg.includes('<!DOCTYPE') || msg.includes('JSON')){
-      msg = 'La sesión expiró — recarga la página (F5)';
+      msg = 'La sesión expiró - recarga la página (F5)';
     }
     status.textContent = '⚠️ ' + msg;
   } finally {
@@ -4638,7 +4638,7 @@ async function loadEventosCalendario(){
         <td style="padding:6px;font-family:monospace;color:var(--cx-text-mute)">${esc(e.fecha)}</td>
         <td style="padding:6px"><span style="background:var(--cx-primary-soft);color:#6d28d9;padding:1px 6px;border-radius:6px;font-weight:700">${e.multiplicador}×</span></td>
         <td style="padding:6px"><div style="width:24px;height:18px;background:${esc(e.color||'#94a3b8')};border-radius:3px;border:1px solid #e7e5e4"></div></td>
-        <td style="padding:6px;text-align:center">${e.activo?'✓':'—'}</td>
+        <td style="padding:6px;text-align:center">${e.activo?'✓':'-'}</td>
         <td style="padding:6px;text-align:right">
           ${e.activo
             ? `<button class="btn btn-danger btn-sm" onclick="toggleEventoCal(${parseInt(e.id)||0}, 0)" style="font-size:10px;padding:2px 8px" title="Desactivar">🗑</button>`
@@ -4805,7 +4805,7 @@ async function runAgent(agente) {
           const view = document.getElementById('estrategia-vista');
           if (view) view.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }, 250);
-        showToast('✅ Estrategia generada — revisá el calendario y oportunidades', 'success');
+        showToast('✅ Estrategia generada - revisá el calendario y oportunidades', 'success');
       }
     }
     resultDiv.classList.add('show');
@@ -4827,7 +4827,7 @@ function fmtIA(data) {
   return `<div style="margin-top:14px;padding:14px;background:linear-gradient(135deg,rgba(212,175,55,.08),rgba(212,175,55,.03));border:1px solid rgba(212,175,55,.25);border-radius:10px">
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
       <span style="font-size:15px">🤖</span>
-      <span style="font-size:11px;font-weight:700;color:#d4af37;letter-spacing:.5px;text-transform:uppercase">Análisis IA — Claude</span>
+      <span style="font-size:11px;font-weight:700;color:#d4af37;letter-spacing:.5px;text-transform:uppercase">Análisis IA - Claude</span>
     </div>
     <div style="font-size:13px;color:var(--cx-text);line-height:1.7;white-space:pre-line">${esc(data.analisis_ia)}</div>
   </div>`;
@@ -4843,9 +4843,9 @@ function formatAgentResult(agente, data) {
       out += `Total alertas: ${data.total_alertas} | Críticos: ${data.criticos}\n\n`;
       data.alertas.forEach(a=>{
         const icon = a.estado==='critico'?'🔴':a.estado==='advertencia'?'🟡':'🟢';
-        out += `${icon} ${a.evento} (${a.fecha_evento}) — ${a.dias_restantes}d\n`;
+        out += `${icon} ${a.evento} (${a.fecha_evento}) - ${a.dias_restantes}d\n`;
         out += `   SKU: ${a.sku} | Stock: ${fmt(a.stock_actual)} | Demanda: ${fmt(a.demanda_proyectada)}\n`;
-        if(a.deficit>0) out += `   Déficit: ${fmt(a.deficit)} uds | Deadline prod: ${a.deadline_produccion||'—'}\n`;
+        if(a.deficit>0) out += `   Déficit: ${fmt(a.deficit)} uds | Deadline prod: ${a.deadline_produccion||'-'}\n`;
         out += '\n';
       });
     }
@@ -4857,7 +4857,7 @@ function formatAgentResult(agente, data) {
     else {
       out += `🎯 ${data.titulo}\n${'─'.repeat(40)}\n`;
       data.recomendaciones.forEach((r,i)=>{
-        out += `${i+1}. ${r.sku} — Score: ${r.score}\n`;
+        out += `${i+1}. ${r.sku} - Score: ${r.score}\n`;
         out += `   Stock: ${fmt(r.stock)} uds | Rotación: ${r.rotacion_mes}/mes | ${r.meses_cobertura}m inventario\n`;
         out += `   Razones: ${r.razones.join(', ')}\n`;
         out += `   ➜ ${r.accion}\n\n`;
@@ -4882,7 +4882,7 @@ function formatAgentResult(agente, data) {
   if(agente==='tendencias') {
     out += `📈 ${data.titulo}\n${'─'.repeat(40)}\n`;
     if(data.tendencias_erp&&data.tendencias_erp.length) {
-      out += 'ERP — TOP VARIACIONES:\n';
+      out += 'ERP - TOP VARIACIONES:\n';
       data.tendencias_erp.forEach(t=>{
         const icon = t.tendencia==='alza'?'🟢':t.tendencia==='baja'?'🔴':'⚪';
         out += `  ${icon} ${t.sku}: ${t.cambio_pct>0?'+':''}${t.cambio_pct}% (${t.reciente} vs ${t.anterior} uds)\n`;
@@ -4913,7 +4913,7 @@ function formatAgentResult(agente, data) {
     else {
       out += `🏷️ ${data.titulo}\n${'─'.repeat(40)}\n`;
       data.propuestas.forEach(p=>{
-        out += `\n${p.sku} — ${p.meses_cobertura}m de inventario\n`;
+        out += `\n${p.sku} - ${p.meses_cobertura}m de inventario\n`;
         out += `  Precio normal: ${fmtM(p.precio_normal)} → Precio promo: ${fmtM(p.precio_promo)} (-${p.max_descuento_pct}%)\n`;
         out += `  ${p.razon}\n`;
       });
@@ -4929,7 +4929,7 @@ function formatAgentResult(agente, data) {
         const icon = p.urgencia==='hoy'?'🔴':p.urgencia==='esta semana'?'🟡':'🟢';
         out += `\n${icon} ${p.email}\n`;
         out += `  Pedidos: ${p.pedidos} | Revenue: ${fmtM(p.revenue_total)} | Ticket: ${fmtM(p.ticket_promedio)}\n`;
-        out += `  Intervalo: ${p.intervalo_dias}d | Próximo: ${p.proximo_reorden_estimado} (${p.dias_para_reorden}d) — ${p.urgencia}\n`;
+        out += `  Intervalo: ${p.intervalo_dias}d | Próximo: ${p.proximo_reorden_estimado} (${p.dias_para_reorden}d) - ${p.urgencia}\n`;
       });
     }
     return `<pre>${esc(out)}</pre>${fmtIA(data)}`;
@@ -4943,7 +4943,7 @@ function formatAgentResult(agente, data) {
       out += `${data.conflictos.length} conflictos en ${data.campanas_revisadas} campañas.\n\n`;
       data.conflictos.forEach((c,i)=>{
         out += `${i+1}. "${c.campana_a}" vs "${c.campana_b}"\n`;
-        out += `   Tipo: ${c.conflicto} | Canal: ${c.canal||'—'} | SKU: ${c.sku||'—'}\n`;
+        out += `   Tipo: ${c.conflicto} | Canal: ${c.canal||'-'} | SKU: ${c.sku||'-'}\n`;
         out += `   ➜ ${c.recomendacion}\n\n`;
       });
     }
@@ -4957,7 +4957,7 @@ function formatAgentResult(agente, data) {
       data.piezas.forEach(p=>{
         out += `\n📦 ${p.sku} (${fmt(p.uds_30d)} uds / 30d | ${fmtM(p.precio)})\n`;
         out += `\nINSTAGRAM:\n${p.caption_instagram}\n`;
-        out += `\nEMAIL — Asunto: ${p.asunto_email}\n`;
+        out += `\nEMAIL - Asunto: ${p.asunto_email}\n`;
         out += `\nWHATSAPP: ${p.texto_whatsapp}\n`;
         out += '\n'+'─'.repeat(30)+'\n';
       });
@@ -4971,7 +4971,7 @@ function formatAgentResult(agente, data) {
       out += `🚨 ${data.titulo}\n${'─'.repeat(40)}\n`;
       data.alertas.forEach(a=>{
         const icon = a.nivel==='critico'?'🔴':'🟡';
-        out += `${icon} ${a.sku} — ${a.dias_cobertura_real}d de cobertura\n`;
+        out += `${icon} ${a.sku} - ${a.dias_cobertura_real}d de cobertura\n`;
         out += `   Stock: ${fmt(a.stock)} | ERP: ${fmt(a.rotacion_erp)} uds/mes | Shopify: ${fmt(a.demanda_shopify_30d)} uds/30d\n`;
         out += `   ➜ ${a.accion}\n\n`;
       });
@@ -4997,17 +4997,17 @@ function formatAgentResult(agente, data) {
         <div style="font-size:11px;color:var(--cx-text-mute);margin-top:4px;">${c.label}</div>
       </div>`).join('');
     html += '</div>';
-    // Análisis IA (markdown del modelo) — render con markdown básico
+    // Análisis IA (markdown del modelo) - render con markdown básico
     if(data.analisis_ia) {
       html += `<div style="background:linear-gradient(135deg,rgba(124,58,237,.10),rgba(124,58,237,.03));border:1px solid rgba(124,58,237,.35);border-radius:12px;padding:18px;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
           <span style="font-size:16px;">🧠</span>
-          <span style="font-size:11px;font-weight:700;color:#6d28d9;letter-spacing:.5px;text-transform:uppercase;">Análisis estratégico — Claude Sonnet</span>
+          <span style="font-size:11px;font-weight:700;color:#6d28d9;letter-spacing:.5px;text-transform:uppercase;">Análisis estratégico - Claude Sonnet</span>
         </div>
         <div class="estrategia-md">${renderMarkdownBasic(data.analisis_ia)}</div>
       </div>`;
     } else {
-      html += `<div style="padding:14px;color:#f59e0b;background:#78350f33;border:1px solid #f59e0b44;border-radius:8px;font-size:13px;">⚠️ Sin análisis IA — verificá que ANTHROPIC_API_KEY esté configurada en animus_config.</div>`;
+      html += `<div style="padding:14px;color:#f59e0b;background:#78350f33;border:1px solid #f59e0b44;border-radius:8px;font-size:13px;">⚠️ Sin análisis IA - verificá que ANTHROPIC_API_KEY esté configurada en animus_config.</div>`;
     }
     // Datos crudos colapsables (para debug / power user)
     html += `<details style="margin-top:14px;">
@@ -5098,17 +5098,17 @@ async function loadAgentLog() {
   if(!rows.length) { body.innerHTML='<tr class="empty-row"><td colspan="5">Sin ejecuciones registradas</td></tr>'; return; }
   body.innerHTML = rows.map(r=>`
     <tr>
-      <td style="color:var(--cx-text-mute);">${r.fecha?.substring(0,16)||'—'}</td>
+      <td style="color:var(--cx-text-mute);">${r.fecha?.substring(0,16)||'-'}</td>
       <td><span class="badge badge-purple">${r.agente}</span></td>
-      <td style="color:var(--cx-text-mute);">${r.accion||'—'}</td>
-      <td>${r.ejecutado_por||'—'}</td>
+      <td style="color:var(--cx-text-mute);">${r.accion||'-'}</td>
+      <td>${r.ejecutado_por||'-'}</td>
       <td><button class="btn btn-outline btn-sm" onclick="verResultadoLog(${r.id})">Ver</button></td>
     </tr>`).join('');
 }
 
 async function verResultadoLog(id) {
   const data = await fetch(`/api/marketing/agentes/log/${id}`).then(r=>r.json());
-  document.getElementById('modal-agent-title').textContent = `Resultado: Agente ${data.agente} — ${data.fecha?.substring(0,16)}`;
+  document.getElementById('modal-agent-title').textContent = `Resultado: Agente ${data.agente} - ${data.fecha?.substring(0,16)}`;
   let content = '';
   if(typeof data.resultado === 'object') {
     content = formatAgentResult(data.agente?.toLowerCase(), data.resultado);
@@ -5162,13 +5162,13 @@ async function loadAnalytics() {
   document.getElementById('an-creadores-hist').textContent = data.creadores_historico||0;
   document.getElementById('an-avg-colab').textContent      = fmtM(data.promedio_por_colab||0);
   document.getElementById('an-pendiente-total').textContent= fmtM(data.total_pendiente||0);
-  document.getElementById('an-top-creador').textContent    = data.top_creador||'—';
+  document.getElementById('an-top-creador').textContent    = data.top_creador||'-';
 
   // ── KPIs Shopify ──
   const sh = roiData.shopify_kpis||{};
   document.getElementById('an-sh-30d').textContent    = fmtM(sh.revenue_30d||0);
   document.getElementById('an-sh-mes').textContent    = fmtM(sh.revenue_mes||0);
-  document.getElementById('an-sh-orders').textContent = sh.pedidos_30d||'—';
+  document.getElementById('an-sh-orders').textContent = sh.pedidos_30d||'-';
   const crec = sh.crecimiento_pct;
   if(crec!=null) {
     const crecEl = document.getElementById('an-sh-crec');
@@ -5194,16 +5194,16 @@ async function loadAnalytics() {
       : '<span style="color:#dc2626;">'+r.estado+'</span>';
     const pendBadge = r.pendiente>0
       ? `<span style="color:#f59e0b;font-weight:700;">${fmtM(r.pendiente)}</span>`
-      : '<span style="color:var(--cx-text-faint);">—</span>';
+      : '<span style="color:var(--cx-text-faint);">-</span>';
     return `<tr>
       <td class="mob-hide" style="color:var(--cx-text-mute);font-weight:700;">${i+1}</td>
-      <td style="font-weight:700;">${esc(r.nombre||'—')}</td>
+      <td style="font-weight:700;">${esc(r.nombre||'-')}</td>
       <td class="mob-hide" style="color:var(--cx-text-mute);">${r.colabs||0}</td>
       <td style="color:#818cf8;font-weight:800;">${fmtM(r.total)}</td>
       <td>${pendBadge}</td>
       <td class="mob-hide" style="color:var(--cx-text-mute);">${fmtM(r.promedio)}</td>
-      <td class="mob-hide" style="color:var(--cx-text-mute);font-size:12px;">${esc(r.primer_pago||'—')}</td>
-      <td class="mob-hide" style="color:var(--cx-text-mute);font-size:12px;">${esc(r.ultimo_pago||'—')}</td>
+      <td class="mob-hide" style="color:var(--cx-text-mute);font-size:12px;">${esc(r.primer_pago||'-')}</td>
+      <td class="mob-hide" style="color:var(--cx-text-mute);font-size:12px;">${esc(r.ultimo_pago||'-')}</td>
       <td>${estadoBadge}</td>
     </tr>`;
   }).join('') : '<tr class="empty-row"><td colspan="9">Sin datos de pagos registrados.</td></tr>';
@@ -5216,7 +5216,7 @@ async function loadAnalytics() {
       <td class="mob-hide">${m.colabs}</td>
       <td class="mob-hide">${m.creadores_unicos_mes}</td>
       <td style="color:#818cf8;font-weight:700;">${fmtM(m.total_pagado)}</td>
-      <td style="color:#f59e0b;">${m.total_pendiente>0?fmtM(m.total_pendiente):'—'}</td>
+      <td style="color:#f59e0b;">${m.total_pendiente>0?fmtM(m.total_pendiente):'-'}</td>
       <td class="mob-hide" style="color:#16a34a;">${m.nuevos_creadores||0}</td>
     </tr>`
   ).join('') : '<tr class="empty-row"><td colspan="6">Sin datos</td></tr>';
@@ -5270,10 +5270,10 @@ function verHistorial(id, infOptional) {
       <tbody>`;
     pagadas.forEach(p=>{
       html += `<tr style="border-bottom:1px solid var(--cx-hairline);">
-        <td style="padding:6px 8px;color:var(--cx-text-mute);">${p.fecha||'—'}</td>
-        <td style="padding:6px 8px;">${p.concepto||'—'}</td>
+        <td style="padding:6px 8px;color:var(--cx-text-mute);">${p.fecha||'-'}</td>
+        <td style="padding:6px 8px;">${p.concepto||'-'}</td>
         <td style="padding:6px 8px;text-align:right;color:#16a34a;font-weight:700;">${fmtM(p.valor||0)}</td>
-        <td style="padding:6px 8px;color:var(--cx-text-mute);font-size:11px;">${p.numero_oc||'—'}</td>
+        <td style="padding:6px 8px;color:var(--cx-text-mute);font-size:11px;">${p.numero_oc||'-'}</td>
       </tr>`;
     });
     html += `</tbody></table>`;
@@ -5291,8 +5291,8 @@ function verHistorial(id, infOptional) {
       <tbody>`;
     pendientes.forEach(p=>{
       html += `<tr style="border-bottom:1px solid var(--cx-hairline);">
-        <td style="padding:6px 8px;color:var(--cx-text-mute);">${p.fecha||'—'}</td>
-        <td style="padding:6px 8px;">${p.concepto||'—'}</td>
+        <td style="padding:6px 8px;color:var(--cx-text-mute);">${p.fecha||'-'}</td>
+        <td style="padding:6px 8px;">${p.concepto||'-'}</td>
         <td style="padding:6px 8px;text-align:right;color:#f59e0b;font-weight:700;">${fmtM(p.valor||0)}</td>
       </tr>`;
     });
@@ -5479,7 +5479,7 @@ function renderAgencia(d) {
 // ──────────────────────────────────────────────────────────────────────────────
 
 // ══════════════════════════════════════════════════════════════════════════════
-// AGENCIA ADS — Multi-plataforma con claude-ads skill
+// AGENCIA ADS - Multi-plataforma con claude-ads skill
 // ══════════════════════════════════════════════════════════════════════════════
 const ADS_PLATFORMS = [
   {id:'google',    name:'Google Ads',     icon:'&#x1F50D;', color:'#4285F4', desc:'Search · PMax · YouTube'},
@@ -5597,7 +5597,7 @@ function renderAdsTab() {
     </style>
 
     <div class="ads-hero">
-      <h2>&#x1F680; Agencia de Ads — Multi-plataforma</h2>
+      <h2>&#x1F680; Agencia de Ads - Multi-plataforma</h2>
       <div class="sub">
         Auditoria, planning, creative y budget para 7 plataformas pagadas.
         Powered by claude-sonnet-4-5 con 250+ checks, scoring 0-100, benchmarks por industria,

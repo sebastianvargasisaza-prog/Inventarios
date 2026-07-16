@@ -1,9 +1,9 @@
-"""Template Bienestar — notificaciones empleados + capacitaciones.
+"""Template Bienestar - notificaciones empleados + capacitaciones.
 
 Sebastian (30-abr-2026): UI minimalista con 3 tabs:
   Mis Notificaciones (crear + ver propias)
   Mis Capacitaciones (ver, abrir examen Claude, calificar)
-  Bandeja Jefe (solo es_jefe=true) — ver TODAS, asignar capacitaciones, resolver
+  Bandeja Jefe (solo es_jefe=true) - ver TODAS, asignar capacitaciones, resolver
 """
 
 HTML = r"""<!DOCTYPE html>
@@ -145,7 +145,7 @@ label{font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:4
   <p style="color:#64748b;font-size:12px;margin-bottom:14px">
     Score = capacitaciones aprobadas × 25 + nota_prom × 0.4 + tareas × 5 +
     producciones × 4 − desviaciones_pendientes × 10. Sebastian (30-abr-2026):
-    "trimestral, no mensual — mensual se vuelve costumbre".
+    "trimestral, no mensual - mensual se vuelve costumbre".
   </p>
   <div id="trimestral-content"></div>
 </div>
@@ -183,7 +183,7 @@ label{font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:4
         </div>
         <div style="margin-bottom:10px">
           <label>Título de la capacitación</label>
-          <input id="cap-titulo" type="text" placeholder="Ej: BPM básico — manejo de marmita">
+          <input id="cap-titulo" type="text" placeholder="Ej: BPM básico - manejo de marmita">
         </div>
         <div style="margin-bottom:10px">
           <label>URL del material (video / NotebookLM / PDF)</label>

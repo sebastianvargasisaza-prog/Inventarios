@@ -1,4 +1,4 @@
-"""Template Compliance — Cronogramas BPM + CAPA + Hallazgos."""
+"""Template Compliance - Cronogramas BPM + CAPA + Hallazgos."""
 
 HTML = r"""<!DOCTYPE html>
 <html lang="es" translate="no">
@@ -334,12 +334,12 @@ async function cargarCronogramas(){
     box.innerHTML = d.cronogramas.map(function(c){
       var pct = c.pct_cumplimiento;
       var clase = pct<50?'danger':pct<80?'warn':'';
-      return '<div class="card" style="cursor:pointer" onclick="abrirCronograma('+c.id+',&quot;'+_esc(c.codigo+' — '+c.nombre)+'&quot;)">' +
+      return '<div class="card" style="cursor:pointer" onclick="abrirCronograma('+c.id+',&quot;'+_esc(c.codigo+' - '+c.nombre)+'&quot;)">' +
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">' +
           '<div style="flex:1;min-width:200px">' +
             '<div style="font-weight:700;color:#0c4a6e;font-family:monospace;font-size:12px">'+_esc(c.codigo)+'</div>' +
             '<div style="font-size:14px;font-weight:600;color:#0f172a;margin-top:2px">'+_esc(c.nombre)+'</div>' +
-            '<div style="font-size:11px;color:#64748b;margin-top:4px">Frecuencia: '+_esc(c.frecuencia||'—')+' · Responsable: '+_esc(c.responsable||'—')+'</div>' +
+            '<div style="font-size:11px;color:#64748b;margin-top:4px">Frecuencia: '+_esc(c.frecuencia||'-')+' · Responsable: '+_esc(c.responsable||'-')+'</div>' +
           '</div>' +
           '<div style="text-align:right">' +
             '<div style="font-size:24px;font-weight:800;color:'+(clase==='danger'?'#dc2626':clase==='warn'?'#d97706':'#16a34a')+'">'+pct+'%</div>' +
@@ -377,8 +377,8 @@ async function abrirCronograma(cron_id, titulo){
         var btn = (e.estado==='pendiente') ?
           '<button class="btn btn-success btn-sm" onclick="cumplirEjecucion('+e.id+')">✓ Marcar cumplido</button>'
           : '';
-        html += '<tr><td>'+_esc(e.fecha_planeada)+'</td><td>'+_esc(e.fecha_real||'—')+
-                '</td><td>'+_esc(e.ejecutado_por||'—')+
+        html += '<tr><td>'+_esc(e.fecha_planeada)+'</td><td>'+_esc(e.fecha_real||'-')+
+                '</td><td>'+_esc(e.ejecutado_por||'-')+
                 '</td><td><span class="badge b-'+e.estado+'">'+e.estado+'</span></td><td>'+btn+'</td></tr>';
       });
       html += '</tbody></table>';
@@ -465,7 +465,7 @@ async function cargarCAPA(){
         '<div style="font-weight:600;margin-top:6px">'+_esc(x.titulo)+'</div>' +
         (x.descripcion?'<div style="color:#475569;font-size:13px;margin-top:4px">'+_esc(x.descripcion)+'</div>':'') +
         (x.producto_relacionado?'<div style="font-size:11px;color:#64748b;margin-top:4px">📦 '+_esc(x.producto_relacionado)+(x.lote?' lote '+_esc(x.lote):'')+'</div>':'') +
-        '<div style="font-size:11px;color:#64748b;margin-top:4px">Responsable: '+_esc(x.responsable||'—')+'</div>' +
+        '<div style="font-size:11px;color:#64748b;margin-top:4px">Responsable: '+_esc(x.responsable||'-')+'</div>' +
         (ES_RESPONSABLE && x.estado!=='cerrada' ? '<div style="margin-top:8px"><button class="btn btn-success btn-sm" onclick="cerrarCAPA('+x.id+')">✓ Cerrar desviación</button></div>' : '') +
         '</div>';
     }).join('');
@@ -537,7 +537,7 @@ async function cargarHallazgos(){
         '</div>' +
         '<div style="font-weight:600;margin-top:6px">'+_esc(h.titulo)+'</div>' +
         (h.descripcion?'<div style="color:#475569;font-size:13px;margin-top:4px">'+_esc(h.descripcion)+'</div>':'') +
-        '<div style="font-size:11px;color:#64748b;margin-top:4px">Área: '+_esc(h.area||'—')+' · Responsable: '+_esc(h.responsable||'—')+'</div>' +
+        '<div style="font-size:11px;color:#64748b;margin-top:4px">Área: '+_esc(h.area||'-')+' · Responsable: '+_esc(h.responsable||'-')+'</div>' +
         (h.accion_propuesta?'<div style="font-size:12px;color:#475569;margin-top:4px"><b>Acción:</b> '+_esc(h.accion_propuesta)+'</div>':'') +
         (ES_RESPONSABLE && h.estado!=='cerrado' ? '<div style="margin-top:8px;display:flex;gap:6px"><button class="btn btn-warn btn-sm" onclick="enProcesoHallazgo('+h.id+')">→ En proceso</button><button class="btn btn-success btn-sm" onclick="cerrarHallazgo('+h.id+')">✓ Cerrar</button></div>' : '') +
         '</div>';

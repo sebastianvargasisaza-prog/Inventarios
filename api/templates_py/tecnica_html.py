@@ -151,7 +151,7 @@ textarea{resize:vertical;min-height:60px;}
     <div class="form-row">
       <div class="form-group"><label>Codigo</label><input id="ft-cod" placeholder="COC-FT-001"></div>
       <div class="form-group"><label>Nombre del Producto</label><input id="ft-nom"></div>
-      <div class="form-group"><label>Formula vinculada</label><select id="ft-formula"><option value="">— ninguna —</option></select></div>
+      <div class="form-group"><label>Formula vinculada</label><select id="ft-formula"><option value="">- ninguna -</option></select></div>
       <div class="form-group"><label>Version</label><input id="ft-ver" value="1.0" style="max-width:80px"></div>
       <div class="form-group"><label>Estado</label><select id="ft-est"><option>Vigente</option><option>En_Revision</option><option>Obsoleta</option></select></div>
       <div class="form-group"><label>Fecha Actualizacion</label><input type="date" id="ft-fv"></div>
@@ -404,7 +404,7 @@ function loadFormulas() {
     var sel = document.getElementById('ft-formula');
     if (sel) {
       var actual = sel.value;
-      var opts = '<option value="">— ninguna —</option>';
+      var opts = '<option value="">- ninguna -</option>';
       FORMULAS_CACHE.forEach(function(f) {
         opts += '<option value="' + f.id + '">' + f.codigo + ' · ' + (f.nombre||'').slice(0,40) + '</option>';
       });
@@ -428,7 +428,7 @@ function verHistorialFormula(fid, codigo) {
     }
     var body = document.getElementById('modal-historial-body');
     if (!versiones || !versiones.length) {
-      body.innerHTML = '<h2 style="margin-top:0">&#128214; Historial — ' + codigo + '</h2>' +
+      body.innerHTML = '<h2 style="margin-top:0">&#128214; Historial - ' + codigo + '</h2>' +
         '<div style="color:var(--cx-text-mute);font-style:italic;padding:24px;text-align:center;">Sin cambios registrados todavia. El primer snapshot se crea al editar la formula.</div>' +
         '<div style="text-align:right;margin-top:16px"><button class="btn btn-secondary" onclick="document.getElementById(\'modal-historial\').remove()">Cerrar</button></div>';
       return;
@@ -445,7 +445,7 @@ function verHistorialFormula(fid, codigo) {
         '</td>' +
       '</tr>';
     }).join('');
-    body.innerHTML = '<h2 style="margin-top:0">&#128214; Historial — ' + codigo + '</h2>' +
+    body.innerHTML = '<h2 style="margin-top:0">&#128214; Historial - ' + codigo + '</h2>' +
       '<div style="font-size:12px;color:var(--cx-text-mute);margin-bottom:14px;">Snapshots tomados automaticamente antes de cada cambio. Click "Restaurar" para revertir (admins only). El restore tambien se snapshot, asi puedes deshacer el deshacer.</div>' +
       '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:var(--cx-bg-alt);color:var(--cx-text-mute);text-transform:uppercase;font-size:11px;">' +
       '<th style="padding:10px;text-align:left;">Version</th><th style="padding:10px;text-align:left;">Fecha</th><th style="padding:10px;text-align:left;">Por</th><th style="padding:10px;text-align:left;">Motivo</th><th style="padding:10px;text-align:right;">Acciones</th>' +
@@ -463,7 +463,7 @@ function verSnapshot(fid, vid) {
              '<td style="padding:6px 12px;font-size:12px;color:var(--cx-text);">' + (snap[k]==null?'<em style="color:var(--cx-text-mute)">null</em>':String(snap[k]).substring(0,200)) + '</td></tr>';
     }).join('');
     var html = '<h2 style="margin-top:0">&#128203; Snapshot v' + d.version_num + '</h2>' +
-      '<div style="font-size:11px;color:var(--cx-text-mute);margin-bottom:10px;">Tomado el ' + (d.fecha_creacion||'-') + ' por ' + (d.creado_por||'-') + ' — motivo: ' + (d.motivo_cambio||'(no especificado)') + '</div>' +
+      '<div style="font-size:11px;color:var(--cx-text-mute);margin-bottom:10px;">Tomado el ' + (d.fecha_creacion||'-') + ' por ' + (d.creado_por||'-') + ' - motivo: ' + (d.motivo_cambio||'(no especificado)') + '</div>' +
       '<table style="width:100%;border-collapse:collapse;background:var(--cx-bg-alt);border-radius:8px;overflow:hidden;">' + lineas + '</table>' +
       '<div style="text-align:right;margin-top:16px;"><button class="btn btn-secondary" onclick="this.parentNode.parentNode.parentNode.parentNode.remove()">Cerrar</button></div>';
     var m = document.createElement('div');
@@ -582,7 +582,7 @@ function abrirEditor(entidad, id, dataActual) {
       inner += '</select>';
     } else if (f.type === 'select-formula') {
       inner += '<select id="ed-' + f.key + '" style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);padding:7px 10px;border-radius:7px;font-size:0.85em;width:100%;">';
-      inner += '<option value="">— ninguna —</option>';
+      inner += '<option value="">- ninguna -</option>';
       FORMULAS_CACHE.forEach(function(fm){
         inner += '<option value="' + fm.id + '"' + (String(fm.id)===val?' selected':'') + '>' + fm.codigo + ' · ' + (fm.nombre||'').slice(0,40) + '</option>';
       });
@@ -666,7 +666,7 @@ function cargarFormulasDropdown() {
     FORMULAS_CACHE = data || [];
     var sel = document.getElementById('ft-formula');
     if (!sel) return;
-    var opts = '<option value="">— ninguna —</option>';
+    var opts = '<option value="">- ninguna -</option>';
     FORMULAS_CACHE.forEach(function(f) {
       opts += '<option value="' + f.id + '">' + f.codigo + ' · ' + (f.nombre||'').slice(0,40) + '</option>';
     });
@@ -687,7 +687,7 @@ function loadFichas() {
       FORMULAS_CACHE.forEach(function(f){ fmap[f.id] = f.codigo; });
       tb.innerHTML = info.items.map(function(r) {
         var link = r.url_documento ? '<a href="' + r.url_documento + '" target="_blank" style="color:#a5b4fc">Ver doc</a>' : '-';
-        var fcod = r.formula_id ? (fmap[r.formula_id] || ('id ' + r.formula_id)) : '<span style="color:var(--cx-text-faint)">—</span>';
+        var fcod = r.formula_id ? (fmap[r.formula_id] || ('id ' + r.formula_id)) : '<span style="color:var(--cx-text-faint)">-</span>';
         return '<tr><td>' + r.codigo + '</td><td>' + r.nombre + '</td><td><span class="badge-azul">' + fcod + '</span></td><td>' + r.version + '</td><td>' + estadoBadge(r.estado) + '</td><td>' + (r.fecha_actualizacion||'-') + '</td><td>' + link + '</td><td><button class="btn btn-secondary btn-sm" onclick="editarFicha(' + r.id + ')" title="Editar">&#9998;</button> <button class="btn btn-danger btn-sm" onclick="eliminarFicha(' + r.id + ')">Eliminar</button></td></tr>';
       }).join('');
       document.getElementById('pg-fichas').innerHTML = _renderPaginacionHTML('fichas', info);
@@ -783,7 +783,7 @@ function loadOperacion(){
     var h='<table style="width:100%;border-collapse:collapse;font-size:12.5px"><thead><tr style="background:#f1f5f9;text-align:left"><th style="padding:6px 8px">Producto</th><th style="padding:6px 8px">Lote</th><th style="padding:6px 8px">Fase</th><th style="padding:6px 8px">Avance</th><th style="padding:6px 8px">Despeje</th><th style="padding:6px 8px">IPC</th></tr></thead><tbody>';
     h+=bs.map(function(b){
       var ipc=b.ipc_oos>0?'<span style="color:#dc2626;font-weight:700">'+b.ipc_oos+' OOS</span>':'<span style="color:#16a34a">ok</span>';
-      var desp=b.despeje_ok?'<span style="color:#16a34a">✓</span>':'<span style="color:#94a3b8">—</span>';
+      var desp=b.despeje_ok?'<span style="color:#16a34a">✓</span>':'<span style="color:#94a3b8">-</span>';
       return '<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:6px 8px"><b>'+_opEsc(b.producto||'?')+'</b></td><td style="padding:6px 8px">'+_opEsc(b.lote||'')+'</td><td style="padding:6px 8px">'+_opEsc(b.fase||'')+'</td><td style="padding:6px 8px">'+b.pasos_done+'/'+b.pasos_total+' ('+b.pct+'%)</td><td style="padding:6px 8px;text-align:center">'+desp+'</td><td style="padding:6px 8px">'+ipc+'</td></tr>';
     }).join('');
     h+='</tbody></table>';

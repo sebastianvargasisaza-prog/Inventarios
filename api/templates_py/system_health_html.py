@@ -108,7 +108,7 @@ SYSTEM_HEALTH_HTML = r'''<!DOCTYPE html>
     <div style="text-align:right">
       <div id="overallPill" class="overall ok">cargando…</div>
       <div class="meta" style="margin-top:6px">
-        commit <b id="commit">—</b> · <span id="ts">—</span>
+        commit <b id="commit">-</b> · <span id="ts">-</span>
         &nbsp; <button class="refresh" onclick="loadHealth()">↻ Refresh</button>
       </div>
     </div>
@@ -156,7 +156,7 @@ function _esc(s){
 }
 
 function fmt(v) {
-  if (v === null || v === undefined) return '—';
+  if (v === null || v === undefined) return '-';
   if (typeof v === 'boolean') return v ? '✓ sí' : '✗ no';
   if (typeof v === 'number') {
     if (Math.abs(v) >= 1000) return v.toLocaleString('es-CO');
@@ -225,7 +225,7 @@ async function loadHealth() {
     const d = await r.json();
 
     // Topbar metadata
-    document.getElementById('commit').textContent = d.commit || '—';
+    document.getElementById('commit').textContent = d.commit || '-';
     document.getElementById('ts').textContent = (d.timestamp || '').slice(0, 19).replace('T', ' ') + ' UTC';
     const overall = d.overall || 'ok';
     const pill = document.getElementById('overallPill');

@@ -1,4 +1,4 @@
-# Auto-extraído de index.py — Fase A refactor
+# Auto-extraído de index.py - Fase A refactor
 SOLICITUDES_HTML = """<!DOCTYPE html>
 <html lang="es" translate="no">
 <head>

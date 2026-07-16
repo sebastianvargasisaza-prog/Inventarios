@@ -7,7 +7,7 @@ HTML = r"""
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Centro de Operaciones — HHA Group</title>
+<title>Centro de Operaciones - HHA Group</title>
 <link rel="stylesheet" href="/static/cortex.css?v=eos15">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
@@ -91,63 +91,63 @@ HTML = r"""
 
   <div class="container">
 
-    <!-- ÁREA: CAJA HOY (solo del día — el mes vive en Financiero) -->
+    <!-- ÁREA: CAJA HOY (solo del día - el mes vive en Financiero) -->
     <div class="area-title"><span class="area-title-icon">💰</span>Caja del día <a class="quick-link" href="/financiero" style="margin-left:auto;">Ver mes en Financiero →</a></div>
     <div class="grid grid-6">
-      <div class="card"><div class="label">Ingresos hoy</div><div class="val" id="caja-ing-hoy">—</div><div class="sub" style="color:#64748b">solo hoy</div></div>
-      <div class="card"><div class="label">Egresos hoy</div><div class="val" style="color:#fca5a5" id="caja-egr-hoy">—</div><div class="sub" style="color:#64748b">solo hoy</div></div>
-      <div class="card"><div class="label">Neto hoy</div><div class="val" id="caja-neto-hoy">—</div><div class="sub" style="color:#64748b">ing − egr del día</div></div>
+      <div class="card"><div class="label">Ingresos hoy</div><div class="val" id="caja-ing-hoy">-</div><div class="sub" style="color:#64748b">solo hoy</div></div>
+      <div class="card"><div class="label">Egresos hoy</div><div class="val" style="color:#fca5a5" id="caja-egr-hoy">-</div><div class="sub" style="color:#64748b">solo hoy</div></div>
+      <div class="card"><div class="label">Neto hoy</div><div class="val" id="caja-neto-hoy">-</div><div class="sub" style="color:#64748b">ing − egr del día</div></div>
     </div>
 
     <!-- ÁREA: PRODUCCIÓN + INVENTARIO -->
     <div class="area-title"><span class="area-title-icon">🏭</span>Producción & Inventario <a class="quick-link" href="/inventarios">Ver Planta</a></div>
     <div class="grid grid-6">
-      <div class="card"><div class="label">Lotes mes</div><div class="val" id="prod-lotes">—</div><div class="sub" id="prod-kg"></div></div>
-      <div class="card"><div class="label">Programados 30d</div><div class="val" id="prod-prog">—</div><div class="sub">próximas producciones</div></div>
-      <div class="card"><div class="label">MPs en cero</div><div class="val" style="color:#fca5a5" id="inv-cero">—</div><div class="sub">stock crítico</div></div>
-      <div class="card"><div class="label">MPs bajo mín.</div><div class="val" style="color:#fcd34d" id="inv-bajo">—</div><div class="sub">requieren reposición</div></div>
-      <div class="card"><div class="label">Lotes vencen 7d</div><div class="val" style="color:#fcd34d" id="inv-venc">—</div><div class="sub">acción urgente</div></div>
-      <div class="card"><div class="label">NCs abiertas</div><div class="val" style="color:#fbbf24" id="ncs">—</div><div class="sub">calidad sin cerrar</div></div>
+      <div class="card"><div class="label">Lotes mes</div><div class="val" id="prod-lotes">-</div><div class="sub" id="prod-kg"></div></div>
+      <div class="card"><div class="label">Programados 30d</div><div class="val" id="prod-prog">-</div><div class="sub">próximas producciones</div></div>
+      <div class="card"><div class="label">MPs en cero</div><div class="val" style="color:#fca5a5" id="inv-cero">-</div><div class="sub">stock crítico</div></div>
+      <div class="card"><div class="label">MPs bajo mín.</div><div class="val" style="color:#fcd34d" id="inv-bajo">-</div><div class="sub">requieren reposición</div></div>
+      <div class="card"><div class="label">Lotes vencen 7d</div><div class="val" style="color:#fcd34d" id="inv-venc">-</div><div class="sub">acción urgente</div></div>
+      <div class="card"><div class="label">NCs abiertas</div><div class="val" style="color:#fbbf24" id="ncs">-</div><div class="sub">calidad sin cerrar</div></div>
     </div>
 
     <!-- ÁREA: COMERCIAL -->
     <div class="area-title"><span class="area-title-icon">🛍️</span>Comercial <a class="quick-link" href="/animus">ÁNIMUS</a><a class="quick-link" href="/clientes">Clientes B2B</a></div>
     <div class="grid grid-6">
-      <div class="card"><div class="label">Ventas Shopify hoy</div><div class="val" id="sh-hoy">—</div><div class="sub" id="sh-hoy-count"></div></div>
-      <div class="card"><div class="label">Ventas Shopify mes</div><div class="val" id="sh-mes">—</div><div class="sub" id="sh-mes-count"></div></div>
-      <div class="card"><div class="label">Pedidos B2B activos</div><div class="val" id="ped-b2b">—</div><div class="sub">en proceso/listos</div></div>
+      <div class="card"><div class="label">Ventas Shopify hoy</div><div class="val" id="sh-hoy">-</div><div class="sub" id="sh-hoy-count"></div></div>
+      <div class="card"><div class="label">Ventas Shopify mes</div><div class="val" id="sh-mes">-</div><div class="sub" id="sh-mes-count"></div></div>
+      <div class="card"><div class="label">Pedidos B2B activos</div><div class="val" id="ped-b2b">-</div><div class="sub">en proceso/listos</div></div>
     </div>
 
     <!-- ÁREA: PAGOS -->
     <div class="area-title"><span class="area-title-icon">💳</span>Pagos pendientes <a class="quick-link" href="/compras">Compras</a><a class="quick-link" href="/contabilidad">Contabilidad</a></div>
     <div class="grid grid-6">
-      <div class="card"><div class="label">OCs por pagar</div><div class="val" id="oc-pend">—</div><div class="sub" id="oc-pend-val"></div></div>
-      <div class="card"><div class="label">Facturas con saldo</div><div class="val" id="fac-pend">—</div><div class="sub" id="fac-pend-val"></div></div>
-      <div class="card"><div class="label">Influencers a pagar</div><div class="val" id="mkt-toca">—</div><div class="sub">ciclo cumplido</div></div>
+      <div class="card"><div class="label">OCs por pagar</div><div class="val" id="oc-pend">-</div><div class="sub" id="oc-pend-val"></div></div>
+      <div class="card"><div class="label">Facturas con saldo</div><div class="val" id="fac-pend">-</div><div class="sub" id="fac-pend-val"></div></div>
+      <div class="card"><div class="label">Influencers a pagar</div><div class="val" id="mkt-toca">-</div><div class="sub">ciclo cumplido</div></div>
     </div>
 
     <!-- ÁREA: DIRECCIÓN TÉCNICA -->
     <div class="area-title"><span class="area-title-icon">🔧</span>Dirección Técnica <a class="quick-link" href="/tecnica">Ver módulo</a></div>
     <div class="grid grid-6">
-      <div class="card"><div class="label">Fórmulas vigentes</div><div class="val" id="t-formulas">—</div><div class="sub">activas en producción</div></div>
-      <div class="card"><div class="label">Registros INVIMA</div><div class="val" id="t-invima">—</div><div class="sub">vigentes</div></div>
-      <div class="card"><div class="label">SGDs vencen 30d</div><div class="val" style="color:#fbbf24" id="t-sgd">—</div><div class="sub">SOPs por revisar</div></div>
+      <div class="card"><div class="label">Fórmulas vigentes</div><div class="val" id="t-formulas">-</div><div class="sub">activas en producción</div></div>
+      <div class="card"><div class="label">Registros INVIMA</div><div class="val" id="t-invima">-</div><div class="sub">vigentes</div></div>
+      <div class="card"><div class="label">SGDs vencen 30d</div><div class="val" style="color:#fbbf24" id="t-sgd">-</div><div class="sub">SOPs por revisar</div></div>
     </div>
 
     <!-- ÁREA: PERSONAS / RRHH -->
     <div class="area-title"><span class="area-title-icon">👤</span>Personas <a class="quick-link" href="/rrhh">RRHH</a></div>
     <div class="grid grid-6">
-      <div class="card"><div class="label">Empleados activos</div><div class="val" id="rrhh-act">—</div><div class="sub">en planilla</div></div>
-      <div class="card"><div class="label">Ausencias pendientes</div><div class="val" style="color:#fbbf24" id="rrhh-aus">—</div><div class="sub">por aprobar</div></div>
+      <div class="card"><div class="label">Empleados activos</div><div class="val" id="rrhh-act">-</div><div class="sub">en planilla</div></div>
+      <div class="card"><div class="label">Ausencias pendientes</div><div class="val" style="color:#fbbf24" id="rrhh-aus">-</div><div class="sub">por aprobar</div></div>
     </div>
 
     <!-- ÁREA: EQUIPO / COMUNICACIÓN -->
     <div class="area-title"><span class="area-title-icon">💬</span>Comunicación <a class="quick-link" href="/comunicacion">Compromisos &amp; Chat</a></div>
     <div class="grid grid-6">
-      <div class="card"><div class="label">Compromisos vencidos</div><div class="val" style="color:#fca5a5" id="t-venc">—</div><div class="sub">todas las áreas</div></div>
-      <div class="card"><div class="label">Mensajes sin leer</div><div class="val" style="color:#fbbf24" id="msg-sin">—</div><div class="sub">en mi bandeja</div></div>
-      <div class="card"><div class="label">Quejas Alta/Crítica</div><div class="val" style="color:#fca5a5" id="quejas">—</div><div class="sub">requieren acción</div></div>
-      <div class="card"><div class="label">Campañas activas</div><div class="val" id="camp">—</div><div class="sub">marketing</div></div>
+      <div class="card"><div class="label">Compromisos vencidos</div><div class="val" style="color:#fca5a5" id="t-venc">-</div><div class="sub">todas las áreas</div></div>
+      <div class="card"><div class="label">Mensajes sin leer</div><div class="val" style="color:#fbbf24" id="msg-sin">-</div><div class="sub">en mi bandeja</div></div>
+      <div class="card"><div class="label">Quejas Alta/Crítica</div><div class="val" style="color:#fca5a5" id="quejas">-</div><div class="sub">requieren acción</div></div>
+      <div class="card"><div class="label">Campañas activas</div><div class="val" id="camp">-</div><div class="sub">marketing</div></div>
     </div>
 
     <!-- ACTIVIDAD RECIENTE -->
@@ -180,7 +180,7 @@ async function cargar(forzado) {
     const d = await fetch('/api/centro/operaciones').then(r=>r.json());
     if(d.error) return;
 
-    // CAJA — solo HOY (el mes vive en /financiero)
+    // CAJA - solo HOY (el mes vive en /financiero)
     const c = d.caja || {};
     document.getElementById('caja-ing-hoy').textContent = fmtM(c.ingresos_hoy);
     document.getElementById('caja-egr-hoy').textContent = fmtM(c.egresos_hoy);

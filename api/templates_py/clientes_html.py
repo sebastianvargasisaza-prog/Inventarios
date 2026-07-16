@@ -1,4 +1,4 @@
-# Auto-generado — Canal B2B HHA Group (ÁNIMUS Aliados + Espagiria Maquila 360)
+# Auto-generado - Canal B2B HHA Group (ÁNIMUS Aliados + Espagiria Maquila 360)
 CLIENTES_HTML = """\
 <!DOCTYPE html>
 <html lang="es" translate="no">
@@ -277,12 +277,12 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
       <!-- Revenue este mes -->
       <div style="background:#0f172a;border-radius:12px;padding:16px;color:#fff;">
         <div style="font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;margin-bottom:4px;">Revenue canal · mes</div>
-        <div style="font-size:1.7em;font-weight:900;" id="cs-rev-mes">—</div>
+        <div style="font-size:1.7em;font-weight:900;" id="cs-rev-mes">-</div>
         <div style="margin-top:6px;font-size:12px;" id="cs-rev-mom">
-          <span id="cs-mom-badge" style="padding:2px 8px;border-radius:10px;font-weight:700;font-size:11px;">—</span>
+          <span id="cs-mom-badge" style="padding:2px 8px;border-radius:10px;font-weight:700;font-size:11px;">-</span>
           <span style="color:#94a3b8;margin-left:4px;">vs mes ant.</span>
         </div>
-        <div style="font-size:10px;color:#64748b;margin-top:4px;" id="cs-rev-anio">Año: —</div>
+        <div style="font-size:10px;color:#64748b;margin-top:4px;" id="cs-rev-anio">Año: -</div>
       </div>
 
       <!-- Activos vs Dormidos -->
@@ -290,16 +290,16 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
         <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px;">Aliados · estado</div>
         <div style="display:flex;align-items:flex-end;gap:12px;">
           <div>
-            <div style="font-size:1.5em;font-weight:900;color:#16a34a;" id="cs-activos">—</div>
+            <div style="font-size:1.5em;font-weight:900;color:#16a34a;" id="cs-activos">-</div>
             <div style="font-size:10px;color:#16a34a;font-weight:600;">Activos</div>
           </div>
           <div style="color:#e2e8f0;font-size:1.5em;font-weight:300;">|</div>
           <div>
-            <div style="font-size:1.5em;font-weight:900;color:#dc2626;" id="cs-dormidos">—</div>
+            <div style="font-size:1.5em;font-weight:900;color:#dc2626;" id="cs-dormidos">-</div>
             <div style="font-size:10px;color:#dc2626;font-weight:600;">Dormidos &gt;60d</div>
           </div>
         </div>
-        <div style="margin-top:8px;font-size:11px;color:#94a3b8;" id="cs-valor-riesgo">Valor en riesgo: —</div>
+        <div style="margin-top:8px;font-size:11px;color:#94a3b8;" id="cs-valor-riesgo">Valor en riesgo: -</div>
       </div>
 
       <!-- Tasa de Retención -->
@@ -311,7 +311,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
             <circle cx="40" cy="40" r="34" fill="none" stroke="#16a34a" stroke-width="8"
               stroke-dasharray="213.6" id="cs-ret-circle" stroke-dashoffset="213.6" stroke-linecap="round"/>
           </svg>
-          <div style="position:absolute;font-size:1.1em;font-weight:900;color:#0f172a;" id="cs-ret-pct">—</div>
+          <div style="position:absolute;font-size:1.1em;font-weight:900;color:#0f172a;" id="cs-ret-pct">-</div>
         </div>
       </div>
 
@@ -320,7 +320,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
         <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:8px;">Concentración top</div>
         <div style="margin-bottom:6px;">
           <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;">
-            <span style="color:#475569;">Top 1</span><span style="font-weight:700;color:#0f172a;" id="cs-top1-pct">—</span>
+            <span style="color:#475569;">Top 1</span><span style="font-weight:700;color:#0f172a;" id="cs-top1-pct">-</span>
           </div>
           <div style="height:6px;background:#f1f5f9;border-radius:3px;overflow:hidden;">
             <div id="cs-top1-bar" style="height:100%;background:#f59e0b;border-radius:3px;width:0%;transition:width .5s;"></div>
@@ -328,7 +328,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
         </div>
         <div>
           <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;">
-            <span style="color:#475569;">Top 3</span><span style="font-weight:700;color:#0f172a;" id="cs-top3-pct">—</span>
+            <span style="color:#475569;">Top 3</span><span style="font-weight:700;color:#0f172a;" id="cs-top3-pct">-</span>
           </div>
           <div style="height:6px;background:#f1f5f9;border-radius:3px;overflow:hidden;">
             <div id="cs-top3-bar" style="height:100%;background:#3b82f6;border-radius:3px;width:0%;transition:width .5s;"></div>
@@ -385,7 +385,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
       🧪 SKUs por Segmento &nbsp;·&nbsp; <span style="font-weight:400;text-transform:none;">qué compra cada tipo de aliada</span>
     </div>
 
-    <!-- SKUs por categoría — tarjetas dinámicas -->
+    <!-- SKUs por categoría - tarjetas dinámicas -->
     <div id="skus-segmento-wrap" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-bottom:20px;">
       <div style="color:#94a3b8;font-size:12px;padding:16px;">Cargando segmentos...</div>
     </div>
@@ -418,26 +418,26 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
   <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;" id="seg-kpis">
     <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:14px;">
       <div style="font-size:10px;font-weight:700;color:#16a34a;text-transform:uppercase;">Total facturado</div>
-      <div style="font-size:1.6em;font-weight:800;color:#15803d;" id="seg-total">—</div>
+      <div style="font-size:1.6em;font-weight:800;color:#15803d;" id="seg-total">-</div>
     </div>
     <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:14px;">
       <div style="font-size:10px;font-weight:700;color:#2563eb;text-transform:uppercase;">Este mes</div>
-      <div style="font-size:1.6em;font-weight:800;color:#1d4ed8;" id="seg-mes">—</div>
+      <div style="font-size:1.6em;font-weight:800;color:#1d4ed8;" id="seg-mes">-</div>
     </div>
     <div style="background:#fefce8;border:1px solid #fde68a;border-radius:10px;padding:14px;">
       <div style="font-size:10px;font-weight:700;color:#ca8a04;text-transform:uppercase;">Ticket promedio</div>
-      <div style="font-size:1.6em;font-weight:800;color:#a16207;" id="seg-ticket">—</div>
+      <div style="font-size:1.6em;font-weight:800;color:#a16207;" id="seg-ticket">-</div>
     </div>
     <div style="background:#fdf4ff;border:1px solid #e9d5ff;border-radius:10px;padding:14px;">
       <div style="font-size:10px;font-weight:700;color:#9333ea;text-transform:uppercase;">Frec. promedio</div>
-      <div style="font-size:1.6em;font-weight:800;color:#7e22ce;" id="seg-frec">—</div>
+      <div style="font-size:1.6em;font-weight:800;color:#7e22ce;" id="seg-frec">-</div>
       <div style="font-size:10px;color:#9333ea;">días entre compras</div>
     </div>
   </div>
 
   <!-- Chart ventas por mes -->
   <div style="background:white;border:1px solid #E8E4DE;border-radius:10px;padding:16px;margin-bottom:18px;">
-    <div style="font-size:0.85em;font-weight:700;color:#1C2B30;margin-bottom:12px;">Ventas netas por aliado — últimos 6 meses</div>
+    <div style="font-size:0.85em;font-weight:700;color:#1C2B30;margin-bottom:12px;">Ventas netas por aliado - últimos 6 meses</div>
     <div id="seg-chart" style="overflow-x:auto;"></div>
   </div>
 
@@ -835,7 +835,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
   </div>
   <div class="mdl-body">
     <p style="margin-bottom:6px;font-size:0.84em;color:#5C7A7A;">Pedido: <strong id="mp-num" style="font-family:monospace;"></strong></p>
-    <p style="margin-bottom:12px;font-size:0.84em;color:#5C7A7A;">Total: <strong id="mp-total"></strong> &mdash; Pagado prev.: <strong id="mp-pagado-prev" style="color:#16a34a;"></strong></p>
+    <p style="margin-bottom:12px;font-size:0.84em;color:#5C7A7A;">Total: <strong id="mp-total"></strong> - Pagado prev.: <strong id="mp-pagado-prev" style="color:#16a34a;"></strong></p>
     <div class="fg" style="margin-bottom:10px;">
       <label>Monto pagado acumulado (total cobrado, no abono)</label>
       <input type="number" id="mp-monto" min="0" step="1000" style="padding:10px 12px;border:1.5px solid #D8E4E4;border-radius:7px;width:100%;font-size:0.9em;box-sizing:border-box;">
@@ -882,8 +882,8 @@ fetch('/api/csrf-token', {credentials: 'same-origin'}).catch(function(){});
 // ─── GLOBALS ──────────────────────────────────────────────────────────────
 var _seccion='animus', _pedActivo=null, _aliadoActivo=null, _prospectoActivo=null, _aliadosCache={}, _prospectoCache={}, _ordenesCache={};
 
-function fmt(n){return n?('$'+parseFloat(n).toLocaleString('es-CO')):'—';}
-function fmtM(n){if(!n)return'—';var m=n/1000000;return'$'+m.toFixed(1)+'M';}
+function fmt(n){return n?('$'+parseFloat(n).toLocaleString('es-CO')):'-';}
+function fmtM(n){if(!n)return'-';var m=n/1000000;return'$'+m.toFixed(1)+'M';}
 function toggleForm(id){var f=document.getElementById(id);f.style.display=f.style.display==='block'?'none':'block';}
 function closeMdl(id){document.getElementById(id).classList.remove('show');}
 function openMdl(id){document.getElementById(id).classList.add('show');}
@@ -1229,7 +1229,7 @@ async function loadChurn(){
       +'<td><strong style="color:'+nivelColor+';">'+c.dias_sin_pedido+'</strong> d</td>'
       +'<td style="text-align:center;">'+c.total_pedidos+'</td>'
       +'<td style="text-align:right;">'+fmt(c.valor_total)+'</td>'
-      +'<td style="font-size:0.8em;">'+(c.email?'<a href="mailto:'+c.email+'" style="color:#6d28d9;">'+c.email+'</a>':'—')+'</td>'
+      +'<td style="font-size:0.8em;">'+(c.email?'<a href="mailto:'+c.email+'" style="color:#6d28d9;">'+c.email+'</a>':'-')+'</td>'
       +'<td><button class="btn btn-xs" onclick="abrirCliente360('+c.id+')">360</button></td></tr>';
   });
   h+='</tbody></table>';
@@ -1248,7 +1248,7 @@ async function abrirCliente360(cid){
   if(s.dias_sin_pedido!==null&&s.dias_sin_pedido!==undefined)
     diasColor=s.dias_sin_pedido>120?'#dc2626':(s.dias_sin_pedido>75?'#d97706':'#16a34a');
   var h='<h2 style="font-size:1.1em;font-weight:800;color:#1C2B30;margin-bottom:4px;">'+cl.nombre+'</h2>'
-    +'<div style="color:#78716c;font-size:0.83em;margin-bottom:14px;">'+cl.tipo+' — '+cl.empresa+(cl.nit?' | NIT: '+cl.nit:'')+'</div>'
+    +'<div style="color:#78716c;font-size:0.83em;margin-bottom:14px;">'+cl.tipo+' - '+cl.empresa+(cl.nit?' | NIT: '+cl.nit:'')+'</div>'
     +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:16px;">'
     +'<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:9px;padding:12px;text-align:center;"><div style="font-size:1.9em;font-weight:900;color:#16a34a;">'+s.total_pedidos+'</div><div style="font-size:0.72em;color:#166534;text-transform:uppercase;letter-spacing:1px;">Pedidos</div></div>'
     +'<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:9px;padding:12px;text-align:center;"><div style="font-size:1.3em;font-weight:900;color:#2563eb;">'+fmt(s.valor_total)+'</div><div style="font-size:0.72em;color:#1e40af;text-transform:uppercase;letter-spacing:1px;">Total</div></div>'
@@ -1336,7 +1336,7 @@ async function loadPipeline(){
       h+='<div class="kan-card" onclick="abrirMoverEtapa('+p.id+')">'
         +'<div class="kan-card-emp">'+p.empresa+'</div>'
         +'<div style="display:flex;gap:4px;flex-wrap:wrap;margin:3px 0;">'+nivelBadge+incubBadge+'</div>'
-        +'<div class="kan-card-prod">'+(p.producto_tipo||'—')+'</div>'
+        +'<div class="kan-card-prod">'+(p.producto_tipo||'-')+'</div>'
         +'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">'
         +'<div class="kan-card-val">'+fmt(p.valor_estimado)+'</div>'
         +kamBadge
@@ -1376,8 +1376,8 @@ async function loadProspectos(){
   tb.innerHTML=prosp.map(function(p){
     return '<tr>'
       +'<td style="font-weight:700;">'+esc(p.empresa)+'</td>'
-      +'<td>'+(p.contacto?esc(p.contacto):'—')+'</td>'
-      +'<td style="font-size:0.83em;">'+(p.producto_tipo?esc(p.producto_tipo):'—')+'</td>'
+      +'<td>'+(p.contacto?esc(p.contacto):'-')+'</td>'
+      +'<td style="font-size:0.83em;">'+(p.producto_tipo?esc(p.producto_tipo):'-')+'</td>'
       +'<td>'+etapaBadge(p.etapa)+'</td>'
       +'<td style="text-align:right;color:#5C4B99;font-weight:700;">'+fmt(p.valor_estimado)+'</td>'
       +'<td style="color:#999;font-size:0.82em;">'+(p.fecha_contacto||'').substring(0,10)+'</td>'
@@ -1420,7 +1420,7 @@ async function loadOrdenes(){
       +'<td style="font-weight:700;">'+esc(o.empresa)+'</td>'
       +'<td>'+esc(o.producto)+'</td>'
       +'<td style="text-align:right;">'+(o.batch_size_kg||0)+' kg</td>'
-      +'<td style="color:#999;font-size:0.82em;">'+(o.fecha_entrega||'—')+'</td>'
+      +'<td style="color:#999;font-size:0.82em;">'+(o.fecha_entrega||'-')+'</td>'
       +'<td><span class="badge '+(estColors[o.estado]||'badge-gris')+'">'+o.estado+'</span></td>'
       +'<td style="text-align:right;color:#5C4B99;font-weight:700;">'+fmt(o.valor_total)+'</td>'
       +'<td><button class="btn btn-ghost-m btn-xs" onclick="abrirEstOrden('+o.id+')">Estado</button></td>'
@@ -1473,7 +1473,7 @@ async function loadSkusSegmento() {
     const wrap = document.getElementById('skus-segmento-wrap');
     const segs = d.segmentos || [];
     if(!segs.length){
-      wrap.innerHTML='<div style="color:#94a3b8;font-size:12px;padding:16px;">Sin datos — aliadas sin categoría asignada</div>';
+      wrap.innerHTML='<div style="color:#94a3b8;font-size:12px;padding:16px;">Sin datos - aliadas sin categoría asignada</div>';
       return;
     }
     const paleta = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#f97316'];
@@ -1547,7 +1547,7 @@ async function loadCartera3() {
           <span style="background:${saldoBg};color:${saldoColor};font-weight:800;padding:2px 10px;border-radius:10px;">${fmtCOP(saldo)}</span>
         </td>
         <td style="padding:10px 14px;text-align:center;font-size:11px;color:#475569;">${pct}% cobrado</td>
-        <td style="padding:10px 14px;text-align:center;font-size:11px;color:#94a3b8;">${r.ultimo_pedido ? r.ultimo_pedido.slice(0,10) : '—'}</td>
+        <td style="padding:10px 14px;text-align:center;font-size:11px;color:#94a3b8;">${r.ultimo_pedido ? r.ultimo_pedido.slice(0,10) : '-'}</td>
       </tr>`;
     }).join('');
   } catch(e){ console.error('loadCartera3:', e); }
@@ -1582,7 +1582,7 @@ async function loadScores() {
 
       // Frecuencia
       const frec = s.frecuencia_dias;
-      const frecTxt   = frec!=null ? frec+'d' : '—';
+      const frecTxt   = frec!=null ? frec+'d' : '-';
       const frecColor = frec==null ? '#94a3b8' : frec<=30 ? '#16a34a' : frec<=60 ? '#f59e0b' : '#dc2626';
 
       // MoM badge
@@ -1592,7 +1592,7 @@ async function loadScores() {
       const momBg    = mom>0 ? '#dcfce7' : mom<0 ? '#fee2e2' : '#f1f5f9';
 
       // Próxima compra
-      let proximaTxt = '—';
+      let proximaTxt = '-';
       let proximaColor = '#94a3b8';
       if(s.dias_proxima!=null){
         if(s.dias_proxima < 0){
@@ -1653,8 +1653,8 @@ async function loadCanalSalud() {
     }
 
     // Activos / dormidos
-    document.getElementById('cs-activos').textContent  = d.aliados_activos  ?? '—';
-    document.getElementById('cs-dormidos').textContent = d.aliados_dormidos ?? '—';
+    document.getElementById('cs-activos').textContent  = d.aliados_activos  ?? '-';
+    document.getElementById('cs-dormidos').textContent = d.aliados_dormidos ?? '-';
     document.getElementById('cs-valor-riesgo').textContent = 'Valor en riesgo: ' + fmtCOP(d.valor_en_riesgo||0);
 
     // Retención donut
@@ -1695,10 +1695,10 @@ async function loadCanalSalud() {
 }
 
 async function loadSeguimiento() {
-  loadCanalSalud();  // Capa 1 — runs independently, non-blocking
-  loadScores();       // Capa 2 — score individual, non-blocking
-  loadSkusSegmento(); // Capa 3 — SKUs por segmento, non-blocking
-  loadCartera3();     // Capa 3 — cartera por aliado, non-blocking
+  loadCanalSalud();  // Capa 1 - runs independently, non-blocking
+  loadScores();       // Capa 2 - score individual, non-blocking
+  loadSkusSegmento(); // Capa 3 - SKUs por segmento, non-blocking
+  loadCartera3();     // Capa 3 - cartera por aliado, non-blocking
   const data = await fetch('/api/aliados/analytics').then(r=>r.json());
   if(data.error){ console.error(data.error); return; }
   _segData = data;
@@ -1715,7 +1715,7 @@ async function loadSeguimiento() {
   document.getElementById('seg-total').textContent  = fmtCOP(totalFact);
   document.getElementById('seg-mes').textContent    = fmtCOP(totalMes);
   document.getElementById('seg-ticket').textContent = fmtCOP(ticket);
-  document.getElementById('seg-frec').textContent   = frecProm!=null ? frecProm : '—';
+  document.getElementById('seg-frec').textContent   = frecProm!=null ? frecProm : '-';
 
   // Chart
   renderSegChart(data.ventas_mes || []);
@@ -1733,16 +1733,16 @@ async function loadSeguimiento() {
     const topSku = (r.top_skus||[])[0];
     const freqBadge = r.frecuencia_dias!=null
       ? `<span style="background:${r.frecuencia_dias<=30?'#dcfce7':r.frecuencia_dias<=60?'#fef9c3':'#fee2e2'};color:${r.frecuencia_dias<=30?'#15803d':r.frecuencia_dias<=60?'#a16207':'#b91c1c'};padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;">${r.frecuencia_dias}d</span>`
-      : '<span style="color:#aaa;font-size:11px;">—</span>';
+      : '<span style="color:#aaa;font-size:11px;">-</span>';
     return `<tr>
       <td><strong>${r.nombre}</strong><br><span style="font-size:10px;color:#94a3b8;">${r.ciudad||''}</span></td>
-      <td><span style="font-size:11px;background:#f1f5f9;padding:2px 7px;border-radius:10px;">${r.categoria_profesional||'—'}</span></td>
-      <td><span style="font-size:11px;color:#64748b;">${r.canal_captacion||'—'}</span></td>
-      <td style="text-align:center;">${redesHtml||'—'}</td>
+      <td><span style="font-size:11px;background:#f1f5f9;padding:2px 7px;border-radius:10px;">${r.categoria_profesional||'-'}</span></td>
+      <td><span style="font-size:11px;color:#64748b;">${r.canal_captacion||'-'}</span></td>
+      <td style="text-align:center;">${redesHtml||'-'}</td>
       <td style="text-align:right;font-weight:700;">${fmtCOP(r.total_facturado)}</td>
       <td style="text-align:right;color:#16a34a;font-weight:600;">${fmtCOP(r.mes_actual)}</td>
       <td style="text-align:center;">${freqBadge}</td>
-      <td style="font-size:11px;">${topSku?topSku.sku+' <span style="color:#94a3b8;">('+topSku.uds+' uds)</span>':'—'}</td>
+      <td style="font-size:11px;">${topSku?topSku.sku+' <span style="color:#94a3b8;">('+topSku.uds+' uds)</span>':'-'}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="abrirModalSeg(${r.id})">Editar</button></td>
     </tr>`;
   }).join('');
@@ -1779,7 +1779,7 @@ function renderSegChart(ventas_mes) {
       const y = H - 30 - barH;
       const col = COLORS[ai % COLORS.length];
       svgBars += `<rect x="${x}" y="${y}" width="${barW}" height="${barH}" fill="${col}" rx="3" opacity="0.85">
-        <title>${anom} — ${mes}: $${Math.round(val/1000)}K</title></rect>`;
+        <title>${anom} - ${mes}: $${Math.round(val/1000)}K</title></rect>`;
       if(barH>14) svgBars += `<text x="${x+barW/2}" y="${y+barH-4}" text-anchor="middle" font-size="8" fill="white" font-weight="700">${Math.round(val/1000)}K</text>`;
     });
     // Month label

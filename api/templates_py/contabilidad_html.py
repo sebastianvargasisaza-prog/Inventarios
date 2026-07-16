@@ -272,9 +272,9 @@ tr:hover td{background:#202020}
         </div>
         <div style="background:#111;border:1px solid #2a2a2a;border-radius:8px;padding:16px;margin-bottom:20px;font-size:13px;color:#888">
           Genera un Excel con 3 hojas:<br>
-          <strong style="color:#ccc">Libro de Ventas</strong> — una fila por factura<br>
-          <strong style="color:#ccc">Detalle Items</strong> — una fila por producto<br>
-          <strong style="color:#ccc">Pagos Recibidos</strong> — abonos registrados
+          <strong style="color:#ccc">Libro de Ventas</strong> - una fila por factura<br>
+          <strong style="color:#ccc">Detalle Items</strong> - una fila por producto<br>
+          <strong style="color:#ccc">Pagos Recibidos</strong> - abonos registrados
         </div>
         <button class="btn btn-primary" style="width:100%;padding:14px" onclick="exportSiigo()">
           Descargar Excel para Siigo
@@ -515,7 +515,7 @@ async function loadFacturas(){
     <tr>
       <td><strong>${esc(f.numero)}</strong></td>
       <td>${esc(fmt(f.fecha_emision))}</td>
-      <td>${esc(f.cliente_nombre||'—')}</td>
+      <td>${esc(f.cliente_nombre||'-')}</td>
       <td>${esc(f.empresa)}</td>
       <td>${COP(f.total)}</td>
       <td>${COP(f.monto_pagado)}</td>
@@ -546,7 +546,7 @@ async function loadCartera(){
       <td><strong>${f.numero}</strong></td>
       <td>${fmt(f.fecha_emision)}</td>
       <td>${fmt(f.fecha_vencimiento)||'Sin fecha'}</td>
-      <td>${f.cliente_nombre||'—'}</td>
+      <td>${f.cliente_nombre||'-'}</td>
       <td>${COP(f.total)}</td>
       <td>${COP(f.saldo)}</td>
       <td>${diasV}</td>
@@ -575,7 +575,7 @@ async function loadTesoreria(){
       ? `<a href="/api/comprobantes-pago/${r.comprobante_id}/pdf" target="_blank"
             style="color:#1F5F5B;font-weight:600;text-decoration:none;font-size:12px;"
             title="Descargar PDF">📄 ${r.comprobante_numero_ce}</a>`
-      : `<span style="color:#bbb;font-size:11px;">—</span>`;
+      : `<span style="color:#bbb;font-size:11px;">-</span>`;
     return `<tr>
       <td>${fmt(r.fecha)}</td>
       <td>${r.concepto||r.descripcion||'Egreso'}</td>
@@ -668,7 +668,7 @@ async function generarFactura(){
   const d = await r.json();
   if(d.ok){
     closeModal('modal-nueva');
-    toast(`Factura ${d.numero} generada — Total: ${COP(d.total)}`);
+    toast(`Factura ${d.numero} generada - Total: ${COP(d.total)}`);
     loadFacturas(); loadKpis(); loadCartera();
   } else {
     toast(d.error||'Error al generar', false);
@@ -678,7 +678,7 @@ async function generarFactura(){
 // ── Pago ─────────────────────────────────────────────────────────────────────
 function openPago(numero, cliente, saldo){
   document.getElementById('pago-numero').value=numero;
-  document.getElementById('pago-title').textContent=`Registrar Pago — ${numero}`;
+  document.getElementById('pago-title').textContent=`Registrar Pago - ${numero}`;
   document.getElementById('pago-monto').value=saldo;
   document.getElementById('pago-ref').value='';
   document.getElementById('modal-pago').classList.add('open');

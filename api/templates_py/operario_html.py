@@ -153,7 +153,7 @@ async function fetchT(url, opts) {
 }
 
 function fmt(n, d=0) {
-  if (n === null || n === undefined) return '—';
+  if (n === null || n === undefined) return '-';
   return Number(n).toLocaleString('es-CO', {maximumFractionDigits: d});
 }
 
@@ -388,7 +388,7 @@ async function completarProd(id) {
       alert('Error: ' + (d.error || r.status));
       return;
     }
-    alert('✓ Completado · merma ' + (d.merma_pct != null ? d.merma_pct.toFixed(1) + '%' : '—'));
+    alert('✓ Completado · merma ' + (d.merma_pct != null ? d.merma_pct.toFixed(1) + '%' : '-'));
     loadMiDia();
   } catch(e) {
     alert(e.timeout ? '⚠ Servidor lento · revisá conexión y reintentá' : ('Error: ' + e.message));

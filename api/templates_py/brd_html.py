@@ -9,7 +9,7 @@ Pestañas:
 - Cleaning Log (listado por equipo)
 
 Acciones (crear MBR, agregar paso, firmar, ejecutar, liberar, etc.) se
-hacen vía endpoints API. Esta v1 es solo VISIBILIDAD — la creación se
+hacen vía endpoints API. Esta v1 es solo VISIBILIDAD - la creación se
 hará en v2 cuando definamos el flujo UX con Calidad.
 """
 
@@ -182,7 +182,7 @@ document.querySelectorAll('.tab').forEach(function(t){
 
 // ── helpers ──
 function escapeHtml(s){return String(s||'').replace(/[&<>"']/g, function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]})}
-function fmtDate(s){if(!s) return '—';return s.substring(0,16).replace('T',' ');}
+function fmtDate(s){if(!s) return '-';return s.substring(0,16).replace('T',' ');}
 
 // CSRF defense-in-depth (mismo patrón que aseguramiento_html.py)
 function _csrf(){var m=document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);return m?decodeURIComponent(m[1]):'';}
@@ -294,9 +294,9 @@ async function loadMbrs(){
         + '<td><strong>' + escapeHtml(m.producto_nombre) + '</strong></td>'
         + '<td>v' + m.version + '</td>'
         + '<td><span class="estado estado-' + m.estado + '">' + m.estado + '</span></td>'
-        + '<td>' + (m.lote_size_g ? m.lote_size_g.toLocaleString('es-CO') : '—') + '</td>'
+        + '<td>' + (m.lote_size_g ? m.lote_size_g.toLocaleString('es-CO') : '-') + '</td>'
         + '<td>' + escapeHtml(m.creado_por) + '</td>'
-        + '<td>' + (m.aprobado_por ? escapeHtml(m.aprobado_por) + '<br><span class="muted">' + fmtDate(m.aprobado_at_utc) + '</span>' : '—') + '</td>'
+        + '<td>' + (m.aprobado_por ? escapeHtml(m.aprobado_por) + '<br><span class="muted">' + fmtDate(m.aprobado_at_utc) + '</span>' : '-') + '</td>'
         + '<td><button class="btn btn-primary btn-sm" onclick="showMbrDetail(' + m.id + ')">Ver</button></td>'
         + '</tr>';
     });
@@ -330,7 +330,7 @@ async function showMbrDetail(id){
     + '<div class="card-title">' + escapeHtml(m.titulo || m.producto_nombre) + ' v' + m.version + ' <span class="estado estado-' + m.estado + '">' + m.estado + '</span></div>'
     + '<dl class="detail-grid">'
     + '<dt>Producto</dt><dd>' + escapeHtml(m.producto_nombre) + '</dd>'
-    + '<dt>Lote ref</dt><dd>' + (m.lote_size_g ? m.lote_size_g.toLocaleString('es-CO') + ' g' : '—') + '</dd>'
+    + '<dt>Lote ref</dt><dd>' + (m.lote_size_g ? m.lote_size_g.toLocaleString('es-CO') + ' g' : '-') + '</dd>'
     + '<dt>Tiempo est</dt><dd>' + (m.tiempo_total_estimado_min || 0) + ' min</dd>'
     + '<dt>Creado por</dt><dd>' + escapeHtml(m.creado_por) + ' · ' + fmtDate(m.creado_at_utc) + '</dd>'
     + (m.aprobado_por ? '<dt>Aprobado por</dt><dd>' + escapeHtml(m.aprobado_por) + ' · firma #' + m.aprobado_signature_id + '</dd>' : '')
@@ -365,15 +365,15 @@ async function loadEbrs(){
     if (!items.length) { div.innerHTML = '<div class="empty">Sin EBRs ejecutados todavía. Iniciá uno desde un MBR aprobado.</div>'; return; }
     let html = '<table><thead><tr><th>OP</th><th>Lote</th><th>Estado</th><th>Iniciado</th><th>Yield</th><th>Liberado por</th><th></th></tr></thead><tbody>';
     items.forEach(function(e){
-      const yld = e.yield_pct != null ? e.yield_pct.toFixed(1) + '%' : '—';
-      const op = e.numero_op || '—';
+      const yld = e.yield_pct != null ? e.yield_pct.toFixed(1) + '%' : '-';
+      const op = e.numero_op || '-';
       html += '<tr>'
         + '<td><span class="muted" style="font-family:monospace;font-size:12px">' + escapeHtml(op) + '</span></td>'
         + '<td><strong>' + escapeHtml(e.lote) + '</strong></td>'
         + '<td><span class="estado estado-' + e.estado + '">' + e.estado + '</span></td>'
         + '<td>' + escapeHtml(e.iniciado_por) + '<br><span class="muted">' + fmtDate(e.iniciado_at_utc) + '</span></td>'
         + '<td>' + yld + '</td>'
-        + '<td>' + (e.liberado_por ? escapeHtml(e.liberado_por) : '—') + '</td>'
+        + '<td>' + (e.liberado_por ? escapeHtml(e.liberado_por) : '-') + '</td>'
         + '<td><button class="btn btn-primary btn-sm" onclick="showEbrDetail(' + e.id + ')">Ver</button>'
         + (['liberado','rechazado','completado'].includes(e.estado) ? ' <a class="btn btn-sm" href="/api/brd/ebr/' + e.id + '/pdf" target="_blank">PDF</a>' : '')
         + '</td>'
@@ -462,7 +462,7 @@ async function showEbrDetail(id){
       if (pendientes.length) {
         html += '<div class="card"><div class="card-title">IPCs pendientes (' + pendientes.length + ')</div>';
         pendientes.forEach(function(s){
-          const rango = (s.valor_min !== null || s.valor_max !== null) ? (s.valor_min + ' – ' + s.valor_max + ' ' + s.unidad) : 'cualitativo';
+          const rango = (s.valor_min !== null || s.valor_max !== null) ? (s.valor_min + ' - ' + s.valor_max + ' ' + s.unidad) : 'cualitativo';
           html += '<div class="paso-card"><strong>' + escapeHtml(s.parametro) + '</strong> · <span class="muted">rango: ' + escapeHtml(rango) + '</span>'
             + (s.obligatorio ? ' <span class="estado estado-en_revision">obligatorio</span>' : '')
             + '<div class="action-bar" style="margin-top:6px"><button class="btn btn-primary btn-sm" onclick="reportarIpc(' + id + ',' + s.id + ',\'' + escapeHtml(s.parametro) + '\',' + (s.valor_min===null?'null':s.valor_min) + ',' + (s.valor_max===null?'null':s.valor_max) + ',\'' + escapeHtml(s.unidad||'') + '\')">Reportar medición</button></div>'
@@ -492,7 +492,7 @@ async function showEbrDetail(id){
     ipc.items.forEach(function(i){
       const conf = i.conforme === 1 ? '<span class="estado estado-aprobado">SÍ</span>' :
                    i.conforme === 0 ? '<span class="estado estado-rechazado">NO</span>' : '<span class="muted">pendiente</span>';
-      const rango = (i.spec.valor_min != null || i.spec.valor_max != null) ? (i.spec.valor_min + ' – ' + i.spec.valor_max + ' ' + i.spec.unidad) : '—';
+      const rango = (i.spec.valor_min != null || i.spec.valor_max != null) ? (i.spec.valor_min + ' - ' + i.spec.valor_max + ' ' + i.spec.unidad) : '-';
       html += '<tr><td>' + escapeHtml(i.spec.parametro) + '</td><td>' + (i.valor_medido != null ? i.valor_medido + ' ' + i.spec.unidad : escapeHtml(i.valor_texto)) + '</td><td>' + escapeHtml(rango) + '</td><td>' + conf + '</td><td>' + escapeHtml(i.medido_por) + '</td></tr>';
     });
     html += '</tbody></table></div>';
@@ -637,7 +637,7 @@ async function reportarIpc(ebrId, specId, parametro, vmin, vmax, unidad) {
   const tieneRango = (vmin !== null && vmin !== undefined) || (vmax !== null && vmax !== undefined);
   let valorRaw;
   if (tieneRango) {
-    valorRaw = prompt('Reportar ' + parametro + ' (' + unidad + ') · rango: ' + vmin + ' – ' + vmax + ':', '');
+    valorRaw = prompt('Reportar ' + parametro + ' (' + unidad + ') · rango: ' + vmin + ' - ' + vmax + ':', '');
     if (!valorRaw) return;
     const v = parseFloat(valorRaw);
     if (isNaN(v)) { alert('Valor inválido'); return; }
@@ -705,10 +705,10 @@ async function loadCleaning(){
       html += '<tr>'
         + '<td><strong>' + escapeHtml(c.equipo_codigo) + '</strong></td>'
         + '<td>' + escapeHtml(c.tipo_limpieza) + '</td>'
-        + '<td>' + escapeHtml(c.lote_anterior || '—') + ' → ' + escapeHtml(c.lote_siguiente || '—') + '</td>'
+        + '<td>' + escapeHtml(c.lote_anterior || '-') + ' → ' + escapeHtml(c.lote_siguiente || '-') + '</td>'
         + '<td>' + escapeHtml(c.operario_username) + '</td>'
         + '<td>' + fmtDate(c.iniciado_at_utc) + '</td>'
-        + '<td>' + (c.completado_at_utc ? fmtDate(c.completado_at_utc) : '—') + '</td>'
+        + '<td>' + (c.completado_at_utc ? fmtDate(c.completado_at_utc) : '-') + '</td>'
         + '<td>' + visual + (c.qc_username ? '<br><span class="muted">' + escapeHtml(c.qc_username) + '</span>' : '') + '</td>'
         + '</tr>';
     });

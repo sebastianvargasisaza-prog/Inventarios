@@ -6,7 +6,7 @@ HTML = r"""
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Comunicación — Tareas, Chat & Comité</title>
+<title>Comunicación - Tareas, Chat & Comité</title>
 <link rel="stylesheet" href="/static/cortex.css?v=eos15">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
@@ -123,10 +123,10 @@ HTML = r"""
   <div class="container">
     <!-- KPIs -->
     <div class="grid grid-4">
-      <div class="card"><h3>Mis tareas activas</h3><div class="val" id="kpi-mis">—</div></div>
-      <div class="card"><h3>Vencidas</h3><div class="val" id="kpi-venc" style="color:#fca5a5">—</div></div>
-      <div class="card"><h3>Mensajes sin leer</h3><div class="val" id="kpi-msj" style="color:#fbbf24">—</div></div>
-      <div class="card"><h3>Quejas Alta/Crítica</h3><div class="val" id="kpi-quejas" style="color:#f87171">—</div></div>
+      <div class="card"><h3>Mis tareas activas</h3><div class="val" id="kpi-mis">-</div></div>
+      <div class="card"><h3>Vencidas</h3><div class="val" id="kpi-venc" style="color:#fca5a5">-</div></div>
+      <div class="card"><h3>Mensajes sin leer</h3><div class="val" id="kpi-msj" style="color:#fbbf24">-</div></div>
+      <div class="card"><h3>Quejas Alta/Crítica</h3><div class="val" id="kpi-quejas" style="color:#f87171">-</div></div>
     </div>
 
     <!-- Tabs -->
@@ -520,7 +520,7 @@ async function enviarQueja() {
     }
     if (d.analisis) {
       document.getElementById('queja-resultado').innerHTML = '<div class="alert-ia">' +
-        '<div style="font-weight:700;margin-bottom:4px">📊 Análisis IA — Severidad: <span style="color:#fbbf24">'+_esc(d.analisis.severidad||'-')+'</span></div>' +
+        '<div style="font-weight:700;margin-bottom:4px">📊 Análisis IA - Severidad: <span style="color:#fbbf24">'+_esc(d.analisis.severidad||'-')+'</span></div>' +
         '<div style="margin-bottom:6px"><strong>Lectura:</strong> '+_esc(d.analisis.analisis||'')+'</div>' +
         '<div style="margin-bottom:6px"><strong>Acción sugerida:</strong> '+_esc(d.analisis.accion_sugerida||'')+'</div>' +
         '<div style="font-size:11px;color:#94a3b8">Escalado a: '+_esc(d.analisis.escalar_a||'-')+'</div>' +
