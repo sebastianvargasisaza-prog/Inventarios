@@ -10668,13 +10668,14 @@ def _rotulo_recep_css(lw, lh):
       ".title .eyebrow{font-size:9px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.5px}"
       ".title .name{margin:2px 0 0;font-size:22px;font-weight:800;letter-spacing:-.4px;line-height:1.12;color:var(--ink)}"
       ".tipo{display:inline-block;font-size:10.5px;font-weight:700;margin-right:14px;white-space:nowrap;color:var(--mute)}.tipo.on{color:var(--violet-d)}"
+      ".rectag{display:inline-block;margin-left:8px;background:var(--pale);color:var(--violet-d);border:1px solid #ede9fe;border-radius:999px;padding:1px 9px;font-size:9px;font-weight:800;text-transform:none;letter-spacing:0;vertical-align:middle}"
       ".lote{margin:0 16px 10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;text-align:center;padding:8px}"
       ".lote .ll{font-size:9px;font-weight:700;color:#9a3412;text-transform:uppercase;letter-spacing:.4px}.lote .lv{font-size:20px;font-weight:800;color:#c2410c;letter-spacing:1px}.lote svg{max-width:100%;height:auto;margin-top:4px}"
       "table{width:100%;border-collapse:collapse}"
       "td{padding:6px 12px;border-top:1px solid var(--line);vertical-align:middle;font-size:12px}"
       "td.k{width:1%;color:var(--mute);font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.3px;background:#fafafa;white-space:nowrap}"
       "td:not(.k){white-space:normal;word-break:break-word;overflow-wrap:anywhere}"
-      ".num{font-variant-numeric:tabular-nums;font-weight:600}.cant{color:#15803d;font-weight:800}.venc{color:#c0392b;font-weight:600}.fill{background:repeating-linear-gradient(-45deg,#fff,#fff 6px,#fafafa 6px,#fafafa 7px);height:20px}.ck{text-align:center;font-weight:700}"
+      ".num{font-variant-numeric:tabular-nums;font-weight:600}.cant{color:#15803d;font-weight:800}.cantsub{color:var(--mute);font-weight:600;font-size:10px}.venc{color:#c0392b;font-weight:600}.fill{background:repeating-linear-gradient(-45deg,#fff,#fff 6px,#fafafa 6px,#fafafa 7px);height:20px}.ck{text-align:center;font-weight:700}"
       ".qc{display:flex;gap:13px;align-items:center;padding:8px 16px;border-top:1px solid var(--line);font-size:11px;font-weight:700;flex-wrap:wrap}.qc b{color:var(--mute);text-transform:uppercase;font-size:9.5px;font-weight:700}"
       ".qcbox{padding:8px 16px;border-top:1px solid var(--line)}"
       ".qcl{font-size:9.5px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.3px;margin-bottom:5px}.qcl span{color:#a1a1aa;font-weight:600;text-transform:none;letter-spacing:0}"
@@ -10761,32 +10762,60 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
     _logo = _rotulo_logo_src(c)
     _uparts = [p for p in [('Est. ' + _e(_est)) if _est else '', ('Pos. ' + _e(_pos)) if _pos else ''] if p]
     ubic_disp = ' &middot; '.join(_uparts) if _uparts else '&mdash;'
-    h=('<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Rotulo Recepcion MP</title>'
+    # Multi-recipiente (Laura 16-jul): ?recs=1000,1000,500 → UN rótulo por recipiente con SU cantidad
+    # (cuando una MP llega en varios envases individuales). Sin `recs` = 1 rótulo por la cantidad total.
+    _recs = []
+    try:
+        _rraw = (request.args.get('recs') or '').strip()
+        if _rraw:
+            for _p in _rraw.split(','):
+                _p = _p.strip()
+                if _p:
+                    _v = float(_p)
+                    if _v > 0:
+                        _recs.append(_v)
+    except Exception:
+        _recs = []
+    if not _recs:
+        _recs = [cantidad]
+    _nrec = len(_recs)
+    _rtot = sum(_recs)
+
+    def _sheet_mp(amt, idx):
+        _rec_tag = ('<span class="rectag">Recipiente ' + str(idx + 1) + ' de ' + str(_nrec) + '</span>') if _nrec > 1 else ''
+        _cant_lbl = 'Cantidad (este recipiente)' if _nrec > 1 else 'Cantidad recibida'
+        _cant_val = f"{amt:,.0f} g" + ((' <span class="cantsub">&middot; de ' + f"{_rtot:,.0f}" + ' g en ' + str(_nrec) + ' recipientes</span>') if _nrec > 1 else '')
+        return ('<div class="sheet"><div class="accent"></div>'
+           '<div class="top"><div class="brand"><img class="mark" src="' + _logo + '" alt="" onerror="this.remove()"><div class="co">ESPAGIRIA Laboratorio SAS</div></div>'
+           '<div class="ctrl"><b>Formato:</b> COC-PRO-002-F07<br><b>F. Impresion:</b> ' + _e(hoy) + '</div></div>'
+           '<div class="title"><div class="eyebrow">Rotulo de ingreso &middot; Materia prima' + _rec_tag + '</div><h1 class="name">' + _e(nc) + '</h1></div>'
+           '<div class="lote"><div class="ll">Numero de lote</div><div class="lv">' + _e(lote) + '</div><svg id="bc' + str(idx) + '"></svg></div>'
+           '<table>'
+           '<tr><td class="k">Codigo MP</td><td class="num"><b>' + _e(codigo) + '</b></td></tr>'
+           '<tr><td class="k">Nombre comercial</td><td><b>' + _e(nc) + '</b></td></tr>'
+           '<tr><td class="k">Nombre INCI</td><td>' + (_e(ni) or '&mdash;') + '</td></tr>'
+           '<tr><td class="k">Tipo de insumo</td><td colspan="3"><span class="tipo on">&#9746; Materia Prima (MP)</span><span class="tipo">&#9744; Material de Envase (ME)</span><span class="tipo">&#9744; Material de Empaque (MEMP)</span></td></tr>'
+           '<tr><td class="k">Proveedor</td><td>' + (_e(pv) or '&mdash;') + '</td></tr>'
+           '<tr><td class="k">' + _cant_lbl + '</td><td class="cant">' + _cant_val + '</td></tr>'
+           '<tr><td class="k">Fecha recepcion</td><td>' + _e(_frec) + '</td><td class="k">Vencimiento</td><td class="venc">' + (_e(fv) or '&mdash;') + '</td></tr>'
+           '<tr><td class="k">Ubicacion</td><td>' + ubic_disp + '</td><td class="k">Fecha analisis</td><td class="fill"></td></tr>'
+           '<tr><td class="k">Observaciones</td><td colspan="3" class="fill obs"></td></tr>'
+           '</table>'
+           '<div class="qcbox"><div class="qcl">Estado de calidad <span>&middot; colocar sticker (cuarentena / aprobado / rechazado)</span></div><div class="qcarea"></div></div>'
+           '<div class="firmas"><div class="firma"><div class="l">Realizado por</div><div class="sig"></div><div class="f">Firma / fecha</div></div>'
+           '<div class="firma"><div class="l">Revisado por</div><div class="sig"></div><div class="f">Firma / fecha</div></div></div>'
+           '</div>')
+
+    _sheets = ''.join(_sheet_mp(a, i) for i, a in enumerate(_recs))
+    _bc_js = ''.join('try{JsBarcode("#bc' + str(i) + '",' + json.dumps(bv) + ',{format:"CODE128",width:1.4,height:30,displayValue:false,margin:0});}catch(e){}' for i in range(_nrec))
+    h = ('<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Rotulo Recepcion MP</title>'
        '<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>'
        + _rotulo_recep_css(_lw, _lh) + '</head><body>'
-       '<div class="ph"><div style="font-weight:700">Rotulo de recepcion &middot; Materia prima</div>'
+       '<div class="ph"><div style="font-weight:700">Rotulo de recepcion &middot; Materia prima' + ((' &middot; ' + str(_nrec) + ' recipientes') if _nrec > 1 else '') + '</div>'
        '<button class="pbtn" onclick="window.print()">&#128424; Imprimir</button></div><div class="wrap">'
-       '<div class="sheet"><div class="accent"></div>'
-       '<div class="top"><div class="brand"><img class="mark" src="'+_logo+'" alt="" onerror="this.remove()"><div class="co">ESPAGIRIA Laboratorio SAS</div></div>'
-       '<div class="ctrl"><b>Formato:</b> COC-PRO-002-F07<br><b>F. Impresion:</b> '+_e(hoy)+'</div></div>'
-       '<div class="title"><div class="eyebrow">Rotulo de ingreso &middot; Materia prima</div><h1 class="name">'+_e(nc)+'</h1></div>'
-       '<div class="lote"><div class="ll">Numero de lote</div><div class="lv">'+_e(lote)+'</div><svg id="bc"></svg></div>'
-       '<table>'
-       '<tr><td class="k">Codigo MP</td><td class="num"><b>'+_e(codigo)+'</b></td></tr>'
-       '<tr><td class="k">Nombre comercial</td><td><b>'+_e(nc)+'</b></td></tr>'
-       '<tr><td class="k">Nombre INCI</td><td>'+(_e(ni) or '&mdash;')+'</td></tr>'
-       '<tr><td class="k">Tipo de insumo</td><td colspan="3"><span class="tipo on">&#9746; Materia Prima (MP)</span><span class="tipo">&#9744; Material de Envase (ME)</span><span class="tipo">&#9744; Material de Empaque (MEMP)</span></td></tr>'
-       '<tr><td class="k">Proveedor</td><td>'+(_e(pv) or '&mdash;')+'</td></tr>'
-       '<tr><td class="k">Cantidad recibida</td><td class="cant">'+f"{cantidad:,.0f} g"+'</td></tr>'
-       '<tr><td class="k">Fecha recepcion</td><td>'+_e(_frec)+'</td><td class="k">Vencimiento</td><td class="venc">'+(_e(fv) or '&mdash;')+'</td></tr>'
-       '<tr><td class="k">Ubicacion</td><td>'+ubic_disp+'</td><td class="k">Fecha analisis</td><td class="fill"></td></tr>'
-       '<tr><td class="k">Observaciones</td><td colspan="3" class="fill obs"></td></tr>'
-       '</table>'
-       '<div class="qcbox"><div class="qcl">Estado de calidad <span>&middot; colocar sticker (cuarentena / aprobado / rechazado)</span></div><div class="qcarea"></div></div>'
-       '<div class="firmas"><div class="firma"><div class="l">Realizado por</div><div class="sig"></div><div class="f">Firma / fecha</div></div>'
-       '<div class="firma"><div class="l">Revisado por</div><div class="sig"></div><div class="f">Firma / fecha</div></div></div>'
-       '</div></div>'
-       '<script>window.onload=function(){try{JsBarcode("#bc",'+json.dumps(bv)+',{format:"CODE128",width:1.4,height:30,displayValue:false,margin:0});}catch(e){}};</script>'
+       + _sheets +
+       '</div>'
+       '<script>window.onload=function(){' + _bc_js + '};</script>'
        '</body></html>')
     return h
 

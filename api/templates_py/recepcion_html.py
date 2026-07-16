@@ -197,9 +197,69 @@ td input[type=text]{width:100%;padding:6px 9px;border:1px solid var(--line);bord
     <div id="lote-result" style="margin-top:12px;"></div>
   </div>
 
+  <!-- Modal · Rótulos por recipiente (Laura 16-jul) -->
+  <div id="rec-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:950;align-items:center;justify-content:center;padding:16px;">
+    <div style="background:var(--card,#fff);border-radius:16px;max-width:560px;width:100%;box-shadow:0 24px 70px rgba(0,0,0,.35);overflow:hidden;">
+      <div style="background:linear-gradient(135deg,#4c1d95,#6d28d9);color:#fff;padding:16px 22px;font-weight:800;font-size:15px;display:flex;justify-content:space-between;align-items:center;">
+        <span>&#128424;&#65039; Rótulos por recipiente</span>
+        <button onclick="cerrarRecModal()" style="background:none;border:none;color:#e9d5ff;font-size:22px;cursor:pointer;line-height:1;">&times;</button>
+      </div>
+      <div style="padding:20px 22px;">
+        <div id="rec-info" style="font-size:13px;color:var(--mut,#6b7280);margin-bottom:14px;"></div>
+        <label style="font-size:12px;font-weight:700;color:var(--ink,#1e1b2e);">¿En cuántos recipientes vino?</label><br>
+        <input type="number" id="rec-n" min="1" max="60" value="1" oninput="recBuildInputs()" style="width:100px;padding:9px 12px;border:1px solid var(--line,#e5e7eb);border-radius:9px;margin:6px 0 14px;font-size:15px;">
+        <div id="rec-amounts"></div>
+        <div id="rec-sum" style="font-size:12px;margin-top:10px;"></div>
+      </div>
+      <div style="padding:14px 22px;border-top:1px solid var(--line,#eee);display:flex;gap:8px;justify-content:flex-end;">
+        <button onclick="cerrarRecModal()" class="btn" style="background:#f1f5f9;color:#475569;">Cancelar</button>
+        <button onclick="recImprimir()" class="btn btn-primary">Imprimir rótulos</button>
+      </div>
+    </div>
+  </div>
+
 </div>
 <script>
 var currentOC = null;
+var _recCtx = null;   // {cod, lote, total} · contexto del modal de rótulos por recipiente
+function abrirRecModal(cod, lote, total){
+  _recCtx = {cod:cod, lote:(lote||'').trim()||'SL', total:Number(total)||0};
+  document.getElementById('rec-info').innerHTML = '<b>'+cod+'</b> &middot; lote '+_recCtx.lote+' &middot; total recibido <b>'+_recCtx.total.toLocaleString()+' g</b>';
+  document.getElementById('rec-n').value = 1;
+  recBuildInputs();
+  document.getElementById('rec-modal').style.display = 'flex';
+}
+function cerrarRecModal(){ var m=document.getElementById('rec-modal'); if(m) m.style.display='none'; _recCtx=null; }
+function recBuildInputs(){
+  if(!_recCtx) return;
+  var n = Math.max(1, Math.min(60, parseInt(document.getElementById('rec-n').value)||1));
+  var per = _recCtx.total>0 ? Math.round(_recCtx.total/n*100)/100 : 0;
+  var box = document.getElementById('rec-amounts');
+  if(n<=1){ box.innerHTML='<div style="font-size:12px;color:var(--mut,#6b7280);">Un solo rótulo por '+_recCtx.total.toLocaleString()+' g.</div>'; document.getElementById('rec-sum').innerHTML=''; return; }
+  var h='<div style="font-size:11px;color:var(--mut,#6b7280);margin-bottom:6px;">Cantidad de cada recipiente (podés ajustar si vienen desiguales):</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;">';
+  for(var i=0;i<n;i++){
+    h+='<div><label style="font-size:10px;color:var(--mut,#6b7280);">Recipiente '+(i+1)+'</label><input type="number" class="rec-amt" min="0" step="0.01" value="'+per+'" oninput="recSum()" style="width:100%;padding:7px 9px;border:1px solid var(--line,#e5e7eb);border-radius:8px;font-size:13px;"></div>';
+  }
+  h+='</div>';
+  box.innerHTML=h; recSum();
+}
+function recSum(){
+  if(!_recCtx) return;
+  var amts=[].map.call(document.querySelectorAll('.rec-amt'), function(el){ return parseFloat(el.value)||0; });
+  var el=document.getElementById('rec-sum');
+  if(!amts.length){ el.innerHTML=''; return; }
+  var sum=amts.reduce(function(a,b){return a+b;},0);
+  var diff=Math.round((sum-_recCtx.total)*100)/100;
+  el.innerHTML='Suma: <b>'+sum.toLocaleString()+' g</b> &middot; total recibido '+_recCtx.total.toLocaleString()+' g'+(Math.abs(diff)>0.01?' &middot; <span style="color:#c2410c;font-weight:700;">difiere '+diff+' g</span>':' &middot; <span style="color:#16a34a;font-weight:700;">cuadra &#10003;</span>');
+}
+function recImprimir(){
+  if(!_recCtx) return;
+  var amts=[].map.call(document.querySelectorAll('.rec-amt'), function(el){ return parseFloat(el.value)||0; }).filter(function(v){ return v>0; });
+  var url='/rotulo-recepcion/'+encodeURIComponent(_recCtx.cod)+'/'+encodeURIComponent(_recCtx.lote)+'/'+encodeURIComponent(_recCtx.total||1);
+  if(amts.length>1){ url+='?recs='+encodeURIComponent(amts.join(',')); }
+  window.open(url,'_blank');
+  cerrarRecModal();
+}
 
 function renderQueue(all) {
   try {
@@ -630,7 +690,8 @@ document.addEventListener('click', function(e) {
     var loteEl = document.getElementById('lote-' + i);
     var lote = (loteEl ? loteEl.value : '').trim();
     if (!lote) { alert('Poné primero el lote de esta fila para el rótulo.'); return; }
-    window.open('/rotulo-recepcion/' + encodeURIComponent(cod) + '/' + encodeURIComponent(lote) + '/' + cant, '_blank');
+    // MP: abre el modal de recipientes (1 rótulo por recipiente · Laura 16-jul)
+    abrirRecModal(cod, lote, cant);
   }
 });
 
@@ -642,7 +703,8 @@ document.addEventListener('click', function(e) {
   var lote = (b.getAttribute('data-rotlote') || '').trim() || 'SIN-LOTE';
   var cant = b.getAttribute('data-rotcant') || '1';
   if (!cod) { alert('Este lote no tiene código de material.'); return; }
-  window.open('/rotulo-recepcion/' + encodeURIComponent(cod) + '/' + encodeURIComponent(lote) + '/' + encodeURIComponent(cant), '_blank');
+  // abre el modal de recipientes (1 rótulo por recipiente)
+  abrirRecModal(cod, lote, cant);
 });
 
 async function buscarLote() {
