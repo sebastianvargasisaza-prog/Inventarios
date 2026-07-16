@@ -10505,7 +10505,7 @@ def generar_rotulos(producto_nombre, cantidad_str):
         rhtml+='<div class="ctrl"><b>Código:</b> PRD-PRO-001-F08<br><b>Versión:</b> 01 &middot; <b>Etiqueta</b> '+str(i+1)+' de '+str(len(items))+'<br><b>Vigencia:</b> 04-Mar-2025 / 03-Mar-2028</div></div>'
         rhtml+='<div class="title"><h1>Rótulo para dispensar materia prima</h1><div class="k">OP '+op_num+' &middot; '+hoy+'</div></div>'
         rhtml+='<table>'
-        rhtml+='<tr><td class="k">Producto</td><td colspan="3"><b>'+_e(prod)+'</b> &mdash; '+str(cantidad_kg)+' kg</td></tr>'
+        rhtml+='<tr><td class="k">Producto</td><td colspan="3"><b>'+_e(prod)+'</b> - '+str(cantidad_kg)+' kg</td></tr>'
         rhtml+='<tr><td class="k">Materia prima</td><td colspan="3"><b>'+_e(mnm)+'</b> <span class="cod">'+_e(mid)+'</span></td></tr>'
         if inci: rhtml+='<tr><td class="k">Nombre INCI</td><td colspan="3" class="inci">'+_e(inci)+'</td></tr>'
         rhtml+='<tr><td class="k">Lote MP</td><td class="num" colspan="3"><b>'+_e(lote_mp)+'</b></td></tr>'
@@ -10573,7 +10573,7 @@ def generar_rotulos(producto_nombre, cantidad_str):
         ('background:#fff;color:#4c1d95;' if (w == _lw and h == _lh) else 'background:#6d28d9;color:#fff;') +
         '">' + lbl + ' · ' + str(w) + '×' + str(h) + 'mm</a>'
         for w, h, lbl in _sizes)
-    return (css + '<div class="ph"><div style="display:flex;align-items:center;gap:12px;"><img src="' + _logo_src + '" alt="" onerror="this.remove()" style="height:34px;width:auto;background:#fff;border-radius:6px;padding:2px 5px;"><div><h2 style="margin:0;">Rotulos &mdash; ' + prod + ' &mdash; ' + str(cantidad_kg) + ' kg</h2>'
+    return (css + '<div class="ph"><div style="display:flex;align-items:center;gap:12px;"><img src="' + _logo_src + '" alt="" onerror="this.remove()" style="height:34px;width:auto;background:#fff;border-radius:6px;padding:2px 5px;"><div><h2 style="margin:0;">Rotulos - ' + prod + ' - ' + str(cantidad_kg) + ' kg</h2>'
             '<div style="font-size:8pt;opacity:0.8;">' + op_num + ' | ' + str(len(items)) + ' MPs | ' + hoy +
             ' | etiqueta ' + str(_lw) + '×' + str(_lh) + 'mm</div></div></div>'
             '<div style="display:flex;align-items:center;gap:4px;"><span style="font-size:8pt;opacity:.8;">Tamaño:</span>' +
@@ -10822,7 +10822,7 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
     _lw = max(50, min(_lw, 210)); _lh = max(30, min(_lh, 297))
     _logo = _rotulo_logo_src(c)
     _uparts = [p for p in [('Est. ' + _e(_est)) if _est else '', ('Pos. ' + _e(_pos)) if _pos else ''] if p]
-    ubic_disp = ' &middot; '.join(_uparts) if _uparts else '&mdash;'
+    ubic_disp = ' &middot; '.join(_uparts) if _uparts else '-'
     # Multi-recipiente (Laura 16-jul): ?recs=1000,1000,500 → UN rótulo por recipiente con SU cantidad
     # (cuando una MP llega en varios envases individuales). Sin `recs` = 1 rótulo por la cantidad total.
     _recs = []
@@ -10854,11 +10854,11 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
            '<table>'
            '<tr><td class="k">Codigo MP</td><td class="num"><b>' + _e(codigo) + '</b></td></tr>'
            '<tr><td class="k">Nombre comercial</td><td><b>' + _e(nc) + '</b></td></tr>'
-           '<tr><td class="k">Nombre INCI</td><td>' + (_e(ni) or '&mdash;') + '</td></tr>'
+           '<tr><td class="k">Nombre INCI</td><td>' + (_e(ni) or '-') + '</td></tr>'
            '<tr><td class="k">Tipo de insumo</td><td colspan="3">' + _tp_row() + '</td></tr>'
-           '<tr><td class="k">Proveedor</td><td>' + (_e(pv) or '&mdash;') + '</td></tr>'
+           '<tr><td class="k">Proveedor</td><td>' + (_e(pv) or '-') + '</td></tr>'
            '<tr><td class="k">' + _cant_lbl + '</td><td class="cant">' + _cant_val + '</td></tr>'
-           '<tr><td class="k">Fecha recepcion</td><td>' + _e(_frec) + '</td><td class="k">Vencimiento</td><td class="venc">' + (_e(fv) or '&mdash;') + '</td></tr>'
+           '<tr><td class="k">Fecha recepcion</td><td>' + _e(_frec) + '</td><td class="k">Vencimiento</td><td class="venc">' + (_e(fv) or '-') + '</td></tr>'
            '<tr><td class="k">Ubicacion</td><td>' + ubic_disp + '</td><td class="k">Fecha analisis</td><td class="fill"></td></tr>'
            '<tr><td class="k">Observaciones</td><td colspan="3" class="fill obs"></td></tr>'
            '</table>'
@@ -10947,10 +10947,10 @@ def rotulo_recepcion_mee(codigo, cantidad_str):
        '<table>'
        '<tr><td class="k">Nombre comercial</td><td colspan="3"><b>'+_e(desc)+'</b></td></tr>'
        '<tr><td class="k">Tipo de insumo</td><td colspan="3"><span class="tipo">'+_tp_mp+'</span><span class="tipo'+(' on' if is_env else '')+'">'+_tp_me+'</span><span class="tipo'+('' if is_env else ' on')+'">'+_tp_emp+'</span></td></tr>'
-       '<tr><td class="k">Categoria</td><td>'+(_e(cat) or '&mdash;')+'</td><td class="k">Cantidad</td><td class="cant">'+_e(cant_str)+'</td></tr>'
-       '<tr><td class="k">Lote</td><td class="num"><b>'+(_e(lote) or '&mdash;')+'</b></td><td class="k">Fecha recep.</td><td>'+_e(_frec)+'</td></tr>'
-       '<tr><td class="k">Proveedor / marca</td><td>'+(_e(prov) or '&mdash;')+'</td><td class="k">Ubicacion / zona</td><td>'+(_e(zona) or '&mdash;')+'</td></tr>'
-       '<tr><td class="k">Observaciones</td><td colspan="3">'+(_e(obs) or '&mdash;')+'</td></tr>'
+       '<tr><td class="k">Categoria</td><td>'+(_e(cat) or '-')+'</td><td class="k">Cantidad</td><td class="cant">'+_e(cant_str)+'</td></tr>'
+       '<tr><td class="k">Lote</td><td class="num"><b>'+(_e(lote) or '-')+'</b></td><td class="k">Fecha recep.</td><td>'+_e(_frec)+'</td></tr>'
+       '<tr><td class="k">Proveedor / marca</td><td>'+(_e(prov) or '-')+'</td><td class="k">Ubicacion / zona</td><td>'+(_e(zona) or '-')+'</td></tr>'
+       '<tr><td class="k">Observaciones</td><td colspan="3">'+(_e(obs) or '-')+'</td></tr>'
        '</table>'
        '<div class="qc"><b>Estado:</b> <span>&#9744; Aprobado</span><span>&#9744; Cuarentena</span><span>&#9744; Rechazado</span></div>'
        '<div class="firmas"><div class="firma"><div class="l">Realizado por</div><div class="sig"></div><div class="f">Firma / fecha</div></div>'
@@ -13671,7 +13671,7 @@ def productos_envases_page():
             return str(vol or '')
 
     def _opts(sel):
-        o = '<option value="">&mdash; sin envase &mdash;</option>'
+        o = '<option value="">- sin envase -</option>'
         su = (sel or '').upper()
         for cod, desc, vol in envs:
             s = ' selected' if str(cod).upper() == su else ''

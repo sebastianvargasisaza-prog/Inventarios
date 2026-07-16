@@ -6516,7 +6516,7 @@ _FACTIBILIDAD_PLAN_HTML = """<!doctype html>
   #err{color:#f85149;margin:8px 0;}
 </style></head><body>
 <h1>Factibilidad del Plan</h1>
-<div class="sub">&iquest;Alcanzan las materias primas para todo lo programado? &middot; solo lectura &mdash; no cambia ninguna programaci&oacute;n</div>
+<div class="sub">&iquest;Alcanzan las materias primas para todo lo programado? &middot; solo lectura - no cambia ninguna programaci&oacute;n</div>
 <div>Horizonte:
   <select id="dias" onchange="cargar()">
     <option value="15">15 d&iacute;as</option>
@@ -6529,7 +6529,7 @@ _FACTIBILIDAD_PLAN_HTML = """<!doctype html>
 <div class="cards" id="cards"></div>
 <div class="sec">Producciones programadas</div>
 <table id="tprod"><thead><tr><th>Producto</th><th>Fecha</th><th>Cantidad</th><th>Estado</th><th>Falta</th></tr></thead><tbody></tbody></table>
-<div class="sec">Compra consolidada &mdash; qu&eacute; comprar para que el plan entero sea ejecutable</div>
+<div class="sec">Compra consolidada - qu&eacute; comprar para que el plan entero sea ejecutable</div>
 <table id="tcompra"><thead><tr><th>Material</th><th>C&oacute;digo</th><th>Faltante</th></tr></thead><tbody></tbody></table>
 <script>
 async function cargar(){
@@ -6574,7 +6574,7 @@ function render(d){
   tc.innerHTML=(d.compra_consolidada||[]).map(function(m){
     return '<tr><td>'+esc(m.material_nombre)+'</td><td>'+esc(m.material_id)+
       '</td><td class="falta">'+fmt(m.faltante_g)+' g ('+m.faltante_kg+' kg)</td></tr>';
-  }).join('')||'<tr><td colspan="3" class="verde">Nada que comprar &mdash; el plan es ejecutable</td></tr>';
+  }).join('')||'<tr><td colspan="3" class="verde">Nada que comprar - el plan es ejecutable</td></tr>';
 }
 function card(n,l,cls){return '<div class="card"><div class="n '+cls+'">'+(n||0)+'</div><div class="l">'+l+'</div></div>';}
 function fmt(n){return (n||0).toLocaleString('es-CO');}

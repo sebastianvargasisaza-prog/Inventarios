@@ -2600,7 +2600,7 @@ td{padding:6px 8px;border-bottom:1px solid var(--line);}
     <div style="margin-top:14px"><button class="btn btn-g" onclick="guardar()">&#x1F4BE; Guardar decisi&oacute;n</button></div>
   </div>
   <div class="card full" style="margin-top:16px" id="card-desg"><h2>&#x1F3A8; Desglose por referencia &middot; c&oacute;mo se reparte el lote (solo lectura)</h2>
-    <div class="help" id="desg-msg">&mdash;</div>
+    <div class="help" id="desg-msg">-</div>
     <table><thead><tr><th>Referencia (SKU)</th><th>ml</th><th>Ventas recientes</th><th>%</th><th>Uds sugeridas</th><th>kg</th></tr></thead>
     <tbody id="desg-body"></tbody></table>
   </div>

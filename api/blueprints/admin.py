@@ -6969,11 +6969,11 @@ a.back{font-size:13px;color:#7c3aed;text-decoration:none}
 </style></head><body><div class="wrap">
 <a class="back" href="/admin/mapeo-producto-envase">&larr; Volver a mapear producto &rarr; envase</a>
 <h1>&#128231; Ponerle ml a los envases</h1>
-<p class="sub">Escribe el <b>ml</b> de cada frasco. Los que tienen el <b>mismo nombre</b> (ej. dos &laquo;FRASCO BLANCO CUADRADO&raquo;) van marcados en <b style="color:#b45309">naranja</b> &mdash; ponles el ml para distinguirlos. El ml aparece luego al lado del nombre en los desplegables. Se guarda solo al escribir.</p>
+<p class="sub">Escribe el <b>ml</b> de cada frasco. Los que tienen el <b>mismo nombre</b> (ej. dos &laquo;FRASCO BLANCO CUADRADO&raquo;) van marcados en <b style="color:#b45309">naranja</b> - ponles el ml para distinguirlos. El ml aparece luego al lado del nombre en los desplegables. Se guarda solo al escribir.</p>
 <div class="kpis">
-  <div class="kpi" style="border-color:#fca5a5"><b id="k-sinml">&mdash;</b>sin ml</div>
-  <div class="kpi" style="border-color:#fdba74"><b id="k-dup">&mdash;</b>nombre duplicado</div>
-  <div class="kpi" style="border-color:#86efac"><b id="k-ok">&mdash;</b>con ml</div>
+  <div class="kpi" style="border-color:#fca5a5"><b id="k-sinml">-</b>sin ml</div>
+  <div class="kpi" style="border-color:#fdba74"><b id="k-dup">-</b>nombre duplicado</div>
+  <div class="kpi" style="border-color:#86efac"><b id="k-ok">-</b>con ml</div>
 </div>
 <div style="background:#fff;border:1px solid #ddd6fe;border-radius:10px;padding:12px 14px;margin-bottom:14px">
   <div style="font-size:13px;font-weight:800;color:#5b21b6;margin-bottom:8px">&#10133; Crear envase que no est&aacute;</div>
@@ -7636,7 +7636,7 @@ async function cargar(){
         baseSel='<select data-cod="'+esc(m.codigo)+'" onchange="setBase(this)">'+opts+'</select>';
       }
       var partes=(m.partes||[]).map(function(p){ return '<span class="chip">'+esc(p.descripcion||p.parte_codigo)+' x'+p.cantidad+' <a onclick="quitarParte('+p.id+')" title="quitar">&times;</a></span>'; }).join('');
-      var partesBox='<div class="partes"><div class="plbl">Partes</div>'+(partes||'<span class="pnone">&mdash; sin partes &mdash;</span>')+'<button class="addp" data-cod="'+esc(m.codigo)+'" onclick="agregarParte(this)">&#43; parte</button></div>';
+      var partesBox='<div class="partes"><div class="plbl">Partes</div>'+(partes||'<span class="pnone">- sin partes -</span>')+'<button class="addp" data-cod="'+esc(m.codigo)+'" onclick="agregarParte(this)">&#43; parte</button></div>';
       h+='<div class="card">'+img+'<div class="cod">'+esc(m.codigo)+'</div><div class="desc">'+esc(m.descripcion)+'</div>'+baseSel+partesBox+
         '<button class="shop" data-cod="'+esc(m.codigo)+'" data-desc="'+esc(m.descripcion)+'" onclick="shopFoto(this)">&#128717; Foto de Shopify</button>'+
         '<div class="acc"><button class="url" data-cod="'+esc(m.codigo)+'" onclick="fotoURL(this)">&#128279; URL</button>'+
@@ -8315,7 +8315,7 @@ button{padding:9px 18px;border:none;border-radius:8px;background:#16a34a;color:#
 .warn{background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px;font-size:13px;color:#9a3412;margin-bottom:16px}
 .muted{color:#94a3b8;font-size:12px}
 </style></head><body><div class="wrap">
-<h1>&#127872; Auto-mapeo de tonos &mdash; Lip Gloss</h1>
+<h1>&#127872; Auto-mapeo de tonos - Lip Gloss</h1>
 <p class="sub">Cada SKU del lip serum se empareja con su frasco gloss <b>por tono</b>. Revisa los pares y aplica.</p>
 <div id="info" class="muted">Cargando...</div>
 <div id="cont"></div>
@@ -8502,8 +8502,8 @@ button.ok{background:#16a34a}
 <h1>&#128230; Mapear producto &rarr; envase</h1>
 <p class="sub">El plan JALA envases desde aqui. Asigna el frasco y los ml de cada producto. Los <b>faltantes</b> (sin envase) salen arriba en naranja. &middot; <a href="/admin/envases-ml" style="color:#7c3aed;font-weight:700">&#128231; Ponerle ml a los envases</a> (para distinguir los frascos del mismo nombre) &middot; <a href="/admin/impresos-anclar" style="color:#7c3aed;font-weight:700">&#128424; Anclar envases impresos</a> (los ya marcados · sobrantes) &middot; <a href="/admin/componentes-anclar" style="color:#7c3aed;font-weight:700">&#127991; Anclar etiquetas y plegadizas</a> &middot; <a href="/admin/tapas-goteros-anclar" style="color:#7c3aed;font-weight:700">&#129380; Tapas y goteros por frasco</a>.</p>
 <div class="kpis">
-  <div class="kpi" style="border-color:#fdba74"><b id="k-falta">&mdash;</b>sin envase</div>
-  <div class="kpi" style="border-color:#86efac"><b id="k-ok">&mdash;</b>con envase</div>
+  <div class="kpi" style="border-color:#fdba74"><b id="k-falta">-</b>sin envase</div>
+  <div class="kpi" style="border-color:#86efac"><b id="k-ok">-</b>con envase</div>
 </div>
 <input class="search" id="q" placeholder="Buscar producto..." oninput="render()">
 <table><thead><tr><th>Producto</th><th>Estado</th><th>Envase (frasco)</th><th>ml</th><th></th></tr></thead>
@@ -8657,7 +8657,7 @@ button.ok{background:linear-gradient(135deg,#16a34a,#15803d)}
 </div>
 <div id="cont"><div class="muted" style="padding:20px">Cargando...</div></div>
 <h2 style="font-size:16px;margin:26px 0 8px;color:#0f766e">&#128230; Órdenes de marcación en curso</h2>
-<div id="ordenes"><div class="muted">&mdash;</div></div>
+<div id="ordenes"><div class="muted">-</div></div>
 </div>
 <script>
 var ROWS=[];
@@ -8688,7 +8688,7 @@ function render(){
     if(ym && ym!==curMes){ curMes=ym; var pp=ym.split('-'); var lbl=(pp.length===2 && MES[parseInt(pp[1],10)-1])?(MES[parseInt(pp[1],10)-1]+' '+pp[0]):ym; h+='<tr><td colspan="8" style="background:#ede9fe;color:#5b21b6;font-weight:800;padding:9px;font-size:13px;border-top:2px solid #c4b5fd">&#128197; '+lbl+'</td></tr>'; }
     var urge=(r.fecha_envio && r.fecha_envio<=hoy());
     h+='<tr>'+
-      '<td>'+(r.fecha_envio?('<span style="display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap;'+(urge?'background:#fee2e2;color:#b91c1c':'background:#f1f5f9;color:#475569')+'">'+(urge?'&#128308; ':'&#128197; ')+esc(r.fecha_envio)+'</span>'):'<span class="muted">&mdash;</span>')+'</td>'+
+      '<td>'+(r.fecha_envio?('<span style="display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap;'+(urge?'background:#fee2e2;color:#b91c1c':'background:#f1f5f9;color:#475569')+'">'+(urge?'&#128308; ':'&#128197; ')+esc(r.fecha_envio)+'</span>'):'<span class="muted">-</span>')+'</td>'+
       '<td><b style="color:#0f172a">'+esc(r.producto)+'</b></td>'+
       '<td class="muted">'+esc(String(r.fecha||''))+'</td>'+
       '<td><select id="e-'+i+'" onchange="cambiarEnvase('+i+')" style="max-width:235px;font-size:11px">'+envOpts(r.envase_codigo)+'</select> <button onclick="crearEnvase('+i+')" title="Crear nuevo envase" style="background:linear-gradient(135deg,#0d9488,#0f766e);padding:5px 10px">&#10133;</button><br><span class="muted" style="font-size:10px">'+esc(r.envase_desc||'')+' &middot; '+(r.volumen_ml||'')+'ml</span></td>'+
@@ -8886,7 +8886,7 @@ async function cargarOrdenes(){
     if(!its.length){ box.innerHTML='<div class="muted">Sin órdenes todavía.</div>'; return; }
     var h='<table><thead><tr><th>#</th><th>Producto</th><th>Base &rarr; Serigrafiado</th><th>Método</th><th>Proveedor</th><th>Enviado</th><th>Recibido</th><th>Estado</th><th></th></tr></thead><tbody>';
     its.forEach(function(o){
-      h+='<tr><td>'+o.id+'</td><td><b>'+esc(o.producto)+'</b></td><td>'+esc(o.base)+' &rarr; '+esc(o.serigrafiado)+'</td><td>'+esc(o.metodo)+'</td><td>'+esc(o.proveedor)+'</td><td>'+Math.round(o.cantidad_enviada||0)+' <span class="muted">('+esc(o.fecha_envio)+')</span></td><td>'+(o.cantidad_recibida?Math.round(o.cantidad_recibida)+' <span class="muted">('+esc(o.fecha_retorno)+')</span>':'<span class="muted">&mdash;</span>')+'</td><td>'+(o.estado==='enviado'?'<span style="color:#b45309;font-weight:700">en marcación</span>':(o.estado==='recibido'?'<span style="color:#0891b2;font-weight:700">recibido &middot; cuarentena</span>':'<span style="color:#16a34a;font-weight:700">&#10003; liberado</span>'))+'</td><td>'+(o.estado==='enviado'?'<button class="ok" onclick="recibir('+o.id+','+(o.cantidad_enviada||0)+')">Recibir</button>':(o.estado==='recibido'?'<button onclick="liberarMarc('+o.id+')" style="background:#7c3aed">&#10003; Liberar (rev. técnica)</button>':'<span class="muted">&#10003;</span>'))+'</td></tr>';
+      h+='<tr><td>'+o.id+'</td><td><b>'+esc(o.producto)+'</b></td><td>'+esc(o.base)+' &rarr; '+esc(o.serigrafiado)+'</td><td>'+esc(o.metodo)+'</td><td>'+esc(o.proveedor)+'</td><td>'+Math.round(o.cantidad_enviada||0)+' <span class="muted">('+esc(o.fecha_envio)+')</span></td><td>'+(o.cantidad_recibida?Math.round(o.cantidad_recibida)+' <span class="muted">('+esc(o.fecha_retorno)+')</span>':'<span class="muted">-</span>')+'</td><td>'+(o.estado==='enviado'?'<span style="color:#b45309;font-weight:700">en marcación</span>':(o.estado==='recibido'?'<span style="color:#0891b2;font-weight:700">recibido &middot; cuarentena</span>':'<span style="color:#16a34a;font-weight:700">&#10003; liberado</span>'))+'</td><td>'+(o.estado==='enviado'?'<button class="ok" onclick="recibir('+o.id+','+(o.cantidad_enviada||0)+')">Recibir</button>':(o.estado==='recibido'?'<button onclick="liberarMarc('+o.id+')" style="background:#7c3aed">&#10003; Liberar (rev. técnica)</button>':'<span class="muted">&#10003;</span>'))+'</td></tr>';
     });
     h+='</tbody></table>';
     box.innerHTML=h;
@@ -14920,15 +14920,15 @@ def admin_influencers_hoy():
     .empty{color:#94a3b8;font-style:italic;padding:14px;background:#fafaf9;border-radius:6px}
     a{color:#0891b2}</style></head><body>
     <a href="/admin" style="font-size:12px">&larr; admin</a>
-    <h1>&#128202; Actividad influencers &mdash; HOY</h1>
+    <h1>&#128202; Actividad influencers - HOY</h1>
     <p style="color:#64748b;font-size:12px">Diagn&oacute;stico r&aacute;pido de qu&eacute; pas&oacute; hoy con influencers/cuentas de cobro.</p>"""
     + _tabla("&#128221; Influencers nuevos hoy", creados,
              ["id","nombre","red_social","usuario_red","tarifa","banco"],
              money_cols=("tarifa",))
-    + _tabla("&#128203; Solicitudes (SOL) hoy &mdash; influencer/CC", solicitudes,
+    + _tabla("&#128203; Solicitudes (SOL) hoy - influencer/CC", solicitudes,
              ["numero","fecha","estado","solicitante","valor","numero_oc"],
              money_cols=("valor",))
-    + _tabla("&#128722; OCs hoy &mdash; influencer/CC", ocs_inf,
+    + _tabla("&#128722; OCs hoy - influencer/CC", ocs_inf,
              ["numero_oc","fecha","estado","proveedor","valor_total"],
              money_cols=("valor_total",))
     + _tabla("&#128181; Pagos influencers hoy", pagos_inf,
@@ -20548,7 +20548,7 @@ MP00068 | 0.95 | Biosure FE phenoxyethanol fenoxietanol</textarea>
 </div>
 <div id="res"></div>
 <div class="card" style="border-color:#7c3aed">
- <b>&#128260; Cambiar f&oacute;rmula</b> &mdash; archiva la receta vigente (queda como
+ <b>&#128260; Cambiar f&oacute;rmula</b> - archiva la receta vigente (queda como
  <span class="mono">[ARCHIVADA]</span> activo=0, consultable) y carga la de arriba.
  <div class="muted" style="margin:8px 0">Pod&eacute;s previsualizar primero: te muestra el nombre REAL hallado en
  prod y cu&aacute;ntos &iacute;tems reemplaza. <b>No</b> escribe nada hasta que aprietes Aplicar.</div>
@@ -20563,7 +20563,7 @@ MP00068 | 0.95 | Biosure FE phenoxyethanol fenoxietanol</textarea>
  <div id="cambioMsg" class="muted" style="margin-top:10px"></div>
 </div>
 <div class="card" style="border-color:#0e7490">
- <b>&#9999;&#65039; Renombrar producto</b> &mdash; cambia el nombre en TODAS las tablas vivas
+ <b>&#9999;&#65039; Renombrar producto</b> - cambia el nombre en TODAS las tablas vivas
  (f&oacute;rmula, &iacute;tems, presentaciones, producci&oacute;n). Los <b>SKU de Shopify NO cambian</b> &rarr; el enlace a
  Shopify/Necesidades sobrevive. Previsualiz&aacute; primero (te dice cu&aacute;ntas filas toca y si hay SKU mapeado).
  <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">
@@ -20577,7 +20577,7 @@ MP00068 | 0.95 | Biosure FE phenoxyethanol fenoxietanol</textarea>
  <div id="rnMsg" class="muted" style="margin-top:10px"></div>
 </div>
 <div class="card" style="border-color:#16a34a">
- <b>&#128722; Mapear a Shopify (Necesidades)</b> &mdash; crea/actualiza la presentaci&oacute;n con el SKU de
+ <b>&#128722; Mapear a Shopify (Necesidades)</b> - crea/actualiza la presentaci&oacute;n con el SKU de
  Shopify para que la venta entre a Necesidades (el join es por SKU). Reusa el upsert existente.
  <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">
    <div><div class="muted">Producto</div><input id="skProd" value="LIMPIADOR ILUMINADOR" style="width:280px;padding:8px;background:#0b1220;color:#e2e8f0;border:1px solid #334155;border-radius:8px"></div>
@@ -20590,7 +20590,7 @@ MP00068 | 0.95 | Biosure FE phenoxyethanol fenoxietanol</textarea>
  <div id="skMsg" class="muted" style="margin-top:10px"></div>
 </div>
 <div class="card" style="border-color:#f59e0b">
- <b>&#128295; Ajustar % de f&oacute;rmula</b> &mdash; corrige el % de ingredientes puntuales (ej. alinear EOS con
+ <b>&#128295; Ajustar % de f&oacute;rmula</b> - corrige el % de ingredientes puntuales (ej. alinear EOS con
  MyBatch). No archiva ni recarga: solo cambia esos %. Una l&iacute;nea por ingrediente: <span class="mono">CODIGO_MP | %</span>.
  <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;margin-top:8px">
    <div><div class="muted">Producto</div>
@@ -20627,8 +20627,8 @@ MPAGUALI01 | 82.24</textarea></div>
    var j=await r.json();
    if(!j.ok){document.getElementById('msg').textContent='Error: '+(j.error||r.status);return;}
    document.getElementById('msg').innerHTML = j.todo_verde
-     ? '<span class="ok"><b>&#10004; TODO VERDE</b> &mdash; los '+j.total+' c&oacute;digos existen, est&aacute;n activos y suman 100. Lista para cargar.</span>'
-     : '<span class="bad"><b>&#9888; HAY PROBLEMAS</b> &mdash; revis&aacute; las filas rojas/&aacute;mbar antes de cargar.</span>';
+     ? '<span class="ok"><b>&#10004; TODO VERDE</b> - los '+j.total+' c&oacute;digos existen, est&aacute;n activos y suman 100. Lista para cargar.</span>'
+     : '<span class="bad"><b>&#9888; HAY PROBLEMAS</b> - revis&aacute; las filas rojas/&aacute;mbar antes de cargar.</span>';
    document.getElementById('kpis').innerHTML=
      kpi(j.total,'ingredientes')+
      kpi(j.existen,'existen',j.existen===j.total?'ok':'bad')+
@@ -20646,7 +20646,7 @@ MPAGUALI01 | 82.24</textarea></div>
      else if(it.dup_en_lista){cls='row-bad';est='<span class="bad">DUPLICADO</span>';}
      else if(it.coincide===false){cls='row-warn';est='<span class="warn">&iquest;OTRA MOL&Eacute;CULA?</span>';}
      h+='<tr class="'+cls+'"><td>'+(i+1)+'</td><td class="mono">'+ESC(it.codigo)+'</td><td>'+it.pct+'</td>'+
-        '<td>'+ESC(it.esperado)+'</td><td>'+(it.existe?(ESC(it.nombre_comercial)+' <span class="muted">/ '+ESC(it.nombre_inci)+'</span>'):'<span class="muted">&mdash;</span>')+'</td><td>'+est+'</td></tr>';
+        '<td>'+ESC(it.esperado)+'</td><td>'+(it.existe?(ESC(it.nombre_comercial)+' <span class="muted">/ '+ESC(it.nombre_inci)+'</span>'):'<span class="muted">-</span>')+'</td><td>'+est+'</td></tr>';
    });
    h+='</table></div>';
    document.getElementById('res').innerHTML=h;
@@ -20702,7 +20702,7 @@ MPAGUALI01 | 82.24</textarea></div>
         (mApr>0?(' &middot; <span class="warn">'+mApr+' aprobado(s) INMUTABLE(s) conserva(n) el nombre viejo (se re-versiona · GMP)</span>'):''))
      : '';
    var barrido = j.modo_barrido ? ' <span class="muted">(modo barrido: la f&oacute;rmula ya estaba renombrada · barriendo rezagos)</span>' : '';
-   return 'Hall&eacute; en prod: <b>'+ESC(j.nombre_real||j.nuevo)+'</b>'+barrido+'<br>Filas a renombrar &mdash; '+filas+'<br>'+shop+mbrLine;
+   return 'Hall&eacute; en prod: <b>'+ESC(j.nombre_real||j.nuevo)+'</b>'+barrido+'<br>Filas a renombrar - '+filas+'<br>'+shop+mbrLine;
  }
  async function previewRename(){
    document.getElementById('rnMsg').textContent='Previsualizando...';
@@ -20823,8 +20823,8 @@ _INTELIGENCIA_OPERACIONAL_HTML = """<!doctype html><html lang="es"><head><meta c
 
 <script>
  var ESC=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch];});};
- function hm(m){ if(m==null) return '<span class="muted">&mdash;</span>'; var h=Math.floor(m/60), r=Math.round(m%60); return (h>0?(h+'h '):'')+r+'m'; }
- function dd(d){ return d==null ? '<span class="muted">&mdash;</span>' : (d+'d'); }
+ function hm(m){ if(m==null) return '<span class="muted">-</span>'; var h=Math.floor(m/60), r=Math.round(m%60); return (h>0?(h+'h '):'')+r+'m'; }
+ function dd(d){ return d==null ? '<span class="muted">-</span>' : (d+'d'); }
  function q(){ var d=document.getElementById('desde').value, h=document.getElementById('hasta').value; var p=[]; if(d)p.push('desde='+d); if(h)p.push('hasta='+h); return p.length?('?'+p.join('&')):''; }
  async function cargar(){
    document.getElementById('msg').textContent='Cargando...';
@@ -20839,7 +20839,7 @@ _INTELIGENCIA_OPERACIONAL_HTML = """<!doctype html><html lang="es"><head><meta c
  }
  function pintarLead(j){
    var s=(j&&j.resumen)||{};
-   function kpi(v,l,cls){return '<div class="kpi"><div class="v '+(cls||'')+'">'+(v==null?'&mdash;':(v+'d'))+'</div><div class="l">'+l+'</div></div>';}
+   function kpi(v,l,cls){return '<div class="kpi"><div class="v '+(cls||'')+'">'+(v==null?'-':(v+'d'))+'</div><div class="l">'+l+'</div></div>';}
    document.getElementById('leadKpis').innerHTML=
      '<div class="kpi"><div class="v">'+(s.n_ocs||0)+'</div><div class="l">OCs recibidas</div></div>'+
      kpi(s.prom_sol_oc_d,'sol → OC')+kpi(s.prom_oc_aut_d,'OC → autoriz.')+
@@ -20851,7 +20851,7 @@ _INTELIGENCIA_OPERACIONAL_HTML = """<!doctype html><html lang="es"><head><meta c
      items.forEach(function(r){ h+='<tr><td class="mono">'+ESC(r.numero_oc)+'</td><td>'+ESC(r.proveedor)+'</td><td>'+ESC(r.fecha_recepcion)+'</td><td>'+dd(r.sol_oc_d)+'</td><td>'+dd(r.oc_aut_d)+'</td><td>'+dd(r.aut_pago_d)+'</td><td>'+dd(r.pago_rec_d)+'</td><td class="ok"><b>'+dd(r.total_d)+'</b></td></tr>'; });
      document.getElementById('lead').innerHTML=h+'</table>'; }
    var pp=s.por_proveedor||[];
-   if(!pp.length){ document.getElementById('leadProv').innerHTML='<p class="muted">&mdash;</p>'; }
+   if(!pp.length){ document.getElementById('leadProv').innerHTML='<p class="muted">-</p>'; }
    else{ var t='<table><tr><th>Proveedor</th><th>Prom. total</th><th>OCs</th></tr>';
      pp.forEach(function(r){ t+='<tr><td>'+ESC(r.proveedor)+'</td><td>'+dd(r.prom_total_d)+'</td><td>'+r.n+'</td></tr>'; });
      document.getElementById('leadProv').innerHTML=t+'</table>'; }
@@ -20873,7 +20873,7 @@ _INTELIGENCIA_OPERACIONAL_HTML = """<!doctype html><html lang="es"><head><meta c
  }
  function pintarProd(j){
    var s=(j&&j.resumen)||{}; var f=s.prom_por_fase||{};
-   function kpi(v,l,cls){return '<div class="kpi"><div class="v '+(cls||'')+'">'+(v==null?'&mdash;':v)+'</div><div class="l">'+l+'</div></div>';}
+   function kpi(v,l,cls){return '<div class="kpi"><div class="v '+(cls||'')+'">'+(v==null?'-':v)+'</div><div class="l">'+l+'</div></div>';}
    document.getElementById('prodKpis').innerHTML=
      kpi(s.n_lotes,'lotes',null)+
      kpi(f['Dispensación']!=null?hm(f['Dispensación']):null,'prom dispensación')+
@@ -20881,7 +20881,7 @@ _INTELIGENCIA_OPERACIONAL_HTML = """<!doctype html><html lang="es"><head><meta c
      kpi(f['Envasado']!=null?hm(f['Envasado']):null,'prom envasado')+
      kpi(f['Acondicionamiento']!=null?hm(f['Acondicionamiento']):null,'prom acond.')+
      kpi(s.prom_total_min!=null?hm(s.prom_total_min):null,'prom total','ok')+
-     kpi(s.cuello_botella||'&mdash;','cuello de botella','warn');
+     kpi(s.cuello_botella||'-','cuello de botella','warn');
    var items=(j&&j.items)||[];
    if(!items.length){ document.getElementById('prod').innerHTML='<p class="muted">Sin producciones con tiempos en el rango.</p>'; }
    else{
@@ -20893,7 +20893,7 @@ _INTELIGENCIA_OPERACIONAL_HTML = """<!doctype html><html lang="es"><head><meta c
      document.getElementById('prod').innerHTML=h+'</table>';
    }
    var tp=(s.por_producto)||[];
-   if(!tp.length){ document.getElementById('prodTop').innerHTML='<p class="muted">&mdash;</p>'; }
+   if(!tp.length){ document.getElementById('prodTop').innerHTML='<p class="muted">-</p>'; }
    else{ var t='<table><tr><th>Producto</th><th>Prom. total</th><th>Lotes</th></tr>';
      tp.forEach(function(r){ t+='<tr><td>'+ESC(r.producto)+'</td><td>'+hm(r.prom_total_min)+'</td><td>'+r.n+'</td></tr>'; });
      document.getElementById('prodTop').innerHTML=t+'</table>'; }
@@ -20962,12 +20962,12 @@ inventario debe volver a su posici&oacute;n INVIMA. Read-only (salvo apagar el m
    document.getElementById('brdMsg').innerHTML='<span class="ok-t">&#10004; '+ESC(_BRD_MODOS[j.modo]||j.modo)+'</span>';
    cargarBrd();
  }
- function kpi(v,l,cls){return '<div class="kpi"><div class="v '+(cls||'')+'">'+(v==null?'&mdash;':v)+'</div><div class="l">'+l+'</div></div>';}
+ function kpi(v,l,cls){return '<div class="kpi"><div class="v '+(cls||'')+'">'+(v==null?'-':v)+'</div><div class="l">'+l+'</div></div>';}
  async function cargar(){
    var r=await fetch('/api/admin/seguridad-planta'); var j=await r.json();
    if(!j.ok){document.getElementById('ctrls').innerHTML='<div class="card bad-t">Error: '+ESC(j.error||r.status)+'</div>';return;}
    document.getElementById('banner').innerHTML = j.alertas
-     ? '<div class="card" style="border-color:#f59e0b"><span class="warn-t"><b>&#9888; '+j.alertas+' control(es) fuera de la posici&oacute;n INVIMA</b></span> &mdash; revis&aacute; abajo.</div>'
+     ? '<div class="card" style="border-color:#f59e0b"><span class="warn-t"><b>&#9888; '+j.alertas+' control(es) fuera de la posici&oacute;n INVIMA</b></span> - revis&aacute; abajo.</div>'
      : '<div class="card" style="border-color:#16a34a"><span class="ok-t"><b>&#10004; Todos los controles en posici&oacute;n segura.</b></span></div>';
    var h='';
    (j.controles||[]).forEach(function(c){
@@ -20982,7 +20982,7 @@ inventario debe volver a su posici&oacute;n INVIMA. Read-only (salvo apagar el m
      if(c.toggle_limpia){ btn = '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">'+
         '<button onclick="setLimpia(true)" style="background:#16a34a">EXIGE (estricto)</button>'+
         '<button onclick="setLimpia(false)" style="background:#f59e0b">BETA (no exige)</button></div>'; }
-     h+='<div class="ctrl '+cls+'"><div><b>'+ESC(c.nombre)+'</b> &mdash; <span class="estado '+et+'">'+ESC(c.estado)+'</span></div>'+
+     h+='<div class="ctrl '+cls+'"><div><b>'+ESC(c.nombre)+'</b> - <span class="estado '+et+'">'+ESC(c.estado)+'</span></div>'+
         '<div class="muted" style="margin-top:3px">'+ESC(c.nota)+'</div>'+
         '<div class="muted" style="font-size:11px;margin-top:2px">Posici&oacute;n INVIMA: '+ESC(c.invima)+'</div>'+quien+btn+'</div>';
    });
@@ -21066,7 +21066,7 @@ _AREAS_PLANTA_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-
 <script>
  var ESC=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch];});};
  async function csrf(){try{var r=await fetch('/api/csrf-token',{credentials:'same-origin'});return (await r.json()).csrf_token;}catch(e){return '';}}
- function kpi(v,l,cls){return '<div class="kpi"><div class="v '+(cls||'')+'">'+(v==null?'&mdash;':v)+'</div><div class="l">'+l+'</div></div>';}
+ function kpi(v,l,cls){return '<div class="kpi"><div class="v '+(cls||'')+'">'+(v==null?'-':v)+'</div><div class="l">'+l+'</div></div>';}
  async function setArea(aid,body){
    var t=await csrf();
    var r=await fetch('/api/admin/areas-planta/set',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(Object.assign({area_id:aid},body))});
@@ -21139,7 +21139,7 @@ bodega (mismo resolver del descuento · con puente)? &iquest;hay duplicados? Los
 <div class="card"><div id="tabla"></div></div>
 <script>
  var ESC=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch];});};
- function kpi(v,l,cls){return '<div class="kpi"><div class="v '+(cls||'')+'">'+(v==null?'&mdash;':v)+'</div><div class="l">'+l+'</div></div>';}
+ function kpi(v,l,cls){return '<div class="kpi"><div class="v '+(cls||'')+'">'+(v==null?'-':v)+'</div><div class="l">'+l+'</div></div>';}
  async function csrf(){try{var r=await fetch('/api/csrf-token',{credentials:'same-origin'});return (await r.json()).csrf_token;}catch(e){return '';}}
  async function desactivarIdx(i){
    var f=(window._sf||[])[i]; if(!f)return;
