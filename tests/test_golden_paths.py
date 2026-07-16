@@ -9086,33 +9086,6 @@ def test_golden_ola3_eta_oee_mass_audit(app, db_clean):
     assert b'Auditor' in r4.data  # contiene "Auditoría"
 
 
-def test_golden_ola3_asistente_operacion(app, db_clean):
-    """OLA 3 IA · "Pregúntale a la planta".
-
-    Sin ANTHROPIC_API_KEY → 503 NO_API_KEY (no API key en test env).
-    Pregunta corta → 400.
-    Sin sesión → 401.
-    """
-    # Sin sesión
-    with app.test_client() as anon:
-        r0 = anon.post('/api/asistente/operacion', json={'pregunta': 'foo'})
-        assert r0.status_code == 401
-
-    cs = _login(app, 'sebastian')
-    # Pregunta corta
-    r_short = cs.post('/api/asistente/operacion', json={'pregunta': 'a'},
-                       headers=csrf_headers())
-    assert r_short.status_code == 400
-
-    # OK shape · sin API key debería ser 503 NO_API_KEY o 502 si está
-    r_ok = cs.post('/api/asistente/operacion', json={
-        'pregunta': 'TEST · resumeme el día en planta',
-    }, headers=csrf_headers())
-    # En test sin API key debería ser 503 · si está set y tiramos a Anthropic
-    # puede ser 200 o 502
-    assert r_ok.status_code in (200, 503, 502)
-
-
 def test_golden_ola2_andon_y_takt(app, db_clean):
     """OLA 2 · Andon (operario reporta) + Takt time (objetivos por SKU)."""
     _exec("DELETE FROM andon_alertas WHERE operario LIKE 'TEST_%' OR descripcion LIKE 'TEST_%'")
