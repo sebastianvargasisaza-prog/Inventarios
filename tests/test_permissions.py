@@ -155,5 +155,5 @@ def test_marketing_module_users(app, db_clean):
         c = app.test_client()
         c.post("/login", data={"username": user, "password": TEST_PASSWORD},
                headers=csrf_headers(), follow_redirects=False)
-        r = c.get("/api/marketing/ads/capabilities")
+        r = c.get("/api/marketing/ads/resumen")
         assert r.status_code == 200, f"{user} sin acceso a marketing"

@@ -49,7 +49,7 @@ def test_logout_clears_session(client, db_clean):
     r = client.get("/logout")
     assert r.status_code == 302
     # Después del logout, ruta privada redirige a login
-    r = client.get("/api/marketing/ads/capabilities")
+    r = client.get("/api/marketing/ads/resumen")
     assert r.status_code == 401
 
 

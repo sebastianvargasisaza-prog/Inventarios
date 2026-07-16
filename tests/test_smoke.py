@@ -65,8 +65,7 @@ def test_critical_routes_registered(app):
         "/admin",
         "/api/admin/backups",
         "/api/admin/backup-now",
-        "/api/marketing/ads/run",
-        "/api/marketing/ads/capabilities",
+        "/api/marketing/ads/resumen",
     }
     missing = critical - rules
     assert not missing, f"Rutas faltantes: {missing}"
