@@ -10063,9 +10063,10 @@ def cc_review():
     mov_id = d.get('mov_id')
     if not mov_id:
         return jsonify({'error': 'mov_id requerido'}), 400
-    solubilidad = d.get('solubilidad', '')
+    # Prueba de solubilidad ELIMINADA del flujo CC (Laura 16-jul) · la columna queda por compat (default '')
+    solubilidad = ''
     resultado_aql = d.get('resultado_aql', '')
-    if solubilidad == 'RECHAZO' or resultado_aql == 'NO_CONFORME':
+    if resultado_aql == 'NO_CONFORME':
         estado_final = 'RECHAZADO'
     elif resultado_aql == 'CUARENTENA_EXTENDIDA':
         estado_final = 'CUARENTENA_EXTENDIDA'
@@ -10144,7 +10145,7 @@ def cc_review():
     c.execute(
         "INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha) VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))",
         (user, 'CC_REVIEW_'+estado_final, 'movimientos', str(mov_id),
-         'Lote '+d.get('lote','')+' AQL:'+resultado_aql+' Solub:'+solubilidad+' Firma:'+user+' e-sign #'+str(sig_id)+ubic_final_msg,
+         'Lote '+d.get('lote','')+' AQL:'+resultado_aql+' Firma:'+user+' e-sign #'+str(sig_id)+ubic_final_msg,
          request.remote_addr))
     if estado_final == 'RECHAZADO':
         # Fix #2 · 21-may-2026 · schema actualizado de solicitudes_compra.
@@ -10663,8 +10664,10 @@ def _rotulo_recep_css(lw, lh):
       ".mark{width:64px;height:64px;border-radius:13px;flex:none;object-fit:contain;background:#fff;border:1px solid var(--line);padding:4px}"
       ".co{font-size:14px;font-weight:800;letter-spacing:-.2px;line-height:1.2}"
       ".ctrl{font-size:9px;color:var(--soft);text-align:right;line-height:1.6;background:var(--pale);border:1px solid #ede9fe;border-radius:9px;padding:7px 10px;flex:none;white-space:nowrap}.ctrl b{color:var(--violet-d);font-weight:700}"
-      ".title{text-align:center;padding:2px 16px 10px}"
-      ".title h1{margin:0;font-size:14px;font-weight:800;letter-spacing:-.2px;text-transform:uppercase}.title .k{font-size:10px;color:var(--mute);margin-top:3px;font-weight:600}"
+      ".title{text-align:center;padding:2px 16px 12px}"
+      ".title .eyebrow{font-size:9px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.5px}"
+      ".title .name{margin:2px 0 0;font-size:22px;font-weight:800;letter-spacing:-.4px;line-height:1.12;color:var(--ink)}"
+      ".tipo{display:inline-block;font-size:10.5px;font-weight:700;margin-right:14px;white-space:nowrap;color:var(--mute)}.tipo.on{color:var(--violet-d)}"
       ".lote{margin:0 16px 10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;text-align:center;padding:8px}"
       ".lote .ll{font-size:9px;font-weight:700;color:#9a3412;text-transform:uppercase;letter-spacing:.4px}.lote .lv{font-size:20px;font-weight:800;color:#c2410c;letter-spacing:1px}.lote svg{max-width:100%;height:auto;margin-top:4px}"
       "table{width:100%;border-collapse:collapse}"
@@ -10675,7 +10678,7 @@ def _rotulo_recep_css(lw, lh):
       ".qc{display:flex;gap:13px;align-items:center;padding:8px 16px;border-top:1px solid var(--line);font-size:11px;font-weight:700;flex-wrap:wrap}.qc b{color:var(--mute);text-transform:uppercase;font-size:9.5px;font-weight:700}"
       ".qcbox{padding:8px 16px;border-top:1px solid var(--line)}"
       ".qcl{font-size:9.5px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.3px;margin-bottom:5px}.qcl span{color:#a1a1aa;font-weight:600;text-transform:none;letter-spacing:0}"
-      ".qcarea{border:1.5px dashed #c4b5fd;border-radius:8px;height:62px;background:repeating-linear-gradient(-45deg,#fff,#fff 8px,#faf5ff 8px,#faf5ff 9px)}"
+      ".qcarea{border:1.5px dashed #c4b5fd;border-radius:8px;height:92px;background:repeating-linear-gradient(-45deg,#fff,#fff 8px,#faf5ff 8px,#faf5ff 9px)}"
       ".obs{height:26px}"
       ".firmas{display:flex;border-top:1px solid var(--line)}.firma{flex:1;padding:9px 14px 11px}.firma+.firma{border-left:1px solid var(--line)}"
       ".firma .l{font-size:9px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.3px}.firma .sig{height:1px;background:var(--ink);margin:22px 0 5px}.firma .f{font-size:9px;color:var(--mute)}"
@@ -10684,9 +10687,9 @@ def _rotulo_recep_css(lw, lh):
       "td{padding:1.6px 8px;font-size:7.5pt;line-height:1.12}td.k{font-size:6pt}"
       "td:not(.k){white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"  # PRINT: valores en 1 linea (compacto, 1 hoja); en pantalla envuelven
       ".top{padding:6px 12px 2px}.mark{width:40px;height:40px}.co{font-size:9.5pt}.ctrl{font-size:5.5pt;padding:4px 6px;line-height:1.35}"
-      ".title{padding:0 12px 3px}.title h1{font-size:9.5pt}.title .k{font-size:7pt}.lote{margin:0 12px 4px;padding:4px}.lote .ll{font-size:7pt}.lote .lv{font-size:12pt}"
+      ".title{padding:0 12px 4px}.title .eyebrow{font-size:6pt}.title .name{font-size:13pt}.tipo{font-size:6.5pt;margin-right:8px}.lote{margin:0 12px 4px;padding:4px}.lote .ll{font-size:7pt}.lote .lv{font-size:12pt}"
       ".qc{padding:3px 12px;font-size:7.5pt;gap:9px}.firma{padding:4px 10px 5px}.firma .l{font-size:7.5pt}.firma .sig{margin:9px 0 3px}.firma .f{font-size:7pt}"
-      ".qcbox{padding:3px 12px}.qcl{font-size:6.5pt;margin-bottom:2px}.qcarea{height:18mm;border-color:#999}.obs{height:9mm}"
+      ".qcbox{padding:3px 12px}.qcl{font-size:6.5pt;margin-bottom:2px}.qcarea{height:26mm;border-color:#999}.obs{height:9mm}"
       "@page{size:" + str(lw) + "mm " + str(lh) + "mm;margin:1.5mm}}"
       "</style>")
 
@@ -10731,7 +10734,23 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
     fv=str(mov[0])[:10] if (mov and mov[0]) else (str(_fvx[0])[:10] if (_fvx and _fvx[0]) else '')
     _est=(mov[1] if (mov and len(mov)>1 and mov[1]) else '') or ''
     _pos=(mov[2] if (mov and len(mov)>2 and mov[2]) else '') or ''
-    nr="REC-"+date.today().strftime('%Y%m%d')+"-"+codigo[-3:]; bv=codigo+'|'+lote
+    # Fecha de recepción REAL = la Entrada del lote en el kardex (NO la fecha de impresión · Laura 16-jul:
+    # "la fecha debe ser específica"). Si no hay Entrada, cae a hoy.
+    _frec = ''
+    try:
+        _fr = c.execute("SELECT MIN(fecha) FROM movimientos WHERE material_id=? AND UPPER(TRIM(lote))=UPPER(TRIM(?)) "
+                        "AND LOWER(COALESCE(tipo,''))='entrada'", (codigo, lote)).fetchone()
+        if _fr and _fr[0]:
+            from datetime import datetime as _dtp
+            try:
+                _frec = _dtp.fromisoformat(str(_fr[0])[:19].replace(' ', 'T')).strftime('%d-%b-%Y').upper()
+            except Exception:
+                _frec = str(_fr[0])[:10]
+    except Exception:
+        pass
+    if not _frec:
+        _frec = hoy
+    bv=codigo+'|'+lote
     import html as _hh
     def _e(x): return _hh.escape(str(x if x is not None else ''))
     try:
@@ -10749,17 +10768,17 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
        '<button class="pbtn" onclick="window.print()">&#128424; Imprimir</button></div><div class="wrap">'
        '<div class="sheet"><div class="accent"></div>'
        '<div class="top"><div class="brand"><img class="mark" src="'+_logo+'" alt="" onerror="this.remove()"><div class="co">ESPAGIRIA Laboratorio SAS</div></div>'
-       '<div class="ctrl"><b>Codigo:</b> COC-PRO-002-F07<br><b>N Rec.:</b> '+_e(nr)+'<br><b>Fecha:</b> '+_e(hoy)+'</div></div>'
-       '<div class="title"><h1>Rotulo de ingreso de materia prima</h1><div class="k">'+_e(nc)+'</div></div>'
+       '<div class="ctrl"><b>Formato:</b> COC-PRO-002-F07<br><b>F. Impresion:</b> '+_e(hoy)+'</div></div>'
+       '<div class="title"><div class="eyebrow">Rotulo de ingreso &middot; Materia prima</div><h1 class="name">'+_e(nc)+'</h1></div>'
        '<div class="lote"><div class="ll">Numero de lote</div><div class="lv">'+_e(lote)+'</div><svg id="bc"></svg></div>'
        '<table>'
        '<tr><td class="k">Codigo MP</td><td class="num"><b>'+_e(codigo)+'</b></td></tr>'
        '<tr><td class="k">Nombre comercial</td><td><b>'+_e(nc)+'</b></td></tr>'
        '<tr><td class="k">Nombre INCI</td><td>'+(_e(ni) or '&mdash;')+'</td></tr>'
-       '<tr><td class="k">Tipo de insumo</td><td><b>Materia prima</b>'+(' &middot; '+_e(tp) if tp else '')+'</td></tr>'
+       '<tr><td class="k">Tipo de insumo</td><td colspan="3"><span class="tipo on">&#9746; Materia Prima (MP)</span><span class="tipo">&#9744; Material de Envase (ME)</span><span class="tipo">&#9744; Material de Empaque (MEMP)</span></td></tr>'
        '<tr><td class="k">Proveedor</td><td>'+(_e(pv) or '&mdash;')+'</td></tr>'
        '<tr><td class="k">Cantidad recibida</td><td class="cant">'+f"{cantidad:,.0f} g"+'</td></tr>'
-       '<tr><td class="k">Fecha recepcion</td><td>'+_e(hoy)+'</td><td class="k">Vencimiento</td><td class="venc">'+(_e(fv) or '&mdash;')+'</td></tr>'
+       '<tr><td class="k">Fecha recepcion</td><td>'+_e(_frec)+'</td><td class="k">Vencimiento</td><td class="venc">'+(_e(fv) or '&mdash;')+'</td></tr>'
        '<tr><td class="k">Ubicacion</td><td>'+ubic_disp+'</td><td class="k">Fecha analisis</td><td class="fill"></td></tr>'
        '<tr><td class="k">Observaciones</td><td colspan="3" class="fill obs"></td></tr>'
        '</table>'
@@ -10797,11 +10816,23 @@ def rotulo_recepcion_mee(codigo, cantidad_str):
     oper  = mov[1] if mov else ''
     obs   = mov[3] if mov and len(mov)>3 else ''
     zona  = mov[4] if mov and len(mov)>4 else ''
-    nr    = "REC-MEE-" + date.today().strftime('%Y%m%d') + "-" + (codigo.split('-')[-1] or codigo[-4:]).lstrip('-')
     # M.ENV: envases primarios / M.EMP: empaque secundario
     env_cats = {'Envase','Frasco','Tapa','Gotero','Contorno'}
     is_env = cat in env_cats
-    chk_mp  = '&#9744;'; chk_env = '&#9745;' if is_env else '&#9744;'; chk_emp = '&#9745;' if not is_env else '&#9744;'
+    # Tipo de insumo MARCADO (Laura 16-jul · MP / ME / MEMP)
+    _tp_mp  = '&#9744; Materia Prima (MP)'
+    _tp_me  = ('&#9746;' if is_env else '&#9744;') + ' Material de Envase (ME)'
+    _tp_emp = ('&#9746;' if not is_env else '&#9744;') + ' Material de Empaque (MEMP)'
+    # Fecha de recepción REAL (la Entrada MEE en el kardex · NO la fecha de impresión)
+    _frec = ''
+    if mov and len(mov) > 2 and mov[2]:
+        from datetime import datetime as _dtp
+        try:
+            _frec = _dtp.fromisoformat(str(mov[2])[:19].replace(' ', 'T')).strftime('%d-%b-%Y').upper()
+        except Exception:
+            _frec = str(mov[2])[:10]
+    if not _frec:
+        _frec = hoy
     cant_str = f"{cantidad:,} {unid}"
 
     import html as _hh
@@ -10820,16 +10851,15 @@ def rotulo_recepcion_mee(codigo, cantidad_str):
        '<button class="pbtn" onclick="window.print()">&#128424; Imprimir</button></div><div class="wrap">'
        '<div class="sheet"><div class="accent"></div>'
        '<div class="top"><div class="brand"><img class="mark" src="'+_logo+'" alt="" onerror="this.remove()"><div class="co">ESPAGIRIA Laboratorio SAS</div></div>'
-       '<div class="ctrl"><b>Codigo:</b> COC-PRO-002-F04<br><b>N Rec.:</b> '+_e(nr)+'<br><b>Fecha:</b> '+_e(hoy)+'</div></div>'
-       '<div class="title"><h1>Identificacion de insumos</h1><div class="k">'+_e(desc)+'</div></div>'
+       '<div class="ctrl"><b>Formato:</b> COC-PRO-002-F04<br><b>F. Impresion:</b> '+_e(hoy)+'</div></div>'
+       '<div class="title"><div class="eyebrow">Rotulo de ingreso &middot; Material de envase</div><h1 class="name">'+_e(desc)+'</h1></div>'
        '<div class="lote"><div class="ll">Codigo interno</div><div class="lv">'+_e(codigo)+'</div><svg id="bc"></svg></div>'
        '<table>'
-       '<tr><td class="k">Nombre comercial</td><td><b>'+_e(desc)+'</b></td></tr>'
-       '<tr><td class="k">Tipo de insumo</td><td>'+_e(_tipo)+'</td></tr>'
-       '<tr><td class="k">Categoria</td><td>'+(_e(cat) or '&mdash;')+'</td></tr>'
-       '<tr><td class="k">Lote</td><td class="num"><b>'+(_e(lote) or '&mdash;')+'</b></td><td class="k">Cantidad</td><td class="cant">'+_e(cant_str)+'</td></tr>'
-       '<tr><td class="k">Proveedor / marca</td><td>'+(_e(prov) or '&mdash;')+'</td></tr>'
-       '<tr><td class="k">Ubicacion / zona</td><td>'+(_e(zona) or '&mdash;')+'</td><td class="k">Fecha recep.</td><td>'+_e(hoy)+'</td></tr>'
+       '<tr><td class="k">Nombre comercial</td><td colspan="3"><b>'+_e(desc)+'</b></td></tr>'
+       '<tr><td class="k">Tipo de insumo</td><td colspan="3"><span class="tipo">'+_tp_mp+'</span><span class="tipo'+(' on' if is_env else '')+'">'+_tp_me+'</span><span class="tipo'+('' if is_env else ' on')+'">'+_tp_emp+'</span></td></tr>'
+       '<tr><td class="k">Categoria</td><td>'+(_e(cat) or '&mdash;')+'</td><td class="k">Cantidad</td><td class="cant">'+_e(cant_str)+'</td></tr>'
+       '<tr><td class="k">Lote</td><td class="num"><b>'+(_e(lote) or '&mdash;')+'</b></td><td class="k">Fecha recep.</td><td>'+_e(_frec)+'</td></tr>'
+       '<tr><td class="k">Proveedor / marca</td><td>'+(_e(prov) or '&mdash;')+'</td><td class="k">Ubicacion / zona</td><td>'+(_e(zona) or '&mdash;')+'</td></tr>'
        '<tr><td class="k">Observaciones</td><td colspan="3">'+(_e(obs) or '&mdash;')+'</td></tr>'
        '</table>'
        '<div class="qc"><b>Estado:</b> <span>&#9744; Aprobado</span><span>&#9744; Cuarentena</span><span>&#9744; Rechazado</span></div>'

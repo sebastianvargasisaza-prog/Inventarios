@@ -32,12 +32,6 @@ CC_REVIEW_MODAL_HTML = r'''
       <label class="ccr-chk"><input type="checkbox" id="ccr-coa-vigente"><span>COA vigente &mdash; no vencido según política de re-análisis</span></label>
       <label class="ccr-chk"><input type="checkbox" id="ccr-ficha-ok"><span>Ficha técnica del proveedor disponible en archivo CC</span></label>
 
-      <div class="ccr-sec">Prueba de solubilidad / compatibilidad</div>
-      <div class="ccr-seg">
-        <label><input type="radio" name="ccr-solub" value="ACEPTACION"><span style="color:#15803d;">&#10003; Aceptación</span></label>
-        <label><input type="radio" name="ccr-solub" value="RECHAZO"><span style="color:#dc2626;">&#10007; Rechazo</span></label>
-      </div>
-
       <div class="ccr-sec">Resultado AQL / inspección organoléptica</div>
       <div class="ccr-seg">
         <label><input type="radio" name="ccr-aql" value="CONFORME"><span style="color:#15803d;">Conforme</span></label>
@@ -95,7 +89,7 @@ function abrirCCReview(lote){
     '<div><b>OC:</b> '+(l.numero_oc||'—')+'</div>';
   ['ccr-coa-ok','ccr-lote-coincide','ccr-coa-vigente','ccr-ficha-ok','ccr-muestra'].forEach(function(id){var e=document.getElementById(id);if(e)e.checked=false;});
   ['ccr-aql-obs','ccr-est','ccr-pos','ccr-obs'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});
-  var rs=document.querySelectorAll('input[name="ccr-solub"],input[name="ccr-aql"]');rs.forEach(function(r){r.checked=false;});
+  var rs=document.querySelectorAll('input[name="ccr-aql"]');rs.forEach(function(r){r.checked=false;});
   document.getElementById('ccr-msg').innerHTML='';
   document.getElementById('ccr-modal').style.display='flex';
 }
@@ -127,7 +121,6 @@ async function _ccrFirmar(meaning, recordId){
 async function enviarCCReview(){
   if(!_ccrLote){return;}
   var msg=document.getElementById('ccr-msg');
-  var solub=document.querySelector('input[name="ccr-solub"]:checked');
   var aql=document.querySelector('input[name="ccr-aql"]:checked');
   var aqlObs=(document.getElementById('ccr-aql-obs').value||'').trim();
   // Modo migración (warm · Sebastián 9-jul): los análisis son OPCIONALES. Si no se marca nada, el backend lo
@@ -137,7 +130,7 @@ async function enviarCCReview(){
     mov_id:_ccrLote.id, lote:_ccrLote.lote||'', codigo_mp:_ccrLote.material_id||_ccrLote.codigo_mp||'',
     coa_ok:document.getElementById('ccr-coa-ok').checked, lote_coincide:document.getElementById('ccr-lote-coincide').checked,
     coa_vigente:document.getElementById('ccr-coa-vigente').checked, ficha_ok:document.getElementById('ccr-ficha-ok').checked,
-    solubilidad:(solub?solub.value:''), resultado_aql:(aql?aql.value:''), observaciones_aql:aqlObs,
+    resultado_aql:(aql?aql.value:''), observaciones_aql:aqlObs,
     muestra_retencion:document.getElementById('ccr-muestra').checked,
     observaciones:(document.getElementById('ccr-obs').value||'').trim(),
     estanteria_final:(document.getElementById('ccr-est').value||'').trim(),

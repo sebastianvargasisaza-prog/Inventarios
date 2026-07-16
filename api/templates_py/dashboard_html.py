@@ -7806,6 +7806,13 @@ async function liberarCuarentenaInventario(){
   }
   if(btn){btn.disabled=false;btn.innerHTML='&#9989; Liberar TODO a inventario';}
 }
+function _imprimirRotuloCuar(el){
+  var cod=(el.dataset.cod||'').trim();
+  if(!cod){ alert('Este lote no tiene código de material.'); return; }
+  var lote=(el.dataset.lote||'').trim()||'SL';
+  var cant=el.dataset.cant||'0';
+  window.open('/rotulo-recepcion/'+encodeURIComponent(cod)+'/'+encodeURIComponent(lote)+'/'+encodeURIComponent(cant),'_blank');
+}
 async function cargarCuarentena(){
   try{
     var r=await fetch('/api/lotes/cuarentena');
@@ -7830,12 +7837,14 @@ async function cargarCuarentena(){
       h+='<td style="font-size:0.82em;">'+(l.numero_oc||'')+'</td>';
       h+='<td style="font-size:0.82em;">'+l.fecha.substring(0,10)+'</td>';
       h+='<td><span style="background:'+estadoColor+'20;color:'+estadoColor+';padding:2px 8px;border-radius:10px;font-size:0.8em;font-weight:700;">'+l.estado_lote.replace('_',' ')+'</span></td>';
-      h+='<td>';
+      h+='<td style="white-space:nowrap;">';
       if(esAdmin){
         h+='<button onclick="abrirCCReview(JSON.parse(this.dataset.lote))" data-lote="'+JSON.stringify(l).replace(/"/g,'&quot;')+'" style="padding:5px 12px;background:#6d28d9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.82em;font-weight:600;">Revisar CC</button>';
       }else{
         h+='<span style="color:#999;font-size:0.82em;">Solo CC/Admin</span>';
       }
+      // Imprimir rótulo (Laura 16-jul · poder imprimir el rótulo apenas entra a cuarentena)
+      h+='<button onclick="_imprimirRotuloCuar(this)" data-cod="'+_escHTML(l.codigo_mp||'')+'" data-lote="'+_escHTML(l.lote||'')+'" data-cant="'+(Number(l.cantidad)||0)+'" style="padding:5px 10px;margin-left:6px;background:#7c3aed;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.82em;font-weight:600;" title="Imprimir rótulo de este lote">&#128424;&#65039; Rótulo</button>';
       h+='</td></tr>';
     });
     tb.innerHTML=h;
