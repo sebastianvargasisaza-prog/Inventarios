@@ -118,6 +118,62 @@ def test_crece_difiere_de_auto(app):
         _limpiar()
 
 
+def _congelado(prod=PROD):
+    conn = sqlite3.connect(os.environ["DB_PATH"], timeout=10.0)
+    try:
+        r = conn.execute("SELECT mix_congelado_json FROM sku_planeacion_config "
+                         "WHERE producto_nombre=?", (prod,)).fetchone()
+        return (r[0] if r else None)
+    finally:
+        conn.close()
+
+
+def test_reguardar_mismo_fijo_no_descongela(app):
+    """FIX P1 15-jul: re-guardar la decisión con el MISMO mix_mode='fijo' (p.ej. al cambiar
+    kg/ritmo con 'fijo' aún seleccionado) NO debe borrar el mix congelado."""
+    _base(mix_mode=None)
+    _venta(SKA, 50, 20, 'a1'); _venta(SKB, 50, 20, 'b1')
+    try:
+        c = _login(app)
+        c.post("/api/programacion/decision-produccion",
+               json={'producto': PROD, 'mix_mode': 'fijo'}, headers=csrf_headers())
+        pct1, _ = _pct(c)   # congela 50/50
+        cong1 = _congelado()
+        assert cong1, "debe haber quedado un mix congelado"
+        # re-guardar con el MISMO modo 'fijo' + kg → NO debe descongelar
+        r = c.post("/api/programacion/decision-produccion",
+                   json={'producto': PROD, 'mix_mode': 'fijo', 'kg_objetivo_lote': 30},
+                   headers=csrf_headers())
+        assert r.status_code == 200, r.data
+        assert 'mix_congelado' not in (r.get_json().get('guardado') or {}), r.get_json()
+        assert _congelado() == cong1, "el mix congelado NO debe cambiar al re-guardar el mismo modo"
+        # y una venta nueva enorme sigue sin mover el reparto (sigue congelado)
+        _venta(SKB, 500, 5, 'bmega')
+        pct2, _ = _pct(c)
+        assert abs(pct2[SKA] - pct1[SKA]) < 0.5, (pct1, pct2)
+    finally:
+        _limpiar()
+
+
+def test_cambiar_modo_si_descongela(app):
+    """Cambiar el mix_mode (fijo→auto) SÍ debe limpiar el congelado (re-congela la próxima vez)."""
+    _base(mix_mode=None)
+    _venta(SKA, 50, 20, 'a1'); _venta(SKB, 50, 20, 'b1')
+    try:
+        c = _login(app)
+        c.post("/api/programacion/decision-produccion",
+               json={'producto': PROD, 'mix_mode': 'fijo'}, headers=csrf_headers())
+        _pct(c)
+        assert _congelado(), "quedó congelado"
+        r = c.post("/api/programacion/decision-produccion",
+                   json={'producto': PROD, 'mix_mode': 'auto'}, headers=csrf_headers())
+        assert r.status_code == 200, r.data
+        assert (r.get_json().get('guardado') or {}).get('mix_congelado') == 'reset', r.get_json()
+        assert _congelado() is None, "al cambiar de modo el congelado debe limpiarse"
+    finally:
+        _limpiar()
+
+
 def test_fijo_congela_y_no_cambia_con_nuevas_ventas(app):
     _base(mix_mode=None)
     _venta(SKA, 50, 20, 'a1'); _venta(SKB, 50, 20, 'b1')   # 50/50

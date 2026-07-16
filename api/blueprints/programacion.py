@@ -2450,14 +2450,13 @@ def prog_decision_produccion():
     if kg is not None:
         sets.append('kg_objetivo_lote=?'); vals.append(kg); cambios['kg_objetivo_lote'] = kg
 
+    _mm_new = None
     if 'mix_mode' in d and d['mix_mode']:
         mm = str(d['mix_mode']).strip().lower()
         if mm not in ('auto', 'crece', 'fijo'):
             return jsonify({'error': "mix_mode debe ser auto/crece/fijo"}), 400
         sets.append('mix_mode=?'); vals.append(mm); cambios['mix_mode'] = mm
-        # Programación v4 · al cambiar/re-elegir el modo, limpiar el mix CONGELADO: si el
-        # nuevo modo es 'fijo', el desglose lo re-congela con la venta ACTUAL la próxima vez.
-        sets.append('mix_congelado_json=NULL'); cambios['mix_congelado'] = 'reset'
+        _mm_new = mm
 
     if not sets:
         return jsonify({'error': 'nada para guardar'}), 400
@@ -2466,15 +2465,24 @@ def prog_decision_produccion():
     c = conn.cursor()
     user = session.get('compras_user', '') if session else ''
     try:
-        # upsert: si el producto no está en sku_planeacion_config, crearlo primero
+        # upsert: si el producto no está en sku_planeacion_config, crearlo primero.
+        # Leemos el mix_mode ACTUAL para decidir si hay que descongelar (abajo).
         existe = c.execute(
-            "SELECT 1 FROM sku_planeacion_config WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
+            "SELECT COALESCE(mix_mode,'auto') FROM sku_planeacion_config "
+            "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
             (producto,)).fetchone()
+        _mm_actual = (existe[0] if existe else None)
         if not existe:
             # ON CONFLICT nativo (SQLite+PG) = race-safe: 2 requests concurrentes del mismo
             # producto nuevo no chocan el UNIQUE (evita 500 espurio · M12d).
             c.execute("INSERT INTO sku_planeacion_config (producto_nombre) VALUES (?) "
                       "ON CONFLICT (producto_nombre) DO NOTHING", (producto,))
+        # Programación v4 · FIX P1 15-jul: limpiar el mix CONGELADO SOLO si el modo REALMENTE
+        # cambió. Re-guardar 'fijo' (o guardar kg/ritmo con 'fijo' aún seleccionado) NO debe
+        # descongelar el desglose — si no, 'fijo' pierde su gracia y se re-congela con la venta
+        # actual en cada guardado. Al pasar a 'fijo' desde otro modo, se re-congela la próxima vez.
+        if _mm_new is not None and _mm_new != (_mm_actual or 'auto'):
+            sets.append('mix_congelado_json=NULL'); cambios['mix_congelado'] = 'reset'
         c.execute("UPDATE sku_planeacion_config SET " + ','.join(sets) +
                   " WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", vals + [producto])
         audit_log(c, usuario=user, accion='DECISION_PRODUCCION', tabla='sku_planeacion_config',

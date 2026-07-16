@@ -702,6 +702,11 @@ JOBS_SCHEDULE = [
     ('ventas_diarias_am',      5, 40, None, None,               'job_refrescar_ventas_diarias'),
     ('ventas_diarias_pm',     13, 40, None, None,               'job_refrescar_ventas_diarias'),
     ('ventas_diarias_noche',  21, 40, None, None,               'job_refrescar_ventas_diarias'),
+    # ⭐ PERF 15-jul · 3×/día (5 min tras ventas_diarias) · precalcula la estacionalidad 24m a la cache
+    # compartida → el ÚNICO scan de Necesidades sin fast-path deja de correr en la carga (lentitud intermitente).
+    ('estacionalidad_am',      5, 45, None, None,               'job_refrescar_estacionalidad'),
+    ('estacionalidad_pm',     13, 45, None, None,               'job_refrescar_estacionalidad'),
+    ('estacionalidad_noche',  21, 45, None, None,               'job_refrescar_estacionalidad'),
     # Mensuales (primeros 5 días del mes a las 12:00)
     ('auto_sc_mensual',      12,  0, None, [1, 2, 3, 4, 5],     'job_auto_sc_mensual'),
     ('auto_sc_mee_mensual',  12, 30, None, [1, 2, 3, 4, 5],     'job_auto_sc_mee_mensual'),
@@ -4305,6 +4310,27 @@ def job_refrescar_ventas_diarias(app):
                 pass
             import time as _tvd
             _VD_LAST_RUN.update({'ok': False, 'info': {'error': str(e)[:300]}, 'ts': _tvd.time()})
+            return False, {'error': str(e)[:200]}, 0
+
+
+def job_refrescar_estacionalidad(app):
+    """PERF (Sebastián 15-jul) · 3×/día · precalcula la estacionalidad de ventas (24 meses) y la deja en la
+    cache compartida (plan_vmaps_cache · clave estac:24:1.30). Es el ÚNICO scan del path de Necesidades sin
+    fast-path a ventas_diarias → sin esto, un worker frío re-parsea ~2 años de órdenes en una carga (la
+    lentitud intermitente). Con el cron, NINGUNA carga vuelve a escanear (lee el blob precalculado). Best-effort."""
+    with app.app_context():
+        from database import get_db as _gdb
+        conn = _gdb()
+        try:
+            from blueprints.plan import _estacionalidad_cached
+            data = _estacionalidad_cached(conn, 24, 1.3, force=True)
+            info = {'productos': int(data.get('total_productos') or 0)}
+            return True, info, info['productos']
+        except Exception as e:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             return False, {'error': str(e)[:200]}, 0
 
 

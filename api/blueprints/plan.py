@@ -14200,15 +14200,45 @@ def _estacionalidad_ventas(conn, meses_atras=24, umbral_pico=1.3):
 _ESTAC_CACHE = {}
 
 
-def _estacionalidad_cached(conn, meses_atras=24, umbral_pico=1.3):
-    import time as _t
+def _estacionalidad_cached(conn, meses_atras=24, umbral_pico=1.3, force=False):
+    """Estacionalidad con cache de 2 niveles. El scan de _estacionalidad_ventas (24 meses de órdenes,
+    parseo JSON por fila) es el ÚNICO del path de Necesidades SIN fast-path a ventas_diarias → en PG
+    multi-worker cada worker frío lo re-escanea (carga lenta intermitente · "se demora en cargar todo").
+      · nivel 1: cache de módulo (por-worker · 30min).
+      · nivel 2: cache COMPARTIDA en BD (plan_vmaps_cache · patrón mig 337) · aceptación 12h → una vez que
+        el cron job_refrescar_estacionalidad (3×/día) la calcula, NINGUNA carga vuelve a escanear.
+    force=True (cron): recalcula sí o sí y reescribe la cache compartida (bypassa la lectura)."""
+    import time as _t, json as _je, os as _oe
     key = (int(meses_atras or 24), round(float(umbral_pico or 1.3), 2))
+    _no_cache = bool(_oe.environ.get('PYTEST_CURRENT_TEST'))
     now = _t.time()
-    hit = _ESTAC_CACHE.get(key)
-    if hit and (now - hit[0]) < 1800:   # 30min · estacionalidad estable · no golpear Necesidades con el scan (M43/M59)
-        return hit[1]
+    _dbkey = 'estac:%d:%.2f' % key
+    if not force and not _no_cache:
+        hit = _ESTAC_CACHE.get(key)
+        if hit and (now - hit[0]) < 1800:   # 30min · estacionalidad estable (M43/M59)
+            return hit[1]
+        # nivel 2 · si OTRO worker (o el cron) ya la calculó hace <12h, se LEE (1 query) en vez de re-escanear.
+        try:
+            _row = conn.cursor().execute(
+                "SELECT computed_at, payload FROM plan_vmaps_cache WHERE cache_key=?", (_dbkey,)).fetchone()
+            if _row and _row[0] and (now - float(_row[0])) < 43200:
+                data = _je.loads(_row[1] or '{}')
+                if data:
+                    _ESTAC_CACHE[key] = (now, data)
+                    return data
+        except Exception:
+            pass
     data = _estacionalidad_ventas(conn, meses_atras, umbral_pico)
-    _ESTAC_CACHE[key] = (now, data)
+    if not _no_cache:
+        _ESTAC_CACHE[key] = (now, data)
+        try:  # persistir en la cache COMPARTIDA (best-effort · para los demás workers y el cron)
+            _c = conn.cursor()
+            _c.execute("DELETE FROM plan_vmaps_cache WHERE cache_key=?", (_dbkey,))
+            _c.execute("INSERT INTO plan_vmaps_cache (cache_key, computed_at, payload) VALUES (?,?,?)",
+                       (_dbkey, str(now), _je.dumps(data)))
+            _c.connection.commit()
+        except Exception:
+            pass
     return data
 
 
@@ -20889,11 +20919,13 @@ function _npResumenDebounced(){ clearTimeout(_npResTO); _npResTO = setTimeout(_n
 // Programación v4 · pre-llena la cadena con la DECISIÓN que el usuario guardó en el panel
 // (/planta/programar) para este producto → "un solo módulo": lo que decidís allá o acá es lo mismo.
 async function _npCargarDecision(name){
+  window._NP_MIX_LOADED = false;   // v4 · solo mandamos mix_mode al crear cadena si lo cargamos (no pisar 'fijo')
   try{
     const r = await fetch('/api/programacion/sugerencia-produccion?producto='+encodeURIComponent(name), {credentials:'same-origin'});
     if(!r.ok) return;
     const d = await r.json();
     const cfg = (d && d.config) || {};
+    window._NP_MIX_LOADED = true;   // la decisión actual se cargó → el selector refleja el modo real
     if(cfg.kg_objetivo_lote){ var k=document.getElementById('np-cad-kg'); if(k) k.value = cfg.kg_objetivo_lote; }
     if(cfg.cadencia_dias){
       var dd=document.getElementById('np-cad-dias'); if(dd) dd.value = cfg.cadencia_dias;
@@ -21035,10 +21067,13 @@ async function _npCrearCadena(){
     // Programación v4 · guardar la DECISIÓN (kg/ritmo/horizonte/mix) → el panel /planta/programar
     // la recuerda = "un solo módulo": decidís acá o allá, es lo mismo. Fire-and-forget.
     try{
-      var _mix = (document.getElementById('np-cad-mix')||{}).value || 'auto';
+      var _dec = {producto:producto, kg_objetivo_lote:cc.kg, cadencia_dias:cc.interval, horizonte_dias:cc.anios*365};
+      // Solo mandamos mix_mode si cargamos la decisión actual (si no, el selector está en su
+      // default 'auto' y pisaría un 'fijo' guardado · el backend además solo descongela si cambia).
+      if(window._NP_MIX_LOADED){ _dec.mix_mode = (document.getElementById('np-cad-mix')||{}).value || 'auto'; }
       fetch('/api/programacion/decision-produccion', {method:'POST', credentials:'same-origin',
         headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF(),'X-CSRFToken':getCSRF()},
-        body: JSON.stringify({producto:producto, kg_objetivo_lote:cc.kg, cadencia_dias:cc.interval, horizonte_dias:cc.anios*365, mix_mode:_mix})});
+        body: JSON.stringify(_dec)});
     }catch(e){}
     cerrarNuevaProduccion();
     if (typeof cargar === 'function') cargar();
