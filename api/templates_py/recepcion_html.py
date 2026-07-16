@@ -10,76 +10,74 @@ RECEPCION_HTML = r"""
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Segoe UI',sans-serif;background:#f8f7f5;color:#1C1917;font-size:14px;}
-.topbar{background:#292524;color:#fff;padding:12px 20px;display:flex;align-items:center;gap:16px;}
-.topbar h1{font-size:18px;font-weight:600;}
-.topbar a{color:#a8a29e;text-decoration:none;font-size:13px;}
-.topbar a:hover{color:#fff;}
-.topbar .hub-link{background:#4A6741;color:#fff;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;}
-.topbar .hub-link:hover{background:#3a5331;}
-.container{max-width:1800px;width:96vw;margin:0 auto;padding:20px;}
-.card{background:#fff;border:1px solid #eef0f2;border-radius:14px;padding:20px;margin-bottom:20px;box-shadow:0 2px 12px rgba(15,23,42,.05);}
-.card h2{font-size:16px;font-weight:800;letter-spacing:-.01em;margin-bottom:14px;color:#292524;display:flex;align-items:center;gap:8px;}
-.oc-queue{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-bottom:16px;}
-.oc-card{background:#fff;border:1px solid #eef0f2;border-radius:12px;padding:12px;cursor:pointer;transition:transform .12s,box-shadow .15s,border-color .15s;box-shadow:0 1px 4px rgba(15,23,42,.04);}
-.oc-card:hover{border-color:#ddd6fe;box-shadow:0 8px 18px rgba(124,58,237,.10);transform:translateY(-2px);}
-.oc-card .oc-num{font-weight:700;font-size:13px;color:#292524;}
-.oc-card .oc-prov{font-size:12px;color:#78716c;margin-top:2px;}
-.oc-card .oc-val{font-size:12px;color:#4A6741;font-weight:600;margin-top:4px;}
-.oc-card .oc-dias{font-size:11px;color:#a8a29e;}
+:root{--vio:#6d28d9;--vio2:#7c3aed;--viod:#5b21b6;--ink:#1e1b2e;--mut:#6b7280;--line:#ece9f6;--bg:#f6f5fb;--card:#fff;--soft:#faf8ff;--amber:#f59e0b;--green:#16a34a;--red:#dc2626;}
+:root[data-theme="dark"]{--ink:#e8e6f2;--mut:#a5a1b8;--line:#2a2740;--bg:#131022;--card:#1b1830;--soft:#211d38;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:14px;}
+.container{max-width:1800px;width:96vw;margin:0 auto;padding:22px 20px 64px;}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:22px 24px;margin-bottom:22px;box-shadow:0 4px 24px rgba(76,29,149,.06);}
+.card h2{font-size:16.5px;font-weight:800;letter-spacing:-.01em;margin-bottom:16px;color:var(--ink);display:flex;align-items:center;gap:9px;padding-left:12px;border-left:4px solid var(--vio);line-height:1.15;}
+.oc-queue{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:13px;margin-bottom:8px;}
+.oc-card{position:relative;background:var(--card);border:1px solid var(--line);border-left:5px solid #cbd5e1;border-radius:14px;padding:13px 15px;cursor:pointer;transition:transform .14s ease,box-shadow .16s ease;box-shadow:0 2px 10px rgba(76,29,149,.05);}
+.oc-card:hover{box-shadow:0 13px 30px rgba(124,58,237,.16);transform:translateY(-3px);}
+.oc-card .oc-num{font-weight:800;font-size:13.5px;color:var(--viod);letter-spacing:-.01em;}
+.oc-card .oc-prov{font-size:12px;color:var(--mut);margin-top:3px;font-weight:600;}
+.oc-card .oc-val{font-size:13px;color:var(--green);font-weight:800;margin-top:5px;}
+.oc-card .oc-dias{font-size:11px;color:#a89fc0;margin-top:2px;}
 .search-row{display:flex;gap:10px;align-items:center;margin-bottom:16px;}
-.search-row input{flex:1;max-width:320px;padding:9px 12px;border:1px solid #d6d3d1;border-radius:6px;font-size:14px;}
-.search-row input:focus{outline:none;border-color:#57534e;}
-.btn{padding:9px 18px;border:none;border-radius:10px;font-size:14px;cursor:pointer;font-weight:700;box-shadow:0 1px 3px rgba(15,23,42,.08);transition:transform .1s,box-shadow .15s,filter .15s;}
-.btn:hover{transform:translateY(-1px);box-shadow:0 5px 14px rgba(15,23,42,.14);}
-.btn-primary{background:#292524;color:#fff;}
-.btn-primary:hover{background:#1c1917;}
+.search-row input{flex:1;max-width:340px;padding:10px 14px;border:1px solid var(--line);border-radius:11px;font-size:14px;background:var(--card);color:var(--ink);}
+.search-row input:focus{outline:none;border-color:var(--vio2);box-shadow:0 0 0 3px rgba(124,58,237,.12);}
+.btn{padding:10px 20px;border:none;border-radius:11px;font-size:14px;cursor:pointer;font-weight:700;box-shadow:0 2px 8px rgba(76,29,149,.10);transition:transform .1s,box-shadow .15s,filter .15s;}
+.btn:hover{transform:translateY(-1px);box-shadow:0 7px 18px rgba(76,29,149,.18);}
+.btn-primary{background:linear-gradient(135deg,var(--vio2),var(--viod));color:#fff;}
+.btn-primary:hover{filter:brightness(1.07);}
 .btn-success{background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;}
 .btn-success:hover{filter:brightness(1.06);}
 .btn-print{background:linear-gradient(135deg,#3b82f6,#1e40af);color:#fff;}
 .btn-print:hover{filter:brightness(1.06);}
-.oc-info{background:#fafaf9;border:1px solid #e7e5e4;border-radius:8px;padding:14px;margin-bottom:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;}
-.oc-info .lbl{font-size:11px;color:#78716c;text-transform:uppercase;letter-spacing:.5px;}
-.oc-info .val{font-size:14px;font-weight:600;color:#292524;margin-top:2px;}
-.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;}
+.oc-info{background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;}
+.oc-info .lbl{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;font-weight:700;}
+.oc-info .val{font-size:14px;font-weight:700;color:var(--ink);margin-top:2px;}
+.badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:800;}
 .badge-autorizada{background:#fef3c7;color:#92400e;}
 .badge-pagada{background:#d1fae5;color:#065f46;}
 .badge-recibida{background:#dbeafe;color:#1e40af;}
 .badge-borrador{background:#f3f4f6;color:#374151;}
 table{width:100%;border-collapse:collapse;font-size:13px;}
-th{background:#faf5ff;padding:9px 7px;text-align:left;font-weight:700;color:#6d28d9;text-transform:uppercase;font-size:10.5px;letter-spacing:.04em;border-bottom:1px solid #eef0f2;white-space:nowrap;}
-td{padding:8px 7px;border-bottom:1px solid #f5f5f4;vertical-align:middle;}
-tr:hover td{background:#fafaf9;}
-td input[type=number]{width:74px;padding:5px 6px;border:1px solid #d6d3d1;border-radius:5px;font-size:13px;}
-td input[type=number]:focus{outline:none;border-color:#57534e;}
-td select{padding:5px 8px;border:1px solid #d6d3d1;border-radius:5px;font-size:13px;background:#fff;}
-td input[type=text]{width:100%;padding:5px 8px;border:1px solid #d6d3d1;border-radius:5px;font-size:13px;}
+th{background:var(--soft);padding:10px 9px;text-align:left;font-weight:800;color:var(--vio);text-transform:uppercase;font-size:10.5px;letter-spacing:.05em;border-bottom:2px solid var(--line);white-space:nowrap;}
+td{padding:9px 9px;border-bottom:1px solid var(--line);vertical-align:middle;color:var(--ink);}
+tr:hover td{background:var(--soft);}
+td input[type=number]{width:76px;padding:6px 8px;border:1px solid var(--line);border-radius:7px;font-size:13px;background:var(--card);color:var(--ink);}
+td input[type=number]:focus{outline:none;border-color:var(--vio2);box-shadow:0 0 0 3px rgba(124,58,237,.1);}
+td select{padding:6px 9px;border:1px solid var(--line);border-radius:7px;font-size:13px;background:var(--card);color:var(--ink);}
+td input[type=text]{width:100%;padding:6px 9px;border:1px solid var(--line);border-radius:7px;font-size:13px;background:var(--card);color:var(--ink);}
 .row-ok td{background:#f0fdf4;}
 .row-disc td{background:#fff7ed;}
 .row-falta td{background:#fef2f2;}
-.obs-row{margin-top:12px;}
-.obs-row label{font-size:13px;font-weight:600;display:block;margin-bottom:6px;color:#292524;}
-.obs-row textarea{width:100%;padding:9px 12px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;resize:vertical;min-height:72px;}
-.receptor-row{display:flex;gap:12px;align-items:center;margin-top:12px;}
-.receptor-row label{font-size:13px;font-weight:600;white-space:nowrap;color:#292524;}
-.receptor-row input{flex:1;max-width:260px;padding:8px 12px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;}
-.submit-row{margin-top:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
-.msg{font-size:13px;padding:8px 14px;border-radius:6px;}
+.obs-row{margin-top:14px;}
+.obs-row label{font-size:13px;font-weight:700;display:block;margin-bottom:6px;color:var(--ink);}
+.obs-row textarea{width:100%;padding:10px 13px;border:1px solid var(--line);border-radius:10px;font-size:13px;resize:vertical;min-height:74px;background:var(--card);color:var(--ink);}
+.obs-row textarea:focus{outline:none;border-color:var(--vio2);box-shadow:0 0 0 3px rgba(124,58,237,.1);}
+.receptor-row{display:flex;gap:12px;align-items:center;margin-top:14px;}
+.receptor-row label{font-size:13px;font-weight:700;white-space:nowrap;color:var(--ink);}
+.receptor-row input{flex:1;max-width:270px;padding:9px 13px;border:1px solid var(--line);border-radius:10px;font-size:13px;background:var(--card);color:var(--ink);}
+.submit-row{margin-top:18px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.msg{font-size:13px;padding:9px 15px;border-radius:9px;}
 .msg-ok{background:#d1fae5;color:#065f46;}
 .msg-err{background:#fee2e2;color:#991b1b;}
-.tabs{display:flex;gap:2px;margin-bottom:16px;border-bottom:2px solid #e7e5e4;}
-.tab-btn{padding:9px 18px;border:none;background:none;font-size:13px;font-weight:500;color:#78716c;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;}
-.tab-btn.active{color:#292524;border-bottom-color:#292524;}
-.tab-btn:hover{color:#292524;}
+.tabs{display:flex;gap:4px;margin-bottom:18px;border-bottom:2px solid var(--line);flex-wrap:wrap;}
+.tab-btn{padding:10px 18px;border:none;background:none;font-size:13px;font-weight:600;color:var(--mut);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;border-radius:8px 8px 0 0;transition:color .12s,background .12s;}
+.tab-btn.active{color:var(--viod);border-bottom-color:var(--vio);font-weight:800;background:var(--soft);}
+.tab-btn:hover{color:var(--viod);}
 .tab-content{display:none;}
 .tab-content.active{display:block;}
-.empty{text-align:center;padding:32px;color:#a8a29e;font-size:13px;}
-.cnt-badge{display:inline-block;background:#292524;color:#fff;border-radius:20px;font-size:11px;padding:1px 7px;margin-left:4px;}
-.disc{color:#dc2626;font-weight:600;}
-.valor{font-family:'Courier New',monospace;font-size:12px;}
-.progress-bar{background:#e7e5e4;border-radius:4px;height:6px;margin-top:4px;}
+.empty{text-align:center;padding:34px;color:var(--mut);font-size:13px;}
+.cnt-badge{display:inline-block;background:var(--vio);color:#fff;border-radius:20px;font-size:11px;font-weight:800;padding:1px 8px;margin-left:5px;}
+.tab-btn.active .cnt-badge{background:var(--viod);}
+.disc{color:#dc2626;font-weight:700;}
+.valor{font-family:'Courier New',monospace;font-size:12px;font-weight:700;}
+.progress-bar{background:var(--line);border-radius:4px;height:6px;margin-top:4px;}
 .progress-fill{background:#16a34a;height:6px;border-radius:4px;transition:width .3s;}
-.item-pct{font-size:11px;color:#78716c;margin-top:2px;}
+.item-pct{font-size:11px;color:var(--mut);margin-top:2px;}
 .icon-ok{color:#16a34a;font-size:16px;}
 .icon-disc{color:#d97706;font-size:16px;}
 .icon-falta{color:#dc2626;font-size:16px;}
@@ -202,10 +200,8 @@ td input[type=text]{width:100%;padding:5px 8px;border:1px solid #d6d3d1;border-r
 <script>
 var currentOC = null;
 
-async function loadQueue() {
+function renderQueue(all) {
   try {
-    var r = await fetch('/api/recepcion/seguimiento');
-    var all = await r.json();
     if (!Array.isArray(all)) all = [];
     // Pendientes = TODO lo que aun no esta totalmente recibido.
     // Incluye Autorizada, Pagada (en transito), Parcial y Aprobada.
@@ -243,7 +239,9 @@ async function loadQueue() {
       var eta = oc.fecha_entrega_est
         ? '<div style="font-size:10px;color:#0891b2;margin-top:2px;">&#x23F0; ETA ' + oc.fecha_entrega_est + '</div>'
         : '';
-      html += '<div class="oc-card" data-oc="' + oc.numero_oc + '" onclick="cargarOC(this.dataset.oc)">'
+      // franja de estado (scan a la vista): azul=en tránsito · ámbar=parcial · violeta=aprobada
+      var stripe = oc.en_transito ? '#3b82f6' : (oc.estado === 'Parcial' ? '#f59e0b' : (oc.estado === 'Aprobada' ? '#9333ea' : '#a78bfa'));
+      html += '<div class="oc-card" data-oc="' + oc.numero_oc + '" style="border-left-color:' + stripe + ';" onclick="cargarOC(this.dataset.oc)">'
         + '<div style="display:flex;justify-content:space-between;align-items:start;gap:6px;">'
         +   '<div class="oc-num">' + oc.numero_oc + '</div>'
         +   badge
@@ -458,8 +456,7 @@ async function registrarRecepcion() {
       document.getElementById('receptor-input').value = '';
       document.getElementById('obs-input').value = '';
       if (_submitBtn) { _submitBtn.disabled = false; _submitBtn.textContent = '\u2713 Registrar Recepcion'; }
-      loadMonitoreo();
-      loadQueue();
+      loadSeguimiento();
       loadCuarentena();
     } else {
       showMsg('submit-msg', d.error || 'Error al registrar', 'err');
@@ -554,10 +551,8 @@ function buildTable(rows) {
   return h;
 }
 
-async function loadMonitoreo() {
+function renderMonitoreo(all) {
   try {
-    var r = await fetch('/api/recepcion/seguimiento');
-    var all = await r.json();
     if (!Array.isArray(all)) all = [];
     var transito = all.filter(function(x) { return x.estado === 'Autorizada' && (!x.fecha_recepcion || x.fecha_recepcion.length < 3); });
     var parcial = all.filter(function(x) { return x.estado === 'Parcial'; });
@@ -654,8 +649,22 @@ async function buscarLote() {
   } catch(e) { el.innerHTML = '<p style="color:#dc2626;">Error: ' + e.message + '</p>'; }
 }
 
-loadQueue();
-loadMonitoreo();
+// PERF (Sebastián 15-jul): loadQueue y loadMonitoreo pedían el MISMO endpoint
+// /api/recepcion/seguimiento (doble llamada pesada en el load · M43/M59). Ahora UN
+// solo fetch y se comparte el array entre las dos vistas.
+async function loadSeguimiento() {
+  try {
+    var r = await fetch('/api/recepcion/seguimiento');
+    var all = await r.json();
+    if (!Array.isArray(all)) all = [];
+    renderQueue(all);
+    renderMonitoreo(all);
+  } catch(e) {
+    console.error(e);
+    renderQueue([]); renderMonitoreo([]);
+  }
+}
+loadSeguimiento();
 loadCuarentena();
 </script>
 </body>
