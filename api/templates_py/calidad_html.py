@@ -30,6 +30,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);color:v
 .kpi-card{background:var(--cx-card);border:1px solid var(--cx-hairline);box-shadow:var(--cx-sh-card);border-radius:12px;padding:14px 18px;flex:1;min-width:130px;}
 .kpi-l{font-size:0.68em;text-transform:uppercase;letter-spacing:1.2px;color:var(--cx-text-mute);font-weight:700;margin-bottom:5px;}
 .kpi-v{font-size:1.8em;font-weight:800;color:var(--cx-text);}
+.card.ban-clk{transition:transform .14s ease,box-shadow .16s ease;}
+.card.ban-clk:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(124,58,237,.14);}
 .card{background:var(--cx-card);border:1px solid var(--cx-hairline);box-shadow:var(--cx-sh-card);border-radius:14px;padding:18px;margin-bottom:16px;}
 .card-title{font-size:0.7em;text-transform:uppercase;letter-spacing:1.5px;color:var(--cx-text-mute);margin-bottom:14px;font-weight:700;}
 table{width:100%;border-collapse:collapse;}
@@ -1167,9 +1169,12 @@ function _escBan(s){return String(s||'').replace(/[&<>"']/g,function(ch){return 
 
 function _bandejaCard(opts){
   var cls = opts.accent==='red' ? '#ef4444' : (opts.accent==='amber' ? '#fbbf24' : (opts.accent==='green' ? '#15803d' : '#6d28d9'));
-  var html = '<div class="card" style="border-left:4px solid '+cls+'">';
+  // Tarjeta CLICKEABLE (Sebastián 16-jul · "que pueda entrar"): si trae link, entra a esa pestaña.
+  var _lk = opts.link || '';
+  var _at = _lk ? (' onclick="goTab(\''+_lk+'\')" title="Abrir"') : '';
+  var html = '<div class="card'+(_lk?' ban-clk':'')+'"'+_at+' style="border-left:4px solid '+cls+(_lk?';cursor:pointer':'')+'">';
   html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
-  html += '<div style="font-size:0.95em;font-weight:700;color:#0f172a">'+(opts.icon||'')+' '+_escBan(opts.titulo)+'</div>';
+  html += '<div style="font-size:0.95em;font-weight:700;color:#0f172a">'+(opts.icon||'')+' '+_escBan(opts.titulo)+(_lk?' <span style="color:#a78bfa;font-weight:800">&rsaquo;</span>':'')+'</div>';
   html += '<div style="background:'+cls+';color:#fff;padding:3px 10px;border-radius:12px;font-size:0.78em;font-weight:700">'+(opts.total||0)+'</div>';
   html += '</div>';
   if(opts.subtitulo){
@@ -1237,7 +1242,7 @@ async function loadBandeja(){
     // 0b. MP/insumos vencidos o por vencer (del kardex compartido con Planta)
     if(s.por_vencer && s.por_vencer.items && s.por_vencer.items.length){
       html += _bandejaCard({
-        titulo:'Vencidos / por vencer (60d)', icon:'&#9203;',
+        titulo:'Vencidos / por vencer (60d)', icon:'&#9203;', link:'tab-cc',
         total: s.por_vencer.total,
         accent: s.por_vencer.vencidos>0 ? 'red' : 'amber',
         subtitulo: s.por_vencer.vencidos>0 ? ('&#x26A0;&#xFE0F; '+s.por_vencer.vencidos+' YA vencidos con stock') : 'Próximos a vencer · revisar uso/liberación',
@@ -1278,7 +1283,7 @@ async function loadBandeja(){
 
     // 1. Lotes en cuarentena
     html += _bandejaCard({
-      titulo:'Lotes en Cuarentena', icon:'&#x1F4E6;',
+      titulo:'Lotes en Cuarentena', icon:'&#x1F4E6;', link:'tab-cc',
       total: s.lotes_cuarentena.total,
       accent: s.lotes_cuarentena.criticos>0 ? 'red' : (s.lotes_cuarentena.total>0 ? 'amber' : 'green'),
       subtitulo: s.lotes_cuarentena.criticos>0 ? '&#x26A0;&#xFE0F; '+s.lotes_cuarentena.criticos+' lotes >5 días en cuarentena' : 'Esperando liberación QC',
@@ -1352,7 +1357,7 @@ async function loadBandeja(){
 
     // 5. Muestreo micro semana
     html += _bandejaCard({
-      titulo:'Muestreo Microbiológico (semana)', icon:'&#x1F9EB;',
+      titulo:'Muestreo Microbiológico (semana)', icon:'&#x1F9EB;', link:'tab-micro',
       total: s.muestreo_micro_semana.total,
       accent: s.muestreo_micro_semana.total>0 ? 'amber' : 'green',
       items: s.muestreo_micro_semana.items,
