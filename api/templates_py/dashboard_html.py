@@ -896,6 +896,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
         <div class="form-group"><label>N Lote (vacio = auto)</label><input type="text" id="ing-lote" placeholder="Ej: LYPH250727" onblur="checkLoteExistente()"><div id="ing-lote-info" style="display:none;margin-top:6px;font-size:12px;padding:8px 10px;border-radius:8px;background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;line-height:1.45"></div></div>
         <div class="form-group"><label>Cantidad recibida (g) *</label><input type="number" id="ing-cant" placeholder="0" step="0.01" oninput="calcularValorTotal()"></div>
+        <div class="form-group"><label>N&deg; de recipientes <span style="color:#94a3b8;font-weight:400">(si llego en varios envases)</span></label><input type="number" id="ing-recip" min="1" step="1" value="1" placeholder="1"></div>
         <div class="form-group"><label>Fecha Vencimiento</label><input type="date" id="ing-vence"></div>
         <div class="form-group"><label>Estanteria</label><input type="text" id="ing-est" placeholder="Ej: 9"></div>
         <div class="form-group"><label>Posicion</label><input type="text" id="ing-pos" placeholder="Ej: B"></div>
@@ -5281,6 +5282,7 @@ async function registrarIngreso(){
     precio_kg:parseFloat(document.getElementById('ing-precio-kg')?document.getElementById('ing-precio-kg').value:0)||0,
     numero_factura:document.getElementById('ing-factura')?document.getElementById('ing-factura').value.trim():'',
     numero_oc:numOC,
+    recipientes:Math.max(1,parseInt(document.getElementById('ing-recip')?document.getElementById('ing-recip').value:1)||1),
     cuarentena:enCuarentena};
   if(esNueva){
     data.nombre_inci=document.getElementById('ing-inci-new')?document.getElementById('ing-inci-new').value:'';
@@ -7811,7 +7813,14 @@ function _imprimirRotuloCuar(el){
   if(!cod){ alert('Este lote no tiene código de material.'); return; }
   var lote=(el.dataset.lote||'').trim()||'SL';
   var cant=el.dataset.cant||'0';
-  window.open('/rotulo-recepcion/'+encodeURIComponent(cod)+'/'+encodeURIComponent(lote)+'/'+encodeURIComponent(cant),'_blank');
+  var nrec=parseInt(el.dataset.nrec||'1')||1;
+  var url='/rotulo-recepcion/'+encodeURIComponent(cod)+'/'+encodeURIComponent(lote)+'/'+encodeURIComponent(cant);
+  if(nrec>1){
+    var per=(Number(cant)||0)/nrec, recs=[];
+    for(var k=0;k<nrec;k++){ recs.push(Math.round(per*100)/100); }
+    url+='?recs='+encodeURIComponent(recs.join(','));
+  }
+  window.open(url,'_blank');
 }
 async function cargarCuarentena(){
   try{
@@ -7832,7 +7841,7 @@ async function cargarCuarentena(){
       h+='<td style="font-weight:600;">'+(l.nombre_inci||l.nombre||'')+'</td>';
       h+='<td style="font-size:0.78em;color:#888;">'+(l.nombre||'')+'</td>';
       h+='<td style="font-family:monospace;font-weight:600;">'+l.lote+'</td>';
-      h+='<td style="text-align:right;font-weight:600;">'+l.cantidad.toLocaleString()+'</td>';
+      h+='<td style="text-align:right;font-weight:600;">'+l.cantidad.toLocaleString()+(((Number(l.n_recipientes)||1)>1)?'<div style="font-size:0.72em;color:#7c3aed;font-weight:700;">'+l.n_recipientes+' recipientes</div>':'')+'</td>';
       h+='<td style="font-size:0.85em;">'+(l.proveedor||'')+'</td>';
       h+='<td style="font-size:0.82em;">'+(l.numero_oc||'')+'</td>';
       h+='<td style="font-size:0.82em;">'+l.fecha.substring(0,10)+'</td>';
@@ -7844,7 +7853,7 @@ async function cargarCuarentena(){
         h+='<span style="color:#999;font-size:0.82em;">Solo CC/Admin</span>';
       }
       // Imprimir rótulo (Laura 16-jul · poder imprimir el rótulo apenas entra a cuarentena)
-      h+='<button onclick="_imprimirRotuloCuar(this)" data-cod="'+_escHTML(l.codigo_mp||'')+'" data-lote="'+_escHTML(l.lote||'')+'" data-cant="'+(Number(l.cantidad)||0)+'" style="padding:5px 10px;margin-left:6px;background:#7c3aed;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.82em;font-weight:600;" title="Imprimir rótulo de este lote">&#128424;&#65039; Rótulo</button>';
+      h+='<button onclick="_imprimirRotuloCuar(this)" data-cod="'+_escHTML(l.codigo_mp||'')+'" data-lote="'+_escHTML(l.lote||'')+'" data-cant="'+(Number(l.cantidad)||0)+'" data-nrec="'+(Number(l.n_recipientes)||1)+'" style="padding:5px 10px;margin-left:6px;background:#7c3aed;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.82em;font-weight:600;" title="Imprimir rótulo de este lote">&#128424;&#65039; Rótulo</button>';
       h+='</td></tr>';
     });
     tb.innerHTML=h;

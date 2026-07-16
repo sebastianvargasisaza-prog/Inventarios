@@ -135,6 +135,7 @@ td input[type=text]{width:100%;padding:6px 9px;border:1px solid var(--line);bord
               <th>Lote</th>
               <th>Vence</th>
               <th>Notas</th>
+              <th style="text-align:center;" title="¿En cuántos recipientes individuales llegó? (1 = un solo envase)">Recip.</th>
               <th style="text-align:center;">Rótulo</th>
             </tr>
           </thead>
@@ -215,10 +216,10 @@ td input[type=text]{width:100%;padding:6px 9px;border:1px solid var(--line);bord
 <script>
 var currentOC = null;
 var _recCtx = null;   // {cod, lote, total} · contexto del modal de rótulos por recipiente
-function abrirRecModal(cod, lote, total){
+function abrirRecModal(cod, lote, total, nPre){
   _recCtx = {cod:cod, lote:(lote||'').trim()||'SL', total:Number(total)||0};
   document.getElementById('rec-info').innerHTML = '<b>'+cod+'</b> &middot; lote '+_recCtx.lote+' &middot; total recibido <b>'+_recCtx.total.toLocaleString()+' g</b>';
-  document.getElementById('rec-n').value = 1;
+  document.getElementById('rec-n').value = (nPre && nPre>1) ? nPre : 1;
   recBuildInputs();
   document.getElementById('rec-modal').style.display = 'flex';
 }
@@ -401,6 +402,7 @@ function renderOC(d) {
         '<td><input type="text" id="lote-' + i + '" placeholder="Ej: L-2026-001" style="width:110px;"></td>' +
         '<td><input type="date" id="fv-' + i + '" style="width:130px;"></td>' +
         '<td><input type="text" id="nota-' + i + '" placeholder="Observacion opcional"></td>' +
+        '<td style="text-align:center;"><input type="number" id="nrec-' + i + '" min="1" step="1" value="1" style="width:54px;text-align:center;" title="N° de recipientes individuales"></td>' +
         '<td style="text-align:center;"><button class="btn btn-print" style="padding:5px 11px;font-size:11px;white-space:nowrap;" data-rotidx="' + i + '" data-rotcod="' + (it.codigo_mp||'') + '" data-rotmee="' + (esMee ? 1 : 0) + '" title="Imprimir rótulo de este material (usa la cantidad recibida y el lote de esta fila)">&#128424;&#65039; Rótulo</button></td>';
       tbody.appendChild(tr);
       updateRow(i);
@@ -475,7 +477,9 @@ async function registrarRecepcion() {
     var lote = loteEl ? loteEl.value.trim() : '';
     var fv = fvEl ? fvEl.value.trim() : '';
     if (est !== 'OK' || cant < it.cantidad_g) discrepancias = true;
-    items.push({codigo_mp: it.codigo_mp, cantidad_recibida: cant, estado: est, notas: nota, lote: lote, fecha_vencimiento: fv});
+    var nrecEl = document.getElementById('nrec-' + idx);
+    var nrec = Math.max(1, parseInt(nrecEl ? nrecEl.value : 1) || 1);
+    items.push({codigo_mp: it.codigo_mp, cantidad_recibida: cant, estado: est, notas: nota, lote: lote, fecha_vencimiento: fv, recipientes: nrec});
   }
   var payload = {
     observaciones_recepcion: obs,
@@ -640,8 +644,10 @@ document.addEventListener('click', function(e) {
     var loteEl = document.getElementById('lote-' + i);
     var lote = (loteEl ? loteEl.value : '').trim();
     if (!lote) { alert('Poné primero el lote de esta fila para el rótulo.'); return; }
-    // MP: abre el modal de recipientes (1 rótulo por recipiente · Laura 16-jul)
-    abrirRecModal(cod, lote, cant);
+    // MP: abre el modal de recipientes (1 rótulo por recipiente · Laura 16-jul) · pre-llena con la fila
+    var nrEl = document.getElementById('nrec-' + i);
+    var npre = Math.max(1, parseInt(nrEl ? nrEl.value : 1) || 1);
+    abrirRecModal(cod, lote, cant, npre);
   }
 });
 

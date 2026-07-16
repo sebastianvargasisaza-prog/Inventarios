@@ -428,6 +428,12 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (355, "Recepción · N° de recipientes por lote (Laura 16-jul): cuando una MP llega en varios envases individuales "
+          "(ej. 4 kg en 4 tarros de 1 kg), se registra cuántos recipientes → figura en Cuarentena/Calidad y el rótulo "
+          "puede generar uno por recipiente. `movimientos.n_recipientes` INTEGER DEFAULT 1 (1 = un solo envase, lo normal). "
+          "Additiva, PG-safe.", [
+        "ALTER TABLE movimientos ADD COLUMN n_recipientes INTEGER DEFAULT 1",
+    ]),
     (354, "Envases · MEDIDA por código (Catalina 15-jul · Excel INVENTARIO ENVASE): `maestro_mee.medida` TEXT = la "
           "presentación/medida física que identifica el envase (30ml, 15ml, 89mm/65mm/72mm para GOTEROS que se "
           "distinguen por LARGO, 30ml/15ml para tapa cuadrada). Sin esto Catalina no sabía qué gotero pedir en la OC "

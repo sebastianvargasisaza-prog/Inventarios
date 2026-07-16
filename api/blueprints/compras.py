@@ -6236,6 +6236,13 @@ def recibir_oc(numero_oc):
         fv = ir.get('fecha_vencimiento', '').strip()
         estado_item = ir.get('estado', 'OK')
         notas_item = ir.get('notas', '')
+        # N° de recipientes del lote (Laura 16-jul · si llegó en varios envases · default 1)
+        try:
+            _nrec = int(ir.get('recipientes') or 1)
+            if _nrec < 1:
+                _nrec = 1
+        except Exception:
+            _nrec = 1
         # COA + lote proveedor (Fase 2 · INVIMA · mig 151)
         coa_url = (ir.get('coa_url') or '').strip()
         coa_filename = (ir.get('coa_filename') or '').strip()
@@ -6313,14 +6320,14 @@ def recibir_oc(numero_oc):
                         cur.execute(
                             "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, "
                             "observaciones, proveedor, operador, lote, fecha_vencimiento, estado_lote, numero_oc, "
-                            "coa_url, coa_filename, lote_proveedor, ficha_seguridad_url) "
-                            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                            "coa_url, coa_filename, lote_proveedor, ficha_seguridad_url, n_recipientes) "
+                            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                             (codigo, nombre, cant_recibida, 'Entrada', fecha,
                              f'Recepcion OC {numero_oc}' + (f' | {notas_item}' if notas_item else ''),
                              prov_nombre, operador, lote_final,
                              fv or None, _estado_recep, numero_oc,
                              coa_url or None, coa_filename or None,
-                             lote_proveedor or None, ficha_seguridad_url or None))
+                             lote_proveedor or None, ficha_seguridad_url or None, _nrec))
                         _coa_ok = True
                     except Exception as _e:
                         # SOLO caer a legacy si es DRIFT DE ESQUEMA (columna COA ausente · mig 151 no

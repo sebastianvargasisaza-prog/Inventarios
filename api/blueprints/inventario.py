@@ -7539,15 +7539,21 @@ def registrar_recepcion():
                 return jsonify({'error': 'Esta recepción ya fue registrada (doble envío)',
                                 'codigo': 'RECEPCION_DUPLICADA'}), 409
             raise
+    try:
+        _nrec_ing = int(d.get('recipientes') or 1)
+        if _nrec_ing < 1:
+            _nrec_ing = 1
+    except Exception:
+        _nrec_ing = 1
     c.execute("""INSERT INTO movimientos
                  (material_id,material_nombre,cantidad,tipo,fecha,observaciones,
                   lote,fecha_vencimiento,estanteria,posicion,proveedor,estado_lote,operador,
-                  precio_kg,numero_factura,numero_oc)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                  precio_kg,numero_factura,numero_oc,n_recipientes)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
               (codigo,nombre,cantidad_recibida,'Entrada',datetime.now().isoformat(),
                d.get('observaciones','Ingreso MP'),lote,d.get('fecha_vencimiento',''),
                d.get('estanteria',''),d.get('posicion',''),proveedor,estado_lote,
-               d.get('operador',''),precio_kg,numero_factura,numero_oc))
+               d.get('operador',''),precio_kg,numero_factura,numero_oc,_nrec_ing))
     mov_id = c.lastrowid
     # Log precio historico — solo ignorar si tabla no existe (legacy).
     if precio_kg > 0:
@@ -8052,7 +8058,7 @@ def lotes_cuarentena():
     # última es la señal confiable, ya que EPP puede tener el tipo_material mal. Sebastián 1-jul.
     c.execute("""SELECT m.id, m.material_id, m.material_nombre, m.lote, m.cantidad,
                       m.fecha, m.proveedor, m.numero_factura, m.numero_oc, m.observaciones,
-                      mp.nombre_inci, m.estado_lote
+                      mp.nombre_inci, m.estado_lote, COALESCE(m.n_recipientes,1)
                FROM movimientos m
                LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
                LEFT JOIN ordenes_compra oc ON oc.numero_oc = m.numero_oc
@@ -8064,7 +8070,7 @@ def lotes_cuarentena():
                      ('MATERIA PRIMA','MATERIA_PRIMA','MP','')
                ORDER BY m.fecha DESC""")
     rows = c.fetchall()
-    cols = ['id','codigo_mp','nombre','lote','cantidad','fecha','proveedor','numero_factura','numero_oc','observaciones','nombre_inci','estado_lote']
+    cols = ['id','codigo_mp','nombre','lote','cantidad','fecha','proveedor','numero_factura','numero_oc','observaciones','nombre_inci','estado_lote','n_recipientes']
     return jsonify([dict(zip(cols,r)) for r in rows])
 
 @bp.route('/api/lotes/retenido', methods=['GET'])
