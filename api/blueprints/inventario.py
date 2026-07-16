@@ -12216,11 +12216,13 @@ def descuento_retro_apply():
 #   MP00302 (Ethylhexylglycerin)   → MP00301   · en EOS MP00302 = Isododecane
 #   MP00303 (Coco-Caprylate)       → MPCOCP01  · MP00303 no existe en EOS
 #   MP00298 (Aerosil 200/Silica)   → MP00112   · en EOS MP00298 = Butylene Glycol
+#   MP00252 (Centella extract)     → MP00181   · MP00252 no existe en EOS · el maestro de Alejandro
+#                                                usa MP00181 (Centella extract) en Emulsión Limpiadora
 # La corrección: revierte el descuento hecho al material EQUIVOCADO (Entrada net-zero · M31) y
 # lo re-aplica al CORRECTO (FEFO). Idempotente (marcadores), auditado, reversible.
 _RETRO_CORR_MAP = {
     'MP00300': 'MP00103', 'MP00301': 'MP00030', 'MP00302': 'MP00301',
-    'MP00303': 'MPCOCP01', 'MP00298': 'MP00112',
+    'MP00303': 'MPCOCP01', 'MP00298': 'MP00112', 'MP00252': 'MP00181',
 }
 
 
