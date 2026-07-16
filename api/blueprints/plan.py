@@ -13217,7 +13217,9 @@ def _generar_plan_desde_hoy(conn, dias=730, usuario='plan-manual', dry_run=False
         return fd
 
     skus = c.execute(
-        "SELECT spc.producto_nombre, fh.lote_size_kg FROM sku_planeacion_config spc "
+        "SELECT spc.producto_nombre, fh.lote_size_kg, spc.kg_objetivo_lote, "
+        "       spc.horizonte_dias, spc.cadencia_dias "
+        "FROM sku_planeacion_config spc "
         "LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(spc.producto_nombre)) "
         "WHERE spc.activo=1 ORDER BY spc.prioridad, spc.producto_nombre").fetchall()
     # prefer-Fijo: NO autogenerar sugeridas para un producto que ya está FIJADO a mano en el
@@ -13232,8 +13234,16 @@ def _generar_plan_desde_hoy(conn, dias=730, usuario='plan-manual', dry_run=False
     productos = 0
     nuevos = []
     sin_venta = 0
-    for producto, lote_kg in skus:
-        if not lote_kg or float(lote_kg) <= 0:
+    for producto, lote_size_kg, kg_obj, _hor_cfg, _cad_cfg in skus:
+        # Programación v4 (Fase 1 · wiring del motor): el kg del lote sale de la DECISIÓN
+        # que el usuario guardó en el panel (`sku_planeacion_config.kg_objetivo_lote`) si
+        # existe; si no, cae al `lote_size_kg` de la fórmula = comportamiento actual.
+        try:
+            lote_kg = float(kg_obj) if (kg_obj not in (None, '') and float(kg_obj) > 0) \
+                else (float(lote_size_kg) if lote_size_kg else 0.0)
+        except (TypeError, ValueError):
+            lote_kg = float(lote_size_kg) if lote_size_kg else 0.0
+        if not lote_kg or lote_kg <= 0:
             continue
         if _norm_prod_recon(producto) in _fijo_prods:
             continue  # ya fijado manualmente · no duplicar la sugerencia
@@ -13245,13 +13255,30 @@ def _generar_plan_desde_hoy(conn, dias=730, usuario='plan-manual', dry_run=False
         lote_g = float(lote_kg) * 1000.0
         cad_real = lote_g / demand_g            # días que un lote dura a la demanda actual
         cad = max(CAD_MIN, min(int(round(cad_real)), CAD_MAX))  # solo para mostrar/espaciar
+        # Programación v4 (Fase 1 · wiring): el RITMO (cadencia guardada, ej. 60=2 meses)
+        # manda sobre la cadencia natural calculada por venta. Si el usuario forzó un ritmo,
+        # se encadena a ese ritmo dentro del horizonte (no cae en "1 lote cubre todo").
+        _cad_forzada = False
+        try:
+            if _cad_cfg not in (None, '') and int(_cad_cfg) > 0:
+                cad = max(CAD_MIN, min(int(_cad_cfg), CAD_MAX))
+                _cad_forzada = True
+        except (TypeError, ValueError):
+            pass
+        # Programación v4 (Fase 1 · wiring): el HORIZONTE de la cadena sale de la decisión
+        # guardada (`sku_planeacion_config.horizonte_dias`, ej. 730=2 años / 1095=3 años) si
+        # existe; si no, cae al `dias` del caller (730 = comportamiento actual).
+        try:
+            prod_dias = int(_hor_cfg) if (_hor_cfg not in (None, '') and int(_hor_cfg) > 0) else dias
+        except (TypeError, ValueError):
+            prod_dias = dias
         # FIX 17-jun [9]: si un solo lote cubre MÁS que el horizonte, emitir UNO solo.
         # Antes el clamp a CAD_MAX=365 encadenaba ~2 lotes/año a productos de rotación
         # muy lenta (cad_real de años) → sobre-producción masiva + MP comprada de más.
-        _emite_uno = cad_real > dias
+        _emite_uno = (cad_real > prod_dias) and not _cad_forzada
         n = 0
         off = 0
-        while off <= dias and n < 130:
+        while off <= prod_dias and n < 130:
             prod_date = _slot(max(hoy, hoy + _td(days=off)))
             _obs = ('Plan manual desde hoy · 1 lote cubre el horizonte (~' + format(cad_real, '.0f') + 'd)'
                     if _emite_uno else
