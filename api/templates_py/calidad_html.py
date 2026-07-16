@@ -1262,7 +1262,7 @@ async function loadBandeja(){
 
     // 0c. Equipos con calibración vencida / próxima (sistema equipos_planta)
     if(s.equipos_calibracion && s.equipos_calibracion.items && s.equipos_calibracion.items.length){
-      html += _bandejaCard({
+      if(0) html += _bandejaCard({
         titulo:'Equipos por calibrar (30d)', icon:'&#x1F527;',
         total: s.equipos_calibracion.total,
         accent: s.equipos_calibracion.vencidos>0 ? 'red' : 'amber',
@@ -1299,7 +1299,7 @@ async function loadBandeja(){
     });
 
     // 2. NCs abiertas
-    html += _bandejaCard({
+    if(0) html += _bandejaCard({
       titulo:'No Conformidades Abiertas', icon:'&#x26A0;',
       total: s.ncs_abiertas.total,
       accent: s.ncs_abiertas.criticas>0 ? 'red' : (s.ncs_abiertas.total>0 ? 'amber' : 'green'),
@@ -1317,7 +1317,7 @@ async function loadBandeja(){
     });
 
     // 3. OOS abiertas
-    html += _bandejaCard({
+    if(0) html += _bandejaCard({
       titulo:'OOS Abiertos', icon:'&#x26A0;&#xFE0F;',
       total: s.oos_abiertas.total,
       accent: (s.oos_abiertas.sla_vencidos>0 || s.oos_abiertas.total>0) ? 'red' : 'green',
@@ -1337,7 +1337,7 @@ async function loadBandeja(){
     // 4. Calibraciones
     var cal = s.calibraciones;
     var calItems = (cal.vencidas||[]).concat(cal.proximas_7d||[]);
-    html += _bandejaCard({
+    if(0) html += _bandejaCard({
       titulo:'Calibraciones',  icon:'&#x1F527;',
       total: cal.total_vencidas + cal.total_proximas,
       accent: cal.total_vencidas>0 ? 'red' : (cal.total_proximas>0 ? 'amber' : 'green'),
@@ -1373,7 +1373,7 @@ async function loadBandeja(){
     // 6. Agua hoy
     var agua = s.registro_agua_hoy;
     var aguaItem = agua.registrado ? [{texto:'Conductividad: '+(agua.conductividad||'?')+' · pH: '+(agua.ph||'?')+' · Por: '+(agua.registrado_por||'?')}] : [];
-    html += _bandejaCard({
+    if(0) html += _bandejaCard({
       titulo:'Sistema de Agua (hoy)', icon:'&#x1F4A7;',
       total: agua.registrado ? 1 : 0,
       accent: agua.registrado ? 'green' : 'red',
@@ -1406,7 +1406,7 @@ async function loadBandeja(){
     });
 
     // 8. Auditorías próximas
-    html += _bandejaCard({
+    if(0) html += _bandejaCard({
       titulo:'Auditorías Próximas (60d)', icon:'&#x1F50D;',
       total: s.auditorias_proximas.total,
       accent: 'amber',
@@ -1421,7 +1421,7 @@ async function loadBandeja(){
     });
 
     // 9. Estabilidades
-    html += _bandejaCard({
+    if(0) html += _bandejaCard({
       titulo:'Estabilidades (próximas 30d)', icon:'&#x1F4C8;',
       total: s.estabilidades_pendientes.total,
       accent: 'amber',
