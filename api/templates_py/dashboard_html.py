@@ -23716,6 +23716,7 @@ async function ckMarcar(itemId, estado){
       const d = await r.json();
       // Guardar estado para acciones (filtros, selección)
       window._ABA_STATE.items = [].concat(d.mps || [], d.mees || []);
+      window._ABA_STATE.sin_formula = d.productos_sin_match_formula || [];   // B3 · para el modal "Resolver"
       window._ABA_STATE.horizontes = d.horizontes || [];
       window._ABA_STATE.acelerador = d.acelerador || null;
       window._ABA_STATE.seleccionados = {};
@@ -23757,9 +23758,10 @@ async function ckMarcar(itemId, estado){
         }).filter(Boolean).join(' &middot; ');
         var _mas = _sf.length > 12 ? (' +' + (_sf.length - 12) + ' m&aacute;s') : '';
         resumenDiv.innerHTML += '<div style="margin-top:8px;background:#fef2f2;border:1px solid #fca5a5;border-left:4px solid #dc2626;border-radius:8px;padding:10px 14px">'
-          + '<div style="font-weight:800;color:#b91c1c;font-size:13px">&#9888; ' + d.lotes_sin_formula + ' producci&oacute;n(es) NO cruzaron f&oacute;rmula &rarr; su materia prima NO se est&aacute; contando (riesgo de comprar de MENOS).</div>'
+          + '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div style="font-weight:800;color:#b91c1c;font-size:13px">&#9888; ' + d.lotes_sin_formula + ' producci&oacute;n(es) NO cruzaron f&oacute;rmula &rarr; su materia prima NO se est&aacute; contando (riesgo de comprar de MENOS).</div>'
+          + '<button onclick="_abastResolverFormulas()" style="padding:6px 14px;font-size:12px;font-weight:800;background:#dc2626;color:#fff;border:none;border-radius:8px;cursor:pointer;white-space:nowrap">&#128279; Resolver</button></div>'
           + (_lista ? ('<div style="font-size:11px;color:#7f1d1d;margin-top:4px">Productos: ' + _lista + _mas + '</div>') : '')
-          + '<div style="font-size:10px;color:#991b1b;margin-top:4px">Verific&aacute; que el nombre del producto en el plan coincida con la f&oacute;rmula (o vincul&aacute; la f&oacute;rmula). Mientras no cruce, esa MP sale en 0.</div>'
+          + '<div style="font-size:10px;color:#991b1b;margin-top:4px">Vincul&aacute; cada producto del plan con su f&oacute;rmula (bot&oacute;n Resolver). Mientras no cruce, esa MP sale en 0.</div>'
           + '</div>';
       }
 
@@ -24111,6 +24113,59 @@ async function ckMarcar(itemId, estado){
     if (!st) return;
     st.seleccionados[cod] = { marcado: true, cantidad_override: Math.round(g) };
     renderTablaAbast();
+  }
+  // 🔗 B3 · modal para VINCULAR cada producto del plan sin fórmula con su fórmula (alias explícito)
+  function _abastCerrarResolver() {
+    var o = document.getElementById('_rf-ov');
+    if (o) o.remove();
+    if (window._rfDirty) { window._rfDirty = false; if (window.cargarAbastecimiento) cargarAbastecimiento(); }
+  }
+  async function _abastResolverFormulas() {
+    var sin = (window._ABA_STATE && window._ABA_STATE.sin_formula) || [];
+    if (!sin.length) { alert('No hay producciones sin fórmula por resolver.'); return; }
+    var formulas = [];
+    try {
+      var r0 = await fetch('/api/abastecimiento/formulas-activas', {credentials:'same-origin'});
+      var d0 = await r0.json(); formulas = (d0 && d0.formulas) || [];
+    } catch(e) {}
+    var dlOpts = formulas.map(function(f){ return '<option value="' + escapeHtmlNec(f) + '">'; }).join('');
+    var rows = sin.map(function(p, i){
+      var nm = (typeof p === 'string') ? p : (p.producto || p.nombre || '');
+      return '<div style="display:flex;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid #f1f5f9">'
+        + '<div style="flex:1;font-weight:700;color:#0f172a;font-size:12px">' + escapeHtmlNec(nm) + '</div>'
+        + '<input list="_rf-dl" id="_rf-in-' + i + '" placeholder="Elegí la fórmula…" style="flex:1;min-width:150px;padding:6px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px">'
+        + '<button onclick="_abastVincularFormula(' + i + ',this)" data-plan="' + escapeHtmlNec(nm) + '" style="padding:6px 12px;font-size:11px;font-weight:800;background:#16a34a;color:#fff;border:none;border-radius:6px;cursor:pointer">Vincular</button>'
+        + '</div>';
+    }).join('');
+    var ov = document.createElement('div');
+    ov.id = '_rf-ov';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,15,45,.45);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    ov.innerHTML = '<div style="background:#fff;border-radius:14px;max-width:660px;width:100%;max-height:82vh;overflow:auto;padding:20px 22px;box-shadow:0 20px 60px -20px rgba(0,0,0,.5)">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-size:16px;font-weight:800;color:#7c3aed">🔗 Vincular producto → fórmula</div>'
+      + '<button onclick="_abastCerrarResolver()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#94a3b8">✕</button></div>'
+      + '<div style="font-size:11px;color:#64748b;margin-bottom:12px">Estos productos del plan no cruzaron con ninguna fórmula (nombre distinto). Elegí la fórmula correcta de cada uno para que su materia prima se cuente. Reversible.</div>'
+      + '<datalist id="_rf-dl">' + dlOpts + '</datalist>'
+      + rows
+      + '</div>';
+    document.body.appendChild(ov);
+  }
+  async function _abastVincularFormula(i, btn) {
+    var plan = btn.getAttribute('data-plan') || '';
+    var inp = document.getElementById('_rf-in-' + i);
+    var formula = inp ? inp.value.trim() : '';
+    if (!formula) { alert('Elegí la fórmula de la lista'); return; }
+    btn.disabled = true; btn.textContent = '…';
+    try {
+      var t = (await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json()).csrf_token;
+      var r = await fetch('/api/abastecimiento/vincular-formula', {method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json','X-CSRF-Token':t},
+        body: JSON.stringify({producto_plan: plan, producto_formula: formula})});
+      var d = await r.json().catch(function(){ return {}; });
+      if (!r.ok || !d.ok) { alert('No se pudo: ' + (d.error || r.status)); btn.disabled = false; btn.textContent = 'Vincular'; return; }
+      window._rfDirty = true;
+      btn.textContent = '✓ vinculado'; btn.style.background = '#94a3b8';
+      if (inp) inp.disabled = true;
+    } catch(e) { alert('Error: ' + e); btn.disabled = false; btn.textContent = 'Vincular'; }
   }
   // Sebastián 11-jul · acelerador de compras (on/off + config de tope/colchón)
   async function _abastAcelGuardar(patch) {

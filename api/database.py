@@ -428,6 +428,15 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (358, "Abastecimiento · alias producto→fórmula (Sebastián 17-jul): vincula el nombre de un producto del "
+          "PLAN con el de su FÓRMULA cuando difieren (renombre/sinónimo/orden de palabras) → deja de aparecer "
+          "'sin fórmula' y su materia prima SÍ se cuenta en la compra. Explícito (lo confirma un humano desde "
+          "'Resolver'), reversible (activo=0). Un solo alias por producto del plan (UNIQUE).", [
+        "CREATE TABLE IF NOT EXISTS producto_formula_alias (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "producto_plan TEXT NOT NULL, producto_formula TEXT NOT NULL, activo INTEGER DEFAULT 1, "
+        "creado_por TEXT DEFAULT '', creado_en TEXT)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_pfa_plan ON producto_formula_alias(producto_plan)",
+    ]),
     (357, "Abastecimiento MP · MOQ y múltiplo de compra por materia prima (Sebastián 17-jul): mp_lead_time_config "
           "gana moq_g (mínimo de compra en gramos) y multiplo_g (redondeo del pedido). Alimentan la columna "
           "'COMPRAR AHORA' (cantidad neta por lead time, redondeada al MOQ/múltiplo). Default 0 = sin restricción.", [

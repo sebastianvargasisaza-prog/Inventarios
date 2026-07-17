@@ -15159,6 +15159,19 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
         if prod_key not in lote_size_por_prod:
             lote_size_por_prod[prod_key] = float(r[5] or 0)
 
+    # Alias producto→fórmula (mig 358 · B3 · Sebastián 17-jul): cuando el nombre del PLAN difiere del
+    # de la FÓRMULA (renombre/sinónimo), el humano vincula desde "Resolver". Aquí se usa como FALLBACK
+    # del match exacto-normalizado (nunca fuzzy automático · M1/M19). {norm(plan): norm(fórmula)}.
+    alias_map = {}
+    try:
+        for _ar in c.execute("SELECT producto_plan, producto_formula FROM producto_formula_alias "
+                             "WHERE COALESCE(activo,1)=1").fetchall():
+            _k = _norm_prod(_ar[0]); _v = _norm_prod(_ar[1])
+            if _k and _v:
+                alias_map[_k] = _v
+    except Exception:
+        alias_map = {}
+
     # 4. MEE por producto (volumen-aware)
     # AUDITORÍA-FIX 23-may-2026 · agente P0-2 · sku_mee_config.sku_codigo es
     # un SKU comercial (ej 'SAH-30') pero el endpoint indexaba por
@@ -15636,10 +15649,16 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
         if cant_kg <= 0:
             continue
         items = formulas.get(producto_norm) or []
+        if not items:
+            # B3 · fallback por ALIAS explícito (producto renombrado/sinónimo · mig 358)
+            _alias_key = alias_map.get(producto_norm)
+            if _alias_key:
+                items = formulas.get(_alias_key) or []
         if items:
             matched_lotes += 1
         else:
-            sin_formula_lotes.append(producto_norm)
+            # guardar el NOMBRE ORIGINAL (no el normalizado) para que el modal "Resolver" lo muestre legible
+            sin_formula_lotes.append(producto)
         # FIX 24-may-2026 noche · Sebastián cazó bug raíz: en los seeds,
         # cantidad_g_por_lote se cargó IGUAL al porcentaje (typo masivo, 674
         # items). Resultado: el cálculo g_por_lote × cant_kg/lote_size daba
@@ -16184,6 +16203,69 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
         'lotes_sin_formula': len(sin_formula_lotes),
         'productos_sin_match_formula': sorted(set(sin_formula_lotes))[:30],
     }
+
+
+@bp.route('/api/abastecimiento/formulas-activas', methods=['GET'])
+def abastecimiento_formulas_activas():
+    """Lista de nombres de fórmulas activas · para el datalist del modal 'Resolver' (B3)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db()
+    nombres = []
+    try:
+        for r in conn.execute("SELECT DISTINCT producto_nombre FROM formula_headers "
+                              "WHERE COALESCE(activo,1)=1 AND TRIM(COALESCE(producto_nombre,''))<>'' "
+                              "ORDER BY producto_nombre").fetchall():
+            if r[0]:
+                nombres.append(r[0])
+    except Exception:
+        pass
+    return jsonify({'ok': True, 'formulas': nombres})
+
+
+@bp.route('/api/abastecimiento/vincular-formula', methods=['POST'])
+def abastecimiento_vincular_formula():
+    """B3 (Sebastián 17-jul): vincula un producto del PLAN con el nombre de su FÓRMULA (alias explícito ·
+    mig 358) → deja de salir 'sin fórmula' y su MP SÍ se cuenta en la compra. Reversible (producto_formula
+    vacío = desvincular). Nunca fuzzy automático · lo confirma el humano (M1/M19)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    from datetime import datetime as _dtn, timezone as _tzn, timedelta as _tdn
+    user = session.get('compras_user', '') or 'sistema'
+    body = request.get_json(silent=True) or {}
+    plan = (str(body.get('producto_plan') or '')).strip()
+    formula = (str(body.get('producto_formula') or '')).strip()
+    if not plan:
+        return jsonify({'error': 'Falta el producto del plan'}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    _hoy = (_dtn.now(_tzn.utc) - _tdn(hours=5)).date().isoformat()
+    if not formula:  # desvincular
+        try:
+            cur.execute("UPDATE producto_formula_alias SET activo=0 WHERE producto_plan=?", (plan,))
+            audit_log(cur, usuario=user, accion='ALIAS_FORMULA_QUITAR',
+                      tabla='producto_formula_alias', registro_id=0, despues={'producto_plan': plan})
+            conn.commit()
+        except Exception as e:
+            conn.rollback(); return jsonify({'error': f'No se pudo: {e}'}), 500
+        return jsonify({'ok': True, 'desvinculado': True})
+    _ok = conn.execute("SELECT 1 FROM formula_headers WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) "
+                       "AND COALESCE(activo,1)=1 LIMIT 1", (formula,)).fetchone()
+    if not _ok:
+        return jsonify({'error': 'Esa fórmula no existe o está inactiva'}), 400
+    try:
+        cur.execute("UPDATE producto_formula_alias SET producto_formula=?, activo=1, creado_por=?, creado_en=? "
+                    "WHERE producto_plan=?", (formula, user, _hoy, plan))
+        if cur.rowcount == 0:
+            cur.execute("INSERT INTO producto_formula_alias (producto_plan, producto_formula, activo, creado_por, creado_en) "
+                        "VALUES (?, ?, 1, ?, ?)", (plan, formula, user, _hoy))
+        audit_log(cur, usuario=user, accion='ALIAS_FORMULA_VINCULAR',
+                  tabla='producto_formula_alias', registro_id=cur.lastrowid or 0,
+                  despues={'producto_plan': plan, 'producto_formula': formula})
+        conn.commit()
+    except Exception as e:
+        conn.rollback(); return jsonify({'error': f'No se pudo: {e}'}), 500
+    return jsonify({'ok': True, 'producto_plan': plan, 'producto_formula': formula})
 
 
 def _trail_envase(c, codigo_up, mee_row):
