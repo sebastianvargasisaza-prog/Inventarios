@@ -1,0 +1,209 @@
+[
+ {
+  "area": "Pago influencer · creación SOL+OC+pago",
+  "sintoma": "Doble submit de 'Solicitar pago' (retry tras 502/timeout, 2ª pestaña, o re-corrida del bulk 'Pago periódico') crea DOS cadenas SOL+OC+pagos_influencers con números distintos, ambas válidas y pagables por Catalina = doble egreso. El guard H3 de pagar_oc (compras.py:6676) NO protege: cada OC nueva tiene su propio pi 'Pendiente'.",
+  "causa": "mkt_solicitar_pago_influencer no tiene idempotencia backend (M27/M63: CAS protege transiciones, no la creación). El anti-colisión del número (while numero existe → seq+1, marketing.py:6804) garantiza números ÚNICOS pero justamente habilita el duplicado lógico. Única defensa = disable del botón client-side (marketing_html.py:3773) que no cubre retry de red ni el loop bulk (marketing_html.py:2935). pagos_influencers no tiene ningún UNIQUE (database.py:6008).",
+  "file_line": "api/blueprints/marketing.py:6724-6950 (creación sin dedup) · api/templates_py/marketing_html.py:2935 y 3773 (solo guard de botón)",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "Token de idempotencia del cliente (patrón M45 recepcion_id + UNIQUE en oc_recepcion_dedup, mig 265): el JS genera solicitud_id (crypto.randomUUID) por envío, backend lo reclama con INSERT a tabla dedup UNIQUE antes de crear SOL/OC/pi → repetido = 409 SOLICITUD_DUPLICADA. Complemento barato: 409 si existe pi 'Pendiente' del mismo influencer_id+valor creado <10 min (respaldado por el token, no solo, por multi-worker)."
+ },
+ {
+  "area": "Dashboard/KPIs Shopify · órdenes canceladas",
+  "sintoma": "Todos los KPIs de marketing basados en Shopify (revenue_30d/7d/total, pedidos, clientes, ticket, mensual, ciudades, LTV, meta-progreso, ROI, tendencias, atribución por cupón, skus_en_riesgo) cuentan órdenes CANCELADAS como ventas → números inflados que no cuadran con Ánimus.",
+  "causa": "marketing.py tiene 45 queries sobre animus_shopify_orders y NINGUNA aplica el filtro canónico LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') que el fix del 27-jun instaló en plan.py:2029, auto_plan.py:243, index.py:920 y programacion.py:219. El sync canónico marca estado='cancelled' (shopify_client.py:151) pero marketing las suma igual (M5: el número mostrado ≠ el que decide).",
+  "file_line": "C:/Users/sebas/Downloads/Claude/Inventarios/api/blueprints/marketing.py:2707-2782 (mkt_dashboard), 2586 (kpis-hoy), 4057-4068 (analytics/roi), 4131-4188 (tendencias), 1945 (ltv-clientes), 2466-2477 (meta-progreso), 549+556 (atribucion), 6277 (atribucion-influencers), 6086 (influencers-panel), 1649-1698 (reporte ejecutivo)",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "Agregar el filtro canónico AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') a todas las queries de lectura sobre animus_shopify_orders en marketing.py (mismo string que plan.py:2029). Grep 'FROM animus_shopify_orders' en marketing.py debe devolver 0 sitios sin el filtro (salvo el sync/write)."
+ },
+ {
+  "area": "Sync Shopify de marketing · pisa la marca cancelled",
+  "sintoma": "Tras correr el sync manual de marketing (POST /api/marketing/sync/shopify) o el workflow del lunes, las órdenes canceladas VUELVEN a contar como ventas en TODO el sistema (velocidad, necesidades, KPIs) — deshace el fix del 27-jun en silencio.",
+  "causa": "El writer de mkt_sync escribe estado = o.get('fulfillment_status') or 'unfulfilled' SIN chequear cancelled_at (marketing.py:4390); igual el workflow lunes (auto_plan_jobs.py:1473). Como es INSERT OR REPLACE por shopify_id (en PG → ON CONFLICT DO UPDATE de las columnas listadas, estado incluida), re-sincronizar una orden cancelada revierte estado='cancelled' → 'unfulfilled'. El writer canónico shopify_client.py:151 sí lo hace bien.",
+  "file_line": "C:/Users/sebas/Downloads/Claude/Inventarios/api/blueprints/marketing.py:4390 y C:/Users/sebas/Downloads/Claude/Inventarios/api/blueprints/auto_plan_jobs.py:1473",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "Replicar en ambos writers la lógica de shopify_client.py:151: ('cancelled' if (o.get('cancelled_at') or '').strip() else (o.get('fulfillment_status') or '')). Regla M45: un fix de patrón (cancelled_at) debe barrerse en TODOS los writers hermanos de animus_shopify_orders (son 3: shopify_client, marketing.mkt_sync, auto_plan_jobs lunes)."
+ },
+ {
+  "area": "CMO IA · decidir acción (transición de estado)",
+  "sintoma": "Doble click en '✓ Aprobar y ejecutar' (o 2 requests concurrentes en los 3 workers PG) ejecuta el workflow DOS veces → campañas/briefs duplicados creados por la IA.",
+  "causa": "Check-then-act sin CAS (M27): mkt_cmo_accion_decidir hace SELECT del estado (marketing.py:8116), valida estado=='pendiente' en Python (8120), EJECUTA el workflow que inserta campañas/contenido (8136 → _mkt_workflow_aplicar_agente_impl), y recién después UPDATE incondicional 'WHERE id=?' sin 'AND estado=pendiente' ni chequeo de rowcount (8146-8151). El dedup interno del workflow ('ya tiene campaña activa', 8211) es otro check-then-act en la misma tx, no salva la ventana concurrente. El frontend cmoDecidir (marketing_html.py:1747-1766) tampoco tiene busy-guard (M63).",
+  "file_line": "api/blueprints/marketing.py:8116-8151 · api/templates_py/marketing_html.py:1747",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "Reclamar la acción ANTES de ejecutar el workflow: UPDATE marketing_cmo_acciones SET estado='en_proceso' WHERE id=? AND estado='pendiente'; si rowcount==0 → rollback + 409 ESTADO_CAMBIO. Luego ejecutar el workflow y UPDATE final al estado terminal. Agregar busy-guard de cliente (window._cmoBusy) en cmoDecidir."
+ },
+ {
+  "area": "CMO IA · decidir/workflow (audit_log faltante)",
+  "sintoma": "Aprobar/descartar acciones del CMO IA y las campañas/briefs que el workflow crea NO dejan rastro en audit_log — pero el confirm() del frontend le PROMETE al usuario 'queda registrada en audit' (marketing_html.py:1748).",
+  "causa": "mkt_cmo_accion_decidir (marketing.py:8103-8154) hace UPDATE de estado + commit sin ninguna llamada a audit_log. _mkt_workflow_aplicar_agente_impl (8198-8332) inserta marketing_campanas (8220, 8283, 8307) y marketing_contenido (8244) y commitea (8324) sin audit — asimetría M3: el POST manual de campaña SÍ audita CREAR_CAMPANA_MKT (marketing.py:3120). Regla del módulo: audit_log ANTES del commit en toda mutación.",
+  "file_line": "api/blueprints/marketing.py:8146-8152 y 8198-8332 (vs 3120 que sí audita)",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "audit_log(c, accion='CMO_ACCION_DECIDIR', antes={estado previo}, despues={decision, motivo}) antes del commit en decidir; y en _mkt_workflow_aplicar_agente_impl un audit_log por entidad creada (o uno agregado con el detalle de creado[]) antes del conn.commit() de 8324."
+ },
+ {
+  "area": "Agentes IA · tab Hoy (saturación de workers · M43/M59)",
+  "sintoma": "Click en '⚡ Ejecutar todos los agentes' puede tumbar TODO el app: los 3 workers Gunicorn quedan bloqueados en llamadas a Claude hasta 90s → 502 global → 'Unexpected token <' en cualquier otra pantalla.",
+  "causa": "hoyEjecutarTodos (marketing_html.py:1849-1858) dispara los 11 POST /api/marketing/agentes/<key> en Promise.all (concurrentes). Cada mkt_ejecutar_agente llama _call_claude SÍNCRONO (marketing.py:5665) con timeout 20s (Haiku) o 90s para 'estrategia' con Sonnet (marketing.py:388); 'contenido_auto' y 'brief' hacen llamadas Claude ADICIONALES con timeout 30 (marketing.py:5153, 5425). Sin cache, sin thread, sin cron: ≥3 requests IA concurrentes = los 3 workers ocupados. Es botón (no load de página — el tab 'hoy' solo carga kpis-hoy sin Claude), por eso P1 y no P0, pero el radio de daño es app-wide.",
+  "file_line": "api/templates_py/marketing_html.py:1849-1851 · api/blueprints/marketing.py:388, 5153, 5425, 5665",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "Serializar en el frontend (for..of con await en vez de Promise.all) como mitigación inmediata; de fondo: ejecutar los agentes en un thread background con job-id + polling (patrón ya usado en mkt_refresh_all_metrics marketing.py:7716-7738), o cachear el resultado por día y refrescarlo por cron."
+ },
+ {
+  "area": "XSS almacenado · modal Solicitar pago (datos bancarios)",
+  "sintoma": "Un nombre/banco/cuenta/cédula de influencer con HTML malicioso se ejecuta al abrir el modal 'Solicitar pago' — sesión que suele ser de quien maneja pagos (admin/contadora, contexto Habeas Data).",
+  "causa": "solicitarPagoInf inyecta con innerHTML SIN escapar los campos del influencer: prev.innerHTML = '<b>Beneficiario:</b> '+nombre+'<br>'+'<b>Banco:</b> '+banco+... (marketing_html.py:3744-3748); los valores vienen crudos de _INF_ROW_PAYLOAD (3736-3739). Ídem la barra de progreso del bulk: bar.innerHTML = `...<b>${nombre}</b>...` (marketing_html.py:2926). Estos campos los edita cualquier usuario de marketing → stored XSS. (El resto del template está bien: la salida IA del CMO, outreach, kanban y sentiment escapan con esc()/_escHtml — verificado en 1700-1725, 3313-3353, 3866-3905, 4353.)",
+  "file_line": "api/templates_py/marketing_html.py:3744-3748 y 2926",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "Envolver cada valor con esc(): prev.innerHTML = '<b>Beneficiario:</b> '+esc(nombre)+... y `<b>${esc(nombre)}</b>` en 2926 (esc ya existe en el archivo, marketing_html.py:4982)."
+ },
+ {
+  "area": "Pago influencer · fechas de vencimiento (M24 TZ)",
+  "sintoma": "Solicitando un pago de noche en Colombia (19:00-24:00) sin fecha_contenido explícita, fecha_contenido y vence_pago_at quedan corridos +1 día (fecha UTC de Render = mañana CO) → la promesa de 30 días y la clasificación vencido/urgente se desfasan un día respecto al resto del flujo (que ancla Colombia).",
+  "causa": "Default `base = _dt_fc.now()` (UTC en Render) en marketing.py:6773, mientras _fecha_hoy de la misma función sí resta 5h (línea 6785) y el lector de urgencias ancla Colombia (marketing.py:718). Mismo patrón en los KPIs de la lista: now_month/now_year con _dt.now() UTC (marketing.py:6692-6693) → un pago del 30/jun a las 20:00 CO cae al mes siguiente en el KPI.",
+  "file_line": "api/blueprints/marketing.py:6773 (fecha_contenido default) · 6692-6693 (KPIs mes/año)",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "base = _dt_fc.utcnow() - _td_fc(hours=5) cuando no viene fecha_contenido; y now_month/now_year desde (utcnow()-5h). Regla M24: ningún now()/today() crudo para 'hoy' en lógica de negocio."
+ },
+ {
+  "area": "Urgencias de pago · cron vs endpoint (M5/M45)",
+  "sintoma": "La campana diaria 9:05 a Sebastián/Alejandro puede decir 'N pagos ATRASADOS · $X en mora' contando pagos cuya OC YA está Pagada (link pi↔OC desalineado), mientras la pantalla de urgencias los excluye → número de la alerta ≠ número de la pantalla.",
+  "causa": "El fix H2 del 13-jun (excluir pi con OC ligada en estado 'Pagada') se aplicó al endpoint mkt_pagos_influencer_urgencias (marketing.py:706-708) pero NO a su hermano el cron job_pagos_influencer_urgencia, que filtra solo estado='Pendiente' AND vence_pago_at < hoy (M45: el patrón vive en hermanos que copiaron el idiom). Mitigado parcialmente porque el auto-backfill de las listas re-marca esas filas al abrirlas, pero la ventana existe (la campana sale a las 9:05 antes de que alguien abra la lista).",
+  "file_line": "api/blueprints/auto_plan_jobs.py:5685-5693 (cron sin exclusión) vs api/blueprints/marketing.py:701-708 (endpoint con exclusión)",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Agregar al WHERE del cron la misma cláusula del endpoint: AND COALESCE(numero_oc,'') NOT IN (SELECT numero_oc FROM ordenes_compra WHERE estado='Pagada' AND COALESCE(numero_oc,'')!='')."
+ },
+ {
+  "area": "Panel influencers · auto-backfill muta dinero sin audit_log",
+  "sintoma": "Un GET (influencers-panel) hace UPDATE masivo pagos_influencers→'Pagada' y DELETE de filas Pendiente cuya OC está Rechazada/Cancelada, sin audit_log y con except:pass. Registros de pago desaparecen sin rastro de quién/cuándo; si la OC luego se corrige de 'Cancelada', el registro de marketing ya no existe.",
+  "causa": "Bloque AUTO-BACKFILL (marketing.py:5961-5993) diseñado como reconciliación barata, pero viola la regla dura 'audit_log ANTES del commit en toda mutación de dinero' (el cleanup histórico admin SÍ audita, marketing.py:6387). Además en PG un fallo de esas queries envenena la tx del GET (except:pass no la sana) → el resto del panel cae al fallback vacío en silencio. El backfill gemelo de la lista (marketing.py:6555-6563) tiene el mismo hueco de audit (solo UPDATE, sin DELETE — menos grave).",
+  "file_line": "api/blueprints/marketing.py:5961-5993 (UPDATE+DELETE sin audit en GET) · 6554-6570 (UPDATE sin audit)",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "SELECT de ids afectados antes de cada UPDATE/DELETE → audit_log('AUTO_BACKFILL_PAGOS_INFLUENCER', ids+snapshot) pre-commit; envolver el bloque en SAVEPOINT (PG); idealmente reemplazar el DELETE por estado='Anulada' (conservar el registro, igual que la política GMP de nunca-DELETE)."
+ },
+ {
+  "area": "Editar pago influencer · divergencia pi.valor vs OC (M5/M30) + PATCH sin guard de OC Pagada",
+  "sintoma": "(1) PATCH de valor en un pago vinculado a OC cambia solo pagos_influencers.valor: Marketing muestra el monto corregido pero Compras paga ordenes_compra.valor_total (pagar_oc usa valor_total como tope y default) → monto mostrado ≠ monto pagado. (2) A diferencia del DELETE (que bloquea si la OC está Pagada/Recibida/Parcial, 409 PAGO_VINCULADO_A_OC_PAGADA), el PATCH no mira el estado de la OC: se puede poner 'Anulada'/'Pendiente' o cambiar el valor de un pago cuya OC ya se pagó (el dinero ya salió).",
+  "causa": "mkt_pago_influencer_editar solo escribe pagos_influencers (marketing.py:6496-6510) sin write-through a ordenes_compra/solicitudes_compra ni guard de estado OC en la rama PATCH (el guard existe solo en DELETE, 6436-6445). Mitigación parcial: los auto-backfills y el CASE derivado re-imponen 'Pagada' si la OC lo está, pero el valor divergente persiste.",
+  "file_line": "api/blueprints/marketing.py:6466-6510 (PATCH) vs 6433-6445 (DELETE con guard)",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "En PATCH: si numero_oc ligado y OC en estado pagado-real ('Pagada','Recibida','Parcial') → 409 para cambios de valor o estado≠'Pagada' (espejo del guard de DELETE). Si la OC aún no se pagó y cambia el valor → propagar a ordenes_compra.valor_total y solicitudes_compra.valor en la misma tx + audit (una sola verdad del monto que se va a pagar)."
+ },
+ {
+  "area": "Habeas Data · inf_banco sin máscara en lista de pagos",
+  "sintoma": "GET /api/marketing/pagos-influencers devuelve inf_banco (nombre del banco del influencer) a CUALQUIER usuario autenticado, mientras la política del módulo enmascara 'banco' con '***' para no-admin/contadora en los otros 3 endpoints que lo exponen.",
+  "causa": "mkt_pagos_influencers_list proyecta COALESCE(mi.banco,'') as inf_banco (marketing.py:6593) con gate solo _auth(), sin el filtro _puede_ver_banco que sí aplican influencers-panel (5946-5951), analytics (8359-8361) y la lista de influencers (3365-3366). Solo expone el nombre del banco (no cuenta/cédula) → riesgo bajo pero inconsistente con la política declarada (banco está en el set de campos sensibles en los 4 sitios).",
+  "file_line": "api/blueprints/marketing.py:6593 (SELECT) y 6528-6542 (gate solo _auth) vs 5946-5951 (política de máscara)",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Aplicar el mismo gate: si el caller no está en ADMIN_USERS|CONTADORA_USERS, inf_banco='***' (o quitar la columna del SELECT — el front de pagos no la necesita para operar; los datos completos ya viajan en las observaciones de la SOL para Compras)."
+ },
+ {
+  "area": "Reporte ejecutivo semanal · N+1",
+  "sintoma": "GET/POST /api/marketing/reporte-ejecutivo-semanal (y el cron del lunes que lo manda por email) hace 2 SELECTs por CADA SKU de stock_pt dentro de un loop, incluyendo un LIKE '%sku%' full-scan sobre toda animus_shopify_orders por SKU → decenas de queries + scans por request (bloquea worker, M43/M59).",
+  "causa": "_build_reporte_ejecutivo_data itera stock_pt GROUP BY sku y por cada SKU ejecuta SELECT sobre liberaciones (marketing.py:1692) + SELECT con sku_items LIKE ? (marketing.py:1695) — es EXACTAMENTE el patrón N+1 que ya se arregló en mkt_kpis_hoy con precarga en bloque (marketing.py:2574-2589, PERF ronda2 29-may), pero este hermano no se barrió (M45).",
+  "file_line": "C:/Users/sebas/Downloads/Claude/Inventarios/api/blueprints/marketing.py:1685-1698",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Copiar el patrón de mkt_kpis_hoy: precargar liberaciones con un solo GROUP BY sku (creado_en>=h30) y las filas sku_items+unidades_total de animus_shopify_orders 30d en UNA query, y hacer el match por SKU en Python sobre las filas precargadas."
+ },
+ {
+  "area": "mkt_dashboard · Top SKUs miente + query muerta",
+  "sintoma": "El bloque shopify.top_skus del dashboard NO muestra revenue Shopify: muestra liberaciones ERP × MAX(precio_base). La query de top SKUs Shopify 30d se calcula y se descarta. Si liberaciones está flaca, el Top SKUs del dashboard no refleja las ventas reales.",
+  "causa": "sh_top_skus_raw (marketing.py:2735-2739) se computa pero nunca se usa: top_skus_combined = sorted(erp_rev.items()...) (línea 2755) sale SOLO de erp_rev (liberaciones × precio). Además la query muerta agrupa GROUP BY sku_items (el JSON completo del carrito como clave → agrupa por combinación de carrito, no por SKU), señal de que nunca funcionó como 'top SKUs'. M5: el número mostrado bajo la etiqueta 'shopify' no es Shopify.",
+  "file_line": "C:/Users/sebas/Downloads/Claude/Inventarios/api/blueprints/marketing.py:2735-2756",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "O parsear sku_items (json.loads por orden, como hace mkt_analytics_tendencias:4110-4129) y combinar de verdad Shopify+ERP en top_skus, o eliminar la query muerta y renombrar el campo para que la UI no lo presente como revenue Shopify."
+ },
+ {
+  "area": "mkt_analytics_tendencias · mezcla pesos + unidades",
+  "sintoma": "El KPI de crecimiento por SKU (reciente_90d / anterior_90d / crecimiento_pct) suma UNIDADES de liberaciones al REVENUE en pesos de Shopify — dimensiones incompatibles en el mismo número.",
+  "causa": "reciente_erp[sku] = SUM(unidades) de liberaciones (marketing.py:4146-4155) y luego rec_rev = reciente_sh[sku]['rev'] (pesos) + reciente_erp.get(sku, 0) (unidades) en marketing.py:4166-4167. El mismo dict de unidades también se suma a rec_qty (ahí sí es correcto).",
+  "file_line": "C:/Users/sebas/Downloads/Claude/Inventarios/api/blueprints/marketing.py:4166-4169",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "No sumar reciente_erp/anterior_erp (unidades) a rec_rev/ant_rev; si se quiere valorizar el ERP, multiplicar unidades × precio_base (como hace mkt_dashboard con _precio_por_sku) o dejar el ERP solo en las cantidades."
+ },
+ {
+  "area": "TZ (M24) · anclas 'hoy' en UTC",
+  "sintoma": "De noche en Colombia (19-24h) las ventanas 30d/7d/mes de los KPIs se corren un día: revenue_30d, kpis-hoy (eventos y hace30), meta-progreso (días transcurridos y proyección fin de mes), ROI y tendencias divergen de lo que ve el usuario.",
+  "causa": "Render corre en UTC y creado_en se guarda como fecha Bogotá (created_at_bogota, shopify_client.py:30-47), pero los endpoints anclan 'hoy' con datetime.now()/date.today() crudos: mkt_kpis_hoy:2547-2548, mkt_dashboard:2683+2704-2705, mkt_analytics_roi:4034-4037, mkt_analytics_tendencias:4104-4107, mkt_meta_progreso:2456+2486, _build_reporte_ejecutivo_data:1644-1646. Regla M24: ningún date.today()/datetime.now() crudo para 'hoy' en lógica de negocio.",
+  "file_line": "C:/Users/sebas/Downloads/Claude/Inventarios/api/blueprints/marketing.py:2547, 2683, 2704-2705, 4034-4037, 4104-4107, 2456, 2486, 1644-1646",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Anclar Colombia en todos: hoy = datetime.utcnow() - timedelta(hours=5) (o datetime.now(timezone.utc) - timedelta(hours=5)) antes de derivar hace30/hace7/mes, igual que el fix de abastecimiento_consumo_horizontes (M24 4ª instancia)."
+ },
+ {
+  "area": "Atribución por cupón · cobertura de datos",
+  "sintoma": "revenue_atribuible/ROI de influencers (panel, atribución, reporte semanal) sub-cuentan en silencio: las órdenes que trae el sync DIARIO canónico quedan con discount_codes='' para siempre, hasta que alguien corre el sync manual de Marketing.",
+  "causa": "Solo el writer de mkt_sync captura discount_codes/subtotal/total_descuentos (marketing.py:4367-4395); el sync canónico diario (shopify_client.py:135-161) y el del workflow lunes (auto_plan_jobs.py:1466) no los traen ni los escriben (en PG el ON CONFLICT solo actualiza columnas listadas, así que no los borra — pero tampoco los puebla). La atribución depende de un botón manual.",
+  "file_line": "C:/Users/sebas/Downloads/Claude/Inventarios/api/shopify_client.py:135-161 vs C:/Users/sebas/Downloads/Claude/Inventarios/api/blueprints/marketing.py:4382-4395",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Agregar la captura de discount_codes (CSV upper, mismo formato que marketing.py:4368-4371), subtotal_price y total_discounts al writer canónico shopify_client.py y al de auto_plan_jobs, para que la atribución quede poblada por el cron diario sin depender del sync manual."
+ },
+ {
+  "area": "mkt_analytics_influencers / influencers-panel · error tragado como 200",
+  "sintoma": "Si el endpoint de analytics de influencers falla (p.ej. una query aborta la tx en PG), devuelve HTTP 200 con {_error, _trace} → el frontend pinta el panel vacío sin señal de error, y el traceback del servidor se filtra al cliente.",
+  "causa": "except Exception → return jsonify({'_error': str(e), '_trace': traceback...[-600:]}), 200 en mkt_analytics_influencers (marketing.py:3052-3054) y el mismo patrón con status 200 y _trace de 800 chars en mkt_influencers_panel (marketing.py:6216-6223). Contrasta con mkt_atribucion_influencers:6341-6344 que ya lo hace bien (log server-side + 500 sin traceback).",
+  "file_line": "C:/Users/sebas/Downloads/Claude/Inventarios/api/blueprints/marketing.py:3052-3054 y 6216-6223",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Replicar el patrón de mkt_atribucion_influencers: log.error(traceback) server-side y return jsonify({'error': 'mensaje genérico'}), 500 — sin _trace al cliente y con status real para que el frontend muestre el error."
+ },
+ {
+  "area": "influencers-panel · backfill en GET con commit condicional roto",
+  "sintoma": "El auto-backfill de pagos_influencers (marcar Pagada / borrar solicitudes muertas) a veces no persiste: corrige filas y se pierde al cerrar el request; además borra registros de pagos en un GET sin audit_log.",
+  "causa": "marketing.py:5961-5993 ejecuta 2 UPDATE + 1 DELETE + 1 UPDATE y comitea solo `if c.rowcount:` (línea 5990) — rowcount refleja ÚNICAMENTE el último execute; si los primeros statements cambiaron filas pero el último afectó 0, no hay commit y el teardown cierra sin commitear (mismo mecanismo de M22). Todo envuelto en except:pass (en PG una falla aborta la tx y el resto del endpoint muere silencioso). El DELETE de pagos_influencers no audita.",
+  "file_line": "C:/Users/sebas/Downloads/Claude/Inventarios/api/blueprints/marketing.py:5961-5993",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Acumular rowcount de los 4 statements (tocados = sum de c.rowcount tras cada execute) y commitear si tocados>0; agregar audit_log antes del commit para el DELETE (registrar ids borrados); envolver en SAVEPOINT en vez de except:pass para no envenenar la tx PG. Idealmente mover el backfill a un cron/endpoint POST, no a un GET."
+ },
+ {
+  "area": "IA síncrona en endpoints de acción (workers bloqueados)",
+  "sintoma": "Cada uso de sentiment/analyze, CMO generar plan (forzar) u outreach bloquea 1 de los 3 workers hasta 25-45s; 2-3 usuarios simultáneos + cualquier otra pantalla = 502.",
+  "causa": "Claude síncrono con urllib en el request: mkt_sentiment_analyze timeout=45 (marketing.py:1292), _cmo_decidir_acciones_claude timeout=40 llamado desde el POST plan-diario (marketing.py:7996 ← 7837), _outreach_mensajes_claude timeout=25 (marketing.py:1487 ← 1587). Son acciones de botón (no load — el GET del plan lee la tabla poblada por el cron 7am), por eso P2 y no P1. EXTRA en outreach: es un GET que MUTA (INSERT marketing_outreach_log + commit, marketing.py:1592-1598) → sin protección CSRF (los GET están exentos) y viola semántica HTTP.",
+  "file_line": "api/blueprints/marketing.py:1292, 1487+1592-1598, 7996",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Corto plazo: son las '3 IA síncronas' ya identificadas como pendiente — mover a thread background + polling o job encolado. Para outreach: cambiar la ruta a POST (o al menos mover el INSERT del log a un POST /outreach-log separado que el frontend llame al enviar)."
+ },
+ {
+  "area": "Dashboard marketing · HTTP síncrono en LOAD",
+  "sintoma": "Con el token IG vencido o sin fecha de expiry registrada, CADA carga del dashboard de marketing hace una llamada HTTP a graph.facebook.com (hasta 10s) que falla y se reintenta en la carga siguiente, para siempre.",
+  "causa": "mkt_dashboard llama _ig_check_refresh en el request de carga (marketing.py:2803). Si days_left<10 (o expiry no registrado → days_left=0, marketing.py:419-421) y hay credenciales, hace urlopen timeout=10 (marketing.py:427-435); si el exchange falla, except:pass (449-450) NO persiste nada → el estado 'near_expiry' se re-evalúa idéntico en cada load → HTTP sincrónico permanente en la ruta de carga (clase M43, acotado a 10s).",
+  "file_line": "api/blueprints/marketing.py:2803 y 396-458",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Mover el refresh del token a un cron diario (ya existe infraestructura multi-cron) y que el dashboard solo LEA instagram_token_expiry de config; o al menos persistir un backoff (animus_config 'ig_refresh_last_attempt') para no reintentar más de 1 vez/día desde el load."
+ },
+ {
+  "area": "Contenido CRUD · estado sin whitelist + sin audit",
+  "sintoma": "POST/PUT de contenido aceptan cualquier string como estado (data fantasma: el kanban lo re-bucketa en silencio a 'Brief', marketing.py:3911-3913, y la pieza 'se mueve sola'); DELETE de contenido borra sin dejar rastro.",
+  "causa": "mkt_contenido POST solo mapea estados legacy, no valida contra KANBAN_ESTADOS (marketing.py:3827-3829 vs 3779); mkt_contenido_detail PUT igual (3964-3965) y su DELETE (3953-3955) y el PUT no escriben audit_log — asimetría con campañas, que auditan CREAR/MODIFICAR/ELIMINAR (3120, 3195, 3226). mkt_update_asignacion también acepta 'estado' libre (3733). Checklist del cerebro: 'Campo de estado → whitelist explícita'.",
+  "file_line": "api/blueprints/marketing.py:3827-3829, 3953-3955, 3962-3970 (KANBAN_ESTADOS en 3779)",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "if estado_in not in KANBAN_ESTADOS: return 400 en POST y PUT (tras el mapeo legacy); agregar audit_log en PUT (antes/después) y DELETE de mkt_contenido_detail, igual que el patrón de campañas."
+ },
+ {
+  "area": "PG-drift · date('now')/datetime('now') en DML",
+  "sintoma": "Riesgo latente de 500 en mutaciones si pg_functions.sql no está cargada (BD reconstruida) — exactamente el 500 real que ya pasó en solicitar-pago y que el propio archivo documenta.",
+  "causa": "Múltiples INSERT/UPDATE usan date('now','-5 hours')/datetime('now','-5 hours') en el SQL en vez de fecha Python como parámetro: marketing.py:840, 852, 1108, 1319 (sentiment UPDATE), 2422, 2925 (dar de baja), 4386, 4442, 4502, 4554, 7093, 8148 (CMO decidir), 8226+8287+8312 (workflow crea campañas). El comentario en 6780-6784 explica el 500 real de este patrón. Además el workflow mezcla anclajes en el MISMO INSERT: fecha_creacion = datetime.now() UTC-servidor (8201) vs fecha_inicio = date('now','-5 hours') Colombia (8226) — M24. Hoy funciona vía la capa pg_functions → latente, no activo.",
+  "file_line": "api/blueprints/marketing.py:840, 1108, 1319, 2422, 2925, 4386, 4442, 4502, 4554, 7093, 8148, 8226, 8287, 8312 (y 8201 anclaje mixto)",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Calcular la fecha/hora Bogotá en Python ((datetime.utcnow()-timedelta(hours=5))) y pasarla como parámetro en esos DML (patrón ya aplicado en 6785); unificar fecha_creacion del workflow al mismo anclaje Colombia."
+ }
+]

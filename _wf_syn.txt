@@ -1,0 +1,59 @@
+## 8. Fan-out mando: 8 fetches al abrir + 6 re-fetches cada 30s de datos casi estáticos
+**Impacto: P1 · tab: mando-midia · conf 0.9**
+`dashboard_html.py:14456-14496 + 14634-14645 + 14513-14528`. El tick de 30s re-ejecuta rotación 14d, tabla operarios, OEE 7d, tablero-equipo — datos que no cambian por minuto. Sub-hallazgos absorbidos: triple fetch de operarios (`:21263 + :15507 + :15695`, conf 0.85) y N+1 de OEE (`auto_plan.py:8086-8132`: 2 queries por lote incl. un round-trip solo para julianday, conf 0.9).
+**Fix [SEGURO]:** tick de 30s solo centro-mando(+andon); rotación/tabla/OEE una vez al abrir con `window._X_CACHE` TTL 5-10 min; unificar operarios en un cache compartido. OEE: duración calculada en la query madre o Python + dict de takt precargado (misma aritmética) + TTL 5 min.
+
+## 9. `/api/mee/stock` devuelve fotos base64 de ~129 envases en cada carga (y se pide 2× por flujo típico)
+**Impacto: P1 · tab: envases-mee · conf 0.7 (peso real en prod sin verificar)**
+`inventario.py:12408` + `dashboard_html.py:9493/9543`; doble fetch: `:4457` (tab-open) + `:9762-9768` (meeSubTab sin frescura); refetch tras cada acción y cada 60s.
+**Fix [SEGURO]:** excluir `imagen_url` del listado (devolver `tiene_foto:1`) y servir por `GET /api/mee/imagen/<codigo>` con Cache-Control (el `<img>` ya es lazy); cliente: cache `_MEE_LAST_DATA` <60s para el doble fetch. **Antes de invertir: medir** `curl -w '%{size_download}'` en prod.
+
+## 10. Calendario: `listado?historico=1` sin piso de fecha pasada + LIMIT 6000 ASC que recortaría el FUTURO
+**Impacto: P2 (con corrección latente P1 futura) · tab: calendario · conf 0.85**
+`programacion.py:9243-9247`. Payload bloqueante que crece a diario; al superar 6000 filas el ORDER BY ASC botaría el plan futuro en silencio, no el histórico.
+**Fix [TOCA LÓGICA — leve]:** piso pasado `hoy-400d` en la rama historico (cambia qué histórico es visible → confirmar con Alejandro que 400d cubre el uso real), o 2 queries pasado/futuro con límites propios para que el recorte nunca toque el futuro.
+
+## 11. SQL no-sargable sobre columnas (date()/ABS(julianday)/UPPER(TRIM)) + índices faltantes — 6 sitios, 4 tabs
+**Impacto: P2 agregado · conf 0.6-0.9**
+- `auto_plan.py:9637` kanban `date(pp.fecha_programada)=?` → seq scan cada 30s por tablet (conf 0.7; hermanas :10491/:10548/:10605)
+- `plan.py:1723-1733` match-preview B2B `ABS(julianday(...))` + N+1 de fetches por pedido (`dashboard_html.py:23367`) (conf 0.85)
+- `auto_plan.py:7231-7242, 7301-7307` reporte-ejecutivo `date(fecha)>=?` ×4 + LIKE '%...%' (conf 0.7)
+- `plan.py:5554-5565` JOIN `UPPER(TRIM(producto_nombre))` (menor hoy, conf 0.7)
+- `inventario.py:12878-12889` ORDER BY fecha DESC sin índice en movimientos_mee (conf 0.9)
+- `auto_plan.py:9671-9672` UPPER(TRIM) maestro_mee (trivial, conf 0.6 — deuda, no actuar)
+
+**Fix [SEGURO]:** reescribir a rangos sargables sobre la columna cruda (`fecha >= ? AND fecha < ?` con ISO calculado en Python — semántica idéntica, ISO ordena bien) · `CREATE INDEX idx_movimientos_mee_fecha ON movimientos_mee(fecha DESC, id DESC)` · match-preview: endpoint batch `?ids=` + BETWEEN. Todos son índice/filtrar-en-SQL sin cambiar resultados.
+
+## 12. Cliente sin TTL: re-switch de tab re-paga cargas completas + waterfalls + prefetch muerto
+**Impacto: P2 · tabs: calendario, necesidades, config, carga-inicial · conf 0.75-0.9**
+- Re-switch calendario re-dispara listado+huérfanos siempre (`dashboard_html.py:14380-14383`) · conf 0.8 → **[SEGURO]** TTL cliente 60s, solo re-render si fresco (mutaciones ya llaman cargar() explícito)
+- Necesidades+resumen en paralelo saturan 2/3 workers (`dashboard_html.py:4465-4471`) · conf 0.75 → **[SEGURO]** secuenciar con `.finally()` o cache TTL 60-120s de /resumen
+- Waterfall listado→festivos (`plan.py:18225→18242`) · conf 0.9 → **[SEGURO]** Promise.all o embeber festivos server-side
+- `cargarPresentaciones` 2 fetches en serie (`dashboard_html.py:15807-15810`) · conf 0.8 → **[SEGURO]** Promise.all
+- `cargarEnvasadoSimpleTab` a los 1.5s del load para pestaña no visible (`dashboard_html.py:2966`) · conf 0.8 → **[SEGURO]** lazy al abrir la pestaña con flag ya-cargado
+- Poll de midia sigue en background al cambiar de sub-tab (`operario_html.py:540/:168`) · conf 0.85 → **[SEGURO]** guard `frameElement.offsetParent === null`
+- Auto-refresh dashboard 60s + visibilitychange sin throttle (`dashboard_html.py:565, 4670-4688`) · conf 0.88 → **[SEGURO]** 180-300s + throttle <60s + omitir alertas-ia del refresh silencioso (absorbe con #2)
+
+## 13. Agregaciones redundantes por request (misma tabla escaneada N veces)
+**Impacto: P2 · tabs: carga-inicial, envases-mee, config · conf 0.75-0.85**
+- `/api/inventario`: ~6 full-scans de movimientos, 2 con subquery idéntica (`inventario.py:218-320`) → **[SEGURO]** colapsar en 1-2 CTEs o cache TTL 60-120s
+- `/api/mee/alertas` recomputa el stock que `/api/mee/stock` calcula en paralelo (~6 pasadas movimientos_mee, `inventario.py:12995-13048`) → **[SEGURO]** reusar `_get_mee_stock` una vez + agregación condicional
+- health-check y cron-jobs-status: el MISMO loop N+1 de ~30-56 queries c/u (`auto_plan.py:11623-11643, 7719-7726`) → **[SEGURO]** 1 query `GROUP BY job_name + MAX(id)` y reusar payload entre ambos
+
+## 14. Guardia de regresión: todo el fast-path depende de `ventas_diarias` — degradación silenciosa si vuelve a vaciarse (ya pasó 2 veces)
+**Impacto: P2 preventivo · afecta necesidades/calendario/config/abastecimiento/carga-inicial · conf 0.85**
+`plan.py:3705-3739` y `programacion.py:198-215`: fallback silencioso al parseo de 16-39k órdenes.
+**Fix [SEGURO]:** exponer MAX(fecha)+COUNT de ventas_diarias en `/api/health` + banner en Necesidades si stale + `log.warning` explícito cuando `_vd_ok=False`. Observabilidad pura. **Nota:** este guard sube de prioridad si se aplican los fixes del #1 (más código dependerá de la tabla).
+
+---
+
+## Verificados SIN acción (no re-reportar / no re-encender sin cache)
+- **Kanban NO es culpable** (`auto_plan.py:9564-9783`): 3 queries bulk, guard inFlight, sin N+1/IA/Shopify; la pista 'ordenes-unificadas' pertenece a Fabricación (= hallazgo #4) · conf 0.9
+- **sugerencias-adelanto y alertas-ia del calendario ya mitigados** (`plan.py:18271-18273, 18628`); si se reactivan, solo con cache/async · conf 0.95
+- **Estacionalidad y health-check GCal livianos** (`programacion.py:3864-3889, 3658-3695, 456-467`): el parseo 24m está detrás de botón; GCal early-return desde 7-jul · conf 0.95
+- **Tab envases-mee no contiene patrones M43/M59 pesados** salvo #9 · conf 0.9
+
+## Resumen de riesgo
+**SEGUROS (aplicables ya, sin cambiar negocio):** #1 fast-path+índice+TTL, #2 cache+diferir, #3 dedup hook+render client-side, #4 memo+lazy+LIMIT, #5a commit condicional, #7 cache TTL respuesta, #8 TTL+bulk OEE, #9 endpoint de imagen, #11 rangos sargables+índices, #12 completo, #13 completo, #14 observabilidad.
+**TOCAN LÓGICA (revisar/golden test):** #5 skip_cleanup en refresh y quitar auto-clean de tablero-equipo (cadencia de auto-cancel), #6 resolver bulk (semántica 5-tier, corazón del match — el de mayor riesgo), #10 piso histórico (visibilidad de datos).
+**Mayor palanca global:** #1 + #2 + #3 + #4 juntos eliminan casi toda la contención de los 3 workers gunicorn que causa el síntoma transversal 502/'Cargando…' (M43).

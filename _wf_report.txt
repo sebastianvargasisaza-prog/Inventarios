@@ -1,0 +1,156 @@
+SINTESIS:
+# Consolidado perf · pestaña Planta — 14 causas raíz (dedupe de 38 hallazgos)
+
+Orden = severidad × pestañas afectadas × confianza. Etiquetas: **[SEGURO]** = cache/memo/índice/diferir/filtrar-en-SQL sin cambiar lógica de negocio · **[TOCA LÓGICA]** = cambia semántica o timing de negocio, revisar con más cuidado.
+
+---
+
+## 1. Re-parseo JSON de `animus_shopify_orders` en ruta de carga, ignorando el fast-path `ventas_diarias` (patrón M43) — 4 sitios, 4 tabs
+**Impacto: P1 · tabs: necesidades, calendario, config, abastecimiento · confianza 0.92**
+La misma causa raíz citada 4 veces: código que hace `SELECT sku_items ... WHERE creado_en >= X` + `json.loads` por orden en Python, en cada request, sin usar la tabla precalculada `ventas_diarias` ni cache TTL. Sitios (dedupe):
+- **a)** Huérfanos 30d dentro de `plan_necesidades` — `api/blueprints/plan.py:3281-3319` (corre en CADA carga de Necesidades) · conf 0.92
+- **b)** `/api/admin/skus-huerfanos-top` 60d — `api/blueprints/plan.py:2422-2450`, disparado automático desde `plan.py:18270→18604` en cada apertura/re-switch del calendario · conf 0.92
+- **c)** `split-audit` 90d — `api/blueprints/programacion.py:3990-4005`, re-disparado por CADA edición inline del sub-tab Reparto (`dashboard_html.py:20269-20297`) · conf 0.9
+- **d)** `_ventas_sku_180d` — `programacion.py:8538-8583` (mitigado por TTL 600s per-worker, pero cold-miss ×3 workers cada 10 min) · conf 0.9
+
+**Fix [SEGURO]:** un solo patrón replicado: derivar ventas por SKU desde `ventas_diarias` (SUM GROUP BY sku, indexada) con fallback al parseo solo si está vacía — exactamente el fast-path ya probado en `_ventas_maps_shopify` (`plan.py:3705-3728`). Complemento: cache módulo-level TTL 10-20 min (patrón `plan_vmaps_cache`) + `CREATE INDEX idx_shopify_creado ON animus_shopify_orders(creado_en)`. Para (c) además: en el JS, actualizar solo la fila editada o debounce, en vez de re-ejecutar los 4 fetches. Nota: los detectores de huérfanos/reparto no necesitan exactitud al minuto, staleness de horas es aceptable.
+
+## 2. `/api/plan/alertas-ia` ejecuta el motor COMPLETO de Necesidades en cada page-load + cada 60s + cada visibilitychange
+**Impacto: P1 · tab: carga-inicial (afecta a TODA la app vía saturación de 3 workers) · conf 0.92**
+`api/blueprints/plan.py:3423-3626` (llama `_calcular_animus_dtc` en :3459 + N+1 B2B `_check_mp_para_pedido_b2b` en :3575-3612) · disparo: `dashboard_html.py:4702, 2965/2996, 4672-4679 (timer 60s default ON), 4683-4687`. Deshace el fix PERF 6-jul que hizo lazy a Necesidades: el resultado del motor no tiene cache, solo la velocidad.
+**Fix [SEGURO]:** (a) cachear el JSON de respuesta con TTL 5-10 min (o precalcular en cron y que el endpoint solo lea); (b) diferir del `Promise.all` inicial (setTimeout 5-10s post-load) y sacarlo del refresh de 60s; (c) precargar fórmulas+stock fuera del loop B2B (M63). Todo es cache/diferir, cero lógica.
+
+## 3. Doble disparo + refetch innecesario del endpoint MRP (`consumo-horizontes`) en Abastecimiento
+**Impacto: P1 · tab: abastecimiento · conf 0.95-0.97**
+- **a)** Hook duplicado: `dashboard_html.py:14337-14349` (setAbastFoco→cargarAbastecimiento :14182) + `:14425-14427` (cargarAbastecimiento OTRA VEZ) → 2 requests idénticos concurrentes del endpoint más pesado, ocupan 2 de 3 workers por un usuario · conf 0.97
+- **b)** Cada click de horizonte (15d…365d) y cada checkbox MP/MEE refetchea el MRP completo, aunque `_ABA_STATE.items` YA trae los 7 horizontes y ambos tipos (`dashboard_html.py:14165-14183, 23513-23514`) · conf 0.95
+
+**Fix [SEGURO]:** eliminar el hook de :14425-14427 (dedup puro); en `setAbastFoco`, si `_ABA_STATE.items` tiene datos solo re-render client-side (los déficits por horizonte ya están en memoria); checkboxes → filtrar client-side. Adicional: promesa en vuelo memoizada `window._ABA_FETCH` (patrón M59 `_COMP_MEE_PROMISE`).
+
+## 4. `/api/brd/ordenes-unificadas` 2× en la carga inicial, sin LIMIT, para una pestaña no visible
+**Impacto: P1 · tab: carga-inicial · conf 0.9**
+`dashboard_html.py:1421` (IIFE top-level) → `:1376-1379` → fetches duplicados en `:1335` y `:4172`; backend `brd.py:6816-6830` trae TODOS los EBRs históricos sin LIMIT (crece sin tope).
+**Fix [SEGURO]:** (1) promesa memoizada compartida entre cargarEnCurso/cargarHistProd; (2) mover las llamadas de la IIFE al hook de switchTab 'produccion' (lazy, hooks ya existen en :4452/:4493); (3) `LIMIT 300` en la query de ebr_rows como su hermana de producciones (filtrar-en-SQL; verificar que la UI pagina/trunca igual).
+
+## 5. WRITE-on-GET: auto-clean con UPDATEs+commit en cada refresh de 30s del Centro de Mando
+**Impacto: P1 · tab: mando-midia · conf 0.9-0.95**
+- **a)** `renderCentroMando` nunca manda `skip_cleanup` — el flag backend del 22-may quedó huérfano: `dashboard_html.py:14557` vs `programacion.py:7442-7453`; auto-clean :7455-7561 con `conn.commit()` incondicional en :7555 corre en cada load y cada 30s · conf 0.95
+- **b)** `tablero-equipo` hace lo mismo: `auto_plan.py:10487-10516`, llamado cada 30s desde `dashboard_html.py:14858/:14641` — redundante con (a) en el MISMO ciclo · conf 0.9
+
+**Fix:** commit condicional a `auto_canceladas_inicial>0` **[SEGURO]** · agregar `&skip_cleanup=1` en el auto-refresh silencioso **[TOCA LÓGICA — leve]**: cambia la cadencia del auto-cancel (queda cubierta por el cron diario `auto_reparar_huerfanas` y por las cargas manuales); quitar el auto-clean de tablero-equipo **[TOCA LÓGICA]** — gatearlo con cron_locks (máx 1×/N min) es la variante segura.
+
+## 6. N+1 del resolver de bodega `_resolver_material_bodega` — compartido por Abastecimiento y Factibilidad
+**Impacto: P1 · 2 tabs · conf 0.85**
+`programacion.py:9812-9956` (impl con `_stock_neto` = SUM sobre movimientos + bridge + maestro + 2 fetchall completos de maestro_mps en tiers 2b/3, POR CÓDIGO), invocado en loop desde `programacion.py:14719-14730` (abastecimiento, ~150 códigos) y `plan.py:5596-5605, 5870` (factibilidad — y los códigos SIN stock, justo los de déficit, recorren la cascada entera). Memo solo por-request → cientos de round-trips PG por apertura, ×2 por el doble disparo del #3.
+**Fix [TOCA LÓGICA — riesgo medio]:** versión bulk: precargar en flask.g maestro_mps completo + bridge activo + usar el mapa de `_get_mp_stock` (ya memoizado, misma semántica de estados) en lugar de `_stock_neto` por código. Convierte cientos de queries en 0, pero hay que preservar exactamente la semántica 5-tier del resolver — es el corazón del match fórmula↔bodega (M1: resolver canónico único). Hacer con golden test antes/después.
+
+## 7. Endpoints pesados sin cache server-side: MRP (`consumo-horizontes`) y `plan_factibilidad` recomputan TODO por request
+**Impacto: P1 · 2 tabs (abastecimiento, factibilidad) · conf 0.85-0.9**
+- `programacion.py:14136` + `:14744-14779` + `:13948-13980` (MRP: `_get_mp_stock` = 3 full-scans de movimientos `:738-797` memoizado solo en flask.g, + 3 agregados de cuarentena, + cruce fórmulas×producciones)
+- `plan.py:5497-5979` (factibilidad entera, re-dispar
+
+=== HALLAZGOS por tab (titulo | sev | conf | file) ===
+
+## necesidades
+  [P1 c=0.92] Escaneo de SKUs huérfanos re-parsea el JSON de TODAS las órdenes Shopify de 30d en CADA carga de Necesidades, 
+     @ api/blueprints/plan.py:3281-3319 (dentro de plan_necesidades)
+  [P2 c=0.8] Fallback _volumen_sku por SKU con cache solo request-scope → N+1 de 2-4 queries por SKU sin volumen, repetido 
+     @ api/blueprints/plan.py:4204-4270 (_ml_cache y _ml_de_sku dentro de _calcular_animus_dtc) → auto_plan.py:13155 (_volumen_sku) → _factor_g_por_unidad_detalle
+  [P2 c=0.85] N+1 de fetches match-preview B2B: un request por cada pedido pendiente al abrir el tab, cada uno con ABS(julia
+     @ dashboard_html.py:23367 (items.forEach(_matchPreviewB2B)) → plan.py:1723-1733 (query ABS(julianday(fecha_programada) - julianday(?)) <= 10)
+  [P2 c=0.75] Dos endpoints pesados disparan EN PARALELO al abrir Programación: /api/plan/necesidades + /api/programacion/re
+     @ dashboard_html.py:4465-4471 (showTab 'programacion' llama cargarProgramacion Y switchProgTab('necesidades')) → programacion.py:2037 (prog_resumen: _shopify_velocity + _project_stock + _get_formulas + _get_mp_stock)
+  [P2 c=0.85] Riesgo latente: TODO el fast-path de velocidad depende de que el cron llene ventas_diarias — si vuelve a queda
+     @ plan.py:3705-3739 (_ventas_maps_shopify fallback a animus_shopify_orders si _vdrows vacío) y programacion.py:198-215 (_shopify_velocity mismo patrón)
+
+## calendario
+  [P1 c=0.92] skus-huerfanos-top: full-scan + parseo JSON de todas las órdenes Shopify 60d en CADA apertura del tab (patrón 
+     @ api/blueprints/plan.py:2422-2450 (loop json.loads por orden) · disparado automático desde plan.py:18270→18604
+  [P2 c=0.85] listado?historico=1 sin piso de fecha pasada: el payload principal (bloqueante) crece sin límite con la histor
+     @ api/blueprints/programacion.py:9243-9247 (WHERE solo tope futuro +760d, sin piso pasado, ORDER BY fecha ASC LIMIT 6000)
+  [P2 c=0.9] Waterfall secuencial en cargar(): listado → festivos en serie; festivos podría ir en paralelo
+     @ api/blueprints/plan.py:18225 (await listado) → :18242 (await festivos después)
+  [P2 c=0.8] Cada re-switch al tab re-dispara la carga completa (listado 6000 filas + scan huerfanos) sin TTL cliente
+     @ api/templates_py/dashboard_html.py:14380-14383 (frCal.contentWindow.cargar() SIEMPRE que tab==='calendario')
+  [P2 c=0.95] Verificado SIN acción: los dos históricos M43 del calendario ya están mitigados (sugerencias-adelanto a botón,
+     @ api/blueprints/plan.py:18271-18273 (sugerencias solo por botón, fix 16-jun) · plan.py:18628 (cargarAlertasIA early-return 5-jul, el fetch a alertas-ia/_calcular_animus_dtc NO corre en el load)
+
+## abastecimiento
+  [P1 c=0.97] DOBLE disparo del endpoint más pesado en cada apertura del tab (2 requests concurrentes idénticos)
+     @ api/templates_py/dashboard_html.py:14337-14349 + 14425-14427 (switchProgTab); setAbastFoco llama cargarAbastecimiento en :14182
+  [P1 c=0.95] Cada click en un botón de horizonte (15d/30d/…/365d) re-ejecuta el MRP completo en el backend, aunque la respu
+     @ api/templates_py/dashboard_html.py:14165-14183 (setAbastFoco → cargarAbastecimiento en :14182); datos ya presentes: :23513-23514 (_ABA_STATE.items con it.deficit[h] e it.consumo[h] para los 7 horizontes) y _abastPintarHorizontes (:14188)
+  [P2 c=0.85] N+1 en el colapso demanda→código de bodega: _resolver_material_bodega por cada código de MP con consumo (~150 
+     @ api/blueprints/programacion.py:14719-14730 (loop de colapso) → _resolver_material_bodega:9812-9832 (memo por request) → _resolver_material_bodega_impl:9835+ (_stock_neto = SUM sobre movimientos por código :9858-9873, bridge lookup :9888-9893, check maestro)
+  [P2 c=0.9] Escaneo Shopify 180d (_ventas_sku_180d) en la ruta de carga del tab — parsea el JSON de TODAS las órdenes en P
+     @ api/blueprints/programacion.py:14040 (llamada dentro de consumo-horizontes, rama incluir_mee que es el DEFAULT porque #abast-mee viene checked · dashboard_html.py:2616) → _ventas_sku_180d:8538-8583
+  [P2 c=0.85] El endpoint recomputa TODO el MRP en cada request sin ningún cache server-side: _get_mp_stock (3 full-scans de
+     @ api/blueprints/programacion.py:14136 (_get_mp_stock, impl :709-729 memo solo por request), :14744-14779 (bloque _cuar_mp: 2 GROUP BY + 1 DISTINCT sobre movimientos + 1 GROUP BY sobre movimientos_mee), :13948-13980 (join formula_items×formula_headers completo), :14169 (_get_mee_stock full-scan movimientos_mee)
+
+## factibilidad
+  [P1 c=0.9] Recompute completo del endpoint en CADA apertura del tab (sin cache/TTL ni staleness check)
+     @ api/templates_py/dashboard_html.py:14411-14417 (contentWindow.cargar() en cada re-open) + api/blueprints/plan.py:5497-5979 (endpoint sin memo)
+  [P1 c=0.85] Cascada N+1 del resolver de bodega para códigos fantasma/sin stock (justo el caso de los déficits)
+     @ api/blueprints/programacion.py:9835-9956 (_resolver_material_bodega_impl) · invocado desde api/blueprints/plan.py:5596-5605 y :5870 (un _resolver_mid por ítem de fórmula)
+  [P2 c=0.85] _get_mp_stock = 3 full-scans de movimientos por request, sin cache entre requests
+     @ api/blueprints/programacion.py:738-797 (pass 1 agregado, pass 2 DISTINCT nombres, pass 3 legacy sin material_id) · llamado desde plan.py:5583-5585
+  [P2 c=0.7] JOIN no-sargable formula_items × formula_headers por UPPER(TRIM(nombre))
+     @ api/blueprints/plan.py:5554-5565
+
+## kanban
+  [P2 c=0.7] Filtro date(fecha_programada)=? no-sargable → seq scan de produccion_programada en cada poll de 30s
+     @ api/blueprints/auto_plan.py:9637 (WHERE date(pp.fecha_programada) = ?)
+  [P2 c=0.6] JOIN maestro_mee por UPPER(TRIM(codigo)) no-sargable en aportes B2B (impacto hoy trivial)
+     @ api/blueprints/auto_plan.py:9671-9672 (ON UPPER(TRIM(mee.codigo)) = UPPER(TRIM(COALESCE(pbl.envase_codigo,''))))
+  [P2 c=0.9] VEREDICTO: el tab kanban NO es un culpable de la lentitud global — es de los tabs livianos; la pista 'ordenes-
+     @ api/blueprints/auto_plan.py:9564-9783 (backend) + 10291-10453 (JS del iframe)
+
+## mando-midia
+  [P1 c=0.9] Fan-out de 8 fetches concurrentes al abrir 'mando' + 6 re-fetches cada 30s SIN cache/TTL de datos casi-estátic
+     @ api/templates_py/dashboard_html.py:14456-14496 (hooks del tab) + 14634-14645 (sub-cargas dentro de renderCentroMando) + 14513-14528 (timer 30s)
+  [P1 c=0.95] renderCentroMando nunca manda skip_cleanup → el auto-clean WRITE-on-GET (SELECT 200 filas + UPDATEs + audit po
+     @ api/templates_py/dashboard_html.py:14557 (fetch sin ?skip_cleanup=1 ni X-Skip-Cleanup) vs api/blueprints/programacion.py:7442-7453 (soporte del flag) y 7455-7561 (auto-clean + conn.commit() incondicional en 7555)
+  [P2 c=0.9] N+1 en /api/planta/oee: 2 queries por lote dentro de loop por sala (incluye un round-trip SQL solo para calcul
+     @ api/blueprints/auto_plan.py:8086-8132 (loop salas → loop prods → c.execute julianday en 8118-8121 + SUM tiempo_objetivo_sku en 8127-8131)
+  [P2 c=0.9] tablero-equipo también hace WRITE-on-GET (auto-clean + commit) en cada refresh de 30s
+     @ api/blueprints/auto_plan.py:10487-10516 (SELECT 50 + loop UPDATE hasta 20 + commit) · llamado desde cmCargarEquipo en dashboard_html.py:14858 dentro del ciclo de renderCentroMando (:14641)
+  [P2 c=0.85] El iframe de 'midia' (/operario) sigue polleando /api/operario/mi-dia cada 30s aunque el usuario cambie a otra
+     @ api/templates_py/operario_html.py:540 (setInterval 30s) + :168 (guard solo mira document.visibilityState) · el iframe nunca se descarga: switchProgTab solo hace display:none del div (dashboard_html.py:14354-14367, 14432-14436)
+  [P2 c=0.85] Triple fetch redundante de la lista de operarios en el mismo tab-open
+     @ dashboard_html.py:21263 (/api/planta/mi-dia?list_only=1) + :15507 (/api/planta/operarios?incluir_inactivos=1) + :15695 (/api/planta/operarios/historial) — los 3 se disparan al abrir 'mando'
+
+## envases-mee (switchTab('empaque') · Bodega MEE)
+  [P1 c=0.7] /api/mee/stock devuelve la FOTO base64 (data-uri) de TODOS los envases activos en cada carga del tab
+     @ api/blueprints/inventario.py:12408 (SELECT ... COALESCE(m.imagen_url,'')) + dashboard_html.py:9493 (window._MEE_IMG[m.codigo]=m.imagen_url) y 9543 (<img src=imagen_url> por fila)
+  [P2 c=0.85] /api/mee/alertas hace 5 pasadas completas sobre movimientos_mee y duplica la agregacion que /api/mee/stock ya 
+     @ api/blueprints/inventario.py:12995-13048 (subquery SUM GROUP BY 12998-13003, _get_mee_stock canonico 13019-13020, GROUP BY MAX(fecha) 13023-13030, 2 COUNT con fecha>= 13045-13047)
+  [P2 c=0.9] /api/mee/movimientos ordena por fecha DESC sin indice en movimientos_mee(fecha)
+     @ api/blueprints/inventario.py:12878-12889 (ORDER BY mv.fecha DESC, mv.id DESC LIMIT ? OFFSET ?) · unico indice existente: idx_movimientos_mee_codigo ON movimientos_mee(mee_codigo) (api/database.py:940)
+  [P2 c=0.8] cargarMeeStock se dispara al abrir el tab aunque el subtab visible por defecto es Recepcion (pane Inventario o
+     @ api/templates_py/dashboard_html.py:4457 (tab-open dispara cargarMeeStock) + 1940-1941 (default activo = meest-recepcion) + 9762-9768 (meeSubTab('inventario') vuelve a llamar cargarMeeStock sin condicion de frescura)
+  [P2 c=0.9] Veredicto global del tab: NO contiene los patrones pesados conocidos (M43/M59/IA sincrona) — no es el causante
+     @ api/templates_py/dashboard_html.py:4457 + api/blueprints/inventario.py:12397-13053
+
+## config
+  [P1 c=0.9] split-audit re-parsea el JSON de TODAS las órdenes Shopify de 90d en CADA request y cargarReparto lo re-dispar
+     @ api/blueprints/programacion.py:3990-4005 (prog_split_audit: SELECT sku_items FROM animus_shopify_orders WHERE creado_en>=cut90 + json.loads por orden en Python) · re-triggers: api/templates_py/dashboard_html.py:20269-20297 (setSkuVol, setPresVentas, cambiarEnvasePres, asignarEnvase, quitarPres, noAplicaEnvase, unificarEnvase → TODOS terminan en cargarReparto())
+  [P2 c=0.75] Abrir el tab config dispara 5 requests simultáneos (2 de ellos con loop N+1 sobre cron_jobs_runs duplicado) co
+     @ api/templates_py/dashboard_html.py:14491+14498-14502 (switchProgTab 'config' → cfgInit + healthRecargar + reporteEjecutivoRecargar + cronStatusRecargar) · api/blueprints/auto_plan.py:11623-11643 (health-check: loop JOBS_SCHEDULE ~30-56 jobs × 1 query cada uno) · auto_plan.py:7719-7726 (cron-jobs-status: el MISMO loop N+1)
+  [P2 c=0.7] reporte-ejecutivo usa date(fecha)>=? (mata índice) + LIKE '%...%' full-scan en cada apertura del tab
+     @ api/blueprints/auto_plan.py:7231-7242 (COUNT solicitudes_compra WHERE date(fecha) >= ?  ×3) · :7254-7258 (COUNT sku_mee_config WHERE notas LIKE '%Aprendido%' OR LIKE '%Auto-mapeo%') · :7301-7307 (GROUP BY observaciones sobre solicitudes_compra 90d con date(s.fecha)>=?)
+  [P2 c=0.8] cargarPresentaciones hace sus 2 fetches en SERIE y productos-disponibles usa subquery correlacionada por produ
+     @ api/templates_py/dashboard_html.py:15807-15810 (await fetch r1, LUEGO await fetch r2 · sin Promise.all) · api/blueprints/programacion.py:19609-19616 (subquery COUNT producto_presentaciones por cada formula_header, sobre producto_nombre sin normalizar)
+  [P2 c=0.95] VERIFICADO NO-PROBLEMA: el GET de estacionalidad y el health-check del Calendar son livianos (el escaneo 24-me
+     @ api/blueprints/programacion.py:3864-3889 (GET estacionalidad-config: solo estacionalidad_meses + app_settings) · :3658-3695 (_estacionalidad_mensual, parseo 24 meses de órdenes, SOLO en accion=refrescar o diag) · :456-467 (_fetch_calendar_events retorna al instante 'Google Calendar deshabilitado' desde 7-jul → health-check :11648 ya no hace red)
+
+## carga-inicial
+  [P1 c=0.92] El banner /api/plan/alertas-ia corre el motor COMPLETO de Necesidades (_calcular_animus_dtc) + N+1 B2B en CADA
+     @ api/blueprints/plan.py:3423-3626 (llama _calcular_animus_dtc en 3459; loop B2B con _check_mp_para_pedido_b2b en 3575-3612, helper en 1032) · disparo: dashboard_html.py:4702 (loadDashboardCompleto) + 2965/2996 (DOMContentLoaded) + 4672-4679 (timer 60s, checkbox 565 checked default) + 4683-4687 (visibilitychange)
+  [P1 c=0.9] /api/brd/ordenes-unificadas se llama 2 VECES duplicado en la carga inicial (cargarEnCurso + cargarHistProd), s
+     @ api/blueprints/brd.py:6782-6900 (query EBR 6816-6830 SIN LIMIT; producciones sí tiene LIMIT 300 en 6873) · JS: dashboard_html.py:1421 (IIFE top-level ejecuta cargarEnProcesoFab al cargar el script) → 1376-1379 (cargarEnProcesoFab llama cargarEnCurso Y cargarHistProd) → 1335 y 4172 (ambos fetchean el MISMO endpoint)
+  [P2 c=0.85] /api/inventario ejecuta ~6 agregaciones full-scan separadas sobre movimientos por request, dos de ellas con la
+     @ api/blueprints/inventario.py:218-320+ (stock_total 249, mps_sin_stock 263-268, mps_bajo_min 270-275 con la MISMA subquery SUM sobre movimientos, lotes_vencidos 283-295, lotes_cuarentena 312-317, y siguen más _safe())
+  [P2 c=0.88] Auto-refresh del dashboard cada 60s ENCENDIDO por defecto repite los 4 endpoints (incluido alertas-ia) + visib
+     @ dashboard_html.py:565 (checkbox 'dash-autorefresh' checked por defecto), 4670-4679 (_dashStartAutoRefresh 60000ms), 4681-4688 (visibilitychange → loadDashboardCompleto(true) sin throttle)
+  [P2 c=0.8] cargarEnvasadoSimpleTab a los 1.5s del load fetchea 3 endpoints (/api/programacion/productos, /api/mee/stock c
+     @ dashboard_html.py:2966 (setTimeout(cargarEnvasadoSimpleTab,1500)), 10841-10882 (los 3 fetches) · backend /api/mee/stock inventario.py:12397

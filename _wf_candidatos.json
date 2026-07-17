@@ -1,0 +1,290 @@
+[
+ {
+  "cadena": "① MP ingresada → Bodega MP (vista /api/lotes · dias_para_vencer/alerta)",
+  "sintoma": "En ventana nocturna Colombia (19:00–24:00 CO, cuando el server UTC ya está en 'mañana'), la Bodega MP pinta un lote como 'vencido' o 'critico' un día antes de lo real, y diverge del filtro solo_criticos del MISMO endpoint (que sí ancla Colombia) y del cron job_marcar_vencidos.",
+  "causa": "get_lotes usa `hoy = date.today().isoformat()` (UTC crudo, línea 4478) para calcular dias_para_vencer y la alerta (línea 4577), mientras el filtro solo_criticos del mismo endpoint usa `date('now','-5 hours')` (línea 4532). Dos anclajes TZ distintos en el mismo endpoint — violación directa de la regla dura M24 ('NINGÚN date.today() crudo para hoy en lógica de negocio').",
+  "file_line": "api/blueprints/inventario.py:4478 (usado en :4577-4578; contraste con :4532)",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "hoy = (datetime.now(timezone.utc) - timedelta(hours=5)).date().isoformat() — mismo anclaje Colombia que solo_criticos y el cron. Solo afecta display (FEFO/descuento tienen su propia guarda M25), por eso P2."
+ },
+ {
+  "cadena": "① MP ingresada → Bodega (POST /api/recepcion · guard REC-01 de MP vencida)",
+  "sintoma": "En ventana nocturna Colombia, registrar una recepción de MP cuya fecha_vencimiento es HOY (todavía válida) devuelve 409 'fecha_vencimiento ya pasada · MP vencida' falsamente — el ingreso legítimo se bloquea hasta el día siguiente o exige forzar_vencido (admin).",
+  "causa": "El guard REC-01 compara `_dvenc.fromisoformat(_fv[:10]) < _dvenc.today()` con `date.today()` UTC crudo (en Render, de noche CO ya es mañana → un vencimiento de hoy CO queda 'en el pasado'). Misma clase M24 que el hallazgo anterior, pero en el path de INGRESO (bloquea la operación, no solo display). También el lote AUTO (línea 7377) usa date.today() UTC (cosmético: el correlativo ESPyymmdd salta un día antes).",
+  "file_line": "api/blueprints/inventario.py:7386 (guard REC-01; lote AUTO en :7377)",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Anclar Colombia: `hoy_co = (datetime.utcnow() - timedelta(hours=5)).date()` y comparar `fromisoformat(_fv[:10]) < hoy_co`. Aplicar el mismo anclaje al lote AUTO."
+ },
+ {
+  "cadena": "① MP mostrada en Bodega vs stock que usa planeación (M5/M9)",
+  "sintoma": "Para un MP con drift de lote negativo (caso real de prod: Argán MP00137 quedó en −724g mientras otros lotes del mismo código tenían saldo positivo), la Bodega muestra 'Total MP' = suma de solo los lotes positivos visibles, mientras planeación/abastecimiento (canónico _get_mp_stock) ve la suma de TODOS los movimientos (los negativos restan, clamp a 0 a nivel material). El usuario ve stock en Bodega que el motor de compra dice que no existe → sugiere comprar MP que 'se ve' en estantería.",
+  "causa": "get_lotes agrupa por (material_id, lote) con HAVING stock_neto > 0.01 (inventario.py:4517-4518) y arma stock_total_mp_g sumando SOLO las filas visibles (:4565-4568) — los grupos de lote con saldo negativo quedan fuera de la vista Y del total. _get_mp_stock (programacion.py:730-745) suma todas las filas por material_id sin agrupar por lote, con clamp max(x,0) a nivel material — los lotes negativos SÍ restan. Divergencia latente que solo se manifiesta con datos drifteados (que ya ocurrieron en prod, M19). El FEFO consume por lote (>0.01) igual que la vista, así que Bodega==descuento; el desalineado es planeación.",
+  "file_line": "api/blueprints/inventario.py:4517-4518 y 4565-4568 vs api/blueprints/programacion.py:730-745",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "No cambiar el canónico. Opción barata de visibilidad: en get_lotes, calcular además el total canónico por material (misma agregación de _get_mp_stock) y, si difiere de la suma de lotes visibles en >0.01g, devolver un flag `drift_lote_negativo: true` por material para que la UI lo marque (y alimentar el conteo cíclico). El fix de fondo del dato es conteo físico (ya documentado M19), no código."
+ },
+ {
+  "cadena": "① Bodega MP paginada (/api/lotes?limit=N · rama solo con paginación)",
+  "sintoma": "Si un consumidor usara ?limit=N: (a) stock_total_mp_g saldría truncado para un MP cuyos lotes cruzan el borde de página (falso 'bajo mínimo' en la UI); (b) en PostgreSQL <16 el count_sql fallaría silenciosamente (subquery en FROM sin alias) y la respuesta perdería total_disponibles/has_more. HOY es latente: los 2 únicos callers de la UI (dashboard_html.py:4725 y :6617) llaman /api/lotes SIN limit.",
+  "causa": "(a) totales_mp se calcula sobre `rows` DESPUÉS de aplicar LIMIT/OFFSET en el SQL (inventario.py:4534-4535 → :4565-4568), no sobre el universo completo. (b) count_sql `SELECT COUNT(*) FROM ( ... )` sin alias de subquery (:4630-4641) — PG <16 exige alias ('subquery in FROM must have an alias'); el except lo traga con warning y no hay queries posteriores, así que no aborta nada visible.",
+  "file_line": "api/blueprints/inventario.py:4534-4535, 4565-4568, 4630-4641",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "(a) Calcular totales_mp con una query agregada por material_id sin LIMIT (o solo cuando limit>0). (b) Agregar alias: `FROM ( ... ) AS sub`. Ambos de una línea; prioridad baja porque ningún caller usa limit hoy."
+ },
+ {
+  "cadena": "④ ABASTECIMIENTO ENVASES (MEE) · _composicion_envases_lote vs motor/trail/desglose",
+  "sintoma": "Para productos multi-presentación de volúmenes distintos (LIP SERUM 30+15ml, Renova C10 30/15ml), el modal 'Reparto envases' (composicion-mee), Preparar envases de Compras (OS a Planta), mínimos MEE sugeridos, serigrafía-cola y el plan de envasado del EBR (brd.py) muestran/ordenan unidades por presentación ERRADAS y distintas a lo que el abastecimiento compra y el trail muestra. Con sku_shopify vacío (lo usual, M70) cae a 50/50 del KG: ej. Renova C10 (ventas 392 uds 30ml vs 1 ud 15ml) → preparación pide ~3000 frascos de 15ml cuando la compra del motor trae ~8. Con ventas iguales 10/30ml da 3× más frascos de 10ml que de 30ml (el bug exacto que Sebastián cazó el 5-jul en el motor).",
+  "causa": "_composicion_envases_lote quedó como hermano SIN los dos fixes M58+M72 que sí recibieron el motor, el trail y producciones_faltantes: (a) su tier de ventas Shopify usa producto_presentaciones.sku_shopify (línea 8648: sk=(p['sku_shopify'] or '').strip().upper()) que suele estar vacío → total=0 → cae a UNIFORME; NO tiene el tier por (producto,volumen) desde sku_producto_map que sí tienen el motor (13899-13905/13933), _trail_envase (14846-14856/14872-14876) y _ratio_presentaciones (12414-12426/12446-12450). (b) Aplica el share de UNIDADES directo al KG sin pesar por volumen: líneas 8716-8721 `r_rel = p['_ratio']/suma_ratio_no_fija; kg_p = kg_restante * r_rel; un_p = kg_p*1000/vol` — sin el peso uds×ml (M72) que sí tienen _ratio_presentaciones (12458-12462), _trail_envase._ratio (14883-14887) y el desglose de Necesidades (test_envase_fija_desglose). La reserva de FIJA (8690-8708) sí está bien.",
+  "file_line": "api/blueprints/programacion.py:8646-8660 (tiers de ratio) y 8716-8721 (kg_p por share de unidades) · consumidores: 8455 (composicion-mee), 8841 (preparacion-envases), 8940 (minimos-envases-sugeridos), 13184 (serigrafia-cola), brd.py:2110 y 2192 (plan envasado EBR)",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "Replicar en _composicion_envases_lote el _ratio del trail (14860-14887): unidades por prioridad vmr → sku_producto_map ventas por (producto,volumen) → sku_shopify → uniforme; luego pesos = unidades×ml normalizado y kg_p = kg_restante × ratio_volumen. Manteniendo la reserva FIJA existente. Test con dientes igual a test_envase_reparto_pesado_por_volumen pero contra /composicion-mee (ventas iguales 10/30ml → unidades_estimadas iguales)."
+ },
+ {
+  "cadena": "④ ABASTECIMIENTO ENVASES (MEE) · demanda por código crudo vs stock plegado por alias",
+  "sintoma": "Cuando el mismo frasco físico existe bajo 2 códigos (duplicado fusionado vía mee_aliases, M57), la demanda queda PARTIDA entre alias y canónico en items_out_mee, y CADA fila acredita el stock canónico COMPLETO → déficit subestimado en silencio (sub-compra → quiebre de frascos). Además una SOL/OC emitida con un código no cruza como pendiente de la demanda llaveada con el otro → se re-sugiere comprar lo ya pedido.",
+  "causa": "Asimetría MP↔MEE: consumo_mp SÍ se colapsa al código de bodega con _resolver_material_bodega (programacion.py:14577-14588), pero consumo_mee, pendientes_mee y _cuar_mee se llavean por el envase_codigo CRUDO (UPPER) de producto_presentaciones (14675-14700, 14127-14159, 14633) sin pasar por _resolver_envase_bodega — helper que existe desde M57 (línea 1117) y tiene CERO callers en todo el repo. Mientras tanto _get_mee_stock PASS-3 (1081-1100) reporta el TOTAL canónico bajo AMBAS claves (línea 1098: stock[dup]=stock.get(canon,0)) → cada mitad de la demanda ve todo el stock: demanda A=500 + C=500 con stock 600 → déficit 0+0 cuando el real es 400.",
+  "file_line": "api/blueprints/programacion.py:14673-14700 (items_out_mee con cod crudo) · 1098 (stock doble-clave) · 1117 (_resolver_envase_bodega sin callers) · colapso MP análogo en 14577-14588",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Antes del build de items_out_mee, colapsar consumo_mee al canónico con _resolver_envase_bodega (espejo exacto del colapso de consumo_mp en 14577-14588), y resolver también las claves de pendientes_mee y _cuar_mee. P2 porque el daño requiere mee_aliases activos con codigo_mee set (las fusiones del tool /admin/maestro-envases) — pero el mecanismo está vivo y es sub-compra silenciosa cuando dispara."
+ },
+ {
+  "cadena": "④ ABASTECIMIENTO ENVASES (MEE) · share 0% silencioso por mismatch volumen presentación ≠ volumen SKU",
+  "sintoma": "Si UNA presentación de un producto multi-presentación tiene volumen_ml que no matchea exacto ningún volumen_ml de sus SKUs en sku_producto_map (typo 15 vs 30, presentación en gramos vs SKU en ml, o SKU con volumen_ml=0/NULL sin poblar), esa presentación recibe peso 0 mientras su hermana matchea → share 0% → su envase (y tapa/caja) NUNCA entra a la demanda de compra, sin aviso ni diagnóstico. El frasco se quiebra aunque el desglose de Necesidades sí lo muestre.",
+  "causa": "En el loop M58 de abastecimiento_consumo_horizontes, el peso por presentación es lookup EXACTO `x['_w'] = _ventas_prod_vol.get((_k, round(x['vol'], 2)), 0)` (línea 13933). El fallback a ventas_mes_referencia/uniforme (13935-13941) solo aplica si TODAS las presentaciones dan 0 (`if _tot_w <= 0`); un match PARCIAL deja a la presentación no-matcheada con share 0 permanente. Nota: _ventas_prod_vol solo incluye SKUs con volumen_ml>0 (13900-13901), así que un volumen sin poblar en sku_producto_map produce exactamente este caso parcial.",
+  "file_line": "api/blueprints/programacion.py:13929-13941 (lookup exacto + fallback solo-total) · build de _ventas_prod_vol en 13896-13907",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Fallback POR PRESENTACIÓN: si _tot_w>0 pero x['_w']==0 para una presentación, usar su vmr (o un mínimo uniforme 1.0) como peso en vez de 0, y/o reportar el mismatch en el diagnóstico existente (/api/abastecimiento/envases-cobertura o productos_multi_volumen) para que se corrija el volumen_ml en sku_producto_map."
+ },
+ {
+  "cadena": "④ ABASTECIMIENTO ENVASES (MEE) · motor de compra ignora cantidad FIJA y el override manual",
+  "sintoma": "Para productos con presentación FIJA (mig 204 · TRX/niacinamida: 10ml = 1000-1200 uds fijas POR LOTE), la compra de envases reparte por share de ventas mientras el descuento, la preparación de envases y el trail reservan la FIJA primero → compra ≠ descuento: en el ejemplo de niacinamida (90kg, ventas 4/día 10ml vs 12/día 30ml) el motor compra ~900 frascos de 10ml por lote cuando cada lote consume 1000 fijas → sub-compra sistemática del frasco fijo. Además, si el usuario setea ventas_mes_referencia manual, la compra lo IGNORA cuando hay ventas Shopify (prioridad invertida) → el mix comprado ≠ el mix que preparación/desglose muestran.",
+  "causa": "(a) El SELECT de _pres_rows del loop M58 (13911-13922) NO lee cantidad_fija_uds → el share (13940-13948) es puramente por ventas; la reserva fija-first sí existe en _composicion_envases_lote (8690-8708) y en _trail_envase._reparto_lote (14889-14918, fix 7-jul), pero no en el motor que decide la COMPRA. (b) Prioridad invertida: el motor pesa Shopify-por-volumen PRIMERO y cae a vmr (13932-13938), mientras composicion (8639-8644), _trail_envase._ratio (14867-14870) y _ratio_presentaciones (12442-12444) priorizan el override manual vmr — M70: el mismo input con fuente/prioridad distinta entre display y motor.",
+  "file_line": "api/blueprints/programacion.py:13911-13948 (sin cantidad_fija_uds + prioridad Shopify-first) vs 8690-8708 y 14889-14918 (fija-first) y 12442-12444/14867-14870 (vmr-first)",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "En el loop 8a del motor, para productos con alguna presentación fija, derivar las unidades por envase POR LOTE reservando la fija primero (leer cantidad_fija_uds en _pres_rows y aplicar la misma lógica kg_fijo/kg_restante de _composicion_envases_lote, respetando fija_override_json del lote), y alinear la prioridad de pesos a vmr → Shopify-por-volumen (igual que los otros 3 sitios). Lo estructural (deuda): que el motor consuma _composicion_envases_lote por lote una vez arreglado el hallazgo 1, para tener UNA sola fuente del reparto."
+ },
+ {
+  "cadena": "③ CALENDARIO/NECESIDADES · match SKU→producto display vs motor (M70/M13)",
+  "sintoma": "Un producto cuyo nombre en sku_producto_map difiere del de formula_headers/sku_planeacion_config por acento/'+'/puntuación (ej. 'NAD' vs 'NAD+', 'Retinaldehído' vs 'RETINALDEHIDO') MUESTRA velocidad/demanda en Necesidades pero el motor le calcula 0 SKUs → demand_g=0 → nunca lo programa en el calendario ('lo que ves ≠ lo que programa').",
+  "causa": "El display cruza SKUs con normalización FUERTE: plan.py:4216-4222 `skus_de_prod = [sku for sku,pname in sku_to_prod.items() if _npf_sku(pname)==_prod_key_n]` (fix M13 del 27-jun). El motor sigue con match SQL débil: auto_plan.py:13187-13190 `SELECT sku... FROM sku_producto_map WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))` — un acento o '+' rompe el match que el display sí resuelve. El fix M13 se aplicó al display y a los dicts de pipeline (plan.py:4120-4137) pero nunca al lookup de SKUs del motor.",
+  "file_line": "api/blueprints/auto_plan.py:13187-13190 (vs api/blueprints/plan.py:4216-4222)",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "En _demanda_stock_gramos traer TODOS los rows de sku_producto_map activos con es_regalo=0 y filtrar en Python con _norm_prod_fuerte(producto_nombre)==_norm_prod_fuerte(producto) (mismo helper que el display), con fallback al match exacto UPPER/TRIM primero. Réplica exacta del patrón plan.py:4219-4222."
+ },
+ {
+  "cadena": "③ CALENDARIO/NECESIDADES · 'por entrar' manual (app_settings) invisible al motor",
+  "sintoma": "Sebastián carga a mano el 'por entrar' de Espagiria (cuando el token no ve esa bodega): Necesidades saca el producto del rojo (test_por_entrar_manual lo fija), pero el MOTOR de proyección/cadencia lo ignora → re-programa producción de bulk que Espagiria YA fabricó — exactamente lo que el Paso 2 (5-jul) quería evitar.",
+  "causa": "El display suma DOS fuentes: tabla stock_por_entrar (plan.py:3913-3919) + override manual app_settings 'por_entrar_manual' (plan.py:3923-3932, 'GANA sobre lo del sync'), y además resuelve por NOMBRE/código PT normalizado si no cruza por SKU (plan.py:4593-4602, caso 'ANIMUSLASH'). El motor solo lee la tabla stock_por_entrar keyeada por SKU exacto: auto_plan.py:13205-13211 — no lee app_settings 'por_entrar_manual' ni tiene el fallback por nombre/código (grep 'por_entrar_manual' confirma: 0 hits en auto_plan.py).",
+  "file_line": "api/blueprints/auto_plan.py:13205-13211 (vs api/blueprints/plan.py:3920-3932 y 4590-4602)",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "En _demanda_stock_gramos, tras poblar _por_entrar desde stock_por_entrar, sobreescribir con app_settings 'por_entrar_manual' (mismo parseo que plan.py:3923-3932) y, si _por_entrar no cruza por SKU, aplicar el fallback por nombre de producto/código PT normalizado (_norm_prod_fuerte) igual que plan.py:4593-4602. Idealmente extraer un helper compartido _por_entrar_por_sku(c) que usen ambos caminos."
+ },
+ {
+  "cadena": "③ CALENDARIO/NECESIDADES · pipeline 7d con filtros de estado CONTRADICTORIOS display vs motor",
+  "sintoma": "Para el MISMO lote de los últimos 7 días la cobertura difiere entre pantalla y motor: (a) un lote estado='completado' (liberado por QC, ya en stock) el display lo excluye del pipeline pero el motor lo SUMA → si ya entró al stock resuelto, el motor lo cuenta 2 veces → cobertura del motor inflada → programa tarde (riesgo quiebre); (b) un lote 'pendiente' atrasado (fecha_programada hace 3d, nunca producido, sin fin_real_at) el display lo cuenta como bulk 'en camino' (cobertura mostrada inflada con bulk inexistente) y el motor no → pantalla dice OK mientras el calendario programa ya.",
+  "causa": "Display (plan.py:4033-4046): ventana fecha_programada [hoy-7d, hoy] con `LOWER(estado) NOT IN ('completado','cancelado')` y SIN exigir fin_real_at (comentario: \"'completado' se excluye (ya pasó a Available por QC)\"). Motor (auto_plan.py:13297-13315): misma ventana física pero exige `fin_real_at IS NOT NULL` y excluye SOLO 'cancelado' (auto_plan.py:13314, comentario opuesto: \"un lote queda 'completado' y solo entra a stock al LIBERARse\"). Los dos comentarios afirman semánticas opuestas de 'completado' — el M70 del 1-jul había alineado el motor a excluir 'completado' pero la reescritura del 4-jul (ventana por fecha_programada) lo revirtió a solo-'cancelado'.",
+  "file_line": "api/blueprints/auto_plan.py:13297-13315 (vs api/blueprints/plan.py:4033-4046)",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "Unificar el filtro de estado en AMBOS caminos según la semántica real de 'completado' (si liberar QC escribe stock_pt/Disponible que _resolved_stock_por_sku ya ve → excluir 'completado' también en el motor: agregar `AND LOWER(COALESCE(pp.estado,'')) NOT IN ('completado','cancelado')` en auto_plan.py:13314). Y decidir UNA regla para lotes sin fin_real_at en la ventana: o el display también exige terminado (fin_real_at) o el motor acepta pendientes — hoy cada camino cuenta un conjunto de lotes distinto para el mismo hecho."
+ },
+ {
+  "cadena": "③ CALENDARIO/NECESIDADES · pauta multi-tono: display distingue dominante/cuello + override, motor solo cuello",
+  "sintoma": "Producto multi-TAMAÑO (30ml+15ml, ej. VITAMINA C / NOVA PHA / AZ): si el tamaño chico está bajo, Necesidades (regla 6-jul) muestra la cobertura del DOMINANTE (OK, sin urgencia), pero el motor recorta stock_proyeccion_g al tono/tamaño que se agota primero (cuello) → el calendario programa el lote antes de lo que la pantalla sugiere. El override por producto app_settings 'pauta_multitono' tampoco existe en el motor.",
+  "causa": "Display: plan.py:4519-4526 y 4566-4577 — decide dominante vs cuello por nº de volúmenes significativos (`_es_multitamano = len(_vols_signif) > 1`) con override `_pauta_override` (app_settings 'pauta_multitono', plan.py:4195-4203). Motor: auto_plan.py:13322-13341 aplica SIEMPRE el mínimo de cobertura entre SKUs ≥5% del mix (`_cov < cuello_gondola_dias` sin distinguir volúmenes ni leer el override) → para multi-tamaño usa la pauta 'cuello' que el display del 6-jul ya descartó para esos productos.",
+  "file_line": "api/blueprints/auto_plan.py:13322-13341 (vs api/blueprints/plan.py:4519-4526, 4566-4577, 4195-4203)",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Portar la regla del 6-jul al motor: en _demanda_stock_gramos rastrear el volumen de cada SKU significativo; si hay >1 volumen (multi-tamaño) usar la cobertura del DOMINANTE (mayor mix) en vez del mínimo, y leer app_settings 'pauta_multitono' con la misma precedencia que plan.py:4566-4573. (Dirección del bug hoy: motor programa antes — seguro pero display≠motor.)"
+ },
+ {
+  "cadena": "③ CALENDARIO/NECESIDADES · stock de SKUs huérfanos (extra_stock_by_prod_lc) solo en el display",
+  "sintoma": "Producto cuyo stock Shopify vive bajo un SKU de variante que NO está en sku_producto_map pero sí mapea vía producto_presentaciones.sku_shopify o descripción exacta (caso histórico Limpiador BHA): Necesidades muestra ese stock (cobertura X días), pero el motor lo ve en 0 → programa un lote 'urgente' que la pantalla no justifica → sobre-producción y calendario que contradice la pantalla.",
+  "causa": "El display atribuye stock huérfano al producto: plan.py:3943-3971 construye extra_stock_by_prod_lc (SKUs de _resolved_stock_por_sku que no están en sku_to_prod, atribuidos por producto_presentaciones/descripcion) y lo suma en plan.py:4242 `stock_uds_total += extra_stock_by_prod_lc.get(_prod_key_lc, 0)`. El motor (auto_plan.py:13232-13236) suma stock SOLO de los SKUs de sku_producto_map (`_resolved.get(sku)` por cada fila del map) — nunca considera los huérfanos.",
+  "file_line": "api/blueprints/auto_plan.py:13232-13236 (vs api/blueprints/plan.py:3943-3971 y 4242)",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Extraer la atribución de huérfanos a un helper compartido (dado _resolved y el producto, devolver uds extra vía producto_presentaciones.sku_shopify/descripcion, aditivo y sin doble conteo como plan.py:3958-3960) y sumar esas uds×volumen_producto a stock_g en _demanda_stock_gramos."
+ },
+ {
+  "cadena": "③ CALENDARIO/NECESIDADES · off-by-one en el fast-path ventas_diarias del display (frontera de ventana)",
+  "sintoma": "La velocidad mostrada en Necesidades pierde sistemáticamente las ventas del día-frontera de cada ventana (día 30, día 60/ventana y día 90): v30 subcuenta ~1/30 (~3%), y la 1ª venta observada (age-ajuste) puede correrse 1 día. El motor SÍ incluye ese día → velocidad display ligeramente menor que la del motor, y el propio display difiere entre fast-path (ventas_diarias, el camino de prod desde el cron 3×/día) y cold-path (parseo de órdenes).",
+  "causa": "Comparación de fecha de 10 chars contra cutoff de 19 chars: plan.py:3719-3723 `c10 = str(_fe)[:10]` ('YYYY-MM-DD') vs `vd_iso/cut30/cut90 = 'YYYY-MM-DDT00:00:00'` (plan.py:3985-3988). En comparación de strings, 'YYYY-MM-DD' < 'YYYY-MM-DDT00:00:00' → el día exacto del cutoff NUNCA pasa el `>=` (y el WHERE `fecha >= vd_base` de plan.py:3711 lo excluye del fetch). El cold-path compara el timestamp completo (plan.py:3745-3748) → sí lo incluye. El motor compara 'YYYY-MM-DD' >= 'YYYY-MM-DD' (auto_plan.py:300-313 y 13230-13246) → sí lo incluye.",
+  "file_line": "api/blueprints/plan.py:3711-3727 (cutoffs en plan.py:3985-3988)",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "En el fast-path comparar contra cutoffs de 10 chars: usar `vd_iso[:10]`, `cut30[:10]`, `cut90[:10]` (y `vd_base[:10]` en el WHERE de ventas_diarias) para que el día-frontera entre igual que en el cold-path y en el motor."
+ },
+ {
+  "cadena": "① INGRESO MP · recepción por OC (rama MEE/envases)",
+  "sintoma": "Los envases (MEE) recibidos por OC entran directo como stock USABLE sin pasar por cuarentena de Calidad: la Entrada en movimientos_mee queda con estado default 'VIGENTE' y _get_mee_stock la cuenta de inmediato. Salta el gate de liberación de mig 301 ('las Entradas nuevas entran en CUARENTENA y Calidad libera') y también ignora el toggle RECEPCION_AUTO_VIGENTE que la misma función sí aplica a MP.",
+  "causa": "compras.py recibir_oc, rama `if categoria == 'MEE':` hace `INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, lote_ref, observaciones, responsable, fecha)` SIN la columna `estado` (agregada por mig 301 con DEFAULT 'VIGENTE'). El writer hermano de recepción manual MEE (inventario.py:11903) sí escribe `estado_mee = 'CUARENTENA' if ...` y _get_mee_stock (programacion.py:1059) excluye Entradas en CUARENTENA — el path OC quedó sin parchear (patrón M45: hermano que copió el idiom viejo). El cálculo de _estado_recep con recepcion_auto_vigente (compras.py:6104) vive solo en la rama no-MEE.",
+  "file_line": "api/blueprints/compras.py:6061-6062 (writer sin estado) · contraste inventario.py:11903 y api/database.py:638-641 (mig 301)",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "En la rama MEE de recibir_oc, calcular el estado igual que la recepción manual: `_estado_mee = 'VIGENTE' if _rav(cur) else 'CUARENTENA'` y agregar la columna al INSERT: `INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, lote_ref, observaciones, responsable, fecha, estado) VALUES (...)`. Además NO sumar al cache maestro_mee.stock_actual mientras esté en cuarentena (o dejar que el cron drift-sync lo alinee) y disparar la misma push_notif a CALIDAD/QC_USERS que usa el path manual. Test: recibir OC categoría MEE → SELECT estado del movimiento = 'CUARENTENA' y _get_mee_stock no lo cuenta."
+ },
+ {
+  "cadena": "① INGRESO MP · recepción manual vinculada a OC (write-through a items)",
+  "sintoma": "Si una OC tiene 2+ líneas del MISMO codigo_mp (caso legítimo documentado C22: dos lotes distintos del mismo MP), un ingreso manual de 500g suma 500g a TODAS las líneas → cantidad_recibida_g inflada ×N → el check de pendientes (línea 7451) ve todo cubierto y marca la OC 'Recibida' prematuramente, con mercancía aún sin llegar.",
+  "causa": "inventario.py registrar_recepcion: `UPDATE ordenes_compra_items SET cantidad_recibida_g=cantidad_recibida_g+?,lote_asignado=? WHERE numero_oc=? AND codigo_mp=?` — UPDATE bulk por (numero_oc, codigo_mp) en vez de por id de línea. Es exactamente el anti-patrón del checklist cero-error ('UPDATE bulk → WHERE id=? … no WHERE numero_oc+codigo_mp si 2 items mismo MP'); recibir_oc ya se corrigió a rowid (C22, compras.py:6138-6144) pero este hermano no.",
+  "file_line": "api/blueprints/inventario.py:7448-7458",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Actualizar UNA sola línea: elegir la fila objetivo (la de menor id con pendiente > 0 para ese codigo_mp: `SELECT id FROM ordenes_compra_items WHERE numero_oc=? AND codigo_mp=? AND (cantidad_g-COALESCE(cantidad_recibida_g,0))>0 ORDER BY id LIMIT 1`) y hacer el += `WHERE id=?`. Si no hay fila con pendiente, caer a la primera por id. Test: OC con 2 líneas del mismo MP → ingreso manual de la cantidad de una línea NO marca la OC 'Recibida'."
+ },
+ {
+  "cadena": "① INGRESO MP · anulación de recepción (write-back a items OC)",
+  "sintoma": "Al anular una recepción con OC vinculada donde la OC tiene 2+ líneas del mismo MP, el descuento de cantidad_recibida_g se aplica a TODAS las líneas (cada una pierde la cantidad completa, clamp a 0) → el acumulado recibido de la OC queda sub-contado ×N → discrepancias falsas y permite re-recibir de más contra esa OC.",
+  "causa": "inventario.py anular_recepcion: `UPDATE ordenes_compra_items SET cantidad_recibida_g = CASE WHEN COALESCE(cantidad_recibida_g,0) - ? < 0 THEN 0 ELSE COALESCE(cantidad_recibida_g,0) - ? END WHERE numero_oc = ? AND codigo_mp = ?` — mismo UPDATE bulk por (numero_oc, codigo_mp) sin id de línea. El kardex (la Salida espejo) sí es net-zero correcto; el daño es solo en el acumulado de la OC. Además el except alrededor traga cualquier fallo (`except Exception: pass`, M4).",
+  "file_line": "api/blueprints/inventario.py:7715-7730",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Descontar de UNA línea: `SELECT id FROM ordenes_compra_items WHERE numero_oc=? AND codigo_mp=? AND COALESCE(cantidad_recibida_g,0)>0 ORDER BY id LIMIT 1` y aplicar el CASE-clamp `WHERE id=?`. Reemplazar el `except Exception: pass` por log con la causa (M4). Test: OC con 2 líneas mismo MP, recibir en ambas, anular una → solo una línea baja."
+ },
+ {
+  "cadena": "① INGRESO MP · guard de sobre-recepción del ingreso manual",
+  "sintoma": "El bloqueo 'cantidad ≤ pendiente de la OC' NO aplica cuando el pendiente es 0: (a) una OC ya recibida al 100% acepta OTRO ingreso manual completo sin exigir forzar_excedente (stock duplicado si pasan >10 min del guard de duplicados); (b) un codigo_mp que NI pertenece a la OC vinculada pasa sin ninguna validación (pendiente=0 porque el SUM no matchea filas).",
+  "causa": "inventario.py registrar_recepcion: `if pendiente_g > 0 and cantidad_recibida > pendiente_g * 1.05:` — la condición `pendiente_g > 0` desactiva el guard justo en el caso más grave (pendiente agotado o código ajeno a la OC). El guard de duplicados (7400-7423) solo cubre reintentos idénticos dentro de 10 minutos.",
+  "file_line": "api/blueprints/inventario.py:7287-7306 (condición en 7296)",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Distinguir los casos: si la query no devuelve NINGUNA fila del item (código no está en la OC) → 409 'el código no pertenece a la OC vinculada'; si hay filas pero pendiente_g <= 0 → aplicar el mismo 409 cantidad_excede_oc (recibís X pero quedan 0g) salvo forzar_excedente=true. Test: OC completamente recibida + ingreso manual vinculado → 409 sin forzar."
+ },
+ {
+  "cadena": "① INGRESO MP · validación REC-01 de vencimiento (ambos writers)",
+  "sintoma": "De noche en Colombia (19:00-24:00, server Render en UTC) un lote cuya fecha_vencimiento es HOY —que según el cron canónico (date('now','-5 hours')) todavía es VIGENTE— se rechaza como 'MP vencida' un día antes, en el ingreso manual y en la recepción por OC. Falso rechazo nocturno (dirección conservadora, pero contradice el anclaje Colombia del resto del sistema).",
+  "causa": "Violación M24 en ambos writers: inventario.py:7386 `if _dvenc.fromisoformat(_fv[:10]) < _dvenc.today():` (date.today() = fecha UTC) y compras.py:5933 `hoy_iso = _date.today().isoformat()` usado en el pre-check de vencimientos_pasados (compras.py:5993). Además el lote sintético del ingreso manual se rotula con fecha UTC: inventario.py:7377 `lote = f\"ESP{date.today().strftime('%y%m%d')}...\"` → etiqueta de trazabilidad con día corrido de noche.",
+  "file_line": "api/blueprints/inventario.py:7386 y 7377 · api/blueprints/compras.py:5933",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Anclar Colombia en los tres sitios: `hoy_co = (datetime.now(timezone.utc) - timedelta(hours=5)).date()` y comparar `fromisoformat(fv[:10]) < hoy_co`; usar hoy_co también para el strftime del lote sintético ESP. Mismo patrón ya aplicado en abastecimiento (M24 4ª instancia)."
+ },
+ {
+  "cadena": "① INGRESO MP · recepción por OC (INSERT del kardex con columnas COA)",
+  "sintoma": "Latente M69: si el INSERT principal del movimiento falla por una causa REAL (constraint, trigger, tx PG ya envenenada), el error se disfraza en el log como 'movimientos sin columnas COA · cae a legacy' y se reintenta un INSERT sin COA — en PostgreSQL la transacción ya está abortada, así que el INSERT legacy revienta con 'current transaction is aborted' → 500 con causa enmascarada; en SQLite podría insertar la Entrada PERDIENDO coa_url/lote_proveedor/ficha_seguridad (trazabilidad INVIMA) en silencio.",
+  "causa": "compras.py recibir_oc: `try: cur.execute('INSERT INTO movimientos (... coa_url, coa_filename, lote_proveedor, ficha_seguridad_url) ...'); _coa_ok=True except Exception as _e: log.info('movimientos sin columnas COA · cae a legacy: %s', _e)` + INSERT legacy sin esas columnas. Es el anti-patrón M69 exacto (try/except como sonda de esquema alrededor de una mutación crítica); mig 151 está aplicada hace tiempo, así que el fallback es código muerto peligroso.",
+  "file_line": "api/blueprints/compras.py:6098-6131",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Aplicar el patrón M69: detectar UNA vez si las columnas COA existen (`SELECT coa_url FROM movimientos LIMIT 0` en try/except + rollback, cacheado en flask.g como _movimientos_tiene_pid) y ramificar con if/else; eliminar el try/except alrededor del INSERT real para que cualquier fallo verdadero haga rollback y devuelva la causa (M4). Dado que mig 151 está aplicada en prod, la opción simple es borrar el fallback legacy."
+ },
+ {
+  "cadena": "② descuento→kardex FEFO · reversión (prog_revertir_completado)",
+  "sintoma": "Ciclo completar→revertir→completar→revertir (o iniciar/forzar re-descuento y luego revertir de nuevo): la 2ª reversión devuelve DOS veces la MP del 1er ciclo → stock de MP inflado en silencio en el kardex (las Salidas originales nunca se anulan y vuelven a matchear el query).",
+  "causa": "El loop de reversión de MPs (programacion.py:11020-11051) selecciona TODAS las Salidas con produccion_id=evento_id (o LIKE legacy) e inserta una Entrada compensatoria por cada una SIN verificar si ya fueron compensadas. El loop hermano de MEE SÍ tiene ese guard exacto (programacion.py:11098-11103: salta el mov si ya existe su Entrada 'mov_mee #<id>') y su comentario (11094-11097) describe literalmente este ciclo como la razón del guard — la simetría falta en el lado MP (patrón M45: fix aplicado a un hermano y no al otro). La Entrada compensatoria de MP sí escribe 'REVERSIÓN producción completada — original mov #{mid}' (11046), así que el dedup es trivialmente posible.",
+  "file_line": "api/blueprints/programacion.py:11039-11051 (loop sin dedup) vs :11098-11103 (guard MEE que falta espejar)",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "Espejar el guard MEE en el loop MP: antes de insertar la Entrada compensatoria, `SELECT 1 FROM movimientos WHERE tipo='Entrada' AND observaciones LIKE '%original mov #'||mid||'%' LIMIT 1` (con mid interpolado como parámetro `f'%original mov #{mid}%'`) y `continue` si existe. Idéntico al patrón de 11098-11103. Test: completar→revertir→completar→revertir y assert SUM(movimientos) del MP == stock inicial."
+ },
+ {
+  "cadena": "② descuento→kardex · envase del lote (envase_codigo_override vs checklist)",
+  "sintoma": "Si el admin asigna un envase distinto al default para un lote (override del modal del calendario, propósito declarado del endpoint), la COMPRA/necesidades cuentan el envase OVERRIDE pero el DESCUENTO al terminar envasado consume el envase DEFAULT → drift en DOS códigos MEE: el envase físicamente usado queda sobre-estimado en stock y el default sub-estimado (compra ≠ descuento, la clase M55/M5 exacta).",
+  "causa": "`_descontar_mee_envasado` descuenta exclusivamente desde `produccion_checklist.mee_codigo_asignado` (programacion.py:10537-10546) y NUNCA consulta `produccion_programada.envase_codigo_override`. Ese campo se pre-llena en `_generar_checklist_produccion` SOLO con el default de producto_presentaciones (programacion.py:17169-17196, no lee el override). El PATCH del override (programacion.py:8210-8232) actualiza produccion_programada (+propaga a lotes futuros :8225) pero NO toca el checklist; el único writer de mee_codigo_asignado es el PATCH manual (:18619). En cambio el motor de DEMANDA sí honra el override (programacion.py:14342-14344 'ese envase REEMPLAZA al default') → los dos lados de la cadena divergen para cualquier lote con override.",
+  "file_line": "api/blueprints/programacion.py:10537-10546 (descuento ignora override) · :8210-8232 (PATCH no sincroniza checklist) · :14342-14344 (demanda sí lo honra)",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "Al setear el override (PATCH :8212 y la propagación :8225), sincronizar el checklist no-consumido del/los lote(s): `UPDATE produccion_checklist SET mee_codigo_asignado=? WHERE produccion_id=? AND LOWER(COALESCE(item_tipo,'')) IN ('envase','envase_primario','frasco','recipiente') AND COALESCE(consumido_at,'')=''` (y al limpiar el override, volver al default de producto_presentaciones). Alternativa equivalente: que `_descontar_mee_envasado` lea envase_codigo_override de produccion_programada y lo use como código efectivo del item tipo envase (mismo patrón que el split B2B que ya hace). Test: lote con override → terminar envasado → assert Salida en movimientos_mee del código OVERRIDE, no del default."
+ },
+ {
+  "cadena": "③ NECESIDADES multi-tono/tamaño + cadencia — reparto por presentación (M72) vs abastecimiento",
+  "sintoma": "Para productos multi-presentación (10/15/30ml), el modal 'composición MEE/desglose', la Preparación de envases (OS), el consumo futuro de envases (mínimos MEE dinámicos), la serigrafía-cola y el plan de envasado del EBR muestran unidades por presentación ERRADAS: con ventas iguales, la presentación chica sale con 2-3× más unidades que la grande (firma exacta del bug M72 que Sebastián cazó con la niacinamida 90kg). Esos números divergen del abastecimiento (ya corregido) y del desglose nuevo de Necesidades.",
+  "causa": "El fix M72 (pesar por uds×ml) se aplicó a _ratio_presentaciones (programacion.py:12459) y _trail_envase (programacion.py:14883) pero NO al tercer hermano _composicion_envases_lote: en programacion.py:8643/8654 el _ratio es share puro de UNIDADES (_ventas_90d/total) y en 8716-8720 se aplica DIRECTO al kg (kg_p = kg_restante * r_rel; un_p = kg_p*1000/ml) → sub-asigna kg (y sobre-asigna unidades relativas) a la presentación de menor volumen. Patrón M45: fix parcial deja gemelos vivos. Consumidores: programacion.py:8455 (modal composicion-mee), 8841 (preparación envases), 8940 (consumo envases futuro), 13184 (serigrafía-cola), brd.py:2110 y 2192 (EBR envasado).",
+  "file_line": "api/blueprints/programacion.py:8716-8721 (y 8643-8660)",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "En _composicion_envases_lote, replicar el pesado por volumen de _ratio_presentaciones: tras derivar _ventas_90d por presentación (override → shopify → uniforme), calcular peso_p = _ventas_90d * volumen_ml, normalizar (peso_p/Σpesos) y usar ESE peso como r_rel para kg_p = kg_restante * r_rel (las fijas ya se reservan antes, no tocarlas). Verificar con el caso M72: 10ml+30ml con ventas iguales → unidades iguales. Agregar test hermano a test_envase_reparto_pesado_por_volumen que ejercite _composicion_envases_lote."
+ },
+ {
+  "cadena": "③ NECESIDADES multi-tono — construcción de tonos_arr en _calcular_animus_dtc",
+  "sintoma": "Para productos cuyo nombre en sku_producto_map difiere del de formula_headers solo por mayúsculas/acento/puntuación (caso documentado M13, p.ej. 'Suero Exfoliante Nova PHA' vs 'SUERO EXFOLIANTE NOVA PHA'), el desglose por tono/tamaño sale VACÍO en silencio (tonos_arr=[]) y — peor — la regla multi-tono de Alejandro (cuello de botella / dominante + override pauta_multitono) NUNCA corrige dias_gondola ni la urgencia: un multi-color con un tono agotado se ve OK/verde (money-critical según el propio comentario del 5-jul).",
+  "causa": "plan.py:4468 arma skus_del_prod con prod_to_skus.get(prod_nombre) — lookup por nombre EXACTO (prod_to_skus se llenó en plan.py:3850 con la clave cruda r[1] de sku_producto_map) — mientras que 30 líneas arriba el mismo loop calcula skus_de_prod con normalización FUERTE en ambos lados (_npf_sku, plan.py:4219-4222, fix M13 del 27-jun). Violación M2: la clave del dict y el lookup no usan la misma normalización. Si el nombre no cruza exacto, len(skus_del_prod)<2 → todo el bloque try (4474-4579) se saltea → _dias_tono_bottleneck queda None → el ajuste de cobertura/urgencia (4606-4628) no aplica.",
+  "file_line": "api/blueprints/plan.py:4468 (build en 3850, contraste con 4219-4222)",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "Reusar la lista ya normalizada: skus_del_prod = [s for s in skus_de_prod if s not in skus_regalo] (skus_de_prod ya viene de sku_to_prod con _npf_sku y las claves ya están en UPPER, compatibles con ventas_por_sku/ml_por_sku/resolved_stock). Alternativa equivalente: construir un índice prod_to_skus_norm keyed por _npf_sku(producto_nombre) en 3850 y consultarlo con _prod_key_n."
+ },
+ {
+  "cadena": "③ NECESIDADES multi-tono — reserva de cantidad FIJA (mig 204) en el desglose",
+  "sintoma": "Si un producto multi-tono (N SKUs que comparten el MISMO volumen, ej. Blush Balm 8 tonos en frasco 6ml) tiene cantidad_fija_uds configurada en su presentación, el desglose de Necesidades reserva la fija N VECES (una por SKU): _kg_fija_tot se infla N×, puede superar el lote (dispara _fija_scale y deja _kg_rest=0) → las uds_estim_lote por tono y los flags es_fija salen distorsionados, y el desglose diverge del reparto de abastecimiento (_composicion_envases_lote / _ratio_presentaciones), que aplica la fija UNA sola vez por presentación.",
+  "causa": "plan.py:4485-4494: fija_por_prod_vol está keyed por (producto_norm, volumen) — es decir 'N uds fijas de ESA presentación por lote' — pero el loop recorre SKUs y asigna _kg_fija_sku[_s] = _fj*_mls/1000 con la fija COMPLETA a CADA SKU cuyo int(round(_mls)) coincide con el volumen. No hay reparto de la fija entre los SKUs que comparten volumen. (Efecto lateral menor del mismo bloque: _mls usa ml_por_sku.get(_s, ml_promedio) sin el fallback del motor _ml_de_sku, así que un SKU sin volumen per-SKU cae a ml_promedio y el int(round()) puede no matchear la clave de la fija → fija no reservada, otra divergencia con abastecimiento.)",
+  "file_line": "api/blueprints/plan.py:4488-4494 (contraste con programacion.py:8690-8702)",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Reservar la fija POR VOLUMEN una sola vez: agrupar skus_del_prod por volumen (vol → [skus]), calcular _kgf = fija*vol/1000 una vez por volumen presente en _fija_vol, y repartir esas uds fijas entre los SKUs de ese volumen por share de ventas (o uniforme si 0 ventas) para marcar es_fija/uds. Usar _ml_de_sku(_s) (ya memoizado) en lugar de ml_por_sku.get(_s, ml_promedio) para que la clave de volumen coincida con la del abastecimiento."
+ },
+ {
+  "cadena": "② FABRICACIÓN DESCUENTA desde fórmulas · descuento PROGRAMADO (calendario/Kanban) · _calcular_mp_consumo_produccion",
+  "sintoma": "Iniciar/completar una producción programada de un producto con header case-duplicado (caso real en prod: 'BLUSH BALM' activo=1 conviviendo con 'Blush Balm' activo=0, migs 230/274/296) NO descuenta NINGUNA materia prima: _calcular_mp_consumo_produccion devuelve mps=[] y prog_iniciar_produccion (programacion.py:10201-10222) lo trata como 'sin fórmula válida' → la producción arranca y completa igual, con solo un warning, sin tocar el kardex. Stock de MP sobre-estimado en silencio para un producto EN PRODUCCIÓN. El path directo (POST /api/produccion, inventario.py) SÍ descuenta bien → los dos caminos divergen (M45) y el drift solo se ve al contar físico.",
+  "causa": "La exclusión de fórmula descontinuada está normalizada A AMBOS LADOS: \"AND UPPER(TRIM(producto_nombre)) NOT IN (SELECT UPPER(TRIM(producto_nombre)) FROM formula_headers WHERE COALESCE(activo,1)=0)\". Como 'Blush Balm' (activo=0) normaliza a 'BLUSH BALM', el set de exclusión contiene 'BLUSH BALM' y excluye TAMBIÉN los formula_items de la fórmula ACTIVA 'BLUSH BALM' → rows=[] → mps=[]. Reproducido empíricamente con SQLite: la query de programacion.py devuelve [] mientras la query exacta de inventario.py:2096-2098 (exclusión por nombre EXACTO) devuelve los 2 ítems activos. Agravante menor: el LEFT JOIN a formula_headers (programacion.py:9926-9928) tampoco filtra activo=1 → con 2 headers case-dup el lote_kg del fallback puede salir del header inactivo (lote_size 0).",
+  "file_line": "api/blueprints/programacion.py:9946-9949 (exclusión) y 9926-9928 (JOIN lote_kg); consecuencia en programacion.py:10201-10222",
+  "severidad": "P0",
+  "es_bug": true,
+  "fix_sugerido": "Cambiar la exclusión a nombre EXACTO (igual que el path directo probado en inventario.py:2097): \"AND TRIM(producto_nombre) NOT IN (SELECT TRIM(producto_nombre) FROM formula_headers WHERE COALESCE(activo,1)=0)\" manteniendo el match externo case-insensitive — así 'Blush Balm' (su header exacto está inactivo) se excluye y 'BLUSH BALM' (header exacto activo) se conserva, sin doble-carga de ambas grafías (que el _acc sumaría → doble descuento). Además, en el JOIN de lote_kg preferir el header activo: \"LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(pp.producto)) AND COALESCE(fh.activo,1)=1\". Test con dientes: producto con header inactivo case-variant + activo → mps NO vacío y gramos = %×kg (hoy devuelve [])."
+ },
+ {
+  "cadena": "② FABRICACIÓN DESCUENTA · teóricos EBR (pesajes/reconciliación) · _calcular_teoricos_mp vs _generar_mbr_desde_formula",
+  "sintoma": "Si el MBR se creó con una grafía distinta a la de formula_items (p.ej. el caso real documentado 'Suero Exfoliante Nova PHA' registro vs 'SUERO EXFOLIANTE NOVA PHA' fórmula, vía POST /api/brd/mbr/generar-desde-formula o preparar-aprobado con el nombre del registro), _calcular_teoricos_mp devuelve {} → TODO pesaje del operario responde 400 \"material_id no está en formula_items\" (brd.py:5196-5200), la hoja de pesajes sale vacía (brd.py:5296) y la reconciliación teórico-vs-real queda sin ítems (brd.py:6571) — el batch record regulado queda inutilizable para ese producto.",
+  "causa": "Divergencia M2/M45: _generar_mbr_desde_formula matchea la fórmula con UPPER(TRIM) (brd.py:1247 headers, 1258 items — fix 9-jun) pero GUARDA en mbr_templates.producto_nombre la grafía cruda del caller (brd.py:1271). _calcular_teoricos_mp luego busca con match EXACTO case-sensitive: \"WHERE fi.producto_nombre = ?\" (brd.py:5136) usando ese nombre del MBR → 0 filas si la grafía difiere. El generador se normalizó pero el lector no.",
+  "file_line": "api/blueprints/brd.py:5136 (match exacto) vs brd.py:1258+1271 (generador normalizado que guarda la grafía del caller)",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "En _calcular_teoricos_mp: intentar primero el match exacto (preserva el comportamiento actual y el golden de 'Blush Balm' con seed activo=0) y, si devuelve 0 filas, fallback a \"WHERE UPPER(TRIM(fi.producto_nombre))=UPPER(TRIM(?))\". No usar UPPER(TRIM) directo sin fallback-exacto-primero: con headers case-dup (BLUSH BALM) cargaría ítems de AMBAS grafías y el dict por material_id pisaría porcentajes arbitrariamente. Alternativa de fondo: que _generar_mbr_desde_formula guarde en mbr_templates el producto_nombre CANÓNICO de formula_headers (fh ya está resuelto en brd.py:1244-1250), no la grafía del caller."
+ },
+ {
+  "cadena": "② FABRICACIÓN DESCUENTA · teóricos EBR · _calcular_teoricos_mp robustez de porcentaje",
+  "sintoma": "Para una fórmula con formula_items.porcentaje NULL (columna nullable sin default — CREATE TABLE base database.py:9994-9997; fórmulas legacy cargadas solo con cantidad_g_por_lote), los endpoints de pesaje (POST /api/brd/ebr/<id>/pesajes), la lista de pesajes y la reconciliación devuelven 500 (TypeError: unsupported operand NoneType / int). Y una fórmula con porcentaje=0 pero cantidad_g_por_lote>0 muestra teórico 0 g mientras el descuento programado SÍ desconta gramos reales por su fallback reescalado (programacion.py:9966-9967) → teórico EBR ≠ descuento kardex (M45/M71).",
+  "causa": "_calcular_teoricos_mp calcula \"cantidad_teorica_g\": (r[\"porcentaje\"] / 100.0) * lote_size_g (brd.py:5146) sin COALESCE sobre porcentaje (el SELECT de 5132-5137 tampoco lo coalesce) y sin el fallback a cantidad_g_por_lote reescalado que sus 2 hermanos del descuento sí tienen (inventario.py usa pct directo de la misma fila; programacion.py:9961-9969 tiene la cascada %-first → g_por_lote reescalado). Los demás lectores del archivo usan COALESCE(porcentaje,0) (p.ej. brd.py:1256).",
+  "file_line": "api/blueprints/brd.py:5146 (división sobre porcentaje posiblemente NULL) y 5132-5137 (SELECT sin COALESCE ni cantidad_g_por_lote)",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "En el SELECT traer COALESCE(fi.porcentaje,0) AS porcentaje y COALESCE(fi.cantidad_g_por_lote,0), y calcular con la MISMA cascada canónica M71 del descuento programado: si pct>0 → (pct/100)×lote_size_g; elif g_por_lote>0 y lote_base>0 → g_por_lote×(lote_size_g/lote_base_g) (lote_base_g = formula_headers.lote_size_kg×1000); nunca crudo. Así el teórico del EBR converge por construcción con lo que el kardex descuenta."
+ },
+ {
+  "cadena": "④ ABASTECIMIENTO · paridad motores M47: abastecimiento_consumo_horizontes (pantalla) vs _compute_mp_deficit_aggregated (generar-oc/regenerar-oc/mps-deficit)",
+  "sintoma": "Un pedido B2B en estado 'pendiente' (aún no integrado a lote) muestra déficit de MP en la pantalla de Abastecimiento, pero al pulsar Generar OC / Regenerar OC la orden NO incluye esa demanda → la OC compra MENOS que el déficit visible ('no cuadra') y la MP llega tarde para el compromiso B2B (sub-compra silenciosa).",
+  "causa": "El motor de la PANTALLA suma pedidos_b2b pendientes sin lote (query programacion.py:13769-13779 con LEFT JOIN pedidos_b2b_lote anti-doble-conteo, y loop 8b en 14364-14403 que explota la fórmula uds×ml→kg). El motor de COMPRA _compute_mp_deficit_aggregated construye `producciones` SOLO desde eventos de Google Calendar (1304-1330) + produccion_programada (1343-1398): no existe NINGUNA consulta a pedidos_b2b en 1184-1532 (verificado por grep: la única mención 'b2b' es la tupla _FIJO_ORG en 1357). Viola la paridad M47/M16 (anti-doble-conteo B2B existe en un motor, la demanda B2B no existe en el otro).",
+  "file_line": "api/blueprints/programacion.py:1294-1398 (falta la fuente B2B) vs api/blueprints/programacion.py:13769-13779 y 14364-14403 (pantalla sí la cuenta)",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "En _compute_mp_deficit_aggregated, tras el loop de produccion_programada, replicar la query de la pantalla (pedidos_b2b estado='pendiente' + LEFT JOIN pedidos_b2b_lote pbl.id IS NULL + fecha_estimada entre today y cutoff) y append a `producciones` con kg = cantidad_uds×ml_unidad/1000 (idéntico a 8b). Mejor aún (veredicto M47): que generar-OC consuma el motor verificado abastecimiento_consumo_horizontes en vez de mantener dos."
+ },
+ {
+  "cadena": "④ ABASTECIMIENTO · paridad motores M47: dedup por (producto,fecha)",
+  "sintoma": "Si el mismo producto+día quedó programado bajo 2 orígenes sobrevivientes al prefer-Fijo con kg distintos (ej. eos_plan 100kg editado + eos_canonico/sugerido 20kg residual), la pantalla cuenta 100kg pero generar-OC puede contar 20kg (o al revés, según el orden de filas) → la OC pide una cantidad distinta a la del déficit mostrado (sub/sobre-compra).",
+  "causa": "La pantalla deduplica (producto,fecha) quedándose con la fila de MÁS kg: `if _kk not in _ded_pp or _eff > _ded_pp[_kk][1]` (programacion.py:14251-14264, comentario explícito 'nos quedamos con la fila de MÁS kg (la real, no la estimada)'). El motor de compra usa first-wins: `key=(prod, fecha_s); if key in seen_events: continue` (programacion.py:1384-1387) — conserva la PRIMERA fila que devuelve ORDER BY fecha_programada, arbitraria entre filas de la misma fecha. Misma llave, criterio de resolución distinto → divergen exactamente en el caso M49 (planes solapados) que el dedup debía cerrar.",
+  "file_line": "api/blueprints/programacion.py:1384-1387 vs api/blueprints/programacion.py:14251-14264",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "En el loop de produccion_programada de _compute_mp_deficit_aggregated, acumular por (prod, fecha) en un dict quedándose con la fila de mayor kg_real (mismo criterio que _ded_pp de la pantalla) y recién después volcar a `producciones`, en vez del `seen_events` first-wins."
+ },
+ {
+  "cadena": "④ ABASTECIMIENTO · paridad motores M47: filtro de origen de produccion_programada",
+  "sintoma": "Lotes con origen '', 'manual' o 'calendar' (ej. los que inserta el endpoint legacy /api/programacion/programar sin origen · M40) inflan la demanda de /generar-oc y /mps-deficit pero son INVISIBLES en la pantalla de Abastecimiento (modo comprometido) → la OC compra para producciones que el usuario no ve en la tabla de déficit.",
+  "causa": "La pantalla restringe `WHERE COALESCE(pp.origen,'') IN ('eos_plan','eos_b2b','eos_retroactivo','eos_canonico','auto_plan','sugerido','eos_proyeccion')` (programacion.py:13710-13711 y 13726). El motor de compra consulta produccion_programada SIN ningún filtro de origen (programacion.py:1343-1352: solo estado/inventario_descontado_at/fechas) → cuenta también origen='', 'manual', 'calendar'. El dedup cruzado GCal↔pp (1382) solo neutraliza los espejos cuyo (producto_norm,fecha) coincide con un evento parseado; los '' / 'manual' quedan contados solo por el motor de compra. Además el motor de compra suma eventos crudos de Google Calendar (1304-1330) que la pantalla no lee — asimetría de fuentes ya señalada como deuda en M47.",
+  "file_line": "api/blueprints/programacion.py:1343-1352 vs api/blueprints/programacion.py:13704-13732",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Alinear el WHERE del motor de compra al mismo conjunto de orígenes de la pantalla (o, decisión de fondo M47, hacer que generar-OC consuma abastecimiento_consumo_horizontes con horizonte 90 y eliminar el motor viejo)."
+ },
+ {
+  "cadena": "④ ABASTECIMIENTO · paridad motores M47: crédito de CUARENTENA (fix 5-jul incompleto en el motor de compra)",
+  "sintoma": "Material recibido en cuarentena cuyo movimiento quedó registrado SIN material_id (filas legacy por nombre) o bajo variante de nombre se acredita como 'ya viene' en la pantalla, pero /generar-oc NO lo acredita → la OC re-compra material que ya está en bodega esperando liberación de Calidad (sobre-compra), justo el caso que el fix del 5-jul quiso cerrar.",
+  "causa": "En _compute_mp_deficit_aggregated el dict `_cuar` se llena SOLO con `GROUP BY material_id` (programacion.py:1500-1507) y el lookup es un .get() plano por mid.upper() (programacion.py:1516). La pantalla construye `_cuar_mp` con 3 capas — material_id + nombre exacto + nombre normalizado + fallback de filas legacy sin material_id (programacion.py:14603-14628) — y lo consulta con el 5-tier canónico `_lookup_stock_5tier` (programacion.py:14649). Mismo crédito, cobertura de llaves distinta → divergen para filas legacy/variantes (viola M1: lookup con menos tiers que el canónico).",
+  "file_line": "api/blueprints/programacion.py:1499-1516 vs api/blueprints/programacion.py:14603-14649",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "En _compute_mp_deficit_aggregated construir la cuarentena con la misma rutina de la pantalla (material_id + nombres + fallback legacy sin material_id) y resolver con _lookup_stock_5tier(_cuar, mid, nombre) en lugar del .get() por material_id; idealmente extraer un helper _cuarentena_mp_bulk(conn) compartido por ambos motores."
+ }
+]

@@ -1,0 +1,135 @@
+
+[1] P0 | PLAN (plan.py +  | plan.py:11829
+  T: audit_log en _proyectar_horizonte_2y: post-commit envuelto en try/pass
+  INV: audit_log DEBE ser atómico o logging post-commit con garantía. Aquí está POST-commit e INSIDE try/pass. Si falla, se silencia sin log (M22).
+  FIX: Cambiar a `audit_log(None, usuario=...)` (modo independiente post-commit, OK por M22) o mover ANTES del commit (atómico). Hoy un fallo silencioso no registra la proyección.
+
+[2] P0 | FACTIBILIDAD (pl | auto_plan_jobs.py:4993-5001 + plan.py:4994-4999 + plan.py:11795-11805
+  T: Proyección a 2 años (_proyectar_horizonte_2y) está APAGADA; bug de stock sobreestimado es REAL
+  INV: M6: FÍSICO vs EN-CAMINO separados · stock efectivo (Shopify+pipeline) NO infla cobertura sobre-real. Si proyección corre, solo funciona bien
+  FIX: Antes de re-encender proyeccion_auto=1: (a) validar stock_shopify_g vs kardex (deben coincidir ±5%); (b) pipeline de producción ≤7d debe cuadrar con produccion_programada.inventario_descontado_at=NULL antes de HOY+7; (c) test E2E que corra 
+
+[3] P1 | PLAN (plan.py +  | auto_plan.py:361
+  T: _velocidad_y_tendencia: regresión 30d vs velocidad_blended 30/60/90
+  INV: Demanda + Necesidades usan la MISMA métrica de velocidad (M5 'el número MOSTRADO = el número que DECIDE'). Hoy _demanda_stock_gramos usa vel
+  FIX: Unificar: _demanda_stock_gramos ya usa velocidad_blended (correcto, alineado con Necesidades). No cambiar. _velocidad_y_tendencia (usado solo por calcular_demanda_suministro linea 13212, 'demanda_suministro' = lógica vieja) no alimenta proy
+
+[4] P1 | PLAN (plan.py +  | plan.py:11915
+  T: prefer-Fijo skip: _generar_plan_desde_hoy SÍ lo respeta · _proyectar_horizonte_2y NO
+  INV: Motor de sugeridas NO debe duplicar lotes de productos ya fijados manualmente (eos_plan/eos_b2b/eos_retroactivo). _generar_plan_desde_hoy lo
+  FIX: Agregar prefer-Fijo skip a _proyectar_horizonte_2y antes del loop skus (línea 11766). Líneas 11915-11921 de _generar_plan_desde_hoy son el patrón. O bien: incluir `AND COALESCE(origen,'')<>'eos_proyeccion'` en línea 11783 sin cambiar — ambo
+
+[5] P1 | PLAN (plan.py +  | plan.py:13311
+  T: regenerar_canonicos: FALTA check de prefer-Fijo
+  INV: regenerar_canonicos cancela eos_canonico/calendar/manual pero respeta eos_plan/eos_b2b/eos_retroactivo (Fijo). PERO NO hay check de prefer-F
+  FIX: Agregar prefer-Fijo skip (línea 11916-11921 es el patrón) entre línea 13390 y 13400, antes de generar. Check si producto está en Fijo (`origen IN ('eos_plan','eos_b2b','eos_retroactivo')`) y saltearlo.
+
+[6] P1 | PLAN (plan.py +  | plan.py:7656
+  T: generar_plan_perfecto: respeta Fijo en cancelación pero NO en prefer-Fijo skip
+  INV: generar_plan_perfecto cancela eos_canonico/calendar/manual (línea 7670, correcto), pero NO tiene prefer-Fijo skip: genera canónicos para TOD
+  FIX: Agregar prefer-Fijo skip entre línea 7685 y 7710 (patrón línea 11916-11921).
+
+[7] P1 | CALENDARIO (prod | auto_plan_jobs.py:4993-5001
+  T: Proyeccion automática DESACTIVADA por seguridad (P2 latente)
+  INV: proyeccion_auto debe estar OFF; si ON, cron job_proyeccion_2anios debe verificar que NO sobre-programa a 2027
+  FIX: Antes de encender proyeccion_auto, agregar guard a _proyectar_horizonte_2y línea 11806 similar a _generar_plan_desde_hoy línea 11942: if cad_real > dias: break (emitir UNO solo). Test E2E que valide no sobreestima stock 2y + no pone lotes e
+
+[8] P1 | CALENDARIO (prod | plan.py:11691-11838
+  T: Guard 'si 1 lote cubre horizonte' falta en _proyectar_horizonte_2y
+  INV: _proyectar_horizonte_2y debe emitir UNO SOLO si lote_g/demanda_g > dias (cadencia real > horizonte)
+  FIX: Añadir a _proyectar_horizonte_2y (post-línea 11774): cad_real = lote_g / demand_g; _emite_uno = cad_real > dias. Post-línea 11816: if _emite_uno: break. Duplicar la lógica de _generar_plan_desde_hoy para coherencia.
+
+[9] P1 | ABASTECIMIENTO ( | C:\Users\sebas\Downloads\Claude\Inventarios\api\blueprints\plan.py:11805
+  T: _proyectar_horizonte_2y falta guard 'emitir lote ÚNICO si cubre horizonte'
+  INV: Si un producto tiene cadencia_real > horizonte (días_años=730), debe emitirse UN SOLO lote en el horizonte, no encadenar lotes a CAD_MAX=365
+  FIX: Agregar guard en _proyectar_horizonte_2y: antes de la línea 11801 `while d <= dias`, calcular `_cad_real = lote_g / demand_g` y `_emite_uno = _cad_real > dias`. Dentro del while, si se crea un lote y `_emite_uno`, hacer break (igual que lín
+
+[10] P1 | ABASTECIMIENTO ( | C:\Users\sebas\Downloads\Claude\Inventarios\api\blueprints\auto_plan_jobs.py:4998
+  T: _proyectar_horizonte_2y está APAGADA por defecto (off desde 23-may)
+  INV: job_proyeccion_2anios (cron 5:10 AM) debe ejecutar _proyectar_horizonte_2y SOLAMENTE si app_settings.proyeccion_auto='1' (explícitamente enc
+  FIX: Agregar guard de cadencia en _proyectar_horizonte_2y. UNA VEZ verificado en dev (dry_run), cambiar el comentario del default OFF a ON o dejarlo OFF si Sebastián prefiere planeación manual. El cron funcionará cuando proyeccion_auto='1'.
+
+[11] P1 | ABASTECIMIENTO ( | C:\Users\sebas\Downloads\Claude\Inventarios\api\blueprints\programacion.py:11560
+  T: abastecimiento_consumo_horizontes excluye controla_stock=0 CORRECTAMENTE
+  INV: MP con controla_stock=0 (agua, consumibles infinitos) NO deben aparecer en la tabla de Abastecimiento ni generar pedidos de compra
+  FIX: Ninguno. ✅ Implementado correctamente.
+
+[12] P1 | ABASTECIMIENTO ( | C:\Users\sebas\Downloads\Claude\Inventarios\api\blueprints\programacion.py:1091
+  T: Paridad de motores: _compute_mp_deficit_aggregated y abastecimiento_consumo_horizontes VERIFICADA
+  INV: Ambos motores restan pendientes UNA sola vez, excluyen agua/controla_stock, resuelven a bodega, convierten %×kg×1000, deduplicanal overlap
+  FIX: Ninguno. ✅ Paridad confirmada.
+
+[13] P1 | ABASTECIMIENTO ( | C:\Users\sebas\Downloads\Claude\Inventarios\api\blueprints\programacion.py:11204
+  T: Dedup prefer-Fijo (18-jun) RESOLVIÓ pedido masivo ~130x
+  INV: Si un producto tiene plan FIJO (eos_plan/eos_b2b/eos_retroactivo), ignorar capas auto-llenado (auto_plan, eos_proyeccion) del MISMO producto
+  FIX: Ninguno. ✅ Implementado 18-jun.
+
+[14] P1 | ABASTECIMIENTO ( | C:\Users\sebas\Downloads\Claude\Inventarios\api\blueprints\programacion.py:11262
+  T: Fórmulas priorizan % sobre g_por_lote (seed roto 24-may)
+  INV: Si formula_items.porcentaje > 0, usar (% / 100) × cant_kg × 1000 para gramos. FALLBACK a cantidad_g_por_lote solo si % vacío. NUNCA invertir
+  FIX: Ninguno. ✅ Implementado 24-may.
+
+[15] P1 | ABASTECIMIENTO ( | C:\Users\sebas\Downloads\Claude\Inventarios\api\blueprints\programacion.py:10851
+  T: Normalización de espacios dobles en producto (M13)
+  INV: Match de producto↔fórmula usa _norm_prod (UPPER + colapsa espacios múltiples + quita acentos/puntuación) en AMBOS lados de la comparación
+  FIX: Ninguno. ✅ M13 implementado 10-jun.
+
+[16] P1 | ABASTECIMIENTO ( | C:\Users\sebas\Downloads\Claude\Inventarios\api\blueprints\programacion.py:10823
+  T: B2B dedup con LEFT JOIN (M5 auditoría 24-may)
+  INV: Pedidos B2B pendientes se cuentan UNA sola vez: LEFT JOIN pedidos_b2b_lote excluye filas que YA fueron integradas a un lote producción (pbl.
+  FIX: Ninguno. ✅ Implementado 24-may.
+
+[17] P1 | ABASTECIMIENTO ( | C:\Users\sebastias\Downloads\Claude\Inventarios\api\blueprints\programacion.py:704
+  T: Stock canónico _get_mp_stock excluye CUARENTENA/RECHAZADO/VENCIDO/BLOQUEADO (INVIMA)
+  INV: SUM(movimientos) agrupa por material_id y EXCLUYE lotes en estados no-producibles: CUARENTENA, CUARENTENA_EXTENDIDA, VENCIDO, RECHAZADO, AGO
+  FIX: Ninguno. ✅ M4 implementado 22-may.
+
+[18] P1 | ABASTECIMIENTO ( | C:\Users\sebas\Downloads\Claude\Inventarios\api\blueprints\programacion.py:697
+  T: Ajuste+ / Ajuste- normalizados en SUM (M4 auditoría 22-may)
+  INV: CASE contabiliza Entrada+Ajuste+Ajuste+ como suma, Salida+Ajuste- como resta (NUNCA invertir: el seed del conteo cíclico cargó cantidad_g_po
+  FIX: Ninguno. ✅ Implementado 22-may. Nota: la normalización case-sensitivity de Ajuste (mayús/minús) está resuelta con case-insensitive WHEN y UPPER(COALESCE(...)).
+
+[19] P1 | ABASTECIMIENTO ( | C:\Users\sebas\Downloads\Claude\Inventarios\api\blueprints\programacion.py:1286
+  T: MP infinita (agua) controlada por controla_stock=0, no solo nombre
+  INV: La exclusión de MP infinitas debe verificar AMBOS: nombre contiene 'agua' AND controla_stock=0 (para cubrir consumibles infinitos sin 'agua'
+  FIX: Ninguno. ✅ Implementado mig 218 + excluido correctamente en todos los motores.
+
+[20] P1 | FACTIBILIDAD (pl | plan.py:4769-4821 + 4877-4920
+  T: FÍSICO vs EN-CAMINO separados (M6 BIEN implementado): dos stocks + dos veredictos + MPs en-camino
+  INV: M6: alertas de quiebre usan stock FÍSICO; pipeline se muestra aparte
+  FIX: NINGUNO requerido; implementación correcta.
+
+[21] P1 | FACTIBILIDAD (pl | plan.py:4595-4604 (factibilidad) + programacion.py:7343-7550
+  T: Resolver canónico BODEGA vs FÓRMULA (M1 implementado): tiers 1-4 con caché
+  INV: M1: UN resolver canónico por entidad; tiers: (1) material_id si ya tiene mov>0, (2) bridge, (2b) INCI, (3) nombre normalizado, (4) rescate i
+  FIX: NINGUNO requerido; auditoría 1-jun verificó y arregló (mig 223+test_resolver_mp_bridge.py).
+
+[22] P1 | FACTIBILIDAD (pl | plan.py:4569-4572 (fórmulas) + 4862-4873 (consumo por lote)
+  T: Cálculo % × kg × 1000 con fallback (F9): correcto en fórmulas e items
+  INV: M16: porcentaje × kg × 1000, fallback cantidad_g_por_lote
+  FIX: NINGUNO requerido.
+
+[23] P1 | FACTIBILIDAD (pl | plan.py:4708
+  T: Fechas Colombia (TZ correcta): hoy = datetime.now(UTC)-5h
+  INV: M24: 'NINGÚN date.today() crudo para hoy'; siempre Colombia offset -5h vs UTC
+  FIX: NINGUNO requerido.
+
+[24] P1 | FACTIBILIDAD (pl | plan.py:4908-4910
+  T: Acumulación GREEDY (F5): consume stock incluso si bloqueada → deficit propaga
+  INV: F5/M6: consumir SIEMPRE (no max(0, saldo)); déjalo negativo para que lote siguiente lo vea
+  FIX: NINGUNO requerido.
+
+[25] P1 | FACTIBILIDAD (pl | plan.py:4693-4704 + 4838-4840
+  T: Productos descontinuados excluidos (F8): filtra por sku_planeacion_config.estado
+  INV: F8/M29: no fabricar ni contar demanda de fórmulas activo=0
+  FIX: NINGUNO requerido.
+
+[26] P2 | PLAN (plan.py +  | plan.py:11801
+  T: _proyectar_horizonte_2y: FALTA guard '1 lote cubre horizonte'
+  INV: Si un solo lote cubre MÁS que el horizonte (dias=730), emitir UNO solo, no encadenar. Fix 17-jun [9] en _generar_plan_desde_hoy pero NO en _
+  FIX: Agregar antes del while d=0 (línea 11801): `cad_real = lote_g / demand_g` si cad_real > dias: crear UNO solo y continuar próximo producto. Idéntico a línea 11942-11953 de _generar_plan_desde_hoy.
+
+[27] P2 | ABASTECIMIENTO ( | C:\Users\sebas\Downloads\Claude\Inventarios\api\blueprints\plan.py:11770
+  T: Stock efectivo (Shopify+pipeline) NO está sobreestimado en _proyectar_horizonte_2y
+  INV: stock0_g (stock efectivo al inicio) se calcula como Shopify disponible + pipeline (prod ≤7d), NO incluye stock en tránsito indefinido
+  FIX: Ninguno respecto a sobreestimación. Stock es correcto. La causa del 2027 fue la falta de break (P1 anterior).

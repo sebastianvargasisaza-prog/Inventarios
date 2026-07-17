@@ -1,0 +1,173 @@
+[
+ {
+  "area": "Inventario · anular movimiento (kardex)",
+  "sintoma": "Dos anulaciones concurrentes del MISMO movimiento (doble-click o 2 workers) generan DOS contra-movimientos → el stock queda corrido en ±cantidad (doble Entrada o doble Salida). Secuencialmente el check '[ANULADO]' atrapa, pero la ventana concurrente pasa.",
+  "causa": "Check-then-act puro: inventario.py:10076 chequea en Python `(mov.get('observaciones') or '').startswith('[ANULADO]')`, luego inserta el contra-movimiento (10087) y marca el original con `UPDATE movimientos SET observaciones=? WHERE id=?` (10094) SIN condición de estado ni chequeo de rowcount. Es exactamente el patrón que M31 corrigió en anular_recepcion (mismo archivo, 7684-7691, marca CAS + rowcount==1 → 409 ANULACION_YA_RECLAMADA) pero NO se aplicó a este hermano.",
+  "file_line": "api/blueprints/inventario.py:10076-10095",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "Reclamar ANTES de insertar el contra-movimiento con CAS igual a anular_recepcion: `UPDATE movimientos SET observaciones='[ANULADO] '||COALESCE(observaciones,'') WHERE id=? AND COALESCE(observaciones,'') NOT LIKE '[ANULADO]%'`; si rowcount != 1 → rollback + 409 ANULACION_YA_RECLAMADA. Solo el ganador inserta el contra-movimiento."
+ },
+ {
+  "area": "Admin · anular movimiento (herramienta admin)",
+  "sintoma": "Cada llamada a POST anular_movimiento (admin.py) inserta un contra-movimiento NUEVO sin marcar nada: doble-click, retry de red o replay = N reversas del mismo movimiento → stock corrupto. Ni siquiera es race: la segunda llamada SECUENCIAL también duplica.",
+  "causa": "Cero idempotencia: admin.py:21627-21664 hace SELECT del movimiento y INSERT del contra-movimiento sin verificar si ya fue anulado, sin marcar el original con '[ANULADO]' (a diferencia del hermano de inventario.py:10094) y sin token/UNIQUE. Además, al no marcar el original, el endpoint de inventario.py tampoco detectaría que este ya lo anuló (las dos rutas de mutación divergen · viola M3).",
+  "file_line": "api/blueprints/admin.py:21596-21694",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "Unificar con la ruta canónica (M3): que admin delegue en la misma lógica de inventario.py con el CAS de marca '[ANULADO]' en observaciones del original (UPDATE condicional + rowcount==1) antes del INSERT del contra-movimiento; rowcount==0 → 409 'ya anulado'."
+ },
+ {
+  "area": "Compras · revertir pago de OC",
+  "sintoma": "Dos reverts concurrentes del mismo pago (doble-click del admin): el 2º worker no revierte el pago (ya borrado) pero SIGUE ejecutando y borra el comprobante_pago ANTERIOR (de otro pago) y potencialmente otra fila de flujo_egresos con el mismo monto → contabilidad/comprobantes corruptos + audit que dice que revirtió un pago ya revertido.",
+  "causa": "El `DELETE FROM pagos_oc WHERE id=?` (compras.py:12807) no chequea rowcount: tras el commit del 1er worker, el 2º borra 0 filas y continúa con el flujo completo — `SELECT ... FROM comprobantes_pago ORDER BY id DESC LIMIT 1` + DELETE (12809-12818) ahora apunta al penúltimo comprobante, y `DELETE FROM flujo_egresos WHERE numero_oc=? AND ABS(monto-?)<0.01` (12823) puede matar el egreso de un pago anterior de igual monto. El guard de estado (12775) también es check-then-act.",
+  "file_line": "api/blueprints/compras.py:12807-12828",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "Después del `DELETE FROM pagos_oc WHERE id=?` chequear `cur.rowcount == 1`; si 0 → rollback + 409 PAGO_YA_REVERTIDO. Con eso el 2º worker aborta antes de tocar comprobantes/flujo (el DELETE por id toma el row-lock y serializa)."
+ },
+ {
+  "area": "Inventario · recepción manual de MP (POST /api/recepcion)",
+  "sintoma": "Doble-submit CONCURRENTE del mismo ingreso manual (doble-click en el form, o retry mientras el 1º sigue en vuelo) crea dos Entradas idénticas → stock inflado 2×. El guard de 10 minutos solo atrapa reintentos secuenciales (post-commit).",
+  "causa": "El dedup es SELECT-then-INSERT: inventario.py:7408-7414 busca una Entrada idéntica (material+lote+cantidad, 10 min) y si no existe inserta (7424). En PG READ COMMITTED con 3 workers, dos requests simultáneos no ven el INSERT no-commiteado del otro → ambos pasan. Viola la regla M31 ('idempotencia multi-worker = CAS/UNIQUE, nunca SELECT-then-INSERT'). El hermano recibir_oc YA tiene token de idempotencia del cliente + UNIQUE (oc_recepcion_dedup, mig 265, compras.py:5857-5871); este path manual quedó sin él. De paso, el pre-check de sobre-recepción vs OC (7287-7306) es también check-then-act y dos parciales concurrentes lo pasan.",
+  "file_line": "api/blueprints/inventario.py:7400-7432",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "Mismo patrón M45: token `recepcion_id` generado por el cliente en el form + INSERT a una tabla dedup con UNIQUE (reusar oc_recepcion_dedup o una hermana) antes del INSERT a movimientos; IntegrityError → 409 RECEPCION_DUPLICADA. El guard de 10 min queda como defensa secundaria."
+ },
+ {
+  "area": "Programación · completar producción (rama MEE)",
+  "sintoma": "Dos /completar concurrentes de la misma producción cuyo MP YA se descontó al iniciar (el flujo NORMAL hoy) duplican las Salidas de MEE pendientes del checklist (serigrafía/tampografía/caja_master no consumidas al envasar) → stock de envases descontado 2× + doble decremento del cache stock_actual.",
+  "causa": "El ATOMIC CLAIM de inventario_descontado_at solo protege el loop de MP; cuando `mp_ya_descontado=True` (programacion.py:10731, 10802-10803) se setea `claim_rowcount=0` y el 409 se salta a propósito → NADA gatea el resto. No hay CAS de estado ('completado') en ningún punto: el SELECT del checklist filtra `COALESCE(consumido_at,'')=''` (10761) pero el marcado es `UPDATE produccion_checklist SET consumido_at=? ... WHERE id=?` INCONDICIONAL y sin rowcount (10891-10899), y la Salida MEE se inserta ANTES de marcar (10884). Dos workers leen los mismos items (ninguno commiteado) y ambos insertan. El hermano de envasado SÍ está protegido río arriba (planta_envasado_terminar tiene CAS `WHERE id=? AND estado='en_proceso'` + rowcount, programacion.py:21920-21930) — este path de completar no.",
+  "file_line": "api/blueprints/programacion.py:10802-10824 y 10882-10899",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "Claim por item (patrón de liberar_cuarentena inventario.py:10840-10848): PRIMERO `UPDATE produccion_checklist SET consumido_at=?, consumido_por=?, consumido_contexto='completar' WHERE id=? AND COALESCE(consumido_at,'')=''`; solo si rowcount==1 llamar aplicar_movimiento_mee para ese item (misma tx: rollback deshace ambos). Opcional: CAS de cierre `UPDATE produccion_programada SET estado='completado' ... WHERE id=? AND LOWER(COALESCE(estado,'')) != 'completado'` con rowcount para deduplicar también limpieza/audit."
+ },
+ {
+  "area": "compras · crear OC (POST /api/ordenes-compra · handle_ordenes_compra)",
+  "sintoma": "El histórico de precios que debería alimentar el autocomplete de Catalina y el análisis de variaciones de precio (>15%, compras.py:10257) NUNCA se guarda desde la creación de OC. El INSERT falla el 100% de las veces (en SQLite Y en PG) y un except: pass lo esconde. El único writer que sí funciona es el manual de inventario.py:11554.",
+  "causa": "Columnas FANTASMA (patrón c): el INSERT usa `(codigo_mp, nombre_mp, precio_unitario, proveedor, fecha, numero_oc, cantidad_g)` pero `precios_mp_historico` real (database.py:10171-10176 y pg_schema.sql:2782-2787, verificado que ningún ALTER las agrega) solo tiene `id, codigo_mp, proveedor, precio_kg (NOT NULL), fecha, numero_oc, numero_factura, origen, observaciones`. `nombre_mp`, `precio_unitario` y `cantidad_g` no existen → 'no such column' / 'column does not exist' → except Exception: pass (compras.py:1065-1066) → dato perdido en silencio (M4 + M12a).",
+  "file_line": "api/blueprints/compras.py:1059-1066 (dentro de handle_ordenes_compra, compras.py:963)",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "Reescribir el INSERT con las columnas reales, espejando el writer que funciona (inventario.py:11554): `INSERT INTO precios_mp_historico (codigo_mp, proveedor, precio_kg, fecha, numero_oc, origen, observaciones) VALUES (?,?,?,?,?,?,?)`. OJO unidad: los items de OC guardan precio_unitario en $/g — convertir a $/kg (`precio_u*1000.0`, la misma conversión que ya hace la línea 1071 para maestro_mps INV-2). Quitar el except mudo o loguear la causa real. Verificar si compras.py tiene INSERTs hermanos a precios_mp_historico con el mismo idiom (M45)."
+ },
+ {
+  "area": "compras/programacion/inventario · numeradores de SOL/AUTO/OS (toda la cadena abastecimiento→solicitudes)",
+  "sintoma": "LATENTE PG-only, misma clase que el bug que tumbó la creación de OCs (M45): si en prod existe UNA fila `solicitudes_compra.numero` que matchee 'SOL-2026-%' con cola no 100% numérica tras la posición 10 (sufijo, formato legacy), TODA creación de SOL del año devuelve 500 en PostgreSQL. En SQLite CAST('0001-x') devuelve 0 permisivo y nunca se ve. El retry del numerador solo captura IntegrityError; el error de CAST llega como OperationalError y explota. Hay evidencia de que los formatos heterogéneos de SOL existieron en prod: el comentario/blindaje de marketing.py:6799-6804 ('formatos heterogéneos de SOL en prod → split/int falla').",
+  "causa": "Patrón (f)/M45 vivo: `SELECT MAX(CAST(SUBSTR(numero,10) AS INTEGER)) ... WHERE numero LIKE 'SOL-{año}-%'`. PG rechaza CAST de texto no numérico ('invalid input syntax for type integer'). El fix de 16-jun (helper `siguiente_numero_oc` en audit_helpers.py:181, que parsea el correlativo en Python) se aplicó SOLO a los numeradores de OC; los de SOL/AUTO/OS conservan el CAST crudo. Sitios vivos en los 4 archivos auditados: compras.py:3348 (POST /api/solicitudes-compra, el endpoint principal), inventario.py:13091 (POST /api/envasado), programacion.py:11503 (regenerar-oc), 11656 (generar-oc), 15922 (abastecimiento/solicitar-items), 16122 (solicitar-faltantes-bulk), 16709 (planificacion/solicitar-bulk); mismo patrón con 'AUTO-%' en compras.py:4522 (consolidar-auto-pendientes) y 5507 (solicitud_split), y con numero_os en compras.py:10408 (ordenes de servicio). Nota: programacion.py:17580-17588 y marketing.py:6787-6798 ya usan la variante PG-safe (traer el último numero y parsear en Python con try/except) — la app tiene ambos idioms conviviendo.",
+  "file_line": "api/blueprints/compras.py:3348 (+4522, 5507, 10408), api/blueprints/inventario.py:13091, api/blueprints/programacion.py:11503, 11656, 15922, 16122, 16709",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "Crear helper canónico `siguiente_numero_sol(c, anio)` en audit_helpers.py análogo a siguiente_numero_oc (traer los numero del año con LIKE y extraer el correlativo con regex `^SOL-\\d{4}-0*(\\d+)$` en Python, ignorando no numéricos) y reemplazar los 7 CAST(SUBSTR) de SOL; ídem un `siguiente_correlativo(c, tabla, col, prefijo)` genérico para AUTO- y OS-. Es exactamente la regla M45: 'tras arreglar un CAST(SUBSTR) en un sitio, grepealo en TODO el repo — hay más' (también quedan instancias fuera del scope en auto_plan.py:5434/6135/6191/6620/6784/6907, auto_plan_jobs.py:1279 y admin.py:9629)."
+ },
+ {
+  "area": "produccion_programada · iniciar/completar",
+  "sintoma": "Una producción CANCELADA puede iniciarse o completarse: /iniciar descuenta MP y deja la fila estado='cancelado' + inicio_real_at + inventario_descontado_at (stock consumido para una producción que no existe en el calendario); /completar la REVIVE a 'completado' y descuenta MP. Secuencia real: usuario cancela en calendario → operario con Kanban/página stale aprieta Iniciar/Completar.",
+  "causa": "Ni prog_iniciar_produccion ni prog_completar_evento validan `estado`. iniciar solo chequea inicio_real_at (idempotencia) y fin_real_at ('ya terminada'); 'cancelado' no tiene timestamp y pasa. El claim atómico de _descontar_mp_produccion (UPDATE ... WHERE inventario_descontado_at='') y el de completar tampoco incluyen condición de estado, y el UPDATE final de completar pone estado='completado' incondicional. prog_cancelar_evento sí protege la dirección inversa (CAS cancel-tras-descuento), pero la dirección cancel-primero→iniciar/completar-después quedó abierta.",
+  "file_line": "api/blueprints/programacion.py:6456-6467 (iniciar sin check de estado), 10270-10279 (claim sin estado), 10709-10731 y 10915-10922 (completar: SELECT trae estado pero nunca lo valida; UPDATE final SET estado='completado' WHERE id=? incondicional)",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "En iniciar: tras el SELECT, `if (pp_estado or '')=='cancelado': return 409 PRODUCCION_CANCELADA`. En completar: igual guard temprano + agregar `AND COALESCE(estado,'')<>'cancelado'` al WHERE del claim atómico (10817-10822) y al UPDATE final estado='completado' (con rowcount==0 → rollback+409), patrón M27. Admin que quiera revivir usa restaurar explícito."
+ },
+ {
+  "area": "produccion_programada · revertir-completado",
+  "sintoma": "Tras revertir una producción completada, la MP vuelve al kardex pero el lote SIGUE contando como 'última producción' (ancla de cobertura del plan) → cobertura/stock proyectado inflados sobre un bulk que ya no existe; además /iniciar devuelve 400 'produccion ya terminada' (no se puede re-ejecutar por el flujo normal). El forzar-eliminar (plan.py) deja una CANCELADA que también sigue anclando.",
+  "causa": "prog_revertir_completado limpia inventario_descontado_at y pone estado='programado' pero NO limpia fin_real_at ni inicio_real_at (programacion.py:11167-11174). El forzar-eliminar limpia inicio_real_at+inventario_descontado_at pero NO fin_real_at (plan.py:22886-22887) y luego cancela. Y el consumidor _prod_hecha considera producida toda fila con `fin_real_at IS NOT NULL` SIN excluir estado='cancelado' en esa rama (la exclusión de 'cancelado' solo aplica a la 3ª rama de fecha pasada) → estado imposible: 'programado'/'cancelado' con fin_real_at set = 'realizada' para el motor.",
+  "file_line": "api/blueprints/programacion.py:11167-11174 · api/blueprints/plan.py:22886-22887 · api/blueprints/plan.py:4805-4810 (_prod_hecha) y 4817-4818",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "En ambos reverts, limpiar también fin_real_at (e inicio_real_at en revertir-completado): `SET estado='programado', inventario_descontado_at=NULL, inicio_real_at=NULL, fin_real_at=NULL`. Defensa en profundidad: en _prod_hecha, la rama `fin_real_at IS NOT NULL` debe llevar `AND LOWER(COALESCE(estado,'')) <> 'cancelado'` (igual para inventario_descontado_at)."
+ },
+ {
+  "area": "ordenes_compra · revertir pago",
+  "sintoma": "Doble reversión del mismo pago: dos POST concurrentes (3 workers Gunicorn) a /revertir-pago pasan ambos — el 2º borra un comprobante_pago de un pago ANTERIOR (ORDER BY id DESC del restante), puede borrar un flujo_egresos de otro pago con el mismo monto, y re-flipea pagos_influencers. En OC 'Parcial' un doble-click secuencial revierte DOS pagos cuando el usuario quería uno.",
+  "causa": "Check-then-act sin CAS (M27): valida estado IN ('Pagada','Parcial') y busca el último pago con SELECT, luego `DELETE FROM pagos_oc WHERE id=?` SIN chequear rowcount. En PG READ COMMITTED ambos workers leen el mismo pago_id; el 2º DELETE da rowcount=0 pero el código sigue borrando comprobante/flujo y recalculando estado.",
+  "file_line": "api/blueprints/compras.py:12767-12779 (check estado), 12781-12790 (SELECT último pago), 12807 (DELETE sin rowcount), 12809-12818 (borra comprobante extra), 12823-12826 (DELETE flujo por monto)",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "CAS: tras `DELETE FROM pagos_oc WHERE id=?`, `if cur.rowcount == 0: conn.rollback(); return 409 REVERSION_YA_PROCESADA`. Con eso el 2º worker aborta antes de tocar comprobantes/flujo/pagos_influencers. Opcional: borrar el comprobante por vínculo al pago (o por monto+fecha), no 'el último'."
+ },
+ {
+  "area": "ordenes_compra · recepción manual",
+  "sintoma": "Una OC Cancelada/Rechazada/Borrador REVIVE a 'Recibida' vía el ingreso manual de MP: /api/recepcion con numero_oc referenciado acumula cantidad_recibida_g en los items y, si quedan cubiertos, flipea la OC a 'Recibida' sin importar su estado → entra a la cola de pago (pagar_oc acepta Recibida) → se puede pagar una OC cancelada.",
+  "causa": "El path manual no replica el guard del path formal: recibir_oc exige estado IN ('Autorizada','Parcial','Pagada') (compras.py:5837), pero el UPDATE de inventario.py es incondicional: `UPDATE ordenes_compra SET estado='Recibida', fecha_recepcion=..., recibido_por=? WHERE numero_oc=?` sin condición de estado-origen.",
+  "file_line": "api/blueprints/inventario.py:7444-7458 (bloque 'Cerrar OC si se referencia una' · UPDATE en 7457) vs api/blueprints/compras.py:5837 (guard del path formal)",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "Alinear al guard formal: antes de acumular cantidad_recibida_g, SELECT estado de la OC; si NOT IN ('Autorizada','Parcial','Pagada') → no tocar la OC (registrar el movimiento con warning 'OC en estado X · no actualizada') o 409. Y el UPDATE con la condición en el WHERE: `AND estado IN ('Autorizada','Parcial','Pagada')`."
+ },
+ {
+  "area": "EBR ↔ estado_lote PT · rechazo",
+  "sintoma": "El lote PT de un EBR RECHAZADO puede volverse VIGENTE (vendible): al rechazar el EBR, la Entrada PT del kardex queda en CUARENTENA para siempre; esa fila aparece en la bandeja QC /api/recepcion/lotes-cuarentena (que no excluye material_id PT_%) y recepcion_aprobar_lote la puede aprobar → VIGENTE, saltándose todos los gates de liberar_ebr (e-firma 'libera', micro gate, IPC OOS, despeje). liberar-inventario (modo inventario) la libera en BLOQUE junto con todo lo demás.",
+  "causa": "Asimetría de la máquina de estados: liberar_ebr SÍ promueve el PT (CUARENTENA→VIGENTE, brd.py:3731-3737 con guard), pero rechazar_ebr solo cambia ebr_ejecuciones.estado='rechazado' y NUNCA degrada el PT a RECHAZADO (brd.py:3810-3828, no toca movimientos). El estado terminal del EBR y el estado_lote del PT quedan desacoplados, y las rutas genéricas de disposición de cuarentena (pensadas para MP de recepción) actúan sobre cualquier Entrada en CUARENTENA.",
+  "file_line": "api/blueprints/brd.py:3810-3828 (rechazar sin degradar PT) · api/blueprints/despachos.py:159-165 (bandeja incluye PT_%) y 215-217 (aprobar-lote permite CUARENTENA→VIGENTE) · api/blueprints/inventario.py:10963-10970 (liberar-inventario bulk)",
+  "severidad": "P1",
+  "es_bug": true,
+  "fix_sugerido": "En rechazar_ebr, espejo del bloque de liberar: `UPDATE movimientos SET estado_lote='RECHAZADO' WHERE lote=? AND tipo='Entrada' AND material_id LIKE 'PT\\_%' AND estado_lote IN ('CUARENTENA','CUARENTENA_EXTENDIDA')` usando COALESCE(lote_codigo,lote). Defensa adicional: excluir material_id LIKE 'PT_%' de la bandeja de recepción y de recepcion_aprobar_lote/liberar-inventario (el PT solo se dispone vía EBR)."
+ },
+ {
+  "area": "BRD · aprobar/obsoletar MBR",
+  "sintoma": "aprobar_mbr, obsoletar_mbr y aprobar_mbr_rapido son check-then-act: dos aprobaciones concurrentes pasan ambas el check de estado; el 2º UPDATE choca con el trigger de inmutabilidad (mig 109) → 500 crudo en vez de 409 limpio, y aprobar_mbr_rapido ya creó una e-firma 'aprueba' duplicada antes del UPDATE (se revierte solo si la excepción rollbackea toda la tx). Si el trigger permitiera la transición, el 2º sobrescribiría aprobado_por/signature_id.",
+  "causa": "El SELECT de estado (brd.py:909-915, 958-964, 8843-8848) y el UPDATE posterior van `WHERE id=?` sin condición de estado ni chequeo de rowcount — a diferencia de los endpoints EBR del mismo archivo que sí tienen CAS (completar 3255, liberar 3710, rechazar 3818). El trigger de inmutabilidad de MBR aprobado actúa de backstop contra corrupción, por eso P2 y no P1.",
+  "file_line": "api/blueprints/brd.py:930-938 (aprobar), 966-973 (obsoletar), 8856-8858 (rápido)",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Añadir la condición de estado al WHERE + rowcount (patrón M27 ya usado en EBR): `UPDATE mbr_templates SET estado='aprobado', ... WHERE id=? AND estado='en_revision'`; rowcount==0 → rollback + 409 ESTADO_CAMBIO. Ídem obsoletar con `AND estado='aprobado'`. En aprobar_mbr_rapido, hacer el CAS ANTES de crear_firma_directa (o en la misma tx con rollback garantizado)."
+ },
+ {
+  "area": "Programación · iniciar producción (path sin_formula)",
+  "sintoma": "Para un producto SIN fórmula válida, dos /iniciar concurrentes pasan ambos (el claim de inventario se salta a propósito para permitir reintento) → doble fila en area_eventos, doble audit INICIAR_PRODUCCION y posible doble intento de EBR auto. Sin impacto en inventario (no hay descuento).",
+  "causa": "prog_iniciar_produccion valida 'ya iniciada' leyendo `pp[3]` (inicio_real_at) en Python (programacion.py:6461) y el `UPDATE ... SET inicio_real_at=... WHERE id=?` (6529) es incondicional; la protección real es el atomic claim de _descontar_mp_produccion (10275-10293), pero el retorno temprano sin_formula (10223-10244) NO reclama nada (deliberado, para reintentar tras completar la fórmula) → en ese caso no queda ningún CAS en la ruta.",
+  "file_line": "api/blueprints/programacion.py:6461-6467 y 6529 (claim salteado en 10223-10244)",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "CAS barato en el registro de inicio: `UPDATE produccion_programada SET inicio_real_at=datetime('now','-5 hours') WHERE id=? AND COALESCE(inicio_real_at,'')=''` + rowcount==0 → devolver ya_iniciada (idempotente, no rompe el reintento del descuento porque inventario_descontado_at sigue vacío)."
+ },
+ {
+  "area": "compras · dashboard (GET /api/dashboard-stats · dashboard_stats)",
+  "sintoma": "El widget 'Vencimientos próximos 6 meses' del dashboard de Compras sale SIEMPRE vacío en producción PG (verde en SQLite). Sin 500 visible: ambas queries fallan y los except las tragan.",
+  "causa": "GROUP BY incompleto (patrón d): la query principal proyecta `venc` crudo pero agrupa por `substr(venc,1,7)` (y ORDER BY venc) → PG: 'column lote_stock.venc must appear in the GROUP BY clause'. SQLite elige un valor arbitrario y funciona. El fallback del except (compras.py:577-584) tiene EXACTAMENTE el mismo bug (proyecta `fecha_vencimiento` crudo, GROUP BY substr(fecha_vencimiento,1,7)) → también falla → except: pass → venc_por_mes={}. El SAVEPOINT del adapter evita el envenenamiento de la TX, pero el dato nunca llega.",
+  "file_line": "api/blueprints/compras.py:564-568 (query principal) y compras.py:577-584 (fallback igual de roto); función dashboard_stats compras.py:524",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Proyectar el mes agrupado en vez de la columna cruda: `SELECT substr(venc,1,7) AS mes, COUNT(*) as n, SUM(stock_restante_g) as total_g ... GROUP BY substr(venc,1,7) ORDER BY mes` (el consumidor ya hace str(row[0])[:7], sigue funcionando). Mismo cambio en el fallback: `SELECT substr(fecha_vencimiento,1,7) AS mes, ... GROUP BY substr(fecha_vencimiento,1,7)`. Regla M12b/M45: GROUP BY por expresión obliga a proyectar la expresión o envolver en agregado."
+ },
+ {
+  "area": "programacion · cronograma de áreas de planta (planta_cronograma_areas)",
+  "sintoma": "La fila ENTR (entregas/despachos) del cronograma de áreas nunca muestra nada en producción PG; en SQLite sí. Silencioso (except: pass).",
+  "causa": "GROUP BY incompleto (patrón d): `SELECT date(d.fecha), COALESCE(cl.nombre,''), COUNT(di.id) FROM despachos d LEFT JOIN clientes cl ... GROUP BY d.numero`. `despachos.numero` es UNIQUE pero NO PK (PK=id, database.py:10308-10312) → PG solo deriva dependencia funcional de la PK → 'd.fecha must appear in the GROUP BY clause'. Además `cl.nombre` es de OTRA tabla (clientes) y tampoco estaría cubierto aunque numero fuera PK. La query falla en PG, el except de la línea 22529 la traga y la sección queda vacía.",
+  "file_line": "api/blueprints/programacion.py:22514-22521 (función planta_cronograma_areas, programacion.py:22335)",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Agregar las expresiones proyectadas al GROUP BY: `GROUP BY d.numero, date(d.fecha), COALESCE(cl.nombre,'')` (d.numero es UNIQUE, no cambia la cardinalidad). Y quitar el except:pass mudo o loguearlo (M4) para que un fallo futuro de esta sección no sea invisible."
+ },
+ {
+  "area": "estado_lote · bandeja cuarentena legacy",
+  "sintoma": "Lotes con estado_lote NULL (legacy, incluidos a propósito en la bandeja QC) NO se pueden disponer: aprobar/rechazar devuelve 409 ESTADO_NO_LIBERABLE siempre → quedan atascados visibles en cuarentena sin salida por la UI.",
+  "causa": "Regresión del fix CAS del 17-jun: la bandeja lista `estado_lote IS NULL AND lote IS NOT NULL` (despachos.py:163-164), pero el CAS de recepcion_aprobar_lote exige `UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')` — COALESCE(NULL,'')='' no está en el set → rowcount=0 → 409. Antes del CAS el UPDATE incondicional sí los disponía.",
+  "file_line": "api/blueprints/despachos.py:163-164 (bandeja incluye NULL) vs 215-224 (CAS los rechaza)",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Alinear el WHERE del CAS con lo que la bandeja lista: `... IN ('CUARENTENA','CUARENTENA_EXTENDIDA') OR (estado_lote IS NULL AND COALESCE(lote,'')<>'')` (misma condición exacta de la bandeja), o dejar de listar NULL en la bandeja y migrar los legacy a CUARENTENA."
+ },
+ {
+  "area": "estado_lote · liberación rápida modo inventario",
+  "sintoma": "Ventana de race en la liberación en bloque: un lote que Calidad RECHAZA entre el SELECT y el UPDATE puede revivir a VIGENTE (el UPDATE no re-verifica el estado).",
+  "causa": "Check-then-act: el SELECT filtra CUARENTENA/CUARENTENA_EXTENDIDA pero el UPDATE por fila es `SET estado_lote='VIGENTE' WHERE id=?` sin condición de estado en el WHERE (a diferencia de liberar_cuarentena:10916-10918 y aprobar-lote que sí llevan CAS).",
+  "file_line": "api/blueprints/inventario.py:10958-10970 (SELECT 10959-10967 · UPDATE incondicional 10970)",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "Repetir la condición en el WHERE: `UPDATE movimientos SET estado_lote='VIGENTE' WHERE id=? AND UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')` y saltar la fila (sin audit) si rowcount=0. Riesgo acotado (admin + switch ON) pero es el mismo patrón M27 ya corregido en sus hermanos."
+ },
+ {
+  "area": "produccion_programada · transiciones sin audit por fila",
+  "sintoma": "Reactivación masiva cancelado→completado del historial (eos_retroactivo) sin rastro por registro en audit_log: si reactiva filas de más/de menos no hay forma de reconstruir cuáles cambió (la clase de hueco que hizo desaparecer la programación del 19-may).",
+  "causa": "Dos UPDATEs bulk `SET estado='completado' WHERE origen='eos_retroactivo' AND estado='cancelado'` sin audit_log por fila ni resumen con ids (solo devuelven rowcount en el JSON). El resto de los pasos de esos endpoints sí auditan (RESTAURAR_A_HORA, RECONSTRUIR_PLAN_RESTAURAR).",
+  "file_line": "api/blueprints/plan.py:12183-12186 (plan restaurar-a-hora · garantía historial) y 12321-12324 (plan_reconstruir_plan paso 1)",
+  "severidad": "P2",
+  "es_bug": true,
+  "fix_sugerido": "SELECT de los ids afectados antes del UPDATE y audit_log por fila (accion='REACTIVAR_HISTORIAL_RETROACTIVO') o un audit resumen con la lista de ids, ANTES del commit — mismo patrón que ya usa GENERAR_PLAN_DESDE_HOY (plan.py:13049)."
+ }
+]

@@ -2014,6 +2014,21 @@ def plan_desglose_tonos():
                 ml_por_sku[r[0]] = float(r[1])
     except Exception:
         pass
+    # tono_label por SKU (nombre amigable del tono · MALVA, MERLOT…) para el multitono del Calendario
+    # (Sebastián 17-jul · que el Desglose del modal se vea igual que Necesidades, con el nombre del tono).
+    tono_por_sku = {}
+    try:
+        _qs3 = ','.join(['?'] * len(skus))
+        for r in cur.execute(
+            f"""SELECT UPPER(TRIM(sku)), COALESCE(tono_label,'') FROM sku_producto_map
+                 WHERE UPPER(TRIM(sku)) IN ({_qs3}) AND COALESCE(activo,1) = 1""",
+            tuple(skus),
+        ).fetchall():
+            if r[1]:
+                tono_por_sku[r[0]] = r[1]
+    except Exception:
+        # mig 177 (tono_label) puede no estar aplicada en instancias viejas → sin etiqueta, cae al SKU
+        pass
     # Ventas por SKU en ventana · + ventana RECIENTE (mitad) para estimar tendencia (Sebastián 27-jun:
     # "si la venta viene en ascenso, redondeá para arriba"). tendencia = cuánto sube el ritmo reciente.
     desde = (_dt2.utcnow() - _td2(days=ventana)).strftime('%Y-%m-%dT00:00:00')
@@ -2106,6 +2121,7 @@ def plan_desglose_tonos():
         pct = pct_por_sku.get(sk, 100.0 / len(skus))
         items.append({
             'sku': sk,
+            'tono_label': tono_por_sku.get(sk, ''),
             'ml_unidad': ml_por_sku.get(sk),
             'uds_ventana': int(ventas.get(sk, 0)),
             'porcentaje': round(pct, 2),
@@ -21551,6 +21567,12 @@ async function abrirLoteModal(id, producto, fecha, kg){
   try{ _calCargarListoEnvases(id); }catch(e){}
 }
 
+// 🎨 color estable por tono (mismo hash que Necesidades · Sebastián 17-jul · swatch multitono igual)
+function _tonoColorCal(lbl){
+  var s = String(lbl || ''), h = 0, i;
+  for(i = 0; i < s.length; i++){ h = (h * 31 + s.charCodeAt(i)) % 360; }
+  return 'hsl(' + h + ',60%,58%)';
+}
 // 📊 Desglose EDITABLE por referencia en el modal del lote (Sebastián 27-jun): muestra cada SKU del producto
 // con cuántas unidades, editable · la SUMA (Σ uds_sku × ml_sku) calcula los kg a producir y los aplica al
 // campo "Kg a producir". Reusa /api/plan/desglose-tonos (ml canónico de sku_producto_map · M44).
@@ -21576,7 +21598,9 @@ async function cargarDesgloseEditableLote(producto, kgActual, mlProm, mesesGuard
     var rows = items.map(function(it){
       var ml = parseFloat(it.ml_unidad) || mlProm;
       var pre = Math.round(totalUds * (it.porcentaje||0) / pctTot);
-      var lbl = (it.tono_label && it.tono_label !== it.sku) ? (escapeHtml(it.sku)+' · '+escapeHtml(it.tono_label)) : escapeHtml(it.sku||'');
+      var _tl = (it.tono_label && it.tono_label !== it.sku) ? it.tono_label : '';
+      var _sw = _tl ? ('<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+_tonoColorCal(_tl)+';margin-right:5px;vertical-align:middle"></span>') : '';
+      var lbl = _sw + (_tl ? (escapeHtml(it.sku)+' &middot; '+escapeHtml(_tl)) : escapeHtml(it.sku||''));
       return '<tr style="border-top:1px solid #e2e8f0">'
         + '<td style="padding:4px 8px;font-family:monospace;font-weight:700">'+lbl+'</td>'
         + '<td style="padding:4px 8px;text-align:center;color:#64748b">'+ml+' ml</td>'

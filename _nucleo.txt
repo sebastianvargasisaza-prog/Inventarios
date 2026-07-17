@@ -1,0 +1,81 @@
+# Inventarios / stock (inventario.py, programacion.p :: TIENE FALLAS (3)
+# MUTACIONES de Inventario (movimientos, movimientos :: TIENE FALLAS (1)
+# CONSUMOS / Descuento de Producción · Flujo canónic :: TIENE FALLAS (3)
+# CONSUMO DE ENVASES (MEE): COMPRA vs DESCUENTO :: TIENE FALLAS (3)
+# NECESIDADES / demanda (plan.py _calcular_animus_dt :: PERFECTO (0)
+# NÚCLEO INVENTARIOS (mig 274-277 + cambios reciente :: PERFECTO (0)
+
+=== CONFIRMADOS REALES: 10 ===
+
+[1] P0 | inventario.py:8700-8706
+  T: BUG P1: INSERT INTO movimientos_mee con columna fantasma 'descripcion'
+  INV: Toda mutación de inventario (INSERT/UPDATE a movimientos y movimientos_mee) debe escribir únicamente en columnas que existen en el
+  RAZON: Verificación contra código real (líneas 8699-8706 de inventario.py) + schema movimientos_mee de database.py:
+
+**Hallazgo P0 confirmado por lectura adversarial:**
+
+1. **Columna fantasma**: El INSERT li
+  FIX: Remover columna 'descripcion' del INSERT (línea 8701) y de los VALUES (línea 8703). La columna correcta para almacenar el nombre es 'observaciones' (ya existe en el esquema). El INSERT debería ser: INSERT INTO movimientos_mee (mee_codigo, t
+
+[2] P0 | brd.py:1042
+  T: BRD.PY: _generar_mbr_desde_formula NO filtra header.activo en carga de items — M29 incompleto
+  INV: Todo descuento de MP debe usar fórmula activa (M29); formula_items se cargan filtrando header.activo=1, nunca items de fórmulas de
+  RAZON: VERIFICADO ADVERSARIALMENTE contra código real. Linha 1031 em brd.py valida `COALESCE(activo,1)=1` ao carregar o header da fórmula. PORÉM, linha 1042 carrega formula_items sem filtrar por header ativo
+  FIX: Replicar el fix M29 de inventario.py línea 2326: cambiar línea 1042 a:
+FROM formula_items WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND producto_nombre NOT IN (SELECT producto_nombre FROM formula_headers WHERE COALESCE(activo,1)=0)
+
+[3] P0 | programacion.py:13941-14020
+  T: Checklist de envases se crea vacío (sin mee_codigo_asignado) — requiere asignación manual del operario
+  INV: Cada item de envase en checklist DEBE tener mee_codigo_asignado pre-poblado O auto-calculado, para garantizar que el descuento ref
+  RAZON: **Hallazgo verificado en código real (no snapshot):**
+
+LÍNEAS CRÍTICAS IDENTIFICADAS:
+1. **INSERT sin mee_codigo_asignado** (programacion.py:14011-14019): `c.execute("""INSERT INTO produccion_checklis
+  FIX: En _generar_checklist_produccion(), cuando cree un item de tipo envase/tapa/etiqueta, consulta producto_presentaciones para ese producto, identifica el envase_codigo correspondiente (o usa el default si no hay), y lo pasa en el INSERT. Ejem
+
+[4] P1 | inventario.py:7879
+  T: liberar_lote() falta UPPER(COALESCE()) en WHERE estado_lote
+  INV: M23: UPPER(COALESCE(estado_lote,'')) en TODO filtro por estado_lote
+  RAZON: La función liberar_lote() (api/blueprints/inventario.py:7879) ejecuta: UPDATE movimientos SET estado_lote=? WHERE id=? AND estado_lote IN ('CUARENTENA','CUARENTENA_EXTENDIDA') SIN aplicar UPPER(COALES
+  FIX: cambiar a: WHERE id=? AND UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')
+
+[5] P1 | inventario.py:13014
+  T: diagnostico_alertas() falta UPPER() en filtro vencidos línea 13014
+  INV: M23: case-insensitive estado_lote en decisiones de alerta
+  RAZON: Las líneas 13014 y 13047 de api/blueprints/inventario.py tienen filtros case-sensitive de estado_lote que violan el patrón M23 de defensa-en-profundidad
+  FIX: cambiar a: AND UPPER(COALESCE(m.estado_lote,'')) IN ('VIGENTE','CUARENTENA')
+
+[6] P1 | inventario.py:13047
+  T: diagnostico_alertas() falta UPPER() en subquery stock bajo mínimo línea 13047
+  INV: M23: case-insensitive estado_lote; M4: stock disponible = SUM(VIGENTE)
+  RAZON: Verificado en código real: api/blueprints/inventario.py líneas 13014, 13047, 13106 usan filtros case-sensitive en estado_lote (IN ('VIGENTE',...) y ='VIGENTE') violando M23 defensa que exige UPPER(COA
+  FIX: cambiar a: WHERE m.material_id = mp.codigo_mp AND UPPER(COALESCE(m.estado_lote,''))='VIGENTE'
+
+[7] P1 | brd.py:4674
+  T: BRD.PY: _calcular_teoricos_mp NO filtra header.activo — pesajes teóricos incorrectos
+  INV: Cálculo de teórico para pesaje debe usar fórmula activa; cantidad_teorica_g se basa en formula_items que deben ser de header activ
+  RAZON: Verificado adversarialmente contra código real e invariantes CERO_ERROR.md:
+
+HALLAZGO: Función _calcular_teoricos_mp (brd.py:4665-4686) carga formula_items SIN validar que el header sea activo=1. Cons
+  FIX: Cambiar línea 4673-4675 a:
+FROM formula_items fi LEFT JOIN maestro_mps mm ON mm.codigo_mp=fi.material_id
+WHERE fi.producto_nombre = ? AND fi.producto_nombre NOT IN (SELECT producto_nombre FROM formula_headers WHERE COALESCE(activo,1)=0)
+
+[8] P1 | brd.py:2320
+  T: BRD.PY: EBR detail pesaje sheet (línea 2320) NO filtra header.activo
+  INV: Hoja de pesaje del EBR (GET /api/brd/ebr/<id>) must display ingredientes de fórmula activa
+  RAZON: En ebr_vista_completa() la hoja de pesaje (pesaje_sheet) carga formula_items sin filtrar si el header está activo. Línea 2316-2320 ejecuta SELECT FROM formula_items WHERE producto_nombre=? SIN excluir
+  FIX: Línea 2320 cambiar a:
+WHERE fi.producto_nombre=? AND fi.producto_nombre NOT IN (SELECT producto_nombre FROM formula_headers WHERE COALESCE(activo,1)=0)
+
+[9] P1 | programacion.py:8110-8120, 8137-8146
+  T: Descuento de MEE lee solo checklist.mee_codigo_asignado, ignorando el cálculo de presentaciones del abastecimiento
+  INV: El descuento de MEE (prog_completar_evento + _descontar_mee_envasado) DEBE consumir las MISMAS unidades y envases que el motor de 
+  RAZON: En `programacion.py`, el motor de compra (`abastecimiento_consumo_horizontes`, línea 10987-11000) calcula la composición de envases (ENVASE-500 60%, ENVASE-250 40%) desde `producto_presentaciones.enva
+  FIX: En _descontar_mee_envasado(), antes de iterar checklist items, invoca _composicion_envases_lote(c, produccion_id) para obtener la composición AUTORIZADA de envases. Luego, para cada tipo 'envase', descuenta las unidades según la composición
+
+[10] P2 | programacion.py:11005-11032, 6265-6305
+  T: Volumen y factor_g_por_unidad: compra usa volumen_ml, pero descuento podría usar factor_g (columna duplicada)
+  INV: Un solo campo canónico por producto para convertir kg→unidades (volumen_ml O factor_g_por_unidad, no ambos; coherencia con _compos
+  RAZON: El sistema tiene DOS módulos que convierten cantidad en kg a unidades de producto para calcular consumo de envases: (1) **Compra/Abastecimiento** (`programacion.py:abastecimiento_consumo_horizontes` l
+  FIX: Documentar en MEMORY.md que volumen_ml (no factor_g_por_unidad) es la fuente única para envases. Limpiar o marcar factor_g_por_unidad como deprecated. Grep para verificar que solo volumen_ml se usa en conversiones kg↔uds en programacion.py.
