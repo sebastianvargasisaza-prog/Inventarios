@@ -16666,12 +16666,16 @@ def abastecimiento_export_excel():
         cell.border = border
 
     # Agrupar por proveedor con cant_sug
+    # FIX 17-jul · "lo que hay que comprar" usa neto_a_pedir (resta lo YA pedido), NO deficit
+    # bruto → evita que Catalina re-compre lo que ya viene en camino (sobre-compra). El deficit
+    # bruto sigue en la Hoja 1 como "faltante físico" (alerta de quiebre), no como cantidad a pedir.
     grupos = {}
     for it in todos:
-        cant_sug = it.get('deficit', {}).get('60', 0)
+        _neto = it.get('neto_a_pedir') or {}
+        cant_sug = _neto.get('60', 0)
         if cant_sug <= 0:
             for h in horizontes:
-                v = it['deficit'].get(str(h), 0)
+                v = _neto.get(str(h), 0)
                 if v > 0:
                     cant_sug = v
                     break

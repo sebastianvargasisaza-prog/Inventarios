@@ -23747,6 +23747,22 @@ async function ckMarcar(itemId, estado){
       html += '</div>';
       resumenDiv.innerHTML = html;
 
+      // P3(a) 17-jul · ALERTA VISIBLE: producciones que NO cruzaron fórmula → su MP NO se cuenta
+      // (compra de MENOS silenciosa). El motor ya calcula d.lotes_sin_formula / productos_sin_match_formula;
+      // antes moría en el JSON. Ahora se ve fuerte arriba de la tabla.
+      if (d.lotes_sin_formula && d.lotes_sin_formula > 0) {
+        var _sf = d.productos_sin_match_formula || [];
+        var _lista = _sf.slice(0, 12).map(function(p){
+          return escapeHtmlNec(typeof p === 'string' ? p : (p.producto || p.nombre || ''));
+        }).filter(Boolean).join(' &middot; ');
+        var _mas = _sf.length > 12 ? (' +' + (_sf.length - 12) + ' m&aacute;s') : '';
+        resumenDiv.innerHTML += '<div style="margin-top:8px;background:#fef2f2;border:1px solid #fca5a5;border-left:4px solid #dc2626;border-radius:8px;padding:10px 14px">'
+          + '<div style="font-weight:800;color:#b91c1c;font-size:13px">&#9888; ' + d.lotes_sin_formula + ' producci&oacute;n(es) NO cruzaron f&oacute;rmula &rarr; su materia prima NO se est&aacute; contando (riesgo de comprar de MENOS).</div>'
+          + (_lista ? ('<div style="font-size:11px;color:#7f1d1d;margin-top:4px">Productos: ' + _lista + _mas + '</div>') : '')
+          + '<div style="font-size:10px;color:#991b1b;margin-top:4px">Verific&aacute; que el nombre del producto en el plan coincida con la f&oacute;rmula (o vincul&aacute; la f&oacute;rmula). Mientras no cruce, esa MP sale en 0.</div>'
+          + '</div>';
+      }
+
       // Inyectar el déficit por horizonte DENTRO de cada botón de horizonte
       // (elimina la caja duplicada · "90d ·51").
       _abastPintarHorizontes(d);
