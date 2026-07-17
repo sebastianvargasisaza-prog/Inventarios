@@ -2722,23 +2722,49 @@ def plan_producto_presentaciones_get(producto):
     _seen = set()
     try:
         # 1) SKUs de sku_producto_map con match de nombre SIN acentos (evita el hueco por acento/escritura)
-        for r in conn.execute("SELECT sku, producto_nombre FROM sku_producto_map WHERE COALESCE(activo,1)=1").fetchall():
+        #    + ml (volumen_ml canónico · M44) + tono_label · así el editor muestra "vende/mes" y multitono
+        #    (Sebastián 17-jul · que PRESENTACIONES se auto-liste con lo que venden, igual que Necesidades).
+        for r in conn.execute(
+                "SELECT sku, producto_nombre, COALESCE(volumen_ml,0), COALESCE(tono_label,'') "
+                "FROM sku_producto_map WHERE COALESCE(activo,1)=1").fetchall():
             if _na(r[1]) == _tgt:
                 sk = (r[0] or '').strip().upper()
                 if sk and sk not in _seen:
                     _seen.add(sk)
-                    skus.append({'sku': sk, 'ventas_180d': int(ventas.get(sk, 0) or 0)})
+                    skus.append({'sku': sk, 'ventas_180d': int(ventas.get(sk, 0) or 0),
+                                 'ml_unidad': float(r[2] or 0), 'tono_label': r[3] or ''})
     except Exception:
-        pass
+        # mig 177 (tono_label) / volumen_ml pueden no estar → fallback sin esas columnas
+        try:
+            for r in conn.execute("SELECT sku, producto_nombre FROM sku_producto_map WHERE COALESCE(activo,1)=1").fetchall():
+                if _na(r[1]) == _tgt:
+                    sk = (r[0] or '').strip().upper()
+                    if sk and sk not in _seen:
+                        _seen.add(sk)
+                        skus.append({'sku': sk, 'ventas_180d': int(ventas.get(sk, 0) or 0),
+                                     'ml_unidad': 0.0, 'tono_label': ''})
+        except Exception:
+            pass
+    # ml por presentación guardada (para completar el ml de un SKU que no lo tenga en sku_producto_map)
+    _ml_by_sku_pres = {}
+    for p in pres:
+        _sk = (p.get('sku_shopify') or '').strip().upper()
+        if _sk and (p.get('volumen_ml') or 0) > 0:
+            _ml_by_sku_pres[_sk] = float(p['volumen_ml'])
     try:
         # 2) SKUs ya guardados en las presentaciones (por si alguno no está en sku_producto_map)
         for p in pres:
             sk = (p.get('sku_shopify') or '').strip().upper()
             if sk and sk not in _seen:
                 _seen.add(sk)
-                skus.append({'sku': sk, 'ventas_180d': int(ventas.get(sk, 0) or 0)})
+                skus.append({'sku': sk, 'ventas_180d': int(ventas.get(sk, 0) or 0),
+                             'ml_unidad': float(p.get('volumen_ml') or 0), 'tono_label': ''})
     except Exception:
         pass
+    # completar ml faltante desde las presentaciones guardadas
+    for s in skus:
+        if not (s.get('ml_unidad') or 0) and _ml_by_sku_pres.get(s['sku']):
+            s['ml_unidad'] = _ml_by_sku_pres[s['sku']]
     skus.sort(key=lambda x: (-x['ventas_180d'], x['sku']))
     return jsonify({'ok': True, 'producto': canonico, 'presentaciones': pres, 'skus': skus})
 
@@ -20270,12 +20296,29 @@ function _presSkuSelect(id, cur){
   h += '</select>';
   return h;
 }
+// Sebastián 17-jul · "vende N/mes" de una fila: por SKU enlazado, si no por ml, si el producto
+// tiene 1 solo SKU cae al total. Lee el mapa que arma _cargarPresentaciones (sin fetch extra).
+function _presVmesFila(p, id){
+  var _vm = (window._PRES_VMES && window._PRES_VMES[id]) || null;
+  if(!_vm) return 0;
+  var _sk = (p.sku_shopify || '').toUpperCase();
+  if(_sk && _vm.porSku[_sk] != null) return _vm.porSku[_sk];
+  var _ml = p.volumen_ml || 0;
+  if(_ml && _vm.porMl[_ml] != null) return _vm.porMl[_ml];
+  if(_vm.nSkus === 1 && (p.id || _ml)) return _vm.total;  // 1 SKU → el total es de esa presentación
+  return 0;
+}
 function _presRowHtml(p, id){
   p = p || {};
+  var _vmes = _presVmesFila(p, id);
+  var _vbadge = (_vmes > 0)
+    ? ('<span title="unidades que vende por mes (ventas de los últimos 180 días)" style="font-size:11px;color:#0369a1;background:#e0f2fe;border-radius:10px;padding:2px 8px;font-weight:700;white-space:nowrap">vende ' + Math.round(_vmes).toLocaleString('es-CO') + '/mes</span>')
+    : '';
   return '<div class="pres-row" data-pid="' + (p.id || '') + '" style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:5px;background:#fffbeb;padding:5px;border-radius:5px">'
     + '<input class="pres-ml" type="number" min="1" step="1" value="' + (p.volumen_ml || '') + '" placeholder="ml" title="Volumen en ml" style="width:62px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px"> ml'
     + '<select class="pres-env" style="flex:1;min-width:150px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px;background:#fff">' + _opcionesEnvaseInline(p.envase_codigo || '') + '</select>'
     + _presSkuSelect(id, p.sku_shopify || '')
+    + _vbadge
     + '<input class="pres-fija" type="number" min="0" step="1" value="' + (p.cantidad_fija_uds || '') + '" placeholder="uds fijas (opc)" title="OPCIONAL · unidades FIJAS de esta presentación por lote. Vacío = el sistema reparte por VENTAS del SKU (o uniforme si el SKU no tiene ventas). Solo para forzar una cantidad exacta." style="width:104px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px">'
     + '<button onclick="_removePresRow(this)" title="Quitar" style="padding:3px 8px;font-size:11px;background:#ef4444;color:#fff;border:none;border-radius:4px;cursor:pointer">&#10005;</button>'
     + '</div>';
@@ -20300,8 +20343,35 @@ async function _cargarPresentaciones(id, _try){
     const pres = (d && d.presentaciones) || [];
     window._PRES_SKUS = window._PRES_SKUS || {};
     window._PRES_SKUS[id] = (d && d.skus) || [];   // SKUs reales + ventas para el dropdown
+    // Sebastián 17-jul · mapa de ventas/mes por SKU y por ml (de ventas_180d ÷ 6 → mensual) para
+    // que cada presentación se auto-liste con lo que vende, igual que Necesidades. Sin fetch extra.
+    window._PRES_VMES = window._PRES_VMES || {};
+    var _vm = { porSku:{}, porMl:{}, total:0, nSkus:(window._PRES_SKUS[id]||[]).length, tonos:[] };
+    (window._PRES_SKUS[id]||[]).forEach(function(s){
+      var vmes = (s.ventas_180d || 0) / 6;
+      _vm.total += vmes;
+      _vm.porSku[(s.sku||'').toUpperCase()] = vmes;
+      var ml = s.ml_unidad || 0;
+      if(ml > 0){ _vm.porMl[ml] = (_vm.porMl[ml] || 0) + vmes; }
+      if(s.tono_label){ _vm.tonos.push({ sku:s.sku, tono:s.tono_label, ml:ml, vmes:vmes }); }
+    });
+    window._PRES_VMES[id] = _vm;
     if(!pres.length){ list.innerHTML = '<div style="opacity:.7">Sin presentaciones definidas &middot; agreg&aacute; una.</div>'; return; }
     list.innerHTML = pres.map(function(p){ return _presRowHtml(p, id); }).join('');
+    // multitono: resumen read-only de lo que vende cada tono (igual que Necesidades · swatch+color)
+    if(_vm.tonos.length >= 2){
+      var _trows = _vm.tonos.slice().sort(function(a,b){ return b.vmes - a.vmes; }).map(function(t){
+        return '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#155e75;padding:2px 0">'
+          + '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + _tonoColorCal(t.tono) + '"></span>'
+          + '<b>' + escapeHtml(t.tono) + '</b>'
+          + '<span style="color:#64748b">' + escapeHtml(t.sku || '') + (t.ml ? (' &middot; ' + t.ml + 'ml') : '') + '</span>'
+          + '<span style="margin-left:auto;font-weight:700;color:#0369a1">vende ' + Math.round(t.vmes).toLocaleString('es-CO') + '/mes</span>'
+          + '</div>';
+      }).join('');
+      list.insertAdjacentHTML('beforeend', '<div style="margin-top:8px;border-top:1px dashed #a5f3fc;padding-top:6px">'
+        + '<div style="font-size:10px;font-weight:800;color:#0e7490;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px">&#127912; Tonos &middot; lo que vende cada uno</div>'
+        + _trows + '</div>');
+    }
   }catch(e){ list.innerHTML = '<div style="color:#b91c1c">Error cargando presentaciones</div>'; }
 }
 function addPresentacionRow(id){
