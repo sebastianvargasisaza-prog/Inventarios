@@ -1029,6 +1029,124 @@ def admin_b2b_lote_desglose(lote_id):
     })
 
 
+@bp.route("/api/plan/lote/<int:lote_id>/agregar-cliente", methods=["POST"])
+def plan_lote_agregar_cliente(lote_id):
+    """Sebastián 17-jul · Agregar OTRO CLIENTE a mano a un lote del Calendario, que SUMA
+    a los kg que se fabrican (no reasigna). Base = Ánimus; el cliente se agrega encima.
+    Espejo LIGERO de _integrar_pedido_b2b_al_plan pero SIEMPRE sobre ESTE lote (no busca otro):
+    crea un pedidos_b2b mínimo + aporte en pedidos_b2b_lote + bump atómico de cantidad_kg.
+    kg de MP se recalculan solos (el consumo usa cantidad_kg · %-first × kg real · M71).
+    """
+    err = _require_login()
+    if err:
+        return err
+    user = session.get('compras_user', '') or 'sistema'
+    body = request.get_json(silent=True) or {}
+    cliente = (str(body.get('cliente') or '')).strip()[:120]
+    envase = (str(body.get('envase_codigo') or '')).strip()[:60]
+    try:
+        kg = round(float(body.get('kg') or 0), 2)
+    except Exception:
+        kg = 0.0
+    try:
+        ml_in = float(body.get('ml') or 0)
+    except Exception:
+        ml_in = 0.0
+    if not cliente:
+        return jsonify({'error': 'Falta el nombre del cliente'}), 400
+    if not (kg > 0):
+        return jsonify({'error': 'Los kg deben ser mayores a 0'}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    lote = cur.execute(
+        "SELECT id, producto, COALESCE(cantidad_kg,0), estado, inicio_real_at "
+        "FROM produccion_programada WHERE id=?", (lote_id,)).fetchone()
+    if not lote:
+        return jsonify({'error': 'lote no existe'}), 404
+    producto = lote[1] or ''
+    _estado = (lote[3] or '').lower()
+    if _estado in ('completado', 'cancelado') or lote[4]:
+        return jsonify({'error': 'El lote ya inició o se cerró · no se le puede sumar producción'}), 409
+    # ml del envase: body → maestro_mee.volumen_ml → presentación del producto → 30 (default)
+    ml = ml_in if ml_in > 0 else 0.0
+    if not (ml > 0) and envase:
+        try:
+            _r = cur.execute("SELECT COALESCE(volumen_ml,0) FROM maestro_mee WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))",
+                             (envase,)).fetchone()
+            if _r and _r[0]:
+                ml = float(_r[0])
+        except Exception:
+            pass
+    if not (ml > 0):
+        try:
+            _r = cur.execute(
+                "SELECT COALESCE(volumen_ml,0) FROM producto_presentaciones "
+                "WHERE LOWER(TRIM(producto_nombre))=LOWER(TRIM(?)) AND COALESCE(activo,1)=1 "
+                "AND COALESCE(volumen_ml,0)>0 ORDER BY volumen_ml DESC LIMIT 1", (producto,)).fetchone()
+            if _r and _r[0]:
+                ml = float(_r[0])
+        except Exception:
+            pass
+    if not (ml > 0):
+        ml = 30.0
+    unidades = int(round(kg * 1000.0 / ml)) if ml > 0 else 0
+    try:
+        # 1) pedido B2B mínimo (cliente_id/creado_por NOT NULL · estado válido del CHECK · M62)
+        try:
+            cur.execute(
+                """INSERT INTO pedidos_b2b
+                     (cliente_id, cliente_nombre, producto_nombre, cantidad_uds, ml_unidad,
+                      fecha_estimada, notas, creado_por, envase_codigo, envase_notas)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                ('manual', cliente, producto, unidades, ml, None,
+                 'Agregado a mano desde el Calendario', user, envase, ''))
+        except Exception:
+            cur.execute(
+                """INSERT INTO pedidos_b2b
+                     (cliente_id, cliente_nombre, producto_nombre, cantidad_uds, ml_unidad,
+                      fecha_estimada, notas, creado_por)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                ('manual', cliente, producto, unidades, ml, None,
+                 'Agregado a mano desde el Calendario', user))
+        pid = cur.lastrowid
+        # 2) bump ATÓMICO del kg del lote + Fijo (eos_plan) · CAS: solo si sigue sin iniciar
+        cur.execute(
+            """UPDATE produccion_programada
+                 SET cantidad_kg = COALESCE(cantidad_kg,0) + ?,
+                     origen = 'eos_plan',
+                     observaciones = COALESCE(observaciones,'') || ' · +' || ? || 'kg ' || ? || ' (otro cliente manual)'
+               WHERE id=? AND LOWER(COALESCE(estado,'')) NOT IN ('completado','cancelado')
+                 AND inicio_real_at IS NULL""",
+            (kg, kg, cliente, lote_id))
+        if cur.rowcount != 1:
+            conn.rollback()
+            return jsonify({'error': 'El lote cambió de estado (inició/cerró) · recargá'}), 409
+        row_post = cur.execute("SELECT COALESCE(cantidad_kg,0) FROM produccion_programada WHERE id=?",
+                               (lote_id,)).fetchone()
+        nuevo_kg = float(row_post[0] or 0) if row_post else 0
+        # 3) aporte estructurado (modo válido del CHECK · M62)
+        cur.execute(
+            """INSERT OR REPLACE INTO pedidos_b2b_lote
+                 (pedido_b2b_id, lote_produccion_id, kg_aporte, unidades_aporte,
+                  ml_unidad, envase_codigo, modo, cliente_nombre)
+               VALUES (?, ?, ?, ?, ?, ?, 'sumado_a_lote_canonico', ?)""",
+            (pid, lote_id, kg, unidades, ml, envase, cliente))
+        audit_log(cur, usuario=user, accion="B2B_MANUAL_SUMADO",
+                  tabla="produccion_programada", registro_id=lote_id,
+                  despues={"pedido_b2b": pid, "cliente": cliente, "kg_sumados": kg,
+                           "kg_total": nuevo_kg, "envase": envase})
+        try:
+            _regenerar_distribucion_lote(cur, lote_id)
+        except Exception:
+            pass
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': f'No se pudo agregar: {e}'}), 500
+    return jsonify({'ok': True, 'lote_id': lote_id, 'pedido_id': pid,
+                    'kg_sumados': kg, 'kg_total': nuevo_kg, 'unidades': unidades, 'ml': ml})
+
+
 def _check_mp_para_pedido_b2b(c, producto, kg_b2b):
     """Verifica si hay MP suficiente para producir kg_b2b del producto.
 
@@ -21498,6 +21616,18 @@ async function abrirLoteModal(id, producto, fecha, kg){
   html += '<div style="margin-top:12px;background:linear-gradient(180deg,#fffdf5,#fffbeb);border:1px solid #fde68a;border-radius:10px;padding:12px 14px">';
   html += '<div style="font-size:12px;font-weight:800;color:#92400e;margin-bottom:8px">🤝 Otros clientes <span style="font-weight:600;color:#b45309;font-size:11px">· pedidos B2B (portal / Programar) que suman a este lote</span></div>';
   html += '<div id="otros-b2b-' + id + '" style="font-size:12px;color:#92400e">cargando&#8230;</div>';
+  // ➕ Agregar otro cliente A MANO (SUMA a la producción · crea aporte + sube el kg del lote)
+  html += '<div style="margin-top:9px">';
+  html += '<button onclick="_toggleAddCliente(' + id + ')" style="padding:6px 12px;font-size:11px;background:#16a34a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:800">&#10133; Agregar otro cliente</button>';
+  html += '<div id="add-cli-' + id + '" style="display:none;margin-top:8px;background:#fff;border:1px solid #86efac;border-radius:8px;padding:10px 11px">';
+  html += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
+  html += '<input id="addcli-nombre-' + id + '" placeholder="Cliente" style="flex:1;min-width:120px;padding:5px 7px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px">';
+  html += '<select id="addcli-env-' + id + '" style="min-width:170px;padding:5px 7px;border:1px solid #cbd5e1;border-radius:5px;font-size:11px;background:#fff">' + _opcionesEnvaseInline('') + '</select>';
+  html += '<input id="addcli-kg-' + id + '" type="number" min="0.1" step="0.1" placeholder="kg" style="width:70px;padding:5px 7px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;text-align:center"> <span style="font-size:11px;color:#166534;font-weight:700">kg</span>';
+  html += '<button onclick="_guardarOtroCliente(' + id + ')" style="padding:5px 12px;font-size:11px;background:#16a34a;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:800">&#128190; Sumar</button>';
+  html += '</div>';
+  html += '<div style="font-size:10px;color:#166534;margin-top:5px">Se agrega ENCIMA del lote &Aacute;nimus &middot; sube el kg a fabricar y la compra de MP para cubrirlo.</div>';
+  html += '</div></div>';
   html += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;border-top:1px dashed #fcd34d;margin-top:10px;padding-top:9px">';
   html += '<span style="font-size:11px;color:#92400e;font-weight:700" title="kg de ESTE lote que van para otro cliente sin pedido B2B formal · resta de la cobertura de Ánimus">Reserva manual (resta cobertura):</span>';
   html += '<input id="kg-otro-cli" type="number" min="0" max="1000" step="1" value="' + _kgOtroActual + '" oninput="try{_updateCadenciaPreview()}catch(e){}" style="width:64px;font-size:14px;font-weight:800;padding:4px 6px;border:1px solid #fcd34d;border-radius:5px"> <span style="font-size:11px;color:#92400e">kg</span>';
@@ -21851,6 +21981,32 @@ async function _calCargarOtrosClientes(id){
       + '<span style="color:#7c2d12;font-weight:800">TOTAL a fabricar: ' + kgTot.toFixed(1) + ' kg</span></div>'
       + '</div>';
   }catch(e){ box.innerHTML = ''; }
+}
+function _toggleAddCliente(id){
+  var e = document.getElementById('add-cli-' + id);
+  if(e){ e.style.display = (e.style.display === 'none' ? 'block' : 'none'); }
+}
+// ➕ Agregar otro cliente A MANO: SUMA kg al lote (produce más) · crea aporte tipo-B2B en ESTE lote.
+async function _guardarOtroCliente(id){
+  if(window._addCliBusy){ return; }
+  window._addCliBusy = true; setTimeout(function(){ window._addCliBusy = false; }, 2500);
+  var nom = ((document.getElementById('addcli-nombre-' + id) || {}).value || '').trim();
+  var env = ((document.getElementById('addcli-env-' + id) || {}).value || '').trim();
+  var kg = parseFloat((document.getElementById('addcli-kg-' + id) || {}).value || '0') || 0;
+  if(!nom){ alert('Poné el nombre del cliente'); return; }
+  if(!(kg > 0)){ alert('Poné los kg (mayor a 0)'); return; }
+  var m = window._LOTE_MODAL_ACTUAL || {};
+  try{
+    var t = (await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json()).csrf_token;
+    var r = await fetch('/api/plan/lote/' + id + '/agregar-cliente', {method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':t},
+      body: JSON.stringify({cliente: nom, envase_codigo: env, kg: kg})});
+    var d = await r.json().catch(function(){ return {}; });
+    if(!r.ok || !d.ok){ alert('No se pudo agregar: ' + (d.error || r.status)); return; }
+    if(typeof _toastCal === 'function'){ _toastCal('✅ ' + nom + ': +' + kg + ' kg · lote ahora ' + (d.kg_total||0).toFixed(1) + ' kg'); }
+    // reabrir el modal → recalcula todo con el nuevo kg (la porción Animus baja, se ve el aporte)
+    abrirLoteModal(id, m.producto, m.fecha, d.kg_total || m.kg);
+  }catch(e){ alert('Error de red: ' + e); }
 }
 // Panel de claridad (Sebastián 3-jul): "este lote alcanza N días → cadena cada X" · base jun/jul.
 function _updateCadenciaPreview(){
