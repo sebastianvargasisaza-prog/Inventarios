@@ -20271,6 +20271,29 @@ function _removePresRow(btn){
   row.style.opacity = 0.4;
   btn.disabled = true;
 }
+// Vista LIMPIA de referencias/tonos (igual que Necesidades · reusa /api/plan/desglose-tonos) · Sebastián 17-jul.
+async function _cargarTonos(id, _try){
+  _try = _try || 0;
+  var box = document.getElementById('pres-tonos-' + id);
+  if(!box){ if(_try < 10){ setTimeout(function(){ _cargarTonos(id, _try + 1); }, 120); } return; }
+  var pb = document.getElementById('pres-box-' + id);
+  var prod = pb ? (pb.getAttribute('data-prod') || '') : '';
+  if(!prod){ box.innerHTML = ''; return; }
+  box.innerHTML = '<div style="font-size:11px;color:#94a3b8;padding:4px">Cargando referencias&#8230;</div>';
+  try{
+    var d = await (await fetch('/api/plan/desglose-tonos?producto=' + encodeURIComponent(prod), {cache:'no-store'})).json();
+    var items = (d && d.items) || [];
+    if(!items.length){
+      box.innerHTML = '<div style="font-size:11px;color:#94a3b8;padding:6px 4px">' + escapeHtml((d && d.mensaje) || 'Sin referencias/SKUs mapeados a este producto.') + '</div>';
+      return;
+    }
+    var rows = items.map(function(it){
+      return '<tr style="border-top:1px solid #f1f5f9"><td style="padding:4px 8px;font-family:ui-monospace;font-weight:700">' + escapeHtml(it.sku||'') + '</td><td style="padding:4px 8px">' + escapeHtml(it.tono_label||it.tono||'') + '</td><td style="padding:4px 8px;text-align:right">' + (it.ml_unidad||'-') + '</td><td style="padding:4px 8px;text-align:right;font-weight:700">' + (it.uds_ventana||0) + '</td><td style="padding:4px 8px;text-align:right;color:#6d28d9;font-weight:700">' + (it.porcentaje!=null?it.porcentaje+'%':'-') + '</td></tr>';
+    }).join('');
+    box.innerHTML = '<div style="font-size:10.5px;color:#64748b;margin-bottom:5px">Mismo bulk &middot; se reparte entre las referencias seg&uacute;n el mix de ventas (&uacute;ltimos 60d):</div>'
+      + '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="background:#f8fafc;color:#475569"><th style="padding:4px 8px;text-align:left">SKU</th><th style="padding:4px 8px;text-align:left">Tono</th><th style="padding:4px 8px;text-align:right">ml</th><th style="padding:4px 8px;text-align:right">uds 60d</th><th style="padding:4px 8px;text-align:right">% mix</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }catch(e){ box.innerHTML = '<div style="font-size:11px;color:#dc2626">Error cargando referencias</div>'; }
+}
 async function _cargarPresentaciones(id, _try){
   _try = _try || 0;
   const box = document.getElementById('pres-box-' + id);
@@ -21298,16 +21321,21 @@ async function abrirLoteModal(id, producto, fecha, kg){
     // Sebastián 2-jul · PRESENTACIONES del producto (multi-envase) DENTRO del área azul de
     // envase · UNA sola área. Persisten en producto_presentaciones (aplican a TODOS los lotes).
     html += '<div id="pres-box-' + id + '" data-prod="' + escapeHtml(producto) + '" style="margin-top:10px;border-top:1px dashed #67e8f9;padding-top:10px">';
-    html += '<div style="font-size:11px;font-weight:800;color:#0e7490;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">&#128230; Presentaciones del producto <span style="font-weight:600;text-transform:none;color:#155e75">· si tiene 2+ envases · se guarda para siempre</span></div>';
-    html += '<div id="pres-list-' + id + '" style="font-size:12px;color:#0f766e">cargando&#8230;</div>';
+    html += '<div style="font-size:11px;font-weight:800;color:#0e7490;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">&#128230; Presentaciones / referencias <span style="font-weight:600;text-transform:none;color:#155e75">· mix de ventas por tono (como Necesidades)</span></div>';
+    // Vista LIMPIA de tonos/referencias (read-only · igual que Necesidades · reusa desglose-tonos)
+    html += '<div id="pres-tonos-' + id + '" style="font-size:12px;color:#0f766e">cargando&#8230;</div>';
+    // Editor (agregar/editar presentaciones) COLAPSADO · por si hay que ajustar envase/uds
+    html += '<details style="margin-top:8px"><summary style="cursor:pointer;font-size:11px;color:#0e7490;font-weight:700">&#9656; Editar / agregar presentaciones (avanzado)</summary>';
+    html += '<div id="pres-list-' + id + '" style="font-size:12px;color:#0f766e;margin-top:6px">cargando&#8230;</div>';
     html += '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center">';
     html += '<button onclick="addPresentacionRow(' + id + ')" style="padding:6px 12px;font-size:11px;background:#0891b2;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">&#10133; Agregar presentaci&oacute;n</button>';
     html += '<button onclick="guardarPresentaciones(' + id + ')" style="padding:6px 12px;font-size:11px;background:#16a34a;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">&#128190; Guardar presentaciones</button>';
     html += '<span id="pres-ok-' + id + '" style="color:#15803d;font-size:11px;display:none">&#10003; guardado</span>';
     html += '</div>';
     html += '<div style="font-size:10px;color:#0e7490;margin-top:6px;line-height:1.5">Cada fila = <b>un frasco + su volumen (ml)</b>. Con eso el sistema calcula solo cu&aacute;ntos envases pedir en Abastecimiento (kg &rarr; ml &rarr; unidades). Si el producto tiene 1 sola presentaci&oacute;n, dej&aacute; 1 fila. <b>&laquo;uds fijas&raquo;</b> es OPCIONAL: d&eacute;jala vac&iacute;a y reparte autom&aacute;tico; solo la us&aacute;s para forzar una cantidad exacta (ej. 1200 uds de 10&nbsp;ml siempre). Aplica a TODOS los lotes del producto.</div>';
+    html += '</details>';
     html += '</div>';
-    setTimeout(function(){ _cargarPresentaciones(id); }, 60);
+    setTimeout(function(){ _cargarTonos(id); _cargarPresentaciones(id); }, 60);
     html += '</div>';
   } catch(_e_env){ /* sin lote en PLAN_DATA · no mostrar */ }
 
