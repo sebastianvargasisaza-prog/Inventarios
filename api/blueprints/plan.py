@@ -20414,6 +20414,24 @@ async function envasePropagarFuturos(loteId){
 // Sebastián 25-may-2026 PM · guardar envase override del lote.
 // Sobreescribe el envase default del producto · MEE Abastecimiento usa
 // este código para calcular el consumo. Vacío = limpiar, volver al default.
+// Traer la foto linda del producto desde Shopify (igual que Necesidades · Sebastián 16-jul).
+async function _calTraerFotoShopify(btn){
+  var prod = btn.getAttribute('data-prod'); if(!prod) return;
+  var _o = btn.innerHTML; btn.disabled = true; btn.innerHTML = '⏳ Trayendo…';
+  try{
+    var t = (await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json()).csrf_token;
+    var r = await fetch('/api/formulas/' + encodeURIComponent(prod) + '/imagen-shopify-sync', {method:'POST', credentials:'same-origin', headers:{'X-CSRF-Token':t}});
+    var d = await r.json().catch(function(){ return {}; });
+    if(r.ok && (d.imagen_url || d.imagen)){
+      var m = window._LOTE_MODAL_ACTUAL || {};
+      if(m.id){ abrirLoteModal(m.id, m.producto, m.fecha, m.kg); }   // reabrir → muestra la foto nueva
+    } else if(r.ok){
+      btn.disabled = false; btn.innerHTML = _o; alert('Sincronizó, pero Shopify no tiene foto para "' + prod + '".');
+    } else {
+      btn.disabled = false; btn.innerHTML = _o; alert('No se pudo traer la foto: ' + ((d && d.error) || r.status));
+    }
+  }catch(e){ btn.disabled = false; btn.innerHTML = _o; alert('Error: ' + e); }
+}
 function corregirFotoProducto(btn){
   var prod = btn.getAttribute('data-prod') || '';
   if(!prod) return;
@@ -21226,13 +21244,18 @@ async function abrirLoteModal(id, producto, fecha, kg){
 
   let html = '';
 
-  // 🖼️ Foto del producto (Shopify · formula_headers.imagen_url · viene en /api/plan/necesidades) · Sebastián 27-jun
+  // 🖼️ Foto del producto · servida por el PROXY /api/imagen-producto (misma fuente canónica que el
+  // catálogo/Necesidades · prefiere la foto de Shopify) + botón "Traer de Shopify" (Sebastián 16-jul).
   html += '<div style="text-align:center;margin-bottom:10px">';
   if (info.imagen_url){
-    html += '<img src="' + escapeHtml(info.imagen_url) + '" style="max-height:130px;max-width:100%;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.12)" alt=""><br>';
+    html += '<img src="/api/imagen-producto/' + encodeURIComponent(producto) + '?t=' + Date.now() + '" style="max-height:130px;max-width:100%;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.12)" alt="" onerror="this.style.display=&#39;none&#39;"><br>';
+  } else {
+    html += '<div style="max-width:150px;margin:0 auto 4px;height:110px;background:linear-gradient(135deg,#e2e8f0,#cbd5e1);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:28px;color:#475569">&#128230;<span style="font-size:9px;font-weight:700;margin-top:2px">sin foto</span></div>';
   }
-  html += '<button onclick="corregirFotoProducto(this)" data-prod="' + escapeHtml(producto) + '" style="margin-top:6px;padding:4px 10px;font-size:11px;background:#0891b2;color:#fff;border:none;border-radius:5px;cursor:pointer">' + (info.imagen_url ? '&#128247; Corregir foto' : '&#128247; Subir foto') + '</button>';
-  html += '</div>';
+  html += '<div style="margin-top:6px;display:flex;gap:6px;justify-content:center;flex-wrap:wrap">';
+  html += '<button onclick="_calTraerFotoShopify(this)" data-prod="' + escapeHtml(producto) + '" title="Traer la foto linda del producto desde Shopify (igual que en Necesidades)" style="padding:4px 10px;font-size:11px;background:#5b21b6;color:#fff;border:none;border-radius:5px;cursor:pointer">&#128717; Traer foto de Shopify</button>';
+  html += '<button onclick="corregirFotoProducto(this)" data-prod="' + escapeHtml(producto) + '" style="padding:4px 10px;font-size:11px;background:#0891b2;color:#fff;border:none;border-radius:5px;cursor:pointer">' + (info.imagen_url ? '&#128247; Corregir foto' : '&#128247; Subir foto') + '</button>';
+  html += '</div></div>';
 
   // Sebastián 25-may-2026 PM · selector envase override del lote.
   // Dropdown que carga de /api/programacion/mees-disponibles (maestro_mee)
