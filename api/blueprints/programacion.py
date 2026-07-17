@@ -14984,7 +14984,16 @@ def abastecimiento_consumo_horizontes():
         modo = 'comprometido'
     solo_fijo = request.args.get('solo_fijo', '').lower() in ('1','true','yes','si')
 
-    conn = get_db()
+    return jsonify(_consumo_horizontes_core(
+        get_db(), horizontes, incluir_mp, incluir_mee, modo, solo_fijo, tipo))
+
+
+def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
+                             solo_fijo, tipo, atrasadas_dias=0):
+    """Núcleo PURO del MRP por horizontes (Sebastián 17-jul · extraído del endpoint para que
+    generar-OC / mps-deficit usen EXACTAMENTE el mismo cálculo · UN SOLO motor de demanda · cierra
+    la deuda M47). Devuelve el dict de resultado (sin jsonify). `atrasadas_dias` = días de backlog
+    de lotes ATRASADOS no iniciados a incluir (piso = hoy − N · la pantalla usa 0, generar-OC 7)."""
     c = conn.cursor()
     from datetime import date, timedelta as _td
     # FIX 13-jun (M24): HOY ancla en Colombia (date('now','-5 hours')), no date.today()
@@ -14994,6 +15003,10 @@ def abastecimiento_consumo_horizontes():
     hoy = (datetime.now(timezone.utc) - _td(hours=5)).date()
     cutoff_max = (hoy + _td(days=max(horizontes))).isoformat()
     hoy_iso = hoy.isoformat()
+    # Sebastián 17-jul · piso de fechas para incluir lotes ATRASADOS no iniciados (backlog).
+    # atrasadas_dias=0 (default · pantalla) → piso = hoy (sin cambio). generar-OC pasa 7 para
+    # contar la MP de lotes atrasados hasta 7 días (igual que el motor viejo · unificación M47).
+    piso_iso = (hoy - _td(days=max(0, int(atrasadas_dias or 0)))).isoformat()
 
     # 1. Producciones del Calendario · Fijo + Sugerida (a menos que solo_fijo)
     # exclude: cancelado, completado y ya descontadas (su MP ya bajó del stock)
@@ -15030,7 +15043,7 @@ def abastecimiento_consumo_horizontes():
               AND pp.fecha_programada >= ?
               AND pp.fecha_programada <= ?
             ORDER BY pp.fecha_programada ASC
-        """, origenes_in + (hoy_iso, cutoff_max)).fetchall()
+        """, origenes_in + (piso_iso, cutoff_max)).fetchall()
         _has_env_ovr_calc = True
     except Exception:
         prod_rows = c.execute(f"""
@@ -15048,7 +15061,7 @@ def abastecimiento_consumo_horizontes():
               AND pp.fecha_programada >= ?
               AND pp.fecha_programada <= ?
             ORDER BY pp.fecha_programada ASC
-        """, origenes_in + (hoy_iso, cutoff_max)).fetchall()
+        """, origenes_in + (piso_iso, cutoff_max)).fetchall()
         _has_env_ovr_calc = False
     # FIX AUDIT 24-may-2026 noche · agente cazó: 'esperando_recurso' es
     # un lote pausado por falta de MP. Si lo cuento como consumo, el
@@ -16144,7 +16157,7 @@ def abastecimiento_consumo_horizontes():
             _acel['crecimiento_marca_pct'] = None
     except Exception:
         _acel = None
-    return jsonify({
+    return {
         'hoy': hoy_iso,
         'horizontes': horizontes,
         'modo': modo,
@@ -16170,7 +16183,7 @@ def abastecimiento_consumo_horizontes():
         'lotes_con_formula': matched_lotes,
         'lotes_sin_formula': len(sin_formula_lotes),
         'productos_sin_match_formula': sorted(set(sin_formula_lotes))[:30],
-    })
+    }
 
 
 def _trail_envase(c, codigo_up, mee_row):
