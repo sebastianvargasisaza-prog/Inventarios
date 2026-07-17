@@ -21508,6 +21508,10 @@ async function abrirLoteModal(id, producto, fecha, kg){
     }
   }
 
+  // 🧪 Listo para producir · materias primas + envases (Sebastián 16-jul · paridad con Programar
+  // de Necesidades). Se llena async al abrir (reusa /api/planta/listo-producir para MP).
+  html += '<div id="lote-readiness" style="margin:14px 0 2px"></div>';
+
   // 📦 Lo que se va a producir (detalle) · Plan de envasado por cliente (Ánimus vs otros) +
   // desglose por referencia · va DESPUÉS del estado y el timing (Sebastián 13-jul · como
   // Necesidades: primero el estado del producto, luego el detalle de lo programado).
@@ -21520,6 +21524,7 @@ async function abrirLoteModal(id, producto, fecha, kg){
   document.getElementById('lote-body').innerHTML = html;
   var _ldMeses = (PLAN_DATA.agendadas || []).find(a => a.id === id);
   cargarDesgloseEditableLote(producto, kg, ml, (_ldMeses && _ldMeses.meses_cobertura) ? _ldMeses.meses_cobertura : null);
+  try{ _calCargarListoProducir(producto); }catch(e){}
 }
 
 // 📊 Desglose EDITABLE por referencia en el modal del lote (Sebastián 27-jun): muestra cada SKU del producto
@@ -21659,6 +21664,41 @@ function _calAnios(){
   var s = document.getElementById('cal-anios');
   var a = s ? (parseInt(s.value) || 2) : 2;
   return (a === 1 || a === 2 || a === 3) ? a : 2;
+}
+// Chequeo "listo para producir" · MATERIAS PRIMAS (Sebastián 16-jul · reusa /api/planta/listo-producir).
+async function _calCargarListoProducir(producto){
+  var box = document.getElementById('lote-readiness');
+  if(!box || !producto) return;
+  box.innerHTML = '<div style="font-size:11px;color:#94a3b8;padding:6px 10px">🧪 Verificando materias primas…</div>';
+  try{
+    var r = await fetch('/api/planta/listo-producir/' + encodeURIComponent(producto) + '?lotes=1', {credentials:'same-origin'});
+    if(!r.ok){
+      box.innerHTML = (r.status === 404)
+        ? '<div style="font-size:11px;color:#94a3b8;padding:6px 10px;background:#f8fafc;border-radius:6px">📋 Sin fórmula registrada · no se puede verificar materias primas</div>'
+        : '';
+      return;
+    }
+    var d = await r.json();
+    var rs = d.resumen || {};
+    var col = rs.deficit > 0 ? '#dc2626' : (rs.justo > 0 ? '#d97706' : '#16a34a');
+    var bg = rs.deficit > 0 ? '#fef2f2' : (rs.justo > 0 ? '#fffbeb' : '#f0fdf4');
+    var label = rs.deficit > 0 ? '❌ Faltan materias primas' : (rs.justo > 0 ? '⚠ Materias primas justas para 1 lote' : '🧪 Materias primas OK · ' + (rs.total||0) + ' items · listo para producir');
+    var h = '<div style="background:' + bg + ';border:1px solid ' + col + '33;border-left:3px solid ' + col + ';border-radius:8px;padding:8px 12px;font-size:12px">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b style="color:' + col + '">' + label + '</b>'
+      + '<span style="font-size:10px;color:#64748b;white-space:nowrap">' + (rs.ok||0) + ' OK · ' + (rs.justo||0) + ' justo · ' + (rs.deficit||0) + ' déficit</span></div>';
+    var probl = (d.items||[]).filter(function(x){ return x.status !== 'ok'; }).sort(function(a,b){ return (a.status==='deficit'?0:1)-(b.status==='deficit'?0:1); });
+    if(probl.length){
+      var f = function(g){ return Math.round(g).toLocaleString('es-CO'); };
+      h += '<div style="margin-top:6px;border-top:1px dashed ' + col + '33;padding-top:5px">'
+        + probl.slice(0,6).map(function(it){
+            var ic = it.status==='deficit'?'❌':'⚠', c2 = it.status==='deficit'?'#dc2626':'#d97706';
+            return '<div style="display:flex;justify-content:space-between;font-size:11px;padding:1px 0"><span>' + ic + ' ' + escapeHtml(it.nombre||'') + '</span><span style="color:' + c2 + ';font-family:ui-monospace">' + f(it.disponible_g) + '/' + f(it.requerido_g) + 'g' + (it.faltante_g>0?(' (falta ' + f(it.faltante_g) + ')'):'') + '</span></div>';
+          }).join('')
+        + (probl.length>6 ? ('<div style="font-size:10px;color:#94a3b8;text-align:center">+ ' + (probl.length-6) + ' más</div>') : '')
+        + '</div>';
+    }
+    box.innerHTML = h + '</div>';
+  }catch(e){ box.innerHTML = ''; }
 }
 // Panel de claridad (Sebastián 3-jul): "este lote alcanza N días → cadena cada X" · base jun/jul.
 function _updateCadenciaPreview(){
