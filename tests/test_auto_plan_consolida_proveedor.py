@@ -493,20 +493,21 @@ def test_consolidar_audit_log(app, db_clean):
         _cleanup_auto_solicitudes()
 
 
-def test_compras_html_boton_consolidar_visible(app, db_clean):
+def test_compras_html_boton_consolidar_auto_removido(app, db_clean):
+    # Sebastián 13-jul · los botones de auto-plan de MP (Consolidar AUTO / Regenerar / Solo limpiar /
+    # Limpiar y regenerar) se QUITARON de /compras (operaban sobre la fuente PLANTA · hacían borrado
+    # masivo de solicitudes · compras_html.py:544). Este test guarda que NO reaparezcan.
     cs = _login(app)
     body = cs.get('/compras').get_data(as_text=True)
-    assert 'btn-consolidar-auto' in body
-    assert 'consolidarAutoPendientes' in body
-    assert 'Consolidar AUTO' in body
+    # se chequea el ID del BOTÓN (lo que se renderiza) · los nombres de función quedaron en un
+    # comentario JS de documentación, así que no se asertan.
+    assert 'btn-consolidar-auto' not in body
 
 
-def test_compras_html_boton_limpiar_regenerar_visible(app, db_clean):
+def test_compras_html_boton_limpiar_regenerar_removido(app, db_clean):
     cs = _login(app)
     body = cs.get('/compras').get_data(as_text=True)
-    assert 'btn-limpiar-regenerar-auto' in body
-    assert 'limpiarYRegenerarAutoPlan' in body
-    assert 'Limpiar y regenerar' in body
+    assert 'btn-limpiar-regenerar-auto' not in body
 
 
 # ── Fallback proveedor desde maestro_mps cuando proveedor_sugerido vacio ──
@@ -680,12 +681,11 @@ def test_solo_limpiar_dry_run_indica_no_regenera_en_mensaje(app, db_clean):
         _cleanup_auto_solicitudes()
 
 
-def test_compras_html_boton_solo_limpiar_visible(app, db_clean):
+def test_compras_html_boton_solo_limpiar_removido(app, db_clean):
+    # Sebastián 13-jul · botón removido (ver test_compras_html_boton_consolidar_auto_removido).
     cs = _login(app)
     body = cs.get('/compras').get_data(as_text=True)
-    assert 'btn-solo-limpiar-auto' in body
-    assert 'soloLimpiarAuto' in body
-    assert 'Solo limpiar' in body
+    assert 'btn-solo-limpiar-auto' not in body
 
 
 # ── Limpiar tambien borra SOL-YYYY-XXXX auto-generadas y OCs Borrador ──
