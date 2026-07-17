@@ -1189,381 +1189,6 @@ def _fetch_calendar_events_cached(days_ahead=90):
     return data
 
 
-def _compute_mp_deficit_aggregated(conn, days_ahead=90):
-    """Calcula déficit REAL de MPs agregando primero, restando stock una sola vez.
-
-    Esta es la lógica correcta — agrupa todas las producciones planificadas
-    (calendario + DB local), suma cuánto se necesita por MP, y resta el stock
-    actual UNA vez para obtener el déficit real.
-
-    El bug que esto fixea: si calculas deficit per-product y sumas, cuando hay
-    stock parcial cada producto "ve" el mismo stock disponible y under-cuentas
-    el déficit total. Ej: A pide 3g, B pide 5g, stock=4g → A: déf=0, B: déf=1,
-    suma=1g. Real: 3+5-4 = 4g. La suma per-product subestima en 3g.
-
-    Returns dict {material_id: {nombre, total_g, stock_g, deficit_g, productos,
-                                proveedor, por_mes, n_meses}}.
-    Solo incluye MPs con deficit_g > 0. MPs ilimitados (agua, etc.) excluidos.
-    """
-    import datetime as _dt
-    import re as _re
-
-    cal = _fetch_calendar_events_cached(days_ahead=days_ahead)
-    events = cal.get('events', [])
-    formulas = _get_formulas(conn)
-    # ⚠ Sebastián 4-jul (P1-C · audit): _get_formulas NO filtra activo (se usa en EBR/pesaje · M52 · NO tocar
-    # ahí). Acá, en el MOTOR DE COMPRA (alimenta /generar-oc /regenerar-oc /mps-deficit), excluir los
-    # productos DESCONTINUADOS (activo=0) para paridad con la pantalla (abastecimiento_consumo_horizontes
-    # filtra fh.activo=1) → NO comprar MP de un producto que ya no se vende aunque le quede un lote futuro
-    # huérfano en el calendario (migs 335/336 apagan la fórmula pero NO cancelan produccion_programada · M29).
-    # Filtra la copia LOCAL → _upper_to_prod/_norm_to_prod (1272/1275) tampoco lo resuelven → 0 demanda MP.
-    # ⚠ P0 (review Fable 5 · 4-jul): NO borrar por UPPER a secas. Existe el case-dup 'Blush Balm' activo=0
-    # (mig 230) conviviendo con 'BLUSH BALM' activo=1 (la fórmula EN PRODUCCIÓN · 21 MPs) → UPPER las colapsa
-    # y borraría la ACTIVA → BLUSH BALM compraría 0 MP (sub-compra). Solo borrar un UPPER INACTIVO que NO
-    # tenga TAMBIÉN un header ACTIVO con el mismo UPPER (la activa siempre gana).
-    try:
-        _inactivos_up, _activos_up = set(), set()
-        for _r in conn.execute("SELECT producto_nombre, COALESCE(activo,1) FROM formula_headers").fetchall():
-            if not _r[0]:
-                continue
-            _ku = str(_r[0]).strip().upper()
-            (_activos_up if _r[1] else _inactivos_up).add(_ku)
-        _borrar_up = _inactivos_up - _activos_up
-        if _borrar_up:
-            for _k in list(formulas.keys()):
-                if str(_k).strip().upper() in _borrar_up:
-                    del formulas[_k]
-    except Exception:
-        pass
-    mp_stock = _get_mp_stock(conn)
-    if not formulas:
-        return {}
-
-    # SKU → producto map
-    _sku_to_prod = {}
-    try:
-        for row in conn.execute(
-            "SELECT UPPER(sku), producto_nombre FROM sku_producto_map WHERE activo=1"
-        ).fetchall():
-            _sku_to_prod[row[0]] = row[1]
-    except Exception:
-        pass
-
-    # Proveedor por MP · Sebastian 4-may-2026 (Catalina): normalizar al
-    # primer "case canónico" para que "Agenquimicos" y "AGENQUIMICOS" no
-    # caigan en grupos distintos al agrupar por proveedor.
-    _prov_map = {}
-    _prov_canonical = {}  # lowercase trimmed → primera variante observada
-    try:
-        for row in conn.execute(
-            "SELECT codigo_mp, COALESCE(proveedor,'') FROM maestro_mps"
-        ).fetchall():
-            prov_raw = (row[1] or '').strip()
-            if not prov_raw:
-                _prov_map[row[0]] = ''
-                continue
-            key = prov_raw.lower()
-            canonical = _prov_canonical.setdefault(key, prov_raw)
-            _prov_map[row[0]] = canonical
-    except Exception:
-        pass
-
-    # FIX 17-jun (M24): "hoy" anclado en Colombia (NO date.today() UTC, que de
-    # noche en el server de Render salta a mañana → excluiría las producciones de
-    # HOY del cálculo de compra → sub-compra). Igual que abastecimiento_consumo_horizontes.
-    today = (_dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(hours=5)).date()
-    cutoff = today + _dt.timedelta(days=days_ahead)
-
-    # Tokens que no son SKUs en títulos del calendario
-    _NOT_SKU = {
-        'FAB','QC','CON','SIN','MICRO','ENVASADO','ACONDICIONAMIENTO',
-        'FABRICACION','FABRICACIÓN','LANZAMIENTO','PRODUCCION','PRODUCCIÓN',
-        'KG','MES','DIAS','DÍAS','ML','UDS','BATCH','FERNANDO',
-        'MESA','LOTES','LOTE','MINI','MACRO','AND','THE','FOR'
-    }
-
-    def _skus(titulo):
-        tokens = _re.findall(r'\b([A-Z][A-Z0-9]{1,}[A-Z0-9])\b', titulo.upper())
-        return [t for t in tokens if t not in _NOT_SKU]
-
-    def _kg_ev(titulo):
-        m = _re.findall(r'~?(\d+(?:[,.]\d+)*)\s*kg', titulo, _re.IGNORECASE)
-        if not m:
-            return None
-        try:
-            return float(m[-1].replace(',', '.'))
-        except Exception:
-            return None
-
-    # Filtro: ignorar fases que NO consumen MPs (envasado/acondicionamiento/QC)
-    # Sebastián 12-may-2026: usar constante global unificada.
-    _NON_FAB_KW = NON_FAB_KW_GLOBAL
-
-    producciones = []
-    seen_events = set()
-    # FIX 17-jun · dedup CRUZADO calendario↔produccion_programada por
-    # (producto_normalizado, fecha): una producción espejada de Google Calendar a
-    # produccion_programada se contaba 2 veces (las llaves de dedup eran distintas:
-    # titulo vs producto). Registramos el (prod_norm, fecha) que ya aportó el
-    # calendario para que el loop de DB local NO lo vuelva a sumar.
-    cal_prod_dates = set()
-
-    # Calendario
-    for ev in events:
-        titulo = ev.get('titulo', '')
-        fecha_s = ev.get('fecha', '')
-        if not fecha_s:
-            continue
-        try:
-            fecha = _dt.date.fromisoformat(fecha_s)
-        except ValueError:
-            continue
-        if fecha < today or fecha > cutoff:
-            continue
-        if any(kw in titulo.lower() for kw in _NON_FAB_KW):
-            continue
-        key = (titulo.strip(), fecha_s)
-        if key in seen_events:
-            continue
-        seen_events.add(key)
-        kg = _kg_ev(titulo)
-        for sku in _skus(titulo):
-            prod = _sku_to_prod.get(sku)
-            if prod and prod in formulas:
-                producciones.append({
-                    'fecha': fecha_s, 'mes': fecha.strftime('%Y-%m'),
-                    'producto': prod, 'kg': kg or formulas[prod]['lote_size_kg'],
-                })
-                cal_prod_dates.add((_norm_prod_fuerte(prod), fecha_s))
-                break
-
-    # produccion_programada (DB local) — complementa el calendario
-    _upper_to_prod = {p.upper(): p for p in formulas.keys()}
-    # FIX 10-jun (M13) · match fuerte (sin acentos/puntuación) como fallback · si la
-    # programación difiere por acento/'+'/paréntesis del nombre de la fórmula, igual cruza.
-    _norm_to_prod = {_norm_prod_fuerte(p): p for p in formulas.keys()}
-    try:
-        # FIX 17-jun · alinear al motor verificado abastecimiento_consumo_horizontes:
-        #  (1) excluir 'esperando_recurso' (lote pausado por falta de MP · contarlo
-        #      es circular) y los lotes con inventario ya descontado (su MP YA bajó
-        #      del stock · contarlos = DOBLE conteo → sobre-compra).
-        #  (2) traer cantidad_kg para respetar los kg editados por el usuario.
-        local_rows = conn.execute(
-            """SELECT producto, fecha_programada, lotes, COALESCE(cantidad_kg, 0), COALESCE(origen,'')
-               FROM produccion_programada
-               WHERE LOWER(COALESCE(estado,'')) NOT IN ('completado','cancelado','esperando_recurso')
-                 AND COALESCE(inventario_descontado_at,'') = ''
-                 AND COALESCE(origen,'') <> 'calendar'
-                 AND fecha_programada >= date('now', '-5 hours', '-7 days')
-                 AND fecha_programada <= ?
-               ORDER BY fecha_programada""",
-            (cutoff.isoformat(),)
-        ).fetchall()
-        # FIX 18-jun · prefer-Fijo (igual que abastecimiento_consumo_horizontes · M49): si un
-        # producto tiene plan FIJO, ignorar las capas que ACUMULAN solas (auto_plan del cron +
-        # eos_proyeccion) → no apilar planes solapados (causa raíz del pedido ~130x). Conserva
-        # eos_canonico/sugerido y los productos que solo tienen sugeridas.
-        _FIJO_ORG = ('eos_plan', 'eos_b2b', 'eos_retroactivo')
-        _AUTO_FILL = ('auto_plan', 'eos_proyeccion')
-        def _rprod(praw):
-            return (praw if praw in formulas
-                    else _upper_to_prod.get(praw.upper())
-                    or _norm_to_prod.get(_norm_prod_fuerte(praw)))
-        _prod_con_fijo = set()
-        for row in local_rows:
-            if (row[4] or '') in _FIJO_ORG:
-                _pf = _rprod((row[0] or '').strip())
-                if _pf:
-                    _prod_con_fijo.add(_pf)
-        for row in local_rows:
-            prod_raw = (row[0] or '').strip()
-            fecha_s = (row[1] or '').strip()
-            lotes = int(row[2] or 1)
-            cant_kg = float(row[3] or 0)
-            _org = row[4] or ''
-            prod = _rprod(prod_raw)
-            if not prod or not fecha_s:
-                continue
-            if prod in _prod_con_fijo and _org in _AUTO_FILL:
-                continue   # el plan fijo manda · no apilar auto_plan/proyección de este producto
-            # dedup CRUZADO: si el calendario ya aportó este producto+fecha, no
-            # lo dupliques (el espejo GCal→produccion_programada es la misma prod).
-            if (_norm_prod_fuerte(prod), fecha_s) in cal_prod_dates:
-                continue
-            key = (prod, fecha_s)
-            if key in seen_events:
-                continue
-            seen_events.add(key)
-            try:
-                fecha = _dt.date.fromisoformat(fecha_s)
-            except ValueError:
-                continue
-            # kg reales: prioriza cantidad_kg editada; fallback lote_size × lotes
-            lote_kg = formulas[prod]['lote_size_kg']
-            kg_real = cant_kg if cant_kg > 0 else lote_kg * lotes
-            producciones.append({
-                'fecha': fecha_s, 'mes': fecha.strftime('%Y-%m'),
-                'producto': prod, 'kg': kg_real,
-            })
-        # M47 · paridad con la pantalla (abastecimiento_consumo_horizontes paso 8b): sumar los pedidos_b2b
-        # PENDIENTES (aún no integrados a un lote) para que /generar-oc NO sub-compre la MP de esos pedidos.
-        # kg = uds × ml_unidad / 1000. Sebastián 8-jul (resuelve la divergencia M47 [4] · antes solo la pantalla
-        # los contaba → la OC quedaba corta en la ventana entre que entra el pedido B2B y se convierte a lote).
-        for _b in conn.execute(
-            """SELECT pb.producto_nombre, COALESCE(pb.cantidad_uds,0), COALESCE(pb.ml_unidad,30),
-                      COALESCE(pb.fecha_estimada,'')
-               FROM pedidos_b2b pb
-               LEFT JOIN pedidos_b2b_lote pbl ON pbl.pedido_b2b_id = pb.id
-               WHERE LOWER(COALESCE(pb.estado,'pendiente'))='pendiente'
-                 AND COALESCE(pb.fecha_estimada,'') >= ? AND COALESCE(pb.fecha_estimada,'') <= ?
-                 AND pbl.id IS NULL""",
-            (today.isoformat(), cutoff.isoformat())).fetchall():
-            _prod_b = _rprod((_b[0] or '').strip())
-            _kg_b = (float(_b[1] or 0) * float(_b[2] or 30)) / 1000.0
-            if not _prod_b or _kg_b <= 0:
-                continue
-            _fs_b = (_b[3] or today.isoformat())[:10]
-            try:
-                _mes_b = _dt.date.fromisoformat(_fs_b).strftime('%Y-%m')
-            except Exception:
-                _mes_b = today.strftime('%Y-%m')
-            producciones.append({'fecha': _fs_b, 'mes': _mes_b, 'producto': _prod_b, 'kg': _kg_b})
-    except Exception:
-        pass
-
-    # M16/M47 · paridad con abastecimiento_consumo_horizontes: excluir MP de fabricación
-    # propia/infinita por la columna controla_stock=0 (no solo por nombre · _is_unlimited_mp
-    # cubre 'agua' pero se le escaparía un controla_stock=0 con otro nombre → sobre-compra).
-    _no_controla = set()
-    try:
-        for (cod,) in conn.execute("SELECT UPPER(TRIM(codigo_mp)) FROM maestro_mps WHERE COALESCE(controla_stock,1)=0").fetchall():
-            if cod:
-                _no_controla.add(cod)
-    except Exception:
-        pass
-
-    # Agregar necesidad por MP a través de TODAS las producciones
-    mp_needed = {}  # mid → {nombre, total_g, productos, por_mes}
-    for pr in producciones:
-        prod = pr['producto']
-        kg_ev = pr['kg']
-        formula = formulas.get(prod, {})
-        lote_kg = formula.get('lote_size_kg', 1)
-        factor = kg_ev / lote_kg if lote_kg > 0 else 1.0
-        for item in formula.get('items', []):
-            nombre = item.get('material_nombre', '')
-            # FIX 2-jun-2026 audit abastecimiento (M1) · resolver a código de BODEGA
-            # antes de acumular demanda · igual que consumo_horizontes · evita demanda
-            # partida entre códigos de fórmula del mismo material (este motor alimenta
-            # /generar-oc, /regenerar-oc, /mps-deficit).
-            _mid_raw = str(item['material_id']).strip()
-            mid = _resolver_material_bodega(conn, _mid_raw, nombre) or _mid_raw
-            # FIX 5-jul-2026 · auditoría ultracode abastecimiento · %-FIRST (M71/M47): igualar el motor de
-            # compra a la pantalla (%-first × kg real). Antes usaba cantidad_g_por_lote × factor PRIMERO → si
-            # esa columna derivada estaba stale/con bases mezcladas (M71), /generar-oc pedía DISTINTO a lo que
-            # muestra la pantalla → sobre/sub-compra silenciosa. g_por_lote queda como fallback reescalado.
-            _pct = float(item.get('porcentaje', 0) or 0)
-            if _pct > 0 and float(kg_ev or 0) > 0:
-                g_need = (_pct / 100.0) * float(kg_ev or 0) * 1000.0
-            else:
-                g_lote = float(item.get('cantidad_g_por_lote', 0) or 0)
-                g_need = g_lote * factor
-            if g_need <= 0 or not mid:
-                continue
-            if _is_unlimited_mp(nombre) or (mid or '').upper() in _no_controla:
-                continue
-            if mid not in mp_needed:
-                mp_needed[mid] = {
-                    'nombre': nombre, 'total_g': 0.0,
-                    'productos': [], 'por_mes': {},
-                }
-            mp_needed[mid]['total_g'] += g_need
-            mp_needed[mid]['por_mes'][pr['mes']] = (
-                mp_needed[mid]['por_mes'].get(pr['mes'], 0) + g_need
-            )
-            if prod not in mp_needed[mid]['productos']:
-                mp_needed[mid]['productos'].append(prod)
-
-    # Lookup stock por mid o por nombre normalizado
-    # FIX 1-jun-2026 audit Abastecimiento (P0) · faltaba el tier de ALIAS que sí
-    # tiene el lookup canónico (~1404) → MPs con nombre-variante no bridgeado
-    # resolvían stock=0 → déficit FALSO → sobre-compra. Alineado al canónico.
-    def _lookup_stock(mid, nombre):
-        s = mp_stock.get(mid)
-        if s is not None:
-            return s
-        s = mp_stock.get((mid or '').upper())
-        if s is not None:
-            return s
-        _nom_exact = (nombre or '').upper()
-        s = mp_stock.get(_nom_exact)
-        if s is not None:
-            return s
-        _nom_norm = _norm_mp_name(nombre or '')
-        s = mp_stock.get(_nom_norm)
-        if s is not None:
-            return s
-        _alias = _MP_NAME_ALIAS.get(_nom_norm) or _MP_NAME_ALIAS.get(_nom_exact)
-        if _alias and mp_stock.get(_alias) is not None:
-            return mp_stock.get(_alias)
-        return 0
-
-    # FIX 10-jun audit abastecimiento (BUG 3) · restar lo YA pedido (SOL/OC en vuelo) ANTES
-    # del déficit. Sin esto, /generar-oc y /regenerar-oc re-piden el total aunque ya exista
-    # una OC en curso → sobre-compra y SOLs duplicadas. Mismo criterio que los motores
-    # nuevos (auto_plan, consumo-horizontes). Pendiente va por código de BODEGA (UPPER).
-    try:
-        from blueprints.compras import _pendiente_en_compras_bulk as _pend_bulk
-    except Exception:
-        try:
-            from api.blueprints.compras import _pendiente_en_compras_bulk as _pend_bulk
-        except Exception:
-            _pend_bulk = None
-    _pendiente = {}
-    try:
-        _pendiente = _pend_bulk(conn) if _pend_bulk else {}
-    except Exception:
-        _pendiente = {}
-
-    # FIX 5-jul-2026 · auditoría ultracode · acreditar CUARENTENA (igual que la pantalla · 13139/13187): el
-    # material recibido-en-cuarentena (esperando liberación de Calidad) NO está en el stock canónico ni en el
-    # pendiente → sin esto /generar-oc lo RE-COMPRABA. Cuarentena por material_id (query canónica UPPER).
-    _cuar = {}
-    try:
-        for (mid_c, qg) in conn.execute(
-                "SELECT material_id, COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') "
-                "THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0) "
-                "FROM movimientos WHERE material_id IS NOT NULL AND material_id != '' "
-                "AND UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA') "
-                "GROUP BY material_id").fetchall():
-            _cuar[str(mid_c or '').strip().upper()] = max(float(qg or 0), 0)
-    except Exception:
-        _cuar = {}
-
-    # Calcular déficit (UNA sola resta — total_g - stock - pendiente - cuarentena)
-    out = {}
-    for mid, data in mp_needed.items():
-        stock_g = _lookup_stock(mid, data['nombre'])
-        pend_g = float(_pendiente.get((mid or '').upper().strip(), 0) or 0)
-        cuar_g = float(_cuar.get((mid or '').upper().strip(), 0) or 0)
-        deficit = max(0.0, data['total_g'] - stock_g - pend_g - cuar_g)
-        if deficit <= 0:
-            continue
-        out[mid] = {
-            'material_id': mid,
-            'nombre': data['nombre'],
-            'total_g': round(data['total_g'], 1),
-            'stock_g': round(stock_g, 1),
-            'pendiente_g': round(pend_g, 1),
-            'deficit_g': round(deficit, 1),
-            'productos': data['productos'],
-            'por_mes': data['por_mes'],
-            'n_meses': len(data['por_mes']),
-            'proveedor': _prov_map.get(mid, ''),
-        }
-    return out
-
-
 def _project_stock(conn, prod_vel, formulas, mp_stock, calendar_events, china_mps=None):
     """
     Logica correcta de programacion:
@@ -12448,7 +12073,7 @@ def prog_regenerar_oc():
 
     # 2. Recalcular déficit con la lógica correcta (total_g - stock una sola
     # vez). Misma fuente de verdad que /programacion para no divergir.
-    mp_deficit = _compute_mp_deficit_aggregated(conn, days_ahead=90)
+    mp_deficit = _mp_deficit_para_oc(conn, days_ahead=90)
 
     if not mp_deficit:
         return jsonify({'ok': True, 'mensaje': 'Sin déficits actuales — solo se borraron viejas',
@@ -12593,7 +12218,7 @@ def prog_generar_oc():
     # Antes se sumaban deficits per-product (under-cuenta cuando hay stock
     # parcial). Esto deja las cantidades del OC alineadas con lo que muestra
     # /programacion (planificacion_estrategica + mps-deficit).
-    mp_deficit = _compute_mp_deficit_aggregated(conn, days_ahead=90)
+    mp_deficit = _mp_deficit_para_oc(conn, days_ahead=90)
 
     if not mp_deficit:
         return jsonify({
@@ -12758,7 +12383,7 @@ def prog_mps_deficit():
     try:
         china_mps_set = _get_china_mps(conn)
         # Misma fuente de verdad que /generar-oc y /planificacion
-        mp_def_raw = _compute_mp_deficit_aggregated(conn, days_ahead=90)
+        mp_def_raw = _mp_deficit_para_oc(conn, days_ahead=90)
         if not mp_def_raw:
             return jsonify({'mps': [], 'total': 0, 'deficit_total_kg': 0})
 
@@ -15523,15 +15148,18 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
     # consumo[codigo_mp][h] = gramos · acumulativo (15d ⊂ 30d ⊂ 60d ...)
     consumo_mp = {}    # codigo_mp -> {h: g}
     consumo_mee = {}   # codigo_mee -> {h: uds}
+    productos_por_mp = {}   # codigo_mp (crudo) -> set(productos que la empujan) · B2c · para la justificación de la SOL
     _zero_mp = {h: 0.0 for h in horizontes}
 
-    def _agregar_consumo_mp(codigo, gramos, dias_hasta):
+    def _agregar_consumo_mp(codigo, gramos, dias_hasta, producto=None):
         if not codigo or gramos <= 0:
             return
         d = consumo_mp.setdefault(codigo, dict(_zero_mp))
         for h in horizontes:
             if dias_hasta <= h:
                 d[h] = d.get(h, 0.0) + gramos
+        if producto:
+            productos_por_mp.setdefault(codigo, set()).add(producto)
 
     def _agregar_consumo_mee(codigo, uds, dias_hasta):
         if not codigo or uds <= 0:
@@ -15678,7 +15306,7 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
             else:
                 continue
             if incluir_mp:
-                _agregar_consumo_mp(it['codigo_mp'], gramos, dias_hasta)
+                _agregar_consumo_mp(it['codigo_mp'], gramos, dias_hasta, producto)
         # MEE: requiere volumen por unidad
         if incluir_mee:
             vol = volumen_por_producto.get(producto_norm, 0.0)
@@ -15759,7 +15387,7 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
             else:
                 continue
             if incluir_mp:
-                _agregar_consumo_mp(it['codigo_mp'], gramos, dias_hasta)
+                _agregar_consumo_mp(it['codigo_mp'], gramos, dias_hasta, prod_nom)
         if incluir_mee:
             uds_envasadas = float(cant_uds or 0)
             for me in mee_por_producto.get(producto_norm, []):
@@ -15943,14 +15571,18 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
     # (id-con-mov → bridge → nombre/alias) y sumamos los horizontes.
     try:
         _consumo_col = {}
+        _prod_col = {}
         for _cod, _cons in consumo_mp.items():
             _nom = (mp_info.get(_cod, {}) or {}).get('nombre', '') or ''
             _bod = _resolver_material_bodega(c, _cod, _nom) or _cod
             _acc = _consumo_col.setdefault(_bod, {h: 0.0 for h in horizontes})
             for h in horizontes:
                 _acc[h] = _acc.get(h, 0.0) + float(_cons.get(h, 0) or 0)
+            if _cod in productos_por_mp:
+                _prod_col.setdefault(_bod, set()).update(productos_por_mp[_cod])
         if _consumo_col:
             consumo_mp = _consumo_col
+            productos_por_mp = _prod_col
     except Exception:
         log.warning('colapso consumo_mp por bodega falló · uso crudo', exc_info=True)
 
@@ -16086,6 +15718,7 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
                 'cobertura_dias': (round(_cob_dias) if _cob_dias is not None else None),
                 'horizonte_objetivo_dias': _h_obj,
                 'moq_g': round(_moq_g, 1),
+                'productos': sorted(productos_por_mp.get(cod, []))[:12],  # B2c · justificación de la SOL
                 'solicitudes_en_curso': solicitudes_en_curso.get(cod.upper(), []),
             })
 
@@ -16203,6 +15836,42 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
         'lotes_sin_formula': len(sin_formula_lotes),
         'productos_sin_match_formula': sorted(set(sin_formula_lotes))[:30],
     }
+
+
+def _mp_deficit_para_oc(conn, days_ahead=90, atrasadas_dias=7):
+    """B2c (Sebastián 17-jul · unificación M47): adaptador que corre el NÚCLEO ÚNICO de demanda
+    (_consumo_horizontes_core) y devuelve el shape {cod:{nombre,proveedor,deficit_g,productos,...}}
+    que consumen generar-oc / regenerar-oc / mps-deficit. deficit_g = neto_a_pedir[days_ahead]
+    (resta lo YA pedido · NUNCA el bruto · misma cantidad que la columna 'Pedir' de la pantalla).
+    Reemplaza al viejo _compute_mp_deficit_aggregated (que divergía · leía GCal muerto)."""
+    data = _consumo_horizontes_core(conn, [int(days_ahead)], True, False,
+                                    'comprometido', False, 'mp', atrasadas_dias=atrasadas_dias)
+    hk = str(int(days_ahead))
+    out = {}
+    for it in data.get('mps', []):
+        neto = float((it.get('neto_a_pedir') or {}).get(hk, 0) or 0)
+        cuar = float(it.get('cuarentena_g', 0) or 0)
+        # generar-OC ACREDITA cuarentena (material ya recibido, esperando QC · Catalina no lo re-compra),
+        # igual que el motor viejo. La PANTALLA (Alejandro) NO la acredita a propósito (queda rojo hasta
+        # liberar · M39) → única diferencia intencional entre las dos vistas del mismo motor.
+        _buy = max(0.0, neto - cuar)
+        if _buy <= 0.01:
+            continue  # solo MP que hay que pedir (igual que el motor viejo · deficit_g>0)
+        out[it['codigo']] = {
+            'nombre': it.get('nombre', it['codigo']),
+            'proveedor': it.get('proveedor_sugerido', ''),
+            'deficit_g': round(_buy, 1),
+            'productos': it.get('productos', []),
+            'total_g': round(float((it.get('consumo') or {}).get(hk, 0) or 0), 1),
+            'stock_g': it.get('stock_actual_g', 0),
+            'pendiente_g': it.get('pendiente_compras_g', 0),
+        }
+    return out
+
+
+# Compat B2c · el nombre viejo delega en el motor UNIFICADO (mismo cálculo que la pantalla).
+# Tests y llamadores históricos siguen funcionando; ya no hay dos motores que diverjan (M47).
+_compute_mp_deficit_aggregated = _mp_deficit_para_oc
 
 
 @bp.route('/api/abastecimiento/formulas-activas', methods=['GET'])

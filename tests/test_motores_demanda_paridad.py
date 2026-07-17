@@ -88,7 +88,9 @@ def test_paridad_acredita_pendiente_igual(app, db_clean):
                if (it.get("codigo_mp") or "").upper() == cod.upper()), 0.0)
     j2 = c.get("/api/abastecimiento/consumo-horizontes").get_json()
     hmax = str(max(j2["horizontes"]))
-    d2 = next((float(it.get("deficit", {}).get(hmax) or 0) for it in (j2.get("mps") or [])
+    # Sebastián 17-jul (B2c · unificación): la COMPRA (mps-deficit, vía el núcleo único) usa el NETO
+    # a pedir · se compara contra `neto_a_pedir` de la pantalla (NO el `deficit` bruto, que por diseño
+    # NO resta lo pendiente · M39). Ambos = necesidad 1000 − pendiente 400 = 600.
+    d2 = next((float(it.get("neto_a_pedir", {}).get(hmax) or 0) for it in (j2.get("mps") or [])
                if (it.get("codigo") or "").upper() == cod.upper()), 0.0)
-    # necesidad 1000 − pendiente 400 = 600 en ambos
-    assert abs(d1 - d2) <= 1.0, f"deben coincidir acreditando la OC pagada · compra={d1} pantalla={d2}"
+    assert abs(d1 - d2) <= 1.0, f"la COMPRA debe = neto_a_pedir de la pantalla · compra={d1} pantalla={d2}"
