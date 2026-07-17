@@ -20199,7 +20199,7 @@ async function _cargarComposicionMee(loteId, _try){
 }
 
 function _opcionesEnvaseInline(sel){
-  var mees = (window._MEES_CACHE||[]).filter(function(m){return /^FR-/.test((m.codigo||''));});  // ENVASE DEL LOTE = solo frascos (no etiquetas/tapas/cajas · Sebastian 29-jun)
+  var mees = (window._MEES_CACHE||[]).filter(function(m){var _c=((m&&m.categoria)||'').toLowerCase();return _c==='frasco'||_c==='envase';});  // ENVASE DEL LOTE = solo frascos (no etiquetas/tapas/cajas · Sebastian 29-jun)
   if(!mees || !mees.length) return '<option value="">— Cargando envases —</option>';
   var h = '<option value="">— Envase default del producto —</option>';
   for(var i=0;i<mees.length;i++){ var m=mees[i]; h += '<option value="'+escapeHtml(m.codigo)+'"'+(m.codigo===sel?' selected':'')+'>'+escapeHtml(m.label||m.codigo)+'</option>'; }
@@ -20223,7 +20223,7 @@ async function _cargarOpcionesEnvases(loteId, envActual){
   }
   // Render INMEDIATO con el catálogo · NUNCA quedar pegado en "Cargando" (FIX 27-jun · antes esperaba a
   // composicion-mee, que escanea Shopify y es lento → dejaba el dropdown colgado).
-  mees = (mees||[]).filter(function(m){return /^FR-/.test((m.codigo||''));});  // solo frascos en el dropdown del lote
+  mees = (mees||[]).filter(function(m){var _c=((m&&m.categoria)||'').toLowerCase();return _c==='frasco'||_c==='envase';});  // solo frascos en el dropdown del lote
   _pintarOpcionesEnvase(sel, mees, envActual, []);
   // 2) enriquecer con el/los envase(s) del producto (composición · con timeout 4s · NO bloquea el dropdown)
   try{
