@@ -24071,7 +24071,7 @@ async function ckMarcar(itemId, estado){
       var _re = it.reorden_estado || 'OK';
       var _caCol = _re === 'TARDE' ? '#dc2626' : (_re === 'COMPRAR' ? '#d97706' : '#94a3b8');
       var _caLbl = _re === 'TARDE' ? '&#9888; tarde' : (_re === 'COMPRAR' ? 'comprar' : '');
-      var _caTip = 'Lead ' + lt + 'd + buffer ' + (it.buffer_dias||30) + 'd &rarr; cubrir ' + (it.horizonte_objetivo_dias||0) + 'd · cobertura actual ' + (it.cobertura_dias!=null?(it.cobertura_dias+'d'):'—') + (it.moq_g>0?(' · MOQ ' + _fmtAba(it.moq_g)+unit):'') + ' · click: poner en Pedir';
+      var _caTip = 'Lead ' + lt + 'd + buffer ' + (it.buffer_dias||30) + 'd &rarr; cubrir ' + (it.horizonte_objetivo_dias||0) + 'd · cobertura actual ' + (it.cobertura_dias!=null?(it.cobertura_dias+'d'):'s/d') + (it.moq_g>0?(' · MOQ ' + _fmtAba(it.moq_g)+unit):'') + ' · click: poner en Pedir';
       var _caCell;
       if (it.tipo !== 'MP') {
         _caCell = '<span style="color:#cbd5e1">-</span>';

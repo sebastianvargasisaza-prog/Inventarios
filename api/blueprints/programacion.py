@@ -15373,6 +15373,14 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
         if cant_kg <= 0:
             continue
         items = formulas.get(producto_norm) or []
+        if not items:
+            # B3 · mismo fallback por ALIAS que el loop de producción (un pedido B2B pendiente de
+            # un producto renombrado también debe cruzar su fórmula · si no, sub-abastecimiento silencioso)
+            _ak = alias_map.get(producto_norm)
+            if _ak:
+                items = formulas.get(_ak) or []
+        if not items:
+            sin_formula_lotes.append(prod_nom)   # visible en el banner "Resolver" (antes ni aparecía)
         # AUDITORÍA-FIX P1-2 · usar lote_size pre-cargado (no N+1 query)
         lote_size_b2b = lote_size_por_prod.get(producto_norm, 0.0)
         for it in items:
@@ -15504,6 +15512,8 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
             if kg_dia <= 0:
                 continue
             items = formulas.get(prod_up) or []
+            if not items and alias_map.get(prod_up):   # B3 · alias también en run_rate
+                items = formulas.get(alias_map[prod_up]) or []
             # lote_size con la MISMA normalización que la clave (prod_up = _norm_prod): reusar el
             # dict lote_size_por_prod (también keyed por _norm_prod), NO un SELECT con UPPER(TRIM)
             # crudo — eran asimétricos (M2/M13) y un '+'/acento en el nombre daba lote_size=0 →
@@ -15674,8 +15684,10 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
             _h_obj = _lead + _buf
             _demanda_cob = _consumo_al_dia(consumo, horizontes, _h_obj)
             _comprar = max(0.0, _demanda_cob - stock_g - pend_g)  # neto (inmune al toggle)
-            _hmax = max(horizontes)
-            _cons_diario = (float(consumo.get(_hmax, 0) or 0) / _hmax) if _hmax > 0 else 0.0
+            # tasa diaria de la VENTANA del lead (no el promedio sobre 365, que aplana la tasa si no
+            # hay producción tras N días → sobreestimaba cobertura · revisión 17-jul). Si no hay demanda
+            # en la ventana del lead, la cobertura es "infinita" (no urge comprar aunque haya lotes lejanos).
+            _cons_diario = (_demanda_cob / _h_obj) if _h_obj > 0 else 0.0
             _cob_dias = (stock_g / _cons_diario) if _cons_diario > 0.01 else None
             # estado de reorden RELATIVO al lead time de la MP (no umbrales fijos)
             if _cons_diario <= 0.01:

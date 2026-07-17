@@ -58,6 +58,32 @@ def test_alias_resuelve_match(app, db_clean):
     assert mp["consumo"]["90"] > 0, mp["consumo"]
 
 
+def test_alias_resuelve_b2b_pendiente(app, db_clean):
+    """El alias también debe cruzar un PEDIDO B2B pendiente de un producto renombrado (revisión 17-jul ·
+    antes el loop B2B no aplicaba alias ni lo reportaba en 'sin fórmula')."""
+    cod = "MP-ALIASB2B"
+    _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, activo) "
+          "VALUES (?, 'Alias B2B', 'ALIASB2B INCI', 1)", (cod,))
+    _exec("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo) VALUES ('SERUM B2B', 10, 1)")
+    _exec("INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje, cantidad_g_por_lote) "
+          "VALUES ('SERUM B2B', ?, 'Alias B2B', 10, 0)", (cod,))
+    _exec("INSERT INTO pedidos_b2b (cliente_id, cliente_nombre, producto_nombre, cantidad_uds, ml_unidad, "
+          "fecha_estimada, estado, creado_por) "
+          "VALUES ('c1','Cliente','SERUM B2B RENOM', 1000, 30, date('now','-5 hours','+15 days'), 'pendiente', 'test')")
+    c = _login(app)
+    d = _mps(c)
+    assert cod.upper() not in [(m.get("codigo") or "").upper() for m in d.get("mps", [])], "sin alias, B2B renombrado no cuenta"
+    assert any("SERUM B2B RENOM" in str(s) for s in d.get("productos_sin_match_formula", [])), \
+        d.get("productos_sin_match_formula")
+    r = c.post("/api/abastecimiento/vincular-formula",
+               json={"producto_plan": "SERUM B2B RENOM", "producto_formula": "SERUM B2B"}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    d2 = _mps(c)
+    mp = next((m for m in d2.get("mps", []) if (m.get("codigo") or "").upper() == cod.upper()), None)
+    assert mp is not None, "tras vincular, el B2B pendiente cuenta"
+    assert mp["consumo"]["90"] > 0, mp["consumo"]
+
+
 def test_vincular_valida_formula_existe(app, db_clean):
     c = _login(app)
     r = c.post("/api/abastecimiento/vincular-formula",
