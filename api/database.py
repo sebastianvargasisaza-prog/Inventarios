@@ -428,6 +428,12 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (357, "Abastecimiento MP · MOQ y múltiplo de compra por materia prima (Sebastián 17-jul): mp_lead_time_config "
+          "gana moq_g (mínimo de compra en gramos) y multiplo_g (redondeo del pedido). Alimentan la columna "
+          "'COMPRAR AHORA' (cantidad neta por lead time, redondeada al MOQ/múltiplo). Default 0 = sin restricción.", [
+        "ALTER TABLE mp_lead_time_config ADD COLUMN moq_g DOUBLE PRECISION DEFAULT 0",
+        "ALTER TABLE mp_lead_time_config ADD COLUMN multiplo_g DOUBLE PRECISION DEFAULT 0",
+    ]),
     (356, "Calidad · Indicadores: dejar solo Liberación + Micro y agregar 3 nuevos (Sebastián 16-jul · 'el resto "
           "aún no lo usamos, para presionar'). Desactiva (activo=0, reversible) NC/CAPA/OOS/agua/calibraciones. "
           "Agrega: MP en cuarentena (lotes esperando revisión · ahora), Tiempo de liberación (días prom. cuarentena→"

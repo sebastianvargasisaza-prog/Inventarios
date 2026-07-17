@@ -23998,7 +23998,7 @@ async function ckMarcar(itemId, estado){
 
     // Tabla
     html += '<div style="overflow-x:auto;background:white;border-radius:14px;border:1px solid #ece9f5;box-shadow:0 1px 3px rgba(16,15,45,.05),0 18px 40px -28px rgba(16,15,45,.2)">';
-    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1100px">';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1200px">';
     html += '<thead><tr style="background:linear-gradient(180deg,#faf9ff,#f3f1fb);color:#6d28d9;border-bottom:1px solid #ece9f5">';
     html += '<th style="text-align:center;padding:8px;font-weight:700;width:32px"><input type="checkbox" onchange="_abastSelectVisibles(this.checked)"></th>';
     html += '<th style="text-align:left;padding:8px;font-weight:700">Código</th>';
@@ -24014,6 +24014,7 @@ async function ckMarcar(itemId, estado){
       html += '<th style="text-align:right;padding:8px;font-weight:700;background:' + (h===730?'#eef2ff':'#f1f5f9') + '" title="Consumo acumulado de MP hasta ' + h + ' días">' + _hlbl + '</th>';
     });
     html += '<th style="text-align:center;padding:8px;font-weight:700">Urg</th>';
+    html += '<th style="text-align:right;padding:8px;font-weight:700;background:#fffbeb" title="Cantidad NETA a comprar hoy, resuelta sola por el lead time de cada MP (cubrir lead + buffer, restando stock y lo ya pedido, redondeada al MOQ). Click en el número la pone en Pedir.">&#128722; Comprar ahora</th>';
     html += '<th style="text-align:right;padding:8px;font-weight:700;background:#ecfdf5">Pedir</th>';
     html += '</tr></thead><tbody>';
     items.forEach((it, idx) => {
@@ -24063,6 +24064,23 @@ async function ckMarcar(itemId, estado){
         html += '<td style="padding:6px 8px;text-align:right;font-family:ui-monospace;background:' + cellBg + ';color:' + cellTc + ';font-weight:' + (def>0.01?'700':'400') + '" title="Consumo ' + h + 'd: ' + _fmtAba(cons) + ' ' + unit + '">' + _fmtAba(def) + '</td>';
       });
       html += '<td style="padding:6px 8px;text-align:center;font-size:16px" title="' + urg.text + '">' + urg.emoji + '</td>';
+      // 🛒 COMPRAR AHORA · el sistema resuelve el horizonte SOLO por el lead time de la MP (Sebastián 17-jul)
+      var _ca = it.comprar_ahora_g || 0;
+      var _re = it.reorden_estado || 'OK';
+      var _caCol = _re === 'TARDE' ? '#dc2626' : (_re === 'COMPRAR' ? '#d97706' : '#94a3b8');
+      var _caLbl = _re === 'TARDE' ? '&#9888; tarde' : (_re === 'COMPRAR' ? 'comprar' : '');
+      var _caTip = 'Lead ' + lt + 'd + buffer ' + (it.buffer_dias||30) + 'd &rarr; cubrir ' + (it.horizonte_objetivo_dias||0) + 'd · cobertura actual ' + (it.cobertura_dias!=null?(it.cobertura_dias+'d'):'—') + (it.moq_g>0?(' · MOQ ' + _fmtAba(it.moq_g)+unit):'') + ' · click: poner en Pedir';
+      var _caCell;
+      if (it.tipo !== 'MP') {
+        _caCell = '<span style="color:#cbd5e1">-</span>';
+      } else if (_ca > 0) {
+        _caCell = '<div onclick="_abastUsarComprarAhora(this.dataset.cod,' + _ca + ')" data-cod="' + escapeHtmlNec(it.codigo) + '" style="cursor:pointer;font-weight:800;color:' + _caCol + '" title="' + escapeHtmlNec(_caTip) + '">' + _fmtAba(_ca) + ' ' + unit + (_caLbl?('<div style="font-size:9px;font-weight:700">' + _caLbl + '</div>'):'') + '</div>';
+      } else if ((it[colaKey]||0) > 0.01) {
+        _caCell = '<div style="font-size:10px;color:#0369a1;font-weight:700" title="Ya pediste lo suficiente para el lead time · no comprar de nuevo">&#128666; ya viene</div>';
+      } else {
+        _caCell = '<span style="color:#cbd5e1">-</span>';
+      }
+      html += '<td style="padding:6px 8px;text-align:right;background:#fffbeb">' + _caCell + '</td>';
       // Pedir: input editable · sugerencia automática (+ badge 🚀 si el acelerador subió la cantidad)
       var _acelBd = (selData.cantidad_override == null) ? _acelBreakdown(it) : '';
       var _acelTag = _acelBd ? '<div style="font-size:9px;color:#b45309;font-weight:700;margin-top:2px" title="' + escapeHtmlNec(_acelBd) + '">🚀 acelerado</div>' : '';
@@ -24085,6 +24103,13 @@ async function ckMarcar(itemId, estado){
   }
   function _abastCubrir(v) {
     window._ABA_STATE.cubrir_dias = parseInt(v, 10);
+    renderTablaAbast();
+  }
+  // 🛒 poner la cantidad "Comprar ahora" (resuelta por lead time) en el input Pedir + marcar la fila
+  function _abastUsarComprarAhora(cod, g) {
+    var st = window._ABA_STATE;
+    if (!st) return;
+    st.seleccionados[cod] = { marcado: true, cantidad_override: Math.round(g) };
     renderTablaAbast();
   }
   // Sebastián 11-jul · acelerador de compras (on/off + config de tope/colchón)

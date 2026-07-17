@@ -14897,6 +14897,33 @@ def recalcular_minimos():
                     'dias': dias, 'colchon_pct': colchon_pct})
 
 
+def _consumo_al_dia(consumo, horizontes, dia):
+    """Consumo ACUMULADO estimado hasta `dia` (interpola entre los buckets del plan).
+    `consumo` = dict {horizonte_int: gramos_acumulados}. Sebastián 17-jul · para el
+    reorden por lead time (el H objetivo = lead+buffer casi nunca cae justo en un bucket)."""
+    hs = sorted(horizontes)
+    if not hs or dia <= 0:
+        return 0.0
+    if dia <= hs[0]:
+        return float(consumo.get(hs[0], 0) or 0) * (dia / hs[0]) if hs[0] > 0 else 0.0
+    for i in range(1, len(hs)):
+        if dia <= hs[i]:
+            h0, h1 = hs[i - 1], hs[i]
+            c0 = float(consumo.get(h0, 0) or 0)
+            c1 = float(consumo.get(h1, 0) or 0)
+            if h1 == h0:
+                return c1
+            return c0 + (c1 - c0) * ((dia - h0) / (h1 - h0))
+    # más allá del último horizonte → extrapolar con la tasa del último tramo
+    hlast = hs[-1]
+    clast = float(consumo.get(hlast, 0) or 0)
+    if len(hs) >= 2 and (hs[-1] - hs[-2]) > 0:
+        rate = (clast - float(consumo.get(hs[-2], 0) or 0)) / (hs[-1] - hs[-2])
+    else:
+        rate = (clast / hlast) if hlast > 0 else 0.0
+    return clast + rate * (dia - hlast)
+
+
 @bp.route('/api/abastecimiento/consumo-horizontes', methods=['GET'])
 def abastecimiento_consumo_horizontes():
     """MRP por múltiples horizontes · consumo de MP/MEE según producciones Fijas
@@ -15314,6 +15341,15 @@ def abastecimiento_consumo_horizontes():
             }
     except sqlite3.OperationalError:
         pass
+    # MOQ / múltiplo de compra por MP (mig 357) · lectura SEPARADA para que una migración
+    # lagueada no tumbe el lead time (M38/M81 · columna faltante = solo pierde MOQ, no todo).
+    mp_moq = {}
+    try:
+        for r in c.execute("SELECT material_id, COALESCE(moq_g,0), COALESCE(multiplo_g,0) "
+                           "FROM mp_lead_time_config").fetchall():
+            mp_moq[r[0]] = (float(r[1] or 0), float(r[2] or 0))
+    except Exception:
+        mp_moq = {}
 
     # 6. Stock + info MEE
     # P0-5 23-may-PM · auditoría · antes leía stock_actual directo
@@ -15966,6 +16002,37 @@ def abastecimiento_consumo_horizontes():
             urg, h_urg = _urgencia_de(deficits)
             if urg == 'OK' and max(consumo.values()) <= 0.01:
                 continue  # sin consumo · no mostrar
+            # 🛒 COMPRAR AHORA (Sebastián 17-jul · Punto 4): el sistema resuelve el horizonte SOLO
+            # por el lead time de ESTA MP (no el humano eligiendo columna). Cantidad NETA a pedir hoy
+            # para cubrir hasta (lead + buffer), redondeada al MOQ/múltiplo del proveedor.
+            _lead = int(info.get('lead_time_dias', 14) or 14)
+            _buf = int(info.get('buffer_dias', 30) or 30)
+            _h_obj = _lead + _buf
+            _demanda_cob = _consumo_al_dia(consumo, horizontes, _h_obj)
+            _comprar = max(0.0, _demanda_cob - stock_g - pend_g)  # neto (inmune al toggle)
+            _hmax = max(horizontes)
+            _cons_diario = (float(consumo.get(_hmax, 0) or 0) / _hmax) if _hmax > 0 else 0.0
+            _cob_dias = (stock_g / _cons_diario) if _cons_diario > 0.01 else None
+            # estado de reorden RELATIVO al lead time de la MP (no umbrales fijos)
+            if _cons_diario <= 0.01:
+                _reorden = 'OK'
+            elif _cob_dias is not None and _cob_dias <= _lead:
+                _reorden = 'TARDE'      # el stock no alcanza ni para que llegue una OC pedida hoy
+            elif _cob_dias is not None and _cob_dias <= _h_obj:
+                _reorden = 'COMPRAR'    # llegó el punto de reorden
+            else:
+                _reorden = 'OK'         # todavía no comprar (aunque haya déficit a 365d)
+            # MOQ + redondeo a múltiplo
+            _moq_g, _mult_g = mp_moq.get(cod, (0.0, 0.0))
+            _comprar_final = _comprar
+            if _comprar_final > 0:
+                if _moq_g > 0 and _comprar_final < _moq_g:
+                    _comprar_final = _moq_g
+                if _mult_g > 0:
+                    _n = int(_comprar_final / _mult_g)
+                    if _comprar_final > _n * _mult_g + 1e-6:
+                        _n += 1
+                    _comprar_final = _n * _mult_g
             items_out_mp.append({
                 'codigo': cod,
                 'nombre': info['nombre'],
@@ -15982,6 +16049,11 @@ def abastecimiento_consumo_horizontes():
                 'horizonte_quiebre_dias': h_urg,
                 'lead_time_dias': info.get('lead_time_dias', 14),
                 'buffer_dias': info.get('buffer_dias', 30),
+                'comprar_ahora_g': round(_comprar_final, 1),
+                'reorden_estado': _reorden,
+                'cobertura_dias': (round(_cob_dias) if _cob_dias is not None else None),
+                'horizonte_objetivo_dias': _h_obj,
+                'moq_g': round(_moq_g, 1),
                 'solicitudes_en_curso': solicitudes_en_curso.get(cod.upper(), []),
             })
 
