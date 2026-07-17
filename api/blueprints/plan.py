@@ -21480,20 +21480,8 @@ async function abrirLoteModal(id, producto, fecha, kg){
     '<button onclick="guardarKgLote(' + id + ')" style="padding:5px 9px;font-size:11px;margin:0">💾 Guardar</button>' +
     '</div>' +
     '<div class="metric-sub" id="edit-kg-uds">' + Math.round(kg * 1000 / ml) + ' uds aprox</div></div>';
-  // Sebastián 2-jul · reserva MANUAL de kg para OTRO cliente (sin pedido B2B) · se resta de la
-  // cobertura/próxima de Animus (caso Renova Body: 80% del lote iba para otra marca).
-  var _lfOtro = (PLAN_DATA.agendadas || []).find(function(a){ return a.id === id; });
-  var _kgOtroActual = (_lfOtro && _lfOtro.kg_otro_cliente) ? _lfOtro.kg_otro_cliente : 0;
-  html += '<div class="metric-card" style="border-color:#fcd34d;background:#fffbeb"><div class="metric-lbl" title="kg de este lote que van para OTRO cliente (sin pedido B2B) · se restan de la cobertura de Animus">Para otro cliente</div>' +
-    '<div style="display:flex;gap:4px;align-items:center;margin-top:2px">' +
-    '<input id="kg-otro-cli" type="number" min="0" max="1000" step="1" value="' + _kgOtroActual + '" oninput="try{_updateCadenciaPreview()}catch(e){}" style="width:60px;font-size:16px;font-weight:800;padding:3px 5px;border:1px solid #fcd34d;border-radius:5px">' +
-    '<span style="font-size:12px;color:#92400e">kg</span>' +
-    '<button onclick="guardarKgOtroCliente(' + id + ')" style="padding:5px 9px;font-size:11px;margin:0;background:#d97706">💾 Este lote</button>' +
-    '</div>' +
-    '<div class="metric-sub" style="color:#92400e">no es de Animus · resta cobertura</div>' +
-    '<button onclick="aplicarKgOtroClienteCadena(this)" data-prod="' + escapeHtml(producto) + '" title="Aplica este kg (fijo por lote) a TODOS los lotes futuros del producto · la porción Ánimus baja y la cadencia recalcula más seguido" style="margin-top:8px;width:100%;padding:6px 8px;font-size:11px;background:#fff;color:#b45309;border:1px solid #fcd34d;border-radius:6px;cursor:pointer;font-weight:800">&#128203; Aplicar a toda la cadena</button></div>';
-  html += '<div class="metric-card"><div class="metric-lbl">Vende/día</div><div class="metric-val">' + velUds.toFixed(1) + '</div><div class="metric-sub">' + velKgDia.toFixed(2) + ' kg/día</div></div>';
-  html += '<div class="metric-card"><div class="metric-lbl">Vende/mes</div><div class="metric-val">' + velMes + '</div><div class="metric-sub">' + (velKgDia * 30).toFixed(1) + ' kg/mes</div></div>';
+  // Sebastián 17-jul · ventas CONSOLIDADAS en una tarjeta limpia: vende/mes (uds) + ml + kg/mes sugeridos.
+  html += '<div class="metric-card"><div class="metric-lbl">Vende / mes</div><div class="metric-val">' + velMes + ' <span style="font-size:12px;font-weight:600;color:#64748b">uds</span></div><div class="metric-sub">' + ml + ' ml &middot; <b>' + (velKgDia * 30).toFixed(1) + ' kg/mes</b> sugeridos &middot; ' + velUds.toFixed(1) + ' uds/d&iacute;a</div></div>';
   // FIX 30-may-2026 · "237 uds / 72.1 kg" era incoherente · 237 uds × 30ml = 7.1kg,
   // no 72.1 (eso era góndola + lote programado). Mostrar el FÍSICO de góndola, que
   // sí cuadra con las uds. La cobertura (que sí cuenta lo programado) va en su tarjeta.
@@ -21501,6 +21489,21 @@ async function abrirLoteModal(id, producto, fecha, kg){
   html += '<div class="metric-card"><div class="metric-lbl">Stock actual</div><div class="metric-val">' + stockUds + ' uds</div><div class="metric-sub">' + _stockKgFisico.toFixed(1) + ' kg físico</div></div>';
   html += '<div class="metric-card"><div class="metric-lbl">Cobertura</div><div class="metric-val">' + (diasCob != null ? diasCob + 'd' : '—') + '</div><div class="metric-sub">' + (info.urgencia || '') + '</div></div>';
   html += '</div>';
+
+  // 🤝 OTROS CLIENTES (Sebastián 17-jul): los pedidos B2B (del portal del cliente o de "Programar")
+  // caen aquí AUTOMÁTICO y ya suman a los kg que se fabrican (backend: pedidos_b2b_lote). Read-only,
+  // se llena en _calCargarOtrosClientes(id). Debajo, la reserva MANUAL de kg para otro cliente.
+  var _lfOtro = (PLAN_DATA.agendadas || []).find(function(a){ return a.id === id; });
+  var _kgOtroActual = (_lfOtro && _lfOtro.kg_otro_cliente) ? _lfOtro.kg_otro_cliente : 0;
+  html += '<div style="margin-top:12px;background:linear-gradient(180deg,#fffdf5,#fffbeb);border:1px solid #fde68a;border-radius:10px;padding:12px 14px">';
+  html += '<div style="font-size:12px;font-weight:800;color:#92400e;margin-bottom:8px">🤝 Otros clientes <span style="font-weight:600;color:#b45309;font-size:11px">· pedidos B2B (portal / Programar) que suman a este lote</span></div>';
+  html += '<div id="otros-b2b-' + id + '" style="font-size:12px;color:#92400e">cargando&#8230;</div>';
+  html += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;border-top:1px dashed #fcd34d;margin-top:10px;padding-top:9px">';
+  html += '<span style="font-size:11px;color:#92400e;font-weight:700" title="kg de ESTE lote que van para otro cliente sin pedido B2B formal · resta de la cobertura de Ánimus">Reserva manual (resta cobertura):</span>';
+  html += '<input id="kg-otro-cli" type="number" min="0" max="1000" step="1" value="' + _kgOtroActual + '" oninput="try{_updateCadenciaPreview()}catch(e){}" style="width:64px;font-size:14px;font-weight:800;padding:4px 6px;border:1px solid #fcd34d;border-radius:5px"> <span style="font-size:11px;color:#92400e">kg</span>';
+  html += '<button onclick="guardarKgOtroCliente(' + id + ')" style="padding:5px 10px;font-size:11px;margin:0;background:#d97706">💾 Este lote</button>';
+  html += '<button onclick="aplicarKgOtroClienteCadena(this)" data-prod="' + escapeHtml(producto) + '" title="Aplica este kg (fijo por lote) a TODOS los lotes futuros del producto · la porción Ánimus baja y la cadencia recalcula más seguido" style="padding:5px 10px;font-size:11px;background:#fff;color:#b45309;border:1px solid #fcd34d;border-radius:6px;cursor:pointer;font-weight:800">&#128203; A toda la cadena</button>';
+  html += '</div></div>';
 
   // 📊 Desglose EDITABLE por referencia · movido ABAJO (al bloque "Lo que se va a producir")
   // para que el modal lidere con el estado del producto (Sebastián 13-jul · como Necesidades).
@@ -21594,6 +21597,7 @@ async function abrirLoteModal(id, producto, fecha, kg){
   cargarDesgloseEditableLote(producto, kg, ml, (_ldMeses && _ldMeses.meses_cobertura) ? _ldMeses.meses_cobertura : null);
   try{ _calCargarListoProducir(producto); }catch(e){}
   try{ _calCargarListoEnvases(id); }catch(e){}
+  try{ _calCargarOtrosClientes(id); }catch(e){}
 }
 
 // 🎨 color estable por tono (mismo hash que Necesidades · Sebastián 17-jul · swatch multitono igual)
@@ -21809,6 +21813,43 @@ async function _calCargarListoEnvases(loteId){
         + '</div>';
     }
     box.innerHTML = h + '</div>';
+  }catch(e){ box.innerHTML = ''; }
+}
+// 🤝 Otros clientes (Sebastián 17-jul): trae los pedidos B2B ligados a ESTE lote (portal del cliente
+// o "Programar") · ya suman a los kg del lote en el backend · acá se muestran bonitos + el split
+// Ánimus (DTC) / TOTAL a fabricar. Read-only, aislado en try/catch (no rompe el modal).
+async function _calCargarOtrosClientes(id){
+  var box = document.getElementById('otros-b2b-' + id);
+  if(!box || !id) return;
+  try{
+    var r = await fetch('/api/admin/b2b/lote/' + id + '/desglose', {credentials:'same-origin'});
+    if(!r.ok){ box.innerHTML = '<span style="color:#b45309;font-size:11px">Sin pedidos de otros clientes en este lote.</span>'; return; }
+    var d = await r.json();
+    var ap = (d.aportes_b2b) || [];
+    var kgDtc = d.kg_dtc || 0, kgTot = d.kg_total || 0;
+    if(!ap.length){
+      box.innerHTML = '<span style="color:#b45309;font-size:11px">Sin pedidos de otros clientes · si un cliente pide (portal o Programar) aparece ac&aacute; autom&aacute;tico y suma al kg del lote.</span>';
+      return;
+    }
+    var f = function(n){ return Math.round(n).toLocaleString('es-CO'); };
+    var rows = ap.map(function(a){
+      var est = (a.estado_pedido || '').toLowerCase();
+      var ecol = est.indexOf('entreg') >= 0 ? '#16a34a' : (est.indexOf('cancel') >= 0 ? '#dc2626' : '#d97706');
+      var env = a.envase_descripcion || a.envase_codigo || '';
+      return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #fde68a">'
+        + '<span><b style="color:#7c2d12">' + escapeHtml(a.cliente_nombre || 'Cliente') + '</b>'
+        + (a.unidades_aporte ? (' <span style="color:#92400e">&middot; ' + f(a.unidades_aporte) + ' uds</span>') : '')
+        + (env ? (' <span style="color:#a16207;font-size:10px">&middot; ' + escapeHtml(env) + '</span>') : '')
+        + (a.estado_pedido ? (' <span style="font-size:10px;color:' + ecol + '">&middot; ' + escapeHtml(a.estado_pedido) + '</span>') : '')
+        + '</span>'
+        + '<span style="font-weight:800;color:#b45309;white-space:nowrap">' + (a.kg_aporte || 0).toFixed(1) + ' kg</span></div>';
+    }).join('');
+    box.innerHTML = '<div style="background:#fff;border:1px solid #fde68a;border-radius:8px;padding:8px 10px">'
+      + rows
+      + '<div style="display:flex;justify-content:space-between;margin-top:6px;padding-top:6px;border-top:2px solid #fcd34d;font-size:11px">'
+      + '<span style="color:#166534;font-weight:700">&Aacute;nimus (DTC): ' + kgDtc.toFixed(1) + ' kg</span>'
+      + '<span style="color:#7c2d12;font-weight:800">TOTAL a fabricar: ' + kgTot.toFixed(1) + ' kg</span></div>'
+      + '</div>';
   }catch(e){ box.innerHTML = ''; }
 }
 // Panel de claridad (Sebastián 3-jul): "este lote alcanza N días → cadena cada X" · base jun/jul.
