@@ -20296,31 +20296,17 @@ function _presSkuSelect(id, cur){
   h += '</select>';
   return h;
 }
-// Sebastián 17-jul · "vende N/mes" de una fila: por SKU enlazado, si no por ml, si el producto
-// tiene 1 solo SKU cae al total. Lee el mapa que arma _cargarPresentaciones (sin fetch extra).
-function _presVmesFila(p, id){
-  var _vm = (window._PRES_VMES && window._PRES_VMES[id]) || null;
-  if(!_vm) return 0;
-  var _sk = (p.sku_shopify || '').toUpperCase();
-  if(_sk && _vm.porSku[_sk] != null) return _vm.porSku[_sk];
-  var _ml = p.volumen_ml || 0;
-  if(_ml && _vm.porMl[_ml] != null) return _vm.porMl[_ml];
-  if(_vm.nSkus === 1 && (p.id || _ml)) return _vm.total;  // 1 SKU → el total es de esa presentación
-  return 0;
-}
 function _presRowHtml(p, id){
   p = p || {};
-  var _vmes = _presVmesFila(p, id);
-  var _vbadge = (_vmes > 0)
-    ? ('<span title="unidades que vende por mes (ventas de los últimos 180 días)" style="font-size:11px;color:#0369a1;background:#e0f2fe;border-radius:10px;padding:2px 8px;font-weight:700;white-space:nowrap">vende ' + Math.round(_vmes).toLocaleString('es-CO') + '/mes</span>')
-    : '';
-  return '<div class="pres-row" data-pid="' + (p.id || '') + '" style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-bottom:5px;background:#fffbeb;padding:5px;border-radius:5px">'
-    + '<input class="pres-ml" type="number" min="1" step="1" value="' + (p.volumen_ml || '') + '" placeholder="ml" title="Volumen en ml" style="width:62px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px"> ml'
-    + '<select class="pres-env" style="flex:1;min-width:150px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px;background:#fff">' + _opcionesEnvaseInline(p.envase_codigo || '') + '</select>'
-    + _presSkuSelect(id, p.sku_shopify || '')
-    + _vbadge
-    + '<input class="pres-fija" type="number" min="0" step="1" value="' + (p.cantidad_fija_uds || '') + '" placeholder="uds fijas (opc)" title="OPCIONAL · unidades FIJAS de esta presentación por lote. Vacío = el sistema reparte por VENTAS del SKU (o uniforme si el SKU no tiene ventas). Solo para forzar una cantidad exacta." style="width:104px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px">'
-    + '<button onclick="_removePresRow(this)" title="Quitar" style="padding:3px 8px;font-size:11px;background:#ef4444;color:#fff;border:none;border-radius:4px;cursor:pointer">&#10005;</button>'
+  // Sebastián 17-jul · versión LIMPIA: solo el ENVASE (+ su ml) · agregar/quitar. Sin ventas ni SKU
+  // (eso ya sale en "Desglose por referencia" más abajo). sku_shopify y uds-fijas se PRESERVAN
+  // en inputs ocultos → guardar NO los borra, pero no ensucian la UI.
+  return '<div class="pres-row" data-pid="' + (p.id || '') + '" style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:6px;background:#f0fdff;border:1px solid #cffafe;padding:7px 9px;border-radius:6px">'
+    + '<input class="pres-ml" type="number" min="1" step="1" value="' + (p.volumen_ml || '') + '" placeholder="ml" title="Volumen en ml del envase" style="width:60px;padding:5px 6px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;text-align:center"><span style="font-size:11px;color:#0e7490;font-weight:600">ml</span>'
+    + '<select class="pres-env" style="flex:1;min-width:230px;padding:5px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;background:#fff">' + _opcionesEnvaseInline(p.envase_codigo || '') + '</select>'
+    + '<input class="pres-sku" type="hidden" value="' + String(p.sku_shopify || '').replace(/"/g,'&quot;') + '">'
+    + '<input class="pres-fija" type="hidden" value="' + (p.cantidad_fija_uds || '') + '">'
+    + '<button onclick="_removePresRow(this)" title="Quitar este envase" style="padding:5px 10px;font-size:12px;background:#ef4444;color:#fff;border:none;border-radius:5px;cursor:pointer">&#10005;</button>'
     + '</div>';
 }
 function _removePresRow(btn){
@@ -20342,37 +20328,10 @@ async function _cargarPresentaciones(id, _try){
     const d = await r.json().catch(()=>({}));
     const pres = (d && d.presentaciones) || [];
     window._PRES_SKUS = window._PRES_SKUS || {};
-    window._PRES_SKUS[id] = (d && d.skus) || [];   // SKUs reales + ventas para el dropdown
-    // Sebastián 17-jul · mapa de ventas/mes por SKU y por ml (de ventas_180d ÷ 6 → mensual) para
-    // que cada presentación se auto-liste con lo que vende, igual que Necesidades. Sin fetch extra.
-    window._PRES_VMES = window._PRES_VMES || {};
-    var _vm = { porSku:{}, porMl:{}, total:0, nSkus:(window._PRES_SKUS[id]||[]).length, tonos:[] };
-    (window._PRES_SKUS[id]||[]).forEach(function(s){
-      var vmes = (s.ventas_180d || 0) / 6;
-      _vm.total += vmes;
-      _vm.porSku[(s.sku||'').toUpperCase()] = vmes;
-      var ml = s.ml_unidad || 0;
-      if(ml > 0){ _vm.porMl[ml] = (_vm.porMl[ml] || 0) + vmes; }
-      if(s.tono_label){ _vm.tonos.push({ sku:s.sku, tono:s.tono_label, ml:ml, vmes:vmes }); }
-    });
-    window._PRES_VMES[id] = _vm;
-    if(!pres.length){ list.innerHTML = '<div style="opacity:.7">Sin presentaciones definidas &middot; agreg&aacute; una.</div>'; return; }
+    window._PRES_SKUS[id] = (d && d.skus) || [];   // SKUs reales (para preservar/reparto) · ya no se muestran acá
+    if(!pres.length){ list.innerHTML = '<div style="opacity:.7">Sin envases definidos &middot; agreg&aacute; uno.</div>'; return; }
     list.innerHTML = pres.map(function(p){ return _presRowHtml(p, id); }).join('');
-    // multitono: resumen read-only de lo que vende cada tono (igual que Necesidades · swatch+color)
-    if(_vm.tonos.length >= 2){
-      var _trows = _vm.tonos.slice().sort(function(a,b){ return b.vmes - a.vmes; }).map(function(t){
-        return '<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:#155e75;padding:2px 0">'
-          + '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + _tonoColorCal(t.tono) + '"></span>'
-          + '<b>' + escapeHtml(t.tono) + '</b>'
-          + '<span style="color:#64748b">' + escapeHtml(t.sku || '') + (t.ml ? (' &middot; ' + t.ml + 'ml') : '') + '</span>'
-          + '<span style="margin-left:auto;font-weight:700;color:#0369a1">vende ' + Math.round(t.vmes).toLocaleString('es-CO') + '/mes</span>'
-          + '</div>';
-      }).join('');
-      list.insertAdjacentHTML('beforeend', '<div style="margin-top:8px;border-top:1px dashed #a5f3fc;padding-top:6px">'
-        + '<div style="font-size:10px;font-weight:800;color:#0e7490;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px">&#127912; Tonos &middot; lo que vende cada uno</div>'
-        + _trows + '</div>');
-    }
-  }catch(e){ list.innerHTML = '<div style="color:#b91c1c">Error cargando presentaciones</div>'; }
+  }catch(e){ list.innerHTML = '<div style="color:#b91c1c">Error cargando envases</div>'; }
 }
 function addPresentacionRow(id){
   const list = document.getElementById('pres-list-' + id);
@@ -21384,14 +21343,14 @@ async function abrirLoteModal(id, producto, fecha, kg){
     // Sebastián 2-jul · PRESENTACIONES del producto (multi-envase) DENTRO del área azul de
     // envase · UNA sola área. Persisten en producto_presentaciones (aplican a TODOS los lotes).
     html += '<div id="pres-box-' + id + '" data-prod="' + escapeHtml(producto) + '" style="margin-top:10px;border-top:1px dashed #67e8f9;padding-top:10px">';
-    html += '<div style="font-size:11px;font-weight:800;color:#0e7490;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">&#128230; Presentaciones del producto <span style="font-weight:600;text-transform:none;color:#155e75">· si tiene 2+ envases · se guarda para siempre</span></div>';
+    html += '<div style="font-size:11px;font-weight:800;color:#0e7490;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">&#128230; Envase(s) del producto <span style="font-weight:600;text-transform:none;color:#155e75">· agreg&aacute; otro solo si tiene 2+ tama&ntilde;os · se guarda para siempre</span></div>';
     html += '<div id="pres-list-' + id + '" style="font-size:12px;color:#0f766e">cargando&#8230;</div>';
     html += '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center">';
-    html += '<button onclick="addPresentacionRow(' + id + ')" style="padding:6px 12px;font-size:11px;background:#0891b2;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">&#10133; Agregar presentaci&oacute;n</button>';
-    html += '<button onclick="guardarPresentaciones(' + id + ')" style="padding:6px 12px;font-size:11px;background:#16a34a;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">&#128190; Guardar presentaciones</button>';
+    html += '<button onclick="addPresentacionRow(' + id + ')" style="padding:6px 12px;font-size:11px;background:#0891b2;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">&#10133; Agregar envase</button>';
+    html += '<button onclick="guardarPresentaciones(' + id + ')" style="padding:6px 12px;font-size:11px;background:#16a34a;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">&#128190; Guardar</button>';
     html += '<span id="pres-ok-' + id + '" style="color:#15803d;font-size:11px;display:none">&#10003; guardado</span>';
     html += '</div>';
-    html += '<div style="font-size:10px;color:#0e7490;margin-top:6px;line-height:1.5">Cada fila = <b>un frasco + su volumen (ml)</b>. Con eso el sistema calcula solo cu&aacute;ntos envases pedir en Abastecimiento (kg &rarr; ml &rarr; unidades). Si el producto tiene 1 sola presentaci&oacute;n, dej&aacute; 1 fila. <b>&laquo;uds fijas&raquo;</b> es OPCIONAL: d&eacute;jala vac&iacute;a y reparte autom&aacute;tico; solo la us&aacute;s para forzar una cantidad exacta (ej. 1200 uds de 10&nbsp;ml siempre). Aplica a TODOS los lotes del producto.</div>';
+    html += '<div style="font-size:10px;color:#0e7490;margin-top:6px;line-height:1.5">Cada fila = <b>un envase + su volumen (ml)</b>. Con eso Abastecimiento calcula solo cu&aacute;ntos envases pedir (kg &rarr; ml &rarr; unidades). Si tiene un solo tama&ntilde;o, dej&aacute; 1 fila. <span style="color:#94a3b8">Lo que vende cada referencia sale en &laquo;Desglose por referencia&raquo; m&aacute;s abajo.</span></div>';
     html += '</div>';
     setTimeout(function(){ _cargarPresentaciones(id); }, 60);
     html += '</div>';
