@@ -21509,8 +21509,8 @@ async function abrirLoteModal(id, producto, fecha, kg){
   }
 
   // 🧪 Listo para producir · materias primas + envases (Sebastián 16-jul · paridad con Programar
-  // de Necesidades). Se llena async al abrir (reusa /api/planta/listo-producir para MP).
-  html += '<div id="lote-readiness" style="margin:14px 0 2px"></div>';
+  // de Necesidades). Se llena async al abrir (MP: /api/planta/listo-producir · envases: listo-envases).
+  html += '<div id="lote-readiness" style="margin:14px 0 2px"><div id="lote-ready-mp"></div><div id="lote-ready-env" style="margin-top:6px"></div></div>';
 
   // 📦 Lo que se va a producir (detalle) · Plan de envasado por cliente (Ánimus vs otros) +
   // desglose por referencia · va DESPUÉS del estado y el timing (Sebastián 13-jul · como
@@ -21525,6 +21525,7 @@ async function abrirLoteModal(id, producto, fecha, kg){
   var _ldMeses = (PLAN_DATA.agendadas || []).find(a => a.id === id);
   cargarDesgloseEditableLote(producto, kg, ml, (_ldMeses && _ldMeses.meses_cobertura) ? _ldMeses.meses_cobertura : null);
   try{ _calCargarListoProducir(producto); }catch(e){}
+  try{ _calCargarListoEnvases(id); }catch(e){}
 }
 
 // 📊 Desglose EDITABLE por referencia en el modal del lote (Sebastián 27-jun): muestra cada SKU del producto
@@ -21667,7 +21668,7 @@ function _calAnios(){
 }
 // Chequeo "listo para producir" · MATERIAS PRIMAS (Sebastián 16-jul · reusa /api/planta/listo-producir).
 async function _calCargarListoProducir(producto){
-  var box = document.getElementById('lote-readiness');
+  var box = document.getElementById('lote-ready-mp');
   if(!box || !producto) return;
   box.innerHTML = '<div style="font-size:11px;color:#94a3b8;padding:6px 10px">🧪 Verificando materias primas…</div>';
   try{
@@ -21693,6 +21694,40 @@ async function _calCargarListoProducir(producto){
         + probl.slice(0,6).map(function(it){
             var ic = it.status==='deficit'?'❌':'⚠', c2 = it.status==='deficit'?'#dc2626':'#d97706';
             return '<div style="display:flex;justify-content:space-between;font-size:11px;padding:1px 0"><span>' + ic + ' ' + escapeHtml(it.nombre||'') + '</span><span style="color:' + c2 + ';font-family:ui-monospace">' + f(it.disponible_g) + '/' + f(it.requerido_g) + 'g' + (it.faltante_g>0?(' (falta ' + f(it.faltante_g) + ')'):'') + '</span></div>';
+          }).join('')
+        + (probl.length>6 ? ('<div style="font-size:10px;color:#94a3b8;text-align:center">+ ' + (probl.length-6) + ' más</div>') : '')
+        + '</div>';
+    }
+    box.innerHTML = h + '</div>';
+  }catch(e){ box.innerHTML = ''; }
+}
+// Chequeo "listo para producir" · ENVASES (Sebastián 16-jul · nuevo · listo-envases por lote).
+async function _calCargarListoEnvases(loteId){
+  var box = document.getElementById('lote-ready-env');
+  if(!box || !loteId) return;
+  box.innerHTML = '<div style="font-size:11px;color:#94a3b8;padding:6px 10px">📦 Verificando envases…</div>';
+  try{
+    var r = await fetch('/api/programacion/programar/' + loteId + '/listo-envases', {credentials:'same-origin'});
+    if(!r.ok){ box.innerHTML = ''; return; }
+    var d = await r.json();
+    if(d.sin_variantes){
+      box.innerHTML = '<div style="font-size:11px;color:#94a3b8;padding:6px 10px;background:#f8fafc;border-radius:6px">📦 Sin presentaciones configuradas · no se puede verificar envases (cargalas en Presentaciones)</div>';
+      return;
+    }
+    var rs = d.resumen || {};
+    var col = rs.deficit > 0 ? '#dc2626' : (rs.justo > 0 ? '#d97706' : '#16a34a');
+    var bg = rs.deficit > 0 ? '#fef2f2' : (rs.justo > 0 ? '#fffbeb' : '#f0fdf4');
+    var label = rs.deficit > 0 ? '❌ Faltan envases' : (rs.justo > 0 ? '⚠ Envases justos' : '📦 Envases OK · ' + (rs.total||0) + ' · listo para envasar');
+    var h = '<div style="background:' + bg + ';border:1px solid ' + col + '33;border-left:3px solid ' + col + ';border-radius:8px;padding:8px 12px;font-size:12px">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b style="color:' + col + '">' + label + '</b>'
+      + '<span style="font-size:10px;color:#64748b;white-space:nowrap">' + (rs.ok||0) + ' OK · ' + (rs.justo||0) + ' justo · ' + (rs.deficit||0) + ' déficit</span></div>';
+    var probl = (d.items||[]).filter(function(x){ return x.status !== 'ok'; });
+    if(probl.length){
+      var f = function(u){ return Math.round(u).toLocaleString('es-CO'); };
+      h += '<div style="margin-top:6px;border-top:1px dashed ' + col + '33;padding-top:5px">'
+        + probl.slice(0,6).map(function(it){
+            var ic = it.status==='deficit'?'❌':'⚠', c2 = it.status==='deficit'?'#dc2626':'#d97706';
+            return '<div style="display:flex;justify-content:space-between;font-size:11px;padding:1px 0"><span>' + ic + ' ' + escapeHtml(it.nombre||it.codigo||'') + '</span><span style="color:' + c2 + ';font-family:ui-monospace">' + f(it.disponible) + '/' + f(it.requerido) + ' u' + (it.faltante>0?(' (falta ' + f(it.faltante) + ')'):'') + '</span></div>';
           }).join('')
         + (probl.length>6 ? ('<div style="font-size:10px;color:#94a3b8;text-align:center">+ ' + (probl.length-6) + ' más</div>') : '')
         + '</div>';

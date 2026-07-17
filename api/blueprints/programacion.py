@@ -9225,6 +9225,49 @@ def prog_composicion_mee(evento_id):
     return jsonify(_res)
 
 
+@bp.route('/api/programacion/programar/<int:evento_id>/listo-envases', methods=['GET'])
+def prog_listo_envases(evento_id):
+    """¿Hay stock de ENVASES (frascos) para este lote? · Sebastián 16-jul (paridad con
+    listo-producir de MP). Reusa la composición de envases del lote y compara las
+    unidades estimadas por envase vs stock MEE canónico (SUM movimientos_mee). Read-only."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = db_connect(); c = conn.cursor()
+    _res = _composicion_envases_lote(c, evento_id)
+    if _res is None:
+        return jsonify({'error': f'Producción {evento_id} no encontrada'}), 404
+    if _res.get('sin_variantes'):
+        return jsonify({'ok': True, 'sin_variantes': True,
+                        'resumen': {'ok': 0, 'justo': 0, 'deficit': 0, 'total': 0}, 'items': []})
+    # Necesidad por envase (frasco) = suma de unidades_estimadas de las variantes que lo usan
+    need, desc = {}, {}
+    for v in (_res.get('variantes') or []):
+        cod = str(v.get('envase_codigo') or '').strip().upper()
+        if not cod:
+            continue
+        need[cod] = need.get(cod, 0.0) + float(v.get('unidades_estimadas') or 0)
+        desc.setdefault(cod, (v.get('envase_descripcion') or v.get('etiqueta') or cod))
+    try:
+        stock = _get_mee_stock(conn)   # {codigo_upper: stock}
+    except Exception:
+        stock = {}
+    items, n_ok, n_justo, n_def = [], 0, 0, 0
+    for cod, req in need.items():
+        disp = float(stock.get(cod, 0) or 0)
+        falta = max(0.0, req - disp)
+        if falta > 0.5:
+            st = 'deficit'; n_def += 1
+        elif disp < req * 1.1:
+            st = 'justo'; n_justo += 1
+        else:
+            st = 'ok'; n_ok += 1
+        items.append({'codigo': cod, 'nombre': desc.get(cod, cod), 'requerido': round(req, 1),
+                      'disponible': round(disp, 1), 'faltante': round(falta, 1), 'status': st})
+    items.sort(key=lambda x: (0 if x['status'] == 'deficit' else (1 if x['status'] == 'justo' else 2), -x['faltante']))
+    return jsonify({'ok': True, 'resumen': {'ok': n_ok, 'justo': n_justo, 'deficit': n_def, 'total': len(items)},
+                    'items': items})
+
+
 _VENTAS_SKU_180D_CACHE = {'data': None, 'ts': 0.0}  # cache global TTL · escaneo Shopify 180d es pesado (M43)
 _NARRATIVE_CACHE = {'text': None, 'ts': 0.0}  # PERF 6-jul (fable) · la narrativa IA es HTTP síncrono ~15s a Anthropic · cache 15min
 
