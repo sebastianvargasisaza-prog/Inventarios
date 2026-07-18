@@ -428,6 +428,37 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (361, "Calidad · Recepción MP/MEE en 3 etapas (Laura 18-jul): formatos F01 (Recepción técnica y "
+          "documental · COC-PRO-002-F01) + F02 (Certificado de análisis de MP · COC-PRO-002-F02) digitales, "
+          "anclados al lote de cuarentena. El registro digital calca el papel (INVIMA). El F02 aprobado por el "
+          "jefe de calidad libera el lote (VIGENTE).", [
+        # F01 · Recepción técnica y documental de insumos (MP/Envase/Empaque)
+        "CREATE TABLE IF NOT EXISTS recepcion_tecnica_doc (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "mov_id INTEGER, numero_oc TEXT DEFAULT '', lote TEXT DEFAULT '', tipo_insumo TEXT DEFAULT 'materia_prima', "
+        "codigo_insumo TEXT DEFAULT '', nombre_insumo TEXT DEFAULT '', lote_proveedor TEXT DEFAULT '', "
+        "cantidad_recibida TEXT DEFAULT '', proveedor TEXT DEFAULT '', fecha_recepcion TEXT DEFAULT '', "
+        "numero_remision TEXT DEFAULT '', area_almacenamiento TEXT DEFAULT '', "
+        "crit_rotulado TEXT DEFAULT '', crit_empaque TEXT DEFAULT '', crit_hoja_seguridad TEXT DEFAULT '', "
+        "crit_ficha_tecnica TEXT DEFAULT '', crit_coa TEXT DEFAULT '', crit_doc_coincide TEXT DEFAULT '', "
+        "observaciones TEXT DEFAULT '', resultado TEXT DEFAULT '', fecha_vencimiento TEXT DEFAULT '', "
+        "realiza_por TEXT DEFAULT '', realiza_fecha TEXT DEFAULT '', aprueba_por TEXT DEFAULT '', aprueba_fecha TEXT DEFAULT '', "
+        "creado_por TEXT DEFAULT '', creado_en TEXT DEFAULT '', anulado INTEGER DEFAULT 0)",
+        "CREATE INDEX IF NOT EXISTS idx_rtd_lote ON recepcion_tecnica_doc(lote, anulado)",
+        # F02 · Certificado de análisis de MP (5 parámetros fijos)
+        "CREATE TABLE IF NOT EXISTS certificado_analisis_mp (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "mov_id INTEGER, lote TEXT DEFAULT '', codigo_mp TEXT DEFAULT '', nombre_mp TEXT DEFAULT '', "
+        "lote_proveedor TEXT DEFAULT '', cantidad_recibida TEXT DEFAULT '', proveedor TEXT DEFAULT '', "
+        "fecha_recepcion TEXT DEFAULT '', fecha_analisis TEXT DEFAULT '', "
+        "aspecto_spec TEXT DEFAULT '', aspecto_result TEXT DEFAULT '', aspecto_cumple TEXT DEFAULT '', aspecto_obs TEXT DEFAULT '', "
+        "ph_spec TEXT DEFAULT '', ph_result TEXT DEFAULT '', ph_cumple TEXT DEFAULT '', ph_obs TEXT DEFAULT '', "
+        "densidad_spec TEXT DEFAULT '', densidad_result TEXT DEFAULT '', densidad_cumple TEXT DEFAULT '', densidad_obs TEXT DEFAULT '', "
+        "solubilidad_spec TEXT DEFAULT '', solubilidad_result TEXT DEFAULT '', solubilidad_cumple TEXT DEFAULT '', solubilidad_obs TEXT DEFAULT '', "
+        "viscosidad_spec TEXT DEFAULT '', viscosidad_result TEXT DEFAULT '', viscosidad_cumple TEXT DEFAULT '', viscosidad_obs TEXT DEFAULT '', "
+        "resultado TEXT DEFAULT '', observaciones_generales TEXT DEFAULT '', fecha_vencimiento TEXT DEFAULT '', "
+        "responsable_analisis TEXT DEFAULT '', realiza_fecha TEXT DEFAULT '', aprobo_por TEXT DEFAULT '', aprobo_fecha TEXT DEFAULT '', "
+        "creado_por TEXT DEFAULT '', creado_en TEXT DEFAULT '', anulado INTEGER DEFAULT 0)",
+        "CREATE INDEX IF NOT EXISTS idx_cam_lote ON certificado_analisis_mp(lote, anulado)",
+    ]),
     (360, "Compras · N° de transacción bancaria por pago (Catalina 17-jul): pagos_oc gana "
           "numero_transaccion (referencia de la transferencia/consignación) para anclar el pago a la OC "
           "y llevar la contabilidad. Distinto de numero_factura_proveedor (la factura del proveedor).", [

@@ -1215,6 +1215,200 @@ def especificacion_update(eid):
 
 # ─── CoA RESULTADOS ─────────────────────────────────────────────────────────
 
+# ═══════════════════════════════════════════════════════════════════════════
+# 🧪 RECEPCIÓN DE MP EN 3 ETAPAS (Laura 18-jul · mig 361 · formatos COC-PRO-002)
+# 🅐 Recepción administrativa (Catalina · Compras) → CUARENTENA automático
+# 🅑 F01 Recepción técnica y documental (COC-PRO-002-F01) → Conforme/No conforme
+# 🅒 F02 Certificado de análisis de MP (COC-PRO-002-F02) → Aprobado libera el lote (VIGENTE)
+# ═══════════════════════════════════════════════════════════════════════════
+def _fecha_co():
+    from datetime import datetime as _d, timezone as _t, timedelta as _td
+    return (_d.now(_t.utc) - _td(hours=5)).isoformat()
+
+
+@bp.route('/api/calidad/recepcion-pipeline', methods=['GET'])
+def calidad_recepcion_pipeline():
+    """Lotes de MP en cuarentena + estado de sus formatos F01/F02 (pipeline de Calidad · Laura)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    lotes = []
+    try:
+        for r in c.execute(
+            """SELECT m.id, m.material_id, m.material_nombre, m.cantidad, m.lote,
+                      m.fecha_vencimiento, m.proveedor, m.fecha, m.numero_oc, m.estado_lote
+               FROM movimientos m
+               LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
+               WHERE UPPER(COALESCE(m.estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA') AND m.tipo='Entrada'
+                 AND TRIM(COALESCE(m.material_id,'')) <> ''
+                 AND COALESCE(m.observaciones,'') NOT LIKE '%::ANULADA-mov#%'
+                 AND UPPER(COALESCE(mp.tipo_material,'MP'))='MP'
+               ORDER BY m.fecha DESC LIMIT 100""").fetchall():
+            mid = r[0]
+            f01 = c.execute("SELECT resultado FROM recepcion_tecnica_doc WHERE mov_id=? AND COALESCE(anulado,0)=0 "
+                            "ORDER BY id DESC LIMIT 1", (mid,)).fetchone()
+            f02 = c.execute("SELECT resultado FROM certificado_analisis_mp WHERE mov_id=? AND COALESCE(anulado,0)=0 "
+                            "ORDER BY id DESC LIMIT 1", (mid,)).fetchone()
+            lotes.append({'mov_id': mid, 'codigo_mp': r[1], 'nombre': r[2], 'cantidad': r[3], 'lote': r[4],
+                          'fecha_vencimiento': r[5] or '', 'proveedor': r[6] or '', 'fecha': (r[7] or '')[:10],
+                          'numero_oc': r[8] or '', 'estado_lote': r[9] or '',
+                          'f01_resultado': (f01[0] if f01 else ''), 'f02_resultado': (f02[0] if f02 else '')})
+    except Exception:
+        lotes = []
+    return jsonify({'ok': True, 'lotes': lotes})
+
+
+_F01_COLS = ['mov_id', 'numero_oc', 'lote', 'tipo_insumo', 'codigo_insumo', 'nombre_insumo', 'lote_proveedor',
+             'cantidad_recibida', 'proveedor', 'fecha_recepcion', 'numero_remision', 'area_almacenamiento',
+             'crit_rotulado', 'crit_empaque', 'crit_hoja_seguridad', 'crit_ficha_tecnica', 'crit_coa',
+             'crit_doc_coincide', 'observaciones', 'resultado', 'fecha_vencimiento',
+             'realiza_por', 'realiza_fecha', 'aprueba_por', 'aprueba_fecha']
+
+
+@bp.route('/api/calidad/recepcion-tecnica', methods=['GET', 'POST'])
+def calidad_recepcion_tecnica():
+    """F01 · Recepción técnica y documental (COC-PRO-002-F01). GET ?mov_id=X → registro o prefill del movimiento."""
+    if request.method == 'GET':
+        if 'compras_user' not in session:
+            return jsonify({'error': 'No autorizado'}), 401
+        mov_id = request.args.get('mov_id')
+        conn = get_db(); c = conn.cursor()
+        row = c.execute("SELECT * FROM recepcion_tecnica_doc WHERE mov_id=? AND COALESCE(anulado,0)=0 "
+                        "ORDER BY id DESC LIMIT 1", (mov_id,)).fetchone()
+        if row:
+            cols = [d[0] for d in c.description]
+            return jsonify({'ok': True, 'f01': dict(zip(cols, row))})
+        m = c.execute("SELECT material_id, material_nombre, cantidad, lote, proveedor, fecha, numero_oc, "
+                      "fecha_vencimiento FROM movimientos WHERE id=?", (mov_id,)).fetchone()
+        pre = {}
+        if m:
+            pre = {'codigo_insumo': m[0], 'nombre_insumo': m[1], 'cantidad_recibida': str(m[2] or ''),
+                   'lote': m[3], 'proveedor': m[4] or '', 'fecha_recepcion': (m[5] or '')[:10],
+                   'numero_oc': m[6] or '', 'fecha_vencimiento': m[7] or ''}
+        return jsonify({'ok': True, 'f01': None, 'prefill': pre})
+    err, code = _require_calidad()
+    if err:
+        return err, code
+    u = session.get('compras_user', '')
+    b = request.get_json(silent=True) or {}
+    mov_id = b.get('mov_id')
+    if not mov_id:
+        return jsonify({'error': 'Falta el lote (mov_id)'}), 400
+    vals = {k: (str(b.get(k) or '')) for k in _F01_COLS}
+    vals['mov_id'] = mov_id
+    conn = get_db(); cur = conn.cursor()
+    try:
+        cur.execute("UPDATE recepcion_tecnica_doc SET anulado=1 WHERE mov_id=? AND COALESCE(anulado,0)=0", (mov_id,))
+        _f = _F01_COLS + ['creado_por', 'creado_en']
+        cur.execute(f"INSERT INTO recepcion_tecnica_doc ({','.join(_f)}) VALUES ({','.join(['?']*len(_f))})",
+                    [vals[k] for k in _F01_COLS] + [u, _fecha_co()])
+        audit_log(cur, usuario=u, accion='RECEPCION_TECNICA_F01', tabla='recepcion_tecnica_doc',
+                  registro_id=(cur.lastrowid or 0), despues={'mov_id': mov_id, 'resultado': vals['resultado']})
+        conn.commit()
+    except Exception as e:
+        conn.rollback(); return jsonify({'error': f'No se pudo guardar F01: {e}'}), 500
+    return jsonify({'ok': True, 'resultado': vals['resultado']})
+
+
+_F02_COLS = ['mov_id', 'lote', 'codigo_mp', 'nombre_mp', 'lote_proveedor', 'cantidad_recibida', 'proveedor',
+             'fecha_recepcion', 'fecha_analisis',
+             'aspecto_spec', 'aspecto_result', 'aspecto_cumple', 'aspecto_obs',
+             'ph_spec', 'ph_result', 'ph_cumple', 'ph_obs',
+             'densidad_spec', 'densidad_result', 'densidad_cumple', 'densidad_obs',
+             'solubilidad_spec', 'solubilidad_result', 'solubilidad_cumple', 'solubilidad_obs',
+             'viscosidad_spec', 'viscosidad_result', 'viscosidad_cumple', 'viscosidad_obs',
+             'resultado', 'observaciones_generales', 'fecha_vencimiento',
+             'responsable_analisis', 'realiza_fecha', 'aprobo_por', 'aprobo_fecha']
+
+
+@bp.route('/api/calidad/certificado-analisis', methods=['GET', 'POST'])
+def calidad_certificado_analisis():
+    """F02 · Certificado de análisis de MP (COC-PRO-002-F02). resultado='aprobado' + aprobo_por (jefe) LIBERA
+    el lote (CUARENTENA→VIGENTE · CAS · M23/M27). 'no_aprobado' → RECHAZADO. 'cuarentena' → se queda."""
+    if request.method == 'GET':
+        if 'compras_user' not in session:
+            return jsonify({'error': 'No autorizado'}), 401
+        mov_id = request.args.get('mov_id')
+        conn = get_db(); c = conn.cursor()
+        row = c.execute("SELECT * FROM certificado_analisis_mp WHERE mov_id=? AND COALESCE(anulado,0)=0 "
+                        "ORDER BY id DESC LIMIT 1", (mov_id,)).fetchone()
+        if row:
+            cols = [d[0] for d in c.description]
+            return jsonify({'ok': True, 'f02': dict(zip(cols, row))})
+        m = c.execute("SELECT material_id, material_nombre, cantidad, lote, proveedor, fecha, fecha_vencimiento "
+                      "FROM movimientos WHERE id=?", (mov_id,)).fetchone()
+        pre = {}
+        if m:
+            pre = {'codigo_mp': m[0], 'nombre_mp': m[1], 'cantidad_recibida': str(m[2] or ''), 'lote': m[3],
+                   'proveedor': m[4] or '', 'fecha_recepcion': (m[5] or '')[:10], 'fecha_vencimiento': m[6] or ''}
+            # prefill specs de aspecto/pH/etc desde especificaciones_mp si existen
+            try:
+                for sp in c.execute("SELECT parametro, valor_min, valor_max, unidad FROM especificaciones_mp "
+                                    "WHERE UPPER(TRIM(codigo_mp))=UPPER(TRIM(?))", (m[0],)).fetchall():
+                    _p = (sp[0] or '').lower()
+                    if sp[1] is not None and sp[2] is not None:
+                        _txt = str(sp[1]) + ' - ' + str(sp[2]) + ' ' + (sp[3] or '')
+                    elif sp[1] is not None:
+                        _txt = str(sp[1]) + ' ' + (sp[3] or '')
+                    else:
+                        _txt = ''
+                    if 'aspecto' in _p or 'color' in _p or 'olor' in _p:
+                        pre['aspecto_spec'] = _txt
+                    elif _p.startswith('ph'):
+                        pre['ph_spec'] = _txt
+                    elif 'densidad' in _p:
+                        pre['densidad_spec'] = _txt
+                    elif 'solub' in _p:
+                        pre['solubilidad_spec'] = _txt
+                    elif 'viscos' in _p:
+                        pre['viscosidad_spec'] = _txt
+            except Exception:
+                pass
+        return jsonify({'ok': True, 'f02': None, 'prefill': pre})
+    err, code = _require_calidad()
+    if err:
+        return err, code
+    u = session.get('compras_user', '')
+    b = request.get_json(silent=True) or {}
+    mov_id = b.get('mov_id')
+    if not mov_id:
+        return jsonify({'error': 'Falta el lote (mov_id)'}), 400
+    resultado = (str(b.get('resultado') or '')).strip().lower()  # aprobado | no_aprobado | cuarentena
+    aprobo_por = (str(b.get('aprobo_por') or '')).strip()
+    if resultado == 'aprobado' and not aprobo_por:
+        return jsonify({'error': 'Para APROBAR y liberar el lote se requiere la firma del jefe de calidad (aprobó)'}), 400
+    vals = {k: (str(b.get(k) or '')) for k in _F02_COLS}
+    vals['mov_id'] = mov_id
+    conn = get_db(); cur = conn.cursor()
+    # datos del lote para liberar
+    lrow = cur.execute("SELECT lote, material_id FROM movimientos WHERE id=?", (mov_id,)).fetchone()
+    if not lrow:
+        return jsonify({'error': 'El lote no existe'}), 404
+    _lote, _matid = lrow[0], lrow[1]
+    try:
+        cur.execute("UPDATE certificado_analisis_mp SET anulado=1 WHERE mov_id=? AND COALESCE(anulado,0)=0", (mov_id,))
+        _f = _F02_COLS + ['creado_por', 'creado_en']
+        cur.execute(f"INSERT INTO certificado_analisis_mp ({','.join(_f)}) VALUES ({','.join(['?']*len(_f))})",
+                    [vals[k] for k in _F02_COLS] + [u, _fecha_co()])
+        _liberado = 0
+        if resultado in ('aprobado', 'no_aprobado'):
+            # transición canónica del kardex (M23 VIGENTE/RECHAZADO · M27 CAS: solo si sigue en cuarentena)
+            _nuevo = 'VIGENTE' if resultado == 'aprobado' else 'RECHAZADO'
+            cur.execute("UPDATE movimientos SET estado_lote=? "
+                        "WHERE UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA') "
+                        "AND lote=? AND material_id=? AND tipo='Entrada'",
+                        (_nuevo, _lote, _matid))
+            _liberado = cur.rowcount
+        audit_log(cur, usuario=u, accion='CERTIFICADO_ANALISIS_F02', tabla='certificado_analisis_mp',
+                  registro_id=(cur.lastrowid or 0),
+                  despues={'mov_id': mov_id, 'lote': _lote, 'resultado': resultado, 'aprobo': aprobo_por,
+                           'lotes_afectados': _liberado})
+        conn.commit()
+    except Exception as e:
+        conn.rollback(); return jsonify({'error': f'No se pudo guardar F02: {e}'}), 500
+    return jsonify({'ok': True, 'resultado': resultado, 'liberado': _liberado})
+
+
 @bp.route('/api/calidad/coa', methods=['GET','POST'])
 def coa_list():
     """Registra resultados de analisis CoA por lote.
