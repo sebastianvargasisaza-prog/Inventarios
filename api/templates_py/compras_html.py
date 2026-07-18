@@ -294,7 +294,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
     <button class="tn"      data-tab="cotiz" id="tn-cotiz" title="Rondas de cotizaciones · comparar proveedores lado a lado · elegir ganadora">💬 Cotizaciones <span id="cotiz-badge" style="display:none;background:#0891b2;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <!-- Sebastián 21-may-2026 · Órdenes de Servicio (serigrafía/tampografía) -->
     <button class="tn" style="display:none" data-tab="ordserv" id="tn-ordserv" title="Órdenes de Servicio · serigrafía, tampografía, etiquetado">🎨 Órdenes de Servicio</button>
-    <button class="tn"      data-tab="prepenv" id="tn-prepenv" title="Preparar envases · jalona los envases de las producciones próximas para mandar a serigrafía/tampografía con anticipación">📦 Preparar envases</button>
+    <button class="tn"      data-tab="prepenv" id="tn-prepenv" title="Envases a marcar · método+proveedor y ciclo completo enviar→recibir→cuarentena→liberar (serigrafía/tampografía)">🏷️ Envases a marcar</button>
   </span>
   <!-- Sub-tabs del grupo MAESTROS -->
   <span data-cx-sub="maestros" style="display:none;gap:6px;flex-wrap:wrap">
@@ -630,24 +630,16 @@ function renderHistorico(){
   </div>
 </div>
 
-<!-- Sebastián 31-may-2026 · Preparar envases (Pieza 1) -->
+<!-- Envases a marcar (serigrafía/tampografía) · unificado 18-jul · base Marcación (ciclo completo con cuarentena) -->
 <div id="pane-prepenv" class="pane">
   <div class="bar" style="flex-wrap:wrap;gap:8px">
     <div>
-      <span style="font-weight:700;color:#1e293b;font-size:15px">&#128230; Preparar envases &middot; serigrafía / tampografía</span>
-      <div style="font-size:11px;color:#64748b;margin-top:2px">Jalona los envases de las producciones próximas. Elegí cuáles preparar, proveedor y tipo &middot; la fecha lista ya viene con 30 días de anticipación. "Generar OS" crea la orden y queda asignada.</div>
+      <span style="font-weight:700;color:#1e293b;font-size:15px">&#127991;&#65039; Envases a marcar &middot; serigrafía / tampografía</span>
+      <div style="font-size:11px;color:#64748b;margin-top:2px">Compras define <b>método</b> y <b>proveedor</b> de cada envase y lo manda a marcar (15 días antes de producir). Ciclo completo: enviar &rarr; recibir &rarr; cuarentena &rarr; Calidad libera. Planta solo alista/recibe.</div>
     </div>
-    <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
-      <label style="font-size:12px;color:#475569">Horizonte
-        <select id="prep-dias" onchange="loadPreparacionEnvases()" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px">
-          <option value="60">60d</option><option value="90" selected>90d</option><option value="120">120d</option><option value="180">180d</option>
-        </select>
-      </label>
-      <button class="btn bp" onclick="loadPreparacionEnvases()" style="padding:6px 14px;font-size:12px">&#8635; Actualizar</button>
-      <button class="btn" onclick="recalcularMinimosEnvases()" style="padding:6px 14px;font-size:12px;background:#7c3aed;color:#fff;font-weight:700" title="Calcula el mínimo de cada envase según el consumo real del plan (en vez del estático)">&#9881; Mínimos de envases</button>
-    </div>
+    <button class="btn bp" onclick="loadMarcacionOC(true)" style="margin-left:auto;padding:6px 14px;font-size:12px">&#8635; Actualizar</button>
   </div>
-  <div id="prep-tabla-wrap" style="overflow-x:auto;margin-top:10px">Cargando&hellip;</div>
+  <iframe id="marcacion-iframe-oc" src="about:blank" style="width:100%;height:82vh;border:1px solid #e2e8f0;border-radius:12px;background:#fff;margin-top:6px" title="Envases a marcar"></iframe>
 </div>
 
 <!-- Sebastián 31-may-2026 · Feed de necesidades (Pieza 2) -->
@@ -739,10 +731,6 @@ function renderHistorico(){
      valor), y los cambios se sincronizan globalmente a maestro_mps +
      mp_lead_time_config + precio_referencia (aplican en TODA la app). -->
 <div id="pane-planta" class="pane">
-  <div style="display:flex;gap:6px;margin-bottom:16px;border-bottom:2px solid #e2e8f0;padding-top:2px">
-    <button type="button" class="sp-tab sp-on" id="sptn-mp" onclick="showSubPlanta('mp')">&#129514; Materias Primas</button>
-    <button type="button" class="sp-tab" id="sptn-env" onclick="showSubPlanta('env')">&#128230; Envases</button>
-  </div>
   <div id="subplanta-mp">
   <!-- Alertas MP/envases en déficit (Centro de Programación) · 23-jun: movidas desde Solicitudes - son de PLANTA -->
   <div id="mp-alert-banner" style="display:none;background:linear-gradient(135deg,#fffbeb,#fef3c7);border:1px solid #fcd34d;border-radius:12px;padding:12px 16px;margin-bottom:12px;box-shadow:0 2px 10px rgba(245,158,11,.08);">
@@ -784,19 +772,7 @@ function renderHistorico(){
     <div style="color:#94a3b8;text-align:center;padding:40px;">Cargando...</div>
   </div>
   </div>
-  <div id="subplanta-env" style="display:none">
-    <iframe id="marcacion-iframe" src="about:blank" style="width:100%;height:86vh;border:none;border-radius:8px" title="Marcación de envases"></iframe>
-  </div>
 </div>
-<script>
-function showSubPlanta(w){
-  document.getElementById('subplanta-mp').style.display=(w==='mp')?'':'none';
-  document.getElementById('subplanta-env').style.display=(w==='env')?'':'none';
-  var a=document.getElementById('sptn-mp'),b=document.getElementById('sptn-env');
-  if(a)a.className='sp-tab'+(w==='mp'?' sp-on':'');if(b)b.className='sp-tab'+(w==='env'?' sp-on':'');
-  if(w==='env'){var f=document.getElementById('marcacion-iframe');if(f&&(f.src||'').indexOf('marcacion-envases')<0)f.src='/admin/marcacion-envases';}
-}
-</script>
 
 <div id="pane-consol" class="pane">
   <div class="bar" style="flex-direction:column;align-items:stretch;gap:12px;">
@@ -1805,7 +1781,7 @@ document.querySelectorAll('.tn').forEach(function(btn){
     else if(tab==='solprod'){ loadSolicitudesProduccion(); }
     else if(tab==='mis-sol'){ loadMisSolicitudes(); }
     else if(tab==='ordserv'){ loadOrdenesServicio(); }
-    else if(tab==='prepenv'){ loadPreparacionEnvases(); }
+    else if(tab==='prepenv'){ loadMarcacionOC(); }
     else if(tab==='feedneed'){ loadFeedNecesidades(); }
     else if(tab==='facprov'){ loadFacturasProv(); }
     var fab = document.getElementById('fab-btn');
@@ -2023,7 +1999,15 @@ async function loadFeedNecesidades(){
   }catch(e){ wrap.innerHTML='<div style="color:#dc2626;padding:14px">Error red: '+_esc(e.message||e)+'</div>'; }
 }
 
-// Sebastián 31-may-2026 · Preparar envases (Pieza 1) · jalona producciones → OS
+// Envases a marcar · carga la página de Marcación (ciclo completo) embebida por iframe (unificado 18-jul)
+function loadMarcacionOC(force){
+  var f=document.getElementById('marcacion-iframe-oc');
+  if(!f) return;
+  if(force){ f.src='/admin/marcacion-envases'; return; }
+  if((f.src||'').indexOf('marcacion-envases')<0) f.src='/admin/marcacion-envases';
+}
+
+// Sebastián 31-may-2026 · Preparar envases (Pieza 1 · RETIRADO · queda inerte, null-safe) · jalona producciones → OS
 window._PREP_ITEMS = [];
 async function loadPreparacionEnvases(){
   var wrap = document.getElementById('prep-tabla-wrap');
