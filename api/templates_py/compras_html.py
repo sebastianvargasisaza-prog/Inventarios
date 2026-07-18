@@ -245,7 +245,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
     style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:#e2e8f0;color:#475569"
     title="Catálogo de consumibles + crear compra + reporte de gasto por categoría">🗂️ Catálogo / Gastos</button>
   <span data-cx-sub="catalogo" style="display:none;gap:6px;flex-wrap:wrap">
-    <button class="tn" data-tab="catalogo" id="tn-catalogo"
+    <button class="tn" style="display:none" data-tab="catalogo" id="tn-catalogo"
       onclick="(function(f){ if(f && !f.getAttribute('src')) f.setAttribute('src', f.getAttribute('data-src')); })(document.getElementById('cat-iframe'))"
       title="Catálogo de consumibles + reporte de gasto (papelería, EPP, servicios…)">🗂️ Catálogo / Gastos</button>
   </span>
@@ -1728,8 +1728,11 @@ window._cxTabToGrp = {
   // OCs y Pagos
   'consol':'ocs', 'por-pagar':'ocs', 'pagos':'ocs', 'historico':'ocs', 'ordserv':'ocs',
   'atrasadas':'ocs', 'discrep':'ocs', 'mailbox':'ocs',
+  'facprov':'ocs', 'cotiz':'ocs', 'prepenv':'ocs', 'feedneed':'ocs',
   // Maestros
   'prov':'maestros',
+  // Catálogo
+  'catalogo':'catalogo',
   // Dashboard (consolidado · alertas + mis-sol son widgets dentro)
   'dash':'analitica', 'alertas':'analitica', 'mis-sol':'analitica',
   // PRO Fase 1: estos 2 ya no son tabs visibles · siguen en map por deep links

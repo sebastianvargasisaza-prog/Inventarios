@@ -11667,11 +11667,19 @@ def compras_cash_flow():
             # date(fecha)=creación (siempre ≤ hoy → todas las OCs caían en TODOS los buckets).
             # Ahora agrupa por la fecha ESPERADA de pago (fecha_entrega_est); las OCs sin fecha
             # estimada usan la de creación (pasada → "por pagar ya", entran en todos los buckets).
+            # FIX · 18-jul-2026 · el monto sumaba valor_total COMPLETO de las OC 'Parcial' → sobre-
+            # proyectaba lo ya abonado. Ahora resta lo pagado (pagos_oc) → saldo pendiente real
+            # (valor_total − SUM(pagos), clamp ≥0). Coincide con el saldo de la vista Pagos.
             r = c.execute(
-                """SELECT COUNT(*), COALESCE(SUM(valor_total),0)
-                   FROM ordenes_compra
-                   WHERE estado IN ('Autorizada','Aprobada','Recibida','Parcial')
-                     AND date(COALESCE(NULLIF(TRIM(fecha_entrega_est),''), fecha)) <= ?""",
+                """SELECT COUNT(*), COALESCE(SUM(
+                       CASE WHEN oc.valor_total - COALESCE(p.pagado,0) < 0 THEN 0
+                            ELSE oc.valor_total - COALESCE(p.pagado,0) END
+                   ),0)
+                   FROM ordenes_compra oc
+                   LEFT JOIN (SELECT numero_oc, SUM(monto) AS pagado FROM pagos_oc GROUP BY numero_oc) p
+                     ON p.numero_oc = oc.numero_oc
+                   WHERE oc.estado IN ('Autorizada','Aprobada','Recibida','Parcial')
+                     AND date(COALESCE(NULLIF(TRIM(oc.fecha_entrega_est),''), oc.fecha)) <= ?""",
                 (cutoff,),
             ).fetchone()
             v['ocs_por_pagar'] = {'count': int(r[0] or 0), 'monto': float(r[1] or 0)}
