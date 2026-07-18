@@ -210,21 +210,68 @@ textarea{resize:vertical;min-height:70px;}
 </div>
 
 <div id="tab-cc" class="pane">
-  <div class="card">
-    <div class="card-title">&#x1F9EA; Recepción de MP y envases · pipeline de calidad</div>
-    <div style="font-size:12px;color:var(--cx-text-mute);margin:-4px 0 12px;line-height:1.5">
-      Cada lote que llega pasa por: <b>🅐 Recepción administrativa</b> (Catalina · ya en cuarentena) →
-      <b>🅑 Recepción técnica y documental</b> (F01) → <b>🅒 Certificado de análisis</b> (F02).
-      <b>Materias primas:</b> el F02 <b>aprobado</b> por el jefe de calidad libera el lote (VIGENTE, stock usable).
-      <b>Envases (MEE):</b> no llevan análisis fisicoquímico → el F01 <b>conforme</b> + firma del jefe libera el lote.
+  <style>
+    #tab-cc .ccp-hero{background:var(--cx-hero-grad);border:1px solid var(--cx-border);border-radius:var(--cx-r-xl);padding:22px 26px;margin-bottom:16px;position:relative;overflow:hidden}
+    #tab-cc .ccp-hero:before{content:"";position:absolute;top:-40px;right:-30px;width:180px;height:180px;background:var(--cx-primary-grad);opacity:.10;border-radius:50%}
+    #tab-cc .ccp-title{font-size:21px;font-weight:800;color:var(--cx-text);letter-spacing:-.01em;display:flex;align-items:center;gap:10px}
+    #tab-cc .ccp-sub{font-size:12.5px;color:var(--cx-text-mute);margin-top:5px;max-width:820px;line-height:1.55}
+    #tab-cc .ccp-flow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:16px}
+    #tab-cc .ccp-st{display:flex;align-items:center;gap:9px;background:var(--cx-card);border:1px solid var(--cx-border);border-radius:var(--cx-r-pill);padding:6px 15px 6px 7px;box-shadow:var(--cx-sh-card)}
+    #tab-cc .ccp-st .n{width:26px;height:26px;border-radius:50%;background:var(--cx-primary-soft);color:var(--cx-primary);font-weight:800;display:flex;align-items:center;justify-content:center;font-size:13px}
+    #tab-cc .ccp-st .lb{font-size:12px;font-weight:600;color:var(--cx-text-soft);line-height:1.15}
+    #tab-cc .ccp-st .lb small{display:block;font-weight:400;color:var(--cx-text-mute);font-size:10px}
+    #tab-cc .ccp-arw{color:var(--cx-text-faint);font-size:18px;font-weight:700}
+    #tab-cc .ccp-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px}
+    #tab-cc .ccp-kpi{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:var(--cx-r-lg);padding:15px 18px;box-shadow:var(--cx-sh-card);position:relative}
+    #tab-cc .ccp-kpi .v{font-size:28px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums}
+    #tab-cc .ccp-kpi .k{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--cx-text-mute);margin-top:7px;font-weight:600}
+    #tab-cc .ccp-kpi .bar{position:absolute;left:0;top:14px;bottom:14px;width:4px;border-radius:0 4px 4px 0}
+    #tab-cc .ccp-search{width:100%;max-width:400px;padding:10px 15px;border:1px solid var(--cx-border);border-radius:var(--cx-r-pill);font-size:13px;margin-bottom:14px;background:var(--cx-card);color:var(--cx-text);box-shadow:var(--cx-sh-card);outline:none}
+    #tab-cc .ccp-search:focus{border-color:var(--cx-primary);box-shadow:var(--cx-ring)}
+    #tab-cc .ccp-wrap{background:var(--cx-card);border:1px solid var(--cx-border);border-radius:var(--cx-r-lg);box-shadow:var(--cx-sh-card);overflow:hidden}
+    #tab-cc table.ccp{width:100%;border-collapse:separate;border-spacing:0}
+    #tab-cc table.ccp thead th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--cx-text-mute);font-weight:700;padding:12px 16px;background:var(--cx-bg-alt);border-bottom:1px solid var(--cx-border);white-space:nowrap}
+    #tab-cc table.ccp tbody td{padding:13px 16px;border-bottom:1px solid var(--cx-border-soft);vertical-align:middle;font-size:13px;color:var(--cx-text-soft)}
+    #tab-cc table.ccp tbody tr{transition:background .12s var(--cx-ease)}
+    #tab-cc table.ccp tbody tr:hover{background:var(--cx-primary-pale)}
+    #tab-cc table.ccp tbody tr:last-child td{border-bottom:none}
+    #tab-cc .ccp-badge{display:inline-flex;align-items:center;font-size:9px;font-weight:800;letter-spacing:.04em;border-radius:var(--cx-r-sm);padding:2px 7px;vertical-align:middle;margin-right:7px}
+    #tab-cc .ccp-badge.mp{background:var(--cx-info-pale);color:var(--cx-info)}
+    #tab-cc .ccp-badge.mee{background:var(--cx-primary-soft);color:var(--cx-primary)}
+    #tab-cc .ccp-name{font-weight:700;color:var(--cx-text);font-size:13.5px}
+    #tab-cc .ccp-meta{font-size:11px;color:var(--cx-text-mute);font-family:var(--cx-font-mono);margin-top:2px}
+    #tab-cc .ccp-qty{font-variant-numeric:tabular-nums;font-weight:600;color:var(--cx-text)}
+    #tab-cc .ccp-chip{display:inline-flex;align-items:center;gap:4px;border-radius:var(--cx-r-pill);padding:4px 11px;font-size:11.5px;font-weight:700;white-space:nowrap}
+    #tab-cc .ccp-chip.ok{background:var(--cx-success-pale);color:var(--cx-success)}
+    #tab-cc .ccp-chip.no{background:var(--cx-danger-pale);color:var(--cx-danger)}
+    #tab-cc .ccp-chip.wait{background:#fef3c7;color:#b45309}
+    #tab-cc .ccp-chip.mute{background:var(--cx-bg-alt);color:var(--cx-text-mute);font-weight:600}
+    #tab-cc .ccp-btn{background:var(--cx-primary-grad);color:#fff;border:none;border-radius:var(--cx-r-pill);padding:7px 15px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:var(--cx-sh-violet-sm);transition:filter .12s}
+    #tab-cc .ccp-btn:hover{filter:brightness(1.06)}
+    #tab-cc .ccp-lnk{font-size:10.5px;color:var(--cx-primary);text-decoration:none;margin-left:8px;font-weight:600}
+    #tab-cc .ccp-lnk:hover{text-decoration:underline}
+    #tab-cc .ccp-pdf{font-size:10.5px;color:var(--cx-info);text-decoration:none;margin-left:6px;font-weight:600}
+    #tab-cc .ccp-empty{padding:38px;text-align:center;color:var(--cx-text-mute);font-size:13px}
+    @media(max-width:820px){#tab-cc .ccp-kpis{grid-template-columns:repeat(2,1fr)}}
+  </style>
+  <div class="ccp-hero">
+    <div class="ccp-title">&#x1F9EA; Recepción de MP y envases</div>
+    <div class="ccp-sub">Cada lote que llega recorre el pipeline de calidad. <b>Materias primas:</b> el F02 aprobado por el jefe libera el lote (VIGENTE, stock usable). <b>Envases (MEE):</b> no llevan análisis fisicoquímico &rarr; el F01 conforme + firma del jefe lo libera.</div>
+    <div class="ccp-flow">
+      <div class="ccp-st"><span class="n">&#x1F150;</span><span class="lb">Recepción administrativa<small>Catalina &middot; entra a cuarentena</small></span></div>
+      <span class="ccp-arw">&rarr;</span>
+      <div class="ccp-st"><span class="n">&#x1F151;</span><span class="lb">Recepción técnica (F01)<small>COC-PRO-002-F01</small></span></div>
+      <span class="ccp-arw">&rarr;</span>
+      <div class="ccp-st"><span class="n">&#x1F152;</span><span class="lb">Análisis y liberación (F02)<small>COC-PRO-002-F02</small></span></div>
     </div>
-    <input type="text" oninput="var q=this.value.toLowerCase();document.querySelectorAll('#cc-tbody tr').forEach(function(r){r.style.display=((r.textContent||'').toLowerCase().indexOf(q)>=0)?'':'none';});" placeholder="&#128269; Buscar material, lote, proveedor u OC…" style="width:100%;max-width:380px;padding:9px 13px;border:1px solid #eef0f2;border-radius:10px;font-size:13px;margin-bottom:14px;box-shadow:0 1px 2px rgba(15,23,42,.04);">
-    <div style="overflow-x:auto;">
-    <table>
-      <thead><tr><th>MP / Lote</th><th>Cantidad</th><th>Proveedor</th><th>Vencimiento</th><th>OC</th><th>🅑 F01 técnica</th><th>🅒 F02 análisis</th></tr></thead>
-      <tbody id="cc-tbody"><tr><td colspan="7" class="empty">Cargando...</td></tr></tbody>
+  </div>
+  <div class="ccp-kpis" id="cc-kpis"></div>
+  <input type="text" class="ccp-search" oninput="var q=this.value.toLowerCase();document.querySelectorAll('#cc-tbody tr').forEach(function(r){r.style.display=((r.textContent||'').toLowerCase().indexOf(q)>=0)?'':'none';});" placeholder="&#128269; Buscar material, lote, proveedor u OC…">
+  <div class="ccp-wrap" style="overflow-x:auto;">
+    <table class="ccp">
+      <thead><tr><th>Insumo / Lote</th><th>Cantidad</th><th>Proveedor</th><th>Vencimiento</th><th>OC</th><th>&#x1F151; F01 técnica</th><th>&#x1F152; F02 análisis</th></tr></thead>
+      <tbody id="cc-tbody"><tr><td colspan="7" class="ccp-empty">Cargando&hellip;</td></tr></tbody>
     </table>
-    </div>
   </div>
 </div>
 
@@ -2288,54 +2335,71 @@ async function decidirTarea(estado){
 }
 
 /* ââ CUARENTENA ââââââââââââââââââââââââââââââââââââââ */
+function _ccKpi(v,k,color){
+  return '<div class="ccp-kpi"><span class="bar" style="background:'+color+'"></span>'
+    +'<div class="v" style="color:'+color+'">'+v+'</div><div class="k">'+k+'</div></div>';
+}
+function _ccRenderKpis(rows){
+  var box=document.getElementById('cc-kpis'); if(!box) return;
+  var total=rows.length, faltaF01=0, enAnalisis=0, novedad=0;
+  rows.forEach(function(l){
+    var f01=l.f01_resultado||'', f02=l.f02_resultado||'';
+    if(!f01) faltaF01++;
+    if(l.tipo!=='MEE' && f01==='conforme' && !f02) enAnalisis++;
+    if(f01==='no_conforme' || f02==='no_aprobado' || f02==='cuarentena') novedad++;
+  });
+  box.innerHTML=_ccKpi(total,'En cuarentena','var(--cx-primary)')
+    +_ccKpi(faltaF01,'Falta F01 técnica','var(--cx-info)')
+    +_ccKpi(enAnalisis,'Listas para F02','#b45309')
+    +_ccKpi(novedad,'Con novedad','var(--cx-danger)');
+}
 async function loadCuarentena(){
   const tbody=document.getElementById('cc-tbody');
   try{
     const r=await fetch('/api/calidad/recepcion-pipeline');
     const d=await r.json(); const rows=(d&&d.lotes)||[]; window._ccrRows=rows;
-    if(!rows.length){tbody.innerHTML='<tr><td colspan="7" class="empty">No hay lotes en cuarentena</td></tr>';return;}
+    _ccRenderKpis(rows);
+    if(!rows.length){tbody.innerHTML='<tr><td colspan="7" class="ccp-empty">No hay lotes en cuarentena</td></tr>';return;}
     tbody.innerHTML=rows.map(function(l){
       var esMEE = (l.tipo==='MEE');
       var org = esMEE?'MEE':'MP';
       var f01=l.f01_resultado||'';
       var f01ok=(f01==='conforme');
-      var f01pdf = f01 ? ' <a href="/api/calidad/recepcion-tecnica/imprimible?mov_id='+l.mov_id+'&origen='+org+'" target="_blank" style="font-size:10px;color:#0369a1">PDF</a>' : '';
+      var f01pdf = f01 ? ' <a class="ccp-pdf" href="/api/calidad/recepcion-tecnica/imprimible?mov_id='+l.mov_id+'&origen='+org+'" target="_blank">&#128196; PDF</a>' : '';
       var f01cell = f01
-        ? '<span style="background:'+(f01ok?'#dcfce7':'#fee2e2')+';color:'+(f01ok?'#15803d':'#b91c1c')+';border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700">'+(f01ok?'&#10003; Conforme':'&#10007; No conforme')+'</span> <a href="#" onclick="openF01('+l.mov_id+',&quot;'+org+'&quot;);return false" style="font-size:10px;color:#7c3aed">editar</a>'+f01pdf
-        : '<button class="btn btn-primary btn-sm" onclick="openF01('+l.mov_id+',&quot;'+org+'&quot;)">Hacer F01</button>';
+        ? '<span class="ccp-chip '+(f01ok?'ok':'no')+'">'+(f01ok?'&#10003; Conforme':'&#10007; No conforme')+'</span> <a class="ccp-lnk" href="#" onclick="openF01('+l.mov_id+',&quot;'+org+'&quot;);return false">editar</a>'+f01pdf
+        : '<button class="ccp-btn" onclick="openF01('+l.mov_id+',&quot;'+org+'&quot;)">Hacer F01</button>';
       var f02cell;
       if(esMEE){
-        // los envases no llevan F02 (sin análisis fisicoquímico) · el F01 conforme + firma libera el lote
         f02cell = f01ok
-          ? '<span style="color:#15803d;font-size:11px;font-weight:600">Envase liberado con F01</span>'
-          : '<span style="color:var(--cx-text-mute);font-size:11px">no aplica a envases</span>';
+          ? '<span class="ccp-chip ok">&#10003; Liberado con F01</span>'
+          : '<span class="ccp-chip mute">no aplica a envases</span>';
       } else {
         var f02=l.f02_resultado||'';
         if(f02){
-          var col=f02==='aprobado'?'#dcfce7':(f02==='cuarentena'?'#fef3c7':'#fee2e2');
+          var cls=f02==='aprobado'?'ok':(f02==='cuarentena'?'wait':'no');
           var txt=f02==='aprobado'?'&#10003; Aprobado':(f02==='cuarentena'?'&#9680; Cuarentena':'&#10007; No aprobado');
-          var tc=f02==='aprobado'?'#15803d':(f02==='cuarentena'?'#92400e':'#b91c1c');
-          f02cell='<span style="background:'+col+';color:'+tc+';border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700">'+txt+'</span> <a href="#" onclick="openF02('+l.mov_id+');return false" style="font-size:10px;color:#7c3aed">ver</a> <a href="/api/calidad/certificado-analisis/imprimible?mov_id='+l.mov_id+'" target="_blank" style="font-size:10px;color:#0369a1">PDF</a>';
+          f02cell='<span class="ccp-chip '+cls+'">'+txt+'</span> <a class="ccp-lnk" href="#" onclick="openF02('+l.mov_id+');return false">ver</a> <a class="ccp-pdf" href="/api/calidad/certificado-analisis/imprimible?mov_id='+l.mov_id+'" target="_blank">&#128196; PDF</a>';
         } else if(f01ok){
-          f02cell='<button class="btn btn-primary btn-sm" onclick="openF02('+l.mov_id+')">Hacer F02</button>';
+          f02cell='<button class="ccp-btn" onclick="openF02('+l.mov_id+')">Hacer F02</button>';
         } else {
-          f02cell='<span style="color:var(--cx-text-mute);font-size:11px">requiere F01 conforme</span>';
+          f02cell='<span class="ccp-chip mute">requiere F01 conforme</span>';
         }
       }
       var tipoBadge = esMEE
-        ? '<span style="background:#ede9fe;color:#6d28d9;border-radius:8px;padding:1px 6px;font-size:9px;font-weight:700;vertical-align:middle">ENVASE</span> '
-        : '<span style="background:#dbeafe;color:#1d4ed8;border-radius:8px;padding:1px 6px;font-size:9px;font-weight:700;vertical-align:middle">MP</span> ';
+        ? '<span class="ccp-badge mee">ENVASE</span>'
+        : '<span class="ccp-badge mp">MP</span>';
       return '<tr>'
-        +'<td>'+tipoBadge+'<strong>'+esc(l.nombre)+'</strong><br><small style="color:var(--cx-text-mute)">'+esc(l.lote||'sin lote')+' &middot; '+esc(l.codigo_mp||'')+'</small></td>'
-        +'<td>'+esc(String(l.cantidad))+(esMEE?' und':' g')+'</td>'
-        +'<td>'+esc(l.proveedor||'-')+'</td>'
+        +'<td>'+tipoBadge+'<span class="ccp-name">'+esc(l.nombre)+'</span><div class="ccp-meta">'+esc(l.lote||'sin lote')+' &middot; '+esc(l.codigo_mp||'')+'</div></td>'
+        +'<td><span class="ccp-qty">'+esc(String(l.cantidad))+'</span> '+(esMEE?'und':'g')+'</td>'
+        +'<td class="ccp-prov">'+esc(l.proveedor||'-')+'</td>'
         +'<td>'+fmt(l.fecha_vencimiento)+'</td>'
         +'<td>'+esc(l.numero_oc||'-')+'</td>'
         +'<td>'+f01cell+'</td>'
         +'<td>'+f02cell+'</td>'
         +'</tr>';
     }).join('');
-  }catch(e){tbody.innerHTML='<tr><td colspan="7" class="empty">Error: '+esc(e.message)+'</td></tr>';}
+  }catch(e){tbody.innerHTML='<tr><td colspan="7" class="ccp-empty">Error: '+esc(e.message)+'</td></tr>';}
 }
 
 // ── Pipeline de recepción MP · formularios F01 (técnica/documental) y F02 (análisis) ──
