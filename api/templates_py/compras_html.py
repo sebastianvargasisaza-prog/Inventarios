@@ -83,10 +83,20 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .err{text-align:center;padding:20px;color:#dc2626;font-size:13px;}
 /* Prov */
 .pg{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px;}
-.pc{background:#fff;border:1px solid #e7e5e4;border-radius:8px;padding:14px;}
-.pn{font-weight:700;font-size:14px;margin-bottom:3px;}
-.pnit{font-size:11px;color:#78716c;margin-bottom:8px;}
-.pd{font-size:12px;color:#57534e;display:flex;flex-direction:column;gap:2px;}
+.pc{background:#fff;border:1px solid #eceaf3;border-radius:14px;padding:16px;box-shadow:0 1px 3px rgba(15,23,42,.05);transition:box-shadow .15s,transform .15s,border-color .15s;position:relative;overflow:hidden;}
+.pc:before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(180deg,#a78bfa,#6d28d9);opacity:0;transition:opacity .15s;}
+.pc:hover{box-shadow:0 8px 24px -8px rgba(109,40,217,.28);transform:translateY(-2px);border-color:#ddd6fe;}
+.pc:hover:before{opacity:1;}
+.pc-av{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,#ede9fe,#ddd6fe);color:#6d28d9;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.pn{font-weight:800;font-size:14px;margin-bottom:2px;color:#1e1b2e;line-height:1.25;}
+.pnit{font-size:11px;color:#a1a1aa;font-family:ui-monospace,monospace;}
+.pd{font-size:12px;color:#57534e;display:flex;flex-direction:column;gap:4px;margin-top:12px;padding-top:12px;border-top:1px solid #f4f2f9;}
+.pd span{display:flex;align-items:center;gap:7px;}
+.pd .pd-k{color:#a1a1aa;width:15px;text-align:center;flex-shrink:0;}
+.pc-sc{font-size:11px;padding:5px 11px;white-space:nowrap;border:none;border-radius:999px;font-weight:700;cursor:pointer;}
+.pc-sc.score{background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;box-shadow:0 4px 12px -4px rgba(109,40,217,.5);}
+.pc-sc.v360{background:#f5f3ff;color:#6d28d9;border:1px solid #ede9fe;}
+.pc-sc:hover{filter:brightness(1.05);}
 /* Queue */
 .queue-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px;}
 @media(max-width:700px){.queue-row{grid-template-columns:1fr;}}
@@ -541,6 +551,7 @@ function renderHistorico(){
          cotizaciones del huérfano -->
     <button onclick="abrirProvDuplicados()" style="padding:6px 14px;background:#dc2626;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;margin-left:8px" title="Detectar y fusionar proveedores duplicados (case-insensitive)">🔗 Detectar duplicados</button>
   </div>
+  <div class="kpis" id="prov-kpis" style="margin-bottom:16px"></div>
   <div id="prov-grid" class="pg"><div class="empty">Cargando...</div></div>
 </div>
 
@@ -3237,24 +3248,39 @@ async function verComprobante(num){
   }catch(e){ alert('Error: '+e); }
 }
 
+function _provInicial(n){ n=(n||'').replace(/^[^A-Za-z0-9]+/,'').trim(); return (n.charAt(0)||'?').toUpperCase(); }
 function renderProv(){
   var q=(document.getElementById('q-prov')||{value:''}).value.toLowerCase();
   var list=PROVS.filter(function(p){ return !q||(p.nombre||'').toLowerCase().indexOf(q)>=0||(p.nit||'').toLowerCase().indexOf(q)>=0; });
+  // KPIs (sobre TODO el maestro, no el filtro)
+  var kb=document.getElementById('prov-kpis');
+  if(kb){
+    var conBanco=PROVS.filter(function(p){ return p.num_cuenta; }).length;
+    var conContacto=PROVS.filter(function(p){ return p.contacto||p.telefono||p.email; }).length;
+    var sinNit=PROVS.filter(function(p){ return !p.nit; }).length;
+    kb.innerHTML='<div class="kpi"><div class="kpi-l">Proveedores</div><div class="kpi-v">'+PROVS.length+'</div></div>'
+      +'<div class="kpi"><div class="kpi-l">Con datos bancarios</div><div class="kpi-v g">'+conBanco+'</div></div>'
+      +'<div class="kpi"><div class="kpi-l">Con contacto</div><div class="kpi-v">'+conContacto+'</div></div>'
+      +'<div class="kpi"><div class="kpi-l">Sin NIT</div><div class="kpi-v '+(sinNit>0?'w':'')+'">'+sinNit+'</div></div>';
+  }
   if(!list.length){ document.getElementById('prov-grid').innerHTML='<div class="empty">No hay proveedores</div>'; return; }
   document.getElementById('prov-grid').innerHTML=list.map(function(p){
-    return '<div class="pc"><div style="display:flex;justify-content:space-between;align-items:flex-start;">'
-      +'<div><div class="pn">'+esc(p.nombre)+'</div><div class="pnit">NIT: '+esc(p.nit||'-')+'</div></div>'
+    return '<div class="pc"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">'
+      +'<div style="display:flex;gap:11px;align-items:flex-start;min-width:0">'
+      +'<div class="pc-av">'+esc(_provInicial(p.nombre))+'</div>'
+      +'<div style="min-width:0"><div class="pn">'+esc(p.nombre)+'</div><div class="pnit">NIT: '+esc(p.nit||'-')+'</div></div>'
+      +'</div>'
       // Fase 3 · 21-may-2026 · botón scorecard inline (5 métricas live)
-      +'<div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">'
-      +'<button class="btn" style="font-size:11px;padding:4px 10px;white-space:nowrap;background:#7c3aed;color:#fff" data-scorecard="'+esc(p.nombre)+'" title="Score · cumplimiento · on-time · rechazo QC · variación precio">🎯 Score</button>'
-      +'<button class="btn" style="font-size:11px;padding:4px 10px;white-space:nowrap;" data-ficha360="'+esc(p.nombre)+'">&#x1F4CA; Ver 360</button>'
+      +'<div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;flex-shrink:0">'
+      +'<button class="pc-sc score" data-scorecard="'+esc(p.nombre)+'" title="Score · cumplimiento · on-time · rechazo QC · variación precio">🎯 Score</button>'
+      +'<button class="pc-sc v360" data-ficha360="'+esc(p.nombre)+'">&#x1F4CA; Ver 360</button>'
       +'</div>'
       +'</div><div class="pd">'+
-      (p.contacto?'<span>&#x1F464; '+esc(p.contacto)+'</span>':'')+
-      (p.telefono?'<span>&#x1F4F1; '+esc(p.telefono)+'</span>':'')+
-      (p.email?'<span>&#x1F4E7; '+esc(p.email)+'</span>':'')+
-      (p.banco?'<span>&#x1F3E6; '+esc(p.banco)+' '+esc(p.tipo_cuenta||'')+'</span>':'')+
-      (p.num_cuenta?'<span>&#x1F4B3; '+esc(p.num_cuenta)+'</span>':'')+
+      (p.contacto?'<span><span class="pd-k">&#x1F464;</span>'+esc(p.contacto)+'</span>':'')+
+      (p.telefono?'<span><span class="pd-k">&#x1F4F1;</span>'+esc(p.telefono)+'</span>':'')+
+      (p.email?'<span><span class="pd-k">&#x1F4E7;</span>'+esc(p.email)+'</span>':'')+
+      (p.banco?'<span><span class="pd-k">&#x1F3E6;</span>'+esc(p.banco)+' '+esc(p.tipo_cuenta||'')+'</span>':'')+
+      (p.num_cuenta?'<span><span class="pd-k">&#x1F4B3;</span>'+esc(p.num_cuenta)+'</span>':'')+
     '</div></div>';
   }).join('');
 }
