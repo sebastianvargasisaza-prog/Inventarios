@@ -428,6 +428,11 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (360, "Compras · N° de transacción bancaria por pago (Catalina 17-jul): pagos_oc gana "
+          "numero_transaccion (referencia de la transferencia/consignación) para anclar el pago a la OC "
+          "y llevar la contabilidad. Distinto de numero_factura_proveedor (la factura del proveedor).", [
+        "ALTER TABLE pagos_oc ADD COLUMN numero_transaccion TEXT DEFAULT ''",
+    ]),
     (359, "Compras · SALDO A FAVOR por proveedor (Catalina 17-jul): ledger de movimientos de crédito. "
           "Alejandro a veces hace anticipos / paga de más / hay notas crédito → queda saldo a favor que se "
           "aplica a la próxima OC del proveedor. Saldo vivo = SUM(credito) − SUM(aplicacion) (fuente única, sin "

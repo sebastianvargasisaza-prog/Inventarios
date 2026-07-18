@@ -116,6 +116,17 @@ def test_sobrepago_genera_saldo_favor(app, db_clean):
     assert abs(_saldo(c, "ProvSobre1") - 10000) < 1, "10000 de sobrepago a favor"
 
 
+def test_numero_transaccion_anclado_a_oc(app, db_clean):
+    c = _login(app)
+    _oc("OC-TX-1", "ProvTx", 40000, "Autorizada")
+    r = c.patch("/api/ordenes-compra/OC-TX-1/pagar",
+                json={"monto": 40000, "medio": "Transferencia", "numero_transaccion": "TRX-998877"},
+                headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    d = c.get("/api/ordenes-compra/OC-TX-1/pagos").get_json()
+    assert d["pagos"] and d["pagos"][0].get("numero_transaccion") == "TRX-998877", d["pagos"]
+
+
 def test_compras_ui_saldofavor_render(app, db_clean):
     c = _login(app)
     body = c.get('/compras').get_data(as_text=True)

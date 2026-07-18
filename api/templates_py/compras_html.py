@@ -365,9 +365,15 @@ function renderHistorico(){
       <option value="svc">Servicios</option><option value="adm">Adm</option>
       <option value="inf">Infra</option><option value="cc">CC</option>
     </select>
+    <select id="s-pagos-estado" onchange="renderPagos()" style="padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
+      <option value="">Todos los estados</option>
+      <option value="Pagada">Pagadas</option>
+      <option value="Parcial">Parciales (deben)</option>
+    </select>
     <button onclick="abrirOCRFactura()" style="padding:7px 14px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Subí foto de factura · la IA extrae items, totales · auto-match con OC pendiente">📤 Subir factura</button>
   </div>
-  <div id="pagos-kpis" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;"></div>
+  <div id="pagos-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:14px;"></div>
+  <div id="pagos-saldos-panel" style="display:none;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:14px 16px;margin-bottom:14px;"></div>
   <div id="pagos-bar-extra"></div>
   <div id="pagos-wrap">
     <div class="empty">Cargando pagos...</div>
@@ -1145,11 +1151,17 @@ function showSubPlanta(w){
         <select id="pago-medio"><option>Transferencia</option><option>Efectivo</option><option>Cheque</option><option>PSE</option><option>Nequi</option></select>
       </div>
     </div>
-    <div class="fg">
-      <label>&#x1F4C4; N&uacute;mero factura proveedor (3-way matching)</label>
-      <input type="text" id="pago-factura" placeholder="Ej: FAC-12345" style="text-transform:uppercase;">
-      <div style="font-size:11px;color:#64748b;margin-top:3px;">Si esta factura ya fue usada en otro pago, el sistema te avisa antes de continuar.</div>
+    <div class="g2">
+      <div class="fg">
+        <label>&#x1F4C4; N&uacute;mero factura proveedor</label>
+        <input type="text" id="pago-factura" placeholder="Ej: FAC-12345" style="text-transform:uppercase;">
+      </div>
+      <div class="fg">
+        <label>&#x1F3E6; N&deg; transacci&oacute;n / referencia</label>
+        <input type="text" id="pago-transaccion" placeholder="Ref. de la transferencia (opc)">
+      </div>
     </div>
+    <div style="font-size:11px;color:#64748b;margin-top:-4px;margin-bottom:6px;">La factura sirve para el 3-way matching · el N&deg; de transacci&oacute;n queda pegado a la OC para la contabilidad.</div>
     <!-- Toggles fiscales (retefuente/retica/IVA) - para legalidad -->
     <div class="fg" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;">
       <label style="display:block;font-weight:700;color:#1e293b;margin-bottom:6px;">&#x1F4CA; Retenciones e IVA (opcional)</label>
@@ -1189,10 +1201,17 @@ function showSubPlanta(w){
 
 <!-- MODAL: Saldo a favor por proveedor (Catalina 17-jul) -->
 <div id="m-saldofavor" class="ov">
-  <div class="mc" style="max-width:560px;">
+  <div class="mc" style="max-width:760px;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-      <h3 style="margin:0;font-size:16px;color:#16a34a;">&#x1F4B3; Saldo a favor por proveedor</h3>
-      <button onclick="closeModal('m-saldofavor')" style="background:none;border:none;font-size:20px;cursor:pointer;color:#94a3b8;">&#10005;</button>
+      <div>
+        <h3 style="margin:0;font-size:17px;color:#16a34a;">&#x1F4B3; Saldos a favor &middot; contabilidad de proveedores</h3>
+        <div style="font-size:11px;color:#64748b;margin-top:2px;">Anticipos, sobrepagos y notas cr&eacute;dito &middot; se aplican al pagar una OC del proveedor</div>
+      </div>
+      <button onclick="closeModal('m-saldofavor')" style="background:none;border:none;font-size:22px;cursor:pointer;color:#94a3b8;">&#10005;</button>
+    </div>
+    <div id="sf-total" style="background:linear-gradient(135deg,#065f46,#16a34a);border-radius:10px;padding:14px 16px;margin-bottom:12px;color:#fff;display:flex;justify-content:space-between;align-items:center;">
+      <span style="font-size:12px;font-weight:700;opacity:.9;">TOTAL A FAVOR (todos los proveedores)</span>
+      <span id="sf-total-val" style="font-size:22px;font-weight:800;">-</span>
     </div>
     <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:11px 13px;margin-bottom:12px;">
       <div style="font-size:12px;font-weight:800;color:#166534;margin-bottom:7px;">Registrar saldo a favor</div>
@@ -3033,6 +3052,7 @@ async function loadPagos(){
     if(!r.ok) throw new Error('Pagos '+r.status);
     var d=await r.json();
     PAGOS=d.pagos||[];
+    window.PAGOS_SALDO_FAVOR = d.saldo_favor_total || 0;
   }catch(e){ PAGOS=[]; console.error('loadPagos:',e); }
   // Sebastián 24-may-2026 · paralelo · KPIs mes/año/medio (no bloquea render)
   try{
@@ -3044,62 +3064,89 @@ async function loadPagos(){
 function renderPagos(){
   var q=(document.getElementById('q-pagos')||{value:''}).value.toLowerCase();
   var catF=(document.getElementById('s-pagos-cat')||{value:''}).value;
+  var estF=(document.getElementById('s-pagos-estado')||{value:''}).value;
   var list=PAGOS.filter(function(p){
     if(catF&&!inGroup(p.categoria,catF)) return false;
-    // Bug #9 fix · 21-may-2026 · buscar también por numero_factura_proveedor (3-way matching)
-    if(q&&(p.numero_oc||'').toLowerCase().indexOf(q)<0&&(p.proveedor||'').toLowerCase().indexOf(q)<0&&(p.medio_pago||'').toLowerCase().indexOf(q)<0&&(p.numero_factura_proveedor||'').toLowerCase().indexOf(q)<0&&(p.referencia||'').toLowerCase().indexOf(q)<0) return false;
+    if(estF&&(p.estado||'')!==estF) return false;
+    if(q&&(p.numero_oc||'').toLowerCase().indexOf(q)<0&&(p.proveedor||'').toLowerCase().indexOf(q)<0&&(p.medio_pago||'').toLowerCase().indexOf(q)<0&&(p.numero_factura_proveedor||'').toLowerCase().indexOf(q)<0&&(p.numero_transaccion||'').toLowerCase().indexOf(q)<0) return false;
     return true;
   });
-  // Bug #2 fix · 21-may-2026 · sin fallback a valor_total (race condition daba doble cuenta)
   var vTotal=list.reduce(function(s,p){ return s+parseFloat(p.monto||0); },0);
-  // Sebastián 24-may-2026 · audit Pagos · KPIs ampliados (mes/año/medio)
-  // + botón Excel.
-  var K=window.PAGOS_KPIS||{};
-  var kMes=K.mes_actual||{}, kAnio=K.anio_actual||{};
-  var medios=K.breakdown_medios||[];
-  var topMedio=medios.length?(medios[0].medio+' '+fmt(medios[0].total)):'-';
+  var vPend=list.reduce(function(s,p){ return s+((p.estado==='Parcial')?Math.max(0,parseFloat(p.saldo_pendiente||0)):0); },0);
+  var saldoFav=window.PAGOS_SALDO_FAVOR||0;
+  var K=window.PAGOS_KPIS||{}; var kMes=K.mes_actual||{}, kAnio=K.anio_actual||{};
   var kpiHTML=''
-    +'<div class="kpi" style="background:#0c4a6e;color:#fff"><div class="kpi-l" style="color:#7dd3fc">Pagos filtrados</div><div class="kpi-v">'+list.length+'</div><div style="font-size:11px;color:#bae6fd">'+fmt(vTotal)+'</div></div>'
-    +'<div class="kpi" style="background:#14532d;color:#fff"><div class="kpi-l" style="color:#86efac">Mes actual ('+(kMes.mes||'')+')</div><div class="kpi-v">'+fmt(kMes.total||0)+'</div><div style="font-size:11px;color:#bbf7d0">'+(kMes.n_ocs||0)+' OCs</div></div>'
-    +'<div class="kpi" style="background:#1e1b4b;color:#fff"><div class="kpi-l" style="color:#a78bfa">Año actual ('+(kAnio.anio||'')+')</div><div class="kpi-v">'+fmt(kAnio.total||0)+'</div><div style="font-size:11px;color:#c4b5fd">'+(kAnio.n_ocs||0)+' OCs</div></div>'
-    +'<div class="kpi" style="background:#7c2d12;color:#fff"><div class="kpi-l" style="color:#fdba74">Top medio (año)</div><div class="kpi-v" style="font-size:14px">'+esc(topMedio)+'</div><div style="font-size:11px;color:#fed7aa">'+medios.length+' medios</div></div>';
+    +'<div class="kpi" style="background:#0c4a6e;color:#fff"><div class="kpi-l" style="color:#7dd3fc">Pagado (filtrado)</div><div class="kpi-v">'+fmt(vTotal)+'</div><div style="font-size:11px;color:#bae6fd">'+list.length+' OCs</div></div>'
+    +'<div class="kpi" style="background:#7c2d12;color:#fff"><div class="kpi-l" style="color:#fdba74">Pendiente (parciales)</div><div class="kpi-v">'+fmt(vPend)+'</div><div style="font-size:11px;color:#fed7aa">lo que a&uacute;n se debe</div></div>'
+    +'<div class="kpi" onclick="togglePagosSaldos()" style="background:linear-gradient(135deg,#065f46,#16a34a);color:#fff;cursor:pointer" title="Ver/registrar saldos a favor"><div class="kpi-l" style="color:#bbf7d0">&#x1F4B3; Saldo a favor</div><div class="kpi-v">'+fmt(saldoFav)+'</div><div style="font-size:11px;color:#bbf7d0">click para ver &#9662;</div></div>'
+    +'<div class="kpi" style="background:#14532d;color:#fff"><div class="kpi-l" style="color:#86efac">Mes ('+(kMes.mes||'')+')</div><div class="kpi-v">'+fmt(kMes.total||0)+'</div><div style="font-size:11px;color:#bbf7d0">'+(kMes.n_ocs||0)+' OCs</div></div>'
+    +'<div class="kpi" style="background:#1e1b4b;color:#fff"><div class="kpi-l" style="color:#a78bfa">A&ntilde;o ('+(kAnio.anio||'')+')</div><div class="kpi-v">'+fmt(kAnio.total||0)+'</div><div style="font-size:11px;color:#c4b5fd">'+(kAnio.n_ocs||0)+' OCs</div></div>';
   document.getElementById('pagos-kpis').innerHTML=kpiHTML;
-  // Botón Excel + breakdown medios (colapsable)
-  var medBd=medios.map(function(m){
-    return '<span style="background:#f1f5f9;padding:3px 8px;border-radius:6px;margin-right:4px;font-size:11px;color:#475569">'+esc(m.medio)+' · <b>'+m.n_pagos+'</b> · '+fmt(m.total)+'</span>';
-  }).join('');
   var bar=document.getElementById('pagos-bar-extra');
-  if(bar){
-    bar.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">'
-      +'<div style="font-size:11px;color:#64748b">'+medBd+'</div>'
-      +'<button onclick="descargarPagosExcel()" class="btn" style="background:#059669;color:#fff;font-size:12px;padding:6px 14px;border:0;border-radius:5px;font-weight:700;cursor:pointer">📊 Descargar Excel</button>'
-      +'</div>';
-  }
-  if(!list.length){
-    document.getElementById('pagos-wrap').innerHTML='<div class="empty">No hay pagos registrados</div>';
-    return;
-  }
-  var rows=list.map(function(p){
-    var tieneImg=p.tiene_comprobante;
-    var imgBtn=tieneImg?'<button class="btn bo bs" data-oc="'+esc(p.numero_oc)+'" onclick="verComprobante(this.dataset.oc)">&#x1F4F8; Ver</button>':'<span style="color:#a8a29e;font-size:11px;">Sin imagen</span>';
-    // Sebastián 24-may-2026 · botón Regenerar CE inline · invoca endpoint
-    // existente /api/comprobantes-pago/<id>/regenerar (datos bancarios
-    // refrescados desde maestro). Solo si hay comprobante_id.
-    var regenBtn=p.comprobante_id?'<button class="btn bs" style="background:#7c3aed;color:#fff;font-size:10px;padding:3px 8px;margin-left:3px" data-cid="'+p.comprobante_id+'" data-oc="'+esc(p.numero_oc)+'" onclick="regenerarCEInline(this.dataset.cid, this.dataset.oc)" title="Regenerar PDF con datos bancarios actuales">🔄</button>':'';
-    // Botón revertir pago · solo si ES_ADMIN (cargado en boot template)
-    var revBtn=(typeof ES_ADMIN!=='undefined' && ES_ADMIN)?'<button class="btn bs" style="background:#dc2626;color:#fff;font-size:10px;padding:3px 8px;margin-left:3px" data-oc="'+esc(p.numero_oc)+'" onclick="revertirPagoOC(this.dataset.oc)" title="Revertir pago (admin · ventana 24h)">↩️</button>':'';
+  if(bar){ bar.innerHTML='<div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button onclick="descargarPagosExcel()" class="btn" style="background:#059669;color:#fff;font-size:12px;padding:6px 14px;border:0;border-radius:5px;font-weight:700;cursor:pointer">📊 Descargar Excel</button></div>'; }
+  if(!list.length){ document.getElementById('pagos-wrap').innerHTML='<div class="empty">No hay pagos que coincidan</div>'; return; }
+  var rows=list.map(function(p,i){
+    var estChip=(p.estado==='Parcial')?'<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:10px;padding:2px 8px;font-weight:700">&#9680; Parcial</span>':'<span style="font-size:10px;background:#dcfce7;color:#15803d;border-radius:10px;padding:2px 8px;font-weight:700">&#10003; Pagada</span>';
+    var pend=(p.estado==='Parcial')?'<span style="color:#dc2626;font-weight:700">'+fmt(Math.max(0,p.saldo_pendiente||0))+'</span>':'<span style="color:#cbd5e1">&mdash;</span>';
+    var trx=p.numero_transaccion?('🏦 '+esc(p.numero_transaccion)):(p.numero_factura_proveedor?('fac '+esc(p.numero_factura_proveedor)):'<span style="color:#cbd5e1">&mdash;</span>');
+    var imgBtn=p.tiene_comprobante?'<button class="btn bo bs" data-oc="'+esc(p.numero_oc)+'" onclick="verComprobante(this.dataset.oc)" title="Ver comprobante">📸</button>':'';
+    var regenBtn=p.comprobante_id?'<button class="btn bs" style="background:#7c3aed;color:#fff;font-size:10px;padding:3px 7px;margin-left:3px" data-cid="'+p.comprobante_id+'" data-oc="'+esc(p.numero_oc)+'" onclick="regenerarCEInline(this.dataset.cid, this.dataset.oc)" title="Regenerar PDF CE">🔄</button>':'';
+    var revBtn=(typeof ES_ADMIN!=='undefined' && ES_ADMIN)?'<button class="btn bs" style="background:#dc2626;color:#fff;font-size:10px;padding:3px 7px;margin-left:3px" data-oc="'+esc(p.numero_oc)+'" onclick="revertirPagoOC(this.dataset.oc)" title="Revertir pago">↩️</button>':'';
+    var abonosBtn=(p.n_abonos>1)?'<button class="btn bs" style="background:#e0f2fe;color:#0369a1;font-size:10px;padding:3px 7px;margin-right:3px" data-oc="'+esc(p.numero_oc)+'" data-i="'+i+'" onclick="toggleAbonos(this.dataset.oc,this.dataset.i)" title="Ver abonos parciales">&#9656; '+p.n_abonos+' abonos</button>':'';
     return '<tr>'
       +'<td><strong>'+esc(p.numero_oc)+'</strong></td>'
       +'<td>'+esc(p.proveedor||'-')+'</td>'
       +'<td class="mob-hide"><span style="font-size:10px;background:#e7e5e4;border-radius:3px;padding:2px 6px;">'+esc(p.categoria||'-')+'</span></td>'
-      +'<td style="font-weight:600;color:#16a34a;">'+fmt(p.monto||p.valor_total)+'</td>'
+      +'<td>'+estChip+'</td>'
+      +'<td style="font-weight:600;color:#16a34a;">'+fmt(p.monto||0)+'</td>'
+      +'<td>'+pend+'</td>'
       +'<td class="mob-hide">'+esc(p.medio_pago||'-')+'</td>'
+      +'<td class="mob-hide" style="font-size:11px;color:#475569">'+trx+'</td>'
       +'<td>'+fdate(p.fecha_pago)+'</td>'
       +'<td class="mob-hide">'+esc(p.pagado_por||'-')+'</td>'
-      +'<td>'+imgBtn+regenBtn+revBtn+'</td>'
-      +'</tr>';
+      +'<td style="white-space:nowrap">'+abonosBtn+imgBtn+regenBtn+revBtn+'</td>'
+      +'</tr>'
+      +'<tr id="abonos-'+i+'" style="display:none"><td colspan="11" style="padding:0 12px 10px;background:#f8fafc"></td></tr>';
   }).join('');
-  document.getElementById('pagos-wrap').innerHTML='<div style="overflow-x:auto;"><table class="ptbl"><thead><tr><th>OC</th><th>Proveedor</th><th class="mob-hide">Categoría</th><th>Monto</th><th class="mob-hide">Medio</th><th>Fecha</th><th class="mob-hide">Por</th><th>Acciones</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  document.getElementById('pagos-wrap').innerHTML='<div style="overflow-x:auto;"><table class="ptbl"><thead><tr><th>OC</th><th>Proveedor</th><th class="mob-hide">Categoría</th><th>Estado</th><th>Pagado</th><th>Pendiente</th><th class="mob-hide">Medio</th><th class="mob-hide">🏦 N° trx / fac</th><th>Fecha</th><th class="mob-hide">Por</th><th>Acciones</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+// Detalle de abonos (pagos parciales) de una OC · contabilidad (Catalina 17-jul)
+async function toggleAbonos(oc, i){
+  var tr=document.getElementById('abonos-'+i); if(!tr) return;
+  if(tr.style.display==='table-row'){ tr.style.display='none'; return; }
+  tr.style.display='table-row';
+  var td=tr.querySelector('td'); td.innerHTML='cargando&hellip;';
+  try{
+    var r=await fetch('/api/ordenes-compra/'+encodeURIComponent(oc)+'/pagos');
+    var d=await r.json(); var pagos=(d&&d.pagos)||[];
+    var hd='<div style="font-size:11px;font-weight:700;color:#334155;padding:7px 0 4px">Abonos de '+esc(oc)+' · valor '+fmt(d.valor_total_oc)+' · pagado '+fmt(d.total_pagado)+' · pendiente <b style="color:#dc2626">'+fmt(d.pendiente)+'</b></div>';
+    var body=pagos.map(function(p){
+      var esSaldo=(p.medio==='SaldoAFavor');
+      return '<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-bottom:1px solid #eef2f7">'
+        +'<span>'+(p.fecha_pago||'').replace('T',' ').slice(0,16)+' · '+esc(p.medio||'')
+        +(p.numero_transaccion?(' · 🏦 '+esc(p.numero_transaccion)):'')
+        +(p.numero_factura_proveedor?(' · fac '+esc(p.numero_factura_proveedor)):'')
+        +' · <em>'+esc(p.registrado_por||'')+'</em></span>'
+        +'<b style="color:'+(esSaldo?'#16a34a':'#0f172a')+'">'+fmt(p.monto)+(esSaldo?' · saldo a favor':'')+'</b></div>';
+    }).join('');
+    td.innerHTML=hd+body;
+  }catch(e){ td.innerHTML='<span style="color:#b91c1c">Error cargando abonos</span>'; }
+}
+// Panel de saldos a favor integrado en la vista Pagos (Catalina/Sebastián · contabilidad)
+function togglePagosSaldos(){
+  var panel=document.getElementById('pagos-saldos-panel'); if(!panel) return;
+  if(panel.style.display==='block'){ panel.style.display='none'; return; }
+  panel.style.display='block'; _renderPagosSaldosPanel();
+}
+async function _renderPagosSaldosPanel(){
+  var panel=document.getElementById('pagos-saldos-panel');
+  panel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#166534">💳 Saldos a favor por proveedor</b><button onclick="openSaldoFavor()" style="padding:5px 11px;background:#16a34a;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">➕ Registrar / gestionar</button></div><div id="pagos-sf-lista" style="font-size:12px;color:#64748b">cargando&hellip;</div>';
+  try{
+    var r=await fetch('/api/compras/saldos-favor'); var d=await r.json();
+    var saldos=(d&&d.saldos)||[]; var box=document.getElementById('pagos-sf-lista');
+    if(!saldos.length){ box.innerHTML='<div style="opacity:.7">Sin saldos a favor · registrá un anticipo si Alejandro pagó por adelantado.</div>'; return; }
+    box.innerHTML=saldos.map(function(s){ return '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #dcfce7"><span>'+esc(s.proveedor)+'</span><b style="color:#16a34a">'+fmt(s.saldo)+'</b></div>'; }).join('')+'<div style="text-align:right;font-weight:800;color:#166534;margin-top:6px">Total a favor: '+fmt(d.total||0)+'</div>';
+  }catch(e){}
 }
 
 // Sebastián 24-may-2026 · descarga Excel hist. pagos · soporta ?mes=YYYY-MM
@@ -4529,8 +4576,10 @@ async function confirmarPago(){
     });
   }
   try{
+    var _trx=(document.getElementById('pago-transaccion')||{}).value||'';
     var payload={monto:parseFloat(monto),medio:medio,observaciones:obs};
     if(factura) payload.numero_factura_proveedor=factura;
+    if(_trx.trim()) payload.numero_transaccion=_trx.trim();
     if(imgData) payload.comprobante_imagen=imgData;
     // Toggles fiscales - si están activos, el comprobante PDF se genera con retenciones/IVA
     var rf=document.getElementById('pago-aplicar-retefuente');
@@ -8620,6 +8669,7 @@ async function payOC(numero_oc){
   document.getElementById('pago-medio').value = 'Transferencia';
   document.getElementById('pago-obs').value = '';
   document.getElementById('pago-factura').value = '';
+  var _tx=document.getElementById('pago-transaccion'); if(_tx) _tx.value='';
   document.getElementById('pago-img-file').value = '';
   document.getElementById('pago-img-preview').style.display = 'none';
 
@@ -8658,6 +8708,7 @@ async function payOC(numero_oc){
           return '<div style="padding:4px 0;border-bottom:1px solid #e5e7eb;">'+
             (p.fecha_pago||'').replace('T',' ').slice(0,16)+' · '+_money(p.monto)+' · '+_esc(p.medio)+
             (p.numero_factura_proveedor ? ' · fac '+_esc(p.numero_factura_proveedor) : '')+
+            (p.numero_transaccion ? ' · 🏦 '+_esc(p.numero_transaccion) : '')+
             ' · <em>'+_esc(p.registrado_por||'?')+'</em></div>';
         }).join('');
       } else {
@@ -8700,11 +8751,41 @@ async function openSaldoFavor(){
 }
 function _renderSaldosFavor(saldos){
   var box = document.getElementById('sf-lista');
+  var totEl = document.getElementById('sf-total-val');
+  var tot = saldos.reduce(function(a,s){return a+(s.saldo||0);},0);
+  if(totEl) totEl.textContent = _money(tot);
   if(!box) return;
-  if(!saldos.length){ box.innerHTML = '<div style="opacity:.7">Sin saldos a favor por ahora.</div>'; return; }
-  box.innerHTML = saldos.map(function(s){
-    return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;"><span>'+_esc(s.proveedor)+'</span><b style="color:#16a34a">'+_money(s.saldo)+'</b></div>';
-  }).join('') + '<div style="text-align:right;font-weight:800;color:#166534;margin-top:6px;padding-top:5px;border-top:2px solid #bbf7d0;">Total a favor: '+_money(saldos.reduce(function(a,s){return a+(s.saldo||0);},0))+'</div>';
+  if(!saldos.length){ box.innerHTML = '<div style="opacity:.7;padding:8px 0;">Sin saldos a favor por ahora. Registrá un anticipo o ajuste arriba.</div>'; return; }
+  box.innerHTML = saldos.map(function(s,i){
+    return '<div style="border:1px solid #e5e7eb;border-radius:8px;margin-bottom:7px;overflow:hidden;">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:#f9fafb;cursor:pointer;" onclick="_verMovimientosSaldo('+i+')">'+
+        '<span style="font-weight:700;color:#0f172a;">'+_esc(s.proveedor)+'</span>'+
+        '<span><b style="color:#16a34a;font-size:15px;">'+_money(s.saldo)+'</b> <span style="color:#94a3b8;font-size:11px;">&#9656; movimientos</span></span>'+
+      '</div>'+
+      '<div id="sfmov-'+i+'" data-prov="'+_esc(s.proveedor)+'" style="display:none;padding:7px 12px;font-size:11px;color:#64748b;background:#fff;"></div>'+
+    '</div>';
+  }).join('');
+}
+async function _verMovimientosSaldo(i){
+  var box = document.getElementById('sfmov-'+i);
+  if(!box) return;
+  if(box.style.display==='block'){ box.style.display='none'; return; }
+  box.style.display='block'; box.innerHTML='cargando&hellip;';
+  var prov = box.getAttribute('data-prov')||'';
+  try{
+    var r = await fetch('/api/compras/saldos-favor?proveedor='+encodeURIComponent(prov));
+    var d = await r.json();
+    var movs = (d && d.movimientos) || [];
+    if(!movs.length){ box.innerHTML='Sin movimientos.'; return; }
+    box.innerHTML = movs.map(function(m){
+      var sign = m.tipo==='credito' ? '+' : '\\u2212';
+      var col = m.tipo==='credito' ? '#16a34a' : '#dc2626';
+      var lbl = m.origen==='anticipo'?'anticipo':(m.origen==='sobrepago'?'sobrepago':(m.origen==='aplicar_oc'?'aplicado a OC':(m.origen==='ajuste'?'ajuste/nota crédito':(m.origen||m.tipo))));
+      return '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #f1f5f9;">'+
+        '<span>'+(m.fecha||'').slice(0,10)+' &middot; '+_esc(lbl)+(m.numero_oc?(' &middot; '+_esc(m.numero_oc)):'')+' &middot; <em>'+_esc(m.por||'')+'</em>'+(m.obs?(' &middot; '+_esc(m.obs)):'')+'</span>'+
+        '<b style="color:'+col+';white-space:nowrap;">'+sign+_money(m.monto)+'</b></div>';
+    }).join('');
+  }catch(e){ box.innerHTML='<span style="color:#b91c1c">Error cargando</span>'; }
 }
 async function registrarSaldoFavor(){
   var prov = ((document.getElementById('sf-prov')||{}).value || '').trim();

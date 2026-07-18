@@ -6841,6 +6841,7 @@ def pagar_oc(numero_oc):
     medio = d.get('medio', 'Transferencia')
     obs = d.get('observaciones', '')
     numero_factura = (d.get('numero_factura_proveedor') or '').strip()
+    numero_transaccion = (str(d.get('numero_transaccion') or '')).strip()[:80]  # ref bancaria · ancla a la OC
     comprobante_imagen = d.get('comprobante_imagen', '') or ''
     # Toggles fiscales (default OFF, ver Opcion A en SECURITY notes)
     aplicar_retefuente = bool(d.get('aplicar_retefuente', False))
@@ -6964,10 +6965,10 @@ def pagar_oc(numero_oc):
         cur.execute("""
             INSERT INTO pagos_oc (numero_oc, monto, medio, fecha_pago,
                                   registrado_por, numero_factura_proveedor,
-                                  comprobante_imagen, observaciones)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                  comprobante_imagen, observaciones, numero_transaccion)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (numero_oc, pago_oc_monto, medio, fecha_pago, usuario_actual,
-              numero_factura, comprobante_imagen, obs))
+              numero_factura, comprobante_imagen, obs, numero_transaccion))
     except sqlite3.IntegrityError as _e:
         # UNIQUE de factura disparó (race con check anterior · defense in depth)
         return jsonify({
@@ -8026,7 +8027,8 @@ def get_pagos_oc(numero_oc):
         SELECT id, monto, medio, fecha_pago, registrado_por,
                numero_factura_proveedor, observaciones,
                CASE WHEN comprobante_imagen != '' AND comprobante_imagen IS NOT NULL
-                    THEN 1 ELSE 0 END as tiene_comprobante
+                    THEN 1 ELSE 0 END as tiene_comprobante,
+               COALESCE(numero_transaccion,'') as numero_transaccion
         FROM pagos_oc WHERE numero_oc=?
         ORDER BY fecha_pago ASC
     """, (numero_oc,))
@@ -8258,7 +8260,11 @@ def get_pagos():
                 ORDER BY id DESC LIMIT 1) as comprobante_id,
                (SELECT numero_factura_proveedor FROM pagos_oc
                 WHERE numero_oc=oc.numero_oc AND COALESCE(numero_factura_proveedor,'') != ''
-                ORDER BY id DESC LIMIT 1) as numero_factura_proveedor
+                ORDER BY id DESC LIMIT 1) as numero_factura_proveedor,
+               (SELECT numero_transaccion FROM pagos_oc
+                WHERE numero_oc=oc.numero_oc AND COALESCE(numero_transaccion,'') != ''
+                ORDER BY id DESC LIMIT 1) as numero_transaccion,
+               (SELECT COUNT(*) FROM pagos_oc WHERE numero_oc=oc.numero_oc) as n_abonos
         FROM ordenes_compra oc
         WHERE oc.estado IN ('Pagada','Parcial')
         ORDER BY oc.fecha_pago DESC
@@ -8269,7 +8275,17 @@ def get_pagos():
     # Convertir es_influencer a bool para JSON
     for p in pagos:
         p['es_influencer'] = bool(p.get('es_influencer'))
-    return jsonify({'pagos': pagos})
+    return jsonify({'pagos': pagos, 'saldo_favor_total': _saldo_favor_total(conn)})
+
+
+def _saldo_favor_total(conn):
+    """Total de saldo a favor (todos los proveedores) para el KPI de contabilidad."""
+    try:
+        r = conn.execute("SELECT " + _SALDO_SUM_SQL + " FROM saldos_proveedor_mov "
+                         "WHERE COALESCE(anulado,0)=0").fetchone()
+        return round(float(r[0] or 0), 2)
+    except Exception:
+        return 0.0
 
 
 # ─── Excel histórico pagos · Sebastián 24-may-2026 ──────────────
