@@ -32,6 +32,23 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .kpi-v{font-size:22px;font-weight:800;color:inherit;}
 .kpi-v.w{color:#d97706;} .kpi-v.r{color:#dc2626;} .kpi-v.g{color:#16a34a;}
 .kpi-s{font-size:11px;color:#78716c;margin-top:2px;}
+/* Tablas premium compartidas · recorrido Compras (Facturas/Atrasadas/Cotizaciones/Preparar envases) */
+.cxt-wrap{background:#fff;border:1px solid #eef0f2;border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.05);overflow:hidden;}
+.cxt-wrap.scroll{overflow-x:auto;}
+.cxt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;}
+.cxt thead th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:#78716c;font-weight:700;padding:11px 14px;background:#faf7ff;border-bottom:1px solid #ece9f6;white-space:nowrap;}
+.cxt tbody td{padding:11px 14px;border-bottom:1px solid #f5f4f2;color:#44403c;vertical-align:middle;}
+.cxt tbody tr{transition:background .12s;}
+.cxt tbody tr:hover{background:#faf7ff;}
+.cxt tbody tr:last-child td{border-bottom:none;}
+.cxt-mono{font-family:ui-monospace,'SF Mono',monospace;font-variant-numeric:tabular-nums;}
+.cxt-chip{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:3px 10px;font-size:11px;font-weight:700;white-space:nowrap;}
+.cxt-chip.ok{background:#dcfce7;color:#15803d;} .cxt-chip.no{background:#fee2e2;color:#b91c1c;}
+.cxt-chip.wait{background:#fef3c7;color:#b45309;} .cxt-chip.info{background:#dbeafe;color:#1d4ed8;}
+.cxt-chip.mute{background:#f5f4f2;color:#78716c;}
+.cxt-btnp{background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;border:none;border-radius:8px;padding:6px 13px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:0 4px 12px -4px rgba(109,40,217,.5);}
+.cxt-btnp:hover{filter:brightness(1.06);}
+.cxt-hint{font-size:11px;color:#78716c;padding:10px 14px;background:#faf7ff;border-top:1px solid #ece9f6;line-height:1.5;}
 /* Cards */
 .bar{background:#fff;border:1px solid #eef0f2;border-radius:12px;padding:11px 15px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;box-shadow:0 1px 3px rgba(15,23,42,.04);}
 .bar input,.bar select{padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;color:#292524;}
@@ -1797,41 +1814,42 @@ async function loadFacturasProv(){
     if(!d.ok){ wrap.innerHTML='<div style="color:#dc2626;padding:14px">Error: '+_esc((d&&d.error)||r.status)+'</div>'; return; }
     window._FP=d.items||[];
     if(kpis){
-      kpis.innerHTML=
-        '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 14px;min-width:150px;text-align:center"><div style="font-size:20px;font-weight:800;color:#991b1b">'+_fpMoney(d.total_vencido)+'</div><div style="font-size:10px;color:#64748b;text-transform:uppercase">Vencido</div></div>'+
-        '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 14px;min-width:150px;text-align:center"><div style="font-size:20px;font-weight:800;color:#1e293b">'+_fpMoney(d.total_saldo)+'</div><div style="font-size:10px;color:#64748b;text-transform:uppercase">Saldo total</div></div>'+
-        '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 14px;min-width:120px;text-align:center"><div style="font-size:20px;font-weight:800;color:#1e293b">'+d.n+'</div><div style="font-size:10px;color:#64748b;text-transform:uppercase">Facturas</div></div>';
+      kpis.innerHTML='<div class="kpis" style="margin-bottom:0">'
+        + '<div class="kpi"><div class="kpi-l">Vencido</div><div class="kpi-v r">'+_fpMoney(d.total_vencido)+'</div></div>'
+        + '<div class="kpi"><div class="kpi-l">Saldo total</div><div class="kpi-v">'+_fpMoney(d.total_saldo)+'</div></div>'
+        + '<div class="kpi"><div class="kpi-l">Facturas</div><div class="kpi-v">'+d.n+'</div></div>'
+        + '</div>';
     }
     var b=document.getElementById('facprov-badge'); var nv=window._FP.filter(function(x){return x.vencida;}).length;
     if(b){ if(nv>0){ b.textContent=nv; b.style.display='inline-block'; } else b.style.display='none'; }
-    if(!window._FP.length){ wrap.innerHTML='<div style="padding:18px;color:#64748b">No hay facturas registradas. Usá "➕ Nueva factura".</div>'; return; }
-    var html='<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#0f766e;color:#fff">';
-    ['Nº Factura','Proveedor','OC','Vence','Total','Pagado','Saldo','Estado','Acciones'].forEach(function(h,i){ html+='<th style="padding:7px;text-align:'+((i>=4&&i<=6)?'right':'left')+'">'+h+'</th>'; });
+    if(!window._FP.length){ wrap.innerHTML='<div class="cxt-wrap" style="padding:34px;text-align:center;color:#78716c;font-weight:600">No hay facturas registradas. Us&aacute; "&#10133; Nueva factura".</div>'; return; }
+    var html='<div class="cxt-wrap scroll"><table class="cxt" style="font-size:12px"><thead><tr>';
+    ['N&ordm; Factura','Proveedor','OC','Vence','Total','Pagado','Saldo','Estado','Acciones'].forEach(function(h,i){ html+='<th style="text-align:'+((i>=4&&i<=6)?'right':'left')+'">'+h+'</th>'; });
     html+='</tr></thead><tbody>';
     window._FP.forEach(function(it){
-      var estMap={'pendiente':['#64748b','Pendiente'],'parcial':['#b45309','Parcial'],'pagada':['#15803d','Pagada'],'anulada':['#94a3b8','Anulada'],'vencida':['#b91c1c','Vencida']};
-      var ef=it.estado_efectivo||it.estado; var em=estMap[ef]||['#475569',ef];
+      var estMap={'pendiente':['mute','Pendiente'],'parcial':['wait','Parcial'],'pagada':['ok','Pagada'],'anulada':['mute','Anulada'],'vencida':['no','Vencida']};
+      var ef=it.estado_efectivo||it.estado; var em=estMap[ef]||['mute',ef];
       var venc=it.fecha_vencimiento||'-';
-      var diasTxt=(it.dias_vencimiento!=null&&ef!=='pagada'&&ef!=='anulada')?(' <span style="font-size:10px;color:'+(it.dias_vencimiento<0?'#b91c1c':'#64748b')+'">('+(it.dias_vencimiento<0?Math.abs(it.dias_vencimiento)+'d venc':it.dias_vencimiento+'d')+')</span>'):'';
-      var sobre=it.sobre_facturada?' <span title="total factura &gt; valor OC" style="background:#fee2e2;color:#991b1b;font-size:9px;padding:1px 4px;border-radius:3px">⚠ &gt;OC</span>':'';
-      html+='<tr style="border-top:1px solid #f1f5f9'+(it.vencida?';background:#fff1f2':'')+(it.estado==='anulada'?';opacity:.55':'')+'">';
-      html+='<td style="padding:6px;font-weight:700">'+_esc(it.numero_factura)+sobre+(it.tiene_pdf?' <a href="/api/compras/facturas-proveedor/'+it.id+'/pdf" target="_blank" title="ver PDF" style="text-decoration:none">📎</a>':'')+'</td>';
-      html+='<td style="padding:6px">'+_esc(it.proveedor||'')+'</td>';
-      html+='<td style="padding:6px;font-size:11px;color:#64748b">'+_esc(it.numero_oc||'-')+'</td>';
-      html+='<td style="padding:6px;white-space:nowrap">'+_esc(venc)+diasTxt+'</td>';
-      html+='<td style="padding:6px;text-align:right">'+_fpMoney(it.total)+'</td>';
-      html+='<td style="padding:6px;text-align:right;color:#15803d">'+_fpMoney(it.pagado)+'</td>';
-      html+='<td style="padding:6px;text-align:right;font-weight:700">'+_fpMoney(it.saldo)+'</td>';
-      html+='<td style="padding:6px"><span style="color:'+em[0]+';font-weight:700">'+em[1]+'</span></td>';
-      html+='<td style="padding:6px;white-space:nowrap">';
+      var diasTxt=(it.dias_vencimiento!=null&&ef!=='pagada'&&ef!=='anulada')?(' <span style="font-size:10px;color:'+(it.dias_vencimiento<0?'#b91c1c':'#78716c')+'">('+(it.dias_vencimiento<0?Math.abs(it.dias_vencimiento)+'d venc':it.dias_vencimiento+'d')+')</span>'):'';
+      var sobre=it.sobre_facturada?' <span class="cxt-chip no" title="total factura &gt; valor OC" style="font-size:9px;padding:1px 6px">&#9888; &gt;OC</span>':'';
+      html+='<tr style="'+(it.estado==='anulada'?'opacity:.55':'')+'">';
+      html+='<td class="cxt-mono" style="font-weight:700;color:#6d28d9">'+_esc(it.numero_factura)+sobre+(it.tiene_pdf?' <a href="/api/compras/facturas-proveedor/'+it.id+'/pdf" target="_blank" title="ver PDF" style="text-decoration:none">&#128206;</a>':'')+'</td>';
+      html+='<td style="font-weight:600;color:#292524">'+_esc(it.proveedor||'')+'</td>';
+      html+='<td class="cxt-mono" style="font-size:11px;color:#78716c">'+_esc(it.numero_oc||'-')+'</td>';
+      html+='<td style="white-space:nowrap">'+_esc(venc)+diasTxt+'</td>';
+      html+='<td class="cxt-mono" style="text-align:right">'+_fpMoney(it.total)+'</td>';
+      html+='<td class="cxt-mono" style="text-align:right;color:#15803d">'+_fpMoney(it.pagado)+'</td>';
+      html+='<td class="cxt-mono" style="text-align:right;font-weight:700">'+_fpMoney(it.saldo)+'</td>';
+      html+='<td><span class="cxt-chip '+em[0]+'">'+em[1]+'</span></td>';
+      html+='<td style="white-space:nowrap">';
       if(it.estado!=='anulada'){
-        if(it.saldo>0.5) html+='<button onclick="fpPagarModal('+it.id+')" style="background:#0f766e;color:#fff;border:none;padding:4px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;margin-right:4px">Pagar</button>';
-        html+='<button onclick="fpDetalle('+it.id+')" style="background:#e2e8f0;color:#334155;border:none;padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer;margin-right:4px">Ver</button>';
-        html+='<button onclick="fpAnular('+it.id+')" style="background:#fff;color:#dc2626;border:1px solid #dc2626;padding:4px 8px;border-radius:5px;font-size:11px;cursor:pointer">Anular</button>';
-      } else { html+='<span style="color:#94a3b8;font-size:11px">-</span>'; }
+        if(it.saldo>0.5) html+='<button class="cxt-btnp" onclick="fpPagarModal('+it.id+')" style="margin-right:4px">Pagar</button>';
+        html+='<button onclick="fpDetalle('+it.id+')" style="background:#f5f4f2;color:#44403c;border:1px solid #e7e5e4;padding:5px 11px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;margin-right:4px">Ver</button>';
+        html+='<button onclick="fpAnular('+it.id+')" style="background:#fff;color:#dc2626;border:1px solid #fca5a5;padding:5px 10px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer">Anular</button>';
+      } else { html+='<span style="color:#a8a29e;font-size:11px">-</span>'; }
       html+='</td></tr>';
     });
-    html+='</tbody></table>';
+    html+='</tbody></table></div>';
     wrap.innerHTML=html;
   }catch(e){ wrap.innerHTML='<div style="color:#dc2626;padding:14px">Error red: '+_esc(e.message||e)+'</div>'; }
 }
@@ -1994,12 +2012,19 @@ async function loadPreparacionEnvases(){
     // Sebastián 7-jul (Catalina) · AGRUPADO por envase: la próxima producción + las siguientes (acumulado) para
     // consolidar el envío a serigrafía. Fallback a items si el backend viejo no manda grupos.
     window._PREP_ITEMS = d.grupos || d.items || [];
-    if(!window._PREP_ITEMS.length){ wrap.innerHTML='<div style="padding:18px;color:#64748b">No hay envases en producciones próximas ('+dias+'d).</div>'; return; }
-    var h='<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#0f766e;color:#fff">'+
-      '<th style="padding:7px;text-align:left">Producto</th><th style="padding:7px;text-align:left">Envase · próximas</th>'+
-      '<th style="padding:7px;text-align:right">Uds a preparar</th><th style="padding:7px">Próxima prod.</th>'+
-      '<th style="padding:7px">Lista para</th><th style="padding:7px">Proveedor</th>'+
-      '<th style="padding:7px">Tipo</th><th style="padding:7px;text-align:center">Acción</th></tr></thead><tbody>';
+    if(!window._PREP_ITEMS.length){ wrap.innerHTML='<div class="cxt-wrap" style="padding:34px;text-align:center;color:#78716c;font-weight:600">No hay envases en producciones pr&oacute;ximas ('+dias+'d).</div>'; return; }
+    var _totUds=0, _nAtr=0;
+    window._PREP_ITEMS.forEach(function(it){ _totUds += (it.uds||0); if(it.lista_atrasada) _nAtr++; });
+    var h='<div class="kpis">'
+      + '<div class="kpi"><div class="kpi-l">Envases a preparar</div><div class="kpi-v">'+window._PREP_ITEMS.length+'</div></div>'
+      + '<div class="kpi"><div class="kpi-l">Unidades totales</div><div class="kpi-v">'+_totUds.toLocaleString('es-CO')+'</div></div>'
+      + '<div class="kpi"><div class="kpi-l">Env&iacute;o atrasado</div><div class="kpi-v '+(_nAtr>0?'r':'')+'">'+_nAtr+'</div></div>'
+      + '</div>';
+    h+='<div class="cxt-wrap scroll"><table class="cxt" style="font-size:12px"><thead><tr>'+
+      '<th>Producto</th><th>Envase &middot; pr&oacute;ximas</th>'+
+      '<th style="text-align:right">Uds a preparar</th><th>Pr&oacute;xima prod.</th>'+
+      '<th>Lista para</th><th>Proveedor</th>'+
+      '<th>Tipo</th><th style="text-align:center">Acci&oacute;n</th></tr></thead><tbody>';
     window._PREP_ITEMS.forEach(function(it,i){
       var fl = it.fecha_lista_sugerida||'';
       var flStyle = it.lista_atrasada ? 'background:#fee2e2;color:#991b1b;font-weight:700' : '';
@@ -2032,18 +2057,20 @@ async function loadPreparacionEnvases(){
                    '<div style="font-size:10px;color:#475569;padding:4px 0 0 8px;border-left:2px solid #ddd6fe;margin-top:2px">'+prows+
                    '<div style="color:#94a3b8;font-size:9px;margin-top:3px">Apretá "preparar N" → deja el Uds para cubrir esas N producciones (1 solo envío = más barato).</div></div></details>';
       }
-      h+='<tr id="prep-row-'+i+'" style="border-top:1px solid #e2e8f0">'+
-        '<td style="padding:6px">'+_esc(it.producto||'')+osTag+'</td>'+
-        '<td style="padding:6px;font-family:ui-monospace;font-size:11px">'+_esc(it.envase_codigo||'')+'<div style="color:#64748b;font-size:10px">'+_esc(it.presentacion||'')+'</div>'+pcHtml+proxHtml+'</td>'+
-        '<td style="padding:6px;text-align:right"><input id="prep-cant-'+i+'" type="number" min="1" value="'+(it.uds||0)+'" style="width:78px;padding:3px;border:1px solid #cbd5e1;border-radius:4px;text-align:right"></td>'+
-        '<td style="padding:6px;white-space:nowrap;color:#475569">'+_esc(it.fecha_produccion||'')+'</td>'+
-        '<td style="padding:6px"><input id="prep-fecha-'+i+'" type="date" value="'+_esc(fl)+'" style="padding:3px;border:1px solid #cbd5e1;border-radius:4px;'+flStyle+'"></td>'+
-        '<td style="padding:6px"><input id="prep-prov-'+i+'" placeholder="proveedor" style="width:140px;padding:3px;border:1px solid #cbd5e1;border-radius:4px"></td>'+
-        '<td style="padding:6px"><select id="prep-tipo-'+i+'" style="padding:3px;border:1px solid #cbd5e1;border-radius:4px"><option>Serigrafía</option><option>Tampografía</option><option>Etiquetado</option></select></td>'+
-        '<td style="padding:6px;text-align:center"><button onclick="generarOSDesdePrep('+i+')" style="background:#0f766e;color:#fff;border:none;padding:5px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">Generar OS</button></td>'+
+      h+='<tr id="prep-row-'+i+'">'+
+        '<td style="font-weight:600;color:#292524">'+_esc(it.producto||'')+osTag+'</td>'+
+        '<td class="cxt-mono" style="font-size:11px">'+_esc(it.envase_codigo||'')+'<div style="color:#78716c;font-size:10px;font-family:\\'Segoe UI\\',sans-serif">'+_esc(it.presentacion||'')+'</div>'+pcHtml+proxHtml+'</td>'+
+        '<td style="text-align:right"><input id="prep-cant-'+i+'" type="number" min="1" value="'+(it.uds||0)+'" style="width:78px;padding:4px;border:1px solid #d6d3d1;border-radius:6px;text-align:right"></td>'+
+        '<td style="white-space:nowrap;color:#57534e">'+_esc(it.fecha_produccion||'')+'</td>'+
+        '<td><input id="prep-fecha-'+i+'" type="date" value="'+_esc(fl)+'" style="padding:4px;border:1px solid #d6d3d1;border-radius:6px;'+flStyle+'"></td>'+
+        '<td><input id="prep-prov-'+i+'" placeholder="proveedor" style="width:140px;padding:4px;border:1px solid #d6d3d1;border-radius:6px"></td>'+
+        '<td><select id="prep-tipo-'+i+'" style="padding:4px;border:1px solid #d6d3d1;border-radius:6px"><option>Serigraf&iacute;a</option><option>Tampograf&iacute;a</option><option>Etiquetado</option></select></td>'+
+        '<td style="text-align:center"><button class="cxt-btnp" onclick="generarOSDesdePrep('+i+')">Generar OS</button></td>'+
         '</tr>';
     });
     h+='</tbody></table>';
+    h+='<div class="cxt-hint">&#128161; Jalona los envases de las producciones pr&oacute;ximas para mandarlos a serigraf&iacute;a/tampograf&iacute;a con anticipaci&oacute;n. Abr&iacute; "pr&oacute;ximas N producciones" para consolidar varios env&iacute;os en uno.</div>';
+    h+='</div>';
     wrap.innerHTML=h;
   }catch(e){ wrap.innerHTML='<div style="color:#dc2626;padding:14px">Error red: '+_esc(e.message||e)+'</div>'; }
 }
@@ -8831,34 +8858,6 @@ async function cargarOcsAtrasadas(){
       return;
     }
     var d = await r.json();
-    // Resumen
-    var n = d.total || 0;
-    resumen.innerHTML = '<span style="background:' + (n>0?'#fee2e2':'#dcfce7') + ';color:' + (n>0?'#991b1b':'#15803d') + ';padding:6px 12px;border-radius:8px;font-weight:700;font-size:13px">' +
-      (n>0 ? ('🚨 ' + n + ' OC(s) atrasada(s)') : '✓ Sin OCs atrasadas · todo al día') +
-      '</span>' +
-      '<span style="color:#64748b">Buffer ' + d.buffer_dias + 'd sobre lead_time del proveedor · medido hoy ' + d.hoy + '</span>';
-    // Badge en tab
-    var badge = document.getElementById('atrasadas-badge');
-    if(badge){
-      if(n > 0){ badge.style.display = 'inline-block'; badge.textContent = n; }
-      else { badge.style.display = 'none'; }
-    }
-    if(n === 0){
-      div.innerHTML = '<div style="text-align:center;color:#15803d;padding:30px;background:#f0fdf4">✓ Sin OCs atrasadas · todo al día</div>';
-      return;
-    }
-    // Tabla
-    var html = '<table style="width:100%;border-collapse:collapse;font-size:13px">';
-    html += '<thead><tr style="background:#f8fafc;color:#475569;border-bottom:1px solid #e2e8f0">';
-    html += '<th style="text-align:left;padding:10px 12px;font-weight:700">OC</th>';
-    html += '<th style="text-align:left;padding:10px 12px;font-weight:700">Proveedor</th>';
-    html += '<th style="text-align:left;padding:10px 12px;font-weight:700">Creador</th>';
-    html += '<th style="text-align:center;padding:10px 12px;font-weight:700">Estado</th>';
-    html += '<th style="text-align:right;padding:10px 12px;font-weight:700">Días OC</th>';
-    html += '<th style="text-align:right;padding:10px 12px;font-weight:700">Lead time</th>';
-    html += '<th style="text-align:right;padding:10px 12px;font-weight:700">Atraso</th>';
-    html += '<th style="text-align:right;padding:10px 12px;font-weight:700">Valor</th>';
-    html += '</tr></thead><tbody>';
     function _esc(s){
       if(s == null) return '';
       return String(s).replace(/[&<>"\']/g, function(c){
@@ -8869,22 +8868,50 @@ async function cargarOcsAtrasadas(){
       if(!n) return '-';
       return '$' + Math.round(n).toLocaleString('es-CO');
     }
-    (d.ocs || []).forEach(function(oc){
-      var sev = oc.dias_atraso > 30 ? '#fef2f2' : (oc.dias_atraso > 14 ? '#fff7ed' : '#fefce8');
-      var sevTc = oc.dias_atraso > 30 ? '#991b1b' : (oc.dias_atraso > 14 ? '#9a3412' : '#854d0e');
-      html += '<tr style="border-bottom:1px solid #f1f5f9;background:' + sev + '">';
-      html += '<td style="padding:8px 12px;font-family:ui-monospace;font-weight:700">' + _esc(oc.numero_oc) + '</td>';
-      html += '<td style="padding:8px 12px">' + _esc(oc.proveedor) + '</td>';
-      html += '<td style="padding:8px 12px;color:#64748b">' + _esc(oc.creador || '-') + '</td>';
-      html += '<td style="padding:8px 12px;text-align:center;font-size:11px;font-weight:700;color:' + (oc.estado==='Parcial'?'#9a3412':'#1e40af') + '">' + _esc(oc.estado) + '</td>';
-      html += '<td style="padding:8px 12px;text-align:right;font-family:ui-monospace">' + oc.dias_desde_oc + 'd</td>';
-      html += '<td style="padding:8px 12px;text-align:right;font-family:ui-monospace;color:#64748b">' + oc.lead_time_dias + 'd</td>';
-      html += '<td style="padding:8px 12px;text-align:right;font-family:ui-monospace;color:' + sevTc + ';font-weight:700">+' + oc.dias_atraso + 'd</td>';
-      html += '<td style="padding:8px 12px;text-align:right;font-family:ui-monospace">' + _fmtCop(oc.valor_total) + '</td>';
+    var n = d.total || 0;
+    var ocs = d.ocs || [];
+    // Badge en tab
+    var badge = document.getElementById('atrasadas-badge');
+    if(badge){
+      if(n > 0){ badge.style.display = 'inline-block'; badge.textContent = n; }
+      else { badge.style.display = 'none'; }
+    }
+    resumen.innerHTML = '<span style="color:#78716c;font-size:12px">Buffer ' + d.buffer_dias + 'd sobre el lead_time del proveedor &middot; medido hoy ' + _esc(d.hoy) + '</span>';
+    if(n === 0){
+      div.innerHTML = '<div class="cxt-wrap" style="text-align:center;color:#15803d;padding:34px;font-weight:600">&#10003; Sin OCs atrasadas &middot; todo al d&iacute;a</div>';
+      return;
+    }
+    // KPIs
+    var valorRiesgo = 0, atrasoMax = 0, criticas = 0;
+    ocs.forEach(function(oc){ valorRiesgo += (oc.valor_total||0); if(oc.dias_atraso>atrasoMax) atrasoMax=oc.dias_atraso; if(oc.dias_atraso>30) criticas++; });
+    var html = '<div class="kpis">'
+      + '<div class="kpi"><div class="kpi-l">OCs atrasadas</div><div class="kpi-v r">' + n + '</div></div>'
+      + '<div class="kpi"><div class="kpi-l">Cr&iacute;ticas (&gt;30d)</div><div class="kpi-v ' + (criticas>0?'r':'') + '">' + criticas + '</div></div>'
+      + '<div class="kpi"><div class="kpi-l">Atraso m&aacute;ximo</div><div class="kpi-v w">' + atrasoMax + 'd</div></div>'
+      + '<div class="kpi"><div class="kpi-l">Valor en riesgo</div><div class="kpi-v">' + _fmtCop(valorRiesgo) + '</div></div>'
+      + '</div>';
+    // Tabla premium
+    html += '<div class="cxt-wrap scroll"><table class="cxt">';
+    html += '<thead><tr><th>OC</th><th>Proveedor</th><th>Creador</th><th style="text-align:center">Estado</th>'
+      + '<th style="text-align:right">D&iacute;as OC</th><th style="text-align:right">Lead time</th>'
+      + '<th style="text-align:right">Atraso</th><th style="text-align:right">Valor</th></tr></thead><tbody>';
+    ocs.forEach(function(oc){
+      var chip = oc.dias_atraso > 30 ? 'no' : (oc.dias_atraso > 14 ? 'wait' : 'mute');
+      var estChip = oc.estado==='Parcial' ? 'wait' : 'info';
+      html += '<tr>';
+      html += '<td class="cxt-mono" style="font-weight:700;color:#6d28d9">' + _esc(oc.numero_oc) + '</td>';
+      html += '<td style="font-weight:600;color:#292524">' + _esc(oc.proveedor) + '</td>';
+      html += '<td style="color:#78716c">' + _esc(oc.creador || '-') + '</td>';
+      html += '<td style="text-align:center"><span class="cxt-chip ' + estChip + '">' + _esc(oc.estado) + '</span></td>';
+      html += '<td class="cxt-mono" style="text-align:right">' + oc.dias_desde_oc + 'd</td>';
+      html += '<td class="cxt-mono" style="text-align:right;color:#78716c">' + oc.lead_time_dias + 'd</td>';
+      html += '<td style="text-align:right"><span class="cxt-chip ' + chip + '">+' + oc.dias_atraso + 'd</span></td>';
+      html += '<td class="cxt-mono" style="text-align:right;font-weight:600">' + _fmtCop(oc.valor_total) + '</td>';
       html += '</tr>';
     });
     html += '</tbody></table>';
-    html += '<div style="font-size:11px;color:#64748b;padding:10px 12px;background:#f8fafc;border-top:1px solid #e2e8f0">💡 <strong>Cómo leer:</strong> "Atraso" = días sobre el lead_time del proveedor + buffer. Rojo &gt;30d, naranja &gt;14d, amarillo el resto. El lead_time se aprende automáticamente con cada recepción completa (EWMA 70/30).</div>';
+    html += '<div class="cxt-hint">&#128161; <strong>C&oacute;mo leer:</strong> "Atraso" = d&iacute;as sobre el lead_time del proveedor + buffer. Rojo &gt;30d, &aacute;mbar &gt;14d, gris el resto. El lead_time se aprende autom&aacute;ticamente con cada recepci&oacute;n completa (EWMA 70/30).</div>';
+    html += '</div>';
     div.innerHTML = html;
   }catch(e){
     div.innerHTML = '<div style="color:#dc2626;padding:20px">Error red: ' + e.message + '</div>';
@@ -9147,39 +9174,35 @@ async function cargarCotizaciones(){
     var rondas = d.rondas || d.items || [];
     var pend = rondas.filter(function(x){ return (x.estado||'').toLowerCase()==='abierta' || (x.estado||'').toLowerCase()==='pendiente'; }).length;
     var cerr = rondas.filter(function(x){ return (x.estado||'').toLowerCase()==='cerrada'; }).length;
-    resumen.innerHTML =
-      '<span style="background:#fef3c7;color:#92400e;padding:4px 10px;border-radius:6px;font-weight:700">🟡 Abiertas: '+pend+'</span>'+
-      '<span style="background:#dcfce7;color:#166534;padding:4px 10px;border-radius:6px;font-weight:700;margin-left:6px">✓ Cerradas: '+cerr+'</span>'+
-      '<span style="background:#f1f5f9;color:#475569;padding:4px 10px;border-radius:6px;margin-left:6px">Total últimas 50: '+rondas.length+'</span>';
+    resumen.innerHTML = '<span style="color:#78716c;font-size:12px">Rondas de cotizaci&oacute;n &middot; compar&aacute; hasta 3 proveedores y eleg&iacute; la ganadora (genera la OC).</span>';
     if(!rondas.length){
-      div.innerHTML = '<div style="text-align:center;color:#64748b;padding:40px"><div style="font-size:14px;font-weight:700;margin-bottom:6px">No hay rondas de cotizaciones aún</div><div style="font-size:12px">Crea una desde la pestaña Planta → SOL agrupada → 💬 Cotizar</div></div>';
+      div.innerHTML = '<div class="cxt-wrap" style="text-align:center;color:#78716c;padding:40px"><div style="font-size:14px;font-weight:700;margin-bottom:6px;color:#292524">No hay rondas de cotizaciones a&uacute;n</div><div style="font-size:12px">Cre&aacute; una desde la pesta&ntilde;a Planta &rarr; SOL agrupada &rarr; &#128172; Cotizar</div></div>';
       return;
     }
-    var html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;color:#475569;font-weight:700">';
-    html += '<th style="padding:8px 12px;text-align:left">Ronda #</th>';
-    html += '<th style="padding:8px 12px;text-align:left">MP / Item</th>';
-    html += '<th style="padding:8px 12px;text-align:left">Creada</th>';
-    html += '<th style="padding:8px 12px;text-align:center">Recibidas / Solic</th>';
-    html += '<th style="padding:8px 12px;text-align:right">Mejor precio</th>';
-    html += '<th style="padding:8px 12px;text-align:center">Estado</th>';
-    html += '<th style="padding:8px 12px;text-align:center">Acción</th>';
-    html += '</tr></thead><tbody>';
+    var html = '<div class="kpis">'
+      + '<div class="kpi"><div class="kpi-l">Abiertas</div><div class="kpi-v ' + (pend>0?'w':'') + '">' + pend + '</div></div>'
+      + '<div class="kpi"><div class="kpi-l">Cerradas</div><div class="kpi-v g">' + cerr + '</div></div>'
+      + '<div class="kpi"><div class="kpi-l">Total (&uacute;ltimas 50)</div><div class="kpi-v">' + rondas.length + '</div></div>'
+      + '</div>';
+    html += '<div class="cxt-wrap scroll"><table class="cxt">';
+    html += '<thead><tr><th>Ronda #</th><th>MP / Item</th><th>Creada</th><th style="text-align:center">Recibidas / Solic</th>'
+      + '<th style="text-align:right">Mejor precio</th><th style="text-align:center">Estado</th><th style="text-align:center">Acci&oacute;n</th></tr></thead><tbody>';
     rondas.forEach(function(r2){
       var est = (r2.estado||'').toLowerCase();
-      var bgEst = est==='cerrada' ? '#dcfce7' : (est==='cancelada'?'#fee2e2':'#fef3c7');
-      var fgEst = est==='cerrada' ? '#166534' : (est==='cancelada'?'#991b1b':'#92400e');
-      html += '<tr style="border-bottom:1px solid #f1f5f9">';
-      html += '<td style="padding:8px 12px;font-family:ui-monospace;font-weight:700">#'+(r2.ronda_id||r2.id)+'</td>';
-      html += '<td style="padding:8px 12px">'+_esc(r2.material_nombre||r2.descripcion||r2.material_id||'-')+'</td>';
-      html += '<td style="padding:8px 12px;color:#64748b">'+_esc((r2.creada_en||'').slice(0,10))+'</td>';
-      html += '<td style="padding:8px 12px;text-align:center"><span style="background:#f1f5f9;padding:2px 8px;border-radius:6px;font-weight:700">'+(r2.recibidas||r2.respuestas||0)+' / '+(r2.solicitadas||r2.total||0)+'</span></td>';
-      html += '<td style="padding:8px 12px;text-align:right;font-weight:700;color:#15803d">'+(r2.mejor_precio ? _money(r2.mejor_precio) : '-')+'</td>';
-      html += '<td style="padding:8px 12px;text-align:center"><span style="background:'+bgEst+';color:'+fgEst+';padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700;text-transform:uppercase">'+_esc(r2.estado||'?')+'</span></td>';
-      html += '<td style="padding:8px 12px;text-align:center"><button onclick="abrirCotizDrawer('+(r2.ronda_id||r2.id)+')" style="background:#0891b2;color:#fff;border:none;padding:5px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">📊 Comparar</button></td>';
+      var chip = est==='cerrada' ? 'ok' : (est==='cancelada'?'no':'wait');
+      html += '<tr>';
+      html += '<td class="cxt-mono" style="font-weight:700;color:#6d28d9">#'+(r2.ronda_id||r2.id)+'</td>';
+      html += '<td style="font-weight:600;color:#292524">'+_esc(r2.material_nombre||r2.descripcion||r2.material_id||'-')+'</td>';
+      html += '<td style="color:#78716c">'+_esc((r2.creada_en||'').slice(0,10))+'</td>';
+      html += '<td style="text-align:center"><span class="cxt-chip mute">'+(r2.recibidas||r2.respuestas||0)+' / '+(r2.solicitadas||r2.total||0)+'</span></td>';
+      html += '<td class="cxt-mono" style="text-align:right;font-weight:700;color:#15803d">'+(r2.mejor_precio ? _money(r2.mejor_precio) : '-')+'</td>';
+      html += '<td style="text-align:center"><span class="cxt-chip '+chip+'" style="text-transform:uppercase">'+_esc(r2.estado||'?')+'</span></td>';
+      html += '<td style="text-align:center"><button class="cxt-btnp" onclick="abrirCotizDrawer('+(r2.ronda_id||r2.id)+')">&#128202; Comparar</button></td>';
       html += '</tr>';
     });
     html += '</tbody></table>';
-    html += '<div style="font-size:11px;color:#64748b;padding:10px 12px;background:#f8fafc;border-top:1px solid #e2e8f0">💡 Click <strong>📊 Comparar</strong> para ver las 3 cotizaciones lado a lado y elegir ganadora · al elegir, se genera la OC automáticamente vinculada.</div>';
+    html += '<div class="cxt-hint">&#128161; Click <strong>&#128202; Comparar</strong> para ver las cotizaciones lado a lado y elegir ganadora &middot; al elegir, se genera la OC autom&aacute;ticamente vinculada.</div>';
+    html += '</div>';
     div.innerHTML = html;
     // Update badge
     var b = document.getElementById('cotiz-badge');
