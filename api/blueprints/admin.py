@@ -16739,15 +16739,18 @@ async function cargar(){
   var vig=await jget('/api/compras/vigilancia-precios?umbral=20&dias=365');
   var cf=await jget('/api/compras/cash-flow');
   var ncs=await jget('/api/calidad/no-conformidades');
+  var caja=await jget('/api/animus/caja');
   // KPIs
   var porPagar30=0, precElev=(vig&&vig.anomalias)?vig.anomalias.length:0, rechAb=0;
   if(cf&&cf.proyecciones){ var p30=cf.proyecciones.find(function(x){return x.dias===30;}); if(p30) porPagar30=(p30.ocs_por_pagar&&p30.ocs_por_pagar.monto)||0; }
   var rechList=[];
   if(Array.isArray(ncs)){ ncs.forEach(function(n){ if(n.estado==='Abierta' && (/rechaz/i.test(n.tipo||'')||/recep/i.test(n.area||''))){ rechAb++; rechList.push(n); } }); }
-  document.getElementById('kpis').innerHTML=
+  var kh=
     '<div class="kpi"><span class="bar" style="background:#6d28d9"></span><div class="v">'+cop(porPagar30)+'</div><div class="l">Por pagar (30 d)</div></div>'
     +'<div class="kpi"><span class="bar" style="background:#b45309"></span><div class="v" style="color:'+(precElev?'#b45309':'#15803d')+'">'+precElev+'</div><div class="l">Precios elevados</div></div>'
     +'<div class="kpi"><span class="bar" style="background:#dc2626"></span><div class="v" style="color:'+(rechAb?'#b91c1c':'#15803d')+'">'+rechAb+'</div><div class="l">Rechazos abiertos</div></div>';
+  if(caja&&caja.ok&&caja.kpis){ kh+='<div class="kpi"><span class="bar" style="background:#15803d"></span><div class="v" style="color:#15803d">'+cop(caja.kpis.saldo_total||0)+'</div><div class="l">Caja (efectivo)</div></div>'; }
+  document.getElementById('kpis').innerHTML=kh;
   // Precios (top 6)
   var pd=document.getElementById('precios');
   if(vig&&vig.anomalias&&vig.anomalias.length){
