@@ -3857,10 +3857,12 @@ def get_analisis_abc():
         rows = c.execute(
             """SELECT m.codigo, m.descripcion, '' as nombre_inci, COALESCE(m.proveedor,''),
                       COALESCE(m.categoria,''), '' as origen,
-                      COALESCE((SELECT SUM(CASE WHEN mm.tipo='Entrada' THEN mm.cantidad
-                                                WHEN mm.tipo='Salida'  THEN -mm.cantidad
-                                                WHEN mm.tipo='Ajuste'  THEN mm.cantidad
-                                                ELSE 0 END)
+                      COALESCE((SELECT SUM(CASE
+                                    WHEN LOWER(mm.tipo) IN ('entrada','ingreso','devolucion','devolución')
+                                         AND UPPER(COALESCE(mm.estado,'VIGENTE')) NOT IN ('CUARENTENA','RECHAZADO') THEN mm.cantidad
+                                    WHEN LOWER(mm.tipo)='ajuste' THEN mm.cantidad
+                                    WHEN LOWER(mm.tipo) IN ('salida','consumo','rechazo') THEN -mm.cantidad
+                                    ELSE 0 END)
                                 FROM movimientos_mee mm
                                 WHERE mm.mee_codigo=m.codigo AND COALESCE(mm.anulado,0)=0), m.stock_actual, 0) as stock,
                       0 as precio  -- maestro_mee no tiene columna de precio (ABC MEE = por gramos/consumo, no valor)

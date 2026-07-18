@@ -4202,11 +4202,18 @@ def job_mee_drift_sync(app):
                 # Ahora UPPER(TRIM(tipo)) normaliza y 'Ajuste' usa el SIGNO de
                 # cantidad (cant<0 = bajada, cant>0 = subida) en vez de asumir
                 # siempre suma, que era incorrecto para 'Ajuste -' descontado.
+                # FIX 18-jul-2026 · alinear EXACTO con `_get_mee_stock` (canónico) · el cron
+                # inflaba el cache al contar ENTRADA sin excluir CUARENTENA/RECHAZADO (con la
+                # recepción MEE ahora en cuarentena, M73) → cache != canónico y empujaba a los
+                # lectores de decisión que leen `stock_actual`. Ahora excluye cuarentena/rechazado,
+                # cubre ingreso/devolucion y resta rechazo, igual que el canónico.
                 sum_row = c.execute(
                     """SELECT COALESCE(SUM(CASE
-                           WHEN UPPER(TRIM(tipo)) IN ('ENTRADA') THEN ABS(cantidad)
-                           WHEN UPPER(TRIM(tipo)) IN ('SALIDA','CONSUMO') THEN -ABS(cantidad)
-                           WHEN UPPER(TRIM(tipo)) LIKE 'AJUSTE%' THEN cantidad
+                           WHEN LOWER(TRIM(tipo)) IN ('entrada','ingreso','devolucion','devolución')
+                                AND UPPER(COALESCE(estado,'VIGENTE')) NOT IN ('CUARENTENA','RECHAZADO')
+                               THEN cantidad
+                           WHEN LOWER(TRIM(tipo)) = 'ajuste' THEN cantidad
+                           WHEN LOWER(TRIM(tipo)) IN ('salida','consumo','rechazo') THEN -cantidad
                            ELSE 0 END), 0)
                        FROM movimientos_mee WHERE mee_codigo=? AND COALESCE(anulado,0)=0""",
                     (cod,),

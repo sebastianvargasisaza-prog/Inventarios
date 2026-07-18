@@ -19894,11 +19894,20 @@ def solicitudes_compra_anticipada_list():
     """, params).fetchall()
     cols = [d[0] for d in c.description]
     items = [dict(zip(cols, r)) for r in rows]
+    # Stock CANÓNICO para decidir ruta (FIX 18-jul · antes usaba el cache maestro_mee.stock_actual
+    # que driftea con cuarentena → decidía inventario/oc sobre un stock inflado). _get_mee_stock excluye
+    # cuarentena/rechazado y pliega el puente de aliases.
+    try:
+        _mee_stock = _get_mee_stock(c)
+    except Exception:
+        _mee_stock = {}
     # Sugerencia de ruta para cada solicitud
     for it in items:
         tipo = it.get('tipo_item') or ''
         cant = float(it.get('cantidad_unidades') or 0)
-        stock = float(it.get('stock_actual') or 0)
+        _cod = str(it.get('mee_codigo') or '').strip().upper()
+        stock = float(_mee_stock.get(_cod, it.get('stock_actual') or 0))
+        it['stock_actual'] = stock  # exponer el canónico al front (no el cache)
         if tipo in ('etiqueta_frontal', 'etiqueta_posterior', 'etiqueta_lateral', 'instructivo'):
             it['ruta_sugerida'] = 'oc'  # etiquetas siempre OC
         elif it.get('decoracion_tipo') in ('serigrafia', 'tampografia'):

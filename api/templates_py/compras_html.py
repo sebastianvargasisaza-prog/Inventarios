@@ -637,7 +637,10 @@ function renderHistorico(){
       <span style="font-weight:700;color:#1e293b;font-size:15px">&#127991;&#65039; Envases a marcar &middot; serigrafía / tampografía</span>
       <div style="font-size:11px;color:#64748b;margin-top:2px">Compras define <b>método</b> y <b>proveedor</b> de cada envase y lo manda a marcar (15 días antes de producir). Ciclo completo: enviar &rarr; recibir &rarr; cuarentena &rarr; Calidad libera. Planta solo alista/recibe.</div>
     </div>
-    <button class="btn bp" onclick="loadMarcacionOC(true)" style="margin-left:auto;padding:6px 14px;font-size:12px">&#8635; Actualizar</button>
+    <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+      <button class="btn" onclick="recalcularMinimosEnvases()" style="padding:6px 14px;font-size:12px;background:#7c3aed;color:#fff;font-weight:700" title="Recalcula el mínimo de cada envase según el consumo real del plan (dinámico, en vez del estático del maestro)">&#9881; Mínimos de envases</button>
+      <button class="btn bp" onclick="loadMarcacionOC(true)" style="padding:6px 14px;font-size:12px">&#8635; Actualizar</button>
+    </div>
   </div>
   <iframe id="marcacion-iframe-oc" src="about:blank" style="width:100%;height:82vh;border:1px solid #e2e8f0;border-radius:12px;background:#fff;margin-top:6px" title="Envases a marcar"></iframe>
 </div>
