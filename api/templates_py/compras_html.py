@@ -9350,7 +9350,7 @@ async function cargarCotizaciones(){
       html += '<td style="text-align:center"><span class="cxt-chip mute">'+(r2.recibidas||r2.respuestas||0)+' / '+(r2.solicitadas||r2.total||0)+'</span></td>';
       html += '<td class="cxt-mono" style="text-align:right;font-weight:700;color:#15803d">'+(r2.mejor_precio ? _money(r2.mejor_precio) : '-')+'</td>';
       html += '<td style="text-align:center"><span class="cxt-chip '+chip+'" style="text-transform:uppercase">'+_esc(r2.estado||'?')+'</span></td>';
-      html += '<td style="text-align:center"><button class="cxt-btnp" onclick="abrirCotizDrawer('+(r2.ronda_id||r2.id)+')">&#128202; Comparar</button></td>';
+      html += '<td style="text-align:center"><button class="cxt-btnp" onclick="abrirCotizDrawer(&#39;'+(r2.ronda_id||r2.id)+'&#39;)">&#128202; Comparar</button></td>';
       html += '</tr>';
     });
     html += '</tbody></table>';

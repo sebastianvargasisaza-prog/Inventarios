@@ -1371,6 +1371,7 @@ def calidad_recepcion_tecnica():
         _f = _F01_COLS + ['origen', 'creado_por', 'creado_en']
         cur.execute(f"INSERT INTO recepcion_tecnica_doc ({','.join(_f)}) VALUES ({','.join(['?']*len(_f))})",
                     [vals[k] for k in _F01_COLS] + [origen, u, _fecha_co()])
+        _f01_id = cur.lastrowid  # capturar YA · _crear_nc_rechazo mueve lastrowid (su audit_log) · M22
         _liberado = 0; _nc_id = None
         if origen == 'MEE' and resultado in ('conforme', 'no_conforme'):
             # el F01 del envase decide (no hay F02) · CAS: solo si sigue en cuarentena (M23/M27)
@@ -1389,7 +1390,7 @@ def calidad_recepcion_tecnica():
                                                cantidad=mrow[2], proveedor=mrow[4], oc=mrow[5],
                                                motivo=vals.get('observaciones'), es_envase=True)
         audit_log(cur, usuario=u, accion='RECEPCION_TECNICA_F01', tabla='recepcion_tecnica_doc',
-                  registro_id=(cur.lastrowid or 0),
+                  registro_id=(_f01_id or 0),
                   despues={'mov_id': mov_id, 'origen': origen, 'resultado': resultado, 'liberado': _liberado,
                            'nc_id': _nc_id})
         conn.commit()
@@ -1489,6 +1490,7 @@ def calidad_certificado_analisis():
         _f = _F02_COLS + ['creado_por', 'creado_en']
         cur.execute(f"INSERT INTO certificado_analisis_mp ({','.join(_f)}) VALUES ({','.join(['?']*len(_f))})",
                     [vals[k] for k in _F02_COLS] + [u, _fecha_co()])
+        _f02_id = cur.lastrowid  # capturar YA · _crear_nc_rechazo mueve lastrowid (su audit_log) · M22
         _liberado = 0
         if resultado in ('aprobado', 'no_aprobado'):
             # transición canónica del kardex (M23 VIGENTE/RECHAZADO · M27 CAS: solo si sigue en cuarentena)
@@ -1506,7 +1508,7 @@ def calidad_certificado_analisis():
                                        cantidad=vals.get('cantidad_recibida'), proveedor=vals.get('proveedor'),
                                        oc=_oc, motivo=_motivo, es_envase=False)
         audit_log(cur, usuario=u, accion='CERTIFICADO_ANALISIS_F02', tabla='certificado_analisis_mp',
-                  registro_id=(cur.lastrowid or 0),
+                  registro_id=(_f02_id or 0),
                   despues={'mov_id': mov_id, 'lote': _lote, 'resultado': resultado, 'aprobo': aprobo_por,
                            'lotes_afectados': _liberado, 'nc_id': _nc_id, 'signature_id': signature_id})
         conn.commit()

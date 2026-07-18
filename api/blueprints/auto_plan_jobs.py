@@ -4209,11 +4209,11 @@ def job_mee_drift_sync(app):
                 # cubre ingreso/devolucion y resta rechazo, igual que el canónico.
                 sum_row = c.execute(
                     """SELECT COALESCE(SUM(CASE
-                           WHEN LOWER(TRIM(tipo)) IN ('entrada','ingreso','devolucion','devolución')
+                           WHEN LOWER(tipo) IN ('entrada','ingreso','devolucion','devolución')
                                 AND UPPER(COALESCE(estado,'VIGENTE')) NOT IN ('CUARENTENA','RECHAZADO')
                                THEN cantidad
-                           WHEN LOWER(TRIM(tipo)) = 'ajuste' THEN cantidad
-                           WHEN LOWER(TRIM(tipo)) IN ('salida','consumo','rechazo') THEN -cantidad
+                           WHEN LOWER(tipo) = 'ajuste' THEN cantidad
+                           WHEN LOWER(tipo) IN ('salida','consumo','rechazo') THEN -cantidad
                            ELSE 0 END), 0)
                        FROM movimientos_mee WHERE mee_codigo=? AND COALESCE(anulado,0)=0""",
                     (cod,),

@@ -45,3 +45,16 @@ def test_candidato_en_ronda_abierta_se_excluye(app, db_clean):
     d = c.get("/api/compras/cotizaciones/candidatos").get_json()
     noms = [i["nombre"] for i in d.get("items", [])]
     assert "AAA Material En Ronda ZZ" not in noms, "un MP ya en ronda abierta no debe re-sugerirse"
+
+
+def test_candidato_en_ronda_con_prefijo_cotizar_se_excluye(app, db_clean):
+    # la ronda creada desde un candidato guarda la descripción con prefijo 'Cotizar: <nombre>'
+    # (compras_html · nuevaRondaCotizModal) → el dedup debe pelar el prefijo, si no reaparece
+    _exec("INSERT OR REPLACE INTO maestro_mps (codigo_mp,nombre_comercial,precio_referencia,activo,controla_stock) "
+          "VALUES ('MP-COTZ4','AAA Material Prefijo ZZ',0,1,1)")
+    _exec("INSERT INTO cotizaciones (ronda_id,proveedor,descripcion,estado) "
+          "VALUES ('COT-TESTP','Prov X','Cotizar: AAA Material Prefijo ZZ','Pendiente')")
+    c = _login(app)
+    d = c.get("/api/compras/cotizaciones/candidatos").get_json()
+    noms = [i["nombre"] for i in d.get("items", [])]
+    assert "AAA Material Prefijo ZZ" not in noms, "ronda con prefijo 'Cotizar:' debe excluir el candidato"

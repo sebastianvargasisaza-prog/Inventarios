@@ -13182,6 +13182,10 @@ def cotizaciones_candidatos():
                            "WHERE estado IN ('Pendiente','Recibida')").fetchall():
             if r[0]:
                 en_ronda.add(r[0])
+                # la ronda desde un candidato se guarda con prefijo 'Cotizar: <nombre>'
+                # (compras_html · nuevaRondaCotizModal) → dedup también por el nombre pelado
+                if r[0].startswith('COTIZAR:'):
+                    en_ronda.add(r[0][len('COTIZAR:'):].strip())
     except Exception:
         pass
     items = []
