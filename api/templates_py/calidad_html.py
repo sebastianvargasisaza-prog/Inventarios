@@ -134,7 +134,7 @@ textarea{resize:vertical;min-height:70px;}
   <div class="tab active" data-tip="Centro de mando del día: todo lo pendiente de Calidad en un vistazo (cuarentena, NCs, OOS, agua, calibraciones, PT por liberar) + alertas de microbiología." data-tip-pos="bottom" onclick="goTab('tab-bandeja')">&#x1F3AF; Bandeja del Dia</div>
   <div class="tab" data-tip="Cuadro de mando: indicadores con META, semáforo y tendencia (RFT, rechazos, CAPA, OOS, agua...). Doble-clic una tarjeta para editar su meta." data-tip-pos="bottom" onclick="goTab('tab-indic')">&#128201; Indicadores</div>
   <div class="tab" data-tip="Tareas de calidad del día (muestreos, inspecciones) según COC-PRO-011." data-tip-pos="bottom" onclick="goTab('tab-cron')">&#128203; Cronograma del Dia</div>
-  <div class="tab" data-tip="Lotes de materia prima en cuarentena esperando aprobación/rechazo." data-tip-pos="bottom" onclick="goTab('tab-cc')">&#x1F9EA; Control Calidad MP</div>
+  <div class="tab" data-tip="Recepción y liberación de MP y envases en cuarentena (F01 técnica + F02 análisis)." data-tip-pos="bottom" onclick="goTab('tab-cc')">&#x1F9EA; Recepción y liberación</div>
   <div class="tab" style="display:none" data-tip="Registro y cierre de No Conformidades (producto/proceso)." data-tip-pos="bottom" onclick="goTab('tab-nc')">&#x26A0; No Conformidades</div>
   <div class="tab" style="display:none" data-tip="Estado y vencimiento de calibraciones de instrumentos (COC-PRO-006/012)." data-tip-pos="bottom" onclick="goTab('tab-cal')">&#x1F527; Calibraciones</div>
   <div class="tab" data-tip="Microbiología: resultados por lote, mapa de calor, gráficas (tendencia OOS, conformidad, hallazgos, ambiental) y fisicoquímico. Registrá con su COA y N° de informe." data-tip-pos="bottom" onclick="goTab('tab-micro')">&#x1F9EB; Microbiolog&iacute;a</div>
@@ -255,7 +255,7 @@ textarea{resize:vertical;min-height:70px;}
     @media(max-width:820px){#tab-cc .ccp-kpis{grid-template-columns:repeat(2,1fr)}}
   </style>
   <div class="ccp-hero">
-    <div class="ccp-title">&#x1F9EA; Recepción de MP y envases</div>
+    <div class="ccp-title">&#x1F9EA; Recepción y liberación de insumos</div>
     <div class="ccp-sub">Cada lote que llega recorre el pipeline de calidad. <b>Materias primas:</b> el F02 aprobado por el jefe libera el lote (VIGENTE, stock usable). <b>Envases (MEE):</b> no llevan análisis fisicoquímico &rarr; el F01 conforme + firma del jefe lo libera.</div>
     <div class="ccp-flow">
       <div class="ccp-st"><span class="n">&#x1F150;</span><span class="lb">Recepción administrativa<small>Catalina &middot; entra a cuarentena</small></span></div>
