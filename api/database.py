@@ -428,6 +428,11 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (362, "Calidad · Pipeline de recepción también para ENVASES (MEE): recepcion_tecnica_doc gana "
+          "'origen' (MP|MEE) para desambiguar el mov_id (movimientos.id vs movimientos_mee.id, ambos "
+          "enteros que colisionan). El F01 de un envase conforme + firma del jefe libera el lote MEE.", [
+        "ALTER TABLE recepcion_tecnica_doc ADD COLUMN origen TEXT DEFAULT 'MP'",
+    ]),
     (361, "Calidad · Recepción MP/MEE en 3 etapas (Laura 18-jul): formatos F01 (Recepción técnica y "
           "documental · COC-PRO-002-F01) + F02 (Certificado de análisis de MP · COC-PRO-002-F02) digitales, "
           "anclados al lote de cuarentena. El registro digital calca el papel (INVIMA). El F02 aprobado por el "

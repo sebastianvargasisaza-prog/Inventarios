@@ -1228,7 +1228,8 @@ def _fecha_co():
 
 @bp.route('/api/calidad/recepcion-pipeline', methods=['GET'])
 def calidad_recepcion_pipeline():
-    """Lotes de MP en cuarentena + estado de sus formatos F01/F02 (pipeline de Calidad · Laura)."""
+    """Lotes de MP y ENVASES (MEE) en cuarentena + estado de sus formatos F01/F02 (pipeline de Calidad · Laura).
+    MP: 🅐 admin → 🅑 F01 → 🅒 F02 (aprobado libera). MEE: 🅐 admin → 🅑 F01 (conforme + firma libera · sin F02)."""
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
@@ -1245,16 +1246,36 @@ def calidad_recepcion_pipeline():
                  AND UPPER(COALESCE(mp.tipo_material,'MP'))='MP'
                ORDER BY m.fecha DESC LIMIT 100""").fetchall():
             mid = r[0]
-            f01 = c.execute("SELECT resultado FROM recepcion_tecnica_doc WHERE mov_id=? AND COALESCE(anulado,0)=0 "
-                            "ORDER BY id DESC LIMIT 1", (mid,)).fetchone()
+            f01 = c.execute("SELECT resultado FROM recepcion_tecnica_doc WHERE mov_id=? AND COALESCE(origen,'MP')='MP' "
+                            "AND COALESCE(anulado,0)=0 ORDER BY id DESC LIMIT 1", (mid,)).fetchone()
             f02 = c.execute("SELECT resultado FROM certificado_analisis_mp WHERE mov_id=? AND COALESCE(anulado,0)=0 "
                             "ORDER BY id DESC LIMIT 1", (mid,)).fetchone()
-            lotes.append({'mov_id': mid, 'codigo_mp': r[1], 'nombre': r[2], 'cantidad': r[3], 'lote': r[4],
+            lotes.append({'mov_id': mid, 'tipo': 'MP', 'codigo_mp': r[1], 'nombre': r[2], 'cantidad': r[3], 'lote': r[4],
                           'fecha_vencimiento': r[5] or '', 'proveedor': r[6] or '', 'fecha': (r[7] or '')[:10],
                           'numero_oc': r[8] or '', 'estado_lote': r[9] or '',
                           'f01_resultado': (f01[0] if f01 else ''), 'f02_resultado': (f02[0] if f02 else '')})
     except Exception:
         lotes = []
+    # ── ENVASES (MEE) en cuarentena · movimientos_mee (id colisiona con movimientos.id → origen='MEE') ──
+    try:
+        for r in c.execute(
+            """SELECT mv.id, mv.mee_codigo, COALESCE(mm.descripcion, mv.mee_codigo), mv.cantidad,
+                      COALESCE(mv.lote_ref,''), COALESCE(mv.fecha_vencimiento,''), COALESCE(mv.proveedor,''),
+                      mv.fecha, COALESCE(mv.oc_numero,''), COALESCE(mv.estado,'')
+               FROM movimientos_mee mv
+               LEFT JOIN maestro_mee mm ON UPPER(TRIM(mm.codigo))=UPPER(TRIM(mv.mee_codigo))
+               WHERE mv.tipo='Entrada' AND COALESCE(mv.anulado,0)=0
+                 AND UPPER(COALESCE(mv.estado,'VIGENTE'))='CUARENTENA'
+               ORDER BY mv.id DESC LIMIT 100""").fetchall():
+            mid = r[0]
+            f01 = c.execute("SELECT resultado FROM recepcion_tecnica_doc WHERE mov_id=? AND COALESCE(origen,'MP')='MEE' "
+                            "AND COALESCE(anulado,0)=0 ORDER BY id DESC LIMIT 1", (mid,)).fetchone()
+            lotes.append({'mov_id': mid, 'tipo': 'MEE', 'codigo_mp': r[1], 'nombre': r[2], 'cantidad': r[3], 'lote': r[4],
+                          'fecha_vencimiento': r[5] or '', 'proveedor': r[6] or '', 'fecha': (r[7] or '')[:10],
+                          'numero_oc': r[8] or '', 'estado_lote': r[9] or '',
+                          'f01_resultado': (f01[0] if f01 else ''), 'f02_resultado': ''})
+    except Exception:
+        pass
     return jsonify({'ok': True, 'lotes': lotes})
 
 
@@ -1267,25 +1288,38 @@ _F01_COLS = ['mov_id', 'numero_oc', 'lote', 'tipo_insumo', 'codigo_insumo', 'nom
 
 @bp.route('/api/calidad/recepcion-tecnica', methods=['GET', 'POST'])
 def calidad_recepcion_tecnica():
-    """F01 · Recepción técnica y documental (COC-PRO-002-F01). GET ?mov_id=X → registro o prefill del movimiento."""
+    """F01 · Recepción técnica y documental (COC-PRO-002-F01). GET ?mov_id=X&origen=MP|MEE → registro o prefill.
+    Para ENVASES (origen='MEE') el F01 Conforme + firma del jefe LIBERA el lote (movimientos_mee CUARENTENA→VIGENTE);
+    los envases no llevan F02 (sin análisis fisicoquímico)."""
     if request.method == 'GET':
         if 'compras_user' not in session:
             return jsonify({'error': 'No autorizado'}), 401
         mov_id = request.args.get('mov_id')
+        origen = 'MEE' if (request.args.get('origen', 'MP').upper() == 'MEE') else 'MP'
         conn = get_db(); c = conn.cursor()
-        row = c.execute("SELECT * FROM recepcion_tecnica_doc WHERE mov_id=? AND COALESCE(anulado,0)=0 "
-                        "ORDER BY id DESC LIMIT 1", (mov_id,)).fetchone()
+        row = c.execute("SELECT * FROM recepcion_tecnica_doc WHERE mov_id=? AND COALESCE(origen,'MP')=? "
+                        "AND COALESCE(anulado,0)=0 ORDER BY id DESC LIMIT 1", (mov_id, origen)).fetchone()
         if row:
             cols = [d[0] for d in c.description]
-            return jsonify({'ok': True, 'f01': dict(zip(cols, row))})
-        m = c.execute("SELECT material_id, material_nombre, cantidad, lote, proveedor, fecha, numero_oc, "
-                      "fecha_vencimiento FROM movimientos WHERE id=?", (mov_id,)).fetchone()
+            return jsonify({'ok': True, 'f01': dict(zip(cols, row)), 'origen': origen})
         pre = {}
-        if m:
-            pre = {'codigo_insumo': m[0], 'nombre_insumo': m[1], 'cantidad_recibida': str(m[2] or ''),
-                   'lote': m[3], 'proveedor': m[4] or '', 'fecha_recepcion': (m[5] or '')[:10],
-                   'numero_oc': m[6] or '', 'fecha_vencimiento': m[7] or ''}
-        return jsonify({'ok': True, 'f01': None, 'prefill': pre})
+        if origen == 'MEE':
+            m = c.execute("SELECT mv.mee_codigo, COALESCE(mm.descripcion, mv.mee_codigo), mv.cantidad, mv.lote_ref, "
+                          "COALESCE(mv.proveedor,''), mv.fecha, COALESCE(mv.oc_numero,''), COALESCE(mv.fecha_vencimiento,'') "
+                          "FROM movimientos_mee mv LEFT JOIN maestro_mee mm ON UPPER(TRIM(mm.codigo))=UPPER(TRIM(mv.mee_codigo)) "
+                          "WHERE mv.id=?", (mov_id,)).fetchone()
+            if m:
+                pre = {'codigo_insumo': m[0], 'nombre_insumo': m[1], 'cantidad_recibida': str(m[2] or ''),
+                       'lote': m[3] or '', 'proveedor': m[4] or '', 'fecha_recepcion': (m[5] or '')[:10],
+                       'numero_oc': m[6] or '', 'fecha_vencimiento': m[7] or '', 'tipo_insumo': 'envase'}
+        else:
+            m = c.execute("SELECT material_id, material_nombre, cantidad, lote, proveedor, fecha, numero_oc, "
+                          "fecha_vencimiento FROM movimientos WHERE id=?", (mov_id,)).fetchone()
+            if m:
+                pre = {'codigo_insumo': m[0], 'nombre_insumo': m[1], 'cantidad_recibida': str(m[2] or ''),
+                       'lote': m[3], 'proveedor': m[4] or '', 'fecha_recepcion': (m[5] or '')[:10],
+                       'numero_oc': m[6] or '', 'fecha_vencimiento': m[7] or '', 'tipo_insumo': 'materia_prima'}
+        return jsonify({'ok': True, 'f01': None, 'prefill': pre, 'origen': origen})
     err, code = _require_calidad()
     if err:
         return err, code
@@ -1294,20 +1328,35 @@ def calidad_recepcion_tecnica():
     mov_id = b.get('mov_id')
     if not mov_id:
         return jsonify({'error': 'Falta el lote (mov_id)'}), 400
+    origen = 'MEE' if (str(b.get('origen') or 'MP').upper() == 'MEE') else 'MP'
+    resultado = (str(b.get('resultado') or '')).strip().lower()  # conforme | no_conforme
+    aprueba_por = (str(b.get('aprueba_por') or '')).strip()
+    # Para envases (MEE) el F01 es la liberación → conforme exige firma del jefe
+    if origen == 'MEE' and resultado == 'conforme' and not aprueba_por:
+        return jsonify({'error': 'Para liberar el envase se requiere la firma del jefe de calidad (aprueba)'}), 400
     vals = {k: (str(b.get(k) or '')) for k in _F01_COLS}
     vals['mov_id'] = mov_id
     conn = get_db(); cur = conn.cursor()
     try:
-        cur.execute("UPDATE recepcion_tecnica_doc SET anulado=1 WHERE mov_id=? AND COALESCE(anulado,0)=0", (mov_id,))
-        _f = _F01_COLS + ['creado_por', 'creado_en']
+        cur.execute("UPDATE recepcion_tecnica_doc SET anulado=1 WHERE mov_id=? AND COALESCE(origen,'MP')=? "
+                    "AND COALESCE(anulado,0)=0", (mov_id, origen))
+        _f = _F01_COLS + ['origen', 'creado_por', 'creado_en']
         cur.execute(f"INSERT INTO recepcion_tecnica_doc ({','.join(_f)}) VALUES ({','.join(['?']*len(_f))})",
-                    [vals[k] for k in _F01_COLS] + [u, _fecha_co()])
+                    [vals[k] for k in _F01_COLS] + [origen, u, _fecha_co()])
+        _liberado = 0
+        if origen == 'MEE' and resultado in ('conforme', 'no_conforme'):
+            # el F01 del envase decide (no hay F02) · CAS: solo si sigue en cuarentena (M23/M27)
+            _nuevo = 'VIGENTE' if resultado == 'conforme' else 'RECHAZADO'
+            cur.execute("UPDATE movimientos_mee SET estado=? WHERE id=? AND tipo='Entrada' "
+                        "AND UPPER(COALESCE(estado,'VIGENTE'))='CUARENTENA'", (_nuevo, mov_id))
+            _liberado = cur.rowcount
         audit_log(cur, usuario=u, accion='RECEPCION_TECNICA_F01', tabla='recepcion_tecnica_doc',
-                  registro_id=(cur.lastrowid or 0), despues={'mov_id': mov_id, 'resultado': vals['resultado']})
+                  registro_id=(cur.lastrowid or 0),
+                  despues={'mov_id': mov_id, 'origen': origen, 'resultado': resultado, 'liberado': _liberado})
         conn.commit()
     except Exception as e:
         conn.rollback(); return jsonify({'error': f'No se pudo guardar F01: {e}'}), 500
-    return jsonify({'ok': True, 'resultado': vals['resultado']})
+    return jsonify({'ok': True, 'resultado': resultado, 'origen': origen, 'liberado': _liberado})
 
 
 _F02_COLS = ['mov_id', 'lote', 'codigo_mp', 'nombre_mp', 'lote_proveedor', 'cantidad_recibida', 'proveedor',
@@ -1407,6 +1456,135 @@ def calidad_certificado_analisis():
     except Exception as e:
         conn.rollback(); return jsonify({'error': f'No se pudo guardar F02: {e}'}), 500
     return jsonify({'ok': True, 'resultado': resultado, 'liberado': _liberado})
+
+
+# ── F01 / F02 imprimibles (documento auditable · calca el formato en papel · imprimir→PDF) ──
+def _e(v):
+    import html as _h
+    return _h.escape(str(v if v is not None else ''))
+
+
+def _rc_doc_css():
+    return ("<style>@page{size:letter;margin:14mm}*{box-sizing:border-box}"
+            "body{font-family:'Segoe UI',Arial,sans-serif;color:#1e293b;font-size:12px;margin:0;padding:8px}"
+            ".hd{display:flex;justify-content:space-between;align-items:flex-start;border:1.5px solid #334155;padding:8px 12px;margin-bottom:10px}"
+            ".hd .t{font-size:15px;font-weight:800;color:#0f172a}.hd .s{font-size:10px;color:#64748b}"
+            ".hd .cod{text-align:right;font-size:10px;color:#334155;border-left:1px solid #cbd5e1;padding-left:10px}"
+            ".grid{display:grid;grid-template-columns:1fr 1fr;gap:2px 14px;margin:8px 0}"
+            ".fld{border-bottom:1px solid #e2e8f0;padding:4px 2px;display:flex;gap:6px}"
+            ".fld .k{color:#64748b;min-width:120px;font-size:10px;text-transform:uppercase;letter-spacing:.03em}"
+            ".fld .v{font-weight:600}"
+            "table{width:100%;border-collapse:collapse;margin:8px 0;font-size:11px}"
+            "th,td{border:1px solid #cbd5e1;padding:5px 7px;text-align:left}th{background:#f1f5f9;font-size:10px;text-transform:uppercase}"
+            ".res{margin:10px 0;padding:8px 12px;border:2px solid #334155;border-radius:6px;font-size:13px;font-weight:800}"
+            ".res.ok{border-color:#16a34a;color:#15803d;background:#f0fdf4}.res.no{border-color:#dc2626;color:#b91c1c;background:#fef2f2}"
+            ".firmas{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}"
+            ".firma{border-top:1px solid #334155;padding-top:4px;font-size:10px;color:#475569}.firma b{display:block;color:#0f172a;font-size:12px}"
+            ".noimp{margin:14px 0;text-align:center}.noimp button{padding:8px 18px;font-size:13px;cursor:pointer;border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:6px}"
+            "@media print{.noimp{display:none}}</style>")
+
+
+def _rc_head(titulo, codigo, extra=''):
+    return (f"<div class='hd'><div><div class='t'>{_e(titulo)}</div>"
+            f"<div class='s'>Espagiria Laboratorio · Control de Calidad{(' · ' + _e(extra)) if extra else ''}</div></div>"
+            f"<div class='cod'>{_e(codigo)}<br>Versión 01</div></div>")
+
+
+def _rc_fld(k, v):
+    return f"<div class='fld'><span class='k'>{_e(k)}</span><span class='v'>{_e(v)}</span></div>"
+
+
+def _rc_estado(v):
+    m = {'cumple': 'Cumple', 'no_cumple': 'No cumple', 'no_aplica': 'No aplica',
+         'si': 'Sí', 'no': 'No', 'na': 'N/A', '': '—'}
+    return m.get((v or '').lower(), v)
+
+
+@bp.route('/api/calidad/recepcion-tecnica/imprimible', methods=['GET'])
+def calidad_f01_imprimible():
+    """F01 imprimible (COC-PRO-002-F01) · documento auditable para PDF (imprimir desde el navegador)."""
+    if 'compras_user' not in session:
+        return Response('No autorizado', status=401)
+    mov_id = request.args.get('mov_id')
+    origen = 'MEE' if (request.args.get('origen', 'MP').upper() == 'MEE') else 'MP'
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT * FROM recepcion_tecnica_doc WHERE mov_id=? AND COALESCE(origen,'MP')=? "
+                    "AND COALESCE(anulado,0)=0 ORDER BY id DESC LIMIT 1", (mov_id, origen)).fetchone()
+    if not row:
+        return Response("<p style='font-family:sans-serif;padding:40px'>No hay F01 guardado para este lote.</p>",
+                        mimetype='text/html')
+    d = dict(zip([x[0] for x in c.description], row))
+    tipo_lbl = {'materia_prima': 'Materia prima', 'envase': 'Envase', 'empaque': 'Empaque'}.get(d.get('tipo_insumo'), 'Insumo')
+    crits = [('crit_rotulado', 'Rotulado completo (nombre, lote, fecha vencimiento)'),
+             ('crit_empaque', 'Empaque/envase limpio e íntegro'),
+             ('crit_hoja_seguridad', 'Hoja de seguridad vigente (si aplica)'),
+             ('crit_ficha_tecnica', 'Ficha técnica vigente (si aplica)'),
+             ('crit_coa', 'Certificado de análisis del proveedor (COA)'),
+             ('crit_doc_coincide', 'Documentación coincide con el producto entregado')]
+    filas = ''.join(f"<tr><td>{_e(lbl)}</td><td>{_e(_rc_estado(d.get(k)))}</td></tr>" for k, lbl in crits)
+    _ok = (d.get('resultado') or '').lower() == 'conforme'
+    res_cls = 'ok' if _ok else ('no' if d.get('resultado') else '')
+    res_txt = 'CONFORME' if _ok else ('NO CONFORME' if d.get('resultado') else '—')
+    body = (_rc_doc_css() + _rc_head('Recepción técnica y documental de insumos', 'COC-PRO-002-F01', tipo_lbl)
+            + "<div class='grid'>"
+            + _rc_fld('Insumo', d.get('nombre_insumo')) + _rc_fld('Código', d.get('codigo_insumo'))
+            + _rc_fld('Lote proveedor', d.get('lote_proveedor')) + _rc_fld('Cantidad recibida', d.get('cantidad_recibida'))
+            + _rc_fld('Proveedor', d.get('proveedor')) + _rc_fld('Fecha recepción', d.get('fecha_recepcion'))
+            + _rc_fld('N° remisión/factura', d.get('numero_remision')) + _rc_fld('N° orden de compra', d.get('numero_oc'))
+            + _rc_fld('Área almacenamiento', d.get('area_almacenamiento')) + _rc_fld('Fecha vencimiento', d.get('fecha_vencimiento'))
+            + "</div>"
+            + "<table><thead><tr><th>Verificación técnica y documental</th><th style='width:120px'>Resultado</th></tr></thead><tbody>"
+            + filas + "</tbody></table>"
+            + (f"<div class='fld'><span class='k'>Observaciones</span><span class='v'>{_e(d.get('observaciones'))}</span></div>" if d.get('observaciones') else '')
+            + f"<div class='res {res_cls}'>Resultado de la recepción: {res_txt}</div>"
+            + "<div class='firmas'>"
+            + f"<div class='firma'><b>{_e(d.get('realiza_por') or '—')}</b>Realiza la recepción</div>"
+            + f"<div class='firma'><b>{_e(d.get('aprueba_por') or '—')}</b>Aprueba la recepción</div>"
+            + "</div>"
+            + f"<p style='margin-top:18px;font-size:9px;color:#94a3b8'>Registrado por {_e(d.get('creado_por'))} · {_e((d.get('creado_en') or '')[:19])}</p>"
+            + "<div class='noimp'><button onclick='window.print()'>🖨️ Imprimir / Guardar PDF</button></div>")
+    return Response(body, mimetype='text/html')
+
+
+@bp.route('/api/calidad/certificado-analisis/imprimible', methods=['GET'])
+def calidad_f02_imprimible():
+    """F02 imprimible (COC-PRO-002-F02) · certificado de análisis de MP auditable para PDF."""
+    if 'compras_user' not in session:
+        return Response('No autorizado', status=401)
+    mov_id = request.args.get('mov_id')
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT * FROM certificado_analisis_mp WHERE mov_id=? AND COALESCE(anulado,0)=0 "
+                    "ORDER BY id DESC LIMIT 1", (mov_id,)).fetchone()
+    if not row:
+        return Response("<p style='font-family:sans-serif;padding:40px'>No hay F02 guardado para este lote.</p>",
+                        mimetype='text/html')
+    d = dict(zip([x[0] for x in c.description], row))
+    params = [('aspecto', 'Aspecto / Color / Olor'), ('ph', 'pH (a 25°C)'), ('densidad', 'Densidad (g/mL)'),
+              ('solubilidad', 'Solubilidad'), ('viscosidad', 'Viscosidad (cP)')]
+    filas = ''.join(
+        f"<tr><td>{_e(lbl)}</td><td>{_e(d.get(k + '_spec'))}</td><td>{_e(d.get(k + '_result'))}</td>"
+        f"<td>{_e(_rc_estado(d.get(k + '_cumple')))}</td></tr>" for k, lbl in params)
+    _r = (d.get('resultado') or '').lower()
+    res_cls = 'ok' if _r == 'aprobado' else ('no' if _r == 'no_aprobado' else '')
+    res_txt = {'aprobado': 'APROBADO', 'no_aprobado': 'NO APROBADO', 'cuarentena': 'PERMANECE EN CUARENTENA'}.get(_r, '—')
+    body = (_rc_doc_css() + _rc_head('Certificado de análisis de materia prima', 'COC-PRO-002-F02')
+            + "<div class='grid'>"
+            + _rc_fld('Materia prima', d.get('nombre_mp')) + _rc_fld('Código', d.get('codigo_mp'))
+            + _rc_fld('Lote proveedor', d.get('lote_proveedor')) + _rc_fld('Cantidad recibida', d.get('cantidad_recibida'))
+            + _rc_fld('Proveedor', d.get('proveedor')) + _rc_fld('Fecha recepción', d.get('fecha_recepcion'))
+            + _rc_fld('Fecha de análisis', d.get('fecha_analisis')) + _rc_fld('Fecha vencimiento', d.get('fecha_vencimiento'))
+            + "</div>"
+            + "<table><thead><tr><th>Parámetro</th><th>Especificación</th><th>Resultado</th><th style='width:90px'>Cumple</th></tr></thead><tbody>"
+            + filas + "</tbody></table>"
+            + (f"<div class='fld'><span class='k'>Observaciones generales</span><span class='v'>{_e(d.get('observaciones_generales'))}</span></div>" if d.get('observaciones_generales') else '')
+            + f"<div class='res {res_cls}'>Concepto de calidad: {res_txt}</div>"
+            + "<div class='firmas'>"
+            + f"<div class='firma'><b>{_e(d.get('responsable_analisis') or '—')}</b>Realiza el análisis</div>"
+            + f"<div class='firma'><b>{_e(d.get('aprobo_por') or '—')}</b>Aprueba · Jefe de Control de Calidad</div>"
+            + "</div>"
+            + f"<p style='margin-top:18px;font-size:9px;color:#94a3b8'>Registrado por {_e(d.get('creado_por'))} · {_e((d.get('creado_en') or '')[:19])}</p>"
+            + "<div class='noimp'><button onclick='window.print()'>🖨️ Imprimir / Guardar PDF</button></div>")
+    return Response(body, mimetype='text/html')
 
 
 @bp.route('/api/calidad/coa', methods=['GET','POST'])

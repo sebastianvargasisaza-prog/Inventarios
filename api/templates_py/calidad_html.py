@@ -211,11 +211,12 @@ textarea{resize:vertical;min-height:70px;}
 
 <div id="tab-cc" class="pane">
   <div class="card">
-    <div class="card-title">&#x1F9EA; Recepción de MP · pipeline de calidad</div>
+    <div class="card-title">&#x1F9EA; Recepción de MP y envases · pipeline de calidad</div>
     <div style="font-size:12px;color:var(--cx-text-mute);margin:-4px 0 12px;line-height:1.5">
       Cada lote que llega pasa por: <b>🅐 Recepción administrativa</b> (Catalina · ya en cuarentena) →
-      <b>🅑 Recepción técnica y documental</b> (F01) → <b>🅒 Certificado de análisis</b> (F02). El F02
-      <b>aprobado</b> por el jefe de calidad libera el lote (queda VIGENTE, ya es stock usable).
+      <b>🅑 Recepción técnica y documental</b> (F01) → <b>🅒 Certificado de análisis</b> (F02).
+      <b>Materias primas:</b> el F02 <b>aprobado</b> por el jefe de calidad libera el lote (VIGENTE, stock usable).
+      <b>Envases (MEE):</b> no llevan análisis fisicoquímico → el F01 <b>conforme</b> + firma del jefe libera el lote.
     </div>
     <input type="text" oninput="var q=this.value.toLowerCase();document.querySelectorAll('#cc-tbody tr').forEach(function(r){r.style.display=((r.textContent||'').toLowerCase().indexOf(q)>=0)?'':'none';});" placeholder="&#128269; Buscar material, lote, proveedor u OC…" style="width:100%;max-width:380px;padding:9px 13px;border:1px solid #eef0f2;border-radius:10px;font-size:13px;margin-bottom:14px;box-shadow:0 1px 2px rgba(15,23,42,.04);">
     <div style="overflow-x:auto;">
@@ -2294,24 +2295,39 @@ async function loadCuarentena(){
     const d=await r.json(); const rows=(d&&d.lotes)||[]; window._ccrRows=rows;
     if(!rows.length){tbody.innerHTML='<tr><td colspan="7" class="empty">No hay lotes en cuarentena</td></tr>';return;}
     tbody.innerHTML=rows.map(function(l){
+      var esMEE = (l.tipo==='MEE');
+      var org = esMEE?'MEE':'MP';
       var f01=l.f01_resultado||'';
+      var f01ok=(f01==='conforme');
+      var f01pdf = f01 ? ' <a href="/api/calidad/recepcion-tecnica/imprimible?mov_id='+l.mov_id+'&origen='+org+'" target="_blank" style="font-size:10px;color:#0369a1">PDF</a>' : '';
       var f01cell = f01
-        ? '<span style="background:'+(f01==='conforme'?'#dcfce7':'#fee2e2')+';color:'+(f01==='conforme'?'#15803d':'#b91c1c')+';border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700">'+(f01==='conforme'?'&#10003; Conforme':'&#10007; No conforme')+'</span> <a href="#" onclick="openF01('+l.mov_id+');return false" style="font-size:10px;color:#7c3aed">editar</a>'
-        : '<button class="btn btn-primary btn-sm" onclick="openF01('+l.mov_id+')">Hacer F01</button>';
-      var f02=l.f02_resultado||''; var f02cell;
-      if(f02){
-        var col=f02==='aprobado'?'#dcfce7':(f02==='cuarentena'?'#fef3c7':'#fee2e2');
-        var txt=f02==='aprobado'?'&#10003; Aprobado':(f02==='cuarentena'?'&#9680; Cuarentena':'&#10007; No aprobado');
-        var tc=f02==='aprobado'?'#15803d':(f02==='cuarentena'?'#92400e':'#b91c1c');
-        f02cell='<span style="background:'+col+';color:'+tc+';border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700">'+txt+'</span> <a href="#" onclick="openF02('+l.mov_id+');return false" style="font-size:10px;color:#7c3aed">ver</a>';
-      } else if(f01==='conforme'){
-        f02cell='<button class="btn btn-primary btn-sm" onclick="openF02('+l.mov_id+')">Hacer F02</button>';
+        ? '<span style="background:'+(f01ok?'#dcfce7':'#fee2e2')+';color:'+(f01ok?'#15803d':'#b91c1c')+';border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700">'+(f01ok?'&#10003; Conforme':'&#10007; No conforme')+'</span> <a href="#" onclick="openF01('+l.mov_id+',&quot;'+org+'&quot;);return false" style="font-size:10px;color:#7c3aed">editar</a>'+f01pdf
+        : '<button class="btn btn-primary btn-sm" onclick="openF01('+l.mov_id+',&quot;'+org+'&quot;)">Hacer F01</button>';
+      var f02cell;
+      if(esMEE){
+        // los envases no llevan F02 (sin análisis fisicoquímico) · el F01 conforme + firma libera el lote
+        f02cell = f01ok
+          ? '<span style="color:#15803d;font-size:11px;font-weight:600">Envase liberado con F01</span>'
+          : '<span style="color:var(--cx-text-mute);font-size:11px">no aplica a envases</span>';
       } else {
-        f02cell='<span style="color:var(--cx-text-mute);font-size:11px">requiere F01 conforme</span>';
+        var f02=l.f02_resultado||'';
+        if(f02){
+          var col=f02==='aprobado'?'#dcfce7':(f02==='cuarentena'?'#fef3c7':'#fee2e2');
+          var txt=f02==='aprobado'?'&#10003; Aprobado':(f02==='cuarentena'?'&#9680; Cuarentena':'&#10007; No aprobado');
+          var tc=f02==='aprobado'?'#15803d':(f02==='cuarentena'?'#92400e':'#b91c1c');
+          f02cell='<span style="background:'+col+';color:'+tc+';border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700">'+txt+'</span> <a href="#" onclick="openF02('+l.mov_id+');return false" style="font-size:10px;color:#7c3aed">ver</a> <a href="/api/calidad/certificado-analisis/imprimible?mov_id='+l.mov_id+'" target="_blank" style="font-size:10px;color:#0369a1">PDF</a>';
+        } else if(f01ok){
+          f02cell='<button class="btn btn-primary btn-sm" onclick="openF02('+l.mov_id+')">Hacer F02</button>';
+        } else {
+          f02cell='<span style="color:var(--cx-text-mute);font-size:11px">requiere F01 conforme</span>';
+        }
       }
+      var tipoBadge = esMEE
+        ? '<span style="background:#ede9fe;color:#6d28d9;border-radius:8px;padding:1px 6px;font-size:9px;font-weight:700;vertical-align:middle">ENVASE</span> '
+        : '<span style="background:#dbeafe;color:#1d4ed8;border-radius:8px;padding:1px 6px;font-size:9px;font-weight:700;vertical-align:middle">MP</span> ';
       return '<tr>'
-        +'<td><strong>'+esc(l.nombre)+'</strong><br><small style="color:var(--cx-text-mute)">'+esc(l.lote||'sin lote')+' &middot; '+esc(l.codigo_mp||'')+'</small></td>'
-        +'<td>'+esc(String(l.cantidad))+' g</td>'
+        +'<td>'+tipoBadge+'<strong>'+esc(l.nombre)+'</strong><br><small style="color:var(--cx-text-mute)">'+esc(l.lote||'sin lote')+' &middot; '+esc(l.codigo_mp||'')+'</small></td>'
+        +'<td>'+esc(String(l.cantidad))+(esMEE?' und':' g')+'</td>'
         +'<td>'+esc(l.proveedor||'-')+'</td>'
         +'<td>'+fmt(l.fecha_vencimiento)+'</td>'
         +'<td>'+esc(l.numero_oc||'-')+'</td>'
@@ -2338,16 +2354,19 @@ function _rcCrit(name,val){
 }
 function _rcRadioVal(name){ var el=document.querySelector('input[name="'+name+'"]:checked'); return el?el.value:''; }
 
-async function openF01(mov_id){
+async function openF01(mov_id, origen){
+  var org=(origen==='MEE')?'MEE':'MP';
   try{
-    var d=await (await fetch('/api/calidad/recepcion-tecnica?mov_id='+mov_id)).json();
+    var d=await (await fetch('/api/calidad/recepcion-tecnica?mov_id='+mov_id+'&origen='+org)).json();
     var f=d.f01||{}, pre=d.prefill||{};
     var g=function(k){ return (f[k]!=null&&f[k]!=='')?f[k]:(pre[k]||''); };
-    var tipo=f.tipo_insumo||'materia_prima';
+    var tipo=f.tipo_insumo||(org==='MEE'?'envase':'materia_prima');
+    var meeNote = (org==='MEE') ? '<div style="margin:6px 0;padding:6px 10px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;font-size:11px;color:#6d28d9">Envase: el F01 es la disposición de calidad. <b>Conforme + firma del jefe libera el lote</b> (queda VIGENTE); No conforme lo rechaza. Los envases no llevan F02.</div>' : '';
     var crits=[['crit_rotulado','Rotulado completo (nombre, lote, fecha vencimiento)'],['crit_empaque','Empaque/envase limpio e íntegro'],['crit_hoja_seguridad','Hoja de seguridad vigente (si aplica)'],['crit_ficha_tecnica','Ficha técnica vigente (si aplica)'],['crit_coa','Certificado de análisis del proveedor (COA)'],['crit_doc_coincide','Documentación coincide con el producto entregado']];
     var critRows=crits.map(function(c){ return '<tr><td style="padding:6px 4px;font-size:12px">'+c[1]+'</td><td style="padding:6px 4px">'+_rcCrit(c[0], f[c[0]]||'')+'</td></tr>'; }).join('');
     var _res=f.resultado||'';
     var html='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div><b style="font-size:16px;color:#7c3aed">🅑 Recepción técnica y documental</b><div style="font-size:10px;color:#94a3b8">COC-PRO-002-F01</div></div><button onclick="_rcClose()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#94a3b8">&#10005;</button></div>'
+      +meeNote
       +'<div style="display:flex;gap:14px;margin-bottom:8px;font-size:12px"><b>Tipo de insumo:</b>'
       +'<label><input type="radio" name="f01tipo" value="materia_prima"'+(tipo==='materia_prima'?' checked':'')+'> Materia prima</label>'
       +'<label><input type="radio" name="f01tipo" value="envase"'+(tipo==='envase'?' checked':'')+'> Envase</label>'
@@ -2369,15 +2388,16 @@ async function openF01(mov_id){
       +'<div><label style="font-size:11px;color:#64748b">Fecha vencimiento (F-V)</label>'+_rcInput('f01_fecha_vencimiento',g('fecha_vencimiento'))+'</div>'
       +'<div></div>'
       +'<div><label style="font-size:11px;color:#64748b">Realiza la recepción (analista)</label>'+_rcInput('f01_realiza_por',g('realiza_por'))+'</div>'
-      +'<div><label style="font-size:11px;color:#64748b">Aprueba la recepción</label>'+_rcInput('f01_aprueba_por',g('aprueba_por'))+'</div>'
-      +'<div><button onclick="guardarF01('+mov_id+')" style="width:100%;padding:9px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">💾 Guardar F01</button></div>'
+      +'<div><label style="font-size:11px;color:#64748b">Aprueba la recepción'+(org==='MEE'?' (jefe · libera)':'')+'</label>'+_rcInput('f01_aprueba_por',g('aprueba_por'))+'</div>'
+      +'<div><button onclick="guardarF01('+mov_id+',&quot;'+org+'&quot;)" style="width:100%;padding:9px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">💾 Guardar F01</button></div>'
       +'</div>';
     _rcOverlay(html);
   }catch(e){ alert('Error abriendo F01: '+e.message); }
 }
-async function guardarF01(mov_id){
+async function guardarF01(mov_id, origen){
+  var org=(origen==='MEE')?'MEE':'MP';
   var v=function(id){ var el=document.getElementById(id); return el?el.value:''; };
-  var body={mov_id:mov_id, tipo_insumo:_rcRadioVal('f01tipo'), nombre_insumo:v('f01_nombre_insumo'),
+  var body={mov_id:mov_id, origen:org, tipo_insumo:_rcRadioVal('f01tipo'), nombre_insumo:v('f01_nombre_insumo'),
     lote_proveedor:v('f01_lote_proveedor'), cantidad_recibida:v('f01_cantidad_recibida'), proveedor:v('f01_proveedor'),
     fecha_recepcion:v('f01_fecha_recepcion'), numero_remision:v('f01_numero_remision'), area_almacenamiento:v('f01_area_almacenamiento'),
     crit_rotulado:_rcRadioVal('crit_rotulado'), crit_empaque:_rcRadioVal('crit_empaque'), crit_hoja_seguridad:_rcRadioVal('crit_hoja_seguridad'),
@@ -2385,11 +2405,14 @@ async function guardarF01(mov_id){
     observaciones:v('f01_observaciones'), resultado:_rcRadioVal('f01res'), fecha_vencimiento:v('f01_fecha_vencimiento'),
     realiza_por:v('f01_realiza_por'), aprueba_por:v('f01_aprueba_por')};
   if(!body.resultado){ alert('Marcá el resultado (Conforme / No conforme)'); return; }
+  if(org==='MEE' && body.resultado==='conforme' && !body.aprueba_por.trim()){ alert('Para liberar el envase poné la firma del jefe de calidad (Aprueba)'); return; }
+  if(org==='MEE' && body.resultado==='conforme' && !confirm('Conforme LIBERA el envase (queda VIGENTE, stock usable). ¿Confirmar?')) return;
   try{
     var r=await fetch('/api/calidad/recepcion-tecnica',_fetchOpts('POST', body));
     var d=await r.json();
     if(!r.ok||!d.ok){ alert('No se pudo: '+((d&&d.error)||r.status)); return; }
     _rcClose(); loadCuarentena();
+    if(org==='MEE' && d.resultado==='conforme') alert('✅ Envase liberado (VIGENTE)');
   }catch(e){ alert('Error: '+e.message); }
 }
 
