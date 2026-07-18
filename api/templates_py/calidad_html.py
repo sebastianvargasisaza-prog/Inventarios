@@ -211,12 +211,17 @@ textarea{resize:vertical;min-height:70px;}
 
 <div id="tab-cc" class="pane">
   <div class="card">
-    <div class="card-title">Lotes en Cuarentena · Pendientes de Revisión</div>
+    <div class="card-title">&#x1F9EA; Recepción de MP · pipeline de calidad</div>
+    <div style="font-size:12px;color:var(--cx-text-mute);margin:-4px 0 12px;line-height:1.5">
+      Cada lote que llega pasa por: <b>🅐 Recepción administrativa</b> (Catalina · ya en cuarentena) →
+      <b>🅑 Recepción técnica y documental</b> (F01) → <b>🅒 Certificado de análisis</b> (F02). El F02
+      <b>aprobado</b> por el jefe de calidad libera el lote (queda VIGENTE, ya es stock usable).
+    </div>
     <input type="text" oninput="var q=this.value.toLowerCase();document.querySelectorAll('#cc-tbody tr').forEach(function(r){r.style.display=((r.textContent||'').toLowerCase().indexOf(q)>=0)?'':'none';});" placeholder="&#128269; Buscar material, lote, proveedor u OC…" style="width:100%;max-width:380px;padding:9px 13px;border:1px solid #eef0f2;border-radius:10px;font-size:13px;margin-bottom:14px;box-shadow:0 1px 2px rgba(15,23,42,.04);">
     <div style="overflow-x:auto;">
     <table>
-      <thead><tr><th>MP / Lote</th><th>Cantidad</th><th>Proveedor</th><th>Fec. Vencimiento</th><th>OC</th><th>Acción</th></tr></thead>
-      <tbody id="cc-tbody"><tr><td colspan="6" class="empty">Cargando...</td></tr></tbody>
+      <thead><tr><th>MP / Lote</th><th>Cantidad</th><th>Proveedor</th><th>Vencimiento</th><th>OC</th><th>🅑 F01 técnica</th><th>🅒 F02 análisis</th></tr></thead>
+      <tbody id="cc-tbody"><tr><td colspan="7" class="empty">Cargando...</td></tr></tbody>
     </table>
     </div>
   </div>
@@ -2285,20 +2290,168 @@ async function decidirTarea(estado){
 async function loadCuarentena(){
   const tbody=document.getElementById('cc-tbody');
   try{
-    const r=await fetch('/api/recepcion/lotes-cuarentena');
-    const rows=await r.json(); window._ccrRows=rows;
-    if(!rows.length){tbody.innerHTML='<tr><td colspan="6" class="empty">No hay lotes en cuarentena</td></tr>';return;}
-    tbody.innerHTML=rows.map((l,i)=>`<tr>
-      <td><strong>${esc(l.material_nombre)}</strong><br><small style="color:var(--cx-text-mute)">${esc(l.lote||'sin lote')}</small></td>
-      <td>${esc(String(l.cantidad))} g</td>
-      <td>${esc(l.proveedor||'-')}</td>
-      <td>${fmt(l.fecha_vencimiento)}</td>
-      <td>${esc(l.numero_oc||'-')}</td>
-      <td>
-        <button class="btn btn-primary btn-sm" onclick="abrirCCReview(window._ccrRows[${i}])">Revisar CC</button>
-      </td>
-    </tr>`).join('');
-  }catch(e){tbody.innerHTML='<tr><td colspan="6" class="empty">Error: '+esc(e.message)+'</td></tr>';}
+    const r=await fetch('/api/calidad/recepcion-pipeline');
+    const d=await r.json(); const rows=(d&&d.lotes)||[]; window._ccrRows=rows;
+    if(!rows.length){tbody.innerHTML='<tr><td colspan="7" class="empty">No hay lotes en cuarentena</td></tr>';return;}
+    tbody.innerHTML=rows.map(function(l){
+      var f01=l.f01_resultado||'';
+      var f01cell = f01
+        ? '<span style="background:'+(f01==='conforme'?'#dcfce7':'#fee2e2')+';color:'+(f01==='conforme'?'#15803d':'#b91c1c')+';border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700">'+(f01==='conforme'?'&#10003; Conforme':'&#10007; No conforme')+'</span> <a href="#" onclick="openF01('+l.mov_id+');return false" style="font-size:10px;color:#7c3aed">editar</a>'
+        : '<button class="btn btn-primary btn-sm" onclick="openF01('+l.mov_id+')">Hacer F01</button>';
+      var f02=l.f02_resultado||''; var f02cell;
+      if(f02){
+        var col=f02==='aprobado'?'#dcfce7':(f02==='cuarentena'?'#fef3c7':'#fee2e2');
+        var txt=f02==='aprobado'?'&#10003; Aprobado':(f02==='cuarentena'?'&#9680; Cuarentena':'&#10007; No aprobado');
+        var tc=f02==='aprobado'?'#15803d':(f02==='cuarentena'?'#92400e':'#b91c1c');
+        f02cell='<span style="background:'+col+';color:'+tc+';border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700">'+txt+'</span> <a href="#" onclick="openF02('+l.mov_id+');return false" style="font-size:10px;color:#7c3aed">ver</a>';
+      } else if(f01==='conforme'){
+        f02cell='<button class="btn btn-primary btn-sm" onclick="openF02('+l.mov_id+')">Hacer F02</button>';
+      } else {
+        f02cell='<span style="color:var(--cx-text-mute);font-size:11px">requiere F01 conforme</span>';
+      }
+      return '<tr>'
+        +'<td><strong>'+esc(l.nombre)+'</strong><br><small style="color:var(--cx-text-mute)">'+esc(l.lote||'sin lote')+' &middot; '+esc(l.codigo_mp||'')+'</small></td>'
+        +'<td>'+esc(String(l.cantidad))+' g</td>'
+        +'<td>'+esc(l.proveedor||'-')+'</td>'
+        +'<td>'+fmt(l.fecha_vencimiento)+'</td>'
+        +'<td>'+esc(l.numero_oc||'-')+'</td>'
+        +'<td>'+f01cell+'</td>'
+        +'<td>'+f02cell+'</td>'
+        +'</tr>';
+    }).join('');
+  }catch(e){tbody.innerHTML='<tr><td colspan="7" class="empty">Error: '+esc(e.message)+'</td></tr>';}
+}
+
+// ── Pipeline de recepción MP · formularios F01 (técnica/documental) y F02 (análisis) ──
+function _rcClose(){ var o=document.getElementById('rc-ov'); if(o) o.remove(); }
+function _rcOverlay(inner){
+  _rcClose();
+  var ov=document.createElement('div'); ov.id='rc-ov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(15,15,45,.5);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:24px;overflow:auto';
+  ov.innerHTML='<div style="background:#fff;border-radius:14px;max-width:820px;width:100%;padding:22px 24px;box-shadow:0 24px 70px -20px rgba(0,0,0,.5)">'+inner+'</div>';
+  document.body.appendChild(ov);
+}
+function _rcInput(id,val,ph){ return '<input id="'+id+'" value="'+esc(val||'')+'" placeholder="'+esc(ph||'')+'" style="width:100%;padding:6px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;box-sizing:border-box">'; }
+function _rcCrit(name,val){
+  function o(v,l){ return '<label style="margin-right:12px;font-size:12px;white-space:nowrap"><input type="radio" name="'+name+'" value="'+v+'"'+(val===v?' checked':'')+'> '+l+'</label>'; }
+  return o('cumple','Cumple')+o('no_cumple','No cumple')+o('no_aplica','No aplica');
+}
+function _rcRadioVal(name){ var el=document.querySelector('input[name="'+name+'"]:checked'); return el?el.value:''; }
+
+async function openF01(mov_id){
+  try{
+    var d=await (await fetch('/api/calidad/recepcion-tecnica?mov_id='+mov_id)).json();
+    var f=d.f01||{}, pre=d.prefill||{};
+    var g=function(k){ return (f[k]!=null&&f[k]!=='')?f[k]:(pre[k]||''); };
+    var tipo=f.tipo_insumo||'materia_prima';
+    var crits=[['crit_rotulado','Rotulado completo (nombre, lote, fecha vencimiento)'],['crit_empaque','Empaque/envase limpio e íntegro'],['crit_hoja_seguridad','Hoja de seguridad vigente (si aplica)'],['crit_ficha_tecnica','Ficha técnica vigente (si aplica)'],['crit_coa','Certificado de análisis del proveedor (COA)'],['crit_doc_coincide','Documentación coincide con el producto entregado']];
+    var critRows=crits.map(function(c){ return '<tr><td style="padding:6px 4px;font-size:12px">'+c[1]+'</td><td style="padding:6px 4px">'+_rcCrit(c[0], f[c[0]]||'')+'</td></tr>'; }).join('');
+    var _res=f.resultado||'';
+    var html='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div><b style="font-size:16px;color:#7c3aed">🅑 Recepción técnica y documental</b><div style="font-size:10px;color:#94a3b8">COC-PRO-002-F01</div></div><button onclick="_rcClose()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#94a3b8">&#10005;</button></div>'
+      +'<div style="display:flex;gap:14px;margin-bottom:8px;font-size:12px"><b>Tipo de insumo:</b>'
+      +'<label><input type="radio" name="f01tipo" value="materia_prima"'+(tipo==='materia_prima'?' checked':'')+'> Materia prima</label>'
+      +'<label><input type="radio" name="f01tipo" value="envase"'+(tipo==='envase'?' checked':'')+'> Envase</label>'
+      +'<label><input type="radio" name="f01tipo" value="empaque"'+(tipo==='empaque'?' checked':'')+'> Empaque</label></div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">'
+      +'<div><label style="font-size:11px;color:#64748b">Nombre del insumo</label>'+_rcInput('f01_nombre_insumo',g('nombre_insumo'))+'</div>'
+      +'<div><label style="font-size:11px;color:#64748b">Código interno / Lote proveedor</label>'+_rcInput('f01_lote_proveedor',g('lote_proveedor')||g('codigo_insumo'))+'</div>'
+      +'<div><label style="font-size:11px;color:#64748b">Cantidad recibida</label>'+_rcInput('f01_cantidad_recibida',g('cantidad_recibida'))+'</div>'
+      +'<div><label style="font-size:11px;color:#64748b">Proveedor</label>'+_rcInput('f01_proveedor',g('proveedor'))+'</div>'
+      +'<div><label style="font-size:11px;color:#64748b">Fecha de recepción</label>'+_rcInput('f01_fecha_recepcion',g('fecha_recepcion'))+'</div>'
+      +'<div><label style="font-size:11px;color:#64748b">No. remisión / factura</label>'+_rcInput('f01_numero_remision',g('numero_remision'))+'</div>'
+      +'<div style="grid-column:1/3"><label style="font-size:11px;color:#64748b">Área de almacenamiento asignada</label>'+_rcInput('f01_area_almacenamiento',g('area_almacenamiento'))+'</div>'
+      +'</div>'
+      +'<div style="font-size:12px;font-weight:700;color:#334155;margin:8px 0 4px">Verificación técnica y documental</div>'
+      +'<table style="width:100%;border-collapse:collapse">'+critRows+'</table>'
+      +'<div style="margin-top:8px"><label style="font-size:11px;color:#64748b">Observaciones</label>'+_rcInput('f01_observaciones',g('observaciones'))+'</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px;align-items:end">'
+      +'<div><label style="font-size:11px;color:#64748b">Resultado</label><div style="font-size:12px;margin-top:3px"><label style="margin-right:10px"><input type="radio" name="f01res" value="conforme"'+(_res==='conforme'?' checked':'')+'> Conforme</label><label><input type="radio" name="f01res" value="no_conforme"'+(_res==='no_conforme'?' checked':'')+'> No conforme</label></div></div>'
+      +'<div><label style="font-size:11px;color:#64748b">Fecha vencimiento (F-V)</label>'+_rcInput('f01_fecha_vencimiento',g('fecha_vencimiento'))+'</div>'
+      +'<div></div>'
+      +'<div><label style="font-size:11px;color:#64748b">Realiza la recepción (analista)</label>'+_rcInput('f01_realiza_por',g('realiza_por'))+'</div>'
+      +'<div><label style="font-size:11px;color:#64748b">Aprueba la recepción</label>'+_rcInput('f01_aprueba_por',g('aprueba_por'))+'</div>'
+      +'<div><button onclick="guardarF01('+mov_id+')" style="width:100%;padding:9px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">💾 Guardar F01</button></div>'
+      +'</div>';
+    _rcOverlay(html);
+  }catch(e){ alert('Error abriendo F01: '+e.message); }
+}
+async function guardarF01(mov_id){
+  var v=function(id){ var el=document.getElementById(id); return el?el.value:''; };
+  var body={mov_id:mov_id, tipo_insumo:_rcRadioVal('f01tipo'), nombre_insumo:v('f01_nombre_insumo'),
+    lote_proveedor:v('f01_lote_proveedor'), cantidad_recibida:v('f01_cantidad_recibida'), proveedor:v('f01_proveedor'),
+    fecha_recepcion:v('f01_fecha_recepcion'), numero_remision:v('f01_numero_remision'), area_almacenamiento:v('f01_area_almacenamiento'),
+    crit_rotulado:_rcRadioVal('crit_rotulado'), crit_empaque:_rcRadioVal('crit_empaque'), crit_hoja_seguridad:_rcRadioVal('crit_hoja_seguridad'),
+    crit_ficha_tecnica:_rcRadioVal('crit_ficha_tecnica'), crit_coa:_rcRadioVal('crit_coa'), crit_doc_coincide:_rcRadioVal('crit_doc_coincide'),
+    observaciones:v('f01_observaciones'), resultado:_rcRadioVal('f01res'), fecha_vencimiento:v('f01_fecha_vencimiento'),
+    realiza_por:v('f01_realiza_por'), aprueba_por:v('f01_aprueba_por')};
+  if(!body.resultado){ alert('Marcá el resultado (Conforme / No conforme)'); return; }
+  try{
+    var r=await fetch('/api/calidad/recepcion-tecnica',_fetchOpts('POST', body));
+    var d=await r.json();
+    if(!r.ok||!d.ok){ alert('No se pudo: '+((d&&d.error)||r.status)); return; }
+    _rcClose(); loadCuarentena();
+  }catch(e){ alert('Error: '+e.message); }
+}
+
+async function openF02(mov_id){
+  try{
+    var d=await (await fetch('/api/calidad/certificado-analisis?mov_id='+mov_id)).json();
+    var f=d.f02||{}, pre=d.prefill||{};
+    var g=function(k){ return (f[k]!=null&&f[k]!=='')?f[k]:(pre[k]||''); };
+    var params=[['aspecto','Aspecto / Color / Olor'],['ph','pH (a 25°C)'],['densidad','Densidad (g/mL)'],['solubilidad','Solubilidad'],['viscosidad','Viscosidad (cP)']];
+    var prows=params.map(function(p){
+      var k=p[0];
+      var cmp=f[k+'_cumple']||'';
+      var rad='<label style="margin-right:8px"><input type="radio" name="f02'+k+'cmp" value="si"'+(cmp==='si'?' checked':'')+'> Sí</label><label style="margin-right:8px"><input type="radio" name="f02'+k+'cmp" value="no"'+(cmp==='no'?' checked':'')+'> No</label><label><input type="radio" name="f02'+k+'cmp" value="na"'+(cmp==='na'?' checked':'')+'> N/A</label>';
+      return '<tr><td style="padding:4px;font-size:12px;font-weight:600">'+p[1]+'</td>'
+        +'<td style="padding:4px">'+_rcInput('f02_'+k+'_spec',g(k+'_spec'),'especificación')+'</td>'
+        +'<td style="padding:4px">'+_rcInput('f02_'+k+'_result',f[k+'_result']||'','resultado')+'</td>'
+        +'<td style="padding:4px;white-space:nowrap;font-size:11px">'+rad+'</td></tr>';
+    }).join('');
+    var _res=f.resultado||'';
+    var html='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div><b style="font-size:16px;color:#7c3aed">🅒 Certificado de análisis de MP</b><div style="font-size:10px;color:#94a3b8">COC-PRO-002-F02 · aprobar libera el lote</div></div><button onclick="_rcClose()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#94a3b8">&#10005;</button></div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">'
+      +'<div><label style="font-size:11px;color:#64748b">Nombre MP</label>'+_rcInput('f02_nombre_mp',g('nombre_mp'))+'</div>'
+      +'<div><label style="font-size:11px;color:#64748b">Código / Lote proveedor</label>'+_rcInput('f02_lote_proveedor',g('lote_proveedor'))+'</div>'
+      +'<div><label style="font-size:11px;color:#64748b">Cantidad recibida</label>'+_rcInput('f02_cantidad_recibida',g('cantidad_recibida'))+'</div>'
+      +'<div><label style="font-size:11px;color:#64748b">Proveedor</label>'+_rcInput('f02_proveedor',g('proveedor'))+'</div>'
+      +'<div><label style="font-size:11px;color:#64748b">Fecha recepción</label>'+_rcInput('f02_fecha_recepcion',g('fecha_recepcion'))+'</div>'
+      +'<div><label style="font-size:11px;color:#64748b">Fecha de análisis</label>'+_rcInput('f02_fecha_analisis',f.fecha_analisis||'')+'</div>'
+      +'</div>'
+      +'<div style="font-size:12px;font-weight:700;color:#334155;margin:4px 0">Resultados de análisis</div>'
+      +'<table style="width:100%;border-collapse:collapse"><thead><tr style="color:#64748b;font-size:11px"><th style="text-align:left">Parámetro</th><th style="text-align:left">Especificación</th><th style="text-align:left">Resultado</th><th style="text-align:left">Cumple</th></tr></thead><tbody>'+prows+'</tbody></table>'
+      +'<div style="margin-top:8px"><label style="font-size:11px;color:#64748b">Observaciones generales</label>'+_rcInput('f02_observaciones_generales',g('observaciones_generales'))+'</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">'
+      +'<div><label style="font-size:11px;color:#64748b">Resultado</label><div style="font-size:12px;margin-top:3px"><label style="margin-right:10px"><input type="radio" name="f02res" value="aprobado"'+(_res==='aprobado'?' checked':'')+'> Aprobado</label><label style="margin-right:10px"><input type="radio" name="f02res" value="no_aprobado"'+(_res==='no_aprobado'?' checked':'')+'> No aprobado</label><label><input type="radio" name="f02res" value="cuarentena"'+(_res==='cuarentena'?' checked':'')+'> Cuarentena</label></div></div>'
+      +'<div><label style="font-size:11px;color:#64748b">Fecha vencimiento (F-V)</label>'+_rcInput('f02_fecha_vencimiento',g('fecha_vencimiento'))+'</div>'
+      +'<div><label style="font-size:11px;color:#64748b">Realiza el análisis (analista)</label>'+_rcInput('f02_responsable_analisis',f.responsable_analisis||'')+'</div>'
+      +'<div><label style="font-size:11px;color:#64748b">Aprueba (JEFE de Control de Calidad)</label>'+_rcInput('f02_aprobo_por',f.aprobo_por||'')+'</div>'
+      +'</div>'
+      +'<div style="font-size:10px;color:#b45309;margin-top:6px">⚠ "Aprobado" + firma del jefe LIBERA el lote (queda VIGENTE, stock usable). "No aprobado" lo rechaza.</div>'
+      +'<button onclick="guardarF02('+mov_id+')" style="width:100%;margin-top:10px;padding:10px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">💾 Guardar F02</button>';
+    _rcOverlay(html);
+  }catch(e){ alert('Error abriendo F02: '+e.message); }
+}
+async function guardarF02(mov_id){
+  var v=function(id){ var el=document.getElementById(id); return el?el.value:''; };
+  var body={mov_id:mov_id, nombre_mp:v('f02_nombre_mp'), lote_proveedor:v('f02_lote_proveedor'),
+    cantidad_recibida:v('f02_cantidad_recibida'), proveedor:v('f02_proveedor'), fecha_recepcion:v('f02_fecha_recepcion'),
+    fecha_analisis:v('f02_fecha_analisis'), observaciones_generales:v('f02_observaciones_generales'),
+    resultado:_rcRadioVal('f02res'), fecha_vencimiento:v('f02_fecha_vencimiento'),
+    responsable_analisis:v('f02_responsable_analisis'), aprobo_por:v('f02_aprobo_por')};
+  ['aspecto','ph','densidad','solubilidad','viscosidad'].forEach(function(k){
+    body[k+'_spec']=v('f02_'+k+'_spec'); body[k+'_result']=v('f02_'+k+'_result'); body[k+'_cumple']=_rcRadioVal('f02'+k+'cmp');
+  });
+  if(!body.resultado){ alert('Marcá el resultado (Aprobado / No aprobado / Cuarentena)'); return; }
+  if(body.resultado==='aprobado' && !body.aprobo_por.trim()){ alert('Para APROBAR y liberar el lote poné la firma del jefe de calidad (Aprueba)'); return; }
+  if(body.resultado==='aprobado' && !confirm('Aprobar el lote LIBERA el material (queda VIGENTE, stock usable). ¿Confirmar?')) return;
+  try{
+    var r=await fetch('/api/calidad/certificado-analisis',_fetchOpts('POST', body));
+    var d=await r.json();
+    if(!r.ok||!d.ok){ alert('No se pudo: '+((d&&d.error)||r.status)); return; }
+    _rcClose(); loadCuarentena();
+    if(d.resultado==='aprobado') alert('✅ Lote aprobado y liberado (VIGENTE)');
+  }catch(e){ alert('Error: '+e.message); }
 }
 
 document.addEventListener('click',async function(e){
