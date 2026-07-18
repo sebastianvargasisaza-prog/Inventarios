@@ -56,17 +56,32 @@ def test_f01_guarda_y_prefill(app, db_clean):
     assert g2["f01"]["resultado"] == "conforme"
 
 
+def _firmar(client, mov_id, meaning="libera"):
+    """E-firma Part 11: challenge (password) → sign → signature_id."""
+    rc = client.post("/api/sign/challenge", json={"password": TEST_PASSWORD, "totp_token": ""},
+                     headers=csrf_headers())
+    assert rc.status_code == 200, rc.data[:200]
+    tok = rc.get_json()["token"]
+    rs = client.post("/api/sign", json={"record_table": "movimientos", "record_id": str(mov_id),
+                                        "meaning": meaning, "challenge_token": tok}, headers=csrf_headers())
+    assert rs.status_code in (200, 201), rs.data[:200]
+    return rs.get_json()["signature_id"]
+
+
 def test_f02_aprobado_libera_lote(app, db_clean):
     mid = _lote_cuarentena("MP-RCQ3", "LOTECQ3")
     c = _login(app)
-    # aprobar sin firma del jefe → 400
-    r0 = c.post("/api/calidad/certificado-analisis", json={"mov_id": mid, "resultado": "aprobado"},
-                headers=csrf_headers())
+    # aprobar sin firma electrónica → 400 (Part 11)
+    r0 = c.post("/api/calidad/certificado-analisis", json={
+        "mov_id": mid, "resultado": "aprobado", "aprobo_por": "Laura Gonzalez"}, headers=csrf_headers())
     assert r0.status_code == 400, r0.data[:200]
-    # aprobar CON firma → libera
+    assert r0.get_json().get("requiere_firma") is True
+    # aprobar CON e-firma → libera
+    sig = _firmar(c, mid, "libera")
     r = c.post("/api/calidad/certificado-analisis", json={
         "mov_id": mid, "resultado": "aprobado", "aspecto_result": "polvo blanco", "aspecto_cumple": "si",
-        "responsable_analisis": "Yuliel", "aprobo_por": "Laura Gonzalez"}, headers=csrf_headers())
+        "responsable_analisis": "Yuliel", "aprobo_por": "Laura Gonzalez", "signature_id": sig},
+        headers=csrf_headers())
     assert r.status_code == 200, r.data[:300]
     assert r.get_json().get("liberado") == 1
     assert _estado_lote("LOTECQ3") == "VIGENTE", "el lote aprobado debe quedar VIGENTE"
@@ -75,8 +90,10 @@ def test_f02_aprobado_libera_lote(app, db_clean):
 def test_f02_no_aprobado_rechaza(app, db_clean):
     mid = _lote_cuarentena("MP-RCQ4", "LOTECQ4")
     c = _login(app)
+    sig = _firmar(c, mid, "rechaza")
     r = c.post("/api/calidad/certificado-analisis", json={
-        "mov_id": mid, "resultado": "no_aprobado", "aprobo_por": "Laura"}, headers=csrf_headers())
+        "mov_id": mid, "resultado": "no_aprobado", "aprobo_por": "Laura", "signature_id": sig},
+        headers=csrf_headers())
     assert r.status_code == 200, r.data[:300]
     assert _estado_lote("LOTECQ4") == "RECHAZADO"
 
@@ -84,8 +101,9 @@ def test_f02_no_aprobado_rechaza(app, db_clean):
 def test_f02_no_aprobado_crea_no_conformidad(app, db_clean):
     mid = _lote_cuarentena("MP-RCQ6", "LOTECQ6")
     c = _login(app)
+    sig = _firmar(c, mid, "rechaza")
     r = c.post("/api/calidad/certificado-analisis", json={
-        "mov_id": mid, "resultado": "no_aprobado", "aprobo_por": "Laura",
+        "mov_id": mid, "resultado": "no_aprobado", "aprobo_por": "Laura", "signature_id": sig,
         "observaciones_generales": "pH fuera de especificación"}, headers=csrf_headers())
     assert r.status_code == 200, r.data[:300]
     nc_id = r.get_json().get("nc_id")
@@ -151,9 +169,10 @@ def test_f01_f02_imprimibles(app, db_clean):
     c.post("/api/calidad/recepcion-tecnica", json={
         "mov_id": mid, "tipo_insumo": "materia_prima", "crit_rotulado": "cumple",
         "resultado": "conforme", "realiza_por": "Yuliel"}, headers=csrf_headers())
+    sig = _firmar(c, mid, "libera")
     c.post("/api/calidad/certificado-analisis", json={
         "mov_id": mid, "resultado": "aprobado", "aspecto_result": "polvo", "aspecto_cumple": "si",
-        "responsable_analisis": "Yuliel", "aprobo_por": "Laura"}, headers=csrf_headers())
+        "responsable_analisis": "Yuliel", "aprobo_por": "Laura", "signature_id": sig}, headers=csrf_headers())
     f01 = c.get("/api/calidad/recepcion-tecnica/imprimible?mov_id=%d" % mid)
     assert f01.status_code == 200 and b"COC-PRO-002-F01" in f01.data
     f02 = c.get("/api/calidad/certificado-analisis/imprimible?mov_id=%d" % mid)

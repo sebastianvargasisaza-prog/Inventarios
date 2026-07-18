@@ -1473,6 +1473,17 @@ def calidad_certificado_analisis():
     if not lrow:
         return jsonify({'error': 'El lote no existe'}), 404
     _lote, _matid, _oc = lrow[0], lrow[1], lrow[2]
+    # E-firma Part 11 (§11.200) para DISPONER el lote (aprobar/rechazar) · unifica el flujo con el viejo
+    # "Revisar CC" (Sebastián 18-jul): la disposición de un lote regulado exige firma electrónica, no solo nombre.
+    signature_id = b.get('signature_id')
+    if resultado in ('aprobado', 'no_aprobado'):
+        _meaning = 'libera' if resultado == 'aprobado' else 'rechaza'
+        if not _validar_e_sign_cal(cur, signature_id, record_table='movimientos',
+                                   record_id=mov_id, meaning=_meaning, signer=u):
+            return jsonify({'error': 'Se requiere firma electrónica (21 CFR Part 11) para disponer el lote. '
+                            'Firmá con /api/sign (record_table=movimientos, record_id=' + str(mov_id) +
+                            ') y reenviá signature_id.',
+                            'requiere_firma': True, 'record_id': str(mov_id), 'sign_meaning': _meaning}), 400
     try:
         cur.execute("UPDATE certificado_analisis_mp SET anulado=1 WHERE mov_id=? AND COALESCE(anulado,0)=0", (mov_id,))
         _f = _F02_COLS + ['creado_por', 'creado_en']
@@ -1497,7 +1508,7 @@ def calidad_certificado_analisis():
         audit_log(cur, usuario=u, accion='CERTIFICADO_ANALISIS_F02', tabla='certificado_analisis_mp',
                   registro_id=(cur.lastrowid or 0),
                   despues={'mov_id': mov_id, 'lote': _lote, 'resultado': resultado, 'aprobo': aprobo_por,
-                           'lotes_afectados': _liberado, 'nc_id': _nc_id})
+                           'lotes_afectados': _liberado, 'nc_id': _nc_id, 'signature_id': signature_id})
         conn.commit()
     except Exception as e:
         conn.rollback(); return jsonify({'error': f'No se pudo guardar F02: {e}'}), 500

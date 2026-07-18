@@ -1705,8 +1705,9 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
   <div id="cuarentena" class="tab-content">
     <h2>&#128274; Control de Calidad - Recepcion de Materiales</h2>
     <div style="background:#e8f4fd;border:1px solid #bee5f8;border-radius:10px;padding:14px 20px;margin-bottom:16px;font-size:0.9em;color:#1a4a6b;">
-      <strong>&#8505; Como funciona:</strong> Cuando recibes una MP en la pestana <strong>Ingreso MP</strong> y marcas el checkbox <strong>"Poner en cuarentena"</strong>, ese lote aparece aqui hasta que el equipo de Control de Calidad (Laura, Yuliel) o un admin lo revise y apruebe o rechace conforme a COC-PRO-001. Mientras esta en cuarentena, el sistema NO permite usarlo en produccion.<br>
-      <span style="color:#27ae60;font-weight:600;">&#10003; Si esta vacia: ningun lote esta pendiente de revision CC - es la situacion ideal.</span> Si recibes un lote con dudas de calidad, usa "Poner en cuarentena" al hacer el ingreso.
+      <strong>&#8505; Como funciona:</strong> Cuando recibes una MP en la pestana <strong>Ingreso MP</strong> y marcas el checkbox <strong>"Poner en cuarentena"</strong>, ese lote aparece aqui hasta que Control de Calidad lo disponga. Mientras esta en cuarentena, el sistema NO permite usarlo en produccion.<br>
+      <strong>&#128273; La revision y liberacion se hace en el modulo de Calidad</strong> (F01 recepcion tecnica + F02 analisis, con firma electronica). Esta pantalla es <strong>solo lectura</strong> del estado; el boton <strong>"Revisar en Calidad &rarr;"</strong> te lleva alla. Podes imprimir el <strong>Rotulo</strong> desde aqui.<br>
+      <span style="color:#27ae60;font-weight:600;">&#10003; Si esta vacia: ningun lote esta pendiente de revision CC - es la situacion ideal.</span>
     </div>
     <div id="cuar-msg"></div>
 
@@ -7847,11 +7848,9 @@ async function cargarCuarentena(){
       h+='<td style="font-size:0.82em;">'+l.fecha.substring(0,10)+'</td>';
       h+='<td><span style="background:'+estadoColor+'20;color:'+estadoColor+';padding:2px 8px;border-radius:10px;font-size:0.8em;font-weight:700;">'+l.estado_lote.replace('_',' ')+'</span></td>';
       h+='<td style="white-space:nowrap;">';
-      if(esAdmin){
-        h+='<button onclick="abrirCCReview(JSON.parse(this.dataset.lote))" data-lote="'+JSON.stringify(l).replace(/"/g,'&quot;')+'" style="padding:5px 12px;background:#6d28d9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.82em;font-weight:600;">Revisar CC</button>';
-      }else{
-        h+='<span style="color:#999;font-size:0.82em;">Solo CC/Admin</span>';
-      }
+      // Unificado 18-jul · la disposición de calidad (F01/F02 + e-firma) vive en el módulo de Calidad.
+      // Esta pantalla es SOLO LECTURA del estado; Calidad libera/rechaza allá (evita doble liberación).
+      h+='<a href="/calidad" target="_blank" style="padding:5px 12px;background:#6d28d9;color:#fff;border-radius:6px;font-size:0.82em;font-weight:600;text-decoration:none;" title="Revisar y disponer el lote en el módulo de Calidad (F01 técnica + F02 análisis con firma)">Revisar en Calidad &rarr;</a>';
       // Imprimir rótulo (Laura 16-jul · poder imprimir el rótulo apenas entra a cuarentena)
       h+='<button onclick="_imprimirRotuloCuar(this)" data-cod="'+_escHTML(l.codigo_mp||'')+'" data-lote="'+_escHTML(l.lote||'')+'" data-cant="'+(Number(l.cantidad)||0)+'" data-nrec="'+(Number(l.n_recipientes)||1)+'" style="padding:5px 10px;margin-left:6px;background:#7c3aed;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.82em;font-weight:600;" title="Imprimir rótulo de este lote">&#128424;&#65039; Rótulo</button>';
       h+='</td></tr>';

@@ -2567,6 +2567,21 @@ async function openF02(mov_id){
     _rcOverlay(html);
   }catch(e){ alert('Error abriendo F02: '+e.message); }
 }
+// E-firma Part 11 (§11.200) · idéntico al flujo de disposición del "Revisar CC" (unificado 18-jul)
+async function _calFirmar(meaning, recordId){
+  var pwd=prompt('FIRMA ELECTRÓNICA (21 CFR Part 11)\\n\\nIngresá tu contraseña para firmar la disposición del lote ('+meaning+'):');
+  if(!pwd){ return null; }
+  var totp=prompt('Si tenés MFA activo, ingresá el código de 6 dígitos.\\nSi no usás MFA, dejá vacío y presioná OK.')||'';
+  try{
+    var rc=await fetch('/api/sign/challenge',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({password:pwd,totp_token:totp})});
+    var dc=await rc.json();
+    if(!rc.ok){ return {error:dc.error||'Credenciales inválidas'}; }
+    var rs=await fetch('/api/sign',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({record_table:'movimientos',record_id:String(recordId),meaning:meaning,challenge_token:dc.token})});
+    var ds=await rs.json();
+    if(!rs.ok){ return {error:ds.error||'Error al firmar'}; }
+    return {signature_id:ds.signature_id};
+  }catch(e){ return {error:'Error de red al firmar: '+e.message}; }
+}
 async function guardarF02(mov_id){
   var v=function(id){ var el=document.getElementById(id); return el?el.value:''; };
   var body={mov_id:mov_id, nombre_mp:v('f02_nombre_mp'), lote_proveedor:v('f02_lote_proveedor'),
@@ -2580,6 +2595,14 @@ async function guardarF02(mov_id){
   if(!body.resultado){ alert('Marcá el resultado (Aprobado / No aprobado / Cuarentena)'); return; }
   if(body.resultado==='aprobado' && !body.aprobo_por.trim()){ alert('Para APROBAR y liberar el lote poné la firma del jefe de calidad (Aprueba)'); return; }
   if(body.resultado==='aprobado' && !confirm('Aprobar el lote LIBERA el material (queda VIGENTE, stock usable). ¿Confirmar?')) return;
+  // Disposición del lote (aprobar/rechazar) exige e-firma Part 11
+  if(body.resultado==='aprobado' || body.resultado==='no_aprobado'){
+    var _mean=(body.resultado==='aprobado')?'libera':'rechaza';
+    var firma=await _calFirmar(_mean, mov_id);
+    if(firma===null) return; // canceló la firma
+    if(firma.error){ alert('Firma electrónica: '+firma.error); return; }
+    body.signature_id=firma.signature_id;
+  }
   try{
     var r=await fetch('/api/calidad/certificado-analisis',_fetchOpts('POST', body));
     var d=await r.json();
