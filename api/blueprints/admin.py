@@ -16659,6 +16659,105 @@ def admin_reconciliar_precios_page():
     return _RECONCILIAR_PRECIOS_HTML
 
 
+@bp.route("/tesoreria/vigilancia-precios", methods=["GET"])
+def tesoreria_vigilancia_precios_page():
+    """Tesorería · vigilancia de precios de compra (gerencia/contadora)."""
+    if 'compras_user' not in session:
+        return redirect("/login?next=/tesoreria/vigilancia-precios")
+    try:
+        from config import CONTADORA_USERS as _CU
+    except Exception:
+        _CU = set()
+    if session.get('compras_user') not in (set(ADMIN_USERS) | set(_CU)):
+        return "<h2 style='font-family:sans-serif;padding:40px'>Solo gerencia / contadora</h2>", 403
+    return _VIGILANCIA_PRECIOS_HTML
+
+
+_VIGILANCIA_PRECIOS_HTML = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vigilancia de precios · Tesorería · EOS</title>
+<style>
+:root{--v:#6d28d9;--vl:#7c3aed;--txt:#1c1917;--mut:#78716c;--line:#eef0f2;--bg:#faf9fb;}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--txt);padding:28px;}
+.wrap{max-width:1200px;margin:0 auto;}
+h1{font-size:22px;margin:0 0 4px;letter-spacing:-.02em;display:flex;align-items:center;gap:10px;}
+.sub{color:var(--mut);font-size:13px;margin-bottom:20px;line-height:1.5;max-width:820px;}
+.card{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 2px 14px rgba(15,23,42,.05);padding:18px;margin-bottom:16px;}
+.bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px;}
+.bar label{font-size:12px;color:var(--mut);display:flex;align-items:center;gap:6px;}
+.bar input{width:70px;padding:7px 10px;border:1px solid #d6d3d1;border-radius:8px;font-size:13px;}
+button{font-family:inherit;cursor:pointer;border-radius:10px;font-weight:700;font-size:13px;padding:9px 16px;border:1px solid transparent;}
+.btn-p{background:linear-gradient(135deg,var(--vl),var(--v));color:#fff;box-shadow:0 4px 12px rgba(109,40,217,.25);}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:16px;}
+.kpi{background:#fff;border:1px solid var(--line);border-radius:14px;padding:15px 18px;box-shadow:0 2px 14px rgba(15,23,42,.04);}
+.kpi .v{font-size:28px;font-weight:800;font-variant-numeric:tabular-nums;}
+.kpi .l{font-size:10.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;margin-top:6px;font-weight:600;}
+.wrapt{background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 2px 14px rgba(15,23,42,.05);overflow:hidden;}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px;}
+th{background:#faf5ff;color:var(--v);text-transform:uppercase;font-size:10.5px;letter-spacing:.04em;padding:11px 10px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap;}
+td{padding:10px;border-bottom:1px solid #f5f4f2;}
+tr:last-child td{border-bottom:none;}
+tbody tr:hover td{background:#faf9fb;}
+.num{text-align:right;font-variant-numeric:tabular-nums;}
+.mono{font-family:ui-monospace,monospace;}
+.chip{display:inline-block;border-radius:999px;padding:3px 10px;font-size:11px;font-weight:700;white-space:nowrap;}
+.c-hi{background:#fee2e2;color:#b91c1c;} .c-md{background:#fef3c7;color:#b45309;} .c-lo{background:#f5f4f2;color:#78716c;}
+.empty{padding:40px;text-align:center;color:var(--mut);}
+a.back{color:var(--v);text-decoration:none;font-size:13px;font-weight:600;}
+</style></head><body><div class="wrap">
+<a class="back" href="/compras">&larr; Compras</a>
+<h1 style="margin-top:10px">&#128176; Vigilancia de precios <span style="font-size:13px;color:var(--mut);font-weight:600">&middot; Tesorer&iacute;a</span></h1>
+<div class="sub">Materias primas cuyo <b>&uacute;ltimo precio pagado subi&oacute;</b> respecto a su promedio hist&oacute;rico (precios que se elevan). Rojo &gt;50%, &aacute;mbar &gt;umbral. El <b>spread</b> es la diferencia entre el m&aacute;s caro y el m&aacute;s barato de su historial (dispersi&oacute;n entre proveedores/fechas).</div>
+<div class="card">
+  <div class="bar">
+    <label>Subida &gt;<input type="number" id="umbral" value="20" min="1" max="500">%</label>
+    <label>&Uacute;ltimos <input type="number" id="dias" value="365" min="30" max="1095"> d&iacute;as</label>
+    <button class="btn-p" onclick="cargar()">&#8635; Actualizar</button>
+  </div>
+  <div class="kpis" id="kpis"></div>
+  <div class="wrapt" style="overflow-x:auto"><table>
+    <thead><tr><th>Material</th><th>Proveedor (&uacute;ltimo)</th><th class="num">$/kg promedio</th><th class="num">$/kg &uacute;ltimo</th><th class="num">Subida</th><th class="num">Spread</th><th>OC</th><th>Fecha</th></tr></thead>
+    <tbody id="tb"><tr><td colspan="8" class="empty">Cargando&hellip;</td></tr></tbody>
+  </table></div>
+</div>
+</div>
+<script>
+function esc(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+function cop(n){ return '$'+Math.round(Number(n)||0).toLocaleString('es-CO'); }
+async function cargar(){
+  var umbral=(document.getElementById('umbral')||{}).value||20;
+  var dias=(document.getElementById('dias')||{}).value||365;
+  var tb=document.getElementById('tb'), kp=document.getElementById('kpis');
+  tb.innerHTML='<tr><td colspan="8" class="empty">Cargando&hellip;</td></tr>';
+  try{
+    var r=await fetch('/api/compras/vigilancia-precios?umbral='+umbral+'&dias='+dias);
+    if(r.status===401){ location.href='/login'; return; }
+    var d=await r.json();
+    if(!d.ok){ tb.innerHTML='<tr><td colspan="8" class="empty">Error: '+esc(d.error||r.status)+'</td></tr>'; return; }
+    var an=d.anomalias||[];
+    var criticas=an.filter(function(x){ return x.variacion_pct>50; }).length;
+    kp.innerHTML='<div class="kpi"><div class="v" style="color:'+(an.length?'#b45309':'#15803d')+'">'+an.length+'</div><div class="l">Precios elevados</div></div>'
+      +'<div class="kpi"><div class="v" style="color:#b91c1c">'+criticas+'</div><div class="l">Cr&iacute;ticos (&gt;50%)</div></div>'
+      +'<div class="kpi"><div class="v">'+(d.mps_con_historial||0)+'</div><div class="l">MPs con historial</div></div>';
+    if(!an.length){ tb.innerHTML='<tr><td colspan="8" class="empty">&#10003; Ning&uacute;n precio subi&oacute; m&aacute;s del umbral en la ventana. Todo cuadra.</td></tr>'; return; }
+    tb.innerHTML=an.map(function(x){
+      var cls=x.variacion_pct>50?'c-hi':(x.variacion_pct>20?'c-md':'c-lo');
+      var scls=x.spread_pct>100?'c-hi':(x.spread_pct>40?'c-md':'c-lo');
+      return '<tr><td style="font-weight:600">'+esc(x.nombre)+'<div style="font-size:10px;color:#a1a1aa" class="mono">'+esc(x.codigo)+'</div></td>'
+        +'<td>'+esc(x.proveedor||'-')+'</td>'
+        +'<td class="num mono">'+cop(x.precio_promedio_kg)+'</td>'
+        +'<td class="num mono" style="font-weight:700">'+cop(x.precio_ultimo_kg)+'</td>'
+        +'<td class="num"><span class="chip '+cls+'">+'+x.variacion_pct+'%</span></td>'
+        +'<td class="num"><span class="chip '+scls+'">'+x.spread_pct+'%</span></td>'
+        +'<td class="mono" style="font-size:11px">'+esc(x.oc||'-')+'</td>'
+        +'<td style="font-size:11px">'+esc(x.fecha||'-')+'</td></tr>';
+    }).join('');
+  }catch(e){ tb.innerHTML='<tr><td colspan="8" class="empty">Error red: '+esc(e.message)+'</td></tr>'; }
+}
+cargar();
+</script></body></html>"""
+
+
 _RECONCILIAR_PRECIOS_HTML = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Reconciliar precios ÷1000 · EOS</title>

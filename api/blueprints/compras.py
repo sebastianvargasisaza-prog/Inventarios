@@ -13204,6 +13204,66 @@ def cotizaciones_candidatos():
     return jsonify({'items': items[:60], 'total': len(items)})
 
 
+@bp.route('/api/compras/vigilancia-precios', methods=['GET'])
+def vigilancia_precios():
+    """Tesorería · vigilancia de precios de compra (Sebastián 18-jul · 'precios que se elevan,
+    cosas que no cuadran'): por MP, compara el ÚLTIMO precio pagado vs el promedio de los previos
+    (precios_historico_mp · $/g) y marca los que subieron >umbral%. También el spread entre
+    proveedores. Para gerencia/contadora."""
+    u = session.get('compras_user', '')
+    if u not in (ADMIN_USERS | CONTADORA_USERS):
+        return jsonify({'error': 'Solo gerencia/contadora'}), 403
+    try:
+        umbral = float(request.args.get('umbral', 20) or 20)
+    except Exception:
+        umbral = 20.0
+    try:
+        dias = int(request.args.get('dias', 365) or 365)
+    except Exception:
+        dias = 365
+    from datetime import datetime as _dtvp, timedelta as _tdvp
+    cutoff = (_dtvp.utcnow() - _tdvp(hours=5) - _tdvp(days=dias)).date().isoformat()
+    conn = get_db(); c = conn.cursor()
+    hist = {}  # codigo -> [{fecha, precio($/g), proveedor, oc, nombre}]
+    try:
+        for r in c.execute(
+            "SELECT codigo_mp, COALESCE(nombre_mp,''), COALESCE(proveedor,''), precio_unit_g, "
+            "COALESCE(fecha,''), COALESCE(oc_numero,'') FROM precio_historico_mp "
+            "WHERE COALESCE(precio_unit_g,0)>0 AND date(COALESCE(fecha,'1900-01-01')) >= ? "
+            "ORDER BY codigo_mp, fecha", (cutoff,)).fetchall():
+            hist.setdefault(r[0], []).append(
+                {'fecha': (r[4] or '')[:10], 'precio': float(r[3] or 0), 'proveedor': r[2], 'oc': r[5], 'nombre': r[1]})
+    except Exception:
+        hist = {}
+    anomalias = []
+    for cod, recs in hist.items():
+        recs = [x for x in recs if x['precio'] > 0]
+        if len(recs) < 2:
+            continue
+        recs.sort(key=lambda x: x['fecha'])
+        ultimo = recs[-1]
+        previos = recs[:-1]
+        prom = sum(x['precio'] for x in previos) / len(previos)
+        if prom <= 0:
+            continue
+        var_pct = (ultimo['precio'] - prom) / prom * 100.0
+        precios = [x['precio'] for x in recs]
+        spread_pct = ((max(precios) - min(precios)) / min(precios) * 100.0) if min(precios) > 0 else 0.0
+        nombre = ultimo['nombre'] or next((x['nombre'] for x in recs if x['nombre']), cod)
+        if var_pct >= umbral:
+            anomalias.append({
+                'codigo': cod, 'nombre': nombre, 'proveedor': ultimo['proveedor'], 'oc': ultimo['oc'],
+                'fecha': ultimo['fecha'],
+                'precio_ultimo_kg': round(ultimo['precio'] * 1000.0, 0),      # $/kg legible
+                'precio_promedio_kg': round(prom * 1000.0, 0),
+                'variacion_pct': round(var_pct, 1),
+                'spread_pct': round(spread_pct, 1), 'n_registros': len(recs),
+            })
+    anomalias.sort(key=lambda x: x['variacion_pct'], reverse=True)
+    return jsonify({'ok': True, 'anomalias': anomalias, 'total': len(anomalias),
+                    'umbral': umbral, 'dias': dias, 'mps_con_historial': len(hist)})
+
+
 # ─── CENTRO DE COSTOS (Sprint 5) ─────────────────────────────────────────────
 
 @bp.route('/api/compras/centros-costos', methods=['GET'])
