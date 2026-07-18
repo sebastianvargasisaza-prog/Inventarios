@@ -97,6 +97,17 @@ def recepcion_seguimiento():
     # JOIN con solicitudes_compra: trae el numero SOL de origen para que
     # Recepcion vea la trazabilidad SOL → OC → recepcion. Sebastian pidió
     # 28-abr-2026: las OCs en transito deben mostrar de qué SOL vienen.
+    # FIX 18-jul (Sebastián · dividir recepción por naturaleza): Recepción es SOLO
+    # para lo que entra a bodega (MP/MEE). Los consumibles/gastos (EPP, papelería,
+    # aseo, servicios...) `recibir_oc` los RECHAZA (se trazan en Consumos) → no deben
+    # ensuciar el monitoreo de recepción. Excluir CATEGORIAS_SIN_KARDEX (mismo criterio
+    # que recibir_oc) además de los intangibles. Constantes son del código, sin inyección.
+    try:
+        from blueprints.compras import CATEGORIAS_SIN_KARDEX as _SK
+    except Exception:
+        _SK = ('SVC', 'CC', 'Cuenta de Cobro', 'Servicio')
+    _excl = tuple(set(_SK) | {'SVC', 'CC', 'Influencer/Marketing Digital', 'Cuenta de Cobro', 'Servicio'})
+    _not_in = ','.join("'" + x.replace("'", "''") + "'" for x in _excl)
     c.execute(
         'SELECT oc.numero_oc, oc.fecha, oc.estado, oc.proveedor, oc.categoria, '
         "COALESCE(oc.valor_total,0), COALESCE(oc.fecha_recepcion,''), "
@@ -117,7 +128,7 @@ def recepcion_seguimiento():
         "  ON s.numero_oc = oc.numero_oc "
         "WHERE oc.estado IN "
         "('Borrador','Pendiente','Revisada','Aprobada','Autorizada','Recibida','Parcial','Pagada') "
-        "AND oc.categoria NOT IN ('SVC','CC','Influencer/Marketing Digital','Cuenta de Cobro') "
+        "AND COALESCE(oc.categoria,'MP') NOT IN (" + _not_in + ") "
         'ORDER BY '
         # Priorizar las que aun no se reciben para que aparezcan arriba
         "  CASE oc.estado "

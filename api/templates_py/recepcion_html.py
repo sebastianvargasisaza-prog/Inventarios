@@ -103,6 +103,13 @@ td input[type=text]{width:100%;padding:6px 9px;border:1px solid var(--line);bord
 <script>function cxToggleTheme(){var h=document.documentElement;var c=h.getAttribute('data-theme');var n=c==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
 <div class="container">
 
+  <div class="card" style="background:linear-gradient(120deg,#f5f3ff,#faf5ff,#fff);border-left:4px solid #6d28d9;">
+    <div style="font-size:13px;color:#44403c;line-height:1.6;">
+      <b>&#128203; Esto es la recepci&oacute;n administrativa</b> de <b>materias primas y envases</b>: comprob&aacute;s que lleg&oacute; lo de la OC/factura y las cantidades. Lo t&eacute;cnico (an&aacute;lisis, liberaci&oacute;n) lo hace <b>Calidad</b> despu&eacute;s (F01/F02) &middot; el lote entra a <b>cuarentena</b> hasta que Calidad lo apruebe.<br>
+      <span style="color:#78716c;font-size:12px;">Los <b>consumibles y gastos</b> (papeler&iacute;a, EPP, aseo, servicios) NO se reciben ac&aacute; &rarr; se manejan en <b>Cat&aacute;logo / Consumos</b>. Los <b>servicios</b> solo se pagan.</span>
+    </div>
+  </div>
+
   <div class="card">
     <h2>&#9203; OCs Pendientes de Recepcion</h2>
     <input type="text" oninput="filterByText('#queue-list .oc-card', this.value)" placeholder="&#128269; Buscar OC o proveedor…" style="width:100%;max-width:360px;padding:9px 13px;border:1px solid #e7e5e4;border-radius:10px;font-size:13px;margin-bottom:12px;box-shadow:0 1px 2px rgba(15,23,42,.04);">
