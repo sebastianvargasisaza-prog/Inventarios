@@ -81,6 +81,21 @@ def test_f02_no_aprobado_rechaza(app, db_clean):
     assert _estado_lote("LOTECQ4") == "RECHAZADO"
 
 
+def test_f02_no_aprobado_crea_no_conformidad(app, db_clean):
+    mid = _lote_cuarentena("MP-RCQ6", "LOTECQ6")
+    c = _login(app)
+    r = c.post("/api/calidad/certificado-analisis", json={
+        "mov_id": mid, "resultado": "no_aprobado", "aprobo_por": "Laura",
+        "observaciones_generales": "pH fuera de especificación"}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    nc_id = r.get_json().get("nc_id")
+    assert nc_id, "el rechazo debe crear una No Conformidad"
+    # la NC aparece en el listado, ligada al lote
+    ncs = c.get("/api/calidad/no-conformidades").get_json()
+    mine = [n for n in ncs if n["id"] == nc_id]
+    assert mine and mine[0]["lote"] == "LOTECQ6" and mine[0]["estado"] == "Abierta"
+
+
 # ── ENVASES (MEE) en el pipeline ──
 def _lote_mee_cuarentena(cod="MEE-RCQ1", lote="MEELOTE1"):
     conn = sqlite3.connect(os.environ["DB_PATH"], timeout=10)

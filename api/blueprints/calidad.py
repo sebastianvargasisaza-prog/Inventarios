@@ -1226,6 +1226,34 @@ def _fecha_co():
     return (_d.now(_t.utc) - _td(hours=5)).isoformat()
 
 
+def _crear_nc_rechazo(cur, user, *, lote, codigo, nombre, cantidad, proveedor, oc, motivo, es_envase):
+    """Crea la No Conformidad de un lote RECHAZADO en recepción (devolución al proveedor · trazabilidad INVIMA).
+    Se llama SOLO cuando el CAS acaba de mover el lote a RECHAZADO → no duplica (el 2º intento no transiciona).
+    Reusa la tabla/pane canónico `no_conformidades` (M1). Devuelve el id o None."""
+    _fecha = (datetime.utcnow() - timedelta(hours=5)).date().isoformat()  # M24 · fecha Colombia en Python, no date() en DML
+    tipo = 'Envase rechazado' if es_envase else 'Materia prima rechazada'
+    unidad = 'und' if es_envase else 'g'
+    desc = ("Lote RECHAZADO en recepcion de calidad: " + str(nombre or codigo or '') + " (codigo " + str(codigo or 'N/D')
+            + "), lote " + str(lote or 'N/D') + ", " + str(cantidad or '?') + " " + unidad
+            + ", proveedor " + str(proveedor or 'N/D') + ", OC " + str(oc or 'N/D') + ". "
+            + "Motivo: " + (str(motivo).strip() if motivo and str(motivo).strip() else 'no conforme en el control de recepcion') + ".")
+    try:
+        cur.execute("""INSERT INTO no_conformidades
+                       (fecha,tipo,descripcion,area,responsable,lote,codigo_mp,
+                        impacto,accion_correctiva,estado,creado_por)
+                       VALUES (?,?,?,?,?,?,?,?,?,'Abierta',?)""",
+                    (_fecha, tipo, desc, 'Recepcion / Calidad', user, str(lote or ''), str(codigo or ''),
+                     'Alto', 'Devolucion al proveedor (pendiente de gestion por Compras)', user))
+        nc_id = cur.lastrowid
+        audit_log(cur, usuario=user, accion='CREAR_NC', tabla='no_conformidades', registro_id=(nc_id or 0),
+                  despues={'origen': 'recepcion_rechazo', 'lote': str(lote or '')[:100],
+                           'codigo': str(codigo or ''), 'impacto': 'Alto'})
+        return nc_id
+    except Exception as e:
+        log.warning('crear NC de rechazo fallo: %s', e)
+        return None
+
+
 @bp.route('/api/calidad/recepcion-pipeline', methods=['GET'])
 def calidad_recepcion_pipeline():
     """Lotes de MP y ENVASES (MEE) en cuarentena + estado de sus formatos F01/F02 (pipeline de Calidad · Laura).
@@ -1343,20 +1371,31 @@ def calidad_recepcion_tecnica():
         _f = _F01_COLS + ['origen', 'creado_por', 'creado_en']
         cur.execute(f"INSERT INTO recepcion_tecnica_doc ({','.join(_f)}) VALUES ({','.join(['?']*len(_f))})",
                     [vals[k] for k in _F01_COLS] + [origen, u, _fecha_co()])
-        _liberado = 0
+        _liberado = 0; _nc_id = None
         if origen == 'MEE' and resultado in ('conforme', 'no_conforme'):
             # el F01 del envase decide (no hay F02) · CAS: solo si sigue en cuarentena (M23/M27)
             _nuevo = 'VIGENTE' if resultado == 'conforme' else 'RECHAZADO'
             cur.execute("UPDATE movimientos_mee SET estado=? WHERE id=? AND tipo='Entrada' "
                         "AND UPPER(COALESCE(estado,'VIGENTE'))='CUARENTENA'", (_nuevo, mov_id))
             _liberado = cur.rowcount
+            if resultado == 'no_conforme' and _liberado > 0:
+                # envase rechazado → No Conformidad + devolución al proveedor (trazabilidad)
+                mrow = cur.execute("SELECT mv.mee_codigo, COALESCE(mm.descripcion, mv.mee_codigo), mv.cantidad, "
+                                   "COALESCE(mv.lote_ref,''), COALESCE(mv.proveedor,''), COALESCE(mv.oc_numero,'') "
+                                   "FROM movimientos_mee mv LEFT JOIN maestro_mee mm ON UPPER(TRIM(mm.codigo))=UPPER(TRIM(mv.mee_codigo)) "
+                                   "WHERE mv.id=?", (mov_id,)).fetchone()
+                if mrow:
+                    _nc_id = _crear_nc_rechazo(cur, u, lote=mrow[3], codigo=mrow[0], nombre=mrow[1],
+                                               cantidad=mrow[2], proveedor=mrow[4], oc=mrow[5],
+                                               motivo=vals.get('observaciones'), es_envase=True)
         audit_log(cur, usuario=u, accion='RECEPCION_TECNICA_F01', tabla='recepcion_tecnica_doc',
                   registro_id=(cur.lastrowid or 0),
-                  despues={'mov_id': mov_id, 'origen': origen, 'resultado': resultado, 'liberado': _liberado})
+                  despues={'mov_id': mov_id, 'origen': origen, 'resultado': resultado, 'liberado': _liberado,
+                           'nc_id': _nc_id})
         conn.commit()
     except Exception as e:
         conn.rollback(); return jsonify({'error': f'No se pudo guardar F01: {e}'}), 500
-    return jsonify({'ok': True, 'resultado': resultado, 'origen': origen, 'liberado': _liberado})
+    return jsonify({'ok': True, 'resultado': resultado, 'origen': origen, 'liberado': _liberado, 'nc_id': _nc_id})
 
 
 _F02_COLS = ['mov_id', 'lote', 'codigo_mp', 'nombre_mp', 'lote_proveedor', 'cantidad_recibida', 'proveedor',
@@ -1430,10 +1469,10 @@ def calidad_certificado_analisis():
     vals['mov_id'] = mov_id
     conn = get_db(); cur = conn.cursor()
     # datos del lote para liberar
-    lrow = cur.execute("SELECT lote, material_id FROM movimientos WHERE id=?", (mov_id,)).fetchone()
+    lrow = cur.execute("SELECT lote, material_id, COALESCE(numero_oc,'') FROM movimientos WHERE id=?", (mov_id,)).fetchone()
     if not lrow:
         return jsonify({'error': 'El lote no existe'}), 404
-    _lote, _matid = lrow[0], lrow[1]
+    _lote, _matid, _oc = lrow[0], lrow[1], lrow[2]
     try:
         cur.execute("UPDATE certificado_analisis_mp SET anulado=1 WHERE mov_id=? AND COALESCE(anulado,0)=0", (mov_id,))
         _f = _F02_COLS + ['creado_por', 'creado_en']
@@ -1448,14 +1487,21 @@ def calidad_certificado_analisis():
                         "AND lote=? AND material_id=? AND tipo='Entrada'",
                         (_nuevo, _lote, _matid))
             _liberado = cur.rowcount
+        _nc_id = None
+        if resultado == 'no_aprobado' and _liberado > 0:
+            # MP rechazada → No Conformidad + devolución al proveedor (trazabilidad · va a Compras)
+            _motivo = vals.get('observaciones_generales') or ''
+            _nc_id = _crear_nc_rechazo(cur, u, lote=_lote, codigo=_matid, nombre=vals.get('nombre_mp'),
+                                       cantidad=vals.get('cantidad_recibida'), proveedor=vals.get('proveedor'),
+                                       oc=_oc, motivo=_motivo, es_envase=False)
         audit_log(cur, usuario=u, accion='CERTIFICADO_ANALISIS_F02', tabla='certificado_analisis_mp',
                   registro_id=(cur.lastrowid or 0),
                   despues={'mov_id': mov_id, 'lote': _lote, 'resultado': resultado, 'aprobo': aprobo_por,
-                           'lotes_afectados': _liberado})
+                           'lotes_afectados': _liberado, 'nc_id': _nc_id})
         conn.commit()
     except Exception as e:
         conn.rollback(); return jsonify({'error': f'No se pudo guardar F02: {e}'}), 500
-    return jsonify({'ok': True, 'resultado': resultado, 'liberado': _liberado})
+    return jsonify({'ok': True, 'resultado': resultado, 'liberado': _liberado, 'nc_id': _nc_id})
 
 
 # ── F01 / F02 imprimibles (documento auditable · calca el formato en papel · imprimir→PDF) ──

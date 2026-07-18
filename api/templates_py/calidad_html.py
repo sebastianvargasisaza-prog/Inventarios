@@ -135,7 +135,7 @@ textarea{resize:vertical;min-height:70px;}
   <div class="tab" data-tip="Cuadro de mando: indicadores con META, semáforo y tendencia (RFT, rechazos, CAPA, OOS, agua...). Doble-clic una tarjeta para editar su meta." data-tip-pos="bottom" onclick="goTab('tab-indic')">&#128201; Indicadores</div>
   <div class="tab" data-tip="Tareas de calidad del día (muestreos, inspecciones) según COC-PRO-011." data-tip-pos="bottom" onclick="goTab('tab-cron')">&#128203; Cronograma del Dia</div>
   <div class="tab" data-tip="Recepción y liberación de MP y envases en cuarentena (F01 técnica + F02 análisis)." data-tip-pos="bottom" onclick="goTab('tab-cc')">&#x1F9EA; Recepción y liberación</div>
-  <div class="tab" style="display:none" data-tip="Registro y cierre de No Conformidades (producto/proceso)." data-tip-pos="bottom" onclick="goTab('tab-nc')">&#x26A0; No Conformidades</div>
+  <div class="tab" data-tip="Registro y cierre de No Conformidades (incluye lotes RECHAZADOS en recepción · devolución al proveedor)." data-tip-pos="bottom" onclick="goTab('tab-nc')">&#x26A0; No Conformidades</div>
   <div class="tab" style="display:none" data-tip="Estado y vencimiento de calibraciones de instrumentos (COC-PRO-006/012)." data-tip-pos="bottom" onclick="goTab('tab-cal')">&#x1F527; Calibraciones</div>
   <div class="tab" data-tip="Microbiología: resultados por lote, mapa de calor, gráficas (tendencia OOS, conformidad, hallazgos, ambiental) y fisicoquímico. Registrá con su COA y N° de informe." data-tip-pos="bottom" onclick="goTab('tab-micro')">&#x1F9EB; Microbiolog&iacute;a</div>
   <div class="tab" style="display:none" data-tip="Sistema de agua purificada: pH, conductividad, TOC, micro (COC-PRO-008) + tendencia y alertas." data-tip-pos="bottom" onclick="goTab('tab-agua')">&#x1F4A7; Sistema de Agua</div>
@@ -277,6 +277,10 @@ textarea{resize:vertical;min-height:70px;}
 
 <!-- Ã¢ÂÂÃ¢ÂÂ NO CONFORMIDADES Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ -->
 <div id="tab-nc" class="pane">
+  <div style="background:var(--cx-hero-grad);border:1px solid var(--cx-border);border-left:5px solid var(--cx-danger);border-radius:var(--cx-r-xl);padding:18px 24px;margin-bottom:16px">
+    <div style="font-size:19px;font-weight:800;color:var(--cx-text);letter-spacing:-.01em">&#9888; No Conformidades</div>
+    <div style="font-size:12.5px;color:var(--cx-text-mute);margin-top:5px;max-width:820px;line-height:1.55">Registro y cierre de no conformidades. Los <b>lotes RECHAZADOS en recepción</b> (F02 no aprobado o F01 de envase no conforme) llegan aquí <b>automáticamente</b> con impacto Alto y disposición <b>devolución al proveedor</b>, para gestión de Compras. Cerrar una NC exige la disposición y evidencia (guía de devolución / acta de destrucción) para la trazabilidad INVIMA.</div>
+  </div>
   <div class="card">
     <div class="card-title">Registrar No Conformidad</div>
     <div class="form-row">
@@ -2519,6 +2523,7 @@ async function guardarF01(mov_id, origen){
     if(!r.ok||!d.ok){ alert('No se pudo: '+((d&&d.error)||r.status)); return; }
     _rcClose(); loadCuarentena();
     if(org==='MEE' && d.resultado==='conforme') alert('✅ Envase liberado (VIGENTE)');
+    else if(org==='MEE' && d.resultado==='no_conforme' && d.nc_id) alert('⛔ Envase RECHAZADO. Se creó la No Conformidad NC-'+d.nc_id+' (devolución al proveedor · queda en la pestaña No Conformidades para gestión de Compras).');
   }catch(e){ alert('Error: '+e.message); }
 }
 
@@ -2581,6 +2586,7 @@ async function guardarF02(mov_id){
     if(!r.ok||!d.ok){ alert('No se pudo: '+((d&&d.error)||r.status)); return; }
     _rcClose(); loadCuarentena();
     if(d.resultado==='aprobado') alert('✅ Lote aprobado y liberado (VIGENTE)');
+    else if(d.resultado==='no_aprobado' && d.nc_id) alert('⛔ Lote RECHAZADO. Se creó la No Conformidad NC-'+d.nc_id+' (devolución al proveedor · queda en la pestaña No Conformidades para gestión de Compras).');
   }catch(e){ alert('Error: '+e.message); }
 }
 
@@ -2646,11 +2652,15 @@ document.addEventListener('click',async function(ev){
   const btn=ev.target.closest('[data-cerrar-nc]');
   if(!btn) return;
   const ncid=btn.dataset.cerrarNc;
-  if(!confirm('Cerrar esta no conformidad?')) return;
+  var disp=prompt('¿Cómo se cerró esta No Conformidad? Escribí la disposición y evidencia (ej: Devuelto al proveedor guía 12345 / Destruido acta 07). Mínimo 10 caracteres:');
+  if(disp===null) return;
+  disp=disp.trim();
+  if(disp.length<10){ alert('La disposición debe tener al menos 10 caracteres (trazabilidad INVIMA).'); return; }
   try{
-    const r=await fetch('/api/calidad/no-conformidades/'+ncid+'/cerrar', _fetchOpts('POST'));
-    if(r.ok) loadNC();
-    else alert('Error al cerrar NC');
+    const r=await fetch('/api/calidad/no-conformidades/'+ncid+'/cerrar', _fetchOpts('POST', {motivo_cierre:disp, accion_correctiva:disp}));
+    var d=await r.json().catch(function(){return {};});
+    if(r.ok){ loadNC(); }
+    else alert('No se pudo cerrar: '+((d&&d.error)||r.status));
   }catch(e){alert('Error: '+e.message);}
 });
 
