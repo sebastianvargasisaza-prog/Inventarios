@@ -543,3 +543,23 @@ def test_compras_html_toggle_vista_agrupada_visible(app, db_clean):
     assert 'abrirCrearOCDesdeGrupo' in body
     assert 'Agrupar por proveedor' in body
     assert 'grid-solic-grouped' in body
+
+
+def test_bandeja_pendiente_no_muestra_sol_con_oc(app):
+    """Sebastián 18-jul · doble camino: una SOL que ya tiene OC (la crea 'Generar OC' Pendiente+OC
+    Borrador) NO debe aparecer en la bandeja 'por convertir' (Pendiente) · va en la pestaña OCs."""
+    _crear_solicitud_con_items('SOL-BXSUELTA', [{'codigo_mp': 'MPBX1', 'nombre_mp': 'Sin OC',
+                                                 'cantidad_g': 1000, 'proveedor_sugerido': 'ProvBandejaX'}])
+    _crear_solicitud_con_items('SOL-BXCONOC', [{'codigo_mp': 'MPBX2', 'nombre_mp': 'Con OC',
+                                                'cantidad_g': 1000, 'proveedor_sugerido': 'ProvBandejaX'}])
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("UPDATE solicitudes_compra SET numero_oc='OC-2026-9999' WHERE numero='SOL-BXCONOC'")
+    conn.commit(); conn.close()
+    cs = _login(app)
+    r = cs.get('/api/compras/solicitudes-agrupadas-por-proveedor?estado=Pendiente&fuente=planta')
+    assert r.status_code == 200, r.data[:200]
+    body = r.get_data(as_text=True)
+    assert 'SOL-BXSUELTA' in body, "la SOL sin OC (por convertir) SÍ aparece"
+    assert 'SOL-BXCONOC' not in body, "la SOL que ya tiene OC NO debe aparecer en 'por convertir'"
+    _cleanup_solicitudes(['SOL-BXSUELTA', 'SOL-BXCONOC'])
+    _cleanup_oc('OC-2026-9999')

@@ -3827,6 +3827,12 @@ def solicitudes_agrupadas_por_proveedor():
     if categoria_filtro:
         sql += " AND s.categoria=?"
         params.append(categoria_filtro)
+    # Sebastián 18-jul · la bandeja "por convertir" (Pendiente) NO debe mostrar SOLs que YA tienen OC:
+    # las que crea "Generar OC" nacen Pendiente CON numero_oc + su OC Borrador → se manejan en la pestaña
+    # OCs (autorizar), no en "Crear OC". Mostrarlas acá revueltas con las sueltas confunde (Crear OC daría
+    # 409). Solo se filtra en la vista Pendiente (default); si se filtra por Aprobada/otro, sí se muestran.
+    if (not estado_filtro) or estado_filtro.strip().lower() == 'pendiente':
+        sql += " AND COALESCE(s.numero_oc,'')=''"
     # Sprint Compras N2 · 21-may-2026 · paginación por SOLs.
     # Antes LIMIT 500 fijo · con 300+ SOLs auto-plan + influencer se
     # truncaba silenciosamente. Ahora respeta ?limit=N&offset=N.
@@ -4429,6 +4435,17 @@ def crear_oc_desde_solicitudes():
             [numero_oc] + nums,
         )
         vinculadas = c.rowcount
+        # CAS anti-doble-orden (Sebastián 18-jul · M27/M31): la OC se insertó ANTES de este link.
+        # Si NO se linkearon TODAS las SOLs (otro click/worker las tomó primero, o cambiaron de estado),
+        # esta OC quedaría HUÉRFANA pero creada = 2ª orden real. Rollback total (no hay commit intermedio)
+        # → la OC no sobrevive salvo que reclame TODAS sus solicitudes.
+        if vinculadas < len(nums):
+            conn.rollback()
+            return jsonify({
+                'error': 'Otra orden tomó estas solicitudes al mismo tiempo (o cambiaron de estado). '
+                         'No se creó la OC · recargá la bandeja e intentá de nuevo.',
+                'codigo': 'SOL_YA_TOMADAS', 'vinculadas': vinculadas, 'esperadas': len(nums),
+            }), 409
 
         # 8. Audit log
         try:
