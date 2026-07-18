@@ -88,6 +88,34 @@ def test_aplicar_saldo_insuficiente(app, db_clean):
     assert r.get_json().get("codigo") == "SALDO_INSUFICIENTE"
 
 
+def test_sobrepago_genera_saldo_favor(app, db_clean):
+    c = _login(app)
+    _oc("OC-SP-1", "ProvSobre1", 50000, "Autorizada")
+    # sin flag: pagar 60000 (OC vale 50000) → rechazo 422
+    r0 = c.patch("/api/ordenes-compra/OC-SP-1/pagar", json={"monto": 60000, "medio": "Transferencia"},
+                 headers=csrf_headers())
+    assert r0.status_code == 422, r0.data[:300]
+    assert r0.get_json().get("codigo") == "OVER_PAYMENT"
+    # con flag: 50000 a la OC (Pagada) + 10000 a favor del proveedor
+    r = c.patch("/api/ordenes-compra/OC-SP-1/pagar",
+                json={"monto": 60000, "medio": "Transferencia", "permitir_saldo_favor": True},
+                headers=csrf_headers())
+    assert r.status_code == 200, r.data[:400]
+    conn = sqlite3.connect(os.environ["DB_PATH"], timeout=10.0)
+    try:
+        est = conn.execute("SELECT estado FROM ordenes_compra WHERE numero_oc='OC-SP-1'").fetchone()[0]
+        pag = conn.execute("SELECT COALESCE(SUM(monto),0) FROM pagos_oc WHERE numero_oc='OC-SP-1'").fetchone()[0]
+        # egreso por el monto REAL pagado (60000), no por 50000
+        egr = conn.execute("SELECT COALESCE(SUM(monto),0) FROM flujo_egresos WHERE referencia='OC-SP-1'").fetchone()[0]
+    finally:
+        conn.close()
+    assert est == "Pagada", est
+    assert abs(pag - 50000) < 1, ("la OC solo recibe su valor (50000), no el sobrepago", pag)
+    assert abs(egr - 60000) < 1, ("el egreso = plata real que salió (60000)", egr)
+    # el excedente quedó a favor
+    assert abs(_saldo(c, "ProvSobre1") - 10000) < 1, "10000 de sobrepago a favor"
+
+
 def test_compras_ui_saldofavor_render(app, db_clean):
     c = _login(app)
     body = c.get('/compras').get_data(as_text=True)

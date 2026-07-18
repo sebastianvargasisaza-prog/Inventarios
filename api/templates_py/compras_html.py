@@ -4549,6 +4549,22 @@ async function confirmarPago(){
       alert('⚠ Excede tu límite\\n\\n'+d.error+'\\n\\n'+d.detail);
       return;
     }
+    // 💰 Sobrepago → saldo a favor (Catalina 17-jul): si el monto excede la OC, ofrecer dejar el excedente a favor
+    if(r.status===422 && d.codigo==='OVER_PAYMENT'){
+      var _exc=d.excedente||0;
+      if(confirm('El pago ($'+parseFloat(monto).toLocaleString('es-CO')+') excede el valor de la OC.\\n\\n¿Dejar el excedente de $'+_exc.toLocaleString('es-CO')+' como SALDO A FAVOR del proveedor?\\n(La OC queda pagada · el excedente lo aplicás a la próxima OC de ese proveedor.)')){
+        payload.permitir_saldo_favor=true;
+        var r2=await fetch('/api/ordenes-compra/'+num+'/pagar',_fetchOpts('PATCH', payload));
+        var d2=await r2.json();
+        if(!r2.ok || d2.error){ alert('No se pudo: '+((d2&&d2.error)||r2.status)); return; }
+        alert('✅ OC pagada · $'+_exc.toLocaleString('es-CO')+' quedó a favor del proveedor.');
+        closeModal('m-pago');
+        if(typeof loadData==='function'){ try{ await loadData(); }catch(e){} }
+        if(typeof loadPorPagar==='function'){ try{ loadPorPagar(); }catch(e){} }
+        return;
+      }
+      return;
+    }
     if(d.error){ alert('Error: '+d.error); return; }
     // Mensaje claro de pago parcial vs total + comprobante de egreso
     var msg = '';

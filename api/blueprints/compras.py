@@ -6846,6 +6846,9 @@ def pagar_oc(numero_oc):
     aplicar_retefuente = bool(d.get('aplicar_retefuente', False))
     aplicar_retica = bool(d.get('aplicar_retica', False))
     aplicar_iva = bool(d.get('aplicar_iva', False))
+    # Catalina 17-jul · si Alejandro paga MÁS que la OC, el excedente queda a favor del proveedor
+    # (solo con este flag · default OFF = rechazo duro, seguro · M39/M66).
+    permitir_saldo_favor = bool(d.get('permitir_saldo_favor', False))
     # Limit image size to ~4MB base64 to avoid DB bloat
     if len(comprobante_imagen) > 4_000_000:
         comprobante_imagen = comprobante_imagen[:4_000_000]
@@ -6901,14 +6904,27 @@ def pagar_oc(numero_oc):
     # Audit zero-error 2-may-2026: validar over-payment ANTES de insertar
     cur.execute("SELECT COALESCE(SUM(monto), 0) FROM pagos_oc WHERE numero_oc=?", (numero_oc,))
     total_pagado_actual = float(cur.fetchone()[0] or 0)
-    if (total_pagado_actual + monto) > (valor_total_oc + 0.01):
+    # Catalina 17-jul · SOBREPAGO → SALDO A FAVOR (Fase 2). Lo que entra a la OC nunca la sobre-paga
+    # (pago_oc_monto = min(monto, pendiente)); el resto (excedente) queda como CRÉDITO del proveedor,
+    # SOLO si permitir_saldo_favor=True. Sin el flag → rechazo duro (igual que antes · seguro).
+    _remaining_oc = max(0.0, valor_total_oc - total_pagado_actual)
+    pago_oc_monto = min(monto, _remaining_oc)
+    excedente_favor = round(monto - pago_oc_monto, 2)
+    if excedente_favor > 0.01 and not permitir_saldo_favor:
         return jsonify({
             'error': f"Over-payment: pagado actual {total_pagado_actual:.0f} + nuevo {monto:.0f} "
-                       f"excede valor OC {valor_total_oc:.0f}",
+                       f"excede valor OC {valor_total_oc:.0f}. Marcá 'dejar excedente a favor' para permitirlo.",
             'pagado_actual': total_pagado_actual,
             'valor_oc': valor_total_oc,
+            'excedente': excedente_favor,
             'codigo': 'OVER_PAYMENT'
         }), 422
+    if excedente_favor > 0.01 and pago_oc_monto <= 0.01:
+        # la OC ya está pagada · un pago extra va por "Registrar anticipo", no por acá
+        return jsonify({
+            'error': f'La OC {numero_oc} ya está pagada. Para un saldo a favor usá "Registrar anticipo/ajuste".',
+            'codigo': 'OC_YA_PAGADA'
+        }), 409
     cat_map = {'MPs':'MPs','MP':'MPs','Envase':'MEE','Insumos':'MEE','MEE':'MEE','SVC':'Servicios','Servicios':'Servicios','Analisis':'Servicios','Ánalisis':'Servicios','Acondicionamiento':'Servicios','Admin':'Administrativo','Nomina':'Administrativo','ADM':'Administrativo','Infraestructura':'Infraestructura','INF':'Infraestructura','CC':'Cuentas de Cobro'}
     cat_egreso = cat_map.get(categoria, 'Compras')
     fecha_pago = datetime.now().isoformat()
@@ -6950,7 +6966,7 @@ def pagar_oc(numero_oc):
                                   registrado_por, numero_factura_proveedor,
                                   comprobante_imagen, observaciones)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (numero_oc, monto, medio, fecha_pago, usuario_actual,
+        """, (numero_oc, pago_oc_monto, medio, fecha_pago, usuario_actual,
               numero_factura, comprobante_imagen, obs))
     except sqlite3.IntegrityError as _e:
         # UNIQUE de factura disparó (race con check anterior · defense in depth)
@@ -6995,6 +7011,22 @@ def pagar_oc(numero_oc):
                       f"excede el valor de la OC {valor_total_oc:.0f}. No se registró este pago."),
             'codigo': 'OVER_PAYMENT_RACE',
         }), 409
+    # Catalina 17-jul · SOBREPAGO: el excedente sobre el valor de la OC entra como CRÉDITO del proveedor
+    # (saldo a favor). La plata YA salió (el egreso de abajo usa `monto` completo · real), así que el crédito
+    # se aplica luego a otra OC SIN egreso (M12f · no doble). Ledger saldos_proveedor_mov · audit.
+    if excedente_favor > 0.01 and proveedor:
+        try:
+            from datetime import datetime as _dtsf, timezone as _tzsf, timedelta as _tdsf
+            _fsf = (_dtsf.now(_tzsf.utc) - _tdsf(hours=5)).isoformat()
+            cur.execute(
+                "INSERT INTO saldos_proveedor_mov (proveedor, tipo, monto, origen, numero_oc, fecha, registrado_por, observaciones) "
+                "VALUES (?, 'credito', ?, 'sobrepago', ?, ?, ?, ?)",
+                (proveedor, excedente_favor, numero_oc, _fsf, usuario_actual, f'Sobrepago de {numero_oc}'))
+            audit_log(cur, usuario=usuario_actual, accion='SALDO_FAVOR_SOBREPAGO',
+                      tabla='saldos_proveedor_mov', registro_id=(cur.lastrowid or 0),
+                      despues={'proveedor': proveedor, 'excedente': excedente_favor, 'numero_oc': numero_oc})
+        except Exception:
+            pass  # best-effort · el pago de la OC no se rompe por el crédito
     # Audit log INVIMA · Resolución 2214/2021 · pago de OC es operación financiera regulada
     try:
         audit_log(cur, usuario=usuario_actual, accion='PAGAR_OC',
