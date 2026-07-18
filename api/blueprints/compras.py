@@ -13166,6 +13166,44 @@ def listar_rondas():
     return jsonify({'rondas': rondas, 'count': len(rondas)})
 
 
+@bp.route('/api/compras/cotizaciones/candidatos', methods=['GET'])
+def cotizaciones_candidatos():
+    """MPs activos SIN precio de referencia (nunca cotizados/comprados con precio conocido) →
+    candidatos a abrir una ronda de cotización. Sebastián 18-jul (auto-cotizar 'algo que no hemos
+    comprado'). Excluye los que ya tienen una ronda ABIERTA (para no re-sugerir)."""
+    u, err, code = _require_compras_session()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    # nombres que ya tienen una ronda de cotización abierta (Pendiente/Recibida) → no re-sugerir
+    en_ronda = set()
+    try:
+        for r in c.execute("SELECT DISTINCT UPPER(TRIM(descripcion)) FROM cotizaciones "
+                           "WHERE estado IN ('Pendiente','Recibida')").fetchall():
+            if r[0]:
+                en_ronda.add(r[0])
+    except Exception:
+        pass
+    items = []
+    try:
+        for r in c.execute("""
+            SELECT codigo_mp, COALESCE(NULLIF(TRIM(nombre_comercial),''), NULLIF(TRIM(nombre_inci),''), codigo_mp),
+                   COALESCE(proveedor,''), COALESCE(tipo_material,'MP')
+            FROM maestro_mps
+            WHERE COALESCE(activo,1)=1 AND COALESCE(precio_referencia,0) <= 0
+              AND COALESCE(controla_stock,1)=1
+            ORDER BY COALESCE(NULLIF(TRIM(nombre_comercial),''), nombre_inci, codigo_mp)
+            LIMIT 80
+        """).fetchall():
+            _nom = (r[1] or '').strip()
+            if _nom.upper() in en_ronda:
+                continue  # ya está en una ronda abierta
+            items.append({'codigo': r[0], 'nombre': _nom, 'proveedor': r[2], 'tipo': r[3]})
+    except Exception:
+        items = []
+    return jsonify({'items': items[:60], 'total': len(items)})
+
+
 # ─── CENTRO DE COSTOS (Sprint 5) ─────────────────────────────────────────────
 
 @bp.route('/api/compras/centros-costos', methods=['GET'])

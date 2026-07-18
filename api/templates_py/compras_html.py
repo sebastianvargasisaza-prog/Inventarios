@@ -964,6 +964,7 @@ function renderHistorico(){
     </div>
   </div>
   <div id="cotiz-resumen" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;font-size:12px;color:#475569"></div>
+  <div id="cotiz-candidatos" style="margin-bottom:16px"></div>
   <div id="cotiz-contenido" style="background:white;border:1px solid #e2e8f0;border-radius:10px;overflow-x:auto">
     <div style="text-align:center;color:#94a3b8;padding:30px">Click &#x21BA; Actualizar</div>
   </div>
@@ -9251,7 +9252,7 @@ function _cotProvRow(){
     +'</div>';
 }
 function _cotAddProvRow(){ var box=document.getElementById('cot-prov-rows'); if(box) box.insertAdjacentHTML('beforeend', _cotProvRow()); }
-function nuevaRondaCotizModal(){
+function nuevaRondaCotizModal(prefill){
   _cotOvClose();
   var ov=document.createElement('div'); ov.id='cot-new-ov';
   ov.style.cssText='position:fixed;inset:0;background:rgba(20,18,40,.55);z-index:99999;display:flex;align-items:flex-start;justify-content:center;padding:28px;overflow:auto';
@@ -9272,6 +9273,26 @@ function nuevaRondaCotizModal(){
     +'</div></div>';
   ov.addEventListener('click',function(e){ if(e.target===ov) _cotOvClose(); });
   document.body.appendChild(ov);
+  if(prefill){ var _td=document.getElementById('cot-desc'); if(_td){ _td.value=prefill; } var _p0=document.querySelector('#cot-prov-rows .cot-prov'); if(_p0) setTimeout(function(){ _p0.focus(); }, 50); }
+}
+// Candidatos a cotizar · MPs activos SIN precio de referencia (nunca comprados) → cotizalos de una
+async function cargarCandidatosCotiz(){
+  var box=document.getElementById('cotiz-candidatos'); if(!box) return;
+  try{
+    var r=await fetch('/api/compras/cotizaciones/candidatos');
+    if(!r.ok){ box.innerHTML=''; return; }
+    var d=await r.json(); var its=d.items||[];
+    if(!its.length){ box.innerHTML=''; return; }
+    var chips=its.map(function(it){
+      var nom=esc(it.nombre||it.codigo||'');
+      return '<button onclick="nuevaRondaCotizModal(&quot;Cotizar: '+nom.replace(/&quot;/g,'')+'&quot;)" class="cxt-chip mute" style="border:1px solid #ede9f6;cursor:pointer;padding:5px 11px" title="Abrir ronda de cotización para este material">&#128172; '+nom+'</button>';
+    }).join(' ');
+    box.innerHTML='<div class="cxt-wrap" style="padding:14px 16px">'
+      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="font-weight:800;font-size:13px;color:#1e1b2e">&#128269; Candidatos a cotizar</span>'
+      +'<span class="cxt-chip wait">'+its.length+' sin precio</span></div>'
+      +'<div style="font-size:11px;color:#78716c;margin-bottom:10px">Materiales activos sin precio de referencia (nunca comprados). Click en uno para abrir su ronda de cotización.</div>'
+      +'<div style="display:flex;gap:6px;flex-wrap:wrap">'+chips+'</div></div>';
+  }catch(e){ box.innerHTML=''; }
 }
 async function crearRondaCotiz(){
   var desc=((document.getElementById('cot-desc')||{}).value||'').trim();
@@ -9297,6 +9318,7 @@ async function cargarCotizaciones(){
   var div = document.getElementById('cotiz-contenido');
   var resumen = document.getElementById('cotiz-resumen');
   div.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:30px">Cargando…</div>';
+  cargarCandidatosCotiz();
   try{
     var r = await fetch('/api/compras/cotizaciones/rondas');
     if(!r.ok){ div.innerHTML='<div style="color:#dc2626;padding:20px">Error '+r.status+'</div>'; return; }
