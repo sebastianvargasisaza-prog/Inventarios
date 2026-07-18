@@ -285,10 +285,10 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
     <button class="tn"      data-tab="por-pagar" id="tn-por-pagar" title="Pendientes · OCs autorizadas sin pagar">💰 Por Pagar</button>
     <button class="tn"      data-tab="pagos" id="tn-pagos" title="Histórico · pagos ya ejecutados">💸 Pagos</button>
     <button class="tn"      data-tab="historico" id="tn-historico" title="Histórico · TODO lo que se ha pedido (todas las OCs, cualquier estado · buscable)">📜 Histórico</button>
-    <button class="tn"      data-tab="facprov" id="tn-facprov" title="Libro de facturas de proveedor · cuentas por pagar formales con retenciones, vencimiento y saldos">🧾 Facturas <span id="facprov-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
+    <button class="tn" style="display:none"     data-tab="facprov" id="tn-facprov" title="Libro de facturas de proveedor · cuentas por pagar formales con retenciones, vencimiento y saldos">🧾 Facturas <span id="facprov-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <button class="tn"      data-tab="atrasadas" id="tn-atrasadas" title="OCs sin recibir tras lead_time + buffer · Sebastián 23-may">🚨 Atrasadas <span id="atrasadas-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <button class="tn" style="display:none" data-tab="feedneed" id="tn-feedneed" title="Necesidades de compra · materias primas y envases por debajo del mínimo, en un solo lugar">🔔 Necesidades <span id="feedneed-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
-    <button class="tn"      data-tab="discrep" id="tn-discrep" title="Recepciones con faltante · ranking calidad proveedor · Sebastián 23-may">📋 Calidad recepción <span id="discrep-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
+    <button class="tn"      data-tab="discrep" id="tn-discrep" title="Ciclo recepción + calidad: recibido, cuarentena (F01/F02), rechazos y discrepancias">📋 Recepción y calidad <span id="discrep-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <button class="tn" style="display:none" data-tab="mailbox" id="tn-mailbox" title="Facturas detectadas por el cron mailbox · revisar/completar/descartar · Sebastián 23-may">📧 Mailbox <span id="mailbox-badge" style="display:none;background:#7c3aed;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <!-- COT comparador · Sebastián 23-may-2026 PM · backend ya estaba listo, UI nueva -->
     <button class="tn"      data-tab="cotiz" id="tn-cotiz" title="Rondas de cotizaciones · comparar proveedores lado a lado · elegir ganadora">💬 Cotizaciones <span id="cotiz-badge" style="display:none;background:#0891b2;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
@@ -907,17 +907,26 @@ function showSubPlanta(w){
 <div id="pane-discrep" class="pane">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
     <div>
-      <h2 style="margin:0;font-size:18px;color:#1e293b;">&#x1F4CB; Calidad de recepción</h2>
+      <h2 style="margin:0;font-size:18px;color:#1e293b;">&#x1F4CB; Recepción y calidad</h2>
       <div style="font-size:12px;color:#64748b;margin-top:2px;">
-        OCs recibidas con faltante en últimos
-        <input type="number" id="discrep-dias" value="30" min="7" max="365" style="width:50px;padding:2px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px" onchange="cargarDiscrepancias()"> d&iacute;as &middot;
-        ranking proveedores por tasa de discrepancia
+        El ciclo completo de Catalina: lo recibido, lo que está en cuarentena (F01/F02), rechazos y discrepancias &middot; ventana
+        <input type="number" id="discrep-dias" value="30" min="7" max="365" style="width:50px;padding:2px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px" onchange="cargarDiscrepancias()"> d&iacute;as
       </div>
     </div>
     <button class="btn bp" onclick="cargarDiscrepancias()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
   </div>
 
   <div id="discrep-resumen" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;font-size:12px;color:#475569"></div>
+
+  <!-- Vista unificada · recepción + calidad (Catalina ve el ciclo completo) -->
+  <div class="kpis" id="ccr-kpis" style="margin-bottom:16px"></div>
+  <div class="cxt-wrap" id="ccr-pipeline-wrap" style="margin-bottom:16px;display:none">
+    <div style="padding:12px 16px;border-bottom:1px solid #ece9f6;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <span style="font-weight:800;font-size:13px;color:#1e1b2e">&#x1F9EA; En cuarentena &middot; pipeline de calidad</span>
+      <span style="font-size:11px;color:#78716c">recepci&oacute;n &rarr; F01 t&eacute;cnica &rarr; F02 an&aacute;lisis &rarr; liberaci&oacute;n (Laura trabaja el F01/F02 en Calidad)</span>
+    </div>
+    <div id="ccr-pipeline" style="overflow-x:auto"></div>
+  </div>
 
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
     <!-- Ranking proveedores -->
@@ -3131,8 +3140,8 @@ function renderPagos(){
   if(!list.length){ document.getElementById('pagos-wrap').innerHTML='<div class="empty">No hay pagos que coincidan</div>'; return; }
   var rows=list.map(function(p,i){
     var estChip=(p.estado==='Parcial')?'<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:10px;padding:2px 8px;font-weight:700">&#9680; Parcial</span>':'<span style="font-size:10px;background:#dcfce7;color:#15803d;border-radius:10px;padding:2px 8px;font-weight:700">&#10003; Pagada</span>';
-    var pend=(p.estado==='Parcial')?'<span style="color:#dc2626;font-weight:700">'+fmt(Math.max(0,p.saldo_pendiente||0))+'</span>':'<span style="color:#cbd5e1">&mdash;</span>';
-    var trx=p.numero_transaccion?('🏦 '+esc(p.numero_transaccion)):(p.numero_factura_proveedor?('fac '+esc(p.numero_factura_proveedor)):'<span style="color:#cbd5e1">&mdash;</span>');
+    var pend=(p.estado==='Parcial')?'<span style="color:#dc2626;font-weight:700">'+fmt(Math.max(0,p.saldo_pendiente||0))+'</span>':'<span style="color:#cbd5e1">-</span>';
+    var trx=p.numero_transaccion?('🏦 '+esc(p.numero_transaccion)):(p.numero_factura_proveedor?('fac '+esc(p.numero_factura_proveedor)):'<span style="color:#cbd5e1">-</span>');
     var imgBtn=p.tiene_comprobante?'<button class="btn bo bs" data-oc="'+esc(p.numero_oc)+'" onclick="verComprobante(this.dataset.oc)" title="Ver comprobante">📸</button>':'';
     var regenBtn=p.comprobante_id?'<button class="btn bs" style="background:#7c3aed;color:#fff;font-size:10px;padding:3px 7px;margin-left:3px" data-cid="'+p.comprobante_id+'" data-oc="'+esc(p.numero_oc)+'" onclick="regenerarCEInline(this.dataset.cid, this.dataset.oc)" title="Regenerar PDF CE">🔄</button>':'';
     var revBtn=(typeof ES_ADMIN!=='undefined' && ES_ADMIN)?'<button class="btn bs" style="background:#dc2626;color:#fff;font-size:10px;padding:3px 7px;margin-left:3px" data-oc="'+esc(p.numero_oc)+'" onclick="revertirPagoOC(this.dataset.oc)" title="Revertir pago">↩️</button>':'';
@@ -8991,6 +9000,8 @@ async function cargarDiscrepancias(){
       if(n > 0){ badge.style.display = 'inline-block'; badge.textContent = n; }
       else { badge.style.display = 'none'; }
     }
+    // Vista unificada recepción + calidad (KPIs + pipeline de cuarentena)
+    cargarReceptionUnificada(d, dias);
     // Ranking proveedores
     var rk = d.ranking_proveedores || [];
     if(!rk.length){
@@ -9057,6 +9068,52 @@ async function cargarDiscrepancias(){
   }catch(e){
     div.innerHTML = '<div style="color:#dc2626;padding:20px">Error red: ' + e.message + '</div>';
   }
+}
+
+// Vista unificada recepción + calidad · Catalina ve el ciclo completo (cuarentena → F01 → F02 → liberación)
+async function cargarReceptionUnificada(discrepData, dias){
+  var kb = document.getElementById('ccr-kpis');
+  var pw = document.getElementById('ccr-pipeline-wrap');
+  var pp = document.getElementById('ccr-pipeline');
+  function _esc(s){ if(s==null) return ''; return String(s).replace(/[&<>"\']/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  var recibidas = 0;
+  (discrepData.ranking_proveedores||[]).forEach(function(p){ recibidas += (p.total_recibidas||0); });
+  var conDiscrep = discrepData.total_ocs_con_discrepancia || 0;
+  var lotes = [], ncAbiertas = 0;
+  try{ var pr = await fetch('/api/calidad/recepcion-pipeline'); if(pr.ok){ var pd = await pr.json(); lotes = (pd&&pd.lotes)||[]; } }catch(e){}
+  try{ var nr = await fetch('/api/calidad/no-conformidades'); if(nr.ok){ var nd = await nr.json(); (nd||[]).forEach(function(x){ if((x.estado==='Abierta') && (/rechaz/i.test(x.tipo||'') || /recep/i.test(x.area||''))) ncAbiertas++; }); } }catch(e){}
+  var enCuar = lotes.length;
+  var faltaF01 = lotes.filter(function(l){ return !l.f01_resultado; }).length;
+  var porLiberar = lotes.filter(function(l){ if(l.tipo==='MEE') return l.f01_resultado!=='conforme'; return l.f01_resultado==='conforme' && !l.f02_resultado; }).length;
+  if(kb){
+    kb.innerHTML = '<div class="kpi"><div class="kpi-l">Recibidas ('+dias+'d)</div><div class="kpi-v">'+recibidas+'</div></div>'
+      + '<div class="kpi"><div class="kpi-l">Con discrepancia</div><div class="kpi-v '+(conDiscrep>0?'r':'')+'">'+conDiscrep+'</div></div>'
+      + '<div class="kpi"><div class="kpi-l">En cuarentena</div><div class="kpi-v" style="color:#6d28d9">'+enCuar+'</div></div>'
+      + '<div class="kpi"><div class="kpi-l">Falta F01</div><div class="kpi-v '+(faltaF01>0?'w':'')+'">'+faltaF01+'</div></div>'
+      + '<div class="kpi"><div class="kpi-l">Por liberar</div><div class="kpi-v '+(porLiberar>0?'w':'')+'">'+porLiberar+'</div></div>'
+      + '<div class="kpi"><div class="kpi-l">Rechazos / NC</div><div class="kpi-v '+(ncAbiertas>0?'r':'')+'">'+ncAbiertas+'</div></div>';
+  }
+  if(!enCuar){ if(pw) pw.style.display='none'; return; }
+  if(pw) pw.style.display='';
+  var h = '<table class="cxt" style="font-size:12px"><thead><tr><th>Insumo / Lote</th><th>Cantidad</th><th>Proveedor</th><th>OC</th><th style="text-align:center">F01 t&eacute;cnica</th><th style="text-align:center">F02 an&aacute;lisis</th></tr></thead><tbody>';
+  lotes.forEach(function(l){
+    var esMEE = l.tipo==='MEE';
+    var f01 = l.f01_resultado||'';
+    var f01c = f01==='conforme'?'<span class="cxt-chip ok">&#10003; Conforme</span>':(f01==='no_conforme'?'<span class="cxt-chip no">&#10007; No conforme</span>':'<span class="cxt-chip wait">Pendiente</span>');
+    var f02c;
+    if(esMEE){ f02c = (f01==='conforme')?'<span class="cxt-chip ok">&#10003; Liberado (F01)</span>':'<span class="cxt-chip mute">n/a envase</span>'; }
+    else { var f02=l.f02_resultado||''; f02c = f02==='aprobado'?'<span class="cxt-chip ok">&#10003; Aprobado</span>':(f02==='no_aprobado'?'<span class="cxt-chip no">&#10007; No aprobado</span>':(f02==='cuarentena'?'<span class="cxt-chip wait">Cuarentena</span>':(f01==='conforme'?'<span class="cxt-chip wait">Pendiente</span>':'<span class="cxt-chip mute">requiere F01</span>'))); }
+    var badge = esMEE?'<span class="cxt-chip info" style="font-size:9px;padding:1px 6px">ENVASE</span> ':'<span class="cxt-chip mute" style="font-size:9px;padding:1px 6px">MP</span> ';
+    h += '<tr><td>'+badge+'<b style="color:#292524">'+_esc(l.nombre)+'</b><div style="font-size:10px;color:#a1a1aa;font-family:ui-monospace">'+_esc(l.lote||'sin lote')+'</div></td>'
+      + '<td class="cxt-mono">'+_esc(String(l.cantidad))+(esMEE?' und':' g')+'</td>'
+      + '<td>'+_esc(l.proveedor||'-')+'</td>'
+      + '<td class="cxt-mono" style="color:#78716c">'+_esc(l.numero_oc||'-')+'</td>'
+      + '<td style="text-align:center">'+f01c+'</td>'
+      + '<td style="text-align:center">'+f02c+'</td></tr>';
+  });
+  h += '</tbody></table>';
+  h += '<div class="cxt-hint">&#128161; Catalina ve el estado; Laura hace el F01/F02 en el m&oacute;dulo de Calidad. Un lote rechazado genera una No Conformidad (devoluci&oacute;n al proveedor).</div>';
+  if(pp) pp.innerHTML = h;
 }
 
 
