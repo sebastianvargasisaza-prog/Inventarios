@@ -29,7 +29,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:18px;}
 .kpi{background:#fff;border:1px solid #e7e5e4;border-radius:8px;padding:14px;}
 .kpi-l{font-size:10px;color:#78716c;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;}
-.kpi-v{font-size:22px;font-weight:800;color:#292524;}
+.kpi-v{font-size:22px;font-weight:800;color:inherit;}
 .kpi-v.w{color:#d97706;} .kpi-v.r{color:#dc2626;} .kpi-v.g{color:#16a34a;}
 .kpi-s{font-size:11px;color:#78716c;margin-top:2px;}
 /* Cards */
@@ -3075,12 +3075,15 @@ function renderPagos(){
   var vPend=list.reduce(function(s,p){ return s+((p.estado==='Parcial')?Math.max(0,parseFloat(p.saldo_pendiente||0)):0); },0);
   var saldoFav=window.PAGOS_SALDO_FAVOR||0;
   var K=window.PAGOS_KPIS||{}; var kMes=K.mes_actual||{}, kAnio=K.anio_actual||{};
+  // FIX contraste (Sebastián 17-jul): el CSS .kpi-v fija color:#292524 (oscuro) → en tarjetas de fondo
+  // oscuro el número no se leía. Se fuerza el valor a BLANCO inline (gana a la clase) + paleta legible.
+  var _kv='color:#fff';  // valor siempre blanco en estas tarjetas oscuras
   var kpiHTML=''
-    +'<div class="kpi" style="background:#0c4a6e;color:#fff"><div class="kpi-l" style="color:#7dd3fc">Pagado (filtrado)</div><div class="kpi-v">'+fmt(vTotal)+'</div><div style="font-size:11px;color:#bae6fd">'+list.length+' OCs</div></div>'
-    +'<div class="kpi" style="background:#7c2d12;color:#fff"><div class="kpi-l" style="color:#fdba74">Pendiente (parciales)</div><div class="kpi-v">'+fmt(vPend)+'</div><div style="font-size:11px;color:#fed7aa">lo que a&uacute;n se debe</div></div>'
-    +'<div class="kpi" onclick="togglePagosSaldos()" style="background:linear-gradient(135deg,#065f46,#16a34a);color:#fff;cursor:pointer" title="Ver/registrar saldos a favor"><div class="kpi-l" style="color:#bbf7d0">&#x1F4B3; Saldo a favor</div><div class="kpi-v">'+fmt(saldoFav)+'</div><div style="font-size:11px;color:#bbf7d0">click para ver &#9662;</div></div>'
-    +'<div class="kpi" style="background:#14532d;color:#fff"><div class="kpi-l" style="color:#86efac">Mes ('+(kMes.mes||'')+')</div><div class="kpi-v">'+fmt(kMes.total||0)+'</div><div style="font-size:11px;color:#bbf7d0">'+(kMes.n_ocs||0)+' OCs</div></div>'
-    +'<div class="kpi" style="background:#1e1b4b;color:#fff"><div class="kpi-l" style="color:#a78bfa">A&ntilde;o ('+(kAnio.anio||'')+')</div><div class="kpi-v">'+fmt(kAnio.total||0)+'</div><div style="font-size:11px;color:#c4b5fd">'+(kAnio.n_ocs||0)+' OCs</div></div>';
+    +'<div class="kpi" style="background:#0f2a43;color:#fff"><div class="kpi-l" style="color:#93c5fd">Pagado (filtrado)</div><div class="kpi-v" style="'+_kv+'">'+fmt(vTotal)+'</div><div style="font-size:11px;color:#bae6fd">'+list.length+' OCs</div></div>'
+    +'<div class="kpi" style="background:#7c2d12;color:#fff"><div class="kpi-l" style="color:#fdba74">Pendiente (parciales)</div><div class="kpi-v" style="'+_kv+'">'+fmt(vPend)+'</div><div style="font-size:11px;color:#fed7aa">lo que a&uacute;n se debe</div></div>'
+    +'<div class="kpi" onclick="togglePagosSaldos()" style="background:linear-gradient(135deg,#047857,#10b981);color:#fff;cursor:pointer" title="Ver/registrar saldos a favor"><div class="kpi-l" style="color:#d1fae5">&#x1F4B3; Saldo a favor</div><div class="kpi-v" style="'+_kv+'">'+fmt(saldoFav)+'</div><div style="font-size:11px;color:#d1fae5">click para ver &#9662;</div></div>'
+    +'<div class="kpi" style="background:#134e4a;color:#fff"><div class="kpi-l" style="color:#5eead4">Mes ('+(kMes.mes||'')+')</div><div class="kpi-v" style="'+_kv+'">'+fmt(kMes.total||0)+'</div><div style="font-size:11px;color:#99f6e4">'+(kMes.n_ocs||0)+' OCs</div></div>'
+    +'<div class="kpi" style="background:#3730a3;color:#fff"><div class="kpi-l" style="color:#c7d2fe">A&ntilde;o ('+(kAnio.anio||'')+')</div><div class="kpi-v" style="'+_kv+'">'+fmt(kAnio.total||0)+'</div><div style="font-size:11px;color:#c7d2fe">'+(kAnio.n_ocs||0)+' OCs</div></div>';
   document.getElementById('pagos-kpis').innerHTML=kpiHTML;
   var bar=document.getElementById('pagos-bar-extra');
   if(bar){ bar.innerHTML='<div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button onclick="descargarPagosExcel()" class="btn" style="background:#059669;color:#fff;font-size:12px;padding:6px 14px;border:0;border-radius:5px;font-weight:700;cursor:pointer">📊 Descargar Excel</button></div>'; }

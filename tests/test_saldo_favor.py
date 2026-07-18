@@ -127,6 +127,21 @@ def test_numero_transaccion_anclado_a_oc(app, db_clean):
     assert d["pagos"] and d["pagos"][0].get("numero_transaccion") == "TRX-998877", d["pagos"]
 
 
+def test_registro_pagos_excluye_influencers(app, db_clean):
+    # Compras (Catalina) NO debe ver pagos a influencers · van en Tesorería/Marketing
+    _oc("OC-NORM-1", "ProvNormal", 10000, "Pagada")
+    _exec("INSERT INTO ordenes_compra (numero_oc, proveedor, valor_total, estado, categoria, fecha) "
+          "VALUES ('OC-INFLU-1', 'Influencer X', 20000, 'Pagada', 'Influencer/Marketing Digital', date('now'))")
+    # ambas con un pago para que aparezcan (estado Pagada)
+    _exec("INSERT INTO pagos_oc (numero_oc, monto, medio, fecha_pago) VALUES ('OC-NORM-1', 10000, 'Transferencia', date('now'))")
+    _exec("INSERT INTO pagos_oc (numero_oc, monto, medio, fecha_pago) VALUES ('OC-INFLU-1', 20000, 'Transferencia', date('now'))")
+    c = _login(app)
+    d = c.get("/api/compras/pagos").get_json()
+    ocs = [(p.get("numero_oc") or "") for p in d.get("pagos", [])]
+    assert "OC-NORM-1" in ocs, "la OC normal de compras SÍ aparece"
+    assert "OC-INFLU-1" not in ocs, "la OC de influencer NO debe aparecer en Compras"
+
+
 def test_compras_ui_saldofavor_render(app, db_clean):
     c = _login(app)
     body = c.get('/compras').get_data(as_text=True)

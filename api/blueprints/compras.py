@@ -8267,6 +8267,12 @@ def get_pagos():
                (SELECT COUNT(*) FROM pagos_oc WHERE numero_oc=oc.numero_oc) as n_abonos
         FROM ordenes_compra oc
         WHERE oc.estado IN ('Pagada','Parcial')
+          -- Catalina 17-jul · los pagos a INFLUENCERS NO van en Compras (van en Tesorería/Marketing ·
+          -- Gerencia›Influencers los muestra · admin). El Registro de Pagos es la contabilidad de COMPRAS.
+          AND COALESCE(oc.categoria,'') NOT IN ('Influencer/Marketing Digital','Cuenta de Cobro')
+          AND NOT EXISTS(SELECT 1 FROM pagos_influencers pi WHERE pi.numero_oc=oc.numero_oc)
+          AND NOT EXISTS(SELECT 1 FROM solicitudes_compra sc
+                         WHERE sc.numero_oc=oc.numero_oc AND sc.influencer_id IS NOT NULL)
         ORDER BY oc.fecha_pago DESC
         LIMIT 500
     """)
@@ -8366,11 +8372,16 @@ def pagos_kpis():
     hoy = datetime.now()
     mes_actual = hoy.strftime('%Y-%m')
     anio_actual = hoy.strftime('%Y')
+    # Catalina 17-jul · excluir INFLUENCERS de la contabilidad de Compras (van en Tesorería/Marketing) ·
+    # los totales del tab Pagos deben cuadrar con la lista (que también los excluye).
+    _NO_INFLU = (" AND COALESCE(oc.categoria,'') NOT IN ('Influencer/Marketing Digital','Cuenta de Cobro') "
+                 " AND NOT EXISTS(SELECT 1 FROM pagos_influencers pi WHERE pi.numero_oc=oc.numero_oc) "
+                 " AND NOT EXISTS(SELECT 1 FROM solicitudes_compra sc WHERE sc.numero_oc=oc.numero_oc AND sc.influencer_id IS NOT NULL) ")
     # Total mes actual
     cur.execute(
         "SELECT COUNT(DISTINCT oc.numero_oc), COALESCE(SUM(po.monto),0) "
         "FROM pagos_oc po JOIN ordenes_compra oc ON po.numero_oc=oc.numero_oc "
-        "WHERE substr(po.fecha_pago, 1, 7) = ?",
+        "WHERE substr(po.fecha_pago, 1, 7) = ?" + _NO_INFLU,
         (mes_actual,),
     )
     r_mes = cur.fetchone()
@@ -8378,15 +8389,15 @@ def pagos_kpis():
     cur.execute(
         "SELECT COUNT(DISTINCT oc.numero_oc), COALESCE(SUM(po.monto),0) "
         "FROM pagos_oc po JOIN ordenes_compra oc ON po.numero_oc=oc.numero_oc "
-        "WHERE substr(po.fecha_pago, 1, 4) = ?",
+        "WHERE substr(po.fecha_pago, 1, 4) = ?" + _NO_INFLU,
         (anio_actual,),
     )
     r_anio = cur.fetchone()
-    # Breakdown por medio (año actual)
+    # Breakdown por medio (año actual) · también sin influencers (JOIN para el filtro)
     cur.execute(
         "SELECT COALESCE(po.medio,'(sin medio)'), COUNT(*), COALESCE(SUM(po.monto),0) "
-        "FROM pagos_oc po "
-        "WHERE substr(po.fecha_pago, 1, 4) = ? "
+        "FROM pagos_oc po JOIN ordenes_compra oc ON po.numero_oc=oc.numero_oc "
+        "WHERE substr(po.fecha_pago, 1, 4) = ?" + _NO_INFLU +
         "GROUP BY COALESCE(po.medio,'(sin medio)') "
         "ORDER BY SUM(po.monto) DESC",
         (anio_actual,),
