@@ -976,10 +976,13 @@ function showSubPlanta(w){
     <div>
       <h2 style="margin:0;font-size:18px;color:#1e293b;">&#x1F4AC; Rondas de cotizaciones</h2>
       <div style="font-size:12px;color:#64748b;margin-top:2px;">
-        Compar&aacute; precios de hasta 3 proveedores lado a lado &middot; eleg&iacute; ganadora &middot; gener&aacute; OC autom&aacute;ticamente.
+        Compar&aacute; precios de varios proveedores lado a lado &middot; eleg&iacute; ganadora &middot; gener&aacute; OC autom&aacute;ticamente. Sirve para cualquier cosa, incluso algo que <b>nunca hemos comprado</b>.
       </div>
     </div>
-    <button class="btn bp" onclick="cargarCotizaciones()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="cxt-btnp" onclick="nuevaRondaCotizModal()" style="padding:9px 16px;font-size:13px">&#10133; Nueva cotizaci&oacute;n</button>
+      <button class="btn bp" onclick="cargarCotizaciones()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
+    </div>
   </div>
   <div id="cotiz-resumen" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;font-size:12px;color:#475569"></div>
   <div id="cotiz-contenido" style="background:white;border:1px solid #e2e8f0;border-radius:10px;overflow-x:auto">
@@ -9249,6 +9252,59 @@ async function _mailboxCompletar(pagoId, valorOC, numeroOC){
 
 // ════════ COT COMPARADOR · Sebastián 23-may-2026 PM ════════
 // Backend ya tenía 6 endpoints (mig 29, compras.py:10168+). UI nueva.
+// ── Nueva ronda de cotización desde el tab (cualquier ítem, incl. no comprados antes) ──
+function _cotOvClose(){ var o=document.getElementById('cot-new-ov'); if(o) o.remove(); }
+function _cotProvOptions(){ return (window.PROVS||[]).map(function(p){ return '<option value="'+esc(p.nombre)+'">'; }).join(''); }
+function _cotProvRow(){
+  return '<div class="cot-prow" style="display:flex;gap:8px;margin-bottom:8px">'
+    +'<input list="cot-prov-list" class="cot-prov" placeholder="Proveedor (elegí o escribí uno nuevo)" style="flex:2;padding:8px 11px;border:1px solid #d6d3d1;border-radius:8px;font-size:13px">'
+    +'<input class="cot-cond" placeholder="Condiciones (opc)" style="flex:1;padding:8px 11px;border:1px solid #d6d3d1;border-radius:8px;font-size:13px">'
+    +'<button onclick="this.parentNode.remove()" title="quitar" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:8px;width:36px;cursor:pointer;font-weight:700">&times;</button>'
+    +'</div>';
+}
+function _cotAddProvRow(){ var box=document.getElementById('cot-prov-rows'); if(box) box.insertAdjacentHTML('beforeend', _cotProvRow()); }
+function nuevaRondaCotizModal(){
+  _cotOvClose();
+  var ov=document.createElement('div'); ov.id='cot-new-ov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(20,18,40,.55);z-index:99999;display:flex;align-items:flex-start;justify-content:center;padding:28px;overflow:auto';
+  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:600px;width:100%;box-shadow:0 30px 80px -24px rgba(24,24,45,.55);overflow:hidden">'
+    +'<div style="background:linear-gradient(120deg,#f5f3ff,#faf5ff,#fff);border-bottom:1px solid #ece9f6;padding:18px 22px;display:flex;justify-content:space-between;align-items:center">'
+    +'<div><div style="font-size:16px;font-weight:800;color:#1e1b2e">&#128172; Nueva ronda de cotizaci&oacute;n</div><div style="font-size:11px;color:#8b8b9e;margin-top:1px">Ped&iacute; precio a varios proveedores y compar&aacute;</div></div>'
+    +'<button onclick="_cotOvClose()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#a1a1b0">&times;</button></div>'
+    +'<div style="padding:20px 22px">'
+    +'<label style="font-size:11px;color:#78788a;font-weight:600;text-transform:uppercase;display:block;margin-bottom:4px">&iquest;Qu&eacute; se va a cotizar?</label>'
+    +'<textarea id="cot-desc" rows="2" placeholder="Ej: 500 uds de frasco ambar 30ml con gotero, o cualquier material/servicio nuevo" style="width:100%;padding:9px 11px;border:1px solid #d6d3d1;border-radius:9px;font-size:13px;box-sizing:border-box;resize:vertical"></textarea>'
+    +'<div style="font-size:11px;color:#a1a1aa;margin:3px 0 14px">Texto libre, funciona para cosas que nunca hemos comprado. S&eacute; espec&iacute;fico (cantidad, medida, calidad).</div>'
+    +'<label style="font-size:11px;color:#78788a;font-weight:600;text-transform:uppercase;display:block;margin-bottom:6px">Proveedores a cotizar (m&iacute;nimo 2)</label>'
+    +'<datalist id="cot-prov-list">'+_cotProvOptions()+'</datalist>'
+    +'<div id="cot-prov-rows">'+_cotProvRow()+_cotProvRow()+'</div>'
+    +'<button onclick="_cotAddProvRow()" style="background:#f5f3ff;color:#6d28d9;border:1px dashed #ddd6fe;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:14px">&#10133; Agregar proveedor</button>'
+    +'<div id="cot-new-msg" style="font-size:12px;margin-bottom:8px"></div>'
+    +'<button onclick="crearRondaCotiz()" style="width:100%;padding:11px;background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;border:none;border-radius:11px;font-weight:800;font-size:14px;cursor:pointer">Crear ronda y comparar</button>'
+    +'</div></div>';
+  ov.addEventListener('click',function(e){ if(e.target===ov) _cotOvClose(); });
+  document.body.appendChild(ov);
+}
+async function crearRondaCotiz(){
+  var desc=((document.getElementById('cot-desc')||{}).value||'').trim();
+  var msg=document.getElementById('cot-new-msg');
+  if(desc.length<3){ if(msg) msg.innerHTML='<span style="color:#dc2626">Escrib&iacute; qu&eacute; se va a cotizar.</span>'; return; }
+  var provs=[];
+  document.querySelectorAll('#cot-prov-rows .cot-prow').forEach(function(row){
+    var n=((row.querySelector('.cot-prov')||{}).value||'').trim();
+    var cc=((row.querySelector('.cot-cond')||{}).value||'').trim();
+    if(n) provs.push({nombre:n, condiciones:cc});
+  });
+  if(provs.length<2){ if(msg) msg.innerHTML='<span style="color:#dc2626">M&iacute;nimo 2 proveedores para comparar.</span>'; return; }
+  try{
+    var r=await fetch('/api/compras/cotizaciones/rondas', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':window._csrfTok||''}, body:JSON.stringify({descripcion:desc, proveedores:provs})});
+    var d=await r.json();
+    if(!r.ok || d.error){ if(msg) msg.innerHTML='<span style="color:#dc2626">'+esc(d.error||('Error '+r.status))+'</span>'; return; }
+    _cotOvClose(); cargarCotizaciones();
+    if(d.ronda_id) setTimeout(function(){ abrirCotizDrawer(d.ronda_id); }, 200);
+  }catch(e){ if(msg) msg.innerHTML='<span style="color:#dc2626">Error red: '+esc(e.message)+'</span>'; }
+}
+
 async function cargarCotizaciones(){
   var div = document.getElementById('cotiz-contenido');
   var resumen = document.getElementById('cotiz-resumen');
@@ -9350,44 +9406,66 @@ async function abrirCotizDrawer(rondaId){
       html += '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">';
       if(!cerrada){
         if(!c.valor_total){
-          html += '<button onclick="cotRegistrarRespuesta('+c.id+',\\''+_esc((c.proveedor||'').replace(/\\x27/g,"\\\\\\x27"))+'\\')" style="background:#0891b2;color:#fff;border:none;padding:5px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">✏️ Registrar respuesta</button>';
+          html += '<button onclick="cotRegistrarRespuesta('+c.id+')" style="background:#0891b2;color:#fff;border:none;padding:5px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">✏️ Registrar respuesta</button>';
         } else if(!esGanadora){
-          html += '<button onclick="cotElegirGanadora('+c.id+','+rondaId+',\\''+_esc((c.proveedor||'').replace(/\\x27/g,"\\\\\\x27"))+'\\')" style="background:#16a34a;color:#fff;border:none;padding:5px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">🏆 Elegir ganadora</button>';
+          html += '<button onclick="cotElegirGanadora('+c.id+')" style="background:#16a34a;color:#fff;border:none;padding:5px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">🏆 Elegir ganadora</button>';
         }
       }
       html += '</div>';
       html += '</div>';
     });
     html += '</div>';
+    window._COT_CURRENT = {rondaId: rondaId, cots: cots};
     document.getElementById('cot-drawer-body').innerHTML = html;
   } catch(e){
     document.getElementById('cot-drawer-body').innerHTML = '<div style="color:#dc2626">Error red: '+e.message+'</div>';
   }
 }
-async function cotRegistrarRespuesta(cotId, proveedor){
-  var precio = prompt('Precio total cotizado por '+proveedor+':\\n(valor numérico · solo COP)');
-  if(!precio || isNaN(parseFloat(precio))) return;
-  var dias = prompt('Tiempo de entrega en días (default 15):', '15');
-  if(!dias || isNaN(parseInt(dias,10))) dias = '15';
-  var cond = prompt('Condiciones (forma de pago, MOQ, etc.) · puede ser vacío:', '');
-  try{
-    var r = await fetch('/api/compras/cotizaciones/'+cotId, {
-      method:'PATCH',
-      headers:{'Content-Type':'application/json','X-CSRF-Token':window._csrfTok||''},
-      body: JSON.stringify({valor_total:parseFloat(precio), tiempo_entrega_dias:parseInt(dias,10), condiciones:cond}),
-    });
-    var d = await r.json();
-    if(!r.ok || d.error){ alert('Error: '+(d.error||r.status)); return; }
-    var dr = document.getElementById('cotiz-drawer');
-    if(dr) dr.remove();
-    cargarCotizaciones();
-    // Re-abrir drawer mismo · necesita rondaId
-    var rondaIdMatch = (d.ronda_id || d.cotizacion?.ronda_id);
-    if(rondaIdMatch) setTimeout(function(){ abrirCotizDrawer(rondaIdMatch); }, 200);
-  } catch(e){ alert('Error red: '+e.message); }
+function _cotLookup(cotId){
+  var st=window._COT_CURRENT||{}; var c=((st.cots)||[]).filter(function(x){ return String(x.id)===String(cotId); })[0]||{};
+  return {ronda:st.rondaId, prov:(c.proveedor||''), desc:(c.descripcion||'')};
 }
-async function cotElegirGanadora(cotId, rondaId, proveedor){
-  if(!confirm('¿Elegir a '+proveedor+' como ganadora?\\n\\nEsto:\\n· marca esta cotización como ganadora\\n· cierra las otras\\n· genera OC automática\\n· cierra la ronda')) return;
+function cotRegistrarRespuesta(cotId){
+  var info=_cotLookup(cotId);
+  _cotOvClose();
+  var ov=document.createElement('div'); ov.id='cot-new-ov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(20,18,40,.55);z-index:100000;display:flex;align-items:flex-start;justify-content:center;padding:28px;overflow:auto';
+  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:460px;width:100%;box-shadow:0 30px 80px -24px rgba(24,24,45,.55);overflow:hidden">'
+    +'<div style="background:linear-gradient(120deg,#ecfeff,#f5f3ff,#fff);border-bottom:1px solid #ece9f6;padding:16px 20px;display:flex;justify-content:space-between;align-items:center">'
+    +'<div><div style="font-size:15px;font-weight:800;color:#1e1b2e">&#9997;&#65039; Respuesta de '+esc(info.prov||'proveedor')+'</div><div style="font-size:11px;color:#8b8b9e">'+esc((info.desc||'').slice(0,60))+'</div></div>'
+    +'<button onclick="_cotOvClose()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#a1a1b0">&times;</button></div>'
+    +'<div style="padding:18px 20px">'
+    +'<label style="font-size:11px;color:#78788a;font-weight:600;text-transform:uppercase;display:block;margin-bottom:3px">Precio total cotizado (COP)</label>'
+    +'<input id="cotr-precio" type="number" min="0" step="0.01" placeholder="0" style="width:100%;padding:9px 11px;border:1px solid #d6d3d1;border-radius:9px;font-size:14px;box-sizing:border-box;font-weight:700">'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">'
+    +'<div><label style="font-size:11px;color:#78788a;font-weight:600;text-transform:uppercase;display:block;margin-bottom:3px">Entrega (d&iacute;as)</label><input id="cotr-dias" type="number" min="0" value="15" style="width:100%;padding:9px 11px;border:1px solid #d6d3d1;border-radius:9px;font-size:13px;box-sizing:border-box"></div>'
+    +'<div><label style="font-size:11px;color:#78788a;font-weight:600;text-transform:uppercase;display:block;margin-bottom:3px">Condiciones</label><input id="cotr-cond" placeholder="pago, MOQ (opc)" style="width:100%;padding:9px 11px;border:1px solid #d6d3d1;border-radius:9px;font-size:13px;box-sizing:border-box"></div>'
+    +'</div>'
+    +'<div id="cotr-msg" style="font-size:12px;margin-top:10px"></div>'
+    +'<button onclick="cotGuardarRespuesta('+cotId+')" style="width:100%;margin-top:12px;padding:11px;background:linear-gradient(135deg,#22d3ee,#0891b2);color:#fff;border:none;border-radius:11px;font-weight:800;font-size:14px;cursor:pointer">Guardar respuesta</button>'
+    +'</div></div>';
+  ov.addEventListener('click',function(e){ if(e.target===ov) _cotOvClose(); });
+  document.body.appendChild(ov);
+  setTimeout(function(){ var el=document.getElementById('cotr-precio'); if(el) el.focus(); }, 50);
+}
+async function cotGuardarRespuesta(cotId){
+  var info=_cotLookup(cotId);
+  var precio=parseFloat((document.getElementById('cotr-precio')||{}).value||'');
+  var msg=document.getElementById('cotr-msg');
+  if(!precio || isNaN(precio) || precio<=0){ if(msg) msg.innerHTML='<span style="color:#dc2626">Pon&eacute; un precio v&aacute;lido.</span>'; return; }
+  var dias=parseInt((document.getElementById('cotr-dias')||{}).value||'15',10); if(isNaN(dias)) dias=15;
+  var cond=((document.getElementById('cotr-cond')||{}).value||'').trim();
+  try{
+    var r=await fetch('/api/compras/cotizaciones/'+cotId, {method:'PATCH', headers:{'Content-Type':'application/json','X-CSRF-Token':window._csrfTok||''}, body:JSON.stringify({valor_total:precio, tiempo_entrega_dias:dias, condiciones:cond})});
+    var d=await r.json();
+    if(!r.ok || d.error){ if(msg) msg.innerHTML='<span style="color:#dc2626">'+esc(d.error||('Error '+r.status))+'</span>'; return; }
+    _cotOvClose(); cargarCotizaciones();
+    if(info.ronda) setTimeout(function(){ abrirCotizDrawer(info.ronda); }, 200);
+  }catch(e){ if(msg) msg.innerHTML='<span style="color:#dc2626">Error red: '+esc(e.message)+'</span>'; }
+}
+async function cotElegirGanadora(cotId){
+  var info=_cotLookup(cotId);
+  if(!confirm('¿Elegir a '+(info.prov||'este proveedor')+' como ganadora?\\n\\nEsto marca la cotización ganadora, cierra las otras, genera la OC automática y cierra la ronda.')) return;
   try{
     var r = await fetch('/api/compras/cotizaciones/'+cotId+'/elegir-ganadora', {
       method:'POST',
