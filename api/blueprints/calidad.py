@@ -1465,29 +1465,46 @@ def _e(v):
 
 
 def _rc_doc_css():
-    return ("<style>@page{size:letter;margin:14mm}*{box-sizing:border-box}"
-            "body{font-family:'Segoe UI',Arial,sans-serif;color:#1e293b;font-size:12px;margin:0;padding:8px}"
-            ".hd{display:flex;justify-content:space-between;align-items:flex-start;border:1.5px solid #334155;padding:8px 12px;margin-bottom:10px}"
-            ".hd .t{font-size:15px;font-weight:800;color:#0f172a}.hd .s{font-size:10px;color:#64748b}"
-            ".hd .cod{text-align:right;font-size:10px;color:#334155;border-left:1px solid #cbd5e1;padding-left:10px}"
-            ".grid{display:grid;grid-template-columns:1fr 1fr;gap:2px 14px;margin:8px 0}"
-            ".fld{border-bottom:1px solid #e2e8f0;padding:4px 2px;display:flex;gap:6px}"
-            ".fld .k{color:#64748b;min-width:120px;font-size:10px;text-transform:uppercase;letter-spacing:.03em}"
-            ".fld .v{font-weight:600}"
-            "table{width:100%;border-collapse:collapse;margin:8px 0;font-size:11px}"
-            "th,td{border:1px solid #cbd5e1;padding:5px 7px;text-align:left}th{background:#f1f5f9;font-size:10px;text-transform:uppercase}"
-            ".res{margin:10px 0;padding:8px 12px;border:2px solid #334155;border-radius:6px;font-size:13px;font-weight:800}"
-            ".res.ok{border-color:#16a34a;color:#15803d;background:#f0fdf4}.res.no{border-color:#dc2626;color:#b91c1c;background:#fef2f2}"
-            ".firmas{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:26px}"
-            ".firma{border-top:1px solid #334155;padding-top:4px;font-size:10px;color:#475569}.firma b{display:block;color:#0f172a;font-size:12px}"
-            ".noimp{margin:14px 0;text-align:center}.noimp button{padding:8px 18px;font-size:13px;cursor:pointer;border:1px solid #7c3aed;background:#7c3aed;color:#fff;border-radius:6px}"
-            "@media print{.noimp{display:none}}</style>")
+    return ("<style>@page{size:letter;margin:15mm}*{box-sizing:border-box}"
+            "body{font-family:'Inter','Segoe UI',Arial,sans-serif;color:#1e1b2e;font-size:12px;margin:0;padding:10px;"
+            "-webkit-print-color-adjust:exact;print-color-adjust:exact}"
+            ".hd{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;margin-bottom:16px;"
+            "background:linear-gradient(120deg,#f5f3ff 0%,#faf5ff 55%,#fff 100%);border:1px solid #ece9f6;border-radius:14px;"
+            "border-left:5px solid #6d28d9}"
+            ".hd .lg{display:flex;align-items:center;gap:13px}"
+            ".hd .ic{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;"
+            "display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800}"
+            ".hd .t{font-size:16px;font-weight:800;color:#1e1b2e;letter-spacing:-.01em}"
+            ".hd .s{font-size:10px;color:#8b8b9e;margin-top:2px;letter-spacing:.02em}"
+            ".hd .cod{text-align:right;font-size:10px;color:#6d28d9;font-weight:700;letter-spacing:.03em}"
+            ".hd .cod small{display:block;color:#a1a1b0;font-weight:500;margin-top:2px}"
+            ".grid{display:grid;grid-template-columns:1fr 1fr;gap:0 22px;margin:10px 0}"
+            ".fld{border-bottom:1px solid #f1f0f7;padding:7px 2px;display:flex;gap:8px;align-items:baseline}"
+            ".fld .k{color:#8b8b9e;min-width:130px;font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;font-weight:600}"
+            ".fld .v{font-weight:600;color:#1e1b2e}"
+            "table{width:100%;border-collapse:separate;border-spacing:0;margin:10px 0;font-size:11px;border:1px solid #e4e2ee;border-radius:10px;overflow:hidden}"
+            "th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #f1f0f7}"
+            "th{background:#f7f6fb;font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;color:#78788a;font-weight:700}"
+            "tbody tr:last-child td{border-bottom:none}tbody tr:nth-child(even){background:#fbfbfd}"
+            ".res{margin:14px 0;padding:11px 16px;border-radius:11px;font-size:13.5px;font-weight:800;letter-spacing:.01em;"
+            "color:#b45309;background:#fffbeb;border:1.5px solid #fde68a}"
+            ".res.ok{color:#15803d;background:#f0fdf4;border-color:#bbf7d0}"
+            ".res.no{color:#b91c1c;background:#fef2f2;border-color:#fecaca}"
+            ".firmas{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:34px}"
+            ".firma{border-top:1.5px solid #1e1b2e;padding-top:6px;font-size:10px;color:#78788a}"
+            ".firma b{display:block;color:#1e1b2e;font-size:12.5px;margin-bottom:1px}"
+            ".noimp{margin:18px 0;text-align:center}.noimp button{padding:10px 22px;font-size:13px;font-weight:700;cursor:pointer;"
+            "border:none;background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;border-radius:11px;"
+            "box-shadow:0 8px 20px -6px rgba(109,40,217,.5)}"
+            "@media print{.noimp{display:none}body{padding:0}}</style>")
 
 
 def _rc_head(titulo, codigo, extra=''):
-    return (f"<div class='hd'><div><div class='t'>{_e(titulo)}</div>"
-            f"<div class='s'>Espagiria Laboratorio · Control de Calidad{(' · ' + _e(extra)) if extra else ''}</div></div>"
-            f"<div class='cod'>{_e(codigo)}<br>Versión 01</div></div>")
+    ic = '\U0001F9EA'
+    return (f"<div class='hd'><div class='lg'><div class='ic'>{ic}</div>"
+            f"<div><div class='t'>{_e(titulo)}</div>"
+            f"<div class='s'>Espagiria Laboratorio · Control de Calidad{(' · ' + _e(extra)) if extra else ''}</div></div></div>"
+            f"<div class='cod'>{_e(codigo)}<small>Versión 01</small></div></div>")
 
 
 def _rc_fld(k, v):
@@ -1496,7 +1513,7 @@ def _rc_fld(k, v):
 
 def _rc_estado(v):
     m = {'cumple': 'Cumple', 'no_cumple': 'No cumple', 'no_aplica': 'No aplica',
-         'si': 'Sí', 'no': 'No', 'na': 'N/A', '': '—'}
+         'si': 'Sí', 'no': 'No', 'na': 'N/A', '': '-'}
     return m.get((v or '').lower(), v)
 
 
@@ -1524,7 +1541,7 @@ def calidad_f01_imprimible():
     filas = ''.join(f"<tr><td>{_e(lbl)}</td><td>{_e(_rc_estado(d.get(k)))}</td></tr>" for k, lbl in crits)
     _ok = (d.get('resultado') or '').lower() == 'conforme'
     res_cls = 'ok' if _ok else ('no' if d.get('resultado') else '')
-    res_txt = 'CONFORME' if _ok else ('NO CONFORME' if d.get('resultado') else '—')
+    res_txt = 'CONFORME' if _ok else ('NO CONFORME' if d.get('resultado') else '-')
     body = (_rc_doc_css() + _rc_head('Recepción técnica y documental de insumos', 'COC-PRO-002-F01', tipo_lbl)
             + "<div class='grid'>"
             + _rc_fld('Insumo', d.get('nombre_insumo')) + _rc_fld('Código', d.get('codigo_insumo'))
@@ -1538,8 +1555,8 @@ def calidad_f01_imprimible():
             + (f"<div class='fld'><span class='k'>Observaciones</span><span class='v'>{_e(d.get('observaciones'))}</span></div>" if d.get('observaciones') else '')
             + f"<div class='res {res_cls}'>Resultado de la recepción: {res_txt}</div>"
             + "<div class='firmas'>"
-            + f"<div class='firma'><b>{_e(d.get('realiza_por') or '—')}</b>Realiza la recepción</div>"
-            + f"<div class='firma'><b>{_e(d.get('aprueba_por') or '—')}</b>Aprueba la recepción</div>"
+            + f"<div class='firma'><b>{_e(d.get('realiza_por') or '-')}</b>Realiza la recepción</div>"
+            + f"<div class='firma'><b>{_e(d.get('aprueba_por') or '-')}</b>Aprueba la recepción</div>"
             + "</div>"
             + f"<p style='margin-top:18px;font-size:9px;color:#94a3b8'>Registrado por {_e(d.get('creado_por'))} · {_e((d.get('creado_en') or '')[:19])}</p>"
             + "<div class='noimp'><button onclick='window.print()'>🖨️ Imprimir / Guardar PDF</button></div>")
@@ -1566,7 +1583,7 @@ def calidad_f02_imprimible():
         f"<td>{_e(_rc_estado(d.get(k + '_cumple')))}</td></tr>" for k, lbl in params)
     _r = (d.get('resultado') or '').lower()
     res_cls = 'ok' if _r == 'aprobado' else ('no' if _r == 'no_aprobado' else '')
-    res_txt = {'aprobado': 'APROBADO', 'no_aprobado': 'NO APROBADO', 'cuarentena': 'PERMANECE EN CUARENTENA'}.get(_r, '—')
+    res_txt = {'aprobado': 'APROBADO', 'no_aprobado': 'NO APROBADO', 'cuarentena': 'PERMANECE EN CUARENTENA'}.get(_r, '-')
     body = (_rc_doc_css() + _rc_head('Certificado de análisis de materia prima', 'COC-PRO-002-F02')
             + "<div class='grid'>"
             + _rc_fld('Materia prima', d.get('nombre_mp')) + _rc_fld('Código', d.get('codigo_mp'))
@@ -1579,8 +1596,8 @@ def calidad_f02_imprimible():
             + (f"<div class='fld'><span class='k'>Observaciones generales</span><span class='v'>{_e(d.get('observaciones_generales'))}</span></div>" if d.get('observaciones_generales') else '')
             + f"<div class='res {res_cls}'>Concepto de calidad: {res_txt}</div>"
             + "<div class='firmas'>"
-            + f"<div class='firma'><b>{_e(d.get('responsable_analisis') or '—')}</b>Realiza el análisis</div>"
-            + f"<div class='firma'><b>{_e(d.get('aprobo_por') or '—')}</b>Aprueba · Jefe de Control de Calidad</div>"
+            + f"<div class='firma'><b>{_e(d.get('responsable_analisis') or '-')}</b>Realiza el análisis</div>"
+            + f"<div class='firma'><b>{_e(d.get('aprobo_por') or '-')}</b>Aprueba · Jefe de Control de Calidad</div>"
             + "</div>"
             + f"<p style='margin-top:18px;font-size:9px;color:#94a3b8'>Registrado por {_e(d.get('creado_por'))} · {_e((d.get('creado_en') or '')[:19])}</p>"
             + "<div class='noimp'><button onclick='window.print()'>🖨️ Imprimir / Guardar PDF</button></div>")

@@ -5,12 +5,13 @@
 > **Cuando encuentres o arregles un bug con un patrón nuevo, AGRÉGALO aquí en el mismo commit.**
 > Mantenlo denso y accionable (checklist, no narrativa). La historia detallada vive en `SESSION_LOG/`.
 
-Última actualización: **2026-07-16** (M86 · mojibake "letras raras" se arregla inspeccionando codepoints y reemplazando la secuencia EXACTA · em-dash `—`→`-` en templates UI es rastro IA y funcionalmente seguro (node-check obligatorio) · N×M en heatmaps = endpoint colgado → 1 query GROUP BY + 1 "último por par")
+Última actualización: **2026-07-18** (REGLA 0 nueva · toda UI que toco sale PREMIUM con cortex tokens + CERO rastro de IA (em-dash `—`→`-`) · revisar SIEMPRE antes de dar por hecho · M86 · mojibake se arregla por codepoints · N×M en heatmaps = endpoint colgado → 1 query GROUP BY + 1 "último por par")
 
 ---
 
-## ⭐ Las 5 reglas que más errores evitan (LEE PRIMERO)
+## ⭐ Las 6 reglas que más errores evitan (LEE PRIMERO)
 
+0. **TODA UI que toco sale PREMIUM y SIN rastro de IA (Sebastián lo exige · revisar SIEMPRE antes de dar por hecho).** (a) **PREMIUM por defecto:** usar el sistema de diseño `cortex.css` (tokens `var(--cx-*)` → respeta tema claro/oscuro), nunca una tabla/form plano con estilos por defecto. Toda vista nueva o tocada lleva jerarquía tipográfica, hero/encabezado con intención, KPIs con color, chips de estado, botones con gradiente violeta (`--cx-primary-grad`), hover, full-width y modales grandes. Antes de decir "listo", MIRÁ la pantalla (o pedí verla) y preguntá "¿esto se ve premium?" — si es plano, rehacer. (b) **CERO rastro de IA:** el em-dash `—` DELATA IA → reemplazar SIEMPRE por `-`/`·`/`:`/`(...)` en TODO texto de UI (incl. placeholders tipo `'—'`, PDFs, comentarios visibles). Es funcionalmente seguro (`—` nunca es sintaxis) PERO node-check obligatorio tras la purga (M86). Nada de "Pregúntale a la IA", asistentes/chatbots visibles, ni frases que suenen a bot. Ver [[feedback_premium_siempre]] [[feedback_sin_rastros_ia]] [[feedback_fullwidth_popups_grandes]].
 1. **VERIFICAR contra código real antes de aplicar cualquier fix.** Los hallazgos de agentes/memoria alucinan (~50%): inventan funciones, reportan bugs ya arreglados, confunden conceptos. NUNCA apliques un hallazgo sin leer el código que cita y confirmar que el bug es real. La memoria es punto-en-el-tiempo: verifica file:line antes de afirmar.
 2. **Suite golden ANTES de cada push.** `pytest tests/test_golden_paths.py -q` debe dar verde (232 al 8-jun-2026). El guardian pre-push la corre; si es roja, el push se bloquea. No usar `--no-verify` salvo autorización explícita.
 3. **No tocar lo FIJO.** `produccion_programada.origen IN ('eos_plan','eos_b2b','eos_retroactivo')` es decisión deliberada del usuario. Ningún DELETE/UPDATE masivo lo toca: siempre `AND COALESCE(origen,'') NOT IN ('eos_plan','eos_b2b','eos_retroactivo')`.

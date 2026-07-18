@@ -2403,20 +2403,63 @@ async function loadCuarentena(){
 }
 
 // ── Pipeline de recepción MP · formularios F01 (técnica/documental) y F02 (análisis) ──
+var _RCM_CSS='<style id="rcm-css">'
+  +'#rc-ov .rcm{background:#fff;border-radius:18px;max-width:840px;width:100%;box-shadow:0 30px 80px -24px rgba(24,24,45,.55);overflow:hidden}'
+  +'#rc-ov .rcm-hd{background:linear-gradient(120deg,#f5f3ff 0%,#faf5ff 55%,#fff 100%);border-bottom:1px solid #ece9f6;padding:18px 24px;display:flex;justify-content:space-between;align-items:center}'
+  +'#rc-ov .rcm-hd .ic{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;box-shadow:0 6px 16px -4px rgba(109,40,217,.5)}'
+  +'#rc-ov .rcm-hd .tt{font-size:17px;font-weight:800;color:#1e1b2e;letter-spacing:-.01em}'
+  +'#rc-ov .rcm-hd .cd{font-size:10.5px;color:#8b8b9e;font-weight:600;letter-spacing:.04em;margin-top:1px}'
+  +'#rc-ov .rcm-x{background:none;border:none;font-size:22px;cursor:pointer;color:#a1a1b0;line-height:1;padding:4px 8px;border-radius:8px}'
+  +'#rc-ov .rcm-x:hover{background:#f1f0f7;color:#6d28d9}'
+  +'#rc-ov .rcm-bd{padding:20px 24px 24px}'
+  +'#rc-ov .rcm label.fl{font-size:10.5px;color:#78788a;text-transform:uppercase;letter-spacing:.03em;font-weight:600;display:block;margin-bottom:3px}'
+  +'#rc-ov .rcm .fg{margin-bottom:2px}'
+  +'#rc-ov .rcm-in{width:100%;padding:8px 11px;border:1px solid #e2e0ee;border-radius:9px;font-size:12.5px;box-sizing:border-box;background:#fbfbfd;color:#1e1b2e;transition:border .12s,box-shadow .12s;outline:none}'
+  +'#rc-ov .rcm-in:focus{border-color:#7c3aed;background:#fff;box-shadow:0 0 0 3px rgba(124,58,237,.14)}'
+  +'#rc-ov .rcm-sec{font-size:12px;font-weight:800;color:#4b4b5e;margin:14px 0 8px;text-transform:uppercase;letter-spacing:.04em;display:flex;align-items:center;gap:7px}'
+  +'#rc-ov .rcm-sec:before{content:"";width:4px;height:14px;border-radius:3px;background:linear-gradient(180deg,#a78bfa,#6d28d9)}'
+  +'#rc-ov .rcm-seg{display:inline-flex;background:#f1f0f7;border-radius:9px;padding:3px;gap:3px}'
+  +'#rc-ov .rcm-seg label{cursor:pointer;margin:0}'
+  +'#rc-ov .rcm-seg input{position:absolute;opacity:0;width:0;height:0}'
+  +'#rc-ov .rcm-seg span{display:block;padding:5px 13px;border-radius:7px;font-size:11.5px;font-weight:600;color:#71717a;white-space:nowrap;transition:all .12s}'
+  +'#rc-ov .rcm-seg input:checked+span{background:#fff;box-shadow:0 1px 3px rgba(24,24,45,.14);color:#1e1b2e}'
+  +'#rc-ov .rcm-seg input[value="cumple"]:checked+span,#rc-ov .rcm-seg input[value="si"]:checked+span,#rc-ov .rcm-seg input[value="conforme"]:checked+span,#rc-ov .rcm-seg input[value="aprobado"]:checked+span{color:#15803d}'
+  +'#rc-ov .rcm-seg input[value="no_cumple"]:checked+span,#rc-ov .rcm-seg input[value="no"]:checked+span,#rc-ov .rcm-seg input[value="no_conforme"]:checked+span,#rc-ov .rcm-seg input[value="no_aprobado"]:checked+span{color:#b91c1c}'
+  +'#rc-ov .rcm-seg input[value="cuarentena"]:checked+span,#rc-ov .rcm-seg input[value="na"]:checked+span,#rc-ov .rcm-seg input[value="no_aplica"]:checked+span{color:#b45309}'
+  +'#rc-ov .rcm table.crt{width:100%;border-collapse:separate;border-spacing:0}'
+  +'#rc-ov .rcm table.crt td{padding:9px 4px;font-size:12.5px;border-bottom:1px solid #f1f0f7;color:#3f3f52}'
+  +'#rc-ov .rcm table.crt tr:last-child td{border-bottom:none}'
+  +'#rc-ov .rcm-save{width:100%;padding:11px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:11px;font-weight:800;font-size:13.5px;cursor:pointer;box-shadow:0 8px 20px -6px rgba(21,128,61,.5);transition:filter .12s}'
+  +'#rc-ov .rcm-save:hover{filter:brightness(1.06)}'
+  +'#rc-ov .rcm-note{margin:2px 0 12px;padding:9px 13px;background:#f5f3ff;border:1px solid #e4defb;border-radius:10px;font-size:11.5px;color:#6d28d9;line-height:1.5}'
+  +'#rc-ov .rcm-warn{font-size:10.5px;color:#b45309;margin-top:8px;line-height:1.5}'
+  +'</style>';
 function _rcClose(){ var o=document.getElementById('rc-ov'); if(o) o.remove(); }
 function _rcOverlay(inner){
   _rcClose();
   var ov=document.createElement('div'); ov.id='rc-ov';
-  ov.style.cssText='position:fixed;inset:0;background:rgba(15,15,45,.5);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:24px;overflow:auto';
-  ov.innerHTML='<div style="background:#fff;border-radius:14px;max-width:820px;width:100%;padding:22px 24px;box-shadow:0 24px 70px -20px rgba(0,0,0,.5)">'+inner+'</div>';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(20,18,40,.55);backdrop-filter:blur(2px);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:28px;overflow:auto';
+  ov.innerHTML=_RCM_CSS+'<div class="rcm">'+inner+'</div>';
+  ov.addEventListener('click',function(e){ if(e.target===ov) _rcClose(); });
   document.body.appendChild(ov);
 }
-function _rcInput(id,val,ph){ return '<input id="'+id+'" value="'+esc(val||'')+'" placeholder="'+esc(ph||'')+'" style="width:100%;padding:6px 9px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;box-sizing:border-box">'; }
+function _rcHeader(num,titulo,cod){
+  return '<div class="rcm-hd"><div style="display:flex;align-items:center;gap:13px"><div class="ic">'+num+'</div>'
+    +'<div><div class="tt">'+titulo+'</div><div class="cd">'+cod+'</div></div></div>'
+    +'<button class="rcm-x" onclick="_rcClose()">&#10005;</button></div>';
+}
+function _rcInput(id,val,ph){ return '<input id="'+id+'" class="rcm-in" value="'+esc(val||'')+'" placeholder="'+esc(ph||'')+'">'; }
 function _rcCrit(name,val){
-  function o(v,l){ return '<label style="margin-right:12px;font-size:12px;white-space:nowrap"><input type="radio" name="'+name+'" value="'+v+'"'+(val===v?' checked':'')+'> '+l+'</label>'; }
-  return o('cumple','Cumple')+o('no_cumple','No cumple')+o('no_aplica','No aplica');
+  function o(v,l){ return '<label><input type="radio" name="'+name+'" value="'+v+'"'+(val===v?' checked':'')+'><span>'+l+'</span></label>'; }
+  return '<div class="rcm-seg">'+o('cumple','Cumple')+o('no_cumple','No cumple')+o('no_aplica','No aplica')+'</div>';
 }
 function _rcRadioVal(name){ var el=document.querySelector('input[name="'+name+'"]:checked'); return el?el.value:''; }
+function _rcFld(lbl,inner){ return '<div class="fg"><label class="fl">'+lbl+'</label>'+inner+'</div>'; }
+function _rcSeg(name,val,pairs){
+  var h='<div class="rcm-seg">';
+  for(var i=0;i<pairs.length;i++){ h+='<label><input type="radio" name="'+name+'" value="'+pairs[i][0]+'"'+(val===pairs[i][0]?' checked':'')+'><span>'+pairs[i][1]+'</span></label>'; }
+  return h+'</div>';
+}
 
 async function openF01(mov_id, origen){
   var org=(origen==='MEE')?'MEE':'MP';
@@ -2425,35 +2468,34 @@ async function openF01(mov_id, origen){
     var f=d.f01||{}, pre=d.prefill||{};
     var g=function(k){ return (f[k]!=null&&f[k]!=='')?f[k]:(pre[k]||''); };
     var tipo=f.tipo_insumo||(org==='MEE'?'envase':'materia_prima');
-    var meeNote = (org==='MEE') ? '<div style="margin:6px 0;padding:6px 10px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;font-size:11px;color:#6d28d9">Envase: el F01 es la disposición de calidad. <b>Conforme + firma del jefe libera el lote</b> (queda VIGENTE); No conforme lo rechaza. Los envases no llevan F02.</div>' : '';
+    var meeNote = (org==='MEE') ? '<div class="rcm-note">Envase: el F01 es la disposición de calidad. <b>Conforme + firma del jefe libera el lote</b> (queda VIGENTE); No conforme lo rechaza. Los envases no llevan F02.</div>' : '';
     var crits=[['crit_rotulado','Rotulado completo (nombre, lote, fecha vencimiento)'],['crit_empaque','Empaque/envase limpio e íntegro'],['crit_hoja_seguridad','Hoja de seguridad vigente (si aplica)'],['crit_ficha_tecnica','Ficha técnica vigente (si aplica)'],['crit_coa','Certificado de análisis del proveedor (COA)'],['crit_doc_coincide','Documentación coincide con el producto entregado']];
-    var critRows=crits.map(function(c){ return '<tr><td style="padding:6px 4px;font-size:12px">'+c[1]+'</td><td style="padding:6px 4px">'+_rcCrit(c[0], f[c[0]]||'')+'</td></tr>'; }).join('');
+    var critRows=crits.map(function(c){ return '<tr><td>'+c[1]+'</td><td style="text-align:right;white-space:nowrap">'+_rcCrit(c[0], f[c[0]]||'')+'</td></tr>'; }).join('');
     var _res=f.resultado||'';
-    var html='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div><b style="font-size:16px;color:#7c3aed">🅑 Recepción técnica y documental</b><div style="font-size:10px;color:#94a3b8">COC-PRO-002-F01</div></div><button onclick="_rcClose()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#94a3b8">&#10005;</button></div>'
+    var html=_rcHeader('&#x1F151;','Recepción técnica y documental','COC-PRO-002-F01')
+      +'<div class="rcm-bd">'
       +meeNote
-      +'<div style="display:flex;gap:14px;margin-bottom:8px;font-size:12px"><b>Tipo de insumo:</b>'
-      +'<label><input type="radio" name="f01tipo" value="materia_prima"'+(tipo==='materia_prima'?' checked':'')+'> Materia prima</label>'
-      +'<label><input type="radio" name="f01tipo" value="envase"'+(tipo==='envase'?' checked':'')+'> Envase</label>'
-      +'<label><input type="radio" name="f01tipo" value="empaque"'+(tipo==='empaque'?' checked':'')+'> Empaque</label></div>'
-      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">'
-      +'<div><label style="font-size:11px;color:#64748b">Nombre del insumo</label>'+_rcInput('f01_nombre_insumo',g('nombre_insumo'))+'</div>'
-      +'<div><label style="font-size:11px;color:#64748b">Código interno / Lote proveedor</label>'+_rcInput('f01_lote_proveedor',g('lote_proveedor')||g('codigo_insumo'))+'</div>'
-      +'<div><label style="font-size:11px;color:#64748b">Cantidad recibida</label>'+_rcInput('f01_cantidad_recibida',g('cantidad_recibida'))+'</div>'
-      +'<div><label style="font-size:11px;color:#64748b">Proveedor</label>'+_rcInput('f01_proveedor',g('proveedor'))+'</div>'
-      +'<div><label style="font-size:11px;color:#64748b">Fecha de recepción</label>'+_rcInput('f01_fecha_recepcion',g('fecha_recepcion'))+'</div>'
-      +'<div><label style="font-size:11px;color:#64748b">No. remisión / factura</label>'+_rcInput('f01_numero_remision',g('numero_remision'))+'</div>'
-      +'<div style="grid-column:1/3"><label style="font-size:11px;color:#64748b">Área de almacenamiento asignada</label>'+_rcInput('f01_area_almacenamiento',g('area_almacenamiento'))+'</div>'
+      +_rcFld('Tipo de insumo', _rcSeg('f01tipo',tipo,[['materia_prima','Materia prima'],['envase','Envase'],['empaque','Empaque']]))
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:11px;margin:12px 0">'
+      +_rcFld('Nombre del insumo',_rcInput('f01_nombre_insumo',g('nombre_insumo')))
+      +_rcFld('Código interno / Lote proveedor',_rcInput('f01_lote_proveedor',g('lote_proveedor')||g('codigo_insumo')))
+      +_rcFld('Cantidad recibida',_rcInput('f01_cantidad_recibida',g('cantidad_recibida')))
+      +_rcFld('Proveedor',_rcInput('f01_proveedor',g('proveedor')))
+      +_rcFld('Fecha de recepción',_rcInput('f01_fecha_recepcion',g('fecha_recepcion')))
+      +_rcFld('No. remisión / factura',_rcInput('f01_numero_remision',g('numero_remision')))
+      +'<div style="grid-column:1/3">'+_rcFld('Área de almacenamiento asignada',_rcInput('f01_area_almacenamiento',g('area_almacenamiento')))+'</div>'
       +'</div>'
-      +'<div style="font-size:12px;font-weight:700;color:#334155;margin:8px 0 4px">Verificación técnica y documental</div>'
-      +'<table style="width:100%;border-collapse:collapse">'+critRows+'</table>'
-      +'<div style="margin-top:8px"><label style="font-size:11px;color:#64748b">Observaciones</label>'+_rcInput('f01_observaciones',g('observaciones'))+'</div>'
-      +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px;align-items:end">'
-      +'<div><label style="font-size:11px;color:#64748b">Resultado</label><div style="font-size:12px;margin-top:3px"><label style="margin-right:10px"><input type="radio" name="f01res" value="conforme"'+(_res==='conforme'?' checked':'')+'> Conforme</label><label><input type="radio" name="f01res" value="no_conforme"'+(_res==='no_conforme'?' checked':'')+'> No conforme</label></div></div>'
-      +'<div><label style="font-size:11px;color:#64748b">Fecha vencimiento (F-V)</label>'+_rcInput('f01_fecha_vencimiento',g('fecha_vencimiento'))+'</div>'
-      +'<div></div>'
-      +'<div><label style="font-size:11px;color:#64748b">Realiza la recepción (analista)</label>'+_rcInput('f01_realiza_por',g('realiza_por'))+'</div>'
-      +'<div><label style="font-size:11px;color:#64748b">Aprueba la recepción'+(org==='MEE'?' (jefe · libera)':'')+'</label>'+_rcInput('f01_aprueba_por',g('aprueba_por'))+'</div>'
-      +'<div><button onclick="guardarF01('+mov_id+',&quot;'+org+'&quot;)" style="width:100%;padding:9px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">💾 Guardar F01</button></div>'
+      +'<div class="rcm-sec">Verificación técnica y documental</div>'
+      +'<table class="crt">'+critRows+'</table>'
+      +'<div style="margin-top:12px">'+_rcFld('Observaciones',_rcInput('f01_observaciones',g('observaciones')))+'</div>'
+      +'<div class="rcm-sec">Resultado y firmas</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">'
+      +_rcFld('Resultado', _rcSeg('f01res',_res,[['conforme','Conforme'],['no_conforme','No conforme']]))
+      +_rcFld('Fecha vencimiento (F-V)',_rcInput('f01_fecha_vencimiento',g('fecha_vencimiento')))
+      +_rcFld('Realiza la recepción (analista)',_rcInput('f01_realiza_por',g('realiza_por')))
+      +_rcFld('Aprueba la recepción'+(org==='MEE'?' (jefe · libera)':''),_rcInput('f01_aprueba_por',g('aprueba_por')))
+      +'</div>'
+      +'<div style="margin-top:16px"><button class="rcm-save" onclick="guardarF01('+mov_id+',&quot;'+org+'&quot;)">&#128190; Guardar F01</button></div>'
       +'</div>';
     _rcOverlay(html);
   }catch(e){ alert('Error abriendo F01: '+e.message); }
@@ -2488,34 +2530,35 @@ async function openF02(mov_id){
     var params=[['aspecto','Aspecto / Color / Olor'],['ph','pH (a 25°C)'],['densidad','Densidad (g/mL)'],['solubilidad','Solubilidad'],['viscosidad','Viscosidad (cP)']];
     var prows=params.map(function(p){
       var k=p[0];
-      var cmp=f[k+'_cumple']||'';
-      var rad='<label style="margin-right:8px"><input type="radio" name="f02'+k+'cmp" value="si"'+(cmp==='si'?' checked':'')+'> Sí</label><label style="margin-right:8px"><input type="radio" name="f02'+k+'cmp" value="no"'+(cmp==='no'?' checked':'')+'> No</label><label><input type="radio" name="f02'+k+'cmp" value="na"'+(cmp==='na'?' checked':'')+'> N/A</label>';
-      return '<tr><td style="padding:4px;font-size:12px;font-weight:600">'+p[1]+'</td>'
-        +'<td style="padding:4px">'+_rcInput('f02_'+k+'_spec',g(k+'_spec'),'especificación')+'</td>'
-        +'<td style="padding:4px">'+_rcInput('f02_'+k+'_result',f[k+'_result']||'','resultado')+'</td>'
-        +'<td style="padding:4px;white-space:nowrap;font-size:11px">'+rad+'</td></tr>';
+      return '<tr><td style="font-weight:600;color:#1e1b2e">'+p[1]+'</td>'
+        +'<td>'+_rcInput('f02_'+k+'_spec',g(k+'_spec'),'especificación')+'</td>'
+        +'<td>'+_rcInput('f02_'+k+'_result',f[k+'_result']||'','resultado')+'</td>'
+        +'<td style="text-align:right;white-space:nowrap">'+_rcSeg('f02'+k+'cmp',f[k+'_cumple']||'',[['si','Sí'],['no','No'],['na','N/A']])+'</td></tr>';
     }).join('');
     var _res=f.resultado||'';
-    var html='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div><b style="font-size:16px;color:#7c3aed">🅒 Certificado de análisis de MP</b><div style="font-size:10px;color:#94a3b8">COC-PRO-002-F02 · aprobar libera el lote</div></div><button onclick="_rcClose()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#94a3b8">&#10005;</button></div>'
-      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">'
-      +'<div><label style="font-size:11px;color:#64748b">Nombre MP</label>'+_rcInput('f02_nombre_mp',g('nombre_mp'))+'</div>'
-      +'<div><label style="font-size:11px;color:#64748b">Código / Lote proveedor</label>'+_rcInput('f02_lote_proveedor',g('lote_proveedor'))+'</div>'
-      +'<div><label style="font-size:11px;color:#64748b">Cantidad recibida</label>'+_rcInput('f02_cantidad_recibida',g('cantidad_recibida'))+'</div>'
-      +'<div><label style="font-size:11px;color:#64748b">Proveedor</label>'+_rcInput('f02_proveedor',g('proveedor'))+'</div>'
-      +'<div><label style="font-size:11px;color:#64748b">Fecha recepción</label>'+_rcInput('f02_fecha_recepcion',g('fecha_recepcion'))+'</div>'
-      +'<div><label style="font-size:11px;color:#64748b">Fecha de análisis</label>'+_rcInput('f02_fecha_analisis',f.fecha_analisis||'')+'</div>'
+    var html=_rcHeader('&#x1F152;','Certificado de análisis de MP','COC-PRO-002-F02 · aprobar libera el lote')
+      +'<div class="rcm-bd">'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-bottom:4px">'
+      +_rcFld('Nombre MP',_rcInput('f02_nombre_mp',g('nombre_mp')))
+      +_rcFld('Código / Lote proveedor',_rcInput('f02_lote_proveedor',g('lote_proveedor')))
+      +_rcFld('Cantidad recibida',_rcInput('f02_cantidad_recibida',g('cantidad_recibida')))
+      +_rcFld('Proveedor',_rcInput('f02_proveedor',g('proveedor')))
+      +_rcFld('Fecha recepción',_rcInput('f02_fecha_recepcion',g('fecha_recepcion')))
+      +_rcFld('Fecha de análisis',_rcInput('f02_fecha_analisis',f.fecha_analisis||''))
       +'</div>'
-      +'<div style="font-size:12px;font-weight:700;color:#334155;margin:4px 0">Resultados de análisis</div>'
-      +'<table style="width:100%;border-collapse:collapse"><thead><tr style="color:#64748b;font-size:11px"><th style="text-align:left">Parámetro</th><th style="text-align:left">Especificación</th><th style="text-align:left">Resultado</th><th style="text-align:left">Cumple</th></tr></thead><tbody>'+prows+'</tbody></table>'
-      +'<div style="margin-top:8px"><label style="font-size:11px;color:#64748b">Observaciones generales</label>'+_rcInput('f02_observaciones_generales',g('observaciones_generales'))+'</div>'
-      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">'
-      +'<div><label style="font-size:11px;color:#64748b">Resultado</label><div style="font-size:12px;margin-top:3px"><label style="margin-right:10px"><input type="radio" name="f02res" value="aprobado"'+(_res==='aprobado'?' checked':'')+'> Aprobado</label><label style="margin-right:10px"><input type="radio" name="f02res" value="no_aprobado"'+(_res==='no_aprobado'?' checked':'')+'> No aprobado</label><label><input type="radio" name="f02res" value="cuarentena"'+(_res==='cuarentena'?' checked':'')+'> Cuarentena</label></div></div>'
-      +'<div><label style="font-size:11px;color:#64748b">Fecha vencimiento (F-V)</label>'+_rcInput('f02_fecha_vencimiento',g('fecha_vencimiento'))+'</div>'
-      +'<div><label style="font-size:11px;color:#64748b">Realiza el análisis (analista)</label>'+_rcInput('f02_responsable_analisis',f.responsable_analisis||'')+'</div>'
-      +'<div><label style="font-size:11px;color:#64748b">Aprueba (JEFE de Control de Calidad)</label>'+_rcInput('f02_aprobo_por',f.aprobo_por||'')+'</div>'
+      +'<div class="rcm-sec">Resultados de análisis</div>'
+      +'<table class="crt"><thead><tr><td style="font-size:10px;text-transform:uppercase;color:#78788a;font-weight:700">Parámetro</td><td style="font-size:10px;text-transform:uppercase;color:#78788a;font-weight:700">Especificación</td><td style="font-size:10px;text-transform:uppercase;color:#78788a;font-weight:700">Resultado</td><td style="font-size:10px;text-transform:uppercase;color:#78788a;font-weight:700;text-align:right">Cumple</td></tr></thead><tbody>'+prows+'</tbody></table>'
+      +'<div style="margin-top:12px">'+_rcFld('Observaciones generales',_rcInput('f02_observaciones_generales',g('observaciones_generales')))+'</div>'
+      +'<div class="rcm-sec">Concepto y firmas</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">'
+      +'<div style="grid-column:1/3">'+_rcFld('Resultado', _rcSeg('f02res',_res,[['aprobado','Aprobado'],['no_aprobado','No aprobado'],['cuarentena','Cuarentena']]))+'</div>'
+      +_rcFld('Fecha vencimiento (F-V)',_rcInput('f02_fecha_vencimiento',g('fecha_vencimiento')))
+      +_rcFld('Realiza el análisis (analista)',_rcInput('f02_responsable_analisis',f.responsable_analisis||''))
+      +'<div style="grid-column:1/3">'+_rcFld('Aprueba (JEFE de Control de Calidad)',_rcInput('f02_aprobo_por',f.aprobo_por||''))+'</div>'
       +'</div>'
-      +'<div style="font-size:10px;color:#b45309;margin-top:6px">⚠ "Aprobado" + firma del jefe LIBERA el lote (queda VIGENTE, stock usable). "No aprobado" lo rechaza.</div>'
-      +'<button onclick="guardarF02('+mov_id+')" style="width:100%;margin-top:10px;padding:10px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">💾 Guardar F02</button>';
+      +'<div class="rcm-warn">&#9888; "Aprobado" + firma del jefe LIBERA el lote (queda VIGENTE, stock usable). "No aprobado" lo rechaza.</div>'
+      +'<div style="margin-top:14px"><button class="rcm-save" onclick="guardarF02('+mov_id+')">&#128190; Guardar F02</button></div>'
+      +'</div>';
     _rcOverlay(html);
   }catch(e){ alert('Error abriendo F02: '+e.message); }
 }
