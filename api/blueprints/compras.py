@@ -8002,19 +8002,192 @@ def get_pagos_oc(numero_oc):
     pagos = [dict(zip(cols, row)) for row in cur.fetchall()]
 
     # Total + comparación con valor_total OC
-    cur.execute("SELECT valor_total FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
+    cur.execute("SELECT valor_total, COALESCE(proveedor,'') FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
     row = cur.fetchone()
     valor_oc = float(row[0]) if row else 0
+    _prov_oc = (row[1] if row else '') or ''
     total_pagado = sum(p.get('monto', 0) or 0 for p in pagos)
 
     return jsonify({
         'numero_oc': numero_oc,
+        'proveedor': _prov_oc,
+        'saldo_favor_proveedor': _saldo_proveedor(conn, _prov_oc),
         'pagos': pagos,
         'count': len(pagos),
         'total_pagado': round(total_pagado, 2),
         'valor_total_oc': round(valor_oc, 2),
         'pendiente': round(max(0, valor_oc - total_pagado), 2),
     })
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 💰 SALDO A FAVOR por proveedor (Catalina 17-jul · mig 359)
+# Ledger de movimientos: saldo vivo = SUM(credito) − SUM(aplicacion). Sin cache (patrón kardex · M9/M26).
+# Entra por: anticipo (sale plata → egreso), sobrepago (excedente al pagar) o ajuste (nota crédito · sin
+# egreso). Se aplica manual a la próxima OC del proveedor (medio 'SaldoAFavor' · sin egreso · la plata ya salió).
+# ═══════════════════════════════════════════════════════════════════════════
+_SALDO_SUM_SQL = ("COALESCE(SUM(CASE WHEN tipo='credito' THEN monto "
+                  "WHEN tipo='aplicacion' THEN -monto ELSE 0 END),0)")
+
+
+def _saldo_proveedor(conn, proveedor):
+    """Saldo a favor VIVO del proveedor (fuente única · sin cache). Match case-insensitive (M2)."""
+    prov = (proveedor or '').strip()
+    if not prov:
+        return 0.0
+    try:
+        r = conn.execute(
+            "SELECT " + _SALDO_SUM_SQL + " FROM saldos_proveedor_mov "
+            "WHERE UPPER(TRIM(proveedor))=UPPER(TRIM(?)) AND COALESCE(anulado,0)=0",
+            (prov,)).fetchone()
+        return round(float(r[0] or 0), 2)
+    except Exception:
+        return 0.0
+
+
+@bp.route('/api/compras/saldos-favor', methods=['GET'])
+def compras_saldos_favor():
+    """Saldos a favor por proveedor (>0) + total. ?proveedor=X para uno solo (con sus movimientos)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db()
+    prov_q = (request.args.get('proveedor') or '').strip()
+    out, movs = [], []
+    try:
+        if prov_q:
+            for r in conn.execute(
+                "SELECT id, tipo, monto, origen, numero_oc, fecha, registrado_por, observaciones "
+                "FROM saldos_proveedor_mov WHERE UPPER(TRIM(proveedor))=UPPER(TRIM(?)) AND COALESCE(anulado,0)=0 "
+                "ORDER BY id DESC", (prov_q,)).fetchall():
+                movs.append({'id': r[0], 'tipo': r[1], 'monto': round(float(r[2] or 0), 2), 'origen': r[3] or '',
+                             'numero_oc': r[4] or '', 'fecha': (r[5] or '')[:19], 'por': r[6] or '', 'obs': r[7] or ''})
+            out.append({'proveedor': prov_q, 'saldo': _saldo_proveedor(conn, prov_q)})
+        else:
+            for r in conn.execute(
+                "SELECT TRIM(proveedor), " + _SALDO_SUM_SQL + " AS s FROM saldos_proveedor_mov "
+                "WHERE COALESCE(anulado,0)=0 GROUP BY TRIM(proveedor) "
+                "HAVING " + _SALDO_SUM_SQL + " > 0.01 ORDER BY s DESC").fetchall():
+                out.append({'proveedor': r[0], 'saldo': round(float(r[1] or 0), 2)})
+    except Exception:
+        out, movs = [], []
+    return jsonify({'ok': True, 'saldos': out, 'movimientos': movs,
+                    'total': round(sum(s['saldo'] for s in out), 2)})
+
+
+@bp.route('/api/compras/proveedor-saldo/registrar', methods=['POST'])
+def compras_registrar_saldo():
+    """Registra un SALDO A FAVOR. origen='anticipo' (sale plata → egreso real) o 'ajuste' (nota crédito ·
+    sin egreso). Gate _require_authorize_oc (mueve/afecta plata · NUNCA contadora)."""
+    usuario, err, code = _require_authorize_oc()
+    if err:
+        return err, code
+    from datetime import datetime as _dtn, timezone as _tzn, timedelta as _tdn
+    body = request.get_json(silent=True) or {}
+    proveedor = (str(body.get('proveedor') or '')).strip()[:200]
+    origen = (str(body.get('origen') or 'ajuste')).strip().lower()
+    obs = (str(body.get('observaciones') or '')).strip()[:500]
+    medio = (str(body.get('medio') or '')).strip()[:60]
+    try:
+        monto = round(float(body.get('monto') or 0), 2)
+    except Exception:
+        monto = 0.0
+    if not proveedor:
+        return jsonify({'error': 'Falta el proveedor'}), 400
+    if not (monto > 0):
+        return jsonify({'error': 'El monto debe ser mayor a 0'}), 400
+    if origen not in ('anticipo', 'ajuste'):
+        origen = 'ajuste'
+    conn = get_db(); cur = conn.cursor()
+    _fecha = (_dtn.now(_tzn.utc) - _tdn(hours=5)).isoformat()
+    _peri = (_dtn.now(_tzn.utc) - _tdn(hours=5)).strftime('%Y-%m')
+    egreso_id = None
+    try:
+        if origen == 'anticipo':  # plata REAL sale → espejo a flujo_egresos (M12f · no doble)
+            try:
+                cur.execute(
+                    "INSERT INTO flujo_egresos (fecha, empresa, concepto, categoria, monto, periodo, fuente, referencia, creado_por, observaciones) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (_fecha, 'Espagiria', f'Anticipo a {proveedor}', 'Compras', monto, _peri,
+                     'compras', proveedor, usuario, f'Anticipo saldo a favor · {medio}. {obs}'))
+                egreso_id = cur.lastrowid
+            except Exception:
+                egreso_id = None
+        cur.execute(
+            "INSERT INTO saldos_proveedor_mov (proveedor, tipo, monto, origen, numero_oc, flujo_egreso_id, fecha, registrado_por, observaciones) "
+            "VALUES (?, 'credito', ?, ?, '', ?, ?, ?, ?)",
+            (proveedor, monto, origen, egreso_id, _fecha, usuario, obs))
+        _mid = cur.lastrowid
+        audit_log(cur, usuario=usuario, accion='SALDO_FAVOR_CREDITO', tabla='saldos_proveedor_mov',
+                  registro_id=_mid or 0, despues={'proveedor': proveedor, 'monto': monto, 'origen': origen})
+        conn.commit()
+    except Exception as e:
+        conn.rollback(); return jsonify({'error': f'No se pudo registrar: {e}'}), 500
+    return jsonify({'ok': True, 'proveedor': proveedor, 'origen': origen,
+                    'saldo': _saldo_proveedor(conn, proveedor)})
+
+
+@bp.route('/api/compras/ordenes-compra/<numero_oc>/aplicar-saldo', methods=['POST'])
+def compras_aplicar_saldo_oc(numero_oc):
+    """Aplica saldo a favor del proveedor de la OC como pago (medio='SaldoAFavor'). NO genera egreso
+    (la plata ya salió cuando entró el crédito). Reduce el pendiente. CAS anti-negativo (M27/M31)."""
+    usuario, err, code = _require_authorize_oc()
+    if err:
+        return err, code
+    from datetime import datetime as _dtn, timezone as _tzn, timedelta as _tdn
+    body = request.get_json(silent=True) or {}
+    try:
+        monto = round(float(body.get('monto') or 0), 2)
+    except Exception:
+        monto = 0.0
+    if not (monto > 0):
+        return jsonify({'error': 'El monto a aplicar debe ser mayor a 0'}), 400
+    conn = get_db(); cur = conn.cursor()
+    row = cur.execute("SELECT proveedor, COALESCE(valor_total,0), COALESCE(estado,'') "
+                      "FROM ordenes_compra WHERE numero_oc=?", (numero_oc,)).fetchone()
+    if not row:
+        return jsonify({'error': 'OC no existe'}), 404
+    proveedor = (row[0] or '').strip()
+    valor_total = float(row[1] or 0)
+    if (row[2] or '').lower() in ('cancelada', 'anulada'):
+        return jsonify({'error': 'La OC está cancelada'}), 409
+    if not proveedor:
+        return jsonify({'error': 'La OC no tiene proveedor'}), 400
+    pagado = float(cur.execute("SELECT COALESCE(SUM(monto),0) FROM pagos_oc WHERE numero_oc=?",
+                               (numero_oc,)).fetchone()[0] or 0)
+    pendiente = round(valor_total - pagado, 2)
+    if monto > pendiente + 0.01:
+        return jsonify({'error': f'El saldo a aplicar ({monto:.0f}) excede lo pendiente de la OC ({pendiente:.0f})',
+                        'codigo': 'EXCEDE_PENDIENTE'}), 422
+    _fecha = (_dtn.now(_tzn.utc) - _tdn(hours=5)).isoformat()
+    try:
+        # CAS anti-negativo: solo inserta la aplicación si HAY saldo suficiente (multi-worker · M27/M31/M73)
+        cur.execute(
+            "INSERT INTO saldos_proveedor_mov (proveedor, tipo, monto, origen, numero_oc, fecha, registrado_por) "
+            "SELECT ?, 'aplicacion', ?, 'aplicar_oc', ?, ?, ? WHERE ("
+            "SELECT " + _SALDO_SUM_SQL + " FROM saldos_proveedor_mov "
+            "WHERE UPPER(TRIM(proveedor))=UPPER(TRIM(?)) AND COALESCE(anulado,0)=0) >= ?",
+            (proveedor, monto, numero_oc, _fecha, usuario, proveedor, monto))
+        if cur.rowcount != 1:
+            conn.rollback()
+            return jsonify({'error': f'Saldo a favor insuficiente para {proveedor} '
+                                     f'(disponible {_saldo_proveedor(conn, proveedor):.0f})',
+                            'codigo': 'SALDO_INSUFICIENTE'}), 409
+        cur.execute("INSERT INTO pagos_oc (numero_oc, monto, medio, fecha_pago, registrado_por, observaciones) "
+                    "VALUES (?, ?, 'SaldoAFavor', ?, ?, ?)",
+                    (numero_oc, monto, _fecha, usuario, 'Aplicación de saldo a favor'))
+        cur.execute("UPDATE ordenes_compra SET estado = CASE WHEN "
+                    "(SELECT COALESCE(SUM(monto),0) FROM pagos_oc WHERE numero_oc=?) >= ? - 0.01 "
+                    "THEN 'Pagada' ELSE 'Parcial' END WHERE numero_oc=?",
+                    (numero_oc, valor_total, numero_oc))
+        audit_log(cur, usuario=usuario, accion='SALDO_FAVOR_APLICADO', tabla='ordenes_compra',
+                  registro_id=0, despues={'numero_oc': numero_oc, 'proveedor': proveedor, 'monto': monto})
+        conn.commit()
+    except Exception as e:
+        conn.rollback(); return jsonify({'error': f'No se pudo aplicar: {e}'}), 500
+    nuevo_pagado = pagado + monto
+    return jsonify({'ok': True, 'numero_oc': numero_oc, 'aplicado': monto,
+                    'pendiente': round(max(0, valor_total - nuevo_pagado), 2),
+                    'saldo_restante': _saldo_proveedor(conn, proveedor)})
 
 
 @bp.route('/api/compras/pagos', methods=['GET'])

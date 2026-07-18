@@ -428,6 +428,16 @@ except ImportError:
         _MIG_248_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (359, "Compras · SALDO A FAVOR por proveedor (Catalina 17-jul): ledger de movimientos de crédito. "
+          "Alejandro a veces hace anticipos / paga de más / hay notas crédito → queda saldo a favor que se "
+          "aplica a la próxima OC del proveedor. Saldo vivo = SUM(credito) − SUM(aplicacion) (fuente única, sin "
+          "cache · patrón kardex). tipo: 'credito' (entra) | 'aplicacion' (se consume). monto siempre > 0.", [
+        "CREATE TABLE IF NOT EXISTS saldos_proveedor_mov (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "proveedor TEXT NOT NULL, tipo TEXT NOT NULL, monto DOUBLE PRECISION NOT NULL DEFAULT 0, "
+        "origen TEXT DEFAULT '', numero_oc TEXT DEFAULT '', pago_oc_id INTEGER, flujo_egreso_id INTEGER, "
+        "fecha TEXT, registrado_por TEXT DEFAULT '', observaciones TEXT DEFAULT '', anulado INTEGER DEFAULT 0)",
+        "CREATE INDEX IF NOT EXISTS idx_saldos_prov ON saldos_proveedor_mov(proveedor, anulado)",
+    ]),
     (358, "Abastecimiento · alias producto→fórmula (Sebastián 17-jul): vincula el nombre de un producto del "
           "PLAN con el de su FÓRMULA cuando difieren (renombre/sinónimo/orden de palabras) → deja de aparecer "
           "'sin fórmula' y su materia prima SÍ se cuenta en la compra. Explícito (lo confirma un humano desde "

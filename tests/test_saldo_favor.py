@@ -1,0 +1,106 @@
+"""Catalina 17-jul · Saldo a favor por proveedor (mig 359). Alejandro hace anticipos / paga de más /
+notas crédito → queda saldo a favor, aplicable a la próxima OC. Ledger: saldo = SUM(credito) − SUM(aplicacion)."""
+import os
+import sqlite3
+
+from .conftest import TEST_PASSWORD, csrf_headers
+
+
+def _login(app, user="sebastian"):
+    c = app.test_client()
+    r = c.post("/login", data={"username": user, "password": TEST_PASSWORD},
+               headers=csrf_headers(), follow_redirects=False)
+    assert r.status_code == 302, r.data
+    return c
+
+
+def _exec(sql, params=()):
+    conn = sqlite3.connect(os.environ["DB_PATH"], timeout=10.0)
+    try:
+        cur = conn.execute(sql, params); conn.commit(); return cur.lastrowid
+    finally:
+        conn.close()
+
+
+def _oc(numero, proveedor, valor, estado="Autorizada"):
+    _exec("INSERT INTO ordenes_compra (numero_oc, proveedor, valor_total, estado, fecha) "
+          "VALUES (?, ?, ?, ?, date('now'))", (numero, proveedor, valor, estado))
+
+
+def _saldo(client, prov):
+    r = client.get("/api/compras/saldos-favor?proveedor=" + prov)
+    return (r.get_json().get("saldos") or [{}])[0].get("saldo", 0)
+
+
+def test_registrar_anticipo_y_ajuste(app, db_clean):
+    c = _login(app)
+    r = c.post("/api/compras/proveedor-saldo/registrar",
+               json={"proveedor": "ProvSaldo1", "origen": "anticipo", "monto": 500000, "medio": "Transferencia"},
+               headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    assert abs(r.get_json().get("saldo", 0) - 500000) < 1
+    # ajuste (nota crédito) suma
+    r2 = c.post("/api/compras/proveedor-saldo/registrar",
+                json={"proveedor": "ProvSaldo1", "origen": "ajuste", "monto": 50000, "observaciones": "devolución"},
+                headers=csrf_headers())
+    assert r2.status_code == 200, r2.data[:300]
+    assert abs(r2.get_json().get("saldo", 0) - 550000) < 1
+    # anticipo dejó egreso; ajuste no
+    conn = sqlite3.connect(os.environ["DB_PATH"], timeout=10.0)
+    try:
+        n_egr = conn.execute("SELECT COUNT(*) FROM flujo_egresos WHERE referencia='ProvSaldo1'").fetchone()[0]
+    finally:
+        conn.close()
+    assert n_egr == 1, "el anticipo (sale plata) debe dejar 1 egreso; el ajuste (nota crédito) NO"
+
+
+def test_aplicar_saldo_a_oc(app, db_clean):
+    c = _login(app)
+    c.post("/api/compras/proveedor-saldo/registrar",
+           json={"proveedor": "ProvSaldo2", "origen": "ajuste", "monto": 100000}, headers=csrf_headers())
+    _oc("OC-SF-1", "ProvSaldo2", 80000, "Autorizada")
+    # aplicar 60000 del saldo → pendiente 20000, saldo restante 40000, OC 'Parcial'
+    r = c.post("/api/compras/ordenes-compra/OC-SF-1/aplicar-saldo", json={"monto": 60000}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    d = r.get_json()
+    assert abs(d["pendiente"] - 20000) < 1, d
+    assert abs(d["saldo_restante"] - 40000) < 1, d
+    # OC quedó Parcial + hay un pago SaldoAFavor sin egreso
+    conn = sqlite3.connect(os.environ["DB_PATH"], timeout=10.0)
+    try:
+        est = conn.execute("SELECT estado FROM ordenes_compra WHERE numero_oc='OC-SF-1'").fetchone()[0]
+        pago = conn.execute("SELECT monto, medio FROM pagos_oc WHERE numero_oc='OC-SF-1'").fetchone()
+        n_egr = conn.execute("SELECT COUNT(*) FROM flujo_egresos WHERE referencia='OC-SF-1'").fetchone()[0]
+    finally:
+        conn.close()
+    assert est == "Parcial", est
+    assert pago and abs(pago[0] - 60000) < 1 and pago[1] == "SaldoAFavor", pago
+    assert n_egr == 0, "aplicar saldo NO genera egreso (la plata ya salió cuando entró el crédito)"
+
+
+def test_aplicar_saldo_insuficiente(app, db_clean):
+    c = _login(app)
+    c.post("/api/compras/proveedor-saldo/registrar",
+           json={"proveedor": "ProvSaldo3", "origen": "ajuste", "monto": 10000}, headers=csrf_headers())
+    _oc("OC-SF-2", "ProvSaldo3", 100000, "Autorizada")
+    r = c.post("/api/compras/ordenes-compra/OC-SF-2/aplicar-saldo", json={"monto": 50000}, headers=csrf_headers())
+    assert r.status_code == 409, r.data[:300]
+    assert r.get_json().get("codigo") == "SALDO_INSUFICIENTE"
+
+
+def test_compras_ui_saldofavor_render(app, db_clean):
+    c = _login(app)
+    body = c.get('/compras').get_data(as_text=True)
+    assert 'm-saldofavor' in body          # modal
+    assert 'openSaldoFavor' in body        # botón
+    assert 'aplicarSaldoOC' in body        # aplicar en el modal de pago
+
+
+def test_aplicar_saldo_excede_pendiente(app, db_clean):
+    c = _login(app)
+    c.post("/api/compras/proveedor-saldo/registrar",
+           json={"proveedor": "ProvSaldo4", "origen": "ajuste", "monto": 500000}, headers=csrf_headers())
+    _oc("OC-SF-3", "ProvSaldo4", 30000, "Autorizada")
+    r = c.post("/api/compras/ordenes-compra/OC-SF-3/aplicar-saldo", json={"monto": 50000}, headers=csrf_headers())
+    assert r.status_code == 422, r.data[:300]
+    assert r.get_json().get("codigo") == "EXCEDE_PENDIENTE"

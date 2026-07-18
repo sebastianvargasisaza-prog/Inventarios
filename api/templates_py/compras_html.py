@@ -809,6 +809,7 @@ function showSubPlanta(w){
       </div>
     </div>
     <div style="display:flex;gap:6px;">
+      <button class="btn" onclick="openSaldoFavor()" style="padding:6px 14px;font-size:12px;background:#16a34a;color:#fff;border:0;border-radius:5px;font-weight:700;cursor:pointer;" title="Anticipos, saldos a favor y notas crédito por proveedor">&#x1F4B3; Saldo a favor</button>
       <button class="btn" onclick="exportOcsConsolidado()" style="padding:6px 14px;font-size:12px;background:#059669;color:#fff;border:0;border-radius:5px;font-weight:700;cursor:pointer;" title="Excel consolidado de todas las OCs activas (estados, info bancaria, recepción, discrepancia)">&#x1F4CA; Excel consolidado</button>
       <button class="btn bp" onclick="loadPorPagar()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
     </div>
@@ -1137,6 +1138,7 @@ function showSubPlanta(w){
   <div class="mh"><h3>&#x1F4B8; Registrar Pago</h3><button class="mx" onclick="closeModal('m-pago')">&times;</button></div>
   <div class="mb">
     <div id="pago-info" style="background:#f9f8f7;border:1px solid #e7e5e4;border-radius:6px;padding:10px;font-size:13px;"></div>
+    <div id="pago-saldofavor" style="display:none;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:9px 11px;font-size:12px;margin-top:8px"></div>
     <div class="g2">
       <div class="fg"><label>Monto Pagado ($)</label><input type="number" id="pago-monto" min="0" step="0.01" placeholder="0"></div>
       <div class="fg"><label>Medio de Pago</label>
@@ -1183,6 +1185,33 @@ function showSubPlanta(w){
     <button class="btn bg" onclick="confirmarPago()">Registrar Pago</button>
   </div>
 </div>
+</div>
+
+<!-- MODAL: Saldo a favor por proveedor (Catalina 17-jul) -->
+<div id="m-saldofavor" class="ov">
+  <div class="mc" style="max-width:560px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <h3 style="margin:0;font-size:16px;color:#16a34a;">&#x1F4B3; Saldo a favor por proveedor</h3>
+      <button onclick="closeModal('m-saldofavor')" style="background:none;border:none;font-size:20px;cursor:pointer;color:#94a3b8;">&#10005;</button>
+    </div>
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:11px 13px;margin-bottom:12px;">
+      <div style="font-size:12px;font-weight:800;color:#166534;margin-bottom:7px;">Registrar saldo a favor</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+        <input id="sf-prov" placeholder="Proveedor" list="sf-prov-dl" style="flex:1;min-width:150px;padding:6px 9px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;">
+        <datalist id="sf-prov-dl"></datalist>
+        <select id="sf-origen" style="padding:6px 9px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;background:#fff;">
+          <option value="anticipo">Anticipo (sale plata)</option>
+          <option value="ajuste">Ajuste / nota cr&eacute;dito</option>
+        </select>
+        <input id="sf-monto" type="number" min="0" placeholder="$ monto" style="width:110px;padding:6px 9px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;">
+        <button type="button" onclick="registrarSaldoFavor()" style="padding:6px 13px;background:#16a34a;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700;font-size:12px;">Registrar</button>
+      </div>
+      <input id="sf-obs" placeholder="Observaci&oacute;n (opcional)" style="width:100%;margin-top:6px;padding:6px 9px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;box-sizing:border-box;">
+      <div style="font-size:10px;color:#166534;margin-top:5px;"><b>Anticipo</b> = le pagás por adelantado (sale plata, queda a favor). <b>Ajuste</b> = nota crédito/devolución (no sale plata). Aplicás el saldo al pagar una OC de ese proveedor.</div>
+    </div>
+    <div style="font-size:12px;font-weight:800;color:#334155;margin-bottom:5px;">Saldos vigentes</div>
+    <div id="sf-lista" style="font-size:12px;color:#64748b;max-height:38vh;overflow:auto;">cargando&hellip;</div>
+  </div>
 </div>
 
 <!-- MODAL: Nuevo Proveedor -->
@@ -8591,6 +8620,19 @@ async function payOC(numero_oc){
       // Pre-llenar con el monto pendiente
       if(d.pendiente > 0) document.getElementById('pago-monto').value = d.pendiente;
 
+      // 💰 Saldo a favor del proveedor (Catalina 17-jul) · si hay, ofrecer aplicarlo a esta OC
+      var sf = document.getElementById('pago-saldofavor');
+      if(sf){
+        var saldo = d.saldo_favor_proveedor || 0;
+        if(saldo > 0 && d.pendiente > 0){
+          var _apl = Math.min(saldo, d.pendiente);
+          sf.style.display = 'block';
+          sf.innerHTML = '💡 <b>'+_esc(d.proveedor||'')+'</b> tiene <b style="color:#16a34a">'+_money(saldo)+'</b> a favor.'+
+            ' Aplicar <input id="pago-aplicar-monto" type="number" min="0" value="'+_apl+'" style="width:110px;padding:3px 6px;border:1px solid #86efac;border-radius:5px;font-size:12px"> '+
+            '<button type="button" onclick="aplicarSaldoOC()" style="padding:4px 11px;background:#16a34a;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">Aplicar saldo</button>';
+        } else { sf.style.display = 'none'; }
+      }
+
       // Historial de pagos previos (pagos parciales)
       var hist = document.getElementById('pago-historial');
       var histList = document.getElementById('pago-historial-list');
@@ -8609,6 +8651,64 @@ async function payOC(numero_oc){
   }catch(e){}
 
   openModal('m-pago');
+}
+
+// 💰 Aplicar saldo a favor del proveedor a la OC abierta en el modal de pago (Catalina 17-jul)
+async function aplicarSaldoOC(){
+  var numero_oc = (document.getElementById('pago-num')||{}).value || '';
+  var el = document.getElementById('pago-aplicar-monto');
+  var monto = el ? (parseFloat(el.value)||0) : 0;
+  if(!numero_oc){ return; }
+  if(!(monto > 0)){ alert('Poné el monto de saldo a aplicar'); return; }
+  if(!confirm('¿Aplicar '+_money(monto)+' de saldo a favor a la '+numero_oc+'?\\nEsto reduce lo pendiente (no vuelve a salir plata).')) return;
+  try{
+    await _ensureCsrf();
+    var r = await fetch('/api/compras/ordenes-compra/'+encodeURIComponent(numero_oc)+'/aplicar-saldo', _fetchOpts('POST', {monto: monto}));
+    var d = await r.json();
+    if(!r.ok || !d.ok){ alert('No se pudo: '+((d&&d.error)||r.status)); return; }
+    alert('✅ Aplicado '+_money(d.aplicado)+' · pendiente '+_money(d.pendiente)+' · saldo restante '+_money(d.saldo_restante));
+    payOC(numero_oc);  // recargar el modal (muestra el nuevo pendiente + saldo)
+    if(typeof cargarPorPagar==='function'){ try{ cargarPorPagar(); }catch(e){} }
+    if(typeof loadPorPagar==='function'){ try{ loadPorPagar(); }catch(e){} }
+  }catch(e){ alert('Error: '+e); }
+}
+
+// 💳 Modal Saldo a favor: registrar anticipo/ajuste + ver saldos vigentes por proveedor (Catalina 17-jul)
+async function openSaldoFavor(){
+  openModal('m-saldofavor');
+  try{
+    var r = await fetch('/api/compras/saldos-favor');
+    var d = await r.json();
+    _renderSaldosFavor((d && d.saldos) || []);
+  }catch(e){ var b=document.getElementById('sf-lista'); if(b) b.innerHTML='<span style="color:#b91c1c">Error cargando</span>'; }
+}
+function _renderSaldosFavor(saldos){
+  var box = document.getElementById('sf-lista');
+  if(!box) return;
+  if(!saldos.length){ box.innerHTML = '<div style="opacity:.7">Sin saldos a favor por ahora.</div>'; return; }
+  box.innerHTML = saldos.map(function(s){
+    return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;"><span>'+_esc(s.proveedor)+'</span><b style="color:#16a34a">'+_money(s.saldo)+'</b></div>';
+  }).join('') + '<div style="text-align:right;font-weight:800;color:#166534;margin-top:6px;padding-top:5px;border-top:2px solid #bbf7d0;">Total a favor: '+_money(saldos.reduce(function(a,s){return a+(s.saldo||0);},0))+'</div>';
+}
+async function registrarSaldoFavor(){
+  var prov = ((document.getElementById('sf-prov')||{}).value || '').trim();
+  var origen = (document.getElementById('sf-origen')||{}).value || 'ajuste';
+  var monto = parseFloat((document.getElementById('sf-monto')||{}).value||'0')||0;
+  var obs = (document.getElementById('sf-obs')||{}).value || '';
+  if(!prov){ alert('Poné el nombre del proveedor'); return; }
+  if(!(monto>0)){ alert('Poné el monto'); return; }
+  var _lbl = origen==='anticipo' ? 'anticipo (SALE plata)' : 'ajuste / nota crédito (no sale plata)';
+  if(!confirm('¿Registrar '+_money(monto)+' a favor de '+prov+' como '+_lbl+'?')) return;
+  try{
+    await _ensureCsrf();
+    var r = await fetch('/api/compras/proveedor-saldo/registrar', _fetchOpts('POST', {proveedor:prov, origen:origen, monto:monto, observaciones:obs}));
+    var d = await r.json();
+    if(!r.ok || !d.ok){ alert('No se pudo: '+((d&&d.error)||r.status)); return; }
+    document.getElementById('sf-monto').value=''; document.getElementById('sf-obs').value='';
+    var rr = await fetch('/api/compras/saldos-favor'); var dd = await rr.json();
+    _renderSaldosFavor((dd&&dd.saldos)||[]);
+    alert('✅ '+prov+' ahora tiene '+_money(d.saldo)+' a favor');
+  }catch(e){ alert('Error: '+e); }
 }
 
 // ═══════════════════════════════════════════════════════════════════
