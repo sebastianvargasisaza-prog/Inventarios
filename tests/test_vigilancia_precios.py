@@ -61,3 +61,19 @@ def test_vigilancia_gate(app, db_clean):
     assert r.status_code == 302
     resp = c.get("/api/compras/vigilancia-precios")
     assert resp.status_code == 403, "solo gerencia/contadora"
+
+
+def test_tesoreria_pages_render(app, db_clean):
+    c = _login(app)  # sebastian (admin)
+    for url in ("/tesoreria", "/tesoreria/vigilancia-precios"):
+        r = c.get(url)
+        assert r.status_code == 200, f"{url} → {r.status_code}"
+        assert b"Tesorer" in r.data
+
+
+def test_tesoreria_gate(app, db_clean):
+    c = app.test_client()
+    c.post("/login", data={"username": "laura", "password": TEST_PASSWORD},
+           headers=csrf_headers(), follow_redirects=False)
+    r = c.get("/tesoreria")
+    assert r.status_code == 403

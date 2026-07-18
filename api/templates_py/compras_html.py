@@ -401,7 +401,7 @@ function renderHistorico(){
       <option value="Parcial">Parciales (deben)</option>
     </select>
     <button onclick="abrirOCRFactura()" style="padding:7px 14px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Subí foto de factura · la IA extrae items, totales · auto-match con OC pendiente">📤 Subir factura</button>
-    <a href="/tesoreria/vigilancia-precios" target="_blank" style="padding:7px 14px;background:#faf7ff;color:#6d28d9;border:1px solid #ece9f6;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none" title="Tesorería · materiales cuyo último precio subió vs su promedio (precios que se elevan)">&#128176; Vigilancia de precios</a>
+    <a href="/tesoreria" target="_blank" style="padding:7px 14px;background:#faf7ff;color:#6d28d9;border:1px solid #ece9f6;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none" title="Tesorería · vista de gerencia: por-pagar + precios que se elevan + rechazos">&#127974; Tesorería</a>
   </div>
   <div id="pagos-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:14px;"></div>
   <div id="pagos-saldos-panel" style="display:none;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:14px 16px;margin-bottom:14px;"></div>

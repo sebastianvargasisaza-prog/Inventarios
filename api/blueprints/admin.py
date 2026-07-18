@@ -16673,6 +16673,108 @@ def tesoreria_vigilancia_precios_page():
     return _VIGILANCIA_PRECIOS_HTML
 
 
+@bp.route("/tesoreria", methods=["GET"])
+def tesoreria_hub_page():
+    """Tesorería · hub de gerencia: consolida por-pagar + precios que se elevan + rechazos + caja."""
+    if 'compras_user' not in session:
+        return redirect("/login?next=/tesoreria")
+    try:
+        from config import CONTADORA_USERS as _CU
+    except Exception:
+        _CU = set()
+    if session.get('compras_user') not in (set(ADMIN_USERS) | set(_CU)):
+        return "<h2 style='font-family:sans-serif;padding:40px'>Solo gerencia / contadora</h2>", 403
+    return _TESORERIA_HUB_HTML
+
+
+_TESORERIA_HUB_HTML = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tesorería · EOS</title>
+<style>
+:root{--v:#6d28d9;--vl:#7c3aed;--txt:#1c1917;--mut:#78716c;--line:#eef0f2;--bg:#faf9fb;}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--txt);padding:28px;}
+.wrap{max-width:1200px;margin:0 auto;}
+h1{font-size:24px;margin:0 0 4px;letter-spacing:-.02em;display:flex;align-items:center;gap:10px;}
+.sub{color:var(--mut);font-size:13px;margin-bottom:22px;}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:20px;}
+.kpi{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px 18px;box-shadow:0 2px 14px rgba(15,23,42,.05);position:relative;overflow:hidden;}
+.kpi .bar{position:absolute;left:0;top:14px;bottom:14px;width:4px;border-radius:0 4px 4px 0;}
+.kpi .v{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1;}
+.kpi .l{font-size:10.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;margin-top:7px;font-weight:600;}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px;}
+.card{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 2px 14px rgba(15,23,42,.05);padding:18px;}
+.card h2{font-size:14px;margin:0 0 12px;display:flex;justify-content:space-between;align-items:center;}
+.card h2 a{font-size:11px;color:var(--v);text-decoration:none;font-weight:600;}
+.row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f5f4f2;font-size:12.5px;}
+.row:last-child{border-bottom:none;}
+.mono{font-family:ui-monospace,monospace;font-variant-numeric:tabular-nums;}
+.chip{display:inline-block;border-radius:999px;padding:2px 9px;font-size:10.5px;font-weight:700;}
+.c-hi{background:#fee2e2;color:#b91c1c;} .c-md{background:#fef3c7;color:#b45309;} .c-lo{background:#f5f4f2;color:#78716c;}
+.empty{color:var(--mut);font-size:12px;padding:14px 0;text-align:center;}
+a.back{color:var(--v);text-decoration:none;font-size:13px;font-weight:600;}
+.links{margin-top:18px;display:flex;gap:10px;flex-wrap:wrap;}
+.links a{background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 14px;font-size:12.5px;font-weight:700;color:var(--txt);text-decoration:none;box-shadow:0 2px 8px rgba(15,23,42,.04);}
+.links a:hover{border-color:#ddd6fe;color:var(--v);}
+</style></head><body><div class="wrap">
+<a class="back" href="/compras">&larr; Compras</a>
+<h1 style="margin-top:10px">&#127974; Tesorer&iacute;a <span style="font-size:13px;color:var(--mut);font-weight:600">&middot; vista de gerencia</span></h1>
+<div class="sub">Todo lo que mueve plata en un solo lugar: lo que hay que pagar, precios que se elevan, y rechazos que van a devoluci&oacute;n.</div>
+<div class="kpis" id="kpis"><div class="empty">Cargando&hellip;</div></div>
+<div class="grid">
+  <div class="card"><h2>&#128176; Precios que se elevan <a href="/tesoreria/vigilancia-precios">ver todo &rarr;</a></h2><div id="precios"><div class="empty">Cargando&hellip;</div></div></div>
+  <div class="card"><h2>&#9203; Por pagar (proyecci&oacute;n)</h2><div id="porpagar"><div class="empty">Cargando&hellip;</div></div></div>
+  <div class="card"><h2>&#9940; Rechazos &middot; devoluci&oacute;n al proveedor</h2><div id="rechazos"><div class="empty">Cargando&hellip;</div></div></div>
+</div>
+<div class="links">
+  <a href="/tesoreria/vigilancia-precios">&#128176; Vigilancia de precios</a>
+  <a href="/compras">&#128179; Pagos &amp; OCs</a>
+  <a href="/calidad">&#9888; No Conformidades</a>
+</div>
+</div>
+<script>
+function esc(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+function cop(n){ return '$'+Math.round(Number(n)||0).toLocaleString('es-CO'); }
+async function jget(u){ try{ var r=await fetch(u); if(!r.ok) return null; return await r.json(); }catch(e){ return null; } }
+async function cargar(){
+  var vig=await jget('/api/compras/vigilancia-precios?umbral=20&dias=365');
+  var cf=await jget('/api/compras/cash-flow');
+  var ncs=await jget('/api/calidad/no-conformidades');
+  // KPIs
+  var porPagar30=0, precElev=(vig&&vig.anomalias)?vig.anomalias.length:0, rechAb=0;
+  if(cf&&cf.proyecciones){ var p30=cf.proyecciones.find(function(x){return x.dias===30;}); if(p30) porPagar30=(p30.ocs_por_pagar&&p30.ocs_por_pagar.monto)||0; }
+  var rechList=[];
+  if(Array.isArray(ncs)){ ncs.forEach(function(n){ if(n.estado==='Abierta' && (/rechaz/i.test(n.tipo||'')||/recep/i.test(n.area||''))){ rechAb++; rechList.push(n); } }); }
+  document.getElementById('kpis').innerHTML=
+    '<div class="kpi"><span class="bar" style="background:#6d28d9"></span><div class="v">'+cop(porPagar30)+'</div><div class="l">Por pagar (30 d)</div></div>'
+    +'<div class="kpi"><span class="bar" style="background:#b45309"></span><div class="v" style="color:'+(precElev?'#b45309':'#15803d')+'">'+precElev+'</div><div class="l">Precios elevados</div></div>'
+    +'<div class="kpi"><span class="bar" style="background:#dc2626"></span><div class="v" style="color:'+(rechAb?'#b91c1c':'#15803d')+'">'+rechAb+'</div><div class="l">Rechazos abiertos</div></div>';
+  // Precios (top 6)
+  var pd=document.getElementById('precios');
+  if(vig&&vig.anomalias&&vig.anomalias.length){
+    pd.innerHTML=vig.anomalias.slice(0,6).map(function(x){
+      var cls=x.variacion_pct>50?'c-hi':(x.variacion_pct>20?'c-md':'c-lo');
+      return '<div class="row"><span style="font-weight:600">'+esc(x.nombre)+'<div style="font-size:10px;color:#a1a1aa">'+esc(x.proveedor||'')+'</div></span><span><span class="chip '+cls+'">+'+x.variacion_pct+'%</span> <span class="mono" style="margin-left:6px">'+cop(x.precio_ultimo_kg)+'/kg</span></span></div>';
+    }).join('');
+  } else { pd.innerHTML='<div class="empty">&#10003; Ning&uacute;n precio se elev&oacute; sobre el umbral.</div>'; }
+  // Por pagar 30/60/90
+  var pp=document.getElementById('porpagar');
+  if(cf&&cf.proyecciones){
+    pp.innerHTML=cf.proyecciones.map(function(x){
+      return '<div class="row"><span>Pr&oacute;ximos '+x.dias+' d&iacute;as</span><span class="mono" style="font-weight:700">'+cop((x.ocs_por_pagar&&x.ocs_por_pagar.monto)||0)+'</span></div>';
+    }).join('');
+  } else { pp.innerHTML='<div class="empty">Sin datos</div>'; }
+  // Rechazos
+  var rd=document.getElementById('rechazos');
+  if(rechList.length){
+    rd.innerHTML=rechList.slice(0,6).map(function(n){
+      return '<div class="row"><span style="font-weight:600">'+esc((n.tipo||'Rechazo'))+'<div style="font-size:10px;color:#a1a1aa">lote '+esc(n.lote||'-')+' &middot; '+esc(n.fecha||'')+'</div></span><span class="chip c-hi">Abierta</span></div>';
+    }).join('');
+  } else { rd.innerHTML='<div class="empty">&#10003; Sin rechazos abiertos.</div>'; }
+}
+cargar();
+</script></body></html>"""
+
+
 _VIGILANCIA_PRECIOS_HTML = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Vigilancia de precios · Tesorería · EOS</title>
