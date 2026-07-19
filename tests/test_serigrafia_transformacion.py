@@ -62,3 +62,24 @@ def test_serigrafia_cambia_codigo_y_ancla(app, db_clean):
     assert str(est_ser).upper() == "CUARENTENA", "el serigrafiado que vuelve entra en cuarentena (pasa por Calidad)"
     # y la base y el serigrafiado son códigos DISTINTOS (cambió de código)
     assert "MEE-BASE1" != "MEE-SERIG1"
+
+
+def test_serigrafia_no_envia_mas_que_el_stock(app, db_clean):
+    """No se puede enviar a marcar más base del que hay en bodega (evita stock MEE negativo · revisor 19-jul)."""
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("INSERT OR REPLACE INTO maestro_mee (codigo, descripcion, categoria, estado) "
+                 "VALUES ('MEE-BASE2','Frasco poco stock','Envase','Activo')")
+    conn.execute("INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, unidad, lote_ref, estado) "
+                 "VALUES ('MEE-BASE2','Entrada',100,'und','SALDO','VIGENTE')")
+    conn.execute("INSERT OR REPLACE INTO maestro_mee (codigo, descripcion, categoria, estado, material_referencia) "
+                 "VALUES ('MEE-SERIG2','Frasco serigrafiado','Envase','Activo','MEE-BASE2')")
+    conn.commit(); conn.close()
+    c = _login(app)
+    r = c.post("/api/programacion/marcacion-orden/enviar", json={
+        "serigrafiado_codigo": "MEE-SERIG2", "cantidad": 500, "metodo": "serigrafia"}, headers=csrf_headers())
+    assert r.status_code == 422 and r.get_json().get("codigo") == "STOCK_INSUFICIENTE"
+    # con forzar=true sí procede (override admin)
+    r2 = c.post("/api/programacion/marcacion-orden/enviar", json={
+        "serigrafiado_codigo": "MEE-SERIG2", "cantidad": 500, "metodo": "serigrafia", "forzar": True},
+        headers=csrf_headers())
+    assert r2.status_code in (200, 201), r2.data[:200]

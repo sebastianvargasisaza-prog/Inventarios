@@ -1396,6 +1396,7 @@ def calidad_recepcion_tecnica():
         return jsonify({'error': 'Para liberar el envase se requiere la firma del jefe de calidad (aprueba)'}), 400
     vals = {k: (str(b.get(k) or '')) for k in _F01_COLS}
     vals['mov_id'] = mov_id
+    vals['resultado'] = resultado  # guardar NORMALIZADO (no crudo) · el conteo/dispo filtra exacto (M2/M23 · revisor 19-jul)
     conn = get_db(); cur = conn.cursor()
     # E-firma Part 11 para DISPONER el envase (conforme=libera / no_conforme=rechaza) · idéntico al F02 de MP
     # (Sebastián 19-jul). Solo MEE: para MP el F01 es documental (la disposición la hace el F02).
@@ -1517,6 +1518,7 @@ def calidad_certificado_analisis():
         return jsonify({'error': 'Para APROBAR y liberar el lote se requiere la firma del jefe de calidad (aprobó)'}), 400
     vals = {k: (str(b.get(k) or '')) for k in _F02_COLS}
     vals['mov_id'] = mov_id
+    vals['resultado'] = resultado  # guardar NORMALIZADO (no crudo) · el conteo/dispo filtra exacto (M2/M23 · revisor 19-jul)
     conn = get_db(); cur = conn.cursor()
     # datos del lote para liberar
     lrow = cur.execute("SELECT lote, material_id, COALESCE(numero_oc,'') FROM movimientos WHERE id=?", (mov_id,)).fetchone()
@@ -1560,60 +1562,68 @@ def calidad_certificado_analisis():
         # corrige lo que llegó mal ANTES de liberar (INCI/tipo/nombre al maestro · cantidad/fecha/venc/lote al
         # kardex) y fija la UBICACIÓN definitiva al aprobar. Portado del viejo cc-review (probado). Auditado.
         _corr = []
-        _lote_key = _lote  # llave de lote para la ubicación (se actualiza si se corrige el lote)
-        _inci_new = (str(b.get('inci_corregido') or '')).strip()
-        if _inci_new:
-            _ci = cur.execute("SELECT COALESCE(nombre_inci,'') FROM maestro_mps WHERE codigo_mp=?", (_matid,)).fetchone()
-            if _ci is not None and (_ci[0] or '') != _inci_new:
-                cur.execute("UPDATE maestro_mps SET nombre_inci=? WHERE codigo_mp=?", (_inci_new[:200], _matid))
-                _corr.append('INCI:' + (_ci[0] or '(vacio)') + '->' + _inci_new)
-        _tipo_new = (str(b.get('tipo_material') or '')).strip().upper()
-        if _tipo_new in ('MP', 'ME', 'MEMP'):
-            _ct = cur.execute("SELECT COALESCE(tipo_material,'MP') FROM maestro_mps WHERE codigo_mp=?", (_matid,)).fetchone()
-            if _ct is not None and (_ct[0] or 'MP') != _tipo_new:
-                cur.execute("UPDATE maestro_mps SET tipo_material=? WHERE codigo_mp=?", (_tipo_new, _matid))
-                _corr.append('Tipo:' + (_ct[0] or 'MP') + '->' + _tipo_new)
-        _nom_new = (str(b.get('nombre_comercial_final') or '')).strip()
-        if _nom_new:
-            _cn = cur.execute("SELECT COALESCE(nombre_comercial,'') FROM maestro_mps WHERE codigo_mp=?", (_matid,)).fetchone()
-            if _cn is not None and (_cn[0] or '') != _nom_new:
-                cur.execute("UPDATE maestro_mps SET nombre_comercial=? WHERE codigo_mp=?", (_nom_new[:200], _matid))
-                _corr.append('Nombre->' + _nom_new)
-        try:
-            _cant_new = float(b.get('cantidad_final')) if str(b.get('cantidad_final') or '').strip() != '' else None
-        except Exception:
-            _cant_new = None
-        if _cant_new is not None and _cant_new > 0:
-            _cc = cur.execute("SELECT cantidad FROM movimientos WHERE id=?", (mov_id,)).fetchone()
-            if _cc is not None and abs(float(_cc[0] or 0) - _cant_new) > 0.001:
-                cur.execute("UPDATE movimientos SET cantidad=? WHERE id=?", (_cant_new, mov_id))
-                _corr.append('Cant:' + str(_cc[0]) + '->' + ('%g' % _cant_new))
-        _frec_new = (str(b.get('fecha_recepcion_final') or '')).strip()
-        if _frec_new:
-            cur.execute("UPDATE movimientos SET fecha=? WHERE id=?", (_frec_new, mov_id))
-            _corr.append('FRecep:' + _frec_new)
-        _fv_new = (str(b.get('fecha_vencimiento_final') or '')).strip()
-        if _fv_new:
-            cur.execute("UPDATE movimientos SET fecha_vencimiento=? WHERE material_id=? AND lote=? AND tipo='Entrada'",
-                        (_fv_new, _matid, _lote_key))
-            _corr.append('FVenc:' + _fv_new)
-        _lote_new = (str(b.get('lote_final') or '')).strip()
-        if _lote_new and _lote_new != _lote:
-            cur.execute("UPDATE movimientos SET lote=? WHERE material_id=? AND lote=?", (_lote_new, _matid, _lote))
-            _corr.append('Lote:' + _lote + '->' + _lote_new)
-            _lote_key = _lote_new
         _ubic_msg = ''
-        _est_f = (str(b.get('estanteria_final') or '')).strip()
-        _pos_f = (str(b.get('posicion_final') or '')).strip()
-        if resultado == 'aprobado' and (_est_f or _pos_f):
-            _sets, _ps = [], []
-            if _est_f:
-                _sets.append('estanteria=?'); _ps.append(_est_f[:50])
-            if _pos_f:
-                _sets.append('posicion=?'); _ps.append(_pos_f[:50])
-            cur.execute("UPDATE movimientos SET " + ', '.join(_sets) + " WHERE material_id=? AND lote=?",
-                        _ps + [_matid, _lote_key])
-            _ubic_msg = (_est_f or '-') + (('/' + _pos_f) if _pos_f else '')
+        _lote_key = _lote  # llave de lote para la ubicación (se actualiza si se corrige el lote)
+        # Las correcciones (maestro + kardex + ubicación) SOLO se aplican al APROBAR (liberación · ya exige
+        # e-firma Part 11). Revisor adversarial 19-jul (H1): antes corrían también en cuarentena/rechazo (sin
+        # firma) y editaban el maestro GLOBAL desde un form por-lote. La verificación final es la liberación.
+        if resultado == 'aprobado':
+            _inci_new = (str(b.get('inci_corregido') or '')).strip()
+            if _inci_new:
+                _ci = cur.execute("SELECT COALESCE(nombre_inci,'') FROM maestro_mps WHERE codigo_mp=?", (_matid,)).fetchone()
+                if _ci is not None and (_ci[0] or '') != _inci_new:
+                    cur.execute("UPDATE maestro_mps SET nombre_inci=? WHERE codigo_mp=?", (_inci_new[:200], _matid))
+                    _corr.append('INCI:' + (_ci[0] or '(vacio)') + '->' + _inci_new)
+            _tipo_new = (str(b.get('tipo_material') or '')).strip().upper()
+            if _tipo_new in ('MP', 'ME', 'MEMP'):
+                _ct = cur.execute("SELECT COALESCE(tipo_material,'MP') FROM maestro_mps WHERE codigo_mp=?", (_matid,)).fetchone()
+                if _ct is not None and (_ct[0] or 'MP') != _tipo_new:
+                    cur.execute("UPDATE maestro_mps SET tipo_material=? WHERE codigo_mp=?", (_tipo_new, _matid))
+                    _corr.append('Tipo:' + (_ct[0] or 'MP') + '->' + _tipo_new)
+            _nom_new = (str(b.get('nombre_comercial_final') or '')).strip()
+            if _nom_new:
+                _cn = cur.execute("SELECT COALESCE(nombre_comercial,'') FROM maestro_mps WHERE codigo_mp=?", (_matid,)).fetchone()
+                if _cn is not None and (_cn[0] or '') != _nom_new:
+                    cur.execute("UPDATE maestro_mps SET nombre_comercial=? WHERE codigo_mp=?", (_nom_new[:200], _matid))
+                    _corr.append('Nombre->' + _nom_new)
+            try:
+                _cant_new = float(b.get('cantidad_final')) if str(b.get('cantidad_final') or '').strip() != '' else None
+            except Exception:
+                _cant_new = None
+            if _cant_new is not None and _cant_new > 0:
+                _cc = cur.execute("SELECT cantidad FROM movimientos WHERE id=?", (mov_id,)).fetchone()
+                if _cc is not None and abs(float(_cc[0] or 0) - _cant_new) > 0.001:
+                    cur.execute("UPDATE movimientos SET cantidad=? WHERE id=?", (_cant_new, mov_id))
+                    _corr.append('Cant:' + str(_cc[0]) + '->' + ('%g' % _cant_new))
+            _frec_new = (str(b.get('fecha_recepcion_final') or '')).strip()
+            if _frec_new:
+                _cf = cur.execute("SELECT COALESCE(fecha,'') FROM movimientos WHERE id=?", (mov_id,)).fetchone()
+                if _cf is not None and str(_cf[0] or '')[:10] != _frec_new[:10]:
+                    cur.execute("UPDATE movimientos SET fecha=? WHERE id=?", (_frec_new, mov_id))
+                    _corr.append('FRecep:' + _frec_new)
+            _fv_new = (str(b.get('fecha_vencimiento_final') or '')).strip()
+            if _fv_new:
+                _cv = cur.execute("SELECT COALESCE(fecha_vencimiento,'') FROM movimientos WHERE id=?", (mov_id,)).fetchone()
+                if _cv is not None and str(_cv[0] or '')[:10] != _fv_new[:10]:
+                    cur.execute("UPDATE movimientos SET fecha_vencimiento=? WHERE material_id=? AND lote=? AND tipo='Entrada'",
+                                (_fv_new, _matid, _lote_key))
+                    _corr.append('FVenc:' + _fv_new)
+            _lote_new = (str(b.get('lote_final') or '')).strip()
+            if _lote_new and _lote_new != _lote:
+                cur.execute("UPDATE movimientos SET lote=? WHERE material_id=? AND lote=?", (_lote_new, _matid, _lote))
+                _corr.append('Lote:' + _lote + '->' + _lote_new)
+                _lote_key = _lote_new
+            _est_f = (str(b.get('estanteria_final') or '')).strip()
+            _pos_f = (str(b.get('posicion_final') or '')).strip()
+            if _est_f or _pos_f:
+                _sets, _ps = [], []
+                if _est_f:
+                    _sets.append('estanteria=?'); _ps.append(_est_f[:50])
+                if _pos_f:
+                    _sets.append('posicion=?'); _ps.append(_pos_f[:50])
+                cur.execute("UPDATE movimientos SET " + ', '.join(_sets) + " WHERE material_id=? AND lote=?",
+                            _ps + [_matid, _lote_key])
+                _ubic_msg = (_est_f or '-') + (('/' + _pos_f) if _pos_f else '')
         audit_log(cur, usuario=u, accion='CERTIFICADO_ANALISIS_F02', tabla='certificado_analisis_mp',
                   registro_id=(_f02_id or 0),
                   despues={'mov_id': mov_id, 'lote': _lote_key, 'resultado': resultado, 'aprobo': aprobo_por,

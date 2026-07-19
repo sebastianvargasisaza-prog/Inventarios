@@ -13887,6 +13887,18 @@ def marcacion_orden_enviar():
             base = r[0].strip()
     except Exception:
         pass
+    # Gate de stock del base ANTES de la Salida (revisor adversarial 19-jul · BUG-1): sin esto, enviar más de
+    # lo que hay dejaba SUM(movimientos_mee) NEGATIVO, enmascarado como 0 por _get_mee_stock (M5/M6). Override
+    # con forzar=true. El stock es el canónico (SUM), no el cache.
+    _stock_base = 0.0
+    try:
+        _stock_base = float(_get_mee_stock(conn).get(base.strip().upper(), 0) or 0)
+    except Exception:
+        _stock_base = 0.0
+    if not d.get('forzar') and cantidad > _stock_base + 0.01:
+        return jsonify({'error': 'Stock insuficiente del base ' + base + ': hay ' + ('%g' % _stock_base) +
+                        ', se quieren enviar ' + ('%g' % cantidad) + '. Recibí/ajustá el envase o reenviá con forzar=true.',
+                        'codigo': 'STOCK_INSUFICIENTE', 'stock': _stock_base}), 422
     # Salida del base (sale a marcar)
     try:
         c.execute("INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, unidad, lote_ref, responsable, observaciones) "
@@ -13894,6 +13906,13 @@ def marcacion_orden_enviar():
                   (base, cantidad, user, ('Enviado a ' + (metodo or 'marcar') + (' (' + proveedor + ')' if proveedor else ''))))
     except Exception as e:
         return jsonify({'error': 'No se pudo registrar la salida: ' + str(e)[:150]}), 500
+    # Decrementar el cache stock_actual del base (simetría con la recepción · revisor BUG-2 · CASE anti-negativo M51)
+    try:
+        c.execute("UPDATE maestro_mee SET stock_actual = CASE WHEN COALESCE(stock_actual,0) - ? < 0 THEN 0 "
+                  "ELSE COALESCE(stock_actual,0) - ? END WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))",
+                  (cantidad, cantidad, base))
+    except Exception:
+        pass
     c.execute("INSERT INTO marcacion_ordenes (base_codigo, serigrafiado_codigo, producto_nombre, metodo, proveedor, "
               "cantidad_enviada, produccion_id, fecha_envio, fecha_alistar, hora_alistar, urgencia, estado, creado_por, creado_en) "
               "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'enviado', ?, ?)",
