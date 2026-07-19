@@ -6046,18 +6046,17 @@ def recibir_oc(numero_oc):
     estado_oc_original = oc_row[0]
     prov_nombre = oc_row[1] or ''
     categoria = oc_row[2] or 'MP'
-    # Bug #3 fix · 21-may-2026 · OCs de pago directo (servicios/cuotas/CC)
-    # no deben aceptar recepción · son pagos puros sin material físico.
-    # Antes creaba movimientos fantasma con lote sintético si receptor confundía.
-    if categoria in CATEGORIAS_SIN_KARDEX:
-        _es_consumo = categoria in _CATS_CONSUMO
+    # PAGO DIRECTO (servicios/cuotas/CC): son pagos puros sin material físico → NO se reciben.
+    if categoria in CATEGORIAS_PAGO_DIRECTO:
         return jsonify({
-            'error': (f'OC categoría "{categoria}" es de CONSUMO/gasto general · NO entra a la '
-                      f'Bodega de Materias Primas (se traza en Consumos).' if _es_consumo else
-                      f'OC categoría {categoria} es pago directo · no recibe material físico'),
-            'codigo': 'OC_CONSUMO_SIN_RECEPCION' if _es_consumo else 'OC_PAGO_DIRECTO_SIN_RECEPCION',
-            'hint': 'No se recibe en bodega MP · marcá la OC como Pagada / registrá el pago.',
+            'error': f'OC categoría {categoria} es pago directo · no recibe material físico',
+            'codigo': 'OC_PAGO_DIRECTO_SIN_RECEPCION',
+            'hint': 'No se recibe · marcá la OC como Pagada / registrá el pago.',
         }), 409
+    # CONSUMIBLES/EPP/papelería (Sebastián 19-jul): recepción ADMINISTRATIVA (comprobar que llegó lo pedido,
+    # cantidad, quién recibió) SIN kardex regulado ni cuarentena (no son insumos de bodega MP). Acumula
+    # cantidad_recibida en la línea de la OC + estado Parcial/Recibida + rastro; NO inserta movimientos.
+    _es_consumo_admin = categoria in _CATS_CONSUMO
     # IDEMPOTENCIA · M27 · evitar doble Entrada por doble-submit CONCURRENTE de la
     # MISMA recepción (doble-click/retry de red). NO se puede serializar por tiempo
     # (rompería recepciones parciales secuenciales legítimas). El cliente manda un
@@ -6275,8 +6274,9 @@ def recibir_oc(numero_oc):
         coa_filename = (ir.get('coa_filename') or '').strip()
         lote_proveedor = (ir.get('lote_proveedor') or '').strip()
         ficha_seguridad_url = (ir.get('ficha_seguridad_url') or '').strip()
-        # Solo registrar movimiento si hay algo recibido
-        if cant_recibida > 0:
+        # Solo registrar movimiento (kardex) si hay algo recibido Y no es consumible administrativo.
+        # Consumibles: se acumula en la línea de la OC (abajo) pero NO entran al kardex ni a cuarentena.
+        if cant_recibida > 0 and not _es_consumo_admin:
             if categoria == 'MEE':
                 # Sin codigo_mp no se puede imputar el MEE · un INSERT con
                 # mee_codigo='' + UPDATE que no matchea nada = drift permanente.

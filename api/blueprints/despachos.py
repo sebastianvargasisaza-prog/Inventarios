@@ -71,10 +71,15 @@ def recepcion_detalle_oc(numero_oc):
         'LEFT JOIN maestro_mps m ON m.codigo_mp = oi.codigo_mp '
         'WHERE oi.numero_oc=?', (numero_oc,))
     items = c.fetchall()
+    try:
+        from blueprints.compras import _CATS_CONSUMO as _CC
+    except Exception:
+        _CC = ()
+    _es_consumo = oc[3] in _CC  # consumible/EPP/papelería → recepción ADMINISTRATIVA (sin cuarentena)
     return jsonify({
         'numero_oc': oc[0], 'proveedor': oc[1], 'estado': oc[2],
         'categoria': oc[3], 'fecha': oc[4], 'valor_total': oc[5],
-        'creado_por': oc[6], 'observaciones': oc[7],
+        'creado_por': oc[6], 'observaciones': oc[7], 'es_consumo': _es_consumo,
         'items': [
             {'codigo_mp': i[0], 'nombre_mp': i[1], 'cantidad_g': i[2],
              'precio_unitario': i[3], 'cantidad_recibida_g': i[4], 'lote_asignado': i[5],
@@ -97,16 +102,15 @@ def recepcion_seguimiento():
     # JOIN con solicitudes_compra: trae el numero SOL de origen para que
     # Recepcion vea la trazabilidad SOL → OC → recepcion. Sebastian pidió
     # 28-abr-2026: las OCs en transito deben mostrar de qué SOL vienen.
-    # FIX 18-jul (Sebastián · dividir recepción por naturaleza): Recepción es SOLO
-    # para lo que entra a bodega (MP/MEE). Los consumibles/gastos (EPP, papelería,
-    # aseo, servicios...) `recibir_oc` los RECHAZA (se trazan en Consumos) → no deben
-    # ensuciar el monitoreo de recepción. Excluir CATEGORIAS_SIN_KARDEX (mismo criterio
-    # que recibir_oc) además de los intangibles. Constantes son del código, sin inyección.
+    # Sebastián 19-jul (consumibles en recepción): Recepción monitorea MP/MEE (bodega, con cuarentena)
+    # Y consumibles/EPP/papelería (recepción ADMINISTRATIVA · comprobar que llegó lo pedido, sin cuarentena).
+    # Solo se excluye el PAGO DIRECTO (servicios/CC/influencer · pago puro sin material físico). Antes se
+    # excluía todo CATEGORIAS_SIN_KARDEX (incl. consumibles) · ahora `recibir_oc` sí los recibe (admin).
     try:
-        from blueprints.compras import CATEGORIAS_SIN_KARDEX as _SK
+        from blueprints.compras import CATEGORIAS_PAGO_DIRECTO as _PD
     except Exception:
-        _SK = ('SVC', 'CC', 'Cuenta de Cobro', 'Servicio')
-    _excl = tuple(set(_SK) | {'SVC', 'CC', 'Influencer/Marketing Digital', 'Cuenta de Cobro', 'Servicio'})
+        _PD = ('SVC', 'CC', 'Cuenta de Cobro', 'Servicio')
+    _excl = tuple(set(_PD) | {'SVC', 'CC', 'Influencer/Marketing Digital', 'Cuenta de Cobro', 'Servicio'})
     _not_in = ','.join("'" + x.replace("'", "''") + "'" for x in _excl)
     c.execute(
         'SELECT oc.numero_oc, oc.fecha, oc.estado, oc.proveedor, oc.categoria, '

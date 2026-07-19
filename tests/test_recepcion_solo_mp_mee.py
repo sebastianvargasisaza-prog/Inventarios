@@ -1,6 +1,7 @@
-"""Recepción divide por naturaleza (18-jul · Sebastián): el monitoreo/cola de recepción
-muestra SOLO lo que entra a bodega (MP/MEE). Consumibles/gastos (EPP, papelería, servicios)
-NO aparecen (recibir_oc los rechaza · se trazan en Consumos)."""
+"""Recepción por naturaleza (18-jul, actualizado 19-jul · Sebastián): el monitoreo de recepción
+muestra MP/MEE (bodega, con cuarentena) Y consumibles/EPP/papelería (recepción ADMINISTRATIVA, sin
+cuarentena · comprobar que llegó lo pedido). Solo el PAGO DIRECTO (servicios/CC/influencer) NO aparece
+(pago puro sin material físico)."""
 import os
 import sqlite3
 from .conftest import TEST_PASSWORD, csrf_headers
@@ -24,15 +25,17 @@ def _oc(numero, categoria):
         conn.close()
 
 
-def test_recepcion_solo_mp_mee(app, db_clean):
+def test_recepcion_mp_mee_y_consumibles_no_servicios(app, db_clean):
     _oc("OC-REC-MP", "MP")
     _oc("OC-REC-MEE", "MEE")
-    _oc("OC-REC-EPP", "EPP")          # consumo → NO debe aparecer
-    _oc("OC-REC-PAP", "Papeleria/Oficina")  # consumo → NO
-    _oc("OC-REC-SVC", "SVC")          # servicio → NO
+    _oc("OC-REC-EPP", "EPP")          # consumo → SÍ aparece (recepción administrativa)
+    _oc("OC-REC-PAP", "Papeleria/Oficina")  # consumo → SÍ
+    _oc("OC-REC-SVC", "SVC")          # pago directo → NO
+    _oc("OC-REC-CC", "Cuenta de Cobro")  # pago directo → NO
     c = _login(app)
     d = c.get("/api/recepcion/seguimiento").get_json()
     nums = {x.get("numero_oc") for x in (d if isinstance(d, list) else d.get("items", []))}
-    assert "OC-REC-MP" in nums and "OC-REC-MEE" in nums, "MP/MEE deben aparecer en recepción"
-    for n in ("OC-REC-EPP", "OC-REC-PAP", "OC-REC-SVC"):
-        assert n not in nums, f"{n} (consumo/servicio) NO debe aparecer en recepción"
+    assert "OC-REC-MP" in nums and "OC-REC-MEE" in nums, "MP/MEE deben aparecer"
+    assert "OC-REC-EPP" in nums and "OC-REC-PAP" in nums, "consumibles ahora SÍ aparecen (recepción administrativa)"
+    for n in ("OC-REC-SVC", "OC-REC-CC"):
+        assert n not in nums, f"{n} (pago directo) NO debe aparecer en recepción"

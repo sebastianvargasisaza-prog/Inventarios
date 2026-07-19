@@ -409,6 +409,9 @@ function renderOC(d) {
   } else if (d.estado === 'Rechazada') {
     warnEl.style.background = '#fee2e2'; warnEl.style.color = '#991b1b'; warnEl.style.border = '1px solid #fca5a5'; warnEl.style.display = 'block';
     warnEl.textContent = '\u274c Esta OC fue rechazada y no puede recibirse.';
+  } else if (d.es_consumo) {
+    warnEl.style.background = '#eff6ff'; warnEl.style.color = '#1e40af'; warnEl.style.border = '1px solid #bfdbfe'; warnEl.style.display = 'block';
+    warnEl.textContent = '\u2139 Consumible / gasto general (' + (d.categoria || '') + '). Recepcion ADMINISTRATIVA: solo confirmas que llego lo pedido (cantidad, quien recibio). NO pasa por cuarentena ni bodega de MP.';
   } else {
     warnEl.style.display = 'none'; warnEl.textContent = '';
   }
@@ -418,7 +421,8 @@ function renderOC(d) {
   var items = d.items || [];
   for (var idx = 0; idx < items.length; idx++) {
     (function(i, it) {
-      var unidad = it.unidad || ((d.categoria === 'MEE') ? 'uds' : 'g');
+      var esCons = !!d.es_consumo;
+      var unidad = it.unidad || (esCons ? 'uds' : ((d.categoria === 'MEE') ? 'uds' : 'g'));
       // Recepción parcial (Sebastián/Catalina 14-jul): pre-cargar lo PENDIENTE (no lo ya
       // recibido) y marcar como hechas las líneas completas → no doble-contar al re-abrir.
       var recibidoYa = Number(it.cantidad_recibida_g || 0);
@@ -434,7 +438,7 @@ function renderOC(d) {
         '<td style="text-align:center;">' + (yaCompleta
             ? '<span title="Ya recibida completa" style="color:#16a34a;font-weight:800;font-size:15px;">&#10003;</span>'
             : '<input type="checkbox" id="rx-' + i + '" checked onchange="toggleRecibir(' + i + ')" style="width:18px;height:18px;cursor:pointer;" title="Destildá para dejar esta MP pendiente">') + '</td>' +
-        '<td><strong>' + ((it.inci && it.inci.trim()) ? it.inci : it.codigo_mp) + '</strong><br><small style="color:#78716c">' + it.codigo_mp + (recibidoYa > 0 && !yaCompleta ? ' · <span style="color:#b45309;">ya recibido ' + recibidoYa.toLocaleString() + '</span>' : '') + '</small></td>' +
+        '<td><strong>' + ((it.inci && it.inci.trim()) ? it.inci : (it.codigo_mp || it.nombre_mp || '-')) + '</strong><br><small style="color:#78716c">' + (it.codigo_mp || it.nombre_mp || '') + (recibidoYa > 0 && !yaCompleta ? ' · <span style="color:#b45309;">ya recibido ' + recibidoYa.toLocaleString() + '</span>' : '') + '</small></td>' +
         '<td class="valor">' + Number(it.cantidad_g||0).toLocaleString() + ' ' + unidad + '</td>' +
         '<td><input type="number" id="cant-' + i + '" data-codigo="' + it.codigo_mp + '" data-sol="' + it.cantidad_g + '" value="' + prevRec + '"' + (yaCompleta ? ' disabled' : '') + ' min="0" step="0.01" oninput="updateRow(' + i + ')"></td>' +
         '<td id="dif-' + i + '" class="valor" style="font-weight:600;"></td>' +
@@ -448,10 +452,12 @@ function renderOC(d) {
         '<td><input type="text" id="lote-' + i + '" placeholder="Ej: L-2026-001" style="width:110px;"></td>' +
         '<td><input type="date" id="fv-' + i + '" style="width:130px;"></td>' +
         '<td><input type="text" id="nota-' + i + '" placeholder="Observacion opcional"></td>' +
-        '<td style="text-align:center;">' + (esMee
-            ? '<span style="color:#cbd5e1;font-size:12px;" title="Los envases (MEE) se cuentan en unidades, no aplica desglose en gramos">n/a</span>'
+        '<td style="text-align:center;">' + ((esMee || esCons)
+            ? '<span style="color:#cbd5e1;font-size:12px;" title="No aplica desglose por envase">n/a</span>'
             : '<button type="button" class="btn-env" id="env-btn-' + i + '" onclick="abrirRecModal(' + i + ')" data-envcod="' + (it.codigo_mp||'') + '" title="Definir en cuántos envases llegó y cuánto hay en cada uno (ej: 3 de 1000 + 1 de 500)">1 envase</button>') + '</td>' +
-        '<td style="text-align:center;"><button class="btn btn-print" style="padding:5px 11px;font-size:11px;white-space:nowrap;" data-rotidx="' + i + '" data-rotcod="' + (it.codigo_mp||'') + '" data-rotmee="' + (esMee ? 1 : 0) + '" title="Imprimir rótulo de este material (usa la cantidad recibida, el lote y el desglose de envases de esta fila)">&#128424;&#65039; Rótulo</button></td>';
+        '<td style="text-align:center;">' + (esCons
+            ? '<span style="color:#cbd5e1;font-size:12px;" title="Los consumibles no llevan rótulo de bodega">n/a</span>'
+            : '<button class="btn btn-print" style="padding:5px 11px;font-size:11px;white-space:nowrap;" data-rotidx="' + i + '" data-rotcod="' + (it.codigo_mp||'') + '" data-rotmee="' + (esMee ? 1 : 0) + '" title="Imprimir rótulo de este material (usa la cantidad recibida, el lote y el desglose de envases de esta fila)">&#128424;&#65039; Rótulo</button>') + '</td>';
       tbody.appendChild(tr);
       updateRow(i);
     })(idx, items[idx]);
