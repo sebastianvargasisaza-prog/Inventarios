@@ -10716,7 +10716,8 @@ def _rotulo_recep_css(lw, lh):
       ".lote{margin:0 16px 10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;text-align:center;padding:8px}"
       ".lote .ll{font-size:9px;font-weight:700;color:#9a3412;text-transform:uppercase;letter-spacing:.4px}.lote .lv{font-size:20px;font-weight:800;color:#c2410c;letter-spacing:1px}.lote svg{max-width:100%;height:auto;margin-top:4px}"
       "table{width:100%;border-collapse:collapse}"
-      "td{padding:6px 12px;border-top:1px solid var(--line);vertical-align:middle;font-size:12px}"
+      "td{padding:6px 12px;vertical-align:middle;font-size:12px}"  # sin lineas horizontales entre filas (mas limpio · Sebastian 18-jul)
+      "tr:nth-of-type(even) td:not(.k){background:#fbfbfc}"  # zebra tenue separa filas sin lineas
       "td.k{width:1%;color:var(--mute);font-weight:700;font-size:9.5px;text-transform:uppercase;letter-spacing:.3px;background:#fafafa;white-space:nowrap}"
       "td:not(.k){white-space:normal;word-break:break-word;overflow-wrap:anywhere}"
       ".num{font-variant-numeric:tabular-nums;font-weight:600}.cant{color:#15803d;font-weight:800}.cantsub{color:var(--mute);font-weight:600;font-size:10px}.venc{color:#c0392b;font-weight:600}.fill{background:repeating-linear-gradient(-45deg,#fff,#fff 6px,#fafafa 6px,#fafafa 7px);height:20px}.ck{text-align:center;font-weight:700}"
@@ -10732,15 +10733,15 @@ def _rotulo_recep_css(lw, lh):
       # más ancha que la hoja · la fila Tipo de insumo cortaba "Material de Empaque"). Compactado
       # vertical fuerte para que las firmas queden en la misma página (Sebastián 18-jul).
       "@media print{html,body{background:#fff}.ph{display:none}.wrap{display:block;padding:0;gap:0}.accent{height:3px}"
-      ".sheet{width:" + w4 + "mm;max-width:" + w4 + "mm;border-radius:0;box-shadow:none;border:1px solid #ccc;margin:0 auto;page-break-after:always;page-break-inside:avoid;break-inside:avoid;overflow:hidden}.sheet:last-child{page-break-after:auto}"
-      "td{padding:0.5px 7px;font-size:7.5pt;line-height:1.04}td.k{font-size:6pt}"
+      ".sheet{width:" + w4 + "mm;max-width:" + w4 + "mm;border-radius:0;box-shadow:none;border:1px solid #bbb;margin:0 auto;page-break-after:always;page-break-inside:avoid;break-inside:avoid;overflow:hidden}.sheet:last-child{page-break-after:auto}"
+      "td{padding:0.5px 9px;font-size:6.5pt;line-height:1.05}td.k{font-size:5.6pt}"
       "td:not(.k){white-space:normal;word-break:break-word;overflow-wrap:anywhere}"  # PRINT: los valores ENVUELVEN (no cortan a la derecha)
-      "td.dt{font-size:6.8pt}"  # fechas un pelin mas chicas: caben en 1 linea, envuelven sin cortar si no
-      ".top{padding:3px 12px 0}.mark{width:26px;height:26px}.co{font-size:8.5pt}.ctrl{font-size:5.2pt;padding:3px 6px;line-height:1.22}"
-      ".title{padding:0 12px 1px}.title .eyebrow{font-size:5.6pt}.title .name{font-size:11.5pt;line-height:1.03}.tipo{font-size:6pt;margin-right:7px}"
-      ".lote{margin:0 12px 1px;padding:1px}.lote .ll{font-size:6pt}.lote .lv{font-size:10pt}.lote svg{max-height:4.5mm;height:auto}"
-      ".qc{padding:2px 12px;font-size:7.5pt;gap:9px}.firma{padding:2px 11px 3px}.firma .l{font-size:6.5pt}.firma .sig{margin:4px 0 1px}.firma .f{font-size:6pt}"
-      ".qcbox{padding:1px 12px}.qcl{font-size:6pt;margin-bottom:1px}.qcarea{height:8mm;border-color:#999}.obs{height:3mm}"
+      ".top{padding:2px 12px 0}.mark{width:24px;height:24px}.co{font-size:8pt}.ctrl{font-size:5pt;padding:2px 5px;line-height:1.2}"
+      ".title{padding:0 12px 1px}.title .eyebrow{font-size:5.4pt}.title .name{font-size:11pt;line-height:1.03}.tipo{font-size:6pt;margin-right:7px}"
+      ".lote{margin:0 12px 2px;padding:1px}.lote .ll{font-size:6pt}.lote .lv{font-size:10pt}.lote svg{max-height:4mm;height:auto}"
+      ".qc{padding:2px 12px;font-size:6.5pt;gap:9px}.firma{padding:3px 11px 4px}.firma .l{font-size:6pt}.firma .sig{margin:5px 0 1px}.firma .f{font-size:5.6pt}"
+      # el area del sticker en alto generoso fijo para llenar el espacio de abajo (Sebastian 18-jul)
+      ".qcbox{padding:2px 12px 3px}.qcl{font-size:6pt;margin-bottom:1px}.qcarea{height:15mm;border-color:#999}.obs{height:4mm}.fill{height:5mm}"
       "@page{size:" + str(lw) + "mm " + str(lh) + "mm;margin:2mm}}"
       "</style>")
 
@@ -10883,15 +10884,17 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
            '<div class="title"><div class="eyebrow">Rotulo de ingreso &middot; Materia prima' + _rec_tag + '</div><h1 class="name">' + _e(nc) + '</h1></div>'
            '<div class="lote"><div class="ll">Numero de lote</div><div class="lv">' + _e(lote) + '</div><svg id="bc' + str(idx) + '"></svg></div>'
            '<table>'
-           '<tr><td class="k">Codigo MP</td><td class="num" colspan="3"><b>' + _e(codigo) + '</b></td></tr>'
-           '<tr><td class="k">Nombre comercial</td><td colspan="3"><b>' + _e(nc) + '</b></td></tr>'
-           '<tr><td class="k">Nombre INCI</td><td colspan="3">' + (_e(ni) or '-') + '</td></tr>'
-           '<tr><td class="k">Tipo de insumo</td><td colspan="3">' + _tp_row() + '</td></tr>'
-           '<tr><td class="k">Proveedor</td><td colspan="3">' + (_e(pv) or '-') + '</td></tr>'
-           '<tr><td class="k">' + _cant_lbl + '</td><td class="cant" colspan="3">' + _cant_val + '</td></tr>'
-           '<tr><td class="k">Fecha recepcion</td><td class="dt">' + _e(_frec) + '</td><td class="k">Vencimiento</td><td class="venc dt">' + (_e(fv) or '-') + '</td></tr>'
-           '<tr><td class="k">Ubicacion</td><td>' + ubic_disp + '</td><td class="k">Fecha analisis</td><td class="fill"></td></tr>'
-           '<tr><td class="k">Observaciones</td><td colspan="3" class="fill obs"></td></tr>'
+           '<tr><td class="k">Codigo MP</td><td class="num"><b>' + _e(codigo) + '</b></td></tr>'
+           '<tr><td class="k">Nombre comercial</td><td><b>' + _e(nc) + '</b></td></tr>'
+           '<tr><td class="k">Nombre INCI</td><td>' + (_e(ni) or '-') + '</td></tr>'
+           '<tr><td class="k">Tipo de insumo</td><td>' + _tp_row() + '</td></tr>'
+           '<tr><td class="k">Proveedor</td><td>' + (_e(pv) or '-') + '</td></tr>'
+           '<tr><td class="k">' + _cant_lbl + '</td><td class="cant">' + _cant_val + '</td></tr>'
+           '<tr><td class="k">Fecha recepcion</td><td class="dt">' + _e(_frec) + '</td></tr>'
+           '<tr><td class="k">Vencimiento</td><td class="venc dt">' + (_e(fv) or '-') + '</td></tr>'
+           '<tr><td class="k">Ubicacion</td><td>' + ubic_disp + '</td></tr>'
+           '<tr><td class="k">Fecha analisis</td><td class="fill"></td></tr>'
+           '<tr><td class="k">Observaciones</td><td class="fill obs"></td></tr>'
            '</table>'
            '<div class="qcbox"><div class="qcl">Estado de calidad <span>&middot; colocar sticker (cuarentena / aprobado / rechazado)</span></div><div class="qcarea"></div></div>'
            '<div class="firmas"><div class="firma"><div class="l">Realizado por</div><div class="sig"></div><div class="f">Firma / fecha</div></div>'
