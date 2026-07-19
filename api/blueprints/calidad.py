@@ -229,8 +229,12 @@ def calidad_indicadores():
 
     # ── Tasas por ventana (para serie 6m + valor del mes actual) ──────────
     def rft_y_rechazo(ini, fin):
-        aprob = cont("SELECT COUNT(*) FROM audit_log WHERE accion IN ('APROBAR_LOTE','CC_REVIEW_APROBADO') AND fecha >= ? AND fecha < ?", (ini, fin))
-        rech = cont("SELECT COUNT(*) FROM audit_log WHERE accion IN ('RECHAZAR_LOTE','CC_REVIEW_RECHAZADO') AND fecha >= ? AND fecha < ?", (ini, fin))
+        # Flujo ACTUAL = F02 (certificado_analisis_mp) · Sebastián 19-jul: los indicadores estaban ciegos al
+        # pipeline F01/F02 (solo miraban el viejo cc-review). Ahora cuentan el F02 + el histórico cc-review.
+        aprob = cont("SELECT COUNT(*) FROM certificado_analisis_mp WHERE resultado='aprobado' AND COALESCE(anulado,0)=0 AND creado_en >= ? AND creado_en < ?", (ini, fin))
+        rech = cont("SELECT COUNT(*) FROM certificado_analisis_mp WHERE resultado='no_aprobado' AND COALESCE(anulado,0)=0 AND creado_en >= ? AND creado_en < ?", (ini, fin))
+        aprob += cont("SELECT COUNT(*) FROM audit_log WHERE accion IN ('APROBAR_LOTE','CC_REVIEW_APROBADO') AND fecha >= ? AND fecha < ?", (ini, fin))
+        rech += cont("SELECT COUNT(*) FROM audit_log WHERE accion IN ('RECHAZAR_LOTE','CC_REVIEW_RECHAZADO') AND fecha >= ? AND fecha < ?", (ini, fin))
         tot = aprob + rech
         return _ratio_pct(aprob, tot), _ratio_pct(rech, tot)
 
@@ -250,7 +254,23 @@ def calidad_indicadores():
         fuera = cont("SELECT COUNT(*) FROM calidad_sistema_agua WHERE estado='fuera_spec' AND fecha >= ? AND fecha < ?", (ini, fin))
         return _ratio_pct(tot - fuera, tot)
 
-    series = {'rft_mp': [], 'tasa_rechazo_mp': [], 'liberacion_pt': [], 'micro_ok': [], 'agua_conforme': []}
+    # ── Conteos del flujo de MP (F02 · Sebastián 19-jul) ──────────────────
+    def mp_liberadas(ini, fin):
+        return (cont("SELECT COUNT(*) FROM certificado_analisis_mp WHERE resultado='aprobado' AND COALESCE(anulado,0)=0 AND creado_en >= ? AND creado_en < ?", (ini, fin))
+                + cont("SELECT COUNT(*) FROM audit_log WHERE accion IN ('APROBAR_LOTE','CC_REVIEW_APROBADO') AND fecha >= ? AND fecha < ?", (ini, fin)))
+
+    def mp_rechazadas(ini, fin):
+        return (cont("SELECT COUNT(*) FROM certificado_analisis_mp WHERE resultado='no_aprobado' AND COALESCE(anulado,0)=0 AND creado_en >= ? AND creado_en < ?", (ini, fin))
+                + cont("SELECT COUNT(*) FROM audit_log WHERE accion IN ('RECHAZAR_LOTE','CC_REVIEW_RECHAZADO') AND fecha >= ? AND fecha < ?", (ini, fin)))
+
+    def f01_documental(ini, fin):
+        # % de F01 (recepción técnica) que salieron CONFORMES (cumplimiento documental de la recepción)
+        tot = cont("SELECT COUNT(*) FROM recepcion_tecnica_doc WHERE COALESCE(anulado,0)=0 AND COALESCE(origen,'MP')='MP' AND creado_en >= ? AND creado_en < ?", (ini, fin))
+        conf = cont("SELECT COUNT(*) FROM recepcion_tecnica_doc WHERE COALESCE(anulado,0)=0 AND COALESCE(origen,'MP')='MP' AND resultado='conforme' AND creado_en >= ? AND creado_en < ?", (ini, fin))
+        return _ratio_pct(conf, tot)
+
+    series = {'rft_mp': [], 'tasa_rechazo_mp': [], 'liberacion_pt': [], 'micro_ok': [], 'agua_conforme': [],
+              'mp_liberadas_mes': [], 'mp_rechazadas_mes': [], 'rft_documental_f01': []}
     for label, ini, fin in meses:
         rft, rech = rft_y_rechazo(ini, fin)
         series['rft_mp'].append({'mes': label, 'valor': rft})
@@ -258,6 +278,9 @@ def calidad_indicadores():
         series['liberacion_pt'].append({'mes': label, 'valor': liberacion_pt(ini, fin)})
         series['micro_ok'].append({'mes': label, 'valor': micro_ok(ini, fin)})
         series['agua_conforme'].append({'mes': label, 'valor': agua_conforme(ini, fin)})
+        series['mp_liberadas_mes'].append({'mes': label, 'valor': mp_liberadas(ini, fin)})
+        series['mp_rechazadas_mes'].append({'mes': label, 'valor': mp_rechazadas(ini, fin)})
+        series['rft_documental_f01'].append({'mes': label, 'valor': f01_documental(ini, fin)})
 
     # ── Valores actuales ──────────────────────────────────────────────────
     rft_now, rech_now = rft_y_rechazo(mes_ini, mes_fin)
@@ -267,6 +290,9 @@ def calidad_indicadores():
         'liberacion_pt': liberacion_pt(mes_ini, mes_fin),
         'micro_ok': micro_ok(mes_ini, mes_fin),
         'agua_conforme': agua_conforme(mes_ini, mes_fin),
+        'mp_liberadas_mes': mp_liberadas(mes_ini, mes_fin),
+        'mp_rechazadas_mes': mp_rechazadas(mes_ini, mes_fin),
+        'rft_documental_f01': f01_documental(mes_ini, mes_fin),
         'nc_abiertas': cont("SELECT COUNT(*) FROM no_conformidades WHERE estado='Abierta'"),
         'oos_abiertos': cont("SELECT COUNT(*) FROM calidad_oos WHERE LOWER(COALESCE(estado,'')) NOT IN ('cerrado','rechazado','descartado')"),
         'capa_vencidas': cont("SELECT COUNT(*) FROM capa_acciones WHERE estado NOT IN ('Cerrada','Verificada') AND COALESCE(fecha_compromiso,'') <> '' AND fecha_compromiso < ?", (hoy,)),
@@ -298,14 +324,20 @@ def calidad_indicadores():
         "SELECT COUNT(*) FROM movimientos m LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp "
         "WHERE UPPER(COALESCE(m.estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA') AND m.tipo='Entrada' "
         "AND TRIM(COALESCE(m.material_id,'')) <> '' AND UPPER(COALESCE(mp.tipo_material,'MP'))='MP'")
-    # Liberaciones HOY (lotes de MP que Calidad aprobó en el día)
-    valores['liberacion_dia'] = cont(
-        "SELECT COUNT(*) FROM audit_log WHERE accion IN ('CC_REVIEW_APROBADO','APROBAR_LOTE') AND fecha >= ?", (hoy,))
-    # Tiempo de liberación: días promedio entre la Entrada del lote y su aprobación CC (90d · en Python cross-DB)
+    # Liberaciones HOY (lotes de MP que Calidad aprobó en el día · F02 + histórico cc-review)
+    valores['liberacion_dia'] = (
+        cont("SELECT COUNT(*) FROM certificado_analisis_mp WHERE resultado='aprobado' AND COALESCE(anulado,0)=0 AND creado_en >= ?", (hoy,))
+        + cont("SELECT COUNT(*) FROM audit_log WHERE accion IN ('CC_REVIEW_APROBADO','APROBAR_LOTE') AND fecha >= ?", (hoy,)))
+    # Tiempo de liberación: días promedio entre la Entrada del lote y su aprobación (90d · en Python cross-DB).
+    # Flujo actual = F02 (certificado_analisis_mp.creado_en vs movimientos.fecha) + histórico cc-review.
     _libs = c.execute(
+        "SELECT ca.creado_en, m.fecha FROM certificado_analisis_mp ca JOIN movimientos m ON m.id=ca.mov_id "
+        "WHERE ca.resultado='aprobado' AND COALESCE(ca.anulado,0)=0 AND COALESCE(ca.creado_en,'') <> '' "
+        "AND ca.creado_en >= date('now','-5 hours','-90 days')").fetchall()
+    _libs = list(_libs) + list(c.execute(
         "SELECT cr.fecha, m.fecha FROM cc_reviews cr JOIN movimientos m ON m.id=cr.mov_id "
         "WHERE cr.estado_final='APROBADO' AND COALESCE(cr.fecha,'') <> '' "
-        "AND cr.fecha >= date('now','-5 hours','-90 days')").fetchall()
+        "AND cr.fecha >= date('now','-5 hours','-90 days')").fetchall())
     _dl = []
     for _r in _libs:
         try:

@@ -217,3 +217,29 @@ def test_rotulo_acepta_override_ubicacion(app, db_clean):
     assert r.status_code == 200
     html = r.get_data(as_text=True)
     assert "E-9" in html and "A1" in html, "la ubicación override debe salir en el rótulo"
+
+
+def test_indicadores_mp_cuentan_f02(app, db_clean):
+    """Los indicadores de Calidad ahora reflejan el flujo F02: al aprobar una MP, sube MP liberadas
+    y el RFT; y aparecen los KPIs nuevos (mp_liberadas_mes, mp_rechazadas_mes, rft_documental_f01)."""
+    mid = _lote_cuarentena("MP-IND1", "LOTEIND1")
+    c = _login(app)
+    # F01 conforme (cuenta para cumplimiento documental)
+    c.post("/api/calidad/recepcion-tecnica", json={
+        "mov_id": mid, "tipo_insumo": "materia_prima", "crit_rotulado": "cumple",
+        "resultado": "conforme", "realiza_por": "Yuliel"}, headers=csrf_headers())
+    # F02 aprobado + firma → libera
+    sig = _firmar(c, mid, "libera")
+    r = c.post("/api/calidad/certificado-analisis", json={
+        "mov_id": mid, "resultado": "aprobado", "aprobo_por": "Laura", "signature_id": sig,
+        "aspecto_result": "ok", "aspecto_cumple": "si"}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    ind = c.get("/api/calidad/indicadores").get_json()
+    codes = {i["codigo"]: i for i in ind.get("indicadores", [])}
+    assert "mp_liberadas_mes" in codes, "debe existir el KPI MP liberadas"
+    assert "mp_rechazadas_mes" in codes and "rft_documental_f01" in codes
+    assert (codes["mp_liberadas_mes"]["valor"] or 0) >= 1, "la MP liberada por F02 debe contar"
+    # RFT (right first time) debe reflejar el aprobado (100% si es el único)
+    assert (codes["rft_mp"]["valor"] or 0) >= 1
+    # cumplimiento documental F01: la F01 conforme debe dar 100%
+    assert (codes["rft_documental_f01"]["valor"] or 0) >= 100

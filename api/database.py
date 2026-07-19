@@ -10134,6 +10134,20 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "CREATE INDEX IF NOT EXISTS idx_ventas_diarias_fecha ON ventas_diarias(fecha)",
         "CREATE INDEX IF NOT EXISTS idx_ventas_diarias_sku ON ventas_diarias(sku)",
     ]),
+    (363, "Calidad · Indicadores del flujo de MP (F02) · Sebastián 19-jul: los indicadores de MP estaban "
+          "ciegos al pipeline F01/F02 (solo miraban el viejo cc-review) → ahora rft_mp/tasa_rechazo_mp/"
+          "tiempo_liberacion/liberacion_dia cuentan el F02 (cambio en calidad.py) + 3 KPIs nuevos: MP "
+          "liberadas/mes, MP rechazadas/mes y % cumplimiento documental F01. Siembra sus metas (idempotente).", [
+        "INSERT INTO calidad_kpi_metas (codigo,nombre,descripcion,unidad,direccion,meta,umbral_amarillo,categoria,orden) "
+        "SELECT 'mp_liberadas_mes','MP liberadas (mes)','Lotes de materia prima aprobados y liberados en el mes (F02).','lotes','mayor_mejor',1,0,'Liberación',12 "
+        "WHERE NOT EXISTS (SELECT 1 FROM calidad_kpi_metas WHERE codigo='mp_liberadas_mes')",
+        "INSERT INTO calidad_kpi_metas (codigo,nombre,descripcion,unidad,direccion,meta,umbral_amarillo,categoria,orden) "
+        "SELECT 'mp_rechazadas_mes','MP rechazadas (mes)','Lotes de materia prima rechazados en el mes (van a No Conformidades · devolución al proveedor).','lotes','menor_mejor',0,2,'Liberación',22 "
+        "WHERE NOT EXISTS (SELECT 1 FROM calidad_kpi_metas WHERE codigo='mp_rechazadas_mes')",
+        "INSERT INTO calidad_kpi_metas (codigo,nombre,descripcion,unidad,direccion,meta,umbral_amarillo,categoria,orden) "
+        "SELECT 'rft_documental_f01','Cumplimiento documental (F01)','% de recepciones técnicas (F01) conformes: rotulado, COA, ficha, hoja de seguridad, documento coincide.','%','mayor_mejor',95,90,'Liberación',14 "
+        "WHERE NOT EXISTS (SELECT 1 FROM calidad_kpi_metas WHERE codigo='rft_documental_f01')",
+    ]),
 ]
 
 
