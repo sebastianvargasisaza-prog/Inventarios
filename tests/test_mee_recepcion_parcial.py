@@ -75,3 +75,42 @@ def test_mee_recepcion_por_partes_ancladas(app, db_clean):
     assert _oc_estado("OC-MEE-P1") == "Recibida", "completa → Recibida"
     n2, tot2 = _mee_entradas("MEE-PARC", "OC-MEE-P1")
     assert n2 == 2 and tot2 == 1000, "2 Entradas ancladas, total 1000, ambas en cuarentena"
+
+
+def _mee_estado(cod, numero_oc):
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    try:
+        r = conn.execute("SELECT id, estado FROM movimientos_mee WHERE mee_codigo=? AND tipo='Entrada' AND lote_ref=? "
+                         "ORDER BY id DESC LIMIT 1", (cod, numero_oc)).fetchone()
+        return r
+    finally:
+        conn.close()
+
+
+def test_ciclo_mee_recepcion_a_disponible(app, db_clean):
+    """Ciclo MEE (idéntico a MP): envase recibido → CUARENTENA → aparece en Calidad → F01 conforme + firma
+    del jefe → VIGENTE (disponible, deja de estar en cuarentena)."""
+    _seed_oc_mee("OC-MEE-C1", "MEE-CICLO", "Tapa negra", 500)
+    c = _login(app)
+    c.post("/api/ordenes-compra/OC-MEE-C1/recibir", json={
+        "receptor_nombre": "Luz", "recepcion_id": "tokc-1",
+        "items_recepcion": [{"codigo_mp": "MEE-CICLO", "cantidad_recibida": 500, "estado": "OK"}]},
+        headers=csrf_headers())
+    row = _mee_estado("MEE-CICLO", "OC-MEE-C1")
+    assert row is not None and str(row[1]).upper() == "CUARENTENA", "el envase entra en cuarentena"
+    mid = row[0]
+    # aparece en el pipeline de Calidad (rama MEE)
+    pipe = c.get("/api/calidad/recepcion-pipeline").get_json()
+    mee_ids = [l["mov_id"] for l in pipe.get("lotes", []) if l.get("tipo") == "MEE"]
+    assert mid in mee_ids, "el envase en cuarentena debe aparecer en Calidad (F01)"
+    # F01 conforme + firma del jefe → libera (envases no llevan F02)
+    r = c.post("/api/calidad/recepcion-tecnica", json={
+        "mov_id": mid, "origen": "MEE", "tipo_insumo": "envase", "crit_rotulado": "cumple",
+        "resultado": "conforme", "realiza_por": "Yuliel", "aprueba_por": "Laura"}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    assert r.get_json().get("liberado") == 1
+    row2 = _mee_estado("MEE-CICLO", "OC-MEE-C1")
+    assert str(row2[1]).upper() == "VIGENTE", "el envase liberado queda VIGENTE (disponible, fuera de cuarentena)"
+    # y ya no aparece en cuarentena/Calidad
+    pipe2 = c.get("/api/calidad/recepcion-pipeline").get_json()
+    assert mid not in [l["mov_id"] for l in pipe2.get("lotes", [])], "liberado sale del pipeline de cuarentena"
