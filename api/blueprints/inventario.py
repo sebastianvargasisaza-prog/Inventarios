@@ -10731,15 +10731,16 @@ def _rotulo_recep_css(lw, lh):
       # sin cortarse ni a la derecha ni abajo. Los valores ENVUELVEN (no nowrap → no fuerzan la tabla
       # más ancha que la hoja · la fila Tipo de insumo cortaba "Material de Empaque"). Compactado
       # vertical fuerte para que las firmas queden en la misma página (Sebastián 18-jul).
-      "@media print{html,body{background:#fff}.ph{display:none}.wrap{display:block;padding:0;gap:0}.accent{height:2px}"
+      "@media print{html,body{background:#fff}.ph{display:none}.wrap{display:block;padding:0;gap:0}.accent{height:3px}"
       ".sheet{width:" + w4 + "mm;max-width:" + w4 + "mm;border-radius:0;box-shadow:none;border:1px solid #ccc;margin:0 auto;page-break-after:always;page-break-inside:avoid;break-inside:avoid;overflow:hidden}.sheet:last-child{page-break-after:auto}"
-      "td{padding:0.4px 6px;font-size:6.5pt;line-height:1.05}td.k{font-size:5pt}"
+      "td{padding:0.5px 7px;font-size:7.5pt;line-height:1.04}td.k{font-size:6pt}"
       "td:not(.k){white-space:normal;word-break:break-word;overflow-wrap:anywhere}"  # PRINT: los valores ENVUELVEN (no cortan a la derecha)
-      ".top{padding:3px 10px 0}.mark{width:26px;height:26px}.co{font-size:8pt}.ctrl{font-size:4.6pt;padding:2px 4px;line-height:1.25}"
-      ".title{padding:0 10px 1px}.title .eyebrow{font-size:5pt}.title .name{font-size:11pt;line-height:1.03}.tipo{font-size:5.5pt;margin-right:5px}"
-      ".lote{margin:0 10px 1px;padding:1px}.lote .ll{font-size:6pt}.lote .lv{font-size:10pt}.lote svg{max-height:5mm;height:auto}"
-      ".qc{padding:1px 10px;font-size:6.5pt;gap:8px}.firma{padding:2px 9px 2px}.firma .l{font-size:6pt}.firma .sig{margin:4px 0 1px}.firma .f{font-size:5.5pt}"
-      ".qcbox{padding:1px 10px}.qcl{font-size:5.5pt;margin-bottom:0}.qcarea{height:10mm;border-color:#999}.obs{height:3mm}"
+      "td.dt{font-size:6.8pt}"  # fechas un pelin mas chicas: caben en 1 linea, envuelven sin cortar si no
+      ".top{padding:3px 12px 0}.mark{width:26px;height:26px}.co{font-size:8.5pt}.ctrl{font-size:5.2pt;padding:3px 6px;line-height:1.22}"
+      ".title{padding:0 12px 1px}.title .eyebrow{font-size:5.6pt}.title .name{font-size:11.5pt;line-height:1.03}.tipo{font-size:6pt;margin-right:7px}"
+      ".lote{margin:0 12px 1px;padding:1px}.lote .ll{font-size:6pt}.lote .lv{font-size:10pt}.lote svg{max-height:4.5mm;height:auto}"
+      ".qc{padding:2px 12px;font-size:7.5pt;gap:9px}.firma{padding:2px 11px 3px}.firma .l{font-size:6.5pt}.firma .sig{margin:4px 0 1px}.firma .f{font-size:6pt}"
+      ".qcbox{padding:1px 12px}.qcl{font-size:6pt;margin-bottom:1px}.qcarea{height:8mm;border-color:#999}.obs{height:3mm}"
       "@page{size:" + str(lw) + "mm " + str(lh) + "mm;margin:2mm}}"
       "</style>")
 
@@ -10882,13 +10883,13 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
            '<div class="title"><div class="eyebrow">Rotulo de ingreso &middot; Materia prima' + _rec_tag + '</div><h1 class="name">' + _e(nc) + '</h1></div>'
            '<div class="lote"><div class="ll">Numero de lote</div><div class="lv">' + _e(lote) + '</div><svg id="bc' + str(idx) + '"></svg></div>'
            '<table>'
-           '<tr><td class="k">Codigo MP</td><td class="num"><b>' + _e(codigo) + '</b></td></tr>'
-           '<tr><td class="k">Nombre comercial</td><td><b>' + _e(nc) + '</b></td></tr>'
-           '<tr><td class="k">Nombre INCI</td><td>' + (_e(ni) or '-') + '</td></tr>'
+           '<tr><td class="k">Codigo MP</td><td class="num" colspan="3"><b>' + _e(codigo) + '</b></td></tr>'
+           '<tr><td class="k">Nombre comercial</td><td colspan="3"><b>' + _e(nc) + '</b></td></tr>'
+           '<tr><td class="k">Nombre INCI</td><td colspan="3">' + (_e(ni) or '-') + '</td></tr>'
            '<tr><td class="k">Tipo de insumo</td><td colspan="3">' + _tp_row() + '</td></tr>'
-           '<tr><td class="k">Proveedor</td><td>' + (_e(pv) or '-') + '</td></tr>'
-           '<tr><td class="k">' + _cant_lbl + '</td><td class="cant">' + _cant_val + '</td></tr>'
-           '<tr><td class="k">Fecha recepcion</td><td>' + _e(_frec) + '</td><td class="k">Vencimiento</td><td class="venc">' + (_e(fv) or '-') + '</td></tr>'
+           '<tr><td class="k">Proveedor</td><td colspan="3">' + (_e(pv) or '-') + '</td></tr>'
+           '<tr><td class="k">' + _cant_lbl + '</td><td class="cant" colspan="3">' + _cant_val + '</td></tr>'
+           '<tr><td class="k">Fecha recepcion</td><td class="dt">' + _e(_frec) + '</td><td class="k">Vencimiento</td><td class="venc dt">' + (_e(fv) or '-') + '</td></tr>'
            '<tr><td class="k">Ubicacion</td><td>' + ubic_disp + '</td><td class="k">Fecha analisis</td><td class="fill"></td></tr>'
            '<tr><td class="k">Observaciones</td><td colspan="3" class="fill obs"></td></tr>'
            '</table>'
