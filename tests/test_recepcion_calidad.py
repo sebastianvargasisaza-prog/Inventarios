@@ -243,3 +243,40 @@ def test_indicadores_mp_cuentan_f02(app, db_clean):
     assert (codes["rft_mp"]["valor"] or 0) >= 1
     # cumplimiento documental F01: la F01 conforme debe dar 100%
     assert (codes["rft_documental_f01"]["valor"] or 0) >= 100
+
+
+def test_ciclo_completo_ingreso_planta_a_disponible(app, db_clean):
+    """Ciclo completo (Sebastián 19-jul): ingreso MANUAL de Planta → CUARENTENA → aparece en Calidad →
+    F02 aprobado → VIGENTE → disponible para fabricación (sale de cuarentena, entra a /api/lotes)."""
+    import os as _os
+    conn = sqlite3.connect(_os.environ["DB_PATH"], timeout=10)
+    conn.execute("INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_comercial, tipo_material, activo) "
+                 "VALUES ('MP-CICLO', 'MP Ciclo', 'MP', 1)")
+    conn.commit(); conn.close()
+    c = _login(app, "sebastian")
+    # 1) ingreso manual de Planta (modal Ingreso MP) · cuarentena por defecto
+    r = c.post("/api/recepcion", json={"codigo_mp": "MP-CICLO", "cantidad": 5000, "lote": "LOTECICLO",
+               "fecha_vencimiento": "2027-12-31"}, headers=csrf_headers())
+    assert r.status_code in (200, 201), r.data[:300]
+    # entra en CUARENTENA (no disponible aún)
+    assert _estado_lote("LOTECICLO") == "CUARENTENA"
+    lotes_disp = [l for l in c.get("/api/lotes").get_json().get("lotes", []) if l.get("lote") == "LOTECICLO"]
+    assert not lotes_disp, "en cuarentena NO debe estar en stock disponible"
+    cuar = c.get("/api/lotes/cuarentena").get_json()
+    mid = next((x["id"] for x in cuar if x.get("lote") == "LOTECICLO"), None)
+    assert mid is not None, "el ingreso manual debe aparecer en cuarentena"
+    # 2) aparece en el pipeline de Calidad (conectado de una)
+    pipe = c.get("/api/calidad/recepcion-pipeline").get_json()
+    assert mid in [l["mov_id"] for l in pipe.get("lotes", [])], "debe aparecer en Calidad para F01/F02"
+    # 3) Calidad aprueba el F02 (con firma) → libera
+    sig = _firmar(c, mid, "libera")
+    r2 = c.post("/api/calidad/certificado-analisis", json={
+        "mov_id": mid, "resultado": "aprobado", "aprobo_por": "Laura", "signature_id": sig,
+        "estanteria_final": "E-1", "posicion_final": "A1"}, headers=csrf_headers())
+    assert r2.status_code == 200, r2.data[:300]
+    # 4) queda VIGENTE, sale de cuarentena y entra a stock disponible para fabricación
+    assert _estado_lote("LOTECICLO") == "VIGENTE"
+    cuar2 = c.get("/api/lotes/cuarentena").get_json()
+    assert "LOTECICLO" not in [x.get("lote") for x in cuar2], "liberado ya no debe estar en cuarentena"
+    disp2 = [l for l in c.get("/api/lotes").get_json().get("lotes", []) if l.get("lote") == "LOTECICLO"]
+    assert disp2, "liberado debe estar disponible en /api/lotes (usable en fabricación)"

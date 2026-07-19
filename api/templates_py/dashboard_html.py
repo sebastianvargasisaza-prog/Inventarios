@@ -922,7 +922,7 @@ h2 { color:var(--cx-text); margin-bottom:12px; font-size:1.3em; font-weight:700;
       </div>
       <label for="ing-cuarentena" style="display:flex;align-items:center;gap:12px;margin-bottom:12px;padding:12px 15px;background:linear-gradient(135deg,#fff7ed,#fff);border-radius:12px;border:1px solid #fed7aa;cursor:pointer;">
         <input type="checkbox" id="ing-cuarentena" checked style="width:18px;height:18px;flex:none;">
-        <span style="font-weight:700;color:#c2410c;">&#128274; Ingresar en CUARENTENA <span style="font-weight:500;color:#9a3412;">· pendiente aprobación de Calidad</span></span>
+        <span style="font-weight:700;color:#c2410c;">&#128274; Ingresar en CUARENTENA <span style="font-weight:500;color:#9a3412;">· pasa directo a Calidad (F01/F02) · queda disponible para fabricar solo cuando Calidad lo libere</span></span>
       </label>
       <div class="form-group" style="margin-top:10px;"><label>Observaciones</label><input type="text" id="ing-obs" placeholder="Opcional"></div>
       <div style="display:flex;gap:10px;margin-top:18px;flex-wrap:wrap;">
