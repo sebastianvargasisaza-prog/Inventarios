@@ -10426,7 +10426,7 @@ def generar_rotulos(producto_nombre, cantidad_str):
     try: cantidad_kg = float(cantidad_str)
     except: return "<h2>Cantidad invalida</h2>", 400
     from datetime import date; import urllib.parse
-    hoy = date.today().strftime('%d-%b-%Y').upper()
+    hoy = _fecha_larga_es(date.today())
     prod = urllib.parse.unquote(producto_nombre); op_num = "OP-"+date.today().strftime('%Y%m%d'); cant_g = cantidad_kg*1000
     # Tamaño de la etiqueta térmica (mm) · configurable con ?w=100&h=150 · default 100×150 (4×6",
     # el rollo más común y el que acomoda el diseño completo). Antes imprimía en hoja carta a 2
@@ -10692,6 +10692,7 @@ def _rotulo_recep_css(lw, lh):
     """CSS premium compartido de rótulos de recepción (tarjeta .sheet estilo hoja · 100×100mm por defecto ·
     compactación @media print). Mismo lenguaje que los rótulos de MP/limpieza. Sebastián 7-jul."""
     w3 = str(lw - 3)
+    w4 = str(lw - 8)  # ancho en impresión con margen lateral (evita corte a los lados)
     return (
       "<style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');"
       ":root{--ink:#18181b;--soft:#3f3f46;--mute:#71717a;--line:#e4e4e7;--violet:#6d28d9;--violet-d:#4c1d95;--pale:#f5f3ff}"
@@ -10726,16 +10727,45 @@ def _rotulo_recep_css(lw, lh):
       ".obs{height:26px}"
       ".firmas{display:flex;border-top:1px solid var(--line)}.firma{flex:1;padding:9px 14px 11px}.firma+.firma{border-left:1px solid var(--line)}"
       ".firma .l{font-size:9px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.3px}.firma .sig{height:1px;background:var(--ink);margin:22px 0 5px}.firma .f{font-size:9px;color:var(--mute)}"
-      "@media print{html,body{background:#fff}.ph{display:none}.wrap{display:block;padding:0;gap:0}.accent{height:3px}"
-      ".sheet{width:" + w3 + "mm;max-width:" + w3 + "mm;border-radius:0;box-shadow:none;border:1px solid #ccc;margin:0 auto;page-break-after:always;page-break-inside:avoid;break-inside:avoid}.sheet:last-child{page-break-after:auto}"
-      "td{padding:1.6px 8px;font-size:7.5pt;line-height:1.12}td.k{font-size:6pt}"
+      # IMPRESIÓN · todo el rótulo DEBE caber en el alto de la etiqueta (100mm por defecto = 10cm de
+      # la impresora) sin cortarse. Compactado vertical + ancho con margen lateral (Sebastián 18-jul).
+      "@media print{html,body{background:#fff}.ph{display:none}.wrap{display:block;padding:0;gap:0}.accent{height:2px}"
+      ".sheet{width:" + w4 + "mm;max-width:" + w4 + "mm;border-radius:0;box-shadow:none;border:1px solid #ccc;margin:0 auto;page-break-after:always;page-break-inside:avoid;break-inside:avoid}.sheet:last-child{page-break-after:auto}"
+      "td{padding:0.9px 7px;font-size:7pt;line-height:1.08}td.k{font-size:5.5pt}"
       "td:not(.k){white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"  # PRINT: valores en 1 linea (compacto, 1 hoja); en pantalla envuelven
-      ".top{padding:6px 12px 2px}.mark{width:40px;height:40px}.co{font-size:9.5pt}.ctrl{font-size:5.5pt;padding:4px 6px;line-height:1.35}"
-      ".title{padding:0 12px 4px}.title .eyebrow{font-size:6pt}.title .name{font-size:13pt}.tipo{font-size:6.5pt;margin-right:8px}.lote{margin:0 12px 4px;padding:4px}.lote .ll{font-size:7pt}.lote .lv{font-size:12pt}"
-      ".qc{padding:3px 12px;font-size:7.5pt;gap:9px}.firma{padding:4px 10px 5px}.firma .l{font-size:7.5pt}.firma .sig{margin:9px 0 3px}.firma .f{font-size:7pt}"
-      ".qcbox{padding:3px 12px}.qcl{font-size:6.5pt;margin-bottom:2px}.qcarea{height:26mm;border-color:#999}.obs{height:9mm}"
-      "@page{size:" + str(lw) + "mm " + str(lh) + "mm;margin:1.5mm}}"
+      ".top{padding:4px 10px 1px}.mark{width:30px;height:30px}.co{font-size:8.5pt}.ctrl{font-size:5pt;padding:3px 5px;line-height:1.28}"
+      ".title{padding:0 10px 2px}.title .eyebrow{font-size:5.5pt}.title .name{font-size:11.5pt;line-height:1.08}.tipo{font-size:6pt;margin-right:6px}"
+      ".lote{margin:0 10px 2px;padding:2px}.lote .ll{font-size:6.5pt}.lote .lv{font-size:11pt}.lote svg{max-height:6.5mm;height:auto}"
+      ".qc{padding:2px 10px;font-size:7pt;gap:8px}.firma{padding:3px 9px 3px}.firma .l{font-size:6.5pt}.firma .sig{margin:6px 0 2px}.firma .f{font-size:6pt}"
+      ".qcbox{padding:2px 10px}.qcl{font-size:6pt;margin-bottom:1px}.qcarea{height:15mm;border-color:#999}.obs{height:5mm}"
+      "@page{size:" + str(lw) + "mm " + str(lh) + "mm;margin:2mm}}"
       "</style>")
+
+
+_MESES_ES = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO',
+             'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE']
+
+
+def _fecha_larga_es(val):
+    """Formato de fecha de los rótulos (Sebastián 18-jul): '08 JULIO 2026' (día con cero,
+    mes en palabra completa en español MAYÚSCULA, año). Acepta date/datetime o string ISO.
+    Si no logra parsear, devuelve el valor tal cual (nunca revienta el rótulo)."""
+    from datetime import date as _d, datetime as _dt
+    if val is None or str(val).strip() == '':
+        return ''
+    if isinstance(val, (_d, _dt)):
+        d = val
+    else:
+        s = str(val).strip()
+        d = None
+        try:
+            d = _dt.fromisoformat(s[:19].replace(' ', 'T'))
+        except Exception:
+            try:
+                d = _dt.strptime(s[:10], '%Y-%m-%d')
+            except Exception:
+                return s  # formato desconocido → tal cual
+    return '%02d %s %d' % (d.day, _MESES_ES[d.month - 1], d.year)
 
 
 @bp.route('/rotulo-recepcion/<codigo>/<lote>/<cantidad_str>')
@@ -10745,7 +10775,7 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
     try: cantidad = float(cantidad_str)
     except: return "<h2>Cantidad invalida</h2>", 400
     from datetime import date; import urllib.parse
-    hoy = date.today().strftime('%d-%b-%Y').upper(); lote=urllib.parse.unquote(lote)
+    hoy = _fecha_larga_es(date.today()); lote=urllib.parse.unquote(lote)
     conn = get_db(); c = conn.cursor()
     # FIX 9-jul · si el rótulo se reimprime sin lote (llega vacío o 'SL'), buscar el lote REAL de la
     # Entrada más reciente en el kardex → así el número de lote SIEMPRE sale (no queda vacío/SL).
@@ -10775,7 +10805,7 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
         _fvx = None
     ni=mp[0] if mp else ''; nc=mp[1] if mp else codigo; tp=mp[2] if mp else ''
     pv=(mp[3] if mp and mp[3] else '') or (mov[3] if mov and len(mov)>3 and mov[3] else '')
-    fv=str(mov[0])[:10] if (mov and mov[0]) else (str(_fvx[0])[:10] if (_fvx and _fvx[0]) else '')
+    fv=_fecha_larga_es(mov[0]) if (mov and mov[0]) else (_fecha_larga_es(_fvx[0]) if (_fvx and _fvx[0]) else '')
     _est=(mov[1] if (mov and len(mov)>1 and mov[1]) else '') or ''
     _pos=(mov[2] if (mov and len(mov)>2 and mov[2]) else '') or ''
     # Fecha de recepción REAL = la Entrada del lote en el kardex (NO la fecha de impresión · Laura 16-jul:
@@ -10785,11 +10815,7 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
         _fr = c.execute("SELECT MIN(fecha) FROM movimientos WHERE material_id=? AND UPPER(TRIM(lote))=UPPER(TRIM(?)) "
                         "AND LOWER(COALESCE(tipo,''))='entrada'", (codigo, lote)).fetchone()
         if _fr and _fr[0]:
-            from datetime import datetime as _dtp
-            try:
-                _frec = _dtp.fromisoformat(str(_fr[0])[:19].replace(' ', 'T')).strftime('%d-%b-%Y').upper()
-            except Exception:
-                _frec = str(_fr[0])[:10]
+            _frec = _fecha_larga_es(_fr[0])
     except Exception:
         pass
     if not _frec:
@@ -10889,7 +10915,7 @@ def rotulo_recepcion_mee(codigo, cantidad_str):
     try: cantidad = int(float(cantidad_str))
     except: return "<h2>Cantidad invalida</h2>", 400
     from datetime import date; import urllib.parse
-    hoy = date.today().strftime('%d-%b-%Y').upper()
+    hoy = _fecha_larga_es(date.today())
     codigo = urllib.parse.unquote(codigo)
     lote_ref = request.args.get('lote','')
     try:
@@ -10918,11 +10944,7 @@ def rotulo_recepcion_mee(codigo, cantidad_str):
     # Fecha de recepción REAL (la Entrada MEE en el kardex · NO la fecha de impresión)
     _frec = ''
     if mov and len(mov) > 2 and mov[2]:
-        from datetime import datetime as _dtp
-        try:
-            _frec = _dtp.fromisoformat(str(mov[2])[:19].replace(' ', 'T')).strftime('%d-%b-%Y').upper()
-        except Exception:
-            _frec = str(mov[2])[:10]
+        _frec = _fecha_larga_es(mov[2])
     if not _frec:
         _frec = hoy
     cant_str = f"{cantidad:,} {unid}"
