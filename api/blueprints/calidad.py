@@ -1419,17 +1419,18 @@ def calidad_certificado_analisis():
             return jsonify({'error': 'No autorizado'}), 401
         mov_id = request.args.get('mov_id')
         conn = get_db(); c = conn.cursor()
-        row = c.execute("SELECT * FROM certificado_analisis_mp WHERE mov_id=? AND COALESCE(anulado,0)=0 "
-                        "ORDER BY id DESC LIMIT 1", (mov_id,)).fetchone()
-        if row:
-            cols = [d[0] for d in c.description]
-            return jsonify({'ok': True, 'f02': dict(zip(cols, row))})
-        m = c.execute("SELECT material_id, material_nombre, cantidad, lote, proveedor, fecha, fecha_vencimiento "
-                      "FROM movimientos WHERE id=?", (mov_id,)).fetchone()
+        # Datos ACTUALES del lote + maestro (siempre, exista o no el F02) → la verificación final de
+        # Laura (INCI/tipo/ubicación/código) se prefila aunque reabra un F02 ya guardado. Sebastián 19-jul.
+        m = c.execute("SELECT mv.material_id, mv.material_nombre, mv.cantidad, mv.lote, mv.proveedor, mv.fecha, "
+                      "mv.fecha_vencimiento, COALESCE(mv.estanteria,''), COALESCE(mv.posicion,''), "
+                      "COALESCE(mp.nombre_inci,''), COALESCE(mp.tipo_material,'MP'), COALESCE(mp.nombre_comercial,'') "
+                      "FROM movimientos mv LEFT JOIN maestro_mps mp ON mp.codigo_mp=mv.material_id WHERE mv.id=?",
+                      (mov_id,)).fetchone()
         pre = {}
         if m:
-            pre = {'codigo_mp': m[0], 'nombre_mp': m[1], 'cantidad_recibida': str(m[2] or ''), 'lote': m[3],
-                   'proveedor': m[4] or '', 'fecha_recepcion': (m[5] or '')[:10], 'fecha_vencimiento': m[6] or ''}
+            pre = {'codigo_mp': m[0], 'nombre_mp': (m[11] or m[1]), 'cantidad_recibida': str(m[2] or ''), 'lote': m[3],
+                   'proveedor': m[4] or '', 'fecha_recepcion': (m[5] or '')[:10], 'fecha_vencimiento': m[6] or '',
+                   'estanteria': m[7], 'posicion': m[8], 'nombre_inci': m[9], 'tipo_material': (m[10] or 'MP')}
             # prefill specs de aspecto/pH/etc desde especificaciones_mp si existen
             try:
                 for sp in c.execute("SELECT parametro, valor_min, valor_max, unidad FROM especificaciones_mp "
@@ -1453,6 +1454,11 @@ def calidad_certificado_analisis():
                         pre['viscosidad_spec'] = _txt
             except Exception:
                 pass
+        row = c.execute("SELECT * FROM certificado_analisis_mp WHERE mov_id=? AND COALESCE(anulado,0)=0 "
+                        "ORDER BY id DESC LIMIT 1", (mov_id,)).fetchone()
+        if row:
+            cols = [d[0] for d in c.description]
+            return jsonify({'ok': True, 'f02': dict(zip(cols, row)), 'prefill': pre})
         return jsonify({'ok': True, 'f02': None, 'prefill': pre})
     err, code = _require_calidad()
     if err:
@@ -1507,14 +1513,74 @@ def calidad_certificado_analisis():
             _nc_id = _crear_nc_rechazo(cur, u, lote=_lote, codigo=_matid, nombre=vals.get('nombre_mp'),
                                        cantidad=vals.get('cantidad_recibida'), proveedor=vals.get('proveedor'),
                                        oc=_oc, motivo=_motivo, es_envase=False)
+        # ── VERIFICACIÓN FINAL (Laura · Sebastián 19-jul): el F02 es el rótulo final de verificación. Calidad
+        # corrige lo que llegó mal ANTES de liberar (INCI/tipo/nombre al maestro · cantidad/fecha/venc/lote al
+        # kardex) y fija la UBICACIÓN definitiva al aprobar. Portado del viejo cc-review (probado). Auditado.
+        _corr = []
+        _lote_key = _lote  # llave de lote para la ubicación (se actualiza si se corrige el lote)
+        _inci_new = (str(b.get('inci_corregido') or '')).strip()
+        if _inci_new:
+            _ci = cur.execute("SELECT COALESCE(nombre_inci,'') FROM maestro_mps WHERE codigo_mp=?", (_matid,)).fetchone()
+            if _ci is not None and (_ci[0] or '') != _inci_new:
+                cur.execute("UPDATE maestro_mps SET nombre_inci=? WHERE codigo_mp=?", (_inci_new[:200], _matid))
+                _corr.append('INCI:' + (_ci[0] or '(vacio)') + '->' + _inci_new)
+        _tipo_new = (str(b.get('tipo_material') or '')).strip().upper()
+        if _tipo_new in ('MP', 'ME', 'MEMP'):
+            _ct = cur.execute("SELECT COALESCE(tipo_material,'MP') FROM maestro_mps WHERE codigo_mp=?", (_matid,)).fetchone()
+            if _ct is not None and (_ct[0] or 'MP') != _tipo_new:
+                cur.execute("UPDATE maestro_mps SET tipo_material=? WHERE codigo_mp=?", (_tipo_new, _matid))
+                _corr.append('Tipo:' + (_ct[0] or 'MP') + '->' + _tipo_new)
+        _nom_new = (str(b.get('nombre_comercial_final') or '')).strip()
+        if _nom_new:
+            _cn = cur.execute("SELECT COALESCE(nombre_comercial,'') FROM maestro_mps WHERE codigo_mp=?", (_matid,)).fetchone()
+            if _cn is not None and (_cn[0] or '') != _nom_new:
+                cur.execute("UPDATE maestro_mps SET nombre_comercial=? WHERE codigo_mp=?", (_nom_new[:200], _matid))
+                _corr.append('Nombre->' + _nom_new)
+        try:
+            _cant_new = float(b.get('cantidad_final')) if str(b.get('cantidad_final') or '').strip() != '' else None
+        except Exception:
+            _cant_new = None
+        if _cant_new is not None and _cant_new > 0:
+            _cc = cur.execute("SELECT cantidad FROM movimientos WHERE id=?", (mov_id,)).fetchone()
+            if _cc is not None and abs(float(_cc[0] or 0) - _cant_new) > 0.001:
+                cur.execute("UPDATE movimientos SET cantidad=? WHERE id=?", (_cant_new, mov_id))
+                _corr.append('Cant:' + str(_cc[0]) + '->' + ('%g' % _cant_new))
+        _frec_new = (str(b.get('fecha_recepcion_final') or '')).strip()
+        if _frec_new:
+            cur.execute("UPDATE movimientos SET fecha=? WHERE id=?", (_frec_new, mov_id))
+            _corr.append('FRecep:' + _frec_new)
+        _fv_new = (str(b.get('fecha_vencimiento_final') or '')).strip()
+        if _fv_new:
+            cur.execute("UPDATE movimientos SET fecha_vencimiento=? WHERE material_id=? AND lote=? AND tipo='Entrada'",
+                        (_fv_new, _matid, _lote_key))
+            _corr.append('FVenc:' + _fv_new)
+        _lote_new = (str(b.get('lote_final') or '')).strip()
+        if _lote_new and _lote_new != _lote:
+            cur.execute("UPDATE movimientos SET lote=? WHERE material_id=? AND lote=?", (_lote_new, _matid, _lote))
+            _corr.append('Lote:' + _lote + '->' + _lote_new)
+            _lote_key = _lote_new
+        _ubic_msg = ''
+        _est_f = (str(b.get('estanteria_final') or '')).strip()
+        _pos_f = (str(b.get('posicion_final') or '')).strip()
+        if resultado == 'aprobado' and (_est_f or _pos_f):
+            _sets, _ps = [], []
+            if _est_f:
+                _sets.append('estanteria=?'); _ps.append(_est_f[:50])
+            if _pos_f:
+                _sets.append('posicion=?'); _ps.append(_pos_f[:50])
+            cur.execute("UPDATE movimientos SET " + ', '.join(_sets) + " WHERE material_id=? AND lote=?",
+                        _ps + [_matid, _lote_key])
+            _ubic_msg = (_est_f or '-') + (('/' + _pos_f) if _pos_f else '')
         audit_log(cur, usuario=u, accion='CERTIFICADO_ANALISIS_F02', tabla='certificado_analisis_mp',
                   registro_id=(_f02_id or 0),
-                  despues={'mov_id': mov_id, 'lote': _lote, 'resultado': resultado, 'aprobo': aprobo_por,
-                           'lotes_afectados': _liberado, 'nc_id': _nc_id, 'signature_id': signature_id})
+                  despues={'mov_id': mov_id, 'lote': _lote_key, 'resultado': resultado, 'aprobo': aprobo_por,
+                           'lotes_afectados': _liberado, 'nc_id': _nc_id, 'signature_id': signature_id,
+                           'correcciones': _corr, 'ubicacion': _ubic_msg})
         conn.commit()
     except Exception as e:
         conn.rollback(); return jsonify({'error': f'No se pudo guardar F02: {e}'}), 500
-    return jsonify({'ok': True, 'resultado': resultado, 'liberado': _liberado, 'nc_id': _nc_id})
+    return jsonify({'ok': True, 'resultado': resultado, 'liberado': _liberado, 'nc_id': _nc_id,
+                    'correcciones': _corr, 'ubicacion': _ubic_msg})
 
 
 # ── F01 / F02 imprimibles (documento auditable · calca el formato en papel · imprimir→PDF) ──

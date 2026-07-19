@@ -10817,6 +10817,12 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
     fv=_fecha_larga_es(mov[0]) if (mov and mov[0]) else (_fecha_larga_es(_fvx[0]) if (_fvx and _fvx[0]) else '')
     _est=(mov[1] if (mov and len(mov)>1 and mov[1]) else '') or ''
     _pos=(mov[2] if (mov and len(mov)>2 and mov[2]) else '') or ''
+    # Override de ubicación (Sebastián 19-jul · Calidad al LIBERAR ya sabe dónde queda el lote → imprime
+    # el rótulo final con esa ubicación aunque aún no se haya guardado en el kardex). ?est= &pos=
+    if (request.args.get('est') or '').strip():
+        _est = request.args.get('est').strip()
+    if (request.args.get('pos') or '').strip():
+        _pos = request.args.get('pos').strip()
     # Fecha de recepción REAL = la Entrada del lote en el kardex (NO la fecha de impresión · Laura 16-jul:
     # "la fecha debe ser específica"). Si no hay Entrada, cae a hoy.
     _frec = ''
@@ -10836,7 +10842,10 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
         ni = _ov_inci
     _ov_frec = (request.args.get('frec') or '').strip()
     if _ov_frec:
-        _frec = _ov_frec
+        _frec = _fecha_larga_es(_ov_frec) or _ov_frec  # ISO → '19 JULIO 2026'; si ya viene formateada, tal cual
+    _ov_venc = (request.args.get('venc') or '').strip()
+    if _ov_venc:
+        fv = _fecha_larga_es(_ov_venc) or _ov_venc
     _ov_nom = (request.args.get('nombre') or '').strip()
     if _ov_nom:
         nc = _ov_nom

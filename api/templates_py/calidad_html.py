@@ -2532,6 +2532,7 @@ async function openF02(mov_id){
     var d=await (await fetch('/api/calidad/certificado-analisis?mov_id='+mov_id)).json();
     var f=d.f02||{}, pre=d.prefill||{};
     var g=function(k){ return (f[k]!=null&&f[k]!=='')?f[k]:(pre[k]||''); };
+    window._F02={codigo:pre.codigo_mp||'', lote:pre.lote||'', cantidad:(pre.cantidad_recibida||'')};
     var params=[['aspecto','Aspecto / Color / Olor'],['ph','pH (a 25°C)'],['densidad','Densidad (g/mL)'],['solubilidad','Solubilidad'],['viscosidad','Viscosidad (cP)']];
     var prows=params.map(function(p){
       var k=p[0];
@@ -2554,6 +2555,17 @@ async function openF02(mov_id){
       +'<div class="rcm-sec">Resultados de análisis</div>'
       +'<table class="crt"><thead><tr><td style="font-size:10px;text-transform:uppercase;color:#78788a;font-weight:700">Parámetro</td><td style="font-size:10px;text-transform:uppercase;color:#78788a;font-weight:700">Especificación</td><td style="font-size:10px;text-transform:uppercase;color:#78788a;font-weight:700">Resultado</td><td style="font-size:10px;text-transform:uppercase;color:#78788a;font-weight:700;text-align:right">Cumple</td></tr></thead><tbody>'+prows+'</tbody></table>'
       +'<div style="margin-top:12px">'+_rcFld('Observaciones generales',_rcInput('f02_observaciones_generales',g('observaciones_generales')))+'</div>'
+      +'<div class="rcm-sec">Verificación final &middot; corrige y ubica antes de liberar</div>'
+      +'<div style="font-size:11px;color:#78788a;margin:-4px 0 9px">Laura hace la verificación final: el nombre, cantidad y fechas de arriba, más INCI/tipo y la ubicación de aquí, se aplican al maestro y al lote al liberar. La ubicación es dónde quedará el lote (sale en el rótulo).</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:11px">'
+      +_rcFld('Código MP','<input class="rcm-in" value="'+esc(pre.codigo_mp||'')+'" readonly style="background:#f5f3ff;color:#6d28d9;font-weight:700">')
+      +_rcFld('Nombre INCI',_rcInput('f02_inci_final',pre.nombre_inci||''))
+      +_rcFld('Tipo de material',_rcSeg('f02tipo',(pre.tipo_material||'MP'),[['MP','MP'],['ME','ME'],['MEMP','MEMP']]))
+      +_rcFld('Lote (interno)',_rcInput('f02_lote_final',pre.lote||''))
+      +_rcFld('Estantería',_rcInput('f02_est_final',pre.estanteria||''))
+      +_rcFld('Posición',_rcInput('f02_pos_final',pre.posicion||''))
+      +'</div>'
+      +'<div style="margin-top:10px"><button type="button" class="ccp-btn" style="background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe" onclick="_f02Rotulo()">&#128424; Imprimir rótulo final (con ubicación)</button></div>'
       +'<div class="rcm-sec">Concepto y firmas</div>'
       +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">'
       +'<div style="grid-column:1/3">'+_rcFld('Resultado', _rcSeg('f02res',_res,[['aprobado','Aprobado'],['no_aprobado','No aprobado'],['cuarentena','Cuarentena']]))+'</div>'
@@ -2588,7 +2600,12 @@ async function guardarF02(mov_id){
     cantidad_recibida:v('f02_cantidad_recibida'), proveedor:v('f02_proveedor'), fecha_recepcion:v('f02_fecha_recepcion'),
     fecha_analisis:v('f02_fecha_analisis'), observaciones_generales:v('f02_observaciones_generales'),
     resultado:_rcRadioVal('f02res'), fecha_vencimiento:v('f02_fecha_vencimiento'),
-    responsable_analisis:v('f02_responsable_analisis'), aprobo_por:v('f02_aprobo_por')};
+    responsable_analisis:v('f02_responsable_analisis'), aprobo_por:v('f02_aprobo_por'),
+    // Verificación final (se aplica al maestro/kardex al liberar · Sebastián 19-jul)
+    inci_corregido:v('f02_inci_final'), tipo_material:_rcRadioVal('f02tipo'),
+    nombre_comercial_final:v('f02_nombre_mp'), cantidad_final:v('f02_cantidad_recibida'),
+    fecha_recepcion_final:v('f02_fecha_recepcion'), fecha_vencimiento_final:v('f02_fecha_vencimiento'),
+    lote_final:v('f02_lote_final'), estanteria_final:v('f02_est_final'), posicion_final:v('f02_pos_final')};
   ['aspecto','ph','densidad','solubilidad','viscosidad'].forEach(function(k){
     body[k+'_spec']=v('f02_'+k+'_spec'); body[k+'_result']=v('f02_'+k+'_result'); body[k+'_cumple']=_rcRadioVal('f02'+k+'cmp');
   });
@@ -2608,9 +2625,30 @@ async function guardarF02(mov_id){
     var d=await r.json();
     if(!r.ok||!d.ok){ alert('No se pudo: '+((d&&d.error)||r.status)); return; }
     _rcClose(); loadCuarentena();
-    if(d.resultado==='aprobado') alert('✅ Lote aprobado y liberado (VIGENTE)');
+    if(d.resultado==='aprobado') alert('✅ Lote aprobado y liberado (VIGENTE)'+(d.ubicacion?(' · ubicación '+d.ubicacion):'')+(d.correcciones&&d.correcciones.length?('\\nCorrecciones aplicadas: '+d.correcciones.join('; ')):''));
     else if(d.resultado==='no_aprobado' && d.nc_id) alert('⛔ Lote RECHAZADO. Se creó la No Conformidad NC-'+d.nc_id+' (devolución al proveedor · queda en la pestaña No Conformidades para gestión de Compras).');
   }catch(e){ alert('Error: '+e.message); }
+}
+// Imprime el rótulo FINAL con lo verificado (INCI/tipo/nombre/fecha) + la UBICACIÓN definitiva.
+// Sale con los valores del formulario aunque aún no se haya guardado (overrides del rótulo). Sebastián 19-jul.
+function _f02Rotulo(){
+  var v=function(id){ var el=document.getElementById(id); return el?(el.value||'').trim():''; };
+  var cod=(window._F02&&window._F02.codigo)||'';
+  if(!cod){ alert('Sin código de MP'); return; }
+  var lote=v('f02_lote_final')||(window._F02&&window._F02.lote)||'SL';
+  var cant=v('f02_cantidad_recibida')||(window._F02&&window._F02.cantidad)||'0';
+  var tipo=(document.querySelector('input[name="f02tipo"]:checked')||{}).value||'MP';
+  var url='/rotulo-recepcion/'+encodeURIComponent(cod)+'/'+encodeURIComponent(lote||'SL')+'/'+encodeURIComponent(cant||'0');
+  var q=[];
+  var nom=v('f02_nombre_mp'); if(nom) q.push('nombre='+encodeURIComponent(nom));
+  var inci=v('f02_inci_final'); if(inci) q.push('inci='+encodeURIComponent(inci));
+  if(tipo) q.push('tipo='+encodeURIComponent(tipo));
+  var frec=v('f02_fecha_recepcion'); if(frec) q.push('frec='+encodeURIComponent(frec));
+  var venc=v('f02_fecha_vencimiento'); if(venc) q.push('venc='+encodeURIComponent(venc));
+  var est=v('f02_est_final'); if(est) q.push('est='+encodeURIComponent(est));
+  var pos=v('f02_pos_final'); if(pos) q.push('pos='+encodeURIComponent(pos));
+  if(q.length) url+='?'+q.join('&');
+  window.open(url,'_blank');
 }
 
 document.addEventListener('click',async function(e){

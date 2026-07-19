@@ -177,3 +177,43 @@ def test_f01_f02_imprimibles(app, db_clean):
     assert f01.status_code == 200 and b"COC-PRO-002-F01" in f01.data
     f02 = c.get("/api/calidad/certificado-analisis/imprimible?mov_id=%d" % mid)
     assert f02.status_code == 200 and b"COC-PRO-002-F02" in f02.data
+
+
+def test_f02_verificacion_final_aplica_correcciones_y_ubicacion(app, db_clean):
+    """Verificación final (Laura · 19-jul): al aprobar el F02, INCI/tipo → maestro; cantidad/lote/
+    vencimiento → kardex; y la ubicación (estantería/posición) queda en el movimiento al liberar."""
+    mid = _lote_cuarentena("MP-RCQF", "LOTEQF1")
+    c = _login(app)
+    # el GET prefill trae los datos actuales de la MP (INCI/tipo/ubicación)
+    g = c.get("/api/calidad/certificado-analisis?mov_id=%d" % mid).get_json()
+    assert "nombre_inci" in g["prefill"] and g["prefill"]["tipo_material"] == "MP"
+    sig = _firmar(c, mid, "libera")
+    r = c.post("/api/calidad/certificado-analisis", json={
+        "mov_id": mid, "resultado": "aprobado", "aprobo_por": "Laura", "signature_id": sig,
+        "inci_corregido": "PROPYLENE GLYCOL", "tipo_material": "MP", "cantidad_final": "3950",
+        "fecha_vencimiento_final": "2027-05-10", "lote_final": "LOTEQF1B",
+        "estanteria_final": "E-12", "posicion_final": "B3"}, headers=csrf_headers())
+    assert r.status_code == 200, r.data[:300]
+    conn = sqlite3.connect(os.environ["DB_PATH"], timeout=10)
+    try:
+        inci = conn.execute("SELECT nombre_inci FROM maestro_mps WHERE codigo_mp='MP-RCQF'").fetchone()[0]
+        assert inci == "PROPYLENE GLYCOL", "el INCI corregido debe quedar en el maestro"
+        row = conn.execute("SELECT estado_lote, cantidad, lote, estanteria, posicion, fecha_vencimiento "
+                           "FROM movimientos WHERE material_id='MP-RCQF' ORDER BY id DESC LIMIT 1").fetchone()
+        assert row[0] == "VIGENTE"
+        assert abs(float(row[1]) - 3950) < 0.01, "cantidad real corregida al kardex"
+        assert row[2] == "LOTEQF1B", "lote interno renombrado"
+        assert row[3] == "E-12" and row[4] == "B3", "ubicación final guardada"
+        assert (row[5] or "")[:10] == "2027-05-10", "vencimiento corregido"
+    finally:
+        conn.close()
+
+
+def test_rotulo_acepta_override_ubicacion(app, db_clean):
+    """El rótulo imprime con la ubicación pasada por Calidad (?est=&pos=) aunque no esté en el kardex."""
+    mid = _lote_cuarentena("MP-RCQU", "LOTEQU1")
+    c = _login(app, "sebastian")
+    r = c.get("/rotulo-recepcion/MP-RCQU/LOTEQU1/4000?est=E-9&pos=A1")
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "E-9" in html and "A1" in html, "la ubicación override debe salir en el rótulo"
