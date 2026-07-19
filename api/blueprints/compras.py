@@ -6260,6 +6260,16 @@ def recibir_oc(numero_oc):
                 _nrec = 1
         except Exception:
             _nrec = 1
+        # Desglose por envase (Sebastián 18-jul · ej. 3500 g = 1000+1000+1000+500) → se persiste en
+        # las notas del movimiento para trazabilidad INVIMA (el rótulo por envase lleva el detalle físico).
+        try:
+            _envd = ir.get('envases_detalle')
+            if isinstance(_envd, (list, tuple)) and len(_envd) > 1:
+                _envs = '+'.join(('%g' % float(v)) for v in _envd if float(v) > 0)
+                if _envs:
+                    notas_item = (notas_item + ' | ' if notas_item else '') + 'envases: ' + _envs + ' g'
+        except Exception:
+            pass
         # COA + lote proveedor (Fase 2 · INVIMA · mig 151)
         coa_url = (ir.get('coa_url') or '').strip()
         coa_filename = (ir.get('coa_filename') or '').strip()

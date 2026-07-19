@@ -34,6 +34,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 .btn-success:hover{filter:brightness(1.06);}
 .btn-print{background:linear-gradient(135deg,#3b82f6,#1e40af);color:#fff;}
 .btn-print:hover{filter:brightness(1.06);}
+.btn-env{padding:6px 11px;border:1px solid #ddd6fe;border-radius:9px;background:#f5f3ff;color:#5b21b6;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;transition:background .12s,border-color .12s;}
+.btn-env:hover{background:#ede9fe;border-color:#c4b5fd;}
+.btn-env.multi{background:linear-gradient(135deg,#ede9fe,#ddd6fe);border-color:#a78bfa;color:#4c1d95;}
+.btn-env:disabled{background:#f8fafc;color:#cbd5e1;border-color:#eef2f7;cursor:default;}
 .oc-info{background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;}
 .oc-info .lbl{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;font-weight:700;}
 .oc-info .val{font-size:14px;font-weight:700;color:var(--ink);margin-top:2px;}
@@ -142,7 +146,7 @@ td input[type=text]{width:100%;padding:6px 9px;border:1px solid var(--line);bord
               <th>Lote</th>
               <th>Vence</th>
               <th>Notas</th>
-              <th style="text-align:center;" title="¿En cuántos recipientes individuales llegó? (1 = un solo envase)">Recip.</th>
+              <th style="text-align:center;" title="¿En cuántos envases individuales llegó y cuánto hay en cada uno? Clic para definir (ej: 3500 g = 3 de 1000 + 1 de 500).">Envases</th>
               <th style="text-align:center;">Rótulo</th>
             </tr>
           </thead>
@@ -202,19 +206,20 @@ td input[type=text]{width:100%;padding:6px 9px;border:1px solid var(--line);bord
   <div id="rec-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:950;align-items:center;justify-content:center;padding:16px;">
     <div style="background:var(--card,#fff);border-radius:16px;max-width:560px;width:100%;box-shadow:0 24px 70px rgba(0,0,0,.35);overflow:hidden;">
       <div style="background:linear-gradient(135deg,#4c1d95,#6d28d9);color:#fff;padding:16px 22px;font-weight:800;font-size:15px;display:flex;justify-content:space-between;align-items:center;">
-        <span>&#128424;&#65039; Rótulos por recipiente</span>
+        <span>&#128230; Envases de este material</span>
         <button onclick="cerrarRecModal()" style="background:none;border:none;color:#e9d5ff;font-size:22px;cursor:pointer;line-height:1;">&times;</button>
       </div>
       <div style="padding:20px 22px;">
         <div id="rec-info" style="font-size:13px;color:var(--mut,#6b7280);margin-bottom:14px;"></div>
-        <label style="font-size:12px;font-weight:700;color:var(--ink,#1e1b2e);">¿En cuántos recipientes vino?</label><br>
+        <label style="font-size:12px;font-weight:700;color:var(--ink,#1e1b2e);">¿En cuántos envases individuales vino?</label><br>
         <input type="number" id="rec-n" min="1" max="60" value="1" oninput="recBuildInputs()" style="width:100px;padding:9px 12px;border:1px solid var(--line,#e5e7eb);border-radius:9px;margin:6px 0 14px;font-size:15px;">
         <div id="rec-amounts"></div>
         <div id="rec-sum" style="font-size:12px;margin-top:10px;"></div>
       </div>
       <div style="padding:14px 22px;border-top:1px solid var(--line,#eee);display:flex;gap:8px;justify-content:flex-end;">
         <button onclick="cerrarRecModal()" class="btn" style="background:#f1f5f9;color:#475569;">Cancelar</button>
-        <button onclick="recImprimir()" class="btn btn-primary">Imprimir rótulos</button>
+        <button onclick="recGuardar(false)" class="btn" style="background:#ede9fe;color:#5b21b6;">Guardar</button>
+        <button onclick="recGuardar(true)" class="btn btn-primary">&#128424;&#65039; Guardar e imprimir rótulos</button>
       </div>
     </div>
   </div>
@@ -222,43 +227,76 @@ td input[type=text]{width:100%;padding:6px 9px;border:1px solid var(--line);bord
 </div>
 <script>
 var currentOC = null;
-var _recCtx = null;   // {cod, lote, total} · contexto del modal de rótulos por recipiente
-function abrirRecModal(cod, lote, total, nPre){
-  _recCtx = {cod:cod, lote:(lote||'').trim()||'SL', total:Number(total)||0};
-  document.getElementById('rec-info').innerHTML = '<b>'+cod+'</b> &middot; lote '+_recCtx.lote+' &middot; total recibido <b>'+_recCtx.total.toLocaleString()+' g</b>';
-  document.getElementById('rec-n').value = (nPre && nPre>1) ? nPre : 1;
-  recBuildInputs();
+var _recCtx = null;      // {i, cod, lote, total} · contexto del modal de envases de la fila
+var _envBreak = {};      // {rowIdx: [1000,1000,1000,500]} · desglose por envase guardado por fila
+// Abre el modal de envases para la fila i · lee cantidad recibida + lote EN VIVO de la fila
+function abrirRecModal(i){
+  var btn = document.getElementById('env-btn-'+i);
+  var cod = btn ? (btn.getAttribute('data-envcod')||'') : '';
+  var cantEl = document.getElementById('cant-'+i);
+  var total = parseFloat(cantEl ? cantEl.value : 0) || 0;
+  if(total<=0){ alert('Poné primero la cantidad recibida de esta fila.'); return; }
+  var loteEl = document.getElementById('lote-'+i);
+  var lote = (loteEl ? loteEl.value : '').trim() || 'SL';
+  _recCtx = {i:i, cod:cod, lote:lote, total:total};
+  document.getElementById('rec-info').innerHTML = '<b>'+cod+'</b> &middot; lote '+lote+' &middot; total recibido <b>'+total.toLocaleString()+' g</b>';
+  var prev = _envBreak[i];
+  document.getElementById('rec-n').value = (prev && prev.length>1) ? prev.length : 1;
+  recBuildInputs(prev);
   document.getElementById('rec-modal').style.display = 'flex';
 }
 function cerrarRecModal(){ var m=document.getElementById('rec-modal'); if(m) m.style.display='none'; _recCtx=null; }
-function recBuildInputs(){
+function recBuildInputs(preAmts){
   if(!_recCtx) return;
   var n = Math.max(1, Math.min(60, parseInt(document.getElementById('rec-n').value)||1));
   var per = _recCtx.total>0 ? Math.round(_recCtx.total/n*100)/100 : 0;
+  var usePrev = (preAmts && preAmts.length===n);
   var box = document.getElementById('rec-amounts');
-  if(n<=1){ box.innerHTML='<div style="font-size:12px;color:var(--mut,#6b7280);">Un solo rótulo por '+_recCtx.total.toLocaleString()+' g.</div>'; document.getElementById('rec-sum').innerHTML=''; return; }
-  var h='<div style="font-size:11px;color:var(--mut,#6b7280);margin-bottom:6px;">Cantidad de cada recipiente (podés ajustar si vienen desiguales):</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;">';
+  if(n<=1){ box.innerHTML='<div style="font-size:12px;color:var(--mut,#6b7280);">Un solo envase por '+_recCtx.total.toLocaleString()+' g (un rótulo).</div>'; document.getElementById('rec-sum').innerHTML=''; return; }
+  var h='<div style="font-size:11px;color:var(--mut,#6b7280);margin-bottom:6px;">Cuánto hay en cada envase (ajustá si vienen desiguales, ej: 1000 / 1000 / 1000 / 500):</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;">';
   for(var i=0;i<n;i++){
-    h+='<div><label style="font-size:10px;color:var(--mut,#6b7280);">Recipiente '+(i+1)+'</label><input type="number" class="rec-amt" min="0" step="0.01" value="'+per+'" oninput="recSum()" style="width:100%;padding:7px 9px;border:1px solid var(--line,#e5e7eb);border-radius:8px;font-size:13px;"></div>';
+    var v = usePrev ? preAmts[i] : per;
+    h+='<div><label style="font-size:10px;color:var(--mut,#6b7280);">Envase '+(i+1)+'</label><input type="number" class="rec-amt" min="0" step="0.01" value="'+v+'" oninput="recSum()" style="width:100%;padding:7px 9px;border:1px solid var(--line,#e5e7eb);border-radius:8px;font-size:13px;"></div>';
   }
   h+='</div>';
   box.innerHTML=h; recSum();
 }
+function _recAmts(){ return [].map.call(document.querySelectorAll('.rec-amt'), function(el){ return parseFloat(el.value)||0; }); }
 function recSum(){
   if(!_recCtx) return;
-  var amts=[].map.call(document.querySelectorAll('.rec-amt'), function(el){ return parseFloat(el.value)||0; });
+  var amts=_recAmts();
   var el=document.getElementById('rec-sum');
   if(!amts.length){ el.innerHTML=''; return; }
   var sum=amts.reduce(function(a,b){return a+b;},0);
   var diff=Math.round((sum-_recCtx.total)*100)/100;
   el.innerHTML='Suma: <b>'+sum.toLocaleString()+' g</b> &middot; total recibido '+_recCtx.total.toLocaleString()+' g'+(Math.abs(diff)>0.01?' &middot; <span style="color:#c2410c;font-weight:700;">difiere '+diff+' g</span>':' &middot; <span style="color:#16a34a;font-weight:700;">cuadra &#10003;</span>');
 }
-function recImprimir(){
+// etiqueta compacta de la celda Envases segun el desglose guardado
+function envCellLabel(amts){
+  if(!amts || amts.length<=1) return '1 envase';
+  if(amts.length<=4) return amts.length+' &middot; '+amts.map(function(v){return v.toLocaleString();}).join('+');
+  return amts.length+' envases';
+}
+function _envGuardar(i){
+  var amts=_recAmts().filter(function(v){ return v>0; });
+  var btn=document.getElementById('env-btn-'+i);
+  if(amts.length<=1){ delete _envBreak[i]; if(btn){ btn.innerHTML='1 envase'; btn.classList.remove('multi'); } }
+  else{ _envBreak[i]=amts; if(btn){ btn.innerHTML=envCellLabel(amts); btn.classList.add('multi'); } }
+  return amts;
+}
+// Guardar el desglose (y opcionalmente imprimir los rotulos por envase)
+function recGuardar(alsoPrint){
   if(!_recCtx) return;
-  var amts=[].map.call(document.querySelectorAll('.rec-amt'), function(el){ return parseFloat(el.value)||0; }).filter(function(v){ return v>0; });
-  var url='/rotulo-recepcion/'+encodeURIComponent(_recCtx.cod)+'/'+encodeURIComponent(_recCtx.lote)+'/'+encodeURIComponent(_recCtx.total||1);
-  if(amts.length>1){ url+='?recs='+encodeURIComponent(amts.join(',')); }
-  window.open(url,'_blank');
+  var i=_recCtx.i;
+  var amts=_envGuardar(i);
+  if(alsoPrint){
+    var loteEl=document.getElementById('lote-'+i);
+    var lote=(loteEl?loteEl.value:'').trim();
+    if(!lote){ alert('Poné primero el lote de esta fila para el rótulo.'); cerrarRecModal(); return; }
+    var url='/rotulo-recepcion/'+encodeURIComponent(_recCtx.cod)+'/'+encodeURIComponent(lote)+'/'+encodeURIComponent(_recCtx.total||1);
+    if(amts.length>1){ url+='?recs='+encodeURIComponent(amts.join(',')); }
+    window.open(url,'_blank');
+  }
   cerrarRecModal();
 }
 
@@ -376,6 +414,7 @@ function renderOC(d) {
   }
   var tbody = document.getElementById('items-body');
   tbody.innerHTML = '';
+  _envBreak = {};   // limpiar desgloses de envases de la OC anterior (los índices de fila se reutilizan)
   var items = d.items || [];
   for (var idx = 0; idx < items.length; idx++) {
     (function(i, it) {
@@ -409,8 +448,10 @@ function renderOC(d) {
         '<td><input type="text" id="lote-' + i + '" placeholder="Ej: L-2026-001" style="width:110px;"></td>' +
         '<td><input type="date" id="fv-' + i + '" style="width:130px;"></td>' +
         '<td><input type="text" id="nota-' + i + '" placeholder="Observacion opcional"></td>' +
-        '<td style="text-align:center;"><input type="number" id="nrec-' + i + '" min="1" step="1" value="1" style="width:54px;text-align:center;" title="N° de recipientes individuales"></td>' +
-        '<td style="text-align:center;"><button class="btn btn-print" style="padding:5px 11px;font-size:11px;white-space:nowrap;" data-rotidx="' + i + '" data-rotcod="' + (it.codigo_mp||'') + '" data-rotmee="' + (esMee ? 1 : 0) + '" title="Imprimir rótulo de este material (usa la cantidad recibida y el lote de esta fila)">&#128424;&#65039; Rótulo</button></td>';
+        '<td style="text-align:center;">' + (esMee
+            ? '<span style="color:#cbd5e1;font-size:12px;" title="Los envases (MEE) se cuentan en unidades, no aplica desglose en gramos">n/a</span>'
+            : '<button type="button" class="btn-env" id="env-btn-' + i + '" onclick="abrirRecModal(' + i + ')" data-envcod="' + (it.codigo_mp||'') + '" title="Definir en cuántos envases llegó y cuánto hay en cada uno (ej: 3 de 1000 + 1 de 500)">1 envase</button>') + '</td>' +
+        '<td style="text-align:center;"><button class="btn btn-print" style="padding:5px 11px;font-size:11px;white-space:nowrap;" data-rotidx="' + i + '" data-rotcod="' + (it.codigo_mp||'') + '" data-rotmee="' + (esMee ? 1 : 0) + '" title="Imprimir rótulo de este material (usa la cantidad recibida, el lote y el desglose de envases de esta fila)">&#128424;&#65039; Rótulo</button></td>';
       tbody.appendChild(tr);
       updateRow(i);
     })(idx, items[idx]);
@@ -484,9 +525,9 @@ async function registrarRecepcion() {
     var lote = loteEl ? loteEl.value.trim() : '';
     var fv = fvEl ? fvEl.value.trim() : '';
     if (est !== 'OK' || cant < it.cantidad_g) discrepancias = true;
-    var nrecEl = document.getElementById('nrec-' + idx);
-    var nrec = Math.max(1, parseInt(nrecEl ? nrecEl.value : 1) || 1);
-    items.push({codigo_mp: it.codigo_mp, cantidad_recibida: cant, estado: est, notas: nota, lote: lote, fecha_vencimiento: fv, recipientes: nrec});
+    var _amts = _envBreak[idx] || [];
+    var nrec = _amts.length > 1 ? _amts.length : 1;
+    items.push({codigo_mp: it.codigo_mp, cantidad_recibida: cant, estado: est, notas: nota, lote: lote, fecha_vencimiento: fv, recipientes: nrec, envases_detalle: (_amts.length > 1 ? _amts : null)});
   }
   var payload = {
     observaciones_recepcion: obs,
@@ -651,10 +692,12 @@ document.addEventListener('click', function(e) {
     var loteEl = document.getElementById('lote-' + i);
     var lote = (loteEl ? loteEl.value : '').trim();
     if (!lote) { alert('Poné primero el lote de esta fila para el rótulo.'); return; }
-    // MP: abre el modal de recipientes (1 rótulo por recipiente · Laura 16-jul) · pre-llena con la fila
-    var nrEl = document.getElementById('nrec-' + i);
-    var npre = Math.max(1, parseInt(nrEl ? nrEl.value : 1) || 1);
-    abrirRecModal(cod, lote, cant, npre);
+    // MP: imprime usando el desglose de envases guardado en la fila (1 rótulo por envase con SU
+    // cantidad · Laura 16-jul). Si no se definió, sale un rótulo por la cantidad total.
+    var amts = _envBreak[i] || [];
+    var url = '/rotulo-recepcion/' + encodeURIComponent(cod) + '/' + encodeURIComponent(lote) + '/' + encodeURIComponent(cant || 1);
+    if (amts.length > 1) { url += '?recs=' + encodeURIComponent(amts.join(',')); }
+    window.open(url, '_blank');
   }
 });
 
