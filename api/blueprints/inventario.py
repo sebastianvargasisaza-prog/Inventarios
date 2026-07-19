@@ -10727,17 +10727,19 @@ def _rotulo_recep_css(lw, lh):
       ".obs{height:26px}"
       ".firmas{display:flex;border-top:1px solid var(--line)}.firma{flex:1;padding:9px 14px 11px}.firma+.firma{border-left:1px solid var(--line)}"
       ".firma .l{font-size:9px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.3px}.firma .sig{height:1px;background:var(--ink);margin:22px 0 5px}.firma .f{font-size:9px;color:var(--mute)}"
-      # IMPRESIÓN · todo el rótulo DEBE caber en el alto de la etiqueta (100mm por defecto = 10cm de
-      # la impresora) sin cortarse. Compactado vertical + ancho con margen lateral (Sebastián 18-jul).
+      # IMPRESIÓN · todo el rótulo DEBE caber en la etiqueta (100mm por defecto = 10cm de la impresora)
+      # sin cortarse ni a la derecha ni abajo. Los valores ENVUELVEN (no nowrap → no fuerzan la tabla
+      # más ancha que la hoja · la fila Tipo de insumo cortaba "Material de Empaque"). Compactado
+      # vertical fuerte para que las firmas queden en la misma página (Sebastián 18-jul).
       "@media print{html,body{background:#fff}.ph{display:none}.wrap{display:block;padding:0;gap:0}.accent{height:2px}"
-      ".sheet{width:" + w4 + "mm;max-width:" + w4 + "mm;border-radius:0;box-shadow:none;border:1px solid #ccc;margin:0 auto;page-break-after:always;page-break-inside:avoid;break-inside:avoid}.sheet:last-child{page-break-after:auto}"
-      "td{padding:0.9px 7px;font-size:7pt;line-height:1.08}td.k{font-size:5.5pt}"
-      "td:not(.k){white-space:nowrap;overflow:hidden;text-overflow:ellipsis}"  # PRINT: valores en 1 linea (compacto, 1 hoja); en pantalla envuelven
-      ".top{padding:4px 10px 1px}.mark{width:30px;height:30px}.co{font-size:8.5pt}.ctrl{font-size:5pt;padding:3px 5px;line-height:1.28}"
-      ".title{padding:0 10px 2px}.title .eyebrow{font-size:5.5pt}.title .name{font-size:11.5pt;line-height:1.08}.tipo{font-size:6pt;margin-right:6px}"
-      ".lote{margin:0 10px 2px;padding:2px}.lote .ll{font-size:6.5pt}.lote .lv{font-size:11pt}.lote svg{max-height:6.5mm;height:auto}"
-      ".qc{padding:2px 10px;font-size:7pt;gap:8px}.firma{padding:3px 9px 3px}.firma .l{font-size:6.5pt}.firma .sig{margin:6px 0 2px}.firma .f{font-size:6pt}"
-      ".qcbox{padding:2px 10px}.qcl{font-size:6pt;margin-bottom:1px}.qcarea{height:15mm;border-color:#999}.obs{height:5mm}"
+      ".sheet{width:" + w4 + "mm;max-width:" + w4 + "mm;border-radius:0;box-shadow:none;border:1px solid #ccc;margin:0 auto;page-break-after:always;page-break-inside:avoid;break-inside:avoid;overflow:hidden}.sheet:last-child{page-break-after:auto}"
+      "td{padding:0.4px 6px;font-size:6.5pt;line-height:1.05}td.k{font-size:5pt}"
+      "td:not(.k){white-space:normal;word-break:break-word;overflow-wrap:anywhere}"  # PRINT: los valores ENVUELVEN (no cortan a la derecha)
+      ".top{padding:3px 10px 0}.mark{width:26px;height:26px}.co{font-size:8pt}.ctrl{font-size:4.6pt;padding:2px 4px;line-height:1.25}"
+      ".title{padding:0 10px 1px}.title .eyebrow{font-size:5pt}.title .name{font-size:11pt;line-height:1.03}.tipo{font-size:5.5pt;margin-right:5px}"
+      ".lote{margin:0 10px 1px;padding:1px}.lote .ll{font-size:6pt}.lote .lv{font-size:10pt}.lote svg{max-height:5mm;height:auto}"
+      ".qc{padding:1px 10px;font-size:6.5pt;gap:8px}.firma{padding:2px 9px 2px}.firma .l{font-size:6pt}.firma .sig{margin:4px 0 1px}.firma .f{font-size:5.5pt}"
+      ".qcbox{padding:1px 10px}.qcl{font-size:5.5pt;margin-bottom:0}.qcarea{height:10mm;border-color:#999}.obs{height:3mm}"
       "@page{size:" + str(lw) + "mm " + str(lh) + "mm;margin:2mm}}"
       "</style>")
 
@@ -10896,7 +10898,7 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
            '</div>')
 
     _sheets = ''.join(_sheet_mp(a, i) for i, a in enumerate(_recs))
-    _bc_js = ''.join('try{JsBarcode("#bc' + str(i) + '",' + json.dumps(bv) + ',{format:"CODE128",width:1.4,height:30,displayValue:false,margin:0});}catch(e){}' for i in range(_nrec))
+    _bc_js = ''.join('try{JsBarcode("#bc' + str(i) + '",' + json.dumps(bv) + ',{format:"CODE128",width:1.3,height:26,displayValue:false,margin:0});}catch(e){}' for i in range(_nrec))
     h = ('<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Rotulo Recepcion MP</title>'
        '<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>'
        + _rotulo_recep_css(_lw, _lh) + '</head><body>'
