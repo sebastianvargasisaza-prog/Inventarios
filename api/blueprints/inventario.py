@@ -10703,15 +10703,19 @@ def _rotulo_recep_css(lw, lh):
       ".wrap{display:flex;flex-wrap:wrap;gap:16px;padding:20px;justify-content:center;align-items:flex-start}"
       ".sheet{background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(24,24,27,.05),0 10px 24px rgba(24,24,27,.08);width:560px;page-break-inside:avoid}"
       ".accent{height:5px;background:linear-gradient(90deg,#a78bfa,var(--violet))}"
-      ".top{text-align:center;padding:14px 16px 7px}"
-      ".brandrow{display:inline-flex;align-items:center;gap:12px;justify-content:center}"
-      ".mark{width:52px;height:52px;border-radius:14px;flex:none;object-fit:contain;background:#fff;border:1px solid var(--line);padding:5px}"
+      # ENCABEZADO tipo membrete (Sebastián 19-jul · no apilado · producto = protagonista):
+      # marca a la izquierda, tipo de rótulo + formato/fecha a la derecha, divisor, y el nombre del
+      # material GRANDE con el INCI de subtítulo (hero).
+      ".top{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:12px 18px 10px}"
+      ".brandrow{display:inline-flex;align-items:center;gap:12px}"
+      ".mark{width:50px;height:50px;border-radius:14px;flex:none;object-fit:contain;background:#fff;border:1px solid var(--line);padding:5px}"
       ".co{display:flex;flex-direction:column;align-items:flex-start;font-weight:800;line-height:1;font-size:17px;letter-spacing:1.5px;color:var(--ink)}"
       ".cosub{font-size:9px;font-weight:600;letter-spacing:3px;color:var(--mute);text-transform:uppercase;margin-top:3px}"
-      ".meta{font-size:9.5px;color:var(--mute);font-weight:600;margin-top:8px;letter-spacing:.2px}.meta b{color:var(--violet-d);font-weight:700}"
-      ".title{text-align:center;padding:2px 16px 12px}"
-      ".title .eyebrow{font-size:9px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.5px}"
-      ".title .name{margin:2px 0 0;font-size:22px;font-weight:800;letter-spacing:-.4px;line-height:1.12;color:var(--ink)}"
+      ".ctrl{text-align:right;font-size:9px;color:var(--mute);line-height:1.55;flex:none;white-space:nowrap}.ctrl b{color:var(--violet-d);font-weight:700}"
+      ".ctrl-t{font-size:9.5px;font-weight:800;color:var(--ink);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}"
+      ".hero{text-align:center;padding:11px 18px 12px;border-top:1px solid var(--line)}"
+      ".hero .name{font-size:26px;font-weight:800;letter-spacing:-.5px;line-height:1.08;color:var(--ink)}"
+      ".inci{font-size:12px;color:var(--mute);font-weight:700;letter-spacing:.8px;margin-top:5px;text-transform:uppercase}"
       ".tipo{display:inline-block;font-size:10.5px;font-weight:700;margin-right:14px;white-space:nowrap;color:var(--mute)}.tipo.on{color:var(--violet-d)}"
       ".rectag{display:inline-block;margin-left:8px;background:var(--pale);color:var(--violet-d);border:1px solid #ede9fe;border-radius:999px;padding:1px 9px;font-size:9px;font-weight:800;text-transform:none;letter-spacing:0;vertical-align:middle}"
       ".lote{margin:0 16px 10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;text-align:center;padding:8px}"
@@ -10737,12 +10741,12 @@ def _rotulo_recep_css(lw, lh):
       ".sheet{width:" + w4 + "mm;max-width:" + w4 + "mm;border-radius:0;box-shadow:none;border:1px solid #bbb;margin:0 auto;page-break-after:always;page-break-inside:avoid;break-inside:avoid;overflow:hidden}.sheet:last-child{page-break-after:auto}"
       "td{padding:0.5px 9px;font-size:6.5pt;line-height:1.05}td.k{font-size:5.6pt}"
       "td:not(.k){white-space:normal;word-break:break-word;overflow-wrap:anywhere}"  # PRINT: los valores ENVUELVEN (no cortan a la derecha)
-      ".top{padding:3px 12px 1px}.mark{width:27px;height:27px;border-radius:8px;padding:2px}.brandrow{gap:9px}.co{font-size:11pt;letter-spacing:1pt}.cosub{font-size:5pt;letter-spacing:2pt;margin-top:1px}.meta{font-size:5.4pt;margin-top:3px}"
-      ".title{padding:0 12px 1px}.title .eyebrow{font-size:5.4pt}.title .name{font-size:11pt;line-height:1.03}.tipo{font-size:6pt;margin-right:7px}"
+      ".top{padding:4px 14px 3px}.mark{width:26px;height:26px;border-radius:7px;padding:2px}.brandrow{gap:8px}.co{font-size:10pt;letter-spacing:.8pt}.cosub{font-size:4.6pt;letter-spacing:1.6pt;margin-top:1px}.ctrl{font-size:5pt;line-height:1.4}.ctrl-t{font-size:5.4pt;margin-bottom:2px}"
+      ".hero{padding:4px 14px 5px}.hero .name{font-size:16pt;line-height:1.04}.inci{font-size:6.5pt;margin-top:2px}.tipo{font-size:6.5pt;margin-right:8px}"
       ".lote{margin:0 12px 2px;padding:1px}.lote .ll{font-size:6pt}.lote .lv{font-size:10pt}.lote svg{max-height:4mm;height:auto}"
       ".qc{padding:2px 12px;font-size:6.5pt;gap:9px}.firma{padding:3px 11px 4px}.firma .l{font-size:6pt}.firma .sig{margin:5px 0 1px}.firma .f{font-size:5.6pt}"
       # el area del sticker en alto generoso fijo para llenar el espacio de abajo (Sebastian 18-jul)
-      ".qcbox{padding:2px 12px 3px}.qcl{font-size:6pt;margin-bottom:1px}.qcarea{height:10mm;border-color:#999}.obs{height:4mm}.fill{height:5mm}"
+      ".qcbox{padding:2px 12px 3px}.qcl{font-size:6pt;margin-bottom:1px}.qcarea{height:13mm;border-color:#999}.obs{height:4mm}.fill{height:5mm}"
       "@page{size:" + str(lw) + "mm " + str(lh) + "mm;margin:2mm}}"
       "</style>")
 
@@ -10879,15 +10883,14 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
         _rec_tag = ('<span class="rectag">Recipiente ' + str(idx + 1) + ' de ' + str(_nrec) + '</span>') if _nrec > 1 else ''
         _cant_lbl = 'Cantidad (este recipiente)' if _nrec > 1 else 'Cantidad recibida'
         _cant_val = f"{amt:,.0f} g" + ((' <span class="cantsub">&middot; de ' + f"{_rtot:,.0f}" + ' g en ' + str(_nrec) + ' recipientes</span>') if _nrec > 1 else '')
+        _inci_sub = ('<div class="inci">INCI &middot; ' + _e(ni) + '</div>') if (ni and str(ni).strip()) else ''
         return ('<div class="sheet"><div class="accent"></div>'
            '<div class="top"><div class="brandrow"><img class="mark" src="' + _logo + '" alt="" onerror="this.remove()"><div class="co">ESPAGIRIA<span class="cosub">Laboratorio SAS</span></div></div>'
-           '<div class="meta"><b>Formato</b> COC-PRO-002-F07 &nbsp;&middot;&nbsp; <b>Impreso</b> ' + _e(hoy) + '</div></div>'
-           '<div class="title"><div class="eyebrow">Rotulo de ingreso &middot; Materia prima' + _rec_tag + '</div><h1 class="name">' + _e(nc) + '</h1></div>'
+           '<div class="ctrl"><div class="ctrl-t">Rotulo de ingreso &middot; MP' + _rec_tag + '</div><span><b>Formato</b> COC-PRO-002-F07</span><br><span><b>Impreso</b> ' + _e(hoy) + '</span></div></div>'
+           '<div class="hero"><h1 class="name">' + _e(nc) + '</h1>' + _inci_sub + '</div>'
            '<div class="lote"><div class="ll">Numero de lote</div><div class="lv">' + _e(lote) + '</div><svg id="bc' + str(idx) + '"></svg></div>'
            '<table>'
            '<tr><td class="k">Codigo MP</td><td class="num"><b>' + _e(codigo) + '</b></td></tr>'
-           '<tr><td class="k">Nombre comercial</td><td><b>' + _e(nc) + '</b></td></tr>'
-           '<tr><td class="k">Nombre INCI</td><td>' + (_e(ni) or '-') + '</td></tr>'
            '<tr><td class="k">Tipo de insumo</td><td>' + _tp_row() + '</td></tr>'
            '<tr><td class="k">Proveedor</td><td>' + (_e(pv) or '-') + '</td></tr>'
            '<tr><td class="k">' + _cant_lbl + '</td><td class="cant">' + _cant_val + '</td></tr>'
