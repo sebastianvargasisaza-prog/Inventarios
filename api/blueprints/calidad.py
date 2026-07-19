@@ -1397,6 +1397,17 @@ def calidad_recepcion_tecnica():
     vals = {k: (str(b.get(k) or '')) for k in _F01_COLS}
     vals['mov_id'] = mov_id
     conn = get_db(); cur = conn.cursor()
+    # E-firma Part 11 para DISPONER el envase (conforme=libera / no_conforme=rechaza) · idéntico al F02 de MP
+    # (Sebastián 19-jul). Solo MEE: para MP el F01 es documental (la disposición la hace el F02).
+    signature_id = b.get('signature_id')
+    if origen == 'MEE' and resultado in ('conforme', 'no_conforme'):
+        _meaning = 'libera' if resultado == 'conforme' else 'rechaza'
+        if not _validar_e_sign_cal(cur, signature_id, record_table='movimientos_mee',
+                                   record_id=mov_id, meaning=_meaning, signer=u):
+            return jsonify({'error': 'Se requiere firma electrónica (21 CFR Part 11) para disponer el envase. '
+                            'Firmá con /api/sign (record_table=movimientos_mee, record_id=' + str(mov_id) +
+                            ') y reenviá signature_id.',
+                            'requiere_firma': True, 'record_id': str(mov_id), 'sign_meaning': _meaning}), 400
     try:
         cur.execute("UPDATE recepcion_tecnica_doc SET anulado=1 WHERE mov_id=? AND COALESCE(origen,'MP')=? "
                     "AND COALESCE(anulado,0)=0", (mov_id, origen))
@@ -1424,7 +1435,7 @@ def calidad_recepcion_tecnica():
         audit_log(cur, usuario=u, accion='RECEPCION_TECNICA_F01', tabla='recepcion_tecnica_doc',
                   registro_id=(_f01_id or 0),
                   despues={'mov_id': mov_id, 'origen': origen, 'resultado': resultado, 'liberado': _liberado,
-                           'nc_id': _nc_id})
+                           'nc_id': _nc_id, 'signature_id': signature_id})
         conn.commit()
     except Exception as e:
         conn.rollback(); return jsonify({'error': f'No se pudo guardar F01: {e}'}), 500

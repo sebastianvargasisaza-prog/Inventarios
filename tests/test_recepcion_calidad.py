@@ -56,13 +56,13 @@ def test_f01_guarda_y_prefill(app, db_clean):
     assert g2["f01"]["resultado"] == "conforme"
 
 
-def _firmar(client, mov_id, meaning="libera"):
+def _firmar(client, mov_id, meaning="libera", record_table="movimientos"):
     """E-firma Part 11: challenge (password) → sign → signature_id."""
     rc = client.post("/api/sign/challenge", json={"password": TEST_PASSWORD, "totp_token": ""},
                      headers=csrf_headers())
     assert rc.status_code == 200, rc.data[:200]
     tok = rc.get_json()["token"]
-    rs = client.post("/api/sign", json={"record_table": "movimientos", "record_id": str(mov_id),
+    rs = client.post("/api/sign", json={"record_table": record_table, "record_id": str(mov_id),
                                         "meaning": meaning, "challenge_token": tok}, headers=csrf_headers())
     assert rs.status_code in (200, 201), rs.data[:200]
     return rs.get_json()["signature_id"]
@@ -154,10 +154,16 @@ def test_f01_envase_conforme_libera(app, db_clean):
     r0 = c.post("/api/calidad/recepcion-tecnica", json={
         "mov_id": mid, "origen": "MEE", "tipo_insumo": "envase", "resultado": "conforme"}, headers=csrf_headers())
     assert r0.status_code == 400, r0.data[:200]
-    # conforme CON firma → libera el envase
+    # conforme sin e-firma Part 11 → 400 (requiere firma)
+    r1 = c.post("/api/calidad/recepcion-tecnica", json={
+        "mov_id": mid, "origen": "MEE", "tipo_insumo": "envase",
+        "resultado": "conforme", "aprueba_por": "Laura"}, headers=csrf_headers())
+    assert r1.status_code == 400 and r1.get_json().get("requiere_firma") is True
+    # conforme CON firma electrónica → libera el envase
+    sig = _firmar(c, mid, "libera", "movimientos_mee")
     r = c.post("/api/calidad/recepcion-tecnica", json={
         "mov_id": mid, "origen": "MEE", "tipo_insumo": "envase", "crit_empaque": "cumple",
-        "resultado": "conforme", "realiza_por": "Yuliel", "aprueba_por": "Laura"}, headers=csrf_headers())
+        "resultado": "conforme", "realiza_por": "Yuliel", "aprueba_por": "Laura", "signature_id": sig}, headers=csrf_headers())
     assert r.status_code == 200, r.data[:300]
     assert r.get_json().get("liberado") == 1
     assert _estado_mee(mid) == "VIGENTE", "el envase conforme debe quedar VIGENTE"

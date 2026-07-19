@@ -103,10 +103,17 @@ def test_ciclo_mee_recepcion_a_disponible(app, db_clean):
     pipe = c.get("/api/calidad/recepcion-pipeline").get_json()
     mee_ids = [l["mov_id"] for l in pipe.get("lotes", []) if l.get("tipo") == "MEE"]
     assert mid in mee_ids, "el envase en cuarentena debe aparecer en Calidad (F01)"
-    # F01 conforme + firma del jefe → libera (envases no llevan F02)
+    # F01 conforme + e-firma Part 11 del jefe → libera (envases no llevan F02)
+    def _firmar_mee(cl, rid, meaning="libera"):
+        rc = cl.post("/api/sign/challenge", json={"password": TEST_PASSWORD, "totp_token": ""}, headers=csrf_headers())
+        tok = rc.get_json()["token"]
+        rs = cl.post("/api/sign", json={"record_table": "movimientos_mee", "record_id": str(rid),
+                                        "meaning": meaning, "challenge_token": tok}, headers=csrf_headers())
+        return rs.get_json()["signature_id"]
+    sig = _firmar_mee(c, mid, "libera")
     r = c.post("/api/calidad/recepcion-tecnica", json={
         "mov_id": mid, "origen": "MEE", "tipo_insumo": "envase", "crit_rotulado": "cumple",
-        "resultado": "conforme", "realiza_por": "Yuliel", "aprueba_por": "Laura"}, headers=csrf_headers())
+        "resultado": "conforme", "realiza_por": "Yuliel", "aprueba_por": "Laura", "signature_id": sig}, headers=csrf_headers())
     assert r.status_code == 200, r.data[:300]
     assert r.get_json().get("liberado") == 1
     row2 = _mee_estado("MEE-CICLO", "OC-MEE-C1")

@@ -2517,6 +2517,14 @@ async function guardarF01(mov_id, origen){
   if(!body.resultado){ alert('Marcá el resultado (Conforme / No conforme)'); return; }
   if(org==='MEE' && body.resultado==='conforme' && !body.aprueba_por.trim()){ alert('Para liberar el envase poné la firma del jefe de calidad (Aprueba)'); return; }
   if(org==='MEE' && body.resultado==='conforme' && !confirm('Conforme LIBERA el envase (queda VIGENTE, stock usable). ¿Confirmar?')) return;
+  // Disposición del envase (liberar/rechazar) exige e-firma Part 11 (idéntico al F02 de MP · Sebastián 19-jul)
+  if(org==='MEE' && (body.resultado==='conforme' || body.resultado==='no_conforme')){
+    var _mean=(body.resultado==='conforme')?'libera':'rechaza';
+    var firma=await _calFirmar(_mean, mov_id, 'movimientos_mee');
+    if(firma===null) return; // canceló la firma
+    if(firma.error){ alert('Firma electrónica: '+firma.error); return; }
+    body.signature_id=firma.signature_id;
+  }
   try{
     var r=await fetch('/api/calidad/recepcion-tecnica',_fetchOpts('POST', body));
     var d=await r.json();
@@ -2580,7 +2588,7 @@ async function openF02(mov_id){
   }catch(e){ alert('Error abriendo F02: '+e.message); }
 }
 // E-firma Part 11 (§11.200) · idéntico al flujo de disposición del "Revisar CC" (unificado 18-jul)
-async function _calFirmar(meaning, recordId){
+async function _calFirmar(meaning, recordId, recordTable){
   var pwd=prompt('FIRMA ELECTRÓNICA (21 CFR Part 11)\\n\\nIngresá tu contraseña para firmar la disposición del lote ('+meaning+'):');
   if(!pwd){ return null; }
   var totp=prompt('Si tenés MFA activo, ingresá el código de 6 dígitos.\\nSi no usás MFA, dejá vacío y presioná OK.')||'';
@@ -2588,7 +2596,7 @@ async function _calFirmar(meaning, recordId){
     var rc=await fetch('/api/sign/challenge',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({password:pwd,totp_token:totp})});
     var dc=await rc.json();
     if(!rc.ok){ return {error:dc.error||'Credenciales inválidas'}; }
-    var rs=await fetch('/api/sign',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({record_table:'movimientos',record_id:String(recordId),meaning:meaning,challenge_token:dc.token})});
+    var rs=await fetch('/api/sign',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({record_table:(recordTable||'movimientos'),record_id:String(recordId),meaning:meaning,challenge_token:dc.token})});
     var ds=await rs.json();
     if(!rs.ok){ return {error:ds.error||'Error al firmar'}; }
     return {signature_id:ds.signature_id};

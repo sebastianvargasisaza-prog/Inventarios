@@ -8884,7 +8884,18 @@ async function cargarOrdenes(){
     var d=await (await fetch('/api/programacion/marcacion-ordenes',{cache:'no-store'})).json();
     var its=d.items||[];
     if(!its.length){ box.innerHTML='<div class="muted">Sin órdenes todavía.</div>'; return; }
-    var h='<table><thead><tr><th>#</th><th>Producto</th><th>Base &rarr; Serigrafiado</th><th>Método</th><th>Proveedor</th><th>Enviado</th><th>Recibido</th><th>Estado</th><th></th></tr></thead><tbody>';
+    // Resumen "En serigrafía ahora" (Sebastián 19-jul · qué salió del inventario y qué falta volver)
+    var _env=its.filter(function(o){return o.estado==='enviado';});
+    var _rec=its.filter(function(o){return o.estado==='recibido';});
+    var _afuera=_env.reduce(function(s,o){return s+(o.cantidad_enviada||0);},0);
+    var _atras=_env.filter(function(o){return o.urgencia==='vencido';}).length;
+    function _mc(t,v,sub,col,bg){ return '<div style="background:'+bg+';border:1px solid '+col+'33;border-left:4px solid '+col+';border-radius:12px;padding:13px 16px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:'+col+';font-weight:700">'+t+'</div><div style="font-size:24px;font-weight:800;color:#1e1b2e;line-height:1.1;margin-top:3px">'+v+'</div><div style="font-size:11px;color:#78716c;margin-top:2px">'+sub+'</div></div>'; }
+    var sum='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:14px">'
+      +_mc('&#128424; En serigraf&iacute;a ahora', Math.round(_afuera).toLocaleString()+' <span style="font-size:13px;font-weight:600;color:#78716c">envases</span>', _env.length+' &oacute;rdenes afuera (salieron del inventario)', '#b45309', '#fff7ed')
+      +_mc('&#8617; De regreso &middot; cuarentena', _rec.length, 'volvieron, esperan que Calidad libere', '#0891b2', '#ecfeff')
+      +(_atras>0?_mc('&#9888; Atrasadas', _atras, 'pasaron la fecha de alistar', '#dc2626', '#fef2f2'):_mc('&#10003; Al d&iacute;a', _env.length-_atras, 'sin atrasos de alistamiento', '#16a34a', '#f0fdf4'))
+      +'</div>';
+    var h=sum+'<table><thead><tr><th>#</th><th>Producto</th><th>Base &rarr; Serigrafiado</th><th>Método</th><th>Proveedor</th><th>Enviado</th><th>Recibido</th><th>Estado</th><th></th></tr></thead><tbody>';
     its.forEach(function(o){
       h+='<tr><td>'+o.id+'</td><td><b>'+esc(o.producto)+'</b></td><td>'+esc(o.base)+' &rarr; '+esc(o.serigrafiado)+'</td><td>'+esc(o.metodo)+'</td><td>'+esc(o.proveedor)+'</td><td>'+Math.round(o.cantidad_enviada||0)+' <span class="muted">('+esc(o.fecha_envio)+')</span></td><td>'+(o.cantidad_recibida?Math.round(o.cantidad_recibida)+' <span class="muted">('+esc(o.fecha_retorno)+')</span>':'<span class="muted">-</span>')+'</td><td>'+(o.estado==='enviado'?'<span style="color:#b45309;font-weight:700">en marcación</span>':(o.estado==='recibido'?'<span style="color:#0891b2;font-weight:700">recibido &middot; cuarentena</span>':'<span style="color:#16a34a;font-weight:700">&#10003; liberado</span>'))+'</td><td>'+(o.estado==='enviado'?'<button class="ok" onclick="recibir('+o.id+','+(o.cantidad_enviada||0)+')">Recibir</button>':(o.estado==='recibido'?'<button onclick="liberarMarc('+o.id+')" style="background:#7c3aed">&#10003; Liberar (rev. técnica)</button>':'<span class="muted">&#10003;</span>'))+'</td></tr>';
     });
