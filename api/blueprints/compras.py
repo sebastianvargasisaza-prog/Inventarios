@@ -6487,7 +6487,8 @@ def recibir_oc(numero_oc):
     # AUDITORÍA-FIX 23-may-2026 · C15 · solo aprender en recepción completa
     # · antes 3 partials = 3 updates EWMA encadenados (peso 0.7³=0.34 a histórico)
     # distorsionando el aprendizaje · ahora solo si not es_parcial
-    if not es_parcial:
+    # + revisor 19-jul (H1): NO aprender lead-time/precio de MP para consumibles (contamina el maestro MP).
+    if not es_parcial and not _es_consumo_admin:
         try:
             oc_fecha_row = cur.execute(
                 "SELECT fecha FROM ordenes_compra WHERE numero_oc=?", (numero_oc,)
@@ -6529,8 +6530,9 @@ def recibir_oc(numero_oc):
     # solo se actualizaba en update_sol_items y crear_oc · datos quedaban
     # stale después de recibir si el precio facturado cambió
     try:
-        # Re-leer items con precio para tener el dato canonical
-        precios_rows = cur.execute(
+        # Re-leer items con precio para tener el dato canonical (NO para consumibles · revisor 19-jul H1:
+        # pisar precio_referencia de una MP con el precio de un consumible que reusara el código = corrupción).
+        precios_rows = [] if _es_consumo_admin else cur.execute(
             "SELECT codigo_mp, precio_unitario FROM ordenes_compra_items WHERE numero_oc=?",
             (numero_oc,),
         ).fetchall()
@@ -8665,23 +8667,8 @@ def compras_trazabilidad_item():
     conn = get_db(); c = conn.cursor()
     eventos = []; nombre = item
     tot_pedido = 0.0; tot_recibido = 0.0; n_sol = 0; n_oc = 0; precios = []
-    # ── Solicitudes (quién lo pidió) ─────────────────────────────────────
-    try:
-        for r in c.execute(
-            "SELECT s.numero, COALESCE(s.fecha,''), COALESCE(s.solicitante,''), COALESCE(s.estado,''), "
-            "COALESCE(s.numero_oc,''), COALESCE(si.cantidad_g,0), COALESCE(si.nombre_mp,'') "
-            "FROM solicitudes_compra_items si JOIN solicitudes_compra s ON s.numero=si.numero "
-            "WHERE COALESCE(NULLIF(TRIM(si.codigo_mp),''), UPPER(TRIM(si.nombre_mp))) = ? "
-            "ORDER BY s.fecha DESC LIMIT 80", (item,)).fetchall():
-            n_sol += 1
-            if r[6]:
-                nombre = r[6]
-            eventos.append({'tipo': 'solicitado', 'fecha': (r[1] or '')[:10], 'ref': r[0],
-                            'quien': r[2] or '-', 'estado': r[3], 'oc': r[4],
-                            'cantidad': round(float(r[5] or 0), 2)})
-    except Exception:
-        pass
-    # ── Órdenes de compra (comprado/proveedor/precio) + recepción ────────
+    _ESTADOS_PEDIDO = ('pagada', 'recibida', 'autorizada', 'parcial')  # solo cuenta al total lo comprometido
+    # ── Órdenes de compra PRIMERO (comprado/proveedor/precio) + recepción · para conocer el nombre del ítem ─
     try:
         for r in c.execute(
             "SELECT oc.numero_oc, COALESCE(oc.fecha,''), COALESCE(oc.estado,''), COALESCE(oc.proveedor,''), "
@@ -8693,7 +8680,9 @@ def compras_trazabilidad_item():
             "ORDER BY oc.fecha DESC LIMIT 80", (item,)).fetchall():
             n_oc += 1
             _cant = float(r[7] or 0); _precio = float(r[8] or 0); _recib = float(r[9] or 0)
-            tot_pedido += _cant; tot_recibido += _recib
+            if (str(r[2] or '')).strip().lower() in _ESTADOS_PEDIDO:  # revisor 19-jul P3: no contar Borrador/Cancelada
+                tot_pedido += _cant
+            tot_recibido += _recib
             if r[10]:
                 nombre = r[10]
             if _precio > 0:
@@ -8710,6 +8699,25 @@ def compras_trazabilidad_item():
         except Exception:
             pass
         return jsonify({'error': str(e)[:200]}), 500
+    # ── Solicitudes (quién lo pidió) · match por la llave DEL ÍTEM o por el NOMBRE resuelto de la OC
+    # (revisor 19-jul P2: si la OC trae código pero la SOL se cargó solo con nombre, se perdía el enlace).
+    try:
+        for r in c.execute(
+            "SELECT s.numero, COALESCE(s.fecha,''), COALESCE(s.solicitante,''), COALESCE(s.estado,''), "
+            "COALESCE(s.numero_oc,''), COALESCE(si.cantidad_g,0), COALESCE(si.nombre_mp,'') "
+            "FROM solicitudes_compra_items si JOIN solicitudes_compra s ON s.numero=si.numero "
+            "WHERE COALESCE(NULLIF(TRIM(si.codigo_mp),''), UPPER(TRIM(si.nombre_mp))) = ? "
+            "   OR UPPER(TRIM(si.nombre_mp)) = ? "
+            "ORDER BY s.fecha DESC LIMIT 80", (item, (nombre or item).strip().upper())).fetchall():
+            n_sol += 1
+            eventos.append({'tipo': 'solicitado', 'fecha': (r[1] or '')[:10], 'ref': r[0],
+                            'quien': r[2] or '-', 'estado': r[3], 'oc': r[4],
+                            'cantidad': round(float(r[5] or 0), 2)})
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
     eventos.sort(key=lambda e: (e.get('fecha') or '', {'recibido': 3, 'ordenado': 2, 'solicitado': 1}.get(e['tipo'], 0)), reverse=True)
     resumen = {'nombre': nombre, 'item': item, 'n_sol': n_sol, 'n_oc': n_oc,
                'total_pedido': round(tot_pedido, 2), 'total_recibido': round(tot_recibido, 2),
@@ -8870,7 +8878,7 @@ _DISCREPANCIAS_HTML = r"""<!doctype html><html lang="es"><head><meta charset="ut
 </div>
 <script>
 var GRUPO='todos';
-function esc(s){return (''+(s==null?'':s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function esc(s){return (''+(s==null?'':s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function fmt(n){n=Number(n||0);return (n<0?'-':'')+'$'+Math.abs(Math.round(n)).toLocaleString('es-CO');}
 function setG(el){document.querySelectorAll('.chip').forEach(function(x){x.classList.remove('on');});el.classList.add('on');GRUPO=el.getAttribute('data-g');cargar();}
 function spark(serie){var mx=Math.max.apply(null,serie.concat([1]));var h='<div class="spark">';for(var i=0;i<serie.length;i++){var pc=Math.round((serie[i]/mx)*100);h+='<i class="'+(i===serie.length-1?'last':'')+'" style="height:'+Math.max(pc,4)+'%" title="'+serie[i]+'"></i>';}return h+'</div>';}

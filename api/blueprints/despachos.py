@@ -54,7 +54,14 @@ def recepcion_detalle_oc(numero_oc):
     oc = c.fetchone()
     if oc is None:
         return jsonify({'error': 'OC no encontrada'}), 404
-    _INTANGIBLE = ('SVC', 'CC', 'Influencer/Marketing Digital')
+    # Pago directo (sin material físico) → no se recibe. Alineado con recibir_oc (revisor 19-jul H2:
+    # antes faltaban los nombres largos 'Servicio'/'Cuenta de Cobro' → una OC de servicio tecleada
+    # directo se renderizaba como recepción normal aunque el submit la frenara).
+    try:
+        from blueprints.compras import CATEGORIAS_PAGO_DIRECTO as _PDD
+        _INTANGIBLE = tuple(set(_PDD) | {'SVC', 'CC', 'Influencer/Marketing Digital'})
+    except Exception:
+        _INTANGIBLE = ('SVC', 'CC', 'Influencer/Marketing Digital', 'Servicio', 'Cuenta de Cobro')
     if oc[3] in _INTANGIBLE:
         return jsonify({
             'error': f'La OC {oc[0]} es de tipo {oc[3]} (intangible). '
