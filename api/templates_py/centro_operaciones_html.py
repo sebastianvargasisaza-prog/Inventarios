@@ -75,9 +75,9 @@ HTML = r"""
     <div>
       <div class="cx-mod-header__title">
         <span class="live-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#dc2626;margin-right:8px;animation:pulse 1.5s infinite;"></span>
-        HOY · qué pasa ahora
+        Centro de Mando
       </div>
-      <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; tiempo real operativo · refresh cada 60s · ver <a href="/gerencia" style="color:#6d28d9">Gerencia</a> para mes/YTD · <a href="/financiero" style="color:#6d28d9">Financiero</a> para P&amp;L</div>
+      <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; tus decisiones de hoy y el pulso de la empresa · refresh cada 60s · <a href="/gerencia" style="color:#6d28d9">Gerencia</a> (mes/YTD) · <a href="/financiero" style="color:#6d28d9">Financiero</a> (P&amp;L)</div>
     </div>
     <div class="cx-mod-header__nav">
       <button class="cx-btn cx-btn-ghost cx-btn-sm" onclick="cargar(true)" title="Refresh">&#x21bb; Refresh</button>
@@ -90,6 +90,13 @@ HTML = r"""
   <script>function cxToggleTheme(){var h=document.documentElement;var c=h.getAttribute('data-theme');var n=c==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
 
   <div class="container">
+
+    <!-- ÁREA: DECISIONES (lo que puedo atacar HOY) -->
+    <div class="area-title"><span class="area-title-icon">🎯</span>Decisiones · atacá de una
+      <span id="dec-resumen" style="margin-left:auto;font-size:12px;font-weight:600;color:#78716c"></span>
+    </div>
+    <div id="dec-chips" style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px 0"></div>
+    <div id="decisiones"><div class="empty" style="padding:14px;color:#78716c">Cargando decisiones...</div></div>
 
     <!-- ÁREA: CAJA HOY (solo del día - el mes vive en Financiero) -->
     <div class="area-title"><span class="area-title-icon">💰</span>Caja del día <a class="quick-link" href="/financiero" style="margin-left:auto;">Ver mes en Financiero →</a></div>
@@ -262,8 +269,66 @@ async function cargar(forzado) {
   } catch(e) { console.error('Centro error:', e); }
 }
 
+// ── DECISIONES: cola priorizada de lo que puedo atacar hoy ──
+var _DEC = [];
+var _DEC_FILTRO = 'todas';
+var _GRP_META = {compras:['🛒','Compras'], discrepancia:['📊','Discrepancias'], inventario:['📦','Inventario'], calidad:['🧪','Calidad'], equipo:['👥','Equipo']};
+function _decColor(n){ return n==='critico' ? '#dc2626' : (n==='atencion' ? '#d97706' : '#0891b2'); }
+function pintarDecisiones(){
+  var cont = document.getElementById('decisiones');
+  var lista = _DEC_FILTRO==='todas' ? _DEC : _DEC.filter(function(d){return d.nivel===_DEC_FILTRO;});
+  if(!lista.length){
+    cont.innerHTML = '<div class="empty" style="padding:16px;color:#16a34a;font-weight:600">✓ Nada urgente que atacar ahora mismo.</div>';
+    return;
+  }
+  cont.innerHTML = lista.map(function(d){
+    var col = _decColor(d.nivel);
+    var gm = _GRP_META[d.grupo] || ['•', d.grupo||''];
+    return '<a href="'+_esc(d.accion||'#')+'" style="display:flex;align-items:center;gap:12px;text-decoration:none;'+
+      'background:var(--cx-surface,#fff);border:1px solid var(--cx-border,#e7e5e4);border-left:4px solid '+col+';'+
+      'border-radius:10px;padding:12px 16px;margin-bottom:8px;transition:box-shadow .15s" '+
+      'onmouseover="this.style.boxShadow=\'0 4px 14px rgba(0,0,0,.08)\'" onmouseout="this.style.boxShadow=\'none\'">'+
+      '<span style="font-size:20px;line-height:1">'+gm[0]+'</span>'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-weight:700;color:var(--cx-text,#1c1917);font-size:14px">'+_esc(d.titulo||'-')+'</div>'+
+        '<div style="color:#78716c;font-size:12.5px;margin-top:2px;overflow:hidden;text-overflow:ellipsis">'+_esc(d.detalle||'')+'</div>'+
+      '</div>'+
+      '<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:'+col+';background:'+col+'18;padding:3px 8px;border-radius:20px;white-space:nowrap">'+_esc(gm[1])+'</span>'+
+      '<span style="color:'+col+';font-size:18px">→</span>'+
+    '</a>';
+  }).join('');
+}
+var _DEC_RES = {};
+function setFiltroDec(f){ _DEC_FILTRO = f; pintarChips(); pintarDecisiones(); }
+function pintarChips(){
+  var res = _DEC_RES || {};
+  var c = document.getElementById('dec-chips');
+  var defs = [['todas','Todas',(res.total||0)], ['critico','Críticas',(res.critico||0)], ['atencion','Atención',(res.atencion||0)]];
+  c.innerHTML = defs.map(function(x){
+    var act = _DEC_FILTRO===x[0];
+    var col = x[0]==='critico' ? '#dc2626' : (x[0]==='atencion' ? '#d97706' : '#6d28d9');
+    return '<button onclick="setFiltroDec(\''+x[0]+'\')" '+
+      'style="border:1px solid '+(act?col:'#d6d3d1')+';background:'+(act?col:'transparent')+';color:'+(act?'#fff':'#57534e')+';'+
+      'border-radius:20px;padding:5px 14px;font-size:12px;font-weight:600;cursor:pointer">'+x[1]+' ('+x[2]+')</button>';
+  }).join('');
+}
+async function cargarDecisiones(){
+  try{
+    var d = await fetch('/api/centro/decisiones').then(function(r){return r.json();});
+    if(d.error){ document.getElementById('decisiones').innerHTML='<div class="empty" style="padding:14px;color:#78716c">'+_esc(d.error)+'</div>'; return; }
+    _DEC = d.decisiones||[];
+    _DEC_RES = d.resumen||{};
+    var rz = document.getElementById('dec-resumen');
+    rz.textContent = (_DEC_RES.critico||0)+' críticas · '+(_DEC_RES.atencion||0)+' de atención';
+    rz.style.color = (_DEC_RES.critico>0) ? '#dc2626' : '#78716c';
+    pintarChips();
+    pintarDecisiones();
+  }catch(e){ console.error('Decisiones error:', e); }
+}
+
 cargar();
-setInterval(cargar, 60*1000);
+cargarDecisiones();
+setInterval(function(){ cargar(); cargarDecisiones(); }, 60*1000);
 </script>
 </body>
 </html>

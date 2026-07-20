@@ -84,14 +84,10 @@ def hub_resumen():
         'clientes': clientes_activos
     })
 
-@bp.route('/api/hub/alertas')
-def hub_alertas():
-    # Authz fix 28-may · antes SIN auth (anónimo podía leer alertas con
-    # valores de OC) · requiere login.
-    if 'compras_user' not in session:
-        return jsonify({'error': 'No autorizado'}), 401
-    conn = get_db(); c = conn.cursor()
-    hoy = datetime.now().strftime('%Y-%m-%d')
+def _hub_alertas_core(c, hoy):
+    """Núcleo reutilizable de alertas de compra/inventario (M1 un solo motor).
+    Lo consumen el endpoint /api/hub/alertas (home) y la cola de decisiones del
+    Centro de Mando (/api/centro/decisiones). Devuelve la lista de alertas."""
     alertas = []
     # OCs Revisadas sin autorizar (> 2 dias)
     hace2 = (datetime.now() - __import__('datetime').timedelta(days=2)).isoformat()
@@ -101,14 +97,14 @@ def hub_alertas():
         dias = max(0, (datetime.now() - datetime.fromisoformat(fecha[:19])).days) if fecha else 0
         nivel = 'critico' if dias >= 3 else 'atencion'
         alertas.append({'nivel':nivel,'tipo':'oc_autorizar','titulo':'OC pendiente de autorizar',
-            'detalle':f'{num} — {prov or "?"} ${val:,.0f} — {dias}d sin autorizar',
+            'detalle':f'{num} · {prov or "?"} ${val:,.0f} · {dias}d sin autorizar',
             'accion':'/compras','oc_num':num,'valor':val})
     # OCs Autorizadas con fecha vencida
     c.execute("SELECT numero_oc, proveedor, valor_total, fecha_entrega_est FROM ordenes_compra WHERE estado='Autorizada' AND fecha_entrega_est != '' AND fecha_entrega_est < ? ORDER BY fecha_entrega_est ASC", (hoy,))
     for row in c.fetchall():
         num, prov, val, fecha = row
         alertas.append({'nivel':'critico','tipo':'pago_vencido','titulo':'Pago vencido',
-            'detalle':f'{num} — {prov or "?"} ${val:,.0f} — vencio {fecha}',
+            'detalle':f'{num} · {prov or "?"} ${val:,.0f} · vencio {fecha}',
             'accion':'/compras','oc_num':num,'valor':val})
     # OCs Autorizadas proximas a vencer (3 dias)
     en3 = (datetime.now() + __import__('datetime').timedelta(days=3)).strftime('%Y-%m-%d')
@@ -116,7 +112,7 @@ def hub_alertas():
     for row in c.fetchall():
         num, prov, val, fecha = row
         alertas.append({'nivel':'atencion','tipo':'pago_proximo','titulo':'Pago proximo',
-            'detalle':f'{num} — {prov or "?"} ${val:,.0f} — vence {fecha}',
+            'detalle':f'{num} · {prov or "?"} ${val:,.0f} · vence {fecha}',
             'accion':'/compras','oc_num':num,'valor':val})
     # Compromisos vencidos
     c.execute("SELECT descripcion, responsable, fecha_limite, prioridad FROM compromisos WHERE estado NOT IN ('Completado','Cancelado') AND fecha_limite != '' AND fecha_limite < ? ORDER BY prioridad DESC, fecha_limite ASC LIMIT 5", (hoy,))
@@ -124,8 +120,8 @@ def hub_alertas():
         desc, resp, fecha, prior = row
         nivel = 'critico' if prior == 'Critico' else 'atencion'
         alertas.append({'nivel':nivel,'tipo':'compromiso_vencido','titulo':'Compromiso vencido',
-            'detalle':f'{desc[:60]} — {resp} — vencio {fecha}',
-            'accion':'/compromisos'})
+            'detalle':f'{desc[:60]} · {resp} · vencio {fecha}',
+            'accion':'/comunicacion'})
     # Lotes proximos a vencer o ya vencidos
     hoy_dt = datetime.now()
     en60 = (hoy_dt + timedelta(days=60)).strftime('%Y-%m-%d')
@@ -154,17 +150,159 @@ def hub_alertas():
                 msg = f'Vence en {dias} dias ({fv_clean})'
             alertas.append({'nivel': nivel, 'tipo': 'lote_vencimiento',
                 'titulo': 'Lote proximo a vencer',
-                'detalle': f'{nombre} — Lote {lote or "sin lote"} — {msg}',
+                'detalle': f'{nombre} · Lote {lote or "sin lote"} · {msg}',
                 'accion': '/inventarios'})
     except Exception:
         pass
-    # Sort: critico first
+    return alertas
+
+
+@bp.route('/api/hub/alertas')
+def hub_alertas():
+    # Authz fix 28-may · antes SIN auth (anónimo podía leer alertas con
+    # valores de OC) · requiere login.
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    hoy = datetime.now().strftime('%Y-%m-%d')
+    alertas = _hub_alertas_core(c, hoy)
     orden = {'critico':0,'atencion':1,'info':2}
     alertas.sort(key=lambda x: orden.get(x['nivel'],2))
     resumen = {'critico': sum(1 for a in alertas if a['nivel']=='critico'),
                'atencion': sum(1 for a in alertas if a['nivel']=='atencion'),
                'info': sum(1 for a in alertas if a['nivel']=='info')}
     return jsonify({'alertas': alertas[:15], 'resumen': resumen})
+
+
+@bp.route('/api/centro/decisiones')
+def centro_decisiones():
+    """Cola priorizada de DECISIONES del Centro de Mando (Sebastián 19-jul): todo lo que el
+    gerente puede atacar HOY, con su 'por qué' y un link para actuar de una. Reúne compras por
+    autorizar / pagos, discrepancias de precio-consumo, inventario crítico, calidad pendiente y
+    equipo. Cada fuente aislada (en PG un query fallido aborta la tx → rollback por bloque · M33).
+    Solo admins (sebastian + alejandro)."""
+    u = session.get('compras_user', '')
+    if not u:
+        return jsonify({'error': 'No autenticado'}), 401
+    if u not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admins'}), 403
+    conn = get_db(); c = conn.cursor()
+    hoy = datetime.now().strftime('%Y-%m-%d')
+    dec = []
+
+    def _add(nivel, grupo, titulo, detalle, accion, valor=0):
+        dec.append({'nivel': nivel, 'grupo': grupo, 'titulo': titulo,
+                    'detalle': detalle, 'accion': accion, 'valor': valor})
+
+    # ── COMPRAS: OCs por autorizar, pagos, lotes por vencer (núcleo compartido) ──
+    try:
+        for a in _hub_alertas_core(c, hoy):
+            _grp = 'inventario' if a.get('tipo') == 'lote_vencimiento' else (
+                   'equipo' if a.get('tipo') == 'compromiso_vencido' else 'compras')
+            _add(a['nivel'], _grp, a['titulo'], a['detalle'], a.get('accion', '/compras'),
+                 a.get('valor', 0) or 0)
+    except Exception:
+        try: conn.rollback()
+        except Exception: pass
+
+    # ── DISCREPANCIAS de precio/consumo (motor reutilizado · M1) ──
+    try:
+        from blueprints.compras import _discrepancias_core
+        _m, _items = _discrepancias_core(conn, meses_n=6, umbral=25.0, grupo='todos')
+        _alz = sorted([x for x in _items if x.get('alerta') and not x.get('atipico')],
+                      key=lambda x: -abs(x.get('delta_gasto') or 0))[:6]
+        _gl = {'mp': 'MP', 'mee': 'Envase', 'consumo': 'Consumible', 'otro': 'Ítem'}
+        for x in _alz:
+            vp = x.get('variacion_pct')
+            _sig = '+' if (vp or 0) >= 0 else ''
+            nivel = 'critico' if abs(vp or 0) >= 60 else 'atencion'
+            det = (_gl.get(x.get('grupo'), 'Ítem') + ' ' + (x.get('nombre') or x.get('item') or '')[:38]
+                   + ' · gasto ' + _sig + str(vp) + '% · ' + (x.get('razon') or ''))
+            _add(nivel, 'discrepancia', 'Discrepancia de compra', det,
+                 '/compras/discrepancias', abs(x.get('delta_gasto') or 0))
+    except Exception:
+        try: conn.rollback()
+        except Exception: pass
+
+    # ── INVENTARIO: MP en cero / bajo mínimo (resumen accionable, no 100 filas) ──
+    try:
+        n_cero = c.execute(
+            "SELECT COUNT(*) FROM (SELECT m.codigo_mp, "
+            "COALESCE(SUM(CASE WHEN UPPER(mov.tipo) IN ('ENTRADA','AJUSTE +','AJUSTE') THEN mov.cantidad "
+            "WHEN UPPER(mov.tipo) IN ('SALIDA','AJUSTE -') THEN -mov.cantidad ELSE 0 END),0) AS stock "
+            "FROM maestro_mps m LEFT JOIN movimientos mov ON mov.material_id=m.codigo_mp "
+            "AND UPPER(COALESCE(mov.estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO') "
+            "WHERE m.activo=1 AND COALESCE(m.controla_stock,1)=1 AND m.stock_minimo>0 "
+            "GROUP BY m.codigo_mp HAVING stock<=0.01) t").fetchone()[0]
+        if n_cero:
+            _add('critico', 'inventario', 'Materia prima en cero',
+                 f'{n_cero} MP activas en 0 · frena producción', '/compras', n_cero)
+    except Exception:
+        try: conn.rollback()
+        except Exception: pass
+
+    # ── CALIDAD: lotes en cuarentena esperando liberación ──
+    try:
+        n_cuar = c.execute(
+            "SELECT COUNT(*) FROM (SELECT material_id, lote FROM movimientos "
+            "WHERE tipo='Entrada' AND UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA') "
+            "GROUP BY material_id, lote) t").fetchone()[0]
+        if n_cuar:
+            _add('atencion', 'calidad', 'Lotes en cuarentena',
+                 f'{n_cuar} lote(s) esperando liberación de Calidad', '/calidad', n_cuar)
+    except Exception:
+        try: conn.rollback()
+        except Exception: pass
+
+    # ── PAGOS: facturas de proveedor con saldo ──
+    try:
+        fr = c.execute(
+            "SELECT COUNT(*), COALESCE(SUM(total - COALESCE((SELECT SUM(monto) FROM facturas_pagos "
+            "WHERE numero_factura=facturas.numero_factura),0)),0) FROM facturas "
+            "WHERE estado IN ('Emitida','Parcial')").fetchone()
+        if fr and fr[0]:
+            _add('atencion', 'compras', 'Facturas de proveedor con saldo',
+                 f'{fr[0]} factura(s) · ${(fr[1] or 0):,.0f} por pagar', '/compras', fr[1] or 0)
+    except Exception:
+        try: conn.rollback()
+        except Exception: pass
+
+    # ── EQUIPO: tareas vencidas, quejas alta/crítica, NCs abiertas ──
+    try:
+        tv = c.execute("SELECT COUNT(*) FROM tareas_internas WHERE estado NOT IN ('Hecha','Cancelada') "
+                       "AND fecha_compromiso IS NOT NULL AND fecha_compromiso < date('now','-5 hours')").fetchone()[0]
+        if tv:
+            _add('atencion', 'equipo', 'Tareas vencidas',
+                 f'{tv} tarea(s) vencida(s) en el equipo', '/comunicacion', tv)
+    except Exception:
+        try: conn.rollback()
+        except Exception: pass
+    try:
+        qa = c.execute("SELECT COUNT(*) FROM quejas_internas WHERE estado IN ('Pendiente','Analizada','Escalada') "
+                       "AND severidad_ia IN ('Alta','Critica')").fetchone()[0]
+        if qa:
+            _add('critico', 'equipo', 'Quejas de severidad alta',
+                 f'{qa} queja(s) alta/crítica sin resolver', '/comunicacion', qa)
+    except Exception:
+        try: conn.rollback()
+        except Exception: pass
+    try:
+        nc = c.execute("SELECT COUNT(*) FROM no_conformidades WHERE estado='Abierta'").fetchone()[0]
+        if nc:
+            _add('atencion', 'calidad', 'No conformidades abiertas',
+                 f'{nc} NC abierta(s)', '/aseguramiento', nc)
+    except Exception:
+        try: conn.rollback()
+        except Exception: pass
+
+    orden = {'critico': 0, 'atencion': 1, 'info': 2}
+    dec.sort(key=lambda x: (orden.get(x['nivel'], 2), -(x.get('valor') or 0)))
+    resumen = {'critico': sum(1 for a in dec if a['nivel'] == 'critico'),
+               'atencion': sum(1 for a in dec if a['nivel'] == 'atencion'),
+               'info': sum(1 for a in dec if a['nivel'] == 'info'),
+               'total': len(dec)}
+    return jsonify({'decisiones': dec[:40], 'resumen': resumen,
+                    'generado_en': datetime.now().isoformat()})
 
 @bp.route('/api/compromisos', methods=['GET','POST'])
 def handle_compromisos():

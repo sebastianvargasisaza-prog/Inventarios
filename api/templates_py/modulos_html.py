@@ -93,24 +93,28 @@ MODULOS_HTML = (
     "\n"
     "  <!-- VISTA EJECUTIVA (admins) -->\n"
     "  <div class=\"section\" id=\"sec-ceo\" style=\"display:none;\">\n"
-    "    <div class=\"section-label\">&#x1F3AF; CEO &middot; Vista del día <span class=\"hint\">tu vista única</span></div>\n"
-    "    <div class=\"grid\">\n"
-    "      <a class=\"mod-card featured\" href=\"/hoy\">"
-    "<span class=\"mod-icon\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"cx-ico\"><circle cx=\"12\" cy=\"12\" r=\"4\"/><path d=\"M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4\"/></svg></span>"
-    "<span class=\"mod-name\" style=\"color:#5b21b6\">HOY</span>"
-    "<span class=\"mod-sub\" style=\"color:#5b21b6\">qué pasa en toda la empresa</span></a>\n"
+    "    <div class=\"section-label\">&#x1F3AF; CEO <span class=\"hint\">tu vista única</span></div>\n"
+    # Sebastián 19-jul-2026: UN solo Centro de Mando (tarjeta grande = resúmenes +
+    # cola de decisiones accionables). Las 8 herramientas de rol/mantenimiento
+    # (Gerencia, Inteligencia Operacional, Seguridad de Planta, Reportes INVIMA,
+    # Auditoría Catálogo, Zero-Error, MPs sin uso, Realidad Zero-Error) bajan a un
+    # cajón colapsable (siguen accesibles, fuera de la vista principal).
+    "    <a class=\"mod-card featured\" href=\"/hoy\" style=\"display:flex;align-items:center;gap:20px;padding:26px 28px;background:linear-gradient(135deg,#f5f3ff 0%,#faf5ff 100%);border:1px solid #ddd6fe;\">"
+    "<span class=\"mod-icon\" style=\"flex:0 0 auto;width:56px;height:56px;color:#5b21b6\"><svg viewBox=\"0 0 24 24\" width=\"56\" height=\"56\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"4\"/><path d=\"M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4\"/></svg></span>"
+    "<span style=\"flex:1;text-align:left\"><span class=\"mod-name\" style=\"color:#5b21b6;font-size:22px;display:block\">Centro de Mando</span>"
+    "<span class=\"mod-sub\" style=\"color:#6d28d9;font-size:14px;display:block;margin-top:4px\">tus decisiones de hoy &middot; alertas &middot; discrepancias &middot; el pulso de toda la empresa</span></span>"
+    "<span style=\"flex:0 0 auto;color:#5b21b6;font-size:26px\">&rarr;</span></a>\n"
+    "    <details style=\"margin-top:16px\">\n"
+    "      <summary style=\"cursor:pointer;list-style:none;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#78716c;padding:8px 0;user-select:none\">&#x1F527; Herramientas de gerencia <span class=\"hint\" style=\"text-transform:none;letter-spacing:0\">gerencia &middot; calidad &middot; mantenimiento (clic para abrir)</span></summary>\n"
+    "      <div class=\"grid\" style=\"margin-top:10px\">\n"
     "      <a class=\"mod-card\" href=\"/gerencia\">"
     "<span class=\"mod-icon\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"cx-ico\"><path d=\"M3 9l9-6 9 6\"/><path d=\"M5 21V11M19 21V11M9 21v-8M15 21v-8M2 21h20\"/></svg></span>"
     "<span class=\"mod-name\">Gerencia</span>"
     "<span class=\"mod-sub\">metas YTD &middot; estrategia</span></a>\n"
-    # Sebastián 22-jun-2026: CEO depurado · solo vista del día. Las herramientas
-    # técnicas/mantenimiento (Auditoría Catálogo, Zero-Error, MPs sin uso, Realidad
-    # Zero-Error) bajan a un grupo "Mantenimiento" (siguen accesibles, fuera de la
-    # vista CEO). Inteligencia Operacional + Seguridad de Planta entran al CEO.
-    "      <a class=\"mod-card featured\" href=\"/admin/inteligencia-operacional\">"
+    "      <a class=\"mod-card\" href=\"/admin/inteligencia-operacional\">"
     "<span class=\"mod-icon\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"cx-ico\"><path d=\"M3 3v18h18\"/><path d=\"M7 14l3-3 3 3 5-6\"/></svg></span>"
-    "<span class=\"mod-name\" style=\"color:#5b21b6\">Inteligencia Operacional</span>"
-    "<span class=\"mod-sub\" style=\"color:#5b21b6\">inicio de labores &middot; tiempos de producción</span></a>\n"
+    "<span class=\"mod-name\">Inteligencia Operacional</span>"
+    "<span class=\"mod-sub\">inicio de labores &middot; tiempos de producción</span></a>\n"
     "      <a class=\"mod-card\" href=\"/admin/seguridad-planta\">"
     "<span class=\"mod-icon\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"cx-ico\"><path d=\"M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z\"/><path d=\"M9 12l2 2 4-4\"/></svg></span>"
     "<span class=\"mod-name\">Seguridad de Planta</span>"
@@ -119,9 +123,6 @@ MODULOS_HTML = (
     "<span class=\"mod-icon\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"cx-ico\"><path d=\"M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z\"/><path d=\"M14 2v6h6M16 13H8M16 17H8M10 9H8\"/></svg></span>"
     "<span class=\"mod-name\">Reportes INVIMA</span>"
     "<span class=\"mod-sub\">trazabilidad lote &middot; audit CSV</span></a>\n"
-    "    </div>\n"
-    "    <div class=\"section-label\" style=\"margin-top:18px;\">&#x1F527; Mantenimiento <span class=\"hint\">admin &middot; uso ocasional</span></div>\n"
-    "    <div class=\"grid\">\n"
     "      <a class=\"mod-card\" href=\"/admin/auditoria-catalogo\">"
     "<span class=\"mod-icon\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"cx-ico\"><circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"M21 21l-4.3-4.3M11 8v3M11 14h.01\"/></svg></span>"
     "<span class=\"mod-name\">Auditoría Catálogo</span>"
@@ -138,7 +139,8 @@ MODULOS_HTML = (
     "<span class=\"mod-icon\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"cx-ico\"><circle cx=\"12\" cy=\"12\" r=\"10\"/><circle cx=\"12\" cy=\"12\" r=\"6\"/><circle cx=\"12\" cy=\"12\" r=\"2\" fill=\"currentColor\"/></svg></span>"
     "<span class=\"mod-name\">Realidad Zero-Error</span>"
     "<span class=\"mod-sub\">score agregado S1-S5 &middot; matriz</span></a>\n"
-    "    </div>\n"
+    "      </div>\n"
+    "    </details>\n"
     "  </div>\n"
     "  <script>\n"
     "    if({usuario_es_admin}){{ document.getElementById('sec-ceo').style.display=''; }}\n"

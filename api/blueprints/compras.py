@@ -8542,24 +8542,11 @@ def consumos_tendencia():
                     'alertas': alertas, 'umbral': umbral, 'gasto_total': round(sum(x['total'] for x in cats_out), 2)})
 
 
-@bp.route('/api/compras/discrepancias', methods=['GET'])
-def compras_discrepancias():
-    """Inteligencia de discrepancias de compra (Sebastián 19-jul): por ÍTEM (MP/MEE/consumos), tendencia de
-    CANTIDAD y PRECIO por mes, y descompone la variación del gasto del último mes vs el promedio previo en
-    efecto PRECIO vs efecto CANTIDAD ('subió 45%: precio +10%, cantidad +35%'). Da la razón probable.
-    ?grupo=mp|mee|consumo|todos ?meses=6 ?umbral=25 (% mínimo para marcar). PG-safe (GROUP BY completo)."""
-    if 'compras_user' not in session:
-        return jsonify({'error': 'No autorizado'}), 401
-    try:
-        meses_n = max(3, min(24, int(request.args.get('meses', 6) or 6)))
-    except Exception:
-        meses_n = 6
-    try:
-        umbral = float(request.args.get('umbral', 25) or 25)
-    except Exception:
-        umbral = 25.0
-    grupo = (request.args.get('grupo') or 'todos').strip().lower()
-    conn = get_db(); c = conn.cursor()
+def _discrepancias_core(conn, meses_n=6, umbral=25.0, grupo='todos'):
+    """Núcleo reutilizable de discrepancias (Sebastián 19-jul · M1 un solo motor). Devuelve
+    (meses, out) donde out = lista de ítems con descomposición precio/cantidad + alerta.
+    Lo consumen el endpoint /api/compras/discrepancias y la cola de decisiones del Centro de Mando."""
+    c = conn.cursor()
     _cons = set(x.upper() for x in _CATS_CONSUMO)
 
     def _grp(cat):
@@ -8571,8 +8558,7 @@ def compras_discrepancias():
         if cu in ('MP', 'MATERIA PRIMA', 'MATERIA_PRIMA', ''):
             return 'mp'
         return 'otro'
-    try:
-        rows = c.execute(
+    rows = c.execute(
             "SELECT COALESCE(NULLIF(TRIM(oi.codigo_mp),''), UPPER(TRIM(oi.nombre_mp))) AS ikey, "
             "MAX(oi.nombre_mp) AS nombre, MAX(oi.codigo_mp) AS cod, "
             "COALESCE(NULLIF(TRIM(oc.categoria),''),'MP') AS cat, "
@@ -8586,12 +8572,6 @@ def compras_discrepancias():
             "AND COALESCE(NULLIF(TRIM(oi.codigo_mp),''), TRIM(oi.nombre_mp)) <> '' "
             "GROUP BY COALESCE(NULLIF(TRIM(oi.codigo_mp),''), UPPER(TRIM(oi.nombre_mp))), "
             "COALESCE(NULLIF(TRIM(oc.categoria),''),'MP'), SUBSTR(oc.fecha,1,7)").fetchall()
-    except Exception as e:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-        return jsonify({'error': str(e)[:200]}), 500
     items = {}; meses_set = set()
     for r in rows:
         ikey, nombre, cod, cat, mes = r[0], r[1], r[2], r[3], r[4]
@@ -8648,6 +8628,35 @@ def compras_discrepancias():
                     'alerta': flag, 'atipico': atipico, 'razon': razon})
     # marcadas primero, por magnitud de |delta gasto|
     out.sort(key=lambda x: (0 if x['alerta'] else 1, -abs(x['delta_gasto'] or 0)))
+    return meses, out
+
+
+@bp.route('/api/compras/discrepancias', methods=['GET'])
+def compras_discrepancias():
+    """Inteligencia de discrepancias de compra (Sebastián 19-jul): por ÍTEM (MP/MEE/consumos), tendencia de
+    CANTIDAD y PRECIO por mes, y descompone la variación del gasto del último mes vs el promedio previo en
+    efecto PRECIO vs efecto CANTIDAD ('subió 45%: precio +10%, cantidad +35%'). Da la razón probable.
+    ?grupo=mp|mee|consumo|todos ?meses=6 ?umbral=25 (% mínimo para marcar). PG-safe (GROUP BY completo)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    try:
+        meses_n = max(3, min(24, int(request.args.get('meses', 6) or 6)))
+    except Exception:
+        meses_n = 6
+    try:
+        umbral = float(request.args.get('umbral', 25) or 25)
+    except Exception:
+        umbral = 25.0
+    grupo = (request.args.get('grupo') or 'todos').strip().lower()
+    conn = get_db()
+    try:
+        meses, out = _discrepancias_core(conn, meses_n, umbral, grupo)
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return jsonify({'error': str(e)[:200]}), 500
     alertas = [x for x in out if x['alerta']]
     return jsonify({'ok': True, 'meses': meses, 'grupo': grupo, 'umbral': umbral,
                     'items': out[:200], 'n_alertas': len(alertas),
