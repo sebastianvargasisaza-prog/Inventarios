@@ -57,3 +57,35 @@ def test_pagina_discrepancias_render(app, db_clean):
     r = c.get("/compras/discrepancias")
     assert r.status_code == 200
     assert "Discrepancias de compra" in r.get_data(as_text=True)
+
+
+def _seed_sol(numero, fecha, solicitante, nombre, cant, oc=""):
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    c = conn.cursor()
+    c.execute("INSERT OR REPLACE INTO solicitudes_compra (numero, fecha, estado, solicitante, numero_oc) "
+              "VALUES (?, ?, 'Aprobada', ?, ?)", (numero, fecha, solicitante, oc))
+    c.execute("INSERT INTO solicitudes_compra_items (numero, codigo_mp, nombre_mp, cantidad_g, unidad) "
+              "VALUES (?, '', ?, ?, 'uds')", (numero, nombre, cant))
+    conn.commit(); conn.close()
+
+
+def test_trazabilidad_item_timeline(app, db_clean):
+    # Alejandro pide → OC de Catalina → llega y recibe Luz
+    _seed_sol("SOL-TZ1", "2026-06-01", "Alejandro", "TAPA-NEGRA-TZ", 500, "OC-TZ1")
+    _oc_item("OC-TZ1", "2026-06-05", "MEE", "TAPA-NEGRA-TZ", 500, 3)
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("UPDATE ordenes_compra SET estado='Recibida', fecha_recepcion='2026-06-10', recibido_por='Luz' WHERE numero_oc='OC-TZ1'")
+    conn.execute("UPDATE ordenes_compra_items SET cantidad_recibida_g=500 WHERE numero_oc='OC-TZ1'")
+    conn.commit(); conn.close()
+    c = _login(app)
+    d = c.get("/api/compras/trazabilidad-item?item=TAPA-NEGRA-TZ").get_json()
+    assert d["ok"] is True
+    R = d["resumen"]
+    assert R["n_sol"] == 1 and R["n_oc"] == 1
+    assert R["total_pedido"] == 500 and R["total_recibido"] == 500 and R["pendiente"] == 0
+    tipos = [e["tipo"] for e in d["eventos"]]
+    assert "solicitado" in tipos and "ordenado" in tipos and "recibido" in tipos, "la historia completa"
+    sol = next(e for e in d["eventos"] if e["tipo"] == "solicitado")
+    assert sol["quien"] == "Alejandro", "quién lo pidió"
+    rec = next(e for e in d["eventos"] if e["tipo"] == "recibido")
+    assert rec["quien"] == "Luz", "quién recibió"

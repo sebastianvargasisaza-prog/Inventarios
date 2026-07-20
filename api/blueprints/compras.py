@@ -8652,6 +8652,73 @@ def compras_discrepancias():
                     'delta_total_alertas': round(sum(x['delta_gasto'] or 0 for x in alertas), 2)})
 
 
+@bp.route('/api/compras/trazabilidad-item', methods=['GET'])
+def compras_trazabilidad_item():
+    """Trazabilidad TOTAL de un artículo (Sebastián 19-jul): su historia de compra en línea de tiempo →
+    quién lo SOLICITÓ (SOL) → qué OC lo compró (proveedor/precio/estado) → cuándo LLEGÓ y quién recibió.
+    ?item=<codigo_mp o NOMBRE en mayúsculas> (la misma llave que /discrepancias). PG-safe."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    item = (request.args.get('item') or '').strip()
+    if not item:
+        return jsonify({'error': 'Falta item'}), 400
+    conn = get_db(); c = conn.cursor()
+    eventos = []; nombre = item
+    tot_pedido = 0.0; tot_recibido = 0.0; n_sol = 0; n_oc = 0; precios = []
+    # ── Solicitudes (quién lo pidió) ─────────────────────────────────────
+    try:
+        for r in c.execute(
+            "SELECT s.numero, COALESCE(s.fecha,''), COALESCE(s.solicitante,''), COALESCE(s.estado,''), "
+            "COALESCE(s.numero_oc,''), COALESCE(si.cantidad_g,0), COALESCE(si.nombre_mp,'') "
+            "FROM solicitudes_compra_items si JOIN solicitudes_compra s ON s.numero=si.numero "
+            "WHERE COALESCE(NULLIF(TRIM(si.codigo_mp),''), UPPER(TRIM(si.nombre_mp))) = ? "
+            "ORDER BY s.fecha DESC LIMIT 80", (item,)).fetchall():
+            n_sol += 1
+            if r[6]:
+                nombre = r[6]
+            eventos.append({'tipo': 'solicitado', 'fecha': (r[1] or '')[:10], 'ref': r[0],
+                            'quien': r[2] or '-', 'estado': r[3], 'oc': r[4],
+                            'cantidad': round(float(r[5] or 0), 2)})
+    except Exception:
+        pass
+    # ── Órdenes de compra (comprado/proveedor/precio) + recepción ────────
+    try:
+        for r in c.execute(
+            "SELECT oc.numero_oc, COALESCE(oc.fecha,''), COALESCE(oc.estado,''), COALESCE(oc.proveedor,''), "
+            "COALESCE(oc.categoria,'MP'), COALESCE(oc.fecha_recepcion,''), COALESCE(oc.recibido_por,''), "
+            "COALESCE(oi.cantidad_g,0), COALESCE(oi.precio_unitario,0), COALESCE(oi.cantidad_recibida_g,0), "
+            "COALESCE(oi.nombre_mp,'') "
+            "FROM ordenes_compra_items oi JOIN ordenes_compra oc ON oc.numero_oc=oi.numero_oc "
+            "WHERE COALESCE(NULLIF(TRIM(oi.codigo_mp),''), UPPER(TRIM(oi.nombre_mp))) = ? "
+            "ORDER BY oc.fecha DESC LIMIT 80", (item,)).fetchall():
+            n_oc += 1
+            _cant = float(r[7] or 0); _precio = float(r[8] or 0); _recib = float(r[9] or 0)
+            tot_pedido += _cant; tot_recibido += _recib
+            if r[10]:
+                nombre = r[10]
+            if _precio > 0:
+                precios.append(_precio)
+            eventos.append({'tipo': 'ordenado', 'fecha': (r[1] or '')[:10], 'ref': r[0],
+                            'quien': r[3] or '-', 'estado': r[2], 'categoria': r[4],
+                            'cantidad': round(_cant, 2), 'precio': round(_precio, 4)})
+            if _recib > 0:
+                eventos.append({'tipo': 'recibido', 'fecha': (r[5] or r[1] or '')[:10], 'ref': r[0],
+                                'quien': r[6] or '-', 'cantidad': round(_recib, 2)})
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return jsonify({'error': str(e)[:200]}), 500
+    eventos.sort(key=lambda e: (e.get('fecha') or '', {'recibido': 3, 'ordenado': 2, 'solicitado': 1}.get(e['tipo'], 0)), reverse=True)
+    resumen = {'nombre': nombre, 'item': item, 'n_sol': n_sol, 'n_oc': n_oc,
+               'total_pedido': round(tot_pedido, 2), 'total_recibido': round(tot_recibido, 2),
+               'pendiente': round(max(0.0, tot_pedido - tot_recibido), 2),
+               'precio_min': round(min(precios), 4) if precios else None,
+               'precio_max': round(max(precios), 4) if precios else None}
+    return jsonify({'ok': True, 'resumen': resumen, 'eventos': eventos[:150]})
+
+
 @bp.route('/api/compras/consumibles', methods=['GET', 'POST'])
 def consumibles_catalogo():
     """Catálogo (maestro) de consumibles · GET lista activos (?q búsqueda) · POST crea uno nuevo
@@ -8834,10 +8901,47 @@ async function cargar(){
        +'<div class="decomp">'
        +'<div class="deff"><div class="lb">Efecto cantidad</div><div class="vv" style="color:'+((o.efecto_cantidad||0)>=0?'var(--warn)':'var(--ok)')+'">'+fmt(o.efecto_cantidad)+'</div>'+decompBar(o.efecto_cantidad,o.efecto_precio,'#f59e0b')+'<div class="csub">'+(o.var_cantidad_pct==null?'-':((o.var_cantidad_pct>=0?'+':'')+o.var_cantidad_pct+'% en unidades'))+'</div></div>'
        +'<div class="deff"><div class="lb">Efecto precio</div><div class="vv" style="color:'+((o.efecto_precio||0)>=0?'var(--dang)':'var(--ok)')+'">'+fmt(o.efecto_precio)+'</div>'+decompBar(o.efecto_precio,o.efecto_cantidad,'#dc2626')+'<div class="csub">'+(o.var_precio_pct==null?'-':((o.var_precio_pct>=0?'+':'')+o.var_precio_pct+'% en precio unit.'))+'</div></div>'
-       +'</div></div>';
+       +'</div><div style="margin-top:10px;text-align:right"><a class="verhist" data-item="'+esc(o.item)+'" onclick="abrirTraza(this)" style="font-size:12px;color:#6d28d9;font-weight:700;cursor:pointer">&#128220; ver historia completa (quién pidió → OC → recepción) &rarr;</a></div></div>';
     });
     box.innerHTML=h;
   }catch(e){ box.innerHTML='<div class="empty">Error: '+esc(e.message)+'</div>'; }
+}
+// ── Trazabilidad total del artículo (drill-down) ─────────────────────────
+function cerrarTraza(){ var m=document.getElementById('traza-ov'); if(m) m.remove(); }
+async function abrirTraza(el){
+  var item=el.getAttribute('data-item'); if(!item) return;
+  var ov=document.createElement('div'); ov.id='traza-ov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(30,27,46,.5);z-index:900;display:flex;align-items:flex-start;justify-content:center;padding:34px 16px;overflow:auto';
+  ov.onclick=function(e){ if(e.target===ov) cerrarTraza(); };
+  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:760px;width:100%;box-shadow:0 24px 70px rgba(0,0,0,.35);overflow:hidden"><div style="background:linear-gradient(135deg,#4c1d95,#6d28d9);color:#fff;padding:15px 22px;display:flex;justify-content:space-between;align-items:center"><span style="font-weight:800;font-size:15px">&#128220; Trazabilidad del artículo</span><button onclick="cerrarTraza()" style="background:none;border:none;color:#e9d5ff;font-size:22px;cursor:pointer;line-height:1">&times;</button></div><div id="traza-bd" style="padding:20px 22px"><div class="empty">Cargando&hellip;</div></div></div>';
+  document.body.appendChild(ov);
+  try{
+    var d=await (await fetch('/api/compras/trazabilidad-item?item='+encodeURIComponent(item),{cache:'no-store'})).json();
+    var bd=document.getElementById('traza-bd');
+    if(!d.ok){ bd.innerHTML='<div class="empty">Error: '+esc(d.error||'')+'</div>'; return; }
+    var R=d.resumen||{};
+    var pr=(R.precio_min!=null)?(fmt(R.precio_min)+((R.precio_max!=R.precio_min)?(' &ndash; '+fmt(R.precio_max)):'')):'-';
+    var h='<div style="font-size:17px;font-weight:800;margin-bottom:3px">'+esc(R.nombre||item)+'</div>'
+      +'<div class="csub" style="margin-bottom:14px">'+ (R.n_sol||0)+' solicitudes &middot; '+(R.n_oc||0)+' órdenes &middot; pedido '+Math.round(R.total_pedido||0).toLocaleString('es-CO')+' &middot; recibido '+Math.round(R.total_recibido||0).toLocaleString('es-CO')+(R.pendiente>0?(' &middot; <b style="color:#c2410c">pendiente '+Math.round(R.pendiente).toLocaleString('es-CO')+'</b>'):'')+' &middot; precio unit. '+pr+'</div>';
+    var evs=d.eventos||[];
+    if(!evs.length){ h+='<div class="empty">Sin historia registrada para este artículo.</div>'; }
+    else {
+      h+='<div style="border-left:2px solid #ece9f6;margin-left:8px;padding-left:16px">';
+      evs.forEach(function(e){
+        var ic={solicitado:'&#128221;',ordenado:'&#128722;',recibido:'&#10003;'}[e.tipo]||'&#8226;';
+        var col={solicitado:'#7c3aed',ordenado:'#1e40af',recibido:'#16a34a'}[e.tipo]||'#78716c';
+        var tit={solicitado:'Solicitado',ordenado:'Ordenado (OC)',recibido:'Recibido'}[e.tipo]||e.tipo;
+        var extra='';
+        if(e.tipo==='solicitado') extra='por <b>'+esc(e.quien)+'</b>'+(e.oc?(' &middot; '+esc(e.oc)):'')+(e.estado?(' &middot; '+esc(e.estado)):'');
+        else if(e.tipo==='ordenado') extra='<b>'+esc(e.ref)+'</b> &middot; '+esc(e.quien)+(e.precio>0?(' &middot; '+fmt(e.precio)+'/u'):'')+(e.estado?(' &middot; '+esc(e.estado)):'');
+        else if(e.tipo==='recibido') extra='<b>'+esc(e.ref)+'</b> &middot; recibió <b>'+esc(e.quien)+'</b>';
+        h+='<div style="position:relative;padding:9px 0;border-bottom:1px solid #f5f3ff"><span style="position:absolute;left:-25px;color:'+col+';font-size:14px">'+ic+'</span>'
+          +'<div style="display:flex;justify-content:space-between;gap:10px"><div><b style="color:'+col+'">'+tit+'</b> &middot; '+extra+'</div><div style="white-space:nowrap;color:#78716c;font-size:12px">'+(e.cantidad!=null?(Math.round(e.cantidad).toLocaleString('es-CO')+' uds &middot; '):'')+esc(e.fecha||'')+'</div></div></div>';
+      });
+      h+='</div>';
+    }
+    bd.innerHTML=h;
+  }catch(e){ var bd2=document.getElementById('traza-bd'); if(bd2) bd2.innerHTML='<div class="empty">Error: '+esc(e.message)+'</div>'; }
 }
 cargar();
 </script></body></html>"""
