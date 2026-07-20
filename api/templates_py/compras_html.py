@@ -402,6 +402,7 @@ function renderHistorico(){
     </select>
     <button onclick="abrirOCRFactura()" style="padding:7px 14px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Subí foto de factura · la IA extrae items, totales · auto-match con OC pendiente">📤 Subir factura</button>
     <a href="/tesoreria" target="_blank" style="padding:7px 14px;background:#faf7ff;color:#6d28d9;border:1px solid #ece9f6;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none" title="Tesorería · vista de gerencia: por-pagar + precios que se elevan + rechazos">&#127974; Tesorería</a>
+    <a href="/compras/discrepancias" target="_blank" style="padding:7px 14px;background:#faf7ff;color:#6d28d9;border:1px solid #ece9f6;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none" title="Discrepancias de compra por artículo · ¿subió por precio o por cantidad? (MP, envases y consumibles)">&#128202; Discrepancias</a>
   </div>
   <div id="pagos-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:14px;"></div>
   <div id="pagos-saldos-panel" style="display:none;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:14px 16px;margin-bottom:14px;"></div>
@@ -2616,7 +2617,8 @@ async function cargarConsumosElevados(){
     al.slice(0,5).forEach(function(a){
       h+='<div style="font-size:13px;color:#7c2d12;padding:3px 0">&#9888;&#65039; <b>'+_esc(a.categoria)+'</b> subió <b>+'+a.variacion_pct+'%</b> ('+_f(a.ultimo)+' vs prom '+_f(a.promedio_previo)+')</div>';
     });
-    h+='<a href="/compras/consumos" style="font-size:12px;color:#9a3412;font-weight:700">ver tendencia completa &rarr;</a></div>';
+    h+='<a href="/compras/consumos" style="font-size:12px;color:#9a3412;font-weight:700">ver tendencia completa &rarr;</a>'
+      +' &nbsp;&middot;&nbsp; <a href="/compras/discrepancias" style="font-size:12px;color:#6d28d9;font-weight:700">&#128202; discrepancias por artículo (precio vs cantidad) &rarr;</a></div>';
     cont.innerHTML=h;
   }catch(e){ cont.innerHTML=''; }
 }
