@@ -6360,12 +6360,30 @@ def verificar_despeje_item_ebr(ebr_id):
             idx = int(body.get("item_idx"))
         except (TypeError, ValueError):
             return jsonify({"error": "item_idx inválido"}), 400
-        cur.execute(
-            "UPDATE ebr_despeje_items SET verificado_por=?, verificado_at_utc=datetime('now','utc') "
-            "WHERE ebr_id=? AND item_idx=? AND COALESCE(etapa,'dispensacion')=? AND cumple=1 "
-            "AND COALESCE(verificado_por,'')='' AND COALESCE(registrado_por,'')<>?",
-            (user, ebr_id, idx, etapa, user))
+        # DEMO (Sebastián 20-jul): en un lote DEMO se permite AUTO-verificar (mismo usuario marca y verifica)
+        # para poder CAMINAR el demo con una sola persona. En lotes reales rige la regla de 2 personas (GMP).
+        _lr = cur.execute("SELECT COALESCE(lote_codigo, lote) FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
+        _es_demo = str((_lr[0] if _lr else "") or "").upper().startswith("DEMO-")
+        if _es_demo:
+            cur.execute(
+                "UPDATE ebr_despeje_items SET verificado_por=?, verificado_at_utc=datetime('now','utc') "
+                "WHERE ebr_id=? AND item_idx=? AND COALESCE(etapa,'dispensacion')=? AND cumple=1 "
+                "AND COALESCE(verificado_por,'')=''",
+                (user, ebr_id, idx, etapa))
+        else:
+            cur.execute(
+                "UPDATE ebr_despeje_items SET verificado_por=?, verificado_at_utc=datetime('now','utc') "
+                "WHERE ebr_id=? AND item_idx=? AND COALESCE(etapa,'dispensacion')=? AND cumple=1 "
+                "AND COALESCE(verificado_por,'')='' AND COALESCE(registrado_por,'')<>?",
+                (user, ebr_id, idx, etapa, user))
         n = cur.rowcount
+        if n == 0 and not _es_demo:
+            # Nada verificado en un lote real: casi siempre porque intentás verificar tu propio registro.
+            conn.rollback()
+            return jsonify({
+                "error": "No podés verificar tu propio despeje: la 2ª firma (Calidad) debe ser de OTRA persona "
+                         "distinta al operario que lo marcó (regla de las 2 personas · GMP).",
+                "codigo": "AUTOVERIFICACION_BLOQUEADA", "verificados": 0}), 409
     audit_log(cur, usuario=user, accion="VERIFICAR_DESPEJE_ITEM_EBR",
               tabla="ebr_despeje_items", registro_id=ebr_id,
               despues={"ebr_id": ebr_id, "etapa": etapa, "verificados": n, "por": user})
