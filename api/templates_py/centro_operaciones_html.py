@@ -67,6 +67,36 @@ HTML = r"""
     .grid-6 { grid-template-columns:1fr 1fr; }
     .header h1 { font-size:0.95em; }
   }
+  /* Pestañas del Centro de Mando */
+  .cm-tabs { display:flex; gap:8px; flex-wrap:wrap; margin:6px 0 20px; border-bottom:1px solid var(--cx-hairline); padding-bottom:0; }
+  .cm-tab { appearance:none; border:none; background:transparent; cursor:pointer; font-size:14px; font-weight:600;
+            color:var(--cx-text-mute); padding:10px 4px; margin-right:14px; border-bottom:2.5px solid transparent;
+            transition:color .15s, border-color .15s; display:inline-flex; align-items:center; gap:7px; }
+  .cm-tab:hover { color:var(--cx-primary); }
+  .cm-tab.active { color:var(--cx-primary); border-bottom-color:var(--cx-primary); }
+  .cm-badge { min-width:18px; height:18px; padding:0 5px; border-radius:9px; background:var(--cx-danger,#dc2626); color:#fff;
+              font-size:10px; font-weight:700; display:none; align-items:center; justify-content:center; line-height:1; }
+  .cm-badge.on { display:inline-flex; }
+  /* Grid premium de decisiones (evita el vacío a la derecha en pantallas anchas) */
+  #decisiones { display:grid; grid-template-columns:repeat(auto-fill,minmax(440px,1fr)); gap:12px; }
+  #decisiones .dec-card { display:flex; align-items:center; gap:13px; text-decoration:none;
+            background:var(--cx-card); border:1px solid var(--cx-hairline); border-radius:12px;
+            padding:14px 16px; transition:box-shadow .15s, transform .1s; box-shadow:var(--cx-sh-card); }
+  #decisiones .dec-card:hover { box-shadow:0 6px 18px rgba(0,0,0,.09); transform:translateY(-1px); }
+  #decisiones .dec-ico { font-size:22px; line-height:1; flex:0 0 auto; }
+  #decisiones .dec-body { flex:1; min-width:0; }
+  #decisiones .dec-tit { font-weight:700; color:var(--cx-text,#1c1917); font-size:14px; }
+  #decisiones .dec-det { color:var(--cx-text-mute,#78716c); font-size:12.5px; margin-top:3px; line-height:1.35; }
+  #decisiones .dec-badge { font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.5px;
+            padding:3px 8px; border-radius:20px; white-space:nowrap; flex:0 0 auto; }
+  #decisiones .dec-arrow { font-size:17px; flex:0 0 auto; }
+  @media (max-width:768px){ #decisiones { grid-template-columns:1fr; } .cm-tab { font-size:12.5px; margin-right:8px; } }
+  /* KPI clickeable: cada tarjeta lleva a donde ver/actuar */
+  a.card { text-decoration:none; color:inherit; cursor:pointer; position:relative; display:block; }
+  a.card::after { content:"→"; position:absolute; top:14px; right:14px; font-size:14px; color:var(--cx-primary);
+                  opacity:0; transform:translateX(-4px); transition:opacity .15s, transform .15s; }
+  a.card:hover { box-shadow:0 6px 18px rgba(0,0,0,.09); transform:translateY(-1px); border-color:var(--cx-primary-soft); }
+  a.card:hover::after { opacity:.85; transform:translateX(0); }
 </style>
 </head>
 <body>
@@ -91,70 +121,87 @@ HTML = r"""
 
   <div class="container">
 
-    <!-- ÁREA: DECISIONES (lo que puedo atacar HOY) -->
-    <div class="area-title"><span class="area-title-icon">🎯</span>Decisiones · atacá de una
+    <!-- NAV DE PESTAÑAS -->
+    <div class="cm-tabs" id="cm-tabs">
+      <button class="cm-tab active" data-pane="dec" onclick="showPane('dec')">🎯 Decisiones <span class="cm-badge" id="cm-badge-dec"></span></button>
+      <button class="cm-tab" data-pane="pulso" onclick="showPane('pulso')">📊 Pulso del día</button>
+      <button class="cm-tab" data-pane="fin" onclick="showPane('fin')">💳 Finanzas & Equipo</button>
+    </div>
+
+    <!-- PANE: DECISIONES (lo que puedo atacar HOY) -->
+    <div class="pane" id="pane-dec">
+    <div class="area-title" style="border:none;padding-bottom:2px"><span class="area-title-icon">🎯</span>Lo que podés atacar hoy
       <span id="dec-resumen" style="margin-left:auto;font-size:12px;font-weight:600;color:#78716c"></span>
     </div>
-    <div id="dec-chips" style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px 0"></div>
+    <div id="dec-chips" style="display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px 0"></div>
     <div id="decisiones"><div class="empty" style="padding:14px;color:#78716c">Cargando decisiones...</div></div>
+    </div>
+
+    <!-- PANE: PULSO DEL DÍA -->
+    <div class="pane" id="pane-pulso" style="display:none">
 
     <!-- ÁREA: CAJA HOY (solo del día - el mes vive en Financiero) -->
     <div class="area-title"><span class="area-title-icon">💰</span>Caja del día <a class="quick-link" href="/financiero" style="margin-left:auto;">Ver mes en Financiero →</a></div>
     <div class="grid grid-6">
-      <div class="card"><div class="label">Ingresos hoy</div><div class="val" id="caja-ing-hoy">-</div><div class="sub" style="color:#64748b">solo hoy</div></div>
-      <div class="card"><div class="label">Egresos hoy</div><div class="val" style="color:#fca5a5" id="caja-egr-hoy">-</div><div class="sub" style="color:#64748b">solo hoy</div></div>
-      <div class="card"><div class="label">Neto hoy</div><div class="val" id="caja-neto-hoy">-</div><div class="sub" style="color:#64748b">ing − egr del día</div></div>
+      <a class="card" href="/financiero"><div class="label">Ingresos hoy</div><div class="val" id="caja-ing-hoy">-</div><div class="sub" style="color:#64748b">solo hoy</div></a>
+      <a class="card" href="/financiero"><div class="label">Egresos hoy</div><div class="val" style="color:#fca5a5" id="caja-egr-hoy">-</div><div class="sub" style="color:#64748b">solo hoy</div></a>
+      <a class="card" href="/financiero"><div class="label">Neto hoy</div><div class="val" id="caja-neto-hoy">-</div><div class="sub" style="color:#64748b">ing − egr del día</div></a>
     </div>
 
     <!-- ÁREA: PRODUCCIÓN + INVENTARIO -->
     <div class="area-title"><span class="area-title-icon">🏭</span>Producción & Inventario <a class="quick-link" href="/inventarios">Ver Planta</a></div>
     <div class="grid grid-6">
-      <div class="card"><div class="label">Lotes mes</div><div class="val" id="prod-lotes">-</div><div class="sub" id="prod-kg"></div></div>
-      <div class="card"><div class="label">Programados 30d</div><div class="val" id="prod-prog">-</div><div class="sub">próximas producciones</div></div>
-      <div class="card"><div class="label">MPs en cero</div><div class="val" style="color:#fca5a5" id="inv-cero">-</div><div class="sub">stock crítico</div></div>
-      <div class="card"><div class="label">MPs bajo mín.</div><div class="val" style="color:#fcd34d" id="inv-bajo">-</div><div class="sub">requieren reposición</div></div>
-      <div class="card"><div class="label">Lotes vencen 7d</div><div class="val" style="color:#fcd34d" id="inv-venc">-</div><div class="sub">acción urgente</div></div>
-      <div class="card"><div class="label">NCs abiertas</div><div class="val" style="color:#fbbf24" id="ncs">-</div><div class="sub">calidad sin cerrar</div></div>
+      <a class="card" href="/inventarios"><div class="label">Lotes mes</div><div class="val" id="prod-lotes">-</div><div class="sub" id="prod-kg"></div></a>
+      <a class="card" href="/programacion"><div class="label">Programados 30d</div><div class="val" id="prod-prog">-</div><div class="sub">próximas producciones</div></a>
+      <a class="card" href="/compras"><div class="label">MPs en cero</div><div class="val" style="color:#fca5a5" id="inv-cero">-</div><div class="sub">stock crítico</div></a>
+      <a class="card" href="/compras"><div class="label">MPs bajo mín.</div><div class="val" style="color:#fcd34d" id="inv-bajo">-</div><div class="sub">requieren reposición</div></a>
+      <a class="card" href="/inventarios"><div class="label">Lotes vencen 7d</div><div class="val" style="color:#fcd34d" id="inv-venc">-</div><div class="sub">acción urgente</div></a>
+      <a class="card" href="/aseguramiento"><div class="label">NCs abiertas</div><div class="val" style="color:#fbbf24" id="ncs">-</div><div class="sub">calidad sin cerrar</div></a>
     </div>
 
     <!-- ÁREA: COMERCIAL -->
     <div class="area-title"><span class="area-title-icon">🛍️</span>Comercial <a class="quick-link" href="/animus">ÁNIMUS</a><a class="quick-link" href="/clientes">Clientes B2B</a></div>
     <div class="grid grid-6">
-      <div class="card"><div class="label">Ventas Shopify hoy</div><div class="val" id="sh-hoy">-</div><div class="sub" id="sh-hoy-count"></div></div>
-      <div class="card"><div class="label">Ventas Shopify mes</div><div class="val" id="sh-mes">-</div><div class="sub" id="sh-mes-count"></div></div>
-      <div class="card"><div class="label">Pedidos B2B activos</div><div class="val" id="ped-b2b">-</div><div class="sub">en proceso/listos</div></div>
+      <a class="card" href="/animus"><div class="label">Ventas Shopify hoy</div><div class="val" id="sh-hoy">-</div><div class="sub" id="sh-hoy-count"></div></a>
+      <a class="card" href="/animus"><div class="label">Ventas Shopify mes</div><div class="val" id="sh-mes">-</div><div class="sub" id="sh-mes-count"></div></a>
+      <a class="card" href="/clientes"><div class="label">Pedidos B2B activos</div><div class="val" id="ped-b2b">-</div><div class="sub">en proceso/listos</div></a>
     </div>
+
+    </div><!-- /pane-pulso -->
+
+    <!-- PANE: FINANZAS & EQUIPO -->
+    <div class="pane" id="pane-fin" style="display:none">
 
     <!-- ÁREA: PAGOS -->
     <div class="area-title"><span class="area-title-icon">💳</span>Pagos pendientes <a class="quick-link" href="/compras">Compras</a><a class="quick-link" href="/contabilidad">Contabilidad</a></div>
     <div class="grid grid-6">
-      <div class="card"><div class="label">OCs por pagar</div><div class="val" id="oc-pend">-</div><div class="sub" id="oc-pend-val"></div></div>
-      <div class="card"><div class="label">Facturas con saldo</div><div class="val" id="fac-pend">-</div><div class="sub" id="fac-pend-val"></div></div>
-      <div class="card"><div class="label">Influencers a pagar</div><div class="val" id="mkt-toca">-</div><div class="sub">ciclo cumplido</div></div>
+      <a class="card" href="/compras"><div class="label">OCs por pagar</div><div class="val" id="oc-pend">-</div><div class="sub" id="oc-pend-val"></div></a>
+      <a class="card" href="/compras"><div class="label">Facturas con saldo</div><div class="val" id="fac-pend">-</div><div class="sub" id="fac-pend-val"></div></a>
+      <a class="card" href="/marketing"><div class="label">Influencers a pagar</div><div class="val" id="mkt-toca">-</div><div class="sub">ciclo cumplido</div></a>
     </div>
 
     <!-- ÁREA: DIRECCIÓN TÉCNICA -->
     <div class="area-title"><span class="area-title-icon">🔧</span>Dirección Técnica <a class="quick-link" href="/tecnica">Ver módulo</a></div>
     <div class="grid grid-6">
-      <div class="card"><div class="label">Fórmulas vigentes</div><div class="val" id="t-formulas">-</div><div class="sub">activas en producción</div></div>
-      <div class="card"><div class="label">Registros INVIMA</div><div class="val" id="t-invima">-</div><div class="sub">vigentes</div></div>
-      <div class="card"><div class="label">SGDs vencen 30d</div><div class="val" style="color:#fbbf24" id="t-sgd">-</div><div class="sub">SOPs por revisar</div></div>
+      <a class="card" href="/tecnica"><div class="label">Fórmulas vigentes</div><div class="val" id="t-formulas">-</div><div class="sub">activas en producción</div></a>
+      <a class="card" href="/admin/reportes-invima"><div class="label">Registros INVIMA</div><div class="val" id="t-invima">-</div><div class="sub">vigentes</div></a>
+      <a class="card" href="/tecnica"><div class="label">SGDs vencen 30d</div><div class="val" style="color:#fbbf24" id="t-sgd">-</div><div class="sub">SOPs por revisar</div></a>
     </div>
 
     <!-- ÁREA: PERSONAS / RRHH -->
     <div class="area-title"><span class="area-title-icon">👤</span>Personas <a class="quick-link" href="/rrhh">RRHH</a></div>
     <div class="grid grid-6">
-      <div class="card"><div class="label">Empleados activos</div><div class="val" id="rrhh-act">-</div><div class="sub">en planilla</div></div>
-      <div class="card"><div class="label">Ausencias pendientes</div><div class="val" style="color:#fbbf24" id="rrhh-aus">-</div><div class="sub">por aprobar</div></div>
+      <a class="card" href="/rrhh"><div class="label">Empleados activos</div><div class="val" id="rrhh-act">-</div><div class="sub">en planilla</div></a>
+      <a class="card" href="/rrhh"><div class="label">Ausencias pendientes</div><div class="val" style="color:#fbbf24" id="rrhh-aus">-</div><div class="sub">por aprobar</div></a>
     </div>
 
     <!-- ÁREA: EQUIPO / COMUNICACIÓN -->
     <div class="area-title"><span class="area-title-icon">💬</span>Comunicación <a class="quick-link" href="/comunicacion">Compromisos &amp; Chat</a></div>
     <div class="grid grid-6">
-      <div class="card"><div class="label">Compromisos vencidos</div><div class="val" style="color:#fca5a5" id="t-venc">-</div><div class="sub">todas las áreas</div></div>
-      <div class="card"><div class="label">Mensajes sin leer</div><div class="val" style="color:#fbbf24" id="msg-sin">-</div><div class="sub">en mi bandeja</div></div>
-      <div class="card"><div class="label">Quejas Alta/Crítica</div><div class="val" style="color:#fca5a5" id="quejas">-</div><div class="sub">requieren acción</div></div>
-      <div class="card"><div class="label">Campañas activas</div><div class="val" id="camp">-</div><div class="sub">marketing</div></div>
+      <a class="card" href="/comunicacion"><div class="label">Compromisos vencidos</div><div class="val" style="color:#fca5a5" id="t-venc">-</div><div class="sub">todas las áreas</div></a>
+      <a class="card" href="/chat"><div class="label">Mensajes sin leer</div><div class="val" style="color:#fbbf24" id="msg-sin">-</div><div class="sub">en mi bandeja</div></a>
+      <a class="card" href="/comunicacion"><div class="label">Quejas Alta/Crítica</div><div class="val" style="color:#fca5a5" id="quejas">-</div><div class="sub">requieren acción</div></a>
+      <a class="card" href="/marketing"><div class="label">Campañas activas</div><div class="val" id="camp">-</div><div class="sub">marketing</div></a>
     </div>
 
     <!-- ACTIVIDAD RECIENTE -->
@@ -175,9 +222,16 @@ HTML = r"""
         </div>
       </div>
     </div>
+    </div><!-- /pane-fin -->
   </div>
 
 <script>
+function showPane(p){
+  var panes=['dec','pulso','fin'];
+  panes.forEach(function(x){ var el=document.getElementById('pane-'+x); if(el) el.style.display = (x===p)?'':'none'; });
+  var tabs=document.querySelectorAll('#cm-tabs .cm-tab');
+  tabs.forEach(function(t){ if(t.getAttribute('data-pane')===p) t.classList.add('active'); else t.classList.remove('active'); });
+}
 function fmtM(n) { n = parseFloat(n||0); if(n>=1e6) return '$'+(n/1e6).toFixed(1)+'M'; if(n>=1e3) return '$'+(n/1e3).toFixed(0)+'K'; return '$'+Math.round(n).toLocaleString('es-CO'); }
 function fmtN(n) { return (n||0).toLocaleString('es-CO'); }
 function _esc(s){return String(s||'').replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));}
@@ -284,17 +338,14 @@ function pintarDecisiones(){
   cont.innerHTML = lista.map(function(d){
     var col = _decColor(d.nivel);
     var gm = _GRP_META[d.grupo] || ['•', d.grupo||''];
-    return '<a href="'+_esc(d.accion||'#')+'" style="display:flex;align-items:center;gap:12px;text-decoration:none;'+
-      'background:var(--cx-surface,#fff);border:1px solid var(--cx-border,#e7e5e4);border-left:4px solid '+col+';'+
-      'border-radius:10px;padding:12px 16px;margin-bottom:8px;transition:box-shadow .15s" '+
-      'onmouseover="this.style.boxShadow=\'0 4px 14px rgba(0,0,0,.08)\'" onmouseout="this.style.boxShadow=\'none\'">'+
-      '<span style="font-size:20px;line-height:1">'+gm[0]+'</span>'+
-      '<div style="flex:1;min-width:0">'+
-        '<div style="font-weight:700;color:var(--cx-text,#1c1917);font-size:14px">'+_esc(d.titulo||'-')+'</div>'+
-        '<div style="color:#78716c;font-size:12.5px;margin-top:2px;overflow:hidden;text-overflow:ellipsis">'+_esc(d.detalle||'')+'</div>'+
+    return '<a class="dec-card" href="'+_esc(d.accion||'#')+'" style="border-left:4px solid '+col+'">'+
+      '<span class="dec-ico">'+gm[0]+'</span>'+
+      '<div class="dec-body">'+
+        '<div class="dec-tit">'+_esc(d.titulo||'-')+'</div>'+
+        '<div class="dec-det">'+_esc(d.detalle||'')+'</div>'+
       '</div>'+
-      '<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:'+col+';background:'+col+'18;padding:3px 8px;border-radius:20px;white-space:nowrap">'+_esc(gm[1])+'</span>'+
-      '<span style="color:'+col+';font-size:18px">→</span>'+
+      '<span class="dec-badge" style="color:'+col+';background:'+col+'18">'+_esc(gm[1])+'</span>'+
+      '<span class="dec-arrow" style="color:'+col+'">→</span>'+
     '</a>';
   }).join('');
 }
@@ -321,6 +372,8 @@ async function cargarDecisiones(){
     var rz = document.getElementById('dec-resumen');
     rz.textContent = (_DEC_RES.critico||0)+' críticas · '+(_DEC_RES.atencion||0)+' de atención';
     rz.style.color = (_DEC_RES.critico>0) ? '#dc2626' : '#78716c';
+    var bd = document.getElementById('cm-badge-dec');
+    if(bd){ var nc=(_DEC_RES.critico||0); if(nc>0){ bd.textContent=nc; bd.classList.add('on'); } else { bd.classList.remove('on'); } }
     pintarChips();
     pintarDecisiones();
   }catch(e){ console.error('Decisiones error:', e); }
