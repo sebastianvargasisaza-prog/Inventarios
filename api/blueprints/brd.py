@@ -5342,12 +5342,75 @@ def reportar_pesaje(ebr_id):
               tabla="ebr_pesajes", registro_id=pid,
               despues={"ebr_id": ebr_id, "material_id": material_id,
                         "real": real, "teorico": teorico, "delta_pct": delta_pct})
+
+    # ── Conteo cíclico OPCIONAL en el pesaje (Sebastián 20-jul) ───────────────────────────────
+    # El operario cuenta cuánto QUEDA físicamente de esta MP tras sacar lo pesado. Corrección =
+    # (contado + pesado) − stock_sistema. |dif| ≤5% → Ajuste AUTO auditado; >5% → NO ajusta:
+    # requiere verificación del Jefe de Producción + alerta a gerencia (campana).
+    conteo_out = None
+    _scr = body.get("stock_fisico_restante")
+    if _scr is not None and str(_scr).strip() != "":
+        try:
+            contado = float(str(_scr).replace(",", "."))
+        except (TypeError, ValueError):
+            contado = None
+        if contado is not None and contado >= 0:
+            try:
+                from datetime import datetime as _dtc, timedelta as _tdc
+                from blueprints.programacion import _resolver_material_bodega, _get_mp_stock
+                cod = (_resolver_material_bodega(cur, material_id, spec["material_nombre"]) or material_id)
+                _st = _get_mp_stock(conn) or {}
+                sistema = float(_st.get(str(cod).strip().upper(), _st.get(cod, 0)) or 0)
+                real_total = contado + real
+                diff = round(real_total - sistema, 2)
+                base = sistema if sistema > 0.01 else max(real_total, 1.0)
+                pct = (abs(diff) / base * 100.0) if base > 0 else 0.0
+                _hoy = (_dtc.utcnow() - _tdc(hours=5)).isoformat(timespec="seconds")
+                if abs(diff) < 0.01:
+                    conteo_out = {"estado": "cuadra", "diferencia_g": 0, "sistema_g": round(sistema, 2), "pct": 0}
+                elif pct <= 5.0:
+                    _tipo = "Ajuste +" if diff > 0 else "Ajuste -"
+                    _lote = (body.get("lote_mp") or "").strip() or ("CONTEO-PESAJE-" + str(ebr_id))
+                    cur.execute(
+                        "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, "
+                        "observaciones, lote, operador, estado_lote) VALUES (?,?,?,?,?,?,?,?, 'VIGENTE')",
+                        (cod, spec["material_nombre"], abs(diff), _tipo, _hoy,
+                         "Conteo cíclico en pesaje EBR-" + str(ebr_id) + " · contó " + str(contado) + "g", _lote, user))
+                    conn.commit()
+                    audit_log(None, usuario=user, accion="CONTEO_CICLICO_PESAJE_AJUSTE",
+                              tabla="movimientos", registro_id=ebr_id,
+                              despues={"material": cod, "diferencia_g": diff, "pct": round(pct, 1), "auto": True})
+                    conteo_out = {"estado": "ajustado", "diferencia_g": diff, "pct": round(pct, 1), "sistema_g": round(sistema, 2)}
+                else:
+                    audit_log(None, usuario=user, accion="CONTEO_CICLICO_PESAJE_DISCREPANCIA",
+                              tabla="ebr_pesajes", registro_id=pid,
+                              despues={"material": cod, "diferencia_g": diff, "pct": round(pct, 1),
+                                       "contado": contado, "sistema": round(sistema, 2)})
+                    try:
+                        from blueprints.notif import push_notif_multi
+                        from config import ADMIN_USERS as _ADM
+                        push_notif_multi(sorted(set(_ADM)), "conteo_ciclico",
+                            "Discrepancia de conteo en pesaje (" + str(round(pct, 1)) + "%)",
+                            body=("MP " + str(cod) + " · sistema " + str(round(sistema, 2)) + "g vs físico "
+                                  + str(round(real_total, 2)) + "g (dif " + str(diff) + "g). Requiere verificación del Jefe de Producción."),
+                            link="/inventarios", remitente=user, importante=True)
+                    except Exception:
+                        pass
+                    conteo_out = {"estado": "requiere_jefe", "diferencia_g": diff, "pct": round(pct, 1), "sistema_g": round(sistema, 2)}
+            except Exception as _ecc:
+                log.warning("conteo cíclico en pesaje falló (no bloquea el pesaje): %s", _ecc)
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+
     return jsonify({
         "ok": True, "id": pid,
         "cantidad_teorica_g": teorico,
         "cantidad_real_g": real,
         "delta_g": delta,
         "delta_pct": delta_pct,
+        "conteo_ciclico": conteo_out,
     }), 201
 
 

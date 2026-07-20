@@ -8519,18 +8519,59 @@ async function ebrLiberarLote(ebrId){
     abrirEBR(ebrId);
   }catch(e){ alert('Error: '+(e.message||e)); }
 }
-async function ebrPesarMp(ebrId, materialId, teorico){
-  var v=prompt('Cantidad REAL pesada de '+materialId+' (gramos)'+(teorico?(' \\u00b7 te\\u00f3rico '+teorico+' g'):'')+':');
-  if(v===null)return;
-  var n=parseFloat(String(v).replace(',','.'));
-  if(!(n>=0)){ alert('Cantidad inválida'); return; }
-  var lote=prompt('N\\u00b0 de lote de la materia prima (de la etiqueta):')||'';
+function _ebrCcToggle(cb){ var b=document.getElementById('pes-cc-box'); if(b) b.style.display=cb.checked?'block':'none'; }
+function _ebrPesarCerrar(){ var m=document.getElementById('pesaje-modal'); if(m) m.remove(); }
+function ebrPesarMp(ebrId, materialId, teorico){
+  _ebrPesarCerrar();
+  var matNombre=materialId;
+  try{ var _s=(window._pesajeSheet||[]).find(function(x){return x.material_id===materialId;}); if(_s&&_s.material_nombre) matNombre=_s.material_nombre; }catch(e){}
+  var tol=teorico?(' &middot; te&oacute;rico <b style="color:#3f3f46">'+teorico+' g</b> (&plusmn;5%)'):'';
+  var html='<div id="pesaje-modal" style="position:fixed;inset:0;background:rgba(24,24,27,.5);display:flex;align-items:center;justify-content:center;z-index:9999;padding:14px" onclick="if(event.target===this)_ebrPesarCerrar()">'
+    +'<div style="background:#fff;border-radius:18px;padding:24px 26px;width:min(440px,96vw);box-shadow:0 24px 60px rgba(0,0,0,.3)">'
+    +'<div style="font-size:11px;font-weight:800;color:#7c3aed;text-transform:uppercase;letter-spacing:1px">&#9878;&#65039; Pesaje de materia prima</div>'
+    +'<div style="font-size:18px;font-weight:800;color:#18181b;margin-top:4px">'+_escHTML(matNombre)+'</div>'
+    +'<div style="font-size:12px;color:#71717a;margin-bottom:16px">'+_escHTML(materialId)+tol+'</div>'
+    +'<label style="font-size:12px;font-weight:700;color:#52525b">Peso REAL pesado (g)</label>'
+    +'<input id="pes-real" type="number" step="0.01" inputmode="decimal" style="width:100%;box-sizing:border-box;padding:11px;border:1.5px solid #e4e4e7;border-radius:10px;font-size:16px;margin:4px 0 12px" placeholder="'+(teorico||'0')+'">'
+    +'<label style="font-size:12px;font-weight:700;color:#52525b">N&deg; de lote de la MP (etiqueta)</label>'
+    +'<input id="pes-lote" style="width:100%;box-sizing:border-box;padding:10px;border:1.5px solid #e4e4e7;border-radius:10px;font-size:14px;margin:4px 0 14px" placeholder="opcional">'
+    +'<div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:12px;padding:12px 14px;margin-bottom:16px">'
+      +'<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;color:#6d28d9;cursor:pointer"><input type="checkbox" id="pes-cc-on" onchange="_ebrCcToggle(this)"> &#128260; Conteo c&iacute;clico (opcional)</label>'
+      +'<div id="pes-cc-box" style="display:none;margin-top:10px">'
+        +'<label style="font-size:11.5px;color:#52525b;font-weight:600">&iquest;Cu&aacute;nto QUEDA en bodega de esta MP? (g)</label>'
+        +'<input id="pes-queda" type="number" step="0.01" inputmode="decimal" style="width:100%;box-sizing:border-box;padding:10px;border:1.5px solid #ddd6fe;border-radius:10px;font-size:15px;margin-top:4px" placeholder="lo que ves f&iacute;sico">'
+        +'<div style="font-size:10.5px;color:#94a3b8;margin-top:5px;line-height:1.4">Se compara con el sistema. Diferencia &le;5% se ajusta sola (auditado); mayor requiere visto bueno del Jefe de Producci&oacute;n + avisa a gerencia.</div>'
+      +'</div>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px;justify-content:flex-end">'
+      +'<button onclick="_ebrPesarCerrar()" style="background:#fff;border:1px solid #e4e4e7;color:#71717a;border-radius:10px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer">Cancelar</button>'
+      +'<button onclick="_ebrPesarSubmit('+ebrId+',&#39;'+materialId+'&#39;)" style="background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:10px;padding:9px 22px;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 4px 12px rgba(22,163,74,.3)">&#10003; Pesar</button>'
+    +'</div></div></div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+  setTimeout(function(){ var el=document.getElementById('pes-real'); if(el) el.focus(); }, 60);
+}
+async function _ebrPesarSubmit(ebrId, materialId){
+  var real=parseFloat(String((document.getElementById('pes-real')||{}).value||'').replace(',','.'));
+  if(!(real>=0)){ alert('Ingresá el peso real pesado'); return; }
+  var lote=((document.getElementById('pes-lote')||{}).value||'').trim();
+  var scr='';
+  var ccOn=document.getElementById('pes-cc-on');
+  if(ccOn&&ccOn.checked){ scr=((document.getElementById('pes-queda')||{}).value||'').trim(); }
   var f=await _firmarEsign('ejecuta','ebr_pesajes',ebrId+':'+materialId);
   if(!f)return;
   if(f.error){ alert(f.error); return; }
+  var body={material_id:materialId,cantidad_real_g:real,lote_mp:lote,signature_id:f.signature_id};
+  if(scr!==''){ body.stock_fisico_restante=scr; }
   try{
-    var r=await fetch('/api/brd/ebr/'+ebrId+'/pesajes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({material_id:materialId,cantidad_real_g:n,lote_mp:lote,signature_id:f.signature_id})});
-    if(!r.ok){ var j=await r.json(); alert('Error: '+(j.error||r.status)); return; }
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/pesajes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var j=await r.json();
+    if(!r.ok){ alert('Error: '+(j.error||r.status)); return; }
+    _ebrPesarCerrar();
+    var cc=j.conteo_ciclico;
+    if(cc&&cc.estado==='ajustado'){ alert('✓ Pesado. Conteo cíclico: diferencia '+cc.diferencia_g+'g ('+cc.pct+'%) AJUSTADA automáticamente en el inventario (auditado).'); }
+    else if(cc&&cc.estado==='requiere_jefe'){ alert('✓ Pesado. ⚠ Conteo cíclico: diferencia '+cc.diferencia_g+'g ('+cc.pct+'%) MAYOR a 5% · NO se ajustó · se avisó a gerencia · requiere visto bueno del Jefe de Producción.'); }
+    else if(cc&&cc.estado==='cuadra'){ if(typeof _toast==='function') _toast('Pesado ✓ · el conteo cuadra', 1); }
+    else if(typeof _toast==='function'){ _toast('Pesado ✓', 1); }
     abrirEBR(ebrId);
   }catch(e){ alert('Error: '+(e.message||e)); }
 }
