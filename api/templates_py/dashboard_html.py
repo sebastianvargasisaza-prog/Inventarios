@@ -8050,29 +8050,38 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   var _kv=function(lbl,val){return '<div><div style="font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.3px">'+lbl+'</div><div style="font-size:12px;color:#1e293b;font-weight:600;margin-top:2px;line-height:1.35">'+((val||val===0)&&val!==''?val:'<span style="color:#cbd5e1">-</span>')+'</div></div>';};
   var loteBtn=editable?(' <button onclick="ebrAsignarLoteFisico('+d.id+",'"+(d.lote||'')+"'"+')" title="Asignar el lote físico/comercial real" style="background:#ddd6fe;color:#4c1d95;border:none;border-radius:4px;padding:1px 6px;font-size:9px;cursor:pointer;">✏️</button>'):'';
   var prodMl=(d.cantidad_real_g?((d.cantidad_real_g)+' Gr'+(d.ml_envasable?(' - '+d.ml_envasable+' mL'):'')):'');
-  // Encabezado estilo MyBatch · INSTRUCCIONES DE MANUFACTURA
-  var h='<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;border-bottom:1px solid #e4e4e7;padding-bottom:10px;margin-bottom:12px">';
-  h+='<div><div style="font-weight:800;color:#6d28d9;font-size:12px;letter-spacing:.6px">'+(em[fa]||'')+' INSTRUCCIONES DE MANUFACTURA</div>';
-  h+='<div style="font-weight:800;color:#1e293b;font-size:17px;margin-top:4px">'+(d.numero_op||('EBR #'+d.id))+'</div>';
-  if(d.producto_nombre){ h+='<div style="font-weight:600;color:#334155;font-size:13px;margin-top:1px">'+_escHTML(d.producto_nombre)+'</div>'; }
-  h+='</div>';
+  // Encabezado PREMIUM (Sebastián 20-jul · hero violeta + métricas en tiles + secundaria)
   var _loteDoss=encodeURIComponent(d.lote_codigo||d.lote||'');
-  h+='<div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end"><a href="/api/brd/ebr/'+d.id+'/pdf" target="_blank" style="background:#dc2626;color:#fff;border-radius:5px;padding:5px 12px;font-size:11px;text-decoration:none;font-weight:700">📄 Descargar</a><a href="/api/planta/dossier-lote/'+_loteDoss+'" target="_blank" title="Expediente completo del lote: producción + envasado + micro + MP consumidas" style="background:#6d28d9;color:#fff;border-radius:5px;padding:5px 12px;font-size:11px;text-decoration:none;font-weight:700">📦 Dossier lote</a><button onclick="verLoteFases(&#39;'+_loteDoss+'&#39;)" title="Ver Fabricación + Envasado + Acondicionamiento de este lote juntos" style="background:#7c3aed;color:#fff;border:none;border-radius:5px;padding:5px 12px;font-size:11px;cursor:pointer;font-weight:700">🔗 Lote completo</button><button onclick="ebrCerrarRunner()" style="background:#94a3b8;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;">Cerrar ✕</button></div></div>';
-  // Grilla de datos de la orden (como MyBatch)
-  h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:11px 18px;background:#fafafa;border:1px solid #f1f5f9;border-radius:10px;padding:13px 15px;margin-bottom:10px">';
-  h+=_kv('N° de Lote Bulk', _escHTML(d.lote||'')+loteBtn);
-  h+=_kv('Cantidad Ordenada', (d.cantidad_objetivo_g||0)+' Gr');
-  h+=_kv('Área o Línea', _escHTML(d.area_nombre||''));
-  h+=_kv('Fecha Inicio', _dt(d.iniciado_at_utc));
-  h+=_kv('Fecha Final', _dt(d.completado_at_utc||d.liberado_at_utc));
-  h+=_kv('Estado Actual', _ebrBadge(d.estado));
-  h+=_kv('Cant. Producida/Aprobada', prodMl);
-  h+=_kv('Densidad', d.densidad_g_ml?(d.densidad_g_ml+' g/mL'):'');
-  h+=_kv('Rendimiento', (d.yield_pct!=null&&d.yield_pct!=='')?(d.yield_pct+'%'):'');
-  h+=_kv('Elaborado por', _escHTML(d.iniciado_por||'')+(d.iniciado_at_utc?(' · '+_dt(d.iniciado_at_utc)):''));
-  h+=_kv('Aprobado por (Calidad)', _escHTML(d.liberado_por||'')+(d.liberado_at_utc?(' · '+_dt(d.liberado_at_utc)):''));
-  h+=_kv('Observaciones', _escHTML(d.notas||''));
+  var _tile=function(lbl,val,accent){return '<div style="background:#fff;border:1px solid #efedf6;border-radius:13px;padding:12px 15px;box-shadow:0 1px 2px rgba(24,24,27,.04)"><div style="font-size:9.5px;color:#a1a1aa;font-weight:700;text-transform:uppercase;letter-spacing:.5px">'+lbl+'</div><div style="font-size:15px;font-weight:800;color:'+(accent||"#18181b")+';margin-top:4px;line-height:1.2">'+(((val||val===0)&&val!=="")?val:"<span style=\\"color:#d4d4d8;font-weight:600\\">-</span>")+'</div></div>';};
+  var _sec=function(lbl,val){return '<span style="white-space:nowrap"><span style="color:#a1a1aa;font-weight:700">'+lbl+':</span> <span style="color:#52525b;font-weight:600">'+(val||"-")+'</span></span>';};
+  var h='<div style="background:linear-gradient(135deg,#f6f3ff 0%,#faf5ff 55%,#fdf4ff 100%);border:1px solid #e9d5ff;border-radius:18px;padding:20px 24px;margin-bottom:14px;box-shadow:0 1px 3px rgba(109,40,217,.05),0 14px 34px -20px rgba(109,40,217,.22)">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:14px">';
+  h+='<div style="min-width:0"><div style="font-weight:800;color:#7c3aed;font-size:11px;letter-spacing:1.2px;text-transform:uppercase">'+(em[fa]||'')+' Instrucciones de Manufactura</div>';
+  h+='<div style="display:flex;align-items:center;gap:12px;margin-top:7px;flex-wrap:wrap"><span style="font-weight:900;color:#18181b;font-size:26px;letter-spacing:-.6px">'+(d.numero_op||('EBR #'+d.id))+'</span>'+_ebrBadge(d.estado)+'</div>';
+  if(d.producto_nombre){ h+='<div style="font-weight:600;color:#6d28d9;font-size:15px;margin-top:3px">'+_escHTML(d.producto_nombre)+'</div>'; }
   h+='</div>';
+  h+='<div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;justify-content:flex-end">'
+    +'<a href="/api/brd/ebr/'+d.id+'/pdf" target="_blank" style="background:#fff;color:#dc2626;border:1px solid #fecaca;border-radius:10px;padding:7px 13px;font-size:11.5px;text-decoration:none;font-weight:700;box-shadow:0 1px 2px rgba(24,24,27,.05)">📄 Descargar</a>'
+    +'<a href="/api/planta/dossier-lote/'+_loteDoss+'" target="_blank" title="Expediente completo del lote: producción + envasado + micro + MP consumidas" style="background:#fff;color:#6d28d9;border:1px solid #ddd6fe;border-radius:10px;padding:7px 13px;font-size:11.5px;text-decoration:none;font-weight:700;box-shadow:0 1px 2px rgba(24,24,27,.05)">📦 Dossier lote</a>'
+    +'<button onclick="verLoteFases(&#39;'+_loteDoss+'&#39;)" title="Ver Fabricación + Envasado + Acondicionamiento de este lote juntos" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;border-radius:10px;padding:7px 13px;font-size:11.5px;cursor:pointer;font-weight:700;box-shadow:0 3px 10px rgba(109,40,217,.28)">🔗 Lote completo</button>'
+    +'<button onclick="ebrCerrarRunner()" title="Cerrar" style="background:#fff;color:#71717a;border:1px solid #e4e4e7;border-radius:10px;padding:7px 11px;font-size:11.5px;cursor:pointer;font-weight:700">✕</button>'
+    +'</div>';
+  h+='</div>';
+  h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:18px">';
+  h+=_tile('Nº Lote Bulk', _escHTML(d.lote||'')+loteBtn);
+  h+=_tile('Cantidad Ordenada', ((d.cantidad_objetivo_g||0).toLocaleString?(d.cantidad_objetivo_g||0).toLocaleString('es-CO'):(d.cantidad_objetivo_g||0))+' g');
+  h+=_tile('Fecha Inicio', _dt(d.iniciado_at_utc));
+  h+=_tile('Fecha Final', _dt(d.completado_at_utc||d.liberado_at_utc));
+  h+=_tile('Cant. Producida', prodMl, '#15803d');
+  h+=_tile('Rendimiento', (d.yield_pct!=null&&d.yield_pct!=='')?(d.yield_pct+'%'):'', '#7c3aed');
+  h+='</div>';
+  h+='<div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:14px;padding-top:13px;border-top:1px solid #ece7f7;font-size:11.5px">';
+  h+=_sec('Área/Línea', _escHTML(d.area_nombre||''));
+  h+=_sec('Densidad', d.densidad_g_ml?(d.densidad_g_ml+' g/mL'):'');
+  h+=_sec('Elaborado por', _escHTML(d.iniciado_por||'')+(d.iniciado_at_utc?(' · '+_dt(d.iniciado_at_utc)):''));
+  h+=_sec('Aprobado (Calidad)', _escHTML(d.liberado_por||'')+(d.liberado_at_utc?(' · '+_dt(d.liberado_at_utc)):''));
+  if(d.notas){ h+=_sec('Observaciones', _escHTML(d.notas)); }
+  h+='</div></div>';
   // ── Rol del usuario · la vista se adapta (segregación de funciones GMP) ──
   var miRol=d.mi_rol||{tipo:'consulta',rol:'Consulta',realiza:false,verifica:false};
   var _rc=({operario:'#16a34a',jefe_produccion:'#2563eb',calidad:'#0891b2',director_tecnico:'#7c3aed',aseguramiento:'#b45309',administrativo:'#64748b',admin:'#6d28d9',consulta:'#94a3b8'})[miRol.tipo]||'#94a3b8';
@@ -8093,18 +8102,20 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
     var _iv=(ipcSpecs||[]).filter(function(sp){return !(ipcRes||[]).some(function(r){return r.ipc_spec_id===sp.id;});}).length;
     if(_iv)_tareas.push('Reportar '+_iv+' control(es) IPC');
   }
-  h+='<div style="display:flex;align-items:center;gap:11px;background:'+_rc+'14;border:1px solid '+_rc+'55;border-radius:12px;padding:11px 14px;margin-bottom:14px;flex-wrap:wrap">';
-  h+='<span style="display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:'+_rc+';color:#fff;font-size:17px">&#128100;</span>';
-  h+='<div><div style="font-size:9px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.4px">Estás en este legajo como</div><div style="font-size:14px;font-weight:800;color:'+_rc+'">'+_escHTML(miRol.rol||'Usuario')+'</div></div>';
+  h+='<div style="display:flex;align-items:center;gap:14px;background:#fff;border:1px solid #eef0f4;border-left:4px solid '+_rc+';border-radius:14px;padding:14px 18px;margin-bottom:16px;box-shadow:0 1px 3px rgba(24,24,27,.04);flex-wrap:wrap">';
+  h+='<span style="display:inline-flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:13px;background:'+_rc+';color:#fff;font-size:19px;box-shadow:0 4px 12px '+_rc+'44">&#128100;</span>';
+  h+='<div><div style="font-size:9.5px;color:#a1a1aa;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Estás en este legajo como</div><div style="font-size:16px;font-weight:800;color:'+_rc+'">'+_escHTML(miRol.rol||'Usuario')+'</div></div>';
   if(editable){
-    h+='<div style="margin-left:auto;min-width:180px;text-align:right">';
+    h+='<div style="margin-left:auto">';
     if(_tareas.length){
-      h+='<div style="font-size:11px;font-weight:800;color:'+_rc+';margin-bottom:2px">&#9203; TU TRABAJO &middot; '+_tareas.length+' pendiente(s)</div>';
-      _tareas.forEach(function(t){h+='<div style="font-size:11px;color:#475569">&bull; '+t+'</div>';});
+      h+='<div style="font-size:10.5px;font-weight:800;color:'+_rc+';margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">&#9203; Tu trabajo &middot; '+_tareas.length+' pendiente(s)</div>';
+      h+='<div style="display:flex;flex-direction:column;gap:4px">';
+      _tareas.forEach(function(t){h+='<div style="font-size:11.5px;color:#52525b;display:flex;align-items:center;gap:7px"><span style="width:5px;height:5px;border-radius:50%;background:'+_rc+';display:inline-block;flex:none"></span>'+t+'</div>';});
+      h+='</div>';
     } else if(miRol.realiza||miRol.verifica){
-      h+='<div style="font-size:12px;font-weight:700;color:#16a34a">&#10003; Sin tareas pendientes para tu rol</div>';
+      h+='<div style="font-size:13px;font-weight:700;color:#16a34a">&#10003; Sin tareas pendientes para tu rol</div>';
     } else {
-      h+='<div style="font-size:11px;color:#94a3b8">Solo lectura (administrativo)</div>';
+      h+='<div style="font-size:11.5px;color:#a1a1aa">Solo lectura (administrativo)</div>';
     }
     h+='</div>';
   }
