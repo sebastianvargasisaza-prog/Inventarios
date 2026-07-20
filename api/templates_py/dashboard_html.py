@@ -8084,6 +8084,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   h+='</div></div>';
   // ── Rol del usuario · la vista se adapta (segregación de funciones GMP) ──
   var miRol=d.mi_rol||{tipo:'consulta',rol:'Consulta',realiza:false,verifica:false};
+  window._ebrMiRol=miRol;   // para el marcado OPTIMISTA del despeje (sin re-render de todo · 20-jul)
   var _rc=({operario:'#16a34a',jefe_produccion:'#2563eb',calidad:'#0891b2',director_tecnico:'#7c3aed',aseguramiento:'#b45309',administrativo:'#64748b',admin:'#6d28d9',consulta:'#94a3b8'})[miRol.tipo]||'#94a3b8';
   var _tareas=[];
   if(editable&&miRol.realiza){
@@ -8154,21 +8155,21 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
       if(d.despeje_respuesta_min!=null){ oh+='<div style="margin:0 0 8px;font-size:11px;color:#166534;background:#dcfce7;border-radius:6px;padding:5px 10px;display:inline-block">&#9201; Calidad respondió en <b>'+d.despeje_respuesta_min+' min</b> (aviso &rarr; 1ª verificación)</div>'; }
       else if(d.despeje_espera_min!=null){ oh+='<div style="margin:0 0 8px;font-size:11px;color:#92400e;background:#fef3c7;border-radius:6px;padding:5px 10px;display:inline-block">&#9201; <b>'+d.despeje_espera_min+' min</b> desde el aviso &middot; esperando 1ª verificaci\\u00f3n de Calidad</div>'; }
     }
-    oh+='<table class="table" style="font-size:11px"><thead><tr><th style="text-align:left">Verificación</th><th style="text-align:center">Realizó</th><th style="text-align:center">Verificó</th></tr></thead><tbody>';
+    oh+='<table class="table" style="font-size:13px;width:100%;border-collapse:collapse"><thead><tr style="border-bottom:2px solid #eef0f4"><th style="text-align:left;font-size:11px;color:#a1a1aa;text-transform:uppercase;letter-spacing:.5px;padding:8px 10px">Verificación</th><th style="text-align:center;font-size:11px;color:#a1a1aa;text-transform:uppercase;letter-spacing:.5px;padding:8px 10px">Realizó</th><th style="text-align:center;font-size:11px;color:#a1a1aa;text-transform:uppercase;letter-spacing:.5px;padding:8px 10px">Verificó</th></tr></thead><tbody>';
     items.forEach(function(it){
       var rz;
-      // Sebastián 7-jul (v2): el operario VA HACIENDO sin trabarse (sin lock); al marcar, se AVISA a Calidad
-      // para que esté al lado verificando (el backend manda la notificación a la campana). Sin "marcar todo".
-      if(it.cumple===1){ rz='<span style="color:#16a34a;font-weight:700">✓ Sí</span>'+(it.registrado_por?('<div style="font-size:9px;color:#94a3b8">'+_escHTML(it.registrado_por)+'</div>'):''); }
-      else if(it.cumple===0){ rz='<span style="color:#dc2626;font-weight:700">✗ No</span>'; }
-      else if(editable&&miRol.realiza){ rz='<button onclick="ebrMarcarDespeje('+d.id+','+it.idx+',&#39;'+etapa+'&#39;)" style="background:#16a34a;color:#fff;border:none;border-radius:4px;padding:2px 9px;font-size:10px;cursor:pointer">✓ Sí</button>'; }
-      else { rz='<span style="color:#94a3b8">pendiente</span>'; }
+      // Sebastián 7-jul (v2): el operario VA HACIENDO sin trabarse (sin lock); al marcar, se AVISA a Calidad.
+      // 20-jul: marcado OPTIMISTA (actualiza la fila al instante · no re-renderiza todo el legajo · era lento).
+      if(it.cumple===1){ rz='<span style="color:#16a34a;font-weight:800;font-size:14px">✓ Sí</span>'+(it.registrado_por?('<div style="font-size:10px;color:#a1a1aa;margin-top:1px">'+_escHTML(it.registrado_por)+'</div>'):''); }
+      else if(it.cumple===0){ rz='<span style="color:#dc2626;font-weight:800;font-size:14px">✗ No</span>'; }
+      else if(editable&&miRol.realiza){ rz='<button onclick="ebrMarcarDespeje(this,'+d.id+','+it.idx+',&#39;'+etapa+'&#39;)" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:6px 16px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 2px 6px rgba(22,163,74,.28)">✓ Sí</button>'; }
+      else { rz='<span style="color:#a1a1aa">pendiente</span>'; }
       var vf;
-      if((it.verificado_por||'').trim()){ vf='<span style="color:#16a34a;font-weight:700">✓</span><div style="font-size:9px;color:#94a3b8">'+_escHTML(it.verificado_por)+'</div>'; }
-      else if(it.cumple===1&&editable&&miRol.verifica){ vf='<button onclick="ebrVerificarDespeje('+d.id+','+it.idx+',&#39;'+etapa+'&#39;)" style="background:#0ea5e9;color:#fff;border:none;border-radius:4px;padding:2px 9px;font-size:10px;cursor:pointer">Verificar</button>'; }
-      else if(it.cumple===1){ vf='<span style="color:#f59e0b;font-size:10px">&#9203; espera Calidad</span>'; }
-      else { vf='<span style="color:#cbd5e1">-</span>'; }
-      oh+='<tr><td style="font-size:10px;line-height:1.3">'+_escHTML(it.texto)+'</td><td style="text-align:center;white-space:nowrap;vertical-align:top">'+rz+'</td><td style="text-align:center;white-space:nowrap;vertical-align:top">'+vf+'</td></tr>';
+      if((it.verificado_por||'').trim()){ vf='<span style="color:#16a34a;font-weight:800;font-size:15px">✓</span><div style="font-size:10px;color:#a1a1aa;margin-top:1px">'+_escHTML(it.verificado_por)+'</div>'; }
+      else if(it.cumple===1&&editable&&miRol.verifica){ vf='<button onclick="ebrVerificarDespeje('+d.id+','+it.idx+',&#39;'+etapa+'&#39;)" style="background:#0ea5e9;color:#fff;border:none;border-radius:8px;padding:6px 15px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 2px 6px rgba(14,165,233,.28)">Verificar</button>'; }
+      else if(it.cumple===1){ vf='<span style="color:#d97706;font-size:11.5px;font-weight:600">&#9203; espera Calidad</span>'; }
+      else { vf='<span style="color:#d4d4d8">-</span>'; }
+      oh+='<tr style="border-bottom:1px solid #f4f4f5"><td style="font-size:13px;line-height:1.4;color:#3f3f46;padding:11px 10px">'+_escHTML(it.texto)+'</td><td style="text-align:center;white-space:nowrap;vertical-align:middle;padding:11px 10px">'+rz+'</td><td style="text-align:center;white-space:nowrap;vertical-align:middle;padding:11px 10px">'+vf+'</td></tr>';
     });
     oh+='</tbody></table>';
     // Sebastián 7-jul: SIN "Marcar TODO / Verificar TODO" - el despeje es SECUENCIAL (operario marca un ítem →
@@ -8468,14 +8469,23 @@ async function ebrAgregarPrecaucion(ebrId, tipo){
     abrirEBR(ebrId);
   }catch(e){alert('Error de red');}
 }
-async function ebrMarcarDespeje(ebrId, idx, etapa){
+async function ebrMarcarDespeje(btn, ebrId, idx, etapa){
+  // Sebastián 20-jul: marcado OPTIMISTA · actualiza SOLO esa fila al instante y persiste en 2º plano.
+  // Antes re-descargaba TODO el legajo (11 fetches) y reconstruía la página en cada "Sí" → muy lento.
+  var tr = (btn && btn.closest) ? btn.closest('tr') : null;
+  var prev = (tr && tr.cells[1]) ? tr.cells[1].innerHTML : null;
+  if(tr && tr.cells[1]){ tr.cells[1].innerHTML='<span style="color:#16a34a;font-weight:800;font-size:14px">✓ Sí</span>'; }
   try{
     var r=await fetch('/api/brd/ebr/'+ebrId+'/despeje-item',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({item_idx:idx,cumple:1,etapa:etapa})});
-    if(!r.ok){ var j=await r.json(); alert('Error: '+(j.error||r.status)); return; }
-    // Sebastián 7-jul (v2): pop-up no-bloqueante · el operario sigue, y Calidad ya recibió la alerta (campana).
+    if(!r.ok){ var j=await r.json(); if(tr&&tr.cells[1]&&prev!=null){ tr.cells[1].innerHTML=prev; } alert('Error: '+(j.error||r.status)); return; }
     if(typeof _toast==='function'){ _toast('Registrado ✓ · Calidad avisada para verificar al lado', 1); }
-    abrirEBR(ebrId);
-  }catch(e){ alert('Error: '+(e.message||e)); }
+    // la celda Verificó pasa a Verificar (si soy Calidad) o "espera Calidad" · sin reconstruir todo
+    if(tr && tr.cells[2]){
+      var _mr=window._ebrMiRol||{};
+      if(_mr.verifica){ tr.cells[2].innerHTML='<button onclick="ebrVerificarDespeje('+ebrId+','+idx+',&#39;'+etapa+'&#39;)" style="background:#0ea5e9;color:#fff;border:none;border-radius:8px;padding:6px 15px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 2px 6px rgba(14,165,233,.28)">Verificar</button>'; }
+      else { tr.cells[2].innerHTML='<span style="color:#d97706;font-size:11.5px;font-weight:600">&#9203; espera Calidad</span>'; }
+    }
+  }catch(e){ if(tr&&tr.cells[1]&&prev!=null){ tr.cells[1].innerHTML=prev; } alert('Error: '+(e.message||e)); }
 }
 async function ebrDespejeTodoCumple(ebrId, etapa){
   if(!confirm('\\u00bfMarcar TODAS las verificaciones de despeje como CUMPLE? (firm\\u00e1s como responsable)')) return;
