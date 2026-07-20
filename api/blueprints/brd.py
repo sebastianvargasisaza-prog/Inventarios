@@ -5685,7 +5685,8 @@ def cerrar_envasado_ebr(ebr_id):
     user = session.get("compras_user", "")
     conn = get_db(); cur = conn.cursor()
     erow = cur.execute(
-        "SELECT COALESCE(m.producto_nombre,''), COALESCE(e.lote_codigo, e.lote), COALESCE(e.fase,'fabricacion') "
+        "SELECT COALESCE(m.producto_nombre,''), COALESCE(e.lote_codigo, e.lote), COALESCE(e.fase,'fabricacion'), "
+        "COALESCE(e.produccion_id, 0) "
         "FROM ebr_ejecuciones e LEFT JOIN mbr_templates m ON m.id=e.mbr_template_id WHERE e.id=?",
         (ebr_id,)).fetchone()
     if not erow:
@@ -5694,6 +5695,7 @@ def cerrar_envasado_ebr(ebr_id):
         return jsonify({"error": "este cierre es solo para legajos de envasado"}), 400
     producto = erow[0] or ""
     lote = erow[1] or ""
+    _prod_id = int(erow[3] or 0)
     uds = {}
     for r in cur.execute(
         "SELECT COALESCE(presentacion_codigo,''), COALESCE(unidades,0) FROM ebr_envasado_unidades "
@@ -5712,6 +5714,30 @@ def cerrar_envasado_ebr(ebr_id):
         conn.rollback()
         return jsonify({"error": "El envasado ya se cerró/descontó o no está en proceso · refrescá",
                         "codigo": "YA_CERRADO"}), 409
+    # El ENVASE puede variar por lote (Sebastián 20-jul): honrar el override del lote
+    # (produccion_programada.envase_codigo_override) y el envase custom por cliente B2B
+    # (pedidos_b2b_lote.envase_codigo) · igual que _descontar_mee_envasado (M55/M73). Tapa/caja
+    # siempre el default. Etiqueta NO va acá (se pone en Acondicionamiento · Sebastián 20-jul).
+    _env_override = ''
+    _b2b_custom = []   # [(env_cod, uds)]
+    if _prod_id:
+        try:
+            _eo = cur.execute("SELECT COALESCE(envase_codigo_override,'') FROM produccion_programada WHERE id=?",
+                              (_prod_id,)).fetchone()
+            _env_override = ((_eo[0] if _eo else '') or '').strip().upper()
+        except Exception:
+            _env_override = ''
+        try:
+            for _br in cur.execute(
+                "SELECT COALESCE(envase_codigo,''), COALESCE(unidades_aporte,0) FROM pedidos_b2b_lote "
+                "WHERE lote_produccion_id=? AND COALESCE(envase_codigo,'')<>''", (_prod_id,)).fetchall():
+                _ec = (_br[0] or '').strip().upper(); _un = int(_br[1] or 0)
+                if _ec and _un > 0:
+                    _b2b_custom.append((_ec, _un))
+        except Exception:
+            _b2b_custom = []
+    _b2b_rem = sum(u for _, u in _b2b_custom)  # uds B2B a restar del descuento del envase default
+
     descuentos = []
     try:
         for p in cur.execute(
@@ -5725,11 +5751,27 @@ def cerrar_envasado_ebr(ebr_id):
                 cod = (cod or "").strip()
                 if not cod:
                     continue
+                qty = n
+                if etq == "envase":
+                    if _env_override:            # el lote usa OTRO envase → descontar ese
+                        cod = _env_override
+                    if _b2b_rem > 0:             # restar las uds que van a envase B2B custom
+                        _sub = min(_b2b_rem, qty)
+                        qty -= _sub; _b2b_rem -= _sub
+                if qty <= 0:
+                    continue
                 cur.execute(
                     "INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, observaciones, responsable, fecha) "
                     "VALUES (?, 'Salida', ?, ?, ?, datetime('now','utc'))",
-                    (cod, n, "Envasado EBR-" + str(ebr_id) + " lote " + lote + " · " + etq + " " + p[0], user))
-                descuentos.append({"mee_codigo": cod, "tipo": etq, "cantidad": n, "presentacion": p[0]})
+                    (cod, qty, "Envasado EBR-" + str(ebr_id) + " lote " + lote + " · " + etq + " " + p[0], user))
+                descuentos.append({"mee_codigo": cod, "tipo": etq, "cantidad": qty, "presentacion": p[0]})
+        # Envases custom por cliente B2B · 1:1 con sus unidades (aparte del default)
+        for _ec, _un in _b2b_custom:
+            cur.execute(
+                "INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, observaciones, responsable, fecha) "
+                "VALUES (?, 'Salida', ?, ?, ?, datetime('now','utc'))",
+                (_ec, _un, "Envasado EBR-" + str(ebr_id) + " lote " + lote + " · envase B2B", user))
+            descuentos.append({"mee_codigo": _ec, "tipo": "envase_b2b", "cantidad": _un, "presentacion": ""})
     except Exception as _e:
         conn.rollback()
         log.warning("cerrar-envasado descuento MEE fallo (rollback): %s", _e)
