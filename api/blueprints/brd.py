@@ -5472,12 +5472,36 @@ def pesajes_plan_ebr(ebr_id):
             pesados[p["material_id"]] = dict(p)
     except Exception:
         pesados = {}
+    # INCI + lote(s) FEFO sugeridos por MP (Sebastián 20-jul): el INCI sale del maestro; el lote se
+    # ARRASTRA del FEFO (mismo motor que descuenta al cerrar · muestra 70g de un lote + 30g de otro).
+    try:
+        from blueprints.programacion import _resolver_material_bodega as _rmb, _distribuir_fefo as _dfefo
+    except Exception:
+        _rmb = _dfefo = None
     items = []
     for mid, t in teoricos.items():
         pp = pesados.get(mid)
+        _inci = ""; _fefo = ""
+        if _rmb:
+            try:
+                _cod = _rmb(conn.cursor(), mid, t["material_nombre"]) or mid
+                _ir = conn.execute("SELECT COALESCE(nombre_inci,'') FROM maestro_mps WHERE codigo_mp=?", (_cod,)).fetchone()
+                _inci = (_ir[0] if _ir else "") or ""
+                if _dfefo and t["cantidad_teorica_g"]:
+                    _dist = _dfefo(conn.cursor(), _cod, round(t["cantidad_teorica_g"], 3)) or []
+                    _parts = []
+                    for _d in _dist[:4]:
+                        _l = str(_d.get("lote") or "").strip()
+                        _q = round(float(_d.get("cantidad") or 0), 1)
+                        _parts.append((_l if (_l and not _d.get("sin_lote")) else "s/lote") + " " + str(_q) + "g")
+                    _fefo = " + ".join(_parts)
+            except Exception:
+                pass
         items.append({
             "material_id": mid,
             "material_nombre": t["material_nombre"] or mid,
+            "nombre_inci": _inci,
+            "lote_fefo": _fefo,
             "porcentaje": t["porcentaje"],
             "cantidad_teorica_g": round(t["cantidad_teorica_g"], 3),
             "id": (pp["id"] if pp else None),
