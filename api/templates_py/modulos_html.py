@@ -99,11 +99,12 @@ MODULOS_HTML = (
     # (Gerencia, Inteligencia Operacional, Seguridad de Planta, Reportes INVIMA,
     # Auditoría Catálogo, Zero-Error, MPs sin uso, Realidad Zero-Error) bajan a un
     # cajón colapsable (siguen accesibles, fuera de la vista principal).
-    "    <a class=\"mod-card featured\" href=\"/hoy\" style=\"display:flex;align-items:center;gap:20px;padding:26px 28px;background:linear-gradient(135deg,#f5f3ff 0%,#faf5ff 100%);border:1px solid #ddd6fe;\">"
-    "<span class=\"mod-icon\" style=\"flex:0 0 auto;width:56px;height:56px;color:#5b21b6\"><svg viewBox=\"0 0 24 24\" width=\"56\" height=\"56\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"4\"/><path d=\"M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4\"/></svg></span>"
-    "<span style=\"flex:1;text-align:left\"><span class=\"mod-name\" style=\"color:#5b21b6;font-size:22px;display:block\">Centro de Mando</span>"
-    "<span class=\"mod-sub\" style=\"color:#6d28d9;font-size:14px;display:block;margin-top:4px\">tus decisiones de hoy &middot; alertas &middot; discrepancias &middot; el pulso de toda la empresa</span></span>"
-    "<span style=\"flex:0 0 auto;color:#5b21b6;font-size:26px\">&rarr;</span></a>\n"
+    "    <div class=\"grid\">\n"
+    "      <a class=\"mod-card featured\" href=\"/hoy\">"
+    "<span class=\"mod-icon\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"cx-ico\"><circle cx=\"12\" cy=\"12\" r=\"4\"/><path d=\"M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4\"/></svg></span>"
+    "<span class=\"mod-name\" style=\"color:#5b21b6\">Centro de Mando</span>"
+    "<span class=\"mod-sub\" style=\"color:#5b21b6\">decisiones &middot; alertas &middot; pulso de la empresa</span></a>\n"
+    "    </div>\n"
     "    <details style=\"margin-top:16px\">\n"
     "      <summary style=\"cursor:pointer;list-style:none;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#78716c;padding:8px 0;user-select:none\">&#x1F527; Herramientas de gerencia <span class=\"hint\" style=\"text-transform:none;letter-spacing:0\">gerencia &middot; calidad &middot; mantenimiento (clic para abrir)</span></summary>\n"
     "      <div class=\"grid\" style=\"margin-top:10px\">\n"

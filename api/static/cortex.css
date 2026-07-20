@@ -222,14 +222,16 @@ code, pre, kbd, samp, .mono, [class*="font-mono"] {
 .cx-btn-success { background: var(--cx-success); }
 .cx-btn-success:hover { background: #166534; box-shadow: 0 4px 14px rgba(21,128,61,0.22); }
 .cx-btn-ghost {
-  background: transparent;
-  color: var(--cx-primary);
-  border: 1px solid var(--cx-border);
+  background: var(--cx-card);
+  color: var(--cx-text-soft, var(--cx-text-mute));
+  border: 1px solid var(--cx-hairline);
+  box-shadow: var(--cx-sh-sm);
 }
 .cx-btn-ghost:hover {
   background: var(--cx-primary-pale);
   border-color: var(--cx-primary-light);
   color: var(--cx-primary-dark);
+  box-shadow: var(--cx-sh-card);
 }
 .cx-btn-sm {
   padding: 6px 12px;

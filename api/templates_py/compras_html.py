@@ -281,6 +281,8 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
          sub-vista Influencers se gatea a admin dentro del pane. -->
     <button class="tn" data-tab="influencer" id="tn-influencer"
       title="Gerencia · cargos fijos + pagos influencers">🏛️ Gerencia</button>
+    <button class="tn" data-tab="artes" id="tn-artes"
+      title="Etiquetas & artes · solicitar revisión a Dirección Técnica y ver aprobados">🏷️ Etiquetas</button>
   </span>
   <!-- Sub-tabs del grupo OCs Y PAGOS -->
   <span data-cx-sub="ocs" style="display:none;gap:6px;flex-wrap:wrap">
@@ -735,6 +737,9 @@ function renderHistorico(){
      ya agrupado por proveedor, puede editar inline (proveedor / cantidad /
      valor), y los cambios se sincronizan globalmente a maestro_mps +
      mp_lead_time_config + precio_referencia (aplican en TODA la app). -->
+<div id="pane-artes" class="pane">
+  <iframe id="artes-frame" title="Etiquetas y artes" style="width:100%;height:calc(100vh - 160px);border:0;border-radius:12px;background:transparent"></iframe>
+</div>
 <div id="pane-planta" class="pane">
   <div id="subplanta-mp">
   <!-- Alertas MP/envases en déficit (Centro de Programación) · 23-jun: movidas desde Solicitudes - son de PLANTA -->
@@ -1730,6 +1735,7 @@ window._cxTabToGrp = {
   // Entradas
   'planta':'entradas', 'solic':'entradas', 'solprod':'entradas',
   'influencer':'entradas',  // por compat · aunque oculto
+  'artes':'entradas',
   // OCs y Pagos
   'consol':'ocs', 'por-pagar':'ocs', 'pagos':'ocs', 'historico':'ocs', 'ordserv':'ocs',
   'atrasadas':'ocs', 'discrep':'ocs', 'mailbox':'ocs',
@@ -1775,6 +1781,7 @@ document.querySelectorAll('.tn').forEach(function(btn){
     else if(tab==='solic') loadSolicitudes();
     else if(tab==='planta') loadPlanta();
     else if(tab==='influencer') loadGerencia();
+    else if(tab==='artes'){ var _af=document.getElementById('artes-frame'); if(_af && !_af.getAttribute('src')) _af.setAttribute('src','/artes?embed=1'); }
     else if(tab==='consol') loadConsolidado();
     else if(tab==='pagos'){ loadPagos(); }
     else if(tab==='historico'){ renderHistorico(); }

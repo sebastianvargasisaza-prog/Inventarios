@@ -268,6 +268,13 @@ async function setBiblioteca(){
 
 async function csrf(){ try{ var r=await fetch('/api/csrf-token',{credentials:'same-origin'}); var j=await r.json(); return j.csrf_token||j.token||''; }catch(e){ return ''; } }
 
+// Embebido en una pestaña (Compras): ocultar el header propio para que se vea como sub-pestaña
+if(location.search.indexOf('embed=1')>=0){
+  var _hd=document.querySelector('.hd'); if(_hd) _hd.style.display='none';
+  var _wr=document.querySelector('.wrap'); if(_wr){ _wr.style.paddingTop='4px'; _wr.style.paddingLeft='6px'; _wr.style.paddingRight='6px'; }
+  document.body.style.background='transparent';
+}
+
 cargar();
 </script>
 </body>

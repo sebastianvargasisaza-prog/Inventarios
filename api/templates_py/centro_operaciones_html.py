@@ -78,18 +78,20 @@ HTML = r"""
               font-size:10px; font-weight:700; display:none; align-items:center; justify-content:center; line-height:1; }
   .cm-badge.on { display:inline-flex; }
   /* Grid premium de decisiones (evita el vacío a la derecha en pantallas anchas) */
-  #decisiones { display:grid; grid-template-columns:repeat(auto-fill,minmax(440px,1fr)); gap:12px; }
-  #decisiones .dec-card { display:flex; align-items:center; gap:13px; text-decoration:none;
-            background:var(--cx-card); border:1px solid var(--cx-hairline); border-radius:12px;
-            padding:14px 16px; transition:box-shadow .15s, transform .1s; box-shadow:var(--cx-sh-card); }
-  #decisiones .dec-card:hover { box-shadow:0 6px 18px rgba(0,0,0,.09); transform:translateY(-1px); }
-  #decisiones .dec-ico { font-size:22px; line-height:1; flex:0 0 auto; }
+  #decisiones { display:grid; grid-template-columns:repeat(auto-fill,minmax(430px,1fr)); gap:12px; }
+  #decisiones .dec-card { display:flex; align-items:center; gap:14px; text-decoration:none;
+            background:var(--cx-card); border:1px solid var(--cx-hairline); border-radius:14px;
+            padding:15px 18px; transition:box-shadow .18s, transform .12s, border-color .18s; box-shadow:var(--cx-sh-sm); }
+  #decisiones .dec-card:hover { box-shadow:0 8px 22px rgba(24,24,27,.08); transform:translateY(-2px); border-color:var(--cx-primary-light,#c4b5fd); }
+  #decisiones .dec-ico { width:38px; height:38px; border-radius:11px; display:flex; align-items:center;
+            justify-content:center; font-size:19px; line-height:1; flex:0 0 auto; }
   #decisiones .dec-body { flex:1; min-width:0; }
-  #decisiones .dec-tit { font-weight:700; color:var(--cx-text,#1c1917); font-size:14px; }
-  #decisiones .dec-det { color:var(--cx-text-mute,#78716c); font-size:12.5px; margin-top:3px; line-height:1.35; }
-  #decisiones .dec-badge { font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.5px;
-            padding:3px 8px; border-radius:20px; white-space:nowrap; flex:0 0 auto; }
-  #decisiones .dec-arrow { font-size:17px; flex:0 0 auto; }
+  #decisiones .dec-tit { font-weight:700; color:var(--cx-text,#1c1917); font-size:14.5px; letter-spacing:-.01em; }
+  #decisiones .dec-det { color:var(--cx-text-mute,#78716c); font-size:12.5px; margin-top:3px; line-height:1.4; }
+  #decisiones .dec-badge { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.7px;
+            color:var(--cx-text-mute,#a8a29e); background:transparent; white-space:nowrap; flex:0 0 auto; }
+  #decisiones .dec-arrow { font-size:16px; flex:0 0 auto; color:var(--cx-text-mute,#d6d3d1); transition:transform .15s, color .15s; }
+  #decisiones .dec-card:hover .dec-arrow { color:var(--cx-primary,#6d28d9); transform:translateX(3px); }
   @media (max-width:768px){ #decisiones { grid-template-columns:1fr; } .cm-tab { font-size:12.5px; margin-right:8px; } }
   /* KPI clickeable: cada tarjeta lleva a donde ver/actuar */
   a.card { text-decoration:none; color:inherit; cursor:pointer; position:relative; display:block; }
@@ -107,7 +109,7 @@ HTML = r"""
         <span class="live-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#dc2626;margin-right:8px;animation:pulse 1.5s infinite;"></span>
         Centro de Mando
       </div>
-      <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; tus decisiones de hoy y el pulso de la empresa · refresh cada 60s · <a href="/gerencia" style="color:#6d28d9">Gerencia</a> (mes/YTD) · <a href="/financiero" style="color:#6d28d9">Financiero</a> (P&amp;L)</div>
+      <div class="cx-mod-header__sub">Tu día de un vistazo &middot; <a href="/gerencia" style="color:#6d28d9;text-decoration:none;font-weight:600">Gerencia</a> &middot; <a href="/financiero" style="color:#6d28d9;text-decoration:none;font-weight:600">Financiero</a></div>
     </div>
     <div class="cx-mod-header__nav">
       <button class="cx-btn cx-btn-ghost cx-btn-sm" onclick="cargar(true)" title="Refresh">&#x21bb; Refresh</button>
@@ -339,13 +341,13 @@ function pintarDecisiones(){
     var col = _decColor(d.nivel);
     var gm = _GRP_META[d.grupo] || ['•', d.grupo||''];
     return '<a class="dec-card" href="'+_esc(d.accion||'#')+'" style="border-left:4px solid '+col+'">'+
-      '<span class="dec-ico">'+gm[0]+'</span>'+
+      '<span class="dec-ico" style="background:'+col+'14;color:'+col+'">'+gm[0]+'</span>'+
       '<div class="dec-body">'+
         '<div class="dec-tit">'+_esc(d.titulo||'-')+'</div>'+
         '<div class="dec-det">'+_esc(d.detalle||'')+'</div>'+
       '</div>'+
-      '<span class="dec-badge" style="color:'+col+';background:'+col+'18">'+_esc(gm[1])+'</span>'+
-      '<span class="dec-arrow" style="color:'+col+'">→</span>'+
+      '<span class="dec-badge">'+_esc(gm[1])+'</span>'+
+      '<span class="dec-arrow">&rarr;</span>'+
     '</a>';
   }).join('');
 }
