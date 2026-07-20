@@ -67,6 +67,7 @@ textarea{resize:vertical;min-height:60px;}
   </div>
   <div class="cx-mod-header__nav">
     <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver">&larr; Módulos</a>
+    <a href="/artes" class="cx-btn cx-btn-primary cx-btn-sm" title="Revisar y aprobar artes/etiquetas">&#127991; Artes &amp; Etiquetas</a>
     <a href="/aseguramiento" class="cx-btn cx-btn-ghost cx-btn-sm" title="Aseguramiento de Calidad">Aseguramiento</a>
     <a href="/calidad" class="cx-btn cx-btn-ghost cx-btn-sm" title="Control de Calidad">Calidad</a>
     <a href="/compliance" class="cx-btn cx-btn-ghost cx-btn-sm" title="Cronogramas BPM + CAPA">Compliance</a>

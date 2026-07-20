@@ -8612,8 +8612,9 @@ button.ok{background:linear-gradient(135deg,#16a34a,#15803d)}
 <div style="display:flex;align-items:center;gap:12px;margin-bottom:2px">
 <div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#5b21b6);display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 4px 12px rgba(124,58,237,.3)">&#127991;</div>
 <h1 style="margin:0">Marcaci&oacute;n de envases <span style="color:#94a3b8;font-weight:600;font-size:15px">&middot; serigraf&iacute;a / tampograf&iacute;a</span></h1>
+<a href="/artes" style="margin-left:auto;background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;text-decoration:none;border-radius:9px;padding:9px 15px;font-size:13px;font-weight:700;white-space:nowrap">&#127991; Solicitar revisi&oacute;n de arte a DT &rarr;</a>
 </div>
-<p class="sub">Compras define el <b>m&eacute;todo</b> y el <b>proveedor</b> de cada envase, y ve qu&eacute; enviar a marcar y <b>para cu&aacute;ndo</b> (15 d&iacute;as antes de la producci&oacute;n). Los pre-impresos de China no aparecen.</p>
+<p class="sub">Compras define el <b>m&eacute;todo</b> y el <b>proveedor</b> de cada envase, y ve qu&eacute; enviar a marcar y <b>para cu&aacute;ndo</b> (15 d&iacute;as antes de la producci&oacute;n). Los pre-impresos de China no aparecen. El arte debe estar <b>aprobado por Direcci&oacute;n T&eacute;cnica</b> antes de enviar.</p>
 <div style="display:flex;gap:10px;margin:0 0 12px;align-items:center;flex-wrap:wrap">
   <div style="display:inline-flex;background:#eef2f7;border-radius:10px;padding:3px">
     <button id="vw-mes" onclick="setView('mes')" style="border:none;border-radius:8px;padding:7px 16px;font-size:12px;font-weight:700;cursor:pointer;background:#fff;color:#0f172a;box-shadow:0 1px 3px rgba(0,0,0,.1)">&#128197; Por mes</button>

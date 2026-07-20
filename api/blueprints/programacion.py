@@ -13880,6 +13880,23 @@ def marcacion_orden_enviar():
     c = conn.cursor()
     if not c.execute("SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))", (serig,)).fetchone():
         return jsonify({'error': f'envase {serig} no existe'}), 400
+    # Gate DT de arte/etiqueta (Sebastián 19-jul): un envase NO se envía a serigrafía/tampografía
+    # sin que Dirección Técnica haya aprobado el arte del producto. Toggle en app_settings
+    # 'artes_gate_dt' (default OFF · M39/M68 · se prende cuando el Drive de artes esté cargado).
+    # Override admin con forzar=true (auditado).
+    try:
+        _gate_on = False
+        _g = c.execute("SELECT valor FROM app_settings WHERE clave='artes_gate_dt' LIMIT 1").fetchone()
+        if _g and str(_g[0]).strip() in ('1', 'true', 'True', 'on'):
+            _gate_on = True
+        if _gate_on and producto and not (d.get('forzar') and user in ADMIN_USERS):
+            from blueprints.artes import arte_aprobado_para
+            if not arte_aprobado_para(conn, producto):
+                return jsonify({'error': 'ARTE_DT_NO_APROBADO',
+                                'detalle': f'El arte/etiqueta de "{producto}" no está aprobado por Dirección Técnica. '
+                                           'Solicita la revisión en /artes antes de enviar a marcación.'}), 409
+    except Exception:
+        pass  # gate OFF por defecto · un fallo del check nunca bloquea la marcación (fail-open)
     base = serig
     try:
         r = c.execute("SELECT COALESCE(material_referencia,'') FROM maestro_mee WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))", (serig,)).fetchone()

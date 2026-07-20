@@ -10148,6 +10148,41 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "SELECT 'rft_documental_f01','Cumplimiento documental (F01)','% de recepciones técnicas (F01) conformes: rotulado, COA, ficha, hoja de seguridad, documento coincide.','%','mayor_mejor',95,90,'Liberación',14 "
         "WHERE NOT EXISTS (SELECT 1 FROM calidad_kpi_metas WHERE codigo='rft_documental_f01')",
     ]),
+    (364, "Artes/Etiquetas · gate de Dirección Técnica (Sebastián 19-jul): Catalina (Compras) solicita la "
+          "revisión de una etiqueta/arte → DT revisa INCI/ingredientes y aprueba con e-firma (1ª revisión) → "
+          "se manda a hacer → al llegar, DT da una 2ª mirada (física) → recién ahí queda usable. Gate DURO: "
+          "sin arte aprobado no se envía a marcación ni se reciben etiquetas. + biblioteca de artes existentes.", [
+        """CREATE TABLE IF NOT EXISTS artes_etiquetas (
+            id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+            producto_nombre      TEXT NOT NULL DEFAULT '',
+            presentacion_codigo  TEXT DEFAULT '',
+            mee_codigo           TEXT DEFAULT '',
+            tipo                 TEXT NOT NULL DEFAULT 'etiqueta',
+            version              INTEGER NOT NULL DEFAULT 1,
+            estado               TEXT NOT NULL DEFAULT 'borrador',
+            solicitado_por       TEXT DEFAULT '',
+            solicitado_at        TEXT DEFAULT '',
+            solicitud_notas      TEXT DEFAULT '',
+            arte_aprobado        INTEGER DEFAULT 0,
+            arte_aprobado_por    TEXT DEFAULT '',
+            arte_aprobado_at     TEXT DEFAULT '',
+            arte_signature_id    INTEGER,
+            inci_revisado        INTEGER DEFAULT 0,
+            drive_url            TEXT DEFAULT '',
+            fisica_aprobada      INTEGER DEFAULT 0,
+            fisica_aprobada_por  TEXT DEFAULT '',
+            fisica_aprobada_at   TEXT DEFAULT '',
+            fisica_signature_id  INTEGER,
+            archivo              TEXT DEFAULT '',
+            notas                TEXT DEFAULT '',
+            rechazo_motivo       TEXT DEFAULT '',
+            creado_at            TEXT DEFAULT (datetime('now')),
+            empresa              TEXT DEFAULT 'Espagiria'
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_artes_producto ON artes_etiquetas(producto_nombre)",
+        "CREATE INDEX IF NOT EXISTS idx_artes_estado ON artes_etiquetas(estado)",
+        "CREATE INDEX IF NOT EXISTS idx_artes_mee ON artes_etiquetas(mee_codigo)",
+    ]),
 ]
 
 
