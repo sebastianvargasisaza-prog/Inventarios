@@ -3223,7 +3223,8 @@ def completar_ebr(ebr_id):
     conn = get_db()
     cur = conn.cursor()
     ebr = cur.execute(
-        "SELECT estado, cantidad_objetivo_g, COALESCE(fase,'fabricacion') AS fase "
+        "SELECT estado, cantidad_objetivo_g, COALESCE(fase,'fabricacion') AS fase, "
+        "COALESCE(lote_codigo, lote) AS lote "
         "FROM ebr_ejecuciones WHERE id = ?",
         (ebr_id,),
     ).fetchone()
@@ -3231,13 +3232,16 @@ def completar_ebr(ebr_id):
         return jsonify({"error": "EBR no encontrado"}), 404
     if ebr["estado"] not in ("iniciado", "en_proceso"):
         return jsonify({"error": f"EBR no completable (estado: {ebr['estado']})"}), 409
+    # DEMO (Sebastián 20-jul): un lote DEMO (lote 'DEMO-...') se puede TERMINAR sin todos los
+    # pasos/IPCs completos (es un sandbox para caminar el flujo). Los lotes reales exigen TODO (GMP).
+    _es_demo = str(ebr["lote"] or "").upper().startswith("DEMO-")
 
     pendientes = cur.execute(
         """SELECT COUNT(*) FROM ebr_pasos_ejecutados
            WHERE ebr_id = ? AND estado NOT IN ('completado', 'omitido')""",
         (ebr_id,),
     ).fetchone()[0]
-    if pendientes:
+    if pendientes and not _es_demo:
         return jsonify({"error": f"hay {pendientes} paso(s) sin completar"}), 409
 
     # IPCs obligatorios deben estar reportados Y conformes (Part 11 + GMP).
@@ -3264,7 +3268,7 @@ def completar_ebr(ebr_id):
              AND r.id IS NULL""",
         (ebr_id, ebr_full["mbr_template_id"]),
     ).fetchall()
-    if ipcs_faltantes:
+    if ipcs_faltantes and not _es_demo:
         return jsonify({
             "error": "IPCs obligatorios sin reportar",
             "parametros": [r["parametro"] for r in ipcs_faltantes],
@@ -3281,7 +3285,7 @@ def completar_ebr(ebr_id):
              AND (r.conforme = 0 OR r.conforme IS NULL)""",
         (ebr_id,),
     ).fetchall()
-    if ipcs_no_conformes:
+    if ipcs_no_conformes and not _es_demo:
         return jsonify({
             "error": "IPCs obligatorios fuera de spec o sin adjudicar QC "
                      "(conforme=NULL) · debe resolverse antes de completar",
