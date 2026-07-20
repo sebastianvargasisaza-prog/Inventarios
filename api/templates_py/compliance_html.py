@@ -67,7 +67,7 @@ tr:hover{background:#fafafa}
 <body>
 <div class="topbar">
   <h1>📋 Compliance · HHA Group</h1>
-  <a href="/modulos">← Módulos</a>
+  <a href="/modulos">Módulos</a>
 </div>
 
 <!-- KPIs globales -->

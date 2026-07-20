@@ -90,13 +90,16 @@ HTML = r"""
   #decisiones .dec-det { color:var(--cx-text-mute,#78716c); font-size:12.5px; margin-top:3px; line-height:1.4; }
   #decisiones .dec-badge { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.7px;
             color:var(--cx-text-mute,#a8a29e); background:transparent; white-space:nowrap; flex:0 0 auto; }
-  #decisiones .dec-arrow { font-size:16px; flex:0 0 auto; color:var(--cx-text-mute,#d6d3d1); transition:transform .15s, color .15s; }
+  #decisiones .dec-arrow { flex:0 0 auto; display:flex; align-items:center; color:var(--cx-text-mute,#d6d3d1); transition:transform .15s, color .15s; }
   #decisiones .dec-card:hover .dec-arrow { color:var(--cx-primary,#6d28d9); transform:translateX(3px); }
   @media (max-width:768px){ #decisiones { grid-template-columns:1fr; } .cm-tab { font-size:12.5px; margin-right:8px; } }
   /* KPI clickeable: cada tarjeta lleva a donde ver/actuar */
   a.card { text-decoration:none; color:inherit; cursor:pointer; position:relative; display:block; }
-  a.card::after { content:"→"; position:absolute; top:14px; right:14px; font-size:14px; color:var(--cx-primary);
-                  opacity:0; transform:translateX(-4px); transition:opacity .15s, transform .15s; }
+  a.card::after { content:""; position:absolute; top:15px; right:15px; width:14px; height:14px;
+                  background-color:var(--cx-primary); opacity:0; transform:translateX(-4px);
+                  transition:opacity .15s, transform .15s;
+                  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 18l6-6-6-6'/%3E%3C/svg%3E") center/contain no-repeat;
+                          mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 18l6-6-6-6'/%3E%3C/svg%3E") center/contain no-repeat; }
   a.card:hover { box-shadow:0 6px 18px rgba(0,0,0,.09); transform:translateY(-1px); border-color:var(--cx-primary-soft); }
   a.card:hover::after { opacity:.85; transform:translateX(0); }
 </style>
@@ -112,8 +115,8 @@ HTML = r"""
       <div class="cx-mod-header__sub">Tu día de un vistazo &middot; <a href="/gerencia" style="color:#6d28d9;text-decoration:none;font-weight:600">Gerencia</a> &middot; <a href="/financiero" style="color:#6d28d9;text-decoration:none;font-weight:600">Financiero</a></div>
     </div>
     <div class="cx-mod-header__nav">
-      <button class="cx-btn cx-btn-ghost cx-btn-sm" onclick="cargar(true)" title="Refresh">&#x21bb; Refresh</button>
-      <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver">&larr; Módulos</a>
+      <button class="cx-btn cx-btn-ghost cx-btn-sm" onclick="cargar(true)" title="Actualizar"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v5h-5"/></svg>Actualizar</button>
+      <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver a módulos">Módulos</a>
       <button class="cx-theme-toggle" onclick="cxToggleTheme()" title="Modo claro/oscuro">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4"/></svg>
       </button>
@@ -347,7 +350,7 @@ function pintarDecisiones(){
         '<div class="dec-det">'+_esc(d.detalle||'')+'</div>'+
       '</div>'+
       '<span class="dec-badge">'+_esc(gm[1])+'</span>'+
-      '<span class="dec-arrow">&rarr;</span>'+
+      '<span class="dec-arrow"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>'+
     '</a>';
   }).join('');
 }

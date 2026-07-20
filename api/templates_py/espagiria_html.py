@@ -79,7 +79,7 @@ HTML = r"""
       <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; vista consolidada para coordinación operativa de planta</div>
     </div>
     <div class="cx-mod-header__nav">
-      <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver">&larr; Módulos</a>
+      <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver">Módulos</a>
       <button class="cx-theme-toggle" onclick="cxToggleTheme()" title="Modo claro/oscuro">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4"/></svg>
       </button>

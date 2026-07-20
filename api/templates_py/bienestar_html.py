@@ -64,7 +64,7 @@ label{font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:4
 <body>
 <div class="topbar">
   <h1>🌱 Bienestar HHA · <span style="font-weight:400">{usuario}</span></h1>
-  <a href="/modulos">← Módulos</a>
+  <a href="/modulos">Módulos</a>
 </div>
 
 <div class="tabs">

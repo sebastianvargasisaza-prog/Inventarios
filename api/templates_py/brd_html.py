@@ -79,7 +79,7 @@ tr:hover{background:#fafafa}
 <body>
 <header>
   <div class="logo">EOS · BATCH RECORD DIGITAL</div>
-  <div><a href="/modulos" style="color:#cbd5e1;font-size:.85em;text-decoration:none">← Módulos</a></div>
+  <div><a href="/modulos" style="color:#cbd5e1;font-size:.85em;text-decoration:none">Módulos</a></div>
 </header>
 
 <div class="tabs">
