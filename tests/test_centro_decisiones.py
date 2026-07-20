@@ -46,6 +46,23 @@ def test_decisiones_estructura_y_prioridad(app, db_clean):
     assert d["resumen"]["critico"] == sum(1 for x in d["decisiones"] if x["nivel"] == "critico")
 
 
+def test_decisiones_factura_proveedor_con_saldo(app, db_clean):
+    # Fix cero-error (ultracode): la decision 'Facturas de proveedor con saldo' debe salir de
+    # facturas_proveedor (AP), NO de facturas (AR cliente, sin columna numero_factura). Guard de regresion.
+    conn = sqlite3.connect(os.environ["DB_PATH"], timeout=10)
+    try:
+        conn.execute("INSERT INTO facturas_proveedor (numero_factura, proveedor, total, estado, fecha_emision) "
+                     "VALUES ('FP-DEC-9', 'Prov Saldo', 700000, 'pendiente', date('now','-5 hours'))")
+        conn.commit()
+    finally:
+        conn.close()
+    c = _login(app, "sebastian")
+    d = c.get("/api/centro/decisiones").get_json()
+    fp = [x for x in d.get("decisiones", []) if "Facturas de proveedor" in (x.get("titulo") or "")]
+    assert fp, "la factura de proveedor con saldo debe aparecer como decision"
+    assert "700,000" in (fp[0].get("detalle") or "") or "1 factura" in (fp[0].get("detalle") or "")
+
+
 def test_hub_alertas_sin_emdash(app, db_clean):
     # regla M86: cero em-dash en la UI/datos
     c = _login(app, "sebastian")

@@ -127,12 +127,14 @@ def _hub_alertas_core(c, hoy):
     en60 = (hoy_dt + timedelta(days=60)).strftime('%Y-%m-%d')
     hoy_str = hoy_dt.strftime('%Y-%m-%d')
     try:
-        c.execute("""SELECT material_nombre, lote, fecha_vencimiento, material_id
+        # PG-safe (M12b): material_nombre/fecha_vencimiento no van en GROUP BY -> MAX(...)
+        c.execute("""SELECT MAX(material_nombre) AS material_nombre, lote,
+                            MAX(fecha_vencimiento) AS fv, material_id
                      FROM movimientos
                      WHERE tipo='Entrada' AND fecha_vencimiento IS NOT NULL AND fecha_vencimiento != ''
                      AND fecha_vencimiento <= ?
                      GROUP BY material_id, lote
-                     ORDER BY fecha_vencimiento ASC LIMIT 8""", (en60,))
+                     ORDER BY fv ASC LIMIT 8""", (en60,))
         for row in c.fetchall():
             nombre, lote, fv, mid = row
             try:
@@ -254,12 +256,15 @@ def centro_decisiones():
         try: conn.rollback()
         except Exception: pass
 
-    # ── PAGOS: facturas de proveedor con saldo ──
+    # ── PAGOS: facturas de proveedor con saldo (AP · facturas_proveedor · patrón compras.py:2161) ──
     try:
         fr = c.execute(
-            "SELECT COUNT(*), COALESCE(SUM(total - COALESCE((SELECT SUM(monto) FROM facturas_pagos "
-            "WHERE numero_factura=facturas.numero_factura),0)),0) FROM facturas "
-            "WHERE estado IN ('Emitida','Parcial')").fetchone()
+            "SELECT COUNT(*), COALESCE(SUM(f.total - COALESCE(p.pagado,0)),0) "
+            "FROM facturas_proveedor f "
+            "LEFT JOIN (SELECT factura_proveedor_id, SUM(monto) AS pagado FROM pagos_oc "
+            "           WHERE factura_proveedor_id IS NOT NULL GROUP BY factura_proveedor_id) p "
+            "  ON p.factura_proveedor_id = f.id "
+            "WHERE f.estado IN ('pendiente','parcial')").fetchone()
         if fr and fr[0]:
             _add('atencion', 'compras', 'Facturas de proveedor con saldo',
                  f'{fr[0]} factura(s) · ${(fr[1] or 0):,.0f} por pagar', '/compras', fr[1] or 0)
@@ -1009,11 +1014,12 @@ def centro_operaciones_data():
             WHERE estado IN ('Borrador','Pendiente','Revisada','Aprobada','Autorizada','Recibida','Parcial')
         """).fetchone()
         facturas_saldo = c.execute("""
-            SELECT COUNT(*), COALESCE(SUM(total - COALESCE(
-                (SELECT SUM(monto) FROM facturas_pagos WHERE numero_factura=facturas.numero_factura),0
-            )),0) as saldo
-            FROM facturas
-            WHERE estado IN ('Emitida','Parcial')
+            SELECT COUNT(*), COALESCE(SUM(f.total - COALESCE(p.pagado,0)),0) as saldo
+            FROM facturas_proveedor f
+            LEFT JOIN (SELECT factura_proveedor_id, SUM(monto) AS pagado FROM pagos_oc
+                       WHERE factura_proveedor_id IS NOT NULL GROUP BY factura_proveedor_id) p
+              ON p.factura_proveedor_id = f.id
+            WHERE f.estado IN ('pendiente','parcial')
         """).fetchone()
         out['pagos'] = {
             'ocs_pendientes_count': oc_pendientes[0] if oc_pendientes else 0,
