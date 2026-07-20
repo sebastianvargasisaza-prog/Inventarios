@@ -8462,7 +8462,7 @@ async function ebrAprobarArte(ebrId, arteId){
   }catch(e){alert('Error de red');}
 }
 async function ebrAgregarPrecaucion(ebrId, tipo){
-  var d=prompt((tipo==='equipo'?'Equipo usado:':'Precaución del proceso:'));
+  var d=await _cxPrompt((tipo==='equipo'?'Agregar equipo':'Agregar precaución'),(tipo==='equipo'?'Equipo usado en el proceso':'Precaución del proceso'),'','');
   if(d===null)return; d=(d||'').trim(); if(!d)return;
   try{
     var r=await fetch('/api/brd/ebr/'+ebrId+'/precauciones',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tipo:tipo,descripcion:d})});
@@ -8497,8 +8497,40 @@ async function ebrDespejeTodoCumple(ebrId, etapa){
     abrirEBR(ebrId);
   }catch(e){ alert('Error: '+(e.message||e)); }
 }
+// ── Modales premium reutilizables (Sebastián 20-jul · reemplazan prompt/confirm del navegador) ──
+var _cxResolver=null;
+function _cxCerrar(v){ var m=document.getElementById('_cxmodal'); if(m) m.remove(); var r=_cxResolver; _cxResolver=null; if(r) r(v); }
+function _cxOkVal(){ var el=document.getElementById('_cxin'); _cxCerrar(el?el.value:''); }
+function _cxPrompt(title, sub, ph, val, multiline){
+  return new Promise(function(res){ _cxResolver=res;
+    var f = multiline
+      ? '<textarea id="_cxin" rows="3" style="width:100%;box-sizing:border-box;padding:11px;border:1.5px solid #e4e4e7;border-radius:10px;font-size:15px;font-family:inherit">'+_escHTML(val||'')+'</textarea>'
+      : '<input id="_cxin" value="'+_escHTML(val||'')+'" placeholder="'+_escHTML(ph||'')+'" style="width:100%;box-sizing:border-box;padding:11px;border:1.5px solid #e4e4e7;border-radius:10px;font-size:16px">';
+    var h='<div id="_cxmodal" style="position:fixed;inset:0;background:rgba(24,24,27,.5);display:flex;align-items:center;justify-content:center;z-index:10000;padding:14px" onclick="if(event.target===this)_cxCerrar(null)">'
+      +'<div style="background:#fff;border-radius:18px;padding:24px 26px;width:min(440px,96vw);box-shadow:0 24px 60px rgba(0,0,0,.3)">'
+      +'<div style="font-size:16px;font-weight:800;color:#18181b;margin-bottom:'+(sub?'4px':'14px')+'">'+_escHTML(title)+'</div>'
+      +(sub?'<div style="font-size:12.5px;color:#71717a;margin-bottom:14px;line-height:1.4">'+_escHTML(sub)+'</div>':'')
+      +f
+      +'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px"><button onclick="_cxCerrar(null)" style="background:#fff;border:1px solid #e4e4e7;color:#71717a;border-radius:10px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer">Cancelar</button><button onclick="_cxOkVal()" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;border-radius:10px;padding:9px 20px;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 4px 12px rgba(109,40,217,.28)">Aceptar</button></div>'
+      +'</div></div>';
+    document.body.insertAdjacentHTML('beforeend', h);
+    setTimeout(function(){var el=document.getElementById('_cxin');if(el){el.focus();if(el.select)el.select();}},60);
+  });
+}
+function _cxConfirm(title, msg, okLabel, danger){
+  return new Promise(function(res){ _cxResolver=res;
+    var col=danger?'linear-gradient(135deg,#dc2626,#b91c1c)':'linear-gradient(135deg,#7c3aed,#6d28d9)';
+    var h='<div id="_cxmodal" style="position:fixed;inset:0;background:rgba(24,24,27,.5);display:flex;align-items:center;justify-content:center;z-index:10000;padding:14px" onclick="if(event.target===this)_cxCerrar(false)">'
+      +'<div style="background:#fff;border-radius:18px;padding:24px 26px;width:min(430px,96vw);box-shadow:0 24px 60px rgba(0,0,0,.3)">'
+      +'<div style="font-size:16px;font-weight:800;color:#18181b;margin-bottom:'+(msg?'6px':'16px')+'">'+_escHTML(title)+'</div>'
+      +(msg?'<div style="font-size:13px;color:#52525b;line-height:1.5;margin-bottom:16px">'+_escHTML(msg)+'</div>':'')
+      +'<div style="display:flex;gap:8px;justify-content:flex-end"><button onclick="_cxCerrar(false)" style="background:#fff;border:1px solid #e4e4e7;color:#71717a;border-radius:10px;padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer">Cancelar</button><button onclick="_cxCerrar(true)" style="background:'+col+';color:#fff;border:none;border-radius:10px;padding:9px 20px;font-size:13px;font-weight:800;cursor:pointer">'+_escHTML(okLabel||'Aceptar')+'</button></div>'
+      +'</div></div>';
+    document.body.insertAdjacentHTML('beforeend', h);
+  });
+}
 async function ebrTerminarLote(ebrId){
-  var v=prompt('Cantidad REAL producida (gramos) · cierra la producción:');
+  var v=await _cxPrompt('Terminar producción','Cantidad REAL producida (gramos) · cierra la producción','ej: 9800','');
   if(v===null)return;
   var n=parseFloat(String(v).replace(',','.'));
   if(!(n>0)){alert('Cantidad inválida');return;}
@@ -8509,7 +8541,7 @@ async function ebrTerminarLote(ebrId){
   }catch(e){ alert('Error: '+(e.message||e)); }
 }
 async function ebrLiberarLote(ebrId){
-  if(!confirm('\\u00bfLiberar el lote? Vas a firmar electr\\u00f3nicamente (21 CFR Part 11). Cierra el batch record.'))return;
+  if(!(await _cxConfirm('Liberar el lote','Vas a firmar electrónicamente (21 CFR Part 11). Esto cierra el batch record.','Liberar')))return;
   var f=await _firmarEsign('libera','ebr_ejecuciones',ebrId);
   if(!f)return;
   if(f.error){ alert(f.error); return; }
@@ -8577,7 +8609,7 @@ async function _ebrPesarSubmit(ebrId, materialId){
   }catch(e){ alert('Error: '+(e.message||e)); }
 }
 async function ebrAprobarDt(ebrId){
-  if(!confirm('\\u00bfDar el visto bueno final como Director T\\u00e9cnico? Vas a firmar electr\\u00f3nicamente (21 CFR Part 11).'))return;
+  if(!(await _cxConfirm('Visto bueno · Director Técnico','Vas a firmar electrónicamente (21 CFR Part 11).','Aprobar')))return;
   var f=await _firmarEsign('aprueba_dt','ebr_ejecuciones',ebrId);
   if(!f)return;
   if(f.error){ alert(f.error); return; }
@@ -8658,7 +8690,7 @@ async function ebrAgregarRegistroFisico(ebrId, descPre){
   var desc;
   if(descPre){ desc=descPre; }
   else{
-    desc=prompt('Descripci\\u00f3n del registro f\\u00edsico (ej. "R\\u00f3tulo MP00138 \\u00c1cido L\\u00e1ctico", "R\\u00f3tulo limpieza Fabricaci\\u00f3n", "Tirilla balanza"):');
+    desc=await _cxPrompt('Registro físico','Descripción (ej. "Rótulo MP00138 Ácido Láctico", "Rótulo limpieza Fabricación", "Tirilla balanza")','','');
     if(desc===null)return; desc=(desc||'').trim(); if(!desc)return;
   }
   // Foto del rótulo (lo único que se llena a mano) o PDF · en celular abre la cámara
@@ -8700,7 +8732,7 @@ async function ebrIniciarPaso(ebrId, orden){
   }catch(e){alert('Error de red');}
 }
 async function ebrCompletarPaso(ebrId, orden, pasoId, reqSign, reqQc){
-  var body={observaciones:(prompt('Resultado del paso (pH, temperatura, tiempo\\u2026 \\u00b7 opcional):')||'')};
+  var _rp=await _cxPrompt('Ejecutar paso','Resultado del paso (pH, temperatura, tiempo… · opcional)','opcional','');if(_rp===null)return;var body={observaciones:(_rp||'')};
   if(reqSign){
     var f=await _firmarEsign('ejecuta','ebr_pasos_ejecutados',pasoId);
     if(!f){return;}
@@ -8827,7 +8859,7 @@ async function _ipcSubmit(ebrId, codigo, conforme){
 }
 async function ebrAsignarLoteFisico(id, actual){
   var sug=(actual && actual.indexOf('PP')===0)?'':actual;
-  var nuevo=prompt('Lote físico/comercial real (reemplaza el provisional '+(actual||'')+'):', sug);
+  var nuevo=await _cxPrompt('Asignar lote físico','Reemplaza el provisional '+(actual||''),'lote real',sug);
   if(nuevo===null){return;}
   nuevo=(nuevo||'').trim();
   if(!nuevo){return;}
