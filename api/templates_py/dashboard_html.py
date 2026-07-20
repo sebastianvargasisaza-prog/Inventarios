@@ -8004,7 +8004,12 @@ async function abrirEBR(id, targetId){
   var box=document.getElementById(_ebrTarget);
   if(!box){return;}
   box.style.display='block';
-  box.innerHTML='<span style="color:#999;">Cargando legajo…</span>';
+  // Sebastián 20-jul: si es RE-RENDER del mismo legajo (tras marcar un ítem, etc.) NO mostrar
+  // "Cargando" (colapsa la página y salta arriba) y RESTAURAR el scroll al terminar → el operario
+  // marca "Sí" y queda en el lugar, sin perder tiempo. Solo un legajo NUEVO baja al inicio.
+  var _reRenderEBR = (window._ebrCurrentId===id);
+  var _keepYEBR = _reRenderEBR ? (window.pageYOffset||window.scrollY||0) : null;
+  if(!_reRenderEBR){ box.innerHTML='<span style="color:#999;">Cargando legajo…</span>'; }
   try{
     var r=await fetch('/api/brd/ebr/'+id,{credentials:'same-origin'});
     var d=await r.json();
@@ -8028,6 +8033,8 @@ async function abrirEBR(id, targetId){
     var ipcSpecs=_arr(P[4]),ipcRes=_arr(P[5]),ipcEstandar=_arr(P[6]);
     var despeje=_arr(P[7]),prec=_arr(P[8]),regs=_arr(P[9]),despejeChk=P[10]||{};
     box.innerHTML=_ebrRender(d,(dp&&dp.items)||[],(dcm&&dcm.items)||[],(dar&&dar.items)||[],(dob&&dob.items)||[],ipcSpecs,ipcRes,despeje,prec,regs,ipcEstandar,despejeChk);
+    window._ebrCurrentId=id;
+    if(_keepYEBR!=null){ window.scrollTo(0,_keepYEBR); }
     if((d.fase||'fabricacion')==='envasado'){ try{ cargarEnvasesPlan(id); }catch(_e){} }  // Fase 3 · llena la sección de presentaciones
     if((d.fase||'fabricacion')==='acondicionamiento'){ try{ acondAddMat(id); }catch(_e){} }  // OA · siembra 1 fila de material
     box.scrollIntoView({behavior:'smooth',block:'start'});
