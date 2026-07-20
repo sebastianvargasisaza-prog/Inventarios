@@ -8281,6 +8281,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   // Controles ESTÁNDAR (siempre presentes) · valor o "No aplica"
   h+='<div style="margin-top:10px;font-size:12px;font-weight:700;color:#6d28d9;">Controles estándar (Densidad · pH · Olor · Color · Apariencia)</div>';
   h+='<table class="table" style="font-size:12px;"><thead><tr><th>Control</th><th>Resultado</th><th>Conf.</th><th>Midió</th><th></th></tr></thead><tbody>';
+  window._ipcEstandarArr=ipcEstandar;   // para el modal premium de registro de IPC (20-jul)
   for(var e=0;e<ipcEstandar.length;e++){
     var ec=ipcEstandar[e];
     var ecConf=ec.conforme===1?'<span style="color:#16a34a;font-weight:700;">✓</span>':(ec.conforme===0?'<span style="color:#dc2626;font-weight:700;">✗</span>':(ec.conforme===2?'<span style="color:#64748b;font-weight:700;">N/A</span>':'<span style="color:#999;">-</span>'));
@@ -8784,20 +8785,43 @@ async function ebrReportarIpc(ebrId, specId, esNumerico){
     abrirEBR(ebrId);
   }catch(e){alert('Error de red');}
 }
-async function ebrReportarIpcEstandar(ebrId, codigo){
+function _ipcCerrar(){ var m=document.getElementById('ipc-modal'); if(m) m.remove(); }
+function ebrReportarIpcEstandar(ebrId, codigo){
+  _ipcCerrar();
+  var nombre=codigo;
+  try{ var _c=(window._ipcEstandarArr||[]).find(function(x){return x.control_codigo===codigo;}); if(_c&&_c.control_nombre) nombre=_c.control_nombre; }catch(e){}
+  var html='<div id="ipc-modal" style="position:fixed;inset:0;background:rgba(24,24,27,.5);display:flex;align-items:center;justify-content:center;z-index:9999;padding:14px" onclick="if(event.target===this)_ipcCerrar()">'
+    +'<div style="background:#fff;border-radius:18px;padding:24px 26px;width:min(440px,96vw);box-shadow:0 24px 60px rgba(0,0,0,.3)">'
+    +'<div style="font-size:11px;font-weight:800;color:#0ea5e9;text-transform:uppercase;letter-spacing:1px">&#129514; Control en proceso (IPC)</div>'
+    +'<div style="font-size:18px;font-weight:800;color:#18181b;margin:4px 0 16px">'+_escHTML(nombre)+'</div>'
+    +'<label style="font-size:12px;font-weight:700;color:#52525b">Resultado / valor medido</label>'
+    +'<input id="ipc-val" style="width:100%;box-sizing:border-box;padding:11px;border:1.5px solid #e4e4e7;border-radius:10px;font-size:15px;margin:4px 0 16px" placeholder="ej: 1,056 g/mL &middot; Inodoro &middot; Amarillento&hellip;">'
+    +'<div style="display:flex;gap:10px;margin-bottom:14px">'
+      +'<button onclick="_ipcSubmit('+ebrId+',&#39;'+codigo+'&#39;,1)" style="flex:1;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:11px;padding:12px;font-size:14px;font-weight:800;cursor:pointer;box-shadow:0 4px 12px rgba(22,163,74,.28)">&#10003; Cumple</button>'
+      +'<button onclick="_ipcSubmit('+ebrId+',&#39;'+codigo+'&#39;,0)" style="flex:1;background:linear-gradient(135deg,#dc2626,#b91c1c);color:#fff;border:none;border-radius:11px;padding:12px;font-size:14px;font-weight:800;cursor:pointer;box-shadow:0 4px 12px rgba(220,38,38,.28)">&#10007; No cumple</button>'
+    +'</div>'
+    +'<div style="display:flex;gap:8px;justify-content:space-between;align-items:center">'
+      +'<button onclick="_ipcSubmit('+ebrId+',&#39;'+codigo+'&#39;,-1)" style="background:#fff;border:1px solid #e4e4e7;color:#71717a;border-radius:10px;padding:8px 14px;font-size:12.5px;font-weight:700;cursor:pointer">No aplica</button>'
+      +'<button onclick="_ipcCerrar()" style="background:#fff;border:1px solid #e4e4e7;color:#71717a;border-radius:10px;padding:8px 14px;font-size:12.5px;font-weight:700;cursor:pointer">Cancelar</button>'
+    +'</div></div></div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+  setTimeout(function(){ var el=document.getElementById('ipc-val'); if(el) el.focus(); }, 60);
+}
+async function _ipcSubmit(ebrId, codigo, conforme){
   var body={control_codigo:codigo};
-  var aplica=confirm('¿Este control APLICA al producto?\\n\\nAceptar = Sí (registrar)\\nCancelar = NO APLICA');
-  if(!aplica){
-    body.no_aplica=true;
-  } else {
-    var conf=confirm('¿CUMPLE?\\nAceptar = Cumple · Cancelar = No cumple');
-    var txt=prompt('Resultado / valor (ej: 1,056 g/mL · Inodoro · Amarillento…):')||'';
-    body.conforme=conf?1:0; body.valor_texto=txt.trim();
+  if(conforme===-1){ body.no_aplica=true; }
+  else {
+    var v=((document.getElementById('ipc-val')||{}).value||'').trim();
+    if(!v){ alert('Ingresá el resultado / valor medido'); return; }
+    body.conforme=conforme; body.valor_texto=v;
   }
   try{
     var r=await fetch('/api/brd/ebr/'+ebrId+'/ipc-estandar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     var d=await r.json();
     if(!r.ok){alert((d&&d.error)||'No se pudo registrar el control');return;}
+    _ipcCerrar();
+    if(d.conforme===0 && d.desviacion){ alert('⚠ IPC FUERA DE SPEC · se abrió la desviación '+(d.desviacion.codigo||'')+' automáticamente.'); }
+    else if(typeof _toast==='function'){ _toast('Control registrado ✓', 1); }
     abrirEBR(ebrId);
   }catch(e){alert('Error de red');}
 }
