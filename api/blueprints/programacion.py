@@ -6366,17 +6366,22 @@ def _rotulo_f02_doc(sheets_html, titulo='Rótulo de Limpieza F02', lw=100, lh=10
   .ph .printbtn{{background:#fff;color:#4c1d95;box-shadow:none}}
   @media(max-width:560px){{ .top{{flex-direction:column;gap:10px}} .ctrl{{text-align:left}} .firmas{{flex-direction:column}} .firma+.firma{{border-left:0;border-top:1px solid var(--line)}} }}
   @media print{{
-    body{{padding:0;background:#fff;font-size:8.5pt}}
+    body{{padding:0;background:#fff;font-size:7pt}}
     .sheet{{box-shadow:none;border:1px solid #ddd;border-radius:0;margin:0 auto;max-width:{lw-3}mm;width:{lw-3}mm;page-break-inside:avoid}}
     .sheet + .sheet{{page-break-before:always}}
     .printbar{{display:none}} .ph{{display:none}}
-    /* Compactar para caber en 100×100mm (Sebastián 7-jul) sin recortar */
-    td{{padding:4px 12px;font-size:8pt}}
-    .top{{padding:9px 14px 5px}} .mark{{width:50px;height:50px}} .co{{font-size:10pt}}
-    .title{{padding:3px 14px 7px}} .title h1{{font-size:12pt}}
-    .estado{{padding:3px 12px 8px}} .chip{{padding:5px 13px;font-size:10.5pt;margin:0 3px}} .estado .elbl{{margin-bottom:6px}}
-    .firma{{padding:7px 14px 9px}} .firma .who{{margin-top:7px}} .firma .sig-line{{margin:16px 0 5px}}
-    @page{{size:{lw}mm {lh}mm;margin:2mm}}
+    /* Compactar para caber TODO en 1 página 100×100mm (Sebastián 20-jul) sin recortar */
+    .accent{{height:2px}}
+    td{{padding:1px 9px;font-size:6.6pt;line-height:1.05}} td.k{{font-size:5.6pt}}
+    .top{{padding:4px 11px 2px;gap:8px}} .mark{{width:28px;height:28px;padding:2px}}
+    .co{{font-size:8.5pt;white-space:nowrap}} .brand .sub{{display:none}}
+    .ctrl{{font-size:6pt;line-height:1.3;padding:4px 7px}}
+    .title{{padding:1px 11px 3px}} .title h1{{font-size:9pt}} .title .k{{font-size:5.2pt;margin-top:0}}
+    .estado{{padding:1px 10px 4px}} .chip{{padding:2px 10px;font-size:8pt;margin:0 2px}} .estado .elbl{{margin-bottom:2px;font-size:5.6pt}}
+    .firma{{padding:3px 11px 4px}} .firma .l{{font-size:5.6pt}} .firma .who{{margin-top:2px;font-size:7.5pt;line-height:1.1}}
+    .firma .sig-ok{{margin-top:1px;font-size:6pt;padding:1px 5px}}
+    .firma .sig-line{{margin:9px 0 2px}} .firma .f{{font-size:6pt;margin-top:1px}}
+    @page{{size:{lw}mm {lh}mm;margin:1.5mm}}
   }}
 </style></head><body>
 <div class="ph">
@@ -11336,8 +11341,14 @@ def prog_completar_evento(evento_id):
     # caja_master si vienen al final).
     mees_a_consumir = []
     mee_item_ids = []  # ids del checklist para marcar consumido_at después
+    # Sebastián 20-jul (decisión: "envases SOLO en Envasado"): los tipos de envase/tapa/caja/etiqueta
+    # (TIPOS_MEE_AL_ENVASAR) se consumen EXCLUSIVAMENTE en Envasado (cerrar-envasado EBR, o el flujo viejo
+    # _descontar_mee_envasado). Finalizar/completar NO los toca → invariante DURO contra doble descuento
+    # (antes solo se salvaba por casualidad de que el ítem quedara en estado 'pendiente'). Completar solo
+    # limpia MEE no-envase que sí se consume al cierre (serigrafía/tampografía/decoración, si existieran).
+    _env_ph = ','.join(['?'] * len(TIPOS_MEE_AL_ENVASAR))
     try:
-        crows = c.execute("""
+        crows = c.execute(f"""
             SELECT id, mee_codigo_asignado, descripcion, cantidad_unidades, item_tipo
             FROM produccion_checklist
             WHERE produccion_id = ?
@@ -11345,7 +11356,8 @@ def prog_completar_evento(evento_id):
               AND COALESCE(cantidad_unidades, 0) > 0
               AND COALESCE(consumido_at, '') = ''
               AND estado IN ('verificado_ok','recibido','listo')
-        """, (pid,)).fetchall()
+              AND LOWER(COALESCE(item_tipo,'')) NOT IN ({_env_ph})
+        """, (pid,) + tuple(t.lower() for t in TIPOS_MEE_AL_ENVASAR)).fetchall()
         for item_id, mee_cod, desc, cant_ud, tipo_item in crows:
             mees_a_consumir.append({
                 'item_id': item_id,
