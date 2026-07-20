@@ -8540,6 +8540,118 @@ def consumos_tendencia():
                     'alertas': alertas, 'umbral': umbral, 'gasto_total': round(sum(x['total'] for x in cats_out), 2)})
 
 
+@bp.route('/api/compras/discrepancias', methods=['GET'])
+def compras_discrepancias():
+    """Inteligencia de discrepancias de compra (Sebastián 19-jul): por ÍTEM (MP/MEE/consumos), tendencia de
+    CANTIDAD y PRECIO por mes, y descompone la variación del gasto del último mes vs el promedio previo en
+    efecto PRECIO vs efecto CANTIDAD ('subió 45%: precio +10%, cantidad +35%'). Da la razón probable.
+    ?grupo=mp|mee|consumo|todos ?meses=6 ?umbral=25 (% mínimo para marcar). PG-safe (GROUP BY completo)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    try:
+        meses_n = max(3, min(24, int(request.args.get('meses', 6) or 6)))
+    except Exception:
+        meses_n = 6
+    try:
+        umbral = float(request.args.get('umbral', 25) or 25)
+    except Exception:
+        umbral = 25.0
+    grupo = (request.args.get('grupo') or 'todos').strip().lower()
+    conn = get_db(); c = conn.cursor()
+    _cons = set(x.upper() for x in _CATS_CONSUMO)
+
+    def _grp(cat):
+        cu = (cat or 'MP').upper()
+        if cu == 'MEE':
+            return 'mee'
+        if cu in _cons:
+            return 'consumo'
+        if cu in ('MP', 'MATERIA PRIMA', 'MATERIA_PRIMA', ''):
+            return 'mp'
+        return 'otro'
+    try:
+        rows = c.execute(
+            "SELECT COALESCE(NULLIF(TRIM(oi.codigo_mp),''), UPPER(TRIM(oi.nombre_mp))) AS ikey, "
+            "MAX(oi.nombre_mp) AS nombre, MAX(oi.codigo_mp) AS cod, "
+            "COALESCE(NULLIF(TRIM(oc.categoria),''),'MP') AS cat, "
+            "SUBSTR(oc.fecha,1,7) AS mes, "
+            "SUM(COALESCE(oi.cantidad_g,0)) AS qty, "
+            "SUM(CASE WHEN COALESCE(oi.subtotal,0)>0 THEN oi.subtotal "
+            "         ELSE COALESCE(oi.cantidad_g,0)*COALESCE(oi.precio_unitario,0) END) AS spend "
+            "FROM ordenes_compra_items oi JOIN ordenes_compra oc ON oc.numero_oc=oi.numero_oc "
+            "WHERE LOWER(COALESCE(oc.estado,'')) IN ('pagada','recibida','autorizada','parcial') "
+            "AND oc.fecha IS NOT NULL AND TRIM(oc.fecha)<>'' "
+            "AND COALESCE(NULLIF(TRIM(oi.codigo_mp),''), TRIM(oi.nombre_mp)) <> '' "
+            "GROUP BY COALESCE(NULLIF(TRIM(oi.codigo_mp),''), UPPER(TRIM(oi.nombre_mp))), "
+            "COALESCE(NULLIF(TRIM(oc.categoria),''),'MP'), SUBSTR(oc.fecha,1,7)").fetchall()
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return jsonify({'error': str(e)[:200]}), 500
+    items = {}; meses_set = set()
+    for r in rows:
+        ikey, nombre, cod, cat, mes = r[0], r[1], r[2], r[3], r[4]
+        qty, spend = float(r[5] or 0), float(r[6] or 0)
+        if not ikey or not mes:
+            continue
+        g = _grp(cat)
+        if grupo != 'todos' and g != grupo:
+            continue
+        it = items.setdefault(ikey, {'nombre': nombre or ikey, 'cod': cod or '', 'grupo': g, 'meses': {}})
+        pq, ps = it['meses'].get(mes, (0.0, 0.0))
+        it['meses'][mes] = (pq + qty, ps + spend)
+        meses_set.add(mes)
+    meses = sorted(meses_set)[-meses_n:]
+    out = []
+    for ikey, it in items.items():
+        serie_q = [round(it['meses'].get(m, (0, 0))[0], 2) for m in meses]
+        serie_s = [round(it['meses'].get(m, (0, 0))[1], 2) for m in meses]
+        q_last, s_last = serie_q[-1], serie_s[-1]
+        prev_idx = [i for i in range(len(meses) - 1) if serie_q[i] > 0]
+        if not prev_idx or (q_last <= 0 and s_last <= 0):
+            continue  # sin base previa o sin compra reciente → no analizable
+        q_base = sum(serie_q[i] for i in prev_idx) / len(prev_idx)
+        s_base = sum(serie_s[i] for i in prev_idx) / len(prev_idx)
+        p_last = (s_last / q_last) if q_last > 0 else 0.0
+        p_base = (s_base / q_base) if q_base > 0 else 0.0
+        d_spend = round(s_last - s_base, 2)
+        var_pct = round((s_last - s_base) / s_base * 100, 1) if s_base > 0 else None
+        # descomposición del cambio de gasto en efecto PRECIO vs efecto CANTIDAD
+        ef_precio = round((p_last - p_base) * q_base, 2)
+        ef_cant = round((q_last - q_base) * p_base, 2)
+        var_q_pct = round((q_last - q_base) / q_base * 100, 1) if q_base > 0 else None
+        var_p_pct = round((p_last - p_base) / p_base * 100, 1) if p_base > 0 else None
+        flag = bool(var_pct is not None and abs(var_pct) >= umbral)
+        # razón probable: qué domina la subida
+        razon = ''
+        _pp = []
+        if var_q_pct is not None and abs(var_q_pct) >= 5:
+            _pp.append('cantidad ' + ('+' if var_q_pct >= 0 else '') + str(var_q_pct) + '%')
+        if var_p_pct is not None and abs(var_p_pct) >= 5:
+            _pp.append('precio ' + ('+' if var_p_pct >= 0 else '') + str(var_p_pct) + '%')
+        razon = ' · '.join(_pp) if _pp else 'variación menor'
+        # compra atípica: un solo mes con compra (sin recurrencia) → puntual
+        _meses_con_compra = sum(1 for v in serie_q if v > 0)
+        atipico = bool(_meses_con_compra <= 1)
+        out.append({'item': ikey, 'nombre': it['nombre'], 'codigo': it['cod'], 'grupo': it['grupo'],
+                    'serie_cantidad': serie_q, 'serie_gasto': serie_s,
+                    'cant_ult': round(q_last, 2), 'cant_prom': round(q_base, 2),
+                    'precio_ult': round(p_last, 4), 'precio_prom': round(p_base, 4),
+                    'gasto_ult': round(s_last, 2), 'gasto_prom': round(s_base, 2),
+                    'delta_gasto': d_spend, 'variacion_pct': var_pct,
+                    'var_cantidad_pct': var_q_pct, 'var_precio_pct': var_p_pct,
+                    'efecto_precio': ef_precio, 'efecto_cantidad': ef_cant,
+                    'alerta': flag, 'atipico': atipico, 'razon': razon})
+    # marcadas primero, por magnitud de |delta gasto|
+    out.sort(key=lambda x: (0 if x['alerta'] else 1, -abs(x['delta_gasto'] or 0)))
+    alertas = [x for x in out if x['alerta']]
+    return jsonify({'ok': True, 'meses': meses, 'grupo': grupo, 'umbral': umbral,
+                    'items': out[:200], 'n_alertas': len(alertas),
+                    'delta_total_alertas': round(sum(x['delta_gasto'] or 0 for x in alertas), 2)})
+
+
 @bp.route('/api/compras/consumibles', methods=['GET', 'POST'])
 def consumibles_catalogo():
     """Catálogo (maestro) de consumibles · GET lista activos (?q búsqueda) · POST crea uno nuevo
@@ -8632,6 +8744,105 @@ def compras_consumos_page():
     return _CONSUMOS_HTML
 
 
+@bp.route('/compras/discrepancias', methods=['GET'])
+def compras_discrepancias_page():
+    """Página · Discrepancias de compra (por ítem · precio vs cantidad · MP/MEE/consumos)."""
+    if 'compras_user' not in session:
+        return redirect('/login?next=/compras/discrepancias')
+    return _DISCREPANCIAS_HTML
+
+
+_DISCREPANCIAS_HTML = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Discrepancias de compra</title>
+<style>
+:root{--vio:#6d28d9;--viod:#4c1d95;--ink:#1e1b2e;--mut:#78716c;--line:#e5e7eb;--card:#fff;--bg:#f5f3ff;--ok:#16a34a;--warn:#c2410c;--dang:#dc2626}
+*{box-sizing:border-box;margin:0}body{font-family:Inter,system-ui,Arial,sans-serif;background:#faf9ff;color:var(--ink);padding:0 0 60px}
+.top{background:linear-gradient(90deg,var(--viod),var(--vio));color:#fff;padding:16px 26px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+.top h1{font-size:18px;font-weight:800;display:flex;align-items:center;gap:9px}.top a{color:#e9d5ff;text-decoration:none;font-size:13px;font-weight:600}
+.wrap{max-width:1120px;margin:0 auto;padding:20px 26px}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
+.chip{padding:8px 16px;border:1px solid var(--line);border-radius:999px;background:#fff;cursor:pointer;font-weight:700;font-size:13px;color:var(--mut)}
+.chip.on{background:linear-gradient(135deg,#a78bfa,var(--vio));color:#fff;border-color:transparent}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:18px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.kpi .v{font-size:26px;font-weight:800;line-height:1}.kpi .k{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--mut);margin-top:6px;font-weight:600}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:15px 18px;margin-bottom:11px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.card.alert{border-left:4px solid var(--dang)}
+.crow{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap}
+.cname{font-weight:800;font-size:15px}.cbadge{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;padding:2px 8px;border-radius:6px;margin-left:8px;vertical-align:middle}
+.bmp{background:#eff6ff;color:#1e40af}.bmee{background:#f0fdfa;color:#0f766e}.bconsumo{background:#fef3c7;color:#92400e}.botro{background:#f3f4f6;color:#4b5563}
+.cvar{font-size:22px;font-weight:800;text-align:right}.up{color:var(--dang)}.down{color:var(--ok)}
+.csub{font-size:12px;color:var(--mut);margin-top:3px}
+.razon{margin-top:10px;font-size:13px;font-weight:700}
+.decomp{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap}
+.deff{flex:1;min-width:170px;background:#faf9ff;border:1px solid var(--line);border-radius:10px;padding:9px 12px}
+.deff .lb{font-size:10px;text-transform:uppercase;letter-spacing:.3px;color:var(--mut);font-weight:700}
+.deff .vv{font-size:15px;font-weight:800;margin-top:2px}
+.bar{height:7px;border-radius:4px;background:#eee;margin-top:6px;overflow:hidden}.bar>span{display:block;height:100%}
+.spark{display:flex;align-items:flex-end;gap:3px;height:34px;margin-top:8px}
+.spark i{flex:1;background:#ddd6fe;border-radius:2px;min-height:2px}.spark i.last{background:var(--vio)}
+.mut{color:var(--mut)}.empty{padding:40px;text-align:center;color:var(--mut)}
+.atip{font-size:9px;font-weight:800;color:#92400e;background:#fef3c7;padding:2px 7px;border-radius:6px;margin-left:6px}
+</style></head><body>
+<div class="top"><h1>&#128202; Discrepancias de compra</h1><a href="/compras">&larr; Compras</a></div>
+<div class="wrap">
+  <div style="font-size:13px;color:var(--mut);margin-bottom:14px;line-height:1.5">Por cada artículo (materia prima, envases y consumibles) comparamos el <b>último mes</b> vs el <b>promedio previo</b>, y separamos la variación del gasto en <b>efecto precio</b> vs <b>efecto cantidad</b> &mdash; para saber la razón: &iquest;subió porque compramos más o porque el precio subió?</div>
+  <div class="filters">
+    <span class="mut" style="font-size:12px;font-weight:700">Grupo:</span>
+    <span class="chip on" data-g="todos" onclick="setG(this)">Todos</span>
+    <span class="chip" data-g="mp" onclick="setG(this)">Materia prima</span>
+    <span class="chip" data-g="mee" onclick="setG(this)">Envases</span>
+    <span class="chip" data-g="consumo" onclick="setG(this)">Consumibles</span>
+    <span class="mut" style="font-size:12px;margin-left:12px">Umbral alerta:
+      <select id="umbral" onchange="cargar()" style="padding:5px 8px;border-radius:8px;border:1px solid var(--line)">
+        <option value="15">15%</option><option value="25" selected>25%</option><option value="40">40%</option></select></span>
+  </div>
+  <div class="kpis" id="kpis"></div>
+  <div id="lista"><div class="empty">Cargando&hellip;</div></div>
+</div>
+<script>
+var GRUPO='todos';
+function esc(s){return (''+(s==null?'':s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function fmt(n){n=Number(n||0);return (n<0?'-':'')+'$'+Math.abs(Math.round(n)).toLocaleString('es-CO');}
+function setG(el){document.querySelectorAll('.chip').forEach(function(x){x.classList.remove('on');});el.classList.add('on');GRUPO=el.getAttribute('data-g');cargar();}
+function spark(serie){var mx=Math.max.apply(null,serie.concat([1]));var h='<div class="spark">';for(var i=0;i<serie.length;i++){var pc=Math.round((serie[i]/mx)*100);h+='<i class="'+(i===serie.length-1?'last':'')+'" style="height:'+Math.max(pc,4)+'%" title="'+serie[i]+'"></i>';}return h+'</div>';}
+function decompBar(ef, other, col){var tot=Math.abs(ef)+Math.abs(other)||1;var pc=Math.round(Math.abs(ef)/tot*100);return '<div class="bar"><span style="width:'+pc+'%;background:'+col+'"></span></div>';}
+async function cargar(){
+  var box=document.getElementById('lista'); box.innerHTML='<div class="empty">Cargando&hellip;</div>';
+  var um=document.getElementById('umbral').value;
+  try{
+    var d=await (await fetch('/api/compras/discrepancias?grupo='+GRUPO+'&umbral='+um+'&meses=6',{cache:'no-store'})).json();
+    if(!d.ok){ box.innerHTML='<div class="empty">Error: '+esc(d.error||'')+'</div>'; return; }
+    var its=d.items||[];
+    document.getElementById('kpis').innerHTML=
+      '<div class="kpi"><div class="v" style="color:var(--dang)">'+(d.n_alertas||0)+'</div><div class="k">Artículos con discrepancia</div></div>'
+     +'<div class="kpi"><div class="v">'+fmt(d.delta_total_alertas)+'</div><div class="k">Impacto en gasto (mes vs promedio)</div></div>'
+     +'<div class="kpi"><div class="v">'+its.length+'</div><div class="k">Artículos analizados</div></div>';
+    if(!its.length){ box.innerHTML='<div class="empty">Sin datos suficientes para analizar (se necesitan al menos 2 meses de compra por artículo).</div>'; return; }
+    var h='';
+    its.forEach(function(o){
+      var up=(o.variacion_pct||0)>=0;
+      var bcls={mp:'bmp',mee:'bmee',consumo:'bconsumo',otro:'botro'}[o.grupo]||'botro';
+      var gname={mp:'MP',mee:'Envase',consumo:'Consumible',otro:'Otro'}[o.grupo]||'';
+      h+='<div class="card'+(o.alerta?' alert':'')+'">'
+       +'<div class="crow"><div><div class="cname">'+esc(o.nombre)+'<span class="cbadge '+bcls+'">'+gname+'</span>'+(o.atipico?'<span class="atip">compra puntual</span>':'')+'</div>'
+       +'<div class="csub">Último mes: <b>'+Math.round(o.cant_ult).toLocaleString('es-CO')+'</b> uds &middot; '+fmt(o.gasto_ult)+' &nbsp;|&nbsp; promedio previo: '+Math.round(o.cant_prom).toLocaleString('es-CO')+' uds &middot; '+fmt(o.gasto_prom)+'</div>'
+       +spark(o.serie_cantidad)+'</div>'
+       +'<div style="text-align:right"><div class="cvar '+(up?'up':'down')+'">'+(up?'+':'')+(o.variacion_pct==null?'-':o.variacion_pct)+'%</div><div class="csub">'+fmt(o.delta_gasto)+' vs prom.</div></div></div>'
+       +'<div class="razon">'+(o.alerta?'&#128161; Razón: ':'')+esc(o.razon)+'</div>'
+       +'<div class="decomp">'
+       +'<div class="deff"><div class="lb">Efecto cantidad</div><div class="vv" style="color:'+((o.efecto_cantidad||0)>=0?'var(--warn)':'var(--ok)')+'">'+fmt(o.efecto_cantidad)+'</div>'+decompBar(o.efecto_cantidad,o.efecto_precio,'#f59e0b')+'<div class="csub">'+(o.var_cantidad_pct==null?'-':((o.var_cantidad_pct>=0?'+':'')+o.var_cantidad_pct+'% en unidades'))+'</div></div>'
+       +'<div class="deff"><div class="lb">Efecto precio</div><div class="vv" style="color:'+((o.efecto_precio||0)>=0?'var(--dang)':'var(--ok)')+'">'+fmt(o.efecto_precio)+'</div>'+decompBar(o.efecto_precio,o.efecto_cantidad,'#dc2626')+'<div class="csub">'+(o.var_precio_pct==null?'-':((o.var_precio_pct>=0?'+':'')+o.var_precio_pct+'% en precio unit.'))+'</div></div>'
+       +'</div></div>';
+    });
+    box.innerHTML=h;
+  }catch(e){ box.innerHTML='<div class="empty">Error: '+esc(e.message)+'</div>'; }
+}
+cargar();
+</script></body></html>"""
+
+
 _CONSUMOS_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Consumos / Gastos Generales</title>
@@ -8660,7 +8871,7 @@ _CONSUMOS_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
  .tab{padding:8px 16px;border-radius:9px 9px 0 0;background:#ede9fe;color:#6d28d9;cursor:pointer;font-weight:700;font-size:14px}
  .tab.active{background:#7c3aed;color:#fff}
 </style></head><body><div class="wrap">
-<a href="/compras">&larr; Compras</a>
+<a href="/compras">&larr; Compras</a> &nbsp;&middot;&nbsp; <a href="/compras/discrepancias" style="color:#6d28d9;font-weight:700">&#128202; Discrepancias (precio vs cantidad)</a>
 <h1>&#128230; Consumos / Gastos Generales</h1>
 <div class="muted">Todo lo que la empresa consume (EPP, papelería, aseo, dotación, mantenimiento…) · NO es materia prima. Creá el consumible una vez y reusalo en cada solicitud. El sistema traza el gasto y te avisa cuando algo <b>sube</b>.</div>
 
