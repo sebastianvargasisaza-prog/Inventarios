@@ -21621,7 +21621,7 @@ async function abrirLoteModal(id, producto, fecha, kg){
   var _lfOtro = (PLAN_DATA.agendadas || []).find(function(a){ return a.id === id; });
   var _kgOtroActual = (_lfOtro && _lfOtro.kg_otro_cliente) ? _lfOtro.kg_otro_cliente : 0;
   var _otrosHtml = '';
-  _otrosHtml += '<div style="margin-top:12px;background:linear-gradient(180deg,#fffdf5,#fffbeb);border:1px solid #fde68a;border-radius:10px;padding:12px 14px">';
+  _otrosHtml += '<div style="margin-top:12px;padding-top:12px;border-top:1px dashed #e9d5ff">';
   _otrosHtml += '<div style="font-size:12px;font-weight:800;color:#92400e;margin-bottom:8px">🤝 Otros clientes <span style="font-weight:600;color:#b45309;font-size:11px">· pedidos B2B (portal / Programar) que suman a este lote</span></div>';
   _otrosHtml += '<div id="otros-b2b-' + id + '" style="font-size:12px;color:#92400e">cargando&#8230;</div>';
   _otrosHtml += '<div style="margin-top:9px">';
@@ -21794,7 +21794,7 @@ async function cargarDesgloseEditableLote(producto, kgActual, mlProm, mesesGuard
         + '</tr>';
     }).join('');
     var tendTxt = ((d.tendencia||0) > 0.02) ? (' · 📈 +'+Math.round(d.tendencia*100)+'% en ascenso') : '';
-    host.innerHTML = '<div style="background:#f5f3ff;border:1px solid #c4b5fd;border-radius:8px;padding:10px 12px;margin:4px 0 12px">'
+    host.innerHTML = '<div style="padding:12px 0 0;margin:4px 0 0;border-top:1px dashed #e9d5ff">'
       + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:6px">'
       + '<span style="font-size:12px;font-weight:700;color:#5b21b6">📊 Desglose por referencia'+tendTxt+'</span>'
       + '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
