@@ -26625,7 +26625,7 @@ async function ckMarcar(itemId, estado){
       var _intM = Math.max(Math.round(_mesesM * 30.44), 15);
       var _kgM = (_velDiaM > 0) ? (Math.round(_velDiaM * (_intM + 20) * 10) / 10) : (_ceM ? _ceM.kg.toFixed(1) : _partKg);
       html += '<div style="background:linear-gradient(135deg,#f5f3ff,#faf5ff);border:1px solid #ddd6fe;border-radius:10px;padding:14px;margin:14px 0">';
-      html += '<div style="font-size:13px;font-weight:800;color:#5b21b6;margin-bottom:8px">📅 Programar producción · canónico manual</div>';
+      html += '<div style="font-size:14px;font-weight:800;color:#5b21b6;margin-bottom:8px">🏭 Producción</div>';
       if (_ceM) {
         html += '<div style="background:#dcfce7;border:1px solid #86efac;border-radius:6px;padding:7px 10px;margin-bottom:10px;font-size:11px;color:#166534;line-height:1.5">✅ <b>Ya tenés cadena:</b> ' + _ceM.n + ' lotes de <b>' + _ceM.kg.toFixed(1) + ' kg</b> cada <b>' + _ceM.meses + ' mes' + (_ceM.meses === 1 ? '' : 'es') + '</b>. Reprogramá abajo para cambiarla.</div>';
       }

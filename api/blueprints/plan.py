@@ -21650,16 +21650,10 @@ async function abrirLoteModal(id, producto, fecha, kg){
   // muestra el % por cliente y además es editable (uds a envasar + envase + observaciones). Una sola
   // sección para el desglose por cliente. (El "Desglose por referencia" por SKU sigue, es distinto.)
 
-  // Sección 2: Diagnóstico fecha programada
-  if (diagFechaTxt){
-    const cls = (diagFecha === 'ok' || diagFecha === 'serie') ? 'ok' : (diagFecha === 'tarde' ? 'danger' : 'info');
-    html += '<div class="banner-inline ' + cls + '"><strong>Fecha programada: ' + fecha + '</strong><br>' + diagFechaTxt + '</div>';
-  }
-
-  // Sección 3: Próxima producción sugerida
-  if (proximaTxt){
-    html += '<div class="banner-inline ok">🔁 ' + proximaTxt + '</div>';
-  }
+  // Sebastián 20-jul · QUITADOS los banners "Fecha programada" (diagFechaTxt) y "Lote programado ·
+  // cubre Animus · próxima sugerida" (proximaTxt): eran REDUNDANTES con la sección 🏭 Producción, que
+  // ya muestra los kilos + cuánto alcanzan + próxima. El banner interactivo "la próxima YA está
+  // programada" (accionable · adelantar/abrir) SÍ se conserva.
 
   // Sebastián 30-may-2026 · "¿la próxima ya está programada?" · cruza la fecha
   // sugerida contra las producciones YA agendadas de ESTE producto y deja
@@ -22069,9 +22063,9 @@ function _prodKgAlcance(){
   var vel = window._loteVelKgDia || 0;   // kg/día Animus
   if(!(kg > 0) || !(vel > 0.0001)){ el.innerHTML = '<span style="color:#94a3b8">Poné los kilos para ver cuánto alcanzan.</span>'; return; }
   var dias = Math.round(kg / vel);
-  var prox = '';
-  try{ var d = new Date(); d.setDate(d.getDate() + Math.max(dias - 20, 0)); prox = fechaLocalStr(d); }catch(e){}
-  el.innerHTML = '🎯 Estos <b>' + kg.toFixed(0) + ' kg</b> alcanzan <b>~' + dias + ' días</b> al ritmo actual (' + vel.toFixed(2) + ' kg/día) · fabricá <b>20 días antes</b> de agotar → próxima producción ~<b>' + prox + '</b>.';
+  // Solo la DURACIÓN (la fecha/cadencia/próxima la maneja el Desglose de abajo, anclado a la
+  // producción base · no repetir la fecha acá para no dar dos números distintos · Sebastián 20-jul).
+  el.innerHTML = '🎯 Estos <b>' + kg.toFixed(0) + ' kg</b> alcanzan <b>~' + dias + ' días</b> al ritmo actual (' + vel.toFixed(2) + ' kg/día) · fabricá <b>20 días antes</b> de agotar (ver la cadencia abajo).';
 }
 function _updateCadenciaPreview(){
   var el = document.getElementById('cadencia-preview');
