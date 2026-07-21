@@ -21741,6 +21741,9 @@ async function abrirLoteModal(id, producto, fecha, kg){
   html += '<div id="lote-desglose-edit"></div>';
   html += '</div>';   // cierra el contenedor 🏭 Producción (englobar todo · Sebastián 20-jul)
 
+  // 📋 LOTES YA AGENDADOS del producto · con SALUD (colchón) · Sebastián 20-jul (paridad Necesidades img 130)
+  html += _renderLotesAgendadosCal(producto, info, ml);
+
   // Sección 4: Acciones
   html += _renderAccionesLote(id, producto, fecha);
   document.getElementById('lote-body').innerHTML = html;
@@ -21752,6 +21755,55 @@ async function abrirLoteModal(id, producto, fecha, kg){
   try{ _calCargarOtrosClientes(id); }catch(e){}
 }
 
+// SALUD de la cadena (colchón) para el calendario · Sebastián 20-jul (misma lógica que Necesidades img 130).
+// colchón = días de margen antes de agotarse el stock cuando el lote entra a góndola (~7d tras producir).
+function _saludCadenaCal(lotes, velUds, stockUds, ml){
+  var out = {};
+  if(!(velUds > 0.001)) return out;
+  var PIPE = 7, hoy = new Date(new Date().toISOString().slice(0,10) + 'T12:00:00');
+  function addD(d,n){ var x=new Date(d.getTime()); x.setDate(x.getDate()+Math.round(n)); return x; }
+  function diffD(a,b){ return Math.round((a.getTime()-b.getTime())/86400000); }
+  var coverUntil = addD(hoy, (stockUds||0)/velUds);
+  var arr = (lotes||[]).filter(function(l){ var e=(''+(l.estado||'')).toLowerCase(); return e!=='cancelado'&&e!=='completado'&&l.fecha_programada; })
+    .map(function(l){ return {id:l.id, fecha:(''+l.fecha_programada).slice(0,10), kg:(l.kg||0)}; })
+    .sort(function(a,b){ return a.fecha<b.fecha?-1:1; });
+  arr.forEach(function(l){
+    var fd=new Date(l.fecha+'T12:00:00'), arrival=addD(fd,PIPE), coverBefore=coverUntil;
+    if(diffD(fd,hoy)>=-1){ out[l.id]={colchon:diffD(coverBefore,arrival), coverBefore:coverBefore}; }
+    var base=(coverBefore>arrival)?coverBefore:arrival;
+    coverUntil=addD(base, (l.kg*1000/(ml||30))/velUds);
+  });
+  return out;
+}
+// Lista de LOTES YA AGENDADOS del producto con badge de salud + botón abrir (reusa abrirLoteModal).
+function _renderLotesAgendadosCal(producto, info, ml){
+  var lotes = (PLAN_DATA.agendadas||[]).filter(function(a){ return (a.producto||'')===producto; });
+  if(!lotes.length) return '';
+  var velUds = (info && info.velocidad_uds_dia) || 0;
+  var stockUds = (info && info.stock_uds_total) || 0;
+  var salud = _saludCadenaCal(lotes, velUds, stockUds, ml);
+  var arr = lotes.slice().sort(function(a,b){ return (''+(a.fecha_programada||'')).localeCompare(''+(b.fecha_programada||'')); });
+  var MES=['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
+  var h = '<div style="font-size:13px;font-weight:800;color:#6d28d9;margin:18px 0 8px;padding-bottom:4px;border-bottom:2px solid #6d28d9">📋 Lotes ya agendados &middot; '+arr.length+'</div>';
+  h += '<div style="display:flex;flex-direction:column;gap:8px">';
+  arr.forEach(function(lt){
+    var f=(''+(lt.fecha_programada||'')).slice(0,10), dd=f.slice(8,10), mm=parseInt(f.slice(5,7),10), yy=f.slice(2,4);
+    var mesAbr=(mm>=1&&mm<=12)?MES[mm-1]:'';
+    var est=(lt.estado||'');
+    var sd=salud[lt.id], saludBadge='';
+    if(sd){ var cc=sd.colchon, sc, sl;
+      if(cc>=20){sc='#16a34a';sl='🟢 colchón '+cc+'d';} else if(cc>=0){sc='#d97706';sl='🟡 justo · '+cc+'d';} else {sc='#dc2626';sl='🔴 tarde · '+(-cc)+'d';}
+      saludBadge='<span style="background:'+sc+'1a;color:'+sc+';padding:2px 9px;border-radius:10px;font-size:10px;font-weight:800;border:1px solid '+sc+'40">'+sl+'</span>';
+    }
+    h += '<div style="display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #e2e8f0;border-left:4px solid #7c3aed;border-radius:8px;padding:8px 12px">'
+      + '<div style="text-align:center;min-width:44px;line-height:1.1"><div style="font-size:17px;font-weight:800;color:#1e293b">'+dd+'</div><div style="font-size:10px;color:#94a3b8">'+mesAbr+' '+yy+'</div></div>'
+      + '<div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:13px;font-weight:700;color:#334155">'+(lt.kg||0)+' kg</span>'+(est?('<span style="font-size:10px;color:#94a3b8">'+est+'</span>'):'')+saludBadge+'</div></div>'
+      + '<button onclick="abrirLoteModal('+lt.id+',&quot;'+escapeHtml(producto)+'&quot;,&quot;'+f+'&quot;,'+(lt.kg||0)+')" style="background:#6d28d9;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer">abrir</button>'
+      + '</div>';
+  });
+  h += '</div>';
+  return h;
+}
 // 🎨 color estable por tono (mismo hash que Necesidades · Sebastián 17-jul · swatch multitono igual)
 function _tonoColorCal(lbl){
   var s = String(lbl || ''), h = 0, i;
