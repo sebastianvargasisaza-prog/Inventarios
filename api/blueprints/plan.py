@@ -21636,7 +21636,7 @@ async function abrirLoteModal(id, producto, fecha, kg){
   html += '<button onclick="_toggleAddCliente(' + id + ')" style="padding:6px 12px;font-size:11px;background:#16a34a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:800">&#10133; Agregar otro cliente</button>';
   html += '<div id="add-cli-' + id + '" style="display:none;margin-top:8px;background:#fff;border:1px solid #86efac;border-radius:8px;padding:10px 11px">';
   html += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
-  html += '<input id="addcli-nombre-' + id + '" placeholder="Cliente" style="flex:1;min-width:120px;padding:5px 7px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px">';
+  html += '<input id="addcli-nombre-' + id + '" list="addcli-clientes-dl" placeholder="Cliente (elegí o escribí uno nuevo)" autocomplete="off" style="flex:1;min-width:150px;padding:5px 7px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px"><datalist id="addcli-clientes-dl"></datalist>';
   html += '<select id="addcli-env-' + id + '" style="min-width:170px;padding:5px 7px;border:1px solid #cbd5e1;border-radius:5px;font-size:11px;background:#fff">' + _opcionesEnvaseInline('') + '</select>';
   html += '<input id="addcli-kg-' + id + '" type="number" min="0.1" step="0.1" placeholder="kg" style="width:70px;padding:5px 7px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;text-align:center"> <span style="font-size:11px;color:#166534;font-weight:700">kg</span>';
   html += '<button onclick="_guardarOtroCliente(' + id + ')" style="padding:5px 12px;font-size:11px;background:#16a34a;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:800">&#128190; Sumar</button>';
@@ -22015,7 +22015,18 @@ async function _calCargarOtrosClientes(id){
 }
 function _toggleAddCliente(id){
   var e = document.getElementById('add-cli-' + id);
-  if(e){ e.style.display = (e.style.display === 'none' ? 'block' : 'none'); }
+  if(e){ e.style.display = (e.style.display === 'none' ? 'block' : 'none'); if(e.style.display === 'block'){ _cargarClientesDL(); } }
+}
+// Sebastián 20-jul · llena el desplegable de clientes (datalist) una sola vez · elegís uno o escribís nuevo.
+async function _cargarClientesDL(){
+  try{
+    var dl = document.getElementById('addcli-clientes-dl');
+    if(!dl || dl.getAttribute('data-loaded') === '1') return;
+    var d = await (await fetch('/api/clientes', {credentials:'same-origin'})).json();
+    var cs = (d && d.clientes) || [];
+    dl.innerHTML = cs.map(function(c){ return '<option value="' + escapeHtml(c.nombre || '') + '">' + escapeHtml((c.empresa || '') + (c.ciudad ? (' · ' + c.ciudad) : '')) + '</option>'; }).join('');
+    dl.setAttribute('data-loaded', '1');
+  }catch(e){}
 }
 // ➕ Agregar otro cliente A MANO: SUMA kg al lote (produce más) · crea aporte tipo-B2B en ESTE lote.
 async function _guardarOtroCliente(id){
