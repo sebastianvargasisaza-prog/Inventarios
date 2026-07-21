@@ -25658,6 +25658,32 @@ async function ckMarcar(itemId, estado){
     } catch(e) { alert('Error: ' + e.message); }
   }
 
+  // Sebastián 20-jul · ⏩ Adelantar: mueve el lote a la fecha que recupera el colchón de 20 días
+  // (una sola confirmación · reusa el endpoint reprogramar de moverPEC).
+  async function adelantarPEC(id, producto, fechaSug) {
+    if (!confirm('⏩ Adelantar ' + producto + ' a ' + fechaSug + ' para recuperar el colchón de 20 días. ¿Continuar?')) return;
+    try {
+      let r = await fetch('/api/plan/proximas/' + id + '/reprogramar', {
+        method: 'POST', headers: {'Content-Type':'application/json', 'X-CSRF-Token': csrfTokenNec()},
+        body: JSON.stringify({nueva_fecha: fechaSug, razon: 'adelantar_colchon'}),
+      });
+      let d = await r.json();
+      if (r.status === 422) {
+        if (confirm('⚠ ' + (d.error || 'Validación de día') + ' · ¿Forzar adelanto igual?')) {
+          r = await fetch('/api/plan/proximas/' + id + '/reprogramar', {
+            method: 'POST', headers: {'Content-Type':'application/json', 'X-CSRF-Token': csrfTokenNec()},
+            body: JSON.stringify({nueva_fecha: fechaSug, razon: 'adelantar_colchon', skip_validacion_dia: true}),
+          });
+          d = await r.json();
+        } else { return; }
+      }
+      if (!r.ok) { alert('Error: ' + (d.error || r.status)); return; }
+      if (d.noop) { alert('Ya estaba en esa fecha · sin cambios'); return; }
+      alert('✓ Adelantado: ' + d.fecha_antes + ' → ' + d.fecha_nueva);
+      cargarPlanEnCurso();
+    } catch(e) { alert('Error: ' + e.message); }
+  }
+
   async function pausarPEC(id, producto) {
     const motivo = prompt('⏸ Pausar producción\\n\\n' + producto +
                             '\\n\\nMotivo (falta_mp, operario_ausente, equipo_mantenimiento, espera_QC, etc):',
@@ -26085,13 +26111,48 @@ async function ckMarcar(itemId, estado){
   // Rediseño 15-jun · lista vertical tipo timeline (antes chips apretados) ·
   // cada lote = una fila clara: fecha grande · estado · kg · origen · B2B · acciones.
   const _MESES_ABR = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
-  function renderLotesInline(lotes, producto) {
+  // Sebastián 20-jul · SALUD de la cadena: simula el stock hacia adelante y calcula, por cada lote, el
+  // "colchón" = días de margen antes de que se agote el stock cuando ese lote entra a góndola (~7d tras
+  // producir). Ideal ≥20d (BUFFER_REORDEN). <20 = estrecho (ámbar), <0 = llega tarde (rojo · stockout).
+  // Devuelve {id: {colchon, coverBefore(Date)}}. Misma lógica que el motor de cadencia (producir 20d antes).
+  function _saludCadena(lotes, p){
+    var out = {};
+    if(!p) return out;
+    var vel = p.velocidad_uds_dia || 0;
+    if(!(vel > 0.001)) return out;
+    var ml = p.ml_unidad || 30;
+    var PIPE = 7, hoy = new Date(new Date().toISOString().slice(0,10) + 'T12:00:00');
+    var stockUds = p.stock_uds_total || 0;
+    function addD(d, n){ var x = new Date(d.getTime()); x.setDate(x.getDate() + Math.round(n)); return x; }
+    function diffD(a, b){ return Math.round((a.getTime() - b.getTime()) / 86400000); }
+    var coverUntil = addD(hoy, stockUds / vel);   // fecha en que se agota lo que HAY hoy
+    var arr = (lotes || []).filter(function(l){
+      var e = l.estado || ''; return (e !== 'cancelado' && e !== 'completado' && !!l.fecha);
+    }).map(function(l){ return {id: l.id, fecha: ('' + l.fecha).slice(0,10), kg: (l.kg || 0)}; })
+      .sort(function(a,b){ return a.fecha < b.fecha ? -1 : 1; });
+    arr.forEach(function(l){
+      var fd = new Date(l.fecha + 'T12:00:00');
+      var arrival = addD(fd, PIPE);              // entra a góndola ~7d tras producir
+      var coverBefore = coverUntil;
+      if(diffD(fd, hoy) >= -1){                  // solo lotes de hoy en adelante tienen salud predictiva
+        out[l.id] = {colchon: diffD(coverBefore, arrival), coverBefore: coverBefore};
+      }
+      var base = (coverBefore > arrival) ? coverBefore : arrival;
+      coverUntil = addD(base, (l.kg * 1000 / ml) / vel);   // este lote extiende la cobertura
+    });
+    return out;
+  }
+  function _fechaAdelanto(coverBefore){   // fecha para dejar 20d de colchón: llegada = cobertura−20, fecha = −7 pipeline
+    try{ var x = new Date(coverBefore.getTime()); x.setDate(x.getDate() - 27); return x.toISOString().slice(0,10); }catch(e){ return ''; }
+  }
+  function renderLotesInline(lotes, producto, p) {
     if (!lotes || !lotes.length) return '';
     const ORIGEN_LABEL = {
       'eos_plan': '🆕 manual', 'eos_canonico': '🔁 auto', 'eos_retroactivo': '📜 histórico',
       'calendar': '📆 calendar', 'manual': '✋ manual', 'auto_plan': '🤖 auto', 'sugerido': '🔁 auto',
     };
     const prodEsc = escapeHtmlNec(producto);
+    const _salud = _saludCadena(lotes, p);
     const arr = lotes.slice().sort((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')));
     let html = '<div style="display:flex;flex-direction:column;gap:8px">';
     arr.forEach(lt => {
@@ -26100,7 +26161,25 @@ async function ckMarcar(itemId, estado){
       const f = String(lt.fecha || '');
       const dd = f.slice(8, 10), mm = parseInt(f.slice(5, 7), 10), yy = f.slice(0, 4);
       const mesAbr = (mm >= 1 && mm <= 12) ? _MESES_ABR[mm - 1] : '';
-      let acc = '';
+      // SALUD del lote (colchón) · Sebastián 20-jul
+      const _sd = _salud[lt.id];
+      let saludBadge = '';
+      let adelantarBtn = '';
+      if (_sd) {
+        const _cc = _sd.colchon;
+        let _sc, _sl;
+        if (_cc >= 20) { _sc = '#16a34a'; _sl = '🟢 colchón ' + _cc + 'd'; }
+        else if (_cc >= 0) { _sc = '#d97706'; _sl = '🟡 justo · ' + _cc + 'd'; }
+        else { _sc = '#dc2626'; _sl = '🔴 tarde · ' + (-_cc) + 'd sin stock'; }
+        saludBadge = '<span title="Colchón = días de margen antes de agotarse el stock cuando este lote entra a góndola. Ideal ≥20d." style="background:' + _sc + '1a;color:' + _sc + ';padding:2px 9px;border-radius:10px;font-size:10px;font-weight:800;border:1px solid ' + _sc + '40">' + _sl + '</span>';
+        if (_cc < 20 && (lt.estado === 'pendiente' || lt.estado === 'programado')) {
+          const _fSug = _fechaAdelanto(_sd.coverBefore);
+          if (_fSug && _fSug < f) {
+            adelantarBtn = '<button onclick="adelantarPEC(' + lt.id + ',&#39;' + prodEsc + '&#39;,&#39;' + _fSug + '&#39;)" title="Adelantar este lote a ' + _fSug + ' para recuperar el colchón de 20 días" style="background:#dc2626;color:#fff;border:none;padding:0 10px;height:28px;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer">⏩ Adelantar</button>';
+          }
+        }
+      }
+      let acc = adelantarBtn;
       if (lt.estado === 'pendiente' || lt.estado === 'programado') {
         // Sebastián 10-jul · usar ESTE lote como origen y recalcular TODO el horizonte (con la cadencia de arriba)
         acc += '<button onclick="recalcularHorizonteDesdeLote(' + lt.id + ',&#39;' + prodEsc + '&#39;)" title="Usar este lote como origen y recalcular todo el horizonte con la cadencia de arriba (cada X meses · kg · años)" style="background:#7c3aed;color:#fff;border:none;padding:0 9px;height:28px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">📌 recalcular</button>';
@@ -26120,6 +26199,7 @@ async function ckMarcar(itemId, estado){
       html += '<span style="background:' + cfg.bg + ';color:' + cfg.text + ';padding:2px 9px;border-radius:10px;font-size:10px;font-weight:700">' + cfg.emoji + ' ' + lt.estado + '</span>';
       html += '<span style="font-size:13px;font-weight:700;color:#334155">' + lt.kg + ' kg</span>';
       if (orig) html += '<span style="font-size:10px;color:#94a3b8">' + orig + '</span>';
+      if (saludBadge) html += saludBadge;
       html += '</div>';
       if (lt.tiene_b2b && lt.kg_b2b > 0) {
         const tt = (lt.aportes_b2b || []).map(a => a.cliente + ': ' + a.kg + 'kg (' + a.n_pedidos + ' pedido' + (a.n_pedidos === 1 ? '' : 's') + ')').join(' · ');
@@ -26584,7 +26664,7 @@ async function ckMarcar(itemId, estado){
     if ((p.planificacion || []).length > 0) {
       html += '<div style="font-size:11px;color:#6d28d9;font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:18px 0 6px;padding-bottom:4px;border-bottom:2px solid #6d28d9">③ Lotes ya agendados · ' + p.planificacion.length + '</div>';
       html += '<div style="background:#f8fafc;border-radius:8px;padding:10px">';
-      html += renderLotesInline(p.planificacion, p.producto_nombre);
+      html += renderLotesInline(p.planificacion, p.producto_nombre, p);
       html += '</div>';
     }
 

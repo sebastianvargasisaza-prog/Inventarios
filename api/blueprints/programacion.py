@@ -16003,9 +16003,9 @@ def _trail_envase(c, codigo_up, mee_row):
     un producto multi-presentación (15+30ml, tonos) reparte cada lote por VENTAS → el frasco 15ml solo recibe
     su porción, NO el lote completo. Share = ventas_mes_referencia (manual) → ventas Shopify 90d por SKU →
     uniforme. Antes contaba el kg entero en cada presentación (sobre-conteo · lo cazó Sebastián)."""
-    from datetime import date as _d, timedelta as _td
+    from datetime import date as _d, timedelta as _td, datetime as _dt, timezone as _tz
     import json as _json
-    hoy = _d.today()
+    hoy = (_dt.now(_tz.utc) - _td(hours=5)).date()   # M24 · ancla Colombia (no UTC · de noche corría +1 día)
     hoy_iso = hoy.isoformat()
     cutoff = (hoy + _td(days=365)).isoformat()
 

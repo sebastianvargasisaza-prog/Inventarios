@@ -22082,7 +22082,7 @@ async function programarCadenciaDesdeLote(){
     var t = (await (await fetch('/api/csrf-token', {credentials:'same-origin'})).json()).csrf_token;
     var r = await fetch('/api/plan/programar-cadencia-desde-lote/' + id, {method:'POST', credentials:'same-origin',
       headers:{'Content-Type':'application/json','X-CSRF-Token':t},
-      body: JSON.stringify({interval_dias: cc.intervalDias, first_offset_dias: cc.firstOffset, kg_por_lote: cc.kg, anios: _anios})});
+      body: JSON.stringify({interval_dias: cc.intervalDias, first_offset_dias: cc.firstOffset, kg_por_lote: cc.kg, kg_otro_cliente: cc.kgOtro, anios: _anios})});
     var d = await r.json();
     if(!r.ok){ alert('No se pudo: ' + ((d && d.error) || r.status)); return; }
     var _f1 = (d.fechas && d.fechas[0]) || '';
