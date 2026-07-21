@@ -303,7 +303,6 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
     <button class="tn"      data-tab="consol" id="tn-consol" title="OCs activas (Borrador/Revisada/Autorizada) agrupadas por proveedor">📦 OCs Activas <span style="font-size:9px;background:#cbd5e1;color:#475569;padding:1px 5px;border-radius:6px;margin-left:2px;font-weight:600">activas</span></button>
     <button class="tn"      data-tab="por-pagar" id="tn-por-pagar" title="Pendientes · OCs autorizadas sin pagar">💰 Por Pagar</button>
     <button class="tn"      data-tab="pagos" id="tn-pagos" title="Histórico · pagos ya ejecutados">💸 Pagos</button>
-    <button class="tn"      data-tab="historico" id="tn-historico" title="Histórico · TODO lo que se ha pedido (todas las OCs, cualquier estado · buscable)">📜 Histórico</button>
     <button class="tn" style="display:none"     data-tab="facprov" id="tn-facprov" title="Libro de facturas de proveedor · cuentas por pagar formales con retenciones, vencimiento y saldos">🧾 Facturas <span id="facprov-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <button class="tn"      data-tab="atrasadas" id="tn-atrasadas" title="OCs sin recibir tras lead_time + buffer · Sebastián 23-may">🚨 Atrasadas <span id="atrasadas-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <button class="tn" style="display:none" data-tab="feedneed" id="tn-feedneed" title="Necesidades de compra · materias primas y envases por debajo del mínimo, en un solo lugar">🔔 Necesidades <span id="feedneed-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
@@ -361,46 +360,6 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
   <div id="dash-chart-wrap"></div>
 </div>
 
-
-<div id="pane-historico" class="pane">
-  <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
-    <span style="font-weight:800;color:#1e293b;font-size:15px;">&#x1F4DC; Hist&oacute;rico de OCs</span>
-    <span style="font-size:11px;color:#94a3b8;">buscá cualquier OC y su estado &middot; el total de plata vive en <b>Tesorer&iacute;a</b></span>
-    <input type="text" id="q-historico" placeholder="Buscar OC, proveedor, categoría..." oninput="renderHistorico()" style="padding:7px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;min-width:220px">
-    <select id="f-historico-est" onchange="renderHistorico()" style="padding:7px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
-      <option value="">Todos los estados</option>
-      <option value="Borrador">Borrador</option><option value="Revisada">Revisada</option>
-      <option value="Autorizada">Autorizada</option><option value="Recibida">Recibida</option>
-      <option value="Parcial">Parcial</option><option value="Pagada">Pagada</option>
-    </select>
-    <button class="btn bp" onclick="loadData().then(renderHistorico)" style="padding:6px 12px;font-size:12px">&#x21BA; Actualizar</button>
-  </div>
-  <div id="historico-body"><div class="empty">Cargando&hellip;</div></div>
-</div>
-<script>
-function renderHistorico(){
-  var wrap=document.getElementById('historico-body'); if(!wrap) return;
-  var q=((document.getElementById('q-historico')||{}).value||'').toLowerCase().trim();
-  var est=((document.getElementById('f-historico-est')||{}).value||'');
-  var _f=function(n){return '$'+(Math.round(n||0)).toLocaleString('es-CO');};
-  var _e=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
-  var list=(typeof OCS!=='undefined'?OCS:[]).filter(function(o){
-    if(est && (o.estado||'')!==est) return false;
-    if(!q) return true;
-    return ((o.numero_oc||'')+' '+(o.proveedor||'')+' '+(o.categoria||'')+' '+(o.observaciones||'')).toLowerCase().indexOf(q)>=0;
-  });
-  list.sort(function(a,b){return String(b.fecha||'').localeCompare(String(a.fecha||''));});
-  // Buscador OPERATIVO de OCs (Sebastián 21-jul): sin total acumulado de plata · ese número
-  // vive en Tesorería (Archivo de OCs). Acá Catalina rastrea qué se pidió y en qué estado quedó.
-  var h='<div style="margin:4px 0 10px;color:#475569;font-size:13px"><b>'+list.length+'</b> '+(list.length===1?'orden':'órdenes')+'</div>';
-  if(!list.length){ wrap.innerHTML=h+'<div class="empty">No hay órdenes que coincidan.</div>'; return; }
-  h+='<table style="width:100%;border-collapse:collapse;font-size:13px"><tr style="text-align:left;color:#6d28d9"><th style="padding:6px 8px">N° OC</th><th style="padding:6px 8px">Fecha</th><th style="padding:6px 8px">Proveedor</th><th style="padding:6px 8px">Categoría</th><th style="padding:6px 8px">Estado</th><th style="padding:6px 8px;text-align:right">Valor</th></tr>';
-  list.forEach(function(o){
-    h+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 8px;font-weight:700">'+_e(o.numero_oc)+'</td><td style="padding:6px 8px">'+_e(String(o.fecha||'').slice(0,10))+'</td><td style="padding:6px 8px">'+_e(o.proveedor)+'</td><td style="padding:6px 8px">'+_e(o.categoria||'-')+'</td><td style="padding:6px 8px">'+_e(o.estado)+'</td><td style="padding:6px 8px;text-align:right">'+_f(parseFloat(o.valor_total)||0)+'</td></tr>';
-  });
-  wrap.innerHTML=h+'</table>';
-}
-</script>
 
 <div id="pane-pagos" class="pane">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
@@ -1749,7 +1708,7 @@ window._cxTabToGrp = {
   'influencer':'entradas',  // por compat · aunque oculto
   'artes':'entradas',
   // OCs y Pagos
-  'consol':'ocs', 'por-pagar':'ocs', 'pagos':'ocs', 'historico':'ocs', 'ordserv':'ocs',
+  'consol':'ocs', 'por-pagar':'ocs', 'pagos':'ocs', 'ordserv':'ocs',
   'atrasadas':'ocs', 'discrep':'ocs', 'mailbox':'ocs',
   'facprov':'ocs', 'cotiz':'ocs', 'prepenv':'ocs', 'feedneed':'ocs',
   // Maestros
@@ -1796,7 +1755,6 @@ document.querySelectorAll('.tn').forEach(function(btn){
     else if(tab==='artes'){ var _af=document.getElementById('artes-frame'); if(_af && !_af.getAttribute('src')) _af.setAttribute('src','/artes?embed=1'); }
     else if(tab==='consol') loadConsolidado();
     else if(tab==='pagos'){ loadPagos(); }
-    else if(tab==='historico'){ renderHistorico(); }
     else if(tab==='por-pagar'){ loadPorPagar(); }
     else if(tab==='atrasadas'){ cargarOcsAtrasadas(); }
     else if(tab==='discrep'){ cargarDiscrepancias(); }

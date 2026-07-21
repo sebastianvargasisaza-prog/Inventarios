@@ -8999,6 +8999,7 @@ _CONSUMOS_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
 <div class="tabs">
   <div class="tab active" id="tab-cat" onclick="verTab('cat')">&#128203; Catálogo + Solicitar</div>
   <div class="tab" id="tab-ten" onclick="verTab('ten')">&#128202; Tendencia de gasto</div>
+  <div class="tab" id="tab-his" onclick="verTab('his')">&#128220; Histórico de OCs</div>
 </div>
 
 <div id="pane-cat">
@@ -9028,6 +9029,20 @@ _CONSUMOS_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
   <div class="muted">Umbral de alerta: el último mes supera <b>30%</b> sobre el promedio de los meses previos. Gasto = OCs en estado Pagada (con IVA).</div>
 </div>
 
+<div id="pane-his" style="display:none">
+  <div class="card">
+    <div class="frow" style="align-items:end">
+      <div><label>Buscar</label><input id="h-buscar" placeholder="OC, proveedor, categoría…" oninput="renderHistoricoOCs()" style="width:230px"></div>
+      <div><label>Estado</label><select id="h-estado" onchange="renderHistoricoOCs()">
+        <option value="">Todos</option><option>Borrador</option><option>Revisada</option><option>Autorizada</option><option>Recibida</option><option>Parcial</option><option>Pagada</option>
+      </select></div>
+      <button class="b-add" onclick="cargarHistoricoOCs()">&#8635; Actualizar</button>
+    </div>
+    <div class="muted" style="margin-bottom:8px">Todo lo que se ha pedido (todas las OCs, cualquier estado) &middot; buscá cualquier orden y su estado. El total acumulado de plata vive en <b>Tesorería</b>.</div>
+    <div id="h-tabla">Cargando…</div>
+  </div>
+</div>
+
 <div id="modal" class="modal"><div class="box">
   <div style="font-size:15px;font-weight:800" id="m-tit"></div>
   <div class="muted" id="m-prov" style="margin:4px 0 10px"></div>
@@ -9045,11 +9060,12 @@ _CONSUMOS_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
  var _cat=[]; var _sel=null;
  async function csrf(){try{return (await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json()).csrf_token;}catch(e){return '';}}
  function verTab(t){
-   document.getElementById('pane-cat').style.display=(t==='cat')?'':'none';
-   document.getElementById('pane-ten').style.display=(t==='ten')?'':'none';
-   document.getElementById('tab-cat').classList.toggle('active',t==='cat');
-   document.getElementById('tab-ten').classList.toggle('active',t==='ten');
+   ['cat','ten','his'].forEach(function(x){
+     var p=document.getElementById('pane-'+x); if(p) p.style.display=(x===t)?'':'none';
+     var tb=document.getElementById('tab-'+x); if(tb) tb.classList.toggle('active',x===t);
+   });
    if(t==='ten') cargarTendencia();
+   if(t==='his') cargarHistoricoOCs();
  }
  (function(){var o='';CATS.forEach(function(c){o+='<option value="'+c+'">'+c+'</option>';});document.getElementById('c-cat').innerHTML=o;})();
  async function guardarConsumible(){
@@ -9110,6 +9126,36 @@ _CONSUMOS_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
    var t=await csrf();
    await fetch('/api/compras/consumibles/'+id,{method:'DELETE',credentials:'same-origin',headers:{'X-CSRF-Token':t}});
    cargarCatalogo();
+ }
+ // Histórico de OCs fusionado al Catálogo/Gastos (Sebastián 21-jul) · memoria de todo lo pedido
+ var _HOCS=[];
+ function _hChip(e){
+   var m={'Pagada':['#dcfce7','#15803d'],'Parcial':['#fef3c7','#92400e'],'Recibida':['#e0e7ff','#3730a3'],'Autorizada':['#dbeafe','#1e40af'],'Revisada':['#f3e8ff','#7c3aed'],'Borrador':['#f1f5f9','#475569']};
+   var c=m[e]||['#f1f5f9','#475569'];
+   return '<span style="font-size:10px;background:'+c[0]+';color:'+c[1]+';border-radius:10px;padding:2px 8px;font-weight:700">'+ESC(e||'-')+'</span>';
+ }
+ async function cargarHistoricoOCs(){
+   var cont=document.getElementById('h-tabla'); if(cont) cont.innerHTML='Cargando…';
+   try{ var r=await fetch('/api/ordenes-compra',{credentials:'same-origin'}); var j=await r.json(); _HOCS=(j&&j.ordenes)||[]; }catch(e){ _HOCS=[]; }
+   renderHistoricoOCs();
+ }
+ function renderHistoricoOCs(){
+   var cont=document.getElementById('h-tabla'); if(!cont) return;
+   var q=((document.getElementById('h-buscar')||{}).value||'').toLowerCase().trim();
+   var est=((document.getElementById('h-estado')||{}).value||'');
+   var list=_HOCS.filter(function(o){
+     if(est && (o.estado||'')!==est) return false;
+     if(!q) return true;
+     return ((o.numero_oc||'')+' '+(o.proveedor||'')+' '+(o.categoria||'')).toLowerCase().indexOf(q)>=0;
+   });
+   list.sort(function(a,b){return String(b.fecha||'').localeCompare(String(a.fecha||''));});
+   if(!list.length){ cont.innerHTML='<div class="muted">No hay órdenes que coincidan.</div>'; return; }
+   var h='<div class="muted" style="margin-bottom:6px"><b>'+list.length+'</b> '+(list.length===1?'orden':'órdenes')+'</div>';
+   h+='<table><tr><th>N° OC</th><th>Fecha</th><th>Proveedor</th><th>Categoría</th><th>Estado</th><th>Valor</th></tr>';
+   list.forEach(function(o){
+     h+='<tr><td><b>'+ESC(o.numero_oc)+'</b></td><td>'+ESC(String(o.fecha||'').slice(0,10))+'</td><td>'+ESC(o.proveedor||'-')+'</td><td>'+ESC(o.categoria||'-')+'</td><td>'+_hChip(o.estado)+'</td><td>'+FM(o.valor_total||0)+'</td></tr>';
+   });
+   cont.innerHTML=h+'</table>';
  }
  async function cargarTendencia(){
    var r=await fetch('/api/compras/consumos/tendencia?meses=8',{credentials:'same-origin'});
