@@ -21964,10 +21964,13 @@ async function _calCrearCadena(id, producto){
     window._cadenaBusyCal=false;
     if(!r.ok){ alert('No se pudo: '+((d&&d.error)||r.status)); return; }
     var _cr=d.creados||0, _esp=d.esperados||_cr;
-    alert('✓ Cadena creada · '+_cr+'/'+_esp+' lotes'+(d.origen_creado?(' (origen '+(d.origen_fecha||'')+')'):''));
+    if(typeof _toastCal==='function') _toastCal('✓ Cadena creada · '+_cr+'/'+_esp+' lotes'+(d.origen_creado?(' (origen '+(d.origen_fecha||'')+')'):''));
+    else alert('✓ Cadena creada · '+_cr+'/'+_esp+' lotes');
     if(d.aviso){ alert('⚠ '+d.aviso); }
-    if(typeof cerrarLoteModal==='function') cerrarLoteModal();
-    if(typeof cargar==='function'){ try{ await cargar(); }catch(e){} } else if(window.cargarNecesidades){ try{ await cargarNecesidades(); }catch(e){} }
+    // Sebastián 21-jul · NO cerrar el modal · quedarse acá para seguir con el próximo producto (navegá con ‹ ›).
+    if(typeof cargar==='function'){ try{ await cargar(); }catch(e){} }   // refresca el grid del calendario en el fondo
+    var m=window._LOTE_MODAL_ACTUAL||{};
+    abrirLoteModal(id, producto, m.fecha, m.kg);   // reabre el modal con la cadena creada (no te saca)
   }catch(e){ window._cadenaBusyCal=false; alert('Error: '+e); }
 }
 // 📈 Fijar/borrar la venta esperada/mes del producto (Sebastián 20-jul · mig 365) · reabre para recalcular.

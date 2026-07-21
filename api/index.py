@@ -1164,6 +1164,71 @@ def diag_producto_ventas(producto):
         return jsonify({'ok': False, 'error': str(e)[:200]}), 500
 
 
+@app.route('/diag/envasado-estado')
+def diag_envasado_estado():
+    """Sebastián 21-jul · "sigue sin salirme nada en Envasado". Diag público read-only (sin datos
+    sensibles · solo metadata de legajos) para ver por qué la lista de Envasado sale vacía:
+    - conteo de ebr_ejecuciones por (fase, estado)
+    - legajos de ENVASADO existentes (id, lote, estado)
+    - fabricaciones LIBERADAS y si cada una tiene su legajo de envasado
+    - corre la MISMA query de ordenes-unificadas(fase=envasado) y reporta filas / error real."""
+    try:
+        from database import get_db
+        db = get_db(); c = db.cursor()
+        out = {'ok': True}
+        # 1. conteo por fase+estado
+        try:
+            rows = c.execute("SELECT COALESCE(fase,'fabricacion'), COALESCE(estado,''), COUNT(*) "
+                             "FROM ebr_ejecuciones GROUP BY COALESCE(fase,'fabricacion'), COALESCE(estado,'')").fetchall()
+            out['conteo_fase_estado'] = [{'fase': r[0], 'estado': r[1], 'n': r[2]} for r in rows]
+        except Exception as e:
+            out['conteo_err'] = str(e)[:200]
+        # 2. legajos de envasado existentes
+        try:
+            rows = c.execute("SELECT id, COALESCE(lote_codigo,lote,''), COALESCE(estado,''), COALESCE(numero_op,''), "
+                             "COALESCE(iniciado_at_utc,'') FROM ebr_ejecuciones "
+                             "WHERE COALESCE(fase,'fabricacion')='envasado' ORDER BY id DESC LIMIT 30").fetchall()
+            out['envasado_legajos'] = [{'id': r[0], 'lote': r[1], 'estado': r[2], 'op': r[3], 'iniciado': r[4]} for r in rows]
+        except Exception as e:
+            out['envasado_err'] = str(e)[:200]
+        # 3. fabricaciones LIBERADAS y si tienen envasado
+        try:
+            rows = c.execute("SELECT id, COALESCE(lote_codigo,lote,''), COALESCE(estado,''), COALESCE(mbr_template_id,0) "
+                             "FROM ebr_ejecuciones WHERE COALESCE(fase,'fabricacion')='fabricacion' "
+                             "AND LOWER(COALESCE(estado,''))='liberado' ORDER BY id DESC LIMIT 30").fetchall()
+            fabs = []
+            for r in rows:
+                lote = r[1]
+                tiene_env = c.execute("SELECT COUNT(*) FROM ebr_ejecuciones WHERE COALESCE(fase,'fabricacion')='envasado' "
+                                      "AND COALESCE(lote_codigo,lote)=?", (lote,)).fetchone()[0]
+                # producto del MBR (para ver si _erow[1] estaría vacío → el hook no dispara)
+                prod = c.execute("SELECT COALESCE(producto_nombre,''), COALESCE(estado,'') FROM mbr_templates WHERE id=?", (r[3],)).fetchone()
+                fabs.append({'id': r[0], 'lote': lote, 'estado': r[2], 'mbr_id': r[3],
+                             'mbr_producto': (prod[0] if prod else '(MBR no existe)'),
+                             'mbr_estado': (prod[1] if prod else ''),
+                             'tiene_legajo_envasado': tiene_env})
+            out['fabricaciones_liberadas'] = fabs
+        except Exception as e:
+            out['fab_err'] = str(e)[:200]
+        # 4. correr la MISMA query de ordenes-unificadas(envasado) y reportar filas / error
+        try:
+            rows = c.execute(
+                "SELECT e.id, e.numero_op, e.produccion_id, COALESCE(e.lote_codigo, e.lote) AS lote, e.estado, "
+                "e.cantidad_objetivo_g, e.cantidad_real_g, COALESCE(e.ml_envasable, NULL) AS ml_envasable, "
+                "e.iniciado_at_utc, e.liberado_at_utc, COALESCE(e.fase,'fabricacion') AS fase, "
+                "COALESCE(m.producto_nombre,'') AS producto FROM ebr_ejecuciones e "
+                "LEFT JOIN mbr_templates m ON m.id = e.mbr_template_id "
+                "WHERE COALESCE(e.fase,'fabricacion') = 'envasado' AND COALESCE(e.estado,'') != 'cancelado' "
+                "ORDER BY e.iniciado_at_utc DESC").fetchall()
+            out['ordenes_unificadas_envasado_query'] = {'ok': True, 'filas': len(rows),
+                'lotes': [str(r[3]) for r in rows[:20]]}
+        except Exception as e:
+            out['ordenes_unificadas_envasado_query'] = {'ok': False, 'error': str(e)[:300]}
+        return jsonify(out)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)[:200]}), 500
+
+
 @app.route('/diag/sku-buscar')
 def diag_sku_buscar():
     """Sebastián 23-may-PM · "BOOSTER ya sale en Shopy como booster tensor
