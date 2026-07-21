@@ -32,6 +32,16 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .kpi-v{font-size:22px;font-weight:800;color:inherit;}
 .kpi-v.w{color:#d97706;} .kpi-v.r{color:#dc2626;} .kpi-v.g{color:#16a34a;}
 .kpi-s{font-size:11px;color:#78716c;margin-top:2px;}
+/* KPIs premium de Pagos (Sebastián 21-jul) · tarjetas cohesivas, número tabular, saldo-a-favor interactivo */
+.pkpi{position:relative;border-radius:15px;padding:16px 17px;color:#fff;overflow:hidden;box-shadow:0 7px 20px rgba(15,23,42,.16);border:1px solid rgba(255,255,255,.10);}
+.pkpi .pk-top{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+.pkpi .pk-ico{width:27px;height:27px;border-radius:9px;background:rgba(255,255,255,.17);display:flex;align-items:center;justify-content:center;font-size:14px;flex:none;}
+.pkpi .pk-l{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;opacity:.92;line-height:1.15;}
+.pkpi .pk-v{font-size:24px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.05;}
+.pkpi .pk-s{font-size:11px;opacity:.82;margin-top:4px;}
+.pkpi-act{cursor:pointer;transition:transform .16s ease,box-shadow .16s ease;}
+.pkpi-act:hover{transform:translateY(-3px);box-shadow:0 12px 28px rgba(16,185,129,.36);}
+.pkpi-act::after{content:"";position:absolute;right:-20px;top:-20px;width:74px;height:74px;border-radius:50%;background:rgba(255,255,255,.10);pointer-events:none;}
 /* Tablas premium compartidas · recorrido Compras (Facturas/Atrasadas/Cotizaciones/Preparar envases) */
 .cxt-wrap{background:#fff;border:1px solid #eef0f2;border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.05);overflow:hidden;}
 .cxt-wrap.scroll{overflow-x:auto;}
@@ -3112,6 +3122,13 @@ async function loadPagos(){
   }catch(_){ window.PAGOS_KPIS={}; }
   renderPagos();
 }
+// Tarjeta KPI premium de Pagos (Sebastián 21-jul)
+function _pkpi(o){
+  return '<div class="pkpi'+(o.act?' pkpi-act':'')+'" style="background:'+o.bg+'"'+(o.onclick?(' onclick="'+o.onclick+'"'):'')+(o.title?(' title="'+o.title+'"'):'')+'>'
+    +'<div class="pk-top"><div class="pk-ico">'+o.ico+'</div><div class="pk-l">'+o.l+'</div></div>'
+    +'<div class="pk-v">'+o.v+'</div>'
+    +'<div class="pk-s">'+o.s+'</div></div>';
+}
 function renderPagos(){
   var q=(document.getElementById('q-pagos')||{value:''}).value.toLowerCase();
   var catF=(document.getElementById('s-pagos-cat')||{value:''}).value;
@@ -3126,18 +3143,19 @@ function renderPagos(){
   var vPend=list.reduce(function(s,p){ return s+((p.estado==='Parcial')?Math.max(0,parseFloat(p.saldo_pendiente||0)):0); },0);
   var saldoFav=window.PAGOS_SALDO_FAVOR||0;
   var K=window.PAGOS_KPIS||{}; var kMes=K.mes_actual||{}, kAnio=K.anio_actual||{};
-  // FIX contraste (Sebastián 17-jul): el CSS .kpi-v fija color:#292524 (oscuro) → en tarjetas de fondo
-  // oscuro el número no se leía. Se fuerza el valor a BLANCO inline (gana a la clase) + paleta legible.
-  var _kv='color:#fff';  // valor siempre blanco en estas tarjetas oscuras
+  var nParc=list.filter(function(p){ return p.estado==='Parcial'; }).length;
   var kpiHTML=''
-    +'<div class="kpi" style="background:#0f2a43;color:#fff"><div class="kpi-l" style="color:#93c5fd">Pagado (filtrado)</div><div class="kpi-v" style="'+_kv+'">'+fmt(vTotal)+'</div><div style="font-size:11px;color:#bae6fd">'+list.length+' OCs</div></div>'
-    +'<div class="kpi" style="background:#7c2d12;color:#fff"><div class="kpi-l" style="color:#fdba74">Pendiente (parciales)</div><div class="kpi-v" style="'+_kv+'">'+fmt(vPend)+'</div><div style="font-size:11px;color:#fed7aa">lo que a&uacute;n se debe</div></div>'
-    +'<div class="kpi" onclick="togglePagosSaldos()" style="background:linear-gradient(135deg,#047857,#10b981);color:#fff;cursor:pointer" title="Ver/registrar saldos a favor"><div class="kpi-l" style="color:#d1fae5">&#x1F4B3; Saldo a favor</div><div class="kpi-v" style="'+_kv+'">'+fmt(saldoFav)+'</div><div style="font-size:11px;color:#d1fae5">click para ver &#9662;</div></div>'
-    +'<div class="kpi" style="background:#134e4a;color:#fff"><div class="kpi-l" style="color:#5eead4">Mes ('+(kMes.mes||'')+')</div><div class="kpi-v" style="'+_kv+'">'+fmt(kMes.total||0)+'</div><div style="font-size:11px;color:#99f6e4">'+(kMes.n_ocs||0)+' OCs</div></div>'
-    +'<div class="kpi" style="background:#3730a3;color:#fff"><div class="kpi-l" style="color:#c7d2fe">A&ntilde;o ('+(kAnio.anio||'')+')</div><div class="kpi-v" style="'+_kv+'">'+fmt(kAnio.total||0)+'</div><div style="font-size:11px;color:#c7d2fe">'+(kAnio.n_ocs||0)+' OCs</div></div>';
+    +_pkpi({ico:'&#10003;',l:'Pagado (filtrado)',v:fmt(vTotal),s:list.length+' OCs',bg:'linear-gradient(135deg,#0b1f38,#16355f)'})
+    +_pkpi({ico:'&#9680;',l:'Pendiente (parciales)',v:fmt(vPend),s:(nParc?nParc+' OC'+(nParc>1?'s':'')+' &middot; a&uacute;n se debe':'todo al d&iacute;a'),bg:'linear-gradient(135deg,#7c2d12,#a3400f)'})
+    +_pkpi({ico:'&#x1F4B3;',l:'Saldo a favor',v:fmt(saldoFav),s:'click para ver / registrar &#9662;',bg:'linear-gradient(135deg,#047857,#10b981)',act:true,onclick:'togglePagosSaldos()',title:'Ver, registrar y aplicar saldos a favor por proveedor'})
+    +_pkpi({ico:'&#x1F4C5;',l:'Mes ('+(kMes.mes||'')+')',v:fmt(kMes.total||0),s:(kMes.n_ocs||0)+' OCs',bg:'linear-gradient(135deg,#0f3d3a,#15756b)'})
+    +_pkpi({ico:'&#x1F4C8;',l:'A&ntilde;o ('+(kAnio.anio||'')+')',v:fmt(kAnio.total||0),s:(kAnio.n_ocs||0)+' OCs',bg:'linear-gradient(135deg,#312e81,#4338ca)'});
   document.getElementById('pagos-kpis').innerHTML=kpiHTML;
   var bar=document.getElementById('pagos-bar-extra');
-  if(bar){ bar.innerHTML='<div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button onclick="descargarPagosExcel()" class="btn" style="background:#059669;color:#fff;font-size:12px;padding:6px 14px;border:0;border-radius:5px;font-weight:700;cursor:pointer">📊 Descargar Excel</button></div>'; }
+  if(bar){
+    var guia=(nParc>0)?'<div style="flex:1;min-width:220px;font-size:12px;color:#7c2d12;background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:9px 13px;line-height:1.4"><b>'+nParc+'</b> OC'+(nParc>1?'s':'')+' con saldo pendiente &middot; us&aacute; <b style="color:#15803d">&#128181; Abonar</b> en la fila para completar el pago (ah&iacute; mismo podés aplicar <b>saldo a favor</b>).</div>':'<div style="flex:1"></div>';
+    bar.innerHTML='<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">'+guia+'<button onclick="descargarPagosExcel()" class="btn" style="background:#059669;color:#fff;font-size:12px;padding:7px 15px;border:0;border-radius:8px;font-weight:700;cursor:pointer;white-space:nowrap">&#128202; Descargar Excel</button></div>';
+  }
   if(!list.length){ document.getElementById('pagos-wrap').innerHTML='<div class="empty">No hay pagos que coincidan</div>'; return; }
   var rows=list.map(function(p,i){
     var estChip=(p.estado==='Parcial')?'<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:10px;padding:2px 8px;font-weight:700">&#9680; Parcial</span>':'<span style="font-size:10px;background:#dcfce7;color:#15803d;border-radius:10px;padding:2px 8px;font-weight:700">&#10003; Pagada</span>';
@@ -3147,6 +3165,8 @@ function renderPagos(){
     var regenBtn=p.comprobante_id?'<button class="btn bs" style="background:#7c3aed;color:#fff;font-size:10px;padding:3px 7px;margin-left:3px" data-cid="'+p.comprobante_id+'" data-oc="'+esc(p.numero_oc)+'" onclick="regenerarCEInline(this.dataset.cid, this.dataset.oc)" title="Regenerar PDF CE">🔄</button>':'';
     var revBtn=(typeof ES_ADMIN!=='undefined' && ES_ADMIN)?'<button class="btn bs" style="background:#dc2626;color:#fff;font-size:10px;padding:3px 7px;margin-left:3px" data-oc="'+esc(p.numero_oc)+'" onclick="revertirPagoOC(this.dataset.oc)" title="Revertir pago">↩️</button>':'';
     var abonosBtn=(p.n_abonos>1)?'<button class="btn bs" style="background:#e0f2fe;color:#0369a1;font-size:10px;padding:3px 7px;margin-right:3px" data-oc="'+esc(p.numero_oc)+'" data-i="'+i+'" onclick="toggleAbonos(this.dataset.oc,this.dataset.i)" title="Ver abonos parciales">&#9656; '+p.n_abonos+' abonos</button>':'';
+    // 💵 Abonar el saldo pendiente directo desde Pagos (Sebastián 21-jul) · el modal ya aplica saldo a favor
+    var pagarBtn=(p.estado==='Parcial')?'<button class="btn bs" style="background:#16a34a;color:#fff;font-size:10px;padding:3px 10px;margin-right:3px;font-weight:800" data-oc="'+esc(p.numero_oc)+'" onclick="payOC(this.dataset.oc)" title="Registrar el pago pendiente de esta OC · podés aplicar saldo a favor del proveedor">&#128181; Abonar</button>':'';
     return '<tr>'
       +'<td><strong>'+esc(p.numero_oc)+'</strong></td>'
       +'<td>'+esc(p.proveedor||'-')+'</td>'
@@ -3158,7 +3178,7 @@ function renderPagos(){
       +'<td class="mob-hide" style="font-size:11px;color:#475569">'+trx+'</td>'
       +'<td>'+fdate(p.fecha_pago)+'</td>'
       +'<td class="mob-hide">'+esc(p.pagado_por||'-')+'</td>'
-      +'<td style="white-space:nowrap">'+abonosBtn+imgBtn+regenBtn+revBtn+'</td>'
+      +'<td style="white-space:nowrap">'+pagarBtn+abonosBtn+imgBtn+regenBtn+revBtn+'</td>'
       +'</tr>'
       +'<tr id="abonos-'+i+'" style="display:none"><td colspan="11" style="padding:0 12px 10px;background:#f8fafc"></td></tr>';
   }).join('');
@@ -3194,12 +3214,17 @@ function togglePagosSaldos(){
 }
 async function _renderPagosSaldosPanel(){
   var panel=document.getElementById('pagos-saldos-panel');
-  panel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b style="color:#166534">💳 Saldos a favor por proveedor</b><button onclick="openSaldoFavor()" style="padding:5px 11px;background:#16a34a;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">➕ Registrar / gestionar</button></div><div id="pagos-sf-lista" style="font-size:12px;color:#64748b">cargando&hellip;</div>';
+  panel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">'
+    +'<b style="color:#166534;font-size:14px">&#128179; Saldos a favor por proveedor</b>'
+    +'<button onclick="openSaldoFavor()" style="padding:7px 13px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:800;cursor:pointer;box-shadow:0 2px 8px rgba(22,163,74,.28)">&#10133; Registrar anticipo / ajuste</button></div>'
+    +'<div style="font-size:11.5px;color:#3f6212;background:#fff;border:1px dashed #86efac;border-radius:9px;padding:8px 11px;margin-bottom:10px;line-height:1.45">'
+    +'El <b>saldo a favor</b> nace cuando le pagaste de m&aacute;s a un proveedor (sobrepago) o le diste un <b>anticipo</b>. Para <b>usarlo</b>: abr&iacute; <b>&#128181; Abonar</b> en la OC de ese proveedor y aplic&aacute;s el saldo &mdash; baja lo pendiente sin volver a sacar plata.</div>'
+    +'<div id="pagos-sf-lista" style="font-size:12px;color:#64748b">cargando&hellip;</div>';
   try{
     var r=await fetch('/api/compras/saldos-favor'); var d=await r.json();
     var saldos=(d&&d.saldos)||[]; var box=document.getElementById('pagos-sf-lista');
-    if(!saldos.length){ box.innerHTML='<div style="opacity:.7">Sin saldos a favor · registrá un anticipo si Alejandro pagó por adelantado.</div>'; return; }
-    box.innerHTML=saldos.map(function(s){ return '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #dcfce7"><span>'+esc(s.proveedor)+'</span><b style="color:#16a34a">'+fmt(s.saldo)+'</b></div>'; }).join('')+'<div style="text-align:right;font-weight:800;color:#166534;margin-top:6px">Total a favor: '+fmt(d.total||0)+'</div>';
+    if(!saldos.length){ box.innerHTML='<div style="opacity:.75;padding:6px 0">Sin saldos a favor por ahora &middot; registr&aacute; un anticipo si se pag&oacute; por adelantado, o al pagar una OC dej&aacute; el excedente a favor.</div>'; return; }
+    box.innerHTML=saldos.map(function(s){ return '<div style="display:flex;justify-content:space-between;padding:6px 2px;border-bottom:1px solid #dcfce7"><span style="color:#334155">'+esc(s.proveedor)+'</span><b style="color:#16a34a;font-variant-numeric:tabular-nums">'+fmt(s.saldo)+'</b></div>'; }).join('')+'<div style="text-align:right;font-weight:800;color:#166534;margin-top:8px">Total a favor: '+fmt(d.total||0)+'</div>';
   }catch(e){}
 }
 
