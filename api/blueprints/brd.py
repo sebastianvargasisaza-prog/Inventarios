@@ -3512,18 +3512,22 @@ def liberar_ebr(ebr_id):
         return err
     body = request.get_json(silent=True) or {}
     signature_id = body.get("signature_id")
-    if not signature_id:
-        return jsonify({
-            "error": "signature_id requerido · meaning='libera' record_table='ebr_ejecuciones'",
-        }), 400
 
     conn = get_db()
     cur = conn.cursor()
     ebr = cur.execute(
-        "SELECT estado FROM ebr_ejecuciones WHERE id = ?", (ebr_id,),
+        "SELECT estado, COALESCE(lote_codigo, lote, '') AS _lote FROM ebr_ejecuciones WHERE id = ?", (ebr_id,),
     ).fetchone()
     if not ebr:
         return jsonify({"error": "EBR no encontrado"}), 404
+    # DEMO (lote 'DEMO-...') · sandbox para caminar el flujo: un click, sin e-firma
+    # (Part 11). Los lotes REALES siguen exigiendo signature_id 'libera'. Los gates
+    # regulatorios de abajo (desviación/IPC OOS/micro/pesajes) siguen aplicando.
+    _es_demo = str(ebr["_lote"] or "").upper().startswith("DEMO-")
+    if not signature_id and not _es_demo:
+        return jsonify({
+            "error": "signature_id requerido · meaning='libera' record_table='ebr_ejecuciones'",
+        }), 400
     if ebr["estado"] not in ("completado", "en_revision_qc"):
         return jsonify({"error": f"solo completado puede liberarse (actual: {ebr['estado']})"}), 409
 
@@ -3773,7 +3777,7 @@ def liberar_ebr(ebr_id):
             pass  # graceful
 
     user = session.get("compras_user", "")
-    if not _validar_signature(
+    if not _es_demo and not _validar_signature(
         cur, signature_id, record_table="ebr_ejecuciones",
         record_id=ebr_id, meaning="libera", signer_username=user,
     ):
@@ -3790,7 +3794,7 @@ def liberar_ebr(ebr_id):
                  liberado_at_utc = datetime('now', 'utc'),
                  liberado_signature_id = ?
            WHERE id = ? AND estado IN ('completado', 'en_revision_qc')""",
-        (user, int(signature_id), ebr_id),
+        (user, (int(signature_id) if signature_id else None), ebr_id),
     )
     if cur.rowcount == 0:
         conn.rollback()
@@ -6552,13 +6556,14 @@ def aprobar_dt_ebr(ebr_id):
                         "codigo": "SOLO_DIRECTOR_TECNICO"}), 403
     body = request.get_json(silent=True) or {}
     signature_id = body.get("signature_id")
-    if not signature_id:
-        return jsonify({"error": "signature_id requerido · meaning='aprueba_dt' record_table='ebr_ejecuciones'"}), 400
     conn = get_db()
     cur = conn.cursor()
-    ebr = cur.execute("SELECT estado, COALESCE(aprobado_dt_por,'') FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
+    ebr = cur.execute("SELECT estado, COALESCE(aprobado_dt_por,''), COALESCE(lote_codigo,lote,'') FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
     if not ebr:
         return jsonify({"error": "EBR no encontrado"}), 404
+    _es_demo = str(ebr[2] or "").upper().startswith("DEMO-")
+    if not signature_id and not _es_demo:
+        return jsonify({"error": "signature_id requerido · meaning='aprueba_dt' record_table='ebr_ejecuciones'"}), 400
     if (ebr[1] or "").strip():
         return jsonify({"error": "Ya tiene visto bueno del Director Técnico"}), 409
     cur.execute("UPDATE ebr_ejecuciones SET aprobado_dt_por=?, aprobado_dt_at_utc=datetime('now','utc'), "

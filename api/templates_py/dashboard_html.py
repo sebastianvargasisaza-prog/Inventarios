@@ -8085,6 +8085,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   // ── Rol del usuario · la vista se adapta (segregación de funciones GMP) ──
   var miRol=d.mi_rol||{tipo:'consulta',rol:'Consulta',realiza:false,verifica:false};
   window._ebrMiRol=miRol;   // para el marcado OPTIMISTA del despeje (sin re-render de todo · 20-jul)
+  window._ebrEsDemo=/^DEMO-/i.test(String(d.lote_codigo||d.lote||''));   // DEMO = liberar/visto bueno de un click sin e-firma (20-jul)
   var _rc=({operario:'#16a34a',jefe_produccion:'#2563eb',calidad:'#0891b2',director_tecnico:'#7c3aed',aseguramiento:'#b45309',administrativo:'#64748b',admin:'#6d28d9',consulta:'#94a3b8'})[miRol.tipo]||'#94a3b8';
   var _tareas=[];
   if(editable&&miRol.realiza){
@@ -8365,6 +8366,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   // Cierre y Aprobaciones finales (Producción + Calidad · MyBatch pie del instructivo)
   h+='</div>'+_secOpen('&#9989; Cierre y Aprobaciones');
   var _est=(d.estado||'');
+  var _esDemoL=/^DEMO-/i.test(String(d.lote_codigo||d.lote||''));   // DEMO: liberar/visto bueno de un click sin e-firma
   h+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px">';
   h+='<div style="border:1px solid #e2e8f0;border-radius:10px;padding:12px">';
   h+='<div style="font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.3px">Aprobado por &middot; Producción</div>';
@@ -8383,7 +8385,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   if(_est==='liberado'){
     h+='<div style="font-size:13px;font-weight:700;color:#16a34a;margin-top:4px">&#128275; Liberado por '+_escHTML(d.liberado_por||'')+'</div><div style="font-size:11px;color:#64748b">'+(d.liberado_at_utc?String(d.liberado_at_utc).replace('T',' ').slice(0,16):'')+'</div>';
   } else if((_est==='completado'||_est==='en_revision_qc')&&miRol.puede_liberar){
-    h+='<div style="font-size:11px;color:#64748b;margin:5px 0 7px">Libera el lote con tu e-firma (cierra el batch record &middot; Part 11).</div><button onclick="ebrLiberarLote('+d.id+')" style="background:#15803d;color:#fff;border:none;border-radius:7px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer">&#128274; Liberar lote</button>';
+    h+='<div style="font-size:11px;color:#64748b;margin:5px 0 7px">'+(_esDemoL?'Demo &middot; libera el lote de un click (sin contrase&ntilde;a) para pasar a envasado.':'Libera el lote con tu e-firma (cierra el batch record &middot; Part 11).')+'</div><button onclick="ebrLiberarLote('+d.id+')" style="background:#15803d;color:#fff;border:none;border-radius:7px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer">&#128274; Liberar lote</button>';
   } else if(_est==='completado'||_est==='en_revision_qc'){
     h+='<div style="font-size:11px;color:#f59e0b;margin-top:4px">&#9203; Espera liberación de Calidad / Aseguramiento</div>';
   } else {
@@ -8395,7 +8397,7 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   if((d.aprobado_dt_por||'').trim()){
     h+='<div style="font-size:13px;font-weight:700;color:#16a34a;margin-top:4px">&#9989; '+_escHTML(d.aprobado_dt_por)+'</div><div style="font-size:11px;color:#64748b">'+(d.aprobado_dt_at?String(d.aprobado_dt_at).replace('T',' ').slice(0,16):'')+'</div>';
   } else if((_est==='liberado'||_est==='completado'||_est==='en_revision_qc')&&miRol.aprueba_dt){
-    h+='<div style="font-size:11px;color:#64748b;margin:5px 0 7px">Visto bueno final del responsable técnico (INVIMA) con tu e-firma.</div><button onclick="ebrAprobarDt('+d.id+')" style="background:#7c3aed;color:#fff;border:none;border-radius:7px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer">&#9989; Dar visto bueno</button>';
+    h+='<div style="font-size:11px;color:#64748b;margin:5px 0 7px">'+(_esDemoL?'Demo &middot; da el visto bueno de un click (sin contrase&ntilde;a).':'Visto bueno final del responsable t&eacute;cnico (INVIMA) con tu e-firma.')+'</div><button onclick="ebrAprobarDt('+d.id+')" style="background:#7c3aed;color:#fff;border:none;border-radius:7px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer">&#9989; Dar visto bueno</button>';
   } else {
     h+='<div style="font-size:11px;color:#cbd5e1;margin-top:4px">- (lo firma el Director Técnico)</div>';
   }
@@ -8541,14 +8543,20 @@ async function ebrTerminarLote(ebrId){
   }catch(e){ alert('Error: '+(e.message||e)); }
 }
 async function ebrLiberarLote(ebrId){
-  if(!(await _cxConfirm('Liberar el lote','Vas a firmar electrónicamente (21 CFR Part 11). Esto cierra el batch record.','Liberar')))return;
-  var f=await _firmarEsign('libera','ebr_ejecuciones',ebrId);
-  if(!f)return;
-  if(f.error){ alert(f.error); return; }
+  // DEMO (lote 'DEMO-...') · un click, sin contraseña/e-firma (sandbox). Lote REAL = e-firma Part 11.
+  var _demo=!!window._ebrEsDemo;
+  var _sig=null;
+  if(!_demo){
+    if(!(await _cxConfirm('Liberar el lote','Vas a firmar electrónicamente (21 CFR Part 11). Esto cierra el batch record.','Liberar')))return;
+    var f=await _firmarEsign('libera','ebr_ejecuciones',ebrId);
+    if(!f)return;
+    if(f.error){ alert(f.error); return; }
+    _sig=f.signature_id;
+  }
   try{
-    var r=await fetch('/api/brd/ebr/'+ebrId+'/liberar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({signature_id:f.signature_id})});
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/liberar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({signature_id:_sig})});
     if(!r.ok){ var j=await r.json(); alert('Error: '+(j.error||r.status)); return; }
-    alert('\\u2713 Lote liberado \\u00b7 batch record cerrado');
+    if(typeof _toast==='function') _toast('Lote liberado \\u2713', 1); else alert('\\u2713 Lote liberado \\u00b7 batch record cerrado');
     abrirEBR(ebrId);
   }catch(e){ alert('Error: '+(e.message||e)); }
 }
@@ -8609,13 +8617,20 @@ async function _ebrPesarSubmit(ebrId, materialId){
   }catch(e){ alert('Error: '+(e.message||e)); }
 }
 async function ebrAprobarDt(ebrId){
-  if(!(await _cxConfirm('Visto bueno · Director Técnico','Vas a firmar electrónicamente (21 CFR Part 11).','Aprobar')))return;
-  var f=await _firmarEsign('aprueba_dt','ebr_ejecuciones',ebrId);
-  if(!f)return;
-  if(f.error){ alert(f.error); return; }
+  // DEMO · un click, sin contraseña. Lote REAL = e-firma Part 11.
+  var _demo=!!window._ebrEsDemo;
+  var _sig=null;
+  if(!_demo){
+    if(!(await _cxConfirm('Visto bueno · Director Técnico','Vas a firmar electrónicamente (21 CFR Part 11).','Aprobar')))return;
+    var f=await _firmarEsign('aprueba_dt','ebr_ejecuciones',ebrId);
+    if(!f)return;
+    if(f.error){ alert(f.error); return; }
+    _sig=f.signature_id;
+  }
   try{
-    var r=await fetch('/api/brd/ebr/'+ebrId+'/aprobar-dt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({signature_id:f.signature_id})});
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/aprobar-dt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({signature_id:_sig})});
     if(!r.ok){ var j=await r.json(); alert('Error: '+(j.error||r.status)); return; }
+    if(typeof _toast==='function') _toast('Visto bueno registrado \\u2713', 1);
     abrirEBR(ebrId);
   }catch(e){ alert('Error: '+(e.message||e)); }
 }
