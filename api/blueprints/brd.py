@@ -3864,6 +3864,54 @@ def liberar_ebr(ebr_id):
                     "envasado_ebr_id": _envasado_habilitado})
 
 
+@bp.route("/api/brd/ebr/<int:ebr_id>/habilitar-envasado", methods=["POST"])
+def habilitar_envasado_ebr(ebr_id):
+    """Re-crea (o reusa) el legajo de ENVASADO de un lote de FABRICACIÓN ya liberado, por si el hook
+    automático del liberar falló silenciosamente (best-effort). Idempotente · devuelve el error REAL
+    si no se puede (M4 · no lo traga). Sebastián 20-jul."""
+    err = _require_brd_ejecutor()
+    if err:
+        return err
+    conn = get_db()
+    cur = conn.cursor()
+    row = cur.execute(
+        "SELECT COALESCE(e.fase,'fabricacion'), COALESCE(m.producto_nombre,''), "
+        "COALESCE(e.lote_codigo, e.lote), e.estado "
+        "FROM ebr_ejecuciones e LEFT JOIN mbr_templates m ON m.id=e.mbr_template_id WHERE e.id=?",
+        (ebr_id,)).fetchone()
+    if not row:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    _fase = str(row[0]).strip().lower()
+    _prod = row[1]
+    _lote = row[2]
+    if _fase != 'fabricacion':
+        return jsonify({"error": "Solo un legajo de FABRICACIÓN habilita el envasado."}), 400
+    if not _prod or not _lote:
+        return jsonify({"error": "El legajo no tiene producto/lote resueltos (¿el MBR quedó sin producto?)."}), 400
+    user = session.get("compras_user", "")
+    try:
+        res = crear_ebr_desde_mbr(cur, producto_nombre=_prod, lote=_lote, usuario=user, fase='envasado')
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": "No se pudo crear el legajo de envasado: " + str(e)[:220]}), 500
+    if not res.get('ok'):
+        # LOTE_DUPLICADO = el legajo de envasado YA existe → devolver su id para abrirlo.
+        if res.get('error') == 'LOTE_DUPLICADO':
+            env = cur.execute(
+                "SELECT id FROM ebr_ejecuciones WHERE COALESCE(lote_codigo,lote)=? "
+                "AND COALESCE(fase,'fabricacion')='envasado'", (_lote,)).fetchone()
+            return jsonify({"ok": True, "envasado_ebr_id": (env[0] if env else None), "ya_existia": True})
+        # NO_MBR_APROBADO u otro → devolver la causa REAL (no silencio).
+        return jsonify({"error": res.get('detail') or "No se pudo habilitar el envasado.",
+                        "codigo": res.get('error')}), 409
+    conn.commit()
+    if not res.get('reusado'):
+        audit_log(None, usuario=user, accion="AUTO_CREAR_EBR_ENVASADO", tabla="ebr_ejecuciones",
+                  registro_id=res.get('id'),
+                  despues={"origen_fabricacion_ebr": ebr_id, "lote": _lote, "manual": True})
+    return jsonify({"ok": True, "envasado_ebr_id": res.get('id'), "reusado": res.get('reusado', False)})
+
+
 @bp.route("/api/brd/ebr/<int:ebr_id>/rechazar", methods=["POST"])
 def rechazar_ebr(ebr_id):
     err = _require_qa_or_admin()

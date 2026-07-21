@@ -8384,6 +8384,9 @@ function _ebrRender(d, pesajes, conc, artes, obs, ipcSpecs, ipcRes, despeje, pre
   h+='<div style="font-size:10px;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:.3px">Aprobado por &middot; Calidad (liberación)</div>';
   if(_est==='liberado'){
     h+='<div style="font-size:13px;font-weight:700;color:#16a34a;margin-top:4px">&#128275; Liberado por '+_escHTML(d.liberado_por||'')+'</div><div style="font-size:11px;color:#64748b">'+(d.liberado_at_utc?String(d.liberado_at_utc).replace('T',' ').slice(0,16):'')+'</div>';
+    if(fa==='fabricacion'){
+      h+='<button onclick="ebrHabilitarEnvasado('+d.id+')" style="margin-top:9px;background:#7c3aed;color:#fff;border:none;border-radius:7px;padding:7px 13px;font-size:12px;font-weight:700;cursor:pointer">&#128230; Ir a Envasado</button><div style="font-size:10px;color:#94a3b8;margin-top:3px">Habilita/abre el legajo de envasado de este lote.</div>';
+    }
   } else if((_est==='completado'||_est==='en_revision_qc')&&miRol.puede_liberar){
     h+='<div style="font-size:11px;color:#64748b;margin:5px 0 7px">'+(_esDemoL?'Demo &middot; libera el lote de un click (sin contrase&ntilde;a) para pasar a envasado.':'Libera el lote con tu e-firma (cierra el batch record &middot; Part 11).')+'</div><button onclick="ebrLiberarLote('+d.id+')" style="background:#15803d;color:#fff;border:none;border-radius:7px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer">&#128274; Liberar lote</button>';
   } else if(_est==='completado'||_est==='en_revision_qc'){
@@ -8540,6 +8543,20 @@ async function ebrTerminarLote(ebrId){
     var r=await fetch('/api/brd/ebr/'+ebrId+'/completar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cantidad_real_g:n})});
     if(!r.ok){ var j=await r.json(); alert('Error: '+(j.error||r.status)); return; }
     abrirEBR(ebrId);
+  }catch(e){ alert('Error: '+(e.message||e)); }
+}
+async function ebrHabilitarEnvasado(ebrId){
+  // Habilita/abre el legajo de envasado del lote de fabricación liberado (por si el hook automático falló).
+  try{
+    var r=await fetch('/api/brd/ebr/'+ebrId+'/habilitar-envasado',{method:'POST',headers:{'Content-Type':'application/json'}});
+    var j=await r.json();
+    if(!r.ok){ alert('No se pudo habilitar el envasado: '+(j.error||r.status)+(j.codigo?(' ('+j.codigo+')'):'')); return; }
+    if(j.envasado_ebr_id){
+      if(typeof _toast==='function') _toast((j.ya_existia?'Envasado ya existía':'Envasado habilitado')+' \\u2713', 1);
+      abrirEBR(j.envasado_ebr_id);
+    } else {
+      alert('Envasado habilitado, pero no se devolvió el id. Buscalo en la pestaña Envasado.');
+    }
   }catch(e){ alert('Error: '+(e.message||e)); }
 }
 async function ebrLiberarLote(ebrId){
