@@ -21798,7 +21798,8 @@ function _saludCadenaCal(lotes, velUds, stockUds, ml){
     .sort(function(a,b){ return a.fecha<b.fecha?-1:1; });
   arr.forEach(function(l){
     var fd=new Date(l.fecha+'T12:00:00'), arrival=addD(fd,PIPE), coverBefore=coverUntil;
-    if(diffD(fd,hoy)>=-1){ out[l.id]={colchon:diffD(coverBefore,arrival), coverBefore:coverBefore}; }
+    var diasLote=Math.round((l.kg*1000/(ml||30))/velUds);   // días que dura ESTE lote (para detectar sobre-stock)
+    if(diffD(fd,hoy)>=-1){ out[l.id]={colchon:diffD(coverBefore,arrival), coverBefore:coverBefore, diasLote:diasLote}; }
     var base=(coverBefore>arrival)?coverBefore:arrival;
     coverUntil=addD(base, (l.kg*1000/(ml||30))/velUds);
   });
@@ -21820,9 +21821,12 @@ function _renderLotesAgendadosCal(producto, info, ml){
     var mesAbr=(mm>=1&&mm<=12)?MES[mm-1]:'';
     var est=(lt.estado||'');
     var sd=salud[lt.id], saludBadge='';
-    if(sd){ var cc=sd.colchon, sc, sl;
-      if(cc>=20){sc='#16a34a';sl='🟢 colchón '+cc+'d';} else if(cc>=0){sc='#d97706';sl='🟡 justo · '+cc+'d';} else {sc='#dc2626';sl='🔴 tarde · '+(-cc)+'d';}
-      saludBadge='<span style="background:'+sc+'1a;color:'+sc+';padding:2px 9px;border-radius:10px;font-size:10px;font-weight:800;border:1px solid '+sc+'40">'+sl+'</span>';
+    if(sd){ var cc=sd.colchon, dl=sd.diasLote||60, sc, sl, ti;
+      if(cc<0){sc='#dc2626';sl='🔴 tarde · '+(-cc)+'d';ti='Llega '+(-cc)+' días DESPUÉS de agotarse el stock (quiebre) · adelantá este lote.';}
+      else if(cc<20){sc='#d97706';sl='🟡 justo · '+cc+'d';ti='Solo '+cc+' días de margen antes de agotar (ideal ≥20).';}
+      else if(cc<=dl){sc='#16a34a';sl='🟢 colchón '+cc+'d';ti=cc+' días de margen antes de agotar cuando este lote entra a góndola. Sano.';}
+      else {sc='#0891b2';sl='🔵 sobra-stock · '+cc+'d';ti='Cuando este lote entra ya tenés '+cc+' días de stock (más de lo que dura UN lote ≈'+dl+'d) → la cadena SOBRE-PRODUCE · espaciá la cadencia arriba.';}
+      saludBadge='<span title="'+ti+'" style="background:'+sc+'1a;color:'+sc+';padding:2px 9px;border-radius:10px;font-size:10px;font-weight:800;border:1px solid '+sc+'40">'+sl+'</span>';
     }
     h += '<div style="display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #e2e8f0;border-left:4px solid #7c3aed;border-radius:8px;padding:8px 12px">'
       + '<div style="text-align:center;min-width:44px;line-height:1.1"><div style="font-size:17px;font-weight:800;color:#1e293b">'+dd+'</div><div style="font-size:10px;color:#94a3b8">'+mesAbr+' '+yy+'</div></div>'

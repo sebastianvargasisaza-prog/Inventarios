@@ -26151,8 +26151,9 @@ async function ckMarcar(itemId, estado){
       var fd = new Date(l.fecha + 'T12:00:00');
       var arrival = addD(fd, PIPE);              // entra a góndola ~7d tras producir
       var coverBefore = coverUntil;
+      var diasLote = Math.round((l.kg * 1000 / ml) / vel);   // días que dura ESTE lote (sobre-stock)
       if(diffD(fd, hoy) >= -1){                  // solo lotes de hoy en adelante tienen salud predictiva
-        out[l.id] = {colchon: diffD(coverBefore, arrival), coverBefore: coverBefore};
+        out[l.id] = {colchon: diffD(coverBefore, arrival), coverBefore: coverBefore, diasLote: diasLote};
       }
       var base = (coverBefore > arrival) ? coverBefore : arrival;
       coverUntil = addD(base, (l.kg * 1000 / ml) / vel);   // este lote extiende la cobertura
@@ -26184,11 +26185,13 @@ async function ckMarcar(itemId, estado){
       let adelantarBtn = '';
       if (_sd) {
         const _cc = _sd.colchon;
-        let _sc, _sl;
-        if (_cc >= 20) { _sc = '#16a34a'; _sl = '🟢 colchón ' + _cc + 'd'; }
-        else if (_cc >= 0) { _sc = '#d97706'; _sl = '🟡 justo · ' + _cc + 'd'; }
-        else { _sc = '#dc2626'; _sl = '🔴 tarde · ' + (-_cc) + 'd sin stock'; }
-        saludBadge = '<span title="Colchón = días de margen antes de agotarse el stock cuando este lote entra a góndola. Ideal ≥20d." style="background:' + _sc + '1a;color:' + _sc + ';padding:2px 9px;border-radius:10px;font-size:10px;font-weight:800;border:1px solid ' + _sc + '40">' + _sl + '</span>';
+        const _dl = _sd.diasLote || 60;
+        let _sc, _sl, _ti;
+        if (_cc < 0) { _sc = '#dc2626'; _sl = '🔴 tarde · ' + (-_cc) + 'd sin stock'; _ti = 'Llega ' + (-_cc) + ' días DESPUÉS de agotarse el stock (quiebre) · adelantá este lote.'; }
+        else if (_cc < 20) { _sc = '#d97706'; _sl = '🟡 justo · ' + _cc + 'd'; _ti = 'Solo ' + _cc + ' días de margen antes de agotar (ideal ≥20).'; }
+        else if (_cc <= _dl) { _sc = '#16a34a'; _sl = '🟢 colchón ' + _cc + 'd'; _ti = _cc + ' días de margen antes de agotar cuando este lote entra a góndola. Sano.'; }
+        else { _sc = '#0891b2'; _sl = '🔵 sobra-stock · ' + _cc + 'd'; _ti = 'Cuando este lote entra ya tenés ' + _cc + ' días de stock (más de lo que dura UN lote ≈' + _dl + 'd) → la cadena SOBRE-PRODUCE · espaciá la cadencia.'; }
+        saludBadge = '<span title="' + _ti + '" style="background:' + _sc + '1a;color:' + _sc + ';padding:2px 9px;border-radius:10px;font-size:10px;font-weight:800;border:1px solid ' + _sc + '40">' + _sl + '</span>';
         if (_cc < 20 && (lt.estado === 'pendiente' || lt.estado === 'programado')) {
           const _fSug = _fechaAdelanto(_sd.coverBefore);
           if (_fSug && _fSug < f) {
