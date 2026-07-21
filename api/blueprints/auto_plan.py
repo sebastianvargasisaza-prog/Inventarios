@@ -423,6 +423,24 @@ def _velocidad_blended_producto(c, producto, ventana=60):
     return vel
 
 
+def venta_esperada_override(c, producto):
+    """Venta esperada/mes MANUAL del producto (Sebastián 20-jul · mig 365 · sku_planeacion_config.venta_esperada_mes).
+    Cuando la ventana reciente de Shopify NO refleja la venta normal (ej. un bache de 60d), el usuario fija
+    acá la venta que CONOCE. Si está seteada (>0), el motor de velocidad la usa en LUGAR del blend, IGUAL en
+    el display (_calcular_animus_dtc) y el motor (_demanda_stock_gramos) → paridad M70. Devuelve uds/DÍA
+    (venta_esperada_mes/30.44) o None. NULL-safe/deploy-safe (columna ausente → None, no rompe)."""
+    try:
+        r = c.execute(
+            "SELECT venta_esperada_mes FROM sku_planeacion_config "
+            "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) "
+            "AND COALESCE(venta_esperada_mes,0) > 0 LIMIT 1", (producto,)).fetchone()
+        if r and r[0] and float(r[0]) > 0:
+            return float(r[0]) / 30.44   # uds/mes → uds/día
+    except Exception:
+        pass
+    return None
+
+
 def _velocidad_y_tendencia(c, sku):
     """Velocidad de venta diaria + factor de tendencia (regresión 30d).
 
@@ -526,6 +544,12 @@ def _velocidad_total_producto(c, producto):
         if v > 0:
             factores.append(f)
     factor_avg = (sum(factores) / len(factores)) if factores else 1.0
+    # Override manual de venta esperada/mes (Sebastián 20-jul · mig 365): si el usuario lo fijó, manda sobre
+    # el blend acá también (los generadores legacy que usan este helper — eliminar_y_replan, recomendación —
+    # dimensionan con la venta real). Factor NEUTRO 1.0 (los callers multiplican vel×factor · un 0.0 anularía).
+    _ov_vt = venta_esperada_override(c, producto)
+    if _ov_vt is not None:
+        return (_ov_vt, 1.0)
     return (vel_total, factor_avg)
 
 
@@ -13014,6 +13038,12 @@ def _demanda_stock_gramos(c, producto):
         except Exception:
             pass
     vel_prod, _tend = velocidad_blended_uds_dia(v30_tot, v60_tot, v90_tot, _dias_creacion, 60)
+    # Override manual de venta esperada/mes (Sebastián 20-jul · mig 365): si el usuario lo fijó, manda
+    # sobre el blend de Shopify (paridad con el display · _calcular_animus_dtc aplica el MISMO override).
+    _ov = venta_esperada_override(c, producto)
+    if _ov is not None:
+        vel_prod = _ov
+        _tend = 0.0
     vol_pond = (_wvol / v60_tot) if v60_tot > 0.001 else (
         (sum(_vol_simple) / len(_vol_simple)) if _vol_simple else 0.0)
     demand_g = vel_prod * vol_pond

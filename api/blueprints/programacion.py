@@ -1894,6 +1894,19 @@ def prog_sugerencia_produccion():
         except Exception:
             dias_creacion = None
     vel, tendencia = velocidad_blended_uds_dia(v30, v60, v90, dias_creacion, 60)
+    # Override manual de venta esperada/mes (Sebastián 20-jul · mig 365 · paridad M70): si el usuario lo fijó,
+    # manda sobre el blend acá también (este panel pre-llena el kg del lote → debe usar la MISMA velocidad que
+    # el display/motor). tendencia='estable' (string · el JS del panel opera sobre string, no sobre 0.0).
+    _venta_esp_ov = None
+    try:
+        from blueprints.auto_plan import venta_esperada_override as _vesp_sp
+        _ov_sp = _vesp_sp(c, producto)
+        if _ov_sp is not None:
+            vel = _ov_sp
+            tendencia = 'estable'
+            _venta_esp_ov = round(_ov_sp * 30.44)
+    except Exception:
+        _venta_esp_ov = None
 
     # 3) Volumen g/unidad (≈ml) para convertir uds→kg (mismo resolver que el motor)
     factor_g, fuente_vol, detalle_vol, _pres = _factor_g_por_unidad_detalle(c, producto)
@@ -2009,6 +2022,7 @@ def prog_sugerencia_produccion():
             'vel_uds_dia': round(vel, 2), 'tendencia': tendencia,
             'uds_mes': int(round(vel * 30)),
             'v30': int(round(v30)), 'v60': int(round(v60)), 'v90': int(round(v90)),
+            'venta_esperada_mes': _venta_esp_ov,   # si está seteada, la vel viene del override (no Shopify)
         },
         'volumen': {'ml_unidad': factor_g, 'fuente': fuente_vol, 'detalle': detalle_vol},
         'lote_size_kg': lote_size_kg,
@@ -2074,6 +2088,15 @@ def prog_decision_produccion():
         return jsonify({'error': 'kg_objetivo_lote inválido'}), 400
     if kg is not None:
         sets.append('kg_objetivo_lote=?'); vals.append(kg); cambios['kg_objetivo_lote'] = kg
+
+    # Venta esperada/mes MANUAL (Sebastián 20-jul · mig 365): el usuario fija la venta que CONOCE cuando
+    # la ventana reciente de Shopify engaña (bache/estacionalidad). 0 o vacío = borrar (volver a Shopify).
+    vem = _num('venta_esperada_mes', float, 0, 10000000)
+    if vem == 'ERR':
+        return jsonify({'error': 'venta_esperada_mes inválida'}), 400
+    if vem is not None:
+        _vem_store = vem if (vem and vem > 0) else None
+        sets.append('venta_esperada_mes=?'); vals.append(_vem_store); cambios['venta_esperada_mes'] = _vem_store
 
     _mm_new = None
     if 'mix_mode' in d and d['mix_mode']:

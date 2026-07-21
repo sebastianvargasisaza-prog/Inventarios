@@ -3886,6 +3886,14 @@ def habilitar_envasado_ebr(ebr_id):
     _lote = row[2]
     if _fase != 'fabricacion':
         return jsonify({"error": "Solo un legajo de FABRICACIÓN habilita el envasado."}), 400
+    # El envasado se habilita SOLO cuando Calidad LIBERÓ el granel (igual que el hook automático de
+    # liberar_ebr · GMP: no envasar producto no liberado). Sin esto, el botón crearía el legajo de
+    # envasado de un lote que QC aún no aprobó (hallazgo review 20-jul · P1).
+    _est_fab = str(row[3] or '').strip().lower()
+    if _est_fab != 'liberado':
+        return jsonify({"error": "La fabricación debe estar LIBERADA por Calidad antes de habilitar el "
+                                 "envasado (estado actual: " + (_est_fab or 'sin estado') + ").",
+                        "codigo": "FABRICACION_NO_LIBERADA"}), 409
     if not _prod or not _lote:
         return jsonify({"error": "El legajo no tiene producto/lote resueltos (¿el MBR quedó sin producto?)."}), 400
     user = session.get("compras_user", "")
@@ -6612,6 +6620,12 @@ def aprobar_dt_ebr(ebr_id):
     _es_demo = str(ebr[2] or "").upper().startswith("DEMO-")
     if not signature_id and not _es_demo:
         return jsonify({"error": "signature_id requerido · meaning='aprueba_dt' record_table='ebr_ejecuciones'"}), 400
+    # VALIDAR la firma contra e_signatures en lote REAL (espejo de liberar_ebr · Part 11: la firma debe ser
+    # una 'aprueba_dt' de ESTE EBR por este usuario, no un id cualquiera). DEMO no firma (hallazgo review 20-jul).
+    if not _es_demo and not _validar_signature(
+            cur, signature_id, record_table="ebr_ejecuciones",
+            record_id=ebr_id, meaning="aprueba_dt", signer_username=user):
+        return jsonify({"error": "signature_id no corresponde a una firma 'aprueba_dt' de este EBR por vos"}), 400
     if (ebr[1] or "").strip():
         return jsonify({"error": "Ya tiene visto bueno del Director Técnico"}), 409
     cur.execute("UPDATE ebr_ejecuciones SET aprobado_dt_por=?, aprobado_dt_at_utc=datetime('now','utc'), "

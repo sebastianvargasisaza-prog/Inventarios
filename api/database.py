@@ -10183,6 +10183,16 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "CREATE INDEX IF NOT EXISTS idx_artes_estado ON artes_etiquetas(estado)",
         "CREATE INDEX IF NOT EXISTS idx_artes_mee ON artes_etiquetas(mee_codigo)",
     ]),
+    (365, "Planeación · VENTA ESPERADA/mes manual por producto (Sebastián 20-jul): cuando la venta "
+          "reciente de Shopify (ventana 60d) NO refleja la venta normal — p.ej. un producto que "
+          "normalmente vende 900/mes pero tuvo un bache de 60 días y sale 637 — el usuario fija acá "
+          "la venta esperada que CONOCE. Si `venta_esperada_mes` está seteada (>0), el motor de "
+          "velocidad la usa como uds/día (venta_esperada_mes/30.44) en LUGAR del blend de Shopify, "
+          "en el DISPLAY (_calcular_animus_dtc) y en el MOTOR (_demanda_stock_gramos) por igual (M70) "
+          "→ cadencia, colchón y abastecimiento se dimensionan a la venta real. NULL/0 = usa Shopify "
+          "(comportamiento actual). Additiva, NULL-safe, PG-safe.", [
+        "ALTER TABLE sku_planeacion_config ADD COLUMN venta_esperada_mes REAL",
+    ]),
 ]
 
 

@@ -2181,6 +2181,19 @@ def plan_desglose_tonos():
     except Exception as e:
         return jsonify({'error': f'query ventas: {e}'}), 500
     total_uds = sum(ventas.values())
+    # Override de venta esperada/mes (Sebastián 20-jul · mig 365): 'Calcular X meses' dimensiona el kg con
+    # uds_ventana → si el usuario fijó la venta (Shopify reciente engaña), escalar los ABSOLUTOS por producto
+    # (conserva el mix · pct no cambia porque es proporción) para no contradecir la velocidad/cadencia.
+    _ov_win_factor = 1.0
+    try:
+        _ovr_dt = cur.execute(
+            "SELECT venta_esperada_mes FROM sku_planeacion_config "
+            "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(venta_esperada_mes,0)>0 LIMIT 1",
+            (producto,)).fetchone()
+        if _ovr_dt and _ovr_dt[0] and float(_ovr_dt[0]) > 0 and total_uds > 0:
+            _ov_win_factor = (float(_ovr_dt[0]) * (ventana / 30.44)) / total_uds
+    except Exception:
+        _ov_win_factor = 1.0
     # tendencia (0..0.5): ritmo reciente vs ritmo de toda la ventana · SOLO positiva (ascenso) · 0 si baja/plano
     _rate_win = (total_uds / ventana) if ventana > 0 else 0
     _rate_rec = (sum(ventas_rec.values()) / _dias_rec) if _dias_rec > 0 else 0
@@ -2241,7 +2254,7 @@ def plan_desglose_tonos():
             'sku': sk,
             'tono_label': tono_por_sku.get(sk, ''),
             'ml_unidad': ml_por_sku.get(sk),
-            'uds_ventana': int(ventas.get(sk, 0)),
+            'uds_ventana': int(round(ventas.get(sk, 0) * _ov_win_factor)),
             'porcentaje': round(pct, 2),
             'kg_sugerido': round((pct / 100.0) * cantidad_kg, 2) if cantidad_kg > 0 else 0,
         })
@@ -2250,7 +2263,7 @@ def plan_desglose_tonos():
     return jsonify({
         'ok': True, 'producto': producto, 'n_tonos': len(skus),
         'ventana_dias': ventana, 'cantidad_kg': cantidad_kg,
-        'total_uds_ventana': int(total_uds), 'items': items,
+        'total_uds_ventana': int(round(total_uds * _ov_win_factor)), 'items': items,
         'tendencia': round(tendencia, 3), 'mix_mode': _mix_mode,
     })
 
@@ -4682,6 +4695,18 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         velocidad_uds_dia, tendencia = _vblend(
             ventas_30d_total, ventas_periodo_total, ventas_90d_total,
             _dias_prod_vel, ventana)
+        # Override manual de venta esperada/mes (Sebastián 20-jul · mig 365): si el usuario lo fijó porque
+        # conoce la venta normal (Shopify reciente engaña · bache/estacionalidad), manda sobre el blend.
+        # MISMO override que el motor (_demanda_stock_gramos) → display=motor (M70).
+        _ov_vel = None
+        try:
+            from blueprints.auto_plan import venta_esperada_override as _vesp
+            _ov_vel = _vesp(c, prod_nombre)
+            if _ov_vel is not None:
+                velocidad_uds_dia = _ov_vel
+                tendencia = 0.0
+        except Exception:
+            _ov_vel = None
         velocidad_kg_dia = (velocidad_uds_dia * ml_promedio) / 1000.0
         # Stock kg = uds × ml / 1000 + pipeline reciente + Fijo pendiente
         # FIX P0 audit 24-may-2026 · sumar Fijo futuro (60d) al stock total
@@ -5026,6 +5051,8 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             "ventas_90d_uds": ventas_90d_total,
             "velocidad_uds_dia": round(velocidad_uds_dia, 2),
             "velocidad_kg_dia": round(velocidad_kg_dia, 3),
+            # override manual de venta esperada/mes (mig 365) · el UI muestra este valor si está seteado
+            "venta_esperada_mes": (round(_ov_vel * 30.44) if _ov_vel is not None else None),
             "velocidad_uds_dia_30d": round(vel_30d, 2),
             "velocidad_uds_dia_60d": round(vel_60d, 2),
             "velocidad_uds_dia_90d": round(vel_90d, 2),
@@ -21718,7 +21745,7 @@ async function abrirLoteModal(id, producto, fecha, kg){
   // (live · producí 20d antes de agotar), luego el detalle/desglose y la cadencia. "Kg a producir"
   // se movió acá desde Estado (Estado = solo volumen/venta/lo que hay/alcanza).
   window._loteVelKgDia = velKgDia;
-  window._calCadInfo = {velKgDia: velKgDia, velUdsDia: velUds, ml: ml};   // para el editor de cadencia (paridad Necesidades img 129)
+  window._calCadInfo = {velKgDia: velKgDia, velUdsDia: velUds, ml: (info.ml_unidad || 0)};   // editor de cadencia · ml crudo (|| 0) igual que Necesidades (no default 30)
   html += '<div style="font-size:14px;font-weight:800;color:#5b21b6;margin:18px 0 10px;padding-top:12px;border-top:2px solid #ede9fe">🏭 Producción <span style="font-size:11px;font-weight:600;color:#94a3b8">· todo lo de producir en un solo lugar</span></div>';
   // Sebastián 20-jul · ENGLOBAR TODO en un contenedor: kilos + alcance + agregar cliente + desglose + cadencia.
   html += '<div style="border:1.5px solid #e9d5ff;border-radius:14px;background:linear-gradient(180deg,#fdfcff,#faf7ff);padding:16px;margin-bottom:14px">';
@@ -21741,6 +21768,17 @@ async function abrirLoteModal(id, producto, fecha, kg){
   var _cadExist = _calCadenaExistente(producto);
   html += '<div style="margin-top:12px;padding-top:12px;border-top:1px dashed #e9d5ff">';
   if(_cadExist){ html += '<div style="background:#dcfce7;border:1px solid #86efac;border-radius:6px;padding:7px 10px;margin-bottom:10px;font-size:11px;color:#166534;line-height:1.5">✅ <b>Ya tenés cadena:</b> ' + _cadExist.n + ' lotes de <b>' + _cadExist.kg.toFixed(1) + ' kg</b> cada <b>' + _cadExist.meses + ' mes' + (_cadExist.meses===1?'':'es') + '</b>. Reprogramá abajo para cambiarla.</div>'; }
+  // 📈 Venta esperada/mes (Sebastián 20-jul · mig 365): override cuando Shopify reciente engaña (bache/estacionalidad).
+  var _vespActual = (info && info.venta_esperada_mes) ? info.venta_esperada_mes : '';
+  html += '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:9px 11px;margin-bottom:11px">';
+  html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">';
+  html += '<span style="font-size:11px;font-weight:800;color:#1e40af">📈 Venta esperada/mes</span>';
+  html += '<input id="cal-venta-esp" type="number" min="0" step="1" placeholder="' + velMes + ' (Shopify)" value="' + _vespActual + '" title="Si la venta reciente de Shopify NO refleja la venta normal (bache o estacionalidad), poné acá la venta que conocés. Manda sobre Shopify para velocidad, cadencia, colchón y compra de MP/envases." style="width:84px;padding:4px 6px;border:1px solid #93c5fd;border-radius:5px;font-size:13px;font-weight:700;text-align:center;color:#1e40af">';
+  html += '<span style="font-size:11px;color:#64748b">uds/mes</span>';
+  html += '<button onclick="_calGuardarVentaEsp(&quot;' + escapeHtml(producto) + '&quot;,' + id + ')" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:5px 11px;font-size:11px;font-weight:700;cursor:pointer">💾 Fijar</button>';
+  html += '</div>';
+  html += '<div style="font-size:10px;color:' + (_vespActual?'#1e40af':'#94a3b8') + ';margin-top:5px">' + (_vespActual ? ('✓ Fijada en ' + _vespActual + '/mes · el plan usa esta (no Shopify). Vaciá y Fijar para volver a Shopify.') : ('Shopify cuenta ~' + velMes + '/mes. Si la venta normal es otra, fijala acá y el plan entero se dimensiona a ese número.')) + '</div>';
+  html += '</div>';
   html += '<div style="font-size:11px;color:#6d28d9;font-weight:800;margin-bottom:4px">📍 Fecha canónica / fecha de origen <span style="font-weight:600;color:#94a3b8">(punto de partida)</span></div>';
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">';
   html += '<label style="font-size:11px;color:#475569">Fecha <input id="cal-cm-fecha" type="date" value="' + fecha + '" style="padding:4px 6px;border:1px solid #c4b5fd;border-radius:5px;font-size:12px"></label>';
@@ -21789,7 +21827,7 @@ async function abrirLoteModal(id, producto, fecha, kg){
 function _saludCadenaCal(lotes, velUds, stockUds, ml){
   var out = {};
   if(!(velUds > 0.001)) return out;
-  var PIPE = 7, hoy = new Date(new Date().toISOString().slice(0,10) + 'T12:00:00');
+  var PIPE = 7, _dh=new Date(), hoy=new Date(_dh.getFullYear(),_dh.getMonth(),_dh.getDate(),12);   // fecha LOCAL (no UTC · M24 en cliente)
   function addD(d,n){ var x=new Date(d.getTime()); x.setDate(x.getDate()+Math.round(n)); return x; }
   function diffD(a,b){ return Math.round((a.getTime()-b.getTime())/86400000); }
   var coverUntil = addD(hoy, (stockUds||0)/velUds);
@@ -21918,6 +21956,11 @@ async function _calCrearCadena(id, producto){
     var bodyObj={producto:producto, ancla_fecha:cc.partida, kg_por_lote:cc.kg, interval_dias:cc.intervalDias, dias_hasta_primera:cc.dhp, anios:cc.anios, crear_origen:true, kg_origen:kgOrigen};
     var r=await fetch('/api/plan/programar-cadencia-producto',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(bodyObj)});
     var d=await r.json();
+    if(r.status===409 && d && ((''+(d.error||'')).indexOf('ya se está programando')>=0)){   // lock de cadena · reintentar 1 vez (paridad Necesidades)
+      await new Promise(function(res){ setTimeout(res,1500); });
+      r=await fetch('/api/plan/programar-cadencia-producto',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(bodyObj)});
+      d=await r.json();
+    }
     window._cadenaBusyCal=false;
     if(!r.ok){ alert('No se pudo: '+((d&&d.error)||r.status)); return; }
     var _cr=d.creados||0, _esp=d.esperados||_cr;
@@ -21926,6 +21969,22 @@ async function _calCrearCadena(id, producto){
     if(typeof cerrarLoteModal==='function') cerrarLoteModal();
     if(typeof cargar==='function'){ try{ await cargar(); }catch(e){} } else if(window.cargarNecesidades){ try{ await cargarNecesidades(); }catch(e){} }
   }catch(e){ window._cadenaBusyCal=false; alert('Error: '+e); }
+}
+// 📈 Fijar/borrar la venta esperada/mes del producto (Sebastián 20-jul · mig 365) · reabre para recalcular.
+async function _calGuardarVentaEsp(producto, id){
+  var el = document.getElementById('cal-venta-esp');
+  var val = el ? (parseFloat(el.value) || 0) : 0;
+  try{
+    var t = (await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json()).csrf_token;
+    var r = await fetch('/api/programacion/decision-produccion',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':t},
+      body:JSON.stringify({producto:producto, venta_esperada_mes:val})});
+    var d = await r.json();
+    if(!r.ok){ alert('No se pudo: '+((d&&d.error)||r.status)); return; }
+    if(typeof _toastCal==='function') _toastCal(val>0?('✓ Venta esperada: '+val+'/mes'):'✓ Volvió a usar Shopify');
+    var m = window._LOTE_MODAL_ACTUAL || {};
+    abrirLoteModal(id, producto, m.fecha, m.kg);   // reabrir → recalcula velocidad/cadencia/colchón con el override
+  }catch(e){ alert('Error: '+e); }
 }
 // 🎨 color estable por tono (mismo hash que Necesidades · Sebastián 17-jul · swatch multitono igual)
 function _tonoColorCal(lbl){

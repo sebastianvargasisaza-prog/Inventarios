@@ -26138,7 +26138,7 @@ async function ckMarcar(itemId, estado){
     var vel = p.velocidad_uds_dia || 0;
     if(!(vel > 0.001)) return out;
     var ml = p.ml_unidad || 30;
-    var PIPE = 7, hoy = new Date(new Date().toISOString().slice(0,10) + 'T12:00:00');
+    var PIPE = 7, _dh = new Date(), hoy = new Date(_dh.getFullYear(), _dh.getMonth(), _dh.getDate(), 12);   // fecha LOCAL (no UTC · M24 en cliente)
     var stockUds = p.stock_uds_total || 0;
     function addD(d, n){ var x = new Date(d.getTime()); x.setDate(x.getDate() + Math.round(n)); return x; }
     function diffD(a, b){ return Math.round((a.getTime() - b.getTime()) / 86400000); }
@@ -26646,6 +26646,15 @@ async function ckMarcar(itemId, estado){
       var _kgM = (_velDiaM > 0) ? (Math.round(_velDiaM * (_intM + 20) * 10) / 10) : (_ceM ? _ceM.kg.toFixed(1) : _partKg);
       html += '<div style="background:linear-gradient(135deg,#f5f3ff,#faf5ff);border:1px solid #ddd6fe;border-radius:10px;padding:14px;margin:14px 0">';
       html += '<div style="font-size:14px;font-weight:800;color:#5b21b6;margin-bottom:8px">🏭 Producción</div>';
+      // 📈 Venta esperada/mes (Sebastián 20-jul · mig 365): override cuando Shopify reciente engaña.
+      var _vespN = (p.venta_esperada_mes) ? p.venta_esperada_mes : '';
+      html += '<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:9px 11px;margin-bottom:11px">';
+      html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="font-size:11px;font-weight:800;color:#1e40af">📈 Venta esperada/mes</span>';
+      html += '<input id="nec-venta-esp" type="number" min="0" step="1" placeholder="' + ventaMes + ' (Shopify)" value="' + _vespN + '" title="Si Shopify reciente NO refleja la venta normal (bache/estacionalidad), poné la venta que conocés. Manda sobre Shopify para velocidad, cadencia, colchón y compra." style="width:84px;padding:4px 6px;border:1px solid #93c5fd;border-radius:5px;font-size:13px;font-weight:700;text-align:center;color:#1e40af">';
+      html += '<span style="font-size:11px;color:#64748b">uds/mes</span>';
+      html += '<button onclick="_necGuardarVentaEsp(' + JSON.stringify(p.producto_nombre||'').replace(/"/g,'&quot;') + ',' + idx + ')" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:5px 11px;font-size:11px;font-weight:700;cursor:pointer">💾 Fijar</button></div>';
+      html += '<div style="font-size:10px;color:' + (_vespN?'#1e40af':'#94a3b8') + ';margin-top:5px">' + (_vespN ? ('✓ Fijada en ' + _vespN + '/mes · el plan usa esta (no Shopify).') : ('Shopify cuenta ~' + ventaMes + '/mes · si la venta normal es otra, fijala acá.')) + '</div>';
+      html += '</div>';
       if (_ceM) {
         html += '<div style="background:#dcfce7;border:1px solid #86efac;border-radius:6px;padding:7px 10px;margin-bottom:10px;font-size:11px;color:#166534;line-height:1.5">✅ <b>Ya tenés cadena:</b> ' + _ceM.n + ' lotes de <b>' + _ceM.kg.toFixed(1) + ' kg</b> cada <b>' + _ceM.meses + ' mes' + (_ceM.meses === 1 ? '' : 'es') + '</b>. Reprogramá abajo para cambiarla.</div>';
       }
@@ -26972,6 +26981,21 @@ async function ckMarcar(itemId, estado){
     for(var i=0;i<rows.length;i++){ rows[i].style.display = show ? '' : 'none'; }
     var car = document.getElementById('necx-caret-' + idx);
     if(car) car.style.transform = show ? 'rotate(90deg)' : '';
+  }
+  // 📈 Fijar/borrar la venta esperada/mes (Sebastián 20-jul · mig 365) · recarga Necesidades y reabre para recalcular.
+  async function _necGuardarVentaEsp(producto, idx){
+    var el = document.getElementById('nec-venta-esp');
+    var val = el ? (parseFloat(el.value) || 0) : 0;
+    try{
+      var t = (await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json()).csrf_token;
+      var r = await fetch('/api/programacion/decision-produccion',{method:'POST',credentials:'same-origin',
+        headers:{'Content-Type':'application/json','X-CSRF-Token':t},
+        body:JSON.stringify({producto:producto, venta_esperada_mes:val})});
+      var d = await r.json();
+      if(!r.ok){ alert('No se pudo: '+((d&&d.error)||r.status)); return; }
+      if(window.cargarNecesidades){ try{ await cargarNecesidades(); }catch(e){} }
+      if(typeof abrirSolicitar==='function'){ try{ abrirSolicitar(idx); }catch(e){} }
+    }catch(e){ alert('Error: '+e); }
   }
   async function programarCadenaManual(idx){
     var p = window._NEC_PRODUCTOS_CACHE[idx]; if(!p){ alert('Producto no encontrado'); return; }
