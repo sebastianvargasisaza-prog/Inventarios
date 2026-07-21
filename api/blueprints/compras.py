@@ -12313,12 +12313,34 @@ def _scorecard_proveedor_dict(c, nombre_prov):
         out['lead_time_real_dias'] = round(float((r or [0])[0] or 0), 1)
     except Exception:
         out['lead_time_real_dias'] = 0
-    # 7. score_global (0-100 ponderado · 4 dimensiones)
+    # 6b. tasa_discrepancia_pct · % OCs recibidas con discrepancia (recibió <95% de algún ítem)
+    # Sebastián 21-jul: la calidad de despacho ahora PUNTEA al proveedor. Antes esta métrica
+    # solo vivía en la pestaña "Recepción y calidad" sin afectar el score. Misma fuente que el
+    # ranking de recepciones-discrepancias (tiene_discrepancias sobre recibidas).
+    try:
+        r = c.execute(
+            """SELECT COUNT(*),
+                      SUM(CASE WHEN tiene_discrepancias=1 THEN 1 ELSE 0 END)
+               FROM ordenes_compra
+               WHERE LOWER(TRIM(proveedor))=LOWER(TRIM(?))
+                 AND estado IN ('Recibida','Pagada','Parcial')
+                 AND date(fecha) >= date('now','-5 hours','-365 days')""",
+            (nombre_prov,),
+        ).fetchone()
+        _tot_rec_d = int((r or [0, 0])[0] or 0)
+        _con_dis = int((r or [0, 0])[1] or 0)
+        out['tasa_discrepancia_pct'] = round(_con_dis / _tot_rec_d * 100, 1) if _tot_rec_d else 0
+        out['recepciones_evaluadas'] = _tot_rec_d
+    except Exception:
+        out['tasa_discrepancia_pct'] = 0
+        out['recepciones_evaluadas'] = 0
+    # 7. score_global (0-100 ponderado · 5 dimensiones · discrepancia suma desde 21-jul)
     cumpl = out['cumplimiento_pct'] / 100
     on_time = out['on_time_pct'] / 100
     no_rechazo = max(0, 1 - out['rechazo_qc_pct'] / 100)
+    no_discrep = max(0, 1 - out['tasa_discrepancia_pct'] / 100)
     precio_estable = max(0, 1 - abs(out['variacion_precio_12m_pct']) / 50)  # >50% var = 0
-    score = (cumpl * 0.30 + on_time * 0.25 + no_rechazo * 0.30 + precio_estable * 0.15) * 100
+    score = (cumpl * 0.25 + on_time * 0.20 + no_rechazo * 0.25 + no_discrep * 0.15 + precio_estable * 0.15) * 100
     out['score_global'] = round(score, 1)
     out['score_color'] = 'verde' if score >= 80 else ('amarillo' if score >= 60 else 'rojo')
     out['recomendacion'] = (

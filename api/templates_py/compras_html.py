@@ -305,7 +305,6 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
     <button class="tn"      data-tab="pagos" id="tn-pagos" title="Histórico · pagos ya ejecutados">💸 Pagos</button>
     <button class="tn" style="display:none"     data-tab="facprov" id="tn-facprov" title="Libro de facturas de proveedor · cuentas por pagar formales con retenciones, vencimiento y saldos">🧾 Facturas <span id="facprov-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <button class="tn" style="display:none" data-tab="feedneed" id="tn-feedneed" title="Necesidades de compra · materias primas y envases por debajo del mínimo, en un solo lugar">🔔 Necesidades <span id="feedneed-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
-    <button class="tn"      data-tab="discrep" id="tn-discrep" title="Ciclo recepción + calidad: recibido, cuarentena (F01/F02), rechazos y discrepancias">📋 Recepción y calidad <span id="discrep-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <button class="tn" style="display:none" data-tab="mailbox" id="tn-mailbox" title="Facturas detectadas por el cron mailbox · revisar/completar/descartar · Sebastián 23-may">📧 Mailbox <span id="mailbox-badge" style="display:none;background:#7c3aed;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <!-- COT comparador · Sebastián 23-may-2026 PM · backend ya estaba listo, UI nueva -->
     <button class="tn"      data-tab="cotiz" id="tn-cotiz" title="Rondas de cotizaciones · comparar proveedores lado a lado · elegir ganadora">💬 Cotizaciones <span id="cotiz-badge" style="display:none;background:#0891b2;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
@@ -528,7 +527,9 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
     <span style="width:1px;height:24px;background:#e7e5e4"></span>
     <button onclick="abrirROIProveedores()" style="padding:8px 12px;background:#faf7ff;color:#78716c;border:1px solid #ece9f6;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap" title="ROI 12 meses · cumplimiento · top por monto">&#128202; ROI</button>
     <button onclick="abrirProvDuplicados()" style="padding:8px 12px;background:#faf7ff;color:#78716c;border:1px solid #ece9f6;border-radius:9px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap" title="Detectar y fusionar proveedores duplicados (case-insensitive)">&#128279; Duplicados</button>
+    <button onclick="toggleProvCalidad()" style="padding:8px 12px;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;border-radius:9px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap" title="Ranking de calidad de despacho por proveedor (tasa de discrepancia en recepciones)">&#127942; Ranking calidad</button>
   </div>
+  <div id="prov-calidad-panel" style="display:none;background:#fff;border:1px solid #e7e5e4;border-radius:12px;padding:16px 18px;margin-bottom:16px;box-shadow:0 1px 3px rgba(15,23,42,.04)"></div>
   <div class="kpis" id="prov-kpis" style="margin-bottom:16px"></div>
   <div id="prov-grid" class="pg"><div class="empty">Cargando...</div></div>
 </div>
@@ -840,52 +841,6 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 
 <!-- ════════════ TAB: ATRASADAS · Sebastián 23-may-2026 ════════════ -->
 <!-- OCs Autorizada/Parcial sin recibir tras lead_time+buffer · cierre flujo -->
-<!-- ════════════ TAB: CALIDAD RECEPCIÓN · Sebastián 23-may-2026 ════════════ -->
-<!-- Histórico de OCs recibidas con discrepancia + ranking proveedores -->
-<div id="pane-discrep" class="pane">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
-    <div>
-      <h2 style="margin:0;font-size:18px;color:#1e293b;">&#x1F4CB; Recepción y calidad</h2>
-      <div style="font-size:12px;color:#64748b;margin-top:2px;">
-        El ciclo completo de Catalina: lo recibido, lo que está en cuarentena (F01/F02), rechazos y discrepancias &middot; ventana
-        <input type="number" id="discrep-dias" value="30" min="7" max="365" style="width:50px;padding:2px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px" onchange="cargarDiscrepancias()"> d&iacute;as
-      </div>
-    </div>
-    <button class="btn bp" onclick="cargarDiscrepancias()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
-  </div>
-
-  <div id="discrep-resumen" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;font-size:12px;color:#475569"></div>
-
-  <!-- Vista unificada · recepción + calidad (Catalina ve el ciclo completo) -->
-  <div class="kpis" id="ccr-kpis" style="margin-bottom:16px"></div>
-  <div class="cxt-wrap" id="ccr-pipeline-wrap" style="margin-bottom:16px;display:none">
-    <div style="padding:12px 16px;border-bottom:1px solid #ece9f6;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-      <span style="font-weight:800;font-size:13px;color:#1e1b2e">&#x1F9EA; En cuarentena &middot; pipeline de calidad</span>
-      <span style="font-size:11px;color:#78716c">recepci&oacute;n &rarr; F01 t&eacute;cnica &rarr; F02 an&aacute;lisis &rarr; liberaci&oacute;n (Laura trabaja el F01/F02 en Calidad)</span>
-    </div>
-    <div id="ccr-pipeline" style="overflow-x:auto"></div>
-  </div>
-
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
-    <!-- Ranking proveedores -->
-    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;">
-      <div style="font-weight:700;font-size:13px;color:#1e293b;margin-bottom:10px;">&#x1F3C6; Ranking proveedores (tasa discrepancia)</div>
-      <div id="discrep-ranking" style="font-size:12px;max-height:340px;overflow-y:auto">Cargando&hellip;</div>
-    </div>
-    <!-- Tip educativo -->
-    <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:10px;padding:14px;font-size:12px;color:#1e40af">
-      <div style="font-weight:700;margin-bottom:6px">&#x1F4A1; C&oacute;mo se detectan</div>
-      <div>1. Receptor marca <strong>tiene_discrepancias</strong> en /recibir</div>
-      <div>2. <strong>Auto-detecci&oacute;n</strong>: si alg&uacute;n item recibe &lt;95% de lo pedido, sistema marca discrepancia + push_notif a creador OC + admins</div>
-      <div style="margin-top:6px;color:#64748b">Un cron diario (8:45 AM) avisa por campana las OCs atrasadas sin recibir tras su lead_time.</div>
-    </div>
-  </div>
-
-  <div id="discrep-contenido" style="background:white;border:1px solid #e2e8f0;border-radius:10px;overflow-x:auto">
-    <div style="text-align:center;color:#94a3b8;padding:30px">Click &#x21BA; Actualizar</div>
-  </div>
-</div>
-
 <!-- ════════════ TAB: MAILBOX FACTURAS · Sebastián 23-may-2026 ════════════ -->
 <!-- Facturas detectadas por cron mailbox IMAP · admin las completa o descarta -->
 <div id="pane-mailbox" class="pane">
@@ -1690,7 +1645,7 @@ window._cxTabToGrp = {
   'artes':'entradas',
   // OCs y Pagos
   'consol':'ocs', 'por-pagar':'ocs', 'pagos':'ocs', 'ordserv':'ocs',
-  'discrep':'ocs', 'mailbox':'ocs',
+  'mailbox':'ocs',
   'facprov':'ocs', 'cotiz':'ocs', 'prepenv':'ocs', 'feedneed':'ocs',
   // Maestros
   'prov':'maestros',
@@ -1737,7 +1692,6 @@ document.querySelectorAll('.tn').forEach(function(btn){
     else if(tab==='consol') loadConsolidado();
     else if(tab==='pagos'){ loadPagos(); }
     else if(tab==='por-pagar'){ loadPorPagar(); }
-    else if(tab==='discrep'){ cargarDiscrepancias(); }
     else if(tab==='mailbox'){ cargarMailbox(); }
     else if(tab==='cotiz'){ cargarCotizaciones(); }
     else if(tab==='alertas'){ loadAlertasCompras(); }
@@ -3254,11 +3208,39 @@ function renderProv(){
       '</div>'
       // Fase 3 · 21-may-2026 · scorecard + ficha 360 (footer · nombre queda a ancho completo arriba)
       +'<div class="pc-actions">'
-      +'<button class="pc-sc score" data-scorecard="'+esc(p.nombre)+'" title="Score · cumplimiento · on-time · rechazo QC · variación precio">🎯 Score</button>'
+      +'<button class="pc-sc score" data-scorecard="'+esc(p.nombre)+'" title="Score · cumplimiento · on-time · rechazo QC · discrepancia despacho · variación precio">🎯 Score</button>'
       +'<button class="pc-sc v360" data-ficha360="'+esc(p.nombre)+'">&#x1F4CA; Ver 360</button>'
       +'</div>'
     +'</div>';
   }).join('');
+}
+
+// ─── Ranking de calidad de despacho por proveedor (Sebastián 21-jul) ───────
+// Movido desde la pestaña "Recepción y calidad": la evaluación de calidad ES la nota del
+// proveedor, así que vive en Proveedores. Fuente: /api/compras/recepciones-discrepancias.
+function toggleProvCalidad(){
+  var panel=document.getElementById('prov-calidad-panel'); if(!panel) return;
+  if(panel.style.display==='block'){ panel.style.display='none'; return; }
+  panel.style.display='block'; _renderProvCalidad();
+}
+async function _renderProvCalidad(){
+  var panel=document.getElementById('prov-calidad-panel');
+  panel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px"><b style="color:#166534;font-size:14px">&#127942; Ranking de calidad de despacho</b><span style="font-size:11px;color:#94a3b8">tasa de discrepancia = OCs que llegaron con faltante / recibidas &middot; la discrepancia ya puntea en el &#127919; Score</span></div><div id="prov-calidad-body" style="font-size:12px;color:#64748b">cargando&hellip;</div>';
+  try{
+    var r=await fetch('/api/compras/recepciones-discrepancias?dias=180'); var d=await r.json();
+    var rk=(d&&d.ranking_proveedores)||[]; var box=document.getElementById('prov-calidad-body');
+    if(!rk.length){ box.innerHTML='<div style="opacity:.75;padding:6px 0">&#10003; Sin recepciones con discrepancia en los últimos 180 días &middot; todos despachando bien.</div>'; return; }
+    var rows=rk.map(function(s){
+      var t=s.tasa_discrepancia_pct||0;
+      var col=t<=5?'#16a34a':(t<=15?'#ca8a04':'#dc2626');
+      return '<tr style="border-bottom:1px solid #f1f5f9"><td style="padding:6px 4px;font-weight:600;color:#334155">'+esc(s.proveedor)+'</td>'
+        +'<td style="padding:6px 4px;text-align:right;color:#64748b">'+(s.total_recibidas||0)+'</td>'
+        +'<td style="padding:6px 4px;text-align:right;color:#64748b">'+(s.con_discrepancia||0)+'</td>'
+        +'<td style="padding:6px 4px;text-align:right;font-weight:800;color:'+col+';font-variant-numeric:tabular-nums">'+t+'%</td>'
+        +'<td style="padding:6px 4px;text-align:right"><button class="pc-sc score" data-scorecard="'+esc(s.proveedor)+'" style="font-size:10px;padding:3px 8px">&#127919; Score</button></td></tr>';
+    }).join('');
+    box.innerHTML='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:#6d28d9;text-align:right"><th style="padding:6px 4px;text-align:left">Proveedor</th><th style="padding:6px 4px">Recibidas</th><th style="padding:6px 4px">Con discrep.</th><th style="padding:6px 4px">Tasa</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  }catch(e){ var b=document.getElementById('prov-calidad-body'); if(b) b.innerHTML='<span style="color:#b91c1c">Error cargando el ranking</span>'; }
 }
 
 // ─── Proveedor 360 ────────────────────────────────────────────────
@@ -6714,6 +6696,7 @@ async function abrirScorecardProveedor(nombre){
       {l:'✅ Cumplimiento', v:d.cumplimiento_pct, suf:'%', col:d.cumplimiento_pct>=80?'#16a34a':(d.cumplimiento_pct>=50?'#ca8a04':'#dc2626')},
       {l:'⏱ On-time (≤30d)', v:d.on_time_pct, suf:'%', col:d.on_time_pct>=80?'#16a34a':(d.on_time_pct>=50?'#ca8a04':'#dc2626')},
       {l:'❌ Rechazo QC', v:d.rechazo_qc_pct, suf:'%', col:d.rechazo_qc_pct<=2?'#16a34a':(d.rechazo_qc_pct<=10?'#ca8a04':'#dc2626'), nota:d.lotes_evaluados+' lotes evaluados'},
+      {l:'💥 Discrepancia despacho', v:(d.tasa_discrepancia_pct||0), suf:'%', col:(d.tasa_discrepancia_pct||0)<=5?'#16a34a':((d.tasa_discrepancia_pct||0)<=15?'#ca8a04':'#dc2626'), nota:(d.recepciones_evaluadas||0)+' recepciones'},
       {l:'📈 Variación precio', v:(d.variacion_precio_12m_pct>0?'+':'')+d.variacion_precio_12m_pct, suf:'%', col:Math.abs(d.variacion_precio_12m_pct)<=10?'#16a34a':(Math.abs(d.variacion_precio_12m_pct)<=25?'#ca8a04':'#dc2626')},
       {l:'🚚 Lead time real', v:d.lead_time_real_dias, suf:'d'},
     ];
@@ -6728,7 +6711,7 @@ async function abrirScorecardProveedor(nombre){
     html += '</div>';
     // Ponderación
     html += '<div style="background:#f1f5f9;padding:10px 14px;border-radius:6px;font-size:11px;color:#475569">';
-    html += '<b>Ponderación score:</b> Cumplimiento 30% · On-time 25% · Sin rechazo QC 30% · Precio estable 15%';
+    html += '<b>Ponderación score:</b> Cumplimiento 25% · On-time 20% · Sin rechazo QC 25% · Sin discrepancia 15% · Precio estable 15%';
     html += '</div>';
     document.getElementById('sc-body').innerHTML = html;
   }catch(e){
@@ -8840,166 +8823,6 @@ async function registrarSaldoFavor(){
     alert('✅ '+prov+' ahora tiene '+_money(d.saldo)+' a favor');
   }catch(e){ alert('Error: '+e); }
 }
-
-// ═══════════════════════════════════════════════════════════════════
-// Tab "Calidad recepción" · Sebastián 23-may-2026
-// Histórico OCs con discrepancia + ranking proveedores
-// ═══════════════════════════════════════════════════════════════════
-async function cargarDiscrepancias(){
-  var div = document.getElementById('discrep-contenido');
-  var resumen = document.getElementById('discrep-resumen');
-  var ranking = document.getElementById('discrep-ranking');
-  var diasEl = document.getElementById('discrep-dias');
-  var dias = diasEl ? parseInt(diasEl.value, 10) : 30;
-  if(isNaN(dias) || dias < 1) dias = 30;
-  div.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:30px">Cargando…</div>';
-  ranking.innerHTML = 'Cargando…';
-  resumen.innerHTML = '';
-  try{
-    var r = await fetch('/api/compras/recepciones-discrepancias?dias=' + dias);
-    if(r.status === 401){ window.location.href = '/login'; return; }
-    if(!r.ok){
-      div.innerHTML = '<div style="color:#dc2626;padding:20px">Error HTTP ' + r.status + '</div>';
-      return;
-    }
-    var d = await r.json();
-    function _esc(s){
-      if(s == null) return '';
-      return String(s).replace(/[&<>"\']/g, function(c){
-        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
-      });
-    }
-    function _fmtCop(n){
-      if(!n) return '-';
-      return '$' + Math.round(n).toLocaleString('es-CO');
-    }
-    // Resumen
-    var n = d.total_ocs_con_discrepancia || 0;
-    resumen.innerHTML = '<span style="background:' + (n>0?'#fee2e2':'#dcfce7') + ';color:' + (n>0?'#991b1b':'#15803d') + ';padding:6px 12px;border-radius:8px;font-weight:700;font-size:13px">' +
-      (n>0 ? ('⚠ ' + n + ' OC(s) con discrepancia en ' + dias + 'd') : '✓ Sin discrepancias en ' + dias + 'd') +
-      '</span>' +
-      '<span style="color:#64748b">Hoy ' + d.hoy + '</span>';
-    var badge = document.getElementById('discrep-badge');
-    if(badge){
-      if(n > 0){ badge.style.display = 'inline-block'; badge.textContent = n; }
-      else { badge.style.display = 'none'; }
-    }
-    // Vista unificada recepción + calidad (KPIs + pipeline de cuarentena)
-    cargarReceptionUnificada(d, dias);
-    // Ranking proveedores
-    var rk = d.ranking_proveedores || [];
-    if(!rk.length){
-      ranking.innerHTML = '<div style="color:#94a3b8">Sin recepciones en la ventana</div>';
-    } else {
-      var rkHtml = '<table style="width:100%;border-collapse:collapse;font-size:12px">';
-      rkHtml += '<thead><tr style="color:#475569;border-bottom:1px solid #e2e8f0"><th style="text-align:left;padding:5px 6px">Proveedor</th><th style="text-align:right;padding:5px 6px">Recibidas</th><th style="text-align:right;padding:5px 6px">Discrep.</th><th style="text-align:right;padding:5px 6px">Tasa</th></tr></thead><tbody>';
-      rk.forEach(function(p){
-        var tasaCol = p.tasa_discrepancia_pct > 30 ? '#dc2626' : (p.tasa_discrepancia_pct > 10 ? '#ea580c' : (p.tasa_discrepancia_pct > 0 ? '#ca8a04' : '#16a34a'));
-        rkHtml += '<tr style="border-bottom:1px solid #f1f5f9">';
-        rkHtml += '<td style="padding:6px;font-weight:600">' + _esc(p.proveedor) + '</td>';
-        rkHtml += '<td style="padding:6px;text-align:right;font-family:ui-monospace">' + p.total_recibidas + '</td>';
-        rkHtml += '<td style="padding:6px;text-align:right;font-family:ui-monospace">' + p.con_discrepancia + '</td>';
-        rkHtml += '<td style="padding:6px;text-align:right;font-family:ui-monospace;color:' + tasaCol + ';font-weight:700">' + p.tasa_discrepancia_pct + '%</td>';
-        rkHtml += '</tr>';
-      });
-      rkHtml += '</tbody></table>';
-      ranking.innerHTML = rkHtml;
-    }
-    // Tabla OCs con discrepancia
-    if(n === 0){
-      div.innerHTML = '<div style="text-align:center;color:#15803d;padding:30px;background:#f0fdf4">✓ Sin OCs con discrepancia en últimos ' + dias + 'd</div>';
-      return;
-    }
-    var html = '<table style="width:100%;border-collapse:collapse;font-size:13px">';
-    html += '<thead><tr style="background:#f8fafc;color:#475569;border-bottom:1px solid #e2e8f0">';
-    html += '<th style="text-align:left;padding:10px 12px;font-weight:700">OC</th>';
-    html += '<th style="text-align:left;padding:10px 12px;font-weight:700">Proveedor</th>';
-    html += '<th style="text-align:left;padding:10px 12px;font-weight:700">Fecha recep.</th>';
-    html += '<th style="text-align:left;padding:10px 12px;font-weight:700">Recibió</th>';
-    html += '<th style="text-align:center;padding:10px 12px;font-weight:700">Items con faltante</th>';
-    html += '<th style="text-align:right;padding:10px 12px;font-weight:700">Valor</th>';
-    html += '<th style="text-align:left;padding:10px 12px;font-weight:700">Observaciones</th>';
-    html += '</tr></thead><tbody>';
-    (d.ocs || []).forEach(function(oc){
-      var maxPct = 0;
-      (oc.items_faltantes || []).forEach(function(it){ if(it.pct_faltante > maxPct) maxPct = it.pct_faltante; });
-      var bg = maxPct > 30 ? '#fef2f2' : (maxPct > 10 ? '#fff7ed' : '#fefce8');
-      html += '<tr style="border-bottom:1px solid #f1f5f9;background:' + bg + '">';
-      html += '<td style="padding:8px 12px;font-family:ui-monospace;font-weight:700">' + _esc(oc.numero_oc) + '</td>';
-      html += '<td style="padding:8px 12px">' + _esc(oc.proveedor) + '</td>';
-      html += '<td style="padding:8px 12px">' + _esc(oc.fecha_recepcion) + '</td>';
-      html += '<td style="padding:8px 12px;color:#64748b">' + _esc(oc.recibido_por || '-') + '</td>';
-      // Items faltantes · expandible
-      var itemsHtml = '<span style="font-weight:700;color:#dc2626">' + oc.n_items_faltantes + '</span>';
-      if(oc.items_faltantes && oc.items_faltantes.length){
-        itemsHtml += '<div style="font-size:11px;color:#64748b;margin-top:3px">';
-        oc.items_faltantes.slice(0, 3).forEach(function(it){
-          itemsHtml += '<div>' + _esc(it.codigo_mp) + ': ' + it.recibido + '/' + it.pedido + 'g (-' + it.pct_faltante + '%)</div>';
-        });
-        if(oc.items_faltantes.length > 3){
-          itemsHtml += '<div style="color:#94a3b8">+' + (oc.items_faltantes.length - 3) + ' más</div>';
-        }
-        itemsHtml += '</div>';
-      }
-      html += '<td style="padding:8px 12px;text-align:center">' + itemsHtml + '</td>';
-      html += '<td style="padding:8px 12px;text-align:right;font-family:ui-monospace">' + _fmtCop(oc.valor_total) + '</td>';
-      html += '<td style="padding:8px 12px;font-size:11px;color:#64748b;max-width:280px">' + _esc(oc.observaciones_recepcion || '-') + '</td>';
-      html += '</tr>';
-    });
-    html += '</tbody></table>';
-    html += '<div style="font-size:11px;color:#64748b;padding:10px 12px;background:#f8fafc;border-top:1px solid #e2e8f0">💡 Filas rojas = faltante &gt;30%, naranja &gt;10%, ámbar el resto. Usá el ranking arriba para identificar proveedores recurrentes.</div>';
-    div.innerHTML = html;
-  }catch(e){
-    div.innerHTML = '<div style="color:#dc2626;padding:20px">Error red: ' + e.message + '</div>';
-  }
-}
-
-// Vista unificada recepción + calidad · Catalina ve el ciclo completo (cuarentena → F01 → F02 → liberación)
-async function cargarReceptionUnificada(discrepData, dias){
-  var kb = document.getElementById('ccr-kpis');
-  var pw = document.getElementById('ccr-pipeline-wrap');
-  var pp = document.getElementById('ccr-pipeline');
-  function _esc(s){ if(s==null) return ''; return String(s).replace(/[&<>"\']/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
-  var recibidas = 0;
-  (discrepData.ranking_proveedores||[]).forEach(function(p){ recibidas += (p.total_recibidas||0); });
-  var conDiscrep = discrepData.total_ocs_con_discrepancia || 0;
-  var lotes = [], ncAbiertas = 0;
-  try{ var pr = await fetch('/api/calidad/recepcion-pipeline'); if(pr.ok){ var pd = await pr.json(); lotes = (pd&&pd.lotes)||[]; } }catch(e){}
-  try{ var nr = await fetch('/api/calidad/no-conformidades'); if(nr.ok){ var nd = await nr.json(); (nd||[]).forEach(function(x){ if((x.estado==='Abierta') && (/rechaz/i.test(x.tipo||'') || /recep/i.test(x.area||''))) ncAbiertas++; }); } }catch(e){}
-  var enCuar = lotes.length;
-  var faltaF01 = lotes.filter(function(l){ return !l.f01_resultado; }).length;
-  var porLiberar = lotes.filter(function(l){ if(l.tipo==='MEE') return l.f01_resultado!=='conforme'; return l.f01_resultado==='conforme' && !l.f02_resultado; }).length;
-  if(kb){
-    kb.innerHTML = '<div class="kpi"><div class="kpi-l">Recibidas ('+dias+'d)</div><div class="kpi-v">'+recibidas+'</div></div>'
-      + '<div class="kpi"><div class="kpi-l">Con discrepancia</div><div class="kpi-v '+(conDiscrep>0?'r':'')+'">'+conDiscrep+'</div></div>'
-      + '<div class="kpi"><div class="kpi-l">En cuarentena</div><div class="kpi-v" style="color:#6d28d9">'+enCuar+'</div></div>'
-      + '<div class="kpi"><div class="kpi-l">Falta F01</div><div class="kpi-v '+(faltaF01>0?'w':'')+'">'+faltaF01+'</div></div>'
-      + '<div class="kpi"><div class="kpi-l">Por liberar</div><div class="kpi-v '+(porLiberar>0?'w':'')+'">'+porLiberar+'</div></div>'
-      + '<div class="kpi"><div class="kpi-l">Rechazos / NC</div><div class="kpi-v '+(ncAbiertas>0?'r':'')+'">'+ncAbiertas+'</div></div>';
-  }
-  if(!enCuar){ if(pw) pw.style.display='none'; return; }
-  if(pw) pw.style.display='';
-  var h = '<table class="cxt" style="font-size:12px"><thead><tr><th>Insumo / Lote</th><th>Cantidad</th><th>Proveedor</th><th>OC</th><th style="text-align:center">F01 t&eacute;cnica</th><th style="text-align:center">F02 an&aacute;lisis</th></tr></thead><tbody>';
-  lotes.forEach(function(l){
-    var esMEE = l.tipo==='MEE';
-    var f01 = l.f01_resultado||'';
-    var f01c = f01==='conforme'?'<span class="cxt-chip ok">&#10003; Conforme</span>':(f01==='no_conforme'?'<span class="cxt-chip no">&#10007; No conforme</span>':'<span class="cxt-chip wait">Pendiente</span>');
-    var f02c;
-    if(esMEE){ f02c = (f01==='conforme')?'<span class="cxt-chip ok">&#10003; Liberado (F01)</span>':'<span class="cxt-chip mute">n/a envase</span>'; }
-    else { var f02=l.f02_resultado||''; f02c = f02==='aprobado'?'<span class="cxt-chip ok">&#10003; Aprobado</span>':(f02==='no_aprobado'?'<span class="cxt-chip no">&#10007; No aprobado</span>':(f02==='cuarentena'?'<span class="cxt-chip wait">Cuarentena</span>':(f01==='conforme'?'<span class="cxt-chip wait">Pendiente</span>':'<span class="cxt-chip mute">requiere F01</span>'))); }
-    var badge = esMEE?'<span class="cxt-chip info" style="font-size:9px;padding:1px 6px">ENVASE</span> ':'<span class="cxt-chip mute" style="font-size:9px;padding:1px 6px">MP</span> ';
-    h += '<tr><td>'+badge+'<b style="color:#292524">'+_esc(l.nombre)+'</b><div style="font-size:10px;color:#a1a1aa;font-family:ui-monospace">'+_esc(l.lote||'sin lote')+'</div></td>'
-      + '<td class="cxt-mono">'+_esc(String(l.cantidad))+(esMEE?' und':' g')+'</td>'
-      + '<td>'+_esc(l.proveedor||'-')+'</td>'
-      + '<td class="cxt-mono" style="color:#78716c">'+_esc(l.numero_oc||'-')+'</td>'
-      + '<td style="text-align:center">'+f01c+'</td>'
-      + '<td style="text-align:center">'+f02c+'</td></tr>';
-  });
-  h += '</tbody></table>';
-  h += '<div class="cxt-hint">&#128161; Catalina ve el estado; Laura hace el F01/F02 en el m&oacute;dulo de Calidad. Un lote rechazado genera una No Conformidad (devoluci&oacute;n al proveedor).</div>';
-  if(pp) pp.innerHTML = h;
-}
-
 
 // ═══════════════════════════════════════════════════════════════════
 // Tab "Mailbox facturas" · Sebastián 23-may-2026 · MBX UI
