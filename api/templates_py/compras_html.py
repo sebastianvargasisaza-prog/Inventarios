@@ -1167,10 +1167,10 @@ function renderHistorico(){
 
 <!-- MODAL: Registrar Pago -->
 <div id="m-pago" class="ov">
-<div class="mdl">
-  <div class="mh"><h3>&#x1F4B8; Registrar Pago</h3><button class="mx" onclick="closeModal('m-pago')">&times;</button></div>
+<div class="mdl mdl-lg">
+  <div class="mh mh-ent"><h3>&#x1F4B8; Registrar Pago</h3><button class="mx" onclick="closeModal('m-pago')">&times;</button></div>
   <div class="mb">
-    <div id="pago-info" style="background:#f9f8f7;border:1px solid #e7e5e4;border-radius:6px;padding:10px;font-size:13px;"></div>
+    <div id="pago-info" style="background:linear-gradient(135deg,#faf5ff,#f5f3ff);border:1px solid #e9d5ff;border-radius:11px;padding:13px 15px;font-size:13.5px;color:#3730a3;font-weight:600;"></div>
     <div id="pago-saldofavor" style="display:none;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:9px 11px;font-size:12px;margin-top:8px"></div>
     <div class="g2">
       <div class="fg"><label>Monto Pagado ($)</label><input type="number" id="pago-monto" min="0" step="0.01" placeholder="0"></div>
