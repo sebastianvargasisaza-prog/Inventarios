@@ -21866,7 +21866,9 @@ function _calcCadencia(){
   var kgOtroEl = document.getElementById('kg-otro-cli');
   var kgOtro = kgOtroEl ? (parseFloat(kgOtroEl.value) || 0) : 0;
   var lf = (PLAN_DATA.agendadas || []).find(function(a){ return a.id === m.id; });
-  var kgB2B = (lf && parseFloat(lf.kg_b2b)) || 0;
+  // FIX 20-jul (Fable P1 · M45/M70): el listado emite kg_b2b_TOTAL, no kg_b2b → antes NaN→0 → la
+  // porción B2B NUNCA se restaba → cadena espaciada de más → quiebre DTC en lotes con B2B.
+  var kgB2B = (lf && parseFloat(lf.kg_b2b_total)) || 0;
   var kg = kgTotal - kgOtro - kgB2B;   // porción Animus (la que consume la venta DTC)
   var vel = cad.velKgDia || 0;         // kg/día Animus
   if(!(kg > 0.01)){
@@ -21880,7 +21882,11 @@ function _calcCadencia(){
   var _man = _manEl ? parseFloat(_manEl.value) : NaN;
   if(_man >= 15){
     intervalDias = Math.round(_man);
-    firstOffset = Math.max(intervalDias - 20, 1);         // 1er lote: 20d antes de agotar (colchón)
+    // FIX 20-jul (Fable P1): el 1er lote cae 20d antes de AGOTARSE de verdad (cobertura real kg/vel),
+    // NO 20d antes de la cadencia manual · si forzás cadencia > cobertura, restar de la manual dejaría
+    // el 1er lote DESPUÉS del agotamiento = quiebre. Se ancla al mínimo(cadencia, cobertura real) − 20.
+    var _cobReal = (vel > 0.0001) ? Math.max(Math.round(kg / vel), 15) : intervalDias;
+    firstOffset = Math.max(Math.min(intervalDias, _cobReal) - 20, 1);
     base = 'manual';
   } else if(vel > 0.0001){
     intervalDias = Math.max(Math.round(kg / vel), 15);   // días que ALCANZA la porción Animus

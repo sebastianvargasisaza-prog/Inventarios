@@ -9844,6 +9844,7 @@ def listado_produccion_programada():
             'envase_codigo_override': envase_override,
             'desglose_b2b': desglose,
             'kg_b2b_total': round(kg_b2b_sum, 2),
+            'kg_otro_cliente': round(kg_otro_por_id.get(r[0], 0.0), 2),  # M45/M70 · el modal del calendario lo restaba y no llegaba (pre-llenaba 0)
             'kg_dtc': max(0.0, kg_dtc),
             'split_inconsistente': kg_dtc < -0.01,
         })
