@@ -18872,7 +18872,7 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
      tambien deberia poder mover el producto en el calendario asi como
      calendar permite mover eventos" -->
 <div id="loteModal" class="modal-back" onclick="if(event.target===this)cerrarLoteModal()">
-  <div class="modal-box">
+  <div class="modal-box" style="max-width:min(1180px,96vw)">
     <div class="modal-head">
       <h3 id="lote-titulo" style="margin:0;font-size:16px;font-weight:800">Lote</h3>
       <div style="display:flex;align-items:center;gap:6px">
@@ -21319,6 +21319,14 @@ async function abrirLoteModal(id, producto, fecha, kg){
   const stockKg = info.stock_kg_total || 0;
   const diasCob = info.dias_cobertura;
   const velKgDia = info.velocidad_kg_dia || 0;
+  // Sebastián 20-jul · "cuánto hay y para cuánto alcanza eso que hay con las ventas actuales":
+  // el alcance FÍSICO (stock góndola ÷ venta diaria), separado de la cobertura-con-plan (que suma
+  // lo ya programado y confunde · 194.9d vs ~42d real). dias_gondola lo calcula el backend (M5/M6).
+  const diasFisico = (info.dias_gondola != null) ? info.dias_gondola
+                     : (velUds > 0.01 ? Math.round(stockUds / velUds) : null);
+  const _cobCol = (diasFisico == null) ? '#94a3b8'
+                  : (diasFisico <= 20 ? '#dc2626' : diasFisico <= 25 ? '#ea580c'
+                     : diasFisico <= 45 ? '#d97706' : '#16a34a');
 
   // ¿Está bien calculado? · comparar fecha programada vs fecha-óptima (20d antes agotar)
   // fecha agotamiento aproximada · hoy + diasCob días
@@ -21604,8 +21612,15 @@ async function abrirLoteModal(id, producto, fecha, kg){
   // no 72.1 (eso era góndola + lote programado). Mostrar el FÍSICO de góndola, que
   // sí cuadra con las uds. La cobertura (que sí cuenta lo programado) va en su tarjeta.
   const _stockKgFisico = (info.stock_kg_gondola != null) ? info.stock_kg_gondola : stockKg;
-  html += '<div class="metric-card"><div class="metric-lbl">Stock actual</div><div class="metric-val">' + stockUds + ' uds</div><div class="metric-sub">' + _stockKgFisico.toFixed(1) + ' kg físico</div></div>';
-  html += '<div class="metric-card"><div class="metric-lbl">Cobertura</div><div class="metric-val">' + (diasCob != null ? diasCob + 'd' : '—') + '</div><div class="metric-sub">' + (info.urgencia || '') + '</div></div>';
+  // CUÁNTO HAY (físico en góndola)
+  html += '<div class="metric-card"><div class="metric-lbl">Cuánto hay</div><div class="metric-val">' + stockUds.toLocaleString('es-CO') + ' <span style="font-size:12px;font-weight:600;color:#64748b">uds</span></div><div class="metric-sub">' + _stockKgFisico.toFixed(1) + ' kg físico en góndola</div></div>';
+  // PARA CUÁNTO ALCANZA (físico · con las ventas actuales) · color de urgencia · cobertura-con-plan como nota
+  html += '<div class="metric-card" style="border-color:' + _cobCol + '33;background:linear-gradient(180deg,#fff,' + _cobCol + '0d)">'
+    + '<div class="metric-lbl">Alcanza (con lo que hay)</div>'
+    + '<div class="metric-val" style="color:' + _cobCol + '">' + (diasFisico != null ? diasFisico + 'd' : '—') + '</div>'
+    + '<div class="metric-sub" style="color:' + _cobCol + '">' + (info.urgencia || '') + ' &middot; al ritmo actual (' + velUds.toFixed(1) + ' uds/d&iacute;a)</div>'
+    + (diasCob != null ? '<div class="metric-sub" style="margin-top:2px;color:#94a3b8">con lo ya programado: ~' + diasCob + 'd</div>' : '')
+    + '</div>';
   html += '</div>';
 
   // 🤝 OTROS CLIENTES (Sebastián 17-jul): los pedidos B2B (del portal del cliente o de "Programar")
@@ -21792,7 +21807,9 @@ async function cargarDesgloseEditableLote(producto, kgActual, mlProm, mesesGuard
       // Sebastián 2-jul · programar la CADENA desde este lote (ancla) cada X meses × 2 años.
       // Preview del razonamiento (Sebastián 3-jul): este lote alcanza N días → cadencia real.
       + '<div id="cadencia-preview" style="font-size:11px;color:#5b21b6;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;padding:7px 10px;margin-top:8px;text-align:left;line-height:1.5"></div>'
-      + '<div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;color:#5b21b6;font-weight:800">🗓️ Horizonte <select id="cal-anios" onchange="_updateCadenciaPreview()" title="Por cuántos años programar la cadena de producción" style="padding:3px 6px;border:1px solid #c4b5fd;border-radius:5px;font-weight:700;color:#5b21b6;cursor:pointer"><option value="1">1 año</option><option value="2" selected>2 años</option><option value="3">3 años</option></select></div>'
+      + '<div style="margin-top:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:11px;color:#5b21b6;font-weight:800">'
+      + '🔁 Cada <input id="cal-cadencia-dias" type="number" min="15" max="400" oninput="_updateCadenciaPreview()" title="Cadencia en días · vacío = automática por cobertura (kg÷venta). Escribí un número para forzarla a mano (ej. 30)." placeholder="auto" style="width:58px;padding:3px 5px;border:1px solid #c4b5fd;border-radius:5px;text-align:center;font-weight:800;color:#5b21b6"> días <span style="font-weight:600;color:#94a3b8">(vacío = auto por cobertura)</span>'
+      + ' <span style="color:#c4b5fd">·</span> 🗓️ Horizonte <select id="cal-anios" onchange="_updateCadenciaPreview()" title="Por cuántos años programar la cadena de producción" style="padding:3px 6px;border:1px solid #c4b5fd;border-radius:5px;font-weight:700;color:#5b21b6;cursor:pointer"><option value="1">1 año</option><option value="2" selected>2 años</option><option value="3">3 años</option></select></div>'
       + '<button onclick="programarCadenciaDesdeLote()" title="Desde ESTE lote (ancla · producciones reales de jun/jul) calcula cuántos DÍAS alcanza la porción Animus (kg÷venta) y programa la cadena por el horizonte elegido a ese ritmo. BORRA todas las futuras del producto (Fijo, auto, proyección) y deja solo esta cadena · conserva pedidos B2B y lo ya producido." style="margin-top:8px;background:linear-gradient(90deg,#7c3aed,#5b21b6);color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:800;cursor:pointer;box-shadow:0 2px 8px -2px rgba(124,58,237,.5)">📅 Programar la cadena</button>'
       + '</div>'
       + '</div>';
@@ -21857,7 +21874,15 @@ function _calcCadencia(){
             vel: vel, cadaTxt: '', base: 'todo-otros', allOtros: true};
   }
   var intervalDias, firstOffset, base;
-  if(vel > 0.0001){
+  // Sebastián 20-jul · override MANUAL de la cadencia ("no quiero cada 45, quiero cada 30"): si el
+  // usuario escribe días en "Cada X días", manda eso; vacío = auto por cobertura (kg÷venta).
+  var _manEl = document.getElementById('cal-cadencia-dias');
+  var _man = _manEl ? parseFloat(_manEl.value) : NaN;
+  if(_man >= 15){
+    intervalDias = Math.round(_man);
+    firstOffset = Math.max(intervalDias - 20, 1);         // 1er lote: 20d antes de agotar (colchón)
+    base = 'manual';
+  } else if(vel > 0.0001){
     intervalDias = Math.max(Math.round(kg / vel), 15);   // días que ALCANZA la porción Animus
     firstOffset = Math.max(intervalDias - 20, 1);         // 1er lote: 20d antes de agotar
     base = 'cobertura';
@@ -22025,17 +22050,21 @@ function _updateCadenciaPreview(){
     return;
   }
   var velMes = cad.velKgDia * 30;
+  // mostrar la cadencia AUTO (por cobertura) como placeholder del campo manual cuando está vacío,
+  // así ves "45 auto" y podés forzar 30 a mano (Sebastián 20-jul).
+  try{ var _me = document.getElementById('cal-cadencia-dias'); if(_me && !((_me.value||'').trim()) && cc.base !== 'manual'){ _me.placeholder = cc.intervalDias + ' auto'; } }catch(e){}
   var agota = '';
   try{ var da = new Date((m.fecha || '') + 'T12:00:00'); da.setDate(da.getDate() + cc.intervalDias); agota = fechaLocalStr(da); }catch(e){}
   var _anios = _calAnios();
   var nLotes = Math.max(1, Math.round(_anios * 365 / cc.intervalDias));
+  var _cadLbl = (cc.base === 'manual') ? ' <span style="color:#7c3aed">(manual)</span>' : ' <span style="color:#94a3b8">(auto por cobertura)</span>';
   // Si hay porción para otros, mostrar el split (total = Animus + otros)
   var splitTxt = otrosTot > 0.01
     ? '<b>' + cc.kgTotal.toFixed(1) + ' kg</b> (<b style="color:#0e7490">' + cc.kg.toFixed(1) + ' Animus</b> + ' + otrosTot.toFixed(1) + ' otros)'
     : '<b>' + cc.kg.toFixed(1) + ' kg</b>';
   el.innerHTML = '📦 Producción base <b>' + (m.fecha || '') + '</b> · ' + splitTxt + ' · vende <b>' + velMes.toFixed(1) + ' kg/mes</b><br>'
     + '🎯 Producís <b>20d antes</b> de agotarte · la porción <b>Animus</b> alcanza <b>~' + cc.intervalDias + ' días</b>' + (agota ? (' → hasta <b>~' + agota + '</b>') : '') + '<br>'
-    + '🗓️ Un lote cada <b>' + cc.cadaTxt + '</b> · ~<b>' + nLotes + '</b> lotes en <b>' + _anios + ' año' + (_anios===1?'':'s') + '</b> · total <b>' + (cc.kg * nLotes).toFixed(0) + ' kg</b>.';
+    + '🗓️ Un lote cada <b>' + cc.cadaTxt + '</b>' + _cadLbl + ' · ~<b>' + nLotes + '</b> lotes en <b>' + _anios + ' año' + (_anios===1?'':'s') + '</b> · total <b>' + (cc.kg * nLotes).toFixed(0) + ' kg</b>.';
 }
 async function programarCadenciaDesdeLote(){
   var m = window._LOTE_MODAL_ACTUAL || {};
