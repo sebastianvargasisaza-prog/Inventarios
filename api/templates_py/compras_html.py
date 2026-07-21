@@ -51,8 +51,12 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .cxt-hint{font-size:11px;color:#78716c;padding:10px 14px;background:#faf7ff;border-top:1px solid #ece9f6;line-height:1.5;}
 /* Cards */
 .bar{background:#fff;border:1px solid #eef0f2;border-radius:12px;padding:11px 15px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;box-shadow:0 1px 3px rgba(15,23,42,.04);}
-.bar input,.bar select{padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;color:#292524;}
+.bar input,.bar select{padding:9px 12px;border:1px solid #e2e8f0;border-radius:9px;font-size:13px;color:#292524;transition:border-color .15s,box-shadow .15s;}
+.bar input:focus,.bar select:focus{outline:none;border-color:#7c3aed;box-shadow:0 0 0 3px rgba(124,58,237,.12);}
 .bar input{min-width:190px;}
+/* Premium base para inputs de sub-formularios de modal sin clase (proveedor nuevo, datos bancarios) · Sebastián 21-jul */
+.mb input:not([type=checkbox]):not([type=radio]):not([type=date]),.mb select,.mb textarea{border:1px solid #e2e8f0;border-radius:9px;padding:9px 11px;font-size:13px;color:#292524;transition:border-color .15s,box-shadow .15s;}
+.mb input:not([type=checkbox]):not([type=radio]):focus,.mb select:focus,.mb textarea:focus{outline:none;border-color:#7c3aed;box-shadow:0 0 0 3px rgba(124,58,237,.12);}
 .pills{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
 .pill{padding:3px 11px;border-radius:12px;font-size:11px;font-weight:600;background:#f3f4f6;color:#374151;}
 .pill.y{background:#fef3c7;color:#92400e;} .pill.b{background:#dbeafe;color:#1e40af;} .pill.g{background:#dcfce7;color:#166534;}
@@ -794,12 +798,8 @@ function renderHistorico(){
       <button class="btn bg" onclick="openNuevaOC('')" style="padding:9px 20px;font-size:14px;" title="Crear una orden de compra de CUALQUIER cosa · elegí la categoría (MP, empaque, servicios, EPP, papelería…) + ítems · autorizar al crear va directo a Por Pagar">&#10133; Crear OC</button>
     </div>
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;border-top:1px solid #f1f0ee;padding-top:12px;">
-      <div style="display:flex;align-items:center;gap:12px;background:#faf9fb;border:1px solid #eef0f2;border-radius:10px;padding:7px 13px;">
-        <span style="font-size:10.5px;font-weight:800;color:#78716c;text-transform:uppercase;letter-spacing:.05em;">Estados</span>
-        <label style="font-size:12px;display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" class="consol-est" value="Borrador" checked> Borrador</label>
-        <label style="font-size:12px;display:flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" class="consol-est" value="Revisada" checked> Revisada</label>
-        <label style="font-size:12px;display:flex;align-items:center;gap:5px;cursor:pointer;" title="Las autorizadas listas para pagar están en la pestaña 💰 Por Pagar; las de mercancía esperan Recepción. Marcá esto solo si querés verlas acá también."><input type="checkbox" class="consol-est" value="Autorizada"> Autorizada</label>
-      </div>
+      <!-- Sebastián 21-jul · quitado el filtro de ESTADOS: todas las OCs activas están "por autorizar"
+           (Borrador/Revisada) · las Autorizadas ya viven en 💰 Por Pagar → el filtro sobraba. -->
       <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;">
         <button class="btn bo" onclick="loadConsolidado()" style="font-size:12px;">&#x21BA; Actualizar</button>
         <button class="btn" onclick="imprimirTodas()" style="font-size:12px;background:linear-gradient(135deg,#0d9488,#0f766e);color:#fff;" title="Imprime TODAS las órdenes juntas (cada proveedor en su propia hoja) en un solo documento">&#x1F5A8; Imprimir todas</button>
@@ -7808,11 +7808,9 @@ var _consolCache = [];  // cache indexado por posición
 async function loadConsolidado(){
   var body = document.getElementById('consol-body');
   body.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:40px;">Cargando...</div>';
+  // Sin filtro de estados (Sebastián 21-jul): todas las OCs activas son "por autorizar" = Borrador + Revisada.
   var estados = Array.from(document.querySelectorAll('.consol-est:checked')).map(function(el){return el.value;});
-  if(!estados.length){
-    body.innerHTML = '<div style="color:#f59e0b;padding:16px;">Selecciona al menos un estado.</div>';
-    return;
-  }
+  if(!estados.length){ estados = ['Borrador','Revisada']; }
   try{
     var qs = estados.map(function(e){return 'estados='+encodeURIComponent(e);}).join('&');
     var r = await fetch('/api/compras/consolidado-proveedor?'+qs);
