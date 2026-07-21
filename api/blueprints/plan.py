@@ -21718,8 +21718,10 @@ async function abrirLoteModal(id, producto, fecha, kg){
   // (live · producí 20d antes de agotar), luego el detalle/desglose y la cadencia. "Kg a producir"
   // se movió acá desde Estado (Estado = solo volumen/venta/lo que hay/alcanza).
   window._loteVelKgDia = velKgDia;
-  html += '<div style="font-size:14px;font-weight:800;color:#5b21b6;margin:18px 0 10px;padding-top:12px;border-top:2px solid #ede9fe">🏭 Producción</div>';
-  html += '<div style="background:linear-gradient(135deg,#faf5ff,#f5f3ff);border:1px solid #e9d5ff;border-radius:12px;padding:14px 16px;margin-bottom:12px">'
+  html += '<div style="font-size:14px;font-weight:800;color:#5b21b6;margin:18px 0 10px;padding-top:12px;border-top:2px solid #ede9fe">🏭 Producción <span style="font-size:11px;font-weight:600;color:#94a3b8">· todo lo de producir en un solo lugar</span></div>';
+  // Sebastián 20-jul · ENGLOBAR TODO en un contenedor: kilos + alcance + agregar cliente + desglose + cadencia.
+  html += '<div style="border:1.5px solid #e9d5ff;border-radius:14px;background:linear-gradient(180deg,#fdfcff,#faf7ff);padding:16px;margin-bottom:14px">';
+  html += '<div style="padding-bottom:6px">'
     + '<div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap">'
     + '<div><div style="font-size:11px;font-weight:800;color:#6d28d9;text-transform:uppercase;letter-spacing:.4px">Kilos a producir</div>'
     + '<div style="display:flex;gap:7px;align-items:center;margin-top:5px">'
@@ -21737,6 +21739,7 @@ async function abrirLoteModal(id, producto, fecha, kg){
   // Lo que se va a producir (detalle) · Plan de envasado por cliente + desglose por referencia + cadencia.
   html += _planEnvHtml;
   html += '<div id="lote-desglose-edit"></div>';
+  html += '</div>';   // cierra el contenedor 🏭 Producción (englobar todo · Sebastián 20-jul)
 
   // Sección 4: Acciones
   html += _renderAccionesLote(id, producto, fecha);
@@ -22063,9 +22066,11 @@ function _prodKgAlcance(){
   var vel = window._loteVelKgDia || 0;   // kg/día Animus
   if(!(kg > 0) || !(vel > 0.0001)){ el.innerHTML = '<span style="color:#94a3b8">Poné los kilos para ver cuánto alcanzan.</span>'; return; }
   var dias = Math.round(kg / vel);
-  // Solo la DURACIÓN (la fecha/cadencia/próxima la maneja el Desglose de abajo, anclado a la
-  // producción base · no repetir la fecha acá para no dar dos números distintos · Sebastián 20-jul).
-  el.innerHTML = '🎯 Estos <b>' + kg.toFixed(0) + ' kg</b> alcanzan <b>~' + dias + ' días</b> al ritmo actual (' + vel.toFixed(2) + ' kg/día) · fabricá <b>20 días antes</b> de agotar (ver la cadencia abajo).';
+  var meses = (dias / 30.44);
+  var mesesTxt = meses >= 1 ? (' (~<b>' + (Math.round(meses * 10) / 10) + ' meses</b>)') : '';
+  // Duración en días Y meses (sugerencia por la venta · vos decidís la cadencia abajo). La fecha/próxima
+  // la maneja el Desglose anclado a la producción base · no repetir fecha acá (Sebastián 20-jul).
+  el.innerHTML = '🎯 Estos <b>' + kg.toFixed(0) + ' kg</b> alcanzan <b>~' + dias + ' días</b>' + mesesTxt + ' al ritmo actual (' + vel.toFixed(2) + ' kg/día) · fabricá <b>20 días antes</b> de agotar · abajo elegís cada cuánto producir.';
 }
 function _updateCadenciaPreview(){
   var el = document.getElementById('cadencia-preview');
