@@ -21718,6 +21718,7 @@ async function abrirLoteModal(id, producto, fecha, kg){
   // (live · producí 20d antes de agotar), luego el detalle/desglose y la cadencia. "Kg a producir"
   // se movió acá desde Estado (Estado = solo volumen/venta/lo que hay/alcanza).
   window._loteVelKgDia = velKgDia;
+  window._calCadInfo = {velKgDia: velKgDia, velUdsDia: velUds, ml: ml};   // para el editor de cadencia (paridad Necesidades img 129)
   html += '<div style="font-size:14px;font-weight:800;color:#5b21b6;margin:18px 0 10px;padding-top:12px;border-top:2px solid #ede9fe">🏭 Producción <span style="font-size:11px;font-weight:600;color:#94a3b8">· todo lo de producir en un solo lugar</span></div>';
   // Sebastián 20-jul · ENGLOBAR TODO en un contenedor: kilos + alcance + agregar cliente + desglose + cadencia.
   html += '<div style="border:1.5px solid #e9d5ff;border-radius:14px;background:linear-gradient(180deg,#fdfcff,#faf7ff);padding:16px;margin-bottom:14px">';
@@ -21734,6 +21735,32 @@ async function abrirLoteModal(id, producto, fecha, kg){
     + '</div>'
     + '<div id="prod-alcance" style="margin-top:11px;font-size:12px;color:#5b21b6;line-height:1.5"></div>'
     + '</div>';
+  // 🔁 EDITOR DE CADENCIA estilo Necesidades (Sebastián 20-jul · img 129 · "más simple y bonito").
+  // Fecha origen + 1ª producción nueva + Cadencia (meses/días · kg/lote · Horizonte) + razonamiento +
+  // "Crear cadena en el calendario". Reusa el MISMO motor /api/plan/programar-cadencia-producto que Necesidades.
+  var _cadExist = _calCadenaExistente(producto);
+  html += '<div style="margin-top:12px;padding-top:12px;border-top:1px dashed #e9d5ff">';
+  if(_cadExist){ html += '<div style="background:#dcfce7;border:1px solid #86efac;border-radius:6px;padding:7px 10px;margin-bottom:10px;font-size:11px;color:#166534;line-height:1.5">✅ <b>Ya tenés cadena:</b> ' + _cadExist.n + ' lotes de <b>' + _cadExist.kg.toFixed(1) + ' kg</b> cada <b>' + _cadExist.meses + ' mes' + (_cadExist.meses===1?'':'es') + '</b>. Reprogramá abajo para cambiarla.</div>'; }
+  html += '<div style="font-size:11px;color:#6d28d9;font-weight:800;margin-bottom:4px">📍 Fecha canónica / fecha de origen <span style="font-weight:600;color:#94a3b8">(punto de partida)</span></div>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">';
+  html += '<label style="font-size:11px;color:#475569">Fecha <input id="cal-cm-fecha" type="date" value="' + fecha + '" style="padding:4px 6px;border:1px solid #c4b5fd;border-radius:5px;font-size:12px"></label>';
+  html += '<label style="font-size:11px;color:#475569">Kg producidos <input id="cal-cm-kg-part" type="number" min="0.1" step="0.1" value="' + kg + '" style="width:66px;padding:4px 6px;border:1px solid #c4b5fd;border-radius:5px;font-size:12px;text-align:center"></label>';
+  html += '</div>';
+  html += '<div style="font-size:11px;color:#6d28d9;font-weight:800;margin-bottom:4px">🎯 1ª producción nueva <span style="font-weight:600;color:#94a3b8">(opcional · vacío = cuando se agote lo fabricado)</span></div>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">';
+  html += '<label style="font-size:11px;color:#475569">Empezar el <input id="cal-cm-primera" type="date" oninput="_calCmPreview()" style="padding:4px 6px;border:1px solid #c4b5fd;border-radius:5px;font-size:12px"></label>';
+  html += '<button type="button" onclick="var e=document.getElementById(&quot;cal-cm-primera&quot;);if(e){e.value=&quot;&quot;;_calCmPreview()}" style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:5px;padding:4px 8px;font-size:11px;color:#475569;cursor:pointer">auto</button>';
+  html += '</div>';
+  html += '<div style="font-size:11px;color:#6d28d9;font-weight:800;margin-bottom:4px">🔁 Cadencia</div>';
+  html += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">';
+  html += '<span style="font-size:12px;color:#5b21b6;font-weight:700">Cada <input id="cal-cm-meses" type="number" min="0.5" max="12" step="0.5" value="2" oninput="_calCmSyncMeses()" style="width:44px;padding:3px 4px;border:1px solid #c4b5fd;border-radius:4px;text-align:center;font-weight:700"> meses <span style="color:#94a3b8;font-weight:600">o</span> <input id="cal-cm-dias" type="number" min="15" max="400" value="61" oninput="_calCmSyncDias()" title="cadencia exacta en días (ej. 45)" style="width:48px;padding:3px 4px;border:1px solid #c4b5fd;border-radius:4px;text-align:center;font-weight:700"> días</span>';
+  html += '<span style="font-size:12px;color:#5b21b6;font-weight:700">· <input id="cal-cm-kglote" type="number" min="0.1" step="0.1" value="' + kg + '" oninput="_calCmPreview()" style="width:62px;padding:3px 4px;border:1px solid #7c3aed;border-radius:4px;text-align:center;font-weight:800;color:#5b21b6"> kg/lote</span>';
+  html += '<span style="font-size:12px;color:#5b21b6;font-weight:700">· Horizonte <select id="cal-cm-anios" onchange="_calCmPreview()" style="padding:3px 4px;border:1px solid #c4b5fd;border-radius:4px;font-weight:700"><option value="1">1 año</option><option value="2" selected>2 años</option><option value="3">3 años</option></select></span>';
+  html += '</div>';
+  html += '<div id="cal-cm-preview" style="font-size:11px;color:#5b21b6;background:#fff;border:1px solid #ede9fe;border-radius:6px;padding:8px 10px;line-height:1.5;margin-bottom:8px"></div>';
+  html += '<button onclick="_calCrearCadena(' + id + ',&quot;' + escapeHtml(producto) + '&quot;)" style="background:linear-gradient(90deg,#7c3aed,#5b21b6);color:#fff;border:none;border-radius:6px;padding:9px 16px;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 2px 8px -2px rgba(124,58,237,.5)">📅 Crear cadena en el calendario</button>';
+  html += '<div style="font-size:10px;color:#94a3b8;margin-top:6px">Crea un lote cada X desde la partida, por el horizonte elegido, en día hábil (sin festivos). Reemplaza las futuras de este producto · conserva pedidos B2B y lo ya producido.</div>';
+  html += '</div>';
   // Agregar cliente (kilos + envase) · dentro de Producción (Sebastián 20-jul)
   html += _otrosHtml;
   // Lo que se va a producir (detalle) · Plan de envasado por cliente + desglose por referencia + cadencia.
@@ -21750,6 +21777,8 @@ async function abrirLoteModal(id, producto, fecha, kg){
   var _ldMeses = (PLAN_DATA.agendadas || []).find(a => a.id === id);
   cargarDesgloseEditableLote(producto, kg, ml, (_ldMeses && _ldMeses.meses_cobertura) ? _ldMeses.meses_cobertura : null);
   try{ _prodKgAlcance(); }catch(e){}
+  try{ _calCmAutoKg(); }catch(e){}
+  try{ _calCmPreview(); }catch(e){}
   try{ _calCargarListoProducir(producto); }catch(e){}
   try{ _calCargarListoEnvases(id); }catch(e){}
   try{ _calCargarOtrosClientes(id); }catch(e){}
@@ -21803,6 +21832,96 @@ function _renderLotesAgendadosCal(producto, info, ml){
   });
   h += '</div>';
   return h;
+}
+// ── EDITOR DE CADENCIA del calendario · portado de Necesidades (Sebastián 20-jul · img 129) ──
+// Opera sobre window._calCadInfo (velKgDia/velUdsDia/ml del producto del lote) · reusa el MISMO
+// endpoint /api/plan/programar-cadencia-producto que Necesidades (identidad total, sin drift).
+function _calCadenaExistente(producto){
+  var hoy = new Date().toISOString().slice(0,10);
+  var cad = (PLAN_DATA.agendadas||[]).filter(function(l){
+    return (l.producto||'')===producto && l.origen==='eos_plan' && (''+(l.fecha_programada||'')).slice(0,10) > hoy
+      && (l.estado||'')!=='cancelado' && (l.estado||'')!=='completado';
+  }).sort(function(a,b){ return (''+a.fecha_programada).localeCompare(''+b.fecha_programada); });
+  if(cad.length < 2) return null;
+  var d1=new Date((''+cad[0].fecha_programada).slice(0,10)+'T12:00:00'), d2=new Date((''+cad[1].fecha_programada).slice(0,10)+'T12:00:00');
+  var meses=Math.max(1, Math.round(Math.round((d2-d1)/86400000)/30.44));
+  return {n:cad.length, meses:meses, kg:Math.max(0, cad[0].kg||0)};
+}
+function _calCmCalc(){
+  var info = window._calCadInfo || {};
+  var partida = ((document.getElementById('cal-cm-fecha')||{}).value||'').slice(0,10);
+  var kg = parseFloat((document.getElementById('cal-cm-kglote')||{}).value) || 0;
+  var dias = parseFloat((document.getElementById('cal-cm-dias')||{}).value) || 0;
+  var mesesInput = Math.min(parseFloat((document.getElementById('cal-cm-meses')||{}).value)||0, 12);
+  var anios = parseInt((document.getElementById('cal-cm-anios')||{}).value)||1;
+  if(anios<1||anios>3) anios=1;
+  var intervalDias = dias>0 ? Math.max(15,Math.min(Math.round(dias),400)) : Math.max(Math.round(mesesInput*30.44),15);
+  if(!partida || !(kg>0) || !(intervalDias>=15)) return null;
+  var meses = Math.round(intervalDias/30.44*10)/10;
+  var horizonte = anios*365;
+  var _partKg = parseFloat((document.getElementById('cal-cm-kg-part')||{}).value) || kg;
+  var _velKgDia = info.velKgDia || 0;
+  var _runsOut = (_velKgDia>0.0001 && _partKg>0) ? Math.max(Math.round(_partKg/_velKgDia)-20,1) : intervalDias;
+  var dhp = Math.min(_runsOut, intervalDias);
+  var _dhpCap = (_runsOut >= intervalDias);
+  var _pf = ((document.getElementById('cal-cm-primera')||{}).value||'').slice(0,10);
+  var _manual=false;
+  if(_pf){ try{ var _dp=new Date(partida+'T12:00:00'), _dpf=new Date(_pf+'T12:00:00'); var _delta=Math.round((_dpf-_dp)/86400000); if(_delta>=1){ dhp=_delta; _manual=true; } }catch(e){} }
+  var nLotes = Math.max(1, Math.floor((horizonte-dhp)/intervalDias)+1);
+  return {partida:partida, kg:kg, meses:meses, dias:intervalDias, anios:anios, intervalDias:intervalDias, dhp:dhp, dhpManual:_manual, dhpCap:_dhpCap, nLotes:nLotes, horizonte:horizonte};
+}
+function _calCmAutoKg(){
+  var info = window._calCadInfo || {};
+  var kgEl = document.getElementById('cal-cm-kglote'); if(!kgEl) return;
+  var udsDia = info.velUdsDia||0, ml = info.ml||0;
+  if(!(udsDia>0.001)||!(ml>0)) return;
+  var dias = parseFloat((document.getElementById('cal-cm-dias')||{}).value)||0;
+  var mm = Math.min(parseFloat((document.getElementById('cal-cm-meses')||{}).value)||0,12);
+  var interval = dias>0 ? Math.max(15,Math.min(Math.round(dias),400)) : Math.max(Math.round(mm*30.44),15);
+  kgEl.value = (Math.round(udsDia*(interval+20)*ml/1000*10)/10);
+}
+function _calCmSyncMeses(){ var m=parseFloat((document.getElementById('cal-cm-meses')||{}).value)||0; var d=document.getElementById('cal-cm-dias'); if(d&&m>0)d.value=Math.round(m*30.44); _calCmAutoKg(); _calCmPreview(); }
+function _calCmSyncDias(){ var d=parseFloat((document.getElementById('cal-cm-dias')||{}).value)||0; var m=document.getElementById('cal-cm-meses'); if(m&&d>0)m.value=Math.round(d/30.44*10)/10; _calCmAutoKg(); _calCmPreview(); }
+function _calCmPreview(){
+  var el=document.getElementById('cal-cm-preview'); if(!el) return;
+  var info=window._calCadInfo||{};
+  var cc=_calCmCalc();
+  if(!cc){ el.innerHTML='<span style="color:#94a3b8">Completá la partida, cada cuántos meses y los kg/lote.</span>'; return; }
+  var _ref='';
+  var _udsDia=info.velUdsDia||0, _ml=info.ml||0;
+  if(_udsDia>0.001&&_ml>0){
+    var _cubreDias=cc.intervalDias+20;
+    var _kgRef=_udsDia*_cubreDias*_ml/1000;
+    var _dif=cc.kg-_kgRef;
+    var _tag=(_kgRef>0&&Math.abs(_dif)>=_kgRef*0.1)?(_dif>0?' · tu lote deja <b style="color:#0891b2">+'+_dif.toFixed(0)+' kg</b> de colchón':' · tu lote queda <b style="color:#dc2626">'+_dif.toFixed(0)+' kg</b> CORTO'):' · tu lote calza justo ✓';
+    _ref='📊 Vende ~<b>'+Math.round(_udsDia*30.44)+' uds/mes</b> de <b>'+(Math.round(_ml*10)/10)+' ml</b><br>🎯 Producís <b>20d antes</b> de agotarte → cada lote debe cubrir <b>'+cc.intervalDias+' + 20 = '+_cubreDias+' días</b> → ~<b>'+_kgRef.toFixed(0)+' kg</b>'+_tag+'<br>';
+  } else { _ref='<span style="color:#94a3b8">📊 Sin ventas/ml para la referencia · poné el kg a criterio.</span><br>'; }
+  var _first='';
+  try{ var _d=new Date(cc.partida+'T12:00:00'); _d.setDate(_d.getDate()+cc.dhp); _first=_d.toISOString().slice(0,10); }catch(e){}
+  var _firstTxt=cc.dhpManual?'la 1ª nueva <b style="color:#7c3aed">fijada por vos</b> = <b>'+(_first||'-')+'</b>':(cc.dhpCap?'la 1ª nueva <b>una cadencia después</b> del origen (~<b>'+cc.dhp+'d</b>) = <b>'+(_first||'-')+'</b>':'la 1ª nueva cuando se agota lo fabricado (~<b>'+cc.dhp+'d</b>) = <b>'+(_first||'-')+'</b>');
+  el.innerHTML=_ref+'📦 Un lote de <b>'+cc.kg.toFixed(1)+' kg</b> cada <b>'+cc.meses+' mes'+(cc.meses===1?'':'es')+'</b> (~'+cc.intervalDias+' días)<br>🗓️ Partida <b>'+cc.partida+'</b> · '+_firstTxt+', luego cada '+cc.intervalDias+'d · ~<b>'+cc.nLotes+'</b> lotes en <b>'+cc.anios+' año'+(cc.anios===1?'':'s')+'</b> · total <b>'+(cc.kg*cc.nLotes).toFixed(0)+' kg</b>';
+}
+async function _calCrearCadena(id, producto){
+  var cc=_calCmCalc();
+  if(!cc){ alert('Completá la partida (fecha), cada cuántos meses/días y los kg por lote.'); return; }
+  var kgOrigen=parseFloat((document.getElementById('cal-cm-kg-part')||{}).value)||cc.kg;
+  var msg='Crear la cadena de "'+producto+'":\\n\\n• Origen: '+cc.partida+' · '+kgOrigen.toFixed(1)+' kg\\n• Un lote de '+cc.kg.toFixed(1)+' kg cada '+cc.meses+' mes(es)\\n• ~'+cc.nLotes+' lotes en '+cc.anios+' año(s) · total '+(cc.kg*cc.nLotes).toFixed(0)+' kg\\n\\nREEMPLAZA las producciones futuras de este producto (conserva pedidos B2B y lo ya ejecutado).';
+  if(!confirm(msg)) return;
+  if(window._cadenaBusyCal){ return; }
+  window._cadenaBusyCal=true;
+  try{
+    var t=(await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json()).csrf_token;
+    var bodyObj={producto:producto, ancla_fecha:cc.partida, kg_por_lote:cc.kg, interval_dias:cc.intervalDias, dias_hasta_primera:cc.dhp, anios:cc.anios, crear_origen:true, kg_origen:kgOrigen};
+    var r=await fetch('/api/plan/programar-cadencia-producto',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(bodyObj)});
+    var d=await r.json();
+    window._cadenaBusyCal=false;
+    if(!r.ok){ alert('No se pudo: '+((d&&d.error)||r.status)); return; }
+    var _cr=d.creados||0, _esp=d.esperados||_cr;
+    alert('✓ Cadena creada · '+_cr+'/'+_esp+' lotes'+(d.origen_creado?(' (origen '+(d.origen_fecha||'')+')'):''));
+    if(d.aviso){ alert('⚠ '+d.aviso); }
+    if(typeof cerrarLoteModal==='function') cerrarLoteModal();
+    if(typeof cargar==='function'){ try{ await cargar(); }catch(e){} } else if(window.cargarNecesidades){ try{ await cargarNecesidades(); }catch(e){} }
+  }catch(e){ window._cadenaBusyCal=false; alert('Error: '+e); }
 }
 // 🎨 color estable por tono (mismo hash que Necesidades · Sebastián 17-jul · swatch multitono igual)
 function _tonoColorCal(lbl){
@@ -21863,13 +21982,8 @@ async function cargarDesgloseEditableLote(producto, kgActual, mlProm, mesesGuard
       + '<div style="text-align:right;margin-top:8px;border-top:1px dashed #c4b5fd;padding-top:6px">'
       + '<span id="dsk-total" style="font-size:13px;font-weight:800;color:#5b21b6"></span>'
       + '<div style="font-size:10px;color:#94a3b8">"a producir" = cuántas sacar de cada referencia · la suma calcula los kg → 💾 Guardar</div>'
-      // Sebastián 2-jul · programar la CADENA desde este lote (ancla) cada X meses × 2 años.
-      // Preview del razonamiento (Sebastián 3-jul): este lote alcanza N días → cadencia real.
-      + '<div id="cadencia-preview" style="font-size:11px;color:#5b21b6;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;padding:7px 10px;margin-top:8px;text-align:left;line-height:1.5"></div>'
-      + '<div style="margin-top:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:11px;color:#5b21b6;font-weight:800">'
-      + '🔁 Cada <input id="cal-cadencia-dias" type="number" min="15" max="400" oninput="_updateCadenciaPreview()" title="Cadencia en días · vacío = automática por cobertura (kg÷venta). Escribí un número para forzarla a mano (ej. 30)." placeholder="auto" style="width:58px;padding:3px 5px;border:1px solid #c4b5fd;border-radius:5px;text-align:center;font-weight:800;color:#5b21b6"> días <span style="font-weight:600;color:#94a3b8">(vacío = auto por cobertura)</span>'
-      + ' <span style="color:#c4b5fd">·</span> 🗓️ Horizonte <select id="cal-anios" onchange="_updateCadenciaPreview()" title="Por cuántos años programar la cadena de producción" style="padding:3px 6px;border:1px solid #c4b5fd;border-radius:5px;font-weight:700;color:#5b21b6;cursor:pointer"><option value="1">1 año</option><option value="2" selected>2 años</option><option value="3">3 años</option></select></div>'
-      + '<button onclick="programarCadenciaDesdeLote()" title="Desde ESTE lote (ancla · producciones reales de jun/jul) calcula cuántos DÍAS alcanza la porción Animus (kg÷venta) y programa la cadena por el horizonte elegido a ese ritmo. BORRA todas las futuras del producto (Fijo, auto, proyección) y deja solo esta cadena · conserva pedidos B2B y lo ya producido." style="margin-top:8px;background:linear-gradient(90deg,#7c3aed,#5b21b6);color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:800;cursor:pointer;box-shadow:0 2px 8px -2px rgba(124,58,237,.5)">📅 Programar la cadena</button>'
+      // Sebastián 20-jul · los controles de CADENCIA se movieron al editor estilo Necesidades de ARRIBA
+      // (Fecha origen + 1ª nueva + Cadencia + Crear cadena) · acá queda solo el desglose por referencia.
       + '</div>'
       + '</div>';
     _recalcKgDesglose(false);  // al abrir: solo muestra el total, no pisa el kg original
