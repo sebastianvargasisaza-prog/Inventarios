@@ -21596,16 +21596,8 @@ async function abrirLoteModal(id, producto, fecha, kg){
   html += '<div style="font-size:13px;font-weight:800;color:#5b21b6;margin:4px 0 8px">📊 Estado del producto</div>';
   html += '<div class="metric-grid">';
   html += '<div class="metric-card"><div class="metric-lbl">Volumen envase</div><div class="metric-val">' + ml + ' ml</div></div>';
-  // Sebastián 15-may-2026: "kilogramos a producir" editable desde el popup
-  html += '<div class="metric-card"><div class="metric-lbl">Kg a producir</div>' +
-    '<div style="display:flex;gap:4px;align-items:center;margin-top:2px">' +
-    '<input id="edit-kg-lote" type="number" min="1" max="1000" step="1" value="' + kg + '" ' +
-    'oninput="var u=document.getElementById(&quot;edit-kg-uds&quot;);if(u)u.textContent=Math.round((parseFloat(this.value)||0)*1000/' + ml + ')+&quot; uds aprox&quot;" ' +
-    'style="width:64px;font-size:16px;font-weight:800;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px">' +
-    '<span style="font-size:12px;color:#64748b">kg</span>' +
-    '<button onclick="guardarKgLote(' + id + ')" style="padding:5px 9px;font-size:11px;margin:0">💾 Guardar</button>' +
-    '</div>' +
-    '<div class="metric-sub" id="edit-kg-uds">' + Math.round(kg * 1000 / ml) + ' uds aprox</div></div>';
+  // Sebastián 20-jul · "Kg a producir" NO va en Estado (es estado = volumen/venta/lo que hay/alcanza) ·
+  // se movió a la sección 🏭 Producción de abajo.
   // Sebastián 17-jul · ventas CONSOLIDADAS en una tarjeta limpia: vende/mes (uds) + ml + kg/mes sugeridos.
   html += '<div class="metric-card"><div class="metric-lbl">Vende / mes</div><div class="metric-val">' + velMes + ' <span style="font-size:12px;font-weight:600;color:#64748b">uds</span></div><div class="metric-sub">' + ml + ' ml &middot; <b>' + (velKgDia * 30).toFixed(1) + ' kg/mes</b> sugeridos &middot; ' + velUds.toFixed(1) + ' uds/d&iacute;a</div></div>';
   // FIX 30-may-2026 · "237 uds / 72.1 kg" era incoherente · 237 uds × 30ml = 7.1kg,
@@ -21728,10 +21720,25 @@ async function abrirLoteModal(id, producto, fecha, kg){
   // de Necesidades). Se llena async al abrir (MP: /api/planta/listo-producir · envases: listo-envases).
   html += '<div id="lote-readiness" style="margin:14px 0 2px"><div id="lote-ready-mp"></div><div id="lote-ready-env" style="margin-top:6px"></div></div>';
 
-  // 📦 Lo que se va a producir (detalle) · Plan de envasado por cliente (Ánimus vs otros) +
-  // desglose por referencia · va DESPUÉS del estado y el timing (Sebastián 13-jul · como
-  // Necesidades: primero el estado del producto, luego el detalle de lo programado).
-  html += '<div style="font-size:13px;font-weight:800;color:#5b21b6;margin:16px 0 8px;padding-top:10px;border-top:1px solid #ede9fe">📦 Lo que se va a producir</div>';
+  // 🏭 PRODUCCIÓN (Sebastián 20-jul · el ideal): lidera con los KILOS A PRODUCIR + cuánto alcanzan
+  // (live · producí 20d antes de agotar), luego el detalle/desglose y la cadencia. "Kg a producir"
+  // se movió acá desde Estado (Estado = solo volumen/venta/lo que hay/alcanza).
+  window._loteVelKgDia = velKgDia;
+  html += '<div style="font-size:14px;font-weight:800;color:#5b21b6;margin:18px 0 10px;padding-top:12px;border-top:2px solid #ede9fe">🏭 Producción</div>';
+  html += '<div style="background:linear-gradient(135deg,#faf5ff,#f5f3ff);border:1px solid #e9d5ff;border-radius:12px;padding:14px 16px;margin-bottom:12px">'
+    + '<div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap">'
+    + '<div><div style="font-size:11px;font-weight:800;color:#6d28d9;text-transform:uppercase;letter-spacing:.4px">Kilos a producir</div>'
+    + '<div style="display:flex;gap:7px;align-items:center;margin-top:5px">'
+    + '<input id="edit-kg-lote" type="number" min="1" max="1000" step="1" value="' + kg + '" '
+    + 'oninput="var u=document.getElementById(&quot;edit-kg-uds&quot;);if(u)u.textContent=Math.round((parseFloat(this.value)||0)*1000/' + ml + ')+&quot; uds aprox&quot;;try{_prodKgAlcance()}catch(e){}" '
+    + 'style="width:92px;font-size:22px;font-weight:800;padding:6px 9px;border:1.5px solid #c4b5fd;border-radius:9px;color:#5b21b6">'
+    + '<span style="font-size:14px;color:#64748b;font-weight:700">kg</span>'
+    + '<button onclick="guardarKgLote(' + id + ')" style="padding:8px 14px;font-size:12px;margin:0;background:#16a34a">💾 Guardar</button>'
+    + '</div><div class="metric-sub" id="edit-kg-uds" style="margin-top:4px">' + Math.round(kg * 1000 / ml) + ' uds aprox</div></div>'
+    + '</div>'
+    + '<div id="prod-alcance" style="margin-top:11px;font-size:12px;color:#5b21b6;line-height:1.5"></div>'
+    + '</div>';
+  // Lo que se va a producir (detalle) · Plan de envasado por cliente + desglose por referencia + cadencia.
   html += _planEnvHtml;
   html += '<div id="lote-desglose-edit"></div>';
 
@@ -21740,6 +21747,7 @@ async function abrirLoteModal(id, producto, fecha, kg){
   document.getElementById('lote-body').innerHTML = html;
   var _ldMeses = (PLAN_DATA.agendadas || []).find(a => a.id === id);
   cargarDesgloseEditableLote(producto, kg, ml, (_ldMeses && _ldMeses.meses_cobertura) ? _ldMeses.meses_cobertura : null);
+  try{ _prodKgAlcance(); }catch(e){}
   try{ _calCargarListoProducir(producto); }catch(e){}
   try{ _calCargarListoEnvases(id); }catch(e){}
   try{ _calCargarOtrosClientes(id); }catch(e){}
@@ -22051,6 +22059,18 @@ async function _guardarOtroCliente(id){
   }catch(e){ alert('Error de red: ' + e); }
 }
 // Panel de claridad (Sebastián 3-jul): "este lote alcanza N días → cadena cada X" · base jun/jul.
+// Sebastián 20-jul · live bajo "Kilos a producir": estos kg alcanzan ~Y días → fabricá 20d antes → próxima fecha.
+function _prodKgAlcance(){
+  var el = document.getElementById('prod-alcance'); if(!el) return;
+  var kgEl = document.getElementById('edit-kg-lote');
+  var kg = kgEl ? (parseFloat(kgEl.value) || 0) : 0;
+  var vel = window._loteVelKgDia || 0;   // kg/día Animus
+  if(!(kg > 0) || !(vel > 0.0001)){ el.innerHTML = '<span style="color:#94a3b8">Poné los kilos para ver cuánto alcanzan.</span>'; return; }
+  var dias = Math.round(kg / vel);
+  var prox = '';
+  try{ var d = new Date(); d.setDate(d.getDate() + Math.max(dias - 20, 0)); prox = fechaLocalStr(d); }catch(e){}
+  el.innerHTML = '🎯 Estos <b>' + kg.toFixed(0) + ' kg</b> alcanzan <b>~' + dias + ' días</b> al ritmo actual (' + vel.toFixed(2) + ' kg/día) · fabricá <b>20 días antes</b> de agotar → próxima producción ~<b>' + prox + '</b>.';
+}
 function _updateCadenciaPreview(){
   var el = document.getElementById('cadencia-preview');
   if(!el) return;
