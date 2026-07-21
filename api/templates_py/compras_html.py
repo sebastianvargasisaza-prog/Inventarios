@@ -304,7 +304,6 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
     <button class="tn"      data-tab="por-pagar" id="tn-por-pagar" title="Pendientes · OCs autorizadas sin pagar">💰 Por Pagar</button>
     <button class="tn"      data-tab="pagos" id="tn-pagos" title="Histórico · pagos ya ejecutados">💸 Pagos</button>
     <button class="tn" style="display:none"     data-tab="facprov" id="tn-facprov" title="Libro de facturas de proveedor · cuentas por pagar formales con retenciones, vencimiento y saldos">🧾 Facturas <span id="facprov-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
-    <button class="tn"      data-tab="atrasadas" id="tn-atrasadas" title="OCs sin recibir tras lead_time + buffer · Sebastián 23-may">🚨 Atrasadas <span id="atrasadas-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <button class="tn" style="display:none" data-tab="feedneed" id="tn-feedneed" title="Necesidades de compra · materias primas y envases por debajo del mínimo, en un solo lugar">🔔 Necesidades <span id="feedneed-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <button class="tn"      data-tab="discrep" id="tn-discrep" title="Ciclo recepción + calidad: recibido, cuarentena (F01/F02), rechazos y discrepancias">📋 Recepción y calidad <span id="discrep-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <button class="tn" style="display:none" data-tab="mailbox" id="tn-mailbox" title="Facturas detectadas por el cron mailbox · revisar/completar/descartar · Sebastián 23-may">📧 Mailbox <span id="mailbox-badge" style="display:none;background:#7c3aed;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
@@ -841,24 +840,6 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 
 <!-- ════════════ TAB: ATRASADAS · Sebastián 23-may-2026 ════════════ -->
 <!-- OCs Autorizada/Parcial sin recibir tras lead_time+buffer · cierre flujo -->
-<div id="pane-atrasadas" class="pane">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
-    <div>
-      <h2 style="margin:0;font-size:18px;color:#1e293b;">&#x1F6A8; OCs atrasadas</h2>
-      <div style="font-size:12px;color:#64748b;margin-top:2px;">
-        OCs Autorizada/Parcial sin recibir tras
-        <input type="number" id="atrasadas-buffer" value="7" min="0" max="90" style="width:50px;padding:2px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px" onchange="cargarOcsAtrasadas()"> d&iacute;as de buffer sobre el lead_time del proveedor
-      </div>
-    </div>
-    <button class="btn bp" onclick="cargarOcsAtrasadas()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
-  </div>
-
-  <div id="atrasadas-resumen" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;font-size:12px;color:#475569"></div>
-  <div id="atrasadas-contenido" style="background:white;border:1px solid #e2e8f0;border-radius:10px;overflow-x:auto">
-    <div style="text-align:center;color:#94a3b8;padding:30px">Click &#x21BA; Actualizar para cargar</div>
-  </div>
-</div>
-
 <!-- ════════════ TAB: CALIDAD RECEPCIÓN · Sebastián 23-may-2026 ════════════ -->
 <!-- Histórico de OCs recibidas con discrepancia + ranking proveedores -->
 <div id="pane-discrep" class="pane">
@@ -896,7 +877,7 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
       <div style="font-weight:700;margin-bottom:6px">&#x1F4A1; C&oacute;mo se detectan</div>
       <div>1. Receptor marca <strong>tiene_discrepancias</strong> en /recibir</div>
       <div>2. <strong>Auto-detecci&oacute;n</strong>: si alg&uacute;n item recibe &lt;95% de lo pedido, sistema marca discrepancia + push_notif a creador OC + admins</div>
-      <div style="margin-top:6px;color:#64748b">Cron diario notifica OCs atrasadas. Pesta&ntilde;a vecina 🚨 Atrasadas.</div>
+      <div style="margin-top:6px;color:#64748b">Un cron diario (8:45 AM) avisa por campana las OCs atrasadas sin recibir tras su lead_time.</div>
     </div>
   </div>
 
@@ -1709,7 +1690,7 @@ window._cxTabToGrp = {
   'artes':'entradas',
   // OCs y Pagos
   'consol':'ocs', 'por-pagar':'ocs', 'pagos':'ocs', 'ordserv':'ocs',
-  'atrasadas':'ocs', 'discrep':'ocs', 'mailbox':'ocs',
+  'discrep':'ocs', 'mailbox':'ocs',
   'facprov':'ocs', 'cotiz':'ocs', 'prepenv':'ocs', 'feedneed':'ocs',
   // Maestros
   'prov':'maestros',
@@ -1756,7 +1737,6 @@ document.querySelectorAll('.tn').forEach(function(btn){
     else if(tab==='consol') loadConsolidado();
     else if(tab==='pagos'){ loadPagos(); }
     else if(tab==='por-pagar'){ loadPorPagar(); }
-    else if(tab==='atrasadas'){ cargarOcsAtrasadas(); }
     else if(tab==='discrep'){ cargarDiscrepancias(); }
     else if(tab==='mailbox'){ cargarMailbox(); }
     else if(tab==='cotiz'){ cargarCotizaciones(); }
@@ -8860,87 +8840,6 @@ async function registrarSaldoFavor(){
     alert('✅ '+prov+' ahora tiene '+_money(d.saldo)+' a favor');
   }catch(e){ alert('Error: '+e); }
 }
-
-// ═══════════════════════════════════════════════════════════════════
-// Tab "Atrasadas" · Sebastián 23-may-2026 · cierre flujo Compras
-// OCs Autorizada/Parcial sin recibir tras lead_time + buffer
-// ═══════════════════════════════════════════════════════════════════
-async function cargarOcsAtrasadas(){
-  var div = document.getElementById('atrasadas-contenido');
-  var resumen = document.getElementById('atrasadas-resumen');
-  var bufferEl = document.getElementById('atrasadas-buffer');
-  var buffer = bufferEl ? parseInt(bufferEl.value, 10) : 7;
-  if(isNaN(buffer) || buffer < 0) buffer = 7;
-  div.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:30px">Cargando…</div>';
-  resumen.innerHTML = '';
-  try{
-    var r = await fetch('/api/compras/ocs-atrasadas?buffer_dias=' + buffer);
-    if(r.status === 401){ window.location.href = '/login'; return; }
-    if(!r.ok){
-      div.innerHTML = '<div style="color:#dc2626;padding:20px">Error HTTP ' + r.status + '</div>';
-      return;
-    }
-    var d = await r.json();
-    function _esc(s){
-      if(s == null) return '';
-      return String(s).replace(/[&<>"\']/g, function(c){
-        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
-      });
-    }
-    function _fmtCop(n){
-      if(!n) return '-';
-      return '$' + Math.round(n).toLocaleString('es-CO');
-    }
-    var n = d.total || 0;
-    var ocs = d.ocs || [];
-    // Badge en tab
-    var badge = document.getElementById('atrasadas-badge');
-    if(badge){
-      if(n > 0){ badge.style.display = 'inline-block'; badge.textContent = n; }
-      else { badge.style.display = 'none'; }
-    }
-    resumen.innerHTML = '<span style="color:#78716c;font-size:12px">Buffer ' + d.buffer_dias + 'd sobre el lead_time del proveedor &middot; medido hoy ' + _esc(d.hoy) + '</span>';
-    if(n === 0){
-      div.innerHTML = '<div class="cxt-wrap" style="text-align:center;color:#15803d;padding:34px;font-weight:600">&#10003; Sin OCs atrasadas &middot; todo al d&iacute;a</div>';
-      return;
-    }
-    // KPIs
-    var valorRiesgo = 0, atrasoMax = 0, criticas = 0;
-    ocs.forEach(function(oc){ valorRiesgo += (oc.valor_total||0); if(oc.dias_atraso>atrasoMax) atrasoMax=oc.dias_atraso; if(oc.dias_atraso>30) criticas++; });
-    var html = '<div class="kpis">'
-      + '<div class="kpi"><div class="kpi-l">OCs atrasadas</div><div class="kpi-v r">' + n + '</div></div>'
-      + '<div class="kpi"><div class="kpi-l">Cr&iacute;ticas (&gt;30d)</div><div class="kpi-v ' + (criticas>0?'r':'') + '">' + criticas + '</div></div>'
-      + '<div class="kpi"><div class="kpi-l">Atraso m&aacute;ximo</div><div class="kpi-v w">' + atrasoMax + 'd</div></div>'
-      + '<div class="kpi"><div class="kpi-l">Valor en riesgo</div><div class="kpi-v">' + _fmtCop(valorRiesgo) + '</div></div>'
-      + '</div>';
-    // Tabla premium
-    html += '<div class="cxt-wrap scroll"><table class="cxt">';
-    html += '<thead><tr><th>OC</th><th>Proveedor</th><th>Creador</th><th style="text-align:center">Estado</th>'
-      + '<th style="text-align:right">D&iacute;as OC</th><th style="text-align:right">Lead time</th>'
-      + '<th style="text-align:right">Atraso</th><th style="text-align:right">Valor</th></tr></thead><tbody>';
-    ocs.forEach(function(oc){
-      var chip = oc.dias_atraso > 30 ? 'no' : (oc.dias_atraso > 14 ? 'wait' : 'mute');
-      var estChip = oc.estado==='Parcial' ? 'wait' : 'info';
-      html += '<tr>';
-      html += '<td class="cxt-mono" style="font-weight:700;color:#6d28d9">' + _esc(oc.numero_oc) + '</td>';
-      html += '<td style="font-weight:600;color:#292524">' + _esc(oc.proveedor) + '</td>';
-      html += '<td style="color:#78716c">' + _esc(oc.creador || '-') + '</td>';
-      html += '<td style="text-align:center"><span class="cxt-chip ' + estChip + '">' + _esc(oc.estado) + '</span></td>';
-      html += '<td class="cxt-mono" style="text-align:right">' + oc.dias_desde_oc + 'd</td>';
-      html += '<td class="cxt-mono" style="text-align:right;color:#78716c">' + oc.lead_time_dias + 'd</td>';
-      html += '<td style="text-align:right"><span class="cxt-chip ' + chip + '">+' + oc.dias_atraso + 'd</span></td>';
-      html += '<td class="cxt-mono" style="text-align:right;font-weight:600">' + _fmtCop(oc.valor_total) + '</td>';
-      html += '</tr>';
-    });
-    html += '</tbody></table>';
-    html += '<div class="cxt-hint">&#128161; <strong>C&oacute;mo leer:</strong> "Atraso" = d&iacute;as sobre el lead_time del proveedor + buffer. Rojo &gt;30d, &aacute;mbar &gt;14d, gris el resto. El lead_time se aprende autom&aacute;ticamente con cada recepci&oacute;n completa (EWMA 70/30).</div>';
-    html += '</div>';
-    div.innerHTML = html;
-  }catch(e){
-    div.innerHTML = '<div style="color:#dc2626;padding:20px">Error red: ' + e.message + '</div>';
-  }
-}
-
 
 // ═══════════════════════════════════════════════════════════════════
 // Tab "Calidad recepción" · Sebastián 23-may-2026
