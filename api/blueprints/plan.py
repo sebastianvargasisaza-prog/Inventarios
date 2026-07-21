@@ -21615,32 +21615,32 @@ async function abrirLoteModal(id, producto, fecha, kg){
     + '</div>';
   html += '</div>';
 
-  // 🤝 OTROS CLIENTES (Sebastián 17-jul): los pedidos B2B (del portal del cliente o de "Programar")
-  // caen aquí AUTOMÁTICO y ya suman a los kg que se fabrican (backend: pedidos_b2b_lote). Read-only,
-  // se llena en _calCargarOtrosClientes(id). Debajo, la reserva MANUAL de kg para otro cliente.
+  // 🤝 OTROS CLIENTES (Sebastián 17-jul · 20-jul MOVIDO dentro de 🏭 Producción): los pedidos B2B
+  // (del portal o de "Programar") caen aquí AUTOMÁTICO y ya suman a los kg (backend: pedidos_b2b_lote).
+  // Se captura en _otrosHtml y se PINTA dentro de Producción (agregar cliente = kilos + envase).
   var _lfOtro = (PLAN_DATA.agendadas || []).find(function(a){ return a.id === id; });
   var _kgOtroActual = (_lfOtro && _lfOtro.kg_otro_cliente) ? _lfOtro.kg_otro_cliente : 0;
-  html += '<div style="margin-top:12px;background:linear-gradient(180deg,#fffdf5,#fffbeb);border:1px solid #fde68a;border-radius:10px;padding:12px 14px">';
-  html += '<div style="font-size:12px;font-weight:800;color:#92400e;margin-bottom:8px">🤝 Otros clientes <span style="font-weight:600;color:#b45309;font-size:11px">· pedidos B2B (portal / Programar) que suman a este lote</span></div>';
-  html += '<div id="otros-b2b-' + id + '" style="font-size:12px;color:#92400e">cargando&#8230;</div>';
-  // ➕ Agregar otro cliente A MANO (SUMA a la producción · crea aporte + sube el kg del lote)
-  html += '<div style="margin-top:9px">';
-  html += '<button onclick="_toggleAddCliente(' + id + ')" style="padding:6px 12px;font-size:11px;background:#16a34a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:800">&#10133; Agregar otro cliente</button>';
-  html += '<div id="add-cli-' + id + '" style="display:none;margin-top:8px;background:#fff;border:1px solid #86efac;border-radius:8px;padding:10px 11px">';
-  html += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
-  html += '<input id="addcli-nombre-' + id + '" list="addcli-clientes-dl" placeholder="Cliente (elegí o escribí uno nuevo)" autocomplete="off" style="flex:1;min-width:150px;padding:5px 7px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px"><datalist id="addcli-clientes-dl"></datalist>';
-  html += '<select id="addcli-env-' + id + '" style="min-width:170px;padding:5px 7px;border:1px solid #cbd5e1;border-radius:5px;font-size:11px;background:#fff">' + _opcionesEnvaseInline('') + '</select>';
-  html += '<input id="addcli-kg-' + id + '" type="number" min="0.1" step="0.1" placeholder="kg" style="width:70px;padding:5px 7px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;text-align:center"> <span style="font-size:11px;color:#166534;font-weight:700">kg</span>';
-  html += '<button onclick="_guardarOtroCliente(' + id + ')" style="padding:5px 12px;font-size:11px;background:#16a34a;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:800">&#128190; Sumar</button>';
-  html += '</div>';
-  html += '<div style="font-size:10px;color:#166534;margin-top:5px">Se agrega ENCIMA del lote &Aacute;nimus &middot; sube el kg a fabricar y la compra de MP para cubrirlo.</div>';
-  html += '</div></div>';
-  html += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;border-top:1px dashed #fcd34d;margin-top:10px;padding-top:9px">';
-  html += '<span style="font-size:11px;color:#92400e;font-weight:700" title="kg de ESTE lote que van para otro cliente sin pedido B2B formal · resta de la cobertura de Ánimus">Reserva manual (resta cobertura):</span>';
-  html += '<input id="kg-otro-cli" type="number" min="0" max="1000" step="1" value="' + _kgOtroActual + '" oninput="try{_updateCadenciaPreview()}catch(e){}" style="width:64px;font-size:14px;font-weight:800;padding:4px 6px;border:1px solid #fcd34d;border-radius:5px"> <span style="font-size:11px;color:#92400e">kg</span>';
-  html += '<button onclick="guardarKgOtroCliente(' + id + ')" style="padding:5px 10px;font-size:11px;margin:0;background:#d97706">💾 Este lote</button>';
-  html += '<button onclick="aplicarKgOtroClienteCadena(this)" data-prod="' + escapeHtml(producto) + '" title="Aplica este kg (fijo por lote) a TODOS los lotes futuros del producto · la porción Ánimus baja y la cadencia recalcula más seguido" style="padding:5px 10px;font-size:11px;background:#fff;color:#b45309;border:1px solid #fcd34d;border-radius:6px;cursor:pointer;font-weight:800">&#128203; A toda la cadena</button>';
-  html += '</div></div>';
+  var _otrosHtml = '';
+  _otrosHtml += '<div style="margin-top:12px;background:linear-gradient(180deg,#fffdf5,#fffbeb);border:1px solid #fde68a;border-radius:10px;padding:12px 14px">';
+  _otrosHtml += '<div style="font-size:12px;font-weight:800;color:#92400e;margin-bottom:8px">🤝 Otros clientes <span style="font-weight:600;color:#b45309;font-size:11px">· pedidos B2B (portal / Programar) que suman a este lote</span></div>';
+  _otrosHtml += '<div id="otros-b2b-' + id + '" style="font-size:12px;color:#92400e">cargando&#8230;</div>';
+  _otrosHtml += '<div style="margin-top:9px">';
+  _otrosHtml += '<button onclick="_toggleAddCliente(' + id + ')" style="padding:6px 12px;font-size:11px;background:#16a34a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:800">&#10133; Agregar otro cliente</button>';
+  _otrosHtml += '<div id="add-cli-' + id + '" style="display:none;margin-top:8px;background:#fff;border:1px solid #86efac;border-radius:8px;padding:10px 11px">';
+  _otrosHtml += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
+  _otrosHtml += '<input id="addcli-nombre-' + id + '" list="addcli-clientes-dl" placeholder="Cliente (elegí o escribí uno nuevo)" autocomplete="off" style="flex:1;min-width:150px;padding:5px 7px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px"><datalist id="addcli-clientes-dl"></datalist>';
+  _otrosHtml += '<select id="addcli-env-' + id + '" style="min-width:170px;padding:5px 7px;border:1px solid #cbd5e1;border-radius:5px;font-size:11px;background:#fff">' + _opcionesEnvaseInline('') + '</select>';
+  _otrosHtml += '<input id="addcli-kg-' + id + '" type="number" min="0.1" step="0.1" placeholder="kg" style="width:70px;padding:5px 7px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;text-align:center"> <span style="font-size:11px;color:#166534;font-weight:700">kg</span>';
+  _otrosHtml += '<button onclick="_guardarOtroCliente(' + id + ')" style="padding:5px 12px;font-size:11px;background:#16a34a;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:800">&#128190; Sumar</button>';
+  _otrosHtml += '</div>';
+  _otrosHtml += '<div style="font-size:10px;color:#166534;margin-top:5px">Se agrega ENCIMA del lote &Aacute;nimus &middot; sube el kg a fabricar y la compra de MP para cubrirlo.</div>';
+  _otrosHtml += '</div></div>';
+  _otrosHtml += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;border-top:1px dashed #fcd34d;margin-top:10px;padding-top:9px">';
+  _otrosHtml += '<span style="font-size:11px;color:#92400e;font-weight:700" title="kg de ESTE lote que van para otro cliente sin pedido B2B formal · resta de la cobertura de Ánimus">Reserva manual (resta cobertura):</span>';
+  _otrosHtml += '<input id="kg-otro-cli" type="number" min="0" max="1000" step="1" value="' + _kgOtroActual + '" oninput="try{_updateCadenciaPreview()}catch(e){}" style="width:64px;font-size:14px;font-weight:800;padding:4px 6px;border:1px solid #fcd34d;border-radius:5px"> <span style="font-size:11px;color:#92400e">kg</span>';
+  _otrosHtml += '<button onclick="guardarKgOtroCliente(' + id + ')" style="padding:5px 10px;font-size:11px;margin:0;background:#d97706">💾 Este lote</button>';
+  _otrosHtml += '<button onclick="aplicarKgOtroClienteCadena(this)" data-prod="' + escapeHtml(producto) + '" title="Aplica este kg (fijo por lote) a TODOS los lotes futuros del producto · la porción Ánimus baja y la cadencia recalcula más seguido" style="padding:5px 10px;font-size:11px;background:#fff;color:#b45309;border:1px solid #fcd34d;border-radius:6px;cursor:pointer;font-weight:800">&#128203; A toda la cadena</button>';
+  _otrosHtml += '</div></div>';
 
   // 📊 Desglose EDITABLE por referencia · movido ABAJO (al bloque "Lo que se va a producir")
   // para que el modal lidere con el estado del producto (Sebastián 13-jul · como Necesidades).
@@ -21738,6 +21738,8 @@ async function abrirLoteModal(id, producto, fecha, kg){
     + '</div>'
     + '<div id="prod-alcance" style="margin-top:11px;font-size:12px;color:#5b21b6;line-height:1.5"></div>'
     + '</div>';
+  // Agregar cliente (kilos + envase) · dentro de Producción (Sebastián 20-jul)
+  html += _otrosHtml;
   // Lo que se va a producir (detalle) · Plan de envasado por cliente + desglose por referencia + cadencia.
   html += _planEnvHtml;
   html += '<div id="lote-desglose-edit"></div>';
