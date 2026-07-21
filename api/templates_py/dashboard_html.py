@@ -10744,7 +10744,9 @@ async function cargarEnvasadoRunner(){
   wrap.innerHTML='<div style="color:#999;padding:10px">Cargando&hellip;</div>';
   try{
     var d=await (await fetch('/api/brd/ordenes-unificadas?fase=envasado',{credentials:'same-origin'})).json();
-    var items=((d&&d.items)?d.items:[]).filter(function(o){return o&&o.ebr_id;});
+    // FIX 21-jul: el endpoint devuelve la clave 'ordenes' (no 'items') → antes d.items=undefined → SIEMPRE
+    // vacío ("Sin órdenes"), aunque el legajo de envasado existiera. Los otros loaders ya usan d.ordenes.
+    var items=((d&&d.ordenes)?d.ordenes:[]).filter(function(o){return o&&o.ebr_id;});
     if(!items.length){
       wrap.innerHTML='<div style="color:#64748b;padding:16px;text-align:center;font-size:13px">Sin órdenes de envasado todav&iacute;a.<br>Cuando Calidad <b>libera</b> el granel de un lote, su Orden de Envasado aparece ac&aacute; autom&aacute;ticamente.</div>';
       return;
