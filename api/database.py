@@ -10193,6 +10193,14 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
           "(comportamiento actual). Additiva, NULL-safe, PG-safe.", [
         "ALTER TABLE sku_planeacion_config ADD COLUMN venta_esperada_mes REAL",
     ]),
+    (366, "Cotizaciones · cantidad + material en la ronda (Sebastián 21-jul): la ronda ahora guarda "
+          "cuánto (cantidad_g) y de qué MP (codigo_mp) se cotiza, para que al ELEGIR GANADORA la OC "
+          "salga con un ítem REAL (codigo_mp · cantidad · precio unitario = valor_total/cantidad) en "
+          "vez de un genérico de 1 unidad. Ambas NULL = comportamiento anterior (ítem genérico). "
+          "Additiva, NULL-safe, PG-safe.", [
+        "ALTER TABLE cotizaciones ADD COLUMN codigo_mp TEXT",
+        "ALTER TABLE cotizaciones ADD COLUMN cantidad_g REAL",
+    ]),
 ]
 
 

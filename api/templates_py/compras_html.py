@@ -8967,7 +8967,7 @@ function _cotProvRow(){
     +'</div>';
 }
 function _cotAddProvRow(){ var box=document.getElementById('cot-prov-rows'); if(box) box.insertAdjacentHTML('beforeend', _cotProvRow()); }
-function nuevaRondaCotizModal(prefill){
+function nuevaRondaCotizModal(prefill, codigo){
   _cotOvClose();
   var ov=document.createElement('div'); ov.id='cot-new-ov';
   ov.style.cssText='position:fixed;inset:0;background:rgba(20,18,40,.55);z-index:99999;display:flex;align-items:flex-start;justify-content:center;padding:28px;overflow:auto';
@@ -8976,9 +8976,14 @@ function nuevaRondaCotizModal(prefill){
     +'<div><div style="font-size:16px;font-weight:800;color:#1e1b2e">&#128172; Nueva ronda de cotizaci&oacute;n</div><div style="font-size:11px;color:#8b8b9e;margin-top:1px">Ped&iacute; precio a varios proveedores y compar&aacute;</div></div>'
     +'<button onclick="_cotOvClose()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#a1a1b0">&times;</button></div>'
     +'<div style="padding:20px 22px">'
+    +'<input type="hidden" id="cot-codigo" value="'+esc(codigo||'')+'">'
     +'<label style="font-size:11px;color:#78788a;font-weight:600;text-transform:uppercase;display:block;margin-bottom:4px">&iquest;Qu&eacute; se va a cotizar?</label>'
-    +'<textarea id="cot-desc" rows="2" placeholder="Ej: 500 uds de frasco ambar 30ml con gotero, o cualquier material/servicio nuevo" style="width:100%;padding:9px 11px;border:1px solid #d6d3d1;border-radius:9px;font-size:13px;box-sizing:border-box;resize:vertical"></textarea>'
-    +'<div style="font-size:11px;color:#a1a1aa;margin:3px 0 14px">Texto libre, funciona para cosas que nunca hemos comprado. S&eacute; espec&iacute;fico (cantidad, medida, calidad).</div>'
+    +'<textarea id="cot-desc" rows="2" placeholder="Ej: frasco ambar 30ml con gotero, o cualquier material/servicio nuevo" style="width:100%;padding:9px 11px;border:1px solid #d6d3d1;border-radius:9px;font-size:13px;box-sizing:border-box;resize:vertical"></textarea>'
+    +'<div style="font-size:11px;color:#a1a1aa;margin:3px 0 14px">Texto libre, funciona para cosas que nunca hemos comprado. S&eacute; espec&iacute;fico (medida, calidad).</div>'
+    +'<div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:14px">'
+    +'<div style="flex:0 0 150px"><label style="font-size:11px;color:#78788a;font-weight:600;text-transform:uppercase;display:block;margin-bottom:4px">Cantidad <span style="color:#a1a1aa;font-weight:400">(opc)</span></label><input id="cot-cant" type="number" min="0" step="any" placeholder="ej: 500" style="width:100%;padding:9px 11px;border:1px solid #d6d3d1;border-radius:9px;font-size:14px;box-sizing:border-box;font-weight:700"></div>'
+    +'<div style="flex:1;font-size:11px;color:#8b8b9e;padding-bottom:8px;line-height:1.4">Si la pon&eacute;s, la <b>OC ganadora sale con el &iacute;tem listo</b> (cantidad + precio unitario). Cada proveedor carga el <b>precio total</b> por esa cantidad.</div>'
+    +'</div>'
     +'<label style="font-size:11px;color:#78788a;font-weight:600;text-transform:uppercase;display:block;margin-bottom:6px">Proveedores a cotizar (m&iacute;nimo 2)</label>'
     +'<datalist id="cot-prov-list">'+_cotProvOptions()+'</datalist>'
     +'<div id="cot-prov-rows">'+_cotProvRow()+_cotProvRow()+'</div>'
@@ -8998,16 +9003,36 @@ async function cargarCandidatosCotiz(){
     if(!r.ok){ box.innerHTML=''; return; }
     var d=await r.json(); var its=d.items||[];
     if(!its.length){ box.innerHTML=''; return; }
-    var chips=its.map(function(it){
-      var nom=esc(it.nombre||it.codigo||'');
-      return '<button onclick="nuevaRondaCotizModal(&quot;Cotizar: '+nom.replace(/&quot;/g,'')+'&quot;)" class="cxt-chip mute" style="border:1px solid #ede9f6;cursor:pointer;padding:5px 11px" title="Abrir ronda de cotización para este material">&#128172; '+nom+'</button>';
-    }).join(' ');
-    box.innerHTML='<div class="cxt-wrap" style="padding:14px 16px">'
-      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="font-weight:800;font-size:13px;color:#1e1b2e">&#128269; Candidatos a cotizar</span>'
-      +'<span class="cxt-chip wait">'+its.length+' sin precio</span></div>'
-      +'<div style="font-size:11px;color:#78716c;margin-bottom:10px">Materiales activos sin precio de referencia (nunca comprados). Click en uno para abrir su ronda de cotización.</div>'
-      +'<div style="display:flex;gap:6px;flex-wrap:wrap">'+chips+'</div></div>';
+    window._COT_CANDS=its;
+    box.innerHTML='<div style="background:#fff;border:1px solid #ece9f6;border-radius:14px;padding:16px 18px;box-shadow:0 1px 3px rgba(15,23,42,.04)">'
+      +'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">'
+      +'<span style="width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px">&#128269;</span>'
+      +'<span style="font-weight:800;font-size:14px;color:#1e1b2e">Candidatos a cotizar</span>'
+      +'<span style="font-size:11px;font-weight:800;background:#fef3c7;color:#92400e;border-radius:999px;padding:3px 10px">'+its.length+' sin precio</span>'
+      +'<input id="cot-cand-q" oninput="_renderCotCands()" placeholder="&#128269; filtrar material&hellip;" style="margin-left:auto;min-width:180px;flex:1;max-width:280px;padding:7px 12px;border:1px solid #ece9f6;border-radius:999px;font-size:12px">'
+      +'</div>'
+      +'<div style="font-size:11px;color:#78716c;margin-bottom:12px">Materiales activos sin precio de referencia (nunca comprados). Click en uno para abrir su ronda de cotizaci&oacute;n.</div>'
+      +'<div id="cot-cand-chips" style="display:flex;gap:7px;flex-wrap:wrap"></div></div>';
+    _renderCotCands();
   }catch(e){ box.innerHTML=''; }
+}
+function _cotDesdeCandidato(i){ var it=(window._COT_CANDS||[])[i]; if(!it) return; nuevaRondaCotizModal('Cotizar: '+(it.nombre||it.codigo||''), it.codigo||''); }
+function _renderCotCands(){
+  var wrap=document.getElementById('cot-cand-chips'); if(!wrap) return;
+  var its=window._COT_CANDS||[];
+  var q=((document.getElementById('cot-cand-q')||{}).value||'').toLowerCase().trim();
+  var filt=its.map(function(it,idx){ return {it:it, idx:idx}; }).filter(function(o){
+    if(!q) return true;
+    return ((o.it.nombre||'')+' '+(o.it.codigo||'')).toLowerCase().indexOf(q)>=0;
+  });
+  var CAP=48;
+  var shown=filt.slice(0,CAP);
+  var chips=shown.map(function(o){
+    return '<button onclick="_cotDesdeCandidato('+o.idx+')" style="background:#faf7ff;border:1px solid #ede9f6;color:#4c1d95;border-radius:999px;cursor:pointer;padding:6px 12px;font-size:12px;font-weight:600;transition:all .12s" onmouseover="this.style.background=\\'#f0e9ff\\'" onmouseout="this.style.background=\\'#faf7ff\\'" title="Abrir ronda de cotización para este material">&#128172; '+esc(o.it.nombre||o.it.codigo||'')+'</button>';
+  }).join('');
+  if(filt.length>CAP){ chips+='<span style="align-self:center;font-size:11px;color:#94a3b8;padding:0 6px">+'+(filt.length-CAP)+' m&aacute;s &middot; afin&aacute; el filtro</span>'; }
+  if(!filt.length){ chips='<span style="font-size:12px;color:#94a3b8;padding:4px 0">Sin candidatos que coincidan con "'+esc(q)+'".</span>'; }
+  wrap.innerHTML=chips;
 }
 async function crearRondaCotiz(){
   var desc=((document.getElementById('cot-desc')||{}).value||'').trim();
@@ -9020,8 +9045,10 @@ async function crearRondaCotiz(){
     if(n) provs.push({nombre:n, condiciones:cc});
   });
   if(provs.length<2){ if(msg) msg.innerHTML='<span style="color:#dc2626">M&iacute;nimo 2 proveedores para comparar.</span>'; return; }
+  var cant=parseFloat((document.getElementById('cot-cant')||{}).value||'')||0;
+  var codigo=((document.getElementById('cot-codigo')||{}).value||'').trim();
   try{
-    var r=await fetch('/api/compras/cotizaciones/rondas', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':window._csrfTok||''}, body:JSON.stringify({descripcion:desc, proveedores:provs})});
+    var r=await fetch('/api/compras/cotizaciones/rondas', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':window._csrfTok||''}, body:JSON.stringify({descripcion:desc, proveedores:provs, cantidad_g:cant, codigo_mp:codigo})});
     var d=await r.json();
     if(!r.ok || d.error){ if(msg) msg.innerHTML='<span style="color:#dc2626">'+esc(d.error||('Error '+r.status))+'</span>'; return; }
     _cotOvClose(); cargarCotizaciones();
@@ -9046,10 +9073,10 @@ async function cargarCotizaciones(){
       div.innerHTML = '<div class="cxt-wrap" style="text-align:center;color:#78716c;padding:40px"><div style="font-size:14px;font-weight:700;margin-bottom:6px;color:#292524">No hay rondas de cotizaciones a&uacute;n</div><div style="font-size:12px">Cre&aacute; una desde la pesta&ntilde;a Planta &rarr; SOL agrupada &rarr; &#128172; Cotizar</div></div>';
       return;
     }
-    var html = '<div class="kpis">'
-      + '<div class="kpi"><div class="kpi-l">Abiertas</div><div class="kpi-v ' + (pend>0?'w':'') + '">' + pend + '</div></div>'
-      + '<div class="kpi"><div class="kpi-l">Cerradas</div><div class="kpi-v g">' + cerr + '</div></div>'
-      + '<div class="kpi"><div class="kpi-l">Total (&uacute;ltimas 50)</div><div class="kpi-v">' + rondas.length + '</div></div>'
+    var html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px">'
+      + _pkpi({ico:'&#128172;',l:'Rondas abiertas',v:pend,s:(pend>0?'esperando respuesta':'ninguna pendiente'),bg:'linear-gradient(135deg,#0e5a6e,#0891b2)'})
+      + _pkpi({ico:'&#10003;',l:'Cerradas',v:cerr,s:'con ganadora',bg:'linear-gradient(135deg,#0f3d3a,#15756b)'})
+      + _pkpi({ico:'&#128202;',l:'Total (&uacute;ltimas 50)',v:rondas.length,s:'rondas',bg:'linear-gradient(135deg,#312e81,#4338ca)'})
       + '</div>';
     html += '<div class="cxt-wrap scroll"><table class="cxt">';
     html += '<thead><tr><th>Ronda #</th><th>MP / Item</th><th>Creada</th><th style="text-align:center">Recibidas / Solic</th>'
@@ -9099,7 +9126,7 @@ async function abrirCotizDrawer(rondaId){
     var ronda = d.ronda || {};
     var cots = d.cotizaciones || d.items || [];
     var meta = document.getElementById('cot-ronda-meta');
-    if(meta) meta.textContent = (ronda.material_nombre||ronda.descripcion||'?') + ' · creada '+(ronda.creada_en||'').slice(0,10);
+    if(meta) meta.textContent = (ronda.material_nombre||ronda.descripcion||'?') + (ronda.cantidad_g>0?(' · '+ronda.cantidad_g+' und/g'):'') + (ronda.creada_en?(' · creada '+(ronda.creada_en||'').slice(0,10)):'');
     if(!cots.length){
       document.getElementById('cot-drawer-body').innerHTML = '<div style="text-align:center;color:#64748b;padding:40px">Sin cotizaciones registradas aún. Cuando los proveedores respondan, usá el botón ✏️ Registrar respuesta abajo.</div>';
       return;
@@ -9121,6 +9148,7 @@ async function abrirCotizDrawer(rondaId){
       html += '<div style="font-weight:800;font-size:14px;color:#1e293b;margin-bottom:8px">'+_esc(c.proveedor||'?')+'</div>';
       html += '<table style="width:100%;font-size:12px;border-collapse:collapse">';
       html += '<tr><td style="color:#64748b;padding:3px 0">Precio total:</td><td style="text-align:right;font-weight:800;color:#1e293b">'+(c.valor_total?_money(c.valor_total):'-')+'</td></tr>';
+      if(ronda.cantidad_g>0 && c.valor_total){ html += '<tr><td style="color:#64748b;padding:3px 0">Precio unitario:</td><td style="text-align:right;font-weight:700;color:#0891b2">'+_money(c.valor_total/ronda.cantidad_g)+'</td></tr>'; }
       html += '<tr><td style="color:#64748b;padding:3px 0">Tiempo entrega:</td><td style="text-align:right;font-weight:700">'+(c.tiempo_entrega_dias!=null?c.tiempo_entrega_dias+' días':'-')+'</td></tr>';
       html += '<tr><td style="color:#64748b;padding:3px 0">Estado:</td><td style="text-align:right;font-weight:700;color:'+(c.valor_total?'#15803d':'#94a3b8')+'">'+(c.valor_total?'✓ Respondió':'⏳ Pendiente')+'</td></tr>';
       html += '<tr><td style="color:#64748b;padding:3px 0">Condiciones:</td><td style="text-align:right;font-size:11px">'+_esc(c.condiciones||'-')+'</td></tr>';

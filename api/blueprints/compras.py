@@ -13338,6 +13338,13 @@ def crear_ronda_cotizaciones():
     d = request.get_json() or {}
     descripcion = (d.get('descripcion') or '').strip()
     proveedores = d.get('proveedores', [])
+    # Cantidad + material de la ronda (mig 366) · opcional · para que la OC ganadora
+    # salga con ítem real. Se guardan iguales en cada fila de la ronda.
+    codigo_mp = (d.get('codigo_mp') or '').strip()
+    try:
+        cantidad_g = float(d.get('cantidad_g') or 0) or None
+    except (TypeError, ValueError):
+        cantidad_g = None
     if not descripcion or not proveedores:
         return jsonify({'error': 'descripcion y proveedores requeridos'}), 400
     if len(proveedores) < 2:
@@ -13354,12 +13361,12 @@ def crear_ronda_cotizaciones():
             continue
         c.execute("""INSERT INTO cotizaciones
                      (ronda_id, proveedor, descripcion, condiciones,
-                      tiempo_entrega_dias, creado_por, estado)
-                     VALUES (?, ?, ?, ?, ?, ?, 'Pendiente')""",
+                      tiempo_entrega_dias, creado_por, estado, codigo_mp, cantidad_g)
+                     VALUES (?, ?, ?, ?, ?, ?, 'Pendiente', ?, ?)""",
                   (ronda_id, nombre, descripcion,
                    prov.get('condiciones', ''),
                    int(prov.get('tiempo_entrega_dias') or 0),
-                   u))
+                   u, codigo_mp, cantidad_g))
         creadas.append({'id': c.lastrowid, 'proveedor': nombre})
     conn.commit()
     return jsonify({
@@ -13427,15 +13434,23 @@ def get_ronda(ronda_id):
     conn = get_db(); c = conn.cursor()
     c.execute("""SELECT id, proveedor, fecha_solicitud, fecha_recibida,
                         valor_total, condiciones, descripcion,
-                        tiempo_entrega_dias, ganadora, numero_oc, estado
+                        tiempo_entrega_dias, ganadora, numero_oc, estado,
+                        codigo_mp, cantidad_g
                  FROM cotizaciones WHERE ronda_id=? ORDER BY valor_total ASC""",
               (ronda_id,))
     cols = ['id', 'proveedor', 'fecha_solicitud', 'fecha_recibida',
             'valor_total', 'condiciones', 'descripcion',
-            'tiempo_entrega_dias', 'ganadora', 'numero_oc', 'estado']
+            'tiempo_entrega_dias', 'ganadora', 'numero_oc', 'estado',
+            'codigo_mp', 'cantidad_g']
     cotizaciones = [dict(zip(cols, r)) for r in c.fetchall()]
+    _r0 = cotizaciones[0] if cotizaciones else {}
     return jsonify({
         'ronda_id': ronda_id,
+        'ronda': {
+            'descripcion': _r0.get('descripcion'),
+            'codigo_mp': _r0.get('codigo_mp'),
+            'cantidad_g': _r0.get('cantidad_g'),
+        },
         'cotizaciones': cotizaciones,
         'count': len(cotizaciones),
         'completadas': sum(1 for x in cotizaciones if x['estado'] == 'Recibida'),
@@ -13468,13 +13483,16 @@ def elegir_ganadora(cot_id):
 
     conn = get_db(); c = conn.cursor()
     c.execute("""SELECT ronda_id, proveedor, valor_total, descripcion,
-                        COALESCE(tiempo_entrega_dias, 0), condiciones
+                        COALESCE(tiempo_entrega_dias, 0), condiciones,
+                        codigo_mp, cantidad_g
                  FROM cotizaciones WHERE id=?""", (cot_id,))
     row = c.fetchone()
     if not row:
         return jsonify({'error': 'Cotización no encontrada'}), 404
-    ronda_id, prov_ganador, valor_ganador, descripcion, lead_time, condiciones = row
+    ronda_id, prov_ganador, valor_ganador, descripcion, lead_time, condiciones, cot_codigo_mp, cot_cantidad = row
     valor_ganador = float(valor_ganador or 0)
+    cot_cantidad = float(cot_cantidad or 0)         # cantidad cotizada (mig 366) · 0 = genérico
+    cot_codigo_mp = (cot_codigo_mp or '').strip()   # material · vacío = sin desglose
 
     # Decisión · usar OC existente o crear nueva
     numero_oc_final = numero_oc_override
@@ -13500,14 +13518,21 @@ def elegir_ganadora(cot_id):
                     (oc_num_nuevo, datetime.now().isoformat(),
                      prov_ganador or 'Por definir', obs_oc, u, valor_ganador),
                 )
-                # Item agregado · admin puede desglosarlo después si necesita
+                # Item · si la ronda tenía cantidad (mig 366), la OC sale con ítem REAL
+                # (codigo_mp + cantidad + precio unitario = total/cantidad). Si no, genérico de 1.
+                if cot_cantidad and cot_cantidad > 0:
+                    _pu_item = round(valor_ganador / cot_cantidad, 4)
+                    _cant_item = cot_cantidad
+                else:
+                    _pu_item = valor_ganador
+                    _cant_item = 1
                 c.execute(
                     "INSERT INTO ordenes_compra_items "
                     "(numero_oc, codigo_mp, nombre_mp, cantidad_g, "
                     " precio_unitario, subtotal) "
                     "VALUES (?, ?, ?, ?, ?, ?)",
-                    (oc_num_nuevo, '', (descripcion or 'Cotización')[:200],
-                     1, valor_ganador, valor_ganador),
+                    (oc_num_nuevo, cot_codigo_mp, (descripcion or 'Cotización')[:200],
+                     _cant_item, _pu_item, valor_ganador),
                 )
                 numero_oc_final = oc_num_nuevo
                 oc_creada_automatica = True
