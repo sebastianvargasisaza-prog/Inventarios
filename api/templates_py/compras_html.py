@@ -364,7 +364,8 @@ function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':St
 
 <div id="pane-historico" class="pane">
   <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
-    <span style="font-weight:800;color:#1e293b;font-size:15px;">&#x1F4DC; Histórico · todo lo que se ha pedido</span>
+    <span style="font-weight:800;color:#1e293b;font-size:15px;">&#x1F4DC; Hist&oacute;rico de OCs</span>
+    <span style="font-size:11px;color:#94a3b8;">buscá cualquier OC y su estado &middot; el total de plata vive en <b>Tesorer&iacute;a</b></span>
     <input type="text" id="q-historico" placeholder="Buscar OC, proveedor, categoría..." oninput="renderHistorico()" style="padding:7px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;min-width:220px">
     <select id="f-historico-est" onchange="renderHistorico()" style="padding:7px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
       <option value="">Todos los estados</option>
@@ -389,8 +390,9 @@ function renderHistorico(){
     return ((o.numero_oc||'')+' '+(o.proveedor||'')+' '+(o.categoria||'')+' '+(o.observaciones||'')).toLowerCase().indexOf(q)>=0;
   });
   list.sort(function(a,b){return String(b.fecha||'').localeCompare(String(a.fecha||''));});
-  var tot=list.reduce(function(s,o){return s+(parseFloat(o.valor_total)||0);},0);
-  var h='<div style="margin:4px 0 10px;color:#475569;font-size:13px"><b>'+list.length+'</b> órdenes · total <b>'+_f(tot)+'</b></div>';
+  // Buscador OPERATIVO de OCs (Sebastián 21-jul): sin total acumulado de plata · ese número
+  // vive en Tesorería (Archivo de OCs). Acá Catalina rastrea qué se pidió y en qué estado quedó.
+  var h='<div style="margin:4px 0 10px;color:#475569;font-size:13px"><b>'+list.length+'</b> '+(list.length===1?'orden':'órdenes')+'</div>';
   if(!list.length){ wrap.innerHTML=h+'<div class="empty">No hay órdenes que coincidan.</div>'; return; }
   h+='<table style="width:100%;border-collapse:collapse;font-size:13px"><tr style="text-align:left;color:#6d28d9"><th style="padding:6px 8px">N° OC</th><th style="padding:6px 8px">Fecha</th><th style="padding:6px 8px">Proveedor</th><th style="padding:6px 8px">Categoría</th><th style="padding:6px 8px">Estado</th><th style="padding:6px 8px;text-align:right">Valor</th></tr>';
   list.forEach(function(o){

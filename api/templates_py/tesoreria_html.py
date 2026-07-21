@@ -89,6 +89,7 @@ HTML = r"""
       <button class="tab" data-tab="pnl" onclick="switchTab('pnl')">📈 P&L · Margen</button>
       <button class="tab" data-tab="cartera" onclick="switchTab('cartera')">📥 Cartera (AR)</button>
       <button class="tab" data-tab="pagar" onclick="switchTab('pagar')">📤 Por Pagar (AP)</button>
+      <button class="tab" data-tab="ocs" onclick="switchTab('ocs')">📚 Archivo OCs</button>
       <button class="tab" data-tab="facturacion" onclick="switchTab('facturacion')">📄 Facturación</button>
       <button class="tab" data-tab="nomina" onclick="switchTab('nomina')">👥 Nómina</button>
       <button class="tab" data-tab="config" onclick="switchTab('config')">⚙️ Configuración</button>
@@ -150,6 +151,40 @@ HTML = r"""
       <div class="panel">
         <h3>Aging de cuentas por pagar (proveedores)</h3>
         <div id="ap-content" class="empty">Cargando AP...</div>
+      </div>
+    </div>
+
+    <!-- TAB: ARCHIVO OCs (histórico completo · gasto por categoría/mes · Sebastián 21-jul) -->
+    <div id="tab-ocs" class="tabpanel hidden">
+      <div class="grid grid-4" style="margin-bottom:18px">
+        <div class="card"><h3>Total pedido (histórico)</h3><div class="val" id="oc-kpi-total">-</div><div class="sub">todas las OCs, cualquier estado</div></div>
+        <div class="card"><h3>Órdenes</h3><div class="val" id="oc-kpi-count">-</div><div class="sub" id="oc-kpi-count-sub">registradas</div></div>
+        <div class="card"><h3>Pedido <span id="oc-kpi-anio-lbl"></span></h3><div class="val" id="oc-kpi-anio">-</div><div class="sub">año en curso</div></div>
+        <div class="card"><h3>Ticket promedio</h3><div class="val" id="oc-kpi-avg">-</div><div class="sub">por OC</div></div>
+      </div>
+      <div class="grid grid-2">
+        <div class="panel">
+          <h3>Gasto por categoría</h3>
+          <div id="oc-por-cat" class="empty">Cargando…</div>
+        </div>
+        <div class="panel">
+          <h3>Gasto por mes</h3>
+          <div id="oc-por-mes" class="empty">Cargando…</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+          <h3 style="margin:0">Todas las órdenes de compra</h3>
+          <input type="text" id="oc-q" placeholder="Buscar OC, proveedor, categoría…" oninput="renderArchivoOCs()" style="padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;min-width:220px">
+          <select id="oc-estado" onchange="renderArchivoOCs()" style="padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px">
+            <option value="">Todos los estados</option>
+            <option value="Borrador">Borrador</option><option value="Revisada">Revisada</option>
+            <option value="Autorizada">Autorizada</option><option value="Recibida">Recibida</option>
+            <option value="Parcial">Parcial</option><option value="Pagada">Pagada</option>
+          </select>
+          <button class="btn btn-secondary" onclick="cargarArchivoOCs()" style="font-size:12px">↻ Actualizar</button>
+        </div>
+        <div style="overflow-x:auto"><div id="oc-tabla" class="empty">Cargando órdenes…</div></div>
       </div>
     </div>
 
@@ -233,7 +268,7 @@ function fmtM(n){n=parseFloat(n||0); if(n>=1e6) return '$'+(n/1e6).toFixed(1)+'M
 function fmtN(n){return (n||0).toLocaleString('es-CO');}
 function _esc(s){return String(s||'').replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));}
 
-const TABS = ['caja','pnl','cartera','pagar','facturacion','nomina','config'];
+const TABS = ['caja','pnl','cartera','pagar','ocs','facturacion','nomina','config'];
 
 function switchTab(t) {
   TABS.forEach(x => {
@@ -250,6 +285,7 @@ function cargarTab(t) {
   else if (t === 'pnl') cargarPnL();
   else if (t === 'cartera') cargarCartera();
   else if (t === 'pagar') cargarPagar();
+  else if (t === 'ocs') cargarArchivoOCs();
   else if (t === 'facturacion') cargarFacturacion();
   else if (t === 'nomina') cargarNomina();
 }
@@ -400,6 +436,73 @@ async function cargarPagar() {
     }
     document.getElementById('ap-content').innerHTML = html;
   } catch(e) { document.getElementById('ap-content').innerHTML = '<div class="empty">Error</div>'; }
+}
+
+// ── Archivo de OCs · histórico completo + gasto por categoría/mes (Sebastián 21-jul) ──
+// El total acumulado de plata vive acá (Tesorería), no en el módulo operativo de Compras.
+let _ARCHIVO_OCS = [];
+function _ocMoney(n){ return '$'+Math.round(parseFloat(n||0)).toLocaleString('es-CO'); }
+function _ocEstChip(e){
+  var m={'Pagada':['#dcfce7','#15803d'],'Parcial':['#fef3c7','#92400e'],'Recibida':['#e0e7ff','#3730a3'],
+         'Autorizada':['#dbeafe','#1e40af'],'Revisada':['#f3e8ff','#7c3aed'],'Borrador':['#f1f5f9','#475569']};
+  var c=m[e]||['#f1f5f9','#475569'];
+  return '<span style="font-size:10px;background:'+c[0]+';color:'+c[1]+';border-radius:10px;padding:2px 8px;font-weight:700">'+_esc(e||'-')+'</span>';
+}
+async function cargarArchivoOCs(){
+  var tabla=document.getElementById('oc-tabla'); if(tabla) tabla.innerHTML='<div class="empty">Cargando órdenes…</div>';
+  try{
+    const d = await fetch('/api/ordenes-compra').then(r=>r.json());
+    _ARCHIVO_OCS = (d && d.ordenes) || [];
+  }catch(e){ _ARCHIVO_OCS=[]; }
+  renderArchivoOCs();
+}
+function renderArchivoOCs(){
+  var q=((document.getElementById('oc-q')||{}).value||'').toLowerCase().trim();
+  var est=((document.getElementById('oc-estado')||{}).value||'');
+  var all=_ARCHIVO_OCS;
+  var list=all.filter(function(o){
+    if(est && (o.estado||'')!==est) return false;
+    if(!q) return true;
+    return ((o.numero_oc||'')+' '+(o.proveedor||'')+' '+(o.categoria||'')).toLowerCase().indexOf(q)>=0;
+  });
+  list.sort(function(a,b){ return String(b.fecha||'').localeCompare(String(a.fecha||'')); });
+  var tot=list.reduce(function(s,o){ return s+(parseFloat(o.valor_total)||0); },0);
+  var anio=String(new Date().getFullYear());
+  var totAnio=list.reduce(function(s,o){ return s+((String(o.fecha||'').slice(0,4)===anio)?(parseFloat(o.valor_total)||0):0); },0);
+  // KPIs
+  document.getElementById('oc-kpi-total').textContent=_ocMoney(tot);
+  document.getElementById('oc-kpi-count').textContent=list.length;
+  document.getElementById('oc-kpi-count-sub').textContent=(est||q)?('filtradas de '+all.length):'registradas';
+  document.getElementById('oc-kpi-anio-lbl').textContent='('+anio+')';
+  document.getElementById('oc-kpi-anio').textContent=_ocMoney(totAnio);
+  document.getElementById('oc-kpi-avg').textContent=_ocMoney(list.length?tot/list.length:0);
+  // Gasto por categoría (barras)
+  var cats={}; list.forEach(function(o){ var k=o.categoria||'—'; cats[k]=(cats[k]||0)+(parseFloat(o.valor_total)||0); });
+  var catArr=Object.keys(cats).map(function(k){ return {k:k,v:cats[k]}; }).sort(function(a,b){ return b.v-a.v; });
+  var maxc=catArr.reduce(function(m,x){ return Math.max(m,x.v); },0)||1;
+  var catBox=document.getElementById('oc-por-cat');
+  catBox.className='';
+  catBox.innerHTML=catArr.length?catArr.map(function(c){
+    return '<div style="margin:7px 0"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span style="font-weight:600">'+_esc(c.k)+'</span><span style="font-variant-numeric:tabular-nums;color:#57534e">'+_ocMoney(c.v)+'</span></div>'
+      +'<div style="height:8px;background:#f1f5f9;border-radius:6px;overflow:hidden"><div style="height:100%;width:'+(c.v/maxc*100).toFixed(1)+'%;background:linear-gradient(90deg,#7c3aed,#a855f7);border-radius:6px"></div></div></div>';
+  }).join(''):'<div class="empty">Sin datos</div>';
+  // Gasto por mes (últimos 12, barras)
+  var meses={}; list.forEach(function(o){ var k=String(o.fecha||'').slice(0,7); if(k) meses[k]=(meses[k]||0)+(parseFloat(o.valor_total)||0); });
+  var mesArr=Object.keys(meses).sort().reverse().slice(0,12).map(function(k){ return {k:k,v:meses[k]}; });
+  var maxm=mesArr.reduce(function(m,x){ return Math.max(m,x.v); },0)||1;
+  var mesBox=document.getElementById('oc-por-mes');
+  mesBox.className='';
+  mesBox.innerHTML=mesArr.length?mesArr.map(function(c){
+    return '<div style="margin:7px 0"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span style="font-weight:600">'+_esc(c.k)+'</span><span style="font-variant-numeric:tabular-nums;color:#57534e">'+_ocMoney(c.v)+'</span></div>'
+      +'<div style="height:8px;background:#f1f5f9;border-radius:6px;overflow:hidden"><div style="height:100%;width:'+(c.v/maxm*100).toFixed(1)+'%;background:linear-gradient(90deg,#0d9488,#2dd4bf);border-radius:6px"></div></div></div>';
+  }).join(''):'<div class="empty">Sin datos</div>';
+  // Tabla
+  var tabla=document.getElementById('oc-tabla'); tabla.className='';
+  if(!list.length){ tabla.innerHTML='<div class="empty">No hay órdenes que coincidan.</div>'; return; }
+  var rows=list.map(function(o){
+    return '<tr><td style="font-weight:700">'+_esc(o.numero_oc)+'</td><td>'+_esc(String(o.fecha||'').slice(0,10))+'</td><td>'+_esc(o.proveedor||'-')+'</td><td>'+_esc(o.categoria||'-')+'</td><td>'+_ocEstChip(o.estado)+'</td><td style="text-align:right;font-variant-numeric:tabular-nums">'+_ocMoney(o.valor_total||0)+'</td></tr>';
+  }).join('');
+  tabla.innerHTML='<table><thead><tr><th>N° OC</th><th>Fecha</th><th>Proveedor</th><th>Categoría</th><th>Estado</th><th style="text-align:right">Valor</th></tr></thead><tbody>'+rows+'</tbody></table>';
 }
 
 async function cargarFacturacion() {
