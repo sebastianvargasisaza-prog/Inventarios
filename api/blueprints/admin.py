@@ -8624,7 +8624,25 @@ button.ok{background:linear-gradient(135deg,#16a34a,#15803d)}
 <div style="display:flex;gap:4px;align-items:center;border-bottom:2px solid #eef2f7;margin:0 0 16px">
   <button id="smt-marcar" class="smt smt-on" onclick="subTabMarc('marcar')">&#128203; Por marcar</button>
   <button id="smt-curso" class="smt" onclick="subTabMarc('curso')">&#128230; En curso <span id="smt-curso-badge" style="display:none;background:#0891b2;color:#fff;font-size:10px;font-weight:800;padding:1px 7px;border-radius:999px;margin-left:2px"></span></button>
-  <a href="/artes" target="_blank" rel="noopener" style="margin-left:auto;margin-bottom:6px;background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;text-decoration:none;border-radius:9px;padding:8px 15px;font-size:12px;font-weight:700;white-space:nowrap;box-shadow:0 4px 12px rgba(124,58,237,.25)">&#127991; Solicitar revisi&oacute;n de arte a DT &rarr;</a>
+  <button onclick="abrirVincularModal()" title="Vincular cada envase impreso (serigrafiado) con su base limpio · así al mandar a marcar el código cambia de verdad" style="margin-left:auto;margin-bottom:6px;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;border-radius:9px;padding:8px 13px;font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer">&#128279; Vincular base&harr;impreso <span id="vinc-badge" style="display:none;background:#dc2626;color:#fff;font-size:10px;font-weight:800;padding:1px 6px;border-radius:999px;margin-left:2px"></span></button>
+  <a href="/artes" target="_blank" rel="noopener" style="margin-bottom:6px;background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;text-decoration:none;border-radius:9px;padding:8px 15px;font-size:12px;font-weight:700;white-space:nowrap;box-shadow:0 4px 12px rgba(124,58,237,.25)">&#127991; Solicitar revisi&oacute;n de arte a DT &rarr;</a>
+</div>
+<div id="vincular-modal" style="display:none;position:fixed;inset:0;background:rgba(20,18,40,.55);z-index:10000;align-items:flex-start;justify-content:center;padding:24px;overflow:auto">
+  <div style="background:#fff;border-radius:16px;max-width:840px;width:100%;box-shadow:0 30px 80px -24px rgba(24,24,45,.55);overflow:hidden">
+    <div style="background:linear-gradient(120deg,#f0fdf4,#f5f3ff,#fff);border-bottom:1px solid #ece9f6;padding:18px 22px;display:flex;justify-content:space-between;align-items:center">
+      <div><div style="font-size:16px;font-weight:800;color:#1e1b2e">&#128279; Vincular base &harr; impreso</div><div style="font-size:11px;color:#8b8b9e;margin-top:1px">Cada envase impreso (serigrafiado) con su base limpio &middot; el sistema sugiere por nombre, vos confirm&aacute;s. Esto hace que al mandar a marcar el c&oacute;digo cambie de verdad.</div></div>
+      <button onclick="cerrarVincularModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#a1a1b0">&times;</button>
+    </div>
+    <div style="padding:16px 22px">
+      <div id="vinc-resumen" style="font-size:12px;color:#475569;margin-bottom:10px"></div>
+      <div id="vinc-body" style="max-height:52vh;overflow:auto">Cargando&hellip;</div>
+      <div id="vinc-msg" style="font-size:12px;margin-top:10px"></div>
+    </div>
+    <div style="border-top:1px solid #eef2f7;padding:14px 22px;display:flex;justify-content:flex-end;gap:8px">
+      <button onclick="cerrarVincularModal()" style="background:#f1f5f9;color:#475569;border:1px solid #e2e8f0">Cerrar</button>
+      <button onclick="guardarVinculos()" class="ra ra-primary" style="background:linear-gradient(135deg,#16a34a,#15803d)!important;padding:8px 16px!important">&#128190; Guardar v&iacute;nculos</button>
+    </div>
+  </div>
 </div>
 <div id="sub-marcar">
 <div style="display:flex;gap:10px;margin:0 0 12px;align-items:center;flex-wrap:wrap">
@@ -8897,6 +8915,55 @@ async function submitAlistar(){
     else alert('Error: '+(d.error||''));
   }catch(e){ alert('Error de conexi\u00f3n'); }
 }
+// ── Fase 1 · Vincular base↔impreso (Sebastián 21-jul) ──────────────────────
+var _VINC=[], _VINC_BASES=[];
+async function abrirVincularModal(){
+  document.getElementById('vincular-modal').style.display='flex';
+  var body=document.getElementById('vinc-body'); body.innerHTML='Cargando…';
+  document.getElementById('vinc-msg').innerHTML='';
+  try{
+    var d=await (await fetch('/api/programacion/marcacion-vincular-sugerencias',{cache:'no-store'})).json();
+    _VINC=d.items||[]; _VINC_BASES=d.bases||[];
+    document.getElementById('vinc-resumen').innerHTML='<b>'+(d.total||0)+'</b> impresos &middot; <b style="color:#dc2626">'+(d.sin_vincular||0)+'</b> sin vincular. Confirmá el base de cada uno y guardá.';
+    renderVincular();
+  }catch(e){ body.innerHTML='<span style="color:#b91c1c">Error cargando</span>'; }
+}
+function cerrarVincularModal(){ document.getElementById('vincular-modal').style.display='none'; }
+function renderVincular(){
+  var body=document.getElementById('vinc-body');
+  if(!_VINC.length){ body.innerHTML='<div class="muted" style="padding:14px">No hay envases impresos (con serigrafía) en el maestro.</div>'; return; }
+  var dl='<datalist id="vinc-bases-dl">'+_VINC_BASES.map(function(b){return '<option value="'+esc(b.codigo)+'">'+esc(b.codigo)+' · '+esc(b.descripcion)+'</option>';}).join('')+'</datalist>';
+  var h=dl+'<table><thead><tr><th style="width:34px"></th><th>Impreso (serigrafiado)</th><th>Base limpio</th></tr></thead><tbody>';
+  _VINC.forEach(function(it,i){
+    var pre=it.base_actual||it.base_sugerido||'';
+    var estado=it.ya_vinculado?'<span style="color:#16a34a;font-weight:700;font-size:10px">✓ vinculado</span>':(it.ambiguo?'<span style="color:#d97706;font-size:10px">varios posibles</span>':(it.base_sugerido?'<span style="color:#0891b2;font-size:10px">sugerido</span>':'<span style="color:#dc2626;font-size:10px">sin base</span>'));
+    h+='<tr>'
+      +'<td><input type="checkbox" id="vc-'+i+'" '+(pre?'checked':'')+'></td>'
+      +'<td><b>'+esc(it.impreso)+'</b><br><span class="muted" style="font-size:10px">'+esc(it.impreso_desc||'')+'</span></td>'
+      +'<td><input list="vinc-bases-dl" id="vb-'+i+'" value="'+esc(pre)+'" placeholder="código base" style="width:200px"> '+estado+'</td>'
+      +'</tr>';
+  });
+  body.innerHTML=h+'</tbody></table>';
+}
+async function guardarVinculos(){
+  var pares=[];
+  _VINC.forEach(function(it,i){
+    var chk=document.getElementById('vc-'+i), vb=document.getElementById('vb-'+i);
+    if(chk&&chk.checked&&vb&&vb.value.trim()){ pares.push({impreso:it.impreso, base:vb.value.trim()}); }
+  });
+  var msg=document.getElementById('vinc-msg');
+  if(!pares.length){ msg.innerHTML='<span style="color:#dc2626">Marcá al menos un vínculo (checkbox + código base).</span>'; return; }
+  try{
+    var r=await fetch('/api/programacion/marcacion-vincular',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({pares:pares})});
+    var d=await r.json();
+    if(d.ok){ msg.innerHTML='<span style="color:#16a34a">✓ '+d.vinculados+' vínculos guardados'+((d.errores&&d.errores.length)?(' · '+d.errores.length+' con error'):'')+'.</span>'; actualizarVincBadge(); setTimeout(abrirVincularModal,700); }
+    else msg.innerHTML='<span style="color:#dc2626">'+esc(d.error||'error')+'</span>';
+  }catch(e){ msg.innerHTML='<span style="color:#dc2626">Error de red</span>'; }
+}
+async function actualizarVincBadge(){
+  try{ var d=await (await fetch('/api/programacion/marcacion-vincular-sugerencias',{cache:'no-store'})).json();
+    var b=document.getElementById('vinc-badge'); if(b){ if((d.sin_vincular||0)>0){ b.textContent=d.sin_vincular; b.style.display='inline-block'; } else b.style.display='none'; } }catch(e){}
+}
 function subTabMarc(t){
   var m=document.getElementById('sub-marcar'), c=document.getElementById('sub-curso');
   if(m) m.style.display=(t==='marcar')?'':'none';
@@ -9024,7 +9091,7 @@ async function submitCrearEnvase(){
     cargar();
   }catch(e){ alert('Error de conexi\u00f3n'); }
 }
-cargar(); cargarOrdenes(); cargarCatalogos();
+cargar(); cargarOrdenes(); cargarCatalogos(); actualizarVincBadge();
 </script></body></html>"""
 
 

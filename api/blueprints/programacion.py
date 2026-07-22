@@ -14194,6 +14194,84 @@ def marcacion_crear_envase():
     return jsonify({'ok': True, 'codigo': cod})
 
 
+@bp.route('/api/programacion/marcacion-vincular-sugerencias', methods=['GET'])
+def marcacion_vincular_sugerencias():
+    """Fase 1 base↔impreso (Sebastián 21-jul): sugiere el envase BASE de cada IMPRESO
+    (serigrafiado) por coincidencia de nombre, para poblar maestro_mee.material_referencia
+    (el vínculo que hace que al mandar a marcar el base vuelva como impreso). No escribe nada."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    import re as _re
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute("SELECT codigo, COALESCE(descripcion,''), COALESCE(material_referencia,'') "
+                     "FROM maestro_mee WHERE COALESCE(estado,'') NOT IN ('Inactivo','inactivo')").fetchall()
+
+    def _norm(s):
+        s = (s or '').upper()
+        s = _re.sub(r'CON\s+SERIGRAF\w*', ' ', s)
+        s = _re.sub(r'SIN\s+SERIGRAF\w*', ' ', s)
+        s = _re.sub(r'SIN\s+SERIG\b', ' ', s)
+        s = _re.sub(r'\bIMPRES[OA]\b', ' ', s)
+        s = _re.sub(r'[^A-Z0-9]+', ' ', s)
+        return ' '.join(s.split()).strip()
+
+    impresos, bases = [], []
+    for cod, desc, ref in rows:
+        du = (desc or '').upper(); cu = (cod or '').upper()
+        if ('CON SERIGRAF' in du) or ('-IMP-' in cu):
+            impresos.append((cod, desc, ref, _norm(desc)))
+        else:
+            bases.append((cod, desc, _norm(desc)))
+    base_idx = {}
+    for bcod, bdesc, bnorm in bases:
+        if bnorm:
+            base_idx.setdefault(bnorm, []).append((bcod, bdesc))
+    out = []
+    for icod, idesc, iref, inorm in impresos:
+        sug = base_idx.get(inorm, [])
+        base_cod = sug[0][0] if len(sug) == 1 else ''
+        base_desc = sug[0][1] if len(sug) == 1 else ''
+        out.append({'impreso': icod, 'impreso_desc': idesc, 'base_actual': iref,
+                    'base_sugerido': base_cod, 'base_sugerido_desc': base_desc,
+                    'ambiguo': len(sug) > 1, 'ya_vinculado': bool((iref or '').strip())})
+    out.sort(key=lambda x: (x['ya_vinculado'], not x['base_sugerido'], x['impreso']))
+    return jsonify({'items': out, 'total': len(out),
+                    'sin_vincular': sum(1 for x in out if not x['ya_vinculado']),
+                    'bases': [{'codigo': b[0], 'descripcion': b[1]} for b in bases]})
+
+
+@bp.route('/api/programacion/marcacion-vincular', methods=['POST'])
+def marcacion_vincular():
+    """Guarda vínculos base↔impreso confirmados: maestro_mee[impreso].material_referencia = base.
+    Ambos códigos deben existir y ser distintos. Audita."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.json or {}
+    pares = d.get('pares') or []
+    conn = get_db(); c = conn.cursor()
+    n, errores = 0, []
+    for p in pares:
+        imp = (p.get('impreso') or '').strip()
+        base = (p.get('base') or '').strip()
+        if not imp or not base or imp.upper() == base.upper():
+            continue
+        if not c.execute("SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))", (imp,)).fetchone():
+            errores.append(f'impreso {imp} no existe'); continue
+        if not c.execute("SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))", (base,)).fetchone():
+            errores.append(f'base {base} no existe'); continue
+        c.execute("UPDATE maestro_mee SET material_referencia=? WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?))", (base, imp))
+        n += 1
+    try:
+        from audit_helpers import audit_log as _al
+        _al(c, usuario=user, accion='VINCULAR_BASE_IMPRESO', tabla='maestro_mee',
+            registro_id='(varios)', despues={'vinculados': n, 'errores': errores[:10]})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'vinculados': n, 'errores': errores})
+
+
 @bp.route('/api/programacion/marcacion-catalogos', methods=['GET'])
 def marcacion_catalogos():
     """Listas para editar en la bandeja de marcación: proveedores existentes + todos los envases (para cambiar)."""
