@@ -1164,6 +1164,113 @@ def diag_producto_ventas(producto):
         return jsonify({'ok': False, 'error': str(e)[:200]}), 500
 
 
+@app.route('/diag/abastecimiento-mp/<path:codigo>')
+def diag_abastecimiento_mp(codigo):
+    """Sebastián/Alejandro 22-jul · verificar que 'programado × fórmula' CUADRE con lo que pide
+    abastecimiento, con dato real. Diag público read-only. Para una MP:
+      - MOTOR (abastecimiento): consumo/deficit/neto_a_pedir/stock/cuarentena/pendiente por horizonte.
+      - INDEPENDIENTE: productos que la usan (formula_items) × sus producciones programadas (kg) →
+        gramos esperados = Σ kg × porcentaje/100 × 1000. Con desglose producto por producto.
+      - CUADRA: compara el consumo del motor vs el independiente por horizonte.
+    ?dias=90 (default) · uno o más separados por coma (ej ?dias=30,90,365)."""
+    try:
+        from database import get_db
+        from blueprints.programacion import _consumo_horizontes_core
+        from datetime import datetime as _dt, timedelta as _td
+        db = get_db(); c = db.cursor()
+        cod = (codigo or '').strip().upper()
+        try:
+            _dias = [int(x) for x in (request.args.get('dias', '90') or '90').split(',') if x.strip()][:4] or [90]
+        except Exception:
+            _dias = [90]
+        out = {'ok': True, 'codigo_mp': cod, 'dias': _dias}
+        # info MP
+        info = c.execute("SELECT COALESCE(nombre_comercial,nombre_inci,codigo_mp), COALESCE(nombre_inci,''), COALESCE(proveedor,'') "
+                         "FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?", (cod,)).fetchone()
+        out['existe_mp'] = bool(info)
+        out['nombre'] = info[0] if info else None
+        out['inci'] = info[1] if info else None
+        # ── INDEPENDIENTE: productos que la usan × programado ──
+        piso = (_dt.utcnow() - _td(hours=5)).date().isoformat()
+        prods = c.execute("SELECT producto_nombre, COALESCE(porcentaje,0), COALESCE(cantidad_g_por_lote,0) "
+                          "FROM formula_items WHERE UPPER(TRIM(material_id))=? ORDER BY producto_nombre", (cod,)).fetchall()
+        indep = {d: 0.0 for d in _dias}
+        desglose = []
+        for pnom, pct, gpl in prods:
+            # header activo?
+            hz = c.execute("SELECT COALESCE(lote_size_kg,0), COALESCE(activo,1) FROM formula_headers "
+                           "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) ORDER BY COALESCE(activo,1) DESC LIMIT 1", (pnom,)).fetchone()
+            lote_kg = float(hz[0]) if hz else 0.0
+            activo = int(hz[1]) if hz else 1
+            fila = {'producto': pnom, 'porcentaje': float(pct or 0), 'g_por_lote': float(gpl or 0),
+                    'lote_size_kg': lote_kg, 'formula_activa': bool(activo), 'programado': {}}
+            for d in _dias:
+                cutoff = (_dt.utcnow() - _td(hours=5) + _td(days=d)).date().isoformat()
+                pr = c.execute("SELECT COALESCE(SUM(COALESCE(cantidad_kg,0)),0), COUNT(*) FROM produccion_programada "
+                               "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) "
+                               "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado','esperando_recurso') "
+                               "AND COALESCE(inventario_descontado_at,'')='' "
+                               "AND fecha_programada>=? AND fecha_programada<=?", (pnom, piso, cutoff)).fetchone()
+                kg = float(pr[0] or 0); nlotes = int(pr[1] or 0)
+                # gramos esperados: %-first (kg × pct/100 × 1000). Si pct=0 y hay gpl, usar gpl × (kg/lote_size).
+                if pct and pct > 0:
+                    g = kg * (float(pct) / 100.0) * 1000.0
+                elif gpl and gpl > 0 and lote_kg > 0:
+                    g = float(gpl) * (kg / lote_kg)
+                else:
+                    g = 0.0
+                fila['programado'][d] = {'kg': round(kg, 2), 'lotes': nlotes, 'gramos_esperados': round(g, 1)}
+                if activo:
+                    indep[d] += g
+            desglose.append(fila)
+        out['productos_que_usan'] = len(prods)
+        out['desglose'] = desglose
+        out['independiente_gramos'] = {d: round(indep[d], 1) for d in _dias}
+        # ── MOTOR: abastecimiento ──
+        motor = {}
+        try:
+            data = _consumo_horizontes_core(db, list(_dias), True, True, 'comprometido', False, 'mp')
+            _mp = None
+            for it in (data.get('mps') or []):
+                if str(it.get('codigo', '')).upper() == cod:
+                    _mp = it; break
+            if _mp is None:  # ¿es envase?
+                for it in (data.get('mees') or []):
+                    if str(it.get('codigo', '')).upper() == cod:
+                        _mp = it; break
+            if _mp:
+                for d in _dias:
+                    dk = str(d)
+                    motor[d] = {
+                        'consumo': round(float((_mp.get('consumo') or {}).get(dk, 0) or 0), 1),
+                        'deficit': round(float((_mp.get('deficit') or {}).get(dk, 0) or 0), 1),
+                        'neto_a_pedir': round(float((_mp.get('neto_a_pedir') or {}).get(dk, 0) or 0), 1),
+                    }
+                motor['stock_g'] = _mp.get('stock_actual_g', _mp.get('stock_actual_u'))
+                motor['cuarentena'] = _mp.get('cuarentena_g', _mp.get('cuarentena_u'))
+                motor['pendiente'] = _mp.get('pendiente_compras_g', _mp.get('pendiente_compras_u'))
+                motor['productos_motor'] = len(_mp.get('productos') or [])
+            else:
+                out['motor_nota'] = 'la MP no aparece en el motor (sin consumo en el horizonte, o no es MP/MEE controlada)'
+        except Exception as _em:
+            out['motor_err'] = str(_em)[:250]
+        out['motor'] = motor
+        # ── CUADRA ──
+        cuadra = {}
+        for d in _dias:
+            m = float((motor.get(d) or {}).get('consumo', 0) or 0)
+            i = float(indep.get(d, 0) or 0)
+            diff = round(m - i, 1)
+            tol = max(1.0, i * 0.02)
+            cuadra[d] = {'motor_consumo': m, 'independiente': round(i, 1), 'diferencia': diff,
+                         'cuadra': abs(diff) <= tol}
+        out['cuadra'] = cuadra
+        return jsonify(out)
+    except Exception as e:
+        import traceback
+        return jsonify({'ok': False, 'error': str(e)[:250], 'trace': traceback.format_exc()[-600:]}), 500
+
+
 @app.route('/diag/envasado-estado')
 def diag_envasado_estado():
     """Sebastián 21-jul · "sigue sin salirme nada en Envasado". Diag público read-only (sin datos
