@@ -8611,17 +8611,20 @@ button.ok{background:linear-gradient(135deg,#16a34a,#15803d)}
 .smt{background:none!important;border:none;box-shadow:none!important;color:#64748b;font-size:13px;font-weight:700;padding:10px 18px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;border-radius:0}
 .smt:hover{color:#7c3aed;transform:none!important;box-shadow:none!important}
 .smt-on{color:#7c3aed;border-bottom-color:#7c3aed}
+/* Botones de fila premium · familia violeta cohesiva, restraint (Sebastián 21-jul) */
+.ra{padding:6px 12px!important;font-size:11px;font-weight:700;border-radius:8px;border:1px solid transparent;cursor:pointer;box-shadow:none!important}
+.ra:hover{filter:brightness(1.03);transform:translateY(-1px)!important;box-shadow:0 2px 6px rgba(15,23,42,.12)!important}
+.ra-neutral{background:#f1f5f9!important;color:#475569!important;border-color:#e2e8f0}
+.ra-neutral:hover{background:#e9eef5!important}
+.ra-primary{background:linear-gradient(135deg,#7c3aed,#6d28d9)!important;color:#fff!important}
+.ra-accent{background:#faf5ff!important;color:#6d28d9!important;border-color:#e9d5ff}
+.ra-accent:hover{background:#f3e9ff!important}
 </style></head><body><div class="wrap">
-<div style="display:flex;align-items:center;gap:12px;margin-bottom:2px">
-<div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#5b21b6);display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 4px 12px rgba(124,58,237,.3)">&#127991;</div>
-<h1 style="margin:0">Marcaci&oacute;n de envases <span style="color:#94a3b8;font-weight:600;font-size:15px">&middot; serigraf&iacute;a / tampograf&iacute;a</span></h1>
-<a href="/artes" style="margin-left:auto;background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;text-decoration:none;border-radius:9px;padding:9px 15px;font-size:13px;font-weight:700;white-space:nowrap">&#127991; Solicitar revisi&oacute;n de arte a DT &rarr;</a>
-</div>
-<p class="sub">Compras define el <b>m&eacute;todo</b> y el <b>proveedor</b> de cada envase, y ve qu&eacute; enviar a marcar y <b>para cu&aacute;ndo</b> (15 d&iacute;as antes de la producci&oacute;n). Los pre-impresos de China no aparecen. El arte debe estar <b>aprobado por Direcci&oacute;n T&eacute;cnica</b> antes de enviar.</p>
-<!-- SUB-TABS (Sebastián 21-jul): 'En curso' sube arriba como sub-pestaña -->
-<div style="display:flex;gap:4px;border-bottom:2px solid #eef2f7;margin:0 0 16px">
+<!-- Header propio eliminado (Sebastián 21-jul): el wrapper de Compras ya titula "Envases a marcar" · evitamos el doble header. Sub-pestañas + acción de arte quedan acá. -->
+<div style="display:flex;gap:4px;align-items:center;border-bottom:2px solid #eef2f7;margin:0 0 16px">
   <button id="smt-marcar" class="smt smt-on" onclick="subTabMarc('marcar')">&#128203; Por marcar</button>
   <button id="smt-curso" class="smt" onclick="subTabMarc('curso')">&#128230; En curso <span id="smt-curso-badge" style="display:none;background:#0891b2;color:#fff;font-size:10px;font-weight:800;padding:1px 7px;border-radius:999px;margin-left:2px"></span></button>
+  <a href="/artes" target="_blank" rel="noopener" style="margin-left:auto;margin-bottom:6px;background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;text-decoration:none;border-radius:9px;padding:8px 15px;font-size:12px;font-weight:700;white-space:nowrap;box-shadow:0 4px 12px rgba(124,58,237,.25)">&#127991; Solicitar revisi&oacute;n de arte a DT &rarr;</a>
 </div>
 <div id="sub-marcar">
 <div style="display:flex;gap:10px;margin:0 0 12px;align-items:center;flex-wrap:wrap">
@@ -8711,7 +8714,7 @@ function render(){
       '<td><input id="u-'+i+'" type="number" min="1" value="'+Math.round(r.unidades||0)+'" style="width:80px;font-weight:700;color:#5b21b6;text-align:right"></td>'+
       '<td><select id="m-'+i+'">'+opt('',r.marcacion_tipo,'- definir -')+opt('serigrafia',r.marcacion_tipo,'Serigraf&iacute;a')+opt('tampografia',r.marcacion_tipo,'Tampograf&iacute;a')+opt('etiqueta',r.marcacion_tipo,'Etiqueta (solicitada)')+opt('pre_impreso',r.marcacion_tipo,'Pre-impreso (China)')+opt('ninguno',r.marcacion_tipo,'Ninguno')+'</select></td>'+
       '<td><input class="prov" id="p-'+i+'" list="provlist" value="'+esc(r.marcacion_proveedor||'')+'" placeholder="proveedor"></td>'+
-      '<td style="white-space:nowrap"><button id="b-'+i+'" onclick="guardar('+i+')">Guardar</button> <button onclick="generarOC('+i+')" style="background:linear-gradient(135deg,#7c3aed,#6d28d9)" title="Crea la OC de la marcaci\u00f3n (servicio o etiquetas), agrupa por proveedor">&#128722; Generar OC</button> '+(r.marcacion_tipo==='etiqueta'?'<span style="display:inline-block;background:#dcfce7;color:#15803d;font-weight:700;padding:5px 10px;border-radius:6px;font-size:11px">&#127991; Lleva etiqueta</span>':'<button onclick="enviar('+i+')" style="background:linear-gradient(135deg,#5b21b6,#4c1d95)">&#128203; Solicitar alistamiento</button>')+'</td>'+
+      '<td style="white-space:nowrap"><button id="b-'+i+'" class="ra ra-neutral" onclick="guardar('+i+')">Guardar</button> <button class="ra ra-primary" onclick="generarOC('+i+')" title="Crea la OC de la marcaci\u00f3n (servicio o etiquetas), agrupa por proveedor">&#128722; Generar OC</button> '+(r.marcacion_tipo==='etiqueta'?'<span style="display:inline-block;background:#dcfce7;color:#15803d;font-weight:700;padding:5px 10px;border-radius:6px;font-size:11px">&#127991; Lleva etiqueta</span>':'<button class="ra ra-accent" onclick="enviar('+i+')">&#128203; Solicitar alistamiento</button>')+'</td>'+
       '</tr>';
   });
   h+='</tbody></table>';
@@ -8795,7 +8798,7 @@ function renderConsolidado(){
     h+='</div>';
     h+='<div style="margin-top:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;border-top:1px solid #f4f4f8;padding-top:12px">';
     h+='<div>'+(g.primerEnvio?('<span style="display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;'+(urge?'background:#fee2e2;color:#b91c1c':'background:#f1f5f9;color:#475569')+'">'+(urge?'&#128308; ':'&#9200; ')+'1er envío '+esc(g.primerEnvio)+'</span>'):'')+'</div>';
-    h+='<div style="display:flex;gap:8px;flex-wrap:wrap"><button onclick="generarOCcons(\''+env+'\')" style="background:linear-gradient(135deg,#7c3aed,#6d28d9)" title="Crea UNA OC por el total seleccionado (adelanto del horizonte)">&#128722; Generar OC del total</button><button onclick="alistarCons(\''+env+'\')" style="background:linear-gradient(135deg,#5b21b6,#4c1d95)" title="Pide a Planta alistar el total + registra la salida del base">&#128203; Solicitar alistamiento</button></div>';
+    h+='<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="ra ra-primary" onclick="generarOCcons(\''+env+'\')" title="Crea UNA OC por el total seleccionado (adelanto del horizonte)">&#128722; Generar OC del total</button><button class="ra ra-accent" onclick="alistarCons(\''+env+'\')" title="Pide a Planta alistar el total + registra la salida del base">&#128203; Solicitar alistamiento</button></div>';
     h+='</div>';
     h+='</div>';
   });
