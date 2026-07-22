@@ -238,7 +238,7 @@ textarea{resize:vertical;min-height:70px;}
     #tab-cc .ccp-badge{display:inline-flex;align-items:center;font-size:9px;font-weight:800;letter-spacing:.04em;border-radius:var(--cx-r-sm);padding:2px 7px;vertical-align:middle;margin-right:7px}
     #tab-cc .ccp-badge.mp{background:var(--cx-info-pale);color:var(--cx-info)}
     #tab-cc .ccp-badge.mee{background:var(--cx-primary-soft);color:var(--cx-primary)}
-    #tab-cc .ccp-name{font-weight:700;color:var(--cx-text);font-size:13.5px}
+    #tab-cc .ccp-name{font-weight:700;color:var(--cx-text);font-size:14.5px;display:inline-block}
     #tab-cc .ccp-meta{font-size:11px;color:var(--cx-text-mute);font-family:var(--cx-font-mono);margin-top:2px}
     #tab-cc .ccp-qty{font-variant-numeric:tabular-nums;font-weight:600;color:var(--cx-text)}
     #tab-cc .ccp-chip{display:inline-flex;align-items:center;gap:4px;border-radius:var(--cx-r-pill);padding:4px 11px;font-size:11.5px;font-weight:700;white-space:nowrap}
@@ -271,8 +271,8 @@ textarea{resize:vertical;min-height:70px;}
   <input type="text" class="ccp-search" oninput="var q=this.value.toLowerCase();document.querySelectorAll('#cc-tbody tr').forEach(function(r){r.style.display=((r.textContent||'').toLowerCase().indexOf(q)>=0)?'':'none';});" placeholder="&#128269; Buscar material, lote, proveedor u OC…">
   <div class="ccp-wrap" style="overflow-x:auto;">
     <table class="ccp">
-      <thead><tr><th>Insumo / Lote</th><th>Cantidad</th><th>Proveedor</th><th>Vencimiento</th><th>OC</th><th>&#x1F151; F01 técnica</th><th>&#x1F152; F02 análisis</th></tr></thead>
-      <tbody id="cc-tbody"><tr><td colspan="7" class="ccp-empty">Cargando&hellip;</td></tr></tbody>
+      <thead><tr><th>Insumo</th><th>Lote / Código</th><th>Cantidad</th><th>Proveedor</th><th>Vencimiento</th><th>OC</th><th>&#x1F151; F01 técnica</th><th>&#x1F152; F02 análisis</th></tr></thead>
+      <tbody id="cc-tbody"><tr><td colspan="8" class="ccp-empty">Cargando&hellip;</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -767,6 +767,24 @@ textarea{resize:vertical;min-height:70px;}
 <script>
 function esc(s){const d=document.createElement('div');d.appendChild(document.createTextNode(s||'')); return d.innerHTML;}
 function fmt(d){return d?d.substring(0,10):'-';}
+// Fecha formato DD-MMM-AAAA (ej: 21-JUL-2026) · Laura 21-jul
+var _MESES_ES=['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
+function fmtFecha(d){
+  if(!d) return '-';
+  var s=String(d).substring(0,10); var p=s.split('-');
+  if(p.length!==3) return s;
+  var mi=parseInt(p[1],10)-1;
+  if(isNaN(mi)||mi<0||mi>11) return s;
+  return p[2]+'-'+_MESES_ES[mi]+'-'+p[0];
+}
+// Cantidad con unidad clara · MP en gramos (+ kg entre paréntesis si ≥1000g) · envases en uds
+function fmtCant(val, esMEE){
+  var n=parseFloat(val)||0;
+  if(esMEE) return n.toLocaleString('es-CO')+' <span style="color:var(--cx-text-mute)">uds</span>';
+  var g=n.toLocaleString('es-CO')+' <span style="color:var(--cx-text-mute)">g</span>';
+  if(n>=1000){ var kg=(n/1000); g+=' <span style="color:var(--cx-text-faint);font-size:11px">('+kg.toLocaleString('es-CO',{maximumFractionDigits:2})+' kg)</span>'; }
+  return g;
+}
 function fmtH(s){return s?s.substring(0,5):'-';}
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
@@ -2415,7 +2433,7 @@ async function loadCuarentena(){
     const r=await fetch('/api/calidad/recepcion-pipeline');
     const d=await r.json(); const rows=(d&&d.lotes)||[]; window._ccrRows=rows;
     _ccRenderKpis(rows);
-    if(!rows.length){tbody.innerHTML='<tr><td colspan="7" class="ccp-empty">No hay lotes en cuarentena</td></tr>';return;}
+    if(!rows.length){tbody.innerHTML='<tr><td colspan="8" class="ccp-empty">No hay lotes en cuarentena</td></tr>';return;}
     tbody.innerHTML=rows.map(function(l){
       var esMEE = (l.tipo==='MEE');
       var org = esMEE?'MEE':'MP';
@@ -2446,16 +2464,17 @@ async function loadCuarentena(){
         ? '<span class="ccp-badge mee">ENVASE</span>'
         : '<span class="ccp-badge mp">MP</span>';
       return '<tr>'
-        +'<td>'+tipoBadge+'<span class="ccp-name">'+esc(l.nombre)+'</span><div class="ccp-meta">'+esc(l.lote||'sin lote')+' &middot; '+esc(l.codigo_mp||'')+'</div></td>'
-        +'<td><span class="ccp-qty">'+esc(String(l.cantidad))+'</span> '+(esMEE?'und':'g')+'</td>'
+        +'<td>'+tipoBadge+'<span class="ccp-name">'+esc(l.nombre)+'</span></td>'
+        +'<td><div class="ccp-meta" style="font-size:12.5px">'+esc(l.lote||'sin lote')+'</div><div class="ccp-meta" style="font-size:10.5px;opacity:.8">'+esc(l.codigo_mp||'')+'</div></td>'
+        +'<td><span class="ccp-qty">'+fmtCant(l.cantidad, esMEE)+'</span></td>'
         +'<td class="ccp-prov">'+esc(l.proveedor||'-')+'</td>'
-        +'<td>'+fmt(l.fecha_vencimiento)+'</td>'
+        +'<td>'+fmtFecha(l.fecha_vencimiento)+'</td>'
         +'<td>'+esc(l.numero_oc||'-')+'</td>'
         +'<td>'+f01cell+'</td>'
         +'<td>'+f02cell+'</td>'
         +'</tr>';
     }).join('');
-  }catch(e){tbody.innerHTML='<tr><td colspan="7" class="ccp-empty">Error: '+esc(e.message)+'</td></tr>';}
+  }catch(e){tbody.innerHTML='<tr><td colspan="8" class="ccp-empty">Error: '+esc(e.message)+'</td></tr>';}
 }
 
 // ── Pipeline de recepción MP · formularios F01 (técnica/documental) y F02 (análisis) ──
@@ -2496,7 +2515,9 @@ function _rcOverlay(inner){
   var ov=document.createElement('div'); ov.id='rc-ov';
   ov.style.cssText='position:fixed;inset:0;background:rgba(20,18,40,.55);backdrop-filter:blur(2px);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:28px;overflow:auto';
   ov.innerHTML=_RCM_CSS+'<div class="rcm">'+inner+'</div>';
-  ov.addEventListener('click',function(e){ if(e.target===ov) _rcClose(); });
+  // BUG FIX (Sebastián/Laura 21-jul): NO cerrar al clic en el fondo · llenar F01/F02 es largo y un
+  // clic fuera de un campo las sacaba y perdían TODO. Solo cierra con la X (o Escape).
+  ov.addEventListener('keydown',function(e){ if(e.key==='Escape') _rcClose(); });
   document.body.appendChild(ov);
 }
 function _rcHeader(num,titulo,cod){
@@ -2505,6 +2526,7 @@ function _rcHeader(num,titulo,cod){
     +'<button class="rcm-x" onclick="_rcClose()">&#10005;</button></div>';
 }
 function _rcInput(id,val,ph){ return '<input id="'+id+'" class="rcm-in" value="'+esc(val||'')+'" placeholder="'+esc(ph||'')+'">'; }
+function _rcDate(id,val){ var v=(String(val||'').substring(0,10)); return '<input id="'+id+'" type="date" class="rcm-in" value="'+esc(v)+'">'; }
 function _rcCrit(name,val){
   function o(v,l){ return '<label><input type="radio" name="'+name+'" value="'+v+'"'+(val===v?' checked':'')+'><span>'+l+'</span></label>'; }
   return '<div class="rcm-seg">'+o('cumple','Cumple')+o('no_cumple','No cumple')+o('no_aplica','No aplica')+'</div>';
@@ -2523,6 +2545,7 @@ async function openF01(mov_id, origen){
     var d=await (await fetch('/api/calidad/recepcion-tecnica?mov_id='+mov_id+'&origen='+org)).json();
     var f=d.f01||{}, pre=d.prefill||{};
     var g=function(k){ return (f[k]!=null&&f[k]!=='')?f[k]:(pre[k]||''); };
+    window._F01ctx={mov_id:mov_id, org:org, codigo:(pre.codigo_mp||f.codigo_insumo||'')};
     var tipo=f.tipo_insumo||(org==='MEE'?'envase':'materia_prima');
     var meeNote = (org==='MEE') ? '<div class="rcm-note">Envase: el F01 es la disposición de calidad. <b>Conforme + firma del jefe libera el lote</b> (queda VIGENTE); No conforme lo rechaza. Los envases no llevan F02.</div>' : '';
     var crits=[['crit_rotulado','Rotulado completo (nombre, lote, fecha vencimiento)'],['crit_empaque','Empaque/envase limpio e íntegro'],['crit_hoja_seguridad','Hoja de seguridad vigente (si aplica)'],['crit_ficha_tecnica','Ficha técnica vigente (si aplica)'],['crit_coa','Certificado de análisis del proveedor (COA)'],['crit_doc_coincide','Documentación coincide con el producto entregado']];
@@ -2537,7 +2560,7 @@ async function openF01(mov_id, origen){
       +_rcFld('Código interno / Lote proveedor',_rcInput('f01_lote_proveedor',g('lote_proveedor')||g('codigo_insumo')))
       +_rcFld('Cantidad recibida',_rcInput('f01_cantidad_recibida',g('cantidad_recibida')))
       +_rcFld('Proveedor',_rcInput('f01_proveedor',g('proveedor')))
-      +_rcFld('Fecha de recepción',_rcInput('f01_fecha_recepcion',g('fecha_recepcion')))
+      +_rcFld('Fecha de recepción',_rcDate('f01_fecha_recepcion',g('fecha_recepcion')))
       +_rcFld('No. remisión / factura',_rcInput('f01_numero_remision',g('numero_remision')))
       +'<div style="grid-column:1/3">'+_rcFld('Área de almacenamiento asignada',_rcInput('f01_area_almacenamiento',g('area_almacenamiento')))+'</div>'
       +'</div>'
@@ -2547,14 +2570,28 @@ async function openF01(mov_id, origen){
       +'<div class="rcm-sec">Resultado y firmas</div>'
       +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:11px">'
       +_rcFld('Resultado', _rcSeg('f01res',_res,[['conforme','Conforme'],['no_conforme','No conforme']]))
-      +_rcFld('Fecha vencimiento (F-V)',_rcInput('f01_fecha_vencimiento',g('fecha_vencimiento')))
+      +_rcFld('Fecha vencimiento (F-V)',_rcDate('f01_fecha_vencimiento',g('fecha_vencimiento')))
       +_rcFld('Realiza la recepción (analista)',_rcInput('f01_realiza_por',g('realiza_por')))
       +_rcFld('Aprueba la recepción'+(org==='MEE'?' (jefe · libera)':''),_rcInput('f01_aprueba_por',g('aprueba_por')))
       +'</div>'
-      +'<div style="margin-top:16px"><button class="rcm-save" onclick="guardarF01('+mov_id+',&quot;'+org+'&quot;)">&#128190; Guardar F01</button></div>'
+      +'<div style="margin-top:16px;display:flex;gap:10px;align-items:center"><button class="rcm-save" style="flex:1" onclick="guardarF01('+mov_id+',&quot;'+org+'&quot;)">&#128190; Guardar F01</button>'
+      +'<button type="button" onclick="abrirRotuloF01()" title="Imprime el rótulo con el código, lote y cantidad de este insumo (editable)" style="background:#faf5ff;color:#6d28d9;border:1px solid #e9d5ff;border-radius:10px;padding:11px 16px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap">&#128424;&#65039; Rótulo</button></div>'
       +'</div>';
     _rcOverlay(html);
   }catch(e){ alert('Error abriendo F01: '+e.message); }
+}
+// Rótulo de recepción desde el F01 · lee los campos en vivo (editable como el de cuarentena) · Laura 21-jul
+function abrirRotuloF01(){
+  var ctx=window._F01ctx||{};
+  var v=function(id){ var el=document.getElementById(id); return el?el.value.trim():''; };
+  var cod=ctx.codigo||v('f01_lote_proveedor')||'';
+  var lote=v('f01_lote_proveedor')||'SL';
+  var cant=v('f01_cantidad_recibida')||'1';
+  if(!cod){ alert('No se pudo determinar el código del insumo para el rótulo'); return; }
+  var url = (ctx.org==='MEE')
+    ? '/rotulo-recepcion-mee/'+encodeURIComponent(cod)+'/'+encodeURIComponent(cant)
+    : '/rotulo-recepcion/'+encodeURIComponent(cod)+'/'+encodeURIComponent(lote)+'/'+encodeURIComponent(cant);
+  window.open(url,'_blank');
 }
 async function guardarF01(mov_id, origen){
   var org=(origen==='MEE')?'MEE':'MP';
