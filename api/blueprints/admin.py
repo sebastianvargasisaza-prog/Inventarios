@@ -8608,6 +8608,9 @@ button.ok{background:linear-gradient(135deg,#16a34a,#15803d)}
 #crear-modal input,#crear-modal select,#alistar-modal input,#alistar-modal select{width:100%}
 #crear-modal .mrow{display:flex;gap:10px}
 #crear-modal .mrow>div{flex:1}
+.smt{background:none!important;border:none;box-shadow:none!important;color:#64748b;font-size:13px;font-weight:700;padding:10px 18px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;border-radius:0}
+.smt:hover{color:#7c3aed;transform:none!important;box-shadow:none!important}
+.smt-on{color:#7c3aed;border-bottom-color:#7c3aed}
 </style></head><body><div class="wrap">
 <div style="display:flex;align-items:center;gap:12px;margin-bottom:2px">
 <div style="width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#7c3aed,#5b21b6);display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 4px 12px rgba(124,58,237,.3)">&#127991;</div>
@@ -8615,6 +8618,12 @@ button.ok{background:linear-gradient(135deg,#16a34a,#15803d)}
 <a href="/artes" style="margin-left:auto;background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;text-decoration:none;border-radius:9px;padding:9px 15px;font-size:13px;font-weight:700;white-space:nowrap">&#127991; Solicitar revisi&oacute;n de arte a DT &rarr;</a>
 </div>
 <p class="sub">Compras define el <b>m&eacute;todo</b> y el <b>proveedor</b> de cada envase, y ve qu&eacute; enviar a marcar y <b>para cu&aacute;ndo</b> (15 d&iacute;as antes de la producci&oacute;n). Los pre-impresos de China no aparecen. El arte debe estar <b>aprobado por Direcci&oacute;n T&eacute;cnica</b> antes de enviar.</p>
+<!-- SUB-TABS (Sebastián 21-jul): 'En curso' sube arriba como sub-pestaña -->
+<div style="display:flex;gap:4px;border-bottom:2px solid #eef2f7;margin:0 0 16px">
+  <button id="smt-marcar" class="smt smt-on" onclick="subTabMarc('marcar')">&#128203; Por marcar</button>
+  <button id="smt-curso" class="smt" onclick="subTabMarc('curso')">&#128230; En curso <span id="smt-curso-badge" style="display:none;background:#0891b2;color:#fff;font-size:10px;font-weight:800;padding:1px 7px;border-radius:999px;margin-left:2px"></span></button>
+</div>
+<div id="sub-marcar">
 <div style="display:flex;gap:10px;margin:0 0 12px;align-items:center;flex-wrap:wrap">
   <div style="display:inline-flex;background:#eef2f7;border-radius:10px;padding:3px">
     <button id="vw-mes" onclick="setView('mes')" style="border:none;border-radius:8px;padding:7px 16px;font-size:12px;font-weight:700;cursor:pointer;background:#fff;color:#0f172a;box-shadow:0 1px 3px rgba(0,0,0,.1)">&#128197; Por mes</button>
@@ -8657,8 +8666,14 @@ button.ok{background:linear-gradient(135deg,#16a34a,#15803d)}
   </div>
 </div>
 <div id="cont"><div class="muted" style="padding:20px">Cargando...</div></div>
-<h2 style="font-size:16px;margin:26px 0 8px;color:#0f766e">&#128230; Órdenes de marcación en curso</h2>
-<div id="ordenes"><div class="muted">-</div></div>
+</div><!-- /sub-marcar -->
+<div id="sub-curso" style="display:none">
+  <div style="display:flex;align-items:center;gap:11px;margin:2px 0 16px">
+    <span style="width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#0891b2,#0e7490);color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px">&#128230;</span>
+    <div><div style="font-weight:800;font-size:17px;color:#0f172a">Órdenes de marcación en curso</div><div style="font-size:12px;color:#64748b">Lo que salió a marcar, lo que volvió a cuarentena y lo que Calidad ya liberó.</div></div>
+  </div>
+  <div id="ordenes"><div class="muted">Cargando&hellip;</div></div>
+</div>
 </div>
 <script>
 var ROWS=[];
@@ -8879,11 +8894,24 @@ async function submitAlistar(){
     else alert('Error: '+(d.error||''));
   }catch(e){ alert('Error de conexi\u00f3n'); }
 }
+function subTabMarc(t){
+  var m=document.getElementById('sub-marcar'), c=document.getElementById('sub-curso');
+  if(m) m.style.display=(t==='marcar')?'':'none';
+  if(c) c.style.display=(t==='curso')?'':'none';
+  var bm=document.getElementById('smt-marcar'), bc=document.getElementById('smt-curso');
+  if(bm) bm.classList.toggle('smt-on',t==='marcar');
+  if(bc) bc.classList.toggle('smt-on',t==='curso');
+  if(t==='curso') cargarOrdenes();
+}
 async function cargarOrdenes(){
   var box=document.getElementById('ordenes'); if(!box) return;
   try{
     var d=await (await fetch('/api/programacion/marcacion-ordenes',{cache:'no-store'})).json();
     var its=d.items||[];
+    // Badge de la sub-pestaña "En curso": órdenes activas (enviado + recibido/cuarentena)
+    var _actAll=its.filter(function(o){return o.estado==='enviado'||o.estado==='recibido';}).length;
+    var _bdg=document.getElementById('smt-curso-badge');
+    if(_bdg){ if(_actAll>0){ _bdg.textContent=_actAll; _bdg.style.display='inline-block'; } else _bdg.style.display='none'; }
     if(!its.length){ box.innerHTML='<div class="muted">Sin órdenes todavía.</div>'; return; }
     // Resumen "En serigrafía ahora" (Sebastián 19-jul · qué salió del inventario y qué falta volver)
     var _env=its.filter(function(o){return o.estado==='enviado';});
