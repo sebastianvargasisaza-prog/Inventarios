@@ -23,6 +23,8 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .pane{display:none;padding:18px 28px;max-width:1900px;margin:0 auto;}
 #pane-planta{max-width:96vw;}
 #pane-consol{max-width:96vw;}  /* Sebastian 15-jul · OCs Activas ocupa casi todo el ancho */
+#pane-catalogo{max-width:97vw;}  /* Sebastián 21-jul · Catálogo/Gastos ocupa toda la pantalla */
+#pane-prepenv{max-width:97vw;}   /* Envases a marcar · full-width */
 #pane-dash{max-width:1900px;}  /* Sebastián 13-jul · el dashboard usa casi todo el ancho */
 .pane.on{display:block;}
 /* KPI */
@@ -1702,7 +1704,7 @@ document.querySelectorAll('.tn').forEach(function(btn){
     else if(tab==='feedneed'){ loadFeedNecesidades(); }
     else if(tab==='facprov'){ loadFacturasProv(); }
     var fab = document.getElementById('fab-btn');
-    if(tab==='prov'||tab==='solic'||tab==='planta'||tab==='influencer'||tab==='consol'||tab==='pagos'||tab==='por-pagar'||tab==='alertas'||tab==='mis-sol'||tab==='prepenv'||tab==='ordserv'||tab==='feedneed'||tab==='facprov'){ fab.style.display='none'; }
+    if(tab==='prov'||tab==='solic'||tab==='planta'||tab==='influencer'||tab==='consol'||tab==='pagos'||tab==='por-pagar'||tab==='alertas'||tab==='mis-sol'||tab==='prepenv'||tab==='ordserv'||tab==='feedneed'||tab==='facprov'||tab==='catalogo'){ fab.style.display='none'; }
     else{ fab.style.display='flex'; fab.onclick=function(){
       var cat=tab==='dash'?'':tab.toUpperCase();
       openNuevaOC(cat);

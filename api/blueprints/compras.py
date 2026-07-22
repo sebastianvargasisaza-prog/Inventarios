@@ -8968,24 +8968,27 @@ _CONSUMOS_HTML = """<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Consumos / Gastos Generales</title>
 <style>
- body{font-family:system-ui,Arial;margin:0;background:#f7f7fb;color:#1f2937}
- .wrap{max-width:1100px;margin:0 auto;padding:22px}
- a{color:#7c3aed;text-decoration:none}h1{font-size:22px;margin:6px 0}h2{font-size:17px;margin:4px 0 10px}
- .muted{color:#6b7280;font-size:13px}
- .kpis{display:flex;gap:10px;flex-wrap:wrap;margin:14px 0}
- .kpi{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:12px 16px;min-width:130px}
- .kpi .v{font-size:22px;font-weight:800}.kpi .l{font-size:11px;color:#6b7280}
- .card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px;margin:12px 0}
- .alert{background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:10px 14px;margin:8px 0;color:#991b1b}
- table{width:100%;border-collapse:collapse;font-size:13px}
- th,td{padding:7px 9px;border-bottom:1px solid #eee;text-align:right}th{color:#6d28d9;text-align:right}
+ body{font-family:'Inter',system-ui,-apple-system,Segoe UI,Arial;margin:0;background:#f6f7fb;color:#1e293b}
+ .wrap{max-width:1580px;margin:0 auto;padding:20px 26px 60px}
+ a{color:#7c3aed;text-decoration:none;font-weight:600}h1{font-size:23px;margin:6px 0;font-weight:800;letter-spacing:-.01em;color:#0f172a}h2{font-size:16px;margin:4px 0 12px;font-weight:800;color:#1e293b}
+ .muted{color:#64748b;font-size:13px}
+ .kpis{display:flex;gap:12px;flex-wrap:wrap;margin:14px 0}
+ .kpi{background:#fff;border:1px solid #eef2f7;border-radius:14px;padding:15px 18px;min-width:150px;box-shadow:0 1px 3px rgba(15,23,42,.05)}
+ .kpi .v{font-size:25px;font-weight:800;letter-spacing:-.02em;line-height:1}.kpi .l{font-size:11px;color:#64748b;margin-top:4px;text-transform:uppercase;letter-spacing:.4px;font-weight:600}
+ .card{background:#fff;border:1px solid #eef2f7;border-radius:16px;padding:18px 20px;margin:14px 0;box-shadow:0 2px 14px rgba(15,23,42,.05)}
+ .alert{background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:11px 15px;margin:8px 0;color:#9a3412}
+ table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
+ th,td{padding:9px 11px;border-bottom:1px solid #f4f4f8;text-align:right;vertical-align:middle}th{color:#64748b;text-align:right;font-size:10px;text-transform:uppercase;letter-spacing:.04em;font-weight:800;background:#fbfbfe}
  th:first-child,td:first-child{text-align:left}
+ tbody tr:hover td{background:#faf9ff}
  .up{color:#dc2626;font-weight:800}.down{color:#16a34a;font-weight:700}.flat{color:#9ca3af}
- input,select{padding:7px;border:1px solid #d1d5db;border-radius:7px;font-size:13px}
- .frow{display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-bottom:10px}
- .frow label{font-size:11px;color:#6b7280;display:block;margin-bottom:2px}
- button{padding:7px 13px;border:0;border-radius:7px;color:#fff;font-size:13px;font-weight:700;cursor:pointer}
- .b-sol{background:#16a34a}.b-add{background:#7c3aed}.b-del{background:#dc2626}.b-cancel{background:#6b7280}
+ input,select{padding:9px 11px;border:1px solid #e2e8f0;border-radius:9px;font-size:13px;background:#fff;transition:border-color .15s,box-shadow .15s}
+ input:focus,select:focus{outline:none;border-color:#7c3aed;box-shadow:0 0 0 3px rgba(124,58,237,.1)}
+ .frow{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:10px}
+ .frow label{font-size:11px;color:#64748b;display:block;margin-bottom:3px;font-weight:600}
+ button{padding:9px 15px;border:0;border-radius:9px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 1px 3px rgba(15,23,42,.1);transition:transform .1s,box-shadow .15s}
+ button:hover{transform:translateY(-1px);box-shadow:0 3px 8px rgba(15,23,42,.14)}
+ .b-sol{background:linear-gradient(135deg,#16a34a,#15803d)}.b-add{background:linear-gradient(135deg,#7c3aed,#6d28d9)}.b-del{background:linear-gradient(135deg,#ef4444,#dc2626)}.b-cancel{background:#e2e8f0;color:#334155}
  .modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:50}
  .modal.show{display:flex}.box{background:#fff;border-radius:14px;padding:20px;width:330px;max-width:92vw}
  .tabs{display:flex;gap:6px;margin:12px 0}
