@@ -521,7 +521,14 @@ async function registrarRecepcion() {
   var ocItems = currentOC.items || [];
   for (var idx = 0; idx < ocItems.length; idx++) {
     var it = ocItems[idx];
-    if (it.es_cargo) { continue; }  // flete/domicilio/servicio · no se recibe físicamente
+    // FIX (revisión ultracode): NO saltar el cargo con `continue` — el backend mapea lo recibido por
+    // POSICIÓN (enumerate de items_oc que SÍ incluye los cargos), y compactar la lista corría las
+    // cantidades al material equivocado. Se manda el cargo con cant=0 (el backend salta cant=0) para
+    // preservar el alineamiento posicional. Flete/domicilio/servicio no reciben stock físico igual.
+    if (it.es_cargo) {
+      items.push({codigo_mp: it.codigo_mp, cantidad_recibida: 0, estado: 'OK', notas: '', lote: '', fecha_vencimiento: '', recipientes: 1, envases_detalle: null});
+      continue;
+    }
     var cantEl = document.getElementById('cant-' + idx);
     var notaEl = document.getElementById('nota-' + idx);
     // Recepción parcial: si la línea está destildada (o no tiene checkbox = ya recibida
@@ -770,6 +777,9 @@ async function loadSeguimiento() {
   }
 }
 // ── Retornos de serigrafía (Sebastián 21-jul): Catalina los recibe acá → cuarentena → avisa Calidad/DT ──
+// FIX (revisión ultracode): esc() no existía en este archivo · loadSerigRetornos lanzaba
+// ReferenceError y ocultaba la tarjeta justo cuando había órdenes por recibir (flujo muerto).
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 async function loadSerigRetornos(){
   var card=document.getElementById('serig-card'), box=document.getElementById('serig-list');
   if(!card||!box) return;

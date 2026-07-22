@@ -108,8 +108,12 @@ def recepcion_detalle_oc(numero_oc):
         desc_full = (_mee_desc.get(cu) or nom or cod) if es_mee else (nom or cod)
         _txt = (nom + ' ' + cod).upper()
         es_cargo = (not es_mee) and (not inci) and any(k in _txt for k in _CARGO_KW)
-        # MP real (con INCI) = gramos · envases/consumibles/otros = unidades
-        unidad = 'g' if (inci and not es_mee) else 'uds'
+        # Unidad (fix revisión ultracode): envases=uds · consumibles=uds · MP=g (aunque no tenga INCI
+        # cargado todavía, una MP en OC MP se mide en gramos). Antes MP sin INCI salía 'uds' por error.
+        if es_mee or _es_consumo:
+            unidad = 'uds'
+        else:
+            unidad = 'g'
         return {'codigo_mp': cod, 'nombre_mp': nom, 'cantidad_g': i[2],
                 'precio_unitario': i[3], 'cantidad_recibida_g': i[4], 'lote_asignado': i[5],
                 'inci': inci, 'descripcion_full': desc_full, 'unidad': unidad,

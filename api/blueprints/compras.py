@@ -13447,12 +13447,14 @@ def get_ronda(ronda_id):
             'codigo_mp', 'cantidad_g']
     cotizaciones = [dict(zip(cols, r)) for r in c.fetchall()]
     _r0 = cotizaciones[0] if cotizaciones else {}
+    _tiene_ganadora = any(int(x.get('ganadora') or 0) == 1 for x in cotizaciones)
     return jsonify({
         'ronda_id': ronda_id,
         'ronda': {
             'descripcion': _r0.get('descripcion'),
             'codigo_mp': _r0.get('codigo_mp'),
             'cantidad_g': _r0.get('cantidad_g'),
+            'estado': 'cerrada' if _tiene_ganadora else 'abierta',  # fix ultracode: el drawer bloquea 2ª ganadora
         },
         'cotizaciones': cotizaciones,
         'count': len(cotizaciones),
@@ -13493,6 +13495,13 @@ def elegir_ganadora(cot_id):
     if not row:
         return jsonify({'error': 'Cotización no encontrada'}), 404
     ronda_id, prov_ganador, valor_ganador, descripcion, lead_time, condiciones, cot_codigo_mp, cot_cantidad = row
+    # Guard anti-doble-ganadora (fix revisión ultracode): si la ronda YA tiene ganadora, no crear
+    # otra OC. El UI no bloqueaba (ronda.estado no llegaba) → acá el backend lo impide de raíz.
+    _ya = c.execute("SELECT numero_oc FROM cotizaciones WHERE ronda_id=? AND COALESCE(ganadora,0)=1 AND id!=?",
+                    (ronda_id, cot_id)).fetchone()
+    if _ya:
+        return jsonify({'error': 'Esta ronda ya tiene una ganadora (OC ' + str(_ya[0] or '') + '). No se puede elegir otra.',
+                        'codigo': 'YA_TIENE_GANADORA'}), 409
     valor_ganador = float(valor_ganador or 0)
     cot_cantidad = float(cot_cantidad or 0)         # cantidad cotizada (mig 366) · 0 = genérico
     cot_codigo_mp = (cot_codigo_mp or '').strip()   # material · vacío = sin desglose
@@ -13598,6 +13607,10 @@ def listar_rondas():
             'ronda_id': r[0], 'fecha': r[1], 'descripcion': r[2],
             'total_cotizaciones': r[3], 'recibidas': r[4],
             'ganadora_proveedor': r[5], 'valor_ganador': r[6],
+            # estado derivado (no hay tabla rondas): con ganadora = cerrada · sino abierta.
+            # mejor_precio = valor de la ganadora (para la columna del front). Fix revisión ultracode.
+            'estado': 'cerrada' if r[5] else 'abierta',
+            'mejor_precio': r[6],
         }
         for r in c.fetchall()
     ]

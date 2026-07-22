@@ -9089,8 +9089,8 @@ async function cargarCotizaciones(){
       html += '<tr>';
       html += '<td class="cxt-mono" style="font-weight:700;color:#6d28d9">#'+(r2.ronda_id||r2.id)+'</td>';
       html += '<td style="font-weight:600;color:#292524">'+_esc(r2.material_nombre||r2.descripcion||r2.material_id||'-')+'</td>';
-      html += '<td style="color:#78716c">'+_esc((r2.creada_en||'').slice(0,10))+'</td>';
-      html += '<td style="text-align:center"><span class="cxt-chip mute">'+(r2.recibidas||r2.respuestas||0)+' / '+(r2.solicitadas||r2.total||0)+'</span></td>';
+      html += '<td style="color:#78716c">'+_esc((r2.fecha||r2.creada_en||'').slice(0,10))+'</td>';
+      html += '<td style="text-align:center"><span class="cxt-chip mute">'+(r2.recibidas||r2.respuestas||0)+' / '+(r2.total_cotizaciones||r2.solicitadas||r2.total||0)+'</span></td>';
       html += '<td class="cxt-mono" style="text-align:right;font-weight:700;color:#15803d">'+(r2.mejor_precio ? _money(r2.mejor_precio) : '-')+'</td>';
       html += '<td style="text-align:center"><span class="cxt-chip '+chip+'" style="text-transform:uppercase">'+_esc(r2.estado||'?')+'</span></td>';
       html += '<td style="text-align:center"><button class="cxt-btnp" onclick="abrirCotizDrawer(&#39;'+(r2.ronda_id||r2.id)+'&#39;)">&#128202; Comparar</button></td>';

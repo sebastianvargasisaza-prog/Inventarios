@@ -2517,7 +2517,12 @@ function _rcOverlay(inner){
   ov.innerHTML=_RCM_CSS+'<div class="rcm">'+inner+'</div>';
   // BUG FIX (Sebastián/Laura 21-jul): NO cerrar al clic en el fondo · llenar F01/F02 es largo y un
   // clic fuera de un campo las sacaba y perdían TODO. Solo cierra con la X (o Escape).
-  ov.addEventListener('keydown',function(e){ if(e.key==='Escape') _rcClose(); });
+  // FIX ultracode: el listener de Escape va en document (el div overlay no es enfocable → antes
+  // Escape no cerraba hasta que un input hijo tuviera foco).
+  if(!window._rcEscBound){
+    document.addEventListener('keydown',function(e){ if(e.key==='Escape' && document.getElementById('rc-ov')) _rcClose(); });
+    window._rcEscBound=true;
+  }
   document.body.appendChild(ov);
 }
 function _rcHeader(num,titulo,cod){
@@ -2545,7 +2550,7 @@ async function openF01(mov_id, origen){
     var d=await (await fetch('/api/calidad/recepcion-tecnica?mov_id='+mov_id+'&origen='+org)).json();
     var f=d.f01||{}, pre=d.prefill||{};
     var g=function(k){ return (f[k]!=null&&f[k]!=='')?f[k]:(pre[k]||''); };
-    window._F01ctx={mov_id:mov_id, org:org, codigo:(pre.codigo_mp||f.codigo_insumo||'')};
+    window._F01ctx={mov_id:mov_id, org:org, codigo:(pre.codigo_insumo||pre.codigo_mp||f.codigo_insumo||'')};
     var tipo=f.tipo_insumo||(org==='MEE'?'envase':'materia_prima');
     var meeNote = (org==='MEE') ? '<div class="rcm-note">Envase: el F01 es la disposición de calidad. <b>Conforme + firma del jefe libera el lote</b> (queda VIGENTE); No conforme lo rechaza. Los envases no llevan F02.</div>' : '';
     var crits=[['crit_rotulado','Rotulado completo (nombre, lote, fecha vencimiento)'],['crit_empaque','Empaque/envase limpio e íntegro'],['crit_hoja_seguridad','Hoja de seguridad vigente (si aplica)'],['crit_ficha_tecnica','Ficha técnica vigente (si aplica)'],['crit_coa','Certificado de análisis del proveedor (COA)'],['crit_doc_coincide','Documentación coincide con el producto entregado']];
