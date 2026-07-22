@@ -1190,6 +1190,12 @@ def diag_abastecimiento_mp(codigo):
         out['existe_mp'] = bool(info)
         out['nombre'] = info[0] if info else None
         out['inci'] = info[1] if info else None
+        # ¿es agua / consumible infinito (controla_stock=0 → NO se pide · el motor la muestra en 0 a propósito)?
+        try:
+            _cs = c.execute("SELECT COALESCE(controla_stock,1) FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?", (cod,)).fetchone()
+            out['no_controla_stock'] = bool(_cs and int(_cs[0] or 0) == 0)
+        except Exception:
+            out['no_controla_stock'] = False
         # ── INDEPENDIENTE: productos que la usan × programado ──
         piso = (_dt.utcnow() - _td(hours=5)).date().isoformat()
         prods = c.execute("SELECT producto_nombre, COALESCE(porcentaje,0), COALESCE(cantidad_g_por_lote,0) "
@@ -1226,6 +1232,20 @@ def diag_abastecimiento_mp(codigo):
         out['productos_que_usan'] = len(prods)
         out['desglose'] = desglose
         out['independiente_gramos'] = {str(d): round(indep[str(d)], 1) for d in _dias}
+        # Pista de BRIDGE: la fórmula no usa este código (0 productos) pero SÍ existe una MP con nombre
+        # parecido que se consume bajo OTRO código (fantasma/bridge · issue M76 · mapeo de datos).
+        if len(prods) == 0 and info:
+            try:
+                _nm = (info[0] or '').strip()
+                _alt = c.execute(
+                    "SELECT DISTINCT fi.material_id FROM formula_items fi WHERE UPPER(TRIM(fi.material_nombre)) LIKE ? "
+                    "AND UPPER(TRIM(fi.material_id)) != ? LIMIT 5",
+                    ('%' + _nm.upper()[:12] + '%', cod)).fetchall()
+                if _alt:
+                    out['posible_bridge'] = {'nota': 'la fórmula usa otro código para este material (bridge/fantasma · M76)',
+                                             'codigos_en_formula': [r[0] for r in _alt]}
+            except Exception:
+                pass
         # ── MOTOR: abastecimiento ──
         motor = {}
         try:
@@ -1263,8 +1283,15 @@ def diag_abastecimiento_mp(codigo):
             i = float(indep.get(dk, 0) or 0)
             diff = round(m - i, 1)
             tol = max(1.0, i * 0.02)
+            _ok = abs(diff) <= tol
+            _nota = None
+            if not _ok and out.get('no_controla_stock'):
+                _ok = True  # agua/consumible infinito · el motor la muestra en 0 A PROPÓSITO (no se pide)
+                _nota = 'agua/infinito · no se pide (motor=0 es correcto)'
+            elif not _ok and len(prods) == 0:
+                _nota = 'la fórmula usa otro código (bridge/M76) · revisar mapeo, no es error de cálculo'
             cuadra[dk] = {'motor_consumo': m, 'independiente': round(i, 1), 'diferencia': diff,
-                          'cuadra': abs(diff) <= tol}
+                          'cuadra': _ok, **({'nota': _nota} if _nota else {})}
         out['cuadra'] = cuadra
         return jsonify(out)
     except Exception as e:
