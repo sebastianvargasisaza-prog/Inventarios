@@ -142,9 +142,7 @@ td input[type=text]{width:100%;padding:6px 9px;border:1px solid var(--line);bord
               <th>Cantidad Recibida</th>
               <th>Diferencia</th>
               <th>% Cumpl.</th>
-              <th>Estado</th>
               <th>Lote</th>
-              <th>Vence</th>
               <th>Notas</th>
               <th style="text-align:center;" title="¿En cuántos envases individuales llegó y cuánto hay en cada uno? Clic para definir (ej: 3500 g = 3 de 1000 + 1 de 500).">Envases</th>
               <th style="text-align:center;">Rótulo</th>
@@ -443,14 +441,7 @@ function renderOC(d) {
         '<td><input type="number" id="cant-' + i + '" data-codigo="' + it.codigo_mp + '" data-sol="' + it.cantidad_g + '" value="' + prevRec + '"' + (yaCompleta ? ' disabled' : '') + ' min="0" step="0.01" oninput="updateRow(' + i + ')"></td>' +
         '<td id="dif-' + i + '" class="valor" style="font-weight:600;"></td>' +
         '<td><div class="progress-bar"><div class="progress-fill" id="prog-' + i + '" style="width:' + Math.min(pct,100) + '%"></div></div><div class="item-pct" id="pct-' + i + '">' + pct + '%</div></td>' +
-        '<td><select id="est-' + i + '" onchange="updateRow(' + i + ')">' +
-          '<option value="OK">OK - Conforme</option>' +
-          '<option value="Incompleto">Incompleto</option>' +
-          '<option value="Danado">Danado</option>' +
-          '<option value="NoLlego">No llego</option>' +
-        '</select></td>' +
         '<td><input type="text" id="lote-' + i + '" placeholder="Ej: L-2026-001" style="width:110px;"></td>' +
-        '<td><input type="date" id="fv-' + i + '" style="width:130px;"></td>' +
         '<td><input type="text" id="nota-' + i + '" placeholder="Observacion opcional"></td>' +
         '<td style="text-align:center;">' + ((esMee || esCons)
             ? '<span style="color:#cbd5e1;font-size:12px;" title="No aplica desglose por envase">n/a</span>'
@@ -485,7 +476,6 @@ function toggleRecibir(i) {
 }
 function updateRow(i) {
   var cantEl = document.getElementById('cant-' + i);
-  var estEl = document.getElementById('est-' + i);
   var progEl = document.getElementById('prog-' + i);
   var pctEl = document.getElementById('pct-' + i);
   var difEl = document.getElementById('dif-' + i);
@@ -493,7 +483,6 @@ function updateRow(i) {
   if (!cantEl) return;
   var sol = parseFloat(cantEl.dataset.sol) || 0;
   var rec = parseFloat(cantEl.value) || 0;
-  var est = estEl ? estEl.value : 'OK';
   var pct = sol > 0 ? Math.round(rec / sol * 100) : 100;
   var dif = rec - sol;
   if (difEl) {
@@ -503,7 +492,7 @@ function updateRow(i) {
   }
   if (progEl) { progEl.style.width = Math.min(pct,100) + '%'; progEl.style.background = pct >= 100 ? '#16a34a' : pct > 50 ? '#d97706' : '#dc2626'; }
   if (pctEl) pctEl.textContent = pct + '%';
-  if (row) { row.className = (est === 'OK' && pct >= 100) ? 'row-ok' : (est === 'Danado' || est === 'NoLlego' || pct === 0) ? 'row-falta' : 'row-disc'; }
+  if (row) { row.className = (pct >= 100) ? 'row-ok' : (pct === 0) ? 'row-falta' : 'row-disc'; }
 }
 
 async function registrarRecepcion() {
@@ -517,20 +506,20 @@ async function registrarRecepcion() {
   for (var idx = 0; idx < ocItems.length; idx++) {
     var it = ocItems[idx];
     var cantEl = document.getElementById('cant-' + idx);
-    var estEl = document.getElementById('est-' + idx);
     var notaEl = document.getElementById('nota-' + idx);
     // Recepción parcial: si la línea está destildada (o no tiene checkbox = ya recibida
     // completa), se manda 0 → el backend la salta y queda pendiente (no doble-cuenta).
     var rxEl = document.getElementById('rx-' + idx);
     var recibirEsta = rxEl ? rxEl.checked : false;
     var cant = (recibirEsta && cantEl) ? (parseFloat(cantEl.value) || 0) : 0;
-    var est = estEl ? estEl.value : 'OK';
+    // Recepción ADMINISTRATIVA (Sebastián 21-jul): el asistente solo confirma OC + cantidad.
+    // Estado/condición (técnico) y vencimiento los maneja Calidad (F01/F02). Se mandan defaults.
+    var est = 'OK';
     var nota = notaEl ? notaEl.value.trim() : '';
     var loteEl = document.getElementById('lote-' + idx);
-    var fvEl = document.getElementById('fv-' + idx);
     var lote = loteEl ? loteEl.value.trim() : '';
-    var fv = fvEl ? fvEl.value.trim() : '';
-    if (est !== 'OK' || cant < it.cantidad_g) discrepancias = true;
+    var fv = '';
+    if (cant < it.cantidad_g) discrepancias = true;
     var _amts = _envBreak[idx] || [];
     var nrec = _amts.length > 1 ? _amts.length : 1;
     items.push({codigo_mp: it.codigo_mp, cantidad_recibida: cant, estado: est, notas: nota, lote: lote, fecha_vencimiento: fv, recipientes: nrec, envases_detalle: (_amts.length > 1 ? _amts : null)});
