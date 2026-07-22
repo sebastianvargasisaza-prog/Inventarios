@@ -13981,29 +13981,26 @@ def marcacion_orden_enviar():
     return jsonify({'ok': True, 'orden_id': oid, 'base': base, 'serigrafiado': serig})
 
 
-@bp.route('/api/programacion/marcacion-orden/<int:oid>/liberar', methods=['POST'])
-def marcacion_orden_liberar(oid):
-    """Fase D · Revision tecnica + Calidad libera el retorno de marcacion: saca de CUARENTENA (VIGENTE), califica
-    el envase serigrafiado + auto-califica el proveedor que creamos, cierra la orden. CAS recibido->liberado."""
-    if 'compras_user' not in session:
-        return jsonify({'error': 'No autorizado'}), 401
-    user = session.get('compras_user', '')
+def _marcacion_liberar_core(c, oid, user, rol, chk):
+    """Núcleo de liberación del retorno de marcación (Fase 2+3). Saca de CUARENTENA→VIGENTE,
+    califica serigrafiado + proveedor, registra el checklist de arte. Devuelve (ok, error, code)."""
     from datetime import datetime as _dtM, timedelta as _tdM
     _hoy = (_dtM.utcnow() - _tdM(hours=5)).date().isoformat()
-    conn = get_db()
-    c = conn.cursor()
     o = c.execute("SELECT serigrafiado_codigo, COALESCE(proveedor,''), COALESCE(estado,'') FROM marcacion_ordenes WHERE id=?", (oid,)).fetchone()
     if not o:
-        return jsonify({'error': 'Orden no existe'}), 404
+        return (False, 'Orden no existe', 404)
     if o[2] != 'recibido':
-        return jsonify({'error': f'Orden en estado {o[2]} · debe estar recibida para liberar'}), 409
+        return (False, f'Orden en estado {o[2]} · debe estar recibida para liberar', 409)
     serig, prov = o[0], o[1]
-    # CAS: reclamar la liberacion
-    c.execute("UPDATE marcacion_ordenes SET estado='liberado', liberado_at=?, liberado_por=? WHERE id=? AND COALESCE(estado,'')='recibido'",
-              (_hoy, user, oid))
+    # CAS: reclamar la liberacion + registrar checklist
+    c.execute("UPDATE marcacion_ordenes SET estado='liberado', liberado_at=?, liberado_por=?, chk_rol=?, "
+              "chk_arte=?, chk_estado=?, chk_caracteristicas=?, chk_cantidad=?, chk_observaciones=? "
+              "WHERE id=? AND COALESCE(estado,'')='recibido'",
+              (_hoy, user, rol, int(bool(chk.get('arte'))), int(bool(chk.get('estado'))),
+               int(bool(chk.get('caracteristicas'))), int(bool(chk.get('cantidad'))),
+               (chk.get('observaciones') or '')[:500], oid))
     if (c.rowcount or 0) == 0:
-        conn.rollback()
-        return jsonify({'error': 'Orden ya liberada por otro', 'codigo': 'YA_LIBERADA'}), 409
+        return (False, 'Orden ya liberada por otro', 409)
     # 1) sacar de cuarentena (VIGENTE) la entrada de ESTA orden
     try:
         c.execute("UPDATE movimientos_mee SET estado='VIGENTE' WHERE UPPER(TRIM(mee_codigo))=UPPER(TRIM(?)) "
@@ -14037,12 +14034,56 @@ def marcacion_orden_liberar(oid):
                 pass
     try:
         from audit_helpers import audit_log as _al
-        _al(c, usuario=user, accion='MARCACION_LIBERAR', tabla='marcacion_ordenes', registro_id=oid,
-            despues={'serigrafiado': serig, 'proveedor': prov, 'liberado_por': user})
+        _al(c, usuario=user, accion='MARCACION_LIBERAR_CHECKLIST', tabla='marcacion_ordenes', registro_id=oid,
+            despues={'serigrafiado': serig, 'proveedor': prov, 'rol': rol, 'checklist': chk})
     except Exception:
         pass
+    return (True, None, 200)
+
+
+@bp.route('/api/programacion/marcacion-orden/<int:oid>/liberar', methods=['POST'])
+def marcacion_orden_liberar(oid):
+    """DEPRECADO (Fase 2 · Sebastián 21-jul): la liberación directa por Compras SIN control se cerró.
+    El retorno de marcación se libera SOLO por el checklist de arte (DT/Aseguramiento/Calidad)."""
+    return jsonify({'error': 'Liberación directa deshabilitada · usá el checklist de arte (DT/Aseguramiento/Calidad)',
+                    'codigo': 'USAR_CHECKLIST'}), 409
+
+
+@bp.route('/api/programacion/marcacion-orden/<int:oid>/liberar-checklist', methods=['POST'])
+def marcacion_orden_liberar_checklist(oid):
+    """Fase 2+3 (Sebastián 21-jul): libera el retorno de marcación tras el CHECKLIST ligero de arte
+    (arte / estado / características / cantidad). Solo Dirección Técnica, Aseguramiento o Calidad
+    (registro electrónico: quién + rol + checks + observaciones + audit). El envase ya es conocido
+    y ya pasó calidad; lo nuevo es la impresión."""
+    from config import TECNICA_USERS, ASEGURAMIENTO_USERS, CALIDAD_USERS, ADMIN_USERS
+    u = session.get('compras_user', '')
+    if not u:
+        return jsonify({'error': 'No autorizado'}), 401
+    _u = u.lower()
+    if _u in {x.lower() for x in ADMIN_USERS}:
+        rol = 'Admin'
+    elif _u in {x.lower() for x in TECNICA_USERS}:
+        rol = 'Dirección Técnica'
+    elif _u in {x.lower() for x in ASEGURAMIENTO_USERS}:
+        rol = 'Aseguramiento'
+    elif _u in {x.lower() for x in CALIDAD_USERS}:
+        rol = 'Calidad'
+    else:
+        return jsonify({'error': 'Solo Dirección Técnica, Aseguramiento o Calidad pueden liberar el checklist de arte'}), 403
+    d = request.json or {}
+    chk = {'arte': bool(d.get('arte')), 'estado': bool(d.get('estado')),
+           'caracteristicas': bool(d.get('caracteristicas')), 'cantidad': bool(d.get('cantidad')),
+           'observaciones': (d.get('observaciones') or '').strip()}
+    if not (chk['arte'] and chk['estado'] and chk['caracteristicas']):
+        return jsonify({'error': 'Para liberar, arte + estado + características deben estar conformes. Si algo no cumple, no liberes y dejá la observación.',
+                        'codigo': 'CHECKLIST_INCOMPLETO'}), 400
+    conn = get_db(); c = conn.cursor()
+    ok, err, code = _marcacion_liberar_core(c, oid, u, rol, chk)
+    if not ok:
+        conn.rollback()
+        return jsonify({'error': err}), code
     conn.commit()
-    return jsonify({'ok': True, 'orden_id': oid})
+    return jsonify({'ok': True, 'orden_id': oid, 'rol': rol})
 
 
 @bp.route('/api/programacion/marcacion-orden/<int:oid>/recibir', methods=['POST'])

@@ -8644,6 +8644,28 @@ button.ok{background:linear-gradient(135deg,#16a34a,#15803d)}
     </div>
   </div>
 </div>
+<div id="checklist-modal" style="display:none;position:fixed;inset:0;background:rgba(20,18,40,.55);z-index:10001;align-items:flex-start;justify-content:center;padding:24px;overflow:auto">
+  <div style="background:#fff;border-radius:16px;max-width:540px;width:100%;box-shadow:0 30px 80px -24px rgba(24,24,45,.55);overflow:hidden">
+    <div style="background:linear-gradient(120deg,#f5f3ff,#faf5ff,#fff);border-bottom:1px solid #ece9f6;padding:18px 22px;display:flex;justify-content:space-between;align-items:center">
+      <div><div style="font-size:16px;font-weight:800;color:#1e1b2e">&#127912; Checklist de arte &middot; liberar marcaci&oacute;n</div><div id="cka-meta" style="font-size:11px;color:#8b8b9e;margin-top:2px"></div></div>
+      <button onclick="cerrarChecklistArte()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#a1a1b0">&times;</button>
+    </div>
+    <div style="padding:18px 22px">
+      <input type="hidden" id="cka-oid">
+      <div style="font-size:11px;color:#78716c;margin-bottom:14px">El envase ya es conocido y ya pas&oacute; calidad &middot; ac&aacute; solo revis&aacute;s la impresi&oacute;n. Lo firma <b>DT, Aseguramiento o Calidad</b>.</div>
+      <label style="display:flex;gap:9px;align-items:flex-start;margin-bottom:11px;cursor:pointer"><input type="checkbox" id="cka-arte" style="width:17px;height:17px;margin-top:1px"><span><b>Arte conforme</b> al aprobado por Direcci&oacute;n T&eacute;cnica <span style="color:#dc2626">*</span></span></label>
+      <label style="display:flex;gap:9px;align-items:flex-start;margin-bottom:11px;cursor:pointer"><input type="checkbox" id="cka-estado" style="width:17px;height:17px;margin-top:1px"><span><b>Estado</b> del envase OK (sin da&ntilde;os, limpio) <span style="color:#dc2626">*</span></span></label>
+      <label style="display:flex;gap:9px;align-items:flex-start;margin-bottom:11px;cursor:pointer"><input type="checkbox" id="cka-caract" style="width:17px;height:17px;margin-top:1px"><span><b>Caracter&iacute;sticas generales</b> correctas (color, ubicaci&oacute;n, calidad de impresi&oacute;n) <span style="color:#dc2626">*</span></span></label>
+      <label style="display:flex;gap:9px;align-items:flex-start;margin-bottom:13px;cursor:pointer"><input type="checkbox" id="cka-cant" style="width:17px;height:17px;margin-top:1px"><span><b>Cantidad</b> coincide con lo enviado</span></label>
+      <textarea id="cka-obs" rows="2" placeholder="Observaciones (opcional)" style="width:100%;padding:9px 11px;border:1px solid #d6d3d1;border-radius:9px;font-size:13px;box-sizing:border-box;resize:vertical"></textarea>
+      <div id="cka-msg" style="font-size:12px;margin-top:8px"></div>
+    </div>
+    <div style="border-top:1px solid #eef2f7;padding:14px 22px;display:flex;justify-content:flex-end;gap:8px">
+      <button onclick="cerrarChecklistArte()" style="background:#f1f5f9;color:#475569;border:1px solid #e2e8f0">Cancelar</button>
+      <button onclick="guardarChecklistArte()" style="background:linear-gradient(135deg,#7c3aed,#6d28d9)">&#10003; Firmar y liberar</button>
+    </div>
+  </div>
+</div>
 <div id="sub-marcar">
 <div style="display:flex;gap:10px;margin:0 0 12px;align-items:center;flex-wrap:wrap">
   <div style="display:inline-flex;background:#eef2f7;border-radius:10px;padding:3px">
@@ -8978,6 +9000,7 @@ async function cargarOrdenes(){
   try{
     var d=await (await fetch('/api/programacion/marcacion-ordenes',{cache:'no-store'})).json();
     var its=d.items||[];
+    window._ORD_ITEMS = its;
     // Badge de la sub-pestaña "En curso": órdenes activas (enviado + recibido/cuarentena)
     var _actAll=its.filter(function(o){return o.estado==='enviado'||o.estado==='recibido';}).length;
     var _bdg=document.getElementById('smt-curso-badge');
@@ -8996,20 +9019,35 @@ async function cargarOrdenes(){
       +'</div>';
     var h=sum+'<table><thead><tr><th>#</th><th>Producto</th><th>Base &rarr; Serigrafiado</th><th>Método</th><th>Proveedor</th><th>Enviado</th><th>Recibido</th><th>Estado</th><th></th></tr></thead><tbody>';
     its.forEach(function(o){
-      h+='<tr><td>'+o.id+'</td><td><b>'+esc(o.producto)+'</b></td><td>'+esc(o.base)+' &rarr; '+esc(o.serigrafiado)+'</td><td>'+esc(o.metodo)+'</td><td>'+esc(o.proveedor)+'</td><td>'+Math.round(o.cantidad_enviada||0)+' <span class="muted">('+esc(o.fecha_envio)+')</span></td><td>'+(o.cantidad_recibida?Math.round(o.cantidad_recibida)+' <span class="muted">('+esc(o.fecha_retorno)+')</span>':'<span class="muted">-</span>')+'</td><td>'+(o.estado==='enviado'?'<span style="color:#b45309;font-weight:700">en marcación</span>':(o.estado==='recibido'?'<span style="color:#0891b2;font-weight:700">recibido &middot; cuarentena</span>':'<span style="color:#16a34a;font-weight:700">&#10003; liberado</span>'))+'</td><td>'+(o.estado==='enviado'?'<button class="ok" onclick="recibir('+o.id+','+(o.cantidad_enviada||0)+')">Recibir</button>':(o.estado==='recibido'?'<button onclick="liberarMarc('+o.id+')" style="background:#7c3aed">&#10003; Liberar (rev. técnica)</button>':'<span class="muted">&#10003;</span>'))+'</td></tr>';
+      h+='<tr><td>'+o.id+'</td><td><b>'+esc(o.producto)+'</b></td><td>'+esc(o.base)+' &rarr; '+esc(o.serigrafiado)+'</td><td>'+esc(o.metodo)+'</td><td>'+esc(o.proveedor)+'</td><td>'+Math.round(o.cantidad_enviada||0)+' <span class="muted">('+esc(o.fecha_envio)+')</span></td><td>'+(o.cantidad_recibida?Math.round(o.cantidad_recibida)+' <span class="muted">('+esc(o.fecha_retorno)+')</span>':'<span class="muted">-</span>')+'</td><td>'+(o.estado==='enviado'?'<span style="color:#b45309;font-weight:700">en marcación</span>':(o.estado==='recibido'?'<span style="color:#0891b2;font-weight:700">recibido &middot; cuarentena</span>':'<span style="color:#16a34a;font-weight:700">&#10003; liberado</span>'))+'</td><td>'+(o.estado==='enviado'?'<button class="ok" onclick="recibir('+o.id+','+(o.cantidad_enviada||0)+')">Recibir</button>':(o.estado==='recibido'?'<button onclick="abrirChecklistArte('+o.id+')" style="background:#7c3aed" title="Checklist de arte (DT/Aseguramiento/Calidad) para liberar">&#127912; Revisar arte / liberar</button>':'<span class="muted">&#10003;</span>'))+'</td></tr>';
     });
     h+='</tbody></table>';
     box.innerHTML=h;
   }catch(e){ box.innerHTML='<div style="color:#dc2626">Error: '+e+'</div>'; }
 }
-async function liberarMarc(oid){
-  if(!confirm('\u00bfLiberar esta marcaci\u00f3n? (revisi\u00f3n t\u00e9cnica + Calidad)\nSale de cuarentena \u2192 VIGENTE, califica el envase y el proveedor.')) return;
+function abrirChecklistArte(oid){
+  var it=(window._ORD_ITEMS||[]).filter(function(o){return String(o.id)===String(oid);})[0]||{};
+  document.getElementById('cka-oid').value=oid;
+  document.getElementById('cka-meta').innerHTML=esc(it.producto||'?')+' \u00b7 '+esc(it.base||'')+' &rarr; <b>'+esc(it.serigrafiado||'')+'</b> \u00b7 '+esc(it.proveedor||'');
+  ['cka-arte','cka-estado','cka-caract','cka-cant'].forEach(function(id){var e=document.getElementById(id);if(e)e.checked=false;});
+  document.getElementById('cka-obs').value='';
+  document.getElementById('cka-msg').innerHTML='';
+  document.getElementById('checklist-modal').style.display='flex';
+}
+function cerrarChecklistArte(){ document.getElementById('checklist-modal').style.display='none'; }
+async function guardarChecklistArte(){
+  var oid=document.getElementById('cka-oid').value;
+  var arte=document.getElementById('cka-arte').checked, estado=document.getElementById('cka-estado').checked;
+  var caract=document.getElementById('cka-caract').checked, cant=document.getElementById('cka-cant').checked;
+  var obs=document.getElementById('cka-obs').value.trim();
+  var msg=document.getElementById('cka-msg');
+  if(!(arte&&estado&&caract)){ msg.innerHTML='<span style="color:#dc2626">Para liberar, arte + estado + caracter\u00edsticas deben estar OK. Si algo falla, no liberes y dej\u00e1 la observaci\u00f3n.</span>'; return; }
   try{
-    var r=await fetch('/api/programacion/marcacion-orden/'+oid+'/liberar',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin'});
+    var r=await fetch('/api/programacion/marcacion-orden/'+oid+'/liberar-checklist',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await csrf()},credentials:'same-origin',body:JSON.stringify({arte:arte,estado:estado,caracteristicas:caract,cantidad:cant,observaciones:obs})});
     var d=await r.json();
-    if(d.ok){ alert('\u2713 Liberado \u00b7 envase y proveedor calificados.'); cargarOrdenes(); }
-    else alert('Error: '+(d.error||''));
-  }catch(e){ alert('Error de conexi\u00f3n'); }
+    if(d.ok){ cerrarChecklistArte(); alert('\u2713 Liberado por '+(d.rol||'')+' \u00b7 envase disponible + proveedor calificado.'); cargarOrdenes(); }
+    else msg.innerHTML='<span style="color:#dc2626">'+esc(d.error||'Error')+'</span>';
+  }catch(e){ msg.innerHTML='<span style="color:#dc2626">Error de conexi\u00f3n</span>'; }
 }
 async function recibir(oid, env){
   var cant=prompt('¿Cuántos volvieron serigrafiados? (merma = menos)', Math.round(env));

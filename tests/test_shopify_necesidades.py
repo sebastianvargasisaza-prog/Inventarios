@@ -481,11 +481,13 @@ def test_marcacion_liberar(app, db_clean):
     _exec("UPDATE maestro_mee SET material_referencia=? WHERE codigo=?", (base, serig))
     c = _login(app)
     r = c.post('/api/programacion/marcacion-orden/enviar',
-               json={'serigrafiado_codigo': serig, 'cantidad': 50, 'metodo': 'serigrafia', 'proveedor': prov, 'producto': 'X'},
+               json={'serigrafiado_codigo': serig, 'cantidad': 50, 'metodo': 'serigrafia', 'proveedor': prov, 'producto': 'X', 'forzar': True},
                headers=csrf_headers())
     oid = r.get_json()['orden_id']
     c.post('/api/programacion/marcacion-orden/%d/recibir' % oid, json={'cantidad_recibida': 50}, headers=csrf_headers())
-    r3 = c.post('/api/programacion/marcacion-orden/%d/liberar' % oid, json={}, headers=csrf_headers())
+    # Fase 2+3 (21-jul): la liberación va por el checklist de arte (DT/Aseguramiento/Calidad).
+    _chk = {'arte': True, 'estado': True, 'caracteristicas': True, 'cantidad': True}
+    r3 = c.post('/api/programacion/marcacion-orden/%d/liberar-checklist' % oid, json=_chk, headers=csrf_headers())
     assert r3.status_code == 200, r3.data
     assert (_q1("SELECT estado FROM marcacion_ordenes WHERE id=?", (oid,)) or [''])[0] == 'liberado'
     vig = _q1("SELECT COALESCE(estado,'') FROM movimientos_mee WHERE mee_codigo=? AND lote_ref='MARCACION-RET'", (serig,))
@@ -493,8 +495,11 @@ def test_marcacion_liberar(app, db_clean):
     assert (_q1("SELECT calificado FROM maestro_mee WHERE codigo=?", (serig,)) or [0])[0] == 1, 'envase calificado'
     pc = _q1("SELECT estado FROM proveedores_calificacion WHERE LOWER(proveedor)=LOWER(?)", (prov,))
     assert pc and pc[0] == 'aprobado', ('proveedor auto-calificado', pc)
-    r4 = c.post('/api/programacion/marcacion-orden/%d/liberar' % oid, json={}, headers=csrf_headers())
+    r4 = c.post('/api/programacion/marcacion-orden/%d/liberar-checklist' % oid, json=_chk, headers=csrf_headers())
     assert r4.status_code == 409, ('CAS doble liberación', r4.status_code)
+    # el endpoint viejo quedó deprecado (409 · usar checklist)
+    r5 = c.post('/api/programacion/marcacion-orden/%d/liberar' % oid, json={}, headers=csrf_headers())
+    assert r5.status_code == 409, ('liberar directo deprecado', r5.status_code)
 
 
 

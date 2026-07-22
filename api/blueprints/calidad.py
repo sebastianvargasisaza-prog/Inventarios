@@ -1326,6 +1326,7 @@ def calidad_recepcion_pipeline():
                LEFT JOIN maestro_mee mm ON UPPER(TRIM(mm.codigo))=UPPER(TRIM(mv.mee_codigo))
                WHERE mv.tipo='Entrada' AND COALESCE(mv.anulado,0)=0
                  AND UPPER(COALESCE(mv.estado,'VIGENTE'))='CUARENTENA'
+                 AND UPPER(COALESCE(mv.lote_ref,'')) NOT LIKE '%MARCACION%'
                ORDER BY mv.id DESC LIMIT 100""").fetchall():
             mid = r[0]
             f01 = c.execute("SELECT resultado FROM recepcion_tecnica_doc WHERE mov_id=? AND COALESCE(origen,'MP')='MEE' "

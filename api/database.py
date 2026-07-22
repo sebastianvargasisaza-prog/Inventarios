@@ -10201,6 +10201,17 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "ALTER TABLE cotizaciones ADD COLUMN codigo_mp TEXT",
         "ALTER TABLE cotizaciones ADD COLUMN cantidad_g REAL",
     ]),
+    (367, "Marcación Fase 2+3 · checklist ligero de arte (Sebastián 21-jul): el retorno de "
+          "marcación se libera SOLO por un checklist (arte/estado/características/cantidad) que "
+          "firma DT, Aseguramiento o Calidad — no por Compras sin control. Registro electrónico: "
+          "quién revisó (liberado_por ya existe) + rol + los 4 checks + observaciones. Additiva.", [
+        "ALTER TABLE marcacion_ordenes ADD COLUMN chk_arte INTEGER",
+        "ALTER TABLE marcacion_ordenes ADD COLUMN chk_estado INTEGER",
+        "ALTER TABLE marcacion_ordenes ADD COLUMN chk_caracteristicas INTEGER",
+        "ALTER TABLE marcacion_ordenes ADD COLUMN chk_cantidad INTEGER",
+        "ALTER TABLE marcacion_ordenes ADD COLUMN chk_observaciones TEXT",
+        "ALTER TABLE marcacion_ordenes ADD COLUMN chk_rol TEXT",
+    ]),
 ]
 
 
