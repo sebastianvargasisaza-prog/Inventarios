@@ -15284,13 +15284,12 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
                    COALESCE(SUM(oci.cantidad_g - COALESCE(oci.cantidad_recibida_g,0)),0)
             FROM ordenes_compra_items oci
             JOIN ordenes_compra oc ON oc.numero_oc = oci.numero_oc
-            LEFT JOIN solicitudes_compra sc ON sc.numero_oc = oc.numero_oc
             WHERE (
                     oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')
                  OR (oc.estado='Pagada' AND COALESCE(oc.fecha_recepcion,'')='')
               )
               AND oci.codigo_mp IS NOT NULL AND TRIM(oci.codigo_mp) != ''
-              AND COALESCE(sc.categoria,'') NOT IN ('Empaque','Material de Empaque')
+              AND UPPER(TRIM(oci.codigo_mp)) NOT IN (SELECT UPPER(TRIM(codigo)) FROM maestro_mee)
             GROUP BY UPPER(TRIM(oci.codigo_mp))
         """).fetchall():
             k = cm
@@ -15323,10 +15322,10 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
         for r in c.execute("""
             SELECT UPPER(TRIM(oci.codigo_mp)), oc.numero_oc, oc.estado,
                    COALESCE(oci.cantidad_g - COALESCE(oci.cantidad_recibida_g,0), 0),
-                   COALESCE(sc.categoria,'')
+                   CASE WHEN UPPER(TRIM(oci.codigo_mp)) IN (SELECT UPPER(TRIM(codigo)) FROM maestro_mee)
+                        THEN 'Empaque' ELSE 'MP' END
             FROM ordenes_compra_items oci
             JOIN ordenes_compra oc ON oc.numero_oc = oci.numero_oc
-            LEFT JOIN solicitudes_compra sc ON sc.numero_oc = oc.numero_oc
             WHERE (
                     oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')
                  OR (oc.estado='Pagada' AND COALESCE(oc.fecha_recepcion,'')='')
@@ -15366,13 +15365,12 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
                        COALESCE(SUM(oci.cantidad_g - COALESCE(oci.cantidad_recibida_g,0)),0)
                 FROM ordenes_compra_items oci
                 JOIN ordenes_compra oc ON oc.numero_oc = oci.numero_oc
-                LEFT JOIN solicitudes_compra sc ON sc.numero_oc = oc.numero_oc
                 WHERE (
                         oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')
                      OR (oc.estado='Pagada' AND COALESCE(oc.fecha_recepcion,'')='')
                   )
                   AND oci.codigo_mp IS NOT NULL AND TRIM(oci.codigo_mp) != ''
-                  AND COALESCE(sc.categoria,'') IN ('Empaque','Material de Empaque')
+                  AND UPPER(TRIM(oci.codigo_mp)) IN (SELECT UPPER(TRIM(codigo)) FROM maestro_mee)
                 GROUP BY UPPER(TRIM(oci.codigo_mp))
             """).fetchall():
                 k = cm
@@ -15901,14 +15899,16 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
             stock_g = _lookup_stock_5tier(stock_mp, cod, info.get('nombre') or '')
             pend_g = float(pendientes_mp.get(cod.upper(), 0) or 0)
             cuar_g = float(_lookup_stock_5tier(_cuar_mp, cod, info.get('nombre') or '') or 0)
-            # Sebastián 12-jul · déficit contra STOCK FÍSICO (pend/cuar solo INFO · ver interruptor arriba).
-            disponible = stock_g + ((pend_g + cuar_g) if _contar_pend else 0.0)
+            # REGLA Alejandro 22-jul: la CUARENTENA (material que YA llegó por recepción y espera
+            # liberación de Calidad) SÍ se acredita como disponible — está físicamente en planta, no
+            # se re-compra. Lo EN CAMINO (OC pendiente, pend_g) NO reduce el déficit → Alejandro ve la
+            # necesidad EN BRUTO (el pendiente se muestra aparte). El déficit físico = consumo − stock − cuarentena.
+            disponible = stock_g + cuar_g
             deficits = {h: round(max(consumo[h] - disponible, 0), 1) for h in horizontes}
-            # 'neto a pedir' SIEMPRE neto (consumo - stock - lo en camino), independiente
-            # del toggle abast_contar_pendiente. El `deficit` queda BRUTO para monitoreo
-            # (12-jul), pero la SUGERENCIA "Pedir" del front usa esto para NO re-comprar lo
-            # ya pedido · misma fórmula que /generar-oc (#9 · restaura intención del 10-jun).
-            neto_a_pedir = {h: round(max(consumo[h] - stock_g - pend_g, 0), 1) for h in horizontes}
+            # 'neto a pedir' = lo que falta comprar HOY: además del stock físico y la cuarentena,
+            # descuenta lo EN CAMINO (pend_g) para no re-ordenar lo ya pedido. El `deficit` de arriba
+            # queda bruto de en-camino (regla Alejandro) · misma fórmula de neteo que /generar-oc.
+            neto_a_pedir = {h: round(max(consumo[h] - stock_g - cuar_g - pend_g, 0), 1) for h in horizontes}
             urg, h_urg = _urgencia_de(deficits)
             if urg == 'OK' and max(consumo.values()) <= 0.01:
                 continue  # sin consumo · no mostrar
@@ -15919,7 +15919,8 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
             _buf = int(info.get('buffer_dias', 30) or 30)
             _h_obj = _lead + _buf
             _demanda_cob = _consumo_al_dia(consumo, horizontes, _h_obj)
-            _comprar = max(0.0, _demanda_cob - stock_g - pend_g)  # neto (inmune al toggle)
+            # Comprar ahora = neto: descuenta stock + cuarentena (ya llegó) + en-camino (ya pedido) · regla Alejandro 22-jul
+            _comprar = max(0.0, _demanda_cob - stock_g - cuar_g - pend_g)
             # tasa diaria de la VENTANA del lead (no el promedio sobre 365, que aplana la tasa si no
             # hay producción tras N días → sobreestimaba cobertura · revisión 17-jul). Si no hay demanda
             # en la ventana del lead, la cobertura es "infinita" (no urge comprar aunque haya lotes lejanos).
@@ -15977,9 +15978,10 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
             stock_u = float(stock_mee.get(cod, 0) or 0)
             pend_u = float(pendientes_mee.get(cod, 0) or 0)
             cuar_u = float(_cuar_mee.get(str(cod).upper().strip(), 0) or 0)
-            disponible = stock_u + ((pend_u + cuar_u) if _contar_pend else 0.0)  # Sebastián 12-jul · ver interruptor MP
+            # Regla Alejandro 22-jul (igual que MP): cuarentena SÍ se acredita (ya llegó); en-camino no reduce el déficit bruto.
+            disponible = stock_u + cuar_u
             deficits = {h: round(max(consumo[h] - disponible, 0), 1) for h in horizontes}
-            neto_a_pedir = {h: round(max(consumo[h] - stock_u - pend_u, 0), 1) for h in horizontes}  # neto · sugerencia Pedir (#9)
+            neto_a_pedir = {h: round(max(consumo[h] - stock_u - cuar_u - pend_u, 0), 1) for h in horizontes}  # neto · descuenta stock+cuarentena+en-camino
             urg, h_urg = _urgencia_de(deficits)
             if urg == 'OK' and max(consumo.values()) <= 0.01:
                 continue
@@ -16097,12 +16099,11 @@ def _mp_deficit_para_oc(conn, days_ahead=90, atrasadas_dias=7):
     hk = str(int(days_ahead))
     out = {}
     for it in data.get('mps', []):
+        # REGLA Alejandro 22-jul: neto_a_pedir de la pantalla YA descuenta stock + cuarentena + en-camino
+        # (la cuarentena se acredita porque ya llegó · Catalina no la re-compra). generar-OC usa ese neto
+        # DIRECTO — antes restaba cuarentena OTRA VEZ acá (doble conteo) · ahora paridad exacta pantalla↔OC.
         neto = float((it.get('neto_a_pedir') or {}).get(hk, 0) or 0)
-        cuar = float(it.get('cuarentena_g', 0) or 0)
-        # generar-OC ACREDITA cuarentena (material ya recibido, esperando QC · Catalina no lo re-compra),
-        # igual que el motor viejo. La PANTALLA (Alejandro) NO la acredita a propósito (queda rojo hasta
-        # liberar · M39) → única diferencia intencional entre las dos vistas del mismo motor.
-        _buy = max(0.0, neto - cuar)
+        _buy = max(0.0, neto)
         if _buy <= 0.01:
             continue  # solo MP que hay que pedir (igual que el motor viejo · deficit_g>0)
         out[it['codigo']] = {
@@ -16513,31 +16514,38 @@ def abastecimiento_trail_mp(codigo_mp):
     stock_mp = _get_mp_stock(conn)
     stock_actual = float(stock_mp.get(codigo_up, 0))
     pendiente = 0.0
+    # FIX revisión ultracode 22-jul: columnas FANTASMA (cantidad_solicitada_g / solicitud_id NO existen
+    # → la query moría, la tragaba el except → pendiente de SOLs SIEMPRE 0). Ahora usa las columnas reales
+    # (cantidad_g · JOIN por numero) y los MISMOS estados que el motor, para que el trail deje de mentir.
     try:
         for r in c.execute(
-            """SELECT COALESCE(SUM(sci.cantidad_solicitada_g), 0)
+            """SELECT COALESCE(SUM(sci.cantidad_g), 0)
                FROM solicitudes_compra_items sci
-               JOIN solicitudes_compra sc ON sc.id = sci.solicitud_id
+               JOIN solicitudes_compra sc ON sc.numero = sci.numero
                WHERE UPPER(TRIM(sci.codigo_mp)) = ?
-                 AND sc.estado IN ('Pendiente', 'Aprobada')
+                 AND sc.estado IN ('Pendiente', 'En revision', 'Aprobada')
                  AND COALESCE(sc.numero_oc, '') = ''""",
             (codigo_up,),
         ).fetchall():
             pendiente += float(r[0] or 0)
-    except Exception:
-        pass
+    except Exception as _e_sol:
+        log.warning('trail pendiente SOL falló para %s: %s', codigo_up, _e_sol)
     try:
+        # incluye Pagada-no-recibida (igual que el motor · 15290) · antes se omitía → déficit inflado
         for r in c.execute(
             """SELECT COALESCE(SUM(oci.cantidad_g - COALESCE(oci.cantidad_recibida_g, 0)), 0)
                FROM ordenes_compra_items oci
                JOIN ordenes_compra oc ON oc.numero_oc = oci.numero_oc
                WHERE UPPER(TRIM(oci.codigo_mp)) = ?
-                 AND oc.estado IN ('Borrador', 'Revisada', 'Autorizada', 'Parcial')""",
+                 AND (
+                       oc.estado IN ('Borrador', 'Revisada', 'Autorizada', 'Parcial')
+                    OR (oc.estado='Pagada' AND COALESCE(oc.fecha_recepcion,'')='')
+                 )""",
             (codigo_up,),
         ).fetchall():
             pendiente += float(r[0] or 0)
-    except Exception:
-        pass
+    except Exception as _e_oc:
+        log.warning('trail pendiente OC falló para %s: %s', codigo_up, _e_oc)
 
     productos_trail.sort(key=lambda x: -x['gramos_total_365d'])
     return jsonify({

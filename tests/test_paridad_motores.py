@@ -147,50 +147,88 @@ def _set_toggle(valor):
     con.close()
 
 
-def test_paridad_motores_pendiente_segun_toggle(admin_client):
-    """Semántica del interruptor `abast_contar_pendiente` (Sebastián 12-jul).
+def _seed_cuarentena(codigo, cantidad_g):
+    con = _db()
+    con.execute(
+        "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, lote, estado_lote, operador) "
+        "VALUES (?, 'MP Paridad', ?, 'Entrada', date('now'), 'LOTE-CUAR', 'CUARENTENA', 'seed')", (codigo, cantidad_g))
+    con.commit()
+    con.close()
 
-    Divergencia documentada #9: solo la PANTALLA respeta este toggle; el motor de
-    Generar OC SIEMPRE resta lo pendiente (FIX 10-jun · no duplicar SOLs).
-      - toggle ON  → la pantalla también resta → los 2 motores COINCIDEN (neto).
-      - toggle OFF → la pantalla NO resta (bruto) → difieren A PROPÓSITO.
-    Este test bloquea que, CON el toggle ON, ambos resten idéntico. Si alguien
-    cambia cómo un motor resta pendientes, se pone rojo.
+
+def test_neteo_regla_alejandro(admin_client):
+    """Regla de neteo de Alejandro (22-jul · revisión ultracode):
+      - lo EN CAMINO (SOL/OC pendiente) NO reduce el déficit → Alejandro ve la necesidad BRUTA
+        (el pendiente se muestra aparte); el toggle abast_contar_pendiente ya no lo cambia.
+      - la CUARENTENA (material que YA llegó por recepción, esperando QC de Calidad) SÍ se acredita
+        en el déficit Y en 'Pedir' → no se re-compra lo que está físicamente en planta.
+      - 'neto_a_pedir' (columna 'Pedir') == Generar OC: ambos netos de stock + cuarentena + en-camino.
     """
     codigo, producto = "MPPARIDAD9B", "PROD_PARIDAD_TEST9B"
     sol = "SOL-TEST-PARIDAD9"
-    # Demanda 2000 g, stock 500 g, SOL pendiente 1000 g.
+    # Demanda 2000 g · stock 500 g · SOL pendiente 1000 g (en camino) · cuarentena 300 g (ya llegó).
     _seed(codigo, producto, stock_g=500, lotes=4, cant_kg=20, pct=10)
     _seed_sol_pendiente(sol, codigo, 1000)
+    _seed_cuarentena(codigo, 300)
     cu = codigo.upper()
     try:
-        # ── Toggle ON: ambos netos (2000 - 500 - 1000 = 500) y coinciden ──
-        _set_toggle("1")
+        payload = admin_client.get("/api/abastecimiento/consumo-horizontes?horizontes=90").get_json()
+        deficit = _deficit_pantalla(payload, cu)
+        neto = _campo_pantalla(payload, cu, "neto_a_pedir")
         oc = {str(m["codigo_mp"]).upper(): float(m["deficit_g"])
               for m in (admin_client.get("/api/programacion/mps-deficit").get_json().get("mps") or [])}
-        sc = _deficit_pantalla(admin_client.get("/api/abastecimiento/consumo-horizontes?horizontes=90").get_json(), cu)
-        oc_on, sc_on = oc.get(cu, 0.0), sc
-        assert abs(oc_on - sc_on) <= max(1.0, max(oc_on, sc_on) * 0.005), (
-            f"Con toggle ON los motores deben coincidir restando la SOL: OC={oc_on} vs Pantalla={sc_on} (#9)")
-        assert oc_on < 1400, f"Con SOL de 1000g el déficit debe bajar de 1500 a ~500, got {oc_on}"
+        oc_d = oc.get(cu, 0.0)
 
-        # ── Toggle OFF (default): la pantalla NO resta (bruto=1500) · divergencia intencional ──
-        _set_toggle(None)
-        payload_off = admin_client.get("/api/abastecimiento/consumo-horizontes?horizontes=90").get_json()
-        sc_off = _deficit_pantalla(payload_off, cu)
-        assert sc_off > sc_on, (
-            f"Con toggle OFF la pantalla debe mostrar déficit BRUTO (mayor). "
-            f"OFF={sc_off} vs ON={sc_on}. Si esto cambia, revisar el interruptor abast_contar_pendiente.")
-
-        # ── #9 FIX: el 'neto_a_pedir' (lo que usa la sugerencia "Pedir") SIEMPRE es neto,
-        #    independiente del toggle → coincide con lo que Generar OC pediría (evita
-        #    re-comprar lo en camino desde la pantalla).
-        oc_d = oc.get(cu, 0.0)  # OC engine (neto) del bloque toggle-ON de arriba
-        neto = _campo_pantalla(payload_off, cu, "neto_a_pedir")
+        # Déficit BRUTO de en-camino, pero ACREDITA cuarentena: 2000 - 500(stock) - 300(cuar) = 1200.
+        assert abs(deficit - 1200) <= 5, (
+            f"Déficit debe ser bruto de en-camino y acreditar cuarentena: esperado ~1200, got {deficit}")
+        # 'Pedir' (neto_a_pedir) descuenta stock + cuarentena + en-camino: 2000 - 500 - 300 - 1000 = 200.
+        assert abs(neto - 200) <= 5, (
+            f"'Pedir' debe descontar stock+cuarentena+en-camino: esperado ~200, got {neto}")
+        # Paridad EXACTA pantalla 'Pedir' == Generar OC (mismo neto).
         assert abs(neto - oc_d) <= max(1.0, oc_d * 0.005), (
-            f"'neto_a_pedir' de la pantalla ({neto}) debe igualar a Generar OC ({oc_d}) "
-            f"aun con toggle OFF (#9 · la sugerencia Pedir no debe re-comprar lo en camino).")
+            f"neto_a_pedir pantalla ({neto}) debe igualar Generar OC ({oc_d}) · paridad de motores.")
     finally:
         _set_toggle(None)
         _cleanup_sol(sol)
+        _cleanup(codigo, producto)
+
+
+def test_fanout_oc_agrupando_sols_no_infla_pendiente(admin_client):
+    """Fan-out OC↔SOL (revisión ultracode 22-jul): una OC creada desde N solicitudes NO debe
+    inflar el pendiente ×N (el LEFT JOIN a solicitudes_compra multiplicaba las filas → 'Pedir 0'
+    falso → sub-compra). El pendiente debe ser la cantidad REAL de la OC, no × nº de SOLs."""
+    codigo, producto = "MPFANOUT1", "PROD_FANOUT_TEST1"
+    oc_num = "OC-FANOUT-TEST-1"
+    _seed(codigo, producto, stock_g=100, lotes=5, cant_kg=20, pct=10)  # demanda 2000 g · stock 100
+    con = _db()
+    con.execute("DELETE FROM ordenes_compra_items WHERE numero_oc=?", (oc_num,))
+    con.execute("DELETE FROM ordenes_compra WHERE numero_oc=?", (oc_num,))
+    con.execute("DELETE FROM solicitudes_compra WHERE numero_oc=?", (oc_num,))
+    # 1 OC con item de 500 g agrupando 3 SOLs (mismo numero_oc). Fan-out daría 1500; correcto = 500.
+    con.execute("INSERT INTO ordenes_compra (numero_oc, fecha, estado, proveedor, categoria) "
+                "VALUES (?, date('now'), 'Autorizada', 'ProvFanout', 'MP')", (oc_num,))
+    con.execute("INSERT INTO ordenes_compra_items (numero_oc, codigo_mp, nombre_mp, cantidad_g, cantidad_recibida_g) "
+                "VALUES (?, ?, 'MP Paridad', 500, 0)", (oc_num, codigo))
+    for i in range(3):
+        con.execute("INSERT INTO solicitudes_compra (numero, fecha, estado, solicitante, categoria, numero_oc) "
+                    "VALUES (?, date('now'), 'Aprobada', 'seed', 'Materia Prima', ?)", (f"SOL-FANOUT-{i}", oc_num))
+    con.commit()
+    con.close()
+    cu = codigo.upper()
+    try:
+        payload = admin_client.get("/api/abastecimiento/consumo-horizontes?horizontes=90").get_json()
+        neto = _campo_pantalla(payload, cu, "neto_a_pedir")
+        # Con pendiente correcto (500): neto = 2000 - 100(stock) - 500 = 1400.
+        # Con fan-out (1500 = 500×3):   neto = 2000 - 100 - 1500 = 400 (SUB-compra).
+        assert abs(neto - 1400) <= 5, (
+            f"El pendiente NO debe inflarse ×N por las 3 SOLs: neto esperado ~1400 (pend real 500), "
+            f"got {neto} (si es ~400, el fan-out sigue vivo).")
+    finally:
+        con = _db()
+        con.execute("DELETE FROM ordenes_compra_items WHERE numero_oc=?", (oc_num,))
+        con.execute("DELETE FROM ordenes_compra WHERE numero_oc=?", (oc_num,))
+        con.execute("DELETE FROM solicitudes_compra WHERE numero_oc=?", (oc_num,))
+        con.commit()
+        con.close()
         _cleanup(codigo, producto)
