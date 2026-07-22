@@ -1194,7 +1194,7 @@ def diag_abastecimiento_mp(codigo):
         piso = (_dt.utcnow() - _td(hours=5)).date().isoformat()
         prods = c.execute("SELECT producto_nombre, COALESCE(porcentaje,0), COALESCE(cantidad_g_por_lote,0) "
                           "FROM formula_items WHERE UPPER(TRIM(material_id))=? ORDER BY producto_nombre", (cod,)).fetchall()
-        indep = {d: 0.0 for d in _dias}
+        indep = {str(d): 0.0 for d in _dias}
         desglose = []
         for pnom, pct, gpl in prods:
             # header activo?
@@ -1219,13 +1219,13 @@ def diag_abastecimiento_mp(codigo):
                     g = float(gpl) * (kg / lote_kg)
                 else:
                     g = 0.0
-                fila['programado'][d] = {'kg': round(kg, 2), 'lotes': nlotes, 'gramos_esperados': round(g, 1)}
+                fila['programado'][str(d)] = {'kg': round(kg, 2), 'lotes': nlotes, 'gramos_esperados': round(g, 1)}
                 if activo:
-                    indep[d] += g
+                    indep[str(d)] += g
             desglose.append(fila)
         out['productos_que_usan'] = len(prods)
         out['desglose'] = desglose
-        out['independiente_gramos'] = {d: round(indep[d], 1) for d in _dias}
+        out['independiente_gramos'] = {str(d): round(indep[str(d)], 1) for d in _dias}
         # ── MOTOR: abastecimiento ──
         motor = {}
         try:
@@ -1241,7 +1241,7 @@ def diag_abastecimiento_mp(codigo):
             if _mp:
                 for d in _dias:
                     dk = str(d)
-                    motor[d] = {
+                    motor[dk] = {
                         'consumo': round(float((_mp.get('consumo') or {}).get(dk, 0) or 0), 1),
                         'deficit': round(float((_mp.get('deficit') or {}).get(dk, 0) or 0), 1),
                         'neto_a_pedir': round(float((_mp.get('neto_a_pedir') or {}).get(dk, 0) or 0), 1),
@@ -1258,12 +1258,13 @@ def diag_abastecimiento_mp(codigo):
         # ── CUADRA ──
         cuadra = {}
         for d in _dias:
-            m = float((motor.get(d) or {}).get('consumo', 0) or 0)
-            i = float(indep.get(d, 0) or 0)
+            dk = str(d)
+            m = float((motor.get(dk) or {}).get('consumo', 0) or 0)
+            i = float(indep.get(dk, 0) or 0)
             diff = round(m - i, 1)
             tol = max(1.0, i * 0.02)
-            cuadra[d] = {'motor_consumo': m, 'independiente': round(i, 1), 'diferencia': diff,
-                         'cuadra': abs(diff) <= tol}
+            cuadra[dk] = {'motor_consumo': m, 'independiente': round(i, 1), 'diferencia': diff,
+                          'cuadra': abs(diff) <= tol}
         out['cuadra'] = cuadra
         return jsonify(out)
     except Exception as e:
