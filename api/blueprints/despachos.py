@@ -83,16 +83,42 @@ def recepcion_detalle_oc(numero_oc):
     except Exception:
         _CC = ()
     _es_consumo = oc[3] in _CC  # consumible/EPP/papelería → recepción ADMINISTRATIVA (sin cuarentena)
+    # Enriquecer items (Sebastián 21-jul): unidad correcta (MP=g · envases/consumibles=uds),
+    # descripción COMPLETA (los envases mostraban solo el código) y detectar CARGOS que NO se
+    # reciben (flete, domicilio, calibración, servicios embebidos en la OC física).
+    _mee_desc = {}
+    try:
+        _codes = [(i[0] or '').strip().upper() for i in items if (i[0] or '').strip().upper().startswith('MEE-')]
+        if _codes:
+            _ph = ','.join('?' for _ in _codes)
+            for r in c.execute("SELECT UPPER(TRIM(codigo)), COALESCE(descripcion,'') FROM maestro_mee "
+                               "WHERE UPPER(TRIM(codigo)) IN (" + _ph + ")", tuple(_codes)).fetchall():
+                _mee_desc[r[0]] = r[1]
+    except Exception:
+        pass
+    _CARGO_KW = ('FLETE', 'DOMICILIO', 'ENVIO', 'ENVÍO', 'TRANSPORTE', 'CALIBRAC',
+                 'SERVICIO', 'MANTENIMIENTO', 'INSTALAC')
+
+    def _item_dict(i):
+        cod = (i[0] or '').strip()
+        nom = (i[1] or '').strip()
+        inci = (i[6] or '').strip()
+        cu = cod.upper()
+        es_mee = cu.startswith('MEE-')
+        desc_full = (_mee_desc.get(cu) or nom or cod) if es_mee else (nom or cod)
+        _txt = (nom + ' ' + cod).upper()
+        es_cargo = (not es_mee) and (not inci) and any(k in _txt for k in _CARGO_KW)
+        # MP real (con INCI) = gramos · envases/consumibles/otros = unidades
+        unidad = 'g' if (inci and not es_mee) else 'uds'
+        return {'codigo_mp': cod, 'nombre_mp': nom, 'cantidad_g': i[2],
+                'precio_unitario': i[3], 'cantidad_recibida_g': i[4], 'lote_asignado': i[5],
+                'inci': inci, 'descripcion_full': desc_full, 'unidad': unidad,
+                'es_mee': es_mee, 'es_cargo': es_cargo}
     return jsonify({
         'numero_oc': oc[0], 'proveedor': oc[1], 'estado': oc[2],
         'categoria': oc[3], 'fecha': oc[4], 'valor_total': oc[5],
         'creado_por': oc[6], 'observaciones': oc[7], 'es_consumo': _es_consumo,
-        'items': [
-            {'codigo_mp': i[0], 'nombre_mp': i[1], 'cantidad_g': i[2],
-             'precio_unitario': i[3], 'cantidad_recibida_g': i[4], 'lote_asignado': i[5],
-             'inci': i[6]}
-            for i in items
-        ]
+        'items': [_item_dict(i) for i in items]
     })
 
 @bp.route('/api/recepcion/seguimiento')

@@ -429,14 +429,24 @@ function renderOC(d) {
       var prevRec = yaCompleta ? recibidoYa : (pendiente > 0 ? pendiente : Number(it.cantidad_g || 0));
       var pct = it.cantidad_g > 0 ? Math.round(recibidoYa / it.cantidad_g * 100) : 100;
       var esMee = ((it.codigo_mp||'').toUpperCase().indexOf('MEE-') === 0) || (d.categoria === 'MEE');
+      var esCargo = !!it.es_cargo;
+      var descMat = it.descripcion_full || ((it.inci && it.inci.trim()) ? it.inci : (it.codigo_mp || it.nombre_mp || '-'));
       var tr = document.createElement('tr');
       tr.id = 'item-row-' + i;
+      if (esCargo) {
+        tr.innerHTML =
+          '<td style="text-align:center;color:#cbd5e1;">&middot;</td><td></td>' +
+          '<td><strong style="color:#78716c;">' + descMat + '</strong><br><small style="color:#a8a29e;">' + (it.codigo_mp||'') + '</small></td>' +
+          '<td colspan="8" style="color:#78716c;font-style:italic;font-size:12px;">&#128164; Cargo administrativo (flete / domicilio / servicio) &middot; no se recibe f&iacute;sicamente</td>';
+        tbody.appendChild(tr);
+        return;
+      }
       tr.innerHTML =
         '<td style="text-align:center;">' + getItemIcon('OK', pct) + '</td>' +
         '<td style="text-align:center;">' + (yaCompleta
             ? '<span title="Ya recibida completa" style="color:#16a34a;font-weight:800;font-size:15px;">&#10003;</span>'
             : '<input type="checkbox" id="rx-' + i + '" checked onchange="toggleRecibir(' + i + ')" style="width:18px;height:18px;cursor:pointer;" title="Destildá para dejar esta MP pendiente">') + '</td>' +
-        '<td><strong>' + ((it.inci && it.inci.trim()) ? it.inci : (it.codigo_mp || it.nombre_mp || '-')) + '</strong><br><small style="color:#78716c">' + (it.codigo_mp || it.nombre_mp || '') + (recibidoYa > 0 && !yaCompleta ? ' · <span style="color:#b45309;">ya recibido ' + recibidoYa.toLocaleString() + '</span>' : '') + '</small></td>' +
+        '<td><strong>' + descMat + '</strong><br><small style="color:#78716c">' + (it.codigo_mp || it.nombre_mp || '') + (recibidoYa > 0 && !yaCompleta ? ' · <span style="color:#b45309;">ya recibido ' + recibidoYa.toLocaleString() + '</span>' : '') + '</small></td>' +
         '<td class="valor">' + Number(it.cantidad_g||0).toLocaleString() + ' ' + unidad + '</td>' +
         '<td><input type="number" id="cant-' + i + '" data-codigo="' + it.codigo_mp + '" data-sol="' + it.cantidad_g + '" value="' + prevRec + '"' + (yaCompleta ? ' disabled' : '') + ' min="0" step="0.01" oninput="updateRow(' + i + ')"></td>' +
         '<td id="dif-' + i + '" class="valor" style="font-weight:600;"></td>' +
@@ -505,6 +515,7 @@ async function registrarRecepcion() {
   var ocItems = currentOC.items || [];
   for (var idx = 0; idx < ocItems.length; idx++) {
     var it = ocItems[idx];
+    if (it.es_cargo) { continue; }  // flete/domicilio/servicio · no se recibe físicamente
     var cantEl = document.getElementById('cant-' + idx);
     var notaEl = document.getElementById('nota-' + idx);
     // Recepción parcial: si la línea está destildada (o no tiene checkbox = ya recibida
