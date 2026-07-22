@@ -120,6 +120,12 @@ td input[type=text]{width:100%;padding:6px 9px;border:1px solid var(--line);bord
     <div id="queue-list"><p style="color:#a8a29e;font-size:13px;">Cargando...</p></div>
   </div>
 
+  <div class="card" id="serig-card" style="display:none">
+    <h2>&#127912; Envases que volvieron de serigraf&iacute;a / tampograf&iacute;a</h2>
+    <p style="color:#78716c;font-size:12px;margin:2px 0 12px">Marc&aacute; que llegaron y con qu&eacute; cantidad (administrativo). Al recibirlos, quedan en cuarentena y le avisa a <b>Calidad</b> y <b>Direcci&oacute;n T&eacute;cnica</b> para que revisen el <b>arte</b>.</p>
+    <div id="serig-list"></div>
+  </div>
+
   <div class="card">
     <h2>&#128269; Registrar Recepcion</h2>
     <div class="search-row">
@@ -763,7 +769,39 @@ async function loadSeguimiento() {
     renderQueue([]); renderMonitoreo([]);
   }
 }
+// ── Retornos de serigrafía (Sebastián 21-jul): Catalina los recibe acá → cuarentena → avisa Calidad/DT ──
+async function loadSerigRetornos(){
+  var card=document.getElementById('serig-card'), box=document.getElementById('serig-list');
+  if(!card||!box) return;
+  try{
+    var d=await (await fetch('/api/programacion/marcacion-ordenes',{cache:'no-store'})).json();
+    var its=((d&&d.items)||[]).filter(function(o){return o.estado==='enviado';});
+    if(!its.length){ card.style.display='none'; return; }
+    card.style.display='';
+    box.innerHTML=its.map(function(o){
+      var enviado=Math.round(o.cantidad_enviada||0);
+      return '<div style="border:1px solid #ede9f6;border-radius:12px;padding:12px 15px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">'
+        +'<div><div style="font-weight:700;color:#1e1b2e">'+esc(o.serigrafiado||o.serigrafiado_codigo||'')+'</div>'
+        +'<div style="font-size:11.5px;color:#78716c;margin-top:2px">'+esc(o.producto||'?')+' &middot; '+esc(o.metodo||'')+' &middot; '+esc(o.proveedor||'')+' &middot; enviados '+enviado+' uds</div></div>'
+        +'<div style="display:flex;gap:8px;align-items:center"><input type="number" id="sr-cant-'+o.id+'" value="'+enviado+'" min="0" style="width:90px;padding:7px 9px;border:1px solid #d6d3d1;border-radius:8px;font-size:13px;text-align:right"> '
+        +'<button onclick="recibirSerig('+o.id+')" style="background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;border:none;border-radius:9px;padding:9px 15px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap">✓ Recibir</button></div></div>';
+    }).join('');
+  }catch(e){ card.style.display='none'; }
+}
+async function recibirSerig(oid){
+  var el=document.getElementById('sr-cant-'+oid);
+  var cant=el?(parseFloat(el.value)||0):0;
+  if(cant<=0){ alert('Poné la cantidad recibida'); return; }
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/programacion/marcacion-orden/'+oid+'/recibir',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':(t.csrf_token||t.token||'')},credentials:'same-origin',body:JSON.stringify({cantidad_recibida:cant})});
+    var d=await r.json();
+    if(d.ok){ alert('✓ Recibido en cuarentena · Calidad y Dirección Técnica ya pueden revisar el arte.'); loadSerigRetornos(); }
+    else alert('Error: '+(d.error||''));
+  }catch(e){ alert('Error de red'); }
+}
 loadSeguimiento();
+loadSerigRetornos();
 </script>
 </body>
 </html>

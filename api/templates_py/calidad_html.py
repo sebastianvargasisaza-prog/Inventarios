@@ -265,6 +265,8 @@ textarea{resize:vertical;min-height:70px;}
       <div class="ccp-st"><span class="n">&#x1F152;</span><span class="lb">Análisis y liberación (F02)<small>COC-PRO-002-F02</small></span></div>
     </div>
   </div>
+  <!-- Cola de ARTE de envases por revisar (Sebastián 21-jul) · vuelve de serigrafía → checklist -->
+  <div id="arte-cola-cal"></div>
   <div class="ccp-kpis" id="cc-kpis"></div>
   <input type="text" class="ccp-search" oninput="var q=this.value.toLowerCase();document.querySelectorAll('#cc-tbody tr').forEach(function(r){r.style.display=((r.textContent||'').toLowerCase().indexOf(q)>=0)?'':'none';});" placeholder="&#128269; Buscar material, lote, proveedor u OC…">
   <div class="ccp-wrap" style="overflow-x:auto;">
@@ -2357,7 +2359,57 @@ function _ccRenderKpis(rows){
     +_ccKpi(enAnalisis,'Listas para F02','#b45309')
     +_ccKpi(novedad,'Con novedad','var(--cx-danger)');
 }
+// ── Cola de arte de envases por revisar (Sebastián 21-jul) ────────────────────
+async function loadArteCola(contId){
+  var box=document.getElementById(contId); if(!box) return;
+  try{
+    var d=await (await fetch('/api/programacion/marcacion-arte-pendiente',{cache:'no-store'})).json();
+    var its=(d&&d.items)||[];
+    if(!its.length){ box.innerHTML=''; return; }
+    var _e=function(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
+    var cards=its.map(function(it){
+      return '<div style="background:#fff;border:1px solid #ede9f6;border-left:4px solid #7c3aed;border-radius:12px;padding:13px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px">'
+        +'<div><div style="font-weight:800;font-size:14px;color:#1e1b2e">'+_e(it.serigrafiado_desc||it.serigrafiado)+'</div>'
+        +'<div style="font-size:11.5px;color:#78716c;margin-top:2px">'+_e(it.serigrafiado)+' &middot; '+_e(it.producto||'?')+' &middot; '+_e(it.metodo||'')+' &middot; '+_e(it.proveedor||'')+' &middot; '+_e(it.cantidad||0)+' uds &middot; volvió '+_e(it.fecha_retorno||'')+'</div></div>'
+        +'<button onclick="abrirArteChecklist('+it.id+',this)" data-desc="'+_e((it.serigrafiado_desc||it.serigrafiado)+' · '+(it.producto||''))+'" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;border-radius:9px;padding:9px 15px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap">&#127912; Revisar arte / liberar</button></div>';
+    }).join('');
+    box.innerHTML='<div style="background:var(--cx-card,#fff);border:1px solid var(--cx-border,#ece9f6);border-radius:14px;padding:16px 18px;margin-bottom:16px">'
+      +'<div style="display:flex;align-items:center;gap:9px;margin-bottom:4px"><span style="font-size:16px">&#127912;</span><b style="font-size:15px;color:var(--cx-text,#1e1b2e)">Arte de envases por revisar</b><span style="background:#fef3c7;color:#92400e;font-size:10px;font-weight:800;border-radius:999px;padding:2px 9px">'+its.length+'</span></div>'
+      +'<div style="font-size:11.5px;color:var(--cx-text-mute,#78716c);margin-bottom:12px">Envases que volvieron de serigrafía/tampografía · verificá <b>arte, estado y características</b> y liberá. El envase ya es conocido y ya pasó calidad; acá solo revisás la impresión.</div>'
+      +cards+'</div>';
+  }catch(e){ box.innerHTML=''; }
+}
+function abrirArteChecklist(oid, btn){
+  var desc=btn?btn.getAttribute('data-desc'):'';
+  var ov=document.getElementById('arte-chk-ov'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='arte-chk-ov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(20,18,40,.55);z-index:100000;display:flex;align-items:flex-start;justify-content:center;padding:24px;overflow:auto';
+  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:540px;width:100%;box-shadow:0 30px 80px -24px rgba(24,24,45,.55);overflow:hidden">'
+    +'<div style="background:linear-gradient(120deg,#f5f3ff,#faf5ff,#fff);border-bottom:1px solid #ece9f6;padding:18px 22px;display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:16px;font-weight:800;color:#1e1b2e">&#127912; Checklist de arte</div><div style="font-size:11px;color:#8b8b9e;margin-top:2px">'+desc+'</div></div><button onclick="document.getElementById(\'arte-chk-ov\').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#a1a1b0">&times;</button></div>'
+    +'<div style="padding:18px 22px">'
+    +'<div style="font-size:11px;color:#78716c;margin-bottom:14px">Lo firma <b>Calidad o Dirección Técnica</b>. Si algo no cumple, no liberes y dejá la observación.</div>'
+    +'<label style="display:flex;gap:9px;align-items:flex-start;margin-bottom:11px;cursor:pointer"><input type="checkbox" id="ak-arte" style="width:17px;height:17px;margin-top:1px"><span><b>Arte conforme</b> al aprobado por DT <span style="color:#dc2626">*</span></span></label>'
+    +'<label style="display:flex;gap:9px;align-items:flex-start;margin-bottom:11px;cursor:pointer"><input type="checkbox" id="ak-estado" style="width:17px;height:17px;margin-top:1px"><span><b>Estado</b> OK (sin daños, limpio) <span style="color:#dc2626">*</span></span></label>'
+    +'<label style="display:flex;gap:9px;align-items:flex-start;margin-bottom:11px;cursor:pointer"><input type="checkbox" id="ak-caract" style="width:17px;height:17px;margin-top:1px"><span><b>Características</b> correctas (color, ubicación, calidad de impresión) <span style="color:#dc2626">*</span></span></label>'
+    +'<label style="display:flex;gap:9px;align-items:flex-start;margin-bottom:13px;cursor:pointer"><input type="checkbox" id="ak-cant" style="width:17px;height:17px;margin-top:1px"><span><b>Cantidad</b> coincide con lo enviado</span></label>'
+    +'<textarea id="ak-obs" rows="2" placeholder="Observaciones (opcional)" style="width:100%;padding:9px 11px;border:1px solid #d6d3d1;border-radius:9px;font-size:13px;box-sizing:border-box;resize:vertical"></textarea>'
+    +'<div id="ak-msg" style="font-size:12px;margin-top:8px"></div></div>'
+    +'<div style="border-top:1px solid #eef2f7;padding:14px 22px;display:flex;justify-content:flex-end;gap:8px"><button onclick="document.getElementById(\'arte-chk-ov\').remove()" style="background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:8px;padding:8px 15px;cursor:pointer">Cancelar</button><button onclick="guardarArteChecklist('+oid+')" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-weight:800;cursor:pointer">&#10003; Firmar y liberar</button></div></div>';
+  document.body.appendChild(ov);
+}
+async function guardarArteChecklist(oid){
+  var arte=document.getElementById('ak-arte').checked, estado=document.getElementById('ak-estado').checked, caract=document.getElementById('ak-caract').checked, cant=document.getElementById('ak-cant').checked;
+  var obs=document.getElementById('ak-obs').value.trim(), msg=document.getElementById('ak-msg');
+  if(!(arte&&estado&&caract)){ msg.innerHTML='<span style="color:#dc2626">Arte + estado + características deben estar OK para liberar.</span>'; return; }
+  try{
+    var r=await fetch('/api/programacion/marcacion-orden/'+oid+'/liberar-checklist',_fetchOpts('POST',{arte:arte,estado:estado,caracteristicas:caract,cantidad:cant,observaciones:obs}));
+    var d=await r.json();
+    if(d.ok){ var ov=document.getElementById('arte-chk-ov'); if(ov) ov.remove(); if(window.toast) toast('✓ Liberado por '+(d.rol||'')); else alert('✓ Liberado por '+(d.rol||'')); loadArteCola('arte-cola-cal'); }
+    else msg.innerHTML='<span style="color:#dc2626">'+(d.error||'Error')+'</span>';
+  }catch(e){ msg.innerHTML='<span style="color:#dc2626">Error de red</span>'; }
+}
 async function loadCuarentena(){
+  loadArteCola('arte-cola-cal');
   const tbody=document.getElementById('cc-tbody');
   try{
     const r=await fetch('/api/calidad/recepcion-pipeline');

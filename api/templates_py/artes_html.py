@@ -83,6 +83,9 @@ ARTES_HTML = r"""<!doctype html>
     <button class="btn primary" id="sol-btn" onclick="abrirSolicitar()" style="display:none">+ Solicitar revisión</button>
   </div>
 
+  <!-- Cola de arte de envases que volvieron de serigrafía (Sebastián 21-jul) -->
+  <div id="arte-cola-dt"></div>
+
   <div class="grid" id="lista"><div class="empty">Cargando...</div></div>
 </div>
 
@@ -141,7 +144,57 @@ function driveEmbed(url){
   return null;
 }
 
+// ── Cola de arte de envases que volvieron de serigrafía (Sebastián 21-jul · misma que Calidad) ──
+async function loadArteColaDT(){
+  var box=document.getElementById('arte-cola-dt'); if(!box) return;
+  try{
+    var d=await (await fetch('/api/programacion/marcacion-arte-pendiente',{cache:'no-store'})).json();
+    var its=(d&&d.items)||[];
+    if(!its.length){ box.innerHTML=''; return; }
+    var cards=its.map(function(it){
+      return '<div style="background:#fff;border:1px solid #ede9f6;border-left:4px solid #7c3aed;border-radius:12px;padding:13px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px">'
+        +'<div><div style="font-weight:800;font-size:14px;color:#1e1b2e">'+esc(it.serigrafiado_desc||it.serigrafiado)+'</div>'
+        +'<div style="font-size:11.5px;color:#78716c;margin-top:2px">'+esc(it.serigrafiado)+' &middot; '+esc(it.producto||'?')+' &middot; '+esc(it.metodo||'')+' &middot; '+esc(it.proveedor||'')+' &middot; '+esc(it.cantidad||0)+' uds &middot; volvió '+esc(it.fecha_retorno||'')+'</div></div>'
+        +'<button onclick="abrirArteChkDT('+it.id+',this)" data-desc="'+esc((it.serigrafiado_desc||it.serigrafiado)+' · '+(it.producto||''))+'" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;border-radius:9px;padding:9px 15px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap">🎨 Revisar arte / liberar</button></div>';
+    }).join('');
+    box.innerHTML='<div style="background:#fff;border:1px solid #ece9f6;border-radius:14px;padding:16px 18px;margin:16px 0">'
+      +'<div style="display:flex;align-items:center;gap:9px;margin-bottom:4px"><span style="font-size:16px">🎨</span><b style="font-size:15px;color:#1e1b2e">Arte de envases por revisar</b><span style="background:#fef3c7;color:#92400e;font-size:10px;font-weight:800;border-radius:999px;padding:2px 9px">'+its.length+'</span></div>'
+      +'<div style="font-size:11.5px;color:#78716c;margin-bottom:12px">Envases que volvieron de serigrafía/tampografía · verificá <b>arte, estado y características</b> y liberá.</div>'
+      +cards+'</div>';
+  }catch(e){ box.innerHTML=''; }
+}
+function abrirArteChkDT(oid, btn){
+  var desc=btn?btn.getAttribute('data-desc'):'';
+  var ov=document.getElementById('arte-chk-ov'); if(ov) ov.remove();
+  ov=document.createElement('div'); ov.id='arte-chk-ov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(20,18,40,.55);z-index:100000;display:flex;align-items:flex-start;justify-content:center;padding:24px;overflow:auto';
+  ov.innerHTML='<div style="background:#fff;border-radius:16px;max-width:540px;width:100%;box-shadow:0 30px 80px -24px rgba(24,24,45,.55);overflow:hidden">'
+    +'<div style="background:linear-gradient(120deg,#f5f3ff,#faf5ff,#fff);border-bottom:1px solid #ece9f6;padding:18px 22px;display:flex;justify-content:space-between;align-items:center"><div><div style="font-size:16px;font-weight:800;color:#1e1b2e">🎨 Checklist de arte</div><div style="font-size:11px;color:#8b8b9e;margin-top:2px">'+desc+'</div></div><button onclick="document.getElementById(\'arte-chk-ov\').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#a1a1b0">&times;</button></div>'
+    +'<div style="padding:18px 22px">'
+    +'<div style="font-size:11px;color:#78716c;margin-bottom:14px">Lo firma <b>Dirección Técnica o Calidad</b>. Si algo no cumple, no liberes y dejá la observación.</div>'
+    +'<label style="display:flex;gap:9px;align-items:flex-start;margin-bottom:11px;cursor:pointer"><input type="checkbox" id="ak-arte" style="width:17px;height:17px;margin-top:1px"><span><b>Arte conforme</b> al aprobado por DT <span style="color:#dc2626">*</span></span></label>'
+    +'<label style="display:flex;gap:9px;align-items:flex-start;margin-bottom:11px;cursor:pointer"><input type="checkbox" id="ak-estado" style="width:17px;height:17px;margin-top:1px"><span><b>Estado</b> OK (sin daños, limpio) <span style="color:#dc2626">*</span></span></label>'
+    +'<label style="display:flex;gap:9px;align-items:flex-start;margin-bottom:11px;cursor:pointer"><input type="checkbox" id="ak-caract" style="width:17px;height:17px;margin-top:1px"><span><b>Características</b> correctas (color, ubicación, impresión) <span style="color:#dc2626">*</span></span></label>'
+    +'<label style="display:flex;gap:9px;align-items:flex-start;margin-bottom:13px;cursor:pointer"><input type="checkbox" id="ak-cant" style="width:17px;height:17px;margin-top:1px"><span><b>Cantidad</b> coincide con lo enviado</span></label>'
+    +'<textarea id="ak-obs" rows="2" placeholder="Observaciones (opcional)" style="width:100%;padding:9px 11px;border:1px solid #d6d3d1;border-radius:9px;font-size:13px;box-sizing:border-box;resize:vertical"></textarea>'
+    +'<div id="ak-msg" style="font-size:12px;margin-top:8px"></div></div>'
+    +'<div style="border-top:1px solid #eef2f7;padding:14px 22px;display:flex;justify-content:flex-end;gap:8px"><button onclick="document.getElementById(\'arte-chk-ov\').remove()" style="background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:8px;padding:8px 15px;cursor:pointer">Cancelar</button><button onclick="guardarArteChkDT('+oid+')" style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-weight:800;cursor:pointer">✓ Firmar y liberar</button></div></div>';
+  document.body.appendChild(ov);
+}
+async function guardarArteChkDT(oid){
+  var arte=document.getElementById('ak-arte').checked, estado=document.getElementById('ak-estado').checked, caract=document.getElementById('ak-caract').checked, cant=document.getElementById('ak-cant').checked;
+  var obs=document.getElementById('ak-obs').value.trim(), msg=document.getElementById('ak-msg');
+  if(!(arte&&estado&&caract)){ msg.innerHTML='<span style="color:#dc2626">Arte + estado + características deben estar OK para liberar.</span>'; return; }
+  try{
+    var t=await csrf();
+    var r=await fetch('/api/programacion/marcacion-orden/'+oid+'/liberar-checklist',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':t},credentials:'same-origin',body:JSON.stringify({arte:arte,estado:estado,caracteristicas:caract,cantidad:cant,observaciones:obs})});
+    var d=await r.json();
+    if(d.ok){ var ov=document.getElementById('arte-chk-ov'); if(ov) ov.remove(); alert('✓ Liberado por '+(d.rol||'')); loadArteColaDT(); }
+    else msg.innerHTML='<span style="color:#dc2626">'+esc(d.error||'Error')+'</span>';
+  }catch(e){ msg.innerHTML='<span style="color:#dc2626">Error de red</span>'; }
+}
 async function cargar(){
+  loadArteColaDT();
   try{
     var d = await fetch('/api/artes').then(function(r){return r.json();});
     if(d.error){document.getElementById('lista').innerHTML='<div class="empty">'+esc(d.error)+'</div>';return;}

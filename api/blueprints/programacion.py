@@ -14055,7 +14055,7 @@ def marcacion_orden_liberar_checklist(oid):
     (arte / estado / características / cantidad). Solo Dirección Técnica, Aseguramiento o Calidad
     (registro electrónico: quién + rol + checks + observaciones + audit). El envase ya es conocido
     y ya pasó calidad; lo nuevo es la impresión."""
-    from config import TECNICA_USERS, ASEGURAMIENTO_USERS, CALIDAD_USERS, ADMIN_USERS
+    from config import TECNICA_USERS, CALIDAD_USERS, ADMIN_USERS
     u = session.get('compras_user', '')
     if not u:
         return jsonify({'error': 'No autorizado'}), 401
@@ -14064,12 +14064,10 @@ def marcacion_orden_liberar_checklist(oid):
         rol = 'Admin'
     elif _u in {x.lower() for x in TECNICA_USERS}:
         rol = 'Dirección Técnica'
-    elif _u in {x.lower() for x in ASEGURAMIENTO_USERS}:
-        rol = 'Aseguramiento'
     elif _u in {x.lower() for x in CALIDAD_USERS}:
         rol = 'Calidad'
     else:
-        return jsonify({'error': 'Solo Dirección Técnica, Aseguramiento o Calidad pueden liberar el checklist de arte'}), 403
+        return jsonify({'error': 'Solo Dirección Técnica o Calidad pueden liberar el checklist de arte'}), 403
     d = request.json or {}
     chk = {'arte': bool(d.get('arte')), 'estado': bool(d.get('estado')),
            'caracteristicas': bool(d.get('caracteristicas')), 'cantidad': bool(d.get('cantidad')),
@@ -14137,7 +14135,54 @@ def marcacion_orden_recibir(oid):
     except Exception:
         pass
     conn.commit()
+    # Campana a Calidad + Dirección Técnica: volvió un envase marcado, espera revisión de arte
+    try:
+        from config import CALIDAD_USERS, TECNICA_USERS
+        from blueprints.notif import push_notif_multi
+        _prod = ''
+        try:
+            _pr = c.execute("SELECT COALESCE(producto_nombre,'') FROM marcacion_ordenes WHERE id=?", (oid,)).fetchone()
+            _prod = (_pr[0] if _pr else '') or ''
+        except Exception:
+            pass
+        push_notif_multi(
+            list(set(CALIDAD_USERS) | set(TECNICA_USERS)),
+            'arte_envase', '🎨 Envase marcado por revisar',
+            body=(serig + (' · ' + _prod if _prod else '') + ' volvió de marcación · revisá el arte para liberarlo'),
+            link='/calidad#tab-cc', remitente='marcacion')
+    except Exception:
+        pass
     return jsonify({'ok': True, 'orden_id': oid, 'cantidad_recibida': cant})
+
+
+@bp.route('/api/programacion/marcacion-arte-pendiente', methods=['GET'])
+def marcacion_arte_pendiente():
+    """Cola de 'arte de envases por revisar' (Sebastián 21-jul): órdenes de marcación en estado
+    'recibido' (volvieron de serigrafía, en cuarentena) esperando el checklist de arte. Aparece en
+    los módulos Calidad y Dirección Técnica para que ELLOS liberen (no en la pestaña de Compras)."""
+    from config import TECNICA_USERS, CALIDAD_USERS, ADMIN_USERS
+    u = (session.get('compras_user', '') or '').lower()
+    if not u:
+        return jsonify({'error': 'No autorizado'}), 401
+    _ok = {x.lower() for x in (set(TECNICA_USERS) | set(CALIDAD_USERS) | set(ADMIN_USERS))}
+    if u not in _ok:
+        return jsonify({'error': 'Solo Calidad o Dirección Técnica', 'items': []}), 403
+    conn = get_db(); c = conn.cursor()
+    try:
+        rows = c.execute(
+            "SELECT mo.id, COALESCE(mo.producto_nombre,''), COALESCE(mo.base_codigo,''), "
+            " mo.serigrafiado_codigo, COALESCE(mo.metodo,''), COALESCE(mo.proveedor,''), "
+            " COALESCE(mo.cantidad_recibida, mo.cantidad_enviada, 0), COALESCE(mo.fecha_retorno,''), "
+            " COALESCE(mm.descripcion,'') "
+            "FROM marcacion_ordenes mo "
+            "LEFT JOIN maestro_mee mm ON UPPER(TRIM(mm.codigo))=UPPER(TRIM(mo.serigrafiado_codigo)) "
+            "WHERE COALESCE(mo.estado,'')='recibido' ORDER BY mo.fecha_retorno DESC, mo.id DESC").fetchall()
+    except Exception as e:
+        return jsonify({'error': str(e)[:150], 'items': []}), 500
+    items = [{'id': r[0], 'producto': r[1], 'base': r[2], 'serigrafiado': r[3], 'metodo': r[4],
+              'proveedor': r[5], 'cantidad': r[6], 'fecha_retorno': (r[7] or '')[:10],
+              'serigrafiado_desc': r[8]} for r in rows]
+    return jsonify({'ok': True, 'items': items, 'total': len(items)})
 
 
 @bp.route('/api/programacion/marcacion-ordenes', methods=['GET'])
