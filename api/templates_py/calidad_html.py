@@ -2574,7 +2574,8 @@ async function openF01(mov_id, origen){
       +_rcFld('Realiza la recepción (analista)',_rcInput('f01_realiza_por',g('realiza_por')))
       +_rcFld('Aprueba la recepción'+(org==='MEE'?' (jefe · libera)':''),_rcInput('f01_aprueba_por',g('aprueba_por')))
       +'</div>'
-      +'<div style="margin-top:16px;display:flex;gap:10px;align-items:center"><button class="rcm-save" style="flex:1" onclick="guardarF01('+mov_id+',&quot;'+org+'&quot;)">&#128190; Guardar F01</button>'
+      +'<div style="margin-top:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="rcm-save" style="flex:1;min-width:180px" onclick="guardarF01('+mov_id+',&quot;'+org+'&quot;)">&#128190; Guardar F01</button>'
+      +(f.id?'<button type="button" onclick="window.open(\'/api/calidad/recepcion-tecnica/imprimible?mov_id='+mov_id+'&origen='+org+'\',\'_blank\')" title="Imprimir el F01" style="background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe;border-radius:10px;padding:11px 16px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap">&#128424;&#65039; Imprimir F01</button>':'')
       +'<button type="button" onclick="abrirRotuloF01()" title="Imprime el rótulo con el código, lote y cantidad de este insumo (editable)" style="background:#faf5ff;color:#6d28d9;border:1px solid #e9d5ff;border-radius:10px;padding:11px 16px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap">&#128424;&#65039; Rótulo</button></div>'
       +'</div>';
     _rcOverlay(html);
@@ -2671,7 +2672,8 @@ async function openF02(mov_id){
       +'<div style="grid-column:1/3">'+_rcFld('Aprueba (JEFE de Control de Calidad)',_rcInput('f02_aprobo_por',f.aprobo_por||''))+'</div>'
       +'</div>'
       +'<div class="rcm-warn">&#9888; "Aprobado" + firma del jefe LIBERA el lote (queda VIGENTE, stock usable). "No aprobado" lo rechaza.</div>'
-      +'<div style="margin-top:14px"><button class="rcm-save" onclick="guardarF02('+mov_id+')">&#128190; Guardar F02</button></div>'
+      +'<div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="rcm-save" style="flex:1;min-width:180px" onclick="guardarF02('+mov_id+')">&#128190; Guardar F02</button>'
+      +(f.id?'<button type="button" onclick="window.open(\'/api/calidad/certificado-analisis/imprimible?mov_id='+mov_id+'\',\'_blank\')" title="Imprimir el F02" style="background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe;border-radius:10px;padding:11px 16px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap">&#128424;&#65039; Imprimir F02</button>':'')+'</div>'
       +'</div>';
     _rcOverlay(html);
   }catch(e){ alert('Error abriendo F02: '+e.message); }
