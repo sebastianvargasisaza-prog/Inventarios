@@ -1315,6 +1315,21 @@ def diag_maestro_duplicados_inci():
         return jsonify({'ok': False, 'error': str(e)[:200], 'trace': traceback.format_exc()[-400:]}), 500
 
 
+@app.route('/diag/maestro-dump')
+def diag_maestro_dump():
+    """READ-ONLY: dump código->INCI de TODO el maestro (para cruzar colisiones batch↔maestro offline).
+    Sin datos sensibles (solo código, INCI, comercial, activo)."""
+    try:
+        from database import get_db
+        c = get_db().cursor()
+        out = {}
+        for r in c.execute("SELECT UPPER(TRIM(codigo_mp)), COALESCE(nombre_inci,''), COALESCE(nombre_comercial,''), COALESCE(activo,1) FROM maestro_mps").fetchall():
+            out[r[0]] = {'inci': r[1] or '', 'comercial': (r[2] or '')[:30], 'activo': int(r[3] or 1)}
+        return jsonify({'ok': True, 'n': len(out), 'maestro': out})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)[:200]}), 500
+
+
 @app.route('/diag/matriz-batch')
 def diag_matriz_batch():
     """LA MATRIZ (Sebastián 23-jul): estado consolidado de TODOS los productos mapeados desde batch
