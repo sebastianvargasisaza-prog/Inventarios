@@ -14,6 +14,30 @@ MAESTRO_HINTS = {
 # Se carga en el MBR vía /api/brd/mbr/cargar-instructivo (respeta inmutabilidad: MBR aprobado -> versión
 # nueva en borrador que Calidad aprueba con e-firma). El % de MP sigue saliendo de la fórmula (sección 3).
 BATCH_INSTRUCTIVOS = {
+    "EMULSION HIDRATANTE ILUMINADORA": [
+        "Paso 1. PREPARACIÓN FASE A: pesar el agua desionizada en el homogeneizador o en un tanque de capacidad adecuada. Reservar 10% del agua aparte para dilución de activos.",
+        "Paso 2. Encender agitador a 400-450 rpm. Tamizar el EZ-4U sobre el agua bajo agitación constante, agregando lentamente en zona de máxima agitación. No agregar en zonas sin movimiento (forma grumos difíciles de dispersar).",
+        "Paso 3. Agitar durante 10-15 minutos hasta dispersión completamente homogénea. No deben verse partículas secas ni grumos.",
+        "Paso 4. En recipiente aparte: dispersar Ácido Hialurónico 300 kDa en agua fría bajo agitación suave. Agitar hasta solución uniforme. No usar calor.",
+        "Paso 5. Disolver N-Acetilglucosamina y Niacinamida en agua. Agitar hasta disolución completa.",
+        "Paso 6. Incorporar al homogeneizador en orden: solución de HA, solución NAG + Niacinamida, Propanediol, EDTA Disódico.",
+        "Paso 7. Agitar 10 min a 300 rpm hasta fase acuosa uniforme y homogénea.",
+        "Paso 8. ADICIÓN PEG-12 AL HOMOGENEIZADOR: reducir agitación a 200 rpm, agregar PEG-12 Dimeticona directamente al homogeneizador y agitar 5 minutos hasta incorporación completa y homogénea.",
+        "Paso 9. CRÍTICO: la PEG-12 Dimeticona DEBE estar en el homogeneizador ANTES de agregar la Fase B. Su presencia durante la emulsificación actúa como co-emulsionante, reduce el tamaño de gota y produce una emulsión más blanca y estable.",
+        "Paso 10. PREPARACIÓN FASE B: en recipiente auxiliar de acero inoxidable, pesar en orden: Dicaprylyl Carbonate, Propylheptyl Caprylate, Coco-Caprylate, Alcohol cetílico, Cetyl Tranexamate Mesylate (CTM).",
+        "Paso 11. Calentar bajo agitación constante hasta 65-70°C. Mantener temperatura y agitación hasta que el CTM esté COMPLETAMENTE DISUELTO y la mezcla sea TRANSPARENTE. Registrar temperatura real.",
+        "Paso 12. CRÍTICO: no avanzar si persiste turbidez o partículas sólidas. Si después de 15 min a 70°C el CTM no disuelve completamente, aumentar a 75°C y agitar 10 min más.",
+        "Paso 13. Sin retirar del calor, agregar en orden: PolyAquol LW, Tetrahexyldecyl Ascorbate, Aceite de Cacay, Ceramida NP, Vitamina E, Tinogard TT, 4-Butilresorcinol.",
+        "Paso 14. Retirar del calor. Enfriar a 40-45°C bajo agitación suave.",
+        "Paso 15. EMULSIFICACIÓN: aumentar agitación del homogeneizador a 300-400 rpm. Agregar la Fase B sobre el homogeneizador (Fase A + PEG-12) de forma LENTA Y CONTINUA, en hilo fino, bajo agitación constante. NUNCA agregar Fase A sobre Fase B.",
+        "Paso 16. Continuar agitando 15 minutos hasta emulsión homogénea y uniforme.",
+        "Paso 17. OPCIONAL (si la emulsión presenta aspecto translúcido o gelatinoso): activar el rotor-estátor del homogeneizador durante 1-2 minutos. Reduce el tamaño de gota y produce emulsión más blanca y estable.",
+        "Paso 18. Reducir agitación a 150-200 rpm. Agregar Fenil Trimeticona (Silicona BM 956) directamente al homogeneizador. Agitar 10 minutos hasta incorporación completa y uniforme. Verificar ausencia de separación o acumulación superficial.",
+        "Paso 19. ADICIÓN FASE C (ACTIVOS): verificar temperatura del batch < 35°C antes de iniciar. Disolver Glicinamida HCl en el agua reservada, agitar hasta disolución completa y agregar al homogeneizador.",
+        "Paso 20. Oligopéptido-68: pesada directa en balanza analítica, disolver en agua y agregar al homogeneizador.",
+        "Paso 21. Disolver Extracto de Regaliz en 50 g del agua reservada y agregar al homogeneizador. Agitar 10 minutos a 200 rpm hasta homogeneidad.",
+        "Paso 22. FASE D Y AJUSTE DE pH: agregar Phenoxyethanol bajo agitación 200 rpm, luego Ethylhexylglycerin (agitar 3 min), luego 1,2-Hexanediol (agitar 5 min). Ajustar pH al final con Trietanolamina 85%. Controles en proceso: pH ~5.7 a 25°C, densidad ~1.005 g/mL.",
+    ],
     "CONTORNO DE CAFEINA": [
         "Paso 1. Dividir el agua desionizada en 2 partes (50% y 50%).",
         "Paso 2. En el recipiente 1 adicionar el 50% del agua desionizada y, con agitación constante, adicionar las siguientes materias primas: Ácido tranexámico, Gluconolactona, Alantoína, Sorbato de Potasio, Benzoato de sodio, Aloe Vera, Centella Asiática.",
@@ -46,6 +70,17 @@ BATCH_INSTRUCTIVOS = {
 }
 
 BATCH_FORMULAS = {
+    "EMULSION HIDRATANTE ILUMINADORA": {
+        "op": "OP-2026-88", "lote": "261832", "lote_kg": 35,
+        "items": {
+            "MP00127": 1.75, "MP00262": 2.0, "MP00079": 0.3, "MP00123": 0.1, "MP00132": 2.0,
+            "MP00149": 0.3, "MP00240": 3.0, "MP00302": 0.4, "MP00063": 0.1, "MP00201": 1.0,
+            "MP00303": 1.0, "MP00184": 1.5, "MP00291": 0.5, "MP00245": 0.3, "MP00006": 0.5,
+            "MP00021": 0.9, "MP00286": 66.139, "MP00040": 6.0, "MP00301": 3.0, "MP00231": 0.5,
+            "MP00177": 0.001, "MP00120": 0.01, "MP00157": 0.1, "MP00304": 0.2, "MP00043": 3.0,
+            "MP00300": 0.3, "MP00046": 0.1, "MP00148": 5.0,
+        },
+    },
     "CONTORNO DE CAFEINA": {
         "op": "OP-2026-11", "lote": "", "lote_kg": 10,
         "items": {
