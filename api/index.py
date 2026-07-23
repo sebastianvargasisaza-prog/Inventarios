@@ -1315,6 +1315,73 @@ def diag_maestro_duplicados_inci():
         return jsonify({'ok': False, 'error': str(e)[:200], 'trace': traceback.format_exc()[-400:]}), 500
 
 
+@app.route('/diag/matriz-batch')
+def diag_matriz_batch():
+    """LA MATRIZ (Sebastián 23-jul): estado consolidado de TODOS los productos mapeados desde batch
+    records. Por producto: materiales del batch, suma%, cambios vs app (agregar/quitar/pct), códigos
+    sin maestro / inactivos, dobles de INCI, y si tiene instructivo cargable. Read-only. Al final del
+    rastreo = el panorama total para el consejo consolidado + normalización."""
+    try:
+        import re as _re
+        from database import get_db
+        from batch_formulas_data import BATCH_FORMULAS
+        try:
+            from batch_formulas_data import BATCH_INSTRUCTIVOS
+        except Exception:
+            BATCH_INSTRUCTIVOS = {}
+        c = get_db().cursor()
+        def _ninci(s):
+            return _re.sub(r'\s+', ' ', (s or '').strip().upper())
+        maestro = {}
+        for r in c.execute("SELECT UPPER(TRIM(codigo_mp)), COALESCE(nombre_inci,''), COALESCE(activo,1) FROM maestro_mps").fetchall():
+            maestro[r[0]] = (r[1] or '', int(r[2] or 1))
+        inci_a_cods = {}
+        for cod, (inci, act) in maestro.items():
+            ni = _ninci(inci)
+            if ni:
+                inci_a_cods.setdefault(ni, []).append(cod)
+        filas = []
+        for prod, info in BATCH_FORMULAS.items():
+            batch = info.get('items', {})
+            batch_up = {k.upper() for k in batch}
+            suma = round(sum(float(v) for v in batch.values()), 2)
+            # app formula
+            app = {}
+            for r in c.execute("SELECT UPPER(TRIM(material_id)), COALESCE(porcentaje,0) FROM formula_items WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (prod,)).fetchall():
+                app[r[0]] = float(r[1] or 0)
+            agregar = len([k for k in batch_up if k not in app])
+            quitar = len([k for k in app if k not in batch_up])
+            distinto = len([k for k in batch if k.upper() in app and abs(app[k.upper()] - float(batch[k])) > 0.001])
+            sin_maestro = [k for k in batch if k.upper() not in maestro]
+            inactivos = [k for k in batch if k.upper() in maestro and maestro[k.upper()][1] == 0]
+            # dobles: código del batch cuyo INCI existe bajo otro código
+            dobles = []
+            for k in batch:
+                ku = k.upper()
+                ni = _ninci(maestro.get(ku, ('', 1))[0])
+                if ni and len([x for x in inci_a_cods.get(ni, []) if x != ku]) > 0:
+                    dobles.append(ku)
+            # existe MBR / formula en app?
+            hay_app = len(app) > 0
+            filas.append({
+                'producto': prod, 'op': info.get('op', ''),
+                'batch_mat': len(batch), 'suma_pct': suma, 'suma_ok': (95 <= suma <= 105),
+                'app_mat': len(app), 'app_tiene_formula': hay_app,
+                'a_agregar': agregar, 'a_quitar': quitar, 'pct_distinto': distinto,
+                'sin_maestro': sin_maestro, 'inactivos': inactivos, 'dobles_inci': len(dobles),
+                'instructivo_pasos': len(BATCH_INSTRUCTIVOS.get(prod, [])),
+                'cruza_limpio': (agregar == 0 and quitar == 0 and distinto == 0 and not sin_maestro),
+            })
+        filas.sort(key=lambda x: x['producto'])
+        # total productos con fórmula en la app (para saber cuánto falta mapear)
+        tot_app = c.execute("SELECT COUNT(DISTINCT producto_nombre) FROM formula_items").fetchone()
+        return jsonify({'ok': True, 'mapeados': len(filas), 'total_productos_app': int(tot_app[0] or 0),
+                        'faltan_por_mapear': int(tot_app[0] or 0) - len(filas), 'matriz': filas})
+    except Exception as e:
+        import traceback
+        return jsonify({'ok': False, 'error': str(e)[:200], 'trace': traceback.format_exc()[-400:]}), 500
+
+
 @app.route('/diag/maestro-mnemonicos')
 def diag_maestro_mnemonicos():
     """READ-ONLY: lista los códigos MNEMÓNICOS del maestro (formato no-numérico tipo MPCOCP01) que
