@@ -196,23 +196,41 @@ def admin_sync_formula_batch():
     # lote_size del header (para cantidad_g_por_lote) · si no hay, usar el del batch
     hz = c.execute("SELECT COALESCE(lote_size_kg,0) FROM formula_headers WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (key,)).fetchone()
     header_kg = float(hz[0]) if hz and hz[0] else lote_kg
+    # códigos del batch que existen en maestro pero están INACTIVOS (el trigger de formula_items
+    # RECHAZA insertar material activo=0 → 500 · M38). Son materiales reales de un batch de producción.
+    batch_up = [k.upper() for k in batch]
+    inactivos = []
+    for r in c.execute("SELECT UPPER(TRIM(codigo_mp)) FROM maestro_mps WHERE COALESCE(activo,1)=0").fetchall():
+        if r[0] in batch_up:
+            inactivos.append(r[0])
     out = {"ok": True, "producto": key, "op": info.get("op"), "dry_run": (not aplicar),
-           "batch_items": len(batch), "codigos_sin_maestro": sin_maestro, "aplicado": False}
+           "batch_items": len(batch), "codigos_sin_maestro": sin_maestro,
+           "codigos_inactivos": inactivos, "aplicado": False}
     if aplicar:
-        c.execute("DELETE FROM formula_items WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (key,))
-        n = 0
-        for cod, pct in batch.items():
-            gpl = round((float(pct) / 100.0) * header_kg * 1000.0, 4) if header_kg else 0
-            c.execute("INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje, cantidad_g_por_lote) "
-                      "VALUES (?, ?, ?, ?, ?)", (key, cod, inci.get(cod.upper(), cod), float(pct), gpl))
-            n += 1
         try:
-            audit_log(c, usuario=u, accion="SYNC_FORMULA_BATCH", tabla="formula_items", registro_id=key,
-                      despues={"op": info.get("op"), "items": n})
-        except Exception:
-            pass
-        conn.commit()
-        out.update({"aplicado": True, "items_escritos": n})
+            # reactivar los códigos inactivos del batch (materiales reales · reversible · auditado)
+            for cod in inactivos:
+                c.execute("UPDATE maestro_mps SET activo=1 WHERE UPPER(TRIM(codigo_mp))=?", (cod,))
+            c.execute("DELETE FROM formula_items WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (key,))
+            n = 0
+            cod_actual = None
+            for cod, pct in batch.items():
+                cod_actual = cod
+                gpl = round((float(pct) / 100.0) * header_kg * 1000.0, 4) if header_kg else 0
+                c.execute("INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje, cantidad_g_por_lote) "
+                          "VALUES (?, ?, ?, ?, ?)", (key, cod, inci.get(cod.upper(), cod), float(pct), gpl))
+                n += 1
+            try:
+                audit_log(c, usuario=u, accion="SYNC_FORMULA_BATCH", tabla="formula_items", registro_id=key,
+                          despues={"op": info.get("op"), "items": n, "reactivados": inactivos})
+            except Exception:
+                pass
+            conn.commit()
+            out.update({"aplicado": True, "items_escritos": n, "reactivados": inactivos})
+        except Exception as e:
+            conn.rollback()
+            return jsonify({"error": "falló el INSERT de la fórmula", "codigo_que_falló": cod_actual,
+                            "detalle": str(e)[:250], "codigos_inactivos": inactivos}), 500
     return jsonify(out)
 
 
