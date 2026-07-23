@@ -12514,6 +12514,12 @@ def compras_ocr_factura():
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     user = session.get('compras_user', '')
+    # M89 · OCR de factura con IA DESHABILITADO (Sebastián 24-jul: no está en uso · Catalina sube
+    # las facturas pero no usa la lectura automática). Era amplificador de caídas: IA síncrona
+    # (urllib→Anthropic, ~40s) sin lock que retenía 1 de 3 workers. Reversible: quitar este bloque.
+    # NO afecta la SUBIDA/almacenamiento de facturas (libro de facturas), que es otro flujo.
+    return jsonify({'error': 'La lectura automática de facturas (OCR) está deshabilitada. '
+                             'Cargá los datos de la factura manualmente.', 'deshabilitado': True}), 503
     body = request.get_json(silent=True) or {}
     b64 = (body.get('imagen_base64') or '').strip()
     if not b64:

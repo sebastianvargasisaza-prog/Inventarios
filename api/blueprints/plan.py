@@ -23349,6 +23349,12 @@ def autoplan_ia():
         body, code = err
         return jsonify(body), code
 
+    # M89 · autoplan con IA DESHABILITADO (Sebastián 24-jul: "ya no usamos autoplan"). Era un
+    # amplificador de caídas: IA síncrona (urllib→Anthropic, 60-90s) sin lock que retenía 1 de 3
+    # workers → 2 concurrentes saturaban la app → 502. Reversible: quitar este bloque.
+    return jsonify({"ok": False, "deshabilitado": True,
+                    "error": "El autoplan con IA está deshabilitado (no está en uso)."}), 503
+
     body = request.get_json(silent=True) or {}
     cliente = (body.get("cliente") or "ANIMUS_DTC").strip()
     try:

@@ -30,6 +30,9 @@ from templates_py.dashboard_html import DASHBOARD_HTML
 
 bp = Blueprint('core', __name__)
 
+# M88 · commit cacheado (se computa 1 vez por proceso en /api/health · no spawnear git por ping)
+_HEALTH_COMMIT = None
+
 
 def _resolve_password_hash(username):
     """Devuelve el hash de password para un usuario, con fallback lazy.
@@ -101,12 +104,18 @@ def health():
     """
     import os as _os, subprocess as _sp
     from database import db_connect, _usa_postgres
-    try:
-        commit = _sp.check_output(['git', 'rev-parse', '--short', 'HEAD'],
-            cwd=_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
-            stderr=_sp.DEVNULL).decode().strip()
-    except Exception:
-        commit = 'unknown'
+    # M88 · cachear el commit a nivel de módulo: el código NO cambia durante la vida del proceso.
+    # Antes spawneaba `git rev-parse` (un subproceso) en CADA ping de Render (health check frecuente)
+    # → desperdicio + riesgo bajo saturación. Ahora se computa 1 vez por proceso.
+    global _HEALTH_COMMIT
+    if _HEALTH_COMMIT is None:
+        try:
+            _HEALTH_COMMIT = _sp.check_output(['git', 'rev-parse', '--short', 'HEAD'],
+                cwd=_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                stderr=_sp.DEVNULL).decode().strip()
+        except Exception:
+            _HEALTH_COMMIT = 'unknown'
+    commit = _HEALTH_COMMIT
     es_pg = _usa_postgres()
     tables = {}
     malformed = False

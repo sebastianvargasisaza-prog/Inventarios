@@ -8548,9 +8548,10 @@ def test_golden_compras_max_ia_ocr_traz(app, db_clean):
     r6 = cs.get('/api/compras/roi-proveedores')
     assert r6.status_code == 200
     assert 'proveedores' in r6.get_json()
-    # OCR sin imagen
+    # OCR factura DESHABILITADO (Sebastián 24-jul · M89 · no se usa · amplificador de caídas)
     r7 = cs.post('/api/compras/ocr-factura', json={}, headers=csrf_headers())
-    assert r7.status_code == 400
+    assert r7.status_code == 503
+    assert r7.get_json().get('deshabilitado') is True
 
 
 def test_golden_compras_n3_inteligencia(app, db_clean):
@@ -12008,20 +12009,14 @@ def test_golden_plan_autoplan_ia(app, db_clean):
     """
     cs = _login(app, 'sebastian')
 
-    # Caso 1: sin API key configurada → 502 con mensaje claro
-    import os
-    prev = os.environ.pop('ANTHROPIC_API_KEY', None)
-    prev2 = os.environ.pop('CLAUDE_API_KEY', None)
-    try:
-        r = cs.post('/api/plan/autoplan-ia',
-                      json={'cliente': 'ANIMUS_DTC', 'horizonte_dias': 30,
-                            'forzar_recalcular': True},
-                      headers=csrf_headers())
-        assert r.status_code == 502, f'BUG: {r.status_code} {r.data}'
-        assert 'ANTHROPIC_API_KEY' in r.get_json()['error']
-    finally:
-        if prev: os.environ['ANTHROPIC_API_KEY'] = prev
-        if prev2: os.environ['CLAUDE_API_KEY'] = prev2
+    # Caso 1: autoplan-ia DESHABILITADO (Sebastián 24-jul · M89 · no se usa · era amplificador de
+    # caídas por IA síncrona sin lock). El endpoint retorna 503 deshabilitado ANTES de llamar a IA.
+    r = cs.post('/api/plan/autoplan-ia',
+                  json={'cliente': 'ANIMUS_DTC', 'horizonte_dias': 30,
+                        'forzar_recalcular': True},
+                  headers=csrf_headers())
+    assert r.status_code == 503, f'BUG: {r.status_code} {r.data}'
+    assert r.get_json().get('deshabilitado') is True
 
     # Caso 2: tabla autoplan_decisiones existe (mig 124) y acepta inserts
     _exec("""INSERT INTO autoplan_decisiones
