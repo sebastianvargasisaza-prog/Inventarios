@@ -1534,6 +1534,126 @@ def diag_abastecimiento_mp(codigo):
         return jsonify({'ok': False, 'error': str(e)[:250], 'trace': traceback.format_exc()[-600:]}), 500
 
 
+@app.route('/diag/cadena-producto/<path:producto>')
+def diag_cadena_producto(producto):
+    """Sebastián 23-jul · confirmar CADA fórmula en CADA paso: fórmula → inventario → calendario →
+    abastecimiento. Read-only. Para un producto:
+      - FÓRMULA: sus formula_items (post-sync) · suma de %.
+      - INVENTARIO: cada MP existe en maestro, stock real (SUM movimientos), resuelve o es FANTASMA.
+      - CALENDARIO: ¿está programado? lotes futuros + kg + próxima fecha.
+      - ABASTECIMIENTO: el motor cruza la fórmula corregida (cada MP con consumo>0 cuando hay lote).
+      - RESUMEN: todo_cuadra + lista de problemas.
+    ?dias=90 (default)."""
+    try:
+        from database import get_db
+        from datetime import datetime as _dt, timedelta as _td
+        db = get_db(); c = db.cursor()
+        try:
+            _dias = int((request.args.get('dias', '90') or '90').split(',')[0])
+        except Exception:
+            _dias = 90
+        pu = (producto or '').strip().upper()
+        # match del producto (por formula_headers o formula_items)
+        key = None
+        row = c.execute("SELECT producto_nombre FROM formula_headers WHERE UPPER(TRIM(producto_nombre))=? LIMIT 1", (pu,)).fetchone()
+        if row:
+            key = row[0]
+        if not key:
+            r2 = c.execute("SELECT DISTINCT producto_nombre FROM formula_items WHERE UPPER(TRIM(producto_nombre)) LIKE ? LIMIT 1", ('%' + pu + '%',)).fetchone()
+            if r2:
+                key = r2[0]
+        if not key:
+            return jsonify({'ok': False, 'error': 'producto sin fórmula en la app', 'buscado': pu}), 404
+
+        # header
+        hz = c.execute("SELECT COALESCE(lote_size_kg,0), COALESCE(activo,1) FROM formula_headers WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) ORDER BY COALESCE(activo,1) DESC LIMIT 1", (key,)).fetchone()
+        lote_kg = float(hz[0]) if hz else 0.0
+        activo = int(hz[1]) if hz else 1
+
+        # FÓRMULA
+        items = c.execute("SELECT UPPER(TRIM(material_id)), COALESCE(material_nombre,''), COALESCE(porcentaje,0) "
+                          "FROM formula_items WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) ORDER BY porcentaje DESC", (key,)).fetchall()
+        # maestro + stock + bridges + controla_stock
+        maes = {}
+        for r in c.execute("SELECT UPPER(TRIM(codigo_mp)), COALESCE(nombre_inci,''), COALESCE(controla_stock,1) FROM maestro_mps").fetchall():
+            maes[r[0]] = (r[1] or '', int(r[2] or 1))
+        stock = {}
+        try:
+            for r in c.execute("SELECT UPPER(TRIM(material_id)), COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0) FROM movimientos WHERE UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO') GROUP BY UPPER(TRIM(material_id))").fetchall():
+                stock[r[0]] = float(r[1] or 0)
+        except Exception:
+            pass
+        bridges = set()
+        try:
+            for r in c.execute("SELECT UPPER(TRIM(codigo_formula)) FROM mp_formula_bridge WHERE COALESCE(activo,1)=1").fetchall():
+                bridges.add(r[0])
+        except Exception:
+            pass
+
+        # CALENDARIO
+        piso = (_dt.utcnow() - _td(hours=5)).date().isoformat()
+        cutoff = (_dt.utcnow() - _td(hours=5) + _td(days=_dias)).date().isoformat()
+        cal = c.execute("SELECT COALESCE(SUM(COALESCE(cantidad_kg,0)),0), COUNT(*), MIN(fecha_programada) FROM produccion_programada "
+                        "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado','esperando_recurso') "
+                        "AND COALESCE(inventario_descontado_at,'')='' AND fecha_programada>=? AND fecha_programada<=?", (key, piso, cutoff)).fetchone()
+        cal_kg = float(cal[0] or 0); cal_lotes = int(cal[1] or 0); cal_prox = cal[2]
+        programado = cal_lotes > 0
+
+        # ABASTECIMIENTO (motor · una sola corrida)
+        motor_por_cod = {}
+        motor_err = None
+        try:
+            from blueprints.programacion import _consumo_horizontes_core
+            data = _consumo_horizontes_core(db, [_dias], True, True, 'comprometido', False, 'mp')
+            dk = str(_dias)
+            for it in (data.get('mps') or []):
+                motor_por_cod[str(it.get('codigo', '')).upper()] = float((it.get('consumo') or {}).get(dk, 0) or 0)
+        except Exception as _e:
+            motor_err = str(_e)[:200]
+
+        # armar filas + problemas
+        filas = []
+        problemas = []
+        suma_pct = 0.0
+        for cod, nom, pct in items:
+            pct = float(pct or 0); suma_pct += pct
+            en_maestro = cod in maes
+            es_agua = en_maestro and maes[cod][1] == 0
+            resuelve = en_maestro or (cod in bridges)
+            fantasma = not resuelve
+            g_esp = cal_kg * (pct / 100.0) * 1000.0 if programado else 0.0
+            m_cons = motor_por_cod.get(cod, 0.0)
+            # el motor cuenta esta MP para este producto?
+            en_motor = m_cons > 0.01
+            fila = {'codigo': cod, 'nombre': nom[:34], 'pct': pct,
+                    'en_maestro': en_maestro, 'stock_g': round(stock.get(cod, 0), 1),
+                    'agua_infinita': es_agua, 'fantasma': fantasma,
+                    'gramos_esperados': round(g_esp, 1), 'motor_consumo_g': round(m_cons, 1)}
+            filas.append(fila)
+            if fantasma:
+                problemas.append('FANTASMA: %s (%s) no existe en maestro ni tiene bridge → abastecimiento NO lo puede pedir' % (cod, nom[:24]))
+            elif programado and not es_agua and g_esp > 1 and not en_motor:
+                problemas.append('NO CRUZA EN MOTOR: %s (%s) está en la fórmula y hay lote programado, pero el motor no lo cuenta' % (cod, nom[:24]))
+        # sanity suma de %
+        pct_ok = 95.0 <= suma_pct <= 105.0
+        if not pct_ok:
+            problemas.append('SUMA DE %% = %.1f (fuera de 95-105 · la fórmula puede estar incompleta o con base mal codificada)' % suma_pct)
+        if not activo:
+            problemas.append('FÓRMULA INACTIVA (formula_headers.activo=0)')
+
+        return jsonify({'ok': True, 'producto': key, 'formula_activa': bool(activo),
+                        'lote_size_kg': lote_kg, 'n_materiales': len(items),
+                        'suma_pct': round(suma_pct, 2), 'suma_pct_ok': pct_ok,
+                        'calendario': {'programado': programado, 'lotes_futuros': cal_lotes,
+                                       'kg_total': round(cal_kg, 1), 'proxima_fecha': cal_prox, 'horizonte_dias': _dias},
+                        'motor_err': motor_err,
+                        'materiales': filas,
+                        'resumen': {'todo_cuadra': len(problemas) == 0, 'n_problemas': len(problemas), 'problemas': problemas}})
+    except Exception as e:
+        import traceback
+        return jsonify({'ok': False, 'error': str(e)[:250], 'trace': traceback.format_exc()[-600:]}), 500
+
+
 @app.route('/diag/envasado-estado')
 def diag_envasado_estado():
     """Sebastián 21-jul · "sigue sin salirme nada en Envasado". Diag público read-only (sin datos
