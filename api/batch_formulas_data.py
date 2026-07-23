@@ -14,6 +14,13 @@ MAESTRO_HINTS = {
 # Se carga en el MBR vía /api/brd/mbr/cargar-instructivo (respeta inmutabilidad: MBR aprobado -> versión
 # nueva en borrador que Calidad aprueba con e-firma). El % de MP sigue saliendo de la fórmula (sección 3).
 BATCH_INSTRUCTIVOS = {
+    "CONTORNO DE CAFEINA": [
+        "Paso 1. Dividir el agua desionizada en 2 partes (50% y 50%).",
+        "Paso 2. En el recipiente 1 adicionar el 50% del agua desionizada y, con agitación constante, adicionar las siguientes materias primas: Ácido tranexámico, Gluconolactona, Alantoína, Sorbato de Potasio, Benzoato de sodio, Aloe Vera, Centella Asiática.",
+        "Paso 3. Seguir con: Acetyl Tetrapeptido-5, Adenosina, Ácido láctico, Vitamina E y Glicerina.",
+        "Paso 4. Observación: adicionar uno por uno hasta total disolución; no adicionar una materia prima si la anterior no se ha disuelto completamente. Controles en proceso: densidad ~1.044 g/mL a 25°C, pH ~5.64 (se ajusta con Trietanolamina).",
+        "NOTA: instructivo del batch digital marcado como INCOMPLETO por producción (Evelin Obeso). Faltan por ubicar en pasos: cafeína anhidra, dimethicone, propilenglicol, phenoxyethanol, ácido hialurónico 1500/50 kD. Completar con Alejandro/Producción antes de dar por cerrado.",
+    ],
     "SUERO TRIACTIVE RETINOID NAD": [
         "Paso 1. Se realizará por fases, cuidando en cada una los puntos críticos. Dispensar en beakers separados y rotulados por fases los grupos de materias primas; las cantidades en gramos las indica la orden de producción y el formato de dispensación.",
         "Paso 2. Fase A1 (base gel acuosa): calentar el agua a 40°C y disolver la alantoína; luego adicionar el Carbopol 940 y el EZ-4U homogeneizando con el agitador D-500 hasta formar un gel.",
@@ -39,6 +46,15 @@ BATCH_INSTRUCTIVOS = {
 }
 
 BATCH_FORMULAS = {
+    "CONTORNO DE CAFEINA": {
+        "op": "OP-2026-11", "lote": "", "lote_kg": 10,
+        "items": {
+            "MP00217": 0.05, "MP00270": 1.0, "MP00293": 0.3, "MP00138": 0.3, "MP00152": 0.1,
+            "MP00121": 5.0, "MP00252": 0.05, "MP00195": 3.0, "MP00045": 0.3, "MP00069": 1.5,
+            "MP00167": 3.0, "MP00021": 1.0, "MP00286": 82.57, "MP00078": 0.5, "MP00202": 0.3,
+            "MP00142": 0.2, "MP00175": 0.03, "MP00163": 0.3, "MP00047": 0.5,
+        },
+    },
     "SUERO TRIACTIVE RETINOID NAD": {
         "op": "OP-2026-94", "lote": "261881", "lote_kg": 12,
         "items": {
