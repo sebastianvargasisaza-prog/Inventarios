@@ -1187,7 +1187,11 @@ def diag_formula_batch_preview(producto):
         for r in c.execute("SELECT UPPER(TRIM(material_id)), COALESCE(porcentaje,0), COALESCE(material_nombre,'') "
                            "FROM formula_items WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (key,)).fetchall():
             app_items[r[0]] = (float(r[1] or 0), r[2])
-        mp_cods = set(r[0] for r in c.execute("SELECT UPPER(TRIM(codigo_mp)) FROM maestro_mps").fetchall())
+        # maestro completo: código -> INCI (para detectar duplicados por material)
+        maestro = {}
+        for r in c.execute("SELECT UPPER(TRIM(codigo_mp)), COALESCE(nombre_inci,'') FROM maestro_mps").fetchall():
+            maestro[r[0]] = r[1] or ''
+        mp_cods = set(maestro)
         agregar = [{'codigo': k, 'pct': v} for k, v in batch.items() if k.upper() not in app_items]
         quitar = [{'codigo': k, 'pct': app_items[k.upper()][0]} for k in app_items if k not in {b.upper() for b in batch}]
         pct_dist = []
@@ -1196,10 +1200,48 @@ def diag_formula_batch_preview(producto):
             if ku in app_items and abs(app_items[ku][0] - v) > 0.001:
                 pct_dist.append({'codigo': k, 'app': app_items[ku][0], 'batch': v})
         sin_maestro = [k for k in batch if k.upper() not in mp_cods]
+
+        # ── GUARDIÁN DE DUPLICADOS (Sebastián 23-jul: una MP ya organizada no puede quedar
+        #    con otro código o doble) ──────────────────────────────────────────────────
+        def _ninci(s):
+            import re as _re
+            return _re.sub(r'\s+', ' ', (s or '').strip().upper())
+        try:
+            from batch_formulas_data import MAESTRO_HINTS
+        except Exception:
+            MAESTRO_HINTS = {}
+        # INCI de cada código del batch (maestro si existe · si no, la pista)
+        inci_por_cod = {}
+        for k in batch:
+            ku = k.upper()
+            inci = maestro.get(ku, '') or (MAESTRO_HINTS.get(ku, {}) or {}).get('inci', '')
+            inci_por_cod[ku] = _ninci(inci)
+        # (a) mismo INCI bajo OTRO código del maestro = posible duplicado/split de identidad
+        inci_a_cods_maestro = {}
+        for cod, inci in maestro.items():
+            ni = _ninci(inci)
+            if ni:
+                inci_a_cods_maestro.setdefault(ni, []).append(cod)
+        posibles_duplicados = []
+        for ku, ni in inci_por_cod.items():
+            if not ni:
+                continue
+            otros = [x for x in inci_a_cods_maestro.get(ni, []) if x != ku]
+            if otros:
+                posibles_duplicados.append({'codigo_batch': ku, 'inci': ni, 'ya_existe_como': sorted(otros)})
+        # (b) material DOBLE dentro del mismo batch (dos códigos, mismo INCI)
+        inci_a_cods_batch = {}
+        for ku, ni in inci_por_cod.items():
+            if ni:
+                inci_a_cods_batch.setdefault(ni, []).append(ku)
+        dobles_en_batch = [{'inci': ni, 'codigos': sorted(cs)} for ni, cs in inci_a_cods_batch.items() if len(cs) > 1]
+
         return jsonify({'ok': True, 'producto': key, 'op': BATCH_FORMULAS[key].get('op'),
                         'batch_items': len(batch), 'app_items': len(app_items),
                         'a_agregar': agregar, 'a_quitar': quitar, 'pct_distinto': pct_dist,
-                        'codigos_del_batch_sin_maestro': sin_maestro})
+                        'codigos_del_batch_sin_maestro': sin_maestro,
+                        'posibles_duplicados_inci': posibles_duplicados,
+                        'dobles_en_batch': dobles_en_batch})
     except Exception as e:
         import traceback
         return jsonify({'ok': False, 'error': str(e)[:200], 'trace': traceback.format_exc()[-400:]}), 500

@@ -271,6 +271,10 @@ button:disabled{opacity:.5;cursor:not-allowed;}
 .badge{display:inline-block;border-radius:999px;padding:2px 9px;font-size:10.5px;font-weight:700;background:#f5f4f2;color:#78716c;}
 .badge.hot{background:#fee2e2;color:#b91c1c;}
 .note{font-size:11.5px;color:var(--mut);margin-top:8px;line-height:1.5;}
+.dupwarn{background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:12px 14px;margin:10px 0;font-size:12.5px;color:#9a3412;}
+.dupwarn b{display:block;margin-bottom:6px;color:#b45309;}
+.dupwarn .dl{padding:3px 0;font-size:12px;}
+.dupwarn .c{font-family:ui-monospace,monospace;font-weight:700;}
 </style></head><body><div class="wrap">
 <a class="back" href="/inventarios">&larr; Planta</a>
 <h1>&#129514; Sincronizar f&oacute;rmulas con los batch records</h1>
@@ -297,13 +301,24 @@ async function cargarDiff(p){
   var d=await jget('/diag/formula-batch-preview/'+encodeURIComponent(p.nombre));
   if(!d||!d.ok){ box.innerHTML='<div class="msg err">No se pudo cargar el diff'+(d&&d.error?': '+esc(d.error):'')+'</div>'; return; }
   var ag=d.a_agregar||[], qu=d.a_quitar||[], pc=d.pct_distinto||[], sm=d.codigos_del_batch_sin_maestro||[];
+  var dup=d.posibles_duplicados_inci||[], dob=d.dobles_en_batch||[];
   var h='<div class="summary">'
     +'<span>batch <b>'+d.batch_items+'</b></span><span>app <b>'+d.app_items+'</b></span>'
     +'<span style="color:#15803d">+ agregar <b>'+ag.length+'</b></span>'
     +'<span style="color:#b91c1c">- quitar <b>'+qu.length+'</b></span>'
     +'<span style="color:#b45309">~ % <b>'+pc.length+'</b></span>'
     +(sm.length?'<span class="badge hot">'+sm.length+' sin maestro</span>':'<span class="badge">maestro OK</span>')
+    +((dup.length||dob.length)?'<span class="badge hot">&#9888; '+(dup.length+dob.length)+' revisar duplicado</span>':'')
     +'</div>';
+  if(dob.length){
+    h+='<div class="dupwarn"><b>&#9888; Material DOBLE en el batch</b> (dos códigos para el mismo INCI · revisá que no sea un error del batch):'
+      +dob.map(function(x){return '<div class="dl"><span class="c">'+x.codigos.join(' + ')+'</span> &rarr; '+esc(x.inci)+'</div>';}).join('')+'</div>';
+  }
+  if(dup.length){
+    h+='<div class="dupwarn"><b>&#9888; El batch usa un código, pero ese material ya está organizado bajo OTRO código</b> (posible split de identidad · confirmá con Alejandro cuál es el correcto antes de aplicar):'
+      +dup.map(function(x){return '<div class="dl"><span class="c">'+esc(x.codigo_batch)+'</span> ('+esc(x.inci)+') ya existe como <span class="c">'+x.ya_existe_como.join(', ')+'</span></div>';}).join('')
+      +'<div class="note">Nota: hay INCIs legítimamente multi-código (agua, parfum, dimethicone) &middot; esto NO bloquea, solo avisa.</div></div>';
+  }
   h+='<div class="diffgrid">';
   h+='<div class="col add"><h3>Agregar ('+ag.length+')</h3>'+(ag.length?ag.map(function(x){return liRow(x.codigo,x.pct);}).join(''):'<div class="empty">nada</div>')+'</div>';
   h+='<div class="col rem"><h3>Quitar ('+qu.length+')</h3>'+(qu.length?qu.map(function(x){return liRow(x.codigo,x.pct);}).join(''):'<div class="empty">nada</div>')+'</div>';
