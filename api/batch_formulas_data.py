@@ -200,21 +200,18 @@ BATCH_FORMULAS = {
         },
     },
     "EMULSION HIDRATANTE ILUMINADORA": {
-        # Fórmula del batch OP-2026-88 (28 mat, 100%) CON CÓDIGOS CANÓNICOS (remapeados vs Excel Alejandro
-        # v8_2 · 23-jul). El batch usó códigos errados que en el maestro son OTRO material:
-        #   MP00301 Propylheptyl Caprylate -> MP00030 (batch MP00301 = Ethylhexylglycerin en maestro)
-        #   MP00302 Ethylhexylglycerin     -> MPEHGL01
-        #   MP00303 Coco-Caprylate         -> MPCOCP01 (batch MP00303 = Ethylhexylglycerin en maestro)
-        #   MP00300 Ceramide NP            -> MP00103 (batch MP00300 = SODIUM COCOYL GLYCINATE en maestro · ¡peligroso!)
-        # Cacay MP00291 se deja (en la app SÍ es cacay). VitE MP00079 polvo (batch) · grado a confirmar Alejandro.
+        # Batch OP-2026-88 · 35kg · lote 261832. 28 mat, 100%. CÓDIGOS RAW DEL BATCH (Sebastián 23-jul:
+        # nos quedamos con los códigos del batch · normalización final decidirá migrar EOS a batch).
+        # OJO colisiones a resolver: en el maestro actual MP00300=Sodium Cocoyl Glycinate (batch=Ceramide),
+        # MP00301=Ethylhexylglycerin (batch=Propylheptyl), MP00303=Ethylhexylglycerin (batch=Coco-Caprylate).
         "op": "OP-2026-88", "lote": "261832", "lote_kg": 35,
         "items": {
             "MP00127": 1.75, "MP00262": 2.0, "MP00079": 0.3, "MP00123": 0.1, "MP00132": 2.0,
-            "MP00149": 0.3, "MP00240": 3.0, "MPEHGL01": 0.4, "MP00063": 0.1, "MP00201": 1.0,
-            "MPCOCP01": 1.0, "MP00184": 1.5, "MP00291": 0.5, "MP00245": 0.3, "MP00006": 0.5,
-            "MP00021": 0.9, "MP00286": 66.139, "MP00040": 6.0, "MP00030": 3.0, "MP00231": 0.5,
+            "MP00149": 0.3, "MP00240": 3.0, "MP00302": 0.4, "MP00063": 0.1, "MP00201": 1.0,
+            "MP00303": 1.0, "MP00184": 1.5, "MP00291": 0.5, "MP00245": 0.3, "MP00006": 0.5,
+            "MP00021": 0.9, "MP00286": 66.139, "MP00040": 6.0, "MP00301": 3.0, "MP00231": 0.5,
             "MP00177": 0.001, "MP00120": 0.01, "MP00157": 0.1, "MP00304": 0.2, "MP00043": 3.0,
-            "MP00103": 0.3, "MP00046": 0.1, "MP00148": 5.0,
+            "MP00300": 0.3, "MP00046": 0.1, "MP00148": 5.0,
         },
     },
     "CONTORNO DE CAFEINA": {
