@@ -414,15 +414,47 @@ try:
             try:
                 _trg_path = os.path.join(os.path.dirname(__file__), 'pg_triggers.sql')
                 if os.path.exists(_trg_path):
-                    try:
-                        _c.rollback()  # asegurar transacción limpia
-                    except Exception:
-                        pass
                     with open(_trg_path, encoding='utf-8') as _ftrg:
                         _trg_sql = _ftrg.read()
-                    _c.executescript(_trg_sql)
-                    _c.commit()
-                    _logger_mig.warning("AUTO-MIG-PG · pg_triggers.sql cargado OK")
+                    # M88 · gatear por HASH del contenido: el bloque corre en CADA import de worker
+                    # (con --max-requests 1000 sin --preload los workers se reciclan muchas veces/día).
+                    # Recargar los 48 CREATE OR REPLACE TRIGGER cada vez = barrera de escritura
+                    # (SHARE ROW EXCLUSIVE sobre movimientos/audit_log que TODA mutación toca) → app
+                    # colgada intermitente. Con el hash, solo se recarga cuando pg_triggers.sql CAMBIA
+                    # (1× por deploy). En un reciclaje normal: SKIP.
+                    import hashlib as _hl
+                    _trg_hash = _hl.sha256(_trg_sql.encode('utf-8')).hexdigest()[:20]
+                    _need_trg = True
+                    try:
+                        _cur.execute("SELECT valor FROM app_settings WHERE clave='pg_triggers_hash'")
+                        _r = _cur.fetchone()
+                        if _r and _r[0] == _trg_hash:
+                            _need_trg = False
+                    except Exception:
+                        try:
+                            _c.rollback()
+                        except Exception:
+                            pass
+                    if _need_trg:
+                        try:
+                            _c.rollback()  # asegurar transacción limpia
+                        except Exception:
+                            pass
+                        _c.executescript(_trg_sql)
+                        _c.commit()
+                        try:
+                            _cur.execute(
+                                "INSERT INTO app_settings (clave, valor) VALUES ('pg_triggers_hash', ?) "
+                                "ON CONFLICT (clave) DO UPDATE SET valor=excluded.valor", (_trg_hash,))
+                            _c.commit()
+                        except Exception:
+                            try:
+                                _c.rollback()
+                            except Exception:
+                                pass
+                        _logger_mig.warning("AUTO-MIG-PG · pg_triggers.sql cargado OK (hash %s)", _trg_hash)
+                    else:
+                        _logger_mig.warning("AUTO-MIG-PG · pg_triggers.sql sin cambios (hash %s) · skip", _trg_hash)
             except Exception as _e:
                 _logger_mig.error(
                     "AUTO-MIG-PG · pg_triggers.sql FALLÓ (no aborta boot): %s", _e)

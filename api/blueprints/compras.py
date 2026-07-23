@@ -12585,7 +12585,7 @@ def compras_ocr_factura():
             },
             method='POST',
         )
-        with _ureq.urlopen(req, timeout=60) as resp:
+        with _ureq.urlopen(req, timeout=40) as resp:  # M89 · acota el hold del worker (OCR factura síncrono)
             data = _json.loads(resp.read().decode('utf-8'))
         txt = ''
         for b in (data.get('content') or []):

@@ -3775,7 +3775,7 @@ def job_mailbox_factura_proveedor(app):
         from database import get_db as _gdb
         conn = _gdb(); c = conn.cursor()
         try:
-            imap = imaplib.IMAP4_SSL(host)
+            imap = imaplib.IMAP4_SSL(host, timeout=30)  # M90 · sin timeout, un IMAP colgado wedge el hilo multi-cron para siempre
             imap.login(user, pwd)
             imap.select('INBOX')
             # Buscar UNSEEN últimos 7 días

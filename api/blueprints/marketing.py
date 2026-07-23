@@ -3738,9 +3738,9 @@ def ghl_debug():
     if err:
         return err, code
     import urllib.error as _ue
-    with get_db() as conn:
-        key = _cfg(conn, "ghl_api_key") or ""
-        loc = _cfg(conn, "ghl_location_id") or ""
+    conn = get_db()  # M82 · PgConnection no soporta `with` (sin __enter__) → 500 PG-only
+    key = _cfg(conn, "ghl_api_key") or ""
+    loc = _cfg(conn, "ghl_location_id") or ""
     results = {}
     tests = [
         ("v2_con_loc", f"https://services.leadconnectorhq.com/contacts/?locationId={loc}&limit=1"),

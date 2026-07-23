@@ -23235,7 +23235,7 @@ def _ia_autoplan_sugerir(payload_contexto, modelo="claude-sonnet-4-6"):
         method="POST",
     )
     try:
-        with _ureq.urlopen(req, timeout=120) as resp:
+        with _ureq.urlopen(req, timeout=90) as resp:  # M89 · < --timeout 120 de Gunicorn (evita SIGKILL del worker)
             data = _json.loads(resp.read().decode("utf-8"))
     except Exception as ex:
         return None, f"Error llamando Anthropic: {ex}"
