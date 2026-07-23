@@ -1164,6 +1164,59 @@ def diag_producto_ventas(producto):
         return jsonify({'ok': False, 'error': str(e)[:200]}), 500
 
 
+@app.route('/diag/formula/<path:producto>')
+def diag_formula(producto):
+    """Sebastián/Alejandro 22-jul · ver la FÓRMULA real de un producto (los códigos MP que usa)
+    para contrastar con el maestro canónico y detectar drift/fantasmas. Público read-only.
+    Busca por LIKE. Devuelve por producto: header (lote_size, activo) + items (codigo, nombre, %, g/lote)
+    + flag si el código NO existe en maestro_mps (fantasma) o si el material_id está vacío."""
+    try:
+        from database import get_db
+        db = get_db(); c = db.cursor()
+        q = '%' + (producto or '').strip().upper() + '%'
+        # maestros de códigos válidos
+        mp_cods = set(r[0] for r in c.execute("SELECT UPPER(TRIM(codigo_mp)) FROM maestro_mps").fetchall())
+        mee_cods = set(r[0] for r in c.execute("SELECT UPPER(TRIM(codigo)) FROM maestro_mee").fetchall())
+        headers = c.execute("SELECT producto_nombre, COALESCE(lote_size_kg,0), COALESCE(activo,1) "
+                            "FROM formula_headers WHERE UPPER(TRIM(producto_nombre)) LIKE ? ORDER BY producto_nombre", (q,)).fetchall()
+        out = {'ok': True, 'buscado': producto, 'productos': []}
+        # productos que solo aparecen en formula_items (sin header)
+        _en_items = c.execute("SELECT DISTINCT producto_nombre FROM formula_items WHERE UPPER(TRIM(producto_nombre)) LIKE ?", (q,)).fetchall()
+        nombres = list(dict.fromkeys([h[0] for h in headers] + [r[0] for r in _en_items]))
+        for pnom in nombres:
+            hz = next((h for h in headers if h[0] == pnom), None)
+            items = c.execute("SELECT COALESCE(material_id,''), COALESCE(material_nombre,''), COALESCE(porcentaje,0), COALESCE(cantidad_g_por_lote,0) "
+                              "FROM formula_items WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) ORDER BY porcentaje DESC", (pnom,)).fetchall()
+            its = []
+            suma_pct = 0.0
+            n_fantasma = 0
+            for mid, mnom, pct, gpl in items:
+                mu = (mid or '').strip().upper()
+                es_mp = mu in mp_cods
+                es_mee = mu in mee_cods
+                fantasma = bool(mu) and not es_mp and not es_mee
+                if fantasma:
+                    n_fantasma += 1
+                suma_pct += float(pct or 0)
+                its.append({'codigo': mid, 'nombre': mnom, 'porcentaje': float(pct or 0),
+                            'g_por_lote': float(gpl or 0), 'en_maestro': es_mp or es_mee,
+                            'tipo': 'MP' if es_mp else ('MEE' if es_mee else ('FANTASMA' if fantasma else 'vacio'))})
+            out['productos'].append({
+                'producto': pnom,
+                'tiene_header': bool(hz),
+                'lote_size_kg': float(hz[1]) if hz else None,
+                'activa': bool(hz[2]) if hz else None,
+                'n_items': len(its),
+                'suma_porcentaje': round(suma_pct, 2),
+                'items_fantasma': n_fantasma,
+                'items': its,
+            })
+        return jsonify(out)
+    except Exception as e:
+        import traceback
+        return jsonify({'ok': False, 'error': str(e)[:200], 'trace': traceback.format_exc()[-400:]}), 500
+
+
 @app.route('/diag/abastecimiento-mp/<path:codigo>')
 def diag_abastecimiento_mp(codigo):
     """Sebastián/Alejandro 22-jul · verificar que 'programado × fórmula' CUADRE con lo que pide
