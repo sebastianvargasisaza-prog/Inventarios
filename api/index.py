@@ -1315,6 +1315,56 @@ def diag_maestro_duplicados_inci():
         return jsonify({'ok': False, 'error': str(e)[:200], 'trace': traceback.format_exc()[-400:]}), 500
 
 
+@app.route('/diag/maestro-mnemonicos')
+def diag_maestro_mnemonicos():
+    """READ-ONLY: lista los códigos MNEMÓNICOS del maestro (formato no-numérico tipo MPCOCP01) que
+    Sebastián quiere normalizar a numérico MP#####. Por cada uno: INCI, stock, uso en fórmulas, y si
+    ya existe un código NUMÉRICO con el mismo INCI (destino de migración) o si el rango está libre.
+    NO escribe. Sirve para planear la normalización sin adivinar (M17/M19)."""
+    try:
+        import re as _re
+        from database import get_db
+        c = get_db().cursor()
+        def _ninci(s):
+            return _re.sub(r'\s+', ' ', (s or '').strip().upper())
+        maes = {}
+        for r in c.execute("SELECT UPPER(TRIM(codigo_mp)), COALESCE(nombre_inci,''), COALESCE(nombre_comercial,''), COALESCE(activo,1) FROM maestro_mps").fetchall():
+            maes[r[0]] = (r[1] or '', r[2] or '', int(r[3] or 1))
+        stock = {}
+        try:
+            for r in c.execute("SELECT UPPER(TRIM(material_id)), COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0) FROM movimientos GROUP BY UPPER(TRIM(material_id))").fetchall():
+                stock[r[0]] = float(r[1] or 0)
+        except Exception:
+            pass
+        usos = {}
+        for r in c.execute("SELECT UPPER(TRIM(material_id)), COUNT(*) FROM formula_items GROUP BY UPPER(TRIM(material_id))").fetchall():
+            usos[r[0]] = int(r[1] or 0)
+        # numéricos por INCI (posibles destinos)
+        num_por_inci = {}
+        es_num = _re.compile(r'^MP\d+$')
+        for cod, (inci, com, act) in maes.items():
+            if es_num.match(cod):
+                num_por_inci.setdefault(_ninci(inci), []).append(cod)
+        mnem = []
+        for cod, (inci, com, act) in maes.items():
+            if es_num.match(cod):
+                continue
+            ni = _ninci(inci)
+            destinos = sorted([x for x in num_por_inci.get(ni, [])])
+            mnem.append({'codigo': cod, 'inci': ni, 'comercial': com[:24], 'activo': act,
+                         'stock_g': round(stock.get(cod, 0), 1), 'usos_formula': usos.get(cod, 0),
+                         'numerico_mismo_inci': destinos})
+        mnem.sort(key=lambda x: (-x['usos_formula'], -x['stock_g']))
+        con_destino = [m for m in mnem if m['numerico_mismo_inci']]
+        sin_destino = [m for m in mnem if not m['numerico_mismo_inci']]
+        return jsonify({'ok': True, 'total_codigos_maestro': len(maes), 'total_mnemonicos': len(mnem),
+                        'con_destino_numerico': len(con_destino), 'sin_destino_numerico': len(sin_destino),
+                        'mnemonicos': mnem})
+    except Exception as e:
+        import traceback
+        return jsonify({'ok': False, 'error': str(e)[:200], 'trace': traceback.format_exc()[-400:]}), 500
+
+
 @app.route('/diag/maestro-inci-preview')
 def diag_maestro_inci_preview():
     """Preview READ-ONLY del import del maestro canónico (código+INCI de Alejandro). No escribe.
