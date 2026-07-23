@@ -1164,6 +1164,47 @@ def diag_producto_ventas(producto):
         return jsonify({'ok': False, 'error': str(e)[:200]}), 500
 
 
+@app.route('/diag/formula-batch-preview/<path:producto>')
+def diag_formula_batch_preview(producto):
+    """Preview READ-ONLY: diff entre la fórmula del BATCH RECORD (canónica) y la formula_items actual
+    de la app, para un producto. No escribe. Muestra: códigos a agregar/quitar, % distinto, y códigos
+    del batch que faltan en maestro_mps."""
+    try:
+        from database import get_db
+        from batch_formulas_data import BATCH_FORMULAS
+        c = get_db().cursor()
+        # match del producto (case/trim insensible)
+        pu = (producto or '').strip().upper()
+        key = None
+        for k in BATCH_FORMULAS:
+            if k.upper() == pu or pu in k.upper() or k.upper() in pu:
+                key = k; break
+        if not key:
+            return jsonify({'ok': False, 'error': 'producto no está en batch_formulas_data', 'disponibles': list(BATCH_FORMULAS)}), 404
+        batch = BATCH_FORMULAS[key]['items']
+        # formula_items actual de la app
+        app_items = {}
+        for r in c.execute("SELECT UPPER(TRIM(material_id)), COALESCE(porcentaje,0), COALESCE(material_nombre,'') "
+                           "FROM formula_items WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (key,)).fetchall():
+            app_items[r[0]] = (float(r[1] or 0), r[2])
+        mp_cods = set(r[0] for r in c.execute("SELECT UPPER(TRIM(codigo_mp)) FROM maestro_mps").fetchall())
+        agregar = [{'codigo': k, 'pct': v} for k, v in batch.items() if k.upper() not in app_items]
+        quitar = [{'codigo': k, 'pct': app_items[k.upper()][0]} for k in app_items if k not in {b.upper() for b in batch}]
+        pct_dist = []
+        for k, v in batch.items():
+            ku = k.upper()
+            if ku in app_items and abs(app_items[ku][0] - v) > 0.001:
+                pct_dist.append({'codigo': k, 'app': app_items[ku][0], 'batch': v})
+        sin_maestro = [k for k in batch if k.upper() not in mp_cods]
+        return jsonify({'ok': True, 'producto': key, 'op': BATCH_FORMULAS[key].get('op'),
+                        'batch_items': len(batch), 'app_items': len(app_items),
+                        'a_agregar': agregar, 'a_quitar': quitar, 'pct_distinto': pct_dist,
+                        'codigos_del_batch_sin_maestro': sin_maestro})
+    except Exception as e:
+        import traceback
+        return jsonify({'ok': False, 'error': str(e)[:200], 'trace': traceback.format_exc()[-400:]}), 500
+
+
 @app.route('/diag/formulas-dump')
 def diag_formulas_dump():
     """Dump READ-ONLY de TODAS las fórmulas de prod (formula_items) en 1 llamada, para comparar

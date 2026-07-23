@@ -98,6 +98,62 @@ def admin_importar_maestro_inci():
     return jsonify(out)
 
 
+# ─── Sincronizar formula_items con el BATCH RECORD real ──────────────────────────
+@bp.route("/api/admin/sync-formula-batch", methods=["POST"])
+def admin_sync_formula_batch():
+    """Sincroniza la formula_items de un producto con su BATCH RECORD real (fuente de verdad ·
+    lo que producción pesó y Calidad verificó). Corrige códigos drifteados + agrega los ingredientes
+    que faltaban → abastecimiento pide bien. DRY-RUN por default · aplica con {aplicar:true, confirmar:'SI'}.
+    Body: {producto:'...'}."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    from batch_formulas_data import BATCH_FORMULAS
+    d = request.get_json(silent=True) or {}
+    pu = str(d.get("producto", "")).strip().upper()
+    key = None
+    for k in BATCH_FORMULAS:
+        if k.upper() == pu or (pu and (pu in k.upper() or k.upper() in pu)):
+            key = k; break
+    if not key:
+        return jsonify({"error": "producto no está en batch_formulas_data", "disponibles": list(BATCH_FORMULAS)}), 404
+    info = BATCH_FORMULAS[key]
+    batch = info["items"]
+    lote_kg = float(info.get("lote_kg") or 0)
+    conn = get_db(); c = conn.cursor()
+    # INCI por código desde maestro (para material_nombre) · flag de códigos sin maestro
+    inci = {}
+    mp_cods = set()
+    for r in c.execute("SELECT UPPER(TRIM(codigo_mp)), COALESCE(nombre_inci, nombre_comercial, codigo_mp) FROM maestro_mps").fetchall():
+        mp_cods.add(r[0]); inci[r[0]] = r[1]
+    sin_maestro = [k for k in batch if k.upper() not in mp_cods]
+    aplicar = (d.get("aplicar") is True and str(d.get("confirmar", "")).strip().upper() == "SI")
+    if sin_maestro and aplicar:
+        return jsonify({"error": "hay códigos del batch que NO están en maestro_mps · agregalos primero",
+                        "codigos_sin_maestro": sin_maestro}), 400
+    # lote_size del header (para cantidad_g_por_lote) · si no hay, usar el del batch
+    hz = c.execute("SELECT COALESCE(lote_size_kg,0) FROM formula_headers WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (key,)).fetchone()
+    header_kg = float(hz[0]) if hz and hz[0] else lote_kg
+    out = {"ok": True, "producto": key, "op": info.get("op"), "dry_run": (not aplicar),
+           "batch_items": len(batch), "codigos_sin_maestro": sin_maestro, "aplicado": False}
+    if aplicar:
+        c.execute("DELETE FROM formula_items WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (key,))
+        n = 0
+        for cod, pct in batch.items():
+            gpl = round((float(pct) / 100.0) * header_kg * 1000.0, 4) if header_kg else 0
+            c.execute("INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje, cantidad_g_por_lote) "
+                      "VALUES (?, ?, ?, ?, ?)", (key, cod, inci.get(cod.upper(), cod), float(pct), gpl))
+            n += 1
+        try:
+            audit_log(c, usuario=u, accion="SYNC_FORMULA_BATCH", tabla="formula_items", registro_id=key,
+                      despues={"op": info.get("op"), "items": n})
+        except Exception:
+            pass
+        conn.commit()
+        out.update({"aplicado": True, "items_escritos": n})
+    return jsonify(out)
+
+
 # ─── Backups ──────────────────────────────────────────────────────────────────
 
 @bp.route("/api/admin/backups", methods=["GET"])
