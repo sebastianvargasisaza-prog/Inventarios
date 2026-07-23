@@ -216,6 +216,144 @@ def admin_sync_formula_batch():
     return jsonify(out)
 
 
+# ─── Página: Sincronizar fórmulas con los BATCH RECORDS ──────────────────────────
+@bp.route("/admin/sync-batch-formulas", methods=["GET"])
+def admin_sync_batch_formulas_page():
+    if 'compras_user' not in session:
+        return redirect("/login?next=/admin/sync-batch-formulas")
+    if session.get('compras_user') not in ADMIN_USERS:
+        return "<h2 style='font-family:sans-serif;padding:40px'>Solo admins</h2>", 403
+    import json as _json
+    try:
+        from batch_formulas_data import BATCH_FORMULAS, MAESTRO_HINTS
+    except Exception:
+        from batch_formulas_data import BATCH_FORMULAS
+        MAESTRO_HINTS = {}
+    productos = []
+    for k, v in BATCH_FORMULAS.items():
+        productos.append({"nombre": k, "op": v.get("op", ""), "items": len(v.get("items", {}))})
+    data = {"productos": productos, "hints": MAESTRO_HINTS}
+    inj = _json.dumps(data, ensure_ascii=False).replace("<", "\\u003c")
+    return _SYNC_BATCH_HTML.replace("__DATA__", inj)
+
+
+_SYNC_BATCH_HTML = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sincronizar fórmulas · Batch records · EOS</title>
+<style>
+:root{--v:#6d28d9;--vl:#7c3aed;--txt:#1c1917;--mut:#78716c;--line:#eef0f2;--bg:#faf9fb;}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--txt);padding:28px;}
+.wrap{max-width:1180px;margin:0 auto;}
+a.back{color:var(--v);text-decoration:none;font-size:13px;font-weight:600;}
+h1{font-size:24px;margin:10px 0 4px;letter-spacing:-.02em;}
+.sub{color:var(--mut);font-size:13px;margin-bottom:22px;max-width:760px;line-height:1.5;}
+.card{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 2px 14px rgba(15,23,42,.05);padding:20px;margin-bottom:18px;}
+.card h2{font-size:16px;margin:0 0 2px;letter-spacing:-.01em;}
+.op{font-size:11.5px;color:var(--mut);margin-bottom:14px;}
+.diffgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin:12px 0;}
+.col{border:1px solid var(--line);border-radius:12px;padding:12px;background:#fcfcfd;}
+.col h3{font-size:11px;text-transform:uppercase;letter-spacing:.05em;margin:0 0 8px;font-weight:700;}
+.col.add h3{color:#15803d;} .col.rem h3{color:#b91c1c;} .col.chg h3{color:#b45309;} .col.miss h3{color:#be123c;}
+.li{font-size:12px;padding:3px 0;font-variant-numeric:tabular-nums;display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid #f5f4f2;}
+.li:last-child{border-bottom:none;}
+.li .c{font-family:ui-monospace,monospace;font-weight:600;}
+.li .p{color:var(--mut);}
+.empty{color:var(--mut);font-size:12px;padding:6px 0;}
+.summary{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;margin-bottom:8px;}
+.summary b{font-variant-numeric:tabular-nums;}
+.acts{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;align-items:center;}
+button{font-family:inherit;font-size:13px;font-weight:700;border-radius:10px;padding:10px 18px;border:1px solid var(--line);background:#fff;color:var(--txt);cursor:pointer;box-shadow:0 2px 8px rgba(15,23,42,.04);}
+button.primary{background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;border:none;}
+button.warn{background:#fff7ed;border-color:#fed7aa;color:#b45309;}
+button:disabled{opacity:.5;cursor:not-allowed;}
+.msg{font-size:12.5px;font-weight:600;margin-left:4px;}
+.msg.ok{color:#15803d;} .msg.err{color:#b91c1c;}
+.badge{display:inline-block;border-radius:999px;padding:2px 9px;font-size:10.5px;font-weight:700;background:#f5f4f2;color:#78716c;}
+.badge.hot{background:#fee2e2;color:#b91c1c;}
+.note{font-size:11.5px;color:var(--mut);margin-top:8px;line-height:1.5;}
+</style></head><body><div class="wrap">
+<a class="back" href="/inventarios">&larr; Planta</a>
+<h1>&#129514; Sincronizar f&oacute;rmulas con los batch records</h1>
+<div class="sub">El batch record (lo que producci&oacute;n pes&oacute; y Calidad verific&oacute;) es la fuente de verdad. Aqu&iacute; ves el diff entre la f&oacute;rmula que usa la app (descuento + abastecimiento) y el batch real, y lo aplic&aacute;s. Primero asegur&aacute; los c&oacute;digos base que falten, luego aplic&aacute;.</div>
+<div id="lista"></div>
+</div>
+<script>
+var DATA=__DATA__;
+function esc(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+var _csrf=null;
+async function csrf(){ if(_csrf) return _csrf; try{ var r=await fetch('/api/csrf-token',{credentials:'same-origin'}); var j=await r.json(); _csrf=j.csrf_token; }catch(e){} return _csrf; }
+async function jget(u){ try{ var r=await fetch(u); if(!r.ok) return null; return await r.json(); }catch(e){ return null; } }
+async function jpost(u,body){ var t=await csrf(); var r=await fetch(u,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t||''},body:JSON.stringify(body||{})}); var j=null; try{ j=await r.json(); }catch(e){} return {ok:r.ok,status:r.status,j:j}; }
+function liRow(cod,pct){ return '<div class="li"><span class="c">'+esc(cod)+'</span><span class="p">'+esc(pct)+' %</span></div>'; }
+function card(p){
+  return '<div class="card" id="card-'+encodeURIComponent(p.nombre)+'">'
+    +'<h2>'+esc(p.nombre)+'</h2>'
+    +'<div class="op">OP '+esc(p.op||'-')+' &middot; '+p.items+' materiales en el batch</div>'
+    +'<div id="diff-'+encodeURIComponent(p.nombre)+'"><div class="empty">Cargando diff&hellip;</div></div>'
+    +'</div>';
+}
+async function cargarDiff(p){
+  var box=document.getElementById('diff-'+encodeURIComponent(p.nombre));
+  var d=await jget('/diag/formula-batch-preview/'+encodeURIComponent(p.nombre));
+  if(!d||!d.ok){ box.innerHTML='<div class="msg err">No se pudo cargar el diff'+(d&&d.error?': '+esc(d.error):'')+'</div>'; return; }
+  var ag=d.a_agregar||[], qu=d.a_quitar||[], pc=d.pct_distinto||[], sm=d.codigos_del_batch_sin_maestro||[];
+  var h='<div class="summary">'
+    +'<span>batch <b>'+d.batch_items+'</b></span><span>app <b>'+d.app_items+'</b></span>'
+    +'<span style="color:#15803d">+ agregar <b>'+ag.length+'</b></span>'
+    +'<span style="color:#b91c1c">- quitar <b>'+qu.length+'</b></span>'
+    +'<span style="color:#b45309">~ % <b>'+pc.length+'</b></span>'
+    +(sm.length?'<span class="badge hot">'+sm.length+' sin maestro</span>':'<span class="badge">maestro OK</span>')
+    +'</div>';
+  h+='<div class="diffgrid">';
+  h+='<div class="col add"><h3>Agregar ('+ag.length+')</h3>'+(ag.length?ag.map(function(x){return liRow(x.codigo,x.pct);}).join(''):'<div class="empty">nada</div>')+'</div>';
+  h+='<div class="col rem"><h3>Quitar ('+qu.length+')</h3>'+(qu.length?qu.map(function(x){return liRow(x.codigo,x.pct);}).join(''):'<div class="empty">nada</div>')+'</div>';
+  h+='<div class="col chg"><h3>% distinto ('+pc.length+')</h3>'+(pc.length?pc.map(function(x){return '<div class="li"><span class="c">'+esc(x.codigo)+'</span><span class="p">'+esc(x.app)+' &rarr; '+esc(x.batch)+'</span></div>';}).join(''):'<div class="empty">nada</div>')+'</div>';
+  if(sm.length){ h+='<div class="col miss"><h3>Sin maestro ('+sm.length+')</h3>'+sm.map(function(c){var hint=DATA.hints[c];return '<div class="li"><span class="c">'+esc(c)+'</span><span class="p">'+(hint?esc(hint.comercial||hint.inci):'<span style="color:#be123c">falta INCI</span>')+'</span></div>';}).join('')+'</div>'; }
+  h+='</div>';
+  // acciones
+  var puedeAplicar = sm.length===0;
+  var faltanConHint = sm.filter(function(c){return DATA.hints[c];});
+  var faltanSinHint = sm.filter(function(c){return !DATA.hints[c];});
+  h+='<div class="acts">';
+  if(sm.length){
+    if(faltanConHint.length){ h+='<button class="warn" onclick="asegurar(\''+esc(p.nombre).replace(/'/g,"")+'\')">Asegurar '+faltanConHint.length+' c&oacute;digo(s) base</button>'; }
+    if(faltanSinHint.length){ h+='<span class="msg err">Faltan por definir en maestro (sin INCI conocido): '+faltanSinHint.join(', ')+'</span>'; }
+  }
+  var totalCambios=ag.length+qu.length+pc.length;
+  h+='<button class="primary" '+(puedeAplicar?'':'disabled')+' onclick="aplicar(\''+esc(p.nombre).replace(/'/g,"")+'\')">Aplicar sync ('+totalCambios+' cambios)</button>';
+  h+='<span class="msg" id="msg-'+encodeURIComponent(p.nombre)+'"></span>';
+  h+='</div>';
+  if(!totalCambios && puedeAplicar){ h+='<div class="note">&#10003; La f&oacute;rmula de la app ya coincide con el batch record.</div>'; }
+  box.innerHTML=h;
+}
+window.asegurar=async function(nombre){
+  var sm=[]; // recolectar de DATA.hints los faltantes (re-leer el diff)
+  var d=await jget('/diag/formula-batch-preview/'+encodeURIComponent(nombre));
+  if(!d||!d.ok) return;
+  var faltan=(d.codigos_del_batch_sin_maestro||[]).filter(function(c){return DATA.hints[c];});
+  var items=faltan.map(function(c){var hh=DATA.hints[c];return {codigo:c,inci:hh.inci,comercial:hh.comercial,controla_stock:hh.controla_stock};});
+  var m=document.getElementById('msg-'+encodeURIComponent(nombre));
+  var r=await jpost('/api/admin/asegurar-mp',{items:items});
+  if(r.ok&&r.j&&r.j.ok){ if(m){m.className='msg ok';m.textContent='C&oacute;digos asegurados. Recargando diff…';} setTimeout(function(){cargarDiff({nombre:nombre,op:d.op,items:d.batch_items});},600); }
+  else { if(m){m.className='msg err';m.textContent='Error: '+((r.j&&r.j.error)||r.status);} }
+};
+window.aplicar=async function(nombre){
+  if(!confirm('Aplicar la fórmula del batch record a '+nombre+'? Reemplaza la fórmula actual de la app (descuento + abastecimiento). Es auditado y reversible re-sincronizando.')) return;
+  var m=document.getElementById('msg-'+encodeURIComponent(nombre));
+  if(m){m.className='msg';m.textContent='Aplicando…';}
+  var r=await jpost('/api/admin/sync-formula-batch',{producto:nombre,aplicar:true,confirmar:'SI'});
+  if(r.ok&&r.j&&r.j.aplicado){ if(m){m.className='msg ok';m.textContent='✓ Aplicado: '+r.j.items_escritos+' materiales escritos.';} setTimeout(function(){cargarDiff({nombre:nombre,op:'',items:r.j.batch_items});},700); }
+  else { if(m){m.className='msg err';m.textContent='Error: '+((r.j&&r.j.error)||r.status);} }
+};
+(function(){
+  var cont=document.getElementById('lista');
+  if(!DATA.productos.length){ cont.innerHTML='<div class="card"><div class="empty">A&uacute;n no hay batch records cargados. Envi&aacute; el PDF del siguiente producto.</div></div>'; return; }
+  cont.innerHTML=DATA.productos.map(card).join('');
+  DATA.productos.forEach(function(p){ cargarDiff(p); });
+})();
+</script></body></html>"""
+
+
 # ─── Backups ──────────────────────────────────────────────────────────────────
 
 @bp.route("/api/admin/backups", methods=["GET"])

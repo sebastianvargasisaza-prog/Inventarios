@@ -3,6 +3,13 @@
 # El Excel y la fórmula vieja de la app driftaron; el batch es lo que producción pesó y Calidad verificó.
 # producto (nombre canónico en formula_headers) -> {"lote_kg": base, "op": "...", "items": {codigo: porcentaje}}
 
+# Pistas para crear en el maestro un código base/vehículo que un batch usa y que falta
+# (típicamente el agua). controla_stock=0 = agua infinita (no genera demanda de compra · mig 218).
+# codigo -> {inci, comercial, controla_stock}
+MAESTRO_HINTS = {
+    "MP00286": {"inci": "AQUA", "comercial": "Agua Desionizada", "controla_stock": 0},
+}
+
 BATCH_FORMULAS = {
     "SUERO TRIACTIVE RETINOID NAD": {
         "op": "OP-2026-94", "lote": "261881", "lote_kg": 12,
