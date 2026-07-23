@@ -14,6 +14,30 @@ MAESTRO_HINTS = {
 # Se carga en el MBR vía /api/brd/mbr/cargar-instructivo (respeta inmutabilidad: MBR aprobado -> versión
 # nueva en borrador que Calidad aprueba con e-firma). El % de MP sigue saliendo de la fórmula (sección 3).
 BATCH_INSTRUCTIVOS = {
+    "BLUSH BALM": [
+        "Paso 1. Fusión de ceras (Fase A): cargar en la olla Synthetic Wax, Cera Microcristalina, Ceresine y Manteca de Murumuru. Calentar a 85-90°C hasta fusión completa.",
+        "Paso 2. Emolientes y dispersante (Fase B): bajar a 80°C y añadir en orden: Polyglyceryl-2 Triisostearate, Phenyl Trimethicone (Silicona BM), Dicaprylyl Carbonate, Coco-Caprylate.",
+        "Paso 3. Dispersión de pigmentos (Fase C): sobre una porción de la mezcla caliente premezclar los Pigmentos (CI) con Lauroyl Lysine. Pasar por molino (2-3 pasadas mínimo).",
+        "Paso 4. Retorno y polvos: regresar la dispersión de pigmentos a la olla (~80°C). Incorporar Polimetilsilsesquioxano y Boron Nitride.",
+        "Paso 5. Sistema funcional y aroma (Fase D): bajar a 70-75°C y añadir Tinogard TT, Tocopherol (Vit E), Stabil (Phenethyl Alcohol/Caprylyl Glycol), Aceite Esencial de Vainilla, Ceramide NP, Citrus Aurantium.",
+        "Paso 6. Péptidos (Fase E): bajar a 50-60°C y añadir Palmitoyl Tripeptide-1, Palmitoyl Tetrapeptide-7, Palmitoyl Tripeptide-38. PUNTO CRÍTICO: no exceder la temperatura máxima de los péptidos.",
+        "Paso 7. Llenado: verter inmediatamente en moldes a 55-65°C. PUNTO CRÍTICO: sin demora, la mezcla cristaliza rápido por debajo de 55°C.",
+        "Paso 8. Enfriamiento: reposar 1 hora a temperatura ambiente, luego nevera (0-10°C) por 10 minutos.",
+        "Paso 9. Desmolde: retirar de nevera y desmoldar con cuidado.",
+        "Paso 10. Curado: reposar en área de envasado 24-48 horas antes de envasar.",
+        "Paso 11. Envasado: transferir al envase stick primario, verificar funcionamiento mecánico (sube/baja sin ruptura) y limpiar la superficie exterior.",
+        "Paso 12. Controles críticos: dispersión de pigmentos en molino (2-3 pasadas), agitación manual continua durante toda la fabricación, péptidos incorporados en frío.",
+    ],
+    "ESENCIA DE CENTELLA ASIATICA": [
+        "Paso 1. Dispensar en balanza analítica y adicionar en un recipiente: Agua Desionizada, Glicina, Gluconolactona, Niacinamida.",
+        "Paso 2. Seguir con: Ectoína, Regaliz, Centella Asiática, Asiaticósidos, Terpenos solubles, Beta-glucano y Betaína.",
+        "Paso 3. Encender plancha de calentamiento y adicionar el agua desionizada hasta la temperatura indicada; disolver las MP de esta etapa.",
+        "Paso 4. Dispensar en balanza analítica: Glicerina y Ácido Hialurónico 50 kDa.",
+        "Paso 5. Con plancha de calentamiento, adicionar estas MP hasta la temperatura indicada.",
+        "Paso 6. Dispensar el Fenoxietanol hasta total disolución.",
+        "Paso 7. En el recipiente principal incorporar el Fenoxietanol con agitación constante hasta total disolución y mezcla homogénea.",
+        "Paso 8. Homogenizar todas las etapas del premezclado en el recipiente principal; agitar 60 minutos a velocidad constante. Ajustar pH final.",
+    ],
     "SUERO EXFOLIANTE NOVA PHA": [
         "Paso 1. Calentar el agua desionizada (100%) a ~80°C. Tomar una porción precalentada para filtrar (extractos).",
         "Paso 2. Tomar 20% del agua y disolver la Beta-ciclodextrina y el Ácido kójico; dejar en agitación constante 1 hora.",
@@ -378,6 +402,36 @@ BATCH_FORMULAS = {
     # NOTA: estos 4 guardan los CÓDIGOS RAW del batch (para que la matriz muestre las inconsistencias).
     # Gel Hidratante y otros repiten los códigos errados de Emulsión (MP00301/302/300/252) · se remapean
     # al canónico en la normalización final consolidada, NO ahora.
+    "SUERO HIDRATANTE AH 1.5%": {
+        # Batch OP-2026-41 (abril · formato viejo PRD-PRO-001-F03 · SIN instructivo en el PDF).
+        "op": "OP-2026-41", "lote": "", "lote_kg": 90,
+        "items": {
+            "MP00079": 0.2, "MP00217": 0.01, "MP00270": 0.3, "MP00195": 1.0, "MP00236": 0.1,
+            "MP00021": 1.0, "MP00286": 95.21, "MP00215": 0.35, "MP00157": 0.4, "MP00142": 0.3,
+            "MP00163": 0.8, "MP00214": 0.03, "MP00047": 0.3,
+        },
+    },
+    "BLUSH BALM": {
+        # Batch OP-2026-61 · 10kg · ANHIDRO (bálsamo · ceras+emolientes+silicona · sin agua).
+        # MP00101 Aceite Vainilla = 0.035% (no 0.620 que es otra columna). Usa MP00303/MP00300 (colisiones).
+        "op": "OP-2026-61", "lote": "", "lote_kg": 10,
+        "items": {
+            "MP00257": 11.5, "MP00127": 20.271, "MP00024": 10.0, "MP00305": 0.02, "MP00079": 0.1,
+            "MP00159": 0.001, "MP00063": 0.1, "MP00172": 0.001, "MP00303": 3.0, "MP00051": 10.0,
+            "MP00306": 7.5, "MP00060": 10.0, "MP00040": 20.271, "MP00055": 3.0, "MP00077": 0.15,
+            "MP00207": 0.75, "MP00288": 2.0, "MP00300": 0.3, "MP00174": 0.001, "MP00101": 0.035,
+            "MP00054": 1.0,
+        },
+    },
+    "ESENCIA DE CENTELLA ASIATICA": {
+        # Batch OP-2026-83 · 50kg. Usa 3 códigos de centella: MP00252, MP00141, MP00176 (grados/formas).
+        "op": "OP-2026-83", "lote": "", "lote_kg": 50,
+        "items": {
+            "MP00270": 0.5, "MP00252": 0.15, "MP00195": 3.0, "MP00021": 1.0, "MP00286": 92.05,
+            "MP00141": 0.1, "MP00215": 0.3, "MP00120": 0.1, "MP00125": 0.05, "MP00176": 0.1,
+            "MP00163": 0.3, "MP00226": 0.3, "MP00214": 0.05, "MP00148": 2.0,
+        },
+    },
     "SUERO EXFOLIANTE NOVA PHA": {
         "op": "OP-2026-82", "lote": "", "lote_kg": 12,
         "items": {
