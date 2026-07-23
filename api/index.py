@@ -1654,6 +1654,44 @@ def diag_cadena_producto(producto):
         return jsonify({'ok': False, 'error': str(e)[:250], 'trace': traceback.format_exc()[-600:]}), 500
 
 
+@app.route('/diag/mbr-producto/<path:producto>')
+def diag_mbr_producto(producto):
+    """Sebastián 23-jul · confirmar que el batch record queda IGUAL en EOS: qué MBR (Master Batch
+    Record) tiene el producto, su estado, y sus PASOS (instructivo de fabricación). Read-only.
+    Compara alto nivel: nº de materiales de la fórmula vs items del MBR, y lista los pasos con fase."""
+    try:
+        from database import get_db
+        c = get_db().cursor()
+        pu = (producto or '').strip().upper()
+        # MBR más reciente (preferir aprobado)
+        mbrs = c.execute("SELECT id, version, estado, COALESCE(titulo,''), COALESCE(lote_size_g,0), "
+                         "COALESCE(tiempo_total_estimado_min,0), COALESCE(aprobado_por,''), COALESCE(aprobado_at_utc,'') "
+                         "FROM mbr_templates WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) "
+                         "ORDER BY (CASE WHEN estado='aprobado' THEN 0 ELSE 1 END), version DESC", (pu,)).fetchall()
+        if not mbrs:
+            # buscar por LIKE
+            r2 = c.execute("SELECT DISTINCT producto_nombre FROM mbr_templates WHERE UPPER(TRIM(producto_nombre)) LIKE ? LIMIT 1", ('%' + pu + '%',)).fetchone()
+            return jsonify({'ok': True, 'producto': pu, 'tiene_mbr': False,
+                            'nota': 'no hay MBR para este producto en EOS · el instructivo de fabricación NO está cargado (se genera desde la fórmula sin pasos)',
+                            'sugerencia_nombre': r2[0] if r2 else None}), 200
+        m = mbrs[0]
+        mbr_id = m[0]
+        pasos = c.execute("SELECT orden, COALESCE(fase,''), COALESCE(descripcion,''), COALESCE(tipo_paso,'') "
+                          "FROM mbr_pasos WHERE mbr_template_id=? ORDER BY orden", (mbr_id,)).fetchall()
+        # nº materiales de la fórmula actual
+        nform = c.execute("SELECT COUNT(*) FROM formula_items WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (pu,)).fetchone()
+        return jsonify({'ok': True, 'producto': pu, 'tiene_mbr': True,
+                        'mbr': {'id': mbr_id, 'version': m[1], 'estado': m[2], 'titulo': m[3],
+                                'lote_size_g': m[4], 'tiempo_min': m[5], 'aprobado_por': m[6], 'aprobado_at': m[7]},
+                        'n_mbrs_total': len(mbrs),
+                        'materiales_formula_actual': int(nform[0] or 0),
+                        'n_pasos': len(pasos),
+                        'pasos': [{'orden': p[0], 'fase': p[1], 'tipo': p[3], 'descripcion': p[2][:180]} for p in pasos]})
+    except Exception as e:
+        import traceback
+        return jsonify({'ok': False, 'error': str(e)[:250], 'trace': traceback.format_exc()[-500:]}), 500
+
+
 @app.route('/diag/envasado-estado')
 def diag_envasado_estado():
     """Sebastián 21-jul · "sigue sin salirme nada en Envasado". Diag público read-only (sin datos
