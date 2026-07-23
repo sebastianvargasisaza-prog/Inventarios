@@ -1576,7 +1576,9 @@ def diag_cadena_producto(producto):
         # maestro + stock + bridges + controla_stock
         maes = {}
         for r in c.execute("SELECT UPPER(TRIM(codigo_mp)), COALESCE(nombre_inci,''), COALESCE(controla_stock,1) FROM maestro_mps").fetchall():
-            maes[r[0]] = (r[1] or '', int(r[2] or 1))
+            # OJO: controla_stock=0 (agua infinita) es falsy → NO usar `r[2] or 1` (colapsa 0→1)
+            cs = 1 if r[2] is None else int(r[2])
+            maes[r[0]] = (r[1] or '', cs)
         stock = {}
         try:
             for r in c.execute("SELECT UPPER(TRIM(material_id)), COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0) FROM movimientos WHERE UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO') GROUP BY UPPER(TRIM(material_id))").fetchall():
@@ -1612,6 +1614,7 @@ def diag_cadena_producto(producto):
             motor_err = str(_e)[:200]
 
         # armar filas + problemas
+        avisos = []
         filas = []
         problemas = []
         suma_pct = 0.0
@@ -1625,15 +1628,28 @@ def diag_cadena_producto(producto):
             m_cons = motor_por_cod.get(cod, 0.0)
             # el motor cuenta esta MP para este producto?
             en_motor = m_cons > 0.01
+            # ¿otro código con el MISMO INCI que el motor SÍ consume? (el resolver colapsa por INCI/bridge
+            # al código con stock → la demanda no se pierde, pero es un DOBLE CÓDIGO a revisar)
+            import re as _re2
+            _ni = _re2.sub(r'\s+', ' ', (maes.get(cod, ('', 1))[0] or '').strip().upper())
+            resuelto_bajo = []
+            if _ni:
+                for oc, (oinci, _cs) in maes.items():
+                    if oc != cod and _re2.sub(r'\s+', ' ', (oinci or '').strip().upper()) == _ni and motor_por_cod.get(oc, 0) > 0.01:
+                        resuelto_bajo.append(oc)
             fila = {'codigo': cod, 'nombre': nom[:34], 'pct': pct,
                     'en_maestro': en_maestro, 'stock_g': round(stock.get(cod, 0), 1),
                     'agua_infinita': es_agua, 'fantasma': fantasma,
-                    'gramos_esperados': round(g_esp, 1), 'motor_consumo_g': round(m_cons, 1)}
+                    'gramos_esperados': round(g_esp, 1), 'motor_consumo_g': round(m_cons, 1),
+                    'resuelto_bajo_otro_codigo': sorted(resuelto_bajo)}
             filas.append(fila)
             if fantasma:
                 problemas.append('FANTASMA: %s (%s) no existe en maestro ni tiene bridge → abastecimiento NO lo puede pedir' % (cod, nom[:24]))
             elif programado and not es_agua and g_esp > 1 and not en_motor:
-                problemas.append('NO CRUZA EN MOTOR: %s (%s) está en la fórmula y hay lote programado, pero el motor no lo cuenta' % (cod, nom[:24]))
+                if resuelto_bajo:
+                    avisos.append('DOBLE CÓDIGO: %s (%s) se consume bajo otro código con el mismo INCI (%s) · la demanda NO se pierde pero conviene consolidar/puentear con Alejandro' % (cod, nom[:22], ', '.join(resuelto_bajo)))
+                else:
+                    problemas.append('DEMANDA PERDIDA: %s (%s) está en la fórmula con lote programado, pero el motor no lo cuenta ni bajo otro código → abastecimiento NO lo pide' % (cod, nom[:22]))
         # sanity suma de %
         pct_ok = 95.0 <= suma_pct <= 105.0
         if not pct_ok:
@@ -1648,7 +1664,8 @@ def diag_cadena_producto(producto):
                                        'kg_total': round(cal_kg, 1), 'proxima_fecha': cal_prox, 'horizonte_dias': _dias},
                         'motor_err': motor_err,
                         'materiales': filas,
-                        'resumen': {'todo_cuadra': len(problemas) == 0, 'n_problemas': len(problemas), 'problemas': problemas}})
+                        'resumen': {'todo_cuadra': len(problemas) == 0, 'n_problemas': len(problemas),
+                                    'problemas': problemas, 'n_avisos': len(avisos), 'avisos': avisos}})
     except Exception as e:
         import traceback
         return jsonify({'ok': False, 'error': str(e)[:250], 'trace': traceback.format_exc()[-600:]}), 500
