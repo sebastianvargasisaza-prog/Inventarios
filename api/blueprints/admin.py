@@ -39,6 +39,68 @@ def _require_admin():
     return u, None, None
 
 
+# ─── Asegurar código(s) MP en el maestro (bases/agua que trae un batch record) ───
+@bp.route("/api/admin/asegurar-mp", methods=["POST"])
+def admin_asegurar_mp():
+    """Garantiza que exista(n) uno o más códigos MP en maestro_mps (idempotente).
+    Uso: los batch records traen la base/vehículo (ej. MP00286 Agua Desionizada 70.9%) que
+    a veces no está en el maestro → el sync de fórmula se bloquea. Este endpoint la crea.
+    NUNCA pisa el INCI de un código existente (solo backfill si está vacío) · reactiva si estaba inactivo.
+    Body: {items:[{codigo, inci, comercial, controla_stock(0/1), tipo}]}. controla_stock=0 = agua infinita."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.get_json(silent=True) or {}
+    items = d.get("items") or []
+    if not isinstance(items, list) or not items:
+        return jsonify({"error": "falta items:[{codigo,inci,...}]"}), 400
+    conn = get_db(); c = conn.cursor()
+    # columnas reales de maestro_mps (controla_stock puede no existir en esquemas viejos)
+    def _tiene_col(tabla, col):
+        try:
+            c.execute("SELECT %s FROM %s LIMIT 0" % (col, tabla)); return True
+        except Exception:
+            conn.rollback(); return False
+    tiene_cs = _tiene_col("maestro_mps", "controla_stock")
+    creados, reactivados, backfill, ya = [], [], [], []
+    for it in items:
+        cod = str(it.get("codigo", "")).strip().upper()
+        if not cod:
+            continue
+        inci = (it.get("inci") or "").strip()
+        com = (it.get("comercial") or "").strip()
+        tipo = (it.get("tipo") or "Materia Prima").strip()
+        cs = 1 if it.get("controla_stock", 1) else 0
+        row = c.execute("SELECT codigo_mp, COALESCE(nombre_inci,''), COALESCE(activo,1) FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=?", (cod,)).fetchone()
+        if row:
+            # reactivar si estaba inactivo
+            if int(row[2] or 1) == 0:
+                c.execute("UPDATE maestro_mps SET activo=1 WHERE codigo_mp=?", (row[0],))
+                reactivados.append(cod)
+            # backfill INCI solo si estaba vacío
+            if not (row[1] or "").strip() and inci:
+                c.execute("UPDATE maestro_mps SET nombre_inci=? WHERE codigo_mp=?", (inci, row[0]))
+                backfill.append(cod)
+            if cod not in reactivados and cod not in backfill:
+                ya.append(cod)
+            continue
+        # crear
+        cols = ["codigo_mp", "nombre_inci", "nombre_comercial", "tipo", "activo"]
+        vals = [cod, inci, com, tipo, 1]
+        if tiene_cs:
+            cols.append("controla_stock"); vals.append(cs)
+        ph = ",".join(["?"] * len(vals))
+        c.execute("INSERT INTO maestro_mps (%s) VALUES (%s)" % (",".join(cols), ph), tuple(vals))
+        creados.append(cod)
+    try:
+        audit_log(c, usuario=u, accion="ASEGURAR_MP", tabla="maestro_mps", registro_id=",".join([i.get("codigo", "") for i in items])[:80],
+                  despues={"creados": creados, "reactivados": reactivados, "backfill_inci": backfill})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({"ok": True, "creados": creados, "reactivados": reactivados, "backfill_inci": backfill, "ya_existian": ya})
+
+
 # ─── Importar maestro MP canónico (Excel Alejandro · código + INCI) ──────────────
 @bp.route("/api/admin/importar-maestro-inci", methods=["GET", "POST"])
 def admin_importar_maestro_inci():
