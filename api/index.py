@@ -1164,6 +1164,22 @@ def diag_producto_ventas(producto):
         return jsonify({'ok': False, 'error': str(e)[:200]}), 500
 
 
+@app.route('/diag/formulas-dump')
+def diag_formulas_dump():
+    """Dump READ-ONLY de TODAS las fórmulas de prod (formula_items) en 1 llamada, para comparar
+    offline contra el Excel canónico. producto -> [{codigo, inci, pct}]. Sin datos sensibles."""
+    try:
+        from database import get_db
+        c = get_db().cursor()
+        out = {}
+        for r in c.execute("SELECT producto_nombre, COALESCE(material_id,''), COALESCE(material_nombre,''), "
+                           "COALESCE(porcentaje,0) FROM formula_items ORDER BY producto_nombre").fetchall():
+            out.setdefault(r[0], []).append({'codigo': r[1], 'inci': r[2], 'pct': float(r[3] or 0)})
+        return jsonify({'ok': True, 'n_productos': len(out), 'formulas': out})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)[:200]}), 500
+
+
 @app.route('/diag/maestro-inci-preview')
 def diag_maestro_inci_preview():
     """Preview READ-ONLY del import del maestro canónico (código+INCI de Alejandro). No escribe.
