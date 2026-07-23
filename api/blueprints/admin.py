@@ -229,10 +229,15 @@ def admin_sync_batch_formulas_page():
     except Exception:
         from batch_formulas_data import BATCH_FORMULAS
         MAESTRO_HINTS = {}
+    try:
+        from batch_formulas_data import BATCH_INSTRUCTIVOS
+    except Exception:
+        BATCH_INSTRUCTIVOS = {}
     productos = []
     for k, v in BATCH_FORMULAS.items():
-        productos.append({"nombre": k, "op": v.get("op", ""), "items": len(v.get("items", {}))})
-    data = {"productos": productos, "hints": MAESTRO_HINTS}
+        productos.append({"nombre": k, "op": v.get("op", ""), "items": len(v.get("items", {})),
+                          "instructivo_pasos": len(BATCH_INSTRUCTIVOS.get(k, []))})
+    data = {"productos": productos, "hints": MAESTRO_HINTS, "instructivos": BATCH_INSTRUCTIVOS}
     inj = _json.dumps(data, ensure_ascii=False).replace("<", "\\u003c")
     return _SYNC_BATCH_HTML.replace("__DATA__", inj)
 
@@ -336,6 +341,8 @@ async function cargarDiff(p){
   }
   var totalCambios=ag.length+qu.length+pc.length;
   h+='<button class="primary" '+(puedeAplicar?'':'disabled')+' onclick="aplicar(\''+esc(p.nombre).replace(/'/g,"")+'\')">Aplicar sync ('+totalCambios+' cambios)</button>';
+  var npasos=(DATA.instructivos[p.nombre]||[]).length;
+  if(npasos){ h+='<button onclick="instructivo(\''+esc(p.nombre).replace(/'/g,"")+'\')">&#128220; Cargar instructivo ('+npasos+' pasos)</button>'; }
   h+='<span class="msg" id="msg-'+encodeURIComponent(p.nombre)+'"></span>';
   h+='</div>';
   if(!totalCambios && puedeAplicar){ h+='<div class="note">&#10003; La f&oacute;rmula de la app ya coincide con el batch record.</div>'; }
@@ -350,6 +357,16 @@ window.asegurar=async function(nombre){
   var m=document.getElementById('msg-'+encodeURIComponent(nombre));
   var r=await jpost('/api/admin/asegurar-mp',{items:items});
   if(r.ok&&r.j&&r.j.ok){ if(m){m.className='msg ok';m.textContent='C&oacute;digos asegurados. Recargando diff…';} setTimeout(function(){cargarDiff({nombre:nombre,op:d.op,items:d.batch_items});},600); }
+  else { if(m){m.className='msg err';m.textContent='Error: '+((r.j&&r.j.error)||r.status);} }
+};
+window.instructivo=async function(nombre){
+  var pasos=DATA.instructivos[nombre]||[];
+  if(!pasos.length) return;
+  if(!confirm('Cargar el instructivo de fabricación ('+pasos.length+' pasos) en el MBR de '+nombre+'? Si el MBR está aprobado, se crea una versión NUEVA en borrador que Calidad aprueba con e-firma.')) return;
+  var m=document.getElementById('msg-'+encodeURIComponent(nombre));
+  if(m){m.className='msg';m.textContent='Cargando instructivo…';}
+  var r=await jpost('/api/brd/mbr/cargar-instructivo',{producto:nombre,pasos:pasos});
+  if(r.ok&&r.j&&r.j.ok){ if(m){m.className='msg ok';m.textContent='✓ '+r.j.pasos+' pasos cargados'+(r.j.nueva_version?' (versión nueva en borrador · aprobala en el módulo MBR)':'');} }
   else { if(m){m.className='msg err';m.textContent='Error: '+((r.j&&r.j.error)||r.status);} }
 };
 window.aplicar=async function(nombre){
