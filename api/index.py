@@ -1263,6 +1263,58 @@ def diag_formulas_dump():
         return jsonify({'ok': False, 'error': str(e)[:200]}), 500
 
 
+@app.route('/diag/maestro-duplicados-inci')
+def diag_maestro_duplicados_inci():
+    """READ-ONLY: lista los INCIs que existen bajo 2+ códigos en maestro_mps (posible MP duplicada).
+    Por cada código: activo, stock (SUM movimientos), y en cuántas formula_items se usa. Sirve para
+    decidir cuál es el 'bueno' y cuál consolidar. NO escribe. Ojo: hay INCIs legítimamente multi-código
+    (agua, parfum, dimethicone, o mismo INCI distinto GRADO) → es una lista de REVISIÓN, no de borrado."""
+    try:
+        import re as _re
+        from database import get_db
+        c = get_db().cursor()
+        def _ninci(s):
+            return _re.sub(r'\s+', ' ', (s or '').strip().upper())
+        # maestro: código -> (inci, comercial, activo)
+        maes = {}
+        for r in c.execute("SELECT UPPER(TRIM(codigo_mp)), COALESCE(nombre_inci,''), COALESCE(nombre_comercial,''), COALESCE(activo,1) FROM maestro_mps").fetchall():
+            maes[r[0]] = (r[1] or '', r[2] or '', int(r[3] or 1))
+        # stock por material_id (SUM movimientos · canónico simplificado)
+        stock = {}
+        try:
+            for r in c.execute("SELECT UPPER(TRIM(material_id)), COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0) FROM movimientos GROUP BY UPPER(TRIM(material_id))").fetchall():
+                stock[r[0]] = float(r[1] or 0)
+        except Exception:
+            pass
+        # uso en formula_items por código
+        usos = {}
+        for r in c.execute("SELECT UPPER(TRIM(material_id)), COUNT(*) FROM formula_items GROUP BY UPPER(TRIM(material_id))").fetchall():
+            usos[r[0]] = int(r[1] or 0)
+        # agrupar por INCI normalizado
+        grupos = {}
+        for cod, (inci, com, act) in maes.items():
+            ni = _ninci(inci)
+            if ni:
+                grupos.setdefault(ni, []).append(cod)
+        dups = []
+        for ni, cods in grupos.items():
+            if len(cods) < 2:
+                continue
+            detalle = [{'codigo': cd, 'comercial': maes[cd][1], 'activo': maes[cd][2],
+                        'stock_g': round(stock.get(cd, 0), 2), 'usos_formula': usos.get(cd, 0)} for cd in sorted(cods)]
+            dups.append({'inci': ni, 'n_codigos': len(cods),
+                         'con_stock': sum(1 for d in detalle if d['stock_g'] > 0.01),
+                         'con_uso': sum(1 for d in detalle if d['usos_formula'] > 0),
+                         'codigos': detalle})
+        # ordenar: primero los que tienen 2+ con uso en fórmula (más riesgo de split real)
+        dups.sort(key=lambda x: (-x['con_uso'], -x['n_codigos'], x['inci']))
+        return jsonify({'ok': True, 'total_incis_duplicados': len(dups),
+                        'total_codigos_maestro': len(maes), 'duplicados': dups})
+    except Exception as e:
+        import traceback
+        return jsonify({'ok': False, 'error': str(e)[:200], 'trace': traceback.format_exc()[-400:]}), 500
+
+
 @app.route('/diag/maestro-inci-preview')
 def diag_maestro_inci_preview():
     """Preview READ-ONLY del import del maestro canónico (código+INCI de Alejandro). No escribe.
