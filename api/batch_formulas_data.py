@@ -14,6 +14,78 @@ MAESTRO_HINTS = {
 # Se carga en el MBR vía /api/brd/mbr/cargar-instructivo (respeta inmutabilidad: MBR aprobado -> versión
 # nueva en borrador que Calidad aprueba con e-firma). El % de MP sigue saliendo de la fórmula (sección 3).
 BATCH_INSTRUCTIVOS = {
+    "SUERO EXFOLIANTE NOVA PHA": [
+        "Paso 1. Calentar el agua desionizada (100%) a ~80°C. Tomar una porción precalentada para filtrar (extractos).",
+        "Paso 2. Tomar 20% del agua y disolver la Beta-ciclodextrina y el Ácido kójico; dejar en agitación constante 1 hora.",
+        "Paso 3. Con el agua restante (80%) a temperatura, adicionar el Ácido azelaico con agitación hasta total disolución.",
+        "Paso 4. Con el azelaico disuelto, adicionar: Urea, Gluconolactona, Glucosamina, Alpha-arbutina, Centella asiática (Fase I).",
+        "Paso 5. Adicionar uno por uno hasta total disolución; no adicionar una MP si la anterior no se disolvió.",
+        "Paso 6. Agregar a la Fase I la fase de ciclodextrina/kójico y el extracto de Regaliz. Luego agregar con agitación el Ácido láctico.",
+        "Paso 7. Dividir el propilenglicol en dos. En el beaker 1 adicionar propilenglicol (30%) y calentar a ~70°C.",
+        "Paso 8. Al llegar a la temperatura, adicionar con agitación el Ácido salicílico hasta completa disolución.",
+        "Paso 9. En el beaker 2 adicionar propilenglicol (70%) y dispersar el Ácido Hialurónico 50 kDa.",
+        "Paso 10. Con ambos beakers homogéneos, adicionar primero el beaker 1 a la Fase I con agitación.",
+        "Paso 11. Luego agregar el beaker 2 a la fase anterior con agitación hasta homogeneidad.",
+        "Paso 12. Agregar el Gransil VX 419 con agitación hasta homogeneidad.",
+        "Paso 13. Adicionar poco a poco y con agitación el Hidróxido de sodio (solución 50%).",
+        "Paso 14. Verificar y ajustar el pH a 4.8-5.2 con NaOH. Registrar pH real y mL de NaOH.",
+        "Paso 15. Agitar 30 min a 200 rpm hasta mezcla homogénea.",
+    ],
+    "LIMPIADOR FACIAL HIDRATANTE": [
+        "Paso 1. Encender el homogeneizador. Adicionar el 100% del agua desionizada (dejar 500 mL para filtrar/dispersar).",
+        "Paso 2. Agitador a 150 rpm. Adicionar: Betaína, Ácido glutámico, Glicina, Centella asiática.",
+        "Paso 3. Adicionar uno por uno hasta total disolución. Encender el homogeneizador si es necesario.",
+        "Paso 4. Recipiente 1: dispersar los Ácidos Hialurónicos (50/300/1500 kDa) con 50% del propilenglicol.",
+        "Paso 5. Recipiente 2: dispersar la Goma Xantana con 50% de la glicerina.",
+        "Paso 6. Recipiente 3: dispersar el Carbopol con 50% de glicerina y propilenglicol (usar batidora si es necesario).",
+        "Paso 7. Adicionar el recipiente 1 al homogeneizador; incorporar los HA con el agua hasta homogeneidad; agitar 5 min.",
+        "Paso 8. Adicionar el recipiente 2 con agitación hasta homogeneidad; agitar 10 min más.",
+        "Paso 9. Adicionar el recipiente 3 (encender agitador + homogeneizador); agitar 10 min.",
+        "Paso 10. Recipiente 4: Probetaína + AOS-40 + Tween 20; agitar hasta incorporado y translúcido.",
+        "Paso 11. Agregar el recipiente 4 al homogeneizador con agitación suave (apagar el homogeneizador, solo agitador, para evitar espuma).",
+        "Paso 12. Por último agregar el Fenoxietanol y el Ácido láctico; agitar hasta homogeneidad; 20 min más.",
+    ],
+    "CREMA CORPORAL RENOVA BODY": [
+        "Paso 1. Encender el homogeneizador. Adicionar el 100% del agua desionizada. Agitador a 150 rpm.",
+        "Paso 2. Adicionar: Urea, Niacinamida, Glicerina, Propilenglicol (uno por uno hasta total disolución).",
+        "Paso 3. Adicionar poco a poco el Quimcream QUIM-16T con agitación. Una vez incorporado, agregar: Silicona líquida (Dimethicone), Miristato de isopropilo, Aceite de jojoba, Dibutil adipato.",
+        "Paso 4. Seguir con: Aceite de argán, Fragancia de pistacho, Fragancia de yogurt cremoso, Fenoxietanol, Vitamina E.",
+        "Paso 5. Adicionar uno por uno hasta total disolución; no adicionar una MP si la anterior no se disolvió.",
+    ],
+    "SUERO ANTIOXIDANTE RENOVA C10": [
+        "Paso 1. Premezcla 1: en un recipiente adicionar con agitación a temperatura ambiente: Agua desionizada, Niacinamida, Sodium Ascorbyl Phosphate, 3-O-Ethyl Ascorbic Acid, Glicina, Betaína.",
+        "Paso 2. Seguir con: Acetyl Hexapeptide-8, Centella asiática polvo, Ascorbyl glucoside, Pantenol polvo (uno por uno hasta disolución).",
+        "Paso 3. Premezcla 2: en otro recipiente adicionar propilenglicol 100%, glicerina y Ácido Hialurónico 50 kDa. Homogenizar con batidora.",
+        "Paso 4. Tomar el agua restante (40%) y calentar a 65°C; agregar la premezcla 2 sobre el agua caliente, agitar a 1500 rpm.",
+        "Paso 5. Agitar a 1500 rpm hasta total disolución y dejar enfriar (Premezcla 3).",
+        "Paso 6. En un recipiente adicionar el Triglicérido cáprico y disolver el Tinogard TT; llevar a 65°C hasta disolución; dejar enfriar.",
+        "Paso 7. Agregar uno a uno con agitación: Escualeno, Tetraisopalmitato de ascorbilo, Vitamina E, Bakuchiol (Premezcla 4).",
+        "Paso 8. Agregar a la premezcla 1 el Quimcream con agitación hasta formar la emulsión; agitar 10 min más.",
+        "Paso 9. Agregar la Premezcla 3 con agitación hasta homogeneidad; luego la Premezcla 4; agitar 30 min más.",
+        "Paso 10. Agregar el Gransil VX 419 hasta homogeneidad; por último el Biosure FE; agitar a 1000 rpm. Ajustar pH final.",
+    ],
+    "SUERO DE NIACINAMIDA 5% FORMULA NUEVA": [
+        "Paso 1. Dividir el agua desionizada en dos recipientes (70% y 30%).",
+        "Paso 2. En un recipiente agregar la glicerina y con agitación los Ácidos Hialurónicos (50/300/1500 kDa).",
+        "Paso 3. Premezcla 1: agregar el 30% del agua y la dispersión de HA anterior. Registrar temperatura.",
+        "Paso 4. Usar mezclador a 2000 rpm. Registrar RPM reales.",
+        "Paso 5. Premezcla 2: adicionar agua desionizada y uno a uno: Glucosamina, Niacinamida, Gluconolactona, Betaína, Ectoína.",
+        "Paso 6. Seguir con: Triterpenos solubles (Centella) y Pantenol polvo.",
+        "Paso 7. Adicionar uno por uno hasta total disolución.",
+        "Paso 8. Con la premezcla 2 disuelta, adicionar con agitación: Vitamina E polvo y 1,2-Hexanediol. Mezclador a 2000 rpm.",
+        "Paso 9. Adicionar a la premezcla 2 la premezcla 1 con agitación hasta total incorporación de los HA.",
+        "Paso 10. Finalmente adicionar en orden: Gransil VX 419 y Biosure FE; agitar 10 min con hélice de estrías. Ajustar pH final.",
+    ],
+    "SUERO DE VITAMINA C+ FORMULA NUEVA": [
+        "Paso 1. Dividir el agua desionizada en 3 partes (20%, 30%, 50%). Recipiente 1: adicionar Ácido kójico y Beta-ciclodextrina con 30% del agua; dejar en agitación.",
+        "Paso 2. Recipiente 2: adicionar 30% del agua y: Ácido ascórbico, Gluconolactona, EDTA disódico, Ácido cítrico, Glicinamida, Péptidos de colágeno.",
+        "Paso 3. Adicionar uno por uno hasta total disolución.",
+        "Paso 4. Dividir el propilenglicol en dos (30% y 70%). Recipiente 3: propilenglicol 30% con Alpha-arbutina con agitación.",
+        "Paso 5. Recipiente 4: propilenglicol 70% y dispersar el Ácido Hialurónico 50 kDa.",
+        "Paso 6. Al recipiente 2 adicionar con agitación las premezclas: recipiente 1 (kójico/ciclodextrina), recipiente 3 (propilenglicol/arbutina).",
+        "Paso 7. Adicionar uno por uno hasta total disolución.",
+        "Paso 8. Con la mezcla homogénea, adicionar con agitación el Gransil VX 419 y el Biosure FE. Ajustar pH final.",
+    ],
     "CONTORNO DE OJOS RETINALDEHIDO 0.05%": [
         "Paso 1. Dividir el agua desionizada en tres recipientes (50%, 45%, 5%). En el recipiente 1 calentar el agua (45%) hasta máximo 65°C. Registrar temperatura real.",
         "Paso 2. Al alcanzar la temperatura, adicionar con agitación constante el EZ-4U previamente humectado con glicerina. Usar batidora de mano si es necesario hasta homogeneidad.",
@@ -306,6 +378,61 @@ BATCH_FORMULAS = {
     # NOTA: estos 4 guardan los CÓDIGOS RAW del batch (para que la matriz muestre las inconsistencias).
     # Gel Hidratante y otros repiten los códigos errados de Emulsión (MP00301/302/300/252) · se remapean
     # al canónico en la normalización final consolidada, NO ahora.
+    "SUERO EXFOLIANTE NOVA PHA": {
+        "op": "OP-2026-82", "lote": "", "lote_kg": 12,
+        "items": {
+            "MP00262": 1.0, "MP00107": 0.5, "MP00270": 8.0, "MP00138": 4.0, "MP00121": 1.0,
+            "MP00237": 0.2, "MP00252": 0.05, "MP00221": 0.2, "MP00210": 0.5, "MP00144": 2.0,
+            "MP00264": 0.2, "MP00021": 1.0, "MP00286": 77.79, "MP00072": 0.3, "MP00120": 0.01,
+            "MP00297": 3.0, "MP00163": 0.2, "MP00046": 0.05,
+        },
+    },
+    "LIMPIADOR FACIAL HIDRATANTE": {
+        "op": "OP-2026-17", "lote": "", "lote_kg": 70,
+        "items": {
+            "MP00217": 0.01, "MP00138": 1.0, "MP00121": 10.0, "MP00195": 10.0, "MP00080": 3.5,
+            "MP00285": 0.01, "MP00021": 1.0, "MP00286": 66.56, "MP00073": 0.5, "MP00212": 3.5,
+            "MP00181": 0.01, "MP00215": 0.5, "MP00120": 0.01, "MP00157": 0.2, "MP00125": 0.1,
+            "MP00142": 0.2, "MP00200": 0.5, "MP00163": 0.2, "MP00214": 0.1, "MP00290": 0.1,
+            "MP00082": 2.0,
+        },
+    },
+    "CREMA CORPORAL RENOVA BODY": {
+        "op": "OP-2026-84", "lote": "", "lote_kg": 70,
+        "items": {
+            "MP00107": 10.0, "MP00062": 0.2, "MP00293": 5.0, "MP00134": 1.0, "MP00136": 1.0,
+            "MP00121": 5.0, "MP00195": 5.0, "MP00019": 0.1, "MP00071": 2.0, "MP00137": 1.0,
+            "MP00021": 1.0, "MP00286": 64.2, "MP00078": 0.5, "MP00266": 2.0, "MP00148": 2.0,
+        },
+    },
+    "SUERO ANTIOXIDANTE RENOVA C10": {
+        "op": "OP-2026-67", "lote": "", "lote_kg": 23,
+        "items": {
+            "MP00169": 3.5, "MP00079": 0.3, "MP00238": 0.5, "MP00063": 0.04, "MP00121": 0.5,
+            "MP00252": 0.05, "MP00195": 0.5, "MP00071": 1.2, "MP00160": 4.0, "MP00299": 2.0,
+            "MP00236": 0.05, "MP00090": 0.6, "MP00155": 0.01, "MP00286": 79.87, "MP00282": 0.05,
+            "MP00072": 0.3, "MP00125": 0.3, "MP00173": 0.03, "MP00068": 1.0, "MP00163": 0.2,
+            "MP00148": 5.0,
+        },
+    },
+    "SUERO DE NIACINAMIDA 5% FORMULA NUEVA": {
+        "op": "OP-2026-97", "lote": "", "lote_kg": 30,
+        "items": {
+            "MP00262": 0.5, "MP00079": 0.15, "MP00270": 0.3, "MP00252": 0.01, "MP00195": 0.1,
+            "MP00236": 0.05, "MP00245": 0.5, "MP00286": 91.43, "MP00141": 0.01, "MP00072": 0.3,
+            "MP00215": 0.05, "MP00157": 0.05, "MP00142": 0.05, "MP00068": 1.0, "MP00163": 0.35,
+            "MP00226": 0.1, "MP00046": 0.05, "MP00148": 5.0,
+        },
+    },
+    "SUERO DE VITAMINA C+ FORMULA NUEVA": {
+        "op": "OP-2026-91", "lote": "", "lote_kg": 20,
+        "items": {
+            "MP00079": 0.5, "MP00270": 1.0, "MP00121": 3.5, "MP00237": 0.1, "MP00145": 0.05,
+            "MP00160": 4.0, "MP00285": 0.05, "MP00144": 2.0, "MP00264": 0.1, "MP00286": 81.0,
+            "MP00231": 0.05, "MP00072": 0.15, "MP00065": 0.1, "MP00230": 6.0, "MP00150": 0.05,
+            "MP00068": 1.0, "MP00163": 0.3, "MP00046": 0.05,
+        },
+    },
     "CONTORNO DE OJOS RETINALDEHIDO 0.05%": {
         "op": "OP-2026-99", "lote": "", "lote_kg": 7.5,
         "items": {
