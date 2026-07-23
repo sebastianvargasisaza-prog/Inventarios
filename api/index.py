@@ -1164,6 +1164,37 @@ def diag_producto_ventas(producto):
         return jsonify({'ok': False, 'error': str(e)[:200]}), 500
 
 
+@app.route('/diag/maestro-inci-preview')
+def diag_maestro_inci_preview():
+    """Preview READ-ONLY del import del maestro canónico (código+INCI de Alejandro). No escribe.
+    Muestra: INCIs que cambiarían y códigos nuevos a crear vs el maestro_mps actual de prod."""
+    try:
+        from database import get_db
+        from maestro_canon_data import MAESTRO_INCI
+        c = get_db().cursor()
+        cur = {}
+        for row in c.execute("SELECT UPPER(TRIM(codigo_mp)), COALESCE(nombre_inci,'') FROM maestro_mps").fetchall():
+            cur[row[0]] = row[1] or ''
+        cambios, nuevos, iguales = [], [], 0
+        for cod, inci in MAESTRO_INCI.items():
+            cu = (cod or '').strip().upper()
+            if cu not in cur:
+                nuevos.append({'codigo': cod, 'inci': inci})
+            elif (cur[cu] or '').strip().upper() != (inci or '').strip().upper():
+                cambios.append({'codigo': cod, 'antes': cur[cu], 'despues': inci})
+            else:
+                iguales += 1
+        # códigos en prod que NO están en el canon (posibles residuos · solo informativo, NO se borran)
+        en_prod_no_canon = sorted(set(cur) - set(k.upper() for k in MAESTRO_INCI))
+        return jsonify({'ok': True, 'total_canon': len(MAESTRO_INCI), 'ya_iguales': iguales,
+                        'inci_a_cambiar': len(cambios), 'codigos_a_crear': len(nuevos),
+                        'cambios_inci': cambios, 'codigos_nuevos': nuevos,
+                        'en_prod_fuera_del_canon': {'total': len(en_prod_no_canon), 'muestra': en_prod_no_canon[:40]}})
+    except Exception as e:
+        import traceback
+        return jsonify({'ok': False, 'error': str(e)[:200], 'trace': traceback.format_exc()[-400:]}), 500
+
+
 @app.route('/diag/formula/<path:producto>')
 def diag_formula(producto):
     """Sebastián/Alejandro 22-jul · ver la FÓRMULA real de un producto (los códigos MP que usa)

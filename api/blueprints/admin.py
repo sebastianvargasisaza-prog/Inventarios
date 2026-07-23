@@ -39,6 +39,65 @@ def _require_admin():
     return u, None, None
 
 
+# ─── Importar maestro MP canónico (Excel Alejandro · código + INCI) ──────────────
+@bp.route("/api/admin/importar-maestro-inci", methods=["GET", "POST"])
+def admin_importar_maestro_inci():
+    """Reconcilia maestro_mps con el maestro canónico (INVENTARIO_MP_v8_1 + FORMULAS_MAESTRO
+    reconciliados · Alejandro 22-jul): cada código queda con su NOMBRE INCI exacto, y se crean los
+    códigos nuevos (5 por conflicto de código-compartido + 4 que las fórmulas usan y faltaban).
+    Solo INCI y alta de códigos · NUNCA borra ni toca stock/comercial/formula.
+
+    DRY-RUN por default (GET o POST sin aplicar): reporta el diff, NO escribe.
+    APLICAR: POST {\"aplicar\": true, \"confirmar\": \"SI\"}."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    try:
+        from maestro_canon_data import MAESTRO_INCI
+    except Exception as e:
+        return jsonify({"error": "no se pudo cargar el maestro canónico: %s" % e}), 500
+    conn = get_db(); c = conn.cursor()
+    cur = {}
+    for row in c.execute("SELECT UPPER(TRIM(codigo_mp)), COALESCE(nombre_inci,'') FROM maestro_mps").fetchall():
+        cur[row[0]] = row[1] or ''
+    cambios, nuevos, iguales = [], [], 0
+    for cod, inci in MAESTRO_INCI.items():
+        cu = (cod or '').strip().upper()
+        if cu not in cur:
+            nuevos.append((cod, inci))
+        elif (cur[cu] or '').strip().upper() != (inci or '').strip().upper():
+            cambios.append((cod, cur[cu], inci))
+        else:
+            iguales += 1
+    d = request.get_json(silent=True) or {}
+    aplicar = (request.method == "POST" and d.get("aplicar") is True
+               and str(d.get("confirmar", "")).strip().upper() == "SI")
+    out = {
+        "ok": True, "dry_run": (not aplicar), "total_canon": len(MAESTRO_INCI),
+        "ya_iguales": iguales, "inci_a_cambiar": len(cambios), "codigos_a_crear": len(nuevos),
+        "muestra_cambios_inci": [{"codigo": x[0], "antes": x[1], "despues": x[2]} for x in cambios[:60]],
+        "codigos_nuevos": [{"codigo": x[0], "inci": x[1]} for x in nuevos],
+        "aplicado": False,
+    }
+    if aplicar:
+        n_upd = n_ins = 0
+        for cod, _antes, desp in cambios:
+            c.execute("UPDATE maestro_mps SET nombre_inci=? WHERE UPPER(TRIM(codigo_mp))=UPPER(TRIM(?))", (desp, cod))
+            n_upd += 1
+        for cod, inci in nuevos:
+            # códigos nuevos garantizados inexistentes (no estaban en cur) → INSERT simple, idempotente
+            c.execute("INSERT INTO maestro_mps (codigo_mp, nombre_inci, activo) VALUES (?, ?, 1)", (cod, inci))
+            n_ins += 1
+        try:
+            audit_log(c, usuario=u, accion="IMPORTAR_MAESTRO_INCI", tabla="maestro_mps", registro_id="(bulk)",
+                      despues={"inci_actualizados": n_upd, "codigos_creados": n_ins})
+        except Exception:
+            pass
+        conn.commit()
+        out.update({"aplicado": True, "inci_actualizados": n_upd, "codigos_creados": n_ins})
+    return jsonify(out)
+
+
 # ─── Backups ──────────────────────────────────────────────────────────────────
 
 @bp.route("/api/admin/backups", methods=["GET"])
