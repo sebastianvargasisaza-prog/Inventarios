@@ -14,6 +14,18 @@ MAESTRO_HINTS = {
 # Se carga en el MBR vía /api/brd/mbr/cargar-instructivo (respeta inmutabilidad: MBR aprobado -> versión
 # nueva en borrador que Calidad aprueba con e-firma). El % de MP sigue saliendo de la fórmula (sección 3).
 BATCH_INSTRUCTIVOS = {
+    "LIMPIADOR FACIAL BHA 2%": [
+        "Paso 1. En un recipiente, adicionar con agitación constante y a temperatura ambiente el 100% del agua desionizada y la Centella Asiática (Premezcla 1).",
+        "Paso 2. Una vez homogénea, adicionar la Goma Xanthan usando la hélice de dispersión. Mantener en agitación constante hasta completa homogeneidad.",
+        "Paso 3. En otro recipiente, adicionar Propilenglicol (100%) y calentar a ~70°C. Con agitación constante, adicionar el Ácido Salicílico hasta completa disolución. Registrar temperatura real.",
+        "Paso 4. Una vez disuelto el ácido salicílico, adicionar lentamente y con agitación constante el Polietilenglicol 400 (PEG-400). (Premezcla 2)",
+        "Paso 5. En un recipiente, preparar los tensoactivos y el aceite de árbol de té: adicionar con agitación constante AOS-40, Probetaína (Cocamidopropyl Betaine) y Aceite de árbol de té. (Premezcla 3)",
+        "Paso 6. Adicionar poco a poco y con agitación constante la Premezcla 2 sobre la Premezcla 3, usando la hélice antiespuma. (Premezcla 4)",
+        "Paso 7. Una vez homogéneas y a temperatura ambiente, adicionar la Premezcla 4 sobre la Premezcla 1. Dejar ~20 minutos en agitación constante. Registrar tiempo real.",
+        "Paso 8. Adicionar el Fenoxietanol y seguir agitando 5 minutos más. Registrar tiempo real.",
+        "Paso 9. Finalmente adicionar la Trietanolamina. Agitar 20 minutos a velocidad constante de ~1000 RPM hasta mezcla homogénea. Registrar RPM real.",
+        "Paso 10. Apagar el agitador hasta que la mezcla quede totalmente uniforme. Controles en proceso: densidad ~0.995 g/mL a 25°C, viscosidad.",
+    ],
     "EMULSION HIDRATANTE ILUMINADORA": [
         "Paso 1. PREPARACIÓN FASE A: pesar el agua desionizada en el homogeneizador o en un tanque de capacidad adecuada. Reservar 10% del agua aparte para dilución de activos.",
         "Paso 2. Encender agitador a 400-450 rpm. Tamizar el EZ-4U sobre el agua bajo agitación constante, agregando lentamente en zona de máxima agitación. No agregar en zonas sin movimiento (forma grumos difíciles de dispersar).",
@@ -70,6 +82,16 @@ BATCH_INSTRUCTIVOS = {
 }
 
 BATCH_FORMULAS = {
+    "LIMPIADOR FACIAL BHA 2%": {
+        # Batch OP-2026-96 · 200kg · lote 261901. 12 mat, 100%. Todos los códigos NUMÉRICOS.
+        # Centella = MP00181 (extract plano, NO triterpenes MP00176). Árbol de té MP00085.
+        "op": "OP-2026-96", "lote": "261901", "lote_kg": 200,
+        "items": {
+            "MP00123": 1.9, "MP00121": 10.0, "MP00195": 10.0, "MP00080": 2.0, "MP00210": 2.0,
+            "MP00021": 1.0, "MP00286": 63.0, "MP00073": 1.0, "MP00212": 4.0, "MP00181": 0.05,
+            "MP00294": 5.0, "MP00085": 0.05,
+        },
+    },
     "EMULSION HIDRATANTE ILUMINADORA": {
         # Fórmula del batch OP-2026-88 (28 mat, 100%) CON CÓDIGOS CANÓNICOS (remapeados vs Excel Alejandro
         # v8_2 · 23-jul). El batch usó códigos errados que en el maestro son OTRO material:
