@@ -16,16 +16,35 @@ documento vive en PostgreSQL de todos modos). NUNCA rompe un flujo regulado.
 """
 import logging
 import os
+import re
 
 log = logging.getLogger('r2_storage')
+
+# Caracteres invisibles/whitespace unicode que .strip() NO remueve (se cuelan al copiar/pegar
+# desde el dashboard de Cloudflare o desde HTML renderizado) → rompen la validación de endpoint de boto3.
+_INVIS = '\t\n\r\x0b\x0c \xa0​‌‍⁠﻿'
+
+
+def _strip_invis(v):
+    """Quita whitespace estándar + invisibles unicode (nbsp, zero-width, BOM) de los bordes Y del interior."""
+    v = (v or '').strip()
+    return ''.join(ch for ch in v if ch not in _INVIS)
+
+
+def _clean_endpoint(v):
+    """Endpoint R2: solo caracteres válidos de URL (letras/dígitos/:/._-). Elimina cualquier
+    carácter invisible o basura pegada. Un endpoint R2 legítimo solo contiene esos chars."""
+    v = _strip_invis(v)
+    v = re.sub(r'[^A-Za-z0-9:/._\-]', '', v)
+    return v.rstrip('/')  # boto3 no quiere slash final
 
 
 def _cfg():
     return {
-        'endpoint': (os.environ.get('R2_ENDPOINT', '') or '').strip(),
-        'bucket': (os.environ.get('R2_BUCKET', '') or '').strip(),
-        'key': (os.environ.get('R2_ACCESS_KEY', '') or '').strip(),
-        'secret': (os.environ.get('R2_SECRET_KEY', '') or '').strip(),
+        'endpoint': _clean_endpoint(os.environ.get('R2_ENDPOINT', '')),
+        'bucket': _strip_invis(os.environ.get('R2_BUCKET', '')),
+        'key': _strip_invis(os.environ.get('R2_ACCESS_KEY', '')),
+        'secret': _strip_invis(os.environ.get('R2_SECRET_KEY', '')),
     }
 
 
@@ -104,7 +123,14 @@ def r2_selftest():
     except Exception:
         return {'ok': False, 'configurado': True, 'error': 'boto3 no está instalado en el servidor (revisar requirements/deploy)'}
     c = _cfg()
-    _diag = {'endpoint': c['endpoint'], 'bucket': c['bucket'], 'access_key_prefijo': (c['key'][:6] + '…') if c['key'] else ''}
+    _raw_ep = os.environ.get('R2_ENDPOINT', '') or ''
+    _diag = {'endpoint': c['endpoint'], 'bucket': c['bucket'],
+             'access_key_prefijo': (c['key'][:6] + '…') if c['key'] else '',
+             'access_key_len': len(c['key']), 'secret_len': len(c['secret'])}
+    # si el endpoint crudo traía caracteres invisibles, mostrarlo (repr revela nbsp/zero-width)
+    if _raw_ep != c['endpoint']:
+        _diag['endpoint_crudo_repr'] = repr(_raw_ep)[:180]
+        _diag['aviso'] = 'el endpoint en Render tenía caracteres extra (se limpiaron en el código)'
     try:
         cl = _client()
         cl.put_object(Bucket=c['bucket'], Key=key, Body=payload, ContentType='text/plain')
