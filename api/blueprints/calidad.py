@@ -2064,6 +2064,54 @@ def calidad_genealogia_pt(lote):
             out['pt_fecha'] = (pt[1] or '')[:19]
     except Exception:
         pass
+    # 6) Análisis del PT (micro + fisicoquímico) por lote · read-only desde su tabla (Fase 2 · aún NO
+    # inscritos como documento_regulado · se muestran directo para que la genealogía quede completa).
+    out['analisis'] = {'micro': [], 'fisicoquimico': []}
+    try:
+        for r in c.execute(
+                "SELECT microorganismo, COALESCE(valor_texto, CAST(valor AS TEXT), ''), COALESCE(unidad,''), "
+                "COALESCE(estado,''), COALESCE(fecha_analisis,''), COALESCE(laboratorio,'') "
+                "FROM calidad_micro_resultados WHERE lote=? ORDER BY id", (lote,)).fetchall():
+            out['analisis']['micro'].append({'param': r[0], 'valor': r[1], 'unidad': r[2],
+                                             'estado': r[3], 'fecha': (r[4] or '')[:10], 'lab': r[5]})
+    except Exception:
+        pass
+    try:
+        for r in c.execute(
+                "SELECT parametro, COALESCE(resultado,''), COALESCE(unidad,''), COALESCE(valor_referencia,''), "
+                "COALESCE(estado,''), COALESCE(fecha_analisis,''), COALESCE(laboratorio,'') "
+                "FROM calidad_fisicoquimica_resultados WHERE lote=? ORDER BY id", (lote,)).fetchall():
+            out['analisis']['fisicoquimico'].append({'param': r[0], 'resultado': r[1], 'unidad': r[2],
+                                                     'referencia': r[3], 'estado': r[4], 'fecha': (r[5] or '')[:10], 'lab': r[6]})
+    except Exception:
+        pass
+    # 7) Limpieza de área/equipos por lote (rótulos F02) · por produccion_id
+    out['limpieza'] = []
+    if prod_ids:
+        _ph = ','.join('?' for _ in prod_ids)
+        try:
+            for r in c.execute(
+                    "SELECT r.area_codigo, COALESCE(a.nombre,''), COALESCE(r.estado,''), COALESCE(r.realizado_por,''), "
+                    "COALESCE(r.realizado_at,''), COALESCE(r.verificado_por,''), COALESCE(r.verificado_at,'') "
+                    "FROM rotulos_limpieza r LEFT JOIN areas_planta a ON a.id=r.area_id "
+                    "WHERE r.produccion_id IN (%s) ORDER BY r.id" % _ph, tuple(prod_ids)).fetchall():
+                out['limpieza'].append({'area_codigo': r[0], 'area_nombre': r[1], 'estado': r[2],
+                                        'realizado_por': r[3], 'realizado_at': (r[4] or '')[:19],
+                                        'verificado_por': r[5], 'verificado_at': (r[6] or '')[:19]})
+        except Exception:
+            pass
+    # 8) Liberación final (acondicionamiento → stock PT) por lote
+    out['liberacion_final'] = None
+    try:
+        lf = c.execute(
+            "SELECT COALESCE(producto,''), COALESCE(unidades,0), COALESCE(presentacion,''), "
+            "COALESCE(fecha_produccion,''), COALESCE(destino,'') FROM liberaciones WHERE lote=? ORDER BY id DESC LIMIT 1",
+            (lote,)).fetchone()
+        if lf:
+            out['liberacion_final'] = {'producto': lf[0], 'unidades': lf[1], 'presentacion': lf[2],
+                                       'fecha': (lf[3] or '')[:19], 'destino': lf[4]}
+    except Exception:
+        pass
     return jsonify(out)
 
 
@@ -2220,6 +2268,26 @@ async function buscar(){
       h+='<div class="sec"><div class="sec-h">&#128230; Envases consumidos <span class="n">'+d.envases.length+'</span></div><div class="branch">';
       h+=d.envases.map(function(e){ return '<div class="mp"><div class="top"><div><span class="nm">'+esc(e.nombre||e.mee_codigo)+'</span> <span class="cod">'+esc(e.mee_codigo)+'</span></div><span class="lotebadge">'+(e.cantidad||0)+' u</span></div></div>'; }).join('');
       h+='</div></div>';
+    }
+    // control de calidad del PT (micro + fisicoquímico)
+    var anM=(d.analisis&&d.analisis.micro)||[], anF=(d.analisis&&d.analisis.fisicoquimico)||[];
+    var anEst=function(s){ s=(s||'').toLowerCase(); if(s==='ok'||s==='conforme'||s==='informado') return '<span class="chip ok">'+esc(s)+'</span>'; if(s.indexOf('fuera')>=0) return '<span class="chip r">'+esc(s)+'</span>'; if(s.indexOf('observ')>=0) return '<span class="chip q">'+esc(s)+'</span>'; return s?('<span class="chip">'+esc(s)+'</span>'):''; };
+    if(anM.length||anF.length){
+      h+='<div class="sec"><div class="sec-h">&#128300; Control de calidad del lote <span class="n">'+(anM.length+anF.length)+' resultado(s)</span></div><div class="branch">';
+      if(anM.length){ h+='<div class="mp"><div class="top"><span class="nm">Microbiolog&iacute;a</span><span class="cod">'+anM.length+' microorganismo(s)</span></div>'+anM.map(function(x){return '<div class="meta"><b>'+esc(x.param)+':</b> '+esc(x.valor)+' '+esc(x.unidad)+' '+anEst(x.estado)+(x.fecha?(' &middot; '+esc(x.fecha)):'')+'</div>';}).join('')+'</div>'; }
+      if(anF.length){ h+='<div class="mp"><div class="top"><span class="nm">Fisicoqu&iacute;mico</span><span class="cod">'+anF.length+' par&aacute;metro(s)</span></div>'+anF.map(function(x){return '<div class="meta"><b>'+esc(x.param)+':</b> '+esc(x.resultado)+' '+esc(x.unidad)+(x.referencia?(' (ref '+esc(x.referencia)+')'):'')+' '+anEst(x.estado)+(x.fecha?(' &middot; '+esc(x.fecha)):'')+'</div>';}).join('')+'</div>'; }
+      h+='</div></div>';
+    }
+    // limpieza de área/equipos (F02)
+    if(d.limpieza&&d.limpieza.length){
+      h+='<div class="sec"><div class="sec-h">&#129529; Limpieza de &aacute;rea/equipos (F02) <span class="n">'+d.limpieza.length+'</span></div><div class="branch">';
+      h+=d.limpieza.map(function(x){return '<div class="mp"><div class="top"><span class="nm">'+esc(x.area_nombre||x.area_codigo)+'</span>'+estadoChip(x.estado)+'</div><div class="meta">'+(x.realizado_por?('<b>Limpi&oacute;:</b> '+esc(x.realizado_por)+(x.realizado_at?(' &middot; '+esc(x.realizado_at)):'')):'')+(x.verificado_por?(' &middot; <b>Verific&oacute;:</b> '+esc(x.verificado_por)):'')+'</div></div>';}).join('');
+      h+='</div></div>';
+    }
+    // liberación final (acondicionamiento → stock PT)
+    if(d.liberacion_final){
+      var lf=d.liberacion_final;
+      h+='<div class="sec"><div class="sec-h">&#10003; Liberaci&oacute;n final</div><div class="branch"><div class="mp"><div class="meta"><b>'+(lf.unidades||0)+' unidades</b>'+(lf.presentacion?(' &middot; '+esc(lf.presentacion)):'')+(lf.destino?(' &middot; destino '+esc(lf.destino)):'')+(lf.fecha?(' &middot; '+esc(lf.fecha)):'')+'</div></div></div></div>';
     }
     // docs a nivel PT
     if(d.docs_pt&&d.docs_pt.length){

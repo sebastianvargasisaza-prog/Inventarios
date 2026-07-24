@@ -82,8 +82,10 @@ def test_genealogia_pt(logged_client):
     assert j.status_code == 200
     d = j.get_json()
     assert d['ok'] is True and d['encontrado'] is False
-    for k in ('materias_primas', 'fases', 'envases', 'areas', 'docs_pt', 'liberacion'):
+    for k in ('materias_primas', 'fases', 'envases', 'areas', 'docs_pt', 'liberacion',
+              'analisis', 'limpieza', 'liberacion_final'):
         assert k in d
+    assert 'micro' in d['analisis'] and 'fisicoquimico' in d['analisis']
 
 
 def test_endpoint_estado_get(logged_client):
