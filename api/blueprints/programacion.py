@@ -6598,20 +6598,36 @@ def api_trail_explosion():
             bod = _resolver_material_bodega(c, mid, mnombre) or mid
         except Exception:
             bod = mid
+        # ¿MP INFINITA? (agua · controla_stock=0 · M16): el lab la tiene de la red, NO se compra →
+        # NO cuenta como déficit. Detección igual que el abastecimiento: nombre (_is_unlimited_mp) O
+        # controla_stock=0 en el maestro del código de bodega.
+        infinita = False
+        try:
+            if _is_unlimited_mp(mnombre) or _is_unlimited_mp(mid):
+                infinita = True
+            else:
+                _cs = c.execute("SELECT COALESCE(controla_stock,1) FROM maestro_mps WHERE codigo_mp=?", (bod,)).fetchone()
+                if _cs is not None and int(_cs[0] or 1) == 0:
+                    infinita = True
+        except Exception:
+            infinita = False
         try:
             stock = float(_lookup_stock_5tier(stock_mp, mid, mnombre) or 0)
         except Exception:
             stock = float((stock_mp or {}).get(bod, 0) or 0)
         pend = float((pend_map or {}).get(bod, 0) or 0)
-        deficit = max(0.0, gramos - stock - pend)
+        deficit = 0.0 if infinita else max(0.0, gramos - stock - pend)
         try:
             en_maestro = c.execute("SELECT 1 FROM maestro_mps WHERE codigo_mp=? LIMIT 1", (mid,)).fetchone() is not None
         except Exception:
             en_maestro = None
         trail.append({'material_id': mid, 'material_nombre': mnombre, 'pct': round(pct, 4), 'gramos': round(gramos, 1),
                       'codigo_bodega': bod, 'puenteado': (bod != mid), 'fantasma': (en_maestro is False),
-                      'stock': round(stock, 1), 'pendiente': round(pend, 1), 'deficit': round(deficit, 1)})
-        tot_g += gramos; tot_def += deficit
+                      'infinita': infinita, 'stock': round(stock, 1), 'pendiente': round(pend, 1),
+                      'deficit': round(deficit, 1)})
+        tot_g += gramos
+        if not infinita:
+            tot_def += deficit
     return jsonify({'ok': True, 'producto': prod_real, 'kg': kg, 'lote_size_kg': lote_kg_def, 'n': len(trail),
                     'total_g': round(tot_g, 1), 'total_deficit': round(tot_def, 1), 'items': trail})
 
@@ -6654,6 +6670,8 @@ tr:hover td{background:var(--cx-bg-alt)}
 .def{color:#b45309;font-weight:800}.ok{color:#15803d;font-weight:700}
 .tag{display:inline-block;font-size:9.5px;font-weight:800;border-radius:6px;padding:1px 6px;margin-left:5px}
 .tag.p{background:rgba(2,132,199,.14);color:#0284c7}.tag.f{background:rgba(185,28,28,.14);color:#b91c1c}
+.tag.inf{background:var(--cx-hairline);color:var(--cx-text-mute)}
+td.num.inf{color:var(--cx-text-faint)}
 .empty{color:var(--cx-text-mute);font-size:14px;padding:30px 0;text-align:center}
 </style></head><body>
 <header class="cx-mod-header cx-fade-in">
@@ -6691,14 +6709,14 @@ async function ver(){
     if(!d.ok){ res.innerHTML='<div class="card"><div class="empty">'+esc(d.error||'No encontrado')+'</div></div>'; return; }
     sum.innerHTML='<span class="pill v">'+esc(d.producto)+'</span><span class="pill">Lote '+n1(d.kg)+' kg</span><span class="pill">'+d.n+' materias primas</span><span class="pill">Total '+n1(d.total_g)+' g</span>'+(d.total_deficit>0?'<span class="pill d">Déficit '+n1(d.total_deficit)+' g</span>':'<span class="pill">Sin déficit</span>');
     var rows=(d.items||[]).map(function(x){
-      var tags=(x.puenteado?'<span class="tag p" title="Resuelve por puente a otro código de bodega">puente</span>':'')+(x.fantasma?'<span class="tag f" title="El código de fórmula NO existe en el maestro">fantasma</span>':'');
+      var tags=(x.puenteado?'<span class="tag p" title="Resuelve por puente a otro código de bodega">puente</span>':'')+(x.fantasma?'<span class="tag f" title="El código de fórmula NO existe en el maestro">fantasma</span>':'')+(x.infinita?'<span class="tag inf" title="Materia prima infinita (agua) · no se compra · no cuenta como déficit">infinita</span>':'');
       return '<tr><td>'+esc(x.material_nombre||x.material_id)+' <span class="cod">'+esc(x.material_id)+'</span>'+tags+'</td>'
         +'<td class="num">'+n1(x.pct)+'%</td>'
         +'<td class="num">'+n1(x.gramos)+'</td>'
         +'<td class="cod">'+esc(x.codigo_bodega)+'</td>'
-        +'<td class="num">'+n1(x.stock)+'</td>'
+        +'<td class="num">'+(x.infinita?'&#8734;':n1(x.stock))+'</td>'
         +'<td class="num">'+n1(x.pendiente)+'</td>'
-        +'<td class="num '+(x.deficit>0?'def':'ok')+'">'+(x.deficit>0?n1(x.deficit):'0')+'</td></tr>';
+        +'<td class="num '+(x.infinita?'inf':(x.deficit>0?'def':'ok'))+'">'+(x.infinita?'—':(x.deficit>0?n1(x.deficit):'0'))+'</td></tr>';
     }).join('');
     res.innerHTML='<div class="card"><div class="tblwrap"><table><thead><tr><th>Materia prima</th><th>%</th><th>Gramos (%×kg×1000)</th><th>Código bodega</th><th>Stock</th><th>Pendiente</th><th>Déficit</th></tr></thead><tbody>'+(rows||'<tr><td colspan=7 class="empty">La fórmula no tiene ítems.</td></tr>')+'</tbody></table></div></div>';
   }catch(e){ res.innerHTML='<div class="card"><div class="empty">Error: '+esc(e.message)+'</div></div>'; }

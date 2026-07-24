@@ -38,9 +38,14 @@ def test_trail_endpoint_producto_real(app, logged_client):
     d = logged_client.get('/api/programacion/trail-explosion?producto=' + urllib.parse.quote(prod)).get_json()
     assert d['ok'] is True and d['producto'] == prod and d['n'] >= 1
     it = d['items'][0]
-    for k in ('material_id', 'pct', 'gramos', 'codigo_bodega', 'stock', 'pendiente', 'deficit', 'puenteado', 'fantasma'):
+    for k in ('material_id', 'pct', 'gramos', 'codigo_bodega', 'stock', 'pendiente', 'deficit', 'puenteado',
+              'fantasma', 'infinita'):
         assert k in it
     # gramos = %/100 × kg × 1000 (%-first · M71) cuando hay %
     if it['pct'] > 0:
         esperado = round(it['pct'] / 100.0 * d['kg'] * 1000.0, 1)
         assert abs(it['gramos'] - esperado) < 1.0
+    # las MP infinitas (agua · controla_stock=0 · M16) NO cuentan como déficit
+    for x in d['items']:
+        if x['infinita']:
+            assert x['deficit'] == 0
