@@ -657,8 +657,10 @@ textarea{{min-height:300px;line-height:1.5;font-family:inherit}}button{{margin-t
 <b style="color:#a78bfa">&#9889; Cargar TODOS los instructivos de una vez</b>
 <p class="hint" style="margin-top:6px">Carga los instructivos capturados a sus MBR. Los que est&aacute;n aprobados generan una versi&oacute;n NUEVA en borrador (Calidad la aprueba con e-firma · la activa sigue vigente hasta entonces).</p>
 <button onclick="verTodos()" style="margin-top:8px">Ver resumen</button>
-<button onclick="cargarTodos()" id="btnTodos" disabled style="margin-top:8px;background:#3a2f1a;color:#fbbf24">Cargar TODOS</button>
+<button onclick="cargarTodos()" id="btnTodos" disabled style="margin-top:8px;background:#3a2f1a;color:#fbbf24">1) Cargar TODOS</button>
+<button onclick="aprobarTodos()" id="btnAprobar" style="margin-top:8px;background:linear-gradient(135deg,#059669,#047857);color:#fff">2) Aprobar TODOS (e-firma)</button>
 <div id="resTodos" class="hint" style="margin-top:10px"></div>
+<p class="hint" style="margin-top:6px">Los instructivos vienen del batch record ya aprobado por Direcci&oacute;n T&eacute;cnica. "Aprobar TODOS" los pone activos con tu e-firma (la versi&oacute;n anterior se obsoleta) &middot; ah&iacute; ya salen en las fabricaciones.</p>
 </div>
 <label>Producto (MBR destino) · o cargá uno solo</label><select id="prod">{opts}</select>
 <label>Pasos del proceso (uno por línea)</label><textarea id="pasos">{pre}</textarea>
@@ -690,6 +692,17 @@ async function cargarTodos(){{
     var r=await fetch('/api/brd/mbr/cargar-todos-instructivos',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{aplicar:true,confirmar:'SI'}})}});
     var d=await r.json();
     if(r.ok&&d.aplicado){{ res.style.color='#34d399'; res.textContent='OK: '+d.cargados+' instructivos cargados ('+d.nuevas_versiones+' versiones nuevas en borrador, '+d.reemplazados+' borradores). Aprobalos con e-firma en el modulo MBR.'; }}
+    else {{ res.style.color='#f87171'; res.textContent='Error: '+(d.error||d.detalle||r.status); b.disabled=false; }}
+  }}catch(e){{ res.style.color='#f87171'; res.textContent='Error de red'; b.disabled=false; }}
+}}
+async function aprobarTodos(){{
+  if(!confirm('Aprobar con tu e-firma las versiones nuevas con instructivo? Vienen del batch record ya aprobado por Direccion Tecnica. Quedan como version activa (la anterior se obsoleta).')) return;
+  var b=document.getElementById('btnAprobar'); b.disabled=true;
+  var res=document.getElementById('resTodos'); res.style.color='#a1a1aa'; res.textContent='Aprobando...';
+  try{{
+    var r=await fetch('/api/brd/mbr/aprobar-todos-instructivos',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{aplicar:true,confirmar:'SI'}})}});
+    var d=await r.json();
+    if(r.ok&&d.aplicado){{ res.style.color='#34d399'; res.textContent='OK: '+d.aprobados+' instructivos APROBADOS y activos. Ya salen en las fabricaciones.'; }}
     else {{ res.style.color='#f87171'; res.textContent='Error: '+(d.error||d.detalle||r.status); b.disabled=false; }}
   }}catch(e){{ res.style.color='#f87171'; res.textContent='Error de red'; b.disabled=false; }}
 }}
@@ -835,6 +848,82 @@ def cargar_todos_instructivos():
         return jsonify({"error": "falló la carga · rollback total (nada cambió)", "producto": prod_actual, "detalle": str(e)[:250]}), 500
     out.update({"aplicado": True, "cargados": cargados, "nuevas_versiones": nuevas, "reemplazados": reemplazados,
                 "aviso": "Las versiones nuevas quedan en BORRADOR · aprobalas con e-firma en el módulo MBR para que entren en vigor (la activa sigue vigente hasta entonces)."})
+    return jsonify(out)
+
+
+@bp.route("/api/brd/mbr/aprobar-todos-instructivos", methods=["GET", "POST"])
+def aprobar_todos_instructivos():
+    """Aprueba con e-firma las versiones de MBR con instructivo que quedaron en borrador tras
+    'Cargar TODOS' (Sebastián 24-jul). Los instructivos son transcripción del BATCH RECORD REAL,
+    que YA está aprobado y revisado por Dirección Técnica → adoptarlos en EOS = aprobar lo ya
+    validado. Firma con la e-firma del usuario actual (queda registrado quién/cuándo · Part 11) y
+    obsoleta la versión aprobada anterior de cada producto (queda UNA activa). DRY-RUN por default
+    (GET); aplica con POST {aplicar:true, confirmar:'SI'}."""
+    err = _require_qa_or_admin()
+    if err:
+        return err
+    try:
+        from batch_formulas_data import BATCH_INSTRUCTIVOS
+    except Exception as e:
+        return jsonify({"error": "no se pudo cargar batch_formulas_data: %s" % e}), 500
+    body = request.get_json(silent=True) or {}
+    aplicar = (request.method == "POST" and body.get("aplicar") is True
+               and str(body.get("confirmar", "")).strip().upper() == "SI")
+    conn = get_db()
+    cur = conn.cursor()
+    user = session.get("compras_user", "")
+    plan = []
+    for producto_in in BATCH_INSTRUCTIVOS:
+        mbr = cur.execute("SELECT id, estado, producto_nombre, version FROM mbr_templates "
+                          "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) ORDER BY version DESC LIMIT 1",
+                          (producto_in,)).fetchone()
+        if not mbr:
+            plan.append({"producto": producto_in, "estado": "sin MBR"})
+            continue
+        estado = mbr[1]
+        if estado == "aprobado":
+            plan.append({"producto": mbr[2], "estado": "ya aprobado"})
+        elif estado in ("draft", "en_revision"):
+            plan.append({"producto": mbr[2], "estado": f"a aprobar (v{mbr[3]})", "_id": mbr[0], "_estado": estado, "_prod": mbr[2]})
+        else:
+            plan.append({"producto": mbr[2], "estado": f"estado {estado} (saltado)"})
+    a_aprobar = [p for p in plan if "_id" in p]
+    out = {"ok": True, "dry_run": (not aplicar), "a_aprobar": len(a_aprobar),
+           "ya_aprobados": len([p for p in plan if p["estado"] == "ya aprobado"]),
+           "sin_mbr": [p["producto"] for p in plan if p["estado"] == "sin MBR"],
+           "plan": [{"producto": p["producto"], "estado": p["estado"]} for p in plan], "aplicado": False}
+    if not aplicar:
+        return jsonify(out)
+    try:
+        from blueprints.firmas import crear_firma_directa
+    except Exception:
+        from api.blueprints.firmas import crear_firma_directa
+    aprobados, errores = [], []
+    prod_actual = None
+    try:
+        for p in a_aprobar:
+            mbr_id = p["_id"]; producto = p["_prod"]; prod_actual = producto
+            if p["_estado"] == "draft":
+                cur.execute("UPDATE mbr_templates SET estado='en_revision' WHERE id=? AND estado='draft'", (mbr_id,))
+            sig_id = crear_firma_directa(conn, username=user, record_table="mbr_templates", record_id=str(mbr_id),
+                                         meaning="aprueba",
+                                         comment="Instructivo del batch record (revisado/aprobado por Dirección Técnica) adoptado en EOS")
+            cur.execute("UPDATE mbr_templates SET estado='aprobado', aprobado_por=?, aprobado_at_utc=datetime('now','utc'), "
+                        "aprobado_signature_id=? WHERE id=? AND estado='en_revision'", (user, sig_id, mbr_id))
+            if cur.rowcount == 0:
+                errores.append({"producto": producto, "error": "estado cambió"})
+                continue
+            cur.execute("UPDATE mbr_templates SET estado='obsoleto', obsoleto_at_utc=datetime('now','utc'), "
+                        "obsoleto_motivo='Reemplazada por versión con instructivo del batch record' "
+                        "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND estado='aprobado' AND id != ?", (producto, mbr_id))
+            audit_log(cur, usuario=user, accion="APROBAR_INSTRUCTIVO_BULK", tabla="mbr_templates", registro_id=mbr_id,
+                      despues={"producto": producto, "estado": "aprobado", "signature_id": sig_id})
+            aprobados.append(producto)
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": "falló la aprobación · rollback total (nada cambió)", "producto": prod_actual, "detalle": str(e)[:250]}), 500
+    out.update({"aplicado": True, "aprobados": len(aprobados), "productos_aprobados": aprobados, "errores": errores})
     return jsonify(out)
 
 
