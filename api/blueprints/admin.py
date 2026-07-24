@@ -101,6 +101,56 @@ def admin_asegurar_mp():
     return jsonify({"ok": True, "creados": creados, "reactivados": reactivados, "backfill_inci": backfill, "ya_existian": ya})
 
 
+# ─── R2 (Cloudflare) · chequeo de conexión para el archivo inmutable de documentos ──────
+@bp.route("/api/admin/r2-check", methods=["GET", "POST"])
+def admin_r2_check():
+    """Verifica la conexión a Cloudflare R2 (escribe→lee→borra un objeto de prueba). Sebastián 24-jul ·
+    Fase 2 del expediente por lote. Se dispara para confirmar que las credenciales R2_* en Render
+    funcionan ANTES de integrar la subida de documentos."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    try:
+        from r2_storage import r2_selftest
+    except Exception as e:
+        return jsonify({"ok": False, "error": "no se pudo cargar r2_storage: %s" % e}), 500
+    return jsonify(r2_selftest())
+
+
+@bp.route("/admin/r2-check", methods=["GET"])
+def admin_r2_check_page():
+    """Página · chequeo de conexión a R2 (corre el self-test al abrir)."""
+    if "compras_user" not in session:
+        return redirect("/login?next=/admin/r2-check")
+    return Response(r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Chequeo R2 · EOS</title>
+<style>body{font-family:Inter,'Segoe UI',system-ui,sans-serif;background:#faf9fb;color:#1c1917;padding:36px 18px;margin:0}
+.wrap{max-width:640px;margin:0 auto}a.back{color:#6d28d9;text-decoration:none;font-size:13px;font-weight:700}
+h1{font-size:23px;margin:8px 0 4px}.sub{color:#78716c;font-size:13px;margin-bottom:20px;line-height:1.5}
+.card{background:#fff;border:1px solid #eef0f2;border-radius:16px;box-shadow:0 2px 14px rgba(15,23,42,.05);padding:22px}
+.st{font-size:16px;font-weight:800;margin-bottom:8px}.ok{color:#15803d}.err{color:#b91c1c}.wait{color:#78716c}
+.det{font-size:13px;color:#57534e;line-height:1.6;font-family:ui-monospace,monospace;background:#faf9fb;border-radius:10px;padding:12px 14px;margin-top:10px;white-space:pre-wrap;word-break:break-word}
+button{margin-top:16px;font-family:inherit;font-size:14px;font-weight:800;border-radius:11px;padding:12px 22px;border:none;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;cursor:pointer}</style>
+</head><body><div class="wrap"><a class="back" href="/inventarios">&larr; Volver</a>
+<h1>&#9729;&#65039; Chequeo de conexión a R2</h1>
+<div class="sub">Verifica que las credenciales de Cloudflare R2 (cargadas en Render) funcionan: escribe, lee y borra un objeto de prueba en el bucket. Es la Fase 2 del expediente por lote (archivo inmutable de documentos).</div>
+<div class="card"><div class="st wait" id="st">Probando conexión&hellip;</div><div class="det" id="det"></div>
+<button onclick="probar()">Probar de nuevo</button></div></div>
+<script>
+async function probar(){
+  var st=document.getElementById('st'), det=document.getElementById('det');
+  st.className='st wait'; st.textContent='Probando conexión…'; det.textContent='';
+  try{
+    var r=await fetch('/api/admin/r2-check',{credentials:'same-origin'});
+    var d=await r.json();
+    if(d.ok){ st.className='st ok'; st.textContent='✓ '+(d.mensaje||'R2 conectado'); det.textContent='bucket: '+(d.bucket||'')+'\nendpoint: '+(d.endpoint||''); }
+    else { st.className='st err'; st.textContent='✗ '+(d.configurado?'No se pudo conectar':'R2 no configurado'); det.textContent=(d.error||'')+(d.configurado?'':'\n\nCargá R2_ENDPOINT, R2_BUCKET, R2_ACCESS_KEY y R2_SECRET_KEY en Render → servicio Inventarios → Environment.'); }
+  }catch(e){ st.className='st err'; st.textContent='Error de red'; det.textContent=String(e); }
+}
+probar();
+</script></body></html>""", mimetype="text/html")
+
+
 # ─── Importar maestro MP canónico (Excel Alejandro · código + INCI) ──────────────
 @bp.route("/api/admin/importar-maestro-inci", methods=["GET", "POST"])
 def admin_importar_maestro_inci():
