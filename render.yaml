@@ -5,8 +5,13 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn api.index:app --bind 0.0.0.0:$PORT --workers $WEB_CONCURRENCY --worker-class sync --timeout 120 --keep-alive 5 --max-requests 1000 --max-requests-jitter 100 --access-logfile - --error-logfile -
     envVars:
+      # Sin disco persistente (zero-downtime · 24-jul): la BD viva es PostgreSQL
+      # (EOS_DB_BACKEND=postgres · en el dashboard). Estas rutas SQLite/COA quedan
+      # en /tmp (efímero) · el SQLite es legacy sin uso y los COA se archivan en R2.
       - key: DB_PATH
-        value: /var/data/inventario.db
+        value: /tmp/inventario.db
+      - key: COA_STORAGE_DIR
+        value: /tmp/coa
       - key: SECRET_KEY
         generateValue: true
       - key: WEB_CONCURRENCY
@@ -38,8 +43,10 @@ services:
         sync: false
       - key: EMAIL_PASSWORD
         sync: false
-    disk:
-      name: inventario-db
-      mountPath: /var/data
-      sizeGB: 1
+    # Disco persistente ELIMINADO (24-jul · Sebastián): con disco Render NO hace
+    # zero-downtime (apaga la instancia vieja antes de arrancar la nueva → caída de
+    # minutos por deploy). Sin disco → deploys sin caída. Los datos vivos están en
+    # PostgreSQL (backups gestionados por Render); COA en Cloudflare R2 (off-site).
+    # El paso de BORRAR el disco existente se hace en el dashboard de Render
+    # (Settings → Disks → Delete inventario-db) · esto solo evita que se re-declare.
     healthCheckPath: /api/health
