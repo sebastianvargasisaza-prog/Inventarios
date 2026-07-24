@@ -74,6 +74,18 @@ def test_disco_preflight(admin_client):
     assert 'listo_para_quitar_disco' in d and 'disco' in d
 
 
+def test_genealogia_pt(logged_client):
+    """Genealogía de PT: la página premium carga y el endpoint devuelve el árbol sin crash (lote inexistente)."""
+    p = logged_client.get('/calidad/genealogia')
+    assert p.status_code == 200 and b'cortex.css' in p.data and b'cx-mod-header' in p.data
+    j = logged_client.get('/api/calidad/genealogia-pt/LOTE-INEXISTENTE-XYZ')
+    assert j.status_code == 200
+    d = j.get_json()
+    assert d['ok'] is True and d['encontrado'] is False
+    for k in ('materias_primas', 'fases', 'envases', 'areas', 'docs_pt', 'liberacion'):
+        assert k in d
+
+
 def test_endpoint_estado_get(logged_client):
     """GET /api/calidad/archivar-r2 devuelve estado sin requerir R2 (para pintar la página)."""
     r = logged_client.get('/api/calidad/archivar-r2')

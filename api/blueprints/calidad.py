@@ -1928,6 +1928,311 @@ def calidad_expediente_lote():
     return jsonify({'ok': True, 'n': len(rows), 'grupos': list(grupos.values())})
 
 
+@bp.route('/api/calidad/genealogia-pt/<path:lote>', methods=['GET'])
+def calidad_genealogia_pt(lote):
+    """GENEALOGÍA hacia atrás de un lote de PRODUCTO TERMINADO (INVIMA · trazabilidad Fase 1).
+    Dado el lote de PT devuelve el árbol: batch record (EBR OP/OF/OA) + liberación, materias primas
+    consumidas con SU lote de proveedor + documentos (F01/F02/ROTULO/COA), área+equipos de fabricación
+    y de envasado, y envases (MEE) consumidos. Ancla en produccion_id (mig 201) · fallback tag FEFO para
+    Fabricación directa · read-only (no muta nada)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    lote = (lote or '').strip()
+    if not lote:
+        return jsonify({'ok': False, 'error': 'lote vacío'}), 400
+    conn = get_db(); c = conn.cursor()
+    out = {'ok': True, 'lote': lote, 'encontrado': False, 'producto': '', 'pt_estado': '', 'pt_fecha': '',
+           'fases': [], 'liberacion': None, 'materias_primas': [], 'envases': [], 'areas': {}, 'docs_pt': [],
+           'fuente_mp': ''}
+    _FASE_LBL = {'fabricacion': 'Fabricación', 'envasado': 'Envasado', 'acondicionamiento': 'Acondicionamiento'}
+    # 1) EBRs del lote físico (todas las fases OP/OF/OA)
+    try:
+        ebrs = c.execute(
+            "SELECT e.id, COALESCE(e.lote_codigo,e.lote), COALESCE(e.fase,'fabricacion'), e.produccion_id, "
+            "COALESCE(m.producto_nombre,''), COALESCE(e.numero_op,''), COALESCE(e.estado,''), "
+            "COALESCE(e.liberado_por,''), COALESCE(e.liberado_at_utc,''), e.liberado_signature_id, "
+            "e.cantidad_real_g, e.cantidad_objetivo_g, COALESCE(e.area_codigo,'') "
+            "FROM ebr_ejecuciones e LEFT JOIN mbr_templates m ON m.id=e.mbr_template_id "
+            "WHERE COALESCE(e.lote_codigo,e.lote)=? "
+            "ORDER BY CASE COALESCE(e.fase,'fabricacion') WHEN 'fabricacion' THEN 0 WHEN 'envasado' THEN 1 "
+            "WHEN 'acondicionamiento' THEN 2 ELSE 3 END", (lote,)).fetchall()
+    except Exception:
+        ebrs = []
+    prod_ids = []
+    for r in ebrs:
+        out['encontrado'] = True
+        if r[4] and not out['producto']:
+            out['producto'] = r[4]
+        if r[3] and r[3] not in prod_ids:
+            prod_ids.append(r[3])
+        out['fases'].append({
+            'ebr_id': r[0], 'fase': r[2], 'fase_label': _FASE_LBL.get(r[2], r[2]),
+            'numero_op': r[5], 'estado': r[6], 'liberado_por': r[7], 'liberado_at': (r[8] or '')[:19],
+            'cantidad_real_g': r[10], 'cantidad_objetivo_g': r[11], 'area_codigo': r[12],
+            'url': '/api/brd/ebr/%s/vista-completa' % r[0]})
+        if r[7] and not out['liberacion']:
+            out['liberacion'] = {'por': r[7], 'at': (r[8] or '')[:19], 'fase': r[2], 'firma_id': r[9]}
+    # 2) MP consumidas · canónico por produccion_id, fallback FEFO tag (Fabricación directa)
+    mp_rows = []
+    if prod_ids:
+        ph = ','.join('?' for _ in prod_ids)
+        try:
+            mp_rows = c.execute(
+                "SELECT material_id, material_nombre, COALESCE(lote,''), SUM(cantidad) FROM movimientos "
+                "WHERE tipo='Salida' AND produccion_id IN (%s) "
+                "GROUP BY material_id, material_nombre, COALESCE(lote,'')" % ph, tuple(prod_ids)).fetchall()
+            out['fuente_mp'] = 'produccion_id'
+        except Exception:
+            mp_rows = []
+    if not mp_rows:
+        try:
+            mp_rows = c.execute(
+                "SELECT material_id, material_nombre, COALESCE(lote,''), SUM(cantidad) FROM movimientos "
+                "WHERE tipo='Salida' AND observaciones LIKE ? "
+                "GROUP BY material_id, material_nombre, COALESCE(lote,'')", ('FEFO:' + lote + ':%',)).fetchall()
+            if mp_rows:
+                out['fuente_mp'] = 'fefo_tag'
+        except Exception:
+            mp_rows = []
+    for r in mp_rows:
+        mid, mnombre, mlote, gtot = r[0], r[1], r[2], r[3]
+        if not mid or (mid or '').upper().startswith('PT'):
+            continue  # no listar el PT como si fuera MP
+        mp = {'material_id': mid, 'material_nombre': mnombre or '', 'lote_mp': mlote,
+              'gramos': round(gtot or 0, 2), 'proveedor': '', 'numero_oc': '', 'numero_factura': '',
+              'fecha_vencimiento': '', 'estado_lote': '', 'docs': []}
+        if mlote:
+            det = c.execute(
+                "SELECT COALESCE(proveedor,''), COALESCE(numero_oc,''), COALESCE(numero_factura,''), "
+                "COALESCE(fecha_vencimiento,''), COALESCE(estado_lote,'') FROM movimientos "
+                "WHERE lote=? AND material_id=? AND tipo='Entrada' ORDER BY id DESC LIMIT 1", (mlote, mid)).fetchone()
+            if det:
+                mp['proveedor'], mp['numero_oc'], mp['numero_factura'], mp['fecha_vencimiento'], mp['estado_lote'] = det
+            for d in c.execute(
+                    "SELECT tipo_doc, formato, titulo, url, COALESCE(r2_key,'') FROM documentos_regulados "
+                    "WHERE COALESCE(anulado,0)=0 AND lote=? ORDER BY tipo_doc", (mlote,)).fetchall():
+                mp['docs'].append({'tipo': d[0], 'formato': d[1], 'titulo': d[2], 'url': d[3], 'en_r2': bool(d[4])})
+        out['materias_primas'].append(mp)
+    out['materias_primas'].sort(key=lambda x: (x['material_nombre'] or x['material_id']))
+    # 3) Áreas de fabricación + envasado (via produccion_programada) + equipos del área
+    if prod_ids:
+        ph = ','.join('?' for _ in prod_ids)
+        try:
+            arow = c.execute("SELECT MAX(area_id), MAX(area_envasado_id) FROM produccion_programada WHERE id IN (%s)" % ph,
+                             tuple(prod_ids)).fetchone()
+        except Exception:
+            arow = None
+        for _slot, _aid in (('fabricacion', arow[0] if arow else None), ('envasado', arow[1] if arow else None)):
+            if _aid:
+                ar = c.execute("SELECT codigo, nombre FROM areas_planta WHERE id=?", (_aid,)).fetchone()
+                if ar:
+                    equipos = []
+                    try:
+                        from blueprints.programacion import _equipos_de_area
+                        equipos = [{'codigo': e[0], 'nombre': e[1], 'tipo': (e[2] if len(e) > 2 else '')}
+                                   for e in _equipos_de_area(c, ar[0])]
+                    except Exception:
+                        equipos = []
+                    out['areas'][_slot] = {'codigo': ar[0], 'nombre': ar[1], 'equipos': equipos}
+    # 4) Envases (MEE) consumidos · por lote en observaciones/batch_ref
+    try:
+        for r in c.execute(
+                "SELECT mee_codigo, SUM(cantidad) FROM movimientos_mee WHERE tipo='Salida' AND COALESCE(anulado,0)=0 "
+                "AND (observaciones LIKE ? OR batch_ref=?) GROUP BY mee_codigo", ('%' + lote + '%', lote)).fetchall():
+            if r[0]:
+                nombre = ''
+                try:
+                    mr = c.execute("SELECT COALESCE(descripcion,'') FROM maestro_mee WHERE codigo=?", (r[0],)).fetchone()
+                    nombre = mr[0] if mr else ''
+                except Exception:
+                    nombre = ''
+                out['envases'].append({'mee_codigo': r[0], 'nombre': nombre, 'cantidad': round(r[1] or 0, 2)})
+    except Exception:
+        pass
+    # 5) Documentos a nivel PT (batch record, rótulo del PT) + estado del lote en el kardex
+    for d in c.execute(
+            "SELECT tipo_doc, formato, titulo, url, COALESCE(r2_key,'') FROM documentos_regulados "
+            "WHERE COALESCE(anulado,0)=0 AND lote=? ORDER BY tipo_doc", (lote,)).fetchall():
+        out['docs_pt'].append({'tipo': d[0], 'formato': d[1], 'titulo': d[2], 'url': d[3], 'en_r2': bool(d[4])})
+    try:
+        pt = c.execute("SELECT COALESCE(estado_lote,''), COALESCE(fecha,'') FROM movimientos "
+                       "WHERE lote=? AND tipo='Entrada' AND material_id LIKE 'PT_%' ORDER BY id DESC LIMIT 1",
+                       (lote,)).fetchone()
+        if pt:
+            out['encontrado'] = True
+            out['pt_estado'] = pt[0]
+            out['pt_fecha'] = (pt[1] or '')[:19]
+    except Exception:
+        pass
+    return jsonify(out)
+
+
+@bp.route('/calidad/genealogia', methods=['GET'])
+def calidad_genealogia_page():
+    """Página · Genealogía de lote de PT (INVIMA · trazabilidad hacia atrás): buscá un lote de producto
+    terminado y ves el árbol completo (MP con lotes + docs, área/equipos, envasado, liberación)."""
+    if 'compras_user' not in session:
+        return redirect('/login?next=/calidad/genealogia')
+    return Response(_GENEALOGIA_HTML, mimetype='text/html')
+
+
+_GENEALOGIA_HTML = r"""<!DOCTYPE html><html lang="es" translate="no"><head><meta charset="UTF-8">
+<meta name="google" content="notranslate">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"><title>Genealogía de lote · Calidad · EOS</title>
+<link rel="stylesheet" href="/static/cortex.css?v=eos15">
+<script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
+<style>
+body{background:var(--cx-bg);color:var(--cx-text);margin:0;font-family:'Inter',system-ui,-apple-system,sans-serif;}
+*{box-sizing:border-box}
+.wrap{max-width:1160px;margin:0 auto;padding:22px 22px 70px;}
+.intro{color:var(--cx-text-mute);font-size:13.5px;line-height:1.55;max-width:860px;margin:0 0 16px;}
+.card{background:var(--cx-card);border:1px solid var(--cx-hairline);border-radius:18px;box-shadow:0 1px 3px rgba(15,23,42,.04),0 10px 30px rgba(15,23,42,.05);padding:20px 22px;margin-bottom:16px;}
+.searchbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+#q{flex:1;min-width:280px;font-size:15px;}
+#msg{font-size:12.5px;font-weight:700;}
+/* árbol */
+.pt-hd{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+.pt-hd .em{font-size:34px;line-height:1}
+.pt-hd h2{font-size:22px;margin:0;letter-spacing:-.02em;color:var(--cx-text);}
+.pt-hd .lote{font-family:ui-monospace,monospace;font-size:13px;color:var(--cx-primary);font-weight:800;}
+.chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px;}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;padding:4px 11px;border-radius:999px;border:1px solid var(--cx-hairline);color:var(--cx-text-soft);}
+.chip.ok{color:#15803d;background:rgba(21,128,61,.10);border-color:rgba(21,128,61,.3)}
+.chip.q{color:#b45309;background:rgba(180,83,9,.10);border-color:rgba(180,83,9,.3)}
+.chip.r{color:#b91c1c;background:rgba(185,28,28,.10);border-color:rgba(185,28,28,.3)}
+.sec{margin-top:20px;}
+.sec-h{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:800;color:var(--cx-text);text-transform:uppercase;letter-spacing:.05em;margin:0 0 10px;}
+.sec-h .n{font-size:11px;color:var(--cx-text-mute);font-weight:700;}
+.branch{border-left:2px solid var(--cx-hairline);padding-left:16px;margin-left:6px;}
+.mp{background:var(--cx-bg-alt);border:1px solid var(--cx-hairline);border-radius:13px;padding:13px 15px;margin-bottom:10px;}
+.mp .top{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:baseline;}
+.mp .nm{font-size:14px;font-weight:800;color:var(--cx-text);}
+.mp .cod{font-family:ui-monospace,monospace;font-size:11px;color:var(--cx-text-mute);}
+.mp .meta{font-size:11.5px;color:var(--cx-text-mute);margin-top:5px;line-height:1.5;}
+.mp .meta b{color:var(--cx-text-soft);font-weight:700;}
+.mp .lotebadge{font-family:ui-monospace,monospace;font-size:11.5px;font-weight:800;color:var(--cx-primary);background:var(--cx-primary-soft);border-radius:6px;padding:2px 8px;}
+.docs{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px;}
+.doc{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;border-radius:8px;padding:5px 10px;text-decoration:none;border:1px solid var(--cx-hairline);cursor:pointer;}
+.doc.F01{background:rgba(37,99,235,.13);color:#2563eb;border-color:rgba(37,99,235,.25)}
+.doc.F02{background:rgba(21,128,61,.13);color:#15803d;border-color:rgba(21,128,61,.25)}
+.doc.COA_PROVEEDOR{background:var(--cx-primary-soft);color:var(--cx-primary);border-color:rgba(109,40,217,.25)}
+.doc.ROTULO{background:var(--cx-hairline);color:var(--cx-text-soft)}
+.doc.EBR{background:rgba(180,83,9,.14);color:#b45309;border-color:rgba(180,83,9,.28)}
+.doc .r2{font-size:9px;opacity:.75}
+.nodoc{font-size:11px;color:#b45309;font-weight:700;}
+.eqs{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.eq{font-size:11px;font-weight:700;color:var(--cx-text-soft);background:var(--cx-bg-alt);border:1px solid var(--cx-hairline);border-radius:7px;padding:3px 9px}
+.fase-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 0;border-bottom:1px solid var(--cx-hairline)}
+.fase-row:last-child{border-bottom:none}
+.fase-b{font-size:11px;font-weight:800;border-radius:7px;padding:3px 10px;background:var(--cx-primary-soft);color:var(--cx-primary)}
+.empty{color:var(--cx-text-mute);font-size:14px;padding:34px 0;text-align:center;}
+.warn{font-size:12px;color:#b45309;background:rgba(180,83,9,.08);border:1px solid rgba(180,83,9,.25);border-radius:10px;padding:9px 13px;margin-top:8px}
+.modal{display:none;position:fixed;inset:0;background:rgba(15,15,20,.6);z-index:9999;align-items:center;justify-content:center;padding:24px;}
+.modal-card{background:var(--cx-card);border:1px solid var(--cx-hairline);border-radius:16px;width:min(960px,96vw);height:min(88vh,920px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.4);}
+.modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 16px;border-bottom:1px solid var(--cx-hairline);}
+.modal-head b{font-size:14px;color:var(--cx-text)}
+.mx{background:var(--cx-bg-alt);color:var(--cx-text-soft);border:1px solid var(--cx-hairline);border-radius:9px;width:32px;height:32px;font-size:18px;line-height:1;cursor:pointer;padding:0}
+#mdFrame{flex:1;width:100%;border:none;background:#fff}
+</style></head><body>
+<header class="cx-mod-header cx-fade-in">
+  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:var(--cx-primary);"><svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v6m0 0 4-2m-4 2L8 6M4 10l4 2m0 0v6l4 2 4-2v-6m0 0 4-2m-4 2-4 2"/></svg></span>
+  <div><div class="cx-mod-header__title">Genealogía de lote</div>
+  <div class="cx-mod-header__sub"><strong>Calidad</strong> &middot; trazabilidad hacia atrás &middot; INVIMA</div></div>
+  <div class="cx-mod-header__nav">
+    <a href="/calidad/expediente" class="cx-btn cx-btn-ghost cx-btn-sm">&#128193; Expediente</a>
+    <a href="/calidad" class="cx-btn cx-btn-ghost cx-btn-sm">&larr; Calidad</a>
+    <button class="cx-theme-toggle" onclick="cxToggleTheme()" title="Modo claro/oscuro"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4"/></svg></button>
+  </div>
+</header>
+<script>function cxToggleTheme(){var h=document.documentElement;var n=h.getAttribute('data-theme')==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
+<div class="wrap">
+<div class="card">
+<div class="intro">Buscá un <b>lote de producto terminado</b> y se despliega su <b>árbol de trazabilidad hacia atrás</b>: las materias primas que consumió (cada una con su lote de proveedor y documentos F01/F02/COA), el área y equipos donde se fabricó y envasó, el batch record y la liberación. Esto es lo que responde "de qué está hecho este lote" en una auditoría INVIMA.</div>
+<div class="searchbar">
+<input id="q" class="cx-input" placeholder="Lote de PT (ej: 34345, SUEROTRI-1234)&hellip;" autocomplete="off">
+<button class="cx-btn cx-btn-grad" onclick="buscar()">Ver genealog&iacute;a</button>
+<span id="msg"></span>
+</div>
+</div>
+<div id="res"></div>
+</div>
+<div id="modal" class="modal" onclick="if(event.target===this)cerrarDoc()">
+  <div class="modal-card"><div class="modal-head"><b id="mdTit">Documento</b>
+    <button class="mx" onclick="cerrarDoc()" title="Cerrar (Esc)">&times;</button></div>
+    <iframe id="mdFrame" title="Documento"></iframe></div>
+</div>
+<script>
+function esc(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+function abrirDoc(el){ var u=el.getAttribute('data-u'), t=el.getAttribute('data-t')||'Documento'; document.getElementById('mdTit').textContent=t; document.getElementById('mdFrame').src=u; document.getElementById('modal').style.display='flex'; return false; }
+function cerrarDoc(){ document.getElementById('modal').style.display='none'; document.getElementById('mdFrame').src='about:blank'; }
+document.addEventListener('keydown',function(e){ if(e.key==='Escape') cerrarDoc(); });
+function estadoChip(s){ s=(s||'').toUpperCase(); if(s==='VIGENTE') return '<span class="chip ok">&#9679; '+esc(s)+'</span>'; if(s.indexOf('CUARENT')>=0) return '<span class="chip q">&#9679; '+esc(s)+'</span>'; if(s.indexOf('RECHAZ')>=0) return '<span class="chip r">&#9679; '+esc(s)+'</span>'; return s?('<span class="chip">'+esc(s)+'</span>'):''; }
+function docChip(d){ return '<a class="doc '+esc(d.tipo)+'" data-u="'+esc(d.url)+'" data-t="'+esc(d.titulo||d.tipo)+'" onclick="return abrirDoc(this)">'+esc(d.tipo)+(d.en_r2?' <span class="r2">&#128190;R2</span>':'')+'</a>'; }
+function mpCard(mp){
+  var docs = (mp.docs&&mp.docs.length) ? '<div class="docs">'+mp.docs.map(docChip).join('')+'</div>' : '<div class="nodoc">&#9888; sin documentos indexados para este lote de MP</div>';
+  var meta=[]; if(mp.proveedor) meta.push('<b>Proveedor:</b> '+esc(mp.proveedor)); if(mp.numero_oc) meta.push('<b>OC:</b> '+esc(mp.numero_oc)); if(mp.fecha_vencimiento) meta.push('<b>Vence:</b> '+esc(mp.fecha_vencimiento)); if(mp.gramos) meta.push('<b>Consumo:</b> '+mp.gramos+' g');
+  return '<div class="mp"><div class="top"><div><span class="nm">'+esc(mp.material_nombre||mp.material_id)+'</span> <span class="cod">'+esc(mp.material_id)+'</span></div>'
+    +(mp.lote_mp?'<span class="lotebadge">lote '+esc(mp.lote_mp)+'</span>':'<span class="nodoc">sin lote</span>')+'</div>'
+    +(meta.length?'<div class="meta">'+meta.join(' &middot; ')+' '+estadoChip(mp.estado_lote)+'</div>':'')
+    +docs+'</div>';
+}
+function areaBlock(slot,a){
+  if(!a) return '';
+  var eqs = (a.equipos&&a.equipos.length) ? '<div class="eqs">'+a.equipos.map(function(e){return '<span class="eq">'+esc(e.codigo)+(e.nombre?(' &middot; '+esc(e.nombre)):'')+'</span>';}).join('')+'</div>' : '<div class="nodoc">sin equipos catalogados en el área</div>';
+  return '<div class="mp"><div class="top"><span class="nm">'+(slot==='fabricacion'?'&#127981; Fabricación':'&#128230; Envasado')+'</span><span class="lotebadge">'+esc(a.codigo)+' &middot; '+esc(a.nombre)+'</span></div>'
+    +'<div class="meta">Equipos del área <span class="nodoc" style="font-weight:600">(inferidos por área)</span></div>'+eqs+'</div>';
+}
+async function buscar(){
+  var q=document.getElementById('q').value.trim(); var res=document.getElementById('res');
+  if(!q){ res.innerHTML='<div class="card"><div class="empty">Escribí un lote de producto terminado.</div></div>'; return; }
+  res.innerHTML='<div class="card"><div class="empty">Rastreando la genealog&iacute;a&hellip;</div></div>';
+  try{
+    var d=await (await fetch('/api/calidad/genealogia-pt/'+encodeURIComponent(q))).json();
+    if(!d.encontrado){ res.innerHTML='<div class="card"><div class="empty">No encontré un lote de PT <b>'+esc(q)+'</b>. Probá con el lote físico exacto (el del batch record).</div></div>'; return; }
+    var h='<div class="card">';
+    // cabecera PT
+    h+='<div class="pt-hd"><span class="em">&#129514;</span><div><h2>'+esc(d.producto||'Producto')+'</h2><span class="lote">lote '+esc(d.lote)+'</span></div></div>';
+    h+='<div class="chips">'+estadoChip(d.pt_estado);
+    if(d.liberacion){ h+='<span class="chip ok">&#10003; Liberado por '+esc(d.liberacion.por)+(d.liberacion.at?(' &middot; '+esc(d.liberacion.at)):'')+'</span>'; }
+    if(d.pt_fecha){ h+='<span class="chip">Fabricado '+esc(d.pt_fecha)+'</span>'; }
+    h+='</div>';
+    if(d.fuente_mp==='fefo_tag'){ h+='<div class="warn">&#9888; Este lote no está encadenado por produccion_id (Fabricación directa) &middot; las MP se rastrearon por el tag FEFO (menos preciso). Al pasar por el flujo Calendario+EBR queda encadenado exacto.</div>'; }
+    // fases / batch record
+    if(d.fases&&d.fases.length){
+      h+='<div class="sec"><div class="sec-h">&#128203; Batch record <span class="n">'+d.fases.length+' fase(s)</span></div><div class="branch">';
+      h+=d.fases.map(function(f){ return '<div class="fase-row"><span class="fase-b">'+esc(f.fase_label)+'</span>'
+        +(f.numero_op?'<span class="cod">'+esc(f.numero_op)+'</span>':'')
+        +(f.area_codigo?'<span class="eq">'+esc(f.area_codigo)+'</span>':'')
+        +estadoChip(f.estado)
+        +'<a class="doc EBR" data-u="'+esc(f.url)+'" data-t="Batch record '+esc(f.fase_label)+'" onclick="return abrirDoc(this)" style="margin-left:auto">Ver legajo</a></div>'; }).join('');
+      h+='</div></div>';
+    }
+    // materias primas
+    h+='<div class="sec"><div class="sec-h">&#129514; Materias primas consumidas <span class="n">'+d.materias_primas.length+'</span></div><div class="branch">';
+    h+= d.materias_primas.length ? d.materias_primas.map(mpCard).join('') : '<div class="empty" style="padding:14px 0">No se hallaron materias primas encadenadas a este lote.</div>';
+    h+='</div></div>';
+    // áreas + equipos
+    if(d.areas&&(d.areas.fabricacion||d.areas.envasado)){
+      h+='<div class="sec"><div class="sec-h">&#127981; Áreas y equipos</div><div class="branch">'+areaBlock('fabricacion',d.areas.fabricacion)+areaBlock('envasado',d.areas.envasado)+'</div></div>';
+    }
+    // envases
+    if(d.envases&&d.envases.length){
+      h+='<div class="sec"><div class="sec-h">&#128230; Envases consumidos <span class="n">'+d.envases.length+'</span></div><div class="branch">';
+      h+=d.envases.map(function(e){ return '<div class="mp"><div class="top"><div><span class="nm">'+esc(e.nombre||e.mee_codigo)+'</span> <span class="cod">'+esc(e.mee_codigo)+'</span></div><span class="lotebadge">'+(e.cantidad||0)+' u</span></div></div>'; }).join('');
+      h+='</div></div>';
+    }
+    // docs a nivel PT
+    if(d.docs_pt&&d.docs_pt.length){
+      h+='<div class="sec"><div class="sec-h">&#128196; Documentos del lote</div><div class="docs">'+d.docs_pt.map(docChip).join('')+'</div></div>';
+    }
+    h+='</div>';
+    res.innerHTML=h;
+  }catch(e){ res.innerHTML='<div class="card"><div class="empty">Error: '+esc(e.message)+'</div></div>'; }
+}
+document.getElementById('q').addEventListener('keydown',function(e){ if(e.key==='Enter') buscar(); });
+</script></body></html>"""
+
+
 @bp.route('/calidad/expediente', methods=['GET'])
 def calidad_expediente_page():
     """Página · Expediente por lote (INVIMA · zero-paper): buscá un lote y ves TODOS sus documentos."""
@@ -1987,6 +2292,7 @@ body{background:var(--cx-bg);color:var(--cx-text);margin:0;font-family:'Inter',s
     <div class="cx-mod-header__sub"><strong>Calidad</strong> &middot; Espagiria &middot; trazabilidad INVIMA zero-paper</div>
   </div>
   <div class="cx-mod-header__nav">
+    <a href="/calidad/genealogia" class="cx-btn cx-btn-ghost cx-btn-sm" title="Genealog&iacute;a: de qu&eacute; est&aacute; hecho un lote de producto terminado (MP, área, equipos, envasado)">&#129514; Genealog&iacute;a de PT</a>
     <a href="/calidad" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver a Calidad">&larr; Calidad</a>
     <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Todos los m&oacute;dulos">M&oacute;dulos</a>
     <button class="cx-theme-toggle" onclick="cxToggleTheme()" title="Modo claro/oscuro"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4"/></svg></button>
