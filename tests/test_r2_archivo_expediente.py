@@ -88,6 +88,18 @@ def test_genealogia_pt(logged_client):
     assert 'micro' in d['analisis'] and 'fisicoquimico' in d['analisis']
 
 
+def test_equipo_calibracion_helper(app):
+    """El helper de estado de calibración (Fase 3a · genealogía) es defensivo y no crashea."""
+    from blueprints.calidad import _equipo_calibracion
+    with app.app_context():
+        from database import get_db
+        c = get_db()
+        assert _equipo_calibracion(c, '') is None
+        assert _equipo_calibracion(c, 'EQUIPO-INEXISTENTE-XYZ') is None
+        r = _equipo_calibracion(c, 'CUALQUIERA')
+        assert r is None or ('ultima' in r and 'proxima' in r and 'vigente' in r)
+
+
 def test_fase2_imprimibles(logged_client):
     """Los 2 imprimibles de Fase 2 (CoA de PT + rótulo de limpieza por-registro) responden sin crash."""
     r = logged_client.get('/api/calidad/coa-pt/LOTE-INEXISTENTE-XYZ/imprimible')

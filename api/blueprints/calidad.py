@@ -2022,6 +2022,37 @@ def calidad_expediente_lote():
     return jsonify({'ok': True, 'n': len(rows), 'grupos': list(grupos.values())})
 
 
+def _equipo_calibracion(c, equipo_codigo):
+    """Estado de calibración de un equipo (para la genealogía · INVIMA): {ultima, proxima, vigente}.
+    Lee equipos_eventos (tipo_evento='calibracion') · fallback a la tabla legacy `calibraciones`. Read-only."""
+    if not equipo_codigo:
+        return None
+    r = None
+    try:
+        r = c.execute("SELECT COALESCE(fecha,''), COALESCE(fecha_proxima,'') FROM equipos_eventos "
+                      "WHERE equipo_codigo=? AND tipo_evento='calibracion' AND COALESCE(estado,'')<>'cancelado' "
+                      "ORDER BY fecha DESC LIMIT 1", (equipo_codigo,)).fetchone()
+    except Exception:
+        r = None
+    if not r or not ((r[0] or '') or (r[1] or '')):
+        try:
+            r = c.execute("SELECT COALESCE(fecha_ultima,''), COALESCE(fecha_proxima,'') FROM calibraciones "
+                          "WHERE codigo=? ORDER BY id DESC LIMIT 1", (equipo_codigo,)).fetchone()
+        except Exception:
+            r = None
+    if not r or not ((r[0] or '') or (r[1] or '')):
+        return None
+    ultima, proxima = (r[0] or '')[:10], (r[1] or '')[:10]
+    vigente = None
+    if proxima:
+        try:
+            hoy = (datetime.utcnow() - timedelta(hours=5)).date().isoformat()  # Colombia (M24)
+            vigente = (proxima >= hoy)
+        except Exception:
+            vigente = None
+    return {'ultima': ultima, 'proxima': proxima, 'vigente': vigente}
+
+
 @bp.route('/api/calidad/genealogia-pt/<path:lote>', methods=['GET'])
 def calidad_genealogia_pt(lote):
     """GENEALOGÍA hacia atrás de un lote de PRODUCTO TERMINADO (INVIMA · trazabilidad Fase 1).
@@ -2123,7 +2154,8 @@ def calidad_genealogia_pt(lote):
                     equipos = []
                     try:
                         from blueprints.programacion import _equipos_de_area
-                        equipos = [{'codigo': e[0], 'nombre': e[1], 'tipo': (e[2] if len(e) > 2 else '')}
+                        equipos = [{'codigo': e[0], 'nombre': e[1], 'tipo': (e[2] if len(e) > 2 else ''),
+                                    'calibracion': _equipo_calibracion(c, e[0])}
                                    for e in _equipos_de_area(c, ar[0])]
                     except Exception:
                         equipos = []
@@ -2265,7 +2297,9 @@ body{background:var(--cx-bg);color:var(--cx-text);margin:0;font-family:'Inter',s
 .doc .r2{font-size:9px;opacity:.75}
 .nodoc{font-size:11px;color:#b45309;font-weight:700;}
 .eqs{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
-.eq{font-size:11px;font-weight:700;color:var(--cx-text-soft);background:var(--cx-bg-alt);border:1px solid var(--cx-hairline);border-radius:7px;padding:3px 9px}
+.eq{font-size:11px;font-weight:700;color:var(--cx-text-soft);background:var(--cx-bg-alt);border:1px solid var(--cx-hairline);border-radius:7px;padding:3px 9px;display:inline-flex;align-items:center;gap:6px}
+.cal{font-size:9.5px;font-weight:800;border-radius:5px;padding:1px 6px}
+.cal.ok{background:rgba(21,128,61,.16);color:#15803d} .cal.no{background:rgba(185,28,28,.16);color:#b91c1c} .cal.q{background:rgba(180,83,9,.16);color:#b45309} .cal.g{background:var(--cx-hairline);color:var(--cx-text-mute)}
 .fase-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 0;border-bottom:1px solid var(--cx-hairline)}
 .fase-row:last-child{border-bottom:none}
 .fase-b{font-size:11px;font-weight:800;border-radius:7px;padding:3px 10px;background:var(--cx-primary-soft);color:var(--cx-primary)}
@@ -2322,7 +2356,11 @@ function mpCard(mp){
 }
 function areaBlock(slot,a){
   if(!a) return '';
-  var eqs = (a.equipos&&a.equipos.length) ? '<div class="eqs">'+a.equipos.map(function(e){return '<span class="eq">'+esc(e.codigo)+(e.nombre?(' &middot; '+esc(e.nombre)):'')+'</span>';}).join('')+'</div>' : '<div class="nodoc">sin equipos catalogados en el área</div>';
+  var eqs = (a.equipos&&a.equipos.length) ? '<div class="eqs">'+a.equipos.map(function(e){
+    var cal='<span class="cal g">sin calibración</span>';
+    if(e.calibracion){ var v=e.calibracion.vigente; if(v===true) cal='<span class="cal ok" title="Calibrado · vence '+esc(e.calibracion.proxima)+'">&#10003; cal '+esc(e.calibracion.proxima)+'</span>'; else if(v===false) cal='<span class="cal no" title="Calibración VENCIDA ('+esc(e.calibracion.proxima)+')">&#10007; cal vencida</span>'; else cal='<span class="cal q" title="Calibración registrada sin fecha próxima">cal s/f</span>'; }
+    return '<span class="eq">'+esc(e.codigo)+(e.nombre?(' &middot; '+esc(e.nombre)):'')+cal+'</span>';
+  }).join('')+'</div>' : '<div class="nodoc">sin equipos catalogados en el área</div>';
   return '<div class="mp"><div class="top"><span class="nm">'+(slot==='fabricacion'?'&#127981; Fabricación':'&#128230; Envasado')+'</span><span class="lotebadge">'+esc(a.codigo)+' &middot; '+esc(a.nombre)+'</span></div>'
     +'<div class="meta">Equipos del área <span class="nodoc" style="font-weight:600">(inferidos por área)</span></div>'+eqs+'</div>';
 }
