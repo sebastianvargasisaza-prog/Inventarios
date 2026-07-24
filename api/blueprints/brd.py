@@ -653,13 +653,46 @@ textarea{{min-height:300px;line-height:1.5;font-family:inherit}}button{{margin-t
 <body><div class="wrap">
 <h1>📋 Cargar instructivo de fabricación al MBR</h1>
 <p class="hint">Cada línea = un paso del proceso de mezcla. El dispensado de MP sale solo de la fórmula (sección 3). Si el MBR está aprobado, se crea una versión NUEVA en borrador (la apruebás después con e-firma).</p>
-<label>Producto (MBR destino)</label><select id="prod">{opts}</select>
+<div style="background:#17171f;border:1px solid #3a2f5a;border-radius:11px;padding:14px;margin:0 0 18px">
+<b style="color:#a78bfa">&#9889; Cargar TODOS los instructivos de una vez</b>
+<p class="hint" style="margin-top:6px">Carga los instructivos capturados a sus MBR. Los que est&aacute;n aprobados generan una versi&oacute;n NUEVA en borrador (Calidad la aprueba con e-firma · la activa sigue vigente hasta entonces).</p>
+<button onclick="verTodos()" style="margin-top:8px">Ver resumen</button>
+<button onclick="cargarTodos()" id="btnTodos" disabled style="margin-top:8px;background:#3a2f1a;color:#fbbf24">Cargar TODOS</button>
+<div id="resTodos" class="hint" style="margin-top:10px"></div>
+</div>
+<label>Producto (MBR destino) · o cargá uno solo</label><select id="prod">{opts}</select>
 <label>Pasos del proceso (uno por línea)</label><textarea id="pasos">{pre}</textarea>
 <div class="hint">Pre-cargado: instructivo del Suero Multipéptidos (de tu PDF). Editá o cambiá de producto.</div>
 <button onclick="cargar()">✓ Cargar instructivo</button>
 <div id="res"></div>
 </div>
 <script>
+var _todosOK=false;
+async function verTodos(){{
+  var res=document.getElementById('resTodos'); res.style.color='#a1a1aa'; res.textContent='Cargando resumen...';
+  try{{
+    var r=await fetch('/api/brd/mbr/cargar-todos-instructivos',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:'{{}}'}});
+    var d=await r.json();
+    if(!r.ok){{ res.style.color='#f87171'; res.textContent='Error: '+(d.error||r.status); return; }}
+    var sm=(d.sin_mbr||[]);
+    res.style.color='#a1a1aa';
+    res.innerHTML='Con MBR: <b style="color:#e7e7ea">'+d.con_mbr+'</b> de '+d.total+(sm.length?(' &middot; sin MBR (se saltan): '+sm.join(', ')):' &middot; todos tienen MBR');
+    _todosOK=(d.con_mbr>0);
+    document.getElementById('btnTodos').disabled=!_todosOK;
+  }}catch(e){{ res.style.color='#f87171'; res.textContent='Error de red'; }}
+}}
+async function cargarTodos(){{
+  if(!_todosOK) return;
+  if(!confirm('Cargar los instructivos a todos los MBR? Los aprobados generan una version nueva en borrador que Calidad aprueba con e-firma.')) return;
+  var b=document.getElementById('btnTodos'); b.disabled=true;
+  var res=document.getElementById('resTodos'); res.style.color='#a1a1aa'; res.textContent='Cargando...';
+  try{{
+    var r=await fetch('/api/brd/mbr/cargar-todos-instructivos',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{aplicar:true,confirmar:'SI'}})}});
+    var d=await r.json();
+    if(r.ok&&d.aplicado){{ res.style.color='#34d399'; res.textContent='OK: '+d.cargados+' instructivos cargados ('+d.nuevas_versiones+' versiones nuevas en borrador, '+d.reemplazados+' borradores). Aprobalos con e-firma en el modulo MBR.'; }}
+    else {{ res.style.color='#f87171'; res.textContent='Error: '+(d.error||d.detalle||r.status); b.disabled=false; }}
+  }}catch(e){{ res.style.color='#f87171'; res.textContent='Error de red'; b.disabled=false; }}
+}}
 async function cargar(){{
   var prod=document.getElementById('prod').value;
   var pasos=document.getElementById('pasos').value;
@@ -729,6 +762,80 @@ def cargar_instructivo_mbr():
                     "aviso": ("Versión NUEVA en borrador creada · aprobala con e-firma en el módulo MBR "
                               "para que entre en vigor (la anterior sigue activa hasta entonces)"
                               if nueva_version else "Pasos del MBR en borrador reemplazados")}), 200
+
+
+@bp.route("/api/brd/mbr/cargar-todos-instructivos", methods=["GET", "POST"])
+def cargar_todos_instructivos():
+    """Carga los instructivos de fabricación de TODOS los productos de BATCH_INSTRUCTIVOS a sus MBR
+    de una sola vez (Sebastián 24-jul). Respeta inmutabilidad GMP: MBR aprobado -> versión NUEVA en
+    borrador que Calidad aprueba con e-firma (la activa sigue vigente hasta entonces); MBR en borrador
+    -> reemplaza sus pasos. Salta los productos sin MBR (hay que generar el MBR primero). DRY-RUN por
+    default (GET o POST sin aplicar); aplica con POST {aplicar:true, confirmar:'SI'}."""
+    err = _require_qa_or_admin()
+    if err:
+        return err
+    try:
+        from batch_formulas_data import BATCH_INSTRUCTIVOS
+    except Exception as e:
+        return jsonify({"error": "no se pudo cargar batch_formulas_data: %s" % e}), 500
+    body = request.get_json(silent=True) or {}
+    aplicar = (request.method == "POST" and body.get("aplicar") is True
+               and str(body.get("confirmar", "")).strip().upper() == "SI")
+    conn = get_db()
+    cur = conn.cursor()
+    user = session.get("compras_user", "")
+    plan = []
+    for producto_in, pasos in BATCH_INSTRUCTIVOS.items():
+        pasos_l = [str(p).strip() for p in (pasos or []) if str(p or "").strip()][:80]
+        mbr = cur.execute(
+            "SELECT id, estado, COALESCE(lote_size_g,0), producto_nombre FROM mbr_templates "
+            "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) ORDER BY version DESC LIMIT 1",
+            (producto_in,)).fetchone()
+        if not mbr:
+            plan.append({"producto": producto_in, "estado": "sin MBR (generar primero)", "pasos": len(pasos_l), "_ok": False})
+            continue
+        accion = "reemplaza borrador" if (mbr[1] or "") == "draft" else "nueva versión (borrador)"
+        plan.append({"producto": mbr[3], "estado": accion, "pasos": len(pasos_l), "_ok": True, "_mbr": mbr, "_pasos": pasos_l})
+    out = {"ok": True, "dry_run": (not aplicar), "total": len(BATCH_INSTRUCTIVOS),
+           "con_mbr": len([p for p in plan if p["_ok"]]),
+           "sin_mbr": [p["producto"] for p in plan if not p["_ok"]],
+           "plan": [{"producto": p["producto"], "estado": p["estado"], "pasos": p["pasos"]} for p in plan],
+           "aplicado": False}
+    if not aplicar:
+        return jsonify(out)
+    cargados = nuevas = reemplazados = 0
+    prod_actual = None
+    try:
+        for p in plan:
+            if not p["_ok"]:
+                continue
+            mbr = p["_mbr"]; pasos_l = p["_pasos"]; producto = mbr[3]; prod_actual = producto
+            if (mbr[1] or "") == "draft":
+                target_id = mbr[0]; nueva = False
+                cur.execute("DELETE FROM mbr_pasos WHERE mbr_template_id=?", (target_id,))
+            else:
+                version = _next_version(conn, producto)
+                cur.execute("INSERT INTO mbr_templates (producto_nombre, version, estado, titulo, lote_size_g, creado_por) "
+                            "VALUES (?, ?, 'draft', ?, ?, ?)",
+                            (producto, version, f"{producto} v{version} · instructivo de fabricación", mbr[2], user))
+                target_id = cur.lastrowid; nueva = True
+            for i, txt in enumerate(pasos_l, start=1):
+                cur.execute("INSERT INTO mbr_pasos (mbr_template_id, orden, fase, descripcion, tipo_paso, requiere_qc) "
+                            "VALUES (?, ?, 'fabricacion', ?, 'mezclado', 1)", (target_id, i, txt[:1500]))
+            cargados += 1
+            if nueva:
+                nuevas += 1
+            else:
+                reemplazados += 1
+        audit_log(cur, usuario=user, accion="CARGAR_TODOS_INSTRUCTIVOS", tabla="mbr_templates", registro_id="(bulk)",
+                  despues={"cargados": cargados, "nuevas_versiones": nuevas, "reemplazados": reemplazados})
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": "falló la carga · rollback total (nada cambió)", "producto": prod_actual, "detalle": str(e)[:250]}), 500
+    out.update({"aplicado": True, "cargados": cargados, "nuevas_versiones": nuevas, "reemplazados": reemplazados,
+                "aviso": "Las versiones nuevas quedan en BORRADOR · aprobalas con e-firma en el módulo MBR para que entren en vigor (la activa sigue vigente hasta entonces)."})
+    return jsonify(out)
 
 
 @bp.route("/api/brd/mbr/<int:mbr_id>", methods=["PATCH"])
