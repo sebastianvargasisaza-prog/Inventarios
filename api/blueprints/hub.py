@@ -1213,26 +1213,32 @@ def ia_analizar_semana():
         'messages': [{'role': 'user', 'content': prompt}]
     }).encode('utf-8')
 
-    try:
-        req = _urlreq.Request(
-            'https://api.anthropic.com/v1/messages',
-            data=payload,
-            headers={'x-api-key': api_key,
-                     'anthropic-version': '2023-06-01',
-                     'content-type': 'application/json'},
-            method='POST')
-        with _urlreq.urlopen(req, timeout=30) as resp:
-            data = _json.loads(resp.read().decode('utf-8'))
-            text = data['content'][0]['text']
-            # Extraer JSON de la respuesta
-            import re as _re
-            m = _re.search(r'\{[\s\S]+\}', text)
-            if m:
-                analisis = _json.loads(m.group(0))
-                return jsonify({'ok': True, 'datos': datos, 'analisis': analisis})
-            return jsonify({'ok': True, 'datos': datos, 'analisis_raw': text})
-    except Exception as e:
-        return jsonify({'error': f'IA no disponible: {e}', 'datos': datos}), 500
+    # Anti-saturación (M89/M91): 1 IA en vuelo · si ya hay otra, no tomamos worker → fallback inmediato.
+    from http_helpers import ia_slot
+    with ia_slot() as _ia_ok:
+        if not _ia_ok:
+            return jsonify({'ok': True, 'datos': datos,
+                            'analisis_raw': 'IA ocupada (otra consulta en curso) · reintentá en unos segundos.'})
+        try:
+            req = _urlreq.Request(
+                'https://api.anthropic.com/v1/messages',
+                data=payload,
+                headers={'x-api-key': api_key,
+                         'anthropic-version': '2023-06-01',
+                         'content-type': 'application/json'},
+                method='POST')
+            with _urlreq.urlopen(req, timeout=30) as resp:
+                data = _json.loads(resp.read().decode('utf-8'))
+                text = data['content'][0]['text']
+                # Extraer JSON de la respuesta
+                import re as _re
+                m = _re.search(r'\{[\s\S]+\}', text)
+                if m:
+                    analisis = _json.loads(m.group(0))
+                    return jsonify({'ok': True, 'datos': datos, 'analisis': analisis})
+                return jsonify({'ok': True, 'datos': datos, 'analisis_raw': text})
+        except Exception as e:
+            return jsonify({'error': f'IA no disponible: {e}', 'datos': datos}), 500
 
 
 @bp.route('/api/reporte/semanal-ceo')

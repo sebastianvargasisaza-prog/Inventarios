@@ -9211,12 +9211,18 @@ def generar_plan_perfecto():
                          "content-type": "application/json"},
                 method="POST",
             )
-            try:
-                with _ureq.urlopen(req, timeout=60) as resp:
-                    data = _json.loads(resp.read().decode("utf-8"))
-                reporte_ia = data["content"][0]["text"]
-            except Exception as ex:
-                ia_error = f"Error IA: {ex}"
+            # Anti-saturación (M89/M91): 1 IA en vuelo · si ya hay otra, saltamos el reporte (el plan ya está).
+            from http_helpers import ia_slot as _ia_slot
+            with _ia_slot() as _ia_ok:
+                if not _ia_ok:
+                    ia_error = "IA ocupada (otra corriendo) · el plan se generó igual, sin reporte IA."
+                else:
+                    try:
+                        with _ureq.urlopen(req, timeout=60) as resp:
+                            data = _json.loads(resp.read().decode("utf-8"))
+                        reporte_ia = data["content"][0]["text"]
+                    except Exception as ex:
+                        ia_error = f"Error IA: {ex}"
 
     audit_log(c, usuario=user, accion="GENERAR_PLAN_PERFECTO",
               tabla="produccion_programada", registro_id=None,

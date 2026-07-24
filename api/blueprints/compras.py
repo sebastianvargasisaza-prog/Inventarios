@@ -12458,6 +12458,15 @@ def compras_coa_upload():
         f.save(full_path)
     except Exception as e:
         return jsonify({'error': f'No pude guardar: {e}'}), 500
+    # Dual-write a Cloudflare R2 (key estable coa/<nombre>) · best-effort · el COA deja de depender del
+    # disco (habilita quitarlo · INVIMA off-site). Si R2 no está o falla, NO rompe la subida (disco es fuente).
+    try:
+        from r2_storage import r2_put, coa_key, r2_configurado
+        if r2_configurado():
+            with open(full_path, 'rb') as _fh:
+                r2_put(coa_key(safe_name), _fh.read(), mime)
+    except Exception as _e:
+        log.warning('dual-write COA a R2 falló (%s): %s', safe_name, _e)
     # audit log
     conn = get_db(); c = conn.cursor()
     try:
@@ -12501,12 +12510,23 @@ def compras_coa_download(filename):
     if not _os.path.exists(full):
         # Fallback a /tmp/coa si var/data no existe (dev local)
         full = _os.path.join('/tmp/coa', safe)
-    if not _os.path.exists(full):
-        return jsonify({'error': 'COA no encontrado'}), 404
-    from flask import send_file
     mime_by_ext = {'pdf': 'application/pdf', 'jpg': 'image/jpeg',
                    'jpeg': 'image/jpeg', 'png': 'image/png'}
     ext = safe.rsplit('.', 1)[-1].lower()
+    if not _os.path.exists(full):
+        # Fallback a Cloudflare R2 (key estable coa/<nombre>) · si el disco se perdió/quitó, el COA
+        # se sigue sirviendo desde el archivo inmutable off-site (INVIMA · zero-downtime sin disco).
+        try:
+            from r2_storage import r2_get, coa_key, r2_configurado
+            if r2_configurado():
+                data = r2_get(coa_key(safe))
+                if data:
+                    from flask import Response as _Resp
+                    return _Resp(data, mimetype=mime_by_ext.get(ext, 'application/octet-stream'))
+        except Exception as _e:
+            log.warning('fallback COA desde R2 falló (%s): %s', safe, _e)
+        return jsonify({'error': 'COA no encontrado'}), 404
+    from flask import send_file
     return send_file(full, mimetype=mime_by_ext.get(ext, 'application/octet-stream'),
                      as_attachment=False, download_name=safe)
 

@@ -711,6 +711,8 @@ JOBS_SCHEDULE = [
     ('archivar_r2_am',         6, 10, None, None,               'job_archivar_r2'),
     ('archivar_r2_pm',        14, 10, None, None,               'job_archivar_r2'),
     ('archivar_r2_noche',     22, 10, None, None,               'job_archivar_r2'),
+    # 🗄️ COA off-site 24-jul · diario 3:35 · empuja los COA del disco a R2 (key estable) → habilita quitar el disco.
+    ('backfill_coa_r2',        3, 35, None, None,               'job_backfill_coa_r2'),
     ('estacionalidad_noche',  21, 45, None, None,               'job_refrescar_estacionalidad'),
     # Mensuales (primeros 5 días del mes a las 12:00)
     ('auto_sc_mensual',      12,  0, None, [1, 2, 3, 4, 5],     'job_auto_sc_mensual'),
@@ -4193,6 +4195,20 @@ def job_archivar_r2(app):
         return True, {'skip': 'R2 no configurado'}, 0
     res = archivar_pendientes_r2(app, limite=80)
     return bool(res.get('ok')), res, int(res.get('archivados') or 0)
+
+
+def job_backfill_coa_r2(app):
+    """Sebastián 24-jul · empuja a Cloudflare R2 (key estable coa/<nombre>) los COA del disco que aún no
+    están → el disco deja de ser punto único (habilita quitarlo · zero-downtime en deploys). Idempotente
+    (salta los ya subidos) · best-effort · no-op sin R2. Diario en valle."""
+    try:
+        from r2_storage import r2_configurado, backfill_coa_r2
+    except Exception:
+        from api.r2_storage import r2_configurado, backfill_coa_r2  # pragma: no cover
+    if not r2_configurado():
+        return True, {'skip': 'R2 no configurado'}, 0
+    res = backfill_coa_r2(app)
+    return bool(res.get('ok')), res, int(res.get('subidos') or 0)
 
 
 def job_mee_drift_sync(app):

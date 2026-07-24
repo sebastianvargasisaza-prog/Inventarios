@@ -7,6 +7,7 @@ Sebastián 2-may-2026 · audit zero-error.
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 import math
 import random
@@ -15,6 +16,62 @@ from urllib import error as _urllib_error
 from urllib import request as _urllib_request
 
 log = logging.getLogger('http_helpers')
+
+
+@contextlib.contextmanager
+def ia_slot(ttl: int = 110):
+    """Lock distribuido '1 IA en vuelo' (anti-saturación de workers Gunicorn · M89/M91).
+
+    Cede `True` si tomó el slot; `False` si ya hay OTRA llamada IA corriendo (el caller debe usar su
+    fallback determinista o devolver 'IA ocupada'). Así 2-3 llamadas IA síncronas concurrentes no
+    saturan los 3 workers → no 502 app-wide.
+
+    - Conexión INDEPENDIENTE autocommit (`_audit_conn`) → NO interfiere con la transacción del request.
+    - CAS sobre `app_settings('ia_en_vuelo')` (clave es PK · `ON CONFLICT` nativo, seguro SQLite+PG).
+    - TTL (default 110s < gunicorn --timeout 120): si un holder muere, el slot se libera solo.
+    - **Fail-open**: ante CUALQUIER error del lock cede `True` (jamás bloquea la IA por un fallo del lock).
+    - Solo libera si REALMENTE adquirió (no pisa el lock de otro cuando fue fail-open).
+    """
+    acquired = False
+    got = False
+    try:
+        from audit_helpers import _audit_conn
+        ahora = time.time()
+        conn = _audit_conn()
+        try:
+            conn.execute("INSERT INTO app_settings (clave, valor) VALUES ('ia_en_vuelo','0') "
+                         "ON CONFLICT (clave) DO NOTHING")
+            cur = conn.execute(
+                "UPDATE app_settings SET valor=? WHERE clave='ia_en_vuelo' AND "
+                "(COALESCE(valor,'0')='0' OR CAST(valor AS REAL) < ?)",
+                (str(ahora), ahora - ttl))
+            acquired = (getattr(cur, 'rowcount', 0) == 1)
+            got = acquired
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as e:
+        log.warning('ia_slot lock falló (fail-open · cede paso): %s', e)
+        got = True
+        acquired = False
+    try:
+        yield got
+    finally:
+        if acquired:
+            try:
+                from audit_helpers import _audit_conn
+                c2 = _audit_conn()
+                try:
+                    c2.execute("UPDATE app_settings SET valor='0' WHERE clave='ia_en_vuelo'")
+                finally:
+                    try:
+                        c2.close()
+                    except Exception:
+                        pass
+            except Exception as e:
+                log.warning('ia_slot release falló (el TTL lo liberará): %s', e)
 
 
 def fetch_with_retry(req, *, timeout: int = 30, max_intentos: int = 3,

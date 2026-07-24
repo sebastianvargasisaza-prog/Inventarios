@@ -114,6 +114,19 @@ def r2_get(key):
         return None
 
 
+def r2_existe(key):
+    """¿Existe el objeto en R2? (head_object · barato). True/False/None(si R2 no configurado)."""
+    if not r2_configurado():
+        return None
+    try:
+        cl = _client()
+        c = _cfg()
+        cl.head_object(Bucket=c['bucket'], Key=key)
+        return True
+    except Exception:
+        return False
+
+
 def r2_delete(key):
     if not r2_configurado():
         return False
@@ -323,6 +336,48 @@ def archivar_pendientes_r2(app, limite=50):
             ).fetchone()[0]
     except Exception:
         res['pendientes'] = None
+    return res
+
+
+def coa_key(nombre):
+    """Key ESTABLE del COA en R2 (para servir si se pierde el disco). Distinta de la key del expediente
+    (que lleva sha+id · inmutable). Esta es 1:1 con el nombre de archivo → coa-download la resuelve directo."""
+    import os as _os
+    return 'coa/' + _os.path.basename(str(nombre or ''))
+
+
+def backfill_coa_r2(app=None):
+    """Sube a R2 (key estable coa/<nombre>) los COA que están en disco y aún no están en R2 → el disco
+    deja de ser punto único (habilita quitarlo). Idempotente (salta los que ya están). Best-effort."""
+    import os as _os
+    if not r2_configurado():
+        return {'ok': False, 'error': 'R2 no configurado', 'subidos': 0}
+    coa_dir = (_os.environ.get('COA_STORAGE_DIR', '') or '/var/data/coa').strip()
+    res = {'ok': True, 'subidos': 0, 'ya_estaban': 0, 'fallidos': 0, 'dir': coa_dir}
+    try:
+        nombres = _os.listdir(coa_dir) if _os.path.isdir(coa_dir) else []
+    except Exception as e:
+        return {'ok': False, 'error': 'no pude leer %s: %s' % (coa_dir, e), 'subidos': 0}
+    _mime = {'pdf': 'application/pdf', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png'}
+    for nombre in nombres:
+        full = _os.path.join(coa_dir, nombre)
+        if not _os.path.isfile(full):
+            continue
+        key = coa_key(nombre)
+        if r2_existe(key):
+            res['ya_estaban'] += 1
+            continue
+        try:
+            with open(full, 'rb') as fh:
+                data = fh.read()
+            ext = nombre.rsplit('.', 1)[-1].lower() if '.' in nombre else ''
+            if r2_put(key, data, _mime.get(ext, 'application/octet-stream')):
+                res['subidos'] += 1
+            else:
+                res['fallidos'] += 1
+        except Exception as e:
+            res['fallidos'] += 1
+            log.warning('backfill_coa_r2 falló (%s): %s', nombre, e)
     return res
 
 
