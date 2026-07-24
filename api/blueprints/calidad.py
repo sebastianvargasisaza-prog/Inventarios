@@ -1819,6 +1819,62 @@ def calidad_f02_imprimible():
     return Response(body, mimetype='text/html')
 
 
+@bp.route('/api/calidad/coa-pt/<path:lote>/imprimible', methods=['GET'])
+def calidad_coa_pt_imprimible(lote):
+    """Certificado de Análisis del PRODUCTO TERMINADO por lote (micro + fisicoquímico) · imprimible/PDF.
+    Agrega calidad_micro_resultados + calidad_fisicoquimica_resultados del lote en UN certificado (Fase 2)."""
+    if 'compras_user' not in session:
+        return Response('No autorizado', status=401)
+    lote = (lote or '').strip()
+    conn = get_db(); c = conn.cursor()
+    try:
+        micro = c.execute(
+            "SELECT microorganismo, COALESCE(valor_texto, CAST(valor AS TEXT), ''), COALESCE(unidad,''), "
+            "COALESCE(estado,''), COALESCE(metodo,''), COALESCE(producto_nombre,'') "
+            "FROM calidad_micro_resultados WHERE lote=? ORDER BY id", (lote,)).fetchall()
+    except Exception:
+        micro = []
+    try:
+        fq = c.execute(
+            "SELECT parametro, COALESCE(resultado,''), COALESCE(unidad,''), COALESCE(valor_referencia,''), "
+            "COALESCE(estado,''), COALESCE(producto_nombre,'') "
+            "FROM calidad_fisicoquimica_resultados WHERE lote=? ORDER BY id", (lote,)).fetchall()
+    except Exception:
+        fq = []
+    if not micro and not fq:
+        return Response("<p style='font-family:sans-serif;padding:40px'>No hay resultados de análisis registrados para el lote %s.</p>" % _e(lote),
+                        mimetype='text/html')
+    producto = ''
+    for r in micro:
+        if r[5]:
+            producto = r[5]; break
+    if not producto:
+        for r in fq:
+            if r[5]:
+                producto = r[5]; break
+    _mal = lambda s: (s or '').lower() in ('fuera_meta', 'fuera_industria', 'no_conforme', 'no_informado')
+    hay_fuera = any(_mal(r[3]) for r in micro) or any(_mal(r[4]) for r in fq)
+    _map = {'ok': 'Conforme', 'fuera_meta': 'Fuera de meta', 'fuera_industria': 'Fuera de límite',
+            'observacion': 'Observación', 'informado': 'Informado', 'conforme': 'Conforme', 'no_conforme': 'No conforme'}
+    _estl = lambda s: _map.get((s or '').lower(), s or '-')
+    filas_m = ''.join("<tr><td>%s</td><td>%s %s</td><td>%s</td><td>%s</td></tr>"
+                      % (_e(r[0]), _e(r[1]), _e(r[2]), _e(r[4]), _e(_estl(r[3]))) for r in micro)
+    filas_f = ''.join("<tr><td>%s</td><td>%s %s</td><td>%s</td><td>%s</td></tr>"
+                      % (_e(r[0]), _e(r[1]), _e(r[2]), _e(r[3]), _e(_estl(r[4]))) for r in fq)
+    body = (_rc_doc_css() + _rc_head('Certificado de análisis de producto terminado', 'COC-PRO-002 · CoA PT')
+            + "<div class='grid'>" + _rc_fld('Producto', producto) + _rc_fld('Lote', lote) + "</div>"
+            + (("<table><thead><tr><th>Microorganismo</th><th>Resultado</th><th>Método</th><th style='width:110px'>Concepto</th></tr></thead><tbody>"
+                + filas_m + "</tbody></table>") if micro else '')
+            + (("<table><thead><tr><th>Parámetro fisicoquímico</th><th>Resultado</th><th>Referencia</th><th style='width:110px'>Concepto</th></tr></thead><tbody>"
+                + filas_f + "</tbody></table>") if fq else '')
+            + ("<div class='res %s'>Concepto de calidad: %s</div>"
+               % (('no' if hay_fuera else 'ok'), ('CON OBSERVACIONES' if hay_fuera else 'CONFORME')))
+            + "<div class='firmas'><div class='firma'><b>-</b>Realiza el análisis</div>"
+            + "<div class='firma'><b>-</b>Aprueba · Jefe de Control de Calidad</div></div>"
+            + "<div class='noimp'><button onclick='window.print()'>🖨️ Imprimir / Guardar PDF</button></div>")
+    return Response(body, mimetype='text/html')
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # EXPEDIENTE POR LOTE · zero-paper INVIMA · Sebastián 24-jul
 # Registro central `documentos_regulados` (mig 371): reconstruir (backfill) + buscar + página.
@@ -1872,11 +1928,49 @@ def calidad_reconstruir_expediente():
                                 codigo=r[1] or '', producto_nombre=r[2] or '', lote=r[3] or '',
                                 ref_tabla='ebr_ejecuciones', ref_id=r[0], generado_por=r[4], generado_at=(r[5] or None))
             n_ebr += 1
+        # Rótulos de limpieza F02 (Fase 2 · solo los que tienen lote de producción · URL por-registro estable)
+        n_rot = 0
+        try:
+            for r in c.execute(
+                    "SELECT id, COALESCE(area_codigo,''), COALESCE(producto_elaborar,''), COALESCE(lote_elaborar,''), "
+                    "COALESCE(realizado_por, verificado_por,''), COALESCE(realizado_at, creado_en,'') "
+                    "FROM rotulos_limpieza WHERE COALESCE(TRIM(lote_elaborar),'')<>''").fetchall():
+                registrar_documento(c, tipo_doc='ROTULO_LIMPIEZA', formato='PRD-PRO-002-F02',
+                                    titulo='Rótulo de limpieza de área/equipos',
+                                    url='/planta/rotulo-limpieza/registro/%s/pdf' % r[0], entidad='PT',
+                                    codigo=r[1] or '', producto_nombre=r[2] or '', lote=r[3] or '',
+                                    ref_tabla='rotulos_limpieza', ref_id=r[0], generado_por=r[4], generado_at=(r[5] or None))
+                n_rot += 1
+        except Exception:
+            n_rot = 0
+        # CoA de PT (micro + fisicoquímico) · UN documento por lote (agrega los resultados) · imprimible propio
+        n_coa = 0
+        try:
+            _lotes_coa = {}
+            for tabla in ('calidad_micro_resultados', 'calidad_fisicoquimica_resultados'):
+                try:
+                    for r in c.execute("SELECT DISTINCT COALESCE(TRIM(lote),''), COALESCE(producto_nombre,''), "
+                                       "MAX(COALESCE(creado_en,'')) FROM %s WHERE COALESCE(TRIM(lote),'')<>'' "
+                                       "GROUP BY COALESCE(TRIM(lote),''), COALESCE(producto_nombre,'')" % tabla).fetchall():
+                        if r[0]:
+                            _lotes_coa[r[0]] = (r[1] or _lotes_coa.get(r[0], ('', ''))[0], r[2] or '')
+                except Exception:
+                    pass
+            for _lt, (_prod, _at) in _lotes_coa.items():
+                registrar_documento(c, tipo_doc='COA_PT', formato='CoA producto terminado',
+                                    titulo='Certificado de análisis del producto terminado',
+                                    url='/api/calidad/coa-pt/%s/imprimible' % _urlq(_lt), entidad='PT',
+                                    producto_nombre=_prod, lote=_lt,
+                                    ref_tabla='coa_pt', ref_id=_lt, generado_at=(_at or None))
+                n_coa += 1
+        except Exception:
+            n_coa = 0
         conn.commit()
     except Exception as e:
         conn.rollback()
         return jsonify({'error': 'falló el backfill: %s' % e}), 500
-    return jsonify({'ok': True, 'f01': n_f01, 'f02': n_f02, 'ebr': n_ebr, 'total': n_f01 + n_f02 + n_ebr})
+    return jsonify({'ok': True, 'f01': n_f01, 'f02': n_f02, 'ebr': n_ebr, 'rotulo_limpieza': n_rot,
+                    'coa_pt': n_coa, 'total': n_f01 + n_f02 + n_ebr + n_rot + n_coa})
 
 
 @bp.route('/api/calidad/archivar-r2', methods=['GET', 'POST'])
@@ -2165,6 +2259,8 @@ body{background:var(--cx-bg);color:var(--cx-text);margin:0;font-family:'Inter',s
 .doc.F02{background:rgba(21,128,61,.13);color:#15803d;border-color:rgba(21,128,61,.25)}
 .doc.COA_PROVEEDOR{background:var(--cx-primary-soft);color:var(--cx-primary);border-color:rgba(109,40,217,.25)}
 .doc.ROTULO{background:var(--cx-hairline);color:var(--cx-text-soft)}
+.doc.COA_PT{background:rgba(13,148,136,.16);color:#0d9488;border-color:rgba(13,148,136,.28)}
+.doc.ROTULO_LIMPIEZA{background:rgba(2,132,199,.14);color:#0284c7;border-color:rgba(2,132,199,.28)}
 .doc.EBR{background:rgba(180,83,9,.14);color:#b45309;border-color:rgba(180,83,9,.28)}
 .doc .r2{font-size:9px;opacity:.75}
 .nodoc{font-size:11px;color:#b45309;font-weight:700;}
@@ -2343,6 +2439,7 @@ body{background:var(--cx-bg);color:var(--cx-text);margin:0;font-family:'Inter',s
 .doc .b{display:inline-block;font-size:10px;font-weight:800;border-radius:6px;padding:2px 7px;margin-bottom:7px;}
 .b.F01{background:rgba(37,99,235,.16);color:#2563eb;} .b.F02{background:rgba(21,128,61,.16);color:#15803d;} .b.EBR{background:rgba(180,83,9,.18);color:#b45309;}
 .b.COA_PROVEEDOR{background:var(--cx-primary-soft);color:var(--cx-primary);} .b.ROTULO{background:var(--cx-hairline);color:var(--cx-text-soft);}
+.b.COA_PT{background:rgba(13,148,136,.16);color:#0d9488;} .b.ROTULO_LIMPIEZA{background:rgba(2,132,199,.14);color:#0284c7;}
 .empty{color:var(--cx-text-mute);font-size:14px;padding:32px 0;text-align:center;}
 .modal{display:none;position:fixed;inset:0;background:rgba(15,15,20,.6);z-index:9999;align-items:center;justify-content:center;padding:24px;}
 .modal-card{background:var(--cx-card);border:1px solid var(--cx-hairline);border-radius:16px;width:min(960px,96vw);height:min(88vh,920px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.4);}

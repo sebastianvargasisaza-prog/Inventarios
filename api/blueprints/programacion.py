@@ -6092,6 +6092,19 @@ def planta_rotulo_limpieza_realizar(area_id):
                   detalle=f"Limpieza registrada en {base['area_codigo']} por {user}")
     except Exception as _e:
         logging.getLogger('programacion').warning(f'audit ROTULO_LIMPIEZA_REALIZAR: {_e}')
+    # Expediente por lote (INVIMA · Fase 2): inscribir el rótulo de limpieza F02 · tiene URL por-registro
+    # ESTABLE (/planta/rotulo-limpieza/registro/<id>/pdf) · solo si hay lote de producción (contexto real).
+    try:
+        if (lote_elab or '').strip():
+            from audit_helpers import registrar_documento as _regdoc
+            _regdoc(c, tipo_doc='ROTULO_LIMPIEZA', formato='PRD-PRO-002-F02',
+                    titulo='Rótulo de limpieza de área/equipos',
+                    url='/planta/rotulo-limpieza/registro/%s/pdf' % rid,
+                    entidad='PT', codigo=(base.get('area_codigo', '') if isinstance(base, dict) else ''),
+                    producto_nombre=(prod_elab or ''), lote=lote_elab,
+                    ref_tabla='rotulos_limpieza', ref_id=rid, generado_por=user)
+    except Exception as _e:
+        logging.getLogger('programacion').warning('registrar_documento rotulo_limpieza: %s' % _e)
     conn.commit()
     return jsonify({'ok': True, 'rotulo_id': rid, 'estado': 'En limpieza',
                     'mensaje': 'Limpieza registrada · pendiente verificación de Calidad'})
@@ -6447,6 +6460,89 @@ def planta_rotulo_limpieza_pdf(area_id):
     _lw = request.args.get('w') or 100; _lh = request.args.get('h') or 100  # default 100×100mm (Sebastián 7-jul)
     return Response(_rotulo_f02_doc(body, f"Rótulos de Limpieza F02 · {base['area_nombre']}",
                                     lw=_lw, lh=_lh, base_path='/planta/rotulo-limpieza/%d/pdf' % area_id),
+                    mimetype='text/html')
+
+
+@bp.route('/planta/rotulo-limpieza/registro/<int:reg_id>/pdf', methods=['GET'])
+def planta_rotulo_limpieza_registro_pdf(reg_id):
+    """Rótulo de limpieza F02 de UN registro histórico (snapshot inmutable Part 11 · PRD-PRO-002-F02).
+    URL ESTABLE por-registro para el EXPEDIENTE por lote (el /<area_id>/pdf muestra el estado ACTUAL del
+    área, no sirve como documento del lote). Read-only · renderiza el snapshot guardado en rotulos_limpieza."""
+    if 'compras_user' not in session:
+        from flask import redirect
+        return redirect('/login?next=/planta/rotulo-limpieza/registro/%d/pdf' % reg_id)
+    from flask import Response
+    import html as _h
+    import json as _json
+    conn = get_db(); c = conn.cursor()
+    row = c.execute(
+        "SELECT COALESCE(r.area_codigo,''), COALESCE(a.nombre,''), COALESCE(r.producto_elaborar,''), "
+        "COALESCE(r.lote_elaborar,''), COALESCE(r.producto_anterior,''), COALESCE(r.lote_anterior,''), "
+        "COALESCE(r.sanitizante,''), COALESCE(r.detergente,''), COALESCE(r.equipos_json,''), "
+        "COALESCE(r.estado,''), COALESCE(r.realizado_por,''), COALESCE(r.realizado_at,''), "
+        "COALESCE(r.verificado_por,''), COALESCE(r.verificado_at,''), COALESCE(r.observaciones,'') "
+        "FROM rotulos_limpieza r LEFT JOIN areas_planta a ON a.id=r.area_id WHERE r.id=?", (reg_id,)).fetchone()
+    if not row:
+        return Response("<p style='font-family:sans-serif;padding:40px'>Rótulo de limpieza no encontrado.</p>",
+                        mimetype='text/html', status=404)
+    _k = ['area_cod', 'area_nom', 'prod_elab', 'lote_elab', 'prod_prev', 'lote_prev', 'sanit', 'deterg',
+          'equipos_json', 'estado', 'real_por', 'real_at', 'ver_por', 'ver_at', 'obs']
+    d = dict(zip(_k, row))
+    _e = lambda s: _h.escape(str(s if s is not None else ''))
+    equipos = []
+    try:
+        _ej = _json.loads(d['equipos_json'] or '[]')
+        for e in (_ej if isinstance(_ej, list) else []):
+            equipos.append(str(e.get('codigo') or e.get('nombre') or '') if isinstance(e, dict) else str(e))
+    except Exception:
+        equipos = []
+    eq_html = ''.join("<span class='eq'>%s</span>" % _e(x) for x in equipos if x) or "<span class='mut'>Sin equipos listados</span>"
+    _est = (d['estado'] or '').lower()
+    _est_cls = 'ok' if _est in ('verificado', 'liberado', 'realizado') else ''
+    _fld = lambda k, v: "<div class='f'><span class='k'>%s</span><span class='v'>%s</span></div>" % (_e(k), _e(v) or '-')
+    body = ("<div class='sheet'><div class='accent'></div>"
+            "<div class='hd'><div><div class='co'>Espagiria Laboratorio</div>"
+            "<div class='sub'>Control de Calidad · Estado de Limpieza de Áreas y Equipos</div></div>"
+            "<div class='cod'>PRD-PRO-002-F02<small>Rótulo de limpieza</small></div></div>"
+            "<div class='ti'>RÓTULO DE LIMPIEZA F02</div>"
+            "<div class='grid'>"
+            + _fld('Área', (d['area_nom'] or d['area_cod']))
+            + _fld('Producto a elaborar', d['prod_elab'])
+            + _fld('Lote a elaborar', d['lote_elab'])
+            + _fld('Producto anterior', d['prod_prev'])
+            + _fld('Lote anterior', d['lote_prev'])
+            + _fld('Sanitizante', d['sanit'])
+            + _fld('Detergente', d['deterg'])
+            + "</div>"
+            + "<div class='f'><span class='k'>Equipos</span><span class='v'>" + eq_html + "</span></div>"
+            + ("<div class='f'><span class='k'>Observaciones</span><span class='v'>" + _e(d['obs']) + "</span></div>" if d['obs'] else "")
+            + "<div class='res " + _est_cls + "'>Estado: " + _e((d['estado'] or '-').upper()) + "</div>"
+            + "<div class='firmas'>"
+            + "<div class='firma'><b>" + (_e(d['real_por']) or '-') + "</b>Realizó la limpieza" + (("<br><small>" + _e(d['real_at'][:19]) + "</small>") if d['real_at'] else "") + "</div>"
+            + "<div class='firma'><b>" + (_e(d['ver_por']) or '-') + "</b>Verificó (QC)" + (("<br><small>" + _e(d['ver_at'][:19]) + "</small>") if d['ver_at'] else "") + "</div>"
+            + "</div></div>")
+    css = ("<style>@page{size:letter;margin:15mm}*{box-sizing:border-box}"
+           "body{font-family:'Inter','Segoe UI',Arial,sans-serif;color:#1e1b2e;font-size:12px;margin:0;padding:16px;background:#f4f4f7;"
+           "-webkit-print-color-adjust:exact;print-color-adjust:exact}"
+           ".sheet{max-width:760px;margin:0 auto;background:#fff;border:1px solid #e4e4e7;border-radius:14px;overflow:hidden;box-shadow:0 12px 28px rgba(24,24,27,.08)}"
+           ".accent{height:5px;background:linear-gradient(90deg,#a78bfa,#6d28d9)}"
+           ".hd{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;padding:18px 24px 8px}"
+           ".co{font-size:16px;font-weight:800;letter-spacing:-.3px}.sub{font-size:11px;color:#78716c;margin-top:2px}"
+           ".cod{text-align:right;font-size:11px;color:#6d28d9;font-weight:700}.cod small{display:block;color:#a1a1b0;font-weight:500;margin-top:2px}"
+           ".ti{text-align:center;font-size:17px;font-weight:800;text-transform:uppercase;letter-spacing:.02em;padding:4px 24px 12px}"
+           ".grid{display:grid;grid-template-columns:1fr 1fr;gap:0 22px;padding:0 24px}"
+           ".f{border-bottom:1px solid #f1f0f7;padding:7px 0;display:flex;gap:8px;align-items:baseline}.grid .f,.sheet>.f{margin:0 24px}"
+           ".f .k{color:#8b8b9e;min-width:120px;font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;font-weight:600}"
+           ".f .v{font-weight:600;color:#1e1b2e}"
+           ".eq{display:inline-block;background:#ede9fe;color:#4c1d95;border-radius:6px;padding:2px 8px;margin:2px 4px 2px 0;font-size:11px;font-weight:700}"
+           ".mut{color:#a1a1b0}"
+           ".res{margin:14px 24px;padding:10px 16px;border-radius:11px;font-size:13px;font-weight:800;color:#b45309;background:#fffbeb;border:1.5px solid #fde68a}"
+           ".res.ok{color:#15803d;background:#f0fdf4;border-color:#bbf7d0}"
+           ".firmas{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin:26px 24px 22px}"
+           ".firma{border-top:1.5px solid #1e1b2e;padding-top:6px;font-size:10px;color:#78788a}.firma b{display:block;color:#1e1b2e;font-size:12.5px}"
+           ".firma small{color:#a1a1b0}"
+           "@media print{body{padding:0;background:#fff}.sheet{border:none;box-shadow:none}}</style>")
+    return Response("<!doctype html><meta charset='utf-8'><title>Rótulo de limpieza F02 · " + _e(d['lote_elab'] or d['area_cod']) + "</title>" + css + body,
                     mimetype='text/html')
 
 
