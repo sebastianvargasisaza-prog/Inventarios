@@ -1896,7 +1896,9 @@ def calidad_archivar_r2():
         return jsonify({'ok': True, 'estado': r2_stats_expediente(get_db())})
     if not r2_configurado():
         return jsonify({'ok': False, 'error': 'R2 no está configurado en el servidor (faltan variables R2_*)'}), 400
-    res = archivar_pendientes_r2(current_app._get_current_object(), limite=200)
+    # Lote MODESTO + presupuesto de reloj corto (M89/M91): el request nunca retiene el worker cerca del
+    # --timeout 120 · el JS del modal reinvoca en bucle mientras queden 'pendientes' (drena el backlog).
+    res = archivar_pendientes_r2(current_app._get_current_object(), limite=25, presupuesto_seg=35)
     return jsonify(res)
 
 
@@ -2054,20 +2056,30 @@ async function cargarEstadoR2(){
   }catch(err){ e.innerHTML=''; }
 }
 async function archivarR2(){
-  var m=document.getElementById('msg'); m.style.color='#78716c'; m.textContent='Subiendo a R2…';
+  var m=document.getElementById('msg'); var fb=document.getElementById('r2fallos');
+  var totArch=0, totFall=0, fallosDet=[], vueltas=0;
+  m.style.color='#78716c'; m.textContent='Subiendo a R2…';
   try{
     var t=await csrf();
-    var r=await fetch('/api/calidad/archivar-r2',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t||''},body:'{}'});
-    var d=await r.json();
-    if(r.ok&&d.ok){
-      m.style.color='#15803d';
-      m.textContent='OK: '+(d.archivados||0)+' documentos archivados en R2'+(d.fallidos?(' · '+d.fallidos+' fallidos'):'')+(d.pendientes?(' · quedan '+d.pendientes+' pendientes, dale otra vez'):'')+'.';
-      var fb=document.getElementById('r2fallos');
-      if(d.detalle_fallos&&d.detalle_fallos.length){
-        fb.innerHTML='<b>Fallidos:</b> '+d.detalle_fallos.map(function(f){return esc(f.tipo||'')+' #'+esc(f.id)+' ('+esc(f.motivo||'')+')';}).join(' · ');
-      } else { fb.innerHTML=''; }
+    // Bucle: cada request es corto (lote acotado en el server) · seguimos mientras queden pendientes.
+    while(vueltas<40){
+      vueltas++;
+      var r=await fetch('/api/calidad/archivar-r2',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t||''},body:'{}'});
+      var d=await r.json();
+      if(!(r.ok&&d.ok)){ m.style.color='#b91c1c'; m.textContent='Error: '+((d&&d.error)||r.status); break; }
+      totArch+=(d.archivados||0); totFall=(d.fallidos||0);
+      if(d.detalle_fallos&&d.detalle_fallos.length){ fallosDet=d.detalle_fallos; }
+      m.style.color='#78716c'; m.textContent='Subiendo a R2… '+totArch+' archivados'+(d.pendientes?(' · quedan '+d.pendientes):'')+'.';
+      // Si no avanzó (0 archivados) o no quedan pendientes o R2 se cayó, cortamos.
+      if(!d.pendientes || (d.archivados||0)===0 || d.corte_por_r2_caido){
+        if(d.corte_por_r2_caido){ m.style.color='#b91c1c'; m.textContent='R2 no responde ahora · reintentá en un rato ('+totArch+' subidos).'; }
+        else { m.style.color='#15803d'; m.textContent='OK: '+totArch+' documentos archivados en R2'+(totFall?(' · '+totFall+' fallidos (fuente no disponible)'):'')+(d.pendientes?(' · quedan '+d.pendientes):' · todo respaldado')+'.'; }
+        break;
+      }
     }
-    else { m.style.color='#b91c1c'; m.textContent='Error: '+((d&&d.error)||r.status); }
+    if(fallosDet.length){
+      fb.innerHTML='<b>Fallidos:</b> '+fallosDet.map(function(f){return esc(f.tipo||'')+' #'+esc(f.id)+' ('+esc(f.motivo||'')+')';}).join(' · ');
+    } else { fb.innerHTML=''; }
   }catch(e){ m.style.color='#b91c1c'; m.textContent='Error de red'; }
   cargarEstadoR2();
 }

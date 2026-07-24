@@ -217,8 +217,11 @@ def r2_selftest():
 # Cada documento regulado (F01/F02/EBR/COA/rótulo) ya vive en su tabla + en el
 # índice `documentos_regulados`. Aquí lo snapshoteamos a R2 (WORM, off-site) como
 # 2ª capa: si se pierde el disco de Render, el PDF/HTML firmado sobrevive.
-# NO va en el path del request (no retiene un worker · M89/M90): lo corre el cron
-# job_archivar_r2 + el botón POST /api/calidad/archivar-r2 (best-effort, batched).
+# Lo corre el cron job_archivar_r2 (hilo multi-cron) y el botón POST /api/calidad/archivar-r2.
+# ⚠ El trabajo es I/O de red (render + PUT a R2), así que archivar_pendientes_r2 SIEMPRE se acota con
+# `presupuesto_seg` (wall-clock, < gunicorn --timeout 120) + circuit-breaker por fallos de R2 → nunca
+# retiene un worker hasta el SIGKILL ni cuelga el hilo del cron si R2 está lento/caído (M89/M90/M91).
+# Como es idempotente (solo toma pendientes r2_key vacío), el resto se drena en llamadas cortas sucesivas.
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Sesión de servicio (solo lectura) para renderizar los imprimibles internos.
@@ -279,10 +282,16 @@ def _render_doc_bytes(app, url):
         return None, '%s: %s' % (type(e).__name__, str(e)[:120])
 
 
-def archivar_pendientes_r2(app, limite=50):
+def archivar_pendientes_r2(app, limite=50, presupuesto_seg=45):
     """Sube a R2 los documentos regulados aún sin snapshot (r2_key vacío).
-    Idempotente (solo toma los pendientes), batched (limite), best-effort. Retorna dict con conteos."""
+    Idempotente (solo toma los pendientes), batched (limite), best-effort. Retorna dict con conteos.
+
+    ANTI-HANG (M89/M90/M91): `presupuesto_seg` = tope de reloj (wall-clock) por corrida → el loop corta
+    aunque falte trabajo (el resto queda en `pendientes`, se drena en la próxima llamada · idempotente),
+    así NUNCA retiene un worker hasta el SIGKILL (--timeout 120) ni cuelga el hilo del cron. Circuit-breaker:
+    tras varios PUT fallidos SEGUIDOS (R2 caído) corta el lote en vez de moler cada ítem contra el timeout."""
     import hashlib
+    import time as _time
     if not r2_configurado():
         return {'ok': False, 'error': 'R2 no configurado', 'archivados': 0, 'pendientes': None}
     try:
@@ -298,11 +307,19 @@ def archivar_pendientes_r2(app, limite=50):
             "FROM documentos_regulados WHERE COALESCE(anulado,0)=0 AND COALESCE(r2_key,'')='' "
             "ORDER BY id DESC LIMIT ?", (int(limite),)).fetchall()
         cols = [x[0] for x in c.description]
+    _t0 = _time.monotonic()
+    _fallos_r2_seguidos = 0
     for row in rows:
+        if _time.monotonic() - _t0 > presupuesto_seg:
+            res['corte_por_tiempo'] = True  # el resto queda en 'pendientes' · se retoma en la próxima corrida
+            break
+        if _fallos_r2_seguidos >= 4:
+            res['corte_por_r2_caido'] = True  # circuit-breaker: R2 no responde · no molemos el lote entero
+            break
         doc = dict(zip(cols, row))
         data, ct = _render_doc_bytes(app, doc.get('url'))
         if data is None:
-            res['fallidos'] += 1
+            res['fallidos'] += 1  # fuente 404/render falla → NO cuenta para el circuit-breaker (no es R2 caído)
             if len(res['detalle_fallos']) < 12:
                 res['detalle_fallos'].append({'id': doc.get('id'), 'tipo': doc.get('tipo_doc'), 'motivo': ct})
             continue
@@ -311,9 +328,11 @@ def archivar_pendientes_r2(app, limite=50):
         key = _r2_key_documento(doc, sha, ext)
         if not r2_put(key, data, ct if isinstance(ct, str) else 'application/octet-stream'):
             res['fallidos'] += 1
+            _fallos_r2_seguidos += 1  # PUT de red falló → si se repite, R2 está caído
             if len(res['detalle_fallos']) < 12:
                 res['detalle_fallos'].append({'id': doc.get('id'), 'tipo': doc.get('tipo_doc'), 'motivo': 'PUT R2 falló'})
             continue
+        _fallos_r2_seguidos = 0  # éxito → resetea el circuit-breaker
         # marcar como archivado (fecha en Python · PG-safe)
         try:
             from datetime import datetime as _dt
@@ -346,10 +365,15 @@ def coa_key(nombre):
     return 'coa/' + _os.path.basename(str(nombre or ''))
 
 
-def backfill_coa_r2(app=None):
+def backfill_coa_r2(app=None, limite=300, presupuesto_seg=90):
     """Sube a R2 (key estable coa/<nombre>) los COA que están en disco y aún no están en R2 → el disco
-    deja de ser punto único (habilita quitarlo). Idempotente (salta los que ya están). Best-effort."""
+    deja de ser punto único (habilita quitarlo). Idempotente (salta los que ya están). Best-effort.
+
+    ANTI-HANG (M90): corre en el hilo ÚNICO del multi-cron, así que se acota con `presupuesto_seg`
+    (wall-clock · el resto se retoma la próxima noche, es idempotente) + circuit-breaker por fallos de R2
+    seguidos → si R2 está caído no muele miles de archivos a ~30s c/u bloqueando los demás crons."""
     import os as _os
+    import time as _time
     if not r2_configurado():
         return {'ok': False, 'error': 'R2 no configurado', 'subidos': 0}
     coa_dir = (_os.environ.get('COA_STORAGE_DIR', '') or '/var/data/coa').strip()
@@ -359,22 +383,42 @@ def backfill_coa_r2(app=None):
     except Exception as e:
         return {'ok': False, 'error': 'no pude leer %s: %s' % (coa_dir, e), 'subidos': 0}
     _mime = {'pdf': 'application/pdf', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png'}
+    _t0 = _time.monotonic()
+    _fallos_seguidos = 0
+    _procesados = 0
     for nombre in nombres:
+        if _procesados >= limite:
+            res['corte_por_limite'] = True
+            break
+        if _time.monotonic() - _t0 > presupuesto_seg:
+            res['corte_por_tiempo'] = True  # el resto se retoma la próxima corrida (idempotente)
+            break
+        if _fallos_seguidos >= 4:
+            res['corte_por_r2_caido'] = True  # circuit-breaker: R2 no responde
+            break
         full = _os.path.join(coa_dir, nombre)
         if not _os.path.isfile(full):
             continue
         key = coa_key(nombre)
-        if r2_existe(key):
+        _existe = r2_existe(key)
+        if _existe is True:
             res['ya_estaban'] += 1
+            _fallos_seguidos = 0
             continue
+        if _existe is None:  # R2 no configurado (no debería llegar acá) o error de red en head
+            _fallos_seguidos += 1
+            continue
+        _procesados += 1
         try:
             with open(full, 'rb') as fh:
                 data = fh.read()
             ext = nombre.rsplit('.', 1)[-1].lower() if '.' in nombre else ''
             if r2_put(key, data, _mime.get(ext, 'application/octet-stream')):
                 res['subidos'] += 1
+                _fallos_seguidos = 0
             else:
                 res['fallidos'] += 1
+                _fallos_seguidos += 1
         except Exception as e:
             res['fallidos'] += 1
             log.warning('backfill_coa_r2 falló (%s): %s', nombre, e)

@@ -4193,7 +4193,8 @@ def job_archivar_r2(app):
         from api.r2_storage import r2_configurado, archivar_pendientes_r2  # pragma: no cover
     if not r2_configurado():
         return True, {'skip': 'R2 no configurado'}, 0
-    res = archivar_pendientes_r2(app, limite=80)
+    # presupuesto de reloj (M90): corre en el hilo único del multi-cron · nunca lo retiene demasiado.
+    res = archivar_pendientes_r2(app, limite=80, presupuesto_seg=90)
     return bool(res.get('ok')), res, int(res.get('archivados') or 0)
 
 

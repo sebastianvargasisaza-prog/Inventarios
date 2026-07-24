@@ -34,9 +34,11 @@ def ia_slot(ttl: int = 110):
     """
     acquired = False
     got = False
+    token = None
     try:
         from audit_helpers import _audit_conn
         ahora = time.time()
+        token = str(ahora)  # identidad del holder · el release solo libera si el slot SIGUE siendo nuestro
         conn = _audit_conn()
         try:
             conn.execute("INSERT INTO app_settings (clave, valor) VALUES ('ia_en_vuelo','0') "
@@ -44,7 +46,7 @@ def ia_slot(ttl: int = 110):
             cur = conn.execute(
                 "UPDATE app_settings SET valor=? WHERE clave='ia_en_vuelo' AND "
                 "(COALESCE(valor,'0')='0' OR CAST(valor AS REAL) < ?)",
-                (str(ahora), ahora - ttl))
+                (token, ahora - ttl))
             acquired = (getattr(cur, 'rowcount', 0) == 1)
             got = acquired
         finally:
@@ -59,12 +61,14 @@ def ia_slot(ttl: int = 110):
     try:
         yield got
     finally:
-        if acquired:
+        if acquired and token is not None:
             try:
                 from audit_helpers import _audit_conn
                 c2 = _audit_conn()
                 try:
-                    c2.execute("UPDATE app_settings SET valor='0' WHERE clave='ia_en_vuelo'")
+                    # CAS de propiedad: solo libera si el slot SIGUE con nuestro token (si excedimos el TTL
+                    # y otro worker ya lo readquirió, NO le pisamos su lock · el suyo lo libera su propio release).
+                    c2.execute("UPDATE app_settings SET valor='0' WHERE clave='ia_en_vuelo' AND valor=?", (token,))
                 finally:
                     try:
                         c2.close()

@@ -35,3 +35,19 @@ def test_ia_slot_libera_ante_excepcion(app):
             pass
         with ia_slot() as c:
             assert c is True, 'una excepción dentro del slot no debe dejarlo tomado'
+
+
+def test_ia_slot_release_no_pisa_dueno_ajeno(app):
+    """Si otro worker readquirió el slot (tras nuestro TTL), nuestro release NO debe borrar su lock (CAS por token)."""
+    from http_helpers import ia_slot
+    with app.app_context():
+        from database import get_db
+        get_db().execute("UPDATE app_settings SET valor='0' WHERE clave='ia_en_vuelo'")
+        get_db().commit()
+        with ia_slot() as a:
+            assert a is True
+            # simular que OTRO tomó el slot mientras nosotros lo teníamos (token distinto)
+            get_db().execute("UPDATE app_settings SET valor='9999999999' WHERE clave='ia_en_vuelo'")
+            get_db().commit()
+        v = get_db().execute("SELECT valor FROM app_settings WHERE clave='ia_en_vuelo'").fetchone()[0]
+        assert str(v) == '9999999999', 'el release NO debe pisar el lock de otro dueño'
