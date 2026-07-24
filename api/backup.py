@@ -315,6 +315,11 @@ def do_backup(triggered_by="auto"):
     Returns:
         dict con resultado: {ok, file_path, size_bytes, error, skipped}.
     """
+    # En PostgreSQL el backup local (SQLite) es legacy sin uso · skip limpio (ver should_run_backup).
+    if os.environ.get("EOS_DB_BACKEND", "").strip().lower() == "postgres":
+        return {"ok": False, "skipped": True,
+                "error": "backend PostgreSQL · el backup local respalda el SQLite legacy (no aplica) · "
+                         "los datos vivos los respalda Render (PG gestionado)"}
     if not _local_lock.acquire(blocking=False):
         return {"ok": False, "skipped": True, "error": "another backup running in this worker"}
 
@@ -384,6 +389,11 @@ def should_run_backup(conn):
     True si el último backup completado (status='ok') fue hace más de
     BACKUP_INTERVAL_HOURS, o si nunca se ha hecho uno.
     """
+    # El backup local respalda el SQLite (DB_PATH). En PostgreSQL ese archivo es legacy SIN USO
+    # (los datos vivos están en PG · Render gestiona sus propios backups) → respaldarlo no tiene
+    # sentido y, sin el disco /var/data, fallaría. Skip limpio en PG (24-jul · quitar disco).
+    if os.environ.get("EOS_DB_BACKEND", "").strip().lower() == "postgres":
+        return False
     try:
         row = conn.execute(
             "SELECT MAX(completed_at) FROM backup_log WHERE status='ok'"

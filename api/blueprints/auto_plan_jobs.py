@@ -3250,6 +3250,10 @@ def _db_autoheal_check(app):
     """
     from config import DB_PATH
     import time as _time
+    # PostgreSQL: la integridad la gestiona PG/Render · PRAGMA quick_check es SQLite-only y el archivo
+    # del disco es legacy sin uso → skip limpio (evita ruido y no depende del disco · 24-jul quitar disco).
+    if os.environ.get('EOS_DB_BACKEND', '').strip().lower() == 'postgres':
+        return {'bd': 'ok', 'skip': 'postgres'}
     corrupta = False
     detalle = ''
     try:
