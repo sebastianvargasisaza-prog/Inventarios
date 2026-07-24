@@ -99,19 +99,39 @@ def r2_selftest():
     key = '_selftest/eos-r2-check.txt'
     payload = b'EOS R2 self-test OK'
     try:
-        import boto3  # noqa: F401 · verificar que boto3 está instalado antes de operar
+        import boto3  # noqa: F401
+        from botocore.exceptions import ClientError, EndpointConnectionError, ParamValidationError
     except Exception:
         return {'ok': False, 'configurado': True, 'error': 'boto3 no está instalado en el servidor (revisar requirements/deploy)'}
+    c = _cfg()
+    _diag = {'endpoint': c['endpoint'], 'bucket': c['bucket'], 'access_key_prefijo': (c['key'][:6] + '…') if c['key'] else ''}
     try:
-        if not r2_put(key, payload, 'text/plain'):
-            return {'ok': False, 'configurado': True,
-                    'error': 'no se pudo ESCRIBIR (PUT) · revisá que el token tenga permiso Object Read & Write sobre el bucket, y que el endpoint/bucket sean correctos'}
-        got = r2_get(key)
-        r2_delete(key)
+        cl = _client()
+        cl.put_object(Bucket=c['bucket'], Key=key, Body=payload, ContentType='text/plain')
+        got = cl.get_object(Bucket=c['bucket'], Key=key)['Body'].read()
+        try:
+            cl.delete_object(Bucket=c['bucket'], Key=key)
+        except Exception:
+            pass
         if got != payload:
-            return {'ok': False, 'configurado': True, 'error': 'escribió pero la LECTURA no coincidió'}
-        c = _cfg()
-        return {'ok': True, 'configurado': True, 'bucket': c['bucket'], 'endpoint': c['endpoint'],
-                'mensaje': 'R2 conectado correctamente: escritura + lectura + borrado OK'}
+            return {'ok': False, 'configurado': True, 'error': 'escribió pero la LECTURA no coincidió', **_diag}
+        return {'ok': True, 'configurado': True, 'mensaje': 'R2 conectado correctamente: escritura + lectura + borrado OK', **_diag}
+    except EndpointConnectionError as e:
+        return {'ok': False, 'configurado': True, 'code': 'ENDPOINT',
+                'error': 'No se pudo conectar al endpoint · revisá R2_ENDPOINT (debe ser https://<accountid>.r2.cloudflarestorage.com): %s' % str(e)[:200], **_diag}
+    except ClientError as e:
+        _err = e.response.get('Error', {}) if hasattr(e, 'response') else {}
+        _code = _err.get('Code', '')
+        _http = (e.response.get('ResponseMetadata', {}) or {}).get('HTTPStatusCode') if hasattr(e, 'response') else None
+        _pistas = {
+            'AccessDenied': 'el token NO tiene permiso de escritura sobre el bucket → recrealo con "Object Read & Write" (no "Object Read only") y aplicado a eos-documentos',
+            'SignatureDoesNotMatch': 'la Clave de acceso SECRETA está mal (typo al pegar en Render) → revisá R2_SECRET_KEY',
+            'InvalidAccessKeyId': 'el ID de clave de acceso está mal → revisá R2_ACCESS_KEY',
+            'NoSuchBucket': 'el bucket no existe con ese nombre → revisá R2_BUCKET (debe ser eos-documentos)',
+        }
+        return {'ok': False, 'configurado': True, 'code': _code, 'http': _http,
+                'error': 'R2 rechazó (%s · HTTP %s): %s' % (_code or '?', _http or '?', _err.get('Message', '')),
+                'pista': _pistas.get(_code, 'revisá endpoint/bucket/keys y que el token sea Object Read & Write'), **_diag}
     except Exception as e:
-        return {'ok': False, 'configurado': True, 'error': str(e)[:280]}
+        return {'ok': False, 'configurado': True, 'code': type(e).__name__,
+                'error': '%s: %s' % (type(e).__name__, str(e)[:220]), **_diag}
