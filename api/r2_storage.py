@@ -54,6 +54,27 @@ def r2_configurado():
     return bool(c['endpoint'] and c['bucket'] and c['key'] and c['secret'])
 
 
+def _host_de_endpoint(ep):
+    from urllib.parse import urlsplit
+    return urlsplit(ep).hostname or ''
+
+
+def _tls_probe(host, timeout=8):
+    """Handshake TLS crudo (socket+ssl) a host:443 con SNI. Aísla si el problema es de RED/TLS
+    (independiente de boto3/credenciales)."""
+    import socket
+    import ssl
+    if not host:
+        return {'ok': False, 'error': 'host vacío'}
+    try:
+        ctx = ssl.create_default_context()
+        with socket.create_connection((host, 443), timeout=timeout) as sock:
+            with ctx.wrap_socket(sock, server_hostname=host) as ssock:
+                return {'ok': True, 'tls': ssock.version(), 'host': host}
+    except Exception as e:
+        return {'ok': False, 'host': host, 'error': type(e).__name__ + ': ' + str(e)[:140]}
+
+
 def _client():
     import boto3
     from botocore.config import Config
@@ -159,5 +180,20 @@ def r2_selftest():
                 'error': 'R2 rechazó (%s · HTTP %s): %s' % (_code or '?', _http or '?', _err.get('Message', '')),
                 'pista': _pistas.get(_code, 'revisá endpoint/bucket/keys y que el token sea Object Read & Write'), **_diag}
     except Exception as e:
-        return {'ok': False, 'configurado': True, 'code': type(e).__name__,
+        _out = {'ok': False, 'configurado': True, 'code': type(e).__name__,
                 'error': '%s: %s' % (type(e).__name__, str(e)[:220]), **_diag}
+        # SSL/conexión → sondear TLS del host base y del host de jurisdicción EU
+        _msg = (type(e).__name__ + str(e)).lower()
+        if 'ssl' in _msg or 'handshake' in _msg or 'connect' in _msg or 'timed out' in _msg:
+            _host = _host_de_endpoint(c['endpoint'])
+            _host_eu = _host.replace('.r2.cloudflarestorage.com', '.eu.r2.cloudflarestorage.com') if _host and '.eu.' not in _host else _host
+            _out['tls_base'] = _tls_probe(_host)
+            if _host_eu and _host_eu != _host:
+                _out['tls_eu'] = _tls_probe(_host_eu)
+                if not _out['tls_base'].get('ok') and _out['tls_eu'].get('ok'):
+                    _out['pista'] = ('el bucket parece ser de jurisdicción UNIÓN EUROPEA → cambiá R2_ENDPOINT a '
+                                     'https://' + _host_eu + ' (con .eu.) en Render')
+            if _out['tls_base'].get('ok'):
+                _out['pista'] = ('el TLS al host base SÍ conecta a nivel red → el fallo SSL viene de boto3/config, '
+                                 'no del endpoint; revisá versión boto3/urllib3 o proxy de salida')
+        return _out
