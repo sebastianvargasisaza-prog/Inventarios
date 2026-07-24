@@ -322,6 +322,21 @@ def archivar_pendientes_r2(app, limite=50, presupuesto_seg=45):
             res['fallidos'] += 1  # fuente 404/render falla → NO cuenta para el circuit-breaker (no es R2 caído)
             if len(res['detalle_fallos']) < 12:
                 res['detalle_fallos'].append({'id': doc.get('id'), 'tipo': doc.get('tipo_doc'), 'motivo': ct})
+            # Si la FUENTE ya no existe (404 · ej. COA huérfano cuyo archivo se perdió/nunca se subió),
+            # marcar para NO reintentarlo cada corrida ni inflar 'pendientes' (M92). Otros errores (500,
+            # timeout) NO se marcan → se reintentan. Si el doc se re-sube, registrar_documento crea una
+            # fila nueva (r2_key vacío) que sí se archiva.
+            if 'HTTP 404' in str(ct):
+                try:
+                    from datetime import datetime as _dt
+                    _at404 = _dt.utcnow().replace(microsecond=0).isoformat() + 'Z'
+                    with app.app_context():
+                        _cx = get_db()
+                        _cx.execute("UPDATE documentos_regulados SET r2_key='(sin-archivo)', r2_at=? "
+                                    "WHERE id=? AND COALESCE(r2_key,'')=''", (_at404, doc.get('id')))
+                        _cx.commit()
+                except Exception:
+                    pass
             continue
         sha = hashlib.sha256(data).hexdigest()
         ext = _ext_de(ct, doc.get('url'))
@@ -457,12 +472,15 @@ def coa_disco_vs_r2(limite=2000):
 
 
 def r2_stats_expediente(conn):
-    """Conteo archivados/pendientes para mostrar en la página de expediente."""
+    """Conteo archivados/pendientes/sin-archivo para mostrar en la página de expediente.
+    '(sin-archivo)' = documento cuya fuente ya no existe (404 · huérfano) → ni archivado ni pendiente."""
     try:
         arch = conn.execute("SELECT COUNT(*) FROM documentos_regulados WHERE COALESCE(anulado,0)=0 "
-                            "AND COALESCE(r2_key,'')<>''").fetchone()[0]
+                            "AND COALESCE(r2_key,'') NOT IN ('', '(sin-archivo)')").fetchone()[0]
         pend = conn.execute("SELECT COUNT(*) FROM documentos_regulados WHERE COALESCE(anulado,0)=0 "
                             "AND COALESCE(r2_key,'')=''").fetchone()[0]
-        return {'archivados': arch, 'pendientes': pend, 'configurado': r2_configurado()}
+        sin = conn.execute("SELECT COUNT(*) FROM documentos_regulados WHERE COALESCE(anulado,0)=0 "
+                           "AND r2_key='(sin-archivo)'").fetchone()[0]
+        return {'archivados': arch, 'pendientes': pend, 'sin_archivo': sin, 'configurado': r2_configurado()}
     except Exception:
-        return {'archivados': 0, 'pendientes': 0, 'configurado': r2_configurado()}
+        return {'archivados': 0, 'pendientes': 0, 'sin_archivo': 0, 'configurado': r2_configurado()}

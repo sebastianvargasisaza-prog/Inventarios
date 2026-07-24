@@ -88,6 +88,24 @@ def test_genealogia_pt(logged_client):
     assert 'micro' in d['analisis'] and 'fisicoquimico' in d['analisis']
 
 
+def test_fase2_imprimibles(logged_client):
+    """Los 2 imprimibles de Fase 2 (CoA de PT + rótulo de limpieza por-registro) responden sin crash."""
+    r = logged_client.get('/api/calidad/coa-pt/LOTE-INEXISTENTE-XYZ/imprimible')
+    assert r.status_code == 200 and b'No hay resultados' in r.data
+    p = logged_client.get('/planta/rotulo-limpieza/registro/9999999/pdf')
+    assert p.status_code == 404
+
+
+def test_backfill_incluye_fase2(admin_client):
+    """El backfill del expediente devuelve los conteos de rótulo de limpieza y CoA de PT."""
+    r = admin_client.post('/api/calidad/reconstruir-expediente',
+                          headers={'Content-Type': 'application/json'}, data='{}')
+    assert r.status_code in (200, 403)
+    if r.status_code == 200:
+        d = r.get_json()
+        assert 'rotulo_limpieza' in d and 'coa_pt' in d and 'total' in d
+
+
 def test_endpoint_estado_get(logged_client):
     """GET /api/calidad/archivar-r2 devuelve estado sin requerir R2 (para pintar la página)."""
     r = logged_client.get('/api/calidad/archivar-r2')
