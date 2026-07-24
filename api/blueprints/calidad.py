@@ -11,7 +11,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, CALIDAD_USERS
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec, sin_acceso_html
-from audit_helpers import audit_log, intentar_insert_con_retry
+from audit_helpers import audit_log, intentar_insert_con_retry, registrar_documento
 
 log = logging.getLogger('calidad')
 
@@ -1340,6 +1340,12 @@ def calidad_recepcion_pipeline():
     return jsonify({'ok': True, 'lotes': lotes})
 
 
+def _urlq(s):
+    """URL-encode para armar links de documentos del expediente (códigos/lotes)."""
+    import urllib.parse
+    return urllib.parse.quote(str(s if s is not None else ''), safe='')
+
+
 _F01_COLS = ['mov_id', 'numero_oc', 'lote', 'tipo_insumo', 'codigo_insumo', 'nombre_insumo', 'lote_proveedor',
              'cantidad_recibida', 'proveedor', 'fecha_recepcion', 'numero_remision', 'area_almacenamiento',
              'crit_rotulado', 'crit_empaque', 'crit_hoja_seguridad', 'crit_ficha_tecnica', 'crit_coa',
@@ -1443,6 +1449,20 @@ def calidad_recepcion_tecnica():
                     _nc_id = _crear_nc_rechazo(cur, u, lote=mrow[3], codigo=mrow[0], nombre=mrow[1],
                                                cantidad=mrow[2], proveedor=mrow[4], oc=mrow[5],
                                                motivo=vals.get('observaciones'), es_envase=True)
+        # Expediente por lote (INVIMA · zero-paper): inscribir el F01 + su rótulo en el registro central
+        _cod_f01 = vals.get('codigo_insumo') or ''
+        _lote_f01 = vals.get('lote_proveedor') or vals.get('lote') or ''
+        _prod_f01 = vals.get('nombre_insumo') or ''
+        registrar_documento(cur, tipo_doc='F01', formato='COC-PRO-002-F01', titulo='Recepción técnica y documental',
+                            url='/api/calidad/recepcion-tecnica/imprimible?mov_id=%s&origen=%s' % (mov_id, origen),
+                            entidad=origen, codigo=_cod_f01, producto_nombre=_prod_f01, lote=_lote_f01,
+                            ref_tabla='recepcion_tecnica_doc', ref_id=(_f01_id or 0), mov_id=mov_id, generado_por=u)
+        if _cod_f01:
+            _rurl = ('/rotulo-recepcion-mee/%s/%s' % (_urlq(_cod_f01), _urlq(vals.get('cantidad_recibida') or '1'))) if origen == 'MEE' \
+                else ('/rotulo-recepcion/%s/%s/%s' % (_urlq(_cod_f01), _urlq(_lote_f01 or 'SL'), _urlq(vals.get('cantidad_recibida') or '1')))
+            registrar_documento(cur, tipo_doc='ROTULO', formato='COC-PRO-002-F07', titulo='Rótulo de ingreso',
+                                url=_rurl, entidad=origen, codigo=_cod_f01, producto_nombre=_prod_f01, lote=_lote_f01,
+                                ref_tabla='recepcion_tecnica_doc', ref_id=('rot-%s' % (_f01_id or 0)), mov_id=mov_id, generado_por=u)
         audit_log(cur, usuario=u, accion='RECEPCION_TECNICA_F01', tabla='recepcion_tecnica_doc',
                   registro_id=(_f01_id or 0),
                   despues={'mov_id': mov_id, 'origen': origen, 'resultado': resultado, 'liberado': _liberado,
@@ -1634,6 +1654,13 @@ def calidad_certificado_analisis():
                 cur.execute("UPDATE movimientos SET " + ', '.join(_sets) + " WHERE material_id=? AND lote=?",
                             _ps + [_matid, _lote_key])
                 _ubic_msg = (_est_f or '-') + (('/' + _pos_f) if _pos_f else '')
+        # Expediente por lote (INVIMA · zero-paper): inscribir el F02 en el registro central
+        registrar_documento(cur, tipo_doc='F02', formato='COC-PRO-002-F02', titulo='Certificado de análisis de MP',
+                            url='/api/calidad/certificado-analisis/imprimible?mov_id=%s' % mov_id,
+                            entidad='MP', codigo=(_matid or ''), producto_nombre=(vals.get('nombre_mp') or ''),
+                            lote=(vals.get('lote_proveedor') or _lote_key or ''),
+                            ref_tabla='certificado_analisis_mp', ref_id=(_f02_id or 0), mov_id=mov_id,
+                            firma_id=(int(signature_id) if signature_id else None), generado_por=u)
         audit_log(cur, usuario=u, accion='CERTIFICADO_ANALISIS_F02', tabla='certificado_analisis_mp',
                   registro_id=(_f02_id or 0),
                   despues={'mov_id': mov_id, 'lote': _lote_key, 'resultado': resultado, 'aprobo': aprobo_por,
@@ -1790,6 +1817,180 @@ def calidad_f02_imprimible():
             + f"<p style='margin-top:18px;font-size:9px;color:#94a3b8'>Registrado por {_e(d.get('creado_por'))} · {_e((d.get('creado_en') or '')[:19])}</p>"
             + "<div class='noimp'><button onclick='window.print()'>🖨️ Imprimir / Guardar PDF</button></div>")
     return Response(body, mimetype='text/html')
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# EXPEDIENTE POR LOTE · zero-paper INVIMA · Sebastián 24-jul
+# Registro central `documentos_regulados` (mig 371): reconstruir (backfill) + buscar + página.
+# REGLA (cerebro): todo documento regulado nuevo se inscribe con registrar_documento().
+# ══════════════════════════════════════════════════════════════════════════════
+@bp.route('/api/calidad/reconstruir-expediente', methods=['GET', 'POST'])
+def calidad_reconstruir_expediente():
+    """Backfill del registro central desde las tablas origen (F01, F02, EBR + rótulo derivado).
+    Re-ejecutable (idempotente vía registrar_documento · dedup por tipo+mov/ref). Admin/Calidad."""
+    err, code = _require_calidad()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    n_f01 = n_f02 = n_ebr = 0
+    try:
+        for r in c.execute(
+                "SELECT rt.id, rt.mov_id, COALESCE(rt.origen,'MP'), "
+                "COALESCE(NULLIF(TRIM(rt.codigo_insumo),''), COALESCE(mv.material_id,'')), "
+                "COALESCE(NULLIF(TRIM(rt.nombre_insumo),''), COALESCE(mv.material_nombre,'')), "
+                "COALESCE(NULLIF(TRIM(rt.lote_proveedor),''), NULLIF(TRIM(rt.lote),''), COALESCE(mv.lote,'')), "
+                "COALESCE(rt.creado_por,''), COALESCE(rt.creado_en,'') "
+                "FROM recepcion_tecnica_doc rt LEFT JOIN movimientos mv ON mv.id=rt.mov_id "
+                "WHERE COALESCE(rt.anulado,0)=0").fetchall():
+            registrar_documento(c, tipo_doc='F01', formato='COC-PRO-002-F01', titulo='Recepción técnica y documental',
+                                url='/api/calidad/recepcion-tecnica/imprimible?mov_id=%s&origen=%s' % (r[1], r[2]),
+                                entidad=r[2], codigo=r[3] or '', producto_nombre=r[4] or '', lote=r[5] or '',
+                                ref_tabla='recepcion_tecnica_doc', ref_id=r[0], mov_id=r[1], generado_por=r[6], generado_at=(r[7] or None))
+            if (r[3] or ''):
+                _ru = ('/rotulo-recepcion-mee/%s/1' % _urlq(r[3])) if r[2] == 'MEE' else ('/rotulo-recepcion/%s/%s/1' % (_urlq(r[3]), _urlq(r[5] or 'SL')))
+                registrar_documento(c, tipo_doc='ROTULO', formato='COC-PRO-002-F07', titulo='Rótulo de ingreso',
+                                    url=_ru, entidad=r[2], codigo=r[3] or '', producto_nombre=r[4] or '', lote=r[5] or '',
+                                    ref_tabla='recepcion_tecnica_doc', ref_id='rot-%s' % r[0], mov_id=r[1], generado_por=r[6], generado_at=(r[7] or None))
+            n_f01 += 1
+        for r in c.execute(
+                "SELECT ca.id, ca.mov_id, COALESCE(mv.material_id,''), COALESCE(ca.nombre_mp, mv.material_nombre,''), "
+                "COALESCE(NULLIF(TRIM(ca.lote_proveedor),''), COALESCE(mv.lote,'')), COALESCE(ca.creado_por,''), COALESCE(ca.creado_en,'') "
+                "FROM certificado_analisis_mp ca LEFT JOIN movimientos mv ON mv.id=ca.mov_id "
+                "WHERE COALESCE(ca.anulado,0)=0").fetchall():
+            registrar_documento(c, tipo_doc='F02', formato='COC-PRO-002-F02', titulo='Certificado de análisis de MP',
+                                url='/api/calidad/certificado-analisis/imprimible?mov_id=%s' % r[1],
+                                entidad='MP', codigo=r[2] or '', producto_nombre=r[3] or '', lote=r[4] or '',
+                                ref_tabla='certificado_analisis_mp', ref_id=r[0], mov_id=r[1], generado_por=r[5], generado_at=(r[6] or None))
+            n_f02 += 1
+        for r in c.execute(
+                "SELECT e.id, COALESCE(e.numero_op,''), COALESCE(m.producto_nombre,''), "
+                "COALESCE(e.lote_codigo, e.lote, ''), COALESCE(e.liberado_por, e.iniciado_por,''), "
+                "COALESCE(e.liberado_at_utc, e.iniciado_at_utc,'') FROM ebr_ejecuciones e "
+                "LEFT JOIN mbr_templates m ON m.id=e.mbr_template_id").fetchall():
+            registrar_documento(c, tipo_doc='EBR', formato='Batch Record', titulo='Registro de lote (batch record)',
+                                url='/api/brd/ebr/%s/vista-completa' % r[0], entidad='PT',
+                                codigo=r[1] or '', producto_nombre=r[2] or '', lote=r[3] or '',
+                                ref_tabla='ebr_ejecuciones', ref_id=r[0], generado_por=r[4], generado_at=(r[5] or None))
+            n_ebr += 1
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': 'falló el backfill: %s' % e}), 500
+    return jsonify({'ok': True, 'f01': n_f01, 'f02': n_f02, 'ebr': n_ebr, 'total': n_f01 + n_f02 + n_ebr})
+
+
+@bp.route('/api/calidad/expediente-lote', methods=['GET'])
+def calidad_expediente_lote():
+    """Expediente de un lote: todos sus documentos regulados. ?q=<lote, código o producto>."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    q = (request.args.get('q') or '').strip()
+    if not q:
+        return jsonify({'ok': True, 'grupos': [], 'n': 0})
+    conn = get_db(); c = conn.cursor()
+    like = '%' + q.upper() + '%'
+    rows = c.execute(
+        "SELECT entidad, codigo, producto_nombre, lote, tipo_doc, formato, titulo, url, generado_por, generado_at "
+        "FROM documentos_regulados WHERE COALESCE(anulado,0)=0 AND ("
+        "UPPER(COALESCE(lote,'')) LIKE ? OR UPPER(COALESCE(codigo,'')) LIKE ? OR UPPER(COALESCE(producto_nombre,'')) LIKE ?) "
+        "ORDER BY lote, tipo_doc LIMIT 400", (like, like, like)).fetchall()
+    grupos = {}
+    for r in rows:
+        d = {'entidad': r[0], 'codigo': r[1], 'producto': r[2], 'lote': r[3], 'tipo': r[4], 'formato': r[5],
+             'titulo': r[6], 'url': r[7], 'por': r[8], 'fecha': r[9]}
+        k = (d['lote'] or '(sin lote)') + '|' + (d['codigo'] or '')
+        grupos.setdefault(k, {'lote': d['lote'], 'codigo': d['codigo'], 'producto': d['producto'],
+                              'entidad': d['entidad'], 'docs': []})
+        grupos[k]['docs'].append(d)
+    return jsonify({'ok': True, 'n': len(rows), 'grupos': list(grupos.values())})
+
+
+@bp.route('/calidad/expediente', methods=['GET'])
+def calidad_expediente_page():
+    """Página · Expediente por lote (INVIMA · zero-paper): buscá un lote y ves TODOS sus documentos."""
+    if 'compras_user' not in session:
+        return redirect('/login?next=/calidad/expediente')
+    return Response(_EXPEDIENTE_HTML, mimetype='text/html')
+
+
+_EXPEDIENTE_HTML = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Expediente por lote · Calidad · EOS</title>
+<style>
+:root{--v:#6d28d9;--txt:#1c1917;--mut:#78716c;--line:#eef0f2;--bg:#faf9fb;}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--txt);padding:26px 16px;}
+.wrap{max-width:1000px;margin:0 auto;}
+a.back{color:var(--v);text-decoration:none;font-size:13px;font-weight:700;}
+h1{font-size:24px;margin:8px 0 4px;letter-spacing:-.02em;}
+.sub{color:var(--mut);font-size:13px;margin-bottom:20px;line-height:1.5;max-width:720px;}
+.searchbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;}
+#q{flex:1;min-width:240px;padding:13px 16px;border:1px solid #e6e1f2;border-radius:12px;font-size:15px;outline:none;box-shadow:0 1px 3px rgba(16,15,45,.05);}
+#q:focus{border-color:var(--v);box-shadow:0 0 0 3px rgba(109,40,217,.12);}
+button{font-family:inherit;font-size:14px;font-weight:800;border-radius:11px;padding:13px 22px;border:none;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;cursor:pointer;box-shadow:0 2px 10px rgba(109,40,217,.25);}
+button.ghost{background:#fff;color:var(--v);border:1px solid #e9d5ff;box-shadow:none;}
+.grp{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 2px 14px rgba(15,23,42,.05);padding:18px 20px;margin-bottom:16px;}
+.grp h2{font-size:16px;margin:0 0 2px;letter-spacing:-.01em;}
+.grp .meta{font-size:12px;color:var(--mut);margin-bottom:12px;}
+.ent{display:inline-block;border-radius:999px;padding:2px 10px;font-size:10.5px;font-weight:800;margin-right:8px;vertical-align:middle;}
+.ent.MP{background:#ede9fe;color:#6d28d9;} .ent.MEE{background:#dbeafe;color:#1e40af;} .ent.PT{background:#dcfce7;color:#15803d;}
+.docs{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;}
+.doc{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:#fcfcfd;text-decoration:none;color:var(--txt);display:block;transition:.12s;}
+.doc:hover{border-color:#d8b4fe;box-shadow:0 3px 12px rgba(109,40,217,.10);transform:translateY(-1px);}
+.doc .t{font-size:13.5px;font-weight:800;margin-bottom:2px;}
+.doc .f{font-size:11px;color:var(--mut);font-family:ui-monospace,monospace;}
+.doc .b{display:inline-block;font-size:10px;font-weight:800;border-radius:6px;padding:2px 7px;margin-bottom:7px;}
+.b.F01{background:#eff6ff;color:#1e40af;} .b.F02{background:#f0fdf4;color:#15803d;} .b.EBR{background:#fef3c7;color:#b45309;}
+.b.COA_PROVEEDOR{background:#faf5ff;color:#7c3aed;} .b.ROTULO{background:#f5f4f2;color:#57534e;}
+.empty{color:var(--mut);font-size:14px;padding:28px 0;text-align:center;}
+.note{font-size:12px;color:var(--mut);margin-top:6px;}
+#msg{font-size:12.5px;font-weight:700;margin-left:6px;}
+</style></head><body><div class="wrap">
+<a class="back" href="/calidad">&larr; Calidad</a>
+<h1>&#128193; Expediente por lote</h1>
+<div class="sub">Buscá un <b>lote</b> (de materia prima o producto terminado), un <b>código</b> o un <b>producto</b> y te aparecen TODOS sus documentos regulados en un solo lugar: F01, F02, COA del proveedor, rótulo y batch record. Esto es lo que se le muestra a una auditoría INVIMA.</div>
+<div class="searchbar">
+<input id="q" placeholder="Ej: LYPH260123, MP00172, Suero Triactive, lote de PT…" autocomplete="off">
+<button onclick="buscar()">Buscar</button>
+<button class="ghost" onclick="reconstruir()" title="Reindexar los documentos existentes (F01/F02/batch records) en el expediente">Reindexar</button>
+<span id="msg"></span>
+</div>
+<div id="res"></div>
+</div>
+<script>
+function esc(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+var _csrf=null;
+async function csrf(){ if(_csrf) return _csrf; try{ var r=await fetch('/api/csrf-token',{credentials:'same-origin'}); var j=await r.json(); _csrf=j.csrf_token; }catch(e){} return _csrf; }
+async function buscar(){
+  var q=document.getElementById('q').value.trim();
+  var res=document.getElementById('res');
+  if(!q){ res.innerHTML='<div class="empty">Escribí un lote, código o producto para buscar su expediente.</div>'; return; }
+  res.innerHTML='<div class="empty">Buscando…</div>';
+  try{
+    var d=await (await fetch('/api/calidad/expediente-lote?q='+encodeURIComponent(q))).json();
+    var g=(d&&d.grupos)||[];
+    if(!g.length){ res.innerHTML='<div class="empty">No hay documentos para <b>'+esc(q)+'</b>. (Si es un lote viejo, probá "Reindexar" una vez.)</div>'; return; }
+    res.innerHTML=g.map(function(grp){
+      var docs=(grp.docs||[]).map(function(x){
+        return '<a class="doc" href="'+esc(x.url)+'" target="_blank"><span class="b '+esc(x.tipo)+'">'+esc(x.tipo)+'</span>'
+          +'<div class="t">'+esc(x.titulo||x.tipo)+'</div><div class="f">'+esc(x.formato||'')+(x.por?(' · '+esc(x.por)):'')+'</div></a>';
+      }).join('');
+      return '<div class="grp"><h2><span class="ent '+esc(grp.entidad||'MP')+'">'+esc(grp.entidad||'MP')+'</span>'+esc(grp.producto||grp.codigo||'')+'</h2>'
+        +'<div class="meta">Lote <b>'+esc(grp.lote||'-')+'</b> &middot; código '+esc(grp.codigo||'-')+' &middot; '+(grp.docs||[]).length+' documento(s)</div>'
+        +'<div class="docs">'+docs+'</div></div>';
+    }).join('');
+  }catch(e){ res.innerHTML='<div class="empty">Error: '+esc(e.message)+'</div>'; }
+}
+async function reconstruir(){
+  var m=document.getElementById('msg'); m.style.color='#78716c'; m.textContent='Reindexando…';
+  try{
+    var t=await csrf();
+    var r=await fetch('/api/calidad/reconstruir-expediente',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t||''},body:'{}'});
+    var d=await r.json();
+    if(r.ok&&d.ok){ m.style.color='#15803d'; m.textContent='OK: '+d.total+' documentos indexados (F01 '+d.f01+', F02 '+d.f02+', batch '+d.ebr+').'; }
+    else { m.style.color='#b91c1c'; m.textContent='Error: '+((d&&d.error)||r.status); }
+  }catch(e){ m.style.color='#b91c1c'; m.textContent='Error de red'; }
+}
+document.getElementById('q').addEventListener('keydown',function(e){ if(e.key==='Enter') buscar(); });
+</script></body></html>"""
 
 
 @bp.route('/api/calidad/coa', methods=['GET','POST'])

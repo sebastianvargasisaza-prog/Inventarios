@@ -60,7 +60,7 @@ def _ebr_mode_now(c=None):
     return ebr_mode(c)
 
 
-from audit_helpers import audit_log
+from audit_helpers import audit_log, registrar_documento
 
 bp = Blueprint("brd", __name__)
 log = logging.getLogger("brd")
@@ -4024,6 +4024,19 @@ def liberar_ebr(ebr_id):
     except Exception as _e:
         import logging as _log
         _log.getLogger('inventario.brd').warning('liberar_ebr promocion PT fallo: %s', _e)
+    # Expediente por lote (INVIMA · zero-paper): inscribir el BATCH RECORD (EBR liberado) en el registro central
+    try:
+        _einfo = cur.execute("SELECT COALESCE(e.numero_op,''), COALESCE(m.producto_nombre,''), "
+                             "COALESCE(e.lote_codigo, e.lote, '') FROM ebr_ejecuciones e "
+                             "LEFT JOIN mbr_templates m ON m.id=e.mbr_template_id WHERE e.id=?", (ebr_id,)).fetchone()
+        if _einfo:
+            registrar_documento(cur, tipo_doc='EBR', formato='Batch Record', titulo='Registro de lote (batch record)',
+                                url='/api/brd/ebr/%s/vista-completa' % ebr_id, entidad='PT',
+                                codigo=(_einfo[0] or ''), producto_nombre=(_einfo[1] or ''), lote=(_einfo[2] or ''),
+                                ref_tabla='ebr_ejecuciones', ref_id=ebr_id,
+                                firma_id=(int(signature_id) if signature_id else None), generado_por=user)
+    except Exception:
+        pass
     conn.commit()
     audit_log(None, usuario=user, accion="LIBERAR_EBR",
               tabla="ebr_ejecuciones", registro_id=ebr_id,

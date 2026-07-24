@@ -260,3 +260,40 @@ def intentar_insert_con_retry(insert_fn, *, max_intentos=5, columna='codigo'):
                 log.info('codigo race · reintento %d/%d: %s', intento+1, max_intentos, e)
                 continue
             raise
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Registro CENTRAL de documentos regulados · Expediente por lote · zero-paper INVIMA
+# Sebastián 24-jul-2026. REGLA (cerebro): TODO documento regulado nuevo (F01, F02, COA,
+# rótulo, batch record/EBR, liberación, CoA micro/FQ...) DEBE inscribirse aquí en el mismo
+# commit vía registrar_documento() → el Expediente por lote junta todos los docs de un lote.
+# ──────────────────────────────────────────────────────────────────────────────
+def registrar_documento(c, *, tipo_doc, url, entidad='MP', codigo='', producto_nombre='', lote='',
+                        formato='', titulo='', ref_tabla='', ref_id='', mov_id=None, firma_id=None,
+                        generado_por='', generado_at=None):
+    """Inscribe un documento REGULADO en el índice central `documentos_regulados` (mig 371).
+
+    Idempotente: anula la versión previa del MISMO documento (mismo tipo_doc + mov_id, o tipo_doc +
+    ref_tabla + ref_id) antes de insertar la nueva → re-guardar un F01/F02 no duplica su entrada.
+    Best-effort: si falla, loguea y NO rompe al caller (el documento ya está en su tabla origen; esto
+    es solo el índice del expediente). Fecha calculada en Python (no date() en DML · PG-safe).
+    """
+    try:
+        gen_at = generado_at or (datetime.utcnow().replace(microsecond=0).isoformat() + 'Z')
+        if mov_id is not None:
+            c.execute("UPDATE documentos_regulados SET anulado=1 WHERE COALESCE(anulado,0)=0 "
+                      "AND tipo_doc=? AND mov_id=?", (str(tipo_doc), mov_id))
+        elif ref_tabla and str(ref_id or ''):
+            c.execute("UPDATE documentos_regulados SET anulado=1 WHERE COALESCE(anulado,0)=0 "
+                      "AND tipo_doc=? AND ref_tabla=? AND ref_id=?", (str(tipo_doc), str(ref_tabla), str(ref_id)))
+        c.execute(
+            "INSERT INTO documentos_regulados (entidad,codigo,producto_nombre,lote,tipo_doc,formato,"
+            "titulo,url,ref_tabla,ref_id,mov_id,firma_id,generado_por,generado_at,anulado) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)",
+            (str(entidad or 'MP'), str(codigo or ''), str(producto_nombre or ''), str(lote or ''),
+             str(tipo_doc or ''), str(formato or ''), str(titulo or ''), str(url or ''),
+             str(ref_tabla or ''), str(ref_id or ''), mov_id, firma_id, str(generado_por or ''), gen_at))
+        return c.lastrowid
+    except Exception as e:
+        log.warning("registrar_documento falló (tipo=%s lote=%s): %s", tipo_doc, lote, e)
+        return None

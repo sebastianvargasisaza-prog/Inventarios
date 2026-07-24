@@ -10257,6 +10257,22 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "UPDATE formula_headers SET activo=1 WHERE UPPER(TRIM(producto_nombre))='LIP SERUM VOLUMINIZADOR PEPTIDOS'",
         "UPDATE sku_planeacion_config SET estado='activo' WHERE UPPER(TRIM(producto_nombre))='LIP SERUM VOLUMINIZADOR PEPTIDOS'",
     ]),
+    (371, "Registro CENTRAL de documentos regulados (Sebastián 24-jul · zero-paper INVIMA): índice único "
+          "donde CADA documento regulado (F01, F02, COA, rótulo, batch record/EBR, liberación...) se inscribe "
+          "al crearse/firmarse → el 'Expediente por lote' junta TODOS los documentos de un lote en un solo "
+          "lugar (lo que pide una auditoría INVIMA). El backfill de lo existente + el registro on-write lo hace "
+          "el helper registrar_documento() + el endpoint /api/calidad/reconstruir-expediente. REGLA (cerebro): "
+          "todo documento regulado nuevo DEBE registrarse aquí en el mismo commit.", [
+        "CREATE TABLE IF NOT EXISTS documentos_regulados ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT, entidad TEXT DEFAULT 'MP', codigo TEXT DEFAULT '', "
+        " producto_nombre TEXT DEFAULT '', lote TEXT DEFAULT '', tipo_doc TEXT DEFAULT '', "
+        " formato TEXT DEFAULT '', titulo TEXT DEFAULT '', url TEXT DEFAULT '', ref_tabla TEXT DEFAULT '', "
+        " ref_id TEXT DEFAULT '', mov_id INTEGER, firma_id INTEGER, generado_por TEXT DEFAULT '', "
+        " generado_at TEXT DEFAULT '', anulado INTEGER DEFAULT 0)",
+        "CREATE INDEX IF NOT EXISTS idx_docreg_lote ON documentos_regulados(lote)",
+        "CREATE INDEX IF NOT EXISTS idx_docreg_codigo ON documentos_regulados(codigo)",
+        "CREATE INDEX IF NOT EXISTS idx_docreg_mov ON documentos_regulados(mov_id)",
+    ]),
 ]
 
 

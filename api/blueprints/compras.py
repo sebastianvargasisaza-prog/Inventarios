@@ -16,7 +16,7 @@ from config import (
 )
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
-from audit_helpers import audit_log, intentar_insert_con_retry, siguiente_numero_oc as _siguiente_numero_oc, siguiente_correlativo
+from audit_helpers import audit_log, intentar_insert_con_retry, siguiente_numero_oc as _siguiente_numero_oc, siguiente_correlativo, registrar_documento
 from http_helpers import validate_money
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
@@ -12461,6 +12461,13 @@ def compras_coa_upload():
     # audit log
     conn = get_db(); c = conn.cursor()
     try:
+        # Expediente por lote (INVIMA · zero-paper): inscribir el COA del proveedor en el registro central
+        # (hoy el COA no tenía índice en BD · esto le da su lugar en el expediente del lote)
+        registrar_documento(c, tipo_doc='COA_PROVEEDOR', formato='COA proveedor',
+                            titulo='Certificado de análisis del proveedor',
+                            url=f'/api/compras/coa-download/{safe_name}', entidad='MP',
+                            codigo=request.form.get('codigo_mp', ''), lote=request.form.get('lote_proveedor', ''),
+                            ref_tabla='coa_file', ref_id=safe_name, generado_por=user)
         audit_log(c, usuario=user, accion='COA_UPLOAD',
                   tabla='movimientos', registro_id=file_id,
                   despues={'filename': safe_name, 'mime': mime,
