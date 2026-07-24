@@ -24264,7 +24264,19 @@ async function ckMarcar(itemId, estado){
 
   function _abastFiltroBusq(v) {
     window._ABA_STATE.filtros.busqueda = v;
+    // FIX 24-jul · el render recrea el input #abast-buscar → se perdía el foco y había que
+    // clickear por cada letra. Guardamos cursor, re-renderizamos, y restauramos foco+cursor.
+    var _sel = null;
+    try { var _e0 = document.getElementById('abast-buscar'); if (_e0) { _sel = [_e0.selectionStart, _e0.selectionEnd]; } } catch (e) {}
     renderTablaAbast();
+    try {
+      var _e1 = document.getElementById('abast-buscar');
+      if (_e1) {
+        _e1.focus();
+        var _p = (v != null ? String(v).length : 0);
+        try { _e1.setSelectionRange(_sel ? _sel[0] : _p, _sel ? _sel[1] : _p); } catch (e) {}
+      }
+    } catch (e) {}
   }
   function _abastFiltro(campo, valor) {
     window._ABA_STATE.filtros[campo] = valor;

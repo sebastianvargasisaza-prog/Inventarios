@@ -2550,7 +2550,9 @@ async function openF01(mov_id, origen){
     var d=await (await fetch('/api/calidad/recepcion-tecnica?mov_id='+mov_id+'&origen='+org)).json();
     var f=d.f01||{}, pre=d.prefill||{};
     var g=function(k){ return (f[k]!=null&&f[k]!=='')?f[k]:(pre[k]||''); };
-    window._F01ctx={mov_id:mov_id, org:org, codigo:(pre.codigo_insumo||pre.codigo_mp||f.codigo_insumo||'')};
+    // Código REAL (trazabilidad · no editable) · viene del kardex vía codigo_real · Sebastián 24-jul
+    var _codReal=(d.codigo_real||pre.codigo_insumo||f.codigo_insumo||'');
+    window._F01ctx={mov_id:mov_id, org:org, codigo:_codReal};
     var tipo=f.tipo_insumo||(org==='MEE'?'envase':'materia_prima');
     var meeNote = (org==='MEE') ? '<div class="rcm-note">Envase: el F01 es la disposición de calidad. <b>Conforme + firma del jefe libera el lote</b> (queda VIGENTE); No conforme lo rechaza. Los envases no llevan F02.</div>' : '';
     var crits=[['crit_rotulado','Rotulado completo (nombre, lote, fecha vencimiento)'],['crit_empaque','Empaque/envase limpio e íntegro'],['crit_hoja_seguridad','Hoja de seguridad vigente (si aplica)'],['crit_ficha_tecnica','Ficha técnica vigente (si aplica)'],['crit_coa','Certificado de análisis del proveedor (COA)'],['crit_doc_coincide','Documentación coincide con el producto entregado']];
@@ -2562,7 +2564,8 @@ async function openF01(mov_id, origen){
       +_rcFld('Tipo de insumo', _rcSeg('f01tipo',tipo,[['materia_prima','Materia prima'],['envase','Envase'],['empaque','Empaque']]))
       +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:11px;margin:12px 0">'
       +_rcFld('Nombre del insumo',_rcInput('f01_nombre_insumo',g('nombre_insumo')))
-      +_rcFld('Código interno / Lote proveedor',_rcInput('f01_lote_proveedor',g('lote_proveedor')||g('codigo_insumo')))
+      +_rcFld('Código interno (trazabilidad · no editable)','<input id="f01_codigo_insumo" class="rcm-in" value="'+esc(_codReal)+'" readonly title="El código interno es la llave de trazabilidad · si se cambia se rompe el sistema · no editable" style="background:#f5f3ff;color:#6d28d9;cursor:not-allowed;font-family:ui-monospace,monospace;font-weight:800;letter-spacing:.02em">')
+      +_rcFld('Lote del proveedor',_rcInput('f01_lote_proveedor',(function(){var _lp=g('lote_proveedor')||'';if(_lp&&_codReal&&_lp.indexOf(_codReal+'/')===0){_lp=_lp.slice((_codReal+'/').length);}return (_lp===_codReal)?'':_lp;})(),'Lote del proveedor (ej. LYPH260123)'))
       +_rcFld('Cantidad recibida',_rcInput('f01_cantidad_recibida',g('cantidad_recibida')))
       +_rcFld('Proveedor',_rcInput('f01_proveedor',g('proveedor')))
       +_rcFld('Fecha de recepción',_rcDate('f01_fecha_recepcion',g('fecha_recepcion')))
@@ -2590,19 +2593,27 @@ async function openF01(mov_id, origen){
 function abrirRotuloF01(){
   var ctx=window._F01ctx||{};
   var v=function(id){ var el=document.getElementById(id); return el?el.value.trim():''; };
-  var cod=ctx.codigo||v('f01_lote_proveedor')||'';
-  var lote=v('f01_lote_proveedor')||'SL';
+  var cod=ctx.codigo||'';                       // código interno = trazabilidad (NO el lote)
+  var lote=v('f01_lote_proveedor')||'SL';       // lote REAL del proveedor (campo separado)
   var cant=v('f01_cantidad_recibida')||'1';
   if(!cod){ alert('No se pudo determinar el código del insumo para el rótulo'); return; }
+  // Pasar al rótulo lo que el F01 capturó (para que NO salga en '-'): vencimiento, ubicación, fecha, nombre
+  var qs=[];
+  var venc=v('f01_fecha_vencimiento'); if(venc){ qs.push('venc='+encodeURIComponent(venc)); }
+  var ubic=v('f01_area_almacenamiento'); if(ubic){ qs.push('ubic='+encodeURIComponent(ubic)); }
+  var frec=v('f01_fecha_recepcion'); if(frec){ qs.push('frec='+encodeURIComponent(frec)); }
+  var nom=v('f01_nombre_insumo'); if(nom){ qs.push('nombre='+encodeURIComponent(nom)); }
+  var q=qs.length?('?'+qs.join('&')):'';
   var url = (ctx.org==='MEE')
-    ? '/rotulo-recepcion-mee/'+encodeURIComponent(cod)+'/'+encodeURIComponent(cant)
-    : '/rotulo-recepcion/'+encodeURIComponent(cod)+'/'+encodeURIComponent(lote)+'/'+encodeURIComponent(cant);
+    ? '/rotulo-recepcion-mee/'+encodeURIComponent(cod)+'/'+encodeURIComponent(cant)+q
+    : '/rotulo-recepcion/'+encodeURIComponent(cod)+'/'+encodeURIComponent(lote)+'/'+encodeURIComponent(cant)+q;
   window.open(url,'_blank');
 }
 async function guardarF01(mov_id, origen){
   var org=(origen==='MEE')?'MEE':'MP';
   var v=function(id){ var el=document.getElementById(id); return el?el.value:''; };
   var body={mov_id:mov_id, origen:org, tipo_insumo:_rcRadioVal('f01tipo'), nombre_insumo:v('f01_nombre_insumo'),
+    codigo_insumo:((window._F01ctx&&window._F01ctx.codigo)||v('f01_codigo_insumo')||''),
     lote_proveedor:v('f01_lote_proveedor'), cantidad_recibida:v('f01_cantidad_recibida'), proveedor:v('f01_proveedor'),
     fecha_recepcion:v('f01_fecha_recepcion'), numero_remision:v('f01_numero_remision'), area_almacenamiento:v('f01_area_almacenamiento'),
     crit_rotulado:_rcRadioVal('crit_rotulado'), crit_empaque:_rcRadioVal('crit_empaque'), crit_hoja_seguridad:_rcRadioVal('crit_hoja_seguridad'),

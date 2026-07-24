@@ -1362,7 +1362,16 @@ def calidad_recepcion_tecnica():
                         "AND COALESCE(anulado,0)=0 ORDER BY id DESC LIMIT 1", (mov_id, origen)).fetchone()
         if row:
             cols = [d[0] for d in c.description]
-            return jsonify({'ok': True, 'f01': dict(zip(cols, row)), 'origen': origen})
+            _f01 = dict(zip(cols, row))
+            # Código REAL del insumo (trazabilidad · SIEMPRE desde el movimiento · no editable ·
+            # Sebastián 24-jul: el código interno no se toca · el codigo_insumo guardado puede venir
+            # vacío en registros viejos, por eso se resuelve del kardex).
+            if origen == 'MEE':
+                _m = c.execute("SELECT mee_codigo FROM movimientos_mee WHERE id=?", (mov_id,)).fetchone()
+            else:
+                _m = c.execute("SELECT material_id FROM movimientos WHERE id=?", (mov_id,)).fetchone()
+            _cr = ((_m[0] if _m else '') or _f01.get('codigo_insumo') or '')
+            return jsonify({'ok': True, 'f01': _f01, 'codigo_real': _cr, 'origen': origen})
         pre = {}
         if origen == 'MEE':
             m = c.execute("SELECT mv.mee_codigo, COALESCE(mm.descripcion, mv.mee_codigo), mv.cantidad, mv.lote_ref, "
@@ -1380,7 +1389,7 @@ def calidad_recepcion_tecnica():
                 pre = {'codigo_insumo': m[0], 'nombre_insumo': m[1], 'cantidad_recibida': str(m[2] or ''),
                        'lote': m[3], 'proveedor': m[4] or '', 'fecha_recepcion': (m[5] or '')[:10],
                        'numero_oc': m[6] or '', 'fecha_vencimiento': m[7] or '', 'tipo_insumo': 'materia_prima'}
-        return jsonify({'ok': True, 'f01': None, 'prefill': pre, 'origen': origen})
+        return jsonify({'ok': True, 'f01': None, 'prefill': pre, 'codigo_real': pre.get('codigo_insumo', ''), 'origen': origen})
     err, code = _require_calidad()
     if err:
         return err, code

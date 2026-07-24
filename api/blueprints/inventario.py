@@ -10869,6 +10869,28 @@ def rotulo_recepcion(codigo, lote, cantidad_str):
     _logo = _rotulo_logo_src(c)
     _uparts = [p for p in [('Est. ' + _e(_est)) if _est else '', ('Pos. ' + _e(_pos)) if _pos else ''] if p]
     ubic_disp = ' &middot; '.join(_uparts) if _uparts else '-'
+    # Override de ubicación como texto libre (el F01 la captura en area_almacenamiento → la manda como ?ubic=)
+    # Sebastián 24-jul: la posición/ubicación del F01 debe quedar en el rótulo.
+    _ov_ubic = (request.args.get('ubic') or '').strip()
+    if _ov_ubic:
+        ubic_disp = _e(_ov_ubic)
+    # Fallback del VENCIMIENTO desde el F01 (recepcion_tecnica_doc) si el movimiento no lo trae · Sebastián
+    # 24-jul: "el F01 pide vencimiento pero no lo jala al rótulo". El F01 lo guarda ahí, no en movimientos.
+    if not fv:
+        try:
+            _rt = c.execute(
+                "SELECT NULLIF(TRIM(CAST(COALESCE(fecha_vencimiento,'') AS TEXT)),''), "
+                "NULLIF(TRIM(COALESCE(area_almacenamiento,'')),'') FROM recepcion_tecnica_doc "
+                "WHERE COALESCE(anulado,0)=0 AND UPPER(TRIM(codigo_insumo))=UPPER(TRIM(?)) "
+                "AND (UPPER(TRIM(COALESCE(lote_proveedor,'')))=UPPER(TRIM(?)) OR UPPER(TRIM(COALESCE(lote,'')))=UPPER(TRIM(?))) "
+                "ORDER BY id DESC LIMIT 1", (codigo, lote, lote)).fetchone()
+            if _rt:
+                if _rt[0]:
+                    fv = _fecha_larga_es(_rt[0]) or _rt[0]
+                if (ubic_disp == '-') and _rt[1] and not _ov_ubic:
+                    ubic_disp = _e(_rt[1])
+        except Exception:
+            pass
     # Multi-recipiente (Laura 16-jul): ?recs=1000,1000,500 → UN rótulo por recipiente con SU cantidad
     # (cuando una MP llega en varios envases individuales). Sin `recs` = 1 rótulo por la cantidad total.
     _recs = []
