@@ -10248,6 +10248,15 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "WHERE material_id='MP00301' AND UPPER(TRIM(producto_nombre))='LIP SERUM (PIB CHINO)' "
         "AND porcentaje>10",
     ]),
+    (370, "Corrección Lip Serum (Sebastián 24-jul): el producto REAL que se fabrica es LIP SERUM "
+          "VOLUMINIZADOR PEPTIDOS · el 'PIB Chino' fue un nombre transitorio (se conflagraron en mig 128). "
+          "La mig 368 lo descontinuó POR ERROR (se asumió mal que solo se hacía el PIB Chino). Se REACTIVA: "
+          "activo=1 en formula_headers + estado='activo' en sku_planeacion_config. El 'LIP SERUM (PIB CHINO)' "
+          "queda descontinuado (ya estaba inactivo · transitorio). La fórmula real del batch se le aplica a "
+          "VOLUMINIZADOR con 'Sincronizar TODAS' (batch_formulas_data ahora lo mapea a VOLUMINIZADOR). Reversible.", [
+        "UPDATE formula_headers SET activo=1 WHERE UPPER(TRIM(producto_nombre))='LIP SERUM VOLUMINIZADOR PEPTIDOS'",
+        "UPDATE sku_planeacion_config SET estado='activo' WHERE UPPER(TRIM(producto_nombre))='LIP SERUM VOLUMINIZADOR PEPTIDOS'",
+    ]),
 ]
 
 

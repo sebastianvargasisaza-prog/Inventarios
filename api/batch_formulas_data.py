@@ -167,7 +167,7 @@ BATCH_INSTRUCTIVOS = {
         "Paso 7. Fase 4 (activos, frío), en orden: Niacinamida, PAD, Zinc PCA, Ectoína, Extracto de té verde, Alantoína, HA 50 kDa, HA 300 kDa.",
         "Paso 8. Cierre: verificar pH final y apariencia (homogéneo, sin grumos). Desairear si es necesario. Envasar.",
     ],
-    "LIP SERUM (PIB CHINO)": [
+    "LIP SERUM VOLUMINIZADOR PEPTIDOS": [
         "Paso 1. Se realiza por fases cuidando los puntos críticos. Dispensar en beakers separados y rotulados por fases.",
         "Paso 2. Fase oleosa caliente O1: dispensar y calentar a 70-75°C hasta mezcla transparente: Diisostearyl Malate, Bis-Diglyceryl Polyacyladipate-2.",
         "Paso 3. Seguir con Polyglyceryl-2 Triisostearate, Lauroyl Lysine y Tinogard TT.",
@@ -529,7 +529,7 @@ BATCH_FORMULAS = {
             "MP00047": 0.5,
         },
     },
-    "LIP SERUM (PIB CHINO)": {
+    "LIP SERUM VOLUMINIZADOR PEPTIDOS": {
         "op": "OP-2026-51", "lote": "", "lote_kg": 12,
         "items": {
             "MP00140": 0.06, "MP00292": 0.3, "MP00052": 7.0, "MP00159": 0.005, "MP00063": 0.1,
