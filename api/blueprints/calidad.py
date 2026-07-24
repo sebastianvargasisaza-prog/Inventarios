@@ -1879,6 +1879,27 @@ def calidad_reconstruir_expediente():
     return jsonify({'ok': True, 'f01': n_f01, 'f02': n_f02, 'ebr': n_ebr, 'total': n_f01 + n_f02 + n_ebr})
 
 
+@bp.route('/api/calidad/archivar-r2', methods=['GET', 'POST'])
+def calidad_archivar_r2():
+    """Fase 2b · sube a Cloudflare R2 (archivo inmutable off-site) los documentos regulados que aún
+    no tienen snapshot. GET = solo estado (archivados/pendientes); POST = archiva un lote (hasta 200).
+    Best-effort · idempotente (solo toma pendientes) · admin/Calidad."""
+    err, code = _require_calidad()
+    if err:
+        return err, code
+    try:
+        from r2_storage import r2_configurado, r2_stats_expediente, archivar_pendientes_r2
+    except Exception:
+        from api.r2_storage import r2_configurado, r2_stats_expediente, archivar_pendientes_r2  # pragma: no cover
+    from flask import current_app
+    if request.method == 'GET':
+        return jsonify({'ok': True, 'estado': r2_stats_expediente(get_db())})
+    if not r2_configurado():
+        return jsonify({'ok': False, 'error': 'R2 no está configurado en el servidor (faltan variables R2_*)'}), 400
+    res = archivar_pendientes_r2(current_app._get_current_object(), limite=200)
+    return jsonify(res)
+
+
 @bp.route('/api/calidad/expediente-lote', methods=['GET'])
 def calidad_expediente_lote():
     """Expediente de un lote: todos sus documentos regulados. ?q=<lote, código o producto>."""
@@ -1927,6 +1948,12 @@ h1{font-size:24px;margin:8px 0 4px;letter-spacing:-.02em;}
 #q:focus{border-color:var(--v);box-shadow:0 0 0 3px rgba(109,40,217,.12);}
 button{font-family:inherit;font-size:14px;font-weight:800;border-radius:11px;padding:13px 22px;border:none;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;cursor:pointer;box-shadow:0 2px 10px rgba(109,40,217,.25);}
 button.ghost{background:#fff;color:var(--v);border:1px solid #e9d5ff;box-shadow:none;}
+.r2estado{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:-6px 0 18px;}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:5px 11px;border-radius:999px;border:1px solid var(--line);}
+.pill.ok{background:#ecfdf5;color:#047857;border-color:#a7f3d0;}
+.pill.pend{background:#fffbeb;color:#b45309;border-color:#fde68a;}
+.pill.off{background:#f5f5f4;color:#78716c;}
+.r2estado .hint{color:var(--mut);font-size:11px;}
 .grp{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 2px 14px rgba(15,23,42,.05);padding:18px 20px;margin-bottom:16px;}
 .grp h2{font-size:16px;margin:0 0 2px;letter-spacing:-.01em;}
 .grp .meta{font-size:12px;color:var(--mut);margin-bottom:12px;}
@@ -1951,8 +1978,10 @@ button.ghost{background:#fff;color:var(--v);border:1px solid #e9d5ff;box-shadow:
 <input id="q" placeholder="Ej: LYPH260123, MP00172, Suero Triactive, lote de PT…" autocomplete="off">
 <button onclick="buscar()">Buscar</button>
 <button class="ghost" onclick="reconstruir()" title="Reindexar los documentos existentes (F01/F02/batch records) en el expediente">Reindexar</button>
+<button class="ghost" onclick="archivarR2()" title="Sube una copia inmutable de cada documento a Cloudflare R2 (respaldo off-site para INVIMA)">Archivar en R2</button>
 <span id="msg"></span>
 </div>
+<div id="r2estado" class="r2estado"></div>
 <div id="res"></div>
 </div>
 <script>
@@ -1989,7 +2018,31 @@ async function reconstruir(){
     else { m.style.color='#b91c1c'; m.textContent='Error: '+((d&&d.error)||r.status); }
   }catch(e){ m.style.color='#b91c1c'; m.textContent='Error de red'; }
 }
+async function cargarEstadoR2(){
+  var e=document.getElementById('r2estado');
+  try{
+    var d=await (await fetch('/api/calidad/archivar-r2',{credentials:'same-origin'})).json();
+    var s=(d&&d.estado)||{};
+    if(!s.configurado){ e.innerHTML='<span class="pill off">Archivo R2 no configurado</span>'; return; }
+    var tot=(s.archivados||0)+(s.pendientes||0);
+    e.innerHTML='<span class="pill ok">&#9679; '+(s.archivados||0)+' archivados en R2</span>'
+      +(s.pendientes>0?'<span class="pill pend">'+s.pendientes+' pendientes de subir</span>':'<span class="pill ok">todo respaldado</span>')
+      +'<span class="hint">Copia inmutable off-site (Cloudflare R2) &middot; respaldo para auditoría INVIMA</span>';
+  }catch(err){ e.innerHTML=''; }
+}
+async function archivarR2(){
+  var m=document.getElementById('msg'); m.style.color='#78716c'; m.textContent='Subiendo a R2…';
+  try{
+    var t=await csrf();
+    var r=await fetch('/api/calidad/archivar-r2',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t||''},body:'{}'});
+    var d=await r.json();
+    if(r.ok&&d.ok){ m.style.color='#15803d'; m.textContent='OK: '+(d.archivados||0)+' documentos archivados en R2'+(d.fallidos?(' &middot; '+d.fallidos+' fallidos'):'')+(d.pendientes?(' &middot; quedan '+d.pendientes+' pendientes, dale otra vez'):'')+'.'; }
+    else { m.style.color='#b91c1c'; m.textContent='Error: '+((d&&d.error)||r.status); }
+  }catch(e){ m.style.color='#b91c1c'; m.textContent='Error de red'; }
+  cargarEstadoR2();
+}
 document.getElementById('q').addEventListener('keydown',function(e){ if(e.key==='Enter') buscar(); });
+cargarEstadoR2();
 </script></body></html>"""
 
 

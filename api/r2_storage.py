@@ -197,3 +197,142 @@ def r2_selftest():
                 _out['pista'] = ('el TLS al host base SÍ conecta a nivel red → el fallo SSL viene de boto3/config, '
                                  'no del endpoint; revisá versión boto3/urllib3 o proxy de salida')
         return _out
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Fase 2b · Archivo INMUTABLE del expediente por lote (Sebastián 24-jul · INVIMA)
+# Cada documento regulado (F01/F02/EBR/COA/rótulo) ya vive en su tabla + en el
+# índice `documentos_regulados`. Aquí lo snapshoteamos a R2 (WORM, off-site) como
+# 2ª capa: si se pierde el disco de Render, el PDF/HTML firmado sobrevive.
+# NO va en el path del request (no retiene un worker · M89/M90): lo corre el cron
+# job_archivar_r2 + el botón POST /api/calidad/archivar-r2 (best-effort, batched).
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Sesión de servicio (solo lectura) para renderizar los imprimibles internos.
+# El gate de /api/ solo exige presencia de `compras_user`; un string sintético
+# pasa (no es admin → no dispara MFA) y deja claro en logs que es el archivador.
+_SVC_USER = 'sistema-archivo-r2'
+
+
+def _ext_de(content_type, url):
+    ct = (content_type or '').lower()
+    if 'pdf' in ct:
+        return 'pdf'
+    if 'html' in ct:
+        return 'html'
+    u = (url or '').lower()
+    for e in ('.pdf', '.png', '.jpg', '.jpeg', '.html'):
+        if e in u:
+            return e.lstrip('.')
+    return 'bin'
+
+
+def _slug(s):
+    return re.sub(r'[^A-Za-z0-9._-]+', '-', (str(s or '').strip()))[:60].strip('-') or 'sin'
+
+
+def _r2_key_documento(doc, sha, ext):
+    """Key determinista e inmutable. Incluye el id del documento → cada versión
+    (registrar_documento anula la vieja e inserta nueva con id nuevo) obtiene su
+    propia key: R2 nunca sobrescribe (WORM)."""
+    ent = _slug(doc.get('entidad') or 'MP')
+    grupo = _slug(doc.get('lote') or doc.get('codigo') or 'sin-lote')
+    tipo = _slug(doc.get('tipo_doc') or 'DOC')
+    return 'expediente/%s/%s/%s/%s-%s.%s' % (ent, grupo, tipo, doc.get('id'), (sha or '')[:12], ext)
+
+
+def _render_doc_bytes(app, url):
+    """Renderiza el documento (imprimible HTML o archivo COA) vía test_client con
+    sesión de servicio. Devuelve (bytes, content_type) o (None, motivo)."""
+    if not url:
+        return None, 'sin url'
+    try:
+        import time as _t
+        tc = app.test_client()
+        # base_url https → la cookie de sesión (SESSION_COOKIE_SECURE=True) viaja; login_time reciente
+        # evita el check de sesión-expirada. El gate solo exige compras_user presente (imprimibles GET).
+        _bu = 'https://localhost'
+        with tc.session_transaction(base_url=_bu) as sess:
+            sess['compras_user'] = _SVC_USER
+            sess['login_time'] = _t.time()
+        resp = tc.get(url, base_url=_bu)
+        if resp.status_code != 200:
+            return None, 'HTTP %s' % resp.status_code
+        data = resp.get_data()
+        if not data:
+            return None, 'vacío'
+        return data, (resp.headers.get('Content-Type') or 'application/octet-stream')
+    except Exception as e:
+        return None, '%s: %s' % (type(e).__name__, str(e)[:120])
+
+
+def archivar_pendientes_r2(app, limite=50):
+    """Sube a R2 los documentos regulados aún sin snapshot (r2_key vacío).
+    Idempotente (solo toma los pendientes), batched (limite), best-effort. Retorna dict con conteos."""
+    import hashlib
+    if not r2_configurado():
+        return {'ok': False, 'error': 'R2 no configurado', 'archivados': 0, 'pendientes': None}
+    try:
+        from database import get_db
+    except Exception:
+        from api.database import get_db  # pragma: no cover
+    res = {'ok': True, 'archivados': 0, 'fallidos': 0, 'saltados': 0, 'detalle_fallos': []}
+    with app.app_context():
+        conn = get_db()
+        c = conn.cursor()
+        rows = c.execute(
+            "SELECT id, entidad, codigo, producto_nombre, lote, tipo_doc, url "
+            "FROM documentos_regulados WHERE COALESCE(anulado,0)=0 AND COALESCE(r2_key,'')='' "
+            "ORDER BY id DESC LIMIT ?", (int(limite),)).fetchall()
+        cols = [x[0] for x in c.description]
+    for row in rows:
+        doc = dict(zip(cols, row))
+        data, ct = _render_doc_bytes(app, doc.get('url'))
+        if data is None:
+            res['fallidos'] += 1
+            if len(res['detalle_fallos']) < 12:
+                res['detalle_fallos'].append({'id': doc.get('id'), 'tipo': doc.get('tipo_doc'), 'motivo': ct})
+            continue
+        sha = hashlib.sha256(data).hexdigest()
+        ext = _ext_de(ct, doc.get('url'))
+        key = _r2_key_documento(doc, sha, ext)
+        if not r2_put(key, data, ct if isinstance(ct, str) else 'application/octet-stream'):
+            res['fallidos'] += 1
+            if len(res['detalle_fallos']) < 12:
+                res['detalle_fallos'].append({'id': doc.get('id'), 'tipo': doc.get('tipo_doc'), 'motivo': 'PUT R2 falló'})
+            continue
+        # marcar como archivado (fecha en Python · PG-safe)
+        try:
+            from datetime import datetime as _dt
+            _at = _dt.utcnow().replace(microsecond=0).isoformat() + 'Z'
+            with app.app_context():
+                conn = get_db()
+                conn.execute("UPDATE documentos_regulados SET r2_key=?, r2_at=?, r2_sha256=?, r2_bytes=? "
+                             "WHERE id=?", (key, _at, sha, len(data), doc.get('id')))
+                conn.commit()
+            res['archivados'] += 1
+        except Exception as e:
+            res['fallidos'] += 1
+            log.warning('marcar r2 archivado falló (id=%s): %s', doc.get('id'), e)
+    # pendientes restantes (informativo)
+    try:
+        with app.app_context():
+            conn = get_db()
+            res['pendientes'] = conn.execute(
+                "SELECT COUNT(*) FROM documentos_regulados WHERE COALESCE(anulado,0)=0 AND COALESCE(r2_key,'')=''"
+            ).fetchone()[0]
+    except Exception:
+        res['pendientes'] = None
+    return res
+
+
+def r2_stats_expediente(conn):
+    """Conteo archivados/pendientes para mostrar en la página de expediente."""
+    try:
+        arch = conn.execute("SELECT COUNT(*) FROM documentos_regulados WHERE COALESCE(anulado,0)=0 "
+                            "AND COALESCE(r2_key,'')<>''").fetchone()[0]
+        pend = conn.execute("SELECT COUNT(*) FROM documentos_regulados WHERE COALESCE(anulado,0)=0 "
+                            "AND COALESCE(r2_key,'')=''").fetchone()[0]
+        return {'archivados': arch, 'pendientes': pend, 'configurado': r2_configurado()}
+    except Exception:
+        return {'archivados': 0, 'pendientes': 0, 'configurado': r2_configurado()}

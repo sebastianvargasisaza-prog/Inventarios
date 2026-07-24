@@ -706,6 +706,11 @@ JOBS_SCHEDULE = [
     # compartida → el ÚNICO scan de Necesidades sin fast-path deja de correr en la carga (lentitud intermitente).
     ('estacionalidad_am',      5, 45, None, None,               'job_refrescar_estacionalidad'),
     ('estacionalidad_pm',     13, 45, None, None,               'job_refrescar_estacionalidad'),
+    # 🗄️ INVIMA zero-paper 24-jul · 3×/día · archiva a Cloudflare R2 (inmutable off-site) cada documento
+    # regulado nuevo (F01/F02/EBR/COA/rótulo). Idempotente · no-op si R2 no está configurado.
+    ('archivar_r2_am',         6, 10, None, None,               'job_archivar_r2'),
+    ('archivar_r2_pm',        14, 10, None, None,               'job_archivar_r2'),
+    ('archivar_r2_noche',     22, 10, None, None,               'job_archivar_r2'),
     ('estacionalidad_noche',  21, 45, None, None,               'job_refrescar_estacionalidad'),
     # Mensuales (primeros 5 días del mes a las 12:00)
     ('auto_sc_mensual',      12,  0, None, [1, 2, 3, 4, 5],     'job_auto_sc_mensual'),
@@ -4173,6 +4178,21 @@ def job_refrescar_estacionalidad(app):
             except Exception:
                 pass
             return False, {'error': str(e)[:200]}, 0
+
+
+def job_archivar_r2(app):
+    """Fase 2b (Sebastián 24-jul · INVIMA zero-paper) · sube a Cloudflare R2 (archivo inmutable off-site)
+    los documentos regulados aún sin snapshot (F01/F02/EBR/COA/rótulo). Best-effort · idempotente (solo
+    toma los pendientes r2_key vacío) · batched (80/ejecución). Si R2 no está configurado, no-op. El
+    cliente R2 tiene timeouts de socket (M90-safe) y corre en el hilo del multi-cron (no retiene worker)."""
+    try:
+        from r2_storage import r2_configurado, archivar_pendientes_r2
+    except Exception:
+        from api.r2_storage import r2_configurado, archivar_pendientes_r2  # pragma: no cover
+    if not r2_configurado():
+        return True, {'skip': 'R2 no configurado'}, 0
+    res = archivar_pendientes_r2(app, limite=80)
+    return bool(res.get('ok')), res, int(res.get('archivados') or 0)
 
 
 def job_mee_drift_sync(app):

@@ -10273,6 +10273,18 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "CREATE INDEX IF NOT EXISTS idx_docreg_codigo ON documentos_regulados(codigo)",
         "CREATE INDEX IF NOT EXISTS idx_docreg_mov ON documentos_regulados(mov_id)",
     ]),
+    (372, "Archivo INMUTABLE en Cloudflare R2 (Sebastián 24-jul · Fase 2b zero-paper INVIMA): columnas "
+          "que registran el snapshot off-site de cada documento regulado. PostgreSQL sigue siendo la fuente "
+          "de verdad; R2 (egress-free, WORM) es la 2ª capa inmutable que sobrevive a la pérdida del disco. "
+          "El archivador (job_archivar_r2 + POST /api/calidad/archivar-r2) renderiza el documento desde su "
+          "url, calcula sha256 y lo sube a R2 con una key determinista por id de documento (cada versión "
+          "queda con su propia key → nunca se sobrescribe).", [
+        "ALTER TABLE documentos_regulados ADD COLUMN r2_key TEXT DEFAULT ''",
+        "ALTER TABLE documentos_regulados ADD COLUMN r2_at TEXT DEFAULT ''",
+        "ALTER TABLE documentos_regulados ADD COLUMN r2_sha256 TEXT DEFAULT ''",
+        "ALTER TABLE documentos_regulados ADD COLUMN r2_bytes INTEGER DEFAULT 0",
+        "CREATE INDEX IF NOT EXISTS idx_docreg_r2 ON documentos_regulados(r2_key)",
+    ]),
 ]
 
 
