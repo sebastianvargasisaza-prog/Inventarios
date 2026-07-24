@@ -5012,14 +5012,20 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         # Sebastián 6-jul · en UNIDADES (no kg): un producto sin volumen cargado (ej. ÁNIMUS LASH, máscara)
         # daba _por_entrar_kg=0 y velocidad_kg_dia=0 → la condición NUNCA se cumplía y el "por entrar" manual
         # no lo sacaba de rojo. En uds es idéntico cuando hay ml (uds/vel_uds == kg/vel_kg) y funciona sin ml.
-        # Sebastián 10-jul · el azul lo dispara AHORA tanto el "por entrar" de Espagiria como lo EN TRÁNSITO
-        # (en_curso / fabricado ≤14d / fuente colocada) → un producto que estás produciendo sale de rojo.
-        _transito_total_uds = int(_por_entrar_uds) + int(_en_transito_uds)
+        # Sebastián 24-jul · REVERSA del 10-jul: el azul (POR_ENTRAR) lo dispara SOLO el "por entrar" de
+        # Espagiria (stock_por_entrar = inventario Shopify REAL de la location de Espagiria · producto FÍSICO
+        # producido en el lab, aún no trasladado a la góndola de Ánimus). YA NO lo dispara el calendario/plan:
+        # "el calendario NO es la verdad, debe ser el inventario de Espagiria" (Sebastián) → un lote programado
+        # en el pasado que NUNCA se fabricó pintaba azul falso y escondía el faltante de góndola (violaba M6:
+        # físico vs plan separados · "lo tomaba antes, incluso cosas no fabricadas"). La verdad de "lo que viene"
+        # es el inventario físico de Espagiria en Shopify, no una producción agendada. `_en_transito_uds`
+        # (derivado del calendario) queda SOLO como diagnóstico: se devuelve pero NO decide el color.
+        _transito_total_uds = int(_por_entrar_uds)
         if (_transito_total_uds > 0 and velocidad_uds_dia > 0.001
                 and urgencia in ("CRITICO", "URGENTE", "VIGILAR")):
             _dias_con_entrar = (stock_uds_total + _transito_total_uds) / velocidad_uds_dia
-            # con lo que viene (Espagiria + en tránsito) SALE de la zona crítica (≥ cob_critico) → POR_ENTRAR:
-            # ya no urge PRODUCIR (se está produciendo / va en camino). Umbral = cob_critico (Sebastián 5-jul).
+            # con lo que Espagiria tiene FÍSICO por entrar, la góndola SALE de la zona crítica (≥ cob_critico) →
+            # POR_ENTRAR: no urge PRODUCIR (ya está hecho en el lab · urge TRASLADAR). Umbral = cob_critico.
             if _dias_con_entrar > cob_critico:
                 urgencia = "POR_ENTRAR"
 
@@ -5045,7 +5051,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             # ya se hizo y está por llegar a la góndola). dias_gondola=solo física; dias_cobertura=+Fijo.
             "dias_con_pipeline": _dcp,  # Alejandro 5-jul · multi-tono: acotado al cuello de botella (arriba)
             "por_entrar_uds": _por_entrar_uds,  # Paso 2 · producido en Espagiria, aún no en góndola Ánimus
-            "en_transito_uds": _en_transito_uds,  # Sebastián 10-jul · en_curso/fabricado ≤14d/fuente · en camino a góndola
+            "en_transito_uds": _en_transito_uds,  # Sebastián 24-jul · DIAGNÓSTICO (calendario) · YA NO decide el azul (solo por_entrar de Espagiria)
             "ventas_periodo_uds": ventas_periodo_total,
             "ventas_30d_uds": ventas_30d_total,
             "ventas_90d_uds": ventas_90d_total,
