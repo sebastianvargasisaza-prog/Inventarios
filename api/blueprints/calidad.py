@@ -1936,64 +1936,76 @@ def calidad_expediente_page():
     return Response(_EXPEDIENTE_HTML, mimetype='text/html')
 
 
-_EXPEDIENTE_HTML = r"""<!doctype html><html lang="es"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Expediente por lote · Calidad · EOS</title>
+_EXPEDIENTE_HTML = r"""<!DOCTYPE html><html lang="es" translate="no"><head><meta charset="UTF-8">
+<meta name="google" content="notranslate">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover"><title>Expediente por lote · Calidad · EOS</title>
+<link rel="stylesheet" href="/static/cortex.css?v=eos15">
+<script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
-:root{--v:#6d28d9;--txt:#1c1917;--mut:#78716c;--line:#eef0f2;--bg:#faf9fb;}
-*{box-sizing:border-box}body{margin:0;font-family:Inter,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--txt);padding:26px 16px;}
-.wrap{max-width:1000px;margin:0 auto;}
-a.back{color:var(--v);text-decoration:none;font-size:13px;font-weight:700;}
-h1{font-size:24px;margin:8px 0 4px;letter-spacing:-.02em;}
-.sub{color:var(--mut);font-size:13px;margin-bottom:20px;line-height:1.5;max-width:720px;}
-.searchbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px;}
-#q{flex:1;min-width:240px;padding:13px 16px;border:1px solid #e6e1f2;border-radius:12px;font-size:15px;outline:none;box-shadow:0 1px 3px rgba(16,15,45,.05);}
-#q:focus{border-color:var(--v);box-shadow:0 0 0 3px rgba(109,40,217,.12);}
-button{font-family:inherit;font-size:14px;font-weight:800;border-radius:11px;padding:13px 22px;border:none;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;cursor:pointer;box-shadow:0 2px 10px rgba(109,40,217,.25);}
-button.ghost{background:#fff;color:var(--v);border:1px solid #e9d5ff;box-shadow:none;}
-.r2estado{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:-6px 0 18px;}
-.pill{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:5px 11px;border-radius:999px;border:1px solid var(--line);}
-.pill.ok{background:#ecfdf5;color:#047857;border-color:#a7f3d0;}
-.pill.pend{background:#fffbeb;color:#b45309;border-color:#fde68a;}
-.pill.off{background:#f5f5f4;color:#78716c;}
-.r2estado .hint{color:var(--mut);font-size:11px;}
-.r2fallos{font-size:11px;color:#b45309;margin:-10px 0 16px;line-height:1.5;}
-.modal{display:none;position:fixed;inset:0;background:rgba(28,25,23,.55);z-index:9999;align-items:center;justify-content:center;padding:24px;}
-.modal-card{background:#fff;border-radius:16px;width:min(920px,96vw);height:min(88vh,900px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.35);}
-.modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);}
-.modal-head b{font-size:14px;color:var(--txt);}
-.modal-actions{display:flex;align-items:center;gap:12px;}
-.mlink{color:var(--v);text-decoration:none;font-size:12px;font-weight:700;}
-.mx{background:#f5f5f4;color:#57534e;border:none;border-radius:9px;width:30px;height:30px;font-size:18px;line-height:1;cursor:pointer;padding:0;box-shadow:none;}
-#mdFrame{flex:1;width:100%;border:none;background:#fff;}
-.grp{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 2px 14px rgba(15,23,42,.05);padding:18px 20px;margin-bottom:16px;}
-.grp h2{font-size:16px;margin:0 0 2px;letter-spacing:-.01em;}
-.grp .meta{font-size:12px;color:var(--mut);margin-bottom:12px;}
+body{background:var(--cx-bg);color:var(--cx-text);margin:0;font-family:'Inter',system-ui,-apple-system,sans-serif;}
+*{box-sizing:border-box}
+.exp-wrap{max-width:1280px;margin:0 auto;padding:22px 22px 64px;}
+.exp-intro{color:var(--cx-text-mute);font-size:13.5px;line-height:1.55;max-width:840px;margin:0 0 16px;}
+.card{background:var(--cx-card);border:1px solid var(--cx-hairline);border-radius:18px;box-shadow:0 1px 3px rgba(15,23,42,.04),0 10px 30px rgba(15,23,42,.05);padding:22px 24px;margin-bottom:18px;}
+.searchbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+#q{flex:1;min-width:280px;font-size:15px;}
+.r2estado{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:16px;}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:5px 12px;border-radius:999px;border:1px solid var(--cx-hairline);color:var(--cx-text-soft);}
+.pill.ok{color:#15803d;border-color:rgba(21,128,61,.35);background:rgba(21,128,61,.09);}
+.pill.pend{color:#b45309;border-color:rgba(180,83,9,.35);background:rgba(180,83,9,.10);}
+.pill.off{color:var(--cx-text-mute);}
+.r2estado .hint{color:var(--cx-text-faint);font-size:11px;}
+.r2fallos{font-size:11.5px;color:#b45309;margin:8px 0 0;line-height:1.5;}
+#msg{font-size:12.5px;font-weight:700;}
+.grp{background:var(--cx-card);border:1px solid var(--cx-hairline);border-radius:16px;box-shadow:0 2px 14px rgba(15,23,42,.05);padding:18px 20px;margin-bottom:16px;}
+.grp h2{font-size:16px;margin:0 0 2px;letter-spacing:-.01em;color:var(--cx-text);}
+.grp .meta{font-size:12px;color:var(--cx-text-mute);margin-bottom:12px;}
 .ent{display:inline-block;border-radius:999px;padding:2px 10px;font-size:10.5px;font-weight:800;margin-right:8px;vertical-align:middle;}
-.ent.MP{background:#ede9fe;color:#6d28d9;} .ent.MEE{background:#dbeafe;color:#1e40af;} .ent.PT{background:#dcfce7;color:#15803d;}
-.docs{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;}
-.doc{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:#fcfcfd;text-decoration:none;color:var(--txt);display:block;transition:.12s;}
-.doc:hover{border-color:#d8b4fe;box-shadow:0 3px 12px rgba(109,40,217,.10);transform:translateY(-1px);}
+.ent.MP{background:var(--cx-primary-soft);color:var(--cx-primary);} .ent.MEE{background:rgba(37,99,235,.16);color:#2563eb;} .ent.PT{background:rgba(21,128,61,.16);color:#15803d;}
+.docs{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;}
+.doc{border:1px solid var(--cx-hairline);border-radius:12px;padding:13px 15px;background:var(--cx-bg-alt);text-decoration:none;color:var(--cx-text);display:block;transition:.12s;}
+.doc:hover{border-color:var(--cx-primary-light);box-shadow:0 4px 16px rgba(109,40,217,.13);transform:translateY(-1px);}
 .doc .t{font-size:13.5px;font-weight:800;margin-bottom:2px;}
-.doc .f{font-size:11px;color:var(--mut);font-family:ui-monospace,monospace;}
+.doc .f{font-size:11px;color:var(--cx-text-mute);font-family:ui-monospace,monospace;}
 .doc .b{display:inline-block;font-size:10px;font-weight:800;border-radius:6px;padding:2px 7px;margin-bottom:7px;}
-.b.F01{background:#eff6ff;color:#1e40af;} .b.F02{background:#f0fdf4;color:#15803d;} .b.EBR{background:#fef3c7;color:#b45309;}
-.b.COA_PROVEEDOR{background:#faf5ff;color:#7c3aed;} .b.ROTULO{background:#f5f4f2;color:#57534e;}
-.empty{color:var(--mut);font-size:14px;padding:28px 0;text-align:center;}
-.note{font-size:12px;color:var(--mut);margin-top:6px;}
-#msg{font-size:12.5px;font-weight:700;margin-left:6px;}
-</style></head><body><div class="wrap">
-<a class="back" href="/calidad">&larr; Calidad</a>
-<h1>&#128193; Expediente por lote</h1>
-<div class="sub">Buscá un <b>lote</b> (de materia prima o producto terminado), un <b>código</b> o un <b>producto</b> y te aparecen TODOS sus documentos regulados en un solo lugar: F01, F02, COA del proveedor, rótulo y batch record. Esto es lo que se le muestra a una auditoría INVIMA.</div>
+.b.F01{background:rgba(37,99,235,.16);color:#2563eb;} .b.F02{background:rgba(21,128,61,.16);color:#15803d;} .b.EBR{background:rgba(180,83,9,.18);color:#b45309;}
+.b.COA_PROVEEDOR{background:var(--cx-primary-soft);color:var(--cx-primary);} .b.ROTULO{background:var(--cx-hairline);color:var(--cx-text-soft);}
+.empty{color:var(--cx-text-mute);font-size:14px;padding:32px 0;text-align:center;}
+.modal{display:none;position:fixed;inset:0;background:rgba(15,15,20,.6);z-index:9999;align-items:center;justify-content:center;padding:24px;}
+.modal-card{background:var(--cx-card);border:1px solid var(--cx-hairline);border-radius:16px;width:min(960px,96vw);height:min(88vh,920px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.4);}
+.modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 16px;border-bottom:1px solid var(--cx-hairline);}
+.modal-head b{font-size:14px;color:var(--cx-text);}
+.modal-actions{display:flex;align-items:center;gap:12px;}
+.mlink{color:var(--cx-primary);text-decoration:none;font-size:12px;font-weight:700;}
+.mx{background:var(--cx-bg-alt);color:var(--cx-text-soft);border:1px solid var(--cx-hairline);border-radius:9px;width:32px;height:32px;font-size:18px;line-height:1;cursor:pointer;padding:0;}
+#mdFrame{flex:1;width:100%;border:none;background:#fff;}
+</style></head><body>
+<header class="cx-mod-header cx-fade-in">
+  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:var(--cx-primary);"><svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path d="M9 13h6"/></svg></span>
+  <div>
+    <div class="cx-mod-header__title">Expediente por lote</div>
+    <div class="cx-mod-header__sub"><strong>Calidad</strong> &middot; Espagiria &middot; trazabilidad INVIMA zero-paper</div>
+  </div>
+  <div class="cx-mod-header__nav">
+    <a href="/calidad" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver a Calidad">&larr; Calidad</a>
+    <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Todos los m&oacute;dulos">M&oacute;dulos</a>
+    <button class="cx-theme-toggle" onclick="cxToggleTheme()" title="Modo claro/oscuro"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4"/></svg></button>
+  </div>
+</header>
+<script>function cxToggleTheme(){var h=document.documentElement;var n=h.getAttribute('data-theme')==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
+<div class="exp-wrap">
+<div class="card">
+<div class="exp-intro">Buscá un <b>lote</b> (de materia prima o producto terminado), un <b>c&oacute;digo</b> o un <b>producto</b> y te aparecen TODOS sus documentos regulados en un solo lugar: F01, F02, COA del proveedor, r&oacute;tulo y batch record. Esto es lo que se le muestra a una auditor&iacute;a INVIMA.</div>
 <div class="searchbar">
-<input id="q" placeholder="Ej: LYPH260123, MP00172, Suero Triactive, lote de PT…" autocomplete="off">
-<button onclick="buscar()">Buscar</button>
-<button class="ghost" onclick="reconstruir()" title="Reindexar los documentos existentes (F01/F02/batch records) en el expediente">Reindexar</button>
-<button class="ghost" onclick="archivarR2()" title="Sube una copia inmutable de cada documento a Cloudflare R2 (respaldo off-site para INVIMA)">Archivar en R2</button>
+<input id="q" class="cx-input" placeholder="Ej: LYPH260123, MP00172, Suero Triactive, lote de PT&hellip;" autocomplete="off">
+<button class="cx-btn cx-btn-grad" onclick="buscar()">Buscar</button>
+<button class="cx-btn cx-btn-ghost" onclick="reconstruir()" title="Reindexar los documentos existentes (F01/F02/batch records) en el expediente">Reindexar</button>
+<button class="cx-btn cx-btn-ghost" onclick="archivarR2()" title="Sube una copia inmutable de cada documento a Cloudflare R2 (respaldo off-site para INVIMA)">Archivar en R2</button>
 <span id="msg"></span>
 </div>
 <div id="r2estado" class="r2estado"></div>
 <div id="r2fallos" class="r2fallos"></div>
+</div>
 <div id="res"></div>
 </div>
 <div id="modal" class="modal" onclick="if(event.target===this)cerrarDoc()">
