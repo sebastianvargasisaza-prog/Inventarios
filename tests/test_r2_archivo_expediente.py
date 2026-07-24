@@ -62,6 +62,18 @@ def test_render_doc_via_test_client(app):
     assert 'html' in (ct or '').lower()
 
 
+def test_disco_preflight(admin_client):
+    """El preflight de quitar-disco responde el checklist go/no-go sin tocar nada (read-only)."""
+    r = admin_client.get('/admin/disco-preflight')
+    assert r.status_code == 200 and b'cortex.css' in r.data
+    j = admin_client.get('/api/admin/disco-preflight')
+    assert j.status_code == 200
+    d = j.get_json()
+    for k in ('backend_es_postgres', 'r2_conectado', 'coa_todos_en_r2', 'backups_offsite'):
+        assert k in d['checklist']
+    assert 'listo_para_quitar_disco' in d and 'disco' in d
+
+
 def test_endpoint_estado_get(logged_client):
     """GET /api/calidad/archivar-r2 devuelve estado sin requerir R2 (para pintar la página)."""
     r = logged_client.get('/api/calidad/archivar-r2')

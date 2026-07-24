@@ -117,6 +117,172 @@ def admin_r2_check():
     return jsonify(r2_selftest())
 
 
+@bp.route("/api/admin/disco-preflight", methods=["GET"])
+def admin_disco_preflight():
+    """Read-only · reporta si es SEGURO quitar el disco /var/data (para deploys sin caída · zero-downtime).
+    Verifica contra prod REAL: backend (PG vs SQLite legacy en disco), backups off-site, COA en R2 vs disco,
+    y qué archivos viven en el disco. NO toca nada. Sebastián 24-jul."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    import os as _os
+    out = {}
+    try:
+        from database import _usa_postgres
+        out["backend"] = "postgres" if _usa_postgres() else "sqlite"
+    except Exception as e:
+        out["backend"] = "desconocido (%s)" % e
+    try:
+        out["db_path"] = DB_PATH
+        out["db_sqlite_en_disco"] = _os.path.exists(DB_PATH)
+        out["db_sqlite_kb"] = int(_os.path.getsize(DB_PATH) / 1024) if _os.path.exists(DB_PATH) else 0
+    except Exception:
+        pass
+    try:
+        from backup import BACKUP_OFFSITE_URL
+        out["backups_offsite"] = bool(BACKUP_OFFSITE_URL)
+    except Exception:
+        out["backups_offsite"] = None
+    try:
+        from r2_storage import r2_configurado, coa_disco_vs_r2
+        out["r2_configurado"] = r2_configurado()
+        out["coa"] = coa_disco_vs_r2()
+    except Exception as e:
+        out["coa_error"] = str(e)[:200]
+    # Inventario del disco /var/data (dirs con tamaño + archivos sueltos)
+    disco = []
+    try:
+        base = "/var/data"
+        if _os.path.isdir(base):
+            for name in sorted(_os.listdir(base)):
+                full = _os.path.join(base, name)
+                if _os.path.isdir(full):
+                    sz = 0; nf = 0
+                    for root, _d, files in _os.walk(full):
+                        for fn in files:
+                            try:
+                                sz += _os.path.getsize(_os.path.join(root, fn)); nf += 1
+                            except Exception:
+                                pass
+                    disco.append({"nombre": name + "/", "tipo": "dir", "archivos": nf, "kb": int(sz / 1024)})
+                else:
+                    try:
+                        disco.append({"nombre": name, "tipo": "file", "kb": int(_os.path.getsize(full) / 1024)})
+                    except Exception:
+                        disco.append({"nombre": name, "tipo": "file"})
+        else:
+            out["disco_nota"] = "/var/data no existe en este entorno (dev local)"
+    except Exception as e:
+        out["disco_error"] = str(e)[:200]
+    out["disco"] = disco
+    coa = out.get("coa") or {}
+    chk = {
+        "backend_es_postgres": out.get("backend") == "postgres",
+        "r2_conectado": bool(out.get("r2_configurado")),
+        "coa_todos_en_r2": (coa.get("faltan_n", 1) == 0),
+        "backups_offsite": bool(out.get("backups_offsite")),
+    }
+    out["checklist"] = chk
+    # LISTO = backend PG (SQLite del disco no se usa) + R2 ok + COA todos en R2. Backups off-site es
+    # recomendable pero no bloquea (PG en Render ya tiene sus backups gestionados).
+    out["listo_para_quitar_disco"] = bool(chk["backend_es_postgres"] and chk["r2_conectado"] and chk["coa_todos_en_r2"])
+    return jsonify(out)
+
+
+@bp.route("/api/admin/backfill-coa-r2", methods=["POST"])
+def admin_backfill_coa_r2():
+    """Empuja a R2 los COA del disco que aún no están (key estable coa/<nombre>) · para dejar el disco
+    quitable. Bounded (M92 · presupuesto + circuit-breaker). Reinvocable (idempotente). Admin."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    try:
+        from r2_storage import r2_configurado, backfill_coa_r2
+    except Exception as e:
+        return jsonify({"ok": False, "error": "no se pudo cargar r2_storage: %s" % e}), 500
+    if not r2_configurado():
+        return jsonify({"ok": False, "error": "R2 no está configurado (faltan variables R2_*)"}), 400
+    return jsonify(backfill_coa_r2())
+
+
+@bp.route("/admin/disco-preflight", methods=["GET"])
+def admin_disco_preflight_page():
+    """Página · preflight de 'quitar el disco' (zero-downtime): checklist go/no-go + botón backfill COA."""
+    if "compras_user" not in session:
+        return redirect("/login?next=/admin/disco-preflight")
+    return Response(_DISCO_PREFLIGHT_HTML, mimetype="text/html")
+
+
+_DISCO_PREFLIGHT_HTML = r"""<!DOCTYPE html><html lang="es" translate="no"><head><meta charset="UTF-8">
+<meta name="google" content="notranslate"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Quitar el disco · preflight · EOS</title>
+<link rel="stylesheet" href="/static/cortex.css?v=eos15">
+<script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
+<style>
+body{background:var(--cx-bg);color:var(--cx-text);margin:0;font-family:'Inter',system-ui,sans-serif;}
+.wrap{max-width:820px;margin:0 auto;padding:22px 20px 60px;}
+.intro{color:var(--cx-text-mute);font-size:13.5px;line-height:1.55;margin:4px 0 18px;}
+.card{background:var(--cx-card);border:1px solid var(--cx-hairline);border-radius:16px;box-shadow:0 2px 14px rgba(15,23,42,.05);padding:20px 22px;margin-bottom:16px;}
+.chk{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:700;padding:9px 0;border-bottom:1px solid var(--cx-hairline);}
+.chk:last-child{border-bottom:none;}
+.chk .ico{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:900;flex:0 0 auto;}
+.ico.ok{background:rgba(21,128,61,.16);color:#15803d;} .ico.no{background:rgba(185,28,28,.14);color:#b91c1c;} .ico.warn{background:rgba(180,83,9,.16);color:#b45309;}
+.chk .d{font-size:11.5px;font-weight:500;color:var(--cx-text-mute);}
+.verd{font-size:17px;font-weight:900;padding:12px 16px;border-radius:12px;margin-bottom:16px;}
+.verd.go{background:rgba(21,128,61,.12);color:#15803d;border:1px solid rgba(21,128,61,.3);}
+.verd.nogo{background:rgba(180,83,9,.10);color:#b45309;border:1px solid rgba(180,83,9,.3);}
+.mono{font-family:ui-monospace,monospace;font-size:12px;color:var(--cx-text-soft);background:var(--cx-bg-alt);border-radius:10px;padding:12px 14px;white-space:pre-wrap;word-break:break-word;margin-top:8px;}
+h2{font-size:14px;margin:0 0 8px;color:var(--cx-text);}
+#msg{font-size:12.5px;font-weight:700;margin-left:8px;}
+</style></head><body>
+<header class="cx-mod-header cx-fade-in">
+  <span class="cx-mod-header__logo" style="color:var(--cx-primary);display:inline-flex;align-items:center;"><svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg></span>
+  <div><div class="cx-mod-header__title">Quitar el disco &middot; preflight</div>
+  <div class="cx-mod-header__sub"><strong>Infra</strong> &middot; deploys sin caída (zero-downtime)</div></div>
+  <div class="cx-mod-header__nav"><a href="/inventarios" class="cx-btn cx-btn-ghost cx-btn-sm">&larr; Volver</a></div>
+</header>
+<div class="wrap">
+<div class="intro">El disco persistente <b>/var/data</b> es lo que impide los deploys sin caída (Render apaga la app vieja antes de arrancar la nueva). Esta pantalla verifica <b>contra producción real</b> que sea seguro quitarlo, sin tocar nada. Cuando todo esté en verde, coordinamos el paso final (es irreversible).</div>
+<div id="verd" class="verd nogo">Verificando&hellip;</div>
+<div class="card"><h2>Checklist</h2><div id="chks"></div>
+<div style="margin-top:14px"><button class="cx-btn cx-btn-grad" onclick="backfill()">Subir COA que falten a R2</button><span id="msg"></span></div></div>
+<div class="card"><h2>Qué vive en el disco</h2><div id="disco" class="mono">cargando&hellip;</div></div>
+</div>
+<script>
+function ico(ok){return '<span class="ico '+(ok?'ok':'no')+'">'+(ok?'✓':'✕')+'</span>';}
+var _CH={backend_es_postgres:['La app corre sobre PostgreSQL','el inventario.db del disco es legacy sin uso'],
+  r2_conectado:['R2 (Cloudflare) conectado','archivo off-site de documentos'],
+  coa_todos_en_r2:['Todos los COA del disco están en R2','servir COA ya no depende del disco'],
+  backups_offsite:['Backups off-site configurados','recomendable · PG en Render ya trae sus backups']};
+async function cargar(){
+  try{
+    var d=await (await fetch('/api/admin/disco-preflight',{credentials:'same-origin'})).json();
+    var v=document.getElementById('verd');
+    if(d.listo_para_quitar_disco){v.className='verd go';v.textContent='✓ LISTO para quitar el disco (con backfill de COA al 100%)';}
+    else{v.className='verd nogo';v.textContent='⚠ Aún no · faltan puntos en rojo';}
+    var c=d.checklist||{}, h='';
+    Object.keys(_CH).forEach(function(k){var t=_CH[k];h+='<div class="chk">'+ico(!!c[k])+'<div><div>'+t[0]+'</div><div class="d">'+t[1]+'</div></div></div>';});
+    document.getElementById('chks').innerHTML=h;
+    var coa=d.coa||{};
+    var dl=(d.disco||[]).map(function(x){return (x.nombre)+'   '+(x.kb!=null?x.kb+' KB':'')+(x.archivos!=null?'  ('+x.archivos+' archivos)':'');}).join('\n');
+    document.getElementById('disco').textContent='backend: '+(d.backend||'?')+'   |   inventario.db en disco: '+(d.db_sqlite_en_disco?((d.db_sqlite_kb||0)+' KB'):'no')+'\nCOA: '+(coa.en_disco||0)+' en disco, '+(coa.en_r2||0)+' en R2'+(coa.faltan_n?(', FALTAN '+coa.faltan_n):', todos en R2')+'\n\n'+(dl||'(vacío / no accesible)');
+  }catch(e){document.getElementById('verd').textContent='Error: '+e;}
+}
+async function backfill(){
+  var m=document.getElementById('msg');m.style.color='#78716c';m.textContent='Subiendo COA a R2…';
+  try{
+    var t=await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json();
+    var r=await fetch('/api/admin/backfill-coa-r2',{method:'POST',credentials:'same-origin',headers:{'X-CSRF-Token':(t&&t.csrf_token)||''}});
+    var d=await r.json();
+    if(r.ok&&d.ok){m.style.color='#15803d';m.textContent='OK: '+(d.subidos||0)+' subidos, '+(d.ya_estaban||0)+' ya estaban'+(d.corte_por_tiempo?' (quedó a mitad, dale otra vez)':'')+'.';}
+    else{m.style.color='#b91c1c';m.textContent='Error: '+((d&&d.error)||r.status);}
+  }catch(e){m.style.color='#b91c1c';m.textContent='Error de red';}
+  cargar();
+}
+cargar();
+</script></body></html>"""
+
+
 @bp.route("/admin/r2-check", methods=["GET"])
 def admin_r2_check_page():
     """Página · chequeo de conexión a R2 (corre el self-test al abrir)."""

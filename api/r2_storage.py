@@ -425,6 +425,37 @@ def backfill_coa_r2(app=None, limite=300, presupuesto_seg=90):
     return res
 
 
+def coa_disco_vs_r2(limite=2000):
+    """Audita cuántos COA del disco ya están en R2 (key estable coa/<nombre>) · read-only · para el
+    preflight de 'quitar el disco'. Bounded (M92): head_object por archivo, tope `limite`."""
+    import os as _os
+    coa_dir = (_os.environ.get('COA_STORAGE_DIR', '') or '/var/data/coa').strip()
+    res = {'dir': coa_dir, 'en_disco': 0, 'en_r2': 0, 'faltan_n': 0, 'faltan': []}
+    if not _os.path.isdir(coa_dir):
+        res['nota'] = 'el directorio COA no existe en disco (nada que migrar)'
+        return res
+    if not r2_configurado():
+        res['nota'] = 'R2 no configurado'
+        return res
+    _n = 0
+    for nombre in _os.listdir(coa_dir):
+        if _n >= limite:
+            res['truncado'] = True
+            break
+        full = _os.path.join(coa_dir, nombre)
+        if not _os.path.isfile(full):
+            continue
+        _n += 1
+        res['en_disco'] += 1
+        if r2_existe(coa_key(nombre)) is True:
+            res['en_r2'] += 1
+        else:
+            res['faltan_n'] += 1
+            if len(res['faltan']) < 25:
+                res['faltan'].append(nombre)
+    return res
+
+
 def r2_stats_expediente(conn):
     """Conteo archivados/pendientes para mostrar en la página de expediente."""
     try:
