@@ -2160,6 +2160,27 @@ def calidad_genealogia_pt(lote):
                     except Exception:
                         equipos = []
                     out['areas'][_slot] = {'codigo': ar[0], 'nombre': ar[1], 'equipos': equipos}
+    # Fallback (Fabricación directa · sin produccion_id → sin área por produccion_programada): tomar el
+    # área del `area_codigo` del EBR (que se elige al fabricar). Read-only · así el flujo real ve su área.
+    if not out['areas']:
+        for _f in out['fases']:
+            _ac = (_f.get('area_codigo') or '').strip()
+            if not _ac:
+                continue
+            _slot = 'envasado' if _f.get('fase') == 'envasado' else 'fabricacion'
+            if _slot in out['areas']:
+                continue
+            _ar = c.execute("SELECT codigo, nombre FROM areas_planta WHERE codigo=?", (_ac,)).fetchone()
+            if _ar:
+                _eqs = []
+                try:
+                    from blueprints.programacion import _equipos_de_area
+                    _eqs = [{'codigo': e[0], 'nombre': e[1], 'tipo': (e[2] if len(e) > 2 else ''),
+                             'calibracion': _equipo_calibracion(c, e[0])}
+                            for e in _equipos_de_area(c, _ar[0])]
+                except Exception:
+                    _eqs = []
+                out['areas'][_slot] = {'codigo': _ar[0], 'nombre': _ar[1], 'equipos': _eqs}
     # 4) Envases (MEE) consumidos · por lote en observaciones/batch_ref
     try:
         for r in c.execute(
@@ -2378,7 +2399,7 @@ async function buscar(){
     if(d.liberacion){ h+='<span class="chip ok">&#10003; Liberado por '+esc(d.liberacion.por)+(d.liberacion.at?(' &middot; '+esc(d.liberacion.at)):'')+'</span>'; }
     if(d.pt_fecha){ h+='<span class="chip">Fabricado '+esc(d.pt_fecha)+'</span>'; }
     h+='</div>';
-    if(d.fuente_mp==='fefo_tag'){ h+='<div class="warn">&#9888; Este lote no está encadenado por produccion_id (Fabricación directa) &middot; las MP se rastrearon por el tag FEFO (menos preciso). Al pasar por el flujo Calendario+EBR queda encadenado exacto.</div>'; }
+    if(d.fuente_mp==='fefo_tag'){ h+='<div class="warn">&#8505; Lote de <b>Fabricación directa</b> &middot; las materias primas se rastrean por el registro de consumo del lote (tag FEFO) y el área por el EBR. Trazabilidad completa.</div>'; }
     // fases / batch record
     if(d.fases&&d.fases.length){
       h+='<div class="sec"><div class="sec-h">&#128203; Batch record <span class="n">'+d.fases.length+' fase(s)</span></div><div class="branch">';
