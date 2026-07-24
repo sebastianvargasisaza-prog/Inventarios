@@ -61,3 +61,4 @@ archive/mybatch-pdfs/
 
 # Screenshots de auditoría visual (local, no deploy)
 _uiview/
+nova_*.json
