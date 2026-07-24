@@ -6546,6 +6546,167 @@ def planta_rotulo_limpieza_registro_pdf(reg_id):
                     mimetype='text/html')
 
 
+@bp.route('/api/programacion/trail-explosion', methods=['GET'])
+def api_trail_explosion():
+    """Trail AUDITABLE de la explosión de una fórmula en demanda de MP (Alejandro · read-only). Por cada
+    MP: % → gramos (%×kg×1000 · %-first M71) → código de bodega resuelto (con puente si es fantasma) →
+    stock → pendiente en compras → déficit. Reusa los MISMOS helpers que el abastecimiento (M16), no
+    reinventa el cálculo. ?producto=NOMBRE&kg=OPCIONAL (default lote de la fórmula)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    producto = (request.args.get('producto') or '').strip()
+    if not producto:
+        return jsonify({'ok': True, 'producto': '', 'items': []})
+    conn = get_db(); c = conn.cursor()
+    hdr = c.execute(
+        "SELECT producto_nombre, COALESCE(lote_size_kg,0), COALESCE(unidad_base_g,0) FROM formula_headers "
+        "WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?)) AND COALESCE(activo,1)=1 ORDER BY id DESC LIMIT 1",
+        (producto,)).fetchone()
+    if not hdr:
+        return jsonify({'ok': False, 'error': 'No encontré una fórmula ACTIVA para "%s".' % producto})
+    prod_real = hdr[0]
+    lote_kg_def = float(hdr[1]) or (float(hdr[2]) / 1000.0 if hdr[2] else 0.0)
+    try:
+        kg = float(request.args.get('kg') or lote_kg_def or 0)
+    except Exception:
+        kg = lote_kg_def
+    if kg <= 0:
+        kg = lote_kg_def or 1.0
+    items = c.execute(
+        "SELECT material_id, COALESCE(material_nombre,''), COALESCE(porcentaje,0), COALESCE(cantidad_g_por_lote,0) "
+        "FROM formula_items WHERE producto_nombre=? ORDER BY porcentaje DESC, material_nombre", (prod_real,)).fetchall()
+    try:
+        stock_mp = _get_mp_stock(conn)
+    except Exception:
+        stock_mp = {}
+    try:
+        from blueprints.compras import _pendiente_en_compras_bulk
+        pend_map = _pendiente_en_compras_bulk(c)
+    except Exception:
+        pend_map = {}
+    trail = []
+    tot_g = tot_def = 0.0
+    for it in items:
+        mid, mnombre, pct, gpl = it[0], it[1], float(it[2] or 0), float(it[3] or 0)
+        if pct > 0:
+            gramos = (pct / 100.0) * kg * 1000.0
+        elif gpl and lote_kg_def:
+            gramos = gpl * (kg / lote_kg_def)
+        else:
+            gramos = gpl
+        try:
+            bod = _resolver_material_bodega(c, mid, mnombre) or mid
+        except Exception:
+            bod = mid
+        try:
+            stock = float(_lookup_stock_5tier(stock_mp, mid, mnombre) or 0)
+        except Exception:
+            stock = float((stock_mp or {}).get(bod, 0) or 0)
+        pend = float((pend_map or {}).get(bod, 0) or 0)
+        deficit = max(0.0, gramos - stock - pend)
+        try:
+            en_maestro = c.execute("SELECT 1 FROM maestro_mps WHERE codigo_mp=? LIMIT 1", (mid,)).fetchone() is not None
+        except Exception:
+            en_maestro = None
+        trail.append({'material_id': mid, 'material_nombre': mnombre, 'pct': round(pct, 4), 'gramos': round(gramos, 1),
+                      'codigo_bodega': bod, 'puenteado': (bod != mid), 'fantasma': (en_maestro is False),
+                      'stock': round(stock, 1), 'pendiente': round(pend, 1), 'deficit': round(deficit, 1)})
+        tot_g += gramos; tot_def += deficit
+    return jsonify({'ok': True, 'producto': prod_real, 'kg': kg, 'lote_size_kg': lote_kg_def, 'n': len(trail),
+                    'total_g': round(tot_g, 1), 'total_deficit': round(tot_def, 1), 'items': trail})
+
+
+@bp.route('/planta/trail-explosion', methods=['GET'])
+def planta_trail_explosion_page():
+    """Página · Trail de explosión de fórmula (Alejandro): buscá un producto y ves el desglose auditable
+    de la demanda de MP (%→gramos→bodega→stock→déficit)."""
+    if 'compras_user' not in session:
+        from flask import redirect
+        return redirect('/login?next=/planta/trail-explosion')
+    from flask import Response
+    return Response(_TRAIL_EXPLOSION_HTML, mimetype='text/html')
+
+
+_TRAIL_EXPLOSION_HTML = r"""<!DOCTYPE html><html lang="es" translate="no"><head><meta charset="UTF-8">
+<meta name="google" content="notranslate"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Trail de explosión de fórmula · EOS</title>
+<link rel="stylesheet" href="/static/cortex.css?v=eos15">
+<script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
+<style>
+body{background:var(--cx-bg);color:var(--cx-text);margin:0;font-family:'Inter',system-ui,-apple-system,sans-serif;}
+*{box-sizing:border-box}.wrap{max-width:1240px;margin:0 auto;padding:22px 22px 64px;}
+.intro{color:var(--cx-text-mute);font-size:13.5px;line-height:1.55;max-width:880px;margin:0 0 16px;}
+.card{background:var(--cx-card);border:1px solid var(--cx-hairline);border-radius:18px;box-shadow:0 1px 3px rgba(15,23,42,.04),0 10px 30px rgba(15,23,42,.05);padding:20px 22px;margin-bottom:16px;}
+.bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+#q{flex:1;min-width:260px}#kg{width:120px}
+#msg{font-size:12.5px;font-weight:700}
+.sum{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;padding:5px 12px;border-radius:999px;border:1px solid var(--cx-hairline);color:var(--cx-text-soft)}
+.pill.v{color:var(--cx-primary);background:var(--cx-primary-soft);border-color:rgba(109,40,217,.25)}
+.pill.d{color:#b45309;background:rgba(180,83,9,.10);border-color:rgba(180,83,9,.3)}
+.tblwrap{overflow-x:auto}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px;margin-top:6px}
+th,td{padding:9px 11px;text-align:left;border-bottom:1px solid var(--cx-hairline);white-space:nowrap}
+th{font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--cx-text-mute);font-weight:700;background:var(--cx-bg-alt)}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+tr:hover td{background:var(--cx-bg-alt)}
+.cod{font-family:ui-monospace,monospace;font-size:11.5px}
+.def{color:#b45309;font-weight:800}.ok{color:#15803d;font-weight:700}
+.tag{display:inline-block;font-size:9.5px;font-weight:800;border-radius:6px;padding:1px 6px;margin-left:5px}
+.tag.p{background:rgba(2,132,199,.14);color:#0284c7}.tag.f{background:rgba(185,28,28,.14);color:#b91c1c}
+.empty{color:var(--cx-text-mute);font-size:14px;padding:30px 0;text-align:center}
+</style></head><body>
+<header class="cx-mod-header cx-fade-in">
+  <span class="cx-mod-header__logo" style="display:inline-flex;align-items:center;color:var(--cx-primary)"><svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 3-3 3 3 5-6"/></svg></span>
+  <div><div class="cx-mod-header__title">Trail de explosión de fórmula</div>
+  <div class="cx-mod-header__sub"><strong>Abastecimiento</strong> &middot; desglose auditable de la demanda de MP</div></div>
+  <div class="cx-mod-header__nav"><a href="/inventarios" class="cx-btn cx-btn-ghost cx-btn-sm">&larr; Volver</a>
+  <button class="cx-theme-toggle" onclick="cxToggleTheme()" title="Modo claro/oscuro"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4"/></svg></button></div>
+</header>
+<script>function cxToggleTheme(){var h=document.documentElement;var n=h.getAttribute('data-theme')==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
+<div class="wrap">
+<div class="card">
+<div class="intro">Escribí un <b>producto</b> y ves exactamente cómo su fórmula se abre en demanda de materia prima: cada MP con su <b>%</b>, los <b>gramos</b> (% × kg × 1000), el <b>código de bodega</b> al que resuelve (con el puente si es un código fantasma), el <b>stock</b>, lo <b>pendiente</b> en compras y el <b>déficit</b>. Es el "muéstrame la cuenta" del abastecimiento.</div>
+<div class="bar">
+<input id="q" class="cx-input" placeholder="Producto (ej: SUERO TRIACTIVE NAD)&hellip;" autocomplete="off">
+<input id="kg" class="cx-input" type="number" step="0.1" placeholder="kg (opcional)">
+<button class="cx-btn cx-btn-grad" onclick="ver()">Ver desglose</button>
+<span id="msg"></span>
+</div>
+<div id="sum" class="sum"></div>
+</div>
+<div id="res"></div>
+</div>
+<script>
+function esc(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+function n1(x){ return (Math.round((x||0)*10)/10).toLocaleString('es'); }
+async function ver(){
+  var q=document.getElementById('q').value.trim(), kg=document.getElementById('kg').value.trim();
+  var res=document.getElementById('res'), sum=document.getElementById('sum'), msg=document.getElementById('msg');
+  sum.innerHTML=''; msg.textContent='';
+  if(!q){ res.innerHTML='<div class="card"><div class="empty">Escribí un producto.</div></div>'; return; }
+  res.innerHTML='<div class="card"><div class="empty">Calculando la explosión&hellip;</div></div>';
+  try{
+    var d=await (await fetch('/api/programacion/trail-explosion?producto='+encodeURIComponent(q)+(kg?('&kg='+encodeURIComponent(kg)):''))).json();
+    if(!d.ok){ res.innerHTML='<div class="card"><div class="empty">'+esc(d.error||'No encontrado')+'</div></div>'; return; }
+    sum.innerHTML='<span class="pill v">'+esc(d.producto)+'</span><span class="pill">Lote '+n1(d.kg)+' kg</span><span class="pill">'+d.n+' materias primas</span><span class="pill">Total '+n1(d.total_g)+' g</span>'+(d.total_deficit>0?'<span class="pill d">Déficit '+n1(d.total_deficit)+' g</span>':'<span class="pill">Sin déficit</span>');
+    var rows=(d.items||[]).map(function(x){
+      var tags=(x.puenteado?'<span class="tag p" title="Resuelve por puente a otro código de bodega">puente</span>':'')+(x.fantasma?'<span class="tag f" title="El código de fórmula NO existe en el maestro">fantasma</span>':'');
+      return '<tr><td>'+esc(x.material_nombre||x.material_id)+' <span class="cod">'+esc(x.material_id)+'</span>'+tags+'</td>'
+        +'<td class="num">'+n1(x.pct)+'%</td>'
+        +'<td class="num">'+n1(x.gramos)+'</td>'
+        +'<td class="cod">'+esc(x.codigo_bodega)+'</td>'
+        +'<td class="num">'+n1(x.stock)+'</td>'
+        +'<td class="num">'+n1(x.pendiente)+'</td>'
+        +'<td class="num '+(x.deficit>0?'def':'ok')+'">'+(x.deficit>0?n1(x.deficit):'0')+'</td></tr>';
+    }).join('');
+    res.innerHTML='<div class="card"><div class="tblwrap"><table><thead><tr><th>Materia prima</th><th>%</th><th>Gramos (%×kg×1000)</th><th>Código bodega</th><th>Stock</th><th>Pendiente</th><th>Déficit</th></tr></thead><tbody>'+(rows||'<tr><td colspan=7 class="empty">La fórmula no tiene ítems.</td></tr>')+'</tbody></table></div></div>';
+  }catch(e){ res.innerHTML='<div class="card"><div class="empty">Error: '+esc(e.message)+'</div></div>'; }
+}
+document.getElementById('q').addEventListener('keydown',function(e){ if(e.key==='Enter') ver(); });
+</script></body></html>"""
+
+
 @bp.route('/planta/rotulos-limpieza', methods=['GET'])
 def planta_rotulos_limpieza_todas():
     """TODOS los rótulos F02 (todas las salas, uno por equipo). Opción 'imprimir todo'."""
