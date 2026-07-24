@@ -5,7 +5,7 @@
 > **Cuando encuentres o arregles un bug con un patrón nuevo, AGRÉGALO aquí en el mismo commit.**
 > Mantenlo denso y accionable (checklist, no narrativa). La historia detallada vive en `SESSION_LOG/`.
 
-Última actualización: **2026-07-18** (REGLA 0 nueva · toda UI que toco sale PREMIUM con cortex tokens + CERO rastro de IA (em-dash `—`→`-`) · revisar SIEMPRE antes de dar por hecho · M86 · mojibake se arregla por codepoints · N×M en heatmaps = endpoint colgado → 1 query GROUP BY + 1 "último por par")
+Última actualización: **2026-07-24** (M92 · todo loop de I/O de red = presupuesto wall-clock + circuit-breaker · lock IA fail-open con CAS-por-token · ultracode-review de los cambios propios antes de cerrar · REGLA 0 · toda UI que toco sale PREMIUM con cortex tokens + CERO rastro de IA (em-dash `—`→`-`) · revisar SIEMPRE antes de dar por hecho · M86 · mojibake se arregla por codepoints · N×M en heatmaps = endpoint colgado → 1 query GROUP BY + 1 "último por par")
 
 ---
 
@@ -816,6 +816,14 @@ Tras aplicar M88/M89/M90, la app "se volvió a caer" → verificación Fable ded
 - **`/api/health` spawneaba `git rev-parse` (subproceso) en CADA ping de Render** (`core.py:105`) → **FIX: commit cacheado a nivel de módulo (`_HEALTH_COMMIT`, 1× por proceso).**
 - **PEND (no urgente): quitar disco→zero-downtime (reubicar COA); `--preload` en gunicorn (ojo daemons/crons arrancan en import → con --preload corren en el MASTER, no en workers · verificar antes); `--worker-class gthread --threads 4` (I/O-bound sobre PG remoto, ~0 RAM extra); watchdog en _loop_multi_cron.**
 - **DIAGNÓSTICO rápido cuando "se cae": (1) `/api/health` → si responde 200 y `pending_versions=[]`, NO es la app · (2) ¿hubo un deploy/push reciente? = ventana de restart (con disco, dura minutos) · (3) import local `from api import index` arranca? = el código está sano. La mayoría de las "caídas" = ventanas de deploy, no bugs.**
+
+## 🌐 M92 · Todo LOOP de I/O de red (R2/Anthropic/Shopify/IMAP) necesita presupuesto wall-clock + circuit-breaker · 24-jul
+
+Construyendo el archivo inmutable en R2 (Fase 2b · expediente INVIMA) **reintroduje el propio anti-patrón M89/M90/M91** que el cerebro ya prohíbe. Lo cazó un ultracode-review sobre mis cambios de la sesión (workflow 13 agentes · 3 reales + 2 dudosos, TODOS del mismo tema). **Regla dura: cualquier endpoint o cron que recorre N llamadas de red en un loop DEBE llevar:**
+- **(a) presupuesto wall-clock** (`presupuesto_seg` con `time.monotonic()`, **< gunicorn `--timeout` 120**): corta el loop aunque falte trabajo. Si la operación es idempotente (procesa "pendientes"), el resto se drena en llamadas cortas SUCESIVAS — el cliente (JS) reinvoca en bucle mientras `pendientes>0`. Un endpoint de acción NUNCA debe retener 1 de 3 workers cerca del `--timeout` (→ SIGKILL del worker → 502 + reciclaje).
+- **(b) circuit-breaker por fallos SEGUIDos del servicio** (ej. `if fallos_r2_seguidos >= 4: break`): si R2/Anthropic no responde, cortá el lote en vez de moler cada ítem contra su timeout (boto3 `connect_timeout=8/read_timeout=20` ⇒ ~30s por ítem × N = horas). Ojo: un fallo de RENDER/fuente-404 (el doc no existe) **NO** cuenta para el breaker (no es "servicio caído") — solo los fallos de la red del servicio.
+- **(c) el hilo del multi-cron es ÚNICO y secuencial** (M90): un job que muele N×30s bloquea TODOS los crons siguientes (ventas_diarias/estacionalidad stale → lentitud app-wide). El presupuesto lo acota (~90s/corrida para crons).
+Casos: `archivar_pendientes_r2` (botón limite=25+presupuesto=35 + JS bucle · cron limite=80+presupuesto=90), `backfill_coa_r2` (limite+presupuesto=90+breaker). **El cliente boto3 (`_client`) ya trae timeouts de socket — verificalo SIEMPRE en cualquier cliente HTTP nuevo (nunca urlopen/boto3 sin timeout).** **+ Lock distribuido fail-open (`http_helpers.ia_slot`, "1 IA en vuelo"): release con CAS por token (`WHERE valor=?`), nunca UPDATE incondicional (si excediste el TTL y otro readquirió, no le pises su lock).** **+ Correr un ultracode-review adversarial sobre los cambios PROPIOS de una sesión larga caza lo que el golden no cubre (worker-hang, cron-hang, edge del lock) — vale SIEMPRE antes de cerrar.** Ver [[project_caidas_recurrentes_worker_hang_24jul]] [[project_documentos_trazabilidad_invima_pendiente]].
 
 ## 🔁 Cómo mantener este archivo (para que "conozca todo lo nuevo")
 
