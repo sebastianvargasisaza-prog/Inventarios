@@ -46,8 +46,9 @@ def test_mig275_toda_formula_activa_esta_en_planeacion(fresh_conn):
 
 
 def test_mig275_los_6_quedaron_activos(fresh_conn):
+    # LIP SERUM VOLUMINIZADOR PEPTIDOS descontinuado (Sebastián 24-jul · mig 368 · ya no se fabrica).
     for p in ('BLUSH BALM', 'BOOSTER TENSOR', 'HYDRAPEPTIDE', 'HYDRA BALANCE',
-              'LIP SERUM VOLUMINIZADOR PEPTIDOS', 'CREMA FACIAL UREA 10'):
+              'CREMA FACIAL UREA 10'):
         r = fresh_conn.execute("SELECT activo, estado FROM sku_planeacion_config "
                                "WHERE UPPER(TRIM(producto_nombre))=?", (p,)).fetchone()
         assert r is not None and r[0] == 1 and r[1] == 'activo', f"{p} no quedó activo: {r}"

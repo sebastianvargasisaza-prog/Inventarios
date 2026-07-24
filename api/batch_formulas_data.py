@@ -696,3 +696,44 @@ BATCH_FORMULAS = {
         },
     },
 }
+
+
+# ─── Remapeo batch → código canónico de la app (Sebastián 24-jul) ────────────────
+# Los batch records usan códigos que difieren de los canónicos de EOS (fantasmas,
+# grados dispersos, colisiones, swaps). Este mapa los lleva al código correcto de la
+# app ANTES de escribir formula_items → así fórmula = consumo. Verificado 1x1 contra
+# prod (maestro + fórmulas). Ver project_sync_formulas_batch_records_22jul.
+BATCH_CODE_REMAP = {
+    # fantasmas del batch (no existen en maestro) → código real de la app
+    "MP00069": "MP00118", "MP00060": "MP00041", "MP00125": "MP00265",
+    "MP00192": "MP00155", "MP00247": "MP00174", "MP00249": "MP00093",
+    "MP00273": "MP00163", "MP00280": "MP00261", "MP00321": "MPCHLV01",
+    "MP00190": "MP00159",  # Palmitoyl Tripeptide-1 → canónico MP00159 (9 usos · MP00451 se desactiva)
+    # centella: la app diferencia 2 grados (MP00176 triterpenes 80%, MP00185 asiaticoside 95%)
+    "MP00252": "MP00176", "MP00181": "MP00176", "MP00102": "MP00176", "MP00141": "MP00185",
+    # ceramide (≠ sodium cocoyl glycinate), azelamidopropyl=Epi-On, aloe (200X=nombre comercial)
+    "MP00300": "MP00103", "MP00295": "MP00116", "MP00217": "MP00216",
+    # swap propylheptyl/ethylhexyl/coco-caprylate + aerosil (colisiones del batch)
+    "MP00301": "MP00030", "MP00302": "MP00301", "MP00303": "MPCOCP01", "MP00298": "MP00112",
+    # carbopol grado 2 (940 sigue en MP00200) · agua (app usa MPAGUALI01) · citrus aurantium
+    "MP00008": "MP00296", "MP00286": "MPAGUALI01", "MP00305": "MP00025",
+}
+
+# Códigos que el batch introduce y NO existen en el maestro (materiales nuevos reales) →
+# se crean antes de aplicar. (codigo, nombre_inci, nombre_comercial)
+BATCH_CODES_CREAR = [
+    ("MP00296", "CARBOMER", "Carbopol (grado 2)"),
+    ("MP00299", "ASCORBYL TETRAISOPALMITATE", "Ascorbyl Tetraisopalmitate"),
+    ("MP00307", "ORYZA SATIVA (RICE) EXTRACT", "Oryza Sativa Extract"),
+    ("MP00306", "PIGMENTO (BLEND)", "Pigmento blend (definir CI por tono)"),
+]
+
+
+def remap_agg(items):
+    """Aplica BATCH_CODE_REMAP a un dict {codigo:pct} del batch y agrega los que colapsan
+    al mismo código canónico. Devuelve {codigo_canonico: pct_sumado}."""
+    out = {}
+    for cod, pct in items.items():
+        cc = BATCH_CODE_REMAP.get(cod, cod)
+        out[cc] = round(out.get(cc, 0) + float(pct), 4)
+    return out

@@ -234,6 +234,103 @@ def admin_sync_formula_batch():
     return jsonify(out)
 
 
+# ─── Sincronizar TODAS las fórmulas con los BATCH RECORDS (con remapeo canónico) ──
+@bp.route("/api/admin/sync-todas-formulas-batch", methods=["GET", "POST"])
+def admin_sync_todas_formulas_batch():
+    """Sincroniza las 28 fórmulas de EOS con sus BATCH RECORDS reales, remapeando los
+    códigos del batch a los canónicos de la app (BATCH_CODE_REMAP · centella/ceramide/
+    carbopol g2/agua/swaps/fantasmas). El batch es la fórmula real (firmada por
+    producción + Calidad · Sebastián 24-jul). Crea los 4 códigos nuevos que faltan.
+    NO toca los productos descontinuados (formula_headers.activo=0). Atómico: todo o
+    nada. DRY-RUN por default · aplica con {aplicar:true, confirmar:'SI'}."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    try:
+        from batch_formulas_data import BATCH_FORMULAS, BATCH_CODES_CREAR, remap_agg
+    except Exception as e:
+        return jsonify({"error": "no se pudo cargar batch_formulas_data: %s" % e}), 500
+    d = request.get_json(silent=True) or {}
+    aplicar = (request.method == "POST" and d.get("aplicar") is True
+               and str(d.get("confirmar", "")).strip().upper() == "SI")
+    conn = get_db(); c = conn.cursor()
+    # descontinuados (no sincronizar) · match EXACTO por nombre (case-sensitive · M73: UPPER(TRIM)
+    # colapsaría 'Blush Balm' activo=0 con 'BLUSH BALM' activo=1 y saltaría el activo por error)
+    disc = set(r[0] for r in c.execute(
+        "SELECT TRIM(producto_nombre) FROM formula_headers WHERE COALESCE(activo,1)=0").fetchall())
+    # maestro: INCI + activo por código
+    inci, mp_cods, inactivos_todos = {}, set(), set()
+    for r in c.execute("SELECT UPPER(TRIM(codigo_mp)), COALESCE(nombre_inci, nombre_comercial, codigo_mp), COALESCE(activo,1) FROM maestro_mps").fetchall():
+        mp_cods.add(r[0]); inci[r[0]] = r[1]
+        if int(r[2] or 1) == 0:
+            inactivos_todos.add(r[0])
+    crear_codes = {x[0].upper() for x in BATCH_CODES_CREAR}
+    crear_faltan = [{"codigo": cod, "inci": ci} for cod, ci, com in BATCH_CODES_CREAR if cod.upper() not in mp_cods]
+    # plan por producto
+    plan, sin_maestro_global, reactivar = [], set(), set()
+    for key, info in BATCH_FORMULAS.items():
+        if key.strip() in disc:
+            plan.append({"producto": key, "estado": "descontinuado (saltado)"}); continue
+        agg = remap_agg(info["items"])
+        faltan = [cc for cc in agg if cc.upper() not in mp_cods and cc.upper() not in crear_codes]
+        sin_maestro_global |= set(faltan)
+        for cc in agg:
+            if cc.upper() in inactivos_todos:
+                reactivar.add(cc.upper())
+        plan.append({"producto": key, "items": len(agg), "suma": round(sum(agg.values()), 3),
+                     "sin_maestro": faltan})
+    out = {"ok": True, "dry_run": (not aplicar), "total_productos": len(BATCH_FORMULAS),
+           "a_sincronizar": len([p for p in plan if "items" in p]),
+           "descontinuados_saltados": len([p for p in plan if p.get("estado")]),
+           "codigos_a_crear": crear_faltan, "codigos_a_reactivar": sorted(reactivar),
+           "codigos_sin_maestro": sorted(sin_maestro_global), "plan": plan, "aplicado": False}
+    if sin_maestro_global and aplicar:
+        return jsonify({**out, "error": "hay códigos sin maestro que no se crean · abortado (revisar BATCH_CODE_REMAP/CREAR)"}), 400
+    if not aplicar:
+        return jsonify(out)
+    # ── APLICAR (atómico) ──
+    try:
+        # 1. crear los códigos nuevos que faltan
+        n_creados = 0
+        for cod, ci, com in BATCH_CODES_CREAR:
+            if cod.upper() not in mp_cods:
+                c.execute("INSERT INTO maestro_mps (codigo_mp, nombre_inci, nombre_comercial, tipo, activo) VALUES (?, ?, ?, 'Materia Prima', 1)", (cod, ci, com))
+                inci[cod.upper()] = ci; n_creados += 1
+        # 2. reactivar los códigos destino inactivos (materiales reales · reversible)
+        for cod in reactivar:
+            c.execute("UPDATE maestro_mps SET activo=1 WHERE UPPER(TRIM(codigo_mp))=?", (cod,))
+        # 3. por producto: DELETE + INSERT con la fórmula remapeada
+        n_prod = n_items = 0
+        prod_actual = cod_actual = None
+        for key, info in BATCH_FORMULAS.items():
+            if key.strip() in disc:
+                continue
+            prod_actual = key
+            agg = remap_agg(info["items"])
+            hz = c.execute("SELECT COALESCE(lote_size_kg,0) FROM formula_headers WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (key,)).fetchone()
+            header_kg = float(hz[0]) if hz and hz[0] else float(info.get("lote_kg") or 0)
+            c.execute("DELETE FROM formula_items WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))", (key,))
+            for cod, pct in agg.items():
+                cod_actual = cod
+                gpl = round((float(pct) / 100.0) * header_kg * 1000.0, 4) if header_kg else 0
+                c.execute("INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje, cantidad_g_por_lote) VALUES (?, ?, ?, ?, ?)",
+                          (key, cod, inci.get(cod.upper(), cod), float(pct), gpl))
+                n_items += 1
+            n_prod += 1
+        try:
+            audit_log(c, usuario=u, accion="SYNC_TODAS_FORMULAS_BATCH", tabla="formula_items", registro_id="(28 productos)",
+                      despues={"productos": n_prod, "items": n_items, "codigos_creados": n_creados, "reactivados": sorted(reactivar)})
+        except Exception:
+            pass
+        conn.commit()
+        out.update({"aplicado": True, "productos_sincronizados": n_prod, "items_escritos": n_items, "codigos_creados": n_creados})
+        return jsonify(out)
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": "falló la sincronización · rollback total (nada cambió)",
+                        "producto": prod_actual, "codigo": cod_actual, "detalle": str(e)[:250]}), 500
+
+
 # ─── Página: Sincronizar fórmulas con los BATCH RECORDS ──────────────────────────
 @bp.route("/admin/sync-batch-formulas", methods=["GET"])
 def admin_sync_batch_formulas_page():
@@ -302,6 +399,16 @@ button:disabled{opacity:.5;cursor:not-allowed;}
 <a class="back" href="/inventarios">&larr; Planta</a>
 <h1>&#129514; Sincronizar f&oacute;rmulas con los batch records</h1>
 <div class="sub">El batch record (lo que producci&oacute;n pes&oacute; y Calidad verific&oacute;) es la fuente de verdad. Aqu&iacute; ves el diff entre la f&oacute;rmula que usa la app (descuento + abastecimiento) y el batch real, y lo aplic&aacute;s. Primero asegur&aacute; los c&oacute;digos base que falten, luego aplic&aacute;.</div>
+<div class="card" style="border-color:#ddd6fe;background:linear-gradient(135deg,#faf5ff,#fff)">
+<h2>&#9889; Sincronizar TODAS las f&oacute;rmulas de una vez</h2>
+<div class="op">Reemplaza las 28 f&oacute;rmulas de EOS con los batch records reales, remapeando los c&oacute;digos del batch a los can&oacute;nicos de la app. Crea los c&oacute;digos nuevos que falten. NO toca los productos descontinuados. At&oacute;mico (todo o nada).</div>
+<div class="acts">
+<button class="primary" id="btnTodasPrev" onclick="syncTodasPreview()">Ver resumen</button>
+<button class="warn" id="btnTodasApli" onclick="syncTodasAplicar()" disabled>Aplicar TODAS</button>
+<span class="msg" id="msgTodas"></span>
+</div>
+<div id="resumenTodas" class="note"></div>
+</div>
 <div id="lista"></div>
 </div>
 <script>
@@ -395,6 +502,30 @@ window.aplicar=async function(nombre){
   if(r.ok&&r.j&&r.j.aplicado){ if(m){m.className='msg ok';m.textContent='✓ Aplicado: '+r.j.items_escritos+' materiales escritos.';} setTimeout(function(){cargarDiff({nombre:nombre,op:'',items:r.j.batch_items});},700); }
   else { if(m){m.className='msg err';m.textContent='Error: '+((r.j&&r.j.error)||r.status);} }
 };
+var _todasOK=false;
+async function syncTodasPreview(){
+  var m=document.getElementById('msgTodas'); m.className='msg'; m.textContent='Cargando resumen...';
+  var r=await jpost('/api/admin/sync-todas-formulas-batch',{});
+  if(!r.ok||!r.j){ m.className='msg err'; m.textContent='Error'+(r.j&&r.j.error?(': '+esc(r.j.error)):''); return; }
+  var j=r.j, sm=(j.codigos_sin_maestro||[]);
+  var crear=(j.codigos_a_crear||[]).map(function(x){return x.codigo;}).join(', ')||'ninguno';
+  var react=(j.codigos_a_reactivar||[]).join(', ')||'ninguno';
+  var html='A sincronizar: <b>'+j.a_sincronizar+'</b> &middot; descontinuados saltados: '+j.descontinuados_saltados+' &middot; crear: '+esc(crear)+' &middot; reactivar: '+esc(react);
+  if(sm.length){ html+='<br><span style="color:#b91c1c">&#9888; codigos sin maestro (no se aplica): '+esc(sm.join(', '))+'</span>'; }
+  document.getElementById('resumenTodas').innerHTML=html;
+  _todasOK=(sm.length===0);
+  document.getElementById('btnTodasApli').disabled=!_todasOK;
+  m.className='msg ok'; m.textContent='Resumen listo';
+}
+async function syncTodasAplicar(){
+  if(!_todasOK){ return; }
+  if(!confirm('Reemplazar las 28 formulas con los batch records reales? Es reversible por producto.')){ return; }
+  var b=document.getElementById('btnTodasApli'); b.disabled=true;
+  var m=document.getElementById('msgTodas'); m.className='msg'; m.textContent='Aplicando...';
+  var r=await jpost('/api/admin/sync-todas-formulas-batch',{aplicar:true,confirmar:'SI'});
+  if(r.ok&&r.j&&r.j.aplicado){ m.className='msg ok'; m.textContent='OK: '+r.j.productos_sincronizados+' productos, '+r.j.items_escritos+' items, '+r.j.codigos_creados+' codigos creados.'; }
+  else { m.className='msg err'; m.textContent='Error: '+esc((r.j&&(r.j.error||r.j.detalle))||r.status); b.disabled=false; }
+}
 (function(){
   var cont=document.getElementById('lista');
   if(!DATA.productos.length){ cont.innerHTML='<div class="card"><div class="empty">A&uacute;n no hay batch records cargados. Envi&aacute; el PDF del siguiente producto.</div></div>'; return; }

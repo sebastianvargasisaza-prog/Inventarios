@@ -10212,6 +10212,42 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "ALTER TABLE marcacion_ordenes ADD COLUMN chk_observaciones TEXT",
         "ALTER TABLE marcacion_ordenes ADD COLUMN chk_rol TEXT",
     ]),
+    (368, "Descontinuar productos que ya NO se fabrican (Sebastián 24-jul): marca activo=0 en "
+          "formula_headers Y estado='descontinuado' en sku_planeacion_config (consistencia · "
+          "el config no puede quedar activo sin fórmula activa · test_mig275_huerfanas) para "
+          "sacarlos de Necesidades/Calendario/Abastecimiento (NO borra · reversible con "
+          "/api/admin/formula-activar · conserva histórico · NO consume por M29). Los 7 "
+          "confirmados uno por uno por Sebastián.", [
+        "UPDATE formula_headers SET activo=0 WHERE UPPER(TRIM(producto_nombre)) IN ("
+        "'SUERO RETINAL +', 'EMULSION HIDRATANTE  B3+BHA', 'EMULSION HIDRATANTE ANTIOXIDANTE', "
+        "'MASCARILLA HIDRATANTE', 'SUERO ANTIOXIDANTE VITAMINA C+B3', 'ESENCIA ILUMINADORA', "
+        "'LIP SERUM VOLUMINIZADOR PEPTIDOS') AND COALESCE(activo,1)=1",
+        "UPDATE sku_planeacion_config SET estado='descontinuado' WHERE UPPER(TRIM(producto_nombre)) IN ("
+        "'SUERO RETINAL +', 'EMULSION HIDRATANTE  B3+BHA', 'EMULSION HIDRATANTE ANTIOXIDANTE', "
+        "'MASCARILLA HIDRATANTE', 'SUERO ANTIOXIDANTE VITAMINA C+B3', 'ESENCIA ILUMINADORA', "
+        "'LIP SERUM VOLUMINIZADOR PEPTIDOS')",
+    ]),
+    (369, "Normalización códigos MP · Parte A (Sebastián 24-jul · SOLO código, mismo %): "
+          "(1) crear MP00296 = Carbopol grado 2 (Carbomer · el 940 sigue en MP00200); "
+          "(2) split carbopol: GEL HIDRATANTE, SUERO EXFOLIANTE BHA 2%, AZ HIBRID CLEAR y CREMA FACIAL "
+          "UREA 10 pasan de MP00200 (940) a MP00296 (grado 2) · el resto de productos se queda en MP00200; "
+          "(3) fix LIP SERUM (PIB CHINO): el Polyisobutylene 35.8% estaba mal codificado como MP00301 "
+          "(Ethylhexylglycerin) → MP00209 (PIB · su código real) · corrige el descuento del ingrediente "
+          "principal. Verificado 1x1 contra prod (fórmulas+maestro). NO toca %. La Parte B (contenido de "
+          "fórmulas vs batch) va aparte con revisión de Alejandro/Calidad. Reversible (audit por migración).", [
+        # (1) crear MP00296 si no existe · INCI CARBOMER · activo · controla_stock default 1
+        "INSERT INTO maestro_mps (codigo_mp, nombre_inci, nombre_comercial, tipo, activo) "
+        "SELECT 'MP00296', 'CARBOMER', 'Carbopol (grado 2)', 'Materia Prima', 1 "
+        "WHERE NOT EXISTS (SELECT 1 FROM maestro_mps WHERE codigo_mp='MP00296')",
+        # (2) split carbopol grado 2 (mismo %, solo material_id · el trigger exige MP00296 activo, ya creado)
+        "UPDATE formula_items SET material_id='MP00296' "
+        "WHERE material_id='MP00200' AND UPPER(TRIM(producto_nombre)) IN "
+        "('GEL HIDRATANTE', 'SUERO EXFOLIANTE BHA 2%', 'AZ HIBRID CLEAR', 'CREMA FACIAL UREA 10')",
+        # (3) fix Lip Serum PIB · solo el item de 35.8% (guard porcentaje>10 · el Ethylhexyl real iría a 0.4%)
+        "UPDATE formula_items SET material_id='MP00209' "
+        "WHERE material_id='MP00301' AND UPPER(TRIM(producto_nombre))='LIP SERUM (PIB CHINO)' "
+        "AND porcentaje>10",
+    ]),
 ]
 
 
