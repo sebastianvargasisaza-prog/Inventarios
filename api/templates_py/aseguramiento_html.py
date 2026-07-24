@@ -90,6 +90,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
     <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; Espagiria &middot; SGD, desviaciones, control de cambios, recall, gobierno GMP</div>
   </div>
   <div class="cx-mod-header__nav">
+    <a href="/calidad/expediente" class="cx-btn cx-btn-ghost cx-btn-sm" title="Expediente por lote: todos los documentos regulados de un lote (F01, F02, COA, r&oacute;tulo, batch record) para auditor&iacute;a INVIMA">&#128193; Expediente por lote</a>
     <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver a m&oacute;dulos">M&oacute;dulos</a>
     <button class="cx-theme-toggle" onclick="cxToggleTheme()" title="Modo claro/oscuro">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4"/></svg>

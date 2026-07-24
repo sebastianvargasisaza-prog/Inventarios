@@ -9468,6 +9468,7 @@ td{color:var(--cx-text-soft,#3f3f46)}
   <a class="back" href="/inventarios">&larr; Planta</a>
   <h1>&#128203; Bandeja &middot; Dirección Técnica</h1>
   <div class="sub">Decisiones que requieren tu firma &middot; aprobar procedimientos (MBR) y liberar lotes.</div>
+  <div style="margin:-6px 0 16px"><a href="/calidad/expediente" style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:#6d28d9;text-decoration:none;border:1px solid #e9d5ff;background:#fff;border-radius:10px;padding:8px 14px" title="Expediente por lote: todos los documentos regulados de un lote (F01, F02, COA, rótulo, batch record) para auditoría INVIMA">&#128193; Expediente por lote</a></div>
   <div id="cont"><div class="muted">Cargando&hellip;</div></div>
 </div>
 <script>

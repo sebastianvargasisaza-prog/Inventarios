@@ -1954,6 +1954,15 @@ button.ghost{background:#fff;color:var(--v);border:1px solid #e9d5ff;box-shadow:
 .pill.pend{background:#fffbeb;color:#b45309;border-color:#fde68a;}
 .pill.off{background:#f5f5f4;color:#78716c;}
 .r2estado .hint{color:var(--mut);font-size:11px;}
+.r2fallos{font-size:11px;color:#b45309;margin:-10px 0 16px;line-height:1.5;}
+.modal{display:none;position:fixed;inset:0;background:rgba(28,25,23,.55);z-index:9999;align-items:center;justify-content:center;padding:24px;}
+.modal-card{background:#fff;border-radius:16px;width:min(920px,96vw);height:min(88vh,900px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.35);}
+.modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);}
+.modal-head b{font-size:14px;color:var(--txt);}
+.modal-actions{display:flex;align-items:center;gap:12px;}
+.mlink{color:var(--v);text-decoration:none;font-size:12px;font-weight:700;}
+.mx{background:#f5f5f4;color:#57534e;border:none;border-radius:9px;width:30px;height:30px;font-size:18px;line-height:1;cursor:pointer;padding:0;box-shadow:none;}
+#mdFrame{flex:1;width:100%;border:none;background:#fff;}
 .grp{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 2px 14px rgba(15,23,42,.05);padding:18px 20px;margin-bottom:16px;}
 .grp h2{font-size:16px;margin:0 0 2px;letter-spacing:-.01em;}
 .grp .meta{font-size:12px;color:var(--mut);margin-bottom:12px;}
@@ -1982,7 +1991,20 @@ button.ghost{background:#fff;color:var(--v);border:1px solid #e9d5ff;box-shadow:
 <span id="msg"></span>
 </div>
 <div id="r2estado" class="r2estado"></div>
+<div id="r2fallos" class="r2fallos"></div>
 <div id="res"></div>
+</div>
+<div id="modal" class="modal" onclick="if(event.target===this)cerrarDoc()">
+  <div class="modal-card">
+    <div class="modal-head">
+      <b id="mdTit">Documento</b>
+      <span class="modal-actions">
+        <a id="mdNueva" href="#" target="_blank" class="mlink" title="Abrir en pestaña nueva">Abrir aparte &#8599;</a>
+        <button class="mx" onclick="cerrarDoc()" title="Cerrar (Esc)">&times;</button>
+      </span>
+    </div>
+    <iframe id="mdFrame" title="Documento del expediente"></iframe>
+  </div>
 </div>
 <script>
 function esc(s){ if(s==null) return ''; return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
@@ -1999,7 +2021,7 @@ async function buscar(){
     if(!g.length){ res.innerHTML='<div class="empty">No hay documentos para <b>'+esc(q)+'</b>. (Si es un lote viejo, probá "Reindexar" una vez.)</div>'; return; }
     res.innerHTML=g.map(function(grp){
       var docs=(grp.docs||[]).map(function(x){
-        return '<a class="doc" href="'+esc(x.url)+'" target="_blank"><span class="b '+esc(x.tipo)+'">'+esc(x.tipo)+'</span>'
+        return '<a class="doc" href="'+esc(x.url)+'" data-t="'+esc(x.titulo||x.tipo)+'" onclick="return abrirDoc(this)"><span class="b '+esc(x.tipo)+'">'+esc(x.tipo)+'</span>'
           +'<div class="t">'+esc(x.titulo||x.tipo)+'</div><div class="f">'+esc(x.formato||'')+(x.por?(' · '+esc(x.por)):'')+'</div></a>';
       }).join('');
       return '<div class="grp"><h2><span class="ent '+esc(grp.entidad||'MP')+'">'+esc(grp.entidad||'MP')+'</span>'+esc(grp.producto||grp.codigo||'')+'</h2>'
@@ -2025,6 +2047,7 @@ async function cargarEstadoR2(){
     var s=(d&&d.estado)||{};
     if(!s.configurado){ e.innerHTML='<span class="pill off">Archivo R2 no configurado</span>'; return; }
     var tot=(s.archivados||0)+(s.pendientes||0);
+    if(tot===0){ e.innerHTML='<span class="pill off">Sin documentos indexados aún &middot; dale <b>Reindexar</b> y luego <b>Archivar en R2</b></span>'; return; }
     e.innerHTML='<span class="pill ok">&#9679; '+(s.archivados||0)+' archivados en R2</span>'
       +(s.pendientes>0?'<span class="pill pend">'+s.pendientes+' pendientes de subir</span>':'<span class="pill ok">todo respaldado</span>')
       +'<span class="hint">Copia inmutable off-site (Cloudflare R2) &middot; respaldo para auditoría INVIMA</span>';
@@ -2036,12 +2059,32 @@ async function archivarR2(){
     var t=await csrf();
     var r=await fetch('/api/calidad/archivar-r2',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t||''},body:'{}'});
     var d=await r.json();
-    if(r.ok&&d.ok){ m.style.color='#15803d'; m.textContent='OK: '+(d.archivados||0)+' documentos archivados en R2'+(d.fallidos?(' &middot; '+d.fallidos+' fallidos'):'')+(d.pendientes?(' &middot; quedan '+d.pendientes+' pendientes, dale otra vez'):'')+'.'; }
+    if(r.ok&&d.ok){
+      m.style.color='#15803d';
+      m.textContent='OK: '+(d.archivados||0)+' documentos archivados en R2'+(d.fallidos?(' · '+d.fallidos+' fallidos'):'')+(d.pendientes?(' · quedan '+d.pendientes+' pendientes, dale otra vez'):'')+'.';
+      var fb=document.getElementById('r2fallos');
+      if(d.detalle_fallos&&d.detalle_fallos.length){
+        fb.innerHTML='<b>Fallidos:</b> '+d.detalle_fallos.map(function(f){return esc(f.tipo||'')+' #'+esc(f.id)+' ('+esc(f.motivo||'')+')';}).join(' · ');
+      } else { fb.innerHTML=''; }
+    }
     else { m.style.color='#b91c1c'; m.textContent='Error: '+((d&&d.error)||r.status); }
   }catch(e){ m.style.color='#b91c1c'; m.textContent='Error de red'; }
   cargarEstadoR2();
 }
+function abrirDoc(a){
+  var url=a.getAttribute('href'), t=a.getAttribute('data-t')||'Documento';
+  document.getElementById('mdTit').textContent=t;
+  document.getElementById('mdNueva').href=url;
+  document.getElementById('mdFrame').src=url;
+  document.getElementById('modal').style.display='flex';
+  return false;
+}
+function cerrarDoc(){
+  document.getElementById('modal').style.display='none';
+  document.getElementById('mdFrame').src='about:blank';
+}
 document.getElementById('q').addEventListener('keydown',function(e){ if(e.key==='Enter') buscar(); });
+document.addEventListener('keydown',function(e){ if(e.key==='Escape') cerrarDoc(); });
 cargarEstadoR2();
 </script></body></html>"""
 
