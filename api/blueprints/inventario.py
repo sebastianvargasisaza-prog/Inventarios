@@ -2204,33 +2204,56 @@ def _handle_produccion_inner():
             except Exception:
                 return False
 
+        # ─── CONSOLIDAR por código de BODEGA resuelto (antes de mirar stock) ──
+        # FIX 25-jul (auditoría) · P0: se planificaba UNA entrada por FILA de fórmula y
+        # cada fila hacía su propio SELECT FEFO y su propio chequeo contra los MISMOS
+        # lotes → dos filas que apuntan al mismo material de bodega (código repetido, o
+        # dos códigos distintos que el resolver colapsa a uno) pasaban AMBAS el pre-check
+        # viendo el stock completo y descontaban el doble → stock NEGATIVO por lote, en
+        # silencio (el kardex dice que un lote entregó gramos que no tenía · INVIMA).
+        # Es el mismo dedup que el path programado ya tenía desde el 1-jun (P0-1, el `_acc`
+        # de programacion._calcular_mp_consumo_produccion); la ruta de Fabricación directa
+        # (la que EOS usa de verdad) se había quedado sin él. Regla M1: un solo código
+        # canónico por material, y el requerimiento se SUMA antes de validar.
+        _consolidado = {}   # cod_bodega → {mat_id, mat_nombre, g_total, ids_formula:set}
+        for mat_id, mat_nombre, pct in formula_items:
+            g_fila = round(((pct or 0) / 100.0) * cantidad_g, 2)
+            if g_fila <= 0:
+                continue
+            _cod_formula = mat_id
+            try:
+                if _resolver_prod:
+                    mat_id = _resolver_prod(c, mat_id, mat_nombre) or mat_id
+            except Exception:
+                mat_id = _cod_formula
+            _e = _consolidado.setdefault(mat_id, {
+                'mat_id': mat_id, 'mat_nombre': mat_nombre,
+                'g_total': 0.0, 'ids_formula': set(),
+            })
+            _e['g_total'] = round(_e['g_total'] + g_fila, 2)
+            _e['ids_formula'].add(_cod_formula)
+
         # ─── PRE-CHECK: stock suficiente para TODAS las MPs ─────────────────
         # Construimos el plan completo SIN escribir nada. Si falta stock para
         # alguna MP, abortamos antes del primer INSERT.
         plan_descuentos = []  # cada entry: {mat_id, mat_nombre, g_total, lotes_a_usar:[(lote, vence, g)]}
         faltantes = []        # MPs que no tienen stock suficiente
-        for mat_id, mat_nombre, pct in formula_items:
-            g_total = round((pct / 100.0) * cantidad_g, 2)
-            if g_total <= 0:
-                continue
-            # Resolver código fórmula → bodega (mismo material en código duplicado/
-            # inactivo CON stock). Todas las consultas y la Salida usan el resuelto.
-            mat_id_formula = mat_id
-            try:
-                if _resolver_prod:
-                    mat_id = _resolver_prod(c, mat_id, mat_nombre) or mat_id
-            except Exception:
-                mat_id = mat_id_formula
+        for _cons in _consolidado.values():
+            mat_id = _cons['mat_id']
+            mat_nombre = _cons['mat_nombre']
+            g_total = _cons['g_total']
+            _ids_formula = _cons['ids_formula']
             entry = {
                 'mat_id': mat_id, 'mat_nombre': mat_nombre,
                 'g_total': g_total, 'lotes_a_usar': [],
                 'g_sin_lote': 0.0, 'unlimited': False,
             }
-            if _is_unlimited(mat_nombre) or _no_controla(mat_id) or _no_controla(mat_id_formula):
+            if (_is_unlimited(mat_nombre) or _no_controla(mat_id)
+                    or any(_no_controla(_f) for _f in _ids_formula)):
                 # Aguas y similares (lista _MP_UNLIMITED o controla_stock=0) ·
                 # pesaje real pero sin requerir stock.
                 entry['unlimited'] = True
-                if _no_controla(mat_id) or _no_controla(mat_id_formula):
+                if _no_controla(mat_id) or any(_no_controla(_f) for _f in _ids_formula):
                     # AGUA del lab (infinita, fabricada en casa): NO mover kardex
                     # para no acumular stock negativo (-330k g). No se descuenta.
                     entry['g_sin_lote'] = 0.0
@@ -3405,11 +3428,39 @@ def simular_produccion():
         if str(mid or '').strip().upper() in ('MPAGUAL01', 'MPAGUALI01', 'MPAGUALI02'):
             return True
         return False
+    # FIX 25-jul (auditoría) · CONSOLIDAR por código de BODEGA resuelto antes de mirar
+    # stock, igual que el descuento real: dos filas de fórmula que apuntan al mismo
+    # material (código repetido, o dos códigos que el resolver colapsa a uno) miraban
+    # cada una el stock COMPLETO y las dos decían "alcanza", mientras el requerimiento
+    # verdadero es la SUMA. "Verificar stock" tiene que dar el mismo veredicto que el
+    # descuento (M5: el número que se muestra es el que decide).
+    _sim_cons = {}
     for mat_id, mat_nombre, pct, precio_kg, controla_stock in items:
-        g_req = round((pct / 100) * cantidad_g, 2)
+        _g = round(((pct or 0) / 100) * cantidad_g, 2)
+        _inf = _es_infinita(mat_id, mat_nombre, controla_stock)
+        _cod = mat_id
+        if not _inf and _resolver_mp:
+            try:
+                _cod = _resolver_mp(c, mat_id, mat_nombre) or mat_id
+            except Exception:
+                _cod = mat_id
+        _it = _sim_cons.setdefault(_cod, {
+            'mat_id': mat_id, 'cod_bodega': _cod, 'mat_nombre': mat_nombre,
+            'pct': 0.0, 'g_req': 0.0, 'precio_kg': precio_kg or 0, 'infinita': _inf,
+        })
+        _it['pct'] = round(_it['pct'] + float(pct or 0), 4)
+        _it['g_req'] = round(_it['g_req'] + _g, 2)
+        _it['infinita'] = _it['infinita'] or _inf
+        if not _it['precio_kg']:
+            _it['precio_kg'] = precio_kg or 0
+
+    for _it in _sim_cons.values():
+        mat_id, mat_nombre = _it['mat_id'], _it['mat_nombre']
+        pct, g_req, precio_kg = _it['pct'], _it['g_req'], _it['precio_kg']
+        cod_bodega = _it['cod_bodega']
         # MP infinita / fabricada en casa (AGUA del lab) → no se controla stock:
         # siempre suficiente, nunca faltante, no bloquea la producción.
-        if _es_infinita(mat_id, mat_nombre, controla_stock):
+        if _it['infinita']:
             resultado.append({
                 'material_id': mat_id, 'material_nombre': mat_nombre,
                 'porcentaje': pct, 'g_requerido': g_req,
@@ -3419,10 +3470,6 @@ def simular_produccion():
             })
             continue
         if _resolver_mp and _NP6:
-            try:
-                cod_bodega = _resolver_mp(c, mat_id, mat_nombre) or mat_id
-            except Exception:
-                cod_bodega = mat_id
             # M-1 (Sebastian 12-jun): alinear "Verificar Stock" con la seleccion REAL
             # de FEFO -> solo lotes con lote real (no S/L) y stock>0.01 por lote,
             # excluyendo no-producibles (incl BLOQUEADO). Antes era un SUM plano que
@@ -3451,7 +3498,7 @@ def simular_produccion():
                               AND (estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO'))
                             GROUP BY lote HAVING stk > 0.01
                               AND (fv_real IS NULL OR TRIM(CAST(fv_real AS TEXT))='' OR date(fv_real) >= date('now', '-5 hours')))""",
-                      (mat_id,))
+                      (cod_bodega,))
         g_disp = round(c.fetchone()[0] or 0, 2)
         suf = g_disp >= g_req
         if not suf:

@@ -652,6 +652,34 @@ if not app.config.get("TESTING") and not os.environ.get("EOS_DISABLE_DAEMONS"):
 
 
 @app.before_request
+def _gate_diagnosticos():
+    """Los endpoints /diag/* son SOLO para administradores.
+
+    Hallazgo de la auditoría de seguridad (25-jul), verificado contra producción con un
+    `curl` anónimo: el hook de login solo cubre `/api/` (auth.py `require_auth_for_api`),
+    así que las 18 rutas `/diag/*` quedaban ABIERTAS A INTERNET. `/diag/formulas-dump`
+    devolvía TODAS las fórmulas maestras con código de MP, INCI y porcentaje; también el
+    maestro de materias primas, los MBR con sus pasos, ventas por SKU y el plan. Es la
+    propiedad intelectual completa de ÁNIMUS + Espagiria, y varias de esas rutas además
+    devolvían el traceback al cliente.
+
+    Son herramientas de diagnóstico de admin (nadie de la UI las llama · verificado con
+    grep sobre templates_py), así que gatearlas a ADMIN no le quita nada a la operación.
+    404 y no 403: a un anónimo no se le confirma siquiera que la ruta existe.
+    """
+    p = request.path or ''
+    if not p.startswith('/diag/'):
+        return None
+    try:
+        from config import ADMIN_USERS as _ADM
+    except Exception:
+        _ADM = set()
+    if session.get('compras_user') in _ADM:
+        return None
+    return jsonify({'error': 'No encontrado'}), 404
+
+
+@app.before_request
 def _attach_request_context():
     """Adjunta request_id (12 hex) y timestamp de inicio.
 
