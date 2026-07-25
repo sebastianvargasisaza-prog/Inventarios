@@ -152,3 +152,16 @@ def test_pagina_calibracion_abre(app):
     assert 'Bit' in html and 'calibraci' in html.lower()
     assert 'cortex.css' in html, 'la página debe usar el sistema de diseño'
     assert chr(8212) not in html, 'sin em-dash en la UI'
+
+
+def test_pagina_no_inyecta_widget_flotante(app):
+    """La bitácora va EMBEBIDA como pestaña de /aseguramiento: si se le inyecta el widget
+    flotante (campana + chat) sale duplicado sobre el del padre y, en la vista directa,
+    tapa los botones de acción de las últimas filas."""
+    c = _login(app, 'miguel')
+    html = c.get('/aseguramiento/calibracion').data.decode('utf-8')
+    assert '/api/notif/widget.js' not in html, 'no debe inyectar la campana (página embebida)'
+    assert '/api/chat/widget.js' not in html, 'no debe inyectar el chat (página embebida)'
+    # una página normal SÍ lo lleva (esto verifica que la exclusión es específica, no global)
+    otra = c.get('/aseguramiento').data.decode('utf-8')
+    assert '/api/notif/widget.js' in otra, 'la página contenedora sí debe llevar la campana'

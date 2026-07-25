@@ -726,7 +726,11 @@ def _inject_chat_widget(response):
         # chat-widget + notif solo si autenticado y NO en /chat /login /logout
         # 29-jun · estas páginas van EMBEBIDAS en iframe dentro del dashboard → NO inyectar el chat+campana
         # (si no, aparecen duplicados/solapados DENTRO del calendario · el dashboard padre ya los tiene).
-        _embebidas = ('/admin/plan-calendario', '/planta/kanban', '/admin/factibilidad-plan', '/admin/marcacion-envases')
+        # 25-jul · se suman las 2 páginas que viven como pestaña (iframe) de /aseguramiento:
+        # dentro del iframe salían campana+chat DUPLICADOS sobre los del padre, y en la vista
+        # directa el widget flotante tapaba los botones de acción de las últimas filas.
+        _embebidas = ('/admin/plan-calendario', '/planta/kanban', '/admin/factibilidad-plan',
+                      '/admin/marcacion-envases', '/aseguramiento/calibracion', '/admin/firmas-usuarios')
         # 9-jul · páginas de RÓTULO / impresión: NO inyectar campana+chat (flotan encima del rótulo
         # y tapan el QR/datos al imprimir · Sebastián). Cubre /rotulos, /rotulo-recepcion, /rotulo-recepcion-mee, etc.
         _es_impresion = path.startswith('/rotulo') or '/rotulos' in path
