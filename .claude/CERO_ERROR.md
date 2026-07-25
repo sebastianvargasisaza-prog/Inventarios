@@ -949,9 +949,26 @@ hacia adelante y **eso se come justo el colchón de 20 días** que la regla quie
    fines de semana en cuanto el endpoint valida días hábiles. Usar un helper "próximo día hábil"
    (ver `_prox_habil` en `test_plan_sellar_horizonte.py`), no un offset fijo.
 
+6. **Una acción cuyo efecto correcto DEPENDE DEL MOTIVO no se decide sola: se pregunta.**
+   Sebastián, sobre arrastrar un lote: *"si lo muevo porque no llegó la materia prima, el lote ya
+   va tarde; si el próximo se mueve pues llegará tarde. Diferente a que lo mueva porque quiero
+   adelantar algo y no altera los tiempos. Entonces depende."* El re-espaciado de la cadena corría
+   SIEMPRE (y encima dentro de un `except: pass`, moviendo N lotes sin audit_log — justo lo que
+   hizo desaparecer un plan entero el 19-may). Ahora: default = mover SOLO ese lote (lo no
+   destructivo), la respuesta informa `siguientes_en_cadena`, y la UI ofrece correr el resto sólo
+   cuando los hay (patrón "este / este y los siguientes" de un calendario con repeticiones).
+7. **Una capacidad que depende de un campo que NADIE escribe está muerta.** El re-espaciado exige
+   `produccion_programada.cadencia_dias`, pero de los 4 writers sólo lo escribía el generador
+   automático que Sebastián NO usa: en sus 324 lotes (todos del modal de horizonte) la columna
+   venía vacía, así que "mover la cadena" jamás se disparó. Al construir una feature que lee una
+   columna, verificá que el camino REAL del usuario la escriba (`grep` los INSERT de esa tabla).
+8. **`audit_log.registro_id` es TEXT** (el helper hace `str(...)`): compararlo contra un entero
+   pasa en SQLite y en PG revienta con `operator does not exist: text = smallint`.
+
 Verificado: el calendario de festivos es correcto (18/año, Pascua validada contra 5 años reales,
 Ley Emiliani). Tests `test_calendario_dias_habiles.py` (los 3 caminos aplican la misma regla) +
-`test_plan_festivos_clamp.py`. Gate PG 357 verde. Ver [[project_modal_calendario_unificado_16jul]].
+`test_plan_festivos_clamp.py` + `test_mover_lote_cadena.py`. Gate PG 367 verde.
+Ver [[project_modal_calendario_unificado_16jul]].
 
 ## ✅ DECISIONES CERRADAS · no volver a levantarlas como bug (25-jul)
 

@@ -14063,10 +14063,16 @@ def plan_programar_cadencia_desde_lote(lote_id):
         if any(abs((f_k - _fp).days) < 2 for _fp in _preservados) or any(abs((f_k - _fu).days) < 2 for _fu in _usadas):
             _saltados += 1
             continue
+        # `cadencia_dias` = el ritmo que el usuario definió ("tantos kilos cada tanto, tiralo para
+        # 2 años"). Sin guardarlo, el lote no sabe a qué cadena pertenece y "mover este y los
+        # siguientes" no puede funcionar: sólo lo escribía el generador automático, así que en las
+        # cadenas hechas a mano el re-espaciado nunca se disparaba.
         c.execute(
             "INSERT INTO produccion_programada (producto, fecha_programada, lotes, estado, origen, "
-            "cantidad_kg, meses_cobertura, kg_otro_cliente) VALUES (?, ?, 1, 'pendiente', 'eos_plan', ?, ?, ?)",
-            (producto, f_k.isoformat(), round(kg_por_lote + kg_otro_lote, 2), meses_col, round(kg_otro_lote, 2)))
+            "cantidad_kg, meses_cobertura, kg_otro_cliente, cadencia_dias) "
+            "VALUES (?, ?, 1, 'pendiente', 'eos_plan', ?, ?, ?, ?)",
+            (producto, f_k.isoformat(), round(kg_por_lote + kg_otro_lote, 2), meses_col,
+             round(kg_otro_lote, 2), interval_dias))
         creados.append(f_k.isoformat())
         _usadas.append(f_k)
     try:
@@ -14251,10 +14257,14 @@ def plan_programar_cadencia_producto():
             continue
         # cada lote reserva la porción "para otro cliente" (recurrente · ej. Renova 80% otro cliente) ·
         # cantidad_kg = Animus + otro; la cobertura Animus usa (cantidad_kg − otro).
+        # ver nota en el gemelo desde-lote: sin `cadencia_dias` guardada, "mover este y los
+        # siguientes" no puede funcionar en una cadena hecha a mano.
         c.execute(
             "INSERT INTO produccion_programada (producto, fecha_programada, lotes, estado, origen, "
-            "cantidad_kg, meses_cobertura, kg_otro_cliente) VALUES (?, ?, 1, 'pendiente', 'eos_plan', ?, ?, ?)",
-            (producto, f_k.isoformat(), round(kg_por_lote + kg_otro, 2), meses_col, round(kg_otro, 2)))
+            "cantidad_kg, meses_cobertura, kg_otro_cliente, cadencia_dias) "
+            "VALUES (?, ?, 1, 'pendiente', 'eos_plan', ?, ?, ?, ?)",
+            (producto, f_k.isoformat(), round(kg_por_lote + kg_otro, 2), meses_col,
+             round(kg_otro, 2), interval_dias))
         creados.append(f_k.isoformat())
         _usadas.append(f_k)
     try:
@@ -22984,6 +22994,32 @@ async function reprogramarLote(id, nuevaFecha, razon){
     // Sebastián 3-jul · actualizar en el sitio (sin re-descargar todo) · fallback a cargar() si el
     // lote no está en el cache local (ej. otra vista).
     if(!_moverLoteLocal(id, nuevaFecha)){ cargar(); }
+    // ¿CORRER TAMBIÉN LA CADENA? Depende del MOTIVO, y sólo lo sabe quien mueve (Sebastián 25-jul):
+    // un atraso por falta de MP normalmente arrastra los siguientes (si no, el próximo queda
+    // encima); un adelanto puntual que no altera los tiempos mueve sólo ese lote. Por eso se mueve
+    // SOLO este (instantáneo, sin preguntar) y se ofrece correr el resto únicamente si los hay.
+    try{
+      const _dOk = d || {};
+      const _n = Number(_dOk.siguientes_en_cadena) || 0;
+      if(_n > 0){
+        const _cd = Number(_dOk.cadencia_dias) || 0;
+        if(confirm('Movido este lote.\n\nTiene ' + _n + ' lote(s) más adelante en su cadena'
+                   + (_cd ? ' (cada ' + _cd + ' días)' : '') + '.\n\n'
+                   + 'Aceptar = correr también los siguientes (se atrasó la producción).\n'
+                   + 'Cancelar = dejar el resto donde está (ajuste puntual).')){
+          const rc = await fetch('/api/plan/proximas/' + id + '/reprogramar', {
+            method:'POST',
+            headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+            credentials: 'same-origin',
+            body: JSON.stringify({nueva_fecha: nuevaFecha, razon: razon || 'drag_calendario',
+                                  reprogramar_cadena: true, skip_validacion_dia: true}),
+          });
+          const dc = await rc.json().catch(()=>({}));
+          if(rc.ok){ _toastCal('Cadena recolocada · ' + (dc.cadena_recolocados || 0) + ' lote(s)'); cargar(); }
+          else { alert('No se pudo correr la cadena: ' + ((dc && dc.error) || rc.status)); }
+        }
+      }
+    }catch(e){}
   } catch(e){
     alert('❌ Error de red: ' + e.message);
   }
@@ -25043,6 +25079,11 @@ def reprogramar_proxima(pid):
         nueva_fecha: str YYYY-MM-DD (requerido)
         razon: str (opcional · "falta_mp", "operario_ausente", etc.)
         skip_validacion_dia: bool (default False · admin override)
+        reprogramar_cadena: bool (default False) · si True, los lotes SIGUIENTES del mismo
+            producto se recolocan a nueva_fecha + k×cadencia. Lo decide el MOTIVO del
+            movimiento (Sebastián 25-jul): un atraso por falta de MP normalmente arrastra
+            la cadena (si no, el próximo lote queda encima); un adelanto puntual que no
+            altera los tiempos de producción mueve SOLO ese lote. Default = solo este.
 
     Reglas aplicadas si skip_validacion_dia=False:
         - No festivo colombiano · no fin de semana
@@ -25064,6 +25105,9 @@ def reprogramar_proxima(pid):
     nueva_fecha = (body.get("nueva_fecha") or "").strip()
     razon = (body.get("razon") or "").strip()
     skip_val = bool(body.get("skip_validacion_dia"))
+    # ¿arrastrar también los lotes SIGUIENTES de la cadena? Lo decide quien mueve, según el
+    # motivo (ver el bloque de re-espaciado más abajo). Default: NO, mover solo este lote.
+    reprog_cadena = bool(body.get("reprogramar_cadena"))
     # Sebastián 3-jul · "forzar (normalizar)": mover un lote YA ejecutado para organizar el calendario
     # según MyBatch · cambia SOLO la fecha (registro), NO toca el inventario (la producción ya se hizo).
     forzar_norm = bool(body.get("forzar_normalizar"))
@@ -25193,35 +25237,52 @@ def reprogramar_proxima(pid):
         cur.execute(
             "UPDATE produccion_programada SET estado='pendiente', inicio_real_at=NULL, "
             "fin_real_at=NULL, inventario_descontado_at=NULL, kg_real=NULL WHERE id=?", (pid,))
-    # Sebastián 16-jun · "al moverlas se autocalcula y modifica": si el lote es parte de
-    # una cadena del Plan (tiene cadencia_dias), re-espaciar los lotes SIGUIENTES del
-    # mismo producto a nueva_fecha + k×cadencia (días hábiles). El usuario mueve a una
-    # fecha pasada lo ya producido y el resto de la cadena se recoloca solo.
-    try:
-        _cadr = cur.execute("SELECT cadencia_dias FROM produccion_programada WHERE id=?", (pid,)).fetchone()
-        _cad = int(_cadr[0]) if _cadr and _cadr[0] else 0
-        if _cad > 0:
+    # ARRASTRAR LA CADENA · lo decide el MOTIVO del movimiento, no el producto (Sebastián 25-jul):
+    #   "si muevo el lote porque no llegó la materia prima, el lote ya va tarde; si el próximo se
+    #    mueve pues llegará tarde. Diferente a que lo mueva porque quiero adelantar algo y no
+    #    altera los tiempos de producción. Entonces depende."
+    # Por eso NO se decide sola: el caller pide explícitamente `reprogramar_cadena:true` (la UI
+    # pregunta "¿solo este o también los siguientes?", igual que un calendario con repeticiones).
+    # Default = mover SOLO este lote, que es lo no destructivo.
+    _recolocados = []
+    _cad = 0
+    _sig = []
+    _cadr = cur.execute("SELECT cadencia_dias FROM produccion_programada WHERE id=?", (pid,)).fetchone()
+    _cad = int(_cadr[0]) if _cadr and _cadr[0] else 0
+    if _cad > 0:
+        # FIX 17-jun (#5): excluir 'esperando_recurso' del re-espaciado · un lote
+        # pausado por falta de recurso NO se puede mover directo (409), así que
+        # tampoco debe saltar de fecha como efecto colateral de mover otro (M5
+        # coherencia: la misma regla en move directo y en re-espaciado).
+        # Se CUENTAN siempre (para poder ofrecer "¿corro también los siguientes?"),
+        # pero sólo se MUEVEN si el caller lo pidió.
+        _sig = cur.execute(
+            "SELECT id, substr(fecha_programada,1,10) FROM produccion_programada "
+            "WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) "
+            "AND id<>? AND COALESCE(cadencia_dias,0)>0 "
+            "AND COALESCE(estado,'') NOT IN ('cancelado','completado','esperando_recurso') "
+            "AND fin_real_at IS NULL AND inicio_real_at IS NULL "
+            "AND substr(fecha_programada,1,10) > ? ORDER BY fecha_programada",
+            (producto, pid, (fecha_antes or '')[:10])).fetchall()
+        if reprog_cadena and _sig:
             import blueprints.auto_plan as _ap2
             from datetime import date as _d2, timedelta as _t2
             _base = _d2.fromisoformat(nueva_fecha)
-            # FIX 17-jun (#5): excluir 'esperando_recurso' del re-espaciado · un lote
-            # pausado por falta de recurso NO se puede mover directo (409), así que
-            # tampoco debe saltar de fecha como efecto colateral de mover otro (M5
-            # coherencia: la misma regla en move directo y en re-espaciado).
-            _sig = cur.execute(
-                "SELECT id FROM produccion_programada WHERE UPPER(TRIM(producto))=UPPER(TRIM(?)) "
-                "AND id<>? AND COALESCE(cadencia_dias,0)>0 "
-                "AND COALESCE(estado,'') NOT IN ('cancelado','completado','esperando_recurso') "
-                "AND fin_real_at IS NULL AND inicio_real_at IS NULL "
-                "AND substr(fecha_programada,1,10) > ? ORDER BY fecha_programada",
-                (producto, pid, (fecha_antes or '')[:10])).fetchall()
             _k = 1
-            for (_sid,) in _sig:
+            for _sid, _fant in _sig:
                 _nf = _ap2._next_dia_produccion(_base + _t2(days=_cad * _k)).isoformat()
                 cur.execute("UPDATE produccion_programada SET fecha_programada=? WHERE id=?", (_nf, _sid))
+                _recolocados.append({'id': _sid, 'antes': _fant, 'despues': _nf})
                 _k += 1
-    except Exception:
-        pass
+            # Mover producción programada SIN dejar rastro es justo lo que hizo desaparecer un
+            # plan entero el 19-may. Antes esto vivía dentro de un `except: pass` y movía N lotes
+            # en silencio: ni auditoría ni error visible.
+            audit_log(cur, usuario=user, accion="REPROGRAMAR_CADENA",
+                      tabla="produccion_programada", registro_id=pid,
+                      antes={"producto": producto, "cadencia_dias": _cad,
+                             "lotes": [r['antes'] for r in _recolocados]},
+                      despues={"disparado_por_lote": pid, "razon": razon,
+                               "lotes": [r['despues'] for r in _recolocados]})
     conn.commit()
     audit_log(cur, usuario=user, accion="REPROGRAMAR_PRODUCCION_PROGRAMADA",
               tabla="produccion_programada", registro_id=pid,
@@ -25233,7 +25294,14 @@ def reprogramar_proxima(pid):
 
     return jsonify({"ok": True, "id": pid, "producto": producto,
                     "fecha_antes": fecha_antes, "fecha_nueva": nueva_fecha,
-                    "razon": razon or None})
+                    "razon": razon or None,
+                    # cuántos lotes SIGUIENTES se recolocaron (0 si se movió solo este)
+                    "cadena_recolocados": len(_recolocados),
+                    "cadena_detalle": _recolocados,
+                    # cuántos quedan por detrás en la cadena · la UI usa esto para ofrecer
+                    # "¿corro también los siguientes?" SOLO cuando aplica
+                    "siguientes_en_cadena": (0 if _recolocados else len(_sig)),
+                    "cadencia_dias": _cad or None})
 
 
 @bp.route("/api/plan/proximas/<int:pid>/cantidad", methods=["POST"])
