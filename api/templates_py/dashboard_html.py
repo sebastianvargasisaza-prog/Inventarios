@@ -26039,11 +26039,42 @@ async function ckMarcar(itemId, estado){
         // Sebastián 10-jul · modelo canónico manual: badge/estado NEUTRO, sin sugerencias
         // (adelantar/atrasar/tendencia/incompleta) · solo muestra si hay o no cadena manual.
         if (window.__SOLO_MANUAL) {
+          // FIX 25-jul (Sebastián: "revisá que calcule perfecto, que no cometa error") · el chip
+          // decía "✅ N lotes" en VERDE aunque la cadena estuviera mal dimensionada. Caso real:
+          // LIP SERUM con 36 lotes de 15 kg mensuales cuando el motor calcula 5.9 kg → la app ya
+          // marcaba "sobra-stock 400d…1030d" lote por lote, pero ESO estaba escondido dentro del
+          // modal y la fila decía verde. Ahora el chip resume la SALUD de la cadena con el mismo
+          // clasificador que usa el detalle (_saludCadena): un verde tiene que significar sano.
+          var _sal = {}, _nTarde = 0, _nSobra = 0;
+          try {
+            _sal = _saludCadena(p.planificacion || [], p) || {};
+            Object.keys(_sal).forEach(function(k){
+              var _s = _sal[k];
+              if (!_s) return;
+              if (_s.colchon < 0) _nTarde++;
+              else if (_s.colchon > (_s.diasLote || 60)) _nSobra++;
+            });
+          } catch(e) {}
+          var _cadTit = 'Lotes programados (cadena manual)';
+          var _cadBg = '#dcfce7', _cadFg = '#15803d', _cadIco = '📅';
+          if (_nTarde > 0) {
+            _cadBg = '#fee2e2'; _cadFg = '#b91c1c'; _cadIco = '🔴';
+            _cadTit = _nTarde + ' lote(s) llegan DESPUÉS de que se agote el stock (quiebre) · abrí Programar y adelantalos.';
+          } else if (_nSobra >= 3) {
+            _cadBg = '#cffafe'; _cadFg = '#0e7490'; _cadIco = '🔵';
+            _cadTit = _nSobra + ' lote(s) entran cuando todavía te sobra stock: la cadena SOBRE-PRODUCE. '
+                    + 'Abrí Programar y espaciá la cadencia o bajá los kg por lote.';
+          }
           _cadBadge = _nCad > 0
-            ? '<span title="Lotes programados (cadena manual)" style="background:#dcfce7;color:#15803d;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:800">📅 ' + _nCad + ' lote' + (_nCad === 1 ? '' : 's') + '</span>'
+            ? '<span title="' + _cadTit + '" style="background:' + _cadBg + ';color:' + _cadFg + ';padding:2px 7px;border-radius:5px;font-size:10px;font-weight:800">' + _cadIco + ' ' + _nCad + ' lote' + (_nCad === 1 ? '' : 's')
+              + (_nTarde > 0 ? ' · ' + _nTarde + ' tarde' : (_nSobra >= 3 ? ' · sobra-stock' : '')) + '</span>'
             : '<span title="Sin cadena · programala con el botón Programar" style="background:#f1f5f9;color:#64748b;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:800">⚪ sin programar</span>';
-          _al = _nCad > 0 ? ('📅 ' + _nCad + ' lote' + (_nCad === 1 ? '' : 's') + ' programado' + (_nCad === 1 ? '' : 's')) : '⚪ sin programar';
-          _alc = _nCad > 0 ? '#16a34a' : '#94a3b8';
+          // FIX 25-jul (Sebastián: "en plan 2 años está repetido el dato, dejemos uno") · acá se
+          // pisaban las DOS líneas de la celda con el MISMO conteo: el chip decía "📅 36 lotes" y
+          // debajo se repetía "📅 36 lotes programados". El chip ya lo dice; la 2ª línea queda
+          // vacía y la celda no la pinta.
+          _al = '';
+          _alc = '#94a3b8';
           _proxTxt = '';
         }
         html += '<tr class="necx-prow" style="border-top:1px solid #e2e8f0;background:' + _rowBg + ';border-left:' + _rowBorderL + ';opacity:' + _rowOpacity + '">';
@@ -26067,14 +26098,31 @@ async function ckMarcar(itemId, estado){
               + '</td>';
         // Alcanza · LIMPIO (Sebastián 4-jul): cobertura (color) + próxima sugerida · sin el ruido
         // "lote atrasado sin ejecutar" (eso ahora va como alerta accionable en la columna Plan·acción).
+        // FIX 25-jul (Sebastián: "revisemos que el alcanza calcule perfecto") · el cálculo ESTÁ
+        // bien, pero la fila no lo explicaba: en un multi-tono la cobertura la marca el tono que
+        // se AGOTA PRIMERO (regla de Alejandro 5-jul: el bulk se produce junto, pero si un tono
+        // está en 0 llegás sin ese color). Como al lado se muestran el stock y la velocidad
+        // AGREGADOS, un LIP SERUM con 517 uds y 11.8/día salía "0d" y parecía un error del
+        // sistema. Ahora la celda dice de dónde sale el número.
+        var _cuelloTxt = '';
+        try {
+          var _tt = (p.tonos || []).filter(function(t){ return t && t.cuello; });
+          if (_tt.length && (p.n_tonos || 0) > 1) {
+            var _cl = String(_tt[0].tono_label || _tt[0].sku || '').slice(0, 18);
+            _cuelloTxt = '<div style="font-size:9px;color:#b45309;font-weight:700" '
+                       + 'title="En un producto multi-tono la cobertura la marca el tono que se agota primero: si ese falta, no podés despachar la línea completa. El stock y la venta de la izquierda son del producto ENTERO.">'
+                       + 'cuello: ' + _cl + '</div>';
+          }
+        } catch(e) {}
         html += '<td style="padding:10px 8px;text-align:center">'
               + '<div style="font-weight:700;color:' + diasColorReal + '">' + dias + '</div>'
+              + _cuelloTxt
               + (_proxTxt ? ('<div style="font-size:9px;color:#64748b">' + _proxTxt + '</div>') : '')
               + '</td>';
         // Plan 2 años · alerta inteligente (estado de cadena + sugerencia accionable)
         html += '<td style="padding:10px 8px;text-align:left">'
               + '<div>' + _cadBadge + '</div>'
-              + '<div style="font-size:10px;color:' + _alc + ';font-weight:700;margin-top:3px">' + _al + '</div>'
+              + (_al ? ('<div style="font-size:10px;color:' + _alc + ';font-weight:700;margin-top:3px">' + _al + '</div>') : '')
               + '</td>';
         // Programar
         html += '<td style="padding:10px 8px;text-align:right"><button onclick="abrirPlanProduccion(' + idx + ')" style="background:#6d28d9;color:#fff;border:none;padding:7px 16px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">📅 Programar</button></td>';
