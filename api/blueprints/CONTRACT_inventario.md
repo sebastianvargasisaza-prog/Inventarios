@@ -374,3 +374,19 @@ que la página `/tecnica`. Antes solo exigía sesión, así que cualquier usuari
 el endpoint a mano — verificado en la auditoría con una sesión de planta. Es dato regulado
 INVIMA: define qué y cuánto se dispensa, y alimenta el descuento FEFO, la compra y el MBR.
 Patrón M32: el gate de la PÁGINA y el de la MUTACIÓN son dos controles distintos.
+
+## 🔄 La caché del dashboard se saltea en tests (25-jul · auditoría)
+
+`GET /api/inventario` cachea 45 s por worker (PERF 9-jul). **Desde el 25-jul NO aplica si
+`app.config['TESTING']` o si llega `?fresco=1`.** Con la caché activa, un test que leía el
+baseline, sembraba datos y volvía a leer recibía la respuesta VIEJA: 3 KPIs de Planta (lotes
+vencidos, críticos a 30 días, cuarentena) figuraban rotos con el endpoint sano.
+**Regla: toda caché de endpoint debe poder saltearse, o los tests dejan de ser deterministas
+y esconden bugs reales.**
+
+## 🚪 `/api/mee` tiene UNA sola ruta de creación (25-jul)
+
+`POST /api/mee` lo atiende **`inventario.mee_crear`** (gate `_require_planta_write`). Antes
+`compras.handle_mee` también declaraba POST con un gate más estricto (`_require_compras_write`)
+que **nunca corría**, porque Werkzeug resuelve la primera regla registrada — daba la ilusión
+de un control que no existía. `compras.handle_mee` quedó GET-only (catálogo de envases).
