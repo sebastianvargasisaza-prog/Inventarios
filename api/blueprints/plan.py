@@ -5925,7 +5925,7 @@ def plan_salud_cadenas():
         return jsonify({'ok': False, 'error': 'no se pudo leer necesidades'}), 500
     BUFFER_REORDEN = 20                 # mismo valor que el motor de cadencia y que la UI
     hoy = _hoy_colombia()
-    items, resumen = [], {'sobre': 0, 'corto': 0, 'ok': 0, 'sin_datos': 0, 'sin_cadena': 0}
+    items, resumen = [], {'sobre': 0, 'corto': 0, 'ok': 0, 'lanzamiento': 0, 'sin_datos': 0, 'sin_cadena': 0}
     for cli in (_data.get('clientes') or []):
         for p in (cli.get('productos') or []):
             prod = p.get('producto_nombre') or ''
@@ -5970,8 +5970,16 @@ def plan_salud_cadenas():
             ratio = (kg_lote / kg_req) if kg_req > 0 else 0
             # días que dura UN lote en góndola · lo que el usuario siente como "sobra"
             dur_lote = round((kg_lote * 1000.0 / ml) / vel) if vel > 0 else 0
+            # LANZAMIENTOS (Sebastián 25-jul, sobre BLUSH BALM y LIP SERUM): "son lanzamientos
+            # recientes que van vendiendo cada vez más y se demoran mucho, por eso los hacemos
+            # así". El veredicto se calcula con la velocidad de venta de HOY, que sub-estima a un
+            # producto en rampa: producir de más a propósito es la decisión correcta ahí. Si la
+            # tendencia viene en ascenso fuerte (mismo umbral que usa la UI para "considerá
+            # adelantar"), NO se marca como sobre-producción: se marca como lanzamiento, para que
+            # el diagnóstico deje de gritar sobre algo que es deliberado.
+            _tend = float(p.get('tendencia') or 0)
             if ratio >= 1.3:
-                est = 'sobre'
+                est = 'lanzamiento' if _tend >= 0.08 else 'sobre'
             elif ratio <= 0.9:
                 est = 'corto'
             else:
@@ -5986,6 +5994,7 @@ def plan_salud_cadenas():
                 'kg_exceso_total': round((kg_lote - kg_req) * len(fut), 1),
                 'dias_que_dura_un_lote': dur_lote,
                 'vende_uds_dia': round(vel, 2), 'ml_unidad': round(ml, 1),
+                'tendencia_pct': round(_tend * 100),   # por qué NO es sobre-producción si es lanzamiento
                 # sugerencias: o achicar el lote a lo necesario, o espaciar la cadencia
                 'sugerido_kg_lote': kg_req,
                 'sugerido_cadencia_dias': (max(1, int(round((kg_lote * 1000.0 / ml) / vel)) - BUFFER_REORDEN)
