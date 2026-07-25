@@ -4186,6 +4186,27 @@ def calidad_oos_update(oos_id):
 # vigencia, hoja de vida y cronograma 2026 importado del xlsx oficial.
 # ════════════════════════════════════════════════════════════════════════
 
+def _autorizados_equipos():
+    """Quién puede registrar eventos de equipos (calibración/mantenimiento).
+
+    La BITÁCORA DE CALIBRACIÓN es de ASEGURAMIENTO (Miguel · decisión de Sebastián 21-jul),
+    pero los endpoints vivían gateados solo a CALIDAD_USERS → Miguel VEÍA su bitácora y no
+    podía registrar nada (403 silencioso · es exactamente el patrón M32: al dividir un cargo,
+    el dueño del módulo pierde la escritura porque el gate de la página y el de la mutación
+    son DOS controles distintos).
+    """
+    from config import ADMIN_USERS as _ADM
+    try:
+        from config import CALIDAD_USERS as _CAL
+    except Exception:
+        _CAL = set()
+    try:
+        from config import ASEGURAMIENTO_USERS as _ASEG
+    except Exception:
+        _ASEG = set()
+    return set(_CAL) | set(_ASEG) | set(_ADM)
+
+
 @bp.route('/api/calidad/equipos/dashboard', methods=['GET'])
 def calidad_equipos_dashboard():
     """KPIs + lista de equipos vencidos/próximos. Pantalla principal del módulo."""
@@ -4372,20 +4393,16 @@ def calidad_equipos_registrar_evento(codigo):
       tipo_evento: str (req · uno de los CHECK constraint),
       fecha_proxima: str opt (cuándo vence)
       estado: str opt (default 'completado'),
-      responsable, empresa_externa, certificado_url, resultado, observaciones
+      responsable, empresa_externa, certificado_url, resultado, observaciones,
+      numero_oc: str opt (OC con que se compró la calibración · trazabilidad compra→registro)
     }
 
-    RBAC: solo CALIDAD_USERS o ADMIN_USERS pueden registrar.
+    RBAC: CALIDAD + ASEGURAMIENTO (Miguel · dueño de la bitácora de calibración) + ADMIN.
     """
     user = session.get('compras_user', '')
-    try:
-        from config import CALIDAD_USERS, ADMIN_USERS
-        autorizados = set(CALIDAD_USERS) | set(ADMIN_USERS)
-    except ImportError:
-        from config import ADMIN_USERS
-        autorizados = set(ADMIN_USERS)
+    autorizados = _autorizados_equipos()
     if user not in autorizados:
-        return jsonify({'error': 'Solo Calidad o Admin pueden registrar eventos de equipos'}), 403
+        return jsonify({'error': 'Solo Calidad, Aseguramiento o Admin pueden registrar eventos de equipos'}), 403
 
     conn = get_db(); c = conn.cursor()
     eq = c.execute("SELECT 1 FROM equipos_planta WHERE codigo=?", (codigo,)).fetchone()
@@ -4406,17 +4423,18 @@ def calidad_equipos_registrar_evento(codigo):
     if estado not in ('completado','programado','en_curso','cancelado'):
         return jsonify({'error': 'estado inválido'}), 400
 
+    _oc = (str(d.get('numero_oc') or '')).strip()[:40]
     try:
         c.execute("""
             INSERT INTO equipos_eventos
               (equipo_codigo, tipo_evento, fecha, fecha_proxima, estado,
                responsable, empresa_externa, certificado_url, resultado,
-               observaciones, creado_por)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               observaciones, creado_por, numero_oc)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (codigo, tipo, fecha, fecha_proxima, estado,
               d.get('responsable'), d.get('empresa_externa'),
               d.get('certificado_url'), d.get('resultado'),
-              d.get('observaciones'), user))
+              d.get('observaciones'), user, _oc))
         evento_id = c.lastrowid
         # Si es completado y reactiva, actualizar estado_operacional
         if tipo in ('reactivacion','calibracion','verificacion_semestral') and estado == 'completado':
@@ -4455,14 +4473,8 @@ def calidad_equipos_cronograma_completar(cron_id):
     Body opcional: {observaciones, responsable}
     """
     user = session.get('compras_user', '')
-    try:
-        from config import CALIDAD_USERS, ADMIN_USERS
-        autorizados = set(CALIDAD_USERS) | set(ADMIN_USERS)
-    except ImportError:
-        from config import ADMIN_USERS
-        autorizados = set(ADMIN_USERS)
-    if user not in autorizados:
-        return jsonify({'error': 'Solo Calidad o Admin'}), 403
+    if user not in _autorizados_equipos():
+        return jsonify({'error': 'Solo Calidad, Aseguramiento o Admin'}), 403
 
     conn = get_db(); c = conn.cursor()
     row = c.execute("""

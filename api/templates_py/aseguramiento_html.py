@@ -114,6 +114,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   <div class="tab" data-tip="Consultas ad-hoc para auditorías INVIMA: audit-trail, trazabilidad por lote y por cliente, exportables a CSV." data-tip-pos="bottom" onclick="goTab('tab-reportes')">&#x1F4CB; Reportes INVIMA</div>
   <div class="tab" data-tip="Detección y resolución de códigos de documento repetidos o inconsistentes en el SGD (higiene del sistema documental)." data-tip-pos="bottom" onclick="goTab('tab-conf')">&#x26A0;&#xFE0F; Conflictos SGD</div>
   <div class="tab" data-tip="Firmas manuscritas del personal: la rúbrica que se estampa en los documentos al firmar con contraseña (Part 11 §11.50) y el registro de personas nuevas en la inducción (Aseguramiento hace el onboarding)." data-tip-pos="bottom" onclick="goTab('tab-firmas')">&#x270D;&#xFE0F; Firmas</div>
+  <div class="tab" data-tip="Bitácora de calibración de equipos (INVIMA): cuándo se calibró cada balanza/equipo, cuándo vence la próxima, quién la hizo, con qué certificado y con qué orden de compra." data-tip-pos="bottom" onclick="goTab('tab-calib')">&#x1F527; Calibración</div>
 </div>
 
 <div class="main">
@@ -1086,6 +1087,14 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   <iframe id="firmas-ifr" src="about:blank" title="Firmas del personal" style="width:100%;height:78vh;border:1px solid #e5e7eb;border-radius:12px;background:#fff"></iframe>
 </div>
 
+<div id="tab-calib" class="pane">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+    <div style="font-size:13px;color:#475569">&#x1F527; Bitácora de calibración de equipos &middot; cuándo se calibró cada uno, cuándo vence la próxima y con qué certificado. Un equipo vencido no puede usarse para fabricar.</div>
+    <a href="/aseguramiento/calibracion" target="_blank" class="btn btn-ghost btn-sm">Abrir en pestaña nueva &#8599;</a>
+  </div>
+  <iframe id="calib-ifr" src="about:blank" title="Bitácora de calibración" style="width:100%;height:78vh;border:1px solid #e5e7eb;border-radius:12px;background:#fff"></iframe>
+</div>
+
 </div>
 <script>
 function _esc(s){return String(s||'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
@@ -1215,7 +1224,7 @@ async function withBusy(btn, fn){
   finally { btn.disabled = false; if(btn.textContent !== prev) btn.textContent = prev; }
 }
 
-var _tabIds = ['tab-dash','tab-indic','tab-mis-tareas','tab-sgd','tab-cap','tab-mis-cap','tab-desv','tab-cambios','tab-quejas','tab-recalls','tab-gob','tab-reportes','tab-conf','tab-firmas'];
+var _tabIds = ['tab-dash','tab-indic','tab-mis-tareas','tab-sgd','tab-cap','tab-mis-cap','tab-desv','tab-cambios','tab-quejas','tab-recalls','tab-gob','tab-reportes','tab-conf','tab-firmas','tab-calib'];
 function goTab(id){
   document.querySelectorAll('.tab').forEach((t,i)=>{t.classList.toggle('active',_tabIds[i]===id);});
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
@@ -1234,6 +1243,7 @@ function goTab(id){
   else if(id==='tab-reportes') repInit();
   else if(id==='tab-conf') loadConflictos();
   else if(id==='tab-firmas'){ var f=document.getElementById('firmas-ifr'); if(f && String(f.src||'').indexOf('firmas-usuarios')<0) f.src='/admin/firmas-usuarios'; }
+  else if(id==='tab-calib'){ var g=document.getElementById('calib-ifr'); if(g && String(g.src||'').indexOf('calibracion')<0) g.src='/aseguramiento/calibracion'; }
 }
 
 // === MIS TAREAS · vista consolidada del usuario =======================

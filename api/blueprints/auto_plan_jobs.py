@@ -1929,7 +1929,9 @@ def job_equipos_vencimientos(app):
                 push_notif_multi(
                     destinatarios, 'capa', titulo,
                     body='\n'.join(cuerpo_lines),
-                    link='/calidad', remitente='cron-equipos',
+                    # La campana lleva DIRECTO a la bitácora de calibración (Aseguramiento ·
+                    # Miguel), no al módulo entero de Calidad: ahí se registra la calibración.
+                    link='/aseguramiento/calibracion', remitente='cron-equipos',
                     importante=bool(vencidos or urgentes),
                 )
             except Exception as e:

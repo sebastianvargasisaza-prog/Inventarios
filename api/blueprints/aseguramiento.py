@@ -4199,3 +4199,161 @@ def pqr_inbox_descartar(iid):
                registro_id=iid, despues={'motivo': motivo[:200]})
     conn.commit()
     return jsonify({'ok': True})
+
+
+# ════════════════════════════════════════════════════════════════════════
+# BITÁCORA DE CALIBRACIÓN DE EQUIPOS · INVIMA (Sebastián 21-jul)
+# "Importante saber CUÁNDO se calibró cada equipo y cuándo vence la próxima."
+# Vive en ASEGURAMIENTO (Miguel), NO en Compras/Recepción: las OCs de calibración
+# (CI Balanzas de Colombia, etc.) son un cargo administrativo, no una recepción.
+# Acá es LECTURA; el registro usa la ruta canónica que ya existe
+# POST /api/calidad/equipos/<codigo>/registrar-evento (M3 · no se reimplementa).
+# ════════════════════════════════════════════════════════════════════════
+
+_CAL_DIAS_AVISO = 30  # ventana de "próxima a vencer" · igual que el cron de la campana
+
+
+def _cal_estado(proxima, hoy_iso):
+    """Estado de calibración de un equipo. UNA sola regla para la bitácora, los KPIs y el
+    color del chip (M5: el número que se MUESTRA es el que DECIDE)."""
+    if not proxima:
+        return 'sin_calibrar', None
+    try:
+        dias = (date.fromisoformat(proxima[:10]) - date.fromisoformat(hoy_iso)).days
+    except Exception:
+        return 'sin_calibrar', None
+    if dias < 0:
+        return 'vencido', dias
+    if dias <= _CAL_DIAS_AVISO:
+        return 'proximo', dias
+    return 'vigente', dias
+
+
+def _autorizados_lectura_calibracion():
+    """Ve la bitácora quien la usa o la audita: Aseguramiento, Calidad, Planta y Admin.
+    El cron de la campana ya avisa a Calidad y a Aseguramiento; ambos deben poder abrirla."""
+    try:
+        from config import PLANTA_USERS as _PL
+    except Exception:
+        _PL = set()
+    return _autorizados_escritura() | set(_PL)
+
+
+@bp.route('/api/aseguramiento/calibracion', methods=['GET'])
+def aseguramiento_calibracion():
+    """Bitácora: cada equipo activo con su última calibración, la próxima y su estado.
+
+    Dos queries planas (equipos + eventos) y el "último por equipo" se arma en Python: nada
+    de subquery correlacionada por fila (N×M) ni GROUP BY parcial que en PG es un 500 (M12b).
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    hoy = _hoy_co().isoformat()
+    equipos = c.execute(
+        "SELECT codigo, nombre, COALESCE(area_codigo,''), COALESCE(tipo,''), "
+        "COALESCE(ubicacion_raw,''), COALESCE(estado_operacional,'') "
+        "FROM equipos_planta WHERE COALESCE(activo,1)=1 ORDER BY codigo").fetchall()
+    ultimo = {}
+    try:
+        for r in c.execute(
+                "SELECT equipo_codigo, COALESCE(fecha,''), COALESCE(fecha_proxima,''), "
+                "COALESCE(responsable,''), COALESCE(empresa_externa,''), COALESCE(certificado_url,''), "
+                "COALESCE(resultado,''), COALESCE(numero_oc,'') "
+                "FROM equipos_eventos WHERE tipo_evento='calibracion' "
+                "AND COALESCE(estado,'') <> 'cancelado' ORDER BY fecha ASC, id ASC").fetchall():
+            ultimo[r[0]] = r  # ORDER ASC → la última que queda es la más reciente
+    except Exception as e:
+        log.warning('bitacora calibracion · lectura de eventos fallo: %s', e)
+    items = []
+    kpis = {'total': 0, 'vigentes': 0, 'proximos': 0, 'vencidos': 0, 'sin_calibrar': 0}
+    _kmap = {'vigente': 'vigentes', 'proximo': 'proximos', 'vencido': 'vencidos',
+             'sin_calibrar': 'sin_calibrar'}
+    for cod, nom, area, tipo, ubic, est_op in equipos:
+        ev = ultimo.get(cod)
+        proxima = (ev[2] if ev else '') or ''
+        estado, dias = _cal_estado(proxima, hoy)
+        kpis['total'] += 1
+        kpis[_kmap[estado]] += 1
+        items.append({
+            'codigo': cod, 'nombre': nom or '', 'area': area, 'tipo': tipo,
+            'ubicacion': ubic, 'estado_operacional': est_op,
+            'ultima': ((ev[1] if ev else '') or '')[:10], 'proxima': proxima[:10],
+            'dias': dias, 'estado': estado,
+            'responsable': (ev[3] if ev else ''), 'empresa': (ev[4] if ev else ''),
+            'certificado_url': (ev[5] if ev else ''), 'resultado': (ev[6] if ev else ''),
+            'numero_oc': (ev[7] if ev else ''),
+        })
+    _orden = {'vencido': 0, 'proximo': 1, 'sin_calibrar': 2, 'vigente': 3}
+    items.sort(key=lambda x: (_orden[x['estado']],
+                              x['dias'] if x['dias'] is not None else 9999, x['codigo']))
+    return jsonify({'ok': True, 'hoy': hoy, 'dias_aviso': _CAL_DIAS_AVISO,
+                    'kpis': kpis, 'items': items,
+                    'puede_registrar': session.get('compras_user', '') in _autorizados_escritura()})
+
+
+@bp.route('/api/aseguramiento/calibracion/<path:codigo>/historial', methods=['GET'])
+def aseguramiento_calibracion_historial(codigo):
+    """Historial completo de calibraciones de un equipo (lo que pide una auditoría INVIMA)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    eq = c.execute("SELECT codigo, nombre, COALESCE(area_codigo,''), COALESCE(tipo,'') "
+                   "FROM equipos_planta WHERE codigo=?", (codigo,)).fetchone()
+    if not eq:
+        return jsonify({'error': 'equipo no encontrado'}), 404
+    filas = []
+    try:
+        for r in c.execute(
+                "SELECT id, COALESCE(fecha,''), COALESCE(fecha_proxima,''), COALESCE(estado,''), "
+                "COALESCE(responsable,''), COALESCE(empresa_externa,''), COALESCE(certificado_url,''), "
+                "COALESCE(resultado,''), COALESCE(observaciones,''), COALESCE(numero_oc,''), "
+                "COALESCE(creado_por,''), COALESCE(creado_en,'') "
+                "FROM equipos_eventos WHERE equipo_codigo=? AND tipo_evento='calibracion' "
+                "ORDER BY fecha DESC, id DESC LIMIT 200", (codigo,)).fetchall():
+            filas.append({'id': r[0], 'fecha': (r[1] or '')[:10], 'proxima': (r[2] or '')[:10],
+                          'estado': r[3], 'responsable': r[4], 'empresa': r[5],
+                          'certificado_url': r[6], 'resultado': r[7], 'observaciones': r[8],
+                          'numero_oc': r[9], 'creado_por': r[10], 'creado_en': (r[11] or '')[:19]})
+    except Exception as e:
+        log.warning('historial calibracion %s fallo: %s', codigo, e)
+    return jsonify({'ok': True, 'equipo': {'codigo': eq[0], 'nombre': eq[1] or '',
+                                           'area': eq[2], 'tipo': eq[3]}, 'eventos': filas})
+
+
+@bp.route('/api/aseguramiento/calibracion/ocs-sugeridas', methods=['GET'])
+def aseguramiento_calibracion_ocs():
+    """OCs de calibración compradas · para anclar el registro a la compra (trazabilidad).
+
+    Sebastián 21-jul: las OCs de calibración caían en /recepcion sin sentido y se marcaron
+    como cargo administrativo. Acá se recuperan para que al registrar la calibración quede
+    CON QUÉ ORDEN se pagó: compra → registro → certificado.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    c = get_db().cursor()
+    out = []
+    try:
+        for r in c.execute(
+                "SELECT numero_oc, COALESCE(proveedor,''), COALESCE(fecha_creacion,''), "
+                "COALESCE(estado,'') FROM ordenes_compra "
+                "WHERE UPPER(COALESCE(observaciones,'')) LIKE '%CALIBRAC%' "
+                "OR UPPER(COALESCE(proveedor,'')) LIKE '%BALANZA%' "
+                "ORDER BY numero_oc DESC LIMIT 50").fetchall():
+            out.append({'numero_oc': r[0], 'proveedor': r[1], 'fecha': (r[2] or '')[:10],
+                        'estado': r[3]})
+    except Exception as e:
+        log.warning('ocs de calibracion no resolvieron: %s', e)
+    return jsonify({'ok': True, 'items': out})
+
+
+@bp.route('/aseguramiento/calibracion', methods=['GET'])
+def aseguramiento_calibracion_page():
+    if 'compras_user' not in session:
+        from flask import redirect
+        return redirect('/login?next=/aseguramiento/calibracion')
+    if session.get('compras_user', '') not in _autorizados_lectura_calibracion():
+        from auth import sin_acceso_html
+        return Response(sin_acceso_html('Bitácora de calibración de equipos'), mimetype='text/html')
+    from templates_py.calibracion_html import CALIBRACION_HTML
+    return Response(CALIBRACION_HTML, mimetype='text/html; charset=utf-8')

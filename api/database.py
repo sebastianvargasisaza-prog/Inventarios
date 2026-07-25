@@ -10313,6 +10313,12 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "UPDATE users_passwords SET activo=0 WHERE username='luis'",
         "UPDATE usuarios_identidad SET activo=0 WHERE username='luis'",
     ]),
+    (376, "Bitácora de calibración de equipos (Sebastián 21-jul · INVIMA · vive en ASEGURAMIENTO/Miguel): "
+          "equipos_eventos gana numero_oc para anclar la calibración a la OC con que se compró el servicio "
+          "(ej. OC-2026-0268 · CI Balanzas de Colombia) → trazabilidad compra→registro→certificado.", [
+        "ALTER TABLE equipos_eventos ADD COLUMN numero_oc TEXT DEFAULT ''",
+        "CREATE INDEX IF NOT EXISTS idx_eq_ev_oc ON equipos_eventos(numero_oc)",
+    ]),
 ]
 
 
