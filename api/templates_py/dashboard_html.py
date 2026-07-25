@@ -26064,14 +26064,19 @@ async function ckMarcar(itemId, estado){
           if (_nTarde > 0) {
             _cadBg = '#fee2e2'; _cadFg = '#b91c1c'; _cadIco = '🔴';
             _cadTit = _nTarde + ' lote(s) llegan DESPUÉS de que se agote el stock (quiebre) · abrí Programar y adelantalos.';
-          } else if (_nSobra >= 3) {
+          } else if (_nSobra >= 3 && !p.sobreproduccion_deliberada) {
             _cadBg = '#cffafe'; _cadFg = '#0e7490'; _cadIco = '🔵';
             _cadTit = _nSobra + ' lote(s) entran cuando todavía te sobra stock: la cadena SOBRE-PRODUCE. '
                     + 'Abrí Programar y espaciá la cadencia o bajá los kg por lote.';
+          } else if (_nSobra >= 3) {
+            // Sobre-produce a propósito (decisión guardada · mig 378): se informa sin alarmar.
+            _cadBg = '#ede9fe'; _cadFg = '#6d28d9'; _cadIco = '🟣';
+            _cadTit = 'Sobre-produce A PROPÓSITO: ' + p.sobreproduccion_deliberada;
           }
           _cadBadge = _nCad > 0
             ? '<span title="' + _cadTit + '" style="background:' + _cadBg + ';color:' + _cadFg + ';padding:2px 7px;border-radius:5px;font-size:10px;font-weight:800">' + _cadIco + ' ' + _nCad + ' lote' + (_nCad === 1 ? '' : 's')
-              + (_nTarde > 0 ? ' · ' + _nTarde + ' tarde' : (_nSobra >= 3 ? ' · sobra-stock' : '')) + '</span>'
+              + (_nTarde > 0 ? ' · ' + _nTarde + ' tarde'
+                 : (_nSobra >= 3 ? (p.sobreproduccion_deliberada ? ' · a propósito' : ' · sobra-stock') : '')) + '</span>'
             : '<span title="Sin cadena · programala con el botón Programar" style="background:#f1f5f9;color:#64748b;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:800">⚪ sin programar</span>';
           // FIX 25-jul (Sebastián: "en plan 2 años está repetido el dato, dejemos uno") · acá se
           // pisaban las DOS líneas de la celda con el MISMO conteo: el chip decía "📅 36 lotes" y

@@ -4798,10 +4798,27 @@ def test_golden_identidad_seed_y_actualizacion(app, db_clean):
 # cada mes se preserva con sufijo __monthly y NO entra en rotación
 # diaria (rotada a 30d).
 def test_golden_backup_retencion_dual_monthly(app, db_clean):
-    """do_backup() crea snapshot mensual la primera vez del mes."""
+    """do_backup() crea snapshot mensual la primera vez del mes.
+
+    ⚠ En PostgreSQL este backup NO corre, y eso es DELIBERADO (24-jul · commit bfba25e4, al
+    quitar el disco persistente): el backup local solo respaldaba el SQLite legacy de /var/data;
+    los datos vivos están en PG y los respalda Render. `do_backup()` devuelve `skipped=True` con
+    el motivo. El test asumía la conducta vieja y por eso salía ROJO solo en el gate PG — es una
+    expectativa vencida, no un bug (M97): se afirma el skip limpio en PG y el flujo completo en
+    SQLite, que es donde el backup local sigue siendo real.
+    """
+    import os as _os
     import backup as _backup_mod
     import importlib
     importlib.reload(_backup_mod)  # asegurar que lee env vars actuales
+
+    if _os.environ.get("EOS_DB_BACKEND", "").strip().lower() == "postgres":
+        res_pg = _backup_mod.do_backup(triggered_by="test")
+        assert res_pg.get("skipped") is True, \
+            f'BUG: en PG el backup local debe saltar limpio, no intentar correr · {res_pg}'
+        assert not res_pg.get("ok"), f'BUG: un backup saltado no puede reportar ok · {res_pg}'
+        assert res_pg.get("error"), 'BUG: el skip debe explicar POR QUÉ (auditable)'
+        return
 
     # Limpieza previa por si quedó algo de runs anteriores
     backups_path = _backup_mod.Path(_backup_mod.BACKUPS_DIR)

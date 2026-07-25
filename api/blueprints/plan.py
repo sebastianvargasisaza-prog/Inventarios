@@ -4111,6 +4111,20 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     if not productos:
         return []
 
+    # Sobre-producción DELIBERADA (mig 378) · productos que el dueño decidió producir de más a
+    # propósito (lanzamientos que tardan). Viaja en el payload para que el chip de la cadena no
+    # los pinte como problema: una decisión tomada no es un hallazgo. Se lee UNA vez, no por fila.
+    _sobreprod_ok = {}
+    try:
+        from blueprints.programacion import _norm_prod_fuerte as _npf_sp
+        for _rsp in c.execute("SELECT producto_nombre, COALESCE(sobreproduccion_motivo,'') "
+                              "FROM sku_planeacion_config "
+                              "WHERE COALESCE(sobreproduccion_deliberada,0)=1").fetchall():
+            _sobreprod_ok[_npf_sp(_rsp[0] or '')] = _rsp[1]
+    except Exception as _esp:
+        __import__('logging').getLogger('plan').warning(
+            'necesidades: no se pudo leer sobreproduccion_deliberada: %s', _esp)
+
     # 2. Mapeo producto → sku_principal (para Shopify)
     # Estructura sku_producto_map: sku → producto_nombre
     # FIX 24-may PM · cargamos también es_regalo (mig 170) para excluir
@@ -4710,6 +4724,10 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         # Tendencia NUMÉRICA (fracción de ascenso 30d vs 60d · 0.15 = +15%). El `tendencia` de
         # arriba es una ETIQUETA de texto; quien necesite decidir con un umbral usa ESTE campo.
         # Con override manual la tendencia no aplica (el usuario fijó la venta) → 0.
+        try:
+            _sobreprod_motivo = _sobreprod_ok.get(_npf_sp(prod_nombre))
+        except Exception:
+            _sobreprod_motivo = None
         _tendencia_pct = 0.0
         if _ov_vel is None and vel_60d > 0.001:
             # clamp a ±200% · una racha corta no debe disparar decisiones absurdas
@@ -5078,6 +5096,8 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             # SÍ es el número: fracción de ascenso 30d vs 60d (0.15 = +15%). La etiqueta se
             # conserva intacta para no romper a nadie más (M94 · contrato de retorno).
             "tendencia_pct": _tendencia_pct,
+            # decisión del dueño: sobre-producir a propósito (mig 378) · el chip no lo alerta
+            "sobreproduccion_deliberada": _sobreprod_motivo,
             "vel_uds_mes_predictiva": round(velocidad_uds_dia * 30, 0),
             "ml_unidad": ml_promedio,
             "ml_inferido": ml_inferido,  # FIX #2 · True = heurística por nombre, no SKU real
@@ -5940,7 +5960,24 @@ def plan_salud_cadenas():
         return jsonify({'ok': False, 'error': 'no se pudo leer necesidades'}), 500
     BUFFER_REORDEN = 20                 # mismo valor que el motor de cadencia y que la UI
     hoy = _hoy_colombia()
-    items, resumen = [], {'sobre': 0, 'corto': 0, 'ok': 0, 'lanzamiento': 0, 'sin_datos': 0, 'sin_cadena': 0}
+    # DECISIÓN DELIBERADA del dueño (mig 378) · un producto que se sobre-produce a propósito no es
+    # un hallazgo. La primera versión lo INFERÍA de la tendencia de venta y estaba mal: BLUSH BALM
+    # y LIP SERUM vienen en BAJA (-24% / -31%) y la excusa no aplicaba, así que el diagnóstico
+    # seguía gritando sobre algo ya decidido. Una decisión se guarda como dato, no se adivina.
+    _deliberados = {}
+    try:
+        # ⚠ `_norm_prod_fuerte` NO está a nivel de módulo en plan.py (cada función lo importa
+        # local) · el mismo tropiezo que `_date` unas líneas arriba.
+        from blueprints.programacion import _norm_prod_fuerte as _npf_sc
+        _c = get_db()
+        for _r in _c.execute("SELECT producto_nombre, COALESCE(sobreproduccion_motivo,'') "
+                             "FROM sku_planeacion_config "
+                             "WHERE COALESCE(sobreproduccion_deliberada,0)=1").fetchall():
+            _deliberados[_npf_sc(_r[0] or '')] = _r[1]
+    except Exception as _e:
+        __import__('logging').getLogger('plan').warning('salud-cadenas: no se pudo leer las decisiones deliberadas: %s', _e)
+    items, resumen = [], {'sobre': 0, 'corto': 0, 'ok': 0, 'lanzamiento': 0, 'deliberado': 0,
+                          'sin_datos': 0, 'sin_cadena': 0}
     for cli in (_data.get('clientes') or []):
         for p in (cli.get('productos') or []):
             prod = p.get('producto_nombre') or ''
@@ -6015,8 +6052,16 @@ def plan_salud_cadenas():
                     _tend = float(_tp_raw)
                 except (TypeError, ValueError):
                     _tend = 0.0
+            _motivo_delib = None
+            try:
+                _motivo_delib = _deliberados.get(_npf_sc(prod))
+            except Exception:
+                _motivo_delib = None
             if ratio >= 1.3 and _dias_exceso >= 30:
-                est = 'lanzamiento' if _tend >= 0.08 else 'sobre'
+                if _motivo_delib is not None:
+                    est = 'deliberado'          # el dueño ya lo decidió · no es un hallazgo
+                else:
+                    est = 'lanzamiento' if _tend >= 0.08 else 'sobre'
             elif ratio <= 0.9:
                 est = 'corto'
             else:
@@ -6033,6 +6078,7 @@ def plan_salud_cadenas():
                 'dias_exceso_por_lote': _dias_exceso,   # lo que acumula de MÁS sobre cadencia+20
                 'vende_uds_dia': round(vel, 2), 'ml_unidad': round(ml, 1),
                 'tendencia_pct': round(_tend * 100),   # por qué NO es sobre-producción si es lanzamiento
+                'decision_motivo': _motivo_delib,      # por qué NO es hallazgo si es deliberado
                 # sugerencias: o achicar el lote a lo necesario, o espaciar la cadencia
                 'sugerido_kg_lote': kg_req,
                 'sugerido_cadencia_dias': (max(1, int(round((kg_lote * 1000.0 / ml) / vel)) - BUFFER_REORDEN)

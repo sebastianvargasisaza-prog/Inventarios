@@ -904,6 +904,14 @@ número, así que DOS consumidores lo trataron como fracción y ninguno de los d
 4. **Un endpoint nuevo se mira EN PRODUCCIÓN con datos reales antes de darlo por bueno.** Los
    tests pasaban en verde: el seed no tenía la combinación de ventas que produce la etiqueta.
    El 500 apareció al abrir la URL real. Ver [[project_9_motores_demanda_16jul]].
+5. **Una DECISIÓN del dueño se guarda como DATO explícito, nunca se infiere con una heurística.**
+   La 1ª versión excusaba a BLUSH BALM / LIP SERUM (sobre-producen a propósito) **infiriendo**
+   que venían en ascenso. Con los datos reales los dos vienen en BAJA (−24 % y −31 %), así que la
+   inferencia no los cubría y la alerta seguía gritando sobre algo ya decidido — y una alerta que
+   grita sobre lo deliberado se vuelve ruido y deja de mirarse. Fix: `sku_planeacion_config.
+   sobreproduccion_deliberada` (mig 378) → estado `deliberado` + el motivo, editable y reversible
+   sin deploy. **Cuando el usuario diga "eso es a propósito", el arreglo es una marca que él
+   controla, no un umbral que adivine su intención.**
 
 ## ✅ DECISIONES CERRADAS · no volver a levantarlas como bug (25-jul)
 

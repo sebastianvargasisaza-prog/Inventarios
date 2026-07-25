@@ -10331,6 +10331,25 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "ALTER TABLE equipos_eventos ADD COLUMN numero_oc TEXT DEFAULT ''",
         "CREATE INDEX IF NOT EXISTS idx_eq_ev_oc ON equipos_eventos(numero_oc)",
     ]),
+    (378, "Sobre-producción DELIBERADA (Sebastián 25-jul): 'no te preocupes por el blush y por el "
+          "suero de labios, como son lanzamientos recientes que van vendiendo cada vez más y se "
+          "demoran mucho, por eso los estamos haciendo así'. El diagnóstico de cadenas los marcaba "
+          "como sobre-producción y la primera versión los excusaba INFIRIENDO la tendencia de venta "
+          "-- mala idea: los datos reales de esos dos vienen en BAJA (-24% y -31% de 30d vs 60d), así "
+          "que la excusa no aplicaba y la alerta seguía gritando sobre algo deliberado. Una decisión "
+          "del dueño se guarda como DATO explícito, no se adivina con una heurística. Se marcan los "
+          "dos productos; se desmarca editando la fila (reversible, sin deploy).", [
+        "ALTER TABLE sku_planeacion_config ADD COLUMN sobreproduccion_deliberada INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE sku_planeacion_config ADD COLUMN sobreproduccion_motivo TEXT DEFAULT ''",
+        "INSERT INTO sku_planeacion_config (producto_nombre, sobreproduccion_deliberada, sobreproduccion_motivo) "
+        "VALUES ('LIP SERUM VOLUMINIZADOR PEPTIDOS', 1, 'Lanzamiento reciente · produccion larga · Sebastian 25-jul') "
+        "ON CONFLICT (producto_nombre) DO UPDATE SET sobreproduccion_deliberada=1, "
+        "sobreproduccion_motivo='Lanzamiento reciente · produccion larga · Sebastian 25-jul'",
+        "INSERT INTO sku_planeacion_config (producto_nombre, sobreproduccion_deliberada, sobreproduccion_motivo) "
+        "VALUES ('BLUSH BALM', 1, 'Lanzamiento reciente · produccion larga · Sebastian 25-jul') "
+        "ON CONFLICT (producto_nombre) DO UPDATE SET sobreproduccion_deliberada=1, "
+        "sobreproduccion_motivo='Lanzamiento reciente · produccion larga · Sebastian 25-jul'",
+    ]),
 ]
 
 

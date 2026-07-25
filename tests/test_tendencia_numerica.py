@@ -88,3 +88,61 @@ def test_lanzamiento_en_ascenso_no_se_marca_como_sobreproduccion(app):
         assert False, 'la etiqueta no debería ser convertible a float'
     except ValueError:
         pass
+
+
+def test_sobreproduccion_deliberada_es_un_DATO_no_una_inferencia(app):
+    """Sebastián 25-jul: BLUSH BALM y LIP SERUM sobre-producen A PROPÓSITO.
+
+    La primera versión los excusaba INFIRIENDO que venían en ascenso. Con los datos reales de
+    producción los dos vienen en BAJA (-24% y -31%), así que la inferencia no los cubría y el
+    diagnóstico seguía marcándolos como hallazgo. Una decisión del dueño se guarda como DATO
+    explícito y reversible (mig 378), no se adivina con una heurística.
+    """
+    c = _login(app)
+    r = c.get('/api/plan/salud-cadenas')
+    assert r.status_code == 200, r.data[:300]
+    d = r.get_json()
+    assert 'deliberado' in d['resumen'], d['resumen']
+    for it in d['items']:
+        if it['estado'] == 'deliberado':
+            assert it.get('decision_motivo'), ('un deliberado debe decir POR QUÉ', it)
+        if it['estado'] == 'sobre':
+            assert not it.get('decision_motivo'), ('un deliberado no puede salir como sobre', it)
+
+
+def test_la_marca_deliberada_gana_sobre_la_tendencia(app):
+    """Marcar un producto lo saca de 'sobre' aunque su tendencia venga en BAJA (el caso real)."""
+    import os
+    import sqlite3
+    c = _login(app)
+    base = {i['producto']: i for i in c.get('/api/plan/salud-cadenas').get_json()['items']}
+    objetivo = next((p for p, i in base.items() if i['estado'] == 'sobre'), None)
+    if not objetivo:
+        return   # el seed no produce ninguna cadena sobre-dimensionada · nada que afirmar
+
+    def _marcar(valor, motivo):
+        db = sqlite3.connect(os.environ['DB_PATH'], timeout=15)
+        try:
+            db.execute(
+                "INSERT INTO sku_planeacion_config (producto_nombre, sobreproduccion_deliberada, "
+                "sobreproduccion_motivo) VALUES (?,?,?) ON CONFLICT (producto_nombre) DO UPDATE SET "
+                "sobreproduccion_deliberada=excluded.sobreproduccion_deliberada, "
+                "sobreproduccion_motivo=excluded.sobreproduccion_motivo",
+                (objetivo, valor, motivo))
+            db.commit()
+        finally:
+            db.close()
+
+    _marcar(1, 'test')
+    try:
+        it = next(x for x in c.get('/api/plan/salud-cadenas').get_json()['items']
+                  if x['producto'] == objetivo)
+        assert it['estado'] == 'deliberado', (objetivo, it['estado'])
+        assert it['decision_motivo'] == 'test', it
+        # y al desmarcarlo vuelve a ser un hallazgo (la marca no es de una sola vía)
+        _marcar(0, '')
+        it2 = next(x for x in c.get('/api/plan/salud-cadenas').get_json()['items']
+                   if x['producto'] == objetivo)
+        assert it2['estado'] == 'sobre', (objetivo, it2['estado'])
+    finally:
+        _marcar(0, '')
