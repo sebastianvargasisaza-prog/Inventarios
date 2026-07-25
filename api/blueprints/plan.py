@@ -5976,8 +5976,9 @@ def plan_salud_cadenas():
             _deliberados[_npf_sc(_r[0] or '')] = _r[1]
     except Exception as _e:
         __import__('logging').getLogger('plan').warning('salud-cadenas: no se pudo leer las decisiones deliberadas: %s', _e)
-    items, resumen = [], {'sobre': 0, 'corto': 0, 'ok': 0, 'lanzamiento': 0, 'deliberado': 0,
-                          'sin_datos': 0, 'sin_cadena': 0}
+    items, sin_cadena_prods = [], []
+    resumen = {'sobre': 0, 'corto': 0, 'ok': 0, 'lanzamiento': 0, 'deliberado': 0,
+               'sin_datos': 0, 'sin_cadena': 0, 'sin_ventas': 0}
     for cli in (_data.get('clientes') or []):
         for p in (cli.get('productos') or []):
             prod = p.get('producto_nombre') or ''
@@ -5996,7 +5997,17 @@ def plan_salud_cadenas():
                     continue
                 fut.append({'fecha': _f, 'kg': float(l.get('kg') or 0)})
             if not fut:
-                resumen['sin_cadena'] += 1
+                # SIN CADENA = producto que SE VENDE y no tiene ni un lote programado hacia
+                # adelante → va derecho al quiebre. Es el hallazgo más caro de todos y el
+                # diagnóstico solo devolvía el CONTEO, así que no se podía actuar: ahora los
+                # nombra. Un producto sin ventas no es un hallazgo (no hay nada que programar):
+                # se separa para que el número de "sin cadena" signifique una sola cosa.
+                if vel > 0.001:
+                    resumen['sin_cadena'] += 1
+                    sin_cadena_prods.append({'producto': prod, 'cliente': cli.get('nombre') or '',
+                                             'vende_uds_dia': round(vel, 2)})
+                else:
+                    resumen['sin_ventas'] += 1
                 continue
             fut.sort(key=lambda x: x['fecha'])
             # cadencia = mediana de los saltos entre lotes (robusta a un lote corrido)
@@ -6085,7 +6096,10 @@ def plan_salud_cadenas():
                                            if (est == 'sobre' and vel > 0) else cad),
             })
     items.sort(key=lambda x: -(x.get('kg_exceso_total') or 0))
+    sin_cadena_prods.sort(key=lambda x: -(x.get('vende_uds_dia') or 0))
     return jsonify({'ok': True, 'resumen': resumen, 'items': items,
+                    # qué producto SE VENDE y no tiene ni un lote programado (va al quiebre)
+                    'sin_cadena_productos': sin_cadena_prods,
                     'regla': 'kg_requerido = vende_uds_dia x (cadencia + 20) x ml / 1000',
                     'nota': 'read-only · no modifica el calendario'})
 

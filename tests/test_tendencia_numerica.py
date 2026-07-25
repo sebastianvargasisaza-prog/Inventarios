@@ -90,6 +90,24 @@ def test_lanzamiento_en_ascenso_no_se_marca_como_sobreproduccion(app):
         pass
 
 
+def test_sin_cadena_nombra_los_productos_y_no_cuenta_los_sin_ventas(app):
+    """Un producto que SE VENDE y no tiene ni un lote programado va derecho al quiebre: es el
+    hallazgo más caro y el diagnóstico solo devolvía el CONTEO, así que no se podía actuar.
+    Y contaba también a los productos sin ventas, que no son un hallazgo (no hay qué programar).
+    """
+    c = _login(app)
+    d = c.get('/api/plan/salud-cadenas').get_json()
+    assert 'sin_cadena_productos' in d, d.get('resumen')
+    assert 'sin_ventas' in d['resumen'], d['resumen']
+    lista = d['sin_cadena_productos']
+    assert isinstance(lista, list)
+    assert len(lista) == d['resumen']['sin_cadena'], (len(lista), d['resumen'])
+    for x in lista:
+        assert x.get('producto'), x
+        # si está en la lista es porque VENDE · si no vende, va a sin_ventas
+        assert float(x.get('vende_uds_dia') or 0) > 0.001, x
+
+
 def test_sobreproduccion_deliberada_es_un_DATO_no_una_inferencia(app):
     """Sebastián 25-jul: BLUSH BALM y LIP SERUM sobre-producen A PROPÓSITO.
 
