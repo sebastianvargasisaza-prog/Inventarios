@@ -20,6 +20,21 @@ def _hoy_co():
     return (_dt.datetime.utcnow() - _dt.timedelta(hours=5)).date()
 
 
+def _prox_habil(d):
+    """Primer día en que la planta produce: lunes a viernes, no festivo (Sebastián 25-jul).
+
+    ⚠ Un `hoy + N` cae SIEMPRE en el mismo día de la semana que hoy, así que un test que
+    programa a "hoy + 7" revienta cada vez que la suite corre en sábado o domingo. Con la
+    validación de día hábil activa eso deja de ser cosmético: el endpoint responde 422.
+    """
+    from blueprints.plan import es_festivo_colombia
+    for _ in range(15):
+        if d.weekday() < 5 and not es_festivo_colombia(d):
+            return d
+        d += _dt.timedelta(days=1)
+    return d
+
+
 def _seed(prod, fecha, origen='eos_plan', estado='pendiente', inicio=None):
     conn = sqlite3.connect(os.environ['DB_PATH'], timeout=10)
     try:
@@ -148,22 +163,34 @@ def test_backfill_fabricacion(app, db_clean):
 
 
 def test_dedup_mismo_dia(app, db_clean):
-    """15-jun: lotes duplicados del mismo producto el mismo día → mantiene el de
-    mayor kg, cancela el resto; no toca productos sin duplicado."""
+    """Lotes AUTO duplicados del mismo producto y día → deja el de mayor kg, cancela el resto.
+
+    ⚠ Este test sembraba con `origen='eos_plan'` (el default de `_seed`) y esperaba que se
+    cancelaran. Llevaba tiempo ROJO porque el 25-jul el dedup dejó de tocar lo FIJO, y esa es
+    la regla correcta por dos razones que la propia app documenta: (a) la 2ª pasada de esta
+    MISMA función ya decía "un Fijo puede ser una 2ª tanda deliberada del mismo producto el
+    mismo día → NUNCA se toca"; (b) Abastecimiento aprendió a contar dos tandas fijas del mismo
+    día como dos lotes reales — colapsarlas hacía SUB-COMPRAR la materia prima.
+    Ahora el test siembra AUTO (lo que el dedup sí debe limpiar) y además fija el invariante
+    que importa: lo Fijo sobrevive.
+    """
     hoy = _hoy_co()
     f = (hoy + _dt.timedelta(days=2)).isoformat()
-    ids = [_seed('DEDUP TEST', f) for _ in range(3)]   # 3 iguales (30kg)
-    solo = _seed('SOLO TEST', f)                         # sin duplicado
+    ids = [_seed('DEDUP TEST', f, origen='auto_plan') for _ in range(3)]   # 3 iguales (30kg)
+    solo = _seed('SOLO TEST', f, origen='auto_plan')                       # sin duplicado
+    fijos = [_seed('DEDUP FIJO', f, origen='eos_plan') for _ in range(2)]  # 2 tandas DELIBERADAS
     c = _login(app)
     dg = c.post('/api/plan/dedup-mismo-dia', json={'dry_run': True}, headers=csrf_headers())
     assert dg.status_code == 200
     j = dg.get_json()
-    assert j['grupos_con_duplicado'] == 1 and j['lotes_a_cancelar'] == 2
+    assert j['grupos_con_duplicado'] == 1 and j['lotes_a_cancelar'] == 2, j
     r = c.post('/api/plan/dedup-mismo-dia', json={'dry_run': False}, headers=csrf_headers())
     assert r.status_code == 200 and r.get_json()['cancelados'] == 2
     activos = [i for i in ids if _estado(i) != 'cancelado']
     assert len(activos) == 1                              # queda uno
     assert _estado(solo) == 'pendiente'                  # el sin-dup intacto
+    for i in fijos:                                      # regla dura #3: lo Fijo NO se toca
+        assert _estado(i) == 'pendiente', 'el dedup canceló una tanda FIJA deliberada'
 
 
 def test_repartir_sobrecargados(app, db_clean):
@@ -368,7 +395,7 @@ def test_programar_manual_crea_fijo(app, db_clean):
     """16-jun · clic en el calendario → programar CUALQUIER producto (piloto/otro
     cliente, no está en Necesidades). Debe quedar Fijo (eos_plan) con su kg."""
     hoy = _hoy_co()
-    fecha = (hoy + _dt.timedelta(days=7)).isoformat()
+    fecha = _prox_habil(hoy + _dt.timedelta(days=7)).isoformat()
     c = _login(app)
     r = c.post('/api/plan/programar-manual',
                json={'producto': 'CREMA PILOTO CLIENTE X', 'fecha': fecha,

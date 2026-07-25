@@ -23626,6 +23626,9 @@ async function ckMarcar(itemId, estado){
       const d = await r.json();
       // FIX 23-may-2026 · cachear SKUs huérfanos para mapeo inline desde drill
       window._NEC_SKUS_HUERFANOS = (d.resumen && d.resumen.skus_huerfanos_vendiendo) || [];
+      // "Producir 20 días antes de que se agote" viene del BACKEND (una sola fuente para el
+      // motor, el diagnóstico de cadenas y este modal) · antes era un 20 escrito a mano acá.
+      window._BUFFER_REORDEN = Number((d.parametros || {}).buffer_reorden_dias) || 20;
       renderResumenNec(d.resumen);
       renderClientesNec(d.clientes);
       renderSyncBanner(d.sync_ventas, d.sync_stock);
@@ -26873,11 +26876,13 @@ async function ckMarcar(itemId, estado){
       }catch(e){ firstOffset = null; }
     }
     if(firstOffset == null){
+      // Regla: producir BUFFER días ANTES de que se agote (buffer del backend · no literal).
+      var _BUF = Number(window._BUFFER_REORDEN) || 20;
       if(ancla){
         var anclaAnimusKg = Math.max(0, (ancla.kg || 0) - otro);
-        firstOffset = Math.max(Math.round(anclaAnimusKg / vel) - 20, 1);
+        firstOffset = Math.max(Math.round(anclaAnimusKg / vel) - _BUF, 1);
       } else {
-        firstOffset = Math.max(diasGond - 20, 0);
+        firstOffset = Math.max(diasGond - _BUF, 0);
       }
     }
     return {meses:meses, mesesCubre:mesesCubre, otro:otro, kgAnimus:kgAnimus, intervalDias:intervalDias, firstOffset:firstOffset, nLotes:nLotes, cadaTxt:cadaTxt, vel:vel, diasGond:diasGond, ancla:ancla, prox:_prox};

@@ -3684,6 +3684,10 @@ def plan_necesidades():
             "cobertura_dias_alerta": cob_alerta,
             "cobertura_dias_vigilar": cob_vigilar,
             "ventana_ventas": ventana,
+            # "Producir 20 días ANTES de que se agote" · el modal calculaba la fecha del 1er lote
+            # con un 20 escrito a mano en el JS (2 sitios). Ahora la regla viaja desde el backend:
+            # una sola fuente para el motor, el diagnóstico de cadenas y la pantalla.
+            "buffer_reorden_dias": BUFFER_REORDEN_DIAS,
         },
     })
     # PERF diag (Sebastián 4-jul) · tiempo de cómputo backend visible en el Network tab (Server-Timing) ·
@@ -13418,7 +13422,12 @@ def _proyectar_horizonte_2y(conn, dias=730, usuario='auto-proyeccion', dry_run=F
     hoy = _hoy_colombia()
     LOTES_MAX = 2
     PIPELINE_LAG = 7
-    MARGEN = 20
+    # "Producir 20 días ANTES de que se agote": el disparo es la MISMA constante que usa el resto
+    # del sistema (regla de reorden). Estaba como literal 20 duplicado acá — hoy coincidía, pero
+    # cambiar el buffer en un solo lado dejaba a este generador proyectando con otro criterio que
+    # el modal y el diagnóstico de cadenas. El cerebro ya lo prohíbe: el buffer sale SIEMPRE de
+    # BUFFER_REORDEN_DIAS, nunca de un número suelto.
+    MARGEN = BUFFER_REORDEN_DIAS
 
     # Fase 1 forecast (Sebastián 5-jul · Black Friday) · factor de estacionalidad por DÍA (mes ÷ mes_actual).
     # OFF por defecto → todos 1.0 (sin efecto) hasta que se prenda el interruptor estacionalidad_plan_activa.
@@ -15836,9 +15845,25 @@ def plan_programar_manual():
         return jsonify({'ok': False, 'error': 'Producto y fecha son obligatorios'}), 400
     try:
         from datetime import date as _date
-        _date.fromisoformat(fecha)
+        _f_obj = _date.fromisoformat(fecha)
     except ValueError:
         return jsonify({'ok': False, 'error': 'Fecha inválida (use YYYY-MM-DD)'}), 400
+    # Sebastián 25-jul: "de lunes a viernes en días no festivos". Este endpoint (el ➕ del
+    # calendario) era el ÚNICO camino de programación SIN esta validación: sus dos hermanos
+    # (`programar_produccion` y `reprogramar_proxima`, el arrastre) ya la tenían con el mismo
+    # override. Por eso se podía dejar un lote en sábado o en festivo sin que la app dijera nada.
+    # Se permite forzar igual que en los hermanos (hay casos legítimos: demos, jornada especial),
+    # pero de forma EXPLÍCITA, no por descuido.
+    if not bool(d.get('skip_validacion_dia')):
+        if _f_obj.weekday() not in DIAS_HABILES:
+            return jsonify({'ok': False, 'codigo': 'DIA_NO_HABIL',
+                            'error': '%s cae %s · la planta produce de lunes a viernes'
+                                     % (fecha, _NOMBRE_DIA.get(_f_obj.weekday(), '')),
+                            'puede_forzar': True}), 422
+        if es_festivo_colombia(_f_obj):
+            return jsonify({'ok': False, 'codigo': 'DIA_FESTIVO',
+                            'error': '%s es festivo colombiano · la planta no produce' % fecha,
+                            'puede_forzar': True}), 422
     # No hay columna 'cliente' en produccion_programada → va en observaciones.
     nota = 'Manual ({})'.format(user or 'sistema')
     if cliente:
@@ -21326,12 +21351,29 @@ async function guardarNuevaProduccion(){
   const btn = document.getElementById('np-guardar');
   btn.disabled = true; btn.textContent = 'Programando…';
   try {
-    const r = await fetch('/api/plan/programar-manual', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCSRF()},
-      body: JSON.stringify({producto: producto, fecha: fecha, kg: kg, lotes: lotes, cliente: cliente, observaciones: obs})
-    });
-    const d = await r.json().catch(() => ({}));
+    // La planta produce de lunes a viernes en días no festivos. Si la fecha no lo es, el backend
+    // responde 422 con puede_forzar: se pregunta y, si el usuario confirma, se reenvía forzado
+    // (hay casos legítimos: demos, jornada especial). Nunca se fuerza en silencio.
+    const _enviar = async (forzar) => {
+      const _body = {producto: producto, fecha: fecha, kg: kg, lotes: lotes, cliente: cliente, observaciones: obs};
+      if (forzar) _body.skip_validacion_dia = true;
+      const _r = await fetch('/api/plan/programar-manual', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCSRF()},
+        body: JSON.stringify(_body)
+      });
+      return [_r, await _r.json().catch(() => ({}))];
+    };
+    let [r, d] = await _enviar(false);
+    if (r.status === 422 && d && d.puede_forzar){
+      if (confirm('⚠ ' + (d.error || 'Día no hábil') + '. ¿Programarlo igual en esa fecha?')){
+        [r, d] = await _enviar(true);
+      } else {
+        msg.innerHTML = '<span style="color:#b45309;font-weight:700">Elegí un día hábil (lunes a viernes, no festivo).</span>';
+        btn.disabled = false; btn.textContent = 'Programar';
+        return;
+      }
+    }
     if (!r.ok || !d.ok){
       msg.innerHTML = '<span style="color:#dc2626;font-weight:700">⚠ ' + escapeHtml(d.error || ('Error ' + r.status)) + '</span>';
       btn.disabled = false; btn.textContent = 'Programar';
@@ -24569,6 +24611,9 @@ def _valida_fecha_iso(s):
 DIAS_HABILES = {0, 1, 2, 3, 4}        # lun=0 ... vie=4
 DIAS_PREFERIDOS = {0, 2, 4}            # lun, mié, vie (para canónico)
 MAX_PRODUCCIONES_POR_DIA = 2
+# Para que el mensaje de rechazo diga QUÉ día es (un "2026-08-01 no es hábil" no ayuda).
+_NOMBRE_DIA = {0: 'lunes', 1: 'martes', 2: 'miércoles', 3: 'jueves',
+               4: 'viernes', 5: 'sábado', 6: 'domingo'}
 
 # Timezone Colombia · módulo central api/tz_colombia.py · Sebastián 13-may-2026
 try:

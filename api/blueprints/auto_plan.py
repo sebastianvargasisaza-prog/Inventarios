@@ -39,7 +39,18 @@ bp = Blueprint('auto_plan', __name__)
 log = logging.getLogger('auto_plan')
 
 # Días de la semana donde SE PRODUCE (lunes=0, martes=1, ...)
-DIAS_PRODUCCION = (0, 2, 4)        # lunes, miércoles, viernes
+# Sebastián 25-jul: "de lunes a viernes en días no festivos". Estaba en L/M/V (0,2,4) y eso
+# DIVERGÍA del resto del sistema: `plan.DIAS_HABILES = {0,1,2,3,4}` valida L-V al programar a
+# mano o al arrastrar, y el `_dia_habil` de las cadenas del modal también usa L-V. O sea, el
+# calendario ACEPTABA un martes pero los generadores automáticos nunca lo elegían → dos rutas
+# de programación producían calendarios distintos para el mismo producto, y `reprogramar_proxima`
+# llegaba a dejarte soltar un lote en martes para después re-espaciar la cadena en L/M/V.
+# Además recortaba la capacidad del mes de 44 a 26 cupos (2 lotes/día × 22 hábiles vs 13): al
+# llenarse, los lotes se empujan hacia adelante y eso se come el colchón de 20 días.
+# ⚠ Esta constante de módulo la consume SOLO `_next_dia_produccion` (verificado): las vistas
+# legacy de recomendación semanal (planta_recomendaciones, plan_semana_shopify, mi_dia) definen
+# su propia DIAS_PRODUCCION local y no se ven afectadas.
+DIAS_PRODUCCION = (0, 1, 2, 3, 4)  # lunes a viernes (regla vigente)
 DIAS_ACOND_CONTEO = (1, 3)         # martes, jueves
 DIAS_NO_LABORAL = (5, 6)           # sábado, domingo
 

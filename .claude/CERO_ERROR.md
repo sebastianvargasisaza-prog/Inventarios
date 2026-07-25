@@ -5,7 +5,7 @@
 > **Cuando encuentres o arregles un bug con un patrón nuevo, AGRÉGALO aquí en el mismo commit.**
 > Mantenlo denso y accionable (checklist, no narrativa). La historia detallada vive en `SESSION_LOG/`.
 
-Última actualización: **2026-07-25** (M98 · un campo con nombre de MÉTRICA que en realidad es una ETIQUETA de texto: `tendencia` ('aceleracion_fuerte') se convertía con float() → 500 en prod, y en JS se comparaba >= 0.08 → alerta muerta que nunca apareció · leé el `return` del productor antes de comparar/convertir · el número va en un campo APARTE (`tendencia_pct`), no se reinterpreta la etiqueta · un except alrededor del float() tapa el 500 pero deja la decisión con el default · M97 · un test rojo miente la mitad de las veces: de 9 archivos rojos, 2 eran bugs y 7 expectativas viejas → ANTES de tocar código, correr el test contra el commit anterior y buscar si el comportamiento actual es una decisión documentada · caché sin bypass en tests ESCONDE bugs · guardián con lista blanca a mano = falsos positivos, contrastá contra el url_map real · ruta registrada 2 veces = la 2ª es código muerto · M96 · tabla/columna FANTASMA dentro de un `except` = feature muerta (9 cazadas ejecutando las queries contra el esquema real) · nombres de índice son GLOBALES → 5 índices nunca se crearon · helper que espera CURSOR y recibe CONEXIÓN → "Generar OC" muerto y "Regenerar OC" borraba sin recrear · `flujo_egresos` ancla por `referencia`, no `numero_oc` · `precio_referencia` está en $/kg · M95 · auditoría 9 frentes: `/diag/*` estaba abierto a internet (fórmulas maestras) · pre-check POR FILA contra recurso compartido = doble descuento y stock negativo · dedup que colapsa filas FIJAS legítimas = sub-compra · default distinto por caller de un núcleo compartido = la divergencia M5 · **10 tests del corazón llevaban tiempo en rojo porque el gate solo corre golden** · M94 · helper que devuelve dicts indexado como tupla + `except` mudo = feature muerta en silencio (la genealogía nunca mostró equipos) · una pieza no está VALIDADA hasta que un E2E la recorre por los endpoints reales · M93 · documento regulado: UN helper de estampa (`_rc_firma`) + firma FECHADA + no inventar aprobadores + fixture de registro inmutable en orden real (draft→hijos→aprobar) · Offboarding: desactivar user solo-en-config = INSERTAR fila users_passwords activo=0, no basta UPDATE · firma manuscrita §11.50 estampada en documentos (helper firma_estampa_html · resuelve por username o nombre) · M92 · todo loop de I/O de red = presupuesto wall-clock + circuit-breaker · lock IA fail-open con CAS-por-token · ultracode-review de los cambios propios antes de cerrar · REGLA 0 · toda UI que toco sale PREMIUM con cortex tokens + CERO rastro de IA (em-dash `—`→`-`) · revisar SIEMPRE antes de dar por hecho · M86 · mojibake se arregla por codepoints · N×M en heatmaps = endpoint colgado → 1 query GROUP BY + 1 "último por par")
+Última actualización: **2026-07-25** (M99 · una MISMA regla de negocio en DOS constantes distintas diverge en silencio: `DIAS_HABILES`=L-V validaba y `DIAS_PRODUCCION`=L/M/V ubicaba → el calendario aceptaba martes que los generadores nunca elegían (2 rutas, 2 calendarios) y la capacidad del mes caía de 44 a 26 cupos, comiéndose el colchón de 20d · el ➕ del calendario era el ÚNICO de 3 caminos sin validar día hábil/festivo · si N caminos hacen lo mismo, comparar sus GUARDS no solo su lógica · test que agenda a `hoy+N` cae siempre en el mismo día de semana · M98 · un campo con nombre de MÉTRICA que en realidad es una ETIQUETA de texto: `tendencia` ('aceleracion_fuerte') se convertía con float() → 500 en prod, y en JS se comparaba >= 0.08 → alerta muerta que nunca apareció · leé el `return` del productor antes de comparar/convertir · el número va en un campo APARTE (`tendencia_pct`), no se reinterpreta la etiqueta · un except alrededor del float() tapa el 500 pero deja la decisión con el default · M97 · un test rojo miente la mitad de las veces: de 9 archivos rojos, 2 eran bugs y 7 expectativas viejas → ANTES de tocar código, correr el test contra el commit anterior y buscar si el comportamiento actual es una decisión documentada · caché sin bypass en tests ESCONDE bugs · guardián con lista blanca a mano = falsos positivos, contrastá contra el url_map real · ruta registrada 2 veces = la 2ª es código muerto · M96 · tabla/columna FANTASMA dentro de un `except` = feature muerta (9 cazadas ejecutando las queries contra el esquema real) · nombres de índice son GLOBALES → 5 índices nunca se crearon · helper que espera CURSOR y recibe CONEXIÓN → "Generar OC" muerto y "Regenerar OC" borraba sin recrear · `flujo_egresos` ancla por `referencia`, no `numero_oc` · `precio_referencia` está en $/kg · M95 · auditoría 9 frentes: `/diag/*` estaba abierto a internet (fórmulas maestras) · pre-check POR FILA contra recurso compartido = doble descuento y stock negativo · dedup que colapsa filas FIJAS legítimas = sub-compra · default distinto por caller de un núcleo compartido = la divergencia M5 · **10 tests del corazón llevaban tiempo en rojo porque el gate solo corre golden** · M94 · helper que devuelve dicts indexado como tupla + `except` mudo = feature muerta en silencio (la genealogía nunca mostró equipos) · una pieza no está VALIDADA hasta que un E2E la recorre por los endpoints reales · M93 · documento regulado: UN helper de estampa (`_rc_firma`) + firma FECHADA + no inventar aprobadores + fixture de registro inmutable en orden real (draft→hijos→aprobar) · Offboarding: desactivar user solo-en-config = INSERTAR fila users_passwords activo=0, no basta UPDATE · firma manuscrita §11.50 estampada en documentos (helper firma_estampa_html · resuelve por username o nombre) · M92 · todo loop de I/O de red = presupuesto wall-clock + circuit-breaker · lock IA fail-open con CAS-por-token · ultracode-review de los cambios propios antes de cerrar · REGLA 0 · toda UI que toco sale PREMIUM con cortex tokens + CERO rastro de IA (em-dash `—`→`-`) · revisar SIEMPRE antes de dar por hecho · M86 · mojibake se arregla por codepoints · N×M en heatmaps = endpoint colgado → 1 query GROUP BY + 1 "último por par")
 
 ---
 
@@ -912,6 +912,46 @@ número, así que DOS consumidores lo trataron como fracción y ninguno de los d
    sobreproduccion_deliberada` (mig 378) → estado `deliberado` + el motivo, editable y reversible
    sin deploy. **Cuando el usuario diga "eso es a propósito", el arreglo es una marca que él
    controla, no un umbral que adivine su intención.**
+
+## 📅 M99 · Una MISMA regla de negocio escrita en dos constantes distintas diverge en silencio · 25-jul
+
+Sebastián, sobre el calendario: "de lunes a viernes en días no festivos · aquí todo debe ser
+perfecto". La regla vivía en DOS lugares con valores DISTINTOS y nadie lo notaba porque cada uno
+se usa desde un lado de la app:
+
+- `plan.DIAS_HABILES = {0,1,2,3,4}` (L-V) → lo que VALIDA al programar a mano, al arrastrar un
+  lote, y el `_dia_habil` de las cadenas del modal de Necesidades.
+- `auto_plan.DIAS_PRODUCCION = (0,2,4)` (L/M/V) → lo que USA `_next_dia_produccion`, el helper
+  canónico que ubica la fecha en los **5 generadores automáticos**.
+
+Consecuencia: el calendario ACEPTABA un martes pero los generadores nunca lo elegían, así que
+las dos rutas de programación producían **calendarios distintos para el mismo producto**. Peor:
+`reprogramar_proxima` te dejaba soltar un lote en martes (valida L-V) y después re-espaciaba el
+resto de la cadena en L/M/V — incoherente dentro del MISMO endpoint. Y recortaba la capacidad del
+mes de 44 a 26 cupos (2 lotes/día × 22 hábiles vs 13): al llenarse, `_tomar_slot` empuja los lotes
+hacia adelante y **eso se come justo el colchón de 20 días** que la regla quiere proteger.
+
+**Reglas:**
+1. **Una regla de negocio = UNA constante.** Si dos módulos codifican "cuándo se produce",
+   "cuánto es el buffer" o "qué es un día válido", uno de los dos está a punto de quedar viejo.
+   Antes de agregar una constante, `grep` si la regla ya existe con otro nombre.
+2. **El buffer de reorden sale SIEMPRE de `BUFFER_REORDEN_DIAS`** (ya estaba escrito y se violó
+   igual): `_proyectar_horizonte_2y` tenía `MARGEN = 20` a mano y el modal un `- 20` en el JS.
+   Coincidían por casualidad. Ahora el JS lo recibe del backend (`parametros.buffer_reorden_dias`).
+3. **Si N caminos hacen lo mismo, la validación va en los N.** De los tres endpoints que fijan
+   fecha, `programar-manual` (el ➕ del calendario, el más usado del día a día) era el ÚNICO sin
+   validar día hábil ni festivo: se podía dejar un lote en sábado o en festivo sin una palabra.
+   Al enumerar los hermanos de una acción, comparar sus GUARDS, no solo su lógica.
+4. **Rechazar no es amurallar:** el guard responde 422 con `puede_forzar` y la UI pregunta y
+   reenvía con `skip_validacion_dia` — hay casos legítimos (demos, jornada especial), pero
+   explícitos, nunca por descuido. Es el patrón que los otros dos endpoints ya usaban.
+5. **Un test que agenda a `hoy + N` cae SIEMPRE en el mismo día de semana que hoy** → revienta los
+   fines de semana en cuanto el endpoint valida días hábiles. Usar un helper "próximo día hábil"
+   (ver `_prox_habil` en `test_plan_sellar_horizonte.py`), no un offset fijo.
+
+Verificado: el calendario de festivos es correcto (18/año, Pascua validada contra 5 años reales,
+Ley Emiliani). Tests `test_calendario_dias_habiles.py` (los 3 caminos aplican la misma regla) +
+`test_plan_festivos_clamp.py`. Gate PG 357 verde. Ver [[project_modal_calendario_unificado_16jul]].
 
 ## ✅ DECISIONES CERRADAS · no volver a levantarlas como bug (25-jul)
 
