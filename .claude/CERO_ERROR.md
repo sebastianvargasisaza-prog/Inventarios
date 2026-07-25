@@ -5,7 +5,7 @@
 > **Cuando encuentres o arregles un bug con un patrón nuevo, AGRÉGALO aquí en el mismo commit.**
 > Mantenlo denso y accionable (checklist, no narrativa). La historia detallada vive en `SESSION_LOG/`.
 
-Última actualización: **2026-07-24** (M92 · todo loop de I/O de red = presupuesto wall-clock + circuit-breaker · lock IA fail-open con CAS-por-token · ultracode-review de los cambios propios antes de cerrar · REGLA 0 · toda UI que toco sale PREMIUM con cortex tokens + CERO rastro de IA (em-dash `—`→`-`) · revisar SIEMPRE antes de dar por hecho · M86 · mojibake se arregla por codepoints · N×M en heatmaps = endpoint colgado → 1 query GROUP BY + 1 "último por par")
+Última actualización: **2026-07-24** (Offboarding: desactivar user solo-en-config = INSERTAR fila users_passwords activo=0, no basta UPDATE · firma manuscrita §11.50 estampada en documentos (helper firma_estampa_html · resuelve por username o nombre) · M92 · todo loop de I/O de red = presupuesto wall-clock + circuit-breaker · lock IA fail-open con CAS-por-token · ultracode-review de los cambios propios antes de cerrar · REGLA 0 · toda UI que toco sale PREMIUM con cortex tokens + CERO rastro de IA (em-dash `—`→`-`) · revisar SIEMPRE antes de dar por hecho · M86 · mojibake se arregla por codepoints · N×M en heatmaps = endpoint colgado → 1 query GROUP BY + 1 "último por par")
 
 ---
 
@@ -138,6 +138,7 @@ Tests corren en **SQLite** (local, pasan ✅) pero producción es **PostgreSQL**
 - **NO activar PostgreSQL RLS** (decisión Sebastián 8-jun): con rol dueño se ignora (no-op) y con `FORCE` sin políticas da DENY total → **caída de producción**. RLS solo aplicaría con rol no-dueño + contexto por request + políticas por tabla (re-arquitectura). No es el modelo de EOS.
 - **CORS/Origin ya enforced**: `csrf_origin_check` (auth.py) → 403 si Origin/Referer ≠ host en métodos que mutan. No hay `Access-Control-Allow-Origin` permisivo.
 - **Security headers** en `add_security_headers` (auth.py): HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, CSP, COOP/CORP, Permissions-Policy. Datos bancarios solo admin+contadora (Habeas Data Ley 1581).
+- **Offboarding (desactivar un usuario) · 24-jul:** `_resolve_password_hash` (core.py) lee `users_passwords` PRIMERO y si `activo=0` devuelve '' (login bloqueado · NO cae al config). PERO si el usuario **solo existe en config** (`PASS_<USER>` env · no tiene fila en `users_passwords`), un `UPDATE ... SET activo=0` no hace nada (no hay fila) → **sigue logueando por el fallback de env**. Para bloquearlo hay que **INSERTAR una fila en `users_passwords` con activo=0** (`INSERT OR IGNORE (username,password_hash='!DESACTIVADO',changed_by) + UPDATE activo=0`). Marcar también `usuarios_identidad.activo=0` (sale de listas). NUNCA borrar (GMP/Part 11 · reversible). Un empleado despedido con cuenta activa = hueco de seguridad. Caso: mig 375 desactivó a 'luis'.
 
 ## 🧪 Aislamiento de tests en PG (NO perseguir)
 
