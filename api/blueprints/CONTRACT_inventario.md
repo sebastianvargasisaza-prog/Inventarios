@@ -348,3 +348,20 @@ Invariante nueva:
   modo, esta ruta responde 409 y vuelve la liberación formal con firma.
 - ⚠ Cubierto por `tests/test_recepcion_auto_vigente.py`. El default OFF mantiene
   verdes los golden de recepción/cuarentena (no cambiar el default en código).
+
+## 🧮 Descuento directo · consolidación por código de bodega (25-jul · auditoría)
+
+**Invariante nuevo (INV-8):** `_handle_produccion_inner` y `simular_produccion`
+CONSOLIDAN los ítems de fórmula por el código de BODEGA resuelto **antes** de mirar
+stock. Antes se planificaba una entrada por FILA y cada fila hacía su propio SELECT
+FEFO y su propio pre-check contra LOS MISMOS lotes: dos filas que apuntan al mismo
+material (código repetido en `formula_items`, que no tiene UNIQUE, o dos códigos que
+`_resolver_material_bodega` colapsa en uno) pasaban AMBAS viendo el stock completo y
+descontaban el doble → **stock NEGATIVO por lote, en silencio** (el kardex afirmaba
+que un lote entregó gramos que no tenía · trazabilidad falsa ante INVIMA).
+
+Es el mismo dedup que el path programado (`_calcular_mp_consumo_produccion`) tiene
+desde el 1-jun (P0-1); la ruta de Fabricación directa se había quedado sin él.
+
+Corolario: el simulador ("Verificar stock") consolida igual, así que da el MISMO
+veredicto que el descuento real (M5). Tests: `tests/test_descuento_dedup_codigo.py`.

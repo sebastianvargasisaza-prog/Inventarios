@@ -286,3 +286,28 @@ Tests goldens que protegen:
   Presentaciones (campos "Código tapa MEE" / "Código caja MEE").
 - Tests: `test_envases_abastecimiento.py::test_tapa_caja_aparecen_en_abastecimiento`,
   `test_envase_checklist_autopreset.py::test_checklist_tapa_caja_se_prellenan_desde_presentaciones`.
+
+### 2026-07-25 · Auditoría CERO-ERROR · el motor de demanda deja de sub-comprar
+
+Tres cambios en `_consumo_horizontes_core` (el ÚNICO motor de demanda · pantalla y
+generar-OC comparten núcleo desde el M47). Los tres corrigen SUB-COMPRA:
+
+- **Lo FIJO ya no se deduplica.** El dedup por `(producto, fecha)` se quedaba con UNA
+  fila (la de más kg) sin mirar el origen → dos tandas FIJAS legítimas del mismo
+  producto el mismo día (dos clics en el calendario, o un `eos_plan` junto a un
+  `eos_b2b`) pedían la MP de una sola. **Invariante nuevo:** cada fila con
+  `origen IN ('eos_plan','eos_b2b','eos_retroactivo')` cuenta SIEMPRE; las sugeridas
+  se siguen deduplicando por `(producto, fecha)` **y** se descartan si ese día ya
+  tiene una tanda fija (es la misma producción que el usuario ya fijó). La protección
+  del M49 contra planes solapados queda intacta.
+- **El backlog B2B vuelve a contar.** El loop de `pedidos_b2b` filtraba desde
+  `hoy_iso` mientras las producciones usaban `piso_iso` → un pedido de cliente
+  ATRASADO (sigue pendiente de entregar) desaparecía de la demanda. Ahora ambos
+  usan `piso_iso`.
+- **Paridad pantalla ↔ generar-OC (M5).** `atrasadas_dias` pasa a tener un default
+  ÚNICO (`ATRASADAS_DIAS_DEFAULT = 7`). Antes la pantalla usaba 0 y generar-OC 7: un
+  lote programado hace 2 días y no iniciado daba 0 g en la pantalla y 2000 g en la
+  OC. **Invariante:** el número que se MUESTRA es el que DECIDE.
+
+Tests: `tests/test_abastecimiento_dedup_fijo.py` (6 · incluye las 3 regresiones del
+M49 y la paridad), `tests/test_dedup_mismo_dia_respeta_fijo.py` (3).
