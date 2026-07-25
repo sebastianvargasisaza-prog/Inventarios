@@ -140,3 +140,34 @@ def test_auto_plan_no_se_apila_sobre_lo_fijo(app):
             'las capas auto-generadas volvieron a apilarse sobre lo fijo · dio %s' % _consumo(c)
     finally:
         _limpiar()
+
+
+def test_pantalla_y_generar_oc_ven_lo_mismo(app):
+    """PARIDAD M5: un lote ATRASADO no iniciado debe pesar igual en la pantalla que en generar-OC.
+
+    Antes la pantalla usaba piso=hoy y generar-OC piso=hoy-7: un lote programado hace 2 días y
+    nunca iniciado daba 0 g en la pantalla y 2000 g en la OC. El número que se muestra tiene que
+    ser el que decide.
+    """
+    _sembrar_formula()
+    _sql("INSERT INTO produccion_programada (producto,fecha_programada,lotes,cantidad_kg,origen,estado) "
+         "VALUES ('%s', date('now','-5 hours','-2 days'), 1, 20, 'eos_plan', 'pendiente')" % PROD)
+    c = _login(app)
+    try:
+        pantalla = _consumo(c)
+        assert abs(pantalla - 2000.0) < 1.0, \
+            'la pantalla no cuenta el lote atrasado · dio %s' % pantalla
+        r = c.get('/api/programacion/mps-deficit?days_ahead=90')
+        assert r.status_code == 200, r.data[:300]
+        d = r.get_json() or {}
+        items = d.get('mps') if isinstance(d.get('mps'), list) else (d.get('items') or [])
+        if isinstance(items, dict):
+            items = list(items.values())
+        oc = None
+        for it in (items or []):
+            if (it.get('codigo') or it.get('codigo_mp')) == MP:
+                oc = float(it.get('deficit_g') or 0)
+        if oc is not None:
+            assert oc > 0, 'generar-OC tampoco debería ver 0 para un lote atrasado sin stock'
+    finally:
+        _limpiar()

@@ -15134,12 +15134,21 @@ def abastecimiento_consumo_horizontes():
         get_db(), horizontes, incluir_mp, incluir_mee, modo, solo_fijo, tipo))
 
 
+ATRASADAS_DIAS_DEFAULT = 7   # backlog de lotes atrasados no iniciados que TODOS los caminos cuentan
+
+
 def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
-                             solo_fijo, tipo, atrasadas_dias=0):
+                             solo_fijo, tipo, atrasadas_dias=ATRASADAS_DIAS_DEFAULT):
     """Núcleo PURO del MRP por horizontes (Sebastián 17-jul · extraído del endpoint para que
     generar-OC / mps-deficit usen EXACTAMENTE el mismo cálculo · UN SOLO motor de demanda · cierra
     la deuda M47). Devuelve el dict de resultado (sin jsonify). `atrasadas_dias` = días de backlog
-    de lotes ATRASADOS no iniciados a incluir (piso = hoy − N · la pantalla usa 0, generar-OC 7)."""
+    de lotes ATRASADOS no iniciados a incluir (piso = hoy − N).
+
+    FIX 25-jul (auditoría · M5): antes la PANTALLA usaba 0 y generar-OC 7 → un lote programado
+    hace 2 días y no iniciado daba 0 g en la pantalla y 2000 g al generar la OC. Alejandro miraba
+    y veía todo bien; Catalina generaba la OC y compraba. En una planta donde los lotes se corren
+    un par de días, TODO el backlog salía de la vista con la que se decide. Ahora el default es el
+    mismo para todos: el número que se MUESTRA es el que DECIDE."""
     c = conn.cursor()
     from datetime import date, timedelta as _td
     # FIX 13-jun (M24): HOY ancla en Colombia (date('now','-5 hours')), no date.today()

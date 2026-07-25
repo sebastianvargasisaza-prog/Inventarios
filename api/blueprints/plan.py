@@ -12391,7 +12391,14 @@ def plan_dedup_mismo_dia():
         "FROM produccion_programada "
         "WHERE substr(fecha_programada,1,10) >= ? AND fin_real_at IS NULL AND inicio_real_at IS NULL "
         "AND COALESCE(estado,'') NOT IN ('cancelado','completado') "
-        "AND COALESCE(origen,'') NOT IN ('eos_b2b','eos_retroactivo') "
+        # FIX 25-jul (auditoría · regla dura #3): faltaba 'eos_plan'. Esta 1ª pasada cancelaba
+        # tandas FIJAS, contradiciendo a la 2ª pasada de esta MISMA función, cuyo comentario
+        # (_AUTO_ORIG, más abajo) dice: "un Fijo (eos_plan) puede ser una 2ª tanda deliberada
+        # del mismo producto el mismo día → NUNCA se toca". Es el caso que Abastecimiento
+        # acaba de aprender a contar: dos tandas de 20 kg el mismo día son dos lotes reales.
+        # OJO: los otros 6 sitios de plan.py con esta exclusión SÍ omiten eos_plan a propósito
+        # (reemplazar cadena / regenerar plan) y están documentados como tales · no tocar.
+        "AND COALESCE(origen,'') NOT IN ('eos_plan','eos_b2b','eos_retroactivo') "
         "AND id NOT IN (SELECT COALESCE(lote_produccion_id,0) FROM pedidos_b2b_lote) "
         "ORDER BY producto, substr(fecha_programada,1,10), COALESCE(cantidad_kg,0) DESC, id", (hoy,)).fetchall()
     # agrupar por (producto_norm, fecha)
