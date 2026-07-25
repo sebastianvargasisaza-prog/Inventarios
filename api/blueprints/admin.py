@@ -7930,6 +7930,151 @@ async function guardar(){
     return _tpl.replace('__PREV__', _hh.escape(_prev, quote=True))  # XSS-safe en el atributo src (review 8-jul)
 
 
+@bp.route("/api/admin/firma-usuario", methods=["POST"])
+def admin_set_firma_usuario():
+    """Asigna / reemplaza / limpia la firma manuscrita (PNG/JPG data-uri) de un usuario.
+    Es la MANIFESTACIÓN VISIBLE (Part 11 §11.50) que se estampa en los documentos cuando la
+    persona firma con su contraseña. Solo ADMIN: vincular firma↔persona es un control regulado
+    (INVIMA · §11.100(b) identity binding). data_uri vacío = limpiar. Sebastián 24-jul."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.get_json(silent=True) or {}
+    username = (d.get('username') or '').strip()
+    data_uri = (d.get('data_uri') or '').strip()
+    if not username:
+        return jsonify({'error': 'username requerido'}), 400
+    if data_uri and not data_uri.startswith('data:image/'):
+        return jsonify({'error': 'Debe ser una imagen (PNG/JPG)'}), 400
+    if len(data_uri) > 900000:
+        return jsonify({'error': 'Imagen muy grande · recortá la firma (< 700KB)'}), 400
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT username FROM usuarios_identidad WHERE username=?", (username,)).fetchone()
+    if not row:
+        return jsonify({'error': 'ese usuario no existe en usuarios_identidad'}), 404
+    c.execute("UPDATE usuarios_identidad SET firma_img=? WHERE username=?", (data_uri, username))
+    try:
+        from audit_helpers import audit_log
+        audit_log(c, usuario=u,
+                  accion=('SET_FIRMA_USUARIO' if data_uri else 'CLEAR_FIRMA_USUARIO'),
+                  tabla='usuarios_identidad', registro_id=username,
+                  despues={'tiene_firma': bool(data_uri)})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'username': username, 'tiene_firma': bool(data_uri)})
+
+
+@bp.route("/admin/firmas-usuarios", methods=["GET"])
+def admin_firmas_usuarios_page():
+    """Página premium para asignar la firma manuscrita de cada jefe. Esa firma se estampa
+    en los documentos cuando la persona firma con su contraseña (e-firma Part 11 §11.50).
+    Solo ADMIN (control regulado · vincular firma↔persona)."""
+    if 'compras_user' not in session:
+        return redirect('/login?next=/admin/firmas-usuarios')
+    if session.get('compras_user') not in ADMIN_USERS:
+        return "<h3 style='font-family:Arial;padding:30px'>Solo administradores</h3>", 403
+    import html as _hh
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            "SELECT username, COALESCE(nombre_completo,''), COALESCE(cargo,''), "
+            "COALESCE(area,''), COALESCE(firma_img,'') FROM usuarios_identidad "
+            "WHERE COALESCE(activo,1)=1 "
+            "ORDER BY (CASE WHEN COALESCE(firma_img,'')<>'' THEN 0 ELSE 1 END), area, username"
+        ).fetchall()
+    except Exception:
+        rows = []
+    n_con = sum(1 for r in rows if (r[4] or '').strip())
+    cards = []
+    for r in rows:
+        un = r[0] or ''
+        nom = (r[1] or '').strip()
+        cargo = (r[2] or '').strip()
+        area = (r[3] or '').strip()
+        firma = (r[4] or '').strip()
+        unj = _hh.escape(un, quote=True)
+        disp = _hh.escape(nom or un)
+        sub = _hh.escape(cargo + ((' · ' + area) if area else ''))
+        if firma:
+            prev = '<img class="fprev" src="' + _hh.escape(firma, quote=True) + '" alt="firma de ' + disp + '">'
+            badge = '<span class="bok">&#10003; con firma</span>'
+            quitar = '<button class="cx-btn cx-btn-ghost" onclick="_clear(\'' + unj + '\')">Quitar</button>'
+        else:
+            prev = '<div class="fnone">Sin firma cargada</div>'
+            badge = '<span class="bno">sin firma</span>'
+            quitar = ''
+        cards.append(
+            '<div class="fcard">'
+            '<div class="fhead"><div><div class="fname">' + disp + '</div>'
+            '<div class="fsub">' + sub + ' &middot; <code>' + unj + '</code></div></div>' + badge + '</div>'
+            '<div class="fprevwrap" id="pw-' + unj + '">' + prev + '</div>'
+            '<div class="fctrl">'
+            '<input type="file" accept="image/png,image/jpeg" class="cx-input finput" id="fi-' + unj + '" onchange="_pick(\'' + unj + '\')">'
+            '<button class="cx-btn cx-btn-success" id="bs-' + unj + '" onclick="_save(\'' + unj + '\')" disabled>Guardar</button>'
+            + quitar +
+            '</div><div class="fmsg" id="msg-' + unj + '"></div>'
+            '</div>')
+    cards_html = ''.join(cards) or '<div class="cx-text-mute">No hay usuarios en la identidad.</div>'
+    _tpl = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Firmas de los jefes</title><link rel="stylesheet" href="/static/cortex.css"><style>
+body{font-family:"Inter",system-ui,Arial,sans-serif;background:#f5f3ff;padding:24px 16px;color:#18181b}
+.wrap{max-width:1080px;margin:0 auto}
+.hero{display:flex;align-items:center;gap:14px;margin-bottom:6px}
+.hero .ic{width:46px;height:46px;border-radius:13px;background:linear-gradient(135deg,#7c3aed,#a78bfa);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}
+.hero h1{margin:0;font-size:22px}
+.sub{color:#64748b;font-size:13.5px;margin:2px 0 18px;max-width:760px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
+.fcard{background:#fff;border:1px solid #ede9fe;border-radius:14px;padding:16px;box-shadow:0 2px 10px rgba(109,40,217,.05)}
+.fhead{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px}
+.fname{font-weight:800;font-size:15px}
+.fsub{color:#64748b;font-size:11.5px;margin-top:2px}
+.fsub code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:10.5px}
+.bok{background:#dcfce7;color:#15803d;font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:20px;white-space:nowrap}
+.bno{background:#fef3c7;color:#b45309;font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:20px;white-space:nowrap}
+.fprevwrap{height:110px;background:repeating-conic-gradient(#f8fafc 0% 25%,#eef2f7 0% 50%) 50%/18px 18px;border:1px solid #e5e7eb;border-radius:10px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:10px}
+.fprev{max-height:98px;max-width:94%;object-fit:contain}
+.fnone{color:#94a3b8;font-size:12.5px;font-style:italic}
+.fctrl{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.finput{flex:1;min-width:150px;font-size:12px}
+.fmsg{font-size:12px;margin-top:8px;min-height:16px}
+.note{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;border-radius:12px;padding:12px 14px;font-size:12.5px;margin-bottom:18px}
+</style></head><body><div class="wrap">
+<div class="hero"><div class="ic">&#9997;&#65039;</div><div><h1>Firmas de los jefes</h1></div></div>
+<div class="sub">La firma manuscrita de cada persona se <b>estampa en el documento</b> cuando esa persona firma con su contrase&ntilde;a (e-firma Part 11 &sect;11.50). La firma legal sigue siendo la electr&oacute;nica (identidad + reautenticaci&oacute;n + sello a prueba de manipulaci&oacute;n); esta imagen es la r&uacute;brica visible. <b>__NCON__ de __NTOT__</b> con firma cargada.</div>
+<div class="note">&#128161; Subí un PNG con <b>fondo transparente</b> (la firma sola, sin recuadro blanco) para que quede limpia sobre el documento. Se guarda en la base y persiste (no se pierde en los despliegues).</div>
+<div class="grid">__CARDS__</div>
+</div>
+<script>
+var _dus={};
+function _pick(u){
+  var fi=document.getElementById('fi-'+u); if(!fi||!fi.files[0]) return; var f=fi.files[0];
+  if(f.size>700*1024){ document.getElementById('msg-'+u).innerHTML='<span style="color:#dc2626">Muy grande (&gt;700KB) &middot; recortá la firma</span>'; return; }
+  var r=new FileReader(); r.onload=function(){ _dus[u]=r.result; var pw=document.getElementById('pw-'+u); if(pw) pw.innerHTML='<img class="fprev" src="'+r.result+'">'; var b=document.getElementById('bs-'+u); if(b) b.disabled=false; }; r.readAsDataURL(f);
+}
+async function _csrf(){ try{ return (await (await fetch('/api/csrf-token',{credentials:'same-origin'})).json()).csrf_token||''; }catch(e){ return ''; } }
+async function _save(u){
+  if(!_dus[u]) return; var b=document.getElementById('bs-'+u); b.disabled=true; b.textContent='Guardando...';
+  try{
+    var t=await _csrf();
+    var r=await fetch('/api/admin/firma-usuario',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify({username:u,data_uri:_dus[u]})});
+    var d=await r.json();
+    if(r.ok&&d.ok){ document.getElementById('msg-'+u).innerHTML='<span style="color:#16a34a;font-weight:700">&#10003; Firma guardada &middot; ya se estampa en los documentos</span>'; }
+    else { document.getElementById('msg-'+u).innerHTML='<span style="color:#dc2626">Error: '+((d&&d.error)||r.status)+'</span>'; b.disabled=false; }
+  }catch(e){ document.getElementById('msg-'+u).innerHTML='<span style="color:#dc2626">Error de red</span>'; b.disabled=false; }
+  b.textContent='Guardar';
+}
+async function _clear(u){
+  if(!confirm('Quitar la firma de '+u+' ?')) return;
+  var t=await _csrf();
+  var r=await fetch('/api/admin/firma-usuario',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify({username:u,data_uri:''})});
+  if(r.ok){ location.reload(); } else { alert('No se pudo quitar'); }
+}
+</script></body></html>'''
+    return (_tpl.replace('__CARDS__', cards_html)
+                .replace('__NCON__', str(n_con))
+                .replace('__NTOT__', str(len(rows))))
+
+
 @bp.route("/api/admin/purgar-gcal", methods=["POST"])
 def admin_purgar_gcal():
     """Cancela las producciones FUTURAS no-ejecutadas de origen 'calendar' (Google Calendar ELIMINADO ·

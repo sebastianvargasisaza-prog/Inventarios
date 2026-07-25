@@ -5421,6 +5421,14 @@ def pdf_ebr(ebr_id):
         pdf.set_font("Helvetica", "B", 11)
         pdf.cell(0, 7, _safe_pdf(f"5. Firmas electrónicas ({len(firmas)}) · Part 11 §11.50"),
                  new_x="LMARGIN", new_y="NEXT")
+        # Manifestación visible §11.50 · estampar la firma MANUSCRITA del firmante.
+        import base64 as _b64f
+        from io import BytesIO as _BIOf
+        try:
+            from blueprints.firmas import firma_img_de_usuario as _firma_img_u
+        except Exception:
+            from api.blueprints.firmas import firma_img_de_usuario as _firma_img_u
+        _firma_cache_pdf = {}
         for f in firmas:
             _line(
                 f"{f['signed_at_utc']} UTC · {f['meaning']} · "
@@ -5430,6 +5438,17 @@ def pdf_ebr(ebr_id):
             )
             if f["comment"]:
                 _line(f'   "{f["comment"]}"', h=4, font_size=8, italic=True)
+            _su = f['signer_username'] or ''
+            if _su not in _firma_cache_pdf:
+                _firma_cache_pdf[_su] = _firma_img_u(conn, _su)
+            _uri = _firma_cache_pdf[_su]
+            if _uri and ',' in _uri:
+                try:
+                    _png = _b64f.b64decode(_uri.split(',', 1)[1])
+                    pdf.image(_BIOf(_png), x=pdf.l_margin + 6, h=9)
+                    pdf.ln(2)
+                except Exception:
+                    pass
 
     # 6. Disposición del lote / Certificado de liberación
     pdf.ln(2)

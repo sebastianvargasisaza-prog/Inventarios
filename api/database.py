@@ -10285,6 +10285,14 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "ALTER TABLE documentos_regulados ADD COLUMN r2_bytes INTEGER DEFAULT 0",
         "CREATE INDEX IF NOT EXISTS idx_docreg_r2 ON documentos_regulados(r2_key)",
     ]),
+    (373, "Firma manuscrita por usuario (Sebastián 24-jul · Part 11 §11.50 signature manifestation): "
+          "usuarios_identidad gana firma_img (PNG data-URI) para ESTAMPAR la firma digital del jefe en el "
+          "documento cuando firma con su contraseña. La e-firma (identidad + HMAC + reauth) sigue siendo el "
+          "control legal (§11.200); la imagen es la manifestación VISIBLE que Sebastián exige en cada documento "
+          "('todos los documentos deben ir firmados · debe quedar la firma digital'). Se siembra al arranque "
+          "desde api/static/firmas_seed/<username>.png si el usuario no tiene firma cargada (idempotente).", [
+        "ALTER TABLE usuarios_identidad ADD COLUMN firma_img TEXT DEFAULT ''",
+    ]),
 ]
 
 
@@ -11661,8 +11669,68 @@ def init_db():
     # ─── Migraciones de esquema: aplicar al arranque ─────────────────────────
     run_migrations(conn)
 
+    # Firmas manuscritas de los jefes (idempotente · Part 11 §11.50 · no aborta)
+    try:
+        seed_firmas_iniciales(conn)
+    except Exception as _e:
+        print("[init_db] seed_firmas_iniciales WARN: %s" % _e)
+
     conn.commit()
     conn.close()
+
+
+def seed_firmas_iniciales(conn):
+    """Siembra la firma manuscrita (PNG data-URI) de cada jefe desde
+    api/static/firmas_seed/<username>.png si el usuario aún NO tiene firma
+    cargada. Idempotente (no pisa una firma ya asignada por el admin) y
+    cross-backend (SQLite + PostgreSQL vía el adapter).
+
+    La e-firma (identidad + HMAC + reauth · blueprints/firmas.py) es el control
+    LEGAL Part 11 §11.200; esta imagen es la MANIFESTACIÓN VISIBLE §11.50 que
+    Sebastián exige estampada en cada documento cuando el jefe firma con su
+    contraseña. Retorna cuántas firmas nuevas sembró.
+    """
+    import base64 as _b64
+    import os as _os
+    ddir = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'static', 'firmas_seed')
+    if not _os.path.isdir(ddir):
+        return 0
+    cur = conn.cursor()
+    # Chequeo de columna PG-safe (PRAGMA no sirve en PG · M57): si firma_img aún
+    # no existe (mig 373 no aplicada), salir limpio sin forzar.
+    try:
+        cur.execute("SELECT firma_img FROM usuarios_identidad LIMIT 0")
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return 0
+    n = 0
+    for fn in sorted(_os.listdir(ddir)):
+        if not fn.lower().endswith('.png'):
+            continue
+        username = fn[:-4]
+        try:
+            cur.execute("SELECT COALESCE(firma_img,'') FROM usuarios_identidad WHERE username=?",
+                        (username,))
+            row = cur.fetchone()
+            if not row:
+                continue  # el usuario no está en la identidad · no crear a ciegas
+            if (row[0] or '').strip():
+                continue  # ya tiene firma cargada · no pisar (idempotente)
+            with open(_os.path.join(ddir, fn), 'rb') as fh:
+                data = fh.read()
+            if not data:
+                continue
+            uri = 'data:image/png;base64,' + _b64.b64encode(data).decode('ascii')
+            cur.execute("UPDATE usuarios_identidad SET firma_img=? WHERE username=?",
+                        (uri, username))
+            n += 1
+        except Exception as e:
+            print("[seed_firmas] WARN %s: %s" % (username, e))
+    return n
+
 
 def seed_compromisos(c):
     items = [

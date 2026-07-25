@@ -118,7 +118,7 @@ from auth import (
     _log_sec, register_hooks,
 )
 
-from database import init_db, seed_compromisos, seed_rrhh, run_seed_rrhh, get_db, run_migrations, MIGRATIONS
+from database import init_db, seed_compromisos, seed_rrhh, run_seed_rrhh, get_db, run_migrations, MIGRATIONS, seed_firmas_iniciales
 
 app = Flask(__name__)
 _secret = os.environ.get('SECRET_KEY', '').strip()
@@ -464,6 +464,23 @@ try:
             except Exception as _e:
                 _logger_mig.error(
                     "AUTO-MIG-PG · pg_triggers.sql FALLÓ (no aborta boot): %s", _e)
+                try:
+                    _c.rollback()
+                except Exception:
+                    pass
+            # Firmas manuscritas de los jefes (idempotente · Part 11 §11.50 · PG).
+            # Corre tras la mig 373 (columna firma_img) · solo llena usuarios sin firma.
+            try:
+                _c.rollback()
+            except Exception:
+                pass
+            try:
+                _nf = seed_firmas_iniciales(_c)
+                _c.commit()
+                if _nf:
+                    _logger_mig.warning("AUTO-MIG-PG · seed_firmas · %d firmas sembradas", _nf)
+            except Exception as _e:
+                _logger_mig.error("AUTO-MIG-PG · seed_firmas FALLÓ (no aborta boot): %s", _e)
                 try:
                     _c.rollback()
                 except Exception:

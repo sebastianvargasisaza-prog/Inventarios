@@ -169,6 +169,35 @@ def crear_firma_directa(conn, *, username, record_table, record_id,
     return cur.lastrowid
 
 
+def firma_img_de_usuario(conn, username):
+    """Devuelve el data-URI PNG de la firma manuscrita del usuario (o '' si no
+    tiene / la columna aún no existe).
+
+    Es la MANIFESTACIÓN VISIBLE (Part 11 §11.50) que se estampa junto a la firma
+    electrónica en los documentos. La firma legal sigue siendo la e_signature
+    (identidad + HMAC + reauth); la imagen es el "printed name" hecho rúbrica.
+    Defensivo: nunca lanza (la columna firma_img la agrega la mig 373).
+    """
+    if not username:
+        return ""
+    try:
+        row = conn.execute(
+            "SELECT firma_img FROM usuarios_identidad WHERE username=?",
+            (str(username),)).fetchone()
+    except Exception:
+        return ""
+    if not row:
+        return ""
+    try:
+        v = row["firma_img"]
+    except Exception:
+        try:
+            v = row[0]
+        except Exception:
+            v = ""
+    return v or ""
+
+
 # ── /api/sign/challenge ───────────────────────────────────────────────────
 
 @bp.route("/api/sign/challenge", methods=["POST"])
@@ -373,6 +402,7 @@ def list_signatures(record_table, record_id):
     # append-only, el hash recalculado NO coincide → tampered=True. La firma
     # ya no se cree solo porque está en la tabla.
     sigs = []
+    _firma_cache = {}  # signer_username → data-URI (una sola lectura por firmante)
     for r in rows:
         d = dict(r)
         try:
@@ -387,6 +417,11 @@ def list_signatures(record_table, record_id):
                 recalculado, d.get("signature_hash") or "")
         except Exception:
             d["tampered"] = None  # no se pudo verificar
+        # Manifestación visible §11.50: la firma manuscrita del firmante (si tiene).
+        _su = d.get("signer_username") or ""
+        if _su not in _firma_cache:
+            _firma_cache[_su] = firma_img_de_usuario(conn, _su)
+        d["signer_firma_img"] = _firma_cache[_su]
         sigs.append(d)
     return jsonify({
         "record_table": record_table,
