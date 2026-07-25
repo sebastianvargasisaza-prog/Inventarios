@@ -578,6 +578,106 @@ def _norm_mp_name(name):
     return s
 
 
+def _stock_por_vencimiento(conn):
+    """{material_id: [(dias_para_vencer, gramos), ...]} del stock DISPONIBLE.
+
+    Sebastián 25-jul ("abastecimiento es la fuente de la solicitud para no quedarnos sin materias
+    primas"): el motor tomaba el stock como un número plano, sin mirar CUÁNDO vence. Una MP que
+    vence en 30 días NO puede cubrir un consumo que ocurre en el día 90, pero contaba igual → el
+    déficit salía corto y no se compraba. Medido contra producción: 53 MPs con ese problema (5 en
+    el horizonte de 90d, ~4.7 kg; el caso extremo, 202 kg de Probetaína de los que sólo 9.9 siguen
+    vigentes al día 365).
+
+    Mismas exclusiones que `_get_mp_stock` (los 6 estados no disponibles, UPPER) para que los dos
+    números hablen del MISMO stock. Un lote SIN fecha de vencimiento se trata como que NO vence
+    (None): es la opción conservadora, nunca infla la compra.
+    """
+    from datetime import datetime as _dtv, timedelta as _tdv
+    hoy = (_dtv.utcnow() - _tdv(hours=5)).date()      # ancla Colombia (M24)
+    out = {}
+    for mid, fv, sg in conn.execute("""
+        SELECT material_id,
+               MAX(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA') THEN fecha_vencimiento END) AS fv,
+               COALESCE(SUM(
+                 CASE
+                   WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                   WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
+                   ELSE 0
+                 END), 0) AS g
+        FROM movimientos
+        WHERE material_id IS NOT NULL AND material_id != ''
+          AND (estado_lote IS NULL
+               OR UPPER(COALESCE(estado_lote,'')) NOT IN
+                  ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO'))
+        GROUP BY material_id, lote
+    """).fetchall():
+        g = float(sg or 0)
+        if g <= 0.01:                                  # M21 · el polvo de un lote gastado no cuenta
+            continue
+        dias = None
+        _s = str(fv or '').strip()[:10]
+        if _s:
+            try:
+                dias = (_dtv.strptime(_s, '%Y-%m-%d').date() - hoy).days
+            except ValueError:
+                dias = None
+        out.setdefault(str(mid).strip(), []).append((dias, g))
+    return out
+
+
+def _desperdicio_por_vencimiento(lotes, consumo_por_horizonte, horizontes):
+    """Gramos que se van a VENCER sin alcanzar a usarse, por horizonte.
+
+    Un lote que vence el día D sólo puede cubrir el consumo que ocurre ANTES de D. Entonces, para
+    cada fecha de vencimiento D, lo que sobra es `stock_que_vence_hasta_D − consumo_hasta_D`, y el
+    desperdicio al horizonte h es el PEOR de esos excedentes hasta h (es monótono: lo que ya se
+    perdió no se recupera).
+
+        stock 100 g que vence el día 50 · consumo: 30 g al día 50, 60 g al día 90
+        → al día 50 sobran 100−30 = 70 g que se pierden
+        → disponible real a 90 días = 100 − 70 = 30 g  (y no 100)
+        → déficit = 60 − 30 = 30 g   ← esto es lo que hay que comprar
+
+    `consumo_hasta_D` se interpola linealmente entre los horizontes que ya calcula el motor.
+    Devuelve {horizonte: gramos_desperdiciados}. Sin fechas de vencimiento devuelve todo 0.
+    """
+    hs = sorted(horizontes)
+    conv = [(h, float(consumo_por_horizonte.get(h, 0) or 0)) for h in hs]
+
+    def _consumo_al_dia(d):
+        if d <= 0:
+            return 0.0
+        prev_h, prev_c = 0, 0.0
+        for h, cc in conv:
+            if d <= h:
+                if h == prev_h:
+                    return cc
+                # interpolación lineal dentro del tramo (el consumo se reparte en el tiempo)
+                return prev_c + (cc - prev_c) * ((d - prev_h) / float(h - prev_h))
+            prev_h, prev_c = h, cc
+        return prev_c      # más allá del último horizonte: todo el consumo conocido
+
+    # lotes CON vencimiento, del que vence primero al que vence después
+    con_venc = sorted([(d, g) for (d, g) in lotes if d is not None], key=lambda x: x[0])
+    out = {h: 0.0 for h in hs}
+    if not con_venc:
+        return out
+    acum = 0.0
+    peor_por_dia = []          # (dia_vencimiento, excedente acumulado hasta ese día)
+    for d, g in con_venc:
+        acum += g
+        peor_por_dia.append((d, acum - _consumo_al_dia(d)))
+    for h in hs:
+        peor = 0.0
+        for d, exc in peor_por_dia:
+            if d > h:
+                break
+            if exc > peor:
+                peor = exc
+        out[h] = round(max(0.0, peor), 1)
+    return out
+
+
 def _lookup_stock_5tier(stock_mp, mid, nombre):
     """Lookup canónico de stock en el dict de _get_mp_stock con los 5 tiers
     (id → id.upper → nombre exacto → nombre normalizado → alias). Helper reusable ·
@@ -16277,6 +16377,16 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
         _contar_pend = bool(_rcp and str(_rcp[0]).strip().lower() in ('1', 'true', 'yes', 'si'))
     except Exception:
         _contar_pend = False
+    # Stock abierto por fecha de vencimiento · para no contar como disponible lo que se vence
+    # antes de usarse (se lee UNA vez, no por MP).
+    _stock_venc = {}
+    try:
+        _stock_venc = _stock_por_vencimiento(c)
+    except Exception as _esv:
+        # Sin esto el motor sigue funcionando con el criterio viejo (stock plano) · pero se avisa,
+        # no se traga (M4): que el dato falte NO puede volverse invisible.
+        __import__('logging').getLogger('programacion').warning(
+            'abastecimiento: no se pudo leer el stock por vencimiento: %s', _esv)
     items_out_mp = []
     if incluir_mp:
         for cod, consumo in consumo_mp.items():
@@ -16294,7 +16404,13 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
             # se re-compra. Lo EN CAMINO (OC pendiente, pend_g) NO reduce el déficit → Alejandro ve la
             # necesidad EN BRUTO (el pendiente se muestra aparte). El déficit físico = consumo − stock − cuarentena.
             disponible = stock_g + cuar_g
-            deficits = {h: round(max(consumo[h] - disponible, 0), 1) for h in horizontes}
+            # VENCIMIENTO (Sebastián 25-jul) · el stock no es un número plano: lo que vence antes
+            # de la fecha en que se va a consumir NO sirve para cubrir ese consumo. Antes contaba
+            # igual → el déficit salía corto y no se compraba. Se descuenta por horizonte.
+            _venc_h = _desperdicio_por_vencimiento(
+                _stock_venc.get(str(cod).strip(), []), consumo, horizontes)
+            deficits = {h: round(max(consumo[h] - (disponible - _venc_h.get(h, 0.0)), 0), 1)
+                        for h in horizontes}
             # 'neto a pedir' = lo que falta comprar HOY: además del stock físico y la cuarentena,
             # descuenta lo EN CAMINO (pend_g) para no re-ordenar lo ya pedido. El `deficit` de arriba
             # queda bruto de en-camino (regla Alejandro) · misma fórmula de neteo que /generar-oc.
@@ -16345,6 +16461,9 @@ def _consumo_horizontes_core(conn, horizontes, incluir_mp, incluir_mee, modo,
                 'stock_actual_g': round(stock_g, 1),
                 'pendiente_compras_g': round(pend_g, 1),
                 'cuarentena_g': round(cuar_g, 1),
+                # gramos que se VENCEN antes de alcanzar a usarse · por qué el déficit puede ser
+                # mayor que (consumo − stock): ese stock existe pero no llega vivo a la fecha
+                'vence_sin_usar_g': {str(h): round(_venc_h.get(h, 0.0), 1) for h in horizontes},
                 'consumo': {str(h): round(consumo[h], 1) for h in horizontes},
                 'deficit': {str(h): deficits[h] for h in horizontes},
                 'neto_a_pedir': {str(h): neto_a_pedir[h] for h in horizontes},

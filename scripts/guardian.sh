@@ -55,6 +55,7 @@ CORAZON=(
   "tests/test_plan_festivos_clamp.py"
   "tests/test_plan_primer_lote_buffer.py"
   "tests/test_mover_lote_cadena.py"
+  "tests/test_abastecimiento_vencimiento.py"
   "tests/test_inci_ambiguos.py"
   "tests/test_cron_mee_cuarentena.py"
   "tests/test_descuento_kg_editado.py"
