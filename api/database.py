@@ -10304,6 +10304,15 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "AND COALESCE((SELECT firma_img FROM usuarios_identidad WHERE username='jefferson'),'')<>''",
         "UPDATE usuarios_identidad SET firma_img='' WHERE username='jefferson'",
     ]),
+    (375, "Offboarding 'luis' (Sebastián 24-jul · fue despedido · lo reemplazó 'jose'): bloquea su login "
+          "poniendo users_passwords.activo=0 (así _resolve_password_hash devuelve '' aunque exista PASS_LUIS "
+          "en env → no puede entrar ni e-firmar) y lo marca inactivo en la identidad (sale de la lista de "
+          "firmas del personal). NO se borra (GMP/Part 11 conserva el histórico · reversible).", [
+        "INSERT OR IGNORE INTO users_passwords (username, password_hash, changed_by) "
+        "VALUES ('luis', '!DESACTIVADO', 'offboarding-mig375')",
+        "UPDATE users_passwords SET activo=0 WHERE username='luis'",
+        "UPDATE usuarios_identidad SET activo=0 WHERE username='luis'",
+    ]),
 ]
 
 

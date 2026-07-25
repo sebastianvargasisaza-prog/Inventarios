@@ -68,6 +68,38 @@ def test_crear_persona_solo_aseguramiento(logged_client):
     assert r.status_code == 403
 
 
+def test_firma_estampa_y_resolver(app):
+    """El helper de estampa devuelve <img> para quien tiene firma, y resuelve por username y por nombre."""
+    from blueprints.firmas import firma_estampa_html, firma_img_resolver
+    db = sqlite3.connect(os.environ["DB_PATH"])
+    db.execute("UPDATE usuarios_identidad SET nombre_completo='Hernando Acevedo' WHERE username='hernando'")
+    db.commit(); db.close()
+    with app.app_context():
+        from database import get_db
+        c = get_db()
+        stamp = firma_estampa_html(c, 'hernando')
+        assert stamp.startswith('<img') and 'data:image/png' in stamp
+        assert firma_estampa_html(c, 'NADIE-XYZ') == ''
+        # resuelve por username y por nombre completo
+        assert firma_img_resolver(c, 'hernando').startswith('data:image/png')
+        assert firma_img_resolver(c, 'Hernando Acevedo').startswith('data:image/png')
+        assert firma_img_resolver(c, '') == ''
+
+
+def test_luis_desactivado(app):
+    """Offboarding luis (mig 375): login bloqueado (activo=0) + fuera de la lista de firmas."""
+    with app.app_context():
+        from database import get_db
+        from blueprints.core import _resolve_password_hash
+        db = get_db()
+        up = db.execute("SELECT COALESCE(activo,1) FROM users_passwords WHERE username='luis'").fetchone()
+        assert up is not None and int(up[0]) == 0, 'luis debe quedar activo=0 en users_passwords'
+        ident = db.execute("SELECT COALESCE(activo,1) FROM usuarios_identidad WHERE username='luis'").fetchone()
+        assert ident is not None and int(ident[0]) == 0, 'luis debe quedar activo=0 en la identidad'
+        # el login queda bloqueado aunque exista PASS_LUIS en config (activo=0 gana)
+        assert _resolve_password_hash('luis') == '', 'luis no debe poder autenticar'
+
+
 def test_helper_firma_img(app):
     from blueprints.firmas import firma_img_de_usuario
     with app.app_context():

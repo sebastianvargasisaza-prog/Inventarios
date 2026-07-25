@@ -1791,6 +1791,13 @@ def calidad_f02_imprimible():
         return Response("<p style='font-family:sans-serif;padding:40px'>No hay F02 guardado para este lote.</p>",
                         mimetype='text/html')
     d = dict(zip([x[0] for x in c.description], row))
+    try:
+        from blueprints.firmas import firma_estampa_html as _festampa
+    except Exception:
+        try:
+            from api.blueprints.firmas import firma_estampa_html as _festampa
+        except Exception:
+            _festampa = lambda *a, **k: ''
     params = [('aspecto', 'Aspecto / Color / Olor'), ('ph', 'pH (a 25°C)'), ('densidad', 'Densidad (g/mL)'),
               ('solubilidad', 'Solubilidad'), ('viscosidad', 'Viscosidad (cP)')]
     filas = ''.join(
@@ -1811,8 +1818,8 @@ def calidad_f02_imprimible():
             + (f"<div class='fld'><span class='k'>Observaciones generales</span><span class='v'>{_e(d.get('observaciones_generales'))}</span></div>" if d.get('observaciones_generales') else '')
             + f"<div class='res {res_cls}'>Concepto de calidad: {res_txt}</div>"
             + "<div class='firmas'>"
-            + f"<div class='firma'><b>{_e(d.get('responsable_analisis') or '-')}</b>Realiza el análisis</div>"
-            + f"<div class='firma'><b>{_e(d.get('aprobo_por') or '-')}</b>Aprueba · Jefe de Control de Calidad</div>"
+            + f"<div class='firma'>{_festampa(c, d.get('responsable_analisis'))}<b>{_e(d.get('responsable_analisis') or '-')}</b>Realiza el análisis</div>"
+            + f"<div class='firma'>{_festampa(c, d.get('aprobo_por'))}<b>{_e(d.get('aprobo_por') or '-')}</b>Aprueba · Jefe de Control de Calidad</div>"
             + "</div>"
             + f"<p style='margin-top:18px;font-size:9px;color:#94a3b8'>Registrado por {_e(d.get('creado_por'))} · {_e((d.get('creado_en') or '')[:19])}</p>"
             + "<div class='noimp'><button onclick='window.print()'>🖨️ Imprimir / Guardar PDF</button></div>")

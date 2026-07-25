@@ -6489,6 +6489,16 @@ def planta_rotulo_limpieza_registro_pdf(reg_id):
           'equipos_json', 'estado', 'real_por', 'real_at', 'ver_por', 'ver_at', 'obs']
     d = dict(zip(_k, row))
     _e = lambda s: _h.escape(str(s if s is not None else ''))
+    # Manifestación §11.50: estampar la firma manuscrita de quién limpió / verificó (si la tiene registrada).
+    try:
+        from blueprints.firmas import firma_estampa_html as _festampa
+    except Exception:
+        try:
+            from api.blueprints.firmas import firma_estampa_html as _festampa
+        except Exception:
+            _festampa = lambda *a, **k: ''
+    _firma_real = _festampa(c, d['real_por']) if d['real_por'] else ''
+    _firma_ver = _festampa(c, d['ver_por']) if d['ver_por'] else ''
     equipos = []
     try:
         _ej = _json.loads(d['equipos_json'] or '[]')
@@ -6518,8 +6528,8 @@ def planta_rotulo_limpieza_registro_pdf(reg_id):
             + ("<div class='f'><span class='k'>Observaciones</span><span class='v'>" + _e(d['obs']) + "</span></div>" if d['obs'] else "")
             + "<div class='res " + _est_cls + "'>Estado: " + _e((d['estado'] or '-').upper()) + "</div>"
             + "<div class='firmas'>"
-            + "<div class='firma'><b>" + (_e(d['real_por']) or '-') + "</b>Realizó la limpieza" + (("<br><small>" + _e(d['real_at'][:19]) + "</small>") if d['real_at'] else "") + "</div>"
-            + "<div class='firma'><b>" + (_e(d['ver_por']) or '-') + "</b>Verificó (QC)" + (("<br><small>" + _e(d['ver_at'][:19]) + "</small>") if d['ver_at'] else "") + "</div>"
+            + "<div class='firma'>" + _firma_real + "<b>" + (_e(d['real_por']) or '-') + "</b>Realizó la limpieza" + (("<br><small>" + _e(d['real_at'][:19]) + "</small>") if d['real_at'] else "") + "</div>"
+            + "<div class='firma'>" + _firma_ver + "<b>" + (_e(d['ver_por']) or '-') + "</b>Verificó (QC)" + (("<br><small>" + _e(d['ver_at'][:19]) + "</small>") if d['ver_at'] else "") + "</div>"
             + "</div></div>")
     css = ("<style>@page{size:letter;margin:15mm}*{box-sizing:border-box}"
            "body{font-family:'Inter','Segoe UI',Arial,sans-serif;color:#1e1b2e;font-size:12px;margin:0;padding:16px;background:#f4f4f7;"

@@ -198,6 +198,41 @@ def firma_img_de_usuario(conn, username):
     return v or ""
 
 
+def firma_img_resolver(conn, valor):
+    """Resuelve la firma de una persona por username O por nombre completo. Muchos documentos guardan
+    el NOMBRE del responsable (realizado_por/verificado_por/registrado_por), no el username → hay que
+    resolver por ambos. Devuelve el data-URI o '' si no hay firma."""
+    v = (valor or "").strip()
+    if not v:
+        return ""
+    img = firma_img_de_usuario(conn, v.lower())
+    if img:
+        return img
+    try:
+        row = conn.execute(
+            "SELECT firma_img FROM usuarios_identidad "
+            "WHERE LOWER(TRIM(nombre_completo))=LOWER(TRIM(?)) AND COALESCE(firma_img,'')<>'' LIMIT 1",
+            (v,)).fetchone()
+        if row:
+            try:
+                return row["firma_img"] or ""
+            except Exception:
+                return row[0] or ""
+    except Exception:
+        pass
+    return ""
+
+
+def firma_estampa_html(conn, valor, alto_px=52, max_w=190):
+    """<img> de la firma manuscrita de una persona para ESTAMPAR en un documento HTML (o '' si no tiene).
+    El src es un data-URI de nuestra propia BD (admin-cargado) → no requiere escape. Manifestación §11.50."""
+    img = firma_img_resolver(conn, valor)
+    if not img:
+        return ""
+    return ('<img src="' + img + '" alt="firma" class="firma-estampa" style="display:block;'
+            'max-height:%dpx;max-width:%dpx;object-fit:contain;margin:0 auto 2px">' % (int(alto_px), int(max_w)))
+
+
 # ── /api/sign/challenge ───────────────────────────────────────────────────
 
 @bp.route("/api/sign/challenge", methods=["POST"])
