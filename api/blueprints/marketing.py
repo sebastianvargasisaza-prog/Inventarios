@@ -273,7 +273,7 @@ def _send_push_alert(conn, tipo, clave_unica, asunto, cuerpo_resumen,
                 msg["To"] = destinatario
                 msg.attach(MIMEText(html, "html", "utf-8"))
                 ctx = ssl.create_default_context()
-                with smtplib.SMTP_SSL(sn.smtp_server, sn.smtp_port, context=ctx) as s:
+                with smtplib.SMTP_SSL(sn.smtp_server, sn.smtp_port, context=ctx, timeout=30) as s:  # timeout OBLIGATORIO (M90): sin el, un SMTP que acepta TCP y no responde bloquea el worker
                     s.login(sn.email_remitente, sn.contraseña)
                     s.sendmail(sn.email_remitente, [destinatario], msg.as_string())
             except Exception as _e:
@@ -1374,7 +1374,7 @@ def mkt_reporte_ejecutivo_semanal():
                 msg['To'] = dest
                 msg.attach(MIMEText(html, 'html', 'utf-8'))
                 ctx = ssl.create_default_context()
-                with smtplib.SMTP_SSL(sn.smtp_server, sn.smtp_port, context=ctx) as s:
+                with smtplib.SMTP_SSL(sn.smtp_server, sn.smtp_port, context=ctx, timeout=30) as s:  # timeout OBLIGATORIO (M90): sin el, un SMTP que acepta TCP y no responde bloquea el worker
                     s.login(sn.email_remitente, sn.contraseña)
                     s.sendmail(sn.email_remitente, [dest], msg.as_string())
                 enviados += 1
@@ -6160,7 +6160,7 @@ def _start_reporte_ejecutivo_loop():
                                                 msg['To'] = dest
                                                 msg.attach(MIMEText(html, 'html', 'utf-8'))
                                                 ctx = _ssl.create_default_context()
-                                                with smtplib.SMTP_SSL(sn.smtp_server, sn.smtp_port, context=ctx) as s:
+                                                with smtplib.SMTP_SSL(sn.smtp_server, sn.smtp_port, context=ctx, timeout=30) as s:  # timeout OBLIGATORIO (M90): sin el, un SMTP que acepta TCP y no responde bloquea el worker
                                                     s.login(sn.email_remitente, sn.contraseña)
                                                     s.sendmail(sn.email_remitente, [dest], msg.as_string())
                                                 log.info('[reporte-ejecutivo] enviado a %s', dest)

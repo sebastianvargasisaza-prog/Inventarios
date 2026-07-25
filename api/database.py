@@ -10313,6 +10313,18 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
         "UPDATE users_passwords SET activo=0 WHERE username='luis'",
         "UPDATE usuarios_identidad SET activo=0 WHERE username='luis'",
     ]),
+    (377, "Índices que NUNCA se crearon por colisión de NOMBRE (auditoría 25-jul). Los nombres de "
+          "índice son GLOBALES (en SQLite y en PG), así que un segundo CREATE INDEX IF NOT EXISTS "
+          "con un nombre ya usado por OTRA tabla es un no-op SILENCIOSO. Cinco quedaron sin crear; "
+          "el más caro es movimientos(lote, fecha_vencimiento): toda consulta que filtra por LOTE sin "
+          "material_id (trazabilidad, genealogía, expediente por lote, recepción) hacía scan completo "
+          "de `movimientos`. Se recrean con nombres únicos.", [
+        "CREATE INDEX IF NOT EXISTS idx_mov_lote_venc ON movimientos(lote, fecha_vencimiento)",
+        "CREATE INDEX IF NOT EXISTS idx_prespro_producto ON producto_presentaciones(producto_nombre, activo)",
+        "CREATE INDEX IF NOT EXISTS idx_tareas_oper_estado ON tareas_operativas(estado, fecha_objetivo)",
+        "CREATE INDEX IF NOT EXISTS idx_mp_lt_origen ON mp_lead_time_config(origen, activo)",
+        "CREATE INDEX IF NOT EXISTS idx_mee_aliases_alias_lower ON mee_aliases(LOWER(alias))",
+    ]),
     (376, "Bitácora de calibración de equipos (Sebastián 21-jul · INVIMA · vive en ASEGURAMIENTO/Miguel): "
           "equipos_eventos gana numero_oc para anclar la calibración a la OC con que se compró el servicio "
           "(ej. OC-2026-0268 · CI Balanzas de Colombia) → trazabilidad compra→registro→certificado.", [
