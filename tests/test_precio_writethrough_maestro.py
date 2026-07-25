@@ -42,8 +42,13 @@ def test_precio_oc_se_graba_en_maestro(app, db_clean):
                 json={'items': [{'codigo_mp': cod, 'precio_unitario': 50}]},
                 headers=csrf_headers())
     assert r.status_code == 200, f"{r.status_code} {r.data[:200]}"
+    # ACTUALIZADO 25-jul (auditoría) · lo que este test protege es el WRITE-THROUGH ("último
+    # precio manda"), no la unidad. El endpoint recibe $/g y `maestro_mps.precio_referencia`
+    # está en $/kg (INV-2: los otros 3 writers hacen ×1000 y los lectores dividen por 1000).
+    # El valor esperado pasa de 50 a 50.000: la expectativa vieja congelaba un precio 1000×
+    # más barato, que hacía cotizar la siguiente OC por una milésima de lo real.
     ref = _one("SELECT precio_referencia FROM maestro_mps WHERE codigo_mp=?", (cod,))
-    assert ref and abs(float(ref[0]) - 50) < 0.001, f"precio_referencia debe quedar en 50 (último precio manda) · got {ref}"
+    assert ref and abs(float(ref[0]) - 50000) < 0.001, f"precio_referencia en $/kg = 50 × 1000 · got {ref}"
 
     # 2º precio sobrescribe (último manda)
     r2 = c.patch('/api/ordenes-compra/OC-PWT/items-precios',
@@ -51,7 +56,7 @@ def test_precio_oc_se_graba_en_maestro(app, db_clean):
                  headers=csrf_headers())
     assert r2.status_code == 200
     ref2 = _one("SELECT precio_referencia FROM maestro_mps WHERE codigo_mp=?", (cod,))
-    assert ref2 and abs(float(ref2[0]) - 73.5) < 0.001, f"debe sobrescribir a 73.5 · got {ref2}"
+    assert ref2 and abs(float(ref2[0]) - 73500) < 0.001, f"debe sobrescribir a 73.5 × 1000 · got {ref2}"
 
 
 def test_precio_oc_se_graba_en_maestro_mee(app, db_clean):

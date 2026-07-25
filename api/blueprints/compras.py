@@ -1882,7 +1882,7 @@ def actualizar_precios_items_oc(numero_oc):
                     """INSERT OR IGNORE INTO precios_mp_historico
                        (codigo_mp, precio_kg, proveedor, fecha)
                        VALUES (?, ?, ?, datetime('now', '-5 hours'))""",
-                    (cod, precio, proveedor)
+                    (cod, precio * 1000.0, proveedor)   # $/g → $/kg · FIX 25-jul (la columna es precio_KG)
                 )
             except sqlite3.OperationalError:
                 pass
@@ -1891,7 +1891,14 @@ def actualizar_precios_items_oc(numero_oc):
             # auto-carga en la próxima OC (antes solo iba al histórico, que la auto-carga NO lee
             # → parecía que "no quedaba guardado"). Si el código no es un MP (consumible), 0 filas.
             try:
-                c.execute("UPDATE maestro_mps SET precio_referencia=? WHERE codigo_mp=?", (precio, cod))
+                # FIX 25-jul (auditoría) · `precio` acá es $/g (el subtotal se calcula
+                # cantidad_g × precio) pero `maestro_mps.precio_referencia` está en $/kg: los
+                # otros 3 writers del repo hacen `× 1000.0` con el comentario "$/g → $/kg
+                # (INV-2)" y los lectores dividen por 1000. Sin la conversión, una MP de
+                # $20.000/kg quedaba en 20 → la próxima OC la cotizaba a $0,02/g, o sea 1000
+                # veces más barata (50.000 g por $1.000 en vez de $1.000.000).
+                c.execute("UPDATE maestro_mps SET precio_referencia=? WHERE codigo_mp=?",
+                          (precio * 1000.0, cod))
             except Exception:
                 pass
             # Igual para ENVASES (MEE · Sebastián 1-jul): el precio de empaque también persiste en
@@ -6276,8 +6283,28 @@ def recibir_oc(numero_oc):
         ficha_seguridad_url = (ir.get('ficha_seguridad_url') or '').strip()
         # Solo registrar movimiento (kardex) si hay algo recibido Y no es consumible administrativo.
         # Consumibles: se acumula en la línea de la OC (abajo) pero NO entran al kardex ni a cuarentena.
+        # FIX 25-jul (auditoría) · decidir MP vs ENVASE por ÍTEM, no por la categoría de toda
+        # la OC. La bandeja de Planta agrupa MP y envases del mismo proveedor y el front creaba
+        # la OC con `categoria: 'MP'` FIJO (compras_html.py), así que los frascos caían al
+        # `else` y entraban al kardex de MATERIA PRIMA: no sumaban en SUM(movimientos_mee) (→
+        # abastecimiento de envases los volvía a pedir) y se saltaban la CUARENTENA que la rama
+        # MEE sí aplica (mig 301 · INVIMA). Una OC MIXTA es legítima, así que el criterio
+        # correcto es el código: si está en maestro_mee y NO en maestro_mps, es envase.
+        _es_mee_item = (categoria == 'MEE')
+        if not _es_mee_item and codigo:
+            try:
+                _en_mee = cur.execute("SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo))=UPPER(TRIM(?)) LIMIT 1",
+                                      (codigo,)).fetchone()
+                _en_mps = cur.execute("SELECT 1 FROM maestro_mps WHERE UPPER(TRIM(codigo_mp))=UPPER(TRIM(?)) LIMIT 1",
+                                      (codigo,)).fetchone()
+                if _en_mee and not _en_mps:
+                    _es_mee_item = True
+                    log.warning('recibir_oc %s · item %s está en maestro_mee pero la OC dice categoria=%s '
+                                '→ se recibe como ENVASE (kardex MEE + cuarentena)', numero_oc, codigo, categoria)
+            except Exception as _e_mee:
+                log.warning('recibir_oc · no se pudo verificar si %s es envase: %s', codigo, _e_mee)
         if cant_recibida > 0 and not _es_consumo_admin:
-            if categoria == 'MEE':
+            if _es_mee_item:
                 # Sin codigo_mp no se puede imputar el MEE · un INSERT con
                 # mee_codigo='' + UPDATE que no matchea nada = drift permanente.
                 if codigo:
@@ -8211,8 +8238,15 @@ def compras_aplicar_saldo_oc(numero_oc):
         return jsonify({'error': 'OC no existe'}), 404
     proveedor = (row[0] or '').strip()
     valor_total = float(row[1] or 0)
-    if (row[2] or '').lower() in ('cancelada', 'anulada'):
-        return jsonify({'error': 'La OC está cancelada'}), 409
+    # FIX 25-jul (auditoría) · aplicar saldo a favor es PAGAR: tiene que bloquear los mismos
+    # estados que `pagar_oc` (que ya excluye Borrador y Revisada por el "Bug #8 · bypass de
+    # autorización gerencial"). Antes solo frenaba cancelada/anulada, así que con saldo a favor
+    # se podía dejar en 'Pagada' una OC en BORRADOR: sin autorizar, sin límite de monto, sin
+    # audit de AUTORIZAR_OC. El control gerencial quedaba eludido por todo el crédito disponible.
+    _est_oc = (row[2] or '').strip()
+    if _est_oc.lower() in ('cancelada', 'anulada', 'rechazada', 'borrador', 'revisada'):
+        return jsonify({'error': f"OC en estado '{_est_oc}' no admite pagos (ni con saldo a favor)",
+                        'codigo': 'ESTADO_INVALIDO'}), 409
     if not proveedor:
         return jsonify({'error': 'La OC no tiene proveedor'}), 400
     pagado = float(cur.execute("SELECT COALESCE(SUM(monto),0) FROM pagos_oc WHERE numero_oc=?",
@@ -14023,13 +14057,23 @@ def revertir_pago_oc(numero_oc):
     # 3. DELETE flujo_egresos asociado · best-effort (puede no tener FK directa)
     flujo_eliminado = 0
     try:
+        # FIX 25-jul (auditoría) · `flujo_egresos` NO tiene columna `numero_oc`: el pago guarda
+        # la OC en `referencia` (ver el INSERT de pagar_oc). El DELETE viejo lanzaba
+        # OperationalError SIEMPRE y el `except` lo tragaba → al revertir un pago se borraba
+        # todo (pagos_oc, comprobante, estado de la OC) MENOS el egreso, así que el dinero
+        # seguía contado en el P&L / cash-flow y al volver a pagar bien quedaba DUPLICADO.
+        # Se borra UNA sola fila (la más reciente que coincida) para no llevarse por delante
+        # dos pagos legítimos del mismo monto a la misma OC.
         cur.execute(
-            "DELETE FROM flujo_egresos WHERE numero_oc=? AND ABS(monto - ?) < 0.01",
+            "DELETE FROM flujo_egresos WHERE id = ("
+            "  SELECT id FROM flujo_egresos "
+            "   WHERE referencia=? AND COALESCE(fuente,'')='compras' AND ABS(monto - ?) < 0.01 "
+            "   ORDER BY id DESC LIMIT 1)",
             (numero_oc, float(monto_pago)),
         )
         flujo_eliminado = cur.rowcount
-    except sqlite3.OperationalError:
-        pass
+    except sqlite3.OperationalError as _e_fe:
+        log.warning('revertir_pago %s · no se pudo borrar el egreso espejo: %s', numero_oc, _e_fe)
     # 4. Recalcular estado OC según pagos restantes
     cur.execute("SELECT COALESCE(SUM(monto), 0) FROM pagos_oc WHERE numero_oc=?", (numero_oc,))
     total_restante = float(cur.fetchone()[0] or 0)
