@@ -573,6 +573,22 @@ def handle_formulas():
     conn = get_db()
     c = conn.cursor()
     if request.method == 'POST':
+        # FIX 25-jul (auditoría de seguridad · patrón M32) · escribir una FÓRMULA MAESTRA es
+        # un dato regulado INVIMA: define qué y cuánto se dispensa, alimenta el descuento FEFO,
+        # el cálculo de compra y la generación del MBR. La PÁGINA /tecnica ya está gateada a
+        # TECNICA_USERS|ADMIN, pero este endpoint solo exigía estar logueado, así que cualquier
+        # usuario (una operaria de dispensación, marketing, la contadora) podía reescribir una
+        # receta llamándolo a mano. Verificado en la auditoría con una sesión de planta.
+        # Se gatea al MISMO set que la página: nadie que hoy trabaje en fórmulas pierde acceso.
+        _u_form = session.get('compras_user', '')
+        try:
+            from config import TECNICA_USERS as _TEC, ADMIN_USERS as _ADM_F
+            _puede_formulas = _u_form in (set(_TEC) | set(_ADM_F))
+        except Exception:
+            _puede_formulas = False
+        if not _puede_formulas:
+            return jsonify({'error': 'Solo Técnica o administradores pueden escribir fórmulas maestras',
+                            'codigo': 'SIN_PERMISO_FORMULA'}), 403
         # Sebastián 12-may-2026: bugs criticos resueltos:
         #   1. INSERT items olvidaba cantidad_g_por_lote → fórmulas quedaban
         #      GPL_NO_SEMBRADO. Ahora calcula automaticamente.

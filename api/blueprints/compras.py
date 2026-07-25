@@ -2747,6 +2747,12 @@ def ocs_consolidado_excel():
     """
     u, err, code = _require_compras_session()
     if err: return err, code
+    # FIX 25-jul (auditoría · Habeas Data Ley 1581) · este Excel vuelca NIT, banco, tipo de
+    # cuenta y número de cuenta de TODOS los proveedores, y `_require_compras_session` es solo
+    # "está logueado" (lo dice su propio docstring). Con ?dias=365 era una exfiltración masiva
+    # en un archivo. El dato bancario se restringe a admin + contadora, igual que en el resto
+    # del módulo; los demás siguen descargando el Excel, pero con esas 4 columnas enmascaradas.
+    _ve_banco_xls = (u or '').lower() in {x.lower() for x in (set(ADMIN_USERS) | set(CONTADORA_USERS))}
     try:
         import openpyxl
         from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -2831,7 +2837,12 @@ def ocs_consolidado_excel():
             str(row[6])[:10] if row[6] else '',
             'SÍ' if int(row[7] or 0) else '',
             row[8], row[9],
-            row[10], row[11], row[12], row[13], row[14],
+            # NIT / Banco / Tipo cta / N° cuenta · solo admin y contadora (Habeas Data)
+            (row[10] if _ve_banco_xls else '***'),
+            (row[11] if _ve_banco_xls else '***'),
+            (row[12] if _ve_banco_xls else '***'),
+            (row[13] if _ve_banco_xls else '***'),
+            row[14],
         ]
         total_valor += float(row[5] or 0)
         for col, val in enumerate(valores, start=1):
@@ -9468,6 +9479,21 @@ def get_por_pagar():
     #   - Servicios autorizados (Aprobada/Autorizada con categoria de pago directo)
     todos = fisicas + servicios
     todos.sort(key=lambda x: x.get('fecha_recepcion') or x.get('fecha') or '', reverse=True)
+
+    # FIX 25-jul (auditoría · Habeas Data Ley 1581 · M12e) · este endpoint devolvía
+    # num_cuenta / banco / tipo_cuenta / nit EN CLARO a CUALQUIER usuario logueado. El
+    # comentario de arriba decía "RBAC ya garantiza que solo compras_user accede", pero
+    # `compras_user` es simplemente "inició sesión": una operaria de planta o de calidad
+    # obtenía las cuentas bancarias de todos los proveedores con mercancía recibida.
+    # Se aplica el MISMO enmascarado que ya usan los endpoints hermanos (`compras.py:3176`,
+    # `:3380`, `:10218`): solo admin y contadora ven el dato real.
+    _u_pp = (session.get('compras_user') or '').lower()
+    _ve_banco_pp = _u_pp in {x.lower() for x in (set(ADMIN_USERS) | set(CONTADORA_USERS))}
+    if not _ve_banco_pp:
+        for _it in todos:
+            for _cb in ('num_cuenta', 'banco', 'tipo_cuenta', 'nit'):
+                if _it.get(_cb):
+                    _it[_cb] = '***'
 
     total_valor = sum(item.get('valor_total', 0) or 0 for item in todos)
     total_servicios = sum(item['valor_total'] or 0 for item in servicios)
