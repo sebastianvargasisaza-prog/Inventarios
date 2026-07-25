@@ -13144,7 +13144,11 @@ def admin_inci_ambiguos():
             continue
         _det = []
         for cod, inci, com in miembros:
-            _g = _re_g.findall(r'\(([^)]*)\)', com or '')
+            # FIX 25-jul (visto con los datos reales) · el grado NO siempre vive en el paréntesis
+            # del nombre comercial: en el hialurónico está en el INCI ("HYALURONIC ACID (300 kD)")
+            # y en la vitamina E no hay paréntesis ("Vitamina E polvo" vs "líquida"). Se busca en
+            # los DOS campos.
+            _g = _re_g.findall(r'\(([^)]*)\)', (com or '') + ' ' + (inci or ''))
             _det.append({
                 'codigo': cod,
                 'nombre_comercial': com,
@@ -13154,10 +13158,19 @@ def admin_inci_ambiguos():
                 'formulas_que_lo_usan': sorted(usos.get(cod, []))[:12],
                 'n_formulas': len(usos.get(cod, [])),
             })
+        # CRITERIO REAL de ambigüedad: si los NOMBRES COMERCIALES normalizados difieren, son
+        # materiales DISTINTOS que comparten INCI y hace falta que una persona decida. Si
+        # normalizan igual (las 4 "Agua Desionizada", "Butylene Glycol" vs "Butylene glycol"),
+        # es un código duplicado del MISMO material: el resolver lo unifica solo y no molesta.
+        # Mirar solo el paréntesis se quedaba corto y daba falsos "no ambiguo" en los casos que
+        # más importan (hialurónico 50/300/1500, vitamina E polvo vs líquida).
+        # Hacen falta LOS DOS criterios, porque cada uno solo ve la mitad:
+        #  · el nombre normalizado BORRA el paréntesis → no distingue "(50 kD)" de "(1500 kD)";
+        #  · el paréntesis no existe en "Vitamina E polvo" vs "Vitamina E líquida".
+        # Ambiguo = difieren los nombres normalizados O difieren los grados del paréntesis.
+        _nombres_norm = {_nrm(d['nombre_comercial'] or '') for d in _det}
         _grados = {d['grado'] for d in _det}
-        # solo es AMBIGUO de verdad si los grados difieren (si son iguales, es un código duplicado
-        # del mismo material y el resolver sí puede unificarlo solo)
-        _ambiguo = len(_grados) > 1
+        _ambiguo = (len(_nombres_norm) > 1) or (len(_grados) > 1)
         # BLOQUEA hoy si alguna fórmula usa un código sin stock y hay otro del grupo con stock
         _sin_stock_en_uso = [d for d in _det if d['n_formulas'] > 0 and d['stock_g'] <= 0.01]
         _con_stock = [d for d in _det if d['stock_g'] > 0.01]

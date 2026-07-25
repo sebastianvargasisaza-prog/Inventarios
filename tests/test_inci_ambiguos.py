@@ -52,6 +52,8 @@ def test_distingue_grado_distinto_de_codigo_duplicado(admin_client):
         g_dup = next((g for g in d['grupos'] if 'ZZINCI DUP' in g['inci_normalizado']), None)
         assert g_amb is not None and g_amb['ambiguo_por_grado'] is True, g_amb
         assert {c['grado'] for c in g_amb['codigos']} == {'50 kD', '1500 kD'}, g_amb
+        # el grado tambien se detecta cuando vive en el INCI (caso real del hialuronico)
+        assert all(c['nombre_comercial'] for c in g_amb['codigos']), g_amb
         assert g_dup is not None and g_dup['ambiguo_por_grado'] is False, \
             'un código duplicado del MISMO material no exige decisión humana'
     finally:
