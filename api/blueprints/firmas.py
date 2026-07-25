@@ -353,21 +353,32 @@ def sign_record():
             _grupo_estricto = {x.lower() for x in (set(_ADM) | set(_QC))}
         except Exception:
             _grupo_estricto = set()
-        if username.lower() in _grupo_estricto and auth_factor != 'totp':
+        # FIX 25-jul (auditoría) · este gate estaba MUERTO por DOS defectos superpuestos:
+        #   (a) consultaba `mfa_secrets`, tabla que NO EXISTE (la real es `users_mfa`) → el
+        #       error lo tragaba el `except: pass` de abajo, así que nunca bloqueaba nada;
+        #   (b) comparaba `auth_factor != 'totp'`, y auth_factor solo puede valer 'password'
+        #       o 'password+totp' (ver `_verify_totp_if_enrolled`) → tautología siempre cierta.
+        # O sea que el control Part 11 §11.200(a)(1)(i) que el comentario promete nunca se
+        # aplicó: un admin o QC firmaba una liberación de lote con sola contraseña.
+        # Encenderlo NO cambia la operación: si el usuario tiene MFA habilitado, el challenge
+        # ya exige el TOTP y auth_factor sale 'password+totp'; si no lo tiene, este gate no
+        # exige nada. Queda como defensa en profundidad, que es lo que debió ser siempre.
+        if username.lower() in _grupo_estricto and auth_factor != 'password+totp':
             # Verificar que MFA esté enrolado (no exigir si user no tiene MFA setup)
             try:
                 mfa_row = cur.execute(
-                    "SELECT enabled FROM mfa_secrets WHERE username=? AND COALESCE(enabled,0)=1",
+                    "SELECT enabled FROM users_mfa WHERE username=? AND COALESCE(enabled,0)=1",
                     (username,),
                 ).fetchone()
                 if mfa_row:
                     # Sí tiene MFA · debe usarlo para meanings críticos
                     return jsonify({
-                        'error': 'Meaning crítico requiere firma con MFA TOTP · re-firmá con auth_factor=totp',
+                        'error': 'Meaning crítico requiere firma con MFA TOTP · re-firmá aportando el token',
                         'codigo': 'MFA_REQUIRED_FOR_CRITICAL_SIGN',
                     }), 403
-            except Exception:
-                pass  # graceful · no bloquear si tabla no existe
+            except Exception as _e_mfa:
+                # Ya NO se traga en silencio: si el chequeo falla, queda registrado.
+                log.warning('gate MFA de firma crítica no pudo verificarse para %s: %s', username, _e_mfa)
 
     # Snapshot identidad humana del firmante (Part 11 §11.50: printed name)
     ident = cur.execute(

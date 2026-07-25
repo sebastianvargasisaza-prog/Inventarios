@@ -13132,7 +13132,17 @@ def _cerrar_pendientes_ya_producidos(conn, usuario='cron-fab'):
         "SELECT p.id, p.producto FROM produccion_programada p "
         "WHERE COALESCE(p.estado,'') NOT IN ('cancelado','completado') "
         "AND p.fin_real_at IS NULL AND p.inicio_real_at IS NULL "
-        "AND COALESCE(p.origen,'') <> 'eos_b2b' "
+        # FIX 25-jul (auditoría · regla dura #3) · antes solo excluía 'eos_b2b', así que este
+        # cron (corre 4:50 con sync_fabricacion_calendario) CANCELABA la 2ª tanda FIJA del
+        # usuario: programás dos lotes de 20 kg para el mismo día, la planta produce uno, y a
+        # la madrugada siguiente el otro desaparece. Encima Abastecimiento deja de contar sus
+        # 20 kg de MP (lo cancelado no suma) → SUB-COMPRA silenciosa.
+        # Es el gemelo AUTOMÁTICO del bug que ya se cerró en /api/plan/dedup-mismo-dia.
+        # Si el 2º lote sí se produjo por Fabricación directa y el espejo no lo pudo casar, el
+        # pendiente Fijo queda VISIBLE en el calendario para que una persona lo cierre: se
+        # prefiere un residuo visible (y que sobre-cuente MP) antes que perder el plan del
+        # usuario en silencio y comprar de menos.
+        "AND COALESCE(p.origen,'') NOT IN ('eos_plan','eos_b2b','eos_retroactivo') "
         "AND EXISTS (SELECT 1 FROM produccion_programada c "
         "  WHERE UPPER(TRIM(c.producto))=UPPER(TRIM(p.producto)) "
         "  AND substr(c.fecha_programada,1,10)=substr(p.fecha_programada,1,10) "

@@ -47,6 +47,7 @@ CORAZON=(
   "tests/test_resolver_inci_ambiguo.py"
   "tests/test_generar_oc_correlativo.py"
   "tests/test_dedup_mismo_dia_respeta_fijo.py"
+  "tests/test_cron_no_cancela_fijo.py"
   "tests/test_paridad_motores.py"
   "tests/test_e2e_mp_chain.py"
   "tests/test_diag_solo_admin.py"
