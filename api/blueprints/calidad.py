@@ -2727,8 +2727,8 @@ def coa_list():
         if equipo_id:
             try:
                 eq = c.execute("""
-                    SELECT codigo, fecha_proxima FROM equipos_eventos
-                    WHERE equipo_codigo=(SELECT codigo FROM equipos_eventos WHERE id=? LIMIT 1)
+                    SELECT equipo_codigo, fecha_proxima FROM equipos_eventos
+                    WHERE equipo_codigo=(SELECT equipo_codigo FROM equipos_eventos WHERE id=? LIMIT 1)
                        OR id=?
                     ORDER BY fecha DESC LIMIT 1
                 """, (equipo_id, equipo_id)).fetchone()

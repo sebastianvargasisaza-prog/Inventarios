@@ -8147,7 +8147,7 @@ def planta_mass_balance(pid):
                 pesajes = c.execute(
                     """SELECT material_id, COALESCE(material_nombre,''),
                               cantidad_real_g, COALESCE(lote_mp,''),
-                              COALESCE(operario,''), COALESCE(creado_at_utc,'')
+                              COALESCE(pesado_por,''), COALESCE(pesado_at_utc,'')
                        FROM ebr_pesajes WHERE ebr_id=? ORDER BY id""",
                     (ebr_row[0],),
                 ).fetchall()

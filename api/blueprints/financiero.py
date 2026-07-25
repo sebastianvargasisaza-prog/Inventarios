@@ -1103,6 +1103,33 @@ def financiero_working_capital():
         inventory_value = sum((r[1] or 0) * (r[2] or 0) for r in inv_rows)
     except Exception:
         inventory_value = 0.0
+    if not inventory_value:
+        # FIX 25-jul (auditoría) · la query de arriba lee la tabla `lotes`, que NO EXISTE en
+        # este esquema (el kardex canónico es `movimientos`), así que el except la dejaba
+        # SIEMPRE en 0: el capital de trabajo se mostraba sub-estimado por el valor completo
+        # de la bodega de MP, y el DIO derivado daba 0. Es un número de plata que se veía real.
+        # Se recalcula con el canónico: stock = SUM(movimientos) excluyendo los 6 estados no
+        # disponibles, y el precio en $/g (maestro en $/kg ÷ 1000, fallback al precio de OC).
+        try:
+            _filas = c.execute(
+                "SELECT m.material_id, "
+                " SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad "
+                "          WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END), "
+                " COALESCE(NULLIF((SELECT mp.precio_referencia FROM maestro_mps mp "
+                "                   WHERE mp.codigo_mp=m.material_id),0)/1000.0, "
+                "          (SELECT AVG(oci.precio_unitario) FROM ordenes_compra_items oci "
+                "            WHERE oci.codigo_mp=m.material_id AND oci.precio_unitario>0), 0) "
+                "FROM movimientos m "
+                "WHERE UPPER(COALESCE(m.estado_lote,'')) NOT IN "
+                "      ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO') "
+                "GROUP BY m.material_id").fetchall()
+            inventory_value = sum(float(r[1] or 0) * float(r[2] or 0)
+                                  for r in _filas if float(r[1] or 0) > 0.01)
+        except Exception as _e_inv:
+            import logging as _lg_inv
+            _lg_inv.getLogger('financiero').warning(
+                'valor de inventario no se pudo calcular: %s', _e_inv)
+            inventory_value = 0.0
     # 90-day flows for DSO/DIO/DPO
     cutoff90 = (today - timedelta(days=90)).isoformat()
     c.execute("SELECT COALESCE(SUM(valor_total),0) FROM pedidos WHERE fecha >= ? AND estado NOT IN ('Cancelado')", (cutoff90,))

@@ -143,7 +143,7 @@ def dashboard():
         out["lotes_cuarentena"] = c.execute("""
             SELECT COUNT(DISTINCT lote)
             FROM movimientos
-            WHERE estado_calidad='Cuarentena' AND tipo='Entrada'
+            WHERE UPPER(COALESCE(estado_lote,''))='CUARENTENA' AND tipo='Entrada'
         """).fetchone()[0]
     except Exception:
         out["lotes_cuarentena"] = 0
@@ -424,7 +424,7 @@ def quick_actions():
     try:
         rows = c.execute("""
             SELECT id, codigo, lote, producto, parametro, fecha_deteccion, estado
-              FROM oos
+              FROM calidad_oos
              WHERE estado IN ('abierto','en_investigacion')
              ORDER BY fecha_deteccion DESC LIMIT 10
         """).fetchall()
@@ -448,7 +448,7 @@ def quick_actions():
             SELECT material_id, material_nombre, lote, cantidad, fecha,
                    julianday('now') - julianday(fecha) as dias
               FROM movimientos
-             WHERE estado_calidad = 'Cuarentena' AND tipo = 'Entrada'
+             WHERE UPPER(COALESCE(estado_lote,''))='CUARENTENA' AND tipo = 'Entrada'
                AND date(fecha) <= date('now', '-5 hours', '-7 day')
              ORDER BY fecha ASC LIMIT 10
         """).fetchall()
@@ -1007,7 +1007,7 @@ def lab_en_vivo():
                    fecha as fecha_entrada,
                    julianday('now') - julianday(fecha) as dias_cuarentena
               FROM movimientos
-             WHERE estado_calidad = 'Cuarentena' AND tipo = 'Entrada'
+             WHERE UPPER(COALESCE(estado_lote,''))='CUARENTENA' AND tipo = 'Entrada'
              ORDER BY fecha ASC
              LIMIT 20
         """).fetchall())
@@ -1019,7 +1019,7 @@ def lab_en_vivo():
         out["oos_abiertos"] = _fmt_many(c.execute("""
             SELECT id, codigo, origen, lote, producto, parametro,
                    valor_obtenido, valor_obtenido_texto, estado, fecha_deteccion
-              FROM oos
+              FROM calidad_oos
              WHERE estado IN ('abierto', 'en_investigacion', 'en_aprobacion')
              ORDER BY fecha_deteccion DESC
              LIMIT 15
@@ -1031,7 +1031,7 @@ def lab_en_vivo():
     try:
         agua_hoy = c.execute("""
             SELECT COUNT(*) as registros, MAX(fecha) as ultima
-              FROM calidad_agua_registros
+              FROM calidad_sistema_agua
              WHERE date(fecha) = date('now', '-5 hours')
         """).fetchone()
         out["agua_hoy"] = dict(agua_hoy) if agua_hoy else {'registros': 0, 'ultima': None}

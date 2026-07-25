@@ -442,6 +442,29 @@ def gerencia_dashboard_extra():
         inventory_cop = sum((r[1] or 0) * (r[2] or 0) / 1000.0 for r in lotes_rows)
     except Exception:
         inventory_cop = 0.0
+    if not inventory_cop:
+        # FIX 25-jul (auditoría) · igual que en financiero.py: la query de arriba lee la tabla
+        # `lotes`, que NO EXISTE (el kardex canónico es `movimientos`) → el except dejaba el
+        # KPI de valor de inventario en 0 permanente. Además dividía por 1000 un precio que ya
+        # está en $/g (`ordenes_compra_items.precio_unitario`), o sea que aunque la tabla
+        # hubiera existido el número salía 1000× más bajo. Acá se usa el canónico y $/g.
+        try:
+            _filas = c.execute(
+                "SELECT m.material_id, "
+                " SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad "
+                "          WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END), "
+                " COALESCE(NULLIF((SELECT mp.precio_referencia FROM maestro_mps mp "
+                "                   WHERE mp.codigo_mp=m.material_id),0)/1000.0, "
+                "          (SELECT AVG(oci.precio_unitario) FROM ordenes_compra_items oci "
+                "            WHERE oci.codigo_mp=m.material_id AND oci.precio_unitario>0), 0) "
+                "FROM movimientos m "
+                "WHERE UPPER(COALESCE(m.estado_lote,'')) NOT IN "
+                "      ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO') "
+                "GROUP BY m.material_id").fetchall()
+            inventory_cop = sum(float(r[1] or 0) * float(r[2] or 0)
+                                for r in _filas if float(r[1] or 0) > 0.01)
+        except Exception:
+            inventory_cop = 0.0
     # Churn alerts — clientes activos sin pedido >75 dias
     churn_alerts = []
     try:

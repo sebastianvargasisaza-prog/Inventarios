@@ -316,7 +316,7 @@ def health_debug():
             pass
         # Migraciones aplicadas
         try:
-            rows = conn.execute('SELECT id, descripcion FROM migraciones ORDER BY id DESC LIMIT 10').fetchall()
+            rows = conn.execute('SELECT version, descripcion FROM schema_migrations ORDER BY version DESC LIMIT 10').fetchall()
             out['migraciones_top10'] = [{'id': r[0], 'desc': (r[1] or '')[:80]} for r in rows]
         except Exception as e:
             out['migraciones_err'] = str(e)[:300]

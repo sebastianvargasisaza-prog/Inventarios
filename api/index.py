@@ -1806,7 +1806,7 @@ def diag_cadena_producto(producto):
             pass
         bridges = set()
         try:
-            for r in c.execute("SELECT UPPER(TRIM(codigo_formula)) FROM mp_formula_bridge WHERE COALESCE(activo,1)=1").fetchall():
+            for r in c.execute("SELECT UPPER(TRIM(formula_material_id)) FROM mp_formula_bridge WHERE COALESCE(activo,1)=1").fetchall():
                 bridges.add(r[0])
         except Exception:
             pass

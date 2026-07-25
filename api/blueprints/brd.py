@@ -2934,7 +2934,7 @@ def ebr_vista_completa(ebr_id):
             sup = ((jp[0] + ', ') if jp[0] else '') + (jp[1] or 'Jefe de Producción')
         else:
             jo = conn.execute(
-                "SELECT nombre, COALESCE(apellido,'') FROM operarios "
+                "SELECT nombre, COALESCE(apellido,'') FROM operarios_planta "
                 "WHERE COALESCE(es_jefe_produccion,0)=1 LIMIT 1").fetchone()
             if jo:
                 sup = (str(jo[0] or '') + ' ' + str(jo[1] or '')).strip() + ', Jefe de Producción'

@@ -471,8 +471,8 @@ def animus_clientes():
 
         # Pipeline GHL
         pipeline = _fmt_many(c.execute("""
-            SELECT etapa, COUNT(*) as contactos, COALESCE(SUM(valor_oportunidad),0) as valor
-            FROM animus_ghl_contacts GROUP BY etapa ORDER BY valor DESC
+            SELECT pipeline_etapa, COUNT(*) as contactos, COALESCE(SUM(valor_oportunidad),0) as valor
+            FROM animus_ghl_contacts GROUP BY pipeline_etapa ORDER BY valor DESC
         """).fetchall())
 
         # Nuevos contactos GHL últimos 30 días

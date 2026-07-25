@@ -24461,11 +24461,18 @@ def _sugerir_area_para_producto(c, producto, lote_kg):
         # Detectar alcoholes en la fórmula
         usa_alcohol = False
         try:
+            # FIX 25-jul (auditoría) · consultaba `formulas_v2` y `maestro_mp`, tablas que NO
+            # EXISTEN (las reales son `formula_items` y `maestro_mps`) → el except de abajo se
+            # tragaba el error y `usa_alcohol` quedaba SIEMPRE False, así que la regla "fórmula
+            # con alcohol va a PROD1" nunca se evaluó: un producto con etanol de 80 kg caía por
+            # tamaño a otra sala. No es cosmético: el área elegida alimenta después el gate de
+            # sala limpia, el de arrastre de pigmento y el rótulo de limpieza.
             mps = c.execute("""
-                SELECT LOWER(COALESCE(m.descripcion,''))
-                  FROM formulas_v2 f
-                  LEFT JOIN maestro_mp m ON m.id = f.mp_id
-                 WHERE f.producto_nombre = ?
+                SELECT LOWER(COALESCE(m.nombre_comercial,'') || ' ' ||
+                             COALESCE(m.nombre_inci,'') || ' ' || COALESCE(fi.material_nombre,''))
+                  FROM formula_items fi
+                  LEFT JOIN maestro_mps m ON UPPER(TRIM(m.codigo_mp)) = UPPER(TRIM(fi.material_id))
+                 WHERE UPPER(TRIM(fi.producto_nombre)) = UPPER(TRIM(?))
             """, (producto,)).fetchall()
             for r in mps:
                 desc = r[0] or ''
