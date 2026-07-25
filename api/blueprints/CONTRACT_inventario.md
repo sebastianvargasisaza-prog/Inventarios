@@ -365,3 +365,12 @@ desde el 1-jun (P0-1); la ruta de Fabricación directa se había quedado sin él
 
 Corolario: el simulador ("Verificar stock") consolida igual, así que da el MISMO
 veredicto que el descuento real (M5). Tests: `tests/test_descuento_dedup_codigo.py`.
+
+## 🔐 Escribir una fórmula maestra exige rol (25-jul · auditoría)
+
+**INV-13:** `POST /api/formulas` está gateado a `TECNICA_USERS | ADMIN_USERS`, el MISMO set
+que la página `/tecnica`. Antes solo exigía sesión, así que cualquier usuario autenticado
+(una operaria de dispensación, marketing, la contadora) podía reescribir una receta llamando
+el endpoint a mano — verificado en la auditoría con una sesión de planta. Es dato regulado
+INVIMA: define qué y cuánto se dispensa, y alimenta el descuento FEFO, la compra y el MBR.
+Patrón M32: el gate de la PÁGINA y el de la MUTACIÓN son dos controles distintos.

@@ -253,3 +253,25 @@ transaccional (1:1). NO materializar stock con cache persistente (drift · prohi
 
 **CSRF:** `PUT /api/maestro-mps/<cod>/proveedor` ahora manda X-CSRF-Token desde el front
 (estaba roto en prod · /api/maestro-mps/ está en _admin_paths).
+
+### 2026-07-25 · Auditoría CERO-ERROR · 4 fugas de plata + Habeas Data
+
+- **INV-9 · El espejo a `flujo_egresos` se ancla por `referencia`, NO por `numero_oc`**
+  (esa columna no existe en la tabla). `revertir_pago_oc` borraba con `WHERE numero_oc=?`
+  → OperationalError tragado por el `except` → el egreso NUNCA se borraba: la plata seguía
+  contada en P&L/cash-flow y al re-pagar quedaba duplicada. Ahora borra por
+  `referencia + fuente='compras'` y UNA sola fila (la más reciente).
+- **INV-10 · La recepción decide MP vs ENVASE por ÍTEM, no por la categoría de la OC.**
+  El front creaba las OC de la bandeja de Planta con `categoria:'MP'` fijo, así que los
+  envases entraban al kardex de MATERIA PRIMA: no sumaban en `SUM(movimientos_mee)` (se
+  volvían a pedir) y se saltaban la CUARENTENA (mig 301). Criterio: si el código está en
+  `maestro_mee` y NO en `maestro_mps`, es envase. Cubre las OC mixtas, que son legítimas.
+- **INV-11 · Aplicar saldo a favor ES pagar**: bloquea los mismos estados que `pagar_oc`
+  (Cancelada/Rechazada/Borrador/Revisada). Antes solo frenaba cancelada/anulada, así que con
+  crédito se dejaba en 'Pagada' una OC en Borrador, eludiendo la autorización gerencial.
+- **INV-12 · `maestro_mps.precio_referencia` está en $/kg**: todo writer que venga de una OC
+  (donde `precio_unitario` es $/g) multiplica por 1000. `items-precios` lo omitía y dejaba el
+  precio 1000× más barato para la siguiente OC. Igual `precios_mp_historico.precio_kg`.
+- **Habeas Data (Ley 1581)**: `por-pagar` y `ocs-consolidado-excel` devolvían banco, tipo y
+  número de cuenta y NIT en claro a cualquier usuario logueado (`compras_user` = "inició
+  sesión", NO un rol). Enmascarados a `***` salvo admin + contadora, como los hermanos.
