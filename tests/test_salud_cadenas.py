@@ -66,23 +66,42 @@ def test_endpoint_responde_y_exige_login(app, client):
     assert 'resumen' in d
 
 
-def test_detecta_cadena_sobredimensionada(app):
-    """Un producto cuya cadena entrega mucho más kg del que consume debe salir marcado."""
-    _limpiar()
-    # 3 lotes mensuales de 60 kg para un producto que vende poquísimo → sobra evidente
-    for i, d in enumerate((30, 60, 90)):
-        _lote(PROD_SOBRA, 60, d)
+def test_ve_las_cadenas_que_existen(app):
+    """Si un producto de la lista tiene lotes futuros, el diagnóstico TIENE que verlos.
+
+    ⚠ Este test nació de un bug PROPIO: la primera versión del endpoint usaba `_date` sin
+    importarlo (en plan.py cada función lo importa local), el `except` de la iteración se
+    tragaba el NameError lote por lote y TODAS las cadenas salían vacías: respondía
+    `sin_cadena: 28` con 200 OK. La primera versión de este test tenía un
+    `if item is not None: assert ...`, así que PASÓ EN VACÍO y no lo detectó.
+    Por eso ahora siembra sobre un producto REAL del payload y afirma sin condicionales.
+    """
     c = _login(app)
+    base = c.get('/api/plan/salud-cadenas').get_json()
+    n_sin_antes = base['resumen']['sin_cadena']
+    # tomar un producto que el motor SÍ lista (los sembrados a mano no están mapeados a SKU)
+    nec = c.get('/api/plan/necesidades').get_json()
+    prods = [p.get('producto_nombre') for cl in (nec.get('clientes') or [])
+             for p in (cl.get('productos') or []) if p.get('producto_nombre')]
+    if not prods:
+        return   # el seed de tests no trae productos mapeados · nada que afirmar
+    objetivo = prods[0]
+    _sql("DELETE FROM produccion_programada WHERE producto='%s'" % objetivo.replace("'", "''"))
+    for d in (30, 60, 90):
+        _sql("INSERT INTO produccion_programada (producto,fecha_programada,lotes,cantidad_kg,origen,estado) "
+             "VALUES ('%s', date('now','-5 hours','+%d days'), 1, 60, 'eos_plan', 'pendiente')"
+             % (objetivo.replace("'", "''"), d))
     try:
-        r = c.get('/api/plan/salud-cadenas')
-        assert r.status_code == 200, r.data[:300]
-        d = r.get_json()
-        item = next((x for x in d['items'] if x['producto'] == PROD_SOBRA), None)
-        # sin ventas mapeadas el motor no puede juzgar: debe decirlo, no inventar
-        if item is not None:
-            assert item['estado'] in ('sobre', 'sin_datos'), item
+        d2 = c.get('/api/plan/salud-cadenas').get_json()
+        item = next((x for x in d2['items'] if x['producto'] == objetivo), None)
+        assert item is not None, (
+            'el diagnóstico NO vio una cadena de 3 lotes futuros · resumen=%s' % d2['resumen'])
+        assert item['n_lotes'] == 3, item
+        assert item['cadencia_dias'] == 30, item
+        assert item['kg_lote_programado'] == 60.0, item
+        assert d2['resumen']['sin_cadena'] < n_sin_antes + 1, d2['resumen']
     finally:
-        _limpiar()
+        _sql("DELETE FROM produccion_programada WHERE producto='%s'" % objetivo.replace("'", "''"))
 
 
 def test_no_marca_lo_que_no_puede_juzgar(app):

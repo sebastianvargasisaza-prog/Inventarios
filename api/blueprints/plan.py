@@ -5912,6 +5912,12 @@ def plan_salud_cadenas():
     """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    # ⚠ `_date` NO existe a nivel de módulo en plan.py (cada función lo importa local). Sin este
+    # import, el `_date.fromisoformat` de abajo lanza NameError, el except de la iteración lo
+    # traga lote por lote y TODAS las cadenas salen vacías: el endpoint respondía
+    # `sin_cadena: 28` con 200 OK. Es exactamente el patrón M94/M96 (except mudo sobre un
+    # símbolo inexistente) y lo cometí acá mismo el mismo día que lo documenté.
+    from datetime import date as _date
     _resp = plan_necesidades()          # reusa el motor real · una sola fuente de verdad
     try:
         _data = _resp[0].get_json() if isinstance(_resp, tuple) else _resp.get_json()
