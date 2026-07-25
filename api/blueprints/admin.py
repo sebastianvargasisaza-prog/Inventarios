@@ -15,7 +15,7 @@ from config import (
     DB_PATH, ADMIN_USERS, COMPRAS_USERS, validate_config,
     CONTADORA_USERS, RRHH_USERS, COMPRAS_ACCESS, FINANZAS_ACCESS,
     CLIENTES_ACCESS, TECNICA_USERS, MARKETING_USERS, ANIMUS_ACCESS,
-    ESPAGIRIA_ACCESS, CALIDAD_USERS, PLANTA_USERS,
+    ESPAGIRIA_ACCESS, CALIDAD_USERS, PLANTA_USERS, ASEGURAMIENTO_USERS,
 )
 from database import db_connect
 from database import get_db  # Sebastián 7-jul: usado por endpoints logo/purgar-gcal/producciones-sin-formula (antes NameError)
@@ -7934,11 +7934,13 @@ async function guardar(){
 def admin_set_firma_usuario():
     """Asigna / reemplaza / limpia la firma manuscrita (PNG/JPG data-uri) de un usuario.
     Es la MANIFESTACIÓN VISIBLE (Part 11 §11.50) que se estampa en los documentos cuando la
-    persona firma con su contraseña. Solo ADMIN: vincular firma↔persona es un control regulado
-    (INVIMA · §11.100(b) identity binding). data_uri vacío = limpiar. Sebastián 24-jul."""
-    u, err, code = _require_admin()
-    if err:
-        return err, code
+    persona firma con su contraseña. Aseguramiento (Miguel) o ADMIN: vincular firma↔persona es un
+    control regulado (INVIMA · §11.100(b) identity binding). data_uri vacío = limpiar. Sebastián 24-jul."""
+    u = session.get('compras_user', '')
+    if not u:
+        return jsonify({'error': 'No autenticado'}), 401
+    if u not in (ASEGURAMIENTO_USERS | ADMIN_USERS):
+        return jsonify({'error': 'Solo Aseguramiento de la Calidad / admin'}), 403
     d = request.get_json(silent=True) or {}
     username = (d.get('username') or '').strip()
     data_uri = (d.get('data_uri') or '').strip()
@@ -7965,15 +7967,81 @@ def admin_set_firma_usuario():
     return jsonify({'ok': True, 'username': username, 'tiene_firma': bool(data_uri)})
 
 
+@bp.route("/api/admin/crear-persona-firma", methods=["POST"])
+def admin_crear_persona_firma():
+    """Registra una persona NUEVA (inducción · Aseguramiento hace el onboarding): crea su identidad
+    Part 11 (usuarios_identidad · nombre/cédula/cargo/área) + su firma manuscrita, y OPCIONALMENTE un
+    login (users_passwords) para que pueda entrar y e-firmar. Aseguramiento (Miguel) o ADMIN.
+    Sebastián 24-jul: 'Miguel da las inducciones · buen sitio para crear usuario y firma'."""
+    u = session.get('compras_user', '')
+    if not u:
+        return jsonify({'error': 'No autenticado'}), 401
+    if u not in (ASEGURAMIENTO_USERS | ADMIN_USERS):
+        return jsonify({'error': 'Solo Aseguramiento de la Calidad / admin'}), 403
+    import re as _re
+    d = request.get_json(silent=True) or {}
+    username = (d.get('username') or '').strip().lower()
+    nombre = (d.get('nombre_completo') or '').strip()
+    cargo = (d.get('cargo') or '').strip() or 'Por definir'
+    area = (d.get('area') or '').strip()
+    cedula = (d.get('cedula') or '').strip()
+    data_uri = (d.get('data_uri') or '').strip()
+    password = (d.get('password') or '').strip()
+    if not _re.match(r'^[a-z][a-z0-9_-]{2,30}$', username):
+        return jsonify({'error': 'usuario: 3-31 caracteres · minúsculas/números/-/_ · empezar con letra'}), 400
+    if not nombre:
+        return jsonify({'error': 'El nombre completo es obligatorio'}), 400
+    if data_uri and not data_uri.startswith('data:image/'):
+        return jsonify({'error': 'La firma debe ser una imagen (PNG/JPG)'}), 400
+    if len(data_uri) > 900000:
+        return jsonify({'error': 'Firma muy grande · recortala (< 700KB)'}), 400
+    if password and len(password) < 8:
+        return jsonify({'error': 'La contraseña temporal debe tener mínimo 8 caracteres'}), 400
+    conn = get_db(); c = conn.cursor()
+    ya = c.execute("SELECT 1 FROM usuarios_identidad WHERE username=?", (username,)).fetchone()
+    if ya:
+        return jsonify({'error': 'Ya existe una persona con el usuario "%s" · gestionala en la lista de abajo' % username}), 409
+    # 1) Identidad Part 11 (fuente del snapshot de firma + firma_img)
+    c.execute(
+        "INSERT INTO usuarios_identidad (username, cedula, nombre_completo, cargo, area, firma_img) "
+        "VALUES (?,?,?,?,?,?)",
+        (username, cedula, nombre, cargo, area, data_uri))
+    # 2) Login opcional (para que pueda entrar y e-firmar)
+    login_creado = False
+    if password:
+        from config import COMPRAS_USERS as _CU
+        ya_login = c.execute("SELECT 1 FROM users_passwords WHERE username=?", (username,)).fetchone()
+        if not ya_login and username not in (_CU or {}):
+            from werkzeug.security import generate_password_hash
+            from datetime import datetime as _dt
+            _now = _dt.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+            pw_hash = generate_password_hash(password, method='pbkdf2:sha256')
+            c.execute(
+                "INSERT INTO users_passwords (username, password_hash, changed_at, changed_by) VALUES (?,?,?,?)",
+                (username, pw_hash, _now, u))
+            login_creado = True
+    try:
+        from audit_helpers import audit_log
+        audit_log(c, usuario=u, accion='CREAR_PERSONA_FIRMA', tabla='usuarios_identidad',
+                  registro_id=username,
+                  despues={'nombre': nombre, 'cargo': cargo, 'area': area,
+                           'tiene_firma': bool(data_uri), 'login_creado': login_creado})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'username': username, 'login_creado': login_creado,
+                    'tiene_firma': bool(data_uri)})
+
+
 @bp.route("/admin/firmas-usuarios", methods=["GET"])
 def admin_firmas_usuarios_page():
     """Página premium para asignar la firma manuscrita de cada jefe. Esa firma se estampa
     en los documentos cuando la persona firma con su contraseña (e-firma Part 11 §11.50).
-    Solo ADMIN (control regulado · vincular firma↔persona)."""
+    Aseguramiento de la Calidad (Miguel) o ADMIN · control regulado (vincular firma↔persona)."""
     if 'compras_user' not in session:
         return redirect('/login?next=/admin/firmas-usuarios')
-    if session.get('compras_user') not in ADMIN_USERS:
-        return "<h3 style='font-family:Arial;padding:30px'>Solo administradores</h3>", 403
+    if session.get('compras_user') not in (ASEGURAMIENTO_USERS | ADMIN_USERS):
+        return "<h3 style='font-family:Arial;padding:30px'>Solo Aseguramiento de la Calidad o administradores</h3>", 403
     import html as _hh
     conn = get_db()
     try:
@@ -8038,10 +8106,40 @@ body{font-family:"Inter",system-ui,Arial,sans-serif;background:#f5f3ff;padding:2
 .finput{flex:1;min-width:150px;font-size:12px}
 .fmsg{font-size:12px;margin-top:8px;min-height:16px}
 .note{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;border-radius:12px;padding:12px 14px;font-size:12.5px;margin-bottom:18px}
+.newp{background:#fff;border:1px solid #ede9fe;border-radius:14px;margin-bottom:18px;overflow:hidden;box-shadow:0 2px 10px rgba(109,40,217,.05)}
+.newp-head{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;cursor:pointer;font-weight:800;color:#6d28d9;background:#faf5ff}
+.newp-body{padding:16px;border-top:1px solid #f1e9ff}
+.npgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+.npgrid label{display:flex;flex-direction:column;font-size:11px;font-weight:800;color:#64748b;gap:4px;text-transform:uppercase;letter-spacing:.3px}
+.npgrid input{text-transform:none;letter-spacing:normal}
+.npfirma{display:flex;gap:14px;align-items:center;margin-top:14px;flex-wrap:wrap}
+.npfirma .fprevwrap{width:230px;height:82px;margin:0}
 </style></head><body><div class="wrap">
-<div class="hero"><div class="ic">&#9997;&#65039;</div><div><h1>Firmas de los jefes</h1></div></div>
+<div class="hero"><div class="ic">&#9997;&#65039;</div><div><h1>Firmas del personal</h1></div></div>
 <div class="sub">La firma manuscrita de cada persona se <b>estampa en el documento</b> cuando esa persona firma con su contrase&ntilde;a (e-firma Part 11 &sect;11.50). La firma legal sigue siendo la electr&oacute;nica (identidad + reautenticaci&oacute;n + sello a prueba de manipulaci&oacute;n); esta imagen es la r&uacute;brica visible. <b>__NCON__ de __NTOT__</b> con firma cargada.</div>
-<div class="note">&#128161; Subí un PNG con <b>fondo transparente</b> (la firma sola, sin recuadro blanco) para que quede limpia sobre el documento. Se guarda en la base y persiste (no se pierde en los despliegues).</div>
+<div class="newp">
+  <div class="newp-head" onclick="_toggleNew()"><span>&#10133; Registrar persona nueva (inducci&oacute;n) + firma</span><span id="np-caret">&#9656;</span></div>
+  <div class="newp-body" id="np-body" style="display:none">
+    <div class="npgrid">
+      <label>Usuario (login) *<input id="np-u" class="cx-input" placeholder="ej. jperez" autocomplete="off"></label>
+      <label>Nombre completo *<input id="np-nom" class="cx-input" placeholder="Jos&eacute; P&eacute;rez"></label>
+      <label>Cargo<input id="np-cargo" class="cx-input" placeholder="Operario de Planta"></label>
+      <label>&Aacute;rea<input id="np-area" class="cx-input" placeholder="Producci&oacute;n"></label>
+      <label>C&eacute;dula<input id="np-ced" class="cx-input" placeholder="opcional"></label>
+      <label>Contrase&ntilde;a temporal<input id="np-pass" type="text" class="cx-input" placeholder="opcional &middot; m&iacute;n 8 &middot; para que entre y firme"></label>
+    </div>
+    <div class="npfirma">
+      <div class="fprevwrap" id="np-pw"><div class="fnone">Firma (opcional)</div></div>
+      <input type="file" accept="image/png,image/jpeg" class="cx-input finput" id="np-file" onchange="_pickNew()">
+    </div>
+    <div style="display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap">
+      <button class="cx-btn cx-btn-success" id="np-btn" onclick="_crearPersona()">Registrar persona</button>
+      <div id="np-msg" style="font-size:12.5px"></div>
+    </div>
+    <div style="font-size:11.5px;color:#64748b;margin-top:10px">Sin contrase&ntilde;a la persona queda registrada (identidad + firma) pero a&uacute;n no entra; con contrase&ntilde;a ya puede iniciar sesi&oacute;n y firmar. El acceso a m&oacute;dulos lo asigna un administrador.</div>
+  </div>
+</div>
+<div class="note">&#128161; Sub&iacute; un PNG con <b>fondo transparente</b> (la firma sola, sin recuadro blanco) para que quede limpia sobre el documento. Se guarda en la base y persiste (no se pierde en los despliegues).</div>
 <div class="grid">__CARDS__</div>
 </div>
 <script>
@@ -8068,6 +8166,28 @@ async function _clear(u){
   var t=await _csrf();
   var r=await fetch('/api/admin/firma-usuario',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify({username:u,data_uri:''})});
   if(r.ok){ location.reload(); } else { alert('No se pudo quitar'); }
+}
+var _npFirma='';
+function _toggleNew(){ var b=document.getElementById('np-body'); var c=document.getElementById('np-caret'); var open=b.style.display==='none'; b.style.display=open?'block':'none'; c.innerHTML=open?'&#9662;':'&#9656;'; }
+function _pickNew(){
+  var fi=document.getElementById('np-file'); if(!fi||!fi.files[0]) return; var f=fi.files[0];
+  if(f.size>700*1024){ document.getElementById('np-msg').innerHTML='<span style="color:#dc2626">Firma muy grande (&gt;700KB)</span>'; return; }
+  var r=new FileReader(); r.onload=function(){ _npFirma=r.result; document.getElementById('np-pw').innerHTML='<img class="fprev" src="'+r.result+'">'; }; r.readAsDataURL(f);
+}
+async function _crearPersona(){
+  var u=(document.getElementById('np-u').value||'').trim().toLowerCase();
+  var nom=(document.getElementById('np-nom').value||'').trim();
+  var msg=document.getElementById('np-msg');
+  if(!u||!nom){ msg.innerHTML='<span style="color:#d97706">Usuario y nombre son obligatorios</span>'; return; }
+  var body={username:u,nombre_completo:nom,cargo:(document.getElementById('np-cargo').value||'').trim(),area:(document.getElementById('np-area').value||'').trim(),cedula:(document.getElementById('np-ced').value||'').trim(),password:(document.getElementById('np-pass').value||'').trim(),data_uri:_npFirma};
+  var b=document.getElementById('np-btn'); b.disabled=true; b.textContent='Registrando...';
+  try{
+    var t=await _csrf();
+    var r=await fetch('/api/admin/crear-persona-firma',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(body)});
+    var d=await r.json();
+    if(r.ok&&d.ok){ msg.innerHTML='<span style="color:#16a34a;font-weight:700">&#10003; Persona registrada'+(d.login_creado?' + login creado':'')+'</span>'; setTimeout(function(){location.reload();},1000); }
+    else { msg.innerHTML='<span style="color:#dc2626">Error: '+((d&&d.error)||r.status)+'</span>'; b.disabled=false; b.textContent='Registrar persona'; }
+  }catch(e){ msg.innerHTML='<span style="color:#dc2626">Error de red</span>'; b.disabled=false; b.textContent='Registrar persona'; }
 }
 </script></body></html>'''
     return (_tpl.replace('__CARDS__', cards_html)

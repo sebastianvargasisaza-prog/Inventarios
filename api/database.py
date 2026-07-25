@@ -10293,6 +10293,17 @@ ON CONFLICT (codigo) DO UPDATE SET descripcion=excluded.descripcion, categoria=e
           "desde api/static/firmas_seed/<username>.png si el usuario no tiene firma cargada (idempotente).", [
         "ALTER TABLE usuarios_identidad ADD COLUMN firma_img TEXT DEFAULT ''",
     ]),
+    (374, "Corrección mapeo firma J. Rodriguez (Sebastián 24-jul): la firma de José Rodríguez (Jefe de "
+          "Producción · username 'jose', reemplazó a 'luis' que salió de la empresa) se había asignado por "
+          "error a 'jefferson' (Marketing). Asegura la identidad de 'jose', MUEVE la firma a 'jose' (si aún "
+          "no tiene) y limpia la de jefferson. Asset seed renombrado jefferson.png→jose.png (DB fresco/DR).", [
+        "INSERT OR IGNORE INTO usuarios_identidad (username, cargo, area, manager_username) "
+        "VALUES ('jose', 'Jefe de Producción', 'Producción', 'alejandro')",
+        "UPDATE usuarios_identidad SET firma_img=(SELECT firma_img FROM usuarios_identidad WHERE username='jefferson') "
+        "WHERE username='jose' AND COALESCE(firma_img,'')='' "
+        "AND COALESCE((SELECT firma_img FROM usuarios_identidad WHERE username='jefferson'),'')<>''",
+        "UPDATE usuarios_identidad SET firma_img='' WHERE username='jefferson'",
+    ]),
 ]
 
 

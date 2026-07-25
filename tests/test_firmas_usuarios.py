@@ -19,16 +19,53 @@ def test_mig373_columna_firma_img(app):
 
 
 def test_seed_firmas_de_los_jefes(app):
-    """El seeder cargó la firma manuscrita de los 5 jefes desde api/static/firmas_seed/."""
+    """El seeder cargó la firma manuscrita de los 5 jefes desde api/static/firmas_seed/.
+    J. Rodriguez es 'jose' (Jefe de Producción), NO jefferson (mig 374 lo corrigió)."""
     with app.app_context():
         from database import get_db
         db = get_db()
-        for u in ('hernando', 'miguel', 'laura', 'gloria', 'jefferson'):
+        for u in ('hernando', 'miguel', 'laura', 'gloria', 'jose'):
             row = db.execute("SELECT firma_img FROM usuarios_identidad WHERE username=?", (u,)).fetchone()
             assert row is not None, 'usuario %s no existe' % u
             v = row[0] or ''
             assert v.startswith('data:image/png;base64,'), (u, v[:32])
             assert len(v) > 500, ('firma sospechosamente corta', u, len(v))
+        # jefferson (Marketing) NO debe tener la firma de J. Rodriguez (mig 374 la limpió)
+        jf = db.execute("SELECT COALESCE(firma_img,'') FROM usuarios_identidad WHERE username=?", ('jefferson',)).fetchone()
+        assert (jf[0] if jf else '') == '', 'jefferson no debe tener firma (era el mapeo errado)'
+
+
+def test_crear_persona_firma(admin_client, app):
+    """Aseguramiento/admin registra una persona nueva (inducción) + firma + login."""
+    px = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII='
+    r = admin_client.post('/api/admin/crear-persona-firma', headers=ORIGIN, json={
+        'username': 'ttinduccion', 'nombre_completo': 'Test Inducción', 'cargo': 'Operario',
+        'area': 'Producción', 'password': 'ClaveTest123', 'data_uri': px})
+    assert r.status_code == 200, r.data
+    d = r.get_json()
+    assert d['ok'] and d['login_creado'] is True and d['tiene_firma'] is True
+    with app.app_context():
+        from database import get_db
+        db = get_db()
+        ident = db.execute("SELECT nombre_completo, firma_img FROM usuarios_identidad WHERE username='ttinduccion'").fetchone()
+        assert ident is not None and ident[0] == 'Test Inducción' and (ident[1] or '').startswith('data:image')
+        login = db.execute("SELECT 1 FROM users_passwords WHERE username='ttinduccion'").fetchone()
+        assert login is not None, 'debió crear el login'
+    # duplicado → 409
+    r = admin_client.post('/api/admin/crear-persona-firma', headers=ORIGIN,
+                          json={'username': 'ttinduccion', 'nombre_completo': 'X'})
+    assert r.status_code == 409
+    # username inválido → 400
+    r = admin_client.post('/api/admin/crear-persona-firma', headers=ORIGIN,
+                          json={'username': 'X Y', 'nombre_completo': 'X'})
+    assert r.status_code == 400
+
+
+def test_crear_persona_solo_aseguramiento(logged_client):
+    """valentina (no aseguramiento/admin) NO puede crear personas."""
+    r = logged_client.post('/api/admin/crear-persona-firma', headers=ORIGIN,
+                           json={'username': 'zznope', 'nombre_completo': 'X'})
+    assert r.status_code == 403
 
 
 def test_helper_firma_img(app):

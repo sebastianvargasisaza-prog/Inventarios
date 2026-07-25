@@ -113,6 +113,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   <div class="tab" data-tip="Gobierno GMP: revisión por la dirección, calificación de proveedores (con scorecard de Compras), validación de equipos IQ/OQ/PQ, FMEA (riesgo ICH Q9) y acuerdos de calidad con terceros." data-tip-pos="bottom" onclick="goTab('tab-gob')">&#x1F3DB;&#xFE0F; Gobierno GMP</div>
   <div class="tab" data-tip="Consultas ad-hoc para auditorías INVIMA: audit-trail, trazabilidad por lote y por cliente, exportables a CSV." data-tip-pos="bottom" onclick="goTab('tab-reportes')">&#x1F4CB; Reportes INVIMA</div>
   <div class="tab" data-tip="Detección y resolución de códigos de documento repetidos o inconsistentes en el SGD (higiene del sistema documental)." data-tip-pos="bottom" onclick="goTab('tab-conf')">&#x26A0;&#xFE0F; Conflictos SGD</div>
+  <div class="tab" data-tip="Firmas manuscritas del personal: la rúbrica que se estampa en los documentos al firmar con contraseña (Part 11 §11.50) y el registro de personas nuevas en la inducción (Aseguramiento hace el onboarding)." data-tip-pos="bottom" onclick="goTab('tab-firmas')">&#x270D;&#xFE0F; Firmas</div>
 </div>
 
 <div class="main">
@@ -1077,6 +1078,14 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   </div>
 </div>
 
+<div id="tab-firmas" class="pane">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+    <div style="font-size:13px;color:#475569">&#x270D;&#xFE0F; Firmas manuscritas del personal &middot; asigná la rúbrica que se estampa en los documentos al firmar, y registrá personas nuevas en la inducción.</div>
+    <a href="/admin/firmas-usuarios" target="_blank" class="btn btn-ghost btn-sm">Abrir en pestaña nueva &#8599;</a>
+  </div>
+  <iframe id="firmas-ifr" src="about:blank" title="Firmas del personal" style="width:100%;height:78vh;border:1px solid #e5e7eb;border-radius:12px;background:#fff"></iframe>
+</div>
+
 </div>
 <script>
 function _esc(s){return String(s||'').replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];});}
@@ -1206,7 +1215,7 @@ async function withBusy(btn, fn){
   finally { btn.disabled = false; if(btn.textContent !== prev) btn.textContent = prev; }
 }
 
-var _tabIds = ['tab-dash','tab-indic','tab-mis-tareas','tab-sgd','tab-cap','tab-mis-cap','tab-desv','tab-cambios','tab-quejas','tab-recalls','tab-gob','tab-reportes','tab-conf'];
+var _tabIds = ['tab-dash','tab-indic','tab-mis-tareas','tab-sgd','tab-cap','tab-mis-cap','tab-desv','tab-cambios','tab-quejas','tab-recalls','tab-gob','tab-reportes','tab-conf','tab-firmas'];
 function goTab(id){
   document.querySelectorAll('.tab').forEach((t,i)=>{t.classList.toggle('active',_tabIds[i]===id);});
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
@@ -1224,6 +1233,7 @@ function goTab(id){
   else if(id==='tab-gob') gobInit();
   else if(id==='tab-reportes') repInit();
   else if(id==='tab-conf') loadConflictos();
+  else if(id==='tab-firmas'){ var f=document.getElementById('firmas-ifr'); if(f && String(f.src||'').indexOf('firmas-usuarios')<0) f.src='/admin/firmas-usuarios'; }
 }
 
 // === MIS TAREAS · vista consolidada del usuario =======================
